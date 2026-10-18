@@ -68,11 +68,12 @@ describe("Outbreak look", () => {
     expect(lightRuleWeight(DEFAULT_LOOK_TRIMS, 0.5)).toBeCloseTo(0.5)
     const settings = createOutbreakSettings()
     expect(trimLighting(settings.lighting, settings.look)).toMatchObject({
-      skyFill: settings.lighting.skyFill,
+      skyFill: settings.lighting.skyFill * DEFAULT_LOOK_TRIMS.skyAmbient,
       roomPower: settings.lighting.roomPower,
       practicalWarmth: settings.lighting.practicalWarmth,
     })
-    const packed = packOutbreakLightingUniforms(frame(settings), flashlightColor(0.92))
+    // v8 dims the sky fill and moonlight; with those at 1 the trims leave the lighting uniforms untouched.
+    const packed = packOutbreakLightingUniforms(frame({ ...settings, look: { ...settings.look, skyAmbient: 1, moonlight: 1 } }), flashlightColor(0.92))
     const untrimmed = packOutbreakLightingUniforms(frame({ ...settings, look: undefined } as never), flashlightColor(0.92))
     expect([...packed]).toEqual([...untrimmed])
     expect(settings.survivor.heroStyle).toBe(COLOUR_BLOCKS_STYLE)

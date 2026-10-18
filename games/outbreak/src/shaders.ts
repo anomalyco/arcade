@@ -626,7 +626,7 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
     let extUnseenScale = select(1.0, select(0.16, select(clamp(0.92 * shroudDark, 0.0, 1.8), v8ExtUnseen, isV7), isV6), !inRoom && isV5OrV6);
     let lampKeep = select(1.0, clamp(OL.v8.w, 0.0, 1.0), isV8);
     let sunCancel = max(sunShadow * (select(1.0, 0.68, isV7) + select(0.0, 0.32, isV7) * outbreakSeen) * sunVal, select(0.0, duskGlow * (0.62 + 0.38 * outbreakSeen), isV7)) * (1.0 - dayShroud);
-    let litCancel = select(lit, max(max(litMask * knownSight * mix(lampKeep, 1.0, outbreakSeen), zombieRimMask * outbreakSeen), sunCancel), isV6);
+    let litCancel = select(lit, max(max(litMask * knownSight, zombieRimMask * outbreakSeen), sunCancel), isV6);
     let shroudFloorRule = select(mix(0.38, 1.18, lightRule), 2.55 * lightRule * (1.0 - duskGlow * 0.82) * select(1.0, mix(1.0, 0.5, outbreakSeen), isV8), isV7);
     let actorShroudExempt = select(select(0.0, 0.65, isHeroAny), max(select(0.0, 0.65, isHeroAny), clamp((0.62 + 0.38 * zombieRimMask) * outbreakSeen * clamp(OL.v7.z, 0.0, 1.5), 0.0, 0.94)), isV7 && (mat == 12 || (mat == 3 && o.aux > 0.25 && o.aux < 0.95)));
     let unlitShroudFloor = select(
@@ -635,7 +635,7 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
       isV6 && OL.unseen.mode >= 0.5 && OL.unseen.strength > 0.001,
     );
     let rawUnseen = max(outbreakUnseenAlpha * extUnseenScale * select(1.0, clamp(0.35 + 0.65 * sightDark, 0.0, 2.0), isV6), unlitShroudFloor);
-    let effUnseenAlpha = rawUnseen * select(1.0, 1.0 - smoothstep(0.04, 0.28, litCancel), satStyle > 0);
+    let effUnseenAlpha = rawUnseen * select(1.0, 1.0 - smoothstep(0.04, 0.28, litCancel) * mix(lampKeep, 1.0, max(outbreakSeen, zombieRimMask)), satStyle > 0);
     outbreakFlashMask = select(baseFlashMask, baseFlashMask - effUnseenAlpha, effUnseenAlpha > 0.0);
   }
   if (mat == 6) { outbreakFlashMask = 0.55; }

@@ -20,7 +20,7 @@ const { lookIdea: _, ...TRIMS } = DEFAULT_LOOK_TRIMS
 const TODAY: OutbreakLookKnobs = { ...TRIMS, ...DEFAULT_HERO_LOOK }
 /** The Darkwood v8 knobs at their pre-v8 identity, for every preset that predates them. */
 const PRE_V8 = { coneSharpness: 0, dayShroud: 0, shroudCharcoal: 0, shroudGrain: 0, shroudLampKeep: 1, dayMuted: 0, dayVignette: 0, dayGrain: 0 } as const
-const V7: OutbreakLookKnobs = { ...TODAY, ...PRE_V8, lightSatStyle: 6, styleGrade: 6, beamWarmth: 0.28, beamTightness: 1, nightGrain: 0.05, nightVignette: 0.35 }
+const V7: OutbreakLookKnobs = { ...TODAY, ...PRE_V8, lightSatStyle: 6, styleGrade: 6, beamWarmth: 0.28, beamTightness: 1, nightGrain: 0.05, nightVignette: 0.35, skyAmbient: 1, moonlight: 1 }
 const hero = (style: number): Pick<HeroLookSettings, "heroStyle"> & (typeof HERO_STYLE_SURFACES)[number] => ({ heroStyle: style, ...HERO_STYLE_SURFACES[style]! })
 
 export const OUTBREAK_LOOK_PRESETS: readonly OutbreakLookPreset[] = [

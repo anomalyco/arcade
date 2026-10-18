@@ -321,7 +321,7 @@ fn applyOutbreakUnseenPost(
     let gMid = hash(floor(fragPos * 0.5) + vec2f(-fTime * 19.3, fTime * 23.9)) - 0.5;
     let gFine = hash(floor(fragPos) + vec2f(fTime * 29.7, fTime * 11.3)) - 0.5;
     let grit = gBig * 0.55 + gMid * 0.55 + gFine * 0.35;
-    let amp = aGrit * (0.0035 + 0.16 * cLuma) * (1.0 - smoothstep(0.35, 0.80, cLuma));
+    let amp = aGrit * (0.0012 + 0.16 * cLuma) * (1.0 - smoothstep(0.35, 0.80, cLuma));
     c = max(vec3f(0.0), c + vec3f(grit * amp));
   }
 
