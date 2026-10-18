@@ -129,8 +129,8 @@ fn applyOutbreakUnseenActor(colIn: vec3f, world: vec3f, n: vec3f) -> vec3f {
   let wUnseen = clamp(unseenRaw * distScale, 0.0, 1.0);
   outbreakUnseenAlpha = wUnseen * 4.0;
   let luma = dot(colIn, vec3f(0.2126, 0.7152, 0.0722));
-  let dimCol = vec3f(luma) * vec3f(0.62, 0.74, 1.02) * 0.48;
-  return mix(colIn, dimCol, clamp(unseenRaw * 0.85, 0.0, 0.95));
+  let dimCol = vec3f(luma) * vec3f(0.88, 0.93, 1.02) * 0.44;
+  return mix(colIn, dimCol, clamp(unseenRaw * 0.88, 0.0, 0.96));
 }
 `,
 )
@@ -175,13 +175,14 @@ fn applyOutbreakUnseenPost(
   let uRate = max(2.0, f32((pw >> 17u) & 63u));
 
   let mFull = unseenMask;
-  let edgeBell = smoothstep(0.01, 0.16, unseenMask) * (1.0 - smoothstep(0.24, 0.68, unseenMask));
-  let mGlitch = mix(mFull, edgeBell * 1.25, uEdgeBand);
+  let mDisplace = smoothstep(0.32, 0.92, unseenMask);
+  let edgeBell = smoothstep(0.28, 0.46, unseenMask) * (1.0 - smoothstep(0.54, 0.88, unseenMask));
+  let mGlitch = mix(mDisplace, edgeBell * 1.25, uEdgeBand);
 
   let aGlitch = clamp(mGlitch * wGlitch, 0.0, 1.4);
-  let aWarp = clamp(mFull * wWarp, 0.0, 1.4);
+  let aWarp = clamp(mDisplace * wWarp, 0.0, 1.4);
   let aShroud = clamp(mFull * wShroud, 0.0, 1.4);
-  let aMemory = clamp(mFull * wMemory, 0.0, 1.4);
+  let aMemory = clamp(mDisplace * wMemory, 0.0, 1.4);
   let aNoise = clamp(mFull * wNoise, 0.0, 1.4);
 
   var c = cIn;
@@ -255,9 +256,11 @@ fn applyOutbreakUnseenPost(
   if (aShroud > 0.002) {
     let cLuma = dot(c, vec3f(0.2126, 0.7152, 0.0722));
     let warmLit = clamp((c.r - c.b * 1.12) / max(c.r + 0.0015, 1e-4), 0.0, 1.0);
-    let shroudDark = mix(1.0, mix(0.11, 0.42, warmLit), clamp(aShroud * 0.90, 0.0, 0.96));
-    let shroudMono = vec3f(cLuma) * vec3f(0.46, 0.86, 1.82);
-    let desatAmt = clamp(aShroud * 0.92, 0.0, 0.96) * (1.0 - warmLit * 0.76);
+    let deepShroud = smoothstep(0.18, 0.95, aShroud);
+    let shroudDark = mix(1.0, mix(0.18, 0.46, warmLit), clamp(aShroud * 0.42 + deepShroud * 0.52, 0.0, 0.94));
+    let shroudMono = vec3f(cLuma) * vec3f(0.92, 0.96, 1.03);
+    let desatCurve = smoothstep(0.02, 0.32, aShroud);
+    let desatAmt = clamp(max(aShroud * 0.94, desatCurve * 0.90), 0.0, 0.97) * (1.0 - warmLit * 0.78);
     c = mix(c, shroudMono, desatAmt) * shroudDark;
   }
 
@@ -287,8 +290,8 @@ fn applyOutbreakUnseenPost(
     let bayer = (f32(((bIdx & 1u) << 3u) | ((bIdx & 2u) << 1u) | ((bIdx & 4u) >> 1u) | ((bIdx & 8u) >> 3u)) + 0.5) / 16.0 - 0.5;
     let otherDark = clamp(aShroud * 0.75 + aMemory * 0.35 + aGlitch * 0.35, 0.0, 0.85);
     let silverDim = mix(1.0, mix(0.36, 0.78, otherDark), clamp(aNoise * 0.75, 0.0, 0.86));
-    let silverDesat = clamp(aNoise * 0.82, 0.0, 0.94) * (1.0 - warmLit * 0.78);
-    let silverBase = mix(c, vec3f(cLuma) * vec3f(0.48, 0.88, 1.78), silverDesat) * silverDim;
+    let silverDesat = clamp(aNoise * 0.86, 0.0, 0.95) * (1.0 - warmLit * 0.78);
+    let silverBase = mix(c, vec3f(cLuma) * vec3f(0.93, 0.96, 1.03), silverDesat) * silverDim;
     let shadowGate = smoothstep(0.0012, 0.032, cLuma);
     let noiseVeil = (grain * 0.12 + bayer * 0.06) * aNoise * shadowGate * min(cLuma * 1.10, 0.035);
     let noisyCol = max(vec3f(0.0), silverBase + vec3f(noiseVeil));

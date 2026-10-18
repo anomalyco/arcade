@@ -69,7 +69,7 @@ export const outbreakLookFeature = registerOutbreakClientFeature({
       return true
     }
     if (key === "modelStyle") {
-      const v = Math.max(0, Math.min(3, Math.round(Number(value ?? host.settings.look.modelStyle))))
+      const v = Math.max(0, Math.min(4, Math.round(Number(value ?? host.settings.look.modelStyle))))
       host.settings.look.modelStyle = v
       propDressingState.modelStyle = v
       host.lab().refresh()
