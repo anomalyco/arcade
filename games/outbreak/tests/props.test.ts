@@ -199,7 +199,7 @@ describe("prop dressing exports for the level bake", () => {
   })
 
   test("applies zoom hysteresis around propLodZoom so small zoom oscillations do not flip between LOD0 and LOD1", async () => {
-    Object.assign(propDressingState, { on: true, density: 1, seed: 0, modelStyle: 4 })
+    Object.assign(propDressingState, { on: true, density: 1, seed: 0 })
     const town = makeTown(7)
     let nextModel = 0
     const host = { addModel: () => nextModel++, setModel: () => {} }

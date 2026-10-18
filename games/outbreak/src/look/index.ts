@@ -1,7 +1,6 @@
 import type { LabControl } from "@arcade/kit/lab-panel"
 import { registerOutbreakClientFeature } from "../feature-registry"
 import type { OutbreakLabControlHost } from "../lab-controls"
-import { propDressingState } from "../props/state"
 import { setOutbreakSetting, type OutbreakSettings } from "../settings"
 import { HERO_STYLE_SURFACES, heroLookControls } from "./hero"
 import { lookPreset, OUTBREAK_LOOK_PRESETS } from "./presets"
@@ -15,7 +14,7 @@ export function applyLookPreset(settings: OutbreakSettings, id: string): boolean
   const preset = lookPreset(id)
   if (!preset) return false
   for (const [key, value] of Object.entries(preset.knobs)) setOutbreakSetting(settings, key, value)
-  propDressingState.modelStyle = preset.knobs.modelStyle
+  Object.assign(settings.flashlight, preset.beam)
   if (id === "today") settings.zombies.zombieLook = 1
   settings.look.lookIdea = preset.id
   return true
@@ -65,13 +64,6 @@ export const outbreakLookFeature = registerOutbreakClientFeature({
     const key = routed?.field ?? rawKey
     if (key === "lookIdea") {
       applyLookPreset(host.settings, String(value ?? host.settings.look.lookIdea))
-      host.lab().refresh()
-      return true
-    }
-    if (key === "modelStyle") {
-      const v = Math.max(0, Math.min(4, Math.round(Number(value ?? host.settings.look.modelStyle))))
-      host.settings.look.modelStyle = v
-      propDressingState.modelStyle = v
       host.lab().refresh()
       return true
     }

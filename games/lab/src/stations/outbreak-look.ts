@@ -19,16 +19,12 @@ const detail = (plates: number, ash: number, decals: number, grime: number, caps
 
 const variants: StationVariant[] = [
   // Look presets: every knob in Look · Grade, Look · Lights and Look · Hero, named and versioned (look/presets.ts).
-  { id: "today", group: "Look", boardOption: "1", label: "Today", note: "The shipped look: Noir grade by hour, colour only where light falls, dust in the beams.", setup: look("today") },
-  { id: "hue-colour", group: "Look", label: "Before: colour by hue", note: "The look before the light-colour rule: the whole sight area keeps colour.", setup: look("hue-colour") },
+  { id: "today", group: "Look", boardOption: "1", label: "Today", note: "The shipped Darkwood look: a crisp sight cone over a charcoal shroud, colour only where light falls, a bright wide flashlight at night.", setup: look("today") },
+  { id: "today-v7", group: "Look", label: "Before: v7 (Dying Light)", note: "The v7 look through today's shader: no sight shroud by day, a tight 4800K beam, sunlit colour.", setup: look("today-v7") },
   { id: "deeper-noir", group: "Look", boardOption: "2", label: "Deeper noir", note: "Darker, greyer street; only the beam brings colour back.", setup: look("deeper-noir") },
   { id: "warm-practicals", group: "Look", boardOption: "3", label: "Warmer practicals", note: "Amber porch and window pools that keep their colour.", setup: look("warm-practicals") },
-  { id: "cold-moonlight", group: "Look", boardOption: "4", label: "Colder moonlight", note: "Blue-grey moonlit street, dimmer lamps.", setup: look("cold-moonlight") },
   { id: "vivid-world", group: "Look", boardOption: "5", label: "Vivid world, grey hero", note: "More colour in the world, a grey mannequin survivor.", setup: look("vivid-world") },
   { id: "big-walk", group: "Look", boardOption: "6", label: "Big Walk contrast", note: "A flat dark figure with a crisp rim against a richer house.", setup: look("big-walk") },
-  { id: "re-biohazard", group: "Look", label: "RE Biohazard (round)", note: "Weathered suburban ground, warm/cool lighting saturation split, clean LOD0 satin furniture, and survival-horror shadow toe.", setup: look("re-biohazard") },
-  { id: "rain-nocturne", group: "Look", label: "Rain-Slick Nocturne (round)", note: "Rain-slick asphalt puddles catching the beam, warm/cool lighting split, crisp bevel & rim relief on props, and bleach nocturne grade.", setup: look("rain-nocturne") },
-  { id: "overgrown-lantern", group: "Look", label: "Overgrown & Amber (round)", note: "Cracked & moss-overgrown street, deep amber halation with rich bounce colour, grounded satin props, and intimate lantern pools.", setup: look("overgrown-lantern") },
   // The survivor's style over the Look; "From the look" keeps the one the Look preset chose.
   { id: "hero-from-look", group: "Hero", label: "From the look", note: "The survivor style the Look preset sets.", setup: [] },
   { id: "hero-colour-blocks", group: "Hero", label: "Colour Blocks", note: "Blocky low-poly survivors with chamfered clothes, hats, packs and holsters; 4 distinct people in co-op.", setup: hero(5) },
@@ -103,7 +99,7 @@ export default defineStation({
   layout: {
     left: [{ widget: "status" }, { widget: "metrics" }],
     right: [
-      { widget: "controls", title: "Look", groups: ["Look · Presets", "Look · Hero", "Look · Light colour", "Look · Air", "Look · Grade", "Look · Lights", "Look · Detail"] },
+      { widget: "controls", title: "Look", groups: ["Look · Presets", "Look · Hero", "Look · Sight shroud", "Look · Light colour", "Look · Air", "Look · Grade", "Look · Lights", "Look · Detail"] },
       { widget: "controls", id: "sections", title: "Beam and unseen", groups: ["Flashlight", "Unseen"] },
     ],
     dock: [{ widget: "variants" }],

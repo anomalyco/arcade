@@ -64,6 +64,9 @@ docs folder. Start with `AGENTS.md` at the root; it says which of these to read 
 - [outbreak-hud.md](outbreak-hud.md): Outbreak's character HUD, what other games put on the character, and the defaults.
 - [outbreak-map.md](outbreak-map.md): Outbreak's map (N): what it shows, its input, the optional compass ring and
   minimap, and how per-chunk memory and cached tiles keep it cheap in a streamed world.
+- [outbreak-art-direction.md](outbreak-art-direction.md): Outbreak's shipped look (Darkwood v8): rules, targets by
+  hour, the flashlight spec, what not to do and how to prove a change. Read before touching its shaders, lighting
+  or look settings.
 - [outbreak-look.md](outbreak-look.md), [outbreak-look-v2.md](outbreak-look-v2.md): Outbreak's look studies.
 - [style-playground.md](style-playground.md): the 9-style rendering playground on Outbreak's room sim, measured GPU costs, and full-game scaling verdicts.
 - [outbreak-zombie-profile.md](outbreak-zombie-profile.md): Outbreak's zombie art controls on the shared rig.

@@ -1,43 +1,6 @@
 import type { LabControl } from "@arcade/kit/lab-panel"
 import type { LookSettings } from "@arcade/kit/look"
 
-export const GROUND_STYLES = [
-  { id: "today", label: "Today (stippled)", value: 0 },
-  { id: "weathered-suburban", label: "Weathered Suburban", value: 1 },
-  { id: "rain-slick", label: "Rain-Slick Nocturne", value: 2 },
-  { id: "cracked-overgrown", label: "Cracked & Overgrown", value: 3 },
-] as const
-
-export const LIGHT_SAT_STYLES = [
-  { id: "today", label: "Today (orange wash)", value: 0 },
-  { id: "true-pigment", label: "True Pigment in Light", value: 1 },
-  { id: "warm-cool-split", label: "Warm Beam / Cold Moon Split (v4)", value: 2 },
-  { id: "deep-amber", label: "Deep Amber Halation (RE)", value: 3 },
-  { id: "paintover-v5", label: "Paintover Contrast & Dusk Split (v5)", value: 4 },
-  { id: "shroud-v6", label: "Dark Shroud & Desaturated Unlit (v6)", value: 5 },
-  { id: "dying-light-v7", label: "Dying Light Pass (v7)", value: 6 },
-  { id: "darkwood-v8", label: "Darkwood Sight Shroud (v8)", value: 7 },
-] as const
-
-export const MODEL_STYLES = [
-  { id: "today", label: "Today (LOD1 at zoom 46)", value: 0 },
-  { id: "clean-satin", label: "Clean LOD0 + Grounded Satin (v4)", value: 1 },
-  { id: "crisp-rim", label: "Crisp Bevel & Rim Relief", value: 2 },
-  { id: "matte-cavity", label: "Weathered Matte (Fast LOD1)", value: 3 },
-  { id: "smart-lod0-satin", label: "Smart LOD0 Anchors + Crisp Satin (v5)", value: 4 },
-] as const
-
-export const STYLE_GRADES = [
-  { id: "today", label: "Today", value: 0 },
-  { id: "survival-horror", label: "Survival Horror (RE Biohazard v4)", value: 1 },
-  { id: "bleach-nocturne", label: "Bleach Nocturne (28 Days)", value: 2 },
-  { id: "amber-lantern", label: "Amber Lantern & Deep Shroud", value: 3 },
-  { id: "paintover-v5", label: "Paintover Contrast & Daylight/Dusk (v5)", value: 4 },
-  { id: "shroud-v6", label: "Dark Shroud & Desaturated Unlit (v6)", value: 5 },
-  { id: "dying-light-v7", label: "Dying Light Pass (v7)", value: 6 },
-  { id: "darkwood-v8", label: "Darkwood Sight Shroud (v8)", value: 7 },
-] as const
-
 /**
  * Trims on top of the day cycle: the Day → Dusk → Noir blend still sets the look and the lights for the hour, and
  * these scale or offset what it produces, so a tuned look survives the clock moving. Every default is the identity,
@@ -46,14 +9,6 @@ export const STYLE_GRADES = [
 export type OutbreakLookTrims = {
   /** Curated preset last applied (`look/presets.ts`); editing a knob afterwards keeps the name as a starting point. */
   lookIdea: string
-  /** Rendering round Axis A — Ground material & breakup style (`0` Today, `1` Weathered Suburban, `2` Rain-Slick Nocturne, `3` Cracked & Overgrown). */
-  groundStyle: number
-  /** Rendering round Axis B — Lighting saturation curve (`0` Today, `1` True Pigment in Light, `2` Warm Beam / Cold Moon Split, `3` Deep Amber Halation). */
-  lightSatStyle: number
-  /** Rendering round Axis C — Model & furniture shading (`0` Today, `1` Clean LOD0 + Grounded Satin, `2` Crisp Bevel & Rim Relief, `3` Weathered Matte). */
-  modelStyle: number
-  /** Rendering round Axis D — Overall style & grade (`0` Today, `1` Survival Horror, `2` Bleach Nocturne, `3` Amber Lantern). */
-  styleGrade: number
   /** World colour after the grade (× the hour's saturation). */
   lookSaturation: number
   lookExposure: number
@@ -99,7 +54,7 @@ export type OutbreakLookTrims = {
   outOfSightDarkening: number
   /** Flashlight colour warmth (0 cool xenon, 0.28 neutral-warm ~4800K white, 1 legacy amber torch). */
   beamWarmth: number
-  /** Flashlight core tightness & spill falloff (0 legacy wide cone, 1 tight hotspot with soft dark spill). */
+  /** Flashlight core tightness & spill falloff (0 Darkwood wide even wedge, 1 v7 tight hotspot with soft dark spill). */
   beamTightness: number
   /** Wet grazing rim, specular highlights, and eye/wound glints on zombies in the dark (0 legacy ambient lift, 1 default). */
   zombieRimSpec: number
@@ -123,6 +78,10 @@ export type OutbreakLookTrims = {
   dayVignette: number
   /** Film grain floor at every hour (0 off). */
   dayGrain: number
+  /** Dim grey terrain inside the sight cone at night, so the cone and its occluder wedges read against the shroud (0 off). */
+  sightGlow: number
+  /** Painterly ground detail: dirt, leaf litter, stains and cracks on paving and turf, faded out where it would alias (0 off). */
+  groundDetail: number
   /** Share of air cells holding a dust mote; motes only show where a light reaches them (0 is off). */
   dustAmount: number
   /** × how brightly motes catch the light. */
@@ -141,10 +100,6 @@ export type OutbreakLookTrims = {
 
 export const DEFAULT_LOOK_TRIMS: OutbreakLookTrims = {
   lookIdea: "today",
-  groundStyle: 1,
-  lightSatStyle: 7,
-  modelStyle: 4,
-  styleGrade: 7,
   lookSaturation: 1,
   lookExposure: 1,
   lookContrast: 1.06,
@@ -166,8 +121,8 @@ export const DEFAULT_LOOK_TRIMS: OutbreakLookTrims = {
   shroudDarkness: 1,
   outOfLightDesat: 1,
   outOfSightDarkening: 1,
-  beamWarmth: 0.56,
-  beamTightness: 1.1,
+  beamWarmth: 0.45,
+  beamTightness: 0,
   zombieRimSpec: 1,
   nightGrain: 0.085,
   nightVignette: 0.52,
@@ -179,16 +134,17 @@ export const DEFAULT_LOOK_TRIMS: OutbreakLookTrims = {
   dayMuted: 1,
   dayVignette: 0.42,
   dayGrain: 0.05,
-  dustAmount: 0.6,
-  dustBrightness: 1,
-  dustSize: 1,
+  sightGlow: 1,
+  groundDetail: 1,
+  dustAmount: 0.12,
+  dustBrightness: 0.7,
+  dustSize: 1.5,
   dustLamps: 1,
   bakedLight: 4,
   tableLamps: -1,
   tableLampPower: 1,
 }
 
-const ROUND = "Look · Rendering round"
 const GRADE = "Look · Grade"
 const LIGHTS = "Look · Lights"
 const LIGHT_COLOUR = "Look · Light colour"
@@ -196,10 +152,6 @@ const AIR = "Look · Air"
 const SHROUD = "Look · Sight shroud"
 
 export const lookTrimControls: LabControl[] = [
-  { key: "groundStyle", label: "Ground style", group: ROUND, options: GROUND_STYLES.map(s => ({ label: s.label, value: s.value })) },
-  { key: "lightSatStyle", label: "Lighting saturation", group: ROUND, options: LIGHT_SAT_STYLES.map(s => ({ label: s.label, value: s.value })) },
-  { key: "modelStyle", label: "Model & prop shading", group: ROUND, options: MODEL_STYLES.map(s => ({ label: s.label, value: s.value })) },
-  { key: "styleGrade", label: "Overall style & grade", group: ROUND, options: STYLE_GRADES.map(s => ({ label: s.label, value: s.value })) },
   { key: "lookSaturation", label: "World saturation", group: GRADE, min: 0, max: 3, step: 0.05, unit: "×" },
   { key: "lookExposure", label: "Exposure", group: GRADE, min: 0.5, max: 1.6, step: 0.02, unit: "×" },
   { key: "lookContrast", label: "Contrast", group: GRADE, min: 0.7, max: 1.4, step: 0.02, unit: "×" },
@@ -234,6 +186,8 @@ export const lookTrimControls: LabControl[] = [
   { key: "shroudCharcoal", label: "Charcoal outside sight", group: SHROUD, min: 0, max: 1.5, step: 0.05, unit: "×" },
   { key: "shroudGrain", label: "Shroud grain", group: SHROUD, min: 0, max: 3, step: 0.05, unit: "×" },
   { key: "shroudLampKeep", label: "Lamp-lit colour kept out of sight", group: SHROUD, min: 0, max: 1, step: 0.05, unit: "" },
+  { key: "sightGlow", label: "Sight cone glow at night", group: SHROUD, min: 0, max: 3, step: 0.05, unit: "×" },
+  { key: "groundDetail", label: "Painterly ground detail", group: GRADE, min: 0, max: 2, step: 0.05, unit: "×" },
   { key: "dayMuted", label: "Sickly overcast day palette", group: GRADE, min: 0, max: 1.5, step: 0.05, unit: "×" },
   { key: "dayVignette", label: "Vignette at every hour", group: GRADE, min: 0, max: 1.2, step: 0.02, unit: "" },
   { key: "dayGrain", label: "Grain at every hour", group: GRADE, min: 0, max: 0.4, step: 0.01, unit: "" },
@@ -264,23 +218,17 @@ export function trimLook(base: LookSettings, t: Partial<OutbreakLookTrims> | und
   Object.assign(out, base)
   if (!t) return out
   const rule = lightRuleWeight(t, darkness)
-  const satStyle = Math.round(t.lightSatStyle ?? DEFAULT_LOOK_TRIMS.lightSatStyle)
-  const grade = Math.round(t.styleGrade ?? DEFAULT_LOOK_TRIMS.styleGrade)
-  const worldSat = satStyle === 3 ? Math.min(t.worldSaturation ?? DEFAULT_LOOK_TRIMS.worldSaturation, 0.03) : (t.worldSaturation ?? DEFAULT_LOOK_TRIMS.worldSaturation)
-  const litCol = satStyle === 3 ? Math.max(t.litColour ?? DEFAULT_LOOK_TRIMS.litColour, 0.98) : (t.litColour ?? DEFAULT_LOOK_TRIMS.litColour)
-  const gradeContrast = grade === 2 ? 1.18 : grade === 3 ? 1.14 : 1
-  const gradeExp = grade === 2 ? 1.02 : grade === 3 ? 1.06 : 1
-  const gradeVig = grade === 2 ? 1.24 : grade === 3 ? 1.32 : 1
-  const gradeTemp = grade === 2 ? -0.14 : grade === 3 ? 0.10 : 0
+  const worldSat = t.worldSaturation ?? DEFAULT_LOOK_TRIMS.worldSaturation
+  const litCol = t.litColour ?? DEFAULT_LOOK_TRIMS.litColour
   out.saturation = mix(clamp(base.saturation * (t.lookSaturation ?? 1), 0, 1.6), clamp(worldSat * (t.lookSaturation ?? 1), 0, 1.6), rule)
-  out.exposure = base.exposure * (t.lookExposure ?? 1) * gradeExp
-  out.contrast = clamp(base.contrast * (t.lookContrast ?? 1) * gradeContrast, 0.6, 1.8)
-  const baseVig = base.vignette * (t.lookVignette ?? 1) * gradeVig
-  const nightVig = (t.nightVignette ?? base.vignette) * (t.lookVignette ?? 1) * gradeVig
+  out.exposure = base.exposure * (t.lookExposure ?? 1)
+  out.contrast = clamp(base.contrast * (t.lookContrast ?? 1), 0.6, 1.8)
+  const baseVig = base.vignette * (t.lookVignette ?? 1)
+  const nightVig = (t.nightVignette ?? base.vignette) * (t.lookVignette ?? 1)
   out.vignette = Math.max(mix(baseVig, nightVig, rule), (t.dayVignette ?? 0) * (t.lookVignette ?? 1))
   const nightGrain = t.nightGrain ?? base.grain
   out.grain = Math.max(mix(base.grain, Math.max(base.grain, nightGrain), rule), t.dayGrain ?? 0)
-  out.temperature = clamp(base.temperature + (t.lookTemperature ?? 0) + gradeTemp, -1, 1)
+  out.temperature = clamp(base.temperature + (t.lookTemperature ?? 0), -1, 1)
   out.selectiveColor = mix(clamp(base.selectiveColor * (t.beamColour ?? 1), 0, 1.5), clamp(litCol * (t.beamColour ?? 1), 0, 1.5), rule)
   out.practicalWarmth = mix(clamp(base.practicalWarmth + (t.lampColour ?? 0), -0.8, 1.2), 0, rule)
   return out
@@ -323,21 +271,15 @@ export function trimLighting<L extends {
   streetPower: number
 }>(l: L, t: Partial<OutbreakLookTrims> | undefined) {
   if (!t) return l
-  const grade = Math.round(t.styleGrade ?? DEFAULT_LOOK_TRIMS.styleGrade)
-  const power = (t.lampPower ?? 1) * (grade === 3 ? 1.28 : 1)
-  const roomMult = (t.roomPools ?? 1) * (grade === 3 ? 1.35 : 1)
-  const skyMult = (t.skyAmbient ?? 1) * (grade === 2 ? 1.18 : grade === 3 ? 0.82 : 1)
-  const moonMult = (t.moonlight ?? 1) * (grade === 2 ? 1.28 : 1)
-  const warmthShift = (t.lampWarmth ?? 0) + (grade === 3 ? 0.14 : grade === 2 ? -0.10 : 0)
-  const tightMult = (t.poolTightness ?? 1) * (grade === 3 ? 1.12 : 1)
+  const power = t.lampPower ?? 1
   return {
-    skyFill: l.skyFill * skyMult,
-    moonFill: l.moonFill * moonMult,
-    practicalWarmth: clamp(l.practicalWarmth + warmthShift, 0, 1),
-    lightFalloff: l.lightFalloff * tightMult,
+    skyFill: l.skyFill * (t.skyAmbient ?? 1),
+    moonFill: l.moonFill * (t.moonlight ?? 1),
+    practicalWarmth: clamp(l.practicalWarmth + (t.lampWarmth ?? 0), 0, 1),
+    lightFalloff: l.lightFalloff * (t.poolTightness ?? 1),
     porchPower: l.porchPower * power,
     windowPower: l.windowPower * power,
-    roomPower: l.roomPower * power * roomMult,
+    roomPower: l.roomPower * power * (t.roomPools ?? 1),
     streetPower: l.streetPower * power,
   }
 }

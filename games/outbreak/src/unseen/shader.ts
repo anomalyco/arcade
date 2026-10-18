@@ -58,7 +58,7 @@ fn evalUnseenEdgeDepth(sX: f32, sY: f32, p: vec2f) -> f32 {
   let ramp = smoothstep(0.0, span, awareMeters * 0.65 + (1.0 - sX) * 1.35 + (1.0 - sY) * 0.45);
   // Darkwood (v8): full shroud right past the cone and halo edge, so the space behind the survivor goes dark at once.
   let legacy = (1.0 - sX) * (0.30 + 0.70 * ramp);
-  return clamp(mix(legacy, 1.0 - sX, clamp(OL.v8.x, 0.0, 1.0)), 0.0, 1.0);
+  return clamp(mix(legacy, 1.0 - sX, clamp(OL.sight.x, 0.0, 1.0)), 0.0, 1.0);
 }
 `,
 )
@@ -159,8 +159,18 @@ fn applyOutbreakUnseenPost(
     return cIn;
   }
   let unseenMask = clamp((centerSamp.a - 1.0) * 0.25, 0.0, 1.0);
+  // Darkwood (charcoal on): no blue nights. The grade's night split-tone cools unlit darks; outside actual light
+  // (colour mask) pull cool darks back to neutral so the sight-cone and halo edges never ring blue.
+  let wNeutral = clamp(f32(u32(max(postParam.x, 0.0) + 0.5) & 4095u) * (1.0 / 1024.0), 0.0, 1.0);
+  var cN = cIn;
+  if (wNeutral > 0.001) {
+    let nLuma = dot(cIn, vec3f(0.2126, 0.7152, 0.0722));
+    let cool = clamp((cIn.b - cIn.r) / max(cIn.b, 1e-4) * 3.0, 0.0, 1.0) * (1.0 - smoothstep(0.06, 0.30, nLuma));
+    let unlit = smoothstep(0.55, 0.90, centerSamp.a);
+    cN = mix(cIn, vec3f(nLuma) * vec3f(0.99, 0.995, 1.015), cool * unlit * wNeutral);
+  }
   if (unseenMask <= 0.001) {
-    return cIn;
+    return cN;
   }
   let py = u32(postParam.y + 0.5);
   let pz = u32(postParam.z + 0.5);
@@ -174,7 +184,7 @@ fn applyOutbreakUnseenPost(
   let wCharcoal = f32(px & 4095u) * (1.0 / 1024.0);
   let wGrit = f32((px >> 12u) & 4095u) * (1.0 / 1024.0);
   if (wGlitch + wWarp + wShroud + wMemory + wNoise + wCharcoal + wGrit <= 0.001) {
-    return cIn;
+    return cN;
   }
   let uEdgeBand = f32((pw >> 10u) & 127u) * (1.0 / 127.0);
   let uRate = max(2.0, f32((pw >> 17u) & 63u));
@@ -190,7 +200,7 @@ fn applyOutbreakUnseenPost(
   let aMemory = clamp(mDisplace * wMemory, 0.0, 1.4);
   let aNoise = clamp(mFull * wNoise, 0.0, 1.4);
 
-  var c = cIn;
+  var c = cN;
   var lumaRatio = 1.0;
   var tearFine = 0.0;
   var tearCoarse = 0.0;

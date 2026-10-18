@@ -9,7 +9,7 @@ export const beamShapeWgsl = /* wgsl */ `
 fn falloff(d2: f32) -> f32 {
   let r = max(OL.u4.y, 1.0);
   let x2 = d2 / (r * r);
-  let tight = clamp(OL.v7.y, 0.0, 2.0);
+  let tight = clamp(OL.beamLook.y, 0.0, 2.0);
   let soft = mix(max(OL.u13.z, 0.1), min(max(OL.u13.z, 0.1), 1.35), clamp(tight, 0.0, 1.0));
   if (OL.rampOn.x > 0.5) { return select(0.0, outbreakRamp(0u, sqrt(x2)), x2 < 1.0) / (1.0 + d2 / (soft * soft)); }
   let win = clamp(1.0 - x2 * x2, 0.0, 1.0);
@@ -20,7 +20,7 @@ fn falloff(d2: f32) -> f32 {
 /** Cone and hot core, by angle off the axis as a share of the outer half-angle. */
 fn profile(cosT: f32) -> f32 {
   let t = acos(clamp(cosT, -1.0, 1.0)) * OL.u17.y;
-  let tight = clamp(OL.v7.y, 0.0, 2.0);
+  let tight = clamp(OL.beamLook.y, 0.0, 2.0);
   let legacyCone = 1.0 - smoothstep(OL.u11.z, 1.15, t);
   let tightCone = (1.0 - smoothstep(0.14, 0.68, t)) * 0.18;
   let cone = mix(legacyCone, tightCone, clamp(tight, 0.0, 1.0));
@@ -172,11 +172,11 @@ fn dust(p: vec3f) -> f32 {
         let vis = lensVis(base, lv, lens.y);
         let cosA = dot(lv / d, -rd);
         let phase = 0.91 / pow(1.09 - 0.6 * cosA, 1.5);
-        let nearAxisFade = mix(1.0, exp(-d * 0.24), clamp(OL.v7.y, 0.0, 1.0));
+        let nearAxisFade = mix(1.0, exp(-d * 0.24), clamp(OL.beamLook.y, 0.0, 1.0));
         acc += w * vis * dust(p) * phase * nearAxisFade * smoothstep(0.0, 0.35, d) * (1.0 - smoothstep(OL.u19.w * 0.6, OL.u19.w, d));
       }
     }
-    let clearAirScale = mix(1.0, 0.28 + 0.32 * clamp(OL.u19.x + OL.u19.y * 0.5, 0.0, 1.0), clamp(OL.v7.y, 0.0, 1.0));
+    let clearAirScale = mix(1.0, 0.28 + 0.32 * clamp(OL.u19.x + OL.u19.y * 0.5, 0.0, 1.0), clamp(OL.beamLook.y, 0.0, 1.0));
     let air = density * clearAirScale * (1.0 + 1.5 * OL.u19.x + 0.5 * OL.u19.y);
     col += OL.u5.rgb * acc * dt * power * air * 0.06;
   }
