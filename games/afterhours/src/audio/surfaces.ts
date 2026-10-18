@@ -52,6 +52,8 @@ export function surfaceAt(tag: string, x: number, y: number, z: number): Surface
   const M = BUILDING.main
   if (tag === "ground") {
     if (within(x, z, PARKING_LOT)) return "asphalt"
+    // The forecourt between the lot and the entrance is paved too.
+    if (x >= PARKING_LOT.min[0] && x <= PARKING_LOT.max[0] && z >= M.max[1] && z < PARKING_LOT.min[1]) return "asphalt"
     const d = roadDistance(x, z)
     if (d < 0) return "asphalt"
     if (d < Math.max(ACCESS_ROAD.shoulder, COUNTY_ROAD.shoulder) + 0.8) return "gravel"

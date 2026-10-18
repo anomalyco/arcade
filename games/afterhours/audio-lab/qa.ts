@@ -8,11 +8,12 @@
 import { join } from "node:path"
 import { parseArgs } from "node:util"
 import { judge, QA_MODEL } from "./lib/gemini"
+import { intentFor } from "./prompts"
 import { categoryById, loadManifest, ROOT, saveManifest, type ManifestSound } from "./lib/eleven"
 
 
 export async function qaSound(s: ManifestSound): Promise<void> {
-  const intent = categoryById(s.category)?.intent ?? s.prompt
+  const intent = intentFor(s.category, s.variant) || s.prompt
   const j = await judge(await Bun.file(join(ROOT, s.file)).arrayBuffer(), intent)
   s.qa = { ...j, intent, model: QA_MODEL, at: new Date().toISOString() }
 }
@@ -30,7 +31,7 @@ if (import.meta.main) {
   const todo = manifest.sounds.filter(
     (s) =>
       (!cats || cats.includes(s.category)) &&
-      (args.all || !s.qa || s.qa.intent !== categoryById(s.category)?.intent),
+      (args.all || !s.qa || s.qa.intent !== intentFor(s.category, s.variant)),
   )
   console.log(`QA ${todo.length} clips with ${QA_MODEL}…`)
   let i = 0

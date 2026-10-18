@@ -2,7 +2,7 @@ import { defineConfig } from "vite"
 
 export default defineConfig({
   base: "./",
-  build: { target: "esnext", outDir: "dist/arcade/afterhours", emptyOutDir: true, chunkSizeWarningLimit: 2000, rollupOptions: { input: ["index.html", "look.html", "body.html"] } },
+  build: { target: "esnext", outDir: "dist/arcade/afterhours", emptyOutDir: true, chunkSizeWarningLimit: 2000, rollupOptions: { input: ["index.html", "look.html", "body.html", "bodyb.html"] } },
   server: {
     fs: { allow: ["../.."] },
     allowedHosts: true,

@@ -73,8 +73,8 @@ async function init() {
   for (const s of state.manifest.sounds) {
     // A take that was put back (approved originals restored) gets its earlier record back.
     const prevList = state.store.previous[s.file]
-    const back = !state.store.sounds[s.file] && prevList?.findIndex((p) => p.gen === s.generatedAt)
-    if (back != null && back >= 0) {
+    const back = !state.store.sounds[s.file] && prevList ? prevList.findIndex((p) => p.gen === s.generatedAt) : -1
+    if (prevList && back >= 0) {
       const { prompt: _p, ...rec } = prevList.splice(back, 1)[0]
       state.store.sounds[s.file] = rec
       if (!prevList.length) delete state.store.previous[s.file]

@@ -45,7 +45,10 @@ const TARGETS: Record<string, number> = {
   // lights
   "light-fluoro-hum": -27, "light-fluoro-flicker": -17, "light-sodium-buzz": -27, "light-switch": -18, "light-breaker": -14,
   // ambience beds (integrated); room tone well under the rest
-  "amb-forest-night": -23, "amb-rain-asphalt": -23, "amb-hvac": -25, "amb-corridor-tone": -30,
+  "amb-forest-night": -23,
+  // round-2 forest nights are asked to sit very low; drizzle a touch higher
+  "amb-forest-night/v4": -28, "amb-forest-night/v5": -28, "amb-forest-night/v6": -28, "amb-forest-night/v7": -28,
+  "amb-forest-night/v8": -26, "amb-forest-night/v9": -26, "amb-rain-asphalt": -23, "amb-hvac": -25, "amb-corridor-tone": -30,
   "amb-machine-room": -23, "amb-radio-static": -25,
   // rain bed with thunder sits with the other beds; thunder one-shots per variant (distant quiet, strike loud)
   "amb-rain-thunder": -22, "amb-thunder": -15,

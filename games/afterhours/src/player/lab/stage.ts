@@ -97,7 +97,7 @@ export function buildStage(scene: THREE.Scene) {
 
   scene.add(new THREE.HemisphereLight(0xb8c4d0, 0x2c2a26, 0.9))
   const sun = new THREE.DirectionalLight(0xfff1dc, 2.6)
-  sun.position.set(-6, 10, 7)
+  sun.position.set(6, 9, -5)
   sun.castShadow = true
   sun.shadow.mapSize.set(2048, 2048)
   sun.shadow.camera.left = sun.shadow.camera.bottom = -10
@@ -105,8 +105,10 @@ export function buildStage(scene: THREE.Scene) {
   sun.shadow.bias = -0.0004
   sun.shadow.normalBias = 0.02
   scene.add(sun)
-  const lamp = new THREE.PointLight(0xffa860, 25, 14, 2)
-  lamp.position.set(1, 3.2, -3)
+  // A warm lamp up in the corner, well clear of the head on the stair landing (at 3.2 m it sat half a metre from the
+  // shoulder at the top of the flight and blew the shirt out in a hard orange patch).
+  const lamp = new THREE.PointLight(0xffa860, 30, 16, 2)
+  lamp.position.set(-2, 5, -5)
   scene.add(lamp)
   scene.background = new THREE.Color(0x1d2226)
   return { sun }

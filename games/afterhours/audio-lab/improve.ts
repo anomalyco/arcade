@@ -16,7 +16,7 @@
 import { mkdir, rename, rm } from "node:fs/promises"
 import { join } from "node:path"
 import { parseArgs } from "node:util"
-import { CATEGORIES, type CategorySpec, type VariantSpec } from "./prompts"
+import { CATEGORIES, intentFor, type CategorySpec, type VariantSpec } from "./prompts"
 import { refinePrompt, judge, QA_MODEL, type Judgement } from "./lib/gemini"
 import {
   addCost,
@@ -83,7 +83,7 @@ async function pool<T>(items: T[], n: number, fn: (t: T) => Promise<void>) {
 
 // 1. Judge everything that has no current QA.
 const unjudged = manifest.sounds.filter(
-  (s) => cats.some((c) => c.id === s.category) && (!s.qa || s.qa.intent !== CATEGORIES.find((c) => c.id === s.category)?.intent),
+  (s) => cats.some((c) => c.id === s.category) && (!s.qa || s.qa.intent !== intentFor(s.category, s.variant)),
 )
 if (unjudged.length) out(`QA: judging ${unjudged.length} clips with ${QA_MODEL}`)
 await pool(unjudged, Number(args.concurrency), async (s) => {
@@ -114,7 +114,7 @@ async function makeTake(cat: CategorySpec, spec: VariantSpec): Promise<Take> {
   const { audio, cost } = await generateSfx(spec)
   spent += cost ?? 0
   addCost(manifest, cost)
-  const j = await judge(audio, cat.intent)
+  const j = await judge(audio, spec.intent ?? cat.intent)
   return { prompt: spec.prompt, influence: spec.influence ?? 0.5, audio, cost, j }
 }
 
@@ -140,7 +140,7 @@ async function takesFor(cat: CategorySpec, base: VariantSpec, history: Take[], f
     if (t === 0 && firstPrompt && !all.some((h) => h.prompt === firstPrompt)) prompt = firstPrompt
     else
       prompt = await refinePrompt({
-        intent: cat.intent,
+        intent: base.intent ?? cat.intent,
         goodExample: goodExample(cat),
         styleExamples: styleExamples(cat.id).slice(0, 12),
         attempts: all.map((h) => ({ prompt: h.prompt, description: h.j.description, score: h.j.score, issues: h.j.issues })),
@@ -202,7 +202,7 @@ async function install(
     bytes: take.audio!.byteLength,
     cost: take.cost,
     generatedAt: new Date().toISOString(),
-    qa: { ...take.j, intent: cat.intent, model: QA_MODEL, at: new Date().toISOString() },
+    qa: { ...take.j, intent: spec.intent ?? cat.intent, model: QA_MODEL, at: new Date().toISOString() },
     status,
     previous,
     attempts,

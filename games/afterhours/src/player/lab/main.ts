@@ -5,6 +5,7 @@ import { isEditableEventTarget } from "@arcade/kit/client/controls"
 import { BODY_CONTROLS, BODY_LAYER, HEAD_LAYER, PlayerBody } from "../body"
 import { buildStage, groundAt, LADDER, RAMP, STAIRS } from "./stage"
 import { LabWalker } from "./walker"
+import { createInspector } from "./inspect"
 import "./lab.css"
 
 // Body Lab (body.html): the real PlayerBody in a lit room with a staircase, a ramp and a ladder, driven by a stand-in
@@ -39,8 +40,6 @@ const settings: LabSettings = {
   "lab.inset": params.get("inset") !== "0",
   "lab.follow": true,
   "lab.walk": 1.9,
-  // The lab's flashlight comes out of the torch lens, so the hand needn't dodge a beam from beside the eye.
-  "body.torchAvoidBeam": false,
 }
 const labControls: LabControl[] = [
   { key: "lab.speed", label: "Playback speed", group: "Lab", unit: "×", min: 0.1, max: 1, step: 0.05 },
@@ -101,8 +100,10 @@ const SCRIPTS: Record<string, Script> = {
   turn: { label: "Turn", treadmill: true, input: (t) => ({ yawRate: Math.cos(t * 0.8) * 2.4 }) },
   crouch: { label: "Crouch", treadmill: true, input: (t) => ({ crouch: true, fwd: t % 4 > 0.6 ? 1 : 0 }) },
   jump: { label: "Jump", treadmill: true, input: (t) => ({ fwd: 1, jump: pulse(t + 1, 1.4) }) },
-  stairs_up: { label: "Stairs up", treadmill: false, at: [STAIRS.x0 - 1.5, 0, -Math.PI / 2], input: (t) => ({ fwd: t < 4.2 ? 1 : 0 }) },
+  stairs_up: { label: "Stairs up", treadmill: false, at: [STAIRS.x0 - 1.5, 0, -Math.PI / 2], input: (t) => ({ fwd: t < 2.6 ? 1 : 0 }) },
   stairs_down: { label: "Stairs down", treadmill: false, at: [STAIRS.x0 + STAIRS.steps * STAIRS.run + 1.2, 0, Math.PI / 2], input: (t) => ({ fwd: t < 4.2 ? 1 : 0 }) },
+  stairs_up_run: { label: "Stairs up (run)", treadmill: false, at: [STAIRS.x0 - 2.5, 0, -Math.PI / 2], input: (t) => ({ fwd: t < 1.25 ? 1 : 0, run: true }) },
+  stairs_down_run: { label: "Stairs down (run)", treadmill: false, at: [STAIRS.x0 + STAIRS.steps * STAIRS.run + 1.4, 0, Math.PI / 2], input: (t) => ({ fwd: t < 1.5 ? 1 : 0, run: true }) },
   slope: { label: "Ramp", treadmill: false, at: [0, RAMP.z0 - 1.5, Math.PI], input: (t) => ({ fwd: t < 5 ? 1 : 0 }) },
   ladder: { label: "Ladder", treadmill: false, at: [(LADDER.x0 + LADDER.x1) / 2, LADDER.z + 1.2, 0], input: (t) => ({ fwd: t < 4 ? 1 : 0 }) },
   flashlight: { label: "Flashlight", treadmill: true, input: (t) => ({ flashlight: true, fwd: t % 6 > 3 ? 1 : 0, pitch: Number(params.get("pitch") ?? -0.3) + Math.sin(t * 0.9) * 0.4 }) },
@@ -168,10 +169,35 @@ new LabPanel(settings, [...labControls, ...BODY_CONTROLS], params, () => keys.cl
 addEventListener("resize", () => renderer.setSize(innerWidth, innerHeight, false))
 
 // ------------------------------------------------------------------------------------------- loop
-const status = { ready: false, frames: 0, state: "", slide: [0, 0], slideAvg: 0, slideMax: 0, clips: {} as unknown, errors: [] as string[], settings, body }
+const status = { ready: false, frames: 0, state: "", slide: [0, 0], slideAvg: 0, slideMax: 0, clips: {} as unknown, errors: [] as string[], settings, body, step: (dt: number) => simulate(dt), penetration: () => body.penetration(groundAt), view: (v: string | null) => (shotView = v), time: () => scriptT }
 ;(globalThis as { __bodyLab?: unknown }).__bodyLab = status
 window.addEventListener("error", (e) => status.errors.push(String(e.message)))
 // `set=key:value,key:value` (automation): settings overrides, e.g. set=body.footIK:0.
+// `hide=<regex>` (diagnosis): hide body meshes by name.
+if (params.has("hide")) body.ready.then(() => body.model!.traverse((o) => (o as THREE.Mesh).isMesh && new RegExp(params.get("hide")!).test(o.name) && (o.visible = false)))
+// `lightsOff=sun,point,hemi,spot` (diagnosis): switch lights off by type.
+for (const k of params.get("lightsOff")?.split(",") ?? [])
+  scene.traverse((o) => {
+    const l = o as THREE.Light
+    if (l.isLight && ((k === "sun" && (l as THREE.DirectionalLight).isDirectionalLight) || (k === "point" && (l as THREE.PointLight).isPointLight) || (k === "hemi" && (l as THREE.HemisphereLight).isHemisphereLight) || (k === "spot" && (l as THREE.SpotLight).isSpotLight))) l.intensity = 0
+  })
+// `double=1` (diagnosis): render both faces.
+if (params.get("double") === "1") body.ready.then(() => body.model!.traverse((o) => { const m = (o as THREE.Mesh).material as THREE.Material | undefined; if (m) { m.side = THREE.DoubleSide; m.needsUpdate = true } }))
+// `noshadow=1` (diagnosis): no shadow maps.
+if (params.get("noshadow") === "1") renderer.shadowMap.enabled = false
+// `renorm=1` (diagnosis): recompute the meshes' normals from their bind-pose positions.
+if (params.get("renorm") === "1") body.ready.then(() => body.model!.traverse((o) => (o as THREE.Mesh).isMesh && (o as THREE.Mesh).geometry.computeVertexNormals()))
+// `nomap=1` (diagnosis): drop the clothes' normal maps.
+if (params.get("nomap") === "1")
+  body.ready.then(() =>
+    body.model!.traverse((o) => {
+      const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined
+      if (m?.normalMap) {
+        m.normalMap = null
+        m.needsUpdate = true
+      }
+    }),
+  )
 for (const kv of params.get("set")?.split(",") ?? []) {
   const [k, v] = kv.split(":") as [string, string]
   settings[k] = v === "true" ? true : v === "false" ? false : Number(v)
@@ -183,15 +209,89 @@ const look = new THREE.Vector3()
 let last = performance.now()
 let hudT = 0
 let ready = false
-body.ready.then(() => {
+const inspecting = params.has("inspect")
+// `manual=1` (automation): no wall-clock simulation; `__bodyLab.step(dt)` advances one fixed step, `view(name)` points
+// the camera at the live body (side | front | hand_r | hand_l | feet | fp), `time()` is the script clock.
+const manual = params.has("manual")
+let shotView: string | null = null
+function aimShot(view: string) {
+  const y = walker.yaw
+  const f = new THREE.Vector3(-Math.sin(y), 0, -Math.cos(y))
+  const r = new THREE.Vector3(Math.cos(y), 0, -Math.sin(y))
+  const bone = (n: string) => (body.bone(n) as THREE.Object3D).getWorldPosition(new THREE.Vector3())
+  const at = (p: THREE.Vector3, off: THREE.Vector3, fov: number) => {
+    cam.fov = fov
+    cam.position.copy(p).add(off)
+    cam.lookAt(p)
+    cam.updateProjectionMatrix()
+  }
+  const base = new THREE.Vector3(body.root.position.x, walker.pos.y + 0.9, body.root.position.z)
+  if (view === "side") at(base, r.clone().multiplyScalar(3.4).setY(0.1), 34)
+  // 3/4 front, slightly high (the angle the user judged the stairs from).
+  else if (view === "torso_l") at(bone("spine_02").addScaledVector(r, -0.1), r.clone().multiplyScalar(-1.1).addScaledVector(f, 0.4).setY(0.05), 34)
+  else if (view === "torso_r") at(bone("spine_02").addScaledVector(r, 0.1), r.clone().multiplyScalar(1.1).addScaledVector(f, 0.4).setY(0.05), 34)
+  else if (view === "torso_back") at(bone("spine_02"), f.clone().multiplyScalar(-1.2).addScaledVector(r, 0.4).setY(0.1), 34)
+  else if (view === "q34") at(base.clone().setY(base.y - 0.1), f.clone().multiplyScalar(2.0).addScaledVector(r, -1.5).setY(1.1), 42)
+  else if (view === "front") at(base, f.clone().multiplyScalar(3.4).setY(0.1), 34)
+  // Hand close-ups centre on the palm (wrist → middle knuckle), from the front-outside.
+  else if (view === "hand_r") at(bone("hand_r").lerp(bone("middle_02_r"), 0.55), f.clone().multiplyScalar(0.3).addScaledVector(r, 0.2).setY(0.05), 34)
+  else if (view === "hand_l") at(bone("hand_l").lerp(bone("middle_02_l"), 0.55), f.clone().multiplyScalar(0.3).addScaledVector(r, -0.2).setY(0.05), 34)
+  else if (view === "feet") at(bone("foot_r").lerp(bone("foot_l"), 0.5).setY(walker.pos.y + 0.12), r.clone().multiplyScalar(0.95).addScaledVector(f, 0.6).setY(0.22), 34)
+  if (view === "fp") {
+    fpFull = true
+    cam.fov = 40
+  } else fpFull = false
+}
+body.ready.then(async () => {
+  if (inspecting) {
+    ;(globalThis as { __bodyInspect?: unknown }).__bodyInspect = await createInspector(scene, cam, body, params.get("ref"))
+  }
   ready = true
+  status.ready = true
   status.clips = body.clipInfo()
 })
 
 renderer.setAnimationLoop(() => {
+  if (inspecting) {
+    // The inspector poses everything itself; just draw the orbit view.
+    if (skeleton) skeleton.visible = false
+    eyeDot.visible = false
+    cam.aspect = canvas.clientWidth / canvas.clientHeight
+    cam.updateProjectionMatrix()
+    renderer.render(scene, cam)
+    if (ready) {
+      status.ready = true
+      status.frames++
+    }
+    return
+  }
   const now = performance.now()
   const real = Math.min(0.05, (now - last) / 1000)
   last = now
+  if (manual) {
+    if (shotView) aimShot(shotView)
+    updateFlash()
+    if (skeleton) skeleton.visible = settings["lab.skeleton"] === true
+    eyeDot.visible = false
+    if (fpFull) {
+      fp.position.set(walker.eye.x, walker.eye.y, walker.eye.z)
+      fp.rotation.set(walker.pitch, walker.yaw, 0, "YXZ")
+      fp.aspect = canvas.clientWidth / canvas.clientHeight
+      fp.updateProjectionMatrix()
+      renderer.render(scene, fp)
+    } else {
+      cam.aspect = canvas.clientWidth / canvas.clientHeight
+      cam.updateProjectionMatrix()
+      renderer.render(scene, cam)
+    }
+    return
+  }
+  simulate(real)
+  draw(real)
+})
+
+/** One simulation step: input, controller, body, slide stats. */
+function simulate(real: number) {
   const dt = real * Number(settings["lab.speed"])
   walker.walk = Number(settings["lab.walk"])
   walker.treadmill = settings["lab.treadmill"] === true
@@ -218,17 +318,11 @@ renderer.setAnimationLoop(() => {
   body.debug.belt.set(walker.treadmill ? walker.vel.x : 0, 0, walker.treadmill ? walker.vel.z : 0)
   body.update(dt, walker)
 
-  // Slide stats over the script, after a warm-up.
-  if (ready && scriptReal > 1 && dt > 0) {
-    for (let i = 0; i < 2; i++) {
-      if (!body.debug.planted[i]) continue
-      const v = body.debug.slide[i]! * 100
-      slideAcc.sum += v
-      slideAcc.n++
-      slideAcc.max = Math.max(slideAcc.max, v)
-    }
-  }
+  simDt = dt
+}
+let simDt = 0
 
+function updateFlash() {
   // Flashlight from the torch lens (or the eye while the hand isn't holding it).
   const lit = walker.flashlight && body.torchLens(lensP, lensD)
   flash.intensity = walker.flashlight ? 40 : 0
@@ -240,6 +334,23 @@ renderer.setAnimationLoop(() => {
     flash.target.position.copy(flash.position).add(look.set(0, 0, -1).applyEuler(new THREE.Euler(walker.pitch, walker.yaw, 0, "YXZ")))
   }
 
+}
+
+/** Lights, cameras, render and HUD. */
+function draw(real: number) {
+  const dt = simDt
+  // Slide stats over the script, after a warm-up.
+  if (ready && scriptReal > 1 && dt > 0) {
+    for (let i = 0; i < 2; i++) {
+      if (!body.debug.planted[i]) continue
+      const v = body.debug.slide[i]! * 100
+      slideAcc.sum += v
+      slideAcc.n++
+      slideAcc.max = Math.max(slideAcc.max, v)
+    }
+  }
+
+  updateFlash()
   // Cameras.
   fp.position.set(walker.eye.x, walker.eye.y, walker.eye.z)
   fp.rotation.set(walker.pitch, walker.yaw, 0, "YXZ")
@@ -305,10 +416,10 @@ renderer.setAnimationLoop(() => {
     const sp = Math.hypot(walker.vel.x, walker.vel.z)
     hud.textContent = [
       `${script ? `script ${script}  t ${scriptT.toFixed(1)}s` : "free walk: WASD, Shift run, C crouch, Space jump, F torch, E reach, arrows look"}  ×${Number(settings["lab.speed"]).toFixed(2)}`,
-      `state ${body.debug.state}  warp ${body.debug.warp.toFixed(0)}°  stride ×${body.debug.stride.toFixed(2)}  speed ${sp.toFixed(2)} m/s  phase ${body.debug.phase.toFixed(2)}${walker.treadmill ? "  (treadmill)" : ""}`,
+      `state ${body.debug.state}  warp ${body.debug.warp.toFixed(0)}°  speed ${sp.toFixed(2)} m/s  phase ${body.debug.phase.toFixed(2)}${walker.treadmill ? "  (treadmill)" : ""}`,
       `blend ${w}`,
       `foot slide while planted  L ${(body.debug.slide[0] * 100).toFixed(1)}  R ${(body.debug.slide[1] * 100).toFixed(1)} cm/s  ${body.debug.planted.map((p) => (p ? "▮" : "▯")).join("")}   script avg ${status.slideAvg} max ${status.slideMax} cm/s`,
     ].join("\n")
   }
-})
+}
 if (params.has("shot")) document.body.classList.add("shot")

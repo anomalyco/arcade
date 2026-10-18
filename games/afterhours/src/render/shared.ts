@@ -43,6 +43,11 @@ export const renderState = {
   lamps: [] as LampRuntime[],
   /** Angular size of one 3D-resolution pixel (radians), set by the post chain each frame. */
   pixelAngle: 0.001,
+  /**
+   * Where the hand-held torch's lens is (world position and beam direction); false while the body or torch is hidden
+   * (fly mode, body off). Set by the boot once the player body exists; the flashlight is emitted from it.
+   */
+  torchLens: null as ((pos: THREE.Vector3, dir: THREE.Vector3) => boolean) | null,
   /** True while modules are still streaming in (set through the post chain's `setBooting`). */
   streaming: false,
   /** The lighting rig's per-frame update, for perf scripts that drive frames themselves. */

@@ -1,8 +1,8 @@
 {
   "model": "eleven_text_to_sound_v2",
   "format": "mp3_44100_64",
-  "updatedAt": "2026-10-18T03:37:55.528Z",
-  "totalCost": 43280,
+  "updatedAt": "2026-10-18T06:20:31.312Z",
+  "totalCost": 51400,
   "categories": [
     {
       "id": "foot-linoleum",
@@ -168,8 +168,8 @@
     {
       "id": "amb-forest-night",
       "group": "ambience",
-      "label": "Night pine forest, distant wind",
-      "intent": "quiet night pine forest ambience with distant wind in the trees, sparse and cold, no music, loopable",
+      "label": "Night pine forest",
+      "intent": "a quiet pine forest at night, very low level and sparse: soft needle rustle in light gusts, occasional trunk creak, branch drips, maybe one distant owl or light drizzle on needles; NO traffic, road or highway noise, no constant wind roar or broadband wash, no crickets, no music",
       "loop": true
     },
     {
@@ -480,7 +480,7 @@
         "model": "gemini-3.8-flash",
         "at": "2026-10-18T03:05:28.890Z"
       },
-      "status": "regenerated",
+      "status": "approved",
       "previous": {
         "prompt": "single-person walking footsteps, hard heel on linoleum, 1980s government building corridor, quiet, realistic",
         "file": "sfx/_previous/foot-linoleum/v3-1792290247096.mp3",
@@ -616,37 +616,55 @@
       "category": "foot-carpet",
       "group": "footsteps",
       "variant": "v1",
-      "prompt": "slow footsteps on thin office carpet, muffled soft thuds, quiet room, close mic",
+      "prompt": "slow footsteps in boots on thin office carpet, firm muffled thuds, subtle fabric friction, small quiet room, close mic",
       "duration": 4,
-      "influence": 0.5,
+      "influence": 0.65,
       "loop": false,
       "file": "sfx/foot-carpet/v1.mp3",
       "bytes": 32644,
       "cost": 40,
-      "generatedAt": "2026-10-18T03:04:40.751Z",
+      "generatedAt": "2026-10-18T06:11:33.768Z",
       "qa": {
-        "description": "Four isolated, muffled footsteps recorded close-up in a very dry acoustic space with virtually no reverb or room tone. The impacts are dull, soft low-frequency thumps with minimal high-frequency friction or scuffing.",
+        "description": "Four deliberate, muffled low-frequency thuds spaced roughly one second apart in a dry, close perspective, resembling heavy footsteps on padded or carpeted flooring with minimal room reflection.",
         "score": 4,
-        "issues": "Lacks the subtle heel firmness and slight fabric friction typical of boots on thin commercial carpet, sounding slightly too pillowy or like soft-soled shoes.",
+        "issues": "Lacks the subtle textile scuff and firm heel strike characteristic of boots on thin commercial carpet, sounding slightly too bass-heavy and pillowy soft.",
         "intent": "one person walking slowly in boots on thin commercial office carpet, muffled soft thuds, small quiet room",
         "model": "gemini-3.8-flash",
-        "at": "2026-10-18T03:04:40.751Z"
+        "at": "2026-10-18T06:11:33.768Z"
       },
       "status": "regenerated",
       "previous": {
-        "prompt": "Footsteps: work boots walking slowly on thin low-pile office carpet, muffled soft thuds with faint fabric scuff, small quiet office, close-mic, 4 seconds",
-        "file": "sfx/_previous/foot-carpet/v1-1792291140673.mp3",
+        "prompt": "slow footsteps on thin office carpet, muffled soft thuds, quiet room, close mic",
+        "file": "sfx/_previous/foot-carpet/v1-1792292680751.mp3",
         "score": 4,
-        "description": "Four slow, muffled low-frequency thuds in a dry, quiet acoustic space, resembling dampened footsteps on a soft or padded surface.",
-        "generatedAt": "2026-10-18T02:39:00.673Z"
+        "description": "Four isolated, muffled footsteps recorded close-up in a very dry acoustic space with virtually no reverb or room tone. The impacts are dull, soft low-frequency thumps with minimal high-frequency friction or scuffing.",
+        "generatedAt": "2026-10-18T03:04:40.751Z"
       },
       "attempts": [
         {
-          "prompt": "slow footsteps on thin office carpet, muffled soft thuds, quiet room, close mic",
-          "influence": 0.5,
+          "prompt": "heavy boots on low pile office carpet, muffled soft thuds, quiet office, close mic",
+          "influence": 0.55,
+          "score": 2,
+          "description": "Five slow, heavy footsteps walking on a hollow wooden floor or deck with audible low-end resonance and slight wood knock transients in a moderately dry acoustic space.",
+          "issues": "Surface material is clearly hollow wood rather than thin commercial carpet; lacks the soft, fabric-dampened impact of carpeted flooring.",
+          "cost": 40,
+          "chosen": false
+        },
+        {
+          "prompt": "slow boot footsteps on thin commercial carpet over concrete, muffled heel strikes, subtle fabric friction, small quiet room, close mic",
+          "influence": 0.6000000000000001,
+          "score": 3,
+          "description": "Four slow, deliberate footsteps pacing across a resonant, hollow wooden floor in a dry, quiet acoustic environment.",
+          "issues": "Surface sounds like hollow wood or plywood rather than commercial carpet, and impacts lack the weight and defined heel-toe strike of boots.",
+          "cost": 40,
+          "chosen": false
+        },
+        {
+          "prompt": "slow footsteps in boots on thin office carpet, firm muffled thuds, subtle fabric friction, small quiet room, close mic",
+          "influence": 0.65,
           "score": 4,
-          "description": "Four isolated, muffled footsteps recorded close-up in a very dry acoustic space with virtually no reverb or room tone. The impacts are dull, soft low-frequency thumps with minimal high-frequency friction or scuffing.",
-          "issues": "Lacks the subtle heel firmness and slight fabric friction typical of boots on thin commercial carpet, sounding slightly too pillowy or like soft-soled shoes.",
+          "description": "Four deliberate, muffled low-frequency thuds spaced roughly one second apart in a dry, close perspective, resembling heavy footsteps on padded or carpeted flooring with minimal room reflection.",
+          "issues": "Lacks the subtle textile scuff and firm heel strike characteristic of boots on thin commercial carpet, sounding slightly too bass-heavy and pillowy soft.",
           "cost": 40,
           "chosen": true
         }
@@ -655,56 +673,56 @@
         "metric": "momentary-max",
         "target": -21,
         "raw": {
-          "integrated": -37.5,
-          "momentaryMax": -37.5,
-          "truePeak": -16.4
+          "integrated": -28.3,
+          "momentaryMax": -28.3,
+          "truePeak": -6.3
         },
         "out": {
-          "integrated": -21.5,
-          "momentaryMax": -21.5,
-          "truePeak": -2.1
+          "integrated": -21.3,
+          "momentaryMax": -21.3,
+          "truePeak": -2.2
         },
-        "gainDb": 17.7,
-        "limitedDb": 3,
-        "take": "2026-10-18T03:04:40.751Z",
-        "at": "2026-10-18T03:04:40.957Z"
+        "gainDb": 9.5,
+        "limitedDb": 4.9,
+        "take": "2026-10-18T06:11:33.768Z",
+        "at": "2026-10-18T06:11:34.171Z"
       }
     },
     {
       "category": "foot-carpet",
       "group": "footsteps",
       "variant": "v2",
-      "prompt": "person walking across a carpeted office at night, soft padded steps",
+      "prompt": "slow heavy footsteps on thin office carpet, dull padded thumps, quiet room at night",
       "duration": 4,
-      "influence": 0.4,
+      "influence": 0.5,
       "loop": false,
       "file": "sfx/foot-carpet/v2.mp3",
       "bytes": 32644,
       "cost": 40,
-      "generatedAt": "2026-10-18T03:04:48.394Z",
+      "generatedAt": "2026-10-18T06:11:41.725Z",
       "qa": {
-        "description": "Four slow, deliberate footsteps of soft-soled shoes stepping on a carpeted floor in a dry interior room, featuring muffled low-end thuds and subtle fabric friction without notable reverb.",
+        "description": "Four slow, rhythmic footsteps producing low-frequency muffled thuds in an intimate, dry acoustic environment with virtually no reverberation.",
         "score": 4,
-        "issues": "Sounds more like sneakers or soft shoes than firm boots, lacking a defined boot heel strike, but fits the intended muffled carpet texture well.",
+        "issues": "Lacks the subtle high-frequency surface texture, scuff, or heel impact characteristic of boots striking thin commercial carpet; sounds slightly too pillowy or like padded socks.",
         "intent": "one person walking slowly in boots on thin commercial office carpet, muffled soft thuds, small quiet room",
         "model": "gemini-3.8-flash",
-        "at": "2026-10-18T03:04:48.394Z"
+        "at": "2026-10-18T06:11:41.725Z"
       },
       "status": "regenerated",
       "previous": {
-        "prompt": "Foley footsteps: boots walking slowly across dense low-pile commercial carpet, heavily damped soft thuds, fibrous textile scuff, acoustically dead small office, close-mic, 4 seconds",
-        "file": "sfx/_previous/foot-carpet/v2-1792291178759.mp3",
+        "prompt": "person walking across a carpeted office at night, soft padded steps",
+        "file": "sfx/_previous/foot-carpet/v2-1792292688394.mp3",
         "score": 4,
-        "description": "Four rhythmic, muffled low-frequency thuds spaced roughly one second apart, recorded closely in a dry acoustic space, sounding like gentle impacts or knuckle taps on a padded or hollow surface.",
-        "generatedAt": "2026-10-18T02:39:38.759Z"
+        "description": "Four slow, deliberate footsteps of soft-soled shoes stepping on a carpeted floor in a dry interior room, featuring muffled low-end thuds and subtle fabric friction without notable reverb.",
+        "generatedAt": "2026-10-18T03:04:48.394Z"
       },
       "attempts": [
         {
-          "prompt": "person walking across a carpeted office at night, soft padded steps",
-          "influence": 0.4,
+          "prompt": "slow heavy footsteps on thin office carpet, dull padded thumps, quiet room at night",
+          "influence": 0.5,
           "score": 4,
-          "description": "Four slow, deliberate footsteps of soft-soled shoes stepping on a carpeted floor in a dry interior room, featuring muffled low-end thuds and subtle fabric friction without notable reverb.",
-          "issues": "Sounds more like sneakers or soft shoes than firm boots, lacking a defined boot heel strike, but fits the intended muffled carpet texture well.",
+          "description": "Four slow, rhythmic footsteps producing low-frequency muffled thuds in an intimate, dry acoustic environment with virtually no reverberation.",
+          "issues": "Lacks the subtle high-frequency surface texture, scuff, or heel impact characteristic of boots striking thin commercial carpet; sounds slightly too pillowy or like padded socks.",
           "cost": 40,
           "chosen": true
         }
@@ -713,56 +731,56 @@
         "metric": "momentary-max",
         "target": -21,
         "raw": {
-          "integrated": -49.3,
-          "momentaryMax": -49.3,
-          "truePeak": -23.7
+          "integrated": -27.1,
+          "momentaryMax": -27.1,
+          "truePeak": -7.2
         },
         "out": {
           "integrated": -21.5,
           "momentaryMax": -21.5,
-          "truePeak": -1.9
+          "truePeak": -2
         },
-        "gainDb": 29.4,
-        "limitedDb": 7.4,
-        "take": "2026-10-18T03:04:48.394Z",
-        "at": "2026-10-18T03:04:48.672Z"
+        "gainDb": 6.1,
+        "limitedDb": 0.6,
+        "take": "2026-10-18T06:11:41.725Z",
+        "at": "2026-10-18T06:11:41.933Z"
       }
     },
     {
       "category": "foot-carpet",
       "group": "footsteps",
       "variant": "v3",
-      "prompt": "heavy boots on low pile carpet, dull thumps, small quiet office",
+      "prompt": "work boots walking across a carpeted office floor, soft muffled steps, faint fabric scuff, quiet",
       "duration": 4,
       "influence": 0.5,
       "loop": false,
       "file": "sfx/foot-carpet/v3.mp3",
       "bytes": 32644,
       "cost": 40,
-      "generatedAt": "2026-10-18T03:04:55.466Z",
+      "generatedAt": "2026-10-18T06:11:50.571Z",
       "qa": {
-        "description": "Slow, rhythmic muffled thuds with subtle creaks and hollow sub-bass resonance, sounding like heavy footsteps on a carpeted or hollow wooden floor recorded close-mic in a dry interior.",
+        "description": "Four deliberate, slow footsteps with muffled low-frequency impacts and negligible reverb, recorded from a close, intimate perspective.",
         "score": 4,
-        "issues": "Has a slightly hollow, boomy low-end resonance and lacks the distinct abrasive surface friction or scuff of boot soles on thin commercial carpet.",
+        "issues": "Lacks the distinct sole friction and firmer subfloor impact characteristic of boots on thin commercial carpet, sounding more like soft-soled shoes or thick padding.",
         "intent": "one person walking slowly in boots on thin commercial office carpet, muffled soft thuds, small quiet room",
         "model": "gemini-3.8-flash",
-        "at": "2026-10-18T03:04:55.466Z"
+        "at": "2026-10-18T06:11:50.571Z"
       },
       "status": "regenerated",
       "previous": {
-        "prompt": "Slow heavy steps on commercial carpet, soft thump and slight shoe scrape, quiet carpeted room, close-mic",
-        "file": "sfx/_previous/foot-carpet/v3-1792291185444.mp3",
+        "prompt": "heavy boots on low pile carpet, dull thumps, small quiet office",
+        "file": "sfx/_previous/foot-carpet/v3-1792292695466.mp3",
         "score": 4,
-        "description": "Three slow, low-frequency muffled thuds recorded close and dry in a quiet space, resembling heavy footfalls or muted impacts on a soft, padded surface.",
-        "generatedAt": "2026-10-18T02:39:45.444Z"
+        "description": "Slow, rhythmic muffled thuds with subtle creaks and hollow sub-bass resonance, sounding like heavy footsteps on a carpeted or hollow wooden floor recorded close-mic in a dry interior.",
+        "generatedAt": "2026-10-18T03:04:55.466Z"
       },
       "attempts": [
         {
-          "prompt": "heavy boots on low pile carpet, dull thumps, small quiet office",
+          "prompt": "work boots walking across a carpeted office floor, soft muffled steps, faint fabric scuff, quiet",
           "influence": 0.5,
           "score": 4,
-          "description": "Slow, rhythmic muffled thuds with subtle creaks and hollow sub-bass resonance, sounding like heavy footsteps on a carpeted or hollow wooden floor recorded close-mic in a dry interior.",
-          "issues": "Has a slightly hollow, boomy low-end resonance and lacks the distinct abrasive surface friction or scuff of boot soles on thin commercial carpet.",
+          "description": "Four deliberate, slow footsteps with muffled low-frequency impacts and negligible reverb, recorded from a close, intimate perspective.",
+          "issues": "Lacks the distinct sole friction and firmer subfloor impact characteristic of boots on thin commercial carpet, sounding more like soft-soled shoes or thick padding.",
           "cost": 40,
           "chosen": true
         }
@@ -771,19 +789,19 @@
         "metric": "momentary-max",
         "target": -21,
         "raw": {
-          "integrated": -22.3,
-          "momentaryMax": -22.3,
-          "truePeak": -4.7
+          "integrated": -50.5,
+          "momentaryMax": -50.5,
+          "truePeak": -26.2
         },
         "out": {
-          "integrated": -21.5,
-          "momentaryMax": -21.5,
-          "truePeak": -3.8
+          "integrated": -21.4,
+          "momentaryMax": -21.4,
+          "truePeak": -2.1
         },
-        "gainDb": 1.3,
-        "limitedDb": 0,
-        "take": "2026-10-18T03:04:55.466Z",
-        "at": "2026-10-18T03:04:55.589Z"
+        "gainDb": 30.9,
+        "limitedDb": 6.4,
+        "take": "2026-10-18T06:11:50.571Z",
+        "at": "2026-10-18T06:11:50.854Z"
       }
     },
     {
@@ -806,7 +824,7 @@
         "model": "gemini-3.8-flash",
         "at": "2026-10-18T03:33:22.034Z"
       },
-      "status": "kept",
+      "status": "approved",
       "previous": {
         "prompt": "footsteps walking down concrete stairs in an echoing concrete stairwell, work boots, cold reverb",
         "file": "sfx/_previous/foot-stairwell/v1-1792290250005.mp3",
@@ -1034,7 +1052,7 @@
         "model": "gemini-3.8-flash",
         "at": "2026-10-18T03:36:15.083Z"
       },
-      "status": "regenerated",
+      "status": "approved",
       "previous": {
         "prompt": "boots walking up concrete stairs at a steady pace, hard heel impacts, echoing concrete fire stairwell",
         "file": "sfx/_previous/foot-stairwell/v4-1792292784661.mp3",
@@ -1168,7 +1186,7 @@
         "model": "gemini-3.8-flash",
         "at": "2026-10-18T03:33:27.967Z"
       },
-      "status": "kept",
+      "status": "approved",
       "attempts": [
         {
           "prompt": "work boots climbing bare concrete steps, rubber soles scuffing grit, cold stairwell reverb, close mic",
@@ -1389,7 +1407,7 @@
         "model": "gemini-3.8-flash",
         "at": "2026-10-18T03:06:06.130Z"
       },
-      "status": "regenerated",
+      "status": "approved",
       "previous": {
         "prompt": "Slow boot steps on steel diamond plate floor over a hollow space, dull metallic thud per step, close-mic",
         "file": "sfx/_previous/foot-grating/v3-1792291203371.mp3",
@@ -1744,7 +1762,7 @@
         "model": "gemini-3.8-flash",
         "at": "2026-10-18T03:07:16.701Z"
       },
-      "status": "added",
+      "status": "approved",
       "attempts": [
         {
           "prompt": "steady footsteps walking on wet asphalt road, wet splashy shoe impacts, quiet outdoor street at night, open air acoustic reflections",
@@ -1853,7 +1871,7 @@
         "model": "gemini-3.8-flash",
         "at": "2026-10-18T03:06:06.286Z"
       },
-      "status": "regenerated",
+      "status": "approved",
       "previous": {
         "prompt": "boots crunching on gravel shoulder of a road, steady walk",
         "file": "sfx/_previous/foot-gravel/v2-1792290254569.mp3",
@@ -2284,7 +2302,7 @@
         "model": "gemini-3.8-flash",
         "at": "2026-10-18T03:33:32.252Z"
       },
-      "status": "kept",
+      "status": "approved",
       "attempts": [
         {
           "prompt": "boots sinking into soft damp forest soil and wet needles, quiet soft thuds, night woods, close mic",
@@ -2422,7 +2440,7 @@
         "model": "gemini-3.8-flash",
         "at": "2026-10-18T03:34:09.283Z"
       },
-      "status": "regenerated",
+      "status": "approved",
       "previous": {
         "prompt": "heavy steel fire door opening and slamming shut, metal latch clunk, concrete hallway",
         "file": "sfx/_previous/door-fire-steel/v1-1792292832614.mp3",
@@ -2996,7 +3014,7 @@
         "model": "gemini-3.8-flash",
         "at": "2026-10-18T03:08:29.686Z"
       },
-      "status": "regenerated",
+      "status": "approved",
       "previous": {
         "prompt": "Brass doorknob turns, latch clicks, wooden door opens with a short creak and closes softly with a latch click",
         "file": "sfx/_previous/door-office-wood/v3-1792291294316.mp3",
@@ -3427,7 +3445,7 @@
         "model": "gemini-3.8-flash",
         "at": "2026-10-18T03:33:51.224Z"
       },
-      "status": "kept",
+      "status": "approved",
       "attempts": [
         {
           "prompt": "emergency exit crash bar slammed down, heavy metal clack, door closer hiss, concrete stairwell",
@@ -3681,7 +3699,7 @@
         "model": "gemini-3.8-flash",
         "at": "2026-10-18T03:09:32.772Z"
       },
-      "status": "regenerated",
+      "status": "approved",
       "previous": {
         "prompt": "Roll-up steel garage door pulled down and slammed shut on concrete, metal crash and slat rattle",
         "file": "sfx/_previous/door-rollup-dock/v3-1792291308705.mp3",
@@ -3808,7 +3826,7 @@
         "model": "gemini-3.8-flash",
         "at": "2026-10-18T03:09:22.368Z"
       },
-      "status": "regenerated",
+      "status": "approved",
       "previous": {
         "prompt": "Heavy galvanized chain-link fence gate swinging open on squeaking rusty hinges, deep vibrating wire mesh rattle and heavy steel chain clank, open outdoor night air",
         "file": "sfx/_previous/gate-chainlink/v1-1792291325427.mp3",
@@ -3991,7 +4009,7 @@
         "model": "gemini-3.8-flash",
         "at": "2026-10-18T03:09:51.380Z"
       },
-      "status": "regenerated",
+      "status": "approved",
       "previous": {
         "prompt": "Whining electric gate motor hums steadily while heavy iron wheels grind horizontally along a steel ground rail, ending with a heavy metallic stop post clunk, open outdoor driveway.",
         "file": "sfx/_previous/gate-motorized/v1-1792291434011.mp3",
@@ -4446,7 +4464,7 @@
         "model": "gemini-3.8-flash",
         "at": "2026-10-18T03:10:39.669Z"
       },
-      "status": "regenerated",
+      "status": "approved",
       "previous": {
         "prompt": "Elevator machine room: hoist motor running at constant speed, deep electric hum, occasional relay click, loopable",
         "file": "sfx/_previous/lift-motor/v3-1792291463494.mp3",
@@ -4801,7 +4819,7 @@
         "model": "gemini-3.8-flash",
         "at": "2026-10-18T03:13:42.746Z"
       },
-      "status": "added",
+      "status": "approved",
       "attempts": [
         {
           "prompt": "freight elevator moving, heavy steel cables and pulleys groaning under tension, hollow reverberant elevator shaft",
@@ -4870,7 +4888,7 @@
         "model": "gemini-3.8-flash",
         "at": "2026-10-18T03:10:47.198Z"
       },
-      "status": "regenerated",
+      "status": "approved",
       "previous": {
         "prompt": "single 1980s elevator arrival bell ding, mechanical chime",
         "file": "sfx/_previous/lift-ding/v1-1792290270822.mp3",
@@ -4928,7 +4946,7 @@
         "model": "gemini-3.8-flash",
         "at": "2026-10-18T03:10:52.797Z"
       },
-      "status": "regenerated",
+      "status": "approved",
       "previous": {
         "prompt": "old elevator arrival chime, two-tone electronic bing, office building",
         "file": "sfx/_previous/lift-ding/v2-1792290270658.mp3",
@@ -5053,7 +5071,7 @@
         "model": "gemini-3.8-flash",
         "at": "2026-10-18T03:11:19.651Z"
       },
-      "status": "regenerated",
+      "status": "approved",
       "previous": {
         "prompt": "elevator suddenly stopping between floors, heavy mechanical clunk, motor winding down, lights buzzing",
         "file": "sfx/_previous/lift-stall/v1-1792290271884.mp3",
@@ -5236,7 +5254,7 @@
         "model": "gemini-3.8-flash",
         "at": "2026-10-18T03:12:16.760Z"
       },
-      "status": "regenerated",
+      "status": "approved",
       "previous": {
         "prompt": "old freight elevator collapsible scissor gate being pulled shut, metal lattice clatter and latch",
         "file": "sfx/_previous/lift-scissor-gate/v1-1792290273035.mp3",
@@ -5640,7 +5658,7 @@
         "model": "gemini-3.8-flash",
         "at": "2026-10-18T03:13:07.663Z"
       },
-      "status": "regenerated",
+      "status": "approved",
       "previous": {
         "prompt": "Steady low 60Hz mains hum of overhead fluorescent lights, warm continuous electrical drone with subtle metallic chassis vibration in a quiet empty room, loopable.",
         "file": "sfx/_previous/light-fluoro-hum/v3-1792291593836.mp3",
@@ -5767,7 +5785,7 @@
         "model": "gemini-3.8-flash",
         "at": "2026-10-18T03:12:57.030Z"
       },
-      "status": "regenerated",
+      "status": "approved",
       "previous": {
         "prompt": "fluorescent tube light flickering on, starter ticking and buzzing, then steady hum",
         "file": "sfx/_previous/light-fluoro-flicker/v1-1792290277175.mp3",
@@ -6153,7 +6171,7 @@
         "model": "gemini-3.8-flash",
         "at": "2026-10-18T03:32:32.471Z"
       },
-      "status": "regenerated",
+      "status": "approved",
       "previous": {
         "prompt": "close-up humming streetlight ballast, low electrical drone",
         "file": "sfx/_previous/light-sodium-buzz/v3-1792290280411.mp3",
@@ -6498,14 +6516,14 @@
       "cost": 220,
       "generatedAt": "2026-10-18T03:13:44.410Z",
       "qa": {
-        "description": "A quiet, continuous outdoor ambience of gentle wind rustling through tree canopies and pine needles, featuring soft low wind gusts and subtle high-frequency foliage friction in an open space.",
-        "score": 5,
-        "issues": "none",
-        "intent": "quiet night pine forest ambience with distant wind in the trees, sparse and cold, no music, loopable",
+        "description": "A constant, loud broadband hiss of steady rain or shower water falling continuously on the ground with no dynamic variation.",
+        "score": 2,
+        "issues": "Directly violates the prompt: it is a loud, steady broadband rain wash rather than a quiet, sparse nighttime pine forest atmosphere, lacking needle rustle, tree creaks, or subtle nocturnal details.",
+        "intent": "a quiet pine forest at night, very low level and sparse: soft needle rustle in light gusts, occasional trunk creak, branch drips, maybe one distant owl or light drizzle on needles; NO traffic, road or highway noise, no constant wind roar or broadband wash, no crickets, no music",
         "model": "gemini-3.8-flash",
-        "at": "2026-10-18T03:13:44.410Z"
+        "at": "2026-10-18T06:05:14.770Z"
       },
-      "status": "regenerated",
+      "status": "approved",
       "previous": {
         "prompt": "night pine forest ambience, distant wind through pine trees, quiet crickets, cold and still",
         "file": "sfx/_previous/amb-forest-night/v1-1792290285729.mp3",
@@ -6547,113 +6565,131 @@
       "category": "amb-forest-night",
       "group": "ambience",
       "variant": "v2",
-      "prompt": "foggy night in the woods, soft gusts through pine branches, very quiet",
+      "prompt": "pine forest at night, light breeze rustling needles, gentle tree trunk creak, distant owl hoot",
       "duration": 22,
       "influence": 0.4,
       "loop": true,
       "file": "sfx/amb-forest-night/v2.mp3",
       "bytes": 176631,
       "cost": 220,
-      "generatedAt": "2026-10-18T03:32:34.022Z",
+      "generatedAt": "2026-10-18T06:07:03.504Z",
       "qa": {
-        "description": "Continuous stereo field recording of moderate wind blowing and gusting through tree canopies, featuring low-frequency air rumble and soft rustling foliage.",
-        "score": 4,
-        "issues": "Wind intensity is moderately active rather than strictly quiet, but otherwise fits the sparse cold forest atmosphere cleanly.",
-        "intent": "quiet night pine forest ambience with distant wind in the trees, sparse and cold, no music, loopable",
+        "description": "A continuous outdoor recording featuring the steady rushing murmur of a nearby water stream or brook, layered with prominent daytime songbirds chirping and calling in an open wooded area.",
+        "score": 2,
+        "issues": "Features active daytime songbirds and a constant flowing stream wash rather than a quiet, sparse nighttime pine forest.",
+        "intent": "a quiet pine forest at night, very low level and sparse: soft needle rustle in light gusts, occasional trunk creak, branch drips, maybe one distant owl or light drizzle on needles; NO traffic, road or highway noise, no constant wind roar or broadband wash, no crickets, no music",
         "model": "gemini-3.8-flash",
-        "at": "2026-10-18T03:32:34.022Z"
+        "at": "2026-10-18T06:07:03.504Z"
       },
       "status": "regenerated",
       "previous": {
-        "prompt": "foggy night in a pine forest, soft wind gusts in the treetops, very sparse distant owl",
-        "file": "sfx/_previous/amb-forest-night/v2-1792290286015.mp3",
-        "score": 5,
-        "description": "Continuous stereo field recording of a cold breeze blowing steadily through tree canopies, featuring low-frequency wind rumble and soft, rustling foliage with no birds or intrusive foreground sounds.",
-        "generatedAt": "2026-10-18T02:24:46.015Z"
+        "prompt": "foggy night in the woods, soft gusts through pine branches, very quiet",
+        "file": "sfx/_previous/amb-forest-night/v2-1792294354022.mp3",
+        "score": 1,
+        "description": "Essentially dead silence with an extremely faint low-level background hiss/system noise floor, devoid of any discernible environmental or nature sounds.",
+        "generatedAt": "2026-10-18T03:32:34.022Z"
       },
       "attempts": [
         {
-          "prompt": "foggy night in the woods, soft gusts through pine branches, very quiet",
+          "prompt": "pine forest at night, light breeze rustling needles, gentle tree trunk creak, distant owl hoot",
           "influence": 0.4,
-          "score": 4,
-          "description": "Continuous stereo field recording of moderate wind blowing and gusting through tree canopies, featuring low-frequency air rumble and soft rustling foliage.",
-          "issues": "Wind intensity is moderately active rather than strictly quiet, but otherwise fits the sparse cold forest atmosphere cleanly.",
+          "score": 2,
+          "description": "A continuous outdoor recording featuring the steady rushing murmur of a nearby water stream or brook, layered with prominent daytime songbirds chirping and calling in an open wooded area.",
+          "issues": "Features active daytime songbirds and a constant flowing stream wash rather than a quiet, sparse nighttime pine forest.",
           "cost": 220,
           "chosen": true
+        },
+        {
+          "prompt": "pine forest at night, distant wind in treetops, pine needles rustling softly, wooden trunk creak",
+          "influence": 0.45,
+          "score": 2,
+          "description": "A steady, dense recording of continuous rain falling onto foliage, creating an unchanging broadband hiss and rustling wash of water droplets.",
+          "issues": "Too loud and dense; consists of a constant broadband wash of steady rain rather than a quiet, sparse nighttime ambience with isolated drips and creaks.",
+          "cost": 220,
+          "chosen": false
+        },
+        {
+          "prompt": "pine forest at night, faint wind in the treetops, slow wooden trunk creak, cold sparse atmosphere",
+          "influence": 0.5,
+          "score": 2,
+          "description": "Continuous bubbling stream water flowing in the midground accompanied by a loud, pervasive chorus of crickets and nocturnal insects.",
+          "issues": "Dominated by loud cricket chirping and an unrequested flowing stream/brook, violating the explicit 'no crickets' constraint and lacking sparse pine forest isolation.",
+          "cost": 220,
+          "chosen": false
         }
       ],
       "loudness": {
         "metric": "integrated",
         "target": -23,
         "raw": {
-          "integrated": -42.7,
-          "momentaryMax": -42.7,
-          "truePeak": -16.7
+          "integrated": -56.7,
+          "momentaryMax": -56.7,
+          "truePeak": -41.7
         },
         "out": {
-          "integrated": -23,
-          "momentaryMax": -23,
-          "truePeak": -1.9
+          "integrated": -23.5,
+          "momentaryMax": -23.5,
+          "truePeak": -8.6
         },
-        "gainDb": 21.4,
-        "limitedDb": 6.4,
-        "take": "2026-10-18T03:32:34.022Z",
-        "at": "2026-10-18T03:32:34.649Z"
+        "gainDb": 33.7,
+        "limitedDb": 0,
+        "take": "2026-10-18T06:07:03.504Z",
+        "at": "2026-10-18T06:07:03.912Z"
       }
     },
     {
       "category": "amb-forest-night",
       "group": "ambience",
       "variant": "v3",
-      "prompt": "pine forest, distant cold wind blowing through high treetops, quiet freezing night air",
+      "prompt": "distant owl hoot, faint breeze rustling pine needles, subtle tree trunk creak, cold winter forest",
       "duration": 22,
       "influence": 0.55,
       "loop": true,
       "file": "sfx/amb-forest-night/v3.mp3",
       "bytes": 176631,
       "cost": 220,
-      "generatedAt": "2026-10-18T03:33:17.171Z",
+      "generatedAt": "2026-10-18T06:07:52.493Z",
       "qa": {
-        "description": "Soft, cold wind blowing gently through distant pine trees and foliage, captured from an open outdoor perspective with low-frequency air motion and quiet rustling.",
-        "score": 5,
-        "issues": "none",
-        "intent": "quiet night pine forest ambience with distant wind in the trees, sparse and cold, no music, loopable",
+        "description": "A field recording of a forest at night featuring repeated distant owl hoots alongside prominent cricket/insect chirping and a persistent low-to-mid broadband rumble resembling distant traffic or air hum.",
+        "score": 3,
+        "issues": "Contains continuous high-frequency cricket chirping and an underlying broadband/distant road hum, both of which violate the negative prompts.",
+        "intent": "a quiet pine forest at night, very low level and sparse: soft needle rustle in light gusts, occasional trunk creak, branch drips, maybe one distant owl or light drizzle on needles; NO traffic, road or highway noise, no constant wind roar or broadband wash, no crickets, no music",
         "model": "gemini-3.8-flash",
-        "at": "2026-10-18T03:33:17.171Z"
+        "at": "2026-10-18T06:07:52.493Z"
       },
       "status": "regenerated",
       "previous": {
-        "prompt": "Cold night pine forest ambience, distant wind blowing softly through evergreen pine needles, sparse chilly air tone, faint tree canopy rustle, loopable",
-        "file": "sfx/_previous/amb-forest-night/v3-1792291586154.mp3",
-        "score": 3,
-        "description": "Stereo field recording of a steady moderate breeze blowing through a forest canopy, accompanied by distinct, active songbird chirps and calls.",
-        "generatedAt": "2026-10-18T02:46:26.154Z"
+        "prompt": "pine forest, distant cold wind blowing through high treetops, quiet freezing night air",
+        "file": "sfx/_previous/amb-forest-night/v3-1792294397171.mp3",
+        "score": 2,
+        "description": "A continuous outdoor nocturnal recording dominated by rhythmic cricket chirping over a persistent broadband ambient wind bed.",
+        "generatedAt": "2026-10-18T03:33:17.171Z"
       },
       "attempts": [
         {
           "prompt": "still night forest, water dripping from branches, faint distant wind",
           "influence": 0.45,
           "score": 1,
-          "description": "A steady, dry rhythmic ticking sound resembling a wall clock or timer repeating roughly once per second within a quiet, enclosed room with low background noise.",
-          "issues": "Completely wrong environment; interior clock ticking with no wind, trees, or cold outdoor forest atmosphere.",
+          "description": "Discrete water droplets steadily dripping and plinking onto a wet surface or pool with noticeable reverberation, typical of an interior cave, drainage pipe, or damp basement.",
+          "issues": "Completely wrong setting and source; this is an indoor/cavernous water drip recording with wet acoustic reverb, entirely lacking forest atmosphere, wind, or foliage sounds.",
           "cost": 220,
           "chosen": false
         },
         {
-          "prompt": "winter pine forest at night, faint distant wind through pine needles, quiet cold air",
+          "prompt": "cold pine forest, light breeze rustling pine needles, occasional subtle tree trunk creak, quiet sparse outdoor ambience",
           "influence": 0.5,
-          "score": 3,
-          "description": "Quiet outdoor night ambience featuring steady, faint cricket/insect chirping alongside a gentle background breeze and low-level ambient hiss.",
-          "issues": "Audible summer cricket chirps contradict the cold pine forest prompt, and the distant wind in the trees is overly subtle and masked by insect sounds.",
+          "score": 2,
+          "description": "A continuous ambient recording dominated by a dense, high-frequency bed of loud nocturnal crickets or katydids stridulating steadily.",
+          "issues": "Dominated by loud, continuous cricket chirping explicitly forbidden by the brief, and lacks sparse pine needle rustles, trunk creaks, or water drips.",
           "cost": 220,
           "chosen": false
         },
         {
-          "prompt": "pine forest, distant cold wind blowing through high treetops, quiet freezing night air",
+          "prompt": "distant owl hoot, faint breeze rustling pine needles, subtle tree trunk creak, cold winter forest",
           "influence": 0.55,
-          "score": 5,
-          "description": "Soft, cold wind blowing gently through distant pine trees and foliage, captured from an open outdoor perspective with low-frequency air motion and quiet rustling.",
-          "issues": "none",
+          "score": 3,
+          "description": "A field recording of a forest at night featuring repeated distant owl hoots alongside prominent cricket/insect chirping and a persistent low-to-mid broadband rumble resembling distant traffic or air hum.",
+          "issues": "Contains continuous high-frequency cricket chirping and an underlying broadband/distant road hum, both of which violate the negative prompts.",
           "cost": 220,
           "chosen": true
         }
@@ -6662,19 +6698,438 @@
         "metric": "integrated",
         "target": -23,
         "raw": {
-          "integrated": -59.2,
-          "momentaryMax": -59.2,
-          "truePeak": -44.7
+          "integrated": -57.3,
+          "momentaryMax": -57.3,
+          "truePeak": -41
         },
         "out": {
           "integrated": -23.4,
           "momentaryMax": -23.4,
-          "truePeak": -8.8
+          "truePeak": -7
         },
-        "gainDb": 36.2,
+        "gainDb": 34.3,
         "limitedDb": 0,
-        "take": "2026-10-18T03:33:17.171Z",
-        "at": "2026-10-18T03:33:17.532Z"
+        "take": "2026-10-18T06:07:52.493Z",
+        "at": "2026-10-18T06:07:52.917Z"
+      }
+    },
+    {
+      "category": "amb-forest-night",
+      "group": "ambience",
+      "variant": "v4",
+      "prompt": "pine forest at night, soft pine needle rustle, slow wooden trunk creak, single water drip on branch, distant mic",
+      "duration": 22,
+      "influence": 0.75,
+      "loop": true,
+      "file": "sfx/amb-forest-night/v4.mp3",
+      "bytes": 176631,
+      "cost": 220,
+      "generatedAt": "2026-10-18T06:16:57.098Z",
+      "qa": {
+        "description": "A very quiet, sparse outdoor nocturnal atmosphere featuring a solitary owl giving a soft, repetitive fluty territorial whistle every two to three seconds over faint room/nature background tone.",
+        "score": 4,
+        "issues": "Lacks textural variety like branch drips, trunk creaks, or needle rustling, and the owl call repeats steadily rather than occurring occasionally.",
+        "intent": "a quiet pine forest at night, very low level and sparse: soft needle rustle in light gusts, occasional trunk creak, branch drips, maybe one distant owl or light drizzle on needles; NO traffic, road or highway noise, no constant wind roar or broadband wash, no crickets, no music",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T06:16:57.098Z"
+      },
+      "status": "regenerated",
+      "previous": {
+        "prompt": "cold pine forest, distant wind in treetops, isolated pine branch creak, faint needle rustle, quiet and still",
+        "file": "sfx/_previous/amb-forest-night/v4-1792303725566.mp3",
+        "score": 3,
+        "description": "Continuous light-to-moderate rain shower falling steadily onto foliage and ground, producing a constant broadband patter and hiss with minor distant rumbling.",
+        "generatedAt": "2026-10-18T06:08:45.566Z"
+      },
+      "attempts": [
+        {
+          "prompt": "quiet pine forest at night, occasional soft rustle of pine needles, a slow wooden creak of a tall trunk, long silences",
+          "influence": 0.65,
+          "score": 1,
+          "description": "Continuous moderately heavy rain and dripping water wash that is interrupted around twelve seconds in by a prominent low-frequency vehicle engine rumble or distant highway traffic hum.",
+          "issues": "Far too loud and dense; contains a constant broadband rain wash and prominent traffic/engine noise explicitly forbidden by the brief.",
+          "cost": 220,
+          "chosen": false
+        },
+        {
+          "prompt": "quiet pine forest night, distant owl hoot, isolated wooden trunk creak, gentle breeze",
+          "influence": 0.7000000000000001,
+          "score": 3,
+          "description": "A clear, repetitive two-tone nocturnal bird call (resembling an owl or loon) echoing at regular intervals across an open outdoor space against a faint, steady ambient background hiss.",
+          "issues": "Functions primarily as an isolated bird call stem rather than a forest atmosphere; lacks the requested pine needle rustling, trunk creaks, or drip textures, and has a slight constant recording noise floor.",
+          "cost": 220,
+          "chosen": false
+        },
+        {
+          "prompt": "pine forest at night, soft pine needle rustle, slow wooden trunk creak, single water drip on branch, distant mic",
+          "influence": 0.75,
+          "score": 4,
+          "description": "A very quiet, sparse outdoor nocturnal atmosphere featuring a solitary owl giving a soft, repetitive fluty territorial whistle every two to three seconds over faint room/nature background tone.",
+          "issues": "Lacks textural variety like branch drips, trunk creaks, or needle rustling, and the owl call repeats steadily rather than occurring occasionally.",
+          "cost": 220,
+          "chosen": true
+        }
+      ],
+      "loudness": {
+        "metric": "integrated",
+        "target": -28,
+        "raw": {
+          "integrated": -38.4,
+          "momentaryMax": -38.4,
+          "truePeak": -13
+        },
+        "out": {
+          "integrated": -28.3,
+          "momentaryMax": -28.3,
+          "truePeak": -2.1
+        },
+        "gainDb": 13.1,
+        "limitedDb": 1.8,
+        "take": "2026-10-18T06:16:57.098Z",
+        "at": "2026-10-18T06:16:59.024Z"
+      }
+    },
+    {
+      "category": "amb-forest-night",
+      "group": "ambience",
+      "variant": "v5",
+      "prompt": "midnight pine forest, gentle breeze in the treetops, soft pine needle rustle, subtle trunk creak, quiet outdoors",
+      "duration": 22,
+      "influence": 0.7000000000000001,
+      "loop": true,
+      "file": "sfx/amb-forest-night/v5.mp3",
+      "bytes": 176631,
+      "cost": 220,
+      "generatedAt": "2026-10-18T06:17:46.021Z",
+      "qa": {
+        "description": "A stylized ambient soundscape featuring a continuous, resonant synthetic musical drone accompanied by faint distant daytime bird chirps and a steady low-mid air wash.",
+        "score": 2,
+        "issues": "Features an unnatural tonal synth drone throughout, audible daytime songbirds rather than night ambience, and lacks needle rustles, creaks, and drips.",
+        "intent": "a quiet pine forest at night, very low level and sparse: soft needle rustle in light gusts, occasional trunk creak, branch drips, maybe one distant owl or light drizzle on needles; NO traffic, road or highway noise, no constant wind roar or broadband wash, no crickets, no music",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T06:17:46.021Z"
+      },
+      "status": "regenerated",
+      "previous": {
+        "prompt": "cold pine forest at night, distant wind in treetops, soft pine needle rustle, subtle tree trunk creak",
+        "file": "sfx/_previous/amb-forest-night/v5-1792303789361.mp3",
+        "score": 3,
+        "description": "An outdoor forest atmosphere featuring a repetitive, high-pitched bird call chirping at steady intervals over a gentle, continuous breeze rustling distant foliage.",
+        "generatedAt": "2026-10-18T06:09:49.361Z"
+      },
+      "attempts": [
+        {
+          "prompt": "cold still night in a pine forest, single water drops falling from branches onto needles, a faint creak, near silence",
+          "influence": 0.65,
+          "score": 1,
+          "description": "A dry, metronomic clock ticking or steady hollow water dripping sound repeating once per second over quiet indoor room tone/hiss.",
+          "issues": "Completely unrelated; sounds like an interior clock or steady artificial drip rather than an outdoor pine forest at night.",
+          "cost": 220,
+          "chosen": false
+        },
+        {
+          "prompt": "midnight pine forest, gentle breeze in the treetops, soft pine needle rustle, subtle trunk creak, quiet outdoors",
+          "influence": 0.7000000000000001,
+          "score": 2,
+          "description": "A stylized ambient soundscape featuring a continuous, resonant synthetic musical drone accompanied by faint distant daytime bird chirps and a steady low-mid air wash.",
+          "issues": "Features an unnatural tonal synth drone throughout, audible daytime songbirds rather than night ambience, and lacks needle rustles, creaks, and drips.",
+          "cost": 220,
+          "chosen": true
+        },
+        {
+          "prompt": "quiet pine forest at night, distant owl hoot, soft wind rustling needles, faint wooden tree creak",
+          "influence": 0.75,
+          "score": 2,
+          "description": "A steady, rhythmic monotonic whistling call of a small owl (or bird) repeats every two seconds against a faint background bed of chirping crickets and light night air.",
+          "issues": "Contains audible crickets (explicitly forbidden); lacks requested soft needle rustling, trunk creaks, and branch drips; dominated entirely by a repetitive prominent bird call rather than sparse ambience.",
+          "cost": 220,
+          "chosen": false
+        }
+      ],
+      "loudness": {
+        "metric": "integrated",
+        "target": -28,
+        "raw": {
+          "integrated": -59.2,
+          "momentaryMax": -59.2,
+          "truePeak": -46.1
+        },
+        "out": {
+          "integrated": -28.5,
+          "momentaryMax": -28.5,
+          "truePeak": -15.3
+        },
+        "gainDb": 31.2,
+        "limitedDb": 0,
+        "take": "2026-10-18T06:17:46.021Z",
+        "at": "2026-10-18T06:17:46.920Z"
+      }
+    },
+    {
+      "category": "amb-forest-night",
+      "group": "ambience",
+      "variant": "v6",
+      "prompt": "a distant owl hooting once in a quiet pine forest at night, soft rustle of needles in a light gust, long pauses",
+      "duration": 22,
+      "influence": 0.65,
+      "loop": true,
+      "file": "sfx/amb-forest-night/v6.mp3",
+      "bytes": 176631,
+      "cost": 220,
+      "generatedAt": "2026-10-18T06:18:35.999Z",
+      "qa": {
+        "description": "A close-to-medium perspective recording of an owl or dove repeating a rhythmic two-note hooting call every few seconds against an almost completely silent, dead background.",
+        "score": 2,
+        "issues": "Lacks the entire atmospheric forest bed (no wind, needle rustles, trunk creaks, or drips); the bird call is loud, dry, repetitive, and foregrounded rather than a subtle, distant ambient layer.",
+        "intent": "a quiet pine forest at night, very low level and sparse: soft needle rustle in light gusts, occasional trunk creak, branch drips, maybe one distant owl or light drizzle on needles; NO traffic, road or highway noise, no constant wind roar or broadband wash, no crickets, no music",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T06:18:35.999Z"
+      },
+      "status": "regenerated",
+      "previous": {
+        "prompt": "pine trunks creaking softly in a light breeze at night, needles rustling, long quiet gaps, no insects, no traffic",
+        "file": "sfx/_previous/amb-forest-night/v6-1792303501634.mp3",
+        "score": 2,
+        "description": "Continuous, dense broadband wash resembling steady rain pouring or a rushing stream/waterfall, underlaid with a constant low-frequency rumble.",
+        "generatedAt": "2026-10-18T06:05:01.634Z"
+      },
+      "attempts": [
+        {
+          "prompt": "a distant owl hooting once in a quiet pine forest at night, soft rustle of needles in a light gust, long pauses",
+          "influence": 0.65,
+          "score": 2,
+          "description": "A close-to-medium perspective recording of an owl or dove repeating a rhythmic two-note hooting call every few seconds against an almost completely silent, dead background.",
+          "issues": "Lacks the entire atmospheric forest bed (no wind, needle rustles, trunk creaks, or drips); the bird call is loud, dry, repetitive, and foregrounded rather than a subtle, distant ambient layer.",
+          "cost": 220,
+          "chosen": true
+        },
+        {
+          "prompt": "pine forest at night, distant wind in high treetops, subtle pine trunk creak, faint water drops on needles",
+          "influence": 0.7000000000000001,
+          "score": 2,
+          "description": "An outdoor nature ambience dominated by continuous, high-pitched cricket and cicada chirping with occasional echoing songbird calls in the distance.",
+          "issues": "Dominated by loud cricket chirping explicitly forbidden by the brief; contains diurnal bird calls instead of a quiet night feel; lacks pine needle rustle, drips, or trunk creaks.",
+          "cost": 220,
+          "chosen": false
+        },
+        {
+          "prompt": "cold pine forest at night, faint wind in high treetops, soft needle rustle, distant wooden trunk creak, sparse water drops",
+          "influence": 0.75,
+          "score": 2,
+          "description": "Continuous, prominent nocturnal field recording dominated by high-frequency cricket chirping, occasional distant frog or bird calls, and a steady low-level outdoor noise floor.",
+          "issues": "Dominated by loud insect and cricket chirping, which directly violates the 'no crickets' requirement, and lacks distinct pine needle rustles, trunk creaks, or branch drips.",
+          "cost": 220,
+          "chosen": false
+        }
+      ],
+      "loudness": {
+        "metric": "integrated",
+        "target": -28,
+        "raw": {
+          "integrated": -28.3,
+          "momentaryMax": -28.3,
+          "truePeak": -16.7
+        },
+        "out": {
+          "integrated": -28.5,
+          "momentaryMax": -28.5,
+          "truePeak": -17
+        },
+        "gainDb": 0.3,
+        "limitedDb": 0,
+        "take": "2026-10-18T06:18:35.999Z",
+        "at": "2026-10-18T06:18:36.472Z"
+      }
+    },
+    {
+      "category": "amb-forest-night",
+      "group": "ambience",
+      "variant": "v7",
+      "prompt": "very quiet pine forest after rain at night, sparse drips from needles, a soft gust through branches, then stillness",
+      "duration": 22,
+      "influence": 0.6,
+      "loop": true,
+      "file": "sfx/amb-forest-night/v7.mp3",
+      "bytes": 176631,
+      "cost": 220,
+      "generatedAt": "2026-10-18T06:19:24.260Z",
+      "qa": {
+        "description": "Close-up intermittent water droplets dripping onto a surface, set against an unmistakable low-frequency hum and steady distant highway traffic rumble.",
+        "score": 2,
+        "issues": "Contains prominent, continuous distant traffic/road noise and low-frequency rumble, violating the strict negative constraint.",
+        "intent": "a quiet pine forest at night, very low level and sparse: soft needle rustle in light gusts, occasional trunk creak, branch drips, maybe one distant owl or light drizzle on needles; NO traffic, road or highway noise, no constant wind roar or broadband wash, no crickets, no music",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T06:19:24.260Z"
+      },
+      "status": "regenerated",
+      "previous": {
+        "prompt": "near silent pine forest at night, faint rustle of needles, a single creak, very low level, no wind roar",
+        "file": "sfx/_previous/amb-forest-night/v7-1792303506043.mp3",
+        "score": 2,
+        "description": "Continuous outdoor night ambience featuring prominent, steady cricket chirping set against a heavy, constant low-to-mid frequency broadband rumble resembling distant highway traffic.",
+        "generatedAt": "2026-10-18T06:05:06.043Z"
+      },
+      "attempts": [
+        {
+          "prompt": "very quiet pine forest after rain at night, sparse drips from needles, a soft gust through branches, then stillness",
+          "influence": 0.6,
+          "score": 2,
+          "description": "Close-up intermittent water droplets dripping onto a surface, set against an unmistakable low-frequency hum and steady distant highway traffic rumble.",
+          "issues": "Contains prominent, continuous distant traffic/road noise and low-frequency rumble, violating the strict negative constraint.",
+          "cost": 220,
+          "chosen": true
+        },
+        {
+          "prompt": "isolated pine forest, soft breeze rustling needles high in canopy, distant wooden trunk creak, lone owl hoot, remote wilderness",
+          "influence": 0.65,
+          "score": 2,
+          "description": "Repetitive, loud wailing bird shrieks (reminiscent of a peacock or water bird) echoing in an open outdoor setting over a noticeable continuous noise floor/wind hiss.",
+          "issues": "Dominated by loud, harsh, repetitive bird cries rather than being quiet and sparse; lacks needle rustles, drips, or wood creaks; background hiss is too pronounced.",
+          "cost": 220,
+          "chosen": false
+        },
+        {
+          "prompt": "faint breeze rustling pine needles, occasional tree trunk creak, sparse water drips, quiet pine forest, distant perspective",
+          "influence": 0.7,
+          "score": 1,
+          "description": "Continuous heavy rain or water wash forming a dense broadband noise floor, punctuated by two distinct, echoing distant train or truck air horn blasts.",
+          "issues": "Has loud continuous broadband wash instead of a quiet sparse bed, and includes distinct vehicle/train horn blasts violating the negative constraint against traffic noise.",
+          "cost": 220,
+          "chosen": false
+        }
+      ],
+      "loudness": {
+        "metric": "integrated",
+        "target": -28,
+        "raw": {
+          "integrated": -55.7,
+          "momentaryMax": -55.7,
+          "truePeak": -24.6
+        },
+        "out": {
+          "integrated": -28.2,
+          "momentaryMax": -28.2,
+          "truePeak": -1.8
+        },
+        "gainDb": 28.5,
+        "limitedDb": 5.9,
+        "take": "2026-10-18T06:19:24.260Z",
+        "at": "2026-10-18T06:19:25.101Z"
+      }
+    },
+    {
+      "category": "amb-forest-night",
+      "group": "ambience",
+      "variant": "v8",
+      "prompt": "soft steady drizzle pattering across pine needles, gentle ambient rain in dense pine canopy, quiet forest exterior",
+      "duration": 22,
+      "influence": 0.7000000000000001,
+      "loop": true,
+      "file": "sfx/amb-forest-night/v8.mp3",
+      "bytes": 176631,
+      "cost": 220,
+      "generatedAt": "2026-10-18T06:20:12.026Z",
+      "qa": {
+        "description": "Continuous, steady rain falling on a canopy or ground foliage with a constant broadband wash of hiss and occasional soft drop impacts, recorded at a medium perspective.",
+        "score": 3,
+        "issues": "Has a constant ambient rain wash rather than sparse light drizzle; lacks the delicate, tactile patter and distinct slow drips typical of pine needles.",
+        "intent": "light drizzle on pine needles in a quiet pine forest at night: soft patter on needles and branches and slow drips, low level; no traffic, road or highway hum, no crickets or birds, no heavy rain wash, no music",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T06:20:12.026Z"
+      },
+      "status": "regenerated",
+      "previous": {
+        "prompt": "light drizzle on pine needles at night, soft pattering in the branches, slow drips, quiet forest, no traffic",
+        "file": "sfx/_previous/amb-forest-night/v8-1792303506076.mp3",
+        "score": 2,
+        "description": "Sparse, sharp water drips falling onto a hard or slightly resonant surface with a dry, close-mic perspective against almost complete silence.",
+        "generatedAt": "2026-10-18T06:05:06.076Z"
+      },
+      "attempts": [
+        {
+          "prompt": "light drizzle pattering softly on pine needles and branches at night, slow drips, close, quiet forest",
+          "influence": 0.65,
+          "score": 2,
+          "description": "Sparse, isolated water drips falling onto a hard or slightly resonant surface, recorded close-up with light interior acoustics and silence between drops.",
+          "issues": "Lacks the soft, continuous ambient patter of drizzle on pine needles and foliage; sounds like sporadic indoor plumbing or cave drips rather than forest rain.",
+          "cost": 220,
+          "chosen": false
+        },
+        {
+          "prompt": "soft steady drizzle pattering across pine needles, gentle ambient rain in dense pine canopy, quiet forest exterior",
+          "influence": 0.7000000000000001,
+          "score": 3,
+          "description": "Continuous, steady rain falling on a canopy or ground foliage with a constant broadband wash of hiss and occasional soft drop impacts, recorded at a medium perspective.",
+          "issues": "Has a constant ambient rain wash rather than sparse light drizzle; lacks the delicate, tactile patter and distinct slow drips typical of pine needles.",
+          "cost": 220,
+          "chosen": true
+        },
+        {
+          "prompt": "delicate drizzle pattering softly on pine needles, gentle droplets falling on damp evergreen branches, quiet coniferous forest exterior",
+          "influence": 0.75,
+          "score": 2,
+          "description": "Sparse, resonant, and almost rhythmic water drips or clicks impacting a hard, hollow surface roughly once every one to two seconds against a silent background.",
+          "issues": "Lacks the soft, diffuse texture of drizzle on pine needles; consists entirely of isolated, slow, resonant drips on a hard/indoor surface.",
+          "cost": 220,
+          "chosen": false
+        }
+      ],
+      "loudness": {
+        "metric": "integrated",
+        "target": -26,
+        "raw": {
+          "integrated": -57.1,
+          "momentaryMax": -57.1,
+          "truePeak": -26.7
+        },
+        "out": {
+          "integrated": -26.1,
+          "momentaryMax": -26.1,
+          "truePeak": -1.9
+        },
+        "gainDb": 31.8,
+        "limitedDb": 6.8,
+        "take": "2026-10-18T06:20:12.026Z",
+        "at": "2026-10-18T06:20:12.658Z"
+      }
+    },
+    {
+      "category": "amb-forest-night",
+      "group": "ambience",
+      "variant": "v9",
+      "prompt": "fine rain falling on a pine forest at night, gentle hiss on needles, drips, no wind, no road",
+      "duration": 22,
+      "influence": 0.5,
+      "loop": true,
+      "file": "sfx/amb-forest-night/v9.mp3",
+      "bytes": 176631,
+      "cost": 220,
+      "generatedAt": "2026-10-18T06:05:06.556Z",
+      "loudness": {
+        "metric": "integrated",
+        "target": -26,
+        "raw": {
+          "integrated": -40.9,
+          "momentaryMax": -40.9,
+          "truePeak": -12.6
+        },
+        "out": {
+          "integrated": -26.1,
+          "momentaryMax": -26.1,
+          "truePeak": -2.6
+        },
+        "gainDb": 16,
+        "limitedDb": 7.1,
+        "take": "2026-10-18T06:05:06.556Z",
+        "at": "2026-10-18T06:05:08.168Z"
+      },
+      "qa": {
+        "description": "Continuous ambient sound of steady light rain falling on outdoor vegetation and soil, featuring soft drops spattering on leaves and needles with subtle distant trickling.",
+        "score": 4,
+        "issues": "Slightly denser and more continuous than a sparse drizzle with slow drips, but otherwise clean and free of unwanted fauna or traffic noise.",
+        "intent": "light drizzle on pine needles in a quiet pine forest at night: soft patter on needles and branches and slow drips, low level; no traffic, road or highway hum, no crickets or birds, no heavy rain wash, no music",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T06:16:05.634Z"
       }
     },
     {
@@ -6697,7 +7152,7 @@
         "model": "gemini-3.8-flash",
         "at": "2026-10-18T03:31:28.817Z"
       },
-      "status": "regenerated",
+      "status": "approved",
       "previous": {
         "prompt": "light rain drizzle on asphalt parking lot at night, gentle steady patter, puddles",
         "file": "sfx/_previous/amb-rain-asphalt/v1-1792290289643.mp3",
@@ -7036,7 +7491,7 @@
         "model": "gemini-3.8-flash",
         "at": "2026-10-18T02:59:35.257Z"
       },
-      "status": "kept"
+      "status": "approved"
     },
     {
       "category": "amb-thunder",
@@ -7116,7 +7571,7 @@
         "model": "gemini-3.8-flash",
         "at": "2026-10-18T02:59:42.150Z"
       },
-      "status": "kept"
+      "status": "approved"
     },
     {
       "category": "amb-thunder",
@@ -7178,7 +7633,7 @@
         "model": "gemini-3.8-flash",
         "at": "2026-10-18T03:01:05.305Z"
       },
-      "status": "regenerated",
+      "status": "approved",
       "previous": {
         "prompt": "Sharp acoustic thunderclap: a sudden dry lightning crack echoing into a long, low rolling rumble across open terrain, outdoor field recording, natural decay, no rain",
         "file": "sfx/_previous/amb-thunder/v4-1792292405219.mp3",
@@ -7254,7 +7709,7 @@
         "model": "gemini-3.8-flash",
         "at": "2026-10-18T03:00:19.009Z"
       },
-      "status": "regenerated",
+      "status": "approved",
       "previous": {
         "prompt": "Faint very distant thunder: a soft low grumble on the horizon, barely audible, short, no rain",
         "file": "sfx/_previous/amb-thunder/v5-1792292357688.mp3",
@@ -7330,7 +7785,7 @@
         "model": "gemini-3.8-flash",
         "at": "2026-10-18T02:59:53.666Z"
       },
-      "status": "kept"
+      "status": "approved"
     },
     {
       "category": "amb-hvac",
@@ -7530,7 +7985,7 @@
         "model": "gemini-3.8-flash",
         "at": "2026-10-18T03:31:26.950Z"
       },
-      "status": "regenerated",
+      "status": "approved",
       "previous": {
         "prompt": "silent empty hallway ambience, subtle air movement and building settling",
         "file": "sfx/_previous/amb-corridor-tone/v2-1792290297521.mp3",
@@ -8861,7 +9316,7 @@
         "model": "gemini-3.8-flash",
         "at": "2026-10-18T03:31:55.900Z"
       },
-      "status": "regenerated",
+      "status": "approved",
       "previous": {
         "prompt": "Heavy water sloshing and splashing inside a plastic janitor bucket rolling on small plastic caster wheels across smooth tile floor, echoing interior hallway, close-up.",
         "file": "sfx/_previous/int-mop-bucket/v3-1792291672993.mp3",
@@ -10244,7 +10699,7 @@
         "model": "gemini-3.8-flash",
         "at": "2026-10-18T03:32:23.072Z"
       },
-      "status": "regenerated",
+      "status": "approved",
       "previous": {
         "prompt": "dark ambient drone with faint metallic resonance, tense atmosphere",
         "file": "sfx/_previous/hor-drone/v3-1792290326159.mp3",
@@ -10822,7 +11277,7 @@
         "model": "gemini-3.8-flash",
         "at": "2026-10-18T03:32:08.300Z"
       },
-      "status": "regenerated",
+      "status": "approved",
       "previous": {
         "prompt": "Quiet single analog beep from a 1980s computer terminal",
         "file": "sfx/_previous/ui-notify/v2-1792291737574.mp3",

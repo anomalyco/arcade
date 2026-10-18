@@ -1,5 +1,10 @@
 import type { MotionKind } from "./motion"
 import { unlockAudio } from "../../audio/context"
+import { hooks } from "../../audio/hooks"
+import { SFX } from "../../audio/sfx-manifest"
+
+/** Time of a one-shot's loudest transient (s), from the build. */
+const hitOf = (id: "door-fire-steel" | "gate-chainlink" | "light-switch") => SFX[id].variants[0]?.hit ?? 0
 
 // Procedural door sounds (Web Audio, no samples). One-shots: the latch releasing, the latch catching on close, a
 // locked door's rattle, roll-up ratchet ticks. Continuous, per moving door: a hinge creak whose stick-slip rate,
@@ -8,6 +13,20 @@ import { unlockAudio } from "../../audio/context"
 // on the first door use, which always comes from a key press. Never constructed in `?shot` mode.
 
 export type DoorSound = "steel" | "wood" | "glass" | "gate"
+
+/** What a door event needs to pick and place its recording. */
+export type DoorVoice = { sound: DoorSound; kind: MotionKind; panic: boolean; control: boolean; x: number; y: number; z: number }
+
+/**
+ * How much of the procedural hinge creak stays under each kind of door: where a recording carries the door (office
+ * wood's own creak, a roll-up's slats, the motorised gate), the creak is only a faint layer.
+ */
+function creakScale(sound: DoorSound, kind: MotionKind) {
+  if (kind === "rollup" || kind === "slide") return 0.25
+  if (sound === "wood") return 0.35
+  if (kind === "gate") return 0.5
+  return 0.55
+}
 
 type Voice = { ctx: AudioContext; out: AudioNode; t: number }
 
@@ -38,7 +57,8 @@ export class DoorAudio {
   private noise: AudioBuffer | null = null
   private pulse: PeriodicWave | null = null
   private loops = new Map<string, Loop>()
-  volume = 0.6
+  /** Procedural layer level (the doors bus carries the Lab's Doors knob). */
+  volume = 1
   creakVolume = 1
 
   /** Call from a user-input handler; creates/resumes the shared context (src/audio/context.ts). */
@@ -48,7 +68,7 @@ export class DoorAudio {
     this.ac = shared.ctx
     this.master = this.ac.createGain()
     // Through the shared bus, so doors get the same room / outdoor reverb as footsteps.
-    this.master.connect(shared.bus)
+    this.master.connect(shared.buses.doors)
     this.noise = shared.noise
     // An impulse train: each period is one stick-slip "release" that excites the leaf's resonances.
     const H = 48
@@ -125,8 +145,27 @@ export class DoorAudio {
     for (let i = 0; i < n; i++) this.burst(v, at + Math.random() * spread, 0.035, gain * (0.5 + Math.random() * 0.5), 2400, VOICE.gate.ring)
   }
 
-  /** A door at rest starting to move: the latch (or a gate's chain) releasing. */
-  release(sound: DoorSound, kind: MotionKind, pan: number) {
+  /** A recorded door sound at the door (doors bus), `offset` s into the take. */
+  private clip(id: "door-fire-steel" | "door-office-wood" | "door-panic-bar" | "door-rollup-dock" | "gate-chainlink" | "gate-motorized" | "light-switch", d: DoorVoice, gain: number, offset = 0) {
+    return !!hooks.sfx?.play(id, { bus: "doors", pos: { x: d.x, y: d.y, z: d.z }, ref: 2, rolloff: 1.1, gain, offset, jitter: 0.02 })
+  }
+
+  /** A control (push button, switch) operated: one click. */
+  control(d: DoorVoice) {
+    this.clip("light-switch", d, 0.8, Math.max(0, hitOf("light-switch") - 0.03))
+  }
+
+  /** A roll-up or sliding gate starting to move (either way): its motor and slats. */
+  moveStart(d: DoorVoice) {
+    if (d.kind === "rollup") this.clip("door-rollup-dock", d, 0.9)
+    else if (d.sound === "gate") this.clip("gate-motorized", d, 0.9)
+  }
+
+  /** A door at rest starting to open: the latch (or a gate's chain) releasing. */
+  release(sound: DoorSound, kind: MotionKind, pan: number, d?: DoorVoice) {
+    if (d?.panic && this.clip("door-panic-bar", d, 0.9)) return
+    if (d && sound === "wood" && kind === "swing" && this.clip("door-office-wood", d, 0.85)) return
+    if (d && kind === "gate" && this.clip("gate-chainlink", d, 0.8)) return
     const v = this.voice(pan)
     if (!v) return
     const s = VOICE[sound]
@@ -143,7 +182,11 @@ export class DoorAudio {
   }
 
   /** Leaf meets the frame and the latch catches. */
-  latch(sound: DoorSound, kind: MotionKind, pan: number, speed: number) {
+  latch(sound: DoorSound, kind: MotionKind, pan: number, speed: number, d?: DoorVoice) {
+    // Steel doors close on the fire door's latch clack (its loudest moment lined up with the leaf meeting the frame),
+    // the chain-link gate on its own clank; wood, glass and the motorised doors keep the procedural latch.
+    if (d && sound === "steel" && kind === "swing" && this.clip("door-fire-steel", d, 0.55 + 0.45 * Math.min(1, speed * 2), hitOf("door-fire-steel") - 0.06)) return
+    if (d && kind === "gate" && this.clip("gate-chainlink", d, 0.6, hitOf("gate-chainlink") - 0.05)) return
     const v = this.voice(pan)
     if (!v) return
     const s = VOICE[sound]
@@ -169,6 +212,11 @@ export class DoorAudio {
     const v = this.voice(pan)
     if (!v) return
     this.burst(v, v.t, 0.02, 0.14, 1800, [1100, 2700])
+  }
+
+  /** A door or control operated with E: a very quiet interface confirmation. */
+  confirm() {
+    hooks.sfx?.play("ui-notify", { bus: "ui", gain: 0.18, jitter: 0 })
   }
 
   /** Locked: the handle tried a few times, the leaf knocking in its frame. */
@@ -206,7 +254,7 @@ export class DoorAudio {
     // Faster leaf → faster slips (higher pitch) and louder; a stick drops it out, the slip after comes back hot.
     const rate = (22 + 95 * sp) * s.creakPitch * (1 + 0.18 * l.wander) * (stuck ? 0.6 : 1)
     l.osc.frequency.setTargetAtTime(rate, now, 0.02)
-    const level = this.creakVolume * s.creak * 0.11 * sp ** 0.7 * (1 + 0.35 * l.wander)
+    const level = this.creakVolume * s.creak * 0.11 * creakScale(sound, kind) * sp ** 0.7 * (1 + 0.35 * l.wander)
     l.creak.gain.setTargetAtTime(stuck ? level * 0.06 : level, now, stuck ? 0.012 : 0.03)
     l.pan.pan.setTargetAtTime(Math.max(-0.8, Math.min(0.8, pan)), now, 0.05)
     if (l.grind && l.grindFilter) {

@@ -1,7 +1,7 @@
 import type * as THREE from "three/webgpu"
 import type { Box, Floor, WorldContext } from "./context"
 import { heightAt } from "./height"
-import { DoorAudio, type DoorSound } from "./doors/audio"
+import { DoorAudio, type DoorSound, type DoorVoice } from "./doors/audio"
 import { profileFor, stepMotion, type MotionState, type Profile } from "./doors/motion"
 import { DoorPrompt, type DoorVerb } from "./doors/hud"
 
@@ -359,11 +359,9 @@ export class Doors {
     this.floors = ctx.floors
     this.settings = ctx.settings
     ctx.settings["doors.speed"] ??= 1
-    ctx.settings["doors.volume"] ??= 0.6
     ctx.settings["doors.creak"] ??= 1
     ctx.controls.push(
       { key: "doors.speed", label: "Door speed", group: "Doors", unit: "×", min: 0.25, max: 3, step: 0.05 },
-      { key: "doors.volume", label: "Door sound volume", group: "Doors", min: 0, max: 1, step: 0.05 },
       { key: "doors.creak", label: "Creak volume", group: "Doors", min: 0, max: 2, step: 0.05 },
     )
     if (!this.quiet && typeof document !== "undefined") this.prompt = new DoorPrompt()
@@ -485,7 +483,15 @@ export class Doors {
       return d
     }
     this.command(d, d.isOpen ? 0 : 1, true)
+    this.audio?.confirm()
     return d
+  }
+
+  /** What the door audio needs about a door: its sound, motion kind, panic bar, whether it's a small control, and
+   *  where its leaf is. */
+  private voiceOf(d: Door): DoorVoice {
+    const c = d.centre(this.tmp)
+    return { sound: d.spec.sound ?? "steel", kind: d.profile.kind, panic: d.panic, control: d.height < 1.2, x: c.x, y: c.y, z: c.z }
   }
 
   /** Sets a door's target (and its partner's). */
@@ -503,7 +509,12 @@ export class Doors {
       // From rest the latch (or the gate's chain) releases first; mid-swing a reversal just brakes and turns round.
       d.hold = d.profile.hesitate * (target > d.t ? 1 : 0.5)
       d.plan = null
-      if (target > d.t && d.t < 0.02 && this.player) this.audio?.release(d.spec.sound ?? "steel", d.profile.kind, this.pan(d))
+      if (this.audio && this.player) {
+        const v = this.voiceOf(d)
+        if (v.control) this.audio.control(v)
+        else if (d.profile.kind === "rollup" || d.profile.kind === "slide") this.audio.moveStart(v)
+        else if (target > d.t && d.t < 0.02) this.audio.release(v.sound, v.kind, this.pan(d), v)
+      }
     }
     const p = partner && d.spec.double ? this.byId.get(d.spec.double) : undefined
     if (p) this.command(p, target, false)
@@ -598,7 +609,6 @@ export class Doors {
     this.lastDt = dt
     const speed = Number(this.settings["doors.speed"] ?? 1)
     if (this.audio) {
-      this.audio.volume = Number(this.settings["doors.volume"] ?? 0.6)
       this.audio.creakVolume = Number(this.settings["doors.creak"] ?? 1)
     }
     const p = this.player?.pos
@@ -644,7 +654,7 @@ export class Doors {
             break
           }
         } else d.pose(t)
-        if (latched && this.audio) this.audio.latch(sound, prof.kind, this.pan(d), Math.abs(d.v) * prof.duration)
+        if (latched && this.audio && d.height >= 1.2) this.audio.latch(sound, prof.kind, this.pan(d), Math.abs(d.v) * prof.duration, this.voiceOf(d))
         if (bump > 0.6) this.audio?.bump(sound, this.pan(d), Math.min(1, bump / 3))
         if (d.free && t === 0) {
           d.v = 0
@@ -665,7 +675,7 @@ export class Doors {
         d.tooth = tooth
       }
       // Leaf speed relative to the peak of a full swing (1.875 / duration for the quintic curve).
-      this.audio?.motion(d.id, sound, prof.kind, (Math.abs(d.v) * prof.duration) / (1.875 * Math.max(0.05, speed)), this.pan(d), dt)
+      if (d.height >= 1.2) this.audio?.motion(d.id, sound, prof.kind, (Math.abs(d.v) * prof.duration) / (1.875 * Math.max(0.05, speed)), this.pan(d), dt)
       if (!d.free && d.t === d.target && !d.plan && d.hold <= 0 && d.rattle === 0) {
         d.v = 0
         d.pose(d.t)

@@ -1,9 +1,9 @@
 import type * as THREE from "three/webgpu"
 import { isEditableEventTarget } from "@arcade/kit/client/controls"
-import type { Floor, WorldContext } from "./world/context"
+import type { Floor, Ladder, WorldContext } from "./world/context"
 import { heightAt } from "./world/height"
 import { VIEWPOINTS, type ViewpointName } from "./world/layout"
-import { Footsteps } from "./audio/footsteps"
+import { GameAudio } from "./audio/game"
 
 const RADIUS = 0.3
 /** Standing and crouched eye heights above the feet (m). */
@@ -55,6 +55,11 @@ export type PlayerState = {
   grounded: boolean
   running: boolean
   onLadder: boolean
+  /**
+   * The ladder being climbed, or null: `normal` is the rung plane's outward unit normal (towards the climber) and
+   * `plane` its offset, so the rungs are the points p with normal·p = plane.
+   */
+  ladder: { normal: readonly [number, number, number]; plane: number } | null
   /** Gait cycle 0..1: a left footfall at 0, a right at 0.5. */
   stepPhase: number
   /** Horizontal speed (m/s). */
@@ -108,8 +113,10 @@ export class Player {
   private time = 0
   private foot = 0
   private floor: Floor | null = null
-  /** Footstep audio (src/audio/footsteps.ts); only with input enabled, so never in `?shot` mode. */
-  private footsteps: Footsteps | null = null
+  private ladderOn: Ladder | null = null
+  private ladderFace: PlayerState["ladder"] = null
+  /** The game's audio (src/audio/game.ts): only with input enabled, so never in `?shot` mode. */
+  readonly audio: GameAudio | null = null
 
   constructor(
     private camera: THREE.PerspectiveCamera,
@@ -140,6 +147,7 @@ export class Player {
       grounded: true,
       running: false,
       onLadder: false,
+      ladder: null,
       stepPhase: 0,
       speed: 0,
       get flashlight() {
@@ -152,10 +160,10 @@ export class Player {
     ctx.doors.attach(ctx, { pos: this.pos, camera })
     ;(globalThis as { __afterhoursPlayer?: Player }).__afterhoursPlayer = this
     if (!enabled) return
-    this.footsteps = new Footsteps(ctx, this)
+    ;(this as { audio: GameAudio | null }).audio = new GameAudio(ctx, this)
     // Audio unlocks on the first input (a click or a key), never before.
     canvas.addEventListener("click", () => {
-      this.footsteps?.unlock()
+      this.audio?.unlock()
       canvas.requestPointerLock()
     })
     document.addEventListener("mousemove", (e) => {
@@ -167,10 +175,13 @@ export class Player {
     window.addEventListener("keydown", (e) => {
       if (isEditableEventTarget(e.target)) return
       if (e.code === "Space") e.preventDefault()
-      this.footsteps?.unlock()
+      this.audio?.unlock()
       this.keys.add(e.code)
       if (e.repeat) return
-      if (e.code === "KeyF") this.flashlight = !this.flashlight
+      if (e.code === "KeyF") {
+        this.flashlight = !this.flashlight
+        this.audio?.flashlight()
+      }
       if (e.code === "KeyE") ctx.doors.use()
       if (e.code === "KeyN") this.fly = !this.fly
       if (e.code === "Space") this.jumpBuffer = JUMP_BUFFER
@@ -235,7 +246,7 @@ export class Player {
 
   update(dt: number) {
     this.ctx.doors.update(dt)
-    this.footsteps?.update(dt, this.camera)
+    this.audio?.update(dt, this.camera)
     this.time += dt
     const k = this.keys
     const fwd = (k.has("KeyW") || k.has("ArrowUp") ? 1 : 0) - (k.has("KeyS") || k.has("ArrowDown") ? 1 : 0)
@@ -285,6 +296,8 @@ export class Player {
     const climb = fwd > 0 ? (this.pitch < -0.6 ? -1 : 1) : fwd < 0 ? -1 : 0
     const footing = ladder ? this.groundAt(this.pos.x, this.pos.z, this.pos.y + 0.05) : 0
     const onRungs = ladder && !(this.pos.y <= footing + 0.02 && climb <= 0)
+    if (ladder !== this.ladderOn) this.ladderFace = ladder ? this.faceOf(ladder) : null
+    this.ladderOn = ladder ?? null
     if (ladder && onRungs) {
       this.vel.x = this.vel.y = this.vel.z = 0
       this.grounded = false
@@ -297,7 +310,8 @@ export class Player {
       const cx = (ladder.min[0] + ladder.max[0]) / 2
       const cz = (ladder.min[2] + ladder.max[2]) / 2
       const pull = Math.min(1, 2.5 * dt)
-      if (!side) {
+      const dismounting = this.pos.y >= top - 0.01 && climb > 0
+      if (!side && !dismounting) {
         this.pos.x += (cx - this.pos.x) * pull
         this.pos.z += (cz - this.pos.z) * pull
       }
@@ -443,6 +457,7 @@ export class Player {
     s.grounded = this.grounded
     s.running = running
     s.onLadder = ladder
+    s.ladder = ladder ? this.ladderFace : null
     s.stepPhase = this.phase
     s.speed = speed
     this.apply()
@@ -473,6 +488,34 @@ export class Player {
     e.x = cx
     e.y = eyeY
     e.z = cz
+  }
+
+  /**
+   * Rung plane of a ladder: its own `normal` if set; else the axis the body walked in along (the climber faces the
+   * rungs), pointing back towards where it came from; with no motion, the volume's thinner axis towards the body.
+   */
+  private faceOf(l: Ladder): { normal: readonly [number, number, number]; plane: number } {
+    const cx = (l.min[0] + l.max[0]) / 2
+    const cz = (l.min[2] + l.max[2]) / 2
+    let nx: number
+    let nz: number
+    const vx = this.vel.x
+    const vz = this.vel.z
+    if (l.normal) {
+      const len = Math.hypot(l.normal[0], l.normal[1]) || 1
+      nx = l.normal[0] / len
+      nz = l.normal[1] / len
+    } else if (Math.hypot(vx, vz) > 0.2) {
+      nx = Math.abs(vx) >= Math.abs(vz) ? -Math.sign(vx) : 0
+      nz = Math.abs(vx) >= Math.abs(vz) ? 0 : -Math.sign(vz)
+    } else if (l.max[0] - l.min[0] <= l.max[2] - l.min[2]) {
+      nx = this.pos.x >= cx ? 1 : -1
+      nz = 0
+    } else {
+      nx = 0
+      nz = this.pos.z >= cz ? 1 : -1
+    }
+    return { normal: [nx, 0, nz], plane: nx * cx + nz * cz }
   }
 
   private ladderAt() {
@@ -586,7 +629,12 @@ export class Player {
       if (b.max[1] < feet || b.min[1] > head) continue
       const cx = Math.max(b.min[0], Math.min(nx, b.max[0]))
       const cz = Math.max(b.min[2], Math.min(nz, b.max[2]))
-      if ((nx - cx) ** 2 + (nz - cz) ** 2 < RADIUS * RADIUS) return false
+      const d2 = (nx - cx) ** 2 + (nz - cz) ** 2
+      if (d2 >= RADIUS * RADIUS) continue
+      // Already overlapping (a ladder top, a teleport): moving further out is allowed, so nothing can trap the body.
+      const ox = Math.max(b.min[0], Math.min(this.pos.x, b.max[0]))
+      const oz = Math.max(b.min[2], Math.min(this.pos.z, b.max[2]))
+      if (d2 <= (this.pos.x - ox) ** 2 + (this.pos.z - oz) ** 2 + 1e-9) return false
     }
     // Door leaves: block, or yield to the body (pushing an ajar door open slows the walk by its weight).
     const k = this.ctx.doors.push(this.pos.x, this.pos.z, nx, nz, feet, head, RADIUS)

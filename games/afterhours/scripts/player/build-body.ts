@@ -5,14 +5,36 @@
 // 1. Installs MPFB 2 (MakeHuman for Blender) and unpacks the CC0 MakeHuman system assets it needs (cached in $TMPDIR).
 // 2. Runs scripts/player/build-body.py in Blender: a middle-aged man in a work shirt, dark work trousers and work boots,
 //    skinned to MPFB's game_engine skeleton (UE-style bone names), hidden skin under the clothes deleted.
-// 3. Retargets CC0 clips onto it (scripts/player/retarget.ts): Quaternius Universal Animation Library 1 Standard (idle,
-//    walk, jog, sprint, crouch idle/walk, jump start/loop/land, interact, torch idle). Backpedal plays the forward loops
+// 3. Moves it onto the Quaternius Universal Animation Library skeleton's rest frames (scripts/player/rebind.ts) and
+//    copies UAL 1 Standard clips verbatim (idle, walk, jog, sprint, crouch idle/walk, jump start/loop/land, interact,
+//    torch idle): no retargeting. Backpedal plays the forward loops
 //    in reverse and strafes come from orientation warping (src/player/body.ts), so no side/back clips are needed.
 // 4. Prunes, dedups and meshopt-compresses the export (quantised geometry; JPEG textures, so no KTX2 set-up needed).
-import { existsSync, mkdirSync, statSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
-import { retarget, ualMap } from "./retarget"
+import { rebind } from "./rebind"
+import { bakeMocap, type MocapClip } from "./mocap"
+
+/** Cuts from the 100STYLE "Neutral" takes (straight, steady windows found by scanning hip travel). */
+const MOCAP: MocapClip[] = [
+  { name: "walk", file: "Neutral_FW.bvh", from: 8.0, to: 11.4, cycles: 1 },
+  { name: "walk_back", file: "Neutral_BW.bvh", from: 17.6, to: 20.1, cycles: 1 },
+  // The side-walk take steps to the actor's right; the left strafe is the same cycle mirrored.
+  { name: "strafe_r", file: "Neutral_SW.bvh", from: 82.2, to: 84.7, cycles: 1 },
+  { name: "strafe_l", file: "Neutral_SW.bvh", from: 82.2, to: 84.7, cycles: 1, mirror: true },
+  { name: "idle", file: "Neutral_ID.bvh", from: 12, to: 18, cycles: 0, still: true },
+]
+
+/**
+ * Downloads only the Neutral takes from the 1.4 GB 100STYLE zip on Zenodo (HTTP range requests on the zip's central
+ * directory), into `dir`.
+ */
+async function fetch100Style(dir: string) {
+  if (existsSync(join(dir, "Neutral_FW.bvh"))) return
+  mkdirSync(dir, { recursive: true })
+  await run(["python3", join(import.meta.dir, "fetch-100style.py"), dir])
+}
 
 const root = join(import.meta.dir, "../..")
 const cache = join(tmpdir(), "ah-body")
@@ -62,21 +84,25 @@ await Promise.all([mo.MeshoptEncoder.ready, mo.MeshoptDecoder.ready])
 const io = new core.NodeIO().registerExtensions(ext.ALL_EXTENSIONS).registerDependencies({ "meshopt.encoder": mo.MeshoptEncoder, "meshopt.decoder": mo.MeshoptDecoder })
 const doc = await io.read(raw)
 const ual = await io.read(await download(UAL1, join(cache, "UAL1.glb")))
-const names = doc.getRoot().listSkins()[0].listJoints().map((j: { getName(): string }) => j.getName())
-const U = ualMap(names)
-retarget(doc, [
-  { name: "idle", src: ual, clip: "Idle_Loop", map: U },
-  { name: "walk", src: ual, clip: "Walk_Loop", map: U },
-  { name: "jog", src: ual, clip: "Jog_Fwd_Loop", map: U },
-  { name: "sprint", src: ual, clip: "Sprint_Loop", map: U },
-  { name: "crouch_idle", src: ual, clip: "Crouch_Idle_Loop", map: U },
-  { name: "crouch_walk", src: ual, clip: "Crouch_Fwd_Loop", map: U },
-  { name: "jump_start", src: ual, clip: "Jump_Start", map: U },
-  { name: "jump_air", src: ual, clip: "Jump_Loop", map: U },
-  { name: "jump_land", src: ual, clip: "Jump_Land", map: U },
-  { name: "interact", src: ual, clip: "Interact", map: U },
-  { name: "torch", src: ual, clip: "Idle_Torch_Loop", map: U },
+rebind(doc, ual, [
+  { name: "idle", clip: "Idle_Loop" },
+  { name: "walk", clip: "Walk_Loop" },
+  { name: "jog", clip: "Jog_Fwd_Loop" },
+  { name: "sprint", clip: "Sprint_Loop" },
+  { name: "crouch_idle", clip: "Crouch_Idle_Loop" },
+  { name: "crouch_walk", clip: "Crouch_Fwd_Loop" },
+  { name: "jump_start", clip: "Jump_Start" },
+  { name: "jump_air", clip: "Jump_Loop" },
+  { name: "jump_land", clip: "Jump_Land" },
+  { name: "interact", clip: "Interact" },
+  // UAL holds its torch in the left hand; mirrored, the right hand holds it (authored grip and arm).
+  { name: "torch", clip: "Idle_Torch_Loop", fingers: "clip", mirror: true },
 ])
+// Locomotion from real motion capture (100STYLE, CC BY 4.0), overriding the UAL loops of the same names.
+for (const a of doc.getRoot().listAnimations()) if (MOCAP.some((m) => m.name === a.getName())) a.dispose()
+const styleDir = join(cache, "100style")
+await fetch100Style(styleDir)
+bakeMocap(doc, styleDir, MOCAP, (f) => readFileSync(f, "utf8"))
 await doc.transform(fn.prune(), fn.dedup(), fn.meshopt({ encoder: mo.MeshoptEncoder, level: "medium" }))
 mkdirSync(join(root, "public/models/player"), { recursive: true })
 await io.write(out, doc)

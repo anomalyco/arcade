@@ -480,6 +480,10 @@ export function createLighting(ctx: WorldContext, player: Player) {
   ;(flash as unknown as { colorNode: unknown }).colorNode = flashCookie
   scene.add(flash, flash.target)
   const flashDir = new THREE.Vector3(0, 0, -1)
+  const flashPos = new THREE.Vector3()
+  const lensPos = new THREE.Vector3()
+  const lensDir = new THREE.Vector3()
+  const fwd2 = new THREE.Vector3()
   const flashColor = new THREE.Color(1, 0.93, 0.82)
   let flashLevel = 0
 
@@ -822,11 +826,17 @@ export function createLighting(ctx: WorldContext, player: Player) {
       for (const s of slots) smoothShadowMap(s.light)
       const on = player.flashlight
       flashLevel += ((on ? 1 : 0) - flashLevel) * Math.min(1, dt * 30)
-      const forward = fwd.set(0, -0.04, -1).applyQuaternion(camera.quaternion).normalize()
+      // From the torch in the player's hand when the body shows it, else from a hand offset under the eye. Both the
+      // beam and the emitter are smoothed so the arm's sway doesn't jitter the light (or its shadow).
+      const inHand = renderState.torchLens?.(lensPos, lensDir) === true && lensDir.lengthSq() > 0.5
+      const forward = inHand ? lensDir : fwd.set(0, -0.04, -1).applyQuaternion(camera.quaternion).normalize()
+      const target = inHand ? lensPos : fwd2.set(0.22, -0.28, -0.1).applyQuaternion(camera.quaternion).add(tmpCam)
       const lag = num(ctx, "flash.lag")
       const k = lag > 0 ? 1 - Math.exp(-dt / lag) : 1
-      flashDir.lerp(forward, frame < 3 ? 1 : k).normalize()
-      const handPos = fwd.set(0.22, -0.28, -0.1).applyQuaternion(camera.quaternion).add(tmpCam)
+      const snap = frame < 3 || jump
+      flashDir.lerp(forward, snap ? 1 : k).normalize()
+      // The emitter follows the hand closely (it is part of the body) but not its per-frame tremor.
+      const handPos = flashPos.lerp(target, snap ? 1 : 1 - Math.exp(-dt / 0.04))
       if (frame < 3 || appliedDir.angleTo(flashDir) > 4e-4 || appliedPos.distanceToSquared(handPos) > 1e-6) {
         appliedDir.copy(flashDir)
         appliedPos.copy(handPos)

@@ -16,6 +16,8 @@ export interface VariantSpec {
   influence?: number
   loop?: boolean
   keep?: boolean
+  /** Overrides the category intent for QA when this slot aims at something different (e.g. drizzle vs dry night). */
+  intent?: string
 }
 
 export interface CategorySpec {
@@ -34,6 +36,10 @@ const v = (prompt: string, duration?: number, influence = 0.5, loop?: boolean): 
   loop,
 })
 const loopV = (prompt: string, duration: number, influence = 0.5) => v(prompt, duration, influence, true)
+const withIntent = (spec: VariantSpec, intent: string): VariantSpec => ({ ...spec, intent })
+
+const DRIZZLE_INTENT =
+  "light drizzle on pine needles in a quiet pine forest at night: soft patter on needles and branches and slow drips, low level; no traffic, road or highway hum, no crickets or birds, no heavy rain wash, no music"
 
 export const CATEGORIES: CategorySpec[] = [
   // Footsteps
@@ -55,9 +61,9 @@ export const CATEGORIES: CategorySpec[] = [
     label: "Footsteps: office carpet",
     intent: "one person walking slowly in boots on thin commercial office carpet, muffled soft thuds, small quiet room",
     variants: [
-      v("slow footsteps on thin office carpet, muffled soft thuds, quiet room, close mic", 4, 0.5),
-      v("person walking across a carpeted office at night, soft padded steps", 4, 0.4),
-      v("heavy boots on low pile carpet, dull thumps, small quiet office", 4, 0.5),
+      v("heavy boots on low pile office carpet, muffled soft thuds, quiet office, close mic", 4, 0.55),
+      v("slow heavy footsteps on thin office carpet, dull padded thumps, quiet room at night", 4, 0.5),
+      v("work boots walking across a carpeted office floor, soft muffled steps, faint fabric scuff, quiet", 4, 0.5),
     ],
   },
   {
@@ -307,13 +313,21 @@ export const CATEGORIES: CategorySpec[] = [
   {
     id: "amb-forest-night",
     group: "ambience",
-    label: "Night pine forest, distant wind",
-    intent: "quiet night pine forest ambience with distant wind in the trees, sparse and cold, no music, loopable",
+    label: "Night pine forest",
+    intent: "a quiet pine forest at night, very low level and sparse: soft needle rustle in light gusts, occasional trunk creak, branch drips, maybe one distant owl or light drizzle on needles; NO traffic, road or highway noise, no constant wind roar or broadband wash, no crickets, no music",
     loop: true,
+    // v1–v3: round 1 (v1 approved, though the user hears highway noise in it); v4–v7 sparse night, v8–v9 drizzle.
     variants: [
       loopV("pine forest at night, distant wind in the treetops, quiet and cold", 22, 0.45),
       loopV("foggy night in the woods, soft gusts through pine branches, very quiet", 22, 0.4),
       loopV("still night forest, water dripping from branches, faint distant wind", 22, 0.45),
+      // Positive-only wording: naming a sound to avoid ("no traffic", "no crickets") tends to make the model add it.
+      loopV("quiet pine forest at night, occasional soft rustle of pine needles, a slow wooden creak of a tall trunk, long silences", 22, 0.65),
+      loopV("cold still night in a pine forest, single water drops falling from branches onto needles, a faint creak, near silence", 22, 0.65),
+      loopV("a distant owl hooting once in a quiet pine forest at night, soft rustle of needles in a light gust, long pauses", 22, 0.65),
+      loopV("very quiet pine forest after rain at night, sparse drips from needles, a soft gust through branches, then stillness", 22, 0.6),
+      withIntent(loopV("light drizzle pattering softly on pine needles and branches at night, slow drips, close, quiet forest", 22, 0.65), DRIZZLE_INTENT),
+      withIntent(loopV("fine misty rain on a pine forest canopy at night, soft gentle patter on needles, slow large drips", 22, 0.6), DRIZZLE_INTENT),
     ],
   },
   {
@@ -589,3 +603,9 @@ export const CATEGORIES: CategorySpec[] = [
     ],
   },
 ]
+
+export function intentFor(categoryId: string, variant: string): string {
+  const cat = CATEGORIES.find((c) => c.id === categoryId)
+  if (!cat) return ""
+  return cat.variants[Number(variant.slice(1)) - 1]?.intent ?? cat.intent
+}

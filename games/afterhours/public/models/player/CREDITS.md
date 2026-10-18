@@ -12,12 +12,20 @@ leather work boots), hair `short02`, skinned to MPFB's `game_engine` skeleton wi
   Collection AB, Joel Palmius, Jonas Hauquier). Pack: makehuman_system_assets_cc0.zip,
   https://files.makehumancommunity.org/asset_packs/makehuman_system_assets/
 
-Animation clips baked into `janitor.glb` (retargeted onto the game_engine skeleton by `scripts/player/retarget.ts`):
-idle, walk, jog, sprint, crouch_idle, crouch_walk, jump_start, jump_air, jump_land, interact, torch.
+Motion capture baked into `janitor.glb` as the walking/idle loops (walk, walk_back, strafe_l, strafe_r, idle), cut and
+transferred by `scripts/player/mocap.ts`:
+
+- **100STYLE dataset**, "Neutral" style — Ian Mason, Sebastian Starke, Taku Komura, *Real-Time Style Modelling of
+  Human Locomotion via Feature-Wise Transformations and Local Motion Phases*, 2022. **CC BY 4.0**
+  (https://creativecommons.org/licenses/by/4.0/), https://zenodo.org/records/8127870. Attribution required: ship this
+  credit with the game. Changes: cut into loops, retargeted, head/wrist motion reduced, arm roll re-derived.
+
+Other animation clips baked into `janitor.glb` (retargeted onto the game_engine skeleton by `scripts/player/retarget.ts`):
+jog, sprint, crouch_idle, crouch_walk, jump_start, jump_air, jump_land, interact, torch (fingers are posed at
+runtime by src/player/hands.ts, not taken from any clip).
 
 - Quaternius, **Universal Animation Library (Standard)**, March 2025: **CC0 1.0** (License.txt in the pack).
   https://quaternius.com/packs/universalanimationlibrary.html — fetched from a public mirror of the itch.io Standard
   zip (github.com/NafisRayan/Animate-Rigged-Humanoid-No-Blender, `UAL1_Standard.glb`).
 
-Backpedal plays the forward loops in reverse and strafes/diagonals come from orientation warping at runtime
-(src/player/body.ts), so no other clips are used. No attribution is required for any of this.
+The MakeHuman and Quaternius parts need no attribution; 100STYLE (CC BY 4.0) does.

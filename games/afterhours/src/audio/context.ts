@@ -1,13 +1,25 @@
-// One AudioContext for the walker's sounds (footsteps, doors), created only on the first user input and never in
-// `?shot` mode (callers simply never call `unlockAudio` there). Sounds connect to `bus`: a dry path plus sends into two
-// procedural reverbs, a hard-walled interior (corridors, stairwell) and a short, open exterior, crossfaded by
-// `setSpace` as the listener moves through doorways.
+// One AudioContext for every game sound, created only on the first user input and never in `?shot` mode (callers
+// never call `unlockAudio` there). The mix (no music):
+//
+//   footsteps ─┐
+//   doors ─────┼─► world ─┬─ dry ─────────────────────► master ─► limiter ─► out
+//   ambience ──┤          ├─ room send ─► room reverb ─┘
+//   horror ────┘          └─ outdoor send ─► slap ─────┘
+//   ui ────────────────────────────────────────────────┘
+//
+// `setSpace` crossfades the two reverbs as the listener moves through doorways. Category levels are the Lab's Audio
+// knobs (`setLevels`).
+
+export type Bus = "footsteps" | "doors" | "ambience" | "horror" | "ui"
+export const BUSES: readonly Bus[] = ["footsteps", "doors", "ambience", "horror", "ui"]
 
 export type SharedAudio = {
   ctx: AudioContext
-  /** Everything ends here (dry + reverb returns). */
+  /** Everything ends here (before the limiter). */
   master: GainNode
-  /** Where sounds connect: feeds the dry path and both reverb sends. */
+  /** Category inputs. */
+  buses: Record<Bus, GainNode>
+  /** Where world sounds without a category connect (feeds the dry path and both reverb sends). */
   bus: GainNode
   /** 2 s of white noise for procedural layers. */
   noise: AudioBuffer
@@ -22,11 +34,18 @@ export function unlockAudio(): SharedAudio | null {
   if (!shared) {
     const Ctor = globalThis.AudioContext ?? (globalThis as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
     if (!Ctor) return null
-    const ctx = new Ctor()
+    const ctx = new Ctor({ latencyHint: "interactive" })
     const master = ctx.createGain()
-    master.connect(ctx.destination)
-    const bus = ctx.createGain()
-    bus.connect(master)
+    // A gentle limiter so a thunder crack over rain never clips.
+    const limiter = ctx.createDynamicsCompressor()
+    limiter.threshold.value = -6
+    limiter.knee.value = 4
+    limiter.ratio.value = 12
+    limiter.attack.value = 0.003
+    limiter.release.value = 0.25
+    master.connect(limiter).connect(ctx.destination)
+    const world = ctx.createGain()
+    world.connect(master)
     const n = ctx.sampleRate * 2
     const noise = ctx.createBuffer(1, n, ctx.sampleRate)
     const d = noise.getChannelData(0)
@@ -41,9 +60,14 @@ export function unlockAudio(): SharedAudio | null {
     outSend = ctx.createGain()
     roomSend.gain.value = 0
     outSend.gain.value = 0.12
-    bus.connect(roomSend).connect(room).connect(master)
-    bus.connect(outSend).connect(out).connect(master)
-    shared = { ctx, master, bus, noise }
+    world.connect(roomSend).connect(room).connect(master)
+    world.connect(outSend).connect(out).connect(master)
+    const buses = {} as Record<Bus, GainNode>
+    for (const b of BUSES) {
+      buses[b] = ctx.createGain()
+      buses[b].connect(b === "ui" ? master : world)
+    }
+    shared = { ctx, master, buses, bus: world, noise }
   }
   if (shared.ctx.state === "suspended") void shared.ctx.resume()
   return shared
@@ -52,6 +76,14 @@ export function unlockAudio(): SharedAudio | null {
 /** The context once unlocked and running, else null (nothing plays before user input). */
 export function audio(): SharedAudio | null {
   return shared && shared.ctx.state === "running" ? shared : null
+}
+
+/** Master and category levels (linear, eased). */
+export function setLevels(master: number, levels: Partial<Record<Bus, number>>) {
+  if (!shared) return
+  const t = shared.ctx.currentTime
+  shared.master.gain.setTargetAtTime(master, t, 0.05)
+  for (const b of BUSES) if (levels[b] !== undefined) shared.buses[b].gain.setTargetAtTime(levels[b]!, t, 0.05)
 }
 
 /**
@@ -79,7 +111,7 @@ function impulse(ctx: AudioContext, seconds: number, cutoff: number, gap: number
       // Cutoff falls from `cutoff` to a quarter of it over the tail.
       const fc = cutoff * (1 - 0.75 * (t / seconds))
       const a = 1 - Math.exp((-2 * Math.PI * fc) / rate)
-      lp += a * ((Math.random() * 2 - 1) - lp)
+      lp += a * (Math.random() * 2 - 1 - lp)
       d[i] = lp * env * 0.6
     }
     for (let k = 0; k < taps; k++) {

@@ -48,18 +48,16 @@ export function rotateWorld(b: THREE.Object3D, r: THREE.Quaternion) {
 const a = new THREE.Vector3()
 const bp = new THREE.Vector3()
 const c = new THREE.Vector3()
-const ac = new THREE.Vector3()
 const at = new THREE.Vector3()
 const ab = new THREE.Vector3()
-const n = new THREE.Vector3()
 const dir = new THREE.Vector3()
 const tmp = new THREE.Vector3()
 const rot = new THREE.Quaternion()
 
 /**
- * Two-bone IK: rotates `upper` and `mid` so `end` reaches `target` (clamped to reach). The bend plane is the current
- * (animated) one unless `pole` (a world direction the middle joint should bend toward) is given and `force`; with
- * `force` false the pole only decides a (nearly) straight chain's bend. `weight` 0..1 blends
+ * Two-bone IK: rotates `upper` and `mid` so `end` reaches `target` (clamped to reach). The middle joint bends toward
+ * `pole` when `force`; otherwise the way it is animated, easing toward `pole` only as the chain straightens. `weight`
+ * 0..1 blends
  * from the animated pose. The end bone keeps its world rotation.
  */
 export function twoBoneIK(upper: THREE.Bone, mid: THREE.Bone, end: THREE.Bone, target: THREE.Vector3, weight = 1, pole?: THREE.Vector3, force = true) {
@@ -73,22 +71,28 @@ export function twoBoneIK(upper: THREE.Bone, mid: THREE.Bone, end: THREE.Bone, t
   const goal = tmp.copy(c).lerp(target, weight)
   at.subVectors(goal, a)
   const d = THREE.MathUtils.clamp(at.length(), Math.abs(l1 - l2) + 1e-4, l1 + l2 - 1e-4)
-  // Bend plane normal: from the pole, or the current chain.
-  ac.subVectors(c, a)
-  ab.subVectors(bp, a)
-  n.crossVectors(ac, ab)
-  const bent = n.lengthSq() > 1e-6 * ac.lengthSq() * ab.lengthSq()
-  const usePole = !!pole && (force || !bent)
-  if (usePole) n.crossVectors(at, pole!)
-  if (n.lengthSq() < 1e-10) n.set(1, 0, 0)
-  n.normalize()
-  // Desired middle joint: in the plane, at angle alpha from the chord.
-  const cosA = THREE.MathUtils.clamp((l1 * l1 + d * d - l2 * l2) / (2 * l1 * d), -1, 1)
+  // Bend direction: the animated knee/elbow's offset from the chord, blended continuously toward `pole` as the chain
+  // straightens (a hard switch between the two flipped the bend plane: a knee pop once per stride).
   dir.copy(at).normalize()
-  const perp = new THREE.Vector3().crossVectors(n, dir).normalize()
-  // Keep the bend on the same side as the current knee/elbow.
-  if (!usePole && perp.dot(ab) < 0) perp.negate()
-  if (usePole && perp.dot(pole!) < 0) perp.negate()
+  ab.subVectors(bp, a)
+  const cosA = THREE.MathUtils.clamp((l1 * l1 + d * d - l2 * l2) / (2 * l1 * d), -1, 1)
+  // Measured against the *current* chord (hip → animated ankle), then made perpendicular to the goal chord.
+  const curDir = new THREE.Vector3().subVectors(c, a).normalize()
+  const animated = new THREE.Vector3().copy(ab).addScaledVector(curDir, -ab.dot(curDir))
+  animated.addScaledVector(dir, -animated.dot(dir))
+  const bend = animated.length() / Math.max(1e-6, l1)
+  const perp = new THREE.Vector3()
+  if (pole) perp.copy(pole).addScaledVector(dir, -pole.dot(dir)).normalize()
+  const k = !pole ? 1 : force ? 0 : THREE.MathUtils.smoothstep(bend, 0.02, 0.12)
+  if (k > 0 && bend > 1e-6) perp.multiplyScalar(1 - k).addScaledVector(animated.normalize(), k)
+  if (perp.lengthSq() < 1e-10) perp.set(0, -1, 0).addScaledVector(dir, -dir.y)
+  perp.normalize()
+  // A joint that must bend one way (knees forward): never let the animated bend carry it past the pole's side.
+  if (pole && !force) {
+    const pp = pole.clone().addScaledVector(dir, -pole.dot(dir)).normalize()
+    const c = perp.dot(pp)
+    if (c < 0.3) perp.lerp(pp, THREE.MathUtils.clamp((0.3 - c) / 0.6, 0, 1)).normalize()
+  }
   const midGoal = new THREE.Vector3().copy(a).addScaledVector(dir, l1 * cosA).addScaledVector(perp, l1 * Math.sqrt(1 - cosA * cosA))
   // Upper: swing current upper→mid onto upper→midGoal.
   rot.setFromUnitVectors(ab.normalize(), midGoal.clone().sub(a).normalize())

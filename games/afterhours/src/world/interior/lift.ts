@@ -7,6 +7,7 @@ import type { DocumentId } from "../../render/documents"
 import { HEAD_TOP, LOBBY, STOREYS } from "./core"
 import { ROOM_BANDS } from "./styles"
 import { STYLES } from "./styles"
+import { liftAudio } from "../../audio/hooks"
 
 // A working lift in the core: walk in, press E at the car panel (next storey up, wrapping to the ground floor) or at a
 // landing's call button. The scissor gate and landing doors close, the car lurches, grinds up or down the shaft past
@@ -284,7 +285,8 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
   let jolt = 0
   let pressed = false
   let trip = 0
-  const audio = shot ? null : createAudio()
+  // Sounds come from the game audio (src/audio/lift.ts) through this hook; silent until it exists, never in `?shot`.
+  const audio = shot ? null : liftAudio()
 
   addEventListener("keydown", (e: KeyboardEvent) => {
     if (e.code !== "KeyE" || e.repeat || e.target instanceof HTMLInputElement) return
@@ -484,7 +486,7 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
       sc.set(1, 1, 1)
       ropes.instanceMatrix.needsUpdate = true
 
-      audio?.update(phase, vel, light)
+      audio?.update(phase, vel, light, carY)
     },
     /** Automation/debug: current state. */
     state: () => ({ phase, cur, target, pos }),
@@ -495,77 +497,3 @@ const ROT_Y_PI = new THREE.Matrix4().makeRotationY(Math.PI)
 const buttonY = (k: number) => -0.15 + k * 0.085
 const indicatorX = (k: number) => DOOR.c - 0.2 + k * 0.1
 const needleAngle = (pos: number) => -1.2 + (pos / (LEVELS - 1)) * 2.4
-
-/** Motor hum, rail grind and clunks from WebAudio noise (only after the player presses E; never in automation). */
-function createAudio() {
-  let ac: AudioContext | null = null
-  let hum: GainNode | null = null
-  let grind: GainNode | null = null
-  const noise = (a: AudioContext) => {
-    const buf = a.createBuffer(1, a.sampleRate * 2, a.sampleRate)
-    const d = buf.getChannelData(0)
-    let last = 0
-    for (let i = 0; i < d.length; i++) {
-      last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02
-      d[i] = last * 3.5 + (Math.random() * 2 - 1) * 0.15
-    }
-    const src = a.createBufferSource()
-    src.buffer = buf
-    src.loop = true
-    return src
-  }
-  return {
-    unlock() {
-      if (ac) return
-      ac = new AudioContext()
-      const a = ac
-      const out = a.createGain()
-      out.gain.value = 0.5
-      out.connect(a.destination)
-      hum = a.createGain()
-      hum.gain.value = 0
-      const hf = a.createBiquadFilter()
-      hf.type = "lowpass"
-      hf.frequency.value = 140
-      const osc = a.createOscillator()
-      osc.type = "sawtooth"
-      osc.frequency.value = 48
-      osc.connect(hf).connect(hum).connect(out)
-      osc.start()
-      const n1 = noise(a)
-      n1.connect(hf)
-      n1.start()
-      grind = a.createGain()
-      grind.gain.value = 0
-      const bp = a.createBiquadFilter()
-      bp.type = "bandpass"
-      bp.frequency.value = 1300
-      bp.Q.value = 6
-      const n2 = noise(a)
-      n2.connect(bp).connect(grind).connect(out)
-      n2.start()
-    },
-    clunk(strength: number) {
-      if (!ac) return
-      const a = ac
-      const src = noise(a)
-      const f = a.createBiquadFilter()
-      f.type = "lowpass"
-      f.frequency.value = 220
-      const g = a.createGain()
-      g.gain.setValueAtTime(0.9 * strength, a.currentTime)
-      g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 0.35)
-      src.connect(f).connect(g).connect(a.destination)
-      src.start()
-      src.stop(a.currentTime + 0.4)
-    },
-    update(phase: Phase, vel: number, light: number) {
-      if (!ac || !hum || !grind) return
-      const t = ac.currentTime
-      const moving = phase === "moving" ? Math.min(1, vel / 0.85) : 0
-      hum.gain.setTargetAtTime(phase === "idle" ? 0 : 0.25 + moving * 0.35, t, 0.15)
-      grind.gain.setTargetAtTime(moving * (0.05 + 0.08 * Math.max(0, Math.sin(t * 2.3) * Math.sin(t * 0.7))) + (phase === "stall" ? 0.02 : 0), t, 0.08)
-      void light
-    },
-  }
-}

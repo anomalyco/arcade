@@ -47,7 +47,15 @@ export type Lamp = {
 }
 
 /** A climbable volume (fire-escape and access ladders). Inside it, W/S climb up/down instead of walking. */
-export type Ladder = { min: readonly [number, number, number]; max: readonly [number, number, number] }
+export type Ladder = {
+  min: readonly [number, number, number]
+  max: readonly [number, number, number]
+  /**
+   * Horizontal unit normal [x, z] of the rung plane, pointing out to the side the climber is on. Optional: by default
+   * the player takes the volume's thinner horizontal axis, signed towards the side it approached from.
+   */
+  normal?: readonly [number, number]
+}
 
 export type WorldModule = {
   update?: (dt: number, time: number, camera: THREE.PerspectiveCamera) => void

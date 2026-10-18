@@ -3,6 +3,7 @@ import { join } from "node:path"
 import type { CategorySpec, VariantSpec } from "../prompts"
 import { CATEGORIES } from "../prompts"
 import type { LoudnessInfo } from "./loudness"
+import { isApproved } from "./approved"
 
 export const ROOT = join(import.meta.dir, "..")
 export const OUT = join(ROOT, "sfx")
@@ -121,6 +122,7 @@ let writeChain: Promise<unknown> = Promise.resolve()
 export function saveManifest(m: Manifest): Promise<unknown> {
   writeChain = writeChain.then(async () => {
     const order = new Map(CATEGORIES.map((c, i) => [c.id, i]))
+    for (const s of m.sounds) if (isApproved(s.category, s.variant)) s.status = "approved"
     m.categories = CATEGORIES.map((c) => ({ id: c.id, group: c.group, label: c.label, intent: c.intent, loop: !!c.loop }))
     m.sounds.sort(
       (a, b) =>

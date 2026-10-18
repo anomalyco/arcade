@@ -90,7 +90,7 @@ export async function refinePrompt(opts: {
   const history = opts.attempts
     .map((a, i) => `Attempt ${i + 1} prompt: "${a.prompt}"\n  What it produced (score ${a.score}/5): ${a.description}\n  Issues: ${a.issues}`)
     .join("\n")
-  const prompt = `You write prompts for the ElevenLabs text-to-sound-effects model. It works best with short, literal, physical sound-design descriptions: the exact object, its material, the action performed on it, the consequence sound, mic perspective (close-mic or distant), the room/space, and the length. Never ask for music or voices unless intended. Avoid mood words like "eerie" or "cinematic" unless the intent is a designed stinger; avoid listing many unrelated elements.
+  const prompt = `You write prompts for the ElevenLabs text-to-sound-effects model. It works best with short, literal, physical sound-design descriptions: the exact object, its material, the action performed on it, the consequence sound, mic perspective (close-mic or distant), the room/space, and the length. Never ask for music or voices unless intended. Describe only what should be heard: never name sounds to avoid ("no traffic", "no crickets", "no wind roar"), because the model tends to add any sound that is mentioned. Avoid mood words like "eerie" or "cinematic" unless the intent is a designed stinger; avoid listing many unrelated elements.
 
 Target sound: "${opts.intent}"
 ${opts.goodExample ? `A prompt that worked well in this family: "${opts.goodExample}"\n` : ""}${

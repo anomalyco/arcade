@@ -1,0 +1,51 @@
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #111;
+  font: 12px/1.4 ui-monospace, Menlo, monospace;
+  color: #ddd;
+}
+#view {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+#bar {
+  position: fixed;
+  left: 8px;
+  top: 8px;
+  right: 340px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+#bar button,
+#bar select {
+  font: inherit;
+  background: #222b;
+  color: #ddd;
+  border: 1px solid #555;
+  border-radius: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+#bar button:hover {
+  background: #444b;
+}
+#hud {
+  position: fixed;
+  left: 8px;
+  bottom: 8px;
+  margin: 0;
+  padding: 6px 8px;
+  background: #000a;
+  border-radius: 4px;
+  pointer-events: none;
+  white-space: pre;
+}
+.shot #bar {
+  display: none;
+}
+#bar button.on { background: #6a5b2bcc; }
