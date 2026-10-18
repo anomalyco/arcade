@@ -60,7 +60,7 @@ export async function build(b: Builder, { pause }: StoreyContext): Promise<Store
   })
   // Corridor signage: hazard diamond at the chem store, evacuation maps, notices (doors' own plates are the kit's).
   hazardDiamond(b, -48.85, FLOOR_Y + 1.75, -1.598, 0, 1)
-  plate(b, -48.85, FLOOR_Y + 1.42, -1.598, 0, 1, 0.3, 0.09)
+  plate(b, -48.85, FLOOR_Y + 1.42, -1.598, 0, 1, 0.3, 0.09, undefined, "sign_chem_store")
   wallDoc(k, "map_evac_2", -36.6, FLOOR_Y + 1.5, -1.598, 0, 1, { pin: "tape" })
   wallDoc(k, "map_evac_2", 30.4, FLOOR_Y + 1.5, 1.598, 0, -1, { pin: "tape" })
   wallDoc(k, "notice_firedoors", -53.6, FLOOR_Y + 1.5, -1.598, 0, 1, { pin: "tape" })

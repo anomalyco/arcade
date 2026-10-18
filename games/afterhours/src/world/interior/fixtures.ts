@@ -5,7 +5,8 @@ import { materialFor } from "../../render/materials"
 import { type DoorState, SHELL } from "./plan"
 import { doorway } from "./doorway"
 import { MODELS, type ModelName, yawToward } from "../../render/models"
-import { type Builder, type Mat, CEIL_Y, FLOOR_Y, LAYER, M, T, aaFade, aaWindow, glow, paint } from "./kit"
+import { type Builder, type Mat, CEIL_Y, FLOOR_Y, LAYER, M, T, aaFade, aaWindow, addDocuments, glow, paint } from "./kit"
+import { type DocumentId, documentsByTag } from "../../render/documents"
 import { placeModels, wastebasket } from "./props"
 import { STAIN, PUDDLE, POLY, blindMats, plasticMat } from "./finishes"
 
@@ -44,7 +45,7 @@ export function eyewashStation(b: Builder, x: number, z: number, yaw: number) {
   for (const dx of [-0.06, 0.06]) b.cyl(M.safety, m.clone().multiply(T(dx, 1.06, -0.06)), 0.025, 0.02, 0.04, 12)
   b.rbox(M.safety, m, 0.26, 0.03, 0.06, 0.01, 0, 0.92, -0.17)
   b.boxM(SAFETY_GREEN, m, 0.36, 0.26, 0.006, 0, 1.75, 0.142, { cast: false })
-  b.boxM(M.stencil, m, 0.16, 0.12, 0.004, 0, 1.75, 0.137, { cast: false })
+  signDoc(b, m, "sign_eyewash", 0, 1.75, 0.139, [0.34, 0.24])
   b.rod("metal_galvanized", ptIn(m, 0, 0.98, 0.14), ptIn(m, 0, 0.0, 0.14), 0.014, 8)
   coll(b, m, 0.36, 1.1, 0.3, 0, 0.0)
 }
@@ -62,6 +63,7 @@ export function drenchShower(b: Builder, x: number, z: number, yaw: number) {
   ring.applyMatrix4(m.clone().multiply(T(0, 1.7, -0.1)))
   b.add(M.safety, ring)
   b.boxM(SAFETY_GREEN, m, 0.3, 0.3, 0.006, 0, top - 0.3, 0.215, { cast: false })
+  signDoc(b, m, "sign_drench", 0, top - 0.3, 0.212, [0.28, 0.28])
   b.collideLocal(m, [-0.06, 0, 0.14], [0.06, top, 0.26])
 }
 
@@ -254,6 +256,9 @@ export function lockers(b: Builder, x: number, z: number, yaw: number, n = 6) {
     for (let s = 0; s < 5; s++) b.boxM(M.frame, m, w - 0.12, 0.008, 0.008, u, 1.6 + s * 0.035, -0.228)
     b.boxM(M.steel, m, 0.025, 0.12, 0.03, u + w / 2 - 0.06, 1.1, -0.235)
     b.boxM(M.plate, m, 0.06, 0.03, 0.004, u, 1.85, -0.227, { cast: false })
+    const pp = new THREE.Vector3(u, 1.85, -0.229).applyMatrix4(m)
+    const nn = new THREE.Vector3(0, 0, -1).transformDirection(m)
+    addDocuments(b, [{ id: `locker_${String((k % 12) + 1).padStart(2, "0")}` as DocumentId, position: [pp.x, pp.y, pp.z], normal: [nn.x, 0, nn.z], pin: "none", curl: 0, size: [0.06, 0.03] }])
   }
   coll(b, m, len, 1.92, 0.45)
 }
@@ -318,16 +323,21 @@ export function cot(b: Builder, x: number, z: number, yaw: number) {
 }
 
 /** Chalkboard (or whiteboard) on a wall, back at +Z, width w, chalk ledge, wiped smears. */
-export function chalkboard(b: Builder, x: number, z: number, yaw: number, w = 2.4, kind: "chalk" | "white" = "chalk") {
+export function chalkboard(b: Builder, x: number, z: number, yaw: number, w = 2.4, kind: "chalk" | "white" = "chalk", doc?: DocumentId) {
   const m = frame(x, z, yaw)
   b.rbox(M.wood, m, w + 0.1, 1.2, 0.03, 0.008, 0, 1.6, 0.015)
   b.boxM(kind === "chalk" ? M.chalkboard : paint(0xd8d8d0, 0.2), m, w, 1.1, 0.006, 0, 1.6, -0.003, { cast: false })
-  if (kind === "chalk") for (const [u, v, sw] of [[-0.4, 1.8, 0.9], [0.5, 1.5, 1.1], [0, 1.3, 0.6]]) b.boxM(M.chalkSmear, m, sw!, 0.25, 0.004, u!, v!, -0.008, { cast: false })
+  if (doc) {
+    // The board's writing as a readable document over its face (front is local −Z).
+    const p = new THREE.Vector3(0, 1.6, -0.006).applyMatrix4(m)
+    const nrm = new THREE.Vector3(0, 0, -1).transformDirection(m)
+    addDocuments(b, [{ id: doc, position: [p.x, p.y, p.z], normal: [nrm.x, 0, nrm.z], pin: "none", curl: 0, size: [w, 1.1] }])
+  } else if (kind === "chalk") for (const [u, v, sw] of [[-0.4, 1.8, 0.9], [0.5, 1.5, 1.1], [0, 1.3, 0.6]]) b.boxM(M.chalkSmear, m, sw!, 0.25, 0.004, u!, v!, -0.008, { cast: false })
   b.boxM("metal_galvanized", m, w, 0.02, 0.07, 0, 1.03, -0.035)
 }
 
 /** Papers pinned to a wall in a w × h area centred at (x, y, z), back at +Z. */
-export function wallPapers(b: Builder, x: number, y: number, z: number, yaw: number, w: number, h: number, rnd: () => number, n = 8) {
+export function wallPapers(b: Builder, x: number, y: number, z: number, yaw: number, w: number, h: number, rnd: () => number, n = 8, docs?: readonly DocumentId[]) {
   // Sheets face the room (local +Z) on the FINISHED wall surface behind (x, z), found at flush; overlapping sheets are
   // kept 3.5 mm apart by the depth pass. Randoms are drawn now so the storey's sequence doesn't depend on flush order.
   const sheets = Array.from({ length: n }, () => [(rnd() - 0.5) * (w - 0.2), (rnd() - 0.5) * (h - 0.25), (rnd() - 0.5) * 0.1] as const)
@@ -342,12 +352,28 @@ export function wallPapers(b: Builder, x: number, y: number, z: number, yaw: num
     const m = T(x, y, z, yaw)
     const save = b.depthGap
     b.depthGap = 0.0035
-    sheets.forEach(([u, v, roll], k) => b.quad(M.paper, m.clone().multiply(T(u, v, d0 + 0.004 + k * 0.0006, 0, 0, roll)), 0.21, 0.28, { cast: false }))
+    // Real pinned papers (board-tagged documents, picked from the sheet's own random position).
+    const ids = docs ?? documentsByTag("board")
+    const nrm: [number, number, number] = [Math.sin(yaw), 0, Math.cos(yaw)]
+    addDocuments(
+      b,
+      sheets.map(([u, v, roll], k) => {
+        const p = new THREE.Vector3(u, v, d0).applyMatrix4(m)
+        return { id: ids[(k * 7 + Math.floor(Math.abs(u) * 97)) % ids.length]!, position: [p.x, p.y, p.z] as const, normal: nrm, rotation: roll, pin: "pin" as const }
+      }),
+    )
     b.depthGap = save
   })
 }
 
 // ------------------------------------------------------------------------------------------------ helpers
+
+/** A printed sign (render/documents) on a plate whose face at local z looks along local −Z of frame `m`. */
+function signDoc(b: Builder, m: THREE.Matrix4, id: DocumentId, u: number, v: number, z: number, size: readonly [number, number]) {
+  const p = new THREE.Vector3(u, v, z).applyMatrix4(m)
+  const n = new THREE.Vector3(0, 0, -1).transformDirection(m)
+  addDocuments(b, [{ id, position: [p.x, p.y, p.z], normal: [n.x, 0, n.z], pin: "none", curl: 0, size }])
+}
 
 function ptIn(m: THREE.Matrix4, x: number, y: number, z: number): [number, number, number] {
   const v = new THREE.Vector3(x, y, z).applyMatrix4(m)

@@ -160,33 +160,19 @@ export function buildLink(b: Builder, docs: Docs) {
   docs.add("polaroid_dish", [-0.55, FLOOR_Y + 1.63, zw + 0.0385], [0, 0, 1], { scale: 5.2, pin: "none", curl: 0, offset: 0.0005 })
   const BRONZE = M.clipboard
   b.rbox(BRONZE, T(-0.55, FLOOR_Y + 1.12, zw), 0.42, 0.26, 0.016, 0.006, 0, 0, 0.008)
-  for (let k = 0; k < 5; k++) b.boxM(M.lampShade, T(-0.55, FLOOR_Y + 1.2 - k * 0.04, zw), k === 0 ? 0.26 : 0.18 + (k % 2) * 0.08, 0.012, 0.004, 0, 0, 0.018, { cast: false })
+  docs.add("plaque_dedication", [-0.55, FLOOR_Y + 1.12, zw + 0.016], [0, 0, 1], { pin: "none", curl: 0, size: [0.4, 0.24] })
   for (const sx of [-1, 1]) for (const sy2 of [-1, 1]) b.cyl(M.lampShade, T(-0.55 + sx * 0.18, FLOOR_Y + 1.12 + sy2 * 0.1, zw + 0.018, 0, Math.PI / 2), 0.008, 0.008, 0.006, 8)
-  directory(b, 0.72, zw)
+  directory(b, docs, 0.72, zw)
 }
 
-/** Felt letter board with rows of white letters too small and blurred to read (the floor directory). */
-function directory(b: Builder, x: number, zWall: number) {
+/** Felt letter board: the floor directory, a readable document over the felt (render/documents directory_board). */
+function directory(b: Builder, docs: Docs, x: number, zWall: number) {
   const y0 = FLOOR_Y + 1.0
   const w = 0.9
   const h = 1.2
   b.box(M.wood, x - w / 2 - 0.04, y0 - 0.04, zWall, x + w / 2 + 0.04, y0 + h + 0.04, zWall + 0.05)
   b.box(M.felt, x - w / 2, y0, zWall + 0.05, x + w / 2, y0 + h, zWall + 0.052, { cast: false })
-  let seed = 3
-  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
-  for (let row = 0; row < 16; row++) {
-    const ry = y0 + h - 0.12 - row * 0.066
-    if (row === 1 || row === 6 || row === 11) continue
-    let cx = x - w / 2 + 0.06
-    const words = row === 0 ? 2 : 2 + Math.floor(rnd() * 3)
-    for (let k = 0; k < words; k++) {
-      const len = row === 0 ? 0.16 : 0.05 + rnd() * 0.13
-      if (cx + len > x + w / 2 - 0.2) break
-      b.box(M.feltText, cx, ry, zWall + 0.052, cx + len, ry + (row === 0 ? 0.03 : 0.018), zWall + 0.056, { cast: false })
-      cx += len + 0.025
-    }
-    if (row > 1) b.box(M.feltText, x + w / 2 - 0.12, ry, zWall + 0.052, x + w / 2 - 0.06, ry + 0.018, zWall + 0.056, { cast: false })
-  }
+  docs.add("directory_board", [x, y0 + h / 2, zWall + 0.052], [0, 0, 1], { pin: "none", curl: 0, size: [w - 0.02, h - 0.02] })
   b.box("metal_galvanized", x - w / 2 - 0.04, y0 + h + 0.04, zWall, x + w / 2 + 0.04, y0 + h + 0.06, zWall + 0.06)
 }
 

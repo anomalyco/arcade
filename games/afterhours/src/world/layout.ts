@@ -114,7 +114,7 @@ export const UPPER = { corridor: { min: [-54.65, -1.6] as Vec2, max: [34.65, 1.6
 export const CORRIDOR_EAST = { min: [1.6, -1.6] as Vec2, max: [34.65, 1.6] as Vec2 }
 
 /** Freight lift FL-1 between the ground floor (receiving / decon) and the Sublevel only. */
-export const FREIGHT = { car: { min: [-36.85, -20.5] as Vec2, max: [-33.25, -15.5] as Vec2 }, stops: ["SL", 0] as const }
+export const FREIGHT = { car: { min: [-36.85, -19.6] as Vec2, max: [-33.25, -14.6] as Vec2 }, stops: ["SL", 0] as const }
 
 /** Sublevel floor height (placeholder until the Sublevel is built). */
 export const SUBLEVEL_Y = -6.2

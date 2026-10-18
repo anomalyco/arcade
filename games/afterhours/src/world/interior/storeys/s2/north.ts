@@ -429,7 +429,7 @@ function coldRoom(k: K) {
   b.cyl(M.steel, m.clone().multiply(T(0, 0, 0.02, 0, Math.PI / 2)), 0.08, 0.08, 0.04, 20)
   b.cyl(P.enamel, m.clone().multiply(T(0, 0, 0.041, 0, Math.PI / 2)), 0.07, 0.07, 0.002, 20, { cast: false })
   b.boxM(M.red, m, 0.004, 0.06, 0.002, 0.015, 0.0, 0.044, { cast: false })
-  plate(b, -19.9, FLOOR_Y + 1.7, zDoor + 0.05, 0, 1, 0.4, 0.14, P.green)
+  plate(b, -19.9, FLOOR_Y + 1.7, zDoor + 0.05, 0, 1, 0.4, 0.14, P.green, "sign_cold_room")
 }
 
 /** 2-07: long aisles of steel shelving — jars in fluid and waxed core boxes, labelled by SL depth. */

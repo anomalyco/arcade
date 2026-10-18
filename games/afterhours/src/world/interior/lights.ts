@@ -83,7 +83,9 @@ export function troffers(b: Builder, cells: readonly TrofferCell[], opts: Troffe
   })
   return {
     update(time: number) {
-      for (const f of flick) f.level.value = rigLevelOf(f.lamp) ?? flicker(time, f.seed, f.amount)
+      // The Lab's Flicker scale (0 = steady; also the hygiene sweep) applies to the panels, not only the lamps.
+      const k = Number((b.ctx.settings as unknown as Record<string, unknown>)["light.flicker"] ?? 1)
+      for (const f of flick) f.level.value = rigLevelOf(f.lamp) ?? flicker(time, f.seed, f.amount * k)
     },
   }
 }

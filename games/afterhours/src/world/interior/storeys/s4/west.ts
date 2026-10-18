@@ -142,11 +142,8 @@ export async function buildWest(s: S4, pause: () => Promise<void>) {
   b.box(M.darkSteel, -26.0, FLOOR_Y + 1.2, zw + 0.022, -25.95, FLOOR_Y + 1.3, zw + 0.034)
   for (const [x0, y0, x1, y1] of [[-26.72, 0.82, -25.68, 0.86], [-26.72, 1.64, -25.68, 1.68], [-26.72, 0.82, -26.68, 1.68], [-25.72, 0.82, -25.68, 1.68]] as const)
     b.box(SPRAY, x0, FLOOR_Y + y0, zw + 0.014, x1, FLOOR_Y + y1, zw + 0.016, { cast: false })
-  for (let k = 0; k < 9; k++) {
-    const x = -26.6 + k * 0.11 + (k > 4 ? 0.06 : 0)
-    b.boxM(SPRAY, T(x, FLOOR_Y + 1.95 + (rnd() - 0.5) * 0.03, zw + 0.015, 0, 0, (rnd() - 0.5) * 0.9), 0.025, 0.14, 0.002, 0, 0, 0, { cast: false })
-  }
-  for (let k = 0; k < 6; k++) b.boxM(SPRAY, T(-26.45 + k * 0.13, FLOOR_Y + 1.78, zw + 0.015, 0, 0, (rnd() - 0.5) * 0.9), 0.022, 0.1, 0.002, 0, 0, 0, { cast: false })
+  for (let k = 0; k < 9 * 2 + 6; k++) void rnd()
+  paper(s, "spray_do_not_demo", [-26.2, FLOOR_Y + 1.88, zw + 0.013], [0, 0, 1], { pin: "none", curl: 0 })
   await pause()
 
   // ---------------------------------------------------------------- 4-04 west end, 4-04b behind the telecom room
@@ -229,10 +226,8 @@ export async function buildWest(s: S4, pause: () => Promise<void>) {
   paper(s, "calendar_oct84", [-15.47, FLOOR_Y + 1.6, 3.6], [-1, 0, 0], { pin: "pin", rotation: 0.02 })
   paper(s, "directory_extensions", [-15.47, FLOOR_Y + 1.45, 4.2], [-1, 0, 0], { pin: "tape", rotation: 0.03 })
   // Drawings pinned on the west wall (blueprints and white prints), a wall telephone list.
-  for (const [z, y, w, h, mat] of [[3.2, 1.55, 0.9, 0.62, BLUEPRINT], [4.3, 1.6, 0.9, 0.62, M.paper], [5.4, 1.5, 0.9, 0.62, BLUEPRINT], [6.6, 1.62, 0.6, 0.9, M.paper]] as const) {
-    b.box(mat, -26.14, FLOOR_Y + y - h / 2, z - w / 2, -26.136, FLOOR_Y + y + h / 2, z + w / 2, { cast: false })
-    for (let k = 0; k < 5; k++) b.box(mat === BLUEPRINT ? M.paper : M.felt, -26.136, FLOOR_Y + y - h / 2 + 0.08 + k * 0.1, z - w / 2 + 0.1, -26.134, FLOOR_Y + y - h / 2 + 0.083 + k * 0.1, z + w / 2 - 0.1 - (k % 2) * 0.2, { cast: false })
-  }
+  for (const [z, y, id, rot] of [[3.2, 1.55, "blueprint_4th_floor", 0], [4.3, 1.6, "whiteprint_ceiling", 0], [5.4, 1.5, "blueprint_4th_floor", 0.02], [6.6, 1.62, "whiteprint_ceiling", Math.PI / 2]] as const)
+    paper(s, id, [-26.135, FLOOR_Y + y, z], [1, 0, 0], { pin: "tack", rotation: rot })
   placeModels(b, "stack_chair", [{ position: [-20.3, FLOOR_Y, 7.4], yaw: yawToward(0, 1) + 0.5 }])
   placeModels(b, "space_heater", [{ position: [-22.4, FLOOR_Y, 8.8], yaw: yawToward(1, -1) }])
   placeModels(b, "cardboard_box", [

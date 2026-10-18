@@ -2,7 +2,8 @@ import * as THREE from "three/webgpu"
 import { float, floor, fract, hash, mix, positionWorld, smoothstep, vec2, vec3 } from "three/tsl"
 import type { Box, Floor, Lamp, WorldContext } from "../context"
 import { materialFor } from "../../render/materials"
-import { Builder, FLOOR_Y, TUBE, fluorescentPanel, glow, M, STOREY_H, T, type Band, corridorBands, flicker, wall } from "./kit"
+import { Builder, FLOOR_Y, TUBE, addDocuments, fluorescentPanel, glow, M, STOREY_H, T, type Band, flicker, wall } from "./kit"
+import type { DocumentId } from "../../render/documents"
 import { HEAD_TOP, LOBBY, STOREYS } from "./core"
 import { ROOM_BANDS } from "./styles"
 import { STYLES } from "./styles"
@@ -82,13 +83,10 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
     const plate = new THREE.CylinderGeometry(0.2, 0.2, 0.02, 24, 1, false, -Math.PI / 2, Math.PI)
     plate.applyMatrix4(dial)
     shaft.add(steel, plate)
-    shaft.box(M.felt, DOOR.c - 0.17, y + DOOR.h + 0.33, LOBBY.z1 - 0.032, DOOR.c + 0.17, y + DOOR.h + 0.5, LOBBY.z1 - 0.031, { cast: false })
-    for (let k = 0; k < LEVELS; k++) {
-      const a = needleAngle(k)
-      shaft.box(M.stencil, DOOR.c + Math.sin(a) * 0.15 - 0.006, y + DOOR.h + 0.32 + Math.cos(a) * 0.15, LOBBY.z1 - 0.034, DOOR.c + Math.sin(a) * 0.15 + 0.006, y + DOOR.h + 0.32 + Math.cos(a) * 0.15 + 0.02, LOBBY.z1 - 0.033, { cast: false })
-    }
-    // Storey marks painted inside the shaft beside each landing, seen through the gate on the way past.
-    for (let k = 0; k <= s; k++) shaft.box(M.stencil, DX1 + 0.25 + k * 0.1, y + 1.2, SHAFT.z0, DX1 + 0.31 + k * 0.1, y + 1.7, SHAFT.z0 + 0.003, { cast: false })
+    // Printed dial face (storey figures) on the half-round plate; the needle is a separate mesh.
+    addDocuments(shaft, [{ id: "lift_dial", position: [DOOR.c, y + DOOR.h + 0.415, LOBBY.z1 - 0.03], normal: [0, 0, -1], pin: "none", curl: 0, size: [0.34, 0.17] }])
+    // Storey number painted inside the shaft beside each landing, seen through the gate on the way past.
+    addDocuments(shaft, [{ id: `stencil_storey_${s}` as DocumentId, position: [DX1 + 0.4, y + 1.45, SHAFT.z0], normal: [0, 0, 1], pin: "none", curl: 0, scale: 0.5 }])
     shaft.box(M.safety, DX0 - 0.3, y + 2.4, SHAFT.z0, DX1 + 0.3, y + 2.5, SHAFT.z0 + 0.003, { cast: false })
     // Landing door collider: open only while the car stands here with its doors open.
     const box: Box = { min: [DX0, carFloorY(s), LOBBY.z1 - 0.02], max: [DX1, carFloorY(s) + DOOR.h, SHAFT.z0 + 0.08] }
@@ -155,16 +153,17 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
     const by = buttonY(k)
     car.cyl(M.darkSteel, P.clone().multiply(T(0, by, 0.012, 0, Math.PI / 2)), 0.026, 0.026, 0.01, 16)
     car.cyl(M.beige, P.clone().multiply(T(0, by, 0.018, 0, Math.PI / 2)), 0.019, 0.019, 0.006, 16)
-    for (let n = 0; n <= k; n++) car.box(M.stencil, panelX - 0.075 - n * 0.012, 1.05 + by - 0.012, z0 + 0.017, panelX - 0.068 - n * 0.012, 1.05 + by + 0.012, z0 + 0.018, { cast: false })
   }
+  // Printed panel legend (storey figures beside the buttons, ALARM, the key switch).
+  addDocuments(car, [{ id: "lift_panel", position: [panelX, 1.05, z0 + 0.016], normal: [0, 0, 1], pin: "none", curl: 0, size: [0.22, 0.6] }])
   car.cyl(M.red, P.clone().multiply(T(0, -0.24, 0.016, 0, Math.PI / 2)), 0.024, 0.024, 0.012, 16)
   car.cyl(M.darkSteel, P.clone().multiply(T(0, 0.25, 0.014, 0, Math.PI / 2)), 0.018, 0.018, 0.01, 12)
   car.box(M.steel, panelX - 0.003, 1.3 - 0.012, z0 + 0.02, panelX + 0.003, 1.3 + 0.012, z0 + 0.026)
   // Position indicator: a row of lamps over the door (the lit one is a separate mesh).
   for (let k = 0; k < LEVELS; k++) car.cyl(M.diffuserOff, T(indicatorX(k), DOOR.h + 0.12, z0 + 0.005, 0, Math.PI / 2), 0.022, 0.022, 0.01, 14, { cast: false })
-  // Inspection certificate frame (blank) and scuffs.
+  // Inspection certificate in its frame, and scuffs.
   car.rbox(M.frame, T(x0 + 0.008, 1.55, z1 - 0.5, Math.PI / 2), 0.24, 0.3, 0.012, 0.004)
-  car.quad(M.paper, T(x0 + 0.016, 1.55, z1 - 0.5, Math.PI / 2), 0.2, 0.26, { cast: false })
+  addDocuments(car, [{ id: "cert_elevator", position: [x0 + 0.014, 1.55, z1 - 0.5], normal: [1, 0, 0], pin: "none", curl: 0, size: [0.2, 0.26] }])
   // Sling, crosshead and the rope hitch above the car roof.
   car.box(M.darkSteel, x0 - 0.1, -0.2, 20.9, x0 - 0.04, h + 0.5, 21.06)
   car.box(M.darkSteel, x1 + 0.04, -0.2, 20.9, x1 + 0.1, h + 0.5, 21.06)
@@ -375,7 +374,7 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
 
       // ---- motion
       let shake = 0
-      let light = 0.92 * flicker(time, 3, 0.35)
+      let light = 0.92 * flicker(time, 3, 0.35 * Number((ctx.settings as unknown as Record<string, unknown>)["light.flicker"] ?? 1))
       if (phase === "closing") {
         doorT = Math.max(0, doorT - dt / 2.2)
         if (doorT === 0) {

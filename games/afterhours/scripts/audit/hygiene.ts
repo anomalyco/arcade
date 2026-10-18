@@ -440,6 +440,8 @@ await page.evaluate(() => {
   s["grade.grain"] = 0
   s["light.flicker"] = 0
   s["forest.wind"] = 0
+  // Dying lamps flicker by design (their own per-lamp amount): steady them so only geometry can shimmer.
+  for (const l of g.__interior.ctx.lamps) if (l.flicker) l.flicker = 0
 })
 const flickers: Finding[] = []
 const t0 = performance.now()

@@ -1,5 +1,5 @@
 import type * as THREE from "three/webgpu"
-import { type Builder, type Mat, FLOOR_Y, M, T, door, glow, paint, surfaceDepth } from "./kit"
+import { type Builder, type Mat, FLOOR_Y, M, T, door, glow, paint, plateDocFor, surfaceDepth } from "./kit"
 import { type DoorState, openable } from "./plan"
 import { registerDoor } from "./registry"
 
@@ -68,6 +68,7 @@ export function doorway(b: Builder, d: DoorwaySpec): string[] {
     thickness: d.insulated ? 0.1 : undefined,
     panic: d.panic,
     plate: !!d.sign,
+    plateDoc: plateDocFor(d.sign?.number),
     sound: d.leaf === "glass" ? "glass" : d.leaf === "veneer" ? "wood" : "steel",
     id,
   })
@@ -92,7 +93,7 @@ export function doorway(b: Builder, d: DoorwaySpec): string[] {
       b.rbox(KEY_BRASS, F, 0.05, 0.06, 0.02, 0.008, ux, 1.07, casing + 0.022)
     }
     // Label strip under the number plate (blank: no readable text), 6 mm off the finished face.
-    if (d.sign?.label) b.boxM(M.paper, F, 0.22, 0.05, 0.004, width / 2 + 0.22, 1.39, wf(width / 2 + 0.22, 1.39) + 0.006, { cast: false })
+    if (d.sign?.label && !plateDocFor(d.sign.number)) b.boxM(M.paper, F, 0.22, 0.05, 0.004, width / 2 + 0.22, 1.39, wf(width / 2 + 0.22, 1.39) + 0.006, { cast: false })
     // Dutch door: a service ledge on the wall beside the latch jamb (the leaf itself is one piece in the door system).
     if (d.dutch) b.rbox(M.laminateTop, F, 0.5, 0.03, 0.28, 0.008, width / 2 + 0.38, 1.05, wf(width / 2 + 0.38, 1.05) + 0.14)
   })

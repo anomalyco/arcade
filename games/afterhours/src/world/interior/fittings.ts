@@ -1,7 +1,7 @@
-import * as THREE from "three/webgpu"
 import type { Lamp } from "../context"
 import { MODELS } from "../../render/models"
-import { type Builder, CEIL_Y, FLOOR_Y, M, T, TUBE } from "./kit"
+import { type Builder, FLOOR_Y, M, T, addDocuments } from "./kit"
+import { documentsByTag } from "../../render/documents"
 import { fluoroLamp, rigLevelOf } from "./lights"
 import { placeModels } from "./props"
 
@@ -94,8 +94,12 @@ export function bulletin(b: Builder, x: number, zNominal: number) {
       [-0.08, 0.22, 0.22, 0.28, 0.0],
       [0.36, 0.25, 0.22, 0.28, -0.05],
     ] as const
-    papers.forEach(([px, py, pw, ph, r], i) => {
-      b.quad(M.paper, T(x - n * px, y0 + py, zz(0.034 + i * 0.0004), n > 0 ? 0 : Math.PI, 0, r), pw, ph, { cast: false })
-    })
+    // Real notices on the cork (board-tagged documents), pinned where the blank sheets were.
+    const ids = documentsByTag("board")
+    const seed = Math.floor(Math.abs(x) * 7 + Math.abs(zNominal) * 3)
+    addDocuments(
+      b,
+      papers.map(([px, py, , , r], i) => ({ id: ids[(seed + i * 5) % ids.length]!, position: [x - n * px, y0 + py, zz(0.032)] as const, normal: [0, 0, n] as const, rotation: n > 0 ? r : -r, pin: "pin" as const })),
+    )
   })
 }

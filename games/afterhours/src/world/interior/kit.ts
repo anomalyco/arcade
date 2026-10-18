@@ -11,7 +11,6 @@ import {
   mix,
   normalWorldGeometry,
   positionWorld,
-  pow,
   sin,
   smoothstep,
   step,
@@ -25,7 +24,7 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 import type { Lamp, WorldContext } from "../context"
 import { BUILDING } from "../layout"
 import { material, materialFor, type MaterialName } from "../../render/materials"
-import { type DocumentPlacement, documentGeometry, documentMaterial } from "../../render/documents"
+import { DOCUMENTS, type DocumentId, type DocumentPlacement, documentGeometry, documentMaterial } from "../../render/documents"
 
 /*
  * INTERIOR KIT — the shared construction API for storey agents. Storey files import everything from `./api`:
@@ -618,18 +617,18 @@ const DGAP = 0.0045
 let depthStamp = 0
 /**
  * Adds paper documents (render/documents placements, storey-local coordinates) to the builder, one primitive per sheet
- * in one merged draw: each sheet is lifted ≥ 3.5 mm off its surface and the depth pass keeps it 3.5 mm clear of
+ * in one merged draw: each sheet is lifted ≥ 4 mm off its surface and the depth pass keeps it 4 mm clear of
  * whatever it lies on, so papers never z-fight with boards, desks or walls.
  */
 export function addDocuments(b: Builder, list: readonly DocumentPlacement[]) {
   const save = b.depthGap
-  b.depthGap = 0.0035
+  b.depthGap = 0.004
   for (const p of list)
     // Flat sheets lie on model desks whose catalogue height can be a millimetre short of the real top: 5 mm there.
     b.add(
       documentMaterial(),
       documentGeometry([
-        { ...p, offset: Math.max(p.offset ?? 0, Math.abs(p.normal?.[1] ?? 0) > 0.9 ? 0.005 : 0.0035) },
+        { ...p, offset: Math.max(p.offset ?? 0, Math.abs(p.normal?.[1] ?? 0) > 0.9 ? 0.005 : 0.004) },
       ]),
       {
         worldUV: false,
@@ -685,6 +684,8 @@ function* separateDepthSteps(builders: Builder[]): Generator<void> {
     e: number
     fixed: boolean
     vol: number
+    /** Extent along x, y, z (a sheet or plate is thin along its normal). */
+    ext: [number, number, number]
     tris: DTri[]
     oy: number
     gap: number
@@ -708,6 +709,7 @@ function* separateDepthSteps(builders: Builder[]): Generator<void> {
           e,
           fixed: r.fixed,
           vol: 0,
+          ext: [0, 0, 0],
           tris: [],
           oy: b.oy,
           gap: r.gap,
@@ -813,6 +815,7 @@ function* separateDepthSteps(builders: Builder[]): Generator<void> {
       if (z > z1) z1 = z
     }
     p.vol = Math.max(x1 - x0, 0.001) * Math.max(y1 - y0, 0.001) * Math.max(z1 - z0, 0.001)
+    p.ext = [x1 - x0, y1 - y0, z1 - z0]
     p.tris = rectsOf(pi)
     for (const t of p.tris) put(buckets, t)
   }
@@ -1053,6 +1056,9 @@ function* separateDepthSteps(builders: Builder[]): Generator<void> {
             if (!q.fixed && (q.vol < p.vol || (q.vol === p.vol && o.pr > pi))) return
           }
           const dc = (t.c - o.c) * t.s
+          // A two-sided sheet (front and back in one plane, like a document) only ever moves the way it already stands proud: its back face must not
+          // drag it through the surface it lies on.
+          if (dc < 0 && p.ext[t.ax]! < 0.0015 && p.tris.some((r) => r.ax === t.ax && r.s === -t.s)) return
           const slot = t.ax * 2 + (t.s > 0 ? 1 : 0)
           if (p.gap - dc > need[slot]!) {
             need[slot] = p.gap - dc
@@ -1078,7 +1084,6 @@ function* separateDepthSteps(builders: Builder[]): Generator<void> {
       if (!any) continue
       moved++
       next[pi] = 1
-      const a = p.pt.pos
       for (const t of p.tris) remove(buckets, t)
       p.tris = rectsOf(pi)
       for (const t of p.tris) put(buckets, t)
@@ -1779,6 +1784,13 @@ export function wall(
     else b.collide(c0, base, s0, c1, top, s1)
   }
   for (const o of sorted) {
+    // The head over every opening is solid too (it stopped nothing before: a wall whose openings reach above head
+    // height, like the roof-level shaft walls, could be walked through over a door).
+    const head = Math.max(base, FLOOR_Y + o.top)
+    if (top - head > 1e-3) {
+      if (axis === "x") b.collide(o.a0, head, c0, o.a1, top, c1)
+      else b.collide(c0, head, o.a0, c1, top, o.a1)
+    }
     if (o.bottom === undefined) continue
     if (axis === "x") b.collide(o.a0, base, c0, o.a1, FLOOR_Y + o.bottom, c1)
     else b.collide(c0, base, o.a0, c1, FLOOR_Y + o.bottom, o.a1)
@@ -1816,6 +1828,8 @@ export type DoorOpts = {
   id?: string
   /** Leaf thickness (default 45 mm; insulated cold-room doors ~0.1). */
   thickness?: number
+  /** Printed room plate (render/documents id) over the number plate on the front face. */
+  plateDoc?: DocumentId
 }
 
 const leafTemplates = new Map<string, THREE.Object3D[]>()
@@ -1866,6 +1880,24 @@ function leafTemplate(
   const meshes = b.group.children.filter((c) => (c as THREE.Mesh).isMesh)
   leafTemplates.set(key, meshes)
   return meshes
+}
+
+/**
+ * The printed room plate for a door sign number, if the document library has one: "1-09" → door_1_09, "1-01v" →
+ * door_1_01v, "WCM-2" → door_wc_m2, "WCW-2" → door_wc_w2, "JC-2" → door_jc_2, "2-S" → door_st_2, "EL-2" → plate_el2,
+ * "TC-2" → plate_tc2.
+ */
+export function plateDocFor(number: string | undefined): DocumentId | undefined {
+  if (!number) return undefined
+  const n = number.trim()
+  let id: string | undefined
+  let m: RegExpMatchArray | null
+  if ((m = n.match(/^(\d)-(\d+)([a-z]*)$/i))) id = `door_${m[1]}_${m[2]!.padStart(2, "0")}${m[3]!.toLowerCase()}`
+  else if ((m = n.match(/^WC([MW])-(\d)$/i))) id = `door_wc_${m[1]!.toLowerCase()}${m[2]}`
+  else if ((m = n.match(/^JC-(\d)$/i))) id = `door_jc_${m[1]}`
+  else if ((m = n.match(/^(\d)-S$/i))) id = `door_st_${m[1]}`
+  else if ((m = n.match(/^(EL|TC)-(\d)$/i))) id = `plate_${m[1]!.toLowerCase()}${m[2]}`
+  return id && id in DOCUMENTS ? (id as DocumentId) : undefined
 }
 
 /**
@@ -1927,7 +1959,12 @@ export function door(b: Builder, x: number, z: number, o: DoorOpts): string[] {
     if (o.plate ?? true)
       for (const sd of [1, -1] as const) {
         const d = faceAt(w / 2 + 0.22, 1.5, sd)
-        b.boxM(M.plate, F, 0.16, 0.1, 0.012, w / 2 + 0.22, 1.5, sd * (d + 0.006))
+        // The room's printed plate (render/documents) on the sign side, flat on the wall: real, readable words.
+        if (!(sd > 0 && o.plateDoc)) b.boxM(M.plate, F, 0.16, 0.1, 0.012, w / 2 + 0.22, 1.5, sd * (d + 0.006))
+        else {
+          const v = new THREE.Vector3(w / 2 + 0.22, 1.5, d).applyMatrix4(F)
+          addDocuments(b, [{ id: o.plateDoc, position: [v.x, v.y, v.z], normal: [Math.sin(o.rot), 0, Math.cos(o.rot)], pin: "none", curl: 0, size: [0.155, 0.095] }])
+        }
       }
   })
   const lw = w / leaves - (leaves === 2 ? 0.004 : 0.006)

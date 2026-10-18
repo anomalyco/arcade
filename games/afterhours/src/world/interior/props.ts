@@ -1,6 +1,7 @@
 import * as THREE from "three/webgpu"
 import { float, smoothstep, uv } from "three/tsl"
 import { MODELS, type ModelInfo, type ModelName, type Placement, loadModel, modelCollider, yawToward } from "../../render/models"
+import { decalBias } from "../../render/materials"
 import { type Builder, type Mat, FLOOR_Y, M, T } from "./kit"
 
 // Real models for the interior's furniture and props (render/models.ts). Colliders and contact shadows are placed
@@ -13,9 +14,7 @@ export const blobMat = (() => {
   const m = new THREE.MeshBasicNodeMaterial({ color: 0x000000, transparent: true, depthWrite: false })
   const d = uv().sub(0.5).length().mul(2)
   m.opacityNode = float(1).sub(smoothstep(0.35, 1, d)).mul(0.55)
-  m.polygonOffset = true
-  m.polygonOffsetFactor = -2
-  m.polygonOffsetUnits = -2
+  decalBias(m, 2) // pulls the decal toward the camera whatever the depth convention (reversed-Z)
   m.name = "interior_contact_blob"
   return m
 })()

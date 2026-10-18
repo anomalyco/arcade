@@ -101,3 +101,5 @@
 - Lamps: s0 52 → merge window lamps at (33.6,1.4,17.6/18.3) + drop 2 of 3 warning lamps; s3 51 → merge 9 window lamps to ≤ 5.
 - Boot gate: longest task < 300 ms, ≤ 180 shader builds, boot < 8 s normal.
 - Interior: waist-high collider ~1 m inside the west façade door z≈-10 (x -53.66..-53.34, z -10.06..-9.74, y 0.16–0.79), probably a prop: move it.
+- Interior leftovers: small text stand-ins in storey tables (jar/file labels, tags, s1 in/out board, s0 time-clock rack, s4 name cards); compound booth item; merge closed doors indoors; interior build 2.8 s (target 1.5); west door prop (verify); render sweep flags: s1 1-25 window view, 0-35f + s4 STAIR doors near limit.
+- Lighting: s0 lamps at 0-10 and corner (-20.83,-9.75), 0-16, (-43.12,16.13) still pulse with lamp flicker zeroed in the hygiene sweep: find cause.

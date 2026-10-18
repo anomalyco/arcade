@@ -278,7 +278,7 @@ export async function build(b: Builder, { pause }: StoreyContext): Promise<Store
   overheadProjector(b, -34.0, FLOOR_Y + 0.765, -7.4, face(1, 0))
   for (let k = 0; k < 4; k++) ashtray(b, -33.6 + k * 1.3, FLOOR_Y + 0.765, -7.4 + (k % 2 ? 0.25 : -0.25), rnd, k + 1)
   paper.flat("memo_coffee", -30.2, FLOOR_Y + 0.7665, -7.0, 0.6)
-  chalkboard(b, G[3] + 0.06 + 0.03, -7.2, face(1, 0), 3.0)
+  chalkboard(b, G[3] + 0.06 + 0.03, -7.2, face(1, 0), 3.0, "chalk", "chalkboard_agenda")
   projectionScreen(b, G[3] + 0.35, -7.2, face(1, 0), 2.2, 1.0)
   put("wall_clock", { position: [G[5] - 0.06 - 0.025, FLOOR_Y + 2.15, -7.4], yaw: face(-1, 0), collide: false, blob: 0 })
   verticalBlinds(b, "x", -1.84, -36.8, -28.85, rnd, { open: 1.1 })

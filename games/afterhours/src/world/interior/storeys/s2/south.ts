@@ -156,7 +156,7 @@ export async function buildSouth(k: K, pause: () => Promise<void>): Promise<Room
   sinkCounter(b, -28.4, 9.735 + 0.31, Math.PI, 1.8, 2, "epoxy")
   eyewashStation(b, -26.8, 9.735 + 0.145, Math.PI)
   drenchShower(b, -25.3, 9.735 + 0.26, Math.PI)
-  chalkboard(b, -36.0 + 0.03, 15.7, yawToward(1, 0), 3.6)
+  chalkboard(b, -36.0 + 0.03, 15.7, yawToward(1, 0), 3.6, "chalk", "chalkboard_titration")
   peninsula(b, -34.4, 15.7, Math.PI / 2, 2.4, { sink: true })
   for (const z of [14.0, 18.0])
     for (const x of [-30.6, -24.9]) {
@@ -196,7 +196,7 @@ export async function buildSouth(k: K, pause: () => Promise<void>): Promise<Room
     const lv = shelfUnit(b, rx, z, yawToward(-1, 0), 1.2, 0.5)
     for (const y of lv.slice(1, 4)) for (let i = 0; i < 4; i++) sensorHead(k, rx - 0.02, y, z - 0.42 + i * 0.28, false)
   }
-  plate(b, G[9] - 0.06 - 0.002, FLOOR_Y + 2.35, 7.1, -1, 0, 0.6, 0.14, P.hazYellow)
+  plate(b, G[9] - 0.06 - 0.002, FLOOR_Y + 2.35, 7.1, -1, 0, 0.6, 0.14, P.hazYellow, "sign_sensor_store")
   for (const [x, z, r] of [[-6.2, 18.5, 0.42], [-6.4, 17.3, 0.32], [-7.4, 18.6, 0.35]] as const) cableReel(k, x, z, r)
   corkBoard(k, G[9] - 0.06, FLOOR_Y + 1.5, 12.0, -1, 0, 1.5, 0.9, ["work_order_night", "directory_extensions", "printout_greenbar", "polaroid_dish", "card_extensions"])
   wallDoc(k, "calendar_oct84", G[9] - 0.06, FLOOR_Y + 1.6, 3.5, -1, 0, { pin: "tack" })

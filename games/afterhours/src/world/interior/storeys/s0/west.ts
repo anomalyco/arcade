@@ -274,7 +274,7 @@ function changeAndDecon(b: Builder, docs: Docs): RoomHandle[] {
     if (k === 3 || k === 7) continue
     b.rbox(k % 2 ? M.jugWhite : M.beige, T(u, v - 0.07, -14.265), 0.05, 0.08, 0.012, 0.004)
   }
-  docs.wall("board_dosimeter", bx, FLOOR_Y + 2.0, -14.208, 0, 1, { pin: "none", curl: 0 })
+  docs.wall("board_dosimeter", bx, FLOOR_Y + 2.0, -14.152, 0, -1, { pin: "none", curl: 0 })
   docs.wall("notice_sublevel", -37.06, FLOOR_Y + 1.55, -15.3, -1, 0, { pin: "tape" })
   return [r12, r13, r14, r15]
 }
@@ -286,20 +286,25 @@ function freightLift(b: Builder, docs: Docs) {
   const y = FLOOR_Y
   const c = FL1.car
   const xs = -33.0
-  const zs = -15.3
+  const zs = c.z1 + 0.2
+  // Shaft north line: on the facade while the car runs up to it, else its own wall behind the dock platform.
+  const zN = Math.max(-21.65, c.z0 - 0.1)
+  const gz0 = c.z0 + 0.9
+  const gz1 = c.z1 - 0.9
   // West wall (clean side | shaft, gate) — the same line continues south between 0-13 and receiving.
-  P(b, "z", -37.0, -21.65, -14.15, [ROOM_BANDS, PLANT_BANDS_], [{ kind: "cased", from: -19.6, to: -16.4, head: 2.4 }], 0.15)
-  P(b, "z", -37.0, -14.0, -1.75, [ROOM_BANDS, BLOCK_BANDS], [], 0.15)
+  P(b, "z", -37.0, -21.65, zs + 1.15, [ROOM_BANDS, PLANT_BANDS_], [{ kind: "cased", from: gz0, to: gz1, head: 2.4 }], 0.15)
+  P(b, "z", -37.0, zs + 1.3, -1.75, [ROOM_BANDS, BLOCK_BANDS], [], 0.15)
   P(b, "x", zs, -36.925, xs + 0.075, [PLANT_BANDS_, BLOCK_BANDS], [{ kind: "cased", from: -36.4, to: -33.6, head: 2.4 }], 0.15)
-  // East wall starts behind the dock leveller (the shut roll-up opens onto it at dock height).
-  P(b, "z", xs, -20.5, zs - 0.075, [PLANT_BANDS_, BLOCK_BANDS], [], 0.15)
-  dockLeveller(b)
+  if (zN > -21.5) P(b, "x", zN - 0.075, -36.925, xs + 0.075, [BLOCK_BANDS, PLANT_BANDS_], [], 0.15)
+  // East wall from the shaft's north line (the dock platform runs along its north side).
+  P(b, "z", xs, zN > -21.5 ? zN - 0.15 : -20.5, zs - 0.075, [PLANT_BANDS_, BLOCK_BANDS], [], 0.15)
+  dockPlatform(b, zN > -21.5 ? zN - 0.15 : c.z0)
   // Pit floor under the car (dark), car platform flush with the landings, sill plates.
-  b.box(M.concrete, -36.925, y - 0.4, -21.61, xs - 0.075, y - 0.3, zs - 0.075, { cast: false, skip: "y" })
+  b.box(M.concrete, -36.925, y - 0.4, zN > -21.5 ? zN : -21.61, xs - 0.075, y - 0.3, zs - 0.075, { cast: false, skip: "y" })
   b.box(CHECKER, c.x0, y - 0.12, c.z0, c.x1, y + 0.004, c.z1)
   b.walk(c.x0, c.z0, c.x1, c.z1, y + 0.004)
-  b.box(CHECKER, -36.925, y - 0.05, -19.6, c.x0, y + 0.004, -16.4)
-  b.walk(-36.925, -19.6, c.x0, -16.4, y + 0.004)
+  b.box(CHECKER, -36.925, y - 0.05, gz0, c.x0, y + 0.004, gz1)
+  b.walk(-36.925, gz0, c.x0, gz1, y + 0.004)
   b.box(CHECKER, -36.4, y - 0.05, c.z1, -33.6, y + 0.004, zs - 0.075)
   b.walk(-36.4, c.z1, -33.6, zs - 0.075, y + 0.004)
   // Car: corner posts, crosshead, plywood-lined north and east sides with bumper rails, steel canopy.
@@ -325,10 +330,10 @@ function freightLift(b: Builder, docs: Docs) {
   // Light over the receiving-side gate.
   bulkhead(b, -35.0, y + 2.75, zs + 0.075, 0, 1, true, 8, { range: 5 })
   // Real gates in the door system (kit liftGate): locked with the sublevel keycard, they fold when unlocked.
-  liftGate(b, { axis: "z", at: -37.0, from: -19.6, to: -16.4, id: "FL-1W", state: "keycard:sublevel", room: "FL-1", sign: { number: "FL-1", label: "FREIGHT — SUBLEVEL" } })
+  liftGate(b, { axis: "z", at: -37.0, from: gz0, to: gz1, id: "FL-1W", state: "keycard:sublevel", room: "FL-1", sign: { number: "FL-1", label: "FREIGHT — SUBLEVEL" } })
   liftGate(b, { axis: "x", at: zs, from: -36.4, to: -33.6, id: "FL-1S", state: "keycard:sublevel", room: "FL-1", sign: { number: "FL-1", label: "FREIGHT — SUBLEVEL" } })
   // Position indicator over each gate (0 lit), key-switch call station, hazard floor stripes, signs.
-  for (const [ix, iz, yaw] of [[-37.09, -18.0, -Math.PI / 2], [-35.0, zs + 0.09, 0]] as const) {
+  for (const [ix, iz, yaw] of [[-37.09, (gz0 + gz1) / 2, -Math.PI / 2], [-35.0, zs + 0.09, 0]] as const) {
     const m = T(ix, y + 2.62, iz, yaw)
     b.rbox(M.darkSteel, m, 0.42, 0.14, 0.05, 0.01)
     b.boxM(M.hazardOff, m, 0.1, 0.07, 0.004, -0.09, 0, 0.026, { cast: false })
@@ -349,32 +354,77 @@ const PLANT_BANDS_: Band[] = [[0, 99, "concrete_wall"]]
 /** Collapsible scissor gate filling an opening (axis: the wall's axis, at its line, from..to), locked shut. */
 
 /**
- * Behind the shut roll-up (x −35.5..−32.3, sill at dock height 1.25): a steel dock leveller across the door between
- * the facade and the FL-1 car's north side, then steps down into receiving at its east end, guard rail along the drop.
+ * Dock platform inside the north wall at dock height (1.25 m), behind all three dock doors (shut roll-up, open
+ * roll-up, man door): x −36.94..−23.2, 1.5 m deep (only to the FL-1 shaft's north wall where the shaft reaches
+ * further north: `zShaft`). Checker-plate levellers in front of the roll-ups, a 7-riser stair down to receiving
+ * between the open roll-up and the man door, pipe guard rail along the drop with a collider.
  */
-function dockLeveller(b: Builder) {
+function dockPlatform(b: Builder, zShaft: number) {
   const y = FLOOR_Y
   const top = 1.25
-  const L = { x0: -35.6, x1: -31.85, z0: -21.61, z1: -20.52 }
-  b.box(M.concrete, L.x0, y, L.z0, L.x1, top - 0.02, L.z1, { skip: "y" })
-  b.box(CHECKER, L.x0, top - 0.02, L.z0, L.x1, top, L.z1)
-  b.box(M.safety, L.x0, top - 0.02, L.z1 - 0.05, L.x1, top + 0.002, L.z1 + 0.002, { cast: false })
-  b.walk(L.x0, L.z0 - 0.05, L.x1, L.z1, top)
-  b.collide(L.x0, y, L.z0, L.x1, top - 0.05, L.z1)
-  // Steps south from the leveller's east end into receiving (6 risers).
-  const sx0 = -32.9
-  const sx1 = -31.85
-  for (let k = 0; k < 6; k++) {
-    const t = top - (k + 1) * ((top - y) / 7)
-    const z0 = L.z1 + k * 0.28
-    b.box("concrete_floor_dry", sx0, y, z0, sx1, t, z0 + 0.28, { skip: "y" })
-    b.box(M.safety, sx0, t - 0.03, z0 + 0.25, sx1, t + 0.002, z0 + 0.282, { cast: false })
-    b.walk(sx0, z0, sx1, z0 + 0.28, t)
+  const z0 = -21.61
+  const zF = -20.11
+  const xs = -33.0 + 0.075
+  // West part (behind the shut roll-up, over the shaft) and east part.
+  const parts = [
+    { x0: -36.925, x1: xs, z1: Math.min(zF, zShaft) },
+    { x0: xs, x1: -23.2, z1: zF },
+  ]
+  for (const p of parts) {
+    if (p.z1 - z0 < 0.3) continue
+    b.box(M.concrete, p.x0, y, z0, p.x1, top - 0.006, p.z1, { skip: "y" })
+    b.box("concrete_floor_dry", p.x0, top - 0.006, z0, p.x1, top, p.z1, { skip: "y" })
+    b.walk(p.x0, z0 - 0.06, p.x1, p.z1, top)
+    b.collide(p.x0, y, z0, p.x1, top - 0.05, p.z1)
+    b.box(M.safety, p.x0, top - 0.03, p.z1 - 0.06, p.x1, top + 0.004, p.z1 + 0.003, { cast: false })
   }
-  // Pipe rail along the steps' open (east) side and over the leveller's south edge where it meets receiving.
-  b.rod("metal_galvanized", [sx1 + 0.03, top + 1.0, L.z1], [sx1 + 0.03, y + 1.0 + (top - y) / 7, L.z1 + 1.68], 0.022, 8)
-  for (const z of [L.z1 + 0.05, L.z1 + 1.6]) b.rod("metal_galvanized", [sx1 + 0.03, y, z], [sx1 + 0.03, y + 1.0 + (top - y) * (1 - (z - L.z1) / 1.9), z], 0.02, 8)
-  b.collide(sx1, y, L.z1, sx1 + 0.06, top + 1.0, L.z1 + 1.68)
+  // Checker-plate levellers flush in the platform in front of each roll-up (lip on the door sill).
+  for (const [u0, u1] of [[-35.5, -32.3], [-29.7, -26.5]] as const) {
+    const zl = u0 < -33 ? Math.min(zF, zShaft) : zF
+    b.box(CHECKER, u0 + 0.1, top - 0.004, z0, u1 - 0.1, top + 0.004, Math.min(z0 + 1.8, zl - 0.1), { cast: false })
+  }
+  // Stair down to receiving: 7 risers of 0.156 m, 0.28 m goings, between the open roll-up and the man door.
+  const sx0 = -26.25
+  const sx1 = -25.05
+  const n = 7
+  const rise = (top - y) / n
+  for (let k = 1; k < n; k++) {
+    const t = top - k * rise
+    const za = zF + (k - 1) * 0.28
+    b.box("concrete_floor_dry", sx0, y, za, sx1, t, za + 0.28, { skip: "y" })
+    b.box(M.safety, sx0 + 0.02, t - 0.025, za + 0.25, sx1 - 0.02, t + 0.003, za + 0.283, { cast: false })
+    b.walk(sx0, za, sx1, za + 0.28, t)
+  }
+  const zEnd = zF + (n - 1) * 0.28
+  // Stair handrails both sides (posts on treads, continuous rail, returns down at the ends).
+  for (const x of [sx0 - 0.03, sx1 + 0.03]) {
+    b.rod("metal_galvanized", [x, top + 0.9, zF - 0.3], [x, top + 0.9, zF], 0.021, 8)
+    b.rod("metal_galvanized", [x, top + 0.9, zF], [x, y + 0.9 + rise, zEnd], 0.021, 8)
+    b.rod("metal_galvanized", [x, y + 0.9 + rise, zEnd], [x, y + 0.9, zEnd + 0.3], 0.021, 8)
+    for (const z of [zF - 0.25, zF + 0.7, zF + 1.4]) {
+      const ty = z < zF ? top : top - Math.ceil((z - zF) / 0.28) * rise
+      b.rod("metal_galvanized", [x, ty, z], [x, ty + 0.9 + (z < zF ? 0 : 0.05), z], 0.02, 8)
+    }
+    b.collide(x - 0.03, y, zF, x + 0.03, top + 0.9, zEnd)
+  }
+  // Guard rail along the platform's drop (gap at the stair), posts every ~1.5 m, mid rail; collider to 1.1 m.
+  const runs: [number, number, number][] = [
+    [-36.9, xs, Math.min(zF, zShaft)],
+    [xs, sx0 - 0.03, zF],
+    [sx1 + 0.03, -23.2, zF],
+  ]
+  for (const [a, c2, zr] of runs) {
+    if (c2 - a < 0.3) continue
+    const z = zr - 0.04
+    b.rod("metal_galvanized", [a, top + 1.0, z], [c2, top + 1.0, z], 0.021, 8)
+    b.rod("metal_galvanized", [a, top + 0.5, z], [c2, top + 0.5, z], 0.014, 8)
+    const nPost = Math.max(1, Math.round((c2 - a) / 1.5))
+    for (let k = 0; k <= nPost; k++) {
+      const x = a + 0.03 + ((c2 - a - 0.06) * k) / nPost
+      b.rod("metal_galvanized", [x, top, z], [x, top + 1.0, z], 0.02, 8)
+    }
+    b.collide(a, top, z - 0.04, c2, top + 1.1, z + 0.04)
+  }
 }
 
 // ------------------------------------------------------------------------------------------------ 0-16 receiving
@@ -388,10 +438,8 @@ function receiving(b: Builder, docs: Docs): RoomHandle[] {
     { a0: -29.7, a1: -26.5, bottom: 1.09, top: 99 },
     { a0: -24.8, a1: -23.7, bottom: 1.09, top: 3.2 },
   ])
-  const BAY = { x0: -31.3, x1: -23.2, z1: -15.5 }
-  ceiling(b, -37.0, -21.65, BAY.x0, -9.75)
-  ceiling(b, BAY.x0, BAY.z1, BAY.x1, -9.75)
-  ceiling(b, BAY.x1, -21.65, -20.8, -9.75)
+  // No suspended ceiling over the dock platform (1.25 m up: it would leave 1.85 m headroom); open to the slab.
+  ceiling(b, -37.0, -20.0, -20.8, -9.75)
   troffers(b, [
     { x: -30.0, z: -12.0, on: true },
     { x: -34.2, z: -12.0, on: false },
@@ -399,18 +447,6 @@ function receiving(b: Builder, docs: Docs): RoomHandle[] {
     { x: -22.2, z: -18.0, on: false },
   ], { perLamp: 1, intensity: 11 })
   P(b, "z", -20.8, -21.65, -9.75, [BLOCK_BANDS, ROOM_BANDS])
-  // Steps up to the dock floor at the bay's back edge, a guard rail, bumper.
-  for (let k = 0; k < 6; k++) {
-    const top = y + (k + 1) * ((1.25 - y) / 6)
-    const z1 = BAY.z1 + 1.68 - k * 0.28
-    b.box("concrete_floor_dry", -24.55, y, z1 - 0.28, -23.35, top, z1, { skip: "y" })
-    b.box(M.safety, -24.55, top - 0.03, z1 - 0.03, -23.35, top + 0.002, z1 + 0.002, { cast: false })
-    b.walk(-24.55, z1 - 0.28, -23.35, z1, top)
-  }
-  for (const x of [-24.6, -23.3]) b.rod("metal_galvanized", [x, y + 1.0, BAY.z1 + 1.65], [x, 1.25 + 1.0, BAY.z1 + 0.05], 0.022, 8)
-  for (const x of [-31.0, -28.2, -25.4]) b.rod(M.safety, [x, y, BAY.z1 + 0.05], [x, 1.25 + 1.05, BAY.z1 + 0.05], 0.03, 8)
-  b.rod(M.safety, [BAY.x0 + 0.3, 2.3, BAY.z1 + 0.05], [-24.6, 2.3, BAY.z1 + 0.05], 0.025, 8)
-
   // Pallets with freight, hand truck, shelves, drums, a platform scale, the foreman's desk with the clipboard.
   placeModels(b, "pallet", [
     { position: [-30.0, y, -12.6], yaw: 0.1 },
@@ -512,7 +548,7 @@ function lab(b: Builder, docs: Docs): RoomHandle[] {
   const wz = z0
   b.box(M.wood, -24.8, y + 1.07, wz, -22.4, y + 2.25, wz + 0.04)
   b.box(M.chalkboard, -24.75, y + 1.12, wz + 0.04, -22.45, y + 2.2, wz + 0.045, { cast: false })
-  for (const [x, h, w, hh, r] of [[-24.0, 1.85, 1.2, 0.42, 0.05], [-23.1, 1.58, 1.1, 0.5, -0.04]] as const) b.quad(M.chalkSmear, T(x, y + h, wz + 0.0465, 0, 0, r), w, hh, { cast: false })
+  docs.wall("chalkboard_wiped", -23.6, y + 1.66, wz + 0.045, 0, 1, { pin: "none", curl: 0, size: [2.3, 1.08] })
   b.box(M.cabinet, x0, y, -3.7, x0 + 0.5, y + 2.0, -2.0)
   b.quad(M.wireGlass, T(x0 + 0.503, y + 1.45, -2.85, Math.PI / 2), 1.5, 1.0, { cast: false })
   for (const sy of [1.05, 1.45, 1.85]) for (let k = 0; k < 6; k++) b.cyl(k % 2 ? M.jugBrown : M.jugWhite, T(x0 + 0.35, y + sy + 0.07, -3.5 + k * 0.25), 0.04, 0.04, 0.14, 10)

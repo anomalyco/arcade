@@ -1,7 +1,8 @@
 import { BUILDING, CORE, ROOF_Y } from "../layout"
 import { STYLES } from "./styles"
 import { doorway } from "./doorway"
-import { TUBE, type Band, type Builder, CEIL_Y, DOOR_W, FLOOR_Y, M, PANEL_ON, STOREY_H, T, ceiling, corridorBands, door, doorOpening, troffer, wall, LAYER } from "./kit"
+import { TUBE, type Band, type Builder, CEIL_Y, FLOOR_Y, M, PANEL_ON, STOREY_H, T, addDocuments, ceiling, doorOpening, troffer, wall, LAYER } from "./kit"
+import type { DocumentId } from "../../render/documents"
 
 // Structure shared by every storey: the floor slabs of storeys 1–4 (and the one under the roof deck), the switchback
 // stair from the ground floor to the roof, and on every storey the hall from the corridor to the stair door and the
@@ -92,15 +93,19 @@ function landing(b: Builder, i: number) {
   b.walk(ST.wellX0, ST.z0, xEast, zEast, y)
   // Edge nosings along the drop into the flights below.
   b.box(M.darkSteel, ST.x0, y - 0.03, ST.zFlight - 0.04, ST.wellX0, y + 0.003, ST.zFlight + 0.003)
-  // Storey number: i + 1 painted bars on the west wall, abstract (no readable figures).
-  const zc = 17.4
-  for (let k = 0; k <= i; k++) {
-    const z = zc - (i * 0.13) / 2 + k * 0.13
-    b.box(M.stencil, ST.x0, y + 1.45, z - 0.04, ST.x0 + 0.004, y + 2.05, z + 0.04, { cast: false })
-  }
-  b.box(M.stencil, ST.x0, y + 1.32, zc - 0.5, ST.x0 + 0.004, y + 1.37, zc + 0.5, { cast: false })
+  // Storey number stencilled on the west wall (G, 1..4, ROOF).
+  addDocuments(b, [{ id: `stencil_storey_${i}` as DocumentId, position: [ST.x0, y + 1.75, 17.4], normal: [1, 0, 0], pin: "none", curl: 0 }])
   if (roof) {
     lightBulkhead(b, -42.3, y + 2.4, ST.z0 + 0.07, 0, true)
+    // No flight continues up from the roof landing: guard its open edge over the storey-4 west flight (pipe rail,
+    // mid rail and balusters, meeting the well return), with a collider to rail height.
+    const z = ST.zFlight + 0.03
+    const xa = ST.x0 + 0.06
+    const xb = ST.wellX0 - 0.03
+    b.rod(M.darkSteel, [xa, y + 1.0, z], [xb, y + 1.0, z], 0.021)
+    b.rod(M.darkSteel, [xa, y + 0.5, z], [xb, y + 0.5, z], 0.012)
+    for (let x = xa; x <= xb + 1e-3; x += (xb - xa) / Math.max(1, Math.round((xb - xa) / 0.55))) b.rod(M.darkSteel, [x, y, z], [x, y + 1.0, z], 0.014, 8)
+    b.collide(ST.x0, y, ST.zFlight, ST.wellX0, y + 1.1, ST.zFlight + 0.06)
     return
   }
   // Bulkhead light over the door, emergency twin-head on the west wall.
@@ -292,7 +297,10 @@ function midLight(b: Builder, i: number, yMid: number) {
   for (let k = 0; k < 7; k++) {
     const px = ST.x0 + 0.3 + rnd() * 2.8
     const pz = ST.zMid + 0.4 + rnd() * 2.8
-    b.quad(M.paper, T(px, yMid + 0.003 + k * 0.0004, pz, rnd() * 6, -Math.PI / 2), 0.21 * (0.6 + rnd() * 0.4), 0.28 * (0.5 + rnd() * 0.5), { cast: false })
+    const rot = rnd() * 6
+    void rnd()
+    void rnd()
+    addDocuments(b, [{ id: (["envelope_interoffice", "memo_coffee", "note_repeated"] as const)[k % 3], position: [px, yMid, pz], normal: [0, 1, 0], rotation: rot }])
   }
   b.cyl(M.diffuserOff, T(x + 0.5, yMid + 0.02, z - 0.7, 0.4, 0, Math.PI / 2 - 0.2), 0.085, 0.09, 0.06, 16)
   b.cyl(M.steel, T(-40.4, yMid + 0.035, 23.2, 1.1, 0, Math.PI / 2), 0.032, 0.032, 0.11, 12)
@@ -326,7 +334,7 @@ function hall(b: Builder, i: number) {
   if (!dead) b.lamp({ kind: "fluorescent", position: [-40.2, CEIL_Y + 0.1, 7.2], direction: [0, -1, 0], color: TUBE, intensity: 4, range: 7, angle: 1.3, penumbra: 0.7, size: 1.2 })
   // Floor plan holder and a fire extinguisher by the stair door.
   b.rbox(M.frame, T(x0 + 0.02, FLOOR_Y + 1.5, 13.4, Math.PI / 2), 0.5, 0.36, 0.02, 0.006)
-  b.quad(M.paper, T(x0 + 0.032, FLOOR_Y + 1.5, 13.4, Math.PI / 2), 0.44, 0.3, { cast: false })
+  addDocuments(b, [{ id: `map_evac_${i}` as DocumentId, position: [x0 + 0.029, FLOOR_Y + 1.5, 13.4], normal: [1, 0, 0], pin: "none", curl: 0, size: [0.44, 0.3] }])
   b.cyl(M.red, T(x0 + 0.1, FLOOR_Y + 0.55, 15.3), 0.075, 0.075, 0.5, 14)
   b.cyl(M.darkSteel, T(x0 + 0.1, FLOOR_Y + 0.85, 15.3), 0.03, 0.05, 0.1, 10)
 }

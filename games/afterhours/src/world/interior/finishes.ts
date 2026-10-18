@@ -1,6 +1,6 @@
 import * as THREE from "three/webgpu"
 import { atan, float, fract, mix, positionWorld, sin, smoothstep, step, uv, vec3 } from "three/tsl"
-import { materialFor } from "../../render/materials"
+import { decalBias, materialFor } from "../../render/materials"
 import { aaFade, aaStep } from "./kit"
 
 // Shared surface materials for interior pieces: venetian blinds, polythene sheeting (clear and the dusty contractor's
@@ -38,9 +38,7 @@ export const decal = (color: number, roughness: number, alpha: number, name: str
   const edge = sin(a.mul(3).add(1.3)).mul(0.12).add(sin(a.mul(7).add(0.4)).mul(0.06)).add(0.82)
   const d = p.length().div(edge)
   m.opacityNode = float(1).sub(smoothstep(0.55, 1, d)).mul(alpha)
-  m.polygonOffset = true
-  m.polygonOffsetFactor = -3
-  m.polygonOffsetUnits = -3
+  decalBias(m, 3) // pulls the decal toward the camera whatever the depth convention (reversed-Z)
   m.name = `interior_${name}`
   return m
 }

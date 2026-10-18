@@ -1,6 +1,7 @@
 import * as THREE from "three/webgpu"
 import { MODELS, yawToward } from "../../render/models"
-import { type Builder, CEIL_Y, FLOOR_Y, M, T, paint } from "./kit"
+import { type Builder, CEIL_Y, FLOOR_Y, M, T, addDocuments } from "./kit"
+import type { DocumentId } from "../../render/documents"
 import { CORE_PLAN, type DoorState, RISER_W1, SERVICE, type Rect } from "./plan"
 import { type PDoor, type POpening, partition } from "./partition"
 import { placeModels } from "./props"
@@ -78,7 +79,7 @@ function electrical(b: Builder, refurb?: boolean) {
   for (const z of [2.7, 3.3, 4.1, 4.7, 5.6]) b.rod("metal_galvanized", [wx + 0.04, FLOOR_Y + 1.6, z], [wx + 0.04, CEIL_Y, z], 0.014, 6)
   b.rod("metal_galvanized", [wx + 0.04, CEIL_Y - 0.2, 2.2], [wx + 0.04, CEIL_Y - 0.2, 6.2], 0.016, 6)
   // Breaker schedule cards (blank), a shelf of fuse spares.
-  for (const z of [3.0, 4.4]) b.box(M.paper, wx + 0.002, FLOOR_Y + 1.62, z - 0.12, wx + 0.006, FLOOR_Y + 1.82, z + 0.12, { cast: false })
+  addDocuments(b, [3.0, 4.4].map((z) => ({ id: `breaker_schedule_${b.storey}` as DocumentId, position: [wx, FLOOR_Y + 1.72, z] as const, normal: [1, 0, 0] as const, pin: "none" as const, curl: 0, size: [0.24, 0.2] as const })))
   b.box(M.wood, r.x1 - 0.35, FLOOR_Y + 1.4, 2.2, r.x1 - 0.06, FLOOR_Y + 1.43, 3.6)
   for (let k = 0; k < 6; k++) b.box(M.cardboard, r.x1 - 0.3, FLOOR_Y + 1.43, 2.3 + k * 0.2, r.x1 - 0.12, FLOOR_Y + 1.53, 2.42 + k * 0.2)
   if (refurb) {
@@ -189,15 +190,11 @@ export function riserW1(b: Builder, o: { face?: "north" | "south" | "east" | "we
   b.box(M.concrete, r.x0, CEIL_Y, r.z0, r.x1, CEIL_Y + 0.03, r.z1, { cast: false, skip: "XxYZz" })
   // Coax bundle down the middle of the trunk.
   for (const [dx, dz] of [[-0.12, 0], [0.1, 0.06], [0, -0.12], [0.06, 0.14]]) b.rod(M.rubber, [cx + dx!, FLOOR_Y, cz + dz!], [cx + dx!, CEIL_Y, cz + dz!], 0.025, 8)
-  // Stencil marks beside the door (abstract bars).
+  // Stencilled trunk mark beside the door.
   if (!o.hidden) {
     const n = face === "south" ? [0, 1] : face === "north" ? [0, -1] : face === "east" ? [1, 0] : [-1, 0]
-    const fx = face === "east" ? r.x1 + t + 0.002 : face === "west" ? r.x0 - t - 0.002 : cx + 0.55
-    const fz = face === "south" ? r.z1 + t + 0.002 : face === "north" ? r.z0 - t - 0.002 : cz + 0.55
-    for (let k = 0; k < 3; k++) {
-      const off = -0.08 + k * 0.08
-      const [x, z] = n[0] === 0 ? [fx + off, fz] : [fx, fz + off]
-      b.box(M.stencil, x - 0.025, FLOOR_Y + 1.5, z - 0.002, x + 0.025, FLOOR_Y + 1.85, z + 0.002, { cast: false })
-    }
+    const fx = face === "east" ? r.x1 + t : face === "west" ? r.x0 - t : cx + 0.55
+    const fz = face === "south" ? r.z1 + t : face === "north" ? r.z0 - t : cz + 0.55
+    addDocuments(b, [{ id: "stencil_w1", position: [fx, FLOOR_Y + 1.68, fz], normal: [n[0]!, 0, n[1]!], pin: "none", curl: 0 }])
   }
 }

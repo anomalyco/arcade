@@ -56,7 +56,7 @@ export async function build(b: Builder, { pause }: StoreyContext): Promise<Store
   beacon(b, -18.4, FLOOR_Y + 2.42, -1.54, "amber")
   beacon(b, -17.6, FLOOR_Y + 2.42, -1.54, "red", false)
   b.rbox(M.safety, T(-16.75, FLOOR_Y + 1.6, -1.594), 0.32, 0.42, 0.012, 0.004)
-  b.box(M.felt, -16.88, FLOOR_Y + 1.44, -1.588, -16.62, FLOOR_Y + 1.76, -1.584, { cast: false })
+  s.doc("sign_halon_area", [-16.75, FLOOR_Y + 1.6, -1.588], [0, 0, 1], { pin: "none", curl: 0, size: [0.3, 0.4] })
   s.doc("map_evac_3", [-37.6, FLOOR_Y + 1.55, -1.598], [0, 0, 1], { pin: "tape" })
   s.doc("plate_el3", [-45.68, FLOOR_Y + 1.5, 1.586], [0, 0, -1], { pin: "none", scale: 0.75, curl: 0 })
   s.doc("plate_jc", [-32.68, FLOOR_Y + 1.5, 1.586], [0, 0, -1], { pin: "none", scale: 0.75, curl: 0 })

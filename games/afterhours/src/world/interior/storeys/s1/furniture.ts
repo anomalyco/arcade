@@ -413,7 +413,7 @@ export function vaultHardware(leaf: THREE.Object3D, lw: number) {
   const z = 0.0225
   // Dial: knurled ring, numbered face, spindle.
   add(new THREE.CylinderGeometry(0.075, 0.08, 0.03, 32).rotateX(Math.PI / 2).translate(lw * 0.5, 1.45, z + 0.015), P.vaultDark)
-  add(new THREE.CylinderGeometry(0.06, 0.06, 0.035, 32).rotateX(Math.PI / 2).translate(lw * 0.5, 1.45, z + 0.02), P.vault)
+  add(new THREE.CylinderGeometry(0.06, 0.06, 0.035, 32).rotateX(Math.PI / 2).translate(lw * 0.5, 1.45, z + 0.0215), P.vault)
   add(new THREE.CylinderGeometry(0.015, 0.015, 0.02, 12).rotateX(Math.PI / 2).translate(lw * 0.5, 1.45, z + 0.045), P.vaultDark)
   // Three-spoke bolt wheel below it.
   const hub = new THREE.Vector3(lw * 0.5, 1.08, z + 0.05)

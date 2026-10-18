@@ -165,10 +165,11 @@ export function bioPlacard(b: Builder, x: number, y: number, z: number, nx: numb
 }
 
 /** Small engraved plate (dark with a pale strip of "text"). */
-export function plate(b: Builder, x: number, y: number, z: number, nx: number, nz: number, w = 0.3, h = 0.1, mat: Mat = M.plate) {
+export function plate(b: Builder, x: number, y: number, z: number, nx: number, nz: number, w = 0.3, h = 0.1, mat: Mat = M.plate, doc?: DocumentId) {
   const m = T(x, y, z, Math.atan2(nx, nz))
   b.boxM(mat, m, w, h, 0.006, 0, 0, 0.003)
-  b.boxM(M.stencil, m, w * 0.75, h * 0.25, 0.002, 0, 0, 0.007, { cast: false })
+  if (doc) addDocuments(b, [{ id: doc, position: [x + nx * 0.006, y, z + nz * 0.006], normal: [nx, 0, nz], pin: "none", curl: 0, size: [w, h] }])
+  else b.boxM(M.stencil, m, w * 0.75, h * 0.25, 0.002, 0, 0, 0.007, { cast: false })
 }
 
 /** Intercom box with a speaker grille and a call button. */

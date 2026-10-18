@@ -352,9 +352,8 @@ export async function buildEast(s: S4, pause: () => Promise<void>) {
   // Light spilling under the doors onto the corridor carpet.
   b.lamp({ kind: "incandescent", position: [22.3, FLOOR_Y + 0.05, 0], direction: [-0.97, -0.25, 0], color: WARM, intensity: 6, range: 3.5, angle: 1.3, penumbra: 1, size: 0.02 })
   // "DO NOT DISTURB — R.H." taped on the left leaf: a torn sheet with a scrawl.
-  sb.quad(M.paper, T(22.449, FLOOR_Y + 1.52, -0.42, -Math.PI / 2, 0, 0.06), 0.22, 0.16, { cast: false })
-  for (let k = 0; k < 7; k++) sb.boxM(M.felt, T(22.4485, FLOOR_Y + 1.56 - Math.floor(k / 4) * 0.05, -0.5 + (k % 4) * 0.045 + Math.floor(k / 4) * 0.03, -Math.PI / 2, 0, (rnd() - 0.5) * 0.6), 0.035, 0.008, 0.001, 0, 0, 0, { cast: false })
-  for (const z of [-0.52, -0.32]) sb.boxM(M.vinylBeige, T(22.4482, FLOOR_Y + 1.6, z, -Math.PI / 2, 0, 0.7), 0.05, 0.018, 0.001, 0, 0, 0, { cast: false })
+  for (let k = 0; k < 7; k++) void rnd()
+  paper(s, "note_do_not_disturb", [22.449, FLOOR_Y + 1.52, -0.42], [-1, 0, 0], { pin: "tape", rotation: 0.06 })
   // Barricade: a credenza and a filing cabinet shoved against the inside of the doors.
   credenza(b, 23.0, 0.25, yawToward(1, 0.15), 1.5)
   placeModels(b, "filing_cabinet", [{ position: [22.85 + fcD / 2, FLOOR_Y, -0.75], yaw: yawToward(1, -0.2) }])

@@ -237,15 +237,14 @@ export async function buildNorth(s: S3, pause: () => Promise<void>) {
   headphones(b, -8.15, oTop, -12.99, 0.2, 0.38)
   // The operator's chair pushed back, half turned.
   placeModels(b, "office_chair", [{ position: [-8.35, FLOOR_Y, -14.05], yaw: S + 1.1, inset: 0.15 }])
-  chalkboard(b, -15.31, -16.6, -Math.PI / 2, 2.6, "white")
-  for (let r = 0; r < 6; r++) b.box(M.darkSteel, -15.3, FLOOR_Y + 1.15 + r * 0.17, -17.85, -15.297, FLOOR_Y + 1.153 + r * 0.17, -15.35, { cast: false })
+  chalkboard(b, -15.31, -16.6, -Math.PI / 2, 2.6, "white", "whiteboard_ops")
   s.doc("calendar_oct84", [-4.66, FLOOR_Y + 1.55, -14.8], [-1, 0, 0], { pin: "tack" })
   s.doc("roster_operators", [-4.66, FLOOR_Y + 1.5, -15.5], [-1, 0, 0], { pin: "pin" })
   placeModels(b, "filing_cabinet", [-5.3, -5.8].map((x) => ({ position: [x, FLOOR_Y, -21.61 + 0.27] as const, yaw: S })))
   placeModels(b, "wall_clock", [{ position: [-10.0, FLOOR_Y + 2.45, -21.6 + 0.03], yaw: S, collide: false, blob: 0 }])
   // SL link status panel on the wall by the window: lamps blinking, one red lamp steady.
   b.rbox(paint(0x3a3e3c, 0.5, 0.4), T(-4.72, FLOOR_Y + 1.6, -13.4, -Math.PI / 2), 0.5, 0.36, 0.08, 0.01)
-  b.box(M.felt, -4.77, FLOOR_Y + 1.5, -13.6, -4.765, FLOOR_Y + 1.72, -13.2, { cast: false })
+  s.doc("plate_sl_link", [-4.76, FLOOR_Y + 1.61, -13.4], [-1, 0, 0], { pin: "none", curl: 0, size: [0.4, 0.22] })
   wastebasket(b, -11.0, -13.3)
   await pause()
 
@@ -367,13 +366,13 @@ export async function buildNorth(s: S3, pause: () => Promise<void>) {
   b.quad(PLOT, T(30.4, mt + 0.002, -16.0, 0.05, -Math.PI / 2), 1.2, 0.86, { cast: false })
   b.quad(PLOT, T(31.5, mt + 0.004, -15.8, -0.2, -Math.PI / 2), 0.8, 0.58, { cast: false })
   placeModels(b, "stack_chair", [{ position: [30.0, FLOOR_Y, -14.9], yaw: N + 0.3 }, { position: [31.6, FLOOR_Y, -17.1], yaw: S - 0.2 }])
-  chalkboard(b, 11.69, -11.0, -Math.PI / 2, 4.2, "chalk")
-  // Equations: short chalk strokes in rows.
+  chalkboard(b, 11.69, -11.0, -Math.PI / 2, 4.2, "chalk", "chalkboard_equations")
+  // Keep the storey's random sequence as it was (the strokes drew 2–3 numbers per cell).
   for (let r = 0; r < 7; r++)
     for (let k = 0; k < 6; k++) {
       if (rnd() < 0.25) continue
-      const z = -12.85 + k * 0.62 + rnd() * 0.1
-      b.box(paint(0xb8bcb0, 0.9), 11.701, FLOOR_Y + 2.05 - r * 0.13, z, 11.704, FLOOR_Y + 2.07 - r * 0.13, z + 0.2 + rnd() * 0.3, { cast: false })
+      void rnd()
+      void rnd()
     }
   for (const x of [17.0, 22.4, 27.8]) b.quad(PLOT, T(x, FLOOR_Y + 1.55, -21.6 + 0.004, 0), 1.1, 0.8, { cast: false })
   wallPapers(b, 34.6, FLOOR_Y + 1.5, -15.0, -Math.PI / 2, 2.0, 0.8, rnd, 7)

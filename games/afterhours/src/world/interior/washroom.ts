@@ -1,7 +1,7 @@
 import * as THREE from "three/webgpu"
 import { atan, float, smoothstep, uv } from "three/tsl"
 import { MODELS, type MergePlacement, type ModelName, mergeModels, modelColliders, yawToward } from "../../render/models"
-import { materialFor } from "../../render/materials"
+import { decalBias, materialFor } from "../../render/materials"
 import { createMirror } from "../../render/mirrors"
 import { Builder, CEIL_Y, FLOOR_Y, LAYER, M, T, paint } from "./kit"
 import type { Rect } from "./plan"
@@ -55,9 +55,7 @@ const decal = (color: number, roughness: number, alpha: number, edge: number, na
   const a = atan(p.y, p.x)
   const d = p.length().div(a.mul(3).sin().mul(0.1).add(0.88))
   m.opacityNode = float(1).sub(smoothstep(edge, 1, d)).mul(alpha)
-  m.polygonOffset = true
-  m.polygonOffsetFactor = -3
-  m.polygonOffsetUnits = -3
+  decalBias(m, 3) // pulls the decal toward the camera whatever the depth convention (reversed-Z)
   m.name = `interior_${name}`
   return m
 }
