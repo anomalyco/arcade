@@ -33,6 +33,7 @@ import {
   zombiePalette,
 } from "./look/refined-figure"
 import { zombieProfile, type ZombieTuning } from "./zombie-profile"
+import { STRIKE_TIME, strikeEnvelope } from "./zombie-strikes"
 
 export type DetachedDebrisPiece = {
   partIndex: number
@@ -401,6 +402,10 @@ export class ZombieCrowdRenderer {
   readonly batches: Batch[] = []
   /** Each foot contact of an animated zombie (plan x, y, body speed m/s, how much that foot drags, shamble variant). */
   onFootfall?: (agentId: number, x: number, y: number, speed: number, drag: number, variant: string) => void
+  /** Seconds into each live strike lunge, by agent id (presentation only; see `strike`). */
+  private readonly strikes = new Map<number, number>()
+  /** Lab › Feel › Zombie strike lunge (0 = off). */
+  strikeScale = 1
   private overlayCanvas: HTMLCanvasElement | null = null
   private overlayCtx: CanvasRenderingContext2D | null = null
 
@@ -548,6 +553,16 @@ export class ZombieCrowdRenderer {
       hiddenBones: this.maskToHiddenSet(this.hiddenMask[s]!),
       planted: [this.footPlanted[s * 2] !== 0, this.footPlanted[s * 2 + 1] !== 0],
     }
+  }
+
+  /** Plays a strike lunge on this zombie (its attack just landed); restarts one already playing. */
+  strike(agentId: number): void {
+    this.strikes.set(agentId, 0)
+  }
+
+  /** Seconds into this zombie's strike lunge, or `undefined` when it is not striking (for tests and proofs). */
+  strikeAge(agentId: number): number | undefined {
+    return this.strikes.get(agentId)
   }
 
   detachAgentLimb(agent: AIAgent, root: BoneId, dt: number, impulseDir: V3): (ReturnType<typeof detach>[number])[] {
@@ -865,6 +880,10 @@ export class ZombieCrowdRenderer {
     time = 0,
   ): Batch[] {
     dt = Math.max(0.0001, Math.min(0.1, dt))
+    for (const [id, age] of this.strikes) {
+      if (age + dt >= STRIKE_TIME) this.strikes.delete(id)
+      else this.strikes.set(id, age + dt)
+    }
     const lookMode = Math.round(zombieTune.zombieLook ?? 0)
     const refined = lookMode === 1 || lookMode === 2
     const undead = lookMode !== 2
@@ -1014,7 +1033,6 @@ export class ZombieCrowdRenderer {
 
       if (a.state === "dead" || a.state === "knockdown") {
         if (a.state === "dead") this.seenAt[s] = -1e9
-        if (a.hitFlash > 0) a.hitFlash = Math.max(0, a.hitFlash - dt * 6)
         const isDead = a.state === "dead"
         const col = isDead
           ? Math.min(1, this.collapse[s]! + dt * 4.2)
@@ -1209,7 +1227,6 @@ export class ZombieCrowdRenderer {
       }
 
       if (a.state === "crawler") {
-        if (a.hitFlash > 0) a.hitFlash = Math.max(0, a.hitFlash - dt * 6)
         const syaw = this.yaw[s]! + angleDiff(a.aim, this.yaw[s]!) * yawStepCap
         this.yaw[s] = syaw
         const speed = Math.hypot(a.vx, a.vy)
@@ -1601,7 +1618,13 @@ export class ZombieCrowdRenderer {
       this.twistV[s] = twv
 
       const height = baseHeight - rdx
-      writeYawFrame(bBuf, pelvisOff, a.x, height, a.y, syaw + twx)
+      // A strike that just landed: the body lunges at its target, weight over the front foot, the torso pitches in
+      // and both hands thrust out, the lead hand furthest.
+      const strikeAge = this.strikes.get(a.id)
+      const strikeU = strikeAge === undefined ? 0 : strikeEnvelope(strikeAge) * Math.max(0, this.strikeScale)
+      const lungeX = Math.cos(a.aim) * 0.12 * strikeU
+      const lungeZ = Math.sin(a.aim) * 0.12 * strikeU
+      writeYawFrame(bBuf, pelvisOff, a.x + lungeX, height - 0.03 * strikeU, a.y + lungeZ, syaw + twx)
       rollInPlace(bBuf, pelvisOff, shambleMod.pelvisRollAdd + limpRoll)
       pitchInPlace(bBuf, pelvisOff, -0.06 * moving - 0.35 * shambleMod.torsoPitchAdd)
       const lean = lxx * Math.cos(a.aim) + lyx * Math.sin(a.aim)
@@ -1647,7 +1670,7 @@ export class ZombieCrowdRenderer {
       const torsoPy = bBuf[pelvisOff + 1]! + bBuf[pelvisOff + 7]! * RIG.waist
       const torsoPz = bBuf[pelvisOff + 2]! + bBuf[pelvisOff + 8]! * RIG.waist
       writeYawFrame(bBuf, torsoOff, torsoPx, torsoPy, torsoPz, cx + staggerYaw)
-      pitchInPlace(bBuf, torsoOff, -0.04 - lean - shambleMod.torsoPitchAdd - bashPulse - staggerRecoil)
+      pitchInPlace(bBuf, torsoOff, -0.04 - lean - shambleMod.torsoPitchAdd - bashPulse - staggerRecoil - 0.42 * strikeU)
       pitchInPlace(bBuf, torsoOff, -clamp(torsoLean, -0.15, 0.35))
       rollInPlace(bBuf, torsoOff, clamp(torsoRoll, -0.2, 0.2))
       rollInPlace(bBuf, torsoOff, shambleMod.torsoRollAdd + staggerCant + limpRoll * 0.75)
@@ -1681,6 +1704,15 @@ export class ZombieCrowdRenderer {
       tf.z[0] = tzAxisX; tf.z[1] = tzAxisY; tf.z[2] = tzAxisZ
       const runBlend = clamp((speed - 1.5) / 1.5, 0, 1)
       const [hL, hR] = shambleHandsFK(tf, curPhase, shambleGait, runBlend, profile, actorSeed, this.scratchHands)
+      if (strikeU > 0) {
+        for (let i = 0; i < 2; i++) {
+          const hand = i === 0 ? hL : hR
+          const k = strikeU * ((i === 0) === (sideSign < 0) ? 1 : 0.65)
+          hand[0] += txAxisX * 0.36 * k + tyAxisX * 0.14 * k
+          hand[1] += txAxisY * 0.36 * k + tyAxisY * 0.14 * k
+          hand[2] += txAxisZ * 0.36 * k + tyAxisZ * 0.14 * k
+        }
+      }
 
       for (let i = 0; i < 2; i++) {
         const side = i === 0 ? -1 : 1
@@ -1723,9 +1755,9 @@ export class ZombieCrowdRenderer {
         const isDrag = i === dragFoot
         const dragAmt = isDrag ? clamp(footDrag, 0, 0.95) : 0
         const hipZ = side * RIG.hipW
-        const hipX = a.x + pzAxisX * hipZ
-        const hipY = height + pzAxisY * hipZ
-        const hipZWorld = a.y + pzAxisZ * hipZ
+        const hipX = a.x + lungeX + pzAxisX * hipZ
+        const hipY = height - 0.03 * strikeU + pzAxisY * hipZ
+        const hipZWorld = a.y + lungeZ + pzAxisZ * hipZ
         const ankX = this.footPx[fi]!
         const ankY = this.footPy[fi]! + RIG.ankle
         const ankZ = this.footPz[fi]!

@@ -70,6 +70,28 @@ describe("Outbreak sound director", () => {
     expect(opened[0]!.x).toBeCloseTo((door.rect[0] + door.rect[2]) / 2)
   })
 
+  test("a shove that connects thuds; a whiff is only a whoosh", () => {
+    const session = new LocalSession(7, 7, 0.22, { zombieCount: 0 })
+    const director = new SoundDirector()
+    const p = session.view.player
+    Object.assign(p, { x: 44, y: 44, vx: 0, vy: 0, aim: 0 })
+    const hear = () => director.observe(soundWorld(session.sim), p)
+    hear()
+    session.update(TICK_DT, { ...idle, melee: true }, 0)
+    const whiff = ids(hear())
+    expect(whiff).toContain("melee.swing.light")
+    expect(whiff).not.toContain("melee.shove")
+
+    for (let i = 0; i < 90; i++) session.update(TICK_DT, idle, 0), hear()
+    const z = session.ai.spawnZombie(session.view.town, 45.1, 44, "wander", Math.PI)
+    session.update(TICK_DT, idle, 0), hear()
+    session.update(TICK_DT, { ...idle, melee: true }, 0)
+    const landed = ids(hear())
+    expect(z.state).toBe("stagger")
+    expect(landed).toContain("melee.shove")
+    expect(landed).not.toContain("melee.swing.light")
+  })
+
   test("co-op peers sound at their own position from their replicated state", () => {
     const sim = new CoopSim(7, 7, 0.22, { zombieCount: 0 })
     const a = sim.addSurvivor("a", 0)

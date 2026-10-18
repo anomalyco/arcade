@@ -16,6 +16,7 @@ import {
   type SurvivorCombatState,
 } from "../shared/combat"
 import type { Town } from "../shared/map"
+import { BulletImpactFx } from "./bullet-impacts"
 import { hex } from "./level"
 import type { ZombieCrowdRenderer } from "./zombies"
 
@@ -123,6 +124,10 @@ export class OutbreakCombatFX {
   hasEmitted = false
   legacyMode = false
   private lastFlash: { x: number; y: number; z: number; until: number } | null = null
+  /** Flash, sparks and dust where missed rounds strike (fed by the feel tracker). */
+  readonly bulletImpacts = new BulletImpactFx()
+  /** Lab › Feel › Bullet impact flash. */
+  impactFlash = 1
 
   constructor(renderer: Pick<Renderer, "addModel">) {
     const pistol = new Mesh()
@@ -153,6 +158,7 @@ export class OutbreakCombatFX {
     this.splatter?.reset()
     this.hasEmitted = false
     this.lastFlash = null
+    this.bulletImpacts.reset()
   }
 
   stepAndCollect(
@@ -250,6 +256,7 @@ export class OutbreakCombatFX {
       muzzleLight = [this.lastFlash.x, this.lastFlash.y, this.lastFlash.z, strength * 1.35]
       pushAdd(this.lastFlash.x, this.lastFlash.y, this.lastFlash.z, 0.26 * strength, 1.0, 0.78, 0.35, 0.95, 0, 0, 1, 0)
     }
+    this.bulletImpacts.collect(time, support, pushAdd, this.impactFlash)
 
     // 4. Step & draw broken melee weapon pieces lying or bouncing on the ground
     let shardCount = 0

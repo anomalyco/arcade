@@ -3,8 +3,10 @@ import { MotionBlurBurst } from "@arcade/kit/gpu/motion-blur"
 import type { LocalSession } from "../shared/session"
 import { supportHeight } from "../shared/terrain"
 import type { OutbreakCombatFX } from "./combat-fx"
+import { hitStopSeconds } from "./feel-tuning"
 import type { NetSession } from "./net-session"
 import type { OutbreakSettings } from "./settings"
+import { StrikeTracker } from "./zombie-strikes"
 import type { ZombieCrowdRenderer } from "./zombies"
 
 export interface OutbreakFeelFrameContext {
@@ -40,6 +42,7 @@ export class OutbreakFeelTracker {
   private readonly prevPortalBashTime = new Map<string, number>()
   private readonly prevPortalPlanks = new Map<string, number>()
   private readonly prevDoorOpen = new Map<string, boolean>()
+  private readonly strikes = new StrikeTracker()
 
   constructor(
     private readonly cam: Camera,
@@ -60,6 +63,7 @@ export class OutbreakFeelTracker {
     this.prevPortalBashTime.clear()
     this.prevPortalPlanks.clear()
     this.prevDoorOpen.clear()
+    this.strikes.reset()
     this.features.resetFeel(this, player)
   }
 
@@ -80,7 +84,7 @@ export class OutbreakFeelTracker {
     this.cam.add((hits > 0 ? 0.3 : 0.14) * k, aim, (hits > 0 ? 2.4 : 1.0) * k)
     this.cam.punch(hits > 0 ? -0.22 : -0.08, 0.009 * k)
     if (hits > 0) {
-      this.hitStop.trigger(0.028, 0.08, !this.cam.isReducedMotion())
+      this.hitStop.trigger(hitStopSeconds(this.settings.combat.hitStopShove), 0.08, !this.cam.isReducedMotion())
       if (!this.cam.isReducedMotion()) {
         this.motionBurst.add(
           { dir: aim, directional: 0.005 * k, radial: 0.004 * k, boost: 0.35 * k },
@@ -96,7 +100,7 @@ export class OutbreakFeelTracker {
     this.cam.add(0.52 * scale, dir, 3.2 * scale)
     this.cam.punch(0.38 * scale, 0.016 * scale)
     this.cam.addFlash(0.65 * scale)
-    this.hitStop.trigger(0.026, 0.08, !this.cam.isReducedMotion())
+    this.hitStop.trigger(hitStopSeconds(this.settings.combat.hitStopHitTaken), 0.08, !this.cam.isReducedMotion())
     if (!this.cam.isReducedMotion()) {
       this.motionBurst.add(
         { dir, directional: 0.007 * scale, radial: 0.008 * scale, boost: 0.6 * scale },
@@ -207,6 +211,9 @@ export class OutbreakFeelTracker {
     }
     this.prevHealth = p.health
 
+    zombieCrowd.strikeScale = settings.combat.strikeLunge
+    for (const id of this.strikes.observe(session.sim.slots, zombies)) zombieCrowd.strike(id)
+
     const nowVaulting = Boolean(p.vault)
     if (this.wasVaulting && !nowVaulting) {
       cam.add(0.14, p.aim, 0.7)
@@ -254,6 +261,7 @@ export class OutbreakFeelTracker {
     }
 
     combatFx.legacyMode = settings.combat.bloodStyle === 2
+    combatFx.impactFlash = settings.combat.impactFlash
     let addCount = combatFx.processShots(
       shots,
       time,
@@ -264,6 +272,9 @@ export class OutbreakFeelTracker {
       addSprites,
       0,
       (shot) => {
+        if (shot.hitZombieId === null && !shot.confirmedLocal && !shot.tentativeHit && settings.combat.impactFlash > 0) {
+          combatFx.bulletImpacts.emit(town, shot, (id) => session.ai.portalStates.get(id)?.barricadePlanks ?? 0)
+        }
         const distFromMe = Math.hypot(shot.fromX - p.x, shot.fromY - p.y)
         const isLocalShot = distFromMe < 1.8
         if (isLocalShot) {
@@ -273,10 +284,9 @@ export class OutbreakFeelTracker {
           if (!shot.predicted && shot.hitZombieId !== null) {
             const pwr = shot.detachBone ? 1.25 : 1.0
             cam.add((shot.killed ? 0.22 : 0.12) * pwr, shot.aim, (shot.killed ? 0.85 : 0.45) * pwr)
-            if (shot.killed) {
-              cam.punch(-0.18 * pwr, 0)
-              this.hitStop.trigger(0.022 * pwr, 0.08, !cam.isReducedMotion())
-            }
+            if (shot.killed) cam.punch(-0.18 * pwr, 0)
+            const stopMs = shot.killed ? settings.combat.hitStopShotKill : settings.combat.hitStopShotHit
+            this.hitStop.trigger(hitStopSeconds(stopMs) * pwr, 0.08, !cam.isReducedMotion())
           }
         } else if (distFromMe < 16) {
           const peerAtt = attenuateShake(distFromMe, 16) * 0.35

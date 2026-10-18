@@ -38,12 +38,15 @@ export const DIRECTOR_TUNING = {
   alertGap: 0.35,
   /** Reach of a zombie attack, for pairing a survivor's damage with the zombie that dealt it (m). */
   attackReach: 1.8,
+  /** A zombie that starts staggering this close to a shoving survivor counts as shoved (m). */
+  shoveReach: 2.2,
 }
 
 /** Reload parts are scheduled up to this far ahead of the frame that reaches them (s). */
 const RELOAD_LOOKAHEAD = 1 / 50
 const QUIET: ReadonlySet<AIState> = new Set(["wander", "investigate", "search"])
 const LOUD: ReadonlySet<AIState> = new Set(["alert", "chase", "crawler"])
+const STRUCK: ReadonlySet<AIState> = new Set(["stagger", "knockdown", "dead"])
 const center = (r: readonly number[]) => ({ x: (r[0]! + r[2]!) / 2, y: (r[1]! + r[3]!) / 2 })
 
 type ActorMemory = SoundActor & { lootKey: number; reloadStart: number; reloadElapsed: number }
@@ -204,10 +207,12 @@ export class SoundDirector {
     // Zombie states: snarl on noticing someone, death without a shot (shoves, co-op kills), crowd-spaced idle groans.
     const seen = new Set<number>()
     const candidates: SoundZombie[] = []
+    const struck: SoundZombie[] = []
     for (const z of world.zombies) {
       seen.add(z.id)
       const prev = this.zombies.get(z.id)
       this.zombies.set(z.id, z.state)
+      if (prev !== undefined && prev !== z.state && STRUCK.has(z.state)) struck.push(z)
       if (z.state === "dead") {
         if (prev !== undefined && prev !== "dead" && !this.deaths.has(z.id)) {
           this.deaths.add(z.id)
@@ -299,7 +304,11 @@ export class SoundDirector {
         else if (a.planks > p.planks) emit({ id: "pickup.plank", ...at })
       }
       if (a.channel?.kind === "search" && (!p.channel || p.channel.targetId !== a.channel.targetId)) emit({ id: "search.rummage", ...at })
-      if (a.shoveAnim > p.shoveAnim + 1e-4) emit({ id: "melee.shove", ...at })
+      // A shove that connects thuds into a body; a whiff is only the push of air.
+      if (a.shoveAnim > p.shoveAnim + 1e-4) {
+        const landed = struck.some((z) => Math.hypot(z.x - a.x, z.y - a.y) <= this.tuning.shoveReach)
+        emit(landed ? { id: "melee.shove", ...at } : { id: "melee.swing.light", ...at, gain: 0.7, rate: 1.08 })
+      }
       if (a.flashlightOn !== p.flashlightOn) emit({ id: "flashlight.click", ...at })
       if (a.exhausted && !p.exhausted) emit({ id: "body.breath.exhausted", ...at })
       if (a.vault && !p.vault) emit({ id: "body.vault", ...at })
