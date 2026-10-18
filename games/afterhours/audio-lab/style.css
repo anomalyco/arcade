@@ -74,6 +74,7 @@ section.cat { margin: 10px 0 18px; }
 .card.sel { border-color: var(--teal); box-shadow: 0 0 0 1px var(--teal) inset; }
 .card.playing { background: #14201c; }
 .card.fav { border-color: #6b4a1f; }
+.card.approved { border-color: #5a4a22; background: #17170f; }
 .card.sel.fav { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
 .row { display: flex; align-items: center; gap: 6px; }
 .play {
@@ -82,7 +83,7 @@ section.cat { margin: 10px 0 18px; }
 }
 .card.playing .play { background: var(--teal); color: #071210; border-color: var(--teal); }
 .vname { font-weight: 600; }
-.meta { color: var(--muted); font-size: 11px; }
+.meta { color: var(--muted); font-size: 11px; white-space: nowrap; }
 .spacer { flex: 1; }
 .star { background: none; border: none; font-size: 18px; color: #4a5753; padding: 0 2px; }
 .star.on { color: var(--accent); }
@@ -119,3 +120,5 @@ dialog { background: var(--panel); color: var(--text); border: 1px solid var(--l
 dialog td { padding: 3px 10px 3px 0; }
 kbd { background: var(--panel2); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; font-size: 11px; }
 .empty { color: var(--muted); padding: 40px; text-align: center; }
+.lufs { font-variant-numeric: tabular-nums; }
+.lufs.under { color: #e0c062; }

@@ -71,6 +71,15 @@ async function init() {
   // silently apply to new audio. Unchanged files keep their records untouched.
   let moved = 0
   for (const s of state.manifest.sounds) {
+    // A take that was put back (approved originals restored) gets its earlier record back.
+    const prevList = state.store.previous[s.file]
+    const back = !state.store.sounds[s.file] && prevList?.findIndex((p) => p.gen === s.generatedAt)
+    if (back != null && back >= 0) {
+      const { prompt: _p, ...rec } = prevList.splice(back, 1)[0]
+      state.store.sounds[s.file] = rec
+      if (!prevList.length) delete state.store.previous[s.file]
+      save()
+    }
     const r = state.store.sounds[s.file]
     if (r?.gen && r.gen !== s.generatedAt) {
       ;(state.store.previous[s.file] ||= []).push({ ...r, prompt: s.previous?.prompt })
@@ -118,6 +127,7 @@ function visibleCats() {
       if (qaF === "good" && sc < 4) return false
       if (qaF === "weak" && sc > 3) return false
       if (qaF === "changed" && s.status !== "regenerated" && s.status !== "added") return false
+      if (qaF === "approved" && s.status !== "approved" && s.status !== "locked") return false
       if (!catMatch && !s.prompt.toLowerCase().includes(q) && !(s.qa?.description || "").toLowerCase().includes(q) && !(r.notes || "").toLowerCase().includes(q)) return false
       return true
     })
@@ -176,6 +186,20 @@ function qa_title(s) {
     lines.push("Takes:", ...s.attempts.map((a) => `${a.chosen ? "✓" : "·"} ${a.score}/5 ${a.prompt}`))
   return lines.join("\n")
 }
+function loudTag(s) {
+  const l = s.loudness
+  if (!l) return '<span class="meta lufs" title="Not loudness-normalised yet">raw</span>'
+  const lvl = (x) => (l.metric === "integrated" ? x.integrated : x.momentaryMax)
+  const out = lvl(l.out)
+  const short = out < l.target - 1.5
+  const title = [
+    `Loudness (${l.metric === "integrated" ? "integrated, loop" : "momentary max, one-shot"}): ${out.toFixed(1)} LUFS, target ${l.target}`,
+    `Integrated ${l.out.integrated.toFixed(1)} LUFS · momentary max ${l.out.momentaryMax.toFixed(1)} · true peak ${l.out.truePeak.toFixed(1)} dBTP`,
+    `Raw take: ${lvl(l.raw).toFixed(1)} LUFS, TP ${l.raw.truePeak.toFixed(1)} → gain ${l.gainDb >= 0 ? "+" : ""}${l.gainDb} dB${l.limitedDb ? `, ${l.limitedDb} dB peak limiting` : ""}`,
+    short ? "Under target: peaky take, limited to protect its transients" : "",
+  ].filter(Boolean).join("\n")
+  return `<span class="meta lufs${short ? " under" : ""}" title="${esc(title)}">${l.metric === "integrated" ? "I" : "M"} ${out.toFixed(1)} LUFS</span>`
+}
 const short = (file) => file.split("/").pop().replace(".mp3", "")
 
 function renderToc(vis) {
@@ -193,7 +217,7 @@ function renderToc(vis) {
     const a = document.createElement("a")
     a.href = `#cat-${cat.id}`
     a.textContent = cat.label.replace(/^Footsteps: /, "")
-    if (cat.sounds.some((s) => rec(s).fav)) a.className = "has-pick"
+    if (cat.sounds.some((s) => rec(s).fav || s.status === "approved" || s.status === "locked")) a.className = "has-pick"
     toc.append(a)
   }
 }
@@ -204,7 +228,8 @@ function renderStats() {
   const rated = state.manifest.sounds.filter((s) => rec(s).rating).length
   const good = state.manifest.sounds.filter((s) => (s.qa?.score ?? 0) >= 4).length
   const changed = state.manifest.sounds.filter((s) => s.status === "regenerated" || s.status === "added").length
-  $("#stats").textContent = `${n} sounds · ${state.cats.length} categories · QA ≥4: ${good} · ${changed} regenerated/new · ${picks} ★ · ${rated} rated · ${state.manifest.totalCost} credits`
+  const approved = state.manifest.sounds.filter((s) => s.status === "approved" || s.status === "locked").length
+  $("#stats").textContent = `${n} sounds · ${state.cats.length} categories · ${approved} approved · QA ≥4: ${good} · ${changed} regenerated/new · ${picks} ★ · ${rated} rated · ${state.manifest.totalCost} credits`
 }
 
 function card(s, cat) {
@@ -219,8 +244,8 @@ function card(s, cat) {
       ? `<span class="badge regen" title="Regenerated after listening QA. Previous take${s.previous?.score ? ` (QA ${s.previous.score}/5)` : ""}: ${esc(s.previous?.prompt || "")}${s.previous?.description ? ` — heard: ${esc(s.previous.description)}` : ""}">regenerated</span>`
       : s.status === "added"
         ? '<span class="badge added" title="New variant added to reach 3 good takes">new</span>'
-        : s.status === "locked"
-          ? '<span class="badge locked" title="Approved take, never regenerated">approved</span>'
+        : s.status === "approved" || s.status === "locked"
+          ? '<span class="badge locked" title="Approved by ear: never regenerated or replaced, only loudness-normalised">✓ approved</span>'
           : ""
   const qa = s.qa
     ? `<div class="qa" title="${esc(qa_title(s))}"><span class="score s${s.qa.score}">QA ${s.qa.score}/5</span> ${esc(s.qa.description)}</div>`
@@ -229,7 +254,8 @@ function card(s, cat) {
     <div class="row">
       <button class="play" title="Play/stop (Space)">▶</button>
       <span class="vname">${s.variant}</span>
-      <span class="meta">${s.duration ?? "auto"}s · pi ${s.influence}</span>
+      <span class="meta" title="requested duration · prompt_influence ${s.influence}">${s.duration ?? "auto"}s</span>
+      ${loudTag(s)}
       ${badge}
       <span class="spacer"></span>
       <button class="tag a" title="Mark as A (A)">A</button>
@@ -280,6 +306,7 @@ function updateCard(s) {
   const r = rec(s)
   const ab = state.store.ab[s.category] || {}
   el.classList.toggle("fav", !!r.fav)
+  el.classList.toggle("approved", s.status === "approved" || s.status === "locked")
   $(".star", el).classList.toggle("on", !!r.fav)
   $(".tag.a", el).classList.toggle("on", ab.a === s.file)
   $(".tag.b", el).classList.toggle("on", ab.b === s.file)
@@ -321,7 +348,7 @@ function load(file) {
   if (state.buffers.has(file)) return Promise.resolve(state.buffers.get(file))
   if (loading.has(file)) return loading.get(file)
   const s = soundByFile(file)
-  const p = fetch(`${file}?v=${encodeURIComponent(s?.generatedAt || "")}`)
+  const p = fetch(`${file}?v=${encodeURIComponent(`${s?.generatedAt || ""}|${s?.loudness?.at || ""}`)}`)
     .then((r) => r.arrayBuffer())
     .then((ab) => audio().decodeAudioData(ab))
     .then((buf) => {

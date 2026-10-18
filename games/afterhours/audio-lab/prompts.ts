@@ -1,9 +1,10 @@
 // Candidate SFX prompts for the Afterhours audio lab.
 //
-// ElevenLabs does best with literal sound-design descriptions: the exact object, its material, the action, the
-// consequence sound, mic perspective, the space, and the length; no music or voices unless intended. The model
-// prompt for this file is breaker v3 ("industrial knife switch pulled, power shuts off with descending hum"):
-// one object, one action, one consequence.
+// House style, taken from the takes the user approved by ear (picks-*.json, lib/approved.ts): short, lowercase,
+// comma-separated literal descriptions with one concrete object/material/action, the space, and close mic or
+// distant, e.g. "light switch flicked on and off twice, close mic", "industrial knife switch pulled, power shuts off
+// with descending hum", "far away loud metallic slam somewhere in a concrete basement, long echo". No durations or
+// "loopable" in the text (duration and loop are request fields); no music or voices unless intended.
 //
 // `intent` is what the listening QA (qa.ts) judges every take against. `keep` locks a take the user approved.
 // Edit a category, then `bun audio-lab/generate.ts --category <id> --force` or let `bun audio-lab/improve.ts` fix
@@ -42,10 +43,10 @@ export const CATEGORIES: CategorySpec[] = [
     label: "Footsteps: waxed linoleum corridor",
     intent: "one person walking at a slow steady pace in leather work boots on a waxed linoleum hallway floor, indoor corridor reverb, no music",
     variants: [
-      v("Footsteps: leather work boots walking slowly on waxed linoleum, hard heel taps, long empty institutional hallway, short reverb, close-mic, 5 seconds", 5, 0.6),
-      v("Rubber-soled boots walking steadily on polished vinyl floor tiles, soft squeak every few steps, empty concrete corridor reverb, 5 seconds", 5, 0.5),
-      v("Single person walking on linoleum floor, one step per half second, heel then sole contact, tiled hallway echo, medium distance", 5, 0.6),
-      v("Slow cautious footsteps on waxed linoleum, sneaker rubber squeaks, quiet empty hallway, close-mic", 5, 0.45),
+      v("slow footsteps in work boots on waxed linoleum, long empty hallway, close mic", 5, 0.45),
+      v("footsteps walking down a tiled school corridor at night, hard soles, echoing", 5, 0.4),
+      v("one person walking on polished vinyl floor, rubber soles, faint squeak, empty hallway", 5, 0.5),
+      v("cautious footsteps on linoleum, stopping and starting, quiet empty building at night", 5, 0.35),
     ],
   },
   {
@@ -54,9 +55,9 @@ export const CATEGORIES: CategorySpec[] = [
     label: "Footsteps: office carpet",
     intent: "one person walking slowly in boots on thin commercial office carpet, muffled soft thuds, small quiet room",
     variants: [
-      v("Footsteps: work boots walking slowly on thin low-pile office carpet, muffled soft thuds with faint fabric scuff, small quiet office, close-mic, 4 seconds", 4, 0.6),
-      v("Person walking on carpet tiles over a concrete floor, dull padded footfalls, dead dry room, 4 seconds", 4, 0.5),
-      v("Slow heavy steps on commercial carpet, soft thump and slight shoe scrape, quiet carpeted room, close-mic", 4, 0.65),
+      v("slow footsteps on thin office carpet, muffled soft thuds, quiet room, close mic", 4, 0.5),
+      v("person walking across a carpeted office at night, soft padded steps", 4, 0.4),
+      v("heavy boots on low pile carpet, dull thumps, small quiet office", 4, 0.5),
     ],
   },
   {
@@ -65,10 +66,10 @@ export const CATEGORIES: CategorySpec[] = [
     label: "Footsteps: concrete stairwell",
     intent: "one person walking on concrete stairs inside a hard, echoing concrete fire stairwell, boots on concrete steps",
     variants: [
-      v("Footsteps: boots walking down concrete stairs, regular step rhythm, gritty concrete contact, big hard concrete stairwell echo, 6 seconds", 6, 0.6),
-      v("Footsteps climbing concrete stairs in a fire stairwell, occasional hand tap on a steel handrail, hollow reverberant space, 6 seconds", 6, 0.5),
-      v("Person running up concrete stairs, fast boot steps, loud stairwell reverb, 5 seconds", 5, 0.5),
-      v("Slow heavy boot steps on concrete stair treads with grit scrape, close-mic, concrete stairwell reverb tail", 5, 0.65),
+      v("footsteps walking down concrete stairs, gritty scrape, concrete stairwell echo", 6, 0.5),
+      v("work boots climbing concrete steps, hand sliding on steel railing, empty stairwell at night", 6, 0.4),
+      v("hurried footsteps running up concrete stairs, loud stairwell reverb", 5, 0.45),
+      v("slow footsteps on concrete stairs far below, echoing up the stairwell", 6, 0.4),
     ],
   },
   {
@@ -77,9 +78,9 @@ export const CATEGORIES: CategorySpec[] = [
     label: "Footsteps: metal grating catwalk",
     intent: "one person walking in boots on a steel grating catwalk, metallic clank and ring per step, industrial room",
     variants: [
-      v("Footsteps: boots walking on a steel bar-grating catwalk, metallic clank and short ring with each step, loose panel rattle, large machine room, 5 seconds", 5, 0.6),
-      v("Person walking across a metal mesh walkway, hollow metal footfalls, grate panels rattling in frames, industrial hall reverb", 5, 0.5),
-      v("Slow boot steps on steel diamond plate floor over a hollow space, dull metallic thud per step, close-mic", 5, 0.6),
+      v("footsteps on a steel grating catwalk, metallic clank each step, machine room, close mic", 5, 0.5),
+      v("boots walking across a metal mesh walkway, rattling grate panels, industrial echo", 5, 0.4),
+      v("slow footsteps on diamond plate steel floor, hollow metallic thud, basement plant room", 5, 0.45),
     ],
   },
   {
@@ -88,9 +89,9 @@ export const CATEGORIES: CategorySpec[] = [
     label: "Footsteps: wet asphalt",
     intent: "one person walking on wet asphalt outdoors at night, wet splashy shoe contacts, open outdoor space",
     variants: [
-      v("Footsteps: boots walking on wet asphalt, wet slap and splash of each step, thin water layer, open outdoor parking lot, no rain, 5 seconds", 5, 0.6),
-      v("Person walking slowly through shallow puddles on a wet road, splashing steps, quiet outdoors, close-mic", 5, 0.5),
-      v("Shoes walking on damp gritty asphalt, light wet scuff per step, outdoor open air, medium distance", 5, 0.6),
+      v("footsteps on wet asphalt at night, wet slapping soles, parking lot, close mic", 5, 0.5),
+      v("boots splashing through shallow puddles on a wet road, slow walk", 5, 0.4),
+      v("slow footsteps on rain soaked pavement, wet scuffs, quiet street at night", 5, 0.45),
     ],
   },
   {
@@ -99,9 +100,9 @@ export const CATEGORIES: CategorySpec[] = [
     label: "Footsteps: gravel",
     intent: "one person walking on loose gravel outdoors, crunchy stone steps",
     variants: [
-      v("Footsteps: boots walking slowly on loose gravel, crisp stone crunch with each step, outdoors, close-mic, 5 seconds", 5, 0.6),
-      v("Person walking on a gravel road shoulder, steady crunching footsteps, open air", 5, 0.5),
-      v("Slow careful steps on coarse gravel, individual stones shifting underfoot, close-mic", 5, 0.65),
+      v("slow footsteps on loose gravel, crunchy steps, outdoors at night, close mic", 5, 0.5),
+      v("boots crunching on a gravel road shoulder, steady walk", 5, 0.4),
+      v("careful steps on coarse gravel, stones shifting underfoot, distant", 5, 0.45),
     ],
   },
   {
@@ -110,9 +111,9 @@ export const CATEGORIES: CategorySpec[] = [
     label: "Footsteps: forest floor",
     intent: "one person walking on a damp pine forest floor: soft needles, earth, occasional twig snap, outdoors",
     variants: [
-      v("Footsteps: boots walking on damp pine needles and soft earth, quiet crunch, one small twig snaps, outdoor forest, close-mic, 6 seconds", 6, 0.6),
-      v("Person walking through damp forest undergrowth, soft leafy footfalls and brushing low plants, quiet outdoors", 6, 0.5),
-      v("Slow steps on wet forest floor with fallen pine needles, muffled soft footfalls, a dry stick cracks underfoot", 6, 0.6),
+      v("slow footsteps on soft wet moss and pine needles, muffled, damp forest at night", 6, 0.5),
+      v("boots walking on damp forest soil, soft squelchy steps, quiet woods", 6, 0.45),
+      v("footsteps on a muddy forest path, wet earth, one twig snaps, close mic", 6, 0.4),
     ],
   },
 
@@ -123,10 +124,10 @@ export const CATEGORIES: CategorySpec[] = [
     label: "Heavy steel fire door open/close",
     intent: "a heavy steel fire door in a concrete corridor opening on a hydraulic closer and closing with a heavy metallic latch slam",
     variants: [
-      v("Heavy steel fire door: lever handle turns, door swings open with closer hiss, then swings shut with a deep metallic boom and latch click, concrete hallway reverb, 4 seconds", 4, 0.6),
-      v("Heavy steel door closing slowly on a hydraulic door closer, ends with a loud metal latch clunk, echoing concrete corridor", 3.5, 0.6),
-      v("Hollow steel security door slammed shut, heavy metallic bang and latch, short concrete room reverb", 2.5, 0.6),
-      v("Steel fire door pushed open, hinges groan, closer arm creaks, door thuds closed against its metal frame", 4, 0.5),
+      v("heavy steel fire door opening and slamming shut, metal latch clunk, concrete hallway", 4, 0.5),
+      v("heavy metal door closing slowly on a hydraulic closer, loud latch, echoing corridor", 4, 0.45),
+      v("steel security door slammed shut, deep metallic boom, empty building", 3, 0.5),
+      v("pushing open a heavy steel door, hinges groan, door thuds closed behind, concrete stairwell", 4, 0.4),
     ],
   },
   {
@@ -135,9 +136,9 @@ export const CATEGORIES: CategorySpec[] = [
     label: "Wooden office door creak",
     intent: "an old wooden office door opening slowly with a creaking hinge, small quiet room",
     variants: [
-      v("Old wooden office door opens slowly, dry metal hinge creaks for two seconds, small quiet room, close-mic", 3.5, 0.6),
-      v("Wooden door with squeaky hinges creaking open slowly, long drawn-out hinge creak, quiet interior", 4, 0.5),
-      v("Brass doorknob turns, latch clicks, wooden door opens with a short creak and closes softly with a latch click", 3, 0.6),
+      v("old wooden office door creaking open slowly, squeaky hinges, quiet room", 3.5, 0.5),
+      v("wooden door handle turning, door opens with a short creak, closes softly", 3, 0.45),
+      v("wooden office door shut firmly, latch click, small room, close mic", 2, 0.5),
     ],
   },
   {
@@ -146,9 +147,9 @@ export const CATEGORIES: CategorySpec[] = [
     label: "Panic bar push",
     intent: "pushing the metal panic/crash bar of an emergency exit door: loud spring latch clack and the steel door swinging open",
     variants: [
-      v("Push bar on a steel emergency exit door pressed hard: loud spring-loaded latch clack, metal rattle, door swings open, close-mic", 2.5, 0.65),
-      v("Crash bar exit door: metal bar depressed with a clunk, latch releases, steel door opens to outdoors", 2.5, 0.55),
-      v("Panic bar door pushed open with a clack, heavy steel door swings, then closes behind with a metallic thud", 4, 0.5),
+      v("pushing the panic bar of a steel exit door, loud clack, door swings open", 2.5, 0.5),
+      v("emergency exit crash bar pushed, latch release clunk, metal rattle, close mic", 2, 0.45),
+      v("panic bar door pushed open to the outside, door closes behind with a heavy thud", 4, 0.4),
     ],
   },
   {
@@ -157,9 +158,9 @@ export const CATEGORIES: CategorySpec[] = [
     label: "Roll-up loading dock door",
     intent: "a large corrugated steel roll-up loading dock door being raised or lowered: rumbling, rattling metal slats",
     variants: [
-      v("Corrugated steel roll-up loading dock door pulled open by hand chain, clinking chain and rumbling rattling steel slats, warehouse, 6 seconds", 6, 0.6),
-      v("Rolling steel shutter door rising on an electric motor, motor whine and clattering slats, warehouse reverb, 7 seconds", 7, 0.55),
-      v("Roll-up steel garage door pulled down and slammed shut on concrete, metal crash and slat rattle", 3, 0.6),
+      v("corrugated steel roll up door pulled open by hand, rattling chain and slats, loading dock", 6, 0.5),
+      v("rolling steel shutter door opening on a motor, clattering slats, warehouse", 7, 0.45),
+      v("roll up loading dock door pulled down and slammed shut, metal crash, echo", 3, 0.5),
     ],
   },
   {
@@ -168,9 +169,9 @@ export const CATEGORIES: CategorySpec[] = [
     label: "Chain-link gate rattle",
     intent: "a chain-link fence gate rattling and swinging, metal chain and fence wire jingling, outdoors at night",
     variants: [
-      v("Chain-link fence gate swung open by hand, wire mesh rattle, loose chain jingling against the steel post, outdoors, close-mic", 4, 0.6),
-      v("Shaking a locked chain-link gate, padlock and steel chain clanking against the mesh, outdoors", 3, 0.6),
-      v("Wind rattling a loose chain-link gate against its post, intermittent metallic clinks, distant, outdoors", 5, 0.45),
+      v("chain link fence gate swinging open, wire mesh rattle, chain jingling, outdoors at night", 4, 0.5),
+      v("shaking a locked chain link gate, padlock and chain clanking", 3, 0.5),
+      v("chain link gate slammed shut against its post, metal rattle, distant", 3, 0.45),
     ],
   },
   {
@@ -179,9 +180,9 @@ export const CATEGORIES: CategorySpec[] = [
     label: "Motorized sliding gate",
     intent: "a motorized steel security sliding gate rolling along its ground track, electric motor hum, ends with a stop clunk, outdoors",
     variants: [
-      v("Motorized steel sliding security gate opening: relay click, electric gear motor hum, steel wheels rolling on a ground rail, stops with a clunk, outdoors, 8 seconds", 8, 0.6),
-      v("Chain-driven sliding steel gate moving along a track, grinding rollers and chain rattle, outdoor parking lot", 8, 0.5),
-      v("Old electric gate operator starting with a relay clack, slow rumbling slide, stopping with a heavy metal clunk", 6, 0.6),
+      v("motorized steel sliding gate opening, motor hum, wheels rolling on track, clunk at the end", 8, 0.5),
+      v("old electric security gate sliding closed, grinding rollers, chain rattle, outdoors", 8, 0.45),
+      v("sliding gate motor starting with a relay click, slow rumbling slide, distant", 6, 0.4),
     ],
   },
 
@@ -193,9 +194,9 @@ export const CATEGORIES: CategorySpec[] = [
     intent: "inside an old elevator car while it travels: steady electric motor hum and gentle cabin rumble, loopable",
     loop: true,
     variants: [
-      loopV("Inside an old elevator car moving between floors: steady low electric motor hum, faint cable whir, gentle cabin rumble, loopable", 10, 0.6),
-      loopV("Freight elevator traveling: constant motor drone, cabin walls rattling softly, steady, loopable", 10, 0.5),
-      loopV("Elevator machine room: hoist motor running at constant speed, deep electric hum, occasional relay click, loopable", 10, 0.55),
+      loopV("old elevator moving between floors, low motor hum, cabin rumble, inside the car", 10, 0.5),
+      loopV("freight elevator travelling, steady motor drone, cabin rattle", 10, 0.45),
+      loopV("elevator machine room, hoist motor running, deep hum and relay clicks", 10, 0.5),
     ],
   },
   {
@@ -204,9 +205,9 @@ export const CATEGORIES: CategorySpec[] = [
     label: "Lift cable creak",
     intent: "steel elevator cables and pulleys creaking and groaning under tension inside an elevator shaft",
     variants: [
-      v("Steel elevator cables creaking and groaning under tension inside a tall shaft, slow metal stress sounds, hollow shaft reverb", 6, 0.6),
-      v("Elevator pulley sheave turning slowly, steel cable creak and metallic groan, shaft echo", 6, 0.5),
-      v("Old elevator car swaying slightly on its cables, metal creak and small ticks, inside the car", 5, 0.6),
+      v("elevator cables creaking in the shaft, steel cable groan, hollow echo", 6, 0.5),
+      v("old elevator car swaying, cable creak and metal ticks, inside the car", 5, 0.45),
+      v("elevator pulley turning slowly, cable strain and creak, machine room", 6, 0.4),
     ],
   },
   {
@@ -215,9 +216,9 @@ export const CATEGORIES: CategorySpec[] = [
     label: "Lift arrival ding (1980s)",
     intent: "a single mechanical elevator arrival bell ding from an 1980s office building elevator",
     variants: [
-      v("Single elevator arrival bell: one mechanical ding from a small metal bell, short ring-out, 1980s office building", 2, 0.7),
-      v("Old elevator hall lantern chime, one electronic bing tone, office lobby", 2, 0.6),
-      v("Vintage elevator floor bell, one soft ding with brief ring-out, quiet hallway", 2, 0.5),
+      v("old elevator arrival bell, single mechanical ding, office lobby", 2, 0.55),
+      v("1980s elevator chime, one soft bing, empty hallway", 2, 0.5),
+      v("elevator floor bell ringing once, small metal bell, close mic", 2, 0.45),
     ],
   },
   {
@@ -226,9 +227,9 @@ export const CATEGORIES: CategorySpec[] = [
     label: "Lift stall / clunk",
     intent: "an elevator car stopping suddenly between floors: heavy mechanical clunk/jolt, motor winding down",
     variants: [
-      v("Elevator car stops suddenly between floors: heavy brake clamp clunk, cabin jolts, motor hum winds down to silence, inside the car", 4, 0.6),
-      v("Elevator jolting to a halt, loud mechanical thud, steel cable twang, cabin rattle", 3, 0.55),
-      v("Old elevator shuddering to a stop, metal grinding then a heavy clunk, then silence", 4, 0.6),
+      v("elevator stopping suddenly between floors, heavy mechanical clunk, motor winding down", 4, 0.5),
+      v("old elevator jolting to a halt, loud brake thud, cabin rattle", 3, 0.45),
+      v("elevator stalls, metal grinding then a heavy clunk, then silence", 4, 0.4),
     ],
   },
   {
@@ -237,9 +238,9 @@ export const CATEGORIES: CategorySpec[] = [
     label: "Lift scissor gate",
     intent: "an old freight elevator's collapsible steel scissor/accordion gate being pulled open or shut, rattling metal lattice and latch",
     variants: [
-      v("Freight elevator collapsible steel scissor gate pulled shut by hand, metal lattice clattering, latch snaps closed, close-mic", 3, 0.65),
-      v("Accordion steel elevator gate pulled open, folding metal lattice rattling and squeaking", 3, 0.6),
-      v("Steel scissor gate slammed closed, metal crash and rattle, freight elevator", 2.5, 0.6),
+      v("freight elevator scissor gate pulled shut, metal lattice clatter, latch, close mic", 3, 0.5),
+      v("old elevator accordion gate pulled open, rattling folding metal gate", 3, 0.45),
+      v("elevator scissor gate slammed closed, metal crash and rattle", 2.5, 0.5),
     ],
   },
 
@@ -251,9 +252,9 @@ export const CATEGORIES: CategorySpec[] = [
     intent: "steady electrical hum/buzz of overhead fluorescent tube lights in a quiet room, loopable",
     loop: true,
     variants: [
-      loopV("Overhead fluorescent tube lights: steady 60 hertz electrical hum and ballast buzz, quiet room, loopable", 10, 0.65),
-      loopV("Buzzing fluorescent light fixture in an empty office, constant electrical hum, close-mic, loopable", 10, 0.55),
-      loopV("Old magnetic fluorescent ballast drone with a faint high-pitched whine, loopable", 10, 0.5),
+      loopV("fluorescent lights humming in an empty office at night, steady electrical buzz", 10, 0.5),
+      loopV("old fluorescent tube fixture buzzing overhead, close mic", 10, 0.5),
+      loopV("fluorescent ballast hum with faint high whine, quiet hallway", 10, 0.45),
     ],
   },
   {
@@ -262,9 +263,9 @@ export const CATEGORIES: CategorySpec[] = [
     label: "Fluorescent flicker / starter tick",
     intent: "a fluorescent tube light flickering on: starter ticking, buzzing pings, then steady hum",
     variants: [
-      v("Fluorescent tube light switching on: starter clicks tick tick, tube buzzes and pings while flickering, then settles into a steady hum", 4, 0.6),
-      v("Faulty fluorescent light flickering, irregular electrical buzz bursts and pings, close-mic", 5, 0.5),
-      v("Fluorescent starter clicking repeatedly, tube struggling to light with short buzzes", 4, 0.6),
+      v("fluorescent tube flickering on, starter ticking, buzzing, then steady hum", 4, 0.5),
+      v("faulty fluorescent light flickering, irregular buzz and pings, empty room", 5, 0.45),
+      v("fluorescent starter clicking, tube struggling to light, close mic", 4, 0.5),
     ],
   },
   {
@@ -274,9 +275,9 @@ export const CATEGORIES: CategorySpec[] = [
     intent: "outdoor high-pressure sodium street/parking lamp humming overhead at night, steady electrical buzz, loopable",
     loop: true,
     variants: [
-      loopV("Outdoor sodium vapor street lamp humming overhead at night, steady electrical buzz from the pole-top ballast, quiet open air, loopable", 10, 0.6),
-      loopV("Parking lot light pole buzzing, constant high-voltage hum, quiet night outdoors, loopable", 10, 0.5),
-      loopV("Close-mic streetlight ballast hum, low steady electrical drone, loopable", 10, 0.6),
+      loopV("sodium street lamp buzzing overhead at night, steady electrical hum, quiet parking lot", 10, 0.5),
+      loopV("parking lot light pole humming, high voltage buzz, distant crickets", 10, 0.45),
+      loopV("streetlight ballast hum, low steady drone, close mic", 10, 0.5),
     ],
   },
   {
@@ -310,9 +311,9 @@ export const CATEGORIES: CategorySpec[] = [
     intent: "quiet night pine forest ambience with distant wind in the trees, sparse and cold, no music, loopable",
     loop: true,
     variants: [
-      loopV("Night pine forest ambience: distant wind moving through pine treetops, soft swells, sparse quiet crickets, still and cold, loopable", 22, 0.5),
-      loopV("Foggy night in a pine forest: gentle gusts in the branches, very occasional distant owl hoot, loopable", 22, 0.45),
-      loopV("Still night forest: faint breeze, water drips from branches onto needles, no animals, loopable", 22, 0.55),
+      loopV("pine forest at night, distant wind in the treetops, quiet and cold", 22, 0.45),
+      loopV("foggy night in the woods, soft gusts through pine branches, very quiet", 22, 0.4),
+      loopV("still night forest, water dripping from branches, faint distant wind", 22, 0.45),
     ],
   },
   {
@@ -322,9 +323,36 @@ export const CATEGORIES: CategorySpec[] = [
     intent: "light rain drizzle falling on an asphalt parking lot at night, steady gentle patter, loopable",
     loop: true,
     variants: [
-      loopV("Light rain drizzle on an asphalt parking lot at night: steady gentle patter, small puddle drips, no thunder, loopable", 20, 0.6),
-      loopV("Soft drizzle on a wet road and parked car roofs, a gutter dripping nearby, loopable", 20, 0.5),
-      loopV("Misty light rain hissing softly on pavement, outdoors, no thunder, loopable", 20, 0.6),
+      loopV("light rain drizzle on an asphalt parking lot at night, steady patter, puddles", 20, 0.5),
+      loopV("soft rain on a wet road and parked car roofs, gutter dripping", 20, 0.45),
+      loopV("misty drizzle hissing on pavement, quiet night, distant", 20, 0.45),
+    ],
+  },
+  {
+    id: "amb-rain-thunder",
+    group: "ambience",
+    label: "Rain with distant thunder",
+    intent: "steady rain or drizzle outdoors at night (on asphalt or in a pine forest) with occasional distant rolling thunder, realistic field recording, no music, loopable",
+    loop: true,
+    variants: [
+      loopV("Steady light rain falling on an asphalt parking lot at night, constant patter and puddle drips, one distant low rolling thunder rumble in the middle, no music, loopable", 26, 0.55),
+      loopV("Rain falling through a pine forest at night: soft hiss on needles and branches, drips, two far-off rolling thunder rumbles, field recording, loopable", 28, 0.5),
+      loopV("Moderate rain on wet pavement and parked car roofs, gutter running, occasional distant thunder rolling across the sky, outdoors at night, loopable", 24, 0.55),
+      loopV("Drizzle on asphalt with a long slow thunder roll far away behind low clouds, quiet night, realistic, loopable", 30, 0.45),
+    ],
+  },
+  {
+    id: "amb-thunder",
+    group: "ambience",
+    label: "Thunder one-shots (layer over rain)",
+    intent: "a single realistic thunder event for layering over rain: distant roll, closer crack-and-roll, rumble heard indoors through walls, or a sharp nearby lightning strike; no rain bed dominating, no music",
+    variants: [
+      v("Single distant thunder: a long low rolling rumble far away across the sky, slowly fading out, no rain, field recording", 9, 0.6),
+      v("Thunder clap at medium distance: a sharp crack followed by a deep rolling rumble that fades over several seconds, no rain", 8, 0.6),
+      v("Thunder heard from inside a concrete building: muffled low rumble through the walls, windows faintly rattle, no rain", 8, 0.55),
+      v("Very close lightning strike: an explosive sharp crack and boom right overhead, then a short heavy rumble, no rain", 6, 0.6),
+      v("Faint very distant thunder: a soft low grumble on the horizon, barely audible, short, no rain", 6, 0.5),
+      v("Rolling thunder at medium distance: several overlapping booms and a long grumbling roll echoing off hills and trees, no rain", 10, 0.55),
     ],
   },
   {
@@ -346,9 +374,9 @@ export const CATEGORIES: CategorySpec[] = [
     intent: "near-silent room tone of an empty tiled institutional corridor at night: faint air and distant electrical hum, loopable",
     loop: true,
     variants: [
-      loopV("Room tone of an empty tiled hallway at night: very quiet air hiss, faint distant fluorescent hum, loopable", 20, 0.6),
-      loopV("Silent empty institutional corridor: subtle air movement, faint far-off ventilation, loopable", 20, 0.5),
-      loopV("Quiet hallway room tone, low faint electrical hum, occasional soft building creak, loopable", 20, 0.55),
+      loopV("empty hallway at night, quiet room tone, faint distant ventilation hum", 20, 0.45),
+      loopV("silent institutional corridor, subtle air hiss, far off fluorescent buzz", 20, 0.45),
+      loopV("empty office building at night, very quiet, faint electrical hum, occasional creak", 20, 0.4),
     ],
   },
   {
@@ -405,9 +433,9 @@ export const CATEGORIES: CategorySpec[] = [
     label: "Mop bucket wheels",
     intent: "a janitor's wheeled mop bucket rolling on a tile floor: plastic caster rattle and water slosh",
     variants: [
-      v("Janitor's yellow plastic mop bucket on casters pushed across a tile floor: small wheels rattle, water sloshes inside, hallway, 5 seconds", 5, 0.6),
-      v("Squeaky caster wheels of a janitor cart rolling along a tiled corridor", 5, 0.5),
-      v("Mop pushed into a bucket wringer and squeezed: water squelch and drips into the bucket", 3, 0.6),
+      v("pushing a janitor mop bucket on squeaky wheels across a tile floor, water sloshing", 5, 0.5),
+      v("janitor cart rolling down a hallway, rattling plastic casters", 5, 0.45),
+      v("wringing a mop in a bucket wringer, water squeeze and drips, close mic", 3, 0.5),
     ],
   },
   {
@@ -427,9 +455,9 @@ export const CATEGORIES: CategorySpec[] = [
     label: "Typewriter",
     intent: "a 1980s typewriter typing: mechanical key strikes, possibly carriage return bell",
     variants: [
-      v("Electric typewriter typing a short sentence: rapid mechanical key strikes, motor hum, carriage return and bell, close-mic", 5, 0.6),
-      v("Manual typewriter typing slowly: loud individual key strikes, close-mic", 4, 0.55),
-      v("IBM Selectric burst of typing: golf-ball strikes and motor hum, office", 4, 0.6),
+      v("electric typewriter typing a short line, carriage return bell, office", 5, 0.5),
+      v("old manual typewriter, slow key strikes, close mic", 4, 0.45),
+      v("IBM Selectric typing, motor hum and ball strikes, quiet office at night", 4, 0.5),
     ],
   },
   {
@@ -508,9 +536,9 @@ export const CATEGORIES: CategorySpec[] = [
     intent: "a low, dark, unsettling ambient drone for horror tension, no melody, loopable",
     loop: true,
     variants: [
-      loopV("Low dark ambient drone: deep sustained tone slowly evolving, no melody, unsettling, loopable", 20, 0.5),
-      loopV("Deep sustained hum with slow beating between two close low frequencies, tense, no melody, loopable", 20, 0.55),
-      loopV("Dark ambient drone with faint metallic resonance and slow swells, no melody, loopable", 20, 0.45),
+      loopV("low ominous drone, deep sustained hum, slowly evolving, no melody", 20, 0.45),
+      loopV("deep unsettling hum from far below, low frequency, no melody", 20, 0.45),
+      loopV("dark low drone with faint metallic resonance, slow swells, no melody", 20, 0.4),
     ],
   },
   {
@@ -554,10 +582,10 @@ export const CATEGORIES: CategorySpec[] = [
     label: "Subtle notification",
     intent: "a subtle short soft interface notification blip, retro electronic, unobtrusive",
     variants: [
-      v("Subtle soft UI notification: one gentle short electronic blip, retro", 1, 0.6),
-      v("Quiet single analog beep from a 1980s computer terminal", 1, 0.65),
-      v("Short soft two-note electronic chime, minimal interface sound", 1.5, 0.5),
-      v("Pager beep: one short soft electronic chirp", 1, 0.6),
+      v("soft single electronic blip, quiet, 1980s computer terminal", 1, 0.5),
+      v("subtle short beep from an old terminal, close mic", 1, 0.45),
+      v("gentle two note electronic chime, quiet, minimal", 1.5, 0.45),
+      v("soft pager chirp, short, quiet", 1, 0.45),
     ],
   },
 ]

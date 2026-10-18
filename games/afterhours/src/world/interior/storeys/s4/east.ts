@@ -182,7 +182,7 @@ export async function buildEast(s: S4, pause: () => Promise<void>) {
   rackRow(b, 6.2, -19.6, Math.PI, 5, 99)
   rackRow(b, 6.6, -16.4, 0, 4, 99)
   // The rotating receiver beacon fills the room (lighting-state.ts 4-11: the red window seen from the lot).
-  beacon(b, 3.0, FLOOR_Y + 1.6, -19.6, "red", true, { intensity: 7, range: 7 })
+  beacon(b, 3.0, FLOOR_Y + 1.6, -19.6, "red", true, { intensity: 12, range: 8 })
   b.lamp({ kind: "window", position: [6.4, FLOOR_Y + 1.3, -18.0], color: [0.4, 1, 0.5], intensity: 0.7, range: 3, size: 0.3 })
   // Bench: spectrum display, rubidium standard, log printout.
   const benchY = FLOOR_Y + 0.76

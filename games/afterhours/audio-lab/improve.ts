@@ -3,8 +3,12 @@
 //   take 1 uses the current prompts.ts prompt for that variant (or a Gemini-refined one if unchanged),
 //   further takes (--retries, default 2) use Gemini-refined prompts built from what the listener heard.
 // The best-scoring take wins (the original wins ties); replaced files move to sfx/_previous/.
+// New takes are loudness-normalised (lib/loudness.ts; raw kept in sfx-raw/).
 // Then each category is topped up with new variants until it has --min-good (3) clips scoring >= 4,
-// up to --max-variants (6). Variants with keep:true in prompts.ts are never touched.
+// up to --max-variants (6). Approved takes (lib/approved.ts) and keep:true variants are never touched.
+//
+// --fresh: for the selected categories, every non-approved slot is regenerated from the current prompts.ts prompts
+// (old takes move to sfx/_previous/), slots beyond the prompts.ts list are archived, then topped up as usual.
 //
 //   bun audio-lab/improve.ts --dry-run
 //   bun audio-lab/improve.ts --force light-breaker/v1,light-breaker/v2
@@ -25,12 +29,15 @@ import {
   type ManifestSound,
 } from "./lib/eleven"
 import { qaSound } from "./qa"
+import { isApproved, styleExamples } from "./lib/approved"
+import { normaliseSound } from "./lib/loudness"
 
 const { values: args } = parseArgs({
   options: {
     category: { type: "string", short: "c" },
     group: { type: "string", short: "g" },
     force: { type: "string" },
+    fresh: { type: "boolean", default: false },
     threshold: { type: "string", default: "3" },
     retries: { type: "string", default: "2" },
     "min-good": { type: "string", default: "3" },
@@ -55,6 +62,7 @@ const cats = CATEGORIES.filter(
 
 const manifest: Manifest = await loadManifest()
 const startCost = manifest.totalCost
+const runStart = new Date().toISOString()
 let spent = 0
 const log: string[] = []
 
@@ -87,7 +95,8 @@ await pool(unjudged, Number(args.concurrency), async (s) => {
   }
 })
 
-const isKeep = (cat: CategorySpec, variant: string) => !!cat.variants[Number(variant.slice(1)) - 1]?.keep
+const isKeep = (cat: CategorySpec, variant: string) =>
+  isApproved(cat.id, variant) || !!cat.variants[Number(variant.slice(1)) - 1]?.keep
 const takeDir = (cat: string) => join(ROOT, "sfx", cat, ".takes")
 
 interface Take {
@@ -109,8 +118,12 @@ async function makeTake(cat: CategorySpec, spec: VariantSpec): Promise<Take> {
 }
 
 function goodExample(cat: CategorySpec): string | undefined {
+  const approved = manifest.sounds.find((s) => s.category === cat.id && s.status === "approved")
+  if (approved) return approved.prompt
   const locked = cat.variants.find((v) => v.keep)
   if (locked) return locked.prompt
+  // In --fresh mode the category's old takes were rejected by ear; don't steer toward them.
+  if (args.fresh) return undefined
   const best = manifest.sounds
     .filter((s) => s.category === cat.id && (s.qa?.score ?? 0) >= 4)
     .sort((a, b) => (b.qa?.score ?? 0) - (a.qa?.score ?? 0))[0]
@@ -128,6 +141,7 @@ async function takesFor(cat: CategorySpec, base: VariantSpec, history: Take[], f
       prompt = await refinePrompt({
         intent: cat.intent,
         goodExample: goodExample(cat),
+        styleExamples: styleExamples(cat.id).slice(0, 12),
         attempts: all.map((h) => ({ prompt: h.prompt, description: h.j.description, score: h.j.score, issues: h.j.issues })),
       })
     const influence = Math.min(0.85, (base.influence ?? 0.5) + 0.05 * t)
@@ -192,21 +206,49 @@ async function install(
     previous,
     attempts,
   }
+  await normaliseSound(ROOT, entry)
   manifest.sounds = manifest.sounds.filter((s) => s.file !== file)
   manifest.sounds.push(entry)
   await saveManifest(manifest)
 }
 
+async function archive(s: ManifestSound) {
+  const prevFile = `sfx/_previous/${s.category}/${s.variant}-${Date.parse(s.generatedAt) || Date.now()}.mp3`
+  await mkdir(join(ROOT, "sfx/_previous", s.category), { recursive: true })
+  await rename(join(ROOT, s.file), join(ROOT, prevFile))
+  await rm(join(ROOT, s.file.replace(/^sfx\//, "sfx-raw/")), { force: true })
+  manifest.sounds = manifest.sounds.filter((x) => x.file !== s.file)
+}
+
 async function improveCategory(cat: CategorySpec) {
-  const sounds = manifest.sounds.filter((s) => s.category === cat.id)
+  if (args.fresh && !args["dry-run"]) {
+    // Archive non-approved slots beyond the prompts.ts list, and create entries for prompts with no slot yet.
+    for (const s of manifest.sounds.filter((x) => x.category === cat.id)) {
+      if (Number(s.variant.slice(1)) > cat.variants.length && !isKeep(cat, s.variant)) await archive(s)
+    }
+    for (let i = 0; i < cat.variants.length; i++) {
+      const variant = `v${i + 1}`
+      if (manifest.sounds.some((x) => x.category === cat.id && x.variant === variant) || isKeep(cat, variant)) continue
+      const spec: VariantSpec = { ...cat.variants[i], loop: cat.variants[i].loop ?? cat.loop }
+      console.log(`  ${cat.id}/${variant}: new slot`)
+      try {
+        const takes = await takesFor(cat, spec, [], spec.prompt)
+        const best = takes.reduce((a, b) => (b.j.score > a.j.score ? b : a))
+        await install(cat, variant, best, spec, "regenerated", attemptsOf(takes, best))
+      } catch (e) {
+        out(`  FAILED ${cat.id}/${variant}: ${(e as Error).message}`)
+      }
+    }
+  }
+  const sounds = manifest.sounds.filter((s) => s.category === cat.id && !(args.fresh && s.attempts && s.generatedAt > runStart))
   // 2. Fix weak (or forced) variants.
   for (const s of sounds) {
     const key = `${cat.id}/${s.variant}`
     if (isKeep(cat, s.variant)) {
-      s.status = "locked"
+      s.status = "approved"
       continue
     }
-    const force = forced.has(key)
+    const force = forced.has(key) || args.fresh
     if (!force && (s.qa?.score ?? 5) > THRESHOLD) {
       s.status ??= "kept"
       continue
@@ -279,7 +321,7 @@ await pool(cats, Math.max(1, Number(args.concurrency)), async (cat) => {
   await improveCategory(cat)
   const s = manifest.sounds.filter((x) => x.category === cat.id)
   out(
-    `${cat.id}: ${s.length} variants, ${s.filter((x) => (x.qa?.score ?? 0) >= 4).length} good, scores ${s.map((x) => `${x.variant}=${x.qa?.score ?? "?"}${x.status === "regenerated" ? "*" : x.status === "added" ? "+" : x.status === "locked" ? "L" : ""}`).join(" ")}`,
+    `${cat.id}: ${s.length} variants, ${s.filter((x) => (x.qa?.score ?? 0) >= 4).length} good, scores ${s.map((x) => `${x.variant}=${x.qa?.score ?? "?"}${x.status === "regenerated" ? "*" : x.status === "added" ? "+" : x.status === "approved" ? "A" : ""}`).join(" ")}`,
   )
 })
 

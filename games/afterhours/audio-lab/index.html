@@ -18,12 +18,12 @@
       <input id="search" type="search" placeholder="Filter (prompt, id)…  /" />
       <select id="group"><option value="">All groups</option></select>
       <select id="qaFilter" title="Filter by listening-QA score">
-        <option value="">QA: all</option><option value="good">QA ≥ 4</option><option value="weak">QA ≤ 3</option><option value="changed">regenerated / new</option>
+        <option value="">QA: all</option><option value="good">QA ≥ 4</option><option value="weak">QA ≤ 3</option><option value="changed">regenerated / new</option><option value="approved">approved</option>
       </select>
       <label class="toggle"><input id="favOnly" type="checkbox" /> ★ only</label>
       <label class="toggle"><input id="ratedOnly" type="checkbox" /> rated</label>
       <label class="toggle" title="Loop sounds in ambience/loop categories (L toggles per sound)"><input id="autoLoop" type="checkbox" checked /> loop ambiences</label>
-      <label class="vol">vol <input id="volume" type="range" min="0" max="1" step="0.01" value="0.8" /></label>
+      <label class="vol">vol <input id="volume" type="range" min="0" max="1" step="0.01" value="1" /></label>
       <button id="stopAll" title="Stop (Esc)">■ Stop</button>
       <button id="export" class="primary">Export picks</button>
       <button id="help" title="Shortcuts (?)">?</button>

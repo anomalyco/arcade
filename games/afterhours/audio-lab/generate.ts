@@ -9,11 +9,13 @@
 //   bun audio-lab/generate.ts --group horror --dry-run
 //   bun audio-lab/generate.ts --list
 //
-// --force never replaces variants marked `keep: true` in prompts.ts.
+// --force never replaces approved takes (lib/approved.ts: picks-*.json exports) or `keep: true` variants.
 import { mkdir, readdir, rename } from "node:fs/promises"
 import { join } from "node:path"
 import { parseArgs } from "node:util"
 import { CATEGORIES, type CategorySpec, type VariantSpec } from "./prompts"
+import { isApproved } from "./lib/approved"
+import { normaliseSound } from "./lib/loudness"
 import { addCost, generateSfx, loadManifest, OUT, ROOT, saveManifest, type ManifestSound } from "./lib/eleven"
 
 const { values: args } = parseArgs({
@@ -91,7 +93,7 @@ for (const cat of selectCategories()) {
   plan(cat).forEach((spec, i) => {
     const variant = `v${i + 1}`
     const has = existing.has(`${variant}.mp3`)
-    if (has && (!args.force || spec.keep)) return
+    if (has && (!args.force || spec.keep || isApproved(cat.id, variant))) return
     jobs.push({ cat, variant, spec, file: `sfx/${cat.id}/${variant}.mp3` })
   })
 }
@@ -140,6 +142,7 @@ async function worker() {
         status: old ? "regenerated" : undefined,
         previous,
       }
+      await normaliseSound(ROOT, entry)
       manifest.sounds = manifest.sounds.filter((s) => s.file !== job.file)
       manifest.sounds.push(entry)
       saveManifest(manifest)

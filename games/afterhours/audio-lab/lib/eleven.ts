@@ -2,6 +2,7 @@
 import { join } from "node:path"
 import type { CategorySpec, VariantSpec } from "../prompts"
 import { CATEGORIES } from "../prompts"
+import type { LoudnessInfo } from "./loudness"
 
 export const ROOT = join(import.meta.dir, "..")
 export const OUT = join(ROOT, "sfx")
@@ -41,10 +42,12 @@ export interface ManifestSound {
   cost: number | null
   generatedAt: string
   qa?: QaResult
-  /** "kept" (original take passed), "regenerated" (replaced by a better take), "added" (new variant), "locked" (user-approved) */
-  status?: "kept" | "regenerated" | "added" | "locked"
+  /** "kept" (original take passed), "regenerated" (replaced by a better take), "added" (new variant),
+   *  "approved" (user picked it by ear; never replaced, see lib/approved.ts) */
+  status?: "kept" | "regenerated" | "added" | "approved"
   previous?: { prompt: string; file: string; score?: number; description?: string; generatedAt: string }
   attempts?: Attempt[]
+  loudness?: LoudnessInfo
 }
 
 export interface Manifest {

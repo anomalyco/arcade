@@ -84,6 +84,7 @@ Return JSON: description (1–2 sentences, concrete), score (integer 1–5), iss
 export async function refinePrompt(opts: {
   intent: string
   goodExample?: string
+  styleExamples?: string[]
   attempts: { prompt: string; description: string; score: number; issues: string }[]
 }): Promise<string> {
   const history = opts.attempts
@@ -92,11 +93,15 @@ export async function refinePrompt(opts: {
   const prompt = `You write prompts for the ElevenLabs text-to-sound-effects model. It works best with short, literal, physical sound-design descriptions: the exact object, its material, the action performed on it, the consequence sound, mic perspective (close-mic or distant), the room/space, and the length. Never ask for music or voices unless intended. Avoid mood words like "eerie" or "cinematic" unless the intent is a designed stinger; avoid listing many unrelated elements.
 
 Target sound: "${opts.intent}"
-${opts.goodExample ? `A prompt that worked well in this family: "${opts.goodExample}"\n` : ""}
+${opts.goodExample ? `A prompt that worked well in this family: "${opts.goodExample}"\n` : ""}${
+    opts.styleExamples?.length
+      ? `House style: prompts whose results the director approved by ear (match their length and tone: short, lowercase, comma-separated, one concrete object/material/action, the space, close mic or distant):\n${opts.styleExamples.map((p) => `- "${p}"`).join("\n")}\n`
+      : ""
+  }
 Previous attempts and what an expert listener heard:
 ${history}
 
-Write ONE improved prompt (max 30 words) that fixes those issues. Return JSON { "prompt": string }.`
+Write ONE improved prompt (max 22 words, no durations, no word "loopable") that fixes those issues. Return JSON { "prompt": string }.`
   const r = await generate([{ text: prompt }], {
     type: "OBJECT",
     properties: { prompt: { type: "STRING" } },

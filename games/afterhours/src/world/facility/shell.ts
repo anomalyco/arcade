@@ -4,6 +4,7 @@ import type { Lamp, WorldContext } from "../context"
 import { Batch, QuadBuilder, SKIP_BOTTOM, rng } from "./geo"
 import { material } from "../../render/materials"
 import { buildFireEscape } from "./firescape"
+import { litWindows } from "../interior/lighting-state"
 import { addFacadeDoor, glassLeaf, steelLeaf } from "./doors"
 import { clearGlassMaterial, decalMaterial, windowMaterial } from "./windows"
 
@@ -282,36 +283,9 @@ export type ShellResult = {
   litPanes: { center: THREE.Vector3; normal: THREE.Vector3; color: [number, number, number]; facade: string; row: string }[]
 }
 
-/** Lit-window kinds at 3 a.m. (building program §3). */
-type LitKind = "warm" | "cool" | "lamp" | "crt" | "hood" | "red" | "work"
-const LIT_PATTERN: [face: "south" | "north", storey: number, x: number, kind: LitKind][] = [
-  ["south", 0, 14.3, "warm"], // 0-38 cafeteria vending glow
-  ["south", 1, -1.9, "lamp"], // 1-24 desk lamp
-  ["south", 1, 25.1, "lamp"], // 1-25
-  ["south", 1, 30.5, "lamp"],
-  ["south", 2, 8.9, "cool"], // 2-27 lab, lit for safety
-  ["south", 2, 14.3, "cool"],
-  ["south", 3, -12.7, "crt"], // 3-24 faint CRT
-  ["south", 3, 30.5, "cool"], // 3-25 corner
-  ["south", 4, 30.5, "warm"], // 4-14 the Director (only lit window on 4)
-  ["north", 3, 3.5, "warm"], // 3-08
-  ["north", 3, 8.9, "warm"],
-  ["north", 4, 3.5, "red"], // 4-11 red beacon
-  ["north", 2, -39.7, "hood"], // 2-04 fume-hood glow
-  ["north", 4, -28.9, "work"], // 4-01 clamp work lights
-]
 const WARM: [number, number, number] = [1.4, 0.78, 0.36]
 const COOL: [number, number, number] = [0.85, 1.1, 0.95]
 const PALE: [number, number, number] = [1.25, 1.02, 0.62]
-const LIT_TINT: Record<LitKind, [number, number, number]> = {
-  warm: WARM,
-  cool: COOL,
-  lamp: [1.0, 0.6, 0.28],
-  crt: COOL,
-  hood: [0.55, 0.85, 0.75],
-  red: [1.3, 0.08, 0.05],
-  work: [1.5, 1.3, 0.9],
-}
 const GRIME: [number, number, number] = [0, 0, 0]
 const RUST: [number, number, number] = [0.2, 0.075, 0.02]
 const COPE = COPING.h
@@ -345,16 +319,8 @@ export function buildShell(ctx: WorldContext, root: THREE.Object3D): ShellResult
   // Annex (no interior rooms behind its windows): fake rooms, a few lit, one CRT.
   const crtSlots = new Set(["annex-south:ground:1"])
   const forcedLit = new Set(["annex-south:ground:3"])
-  // Main block: the 3 a.m. pattern of docs/building-program.md §3, by facade, storey and bay centre x.
-  const pattern = new Map<string, LitKind>(LIT_PATTERN.map(([face, k, x, kind]) => [`${face}:${k}:${x}`, kind]))
-  const litAt = (f: Facade, k: number, h: Hole): LitKind | undefined => {
-    const c = Math.round(((h.u0 + h.u1) / 2) * 10) / 10
-    for (const [key, kind] of pattern) {
-      const [face, ks, xs] = key.split(":")
-      if (`main-${face}` === f.name && Number(ks) === k && Math.abs(Number(xs) - c) < 0.6) return kind
-    }
-    return undefined
-  }
+  // Main block: always plain clear glass. What's lit behind it is the interior's (interior/lighting-state.ts): the real
+  // room up close and its window proxy card further off, so a window glows exactly when the room behind is lit.
 
   for (const f of facades()) {
     wallBoxes(b, f, "concrete_wall")
@@ -392,18 +358,15 @@ export function buildShell(ctx: WorldContext, root: THREE.Object3D): ShellResult
       // Hopper transom low in the taller office windows.
       if (storey > 0) fbox(b, "metal_dark", f, h.u0, h.u1, h.y0 + 0.5, h.y0 + 0.56, GLASS_D - 0.04, GLASS_D + 0.04)
       const roll = rand()
-      const kind = isMain ? litAt(f, storey, h) : undefined
-      const isCrt = isMain ? kind === "crt" : crtSlots.has(id)
+      const isCrt = !isMain && crtSlots.has(id)
       const pLit = 0.1
-      const roomLit = isMain ? !!kind && kind !== "crt" : forcedLit.has(id) || (!isCrt && roll < pLit)
+      const roomLit = !isMain && (forcedLit.has(id) || (!isCrt && roll < pLit))
       const oneLit = !isMain && !roomLit && !isCrt && roll < pLit + 0.05
       const tintRoll = rand()
-      const tint = kind ? LIT_TINT[kind] : tintRoll < 0.45 ? WARM : tintRoll < 0.8 ? PALE : COOL
+      const tint = tintRoll < 0.45 ? WARM : tintRoll < 0.8 ? PALE : COOL
       const litPane = Math.floor(rand() * PANES)
       const crtPane = Math.floor(rand() * PANES)
-      // Main-block panes are see-through (real rooms behind): seeds offset by 2 switch the shaders to their
-      // translucent, outward-only mode.
-      const mode = isMain ? 2 : 0
+      const mode = 0
       const y0 = h.y0 + 0.02 + fr
       const y1 = h.y1 - fr
       for (let p = 0; p < PANES; p++) {
@@ -414,12 +377,10 @@ export function buildShell(ctx: WorldContext, root: THREE.Object3D): ShellResult
         const vVec = new THREE.Vector3(0, y1 - y0, 0)
         if (isCrt && p === crtPane) {
           lit.quad(o, uVec, vVec, n, [1, 1], [0.25 + rand() * 0.5, 0.25 + rand() * 0.2, rand(), rand() + mode + 4])
-          if (isMain) fbox(glass, clear, f, a, c, y0, y1, GLASS_D + 0.005, GLASS_D + 0.012)
         } else if (roomLit || (oneLit && p === litPane)) {
           const k = 0.75 + rand() * 0.45
           const col: [number, number, number] = [tint[0] * k, tint[1] * k, tint[2] * k]
           lit.quad(o, uVec, vVec, n, [1, 1], [...col, rand() + mode])
-          if (isMain) fbox(glass, clear, f, a, c, y0, y1, GLASS_D + 0.005, GLASS_D + 0.012)
           if (p === 1 || oneLit) {
             result.litPanes.push({ center: point(f, (a + c) / 2, (y0 + y1) / 2, GLASS_D), normal: n.clone(), color: col, facade: id, row })
           }
@@ -470,6 +431,22 @@ export function buildShell(ctx: WorldContext, root: THREE.Object3D): ShellResult
   // Fire escape on the west face, with rust weeping down the wall under each landing.
   const west = facades().find((f) => f.name === "main-west")!
   buildFireEscape(ctx, b, (z0, z1, yTop, len) => addStain(stain, west, z0, z1, yTop, len, 0.7, RUST))
+
+  // Spill on the paving outside the main block's lit ground-floor rooms, from the interior's 3 a.m. state.
+  for (const w of litWindows()) {
+    if (w.storey !== 0) continue
+    const name = `main-${w.face}`
+    const f = facades().find((x) => x.name === name)
+    if (!f) continue
+    const k = 0.5 + w.strength * 0.5
+    result.litPanes.push({
+      center: point(f, (w.u0 + w.u1) / 2, FY + (w.sill + w.head) / 2, GLASS_D),
+      normal: normal(f),
+      color: [w.tint[0] * k, w.tint[1] * k, w.tint[2] * k],
+      facade: `${name}:ground:${w.room}`,
+      row: "ground",
+    })
+  }
 
   buildRoofDecks(ctx, b)
 
