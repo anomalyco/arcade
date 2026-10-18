@@ -492,10 +492,14 @@ fn softSight(p: vec2f) -> f32 {
   let unseenActive = OL.unseen.mode >= 0.5 && OL.unseen.strength > 0.001;
   let soft = clamp(select(OL.u10.y, OL.unseen.edgeSoftness, unseenActive), 0.05, 2.0);
   let facing = dot(delta, vec2f(cos(F.effects.x), sin(F.effects.x))) / d;
-  let feather = 0.05 + 0.2 * soft;
+  // Darkwood (v8): a crisp ~5° cone edge and a body halo that ends at the awareness radius.
+  let sharp = clamp(OL.v8.x, 0.0, 1.0);
+  let feather = mix(0.05 + 0.2 * soft, 0.035, sharp);
   let cone = smoothstep(F.effects.y - feather, F.effects.y + feather, facing);
   let nearScale = select(0.6, 1.0, unseenActive);
-  let near = nearScale * (1.0 - smoothstep(F.effects.z * 0.5, F.effects.z + 0.8 + 1.2 * soft, d));
+  let nearIn = mix(F.effects.z * 0.5, F.effects.z * 0.72, sharp);
+  let nearOut = mix(F.effects.z + 0.8 + 1.2 * soft, F.effects.z + 0.35, sharp);
+  let near = nearScale * (1.0 - smoothstep(nearIn, nearOut, d));
   let mask = max(cone, near) * step(d, r);
   var canFlash = false;
   if (unseenActive && OL.unseen.flashActive > 0.5 && OL.u4.z > 0.005) {

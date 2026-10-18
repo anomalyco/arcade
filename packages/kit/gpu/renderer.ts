@@ -181,6 +181,8 @@ export type FrameInput = {
   lookCompare?: { mode?: LookCompareMode; wipeSplit?: number }
   /** Optional game post-process uniform tuple packed into GL.pad.yzw (gradeData[5..7]). */
   postParams?: readonly [number, number, number]
+  /** Optional fourth game post-process float, packed into GL.pad.x on the look pipes only. */
+  postExtra?: number
   /** Optional 2D static lamp light-list grid (`uLampGrid`) for `lights[directLightCount .. lightCount)`. */
   lampGrid?: LampGrid | null
 }
@@ -1334,7 +1336,7 @@ export class Renderer {
     if (f.lampCount) d.queue.writeBuffer(this.lampBuf, 0, f.lampPower.buffer, f.lampPower.byteOffset, Math.min(f.lampCount, MAX_MAP_LIGHTS) * 4)
     this.gradeData.set(f.grade)
     if (useLookPipes && effectiveLook) {
-      this.gradeData[4] = 0
+      this.gradeData[4] = f.postExtra ?? 0
       this.gradeData[5] = f.postParams?.[0] ?? 0
       this.gradeData[6] = f.postParams?.[1] ?? 0
       this.gradeData[7] = f.postParams?.[2] ?? 0

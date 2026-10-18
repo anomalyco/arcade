@@ -213,6 +213,18 @@ export type UnseenFrameEvaluation = {
   hideZombies: boolean
   layers: UnseenLayerWeights
   postParams: readonly [number, number, number]
+  /** Darkwood shroud extras (charcoal and grain weights) packed for `GL.pad.x`; 0 when off. */
+  postExtra: number
+}
+
+/** The look trims that shape the Unseen shroud (see `look/world.ts`). */
+export type UnseenLookTrims = { dayShroud?: number; shroudCharcoal?: number; shroudGrain?: number }
+
+/** Packs the Darkwood charcoal and grain weights (`0..3.99` each) into one 24-bit float for `GL.pad.x`. */
+export function packUnseenPostExtra(charcoal: number, grain: number): number {
+  const c = Math.round(clamp(charcoal, 0, 3.99) * 1024) & 4095
+  const g = Math.round(clamp(grain, 0, 3.99) * 1024) & 4095
+  return c + g * 4096
 }
 
 const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v))
@@ -361,6 +373,7 @@ export function evaluateUnseenFrame(
   darkness = 1.0,
   playerHp = 100,
   playerMaxHp = 100,
+  look?: UnseenLookTrims,
 ): UnseenFrameEvaluation {
   const rawMode = Math.round(settings?.unseenMode ?? DEFAULT_UNSEEN_SETTINGS.unseenMode)
   const mode: UnseenModeId = isUnseenModeId(rawMode) ? rawMode : 0
@@ -372,7 +385,8 @@ export function evaluateUnseenFrame(
 
   const dark = clamp(darkness, 0, 1)
   // Much stronger at night (1.0x at full darkness), subtle by day (~0.46x at default 0.75 night scaling)
-  const nightFactor = 1 - (1 - dark) * nightScale * 0.72
+  const dayShroud = clamp(look?.dayShroud ?? 0, 0, 1)
+  const nightFactor = 1 - (1 - dark) * nightScale * 0.72 * (1 - dayShroud)
   const hpRatio = clamp(playerHp / Math.max(1, playerMaxHp), 0, 1)
   const panicBoost = clamp((1 - hpRatio) * 0.35, 0, 0.35)
   const masterScale = strength * nightFactor * (1 + panicBoost)
@@ -404,5 +418,6 @@ export function evaluateUnseenFrame(
     hideZombies,
     layers,
     postParams: active ? packUnseenPostParams(layers, updateRate) : ([0, 0, 0] as const),
+    postExtra: active ? packUnseenPostExtra((look?.shroudCharcoal ?? 0) * masterScale, (look?.shroudGrain ?? 0) * masterScale) : 0,
   }
 }

@@ -338,7 +338,7 @@ export class OutbreakFrameRenderer {
       coop.otherPositions(),
     )
     const day = dayCycle(hour)
-    const unseenEval = evaluateUnseenFrame(settings.unseen, day.darkness, p.health, p.maxHealth)
+    const unseenEval = evaluateUnseenFrame(settings.unseen, day.darkness, p.health, p.maxHealth, settings.look)
     // Pose the bodies first: the flashlight rides the survivor's pistol or hand.
     const lift = vaultLift(p)
     const riderSink = localVehicle ? (localVehicle.spec.seats[p.seatIndex ?? 0]?.sink ?? 0.48) : 0
@@ -651,6 +651,7 @@ export class OutbreakFrameRenderer {
     render.look = trimLook(this.lookSettings, settings.look, this.gradedLook, 1 - day.sun)
     render.lookCompare = this.lookCompare
     render.postParams = unseenEval.postParams
+    render.postExtra = unseenEval.postExtra
     this.renderer.render(render)
     audio.update({
       dt,

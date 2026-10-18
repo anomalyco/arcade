@@ -16,6 +16,7 @@ export const LIGHT_SAT_STYLES = [
   { id: "paintover-v5", label: "Paintover Contrast & Dusk Split (v5)", value: 4 },
   { id: "shroud-v6", label: "Dark Shroud & Desaturated Unlit (v6)", value: 5 },
   { id: "dying-light-v7", label: "Dying Light Pass (v7)", value: 6 },
+  { id: "darkwood-v8", label: "Darkwood Sight Shroud (v8)", value: 7 },
 ] as const
 
 export const MODEL_STYLES = [
@@ -34,6 +35,7 @@ export const STYLE_GRADES = [
   { id: "paintover-v5", label: "Paintover Contrast & Daylight/Dusk (v5)", value: 4 },
   { id: "shroud-v6", label: "Dark Shroud & Desaturated Unlit (v6)", value: 5 },
   { id: "dying-light-v7", label: "Dying Light Pass (v7)", value: 6 },
+  { id: "darkwood-v8", label: "Darkwood Sight Shroud (v8)", value: 7 },
 ] as const
 
 /**
@@ -105,6 +107,22 @@ export type OutbreakLookTrims = {
   nightGrain: number
   /** Lens vignette strength at night (0.35 default, 0.82 legacy). */
   nightVignette: number
+  /** Crisp edge on the drawn sight cone and a tight body halo (0 legacy wide feather, 1 Darkwood ~5° edge). Presentation only. */
+  coneSharpness: number
+  /** How much of the out-of-sight shroud holds by day (0 legacy: fades by day, 1 as strong as at night). */
+  dayShroud: number
+  /** Charcoal treatment outside sight: near-monochrome cold slate and darker (0 off, 1 Darkwood). */
+  shroudCharcoal: number
+  /** Coarse crawling grain in the out-of-sight shroud (0 off). */
+  shroudGrain: number
+  /** Share of colour that lamp-lit places keep while out of sight (0 grey memory, 1 full colour). */
+  shroudLampKeep: number
+  /** Sickly overcast day palette: olive greens, khaki earth, dark canopies (0 off, 1 Darkwood). */
+  dayMuted: number
+  /** Lens vignette floor at every hour (0 off: the hour's own vignette by day). */
+  dayVignette: number
+  /** Film grain floor at every hour (0 off). */
+  dayGrain: number
   /** Share of air cells holding a dust mote; motes only show where a light reaches them (0 is off). */
   dustAmount: number
   /** × how brightly motes catch the light. */
@@ -124,9 +142,9 @@ export type OutbreakLookTrims = {
 export const DEFAULT_LOOK_TRIMS: OutbreakLookTrims = {
   lookIdea: "today",
   groundStyle: 1,
-  lightSatStyle: 6,
+  lightSatStyle: 7,
   modelStyle: 4,
-  styleGrade: 6,
+  styleGrade: 7,
   lookSaturation: 1,
   lookExposure: 1,
   lookContrast: 1,
@@ -148,11 +166,19 @@ export const DEFAULT_LOOK_TRIMS: OutbreakLookTrims = {
   shroudDarkness: 1,
   outOfLightDesat: 1,
   outOfSightDarkening: 1,
-  beamWarmth: 0.28,
-  beamTightness: 1,
+  beamWarmth: 0.56,
+  beamTightness: 1.18,
   zombieRimSpec: 1,
-  nightGrain: 0.05,
-  nightVignette: 0.35,
+  nightGrain: 0.085,
+  nightVignette: 0.52,
+  coneSharpness: 1,
+  dayShroud: 1,
+  shroudCharcoal: 1,
+  shroudGrain: 1,
+  shroudLampKeep: 0.55,
+  dayMuted: 1,
+  dayVignette: 0.42,
+  dayGrain: 0.05,
   dustAmount: 0.6,
   dustBrightness: 1,
   dustSize: 1,
@@ -167,6 +193,7 @@ const GRADE = "Look · Grade"
 const LIGHTS = "Look · Lights"
 const LIGHT_COLOUR = "Look · Light colour"
 const AIR = "Look · Air"
+const SHROUD = "Look · Sight shroud"
 
 export const lookTrimControls: LabControl[] = [
   { key: "groundStyle", label: "Ground style", group: ROUND, options: GROUND_STYLES.map(s => ({ label: s.label, value: s.value })) },
@@ -202,6 +229,14 @@ export const lookTrimControls: LabControl[] = [
   { key: "zombieRimSpec", label: "Zombie wet rim & glints", group: LIGHT_COLOUR, min: 0, max: 2, step: 0.05, unit: "×" },
   { key: "nightGrain", label: "Night dark-shadow grain", group: GRADE, min: 0, max: 0.4, step: 0.01, unit: "" },
   { key: "nightVignette", label: "Night lens vignette", group: GRADE, min: 0, max: 1.2, step: 0.02, unit: "" },
+  { key: "coneSharpness", label: "Sight cone edge crispness", group: SHROUD, min: 0, max: 1, step: 0.05, unit: "" },
+  { key: "dayShroud", label: "Shroud holds by day", group: SHROUD, min: 0, max: 1, step: 0.05, unit: "" },
+  { key: "shroudCharcoal", label: "Charcoal outside sight", group: SHROUD, min: 0, max: 1.5, step: 0.05, unit: "×" },
+  { key: "shroudGrain", label: "Shroud grain", group: SHROUD, min: 0, max: 3, step: 0.05, unit: "×" },
+  { key: "shroudLampKeep", label: "Lamp-lit colour kept out of sight", group: SHROUD, min: 0, max: 1, step: 0.05, unit: "" },
+  { key: "dayMuted", label: "Sickly overcast day palette", group: GRADE, min: 0, max: 1.5, step: 0.05, unit: "×" },
+  { key: "dayVignette", label: "Vignette at every hour", group: GRADE, min: 0, max: 1.2, step: 0.02, unit: "" },
+  { key: "dayGrain", label: "Grain at every hour", group: GRADE, min: 0, max: 0.4, step: 0.01, unit: "" },
   { key: "dustAmount", label: "Dust motes", group: AIR, min: 0, max: 1, step: 0.05, unit: "" },
   { key: "dustBrightness", label: "Mote brightness", group: AIR, min: 0, max: 4, step: 0.05, unit: "×" },
   { key: "dustSize", label: "Mote size", group: AIR, min: 0.4, max: 3, step: 0.05, unit: "×" },
@@ -242,9 +277,9 @@ export function trimLook(base: LookSettings, t: Partial<OutbreakLookTrims> | und
   out.contrast = clamp(base.contrast * (t.lookContrast ?? 1) * gradeContrast, 0.6, 1.8)
   const baseVig = base.vignette * (t.lookVignette ?? 1) * gradeVig
   const nightVig = (t.nightVignette ?? base.vignette) * (t.lookVignette ?? 1) * gradeVig
-  out.vignette = mix(baseVig, nightVig, rule)
+  out.vignette = Math.max(mix(baseVig, nightVig, rule), (t.dayVignette ?? 0) * (t.lookVignette ?? 1))
   const nightGrain = t.nightGrain ?? base.grain
-  out.grain = mix(base.grain, Math.max(base.grain, nightGrain), rule)
+  out.grain = Math.max(mix(base.grain, Math.max(base.grain, nightGrain), rule), t.dayGrain ?? 0)
   out.temperature = clamp(base.temperature + (t.lookTemperature ?? 0) + gradeTemp, -1, 1)
   out.selectiveColor = mix(clamp(base.selectiveColor * (t.beamColour ?? 1), 0, 1.5), clamp(litCol * (t.beamColour ?? 1), 0, 1.5), rule)
   out.practicalWarmth = mix(clamp(base.practicalWarmth + (t.lampColour ?? 0), -0.8, 1.2), 0, rule)

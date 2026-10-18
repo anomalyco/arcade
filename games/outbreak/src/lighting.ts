@@ -267,7 +267,9 @@ export const OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET = OUTBREAK_BEAN_UNIFORM_OFFSET
 export const OUTBREAK_SHROUD_UNIFORM_OFFSET = OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET + 4
 /** Dying Light v7 trims (see `look/world.ts`): beamWarmth, beamTightness, zombieRimSpec, nightGrain. */
 export const OUTBREAK_V7_UNIFORM_OFFSET = OUTBREAK_SHROUD_UNIFORM_OFFSET + 4
-export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = OUTBREAK_V7_UNIFORM_OFFSET + 4
+/** Darkwood v8 trims (see `look/world.ts`): coneSharpness, dayShroud, dayMuted, shroudLampKeep. */
+export const OUTBREAK_V8_UNIFORM_OFFSET = OUTBREAK_V7_UNIFORM_OFFSET + 4
+export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = OUTBREAK_V8_UNIFORM_OFFSET + 4
 
 export type OutbreakLightingUniformSettings =
   | (OutbreakLightingSettings & Partial<FlashlightBeamSettings> & Partial<UnseenSettings> & {
@@ -575,6 +577,10 @@ export function packOutbreakLightingUniforms(
   out[OUTBREAK_V7_UNIFORM_OFFSET + 1] = look.beamTightness ?? DEFAULT_LOOK_TRIMS.beamTightness
   out[OUTBREAK_V7_UNIFORM_OFFSET + 2] = look.zombieRimSpec ?? DEFAULT_LOOK_TRIMS.zombieRimSpec
   out[OUTBREAK_V7_UNIFORM_OFFSET + 3] = look.nightGrain ?? DEFAULT_LOOK_TRIMS.nightGrain
+  out[OUTBREAK_V8_UNIFORM_OFFSET] = look.coneSharpness ?? DEFAULT_LOOK_TRIMS.coneSharpness
+  out[OUTBREAK_V8_UNIFORM_OFFSET + 1] = look.dayShroud ?? DEFAULT_LOOK_TRIMS.dayShroud
+  out[OUTBREAK_V8_UNIFORM_OFFSET + 2] = look.dayMuted ?? DEFAULT_LOOK_TRIMS.dayMuted
+  out[OUTBREAK_V8_UNIFORM_OFFSET + 3] = look.shroudLampKeep ?? DEFAULT_LOOK_TRIMS.shroudLampKeep
   // win (offset 76..79): windowOriginX, windowOriginZ, isStreamWindow, buildingCount
   const winOx = state.windowOrigin?.[0] ?? 0
   const winOz = state.windowOrigin?.[1] ?? 0
@@ -1187,6 +1193,7 @@ struct OutbreakLightingUniforms {
   round: vec4f, // rendering round: lightSatStyle, modelStyle, styleGrade, groundStyle
   shroud: vec4f, // shroud & unlit: shroudDarkness, outOfLightDesat, outOfSightDarkening, worldSaturation
   v7: vec4f, // Dying Light v7 trims: beamWarmth, beamTightness, zombieRimSpec, nightGrain
+  v8: vec4f, // Darkwood v8 trims: coneSharpness, dayShroud, dayMuted, shroudLampKeep
 }
 @group(0) @binding(13) var<uniform> OL: OutbreakLightingUniforms;
 ${lightRampWgsl}

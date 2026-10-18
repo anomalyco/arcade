@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { createLookSettings } from "@arcade/kit/look"
 import { flashlightColor } from "../shared/flashlight"
-import { OUTBREAK_BEAN_UNIFORM_OFFSET, OUTBREAK_HERO_UNIFORM_OFFSET, OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET, OUTBREAK_SHROUD_UNIFORM_OFFSET, OUTBREAK_V7_UNIFORM_OFFSET, packOutbreakLightingUniforms } from "../src/lighting"
+import { OUTBREAK_BEAN_UNIFORM_OFFSET, OUTBREAK_HERO_UNIFORM_OFFSET, OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET, OUTBREAK_SHROUD_UNIFORM_OFFSET, OUTBREAK_V7_UNIFORM_OFFSET, OUTBREAK_V8_UNIFORM_OFFSET, packOutbreakLightingUniforms } from "../src/lighting"
 import { propDressingState } from "../src/props/state"
 import {
   beanTint,
@@ -25,7 +25,8 @@ import {
 } from "../src/look/refined-figure"
 import { SURVIVOR_COLOURS } from "../src/seat-colours"
 import { applyLookPreset } from "../src/look/index"
-import { OUTBREAK_LOOK_PRESETS } from "../src/look/presets"
+import { lookPreset, OUTBREAK_LOOK_PRESETS } from "../src/look/presets"
+import { evaluateUnseenFrame } from "../src/unseen"
 import { DEFAULT_LOOK_TRIMS, lightRuleWeight, lookTrimControls, trimLighting, trimLook } from "../src/look/world"
 import { createOutbreakSettings, createOutbreakSubsystemDefaults } from "../src/settings"
 import { Survivor } from "../src/survivor"
@@ -52,9 +53,10 @@ const frame = (settings: ReturnType<typeof createOutbreakSettings>) => ({
 describe("Outbreak look", () => {
   test("today's look is the identity apart from the light-colour rule, which holds at night and not by day", () => {
     const base = createLookSettings("noir")
-    expect(trimLook(base, { ...DEFAULT_LOOK_TRIMS, lightColour: 0 }, createLookSettings("current"))).toEqual(base)
-    expect(trimLook(base, DEFAULT_LOOK_TRIMS, createLookSettings("current"), 0)).toEqual(base)
-    const night = trimLook(base, DEFAULT_LOOK_TRIMS, createLookSettings("current"), 1)
+    const trims = { ...DEFAULT_LOOK_TRIMS, dayVignette: 0, dayGrain: 0 }
+    expect(trimLook(base, { ...trims, lightColour: 0 }, createLookSettings("current"))).toEqual(base)
+    expect(trimLook(base, trims, createLookSettings("current"), 0)).toEqual(base)
+    const night = trimLook(base, trims, createLookSettings("current"), 1)
     expect(night).toEqual({
       ...base,
       saturation: DEFAULT_LOOK_TRIMS.worldSaturation,
@@ -192,7 +194,7 @@ describe("Outbreak look", () => {
     expect([...packed.slice(OUTBREAK_BEAN_UNIFORM_OFFSET, OUTBREAK_BEAN_UNIFORM_OFFSET + 4)].map(v => +v.toFixed(4))).toEqual([0.7, 1.1, 4, 0.3])
   })
 
-  test("rendering round axes: presets sync groundStyle and modelStyle, today ships v7, today-v6 keeps v6, today-v5 keeps v5, today-v4 keeps v4, and legacy-today restores 0 across all axes", () => {
+  test("rendering round axes: presets sync groundStyle and modelStyle, today ships v8, today-v7 keeps v7, today-v6 keeps v6, today-v5 keeps v5, today-v4 keeps v4, and legacy-today restores 0 across all axes", () => {
     const settings = createOutbreakSettings()
     applyLookPreset(settings, "legacy-today")
     expect(settings.look.groundStyle).toBe(0)
@@ -228,26 +230,55 @@ describe("Outbreak look", () => {
     expect(settings.look.beamWarmth).toBe(1)
     expect(settings.look.nightVignette).toBe(0.82)
     expect(propDressingState.modelStyle).toBe(4)
+    applyLookPreset(settings, "today-v7")
+    expect(settings.look.lightSatStyle).toBe(6)
+    expect(settings.look.styleGrade).toBe(6)
+    expect(settings.look.beamWarmth).toBe(0.28)
+    expect(settings.look.beamTightness).toBe(1)
+    expect(settings.look.nightGrain).toBe(0.05)
+    expect(settings.look.nightVignette).toBe(0.35)
+    expect(settings.look.coneSharpness).toBe(0)
+    expect(settings.look.dayShroud).toBe(0)
+    expect(settings.look.shroudCharcoal).toBe(0)
+    expect(settings.look.shroudGrain).toBe(0)
+    expect(settings.look.shroudLampKeep).toBe(1)
+    expect(settings.look.dayMuted).toBe(0)
+    expect(settings.look.dayVignette).toBe(0)
+    expect(settings.look.dayGrain).toBe(0)
     applyLookPreset(settings, "today")
     expect(settings.look.groundStyle).toBe(1)
-    expect(settings.look.lightSatStyle).toBe(6)
+    expect(settings.look.lightSatStyle).toBe(7)
     expect(settings.look.modelStyle).toBe(4)
-    expect(settings.look.styleGrade).toBe(6)
+    expect(settings.look.styleGrade).toBe(7)
     expect(settings.look.shroudDarkness).toBe(1)
     expect(settings.look.outOfLightDesat).toBe(1)
     expect(settings.look.outOfSightDarkening).toBe(1)
     expect(settings.look.worldSaturation).toBe(0.03)
     expect(settings.look.visionLift).toBe(0.03)
-    expect(settings.look.beamWarmth).toBe(0.28)
-    expect(settings.look.beamTightness).toBe(1)
     expect(settings.look.zombieRimSpec).toBe(1.0)
-    expect(settings.look.nightGrain).toBe(0.05)
-    expect(settings.look.nightVignette).toBe(0.35)
     expect(propDressingState.modelStyle).toBe(4)
     const packed = packOutbreakLightingUniforms(frame(settings), flashlightColor(0.92))
-    expect([...packed.slice(OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET, OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET + 4)]).toEqual([6, 4, 6, 1])
+    const L = DEFAULT_LOOK_TRIMS
+    expect([...packed.slice(OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET, OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET + 4)]).toEqual([7, 4, 7, 1])
     expect([...packed.slice(OUTBREAK_SHROUD_UNIFORM_OFFSET, OUTBREAK_SHROUD_UNIFORM_OFFSET + 4)].map(v => +v.toFixed(4))).toEqual([1, 1, 1, 0.03])
-    expect([...packed.slice(OUTBREAK_V7_UNIFORM_OFFSET, OUTBREAK_V7_UNIFORM_OFFSET + 4)].map(v => +v.toFixed(4))).toEqual([0.28, 1, 1, 0.05])
+    expect([...packed.slice(OUTBREAK_V7_UNIFORM_OFFSET, OUTBREAK_V7_UNIFORM_OFFSET + 4)].map(v => +v.toFixed(4))).toEqual([L.beamWarmth, L.beamTightness, 1, L.nightGrain])
+    expect([...packed.slice(OUTBREAK_V8_UNIFORM_OFFSET, OUTBREAK_V8_UNIFORM_OFFSET + 4)].map(v => +v.toFixed(4))).toEqual([L.coneSharpness, L.dayShroud, L.dayMuted, L.shroudLampKeep])
+  })
+
+  test("Darkwood v8: the sight shroud holds by day and packs its charcoal and grain weights for the post pass", () => {
+    const settings = createOutbreakSettings()
+    const v8Day = evaluateUnseenFrame(settings.unseen, 0, 100, 100, settings.look)
+    const v7Day = evaluateUnseenFrame(settings.unseen, 0, 100, 100, lookPreset("today-v7")!.knobs)
+    expect(v8Day.nightFactor).toBe(1)
+    expect(v7Day.nightFactor).toBeLessThan(0.5)
+    expect(v7Day.postExtra).toBe(0)
+    const extra = v8Day.postExtra
+    expect(extra & 4095).toBe(Math.round(DEFAULT_LOOK_TRIMS.shroudCharcoal * 1024))
+    expect((extra >>> 12) & 4095).toBe(Math.round(DEFAULT_LOOK_TRIMS.shroudGrain * 1024))
+    expect(Number.isInteger(extra) && extra < 2 ** 24).toBe(true)
+    const day = trimLook(createLookSettings("current"), DEFAULT_LOOK_TRIMS, createLookSettings("current"), 0)
+    expect(day.vignette).toBeGreaterThanOrEqual(DEFAULT_LOOK_TRIMS.dayVignette)
+    expect(day.grain).toBeGreaterThanOrEqual(DEFAULT_LOOK_TRIMS.dayGrain)
   })
 
   test("co-op seats tint the simple figure a little toward their jacket", () => {
