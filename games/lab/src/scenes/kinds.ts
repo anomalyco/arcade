@@ -129,6 +129,7 @@ export const LAB_KINDS: readonly LabKind[] = [
   { id: "interiors", label: "Interiors", subject: "Rugs and furnishing in Outbreak's house interiors", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page },
   { id: "discovery", label: "Discovery", subject: "What the survivor learns by looking, not by being told", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
   { id: "bots", label: "Bots", subject: "Survivor bots and the difficulty tuner", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
+  { id: "blood-lights", label: "Blood & night lights", subject: "Outbreak's blood that stays in the world and its coloured night practicals", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
   { id: "hordes", label: "Hordes", subject: "Outbreak's roaming hordes and the flow fields they follow", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
   { id: "ship", label: "Ship", subject: "A Carrier ship and sea at a time of day", host: { kind: "page", url: "/arcade/carrier/" }, panels: page },
   { id: "brawler", label: "Brawler", subject: "Brawl's characters, their abilities and the props they throw around", host: { kind: "page", url: "/arcade/brawl/playground.html" }, panels: page, play: "Play" },
@@ -152,6 +153,7 @@ const PAGE_STATIONS: Record<string, string> = {
   "survivor-bots": "bots",
   "outbreak-discovery": "discovery",
   "outbreak-hordes": "hordes",
+  "outbreak-blood-lights": "blood-lights",
   brawl: "brawler",
   archers: "archer",
 }
