@@ -1,5 +1,5 @@
 import { Camera } from "@arcade/kit/client/camera"
-import { collectSconces, DEFAULT_INTERIOR_SETTINGS, InteriorPresenter, interiorControls, SCONCE_LAMP_SLOT, SconceLights } from "./interiors"
+import { DEFAULT_INTERIOR_SETTINGS, InteriorPresenter, interiorControls, SCONCE_LAMP_SLOT, SconceLights } from "./interiors"
 import { TABLE_LAMP_SLOT, type TableLamp } from "./lightbake"
 import { TableLampLights } from "./table-lamps"
 import { keyLabelSetting } from "@arcade/kit/client/controls"
@@ -17,8 +17,7 @@ import {
 } from "@arcade/kit/quality"
 import { FRAME_FLOATS } from "@arcade/kit/gpu/shaders"
 import { DRIVING_FX_DEFAULTS, drivingFxControls } from "@arcade/kit/vehicle/driving-fx"
-import { LIGHT_FLOATS, MAX_LIGHTS, MAX_MAP_LIGHTS, MAX_OCCLUDERS, OCC_FLOATS } from "@arcade/kit/limits"
-import { MAT, Mesh } from "@arcade/kit/gpu/mesh"
+import { LIGHT_FLOATS, MAX_LIGHTS, MAX_MAP_LIGHTS } from "@arcade/kit/limits"
 import { raycast } from "@arcade/kit/sim/geom"
 import { mat4 } from "wgpu-matrix"
 import { FOLIAGE_MAX_ACTORS, FOLIAGE_WIND_FLOATS, foliageSettings, packFoliageActors, packFoliageUniforms } from "@arcade/kit/gpu/foliage"
@@ -31,27 +30,22 @@ import { BenchLean } from "./discovery/lean"
 import { DiscoveryProps } from "./discovery/props"
 import type { DiscoveryHost } from "./discovery/stage"
 import { vaultLift, type PeekInfo } from "../shared/interact"
-import { sightRects, SIZE } from "../shared/map"
+import { SIZE } from "../shared/map"
 import { dayCycle, wrapHour } from "../shared/day-cycle"
-import { Vision, FOG_SIZE } from "../shared/vision"
 import { supportHeight } from "../shared/terrain"
-import { SceneryMemory } from "../shared/scenery-memory"
 import { OutbreakAmbientMotion } from "./ambient-motion"
 import { OutbreakCombatFX } from "./combat-fx"
 import { ExteriorClutterRenderer } from "./clutter"
 import { PropDressing } from "./props/dressing"
 import { originFurnishTown, propLamps } from "./props/furnish"
 import {
-  CombinedFogMemory,
   collectFogSoundSprites,
 } from "./fog-of-war"
 import { applyOutbreakDayNight } from "./day-night"
 import { trimLook } from "./look/world"
 import { DustPass } from "./air/dust"
 import { GroundWearRenderer, packGroundCfgBits } from "./ground"
-import { buildLevel, hex } from "./level"
-import { archSettings } from "./architecture"
-import { useOriginBuild, WorldClientStreamer } from "./world-streamer"
+import { hex } from "./level"
 import {
   BEAM_QUALITY_TIERS,
   OUTBREAK_FOLIAGE_UNIFORM_OFFSET,
@@ -67,7 +61,6 @@ import { humanProfiles } from "@arcade/kit/human-profile"
 import { Survivor } from "./survivor"
 import { OutbreakFrameUi } from "./hud/frame-ui"
 import { OutbreakAudio, pursuers, soundWorld } from "./audio"
-import { packLightOccluders, windowStateKey } from "./light-occluders"
 import { type ProgressionLabHost } from "./progression/lab"
 import { type VehicleLabHost } from "./vehicle-lab"
 import { BotsLabController } from "./bots-lab"
@@ -97,6 +90,7 @@ import { buildOutbreakLabControls, handleOutbreakSettingChanged, type OutbreakLa
 import { OutbreakFramePacer } from "./loop/frame-pacer"
 import { shaders } from "./shaders"
 import { evaluateUnseenFrame } from "./unseen"
+import { OutbreakSceneLevel } from "./world/scene-level"
 import "./style.css"
 
 const foliageActorPool = Array.from({ length: FOLIAGE_MAX_ACTORS }, () => ({ x: 0, z: 0 }))
@@ -240,13 +234,6 @@ async function main() {
     const s = session
     return s instanceof LocalSession ? s.sim.slots.filter((slot) => slot !== s.slot) : []
   }
-  let vision = new Vision()
-  let scenery = new SceneryMemory()
-  const combinedFog = new CombinedFogMemory()
-  const worldStreamer = new WorldClientStreamer()
-  let currentWindowOrigin: [number, number] = [0, 0]
-  let currentIsStreamWindow = false
-  let originSconces: Float32Array[] = []
   const cam = new Camera(settings.view)
   const botsLab = new BotsLabController(settings)
   const inputController = new OutbreakInputController({
@@ -275,6 +262,13 @@ async function main() {
   const zombieCrowd = new ZombieCrowdRenderer(renderer)
   zombieCrowd.onFootfall = (id, x, y, speed, drag, variant) => audio.zombieFootstep(id, x, y, speed, drag, variant)
   const combatFx = new OutbreakCombatFX(renderer)
+  const sceneLevel = new OutbreakSceneLevel({
+    renderer,
+    combatFx,
+    settings,
+    cam,
+    session: () => session,
+  })
   const discoveryProps = new DiscoveryProps(renderer)
   const benchLean = new BenchLean()
   const pageGlance = new PageGlance()
@@ -355,31 +349,7 @@ async function main() {
     },
   }
   const controls = buildOutbreakLabControls(labControlHost)
-  const doorMesh = new Mesh()
-  // Deep weathered walnut stiles & rails, 6 recessed craft panels, tarnished brass kickplate, and antique lockset
-  doorMesh.box(0, 0.13, -0.09, 1.4, 2.3, 0.09, hex(0x322216), MAT.timber)
-  doorMesh.box(0.07, 0.15, 0.09, 1.33, 0.32, 0.102, hex(0x6e5834), MAT.shiny)
-  doorMesh.box(0.08, 0.35, -0.10, 1.32, 2.12, -0.092, hex(0x3e2b1c), MAT.timber)
-  // Escutcheon backplate, brass knob & deadbolt cylinder
-  doorMesh.box(1.13, 0.98, 0.09, 1.24, 1.28, 0.115, hex(0x4a3c24), MAT.shiny)
-  doorMesh.box(1.15, 1.05, 0.115, 1.22, 1.13, 0.165, hex(0xc29e58), MAT.shiny)
-  doorMesh.box(1.155, 1.19, 0.115, 1.215, 1.24, 0.14, hex(0xb89450), MAT.shiny)
-  for (const x of [0.14, 0.74]) {
-    for (const [y0, y1] of [[0.38, 0.98], [1.08, 1.66], [1.76, 2.14]] as const) {
-      doorMesh.box(x, y0, 0.091, x + 0.50, y1, 0.112, hex(0x422e1e), MAT.timber)
-      doorMesh.box(x + 0.04, y0 + 0.04, 0.113, x + 0.46, y1 - 0.04, 0.122, hex(0x23170e), MAT.timber)
-    }
-  }
-  const doorModel = renderer.addModel(doorMesh)
-  const doorData = new Float32Array(64 * 12)
-  const doorBatch: Batch = { model: doorModel, data: doorData, count: 0 }
   const beamLookScratch: BeamLook = { low: 0, cone: 0, range: 0, warmth: 0, color: [1, 1, 1] }
-  const sashMesh = new Mesh()
-  sashMesh.box(-1.0, 1.48, -0.06, 1.0, 2.12, 0.06, hex(0xa8a99c), MAT.wall)
-  sashMesh.box(-0.92, 1.54, -0.02, 0.92, 2.06, 0.02, hex(0x809c9e), MAT.glass)
-  const sashModel = renderer.addModel(sashMesh)
-  const sashData = new Float32Array(64 * 12)
-  const sashBatch: Batch = { model: sashModel, data: sashData, count: 0 }
   let peekBlend = 0
   let lastPeek: PeekInfo | null = null
   const frame = new Float32Array(FRAME_FLOATS)
@@ -436,7 +406,6 @@ async function main() {
     buf[o + 14] = s2
     buf[o + 15] = s3
   }
-  const occluders = new Float32Array(MAX_OCCLUDERS * OCC_FLOATS)
   const lampPower = new Float32Array(MAX_MAP_LIGHTS)
   const lightingUniforms = new Float32Array(OUTBREAK_LIGHTING_UNIFORM_FLOATS)
   const flashlightBounce: [number, number] = [0, 0]
@@ -453,7 +422,7 @@ async function main() {
     lights,
     lightCount: 0,
     shadowLightCount: 0,
-    occluders,
+    occluders: sceneLevel.occluders,
     occluderCount: 0,
     lampPower,
     lampCount: 0,
@@ -465,12 +434,6 @@ async function main() {
     addCount: 0,
     grade: [0, 0, 0, 1],
   }
-  let blockers = sightRects(session.view.town)
-  let revision = -1
-  let lightOccluders = 0
-  let lightWindowKey = 0
-  // Walls, closed doors and closed windows: what stops light (sight passes windows, light only open ones).
-  let lightWalls: readonly (readonly [number, number, number, number])[] = blockers
   const pacer = new OutbreakFramePacer({
     device,
     renderer,
@@ -521,8 +484,8 @@ async function main() {
     device,
     renderer,
     session: () => session,
-    vision: () => vision,
-    scenery: () => scenery,
+    vision: () => sceneLevel.vision,
+    scenery: () => sceneLevel.scenery,
     avatar: () => avatar,
     cam,
     input,
@@ -558,49 +521,12 @@ async function main() {
   )
   lab.addControls(
     interiors.settings as unknown as Record<string, string | number | boolean>,
-    interiorControls(() => { interiors.apply("interiorTheme"); level() }, () => interiors.rebuildPool(), () => interiors.apply("rugSource")),
+    interiorControls(() => { interiors.apply("interiorTheme"); sceneLevel.rebuildLevel() }, () => interiors.rebuildPool(), () => interiors.apply("rugSource")),
     { ...DEFAULT_INTERIOR_SETTINGS },
   )
-  let vertices = 0
-  /** Automation only: pin the origin build or the streamed window regardless of the camera (switch comparisons). */
-  let forcedLevel: "origin" | "streamed" | undefined
-  /** Draws the origin block with the authored origin build; its window origin matches the streamed (1,1) window. */
-  function showOriginBuild() {
-    currentWindowOrigin = [0, 0]
-    currentIsStreamWindow = false
-    worldStreamer.center = { cx: 1, cy: 1 }
-    worldStreamer.windowOrigin = [0, 0]
-    worldStreamer.lastWindowKey = ""
-    const data = buildLevel(session.view.town)
-    originSconces = [collectSconces(session.view.town)]
-    vertices = [...data.chunks, ...data.glass].reduce((n, c) => n + c.data.byteLength / 24, 0)
-    renderer.setLevel(data)
-    combatFx.setLevel(data)
-  }
-  function level() {
-    session.view.town.foliageDensity = settings.world.foliageDensity
-    archSettings.houseDecay = settings.world.houseDecay
-    archSettings.clutterDensity = settings.ground.clutterDensity
-    archSettings.weathering = settings.world.weathering
-    archSettings.clutterSeed = settings.ground.clutterSeed
-    const mode = resolveWorldMode(settings.world.worldMode)
-    session.sim.worldStream.mode = mode
-    const p = session.view.player
-    const inOriginBox = p.x >= 14 && p.x <= 82 && p.y >= 14 && p.y <= 82 && settings.view.zoom <= 50
-    if (mode !== "procedural" && inOriginBox && session.sim.worldStream.isOriginNineOnly()) return showOriginBuild()
-    worldStreamer.lastWindowKey = ""
-    const streamed = worldStreamer.updateWindow(p.x, p.y, session.view.town, mode, cam.groundRect(5.5), p.vx, p.vy, session.view.time)
-    currentWindowOrigin = streamed.origin
-    currentIsStreamWindow = true
-    if (streamed.level) {
-      vertices = [...streamed.level.chunks, ...streamed.level.glass].reduce((n, c) => n + (c.byteLength ?? c.data.byteLength) / 24, 0)
-      renderer.setLevel(streamed.level)
-      combatFx.setLevel(streamed.level)
-    }
-  }
   function regenerate() {
     // A co-op room's neighbourhood is fixed by the room: only presentation settings rebuild the level.
-    if (coop.net) return level()
+    if (coop.net) return sceneLevel.rebuildLevel()
     const previous = session.view
     session = new LocalSession(
       previous.town.seed,
@@ -628,8 +554,8 @@ async function main() {
       w.openable = prev.openable
     })
     session.rebuildCollision()
-    revision = -1
-    level()
+    sceneLevel.markTopologyDirty()
+    sceneLevel.rebuildLevel()
     avatar.reset()
     zombieCrowd.reset()
     combatFx.reset()
@@ -639,11 +565,6 @@ async function main() {
   function reset(nextSeed = seed) {
     if (session !== coop.net) session.close()
     session = makeSession(nextSeed)
-    vision = new Vision()
-    worldStreamer.reset()
-    currentWindowOrigin = [0, 0]
-    currentIsStreamWindow = false
-    revision = -1
     peekBlend = 0
     lastPeek = null
     avatar.reset()
@@ -654,12 +575,7 @@ async function main() {
     ambientMotion.reset()
     frameUi.reset()
     weatherController.reset(nextSeed)
-    level()
-    scenery = new SceneryMemory()
-    combinedFog.reset()
-    combinedFog.update(vision, scenery, true)
-    renderer.setVisibility(combinedFog.filtered, FOG_SIZE, FOG_SIZE)
-    renderer.clearVisibilityField()
+    sceneLevel.resetForSession()
     lastSightX = lastSightY = -1e3
     cam.snap(session.view.player.x, session.view.player.y)
     cam.dist = settings.view.zoom
@@ -736,73 +652,20 @@ async function main() {
     cam.follow(camX, camY, lookAheadX, lookAheadY, dt, false, Boolean(localVehicle))
     cam.update(w / h)
     const view = cam.groundRect(5.5)
-    const mode = resolveWorldMode(settings.world.worldMode)
-    session.sim.worldStream.mode = mode
-    let windowMoved = false
-    if (mode !== "classic") {
-      const moveVx = localVehicle ? localVehicle.vx : p.vx
-      const moveVy = localVehicle ? localVehicle.vy : p.vy
-      const originBuild =
-        forcedLevel !== "streamed" &&
-        mode !== "procedural" &&
-        session.sim.worldStream.isOriginNineOnly() &&
-        (forcedLevel === "origin" || useOriginBuild(!currentIsStreamWindow, drawn.x, drawn.y, view, settings.view.zoom))
-      if (originBuild && currentIsStreamWindow && worldStreamer.center.cx === 1 && worldStreamer.center.cy === 1) {
-        // Back inside the origin block: return to the authored build (same window origin, so fog and vision carry over).
-        showOriginBuild()
-      }
-      if (originBuild && !currentIsStreamWindow) {
-        // Pre-warm upcoming border chunks incrementally while inside the origin block
-        worldStreamer.prewarmAround(
-          drawn.x,
-          drawn.y,
-          town.seed,
-          town.houseSeed,
-          town.terrain,
-          town.foliageDensity ?? 1,
-          mode,
-          moveVx,
-          moveVy,
-        )
-        worldStreamer.stepBakeQueue(1.8)
-      } else {
-        const streamed = worldStreamer.updateWindow(
-          activePeek ? activePeek.cutX : drawn.x,
-          activePeek ? activePeek.cutY : drawn.y,
-          town,
-          mode,
-          view,
-          moveVx,
-          moveVy,
-          time,
-        )
-        currentWindowOrigin = streamed.origin
-        currentIsStreamWindow = true
-        if (streamed.changed && streamed.level) {
-          vertices = [...streamed.level.chunks, ...streamed.level.glass].reduce((n, c) => n + (c.byteLength ?? c.data.byteLength) / 24, 0)
-          renderer.setLevel(streamed.level)
-          combatFx.setLevel(streamed.level)
-          if (!streamed.geometryOnly) {
-            windowMoved = vision.setWindowOrigin(streamed.origin[0], streamed.origin[1])
-            scenery.setWindowOrigin(streamed.origin[0], streamed.origin[1], town)
-            combinedFog.markDirty()
-          }
-        }
-      }
-    }
-    const windowKey = windowStateKey(town)
-    if (revision !== session.view.revision || windowKey !== lightWindowKey) {
-      revision = session.view.revision
-      lightWindowKey = windowKey
-      blockers = sightRects(town)
-      const packed = packLightOccluders(town, blockers, occluders, MAX_OCCLUDERS - 4)
-      lightOccluders = packed.count
-      lightWalls = packed.walls
-    }
     const drivingHeadlights =
       Boolean(localVehicle && (p.seatIndex ?? 0) === 0 && localVehicle.headlights && localVehicle.hasBattery && !localVehicle.wreck)
     const effectiveVisionAim = drivingHeadlights && localVehicle ? localVehicle.h : p.aim
     const lowBeam = lowBatteryBeam(settings.flashlight, p.battery, p.batteryDepleted, settings.discovery, beamLookScratch)
+    const { mode, windowMoved, visChanged } = sceneLevel.stepFrame({
+      drawn,
+      activePeek,
+      view,
+      watch,
+      localVehicle,
+      drivingHeadlights,
+      effectiveVisionAim,
+      lowBeam,
+    })
     const effectiveVisionSettings = drivingHeadlights
       ? {
           ...settings.vision,
@@ -810,42 +673,14 @@ async function main() {
           cone: Math.max(settings.vision.cone, 130),
         }
       : settings.vision
-    const flashVisionActive =
-      (drivingHeadlights || p.flashlightOutput > 0.01) &&
-      (drivingHeadlights ? settings.vehicle.headlightPower * 0.85 : settings.flashlight.flashlightIntensity) > 0.01
-    // Horde watch (Lab): the view travels with the horde, so it is what the camera shows that gets seen.
-    const visChanged = vision.update(
-      watch ? watch.x : p.x,
-      watch ? watch.y : p.y,
-      effectiveVisionAim,
-      blockers,
-      watch ? { ...effectiveVisionSettings, cone: 360, range: Math.max(effectiveVisionSettings.range, 40) } : effectiveVisionSettings,
-      watch ? null : peek,
-      flashVisionActive && !watch
-        ? {
-            active: true,
-            range: drivingHeadlights ? settings.vehicle.headlightRange : lowBeam.range,
-            cone: drivingHeadlights ? 68 : lowBeam.cone,
-            aim: effectiveVisionAim,
-          }
-        : null,
+    const frameLightOccluders = sceneLevel.packFlashlightActorCasters(
+      p.x,
+      p.y,
+      p.flashlightOutput,
+      zombies,
+      coop.otherPositions(),
     )
-    if (scenery.update(town, vision) || visChanged) {
-      combinedFog.markDirty()
-      combinedFog.update(vision, scenery, true)
-      renderer.setVisibility(combinedFog.filtered, FOG_SIZE, FOG_SIZE)
-    }
-    // The flashlight also sees actors as round casters, so zombies and other survivors cut its pool and its shaft.
-    let frameLightOccluders = lightOccluders
-    if (p.flashlightOutput > 0.001) {
-      const casters = (x: number, y: number) => {
-        if (frameLightOccluders >= MAX_OCCLUDERS - 4 || frameLightOccluders - lightOccluders >= 16) return
-        if (Math.hypot(x - p.x, y - p.y) > settings.flashlight.flashlightRange) return
-        occluders.set([x, y, 0.27, 0, 1.72, 1, 0, 0], frameLightOccluders++ * OCC_FLOATS)
-      }
-      for (const z of zombies) if (z.state !== "dead") casters(z.x, z.y)
-      for (const o of coop.otherPositions()) casters(o[0], o[1])
-    }
+    const { blockers, lightOccluders, lightWalls } = sceneLevel
     const [vx0, vy0, vx1, vy1] = cam.groundRect(2.8)
     const vp = cam.viewProj
     const inLightFrustum = (lx: number, ly: number, r: number): boolean => {
@@ -907,6 +742,7 @@ async function main() {
       (x, z) => supportHeight(town, x, z) + lift - riderSink,
       settings.survivor,
     )
+    const { vision } = sceneLevel
     const coopBatches = coop.bodies(vdt, time, town, vision, settings.survivor)
     let flashlightHeight = 1.34 + playerGroundY
     let flashlightAirLimit = 0
@@ -1018,24 +854,7 @@ async function main() {
     const cutFlag = activePeek ? 1 + peekBlend : 1
     const cutRadius = activePeek ? 0.48 + 0.1 * peekBlend : 0.22
     const cutHeight = activePeek ? 1.0 - 0.12 * peekBlend : 1.0
-    let inInteriorView = false
-    for (let i = 0; i < town.buildings.length; i++) {
-      const b = town.buildings[i]!
-      if (cutX > b.rect[0] - 0.1 && cutX < b.rect[2] + 0.1 && cutY > b.rect[1] - 0.1 && cutY < b.rect[3] + 0.1) {
-        inInteriorView = true
-        break
-      }
-    }
-    if (!inInteriorView && currentIsStreamWindow) {
-      const wb = worldStreamer.windowBuildings
-      for (let i = 0; i < wb.length; i++) {
-        const b = wb[i]!
-        if (cutX > b.rect[0] - 0.1 && cutX < b.rect[2] + 0.1 && cutY > b.rect[1] - 0.1 && cutY < b.rect[3] + 0.1) {
-          inInteriorView = true
-          break
-        }
-      }
-    }
+    const inInteriorView = sceneLevel.inInteriorView(town, cutX, cutY)
     let unshadowedCount = 0
     const maxUnshadowed = qProfile.maxUnshadowedLamps
     for (let i = 0; i < town.lamps.length; i++) {
@@ -1081,7 +900,7 @@ async function main() {
     const sconceLevel = day.lamps * settings.lighting.lighting * settings.lighting.roomPower
     lampPower[SCONCE_LAMP_SLOT] = SconceLights.bulb(sconceLevel, interiors.settings)
     lampPower[TABLE_LAMP_SLOT] = sconceLevel * 0.5
-    interiors.sconces.setSources(currentIsStreamWindow ? worldStreamer.windowSconces : originSconces)
+    interiors.sconces.setSources(sceneLevel.activeSconces() as Float32Array[])
     count = interiors.sconces.write(
       lights,
       count,
@@ -1145,6 +964,7 @@ async function main() {
         }
       : undefined
     // The visibility field is anchored to the streaming window: a new window origin starts it afresh.
+    const { currentWindowOrigin, currentIsStreamWindow } = sceneLevel
     const fieldSnap = currentWindowOrigin[0] !== fieldWindowX || currentWindowOrigin[1] !== fieldWindowY
     if (fieldSnap) {
       renderer.clearVisibilityField()
@@ -1158,6 +978,7 @@ async function main() {
       settings.flashlight.flashlightCone = lowBeam.cone
       settings.flashlight.flashlightRange = lowBeam.range
     }
+    const activeBuildings = sceneLevel.activeBuildings(town)
     packOutbreakLightingUniforms(
       {
         settings,
@@ -1184,9 +1005,9 @@ async function main() {
         weather: activeWeather,
         windowOrigin: currentWindowOrigin,
         isStreamWindow: currentIsStreamWindow,
-        windowBuildings: currentIsStreamWindow ? worldStreamer.windowBuildings : town.buildings,
+        windowBuildings: activeBuildings,
         unseen: unseenEval,
-        chunkFadeAlpha: currentIsStreamWindow ? worldStreamer.chunkFadeAlpha : 0,
+        chunkFadeAlpha: currentIsStreamWindow ? sceneLevel.worldStreamer.chunkFadeAlpha : 0,
       },
       flashRgb,
       lightingUniforms,
@@ -1195,10 +1016,9 @@ async function main() {
     settings.flashlight.flashlightRange = tunedRange
     packFoliageUniforms(foliageSettings, lightingUniforms, OUTBREAK_FOLIAGE_UNIFORM_OFFSET)
     packFoliageActors(foliageActors(p, zombies), lightingUniforms, OUTBREAK_FOLIAGE_UNIFORM_OFFSET + FOLIAGE_WIND_FLOATS)
-    const interiorBuildings = currentIsStreamWindow ? worldStreamer.windowBuildings : town.buildings
     const deferRugWork = !inInteriorView && (Math.abs(p.vx) > 0.05 || Math.abs(p.vy) > 0.05)
-    interiors.update(interiorBuildings, town.houseSeed, p.x, p.y, performance.now(), deferRugWork)
-    interiors.pack(lightingUniforms, OUTBREAK_INTERIOR_UNIFORM_OFFSET, interiorBuildings, town.houseSeed)
+    interiors.update(activeBuildings, town.houseSeed, p.x, p.y, performance.now(), deferRugWork)
+    interiors.pack(lightingUniforms, OUTBREAK_INTERIOR_UNIFORM_OFFSET, activeBuildings, town.houseSeed)
     renderer.setCustomUniforms(lightingUniforms)
     lastSightX = sightX
     lastSightY = sightY
@@ -1249,46 +1069,7 @@ async function main() {
     frame[45] = Math.cos((sightCone * Math.PI) / 360)
     frame[46] = sightAwareness
     frame[47] = settings.vision.shroud
-    let doorCount = 0
-    for (let i = 0; i < town.doors.length && doorCount < 64; i++) {
-      const door = town.doors[i]!
-      const o = doorCount++ * 12
-      doorData[o] = door.rect[0]
-      doorData[o + 1] = 0
-      doorData[o + 2] = (door.rect[1] + door.rect[3]) / 2
-      doorData[o + 3] = (door as { angle?: number }).angle ?? (door.open ? -Math.PI / 2 : 0)
-      doorData[o + 4] = 1
-      doorData[o + 5] = 1
-      doorData[o + 6] = 1
-      doorData[o + 7] = 1
-      doorData[o + 8] = 0
-      doorData[o + 9] = 0
-      doorData[o + 10] = 1
-      doorData[o + 11] = 0
-    }
-    doorBatch.count = doorCount
-    let openWindows = 0
-    for (let i = 0; i < town.windows.length; i++) {
-      const win = town.windows[i]!
-      if (!win.open || openWindows >= 64) continue
-      const [wx0, wy0, wx1, wy1] = win.rect
-      const horizontal = wx1 - wx0 > wy1 - wy0
-      const yaw = horizontal ? 0 : Math.PI / 2
-      const o = openWindows++ * 12
-      sashData[o] = (wx0 + wx1) / 2
-      sashData[o + 1] = 0.38
-      sashData[o + 2] = (wy0 + wy1) / 2
-      sashData[o + 3] = yaw
-      sashData[o + 4] = 1
-      sashData[o + 5] = 1
-      sashData[o + 6] = 1
-      sashData[o + 7] = 1
-      sashData[o + 8] = 0
-      sashData[o + 9] = 0
-      sashData[o + 10] = 1
-      sashData[o + 11] = 0
-    }
-    sashBatch.count = openWindows
+    const { doorBatch, sashBatch, openWindows } = sceneLevel.updateOpeningBatches(town)
     const debugAlphaCount = zombieCrowd.renderDebugOverlay(
       Boolean(settings.ai.aiDebugOverlay),
       zombies,
@@ -1353,7 +1134,7 @@ async function main() {
     rBatches.length = 0
     for (let i = 0; i < groundWearBatches.length; i++) rBatches.push(groundWearBatches[i]!)
     for (let i = 0; i < clutterBatches.length; i++) rBatches.push(clutterBatches[i]!)
-    for (const b of propDressing.collect(town, tightView, settings.props, settings.view.zoom, qProfile, mode !== "procedural", level)) rBatches.push(b)
+    for (const b of propDressing.collect(town, tightView, settings.props, settings.view.zoom, qProfile, mode !== "procedural", () => sceneLevel.rebuildLevel())) rBatches.push(b)
     for (let i = 0; i < vehOut.batches.length; i++) rBatches.push(vehOut.batches[i]!)
     for (let i = 0; i < motionOut.batches.length; i++) rBatches.push(motionOut.batches[i]!)
     if (!closetView.hidden) for (let i = 0; i < survivorBatches.length; i++) rBatches.push(survivorBatches[i]!)
@@ -1432,7 +1213,7 @@ async function main() {
     renderer,
     render,
     session: () => session,
-    vision: () => vision,
+    vision: () => sceneLevel.vision,
     avatar: () => avatar,
     cam,
     settings,
@@ -1443,7 +1224,7 @@ async function main() {
     feelTracker,
     combatFx,
     weatherController,
-    worldStreamer,
+    worldStreamer: sceneLevel.worldStreamer,
     hud,
     map,
     coop,
@@ -1461,8 +1242,8 @@ async function main() {
       peekBlend = 0
       lastPeek = null
     },
-    getVertices: () => vertices,
-    getWindowState: () => ({ origin: currentWindowOrigin, isStream: currentIsStreamWindow }),
+    getVertices: () => sceneLevel.vertices,
+    getWindowState: () => ({ origin: sceneLevel.currentWindowOrigin, isStream: sceneLevel.currentIsStreamWindow }),
     reset,
     setFrozen: (value = true) => pacer.setFrozen(value),
     isFrozen: () => pacer.isFrozen(),
@@ -1473,9 +1254,9 @@ async function main() {
     incrementFrames: () => pacer.incrementFrames(1),
     draw: (dt) => draw(dt),
     interiors,
-    rebuildLevel: () => level(),
+    rebuildLevel: () => sceneLevel.rebuildLevel(),
     forceLevel: (level?: "origin" | "streamed") => {
-      forcedLevel = level
+      sceneLevel.forcedLevel = level
     },
   })
   Object.assign(window, { __arcadeHarness: harness })
