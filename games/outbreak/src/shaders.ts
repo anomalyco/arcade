@@ -336,8 +336,14 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
       let roomDim = select(mix(0.84, 0.66, w), select(mix(0.94, 0.86, w), 1.04, isV5OrV6), satStyle > 0);
       col = mix(col, vec3f(roomLum) * vec3f(1.24, 0.92, 0.48), roomWash) * roomDim;
       // Warm amber kitchen sink window pane glow (3D muntins are MAT.timber = 0, panes are MAT.lamp = 2)
-      if (mat == 2 && o.world.x > 32.64 && o.world.x < 34.06 && o.world.z > 29.65 && o.world.z < 30.18 && o.world.y > 1.05 && o.world.y < 2.22) {
-        col = vec3f(0.58, 0.24, 0.045) * (0.78 + 0.22 * surfaceNoise(o.world.xy * 6.0)) * nightLamps;
+      if (mat == 2 && o.world.y > 1.05 && o.world.y < 2.22) {
+        let bi = interiorBuildingAt(o.world.xz);
+        if (bi >= 0 && slotLPlan(bi)) {
+          let kb = OL.bldRects[bi];
+          if (o.world.x > kb.z - 4.36 && o.world.x < kb.z - 2.94 && o.world.z > kb.y + 5.65 && o.world.z < kb.y + 6.18) {
+            col = vec3f(0.58, 0.24, 0.045) * (0.78 + 0.22 * surfaceNoise(o.world.xy * 6.0)) * nightLamps;
+          }
+        }
       }
     }
     if (mat == 22) {

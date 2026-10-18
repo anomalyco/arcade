@@ -1269,18 +1269,38 @@ fn evalWindowAreaAttenuation(dv: vec2f, d3: f32, tight: f32) -> f32 {
   return rx * ry * mullionDip * solidAngle;
 }
 
+/** Nearest L-plan bungalow rect from OL.bldRects[0..7] (falls back to bldRects[0]). */
+fn nearestHouseRect(p: vec2f) -> vec4f {
+  let nBld = i32(OL.win.w);
+  var best = OL.bldRects[0];
+  var bestD2 = 1e12;
+  for (var i = 0; i < 8; i++) {
+    if (i >= nBld) { break; }
+    if (((u32(OL.u17.w) >> u32(i)) & 1u) == 0u) { continue; }
+    let b = OL.bldRects[i];
+    let dx = clamp(p.x, b.x, b.z) - p.x;
+    let dz = clamp(p.y, b.y, b.w) - p.y;
+    let d2 = dx * dx + dz * dz;
+    if (d2 < bestD2) {
+      bestD2 = d2;
+      best = b;
+    }
+  }
+  return best;
+}
+
 /**
  * Blog Game Tip #3: Analytical Rectangular Area-Light Floor Bounce (officeFloorBounce).
- * Clamps world.xz to lit floor/porch patch bounds at floor height (6 ALU ops) to bounce warm floor light
+ * Clamps world.xz to lit floor/porch patch bounds at floor height to bounce warm floor light
  * onto vertical walls, kitchen cabinets, and survivor/zombie legs.
  */
-fn evalAreaFloorBounce(world: vec3f, n: vec3f) -> vec3f {
+fn evalAreaFloorBounce(world: vec3f, n: vec3f, b: vec4f) -> vec3f {
   if (world.y > 2.25) { return vec3f(0.0); }
-  // Clamp to nearest lit patch: NW bedroom (23.2..26.8, 24.4..27.4), SE kitchen/dining (31.8..36.2, 29.8..34.2), or front porch (26.2..29.2, 35.4..38.8)
+  // Clamp to nearest lit patch relative to house b: NW bedroom, SE kitchen/dining, or front porch
   let litBox = select(
-    select(vec4f(26.2, 29.2, 35.4, 38.8), vec4f(31.8, 36.2, 29.8, 34.2), world.x > 30.2),
-    vec4f(23.2, 26.8, 24.4, 27.4),
-    world.z < 28.8
+    select(vec4f(b.x + 4.2, b.x + 7.2, b.w - 0.1, b.w + 3.3), vec4f(b.z - 5.2, b.z - 0.8, b.w - 5.7, b.w - 1.3), world.x > b.x + 8.2),
+    vec4f(b.x + 1.2, b.x + 4.8, b.y + 0.4, b.y + 3.4),
+    world.z < b.y + 4.8
   );
   let nearest = vec3f(clamp(world.x, litBox.x, litBox.y), 0.13, clamp(world.z, litBox.z, litBox.w));
   let toFloor = nearest - world;
@@ -1321,6 +1341,7 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, inRoom: 
   let wSpill = select(w, max(w, select(0.88, 0.62, isV7)), isV5);
   if (!inRoom && OL.u1.w <= 0.20 && wSpill <= 0.01 && OL.u8.y + OL.u8.w <= 0.01) { return surfCol; }
   var col = surfCol;
+  let b = nearestHouseRect(world.xz);
   if (!inRoom) {
     let isInView = OL.u5.w > 0.5;
     let groundMask = smoothstep(2.6, 0.35, world.y) * select(1.0, 0.32, mat == 22);
@@ -1329,7 +1350,7 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, inRoom: 
       // 3.7:1 camera-stretched puddle streaks along z toward F.cam.xz
       let q = abs(fract(world.xz * vec2f(0.24, 0.065) + vec2f(0.2, 0.4)) - 0.5) * 2.0;
       wetPuddle = OL.u8.y * (0.45 + 0.95 * q.x * q.y);
-      col *= 1.0 - wetPuddle * select(0.14, 0.28, world.z > 39.8 && world.z < 48.2);
+      col *= 1.0 - wetPuddle * select(0.14, 0.28, world.z > b.w + 4.3 && world.z < b.w + 12.7);
     }
     if (OL.u8.w > 0.01 && n.y > 0.45) {
       col = mix(col, vec3f(0.16, 0.20, 0.28) * (0.45 + 0.55 * F.ambient.w) + surfCol * 1.4, OL.u8.w * 0.55 * n.y);
@@ -1339,7 +1360,7 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, inRoom: 
     // 1. High-pressure sodium streetlamp (2100K) albedo-multiplying ground pool + wet asphalt sheen
     let sScale = OL.u1.w;
     if (sScale > 0.20) {
-      let sPos = select(vec2f(41.2, 42.4), vec2f(39.0, 25.0), isInView);
+      let sPos = select(vec2f(b.z + 4.2, b.w + 6.9), vec2f(b.z + 2.0, b.y + 1.0), isInView);
       let dvS = (world.xz - sPos) * select(vec2f(0.85, 0.90), vec2f(1.10, 0.44), isInView);
       let dS2 = dot(dvS, dvS);
       if (dS2 < 95.0) {
@@ -1354,20 +1375,20 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, inRoom: 
     // 2. Warm 2500K tungsten window & porch bounce + elongated rectangular window sheen (openGlassSheen)
     let pScale = OL.u1.x;
     let wScale = OL.u1.y;
-    if (wSpill > 0.01 && (pScale > 0.001 || wScale > 0.001) && world.z > 34.2 && world.z < 50.0 && world.x > 16.5 && world.x < 40.5) {
-      let vWL = (world.xz - vec2f(24.5, 36.0)) * vec2f(0.72, 0.64);
-      let vWR = (world.xz - vec2f(34.25, 36.0)) * vec2f(0.72, 0.64);
-      let vP = (world.xz - vec2f(27.7, 36.4)) * vec2f(0.68, 0.52);
-      let v7StreetFade = select(1.0, 1.0 - smoothstep(38.0, 41.2, world.z), isV7 && !isInView);
-      let cutZoneScale = select(1.02, select(1.18, 0.96, world.z > 38.0), isInView) * select(1.0, select(0.72, 1.14, isV5), isOverhaul) * v7StreetFade;
+    if (wSpill > 0.01 && (pScale > 0.001 || wScale > 0.001) && world.z > b.w - 1.3 && world.z < b.w + 14.5 && world.x > b.x - 5.5 && world.x < b.z + 3.5) {
+      let vWL = (world.xz - vec2f(b.x + 2.5, b.w + 0.5)) * vec2f(0.72, 0.64);
+      let vWR = (world.xz - vec2f(b.z - 2.75, b.w + 0.5)) * vec2f(0.72, 0.64);
+      let vP = (world.xz - vec2f(b.x + 5.7, b.w + 0.9)) * vec2f(0.68, 0.52);
+      let v7StreetFade = select(1.0, 1.0 - smoothstep(b.w + 2.5, b.w + 5.7, world.z), isV7 && !isInView);
+      let cutZoneScale = select(1.02, select(1.18, 0.96, world.z > b.w + 2.5), isInView) * select(1.0, select(0.72, 1.14, isV5), isOverhaul) * v7StreetFade;
       let tightSpill = select(1.0, select(1.38, select(1.05, 1.85, isV7), isV5), isOverhaul);
       let spill = ((fastExpNeg(dot(vWL, vWL) * 0.0689655 * tightSpill) + fastExpNeg(dot(vWR, vWR) * 0.0689655 * tightSpill)) * wScale * 0.88 + fastExpNeg(dot(vP, vP) * 0.064516 * tightSpill) * pScale * 0.92) * cutZoneScale * groundMask;
       col += texAlbedo * vec3f(1.05, 0.54, 0.12) * spill * wSpill * (1.0 + wetPuddle * OL.u2.y * 0.95);
       outbreakPracticalIrr += spill * wSpill * 0.75;
     }
 
-    // 3. Warm golden-amber porch/lantern road pool around the survivor on the street (z = 40.0..46.0) — scaled by w*w so Noir street stays dark outside the flashlight
-    if (!isInView && world.y < 0.45 && world.z > 39.9 && w > 0.15) {
+    // 3. Warm golden-amber porch/lantern road pool around the survivor on the street — scaled by w*w so Noir street stays dark outside the flashlight
+    if (!isInView && world.y < 0.45 && world.z > b.w + 4.4 && w > 0.15) {
       let dp = (world.xz - vec2f(OL.u6.x, OL.u6.y + 0.85)) * vec2f(0.60, 0.76);
       let dp2 = dot(dp, dp);
       if (dp2 < 26.0) {
@@ -1377,21 +1398,21 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, inRoom: 
       }
     }
   } else {
-    let floorB = evalAreaFloorBounce(world, n);
+    let floorB = evalAreaFloorBounce(world, n, b);
     col += floorB * surfCol * select(8.0, 7.2, isOverhaul);
     outbreakPracticalIrr += dot(floorB, vec3f(14.0, 9.0, 3.0));
-    // Interior indirect room bounce & wall-wash halos (branchless quadrant selection)
+    // Interior indirect room bounce & wall-wash halos (branchless quadrant selection relative to house b)
     let roomScale = OL.u1.z;
     if (roomScale > 0.001) {
       let warmTungsten = select(vec3f(1.0, 0.50, 0.08), vec3f(1.06, 0.52, 0.10), isOverhaul);
       let roomAlbedo = surfCol * select(1.35, 1.28, isOverhaul) + outbreakAlbedo * select(0.18, 0.16, isOverhaul);
-      let isNorth = world.z < 29.6;
-      let isWestN = world.x < 27.2;
-      let isEastS = !isNorth && world.x > 30.6;
-      let isWestS = !isNorth && !isEastS && world.x < 27.0;
+      let isNorth = world.z < b.y + 5.6;
+      let isWestN = world.x < b.x + 5.2;
+      let isEastS = !isNorth && world.x > b.x + 8.6;
+      let isWestS = !isNorth && !isEastS && world.x < b.x + 5.0;
       let cPos = select(
-        select(select(vec2f(28.2, 32.6), vec2f(25.0, 32.8), isWestS), vec2f(33.4, 30.2), isEastS),
-        select(vec2f(29.0, 26.2), vec2f(25.1, 25.4), isWestN),
+        select(select(vec2f(b.x + 6.2, b.w - 2.9), vec2f(b.x + 3.0, b.w - 2.7), isWestS), vec2f(b.z - 3.6, b.y + 6.2), isEastS),
+        select(vec2f(b.x + 7.0, b.y + 2.2), vec2f(b.x + 3.1, b.y + 1.4), isWestN),
         isNorth
       );
       let cScale = select(
@@ -1409,10 +1430,10 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, inRoom: 
       var pool = fastExpNeg(dot(v0, v0) * invDenom);
       let isVertWall = abs(n.y) < 0.45;
       if (isNorth) {
-        pool *= select(select(0.62, 1.25, isVertWall && world.z < 26.2), select(0.55, 1.35, isVertWall && world.z < 26.8), isWestN);
+        pool *= select(select(0.62, 1.25, isVertWall && world.z < b.y + 2.2), select(0.55, 1.35, isVertWall && world.z < b.y + 2.8), isWestN);
       } else if (isEastS) {
-        let vDin = (world.xz - vec2f(33.8, 32.8)) * vec2f(0.58, 0.62);
-        pool = pool * select(0.75, 1.55, isVertWall && world.z < 30.4 && world.y > 0.85) + fastExpNeg(dot(vDin, vDin) * (1.0 / 4.2)) * select(1.0, select(0.48, 0.96, isV5), isOverhaul);
+        let vDin = (world.xz - vec2f(b.z - 3.2, b.w - 2.7)) * vec2f(0.58, 0.62);
+        pool = pool * select(0.75, 1.55, isVertWall && world.z < b.y + 6.4 && world.y > 0.85) + fastExpNeg(dot(vDin, vDin) * (1.0 / 4.2)) * select(1.0, select(0.48, 0.96, isV5), isOverhaul);
       }
       let neScale = select(1.15, select(0.02, 0.16, isV5), isOverhaul);
       let aScale = select(
