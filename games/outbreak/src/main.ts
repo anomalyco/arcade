@@ -2,8 +2,7 @@ import { Camera } from "@arcade/kit/client/camera"
 import { collectSconces, DEFAULT_INTERIOR_SETTINGS, InteriorPresenter, interiorControls, SCONCE_LAMP_SLOT, SconceLights } from "./interiors"
 import { TABLE_LAMP_SLOT, type TableLamp } from "./lightbake"
 import { TableLampLights } from "./table-lamps"
-import { keyLabel, keyLabelSetting, onKeyLayoutChange } from "@arcade/kit/client/controls"
-import { Input } from "@arcade/kit/client/input"
+import { keyLabelSetting } from "@arcade/kit/client/controls"
 import { LabPanel } from "@arcade/kit/lab-panel"
 import {
   createLookControls,
@@ -13,7 +12,6 @@ import {
 import { Renderer, SPRITE_FLOATS, type Batch, type FrameInput } from "@arcade/kit/gpu/renderer"
 import {
   AdaptiveQualityController,
-  describeQualityState,
   loadSavedQualityMode,
   resolveQualityMode,
 } from "@arcade/kit/quality"
@@ -24,8 +22,7 @@ import { MAT, Mesh } from "@arcade/kit/gpu/mesh"
 import { raycast } from "@arcade/kit/sim/geom"
 import { mat4 } from "wgpu-matrix"
 import { FOLIAGE_MAX_ACTORS, FOLIAGE_WIND_FLOATS, foliageSettings, packFoliageActors, packFoliageUniforms } from "@arcade/kit/gpu/foliage"
-import { LocalSession, type Command } from "../shared/session"
-import { MELEE_WEAPONS } from "../shared/combat"
+import { LocalSession } from "../shared/session"
 import { flashlightColor } from "../shared/flashlight"
 import { lowBatteryBeam, type BeamLook } from "./discovery/flashlight"
 import { ClosetView } from "./discovery/closet"
@@ -33,10 +30,9 @@ import { PageGlance } from "./discovery/glance"
 import { BenchLean } from "./discovery/lean"
 import { DiscoveryProps } from "./discovery/props"
 import type { DiscoveryHost } from "./discovery/stage"
-import { HOLD_DURATION, vaultLift, type PeekInfo } from "../shared/interact"
-import { FrameClock, TICK_DT } from "../shared/clock"
+import { vaultLift, type PeekInfo } from "../shared/interact"
 import { sightRects, SIZE } from "../shared/map"
-import { dayCycle, clockText, wrapHour } from "../shared/day-cycle"
+import { dayCycle, wrapHour } from "../shared/day-cycle"
 import { Vision, FOG_SIZE } from "../shared/vision"
 import { supportHeight } from "../shared/terrain"
 import { SceneryMemory } from "../shared/scenery-memory"
@@ -69,20 +65,15 @@ import {
 } from "./lighting"
 import { humanProfiles } from "@arcade/kit/human-profile"
 import { Survivor } from "./survivor"
-import { OutbreakHud } from "./hud"
+import { OutbreakFrameUi } from "./hud/frame-ui"
 import { OutbreakAudio, pursuers, soundWorld } from "./audio"
-import { InventoryHud } from "./inventory-hud"
 import { packLightOccluders, windowStateKey } from "./light-occluders"
-import { MAP_KEY, OutbreakMap } from "./map/map"
-import { gameMapFrame } from "./map/game"
 import { type ProgressionLabHost } from "./progression/lab"
 import { type VehicleLabHost } from "./vehicle-lab"
 import { BotsLabController } from "./bots-lab"
 import { OutbreakVehicleAudio } from "./vehicle-audio"
 import { OutbreakVehicleRenderer } from "./vehicles"
-import { applyVehicleStunt } from "./vehicle-lab"
 import { SURVIVOR_COLOURS } from "./net-session"
-import { WEATHER_PRESETS } from "@arcade/kit/weather"
 import { OutbreakWeatherController } from "./weather/controller"
 import { CoopView } from "./coop-view"
 import type { NetSession } from "./net-session"
@@ -101,7 +92,9 @@ import { outbreakClientFeatures } from "./features"
 import { OutbreakFeelTracker } from "./feel-events"
 import { registerOutbreakGameCommands } from "./game-commands"
 import { createOutbreakHarness } from "./harness"
+import { OutbreakInputController } from "./input/controller"
 import { buildOutbreakLabControls, handleOutbreakSettingChanged, type OutbreakLabControlHost } from "./lab-controls"
+import { OutbreakFramePacer } from "./loop/frame-pacer"
 import { shaders } from "./shaders"
 import { evaluateUnseenFrame } from "./unseen"
 import "./style.css"
@@ -204,28 +197,8 @@ function nearestZombies(zombies: readonly { x: number; y: number; state: string 
 
 async function main() {
   const canvas = document.querySelector<HTMLCanvasElement>("#game")!
-  const status = document.querySelector<HTMLElement>("#status")!
-  const promptEl = document.querySelector<HTMLElement>("#prompt")
-  const staminaEl = document.querySelector<HTMLElement>("#stamina")
-  const staminaFill = document.querySelector<HTMLElement>("#stamina-fill")
-  const batteryEl = document.querySelector<HTMLElement>("#battery")
-  const batteryFill = document.querySelector<HTMLElement>("#battery-fill")
-  const hud = new OutbreakHud(document.body, settings.hud)
-  hud.avoid(promptEl)
-  const map = new OutbreakMap(document.body, settings.map, (() => { try { return localStorage } catch { return null } })())
-  const inventoryHud = new InventoryHud(
-    {
-      prompt: promptEl,
-      hotbar: document.querySelector<HTMLElement>("#hotbar"),
-      belt: document.querySelector<HTMLElement>("#belt"),
-      pack: document.querySelector<HTMLElement>("#pack"),
-      craft: document.querySelector<HTMLElement>("#craft"),
-      markers: document.querySelector<HTMLElement>("#markers"),
-    },
-    (index) => SURVIVOR_COLOURS[index % SURVIVOR_COLOURS.length]!.css,
-    () => settings.discovery,
-    settings.hud,
-  )
+  const frameUi = new OutbreakFrameUi(settings)
+  const { statusEl: status, promptEl, hud, map, inventoryHud } = frameUi
   if (!navigator.gpu) {
     status.textContent = "Outbreak needs WebGPU."
     return
@@ -274,60 +247,19 @@ async function main() {
   let currentWindowOrigin: [number, number] = [0, 0]
   let currentIsStreamWindow = false
   let originSconces: Float32Array[] = []
-  const input = new Input(canvas, ["KeyE"])
-  input.enabled = true
-  // Ctrl is crouch: keep the browser's Ctrl shortcuts (save, bookmark, find) from firing while sneaking.
-  window.addEventListener("keydown", (e) => {
-    const t = e.target as HTMLElement | null
-    if (e.ctrlKey && !e.metaKey && /^(Key[A-Z]|Digit\d|Space)$/.test(e.code) && !t?.closest?.("input, textarea, select, [contenteditable]")) e.preventDefault()
-  })
-  input.mouse.y = innerHeight / 2 - 150
-  let pendingHotbarSlot: number | undefined
-  let pendingHotbarDelta = 0
-  let pendingFlashlightToggle = false
-  let pendingBarricade = false
-  let pendingVerbs: Partial<Command> = {}
-  // KeyG and KeyQ are tap-or-hold: the tap fires on release, the hold once it has lasted HOLD_DURATION.
-  const holds = new Map<string, { at: number; fired: boolean }>()
-  input.onKey = (code) => {
-    const digit = ["Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8", "Digit9"].indexOf(code)
-    if (digit >= 0) {
-      const meant = inventoryHud.digit(digit, session.view)
-      if (meant.hotbarSlot !== undefined) {
-        if (meant.hotbarSlot === 0 && session.view.inventory.selectedSlot === 0) pendingFlashlightToggle = true
-        pendingHotbarSlot = meant.hotbarSlot
-      } else if (meant.pick) pendingVerbs.pick = meant.pick
-    }
-    if (code === "KeyB") pendingBarricade = true
-    if (code === "KeyE") inventoryHud.noteUse(session.view.prompt)
-    if (code === "Tab") inventoryHud.togglePack()
-    if (code === "Escape") inventoryHud.close()
-    if (code === MAP_KEY) map.toggle()
-    else if (code === "Escape") map.close()
-    else map.key(code)
-    if (code === "KeyG" || code === "KeyQ") holds.set(code, { at: performance.now(), fired: false })
-  }
-  const pollHolds = (now: number) => {
-    for (const [code, h] of holds) {
-      const down = input.held(code)
-      if (down && !h.fired && now - h.at >= HOLD_DURATION * 1000) {
-        h.fired = true
-        if (code === "KeyG") pendingVerbs.bundle = true
-        else if (!inventoryHud.craftOpen) inventoryHud.toggleCraft()
-      } else if (!down) {
-        if (!h.fired) {
-          if (code === "KeyG") pendingVerbs.drop = true
-          else if (inventoryHud.craftOpen) inventoryHud.close()
-          else pendingVerbs.ping = true
-        }
-        holds.delete(code)
-      }
-    }
-  }
-  input.onWheel = (delta) => {
-    if (delta !== 0) pendingHotbarDelta += Math.sign(delta)
-  }
   const cam = new Camera(settings.view)
+  const botsLab = new BotsLabController(settings)
+  const inputController = new OutbreakInputController({
+    canvas,
+    session: () => session,
+    cam,
+    settings,
+    inventoryHud,
+    map,
+    botsLab,
+    incrementFrames: (count) => pacer.incrementFrames(count),
+  })
+  const { input } = inputController
   const audio = new OutbreakAudio(settings.audio, {
     baseUrl: new URL("./audio-assets/", document.baseURI).href,
     storage: (() => { try { return localStorage } catch { return null } })(),
@@ -398,7 +330,6 @@ async function main() {
     },
     offline: () => !coop.net,
   }
-  const botsLab = new BotsLabController(settings)
   const labControlHost: OutbreakLabControlHost = {
     features: outbreakClientFeatures,
     session: () => session,
@@ -540,106 +471,25 @@ async function main() {
   let lightWindowKey = 0
   // Walls, closed doors and closed windows: what stops light (sight passes windows, light only open ones).
   let lightWalls: readonly (readonly [number, number, number, number])[] = blockers
-  let frozen = params.has("bench")
-  let frames = 0
-  let meterAt = performance.now()
-  let meterSubmits = renderer.submittedFrames
-  let pendingDrawDt = 0
-  let lastDrawAt = -Infinity
-  const clock = new FrameClock()
-  const liveMove = () => ({ ...input.move(), sprint: input.sprinting })
-  const stepSimulation = (wallNow: number) => {
-    if (frozen || document.hidden || coop.paused) {
-      clock.pause(wallNow)
-      return 0
-    }
-    const substeps = clock.frame(
-      wallNow,
-      liveMove(),
-      () => input.takeEnter(),
-      () => {
-        const f = input.takeSecondary() || pendingFlashlightToggle
-        pendingFlashlightToggle = false
-        return f
-      },
-      () => input.takeJump(),
-      () => input.interactHeld,
-    )
-    if (!substeps.length) return 0
-    const target = cam.unproject(input.mouse.x, input.mouse.y, innerWidth, innerHeight)
-    const hotbarSlot = pendingHotbarSlot
-    const hotbarDelta = pendingHotbarDelta
-    const fireEdge = input.takeFirePress()
-    const reloadEdge = input.takeReload()
-    const meleeEdge = input.takeMelee()
-    const seatEdge = input.takeSeat()
-    const hornHeld = input.held("KeyH")
-    const crouchHeld = input.enabled && (input.held("ControlLeft") || input.held("ControlRight"))
-    const spaceHeld = Boolean(session.view.player.vehicleId) && input.held("Space")
-    const barricadeEdge = pendingBarricade
-    pollHolds(wallNow)
-    const verbs = pendingVerbs
-    pendingVerbs = {}
-    pendingHotbarSlot = undefined
-    pendingHotbarDelta = 0
-    pendingBarricade = false
-    let stepped = 0
-    for (const [idx, step] of substeps.entries()) {
-      const p = session.view.player
-      const rawCommand: Command = {
-        mx: step.mx,
-        my: step.my,
-        sprint: step.sprint || spaceHeld,
-        aim: Math.atan2(target.y - p.y, target.x - p.x),
-        interact: step.interact,
-        flashlight: step.flashlight,
-        jump: step.jump,
-        interactHeld: step.interactHeld,
-        fire: idx === 0 ? fireEdge : false,
-        fireHeld: input.firing,
-        reload: idx === 0 ? reloadEdge : false,
-        melee: idx === 0 ? meleeEdge : false,
-        barricade: idx === 0 ? barricadeEdge : false,
-        ...(idx === 0 && seatEdge ? { seat: true } : {}),
-        ...(hornHeld ? { horn: true } : {}),
-        ...(crouchHeld ? { crouch: true } : {}),
-        ...(idx === 0 ? verbs : {}),
-        ...(idx === 0 && hotbarSlot !== undefined ? { hotbarSlot } : {}),
-        ...(idx === 0 && hotbarDelta !== 0 ? { hotbarDelta } : {}),
-      }
-      const effectiveCommand = applyVehicleStunt(
-        step.dt,
-        session instanceof LocalSession ? botsLab.stepBeforeSessionUpdate(step.dt, session, rawCommand) : rawCommand,
-      )
-      session.update(
-        step.dt,
-        effectiveCommand,
-        settings.dayCycle.timeScale,
-        settings,
-      )
-      stepped += step.dt
-      frames++
-    }
-    pendingDrawDt += stepped
-    return substeps.length
-  }
-  window.addEventListener("keydown", () => {
-    const now = performance.now()
-    clock.recordMove(now, liveMove())
-    if (!frozen && !document.hidden && canDrawNow(now)) tick(now)
-    else scheduleFrame()
+  const pacer = new OutbreakFramePacer({
+    device,
+    renderer,
+    qualityController,
+    lab: () => lab,
+    initialFrozen: params.has("bench"),
+    isCoopPaused: () => coop.paused,
+    isSampleLoading: () => audio.runtime.sampleBank.loadingInFlight,
+    liveMove: () => inputController.liveMove(),
+    releaseInput: () => inputController.release(),
+    stepSubsteps: (wallNow, clock) => inputController.stepSubsteps(wallNow, clock),
+    draw: (dt) => draw(dt),
+    hudSummaryContext: () => ({
+      hour: session.view.hour,
+      seed: session.view.town.seed,
+      livingZombies: session.view.zombies.filter((z) => z.state !== "dead").length,
+    }),
   })
-  window.addEventListener("keyup", () => {
-    const now = performance.now()
-    clock.recordMove(now, liveMove())
-    if (!frozen && !document.hidden && canDrawNow(now)) tick(now)
-    else scheduleFrame()
-  })
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden) clock.pause(performance.now())
-    else scheduleFrame()
-  })
-  window.addEventListener("blur", () => clock.pause(performance.now()))
+  audio.runtime.onTick = () => pacer.onAudioTick()
   const syncTextures = () => {
     renderer.setSurfaceTexUniforms({
       enabled: settings.materials.textures,
@@ -659,8 +509,8 @@ async function main() {
     [],
     params,
     () => {
-      input.release()
-      clock.pause(performance.now())
+      inputController.release()
+      pacer.clock.pause(performance.now())
     },
     (key, value) => onSettingChanged(key, value),
   )
@@ -802,8 +652,7 @@ async function main() {
     vehicleRenderer.reset()
     feelTracker.reset(session.view.player)
     ambientMotion.reset()
-    hud.reset()
-    map.reset()
+    frameUi.reset()
     weatherController.reset(nextSeed)
     level()
     scenery = new SceneryMemory()
@@ -814,72 +663,16 @@ async function main() {
     lastSightX = lastSightY = -1e3
     cam.snap(session.view.player.x, session.view.player.y)
     cam.dist = settings.view.zoom
-    pendingDrawDt = 0
-    lastWallDrawAt = 0
-    qualityController.reset()
-    clock.reset(performance.now(), liveMove())
+    pacer.resetForSession()
   }
-  let lastWallDrawAt = 0
   coop.onSessionChange = () => reset()
   reset()
-  const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
-  let lastNotice: { text: string; until: number } | null = null
-  const formatStatus = () => {
-    const { player: p, hour, time, prompt, zombies } = session.view
-    const primaryKey = keyLabel("KeyE")
-    const reloadKey = keyLabel("KeyR")
-    let promptText = ""
-    if (p.channel) {
-      const pct = Math.min(100, Math.round((p.channel.elapsed / Math.max(0.1, p.channel.duration)) * 100))
-      promptText = ` · ${p.channel.label} (${pct}%)`
-    } else if (prompt) {
-      const second = prompt.secondary ? `  ·  Hold ${primaryKey} ${prompt.secondary.label}` : ""
-      promptText = ` · ${primaryKey} ${prompt.primary.label}${second}`
-    }
-    const weaponText =
-      p.reloadRemaining > 0
-        ? ` · Reloading…`
-        : p.equippedItem === "pistol"
-          ? ` · 9mm ${p.magAmmo}/${p.magCapacity} (+${p.reserveAmmo}${p.magAmmo === 0 && p.reserveAmmo > 0 ? ` ${reloadKey}` : ""})`
-          : p.meleeWeapon
-            ? ` · ${MELEE_WEAPONS[p.meleeWeapon].shortLabel} ${p.meleeDurability}/${p.meleeMaxDurability}`
-            : ""
-    const plankText = p.planks > 0 ? ` · ${p.planks}🪵` : ""
-    const alerted = zombies.filter((z) => z.state === "chase" || z.state === "alert" || z.state === "bash").length
-    const alertText = alerted > 0 ? ` · ${alerted} pursuing` : ""
-    const notice = session.view.notices.splice(0).at(-1)
-    if (notice) lastNotice = { text: notice.text, until: time + 3 }
-    const lootText = p.lootMessage && time < p.lootMessageUntil ? ` · ${p.lootMessage}` : lastNotice && time < lastNotice.until ? ` · ${lastNotice.text}` : ""
-    const weatherText =
-      settings.weather.weatherEnabled && settings.weather.weatherPreset !== "clear"
-        ? ` · ${WEATHER_PRESETS[settings.weather.weatherPreset]?.label ?? settings.weather.weatherPreset}`
-        : ""
-    return `${clockText(hour)}${weatherText}${weaponText}${plankText}${p.exhausted ? " · Exhausted" : ""}${alertText}${promptText}${lootText}`
-  }
-  const syncStatus = () => {
-    if (hud.logMode) status.textContent = formatStatus()
-    else {
-      const weather =
-        settings.weather.weatherEnabled && settings.weather.weatherPreset !== "clear"
-          ? (WEATHER_PRESETS[settings.weather.weatherPreset]?.label ?? settings.weather.weatherPreset)
-          : ""
-      const summary = hud.summary(session.view, weather)
-      if (summary !== null) status.textContent = summary
-    }
-  }
-  onKeyLayoutChange(() => {
-    syncStatus()
-    inventoryHud.sync(session.view, cam, innerWidth, innerHeight)
-  })
+  frameUi.installKeyLayoutListener(() => session, cam)
   await renderer.texturesReady
   syncTextures()
   let lastDayNightHour = -1
   function draw(dt: number) {
-    const nowDraw = performance.now()
-    if (!frozen && lastWallDrawAt > 0) {
-      qualityController.recordFrame(nowDraw - lastWallDrawAt, renderer.lastGpuMs, nowDraw)
-    }
-    lastWallDrawAt = nowDraw
+    pacer.recordFrameStart(performance.now())
     const qProfile = qualityController.getProfile()
     renderer.setBloomLevels(qProfile.bloomLevels)
     if (settings.materials.textures === 2) syncTextures()
@@ -1612,223 +1405,26 @@ async function main() {
     render.lookCompare = lookCompare
     render.postParams = unseenEval.postParams
     renderer.render(render)
-    hud.update(dt, session.view, cam, w, h, settings.flashlight.flashlightFlicker, coop.net?.id || "player", coop.hudRemotes(town, vision))
-    if (staminaEl && staminaFill) {
-      const pct = Math.max(0, Math.min(100, p.stamina * 100))
-      const width = `${pct.toFixed(1)}%`
-      const active = String(p.sprinting || p.exhausted || p.stamina < 0.999)
-      const exhausted = String(p.exhausted)
-      if (staminaFill.style.width !== width) staminaFill.style.width = width
-      if (staminaEl.dataset.active !== active) staminaEl.dataset.active = active
-      if (staminaEl.dataset.exhausted !== exhausted) staminaEl.dataset.exhausted = exhausted
-    }
-    if (batteryEl && batteryFill) {
-      const pct = Math.max(0, Math.min(100, p.battery * 100))
-      const width = `${pct.toFixed(1)}%`
-      const active = String(p.flashlightOn || p.batteryDepleted || p.battery < 0.999)
-      const low = String(p.battery > 0 && p.battery < settings.flashlight.flashlightFlicker)
-      const depleted = String(p.batteryDepleted)
-      const opacity =
-        p.flashlightOn && p.battery < settings.flashlight.flashlightFlicker ? String(0.45 + 0.5 * p.flashlightOutput) : ""
-      if (batteryFill.style.width !== width) batteryFill.style.width = width
-      if (batteryEl.dataset.active !== active) batteryEl.dataset.active = active
-      if (batteryEl.dataset.low !== low) batteryEl.dataset.low = low
-      if (batteryEl.dataset.depleted !== depleted) batteryEl.dataset.depleted = depleted
-      if (batteryEl.style.opacity !== opacity) batteryEl.style.opacity = opacity
-    }
     audio.update({ dt, world: soundWorld(session.sim), listener: drawn, hour, revision: session.view.revision, pursuing: pursuers(zombies, drawn.x, drawn.y), packOpen: inventoryHud.packOpen })
     vehicleAudio.update(dt, time, session.view.vehicles, drawn, p.vehicleId, (id) => vehicleRenderer.tyreAudio(id))
-    vehicleRenderer.syncHud(localVehicle, p.seatIndex ?? 0)
-    syncStatus()
-    coop.overlay(cam, w, h, town, vision)
-    map.update(gameMapFrame({ session, coop, vision, cam, w, h, ground: playerGroundY, visionChanged: visChanged, windowChanged: windowMoved }))
-    inventoryHud.sync(session.view, cam, w, h)
-    if (session instanceof LocalSession) {
-      botsLab.renderOverlay(session, cam, (x, z) => supportHeight(town, x, z), w, h)
-    }
-    const meterNow = performance.now()
-    const elapsed = (meterNow - meterAt) / 1000
-    if (elapsed > 0.25) {
-      lab.header.textContent = `${Math.round((renderer.submittedFrames - meterSubmits) / elapsed)} draws/s · ${Math.round(frames / elapsed)} updates/s · ${renderer.drawnChunks} chunks · ${zombies.filter((z) => z.state !== "dead").length} zombies\n${clockText(hour)} · seed ${town.seed}\n${describeQualityState(qualityController.state(devicePixelRatio))}`
-      if (lab.visible) lab.refresh()
-      frames = 0
-      meterAt = meterNow
-      meterSubmits = renderer.submittedFrames
-    }
-  }
-  let pacerTimer = 0,
-    rafScheduled = false,
-    channelPending = false
-  const paceChannel = new MessageChannel()
-  const canDrawNow = (nowMs: number) =>
-    renderer.inflight === 0 &&
-    nowMs - lastDrawAt >= TICK_DT * 1000 - 0.65 &&
-    (pendingDrawDt > 0 || clock.readyForStep(nowMs))
-  const msUntilNextDraw = (nowMs: number) => {
-    const stepWait = pendingDrawDt > 0 ? 0 : clock.msUntilNextStep(nowMs)
-    const paceWait = Math.max(0, TICK_DT * 1000 - 0.55 - (nowMs - lastDrawAt))
-    return Math.max(stepWait, paceWait)
-  }
-  const onPacerWake = () => {
-    if (frozen || document.hidden) return
-    const now = performance.now()
-    if (canDrawNow(now)) {
-      tick(now)
-    } else {
-      scheduleFrame()
-    }
-  }
-  paceChannel.port1.onmessage = () => {
-    channelPending = false
-    onPacerWake()
-  }
-  const scheduleFrame = () => {
-    if (frozen || document.hidden) return
-    if (!rafScheduled) {
-      rafScheduled = true
-      requestAnimationFrame(rafLoop)
-    }
-    if (coop.paused) return
-    if (!channelPending) {
-      const now = performance.now()
-      const rem = msUntilNextDraw(now)
-      if (renderer.inflight === 0 && rem <= 0.35) {
-        if (pacerTimer) {
-          clearTimeout(pacerTimer)
-          pacerTimer = 0
-        }
-        channelPending = true
-        paceChannel.port2.postMessage(null)
-      } else if (
-        renderer.inflight === 0 &&
-        (rem <= 3.6 || now < gpuPacerUntil || audio.runtime.sampleBank.loadingInFlight)
-      ) {
-        if (pacerTimer) {
-          clearTimeout(pacerTimer)
-          pacerTimer = 0
-        }
-        kickGpuPacer(rem + 1.0)
-      } else if (!pacerTimer) {
-        const waitMs = Math.max(1, Math.floor(rem - 3.5))
-        pacerTimer = window.setTimeout(() => {
-          pacerTimer = 0
-          onPacerWake()
-        }, waitMs)
-      }
-    }
-  }
-  let gpuPacerPending = false,
-    gpuPacerUntil = 0
-  const stepGpuPacer = () => {
-    if (gpuPacerPending || frozen || document.hidden || coop.paused) return
-    const now = performance.now()
-    if (canDrawNow(now)) {
-      tick(now)
-      if (performance.now() < gpuPacerUntil) queueMicrotask(stepGpuPacer)
-      return
-    }
-    if (now >= gpuPacerUntil) return
-    gpuPacerPending = true
-    if (renderer.inflight === 0) {
-      device.queue.submit([device.createCommandEncoder().finish()])
-    }
-    void device.queue.onSubmittedWorkDone().then(() => {
-      gpuPacerPending = false
-      if (frozen || document.hidden || coop.paused) return
-      const t = performance.now()
-      if (canDrawNow(t)) {
-        tick(t)
-        if (performance.now() < gpuPacerUntil) queueMicrotask(stepGpuPacer)
-      } else if (t < gpuPacerUntil) {
-        stepGpuPacer()
-      } else {
-        scheduleFrame()
-      }
+    frameUi.updateFrame({
+      dt,
+      session,
+      coop,
+      vision,
+      cam,
+      w,
+      h,
+      playerGroundY,
+      visChanged,
+      windowMoved,
+      localVehicle,
+      vehicleRenderer,
+      botsLab,
     })
+    pacer.updateMeter(performance.now())
   }
-  const kickGpuPacer = (durationMs = 150) => {
-    gpuPacerUntil = Math.max(gpuPacerUntil, performance.now() + durationMs)
-    stepGpuPacer()
-  }
-  window.addEventListener("pointerdown", () => kickGpuPacer(150), true)
-  window.addEventListener("keydown", () => {
-    if (!frozen && !document.hidden && !coop.paused) {
-      const now = performance.now()
-      if (clock.primeIdleMove(now, liveMove())) {
-        lastDrawAt = -Infinity
-        if (canDrawNow(now)) {
-          tick(now)
-        }
-      }
-    }
-    kickGpuPacer(150)
-  })
-  window.addEventListener("keyup", () => kickGpuPacer(150), true)
-  audio.runtime.onTick = () => {
-    if (!frozen && !document.hidden && !coop.paused) {
-      const now = performance.now()
-      if (canDrawNow(now)) tick(now)
-      else scheduleFrame()
-    }
-  }
-  const rafLoop = (now: number) => {
-    rafScheduled = false
-    const wallNow = performance.now()
-    if (frozen) {
-      clock.pause(wallNow)
-      return
-    }
-    if (document.hidden || coop.paused) {
-      clock.pause(wallNow)
-      rafScheduled = true
-      requestAnimationFrame(rafLoop)
-      return
-    }
-    if (canDrawNow(wallNow)) {
-      tick(now)
-    } else {
-      scheduleFrame()
-    }
-  }
-  function tick(now: number) {
-    void now
-    if (pacerTimer) {
-      clearTimeout(pacerTimer)
-      pacerTimer = 0
-    }
-    const wallNow = performance.now()
-    if (frozen || document.hidden || coop.paused) {
-      clock.pause(wallNow)
-    } else {
-      const mv = liveMove()
-      if (mv.mx !== 0 || mv.my !== 0) {
-        gpuPacerUntil = Math.max(gpuPacerUntil, wallNow + 100)
-      }
-      stepSimulation(wallNow)
-      if (pendingDrawDt > 0 && renderer.inflight === 0) {
-        const dt = pendingDrawDt
-        pendingDrawDt = 0
-        lastDrawAt = wallNow
-        draw(dt)
-      }
-    }
-    scheduleFrame()
-  }
-  renderer.onIdle = () => {
-    const now = performance.now()
-    if (!frozen && !document.hidden && !coop.paused && renderer.inflight === 0) {
-      if (canDrawNow(now)) tick(now)
-      else {
-        if (pacerTimer) {
-          clearTimeout(pacerTimer)
-          pacerTimer = 0
-        }
-        scheduleFrame()
-      }
-    }
-  }
-  lastDrawAt = performance.now()
-  draw(TICK_DT)
+  pacer.drawInitialFrame()
   const harness = createOutbreakHarness({
     features: outbreakClientFeatures,
     adapter,
@@ -1868,29 +1464,13 @@ async function main() {
     getVertices: () => vertices,
     getWindowState: () => ({ origin: currentWindowOrigin, isStream: currentIsStreamWindow }),
     reset,
-    setFrozen: (value = true) => {
-      frozen = value
-      if (pacerTimer) {
-        clearTimeout(pacerTimer)
-        pacerTimer = 0
-      }
-      pendingDrawDt = 0
-      lastDrawAt = -Infinity
-      input.release()
-      clock.reset(performance.now(), liveMove())
-      if (!frozen) {
-        scheduleFrame()
-        kickGpuPacer(150)
-      }
-    },
-    isFrozen: () => frozen,
+    setFrozen: (value = true) => pacer.setFrozen(value),
+    isFrozen: () => pacer.isFrozen(),
     onSettingChanged,
     setLastDayNightHour: (hour) => {
       lastDayNightHour = hour
     },
-    incrementFrames: () => {
-      frames++
-    },
+    incrementFrames: () => pacer.incrementFrames(1),
     draw: (dt) => draw(dt),
     interiors,
     rebuildLevel: () => level(),
@@ -1899,7 +1479,7 @@ async function main() {
     },
   })
   Object.assign(window, { __arcadeHarness: harness })
-  scheduleFrame()
+  pacer.scheduleFrame()
 }
 
 main().catch((error) => {
