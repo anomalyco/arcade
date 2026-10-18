@@ -39,6 +39,7 @@ import {
   type ResolvedLamp,
 } from "../lighting"
 import { originFurnishTown, propLamps } from "../props/furnish"
+import { resolveBeamColor } from "../look/world"
 import type { OutbreakSettings } from "../settings"
 import type { Survivor } from "../survivor"
 import { TableLampLights } from "../table-lamps"
@@ -298,7 +299,8 @@ export class OutbreakFrameLighting {
     let beamReach = 0
     let flashlightPitch: number | undefined
     let flashlightBounceHeight = playerGroundY + 0.3
-    const flashRgb = drivingHeadlights ? flashlightColor(settings.flashlight.flashlightWarmth) : lowBeam.color
+    const rawFlashRgb = drivingHeadlights ? flashlightColor(settings.flashlight.flashlightWarmth) : lowBeam.color
+    const flashRgb = resolveBeamColor(rawFlashRgb, settings.look.beamWarmth)
     const beamAim = drivingHeadlights && localVehicle ? localVehicle.h : p.aim
     const beamRange = drivingHeadlights ? settings.vehicle.headlightRange : lowBeam.range
     const beamOutput = drivingHeadlights ? 1.0 : p.flashlightOutput

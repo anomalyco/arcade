@@ -15,6 +15,7 @@ export const LIGHT_SAT_STYLES = [
   { id: "deep-amber", label: "Deep Amber Halation (RE)", value: 3 },
   { id: "paintover-v5", label: "Paintover Contrast & Dusk Split (v5)", value: 4 },
   { id: "shroud-v6", label: "Dark Shroud & Desaturated Unlit (v6)", value: 5 },
+  { id: "dying-light-v7", label: "Dying Light Pass (v7)", value: 6 },
 ] as const
 
 export const MODEL_STYLES = [
@@ -32,6 +33,7 @@ export const STYLE_GRADES = [
   { id: "amber-lantern", label: "Amber Lantern & Deep Shroud", value: 3 },
   { id: "paintover-v5", label: "Paintover Contrast & Daylight/Dusk (v5)", value: 4 },
   { id: "shroud-v6", label: "Dark Shroud & Desaturated Unlit (v6)", value: 5 },
+  { id: "dying-light-v7", label: "Dying Light Pass (v7)", value: 6 },
 ] as const
 
 /**
@@ -93,6 +95,16 @@ export type OutbreakLookTrims = {
   outOfLightDesat: number
   /** How strongly out-of-sight & unexplored areas darken beyond the live vision cone (0 off, 1 default). */
   outOfSightDarkening: number
+  /** Flashlight colour warmth (0 cool xenon, 0.28 neutral-warm ~4800K white, 1 legacy amber torch). */
+  beamWarmth: number
+  /** Flashlight core tightness & spill falloff (0 legacy wide cone, 1 tight hotspot with soft dark spill). */
+  beamTightness: number
+  /** Wet grazing rim, specular highlights, and eye/wound glints on zombies in the dark (0 legacy ambient lift, 1 default). */
+  zombieRimSpec: number
+  /** Dark-concentrated film grain at night (0 off, 0.05 default). */
+  nightGrain: number
+  /** Lens vignette strength at night (0.35 default, 0.82 legacy). */
+  nightVignette: number
   /** Share of air cells holding a dust mote; motes only show where a light reaches them (0 is off). */
   dustAmount: number
   /** × how brightly motes catch the light. */
@@ -112,9 +124,9 @@ export type OutbreakLookTrims = {
 export const DEFAULT_LOOK_TRIMS: OutbreakLookTrims = {
   lookIdea: "today",
   groundStyle: 1,
-  lightSatStyle: 5,
+  lightSatStyle: 6,
   modelStyle: 4,
-  styleGrade: 5,
+  styleGrade: 6,
   lookSaturation: 1,
   lookExposure: 1,
   lookContrast: 1,
@@ -136,6 +148,11 @@ export const DEFAULT_LOOK_TRIMS: OutbreakLookTrims = {
   shroudDarkness: 1,
   outOfLightDesat: 1,
   outOfSightDarkening: 1,
+  beamWarmth: 0.28,
+  beamTightness: 1,
+  zombieRimSpec: 1,
+  nightGrain: 0.05,
+  nightVignette: 0.35,
   dustAmount: 0.6,
   dustBrightness: 1,
   dustSize: 1,
@@ -180,6 +197,11 @@ export const lookTrimControls: LabControl[] = [
   { key: "shroudDarkness", label: "Shroud darkness", group: LIGHT_COLOUR, min: 0, max: 2, step: 0.05, unit: "×" },
   { key: "outOfLightDesat", label: "Out-of-light desaturation", group: LIGHT_COLOUR, min: 0, max: 1.5, step: 0.05, unit: "×" },
   { key: "outOfSightDarkening", label: "Out-of-sight darkening", group: LIGHT_COLOUR, min: 0, max: 2, step: 0.05, unit: "×" },
+  { key: "beamWarmth", label: "Flashlight beam warmth (4800K=0.28)", group: LIGHTS, min: 0, max: 1, step: 0.02, unit: "" },
+  { key: "beamTightness", label: "Flashlight hotspot tightness", group: LIGHTS, min: 0, max: 2, step: 0.05, unit: "×" },
+  { key: "zombieRimSpec", label: "Zombie wet rim & glints", group: LIGHT_COLOUR, min: 0, max: 2, step: 0.05, unit: "×" },
+  { key: "nightGrain", label: "Night dark-shadow grain", group: GRADE, min: 0, max: 0.4, step: 0.01, unit: "" },
+  { key: "nightVignette", label: "Night lens vignette", group: GRADE, min: 0, max: 1.2, step: 0.02, unit: "" },
   { key: "dustAmount", label: "Dust motes", group: AIR, min: 0, max: 1, step: 0.05, unit: "" },
   { key: "dustBrightness", label: "Mote brightness", group: AIR, min: 0, max: 4, step: 0.05, unit: "×" },
   { key: "dustSize", label: "Mote size", group: AIR, min: 0.4, max: 3, step: 0.05, unit: "×" },
@@ -218,11 +240,40 @@ export function trimLook(base: LookSettings, t: Partial<OutbreakLookTrims> | und
   out.saturation = mix(clamp(base.saturation * (t.lookSaturation ?? 1), 0, 1.6), clamp(worldSat * (t.lookSaturation ?? 1), 0, 1.6), rule)
   out.exposure = base.exposure * (t.lookExposure ?? 1) * gradeExp
   out.contrast = clamp(base.contrast * (t.lookContrast ?? 1) * gradeContrast, 0.6, 1.8)
-  out.vignette = base.vignette * (t.lookVignette ?? 1) * gradeVig
+  const baseVig = base.vignette * (t.lookVignette ?? 1) * gradeVig
+  const nightVig = (t.nightVignette ?? base.vignette) * (t.lookVignette ?? 1) * gradeVig
+  out.vignette = mix(baseVig, nightVig, rule)
+  const nightGrain = t.nightGrain ?? base.grain
+  out.grain = mix(base.grain, Math.max(base.grain, nightGrain), rule)
   out.temperature = clamp(base.temperature + (t.lookTemperature ?? 0) + gradeTemp, -1, 1)
   out.selectiveColor = mix(clamp(base.selectiveColor * (t.beamColour ?? 1), 0, 1.5), clamp(litCol * (t.beamColour ?? 1), 0, 1.5), rule)
   out.practicalWarmth = mix(clamp(base.practicalWarmth + (t.lampColour ?? 0), -0.8, 1.2), 0, rule)
   return out
+}
+
+/**
+ * Resolves the flashlight's linear RGB from `beamWarmth` (0 cool 6000K white, 0.28 neutral-warm ~4800K `[1.0, 0.93, 0.82]`,
+ * 1.0 `baseRgb` legacy amber torch).
+ */
+export function resolveBeamColor(baseRgb: readonly [number, number, number], beamWarmth = 1): [number, number, number] {
+  const w = clamp(beamWarmth, 0, 1)
+  if (w >= 0.999) return [baseRgb[0], baseRgb[1], baseRgb[2]]
+  const neutralWarm: readonly [number, number, number] = [1.0, 0.93, 0.82]
+  if (w <= 0.28) {
+    const u = w / 0.28
+    const cool: readonly [number, number, number] = [0.92, 0.96, 1.0]
+    return [
+      Number(mix(cool[0], neutralWarm[0], u).toFixed(4)),
+      Number(mix(cool[1], neutralWarm[1], u).toFixed(4)),
+      Number(mix(cool[2], neutralWarm[2], u).toFixed(4)),
+    ]
+  }
+  const u = (w - 0.28) / 0.72
+  return [
+    Number(mix(neutralWarm[0], baseRgb[0], u).toFixed(4)),
+    Number(mix(neutralWarm[1], baseRgb[1], u).toFixed(4)),
+    Number(mix(neutralWarm[2], baseRgb[2], u).toFixed(4)),
+  ]
 }
 
 /** The lighting the uniforms get: the hour's lighting with the light trims applied. Pure; `l` is not changed. */
