@@ -263,7 +263,9 @@ export const OUTBREAK_DUST_UNIFORM_OFFSET = OUTBREAK_COLOUR_UNIFORM_OFFSET + 4
 export const OUTBREAK_BEAN_UNIFORM_OFFSET = OUTBREAK_DUST_UNIFORM_OFFSET + 4
 /** Rendering round axes (see `look/world.ts`): lightSatStyle, modelStyle, styleGrade, groundStyle. */
 export const OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET = OUTBREAK_BEAN_UNIFORM_OFFSET + 4
-export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET + 4
+/** Shroud & out-of-light controls (see `look/world.ts`): shroudDarkness, outOfLightDesat, outOfSightDarkening, worldSaturation. */
+export const OUTBREAK_SHROUD_UNIFORM_OFFSET = OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET + 4
+export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = OUTBREAK_SHROUD_UNIFORM_OFFSET + 4
 
 export type OutbreakLightingUniformSettings =
   | (OutbreakLightingSettings & Partial<FlashlightBeamSettings> & Partial<UnseenSettings> & {
@@ -563,6 +565,10 @@ export function packOutbreakLightingUniforms(
   out[OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET + 1] = look.modelStyle ?? DEFAULT_LOOK_TRIMS.modelStyle
   out[OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET + 2] = look.styleGrade ?? DEFAULT_LOOK_TRIMS.styleGrade
   out[OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET + 3] = look.groundStyle ?? DEFAULT_LOOK_TRIMS.groundStyle
+  out[OUTBREAK_SHROUD_UNIFORM_OFFSET] = look.shroudDarkness ?? DEFAULT_LOOK_TRIMS.shroudDarkness
+  out[OUTBREAK_SHROUD_UNIFORM_OFFSET + 1] = look.outOfLightDesat ?? DEFAULT_LOOK_TRIMS.outOfLightDesat
+  out[OUTBREAK_SHROUD_UNIFORM_OFFSET + 2] = look.outOfSightDarkening ?? DEFAULT_LOOK_TRIMS.outOfSightDarkening
+  out[OUTBREAK_SHROUD_UNIFORM_OFFSET + 3] = look.worldSaturation ?? DEFAULT_LOOK_TRIMS.worldSaturation
   // win (offset 76..79): windowOriginX, windowOriginZ, isStreamWindow, buildingCount
   const winOx = state.windowOrigin?.[0] ?? 0
   const winOz = state.windowOrigin?.[1] ?? 0
@@ -1173,6 +1179,7 @@ struct OutbreakLightingUniforms {
   dust: vec4f, // dust motes: amount, brightness, size, under lamps
   bean: vec4f, // Soft Bean: light wrap, sheen, sheen exponent, own colour in the dark
   round: vec4f, // rendering round: lightSatStyle, modelStyle, styleGrade, groundStyle
+  shroud: vec4f, // shroud & unlit: shroudDarkness, outOfLightDesat, outOfSightDarkening, worldSaturation
 }
 @group(0) @binding(13) var<uniform> OL: OutbreakLightingUniforms;
 ${lightRampWgsl}
@@ -1205,18 +1212,25 @@ fn outbreakSkyAmbient(n: vec3f, rawSky: vec3f) -> vec3f {
   let skyLum = dot(rawSky, vec3f(0.299, 0.587, 0.114));
   let suburbanSky = vec3f(skyLum) * vec3f(1.18, 0.90, 0.62);
   let isOverhaul = OL.round.x > 0.5 || OL.round.z > 0.5;
-  let isV5 = OL.round.x > 3.5 || OL.round.z > 3.5;
+  let isV5 = (OL.round.x > 3.5 && OL.round.x < 4.5) || (OL.round.z > 3.5 && OL.round.z < 4.5);
+  let isV6 = OL.round.x > 4.5 || OL.round.z > 4.5;
+  let isV5OrV6 = isV5 || isV6;
   let sun = clamp(F.monitorBounds.w, 0.0, 1.0);
   let duskGlow = smoothstep(0.42, 0.22, F.monitorBounds.y) * (1.0 - smoothstep(0.25, 0.75, sun));
+  let v6NightSky = mix(rawSky * vec3f(0.68, 0.76, 0.92), rawSky * vec3f(0.92, 1.14, 1.98) + vec3f(0.010, 0.008, 0.020), duskGlow);
   let nightSky = select(
     rawSky * vec3f(0.74, 0.95, 1.34),
-    mix(rawSky * vec3f(0.86, 1.14, 1.66), rawSky * vec3f(0.96, 1.18, 2.12) + vec3f(0.012, 0.010, 0.025), duskGlow),
-    isV5,
+    select(
+      mix(rawSky * vec3f(0.86, 1.14, 1.66), rawSky * vec3f(0.96, 1.18, 2.12) + vec3f(0.012, 0.010, 0.025), duskGlow),
+      v6NightSky,
+      isV6,
+    ),
+    isV5OrV6,
   );
-  let daySky = select(mix(rawSky, suburbanSky, 0.34) * 0.68, mix(rawSky, suburbanSky, 0.16) * 1.08, isV5);
+  let daySky = select(mix(rawSky, suburbanSky, 0.34) * 0.68, mix(rawSky, suburbanSky, 0.16) * 1.08, isV5OrV6);
   let overhaulSky = mix(nightSky, daySky, sun);
   let sky = select(mix(rawSky, suburbanSky, w * 0.92), overhaulSky, isOverhaul);
-  return mix(sky * select(0.42, select(0.30, 0.40, isV5), isOverhaul), sky, n.y * 0.5 + 0.5);
+  return mix(sky * select(0.42, select(0.30, select(0.40, 0.34, isV6), isV5OrV6), isOverhaul), sky, n.y * 0.5 + 0.5);
 }
 
 /**

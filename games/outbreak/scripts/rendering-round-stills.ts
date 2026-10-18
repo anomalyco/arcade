@@ -327,6 +327,74 @@ try {
       await capture(page, `v4-${s.name}.png`, s, {}, "today-v4")
     }
     await page.close()
+  } else if (mode === "v6" || mode === "v6-stills") {
+    const legNight = await capture(page, "legacy-street-night-21h.png", SCENES.streetNight!, {}, "legacy-today")
+    const v5Night = await capture(page, "v5-street-night-21h.png", SCENES.streetNight!, {}, "today-v5")
+    const v6Night = await capture(page, "v6-street-night-21h.png", SCENES.streetNight!, {}, "today")
+
+    const legInt = await capture(page, "legacy-interior-night-21h.png", SCENES.interiorNight!, {}, "legacy-today")
+    const v5Int = await capture(page, "v5-interior-night-21h.png", SCENES.interiorNight!, {}, "today-v5")
+    const v6Int = await capture(page, "v6-interior-night-21h.png", SCENES.interiorNight!, {}, "today")
+
+    const legDay = await capture(page, "legacy-street-day-14h.png", SCENES.streetDay!, {}, "legacy-today")
+    const v5Day = await capture(page, "v5-street-day-14h.png", SCENES.streetDay!, {}, "today-v5")
+    const v6Day = await capture(page, "v6-street-day-14h.png", SCENES.streetDay!, {}, "today")
+
+    const legHorde = await capture(page, "legacy-horde-night-21h.png", SCENES.hordeNight!, {}, "legacy-today")
+    const v5Horde = await capture(page, "v5-horde-night-21h.png", SCENES.hordeNight!, {}, "today-v5")
+    const v6Horde = await capture(page, "v6-horde-night-21h.png", SCENES.hordeNight!, {}, "today")
+
+    const legSurv = await capture(page, "legacy-survivors-close-21h.png", SCENES.survivorsClose!, {}, "legacy-today")
+    const v5Surv = await capture(page, "v5-survivors-close-21h.png", SCENES.survivorsClose!, {}, "today-v5")
+    const v6Surv = await capture(page, "v6-survivors-close-21h.png", SCENES.survivorsClose!, {}, "today")
+
+    const sheetPage = await browser.newPage({ deviceScaleFactor: 1 })
+    await sheet(
+      sheetPage,
+      resolve(out, "sheet-v6-shroud-return.png"),
+      "Outbreak Shroud & Desaturation Return (AR-50) · Legacy Today (v1) vs Today · v5 vs Shipped Default (Today · v6)",
+      [
+        { label: "1a. Legacy Today (v1) · Street Night 21:00 (pre-overhaul warm wash & shroud)", file: legNight },
+        { label: "1b. Before (Today · v5) · Street Night 21:00 (lightened exterior shroud 0.16×, bright cobalt unlit)", file: v5Night },
+        { label: "1c. Shipped Default (Today · v6) · Street Night 21:00 (darker shroud & heavy desat outside light, rich golden beam)", file: v6Night },
+        { label: "2a. Legacy Today (v1) · Start House 21:00 (51% sepia pre-wash & dark unseen rooms)", file: legInt },
+        { label: "2b. Before (Today · v5) · Start House 21:00 (bright cobalt-blue unseen bedrooms)", file: v5Int },
+        { label: "2c. Shipped Default (Today · v6) · Start House 21:00 (saturated warm rooms, deep desaturated unseen bedrooms)", file: v6Int },
+        { label: "3a. Legacy Today (v1) · Street Day 14:00 (ochre wash & 4m colour circle)", file: legDay },
+        { label: "3b. Before (Today · v5) · Street Day 14:00 (full saturation everywhere, 0× unseen shroud)", file: v5Day },
+        { label: "3c. Shipped Default (Today · v6) · Street Day 14:00 (vivid sunlit areas, desaturated canopy shade & out-of-vision shroud)", file: v6Day },
+        { label: "4a. Legacy Today (v1) · Horde Night 21:00", file: legHorde },
+        { label: "4b. Before (Today · v5) · Horde Night 21:00 (cobalt unlit street & full-bright 0.94 heroKeep)", file: v5Horde },
+        { label: "4c. Shipped Default (Today · v6) · Horde Night 21:00 (vivid townsfolk in beam, dark desaturated unlit silhouettes)", file: v6Horde },
+        { label: "5a. Legacy Today (v1) · Co-op Survivors 21:00", file: legSurv },
+        { label: "5b. Before (Today · v5) · Co-op Survivors 21:00 (0.94 heroKeep glows outside light)", file: v5Surv },
+        { label: "5c. Shipped Default (Today · v6) · Co-op Survivors 21:00 (distinct co-op jackets, grounded outside light)", file: v6Surv },
+      ],
+      3,
+    )
+    await sheetPage.close()
+    await page.close()
+
+    if (mode === "v6") {
+      const gpuPage = await open(1728, 947, 2)
+      meta.gpuViewport = await gpuPage.evaluate(() => [innerWidth * devicePixelRatio, innerHeight * devicePixelRatio])
+      const gpuResults: Record<string, unknown> = {}
+      const pairs: { name: string; scene: Scene; preset: string; basePreset: string }[] = [
+        { name: "v6-vs-v5-street-night-21h", scene: SCENES.streetNight!, preset: "today", basePreset: "today-v5" },
+        { name: "v6-vs-v5-interior-night-21h", scene: SCENES.interiorNight!, preset: "today", basePreset: "today-v5" },
+        { name: "v6-vs-v5-street-day-14h", scene: SCENES.streetDay!, preset: "today", basePreset: "today-v5" },
+        { name: "v6-vs-v5-horde-night-21h", scene: SCENES.hordeNight!, preset: "today", basePreset: "today-v5" },
+        { name: "v6-vs-v1-street-night-21h", scene: SCENES.streetNight!, preset: "today", basePreset: "legacy-today" },
+        { name: "v6-vs-v1-interior-night-21h", scene: SCENES.interiorNight!, preset: "today", basePreset: "legacy-today" },
+      ]
+      for (const p of pairs) {
+        const res = await measurePair(gpuPage, p.scene, {}, p.preset, p.basePreset)
+        gpuResults[p.name] = res
+        console.log("GPU", p.name, JSON.stringify(res))
+      }
+      meta.gpu = gpuResults
+      await gpuPage.close()
+    }
   } else if (mode === "v5" || mode === "v5-stills") {
     const v4Day = await capture(page, "v4-street-day-14h.png", SCENES.streetDay!, {}, "today-v4")
     const v5Day = await capture(page, "v5-street-day-14h.png", SCENES.streetDay!, {}, "today")

@@ -14,6 +14,7 @@ export const LIGHT_SAT_STYLES = [
   { id: "warm-cool-split", label: "Warm Beam / Cold Moon Split (v4)", value: 2 },
   { id: "deep-amber", label: "Deep Amber Halation (RE)", value: 3 },
   { id: "paintover-v5", label: "Paintover Contrast & Dusk Split (v5)", value: 4 },
+  { id: "shroud-v6", label: "Dark Shroud & Desaturated Unlit (v6)", value: 5 },
 ] as const
 
 export const MODEL_STYLES = [
@@ -30,6 +31,7 @@ export const STYLE_GRADES = [
   { id: "bleach-nocturne", label: "Bleach Nocturne (28 Days)", value: 2 },
   { id: "amber-lantern", label: "Amber Lantern & Deep Shroud", value: 3 },
   { id: "paintover-v5", label: "Paintover Contrast & Daylight/Dusk (v5)", value: 4 },
+  { id: "shroud-v6", label: "Dark Shroud & Desaturated Unlit (v6)", value: 5 },
 ] as const
 
 /**
@@ -85,6 +87,12 @@ export type OutbreakLookTrims = {
   visionLift: number
   /** How much baked lamp bounce counts as light for colour. */
   bounceColour: number
+  /** × darkness of the shroud outside the current light (0 off, 1 default, > 1 deeper shroud). */
+  shroudDarkness: number
+  /** How heavily unlit & shaded surfaces outside the current light desaturate toward monochrome (0 off, 1 default). */
+  outOfLightDesat: number
+  /** How strongly out-of-sight & unexplored areas darken beyond the live vision cone (0 off, 1 default). */
+  outOfSightDarkening: number
   /** Share of air cells holding a dust mote; motes only show where a light reaches them (0 is off). */
   dustAmount: number
   /** × how brightly motes catch the light. */
@@ -104,9 +112,9 @@ export type OutbreakLookTrims = {
 export const DEFAULT_LOOK_TRIMS: OutbreakLookTrims = {
   lookIdea: "today",
   groundStyle: 1,
-  lightSatStyle: 4,
+  lightSatStyle: 5,
   modelStyle: 4,
-  styleGrade: 4,
+  styleGrade: 5,
   lookSaturation: 1,
   lookExposure: 1,
   lookContrast: 1,
@@ -121,10 +129,13 @@ export const DEFAULT_LOOK_TRIMS: OutbreakLookTrims = {
   skyAmbient: 1,
   moonlight: 1,
   lightColour: 1,
-  worldSaturation: 0.06,
+  worldSaturation: 0.03,
   litColour: 0.92,
-  visionLift: 0.08,
+  visionLift: 0.03,
   bounceColour: 0.6,
+  shroudDarkness: 1,
+  outOfLightDesat: 1,
+  outOfSightDarkening: 1,
   dustAmount: 0.6,
   dustBrightness: 1,
   dustSize: 1,
@@ -166,6 +177,9 @@ export const lookTrimControls: LabControl[] = [
   { key: "litColour", label: "Lit colour strength", group: LIGHT_COLOUR, min: 0, max: 1.5, step: 0.02, unit: "×" },
   { key: "visionLift", label: "Vision area lift", group: LIGHT_COLOUR, min: 0, max: 0.5, step: 0.01, unit: "" },
   { key: "bounceColour", label: "Lamp bounce gives colour", group: LIGHT_COLOUR, min: 0, max: 2, step: 0.05, unit: "×" },
+  { key: "shroudDarkness", label: "Shroud darkness", group: LIGHT_COLOUR, min: 0, max: 2, step: 0.05, unit: "×" },
+  { key: "outOfLightDesat", label: "Out-of-light desaturation", group: LIGHT_COLOUR, min: 0, max: 1.5, step: 0.05, unit: "×" },
+  { key: "outOfSightDarkening", label: "Out-of-sight darkening", group: LIGHT_COLOUR, min: 0, max: 2, step: 0.05, unit: "×" },
   { key: "dustAmount", label: "Dust motes", group: AIR, min: 0, max: 1, step: 0.05, unit: "" },
   { key: "dustBrightness", label: "Mote brightness", group: AIR, min: 0, max: 4, step: 0.05, unit: "×" },
   { key: "dustSize", label: "Mote size", group: AIR, min: 0.4, max: 3, step: 0.05, unit: "×" },
@@ -173,7 +187,7 @@ export const lookTrimControls: LabControl[] = [
 ]
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
-const mix = (a: number, b: number, t: number) => a + (b - a) * t
+const mix = (a: number, b: number, t: number) => a * (1 - t) + b * t
 
 /**
  * How strongly the light-colour rule holds at this darkness (0 day, 1 night). The scene shader computes the same
@@ -195,8 +209,8 @@ export function trimLook(base: LookSettings, t: Partial<OutbreakLookTrims> | und
   const rule = lightRuleWeight(t, darkness)
   const satStyle = Math.round(t.lightSatStyle ?? DEFAULT_LOOK_TRIMS.lightSatStyle)
   const grade = Math.round(t.styleGrade ?? DEFAULT_LOOK_TRIMS.styleGrade)
-  const worldSat = satStyle === 3 ? Math.min(t.worldSaturation ?? 0.06, 0.03) : (t.worldSaturation ?? 0.06)
-  const litCol = satStyle === 3 ? Math.max(t.litColour ?? 0.92, 0.98) : (t.litColour ?? 0.92)
+  const worldSat = satStyle === 3 ? Math.min(t.worldSaturation ?? DEFAULT_LOOK_TRIMS.worldSaturation, 0.03) : (t.worldSaturation ?? DEFAULT_LOOK_TRIMS.worldSaturation)
+  const litCol = satStyle === 3 ? Math.max(t.litColour ?? DEFAULT_LOOK_TRIMS.litColour, 0.98) : (t.litColour ?? DEFAULT_LOOK_TRIMS.litColour)
   const gradeContrast = grade === 2 ? 1.18 : grade === 3 ? 1.14 : 1
   const gradeExp = grade === 2 ? 1.02 : grade === 3 ? 1.06 : 1
   const gradeVig = grade === 2 ? 1.24 : grade === 3 ? 1.32 : 1
