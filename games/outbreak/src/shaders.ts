@@ -191,7 +191,7 @@ fn roofCut(p:vec3f, id:i32, frag:vec4f) -> bool {
 ${outbreakFogOfWarDeclarationsWgsl}
 ${interiorDeclarationsWgsl(outbreakInteriorRefs)}
 ${outbreakHeroWgsl}`,
-  directional: "mix(select(mix(vec3f(0.46, 0.68, 1.08), vec3f(0.95, 0.72, 0.46), clamp(OL.u0.z, 0.0, 1.0)), select(vec3f(0.42, 0.68, 1.18), select(vec3f(0.54, 0.84, 1.48), vec3f(0.42, 0.50, 0.62), OL.round.x > 4.5 || OL.round.z > 4.5), OL.round.x > 3.5 || OL.round.z > 3.5), OL.round.x > 0.5 || OL.round.z > 0.5), select(vec3f(1.02, 0.79, 0.52), select(vec3f(1.52, 1.24, 0.88), vec3f(1.38, 1.14, 0.82), OL.round.x > 5.5 || OL.round.z > 5.5), OL.round.x > 3.5 || OL.round.z > 3.5), F.monitorBounds.w) * select(select(fd.g * 0.42, 0.03, abs(n.y) < 0.5), 1.0, !inRoom || o.world.y > 2.8) * evalCanopyCookie(o.world, inRoom) * F.ambient.w * select(max(0.0, dot(n, F.monitorBounds.xyz)), max(0.0, (dot(n, F.monitorBounds.xyz) + 0.52) / 1.52), mat == 22)",
+  directional: "mix(select(mix(vec3f(0.46, 0.68, 1.08), vec3f(0.95, 0.72, 0.46), clamp(OL.u0.z, 0.0, 1.0)), select(vec3f(0.42, 0.68, 1.18), select(vec3f(0.54, 0.84, 1.48), mix(vec3f(0.42, 0.50, 0.62), vec3f(1.48, 0.84, 0.38), select(0.0, smoothstep(0.42, 0.22, F.monitorBounds.y) * (1.0 - smoothstep(0.25, 0.75, F.monitorBounds.w)), OL.round.x > 5.5 || OL.round.z > 5.5)), OL.round.x > 4.5 || OL.round.z > 4.5), OL.round.x > 3.5 || OL.round.z > 3.5), OL.round.x > 0.5 || OL.round.z > 0.5), select(vec3f(1.02, 0.79, 0.52), select(vec3f(1.52, 1.24, 0.88), vec3f(1.38, 1.14, 0.82), OL.round.x > 5.5 || OL.round.z > 5.5), OL.round.x > 3.5 || OL.round.z > 3.5), F.monitorBounds.w) * select(select(fd.g * 0.42, 0.03, abs(n.y) < 0.5), 1.0, !inRoom || o.world.y > 2.8) * evalCanopyCookie(o.world, inRoom) * F.ambient.w * select(max(0.0, dot(n, F.monitorBounds.xyz)), max(0.0, (dot(n, F.monitorBounds.xyz) + 0.52) / 1.52), mat == 22)",
   cutaway: `
       if (OL.u17.z > 0.001 && OL.u17.z < 0.999 && bayer4x4(o.pos) > OL.u17.z) { discard; }
       if ((i32(round(o.mat)) == 21 || o.world.y > 2.801) && roofCut(o.world, i32(round(o.aux)), o.pos)) { discard; }
@@ -248,8 +248,9 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
     col = (col * mix(select(1.08, select(0.80, select(0.94, 0.82, isV6Roof), isV5OrV6Roof), isOverhaul), select(1.66, select(1.20, select(1.54, 1.28, isV6Roof), isV5OrV6Roof), isOverhaul), eave) + roofTint * roofGlint) * extRoofScale;
     let westRoof = smoothstep(36.2, 21.8, o.world.x) * (0.32 + 0.68 * eave);
     let sunsetCopper = (col * 1.8 + vec3f(0.18, 0.062, 0.014)) * vec3f(1.48, 0.52, 0.12) * (0.75 + 0.25 * courseStep);
-    let twilightIndigo = col * vec3f(0.75, 0.95, 1.65) + vec3f(0.014, 0.026, 0.078) * eave;
-    col = mix(col, mix(twilightIndigo, sunsetCopper, westRoof), duskGlow * 0.92);
+    let twilightIndigo = select(col * vec3f(0.75, 0.95, 1.65) + vec3f(0.014, 0.026, 0.078) * eave, col * vec3f(1.08, 0.90, 0.76) + vec3f(0.016, 0.009, 0.004) * eave, isV7Roof);
+    let effWestRoof = select(westRoof, 0.28 + 0.72 * westRoof, isV7Roof);
+    col = mix(col, mix(twilightIndigo, sunsetCopper, effWestRoof), duskGlow * 0.92);
     var roofSight = 1.0;
     if (OL.unseen.mode >= 0.5 && OL.unseen.strength > 0.001) {
       let rSight = fieldSight3(o.world, n);
@@ -341,9 +342,12 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
         let extCutDim = select(1.0, select(0.54, 0.82, o.world.x > 37.2 || o.world.z > 35.8), OL.u5.w > 0.5);
         col *= periphShade * extCutDim;
         let westSweep = smoothstep(35.0, 20.5, o.world.x - (o.world.z - 38.0) * 0.32);
-        let duskTint = mix(vec3f(0.76, 0.92, 1.48), vec3f(1.36, 0.78, 0.42), westSweep);
-        let duskAdd = mix(vec3f(0.004, 0.008, 0.024), vec3f(0.022, 0.008, 0.002), westSweep) * select(1.0, 0.45, mat == 20 && o.world.z > 39.8 && o.world.z < 48.2);
-        col = mix(col, col * duskTint + duskAdd, select(0.0, duskGlow * 0.72, mat != 2));
+        let duskEastTint = select(vec3f(0.76, 0.92, 1.48), select(vec3f(0.98, 0.86, 0.74), vec3f(0.88, 0.92, 0.84), mat == 22), isV7);
+        let duskWestTint = select(vec3f(1.36, 0.78, 0.42), select(vec3f(1.44, 0.84, 0.44), vec3f(1.06, 0.98, 0.76), mat == 22), isV7);
+        let duskTint = mix(duskEastTint, duskWestTint, select(westSweep, 0.32 + 0.68 * westSweep, isV7));
+        let duskEastAdd = select(vec3f(0.004, 0.008, 0.024), vec3f(0.010, 0.006, 0.003), isV7);
+        let duskAdd = mix(duskEastAdd, vec3f(0.024, 0.010, 0.002), westSweep) * select(1.0, 0.45, mat == 20 && o.world.z > 39.8 && o.world.z < 48.2) * select(1.0, 0.0, isV7 && mat == 22);
+        col = mix(col, col * duskTint + duskAdd, select(0.0, duskGlow * select(0.72, 0.82, isV7 && mat != 22), mat != 2));
       }
     } else if (mat != 12) {
       let roomLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
@@ -398,7 +402,13 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
       let sheenCol = select(vec3f(0.50, 0.62, 0.90) * 0.32, select(vec3f(0.18, 0.36, 0.82) * 0.035, select(vec3f(0.26, 0.48, 0.98) * 0.24, v6SheenCol, isV6), isV5OrV6), isOverhaulFol);
       col += outbreakAlbedo * sheenCol * OL.u0.y * crownSheen * clamp(1.0 - F.monitorBounds.w * 1.4, 0.0, 1.0);
       let westCrown = clamp(dot(n, vec3f(-0.83, 0.50, -0.37)) * 0.62 + 0.38, 0.0, 1.0) * smoothstep(0.42, 2.15, o.world.y) * (0.35 + 0.65 * tipWeight);
-      col += (outbreakAlbedo * 1.45 + vec3f(0.12, 0.048, 0.010)) * vec3f(1.46, 0.50, 0.10) * westCrown * (0.45 + 0.55 * smoothstep(42.0, 20.0, o.world.x)) * duskGlow * 0.95;
+      let v7CrownRim = pow(clamp(dot(n, vec3f(-0.83, 0.50, -0.37)), 0.0, 1.0), 1.45) * smoothstep(0.55, 2.15, o.world.y) * tipWeight;
+      let duskCrownTerm = select(
+        (outbreakAlbedo * 1.45 + vec3f(0.12, 0.048, 0.010)) * vec3f(1.46, 0.50, 0.10) * westCrown * (0.45 + 0.55 * smoothstep(42.0, 20.0, o.world.x)),
+        outbreakAlbedo * vec3f(1.28, 0.98, 0.36) * v7CrownRim * (0.55 + 0.45 * smoothstep(42.0, 20.0, o.world.x)),
+        isV7,
+      );
+      col = select(col, col * mix(1.0, 0.76, duskGlow), isV7) + duskCrownTerm * duskGlow * 0.95;
       let folLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
       let v5FolScale = mix(select(0.52, 0.44, isV6), 0.94, sunFactor) * mix(1.0, 0.76 + 0.48 * smoothstep(0.3, 1.9, o.world.y) * max(0.15, n.y), sunVal);
       col = mix(col, vec3f(folLum) * vec3f(1.16, 1.02, 0.64), w * select(0.38, 0.0, satStyle > 0)) * select(1.0, select(mix(0.38, 0.52, sunFactor), v5FolScale, isV5OrV6), isOverhaulFol);

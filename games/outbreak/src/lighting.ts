@@ -1225,7 +1225,9 @@ fn outbreakSkyAmbient(n: vec3f, rawSky: vec3f) -> vec3f {
   let isV5OrV6 = isV5 || isV6;
   let sun = clamp(F.monitorBounds.w, 0.0, 1.0);
   let duskGlow = smoothstep(0.42, 0.22, F.monitorBounds.y) * (1.0 - smoothstep(0.25, 0.75, sun));
-  let v6NightSky = mix(rawSky * vec3f(0.68, 0.76, 0.92), rawSky * vec3f(0.92, 1.14, 1.98) + vec3f(0.010, 0.008, 0.020), duskGlow);
+  let v7DuskSky = rawSky * vec3f(1.28, 0.96, 0.74) + vec3f(0.015, 0.009, 0.004);
+  let v6DuskSky = select(rawSky * vec3f(0.92, 1.14, 1.98) + vec3f(0.010, 0.008, 0.020), v7DuskSky, isV7);
+  let v6NightSky = mix(rawSky * vec3f(0.68, 0.76, 0.92), v6DuskSky, duskGlow);
   let nightSky = select(
     rawSky * vec3f(0.74, 0.95, 1.34),
     select(
