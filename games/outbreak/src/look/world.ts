@@ -147,7 +147,7 @@ export const DEFAULT_LOOK_TRIMS: OutbreakLookTrims = {
   styleGrade: 7,
   lookSaturation: 1,
   lookExposure: 1,
-  lookContrast: 1,
+  lookContrast: 1.06,
   lookVignette: 1,
   lookTemperature: 0,
   lampColour: 0,

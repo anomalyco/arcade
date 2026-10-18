@@ -53,7 +53,7 @@ const frame = (settings: ReturnType<typeof createOutbreakSettings>) => ({
 describe("Outbreak look", () => {
   test("today's look is the identity apart from the light-colour rule, which holds at night and not by day", () => {
     const base = createLookSettings("noir")
-    const trims = { ...DEFAULT_LOOK_TRIMS, dayVignette: 0, dayGrain: 0 }
+    const trims = { ...DEFAULT_LOOK_TRIMS, dayVignette: 0, dayGrain: 0, lookContrast: 1 }
     expect(trimLook(base, { ...trims, lightColour: 0 }, createLookSettings("current"))).toEqual(base)
     expect(trimLook(base, trims, createLookSettings("current"), 0)).toEqual(base)
     const night = trimLook(base, trims, createLookSettings("current"), 1)

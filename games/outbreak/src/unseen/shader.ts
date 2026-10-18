@@ -309,7 +309,7 @@ fn applyOutbreakUnseenPost(
     let cLuma = dot(c, vec3f(0.2126, 0.7152, 0.0722));
     let warmLit = clamp((c.r - c.b * 1.12) / max(c.r + 0.0015, 1e-4), 0.0, 1.0) * smoothstep(0.02, 0.10, cLuma);
     let slate = vec3f(cLuma) * vec3f(0.90, 0.95, 1.05);
-    c = mix(c, slate, clamp(aCharcoal * 0.97, 0.0, 0.98) * (1.0 - warmLit * 0.45)) * mix(1.0, 0.86, clamp(aCharcoal, 0.0, 1.0));
+    c = mix(c, slate, clamp(aCharcoal * 0.97, 0.0, 0.98) * (1.0 - warmLit * 0.45)) * mix(1.0, 0.80, clamp(aCharcoal, 0.0, 1.0));
   }
 
   // Layer 7 (Darkwood v8): grit — coarse crawling charcoal grain that lives in the shroud, strongest in its midtones.
