@@ -39,11 +39,11 @@ Live operational state for agents working in `anomalyco/arcade`. Read this file 
 
 ## Hot-File Contention Rules
 
-In the last 36 hours, `games/outbreak/src/main.ts` was touched by 95 commits (62% of Outbreak commits) and caused 98 merge-conflict events. Keep edits to these files minimal:
+In the last 36 hours, `games/outbreak/src/main.ts` was touched by 95 commits (62% of Outbreak commits) and caused 98 merge-conflict events. `games/outbreak/src/main.ts` is now a thin composition root (`391` lines); keep edits to these files minimal:
 
 | File | Rule |
 | --- | --- |
-| `games/outbreak/src/main.ts` | Put feature logic in a dedicated module (`games/outbreak/src/<feature>/...`) and wire it into `main.ts` with a 1–5 line call site. |
+| `games/outbreak/src/main.ts` | Keep `main.ts` as a thin composition root. Put feature logic in `games/outbreak/src/<feature>/...` and subsystem changes in their owning module (`src/loop/frame-pacer.ts`, `src/input/controller.ts`, `src/hud/frame-ui.ts`, `src/world/scene-level.ts`, `src/scene/frame-lighting.ts`, `src/scene/frame-renderer.ts`). |
 | `games/outbreak/shared/coop-sim.ts` | Put self-contained simulation rules in `games/outbreak/shared/<feature>.ts` and call them from `stepSurvivor` / `stepWorld`. |
 | `games/lab/src/stations/index.ts` | Add your station in `games/lab/src/stations/<id>.ts` and append one registration import/entry; rebase onto `origin/main` right before opening your PR. |
 | `games/blackout/src/game/game.ts` | Keep mode-specific FX and rules in `src/game/` or `shared/sim/modes-*.ts` modules rather than inline in `game.ts`. |

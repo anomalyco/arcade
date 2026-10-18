@@ -1,144 +1,43 @@
 import { Camera } from "@arcade/kit/client/camera"
-import { DEFAULT_INTERIOR_SETTINGS, InteriorPresenter, interiorControls, SCONCE_LAMP_SLOT, SconceLights } from "./interiors"
-import { TABLE_LAMP_SLOT, type TableLamp } from "./lightbake"
-import { TableLampLights } from "./table-lamps"
 import { keyLabelSetting } from "@arcade/kit/client/controls"
+import { Renderer } from "@arcade/kit/gpu/renderer"
 import { LabPanel } from "@arcade/kit/lab-panel"
-import {
-  createLookControls,
-  createLookSettings,
-  type LookCompareMode,
-} from "@arcade/kit/look"
-import { Renderer, SPRITE_FLOATS, type Batch, type FrameInput } from "@arcade/kit/gpu/renderer"
+import { createLookControls } from "@arcade/kit/look"
 import {
   AdaptiveQualityController,
   loadSavedQualityMode,
   resolveQualityMode,
 } from "@arcade/kit/quality"
-import { FRAME_FLOATS } from "@arcade/kit/gpu/shaders"
 import { DRIVING_FX_DEFAULTS, drivingFxControls } from "@arcade/kit/vehicle/driving-fx"
-import { LIGHT_FLOATS, MAX_LIGHTS, MAX_MAP_LIGHTS } from "@arcade/kit/limits"
-import { raycast } from "@arcade/kit/sim/geom"
-import { mat4 } from "wgpu-matrix"
-import { FOLIAGE_MAX_ACTORS, FOLIAGE_WIND_FLOATS, foliageSettings, packFoliageActors, packFoliageUniforms } from "@arcade/kit/gpu/foliage"
+import { wrapHour } from "../shared/day-cycle"
 import { LocalSession } from "../shared/session"
-import { flashlightColor } from "../shared/flashlight"
-import { lowBatteryBeam, type BeamLook } from "./discovery/flashlight"
-import { ClosetView } from "./discovery/closet"
-import { PageGlance } from "./discovery/glance"
-import { BenchLean } from "./discovery/lean"
-import { DiscoveryProps } from "./discovery/props"
-import type { DiscoveryHost } from "./discovery/stage"
-import { vaultLift, type PeekInfo } from "../shared/interact"
-import { SIZE } from "../shared/map"
-import { dayCycle, wrapHour } from "../shared/day-cycle"
-import { supportHeight } from "../shared/terrain"
-import { OutbreakAmbientMotion } from "./ambient-motion"
-import { OutbreakCombatFX } from "./combat-fx"
-import { ExteriorClutterRenderer } from "./clutter"
-import { PropDressing } from "./props/dressing"
-import { originFurnishTown, propLamps } from "./props/furnish"
-import {
-  collectFogSoundSprites,
-} from "./fog-of-war"
-import { applyOutbreakDayNight } from "./day-night"
-import { trimLook } from "./look/world"
-import { DustPass } from "./air/dust"
-import { GroundWearRenderer, packGroundCfgBits } from "./ground"
-import { hex } from "./level"
-import {
-  BEAM_QUALITY_TIERS,
-  OUTBREAK_FOLIAGE_UNIFORM_OFFSET,
-  OUTBREAK_LIGHTING_UNIFORM_FLOATS,
-  OUTBREAK_INTERIOR_UNIFORM_OFFSET,
-  packOutbreakLightingUniforms,
-  resolveLampLight,
-  STREET_LAMP_POSTS,
-  streetLampHead,
-  type ResolvedLamp,
-} from "./lighting"
-import { humanProfiles } from "@arcade/kit/human-profile"
-import { Survivor } from "./survivor"
-import { OutbreakFrameUi } from "./hud/frame-ui"
-import { OutbreakAudio, pursuers, soundWorld } from "./audio"
-import { type ProgressionLabHost } from "./progression/lab"
-import { type VehicleLabHost } from "./vehicle-lab"
+import { OutbreakAudio } from "./audio"
 import { BotsLabController } from "./bots-lab"
-import { OutbreakVehicleAudio } from "./vehicle-audio"
-import { OutbreakVehicleRenderer } from "./vehicles"
-import { SURVIVOR_COLOURS } from "./net-session"
-import { OutbreakWeatherController } from "./weather/controller"
 import { CoopView } from "./coop-view"
+import type { DiscoveryHost } from "./discovery/stage"
+import { outbreakClientFeatures } from "./features"
+import { registerOutbreakGameCommands } from "./game-commands"
+import { createOutbreakHarness } from "./harness"
+import { OutbreakFrameUi } from "./hud/frame-ui"
+import { OutbreakInputController } from "./input/controller"
+import { DEFAULT_INTERIOR_SETTINGS, interiorControls } from "./interiors"
+import { buildOutbreakLabControls, handleOutbreakSettingChanged, type OutbreakLabControlHost } from "./lab-controls"
+import { OutbreakFramePacer } from "./loop/frame-pacer"
 import type { NetSession } from "./net-session"
-import { ZombieCrowdRenderer } from "./zombies"
-import { renderFlowOverlay } from "./hordes/flow-overlay"
-import { hordeWatchPoint } from "./hordes/stage"
-import { beamPose, beamScreenRect, beamWeatherAir } from "./flashlight-beam"
-import { zombieProfile } from "./zombie-profile"
+import { type ProgressionLabHost } from "./progression/lab"
+import { OutbreakFrameRenderer } from "./scene/frame-renderer"
 import {
   bindOutbreakLabControls,
   createOutbreakSettings,
   migrateOutbreakLocalStorage,
   resolveWorldMode,
 } from "./settings"
-import { outbreakClientFeatures } from "./features"
-import { OutbreakFeelTracker } from "./feel-events"
-import { registerOutbreakGameCommands } from "./game-commands"
-import { createOutbreakHarness } from "./harness"
-import { OutbreakInputController } from "./input/controller"
-import { buildOutbreakLabControls, handleOutbreakSettingChanged, type OutbreakLabControlHost } from "./lab-controls"
-import { OutbreakFramePacer } from "./loop/frame-pacer"
 import { shaders } from "./shaders"
-import { evaluateUnseenFrame } from "./unseen"
-import { OutbreakSceneLevel } from "./world/scene-level"
 import "./style.css"
-
-const foliageActorPool = Array.from({ length: FOLIAGE_MAX_ACTORS }, () => ({ x: 0, z: 0 }))
-const foliageActorOut: { x: number; z: number }[] = []
-const foliageNearDist = new Float32Array(FOLIAGE_MAX_ACTORS - 1)
-const foliageNearIdx = new Int32Array(FOLIAGE_MAX_ACTORS - 1)
-
-/** Player first, then the nearest living zombies: grass and bushes bend away from them (presentation only, zero-alloc). */
-function foliageActors(p: { x: number; y: number }, zombies: readonly { x: number; y: number; state: string }[]) {
-  const maxOthers = FOLIAGE_MAX_ACTORS - 1
-  const maxD2 = 24 * 24
-  let found = 0
-  for (let i = 0; i < zombies.length; i++) {
-    const z = zombies[i]!
-    if (z.state === "dead") continue
-    const dx = z.x - p.x
-    const dz = z.y - p.y
-    const d2 = dx * dx + dz * dz
-    if (d2 >= maxD2) continue
-    if (found < maxOthers || d2 < foliageNearDist[found - 1]!) {
-      let ins = found < maxOthers ? found++ : maxOthers - 1
-      while (ins > 0 && foliageNearDist[ins - 1]! > d2) {
-        foliageNearDist[ins] = foliageNearDist[ins - 1]!
-        foliageNearIdx[ins] = foliageNearIdx[ins - 1]!
-        ins--
-      }
-      foliageNearDist[ins] = d2
-      foliageNearIdx[ins] = i
-    }
-  }
-  foliageActorPool[0]!.x = p.x
-  foliageActorPool[0]!.z = p.y
-  foliageActorOut.length = 1 + found
-  foliageActorOut[0] = foliageActorPool[0]!
-  for (let k = 0; k < found; k++) {
-    const z = zombies[foliageNearIdx[k]!]!
-    const slot = foliageActorPool[k + 1]!
-    slot.x = z.x
-    slot.z = z.y
-    foliageActorOut[k + 1] = slot
-  }
-  return foliageActorOut
-}
+import { OutbreakVehicleAudio } from "./vehicle-audio"
+import { type VehicleLabHost } from "./vehicle-lab"
 
 const params = new URLSearchParams(location.search)
-const lookSettings = createLookSettings("noir")
-const gradedLook = createLookSettings("noir")
-const lookCompare: { mode: LookCompareMode; wipeSplit: number } = { mode: 1, wipeSplit: 0.5 }
 try {
   migrateOutbreakLocalStorage(localStorage)
 } catch {}
@@ -152,42 +51,6 @@ if (!params.has("quality") && !params.has("view.quality") && !navigator.webdrive
 const qualityController = new AdaptiveQualityController({
   mode: resolveQualityMode(settings.view.quality),
 })
-
-const streetHeads = STREET_LAMP_POSTS.map(streetLampHead)
-function nearestStreetHead(x: number, y: number, isStream = false): readonly [number, number, number] {
-  const bx = isStream ? Math.floor(x / SIZE) * SIZE : 0
-  const bz = isStream ? Math.floor(y / SIZE) * SIZE : 0
-  let best = streetHeads[0]!
-  for (const head of streetHeads) {
-    if (Math.hypot(bx + head[0] - x, bz + head[2] - y) < Math.hypot(bx + best[0] - x, bz + best[2] - y)) best = head
-  }
-  return isStream ? [bx + best[0], best[1], bz + best[2]] : best
-}
-
-const zombieSlots: [number, number, number, number] = [-999, -999, -999, -999]
-/** Two nearest living zombies within 12 m for analytic lamp shadows; unused slots stay far away. */
-function nearestZombies(zombies: readonly { x: number; y: number; state: string }[], px: number, py: number) {
-  let d0 = 144
-  let d1 = 144
-  zombieSlots.fill(-999)
-  for (const z of zombies) {
-    if (z.state === "dead") continue
-    const d = (z.x - px) ** 2 + (z.y - py) ** 2
-    if (d < d0) {
-      d1 = d0
-      zombieSlots[2] = zombieSlots[0]
-      zombieSlots[3] = zombieSlots[1]
-      d0 = d
-      zombieSlots[0] = z.x
-      zombieSlots[1] = z.y
-    } else if (d < d1) {
-      d1 = d
-      zombieSlots[2] = z.x
-      zombieSlots[3] = z.y
-    }
-  }
-  return zombieSlots
-}
 
 async function main() {
   const canvas = document.querySelector<HTMLCanvasElement>("#game")!
@@ -211,9 +74,6 @@ async function main() {
   const format = navigator.gpu.getPreferredCanvasFormat()
   context.configure({ device, format, alphaMode: "opaque" })
   const renderer = new Renderer(device, context, format, shaders)
-  const interiors = new InteriorPresenter(device, view => renderer.setDetailTextureArray(view))
-  const dust = new DustPass(renderer.passContext)
-  renderer.addPass("alpha", dust)
   const seed = Number(params.get("seed") ?? 7) >>> 0
   // `?room=<code>` joins a co-op room; otherwise the offline LocalSession, exactly as before.
   const coop = CoopView.fromUrl(renderer, params, outbreakClientFeatures)
@@ -249,60 +109,46 @@ async function main() {
   const { input } = inputController
   const audio = new OutbreakAudio(settings.audio, {
     baseUrl: new URL("./audio-assets/", document.baseURI).href,
-    storage: (() => { try { return localStorage } catch { return null } })(),
+    storage: (() => {
+      try {
+        return localStorage
+      } catch {
+        return null
+      }
+    })(),
     automated: navigator.webdriver,
   })
   audio.arm()
-  const footfall = (x: number, y: number, speed: number) => audio.footstep(x, y, speed)
-  coop.onFootfall = footfall
-  coop.hidden = (id) => Boolean(session.view.progression.verbs.hiddenIn(id))
-  let avatar = new Survivor(renderer)
-  avatar.onFootfall = footfall
-  let avatarPalette: object | null = null
-  const zombieCrowd = new ZombieCrowdRenderer(renderer)
-  zombieCrowd.onFootfall = (id, x, y, speed, drag, variant) => audio.zombieFootstep(id, x, y, speed, drag, variant)
-  const combatFx = new OutbreakCombatFX(renderer)
-  const sceneLevel = new OutbreakSceneLevel({
+  const vehicleAudio = new OutbreakVehicleAudio(audio)
+  const frameRenderer = new OutbreakFrameRenderer({
+    device,
     renderer,
-    combatFx,
-    settings,
+    canvas,
     cam,
+    settings,
+    qualityController,
+    coop,
+    audio,
+    vehicleAudio,
+    frameUi,
+    botsLab,
     session: () => session,
   })
-  const discoveryProps = new DiscoveryProps(renderer)
-  const benchLean = new BenchLean()
-  const pageGlance = new PageGlance()
-  const closetView = new ClosetView()
-  const seatTint = (seat: number) => {
-    const c = hex(SURVIVOR_COLOURS[seat % SURVIVOR_COLOURS.length]!.torso)
-    return [c[0] ** 2.2, c[1] ** 2.2, c[2] ** 2.2] as const
-  }
-  const feelTracker = new OutbreakFeelTracker(cam, settings, session.view.player, outbreakClientFeatures)
-  const { hitStop, motionBurst } = feelTracker
-  const groundWear = new GroundWearRenderer(renderer)
-  const exteriorClutter = new ExteriorClutterRenderer(renderer)
-  const propDressing = new PropDressing(renderer, TABLE_LAMP_SLOT)
-  const tableLamps = new TableLampLights()
-  const NO_TABLE_LAMPS: readonly TableLamp[] = []
-  const ambientMotion = new OutbreakAmbientMotion(renderer)
-  const weatherController = new OutbreakWeatherController()
-  const vehicleRenderer = new OutbreakVehicleRenderer(renderer, document.body)
-  const vehicleAudio = new OutbreakVehicleAudio(audio)
-  vehicleRenderer.onPop = (v) => vehicleAudio.pop(v.id)
-  vehicleRenderer.onCrash = (_v, impact) => {
-    cam.impact(impact)
-  }
-  vehicleRenderer.onBang = () => {
-    cam.bump(0.32)
-  }
-  const updateProfile = () => {
-    avatar.profile =
-      settings.zombies.humanProfile === 1
-        ? zombieProfile(settings.zombies)
-        : settings.zombies.humanProfile === 2
-          ? { ...humanProfiles.soldier, runPosture: 0.34, crouchDepth: 0.095 }
-          : undefined
-  }
+  const {
+    interiors,
+    combatFx,
+    sceneLevel,
+    discoveryProps,
+    pageGlance,
+    closetView,
+    feelTracker,
+    weatherController,
+    vehicleRenderer,
+    lookSettings,
+    lookCompare,
+    render,
+  } = frameRenderer
+
   const progressionHost: ProgressionLabHost = {
     view: () => session.view,
     pose: (x, y, aim) => harness.pose(x, y, aim),
@@ -313,7 +159,12 @@ async function main() {
     hud: inventoryHud,
     offline: () => !coop.net,
   }
-  const discoveryHost: DiscoveryHost = { ...progressionHost, props: discoveryProps, glance: pageGlance, closet: closetView }
+  const discoveryHost: DiscoveryHost = {
+    ...progressionHost,
+    props: discoveryProps,
+    glance: pageGlance,
+    closet: closetView,
+  }
   const vehicleHost: VehicleLabHost = {
     sim: () => session.sim,
     view: () => session.view,
@@ -340,100 +191,15 @@ async function main() {
     hud,
     map,
     qualityController,
-    updateProfile,
+    updateProfile: () => frameRenderer.updateProfile(),
     regenerate: () => regenerate(),
     reset: (s) => reset(s),
-    syncTextures: () => syncTextures(),
+    syncTextures: () => frameRenderer.syncTextures(),
     setLastDayNightHour: (hour) => {
-      lastDayNightHour = hour
+      frameRenderer.lastDayNightHour = hour
     },
   }
   const controls = buildOutbreakLabControls(labControlHost)
-  const beamLookScratch: BeamLook = { low: 0, cone: 0, range: 0, warmth: 0, color: [1, 1, 1] }
-  let peekBlend = 0
-  let lastPeek: PeekInfo | null = null
-  const frame = new Float32Array(FRAME_FLOATS)
-  const lights = new Float32Array(MAX_LIGHTS * LIGHT_FLOATS)
-  const unshadowedLampBuf = new Float32Array(MAX_LIGHTS * LIGHT_FLOATS)
-  const scratchResolvedLamp: ResolvedLamp = {
-    lx: 0,
-    lh: 0,
-    ly: 0,
-    r: 0,
-    rEff: 0,
-    color: [0, 0, 0],
-    power: 0,
-    fixtureBrightness: 0,
-    cone: [0, 0, 0, 0],
-    softness: 0,
-    castShadows: false,
-  }
-  const writeLightSlot = (
-    buf: Float32Array,
-    slot: number,
-    lx: number,
-    lh: number,
-    ly: number,
-    r: number,
-    cr: number,
-    cg: number,
-    cb: number,
-    power: number,
-    cx: number,
-    cy: number,
-    cz: number,
-    cw: number,
-    s0: number,
-    s1: number,
-    s2: number,
-    s3: number,
-  ) => {
-    const o = slot * LIGHT_FLOATS
-    buf[o] = lx
-    buf[o + 1] = lh
-    buf[o + 2] = ly
-    buf[o + 3] = r
-    buf[o + 4] = cr
-    buf[o + 5] = cg
-    buf[o + 6] = cb
-    buf[o + 7] = power
-    buf[o + 8] = cx
-    buf[o + 9] = cy
-    buf[o + 10] = cz
-    buf[o + 11] = cw
-    buf[o + 12] = s0
-    buf[o + 13] = s1
-    buf[o + 14] = s2
-    buf[o + 15] = s3
-  }
-  const lampPower = new Float32Array(MAX_MAP_LIGHTS)
-  const lightingUniforms = new Float32Array(OUTBREAK_LIGHTING_UNIFORM_FLOATS)
-  const flashlightBounce: [number, number] = [0, 0]
-  const flashlightOrigin: [number, number] = [0, 0]
-  const invViewProj = new Float32Array(16)
-  let lastSightX = -1e3
-  let lastSightY = -1e3
-  let fieldWindowX = 0
-  let fieldWindowY = 0
-  const alphaSprites = new Float32Array(1024 * SPRITE_FLOATS)
-  const addSprites = new Float32Array(256 * SPRITE_FLOATS)
-  const render: FrameInput = {
-    frame,
-    lights,
-    lightCount: 0,
-    shadowLightCount: 0,
-    occluders: sceneLevel.occluders,
-    occluderCount: 0,
-    lampPower,
-    lampCount: 0,
-    view: [0, 0, SIZE, SIZE],
-    batches: [],
-    alphaSprites,
-    alphaCount: 0,
-    addSprites,
-    addCount: 0,
-    grade: [0, 0, 0, 1],
-  }
   const pacer = new OutbreakFramePacer({
     device,
     renderer,
@@ -453,18 +219,6 @@ async function main() {
     }),
   })
   audio.runtime.onTick = () => pacer.onAudioTick()
-  const syncTextures = () => {
-    renderer.setSurfaceTexUniforms({
-      enabled: settings.materials.textures,
-      globalScale: settings.materials.texScale,
-      globalContrast: settings.materials.texContrast,
-      globalRoughness: settings.materials.texRoughness,
-      rugStyle: settings.materials.rugStyle,
-      wallStyle: settings.materials.wallStyle,
-      floorStyle: settings.materials.floorStyle,
-      splitX: session.view.player.x,
-    })
-  }
   const onSettingChanged = (rawKey: string, value?: number | boolean | string) =>
     handleOutbreakSettingChanged(labControlHost, rawKey, value)
   const lab = new LabPanel(
@@ -486,7 +240,7 @@ async function main() {
     session: () => session,
     vision: () => sceneLevel.vision,
     scenery: () => sceneLevel.scenery,
-    avatar: () => avatar,
+    avatar: () => frameRenderer.avatar,
     cam,
     input,
     settings,
@@ -501,10 +255,7 @@ async function main() {
     vehicleHost,
     weatherController,
     harness: () => harness,
-    resetPeek: () => {
-      peekBlend = 0
-      lastPeek = null
-    },
+    resetPeek: () => frameRenderer.resetPeek(),
     draw: (dt) => draw(dt),
   })
 
@@ -512,16 +263,23 @@ async function main() {
   lab.addControls(keyLabels.settings, [keyLabels.control], keyLabels.defaults)
   lab.addControls(
     vehicleRenderer.drivingFx.settings as unknown as Record<string, string | number | boolean>,
-    drivingFxControls().map(c => ({ ...c, folded: true })),
+    drivingFxControls().map((c) => ({ ...c, folded: true })),
     { ...DRIVING_FX_DEFAULTS },
   )
   lab.addControls(
     lookSettings as unknown as Record<string, string | number | boolean>,
-    createLookControls(lookSettings, { includePresetPicker: false }).map(c => ({ ...c, folded: true })),
+    createLookControls(lookSettings, { includePresetPicker: false }).map((c) => ({ ...c, folded: true })),
   )
   lab.addControls(
     interiors.settings as unknown as Record<string, string | number | boolean>,
-    interiorControls(() => { interiors.apply("interiorTheme"); sceneLevel.rebuildLevel() }, () => interiors.rebuildPool(), () => interiors.apply("rugSource")),
+    interiorControls(
+      () => {
+        interiors.apply("interiorTheme")
+        sceneLevel.rebuildLevel()
+      },
+      () => interiors.rebuildPool(),
+      () => interiors.apply("rugSource"),
+    ),
     { ...DEFAULT_INTERIOR_SETTINGS },
   )
   function regenerate() {
@@ -554,655 +312,22 @@ async function main() {
       w.openable = prev.openable
     })
     session.rebuildCollision()
-    sceneLevel.markTopologyDirty()
-    sceneLevel.rebuildLevel()
-    avatar.reset()
-    zombieCrowd.reset()
-    combatFx.reset()
-    ambientMotion.reset()
-    vehicleRenderer.reset()
+    frameRenderer.resetForRegenerate()
   }
   function reset(nextSeed = seed) {
     if (session !== coop.net) session.close()
     session = makeSession(nextSeed)
-    peekBlend = 0
-    lastPeek = null
-    avatar.reset()
-    zombieCrowd.reset()
-    combatFx.reset()
-    vehicleRenderer.reset()
-    feelTracker.reset(session.view.player)
-    ambientMotion.reset()
-    frameUi.reset()
-    weatherController.reset(nextSeed)
-    sceneLevel.resetForSession()
-    lastSightX = lastSightY = -1e3
-    cam.snap(session.view.player.x, session.view.player.y)
-    cam.dist = settings.view.zoom
+    frameRenderer.resetForSession(nextSeed)
     pacer.resetForSession()
   }
   coop.onSessionChange = () => reset()
   reset()
   frameUi.installKeyLayoutListener(() => session, cam)
   await renderer.texturesReady
-  syncTextures()
-  let lastDayNightHour = -1
+  frameRenderer.syncTextures()
   function draw(dt: number) {
     pacer.recordFrameStart(performance.now())
-    const qProfile = qualityController.getProfile()
-    renderer.setBloomLevels(qProfile.bloomLevels)
-    if (settings.materials.textures === 2) syncTextures()
-    coop.net?.sync(dt)
-    if (coop.localPalette !== avatarPalette) {
-      avatarPalette = coop.localPalette
-      avatar = new Survivor(renderer, coop.localPalette ?? undefined)
-      avatar.onFootfall = footfall
-      updateProfile()
-    }
-    const { player: p, town, hour, time, peek, zombies, noises } = session.view
-    settings.dayCycle.hour = Math.round(hour * 20) / 20
-    if (settings.dayCycle.dayNightLook === 1 && settings.dayCycle.lookPreset === "noir" && Math.abs(hour - lastDayNightHour) > 1e-4) {
-      lastDayNightHour = hour
-      applyOutbreakDayNight(hour, lookSettings, settings)
-    }
-    const playerGroundY = supportHeight(town, p.x, p.y)
-
-    let addCount = feelTracker.processFrame(
-      session,
-      combatFx,
-      zombieCrowd,
-      addSprites,
-      playerGroundY,
-      dt,
-    )
-
-    const vdt = hitStop.step(dt, !cam.isReducedMotion())
-    motionBurst.step(dt, settings.motion.burstDecay)
-    if (peek) {
-      lastPeek = peek
-      peekBlend = Math.min(1, peekBlend + dt * 6.5)
-    } else {
-      peekBlend = Math.max(0, peekBlend - dt * 5.5)
-      if (peekBlend <= 0.001) lastPeek = null
-    }
-    const activePeek = peek ?? (peekBlend > 0.001 ? lastPeek : null)
-    const w = innerWidth
-    const h = innerHeight
-    const { width: targetW, height: targetH } = qualityController.canvasDimensions(w, h, devicePixelRatio)
-    if (canvas.width !== targetW || canvas.height !== targetH) {
-      canvas.width = targetW
-      canvas.height = targetH
-      renderer.resize(targetW, targetH)
-    }
-    const localVehicle = session.sim.vehicles.vehicleOf(p)
-    const vehSpeed = localVehicle ? Math.hypot(localVehicle.vx, localVehicle.vy) : 0
-    const speedPullback = localVehicle
-      ? (vehSpeed / Math.max(1, localVehicle.spec.maxSpeed)) * settings.vehicle.cameraSpeedZoom
-      : 0
-    const lean = benchLean.step(session.view, settings.discovery, dt)
-    pageGlance.update(session.view, settings.discovery, dt)
-    closetView.update(session.view, dt)
-    cam.zoomOffset = settings.view.zoom - 24 + speedPullback + (settings.discovery.discoveryBenchZoom - settings.view.zoom) * lean.blend
-    const drawn = coop.pose(p)
-    const watch = settings.hordes.hordeWatch ? hordeWatchPoint(session.sim) : null
-    const camX = watch ? watch.x : drawn.x + (activePeek ? activePeek.camOffsetX * peekBlend : 0) + lean.dx
-    const camY = watch ? watch.y : drawn.y + (activePeek ? activePeek.camOffsetY * peekBlend : 0) + lean.dy
-    const lookAheadX = localVehicle ? localVehicle.vx * 0.22 : 0
-    const lookAheadY = localVehicle ? localVehicle.vy * 0.22 : 0
-    cam.follow(camX, camY, lookAheadX, lookAheadY, dt, false, Boolean(localVehicle))
-    cam.update(w / h)
-    const view = cam.groundRect(5.5)
-    const drivingHeadlights =
-      Boolean(localVehicle && (p.seatIndex ?? 0) === 0 && localVehicle.headlights && localVehicle.hasBattery && !localVehicle.wreck)
-    const effectiveVisionAim = drivingHeadlights && localVehicle ? localVehicle.h : p.aim
-    const lowBeam = lowBatteryBeam(settings.flashlight, p.battery, p.batteryDepleted, settings.discovery, beamLookScratch)
-    const { mode, windowMoved, visChanged } = sceneLevel.stepFrame({
-      drawn,
-      activePeek,
-      view,
-      watch,
-      localVehicle,
-      drivingHeadlights,
-      effectiveVisionAim,
-      lowBeam,
-    })
-    const effectiveVisionSettings = drivingHeadlights
-      ? {
-          ...settings.vision,
-          range: Math.max(settings.vision.range, settings.vehicle.headlightRange + 4),
-          cone: Math.max(settings.vision.cone, 130),
-        }
-      : settings.vision
-    const frameLightOccluders = sceneLevel.packFlashlightActorCasters(
-      p.x,
-      p.y,
-      p.flashlightOutput,
-      zombies,
-      coop.otherPositions(),
-    )
-    const { blockers, lightOccluders, lightWalls } = sceneLevel
-    const [vx0, vy0, vx1, vy1] = cam.groundRect(2.8)
-    const vp = cam.viewProj
-    const inLightFrustum = (lx: number, ly: number, r: number): boolean => {
-      for (const [sx, sy] of [
-        [1, 0],
-        [-1, 0],
-        [0, 1],
-        [0, -1],
-      ] as const) {
-        const a = vp[3]! + sx * vp[0]! + sy * vp[1]!
-        const b = vp[7]! + sx * vp[4]! + sy * vp[5]!
-        const c = vp[11]! + sx * vp[8]! + sy * vp[9]!
-        const d = vp[15]! + sx * vp[12]! + sy * vp[13]!
-        if (a * lx + c * ly + r * Math.hypot(a, c) + (b > 0 ? 2.8 * b : 0) + d < 0) return false
-      }
-      return true
-    }
-    const day = dayCycle(hour)
-    const unseenEval = evaluateUnseenFrame(settings.unseen, day.darkness, p.health, p.maxHealth)
-    lights.fill(0)
-    const sightX = activePeek ? p.x + (activePeek.eyeX - p.x) * peekBlend : p.x
-    const sightY = activePeek ? p.y + (activePeek.eyeY - p.y) * peekBlend : p.y
-    const sightAim = peek ? peek.aim : effectiveVisionAim
-    const sightCone = activePeek
-      ? effectiveVisionSettings.cone + (Math.max(effectiveVisionSettings.cone, activePeek.cone) - effectiveVisionSettings.cone) * peekBlend
-      : effectiveVisionSettings.cone
-    const sightAwareness = activePeek
-      ? effectiveVisionSettings.awareness + (Math.max(effectiveVisionSettings.awareness, activePeek.awareness) - effectiveVisionSettings.awareness) * peekBlend
-      : effectiveVisionSettings.awareness
-    writeLightSlot(
-      lights,
-      0,
-      sightX,
-      1.65 + supportHeight(town, p.x, p.y),
-      sightY,
-      effectiveVisionSettings.range,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      blockers.length,
-      0.01,
-      -1,
-    )
-    let count = 1
-    let flashlightSlot = -1
-    // Pose the bodies first: the flashlight rides the survivor's pistol or hand.
-    const lift = vaultLift(p)
-    const riderSink = localVehicle ? (localVehicle.spec.seats[p.seatIndex ?? 0]?.sink ?? 0.48) : 0
-    const survivorBatches = avatar.draw(
-      localVehicle ? { ...drawn, vx: 0, vy: 0 } : drawn,
-      vdt,
-      time,
-      (x, z) => supportHeight(town, x, z) + lift - riderSink,
-      settings.survivor,
-    )
-    const { vision } = sceneLevel
-    const coopBatches = coop.bodies(vdt, time, town, vision, settings.survivor)
-    let flashlightHeight = 1.34 + playerGroundY
-    let flashlightAirLimit = 0
-    let flashlightYaw = p.aim
-    let beamReach = 0
-    let flashlightPitch: number | undefined
-    let flashlightBounceHeight = playerGroundY + 0.3
-    const flashRgb = drivingHeadlights ? flashlightColor(settings.flashlight.flashlightWarmth) : lowBeam.color
-    const beamAim = drivingHeadlights && localVehicle ? localVehicle.h : p.aim
-    const beamRange = drivingHeadlights ? settings.vehicle.headlightRange : lowBeam.range
-    const beamOutput = drivingHeadlights ? 1.0 : p.flashlightOutput
-    const beamIntensity = drivingHeadlights
-      ? settings.vehicle.headlightPower * 0.85
-      : settings.flashlight.flashlightIntensity
-    if (beamOutput > 0.001 && beamIntensity > 0.001) {
-      // Lens and direction from the posed rig on foot, or the vehicle front fascia when driving with headlights on.
-      const beam =
-        drivingHeadlights && localVehicle
-          ? {
-              x: localVehicle.x + Math.cos(beamAim) * (localVehicle.spec.length * 0.48),
-              y: localVehicle.y + Math.sin(beamAim) * (localVehicle.spec.length * 0.48),
-              h: 0.72 + playerGroundY,
-              yaw: beamAim,
-              pitch: -0.18,
-            }
-          : beamPose(avatar.light, p.x, p.y, p.aim, playerGroundY, settings.flashlight.beamPoolDistance, lightWalls)
-      const fx = beam.x
-      const fy = beam.y
-      const fh = beam.h
-      const dx = Math.cos(beam.yaw)
-      const dy = Math.sin(beam.yaw)
-      const cosHalf = Math.cos(((drivingHeadlights ? 68 : lowBeam.cone) * Math.PI) / 360)
-      // cone.w 2: the scene's flashAttenuation shapes the 3D beam; rain and smoke still read the plan cone.
-      const power = beamOutput * beamIntensity
-      flashlightSlot = count
-      flashlightHeight = fh
-      flashlightOrigin[0] = fx
-      flashlightOrigin[1] = fy
-      flashlightYaw = beam.yaw
-      flashlightPitch = beam.pitch
-      const wall = raycast(fx, fy, dx, dy, lightWalls, beamRange)
-      const reach = Math.max(0.5, (fh - playerGroundY) / Math.max(0.05, Math.tan(-beam.pitch)))
-      const hit = Math.min(wall, reach, beamRange)
-      flashlightBounce[0] = fx + dx * Math.max(0.3, hit - 0.15)
-      flashlightBounce[1] = fy + dy * Math.max(0.3, hit - 0.15)
-      flashlightAirLimit = wall
-      beamReach = Math.min(beamRange, wall + 1.5, 13)
-      flashlightBounceHeight = playerGroundY + (wall < reach ? 0.9 : 0.3)
-      writeLightSlot(
-        lights,
-        count++,
-        fx,
-        fh,
-        fy,
-        beamRange,
-        flashRgb[0],
-        flashRgb[1],
-        flashRgb[2],
-        power,
-        dx,
-        dy,
-        cosHalf,
-        2,
-        0,
-        frameLightOccluders,
-        0.06,
-        -1,
-      )
-    }
-    count = coop.flashlights(lights, count, town, settings, lightOccluders, lightWalls)
-
-    const zombieBatches = zombieCrowd.draw(
-      zombies,
-      vdt,
-      (x, z) => supportHeight(town, x, z),
-      vision,
-      view,
-      {
-        ...settings.zombies,
-        fogGhostDuration: settings.fog.fogGhostDuration,
-        hideUnseenZombies: unseenEval.hideZombies,
-        unseenMode: unseenEval.mode,
-        unseenMemory: unseenEval.layers.memory,
-      },
-      Boolean(settings.ai.aiDebugOverlay),
-      time,
-    )
-
-    const fxOut = combatFx.stepAndCollect(
-      vdt,
-      time,
-      town,
-      p,
-      avatar.bones,
-      session.ai,
-      zombieCrowd,
-      (x, z) => supportHeight(town, x, z),
-      addSprites,
-      addCount,
-    )
-    addCount = fxOut.addCount
-    if (fxOut.muzzleLight && count < MAX_LIGHTS) {
-      const [mx, my, mz, mPower] = fxOut.muzzleLight
-      writeLightSlot(lights, count++, mx, my, mz, 9.5, 1.0, 0.78, 0.38, mPower, 0, 0, 0, 0, 0, lightOccluders, 0.14, -1)
-    }
-
-    const cutX = activePeek ? activePeek.cutX : drawn.x
-    const cutY = activePeek ? activePeek.cutY : drawn.y
-    const cutFlag = activePeek ? 1 + peekBlend : 1
-    const cutRadius = activePeek ? 0.48 + 0.1 * peekBlend : 0.22
-    const cutHeight = activePeek ? 1.0 - 0.12 * peekBlend : 1.0
-    const inInteriorView = sceneLevel.inInteriorView(town, cutX, cutY)
-    let unshadowedCount = 0
-    const maxUnshadowed = qProfile.maxUnshadowedLamps
-    for (let i = 0; i < town.lamps.length; i++) {
-      const lamp = town.lamps[i]!
-      const resolved = resolveLampLight(lamp, town.buildings, day.lamps, settings.lighting, inInteriorView, scratchResolvedLamp)
-      lampPower[i] = resolved.fixtureBrightness
-      if (resolved.power <= 0.001) continue
-      const { lx, lh, ly, r, rEff, color, power, cone, softness, castShadows } = resolved
-      const dCam = Math.hypot(lx - camX, ly - camY)
-      if (dCam > (lamp.kind === "street" ? 15.5 : 16.5)) continue
-      if (inInteriorView && !castShadows) continue
-      if (lx + rEff < vx0 || lx - rEff > vx1 || ly + rEff < vy0 || ly - rEff > vy1 || !inLightFrustum(lx, ly, rEff)) continue
-      if (lamp.kind === "room") {
-        let b: (typeof town.buildings)[number] | undefined
-        for (let bIdx = 0; bIdx < town.buildings.length; bIdx++) {
-          const bld = town.buildings[bIdx]!
-          if (lamp.x >= bld.rect[0] && lamp.x <= bld.rect[2] && lamp.y >= bld.rect[1] && lamp.y <= bld.rect[3]) {
-            b = bld
-            break
-          }
-        }
-        if (b) {
-          const roofOpen =
-            cutX > b.rect[0] - 0.1 && cutX < b.rect[2] + 0.1 && cutY > b.rect[1] - 0.1 && cutY < b.rect[3] + 0.1
-          if (!roofOpen) continue
-        }
-      }
-      const usePolarShadow = castShadows && lamp.kind === "room"
-      if (usePolarShadow) {
-        if (count < MAX_LIGHTS) {
-          writeLightSlot(lights, count++, lx, lh, ly, r, color[0], color[1], color[2], power, cone[0], cone[1], cone[2], cone[3], 0, lightOccluders, softness, i)
-        }
-      } else if (unshadowedCount < maxUnshadowed) {
-        writeLightSlot(unshadowedLampBuf, unshadowedCount++, lx, lh, ly, r, color[0], color[1], color[2], power, cone[0], cone[1], cone[2], cone[3], 0, 0, softness, i)
-      }
-    }
-    let shadowLightCount = count
-    for (let u = 0; u < unshadowedCount && count < MAX_LIGHTS; u++) {
-      const srcOff = u * LIGHT_FLOATS
-      const dstOff = count++ * LIGHT_FLOATS
-      for (let f = 0; f < LIGHT_FLOATS; f++) lights[dstOff + f] = unshadowedLampBuf[srcOff + f]!
-    }
-    const sconceLevel = day.lamps * settings.lighting.lighting * settings.lighting.roomPower
-    lampPower[SCONCE_LAMP_SLOT] = SconceLights.bulb(sconceLevel, interiors.settings)
-    lampPower[TABLE_LAMP_SLOT] = sconceLevel * 0.5
-    interiors.sconces.setSources(sceneLevel.activeSconces() as Float32Array[])
-    count = interiors.sconces.write(
-      lights,
-      count,
-      MAX_LIGHTS,
-      inInteriorView ? (interiors.settings.sconceLights >= 0 ? interiors.settings.sconceLights : qProfile.maxSconceLights) : 0,
-      cutX,
-      cutY,
-      sconceLevel,
-      settings.lighting.practicalWarmth,
-      interiors.settings,
-    )
-    tableLamps.setSources(mode === "procedural" ? NO_TABLE_LAMPS : propLamps(town), originFurnishTown(town))
-    const tableLampCount = settings.look.tableLamps >= 0 ? settings.look.tableLamps : Math.min(2, qProfile.maxSconceLights)
-    count = tableLamps.write(lights, count, MAX_LIGHTS, inInteriorView ? tableLampCount : 0, cutX, cutY, sconceLevel, settings.lighting.practicalWarmth, 0.55 * settings.look.tableLampPower)
-    const vehOut = vehicleRenderer.collect(
-      vdt,
-      time,
-      town,
-      session.view.vehicles,
-      p.vehicleId,
-      view,
-      cam.eye,
-      lights,
-      count,
-      shadowLightCount,
-      frameLightOccluders,
-      alphaSprites,
-      0,
-      addSprites,
-      addCount,
-      settings.vehicle,
-    )
-    count = vehOut.lights.lightCount
-    shadowLightCount = vehOut.lights.shadowLightCount
-    addCount = vehOut.lights.addCount
-    const vehAlphaStart = vehOut.lights.alphaCount
-    const ambLum = (day.ambient[0] + day.ambient[1] + day.ambient[2]) * settings.lighting.skyFill * 0.333
-    const weatherOut = weatherController.stepAndPrepare({
-      dt,
-      town,
-      settings: settings.weather,
-      viewProj: cam.viewProj,
-      eye: cam.eye,
-      playerX: p.x,
-      playerY: p.y,
-      playerGroundY,
-      canvasWidth: canvas.width,
-      canvasHeight: canvas.height,
-      zoom: settings.view.zoom,
-      lights,
-      lightCount: count,
-      ambientLum: ambLum,
-      particleScale: qProfile.weatherParticleScale,
-    })
-    const activeWeather = weatherOut.prepareInput
-      ? {
-          wetness: weatherOut.state.wetness,
-          puddleCoverage: weatherOut.state.puddleCoverage,
-          rippleIntensity: weatherOut.state.rippleIntensity,
-          snowAmount: weatherOut.state.snowAmount,
-        }
-      : undefined
-    // The visibility field is anchored to the streaming window: a new window origin starts it afresh.
-    const { currentWindowOrigin, currentIsStreamWindow } = sceneLevel
-    const fieldSnap = currentWindowOrigin[0] !== fieldWindowX || currentWindowOrigin[1] !== fieldWindowY
-    if (fieldSnap) {
-      renderer.clearVisibilityField()
-      fieldWindowX = currentWindowOrigin[0]
-      fieldWindowY = currentWindowOrigin[1]
-    }
-    // The lighting pack reads the tuned beam; a dying battery narrows and shortens it for this frame only.
-    const tunedCone = settings.flashlight.flashlightCone
-    const tunedRange = settings.flashlight.flashlightRange
-    if (!drivingHeadlights) {
-      settings.flashlight.flashlightCone = lowBeam.cone
-      settings.flashlight.flashlightRange = lowBeam.range
-    }
-    const activeBuildings = sceneLevel.activeBuildings(town)
-    packOutbreakLightingUniforms(
-      {
-        settings,
-        playerX: p.x,
-        playerY: p.y,
-        playerH: playerGroundY,
-        playerAim: beamAim,
-        flashlightOutput: beamOutput,
-        flashlightSlot,
-        flashlightHeight,
-        flashlightBounce,
-        flashlightAirLimit,
-        flashlightBounceHeight,
-        flashlightOrigin: flashlightSlot >= 0 ? flashlightOrigin : undefined,
-        flashlightYaw,
-        flashlightPitch,
-        invViewProj: mat4.inverse(cam.viewProj, invViewProj),
-        beamReach,
-        weatherAir: settings.weather.weatherEnabled ? beamWeatherAir({ intensity: settings.weather.weatherIntensity, mist: settings.weather.weatherMist }) : 0,
-        frameDt: fieldSnap || Math.hypot(sightX - lastSightX, sightY - lastSightY) > 2.5 ? 0 : dt,
-        inInteriorView,
-        streetHead: nearestStreetHead(camX, camY, currentIsStreamWindow),
-        zombies: nearestZombies(zombies, p.x, p.y),
-        weather: activeWeather,
-        windowOrigin: currentWindowOrigin,
-        isStreamWindow: currentIsStreamWindow,
-        windowBuildings: activeBuildings,
-        unseen: unseenEval,
-        chunkFadeAlpha: currentIsStreamWindow ? sceneLevel.worldStreamer.chunkFadeAlpha : 0,
-      },
-      flashRgb,
-      lightingUniforms,
-    )
-    settings.flashlight.flashlightCone = tunedCone
-    settings.flashlight.flashlightRange = tunedRange
-    packFoliageUniforms(foliageSettings, lightingUniforms, OUTBREAK_FOLIAGE_UNIFORM_OFFSET)
-    packFoliageActors(foliageActors(p, zombies), lightingUniforms, OUTBREAK_FOLIAGE_UNIFORM_OFFSET + FOLIAGE_WIND_FLOATS)
-    const deferRugWork = !inInteriorView && (Math.abs(p.vx) > 0.05 || Math.abs(p.vy) > 0.05)
-    interiors.update(activeBuildings, town.houseSeed, p.x, p.y, performance.now(), deferRugWork)
-    interiors.pack(lightingUniforms, OUTBREAK_INTERIOR_UNIFORM_OFFSET, activeBuildings, town.houseSeed)
-    renderer.setCustomUniforms(lightingUniforms)
-    lastSightX = sightX
-    lastSightY = sightY
-    frame.set(cam.viewProj, 0)
-    frame[16] = cam.eye[0]!
-    frame[17] = cam.eye[1]!
-    frame[18] = cam.eye[2]!
-    frame[19] = time
-    const texCfgBits =
-      ((settings.materials.textures & 3) >>> 0) |
-      (((settings.materials.rugStyle & 3) << 2) >>> 0) |
-      (((settings.materials.wallStyle & 3) << 4) >>> 0) |
-      (((settings.materials.floorStyle & 3) << 6) >>> 0) |
-      ((Math.round((settings.materials.texScale - 0.5) / 0.05) & 63) << 8) |
-      ((Math.round(settings.materials.texContrast / 0.05) & 63) << 14) |
-      ((Math.round(settings.world.weathering * 5) & 15) << 20)
-    frame[20] = canvas.width
-    frame[21] = canvas.height
-    frame[22] = count
-    frame[23] = texCfgBits
-    frame[24] = cutX
-    frame[25] = cutY
-    frame[26] = cutFlag
-    frame[27] = cutRadius
-    const lightningFlash = weatherOut.prepareInput ? weatherOut.state.flash : 0
-    const ambScale = settings.lighting.skyFill * (1 - settings.weather.weather * 0.3)
-    const ambAdd = lightningFlash * 0.16
-    frame[28] = day.ambient[0] * ambScale + ambAdd
-    frame[29] = day.ambient[1] * ambScale + ambAdd
-    frame[30] = day.ambient[2] * ambScale + ambAdd
-    frame[31] = day.strength * settings.lighting.moonFill * (1 - settings.weather.weather * 0.85) + lightningFlash * 0.65
-    const focusX = activePeek ? p.x + (activePeek.cutX - p.x) * peekBlend : p.x
-    const focusY = activePeek ? p.y + (activePeek.cutY - p.y) * peekBlend : p.y
-    const focus = cam.project(focusX, 1, focusY, w, h)
-    frame[32] = (focus.x / w) * 2 - 1
-    frame[33] = 1 - (focus.y / h) * 2
-    frame[34] = cutHeight
-    frame[35] = count
-    frame[36] = day.direction[0]
-    frame[37] = day.direction[1]
-    frame[38] = day.direction[2]
-    frame[39] = day.sun
-    frame[40] = 1 / SIZE
-    frame[41] = 1 / SIZE
-    frame[42] = settings.view.diagnostic
-    frame[43] = packGroundCfgBits(settings.ground)
-    frame[44] = sightAim
-    frame[45] = Math.cos((sightCone * Math.PI) / 360)
-    frame[46] = sightAwareness
-    frame[47] = settings.vision.shroud
-    const { doorBatch, sashBatch, openWindows } = sceneLevel.updateOpeningBatches(town)
-    const debugAlphaCount = zombieCrowd.renderDebugOverlay(
-      Boolean(settings.ai.aiDebugOverlay),
-      zombies,
-      noises,
-      p,
-      session.ai.config,
-      time,
-      (x, z) => supportHeight(town, x, z),
-      cam,
-      w,
-      h,
-      alphaSprites,
-      vehAlphaStart,
-    )
-    const flowCentre = settings.hordes.hordeWatch ? (hordeWatchPoint(session.sim) ?? p) : p
-    const flowAlphaCount = settings.hordes.hordeFlowOverlay
-      ? renderFlowOverlay(session.sim, flowCentre.x, flowCentre.y, (x, z) => supportHeight(town, x, z), alphaSprites, debugAlphaCount)
-      : debugAlphaCount
-    const effectiveFogSettings =
-      unseenEval.active && unseenEval.hideZombies
-        ? {
-            ...settings.fog,
-            fogSoundCues: Math.max(settings.fog.fogSoundCues, Math.min(1.0, 0.55 * unseenEval.effectiveStrength)),
-          }
-        : settings.fog
-    const fogSoundAlphaCount = collectFogSoundSprites(
-      zombies,
-      noises,
-      p,
-      vision,
-      time,
-      (x, z) => supportHeight(town, x, z),
-      effectiveFogSettings,
-      alphaSprites,
-      flowAlphaCount,
-    )
-    const tightView = cam.groundRect(0.8)
-    const groundWearBatches = groundWear.collectBatches(town, tightView, settings.ground)
-    const clutterBatches = exteriorClutter.collectBatches(town, tightView, settings.ground)
-    const motionOut = qProfile.ambientMotion
-      ? ambientMotion.stepAndCollect(
-          dt,
-          time,
-          town,
-          p,
-          tightView,
-          settings.ground,
-          alphaSprites,
-          fogSoundAlphaCount,
-        )
-      : { alphaCount: fogSoundAlphaCount, batches: [] as readonly Batch[] }
-    render.alphaCount = motionOut.alphaCount
-    render.addCount = addCount
-    render.splatter =
-      settings.combat.bloodStyle === 0 ? undefined : combatFx.hasEmitted ? (combatFx.splatter ?? undefined) : undefined
-    render.splatterLegacy = settings.combat.bloodStyle === 2
-    render.skids = vehicleRenderer.drivingFx.marks
-    render.skidsVisible = Boolean(settings.vehicle.vehicleSmoke) && vehicleRenderer.drivingFx.settings.skidMarks
-    vehicleRenderer.wetness = weatherOut.state.wetness
-    render.weather = weatherOut.prepareInput
-    const rBatches = render.batches
-    rBatches.length = 0
-    for (let i = 0; i < groundWearBatches.length; i++) rBatches.push(groundWearBatches[i]!)
-    for (let i = 0; i < clutterBatches.length; i++) rBatches.push(clutterBatches[i]!)
-    for (const b of propDressing.collect(town, tightView, settings.props, settings.view.zoom, qProfile, mode !== "procedural", () => sceneLevel.rebuildLevel())) rBatches.push(b)
-    for (let i = 0; i < vehOut.batches.length; i++) rBatches.push(vehOut.batches[i]!)
-    for (let i = 0; i < motionOut.batches.length; i++) rBatches.push(motionOut.batches[i]!)
-    if (!closetView.hidden) for (let i = 0; i < survivorBatches.length; i++) rBatches.push(survivorBatches[i]!)
-    for (let i = 0; i < coopBatches.length; i++) rBatches.push(coopBatches[i]!)
-    for (let i = 0; i < fxOut.batches.length; i++) rBatches.push(fxOut.batches[i]!)
-    const discoveryBatches = discoveryProps.collect(session.view, session.ai, settings.discovery, time, (x, z) => supportHeight(town, x, z), {
-      survivors: session.sim.slots.map((s) => s.survivor),
-      seatColour: seatTint,
-      dt,
-    })
-    for (let i = 0; i < discoveryBatches.length; i++) rBatches.push(discoveryBatches[i]!)
-    for (let i = 0; i < zombieBatches.length; i++) rBatches.push(zombieBatches[i]!)
-    rBatches.push(doorBatch)
-    if (openWindows) rBatches.push(sashBatch)
-    render.lightCount = count
-    dust.frame(count, qProfile.tier, settings.look.dustAmount > 0)
-    render.shadowLightCount = shadowLightCount
-    render.occluderCount = frameLightOccluders
-    const beamTier = BEAM_QUALITY_TIERS[Math.round(settings.flashlight.beamQuality)] ?? BEAM_QUALITY_TIERS[2]
-    render.volume = flashlightSlot >= 0 && beamTier.downscale && (settings.flashlight.beamVisibility > 0.001 || settings.flashlight.beamGlare > 0.001)
-      ? {
-          downscale: beamTier.downscale,
-          rect: beamScreenRect(
-            (x, y, z) => cam.project(x, y, z, 1, 1),
-            [flashlightOrigin[0], flashlightHeight, flashlightOrigin[1]],
-            flashlightYaw,
-            flashlightPitch ?? 0,
-            ((drivingHeadlights ? settings.flashlight.flashlightCone : lowBeam.cone) * Math.PI) / 360,
-            beamReach,
-            playerGroundY,
-          ),
-        }
-      : null
-    render.lampCount = SCONCE_LAMP_SLOT + 1
-    render.view = view
-    render.grade[0] = time
-    render.grade[1] = settings.view.diagnostic
-    render.grade[2] = Math.max(lightningFlash * 0.35, cam.damageFlash)
-    render.grade[3] = settings.lighting.exposure
-    render.motionBlur = {
-      settings: {
-        ...settings.motion,
-        enabled: Boolean(settings.motion.enabled) && !cam.isReducedMotion(),
-      },
-      burst: motionBurst,
-      dt,
-    }
-    render.look = trimLook(lookSettings, settings.look, gradedLook, 1 - day.sun)
-    render.lookCompare = lookCompare
-    render.postParams = unseenEval.postParams
-    renderer.render(render)
-    audio.update({ dt, world: soundWorld(session.sim), listener: drawn, hour, revision: session.view.revision, pursuing: pursuers(zombies, drawn.x, drawn.y), packOpen: inventoryHud.packOpen })
-    vehicleAudio.update(dt, time, session.view.vehicles, drawn, p.vehicleId, (id) => vehicleRenderer.tyreAudio(id))
-    frameUi.updateFrame({
-      dt,
-      session,
-      coop,
-      vision,
-      cam,
-      w,
-      h,
-      playerGroundY,
-      visChanged,
-      windowMoved,
-      localVehicle,
-      vehicleRenderer,
-      botsLab,
-    })
+    frameRenderer.drawFrame(dt)
     pacer.updateMeter(performance.now())
   }
   pacer.drawInitialFrame()
@@ -1214,7 +339,7 @@ async function main() {
     render,
     session: () => session,
     vision: () => sceneLevel.vision,
-    avatar: () => avatar,
+    avatar: () => frameRenderer.avatar,
     cam,
     settings,
     lookSettings,
@@ -1237,11 +362,8 @@ async function main() {
     botsLab,
     qualityController,
     promptEl,
-    getPeekBlend: () => peekBlend,
-    resetPeek: () => {
-      peekBlend = 0
-      lastPeek = null
-    },
+    getPeekBlend: () => frameRenderer.peekBlend,
+    resetPeek: () => frameRenderer.resetPeek(),
     getVertices: () => sceneLevel.vertices,
     getWindowState: () => ({ origin: sceneLevel.currentWindowOrigin, isStream: sceneLevel.currentIsStreamWindow }),
     reset,
@@ -1249,7 +371,7 @@ async function main() {
     isFrozen: () => pacer.isFrozen(),
     onSettingChanged,
     setLastDayNightHour: (hour) => {
-      lastDayNightHour = hour
+      frameRenderer.lastDayNightHour = hour
     },
     incrementFrames: () => pacer.incrementFrames(1),
     draw: (dt) => draw(dt),
