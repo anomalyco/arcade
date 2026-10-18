@@ -75,6 +75,10 @@ const SCENES: Record<string, Scene> = {
   hordeNight: { name: "horde-night-21h", hour: 21, zoom: 46, x: 27.7, y: 41.0, aim: -Math.PI / 2, flashlight: true, horde: true },
   dusk: { name: "street-dusk-18h30", hour: 18.5, zoom: 46, x: 27.7, y: 41.0, aim: -Math.PI / 2, flashlight: true },
   survivorsClose: { name: "survivors-close-21h", hour: 21, zoom: 24, x: 26.35, y: 39.5, aim: 0.65, flashlight: true, companions: COOP_LINEUP },
+  coneDayAhead: { name: "cone-day-14h-facing-house", hour: 14, zoom: 46, x: 27.7, y: 41.0, aim: -Math.PI / 2, flashlight: false },
+  coneDayTurned: { name: "cone-day-14h-turned-around", hour: 14, zoom: 46, x: 27.7, y: 41.0, aim: Math.PI / 2 - 0.35, flashlight: false },
+  coneNightAhead: { name: "cone-night-21h-facing-house", hour: 21, zoom: 46, x: 27.7, y: 41.0, aim: -Math.PI / 2, flashlight: true },
+  coneNightTurned: { name: "cone-night-21h-turned-around", hour: 21, zoom: 46, x: 27.7, y: 41.0, aim: Math.PI / 2 - 0.35, flashlight: true },
   survivorsDefault: { name: "survivors-default-21h", hour: 21, zoom: 46, x: 26.35, y: 39.5, aim: 0.65, flashlight: true, companions: COOP_LINEUP },
 }
 
@@ -327,6 +331,73 @@ try {
       await capture(page, `v4-${s.name}.png`, s, {}, "today-v4")
     }
     await page.close()
+  } else if (mode === "v8-diag") {
+    for (const k of ["streetDay", "streetNight", "coneDayTurned"] as const) {
+      for (const d of [8, 7]) await capture(page, `diag${d}-${SCENES[k]!.name}.png`, SCENES[k]!, { diagnostic: d }, "today")
+    }
+    await page.close()
+  } else if (mode === "v8" || mode === "v8-quick" || mode === "v8-sheet") {
+    const v8Scenes = ["streetDay", "dusk", "streetNight", "interiorNight", "hordeNight", "survivorsClose", "coneDayAhead", "coneDayTurned", "coneNightAhead", "coneNightTurned"] as const
+    const shot = async (tag: string, key: (typeof v8Scenes)[number], preset: string) => {
+      const s = SCENES[key]!
+      const f = resolve(out, `${tag}-${s.name}.png`)
+      return mode === "v8-sheet" ? f : capture(page, `${tag}-${s.name}.png`, s, {}, preset)
+    }
+    const v8: Record<string, string> = {}
+    const v7: Record<string, string> = {}
+    for (const k of v8Scenes) v8[k] = await shot("v8", k, "today")
+    if (mode !== "v8-quick") for (const k of v8Scenes) v7[k] = await shot("v7", k, "today-v7")
+    if (mode !== "v8-quick") {
+      const refDir = "/Users/kit/code/home/artifacts/2026-10-18-darkwood-look"
+      const ref = (name: string) => resolve(existsSync(resolve(import.meta.dir, "darkwood-refs", name)) ? resolve(import.meta.dir, "darkwood-refs") : refDir, name)
+      const sheetPage = await browser.newPage({ deviceScaleFactor: 1 })
+      await sheet(
+        sheetPage,
+        resolve(out, "sheet-v8-darkwood.png"),
+        "Outbreak Darkwood Look Pass (AR-52) · Before (Today · v7) vs Darkwood Reference vs Shipped Default (Today · v8)",
+        [
+          { label: "1a. Before (Today · v7) · Street Day 14:00 (no visible sight cone by day)", file: v7.streetDay! },
+          { label: "1b. Darkwood · Day woods: colour inside the cone, tree wedges, grey shroud", file: ref("ref-10-tree-shadow-wedges-day.png") },
+          { label: "1c. Today · v8 · Street Day 14:00 (sight cone, charcoal shroud, sickly overcast day)", file: v8.streetDay! },
+          { label: "2a. Before (Today · v7) · Street Dusk 18:30", file: v7.dusk! },
+          { label: "2b. Darkwood · Dusk torch & encroaching canopy", file: ref("ref-06-night-woods-torch-corpse.png") },
+          { label: "2c. Today · v8 · Street Dusk 18:30 (low-key peat amber inside sight, slate outside)", file: v8.dusk! },
+          { label: "3a. Before (Today · v7) · Street Night 21:00", file: v7.streetNight! },
+          { label: "3b. Darkwood · Night forest flashlight & vision cone", file: ref("ref-01-forest-flashlight-cone.png") },
+          { label: "3c. Today · v8 · Street Night 21:00 (dirty halogen beam, near-black shroud)", file: v8.streetNight! },
+          { label: "4a. Before (Today · v7) · Start House 21:00", file: v7.interiorNight! },
+          { label: "4b. Darkwood · Hideout lamp pool & grey memory rooms", file: ref("ref-04-hideout-night-lamp-barricade.png") },
+          { label: "4c. Today · v8 · Start House 21:00 (warm lit rooms in sight, greyer rooms out of sight)", file: v8.interiorNight! },
+          { label: "5a. Before (Today · v7) · Horde Night 21:00", file: v7.hordeNight! },
+          { label: "5b. Darkwood · Deep night narrow cone & unseen figure", file: ref("ref-07-night-roots-narrow-cone.png") },
+          { label: "5c. Today · v8 · Horde Night 21:00 (zombies only inside sight)", file: v8.hordeNight! },
+          { label: "6a. Before (Today · v7) · Co-op Survivors 21:00", file: v7.survivorsClose! },
+          { label: "6b. Darkwood · Flare cone & personal halo", file: ref("ref-08-red-flare-night-cone.jpg") },
+          { label: "6c. Today · v8 · Co-op Survivors 21:00 (each jacket still reads)", file: v8.survivorsClose! },
+          { label: "7a. Today · v8 · Day, facing the house", file: v8.coneDayAhead! },
+          { label: "7b. Darkwood · Day morning cone & log occlusion", file: ref("ref-03-swamp-morning-cone.jpg") },
+          { label: "7c. Today · v8 · Day, turned around: the house drops into the shroud", file: v8.coneDayTurned! },
+          { label: "8a. Today · v8 · Night, facing the house", file: v8.coneNightAhead! },
+          { label: "8b. Darkwood · Doorway sight cone vs grey interior", file: ref("ref-09-house-doorway-cone-spill.png") },
+          { label: "8c. Today · v8 · Night, turned around", file: v8.coneNightTurned! },
+        ],
+        3,
+      )
+      await sheetPage.close()
+    }
+    await page.close()
+    if (mode === "v8") {
+      const gpuPage = await open(1728, 947, 2)
+      meta.gpuViewport = await gpuPage.evaluate(() => [innerWidth * devicePixelRatio, innerHeight * devicePixelRatio])
+      const gpuResults: Record<string, unknown> = {}
+      for (const k of ["streetDay", "dusk", "streetNight", "interiorNight", "hordeNight", "survivorsClose"] as const) {
+        const res = await measurePair(gpuPage, SCENES[k]!, {}, "today", "today-v7")
+        gpuResults[`v8-vs-v7-${SCENES[k]!.name}`] = res
+        console.log("GPU", SCENES[k]!.name, JSON.stringify(res))
+      }
+      meta.gpu = gpuResults
+      await gpuPage.close()
+    }
   } else if (mode === "v7" || mode === "v7-stills" || mode === "v7-sheet") {
     const v6Day = mode === "v7-sheet" ? resolve(out, "v6-street-day-14h.png") : await capture(page, "v6-street-day-14h.png", SCENES.streetDay!, {}, "today-v6")
     const v7Day = mode === "v7-sheet" ? resolve(out, "v7-street-day-14h.png") : await capture(page, "v7-street-day-14h.png", SCENES.streetDay!, {}, "today")
@@ -761,7 +832,7 @@ try {
   }
   meta.errors = errors
 } finally {
-  if (mode !== "v7-sheet") writeFileSync(resolve(out, "meta.json"), JSON.stringify(meta, null, 2))
+  if (mode !== "v7-sheet" && mode !== "v8-sheet") writeFileSync(resolve(out, "meta.json"), JSON.stringify(meta, null, 2))
   await browser.close()
   await server.close()
 }

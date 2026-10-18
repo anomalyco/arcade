@@ -492,10 +492,14 @@ fn softSight(p: vec2f) -> f32 {
   let unseenActive = OL.unseen.mode >= 0.5 && OL.unseen.strength > 0.001;
   let soft = clamp(select(OL.u10.y, OL.unseen.edgeSoftness, unseenActive), 0.05, 2.0);
   let facing = dot(delta, vec2f(cos(F.effects.x), sin(F.effects.x))) / d;
-  let feather = 0.05 + 0.2 * soft;
+  // Darkwood (v8): a crisp ~5° cone edge and a body halo that ends at the awareness radius.
+  let sharp = clamp(OL.v8.x, 0.0, 1.0);
+  let feather = mix(0.05 + 0.2 * soft, 0.035, sharp);
   let cone = smoothstep(F.effects.y - feather, F.effects.y + feather, facing);
   let nearScale = select(0.6, 1.0, unseenActive);
-  let near = nearScale * (1.0 - smoothstep(F.effects.z * 0.5, F.effects.z + 0.8 + 1.2 * soft, d));
+  let nearIn = mix(F.effects.z * 0.5, F.effects.z * 0.72, sharp);
+  let nearOut = mix(F.effects.z + 0.8 + 1.2 * soft, F.effects.z + 0.35, sharp);
+  let near = nearScale * (1.0 - smoothstep(nearIn, nearOut, d));
   let mask = max(cone, near) * step(d, r);
   var canFlash = false;
   if (unseenActive && OL.unseen.flashActive > 0.5 && OL.u4.z > 0.005) {
@@ -678,13 +682,15 @@ fn applyOutbreakFogOfWar(
     let unrevealed = mix(unknownShroud, roomMem, explored);
     baseFowCol = mix(unrevealed, colIn, visible);
   } else {
-    let v4Ext = mix(0.60, 0.88, outbreakLitMask) + (0.40 - 0.12 * outbreakLitMask) * explored;
-    let v5Ext = mix(0.88, 1.0, outbreakLitMask) + (0.12 - 0.12 * outbreakLitMask) * explored;
-    let v6ExtUnlit = clamp((0.46 + 0.18 * explored) * clamp(1.32 - 0.42 * sightDark, 0.24, 1.35), 0.16, 1.0);
-    let v6ExtLit = clamp((0.76 + 0.14 * explored) * clamp(1.16 - 0.22 * sightDark, 0.42, 1.20), 0.35, 1.0);
-    let v7DayExt = mix(clamp(0.78 + 0.12 * explored - 0.12 * (sightDark - 1.0), 0.52, 0.98), clamp(0.92 + 0.06 * explored, 0.75, 1.0), outbreakLitMask);
+    // Darkwood (v8): outdoors the shroud is one even charcoal, so explored blocks no longer show as lighter rectangles.
+    let exploredExt = select(explored, explored * 0.2, OL.round.x > 6.5 || OL.round.z > 6.5);
+    let v4Ext = mix(0.60, 0.88, outbreakLitMask) + (0.40 - 0.12 * outbreakLitMask) * exploredExt;
+    let v5Ext = mix(0.88, 1.0, outbreakLitMask) + (0.12 - 0.12 * outbreakLitMask) * exploredExt;
+    let v6ExtUnlit = clamp((0.46 + 0.18 * exploredExt) * clamp(1.32 - 0.42 * sightDark, 0.24, 1.35), 0.16, 1.0);
+    let v6ExtLit = clamp((0.76 + 0.14 * exploredExt) * clamp(1.16 - 0.22 * sightDark, 0.42, 1.20), 0.35, 1.0);
+    let v7DayExt = mix(clamp(0.78 + 0.12 * exploredExt - 0.12 * (sightDark - 1.0), 0.52, 0.98), clamp(0.92 + 0.06 * exploredExt, 0.75, 1.0), outbreakLitMask);
     let v6Ext = select(mix(v6ExtUnlit, v6ExtLit, outbreakLitMask), mix(mix(v6ExtUnlit, v6ExtLit, outbreakLitMask), v7DayExt, dayOrDusk), isV7);
-    let extUnexp = select(0.78 + 0.22 * explored, select(select(v4Ext, v5Ext, isV5), v6Ext, isV6), isOverhaul);
+    let extUnexp = select(0.78 + 0.22 * exploredExt, select(select(v4Ext, v5Ext, isV5), v6Ext, isV6), isOverhaul);
     baseFowCol = mix(memoryTone * extUnexp, colIn, visible);
   }
 

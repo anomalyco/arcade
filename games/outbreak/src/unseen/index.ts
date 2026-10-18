@@ -2,6 +2,7 @@ export {
   applyUnseenModePreset,
   DEFAULT_UNSEEN_SETTINGS,
   evaluateUnseenFrame,
+  packUnseenPostExtra,
   packUnseenPostParams,
   resolveUnseenBaseLayers,
   syncUnseenSettingChange,
@@ -11,6 +12,7 @@ export {
   unseenControls,
   type UnseenFrameEvaluation,
   type UnseenLayerWeights,
+  type UnseenLookTrims,
   type UnseenModeId,
   type UnseenSettings,
 } from "./settings"

@@ -56,7 +56,9 @@ fn evalUnseenEdgeDepth(sX: f32, sY: f32, p: vec2f) -> f32 {
   let awareMeters = max(0.0, d - F.effects.z);
   let span = max(1.0, 3.4 * soft);
   let ramp = smoothstep(0.0, span, awareMeters * 0.65 + (1.0 - sX) * 1.35 + (1.0 - sY) * 0.45);
-  return clamp((1.0 - sX) * (0.30 + 0.70 * ramp), 0.0, 1.0);
+  // Darkwood (v8): full shroud right past the cone and halo edge, so the space behind the survivor goes dark at once.
+  let legacy = (1.0 - sX) * (0.30 + 0.70 * ramp);
+  return clamp(mix(legacy, 1.0 - sX, clamp(OL.v8.x, 0.0, 1.0)), 0.0, 1.0);
 }
 `,
 )
@@ -153,7 +155,7 @@ fn applyOutbreakUnseenPost(
   G: vec4f,
   postParam: vec4f,
 ) -> vec3f {
-  if (postParam.y <= 0.0 && postParam.z <= 0.0 && postParam.w <= 0.0) {
+  if (postParam.x <= 0.0 && postParam.y <= 0.0 && postParam.z <= 0.0 && postParam.w <= 0.0) {
     return cIn;
   }
   let unseenMask = clamp((centerSamp.a - 1.0) * 0.25, 0.0, 1.0);
@@ -168,7 +170,10 @@ fn applyOutbreakUnseenPost(
   let wShroud = f32(pz & 4095u) * (1.0 / 1024.0);
   let wMemory = f32((pz >> 12u) & 4095u) * (1.0 / 1024.0);
   let wNoise = f32(pw & 1023u) * (1.0 / 256.0);
-  if (wGlitch + wWarp + wShroud + wMemory + wNoise <= 0.001) {
+  let px = u32(max(postParam.x, 0.0) + 0.5);
+  let wCharcoal = f32(px & 4095u) * (1.0 / 1024.0);
+  let wGrit = f32((px >> 12u) & 4095u) * (1.0 / 1024.0);
+  if (wGlitch + wWarp + wShroud + wMemory + wNoise + wCharcoal + wGrit <= 0.001) {
     return cIn;
   }
   let uEdgeBand = f32((pw >> 10u) & 127u) * (1.0 / 127.0);
@@ -296,6 +301,28 @@ fn applyOutbreakUnseenPost(
     let noiseVeil = (grain * 0.12 + bayer * 0.06) * aNoise * shadowGate * min(cLuma * 1.10, 0.035);
     let noisyCol = max(vec3f(0.0), silverBase + vec3f(noiseVeil));
     c = mix(c, noisyCol, clamp(aNoise * 0.95, 0.0, 1.0));
+  }
+
+  // Layer 6 (Darkwood v8): charcoal — near-monochrome cold slate outside sight; lamp-warm pixels keep a little colour.
+  let aCharcoal = clamp(mFull * wCharcoal, 0.0, 1.5);
+  if (aCharcoal > 0.002) {
+    let cLuma = dot(c, vec3f(0.2126, 0.7152, 0.0722));
+    let warmLit = clamp((c.r - c.b * 1.12) / max(c.r + 0.0015, 1e-4), 0.0, 1.0) * smoothstep(0.02, 0.10, cLuma);
+    let slate = vec3f(cLuma) * vec3f(0.90, 0.95, 1.05);
+    c = mix(c, slate, clamp(aCharcoal * 0.97, 0.0, 0.98) * (1.0 - warmLit * 0.45)) * mix(1.0, 0.80, clamp(aCharcoal, 0.0, 1.0));
+  }
+
+  // Layer 7 (Darkwood v8): grit — coarse crawling charcoal grain that lives in the shroud, strongest in its midtones.
+  let aGrit = clamp(mFull * wGrit, 0.0, 3.0);
+  if (aGrit > 0.002) {
+    let fTime = floor(G.x * 14.0);
+    let cLuma = dot(c, vec3f(0.2126, 0.7152, 0.0722));
+    let gBig = hash(floor(fragPos * 0.25) + vec2f(fTime * 13.1, -fTime * 7.7)) - 0.5;
+    let gMid = hash(floor(fragPos * 0.5) + vec2f(-fTime * 19.3, fTime * 23.9)) - 0.5;
+    let gFine = hash(floor(fragPos) + vec2f(fTime * 29.7, fTime * 11.3)) - 0.5;
+    let grit = gBig * 0.55 + gMid * 0.55 + gFine * 0.35;
+    let amp = aGrit * (0.0012 + 0.16 * cLuma) * (1.0 - smoothstep(0.35, 0.80, cLuma));
+    c = max(vec3f(0.0), c + vec3f(grit * amp));
   }
 
   return c;
