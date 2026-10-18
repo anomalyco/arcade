@@ -527,15 +527,16 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
       // body halo and the wedges walls and trees cut out of it stand against the darker charcoal shroud.
       let glow = OL.art.x * lightRule * outbreakSeen * (1.0 - duskGlow) * select(1.0, 0.0, mat == 12);
       col += vec3f(dot(outbreakAlbedo, vec3f(0.2126, 0.7152, 0.0722))) * vec3f(0.98, 0.99, 1.0) * (glow * 0.03);
-      // Lamp roll-off (OL.art.z): stacked lamp pools, tints and the beam on pale paving pushed the red channel deep into
-      // the tone curve, which clipped it and turned the whole pool flat saturated yellow. Roll the brightest channel
-      // off with the hue held, so the pool keeps its falloff, and let the hottest light go warm white: a hot core.
-      let rolloff = clamp(OL.art.z, 0.0, 2.0) * nightLamps * (1.0 - 0.8 * flashShare) * select(1.0, 0.0, mat == 12);
+      // Lamp roll-off (OL.art.z): lamp pools and the beam on pale paving pushed the red channel deep into the tone curve,
+      // and the post read the clipped warm pixels as practical light and saturated them further: a flat yellow blob.
+      // Roll the brightest channel off with the hue held, so the pool keeps its falloff, and let the hottest light go
+      // warm white: a hot core.
+      let rolloff = clamp(OL.art.z, 0.0, 2.0) * nightLamps * select(1.0, 0.0, mat == 12 || mat == 2);
       let peak = max(col.r, max(col.g, col.b));
-      if (rolloff > 0.001 && peak > 0.42) {
-        let over = peak - 0.42;
-        let rolled = col * ((0.42 + over / (1.0 + over * 1.6)) / peak);
-        let core = smoothstep(0.0, 1.2, over) * 0.5 * rolloff;
+      if (rolloff > 0.001 && peak > 0.22) {
+        let over = peak - 0.22;
+        let rolled = col * ((0.22 + over / (1.0 + over * 2.0)) / peak);
+        let core = smoothstep(0.0, 0.5, over) * 0.5 * rolloff;
         let hot = mix(rolled, vec3f(dot(rolled, vec3f(0.2126, 0.7152, 0.0722))) * vec3f(1.12, 0.98, 0.78), clamp(core, 0.0, 0.85));
         col = mix(col, hot, min(rolloff, 1.0));
       }
