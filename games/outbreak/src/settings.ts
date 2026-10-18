@@ -22,6 +22,7 @@ import { DEFAULT_CAMERA_LEAD, DEFAULT_FEEL_TUNING, type CameraLeadSettings, type
 import { DEFAULT_FOG_OF_WAR, type FogOfWarSettings } from "./fog-of-war"
 import { DEFAULT_GROUND_SETTINGS, type GroundSettings } from "./ground"
 import { DEFAULT_HUD_SETTINGS, type HudSettings } from "./hud"
+import { DEFAULT_BLOOD_SETTINGS, type OutbreakBloodSettings } from "./blood/settings"
 import { DEFAULT_DISCOVERY_SETTINGS, type DiscoverySettings } from "./discovery/settings"
 import { DEFAULT_MAP_SETTINGS, type MapSettings } from "./map/settings"
 import {
@@ -32,6 +33,7 @@ import {
   type OutbreakLightingSettings,
 } from "./lighting"
 import { DEFAULT_LOOK_TRIMS, type OutbreakLookTrims } from "./look/world"
+import { DEFAULT_NIGHT_LIGHT_SETTINGS, type OutbreakNightLightSettings } from "./night-lights/settings"
 import { DEFAULT_PROP_SETTINGS, type OutbreakPropSettings } from "./props/settings"
 import { survivorAimTuning, type SurvivorAimTuning } from "./survivor"
 import { applyUnseenModePreset, DEFAULT_UNSEEN_SETTINGS, type UnseenSettings } from "./unseen"
@@ -224,6 +226,8 @@ export type OutbreakSubsystemMap = {
   hordes: OutbreakHordeSettings
   look: OutbreakLookTrims
   props: OutbreakPropSettings
+  blood: OutbreakBloodSettings
+  nightLights: OutbreakNightLightSettings
 }
 
 export type OutbreakSubsystemKey = keyof OutbreakSubsystemMap
@@ -260,7 +264,9 @@ export type OutbreakSettings = OutbreakSubsystemMap &
   OutbreakBotSettings &
   OutbreakHordeSettings &
   OutbreakLookTrims &
-  OutbreakPropSettings
+  OutbreakPropSettings &
+  OutbreakBloodSettings &
+  OutbreakNightLightSettings
 
 export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "lighting",
@@ -290,6 +296,8 @@ export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "hordes",
   "look",
   "props",
+  "blood",
+  "nightLights",
 ] as const
 
 export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
@@ -324,6 +332,8 @@ export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
     hordes: { ...DEFAULT_OUTBREAK_HORDES },
     look: { ...DEFAULT_LOOK_TRIMS },
     props: { ...DEFAULT_PROP_SETTINGS },
+    blood: { ...DEFAULT_BLOOD_SETTINGS },
+    nightLights: { ...DEFAULT_NIGHT_LIGHT_SETTINGS },
   }
 }
 

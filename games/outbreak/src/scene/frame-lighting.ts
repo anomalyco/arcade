@@ -17,7 +17,7 @@ import type { dayCycle } from "../../shared/day-cycle"
 type DayCycleSample = ReturnType<typeof dayCycle>
 import { flashlightColor } from "../../shared/flashlight"
 import type { PeekInfo } from "../../shared/interact"
-import { SIZE, type Town } from "../../shared/map"
+import { SIZE, type Lamp, type Town } from "../../shared/map"
 import { supportHeight } from "../../shared/terrain"
 import type { WorldMode } from "../../shared/world"
 import type { OutbreakVehicle } from "../../shared/vehicles"
@@ -408,6 +408,10 @@ export class OutbreakFrameLighting {
     readonly interiors: InteriorPresenter
     readonly count: number
     readonly shadowLightCount: number
+    /** Adjusts a resolved map lamp before it is packed (Night lights' dying street lamps). */
+    readonly lampTrim?: (lamp: Lamp, resolved: ResolvedLamp) => void
+    /** Packs extra map-range lights after the table lamps (Night lights); returns the new count. */
+    readonly extraLights?: (lights: Float32Array, count: number, max: number, lampPower: Float32Array) => number
   }): { count: number; shadowLightCount: number } {
     const {
       town,
@@ -449,6 +453,7 @@ export class OutbreakFrameLighting {
     for (let i = 0; i < town.lamps.length; i++) {
       const lamp = town.lamps[i]!
       const resolved = resolveLampLight(lamp, town.buildings, day.lamps, settings.lighting, inInteriorView, this.scratchResolvedLamp)
+      input.lampTrim?.(lamp, resolved)
       this.lampPower[i] = resolved.fixtureBrightness
       if (resolved.power <= 0.001) continue
       const { lx, lh, ly, r, rEff, color, power, cone, softness, castShadows } = resolved
@@ -504,6 +509,7 @@ export class OutbreakFrameLighting {
     this.tableLamps.setSources(mode === "procedural" ? NO_TABLE_LAMPS : propLamps(town), originFurnishTown(town))
     const tableLampCount = settings.look.tableLamps >= 0 ? settings.look.tableLamps : Math.min(2, qProfile.maxSconceLights)
     count = this.tableLamps.write(this.lights, count, MAX_LIGHTS, inInteriorView ? tableLampCount : 0, cutX, cutY, sconceLevel, settings.lighting.practicalWarmth, 0.55 * settings.look.tableLampPower)
+    if (input.extraLights) count = input.extraLights(this.lights, count, MAX_LIGHTS, this.lampPower)
     const origin = sceneLevel.currentWindowOrigin
     this.lampGrid.update(this.lights, directLightCount, count, origin[0], origin[1])
     return { count, shadowLightCount }
