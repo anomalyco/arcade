@@ -47,6 +47,8 @@ const browser = await chromium.launch({
   args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio"],
 })
 
+type Companion = { id: string; index: number; x: number; y: number; aim: number; flashlight: boolean }
+
 type Scene = {
   name: string
   hour: number
@@ -56,7 +58,14 @@ type Scene = {
   aim: number
   flashlight: boolean
   horde?: boolean
+  companions?: Companion[]
 }
+
+const COOP_LINEUP: Companion[] = [
+  { id: "maya", index: 1, x: 27.15, y: 39.75, aim: Math.PI / 2 - 0.15, flashlight: true },
+  { id: "hank", index: 2, x: 27.95, y: 40.0, aim: Math.PI / 2 + 0.08, flashlight: true },
+  { id: "tess", index: 3, x: 28.75, y: 40.25, aim: Math.PI / 2 + 0.24, flashlight: true },
+]
 
 const SCENES: Record<string, Scene> = {
   streetDay: { name: "street-day-14h", hour: 14, zoom: 46, x: 27.7, y: 41.0, aim: -Math.PI / 2, flashlight: false },
@@ -64,6 +73,9 @@ const SCENES: Record<string, Scene> = {
   interiorNight: { name: "interior-night-21h", hour: 21, zoom: 46, x: 27.7, y: 31.8, aim: -Math.PI / 2, flashlight: true },
   interiorClose: { name: "interior-close-21h", hour: 21, zoom: 28, x: 27.7, y: 33.8, aim: -Math.PI / 2, flashlight: true },
   hordeNight: { name: "horde-night-21h", hour: 21, zoom: 46, x: 27.7, y: 41.0, aim: -Math.PI / 2, flashlight: true, horde: true },
+  dusk: { name: "street-dusk-18h30", hour: 18.5, zoom: 46, x: 27.7, y: 41.0, aim: -Math.PI / 2, flashlight: true },
+  survivorsClose: { name: "survivors-close-21h", hour: 21, zoom: 24, x: 26.35, y: 39.5, aim: 0.65, flashlight: true, companions: COOP_LINEUP },
+  survivorsDefault: { name: "survivors-default-21h", hour: 21, zoom: 46, x: 26.35, y: 39.5, aim: 0.65, flashlight: true, companions: COOP_LINEUP },
 }
 
 const RESET_KNOBS = {
@@ -73,7 +85,7 @@ const RESET_KNOBS = {
   styleGrade: 0,
 }
 
-const HUD = "#status, #hotbar, #stamina, #battery, .callouts, .callout, #hud, .hud, #markers, #prompt"
+const HUD = "#status, #hotbar, #stamina, #battery, .callouts, .callout, #hud, .hud, #markers, #prompt, .coop-tag, .ob-hud, [data-callout-layer], .ob-callout-layer"
 const errors: string[] = []
 const meta: Record<string, unknown> = { mode, shots: {}, gpu: {} }
 
@@ -108,8 +120,23 @@ async function setup(page: Page, s: Scene, knobs: Record<string, unknown> = {}, 
     }
     for (const [k, v] of Object.entries(knobs)) h.setLab(k, v)
     h.pose(s.x, s.y, s.aim)
+    const sim = h.session?.()?.sim
+    if (sim) {
+      while (sim.slots.length > 1) sim.removeSurvivor(sim.slots[1]!.id)
+    }
+    const addedSlots: any[] = []
+    if (s.companions && sim) {
+      for (const c of s.companions) {
+        const slot = sim.addSurvivor(c.id, c.index)
+        slot.survivor.x = c.x
+        slot.survivor.y = c.y
+        slot.survivor.aim = c.aim
+        slot.survivor.flashlightOn = c.flashlight
+        slot.survivor.flashlightOutput = c.flashlight ? 1 : 0
+        addedSlots.push({ slot, spec: c })
+      }
+    }
     if (s.horde) {
-      const sim = h.session?.()?.sim
       if (sim?.ai && sim?.town) {
         const spots: [number, number, number][] = [
           [27.4, 37.6, Math.PI / 2],
@@ -132,18 +159,37 @@ async function setup(page: Page, s: Scene, knobs: Record<string, unknown> = {}, 
         }
       }
     }
-    const p = h.state().player
-    p.flashlightOn = s.flashlight
-    p.flashlightOutput = s.flashlight ? 1 : 0
+    const pinActors = () => {
+      const p = h.state().player
+      p.x = s.x
+      p.y = s.y
+      p.aim = s.aim
+      p.flashlightOn = s.flashlight
+      p.flashlightOutput = s.flashlight ? 1 : 0
+      for (const { slot, spec } of addedSlots) {
+        slot.survivor.x = spec.x
+        slot.survivor.y = spec.y
+        slot.survivor.aim = spec.aim
+        slot.survivor.vx = 0
+        slot.survivor.vy = 0
+        slot.survivor.flashlightOn = spec.flashlight
+        slot.survivor.flashlightOutput = spec.flashlight ? 1 : 0
+      }
+    }
+    pinActors()
     const t0 = performance.now()
     while (performance.now() - t0 < 20000) {
+      pinActors()
       await h.step(1 / 60, { mx: 0, my: 0, aim: s.aim })
       const props = h.state().props
       const rugs = h.interiors?.()
       if (props?.ready && (rugs?.settled ?? true) && performance.now() - t0 > 120) break
       await new Promise(r => setTimeout(r, 15))
     }
-    for (let i = 0; i < 8; i++) await h.step(1 / 60, { mx: 0, my: 0, aim: s.aim })
+    for (let i = 0; i < 12; i++) {
+      pinActors()
+      await h.step(1 / 60, { mx: 0, my: 0, aim: s.aim })
+    }
     return {
       hour: h.state().hour,
       props: h.state().props?.lastFrame ?? null,
@@ -151,12 +197,73 @@ async function setup(page: Page, s: Scene, knobs: Record<string, unknown> = {}, 
   }, { s, knobs, preset, reset: RESET_KNOBS })
 }
 
+async function analyzePng(page: Page, filePath: string) {
+  const dataUrl = `data:image/png;base64,${readFileSync(filePath).toString("base64")}`
+  return page.evaluate(async (url: string) => {
+    const img = new Image()
+    img.src = url
+    await img.decode()
+    const w = 384
+    const h = 256
+    const c = document.createElement("canvas")
+    c.width = w
+    c.height = h
+    const ctx = c.getContext("2d")!
+    ctx.drawImage(img, 0, 0, w, h)
+    const { data } = ctx.getImageData(0, 0, w, h)
+    const lums: number[] = []
+    const sats: number[] = []
+    const litSats: number[] = []
+    const darkSats: number[] = []
+    let sumL = 0
+    let sumS = 0
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i]! / 255
+      const g = data[i + 1]! / 255
+      const b = data[i + 2]! / 255
+      const l = 0.2126 * r + 0.7152 * g + 0.0722 * b
+      const mx = Math.max(r, g, b)
+      const mn = Math.min(r, g, b)
+      const s = mx > 1e-4 ? (mx - mn) / mx : 0
+      lums.push(l)
+      sats.push(s)
+      sumL += l
+      sumS += s
+      if (l > 0.14) litSats.push(s)
+      else if (l > 0.01 && l <= 0.08) darkSats.push(s)
+    }
+    lums.sort((a, b) => a - b)
+    sats.sort((a, b) => a - b)
+    litSats.sort((a, b) => a - b)
+    darkSats.sort((a, b) => a - b)
+    const n = lums.length
+    const meanL = sumL / n
+    let varL = 0
+    for (let i = 0; i < n; i++) varL += (lums[i]! - meanL) ** 2
+    const pct = (arr: number[], q: number) => arr.length ? arr[Math.min(arr.length - 1, Math.floor(arr.length * q))]! : 0
+    const mean = (arr: number[]) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0
+    return {
+      meanL: +meanL.toFixed(3),
+      stdL: +Math.sqrt(varL / n).toFixed(3),
+      p10L: +pct(lums, 0.1).toFixed(3),
+      p50L: +pct(lums, 0.5).toFixed(3),
+      p90L: +pct(lums, 0.9).toFixed(3),
+      p99L: +pct(lums, 0.99).toFixed(3),
+      meanS: +(sumS / n).toFixed(3),
+      litMeanS: +mean(litSats).toFixed(3),
+      litP90S: +pct(litSats, 0.9).toFixed(3),
+      darkMeanS: +mean(darkSats).toFixed(3),
+    }
+  }, dataUrl)
+}
+
 async function capture(page: Page, filename: string, scene: Scene, knobs: Record<string, unknown> = {}, preset = "today"): Promise<string> {
   const info = await setup(page, scene, knobs, preset)
   const file = resolve(out, filename)
   await page.screenshot({ path: file })
-  ;(meta.shots as Record<string, unknown>)[filename] = { scene: scene.name, knobs, preset, ...info }
-  console.log("captured", filename, JSON.stringify(info.props))
+  const stats = await analyzePng(page, file)
+  ;(meta.shots as Record<string, unknown>)[filename] = { scene: scene.name, knobs, preset, ...info, stats }
+  console.log("captured", filename, JSON.stringify(stats), JSON.stringify(info.props))
   return file
 }
 
@@ -205,6 +312,102 @@ try {
   if (mode === "baseline") {
     for (const s of Object.values(SCENES)) {
       await capture(page, `baseline-${s.name}.png`, s, {}, "legacy-today")
+    }
+  } else if (mode === "v4-baseline") {
+    const v4Scenes = [
+      SCENES.streetDay!,
+      SCENES.streetNight!,
+      SCENES.interiorNight!,
+      SCENES.hordeNight!,
+      SCENES.dusk!,
+      SCENES.survivorsClose!,
+      SCENES.survivorsDefault!,
+    ]
+    for (const s of v4Scenes) {
+      await capture(page, `v4-${s.name}.png`, s, {}, "today-v4")
+    }
+    await page.close()
+  } else if (mode === "v5" || mode === "v5-stills") {
+    const v4Day = await capture(page, "v4-street-day-14h.png", SCENES.streetDay!, {}, "today-v4")
+    const v5Day = await capture(page, "v5-street-day-14h.png", SCENES.streetDay!, {}, "today")
+
+    const v4Dusk = await capture(page, "v4-street-dusk-18h30.png", SCENES.dusk!, {}, "today-v4")
+    const v5Dusk = await capture(page, "v5-street-dusk-18h30.png", SCENES.dusk!, {}, "today")
+
+    const v4Night = await capture(page, "v4-street-night-21h.png", SCENES.streetNight!, {}, "today-v4")
+    const v5Night = await capture(page, "v5-street-night-21h.png", SCENES.streetNight!, {}, "today")
+
+    const v4Int = await capture(page, "v4-interior-night-21h.png", SCENES.interiorNight!, {}, "today-v4")
+    const v5Int = await capture(page, "v5-interior-night-21h.png", SCENES.interiorNight!, {}, "today")
+
+    const v4Horde = await capture(page, "v4-horde-night-21h.png", SCENES.hordeNight!, {}, "today-v4")
+    const v5Horde = await capture(page, "v5-horde-night-21h.png", SCENES.hordeNight!, {}, "today")
+
+    const v4SurvClose = await capture(page, "v4-survivors-close-21h.png", SCENES.survivorsClose!, {}, "today-v4")
+    const v5SurvClose = await capture(page, "v5-survivors-close-21h.png", SCENES.survivorsClose!, {}, "today")
+
+    const v4SurvDef = await capture(page, "v4-survivors-default-21h.png", SCENES.survivorsDefault!, {}, "today-v4")
+    const v5SurvDef = await capture(page, "v5-survivors-default-21h.png", SCENES.survivorsDefault!, {}, "today")
+
+    const paintDir = existsSync(resolve(import.meta.dir, "paintovers/paint-v5-street-day-14h.png"))
+      ? resolve(import.meta.dir, "paintovers")
+      : resolve(out, "paintovers")
+    const sheetPage = await browser.newPage({ deviceScaleFactor: 1 })
+    if (existsSync(resolve(paintDir, "paint-v5-street-day-14h.png"))) {
+      await sheet(
+        sheetPage,
+        resolve(out, "sheet-v5-paintover-pass.png"),
+        "Outbreak Second Paint-Over Pass (AR-47) · Before (Today · v4) vs Paint-Over Target vs Shipped New Default (Today · v5)",
+        [
+          { label: "1a. Before (Today · v4) · Street Day 14:00 (murky L=0.108, heavy dayVig=0.68)", file: v4Day },
+          { label: "1b. Paint-Over Target · Street Day 14:00", file: resolve(paintDir, "paint-v5-street-day-14h.png") },
+          { label: "1c. Shipped Default (Today · v5) · Street Day 14:00 (crisp sunlit afternoon, deep canopy shadows)", file: v5Day },
+          { label: "2a. Before (Today · v4) · Street Dusk 18:30 (crushed to night L=0.041)", file: v4Dusk },
+          { label: "2b. Paint-Over Target · Street Dusk 18:30", file: resolve(paintDir, "paint-v5-street-dusk-18h30.png") },
+          { label: "2c. Shipped Default (Today · v5) · Street Dusk 18:30 (copper sunset grazing roof/crowns vs indigo twilight)", file: v5Dusk },
+          { label: "3a. Before (Today · v4) · Street Night 21:00 (crushed moonlit silhouettes, grey hero)", file: v4Night },
+          { label: "3b. Paint-Over Target · Street Night 21:00", file: resolve(paintDir, "paint-v5-street-night-21h.png") },
+          { label: "3c. Shipped Default (Today · v5) · Street Night 21:00 (golden beam & window spill, cool moonlit roof & crowns)", file: v5Night },
+          { label: "4a. Before (Today · v4) · Start House 21:00 (dim kitchen & bedrooms, +0.70ms all-LOD0 props)", file: v4Int },
+          { label: "4b. Paint-Over Target · Start House 21:00", file: resolve(paintDir, "paint-v5-interior-night-21h.png") },
+          { label: "4c. Shipped Default (Today · v5) · Start House 21:00 (warm rooms, indigo unseen bedrooms, -0.70ms fast LOD1 props)", file: v5Int },
+          { label: "5a. Before (Today · v4) · Horde Night 21:00 (beam scatter washes zombie contrast)", file: v4Horde },
+          { label: "5b. Paint-Over Target · Horde Night 21:00", file: resolve(paintDir, "paint-v5-horde-night-21h.png") },
+          { label: "5c. Shipped Default (Today · v5) · Horde Night 21:00 (vivid townsfolk clothes & blood in beam, cool moonlit rims)", file: v5Horde },
+          { label: "6a. Before (Today · v4) · Co-op Survivors Close 21:00 (Cole grey behind lens, chalky overlapping beams)", file: v4SurvClose },
+          { label: "6b. Paint-Over Target · Co-op Survivors Close 21:00", file: resolve(paintDir, "paint-v5-survivors-close-21h.png") },
+          { label: "6c. Shipped Default (Today · v5) · Co-op Survivors Close 21:00 (Cole/Maya/Hank/Tess vibrant, golden asphalt pools)", file: v5SurvClose },
+          { label: "7a. Before (Today · v4) · Co-op Survivors Default Zoom 46", file: v4SurvDef },
+          { label: "7b. Paint-Over Target · Co-op Survivors (reference)", file: resolve(paintDir, "paint-v5-survivors-close-21h.png") },
+          { label: "7c. Shipped Default (Today · v5) · Co-op Survivors Default Zoom 46", file: v5SurvDef },
+        ],
+        3,
+      )
+    }
+    await sheetPage.close()
+    await page.close()
+
+    if (mode === "v5") {
+      const gpuPage = await open(1728, 947, 2)
+      meta.gpuViewport = await gpuPage.evaluate(() => [innerWidth * devicePixelRatio, innerHeight * devicePixelRatio])
+      const gpuResults: Record<string, unknown> = {}
+      const pairs: { name: string; scene: Scene; preset: string; basePreset: string }[] = [
+        { name: "v5-vs-v4-street-day-14h", scene: SCENES.streetDay!, preset: "today", basePreset: "today-v4" },
+        { name: "v5-vs-v4-street-dusk-18h30", scene: SCENES.dusk!, preset: "today", basePreset: "today-v4" },
+        { name: "v5-vs-v4-street-night-21h", scene: SCENES.streetNight!, preset: "today", basePreset: "today-v4" },
+        { name: "v5-vs-v4-interior-night-21h", scene: SCENES.interiorNight!, preset: "today", basePreset: "today-v4" },
+        { name: "v5-vs-v4-horde-night-21h", scene: SCENES.hordeNight!, preset: "today", basePreset: "today-v4" },
+        { name: "v5-vs-v4-survivors-close-21h", scene: SCENES.survivorsClose!, preset: "today", basePreset: "today-v4" },
+        { name: "v5-vs-v1-interior-night-21h", scene: SCENES.interiorNight!, preset: "today", basePreset: "legacy-today" },
+        { name: "v5-vs-v1-street-night-21h", scene: SCENES.streetNight!, preset: "today", basePreset: "legacy-today" },
+      ]
+      for (const p of pairs) {
+        const res = await measurePair(gpuPage, p.scene, {}, p.preset, p.basePreset)
+        gpuResults[p.name] = res
+        console.log("GPU", p.name, JSON.stringify(res))
+      }
+      meta.gpu = gpuResults
+      await gpuPage.close()
     }
   } else if (mode === "overhaul" || mode === "overhaul-stills") {
     const legDay = await capture(page, "overhaul-before-street-day-14h.png", SCENES.streetDay!, {}, "legacy-today")
@@ -420,3 +623,4 @@ try {
 if (errors.length) console.error(errors.slice(0, 10).join("\n"))
 assert.deepEqual(errors, [])
 console.log(out)
+process.exit(0)

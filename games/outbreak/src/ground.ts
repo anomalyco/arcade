@@ -275,11 +275,17 @@ export const groundSurfaceHookWgsl = /* wgsl */ `
           col = mix(col, oliveOchre, 0.72) * 0.94;
         } else {
           // Preserve rich clumped chlorophyll greens and damp loam variation without any greyscale ochre wash
+          let isV5Ground = OL.round.x > 3.5 || OL.round.z > 3.5;
           let lawnMacro = surfaceNoise(p * 0.42 + vec2f(3.1, 7.4));
           let loamPatch = smoothstep(0.54, 0.82, surfaceNoise(p * 0.88 + vec2f(6.2, 1.8)));
-          let richTurf = col * mix(vec3f(0.68, 0.88, 0.52), vec3f(0.86, 1.02, 0.62), lawnMacro);
+          let richTurf = col * mix(
+            select(vec3f(0.68, 0.88, 0.52), vec3f(0.64, 0.98, 0.44), isV5Ground),
+            select(vec3f(0.86, 1.02, 0.62), vec3f(0.92, 1.16, 0.54), isV5Ground),
+            lawnMacro,
+          );
           let dampLoam = vec3f(turfLum) * vec3f(0.50, 0.39, 0.25);
-          col = mix(richTurf, dampLoam, loamPatch * select(0.38, 0.56, gStyle == 3)) * 0.72;
+          let turfScale = select(0.72, mix(0.76, 1.04, clamp(F.monitorBounds.w, 0.0, 1.0)), isV5Ground);
+          col = mix(richTurf, dampLoam, loamPatch * select(0.38, 0.56, gStyle == 3)) * turfScale;
         }
       } else if (kind == 1) {
         let gParams = unpackGroundParams();
@@ -294,19 +300,20 @@ export const groundSurfaceHookWgsl = /* wgsl */ `
       } else if (kind == 2 || kind == 6) {
         let inVerge = (o.world.z > 39.28 && o.world.z < 39.80) || (o.world.z > 48.20 && o.world.z < 48.72);
         if (!inVerge) {
+          let isV5Walk = OL.round.x > 3.5 || OL.round.z > 3.5;
           let walkLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
           let warmStone = vec3f(walkLum) * vec3f(1.22, 0.95, 0.56);
           let stoneMix = select(w * 0.65, w * 0.32, gStyle > 0 || OL.round.x > 0.5);
-          col = mix(col, warmStone, stoneMix) * select(0.76, 0.72, gStyle > 0);
+          col = mix(col, warmStone, stoneMix) * select(0.76, select(0.72, mix(0.76, 0.94, clamp(F.monitorBounds.w, 0.0, 1.0)), isV5Walk), gStyle > 0);
           let dxWalk = o.world.x - 27.7;
           if (abs(dxWalk) < 4.5 && o.world.z > 34.8 && o.world.z < 40.4) {
             let dxWalk2 = dxWalk * dxWalk;
             let walkCore = fastExpNeg(dxWalk2 * 0.8) * smoothstep(40.4, 35.0, o.world.z);
             let sideSpread = fastExpNeg(dxWalk2 * 0.133333) * smoothstep(37.4, 38.4, o.world.z) * smoothstep(40.2, 38.8, o.world.z);
-            let extScale = select(1.05, 0.68, OL.u5.w > 0.5) * (1.0 + OL.u8.y * 0.85) * select(1.0, 0.54, gStyle > 0 || OL.round.x > 0.5);
+            let extScale = select(1.05, 0.68, OL.u5.w > 0.5) * (1.0 + OL.u8.y * 0.85) * select(1.0, select(0.54, 0.96, isV5Walk), gStyle > 0 || OL.round.x > 0.5);
             let walkPool = (walkCore * 0.88 + sideSpread * 0.35) * OL.u2.y * nightLamps * extScale;
-            col += col * vec3f(1.22, 0.70, 0.22) * walkPool;
-            outbreakPracticalIrr += walkPool * 0.42;
+            col += col * vec3f(1.26, 0.72, 0.22) * walkPool;
+            outbreakPracticalIrr += walkPool * select(0.42, 0.68, isV5Walk);
           }
         }
       }

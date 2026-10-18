@@ -440,7 +440,7 @@ export class Survivor {
       const ids = [f.pelvis, f.torso, f.head, f.upperArm, f.foreArm, f.thigh, f.shin, f.foot, null, null, f.toe]
       return ids.map((m, i) => (m ? renderer.addModel(m) : this.models[i]!))
     }
-    const refined = buildColourBlocksSurvivorMeshes(this.variantIndex, this.paletteOverride)
+    const refined = buildColourBlocksSurvivorMeshes(this.variantIndex, this.paletteOverride, 7)
     const refinedIds = [refined.pelvis, refined.torso, refined.head, refined.upperArm, refined.foreArm, refined.thigh, refined.shin, refined.foot, null, null, refined.toe]
       .map((m, i) => (m ? renderer.addModel(m) : this.models[i]!))
     this.shapes = [this.models, simple("mannequin"), simple("capsule"), [], refinedIds]
@@ -465,7 +465,7 @@ export class Survivor {
     const next = ((Math.trunc(variant) % SURVIVORS.length) + SURVIVORS.length) % SURVIVORS.length
     if (next === this.variantIndex) return
     this.variantIndex = next
-    const refined = buildColourBlocksSurvivorMeshes(this.variantIndex, this.paletteOverride)
+    const refined = buildColourBlocksSurvivorMeshes(this.variantIndex, this.paletteOverride, 7)
     const order = [refined.pelvis, refined.torso, refined.head, refined.upperArm, refined.foreArm, refined.thigh, refined.shin, refined.foot, null, null, refined.toe]
     const ids = this.shapes[4]!
     const setModel = this.renderer.setModel?.bind(this.renderer)
