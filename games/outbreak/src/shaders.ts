@@ -536,8 +536,8 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
       if (rolloff > 0.001 && peak > 0.22) {
         let over = peak - 0.22;
         let rolled = col * ((0.22 + over / (1.0 + over * 2.0)) / peak);
-        let core = smoothstep(0.0, 0.5, over) * 0.5 * rolloff;
-        let hot = mix(rolled, vec3f(dot(rolled, vec3f(0.2126, 0.7152, 0.0722))) * vec3f(1.12, 0.98, 0.78), clamp(core, 0.0, 0.85));
+        let core = smoothstep(0.0, 0.5, over) * 0.4 * rolloff;
+        let hot = mix(rolled, vec3f(dot(rolled, vec3f(0.2126, 0.7152, 0.0722))) * vec3f(1.16, 0.97, 0.72), clamp(core, 0.0, 0.8));
         col = mix(col, hot, min(rolloff, 1.0));
       }
     }
