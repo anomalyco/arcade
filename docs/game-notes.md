@@ -818,8 +818,9 @@ proven animation techniques to animation.md, not here.
   so Look · Grade and Look · Lights (`games/outbreak/src/look/world.ts`) scale or offset what the cycle produces
   (`trimLook` on the grade handed to the renderer, `trimLighting` inside `packOutbreakLightingUniforms`). A tuned look
   survives the clock moving; every default is the identity, so today's frames are unchanged.
-- **Presets set every knob.** `look/presets.ts` holds named, versioned knob sets (`Today · v4`, `Before: pre-overhaul look · v1` (`legacy-today`), Deeper noir, Warmer
-  practicals, Colder moonlight, Vivid world with a grey hero, Big Walk contrast, plus the rendering-round candidates `re-biohazard`, `rain-nocturne`, and `overgrown-lantern`); applying one sets all Look knobs,
+- **Presets set every knob.** `look/presets.ts` holds named, versioned knob sets (`Today · v8`, `Before: Today v7`,
+  Deeper noir, Warmer practicals, Vivid world with a grey hero, Big Walk contrast) and each preset's flashlight beam;
+  applying one sets all Look knobs,
   so they never leak into each other, and `Today` is Reset. Lab: the `outbreak-look` lab (the start house at 17:30),
   which also holds the beam and unseen variants that used to be their own stations.
 - **Outbreak look overhaul (`AR-47`, `Today · v4` default, 2026-10-17).** Removed the source washes that flattened the image into a warm-grey haze: the 51% interior sepia pre-wash (`roomWash` in `buildOutbreakSurfaceWgsl`), the 72% ochre greyscale wash on yard grass (`groundSurfaceHookWgsl`), the 1-px road stipple (`evalAsphaltConcrete`, replaced with smooth weathered macadam, wheel-rut wear, and edge damp darkening under `groundStyle = 1`), the daytime colour hole where `outbreakColorMask` ignored `day.sun` (`F.monitorBounds.w`), and the warm-grey floor in `makeLookSceneShader` / `applyOutbreakUnseenPost`. Upgraded `compositeFast` (`packages/kit/gpu/look-shaders.ts`, `packages/kit/gpu/look.ts`, `packages/kit/gpu/renderer.ts`) with full 4-mode tonemapping (including Sobotka AgX and Lamplight Filmic), a shared 2-tap diagonal clarity unsharp + corner chromatic aberration sample (`sNE`/`sSW`), a high-threshold bloom/halation gate (`smoothstep(0.045, 0.32, bloomPeak)`) so shadows never glow, cool moonlit shadow split-toning (`effShadowTint`) vs warm practical/beam pigment (`effBeamRetain`), and 2-tap triangular IGN dither. `propDressingState.modelStyle = 1` draws `lod0` furniture at default zoom (`46`) with grounded contact AO and low-plastic satin bevel catch. Paired 3456×1894 Metal GPU cost vs `legacy-today` (`captures/outbreak-look-overhaul/meta.json`): ground `+0.084 ms`, lighting saturation split `+0.163 ms`, LOD0 satin models `+0.702 ms`, post-processing stack `+0.063 ms`; total overhaul `+0.438 ms` street day (`6.226 → 6.664 ms`), `+0.428 ms` street night (`6.982 → 7.414 ms`), `+0.433 ms` horde night (`7.149 → 7.579 ms`), and `+1.035 ms` interior night (`11.060 → 12.088 ms`).
@@ -836,7 +837,15 @@ proven animation techniques to animation.md, not here.
   `GL.pad.x` slot (`FrameInput.postExtra`). The shroud must not count `explored` outdoors, or remembered blocks show as
   lighter rectangles. Pixel stats at 14:00: meanS 0.234 → 0.089, darkMeanS 0.285 → 0.089; 21:00 street darkMeanS
   0.084 → 0.033 with lit saturation unchanged (0.60). Paired GPU vs v7 (3456×1894, 6 rounds) sits inside the noise
-  (−1.7 to +0.8 ms, MAD 1.6–4.4 ms). Stills: `rendering-round-stills.ts --mode v8`.
+  (−1.7 to +0.8 ms, MAD 1.6–4.4 ms). Stills: `games/outbreak/scripts/look-beauty.ts`. The finished contract is
+  [outbreak-art-direction.md](outbreak-art-direction.md).
+- **Darkwood finish (`AR-53`, 2026-10-18).** A wide flat-topped beam (inner cone 0.8, near-lens softening 6 m, pool
+  2.4 m out, thin volumetric 0.35) lights the ground's texture instead of glowing in the air, and costs 0.7–1.1 ms
+  less than v7's dense volumetric at 3456×1894. Outdoor practical pools are gated by the lamps being on, so daylight
+  shows no warm wash. A post pass neutralises cool darks outside light (the grade's night split-tone was ringing the
+  sight edge blue). A dim albedo-grey lift inside sight at night (`sightGlow`) makes the cone and its wedges read
+  behind the survivor. Painterly ground (`paintedGround` in `src/ground.ts`) uses 0.4–3 m world-space stains, scuffs
+  and drifts with footprint-widened edges and adds no measurable walking flicker (< 0.0001 hpRms).
 
 ### Vegetation looks: tree, bush, grass
 
