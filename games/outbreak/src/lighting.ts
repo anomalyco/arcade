@@ -1286,11 +1286,11 @@ fn evalAreaFloorBounce(world: vec3f, n: vec3f) -> vec3f {
  * Blog Game Tip #9: Fast Triplanar Nyquist-Filtered Grain & Wear on MAT.timber (24) & MAT.lit (0) Props/Cars.
  */
 fn evalTriplanarPropMod(world: vec3f, n: vec3f) -> f32 {
-  let freq = 11.0;
-  let fade = 1.0 - smoothstep(0.08, 0.45, surfaceFootprint * freq * 0.1);
+  let freq = 6.5;
+  let fade = 1.0 - smoothstep(0.10, 0.32, surfaceFootprint * freq);
   let uv = vec2f(world.x + world.z * 0.85, world.y * 1.6 + world.z * 0.35);
-  let fibre = (hash2(floor(uv * freq)) - 0.5) * fade;
-  return 1.0 + fibre * 0.16;
+  let fibre = (surfaceNoise(uv * freq) - 0.5) * fade;
+  return 1.0 + fibre * 0.12;
 }
 
 fn fastExpNeg(x: f32) -> f32 {

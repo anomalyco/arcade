@@ -197,4 +197,35 @@ describe("prop dressing exports for the level bake", () => {
       console.warn = origWarn
     }
   })
+
+  test("applies zoom hysteresis around propLodZoom so small zoom oscillations do not flip between LOD0 and LOD1", async () => {
+    Object.assign(propDressingState, { on: true, density: 1, seed: 0, modelStyle: 4 })
+    const town = makeTown(7)
+    let nextModel = 0
+    const host = { addModel: () => nextModel++, setModel: () => {} }
+    const dressing = new PropDressing(host, 63, diskLibrary())
+    const view: [number, number, number, number] = [18, 20, 42, 42]
+    const s = { ...DEFAULT_PROP_SETTINGS, propLodZoom: 34 }
+
+    dressing.collect(town, view, s, 33, { clutterScale: 1, minPropLod: 0 }, true, () => {})
+    for (let i = 0; i < 20 && !dressing.furnishedReady; i++) await new Promise(r => setTimeout(r, 5))
+    expect(dressing.furnishedReady).toBe(true)
+
+    const at33 = dressing.collect(town, view, s, 33, { clutterScale: 1, minPropLod: 0 }, true, () => {}).map(b => b.model)
+    const at35 = dressing.collect(town, view, s, 35, { clutterScale: 1, minPropLod: 0 }, true, () => {}).map(b => b.model)
+    // Within hysteresis band (34 ± 2.5): stays on LOD0
+    expect(at35).toEqual(at33)
+
+    // Crossing above 36.5 switches to LOD1
+    const at37 = dressing.collect(town, view, s, 37, { clutterScale: 1, minPropLod: 0 }, true, () => {}).map(b => b.model)
+    expect(at37).not.toEqual(at33)
+
+    // Crossing back to 33 (within 34 - 2.5 = 31.5) stays on LOD1
+    const backTo33 = dressing.collect(town, view, s, 33, { clutterScale: 1, minPropLod: 0 }, true, () => {}).map(b => b.model)
+    expect(backTo33).toEqual(at37)
+
+    // Crossing below 31.5 switches back to LOD0
+    const at31 = dressing.collect(town, view, s, 31, { clutterScale: 1, minPropLod: 0 }, true, () => {}).map(b => b.model)
+    expect(at31).toEqual(at33)
+  })
 })

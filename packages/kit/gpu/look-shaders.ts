@@ -541,7 +541,9 @@ ${
   }
   let ringMean = (sNE + sSW) * 0.5;
   let clarityStrength = clamp((contrast - 0.96) * 0.42, 0.0, 0.34);
-  hdrCenter = max(vec3f(0.0), hdrCenter + (hdrCenter - ringMean) * clarityStrength);
+  let clarityDiff = hdrCenter - ringMean;
+  let clarityDelta = clarityDiff / (vec3f(1.0) + abs(clarityDiff) / max(ringMean + vec3f(0.015), vec3f(0.015)) * 4.0);
+  hdrCenter = max(vec3f(0.0), hdrCenter + clarityDelta * clarityStrength * 0.5);
 
   let bloomPeak = max(bloom.r, max(bloom.g, bloom.b));
   let bloomGate = smoothstep(0.045, 0.32, bloomPeak);

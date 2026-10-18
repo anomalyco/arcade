@@ -26,6 +26,7 @@ export class PropDressing {
   private houses: HouseFurnishing[] = []
   private instances: PropInstance[] = []
   private usedIds: string[] = []
+  private currentZoomLod: 0 | 1 | null = null
 
   /** `lampAux`: the map light slot lamp shades glow through (Outbreak's `TABLE_LAMP_SLOT`). */
   constructor(renderer: Pick<Renderer, "addModel" | "setModel">, lampAux?: number, library?: PropLibrary) {
@@ -65,9 +66,9 @@ export class PropDressing {
     const mStyle = Math.round((s as { modelStyle?: number }).modelStyle ?? st.modelStyle ?? 0)
     const look =
       mStyle === 1 || mStyle === 2 || mStyle === 4
-        ? { brightness: s.propBrightness * 0.94, ao: Math.min(1, Math.max(s.propAO, 0.78)), saturation: s.propSaturation * 1.16 }
+        ? { brightness: s.propBrightness * 0.94, ao: Math.min(1, Math.max(s.propAO, 0.62)), saturation: s.propSaturation * 1.16 }
         : mStyle === 3
-          ? { brightness: s.propBrightness * 0.90, ao: Math.min(1, Math.max(s.propAO, 0.88)), saturation: s.propSaturation * 1.12 }
+          ? { brightness: s.propBrightness * 0.90, ao: Math.min(1, Math.max(s.propAO, 0.68)), saturation: s.propSaturation * 1.12 }
           : { brightness: s.propBrightness, ao: s.propAO, saturation: s.propSaturation }
     this.models.setLook(look)
     const houses = furnishedHouses(town)
@@ -102,7 +103,15 @@ export class PropDressing {
       queueMicrotask(release)
     }
     const effectiveLodZoom = mStyle === 1 || mStyle === 2 ? Math.max(s.propLodZoom, 52) : s.propLodZoom
-    const lod = Math.max(quality.minPropLod, zoom > effectiveLodZoom ? 1 : 0)
+    const hysteresis = 2.5
+    if (this.currentZoomLod === null) {
+      this.currentZoomLod = zoom > effectiveLodZoom ? 1 : 0
+    } else if (this.currentZoomLod === 0 && zoom > effectiveLodZoom + hysteresis) {
+      this.currentZoomLod = 1
+    } else if (this.currentZoomLod === 1 && zoom < effectiveLodZoom - hysteresis) {
+      this.currentZoomLod = 0
+    }
+    const lod = Math.max(quality.minPropLod, this.currentZoomLod)
     const [x0, z0, x1, z1] = view
     return this.batches.collect(
       this.instances,
