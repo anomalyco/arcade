@@ -1,6 +1,34 @@
 import type { LabControl } from "@arcade/kit/lab-panel"
 import type { LookSettings } from "@arcade/kit/look"
 
+export const GROUND_STYLES = [
+  { id: "today", label: "Today (stippled)", value: 0 },
+  { id: "weathered-suburban", label: "Weathered Suburban", value: 1 },
+  { id: "rain-slick", label: "Rain-Slick Nocturne", value: 2 },
+  { id: "cracked-overgrown", label: "Cracked & Overgrown", value: 3 },
+] as const
+
+export const LIGHT_SAT_STYLES = [
+  { id: "today", label: "Today (orange wash)", value: 0 },
+  { id: "true-pigment", label: "True Pigment in Light", value: 1 },
+  { id: "warm-cool-split", label: "Warm Beam / Cold Moon Split", value: 2 },
+  { id: "deep-amber", label: "Deep Amber Halation (RE)", value: 3 },
+] as const
+
+export const MODEL_STYLES = [
+  { id: "today", label: "Today (LOD1 at zoom 46)", value: 0 },
+  { id: "clean-satin", label: "Clean LOD0 + Grounded Satin", value: 1 },
+  { id: "crisp-rim", label: "Crisp Bevel & Rim Relief", value: 2 },
+  { id: "matte-cavity", label: "Weathered Matte (Fast LOD1)", value: 3 },
+] as const
+
+export const STYLE_GRADES = [
+  { id: "today", label: "Today", value: 0 },
+  { id: "survival-horror", label: "Survival Horror (RE Biohazard)", value: 1 },
+  { id: "bleach-nocturne", label: "Bleach Nocturne (28 Days)", value: 2 },
+  { id: "amber-lantern", label: "Amber Lantern & Deep Shroud", value: 3 },
+] as const
+
 /**
  * Trims on top of the day cycle: the Day → Dusk → Noir blend still sets the look and the lights for the hour, and
  * these scale or offset what it produces, so a tuned look survives the clock moving. Every default is the identity,
@@ -9,6 +37,14 @@ import type { LookSettings } from "@arcade/kit/look"
 export type OutbreakLookTrims = {
   /** Curated preset last applied (`look/presets.ts`); editing a knob afterwards keeps the name as a starting point. */
   lookIdea: string
+  /** Rendering round Axis A — Ground material & breakup style (`0` Today, `1` Weathered Suburban, `2` Rain-Slick Nocturne, `3` Cracked & Overgrown). */
+  groundStyle: number
+  /** Rendering round Axis B — Lighting saturation curve (`0` Today, `1` True Pigment in Light, `2` Warm Beam / Cold Moon Split, `3` Deep Amber Halation). */
+  lightSatStyle: number
+  /** Rendering round Axis C — Model & furniture shading (`0` Today, `1` Clean LOD0 + Grounded Satin, `2` Crisp Bevel & Rim Relief, `3` Weathered Matte). */
+  modelStyle: number
+  /** Rendering round Axis D — Overall style & grade (`0` Today, `1` Survival Horror, `2` Bleach Nocturne, `3` Amber Lantern). */
+  styleGrade: number
   /** World colour after the grade (× the hour's saturation). */
   lookSaturation: number
   lookExposure: number
@@ -64,6 +100,10 @@ export type OutbreakLookTrims = {
 
 export const DEFAULT_LOOK_TRIMS: OutbreakLookTrims = {
   lookIdea: "today",
+  groundStyle: 0,
+  lightSatStyle: 0,
+  modelStyle: 0,
+  styleGrade: 0,
   lookSaturation: 1,
   lookExposure: 1,
   lookContrast: 1,
@@ -91,12 +131,17 @@ export const DEFAULT_LOOK_TRIMS: OutbreakLookTrims = {
   tableLampPower: 1,
 }
 
+const ROUND = "Look · Rendering round"
 const GRADE = "Look · Grade"
 const LIGHTS = "Look · Lights"
 const LIGHT_COLOUR = "Look · Light colour"
 const AIR = "Look · Air"
 
 export const lookTrimControls: LabControl[] = [
+  { key: "groundStyle", label: "Ground style", group: ROUND, options: GROUND_STYLES.map(s => ({ label: s.label, value: s.value })) },
+  { key: "lightSatStyle", label: "Lighting saturation", group: ROUND, options: LIGHT_SAT_STYLES.map(s => ({ label: s.label, value: s.value })) },
+  { key: "modelStyle", label: "Model & prop shading", group: ROUND, options: MODEL_STYLES.map(s => ({ label: s.label, value: s.value })) },
+  { key: "styleGrade", label: "Overall style & grade", group: ROUND, options: STYLE_GRADES.map(s => ({ label: s.label, value: s.value })) },
   { key: "lookSaturation", label: "World saturation", group: GRADE, min: 0, max: 3, step: 0.05, unit: "×" },
   { key: "lookExposure", label: "Exposure", group: GRADE, min: 0.5, max: 1.6, step: 0.02, unit: "×" },
   { key: "lookContrast", label: "Contrast", group: GRADE, min: 0.7, max: 1.4, step: 0.02, unit: "×" },
@@ -145,12 +190,20 @@ export function trimLook(base: LookSettings, t: Partial<OutbreakLookTrims> | und
   Object.assign(out, base)
   if (!t) return out
   const rule = lightRuleWeight(t, darkness)
-  out.saturation = mix(clamp(base.saturation * (t.lookSaturation ?? 1), 0, 1.6), clamp((t.worldSaturation ?? 0.06) * (t.lookSaturation ?? 1), 0, 1.6), rule)
-  out.exposure = base.exposure * (t.lookExposure ?? 1)
-  out.contrast = clamp(base.contrast * (t.lookContrast ?? 1), 0.6, 1.8)
-  out.vignette = base.vignette * (t.lookVignette ?? 1)
-  out.temperature = clamp(base.temperature + (t.lookTemperature ?? 0), -1, 1)
-  out.selectiveColor = mix(clamp(base.selectiveColor * (t.beamColour ?? 1), 0, 1.5), clamp((t.litColour ?? 0.92) * (t.beamColour ?? 1), 0, 1.5), rule)
+  const satStyle = Math.round(t.lightSatStyle ?? 0)
+  const grade = Math.round(t.styleGrade ?? 0)
+  const worldSat = satStyle === 3 ? Math.min(t.worldSaturation ?? 0.06, 0.03) : satStyle >= 1 ? Math.min(t.worldSaturation ?? 0.06, 0.05) : (t.worldSaturation ?? 0.06)
+  const litCol = satStyle >= 1 ? Math.max(t.litColour ?? 0.92, 0.98) : (t.litColour ?? 0.92)
+  const gradeContrast = grade === 1 ? 1.12 : grade === 2 ? 1.18 : grade === 3 ? 1.14 : 1
+  const gradeExp = grade === 1 ? 1.05 : grade === 2 ? 1.02 : grade === 3 ? 1.06 : 1
+  const gradeVig = grade === 1 ? 1.18 : grade === 2 ? 1.24 : grade === 3 ? 1.32 : 1
+  const gradeTemp = grade === 1 ? 0.04 : grade === 2 ? -0.14 : grade === 3 ? 0.10 : 0
+  out.saturation = mix(clamp(base.saturation * (t.lookSaturation ?? 1), 0, 1.6), clamp(worldSat * (t.lookSaturation ?? 1), 0, 1.6), rule)
+  out.exposure = base.exposure * (t.lookExposure ?? 1) * gradeExp
+  out.contrast = clamp(base.contrast * (t.lookContrast ?? 1) * gradeContrast, 0.6, 1.8)
+  out.vignette = base.vignette * (t.lookVignette ?? 1) * gradeVig
+  out.temperature = clamp(base.temperature + (t.lookTemperature ?? 0) + gradeTemp, -1, 1)
+  out.selectiveColor = mix(clamp(base.selectiveColor * (t.beamColour ?? 1), 0, 1.5), clamp(litCol * (t.beamColour ?? 1), 0, 1.5), rule)
   out.practicalWarmth = mix(clamp(base.practicalWarmth + (t.lampColour ?? 0), -0.8, 1.2), 0, rule)
   return out
 }
@@ -167,15 +220,21 @@ export function trimLighting<L extends {
   streetPower: number
 }>(l: L, t: Partial<OutbreakLookTrims> | undefined) {
   if (!t) return l
-  const power = t.lampPower ?? 1
+  const grade = Math.round(t.styleGrade ?? 0)
+  const power = (t.lampPower ?? 1) * (grade === 1 ? 1.15 : grade === 3 ? 1.28 : 1)
+  const roomMult = (t.roomPools ?? 1) * (grade === 1 ? 1.22 : grade === 3 ? 1.35 : 1)
+  const skyMult = (t.skyAmbient ?? 1) * (grade === 2 ? 1.18 : grade === 3 ? 0.82 : 1)
+  const moonMult = (t.moonlight ?? 1) * (grade === 2 ? 1.28 : grade === 1 ? 1.12 : 1)
+  const warmthShift = (t.lampWarmth ?? 0) + (grade === 3 ? 0.14 : grade === 2 ? -0.10 : 0)
+  const tightMult = (t.poolTightness ?? 1) * (grade === 3 ? 1.12 : 1)
   return {
-    skyFill: l.skyFill * (t.skyAmbient ?? 1),
-    moonFill: l.moonFill * (t.moonlight ?? 1),
-    practicalWarmth: clamp(l.practicalWarmth + (t.lampWarmth ?? 0), 0, 1),
-    lightFalloff: l.lightFalloff * (t.poolTightness ?? 1),
+    skyFill: l.skyFill * skyMult,
+    moonFill: l.moonFill * moonMult,
+    practicalWarmth: clamp(l.practicalWarmth + warmthShift, 0, 1),
+    lightFalloff: l.lightFalloff * tightMult,
     porchPower: l.porchPower * power,
     windowPower: l.windowPower * power,
-    roomPower: l.roomPower * power * (t.roomPools ?? 1),
+    roomPower: l.roomPower * power * roomMult,
     streetPower: l.streetPower * power,
   }
 }

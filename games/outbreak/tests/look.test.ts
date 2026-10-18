@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { createLookSettings } from "@arcade/kit/look"
 import { flashlightColor } from "../shared/flashlight"
-import { OUTBREAK_BEAN_UNIFORM_OFFSET, OUTBREAK_HERO_UNIFORM_OFFSET, packOutbreakLightingUniforms } from "../src/lighting"
+import { OUTBREAK_BEAN_UNIFORM_OFFSET, OUTBREAK_HERO_UNIFORM_OFFSET, OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET, packOutbreakLightingUniforms } from "../src/lighting"
+import { propDressingState } from "../src/props/state"
 import {
   beanTint,
   COLOUR_BLOCKS_STYLE,
@@ -187,6 +188,24 @@ describe("Outbreak look", () => {
     Object.assign(settings.survivor, { heroStyle: SOFT_BEAN_STYLE, beanWrap: 0.7, beanSheen: 1.1, beanSheenTight: 4, beanOwnColour: 0.3 })
     const packed = packOutbreakLightingUniforms(frame(settings), flashlightColor(0.92))
     expect([...packed.slice(OUTBREAK_BEAN_UNIFORM_OFFSET, OUTBREAK_BEAN_UNIFORM_OFFSET + 4)].map(v => +v.toFixed(4))).toEqual([0.7, 1.1, 4, 0.3])
+  })
+
+  test("rendering round axes: presets sync groundStyle and modelStyle and today restores 0 across all axes", () => {
+    const settings = createOutbreakSettings()
+    applyLookPreset(settings, "re-biohazard")
+    expect(settings.look.groundStyle).toBe(1)
+    expect(settings.look.lightSatStyle).toBe(2)
+    expect(settings.look.modelStyle).toBe(1)
+    expect(settings.look.styleGrade).toBe(1)
+    expect(propDressingState.modelStyle).toBe(1)
+    const packed = packOutbreakLightingUniforms(frame(settings), flashlightColor(0.92))
+    expect([...packed.slice(OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET, OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET + 4)]).toEqual([2, 1, 1, 1])
+    applyLookPreset(settings, "today")
+    expect(settings.look.groundStyle).toBe(0)
+    expect(settings.look.lightSatStyle).toBe(0)
+    expect(settings.look.modelStyle).toBe(0)
+    expect(settings.look.styleGrade).toBe(0)
+    expect(propDressingState.modelStyle).toBe(0)
   })
 
   test("co-op seats tint the simple figure a little toward their jacket", () => {

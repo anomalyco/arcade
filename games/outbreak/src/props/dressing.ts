@@ -61,13 +61,21 @@ export class PropDressing {
       rebuildLevel()
     }
     if (!on) return NONE
-    this.models.setLook({ brightness: s.propBrightness, ao: s.propAO, saturation: s.propSaturation })
+    const mStyle = Math.round((s as { modelStyle?: number }).modelStyle ?? st.modelStyle ?? 0)
+    const look =
+      mStyle === 1 || mStyle === 2
+        ? { brightness: s.propBrightness * 0.94, ao: Math.min(1, Math.max(s.propAO, 0.78)), saturation: s.propSaturation * 1.16 }
+        : mStyle === 3
+          ? { brightness: s.propBrightness * 0.90, ao: Math.min(1, Math.max(s.propAO, 0.88)), saturation: s.propSaturation * 1.12 }
+          : { brightness: s.propBrightness, ao: s.propAO, saturation: s.propSaturation }
+    this.models.setLook(look)
     const houses = furnishedHouses(town)
     if (houses !== this.houses) {
       this.houses = houses
       this.instances = houses.flatMap(instancesOf)
     }
-    const lod = Math.max(quality.minPropLod, zoom > s.propLodZoom ? 1 : 0)
+    const effectiveLodZoom = mStyle === 1 || mStyle === 2 ? Math.max(s.propLodZoom, 52) : s.propLodZoom
+    const lod = Math.max(quality.minPropLod, zoom > effectiveLodZoom ? 1 : 0)
     const [x0, z0, x1, z1] = view
     return this.batches.collect(this.instances, () => lod, p => p.x > x0 - 2 && p.x < x1 + 2 && p.z > z0 - 2 && p.z < z1 + 2)
   }

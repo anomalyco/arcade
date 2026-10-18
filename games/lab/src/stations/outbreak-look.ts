@@ -26,6 +26,9 @@ const variants: StationVariant[] = [
   { id: "cold-moonlight", group: "Look", boardOption: "4", label: "Colder moonlight", note: "Blue-grey moonlit street, dimmer lamps.", setup: look("cold-moonlight") },
   { id: "vivid-world", group: "Look", boardOption: "5", label: "Vivid world, grey hero", note: "More colour in the world, a grey mannequin survivor.", setup: look("vivid-world") },
   { id: "big-walk", group: "Look", boardOption: "6", label: "Big Walk contrast", note: "A flat dark figure with a crisp rim against a richer house.", setup: look("big-walk") },
+  { id: "re-biohazard", group: "Look", label: "RE Biohazard (round)", note: "Weathered suburban ground, warm/cool lighting saturation split, clean LOD0 satin furniture, and survival-horror shadow toe.", setup: look("re-biohazard") },
+  { id: "rain-nocturne", group: "Look", label: "Rain-Slick Nocturne (round)", note: "Rain-slick asphalt puddles catching the beam, warm/cool lighting split, crisp bevel & rim relief on props, and bleach nocturne grade.", setup: look("rain-nocturne") },
+  { id: "overgrown-lantern", group: "Look", label: "Overgrown & Amber (round)", note: "Cracked & moss-overgrown street, deep amber halation with rich bounce colour, grounded satin props, and intimate lantern pools.", setup: look("overgrown-lantern") },
   // The survivor's style over the Look; "From the look" keeps the one the Look preset chose.
   { id: "hero-from-look", group: "Hero", label: "From the look", note: "The survivor style the Look preset sets.", setup: [] },
   { id: "hero-colour-blocks", group: "Hero", label: "Colour Blocks", note: "Blocky low-poly survivors with chamfered clothes, hats, packs and holsters; 4 distinct people in co-op.", setup: hero(5) },

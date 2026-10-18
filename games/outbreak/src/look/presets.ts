@@ -70,6 +70,27 @@ export const OUTBREAK_LOOK_PRESETS: readonly OutbreakLookPreset[] = [
     note: "A flat dark figure with a crisp rim against a richer, brighter house.",
     knobs: { ...TODAY, ...hero(2), lookSaturation: 1.8, lookExposure: 1.14, skyAmbient: 1.35, roomPools: 1.35, lampColour: 0.35, lookContrast: 1.06 },
   },
+  {
+    id: "re-biohazard",
+    label: "RE Biohazard (rendering round)",
+    version: 1,
+    note: "Weathered suburban asphalt & turf, true pigment inside warm light against cold moonlit shadows, clean LOD0 satin furniture, and survival-horror shadow toe.",
+    knobs: { ...TODAY, groundStyle: 1, lightSatStyle: 2, modelStyle: 1, styleGrade: 1 },
+  },
+  {
+    id: "rain-nocturne",
+    label: "Rain-Slick Nocturne (rendering round)",
+    version: 1,
+    note: "Rain-slick wheel ruts & puddles catching the beam, warm/cool lighting split, crisp bevel & rim relief on props, and taut overcast grade.",
+    knobs: { ...TODAY, groundStyle: 2, lightSatStyle: 2, modelStyle: 2, styleGrade: 2 },
+  },
+  {
+    id: "overgrown-lantern",
+    label: "Overgrown & Amber (rendering round)",
+    version: 1,
+    note: "Cracked & moss-overgrown street, deep amber lamp halation with rich bounce colour, grounded satin props, and intimate lantern pools.",
+    knobs: { ...TODAY, groundStyle: 3, lightSatStyle: 3, modelStyle: 1, styleGrade: 3 },
+  },
 ]
 
 export function lookPreset(id: string): OutbreakLookPreset | undefined {
