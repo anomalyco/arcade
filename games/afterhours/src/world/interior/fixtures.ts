@@ -328,8 +328,23 @@ export function chalkboard(b: Builder, x: number, z: number, yaw: number, w = 2.
 
 /** Papers pinned to a wall in a w × h area centred at (x, y, z), back at +Z. */
 export function wallPapers(b: Builder, x: number, y: number, z: number, yaw: number, w: number, h: number, rnd: () => number, n = 8) {
-  const m = T(x, y, z, yaw)
-  for (let k = 0; k < n; k++) b.quad(M.paper, m.clone().multiply(T((rnd() - 0.5) * (w - 0.2), (rnd() - 0.5) * (h - 0.25), -0.003 - k * 0.0006, Math.PI, 0, (rnd() - 0.5) * 0.1)), 0.21, 0.28, { cast: false })
+  // Sheets face the room (local +Z) on the FINISHED wall surface behind (x, z), found at flush; overlapping sheets are
+  // kept 3.5 mm apart by the depth pass. Randoms are drawn now so the storey's sequence doesn't depend on flush order.
+  const sheets = Array.from({ length: n }, () => [(rnd() - 0.5) * (w - 0.2), (rnd() - 0.5) * (h - 0.25), (rnd() - 0.5) * 0.1] as const)
+  b.defer(() => {
+    const nx = Math.round(Math.sin(yaw))
+    const nz = Math.round(Math.cos(yaw))
+    const sx = x - nx * 0.05
+    const sz = z - nz * 0.05
+    const f = b.face(sx, y, sz, nx, nz)
+    const found = nx !== 0 ? f !== sx : f !== sz
+    const d0 = found ? (nx !== 0 ? (f - x) * nx : (f - z) * nz) : 0
+    const m = T(x, y, z, yaw)
+    const save = b.depthGap
+    b.depthGap = 0.0035
+    sheets.forEach(([u, v, roll], k) => b.quad(M.paper, m.clone().multiply(T(u, v, d0 + 0.004 + k * 0.0006, 0, 0, roll)), 0.21, 0.28, { cast: false }))
+    b.depthGap = save
+  })
 }
 
 // ------------------------------------------------------------------------------------------------ helpers

@@ -44,7 +44,7 @@ export async function build(ctx: WorldContext): Promise<WorldModule> {
     if (h.update) updates.push(h.update)
     proxies[i] = h.proxy ?? null
     await pause()
-    b.flush()
+    await b.flushAsync(ctx.scene, pause)
     void bakeModels(b)
     groups[i] = b.group
     builders[i] = b
@@ -54,7 +54,7 @@ export async function build(ctx: WorldContext): Promise<WorldModule> {
   const core = new Builder(ctx, "core")
   buildSlabs(core)
   await buildCore(core, pause)
-  core.flush()
+  await core.flushAsync(ctx.scene, pause)
   await pause()
   const lift = buildLift(ctx, ctx.scene)
   await buildOne(first)

@@ -28,8 +28,8 @@ export function biosafetyCabinet(b: Builder, x: number, z: number, yaw: number, 
   b.boxM(P.stainless, sash, 1.4, 0.05, 0.03, 0, -0.46, 0)
   b.rod(M.steel, pt(sash, -0.4, -0.5, -0.03), pt(sash, 0.4, -0.5, -0.03), 0.01, 6)
   b.boxM(P.dark, m, 1.3, 0.12, 0.004, 0, 2.12, -0.412, { cast: false })
-  b.boxM(uv ? GL.ledGreen : M.hazardOff, m, 0.02, 0.02, 0.003, -0.5, 2.12, -0.415, { cast: false })
-  b.boxM(uv ? GL.uv : M.diffuserOff, m, 0.1, 0.03, 0.003, 0.45, 2.12, -0.415, { cast: false })
+  b.boxM(uv ? GL.ledGreen : M.hazardOff, m, 0.02, 0.02, 0.003, -0.5, 2.12, -0.4195, { cast: false })
+  b.boxM(uv ? GL.uv : M.diffuserOff, m, 0.1, 0.03, 0.003, 0.45, 2.12, -0.4195, { cast: false })
   b.cyl("metal_galvanized", T(...pt(m, 0, 2.34, 0.1)).multiply(T(0, (CEIL_Y - 2.34 - FLOOR_Y) / 2, 0)), 0.12, 0.12, CEIL_Y - FLOOR_Y - 2.34, 14)
   if (uv) {
     b.boxM(GL.uv, m, 1.2, 0.022, 0.022, 0, 1.9, -0.05, { cast: false })

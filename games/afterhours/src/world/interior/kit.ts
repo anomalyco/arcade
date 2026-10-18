@@ -150,6 +150,21 @@ import { type DocumentPlacement, documentGeometry, documentMaterial } from "../.
  *   doorway({ hardware: "none" }) · bulkhead() · screen({ material }) · liftGate() · hoardingWall() · plasticSheet() ·
  *   wallTarp() · POLY (milky polythene) · washroom() · framedMirror() · WASHROOM_LAYER · fittings bulletin/hazardLight
  *   work on either spine wall. Retired: lobby.ts, corridor.ts, rooms.ts, storeys.ts, furnish.ts, props.placeProps.
+ *   Hygiene round: finishedFace() / Builder.face() / surfaceDepth() (the finished wall surface at a point) ·
+ *   Builder.defer() (run at flush, every wall known) · Builder.solid() / registerSolid() / solidsOf() / newSolidId()
+ *   (wall solid registry; wall() registers every span, head and sill) · wall extent.joint/id · addDocuments() ·
+ *   Builder.depthGap / fixedDepth / depthObstacles · releaseDepthRegistry(). Vinyl seam strips removed (styles).
+ *
+ * DEPTH HYGIENE (automatic, at flush; gate: `bun run audit:hygiene`)
+ *   - Wall joints close on the registered wall solids (T: sink, L: X walls own the corner, collinear: butt); an end
+ *     stopping ≤ 45 mm short of a wall is extended to it (no slits).
+ *   - Coincident structural faces (walls, floors, ceilings, joints) are trimmed: one face per spot.
+ *   - Any other face within 3.5 mm of a same-facing face (another primitive, structure, an earlier builder's
+ *     geometry, a square-on model's box) is pushed to 4.5 mm by stretching its primitive (only that face moves).
+ *     Place details flush if convenient: the kit separates them. Papers keep 3.5 mm (addDocuments).
+ *   - Wall-mounted items (door frames, casings, plates, labels, hardware, extinguishers, bulletins, hazard lights,
+ *     fountains, wall papers) find the finished surface (tile, lining, finish layers) at flush via finishedFace().
+ *   - Troffers that would straddle a wall move one grid step off it (or are dropped).
  */
 
 export type Mat = MaterialName | THREE.Material | Paint
@@ -584,6 +599,8 @@ const QUAD = [0, 1, 2, 0, 2, 3]
  * Moving builders (door leaves, lift car and gates) opt out (`Builder.depthShared = false`).
  */
 type DTri = {
+  /** Visit stamp (lookups dedupe faces that sit in several cells). */
+  st?: number
   pr: number
   /** First vertex of the triangle in its part. */
   vi: number
@@ -595,10 +612,10 @@ type DTri = {
   u1: number
   v1: number
 }
-const depthRegistry = new WeakMap<object, Map<string, DTri[]>>()
+const depthRegistry = new WeakMap<object, Map<number, DTri[]>>()
 const DTOL = 0.0035
 const DGAP = 0.0045
-const dkey = (ax: number, s: number, c: number) => `${ax}|${s}|${Math.floor(c / DTOL)}`
+let depthStamp = 0
 /**
  * Adds paper documents (render/documents placements, storey-local coordinates) to the builder, one primitive per sheet
  * in one merged draw: each sheet is lifted ≥ 3.5 mm off its surface and the depth pass keeps it 3.5 mm clear of
@@ -608,7 +625,17 @@ export function addDocuments(b: Builder, list: readonly DocumentPlacement[]) {
   const save = b.depthGap
   b.depthGap = 0.0035
   for (const p of list)
-    b.add(documentMaterial(), documentGeometry([{ ...p, offset: Math.max(p.offset ?? 0, 0.0035) }]), { worldUV: false, cast: false })
+    // Flat sheets lie on model desks whose catalogue height can be a millimetre short of the real top: 5 mm there.
+    b.add(
+      documentMaterial(),
+      documentGeometry([
+        { ...p, offset: Math.max(p.offset ?? 0, Math.abs(p.normal?.[1] ?? 0) > 0.9 ? 0.005 : 0.0035) },
+      ]),
+      {
+        worldUV: false,
+        cast: false,
+      },
+    )
   b.depthGap = save
 }
 
@@ -617,6 +644,41 @@ export function releaseDepthRegistry(ctx: WorldContext) {
   depthRegistry.delete(ctx.colliders)
 }
 function separateDepth(builders: Builder[]) {
+  const t0 = performance.now()
+  for (const _ of separateDepthSteps(builders)) void _
+  depthTotal(performance.now() - t0)
+}
+/** The same pass, yielding to the browser between chunks (≈ ≤ 50 ms each) so a storey never freezes the page. */
+async function separateDepthAsync(builders: Builder[], pause: () => Promise<void>) {
+  let busy = 0
+  let t = performance.now()
+  for (const _ of separateDepthSteps(builders)) {
+    void _
+    const now = performance.now()
+    busy += now - t
+    if (now - t > 40) {
+      await pause()
+      t = performance.now()
+      depthT = t
+    } else t = now
+  }
+  depthTotal(busy + performance.now() - t)
+}
+const depthTotal = (ms: number) => {
+  const g = globalThis as { __interiorDepthMs?: number }
+  g.__interiorDepthMs = (g.__interiorDepthMs ?? 0) + ms
+}
+const depthPhase: Record<string, number> = ((
+  globalThis as { __interiorDepthPhase?: Record<string, number> }
+).__interiorDepthPhase = {})
+let depthT = 0
+const phase = (name: string) => {
+  const t = performance.now()
+  depthPhase[name] = (depthPhase[name] ?? 0) + t - depthT
+  depthT = t
+}
+function* separateDepthSteps(builders: Builder[]): Generator<void> {
+  depthT = performance.now()
   type P = {
     pt: Part
     s: number
@@ -654,49 +716,83 @@ function separateDepth(builders: Builder[]) {
     prims.push(...mine.reverse())
     list.length = 0
   }
-  const buckets = new Map<string, DTri[]>()
-  const put = (m: Map<string, DTri[]>, t: DTri) => {
-    const k = dkey(t.ax, t.s, t.c)
-    let l = m.get(k)
-    if (!l) m.set(k, (l = []))
-    l.push(t)
+  // One bucket map: the world registry for shared builders (earlier builders' faces have pr −1 fixed / −2 movable,
+  // model boxes −3 while this batch runs), so every lookup is a single read.
+  const buckets: Map<number, DTri[]> = reg ?? new Map()
+  // Buckets: plane (axis, facing, 3.5 mm slab) × 1 m cells in the plane, so a lookup only meets nearby faces.
+  const cellKeys = (t: DTri, c: number, fn: (k: number) => void, big = false) => {
+    // Numeric key: ((slab · 512 + u cell) · 512 + v cell) · 6 + axis/facing (1 m cells, ±256 m; slabs ±175 m).
+    // Faces over more than 16 cells (floors, ceilings, long walls) live in one negative per-slab key instead.
+    const af = t.ax * 2 + (t.s > 0 ? 1 : 0)
+    const slab = Math.floor(c / DTOL) + 50000
+    const gu1 = Math.floor(t.u1)
+    const gv1 = Math.floor(t.v1)
+    if (big || (gu1 - Math.floor(t.u0) + 1) * (gv1 - Math.floor(t.v0) + 1) > 16) {
+      fn(-(slab * 6 + af + 1))
+      if (!big) return
+    }
+    const pre = slab * 512
+    for (let gu = Math.floor(t.u0); gu <= gu1; gu++)
+      for (let gv = Math.floor(t.v0); gv <= gv1; gv++) fn(((pre + gu + 256) * 512 + gv + 256) * 6 + af)
+  }
+  // A face is stored in its slab and both neighbours, so a lookup reads one slab only (lookups outnumber stores).
+  const put = (m: Map<number, DTri[]>, t: DTri) => {
+    for (const d of [-1, 0, 1])
+      cellKeys(t, t.c + d * DTOL, (k) => {
+        let l = m.get(k)
+        if (!l) m.set(k, (l = []))
+        l.push(t)
+      })
+  }
+  const remove = (m: Map<number, DTri[]>, t: DTri) => {
+    for (const d of [-1, 0, 1])
+      cellKeys(t, t.c + d * DTOL, (k) => {
+        const l = m.get(k)
+        const i = l ? l.indexOf(t) : -1
+        if (i >= 0) l!.splice(i, 1)
+      })
   }
   const triOf = (pi: number, a: number[], v: number): DTri | null => {
-    const ax0 = a[v * 3]!,
-      ay0 = a[v * 3 + 1]!,
-      az0 = a[v * 3 + 2]!
-    const ux = a[v * 3 + 3]! - ax0,
-      uy = a[v * 3 + 4]! - ay0,
-      uz = a[v * 3 + 5]! - az0
-    const wx = a[v * 3 + 6]! - ax0,
-      wy = a[v * 3 + 7]! - ay0,
-      wz = a[v * 3 + 8]! - az0
+    const o = v * 3
+    const ux = a[o + 3]! - a[o]!,
+      uy = a[o + 4]! - a[o + 1]!,
+      uz = a[o + 5]! - a[o + 2]!
+    const wx = a[o + 6]! - a[o]!,
+      wy = a[o + 7]! - a[o + 1]!,
+      wz = a[o + 8]! - a[o + 2]!
     const nx = uy * wz - uz * wy,
       ny = uz * wx - ux * wz,
       nz = ux * wy - uy * wx
-    const L = Math.hypot(nx, ny, nz)
-    if (L < 1e-9) return null
-    const ax = Math.abs(nx) > 0.9995 * L ? 0 : Math.abs(ny) > 0.9995 * L ? 1 : Math.abs(nz) > 0.9995 * L ? 2 : -1
+    const L2 = nx * nx + ny * ny + nz * nz
+    if (L2 < 1e-18) return null
+    const k = 0.999 * L2 // |n_axis| > 0.9995 |n|  ⇔  n_axis² > 0.999 |n|²
+    const ax = nx * nx > k ? 0 : ny * ny > k ? 1 : nz * nz > k ? 2 : -1
     if (ax < 0) return null
     const s = (ax === 0 ? nx : ax === 1 ? ny : nz) > 0 ? 1 : -1
     const i0 = ax === 0 ? 1 : 0
     const i1 = ax === 2 ? 1 : 2
-    const c0 = [ax0, ay0, az0]
-    const c1 = [ax0 + ux, ay0 + uy, az0 + uz]
-    const c2 = [ax0 + wx, ay0 + wy, az0 + wz]
+    const p0 = a[o + i0]!,
+      p1 = a[o + 3 + i0]!,
+      p2 = a[o + 6 + i0]!
+    const q0 = a[o + i1]!,
+      q1 = a[o + 3 + i1]!,
+      q2 = a[o + 6 + i1]!
     return {
       pr: pi,
       vi: v,
       ax,
       s,
-      c: (c0[ax]! + c1[ax]! + c2[ax]!) / 3,
-      u0: Math.min(c0[i0]!, c1[i0]!, c2[i0]!),
-      u1: Math.max(c0[i0]!, c1[i0]!, c2[i0]!),
-      v0: Math.min(c0[i1]!, c1[i1]!, c2[i1]!),
-      v1: Math.max(c0[i1]!, c1[i1]!, c2[i1]!),
+      c: (a[o + ax]! + a[o + 3 + ax]! + a[o + 6 + ax]!) / 3,
+      u0: Math.min(p0, p1, p2),
+      u1: Math.max(p0, p1, p2),
+      v0: Math.min(q0, q1, q2),
+      v1: Math.max(q0, q1, q2),
     }
   }
-  prims.forEach((p, pi) => {
+
+  for (let pi = 0; pi < prims.length; pi++) {
+    if (pi % 2000 === 1999) yield
+    const p = prims[pi]!
     const a = p.pt.pos
     let x0 = Infinity,
       y0 = Infinity,
@@ -716,25 +812,55 @@ function separateDepth(builders: Builder[]) {
       if (z > z1) z1 = z
     }
     p.vol = Math.max(x1 - x0, 0.001) * Math.max(y1 - y0, 0.001) * Math.max(z1 - z0, 0.001)
+    p.tris = rectsOf(pi)
+    for (const t of p.tris) put(buckets, t)
+  }
+  // A primitive's axis-aligned faces merged per plane (0.5 mm) into rectangles: a cylinder cap or a subdivided face is
+  // one entry, which keeps the lookups cheap.
+  function rectsOf(pi: number): DTri[] {
+    const p = prims[pi]!
+    const a = p.pt.pos
+    const by = new Map<number, DTri>()
     for (let v = p.s; v + 2 < p.e; v += 3) {
       const t = triOf(pi, a, v)
       if (!t) continue
-      p.tris.push(t)
-      put(buckets, t)
+      const k = Math.round(t.c / 0.0005) * 6 + t.ax * 2 + (t.s > 0 ? 1 : 0)
+      const r = by.get(k)
+      if (!r) by.set(k, t)
+      else {
+        r.u0 = Math.min(r.u0, t.u0)
+        r.u1 = Math.max(r.u1, t.u1)
+        r.v0 = Math.min(r.v0, t.v0)
+        r.v1 = Math.max(r.v1, t.v1)
+      }
     }
-  })
-  const near = (t: DTri, m: Map<string, DTri[]>, fn: (o: DTri) => void) => {
-    const kc = Math.floor(t.c / DTOL)
-    for (let d = -1; d <= 1; d++) {
-      const l = m.get(`${t.ax}|${t.s}|${kc + d}`)
-      if (l) for (const o of l) fn(o)
-    }
+    return [...by.values()]
+  }
+  const near = (t: DTri, m: Map<number, DTri[]>, fn: (o: DTri) => void) => {
+    const st = ++depthStamp
+    // The slab's big faces, then the cells this face covers.
+    cellKeys(
+      t,
+      t.c,
+      (k) => {
+        const l = m.get(k)
+        if (l)
+          for (const o of l) {
+            if (o.st === st) continue
+            o.st = st
+            fn(o)
+          }
+      },
+      true,
+    )
   }
   const overlaps = (t: DTri, o: DTri) =>
     Math.abs(t.c - o.c) < DTOL &&
     Math.min(t.u1, o.u1) - Math.max(t.u0, o.u0) > 0.0005 &&
     Math.min(t.v1, o.v1) - Math.max(t.v0, o.v0) > 0.0005
 
+  phase("tris")
+  yield
   // 1. Trim coincident structural faces. A box face is 6 consecutive vertices (two triangles on one rectangle).
   type Rect = [number, number, number, number]
   prims.forEach((p, pi) => {
@@ -772,9 +898,8 @@ function separateDepth(builders: Builder[]) {
         rects = next
       }
       near(f, buckets, (o) => {
-        if (o.pr > pi && prims[o.pr]!.fixed) cut(o)
+        if (o.pr === -1 || (o.pr > pi && prims[o.pr]!.fixed)) cut(o)
       })
-      if (reg) near(f, reg, (o) => o.pr === -1 && cut(o))
       if (
         rects.length === 1 &&
         rects[0]![0] === f.u0 &&
@@ -837,16 +962,29 @@ function separateDepth(builders: Builder[]) {
     }
   })
 
+  phase("trim")
+  yield
   // Model boxes: their faces are fixed obstacles for this pass only.
-  const obst = new Map<string, DTri[]>()
+  const obst: DTri[] = []
   for (const b of builders)
     for (const o of b.depthObstacles)
       for (let ax = 0; ax < 3; ax++)
         for (const s of [-1, 1]) {
           const i0 = ax === 0 ? 1 : 0
           const i1 = ax === 2 ? 1 : 2
-          put(obst, { pr: -1, vi: 0, ax, s, c: s > 0 ? o.max[ax]! : o.min[ax]!, u0: o.min[i0]!, u1: o.max[i0]!, v0: o.min[i1]!, v1: o.max[i1]! })
+          obst.push({
+            pr: -3,
+            vi: 0,
+            ax,
+            s,
+            c: s > 0 ? o.max[ax]! : o.min[ax]!,
+            u0: o.min[i0]!,
+            u1: o.max[i0]!,
+            v0: o.min[i1]!,
+            v1: o.max[i1]!,
+          })
         }
+  for (const o of obst) put(buckets, o)
   // A face pressed onto structure (a bottom on the floor, a back against a wall) can't be seen: its conflicts don't count.
   const solids = solidsOf(builders[0]!.ctx)
   const sg = new Map<string, Solid[]>()
@@ -864,7 +1002,7 @@ function separateDepth(builders: Builder[]) {
     let r = buriedCache.get(t)
     if (r !== undefined) return r
     const w = [0, 0, 0]
-    w[t.ax] = t.c + t.s * 0.002
+    w[t.ax] = t.c + t.s * DGAP
     w[t.ax === 0 ? 1 : 0] = (t.u0 + t.u1) / 2
     w[t.ax === 2 ? 1 : 2] = (t.v0 + t.v1) / 2
     r = t.ax === 1 && t.s < 0 && Math.abs(t.c - floorY) < 0.005
@@ -885,27 +1023,34 @@ function separateDepth(builders: Builder[]) {
     return r
   }
 
+  phase("prep")
+  yield
   // 2. Separate movable primitives, smallest first.
   const order = prims
     .map((_, i) => i)
     .filter((i) => !prims[i]!.fixed)
     .sort((a, b) => prims[a]!.vol - prims[b]!.vol)
-  // A move can create a new contact with a primitive already placed: repeat until nothing moves (bounded).
-  for (let pass = 0, moved = 1; pass < 10 && moved; pass++) {
+  // A move can create a new contact with a primitive already placed: repeat until nothing moves (bounded). Later
+  // passes revisit only primitives that had to move or that a moved face now touches.
+  let active = new Uint8Array(prims.length).fill(1)
+  for (let pass = 0, moved = 1; pass < 30 && moved; pass++) {
     moved = 0
+    const next = new Uint8Array(prims.length)
+    let n = 0
     for (const pi of order) {
+      if (!active[pi]) continue
+      if (++n % 1500 === 0) yield
       const p = prims[pi]!
       const need = [0, 0, 0, 0, 0, 0]
       const plane = [0, 0, 0, 0, 0, 0]
       for (const t of p.tris) {
-        const test = (o: DTri, registered: boolean) => {
+        const test = (o: DTri) => {
+          if (o.pr === pi || !overlaps(t, o) || buried(t)) return
           // The smaller of two movable primitives yields (a strict order, so the passes converge).
-          if (!registered) {
-            if (o.pr === pi) return
+          if (o.pr >= 0) {
             const q = prims[o.pr]!
             if (!q.fixed && (q.vol < p.vol || (q.vol === p.vol && o.pr > pi))) return
           }
-          if (!overlaps(t, o) || buried(t)) return
           const dc = (t.c - o.c) * t.s
           const slot = t.ax * 2 + (t.s > 0 ? 1 : 0)
           if (p.gap - dc > need[slot]!) {
@@ -913,9 +1058,7 @@ function separateDepth(builders: Builder[]) {
             plane[slot] = t.c
           }
         }
-        near(t, buckets, (o) => test(o, false))
-        if (reg) near(t, reg, (o) => test(o, true))
-        if (obst.size) near(t, obst, (o) => test(o, true))
+        near(t, buckets, test)
       }
       // Push each conflicting face out by stretching the primitive: only the vertices at that face's plane move, so a
       // layer, plate or cabinet keeps its other faces (and its contact with the floor or wall) where they were.
@@ -933,19 +1076,25 @@ function separateDepth(builders: Builder[]) {
       }
       if (!any) continue
       moved++
+      next[pi] = 1
       const a = p.pt.pos
-      for (const t of p.tris) {
-        const n = triOf(pi, a, t.vi)
-        if (!n) continue
-        const old = buckets.get(dkey(t.ax, t.s, t.c))
-        if (old) old.splice(old.indexOf(t), 1)
-        Object.assign(t, n)
-        put(buckets, t)
-      }
+      for (const t of p.tris) remove(buckets, t)
+      p.tris = rectsOf(pi)
+      for (const t of p.tris) put(buckets, t)
+      // Whatever the moved faces now touch is revisited next pass.
+      for (const t of p.tris)
+        near(t, buckets, (o) => {
+          if (o.pr >= 0 && o.pr !== pi && overlaps(t, o)) next[o.pr] = 1
+        })
     }
+    active = next
   }
+  phase("separate")
+  yield
   // 3. Later builders treat everything emitted here as fixed.
-  if (reg) for (const p of prims) for (const t of p.tris) put(reg, { ...t, pr: p.fixed ? -1 : -2 })
+  for (const o of obst) remove(buckets, o)
+  if (reg) for (const p of prims) for (const t of p.tris) t.pr = p.fixed ? -1 : -2
+  phase("register")
 }
 
 /** An axis-aligned solid in world coordinates (a wall layer, lining, column...). `id` groups the layers of one wall. */
@@ -1342,6 +1491,20 @@ export class Builder {
             yy >= k.min[1] &&
             yy <= k.max[1],
         )
+      // A neighbour up to 45 mm short of the end is a slit: close it (extend, uncapped) and joint at its face.
+      if (!at(e.a + e.dir * 0.003, hs[0]!, c)) {
+        let g = Infinity
+        for (const k of solids) {
+          if (k.id === e.id || c < k.min[ci] - 1e-3 || c > k.max[ci] + 1e-3) continue
+          if (hs[0]! < k.min[1] || hs[0]! > k.max[1] || hs[1]! < k.min[1] || hs[1]! > k.max[1]) continue
+          const d = e.dir > 0 ? k.min[ai] - e.a : e.a - k.max[ai]
+          if (d > 0.0005 && d < g) g = d
+        }
+        if (g <= 0.045) {
+          this.extend(e, g)
+          e.a += e.dir * g
+        }
+      }
       const first = at(e.a + e.dir * 0.003, hs[0]!, c)
       const second = at(e.a + e.dir * 0.003, hs[1]!, c)
       const cap = (l0: number, l1: number) => {
@@ -1374,7 +1537,14 @@ export class Builder {
       let far = (e.dir > 0 ? k.max[ai] : k.min[ai]) - e.a
       for (let it = 0; it < 6; it++) {
         const n = at(e.a + far + e.dir * 0.003, hs[0]!, c)
-        if (!n) break
+        // Only layers of the crossing wall count; a wall continuing along our axis beyond it (the other arm of a
+        // cross, a collinear wall) is not part of the joint: sinking into it left coloured strips at the corner.
+        if (
+          !n ||
+          n.max[ai] - n.min[ai] > 0.5 ||
+          (Math.abs(n.min[ci] - jc0) < 0.002 && Math.abs(n.max[ci] - jc1) < 0.002)
+        )
+          break
         far = (e.dir > 0 ? n.max[ai] : n.min[ai]) - e.a
       }
       far = Math.abs(far)
@@ -1399,6 +1569,10 @@ export class Builder {
   private extend(e: WallEnd, ext: number) {
     const s0 = e.dir > 0 ? e.a : e.a - ext
     const s1 = e.dir > 0 ? e.a + ext : e.a
+    const by0 = e.bands[0]?.[0] ?? FLOOR_Y
+    const by1 = e.bands[e.bands.length - 1]?.[1] ?? CEIL_Y
+    if (e.axis === "x") this.solid(s0, by0, e.c0, s1, by1, e.c1, e.id)
+    else this.solid(e.c0, by0, s0, e.c1, by1, s1, e.id)
     e.bands.forEach(([b0, b1, m], bi) => {
       const sy = (bi > 0 ? "y" : "") + (bi < e.bands.length - 1 ? "Y" : "")
       if (e.axis === "x") this.box(m, s0, b0, e.c0, s1, b1, e.c1, { skip: "Xx" + sy })
@@ -1407,12 +1581,28 @@ export class Builder {
   }
 
   flush(parent: THREE.Object3D = this.ctx.scene) {
+    this.flushPrepare()
+    if (!this.separated) separateDepth(this.smallB ? [this, this.smallB] : [this])
+    this.flushFinish(parent)
+  }
+
+  /** `flush`, yielding to the browser during the depth pass (storeys: keeps every task short at boot). */
+  async flushAsync(parent: THREE.Object3D, pause: () => Promise<void>) {
+    this.flushPrepare()
+    if (!this.separated) await separateDepthAsync(this.smallB ? [this, this.smallB] : [this], pause)
+    await pause()
+    this.flushFinish(parent)
+  }
+
+  private flushPrepare() {
     for (const fn of this.deferred) fn()
     this.deferred.length = 0
     this.resolveEnds()
     if (this.smallB) for (const fn of this.smallB.deferred) fn()
     if (this.smallB) this.smallB.deferred.length = 0
-    if (!this.separated) separateDepth(this.smallB ? [this, this.smallB] : [this])
+  }
+
+  private flushFinish(parent: THREE.Object3D) {
     if (this.smallB) this.smallB.separated = true
     if (this.smallB) {
       this.smallB.flush(this.small)

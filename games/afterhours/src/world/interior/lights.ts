@@ -3,7 +3,7 @@ import { materialFor } from "../../render/materials"
 import { MODELS } from "../../render/models"
 import type { Lamp } from "../context"
 import { renderState } from "../../render/shared"
-import { type Builder, CEIL_Y, DOOR_H, FLOOR_Y, M, PANEL_ON, PANEL_WARM, T, TUBE, flicker, fluorescentPanel, glow, louvre, paint, troffer } from "./kit"
+import { type Builder, CEIL_Y, DOOR_H, FLOOR_Y, M, PANEL_ON, PANEL_WARM, T, TUBE, flicker, fluorescentPanel, glow, louvre, paint, solidsOf, troffer } from "./kit"
 import { placeModels } from "./props"
 
 // Light fixtures: each builds its visible fixture AND (when on) registers its real lamp, so no emissive "on" surface
@@ -43,28 +43,44 @@ export function troffers(b: Builder, cells: readonly TrofferCell[], opts: Troffe
   const per = opts.perLamp ?? 2
   const flick: { level: THREE.UniformNode<"float", number>; lamp: Lamp; seed: number; amount: number }[] = []
   const steady: TrofferCell[] = []
-  for (const c of cells) {
-    if (opts.louvre) louvre(b, c.x, c.z)
-    if (!c.on) {
-      troffer(b, c.x, c.z, "off", panel)
-      continue
+  // A troffer never straddles a wall: placed at flush (every wall of the storey known), cells whose 0.62 × 1.22 m
+  // housing a wall runs through are dropped.
+  b.defer(() => {
+    const solids = solidsOf(b.ctx)
+    const ceil = CEIL_Y + b.oy - 0.03
+    const clear = (c: TrofferCell) =>
+      !solids.some((k) => k.min[1] < ceil && k.max[1] > ceil && k.min[0] < c.x + 0.31 && k.max[0] > c.x - 0.31 && k.min[2] < c.z + 0.61 && k.max[2] > c.z - 0.61)
+    const placed: TrofferCell[] = []
+    const free = (c: TrofferCell) => clear(c) && !placed.some((q) => Math.abs(q.x - c.x) < 0.6 && Math.abs(q.z - c.z) < 1.2) && !cells.some((q) => q !== c && Math.abs(q.x - c.x) < 0.6 && Math.abs(q.z - c.z) < 1.2)
+    for (const c0 of cells) {
+      // Over a wall: move one grid step off it (along the tile's long side first), or drop it.
+      let c: TrofferCell | undefined = c0
+      if (!clear(c0)) c = [[0, 1.2], [0, -1.2], [0.6, 0], [-0.6, 0]].map(([dx, dz]) => ({ ...c0, x: c0.x + dx!, z: c0.z + dz! })).find(free)
+      if ((globalThis as { __trofferLog?: boolean }).__trofferLog && c !== c0) console.warn(`troffer over a wall at ${c0.x}, ${c0.z} (storey ${b.storey}) → ${c ? `${c.x}, ${c.z}` : "dropped"}`)
+      if (!c) continue
+      placed.push(c)
+      if (opts.louvre) louvre(b, c.x, c.z)
+      if (!c.on) {
+        troffer(b, c.x, c.z, "off", panel)
+        continue
+      }
+      if (c.flicker) {
+        const p = fluorescentPanel(1)
+        troffer(b, c.x, c.z, { flicker: c.flicker, ...p }, panel)
+        const lamp = b.lamp(fluoroLamp(c.x, c.z, (opts.intensity ?? 14) / 2, { flicker: c.flicker, warm: opts.warm }))
+        flick.push({ level: p.level, lamp, seed: c.x * 7 + c.z * 13, amount: c.flicker })
+        continue
+      }
+      troffer(b, c.x, c.z, "on", panel)
+      steady.push(c)
     }
-    if (c.flicker) {
-      const p = fluorescentPanel(1)
-      troffer(b, c.x, c.z, { flicker: c.flicker, ...p }, panel)
-      const lamp = b.lamp(fluoroLamp(c.x, c.z, (opts.intensity ?? 14) / 2, { flicker: c.flicker, warm: opts.warm }))
-      flick.push({ level: p.level, lamp, seed: c.x * 7 + c.z * 13, amount: c.flicker })
-      continue
+    for (let k = 0; k < steady.length; k += per) {
+      const run = steady.slice(k, k + per)
+      const x = run.reduce((s, c) => s + c.x, 0) / run.length
+      const z = run.reduce((s, c) => s + c.z, 0) / run.length
+      b.lamp(fluoroLamp(x, z, ((opts.intensity ?? 14) * run.length) / per, { warm: opts.warm }))
     }
-    troffer(b, c.x, c.z, "on", panel)
-    steady.push(c)
-  }
-  for (let k = 0; k < steady.length; k += per) {
-    const run = steady.slice(k, k + per)
-    const x = run.reduce((s, c) => s + c.x, 0) / run.length
-    const z = run.reduce((s, c) => s + c.z, 0) / run.length
-    b.lamp(fluoroLamp(x, z, ((opts.intensity ?? 14) * run.length) / per, { warm: opts.warm }))
-  }
+  })
   return {
     update(time: number) {
       for (const f of flick) f.level.value = rigLevelOf(f.lamp) ?? flicker(time, f.seed, f.amount)

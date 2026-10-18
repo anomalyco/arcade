@@ -145,7 +145,7 @@ export async function buildSouth(k: K, pause: () => Promise<void>): Promise<Room
   })
   partition(b, { axis: "z", at: G[6], from: 1.75, to: 9.75, finish: [ROOM_BANDS, LAB] })
   partition(b, { axis: "z", at: G[6], from: 9.75, to: 21.65, finish: [LAB, LAB] })
-  partition(b, { axis: "z", at: -36.07, from: 16.05, to: 21.65, thickness: 0.14, finish: [PLANT_BANDS, WET_BANDS] })
+  partition(b, { axis: "z", at: -36.075, from: 16.05, to: 21.65, thickness: 0.15, finish: [PLANT_BANDS, WET_BANDS] })
   // Foyer: coats, goggles cabinet, a bench.
   coatRail(b, 2.8, 7.4, G[5] + 0.06, "z", 1, 7, P.coat, k.rnd)
   const gc = wallCabinet(b, G[6] - 0.06, FLOOR_Y + 1.5, 5.2, -1, 0, 0.8, 0.6, 0.25, true)

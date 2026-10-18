@@ -91,3 +91,12 @@
 - Interior (dock): build a dock-height (1.25 m) platform/leveller inside the north wall x -37..-23.2, ~1.5 m deep, behind all three dock doors, with steps/ramp down to receiving 0.15; resolve FL-1 overlap (propose new FREIGHT position). A bright flat panel fills the dock man-door opening from the interior side: find and remove.
 - Doors: fully open roll-up (bottom edge ~3.55 m) can't be targeted from inside to close: doorway-plane targeting for slides should cover it (doors agent), else facility lowers open height.
 - Facility: duplicate 'facility-details:pine_needles' ground in src/world/facility/grounds.ts (drawn twice): remove; also switch windows.ts:103–105 to decalBias.
+
+## PERF (perf-audit.md "Regression since first audit"): top priority for interior kit next round
+1. separateDepth() in interior/kit.ts (commit 3cd2b0da): 49 of 53 s interior CPU, boot 49–51 s, 10–14 s freezes. Group by plane + 0.5 m 2D cell, skip non-touching pairs, don't re-test unchanged parts; or move to a worker/offline bake. Target boot ≤ 6–8 s, longest task < 300 ms.
+2. Interior doors draw from outside (413 draws, 35% of frame): hide from outside; merge closed doors per storey per material indoors (doors.ts + interior.ts).
+3. All five storeys' walls/floors draw from outside (193 draws, 1.75 M tris): per-storey lit-window proxy outside.
+4. Washrooms draw from outside (110 draws): hide outside; merge per material.
+5. Forest empty layers (8–45 empty draws) + double-sided transparent materials drawn twice (forceSinglePass): forest, facility glass, compound fence/car glass, interior_s4_poly.
+- Lamps: s0 52 → merge window lamps at (33.6,1.4,17.6/18.3) + drop 2 of 3 warning lamps; s3 51 → merge 9 window lamps to ≤ 5.
+- Boot gate: longest task < 300 ms, ≤ 180 shader builds, boot < 8 s normal.

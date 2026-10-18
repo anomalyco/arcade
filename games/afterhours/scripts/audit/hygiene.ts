@@ -2,7 +2,8 @@
 // (all modules streamed in) and fails (exit 1) if the INTERIOR has any of:
 //   1. coplanar: same-facing axis-aligned faces within 3 mm of each other, overlapping > 0.002 m², on a visible side
 //      (faces looking into a collider or wall solid are buried and ignored);
-//   2. slit: two wall solids whose ends/faces stop 0.5–40 mm apart so light shows through between them;
+//   2. slit: two wall solids whose ends/faces stop 0.5–40 mm apart so light shows through between them, or two parallel
+//      walls of different assemblies overlapping (a joint sunk past the crossing wall: a strip of the wrong finish);
 //   3. mount: a wall-mounted item (a face that is not a wall face) within 3 mm of a wall face;
 //   4. flicker: a render sweep over every door and wall corner on every storey — the camera stands 1.5 m away at two
 //      angles, 12 stand-still frames (grain and lamp flicker off), pixels whose temporal range exceeds 24 near the
@@ -70,6 +71,7 @@ await page.waitForFunction(() => {
 }, null, { timeout: 600_000 })
 // Furniture bakes after its models load.
 await page.waitForTimeout(6000)
+console.log(`interior depth pass: ${await page.evaluate(() => Math.round((globalThis as { __interiorDepthMs?: number }).__interiorDepthMs ?? 0) + " ms " + JSON.stringify((globalThis as { __interiorDepthPhase?: Record<string, number> }).__interiorDepthPhase, (_, v) => (typeof v === "number" ? Math.round(v) : v)))}`)
 
 export type Finding = { cls: "coplanar" | "slit" | "mount" | "flicker"; storey: number; owner: string; at: [number, number, number]; what: string; amount: number }
 
@@ -180,7 +182,7 @@ const statics: Finding[] = await page.evaluate((only) => {
       const key = `${ax}|${s}|${Math.round(c / TOL)}`
       let l = planes.get(key)
       if (!l) planes.set(key, (l = []))
-      l.push({ m: mi, ax, s, c, p: pts, area: L / 2, model, onWall: wallTri })
+      l.push({ m: mi, ax, s, c, p: pts, area: L / 2, model, onWall: wallTri, w3: pts3 } as Tri)
     }
   })
   const area = (poly: number[][]) => {
@@ -263,7 +265,7 @@ const statics: Finding[] = await page.evaluate((only) => {
         const cv = poly.reduce((s2, q) => s2 + q[1], 0) / poly.length
         const w = [0, 0, 0]
         const [i0, i1] = ax === 0 ? [1, 2] : ax === 1 ? [0, 2] : [0, 1]
-        w[ax] = Math.max(ti.c, tj.c) * (s > 0 ? 1 : 0) + Math.min(ti.c, tj.c) * (s > 0 ? 0 : 1) + s * 0.01
+        w[ax] = Math.max(ti.c, tj.c) * (s > 0 ? 1 : 0) + Math.min(ti.c, tj.c) * (s > 0 ? 0 : 1) + s * 0.0015
         w[i0] = cu
         w[i1] = cv
         if (inside(w[0]!, w[1]!, w[2]!)) continue
@@ -272,7 +274,7 @@ const statics: Finding[] = await page.evaluate((only) => {
         const owner = mi.owner === "interior" && mj.owner === "interior" ? "interior" : "facility"
         const gk = `${cls}|${st}|${owner}|${Math.round(w[0]! / 0.5)},${Math.round(w[1]! / 0.5)},${Math.round(w[2]! / 0.5)}`
         let gr = groups.get(gk)
-        if (!gr) groups.set(gk, (gr = { cls, storey: st, owner, at: w.map((q) => +q.toFixed(3)), what: `${mi.name} <> ${mj.name} [${"xyz"[ax]}${s > 0 ? "+" : "-"}, Δ${(Math.abs(ti.c - tj.c) * 1000).toFixed(1)} mm] A ${ti.c.toFixed(4)} ${bb[ii]!.map((q) => q.toFixed(3)).join(",")} B ${tj.c.toFixed(4)} ${bj.map((q) => q.toFixed(3)).join(",")}`, amount: 0 }))
+        if (!gr) groups.set(gk, (gr = { cls, storey: st, owner, at: w.map((q) => +q.toFixed(3)), what: `${mi.name} <> ${mj.name} [${"xyz"[ax]}${s > 0 ? "+" : "-"}, Δ${(Math.abs(ti.c - tj.c) * 1000).toFixed(1)} mm] A ${ti.c.toFixed(4)} ${bb[ii]!.map((q) => q.toFixed(3)).join(",")} B ${tj.c.toFixed(4)} ${bj.map((q) => q.toFixed(3)).join(",")} Bv ${JSON.stringify((tj as any).w3.map((q: number[]) => q.map((x) => +x.toFixed(4))))}`, amount: 0 }))
         gr.amount += A
       }
     }
@@ -301,6 +303,19 @@ const statics: Finding[] = await page.evaluate((only) => {
       if (A.id === B.id) continue
       const yo = Math.min(A.max[1], B.max[1]) - Math.max(A.min[1], B.min[1])
       if (yo < 0.3) continue
+      // Joint overreach: two parallel walls of different assemblies overlapping in volume (an end sunk past the
+      // crossing wall into the next wall shows a strip of the wrong finish at the corner).
+      {
+        const lax = A.max[0] - A.min[0] > A.max[2] - A.min[2] ? 0 : 2
+        const lbx = B.max[0] - B.min[0] > B.max[2] - B.min[2] ? 0 : 2
+        const ox = Math.min(A.max[0], B.max[0]) - Math.max(A.min[0], B.min[0])
+        const oz = Math.min(A.max[2], B.max[2]) - Math.max(A.min[2], B.min[2])
+        if (lax === lbx && ox > 0.002 && oz > 0.002 && yo > 0.3) {
+          const p = [(Math.max(A.min[0], B.min[0]) + Math.min(A.max[0], B.max[0])) / 2, (Math.max(A.min[1], B.min[1]) + Math.min(A.max[1], B.max[1])) / 2, (Math.max(A.min[2], B.min[2]) + Math.min(A.max[2], B.max[2])) / 2]
+          if (only < 0 || storeyOf(p[1]!) === only)
+            out.push({ cls: "slit", storey: storeyOf(p[1]!), owner: "interior", at: p.map((q) => +q.toFixed(3)), what: `overreach ${((lax === 0 ? ox : oz) * 1000).toFixed(0)} mm: parallel walls ${A.id} and ${B.id} overlap`, amount: +(lax === 0 ? ox : oz).toFixed(4) })
+        }
+      }
       for (const gax of [0, 2]) {
         const oax = gax === 0 ? 2 : 0
         const [L, R] = A.max[gax] <= B.min[gax] + 1e-6 ? [A, B] : B.max[gax] <= A.min[gax] + 1e-6 ? [B, A] : [null, null]
@@ -466,9 +481,20 @@ for (const [vi, v] of sweep.entries()) {
       }
       let over = 0
       const heat = ctx2.createImageData(W, W)
+      const range = (i: number) => Math.max(hi[i * 3]! - lo[i * 3]!, hi[i * 3 + 1]! - lo[i * 3 + 1]!, hi[i * 3 + 2]! - lo[i * 3 + 2]!)
       for (let i = 0; i < W * W; i++) {
-        const rr = Math.max(hi[i * 3]! - lo[i * 3]!, hi[i * 3 + 1]! - lo[i * 3 + 1]!, hi[i * 3 + 2]! - lo[i * 3 + 2]!)
-        if (rr > 24) over++
+        const rr = range(i)
+        // Z-fighting shimmers in coherent bands; isolated sparkle (TAA on fine detail, specular pinpoints) doesn't
+        // count: a pixel needs ≥ 2 flagged 8-neighbours.
+        if (rr > 24) {
+          const x = i % W
+          const y = (i / W) | 0
+          let nb = 0
+          for (let dy = -1; dy <= 1; dy++)
+            for (let dx = -1; dx <= 1; dx++)
+              if ((dx || dy) && x + dx >= 0 && x + dx < W && y + dy >= 0 && y + dy < W && range(i + dy * W + dx) > 24) nb++
+          if (nb >= 2) over++
+        }
         heat.data[i * 4] = Math.min(255, rr * 4)
         heat.data[i * 4 + 1] = rr > 24 ? 0 : Math.min(255, rr * 4)
         heat.data[i * 4 + 2] = rr > 24 ? 0 : Math.min(255, rr * 4)

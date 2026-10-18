@@ -459,7 +459,8 @@ function archive(k: K) {
   const run = (x: number, z0: number, z1: number, faces: number[], jars: number) => {
     for (let z = z0 + W / 2; z <= z1 - W / 2 + 1e-3; z += W + 0.02)
       for (const f of faces) {
-        const cx = x + (faces.length === 2 ? f * D / 2 : 0)
+        // Back-to-back units stand 10 mm apart (their back uprights never share a plane).
+        const cx = x + (faces.length === 2 ? f * (D / 2 + 0.005) : 0)
         const lv = shelfUnit(b, cx, z, f > 0 ? yawToward(1, 0) : yawToward(-1, 0))
         fill(cx, z, f, lv, jars)
       }

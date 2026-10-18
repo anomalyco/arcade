@@ -263,7 +263,8 @@ export function shelfUnit(b: Builder, x: number, z: number, yaw: number, w = 1.2
   const m = F(x, z, yaw)
   for (const sx of [-1, 1])
     for (const sz of [-1, 1]) {
-      b.boxM(mat, m, 0.032, h, 0.004, sx * (w / 2 - 0.016), h / 2, sz * (d / 2 - 0.002))
+      // Angle-iron upright: two 4 mm legs that meet without overlapping (no shared end planes).
+      b.boxM(mat, m, 0.028, h, 0.004, sx * (w / 2 - 0.018), h / 2, sz * (d / 2 - 0.002))
       b.boxM(mat, m, 0.004, h, 0.032, sx * (w / 2 - 0.002), h / 2, sz * (d / 2 - 0.016))
     }
   for (const l of levels) {

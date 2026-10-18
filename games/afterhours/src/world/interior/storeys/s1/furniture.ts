@@ -541,7 +541,8 @@ export function fillShelf(b: Builder, x: number, z: number, rnd: Rnd, opts: { bo
           if (u + bw > z + half) break
           const bh = 0.2 + rnd() * 0.1
           const bd = 0.17 + rnd() * 0.08
-          const x0 = s > 0 ? x + 0.33 - bd : x - 0.33
+          // Spines 4.5 mm behind the steel_shelves deck edges (x ± 0.3285), never flush with them.
+          const x0 = s > 0 ? x + 0.324 - bd : x - 0.324
           b.box(BOOK_COLOURS[Math.floor(rnd() * BOOK_COLOURS.length)]!, x0, y, u, x0 + bd, y + bh, u + bw, { skip: "y" })
           u += bw + 0.002
         } else {

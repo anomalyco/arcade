@@ -27,6 +27,120 @@ ratios and counts are stable. Every number below comes from a script in `games/a
   at 1× the game is GPU-bound, and merging/instancing fixes get most of the CPU win for a fraction of the effort.
   Not worth it now.
 
+## Regression since first audit (2026-10-17)
+
+Measured on frozen builds of HEAD `8e630c5b` plus the working tree at the time. Tools: `bench/draw-census.ts` (every
+draw the renderer issues in one frame, after three's frustum culling, attributed to pass / module / sub-group /
+material, with triangles) and `bench/boot-trace.ts` (node builds and new pipelines per module, long tasks).
+1536×1024 @1×. Storey views stand at (−12, storeyY + 1.65, 1.1) facing −x, like the integration audit. The mirror
+view stands 1.6 m in front of the lowest mirror. The cost model is the measured ~10 µs of main-thread CPU per draw
+(×4 on a loaded laptop).
+
+### What changed
+
+| | first audit | now |
+|---|---|---|
+| draws per frame, outdoors (lot / gate / road / entrance) | ~475 (road) | **1049 / 1162 / 1175 / 718** |
+| draws per frame, storeys s0–s4 | 250 (corridor) | 501 / 590 / 577 / 541 / 433 |
+| triangles drawn | 2.9 M | 2.4–4.1 M |
+| meshes in scene | 565 | 1631 |
+| node builds at boot / render pipelines | 297 / 255 | **179 / 127**: the instancing fix landed, only 4 InstancedMesh builds are left |
+| TSL node-build time (1×) | 3.3–5.2 s | 2.0 s |
+| **boot complete (1×)** | 5.5–8.7 s | **48.6–51.4 s**; interior `build()` alone takes 43–45 s |
+| **long tasks (1×)** | 235 ms worst | **13.8 s, 13.1 s, 10.3 s, 4.5 s, 2.5 s**: the page is frozen while the interior builds |
+
+### Boot: one function regressed it ~7×
+
+`separateDepth()` in `src/world/interior/kit.ts`, called from `Builder.flush()` and added in `3cd2b0da`, takes
+**49 of the 53 s** of interior CPU (the CPU profile's self time is `test` 21 s, `near` 7 s, `overlaps` 7 s,
+`separateDepth` 6 s). Its buckets are keyed only by axis | sign | plane offset quantised to 3.5 mm. Every coplanar
+triangle on a storey (all the floor finishes at one y, all the walls on one grid line) lands in the same bucket, so
+`test` runs O(n²) per plane. It is then repeated for up to 10 passes, synchronously, once per builder, which gives
+the 10–14 s long tasks. The integration audit (at `011b6dca`, before this commit) measured 7.0 s to `complete`.
+
+Node builds and new pipelines per module at boot (1×, everything after the instancing fix):
+
+| module | node builds | new pipelines |
+|---|---|---|
+| interior | 71 (+4 InstancedMesh) | 50 |
+| forest | 20 | 4 |
+| roads | 17 | 9 |
+| compound | 17 | 14 |
+| facility | 12 | 9 |
+| post / lighting / background / player body (fixed) | ~35 | ~35 |
+| **total** | **179** | **127** |
+
+### Frame: where the draws go
+
+Scene-pass draws (triangles in parentheses). No shadow-map draws happened in the recorded frames (the maps aren't
+re-rendered every frame). Post adds 20 quads.
+
+| group | lot | gate | road | entrance | s0 | s1 | s2 | s3 | s4 |
+|---|---|---|---|---|---|---|---|---|---|
+| **interior: doors** (3 draws per door, ~61 tris each; storeys + core) | **413** (27 k) | 413 | 413 | 274 | 134 | 178 | 160 | 136 | 88 |
+| **interior: storey static** (walls, floors, fittings per material) | **193 (1.75 M)** | 193 | 193 | 171 (1.74 M) | 62 (0.60 M) | 90 (0.82 M) | 96 (1.40 M) | 94 (1.14 M) | 66 (0.92 M) |
+| **interior: washrooms** (11 meshes each, 2 per storey) | **110** (57 k) | 110 | 110 | 45 | 56 | 78 | 78 | 78 | 56 |
+| interior: furniture `props` + `small` (own storey, full models) | 0 | 0 | 0 | 4 (190 k, LOD1) | 38 (0.68 M) | 31 **(1.84 M)** | 36 (0.85 M) | 26 (0.62 M) | 20 (0.13 M) |
+| interior: core static + lift + mirrors + misc | 59 | 59 | 59 | 27 | 48 | 50 | 44 | 44 | 41 |
+| facility | 110 (0.48 M) | 110 | 110 | 79 | 60 (0.35 M) | 60 | 60 | 60 | 59 |
+| compound | 78 (0.38 M) | **190 (0.48 M)** | **198** | 33 | 17 (0.18 M) | 17 | 17 | 17 | 17 |
+| forest (of which zero-triangle draws) | 66 (19) | 66 (10) | 66 (8) | 66 (45) | 66 (43) | 66 (43) | 66 (43) | 66 (43) | 66 (43) |
+| roads | 13 | 14 | 19 | 12 | 13 | 13 | 13 | 13 | 13 |
+| terrain + background + player body + sprite | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 | 7 |
+| **total scene draws** | **1049** | **1162** | **1175** | **718** | **501** | **590** | **577** | **541** | **433** |
+
+Mirror view (washroom, s0): 282 scene draws, plus **80 draws (171 k tris) in the mirror pass**: 62 washroom, 11 doors,
+6 player. The washroom reflect layer works.
+
+### Drawn but shouldn't be
+
+| finding | draws (tris) per frame | evidence |
+|---|---|---|
+| **Every interior door on every storey drawn from outside.** `interior.ts` shows every storey group when the camera is outside (`s < 0`), and each door is its own 3-mesh group (leaf `door_steel`, `interior_wire_glass`, frame) | 413 outdoors (35% of the frame), 88–178 indoors | `interior:doors` row |
+| **All five storeys' static interiors drawn from outside**, though from the lot or the road they're only visible as lit windows | 193 (1.75 M) | `interior:storey-static` row |
+| **Washrooms drawn from outside** (internal rooms, never visible), and from adjacent storeys | 110 outdoors, ~22 per extra storey indoors | `interior:washrooms` |
+| **Forest drawing empty LOD buckets**: InstancedMesh layers with 0 instances still issue a draw | 8–45 | zero-triangle draws, all in `forest/tree-*-lod*` and `undergrowth-*` |
+| **Forest drawn from inside the windowless spine** | 66 (110 k) on every storey view | forest row |
+| **Transparent double-sided materials drawn twice**: three's transparent double pass (back faces, then front) for `side: DoubleSide`. Affects `shell-glass:facility_glass_clear` (7.4 k tris ×2), entrance glass, compound `fence-mesh*:flat_47`, car glass, `interior_s4_poly`, glass in props | 9–32 extra | `exactDuplicates` (same object and material, drawn twice per frame) |
+| Heavy geometry: `interior_paint` merged meshes on storey 3 are 760 k tris (493 k + 266 k), storey 1 is 383 k. Storey-1 furniture full models are 1.84 M tris (one `props` mesh is 504 k), drawn even at the far end of the storey | GPU vertex load | top-triangle meshes. Probably rbox (`RoundedBoxGeometry` with 2 segments ≈ 300 tris per box); verify by counting tris per Builder call |
+| Compound barbed-wire/fence `flat_46` meshes: 74 k tris per side, 296 k in total | 25 (296 k) | `fence#` |
+| Compound booth: 36 draws for 4.6 k tris | 36 | `booth` |
+| Pine needles: **not duplicated at draw level**. `facility-details:pine_needles` is one draw (4.3 k tris). The overlap scan's 587 m² is coplanar faces inside the double-sided shrub geometry; the cost is negligible | 1 | `pine` check |
+| Documents: one merged draw per storey (6–23 k tris), 3 from outside. Fine; hide them with the storey static | 1–3 | `documents` |
+| Mirrors: 12 tiny draws from outside, and a mirror pass of 80 draws only within 8 m. Fine | 12 | `mirrors` |
+| Non-adjacent storeys from inside: **none** (the ±1 rule works) | 0 | `nonAdjacentStoreys` |
+
+Lamps (`ctx.lamps`, budget ≤ 48 per interior zone):
+
+- **interior:0 = 52**: 30 fluorescent, 12 incandescent, 5 window, 3 warning, 2 exit. Two window lamps at
+  (33.6, 1.4, 17.6/18.3) are 0.68 m apart: merge them.
+- **interior:3 = 51**: 29 fluorescent, 9 window (other storeys have 2), 7 incandescent, 5 warning, 1 exit.
+- Exterior: 42 (28 sodium).
+
+### Ranked actions by owner (expected savings)
+
+Draw savings are converted at ~10 µs per draw of main-thread CPU at 1× and ~40 µs at 4×. All savings are
+estimates from the census except boot, which is measured.
+
+| # | owner | action | expected saving |
+|---|---|---|---|
+| 1 | **interior kit** (`kit.ts separateDepth`) | Make the coplanar-separation pass near-linear. Key the buckets by plane **and** a coarse 2-D cell (e.g. 0.5 m in u/v) so `test` only meets overlapping neighbours. Skip pairs whose bounding rectangles don't touch, and stop re-testing primitives that didn't move. Until then, yield between primitives (or between passes) so it doesn't block. Better still, run it in a worker or bake it. Re-check with `bun bench/boot-trace.ts --no-replay` (`longTasks`, `mod:interior:build:end`) | **boot −42 s at 1× (48.6 → ~6 s)**; removes the 10–14 s freezes |
+| 2 | **doors** (`world/doors.ts`) + **interior** (`interior.ts`) | Don't draw interior doors from outside (keep façade doors). Indoors, draw doors only for the camera's storey and the neighbour storeys the stair/lift can see. Merge closed static leaves, glass and frames per storey per material, and swap a door to its own mesh only while it animates | −413 draws outdoors (**−4 ms/frame at 1×, −16 ms at 4×**); −60 to −130 indoors |
+| 3 | **interior** (`interior.ts` outdoor visibility) + **each storey** | Outside the block, don't show storey static groups. Show a per-storey "window-view" proxy: lit rooms behind façade windows, merged to a few meshes per storey (the boot already has `proxy` for lit rooms). Or show only the storeys and rooms whose windows face the camera within ~40 m | −150 to −190 draws (−1.5 to −2 ms at 1×) and **−1.5 M tris** outdoors |
+| 4 | **washrooms** (`interior/washroom.ts`) | Hide from outside. Merge each washroom's 11 meshes per material (keep the `-reflect` layer objects as they are) | −110 draws outdoors; −30 to −50 indoors |
+| 5 | **interior props / assets** (`interior/props.ts`, `render/models.ts`) + **storey 1, storey 3** | Use LOD1 for furniture beyond ~10 m even on the camera's storey, or split `props`/`small` into room chunks culled by distance. Cut rounded-box segments (`kit.ts rbox`: 2 → 1, or a chamfer) for small boxes. Storey 1 (1.84 M tris of furniture) and storey 3 (760 k tris of `interior_paint`) first | −1 to −2 M tris on s1/s3 (GPU; the integration audit had s1/s3 as the heaviest interiors) |
+| 6 | **forest** (`world/forest*`) | Set `visible = count > 0` on instanced layers after each rebuild. Indoors with no window in view, hide undergrowth and LOD0/LOD1 layers (keep impostors) | −8 to −45 draws everywhere; −40 to −60 indoors |
+| 7 | **compound** (`world/compound/*`) | Merge the booth (36 draws) and gate hardware per material. Reduce the barbed-wire/fence `flat_46` tessellation (296 k tris; fewer radial segments, or a distance LOD). Make `fence-mesh` single-pass (see 8) | −30 to −50 draws at gate/road, −200 k tris |
+| 8 | **materials** (`render/materials.ts`) + **facility / compound / interior** glass owners | Give double-sided transparent materials `forceSinglePass = true`, or use `FrontSide` for thin glass. Today three draws every one of them twice | −9 to −32 draws per view |
+| 9 | **facility** (`world/facility*`) | Merge `facility-details`/`facility-props` sub-meshes per material (23 + 23 draws). Hide fire-escape and roof details beyond ~80 m | −20 to −40 draws outdoors |
+| 10 | **lighting** (storey owners for the counts) | s0: merge the two window lamps at (33.6, 1.4, 17.6/18.3) and drop 2 of the 3 warning lamps or fold 2 incandescents → 48. s3: merge the 9 window lamps to ≤5 → 47 | both storeys back under the 48 budget |
+| 11 | **roads, terrain** | No regression (13–19 and 2 draws) | – |
+| 12 | **documents, mirrors** | Fine as they are; hide them from outside with the storey static (3 + 12 draws) | −15 draws outdoors |
+| 13 | **boot** (`main.ts`, `src/boot/*`) | Gate merges on `bench/boot-trace.ts`: `longTasks.top[0]` < 300 ms, node builds ≤ 180, `boot:complete` < 8 s at 1× | prevents the next 7× regression |
+
+Combined, actions 2–4 and 6–9 should bring outdoor views from ~1050–1175 draws to roughly 350–450. That's about
+−7 ms of main-thread CPU per frame at 1×, so the loaded-laptop case would go from ~24 fps to the target.
+
 ## 1. Baseline
 
 ### 1.1 Steady-state frame
@@ -329,6 +443,7 @@ bunx vite build --outDir $TMP/build-dev --minify false --logLevel warn  # readab
 |---|---|
 | `bun bench/frame-profile.ts --dir $TMP/build --view road,corridor [--ablate] [--cpu 4] [--dpr 1,2] [--profile f.cpuprofile]` | steady frame: scene stats, CPU per stage, draws/passes, GPU throughput, scene vs post, ablation |
 | `bun bench/boot-trace.ts --dir $TMP/build-dev [--cpu 4] [--no-replay] [--emulate attr]` | boot buckets, WebGPU call counts, node builds by owner, pipeline replay (driver compile cost) |
+| `bun bench/draw-census.ts --dir $TMP/build [--views lot,gate,road,entrance,s0,s1,s2,s3,s4,mirror] [--out f.json]` | per-frame draws/triangles by pass, module, sub-group, material; flags (interior from outside, non-adjacent storeys, duplicates, zero-triangle and tiny draws, documents, mirrors); scene inventory; lamp census per zone |
 | `bun bench/dump-shaders.ts --dir $TMP/build-dev` | every WGSL program to `$TMP/shaders`, why there are so many, instanced meshes per module |
 | `bun bench/wasm/build.ts` | Rust → `terrain.wasm` / `terrain-simd.wasm` (needs `rustup target add wasm32-unknown-unknown`) |
 | `bun bench/gen-bench.ts` | generators in Bun: JS vs WASM vs WASM SIMD, with exactness checks |
