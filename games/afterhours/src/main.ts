@@ -8,8 +8,8 @@ import { bootWorld } from "./boot/world"
 import "./style.css"
 
 // The game page: boot overlay, HUD, frame loop and automation status around the shared world boot (src/boot/world.ts).
-// `__afterhours.frames` only counts frames once everything is in, so automation that waits for N frames still sees the
-// complete world.
+// The loading screen stays up until the whole world is built, compiled and settled; `__afterhours.frames` counts frames
+// from then on, so automation that waits for N frames sees the complete world.
 
 type Status = {
   ready: boolean
@@ -62,7 +62,6 @@ const tick = () => {
     const n = rendered
     performance.measure(`frame:${n}`, { start: t0 })
     device?.queue.onSubmittedWorkDone().then(() => performance.mark(`frame:${n}:gpu`))
-    if (n === 1) loader.live()
   }
   if (!status.complete) return
   status.frames++
@@ -75,33 +74,30 @@ const tick = () => {
     })
   }
 }
-// While the world streams in, the main thread belongs to shader building (the frame loop took 22% of a 4× CPU boot at
-// 15 fps): draw at ~5 fps, plus a frame as soon as something new appears (≥ 100 ms apart) and while the player moves.
-// `bootFps` (automation/A-B only) overrides the streaming frame rate.
-const STREAMING_FRAME_MS = 1000 / Number(params.get("bootFps") ?? 5)
-const REVEAL_FRAME_MS = 100
-let lastInput = -Infinity
-for (const type of ["keydown", "pointermove", "pointerdown"]) addEventListener(type, () => (lastInput = performance.now()), { passive: true })
-const keys = new Set<string>()
-addEventListener("keydown", (e) => keys.add((e as KeyboardEvent).code))
-addEventListener("keyup", (e) => keys.delete((e as KeyboardEvent).code))
-addEventListener("blur", () => keys.clear())
+// Behind the loading screen the main thread belongs to warming the world: draw only now and then (a frame keeps the
+// near-terrain patch and lamp adoption moving and shows the boot is alive). Once it's warm, a few full-rate frames still
+// under the cover let temporal AA history, shadow maps and auto exposure settle before the reveal.
+const COVERED_FRAME_MS = 500
+const SETTLE_FRAMES = 12
+let settle = -1
 let lastFrame = -Infinity
 renderer.setAnimationLoop((now: number) => {
-  const since = now - lastFrame
-  const wanted = since >= STREAMING_FRAME_MS - 2 || (since >= REVEAL_FRAME_MS && (world.takeReveal() || keys.size > 0 || now - lastInput < 300))
-  if (world.streaming && rendered > 2 && !wanted) return
+  if (world.streaming && rendered > 2 && now - lastFrame < COVERED_FRAME_MS) return
   lastFrame = now
   tick()
+  if (settle > 0 && --settle === 0) reveal()
 })
 
-loader.stream("streaming", 0, 1)
+const reveal = () => {
+  loader.done()
+  status.complete = true
+  status.completeAt = performance.now()
+  performance.mark("boot:complete")
+}
+
 await world.stream({
-  onShown: (name, done, total) => loader.stream(`streaming · ${name} in`, done, total),
+  onShown: (name, done, total) => loader.stream(`warming · ${name}`, done, total),
   // Created once every module has added its controls.
   onBuilt: () => new LabPanel(world.ctx.settings, world.ctx.controls, params, () => player.release(), { open: false, presets: false }),
 })
-loader.done()
-status.complete = true
-status.completeAt = performance.now()
-performance.mark("boot:complete")
+settle = SETTLE_FRAMES

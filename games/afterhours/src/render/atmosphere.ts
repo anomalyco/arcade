@@ -44,6 +44,11 @@ export const fogUniforms = {
   interiorColor: uniform(new THREE.Color()),
   envInterior: uniform(0.06),
   interiorAmbient: uniform(new THREE.Color()),
+  /** Lightning (render/lightning.ts): cloud/fog glow radiance, unit direction towards the strike, outdoor ambient. */
+  flashGlow: uniform(new THREE.Color(0, 0, 0)),
+  flashDir: uniform(new THREE.Vector3(0, 0.3, -1)),
+  flashSpread: uniform(0.35),
+  flashAmbient: uniform(new THREE.Color(0, 0, 0)),
   color: uniform(new THREE.Color()),
   skyColor: uniform(new THREE.Color()),
   skyGlow: uniform(0.3),
@@ -152,7 +157,18 @@ export const skyRadiance = (camera: N, dir: N) => {
   const dark = fogUniforms.skyColor.mul(mix(1, 0.55, smoothstep(0, 0.8, up)))
   // Light pollution and the lamps of the compound faintly lighting the cloud deck from below, mostly near the horizon.
   const glow = fogUniforms.color.mul(fogUniforms.skyGlow).mul(exp(up.mul(-5)))
-  return mix(fogUniforms.color, dark.add(glow), t)
+  return mix(fogUniforms.color, dark.add(glow), t).add(flashLobe(dir).mul(smoothstep(-0.15, 0.05, dir.y)))
+}
+
+/**
+ * Lightning glow seen along a view direction: the cloud base and fog bank light up around the strike's bearing,
+ * strongest low over the horizon, with a broad faint skirt across the whole sky (the clouds scatter it everywhere).
+ */
+export const flashLobe = (dir: N) => {
+  const c = dir.normalize().dot(fogUniforms.flashDir)
+  const lobe = exp(c.oneMinus().div(fogUniforms.flashSpread).negate())
+  const low = exp(dir.y.max(0).mul(-2.2))
+  return fogUniforms.flashGlow.mul(lobe.mul(low).add(0.12))
 }
 
 export function createAtmosphere(ctx: WorldContext) {
@@ -180,7 +196,11 @@ export function createAtmosphere(ctx: WorldContext) {
   const aOut = exp(tau.x.negate()).oneMinus()
   const aIn = exp(tau.y.negate()).oneMinus()
   const fogFactor = exp(tau.x.add(tau.y).negate()).oneMinus()
-  const fogColor = fogUniforms.color.mul(aOut).add(fogUniforms.interiorColor.mul(aIn)).div(aOut.add(aIn).max(1e-5))
+  const fogColor = (fogUniforms.color as N)
+    .add(flashLobe(positionWorld.sub(cameraPosition)))
+    .mul(aOut)
+    .add(fogUniforms.interiorColor.mul(aIn))
+    .div(aOut.add(aIn).max(1e-5))
   ;(ctx.scene as unknown as { fogNode: N }).fogNode = fog(fogColor, fogFactor)
   ctx.scene.backgroundNode = skyRadiance(cameraPosition, positionWorldDirection)
 
@@ -217,7 +237,9 @@ export function createAtmosphere(ctx: WorldContext) {
     const ins = insideNode(positionWorld, 0.05, false)
     const up = (normalWorld as N).y
     const bounce = fogUniforms.interiorAmbient.mul(mix(float(1.15), float(0.8), up.mul(0.5).add(0.5)))
-    ;(ctx.scene as unknown as { environmentNode: N }).environmentNode = mix(envNode, envNode.mul(fogUniforms.envInterior).add(bounce), ins)
+    // Lightning adds a flat cool skylight outdoors (the whole cloud deck lit for a moment).
+    const outdoorEnv = envNode.add(fogUniforms.flashAmbient)
+    ;(ctx.scene as unknown as { environmentNode: N }).environmentNode = mix(outdoorEnv, envNode.mul(fogUniforms.envInterior).add(bounce), ins)
   }
 
   const hsl = new THREE.Color()

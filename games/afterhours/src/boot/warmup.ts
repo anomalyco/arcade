@@ -21,22 +21,33 @@ type Any = any
 export type Warmup = {
   /** True once the scene pass has rendered at least once (warm-up needs its render context). */
   readonly ready: boolean
-  /** Compiles every drawable in `root` (detached from the scene) in the background. */
   /**
    * Compiles every drawable in `root`. `progressive`: `root` may already be in the scene; its drawables are hidden now
    * and revealed one by one as their pipelines are ready (`onReveal` fires after each), nearest/visible first.
+   * `visibleOnly`: only what the game draws right now (every ancestor visible); resolves with the drawables it hides
+   * (other storeys, far furniture...) so they can be warmed later with `warmObjects`.
    */
-  warm(root: THREE.Object3D, options?: { progressive?: boolean; onReveal?: () => void }): Promise<void>
+  warm(root: THREE.Object3D, options?: { progressive?: boolean; onReveal?: () => void; visibleOnly?: boolean }): Promise<THREE.Object3D[]>
+  /** Compiles these objects (e.g. what `warm({ visibleOnly })` left for later), nearest first; visibility untouched. */
+  warmObjects(objects: THREE.Object3D[]): Promise<void>
   /** Runs one frame of the render loop with the renderer's normal top-level state. */
   frame(fn: () => void): void
   /** Warm up objects added under `root` from now on before they are drawn (with `root` itself while it waits). */
   track(root: THREE.Object3D): void
   /** Resolves when no late arrival is being warmed. */
   idle(): Promise<void>
+  /** performance.now() of the last object added under a tracked root after its build (0 if none yet). */
+  readonly lastArrival: number
+  /**
+   * Behind a loading screen nothing on screen needs protecting: compile at full throughput (more materials in flight,
+   * yields never wait for a frame). Off: sliced around frames, fewer in flight, nearest first.
+   */
+  setCovered(on: boolean): void
 }
 
-/** Materials compiled concurrently per warm-up. */
-const CHAINS = 3
+/** Materials compiled concurrently per warm-up (behind the loading screen / during play). */
+const CHAINS_COVERED = 10
+const CHAINS_PLAY = 3
 
 /**
  * @param sliceMs main-thread time per frame that background compiles may take before yielding to rendering
@@ -70,8 +81,9 @@ export function createWarmup(renderer: THREE.WebGPURenderer, scene: THREE.Scene,
   const sched = (globalThis as { scheduler?: Any }).scheduler
   const nativeYield = sched?.yield as (() => Promise<void>) | undefined
   let frameEnd = performance.now()
+  let covered = false
   const politeYield = () =>
-    nativeYield && performance.now() - frameEnd < sliceMs
+    nativeYield && (covered || performance.now() - frameEnd < sliceMs)
       ? nativeYield.call(sched)
       : sched?.postTask
         ? sched.postTask(() => {}, { priority: "user-visible" })
@@ -150,7 +162,9 @@ export function createWarmup(renderer: THREE.WebGPURenderer, scene: THREE.Scene,
     }
     return null
   }
+  let lastArrival = 0
   const lateArrival = (obj: THREE.Object3D, root: { waiting: boolean; held: THREE.Object3D[] }) => {
+    lastArrival = performance.now()
     const mine: THREE.Object3D[] = []
     obj.traverse((o) => {
       if (isDrawable(o) && !hiddenMask.has(o)) {
@@ -168,6 +182,8 @@ export function createWarmup(renderer: THREE.WebGPURenderer, scene: THREE.Scene,
       .catch(() => {})
       .then(() => {
         unhide(mine)
+        const seen = mine.find((o) => inView(o))
+        if (seen) performance.mark(`pop:late:${seen.name || seen.type}`)
         late.delete(job)
       })
     late.add(job)
@@ -187,6 +203,15 @@ export function createWarmup(renderer: THREE.WebGPURenderer, scene: THREE.Scene,
   const projView = new THREE.Matrix4()
   const sphere = new THREE.Sphere()
   const eye = new THREE.Vector3()
+  /** Whether `o` is in the camera's view right now (for pop-in accounting). */
+  const inView = (o: THREE.Object3D) => {
+    for (let a: THREE.Object3D | null = o; a; a = a.parent) if (!a.visible) return false
+    camera.updateMatrixWorld()
+    camera.getWorldPosition(eye)
+    projView.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+    frustum.setFromProjectionMatrix(projView)
+    return priority(o) < 300
+  }
   /** Lower is sooner: in view first, then by distance from the camera. */
   const priority = (o: THREE.Object3D) => {
     if (!o.frustumCulled) return 0
@@ -233,24 +258,57 @@ export function createWarmup(renderer: THREE.WebGPURenderer, scene: THREE.Scene,
       const reveal = (o: THREE.Object3D) => {
         if (!mine.delete(o)) return
         unhide([o])
+        if (inView(o)) performance.mark(`pop:${o.name || o.type}`)
         options.onReveal?.()
       }
+      const { now, later } = drawables(root, !!options.visibleOnly)
       try {
-        await warmRoot(root, reveal)
+        await warmRoot(root, reveal, now)
       } finally {
         unhide([...mine])
         if (t) unhide(t.held.splice(0))
       }
+      return later
+    },
+    async warmObjects(objects) {
+      const byRoot = new Map<THREE.Object3D, THREE.Object3D[]>()
+      for (const o of objects) {
+        let r = o
+        while (r.parent) r = r.parent
+        let l = byRoot.get(r)
+        if (!l) byRoot.set(r, (l = []))
+        l.push(o)
+      }
+      for (const [r, l] of byRoot) await warmRoot(r, undefined, l)
     },
     track(root) {
       if (!tracked.has(root)) tracked.set(root, { waiting: true, held: [] })
+    },
+    get lastArrival() {
+      return lastArrival
+    },
+    setCovered(on) {
+      covered = on
     },
     async idle() {
       while (late.size) await Promise.all(late)
     },
   }
 
-  async function warmRoot(root: THREE.Object3D, onCompiled: (o: THREE.Object3D) => void = () => {}) {
+  /** Drawables under `root`; with `visibleOnly`, split into the ones the game draws now and the ones it hides. */
+  function drawables(root: THREE.Object3D, visibleOnly: boolean) {
+    const now: THREE.Object3D[] = []
+    const later: THREE.Object3D[] = []
+    const walk = (o: THREE.Object3D, shown: boolean) => {
+      const vis = shown && o.visible
+      if (isDrawable(o)) (vis || !visibleOnly ? now : later).push(o)
+      for (const c of o.children) walk(c, vis)
+    }
+    walk(root, true)
+    return { now, later }
+  }
+
+  async function warmRoot(root: THREE.Object3D, onCompiled: (o: THREE.Object3D) => void = () => {}, list?: THREE.Object3D[]) {
     if (!ready) return
     root.updateMatrixWorld(true)
     camera.updateMatrixWorld()
@@ -261,14 +319,13 @@ export function createWarmup(renderer: THREE.WebGPURenderer, scene: THREE.Scene,
     // thread, pipelines compile in parallel on the GPU process), objects sharing a material go one after another so
     // the second one hits the first one's cached shaders instead of building them again.
     const groups = new Map<string, THREE.Object3D[]>()
-    root.traverse((o) => {
-      if (!isDrawable(o)) return
+    for (const o of list ?? drawables(root, false).now) {
       const m = (o as Any).material
       const key = Array.isArray(m) ? m.map((x: Any) => x.uuid).join() : m.uuid
-      let list = groups.get(key)
-      if (!list) groups.set(key, (list = []))
-      list.push(o)
-    })
+      let g = groups.get(key)
+      if (!g) groups.set(key, (g = []))
+      g.push(o)
+    }
     // What the player can see first, within and across material groups.
     const score = new Map<THREE.Object3D, number>()
     const chains = [...groups.values()].map((list) => {
@@ -279,7 +336,7 @@ export function createWarmup(renderer: THREE.WebGPURenderer, scene: THREE.Scene,
     enter()
     try {
       await Promise.all(
-        Array.from({ length: Math.min(CHAINS, chains.length) }, async () => {
+        Array.from({ length: Math.min(covered ? CHAINS_COVERED : CHAINS_PLAY, chains.length) }, async () => {
           for (let list = chains.shift(); list; list = chains.shift())
             for (const o of list) {
               await compileOne(o)

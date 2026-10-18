@@ -1,6 +1,7 @@
 import * as THREE from "three/webgpu"
+import { exp, length, uniform, uv, vec3 } from "three/tsl"
 
-// (Body B copy of src/player/torch.ts, so the bake-off stays self-contained.) A period two-D-cell aluminium flashlight (black anodised barrel with knurled grip, flared reflector head, tail cap),
+// A period two-D-cell aluminium flashlight (black anodised barrel with knurled grip, flared reflector head, tail cap),
 // turned from a lathe profile. Origin at the grip (where the fist closes), lens toward -Z.
 
 export function createTorch() {
@@ -10,14 +11,21 @@ export function createTorch() {
     [0.0175, -0.075], [0.0175, -0.088], [0.0215, -0.11], [0.0262, -0.128], [0.0272, -0.134], [0.0272, -0.148],
     [0.0262, -0.152], [0.024, -0.153],
   ]
-  const pts = profile.map(([r, z]) => new THREE.Vector2(r, z))
+  // Lathe points must run bottom to top (increasing y) for outward faces; listed tail to lens, so reversed. (Inward
+  // faces left only the far inside of the head visible: a thin dark ring floating at the lens.)
+  const pts = profile.map(([r, z]) => new THREE.Vector2(r, z)).reverse()
   const body = new THREE.LatheGeometry(pts, 28)
   // Lathe turns about Y; lay it along Z.
   body.rotateX(Math.PI / 2)
   body.computeVertexNormals()
   const metal = new THREE.MeshStandardNodeMaterial({ color: 0x141416, metalness: 0.85, roughness: 0.42 })
   const knurl = new THREE.MeshStandardNodeMaterial({ color: 0x101012, metalness: 0.8, roughness: 0.7 })
+  // The lit lens: the filament's image in the reflector, a hot centre fading to the rim (seen in mirrors, or when the
+  // beam is turned back at you). `userData.lensLevel` (0..1) dims it with the light.
   const lens = new THREE.MeshStandardNodeMaterial({ color: 0x222222, metalness: 0, roughness: 0.05 })
+  const lensLevel = uniform(1)
+  const r = length(uv().sub(0.5)).mul(2)
+  lens.emissiveNode = vec3(1, 0.86, 0.62).mul(exp(r.mul(r).mul(-3.5)).mul(36).add(2)).mul(lensLevel)
 
   const group = new THREE.Group()
   group.name = "torch"
@@ -33,6 +41,7 @@ export function createTorch() {
   lensAt.position.set(0, 0, -0.155)
   group.add(lensAt)
   group.userData.lens = lensAt
+  group.userData.lensLevel = lensLevel
   group.visible = false
   return group
 }

@@ -2,19 +2,24 @@ import type { Lamp, WorldContext } from "../world/context"
 import { interiorRooms, type RoomEntry } from "../world/interior/registry"
 import { NIGHT_ROOMS } from "../world/interior/lighting-state"
 import { BUILDING, FREIGHT, RISER, SUBLEVEL_Y, storeyY } from "../world/layout"
+import { weather, type Lightning } from "../world/weather"
 import type { LoopVoice, Sfx } from "./engine"
+import { NightOutdoors } from "./night"
 
 // The world's steady sounds and weather.
-//  Outdoors: rain on asphalt as the base bed with the rain-and-distant-thunder bed layered on it, plus single thunder
-//   events every 30–120 s (panned anywhere, now and then a loud close crack). Indoors all of it is muffled by the
-//   building (low-passed and quieter) rather than cut.
+//  Weather (src/world/weather.ts): the default night is dry, so the rain beds (rain on asphalt, and the rain-and-
+//   distant-thunder bed on it) play only with `weather.rain` > 0. Thunder follows each lightning strike: it arrives
+//   distance / 343 m/s after the flash, from the strike's bearing, quieter and duller the further away (a 15 km strike
+//   is a low rumble, a close one the sharp crack take). Indoors weather is muffled by the building rather than cut.
 //  Indoors: the building's HVAC (one take on even storeys, the other on odd) and the corridor's room tone as beds;
 //   fluorescent hum from the lit tubes nearest the listener (four positional voices that follow the nearest fixtures,
 //   not one per tube), the flicker take now and then from a flickering tube; the machine room (3-04), the radio static
 //   in the listening room (3-08) and the off-hook phone on the Chief's desk (1-07) as positional loops; a CRT's
 //   whine when passing a lit terminal; and the low drone near the Sublevel's ways in (FL-1, the W-1 risers).
-// Positional voices are occluded by walls (engine.ts). The forest-night bed is not shipped yet (its pick sounded like
-// a highway); `forest` is the slot for it. `?thunder=<s>` (automation only) sets when the first thunder comes.
+//  Outdoors: the night is built from parts (night.ts): a very quiet gusting wind in the pines plus sparse positional
+//   one-shots in the trees (rustles, twig snaps, trunk creaks, a pine cone, a distant owl, rarely a far-off coyote),
+//   muffled by the building. It replaces the forest-night bed, whose pick sounded like a highway.
+// Positional voices are occluded by walls (engine.ts).
 
 const HUM_VOICES = 4
 const HUM_RANGE = 10
@@ -27,12 +32,14 @@ export class Ambience {
   private hvac: [LoopVoice, LoopVoice]
   private tone: LoopVoice
   private drone: LoopVoice
-  /** Slot for the forest-night bed once a usable take exists (`amb-forest-night` ships no files). */
-  readonly forest: LoopVoice | null = null
+  /** The outdoor night: wind bed and one-shots in the trees. */
+  readonly night: NightOutdoors
   private hums: { voice: LoopVoice; lamp: Lamp | null }[] = []
   private spots: Spot[]
   private nextHum = 0
-  private nextThunder: number
+  private indoor = 0
+  /** Listener's right vector on the ground (x, z), for panning thunder by bearing. */
+  readonly right = { x: 1, z: 0 }
   private cool = new Map<unknown, number>()
   private time = 0
 
@@ -40,9 +47,8 @@ export class Ambience {
     private ctx: WorldContext,
     private sfx: Sfx,
   ) {
-    // `?thunder=<s>` (automation only): when the first thunder comes.
-    const first = Number(ctx.params.get("thunder"))
-    this.nextThunder = ctx.params.has("thunder") && Number.isFinite(first) ? first : 25 + Math.random() * 40
+    weather.onLightning((s) => this.thunder(s))
+    this.night = new NightOutdoors(sfx, ctx.params)
     const bed = (id: Parameters<Sfx["loop"]>[0], variant = 0) => sfx.loop(id, { bus: "ambience", variant })
     this.rain = bed("amb-rain-asphalt")
     this.rainThunder = bed("amb-rain-thunder")
@@ -70,12 +76,15 @@ export class Ambience {
     const M = BUILDING.main
     const storey = Math.max(0, Math.min(M.storeys, Math.round((ear.y - 1.6 - BUILDING.floorY) / M.storeyHeight)))
 
-    // Weather, muffled by the building indoors.
+    // Rain (only when it rains), muffled by the building indoors.
+    this.indoor = indoor
+    const rain = weather.rain
     const out = 1 - 0.8 * indoor
     const cut = 20000 * (1 - indoor) + 650 * indoor
-    this.rain.set(0.6 * out, cut)
-    this.rainThunder.set(0.32 * out, cut)
-    this.thunder(dt, indoor)
+    this.rain.set(0.6 * out * rain, cut)
+    this.rainThunder.set(0.32 * out * rain, cut)
+
+    this.night.update(dt, ear, indoor)
 
     // Building beds.
     this.hvac[0].set(storey % 2 === 0 ? 0.32 * indoor : 0)
@@ -157,14 +166,29 @@ export class Ambience {
     for (const h of free) h.lamp = null
   }
 
-  private thunder(dt: number, indoor: number) {
-    this.nextThunder -= dt
-    if (this.nextThunder > 0) return
-    this.nextThunder = 30 + Math.random() * 90
-    // Variants: v2, v4 (the loud close crack), v5, v6.
-    const close = Math.random() < 0.15
-    const variant = close ? 1 : [0, 2, 3][Math.floor(Math.random() * 3)]!
-    const gain = (close ? 1 : 0.45 + Math.random() * 0.3) * (1 - 0.55 * indoor)
-    this.sfx.play("amb-thunder", { bus: "ambience", variant, gain, pan: (Math.random() * 2 - 1) * 0.7, lowpass: indoor > 0.5 ? 450 : close ? 20000 : 6000, jitter: 0.05 })
+  /** A strike's thunder: delayed by the distance, panned to its bearing, duller and quieter the further away. */
+  private thunder(s: Lightning) {
+    const delay = weather.delayOf(s) - (performance.now() / 1000 - s.at)
+    const km = s.distanceM / 1000
+    // Takes: v2 (rolling), v4 (the close crack), v5 (distant), v6 (long roll).
+    const variant = km < 2.5 ? 1 : km < 7 ? (Math.random() < 0.5 ? 0 : 3) : 2
+    const gain = Math.min(1, 0.25 + 0.85 * s.intensity)
+    const lowpass = 16000 / (1 + km * 1.3)
+    setTimeout(
+      () => {
+        const indoor = this.indoor
+        const pan = (s.dir[0] * this.right.x + s.dir[1] * this.right.z) * 0.75
+        this.sfx.play("amb-thunder", {
+          bus: "ambience",
+          variant,
+          gain: gain * (1 - 0.55 * indoor),
+          pan,
+          lowpass: Math.min(lowpass, indoor > 0.5 ? 450 : 20000),
+          jitter: 0.04,
+        })
+      },
+      Math.max(0, delay) * 1000,
+    )
   }
+
 }

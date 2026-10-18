@@ -62,6 +62,9 @@ const TARGETS: Record<string, number> = {
   "hor-footsteps-other": -19, "hor-sub-rumble": -14,
   // UI sits under everything
   "ui-notify": -20,
+  // outdoor night parts: the bed sits very low, one-shots are placed and attenuated at runtime
+  "amb-pine-wind": -28, "out-owl": -20, "out-twig": -18, "out-cone": -20, "out-creak": -20, "out-rustle": -22,
+  "out-far-animal": -24,
 }
 
 /** Per-category targets in LUFS; "category/variant" keys override for variants with a different intended level. */

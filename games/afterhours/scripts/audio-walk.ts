@@ -29,8 +29,8 @@ const errors: string[] = []
 page.on("pageerror", (e) => errors.push(e.message))
 page.on("console", (m) => m.type() === "error" && errors.push(m.text()))
 await page.routeWebSocket(/.*/, () => {})
-// A thunder early and one horror event inside the recording, so both are heard (automation-only parameters).
-await page.goto("http://localhost:5196/?view=entrance&thunder=6&horror=24")
+// A lightning strike early (its thunder follows) and one horror event inside the recording, so both are heard (automation-only parameters).
+await page.goto("http://localhost:5196/?view=entrance&lightning=6&horror=24")
 await page.waitForFunction(() => {
   const s = (globalThis as { __afterhours?: { ready: boolean; complete: boolean } }).__afterhours
   return !!s?.complete && s.ready
@@ -96,10 +96,13 @@ await evalP(`
 `)
 await page.waitForTimeout(400)
 mark(`turned to shut it ${await door()}`)
-// The leaf stood ajar (under half open), so the first E swings it open; the second shuts it.
+// An ajar leaf (under half open) takes two presses: the first swings it open, the second shuts it.
+const ajar = await evalP<boolean>("return globalThis.__afterhoursDoors.get('s1:STAIR').amount < 0.5")
 await page.keyboard.press("KeyE")
-await page.waitForTimeout(900)
-await page.keyboard.press("KeyE")
+if (ajar) {
+  await page.waitForTimeout(2200)
+  await page.keyboard.press("KeyE")
+}
 await page.waitForTimeout(3500)
 mark(`after closing ${await door()}`)
 
@@ -135,7 +138,7 @@ const webm = `${outDir}/walk.webm`
 writeFileSync(webm, Buffer.from(b64, "base64"))
 const mp3 = `${outDir}/walk.mp3`
 const ff = Bun.spawnSync(["ffmpeg", "-v", "error", "-y", "-i", webm, "-c:a", "libmp3lame", "-q:a", "2", mp3])
-const stats = await evalP<unknown>(`return { sfx: A.sfx.stats, steps: A.footsteps.stats, horror: A.horror.log, ctx: A.sfx && (await Promise.resolve(0)) }`)
+const stats = await evalP<unknown>(`const W = (await import("/src/world/weather.ts")).weather; return { sfx: A.sfx.stats, steps: A.footsteps.stats, horror: A.horror.log, rain: W.rain, strikes: W.log.map((s) => ({ km: s.distanceM / 1000, i: s.intensity })) }`)
 const probe = Bun.spawnSync(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", mp3]).stdout.toString().trim()
 // Loudness of the recording (so a silent capture is caught).
 const loud = Bun.spawnSync(["ffmpeg", "-hide_banner", "-i", mp3, "-af", "ebur128", "-f", "null", "-"]).stderr.toString()

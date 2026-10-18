@@ -22,6 +22,9 @@ into the game; picks get curated into the shared library later (see `docs/sfx-li
   generate.ts and improve.ts never regenerate, replace or renumber them; only normalize.ts touches them (from
   `sfx-raw/`). Their prompts are the house style for new prompts (`prompts.ts` header) and are fed to the Gemini
   prompt refiner as examples. `improve.ts --fresh --category …` regenerates every non-approved slot of a category.
+- Outdoor night parts (group "outdoor": `amb-pine-wind` bed, `out-*` one-shots) ship provisionally from
+  `ship-outdoor-night.json` (listening-QA choices, not approvals) until Aiden picks; `scripts/audio-build.ts` reads it
+  alongside the round-2 picks. Runtime: `src/audio/night.ts`.
 - Loudness: `bun audio-lab/normalize.ts [--all] [--category id]` normalises clips in place from the untouched takes in
   `sfx-raw/` (so re-running never stacks processing). Metric as in `docs/sfx-library.md`: momentary-max LUFS for
   one-shots, integrated LUFS for loops; per-category targets in `lib/loudness.ts` (stingers about -11, doors -13 to

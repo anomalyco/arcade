@@ -1,0 +1,21 @@
+{
+  "note": "Provisional shipped takes for the outdoor night parts (wind bed + positional one-shots), chosen by listening QA until Aiden picks on the audition page. Not approvals: lib/approved.ts only reads picks-*.json.",
+  "picks": [
+    { "category": "amb-pine-wind", "variant": "v1" },
+    { "category": "out-owl", "variant": "v1" },
+    { "category": "out-owl", "variant": "v2" },
+    { "category": "out-twig", "variant": "v1" },
+    { "category": "out-twig", "variant": "v2" },
+    { "category": "out-twig", "variant": "v3" },
+    { "category": "out-cone", "variant": "v1" },
+    { "category": "out-cone", "variant": "v2" },
+    { "category": "out-creak", "variant": "v1" },
+    { "category": "out-creak", "variant": "v2" },
+    { "category": "out-creak", "variant": "v3" },
+    { "category": "out-rustle", "variant": "v1" },
+    { "category": "out-rustle", "variant": "v2" },
+    { "category": "out-rustle", "variant": "v3" },
+    { "category": "out-far-animal", "variant": "v1" },
+    { "category": "out-far-animal", "variant": "v2" }
+  ]
+}

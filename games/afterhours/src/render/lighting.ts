@@ -24,6 +24,7 @@ import {
 } from "three/tsl"
 import { ConeClusteredLighting } from "./clustered"
 import { initMirrors } from "./mirrors"
+import { createLightning } from "./lightning"
 import type { Lamp, WorldContext } from "../world/context"
 import type { Player } from "../player"
 import { fogSigma, opticalDepth } from "./atmosphere"
@@ -248,15 +249,18 @@ function flickerLevel(r: Rig, time: number, scale: number) {
  * a stippled reflector: the ring is a few percent, not a hard caustic halo).
  */
 const flashCookie = Fn(([coord]: [N]) => {
+  // r = 1 at the cone edge (flash.angle, ~40°). A hot centre ~9° wide (r ≈ 0.2), a faint reflector ring just outside
+  // it, and a wide dim spill (~12 % of the peak) that falls smoothly to nothing at the cone edge (no hard rim).
   const r = length(coord.xy.sub(0.5)).mul(2)
-  const hot = exp(r.mul(r).mul(-12)).mul(1.1)
-  const ring = exp(r.sub(0.4).div(0.09).pow(2).negate()).mul(0.07)
-  const dip = float(0)
-  const spill = smoothstep(1, 0.3, r).mul(0.3)
+  const hot = exp(r.div(0.13).pow(2).negate())
+  const ring = exp(r.sub(0.27).div(0.05).pow(2).negate()).mul(0.06)
+  const s = smoothstep(1, 0.05, r)
+  const spill = s.mul(s.add(1)).mul(0.11)
   // Slight lens/reflector imperfection so the spot isn't perfectly round.
   const ang = atan(coord.y.sub(0.5), coord.x.sub(0.5))
-  const wobble = ang.mul(5).sin().mul(0.04).add(ang.mul(3).add(1.3).sin().mul(0.03)).add(1)
-  return vec3(1, 0.97, 0.9).mul(max(hot.add(ring).add(dip).add(spill), 0).mul(wobble))
+  const wobble = ang.mul(5).sin().mul(0.03).add(ang.mul(3).add(1.3).sin().mul(0.02)).add(1)
+  // The hot centre slightly warmer than the spill.
+  return vec3(1, 0.95, 0.85).mul(hot.mul(wobble)).add(vec3(1, 0.97, 0.92).mul(ring.add(spill)))
 })
 
 /**
@@ -336,8 +340,8 @@ export function createLighting(ctx: WorldContext, player: Player) {
     { key: "light.flicker", label: "Flicker", group: "Lighting", unit: "×", min: 0, max: 2, step: 0.05, value: 1 },
     { key: "glow.strength", label: "Emitter glow", group: "Lighting", unit: "×", min: 0, max: 4, step: 0.05, value: 1 },
     { key: "glow.size", label: "Glow size", group: "Lighting", unit: "×", min: 0.2, max: 4, step: 0.05, value: 1 },
-    { key: "flash.intensity", label: "Intensity", group: "Flashlight", unit: "cd", min: 0, max: 4000, step: 10, value: 1000 },
-    { key: "flash.angle", label: "Beam half-angle", group: "Flashlight", unit: "°", min: 8, max: 45, step: 1, value: 24 },
+    { key: "flash.intensity", label: "Intensity (peak)", group: "Flashlight", unit: "cd", min: 0, max: 2000, step: 5, value: 110 },
+    { key: "flash.angle", label: "Spill half-angle", group: "Flashlight", unit: "°", min: 15, max: 60, step: 1, value: 40 },
     { key: "flash.range", label: "Range", group: "Flashlight", unit: "m", min: 5, max: 80, step: 1, value: 40 },
     { key: "flash.lag", label: "Sway lag", group: "Flashlight", unit: "s", min: 0, max: 0.4, step: 0.01, value: 0.09 },
     { key: "flash.scatter", label: "Beam in fog", group: "Flashlight", unit: "×", min: 0, max: 2, step: 0.01, value: 0.15 },
@@ -461,7 +465,7 @@ export function createLighting(ctx: WorldContext, player: Player) {
   let poolKey = `${ctx.settings["light.shadows"]}/${ctx.settings["light.shadowSize"]}`
 
   // ---------------------------------------------------------------- flashlight
-  const flash = new THREE.SpotLight(0xfff0dc, 0, 40, 0.42, 0.35, 2)
+  const flash = new THREE.SpotLight(0xfff0dc, 0, 40, 0.7, 0.1, 2)
   // castShadow stays on for good: toggling it at runtime recompiles every material and crashes r186's ShadowNode.
   // "Casts shadows" off is zero shadow intensity with the map frozen instead.
   flash.castShadow = true
@@ -528,6 +532,7 @@ export function createLighting(ctx: WorldContext, player: Player) {
   glows.visible = glowRigs.length > 0
   scene.add(glows)
   initMirrors(ctx, () => [glows], player)
+  const lightning = createLightning(ctx)
 
   // Culling. Clustered lights cost per pixel for every light whose sphere reaches the pixel's cluster, and their data
   // is re-sorted and re-uploaded each frame, so lamps that can't reach anything on screen are dropped: switched off,
@@ -653,6 +658,7 @@ export function createLighting(ctx: WorldContext, player: Player) {
   const rig = {
     update(dt: number, time: number) {
       frame++
+      lightning.update()
       adoptLamps()
       ;(glows as unknown as { count: number }).count = glowRigs.length
       glows.visible = glowRigs.length > 0
@@ -868,8 +874,9 @@ export function createLighting(ctx: WorldContext, player: Player) {
       fs.dir.copy(flashDir)
       fs.radiance.copy(flashColor).multiplyScalar(flash.intensity * num(ctx, "flash.scatter"))
       fs.range = flash.distance
-      fs.cosOuter = Math.cos(angle)
-      fs.cosInner = Math.cos(angle * 0.45)
+      fs.cosOuter = Math.cos(angle * 0.4)
+      // In the fog the beam is its hot centre (the spill is too dim to show): a narrow cone.
+      fs.cosInner = Math.cos(angle * 0.12)
 
       // Glow instances.
       pixelAngle.value = renderState.pixelAngle

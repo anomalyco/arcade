@@ -12,12 +12,12 @@ import { renderState } from "../render/shared"
 import { nextFrame, yieldToMain } from "./schedule"
 import { createWarmup } from "./warmup"
 import { distanceTo } from "./priority"
+import { modelLoadsPending } from "./loads"
 
-// The world boot, shared by the game (src/main.ts) and the Look Lab. Progressive: `bootWorld` builds only terrain plus
-// the render rig and resolves when the first frame can be drawn (terrain, sky, fog). The caller starts its frame loop
-// (calling `render`) and then `stream()`, which builds the remaining modules after the first frame (the light rig
-// adopts their lamps as they register) and shows each one once its pipelines are compiled in the background, so no
-// frame stalls on shader compilation.
+// The world boot, shared by the game (src/main.ts) and the Look Lab. `bootWorld` builds only terrain plus the render rig
+// and resolves when the first frame can be drawn. The caller starts its frame loop (calling `render`) and then awaits
+// `stream()`, which builds and warms everything else (the light rig adopts lamps as they register) behind the loading
+// screen, so once it lifts, play never stalls on shader compilation, texture uploads or model loads.
 
 export type WorldBuilder = { build: (ctx: WorldContext) => WorldModule | void | Promise<WorldModule | void> }
 
@@ -165,7 +165,8 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
 
   let streaming = true
   let revealed = false
-  const firstShown = new Set<string>()
+  const deferred: THREE.Object3D[] = []
+  let background: Promise<void> = Promise.resolve()
   /** One frame: module updates, atmosphere, lighting and the post chain. Player input/movement is the caller's. */
   const render = (dt: number, time: number) =>
     warmup.frame(() => {
@@ -176,55 +177,71 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
     })
 
   /**
-   * Builds and shows the remaining modules one at a time, in view order: each is built only after the previous one is
-   * shown, so its CPU build never competes with the nearer module's shader compile. The frame loop must be running.
-   * Resolves when everything (including models that arrived meanwhile) is in.
+   * Everything the player can meet, warmed behind the loading screen (the caller keeps it up until this resolves): builds
+   * the remaining modules one at a time in view order, compiles each before it joins the scene, waits for every GLB the
+   * builders asked for (props, vehicles, the player character and its animations) and warms those too. Compiling runs at
+   * full throughput meanwhile (nothing on screen to protect). Afterwards nothing is left to stream, so play doesn't
+   * hitch on shader builds and nothing pops in. The frame loop must be running (a frame now and then is enough).
    */
   const stream = async (hooks: StreamHooks = {}) => {
     for (let i = 0; i < 120 && !warmup.ready; i++) await nextFrame()
+    warmup.setCovered(true)
     const eye = camera.getWorldPosition(new THREE.Vector3())
     const order = insideBuilding(eye) ? INDOOR_ORDER : OUTDOOR_ORDER
     const pending = wanted.filter((n) => !FIRST_FRAME.has(n))
     pending.sort((a, b) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99))
+    // Builds run one after another (main-thread CPU); each module's warm-up starts as soon as it's built and overlaps the
+    // next build (warm-ups mostly wait on the GPU process). Behind the cover the order of arrival doesn't matter.
+    // Only what the game draws now is warmed here; what it hides (other storeys, far furniture) warms after the reveal.
     let done = 0
+    const warming: Promise<void>[] = []
     for (const name of pending) {
       const s = await buildModule(name)
-      if (s) {
-        warmup.track(s.root)
-        performance.mark(`queue:${s.name}:${Math.round(distanceTo(s.root, eye))}m`)
-        performance.mark(`mod:${s.name}:compile:start`)
-        // Progressive: the module joins the scene now with everything hidden, and each object appears as soon as its
-        // pipelines are ready, in-view and nearest first.
-        const progressive = params.get("bootProgressive") !== "0"
-        const warming = warmup.warm(s.root, {
-          // `bootProgressive=0` (automation/A-B only): show whole modules once compiled.
-          progressive,
-          onReveal: () => {
-            revealed = true
-            if (!firstShown.has(s.name)) {
-              firstShown.add(s.name)
-              performance.mark(`mod:${s.name}:first`)
-            }
-          },
-        })
-        if (progressive) scene.add(s.root)
-        try {
-          await warming
-        } catch (e) {
-          fail(`${s.name} warm-up: ${e instanceof Error ? e.message : e}`)
-        }
-        performance.mark(`mod:${s.name}:compile:end`)
-        if (!progressive) scene.add(s.root)
-        performance.mark(`mod:${s.name}:shown`)
-        revealed = true
+      if (!s) {
+        hooks.onShown?.(name, ++done, pending.length + 1)
+        continue
       }
-      hooks.onShown?.(name, ++done, pending.length)
+      warmup.track(s.root)
+      performance.mark(`queue:${s.name}:${Math.round(distanceTo(s.root, eye))}m`)
+      performance.mark(`mod:${s.name}:compile:start`)
+      warming.push(
+        warmup
+          .warm(s.root, { visibleOnly: true })
+          .then((later) => void deferred.push(...later))
+          .catch((e) => fail(`${s.name} warm-up: ${e instanceof Error ? e.message : e}`))
+          .then(() => {
+            performance.mark(`mod:${s.name}:compile:end`)
+            scene.add(s.root)
+            performance.mark(`mod:${s.name}:shown`)
+            revealed = true
+            hooks.onShown?.(name, ++done, pending.length + 1)
+          }),
+      )
     }
+    await Promise.all(warming)
     hooks.onBuilt?.()
-    // Models that already arrived are warming on their own; let them land before calling the world complete.
-    await warmup.idle()
+    // The player character (model + animation library) and its torch.
+    await gameBody.body.ready.catch(() => {})
+    await warmup.warm(gameBody.body.root).catch(() => {})
+    performance.mark("body:warm")
+    // Models still downloading, and builders' own follow-up work (the interior bakes its furniture after build),
+    // land under the tracked module roots and warm on their own: wait until no GLB is in flight, nothing is warming and
+    // nothing new has arrived for a while.
+    const QUIET_MS = 400
+    for (;;) {
+      await warmup.idle()
+      if (modelLoadsPending() === 0 && performance.now() - warmup.lastArrival > QUIET_MS) break
+      await new Promise((r) => setTimeout(r, 50))
+    }
+    hooks.onShown?.("models", ++done, pending.length + 1)
+    warmup.setCovered(false)
     post.setBooting(false)
     streaming = false
+    performance.mark("boot:warm")
+    // What the game hid at the reveal compiles now in slices around frames, nearest first, so it's ready before you
+    // walk up to it (if not, it compiles when first drawn: a hitch, never a hole).
+    performance.mark(`boot:deferred:${deferred.length}`)
+    background = warmup.warmObjects(deferred).then(() => void performance.mark("boot:background"))
   }
 
   return {
@@ -242,6 +259,10 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
     modules: wanted,
     get streaming() {
       return streaming
+    },
+    /** Resolves when what was hidden at the reveal has been warmed in the background too. */
+    get background() {
+      return background
     },
     /** True (once) when something new became visible since the last call: worth drawing a frame for. */
     takeReveal() {

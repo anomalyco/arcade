@@ -1,8 +1,8 @@
 {
   "model": "eleven_text_to_sound_v2",
   "format": "mp3_44100_64",
-  "updatedAt": "2026-10-18T06:20:31.312Z",
-  "totalCost": 51400,
+  "updatedAt": "2026-10-18T23:27:39.445Z",
+  "totalCost": 54117,
   "categories": [
     {
       "id": "foot-linoleum",
@@ -324,6 +324,55 @@
       "group": "horror",
       "label": "Deep sub-rumble from below",
       "intent": "a deep low-frequency rumble coming from underground / below the floor, like huge machinery or a tremor",
+      "loop": false
+    },
+    {
+      "id": "amb-pine-wind",
+      "group": "outdoor",
+      "label": "Wind in the pines (bed)",
+      "intent": "very quiet gusting wind in pine trees at night: airy, high-frequency needle hiss that swells and fades with calm gaps between gusts; no low steady roar, no traffic or highway hum, no rain, no birds or insects, no music",
+      "loop": true
+    },
+    {
+      "id": "out-owl",
+      "group": "outdoor",
+      "label": "Owl, distant",
+      "intent": "a single owl call (one or two soft hoots) far away in a forest at night, natural, no other animals, no music",
+      "loop": false
+    },
+    {
+      "id": "out-twig",
+      "group": "outdoor",
+      "label": "Twig snap",
+      "intent": "one twig or small branch snapping in a forest, a single dry crack, outdoors; not a gunshot, not a footstep sequence",
+      "loop": false
+    },
+    {
+      "id": "out-cone",
+      "group": "outdoor",
+      "label": "Pine cone drop",
+      "intent": "a pine cone falling from a tree: maybe a tap on a branch, then a soft thud on needles or earth; one event",
+      "loop": false
+    },
+    {
+      "id": "out-creak",
+      "group": "outdoor",
+      "label": "Trunk creak",
+      "intent": "a tall tree trunk or branches creaking slowly in the wind: a wooden creak or groan, outdoors; not a door hinge",
+      "loop": false
+    },
+    {
+      "id": "out-rustle",
+      "group": "outdoor",
+      "label": "Leaf and needle rustle",
+      "intent": "a brief rustle of pine branches or undergrowth outdoors: needles shaking in a gust or a small animal moving through brush; short",
+      "loop": false
+    },
+    {
+      "id": "out-far-animal",
+      "group": "outdoor",
+      "label": "Far-off dog / coyote",
+      "intent": "a dog barking or a coyote howling very far away at night, faint, with distance echo; no music",
       "loop": false
     },
     {
@@ -11197,6 +11246,1120 @@
         "limitedDb": 0,
         "take": "2026-10-18T02:25:31.270Z",
         "at": "2026-10-18T02:57:24.281Z"
+      }
+    },
+    {
+      "category": "amb-pine-wind",
+      "group": "outdoor",
+      "variant": "v1",
+      "prompt": "intermittent breeze gust fluttering pine needles, soft airy rustle swelling and fading to stillness, distant forest",
+      "duration": 20,
+      "influence": 0.7,
+      "loop": true,
+      "file": "sfx/amb-pine-wind/v1.mp3",
+      "bytes": 160540,
+      "cost": 200,
+      "generatedAt": "2026-10-18T23:26:27.112Z",
+      "qa": {
+        "description": "A very quiet, airy ambient recording of a gentle wind breeze whispering through pine needle canopies, featuring soft swells and dips with no low-end rumble or wildlife.",
+        "score": 5,
+        "issues": "none",
+        "intent": "very quiet gusting wind in pine trees at night: airy, high-frequency needle hiss that swells and fades with calm gaps between gusts; no low steady roar, no traffic or highway hum, no rain, no birds or insects, no music",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T23:26:27.112Z"
+      },
+      "status": "regenerated",
+      "previous": {
+        "prompt": "soft wind gusts through pine needles high in the treetops, airy breathy hiss rising and falling, calm pauses between gusts",
+        "file": "sfx/_previous/amb-pine-wind/v1-1792365882621.mp3",
+        "score": 2,
+        "description": "Continuous, steady rushing of a running stream or shallow river with constant liquid turbulence, splashing textures, and broadband noise in an open outdoor space.",
+        "generatedAt": "2026-10-18T23:24:42.621Z"
+      },
+      "attempts": [
+        {
+          "prompt": "dry pine needles rustling in intermittent gentle wind gusts, swells then fades into quiet stillness, distant treetop canopy",
+          "influence": 0.6,
+          "score": 3,
+          "description": "A continuous, flat hiss of wind blowing steadily through foliage or pine needles, resembling filtered white noise with minimal dynamic movement and no distinct gust peaks.",
+          "issues": "Lacks the requested gusting dynamics; the sound is a monotonous, steady wash rather than swelling and fading with calm gaps.",
+          "cost": 200,
+          "chosen": false
+        },
+        {
+          "prompt": "isolated gentle gust rustles pine branches, airy needle whispers swell and fade into silence, quiet forest",
+          "influence": 0.65,
+          "score": 1,
+          "description": "A dry, steady rhythmic ticking of a mechanical clock or timer repeating roughly once every half second against a quiet, subtly resonant background.",
+          "issues": "Unrelated sound; this is a mechanical clock ticking with no audible wind, pine needle hiss, or outdoor forest ambience.",
+          "cost": 200,
+          "chosen": false
+        },
+        {
+          "prompt": "intermittent breeze gust fluttering pine needles, soft airy rustle swelling and fading to stillness, distant forest",
+          "influence": 0.7,
+          "score": 5,
+          "description": "A very quiet, airy ambient recording of a gentle wind breeze whispering through pine needle canopies, featuring soft swells and dips with no low-end rumble or wildlife.",
+          "issues": "none",
+          "cost": 200,
+          "chosen": true
+        }
+      ],
+      "loudness": {
+        "metric": "integrated",
+        "target": -28,
+        "raw": {
+          "integrated": -48.8,
+          "momentaryMax": -48.8,
+          "truePeak": -29.3
+        },
+        "out": {
+          "integrated": -28.5,
+          "momentaryMax": -28.5,
+          "truePeak": -8.8
+        },
+        "gainDb": 20.8,
+        "limitedDb": 0,
+        "take": "2026-10-18T23:26:27.112Z",
+        "at": "2026-10-18T23:26:27.674Z"
+      }
+    },
+    {
+      "category": "amb-pine-wind",
+      "group": "outdoor",
+      "variant": "v2",
+      "prompt": "light breeze sighing through pine branches, gentle airy whoosh that swells and fades, quiet",
+      "duration": 20,
+      "influence": 0.55,
+      "loop": true,
+      "file": "sfx/amb-pine-wind/v2.mp3",
+      "bytes": 160540,
+      "cost": 200,
+      "generatedAt": "2026-10-18T23:24:42.449Z",
+      "loudness": {
+        "metric": "integrated",
+        "target": -28,
+        "raw": {
+          "integrated": -30.9,
+          "momentaryMax": -30.9,
+          "truePeak": -15.4
+        },
+        "out": {
+          "integrated": -28.5,
+          "momentaryMax": -28.5,
+          "truePeak": -11.7
+        },
+        "gainDb": 2.9,
+        "limitedDb": 0,
+        "take": "2026-10-18T23:24:42.449Z",
+        "at": "2026-10-18T23:24:42.973Z"
+      },
+      "qa": {
+        "description": "Rhythmic ocean waves crashing and surging on a shoreline, characterized by a rolling low-mid rumble that crests and dissipates into a fizzing foamy wash every few seconds.",
+        "score": 2,
+        "issues": "Sounds distinctly like ocean surf/beach waves rather than wind; features prominent low-mid rolling impact roars, constant motion without calm gaps, and lacks the dry airy hiss of pine needles.",
+        "intent": "very quiet gusting wind in pine trees at night: airy, high-frequency needle hiss that swells and fades with calm gaps between gusts; no low steady roar, no traffic or highway hum, no rain, no birds or insects, no music",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T23:25:05.944Z"
+      },
+      "status": "kept",
+      "attempts": [
+        {
+          "prompt": "intermittent breeze gusting through dry pine needles, high-frequency airy needle hiss fading to stillness, distant forest",
+          "influence": 0.55,
+          "score": 2,
+          "description": "A continuous, static hiss with high-frequency sizzle, sounding like steady moderate rain falling or a running shower/water stream with virtually no dynamic modulation.",
+          "issues": "Completely steady and continuous with no gusting swells or calm gaps; sounds like rain or running water rather than airy wind through pine needles.",
+          "cost": 200,
+          "chosen": false
+        },
+        {
+          "prompt": "gentle breeze gust fluttering pine needles, soft airy rustle swelling and fading into silence, distant forest canopy",
+          "influence": 0.6000000000000001,
+          "score": 2,
+          "description": "A continuous, muffled wind noise with a low-to-mid frequency hollow resonance and steady rumble, reminiscent of wind blowing past a microphone or across a structure's aperture.",
+          "issues": "Dominated by a steady low-mid resonance and rumble rather than delicate high-frequency needle hiss; lacks clear calm gaps between swells; sounds more like structural cavity whistling than forest wind.",
+          "cost": 200,
+          "chosen": false
+        },
+        {
+          "prompt": "single gust brushes pine needles, delicate airy foliage rustle fades to dead silence, distant pine forest",
+          "influence": 0.65,
+          "score": 2,
+          "description": "A flat, continuous high-frequency hiss with minimal dynamic variation, sounding like steady rainfall or filtered white noise rather than natural wind gusts.",
+          "issues": "Completely static with no swelling, fading, or calm gaps between gusts; sounds like steady rain or synthetic noise rather than natural gusting wind.",
+          "cost": 200,
+          "chosen": false
+        }
+      ]
+    },
+    {
+      "category": "amb-pine-wind",
+      "group": "outdoor",
+      "variant": "v3",
+      "prompt": "gusts of wind in tall pine trees, soft needle hiss far overhead, slow swells with near silence between",
+      "duration": 20,
+      "influence": 0.6,
+      "loop": true,
+      "file": "sfx/amb-pine-wind/v3.mp3",
+      "bytes": 160540,
+      "cost": 200,
+      "generatedAt": "2026-10-18T23:24:42.376Z",
+      "loudness": {
+        "metric": "integrated",
+        "target": -28,
+        "raw": {
+          "integrated": -30.9,
+          "momentaryMax": -30.9,
+          "truePeak": -12.3
+        },
+        "out": {
+          "integrated": -28.5,
+          "momentaryMax": -28.5,
+          "truePeak": -9.8
+        },
+        "gainDb": 2.9,
+        "limitedDb": 0,
+        "take": "2026-10-18T23:24:42.376Z",
+        "at": "2026-10-18T23:24:42.906Z"
+      },
+      "qa": {
+        "description": "Continuous broadband rushing water noise with periodic gentle swells and foamy recessions, sounding like ocean surf or rhythmic waves lapping on a beach.",
+        "score": 2,
+        "issues": "Sounds distinctly like watery ocean surf rather than wind; has a constant wash with no calm gaps and lacks the dry, airy needle hiss of pine trees.",
+        "intent": "very quiet gusting wind in pine trees at night: airy, high-frequency needle hiss that swells and fades with calm gaps between gusts; no low steady roar, no traffic or highway hum, no rain, no birds or insects, no music",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T23:25:06.372Z"
+      }
+    },
+    {
+      "category": "out-owl",
+      "group": "outdoor",
+      "variant": "v1",
+      "prompt": "wild barred owl call echoing in deep pine forest at night, outdoor field recording, distant perspective",
+      "duration": 3,
+      "influence": 0.65,
+      "loop": false,
+      "file": "sfx/out-owl/v1.mp3",
+      "bytes": 24494,
+      "cost": 30,
+      "generatedAt": "2026-10-18T23:26:00.338Z",
+      "qa": {
+        "description": "Two soft, acoustic owl hoots with a warm, hollow tone, recorded at a medium perspective with clean, quiet ambient room tone and no background music or insects.",
+        "score": 4,
+        "issues": "Recorded too close/dry to feel truly far away in a foggy pine forest; needs low-pass filtering and diffuse outdoor tail/reverb.",
+        "intent": "a single owl call (one or two soft hoots) far away in a forest at night, natural, no other animals, no music",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T23:26:00.338Z"
+      },
+      "status": "regenerated",
+      "previous": {
+        "prompt": "a great horned owl hooting once in the distance at night, deep soft hoo hoo, forest echo",
+        "file": "sfx/_previous/out-owl/v1-1792365884123.mp3",
+        "score": 1,
+        "description": "A close-mic'd human voice performing an exaggerated, cartoonish imitation of owl hoots ('hoo-hoo-hoo') in a dry interior room.",
+        "generatedAt": "2026-10-18T23:24:44.123Z"
+      },
+      "attempts": [
+        {
+          "prompt": "barred owl call, soft distant bird call echoing in pine forest at night, distant mic perspective",
+          "influence": 0.6,
+          "score": 1,
+          "description": "A close-mic'd human voice performing an exaggerated vocal imitation of an owl hooting, processed with artificial digital reverb.",
+          "issues": "Obvious human vocal impersonation rather than an authentic owl call, not distant, totally unrealistic for a realistic horror game.",
+          "cost": 30,
+          "chosen": false
+        },
+        {
+          "prompt": "wild barred owl call echoing in deep pine forest at night, outdoor field recording, distant perspective",
+          "influence": 0.65,
+          "score": 4,
+          "description": "Two soft, acoustic owl hoots with a warm, hollow tone, recorded at a medium perspective with clean, quiet ambient room tone and no background music or insects.",
+          "issues": "Recorded too close/dry to feel truly far away in a foggy pine forest; needs low-pass filtering and diffuse outdoor tail/reverb.",
+          "cost": 30,
+          "chosen": true
+        }
+      ],
+      "loudness": {
+        "metric": "momentary-max",
+        "target": -20,
+        "raw": {
+          "integrated": -5.8,
+          "momentaryMax": -5.8,
+          "truePeak": -0.4
+        },
+        "out": {
+          "integrated": -20,
+          "momentaryMax": -20,
+          "truePeak": -15
+        },
+        "gainDb": -14.2,
+        "limitedDb": 0,
+        "take": "2026-10-18T23:26:00.338Z",
+        "at": "2026-10-18T23:26:00.590Z"
+      }
+    },
+    {
+      "category": "out-owl",
+      "group": "outdoor",
+      "variant": "v2",
+      "prompt": "barred owl calling once far away in a pine forest at night",
+      "duration": 3.5,
+      "influence": 0.55,
+      "loop": false,
+      "file": "sfx/out-owl/v2.mp3",
+      "bytes": 28465,
+      "cost": 35,
+      "generatedAt": "2026-10-18T23:24:44.183Z",
+      "loudness": {
+        "metric": "momentary-max",
+        "target": -20,
+        "raw": {
+          "integrated": -4.8,
+          "momentaryMax": -4.8,
+          "truePeak": 0.5
+        },
+        "out": {
+          "integrated": -20.4,
+          "momentaryMax": -20.4,
+          "truePeak": -15.3
+        },
+        "gainDb": -15.2,
+        "limitedDb": 0,
+        "take": "2026-10-18T23:24:44.183Z",
+        "at": "2026-10-18T23:24:44.323Z"
+      },
+      "qa": {
+        "description": "Two soft, natural owl hoots heard at a medium-to-distant perspective in an open outdoor nighttime environment with mild background noise floor.",
+        "score": 5,
+        "issues": "none",
+        "intent": "a single owl call (one or two soft hoots) far away in a forest at night, natural, no other animals, no music",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T23:25:09.011Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "out-owl",
+      "group": "outdoor",
+      "variant": "v3",
+      "prompt": "distant owl hoot, two soft low notes, cold still night, far away",
+      "duration": 3,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/out-owl/v3.mp3",
+      "bytes": 24494,
+      "cost": 30,
+      "generatedAt": "2026-10-18T23:24:44.531Z",
+      "loudness": {
+        "metric": "momentary-max",
+        "target": -20,
+        "raw": {
+          "integrated": -11.3,
+          "momentaryMax": -11.3,
+          "truePeak": -0.7
+        },
+        "out": {
+          "integrated": -20.5,
+          "momentaryMax": -20.5,
+          "truePeak": -9.9
+        },
+        "gainDb": -8.7,
+        "limitedDb": 0,
+        "take": "2026-10-18T23:24:44.531Z",
+        "at": "2026-10-18T23:24:44.645Z"
+      },
+      "qa": {
+        "description": "A rapid series of five rhythmic, hollow avian hoots or coos recorded at close-to-medium range with minimal acoustic space or reverberation.",
+        "score": 3,
+        "issues": "Features five rapid staccato notes rather than one or two soft hoots, sounds closer to a dove than an owl, and lacks distant perspective and forest acoustic environment.",
+        "intent": "a single owl call (one or two soft hoots) far away in a forest at night, natural, no other animals, no music",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T23:25:10.398Z"
+      },
+      "status": "kept",
+      "attempts": [
+        {
+          "prompt": "single great horned owl hoot echoing far away, slow deep call, quiet pine forest at night, distant perspective",
+          "influence": 0.6,
+          "score": 1,
+          "description": "A close-up recording of an adult human voice imitating an owl hooting with repeated 'hoo-hoo-hoo-hoo' syllables in a dry indoor acoustic setting.",
+          "issues": "Obviously a human vocal impersonation rather than an authentic owl; recorded dry and up-close rather than naturally distant in an outdoor forest.",
+          "cost": 30,
+          "chosen": false
+        },
+        {
+          "prompt": "barred owl calling once far away, quiet pine forest at night, distant outdoor perspective",
+          "influence": 0.65,
+          "score": 2,
+          "description": "A close-mic'd human vocal impression of two owl hoots in a dry, quiet interior space without natural forest acoustics or distance.",
+          "issues": "Sounds distinctly like a person imitating an owl rather than a real bird; dry, intimate perspective completely lacks the required distance and outdoor forest reverberation.",
+          "cost": 30,
+          "chosen": false
+        },
+        {
+          "prompt": "field recording, solitary owl hooting once, distant in dense night forest, natural outdoor reverberation, far perspective",
+          "influence": 0.7,
+          "score": 2,
+          "description": "A dry, medium-perspective four-note cooing call of a collared dove or mourning dove against faint outdoor ambient noise.",
+          "issues": "This is a dove cooing rather than an owl hooting; it has four rhythmic notes instead of one or two soft hoots, and lacks the distance, nighttime atmosphere, and forest reverberation required.",
+          "cost": 30,
+          "chosen": false
+        }
+      ]
+    },
+    {
+      "category": "out-twig",
+      "group": "outdoor",
+      "variant": "v1",
+      "prompt": "single dry twig snapping in a forest, one sharp crack, medium distance",
+      "duration": 1,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/out-twig/v1.mp3",
+      "bytes": 8612,
+      "cost": 10,
+      "generatedAt": "2026-10-18T23:24:45.259Z",
+      "loudness": {
+        "metric": "momentary-max",
+        "target": -18,
+        "raw": {
+          "integrated": -48.6,
+          "momentaryMax": -48.6,
+          "truePeak": -21.6
+        },
+        "out": {
+          "integrated": -29.2,
+          "momentaryMax": -29.2,
+          "truePeak": -4.6
+        },
+        "gainDb": 29.9,
+        "limitedDb": 10,
+        "take": "2026-10-18T23:24:45.259Z",
+        "at": "2026-10-18T23:24:45.461Z"
+      },
+      "qa": {
+        "description": "A single, sharp, dry crack of a small brittle stick or twig snapping cleanly in two, recorded very close-up with a clean, fast decay and no background ambiance.",
+        "score": 5,
+        "issues": "none",
+        "intent": "one twig or small branch snapping in a forest, a single dry crack, outdoors; not a gunshot, not a footstep sequence",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T23:25:12.118Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "out-twig",
+      "group": "outdoor",
+      "variant": "v2",
+      "prompt": "a branch snapping in the woods some distance away, one crack",
+      "duration": 1.2,
+      "influence": 0.55,
+      "loop": false,
+      "file": "sfx/out-twig/v2.mp3",
+      "bytes": 10075,
+      "cost": 12,
+      "generatedAt": "2026-10-18T23:24:45.621Z",
+      "loudness": {
+        "metric": "momentary-max",
+        "target": -18,
+        "raw": {
+          "integrated": -18.3,
+          "momentaryMax": -18.3,
+          "truePeak": 1.2
+        },
+        "out": {
+          "integrated": -21.9,
+          "momentaryMax": -21.9,
+          "truePeak": -3
+        },
+        "gainDb": 5.8,
+        "limitedDb": 10,
+        "take": "2026-10-18T23:24:45.621Z",
+        "at": "2026-10-18T23:24:45.933Z"
+      },
+      "qa": {
+        "description": "A sharp, close-mic'd single crack of a dry wooden stick or twig snapping under tension, with virtually no ambient outdoor decay or natural acoustic space.",
+        "score": 4,
+        "issues": "Very dry foley booth recording lacking outdoor forest acoustics/decay, but the source material matches cleanly.",
+        "intent": "one twig or small branch snapping in a forest, a single dry crack, outdoors; not a gunshot, not a footstep sequence",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T23:25:11.619Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "out-twig",
+      "group": "outdoor",
+      "variant": "v3",
+      "prompt": "small stick breaking on the forest floor, one snap, close mic",
+      "duration": 1,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/out-twig/v3.mp3",
+      "bytes": 8612,
+      "cost": 10,
+      "generatedAt": "2026-10-18T23:24:45.768Z",
+      "loudness": {
+        "metric": "momentary-max",
+        "target": -18,
+        "raw": {
+          "integrated": -22.5,
+          "momentaryMax": -22.5,
+          "truePeak": 2.2
+        },
+        "out": {
+          "integrated": -24.4,
+          "momentaryMax": -24.4,
+          "truePeak": -1.5
+        },
+        "gainDb": 6.1,
+        "limitedDb": 10,
+        "take": "2026-10-18T23:24:45.768Z",
+        "at": "2026-10-18T23:24:45.951Z"
+      },
+      "qa": {
+        "description": "A close-up, dry snap of a small dry wooden stick or twig breaking under tension, followed by subtle splintering and an immediate decay with virtually no room or natural ambient tail.",
+        "score": 4,
+        "issues": "Recorded very dry in an isolated foley space, lacking natural outdoor forest acoustics and spatial air.",
+        "intent": "one twig or small branch snapping in a forest, a single dry crack, outdoors; not a gunshot, not a footstep sequence",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T23:25:16.362Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "out-cone",
+      "group": "outdoor",
+      "variant": "v1",
+      "prompt": "a pine cone falling through branches and landing softly on pine needles",
+      "duration": 1.5,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/out-cone/v1.mp3",
+      "bytes": 12373,
+      "cost": 15,
+      "generatedAt": "2026-10-18T23:24:47.060Z",
+      "loudness": {
+        "metric": "momentary-max",
+        "target": -20,
+        "raw": {
+          "integrated": -39.2,
+          "momentaryMax": -39.2,
+          "truePeak": -15.5
+        },
+        "out": {
+          "integrated": -21.7,
+          "momentaryMax": -21.7,
+          "truePeak": -1.1
+        },
+        "gainDb": 22,
+        "limitedDb": 10.9,
+        "take": "2026-10-18T23:24:47.060Z",
+        "at": "2026-10-18T23:24:47.471Z"
+      },
+      "qa": {
+        "description": "A sharp, dry wooden snap or branch crack followed immediately by a soft, muffled low-frequency thud on forest ground, recorded closely and dryly.",
+        "score": 4,
+        "issues": "The initial transient sounds more like a crisp twig snapping than a blunt cone tapping a branch, but it is very convincing and usable.",
+        "intent": "a pine cone falling from a tree: maybe a tap on a branch, then a soft thud on needles or earth; one event",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T23:25:18.096Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "out-cone",
+      "group": "outdoor",
+      "variant": "v2",
+      "prompt": "pine cone falling through conifer needles, brushing branch, landing with a soft dull thud on damp forest floor, outdoors",
+      "duration": 1.5,
+      "influence": 0.6000000000000001,
+      "loop": false,
+      "file": "sfx/out-cone/v2.mp3",
+      "bytes": 12373,
+      "cost": 15,
+      "generatedAt": "2026-10-18T23:26:04.706Z",
+      "qa": {
+        "description": "An outdoor recording of a small, solid organic object brushing past a branch or needles before landing with a soft, muffled thud on forest floor debris.",
+        "score": 5,
+        "issues": "none",
+        "intent": "a pine cone falling from a tree: maybe a tap on a branch, then a soft thud on needles or earth; one event",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T23:26:04.707Z"
+      },
+      "status": "regenerated",
+      "previous": {
+        "prompt": "pine cone dropping from a tree, one tap on a branch, then a thud on the forest floor",
+        "file": "sfx/_previous/out-cone/v2-1792365887121.mp3",
+        "score": 2,
+        "description": "Two dry, sharp, hollow wooden or hard plastic clicks occur in quick succession in an untreated, dead acoustic space with no background ambiance.",
+        "generatedAt": "2026-10-18T23:24:47.121Z"
+      },
+      "attempts": [
+        {
+          "prompt": "pine cone rustles through pine needles and twigs, landing with a soft muffled thud on damp pine needles",
+          "influence": 0.55,
+          "score": 3,
+          "description": "A close, dry recording of two quick, sharp taps of light wood or plastic clicking against a hard surface, followed by a faint settle.",
+          "issues": "Sounds like small wooden blocks or dice tapping a hard wooden table rather than falling through foliage onto soft forest floor or pine needles; lacks ambient space and organic debris.",
+          "cost": 15,
+          "chosen": false
+        },
+        {
+          "prompt": "pine cone falling through conifer needles, brushing branch, landing with a soft dull thud on damp forest floor, outdoors",
+          "influence": 0.6000000000000001,
+          "score": 5,
+          "description": "An outdoor recording of a small, solid organic object brushing past a branch or needles before landing with a soft, muffled thud on forest floor debris.",
+          "issues": "none",
+          "cost": 15,
+          "chosen": true
+        }
+      ],
+      "loudness": {
+        "metric": "momentary-max",
+        "target": -20,
+        "raw": {
+          "integrated": -40,
+          "momentaryMax": -40,
+          "truePeak": -22.3
+        },
+        "out": {
+          "integrated": -19.3,
+          "momentaryMax": -19.3,
+          "truePeak": -3.6
+        },
+        "gainDb": 20.8,
+        "limitedDb": 0.2,
+        "take": "2026-10-18T23:26:04.706Z",
+        "at": "2026-10-18T23:26:07.377Z"
+      }
+    },
+    {
+      "category": "out-cone",
+      "group": "outdoor",
+      "variant": "v3",
+      "prompt": "small pine cone hitting the ground, soft thump on needles, close mic",
+      "duration": 1,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/out-cone/v3.mp3",
+      "bytes": 8612,
+      "cost": 10,
+      "generatedAt": "2026-10-18T23:24:47.001Z",
+      "loudness": {
+        "metric": "momentary-max",
+        "target": -20,
+        "raw": {
+          "integrated": -46.7,
+          "momentaryMax": -46.7,
+          "truePeak": -26.4
+        },
+        "out": {
+          "integrated": -20.4,
+          "momentaryMax": -20.4,
+          "truePeak": -1.3
+        },
+        "gainDb": 30.1,
+        "limitedDb": 5.4,
+        "take": "2026-10-18T23:24:47.001Z",
+        "at": "2026-10-18T23:24:47.244Z"
+      },
+      "qa": {
+        "description": "A single, dry, close-mic'd wooden click or tap with no environmental reverberation, resembling an isolated percussion woodblock or metronome tick.",
+        "score": 2,
+        "issues": "Lacks the organic texture and multi-stage impact of a falling pine cone; there is no branch rustle, deflection, or soft thud onto forest ground/needles, sounding instead like an indoor wood tap.",
+        "intent": "a pine cone falling from a tree: maybe a tap on a branch, then a soft thud on needles or earth; one event",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T23:25:17.672Z"
+      },
+      "status": "kept",
+      "attempts": [
+        {
+          "prompt": "pine cone falling through pine branches, tapping a twig, landing with a soft thud on damp pine needles, outdoors",
+          "influence": 0.6,
+          "score": 1,
+          "description": "A close-up, dry creak or friction groan resembling a squeaky door hinge or rubbing material, followed by very faint handling rustle.",
+          "issues": "Completely wrong action and material; sounds like a squeaky door or friction rather than a pine cone hitting branches and dropping onto earth.",
+          "cost": 10,
+          "chosen": false
+        },
+        {
+          "prompt": "pinecone falling from branch, light tap on bark, soft dull thud on damp pine needles, forest outdoors",
+          "influence": 0.65,
+          "score": 1,
+          "description": "A vehicle passes by on wet asphalt with prominent tire spray and whoosh, followed by a faint distant thud/clatter.",
+          "issues": "Dominated by modern highway traffic noise and wet tire spray rather than a natural pine cone drop in a forest.",
+          "cost": 10,
+          "chosen": false
+        },
+        {
+          "prompt": "pine cone falling from tree, light tap on wooden branch, soft muffled thud landing on pine needles and dirt",
+          "influence": 0.7,
+          "score": 2,
+          "description": "A close-up, sharp snap of a dry twig or small stick breaking, followed immediately by a faint rustle of dry leaves.",
+          "issues": "Depicts a twig snapping rather than an object falling; lacks a wooden tap and the soft thud of impact on earth or pine needles.",
+          "cost": 10,
+          "chosen": false
+        }
+      ]
+    },
+    {
+      "category": "out-creak",
+      "group": "outdoor",
+      "variant": "v1",
+      "prompt": "tall pine trunk creaking slowly in the wind, deep wooden groan",
+      "duration": 3,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/out-creak/v1.mp3",
+      "bytes": 24494,
+      "cost": 30,
+      "generatedAt": "2026-10-18T23:24:48.515Z",
+      "loudness": {
+        "metric": "momentary-max",
+        "target": -20,
+        "raw": {
+          "integrated": -23.1,
+          "momentaryMax": -23.1,
+          "truePeak": -6.3
+        },
+        "out": {
+          "integrated": -20.4,
+          "momentaryMax": -20.4,
+          "truePeak": -3.6
+        },
+        "gainDb": 3.1,
+        "limitedDb": 0,
+        "take": "2026-10-18T23:24:48.515Z",
+        "at": "2026-10-18T23:24:48.639Z"
+      },
+      "qa": {
+        "description": "A close, dry recording of a deep, resonant wooden creak and groan produced by slow friction or twisting stress, fading out abruptly.",
+        "score": 4,
+        "issues": "Completely dry and close-up with no outdoor acoustic space, wind ambience, or foliage rustle; requires outdoor reverb and wind layering to sit in a forest.",
+        "intent": "a tall tree trunk or branches creaking slowly in the wind: a wooden creak or groan, outdoors; not a door hinge",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T23:25:23.342Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "out-creak",
+      "group": "outdoor",
+      "variant": "v2",
+      "prompt": "tall pine trunk creaking slowly in the wind, deep resonant wooden groan, distant forest acoustics",
+      "duration": 3,
+      "influence": 0.6000000000000001,
+      "loop": false,
+      "file": "sfx/out-creak/v2.mp3",
+      "bytes": 24494,
+      "cost": 30,
+      "generatedAt": "2026-10-18T23:26:01.927Z",
+      "qa": {
+        "description": "A deep, resonant, and slow wooden creak and groan, sounding like heavy timber or a thick tree trunk twisting under stress, captured in a dry, close perspective.",
+        "score": 5,
+        "issues": "none",
+        "intent": "a tall tree trunk or branches creaking slowly in the wind: a wooden creak or groan, outdoors; not a door hinge",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T23:26:01.927Z"
+      },
+      "status": "regenerated",
+      "previous": {
+        "prompt": "two tree branches rubbing together in the wind, slow wooden creak",
+        "file": "sfx/_previous/out-creak/v2-1792365888612.mp3",
+        "score": 2,
+        "description": "A close-up, repetitive series of dry, high-pitched metallic squeaks and creaks, resembling a rusty door hinge or a metal swing swinging back and forth.",
+        "generatedAt": "2026-10-18T23:24:48.612Z"
+      },
+      "attempts": [
+        {
+          "prompt": "thick tree trunk swaying slowly in the wind, heavy wooden strain, deep organic timber groan, outdoor forest",
+          "influence": 0.55,
+          "score": 2,
+          "description": "Three sharp, rhythmic clicks or tight wooden/plastic squeaks recorded close and dry, sounding like a small hand crank, ratchet, or stiff mechanism being turned in stages.",
+          "issues": "Lacks the low-frequency resonance, slow groaning cadence, and outdoor acoustics of a large tree swaying in wind; sounds like a small, dry mechanical action.",
+          "cost": 30,
+          "chosen": false
+        },
+        {
+          "prompt": "tall pine trunk creaking slowly in the wind, deep resonant wooden groan, distant forest acoustics",
+          "influence": 0.6000000000000001,
+          "score": 5,
+          "description": "A deep, resonant, and slow wooden creak and groan, sounding like heavy timber or a thick tree trunk twisting under stress, captured in a dry, close perspective.",
+          "issues": "none",
+          "cost": 30,
+          "chosen": true
+        }
+      ],
+      "loudness": {
+        "metric": "momentary-max",
+        "target": -20,
+        "raw": {
+          "integrated": -9.9,
+          "momentaryMax": -9.9,
+          "truePeak": 0.3
+        },
+        "out": {
+          "integrated": -20.4,
+          "momentaryMax": -20.4,
+          "truePeak": -10.2
+        },
+        "gainDb": -10.1,
+        "limitedDb": 0,
+        "take": "2026-10-18T23:26:01.927Z",
+        "at": "2026-10-18T23:26:02.140Z"
+      }
+    },
+    {
+      "category": "out-creak",
+      "group": "outdoor",
+      "variant": "v3",
+      "prompt": "old pine tree creaking under its own weight, one long wooden creak, distant",
+      "duration": 3,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/out-creak/v3.mp3",
+      "bytes": 24494,
+      "cost": 30,
+      "generatedAt": "2026-10-18T23:24:48.681Z",
+      "loudness": {
+        "metric": "momentary-max",
+        "target": -20,
+        "raw": {
+          "integrated": -33.8,
+          "momentaryMax": -33.8,
+          "truePeak": -15.5
+        },
+        "out": {
+          "integrated": -20.4,
+          "momentaryMax": -20.4,
+          "truePeak": -2.1
+        },
+        "gainDb": 13.8,
+        "limitedDb": 0,
+        "take": "2026-10-18T23:24:48.681Z",
+        "at": "2026-10-18T23:24:48.820Z"
+      },
+      "qa": {
+        "description": "A close-up, resonant wooden groan and creak under slow mechanical strain, pitch-bending and settling with a subtle wood snap against a faint background hiss.",
+        "score": 4,
+        "issues": "Recorded quite close and dry, lacking the outdoor distance, natural wind ambiance, and forest reverberation expected of a tall tree.",
+        "intent": "a tall tree trunk or branches creaking slowly in the wind: a wooden creak or groan, outdoors; not a door hinge",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T23:25:23.417Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "out-rustle",
+      "group": "outdoor",
+      "variant": "v1",
+      "prompt": "brief rustle of pine branches in a gust, needles shaking",
+      "duration": 2,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/out-rustle/v1.mp3",
+      "bytes": 16553,
+      "cost": 20,
+      "generatedAt": "2026-10-18T23:24:50.208Z",
+      "loudness": {
+        "metric": "momentary-max",
+        "target": -22,
+        "raw": {
+          "integrated": -20.5,
+          "momentaryMax": -20.5,
+          "truePeak": -4.3
+        },
+        "out": {
+          "integrated": -22.1,
+          "momentaryMax": -22.1,
+          "truePeak": -7.4
+        },
+        "gainDb": -0.9,
+        "limitedDb": 0,
+        "take": "2026-10-18T23:24:50.208Z",
+        "at": "2026-10-18T23:24:50.372Z"
+      },
+      "qa": {
+        "description": "A close-up, dry foley recording of a short rustle and scrape of dry leaves, twigs, or foliage moving briskly for about one second with no background atmosphere.",
+        "score": 4,
+        "issues": "Sounds slightly more like dry deciduous leaves or light paper than dense pine needles, and is completely dry without outdoor acoustic space, but highly usable with processing.",
+        "intent": "a brief rustle of pine branches or undergrowth outdoors: needles shaking in a gust or a small animal moving through brush; short",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T23:25:24.894Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "out-rustle",
+      "group": "outdoor",
+      "variant": "v2",
+      "prompt": "something small moving through undergrowth, short rustle, medium distance",
+      "duration": 2,
+      "influence": 0.55,
+      "loop": false,
+      "file": "sfx/out-rustle/v2.mp3",
+      "bytes": 16553,
+      "cost": 20,
+      "generatedAt": "2026-10-18T23:24:49.973Z",
+      "loudness": {
+        "metric": "momentary-max",
+        "target": -22,
+        "raw": {
+          "integrated": -38.8,
+          "momentaryMax": -38.8,
+          "truePeak": -20.2
+        },
+        "out": {
+          "integrated": -21.6,
+          "momentaryMax": -21.6,
+          "truePeak": -2.4
+        },
+        "gainDb": 17.7,
+        "limitedDb": 0,
+        "take": "2026-10-18T23:24:49.973Z",
+        "at": "2026-10-18T23:24:50.138Z"
+      },
+      "qa": {
+        "description": "A very brief, dry close-up rustle of foliage or thin branches shifting rapidly and settling, followed by silence.",
+        "score": 4,
+        "issues": "Sounds slightly more like broadleaf shrubbery or paper foliage than distinct brittle pine needles, but works well as generic undergrowth movement.",
+        "intent": "a brief rustle of pine branches or undergrowth outdoors: needles shaking in a gust or a small animal moving through brush; short",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T23:25:28.551Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "out-rustle",
+      "group": "outdoor",
+      "variant": "v3",
+      "prompt": "bristly pine needles and twigs rustling, scratchy evergreen branches shifting in a quick breeze, outdoor forest exterior",
+      "duration": 2,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/out-rustle/v3.mp3",
+      "bytes": 16553,
+      "cost": 20,
+      "generatedAt": "2026-10-18T23:26:15.914Z",
+      "qa": {
+        "description": "A very dry, close-perspective foley recording of dry foliage, twigs, or stiff bristles brushing and rustling in two quick, subtle motions.",
+        "score": 5,
+        "issues": "none",
+        "intent": "a brief rustle of pine branches or undergrowth outdoors: needles shaking in a gust or a small animal moving through brush; short",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T23:26:15.914Z"
+      },
+      "status": "regenerated",
+      "previous": {
+        "prompt": "pine boughs swaying, soft needle rustle, one gust",
+        "file": "sfx/_previous/out-rustle/v3-1792365890369.mp3",
+        "score": 3,
+        "description": "A very brief, dry foley rustle resembling crumpled paper or dry broad leaves being swiped close to the microphone with minimal room reverberation.",
+        "generatedAt": "2026-10-18T23:24:50.369Z"
+      },
+      "attempts": [
+        {
+          "prompt": "bristly pine needles and twigs rustling, scratchy evergreen branches shifting in a quick breeze, outdoor forest exterior",
+          "influence": 0.6,
+          "score": 5,
+          "description": "A very dry, close-perspective foley recording of dry foliage, twigs, or stiff bristles brushing and rustling in two quick, subtle motions.",
+          "issues": "none",
+          "cost": 20,
+          "chosen": true
+        }
+      ],
+      "loudness": {
+        "metric": "momentary-max",
+        "target": -22,
+        "raw": {
+          "integrated": -23.5,
+          "momentaryMax": -23.5,
+          "truePeak": -3.9
+        },
+        "out": {
+          "integrated": -21.8,
+          "momentaryMax": -21.8,
+          "truePeak": -2.2
+        },
+        "gainDb": 2.2,
+        "limitedDb": 0,
+        "take": "2026-10-18T23:26:15.914Z",
+        "at": "2026-10-18T23:26:16.282Z"
+      }
+    },
+    {
+      "category": "out-far-animal",
+      "group": "outdoor",
+      "variant": "v1",
+      "prompt": "lone coyote howling miles away, faint, muffled atmospheric absorption, long canyon echo, extreme distant perspective",
+      "duration": 3.5,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/out-far-animal/v1.mp3",
+      "bytes": 28465,
+      "cost": 35,
+      "generatedAt": "2026-10-18T23:26:29.539Z",
+      "qa": {
+        "description": "An authentic wolf or coyote howling with a clear primary call followed by a fainter, distant response or lingering tail in an open natural acoustic space, free of background noise or music.",
+        "score": 4,
+        "issues": "A bit too clear and prominent in the mix rather than faint and very far away.",
+        "intent": "a dog barking or a coyote howling very far away at night, faint, with distance echo; no music",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T23:26:29.539Z"
+      },
+      "status": "regenerated",
+      "previous": {
+        "prompt": "a dog barking twice far away across a valley at night, faint distant echo",
+        "file": "sfx/_previous/out-far-animal/v1-1792365891367.mp3",
+        "score": 3,
+        "description": "A medium-perspective recording of a domestic dog barking rhythmically outdoors, with prominent high-mid transients and low ambient noise.",
+        "generatedAt": "2026-10-18T23:24:51.367Z"
+      },
+      "attempts": [
+        {
+          "prompt": "lone coyote howling miles away, faint, muffled atmospheric absorption, long canyon echo, extreme distant perspective",
+          "influence": 0.6,
+          "score": 4,
+          "description": "An authentic wolf or coyote howling with a clear primary call followed by a fainter, distant response or lingering tail in an open natural acoustic space, free of background noise or music.",
+          "issues": "A bit too clear and prominent in the mix rather than faint and very far away.",
+          "cost": 35,
+          "chosen": true
+        }
+      ],
+      "loudness": {
+        "metric": "momentary-max",
+        "target": -24,
+        "raw": {
+          "integrated": -39.3,
+          "momentaryMax": -39.3,
+          "truePeak": -31.8
+        },
+        "out": {
+          "integrated": -24.4,
+          "momentaryMax": -24.4,
+          "truePeak": -17.1
+        },
+        "gainDb": 15.3,
+        "limitedDb": 0,
+        "take": "2026-10-18T23:26:29.539Z",
+        "at": "2026-10-18T23:26:29.686Z"
+      }
+    },
+    {
+      "category": "out-far-animal",
+      "group": "outdoor",
+      "variant": "v2",
+      "prompt": "distant coyote howling miles away, faint muffled canine bark, wide open valley atmospheric echo, extreme distant perspective",
+      "duration": 4,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/out-far-animal/v2.mp3",
+      "bytes": 32644,
+      "cost": 40,
+      "generatedAt": "2026-10-18T23:27:18.920Z",
+      "qa": {
+        "description": "A single, clear canine howl (coyote or dog) recorded at a mid-range perspective with subtle outdoor ambiance and almost no distance reverberation or echo.",
+        "score": 3,
+        "issues": "Too dry, present, and close rather than faint and very far away; lacks the requested distant forest echo.",
+        "intent": "a dog barking or a coyote howling very far away at night, faint, with distance echo; no music",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T23:27:18.920Z"
+      },
+      "status": "regenerated",
+      "previous": {
+        "prompt": "lone coyote howl far in the distance at night, faint echo",
+        "file": "sfx/_previous/out-far-animal/v2-1792365891477.mp3",
+        "score": 2,
+        "description": "A close-up recording of a human voice theatrically mimicking an owl or wolf howl ('ooo-oooh') twice, treated with artificial reverb.",
+        "generatedAt": "2026-10-18T23:24:51.477Z"
+      },
+      "attempts": [
+        {
+          "prompt": "distant coyote howling miles away, faint muffled canine bark, wide open valley atmospheric echo, extreme distant perspective",
+          "influence": 0.6,
+          "score": 3,
+          "description": "A single, clear canine howl (coyote or dog) recorded at a mid-range perspective with subtle outdoor ambiance and almost no distance reverberation or echo.",
+          "issues": "Too dry, present, and close rather than faint and very far away; lacks the requested distant forest echo.",
+          "cost": 40,
+          "chosen": true
+        },
+        {
+          "prompt": "faint coyote howling across mountain valley, long rolling canyon echo, muffled atmospheric absorption, extreme distant perspective",
+          "influence": 0.65,
+          "score": 3,
+          "description": "A sequence of high-pitched canine yips and a short howl recorded at medium-close perspective with minimal environmental reverb. The recording is dry, foregrounded, and lacks distant atmospheric diffusion.",
+          "issues": "Far too close, dry, and prominent instead of faint and distant; lacks nighttime atmosphere and natural long-range forest echo.",
+          "cost": 40,
+          "chosen": false
+        },
+        {
+          "prompt": "faint dog bark echoing across quiet nighttime valley, muffled sound miles away, long rolling forest reverberation, extreme distant perspective",
+          "influence": 0.7,
+          "score": 2,
+          "description": "A barred owl vocalizes its rhythmic call amidst quiet nocturnal forest ambience with chirping crickets, recorded from a moderate distance.",
+          "issues": "This is an owl hooting rather than a dog barking or coyote howling.",
+          "cost": 40,
+          "chosen": false
+        }
+      ],
+      "loudness": {
+        "metric": "momentary-max",
+        "target": -24,
+        "raw": {
+          "integrated": -39,
+          "momentaryMax": -39,
+          "truePeak": -25.5
+        },
+        "out": {
+          "integrated": -24.4,
+          "momentaryMax": -24.4,
+          "truePeak": -11.3
+        },
+        "gainDb": 15,
+        "limitedDb": 0,
+        "take": "2026-10-18T23:27:18.920Z",
+        "at": "2026-10-18T23:27:19.458Z"
+      }
+    },
+    {
+      "category": "out-far-animal",
+      "group": "outdoor",
+      "variant": "v3",
+      "prompt": "farm dog barking three times very far away, faint",
+      "duration": 3.5,
+      "influence": 0.55,
+      "loop": false,
+      "file": "sfx/out-far-animal/v3.mp3",
+      "bytes": 28465,
+      "cost": 35,
+      "generatedAt": "2026-10-18T23:24:51.754Z",
+      "loudness": {
+        "metric": "momentary-max",
+        "target": -24,
+        "raw": {
+          "integrated": -18.7,
+          "momentaryMax": -18.7,
+          "truePeak": -4.9
+        },
+        "out": {
+          "integrated": -24.4,
+          "momentaryMax": -24.4,
+          "truePeak": -10.7
+        },
+        "gainDb": -5.3,
+        "limitedDb": 0,
+        "take": "2026-10-18T23:24:51.754Z",
+        "at": "2026-10-18T23:24:51.877Z"
+      },
+      "qa": {
+        "description": "A medium-sized domestic dog barking multiple times at a close-to-mid perspective in a dry, open outdoor setting.",
+        "score": 2,
+        "issues": "Recorded far too close and loud; completely lacks the faintness, high-frequency air absorption, and spacious distance echo required for a distant nighttime sound.",
+        "intent": "a dog barking or a coyote howling very far away at night, faint, with distance echo; no music",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T23:25:35.490Z"
       }
     },
     {

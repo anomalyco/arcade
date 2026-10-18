@@ -4,6 +4,7 @@ import type { Floor, Ladder, WorldContext } from "./world/context"
 import { heightAt } from "./world/height"
 import { VIEWPOINTS, type ViewpointName } from "./world/layout"
 import { GameAudio } from "./audio/game"
+import { weather } from "./world/weather"
 
 const RADIUS = 0.3
 /** Standing and crouched eye heights above the feet (m). */
@@ -172,6 +173,8 @@ export class Player {
       },
     } as PlayerState
     ctx.doors.attach(ctx, { pos: this.pos, camera })
+    // Weather (src/world/weather.ts): Lab controls always; the automatic storm only with input (never in `?shot`).
+    weather.install(ctx, enabled)
     ;(globalThis as { __afterhoursPlayer?: Player }).__afterhoursPlayer = this
     if (!enabled) return
     ;(this as { audio: GameAudio | null }).audio = new GameAudio(ctx, this)
@@ -281,6 +284,7 @@ export class Player {
 
   update(dt: number) {
     this.ctx.doors.update(dt)
+    weather.update(dt)
     this.audio?.update(dt, this.camera)
     this.time += dt
     const k = this.keys

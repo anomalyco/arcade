@@ -53,8 +53,8 @@ Ignore the other translation tracks, which hold Remy's bone lengths.
   - `duration` (s) and `frames`.
   - `speed` and `velocity` (loops): ground speed in m/s and direction `[x, z]`. In the clip's frame +Z is forward
     and +X is the character's left. The speed is the planted foot's speed with the clip's own drift removed.
-  - `rise` (`climb` only): vertical speed in m/s that the controller must supply. Stairs: 0.33 up. Ladder: 0.71,
-    measured from the gripping foot.
+  - `rise` (`climb` only): vertical speed in m/s that the controller must supply; `rise × duration` is the drop or
+    climb per cycle (two steps). Ladder: 0.71 m/s, measured from the gripping foot.
   - `contacts` (loops): stance intervals per foot, `{l: [[start, end]], r: [...]}`, as phase fractions 0–1 of the
     clip; an `end` above 1 wraps into the next cycle. A foot counts as planted when it moves with the ground (or
     rungs) to within 0.35 m/s and sits within 4 cm of its lowest height.
@@ -69,8 +69,15 @@ Ignore the other translation tracks, which hold Remy's bone lengths.
 
 ## Known source problems
 
-- `descending-stairs` is not a stair loop: one step down, then a sink into a squat; the feet never lift. It is kept
-  as `kind: "broken"`. Re-download Mixamo's "Walking Down Stairs" / "Descending Stairs" with In Place on, then
-  re-run the build.
+- Mixamo's stair-descent takes (`descending-stairs`, `-rootmotion`, `-run`) are shorter than one stride, and their
+  swing foot never goes below the floor it left, so the legs fold into a squat. The build repairs them from one step
+  (`HALF_STEP` in mixamo.py):
+  1. The stepping leg is re-solved onto the steps above and below.
+  2. The hips are lifted back to a walking stance, with both legs re-solved.
+  3. The stride is completed by mirroring the step, then the linear drop is removed like any climb.
+
+  Measured against the staircase each clip implies, the walk-down's planted foot sits within about 3 cm of the
+  tread. The run-down is rougher: its planted foot sits up to 13 cm into the tread.
+- `descending-stairs-rootmotion` is the same take as `descending-stairs`; after conversion the two are identical.
 - `right-turn-90` turns 102.6°, not 90°; scale its `root` yaw if an exact 90° is needed.
 - The torch clips hold the torch in the left hand.

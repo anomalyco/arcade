@@ -54,7 +54,8 @@ export class Footsteps {
     if (surface === "asphalt" && Math.random() > wet) surface = "concrete"
     const v = VOICING[surface]
     this.stats.surfaces[surface] = (this.stats.surfaces[surface] ?? 0) + 1
-    const crouch = 1 - 0.6 * s.crouch
+    // Level by gait: a walk is quiet, a jog a little louder, a sprint loud; crouching is quieter still.
+    const crouch = 1 - 0.45 * s.crouch
     const right = e.foot === "right"
     const pan = right ? 0.08 : -0.08
     const foot = right ? 1.015 : 0.985
@@ -63,7 +64,8 @@ export class Footsteps {
       return
     }
     const run = e.kind === "land" || s.running
-    const level = (0.5 + 0.5 * e.intensity) * crouch * (e.kind === "land" ? 1.3 : 1) * v.gain
+    const gait = Math.max(0.3, Math.min(0.95, 0.12 + 0.2 * e.speed))
+    const level = (e.kind === "land" ? 0.5 + 0.5 * e.intensity : gait) * crouch * v.gain
     this.sfx.play(v.id, {
       bus: "footsteps",
       gain: level * (0.88 + Math.random() * 0.24),

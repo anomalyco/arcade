@@ -589,6 +589,86 @@ export const CATEGORIES: CategorySpec[] = [
     ],
   },
 
+  // Outdoor night, built from parts: a quiet airy wind bed plus sparse positional one-shots placed in the trees.
+  {
+    id: "amb-pine-wind",
+    group: "outdoor",
+    label: "Wind in the pines (bed)",
+    intent: "very quiet gusting wind in pine trees at night: airy, high-frequency needle hiss that swells and fades with calm gaps between gusts; no low steady roar, no traffic or highway hum, no rain, no birds or insects, no music",
+    loop: true,
+    variants: [
+      loopV("soft wind gusts through pine needles high in the treetops, airy breathy hiss rising and falling, calm pauses between gusts", 20, 0.6),
+      loopV("light breeze sighing through pine branches, gentle airy whoosh that swells and fades, quiet", 20, 0.55),
+      loopV("gusts of wind in tall pine trees, soft needle hiss far overhead, slow swells with near silence between", 20, 0.6),
+    ],
+  },
+  {
+    id: "out-owl",
+    group: "outdoor",
+    label: "Owl, distant",
+    intent: "a single owl call (one or two soft hoots) far away in a forest at night, natural, no other animals, no music",
+    variants: [
+      v("a great horned owl hooting once in the distance at night, deep soft hoo hoo, forest echo", 3, 0.6),
+      v("barred owl calling once far away in a pine forest at night", 3.5, 0.55),
+      v("distant owl hoot, two soft low notes, cold still night, far away", 3, 0.6),
+    ],
+  },
+  {
+    id: "out-twig",
+    group: "outdoor",
+    label: "Twig snap",
+    intent: "one twig or small branch snapping in a forest, a single dry crack, outdoors; not a gunshot, not a footstep sequence",
+    variants: [
+      v("single dry twig snapping in a forest, one sharp crack, medium distance", 1, 0.6),
+      v("a branch snapping in the woods some distance away, one crack", 1.2, 0.55),
+      v("small stick breaking on the forest floor, one snap, close mic", 1, 0.6),
+    ],
+  },
+  {
+    id: "out-cone",
+    group: "outdoor",
+    label: "Pine cone drop",
+    intent: "a pine cone falling from a tree: maybe a tap on a branch, then a soft thud on needles or earth; one event",
+    variants: [
+      v("a pine cone falling through branches and landing softly on pine needles", 1.5, 0.6),
+      v("pine cone dropping from a tree, one tap on a branch, then a thud on the forest floor", 1.5, 0.55),
+      v("small pine cone hitting the ground, soft thump on needles, close mic", 1, 0.6),
+    ],
+  },
+  {
+    id: "out-creak",
+    group: "outdoor",
+    label: "Trunk creak",
+    intent: "a tall tree trunk or branches creaking slowly in the wind: a wooden creak or groan, outdoors; not a door hinge",
+    variants: [
+      v("tall pine trunk creaking slowly in the wind, deep wooden groan", 3, 0.6),
+      v("two tree branches rubbing together in the wind, slow wooden creak", 3, 0.55),
+      v("old pine tree creaking under its own weight, one long wooden creak, distant", 3, 0.6),
+    ],
+  },
+  {
+    id: "out-rustle",
+    group: "outdoor",
+    label: "Leaf and needle rustle",
+    intent: "a brief rustle of pine branches or undergrowth outdoors: needles shaking in a gust or a small animal moving through brush; short",
+    variants: [
+      v("brief rustle of pine branches in a gust, needles shaking", 2, 0.6),
+      v("something small moving through undergrowth, short rustle, medium distance", 2, 0.55),
+      v("pine boughs swaying, soft needle rustle, one gust", 2, 0.6),
+    ],
+  },
+  {
+    id: "out-far-animal",
+    group: "outdoor",
+    label: "Far-off dog / coyote",
+    intent: "a dog barking or a coyote howling very far away at night, faint, with distance echo; no music",
+    variants: [
+      v("a dog barking twice far away across a valley at night, faint distant echo", 3.5, 0.6),
+      v("lone coyote howl far in the distance at night, faint echo", 4, 0.6),
+      v("farm dog barking three times very far away, faint", 3.5, 0.55),
+    ],
+  },
+
   // UI
   {
     id: "ui-notify",

@@ -78,6 +78,10 @@ export class GameAudio {
     this.indoor += ((insideBuilding(p) ? 1 : 0) - this.indoor) * (1 - Math.exp(-dt * 3))
     const inRect = (r: { min: readonly [number, number]; max: readonly [number, number] }) => p.x >= r.min[0] && p.x <= r.max[0] && p.z >= r.min[1] && p.z <= r.max[1]
     setSpace(this.indoor, inRect(CORE.stair) ? 1 : inRect(INTERIOR.lobby) ? 0.7 : 0.25)
+    const e = camera.matrixWorld.elements
+    const rl = Math.hypot(e[0]!, e[2]!) || 1
+    this.ambience.right.x = e[0]! / rl
+    this.ambience.right.z = e[2]! / rl
     this.ambience.update(dt, this.ear, this.indoor)
     this.horror.update(dt, this.ear, this.indoor)
   }
