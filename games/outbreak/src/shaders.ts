@@ -232,6 +232,12 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
     let twilightIndigo = select(col * vec3f(0.75, 0.95, 1.65) + vec3f(0.014, 0.026, 0.078) * eave, col * vec3f(1.08, 0.90, 0.76) + vec3f(0.016, 0.009, 0.004) * eave, isV7Roof);
     let effWestRoof = select(westRoof, 0.28 + 0.72 * westRoof, isV7Roof);
     col = mix(col, mix(twilightIndigo, sunsetCopper, effWestRoof), duskGlow * 0.92);
+    if (OL.round.x > 6.5 || OL.round.z > 6.5) {
+      // Darkwood (v8): low-key peat amber instead of a bright copper roof, and a heavier overcast day roof.
+      let roofMuted = clamp(OL.v8.z, 0.0, 1.5) * max(sun, duskGlow);
+      let rLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
+      col = mix(col, mix(vec3f(rLum) * vec3f(1.10, 0.96, 0.78), col, 0.45) * 0.78, clamp(roofMuted, 0.0, 1.0));
+    }
     var roofSight = 1.0;
     if (OL.unseen.mode >= 0.5 && OL.unseen.strength > 0.001) {
       let rSight = fieldSight3(o.world, n);
@@ -419,6 +425,17 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
     // Darken cutaway wall-top molding (y = 2.73..2.83) so interior walls have a crisp dark charcoal cap
     if (o.world.y > 2.72 && o.world.y < 2.83 && n.y > 0.72) {
       col *= 0.08;
+    }
+    if (isV8 && !inRoom && mat != 12 && mat != 2) {
+      // Darkwood (v8) overcast day: greens slide to olive, blue drains from the earth and asphalt, canopies go heavy.
+      let muted = clamp(OL.v8.z, 0.0, 1.5) * max(sunVal, duskGlow);
+      if (muted > 0.001) {
+        let mLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
+        let greenness = clamp((col.g - max(col.r, col.b)) / max(col.g, 1e-4), 0.0, 1.0);
+        var m = vec3f(col.r + (col.g - col.r) * 0.42 * greenness, col.g * (1.0 - 0.08 * greenness), col.b * 0.80);
+        m = mix(vec3f(mLum), m, 0.72) * vec3f(1.03, 0.99, 0.86) * select(0.90, 0.66, mat == 22);
+        col = mix(col, m, clamp(muted, 0.0, 1.0));
+      }
     }
     let beamAdd = evalFlashlight(o.world, n);
     let flashIrr = outbreakFlashMask;
