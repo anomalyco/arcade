@@ -9,7 +9,6 @@ import {
   type SceneHooks,
 } from "@arcade/kit/gpu/shaders"
 import { foliageWindDeclarationsWgsl } from "@arcade/kit/gpu/foliage"
-import { BUILDING_RECTS } from "../shared/map"
 import { flashlightVolumeShader } from "./flashlight-beam"
 import { outbreakFogOfWarDeclarationsWgsl, visibilityFieldShader } from "./fog-of-war"
 import { groundSurfaceHookWgsl, outbreakSurfaceMaterialDeclarationsWgsl, outbreakSurfaceMaterialWgsl } from "./ground"
@@ -87,12 +86,10 @@ export const outbreakSceneHooks: SceneHooks = {
     } else if (L.cone.w > 1.125 && L.cone.w < 1.5) {
       let along = dot(dv, abs(L.cone.yx));
       if (world.y > 2.75 || dot(dv, L.cone.xy) < -L.extra.x || along < L.extra.y + 1.0 || along > -1.25 - L.cone.z) { continue; }
-    } else if ((L.cone.w < -0.5 && (world.y > 2.75 || (world.z < 35.42 && OL.u5.w < 0.5))) || (L.cone.w > 0.5 && dot(dv, L.cone.xy) <= 0.0)) { continue; }`,
-  material: " ",
+    } else if ((L.cone.w < -0.5 && (world.y > 2.75 || (outbreakInRoom && OL.u5.w < 0.5))) || (L.cone.w > 0.5 && dot(dv, L.cone.xy) <= 0.0)) { continue; }`,
+  material: "let inRoom = interior(o.world.xz + select(vec2f(0.0), n.xz * 0.28, mat == 4)); outbreakInRoom = inRoom;",
   postLightMaterial: `${outbreakSurfaceMaterialWgsl}
     ${interiorMaterialWgsl(outbreakInteriorRefs, true)}
-    let inRoom = interior(o.world.xz + select(vec2f(0.0), n.xz * 0.28, mat == 4));
-    outbreakInRoom = inRoom;
     let isPropTone = mat == 0 || mat == 10 || mat == 24;
     let vTone = select(1.0, clamp(0.72 + (o.world.y - 0.04) * 1.4, 0.72, 1.0), !isPropTone && o.world.y > 0.04 && o.world.y < 0.24 && abs(n.y) < 0.45)
       * select(1.0, 1.15, !isPropTone && n.y > 0.35 && n.y < 0.88 && o.world.y > 0.35 && o.world.y < 2.45)
@@ -113,55 +110,38 @@ export const outbreakSceneHooks: SceneHooks = {
 ${foliageWindDeclarationsWgsl}
 ${outbreakLightingDeclarationsWgsl}
 ${outbreakSurfaceMaterialDeclarationsWgsl}
-/** Streamed window building slot i (0..7) has the L-plan bungalow footprint (u17.w bits 0..7). */
+/** Active building slot i (0..7) has the L-plan bungalow footprint (u17.w bits 0..7). */
 fn slotLPlan(i: i32) -> bool { return ((u32(OL.u17.w) >> u32(i)) & 1u) == 1u; }
 /** Whether the rect last returned by houseRect is an L-plan bungalow (cut and lit by wing, not by rect). */
 var<private> houseIsL: bool;
 fn houseRect(id: i32) -> vec4f {
   houseIsL = false;
-  if (OL.win.z > 0.5) {
-    if (id >= 0 && id <= 7) {
-      let b0 = OL.bldRects[id];
-      if (all(F.eye.xy > b0.xy - 0.15) && all(F.eye.xy < b0.zw + 0.15)) { houseIsL = slotLPlan(id); return b0; }
-    }
-    let nBld = i32(OL.win.w);
-    for (var i = 0; i < 8; i++) {
-      if (i >= nBld) { break; }
-      let bi = OL.bldRects[i];
-      if (all(F.eye.xy > bi.xy - 0.15) && all(F.eye.xy < bi.zw + 0.15)) { houseIsL = slotLPlan(i); return bi; }
-    }
-    if (id > 7) { return vec4f(-99999.0, -99999.0, -99998.0, -99998.0); }
-    houseIsL = slotLPlan(clamp(id, 0, 7));
-    return OL.bldRects[clamp(id, 0, 7)];
+  let nBld = i32(OL.win.w);
+  if (id >= 0 && id < nBld) {
+    let b0 = OL.bldRects[id];
+    if (all(F.eye.xy > b0.xy - 0.15) && all(F.eye.xy < b0.zw + 0.15)) { houseIsL = slotLPlan(id); return b0; }
   }
-  houseIsL = id == 0 || id == 1;
-  switch id {
-    ${BUILDING_RECTS.map((b,i)=>`${i===3?"default":`case ${i}`}: {return vec4f(${b.map(v=>v.toFixed(2)).join(",")});}`).join("\n")}
+  for (var i = 0; i < 8; i++) {
+    if (i >= nBld) { break; }
+    let bi = OL.bldRects[i];
+    if (all(F.eye.xy > bi.xy - 0.15) && all(F.eye.xy < bi.zw + 0.15)) { houseIsL = slotLPlan(i); return bi; }
   }
+  if (id < 0 || id >= nBld) { return vec4f(-99999.0, -99999.0, -99998.0, -99998.0); }
+  houseIsL = slotLPlan(id);
+  return OL.bldRects[id];
 }
 fn interior(p:vec2f) -> bool {
-  if (OL.win.z > 0.5) {
-    let nBld = i32(OL.win.w);
-    for (var i = 0; i < 8; i++) {
-      if (i >= nBld) { break; }
-      let b = OL.bldRects[i];
-      if (slotLPlan(i)) {
-        if (p.x > b.x + 0.22 && p.x < b.z - 0.22 && p.y > b.y + 5.70 && p.y < b.w - 0.22) { return true; }
-        if (p.x > b.x + 2.22 && p.x < b.x + 9.28 && p.y > b.y + 0.22 && p.y < b.y + 5.72) { return true; }
-        if (p.x > b.x + 9.25 && p.x < b.z - 0.22 && p.y > b.y + 1.72 && p.y < b.y + 5.72) { return true; }
-      } else if (p.x > b.x + 0.22 && p.x < b.z - 0.22 && p.y > b.y + 0.22 && p.y < b.w - 0.22) { return true; }
-    }
-    return false;
+  let nBld = i32(OL.win.w);
+  for (var i = 0; i < 8; i++) {
+    if (i >= nBld) { break; }
+    let b = OL.bldRects[i];
+    if (p.x <= b.x + 0.22 || p.x >= b.z - 0.22 || p.y <= b.y + 0.22 || p.y >= b.w - 0.22) { continue; }
+    if (!slotLPlan(i)) { return true; }
+    if (p.y > b.y + 5.70) { return true; }
+    if (p.x > b.x + 2.22 && p.x < b.x + 9.28 && p.y < b.y + 5.72) { return true; }
+    if (p.x > b.x + 9.25 && p.y > b.y + 1.72 && p.y < b.y + 5.72) { return true; }
   }
-  let b = select(
-    select(vec4f(53.22, 54.22, 71.78, 67.78), vec4f(53.22, 23.22, 72.78, 37.78), p.y < 45.0),
-    select(vec4f(21.0, 54.0, 36.0, 65.5), vec4f(22.0, 24.0, 37.0, 35.5), p.y < 45.0),
-    p.x < 45.0
-  );
-  let south = p.x > b.x + 0.22 && p.x < b.z - 0.22 && p.y > b.y + 5.70 && p.y < b.w - 0.22;
-  let north = p.x > b.x + 2.22 && p.x < b.x + 9.28 && p.y > b.y + 0.22 && p.y < b.y + 5.72;
-  let wing = p.x > b.x + 9.25 && p.x < b.z - 0.22 && p.y > b.y + 1.72 && p.y < b.y + 5.72;
-  return select(all(p > b.xy) && all(p < b.zw), south || north || wing, p.x < 45.0);
+  return false;
 }
 fn roofCut(p:vec3f, id:i32, frag:vec4f) -> bool {
   let b=houseRect(id);
@@ -196,7 +176,7 @@ ${outbreakHeroWgsl}`,
       if (OL.u17.z > 0.001 && OL.u17.z < 0.999 && bayer4x4(o.pos) > OL.u17.z) { discard; }
       if ((i32(round(o.mat)) == 21 || o.world.y > 2.801) && roofCut(o.world, i32(round(o.aux)), o.pos)) { discard; }
       if (o.world.y > 2.8 && interior(o.world.xz)) {
-        let nCut = select(4, i32(OL.win.w), OL.win.z > 0.5);
+        let nCut = i32(OL.win.w);
         for(var i=0;i<nCut;i++) { if(roofCut(o.world,i,o.pos)){discard;} }
       }
       if (F.eye.z > 1.0001 && o.world.y > 0.88 && (mat == 4 || mat == 9 || mat == 2 || mat == 6)) {

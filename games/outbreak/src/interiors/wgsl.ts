@@ -58,7 +58,7 @@ export const outbreakInteriorRefs: InteriorWgslRefs = {
   plate: i => `OL.bldPlate[clamp(${i}, 0, 7) >> 2][${i} & 3]`,
   floor: "OL.floorCfg",
   floor2: "OL.floorCfg2",
-  buildingCount: "select(4, i32(OL.win.w), OL.win.z > 0.5)",
+  buildingCount: "i32(OL.win.w)",
   buildingRect: i => `OL.bldRects[clamp(${i}, 0, 7)]`,
   flashXZ: "OL.u3.xy",
   classicLayout: "OL.win.z < 0.5",
@@ -77,16 +77,6 @@ fn rugLayer(key: i32) -> f32 {
 }
 
 fn interiorBuildingAt(p: vec2f) -> i32 {
-  if (${r.classicLayout}) {
-    let qId = select(select(3, 2, p.y < 45.0), select(1, 0, p.y < 45.0), p.x < 45.0);
-    if (qId >= ${r.buildingCount}) { return -1; }
-    let b = select(
-      select(vec4f(53.0, 54.0, 72.0, 68.0), vec4f(53.0, 23.0, 73.0, 38.0), p.y < 45.0),
-      select(vec4f(21.0, 54.0, 36.0, 65.5), vec4f(22.0, 24.0, 37.0, 35.5), p.y < 45.0),
-      p.x < 45.0
-    );
-    return select(-1, qId, p.x > b.x && p.x < b.z && p.y > b.y && p.y < b.w);
-  }
   let n = ${r.buildingCount};
   for (var i = 0; i < 8; i++) {
     if (i >= n) { break; }
@@ -97,13 +87,14 @@ fn interiorBuildingAt(p: vec2f) -> i32 {
 }
 
 /**
- * Painted floor plate (Lab spike, AR-42): one unique top-down albedo for Ash's living room and hall (x 22–30.92,
- * z 29.5–35.5), rectified from a paint-over through the gameplay camera. Returns alpha 0 outside it or when off.
+ * Painted floor plate (Lab spike, AR-42): one unique top-down albedo for the first house's living room and hall,
+ * rectified from a paint-over through the gameplay camera. Returns alpha 0 outside it or when off.
  */
 fn interiorPlate(p: vec2f) -> vec4f {
   let w = ${r.cfg}.w;
   if (w < 1.0 || !(${r.classicLayout})) { return vec4f(0.0); }
-  let rect = vec4f(22.0, 29.5, 30.92, 35.5);
+  let b0 = ${r.buildingRect("0")};
+  let rect = vec4f(b0.x, b0.y + 5.5, b0.x + 8.92, b0.w);
   let uv = (p - rect.xy) / (rect.zw - rect.xy);
   if (any(uv <= vec2f(0.0)) || any(uv >= vec2f(1.0))) { return vec4f(0.0); }
   // 1024 texels over the plate's 6 m depth (its denser axis).
@@ -291,10 +282,9 @@ export function interiorMaterialWgsl(r: InteriorWgslRefs, classicKitchen: boolea
         if (mat == 4) {
           if (th > 0 && interior(o.world.xz + n.xz * 0.3)) { albedo = themedWall(albedo, o.world.x + o.world.z, o.world.y, th, variant); }
         } else {
-          ${classicKitchen ? `let classic = ${r.classicLayout};
-          let kb = select(${r.buildingRect("bi")}, select(vec4f(21.0, 54.0, 36.0, 65.5), vec4f(22.0, 24.0, 37.0, 35.5), o.world.z < 44.0), classic);
+          ${classicKitchen ? `let kb = ${r.buildingRect("bi")};
           let pk = o.world.xz;
-          let inKitchen = (classic || ${r.authoredKitchen("bi")}) && pk.x > kb.z - 6.08 && pk.x < kb.z - 0.05 && pk.y > kb.y + 5.68 && pk.y < kb.w - 0.05;` : "let inKitchen = false;"}
+          let inKitchen = ${r.authoredKitchen("bi")} && pk.x > kb.z - 6.08 && pk.x < kb.z - 0.05 && pk.y > kb.y + 5.68 && pk.y < kb.w - 0.05;` : "let inKitchen = false;"}
           let plate = interiorPlate(o.world.xz);
           if (plate.a > 0.5) {
             albedo = plate.rgb;
