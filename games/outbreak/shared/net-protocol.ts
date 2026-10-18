@@ -240,6 +240,9 @@ export function decodeClient(raw: unknown): ClientMsg | null {
   if (o.t === "start") {
     return { t: "start" }
   }
+  if (o.t === "leave") {
+    return { t: "leave" }
+  }
   if (o.t === "in" && Number.isSafeInteger(o.s) && Array.isArray(o.c) && o.c.length <= 64) {
     const a = typeof o.a === "number" && Number.isSafeInteger(o.a) && o.a > 0 ? o.a : undefined
     const v = typeof o.v === "number" && Number.isSafeInteger(o.v) && o.v > 0 ? o.v : undefined

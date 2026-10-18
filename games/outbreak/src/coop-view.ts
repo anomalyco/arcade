@@ -10,7 +10,7 @@ import type { Town } from "../shared/map"
 import type { LocalSession } from "../shared/session"
 import { supportHeight } from "../shared/terrain"
 import type { Vision } from "../shared/vision"
-import { CoopHud, inviteLink, playerName } from "./coop-hud"
+import { CoopHud, coopBasePath, inviteLink, playerName, type NameTag } from "./coop-hud"
 import type { HudRemote } from "./hud"
 import { OutbreakLobby, shouldShowStartScreen } from "./lobby/lobby-ui"
 import { NetSession, remoteLift, SURVIVOR_COLOURS, type NetSessionFeatures } from "./net-session"
@@ -46,6 +46,7 @@ export class CoopView {
   room: string | null
   soloVariant: SurvivorVariant = 0
   soloLoadout: LoadoutId = DEFAULT_LOADOUT
+  soloName = ""
   /** Notifies `main.ts` when switching between Solo and Co-op or changing the Solo starting kit. */
   onSessionChange?: () => void
   private avatars = new Map<number, { variant: number; avatar: Survivor }>()
@@ -75,12 +76,14 @@ export class CoopView {
     this.lobby =
       menu || net
         ? new OutbreakLobby(document.body, {
-            onStartSolo: (variant, loadout) => {
+            onStartSolo: (variant, loadout, name) => {
               this.soloVariant = variant
               this.soloLoadout = loadout
+              this.soloName = name
               this.onSessionChange?.()
             },
             onHostCoop: (variant, loadout, name) => {
+              this.soloName = name
               const code = randomRoomCode(undefined, Math.random, 5)
               const link = inviteLink(code)
               void navigator.clipboard?.writeText(link)
@@ -89,6 +92,7 @@ export class CoopView {
               this.connectRoom(code, name, variant, loadout, true)
             },
             onJoinCoop: (code, variant, loadout, name) => {
+              this.soloName = name
               history.replaceState(null, "", inviteLink(code))
               this.connectRoom(code, name, variant, loadout, true)
             },
@@ -96,6 +100,7 @@ export class CoopView {
             onPickChange: (patch) => {
               if (patch.variant !== undefined) this.soloVariant = patch.variant
               if (patch.loadout !== undefined) this.soloLoadout = patch.loadout
+              if (patch.name !== undefined) this.soloName = patch.name
               if (this.net) {
                 this.net.pick(patch)
               } else if (patch.loadout !== undefined) {
@@ -107,6 +112,7 @@ export class CoopView {
     if (this.lobby) {
       this.soloVariant = this.lobby.variant
       this.soloLoadout = this.lobby.loadout
+      this.soloName = this.lobby.name
     }
   }
 
@@ -131,7 +137,9 @@ export class CoopView {
     useLobby: boolean,
   ): NetSession {
     this.net?.close()
-    const dir = location.pathname.replace(/[^/]*$/, "")
+    this.avatars.clear()
+    this.hud.nameTags([])
+    const dir = coopBasePath()
     const url = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${dir}ws/${room}`
     const net = new NetSession({
       url,
@@ -160,10 +168,12 @@ export class CoopView {
   }
 
   leaveRoom(): void {
-    this.net?.close()
+    this.net?.leave()
     this.net = null
     this.room = null
-    history.replaceState(null, "", location.pathname)
+    this.avatars.clear()
+    this.hud.nameTags([])
+    history.replaceState(null, "", coopBasePath())
     this.hud.bind(null, null)
     this.lobby?.openStart()
     this.onSessionChange?.()
@@ -173,12 +183,13 @@ export class CoopView {
   static fromUrl(renderer: Renderer, params: URLSearchParams, features: NetSessionFeatures): CoopView {
     const room = params.get("room")?.toLowerCase().replace(/[^a-z0-9]/g, "") || null
     const view = new CoopView(renderer, null, null, !params.has("bench"), features)
+    view.soloName = playerName(params)
     if (!room) {
       if (shouldShowStartScreen(location.search)) view.lobby?.openStart()
       return view
     }
     const autoStart = params.has("peaceful") || params.get("autostart") === "1" || params.get("lobby") === "0"
-    view.connectRoom(room, playerName(params), view.soloVariant, view.soloLoadout, !autoStart)
+    view.connectRoom(room, view.soloName, view.soloVariant, view.soloLoadout, !autoStart)
     return view
   }
 
@@ -192,6 +203,12 @@ export class CoopView {
   /** Seat / character variant index for the local survivor (0 offline default, or lobby-picked variant). */
   get localVariant(): number {
     return this.net?.id ? this.net.variant : this.soloVariant
+  }
+
+  /** Callsign for the local survivor (from the co-op roster or lobby callsign field). */
+  get localName(): string {
+    if (this.net?.id) return this.net.nameOf(this.net.index)
+    return this.soloName || this.lobby?.name || "Survivor"
   }
 
   /** The local survivor's drawn pose: predicted state plus the decaying reconciliation offset. */
@@ -284,24 +301,48 @@ export class CoopView {
   }
 
   /** Menu, roster and name tags; call after the camera is updated. */
-  overlay(cam: Camera, w: number, h: number, town: Town, vision: Vision): void {
+  overlay(cam: Camera, w: number, h: number, town: Town, vision: Vision, localPlayer?: { x: number; y: number }): void {
     this.hud.update()
     this.lobby?.sync(this.net)
-    const net = this.net
-    const others = this.others
-    if (!net && !others.length) {
+    if (this.paused) {
       this.hud.nameTags([])
       return
     }
-    this.hud.nameTags(
-      others.map((slot) => {
-        const p = slot.survivor
-        const proj = cam.project(p.x, supportHeight(town, p.x, p.y) + 2.05, p.y, w, h)
-        const name = net ? net.nameOf(slot.index) : slot.id
-        const variant = net ? net.variantOfSeat(slot.index) : slot.index
-        return { index: slot.index, variant, name, x: proj.x, y: proj.y, visible: proj.ok && actorVisibility(vision, p.x, p.y) > 0.05 }
-      }),
-    )
+    const net = this.net
+    const others = this.others
+    if (!net && !this.lobby && !others.length) {
+      this.hud.nameTags([])
+      return
+    }
+    const tags: NameTag[] = []
+    if (localPlayer && (net || this.lobby)) {
+      const proj = cam.project(localPlayer.x, supportHeight(town, localPlayer.x, localPlayer.y) + 2.05, localPlayer.y, w, h)
+      const localId = net ? net.local.id : "local"
+      tags.push({
+        index: -1,
+        variant: this.localVariant,
+        name: this.localName,
+        x: proj.x,
+        y: proj.y,
+        visible: proj.ok && !this.hidden(localId),
+      })
+    }
+    for (const slot of others) {
+      const p = slot.survivor
+      const lift = remoteLift.get(slot) ?? 0
+      const proj = cam.project(p.x, supportHeight(town, p.x, p.y) + lift * 0.58 + 2.05, p.y, w, h)
+      const name = net ? net.nameOf(slot.index) : slot.id
+      const variant = net ? net.variantOfSeat(slot.index) : clampSurvivorVariant(slot.index)
+      tags.push({
+        index: slot.index,
+        variant,
+        name,
+        x: proj.x,
+        y: proj.y,
+        visible: proj.ok && actorVisibility(vision, p.x, p.y) > 0.05 && !this.hidden(slot.id),
+      })
+    }
+    this.hud.nameTags(tags)
   }
 
   /** Other survivors as the character HUD reads them: replicated state, ground height and visibility. */
@@ -321,10 +362,20 @@ export class CoopView {
   /** Automation view of the room for proofs and smoke tests. */
   inspect() {
     const net = this.net
-    if (!net) return this.lobby ? { lobby: this.lobby.inspect() } : null
+    if (!net) {
+      return this.lobby
+        ? {
+            name: this.localName,
+            variant: this.soloVariant,
+            loadout: this.soloLoadout,
+            lobby: this.lobby.inspect(),
+          }
+        : null
+    }
     return {
       id: net.id,
       index: net.index,
+      name: this.localName,
       variant: net.variant,
       loadout: net.loadout,
       phase: net.phase,

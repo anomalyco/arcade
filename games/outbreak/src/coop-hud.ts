@@ -4,9 +4,20 @@ import "./coop.css"
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 
-/** The invite link for a room: this page with only `?room=` (automation flags are not shared). */
-export function inviteLink(room: string): string {
-  return `${location.origin}${location.pathname}?room=${encodeURIComponent(room)}`
+/** Normalizes this page's directory pathname so invite links and WebSockets always use `<base>/` (never missing a trailing slash or keeping `/index.html`). */
+export function coopBasePath(pathname = typeof location !== "undefined" ? location.pathname : "/arcade/outbreak/"): string {
+  const withoutIndex = pathname.replace(/\/index\.html$/i, "/")
+  return withoutIndex.endsWith("/") ? withoutIndex : `${withoutIndex}/`
+}
+
+/** The invite link for a room: public origin + normalized base path with only `?room=` (automation flags are not shared). */
+export function inviteLink(
+  room: string,
+  loc: { origin?: string; pathname?: string } = typeof location !== "undefined" ? location : {},
+): string {
+  const origin = loc.origin && loc.origin !== "null" ? loc.origin : "https://anoma.ly"
+  const path = coopBasePath(loc.pathname ?? "/arcade/outbreak/")
+  return `${origin}${path}?room=${encodeURIComponent(room)}`
 }
 
 async function copy(text: string): Promise<boolean> {
@@ -77,7 +88,7 @@ export class CoopHud {
       return
     }
     this.root.dataset.room = room
-    this.root.innerHTML = `<div class="head"><b>Co-op</b><span class="code">${esc(room)}</span><button type="button" data-copy>Copy invite link</button><a href="${esc(location.pathname)}" data-leave title="Leave the room and play offline">Leave</a></div><ul></ul><div class="note" role="status"></div>`
+    this.root.innerHTML = `<div class="head"><b>Co-op</b><span class="code">${esc(room)}</span><button type="button" data-copy>Copy invite link</button><a href="${esc(coopBasePath())}" data-leave title="Leave the room and play offline">Leave</a></div><ul></ul><div class="note" role="status"></div>`
     this.list = this.root.querySelector("ul")
     this.note = this.root.querySelector(".note")
     const button = this.root.querySelector<HTMLButtonElement>("[data-copy]")!
@@ -124,19 +135,22 @@ export class CoopHud {
     this.note.textContent = status
   }
 
-  /** Positions one name tag per remote survivor; hidden when outside your line of sight. */
+  /** Positions one name tag per survivor; remote tags hide when outside your line of sight. */
   nameTags(tags: readonly NameTag[]): void {
     const seen = new Set<number>()
     for (const t of tags) {
       seen.add(t.index)
       let el = this.tags.get(t.index)
-      const colour = SURVIVOR_COLOURS[(t.variant ?? t.index) % SURVIVOR_COLOURS.length]!.css
+      const variantIdx = Math.max(0, t.variant ?? t.index) % SURVIVOR_COLOURS.length
+      const colour = SURVIVOR_COLOURS[variantIdx]!.css
       if (!el) {
         el = document.createElement("div")
         el.className = "coop-tag"
         document.body.append(el)
         this.tags.set(t.index, el)
       }
+      el.dataset.local = t.index < 0 ? "true" : "false"
+      el.dataset.variant = String(variantIdx)
       el.style.setProperty("--seat", colour)
       if (el.textContent !== t.name) {
         el.textContent = t.name

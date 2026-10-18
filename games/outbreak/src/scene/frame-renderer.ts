@@ -233,9 +233,9 @@ export class OutbreakFrameRenderer {
     this.renderer.setBloomLevels(qProfile.bloomLevels)
     if (settings.materials.textures === 2) this.syncTextures()
     coop.net?.sync(dt)
-    if (coop.localPalette !== this.avatarPalette) {
+    if (coop.localPalette !== this.avatarPalette || coop.localVariant !== this.avatar.variantIndex) {
       this.avatarPalette = coop.localPalette
-      this.avatar = new Survivor(this.renderer, coop.localPalette ?? undefined)
+      this.avatar = new Survivor(this.renderer, coop.localPalette ?? undefined, coop.localVariant)
       this.avatar.onFootfall = this.footfall
       this.updateProfile()
     }

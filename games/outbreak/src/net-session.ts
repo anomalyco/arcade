@@ -45,7 +45,11 @@ import { NOMINAL_PLANK_HP, unpackPlanks } from "../shared/discovery/barricade"
 
 export { SURVIVOR_COLOURS } from "./seat-colours"
 
-export type KeyValueStore = { getItem(key: string): string | null; setItem(key: string, value: string): void }
+export type KeyValueStore = {
+  getItem(key: string): string | null
+  setItem(key: string, value: string): void
+  removeItem?(key: string): void
+}
 
 export type NetSessionOptions = {
   url: string
@@ -261,6 +265,12 @@ export class NetSession implements Session, OutbreakOptimisticHost {
     this.ws?.close()
   }
 
+  leave(): void {
+    this.send({ t: "leave" })
+    this.storage?.removeItem?.(TOKEN_KEY + this.options.room)
+    this.close()
+  }
+
   rebuildCollision(): void {
     this.sim.rebuildSolids()
   }
@@ -345,7 +355,12 @@ export class NetSession implements Session, OutbreakOptimisticHost {
         this.hostId = msg.hostId ?? ""
         this.variant = msg.variant ?? clampSurvivorVariant(msg.index)
         this.loadout = msg.loadout ?? this.options.loadout ?? DEFAULT_LOADOUT
+        this.ready = msg.ready ?? this.phase === "running"
+        this.options.variant = this.variant
+        this.options.loadout = this.loadout
         if (this.loadout !== DEFAULT_LOADOUT) this.sim.progression.setLoadout(this.local, this.loadout)
+        this.smoother.x = 0
+        this.smoother.y = 0
         this.predictor.reset()
         this.optimistic.reset()
         this.pendingPickupItems.clear()
@@ -372,10 +387,16 @@ export class NetSession implements Session, OutbreakOptimisticHost {
         if (msg.hostId !== undefined) this.hostId = msg.hostId
         const self = msg.players.find((p) => p.id === this.id)
         if (self) {
-          if (self.variant !== undefined) this.variant = self.variant
-          if (self.loadout !== undefined && self.loadout !== this.loadout) {
-            this.loadout = self.loadout
-            this.sim.progression.setLoadout(this.local, this.loadout)
+          if (self.variant !== undefined) {
+            this.variant = self.variant
+            this.options.variant = self.variant
+          }
+          if (self.loadout !== undefined) {
+            if (self.loadout !== this.loadout) {
+              this.loadout = self.loadout
+              this.sim.progression.setLoadout(this.local, this.loadout)
+            }
+            this.options.loadout = self.loadout
           }
           if (self.ready !== undefined) this.ready = self.ready
           if (self.host) this.hostId = this.id

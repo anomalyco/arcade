@@ -26,6 +26,7 @@ import { vignetteDropId, vignetteGlassId, vignetteStoreId } from "../shared/disc
 import { OutbreakProgression, type Ledger } from "../shared/progression"
 import { outbreakClientFeatures as features } from "../src/features"
 import { SoundDirector } from "../src/audio/director"
+import { coopBasePath, inviteLink } from "../src/coop-hud"
 import { shouldShowStartScreen } from "../src/lobby/lobby-ui"
 import { SURVIVORS, survivorSpec } from "../src/lobby/survivors"
 import { NetSession, SURVIVOR_COLOURS } from "../src/net-session"
@@ -1094,5 +1095,291 @@ describe("CoopRoomCore lobby phase machine", () => {
       expect(s.legs).toBe(SURVIVOR_COLOURS[i]!.legs)
       expect(survivorSpec(i)).toBe(s)
     })
+  })
+
+  test("inviteLink and coopBasePath always build a public origin + trailing-slash URL", () => {
+    expect(coopBasePath("/arcade/outbreak/")).toBe("/arcade/outbreak/")
+    expect(coopBasePath("/arcade/outbreak")).toBe("/arcade/outbreak/")
+    expect(coopBasePath("/arcade/outbreak/index.html")).toBe("/arcade/outbreak/")
+    expect(inviteLink("k7m2p", { origin: "https://anoma.ly", pathname: "/arcade/outbreak/" })).toBe(
+      "https://anoma.ly/arcade/outbreak/?room=k7m2p",
+    )
+    expect(inviteLink("k7m2p", { origin: "https://anoma.ly", pathname: "/arcade/outbreak" })).toBe(
+      "https://anoma.ly/arcade/outbreak/?room=k7m2p",
+    )
+    expect(inviteLink("k7m2p", { origin: "https://anoma.ly", pathname: "/arcade/outbreak/index.html" })).toBe(
+      "https://anoma.ly/arcade/outbreak/?room=k7m2p",
+    )
+    expect(inviteLink("k7m2p", { origin: "null", pathname: "/arcade/outbreak/" })).toBe(
+      "https://anoma.ly/arcade/outbreak/?room=k7m2p",
+    )
+  })
+
+  test("explicit leave in lobby immediately frees the seat and survivor variant, clears token, and auto-starts remaining ready players", () => {
+    let virtualMs = 0
+    const core = new CoopRoomCore("leave1", { ...DEFAULT_COOP_ROOM, zombieCount: 0 }, () => virtualMs, BUILD)
+    const net = new Loopback(core, 1)
+    const sock = net.socketClass()
+    const makeStorage = () => {
+      const map = new Map<string, string>()
+      return {
+        getItem: (k: string) => map.get(k) ?? null,
+        setItem: (k: string, v: string) => void map.set(k, v),
+        removeItem: (k: string) => void map.delete(k),
+      }
+    }
+    const hostStore = makeStorage()
+    const guestStore = makeStorage()
+    const thirdStore = makeStorage()
+
+    const host = new NetSession({
+      features,
+      url: "loop",
+      room: "leave1",
+      name: "ColeHost",
+      variant: 2,
+      loadout: "breacher",
+      lobby: true,
+      storage: hostStore,
+      now: () => net.now,
+      WebSocket: sock,
+    })
+    const guest = new NetSession({
+      features,
+      url: "loop",
+      room: "leave1",
+      name: "MayaGuest",
+      variant: 1,
+      loadout: "medic",
+      lobby: true,
+      storage: guestStore,
+      now: () => net.now,
+      WebSocket: sock,
+    })
+    const third = new NetSession({
+      features,
+      url: "loop",
+      room: "leave1",
+      name: "TessThird",
+      variant: 3,
+      loadout: "scavenger",
+      lobby: true,
+      storage: thirdStore,
+      now: () => net.now,
+      WebSocket: sock,
+    })
+
+    for (let i = 0; i < 6; i++) {
+      virtualMs = net.now * 1000
+      net.step()
+    }
+    expect(host.variant).toBe(2)
+    expect(guest.variant).toBe(1)
+    expect(third.variant).toBe(3)
+    expect(thirdStore.getItem("outbreak.coop.token.leave1")).toBeTruthy()
+
+    // Third player leaves explicitly -> seat and variant 3 are immediately freed and token is cleared.
+    third.leave()
+    for (let i = 0; i < 4; i++) {
+      virtualMs = net.now * 1000
+      net.step()
+    }
+    expect(thirdStore.getItem("outbreak.coop.token.leave1")).toBeNull()
+    expect(host.roster).toHaveLength(2)
+
+    // Guest can immediately pick variant 3 without waiting for a 60s disconnect grace window.
+    guest.pick({ variant: 3 })
+    for (let i = 0; i < 4; i++) {
+      virtualMs = net.now * 1000
+      net.step()
+    }
+    expect(guest.variant).toBe(3)
+
+    // Re-add third player, guest and third ready up, then unready host leaves -> remaining two ready players auto-start!
+    const thirdRejoin = new NetSession({
+      features,
+      url: "loop",
+      room: "leave1",
+      name: "HankNew",
+      variant: 0,
+      loadout: "standard",
+      lobby: true,
+      now: () => net.now,
+      WebSocket: sock,
+    })
+    for (let i = 0; i < 4; i++) {
+      virtualMs = net.now * 1000
+      net.step()
+    }
+    guest.setReady(true)
+    thirdRejoin.setReady(true)
+    for (let i = 0; i < 4; i++) {
+      virtualMs = net.now * 1000
+      net.step()
+    }
+    expect(guest.phase).toBe("lobby")
+
+    host.leave()
+    for (let i = 0; i < 4; i++) {
+      virtualMs = net.now * 1000
+      net.step()
+    }
+    expect(guest.isHost).toBe(true)
+    expect(guest.phase).toBe("running")
+    expect(thirdRejoin.phase).toBe("running")
+
+    guest.close()
+    thirdRejoin.close()
+  })
+
+  test("reconnect during lobby preserves seat, callsign, variant, loadout, and ready state", () => {
+    let virtualMs = 0
+    const core = new CoopRoomCore("recon1", { ...DEFAULT_COOP_ROOM, zombieCount: 0 }, () => virtualMs, BUILD)
+    const net = new Loopback(core, 1)
+    const sock = net.socketClass()
+    const map = new Map<string, string>()
+    const guestStore = {
+      getItem: (k: string) => map.get(k) ?? null,
+      setItem: (k: string, v: string) => void map.set(k, v),
+      removeItem: (k: string) => void map.delete(k),
+    }
+
+    const host = new NetSession({
+      features,
+      url: "loop",
+      room: "recon1",
+      name: "Alpha",
+      variant: 0,
+      loadout: "standard",
+      lobby: true,
+      now: () => net.now,
+      WebSocket: sock,
+    })
+    const guest = new NetSession({
+      features,
+      url: "loop",
+      room: "recon1",
+      name: "Bravo",
+      variant: 0, // collides with host -> server assigns 1
+      loadout: "standard",
+      lobby: true,
+      storage: guestStore,
+      now: () => net.now,
+      WebSocket: sock,
+    })
+    for (let i = 0; i < 6; i++) {
+      virtualMs = net.now * 1000
+      net.step()
+    }
+    expect(guest.variant).toBe(1)
+    guest.pick({ variant: 3, loadout: "medic", name: "BravoMedic" })
+    guest.setReady(true)
+    for (let i = 0; i < 4; i++) {
+      virtualMs = net.now * 1000
+      net.step()
+    }
+    expect(guest.variant).toBe(3)
+    expect(guest.loadout).toBe("medic")
+    expect(guest.ready).toBe(true)
+    const seatId = guest.id
+
+    // Simulate browser tab refresh / drop while in lobby (close without leave, then reconnect with stored token).
+    guest.close()
+    for (let i = 0; i < 4; i++) {
+      virtualMs = net.now * 1000
+      net.step()
+    }
+    expect(host.roster.find((r) => r.id === seatId)?.connected).toBe(false)
+
+    const guestResumed = new NetSession({
+      features,
+      url: "loop",
+      room: "recon1",
+      name: "BravoMedic",
+      lobby: true,
+      storage: guestStore,
+      now: () => net.now,
+      WebSocket: sock,
+    })
+    for (let i = 0; i < 6; i++) {
+      virtualMs = net.now * 1000
+      net.step()
+    }
+    expect(guestResumed.id).toBe(seatId)
+    expect(guestResumed.variant).toBe(3)
+    expect(guestResumed.loadout).toBe("medic")
+    expect(guestResumed.ready).toBe(true)
+    expect(host.nameOf(guestResumed.index)).toBe("BravoMedic")
+    expect(host.variantOfSeat(guestResumed.index)).toBe(3)
+
+    host.close()
+    guestResumed.close()
+  })
+
+  test("late join into a running room enters running phase immediately with callsigns and variants synced", () => {
+    let virtualMs = 0
+    const core = new CoopRoomCore("late1", { ...DEFAULT_COOP_ROOM, zombieCount: 4 }, () => virtualMs, BUILD)
+    const net = new Loopback(core, 1)
+    const sock = net.socketClass()
+
+    const host = new NetSession({
+      features,
+      url: "loop",
+      room: "late1",
+      name: "HostCole",
+      variant: 0,
+      loadout: "breacher",
+      lobby: true,
+      now: () => net.now,
+      WebSocket: sock,
+    })
+    for (let i = 0; i < 4; i++) {
+      virtualMs = net.now * 1000
+      net.step()
+    }
+    host.start()
+    for (let i = 0; i < 12; i++) {
+      virtualMs = net.now * 1000
+      net.step()
+      host.update(TICK_DT, { mx: 1, my: 0, aim: 0, interact: false })
+      host.sync(TICK_DT)
+    }
+    expect(host.phase).toBe("running")
+    expect(host.snapshotCount).toBeGreaterThan(0)
+
+    // Late joiner connects with lobby: true while room is already running.
+    const late = new NetSession({
+      features,
+      url: "loop",
+      room: "late1",
+      name: "LateTess",
+      variant: 3,
+      loadout: "scavenger",
+      lobby: true,
+      now: () => net.now,
+      WebSocket: sock,
+    })
+    for (let i = 0; i < 12; i++) {
+      virtualMs = net.now * 1000
+      net.step()
+      host.update(TICK_DT, idle())
+      late.update(TICK_DT, { mx: 0, my: 1, aim: 0, interact: false })
+      host.sync(TICK_DT)
+      late.sync(TICK_DT)
+    }
+    expect(late.phase).toBe("running")
+    expect(late.ready).toBe(true)
+    expect(late.variant).toBe(3)
+    expect(late.snapshotCount).toBeGreaterThan(0)
+    expect(host.nameOf(host.index)).toBe("HostCole")
+    expect(host.nameOf(late.index)).toBe("LateTess")
+    expect(host.variantOfSeat(late.index)).toBe(3)
+    expect(late.nameOf(host.index)).toBe("HostCole")
+    expect(late.variantOfSeat(host.index)).toBe(0)
+    expect(host.remotes).toHaveLength(1)
+    expect(late.remotes).toHaveLength(1)
+
+    host.close()
+    late.close()
   })
 })

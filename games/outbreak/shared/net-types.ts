@@ -43,6 +43,7 @@ export type ClientMsg =
   | { t: "pick"; variant?: SurvivorVariant; loadout?: LoadoutId; name?: string }
   | { t: "ready"; ready: boolean }
   | { t: "start" }
+  | { t: "leave" }
 
 export type ServerMsg =
   | {
@@ -59,6 +60,7 @@ export type ServerMsg =
       hostId?: string
       variant?: SurvivorVariant
       loadout?: LoadoutId
+      ready?: boolean
     }
   | { t: "roster"; players: RosterEntry[]; phase?: RoomPhase; hostId?: string }
   | { t: "error"; message: string }
