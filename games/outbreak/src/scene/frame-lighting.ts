@@ -734,7 +734,7 @@ export class OutbreakFrameLighting {
     frame[40] = 1 / SIZE
     frame[41] = 1 / SIZE
     frame[42] = settings.view.diagnostic
-    frame[43] = packGroundCfgBits({ ...settings.ground, groundStyle: settings.look.groundStyle })
+    frame[43] = packGroundCfgBits(settings.ground)
     frame[44] = sightAim
     frame[45] = Math.cos((sightCone * Math.PI) / 360)
     frame[46] = sightAwareness

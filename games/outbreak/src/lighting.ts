@@ -261,15 +261,13 @@ export const OUTBREAK_COLOUR_UNIFORM_OFFSET = OUTBREAK_HERO_UNIFORM_OFFSET + 4
 export const OUTBREAK_DUST_UNIFORM_OFFSET = OUTBREAK_COLOUR_UNIFORM_OFFSET + 4
 /** Soft Bean's surface (see `look/hero.ts`): light wrap, sheen, sheen exponent, own colour in the dark. */
 export const OUTBREAK_BEAN_UNIFORM_OFFSET = OUTBREAK_DUST_UNIFORM_OFFSET + 4
-/** Rendering round axes (see `look/world.ts`): lightSatStyle, modelStyle, styleGrade, groundStyle. */
-export const OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET = OUTBREAK_BEAN_UNIFORM_OFFSET + 4
 /** Shroud & out-of-light controls (see `look/world.ts`): shroudDarkness, outOfLightDesat, outOfSightDarkening, worldSaturation. */
-export const OUTBREAK_SHROUD_UNIFORM_OFFSET = OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET + 4
-/** Dying Light v7 trims (see `look/world.ts`): beamWarmth, beamTightness, zombieRimSpec, nightGrain. */
-export const OUTBREAK_V7_UNIFORM_OFFSET = OUTBREAK_SHROUD_UNIFORM_OFFSET + 4
-/** Darkwood v8 trims (see `look/world.ts`): coneSharpness, dayShroud, dayMuted, shroudLampKeep. */
-export const OUTBREAK_V8_UNIFORM_OFFSET = OUTBREAK_V7_UNIFORM_OFFSET + 4
-export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = OUTBREAK_V8_UNIFORM_OFFSET + 4
+export const OUTBREAK_SHROUD_UNIFORM_OFFSET = OUTBREAK_BEAN_UNIFORM_OFFSET + 4
+/** Beam and actor look (see `look/world.ts`): beamWarmth, beamTightness, zombieRimSpec, nightGrain. */
+export const OUTBREAK_BEAM_LOOK_UNIFORM_OFFSET = OUTBREAK_SHROUD_UNIFORM_OFFSET + 4
+/** Sight shroud (see `look/world.ts`): coneSharpness, dayShroud, dayMuted, shroudLampKeep. */
+export const OUTBREAK_SIGHT_UNIFORM_OFFSET = OUTBREAK_BEAM_LOOK_UNIFORM_OFFSET + 4
+export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = OUTBREAK_SIGHT_UNIFORM_OFFSET + 4
 
 export type OutbreakLightingUniformSettings =
   | (OutbreakLightingSettings & Partial<FlashlightBeamSettings> & Partial<UnseenSettings> & {
@@ -280,7 +278,6 @@ export type OutbreakLightingUniformSettings =
       fogStyle?: number
       fogEdgeSoftness?: number
       fogMemoryDim?: number
-      fogUnknownGrain?: number
       fogMemorySaturation?: number
       fogMemoryWarmth?: number
       fogPenumbra?: number
@@ -300,8 +297,7 @@ export type OutbreakLightingUniformSettings =
         fogStyle?: number
         fogEdgeSoftness?: number
         fogMemoryDim?: number
-        fogUnknownGrain?: number
-        fogMemorySaturation?: number
+          fogMemorySaturation?: number
         fogMemoryWarmth?: number
         fogPenumbra?: number
         fogPenumbraGrowth?: number
@@ -460,8 +456,8 @@ export function packOutbreakLightingUniforms(
   out[37] = state.zombies[1]
   out[38] = state.zombies[2]
   out[39] = state.zombies[3]
-  // u10: fogStyleAndGrain, fogEdgeSoftness, fogMemoryDim, reserved
-  out[40] = (fg?.fogStyle ?? 1) * 4 + Math.max(0, Math.min(0.999, fg?.fogUnknownGrain ?? 0.48))
+  // u10: fogStyle (× 4), fogEdgeSoftness, fogMemoryDim, fogMemorySaturation
+  out[40] = (fg?.fogStyle ?? 1) * 4
   out[41] = fg?.fogEdgeSoftness ?? 0.78
   out[42] = fg?.fogMemoryDim ?? 0.42
   out[43] = fg?.fogMemorySaturation ?? 0.2
@@ -565,22 +561,18 @@ export function packOutbreakLightingUniforms(
   out[OUTBREAK_DUST_UNIFORM_OFFSET + 1] = look.dustBrightness ?? DEFAULT_LOOK_TRIMS.dustBrightness
   out[OUTBREAK_DUST_UNIFORM_OFFSET + 2] = look.dustSize ?? DEFAULT_LOOK_TRIMS.dustSize
   out[OUTBREAK_DUST_UNIFORM_OFFSET + 3] = look.dustLamps ?? DEFAULT_LOOK_TRIMS.dustLamps
-  out[OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET] = look.lightSatStyle ?? DEFAULT_LOOK_TRIMS.lightSatStyle
-  out[OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET + 1] = look.modelStyle ?? DEFAULT_LOOK_TRIMS.modelStyle
-  out[OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET + 2] = look.styleGrade ?? DEFAULT_LOOK_TRIMS.styleGrade
-  out[OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET + 3] = look.groundStyle ?? DEFAULT_LOOK_TRIMS.groundStyle
   out[OUTBREAK_SHROUD_UNIFORM_OFFSET] = look.shroudDarkness ?? DEFAULT_LOOK_TRIMS.shroudDarkness
   out[OUTBREAK_SHROUD_UNIFORM_OFFSET + 1] = look.outOfLightDesat ?? DEFAULT_LOOK_TRIMS.outOfLightDesat
   out[OUTBREAK_SHROUD_UNIFORM_OFFSET + 2] = look.outOfSightDarkening ?? DEFAULT_LOOK_TRIMS.outOfSightDarkening
   out[OUTBREAK_SHROUD_UNIFORM_OFFSET + 3] = look.worldSaturation ?? DEFAULT_LOOK_TRIMS.worldSaturation
-  out[OUTBREAK_V7_UNIFORM_OFFSET] = look.beamWarmth ?? DEFAULT_LOOK_TRIMS.beamWarmth
-  out[OUTBREAK_V7_UNIFORM_OFFSET + 1] = look.beamTightness ?? DEFAULT_LOOK_TRIMS.beamTightness
-  out[OUTBREAK_V7_UNIFORM_OFFSET + 2] = look.zombieRimSpec ?? DEFAULT_LOOK_TRIMS.zombieRimSpec
-  out[OUTBREAK_V7_UNIFORM_OFFSET + 3] = look.nightGrain ?? DEFAULT_LOOK_TRIMS.nightGrain
-  out[OUTBREAK_V8_UNIFORM_OFFSET] = look.coneSharpness ?? DEFAULT_LOOK_TRIMS.coneSharpness
-  out[OUTBREAK_V8_UNIFORM_OFFSET + 1] = look.dayShroud ?? DEFAULT_LOOK_TRIMS.dayShroud
-  out[OUTBREAK_V8_UNIFORM_OFFSET + 2] = look.dayMuted ?? DEFAULT_LOOK_TRIMS.dayMuted
-  out[OUTBREAK_V8_UNIFORM_OFFSET + 3] = look.shroudLampKeep ?? DEFAULT_LOOK_TRIMS.shroudLampKeep
+  out[OUTBREAK_BEAM_LOOK_UNIFORM_OFFSET] = look.beamWarmth ?? DEFAULT_LOOK_TRIMS.beamWarmth
+  out[OUTBREAK_BEAM_LOOK_UNIFORM_OFFSET + 1] = look.beamTightness ?? DEFAULT_LOOK_TRIMS.beamTightness
+  out[OUTBREAK_BEAM_LOOK_UNIFORM_OFFSET + 2] = look.zombieRimSpec ?? DEFAULT_LOOK_TRIMS.zombieRimSpec
+  out[OUTBREAK_BEAM_LOOK_UNIFORM_OFFSET + 3] = look.nightGrain ?? DEFAULT_LOOK_TRIMS.nightGrain
+  out[OUTBREAK_SIGHT_UNIFORM_OFFSET] = look.coneSharpness ?? DEFAULT_LOOK_TRIMS.coneSharpness
+  out[OUTBREAK_SIGHT_UNIFORM_OFFSET + 1] = look.dayShroud ?? DEFAULT_LOOK_TRIMS.dayShroud
+  out[OUTBREAK_SIGHT_UNIFORM_OFFSET + 2] = look.dayMuted ?? DEFAULT_LOOK_TRIMS.dayMuted
+  out[OUTBREAK_SIGHT_UNIFORM_OFFSET + 3] = look.shroudLampKeep ?? DEFAULT_LOOK_TRIMS.shroudLampKeep
   // win (offset 76..79): windowOriginX, windowOriginZ, isStreamWindow, buildingCount
   const winOx = state.windowOrigin?.[0] ?? 0
   const winOz = state.windowOrigin?.[1] ?? 0
@@ -1170,7 +1162,7 @@ struct OutbreakLightingUniforms {
   u7: vec4f, // streetHeadX, streetHeadY, streetHeadZ, streetAirHaze
   u8: vec4f, // actorLampShadow, weatherWetness, weatherPuddles, weatherSnow
   u9: vec4f, // zombie0X, zombie0Y, zombie1X, zombie1Y
-  u10: vec4f, // fogStyleAndGrain, fogEdgeSoftness, fogMemoryDim, fogMemorySaturation
+  u10: vec4f, // fogStyle × 4, fogEdgeSoftness, fogMemoryDim, fogMemorySaturation
   veg: FoliageWindConfig,
   vegActors: FoliageActors,
   win: vec4f, // windowOriginX, windowOriginZ, isStreamWindow, buildingCount
@@ -1190,10 +1182,9 @@ struct OutbreakLightingUniforms {
   colour: vec4f, // light-colour rule: on, vision lift, bounce weight; baked room light scale
   dust: vec4f, // dust motes: amount, brightness, size, under lamps
   bean: vec4f, // Soft Bean: light wrap, sheen, sheen exponent, own colour in the dark
-  round: vec4f, // rendering round: lightSatStyle, modelStyle, styleGrade, groundStyle
   shroud: vec4f, // shroud & unlit: shroudDarkness, outOfLightDesat, outOfSightDarkening, worldSaturation
-  v7: vec4f, // Dying Light v7 trims: beamWarmth, beamTightness, zombieRimSpec, nightGrain
-  v8: vec4f, // Darkwood v8 trims: coneSharpness, dayShroud, dayMuted, shroudLampKeep
+  beamLook: vec4f, // beamWarmth, beamTightness, zombieRimSpec, nightGrain
+  sight: vec4f, // coneSharpness, dayShroud, dayMuted, shroudLampKeep
 }
 @group(0) @binding(13) var<uniform> OL: OutbreakLightingUniforms;
 ${lightRampWgsl}
@@ -1222,32 +1213,15 @@ var<private> outbreakWrap: f32;
  * and 1970s suburban warm olive-ochre-slate twilight (practicalWarmth -> 0.8) without crushing shadows.
  */
 fn outbreakSkyAmbient(n: vec3f, rawSky: vec3f) -> vec3f {
-  let w = clamp(OL.u0.z, 0.0, 1.0);
   let skyLum = dot(rawSky, vec3f(0.299, 0.587, 0.114));
   let suburbanSky = vec3f(skyLum) * vec3f(1.18, 0.90, 0.62);
-  let isOverhaul = OL.round.x > 0.5 || OL.round.z > 0.5;
-  let isV5 = (OL.round.x > 3.5 && OL.round.x < 4.5) || (OL.round.z > 3.5 && OL.round.z < 4.5);
-  let isV6 = OL.round.x > 4.5 || OL.round.z > 4.5;
-  let isV7 = OL.round.x > 5.5 || OL.round.z > 5.5;
-  let isV5OrV6 = isV5 || isV6;
   let sun = clamp(F.monitorBounds.w, 0.0, 1.0);
   let duskGlow = smoothstep(0.42, 0.22, F.monitorBounds.y) * (1.0 - smoothstep(0.25, 0.75, sun));
-  let v7DuskSky = rawSky * vec3f(1.28, 0.96, 0.74) + vec3f(0.015, 0.009, 0.004);
-  let v6DuskSky = select(rawSky * vec3f(0.92, 1.14, 1.98) + vec3f(0.010, 0.008, 0.020), v7DuskSky, isV7);
-  let v6NightSky = mix(rawSky * vec3f(0.68, 0.76, 0.92), v6DuskSky, duskGlow);
-  let nightSky = select(
-    rawSky * vec3f(0.74, 0.95, 1.34),
-    select(
-      mix(rawSky * vec3f(0.86, 1.14, 1.66), rawSky * vec3f(0.96, 1.18, 2.12) + vec3f(0.012, 0.010, 0.025), duskGlow),
-      v6NightSky,
-      isV6,
-    ),
-    isV5OrV6,
-  );
-  let daySky = select(mix(rawSky, suburbanSky, 0.34) * 0.68, mix(rawSky, suburbanSky, select(0.16, 0.24, isV7)) * select(1.08, 1.02, isV7), isV5OrV6);
-  let overhaulSky = mix(nightSky, daySky, sun);
-  let sky = select(mix(rawSky, suburbanSky, w * 0.92), overhaulSky, isOverhaul);
-  return mix(sky * select(0.42, select(0.30, select(0.40, 0.34, isV6), isV5OrV6), isOverhaul), sky, n.y * 0.5 + 0.5);
+  let duskSky = rawSky * vec3f(1.28, 0.96, 0.74) + vec3f(0.015, 0.009, 0.004);
+  let nightSky = mix(rawSky * vec3f(0.68, 0.76, 0.92), duskSky, duskGlow);
+  let daySky = mix(rawSky, suburbanSky, 0.24) * 1.02;
+  let sky = mix(nightSky, daySky, sun);
+  return mix(sky * 0.34, sky, n.y * 0.5 + 0.5);
 }
 
 /**
@@ -1361,11 +1335,7 @@ fn fastExpNeg(x: f32) -> f32 {
 fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, inRoom: bool, mat: i32) -> vec3f {
   if (mat == 2 || mat == 3 || mat == 6 || mat == 12 || world.y >= 2.72) { return surfCol; }
   let w = clamp(OL.u0.z, 0.0, 1.0);
-  let isOverhaul = OL.round.x > 0.5 || OL.round.z > 0.5;
-  let isV5 = OL.round.x > 3.5 || OL.round.z > 3.5;
-  let isV7 = OL.round.x > 5.5 || OL.round.z > 5.5;
-  let wSpill = select(w, max(w, select(0.88, 0.62, isV7)), isV5);
-  if (!inRoom && OL.u1.w <= 0.20 && wSpill <= 0.01 && OL.u8.y + OL.u8.w <= 0.01) { return surfCol; }
+  let wSpill = max(w, 0.62);
   var col = surfCol;
   let b = nearestHouseRect(world.xz);
   if (!inRoom) {
@@ -1401,13 +1371,13 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, inRoom: 
     // 2. Warm 2500K tungsten window & porch bounce + elongated rectangular window sheen (openGlassSheen)
     let pScale = OL.u1.x;
     let wScale = OL.u1.y;
-    if (wSpill > 0.01 && (pScale > 0.001 || wScale > 0.001) && world.z > b.w - 1.3 && world.z < b.w + 14.5 && world.x > b.x - 5.5 && world.x < b.z + 3.5) {
+    if ((pScale > 0.001 || wScale > 0.001) && world.z > b.w - 1.3 && world.z < b.w + 14.5 && world.x > b.x - 5.5 && world.x < b.z + 3.5) {
       let vWL = (world.xz - vec2f(b.x + 2.5, b.w + 0.5)) * vec2f(0.72, 0.64);
       let vWR = (world.xz - vec2f(b.z - 2.75, b.w + 0.5)) * vec2f(0.72, 0.64);
       let vP = (world.xz - vec2f(b.x + 5.7, b.w + 0.9)) * vec2f(0.68, 0.52);
-      let v7StreetFade = select(1.0, 1.0 - smoothstep(b.w + 2.5, b.w + 5.7, world.z), isV7 && !isInView);
-      let cutZoneScale = select(1.02, select(1.18, 0.96, world.z > b.w + 2.5), isInView) * select(1.0, select(0.72, 1.14, isV5), isOverhaul) * v7StreetFade;
-      let tightSpill = select(1.0, select(1.38, select(1.05, 1.85, isV7), isV5), isOverhaul);
+      let streetFade = select(1.0, 1.0 - smoothstep(b.w + 2.5, b.w + 5.7, world.z), !isInView);
+      let cutZoneScale = select(1.02, select(1.18, 0.96, world.z > b.w + 2.5), isInView) * 1.14 * streetFade;
+      let tightSpill = 1.85;
       let spill = ((fastExpNeg(dot(vWL, vWL) * 0.0689655 * tightSpill) + fastExpNeg(dot(vWR, vWR) * 0.0689655 * tightSpill)) * wScale * 0.88 + fastExpNeg(dot(vP, vP) * 0.064516 * tightSpill) * pScale * 0.92) * cutZoneScale * groundMask;
       col += texAlbedo * vec3f(1.05, 0.54, 0.12) * spill * wSpill * (1.0 + wetPuddle * OL.u2.y * 0.95);
       outbreakPracticalIrr += spill * wSpill * 0.75;
@@ -1418,20 +1388,20 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, inRoom: 
       let dp = (world.xz - vec2f(OL.u6.x, OL.u6.y + 0.85)) * vec2f(0.60, 0.76);
       let dp2 = dot(dp, dp);
       if (dp2 < 26.0) {
-        let pPool = fastExpNeg(dp2 * select(0.133333, 0.14, isOverhaul)) * select(0.68, 1.12, isOverhaul);
-        col += texAlbedo * select(vec3f(1.08, 0.58, 0.16), vec3f(1.24, 0.62, 0.14), isOverhaul) * pPool * (w * w) * (1.0 + wetPuddle * 0.65);
-        outbreakPracticalIrr += pPool * (w * w) * select(0.72, 1.25, isOverhaul);
+        let pPool = fastExpNeg(dp2 * 0.14) * 1.12;
+        col += texAlbedo * vec3f(1.24, 0.62, 0.14) * pPool * (w * w) * (1.0 + wetPuddle * 0.65);
+        outbreakPracticalIrr += pPool * (w * w) * 1.25;
       }
     }
   } else {
     let floorB = evalAreaFloorBounce(world, n, b);
-    col += floorB * surfCol * select(8.0, 7.2, isOverhaul);
+    col += floorB * surfCol * 7.2;
     outbreakPracticalIrr += dot(floorB, vec3f(14.0, 9.0, 3.0));
     // Interior indirect room bounce & wall-wash halos (branchless quadrant selection relative to house b)
     let roomScale = OL.u1.z;
     if (roomScale > 0.001) {
-      let warmTungsten = select(vec3f(1.0, 0.50, 0.08), vec3f(1.06, 0.52, 0.10), isOverhaul);
-      let roomAlbedo = surfCol * select(1.35, 1.28, isOverhaul) + outbreakAlbedo * select(0.18, 0.16, isOverhaul);
+      let warmTungsten = vec3f(1.06, 0.52, 0.10);
+      let roomAlbedo = surfCol * 1.28 + outbreakAlbedo * 0.16;
       let isNorth = world.z < b.y + 5.6;
       let isWestN = world.x < b.x + 5.2;
       let isEastS = !isNorth && world.x > b.x + 8.6;
@@ -1451,7 +1421,7 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, inRoom: 
         1.0 / 4.8,
         isNorth
       );
-      let invDenom = baseInvDenom * select(1.0, select(1.55, 1.15, isV5), isOverhaul);
+      let invDenom = baseInvDenom * 1.15;
       let v0 = (world.xz - cPos) * cScale;
       var pool = fastExpNeg(dot(v0, v0) * invDenom);
       let isVertWall = abs(n.y) < 0.45;
@@ -1459,21 +1429,15 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, inRoom: 
         pool *= select(select(0.62, 1.25, isVertWall && world.z < b.y + 2.2), select(0.55, 1.35, isVertWall && world.z < b.y + 2.8), isWestN);
       } else if (isEastS) {
         let vDin = (world.xz - vec2f(b.z - 3.2, b.w - 2.7)) * vec2f(0.58, 0.62);
-        pool = pool * select(0.75, 1.55, isVertWall && world.z < b.y + 6.4 && world.y > 0.85) + fastExpNeg(dot(vDin, vDin) * (1.0 / 4.2)) * select(1.0, select(0.48, 0.96, isV5), isOverhaul);
+        pool = pool * select(0.75, 1.55, isVertWall && world.z < b.y + 6.4 && world.y > 0.85) + fastExpNeg(dot(vDin, vDin) * (1.0 / 4.2)) * 0.96;
       }
-      let neScale = select(1.15, select(0.02, 0.16, isV5), isOverhaul);
-      let aScale = select(
-        select(select(select(0.65, 1.08, isV5), select(1.28, select(0.96, 1.36, isV5), isOverhaul), isWestS), select(1.68, select(1.18, 1.72, isV5), isOverhaul), isEastS),
-        select(neScale, select(1.0, select(0.95, 1.24, isV5), isOverhaul), isWestN),
-        isNorth
-      );
-      let neBias = select(vec3f(0.012, 0.0048, 0.0008), vec3f(0.0), isOverhaul);
+      let aScale = select(select(select(1.08, 1.36, isWestS), 1.72, isEastS), select(0.16, 1.24, isWestN), isNorth);
       let bias = select(
         select(select(vec3f(0.005, 0.0020, 0.0003), vec3f(0.014, 0.0056, 0.0009), isWestS), vec3f(0.022, 0.0088, 0.0014), isEastS),
-        select(neBias, vec3f(0.011, 0.0042, 0.0006), isWestN),
+        select(vec3f(0.0), vec3f(0.011, 0.0042, 0.0006), isWestN),
         isNorth
-      ) * select(1.0, pool * 0.65, isOverhaul);
-      let baseTerm = select(roomAlbedo * aScale, surfCol * select(1.35, 1.25, isOverhaul), isNorth && isWestN);
+      ) * pool * 0.65;
+      let baseTerm = select(roomAlbedo * aScale, surfCol * 1.25, isNorth && isWestN);
       col += (baseTerm + bias) * warmTungsten * (pool * roomScale);
       outbreakPracticalIrr += pool * roomScale * aScale * 0.48;
     }
@@ -1488,7 +1452,7 @@ const FLASH_RADIANCE: f32 = 9.0;
 fn flashProfile(cosT: f32) -> f32 {
   let omc = max(0.0, 1.0 - clamp(cosT, -1.0, 1.0));
   let t = sqrt(2.0 * omc) * (1.0 + 0.083333 * omc) * OL.u17.y;
-  let tight = clamp(OL.v7.y, 0.0, 2.0);
+  let tight = clamp(OL.beamLook.y, 0.0, 2.0);
   let tightShare = clamp(tight, 0.0, 1.0);
   let effInner = mix(OL.u11.z, min(OL.u11.z, 0.38), tightShare);
   let legacyCone = 1.0 - smoothstep(effInner, 1.0, t);
@@ -1516,7 +1480,7 @@ fn flashProfile(cosT: f32) -> f32 {
 fn flashAttenuation(toLight: vec3f, d3: f32, power: f32) -> f32 {
   let cosT3D = -dot(toLight, vec3f(OL.u3.z * OL.u13.y, OL.u13.x, OL.u3.w * OL.u13.y));
   if (cosT3D <= OL.u16.z) { return 0.0; }
-  let tightShare = clamp(OL.v7.y, 0.0, 1.0);
+  let tightShare = clamp(OL.beamLook.y, 0.0, 1.0);
   let planLen = inverseSqrt(max(dot(toLight.xz, toLight.xz), 1e-6));
   let cosPlan = -dot(toLight.xz * planLen, OL.u3.zw);
   // In v7, tighten lateral plan angle while keeping vertical pitch forgiving between hand and ground pool center
@@ -1529,7 +1493,7 @@ fn flashAttenuation(toLight: vec3f, d3: f32, power: f32) -> f32 {
 fn flashFalloff(d2: f32) -> f32 {
   let r = max(OL.u4.y, 1.0);
   let x2 = d2 / (r * r);
-  let tight = clamp(OL.v7.y, 0.0, 2.0);
+  let tight = clamp(OL.beamLook.y, 0.0, 2.0);
   let tightShare = clamp(tight, 0.0, 1.0);
   let soft = mix(max(OL.u13.z, 0.1), min(max(OL.u13.z, 0.1), 1.65), tightShare);
   if (OL.rampOn.x > 0.5) { return select(0.0, outbreakRamp(0u, sqrt(x2)), x2 < 1.0) / (1.0 + d2 / (soft * soft)); }
@@ -1573,16 +1537,15 @@ fn evalFlashlight(world: vec3f, n: vec3f) -> vec3f {
       let full = polar[(u32(round(OL.u4.w)) * RAYS + ray) * 2u].x;
       eb *= 1.0 - smoothstep(full + 0.06, full + 0.18, length(lr));
     }
-    let bWarm = clamp(OL.v7.x, 0.0, 1.0);
+    let bWarm = clamp(OL.beamLook.x, 0.0, 1.0);
     let bounceWarmCol = mix(vec3f(1.02, 0.95, 0.84), vec3f(1.16, 0.80, 0.42), bWarm);
-    let bTightScale = mix(1.0, 0.48, clamp(OL.v7.y, 0.0, 1.0));
-    add += outbreakAlbedo * select(vec3f(1.0, 0.86, 0.7), bounceWarmCol, OL.round.x > 0.5) * (eb * bTightScale * GAIN);
+    let bTightScale = mix(1.0, 0.48, clamp(OL.beamLook.y, 0.0, 1.0));
+    add += outbreakAlbedo * bounceWarmCol * (eb * bTightScale * GAIN);
     irr += eb * bTightScale;
   }
   outbreakFlashMask = irr;
-  let warmTint = mix(vec3f(1.0, 0.98, 0.94), vec3f(1.08, 0.92, 0.68), clamp(OL.v7.x, 0.0, 1.0));
-  let beamTint = select(OL.u5.rgb, OL.u5.rgb * warmTint, OL.round.x > 0.5);
-  return add * beamTint;
+  let warmTint = mix(vec3f(1.0, 0.98, 0.94), vec3f(1.08, 0.92, 0.68), clamp(OL.beamLook.x, 0.0, 1.0));
+  return add * OL.u5.rgb * warmTint;
 }
 
 /** How strongly the light-colour rule holds: the toggle, faded in with darkness (\`lightRuleWeight\` in look/world.ts). */

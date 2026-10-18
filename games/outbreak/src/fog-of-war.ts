@@ -16,7 +16,6 @@ export type FogOfWarSettings = {
   fogStyle: FogStyleId
   fogEdgeSoftness: number
   fogMemoryDim: number
-  fogUnknownGrain: number
   fogSoundCues: number
   fogGhostDuration: number
   fogMemorySaturation: number
@@ -31,7 +30,6 @@ export const DEFAULT_FOG_OF_WAR: FogOfWarSettings = {
   fogStyle: 1,
   fogEdgeSoftness: 0.78,
   fogMemoryDim: 0.5,
-  fogUnknownGrain: 0,
   fogSoundCues: 0,
   fogGhostDuration: 3.2,
   fogMemorySaturation: 0.22,
@@ -72,15 +70,6 @@ export const fogOfWarControls: LabControl[] = [
     max: 0.9,
     step: 0.02,
     unit: "×",
-  },
-  {
-    key: "fogUnknownGrain",
-    label: "Unknown area grain (off by default)",
-    group: "Vision",
-    min: 0.0,
-    max: 1.0,
-    step: 0.02,
-    unit: "",
   },
   {
     key: "fogSoundCues",
@@ -493,7 +482,7 @@ fn softSight(p: vec2f) -> f32 {
   let soft = clamp(select(OL.u10.y, OL.unseen.edgeSoftness, unseenActive), 0.05, 2.0);
   let facing = dot(delta, vec2f(cos(F.effects.x), sin(F.effects.x))) / d;
   // Darkwood (v8): a crisp ~5° cone edge and a body halo that ends at the awareness radius.
-  let sharp = clamp(OL.v8.x, 0.0, 1.0);
+  let sharp = clamp(OL.sight.x, 0.0, 1.0);
   let feather = mix(0.05 + 0.2 * soft, 0.035, sharp);
   let cone = smoothstep(F.effects.y - feather, F.effects.y + feather, facing);
   let nearScale = select(0.6, 1.0, unseenActive);
@@ -597,17 +586,13 @@ fn applyOutbreakFogOfWar(
   let expUv = (world.xz + n.xz * 0.24 - OL.win.xy) * F.map.xy;
   let inExpWin = select(1.0, 0.0, OL.win.z > 0.5 && (any(expUv < vec2f(0.003)) || any(expUv > vec2f(0.997))));
   let explored = max(textureSampleLevel(exploredTex, floorSamp, expUv, 0.0).r * inExpWin, sight.y);
-  let isOverhaul = OL.round.x > 0.5 || OL.round.z > 0.5;
-  let isV5 = (OL.round.x > 3.5 && OL.round.x < 4.5) || (OL.round.z > 3.5 && OL.round.z < 4.5);
-  let isV6 = OL.round.x > 4.5 || OL.round.z > 4.5;
-  let isV7 = OL.round.x > 5.5 || OL.round.z > 5.5;
   let sunVal = clamp(F.monitorBounds.w, 0.0, 1.0);
-  let duskVal = select(0.0, smoothstep(0.42, 0.22, F.monitorBounds.y) * (1.0 - smoothstep(0.25, 0.75, sunVal)), isV7);
+  let duskVal = smoothstep(0.42, 0.22, F.monitorBounds.y) * (1.0 - smoothstep(0.25, 0.75, sunVal));
   let dayOrDusk = max(sunVal, duskVal * 0.88);
   let shroudDark = clamp(OL.shroud.x, 0.0, 2.0);
   let unlitDesat = clamp(OL.shroud.y, 0.0, 1.5);
   let sightDark = clamp(OL.shroud.z, 0.0, 2.0);
-  outbreakKnown = select(1.0, select(explored, max(explored, outbreakLitMask * 0.92), isOverhaul), inRoom && world.y < 2.8);
+  outbreakKnown = select(1.0, max(explored, outbreakLitMask * 0.92), inRoom && world.y < 2.8);
   let fogStyle = i32(floor(OL.u10.x * 0.25 + 1e-4));
   let baseMemDim = OL.u10.z;
   let memDim = clamp(
@@ -627,70 +612,44 @@ fn applyOutbreakFogOfWar(
   }
 
   let luminance = dot(colIn, vec3f(0.2126, 0.7152, 0.0722));
-  let baseMemTint = mix(vec3f(0.86, 0.92, 1.04), vec3f(1.08, 0.98, 0.84), clamp(OL.u16.x, 0.0, 1.0));
-  let v6UnlitTint = mix(vec3f(0.52, 0.86, 1.56), vec3f(0.93, 0.96, 1.02), clamp(unlitDesat, 0.0, 1.0));
-  let overhaulUnlitTint = select(vec3f(0.52, 0.86, 1.56), v6UnlitTint, isV6);
-  let v7LitMemTint = mix(mix(vec3f(1.08, 0.94, 0.74), vec3f(1.22, 0.88, 0.58), duskVal), vec3f(1.02, 0.99, 0.95), sunVal);
-  let memTint = select(baseMemTint, mix(overhaulUnlitTint, select(vec3f(1.08, 0.94, 0.74), v7LitMemTint, isV7), outbreakLitMask), isOverhaul);
-  // Remembered scenery lit by a real light keeps its colour for the grade (the light-colour rule); unlit memory desaturates heavily in v6.
-  let v6MemSatScale = select(clamp(1.0 - 0.85 * unlitDesat, 0.0, 1.0), mix(clamp(1.0 - 0.85 * unlitDesat, 0.0, 1.0), clamp(0.88 - 0.26 * unlitDesat, 0.36, 0.94), dayOrDusk), isV7 && !inRoom);
-  let baseMemSat = select(OL.u10.w, max(OL.u10.w, 0.32), fogStyle == 0) * select(1.0, v6MemSatScale, isV6);
-  let memSat = mix(baseMemSat, select(1.0, mix(1.0, 0.78, sunVal * (1.0 - visible)), isV7 && !inRoom), outbreakLitMask);
-  let v6MemUnlit = memDim * clamp(0.90 - 0.34 * sightDark, 0.20, 1.0);
-  let v7DayMemUnlit = mix(v6MemUnlit, clamp(0.76 - 0.12 * (sightDark - 1.0), 0.52, 0.94), dayOrDusk);
-  let v6MemLit = mix(memDim * 0.86, 1.0, clamp(1.0 - 0.22 * sightDark, 0.45, 1.0));
-  let effMemDim = select(
-    memDim,
-    mix(
-      select(memDim * select(0.76, 0.90, !inRoom && isV5), select(v6MemUnlit, v7DayMemUnlit, isV7 && !inRoom), isV6),
-      select(select(memDim * 0.94, 1.0, isV5), v6MemLit, isV6),
-      outbreakLitMask,
-    ),
-    isOverhaul,
-  );
+  let unlitTint = mix(vec3f(0.52, 0.86, 1.56), vec3f(0.93, 0.96, 1.02), clamp(unlitDesat, 0.0, 1.0));
+  let litMemTint = mix(mix(vec3f(1.08, 0.94, 0.74), vec3f(1.22, 0.88, 0.58), duskVal), vec3f(1.02, 0.99, 0.95), sunVal);
+  let memTint = mix(unlitTint, litMemTint, outbreakLitMask);
+  // Remembered scenery lit by a real light keeps its colour for the grade (the light-colour rule); unlit memory desaturates heavily.
+  let nightMemSat = clamp(1.0 - 0.85 * unlitDesat, 0.0, 1.0);
+  let memSatScale = select(nightMemSat, mix(nightMemSat, clamp(0.88 - 0.26 * unlitDesat, 0.36, 0.94), dayOrDusk), !inRoom);
+  let baseMemSat = select(OL.u10.w, max(OL.u10.w, 0.32), fogStyle == 0) * memSatScale;
+  let memSat = mix(baseMemSat, select(1.0, mix(1.0, 0.78, sunVal * (1.0 - visible)), !inRoom), outbreakLitMask);
+  let memUnlit = memDim * clamp(0.90 - 0.34 * sightDark, 0.20, 1.0);
+  let dayMemUnlit = mix(memUnlit, clamp(0.76 - 0.12 * (sightDark - 1.0), 0.52, 0.94), dayOrDusk);
+  let memLit = mix(memDim * 0.86, 1.0, clamp(1.0 - 0.22 * sightDark, 0.45, 1.0));
+  let effMemDim = mix(select(memUnlit, dayMemUnlit, !inRoom), memLit, outbreakLitMask);
   let memoryTone = mix(vec3f(luminance) * memTint, colIn, memSat) * effMemDim;
 
   var baseFowCol: vec3f;
   if (inRoom && world.y < 2.8) {
     let shroudScale = clamp(F.effects.w * 2.2, 0.35, 1.0);
-    let v6RoomScale = mix(shroudScale * clamp(0.84 - 0.30 * sightDark, 0.22, 1.0), clamp(0.76 - 0.20 * sightDark, 0.32, 0.90), outbreakLitMask);
-    let roomMem = memoryTone * select(shroudScale, select(mix(shroudScale * 0.68, 0.62, outbreakLitMask), v6RoomScale, isV6), isOverhaul);
+    let roomMem = memoryTone * mix(shroudScale * clamp(0.84 - 0.30 * sightDark, 0.22, 1.0), clamp(0.76 - 0.20 * sightDark, 0.32, 0.90), outbreakLitMask);
     if (explored >= 0.992 && OL.unseen.mode < 0.5) {
       return mix(roomMem, colIn, visible);
     }
-    let unknownGrainAmt = fract(OL.u10.x) * select(1.0, 1.35, fogStyle == 2);
-    var shroudNoise = 0.0;
-    if (unknownGrainAmt > 0.001) {
-      let tSalt = floor(F.cam.w * 16.0) * 7.3;
-      shroudNoise = (hash2(floor(world.xz * 12.0) + vec2f(tSalt, -tSalt)) - 0.5) * unknownGrainAmt * select(0.014, 0.002, isOverhaul);
-    }
-    let legacyShroud = max(vec3f(0.0015, 0.0018, 0.0024), outbreakAlbedo * 0.012 + vec3f(0.0042, 0.0040, 0.0040) + vec3f(shroudNoise));
-    let v6ShroudColIn = mix(colIn, vec3f(luminance), clamp(0.88 * unlitDesat, 0.0, 0.98) * (1.0 - outbreakLitMask * 0.72));
-    let v6DarkMult = clamp(1.36 - 0.56 * shroudDark, 0.18, 1.5);
-    let v6ShroudUnlit = vec3f(0.036, 0.042, 0.052) * v6DarkMult;
-    let v6ShroudLit = vec3f(0.24, 0.19, 0.14) * clamp(1.26 - 0.38 * sightDark, 0.28, 1.35);
-    let v6ShroudAlb = vec3f(0.0007, 0.0009, 0.0012) * v6DarkMult;
-    let overhaulShroud = max(
+    let shroudColIn = mix(colIn, vec3f(luminance), clamp(0.88 * unlitDesat, 0.0, 0.98) * (1.0 - outbreakLitMask * 0.72));
+    let darkMult = clamp(1.36 - 0.56 * shroudDark, 0.18, 1.5);
+    let shroudUnlit = vec3f(0.036, 0.042, 0.052) * darkMult;
+    let shroudLit = vec3f(0.24, 0.19, 0.14) * clamp(1.26 - 0.38 * sightDark, 0.28, 1.35);
+    let unknownShroud = max(
       vec3f(0.00010, 0.00022, 0.00055),
-      select(colIn, v6ShroudColIn, isV6) * mix(
-        select(select(vec3f(0.04, 0.08, 0.18), vec3f(0.12, 0.20, 0.42), isV5), v6ShroudUnlit, isV6),
-        select(select(vec3f(0.22, 0.18, 0.14), vec3f(0.44, 0.35, 0.24), isV5), v6ShroudLit, isV6),
-        outbreakLitMask,
-      ) + outbreakAlbedo * select(select(vec3f(0.0004, 0.0008, 0.0018), vec3f(0.0035, 0.0070, 0.0160), isV5), v6ShroudAlb, isV6),
+      shroudColIn * mix(shroudUnlit, shroudLit, outbreakLitMask) + outbreakAlbedo * vec3f(0.0007, 0.0009, 0.0012) * darkMult,
     );
-    let unknownShroud = select(legacyShroud, overhaulShroud, isOverhaul);
     let unrevealed = mix(unknownShroud, roomMem, explored);
     baseFowCol = mix(unrevealed, colIn, visible);
   } else {
-    // Darkwood (v8): outdoors the shroud is one even charcoal, so explored blocks no longer show as lighter rectangles.
-    let exploredExt = select(explored, explored * 0.2, OL.round.x > 6.5 || OL.round.z > 6.5);
-    let v4Ext = mix(0.60, 0.88, outbreakLitMask) + (0.40 - 0.12 * outbreakLitMask) * exploredExt;
-    let v5Ext = mix(0.88, 1.0, outbreakLitMask) + (0.12 - 0.12 * outbreakLitMask) * exploredExt;
-    let v6ExtUnlit = clamp((0.46 + 0.18 * exploredExt) * clamp(1.32 - 0.42 * sightDark, 0.24, 1.35), 0.16, 1.0);
-    let v6ExtLit = clamp((0.76 + 0.14 * exploredExt) * clamp(1.16 - 0.22 * sightDark, 0.42, 1.20), 0.35, 1.0);
-    let v7DayExt = mix(clamp(0.78 + 0.12 * exploredExt - 0.12 * (sightDark - 1.0), 0.52, 0.98), clamp(0.92 + 0.06 * exploredExt, 0.75, 1.0), outbreakLitMask);
-    let v6Ext = select(mix(v6ExtUnlit, v6ExtLit, outbreakLitMask), mix(mix(v6ExtUnlit, v6ExtLit, outbreakLitMask), v7DayExt, dayOrDusk), isV7);
-    let extUnexp = select(0.78 + 0.22 * exploredExt, select(select(v4Ext, v5Ext, isV5), v6Ext, isV6), isOverhaul);
+    // Outdoors the shroud is one even charcoal while it holds by day (OL.sight.y), so explored blocks don't show as lighter rectangles.
+    let exploredExt = mix(explored, explored * 0.2, clamp(OL.sight.y, 0.0, 1.0));
+    let extUnlit = clamp((0.46 + 0.18 * exploredExt) * clamp(1.32 - 0.42 * sightDark, 0.24, 1.35), 0.16, 1.0);
+    let extLit = clamp((0.76 + 0.14 * exploredExt) * clamp(1.16 - 0.22 * sightDark, 0.42, 1.20), 0.35, 1.0);
+    let dayExt = mix(clamp(0.78 + 0.12 * exploredExt - 0.12 * (sightDark - 1.0), 0.52, 0.98), clamp(0.92 + 0.06 * exploredExt, 0.75, 1.0), outbreakLitMask);
+    let extUnexp = mix(mix(extUnlit, extLit, outbreakLitMask), dayExt, dayOrDusk);
     baseFowCol = mix(memoryTone * extUnexp, colIn, visible);
   }
 

@@ -58,7 +58,7 @@ fn evalUnseenEdgeDepth(sX: f32, sY: f32, p: vec2f) -> f32 {
   let ramp = smoothstep(0.0, span, awareMeters * 0.65 + (1.0 - sX) * 1.35 + (1.0 - sY) * 0.45);
   // Darkwood (v8): full shroud right past the cone and halo edge, so the space behind the survivor goes dark at once.
   let legacy = (1.0 - sX) * (0.30 + 0.70 * ramp);
-  return clamp(mix(legacy, 1.0 - sX, clamp(OL.v8.x, 0.0, 1.0)), 0.0, 1.0);
+  return clamp(mix(legacy, 1.0 - sX, clamp(OL.sight.x, 0.0, 1.0)), 0.0, 1.0);
 }
 `,
 )

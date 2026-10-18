@@ -6,11 +6,9 @@ import { Rng } from "@arcade/kit/sim/rng"
 import { frontageEnd, SIZE, type Town } from "../shared/map"
 import { supportHeight } from "../shared/terrain"
 import { STREET_LAMP_POSTS } from "./lighting"
-import { GROUND_STYLES } from "./look/world"
 
 const rgb = (v: number): Rgb => [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255]
 
-export { GROUND_STYLES }
 
 export type GroundSettings = {
   wearAmount: number
@@ -76,12 +74,11 @@ export const groundControls: LabControl[] = [
   { key: "groundTuningSeed", label: "Ground tuning seed", group: "Ground & Clutter", min: 1, max: 9999, step: 1, unit: "" },
 ]
 
-export function packGroundCfgBits(settings: Pick<GroundSettings, "wearAmount" | "curbDirt" | "puddleWetness"> & { groundStyle?: number }): number {
+export function packGroundCfgBits(settings: Pick<GroundSettings, "wearAmount" | "curbDirt" | "puddleWetness">): number {
   const w = Math.max(0, Math.min(40, Math.round(settings.wearAmount / 0.05))) & 63
   const d = Math.max(0, Math.min(40, Math.round(settings.curbDirt / 0.05))) & 63
   const p = Math.max(0, Math.min(40, Math.round(settings.puddleWetness / 0.05))) & 63
-  const style = Math.max(0, Math.min(3, Math.round(settings.groundStyle ?? 0))) & 3
-  return (1 << 18) | (w & 63) | ((d & 63) << 6) | ((p & 63) << 12) | (style << 19)
+  return (1 << 18) | (w & 63) | ((d & 63) << 6) | ((p & 63) << 12)
 }
 
 export const outbreakSurfaceMaterialDeclarationsWgsl = buildSurfaceMaterialDeclarationsWgsl({
@@ -97,16 +94,9 @@ export const outbreakSurfaceMaterialDeclarationsWgsl = buildSurfaceMaterialDecla
   );
 }
 
-fn unpackGroundStyle() -> i32 {
-  let raw = u32(max(0.0, F.map.w));
-  if ((raw & (1u << 18u)) == 0u) { return 0; }
-  return i32((raw >> 19u) & 3u);
-}
-
 fn evalAsphaltConcrete(pIn: vec2f, baseTint: vec3f, isConcrete: bool, r: MaterialRecipe) -> SurfaceSample {
   let p = select(pIn, pIn - floor(pIn / 96.0) * 96.0, OL.win.z > 0.5);
   let gParams = unpackGroundParams();
-  let gStyle = max(unpackGroundStyle(), i32(round(OL.round.w)));
   let wear = gParams.x;
   let dirtAmt = gParams.y;
   let wetness = gParams.z;
@@ -123,36 +113,30 @@ fn evalAsphaltConcrete(pIn: vec2f, baseTint: vec3f, isConcrete: bool, r: Materia
     let isWalkway = (p.y < 39.82 && p.x > 26.4 && p.x < 29.0) || p.y < 38.02 || p.y > 49.98;
     let isNS = (p.x >= 37.95 && p.x <= 40.05) || (p.x >= 47.95 && p.x <= 50.05);
     // Preserve baseTint while calibrating porch walkway vs street sidewalk reflectance
-    let concBase = select(
-      select(vec3f(0.58, 0.56, 0.52), vec3f(0.72, 0.66, 0.56), isWalkway),
-      select(vec3f(0.48, 0.44, 0.36), vec3f(0.62, 0.55, 0.43), isWalkway),
-      gStyle > 0,
-    );
+    let concBase = select(vec3f(0.48, 0.44, 0.36), vec3f(0.62, 0.55, 0.43), isWalkway);
     col = baseTint * concBase;
-    if (isCurb) { col = baseTint * select(vec3f(0.56, 0.54, 0.50), vec3f(0.42, 0.40, 0.36), gStyle > 0); }
+    if (isCurb) { col = baseTint * vec3f(0.42, 0.40, 0.36); }
 
     let along = select(p.x, p.y, isNS || isWalkway);
     let across = select(p.y, p.x, isNS || isWalkway);
     let courseId = floor(across / select(0.94, 0.74, isWalkway));
     let stagger = (hash2(vec2f(courseId, 11.7)) - 0.5) * 0.38;
-    let chipJitter = (grit * select(0.024, 0.008, gStyle > 0) + (n1 - 0.5) * 0.028) * wear;
+    let chipJitter = (grit * 0.008 + (n1 - 0.5) * 0.028) * wear;
     let slabU = (along + chipJitter) / select(1.48, 1.12, isWalkway) + stagger;
     let slabV = (across + chipJitter * 0.5) / select(0.94, 0.74, isWalkway);
     let cell = vec2f(floor(slabU), floor(slabV));
     let fq = vec2f(fract(slabU), fract(slabV));
     let hSlab = hash2(cell * 1.73 + 0.9) - 0.5;
     let hWarm = fract((hSlab + 0.5) * 11.3) - 0.5;
-    let slabVar = select(0.22, 0.30, gStyle > 0);
-    col *= (0.92 + hSlab * slabVar * wear) * vec3f(1.0 + hWarm * 0.10, 1.0 + hWarm * 0.02, 1.0 - hWarm * 0.09);
+    col *= (0.92 + hSlab * 0.30 * wear) * vec3f(1.0 + hWarm * 0.10, 1.0 + hWarm * 0.02, 1.0 - hWarm * 0.09);
 
-    let jW = (select(0.008, 0.012, gStyle > 0) + 0.006 * n1) * clamp(wear, 0.5, 1.8);
+    let jW = (0.012 + 0.006 * n1) * clamp(wear, 0.5, 1.8);
     let joint = seam(slabU, jW, 0.72) * select(seam(slabV, jW * 0.80, 1.04), 1.0, isCurb);
     let edgeDist = min(min(fq.x, 1.0 - fq.x), min(fq.y, 1.0 - fq.y));
-    let diag = (fq.x - 0.5) * (0.75 + hWarm * 0.5) + (fq.y - 0.5) * (0.75 - hSlab * 0.5) + grit * select(0.14, 0.04, gStyle > 0) + (n1 - 0.5) * 0.10;
+    let diag = (fq.x - 0.5) * (0.75 + hWarm * 0.5) + (fq.y - 0.5) * (0.75 - hSlab * 0.5) + grit * 0.04 + (n1 - 0.5) * 0.10;
     let edgeCrackMask = 1.0 - smoothstep(0.05, 0.42, edgeDist);
-    let crackBoost = select(1.0, 1.45, gStyle == 3);
-    let slabCrack = (1.0 - smoothstep(0.002, 0.009 + surfaceFootprint * 0.40, abs(diag))) * step(0.18, hSlab + (wear * crackBoost - 1.0) * 0.20) * edgeCrackMask * wear * crackBoost;
-    let edgeDirt = (1.0 - smoothstep(0.0, select(0.15, 0.22, gStyle > 0) * wear, edgeDist)) * (0.5 + 0.5 * n1) * select(0.24, 0.34, gStyle > 0);
+    let slabCrack = (1.0 - smoothstep(0.002, 0.009 + surfaceFootprint * 0.40, abs(diag))) * step(0.18, hSlab + (wear - 1.0) * 0.20) * edgeCrackMask * wear;
+    let edgeDirt = (1.0 - smoothstep(0.0, 0.22 * wear, edgeDist)) * (0.5 + 0.5 * n1) * 0.34;
 
     var borderDist = min(abs(p.y - 38.0), abs(p.y - 50.0));
     if (isWalkway) {
@@ -164,19 +148,15 @@ fn evalAsphaltConcrete(pIn: vec2f, baseTint: vec3f, isConcrete: bool, r: Materia
     }
     let borderSpill = (1.0 - smoothstep(0.0, (0.13 + n1 * 0.22) * dirtAmt, borderDist)) * clamp(dirtAmt, 0.0, 1.5);
     let smoothGrain = (surfaceNoise(p * 4.2 + vec2f(5.1, 1.9)) - 0.5) * 0.14;
-    col *= 0.98 + select(grit * 0.30, smoothGrain + grit * 0.06, gStyle > 0) - edgeDirt - n2 * 0.10 * wetness;
+    col *= 0.98 + smoothGrain + grit * 0.06 - edgeDirt - n2 * 0.10 * wetness;
     let jointMask = joint * (1.0 - slabCrack * 0.75);
-    cavity = mix(select(0.52, 0.36, gStyle > 0), 1.0, joint * (1.0 - slabCrack * 0.55) * (1.0 - borderSpill * 0.45));
-    let mossShare = select(0.70, 0.95, gStyle == 3);
-    let creviceCol = mix(vec3f(0.036, 0.029, 0.021), select(vec3f(0.042, 0.055, 0.024), vec3f(0.075, 0.135, 0.042), gStyle == 3), smoothstep(0.38, 0.72, n2) * mossShare);
+    cavity = mix(0.36, 1.0, joint * (1.0 - slabCrack * 0.55) * (1.0 - borderSpill * 0.45));
+    let creviceCol = mix(vec3f(0.036, 0.029, 0.021), vec3f(0.042, 0.055, 0.024), smoothstep(0.38, 0.72, n2) * 0.70);
     col = mix(creviceCol, col, jointMask);
-    col = mix(col, creviceCol, borderSpill * select(0.68, 0.82, gStyle == 3));
-    if (gStyle >= 1) {
-      let dampSlab = smoothstep(0.42, 0.68, n2 * 0.7 + (1.0 - edgeDist) * 0.38) * clamp(wetness, 0.35, 1.6);
-      let dampScale = select(0.14, 0.24, gStyle == 2);
-      col *= 1.0 - dampSlab * dampScale;
-      localRough = mix(localRough, select(0.38, 0.26, gStyle == 2), dampSlab * 0.75);
-    }
+    col = mix(col, creviceCol, borderSpill * 0.68);
+    let dampSlab = smoothstep(0.42, 0.68, n2 * 0.7 + (1.0 - edgeDist) * 0.38) * clamp(wetness, 0.35, 1.6);
+    col *= 1.0 - dampSlab * 0.14;
+    localRough = mix(localRough, 0.38, dampSlab * 0.75);
 
     let sLeafQ = p * 5.6 + vec2f(n1 - 0.5, n2 - 0.5) * 1.3;
     let sLeafH = hash2(floor(sLeafQ) + vec2f(7.3, 2.1));
@@ -186,68 +166,42 @@ fn evalAsphaltConcrete(pIn: vec2f, baseTint: vec3f, isConcrete: bool, r: Materia
   } else {
     let roadU = clamp((p.y - 40.0) * 0.125, 0.0, 1.0);
     let dRut = min(abs(roadU - 0.26), abs(roadU - 0.74));
-    let rut = max(0.0, 1.0 - dRut * dRut * select(36.0, 24.0, gStyle > 0));
+    let rut = max(0.0, 1.0 - dRut * dRut * 24.0);
     let gutterDist = min(abs(p.y - 40.0), abs(p.y - 48.0));
     let gutterWarp = (n1 - 0.5) * 0.55;
-    let gutterShade = 1.0 - (1.0 - smoothstep(0.0, select(0.52, 0.72, gStyle > 0) + gutterWarp * 0.35, gutterDist)) * select(0.28, 0.44, gStyle > 0) * dirtAmt;
+    let gutterShade = 1.0 - (1.0 - smoothstep(0.0, 0.72 + gutterWarp * 0.35, gutterDist)) * 0.44 * dirtAmt;
 
-    if (gStyle == 0) {
-      // Today: original hash-cell stipple
-      col = baseTint * vec3f(1.12, 1.15, 1.18);
-      let aggCell1 = hash2(floor(p * 9.5) + vec2f(1.7, 5.3)) - 0.5;
-      let aggCell2 = hash2(floor(p * 19.0) + vec2f(8.1, 2.9)) - 0.5;
-      let aggFade = 1.0 - smoothstep(0.20, 0.65, surfaceFootprint * 9.5);
-      let aggDetail = (aggCell1 * 0.38 + aggCell2 * 0.32 + grit * 0.52) * aggFade;
-      let pebbleGlint = step(0.42, aggCell2) * (0.45 + 0.55 * wetness) * aggFade;
-      col *= (1.04 + aggDetail + pebbleGlint * 0.28 + (n2 - 0.5) * 0.26 - rut * 0.07) * gutterShade;
-    } else {
-      // Candidates 1..3: smooth multi-octave macadam aggregate without 1-px salt-and-pepper static, deep wheel ruts & curb gutter
-      col = baseTint * vec3f(0.56, 0.60, 0.68);
-      let macadam1 = surfaceNoise(p * 3.1 + vec2f(1.7, 5.3)) - 0.5;
-      let macadam2 = surfaceNoise(p * 6.4 + vec2f(8.1, 2.9)) - 0.5;
-      let fineFade = 1.0 - smoothstep(0.14, 0.48, surfaceFootprint * 6.4);
-      let macadam = macadam1 * 0.18 + macadam2 * 0.11 * fineFade + grit * 0.06 * fineFade;
-      let crownLift = 1.0 - abs(roadU * 2.0 - 1.0);
-      let gutterDamp = (1.0 - smoothstep(0.0, 1.25, gutterDist)) * (0.55 + 0.45 * n2);
-      col *= (0.94 + macadam + (n2 - 0.5) * 0.22 + crownLift * 0.08 - rut * 0.24 - gutterDamp * 0.18) * gutterShade;
-      localRough = mix(localRough, 0.48, clamp(rut * 0.65 + gutterDamp * 0.45, 0.0, 0.85));
-    }
+    // Smooth multi-octave macadam aggregate (no 1-px salt-and-pepper static), deep wheel ruts and a damp curb gutter.
+    col = baseTint * vec3f(0.56, 0.60, 0.68);
+    let macadam1 = surfaceNoise(p * 3.1 + vec2f(1.7, 5.3)) - 0.5;
+    let macadam2 = surfaceNoise(p * 6.4 + vec2f(8.1, 2.9)) - 0.5;
+    let fineFade = 1.0 - smoothstep(0.14, 0.48, surfaceFootprint * 6.4);
+    let macadam = macadam1 * 0.18 + macadam2 * 0.11 * fineFade + grit * 0.06 * fineFade;
+    let crownLift = 1.0 - abs(roadU * 2.0 - 1.0);
+    let gutterDamp = (1.0 - smoothstep(0.0, 1.25, gutterDist)) * (0.55 + 0.45 * n2);
+    col *= (0.94 + macadam + (n2 - 0.5) * 0.22 + crownLift * 0.08 - rut * 0.24 - gutterDamp * 0.18) * gutterShade;
+    localRough = mix(localRough, 0.48, clamp(rut * 0.65 + gutterDamp * 0.45, 0.0, 0.85));
 
     let patchMask = smoothstep(0.58 - wear * 0.06, 0.64 - wear * 0.06, n2 * 0.65 + n1 * 0.35) * step(0.14, roadU) * step(roadU, 0.86);
-    col = mix(col, col * vec3f(0.76, 0.78, 0.82), patchMask * select(0.42, 0.55, gStyle > 0));
+    col = mix(col, col * vec3f(0.76, 0.78, 0.82), patchMask * 0.55);
 
-    let jagWarp = vec2f(n1 - 0.5, n2 - 0.5) * 0.68 + vec2f(grit, -grit) * select(0.19, 0.07, gStyle > 0);
+    let jagWarp = vec2f(n1 - 0.5, n2 - 0.5) * 0.68 + vec2f(grit, -grit) * 0.07;
     let r1 = abs(fract(p.x * 0.38 + p.y * 0.14 + jagWarp.x) - 0.5);
     let r2 = abs(fract(p.y * 0.44 - p.x * 0.19 + jagWarp.y) - 0.5);
     let ridgeMin = min(r1, r2 + step(0.12, r1) * 0.08);
-    let wearMult = select(1.0, 1.45, gStyle == 3);
-    let crackGate = smoothstep(0.42, 0.68, n2 + rut * 0.25) * wear * wearMult;
+    let crackGate = smoothstep(0.42, 0.68, n2 + rut * 0.25) * wear;
     let aaM = max(surfaceFootprint * 0.35, 0.0025);
     let crack = (1.0 - smoothstep(0.0015, 0.0085 + aaM, ridgeMin)) * crackGate;
     let spallPocket = (1.0 - smoothstep(0.008, 0.028, max(r1, r2))) * crackGate;
-    let tarBand = (1.0 - smoothstep(0.004, 0.016 + aaM, r1)) * step(select(0.60, 0.52, gStyle > 0), n2) * clamp(wear * wearMult, 0.0, 1.6);
-    col = mix(col, col * vec3f(0.44, 0.46, 0.50), tarBand * select(0.42, 0.62, gStyle > 0));
+    let tarBand = (1.0 - smoothstep(0.004, 0.016 + aaM, r1)) * step(0.52, n2) * clamp(wear, 0.0, 1.6);
+    col = mix(col, col * vec3f(0.44, 0.46, 0.50), tarBand * 0.62);
 
     let dLane = min(abs(roadU - 0.32), abs(roadU - 0.68));
     let laneCenter = max(0.0, 1.0 - dLane * dLane * 52.0);
     let oilStain = smoothstep(0.38, 0.60, n1 * n2 * (0.65 + 0.60 * laneCenter)) * clamp(wear * 0.85, 0.0, 1.3);
-    col = mix(col, col * 0.46, oilStain * select(0.52, 0.65, gStyle > 0));
+    col = mix(col, col * 0.46, oilStain * 0.65);
     col = mix(col, col * 0.16, clamp(crack + spallPocket * 0.85, 0.0, 1.0) * 0.85);
     cavity = (1.0 - crack * 0.46) * gutterShade;
-
-    if (gStyle == 2) {
-      // Rain-Slick Nocturne: low-frequency puddles in wheel ruts & curb gutters with physical wet darkening & low roughness
-      let gutterPool = 1.0 - smoothstep(0.0, 1.35, gutterDist);
-      let puddleField = n2 * 0.65 + n1 * 0.35 + rut * 0.22 + gutterPool * 0.26;
-      let puddleMask = smoothstep(0.52, 0.70, puddleField) * clamp(wetness, 0.4, 1.8);
-      col *= 1.0 - puddleMask * 0.32;
-      localRough = mix(localRough, 0.12, clamp(puddleMask, 0.0, 0.92));
-    } else if (gStyle == 3) {
-      // Cracked & Overgrown: moss & weed encroachment along gutters and fracture seams
-      let gutterMoss = (1.0 - smoothstep(0.0, 1.15 + n1 * 0.5, gutterDist)) * smoothstep(0.36, 0.68, n2);
-      let crackMoss = clamp(crack * 0.75 + spallPocket * 0.6, 0.0, 1.0) * smoothstep(0.42, 0.72, n1);
-      col = mix(col, vec3f(0.11, 0.17, 0.065), clamp(gutterMoss * 0.75 + crackMoss * 0.55, 0.0, 0.85));
-    }
 
     let qLeaf = p * 5.4 + vec2f(n1 - 0.5, n2 - 0.5) * 1.45;
     let leafH = hash2(floor(qLeaf) + vec2f(4.7, 9.1));
@@ -257,7 +211,7 @@ fn evalAsphaltConcrete(pIn: vec2f, baseTint: vec3f, isConcrete: bool, r: Materia
     col = mix(col, vec3f(0.20, 0.12, 0.046), leafMask * 0.86 * dirtAmt);
   }
 
-  return SurfaceSample(col, roughnessToGloss(localRough, select(0.045, 0.065, gStyle == 2)), localRough, cavity);
+  return SurfaceSample(col, roughnessToGloss(localRough, 0.045), localRough, cavity);
 }`,
 })
 
@@ -267,26 +221,14 @@ export const groundSurfaceHookWgsl = /* wgsl */ `
     if (mat == 20) {
       let kind = i32(round(o.aux));
       let p = o.world.xz;
-      let gStyle = max(unpackGroundStyle(), i32(round(OL.round.w)));
       if (kind == 0) {
+        // Clumped chlorophyll greens and damp loam patches, no grey ochre wash.
         let turfLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
-        let oliveOchre = vec3f(turfLum) * mix(vec3f(0.92, 0.96, 1.14), vec3f(1.26, 0.96, 0.58), w);
-        if (gStyle == 0 && OL.round.x < 0.5) {
-          col = mix(col, oliveOchre, 0.72) * 0.94;
-        } else {
-          // Preserve rich clumped chlorophyll greens and damp loam variation without any greyscale ochre wash
-          let isV5Ground = OL.round.x > 3.5 || OL.round.z > 3.5;
-          let lawnMacro = surfaceNoise(p * 0.42 + vec2f(3.1, 7.4));
-          let loamPatch = smoothstep(0.54, 0.82, surfaceNoise(p * 0.88 + vec2f(6.2, 1.8)));
-          let richTurf = col * mix(
-            select(vec3f(0.68, 0.88, 0.52), vec3f(0.64, 0.98, 0.44), isV5Ground),
-            select(vec3f(0.86, 1.02, 0.62), vec3f(0.92, 1.16, 0.54), isV5Ground),
-            lawnMacro,
-          );
-          let dampLoam = vec3f(turfLum) * vec3f(0.50, 0.39, 0.25);
-          let turfScale = select(0.72, mix(0.76, 1.04, clamp(F.monitorBounds.w, 0.0, 1.0)), isV5Ground);
-          col = mix(richTurf, dampLoam, loamPatch * select(0.38, 0.56, gStyle == 3)) * turfScale;
-        }
+        let lawnMacro = surfaceNoise(p * 0.42 + vec2f(3.1, 7.4));
+        let loamPatch = smoothstep(0.54, 0.82, surfaceNoise(p * 0.88 + vec2f(6.2, 1.8)));
+        let richTurf = col * mix(vec3f(0.64, 0.98, 0.44), vec3f(0.92, 1.16, 0.54), lawnMacro);
+        let dampLoam = vec3f(turfLum) * vec3f(0.50, 0.39, 0.25);
+        col = mix(richTurf, dampLoam, loamPatch * 0.38) * mix(0.76, 1.04, clamp(F.monitorBounds.w, 0.0, 1.0));
       } else if (kind == 1) {
         let gParams = unpackGroundParams();
         let pBlock = select(p, p - floor(p / 96.0) * 96.0, OL.win.z > 0.5);
@@ -294,29 +236,25 @@ export const groundSurfaceHookWgsl = /* wgsl */ `
         let crown = 1.0 - abs(roadU * 2.0 - 1.0);
         let dxRoad = (p.x - F.eye.x) * 0.055;
         let centerFocus = max(0.0, 1.0 - dxRoad * dxRoad);
-        let rainBoost = select(0.0, 1.35, gStyle == 2);
-        let sheen = (0.52 + 0.48 * crown) * (0.54 + 0.46 * centerFocus) * (0.72 + col.g * 3.8) * (gParams.z + (OL.u8.y + rainBoost * 0.45) * 1.45);
-        let roadSheenCol = select(mix(vec3f(0.030, 0.038, 0.060), vec3f(0.078, 0.076, 0.072), w), vec3f(0.022, 0.036, 0.068), gStyle > 0);
-        col = col * (1.0 - (OL.u8.y + rainBoost * 0.25) * 0.22) + roadSheenCol * max(F.ambient.w, 0.35 * rainBoost) * OL.u2.y * sheen;
+        let sheen = (0.52 + 0.48 * crown) * (0.54 + 0.46 * centerFocus) * (0.72 + col.g * 3.8) * (gParams.z + OL.u8.y * 1.45);
+        col = col * (1.0 - OL.u8.y * 0.22) + vec3f(0.022, 0.036, 0.068) * max(F.ambient.w, 0.0) * OL.u2.y * sheen;
       } else if (kind == 2 || kind == 6) {
         let pBlock = select(p, p - floor(p / 96.0) * 96.0, OL.win.z > 0.5);
         let inVerge = (pBlock.y > 39.28 && pBlock.y < 39.80) || (pBlock.y > 48.20 && pBlock.y < 48.72);
         if (!inVerge) {
-          let isV5Walk = OL.round.x > 3.5 || OL.round.z > 3.5;
           let walkLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
           let warmStone = vec3f(walkLum) * vec3f(1.22, 0.95, 0.56);
-          let stoneMix = select(w * 0.65, w * 0.32, gStyle > 0 || OL.round.x > 0.5);
-          col = mix(col, warmStone, stoneMix) * select(0.76, select(0.72, mix(0.76, 0.94, clamp(F.monitorBounds.w, 0.0, 1.0)), isV5Walk), gStyle > 0);
+          col = mix(col, warmStone, w * 0.32) * mix(0.76, 0.94, clamp(F.monitorBounds.w, 0.0, 1.0));
           let wb = nearestHouseRect(o.world.xz);
           let dxWalk = o.world.x - (wb.x + 5.7);
           if (abs(dxWalk) < 4.5 && o.world.z > wb.w - 0.7 && o.world.z < wb.w + 4.9) {
             let dxWalk2 = dxWalk * dxWalk;
             let walkCore = fastExpNeg(dxWalk2 * 0.8) * smoothstep(wb.w + 4.9, wb.w - 0.5, o.world.z);
             let sideSpread = fastExpNeg(dxWalk2 * 0.133333) * smoothstep(wb.w + 1.9, wb.w + 2.9, o.world.z) * smoothstep(wb.w + 4.7, wb.w + 3.3, o.world.z);
-            let extScale = select(1.05, 0.68, OL.u5.w > 0.5) * (1.0 + OL.u8.y * 0.85) * select(1.0, select(0.54, 0.96, isV5Walk), gStyle > 0 || OL.round.x > 0.5);
+            let extScale = select(1.05, 0.68, OL.u5.w > 0.5) * (1.0 + OL.u8.y * 0.85) * 0.96;
             let walkPool = (walkCore * 0.88 + sideSpread * 0.35) * OL.u2.y * nightLamps * extScale;
             col += col * vec3f(1.26, 0.72, 0.22) * walkPool;
-            outbreakPracticalIrr += walkPool * select(0.42, 0.68, isV5Walk);
+            outbreakPracticalIrr += walkPool * 0.68;
           }
         }
       }

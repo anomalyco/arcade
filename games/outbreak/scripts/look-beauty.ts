@@ -7,9 +7,9 @@
  *   bun scripts/look-beauty.ts --out <dir> --mode flicker [--base <tree>]
  *   bun scripts/look-beauty.ts --out <dir> --mode sheet --columns 'v8:dir,Darkwood:ref,final:dir'
  *
- * `--base` serves a second Outbreak tree (a `git archive` of main with its own `node_modules/@arcade/kit` link) on
- * its own Vite server, so base and branch run in the same browser on the same GPU. Headless Metal Chromium, muted,
- * no visible window: run it through `hivemind run --kind browser`.
+ * `--base` serves a second Outbreak tree (a `git archive` of main, e.g. in an untracked `.look-base/`) on
+ * its own Vite server with `@arcade/kit` aliased to that tree's copy, so base and branch run in the same browser on
+ * the same GPU. Headless Metal Chromium, muted, no visible window: run it through `hivemind run --kind browser`.
  */
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
@@ -33,11 +33,13 @@ const zooms = arg("zooms", "46,38,32")!.split(",").map(Number)
 const only = arg("scenes")?.split(",")
 mkdirSync(out, { recursive: true })
 
-async function serve(gameRoot: string, repoRoot: string): Promise<{ server: ViteDevServer; url: string }> {
+async function serve(gameRoot: string, repoRoot: string, ownKit = false): Promise<{ server: ViteDevServer; url: string }> {
   const server = await createServer({
     root: gameRoot,
     configFile: resolve(gameRoot, "vite.config.ts"),
     logLevel: "error",
+    // A base tree has no node_modules of its own: point @arcade/kit at its copy (knobs is vendored and shared).
+    resolve: ownKit ? { alias: [{ find: /^@arcade\/kit/, replacement: `${repoRoot}/packages/kit` }] } : undefined,
     server: { host: "127.0.0.1", port: 0, fs: { allow: [repoRoot] } },
     plugins: [{
       name: "look-beauty-hooks",
@@ -375,7 +377,7 @@ try {
   } else {
     const cur = await serve(root, resolve(root, "../.."))
     servers.push(cur.server)
-    const base = baseTree ? await serve(resolve(baseTree, "games/outbreak"), resolve(baseTree)) : undefined
+    const base = baseTree ? await serve(resolve(baseTree, "games/outbreak"), resolve(baseTree), true) : undefined
     if (base) servers.push(base.server)
     meta.base = baseTree ?? null
 
@@ -390,7 +392,7 @@ try {
       await page.close()
       if (base) {
         const bp = await open(browser, base.url, 1536, 1024, 1)
-        for (const s of SCENES.filter(s => !only || only.includes(s.name))) await capture(bp, resolve(out, `base-${s.name}.png`), s, {}, "today")
+        for (const s of SCENES.filter(s => !only || only.includes(s.name))) await capture(bp, resolve(out, `base-${tag}-${s.name}.png`), s, {}, preset)
         await bp.close()
       }
     } else if (mode === "zoom") {
