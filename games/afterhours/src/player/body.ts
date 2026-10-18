@@ -42,18 +42,26 @@ export type BodyInput = {
 export type GroundQuery = (x: number, z: number, maxY: number) => number
 
 export const BODY_DEFAULTS = {
-  "body.back": 0.13,
-  "body.lookBack": 0.1,
+  "body.back": 0.12,
+  "body.lookBack": 0.12,
   "body.eyeGap": 0.03,
   "body.yawHz": 10,
   "body.turnStart": 60,
   "body.turnSpeed": 260,
   "body.velHz": 9,
-  "body.walkAt": 1.6,
-  "body.jogAt": 4,
-  "body.sprintAt": 6,
+  "body.walkAt": 2.4,
+  "body.jogAt": 3.8,
+  "body.sprintAt": 8,
   "body.moveFrom": 0.12,
   "body.fade": 0.2,
+  "body.crouchDepth": 0.75,
+  "body.warpMax": 75,
+  "body.strideWarp": 0.5,
+  "body.strideMin": 0.75,
+  "body.strideMax": 1.45,
+  "body.warpHz": 10,
+  "body.backEnter": 112,
+  "body.backExit": 95,
   "body.jumpStartAt": 0.42,
   "body.footIK": true,
   "body.footIKWeight": 1,
@@ -61,15 +69,17 @@ export const BODY_DEFAULTS = {
   "body.ikHz": 18,
   "body.slopeAlign": 0.8,
   "body.eyeMatch": true,
-  "body.spinePitch": 0.4,
+  "body.spinePitch": 0.12,
+  "body.downLean": 0.35,
   "body.spineYaw": 0.85,
   "body.torch": true,
   "body.torchRight": 0.2,
-  "body.torchDown": 0.4,
-  "body.torchFwd": 0.3,
+  "body.torchDown": 0.27,
+  "body.torchFwd": 0.26,
   "body.torchAvoidBeam": true,
   "body.reachTime": 0.8,
   "body.ladderRung": 0.3,
+  "body.ladderGap": 0.32,
 } satisfies LabSettings
 
 const G = "Body"
@@ -82,12 +92,21 @@ export const BODY_CONTROLS: LabControl[] = [
   { key: "body.turnStart", label: "Turn in place beyond", group: G, subsection: "Facing", unit: "°", min: 10, max: 120, step: 1 },
   { key: "body.turnSpeed", label: "Turn-in-place speed", group: G, subsection: "Facing", unit: "°/s", min: 60, max: 720, step: 10 },
   { key: "body.spineYaw", label: "Spine twist toward the aim", group: G, subsection: "Facing", unit: "×", min: 0, max: 1, step: 0.05 },
+  { key: "body.downLean", label: "Chest back when looking down", group: G, subsection: "First person", unit: "×", min: 0, max: 1, step: 0.05 },
   { key: "body.spinePitch", label: "Spine bend with the view pitch", group: G, subsection: "Facing", unit: "×", min: 0, max: 1, step: 0.05 },
   { key: "body.velHz", label: "Velocity smoothing", group: G, subsection: "Blend space", unit: "Hz", min: 1, max: 30, step: 0.5 },
   { key: "body.moveFrom", label: "Idle → move from", group: G, subsection: "Blend space", unit: "m/s", min: 0.02, max: 0.6, step: 0.01 },
   { key: "body.walkAt", label: "Full walk at", group: G, subsection: "Blend space", unit: "m/s", min: 0.5, max: 3, step: 0.05 },
   { key: "body.jogAt", label: "Full jog at", group: G, subsection: "Blend space", unit: "m/s", min: 2, max: 6, step: 0.05 },
-  { key: "body.sprintAt", label: "Full sprint at", group: G, subsection: "Blend space", unit: "m/s", min: 4, max: 9, step: 0.1 },
+  { key: "body.sprintAt", label: "Full sprint at", group: G, subsection: "Blend space", unit: "m/s", min: 4, max: 10, step: 0.1 },
+  { key: "body.warpMax", label: "Leg warp limit (strafe)", group: G, subsection: "Blend space", unit: "°", min: 0, max: 90, step: 1 },
+  { key: "body.warpHz", label: "Leg warp follow", group: G, subsection: "Blend space", unit: "Hz", min: 1, max: 30, step: 0.5 },
+  { key: "body.backEnter", label: "Backpedal beyond", group: G, subsection: "Blend space", unit: "°", min: 90, max: 170, step: 1 },
+  { key: "body.backExit", label: "Forward again under", group: G, subsection: "Blend space", unit: "°", min: 60, max: 150, step: 1 },
+  { key: "body.strideWarp", label: "Speed into stride length (vs cadence)", group: G, subsection: "Blend space", min: 0, max: 1, step: 0.05 },
+  { key: "body.strideMin", label: "Stride scale min", group: G, subsection: "Blend space", unit: "×", min: 0.5, max: 1, step: 0.05 },
+  { key: "body.strideMax", label: "Stride scale max", group: G, subsection: "Blend space", unit: "×", min: 1, max: 2, step: 0.05 },
+  { key: "body.crouchDepth", label: "Crouch depth (crouch clip weight)", group: G, subsection: "Blend space", min: 0.2, max: 1, step: 0.05 },
   { key: "body.fade", label: "State cross-fade", group: G, subsection: "Blend space", unit: "s", min: 0.02, max: 0.6, step: 0.01 },
   { key: "body.jumpStartAt", label: "Jump start clip from", group: G, subsection: "Blend space", unit: "s", min: 0, max: 1, step: 0.01 },
   { key: "body.footIK", label: "Foot + pelvis IK", group: G, subsection: "IK", type: "toggle" },
@@ -96,16 +115,17 @@ export const BODY_CONTROLS: LabControl[] = [
   { key: "body.ikHz", label: "IK smoothing", group: G, subsection: "IK", unit: "Hz", min: 2, max: 40, step: 1 },
   { key: "body.slopeAlign", label: "Boots align to slope", group: G, subsection: "IK", min: 0, max: 1, step: 0.05 },
   { key: "body.torch", label: "Hold the flashlight", group: G, subsection: "Hands", type: "toggle" },
-  { key: "body.torchRight", label: "Torch hand right of the eye", group: G, subsection: "Hands", unit: "m", min: 0, max: 0.4, step: 0.01 },
-  { key: "body.torchDown", label: "Torch hand below the eye", group: G, subsection: "Hands", unit: "m", min: 0.1, max: 0.7, step: 0.01 },
-  { key: "body.torchFwd", label: "Torch hand ahead of the eye", group: G, subsection: "Hands", unit: "m", min: 0.1, max: 0.6, step: 0.01 },
+  { key: "body.torchRight", label: "Torch hand right (view space)", group: G, subsection: "Hands", unit: "m", min: 0, max: 0.4, step: 0.01 },
+  { key: "body.torchDown", label: "Torch hand down (view space)", group: G, subsection: "Hands", unit: "m", min: 0.1, max: 0.7, step: 0.01 },
+  { key: "body.torchFwd", label: "Torch hand ahead (view space)", group: G, subsection: "Hands", unit: "m", min: 0.1, max: 0.6, step: 0.01 },
   { key: "body.torchAvoidBeam", label: "Keep the torch hand out of the beam", group: G, subsection: "Hands", type: "toggle" },
   { key: "body.reachTime", label: "E reach duration", group: G, subsection: "Hands", unit: "s", min: 0.3, max: 1.5, step: 0.05 },
-  { key: "body.ladderRung", label: "Ladder rung spacing", group: G, subsection: "Hands", unit: "m", min: 0.2, max: 0.4, step: 0.01 },
+  { key: "body.ladderRung", label: "Ladder rung spacing", group: G, subsection: "Ladder", unit: "m", min: 0.2, max: 0.4, step: 0.01 },
+  { key: "body.ladderGap", label: "Ladder ahead of the feet", group: G, subsection: "Ladder", unit: "m", min: 0.1, max: 0.6, step: 0.01 },
 ]
 
-/** Locomotion loops in the blend space. */
-const LOOPS = ["idle", "walk", "jog", "sprint", "walk_back", "strafe_l", "strafe_r", "crouch_idle", "crouch_walk"] as const
+/** Locomotion loops in the blend space; "~" is the same clip played in reverse (a backpedal). */
+const LOOPS = ["idle", "walk", "jog", "sprint", "walk~", "jog~", "crouch_idle", "crouch_walk", "crouch_walk~"] as const
 type Loop = (typeof LOOPS)[number]
 type ClipInfo = { action: THREE.AnimationAction; dur: number; speed: number; offset: number }
 
@@ -131,8 +151,12 @@ export type BodyDebug = {
   /** Blend weights by clip name, the gait phase and the active state. */
   weights: Record<string, number>
   phase: number
+  /** Orientation warp of the legs toward travel (degrees). */
+  warp: number
+  /** Stride warp scale. */
+  stride: number
   state: string
-  /** World-space velocity of the belt (treadmill), subtracted from foot velocity in the slide meter. */
+  /** Treadmill: the controller's velocity while the body stays put (a planted foot should move at minus this). */
   belt: THREE.Vector3
 }
 
@@ -141,7 +165,7 @@ export class PlayerBody {
   readonly root = new THREE.Group()
   readonly settings: LabSettings
   readonly ready: Promise<void>
-  readonly debug: BodyDebug = { planted: [true, true], slide: [0, 0], weights: {}, phase: 0, state: "", belt: v3() }
+  readonly debug: BodyDebug = { planted: [true, true], slide: [0, 0], weights: {}, phase: 0, warp: 0, stride: 1, state: "", belt: v3() }
   model: THREE.Object3D | null = null
   mixer: THREE.AnimationMixer | null = null
   private bones = {} as Record<BoneName, THREE.Bone>
@@ -153,6 +177,12 @@ export class PlayerBody {
   // Motion state.
   private bodyYaw = Number.NaN
   private turning = false
+  private back = false
+  private backK = 0
+  private warp = 0
+  private strideK = 1
+  private drift = 0
+  private legLen = 0.9
   private lv = new THREE.Vector2() // smoothed local velocity (x = right, y = forward)
   private phase = 0
   private idleT = 0
@@ -229,6 +259,17 @@ export class PlayerBody {
       a.play()
       this.actions.set(clip.name, a)
     }
+    // Backpedal loops: their own actions on clones of the forward clips (played with reversed phase).
+    for (const name of ["walk", "jog", "crouch_walk"]) {
+      const clip = clips.find((c) => c.name === name)
+      if (!clip) continue
+      const rev = clip.clone()
+      rev.name = `${name}~`
+      const a = mixer.clipAction(rev)
+      a.enabled = false
+      a.play()
+      this.actions.set(rev.name, a)
+    }
     for (const name of ["jump_start", "jump_land"]) {
       const a = this.actions.get(name)
       if (a) {
@@ -245,8 +286,7 @@ export class PlayerBody {
       this.torchGrip.play()
     }
 
-    const neck = this.bones.neck_01.getWorldPosition(v3())
-    this.eyeAboveNeck = 1.655 - neck.y
+    this.eyeAboveNeck = 1.655 - this.bones.neck_01.getWorldPosition(v3()).y
     // Hand-local axes for the torch grip: across the fist and back along the hand.
     const hand = this.bones.hand_r
     const inv = hand.getWorldQuaternion(new THREE.Quaternion()).invert()
@@ -286,28 +326,38 @@ export class PlayerBody {
         fr.push(this.bones.ball_r.getWorldPosition(v3()))
       }
       action.enabled = false
-      const speeds: number[] = []
-      let best = -Infinity
-      let offset = 0
-      for (let i = 0; i < N; i++) {
-        const j = (i + 1) % N
-        const low = fl[i]!.y < fr[i]!.y ? fl : fr
-        speeds.push(Math.hypot(low[j]!.x - low[i]!.x, low[j]!.z - low[i]!.z) / (dur / N))
-        const d = fr[i]!.y - fl[i]!.y
-        if (d > best) {
-          best = d
-          offset = i / N
+      // Ground speed: the travel of each foot while it is within 2 cm of its lowest point (stance), per second.
+      let dist = 0
+      let time = 0
+      for (const f of [fl, fr]) {
+        const min = Math.min(...f.map((p) => p.y))
+        for (let i = 0; i < N; i++) {
+          const j = (i + 1) % N
+          if (f[i]!.y > min + 0.02 || f[j]!.y > min + 0.02) continue
+          dist += Math.hypot(f[j]!.x - f[i]!.x, f[j]!.z - f[i]!.z)
+          time += dur / N
         }
       }
-      speeds.sort((a, b) => a - b)
-      return { action, dur, speed: speeds[N >> 1]!, offset }
+      // Phase origin: the left foot's touchdown (it reaches its stance height).
+      const minL = Math.min(...fl.map((p) => p.y))
+      let offset = 0
+      for (let i = 0; i < N; i++) {
+        const prev = (i + N - 1) % N
+        if (fl[i]!.y <= minL + 0.02 && fl[prev]!.y > minL + 0.02) {
+          offset = i / N
+          break
+        }
+      }
+      return { action, dur, speed: time > 0 ? dist / time : 0, offset }
     }
-    for (const l of LOOPS) this.loops[l] = measure(l)
+    for (const l of LOOPS) if (!l.endsWith("~")) this.loops[l] = measure(l)
+    for (const l of LOOPS) if (l.endsWith("~")) this.loops[l] = { ...this.loops[l.slice(0, -1) as Loop], action: this.actions.get(l)! }
     this.loops.idle.speed = 0
     this.loops.crouch_idle.speed = 0
     for (const a of this.actions.values()) a.enabled = false
     mixer.update(0)
     scene.updateMatrixWorld(true)
+    this.legLen = this.bones.thigh_r.getWorldPosition(v3()).distanceTo(this.bones.calf_r.getWorldPosition(v3())) + this.bones.calf_r.getWorldPosition(v3()).distanceTo(this.bones.foot_r.getWorldPosition(v3()))
     this.restFootH = [this.bones.foot_l.getWorldPosition(v3()).y, this.bones.foot_r.getWorldPosition(v3()).y]
 
     scene.traverse((o) => {
@@ -320,8 +370,9 @@ export class PlayerBody {
       const mat = mesh.material as THREE.MeshStandardMaterial
       mat.side = THREE.FrontSide
       mat.envMapIntensity = 0.5
+      // Hair and the bare head/neck go to the head layer; clothes stay whole (a cut collar shows the inside of the shirt).
       if (mesh.name.includes("short02")) mesh.layers.set(HEAD_LAYER)
-      else splitHead(mesh, new Set<THREE.Object3D>([this.bones.head, this.bones.neck_01]), neck)
+      else if (!/casualsuit|shoes/.test(mesh.name)) splitHead(mesh, new Set<THREE.Object3D>([this.bones.head, this.bones.neck_01]))
     })
     this.root.visible = true
   }
@@ -373,60 +424,88 @@ export class PlayerBody {
     // Eyes sit just behind the camera: the root goes back along the aim (more when looking down, where the real head
     // comes forward over the feet).
     const aimF = new THREE.Vector3(-Math.sin(aimYaw), 0, -Math.cos(aimYaw))
-    const back = this.num("body.back") + Math.max(0, -Math.sin(s.pitch)) * this.num("body.lookBack")
+    const back = (this.num("body.back") + Math.max(0, -Math.sin(s.pitch)) * this.num("body.lookBack")) * (1 - this.ladder)
     this.root.position.set(s.pos.x - aimF.x * back, s.pos.y, s.pos.z - aimF.z * back)
     this.root.rotation.set(0, this.bodyYaw, 0)
     this.root.updateMatrixWorld(true)
 
     // ------------------------------------------------------------------ blend space
+    // Local velocity → direction group (forward loops, or the same loops reversed for a backpedal) × speed band
+    // (idle / walk / jog / sprint), plus orientation warping: the legs turn toward the travel direction (up to "Warp
+    // limit") and the spine turns back to the aim, so strafes and diagonals come from the forward/back loops.
     const vf = s.vel.x * fwd.x + s.vel.z * fwd.z
     const vr = s.vel.x * right.x + s.vel.z * right.z
     const kv = damp(this.num("body.velHz"), dt)
     this.lv.x += (vr - this.lv.x) * kv
     this.lv.y += (vf - this.lv.y) * kv
     let sp = this.lv.length()
-    // Turning in place: a slow shuffle on the spot.
-    const shuffle = this.turning ? 0.55 : 0
-    if (sp < shuffle) sp = shuffle
-    const dirA = this.lv.lengthSq() > 1e-4 ? Math.atan2(this.lv.x, this.lv.y) : 0
-    const wF = Math.max(0, Math.cos(dirA))
-    const wB = Math.max(0, -Math.cos(dirA))
-    const wR = Math.max(0, Math.sin(dirA))
-    const wL = Math.max(0, -Math.sin(dirA))
-    const wSum = wF + wB + wR + wL || 1
+    let dirA = sp > 0.05 ? Math.atan2(this.lv.x, this.lv.y) : 0
+    // Turning in place: short steps on the spot while the root comes round.
+    const shuffle = this.turning && sp < 0.6
+    if (shuffle) {
+      sp = 0.6
+      dirA = 0
+    }
+    const deg = Math.PI / 180
+    if (sp > 0.15) {
+      if (!this.back && Math.abs(dirA) > this.num("body.backEnter") * deg) this.back = true
+      else if (this.back && Math.abs(dirA) < this.num("body.backExit") * deg) this.back = false
+    }
+    this.backK += ((this.back ? 1 : 0) - this.backK) * damp(1 / Math.max(0.02, this.num("body.fade")) * 2.2, dt)
+    const legDir = this.back ? wrap(dirA - Math.PI) : dirA
+    const limit = this.num("body.warpMax") * deg
     const move = smooth01(this.num("body.moveFrom") * 0.5, this.num("body.moveFrom") + 0.35, sp)
+    const warpGoal = THREE.MathUtils.clamp(legDir, -limit, limit) * move
+    this.warp += wrap(warpGoal - this.warp) * damp(this.num("body.warpHz"), dt)
+    // The legs move along their own heading; what's left of the travel angle is sideways drift.
+    const resid = THREE.MathUtils.clamp(wrap(legDir - this.warp), -0.7, 0.7)
+    const along = sp * Math.max(0.2, Math.cos(resid))
+    this.drift = Math.tan(resid) * move
     const walkAt = this.num("body.walkAt")
     const jogAt = this.num("body.jogAt")
     const sprintAt = this.num("body.sprintAt")
-    const jogK = smooth01(walkAt, jogAt, sp)
-    const sprintK = smooth01(jogAt, sprintAt, sp)
-    this.crouchW += ((s.crouch > 0.5 ? 1 : 0) - this.crouchW) * damp(8, dt)
+    const jogK = smooth01(walkAt, jogAt, along)
+    const sprintK = smooth01(jogAt, sprintAt, along)
+    // The crouch clips are a deep sneak; blended with the standing loops at "Crouch depth" they match the eye height.
+    this.crouchW += ((s.crouch > 0.5 ? this.num("body.crouchDepth") : 0) - this.crouchW) * damp(8, dt)
     const cw = this.crouchW
+    const fK = 1 - this.backK
+    const bK = this.backK
     const W: Record<Loop, number> = {
       idle: (1 - move) * (1 - cw),
-      walk: move * (1 - cw) * (wF / wSum) * (1 - jogK),
-      jog: move * (1 - cw) * (wF / wSum) * jogK * (1 - sprintK),
-      sprint: move * (1 - cw) * (wF / wSum) * jogK * sprintK,
-      walk_back: move * (1 - cw) * (wB / wSum),
-      strafe_l: move * (1 - cw) * (wL / wSum),
-      strafe_r: move * (1 - cw) * (wR / wSum),
+      walk: move * (1 - cw) * fK * (1 - jogK),
+      jog: move * (1 - cw) * fK * jogK * (1 - sprintK),
+      sprint: move * (1 - cw) * fK * jogK * sprintK,
+      "walk~": move * (1 - cw) * bK * (1 - jogK),
+      "jog~": move * (1 - cw) * bK * jogK,
       crouch_idle: (1 - move) * cw,
-      crouch_walk: move * cw,
+      crouch_walk: move * cw * fK,
+      "crouch_walk~": move * cw * bK,
     }
-    // Crouch walking any direction uses the forward clip played backwards for the back half.
-    const crouchRev = cw > 0 && this.lv.y < -0.05 && Math.abs(this.lv.y) > Math.abs(this.lv.x) ? -1 : 1
-    // Phase rate: the weighted cycles per second that keep each clip's planted foot at ground speed.
-    let rate = 0
+    // Phase rate: all loops share one phase, so the blended planted foot moves at the weighted mean stride per cycle;
+    // cycles per second = ground speed / that stride.
+    let stride = 0
     let wMove = 0
     for (const l of LOOPS) {
       const c = this.loops[l]
       if (c.speed <= 0 || W[l] <= 0) continue
-      rate += W[l] * (sp / (c.speed * c.dur))
+      stride += W[l] * c.speed * c.dur
       wMove += W[l]
     }
-    rate = wMove > 0 ? rate / wMove : 0
+    // Speed beyond (or short of) the clips' authored speed goes partly into longer (shorter) steps, the rest into cadence.
+    let natural = 0
+    for (const l of LOOPS) {
+      const c = this.loops[l]
+      if (c.speed > 0 && W[l] > 0) natural += W[l] * c.speed
+    }
+    natural = wMove > 0 ? natural / wMove : 0
+    const strideGoal = shuffle ? this.num("body.strideMin") * 0.4 : natural > 0 && along > 0.05 ? THREE.MathUtils.clamp((along / natural) ** this.num("body.strideWarp"), this.num("body.strideMin"), this.num("body.strideMax")) : 1
+    this.strideK += (THREE.MathUtils.lerp(1, strideGoal, move) - this.strideK) * damp(6, dt)
+    const rate = wMove > 0 ? along / ((stride / wMove) * this.strideK) : 0
     this.phase = (this.phase + rate * dt) % 1
     this.idleT += dt
+    this.debug.warp = this.warp / deg
+    this.debug.stride = this.strideK
 
     // ------------------------------------------------------------------ air, ladder
     if (!s.grounded && !s.onLadder) {
@@ -443,7 +522,7 @@ export class PlayerBody {
     if (s.onLadder) this.ladderPhase += (s.vel.y * dt) / (2 * this.num("body.ladderRung"))
 
     // ------------------------------------------------------------------ mixer weights
-    const ground = 1 - Math.max(this.air, this.ladder * 0.8)
+    const ground = 1 - this.air
     for (const l of LOOPS) {
       const c = this.loops[l]
       const w = W[l] * ground
@@ -451,8 +530,8 @@ export class PlayerBody {
       c.action.setEffectiveWeight(w)
       c.action.setEffectiveTimeScale(0)
       const ph = c.speed > 0 ? this.phase : (this.idleT / c.dur) % 1
-      const dir = l === "crouch_walk" ? crouchRev : 1
-      c.action.time = (((dir * ph + c.offset) % 1) + 1) % 1 * c.dur
+      const dir = l.endsWith("~") ? -1 : 1
+      c.action.time = ((((dir * ph + c.offset) % 1) + 1) % 1) * c.dur
       this.debug.weights[l] = w
     }
     const js = this.actions.get("jump_start")
@@ -492,7 +571,7 @@ export class PlayerBody {
       this.torchGrip.time = 0.2
     }
     this.debug.phase = this.phase
-    this.debug.state = s.onLadder ? "ladder" : airborne ? (this.jumpT >= 0 ? "jump" : "fall") : this.turning ? "turn" : moving ? (cw > 0.5 ? "crouch-walk" : "move") : cw > 0.5 ? "crouch" : "idle"
+    this.debug.state = s.onLadder ? "ladder" : airborne ? (this.jumpT >= 0 ? "jump" : "fall") : this.turning ? "turn" : moving ? (cw > 0.3 ? "crouch-walk" : "move") : cw > 0.3 ? "crouch" : "idle"
     mixer.update(dt)
     this.model.updateMatrixWorld(true)
 
@@ -503,14 +582,23 @@ export class PlayerBody {
     const pitchK = this.num("body.spinePitch")
     const aimRight = new THREE.Vector3(Math.cos(aimYaw), 0, -Math.sin(aimYaw))
     const spine: [THREE.Bone, number, number][] = [
-      [b.spine_01, 0.25, 0.25],
+      [b.spine_01, 0.3, 0.25],
       [b.spine_02, 0.35, 0.3],
-      [b.spine_03, 0.4, 0.3],
+      [b.spine_03, 0.35, 0.3],
     ]
     const pitch = THREE.MathUtils.clamp(s.pitch, -1.2, 1) * (1 - this.ladder)
+    // Orientation warp: the pelvis (and so the legs) turns toward travel, the spine turns back.
+    const warp = this.warp * (1 - this.ladder) * (1 - this.air)
+    if (Math.abs(warp) > 1e-4) {
+      rotateWorld(b.pelvis, new THREE.Quaternion().setFromAxisAngle(UP, -warp))
+      refreshTree(b.pelvis)
+    }
+    // Looking down, the chest leans back out of the view a little (as shipped full-body FPS rigs do), so you see your
+    // legs and boots past it rather than your shirt front.
+    const downLean = Math.max(0, -pitch) * this.num("body.downLean")
     for (const [bone, wy, wp] of spine) {
-      const q = new THREE.Quaternion().setFromAxisAngle(UP, dYaw * yawK * wy)
-      q.multiply(new THREE.Quaternion().setFromAxisAngle(aimRight, pitch * pitchK * wp))
+      const q = new THREE.Quaternion().setFromAxisAngle(UP, (dYaw * yawK + warp) * wy)
+      q.multiply(new THREE.Quaternion().setFromAxisAngle(aimRight, (pitch * pitchK + downLean) * wp))
       rotateWorld(bone, q)
       refreshTree(bone)
     }
@@ -528,8 +616,26 @@ export class PlayerBody {
     const feet = [b.foot_l, b.foot_r] as const
     const footW = [v3(), v3()]
     const normals = [UP.clone(), UP.clone()]
+    // Stride warping: the ankles' offsets from their hips along the legs' heading scale by `strideK`, so a clip can
+    // cover more (or less) ground per step than authored at a natural cadence.
+    const legFwd = fwd.clone().applyAxisAngle(UP, -warp)
+    const legRight = new THREE.Vector3().crossVectors(legFwd, UP)
+    const hipW = [worldPos(b.thigh_l, v3()), worldPos(b.thigh_r, v3())]
+    let reachDrop = 0
     for (let i = 0; i < 2; i++) {
       worldPos(feet[i], footW[i]!)
+      if (Math.abs(this.strideK - 1) > 1e-3 || Math.abs(this.drift) > 1e-3) {
+        const d = footW[i]!.clone().sub(hipW[i]!).dot(legFwd)
+        footW[i]!.addScaledVector(legFwd, d * (this.strideK - 1))
+        // Travel the legs' heading can't turn to (beyond the warp limit): the stance foot runs diagonally under the hip.
+        footW[i]!.addScaledVector(legRight, d * this.strideK * this.drift)
+        // The leg must still reach: lower the hips if the new ankle is out of range.
+        const reach = this.legLen * 0.995
+        const dx = footW[i]!.x - hipW[i]!.x
+        const dz = footW[i]!.z - hipW[i]!.z
+        const maxDown = Math.sqrt(Math.max(0, reach * reach - dx * dx - dz * dz))
+        reachDrop = Math.min(reachDrop, hipW[i]!.y - footW[i]!.y > maxDown ? maxDown - (hipW[i]!.y - footW[i]!.y) : 0)
+      }
       let want = 0
       if (ikOn) {
         const g = this.ground(footW[i]!.x, footW[i]!.z, rootY + ikMax)
@@ -538,7 +644,7 @@ export class PlayerBody {
       }
       this.footOff[i]! += (want - this.footOff[i]!) * kIK
     }
-    let pelvisWant = ikOn ? Math.min(this.footOff[0]!, this.footOff[1]!, 0) : 0
+    let pelvisWant = Math.min(ikOn ? Math.min(this.footOff[0]!, this.footOff[1]!, 0) : 0, reachDrop)
     if (this.on("body.eyeMatch")) {
       const neck = worldPos(b.neck_01, v3())
       const over = neck.y + this.eyeAboveNeck + this.num("body.eyeGap") - s.eye.y
@@ -562,7 +668,7 @@ export class PlayerBody {
       const target = footW[i]!.clone()
       target.y += this.footOff[i]!
       const footQ = worldQuat(foot, new THREE.Quaternion())
-      if (Math.abs(target.y - worldPos(foot, v3()).y) > 1e-3) twoBoneIK(thigh, calf, foot, target, ikOn ? wIK : 1, fwd, false)
+      if (target.distanceToSquared(worldPos(foot, v3())) > 1e-6) twoBoneIK(thigh, calf, foot, target, ikOn ? wIK : 1, fwd, false)
       // Boots flat on the slope while they're down.
       const h = footW[i]!.y - rootY - this.restFootH[i]!
       const contact = 1 - smooth01(0.02, 0.1, h)
@@ -576,21 +682,25 @@ export class PlayerBody {
     }
 
     // Ladder: hands and feet on rungs, alternating with the climb.
-    if (this.ladder > 0.01) this.ladderPose(fwd, right)
+    if (this.ladder > 0.01) this.ladderPose(fwd, right, s.pos.y)
 
     // Arms: torch in the right hand, E reach with a free hand.
     this.arms(s, dt, fwd)
 
     // ------------------------------------------------------------------ debug: foot slide while planted
+    // The planted foot is the lower one, when it's on the floor; its horizontal world speed is the slide.
+    const balls = [worldPos(b.ball_l, v3()), worldPos(b.ball_r, v3())]
+    const hs = balls.map((p) => p.y - this.ground(p.x, p.z, rootY + 0.5))
+    const low = hs[0]! <= hs[1]! ? 0 : 1
     for (let i = 0; i < 2; i++) {
-      const p = worldPos([b.ball_l, b.ball_r][i]!, v3())
-      const g = this.ground(p.x, p.z, rootY + 0.5)
-      const planted = s.grounded && p.y - g < 0.045
-      if (this.hasPrev && dt > 0) {
-        const vx = (p.x - this.prevFoot[i]!.x) / dt - this.debug.belt.x
-        const vz = (p.z - this.prevFoot[i]!.z) / dt - this.debug.belt.z
-        const v = planted ? Math.hypot(vx, vz) : 0
-        if (planted) this.debug.slide[i] = this.debug.slide[i]! + (v - this.debug.slide[i]!) * damp(6, dt)
+      const p = balls[i]!
+      // In contact: the lower foot, within 2 cm of the floor and not still coming down (or lifting) faster than 0.15 m/s.
+      const vy = this.hasPrev && dt > 0 ? (p.y - this.prevFoot[i]!.y) / dt : 0
+      const planted = s.grounded && !s.onLadder && i === low && hs[i]! < 0.02 && Math.abs(vy) < 0.15
+      if (this.hasPrev && dt > 0 && planted && this.debug.planted[i]) {
+        const vx = (p.x - this.prevFoot[i]!.x) / dt + this.debug.belt.x
+        const vz = (p.z - this.prevFoot[i]!.z) / dt + this.debug.belt.z
+        this.debug.slide[i] = this.debug.slide[i]! + (Math.hypot(vx, vz) - this.debug.slide[i]!) * damp(6, dt)
       }
       this.debug.planted[i] = planted
       this.prevFoot[i]!.copy(p)
@@ -620,12 +730,11 @@ export class PlayerBody {
     const yawFwd = new THREE.Vector3(-Math.sin(s.yaw), 0, -Math.cos(s.yaw))
     this.torch.visible = this.torchW > 0.5
     if (this.torchW > 1e-3 && this.ladder < 0.5) {
-      // Hand below and right of the eye, ahead along the aim (the arm's pitch eased so looking at your feet keeps the
-      // fist in front of the hips), barrel along the aim.
-      const pa = THREE.MathUtils.clamp(s.pitch, -0.8, 0.5)
-      const armAim = new THREE.Vector3(yawFwd.x * Math.cos(pa), Math.sin(pa), yawFwd.z * Math.cos(pa))
-      const target = eye.clone().addScaledVector(yawRight, this.num("body.torchRight")).addScaledVector(armAim, this.num("body.torchFwd"))
-      target.y -= this.num("body.torchDown")
+      // Hand in the lower right of the view, in a camera frame whose pitch is eased (so looking at your feet keeps the
+      // fist in front of the hips rather than at the knees); barrel along the aim.
+      const pa = THREE.MathUtils.clamp(s.pitch, -0.75, 0.5)
+      const holdQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(pa, s.yaw, 0, "YXZ"))
+      const target = new THREE.Vector3(this.num("body.torchRight"), -this.num("body.torchDown"), -this.num("body.torchFwd")).applyQuaternion(holdQ).add(eye)
       if (this.on("body.torchAvoidBeam")) outOfBeam(target, eye, camQ, aim)
       const pole = yawRight.clone().multiplyScalar(0.5).add(new THREE.Vector3(0, -1, 0)).addScaledVector(yawFwd, -0.3)
       twoBoneIK(b.upperarm_r, b.lowerarm_r, b.hand_r, target, this.torchW, pole)
@@ -658,29 +767,36 @@ export class PlayerBody {
     void camRight
   }
 
-  private ladderPose(fwd: THREE.Vector3, right: THREE.Vector3) {
+  /**
+   * Ladder: each limb holds a rung fixed in the world (rungs every `body.ladderRung` m) and, once the body has climbed
+   * past it, moves up two rungs; hands and feet alternate (left hand with right foot). The ladder is taken to be
+   * `ladderGap` m ahead of the feet (PlayerState doesn't carry the ladder's plane).
+   */
+  private ladderPose(fwd: THREE.Vector3, right: THREE.Vector3, feetY: number) {
     const b = this.bones
     const rung = this.num("body.ladderRung")
     const w = this.ladder
     const base = this.root.position
-    // The ladder is in front: hands on rungs at shoulder height and above, feet on rungs below the hips.
     for (let i = 0; i < 2; i++) {
       const side = i === 0 ? -1 : 1
-      const ph = this.ladderPhase + i * 0.5
-      const u = ((ph % 1) + 1) % 1
-      // Each limb holds a rung (u < 0.5), then moves up two rungs (u ≥ 0.5).
-      const lift = u < 0.5 ? 0 : THREE.MathUtils.smoothstep(u, 0.5, 1)
-      const hold = Math.floor(ph) * 2 * rung
-      const handY = base.y + 1.45 + ((hold + lift * 2 * rung) % (2 * rung)) - rung * 0.5
-      const footY = base.y + 0.25 + ((hold + rung + lift * 2 * rung) % (2 * rung)) - rung * 0.5
-      const out = Math.sin(Math.PI * lift) * 0.08
-      const hand = base.clone().addScaledVector(fwd, 0.36 - out).addScaledVector(right, side * 0.2)
-      hand.y = handY
-      const foot = base.clone().addScaledVector(fwd, 0.16 - out).addScaledVector(right, side * 0.13)
-      foot.y = footY + out
       const sfx = i === 0 ? "l" : "r"
-      twoBoneIK(b[`upperarm_${sfx}`], b[`lowerarm_${sfx}`], b[`hand_${sfx}`], hand, w, new THREE.Vector3(0, -1, 0).addScaledVector(right, side))
-      twoBoneIK(b[`thigh_${sfx}`], b[`calf_${sfx}`], b[`foot_${sfx}`], foot, w, fwd, false)
+      // Hand i and the opposite foot share a cycle; the other pair is a rung out of step.
+      const limb = (k: number, reachUp: number, gap: number, width: number, isHand: boolean) => {
+        const s = (feetY + k * rung) / (2 * rung)
+        const n = Math.floor(s)
+        const u = s - n
+        const hold = n * 2 * rung - k * rung
+        const swing = THREE.MathUtils.smoothstep(u, 0.55, 1)
+        const y = hold + swing * 2 * rung + reachUp
+        const out = Math.sin(Math.PI * swing) * 0.07
+        const p = base.clone().addScaledVector(fwd, gap - out).addScaledVector(right, side * width)
+        p.y = y + (isHand ? 0 : out * 0.5)
+        return p
+      }
+      const hand = limb(i, 1.5, this.num("body.ladderGap") + 0.12, 0.2, true)
+      const foot = limb(1 - i, 0.12, this.num("body.ladderGap") - 0.1, 0.12, false)
+      twoBoneIK(b[`upperarm_${sfx}`], b[`lowerarm_${sfx}`], b[`hand_${sfx}`], hand, w, new THREE.Vector3(0, -1, 0).addScaledVector(right, side).addScaledVector(fwd, -0.5))
+      twoBoneIK(b[`thigh_${sfx}`], b[`calf_${sfx}`], b[`foot_${sfx}`], foot, w, fwd)
       refreshTree(b[`hand_${sfx}`])
       refreshTree(b[`foot_${sfx}`])
     }
@@ -707,10 +823,10 @@ function outOfBeam(p: THREE.Vector3, eye: THREE.Vector3, camQ: THREE.Quaternion,
 }
 
 /**
- * Moves the head/neck triangles (and the collar right under the eyes) of a skinned mesh into their own mesh on
+ * Moves the head/neck triangles of a skinned mesh into their own mesh on
  * HEAD_LAYER, sharing the geometry buffers and the skeleton.
  */
-function splitHead(mesh: THREE.SkinnedMesh, headBones: Set<THREE.Object3D>, neck: THREE.Vector3) {
+function splitHead(mesh: THREE.SkinnedMesh, headBones: Set<THREE.Object3D>) {
   const geo = mesh.geometry
   const index = geo.index
   const joints = geo.getAttribute("skinIndex")
@@ -719,17 +835,10 @@ function splitHead(mesh: THREE.SkinnedMesh, headBones: Set<THREE.Object3D>, neck
   const headJoint = new Set<number>()
   mesh.skeleton.bones.forEach((b, i) => headBones.has(b) && headJoint.add(i))
   const isHead = new Uint8Array(joints.count)
-  const pos = geo.getAttribute("position")
-  const p = new THREE.Vector3()
-  // Bind-pose metres in the model's own frame (before the root's turn).
-  const toModel = mesh.parent ? new THREE.Matrix4().copy(mesh.parent.matrixWorld).invert().multiply(mesh.matrixWorld) : new THREE.Matrix4()
-  const neckModel = neck.clone().applyMatrix4(new THREE.Matrix4().copy(mesh.parent!.matrixWorld).invert())
   for (let i = 0; i < joints.count; i++) {
     let w = 0
     for (let k = 0; k < 4; k++) if (headJoint.has(joints.getComponent(i, k))) w += weights.getComponent(i, k)
-    p.fromBufferAttribute(pos, i).applyMatrix4(toModel)
-    const collar = (p.y > neckModel.y - 0.06 && Math.hypot(p.x - neckModel.x, p.z - neckModel.z) < 0.13) || p.y > neckModel.y + 0.02
-    isHead[i] = w > 0.5 || collar ? 1 : 0
+    isHead[i] = w > 0.3 ? 1 : 0
   }
   const body: number[] = []
   const head: number[] = []

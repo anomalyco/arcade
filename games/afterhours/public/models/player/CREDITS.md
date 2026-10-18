@@ -12,4 +12,12 @@ leather work boots), hair `short02`, skinned to MPFB's `game_engine` skeleton wi
   Collection AB, Joel Palmius, Jonas Hauquier). Pack: makehuman_system_assets_cc0.zip,
   https://files.makehumancommunity.org/asset_packs/makehuman_system_assets/
 
-No attribution is required. The animation is procedural (the arcade kit's human locomotion), no clips are shipped.
+Animation clips baked into `janitor.glb` (retargeted onto the game_engine skeleton by `scripts/player/retarget.ts`):
+idle, walk, jog, sprint, crouch_idle, crouch_walk, jump_start, jump_air, jump_land, interact, torch.
+
+- Quaternius, **Universal Animation Library (Standard)**, March 2025: **CC0 1.0** (License.txt in the pack).
+  https://quaternius.com/packs/universalanimationlibrary.html — fetched from a public mirror of the itch.io Standard
+  zip (github.com/NafisRayan/Animate-Rigged-Humanoid-No-Blender, `UAL1_Standard.glb`).
+
+Backpedal plays the forward loops in reverse and strafes/diagonals come from orientation warping at runtime
+(src/player/body.ts), so no other clips are used. No attribution is required for any of this.

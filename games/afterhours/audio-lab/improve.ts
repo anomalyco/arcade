@@ -21,6 +21,7 @@ import { refinePrompt, judge, QA_MODEL, type Judgement } from "./lib/gemini"
 import {
   addCost,
   generateSfx,
+  quotaHit,
   loadManifest,
   ROOT,
   saveManifest,
@@ -279,6 +280,7 @@ async function improveCategory(cat: CategorySpec) {
       } else await install(cat, s.variant, best, spec, "regenerated", attemptsOf(takes, best), s)
     } catch (e) {
       out(`  FAILED ${key}: ${(e as Error).message}`)
+      if (quotaHit) return
     }
   }
   // 3. Top up with new variants until MIN_GOOD clips score >= 4.
@@ -318,6 +320,7 @@ async function improveCategory(cat: CategorySpec) {
 }
 
 await pool(cats, Math.max(1, Number(args.concurrency)), async (cat) => {
+  if (quotaHit) return out(`${cat.id}: skipped (out of ElevenLabs credits)`)
   await improveCategory(cat)
   const s = manifest.sounds.filter((x) => x.category === cat.id)
   out(

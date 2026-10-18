@@ -238,25 +238,3 @@ export function ualMap(targetNames: string[]) {
   delete m.Root
   return m
 }
-
-/** KayKit Rig_Medium → janitor. */
-export const KAYKIT_MAP: Record<string, string> = {
-  pelvis: "hips",
-  spine_01: "spine",
-  spine_03: "chest",
-  head: "head",
-  upperarm_l: "upperarm.l",
-  lowerarm_l: "lowerarm.l",
-  hand_l: "wrist.l",
-  upperarm_r: "upperarm.r",
-  lowerarm_r: "lowerarm.r",
-  hand_r: "wrist.r",
-  thigh_l: "upperleg.l",
-  calf_l: "lowerleg.l",
-  foot_l: "foot.l",
-  ball_l: "toes.l",
-  thigh_r: "upperleg.r",
-  calf_r: "lowerleg.r",
-  foot_r: "foot.r",
-  ball_r: "toes.r",
-}

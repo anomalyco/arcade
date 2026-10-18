@@ -7,7 +7,7 @@ import { createLighting } from "../render/lighting"
 import { createPost } from "../render/post"
 import { Player } from "../player"
 import { Doors } from "../world/doors"
-import { createBody } from "../player/body"
+import { createGameBody } from "../player/game"
 import { nextFrame, yieldToMain } from "./schedule"
 import { createWarmup } from "./warmup"
 import { distanceTo } from "./priority"
@@ -142,7 +142,7 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
   performance.mark("rig:start")
   step("lighting", 0.75)
   const player = new Player(camera, canvas, ctx, options.input ?? !params.has("shot"))
-  updates.push(createBody(ctx, player).update)
+  updates.push(createGameBody(ctx, player).update)
   const atmosphere = createAtmosphere(ctx)
   const lighting = createLighting(ctx, player)
   const post = createPost(ctx)

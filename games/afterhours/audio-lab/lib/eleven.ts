@@ -73,7 +73,16 @@ export async function elevenKey(): Promise<string> {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
+/** Thrown when the key's credit quota is exhausted; callers should stop instead of retrying. */
+export class QuotaError extends Error {
+  constructor(public remaining: number | null, detail: string) {
+    super(`ElevenLabs quota exceeded (${remaining ?? "?"} credits remaining): ${detail}`)
+  }
+}
+export let quotaHit: QuotaError | null = null
+
 export async function generateSfx(spec: VariantSpec): Promise<{ audio: ArrayBuffer; cost: number | null }> {
+  if (quotaHit) throw quotaHit
   const key = await elevenKey()
   const body: Record<string, unknown> = { text: spec.prompt, model_id: MODEL, prompt_influence: spec.influence ?? 0.3 }
   if (spec.duration) body.duration_seconds = Math.min(30, Math.max(0.5, spec.duration))
@@ -89,6 +98,11 @@ export async function generateSfx(spec: VariantSpec): Promise<{ audio: ArrayBuff
       return { audio: await res.arrayBuffer(), cost: cost ? Number(cost) : null }
     }
     const detail = (await res.text()).slice(0, 300)
+    if (detail.includes("quota_exceeded")) {
+      const remaining = Number(detail.match(/You have (\d+) credits remaining/)?.[1] ?? NaN)
+      quotaHit = new QuotaError(Number.isFinite(remaining) ? remaining : null, detail)
+      throw quotaHit
+    }
     const retryable = res.status === 429 || res.status >= 500
     if (!retryable || attempt >= 5) throw new Error(`HTTP ${res.status}: ${detail}`)
     const wait = Number(res.headers.get("retry-after")) * 1000 || 1500 * 2 ** (attempt - 1)

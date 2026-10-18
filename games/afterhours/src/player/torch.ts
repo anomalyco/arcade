@@ -29,10 +29,10 @@ export function createTorch() {
     m.receiveShadow = true
     group.add(m)
   }
-  const lens = new THREE.Object3D()
-  lens.position.set(0, 0, -0.155)
-  group.add(lens)
-  group.userData.lens = lens
+  const lensAt = new THREE.Object3D()
+  lensAt.position.set(0, 0, -0.155)
+  group.add(lensAt)
+  group.userData.lens = lensAt
   group.visible = false
   return group
 }
