@@ -14,6 +14,7 @@ export function applyLookPreset(settings: OutbreakSettings, id: string): boolean
   const preset = lookPreset(id)
   if (!preset) return false
   for (const [key, value] of Object.entries(preset.knobs)) setOutbreakSetting(settings, key, value)
+  Object.assign(settings.flashlight, preset.beam)
   if (id === "today") settings.zombies.zombieLook = 1
   settings.look.lookIdea = preset.id
   return true

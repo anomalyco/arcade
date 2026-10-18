@@ -54,7 +54,7 @@ export type OutbreakLookTrims = {
   outOfSightDarkening: number
   /** Flashlight colour warmth (0 cool xenon, 0.28 neutral-warm ~4800K white, 1 legacy amber torch). */
   beamWarmth: number
-  /** Flashlight core tightness & spill falloff (0 legacy wide cone, 1 tight hotspot with soft dark spill). */
+  /** Flashlight core tightness & spill falloff (0 Darkwood wide even wedge, 1 v7 tight hotspot with soft dark spill). */
   beamTightness: number
   /** Wet grazing rim, specular highlights, and eye/wound glints on zombies in the dark (0 legacy ambient lift, 1 default). */
   zombieRimSpec: number
@@ -117,8 +117,8 @@ export const DEFAULT_LOOK_TRIMS: OutbreakLookTrims = {
   shroudDarkness: 1,
   outOfLightDesat: 1,
   outOfSightDarkening: 1,
-  beamWarmth: 0.56,
-  beamTightness: 1.1,
+  beamWarmth: 0.45,
+  beamTightness: 0,
   zombieRimSpec: 1,
   nightGrain: 0.085,
   nightVignette: 0.52,
@@ -130,9 +130,9 @@ export const DEFAULT_LOOK_TRIMS: OutbreakLookTrims = {
   dayMuted: 1,
   dayVignette: 0.42,
   dayGrain: 0.05,
-  dustAmount: 0.6,
-  dustBrightness: 1,
-  dustSize: 1,
+  dustAmount: 0.12,
+  dustBrightness: 0.7,
+  dustSize: 1.5,
   dustLamps: 1,
   bakedLight: 4,
   tableLamps: -1,

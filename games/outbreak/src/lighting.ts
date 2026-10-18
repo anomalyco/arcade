@@ -193,24 +193,42 @@ export const BEAM_QUALITY_TIERS = [
   { label: "High", downscale: 2, samples: 14 },
 ] as const
 
+/**
+ * The Darkwood beam (docs/outbreak-art-direction.md): a wide, evenly lit wedge with a crisp edge (inner cone 80% of
+ * the outer, faint core and rings, almost no spill), aimed low so it lands about a metre from the survivor and runs to
+ * its range, lighting the ground's texture and colour rather than glowing in the air (thin volumetric, soft glare).
+ */
 export const DEFAULT_FLASHLIGHT_BEAM: FlashlightBeamSettings = {
-  beamInner: 0.35,
-  beamCore: 0.6,
+  beamInner: 0.8,
+  beamCore: 0.2,
   beamCoreWidth: 0.34,
-  beamSpill: 0.05,
+  beamSpill: 0.02,
   beamSpillWidth: 1.5,
-  beamCookie: 0.45,
-  beamPoolDistance: 5.5,
-  beamNearSoftening: 2.0,
+  beamCookie: 0.1,
+  beamPoolDistance: 2.4,
+  beamNearSoftening: 6,
   beamAirScatter: 0.35,
   beamBounce: 0.35,
   beamColorKnee: 0.16,
   practicalColor: 0.55,
-  beamVisibility: 1.7,
+  beamVisibility: 0.35,
   beamDust: 0.5,
-  beamGlare: 1.2,
+  beamGlare: 0.6,
   beamQuality: 2,
   beamFalloffCurve: DEFAULT_LIGHT_CURVES.beamFalloffCurve,
+}
+
+/** The Dying Light (v7) beam: a tight hot core tilted to a pool 5.5 m out, dense volumetric air and strong glare. */
+export const V7_FLASHLIGHT_BEAM: FlashlightBeamSettings = {
+  ...DEFAULT_FLASHLIGHT_BEAM,
+  beamInner: 0.35,
+  beamCore: 0.6,
+  beamSpill: 0.05,
+  beamCookie: 0.45,
+  beamPoolDistance: 5.5,
+  beamNearSoftening: 2.0,
+  beamVisibility: 1.7,
+  beamGlare: 1.2,
 }
 
 export const flashlightBeamControls: LabControl[] = [
