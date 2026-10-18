@@ -6,7 +6,7 @@ import {
   packFoliageActors,
   packFoliageUniforms,
 } from "@arcade/kit/gpu/foliage"
-import type { FrameInput, Renderer } from "@arcade/kit/gpu/renderer"
+import { LampGrid, type FrameInput, type Renderer } from "@arcade/kit/gpu/renderer"
 import { FRAME_FLOATS } from "@arcade/kit/gpu/shaders"
 import { LIGHT_FLOATS, MAX_LIGHTS, MAX_MAP_LIGHTS } from "@arcade/kit/limits"
 import type { QualityProfile } from "@arcade/kit/quality"
@@ -196,6 +196,7 @@ export class OutbreakFrameLighting {
   readonly lightingUniforms = new Float32Array(OUTBREAK_LIGHTING_UNIFORM_FLOATS)
   private readonly unshadowedLampBuf = new Float32Array(MAX_LIGHTS * LIGHT_FLOATS)
   private readonly tableLamps = new TableLampLights()
+  readonly lampGrid = new LampGrid()
   private readonly scratchResolvedLamp: ResolvedLamp = {
     lx: 0,
     lh: 0,
@@ -404,6 +405,7 @@ export class OutbreakFrameLighting {
     readonly sceneLevel: OutbreakSceneLevel
     readonly interiors: InteriorPresenter
     readonly count: number
+    readonly shadowLightCount: number
   }): { count: number; shadowLightCount: number } {
     const {
       town,
@@ -420,7 +422,8 @@ export class OutbreakFrameLighting {
       sceneLevel,
       interiors,
     } = input
-    let { count } = input
+    let { count, shadowLightCount } = input
+    const directLightCount = count
     const { lightOccluders } = sceneLevel
     const [vx0, vy0, vx1, vy1] = cam.groundRect(2.8)
     const vp = cam.viewProj
@@ -470,12 +473,12 @@ export class OutbreakFrameLighting {
       if (usePolarShadow) {
         if (count < MAX_LIGHTS) {
           writeLightSlot(this.lights, count++, lx, lh, ly, r, color[0], color[1], color[2], power, cone[0], cone[1], cone[2], cone[3], 0, lightOccluders, softness, i)
+          shadowLightCount = count
         }
       } else if (unshadowedCount < maxUnshadowed) {
         writeLightSlot(this.unshadowedLampBuf, unshadowedCount++, lx, lh, ly, r, color[0], color[1], color[2], power, cone[0], cone[1], cone[2], cone[3], 0, 0, softness, i)
       }
     }
-    const shadowLightCount = count
     for (let u = 0; u < unshadowedCount && count < MAX_LIGHTS; u++) {
       const srcOff = u * LIGHT_FLOATS
       const dstOff = count++ * LIGHT_FLOATS
@@ -499,6 +502,8 @@ export class OutbreakFrameLighting {
     this.tableLamps.setSources(mode === "procedural" ? NO_TABLE_LAMPS : propLamps(town), originFurnishTown(town))
     const tableLampCount = settings.look.tableLamps >= 0 ? settings.look.tableLamps : Math.min(2, qProfile.maxSconceLights)
     count = this.tableLamps.write(this.lights, count, MAX_LIGHTS, inInteriorView ? tableLampCount : 0, cutX, cutY, sconceLevel, settings.lighting.practicalWarmth, 0.55 * settings.look.tableLampPower)
+    const origin = sceneLevel.currentWindowOrigin
+    this.lampGrid.update(this.lights, directLightCount, count, origin[0], origin[1])
     return { count, shadowLightCount }
   }
 

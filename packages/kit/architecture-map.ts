@@ -32,6 +32,7 @@ const RENDERER_TRANSITIVE_SPECS = [
   "@arcade/kit/gpu/motion",
   "@arcade/kit/gpu/motion-blur",
   "@arcade/kit/gpu/look-shaders",
+  "@arcade/kit/gpu/lamp-grid",
   "@arcade/kit/gpu-perf",
   "@arcade/kit/textures",
   "@arcade/kit/textures/loader",
@@ -128,6 +129,7 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
       s === "@arcade/kit/gpu/renderer" ||
       s === "@arcade/kit/gpu/shaders" ||
       s === "@arcade/kit/gpu/level" ||
+      s === "@arcade/kit/gpu/lamp-grid" ||
       s === "@arcade/kit/limits",
   },
   {

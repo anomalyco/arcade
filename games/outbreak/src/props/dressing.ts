@@ -4,7 +4,7 @@ import { PropBatches, PropLibrary, PropModels, type PropInstance } from "@arcade
 import type { QualityProfile } from "@arcade/kit/quality"
 import type { Rect } from "@arcade/kit/sim/geom"
 import type { Town } from "../../shared/map"
-import { furnishedHouses, instancesOf, type HouseFurnishing } from "./furnish"
+import { furnishedHouses, instancesOf, usedPropIds, type HouseFurnishing } from "./furnish"
 import type { OutbreakPropSettings } from "./settings"
 import { propDressingState } from "./state"
 
@@ -14,21 +14,29 @@ let current: PropDressing | null = null
 export const propDressingStats = (): Record<string, unknown> | null => current?.stats() ?? null
 
 /**
- * Draws the start block's houses furnished from `@arcade/kit/props`: loads the library on first use, plans each house
- * once per (town, clutter, seed), and packs one instanced draw per prop and LOD each frame.
+ * Draws the start block's houses furnished from `@arcade/kit/props`: loads the start-house props first and defers the
+ * rest of the catalogue until after the first furnished frame, plans each house once per (town, clutter, seed), and
+ * packs one instanced draw per prop and LOD each frame (falling back to timber boxes until each anchor prop is ready).
  */
 export class PropDressing {
   readonly models: PropModels
   private readonly batches: PropBatches
   private loading: Promise<void> | null = null
+  private releaseStage2: (() => void) | null = null
   private houses: HouseFurnishing[] = []
   private instances: PropInstance[] = []
+  private usedIds: string[] = []
 
   /** `lampAux`: the map light slot lamp shades glow through (Outbreak's `TABLE_LAMP_SLOT`). */
   constructor(renderer: Pick<Renderer, "addModel" | "setModel">, lampAux?: number, library?: PropLibrary) {
-    this.models = new PropModels(renderer, library, { lampAux })
+    this.models = new PropModels(renderer, library, { lampAux, boxFallback: true })
     this.batches = new PropBatches(this.models)
     current = this
+  }
+
+  /** True once every prop used by the start houses (`furnishedHouses`) has loaded or failed. */
+  get furnishedReady(): boolean {
+    return this.usedIds.length > 0 && this.usedIds.every(id => this.models.has(id) || this.models.library.failed.has(id))
   }
 
   get ready(): boolean {
@@ -36,20 +44,13 @@ export class PropDressing {
   }
 
   /**
-   * Per-frame: the prop batches to draw, empty while off, loading, or when the world is purely procedural.
+   * Per-frame: the prop batches to draw, empty while off or when the world is purely procedural.
    * Switching props on or off (or falling back if all `.prop` assets fail to load) calls `rebuildLevel` so the level
    * builder drops or restores the box furniture.
    */
   collect(town: Town, view: Rect, s: OutbreakPropSettings, zoom: number, quality: Pick<QualityProfile, "clutterScale" | "minPropLod">, originBuild: boolean, rebuildLevel: () => void): readonly Batch[] {
-    if (Boolean(s.propsOn) && originBuild && !this.loading) {
-      this.loading = this.models.ensure(PROP_IDS).then(() => {
-        if (!PROP_IDS.some(id => this.models.has(id)) && propDressingState.on) {
-          propDressingState.on = false
-          rebuildLevel()
-        }
-      })
-    }
-    const available = !this.ready || PROP_IDS.some(id => this.models.has(id))
+    const settled = this.furnishedReady || this.ready
+    const available = !settled || this.usedIds.some(id => this.models.has(id)) || PROP_IDS.some(id => this.models.has(id))
     const on = Boolean(s.propsOn) && originBuild && available
     const density = s.propClutter * quality.clutterScale
     const st = propDressingState
@@ -73,6 +74,32 @@ export class PropDressing {
     if (houses !== this.houses) {
       this.houses = houses
       this.instances = houses.flatMap(instancesOf)
+      this.usedIds = usedPropIds(houses)
+      if (this.loading) {
+        const missing = this.usedIds.filter(id => !this.models.has(id) && !this.models.library.failed.has(id))
+        if (missing.length) void this.models.ensure(missing)
+      }
+    }
+    if (!this.loading) {
+      const stage1 = this.usedIds.length ? [...this.usedIds] : PROP_IDS
+      this.loading = this.models.ensure(stage1).then(async () => {
+        if (!stage1.some(id => this.models.has(id)) && propDressingState.on) {
+          propDressingState.on = false
+          rebuildLevel()
+        }
+        // Defer unused catalogue props until after the first furnished frame renders (or idle fallback).
+        await new Promise<void>(r => {
+          this.releaseStage2 = r
+          setTimeout(r, 12)
+        })
+        this.releaseStage2 = null
+        const rest = PROP_IDS.filter(id => !this.models.has(id) && !this.models.library.failed.has(id))
+        if (rest.length) await this.models.ensure(rest)
+      })
+    } else if (this.releaseStage2 && this.furnishedReady) {
+      const release = this.releaseStage2
+      this.releaseStage2 = null
+      queueMicrotask(release)
     }
     const effectiveLodZoom = mStyle === 1 || mStyle === 2 ? Math.max(s.propLodZoom, 52) : s.propLodZoom
     const lod = Math.max(quality.minPropLod, zoom > effectiveLodZoom ? 1 : 0)
@@ -84,7 +111,9 @@ export class PropDressing {
   stats(): Record<string, unknown> {
     return {
       on: propDressingState.on,
+      furnishedReady: this.furnishedReady,
       ready: this.ready,
+      usedProps: this.usedIds.length,
       failed: [...this.models.library.failed],
       houses: this.houses.map(h => ({ building: h.building, anchors: h.anchors.length, clutter: h.clutter.length, trianglesLod0: h.triangles })),
       lastFrame: propDressingState.on ? { ...this.batches.stats } : null,

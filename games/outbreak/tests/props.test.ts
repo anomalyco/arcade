@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { resolve } from "node:path"
+import { PROP_IDS } from "@arcade/kit/props/catalogue"
 import { PropLibrary } from "@arcade/kit/props/models"
 import { makeTown } from "../shared/map"
 import { LocalSession } from "../shared/session"
 import { PropDressing } from "../src/props/dressing"
-import { furnishedHouses, propFloorFootprints, propLamps } from "../src/props/furnish"
+import { furnishedHouses, propFloorFootprints, propLamps, usedPropIds } from "../src/props/furnish"
 import { DEFAULT_PROP_SETTINGS } from "../src/props/settings"
 import { propDressingState, propLevelSignature } from "../src/props/state"
 import { buildVignetteLevel } from "../src/vignette/presets"
@@ -117,5 +118,83 @@ describe("prop dressing exports for the level bake", () => {
     const onBytes = buildVignetteLevel(town).chunks.reduce((n, c) => n + c.data.byteLength, 0)
     expect(onBytes).toBe(offBytes)
     expect(propDressingState.on).toBe(true)
+  })
+
+  test("stages prop loading: start-house anchors and clutter load before unused catalogue props, with box fallbacks until ready or on partial failure", async () => {
+    Object.assign(propDressingState, { on: true, density: 1, seed: 0 })
+    const town = makeTown(7)
+    const houses = furnishedHouses(town)
+    const stage1Ids = usedPropIds(houses)
+    const anchorIds = [...new Set(houses.flatMap(h => h.anchors.map(a => a.id)))]
+    expect(stage1Ids.slice(0, anchorIds.length)).toEqual(anchorIds)
+    expect(stage1Ids.length).toBe(16)
+    expect(PROP_IDS.length).toBe(26)
+
+    const requested: string[] = []
+    let releaseStage1!: () => void
+    const stage1Gate = new Promise<void>(r => { releaseStage1 = r })
+    let stage1Bytes = 0
+    let totalBytes = 0
+    const stagedLib = new PropLibrary("staged/", async url => {
+      const id = url.slice("staged/".length, -".prop".length)
+      requested.push(id)
+      const file = Bun.file(resolve(assetsDir, `${id}.prop`))
+      const buf = await file.arrayBuffer()
+      totalBytes += buf.byteLength
+      if (stage1Ids.includes(id)) {
+        stage1Bytes += buf.byteLength
+        await stage1Gate
+      }
+      return new Response(buf, { status: 200 })
+    })
+
+    let nextModel = 0
+    const host = { addModel: () => nextModel++, setModel: () => {} }
+    const dressing = new PropDressing(host, 63, stagedLib)
+    const view: [number, number, number, number] = [18, 20, 42, 42]
+
+    // Frame 1 while Stage 1 fetches are still in flight: only start-house props were requested, and anchors draw box fallbacks
+    const whileLoading = dressing.collect(town, view, DEFAULT_PROP_SETTINGS, 46, { clutterScale: 1, minPropLod: 0 }, true, () => {})
+    expect(requested).toEqual(stage1Ids)
+    expect(dressing.furnishedReady).toBe(false)
+    expect(whileLoading.length).toBeGreaterThan(0)
+    const fallbackModels = new Set(whileLoading.map(b => b.model))
+
+    // Release Stage 1: start houses become furnishedReady before unused catalogue props are fetched on the deferred turn
+    releaseStage1()
+    for (let i = 0; i < 20 && !dressing.furnishedReady; i++) await new Promise(r => setTimeout(r, 1))
+    expect(dressing.furnishedReady).toBe(true)
+    expect(requested).toEqual(stage1Ids)
+    expect(stage1Bytes).toBe(2963900)
+
+    const furnishedBatches = dressing.collect(town, view, DEFAULT_PROP_SETTINGS, 46, { clutterScale: 1, minPropLod: 0 }, true, () => {})
+    expect(furnishedBatches.some(b => !fallbackModels.has(b.model))).toBe(true)
+
+    // Deferred Stage 2 completes on the idle/macrotask turn
+    for (let i = 0; i < 20 && !dressing.ready; i++) await new Promise(r => setTimeout(r, 5))
+    expect(dressing.ready).toBe(true)
+    expect(requested.length).toBe(PROP_IDS.length)
+    expect(totalBytes).toBe(4330934)
+
+    // Partial failure: if "bed" 404s while other props load, "bed" keeps its box fallback while loaded props use .prop models
+    const origWarn = console.warn
+    console.warn = () => {}
+    try {
+      const partialLib = new PropLibrary("partial/", async url => {
+        const name = url.slice("partial/".length)
+        if (name === "bed.prop") return new Response(null, { status: 404 })
+        const file = Bun.file(resolve(assetsDir, name))
+        return new Response(await file.arrayBuffer(), { status: 200 })
+      })
+      const partial = new PropDressing(host, 63, partialLib)
+      partial.collect(town, view, DEFAULT_PROP_SETTINGS, 46, { clutterScale: 1, minPropLod: 0 }, true, () => {})
+      for (let i = 0; i < 20 && !partial.furnishedReady; i++) await new Promise(r => setTimeout(r, 5))
+      expect(partial.models.has("bed")).toBe(false)
+      expect(partial.models.has("chesterfield-sofa")).toBe(true)
+      expect(partial.models.model("bed", 0)).toBeDefined()
+      expect(propDressingState.on).toBe(true)
+    } finally {
+      console.warn = origWarn
+    }
   })
 })

@@ -43,6 +43,8 @@ import {
   common,
   type LookVariantMode,
 } from "./shaders"
+import { LampGrid } from "./lamp-grid"
+export { LAMP_GRID_CELL, LAMP_GRID_DIM, LAMP_GRID_SLOTS, LampGrid, scoreLampAtCell } from "./lamp-grid"
 import { SmokeRenderer } from "@arcade/kit/vehicle/smoke-renderer"
 import type { SmokeTrail } from "@arcade/kit/vehicle/smoke-trail"
 import { SURFACE_TEX_UNIFORM_FLOATS, packSurfaceTexUniforms, type SurfaceTexUniformInput } from "./surface-materials"
@@ -179,6 +181,8 @@ export type FrameInput = {
   lookCompare?: { mode?: LookCompareMode; wipeSplit?: number }
   /** Optional game post-process uniform tuple packed into GL.pad.yzw (gradeData[5..7]). */
   postParams?: readonly [number, number, number]
+  /** Optional 2D static lamp light-list grid (`uLampGrid`) for `lights[directLightCount .. lightCount)`. */
+  lampGrid?: LampGrid | null
 }
 
 /**
@@ -213,6 +217,7 @@ export class Renderer {
   private moonTex: GPUTexture
   private visibilityTex: GPUTexture
   private fieldTex: GPUTexture
+  private lampGridTex: GPUTexture
   private field: { pipe: GPUComputePipeline; group: GPUBindGroup; state: GPUBuffer; dispatch: number } | null = null
   private volume: {
     pipe: GPURenderPipeline
@@ -342,6 +347,7 @@ export class Renderer {
     this.moonTex = d.createTexture({ size: [1, 1], format: "r8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
     this.visibilityTex = d.createTexture({ size: [1, 1], format: "r8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
     this.bounceTex = d.createTexture({ size: [1, 1], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
+    this.lampGridTex = d.createTexture({ size: [1, 1], format: "rgba8uint", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
     this.fieldTex = d.createTexture({ size: [shaders?.visField?.size ?? 1, shaders?.visField?.size ?? 1], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING })
     this.floorSampler = d.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" })
     const fallbackMaterials = createFallbackMaterialTextureArray(d)
@@ -397,6 +403,7 @@ export class Renderer {
         { binding: 14, visibility: S.FRAGMENT, texture: {} },
         { binding: 15, visibility: S.FRAGMENT, texture: { viewDimension: "2d-array" } },
         { binding: 16, visibility: S.FRAGMENT, sampler: {} },
+        { binding: 17, visibility: S.FRAGMENT, texture: { sampleType: "uint" } },
       ],
     })
     this.sceneLayout = sceneLayout
@@ -663,6 +670,7 @@ export class Renderer {
         { binding: 14, resource: this.fieldTex.createView() },
         { binding: 15, resource: this.detailView },
         { binding: 16, resource: this.detailSampler },
+        { binding: 17, resource: this.lampGridTex.createView() },
       ],
     })
   }
@@ -1292,7 +1300,35 @@ export class Renderer {
       d.queue.writeBuffer(this.motionBuf, 0, this.lookSceneData)
     }
     this.previousFrame = motion ? f.frame.slice() : null
+    const lg = f.lampGrid
+    const useLampGrid = !!lg && lg.directLightCount < lg.lightCount
+    if (useLampGrid) {
+      if (this.lampGridTex.width !== lg.width || this.lampGridTex.height !== lg.height) {
+        this.lampGridTex.destroy()
+        this.lampGridTex = d.createTexture({
+          size: [lg.width, lg.height],
+          format: "rgba8uint",
+          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+        })
+        lg.markAllDirty()
+        this.makeSceneGroup()
+      }
+      if (lg.dirtyRows) {
+        const { minRow, rowCount } = lg.dirtyRows
+        const rowBytes = lg.width * 4
+        d.queue.writeTexture(
+          { texture: this.lampGridTex, origin: [0, minRow, 0] },
+          lg.data,
+          { offset: minRow * rowBytes, bytesPerRow: rowBytes, rowsPerImage: rowCount },
+          [lg.width, rowCount, 1],
+        )
+        lg.markUploaded()
+      }
+    }
+    const prevFocusW = f.frame[35]!
+    if (useLampGrid) f.frame[35] = -(lg.directLightCount + 1)
     d.queue.writeBuffer(this.frameBuf, 0, f.frame)
+    if (useLampGrid) f.frame[35] = prevFocusW
     if (f.lightCount) d.queue.writeBuffer(this.lightBuf, 0, f.lights.buffer, f.lights.byteOffset, f.lightCount * LIGHT_FLOATS * 4)
     if (f.occluderCount) d.queue.writeBuffer(this.occBuf, 0, f.occluders.buffer, f.occluders.byteOffset, Math.min(f.occluderCount, MAX_OCCLUDERS) * OCC_FLOATS * 4)
     if (f.lampCount) d.queue.writeBuffer(this.lampBuf, 0, f.lampPower.buffer, f.lampPower.byteOffset, Math.min(f.lampCount, MAX_MAP_LIGHTS) * 4)
