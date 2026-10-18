@@ -200,7 +200,7 @@ export class OutbreakFrameUi {
     }
     vehicleRenderer.syncHud(localVehicle, p.seatIndex ?? 0)
     this.syncStatus(session.view)
-    coop.overlay(cam, w, h, town, vision)
+    coop.overlay(cam, w, h, town, vision, coop.pose(p))
     this.map.update(
       gameMapFrame({
         session,

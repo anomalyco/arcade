@@ -111,6 +111,7 @@ export class CoopRoomCore {
   /** Transitions the room from `"lobby"` to `"running"` and broadcasts the updated roster and initial running snapshot. */
   start(): boolean {
     if (this.phase === "running") return false
+    this.expireSeats()
     this.phase = "running"
     for (const seat of this.seats.all) {
       seat.data.ready = true
@@ -121,13 +122,22 @@ export class CoopRoomCore {
     return true
   }
 
-  private checkAutoStart(): void {
-    if (this.phase !== "lobby") return
+  private expireSeats(): boolean {
+    const expired = this.seats.expire()
+    for (const seat of expired) this.sim.removeSurvivor(seat.id, this.phase === "running")
+    return expired.length > 0
+  }
+
+  private checkAutoStart(forceRoster = false): void {
+    if (this.phase !== "lobby") {
+      if (forceRoster) this.sendRoster(true)
+      return
+    }
     const connected = this.seats.all.filter((s) => s.connected)
     if (connected.length >= 2 && connected.every((s) => s.data.ready)) {
       this.start()
     } else {
-      this.sendRoster()
+      this.sendRoster(forceRoster)
     }
   }
 
@@ -225,6 +235,18 @@ export class CoopRoomCore {
       if (seat.id === this.hostId || allReady) this.start()
       return
     }
+    if (msg.t === "leave") {
+      this.seats.remove(seat.id)
+      this.sim.removeSurvivor(seat.id, this.phase === "running")
+      for (const [other, s] of this.conns) {
+        if (s.seatId === seat.id) {
+          s.seatId = null
+          if (other !== conn) other.close(4004, "left")
+        }
+      }
+      this.checkAutoStart(true)
+      return
+    }
     if (this.phase === "lobby") return
     if (msg.a && msg.a > seat.data.ackSnapTick && seat.data.history.get(msg.a)) {
       seat.data.ackSnapTick = msg.a
@@ -244,6 +266,7 @@ export class CoopRoomCore {
       return
     }
     const name = cleanPlayerName(msg.name, MAX_NAME, "Survivor")
+    this.expireSeats()
     const joined = this.seats.join(name, msg.token, (index, id) => {
       const slot = this.sim.addSurvivor(id, index)
       const variant = this.pickFreeVariant(msg.variant ?? clampSurvivorVariant(index), id)
@@ -311,6 +334,7 @@ export class CoopRoomCore {
       hostId: this.hostId,
       variant: seat.data.variant,
       loadout: seat.data.loadout,
+      ready: seat.data.ready,
     })
     this.sendRoster(true)
     if (this.phase === "running") this.snapshot([conn])
@@ -348,9 +372,7 @@ export class CoopRoomCore {
 
   /** One 60 Hz tick. The world pauses while nobody is connected or while the room is in the pre-game lobby. */
   step(): void {
-    const expired = this.seats.expire()
-    for (const seat of expired) this.sim.removeSurvivor(seat.id, this.phase === "running")
-    if (expired.length) this.checkAutoStart()
+    if (this.expireSeats()) this.checkAutoStart(true)
     if (!this.seats.connectedCount || this.phase === "lobby") return
     this.tick++
     const sim = this.sim
@@ -381,7 +403,7 @@ export class CoopRoomCore {
    * recipients share the same chunk bubble `(winCx, winCy)` and acked baseline tick.
    */
   snapshot(to?: Conn[]): void {
-    this.snapIndex++
+    if (!to) this.snapIndex++
     const sharedCache = new Map<string, { bytes: Uint8Array; snap: SharedSnapshot }>()
     const nextBubbleSnaps = new Map<string, SharedSnapshot>()
     for (const [conn, s] of this.conns) {
@@ -416,7 +438,7 @@ export class CoopRoomCore {
       }
       if (this.tick > 0 && cached.snap) {
         data.history.record(this.tick, cached.snap)
-        nextBubbleSnaps.set(bubbleKey, cached.snap)
+        if (!to || !this.lastBubbleSnaps.has(bubbleKey)) nextBubbleSnaps.set(bubbleKey, cached.snap)
       }
 
       const delta = this.sim.progression.ledger.diff(data.ledgerRev, { visibleTo: seat.id })
