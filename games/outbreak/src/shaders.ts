@@ -316,7 +316,7 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
         let dayVig = select(0.0, select(0.68, select(0.12, 0.22 * clamp(0.5 + 0.5 * shroudDark, 0.0, 1.6), isV6), isV5OrV6) * sunVal, gradeStyle > 0);
         let vigScale = select(1.0, select(0.68, select(0.92, 0.64, isV7) * clamp(0.4 + 0.6 * shroudDark, 0.0, 1.6), isV6), isV5OrV6);
         let vigDark = max(clamp(OL.u2.w * vigScale, 0.0, 1.2), dayVig);
-        let centerRef = select(vec2f(29.5, select(39.0, 30.5, OL.u5.w > 0.5)), F.eye.xy, OL.win.z > 0.5);
+        let centerRef = F.eye.xy;
         let dCenter = length((o.world.xz - centerRef) * vec2f(0.052, 0.064));
         let v6PeriphFloor = clamp(select(0.34, 0.46, isV7) - 0.10 * (shroudDark - 1.0), 0.16, 0.64);
         let periphFloor = select(0.46, select(0.28, select(0.56, v6PeriphFloor, isV6), isV5OrV6), gradeStyle > 0);
@@ -499,9 +499,11 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
           let lensVec = vec3f(OL.u3.x, OL.u11.x, OL.u3.y) - o.world;
           let dLens = length(lensVec);
           let toLens = lensVec / max(dLens, 1e-4);
-          let toPorch = normalize(vec3f(27.7 - o.world.x, max(1.2, 2.25 - o.world.y), 36.3 - o.world.z));
+          let zb = nearestHouseRect(o.world.xz);
+          let porchXZ = vec2f(zb.x + 5.7, zb.w + 0.8);
+          let toPorch = normalize(vec3f(porchXZ.x - o.world.x, max(1.2, 2.25 - o.world.y), porchXZ.y - o.world.z));
           let toStreet = normalize(vec3f(OL.u7.x - o.world.x, max(1.4, OL.u7.y - o.world.y), OL.u7.z - o.world.z));
-          let dPorch = length(vec2f(27.7, 36.3) - o.world.xz);
+          let dPorch = length(porchXZ - o.world.xz);
           let toLamp = select(toStreet, toPorch, !inRoom && dPorch < 9.5);
           let hBeam = normalize(toLens + V);
           let hLamp = normalize(toLamp + V);
