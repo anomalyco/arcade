@@ -50,6 +50,7 @@ export { serviceStack, riserW1, RISER_W1_OUTER, type ServiceOpts, type ServiceHa
 export * from "./lights"
 export * from "./fixtures"
 export { washroom, framedMirror, WASHROOM_LAYER, type WashroomOpts } from "./washroom"
+export { NIGHT_ROOMS, nightRoomAt, windowLight, litWindows, type NightRoom, type NightLit, type LitWindow } from "./lighting-state"
 export { liftGate, type LiftGateSpec } from "./liftgate"
 export { extinguisher, fountain, bulletin, hazardLight, fluoro, rigLevel } from "./fittings"
 export { POLY, glazing } from "./finishes"

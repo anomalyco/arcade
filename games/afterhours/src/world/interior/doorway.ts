@@ -88,7 +88,7 @@ export function doorway(b: Builder, d: DoorwaySpec): string[] {
       b.rbox(M.darkSteel, F, 0.08, 0.13, 0.025, 0.006, u, 1.2, f + 0.0125)
       b.boxM(M.felt, F, 0.05, 0.006, 0.004, u, 1.23, f + 0.027, { cast: false })
       b.boxM(READER_LED, F, 0.012, 0.012, 0.004, u, 1.16, f + 0.027, { cast: false })
-    } else if (d.state === "locked") {
+    } else if (d.state === "locked" && !openable(d.state)) {
       b.boxM(M.steel, F, 0.03, 0.12, 0.012, ux, 1.15, casing + 0.006)
       b.rbox(KEY_BRASS, F, 0.05, 0.06, 0.02, 0.008, ux, 1.07, casing + 0.022)
     }

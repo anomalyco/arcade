@@ -110,7 +110,7 @@ export function fumeHood(b: Builder, x: number, z: number, yaw: number, light = 
   if (light) {
     b.boxM(glow(0x202418, 0xe8f0d8, 1.8, "hood_tube"), m, 1.2, 0.02, 0.06, 0, 2.08, 0.1, { cast: false })
     const p = ptIn(m, 0, 2.0, 0)
-    b.lamp({ kind: "fluorescent", position: p, direction: [0, -1, 0], color: [0.86, 0.95, 0.75], intensity: 6, range: 3, angle: 1.2, penumbra: 0.8, size: 0.5 })
+    b.lamp({ kind: "fluorescent", position: p, direction: [0, -1, 0], color: [0.86, 0.95, 0.75], intensity: 16, range: 5, angle: 1.3, penumbra: 0.8, size: 0.5 })
   }
   coll(b, m, 1.52, 2.3, 0.84)
 }

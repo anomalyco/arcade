@@ -160,7 +160,16 @@ export const floorWorldY = (storey: number) => storeyY(storey) + 0.01
 
 /** Door states from the program legend. Openable = open | closed | janitor (the player starts with the key). */
 export type DoorState = "open" | "closed" | "janitor" | `keycard:${string}` | "locked"
-export const openable = (s: DoorState) => s === "open" || s === "closed" || s === "janitor"
+/**
+ * Whether door locks are enforced. Off: every door opens (Aiden: none should be locked by default). The janitor,
+ * keycard and locked states stay on the doors (signs, hardware, registry) for future gameplay: turn this on, or
+ * unlock per door at runtime (`door.locked`), when keys exist.
+ */
+export const LOCKS_ACTIVE = false
+/** Can the player open a door in this state now? */
+export const openable = (s: DoorState) => !LOCKS_ACTIVE || s === "open" || s === "closed" || s === "janitor"
+/** Is this state a lock (for hardware: padlock, reader, key cylinder), whether or not locks are enforced? */
+export const lockState = (s: DoorState) => !(s === "open" || s === "closed" || s === "janitor")
 
 /** A room as the program lists it (§2 tables). */
 export type RoomSpec = {

@@ -58,6 +58,8 @@ const VELOCITY_PROJECTION = new Matrix4()
 class SharpTAAUNode extends (TAAUNode as unknown as new (...a: N[]) => N) {
   /** 0 = three's kernel width at rest, 1 = narrowed to one output pixel. */
   readonly sharpness = uniform(1)
+  /** 1 for one frame after a camera cut: the history is replaced by the current frame. */
+  readonly reset = uniform(0)
   private lastCamera: number[] = []
 
   constructor(...args: N[]) {
@@ -185,7 +187,7 @@ class SharpTAAUNode extends (TAAUNode as unknown as new (...a: N[]) => N) {
       // 0.3× the current-frame weight when still: residual jitter aliasing on bright edges (lit windows) shrinks with
       // it; motion, disocclusion and the variance clip still bring new content in quickly.
       const currentWeight = float(self.currentFrameWeight).mul(mix(float(0.3), float(1), motionPx.saturate())).toVar()
-      currentWeight.assign(hasValidHistory.select(currentWeight.add(motionFactor).saturate(), 1))
+      currentWeight.assign(hasValidHistory.and(self.reset.lessThan(0.5)).select(currentWeight.add(motionFactor).saturate(), 1))
       colorOutput.assign(expand(mix(lockedHistoryColor, currentColor, currentWeight)))
       lockOutput.assign(lock)
       return vec4(0)

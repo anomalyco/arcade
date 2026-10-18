@@ -41,6 +41,8 @@ export type FlashState = {
 
 export const renderState = {
   lamps: [] as LampRuntime[],
+  /** Angular size of one 3D-resolution pixel (radians), set by the post chain each frame. */
+  pixelAngle: 0.001,
   /** True while modules are still streaming in (set through the post chain's `setBooting`). */
   streaming: false,
   /** The lighting rig's per-frame update, for perf scripts that drive frames themselves. */

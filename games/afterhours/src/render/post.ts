@@ -769,6 +769,7 @@ export function createPost(ctx: WorldContext) {
   const sphere = new THREE.Sphere()
   let frame = 0
   let indoor = 0
+  const lastCamPos = new THREE.Vector3()
 
   const pushLight = (
     i: number,
@@ -886,6 +887,8 @@ export function createPost(ctx: WorldContext) {
       camera.updateMatrixWorld()
       camera.updateProjectionMatrix()
       projInv.value.copy(camera.projectionMatrixInverse)
+      renderState.pixelAngle =
+        (2 * Math.tan(((camera as THREE.PerspectiveCamera).fov * Math.PI) / 360)) / Math.max(1, renderer.domElement.height * scaleState.internal)
       camWorld.value.copy(camera.matrixWorld)
       camPos.value.setFromMatrixPosition(camera.matrixWorld)
       frameNoise.value = frame % 64
@@ -958,7 +961,12 @@ export function createPost(ctx: WorldContext) {
       aoNode.samples.value = num(ctx, "post.aoSamples")
       // Indoors (inside the building shell) the eye is adapted to the tubes, not the fog: blend an EV offset.
       const inside = insideBuilding(camPos.value) ? 1 : 0
-      indoor += (inside - indoor) * (frame < 3 ? 1 : 0.03)
+      const camJump = lastCamPos.distanceToSquared(camPos.value) > 1.5 * 1.5
+      lastCamPos.copy(camPos.value)
+      indoor += (inside - indoor) * (frame < 3 || camJump ? 1 : 0.03)
+      // A cut restarts the temporal history (TAAU and reflections) instead of letting the old view bleed out slowly.
+      if (taauRef.node) taauRef.node.reset.value = camJump ? 1 : 0
+      if (camJump) ssrHistoryValid.value = 0
       exposure.value = 2 ** (num(ctx, "post.exposure") + indoor * num(ctx, "post.interiorExposure"))
       const bl = bloomNodeRef.node
       // The glow keeps its size and cost in CSS pixels whatever the output pixel ratio (half of a 1.25× canvas).
@@ -1021,6 +1029,6 @@ export function createPost(ctx: WorldContext) {
     },
   }
   // Automation hook for GPU-time breakdowns: scripts render frames back-to-back with settings toggled.
-  if (ctx.params.has("perf")) (globalThis as { __afterhoursRender?: unknown }).__afterhoursRender = { renderer, scene, camera, settings: ctx.settings, render: api.render, state: renderState, scale: () => ({ autoScale, ...scaleState }) }
+  if (ctx.params.has("perf")) (globalThis as { __afterhoursRender?: unknown }).__afterhoursRender = { renderer, scene, camera, settings: ctx.settings, render: api.render, state: renderState, scale: () => ({ autoScale, ...scaleState }), scattering: () => [...scattering].map((r) => r.lamp.position.join(",")).sort().join(" ") }
   return api
 }

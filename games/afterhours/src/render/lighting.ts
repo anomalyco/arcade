@@ -137,9 +137,12 @@ function flickerLevel(r: Rig, time: number, scale: number) {
   const f = r.flicker
   const amt = Math.min(1, (lamp.flicker ?? 0) * scale)
   if (lamp.kind === "warning") {
-    if (r.animated) return 1
+    // The beacon's pulse follows the Flicker scale too (0 = steady on), like every other animated lamp.
+    const k = Math.min(1, Math.max(0, scale))
+    if (r.animated || k <= 0) return 1
     const ph = (time * 0.9 + f.seed) % 1
-    return ph < 0.5 ? 1 - Math.exp(-ph * 30) : Math.exp(-(ph - 0.5) * 14)
+    const pulse = ph < 0.5 ? 1 - Math.exp(-ph * 30) : Math.exp(-(ph - 0.5) * 14)
+    return 1 - k * (1 - pulse)
   }
   f.warm = 1
   if (amt <= 0) return 1
@@ -490,6 +493,7 @@ export function createLighting(ctx: WorldContext, player: Player) {
   const gcol = instancedDynamicBufferAttribute(colorAttr as never) as N
   const gdir = instancedDynamicBufferAttribute(dirAttr as never) as N
 
+  const pixelAngle = uniform(0.001)
   const glowMat = new THREE.SpriteNodeMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })
   glowMat.fog = false
   const toCam = normalize((cameraPosition as N).sub(center.xyz))
@@ -499,7 +503,12 @@ export function createLighting(ctx: WorldContext, player: Player) {
   const facing = gdir.w.greaterThan(0.5).select(smoothstep(-0.25, 0.45, toCam.dot(gdir.xyz)), float(1))
   const r = length(uv().sub(0.5)).mul(2)
   // Hot core (the lamp's visible envelope) plus a short glare skirt; the wide halo is the fog in-scatter in post.
-  const core = exp(r.mul(r).mul(-360)).mul(facing)
+  // The hot core is kept at least ~1.3 render pixels wide (energy preserved): a sub-pixel core sparkled under the TAA
+  // jitter, each frame's samples catching it or not.
+  const coreWorld = center.w.mul(0.105)
+  const minCore = length((cameraPosition as N).sub(center.xyz)).mul(pixelAngle).mul(1.3)
+  const widen = minCore.div(coreWorld.max(1e-4)).max(1)
+  const core = exp(r.mul(r).mul(-360).div(widen.mul(widen))).div(widen.mul(widen)).mul(facing)
   const glare = exp(r.mul(r).mul(-40)).mul(0.12).mul(facing.mul(0.6).add(0.4))
   const skirt = exp(r.mul(-9)).mul(0.04).mul(facing.mul(0.75).add(0.25))
   const edge = smoothstep(1, 0.8, r)
@@ -631,6 +640,8 @@ export function createLighting(ctx: WorldContext, player: Player) {
   const fwd = new THREE.Vector3()
   const order: Rig[] = []
   let frame = 0
+  const lastCam = new THREE.Vector3()
+  let jumpedLast = false
   let wasStreaming = false
   let shadowColliders = -1
   const doorAmounts: number[] = []
@@ -643,6 +654,13 @@ export function createLighting(ctx: WorldContext, player: Player) {
       glows.visible = glowRigs.length > 0
       camera.updateMatrixWorld()
       tmpCam.setFromMatrixPosition(camera.matrixWorld)
+      // A camera jump (viewpoint keys, teleports, automation) snaps every fade instead of cross-fading lamps, shadows
+      // and glows over the next half second, which read as light pulsing in a view that is standing still.
+      const jump = frame < 3 || lastCam.distanceToSquared(tmpCam) > 1.5 * 1.5
+      lastCam.copy(tmpCam)
+      // Glows snap one frame later too: their occlusion is re-tested for every lamp after this frame's glow update.
+      const glowJump = jump || jumpedLast
+      jumpedLast = jump
       const extScale = num(ctx, "light.lampsExterior")
       const spillIn = num(ctx, "light.spillInterior")
       const spillOut = num(ctx, "light.spillExterior")
@@ -659,7 +677,7 @@ export function createLighting(ctx: WorldContext, player: Player) {
       frustum.setFromProjectionMatrix(projView)
       camInside = inside(tmpCam)
       camStorey = camInside ? storeyAt(tmpCam.y) : -1
-      const fade = frame < 3 ? 1 : dt / FADE_S
+      const fade = jump ? 1 : dt / FADE_S
 
       // Lamps: live position/intensity (builders may animate them), flicker, fog terms.
       for (const r of rigs) {
@@ -707,11 +725,13 @@ export function createLighting(ctx: WorldContext, player: Player) {
         r.point.intensity = l.intensity * lampScale * r.level * (1 - r.shadowWeight) * r.vis
         r.point.visible = r.vis > 0.001 && r.point.intensity > 1e-4
         const glowTarget = (!cull || zoneOk(r)) && r.glowSeen ? 1 : 0
-        r.glowVis += (glowTarget - r.glowVis) * Math.min(1, frame < 3 ? 1 : dt / 0.15)
+        // Linear, so it lands exactly on its target (an exponential approach left a long, slowly fading tail).
+        const gs = glowJump ? 1 : dt / 0.15
+        r.glowVis = r.glowVis < glowTarget ? Math.min(glowTarget, r.glowVis + gs) : Math.max(glowTarget, r.glowVis - gs)
       }
 
       // Glow occlusion, a slice of lamps per frame.
-      for (let k = 0; k < Math.min(OCC_PER_FRAME, glowRigs.length); k++) {
+      for (let k = 0; k < Math.min(jump ? glowRigs.length : OCC_PER_FRAME, glowRigs.length); k++) {
         const r = glowRigs[occCursor++ % glowRigs.length]!
         if (r.distance > 150 || r.pos.y < -500) continue
         occPoint.copy(r.pos)
@@ -738,7 +758,7 @@ export function createLighting(ctx: WorldContext, player: Player) {
         ((r.lamp.intensity / Math.max(r.distance - r.lamp.range * 0.3, 1) ** 2) * (held.has(r) ? SHADOW_HYSTERESIS : 1)) || 0
       order.sort((a, b) => score(b) - score(a) || a.point.id - b.point.id)
       const wanted = order.slice(0, slots.length)
-      const step = dt / FADE_S
+      const step = jump ? 1 : dt / FADE_S
       for (const s of slots) {
         const keep = s.rig && wanted.includes(s.rig)
         if (s.rig && !keep) {
@@ -746,6 +766,7 @@ export function createLighting(ctx: WorldContext, player: Player) {
           if (s.rig.shadowWeight === 0) s.rig = null
         } else if (s.rig) {
           s.rig.shadowWeight = Math.min(1, s.rig.shadowWeight + (frame < 4 ? 1 : step))
+          if (jump) s.light.shadow.needsUpdate = true
         }
       }
       for (const w of wanted) {
@@ -753,7 +774,7 @@ export function createLighting(ctx: WorldContext, player: Player) {
         const free = slots.find((s) => !s.rig)
         if (!free) break
         free.rig = w
-        w.shadowWeight = frame < 4 ? 1 : 0
+        w.shadowWeight = frame < 4 || jump ? 1 : 0
         const l = free.light
         l.position.copy(w.pos)
         l.target.position.copy(w.pos).add(w.dir!)
@@ -841,6 +862,7 @@ export function createLighting(ctx: WorldContext, player: Player) {
       fs.cosInner = Math.cos(angle * 0.45)
 
       // Glow instances.
+      pixelAngle.value = renderState.pixelAngle
       const gs = num(ctx, "glow.strength")
       const gz = num(ctx, "glow.size")
       const c = centerAttr.array as Float32Array

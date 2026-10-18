@@ -1,0 +1,3975 @@
+{
+  "model": "eleven_text_to_sound_v2",
+  "format": "mp3_44100_64",
+  "updatedAt": "2026-10-18T02:41:34.317Z",
+  "totalCost": 12295,
+  "categories": [
+    {
+      "id": "foot-linoleum",
+      "group": "footsteps",
+      "label": "Footsteps: waxed linoleum corridor",
+      "intent": "one person walking at a slow steady pace in leather work boots on a waxed linoleum hallway floor, indoor corridor reverb, no music",
+      "loop": false
+    },
+    {
+      "id": "foot-carpet",
+      "group": "footsteps",
+      "label": "Footsteps: office carpet",
+      "intent": "one person walking slowly in boots on thin commercial office carpet, muffled soft thuds, small quiet room",
+      "loop": false
+    },
+    {
+      "id": "foot-stairwell",
+      "group": "footsteps",
+      "label": "Footsteps: concrete stairwell",
+      "intent": "one person walking on concrete stairs inside a hard, echoing concrete fire stairwell, boots on concrete steps",
+      "loop": false
+    },
+    {
+      "id": "foot-grating",
+      "group": "footsteps",
+      "label": "Footsteps: metal grating catwalk",
+      "intent": "one person walking in boots on a steel grating catwalk, metallic clank and ring per step, industrial room",
+      "loop": false
+    },
+    {
+      "id": "foot-wet-asphalt",
+      "group": "footsteps",
+      "label": "Footsteps: wet asphalt",
+      "intent": "one person walking on wet asphalt outdoors at night, wet splashy shoe contacts, open outdoor space",
+      "loop": false
+    },
+    {
+      "id": "foot-gravel",
+      "group": "footsteps",
+      "label": "Footsteps: gravel",
+      "intent": "one person walking on loose gravel outdoors, crunchy stone steps",
+      "loop": false
+    },
+    {
+      "id": "foot-forest",
+      "group": "footsteps",
+      "label": "Footsteps: forest floor",
+      "intent": "one person walking on a damp pine forest floor: soft needles, earth, occasional twig snap, outdoors",
+      "loop": false
+    },
+    {
+      "id": "door-fire-steel",
+      "group": "doors",
+      "label": "Heavy steel fire door open/close",
+      "intent": "a heavy steel fire door in a concrete corridor opening on a hydraulic closer and closing with a heavy metallic latch slam",
+      "loop": false
+    },
+    {
+      "id": "door-office-wood",
+      "group": "doors",
+      "label": "Wooden office door creak",
+      "intent": "an old wooden office door opening slowly with a creaking hinge, small quiet room",
+      "loop": false
+    },
+    {
+      "id": "door-panic-bar",
+      "group": "doors",
+      "label": "Panic bar push",
+      "intent": "pushing the metal panic/crash bar of an emergency exit door: loud spring latch clack and the steel door swinging open",
+      "loop": false
+    },
+    {
+      "id": "door-rollup-dock",
+      "group": "doors",
+      "label": "Roll-up loading dock door",
+      "intent": "a large corrugated steel roll-up loading dock door being raised or lowered: rumbling, rattling metal slats",
+      "loop": false
+    },
+    {
+      "id": "gate-chainlink",
+      "group": "doors",
+      "label": "Chain-link gate rattle",
+      "intent": "a chain-link fence gate rattling and swinging, metal chain and fence wire jingling, outdoors at night",
+      "loop": false
+    },
+    {
+      "id": "gate-motorized",
+      "group": "doors",
+      "label": "Motorized sliding gate",
+      "intent": "a motorized steel security sliding gate rolling along its ground track, electric motor hum, ends with a stop clunk, outdoors",
+      "loop": false
+    },
+    {
+      "id": "lift-motor",
+      "group": "lift",
+      "label": "Lift motor hum",
+      "intent": "inside an old elevator car while it travels: steady electric motor hum and gentle cabin rumble, loopable",
+      "loop": true
+    },
+    {
+      "id": "lift-cable",
+      "group": "lift",
+      "label": "Lift cable creak",
+      "intent": "steel elevator cables and pulleys creaking and groaning under tension inside an elevator shaft",
+      "loop": false
+    },
+    {
+      "id": "lift-ding",
+      "group": "lift",
+      "label": "Lift arrival ding (1980s)",
+      "intent": "a single mechanical elevator arrival bell ding from an 1980s office building elevator",
+      "loop": false
+    },
+    {
+      "id": "lift-stall",
+      "group": "lift",
+      "label": "Lift stall / clunk",
+      "intent": "an elevator car stopping suddenly between floors: heavy mechanical clunk/jolt, motor winding down",
+      "loop": false
+    },
+    {
+      "id": "lift-scissor-gate",
+      "group": "lift",
+      "label": "Lift scissor gate",
+      "intent": "an old freight elevator's collapsible steel scissor/accordion gate being pulled open or shut, rattling metal lattice and latch",
+      "loop": false
+    },
+    {
+      "id": "light-fluoro-hum",
+      "group": "lights",
+      "label": "Fluorescent hum",
+      "intent": "steady electrical hum/buzz of overhead fluorescent tube lights in a quiet room, loopable",
+      "loop": true
+    },
+    {
+      "id": "light-fluoro-flicker",
+      "group": "lights",
+      "label": "Fluorescent flicker / starter tick",
+      "intent": "a fluorescent tube light flickering on: starter ticking, buzzing pings, then steady hum",
+      "loop": false
+    },
+    {
+      "id": "light-sodium-buzz",
+      "group": "lights",
+      "label": "Sodium lamp buzz",
+      "intent": "outdoor high-pressure sodium street/parking lamp humming overhead at night, steady electrical buzz, loopable",
+      "loop": true
+    },
+    {
+      "id": "light-switch",
+      "group": "lights",
+      "label": "Light switch",
+      "intent": "a single 1980s plastic wall toggle light switch being flipped, one click",
+      "loop": false
+    },
+    {
+      "id": "light-breaker",
+      "group": "lights",
+      "label": "Breaker thunk",
+      "intent": "a real 1980s commercial electrical panel breaker or knife switch being thrown by hand: heavy spring-loaded snap with metal panel resonance",
+      "loop": false
+    },
+    {
+      "id": "amb-forest-night",
+      "group": "ambience",
+      "label": "Night pine forest, distant wind",
+      "intent": "quiet night pine forest ambience with distant wind in the trees, sparse and cold, no music, loopable",
+      "loop": true
+    },
+    {
+      "id": "amb-rain-asphalt",
+      "group": "ambience",
+      "label": "Rain drizzle on asphalt",
+      "intent": "light rain drizzle falling on an asphalt parking lot at night, steady gentle patter, loopable",
+      "loop": true
+    },
+    {
+      "id": "amb-hvac",
+      "group": "ambience",
+      "label": "Building HVAC rumble",
+      "intent": "large building HVAC: low steady ventilation rumble and air through ducts, loopable",
+      "loop": true
+    },
+    {
+      "id": "amb-corridor-tone",
+      "group": "ambience",
+      "label": "Empty corridor room tone",
+      "intent": "near-silent room tone of an empty tiled institutional corridor at night: faint air and distant electrical hum, loopable",
+      "loop": true
+    },
+    {
+      "id": "amb-machine-room",
+      "group": "ambience",
+      "label": "1984 computer room, tape drives",
+      "intent": "1980s mainframe computer room: cooling fan roar, reel-to-reel tape drives spinning and stopping, relay clicks, loopable",
+      "loop": true
+    },
+    {
+      "id": "amb-radio-static",
+      "group": "ambience",
+      "label": "Radio static",
+      "intent": "analog radio receiver static and hiss with slow tuning drift, loopable",
+      "loop": true
+    },
+    {
+      "id": "int-flashlight",
+      "group": "interactions",
+      "label": "Flashlight click on/off",
+      "intent": "a handheld flashlight's switch being clicked, a single tactile click",
+      "loop": false
+    },
+    {
+      "id": "int-keys",
+      "group": "interactions",
+      "label": "Keys jingle",
+      "intent": "a large ring of metal keys jingling (janitor's key ring)",
+      "loop": false
+    },
+    {
+      "id": "int-mop-bucket",
+      "group": "interactions",
+      "label": "Mop bucket wheels",
+      "intent": "a janitor's wheeled mop bucket rolling on a tile floor: plastic caster rattle and water slosh",
+      "loop": false
+    },
+    {
+      "id": "int-paper",
+      "group": "interactions",
+      "label": "Paper rustle",
+      "intent": "handling paper documents: page flipping and rustling",
+      "loop": false
+    },
+    {
+      "id": "int-typewriter",
+      "group": "interactions",
+      "label": "Typewriter",
+      "intent": "a 1980s typewriter typing: mechanical key strikes, possibly carriage return bell",
+      "loop": false
+    },
+    {
+      "id": "int-phone-ring",
+      "group": "interactions",
+      "label": "Rotary phone ring",
+      "intent": "an old rotary desk telephone ringing with its mechanical double bell",
+      "loop": false
+    },
+    {
+      "id": "int-phone-offhook",
+      "group": "interactions",
+      "label": "Phone off-the-hook tone",
+      "intent": "an analog landline telephone tone from the handset (off-hook howler, dial tone or busy signal), loopable",
+      "loop": true
+    },
+    {
+      "id": "int-crt-whine",
+      "group": "interactions",
+      "label": "CRT whine",
+      "intent": "an old CRT monitor or TV powering on or off: high-pitched flyback whine, static crackle, degauss thunk",
+      "loop": false
+    },
+    {
+      "id": "int-lab-glass",
+      "group": "interactions",
+      "label": "Lab glass clink",
+      "intent": "laboratory glassware clinking: beakers, test tubes or flasks touching, set down on a bench",
+      "loop": false
+    },
+    {
+      "id": "hor-metal-bang",
+      "group": "horror",
+      "label": "Distant metal bang",
+      "intent": "a single heavy metal bang somewhere far away inside a large empty building, long reverberant echo tail",
+      "loop": false
+    },
+    {
+      "id": "hor-knock",
+      "group": "horror",
+      "label": "Unexplained knock",
+      "intent": "slow knocking on a door or wall from the other side, in a quiet empty building, unsettling",
+      "loop": false
+    },
+    {
+      "id": "hor-drone",
+      "group": "horror",
+      "label": "Low drone",
+      "intent": "a low, dark, unsettling ambient drone for horror tension, no melody, loopable",
+      "loop": true
+    },
+    {
+      "id": "hor-radio-whisper",
+      "group": "horror",
+      "label": "Whisper-like radio interference",
+      "intent": "radio static with garbled, unintelligible whisper-like voices drifting in and out, eerie",
+      "loop": false
+    },
+    {
+      "id": "hor-footsteps-other",
+      "group": "horror",
+      "label": "Footsteps not yours",
+      "intent": "someone else's slow footsteps heard at a distance: another hallway or the floor above, then stopping",
+      "loop": false
+    },
+    {
+      "id": "hor-sub-rumble",
+      "group": "horror",
+      "label": "Deep sub-rumble from below",
+      "intent": "a deep low-frequency rumble coming from underground / below the floor, like huge machinery or a tremor",
+      "loop": false
+    },
+    {
+      "id": "ui-notify",
+      "group": "ui",
+      "label": "Subtle notification",
+      "intent": "a subtle short soft interface notification blip, retro electronic, unobtrusive",
+      "loop": false
+    }
+  ],
+  "sounds": [
+    {
+      "category": "foot-linoleum",
+      "group": "footsteps",
+      "variant": "v1",
+      "prompt": "Footsteps: leather work boots walking slowly on waxed linoleum, hard heel taps, long empty institutional hallway, short reverb, close-mic, 5 seconds",
+      "duration": 5,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/foot-linoleum/v1.mp3",
+      "bytes": 40585,
+      "cost": 50,
+      "generatedAt": "2026-10-18T02:39:00.325Z",
+      "qa": {
+        "description": "Five slow, deliberate footsteps from hard-soled shoes or boots striking a polished indoor floor, captured at close-to-medium perspective with realistic room slapback reverb.",
+        "score": 4,
+        "issues": "The transient impact sounds slightly more like hard dress shoe heels on tile than heavy leather work boots on damped linoleum, but it is highly usable.",
+        "intent": "one person walking at a slow steady pace in leather work boots on a waxed linoleum hallway floor, indoor corridor reverb, no music",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:39:00.325Z"
+      },
+      "status": "regenerated",
+      "previous": {
+        "prompt": "slow footsteps of work boots walking on waxed linoleum floor in an empty institutional hallway, slight squeak, dry close-mic foley, no music",
+        "file": "sfx/_previous/foot-linoleum/v1-1792290246613.mp3",
+        "score": 3,
+        "description": "Five isolated, deliberate footsteps with a sharp, hollow heel strike characteristic of hard-soled dress shoes on a hollow wooden floor, captured close with minimal room acoustic decay.",
+        "generatedAt": "2026-10-18T02:24:06.613Z"
+      },
+      "attempts": [
+        {
+          "prompt": "Footsteps: leather work boots walking slowly on waxed linoleum, hard heel taps, long empty institutional hallway, short reverb, close-mic, 5 seconds",
+          "influence": 0.6,
+          "score": 4,
+          "description": "Five slow, deliberate footsteps from hard-soled shoes or boots striking a polished indoor floor, captured at close-to-medium perspective with realistic room slapback reverb.",
+          "issues": "The transient impact sounds slightly more like hard dress shoe heels on tile than heavy leather work boots on damped linoleum, but it is highly usable.",
+          "cost": 50,
+          "chosen": true
+        }
+      ]
+    },
+    {
+      "category": "foot-linoleum",
+      "group": "footsteps",
+      "variant": "v2",
+      "prompt": "measured walking footsteps on polished vinyl tile corridor, rubber soled shoes, soft reverb of a long empty hallway at night",
+      "duration": 5,
+      "influence": 0.35,
+      "loop": false,
+      "file": "sfx/foot-linoleum/v2.mp3",
+      "bytes": 40585,
+      "cost": 50,
+      "generatedAt": "2026-10-18T02:24:06.730Z",
+      "qa": {
+        "description": "Four isolated, slow footsteps taken in hard-soled boots on a hard indoor surface, followed by a medium hall/room reverb tail after each impact.",
+        "score": 4,
+        "issues": "The impact tone has a slightly hollow, wooden acoustic quality rather than the duller slap or subtle squeak of waxed linoleum.",
+        "intent": "one person walking at a slow steady pace in leather work boots on a waxed linoleum hallway floor, indoor corridor reverb, no music",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:35:37.691Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "foot-linoleum",
+      "group": "footsteps",
+      "variant": "v3",
+      "prompt": "single-person walking footsteps, hard heel on linoleum, 1980s government building corridor, quiet, realistic",
+      "duration": 5,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/foot-linoleum/v3.mp3",
+      "bytes": 40585,
+      "cost": 50,
+      "generatedAt": "2026-10-18T02:24:07.096Z",
+      "qa": {
+        "description": "Slow, rhythmic footsteps from hard-soled footwear walking across a hard interior floor with medium room reverberation.",
+        "score": 4,
+        "issues": "The impact has a sharp, slightly clicky heel strike typical of dress shoes or hard heels rather than the heavier thud of rubber-soled leather work boots.",
+        "intent": "one person walking at a slow steady pace in leather work boots on a waxed linoleum hallway floor, indoor corridor reverb, no music",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:35:37.183Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "foot-linoleum",
+      "group": "footsteps",
+      "variant": "v4",
+      "prompt": "cautious slow steps on linoleum with occasional sneaker squeak, empty school hallway at night",
+      "duration": 5,
+      "influence": 0.3,
+      "loop": false,
+      "file": "sfx/foot-linoleum/v4.mp3",
+      "bytes": 40585,
+      "cost": 50,
+      "generatedAt": "2026-10-18T02:24:08.112Z",
+      "qa": {
+        "description": "Slow, steady footsteps of hard-soled dress shoes or high heels walking across a polished hard surface such as tile or linoleum, recorded with close perspective and distinct indoor hallway slapback reverb.",
+        "score": 3,
+        "issues": "Footwear produces a sharp, light click characteristic of dress shoes or heels rather than the heavier, duller thud of rubber-soled leather work boots.",
+        "intent": "one person walking at a slow steady pace in leather work boots on a waxed linoleum hallway floor, indoor corridor reverb, no music",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:35:36.573Z"
+      },
+      "status": "kept",
+      "attempts": [
+        {
+          "prompt": "Slow cautious footsteps on waxed linoleum, sneaker rubber squeaks, quiet empty hallway, close-mic",
+          "influence": 0.45,
+          "score": 2,
+          "description": "High-pitched rubber shoe squeaks and rubs frictionally against a polished floor surface with faint room reflection, lacking solid heel-strike impacts.",
+          "issues": "Sounds like rubber sneakers or basketball shoes squeaking rather than heavy leather work boots stepping.",
+          "cost": 50,
+          "chosen": false
+        },
+        {
+          "prompt": "Footsteps: heavy leather work boots walking at a slow steady pace on waxed linoleum floor, solid dull heel thuds, empty hallway reverb, close-mic, 5 seconds",
+          "influence": 0.5,
+          "score": 3,
+          "description": "Slow, deliberate footsteps with a hard, sharp heel impact walking across a hollow wooden floor or raised stage in a relatively dry acoustic space.",
+          "issues": "Footwear sounds like hard dress shoes or heels rather than heavy leather boots; floor sounds like resonant hollow wood rather than dense waxed linoleum; lacks corridor reverberation.",
+          "cost": 50,
+          "chosen": false
+        },
+        {
+          "prompt": "Footsteps: slow heavy leather boots with thick rubber soles walking on polished waxed linoleum, dull weighty tread impacts, long empty institutional corridor slapback reverb, close-mic, 5 seconds",
+          "influence": 0.55,
+          "score": 3,
+          "description": "Five slow, rhythmic footsteps of a hard-soled shoe or dress heel clicking sharply on a hard flat surface, recorded dry with almost no reverberation or environmental acoustic tail.",
+          "issues": "Footwear sounds like hard dress shoes/heels rather than heavy leather work boots, lacking low-end weight and sole texture; the acoustic space is very dry and lacks the requested indoor corridor reverberation.",
+          "cost": 50,
+          "chosen": false
+        }
+      ]
+    },
+    {
+      "category": "foot-carpet",
+      "group": "footsteps",
+      "variant": "v1",
+      "prompt": "Footsteps: work boots walking slowly on thin low-pile office carpet, muffled soft thuds with faint fabric scuff, small quiet office, close-mic, 4 seconds",
+      "duration": 4,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/foot-carpet/v1.mp3",
+      "bytes": 32643,
+      "cost": 40,
+      "generatedAt": "2026-10-18T02:39:00.673Z",
+      "qa": {
+        "description": "Four slow, muffled low-frequency thuds in a dry, quiet acoustic space, resembling dampened footsteps on a soft or padded surface.",
+        "score": 4,
+        "issues": "Lacks the faint surface friction and distinct heel impact typical of boots on thin commercial carpet, sounding slightly too dull and heavily padded.",
+        "intent": "one person walking slowly in boots on thin commercial office carpet, muffled soft thuds, small quiet room",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:39:00.673Z"
+      },
+      "status": "regenerated",
+      "previous": {
+        "prompt": "muffled footsteps walking on thin low-pile office carpet, work boots, dry close-mic foley, no music",
+        "file": "sfx/_previous/foot-carpet/v1-1792290248041.mp3",
+        "score": 3,
+        "description": "Four consecutive, slow, low-frequency muffled thuds spaced roughly a second apart in a dry, close acoustic environment, lacking high-frequency contact details.",
+        "generatedAt": "2026-10-18T02:24:08.041Z"
+      },
+      "attempts": [
+        {
+          "prompt": "Footsteps: work boots walking slowly on thin low-pile office carpet, muffled soft thuds with faint fabric scuff, small quiet office, close-mic, 4 seconds",
+          "influence": 0.6,
+          "score": 4,
+          "description": "Four slow, muffled low-frequency thuds in a dry, quiet acoustic space, resembling dampened footsteps on a soft or padded surface.",
+          "issues": "Lacks the faint surface friction and distinct heel impact typical of boots on thin commercial carpet, sounding slightly too dull and heavily padded.",
+          "cost": 40,
+          "chosen": true
+        }
+      ]
+    },
+    {
+      "category": "foot-carpet",
+      "group": "footsteps",
+      "variant": "v2",
+      "prompt": "Foley footsteps: boots walking slowly across dense low-pile commercial carpet, heavily damped soft thuds, fibrous textile scuff, acoustically dead small office, close-mic, 4 seconds",
+      "duration": 4,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/foot-carpet/v2.mp3",
+      "bytes": 32643,
+      "cost": 40,
+      "generatedAt": "2026-10-18T02:39:38.759Z",
+      "qa": {
+        "description": "Four rhythmic, muffled low-frequency thuds spaced roughly one second apart, recorded closely in a dry acoustic space, sounding like gentle impacts or knuckle taps on a padded or hollow surface.",
+        "score": 4,
+        "issues": "Lacks the distinct texture and weight of boots (no heel-toe split, sole friction, or fabric movement), sounding slightly like generic muffled impacts or taps rather than full-body footsteps.",
+        "intent": "one person walking slowly in boots on thin commercial office carpet, muffled soft thuds, small quiet room",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:39:38.759Z"
+      },
+      "status": "regenerated",
+      "previous": {
+        "prompt": "soft padded walking steps on commercial carpet tile in a quiet office at night",
+        "file": "sfx/_previous/foot-carpet/v2-1792290248440.mp3",
+        "score": 2,
+        "description": "Four deliberate, rhythmic impacts with sharp, clicky transients and a hollow resonance, sounding like hard-soled shoes stepping on a hollow wooden floor or knuckles knocking on wood in an interior space.",
+        "generatedAt": "2026-10-18T02:24:08.440Z"
+      },
+      "attempts": [
+        {
+          "prompt": "Person walking on carpet tiles over a concrete floor, dull padded footfalls, dead dry room, 4 seconds",
+          "influence": 0.5,
+          "score": 3,
+          "description": "Four slow, rhythmic footsteps producing a hollow resonant knock and subtle creak characteristic of hard footwear on interior wooden floorboards.",
+          "issues": "Surface material sounds distinctly like hollow wooden flooring rather than the deadened, soft impact of thin commercial carpet.",
+          "cost": 40,
+          "chosen": false
+        },
+        {
+          "prompt": "Footsteps: rubber work boots stepping slowly on thin low-pile commercial carpet, muffled soft thuds, faint fabric friction, dead quiet office room, close-mic, 4 seconds",
+          "influence": 0.55,
+          "score": 3,
+          "description": "Four slow, deliberate footsteps with a hard shoe or boot impact on a hollow wooden floor, producing sharp clicks and resonant low wooden cavity thumps in a reflective space.",
+          "issues": "Surface material is clearly hollow wood/floorboards rather than commercial carpet; lacks the soft, muffled acoustic damping of carpet.",
+          "cost": 40,
+          "chosen": false
+        },
+        {
+          "prompt": "Foley footsteps: boots walking slowly across dense low-pile commercial carpet, heavily damped soft thuds, fibrous textile scuff, acoustically dead small office, close-mic, 4 seconds",
+          "influence": 0.6,
+          "score": 4,
+          "description": "Four rhythmic, muffled low-frequency thuds spaced roughly one second apart, recorded closely in a dry acoustic space, sounding like gentle impacts or knuckle taps on a padded or hollow surface.",
+          "issues": "Lacks the distinct texture and weight of boots (no heel-toe split, sole friction, or fabric movement), sounding slightly like generic muffled impacts or taps rather than full-body footsteps.",
+          "cost": 40,
+          "chosen": true
+        }
+      ]
+    },
+    {
+      "category": "foot-carpet",
+      "group": "footsteps",
+      "variant": "v3",
+      "prompt": "Slow heavy steps on commercial carpet, soft thump and slight shoe scrape, quiet carpeted room, close-mic",
+      "duration": 4,
+      "influence": 0.65,
+      "loop": false,
+      "file": "sfx/foot-carpet/v3.mp3",
+      "bytes": 32643,
+      "cost": 40,
+      "generatedAt": "2026-10-18T02:39:45.444Z",
+      "qa": {
+        "description": "Three slow, low-frequency muffled thuds recorded close and dry in a quiet space, resembling heavy footfalls or muted impacts on a soft, padded surface.",
+        "score": 4,
+        "issues": "Lacks the subtle high-frequency textile friction or scuff characteristic of boots on low-pile commercial carpet, sounding almost purely low-end and thumpy.",
+        "intent": "one person walking slowly in boots on thin commercial office carpet, muffled soft thuds, small quiet room",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:39:45.444Z"
+      },
+      "status": "regenerated",
+      "previous": {
+        "prompt": "slow footsteps on carpet with faint fabric scuff, small office room, very quiet",
+        "file": "sfx/_previous/foot-carpet/v3-1792290249278.mp3",
+        "score": 3,
+        "description": "Four deliberate footsteps of hard-soled shoes or boots striking a rigid hard floor (such as wood or linoleum) with distinct heel-toe impact clicks in a dry interior space.",
+        "generatedAt": "2026-10-18T02:24:09.278Z"
+      },
+      "attempts": [
+        {
+          "prompt": "Slow heavy steps on commercial carpet, soft thump and slight shoe scrape, quiet carpeted room, close-mic",
+          "influence": 0.65,
+          "score": 4,
+          "description": "Three slow, low-frequency muffled thuds recorded close and dry in a quiet space, resembling heavy footfalls or muted impacts on a soft, padded surface.",
+          "issues": "Lacks the subtle high-frequency textile friction or scuff characteristic of boots on low-pile commercial carpet, sounding almost purely low-end and thumpy.",
+          "cost": 40,
+          "chosen": true
+        }
+      ]
+    },
+    {
+      "category": "foot-stairwell",
+      "group": "footsteps",
+      "variant": "v1",
+      "prompt": "footsteps walking down concrete stairs in an echoing concrete stairwell, work boots, cold reverb",
+      "duration": 6,
+      "influence": 0.5,
+      "loop": false,
+      "file": "sfx/foot-stairwell/v1.mp3",
+      "bytes": 48526,
+      "cost": 60,
+      "generatedAt": "2026-10-18T02:24:10.005Z",
+      "qa": {
+        "description": "Slow, deliberate footsteps pacing across a hollow wooden floor or raised platform with moderate indoor room reverberation.",
+        "score": 3,
+        "issues": "Impact surface sounds distinctly like hollow wood/floorboards rather than hard, dense concrete, and the rhythm sounds like flat walking rather than ascending or descending stairs.",
+        "intent": "one person walking on concrete stairs inside a hard, echoing concrete fire stairwell, boots on concrete steps",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:35:41.160Z"
+      },
+      "status": "kept",
+      "attempts": [
+        {
+          "prompt": "Footsteps: boots walking down concrete stairs, regular step rhythm, gritty concrete contact, big hard concrete stairwell echo, 6 seconds",
+          "influence": 0.6,
+          "score": 1,
+          "description": "Rhythmic, individual hand claps recorded at a medium perspective with noticeable acoustic slapback and room reverb.",
+          "issues": "This is someone clapping their hands, not footsteps or boots on concrete stairs.",
+          "cost": 60,
+          "chosen": false
+        },
+        {
+          "prompt": "Heavy boot heels stepping down solid concrete stairs, gritty heel drops and scuffs on stone steps, close-up with enclosed fire stairwell reverberation.",
+          "influence": 0.65,
+          "score": 3,
+          "description": "Six slow, deliberate footsteps from hard-soled footwear on a resonant wooden floor or stage platform with moderate small-room reverb.",
+          "issues": "The impact tone is hollow and woody rather than gritty concrete, and the acoustic space lacks the prominent slapback and long, diffuse reverberation typical of a concrete fire stairwell.",
+          "cost": 60,
+          "chosen": false
+        },
+        {
+          "prompt": "Heavy steps descending gritty concrete stair treads, solid cement footfalls with textured scuffs, sharp slapback reverberation inside a tall echoing concrete stairwell.",
+          "influence": 0.7,
+          "score": 3,
+          "description": "Slow, widely spaced footsteps of hard-soled boots or dress shoes impacting a hard reflective floor (such as tile or polished stone) with a distinct slapback echo and medium room decay.",
+          "issues": "Pacing is unnaturally slow for normal stair climbing, lacks the grit/scuff characteristic of stair treads, and the acoustics sound like a flat corridor or hall rather than a dense, vertical concrete stairwell.",
+          "cost": 60,
+          "chosen": false
+        }
+      ]
+    },
+    {
+      "category": "foot-stairwell",
+      "group": "footsteps",
+      "variant": "v2",
+      "prompt": "Footsteps climbing concrete stairs in a fire stairwell, occasional hand tap on a steel handrail, hollow reverberant space, 6 seconds",
+      "duration": 6,
+      "influence": 0.5,
+      "loop": false,
+      "file": "sfx/foot-stairwell/v2.mp3",
+      "bytes": 48526,
+      "cost": 60,
+      "generatedAt": "2026-10-18T02:39:40.890Z",
+      "qa": {
+        "description": "Slow, heavy footsteps from a single person walking in a large, hard-surfaced indoor space with a long, metallic-tinged reverberation tail. Each deliberate step has a deep impact thud accompanied by a faint hollow resonance.",
+        "score": 4,
+        "issues": "Pacing is very slow and deliberate rather than a natural walking cadence; some impacts have a slightly hollow wooden or metal resonance rather than solid poured concrete.",
+        "intent": "one person walking on concrete stairs inside a hard, echoing concrete fire stairwell, boots on concrete steps",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:39:40.890Z"
+      },
+      "status": "regenerated",
+      "previous": {
+        "prompt": "footsteps climbing concrete stairwell steps with metal handrail tap, hollow echo, empty building at night",
+        "file": "sfx/_previous/foot-stairwell/v2-1792290250402.mp3",
+        "score": 2,
+        "description": "Six slow, rhythmic wooden percussion hits or metronome clicks with a slight hollow room resonance, recorded close-to-mid perspective.",
+        "generatedAt": "2026-10-18T02:24:10.402Z"
+      },
+      "attempts": [
+        {
+          "prompt": "Footsteps climbing concrete stairs in a fire stairwell, occasional hand tap on a steel handrail, hollow reverberant space, 6 seconds",
+          "influence": 0.5,
+          "score": 4,
+          "description": "Slow, heavy footsteps from a single person walking in a large, hard-surfaced indoor space with a long, metallic-tinged reverberation tail. Each deliberate step has a deep impact thud accompanied by a faint hollow resonance.",
+          "issues": "Pacing is very slow and deliberate rather than a natural walking cadence; some impacts have a slightly hollow wooden or metal resonance rather than solid poured concrete.",
+          "cost": 60,
+          "chosen": true
+        }
+      ]
+    },
+    {
+      "category": "foot-stairwell",
+      "group": "footsteps",
+      "variant": "v3",
+      "prompt": "Person running up concrete stairs, fast boot steps, loud stairwell reverb, 5 seconds",
+      "duration": 5,
+      "influence": 0.5,
+      "loop": false,
+      "file": "sfx/foot-stairwell/v3.mp3",
+      "bytes": 40585,
+      "cost": 50,
+      "generatedAt": "2026-10-18T02:40:11.759Z",
+      "qa": {
+        "description": "Footsteps from hard-soled boots ascending or descending a hollow metal staircase with a resonant clang and trailing room reverb in an enclosed space.",
+        "score": 3,
+        "issues": "Surface material is clearly resonant hollow metal/steel steps rather than dense, gritty concrete.",
+        "intent": "one person walking on concrete stairs inside a hard, echoing concrete fire stairwell, boots on concrete steps",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:40:11.759Z"
+      },
+      "status": "regenerated",
+      "previous": {
+        "prompt": "hurried footsteps running up concrete stairs, reverberant fire stairwell",
+        "file": "sfx/_previous/foot-stairwell/v3-1792290250581.mp3",
+        "score": 1,
+        "description": "Two isolated, heavily processed deep sub-bass cinematic impacts or bass drum thuds with extended low-end rumble and decay, lacking high-frequency detail.",
+        "generatedAt": "2026-10-18T02:24:10.581Z"
+      },
+      "attempts": [
+        {
+          "prompt": "Person running up concrete stairs, fast boot steps, loud stairwell reverb, 5 seconds",
+          "influence": 0.5,
+          "score": 3,
+          "description": "Footsteps from hard-soled boots ascending or descending a hollow metal staircase with a resonant clang and trailing room reverb in an enclosed space.",
+          "issues": "Surface material is clearly resonant hollow metal/steel steps rather than dense, gritty concrete.",
+          "cost": 50,
+          "chosen": true
+        },
+        {
+          "prompt": "Hard boot footsteps steadily walking up solid gritty concrete stairs, crisp heel impacts on rough stone, slapback echo in an enclosed concrete stairwell, 5 seconds",
+          "influence": 0.55,
+          "score": 2,
+          "description": "Slow, deliberate footsteps from hard-soled dress shoes or high heels tapping heel-to-toe across a resonant floor in an interior room with moderate reverberation.",
+          "issues": "Footwear sounds like hard dress shoes or high heels rather than heavy boots; the surface lacks the gritty mass of concrete, sounding more like wood or tile, and the acoustic space lacks the deep, echoing decay of a concrete fire stairwell.",
+          "cost": 50,
+          "chosen": false
+        },
+        {
+          "prompt": "Heavy rubber work boots ascending concrete steps, solid thuds and gritty scuffs, hollow echoing enclosed concrete fire stairwell acoustics, 5 seconds",
+          "influence": 0.6,
+          "score": 2,
+          "description": "Slow, heavy, muffled footsteps stomping on a hollow wooden floor or raised stage with a deep sub-bass resonance and dry acoustic.",
+          "issues": "Wrong material and space; sounds like hollow wood rather than hard, gritty concrete, and completely lacks the reverberant reflections of an enclosed concrete stairwell.",
+          "cost": 50,
+          "chosen": false
+        }
+      ]
+    },
+    {
+      "category": "foot-stairwell",
+      "group": "footsteps",
+      "variant": "v4",
+      "prompt": "slow heavy steps on gritty concrete stair treads, close perspective, stairwell echo",
+      "duration": 5,
+      "influence": 0.65,
+      "loop": false,
+      "file": "sfx/foot-stairwell/v4.mp3",
+      "bytes": 40585,
+      "cost": 50,
+      "generatedAt": "2026-10-18T02:24:11.362Z",
+      "qa": {
+        "description": "Slow, deliberate footsteps with a hard heel impact and slight rubbery scuff, followed by a long, bright reverberant slapback decay in a large, hollow concrete space.",
+        "score": 4,
+        "issues": "Pacing is very slow and deliberate rather than a natural stair-climbing cadence, with prominent rubber scuffs on each step.",
+        "intent": "one person walking on concrete stairs inside a hard, echoing concrete fire stairwell, boots on concrete steps",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:35:43.194Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "foot-stairwell",
+      "group": "footsteps",
+      "variant": "v5",
+      "prompt": "Footsteps ascending gritty concrete stair treads at a steady pace, boots on solid concrete steps, close perspective, echoing concrete stairwell reflections, 5 seconds",
+      "duration": 6,
+      "influence": 0.65,
+      "loop": false,
+      "file": "sfx/foot-stairwell/v5.mp3",
+      "bytes": 48526,
+      "cost": 60,
+      "generatedAt": "2026-10-18T02:40:51.081Z",
+      "qa": {
+        "description": "A person quickly walking or lightly trotting down a reverberant stairwell, with sharp impacts exhibiting a distinct hollow, metallic resonance on each tread.",
+        "score": 3,
+        "issues": "The footsteps strike hollow metal stairs rather than solid concrete, and the pace is a hurried trot rather than a normal walk.",
+        "intent": "one person walking on concrete stairs inside a hard, echoing concrete fire stairwell, boots on concrete steps",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:40:51.081Z"
+      },
+      "status": "added",
+      "attempts": [
+        {
+          "prompt": "Footsteps walking up solid concrete stairs at a steady natural pace, leather boots on gritty concrete treads, echoing concrete fire stairwell reverberation, 5 seconds",
+          "influence": 0.6,
+          "score": 2,
+          "description": "Rhythmic footsteps of sharp, hard-heeled dress shoes or high heels walking across a flat tiled or hard-surfaced floor in a moderately reverberant hallway.",
+          "issues": "Footwear sounds like clicking high heels or dress shoes rather than heavy boots; cadence sounds like flat ground rather than stairs; acoustic space lacks the cavernous, slapback reverberation of a concrete fire stairwell.",
+          "cost": 60,
+          "chosen": false
+        },
+        {
+          "prompt": "Footsteps ascending gritty concrete stair treads at a steady pace, boots on solid concrete steps, close perspective, echoing concrete stairwell reflections, 5 seconds",
+          "influence": 0.65,
+          "score": 3,
+          "description": "A person quickly walking or lightly trotting down a reverberant stairwell, with sharp impacts exhibiting a distinct hollow, metallic resonance on each tread.",
+          "issues": "The footsteps strike hollow metal stairs rather than solid concrete, and the pace is a hurried trot rather than a normal walk.",
+          "cost": 60,
+          "chosen": true
+        },
+        {
+          "prompt": "Footsteps walking up poured concrete stairs at a steady normal pace, heavy boots on solid concrete, echoing concrete stairwell acoustics, 6 seconds",
+          "influence": 0.7,
+          "score": 2,
+          "description": "A rhythmic series of rubbery, resonant thuds and bounces at close-to-medium distance, sounding like a basketball being slowly dribbled on a hard surface with minimal room reverb.",
+          "issues": "Sounds like an inflated ball bouncing rather than footsteps; lacks boot heel-toe impacts, scuffs, grit, and the long, cavernous reverberation of a concrete fire stairwell.",
+          "cost": 60,
+          "chosen": false
+        }
+      ]
+    },
+    {
+      "category": "foot-stairwell",
+      "group": "footsteps",
+      "variant": "v6",
+      "prompt": "Footsteps walking up concrete stairs in an echoing fire stairwell, heavy boot impacts on solid concrete steps, stairwell reverberation, 5 seconds",
+      "duration": 6,
+      "influence": 0.55,
+      "loop": false,
+      "file": "sfx/foot-stairwell/v6.mp3",
+      "bytes": 48526,
+      "cost": 60,
+      "generatedAt": "2026-10-18T02:41:22.536Z",
+      "qa": {
+        "description": "Slow, steady footfalls of a single person wearing hard-soled shoes or boots striking a hard concrete or tiled surface, recorded with heavy, cavernous acoustics and a long fluttery reverb tail.",
+        "score": 4,
+        "issues": "The impact sounds slightly more like hard dress shoes on flat stone or polished concrete rather than heavy boots on stairs, but the acoustic space matches an echoing stairwell well.",
+        "intent": "one person walking on concrete stairs inside a hard, echoing concrete fire stairwell, boots on concrete steps",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:41:22.536Z"
+      },
+      "status": "added",
+      "attempts": [
+        {
+          "prompt": "Boot footsteps climbing gritty concrete stairs at a natural walking cadence, solid concrete tread impacts, reverberant concrete stairwell echo, 5 seconds",
+          "influence": 0.5,
+          "score": 1,
+          "description": "Slow, rhythmic hand claps or hollow wooden taps recorded at mid-distance in a room with light reverberation.",
+          "issues": "This is clapping or tapping, not footsteps; lacks the weight, scuff, heel-toe texture of boots, and the dense cavernous reverberation of a concrete stairwell.",
+          "cost": 60,
+          "chosen": false
+        },
+        {
+          "prompt": "Footsteps walking up concrete stairs in an echoing fire stairwell, heavy boot impacts on solid concrete steps, stairwell reverberation, 5 seconds",
+          "influence": 0.55,
+          "score": 4,
+          "description": "Slow, steady footfalls of a single person wearing hard-soled shoes or boots striking a hard concrete or tiled surface, recorded with heavy, cavernous acoustics and a long fluttery reverb tail.",
+          "issues": "The impact sounds slightly more like hard dress shoes on flat stone or polished concrete rather than heavy boots on stairs, but the acoustic space matches an echoing stairwell well.",
+          "cost": 60,
+          "chosen": true
+        }
+      ]
+    },
+    {
+      "category": "foot-grating",
+      "group": "footsteps",
+      "variant": "v1",
+      "prompt": "Work boots walking across a metal mesh walkway, loud metallic clank and ringing vibration per step, rattling iron grate panels, reverberant industrial machinery hall.",
+      "duration": 5,
+      "influence": 0.7,
+      "loop": false,
+      "file": "sfx/foot-grating/v1.mp3",
+      "bytes": 40585,
+      "cost": 50,
+      "generatedAt": "2026-10-18T02:39:29.997Z",
+      "qa": {
+        "description": "Four deliberate footsteps in hard-soled boots impacting resonant metal plating or grating, each producing a sharp clank and hollow metallic ring with slight room reverberation.",
+        "score": 4,
+        "issues": "Sounds slightly more like thin sheet metal or a metal ramp than heavy industrial steel grating catwalk, but fits the prompt well.",
+        "intent": "one person walking in boots on a steel grating catwalk, metallic clank and ring per step, industrial room",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:39:29.997Z"
+      },
+      "status": "regenerated",
+      "previous": {
+        "prompt": "footsteps walking on steel grating catwalk, metallic clank and ring with each step, industrial",
+        "file": "sfx/_previous/foot-grating/v1-1792290252019.mp3",
+        "score": 2,
+        "description": "Rhythmic close-perspective footsteps featuring a dull low thud followed by a distinct rubbery squeak or friction scuff, recorded relatively dry with minimal space reverb.",
+        "generatedAt": "2026-10-18T02:24:12.019Z"
+      },
+      "attempts": [
+        {
+          "prompt": "Footsteps: boots walking on a steel bar-grating catwalk, metallic clank and short ring with each step, loose panel rattle, large machine room, 5 seconds",
+          "influence": 0.6,
+          "score": 1,
+          "description": "A rapid, rhythmic series of dry, sharp clicks or ratcheting taps, resembling fingernails strumming across a plastic comb or winding a small mechanical ratchet. The recording is completely dry, close-mic'd, and entirely devoid of weight, metallic resonance, or room reverberation.",
+          "issues": "Completely wrong action and material; sounds like a small plastic ratchet or comb flicking at high speed rather than paced boot footsteps on a resonant steel grating in an industrial room.",
+          "cost": 50,
+          "chosen": false
+        },
+        {
+          "prompt": "Heavy boots walking slowly across a hollow steel catwalk, resonant metallic clangs with each step, echoing in a large industrial warehouse",
+          "influence": 0.65,
+          "score": 2,
+          "description": "Slow, hollow, muffled footstep impacts on a wooden floor or hollow interior surface with minimal room reverb.",
+          "issues": "Completely wrong material and tone; sounds like dull wooden thumps rather than boot strikes on metallic grating with ringing resonance, and lacks industrial acoustics.",
+          "cost": 50,
+          "chosen": false
+        },
+        {
+          "prompt": "Work boots walking across a metal mesh walkway, loud metallic clank and ringing vibration per step, rattling iron grate panels, reverberant industrial machinery hall.",
+          "influence": 0.7,
+          "score": 4,
+          "description": "Four deliberate footsteps in hard-soled boots impacting resonant metal plating or grating, each producing a sharp clank and hollow metallic ring with slight room reverberation.",
+          "issues": "Sounds slightly more like thin sheet metal or a metal ramp than heavy industrial steel grating catwalk, but fits the prompt well.",
+          "cost": 50,
+          "chosen": true
+        }
+      ]
+    },
+    {
+      "category": "foot-grating",
+      "group": "footsteps",
+      "variant": "v2",
+      "prompt": "boots walking across a metal mesh walkway, rattling grate panels, large machinery room",
+      "duration": 5,
+      "influence": 0.35,
+      "loop": false,
+      "file": "sfx/foot-grating/v2.mp3",
+      "bytes": 40585,
+      "cost": 50,
+      "generatedAt": "2026-10-18T02:24:12.013Z",
+      "qa": {
+        "description": "Slow, heavy boot footsteps stomping across a resonant sheet metal floor or raised metallic platform inside a quiet, slightly reverberant industrial space.",
+        "score": 4,
+        "issues": "Sounds more like solid sheet metal or a metal container floor rather than an open steel mesh grating catwalk; the walking pace is also very slow and deliberate.",
+        "intent": "one person walking in boots on a steel grating catwalk, metallic clank and ring per step, industrial room",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:35:45.863Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "foot-grating",
+      "group": "footsteps",
+      "variant": "v3",
+      "prompt": "Slow boot steps on steel diamond plate floor over a hollow space, dull metallic thud per step, close-mic",
+      "duration": 5,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/foot-grating/v3.mp3",
+      "bytes": 40585,
+      "cost": 50,
+      "generatedAt": "2026-10-18T02:40:03.371Z",
+      "qa": {
+        "description": "Slow, deliberate footsteps in boots or hard-soled shoes landing rhythmically on a hollow wooden floor or deck with a dull thud and slight clack in an enclosed space.",
+        "score": 3,
+        "issues": "Wrong surface material; sounds like hollow wood or decking rather than metal, lacking metallic clatter, grit, and high-frequency ringing characteristic of a steel grating catwalk.",
+        "intent": "one person walking in boots on a steel grating catwalk, metallic clank and ring per step, industrial room",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:40:03.371Z"
+      },
+      "status": "regenerated",
+      "previous": {
+        "prompt": "slow footsteps on diamond plate steel floor, hollow metallic thud, basement plant room",
+        "file": "sfx/_previous/foot-grating/v3-1792290252525.mp3",
+        "score": 2,
+        "description": "Four deliberate, dry thuds or taps on a hollow wooden or dense plastic surface, recorded close-up with no metallic resonance or industrial reverberation.",
+        "generatedAt": "2026-10-18T02:24:12.525Z"
+      },
+      "attempts": [
+        {
+          "prompt": "Slow boot steps on steel diamond plate floor over a hollow space, dull metallic thud per step, close-mic",
+          "influence": 0.6,
+          "score": 3,
+          "description": "Slow, deliberate footsteps in boots or hard-soled shoes landing rhythmically on a hollow wooden floor or deck with a dull thud and slight clack in an enclosed space.",
+          "issues": "Wrong surface material; sounds like hollow wood or decking rather than metal, lacking metallic clatter, grit, and high-frequency ringing characteristic of a steel grating catwalk.",
+          "cost": 50,
+          "chosen": true
+        },
+        {
+          "prompt": "Heavy work boots walking on a steel grating catwalk, sharp metallic clank and ringing vibration per footstep, rattling iron mesh, reverberant industrial warehouse.",
+          "influence": 0.65,
+          "score": 2,
+          "description": "Rhythmic, heavy footsteps of hard-soled shoes or boots walking across a resonant hollow wooden floor or deck in an enclosed space with dry acoustics.",
+          "issues": "Surface sounds like hollow wood rather than steel grating; completely lacks metallic impact clank, jingle, and ring.",
+          "cost": 50,
+          "chosen": false
+        },
+        {
+          "prompt": "Hard boot soles striking open steel grating catwalk, loud metallic clang, high-pitched ping and ringing vibration per step, rattling iron mesh, reverberant industrial room.",
+          "influence": 0.7,
+          "score": 3,
+          "description": "A close-perspective series of steady footsteps walking across a hollow wooden floor or deck, characterized by dull thuds and faint creaks in a relatively dry acoustic space.",
+          "issues": "Surface material is clearly hollow wood rather than a steel grating catwalk, entirely lacking metallic clank/ring, and the acoustic space lacks industrial room reverb.",
+          "cost": 50,
+          "chosen": false
+        }
+      ]
+    },
+    {
+      "category": "foot-grating",
+      "group": "footsteps",
+      "variant": "v4",
+      "prompt": "Work boots walking across a heavy steel grate walkway, loud metallic clank and resonant iron ring per step, vibrating metal grid, reverberant industrial machinery hall.",
+      "duration": 5,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/foot-grating/v4.mp3",
+      "bytes": 40585,
+      "cost": 50,
+      "generatedAt": "2026-10-18T02:40:21.418Z",
+      "qa": {
+        "description": "Four deliberate footsteps walking on a hollow resonant metal structure, each step producing a sharp heel impact followed by a high metallic ring with slight room reverberation.",
+        "score": 4,
+        "issues": "Slightly hollow and pipe-like tone rather than the textured rattle of an open steel grating, but very close and usable.",
+        "intent": "one person walking in boots on a steel grating catwalk, metallic clank and ring per step, industrial room",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:40:21.418Z"
+      },
+      "status": "added",
+      "attempts": [
+        {
+          "prompt": "Work boots walking across a heavy steel grate walkway, loud metallic clank and resonant iron ring per step, vibrating metal grid, reverberant industrial machinery hall.",
+          "influence": 0.6,
+          "score": 4,
+          "description": "Four deliberate footsteps walking on a hollow resonant metal structure, each step producing a sharp heel impact followed by a high metallic ring with slight room reverberation.",
+          "issues": "Slightly hollow and pipe-like tone rather than the textured rattle of an open steel grating, but very close and usable.",
+          "cost": 50,
+          "chosen": true
+        }
+      ]
+    },
+    {
+      "category": "foot-wet-asphalt",
+      "group": "footsteps",
+      "variant": "v1",
+      "prompt": "footsteps walking on wet asphalt parking lot at night, wet splashy soles, light rain",
+      "duration": 5,
+      "influence": 0.5,
+      "loop": false,
+      "file": "sfx/foot-wet-asphalt/v1.mp3",
+      "bytes": 40585,
+      "cost": 50,
+      "generatedAt": "2026-10-18T02:24:13.322Z",
+      "qa": {
+        "description": "Close-up, dry foley recording of slow, squelchy footsteps sinking and sucking into wet, organic mud or deep slush, featuring prominent squishing and slight gritty crunching without hard surface impact.",
+        "score": 3,
+        "issues": "Lacks the distinct hard-soled impact and surface slap of asphalt; sounds like deep squishy mud or muck rather than wet pavement, and is too dryly recorded without open outdoor acoustic decay.",
+        "intent": "one person walking on wet asphalt outdoors at night, wet splashy shoe contacts, open outdoor space",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:35:47.936Z"
+      },
+      "status": "kept",
+      "attempts": [
+        {
+          "prompt": "Footsteps: boots walking on wet asphalt, wet slap and splash of each step, thin water layer, open outdoor parking lot, no rain, 5 seconds",
+          "influence": 0.6,
+          "score": 3,
+          "description": "Rhythmic, close-up footsteps of hard-soled shoes or heels clicking sharply and scuffing on a completely dry, hard indoor surface.",
+          "issues": "Completely dry with no splash or water elements; hard-soled shoe clicks sound like an indoor floor rather than wet asphalt in an open outdoor space.",
+          "cost": 50,
+          "chosen": false
+        },
+        {
+          "prompt": "Boots walking on a wet asphalt street, stepping through shallow puddles with wet slaps and crisp water splashes, quiet open outdoor acoustics.",
+          "influence": 0.65,
+          "score": 1,
+          "description": "A sequence of rhythmic, dry, cupped hand claps or skin slaps recorded very close in an acoustically dead interior room. There is no texture of grit, hard pavement, liquid splashing, or outdoor acoustic reflection.",
+          "issues": "Completely wrong sound; sounds like dry hand claps or slaps rather than footsteps, with zero wet splash, no asphalt texture, and no outdoor atmosphere.",
+          "cost": 50,
+          "chosen": false
+        },
+        {
+          "prompt": "Boots walking on a wet asphalt road, stepping in shallow puddles, crisp water splashes on hard gritty pavement, open outdoor street acoustics at night.",
+          "influence": 0.7,
+          "score": 2,
+          "description": "Crisp, dry footsteps crunching on dead leaves, twigs, and forest debris recorded close-up with minimal reverberation.",
+          "issues": "Completely wrong surface and moisture level; this is dry leaf/twig litter on soil rather than wet splashy footsteps on hard asphalt.",
+          "cost": 50,
+          "chosen": false
+        }
+      ]
+    },
+    {
+      "category": "foot-wet-asphalt",
+      "group": "footsteps",
+      "variant": "v2",
+      "prompt": "boots stepping through shallow puddles on a wet road, slow walk, quiet foggy night",
+      "duration": 5,
+      "influence": 0.4,
+      "loop": false,
+      "file": "sfx/foot-wet-asphalt/v2.mp3",
+      "bytes": 40585,
+      "cost": 50,
+      "generatedAt": "2026-10-18T02:24:13.270Z",
+      "qa": {
+        "description": "Crisp, isolated foley footsteps walking at a measured pace across a hard surface covered in shallow water, producing sharp water slaps and squishy foot contacts.",
+        "score": 4,
+        "issues": "Recorded in an acoustically dry studio environment without the natural open-air acoustic decay or night forest ambient bed.",
+        "intent": "one person walking on wet asphalt outdoors at night, wet splashy shoe contacts, open outdoor space",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:35:48.692Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "foot-wet-asphalt",
+      "group": "footsteps",
+      "variant": "v3",
+      "prompt": "walking footsteps on damp asphalt with grit, outdoor, no rain, distant open space",
+      "duration": 5,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/foot-wet-asphalt/v3.mp3",
+      "bytes": 40585,
+      "cost": 50,
+      "generatedAt": "2026-10-18T02:24:13.749Z",
+      "qa": {
+        "description": "Close-up studio Foley recording of slow, deliberate footsteps in hard-soled shoes on a damp, smooth hard surface with wet squelches and distinct nylon clothing rustle on each pace in an acoustically dry space.",
+        "score": 3,
+        "issues": "Acoustics are dead and studio-dry rather than an open outdoor space; lacks gritty asphalt texture and open-air puddle splash; heavy cloth swish dominates the foot contact.",
+        "intent": "one person walking on wet asphalt outdoors at night, wet splashy shoe contacts, open outdoor space",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:35:49.120Z"
+      },
+      "status": "kept",
+      "attempts": [
+        {
+          "prompt": "Shoes walking on damp gritty asphalt, light wet scuff per step, outdoor open air, medium distance",
+          "influence": 0.6,
+          "score": 2,
+          "description": "Crisp, rhythmic footsteps in hard-soled shoes walking across a dry, firm surface such as linoleum, wood, or dry pavement in a relatively dry, close acoustic environment. There are no water splashes, damp squishes, or outdoor ambient background noises.",
+          "issues": "Completely dry surface with no wet or splashy texture, and lacks open outdoor acoustic space.",
+          "cost": 50,
+          "chosen": false
+        },
+        {
+          "prompt": "Footsteps walking through shallow puddles on wet asphalt road, wet splashy shoe impacts, quiet open outdoor night, wide exterior acoustic space.",
+          "influence": 0.65,
+          "score": 1,
+          "description": "Close-up sound of a wet cloth, sponge, or rubber blade being squeaked and scrubbed rhythmically against a smooth surface like glass, with prominent high-pitched squeaks and no outdoor ambient space.",
+          "issues": "This is a wet squeaky cleaning/wiping sound rather than footsteps; it lacks shoe impact transients, asphalt grit, puddle sloshes, and open outdoor acoustics.",
+          "cost": 50,
+          "chosen": false
+        },
+        {
+          "prompt": "Boots walking slowly through shallow puddles on wet asphalt road, distinct water splash and slosh on pavement, open outdoor night acoustics.",
+          "influence": 0.7,
+          "score": 2,
+          "description": "Close-perspective audio of an animal or dog panting heavily while trotting and splashing through shallow water or a puddle, with rapid, irregular wet sloshes.",
+          "issues": "Contains loud, prominent dog/animal panting throughout; sounds like wading in standing water rather than shoe contacts on hard wet asphalt.",
+          "cost": 50,
+          "chosen": false
+        }
+      ]
+    },
+    {
+      "category": "foot-wet-asphalt",
+      "group": "footsteps",
+      "variant": "v4",
+      "prompt": "boots stepping through shallow puddles on a wet road, slow walk, natural open air exterior acoustics, quiet foggy night",
+      "duration": 5,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/foot-wet-asphalt/v4.mp3",
+      "bytes": 40585,
+      "cost": 50,
+      "generatedAt": "2026-10-18T02:40:54.902Z",
+      "qa": {
+        "description": "Close-up, dry foley recording of slow, deliberate footsteps stepping into shallow water or a wet surface, featuring squishy splash impacts with no background ambience or reverberation.",
+        "score": 4,
+        "issues": "Lacks the subtle grit/hardness of underlying asphalt and is recorded very dry with zero open outdoor acoustic tail or natural night ambience.",
+        "intent": "one person walking on wet asphalt outdoors at night, wet splashy shoe contacts, open outdoor space",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:40:54.902Z"
+      },
+      "status": "added",
+      "attempts": [
+        {
+          "prompt": "boots stepping through shallow puddles on a wet road, slow walk, natural open air exterior acoustics, quiet foggy night",
+          "influence": 0.6,
+          "score": 4,
+          "description": "Close-up, dry foley recording of slow, deliberate footsteps stepping into shallow water or a wet surface, featuring squishy splash impacts with no background ambience or reverberation.",
+          "issues": "Lacks the subtle grit/hardness of underlying asphalt and is recorded very dry with zero open outdoor acoustic tail or natural night ambience.",
+          "cost": 50,
+          "chosen": true
+        }
+      ]
+    },
+    {
+      "category": "foot-gravel",
+      "group": "footsteps",
+      "variant": "v1",
+      "prompt": "footsteps walking on loose gravel, crunchy steps, slow pace, outdoors at night",
+      "duration": 5,
+      "influence": 0.5,
+      "loop": false,
+      "file": "sfx/foot-gravel/v1.mp3",
+      "bytes": 40585,
+      "cost": 50,
+      "generatedAt": "2026-10-18T02:24:14.553Z",
+      "qa": {
+        "description": "Close-perspective, deliberate footsteps crunching into loose gravel or crushed stone with gritty scraping and shifting pebbles against a dead silent background.",
+        "score": 4,
+        "issues": "The footsteps are paced quite slowly and deliberately, and the sound is extremely dry with no natural outdoor air or diffuse environment.",
+        "intent": "one person walking on loose gravel outdoors, crunchy stone steps",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:35:49.679Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "foot-gravel",
+      "group": "footsteps",
+      "variant": "v2",
+      "prompt": "boots crunching on gravel shoulder of a road, steady walk",
+      "duration": 5,
+      "influence": 0.35,
+      "loop": false,
+      "file": "sfx/foot-gravel/v2.mp3",
+      "bytes": 40585,
+      "cost": 50,
+      "generatedAt": "2026-10-18T02:24:14.569Z",
+      "qa": {
+        "description": "Four deliberate footsteps crunching into loose gravel and small stones, recorded closely and cleanly in a dry, isolated studio environment with no ambient background noise.",
+        "score": 4,
+        "issues": "Dry studio recording lacks outdoor air/natural reverberation, but the material texture and cadence are very accurate.",
+        "intent": "one person walking on loose gravel outdoors, crunchy stone steps",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:35:50.570Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "foot-gravel",
+      "group": "footsteps",
+      "variant": "v3",
+      "prompt": "slow careful steps on coarse gravel, close mic, crisp crunch",
+      "duration": 5,
+      "influence": 0.65,
+      "loop": false,
+      "file": "sfx/foot-gravel/v3.mp3",
+      "bytes": 40585,
+      "cost": 50,
+      "generatedAt": "2026-10-18T02:24:15.083Z",
+      "qa": {
+        "description": "A series of four slow, close-mic'd footsteps dragging and crunching across coarse sand or fine gritty gravel in a dry acoustic environment with minimal reverb.",
+        "score": 4,
+        "issues": "The steps have a prolonged scuffing/dragging stroke rather than crisp, firm impacts on loose stones, sounding slightly more like coarse sand or dirt than chunky crunchy gravel.",
+        "intent": "one person walking on loose gravel outdoors, crunchy stone steps",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:35:50.874Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "foot-forest",
+      "group": "footsteps",
+      "variant": "v1",
+      "prompt": "footsteps walking on pine needles and soft forest floor, occasional twig snap, damp night",
+      "duration": 6,
+      "influence": 0.5,
+      "loop": false,
+      "file": "sfx/foot-forest/v1.mp3",
+      "bytes": 48526,
+      "cost": 60,
+      "generatedAt": "2026-10-18T02:24:16.356Z",
+      "qa": {
+        "description": "Crisp, steady footsteps crunching on dry autumn leaves, twigs, and gravel recorded from a close, outdoor perspective with very little ambient noise.",
+        "score": 3,
+        "issues": "Sound is very dry and brittle (crispy leaves) rather than soft, damp earth and pine needles; lacks moisture/squelch and deep ground impact.",
+        "intent": "one person walking on a damp pine forest floor: soft needles, earth, occasional twig snap, outdoors",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:35:52.237Z"
+      },
+      "status": "kept",
+      "attempts": [
+        {
+          "prompt": "Footsteps: boots walking on damp pine needles and soft earth, quiet crunch, one small twig snaps, outdoor forest, close-mic, 6 seconds",
+          "influence": 0.6,
+          "score": 3,
+          "description": "Close-perspective foley footsteps crunching sharply and rustling across very dry, brittle leaves and twigs with no outdoor reverberation. The texture is thin, scratchy, and paper-like with little low-frequency impact.",
+          "issues": "Sounds like dry deciduous autumn leaves rather than damp pine needles and earth; lacks moisture, softness, and low-end footstep weight.",
+          "cost": 60,
+          "chosen": false
+        },
+        {
+          "prompt": "Close-mic boots walking on wet pine needle mulch, dull muffled thuds into damp spongy earth, subtle wet squelch, quiet damp twig snap, outdoor forest, 6 seconds.",
+          "influence": 0.65,
+          "score": 3,
+          "description": "Close-perspective footsteps crunching heavily and snapping dry, brittle sticks and twigs on a firm surface in an open, dry acoustic space.",
+          "issues": "Sounds very dry and brittle rather than damp; nearly every step features prominent twig-snapping with none of the soft, muted impact of damp earth and pine needles.",
+          "cost": 60,
+          "chosen": false
+        },
+        {
+          "prompt": "Slow heavy footsteps sinking into soggy pine needle duff, dull low-end thuds, damp spongy earth squelching, soft muted outdoor forest floor foley, close-mic, 6 seconds.",
+          "influence": 0.7,
+          "score": 2,
+          "description": "Steady, paced footsteps with distinct heel-and-toe thuds walking across a firm wooden plank floor in a dry, intimate acoustic space.",
+          "issues": "Completely wrong surface material; sounds like hard interior floorboards rather than soft damp earth and pine needles, with no organic twig snaps or outdoor dispersion.",
+          "cost": 60,
+          "chosen": false
+        }
+      ]
+    },
+    {
+      "category": "foot-forest",
+      "group": "footsteps",
+      "variant": "v2",
+      "prompt": "boots walking through damp undergrowth and fallen pine needles, quiet forest",
+      "duration": 6,
+      "influence": 0.35,
+      "loop": false,
+      "file": "sfx/foot-forest/v2.mp3",
+      "bytes": 48526,
+      "cost": 60,
+      "generatedAt": "2026-10-18T02:24:16.309Z",
+      "qa": {
+        "description": "Slow, deliberate footsteps crunching loudly on dry, brittle deciduous leaf litter and small twigs in a quiet outdoor space, recorded from a close, grounded perspective.",
+        "score": 3,
+        "issues": "Surface material sounds like very dry, crispy leaves rather than a damp forest floor of soft pine needles and earth.",
+        "intent": "one person walking on a damp pine forest floor: soft needles, earth, occasional twig snap, outdoors",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:35:52.006Z"
+      },
+      "status": "kept",
+      "attempts": [
+        {
+          "prompt": "Person walking through damp forest undergrowth, soft leafy footfalls and brushing low plants, quiet outdoors",
+          "influence": 0.5,
+          "score": 3,
+          "description": "Close-up footsteps of a single person walking at a steady, deliberate pace across very dry, crunchy dead leaves and brittle forest debris with crisp, loud crunches against a quiet outdoor background.",
+          "issues": "The footsteps are decidedly dry and brittle (sounding like dry autumn deciduous leaves) rather than the soft, muffled, and slightly damped texture of a damp pine needle and earth floor.",
+          "cost": 60,
+          "chosen": false
+        },
+        {
+          "prompt": "Close-up muffled footsteps compressing wet pine needles and soft damp soil, spongy damped thuds on moist earth, faint small twig snap, quiet forest exterior.",
+          "influence": 0.55,
+          "score": 3,
+          "description": "Slow, deliberate footsteps crunching dry leaves and brittle twigs recorded close-up in an acoustically dry foley studio.",
+          "issues": "Sounds very dry and brittle rather than damp; lacks the soft, spongy thud of damp soil and cushioned pine needles, and lacks outdoor atmosphere.",
+          "cost": 60,
+          "chosen": false
+        },
+        {
+          "prompt": "Quiet outdoor woods, dull cushioned boot steps sinking softly into sodden pine needle mulch and damp peat, muffled low thuds, a dull small stick snap.",
+          "influence": 0.6,
+          "score": 3,
+          "description": "Close-perspective, dry recording of steady footsteps crunching on loose gravel, coarse dirt, and dry debris with virtually no ambient reverb.",
+          "issues": "Surface sounds far too dry, crunchy, and granular (gravel/dry dirt) rather than soft, muffled damp earth and pine needle duff.",
+          "cost": 60,
+          "chosen": false
+        }
+      ]
+    },
+    {
+      "category": "foot-forest",
+      "group": "footsteps",
+      "variant": "v3",
+      "prompt": "slow steps on soft wet earth and leaves in a pine forest, one dry stick cracking underfoot",
+      "duration": 6,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/foot-forest/v3.mp3",
+      "bytes": 48526,
+      "cost": 60,
+      "generatedAt": "2026-10-18T02:24:16.947Z",
+      "qa": {
+        "description": "A close-up sequence of deliberate footsteps crunching loudly into dry, brittle deciduous leaves and small twigs with very little reverberation.",
+        "score": 3,
+        "issues": "The material is distinctly dry, crackly broadleaf debris rather than soft, damp pine needles and earth.",
+        "intent": "one person walking on a damp pine forest floor: soft needles, earth, occasional twig snap, outdoors",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:35:53.255Z"
+      }
+    },
+    {
+      "category": "door-fire-steel",
+      "group": "doors",
+      "variant": "v1",
+      "prompt": "Massive solid steel fire door pushes open with hydraulic closer air hiss, then violently slams shut with deep metallic impact and latch echoing in concrete hallway.",
+      "duration": 4,
+      "influence": 0.7,
+      "loop": false,
+      "file": "sfx/door-fire-steel/v1.mp3",
+      "bytes": 32643,
+      "cost": 40,
+      "generatedAt": "2026-10-18T02:40:55.708Z",
+      "qa": {
+        "description": "A close-up recording of a heavy metal door latch clicking open with a metallic squeak, followed by the door swinging shut and slamming heavily into its frame with a metallic ring and reverberant tail in a hard-walled space.",
+        "score": 4,
+        "issues": "Lacks the distinct pneumatic hiss or hydraulic resistance sound of a door closer, though the metal door swing and latch slam are otherwise accurate.",
+        "intent": "a heavy steel fire door in a concrete corridor opening on a hydraulic closer and closing with a heavy metallic latch slam",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:40:55.708Z"
+      },
+      "status": "regenerated",
+      "previous": {
+        "prompt": "heavy steel fire door opening with a hydraulic closer hiss and then slamming shut with a deep metallic boom and latch click, concrete hallway",
+        "file": "sfx/_previous/door-fire-steel/v1-1792290257881.mp3",
+        "score": 3,
+        "description": "An interior recording of a hollow metal door unlatching, slowly creaking open, and swinging shut with a light metallic latch click in an acoustic room.",
+        "generatedAt": "2026-10-18T02:24:17.881Z"
+      },
+      "attempts": [
+        {
+          "prompt": "Heavy steel fire door: lever handle turns, door swings open with closer hiss, then swings shut with a deep metallic boom and latch click, concrete hallway reverb, 4 seconds",
+          "influence": 0.6,
+          "score": 2,
+          "description": "An interior door unlatches and swings open with a sharp, squeaky hinge creak, pauses, and then closes with a hollow, lightweight wooden click and thud in a dry, intimate room acoustic.",
+          "issues": "Sounds like a light wooden domestic door rather than heavy steel; lacks hydraulic closer hiss/drag; lacks concrete corridor reverb; closing impact is soft and wooden instead of a heavy metallic latch slam.",
+          "cost": 40,
+          "chosen": false
+        },
+        {
+          "prompt": "Industrial thick steel fire door opening with pneumatic closer air hiss, then forcefully slamming shut with a heavy metallic boom and hard latch in a reverberant concrete corridor.",
+          "influence": 0.65,
+          "score": 2,
+          "description": "A brief pneumatic hiss or puff of air followed immediately by the sharp, hollow slam and metallic rattle of a locker or cabinet door shutting in a dry space.",
+          "issues": "Missing the entire door opening sequence and hydraulic closer sound; the slam sounds like a lightweight thin sheet metal locker rather than a heavy industrial fire door; lacks the reverb of a concrete corridor.",
+          "cost": 40,
+          "chosen": false
+        },
+        {
+          "prompt": "Massive solid steel fire door pushes open with hydraulic closer air hiss, then violently slams shut with deep metallic impact and latch echoing in concrete hallway.",
+          "influence": 0.7,
+          "score": 4,
+          "description": "A close-up recording of a heavy metal door latch clicking open with a metallic squeak, followed by the door swinging shut and slamming heavily into its frame with a metallic ring and reverberant tail in a hard-walled space.",
+          "issues": "Lacks the distinct pneumatic hiss or hydraulic resistance sound of a door closer, though the metal door swing and latch slam are otherwise accurate.",
+          "cost": 40,
+          "chosen": true
+        }
+      ]
+    },
+    {
+      "category": "door-fire-steel",
+      "group": "doors",
+      "variant": "v2",
+      "prompt": "heavy metal fire door slowly swinging closed on a door closer, loud latch clunk, echoing institutional corridor",
+      "duration": 3.5,
+      "influence": 0.4,
+      "loop": false,
+      "file": "sfx/door-fire-steel/v2.mp3",
+      "bytes": 28464,
+      "cost": 35,
+      "generatedAt": "2026-10-18T02:24:17.568Z",
+      "qa": {
+        "description": "A metal latch clicks and the door is quickly pulled open before violently slamming shut with a heavy, resonant metallic clatter echoing in a reverberant hallway.",
+        "score": 3,
+        "issues": "Lacks the hiss or resistance of a hydraulic closer; the entire open-and-slam action occurs far too quickly (under two seconds) rather than a controlled swing.",
+        "intent": "a heavy steel fire door in a concrete corridor opening on a hydraulic closer and closing with a heavy metallic latch slam",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:35:56.718Z"
+      },
+      "status": "kept",
+      "attempts": [
+        {
+          "prompt": "Heavy steel door closing slowly on a hydraulic door closer, ends with a loud metal latch clunk, echoing concrete corridor",
+          "influence": 0.6,
+          "score": 2,
+          "description": "A close, dry recording of a lightweight or standard residential door quickly swinging shut and latching with a sharp, hollow click.",
+          "issues": "Lacks heavy steel weight and resonance, contains no opening phase or hydraulic closer resistance/hiss, and has completely dry acoustics with no concrete corridor reverb.",
+          "cost": 35,
+          "chosen": false
+        },
+        {
+          "prompt": "Heavy steel fire door pushes open with loud hydraulic pneumatic hiss, slowly glides shut, then forcefully slams with massive metallic latch impact echoing down reverberant concrete corridor.",
+          "influence": 0.65,
+          "score": 2,
+          "description": "A close perspective recording of a door opening with a high-pitched hinge squeak, immediately followed by an abrupt, relatively lightweight slam and latch click in a dry, intimate room.",
+          "issues": "Lacks the heavy weight and resonance of a steel fire door; lacks the pneumatic hiss/resistance of a hydraulic closer; no concrete corridor reverb.",
+          "cost": 35,
+          "chosen": false
+        },
+        {
+          "prompt": "Massive solid steel fire door pushes open with pneumatic hydraulic air hiss, slowly closing into a heavy metallic latch slam echoing loudly through a long concrete corridor.",
+          "influence": 0.7,
+          "score": 3,
+          "description": "A close-up recording of a latch releasing with a quick hinge squeak, followed immediately by a rapid, sharp door slam in a relatively dry acoustic space.",
+          "issues": "Sounds like a lightweight interior door rather than heavy steel; slammed shut manually with no hydraulic closer resistance/hiss; lacks concrete corridor reverberation.",
+          "cost": 35,
+          "chosen": false
+        }
+      ]
+    },
+    {
+      "category": "door-fire-steel",
+      "group": "doors",
+      "variant": "v3",
+      "prompt": "steel security door handle turning, door opens with a low groan, closes with a heavy thud",
+      "duration": 4,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/door-fire-steel/v3.mp3",
+      "bytes": 32643,
+      "cost": 40,
+      "generatedAt": "2026-10-18T02:24:18.230Z",
+      "qa": {
+        "description": "A close-up recording of a lightweight interior door unlatching with a brief hinge squeak, then quickly swinging shut with a dry, hollow latch click.",
+        "score": 2,
+        "issues": "Sounds like a light domestic wooden door rather than a heavy steel fire door; lacks hydraulic closer mechanics, heavy metallic slam impact, and concrete corridor reverberation.",
+        "intent": "a heavy steel fire door in a concrete corridor opening on a hydraulic closer and closing with a heavy metallic latch slam",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:35:57.302Z"
+      }
+    },
+    {
+      "category": "door-fire-steel",
+      "group": "doors",
+      "variant": "v4",
+      "prompt": "big hollow metal door slamming shut, reverberant basement",
+      "duration": 2.5,
+      "influence": 0.5,
+      "loop": false,
+      "file": "sfx/door-fire-steel/v4.mp3",
+      "bytes": 20314,
+      "cost": 25,
+      "generatedAt": "2026-10-18T02:24:18.799Z",
+      "qa": {
+        "description": "A light sheet-metal locker or cabinet door quickly unlatches, swings open, and slams shut with a hollow, tinny rattle in a dry, close room.",
+        "score": 2,
+        "issues": "Sounds like a thin locker/cabinet rather than a massive steel fire door; missing the hydraulic closer sound and resistance; cycle is too fast; lacks concrete corridor reverberation.",
+        "intent": "a heavy steel fire door in a concrete corridor opening on a hydraulic closer and closing with a heavy metallic latch slam",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:35:59.018Z"
+      }
+    },
+    {
+      "category": "door-office-wood",
+      "group": "doors",
+      "variant": "v1",
+      "prompt": "Old wooden office door opens slowly, dry metal hinge creaks for two seconds, small quiet room, close-mic",
+      "duration": 3.5,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/door-office-wood/v1.mp3",
+      "bytes": 28464,
+      "cost": 35,
+      "generatedAt": "2026-10-18T02:41:28.632Z",
+      "qa": {
+        "description": "A slow, high-pitched metallic hinge creak that stutters across three seconds in a close, dry acoustic space with no background noise.",
+        "score": 4,
+        "issues": "Consists almost entirely of high-frequency hinge squeak, lacking the latch/knob click and low-frequency resonance of a heavy wooden door moving through air.",
+        "intent": "an old wooden office door opening slowly with a creaking hinge, small quiet room",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:41:28.632Z"
+      },
+      "status": "regenerated",
+      "previous": {
+        "prompt": "old wooden office door slowly creaking open, squeaky hinges, quiet room",
+        "file": "sfx/_previous/door-office-wood/v1-1792290259131.mp3",
+        "score": 2,
+        "description": "Two distinct bursts of high-pitched, rubbery friction squeaks and groans, sounding like a wet finger rubbing against glass, rubber, or a balloon, recorded up close with dry acoustic space.",
+        "generatedAt": "2026-10-18T02:24:19.131Z"
+      },
+      "attempts": [
+        {
+          "prompt": "Old wooden office door opens slowly, dry metal hinge creaks for two seconds, small quiet room, close-mic",
+          "influence": 0.6,
+          "score": 4,
+          "description": "A slow, high-pitched metallic hinge creak that stutters across three seconds in a close, dry acoustic space with no background noise.",
+          "issues": "Consists almost entirely of high-frequency hinge squeak, lacking the latch/knob click and low-frequency resonance of a heavy wooden door moving through air.",
+          "cost": 35,
+          "chosen": true
+        }
+      ]
+    },
+    {
+      "category": "door-office-wood",
+      "group": "doors",
+      "variant": "v2",
+      "prompt": "wooden door opening with long eerie hinge creak, horror atmosphere",
+      "duration": 4,
+      "influence": 0.35,
+      "loop": false,
+      "file": "sfx/door-office-wood/v2.mp3",
+      "bytes": 32643,
+      "cost": 40,
+      "generatedAt": "2026-10-18T02:24:19.423Z",
+      "qa": {
+        "description": "A close-up, dry recording of a high-pitched, prolonged hinge creak slowly modulating in pitch over three seconds without background ambience.",
+        "score": 4,
+        "issues": "Sounds slightly thin and lightweight, resembling a cabinet or light cupboard door hinge rather than a heavier solid wooden office door; completely dry with no room acoustics.",
+        "intent": "an old wooden office door opening slowly with a creaking hinge, small quiet room",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:35:58.032Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "door-office-wood",
+      "group": "doors",
+      "variant": "v3",
+      "prompt": "Brass doorknob turns, latch clicks, wooden door opens with a short creak and closes softly with a latch click",
+      "duration": 3,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/door-office-wood/v3.mp3",
+      "bytes": 24493,
+      "cost": 30,
+      "generatedAt": "2026-10-18T02:41:34.316Z",
+      "qa": {
+        "description": "A close-up recording of a door latch unclicking followed by a slow, dry, high-pitched hinge creak as a door is pushed open in a quiet room.",
+        "score": 5,
+        "issues": "none",
+        "intent": "an old wooden office door opening slowly with a creaking hinge, small quiet room",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:41:34.316Z"
+      },
+      "status": "regenerated",
+      "previous": {
+        "prompt": "wooden office door knob turning, door opens with short creak and closes softly with latch click",
+        "file": "sfx/_previous/door-office-wood/v3-1792290260010.mp3",
+        "score": 2,
+        "description": "A brief, fast hinge squeak followed immediately by a sharp metallic latch click and a loud, abrupt wooden door slam in a small interior room.",
+        "generatedAt": "2026-10-18T02:24:20.010Z"
+      },
+      "attempts": [
+        {
+          "prompt": "Brass doorknob turns, latch clicks, wooden door opens with a short creak and closes softly with a latch click",
+          "influence": 0.6,
+          "score": 5,
+          "description": "A close-up recording of a door latch unclicking followed by a slow, dry, high-pitched hinge creak as a door is pushed open in a quiet room.",
+          "issues": "none",
+          "cost": 30,
+          "chosen": true
+        }
+      ]
+    },
+    {
+      "category": "door-panic-bar",
+      "group": "doors",
+      "variant": "v1",
+      "prompt": "pushing a metal panic bar on an emergency exit door, loud spring-loaded clack, door swings open",
+      "duration": 2.5,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/door-panic-bar/v1.mp3",
+      "bytes": 20314,
+      "cost": 25,
+      "generatedAt": "2026-10-18T02:24:20.372Z",
+      "qa": {
+        "description": "A close-up metal latch click followed immediately by a loud, high-pitched metallic hinge squeak/screech echoing in an open room as a door swings.",
+        "score": 3,
+        "issues": "Lacks the heavy mechanical body and spring-loaded clunk of an industrial crash bar; sounds like a light metal locker or rusty gate hinge swinging open rather than a heavy steel fire door.",
+        "intent": "pushing the metal panic/crash bar of an emergency exit door: loud spring latch clack and the steel door swinging open",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:01.667Z"
+      }
+    },
+    {
+      "category": "door-panic-bar",
+      "group": "doors",
+      "variant": "v2",
+      "prompt": "crash bar exit door push, latch release clunk and metal rattle",
+      "duration": 2,
+      "influence": 0.45,
+      "loop": false,
+      "file": "sfx/door-panic-bar/v2.mp3",
+      "bytes": 16552,
+      "cost": 20,
+      "generatedAt": "2026-10-18T02:24:20.901Z",
+      "qa": {
+        "description": "A close-up recording of a standard door latch mechanism clicking open, followed immediately by a sharp metallic hinge squeak as the door swings open.",
+        "score": 3,
+        "issues": "Lacks the heavy spring-loaded 'clack' of a panic bar and the weight/resonance of a heavy steel emergency door; sounds like a standard interior door with a squeaky hinge.",
+        "intent": "pushing the metal panic/crash bar of an emergency exit door: loud spring latch clack and the steel door swinging open",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:02.631Z"
+      }
+    },
+    {
+      "category": "door-panic-bar",
+      "group": "doors",
+      "variant": "v3",
+      "prompt": "panic bar pushed, door opens to outside night air, then heavy door closes behind",
+      "duration": 4,
+      "influence": 0.35,
+      "loop": false,
+      "file": "sfx/door-panic-bar/v3.mp3",
+      "bytes": 32643,
+      "cost": 40,
+      "generatedAt": "2026-10-18T02:24:21.225Z",
+      "qa": {
+        "description": "A close-up recording of a heavy door firmly slamming shut into its frame with a solid thud and mechanical latch impact.",
+        "score": 2,
+        "issues": "This is a door closing and latching shut rather than pushing a crash bar and swinging open; there is no metal push-bar spring sound or door swing movement.",
+        "intent": "pushing the metal panic/crash bar of an emergency exit door: loud spring latch clack and the steel door swinging open",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:01.178Z"
+      }
+    },
+    {
+      "category": "door-rollup-dock",
+      "group": "doors",
+      "variant": "v1",
+      "prompt": "corrugated metal roll-up loading dock door being pulled open by hand, rattling chain, rumbling steel slats",
+      "duration": 6,
+      "influence": 0.5,
+      "loop": false,
+      "file": "sfx/door-rollup-dock/v1.mp3",
+      "bytes": 48526,
+      "cost": 60,
+      "generatedAt": "2026-10-18T02:24:22.206Z",
+      "qa": {
+        "description": "A close-to-medium perspective recording of a corrugated metal roll-up door or heavy sliding gate rolling along its metal tracks, characterized by a deep hollow rumble, rhythmic clatter of rolling hardware, and rattling metallic slats before coming to a stop.",
+        "score": 5,
+        "issues": "none",
+        "intent": "a large corrugated steel roll-up loading dock door being raised or lowered: rumbling, rattling metal slats",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:02.211Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "door-rollup-dock",
+      "group": "doors",
+      "variant": "v2",
+      "prompt": "motorized rolling steel shutter door opening, motor whine and clattering slats, warehouse",
+      "duration": 7,
+      "influence": 0.4,
+      "loop": false,
+      "file": "sfx/door-rollup-dock/v2.mp3",
+      "bytes": 56467,
+      "cost": 70,
+      "generatedAt": "2026-10-18T02:24:22.417Z",
+      "qa": {
+        "description": "A close-to-medium recording of a corrugated metal roll-up door or shutter rattling loudly as it rolls along metal tracks, ending with a heavy metallic clank and thud at the stop.",
+        "score": 5,
+        "issues": "none",
+        "intent": "a large corrugated steel roll-up loading dock door being raised or lowered: rumbling, rattling metal slats",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:02.960Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "door-rollup-dock",
+      "group": "doors",
+      "variant": "v3",
+      "prompt": "roll-up garage door slammed down shut, metal crash and rattle echo",
+      "duration": 3,
+      "influence": 0.55,
+      "loop": false,
+      "file": "sfx/door-rollup-dock/v3.mp3",
+      "bytes": 24493,
+      "cost": 30,
+      "generatedAt": "2026-10-18T02:24:22.414Z",
+      "qa": {
+        "description": "A heavy metal door, hatch, or shutter forcefully slamming shut with a resonant metallic clatter and reverberant thud, ending on a small latch click.",
+        "score": 2,
+        "issues": "Captures a single hard slam/impact rather than the continuous rolling, rumbling, and rattling motion of a door being raised or lowered.",
+        "intent": "a large corrugated steel roll-up loading dock door being raised or lowered: rumbling, rattling metal slats",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:04.025Z"
+      }
+    },
+    {
+      "category": "gate-chainlink",
+      "group": "doors",
+      "variant": "v1",
+      "prompt": "chain-link fence gate rattling and swinging open, metal chain jingling, outdoors at night",
+      "duration": 4,
+      "influence": 0.5,
+      "loop": false,
+      "file": "sfx/gate-chainlink/v1.mp3",
+      "bytes": 32643,
+      "cost": 40,
+      "generatedAt": "2026-10-18T02:24:23.427Z",
+      "qa": {
+        "description": "Close-up, dry foley recording of small metal keys or lightweight chain links clinking and jingling with no low-end body.",
+        "score": 2,
+        "issues": "Sounds like small keys or dog tags rather than a heavy chain-link gate; lacks the weight, resonance, swinging motion, and outdoor night ambience.",
+        "intent": "a chain-link fence gate rattling and swinging, metal chain and fence wire jingling, outdoors at night",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:06.245Z"
+      }
+    },
+    {
+      "category": "gate-chainlink",
+      "group": "doors",
+      "variant": "v2",
+      "prompt": "shaking a locked chain-link gate, padlock and chain rattle against the fence",
+      "duration": 3,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/gate-chainlink/v2.mp3",
+      "bytes": 24493,
+      "cost": 30,
+      "generatedAt": "2026-10-18T02:24:23.819Z",
+      "qa": {
+        "description": "A close-up, dry recording of a small mechanical metal ratchet or gear clicking and ticking repeatedly as if being wound or cranked.",
+        "score": 2,
+        "issues": "Completely wrong object and action; sounds like a small hand-cranked gear or ratchet tool rather than a full-sized chain-link fence gate rattling and swinging, with no outdoor ambience.",
+        "intent": "a chain-link fence gate rattling and swinging, metal chain and fence wire jingling, outdoors at night",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:07.030Z"
+      }
+    },
+    {
+      "category": "gate-chainlink",
+      "group": "doors",
+      "variant": "v3",
+      "prompt": "wind rattling a loose chain-link fence gate, intermittent metallic clinks, distant",
+      "duration": 5,
+      "influence": 0.3,
+      "loop": false,
+      "file": "sfx/gate-chainlink/v3.mp3",
+      "bytes": 40585,
+      "cost": 50,
+      "generatedAt": "2026-10-18T02:24:23.713Z",
+      "qa": {
+        "description": "A close-up, delicate metallic clinking sound, characteristic of small wind chimes or thin tubular metal rods lightly tapping together in a quiet interior environment.",
+        "score": 2,
+        "issues": "Completely lacks the weight, tension, and harsh rattle of a chain-link fence and heavy chain; sounds like delicate wind chimes without any gate swinging motion or outdoor night ambience.",
+        "intent": "a chain-link fence gate rattling and swinging, metal chain and fence wire jingling, outdoors at night",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:06.683Z"
+      }
+    },
+    {
+      "category": "gate-motorized",
+      "group": "doors",
+      "variant": "v1",
+      "prompt": "motorized security sliding gate opening, electric motor hum, steel wheels rolling on track, ends with a clunk",
+      "duration": 8,
+      "influence": 0.5,
+      "loop": false,
+      "file": "sfx/gate-motorized/v1.mp3",
+      "bytes": 64617,
+      "cost": 80,
+      "generatedAt": "2026-10-18T02:24:25.089Z",
+      "qa": {
+        "description": "A metal overhead roller shutter or corrugated door rolls open or closed along vertical tracks with prominent rhythmic squeaks and rattles, ending with a metallic clunk.",
+        "score": 3,
+        "issues": "Sounds like a squeaky vertical roller shutter rather than a horizontal gate rolling on a ground track, and it lacks a distinct electric motor hum.",
+        "intent": "a motorized steel security sliding gate rolling along its ground track, electric motor hum, ends with a stop clunk, outdoors",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:07.405Z"
+      }
+    },
+    {
+      "category": "gate-motorized",
+      "group": "doors",
+      "variant": "v2",
+      "prompt": "industrial chain-driven sliding gate moving along a rail, grinding rollers, outdoors",
+      "duration": 8,
+      "influence": 0.4,
+      "loop": false,
+      "file": "sfx/gate-motorized/v2.mp3",
+      "bytes": 64617,
+      "cost": 80,
+      "generatedAt": "2026-10-18T02:24:25.215Z",
+      "qa": {
+        "description": "A close-up recording of a heavy metal rolling shutter or chain-driven industrial gate rattling along a track, ending with a heavy metallic latching thud.",
+        "score": 3,
+        "issues": "Sounds like a manual or chain-driven vertical roll-up shutter rather than a horizontal sliding gate; lacks the steady hum/whine of an electric motor and has a fairly dry, indoor acoustic profile.",
+        "intent": "a motorized steel security sliding gate rolling along its ground track, electric motor hum, ends with a stop clunk, outdoors",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:07.771Z"
+      }
+    },
+    {
+      "category": "gate-motorized",
+      "group": "doors",
+      "variant": "v3",
+      "prompt": "old electric gate motor starting with a relay click, rumbling slide, stopping clunk",
+      "duration": 6,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/gate-motorized/v3.mp3",
+      "bytes": 48526,
+      "cost": 60,
+      "generatedAt": "2026-10-18T02:24:25.415Z",
+      "qa": {
+        "description": "A close-perspective, steady electric motor hum with gear whine that runs continuously and cuts off abruptly without any final impact, lacking any outdoor reverberation or environmental ambience.",
+        "score": 2,
+        "issues": "Missing the heavy rumbling friction of steel wheels rolling on a ground track, completely lacks an ending stop clunk, and sounds like a small indoor appliance or toy motor rather than a heavy industrial security gate outdoors.",
+        "intent": "a motorized steel security sliding gate rolling along its ground track, electric motor hum, ends with a stop clunk, outdoors",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:09.006Z"
+      }
+    },
+    {
+      "category": "lift-motor",
+      "group": "lift",
+      "variant": "v1",
+      "prompt": "old elevator traveling, low electric motor hum and gentle cabin rumble, inside the car",
+      "duration": 10,
+      "influence": 0.5,
+      "loop": true,
+      "file": "sfx/lift-motor/v1.mp3",
+      "bytes": 80500,
+      "cost": 100,
+      "generatedAt": "2026-10-18T02:24:27.769Z",
+      "qa": {
+        "description": "A mechanical sequence featuring a metallic clunk, a rising electric motor whine, and an abrupt mechanical latch and deceleration within a close, resonant space.",
+        "score": 2,
+        "issues": "Not steady or loopable; captures a brief machine startup and stop cycle with pronounced pitch shifts and impacts rather than a continuous travel hum and rumble.",
+        "intent": "inside an old elevator car while it travels: steady electric motor hum and gentle cabin rumble, loopable",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:12.833Z"
+      }
+    },
+    {
+      "category": "lift-motor",
+      "group": "lift",
+      "variant": "v2",
+      "prompt": "freight elevator moving between floors, motor drone, rattling cabin, steady",
+      "duration": 10,
+      "influence": 0.4,
+      "loop": true,
+      "file": "sfx/lift-motor/v2.mp3",
+      "bytes": 80500,
+      "cost": 100,
+      "generatedAt": "2026-10-18T02:24:27.852Z",
+      "qa": {
+        "description": "A close-up recording of a small running motor or mechanical apparatus, featuring a background hum overlaid with prominent, repetitive rhythmic metallic clicking and knocking cycles.",
+        "score": 2,
+        "issues": "Features loud, rhythmic mechanical clatter and tapping instead of a smooth elevator travel rumble and steady motor hum; does not convey an elevator car interior.",
+        "intent": "inside an old elevator car while it travels: steady electric motor hum and gentle cabin rumble, loopable",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:11.712Z"
+      }
+    },
+    {
+      "category": "lift-motor",
+      "group": "lift",
+      "variant": "v3",
+      "prompt": "1980s elevator machine room, hoist motor running, deep hum and relay clicks",
+      "duration": 10,
+      "influence": 0.55,
+      "loop": true,
+      "file": "sfx/lift-motor/v3.mp3",
+      "bytes": 80500,
+      "cost": 100,
+      "generatedAt": "2026-10-18T02:24:28.031Z",
+      "qa": {
+        "description": "A steady, high-pitched electrical transformer or motor hum accompanied by a dry, rhythmic mechanical double-click repeating every 1.3 seconds.",
+        "score": 3,
+        "issues": "Lacks the low-end rumble and muffled acoustics of an enclosed elevator cabin; the repetitive, dry mechanical clicking sounds more like a projector or stepping relay than carriage movement.",
+        "intent": "inside an old elevator car while it travels: steady electric motor hum and gentle cabin rumble, loopable",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:13.699Z"
+      }
+    },
+    {
+      "category": "lift-cable",
+      "group": "lift",
+      "variant": "v1",
+      "prompt": "elevator cables creaking and groaning in the shaft, metal tension stress sounds",
+      "duration": 6,
+      "influence": 0.5,
+      "loop": false,
+      "file": "sfx/lift-cable/v1.mp3",
+      "bytes": 48526,
+      "cost": 60,
+      "generatedAt": "2026-10-18T02:24:29.880Z",
+      "qa": {
+        "description": "A close-up recording of a rusty metal door or gate hinge squealing sharply as it swings open, ending with a minor metallic click. There is almost no spatial resonance, low-end weight, or continuous mechanical motion.",
+        "score": 2,
+        "issues": "Sounds like a small swinging hinge rather than heavy steel cables stretching or pulleys rotating under tension; completely lacks the cavernous acoustic reverb of an elevator shaft.",
+        "intent": "steel elevator cables and pulleys creaking and groaning under tension inside an elevator shaft",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:12.458Z"
+      }
+    },
+    {
+      "category": "lift-cable",
+      "group": "lift",
+      "variant": "v2",
+      "prompt": "slow creaking steel cable and pulley, elevator shaft, eerie",
+      "duration": 6,
+      "influence": 0.35,
+      "loop": false,
+      "file": "sfx/lift-cable/v2.mp3",
+      "bytes": 48526,
+      "cost": 60,
+      "generatedAt": "2026-10-18T02:24:29.555Z",
+      "qa": {
+        "description": "A close-up, dry recording of a small unlubricated pulley or hand crank rapidly rotating with rhythmic high-pitched squeaks and subtle mechanical clicks.",
+        "score": 2,
+        "issues": "Sounds like a small, lightweight hand crank or clothesline wheel rather than heavy elevator cables under tension; lacks low-frequency groans, cable strain, and shaft acoustics.",
+        "intent": "steel elevator cables and pulleys creaking and groaning under tension inside an elevator shaft",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:13.143Z"
+      }
+    },
+    {
+      "category": "lift-cable",
+      "group": "lift",
+      "variant": "v3",
+      "prompt": "old elevator car swaying slightly, cable creak and metal tick",
+      "duration": 5,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/lift-cable/v3.mp3",
+      "bytes": 40585,
+      "cost": 50,
+      "generatedAt": "2026-10-18T02:24:29.226Z",
+      "qa": {
+        "description": "A close, dry recording of a small squeaky metal door or cabinet hinge slowly creaking back and forth in an ordinary interior room.",
+        "score": 2,
+        "issues": "Sounds like a small door hinge rather than massive steel cables; completely lacks the heavy mechanical weight, cable tension groans, and reverberant acoustics of an elevator shaft.",
+        "intent": "steel elevator cables and pulleys creaking and groaning under tension inside an elevator shaft",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:12.926Z"
+      }
+    },
+    {
+      "category": "lift-ding",
+      "group": "lift",
+      "variant": "v1",
+      "prompt": "single 1980s elevator arrival bell ding, mechanical chime",
+      "duration": 2,
+      "influence": 0.65,
+      "loop": false,
+      "file": "sfx/lift-ding/v1.mp3",
+      "bytes": 16552,
+      "cost": 20,
+      "generatedAt": "2026-10-18T02:24:30.822Z",
+      "qa": {
+        "description": "A single, bright strike of a metallic dome bell (resembling a desk call bell or mechanical chime) ringing out with a clear, sustained resonant decay in a quiet room.",
+        "score": 4,
+        "issues": "Slightly resembles a handheld or counter service bell more than an authentic wall-mounted elevator chime, though very close in tone.",
+        "intent": "a single mechanical elevator arrival bell ding from an 1980s office building elevator",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:16.276Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "lift-ding",
+      "group": "lift",
+      "variant": "v2",
+      "prompt": "old elevator arrival chime, two-tone electronic bing, office building",
+      "duration": 2,
+      "influence": 0.5,
+      "loop": false,
+      "file": "sfx/lift-ding/v2.mp3",
+      "bytes": 16552,
+      "cost": 20,
+      "generatedAt": "2026-10-18T02:24:30.658Z",
+      "qa": {
+        "description": "A single, high-pitched metallic strike resembling a service bell or chime bar, followed by a bright, clean, and moderately reverberant resonant decay.",
+        "score": 4,
+        "issues": "Pitch is somewhat high and thin, leaning slightly toward a desk service bell or triangle rather than a resonant 1980s solenoid chime bar.",
+        "intent": "a single mechanical elevator arrival bell ding from an 1980s office building elevator",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:17.905Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "lift-ding",
+      "group": "lift",
+      "variant": "v3",
+      "prompt": "vintage elevator floor bell, single soft ding with slight ring-out",
+      "duration": 2,
+      "influence": 0.4,
+      "loop": false,
+      "file": "sfx/lift-ding/v3.mp3",
+      "bytes": 16552,
+      "cost": 20,
+      "generatedAt": "2026-10-18T02:24:31.057Z",
+      "qa": {
+        "description": "A single crisp, high-pitched tap on a small metal service desk call bell, recorded close with a bright metallic transient and a clean, resonant decay.",
+        "score": 3,
+        "issues": "Sounds distinctly like a tabletop counter bell rather than a mechanical elevator chime; lacks the body, tone, and hallway acoustic space expected of an elevator arrival.",
+        "intent": "a single mechanical elevator arrival bell ding from an 1980s office building elevator",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:17.949Z"
+      }
+    },
+    {
+      "category": "lift-stall",
+      "group": "lift",
+      "variant": "v1",
+      "prompt": "elevator suddenly stopping between floors, heavy mechanical clunk, motor winding down, lights buzzing",
+      "duration": 4,
+      "influence": 0.5,
+      "loop": false,
+      "file": "sfx/lift-stall/v1.mp3",
+      "bytes": 32643,
+      "cost": 40,
+      "generatedAt": "2026-10-18T02:24:31.884Z",
+      "qa": {
+        "description": "A heavy, resonant metallic slam and shudder with cable rattle reverberating in a deep, hollow shaft, decaying into a low mechanical hum.",
+        "score": 4,
+        "issues": "Lacks a distinct, audible motor pitch winding down; the tail is mostly impact reverberation and low-end resonance.",
+        "intent": "an elevator car stopping suddenly between floors: heavy mechanical clunk/jolt, motor winding down",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:18.703Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "lift-stall",
+      "group": "lift",
+      "variant": "v2",
+      "prompt": "elevator jolt and stall, loud brake clamp thud and cable twang",
+      "duration": 3,
+      "influence": 0.4,
+      "loop": false,
+      "file": "sfx/lift-stall/v2.mp3",
+      "bytes": 24493,
+      "cost": 30,
+      "generatedAt": "2026-10-18T02:24:32.088Z",
+      "qa": {
+        "description": "A single loud, reverberant wooden door or cabinet slam with a hollow resonance and latch rattle, recorded in a medium room.",
+        "score": 2,
+        "issues": "This is a wooden door slamming, completely lacking the heavy metallic clunk, cable tension, and winding-down motor required for an elevator halting.",
+        "intent": "an elevator car stopping suddenly between floors: heavy mechanical clunk/jolt, motor winding down",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:17.236Z"
+      }
+    },
+    {
+      "category": "lift-stall",
+      "group": "lift",
+      "variant": "v3",
+      "prompt": "old lift shuddering to a halt, metal grinding then silence",
+      "duration": 4,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/lift-stall/v3.mp3",
+      "bytes": 32643,
+      "cost": 40,
+      "generatedAt": "2026-10-18T02:24:32.297Z",
+      "qa": {
+        "description": "A close-up recording of a squeaky mechanical latch or bolt engaging twice with sharp, hollow metallic clangs and reverberant thuds, without any continuous motor hum or mechanical drive sound.",
+        "score": 2,
+        "issues": "Completely lacks a motor winding down or ambient elevator hum; sounds like a manual gate latch or lock mechanism engaging rather than an elevator car jolting to an abrupt halt.",
+        "intent": "an elevator car stopping suddenly between floors: heavy mechanical clunk/jolt, motor winding down",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:19.381Z"
+      }
+    },
+    {
+      "category": "lift-scissor-gate",
+      "group": "lift",
+      "variant": "v1",
+      "prompt": "old freight elevator collapsible scissor gate being pulled shut, metal lattice clatter and latch",
+      "duration": 3,
+      "influence": 0.55,
+      "loop": false,
+      "file": "sfx/lift-scissor-gate/v1.mp3",
+      "bytes": 24493,
+      "cost": 30,
+      "generatedAt": "2026-10-18T02:24:33.035Z",
+      "qa": {
+        "description": "A dry, close-up recording of a rusty metal mechanism with a sharp, high-pitched frictional metal screech followed immediately by a rapid rattling, sliding clatter of metal bars or lattice links.",
+        "score": 4,
+        "issues": "The initial high-pitched friction squeak resembles a swinging rusty hinge slightly more than a pure track slide, but the following lattice rattle fits the accordion gate motion well.",
+        "intent": "an old freight elevator's collapsible steel scissor/accordion gate being pulled open or shut, rattling metal lattice and latch",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:21.281Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "lift-scissor-gate",
+      "group": "lift",
+      "variant": "v2",
+      "prompt": "accordion steel elevator gate opening, rattling metal folding gate",
+      "duration": 3,
+      "influence": 0.4,
+      "loop": false,
+      "file": "sfx/lift-scissor-gate/v2.mp3",
+      "bytes": 24493,
+      "cost": 30,
+      "generatedAt": "2026-10-18T02:24:33.401Z",
+      "qa": {
+        "description": "A close-up, dry sound of a single metal bolt or sliding latch mechanism being smoothly pulled back or pushed into place with a crisp mechanical clink, lasting about one second.",
+        "score": 2,
+        "issues": "Completely lacks the characteristic rhythmic rattling, squeaking, and prolonged movement of a collapsible accordion metal lattice gate sliding on tracks; it only sounds like a small deadbolt or latch mechanism.",
+        "intent": "an old freight elevator's collapsible steel scissor/accordion gate being pulled open or shut, rattling metal lattice and latch",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:21.986Z"
+      }
+    },
+    {
+      "category": "lift-scissor-gate",
+      "group": "lift",
+      "variant": "v3",
+      "prompt": "scissor gate slammed closed, metallic crash and rattle, freight elevator",
+      "duration": 2.5,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/lift-scissor-gate/v3.mp3",
+      "bytes": 20314,
+      "cost": 25,
+      "generatedAt": "2026-10-18T02:24:33.533Z",
+      "qa": {
+        "description": "A close-up, sharp mechanical metal racking sound consisting of a quick slide and a solid lockup click, strongly resembling a firearm slide or pump action being cycled in a dry room.",
+        "score": 2,
+        "issues": "Sounds like cycling a gun bolt or racking a slide; it lacks the extended duration, rolling wheel friction, and sprawling multijointed lattice chatter of a collapsible elevator accordion gate.",
+        "intent": "an old freight elevator's collapsible steel scissor/accordion gate being pulled open or shut, rattling metal lattice and latch",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:22.529Z"
+      }
+    },
+    {
+      "category": "light-fluoro-hum",
+      "group": "lights",
+      "variant": "v1",
+      "prompt": "fluorescent tube light hum, 60 hertz electrical buzz, quiet room tone",
+      "duration": 10,
+      "influence": 0.6,
+      "loop": true,
+      "file": "sfx/light-fluoro-hum/v1.mp3",
+      "bytes": 80500,
+      "cost": 100,
+      "generatedAt": "2026-10-18T02:24:35.728Z",
+      "qa": {
+        "description": "A continuous, flat broadband hiss and sizzle with faint crackles, resembling high-frequency radio static, steam leaking, or a fine water spray rather than an interior electrical fixture.",
+        "score": 2,
+        "issues": "Completely lacks the characteristic 50/60 Hz mains hum and metallic ballast buzz of fluorescent tube lights; sounds like generic white noise or static.",
+        "intent": "steady electrical hum/buzz of overhead fluorescent tube lights in a quiet room, loopable",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:23.682Z"
+      }
+    },
+    {
+      "category": "light-fluoro-hum",
+      "group": "lights",
+      "variant": "v2",
+      "prompt": "buzzing overhead fluorescent lights in an empty office at night, steady electrical hum",
+      "duration": 10,
+      "influence": 0.45,
+      "loop": true,
+      "file": "sfx/light-fluoro-hum/v2.mp3",
+      "bytes": 80500,
+      "cost": 100,
+      "generatedAt": "2026-10-18T02:24:35.920Z",
+      "qa": {
+        "description": "A steady, low-frequency mechanical drone and rumbling hum with rhythmic motor-like throbbing, resembling an idling compressor or pump rather than electrical discharge.",
+        "score": 2,
+        "issues": "Sounds like heavy mechanical equipment or refrigeration compressor idling; lacks the distinct higher-frequency electrical buzz and metallic ballast rattle of fluorescent lights.",
+        "intent": "steady electrical hum/buzz of overhead fluorescent tube lights in a quiet room, loopable",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:23.235Z"
+      }
+    },
+    {
+      "category": "light-fluoro-hum",
+      "group": "lights",
+      "variant": "v3",
+      "prompt": "old fluorescent ballast drone with faint high-pitched whine",
+      "duration": 10,
+      "influence": 0.35,
+      "loop": true,
+      "file": "sfx/light-fluoro-hum/v3.mp3",
+      "bytes": 80500,
+      "cost": 100,
+      "generatedAt": "2026-10-18T02:24:36.098Z",
+      "qa": {
+        "description": "A continuous, harsh, high-pitched electrical buzz and whine with prominent upper-mid and high frequencies, lacking low-end body or noticeable room acoustic resonance.",
+        "score": 3,
+        "issues": "Too sharp, bright, and abrasive compared to the warm, low-frequency 60Hz/120Hz hum and rattle of a standard fluorescent light ballast; sounds more like aggressive coil whine or high-voltage buzzing.",
+        "intent": "steady electrical hum/buzz of overhead fluorescent tube lights in a quiet room, loopable",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:23.975Z"
+      }
+    },
+    {
+      "category": "light-fluoro-flicker",
+      "group": "lights",
+      "variant": "v1",
+      "prompt": "fluorescent tube light flickering on, starter ticking and buzzing, then steady hum",
+      "duration": 4,
+      "influence": 0.55,
+      "loop": false,
+      "file": "sfx/light-fluoro-flicker/v1.mp3",
+      "bytes": 32643,
+      "cost": 40,
+      "generatedAt": "2026-10-18T02:24:37.175Z",
+      "qa": {
+        "description": "A dry, close-up recording of an old fluorescent light fixture starting up, featuring rhythmic mechanical starter clicks, sharp electrical arcing buzzes with hollow resonant pings, and settling into a continuous electrical ballast hum.",
+        "score": 5,
+        "issues": "none",
+        "intent": "a fluorescent tube light flickering on: starter ticking, buzzing pings, then steady hum",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:26.417Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "light-fluoro-flicker",
+      "group": "lights",
+      "variant": "v2",
+      "prompt": "faulty fluorescent light flickering, irregular electrical buzzing and pinging",
+      "duration": 5,
+      "influence": 0.4,
+      "loop": false,
+      "file": "sfx/light-fluoro-flicker/v2.mp3",
+      "bytes": 40585,
+      "cost": 50,
+      "generatedAt": "2026-10-18T02:24:37.340Z",
+      "qa": {
+        "description": "A close, dry recording of a rapid mechanical clicking and rhythmic ratchet friction, resembling a hand-cranked winding mechanism, tape counter, or gear ticking.",
+        "score": 1,
+        "issues": "Completely lacks electrical buzzing, starter zap pings, and a steady tube hum; it sounds purely like a mechanical winding or ratchet device.",
+        "intent": "a fluorescent tube light flickering on: starter ticking, buzzing pings, then steady hum",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:27.434Z"
+      }
+    },
+    {
+      "category": "light-fluoro-flicker",
+      "group": "lights",
+      "variant": "v3",
+      "prompt": "fluorescent starter clicking repeatedly, tube struggling to light",
+      "duration": 4,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/light-fluoro-flicker/v3.mp3",
+      "bytes": 32643,
+      "cost": 40,
+      "generatedAt": "2026-10-18T02:24:37.846Z",
+      "qa": {
+        "description": "A close-to-medium indoor recording of a fluorescent light starter rapidly clicking, followed by an electrical arc buzz and settling into a steady 50/60 Hz ballast hum.",
+        "score": 5,
+        "issues": "none",
+        "intent": "a fluorescent tube light flickering on: starter ticking, buzzing pings, then steady hum",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:26.031Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "light-sodium-buzz",
+      "group": "lights",
+      "variant": "v1",
+      "prompt": "outdoor sodium vapor street lamp electrical buzz, night, faint insects, distant",
+      "duration": 10,
+      "influence": 0.5,
+      "loop": true,
+      "file": "sfx/light-sodium-buzz/v1.mp3",
+      "bytes": 80500,
+      "cost": 100,
+      "generatedAt": "2026-10-18T02:24:39.677Z",
+      "qa": {
+        "description": "A continuous, high-pitched abrasive mechanical whine and drone resembling a small high-speed electric motor, dental drill, or vacuum.",
+        "score": 2,
+        "issues": "Lacks the characteristic 60/120 Hz resonant ballast hum of a high-pressure sodium lamp, sounding far too shrill, harsh, and resembling small motorized power tools rather than an overhead outdoor fixture.",
+        "intent": "outdoor high-pressure sodium street/parking lamp humming overhead at night, steady electrical buzz, loopable",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:28.485Z"
+      }
+    },
+    {
+      "category": "light-sodium-buzz",
+      "group": "lights",
+      "variant": "v2",
+      "prompt": "parking lot light buzzing overhead, high voltage hum, quiet night",
+      "duration": 10,
+      "influence": 0.4,
+      "loop": true,
+      "file": "sfx/light-sodium-buzz/v2.mp3",
+      "bytes": 80500,
+      "cost": 100,
+      "generatedAt": "2026-10-18T02:24:39.962Z",
+      "qa": {
+        "description": "A continuous, loud, broadband hiss resembling high-pressure steam escaping a valve or a steady aerosol/water spray, with no noticeable room resonance or electrical hum.",
+        "score": 1,
+        "issues": "This is a pressurized gas or steam hiss rather than an electrical ballast buzz; it lacks any 50/60Hz mains hum, buzzing harmonics, or metallic resonance of a streetlamp.",
+        "intent": "outdoor high-pressure sodium street/parking lamp humming overhead at night, steady electrical buzz, loopable",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:28.715Z"
+      }
+    },
+    {
+      "category": "light-sodium-buzz",
+      "group": "lights",
+      "variant": "v3",
+      "prompt": "close-up humming streetlight ballast, low electrical drone",
+      "duration": 10,
+      "influence": 0.6,
+      "loop": true,
+      "file": "sfx/light-sodium-buzz/v3.mp3",
+      "bytes": 80500,
+      "cost": 100,
+      "generatedAt": "2026-10-18T02:24:40.411Z",
+      "qa": {
+        "description": "A continuous, buzzy electrical hum with prominent 50/60 Hz harmonics layered with a rapid, repetitive raspy clicking or discharge chatter at a close, dry perspective.",
+        "score": 4,
+        "issues": "Recorded quite close and dry with noticeable high-frequency raspy chatter, requiring some low-pass filtering and outdoor spatialization/reverb to sit convincingly overhead.",
+        "intent": "outdoor high-pressure sodium street/parking lamp humming overhead at night, steady electrical buzz, loopable",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:30.880Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "light-switch",
+      "group": "lights",
+      "variant": "v1",
+      "prompt": "single wall light switch flipped on, plastic toggle click",
+      "duration": 1,
+      "influence": 0.65,
+      "loop": false,
+      "file": "sfx/light-switch/v1.mp3",
+      "bytes": 8611,
+      "cost": 10,
+      "generatedAt": "2026-10-18T02:24:00.944Z",
+      "qa": {
+        "description": "A dry, close-mic'd, sharp plastic click that sounds distinctly like a modern computer mouse click or a small tactile microswitch, lacking any room acoustic or internal cavity resonance.",
+        "score": 3,
+        "issues": "Too lightweight and thin; sounds like a mouse button rather than the chunky, spring-loaded mechanical 'clack' and faceplate resonance of a 1980s wall toggle switch.",
+        "intent": "a single 1980s plastic wall toggle light switch being flipped, one click",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:32.157Z"
+      }
+    },
+    {
+      "category": "light-switch",
+      "group": "lights",
+      "variant": "v2",
+      "prompt": "old 1980s light switch click off, hard plastic snap",
+      "duration": 1,
+      "influence": 0.5,
+      "loop": false,
+      "file": "sfx/light-switch/v2.mp3",
+      "bytes": 8611,
+      "cost": 10,
+      "generatedAt": "2026-10-18T02:24:40.618Z",
+      "qa": {
+        "description": "A close-up, dry recording of a mechanical snap featuring a sharp initial plastic click followed immediately by a resonant metallic spring catch.",
+        "score": 4,
+        "issues": "Has a slight metallic spring resonance and hollow body ring that sounds more like a heavy appliance or equipment toggle rather than a standard wall light switch, but easily usable.",
+        "intent": "a single 1980s plastic wall toggle light switch being flipped, one click",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:32.249Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "light-switch",
+      "group": "lights",
+      "variant": "v3",
+      "prompt": "light switch flicked on and off twice, close mic",
+      "duration": 2,
+      "influence": 0.5,
+      "loop": false,
+      "file": "sfx/light-switch/v3.mp3",
+      "bytes": 16552,
+      "cost": 20,
+      "generatedAt": "2026-10-18T02:24:41.607Z",
+      "qa": {
+        "description": "A close-up, dry, isolated click of a plastic wall switch or toggle snapping into place with a subtle mechanical spring release.",
+        "score": 5,
+        "issues": "none",
+        "intent": "a single 1980s plastic wall toggle light switch being flipped, one click",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:31.615Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "light-breaker",
+      "group": "lights",
+      "variant": "v1",
+      "prompt": "heavy electrical breaker lever thrown, loud mechanical thunk, power hum starts",
+      "duration": 3,
+      "influence": 0.5,
+      "loop": false,
+      "file": "sfx/light-breaker/v1.mp3",
+      "bytes": 24493,
+      "cost": 30,
+      "generatedAt": "2026-10-18T02:24:41.986Z",
+      "qa": {
+        "description": "A close-perspective metallic impact and clatter, sounding like a sheet-metal lid, hatch, or locker door slamming shut with hollow resonant ringing.",
+        "score": 3,
+        "issues": "Lacks the distinct spring-loaded snap and mechanical latching click of an electrical breaker or knife switch; sounds like an impact or slamming metal lid.",
+        "intent": "a real 1980s commercial electrical panel breaker or knife switch being thrown by hand: heavy spring-loaded snap with metal panel resonance",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:32.619Z"
+      }
+    },
+    {
+      "category": "light-breaker",
+      "group": "lights",
+      "variant": "v2",
+      "prompt": "circuit breaker panel switch flipped, metal clunk, electrical surge",
+      "duration": 2.5,
+      "influence": 0.4,
+      "loop": false,
+      "file": "sfx/light-breaker/v2.mp3",
+      "bytes": 20314,
+      "cost": 25,
+      "generatedAt": "2026-10-18T02:24:41.800Z",
+      "qa": {
+        "description": "A close-up, dry recording of a lightweight domestic light switch or small plastic rocker switch being flipped twice, with a hollow plastic snap and no room reverberation.",
+        "score": 3,
+        "issues": "Completely lacks the heavy industrial mass, aggressive spring-loaded snap, and deep metallic resonance of a commercial panel breaker or knife switch; sounds like a small household light switch.",
+        "intent": "a real 1980s commercial electrical panel breaker or knife switch being thrown by hand: heavy spring-loaded snap with metal panel resonance",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:35.307Z"
+      }
+    },
+    {
+      "category": "light-breaker",
+      "group": "lights",
+      "variant": "v3",
+      "prompt": "industrial knife switch pulled, power shuts off with descending hum",
+      "duration": 3,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/light-breaker/v3.mp3",
+      "bytes": 24493,
+      "cost": 30,
+      "generatedAt": "2026-10-18T02:24:43.121Z",
+      "qa": {
+        "description": "A close-up, heavy mechanical snap and metallic thunk followed by the ringing resonance of a hollow metal chassis or panel enclosure.",
+        "score": 5,
+        "issues": "none",
+        "intent": "a real 1980s commercial electrical panel breaker or knife switch being thrown by hand: heavy spring-loaded snap with metal panel resonance",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:35.930Z"
+      },
+      "status": "locked"
+    },
+    {
+      "category": "amb-forest-night",
+      "group": "ambience",
+      "variant": "v1",
+      "prompt": "night pine forest ambience, distant wind through pine trees, quiet crickets, cold and still",
+      "duration": 22,
+      "influence": 0.4,
+      "loop": true,
+      "file": "sfx/amb-forest-night/v1.mp3",
+      "bytes": 176630,
+      "cost": 220,
+      "generatedAt": "2026-10-18T02:24:45.729Z",
+      "qa": {
+        "description": "A very quiet, natural outdoor stereo recording of a gentle, cold breeze softly moving through distant tree canopies, with subtle high-frequency air rustle and low-frequency rumble.",
+        "score": 5,
+        "issues": "none",
+        "intent": "quiet night pine forest ambience with distant wind in the trees, sparse and cold, no music, loopable",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:35.832Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "amb-forest-night",
+      "group": "ambience",
+      "variant": "v2",
+      "prompt": "foggy night in a pine forest, soft wind gusts in the treetops, very sparse distant owl",
+      "duration": 22,
+      "influence": 0.35,
+      "loop": true,
+      "file": "sfx/amb-forest-night/v2.mp3",
+      "bytes": 176630,
+      "cost": 220,
+      "generatedAt": "2026-10-18T02:24:46.015Z",
+      "qa": {
+        "description": "Continuous stereo field recording of a cold breeze blowing steadily through tree canopies, featuring low-frequency wind rumble and soft, rustling foliage with no birds or intrusive foreground sounds.",
+        "score": 5,
+        "issues": "none",
+        "intent": "quiet night pine forest ambience with distant wind in the trees, sparse and cold, no music, loopable",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:35.809Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "amb-forest-night",
+      "group": "ambience",
+      "variant": "v3",
+      "prompt": "still night forest ambience, faint breeze, dripping water from branches, no animals",
+      "duration": 22,
+      "influence": 0.5,
+      "loop": true,
+      "file": "sfx/amb-forest-night/v3.mp3",
+      "bytes": 176630,
+      "cost": 220,
+      "generatedAt": "2026-10-18T02:24:47.261Z",
+      "qa": {
+        "description": "A dense, continuous background recording of loud crickets and night insects chirping steadily in an open outdoor setting with faint low-end air rumble.",
+        "score": 2,
+        "issues": "Dominated by loud summer insect/cricket chirping rather than cold, sparse wind through pines; evokes a warm summer evening instead of a cold, quiet forest.",
+        "intent": "quiet night pine forest ambience with distant wind in the trees, sparse and cold, no music, loopable",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:37.110Z"
+      }
+    },
+    {
+      "category": "amb-rain-asphalt",
+      "group": "ambience",
+      "variant": "v1",
+      "prompt": "light rain drizzle on asphalt parking lot at night, gentle steady patter, puddles",
+      "duration": 20,
+      "influence": 0.5,
+      "loop": true,
+      "file": "sfx/amb-rain-asphalt/v1.mp3",
+      "bytes": 160539,
+      "cost": 200,
+      "generatedAt": "2026-10-18T02:24:49.643Z",
+      "qa": {
+        "description": "A continuous, gentle outdoor rainfall soundscape with a steady bed of high-frequency drizzle and soft drop impacts across a wide stereo field.",
+        "score": 4,
+        "issues": "Lacks the distinct hard, sharp splatter and shallow puddle plinks of water hitting bare asphalt, sounding slightly more like rain falling on surrounding foliage and general ground.",
+        "intent": "light rain drizzle falling on an asphalt parking lot at night, steady gentle patter, loopable",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:38.704Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "amb-rain-asphalt",
+      "group": "ambience",
+      "variant": "v2",
+      "prompt": "soft drizzle falling on wet road and car roofs, distant gutter drip",
+      "duration": 20,
+      "influence": 0.4,
+      "loop": true,
+      "file": "sfx/amb-rain-asphalt/v2.mp3",
+      "bytes": 160539,
+      "cost": 200,
+      "generatedAt": "2026-10-18T02:24:49.913Z",
+      "qa": {
+        "description": "Slow, sparse individual water droplets falling intermittently onto a resonant, hollow surface or shallow pool in an enclosed quiet space with noticeable room hiss. The impacts are isolated and heavy rather than a continuous shower.",
+        "score": 2,
+        "issues": "This is a slow, sparse indoor or gutter drip rather than a steady light rain drizzle, and the surface impact sounds hollow/metallic rather than asphalt.",
+        "intent": "light rain drizzle falling on an asphalt parking lot at night, steady gentle patter, loopable",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:39.287Z"
+      }
+    },
+    {
+      "category": "amb-rain-asphalt",
+      "group": "ambience",
+      "variant": "v3",
+      "prompt": "misty light rain, quiet hiss on pavement, no thunder",
+      "duration": 20,
+      "influence": 0.6,
+      "loop": true,
+      "file": "sfx/amb-rain-asphalt/v3.mp3",
+      "bytes": 160539,
+      "cost": 200,
+      "generatedAt": "2026-10-18T02:24:51.272Z",
+      "qa": {
+        "description": "A continuous, steady wash of light rainfall or drizzle ambience with faint droplet textures over a broad high-frequency hiss and low ambient room tone.",
+        "score": 4,
+        "issues": "Lacks distinct, defined droplet impacts characteristic of hard asphalt; sounds slightly diffuse and wash-like rather than close patter.",
+        "intent": "light rain drizzle falling on an asphalt parking lot at night, steady gentle patter, loopable",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:41.703Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "amb-hvac",
+      "group": "ambience",
+      "variant": "v1",
+      "prompt": "building HVAC air handler rumble, low steady ventilation drone through ducts",
+      "duration": 20,
+      "influence": 0.5,
+      "loop": true,
+      "file": "sfx/amb-hvac/v1.mp3",
+      "bytes": 160539,
+      "cost": 200,
+      "generatedAt": "2026-10-18T02:24:53.607Z",
+      "qa": {
+        "description": "A continuous low-frequency mechanical drone with subtle rhythmic modulation and resonant airflow hum, recorded in an enclosed space with no transient spikes or extraneous noise.",
+        "score": 5,
+        "issues": "none",
+        "intent": "large building HVAC: low steady ventilation rumble and air through ducts, loopable",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:39.034Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "amb-hvac",
+      "group": "ambience",
+      "variant": "v2",
+      "prompt": "large building ventilation system at night, air rushing through vents, deep hum",
+      "duration": 20,
+      "influence": 0.4,
+      "loop": true,
+      "file": "sfx/amb-hvac/v2.mp3",
+      "bytes": 160539,
+      "cost": 200,
+      "generatedAt": "2026-10-18T02:24:53.741Z",
+      "qa": {
+        "description": "A continuous, steady mechanical room tone featuring a low-frequency motor hum blended with smooth, broadband air hiss through ventilation ducting.",
+        "score": 5,
+        "issues": "none",
+        "intent": "large building HVAC: low steady ventilation rumble and air through ducts, loopable",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:39.839Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "amb-hvac",
+      "group": "ambience",
+      "variant": "v3",
+      "prompt": "old air conditioning unit humming in the ceiling with occasional duct tick",
+      "duration": 20,
+      "influence": 0.6,
+      "loop": true,
+      "file": "sfx/amb-hvac/v3.mp3",
+      "bytes": 160539,
+      "cost": 200,
+      "generatedAt": "2026-10-18T02:24:55.121Z",
+      "qa": {
+        "description": "A continuous, low-frequency mechanical rumble accompanied by a steady, diffuse rushing of forced air through metal ducts, recorded in a dry, enclosed interior perspective.",
+        "score": 5,
+        "issues": "none",
+        "intent": "large building HVAC: low steady ventilation rumble and air through ducts, loopable",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:40.582Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "amb-corridor-tone",
+      "group": "ambience",
+      "variant": "v1",
+      "prompt": "empty institutional corridor room tone at night, very quiet, faint distant electrical hum",
+      "duration": 20,
+      "influence": 0.5,
+      "loop": true,
+      "file": "sfx/amb-corridor-tone/v1.mp3",
+      "bytes": 160539,
+      "cost": 200,
+      "generatedAt": "2026-10-18T02:24:57.376Z",
+      "qa": {
+        "description": "A quiet, continuous interior room tone consisting of faint broadband ventilation air hiss layered with a soft, steady low-frequency electrical hum.",
+        "score": 5,
+        "issues": "none",
+        "intent": "near-silent room tone of an empty tiled institutional corridor at night: faint air and distant electrical hum, loopable",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:44.154Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "amb-corridor-tone",
+      "group": "ambience",
+      "variant": "v2",
+      "prompt": "silent empty hallway ambience, subtle air movement and building settling",
+      "duration": 20,
+      "influence": 0.35,
+      "loop": true,
+      "file": "sfx/amb-corridor-tone/v2.mp3",
+      "bytes": 160539,
+      "cost": 200,
+      "generatedAt": "2026-10-18T02:24:57.521Z",
+      "qa": {
+        "description": "A very quiet, continuous interior room tone consisting of a low-frequency HVAC rumble and faint broadband air hiss with a subtle electrical presence.",
+        "score": 5,
+        "issues": "none",
+        "intent": "near-silent room tone of an empty tiled institutional corridor at night: faint air and distant electrical hum, loopable",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:44.019Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "amb-corridor-tone",
+      "group": "ambience",
+      "variant": "v3",
+      "prompt": "quiet tiled hallway room tone with faint far-away fluorescent buzz",
+      "duration": 20,
+      "influence": 0.6,
+      "loop": true,
+      "file": "sfx/amb-corridor-tone/v3.mp3",
+      "bytes": 160539,
+      "cost": 200,
+      "generatedAt": "2026-10-18T02:24:59.383Z",
+      "qa": {
+        "description": "A continuous, loud broadband rushing hiss resembling forced ventilation air blowing directly near the mic or high-pressure steam leaking, with a steady white-noise texture.",
+        "score": 2,
+        "issues": "Far too loud and prominent to be near-silent; lacks the spacious tiled reverberance of an institutional corridor and has no noticeable distant electrical hum.",
+        "intent": "near-silent room tone of an empty tiled institutional corridor at night: faint air and distant electrical hum, loopable",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:44.067Z"
+      }
+    },
+    {
+      "category": "amb-machine-room",
+      "group": "ambience",
+      "variant": "v1",
+      "prompt": "1980s mainframe computer room, reel-to-reel tape drives spinning and stopping, cooling fans, relay clicks",
+      "duration": 20,
+      "influence": 0.5,
+      "loop": true,
+      "file": "sfx/amb-machine-room/v1.mp3",
+      "bytes": 160539,
+      "cost": 200,
+      "generatedAt": "2026-10-18T02:25:01.481Z",
+      "qa": {
+        "description": "A continuous, steady roar of broadband rushing noise, resembling heavy HVAC ventilation, an industrial fan, or rushing water with no spatial reflections or movement.",
+        "score": 2,
+        "issues": "Completely lacks reel-to-reel tape spooling sounds and relay clicks; functions only as generic static fan or rushing water noise.",
+        "intent": "1980s mainframe computer room: cooling fan roar, reel-to-reel tape drives spinning and stopping, relay clicks, loopable",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:43.846Z"
+      }
+    },
+    {
+      "category": "amb-machine-room",
+      "group": "ambience",
+      "variant": "v2",
+      "prompt": "vintage computer machine room ambience, whirring tape reels, dot-matrix printer in the distance, fan noise",
+      "duration": 20,
+      "influence": 0.4,
+      "loop": true,
+      "file": "sfx/amb-machine-room/v2.mp3",
+      "bytes": 160539,
+      "cost": 200,
+      "generatedAt": "2026-10-18T02:25:01.450Z",
+      "qa": {
+        "description": "A continuous, harsh, high-pitched electronic whine and fast-spinning motor buzz with faint white noise hiss, captured at a close and static perspective.",
+        "score": 2,
+        "issues": "Lacks the low-end cooling fan roar, contains no reel-to-reel tape spooling/stopping, and has zero relay clicks; the shrill tonal drone sounds more like an electrical fault or small motor than a mainframe room ambience.",
+        "intent": "1980s mainframe computer room: cooling fan roar, reel-to-reel tape drives spinning and stopping, relay clicks, loopable",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:45.178Z"
+      }
+    },
+    {
+      "category": "amb-machine-room",
+      "group": "ambience",
+      "variant": "v3",
+      "prompt": "old data center 1984, steady equipment hum and fan roar, occasional disk drive seek",
+      "duration": 20,
+      "influence": 0.6,
+      "loop": true,
+      "file": "sfx/amb-machine-room/v3.mp3",
+      "bytes": 160539,
+      "cost": 200,
+      "generatedAt": "2026-10-18T02:25:03.208Z",
+      "qa": {
+        "description": "A continuous, static low-to-mid frequency HVAC air ventilation drone with steady rushing white noise and no dynamic events.",
+        "score": 2,
+        "issues": "Completely lacks reel-to-reel tape drive start/stops and relay clicks; it is merely generic HVAC/fan noise rather than an active 1980s mainframe room.",
+        "intent": "1980s mainframe computer room: cooling fan roar, reel-to-reel tape drives spinning and stopping, relay clicks, loopable",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:47.065Z"
+      }
+    },
+    {
+      "category": "amb-radio-static",
+      "group": "ambience",
+      "variant": "v1",
+      "prompt": "shortwave radio static and hiss, slowly drifting tuning noise",
+      "duration": 15,
+      "influence": 0.5,
+      "loop": true,
+      "file": "sfx/amb-radio-static/v1.mp3",
+      "bytes": 120624,
+      "cost": 150,
+      "generatedAt": "2026-10-18T02:25:05.659Z",
+      "qa": {
+        "description": "Shortwave analog radio static and heterodyne carrier whistles drifting across frequencies, interspersed with faint, intelligible English speech fragments from distant radio broadcasts.",
+        "score": 3,
+        "issues": "Contains distinct, recognizable vocal phrases ('distinguished', 'quite likely') that are distracting and prevent seamless looping.",
+        "intent": "analog radio receiver static and hiss with slow tuning drift, loopable",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:50.509Z"
+      }
+    },
+    {
+      "category": "amb-radio-static",
+      "group": "ambience",
+      "variant": "v2",
+      "prompt": "analog radio white noise with occasional crackle and faint distant tones",
+      "duration": 15,
+      "influence": 0.4,
+      "loop": true,
+      "file": "sfx/amb-radio-static/v2.mp3",
+      "bytes": 120624,
+      "cost": 150,
+      "generatedAt": "2026-10-18T02:25:05.621Z",
+      "qa": {
+        "description": "A continuous hollow whistling resonance overlaid on a muffled low-frequency rushing noise, resembling eerie wind blowing through an opening or an ambient synth drone.",
+        "score": 2,
+        "issues": "Lacks the crisp wideband hiss, electrical crackle, and heterodyne chirps of analog radio static; sounds like whistling wind or ambient horror drone rather than RF receiver noise.",
+        "intent": "analog radio receiver static and hiss with slow tuning drift, loopable",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:49.839Z"
+      }
+    },
+    {
+      "category": "amb-radio-static",
+      "group": "ambience",
+      "variant": "v3",
+      "prompt": "CB radio squelch and static, intermittent carrier hum",
+      "duration": 15,
+      "influence": 0.6,
+      "loop": true,
+      "file": "sfx/amb-radio-static/v3.mp3",
+      "bytes": 120624,
+      "cost": 150,
+      "generatedAt": "2026-10-18T02:25:06.359Z",
+      "qa": {
+        "description": "Continuous synthetic white noise with an automated, rhythmic bandpass filter sweep undulating up and down like an LFO synth patch or artificial wind simulator.",
+        "score": 2,
+        "issues": "Lacks the organic crackle, RF chatter, heterodyne whistles, and grit of real analog radio static; sounds like a cyclic synthesizer filter sweep rather than manual tuning drift.",
+        "intent": "analog radio receiver static and hiss with slow tuning drift, loopable",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:47.976Z"
+      }
+    },
+    {
+      "category": "int-flashlight",
+      "group": "interactions",
+      "variant": "v1",
+      "prompt": "metal flashlight button click on, single tactile click",
+      "duration": 1,
+      "influence": 0.65,
+      "loop": false,
+      "file": "sfx/int-flashlight/v1.mp3",
+      "bytes": 8611,
+      "cost": 10,
+      "generatedAt": "2026-10-18T02:25:06.732Z",
+      "qa": {
+        "description": "A close-up, sharp mechanical click of a tactile button or switch, producing a crisp transient snap and subtle hollow plastic resonance with dry acoustics.",
+        "score": 4,
+        "issues": "Slightly sharp and light, resembling a computer mouse or small appliance button rather than the heavier, duller mechanical clunk of a vintage 1980s flashlight switch.",
+        "intent": "a handheld flashlight's switch being clicked, a single tactile click",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:50.960Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "int-flashlight",
+      "group": "interactions",
+      "variant": "v2",
+      "prompt": "old flashlight switch clicked on then off, plastic click",
+      "duration": 1.5,
+      "influence": 0.5,
+      "loop": false,
+      "file": "sfx/int-flashlight/v2.mp3",
+      "bytes": 12372,
+      "cost": 15,
+      "generatedAt": "2026-10-18T02:25:06.950Z",
+      "qa": {
+        "description": "A close-up, dry sound of a human tongue click or mouth pop, followed shortly after by a faint secondary saliva/tap sound.",
+        "score": 2,
+        "issues": "Sounds like an organic mouth/tongue click rather than a mechanical plastic or metal switch click with tactile spring resistance.",
+        "intent": "a handheld flashlight's switch being clicked, a single tactile click",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:49.769Z"
+      }
+    },
+    {
+      "category": "int-flashlight",
+      "group": "interactions",
+      "variant": "v3",
+      "prompt": "heavy duty police flashlight rubber button click",
+      "duration": 1,
+      "influence": 0.4,
+      "loop": false,
+      "file": "sfx/int-flashlight/v3.mp3",
+      "bytes": 8611,
+      "cost": 10,
+      "generatedAt": "2026-10-18T02:25:07.606Z",
+      "qa": {
+        "description": "A close-up, sharp mechanical click consisting of a quick two-part snap and release, characteristic of a small plastic switch, microswitch, or button with virtually no room reverberation.",
+        "score": 4,
+        "issues": "Has a subtle two-part press-and-release transient rather than a single click, and sounds slightly light/microswitch-like compared to a heavy, rugged 1980s flashlight switch.",
+        "intent": "a handheld flashlight's switch being clicked, a single tactile click",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:53.993Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "int-keys",
+      "group": "interactions",
+      "variant": "v1",
+      "prompt": "large janitor key ring jingling, many keys rattling",
+      "duration": 2.5,
+      "influence": 0.5,
+      "loop": false,
+      "file": "sfx/int-keys/v1.mp3",
+      "bytes": 20314,
+      "cost": 25,
+      "generatedAt": "2026-10-18T02:25:07.854Z",
+      "qa": {
+        "description": "A small cluster of two or three lightweight metal keys rhythmically rattling and clinking against each other, recorded close-up in a dry room.",
+        "score": 3,
+        "issues": "Lacks the heavy mass, density, and resonant clatter of a large janitor's ring with dozens of keys; sounds like a small personal keychain.",
+        "intent": "a large ring of metal keys jingling (janitor's key ring)",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:53.046Z"
+      }
+    },
+    {
+      "category": "int-keys",
+      "group": "interactions",
+      "variant": "v2",
+      "prompt": "taking a key ring out of a pocket, keys jingle, inserting key into lock and turning",
+      "duration": 3,
+      "influence": 0.5,
+      "loop": false,
+      "file": "sfx/int-keys/v2.mp3",
+      "bytes": 24493,
+      "cost": 30,
+      "generatedAt": "2026-10-18T02:25:08.217Z",
+      "qa": {
+        "description": "A small bunch of metal house keys being rhythmically shaken and jangled close to the microphone in a dry, quiet environment.",
+        "score": 3,
+        "issues": "Sounds like only a few light keys (3-5) rather than a heavy, dense janitor's ring containing dozens of keys; lacks the mass, weight, and complex metallic resonance of the prompt.",
+        "intent": "a large ring of metal keys jingling (janitor's key ring)",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:54.775Z"
+      }
+    },
+    {
+      "category": "int-keys",
+      "group": "interactions",
+      "variant": "v3",
+      "prompt": "keys jingling on a belt while walking",
+      "duration": 3,
+      "influence": 0.35,
+      "loop": false,
+      "file": "sfx/int-keys/v3.mp3",
+      "bytes": 24493,
+      "cost": 30,
+      "generatedAt": "2026-10-18T02:25:08.926Z",
+      "qa": {
+        "description": "A close-up, dry foley recording of a small bunch of lightweight metal keys jingling and shaking rhythmically in a hand.",
+        "score": 3,
+        "issues": "Sounds like a small cluster of light modern house keys rather than the heavy, dense, and voluminous clatter of a large janitor's key ring.",
+        "intent": "a large ring of metal keys jingling (janitor's key ring)",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:53.835Z"
+      }
+    },
+    {
+      "category": "int-mop-bucket",
+      "group": "interactions",
+      "variant": "v1",
+      "prompt": "rolling a janitor mop bucket on wheels across a tile floor, plastic casters rattling, water sloshing",
+      "duration": 5,
+      "influence": 0.5,
+      "loop": false,
+      "file": "sfx/int-mop-bucket/v1.mp3",
+      "bytes": 40585,
+      "cost": 50,
+      "generatedAt": "2026-10-18T02:25:09.475Z",
+      "qa": {
+        "description": "Dry, close-up clattering and shuffling of small hard plastic or resin pieces, like dominoes, mahjong tiles, or board game counters sliding and bumping against one another.",
+        "score": 2,
+        "issues": "Completely lacks rolling caster wheel movement, tile floor contact, and water sloshing; sounds strictly like small tabletop game pieces being shuffled.",
+        "intent": "a janitor's wheeled mop bucket rolling on a tile floor: plastic caster rattle and water slosh",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:55.570Z"
+      }
+    },
+    {
+      "category": "int-mop-bucket",
+      "group": "interactions",
+      "variant": "v2",
+      "prompt": "squeaky caster wheels of a janitor cart rolling down a hallway",
+      "duration": 5,
+      "influence": 0.4,
+      "loop": false,
+      "file": "sfx/int-mop-bucket/v2.mp3",
+      "bytes": 40585,
+      "cost": 50,
+      "generatedAt": "2026-10-18T02:25:09.481Z",
+      "qa": {
+        "description": "Rhythmic, high-pitched rubbery friction squeaks and scrapes, characteristic of dry windshield wipers or a rubber squeegee rubbing across clean glass in a dry, close-mic'd environment.",
+        "score": 1,
+        "issues": "Completely wrong sound; contains dry rubber wiper squeaks on glass with zero rolling caster wheel rattle, tile contact, or liquid water sloshing.",
+        "intent": "a janitor's wheeled mop bucket rolling on a tile floor: plastic caster rattle and water slosh",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:56.568Z"
+      }
+    },
+    {
+      "category": "int-mop-bucket",
+      "group": "interactions",
+      "variant": "v3",
+      "prompt": "wringing a mop in a bucket wringer, water squeeze and drip",
+      "duration": 3,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/int-mop-bucket/v3.mp3",
+      "bytes": 24493,
+      "cost": 30,
+      "generatedAt": "2026-10-18T02:25:10.489Z",
+      "qa": {
+        "description": "A brief, faint wet droplet or splash followed immediately by the loud, shrill screeching sound of packing tape being rapidly unrolled and torn from a roll.",
+        "score": 1,
+        "issues": "Entirely the wrong sound; contains no caster wheel rattle, no bucket roll on tile, and almost no water slosh, consisting instead of loud adhesive tape peeling.",
+        "intent": "a janitor's wheeled mop bucket rolling on a tile floor: plastic caster rattle and water slosh",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:58.003Z"
+      }
+    },
+    {
+      "category": "int-paper",
+      "group": "interactions",
+      "variant": "v1",
+      "prompt": "rustling through a stack of paper documents, flipping pages",
+      "duration": 2.5,
+      "influence": 0.5,
+      "loop": false,
+      "file": "sfx/int-paper/v1.mp3",
+      "bytes": 20314,
+      "cost": 25,
+      "generatedAt": "2026-10-18T02:25:11.391Z",
+      "qa": {
+        "description": "A close-up, dry recording of pages of a book or thick document stack being rapidly riffled through, followed by a lighter page turn and paper rustle.",
+        "score": 5,
+        "issues": "none",
+        "intent": "handling paper documents: page flipping and rustling",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:58.250Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "int-paper",
+      "group": "interactions",
+      "variant": "v2",
+      "prompt": "picking up a sheet of paper and unfolding it, close mic",
+      "duration": 2,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/int-paper/v2.mp3",
+      "bytes": 16552,
+      "cost": 20,
+      "generatedAt": "2026-10-18T02:25:11.023Z",
+      "qa": {
+        "description": "A close-up, dry foley recording of a sheet of paper being turned and settling, with a soft rustling and sliding friction texture.",
+        "score": 5,
+        "issues": "none",
+        "intent": "handling paper documents: page flipping and rustling",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:57.437Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "int-paper",
+      "group": "interactions",
+      "variant": "v3",
+      "prompt": "manila folder opened, papers slide out",
+      "duration": 2,
+      "influence": 0.4,
+      "loop": false,
+      "file": "sfx/int-paper/v3.mp3",
+      "bytes": 16552,
+      "cost": 20,
+      "generatedAt": "2026-10-18T02:25:11.678Z",
+      "qa": {
+        "description": "A close-up, dry foley recording of a single sheet of paper being turned and slid, producing a crisp, gentle rustle with light finger friction.",
+        "score": 5,
+        "issues": "none",
+        "intent": "handling paper documents: page flipping and rustling",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:58.236Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "int-typewriter",
+      "group": "interactions",
+      "variant": "v1",
+      "prompt": "electric typewriter typing a short sentence, carriage return bell",
+      "duration": 5,
+      "influence": 0.5,
+      "loop": false,
+      "file": "sfx/int-typewriter/v1.mp3",
+      "bytes": 40585,
+      "cost": 50,
+      "generatedAt": "2026-10-18T02:25:12.300Z",
+      "qa": {
+        "description": "A close-up, dry recording of someone typing steadily on a mechanical typewriter with distinct tactile key clacks, followed by a carriage return slide at the end.",
+        "score": 5,
+        "issues": "none",
+        "intent": "a 1980s typewriter typing: mechanical key strikes, possibly carriage return bell",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:36:59.869Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "int-typewriter",
+      "group": "interactions",
+      "variant": "v2",
+      "prompt": "manual typewriter typing slowly, mechanical key strikes",
+      "duration": 4,
+      "influence": 0.4,
+      "loop": false,
+      "file": "sfx/int-typewriter/v2.mp3",
+      "bytes": 32643,
+      "cost": 40,
+      "generatedAt": "2026-10-18T02:25:12.613Z",
+      "qa": {
+        "description": "Close-up recording of rapid, rhythmic typing on a mechanical typewriter, featuring sharp metal-on-platen keystrokes and snappy mechanism releases in a dry room.",
+        "score": 5,
+        "issues": "none",
+        "intent": "a 1980s typewriter typing: mechanical key strikes, possibly carriage return bell",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:01.398Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "int-typewriter",
+      "group": "interactions",
+      "variant": "v3",
+      "prompt": "IBM Selectric typing burst, motor hum and ball strikes",
+      "duration": 4,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/int-typewriter/v3.mp3",
+      "bytes": 32643,
+      "cost": 40,
+      "generatedAt": "2026-10-18T02:25:13.037Z",
+      "qa": {
+        "description": "A close-up, dry acoustic recording of rapid mechanical typewriter key strikes, culminating in a carriage return ratchet slide and a sharp metallic bell ding.",
+        "score": 5,
+        "issues": "none",
+        "intent": "a 1980s typewriter typing: mechanical key strikes, possibly carriage return bell",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:01.917Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "int-phone-ring",
+      "group": "interactions",
+      "variant": "v1",
+      "prompt": "old rotary telephone ringing with mechanical bell, two rings, empty office",
+      "duration": 6,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/int-phone-ring/v1.mp3",
+      "bytes": 48526,
+      "cost": 60,
+      "generatedAt": "2026-10-18T02:25:14.178Z",
+      "qa": {
+        "description": "A close, dry recording of an authentic mechanical double-bell telephone ringer sounding two bursts with a realistic cadence and metallic resonance.",
+        "score": 5,
+        "issues": "none",
+        "intent": "an old rotary desk telephone ringing with its mechanical double bell",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:01.915Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "int-phone-ring",
+      "group": "interactions",
+      "variant": "v2",
+      "prompt": "1970s desk phone bell ringing in a distant empty room, reverb",
+      "duration": 6,
+      "influence": 0.4,
+      "loop": false,
+      "file": "sfx/int-phone-ring/v2.mp3",
+      "bytes": 48526,
+      "cost": 60,
+      "generatedAt": "2026-10-18T02:25:14.193Z",
+      "qa": {
+        "description": "An electronic telephone warbler ringing in standard cadence, producing a dual-tone synthetic chirp rather than physical acoustic metal strikes.",
+        "score": 2,
+        "issues": "This is an electronic/piezo ring tone rather than a physical rotary phone mechanical double-bell striking metal gongs.",
+        "intent": "an old rotary desk telephone ringing with its mechanical double bell",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:02.629Z"
+      }
+    },
+    {
+      "category": "int-phone-ring",
+      "group": "interactions",
+      "variant": "v3",
+      "prompt": "single rotary phone ring, loud metal bell",
+      "duration": 3,
+      "influence": 0.5,
+      "loop": false,
+      "file": "sfx/int-phone-ring/v3.mp3",
+      "bytes": 24493,
+      "cost": 30,
+      "generatedAt": "2026-10-18T02:25:14.808Z",
+      "qa": {
+        "description": "Two cycles of a mechanical dual-bell telephone ringing in a distinctive British double-pulse cadence (ring-ring... ring-ring), captured clean and dry at close perspective.",
+        "score": 4,
+        "issues": "Uses a UK/Commonwealth double-pulse ring cadence rather than the standard North American single long ring (2 seconds on, 4 seconds off) expected in a US federal facility.",
+        "intent": "an old rotary desk telephone ringing with its mechanical double bell",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:05.015Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "int-phone-offhook",
+      "group": "interactions",
+      "variant": "v1",
+      "prompt": "telephone off the hook warning tone, loud repeating howler beeps, heard through the handset",
+      "duration": 6,
+      "influence": 0.5,
+      "loop": true,
+      "file": "sfx/int-phone-offhook/v1.mp3",
+      "bytes": 48526,
+      "cost": 60,
+      "generatedAt": "2026-10-18T02:25:16.382Z",
+      "qa": {
+        "description": "A harsh, rapid electronic multi-frequency pulsing tone (roughly five pulses per second) recorded completely dry and direct, characteristic of a standard North American telephone receiver off-hook (howler) warning signal.",
+        "score": 5,
+        "issues": "none",
+        "intent": "an analog landline telephone tone from the handset (off-hook howler, dial tone or busy signal), loopable",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:07.168Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "int-phone-offhook",
+      "group": "interactions",
+      "variant": "v2",
+      "prompt": "analog telephone dial tone, steady hum through receiver",
+      "duration": 6,
+      "influence": 0.6,
+      "loop": true,
+      "file": "sfx/int-phone-offhook/v2.mp3",
+      "bytes": 48526,
+      "cost": 60,
+      "generatedAt": "2026-10-18T02:25:16.832Z",
+      "qa": {
+        "description": "A rapid, piercing series of multi-frequency electronic pulses repeated at roughly five pulses per second, directly capturing an analog telephone exchange off-hook howler tone. It is completely dry and direct-input with no acoustic space or physical telephone speaker enclosure resonance.",
+        "score": 4,
+        "issues": "Direct line signal lacking acoustic telephone speaker bandpass and plastic receiver resonance needed to sound like it is emitting from a physical handset.",
+        "intent": "an analog landline telephone tone from the handset (off-hook howler, dial tone or busy signal), loopable",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:08.589Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "int-phone-offhook",
+      "group": "interactions",
+      "variant": "v3",
+      "prompt": "phone line busy signal, repeating beeps, old landline",
+      "duration": 6,
+      "influence": 0.5,
+      "loop": true,
+      "file": "sfx/int-phone-offhook/v3.mp3",
+      "bytes": 48526,
+      "cost": 60,
+      "generatedAt": "2026-10-18T02:25:17.795Z",
+      "qa": {
+        "description": "A repetitive, dry dual-tone telephone busy signal pulsing on and off in equal half-second intervals with no room reverberation or background noise.",
+        "score": 4,
+        "issues": "Needs to be trimmed cleanly at the zero-crossings to form an exact seamless loop, but otherwise authentic.",
+        "intent": "an analog landline telephone tone from the handset (off-hook howler, dial tone or busy signal), loopable",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:08.529Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "int-crt-whine",
+      "group": "interactions",
+      "variant": "v1",
+      "prompt": "old CRT television turning on, high pitched whine and static crackle",
+      "duration": 3,
+      "influence": 0.5,
+      "loop": false,
+      "file": "sfx/int-crt-whine/v1.mp3",
+      "bytes": 24493,
+      "cost": 30,
+      "generatedAt": "2026-10-18T02:25:17.698Z",
+      "qa": {
+        "description": "A heavy mechanical latch or relay switch clanks sharply, followed by an electrical hum and a rising mid-range electronic whine recorded close and dry.",
+        "score": 2,
+        "issues": "Lacks the characteristic 15.7 kHz flyback whine, glass static crackle, and metallic degauss thunk of a CRT; sounds like an industrial electrical switch or small generator instead.",
+        "intent": "an old CRT monitor or TV powering on or off: high-pitched flyback whine, static crackle, degauss thunk",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:08.279Z"
+      }
+    },
+    {
+      "category": "int-crt-whine",
+      "group": "interactions",
+      "variant": "v2",
+      "prompt": "CRT monitor power on, degauss thunk and high frequency hum",
+      "duration": 3,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/int-crt-whine/v2.mp3",
+      "bytes": 24493,
+      "cost": 30,
+      "generatedAt": "2026-10-18T02:25:18.027Z",
+      "qa": {
+        "description": "A single, isolated dry handclap or percussive snap recorded close in an otherwise quiet room, followed by low background air.",
+        "score": 1,
+        "issues": "Completely unrelated sound; it is a dry handclap rather than an electronic CRT powering on or off (no flyback whine, static crackle, or degauss thunk).",
+        "intent": "an old CRT monitor or TV powering on or off: high-pitched flyback whine, static crackle, degauss thunk",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:06.532Z"
+      }
+    },
+    {
+      "category": "int-crt-whine",
+      "group": "interactions",
+      "variant": "v3",
+      "prompt": "CRT screen switching off, static pop and fading whine",
+      "duration": 2.5,
+      "influence": 0.45,
+      "loop": false,
+      "file": "sfx/int-crt-whine/v3.mp3",
+      "bytes": 20314,
+      "cost": 25,
+      "generatedAt": "2026-10-18T02:25:18.926Z",
+      "qa": {
+        "description": "A close-up recording of an old CRT monitor or television powering on, featuring a physical power button click, a resonant metallic degauss thunk and coil ring, followed by high-pitched 15 kHz flyback transformer whine.",
+        "score": 5,
+        "issues": "none",
+        "intent": "an old CRT monitor or TV powering on or off: high-pitched flyback whine, static crackle, degauss thunk",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:09.799Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "int-lab-glass",
+      "group": "interactions",
+      "variant": "v1",
+      "prompt": "laboratory glass beakers clinking together on a metal tray",
+      "duration": 2,
+      "influence": 0.5,
+      "loop": false,
+      "file": "sfx/int-lab-glass/v1.mp3",
+      "bytes": 16552,
+      "cost": 20,
+      "generatedAt": "2026-10-18T02:25:19.322Z",
+      "qa": {
+        "description": "A close, dry recording of delicate, thin glass clinking softly and lightly settling, producing a sharp high-frequency tap and brief resonant ping.",
+        "score": 4,
+        "issues": "Sounds more like a thin glass ornament or small ampoule than thicker laboratory beakers or flasks, but still very usable for delicate test tubes.",
+        "intent": "laboratory glassware clinking: beakers, test tubes or flasks touching, set down on a bench",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:12.447Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "int-lab-glass",
+      "group": "interactions",
+      "variant": "v2",
+      "prompt": "glass test tubes rattling in a rack",
+      "duration": 2,
+      "influence": 0.4,
+      "loop": false,
+      "file": "sfx/int-lab-glass/v2.mp3",
+      "bytes": 16552,
+      "cost": 20,
+      "generatedAt": "2026-10-18T02:25:19.111Z",
+      "qa": {
+        "description": "A close-up, dry sound of thin glass containers or vials clinking lightly against each other with high-pitched resonance.",
+        "score": 4,
+        "issues": "Captures the delicate glass-on-glass clinking well, but lacks the solid impact/placement sound of being set down onto a bench.",
+        "intent": "laboratory glassware clinking: beakers, test tubes or flasks touching, set down on a bench",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:11.826Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "int-lab-glass",
+      "group": "interactions",
+      "variant": "v3",
+      "prompt": "single glass flask set down on a lab bench, clear ring",
+      "duration": 1.5,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/int-lab-glass/v3.mp3",
+      "bytes": 12372,
+      "cost": 15,
+      "generatedAt": "2026-10-18T02:25:19.895Z",
+      "qa": {
+        "description": "A close, dry recording of small, lightweight plastic, resin, or wooden pieces (like dominoes or game tiles) clicking and clattering against each other with no resonant ring.",
+        "score": 2,
+        "issues": "Material clearly sounds like plastic or dense resin/wood rather than borosilicate glass; lacks high-frequency glassy resonance and sounds nothing like glassware on a bench.",
+        "intent": "laboratory glassware clinking: beakers, test tubes or flasks touching, set down on a bench",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:13.906Z"
+      }
+    },
+    {
+      "category": "hor-metal-bang",
+      "group": "horror",
+      "variant": "v1",
+      "prompt": "distant heavy metal bang echoing through an empty building, deep reverberant tail",
+      "duration": 5,
+      "influence": 0.5,
+      "loop": false,
+      "file": "sfx/hor-metal-bang/v1.mp3",
+      "bytes": 40585,
+      "cost": 50,
+      "generatedAt": "2026-10-18T02:25:20.437Z",
+      "qa": {
+        "description": "A single heavy, booming metallic impact with a prominent hollow resonance, followed by a long, dark reverberant decay in a massive enclosed space.",
+        "score": 5,
+        "issues": "none",
+        "intent": "a single heavy metal bang somewhere far away inside a large empty building, long reverberant echo tail",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:12.426Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "hor-metal-bang",
+      "group": "horror",
+      "variant": "v2",
+      "prompt": "far away loud metallic slam somewhere in a concrete basement, long echo",
+      "duration": 5,
+      "influence": 0.4,
+      "loop": false,
+      "file": "sfx/hor-metal-bang/v2.mp3",
+      "bytes": 40585,
+      "cost": 50,
+      "generatedAt": "2026-10-18T02:25:20.498Z",
+      "qa": {
+        "description": "A single heavy, sharp impact on resonant metal followed by a long, cavernous reverberant echo tail decaying across four seconds in a large enclosed space.",
+        "score": 4,
+        "issues": "The initial impact transient has a bit too much high-frequency presence and punch to feel truly far away, though the space and reverb tail match the intent well.",
+        "intent": "a single heavy metal bang somewhere far away inside a large empty building, long reverberant echo tail",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:14.338Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "hor-metal-bang",
+      "group": "horror",
+      "variant": "v3",
+      "prompt": "pipe struck once in the distance, ringing metal echo in industrial building",
+      "duration": 5,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/hor-metal-bang/v3.mp3",
+      "bytes": 40585,
+      "cost": 50,
+      "generatedAt": "2026-10-18T02:25:21.055Z",
+      "qa": {
+        "description": "A single heavy metal impact or hatch slam resonating inside a cavernous, empty structure, followed by a long, diffuse reverberant echo tail that decays naturally over four seconds.",
+        "score": 5,
+        "issues": "none",
+        "intent": "a single heavy metal bang somewhere far away inside a large empty building, long reverberant echo tail",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:13.627Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "hor-knock",
+      "group": "horror",
+      "variant": "v1",
+      "prompt": "three slow knocks on a heavy door, from the other side, quiet empty building",
+      "duration": 4,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/hor-knock/v1.mp3",
+      "bytes": 32643,
+      "cost": 40,
+      "generatedAt": "2026-10-18T02:25:21.630Z",
+      "qa": {
+        "description": "Four firm, standard-tempo knocks on a hollow wooden surface, recorded very close-mic'd and dry with minimal room reverberation.",
+        "score": 3,
+        "issues": "Too fast/brisk rather than slow; dry close-perspective lacks the reverberant decay of an empty building and the muffled filtering of sound traveling through from the other side.",
+        "intent": "slow knocking on a door or wall from the other side, in a quiet empty building, unsettling",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:17.066Z"
+      }
+    },
+    {
+      "category": "hor-knock",
+      "group": "horror",
+      "variant": "v2",
+      "prompt": "single muffled knock inside a wall, eerie",
+      "duration": 3,
+      "influence": 0.45,
+      "loop": false,
+      "file": "sfx/hor-knock/v2.mp3",
+      "bytes": 24493,
+      "cost": 30,
+      "generatedAt": "2026-10-18T02:25:21.729Z",
+      "qa": {
+        "description": "Three slow, evenly spaced knocks rapping against a hollow wooden door or panel, recorded close-up in a dry acoustic environment with minimal reverb.",
+        "score": 4,
+        "issues": "Lacks the low-pass muffled quality of being heard from the other side of a partition, and lacks the room reverb of a quiet, empty building.",
+        "intent": "slow knocking on a door or wall from the other side, in a quiet empty building, unsettling",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:18.118Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "hor-knock",
+      "group": "horror",
+      "variant": "v3",
+      "prompt": "slow knocking on a steel door, hollow metallic knocks, reverb",
+      "duration": 4,
+      "influence": 0.5,
+      "loop": false,
+      "file": "sfx/hor-knock/v3.mp3",
+      "bytes": 32643,
+      "cost": 40,
+      "generatedAt": "2026-10-18T02:25:22.251Z",
+      "qa": {
+        "description": "Four slow, deliberate, muffled thuds of knuckles rapping on a hollow wooden door or partition, captured at medium distance in a quiet interior room.",
+        "score": 5,
+        "issues": "none",
+        "intent": "slow knocking on a door or wall from the other side, in a quiet empty building, unsettling",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:17.272Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "hor-drone",
+      "group": "horror",
+      "variant": "v1",
+      "prompt": "low ominous horror drone, dark ambient, slowly evolving",
+      "duration": 20,
+      "influence": 0.4,
+      "loop": true,
+      "file": "sfx/hor-drone/v1.mp3",
+      "bytes": 160539,
+      "cost": 200,
+      "generatedAt": "2026-10-18T02:25:25.492Z",
+      "qa": {
+        "description": "A deep, ominous low-frequency synthesizer ambient drone with subtle sub-bass modulation and dark, resonant metallic harmonic overtones suspended in a vast hollow space.",
+        "score": 5,
+        "issues": "none",
+        "intent": "a low, dark, unsettling ambient drone for horror tension, no melody, loopable",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:17.746Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "hor-drone",
+      "group": "horror",
+      "variant": "v2",
+      "prompt": "deep unsettling hum, cinematic dread tone, subtle beating frequencies",
+      "duration": 20,
+      "influence": 0.5,
+      "loop": true,
+      "file": "sfx/hor-drone/v2.mp3",
+      "bytes": 160539,
+      "cost": 200,
+      "generatedAt": "2026-10-18T02:25:25.601Z",
+      "qa": {
+        "description": "A deep, steady low-frequency industrial rumble and mechanical drone with subtle vibrating resonance and faint high-end room hiss.",
+        "score": 5,
+        "issues": "none",
+        "intent": "a low, dark, unsettling ambient drone for horror tension, no melody, loopable",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:18.900Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "hor-drone",
+      "group": "horror",
+      "variant": "v3",
+      "prompt": "dark ambient drone with faint metallic resonance, tense atmosphere",
+      "duration": 20,
+      "influence": 0.3,
+      "loop": true,
+      "file": "sfx/hor-drone/v3.mp3",
+      "bytes": 160539,
+      "cost": 200,
+      "generatedAt": "2026-10-18T02:25:26.159Z",
+      "qa": {
+        "description": "A continuous, low-frequency synthesizer drone featuring deep sub-bass rumble and slowly shifting, dark harmonic resonances. The sound is steady and atmospheric with no melodic movement, percussion, or sudden volume shifts.",
+        "score": 5,
+        "issues": "none",
+        "intent": "a low, dark, unsettling ambient drone for horror tension, no melody, loopable",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:19.329Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "hor-radio-whisper",
+      "group": "horror",
+      "variant": "v1",
+      "prompt": "radio static with garbled whisper-like voices fading in and out, unintelligible, eerie",
+      "duration": 8,
+      "influence": 0.45,
+      "loop": false,
+      "file": "sfx/hor-radio-whisper/v1.mp3",
+      "bytes": 64617,
+      "cost": 80,
+      "generatedAt": "2026-10-18T02:25:26.912Z",
+      "qa": {
+        "description": "Dry, filtered radio static noise bed with faint, garbled whispery vocalizations and rhythmic breathing drifting in and out of tuning. The perspective is close and direct, sounding like raw tuner output with subtle pitch fluctuation and hiss.",
+        "score": 5,
+        "issues": "none",
+        "intent": "radio static with garbled, unintelligible whisper-like voices drifting in and out, eerie",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:21.321Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "hor-radio-whisper",
+      "group": "horror",
+      "variant": "v2",
+      "prompt": "shortwave radio interference that almost sounds like breathing and whispering, creepy",
+      "duration": 8,
+      "influence": 0.35,
+      "loop": false,
+      "file": "sfx/hor-radio-whisper/v2.mp3",
+      "bytes": 64617,
+      "cost": 80,
+      "generatedAt": "2026-10-18T02:25:27.156Z",
+      "qa": {
+        "description": "Analog radio tuning static with faint carrier whines and heavily bandpassed, garbled whisper-like vocal fragments drifting through white noise and squelch.",
+        "score": 5,
+        "issues": "none",
+        "intent": "radio static with garbled, unintelligible whisper-like voices drifting in and out, eerie",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:21.335Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "hor-radio-whisper",
+      "group": "horror",
+      "variant": "v3",
+      "prompt": "distorted radio transmission, faint distant voice buried in static, cannot make out words",
+      "duration": 8,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/hor-radio-whisper/v3.mp3",
+      "bytes": 64617,
+      "cost": 80,
+      "generatedAt": "2026-10-18T02:25:27.748Z",
+      "qa": {
+        "description": "Continuous radio static and squelch layered with garbled, fast-paced male walkie-talkie or dispatch voice chatter across narrow-bandwidth communications filters.",
+        "score": 3,
+        "issues": "The voices are mundane tactical radio comms rather than eerie, whisper-like voices drifting in and out.",
+        "intent": "radio static with garbled, unintelligible whisper-like voices drifting in and out, eerie",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:22.659Z"
+      }
+    },
+    {
+      "category": "hor-footsteps-other",
+      "group": "horror",
+      "variant": "v1",
+      "prompt": "distant footsteps walking in another hallway, slow, echoing, empty building at night",
+      "duration": 6,
+      "influence": 0.5,
+      "loop": false,
+      "file": "sfx/hor-footsteps-other/v1.mp3",
+      "bytes": 48526,
+      "cost": 60,
+      "generatedAt": "2026-10-18T02:25:28.704Z",
+      "qa": {
+        "description": "Slow, muffled, low-frequency thumps with a hollow, resonant decay, resembling footsteps walked across a wooden or hollow floorboard overhead or in an adjacent room.",
+        "score": 4,
+        "issues": "The clip cuts off slightly early during the reverberation tail of the fourth footstep, making it ambiguous whether the walker stopped or the recording was truncated.",
+        "intent": "someone else's slow footsteps heard at a distance: another hallway or the floor above, then stopping",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:24.688Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "hor-footsteps-other",
+      "group": "horror",
+      "variant": "v2",
+      "prompt": "footsteps on the floor above, muffled through the ceiling, slow pacing",
+      "duration": 6,
+      "influence": 0.4,
+      "loop": false,
+      "file": "sfx/hor-footsteps-other/v2.mp3",
+      "bytes": 48526,
+      "cost": 60,
+      "generatedAt": "2026-10-18T02:25:29.082Z",
+      "qa": {
+        "description": "Six evenly spaced, identical muffled thuds or knocks on a hollow wooden surface, repeating with rigid metronomic timing in a dry acoustic space.",
+        "score": 2,
+        "issues": "Sounds like deliberate knocking or a mechanical impact rather than bipedal footsteps; lacks heel-toe weight transfer, gait irregularity, floor creak/reverb of another room, and does not naturally come to a halt before clipping out.",
+        "intent": "someone else's slow footsteps heard at a distance: another hallway or the floor above, then stopping",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:25.548Z"
+      }
+    },
+    {
+      "category": "hor-footsteps-other",
+      "group": "horror",
+      "variant": "v3",
+      "prompt": "someone walking behind you then stopping abruptly, hard floor, reverb",
+      "duration": 5,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/hor-footsteps-other/v3.mp3",
+      "bytes": 40585,
+      "cost": 50,
+      "generatedAt": "2026-10-18T02:25:28.990Z",
+      "qa": {
+        "description": "Four slow, heavy, and muffled footsteps landing on hollow wooden floorboards or overhead ceiling joists, reverberating in an enclosed interior space before stopping.",
+        "score": 5,
+        "issues": "none",
+        "intent": "someone else's slow footsteps heard at a distance: another hallway or the floor above, then stopping",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:28.476Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "hor-sub-rumble",
+      "group": "horror",
+      "variant": "v1",
+      "prompt": "deep sub bass rumble from underground, low frequency earth tremor, ominous",
+      "duration": 8,
+      "influence": 0.5,
+      "loop": false,
+      "file": "sfx/hor-sub-rumble/v1.mp3",
+      "bytes": 64617,
+      "cost": 80,
+      "generatedAt": "2026-10-18T02:25:30.222Z",
+      "qa": {
+        "description": "A sustained, deep low-frequency drone and rumbling vibration accented by slow, rhythmic mechanical thumps and subterranean resonance.",
+        "score": 5,
+        "issues": "none",
+        "intent": "a deep low-frequency rumble coming from underground / below the floor, like huge machinery or a tremor",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:26.255Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "hor-sub-rumble",
+      "group": "horror",
+      "variant": "v2",
+      "prompt": "massive machinery rumbling far below the floor, low vibration and groan",
+      "duration": 8,
+      "influence": 0.4,
+      "loop": false,
+      "file": "sfx/hor-sub-rumble/v2.mp3",
+      "bytes": 64617,
+      "cost": 80,
+      "generatedAt": "2026-10-18T02:25:30.435Z",
+      "qa": {
+        "description": "A steady, muffled low-frequency mechanical drone accompanied by rhythmic, cycling thumps and sub-bass vibration, resembling heavy industrial machinery or a large generator running in an enclosed basement.",
+        "score": 5,
+        "issues": "none",
+        "intent": "a deep low-frequency rumble coming from underground / below the floor, like huge machinery or a tremor",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:27.737Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "hor-sub-rumble",
+      "group": "horror",
+      "variant": "v3",
+      "prompt": "low rumble swelling up from below then fading, building vibrates slightly",
+      "duration": 7,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/hor-sub-rumble/v3.mp3",
+      "bytes": 56467,
+      "cost": 70,
+      "generatedAt": "2026-10-18T02:25:31.270Z",
+      "qa": {
+        "description": "A continuous, heavy low-frequency mechanical rumble and sub-bass drone with a faint rhythmic throbbing, devoid of high-end details or room reverberation.",
+        "score": 5,
+        "issues": "none",
+        "intent": "a deep low-frequency rumble coming from underground / below the floor, like huge machinery or a tremor",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:27.695Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "ui-notify",
+      "group": "ui",
+      "variant": "v1",
+      "prompt": "subtle soft UI notification tone, single gentle electronic blip, retro",
+      "duration": 1,
+      "influence": 0.5,
+      "loop": false,
+      "file": "sfx/ui-notify/v1.mp3",
+      "bytes": 8611,
+      "cost": 10,
+      "generatedAt": "2026-10-18T02:25:31.300Z",
+      "qa": {
+        "description": "A very brief, dry acoustic tap or hollow pop sound, resembling a light finger tap on a wooden surface or muted plastic, recorded very close-up with minimal reverb.",
+        "score": 2,
+        "issues": "Acoustic and percussive physical tap rather than a retro electronic synthesizer blip; completely lacks tonal character.",
+        "intent": "a subtle short soft interface notification blip, retro electronic, unobtrusive",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:29.006Z"
+      }
+    },
+    {
+      "category": "ui-notify",
+      "group": "ui",
+      "variant": "v2",
+      "prompt": "quiet analog beep notification, 1980s computer terminal",
+      "duration": 1,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/ui-notify/v2.mp3",
+      "bytes": 8611,
+      "cost": 10,
+      "generatedAt": "2026-10-18T02:25:31.521Z",
+      "qa": {
+        "description": "A very brief, clean, and dry synthesized digital blip with a rapid attack and quick decay, recorded in direct stereo with no spatial acoustics or noise.",
+        "score": 3,
+        "issues": "Sounds like a modern smartphone or casual app UI tone rather than 1984 retro-hardware; lacks the analog grit, square-wave buzz, or CRT texture needed for the era.",
+        "intent": "a subtle short soft interface notification blip, retro electronic, unobtrusive",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:31.273Z"
+      }
+    },
+    {
+      "category": "ui-notify",
+      "group": "ui",
+      "variant": "v3",
+      "prompt": "short warm two-note chime, minimal interface sound",
+      "duration": 1.5,
+      "influence": 0.4,
+      "loop": false,
+      "file": "sfx/ui-notify/v3.mp3",
+      "bytes": 12372,
+      "cost": 15,
+      "generatedAt": "2026-10-18T02:25:32.414Z",
+      "qa": {
+        "description": "A very brief, clean high-pitched electronic blip with an immediate attack and fast decay, heard dry and close with no ambient reverb.",
+        "score": 5,
+        "issues": "none",
+        "intent": "a subtle short soft interface notification blip, retro electronic, unobtrusive",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:30.289Z"
+      },
+      "status": "kept"
+    },
+    {
+      "category": "ui-notify",
+      "group": "ui",
+      "variant": "v4",
+      "prompt": "pager beep, short soft electronic chirp",
+      "duration": 1,
+      "influence": 0.5,
+      "loop": false,
+      "file": "sfx/ui-notify/v4.mp3",
+      "bytes": 8611,
+      "cost": 10,
+      "generatedAt": "2026-10-18T02:25:34.817Z",
+      "qa": {
+        "description": "A very brief, dry electronic sine blip or soft digital interface click with virtually no reverb and a fast decay.",
+        "score": 5,
+        "issues": "none",
+        "intent": "a subtle short soft interface notification blip, retro electronic, unobtrusive",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-18T02:37:32.122Z"
+      },
+      "status": "kept"
+    }
+  ]
+}

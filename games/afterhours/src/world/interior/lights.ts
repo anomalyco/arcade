@@ -271,11 +271,11 @@ export function exitSign(b: Builder, x: number, z: number, nx: number, nz: numbe
 }
 
 /** Rotating-type warning beacon (halon, RF hazard, UV): coloured dome on a base, warning lamp (blinks via the rig). */
-export function beacon(b: Builder, x: number, y: number, z: number, colour: "red" | "amber" | "violet", on = true) {
+export function beacon(b: Builder, x: number, y: number, z: number, colour: "red" | "amber" | "violet", on = true, opts: { intensity?: number; range?: number } = {}) {
   const c = { red: [0xff2a12, [1, 0.12, 0.05]], amber: [0xffa018, [1, 0.55, 0.1]], violet: [0x9a40ff, [0.55, 0.25, 1]] }[colour] as [number, [number, number, number]]
   b.cyl(M.darkSteel, T(x, y, z), 0.06, 0.07, 0.04, 12)
   b.cyl(on ? glow(0x1a0804, c[0], 1.6, `beacon_${colour}`) : M.hazardOff, T(x, y + 0.08, z), 0.045, 0.05, 0.12, 12, { cast: false })
-  if (on) b.lamp({ kind: "warning", position: [x, y + 0.1, z], color: c[1], intensity: 1.2, range: 3.5, size: 0.08 })
+  if (on) b.lamp({ kind: "warning", position: [x, y + 0.1, z], color: c[1], intensity: opts.intensity ?? 1.2, range: opts.range ?? 3.5, size: 0.08 })
 }
 
 // Flicker coupling: follow the light rig's flicker when it drives the lamp, so panel and light stutter together.

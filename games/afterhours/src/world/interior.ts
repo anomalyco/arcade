@@ -11,6 +11,7 @@ import { buildLift } from "./interior/lift"
 import { bakeModels } from "./interior/props"
 import { STOREY_MODULES } from "./interior/storeys/index"
 import { buildWindowProxies } from "./interior/windowproxy"
+import { checkNightState } from "./interior/lighting-state"
 import * as kitDemo from "./interior/storeys/kitdemo"
 
 export { interiorRooms, interiorDoors } from "./interior/registry"
@@ -69,6 +70,8 @@ export async function build(ctx: WorldContext): Promise<WorldModule> {
   releaseDepthRegistry(ctx)
   // Lit-window cards shown from outside instead of the storeys (after every storey registered its lamps).
   const windowProxies = await buildWindowProxies(ctx, BUILDING.main.storeys, pause)
+  // The 3 a.m. lighting state is the one truth for lamps and windows: report drift (a listed source with no lamp).
+  for (const m of checkNightState(ctx.lamps)) console.warn(`interior lighting state: ${m}`)
 
   const { min, max } = BUILDING.main
   // Automation only: `icam=x,y,z,yawDeg,pitchDeg` pins the camera for captures of rooms with no named viewpoint.

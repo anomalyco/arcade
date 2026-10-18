@@ -1,5 +1,6 @@
 import * as THREE from "three/webgpu"
 import { MODELS } from "../../../../render/models"
+import { openable } from "../../plan"
 import {
   type Builder,
   type Window,
@@ -180,7 +181,8 @@ export async function buildEast(s: S4, pause: () => Promise<void>) {
   // Receiver racks in two rows facing each other, panel lamps lit; the RF beacon on top of the window row.
   rackRow(b, 6.2, -19.6, Math.PI, 5, 99)
   rackRow(b, 6.6, -16.4, 0, 4, 99)
-  beacon(b, 3.0, FLOOR_Y + 1.6, -19.6, "red")
+  // The rotating receiver beacon fills the room (lighting-state.ts 4-11: the red window seen from the lot).
+  beacon(b, 3.0, FLOOR_Y + 1.6, -19.6, "red", true, { intensity: 7, range: 7 })
   b.lamp({ kind: "window", position: [6.4, FLOOR_Y + 1.3, -18.0], color: [0.4, 1, 0.5], intensity: 0.7, range: 3, size: 0.3 })
   // Bench: spectrum display, rubidium standard, log printout.
   const benchY = FLOOR_Y + 0.76
@@ -338,9 +340,10 @@ export async function buildEast(s: S4, pause: () => Promise<void>) {
   const dRect = rect(22.55, 34.65, -1.6, 21.65)
   const dRoom = room(b, { id: "4-14", name: "Director's office", rect: dRect, floor: BROADLOOM, lit: "none", windows: { blinds: "up", radiators: "convector" } })
   for (const w of dRoom.windows) paperOver(s, w)
-  // The door at the end of the corridor: walnut pair under a reeded transom, locked and barricaded from inside.
+  // The door at the end of the corridor: walnut pair under a reeded transom (lock state kept for gameplay; locks are
+  // off by default, so it opens), with furniture shoved behind it.
   wall(b, "z", -1.6, 1.6, 22.4, 22.55, EXEC_BANDS, [{ a0: -0.9, a1: 0.9, top: 2.72 }])
-  const ids = door(b, 22.475, 0, { rot: -Math.PI / 2, wallT: 0.15, width: 1.7, leaves: 2, locked: true, glass: null, leaf: M.veneer, sound: "wood", id: "s4:4-14" })
+  const ids = door(b, 22.475, 0, { rot: -Math.PI / 2, wallT: 0.15, width: 1.7, leaves: 2, locked: !openable("locked"), glass: null, leaf: M.veneer, sound: "wood", id: "s4:4-14" })
   registerDoor({ id: ids[0]!, storey: b.storey, state: "locked", room: "4-14", x: 22.475, z: 0, sign: { number: "4-14", label: "DIRECTOR" } })
   b.box(M.veneerDark, 22.4, FLOOR_Y + DOOR_H + 0.05, -0.9, 22.55, FLOOR_Y + 2.3, 0.9)
   for (const z of [-0.9, 0.9]) b.box(M.veneerDark, 22.4, FLOOR_Y + 2.3, z - (z > 0 ? 0.04 : 0), 22.55, FLOOR_Y + 2.72, z + (z < 0 ? 0.04 : 0))
@@ -354,9 +357,10 @@ export async function buildEast(s: S4, pause: () => Promise<void>) {
   // "DO NOT DISTURB — R.H." taped on the left leaf: a torn sheet with a scrawl.
   for (let k = 0; k < 7; k++) void rnd()
   paper(s, "note_do_not_disturb", [22.449, FLOOR_Y + 1.52, -0.42], [-1, 0, 0], { pin: "tape", rotation: 0.06 })
-  // Barricade: a credenza and a filing cabinet shoved against the inside of the doors.
-  credenza(b, 23.0, 0.25, yawToward(1, 0.15), 1.5)
-  placeModels(b, "filing_cabinet", [{ position: [22.85 + fcD / 2, FLOOR_Y, -0.75], yaw: yawToward(1, -0.2) }])
+  // A barricade that was pushed aside: the credenza dragged back along the north side of the doors at an angle, the
+  // filing cabinet shoved off to the south, a gap of about a metre to squeeze through between them.
+  credenza(b, 23.35, 1.85, yawToward(1, 0.45), 1.5)
+  placeModels(b, "filing_cabinet", [{ position: [25.1, FLOOR_Y, -1.25], yaw: yawToward(1, -0.5) }])
   floorLamp(b, 23.7, -1.05, true, 26)
   // Desk turned to the wall, the chair facing north; lamp on, papers everywhere.
   placeModels(b, "office_desk", [{ position: [28.6, FLOOR_Y, 14.0], yaw: yawToward(-1, 0) }])

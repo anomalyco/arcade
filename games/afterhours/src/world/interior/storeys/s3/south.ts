@@ -114,7 +114,8 @@ export async function buildSouth(s: S3, pause: () => Promise<void>) {
         const key = `${tag}${row}${x}`
         if (litPool.has(key)) {
           const p = terminal(b, x, top, z + away * -0.02, yaw, true)
-          if (key === "P1N-21" || key === "P2S-12.5") b.lamp({ kind: "window", position: p, color: GREEN, intensity: 0.7, range: 2.6, size: 0.12 })
+          // The CRTs left on throw a green glow the window shows from outside (lighting-state.ts 3-24).
+          if (key === "P1N-21" || key === "P2S-12.5" || key === "P2S-13.5") b.lamp({ kind: "window", position: p, color: GREEN, intensity: 3, range: 4, size: 0.12 })
         } else crts.push({ position: [x, top, z + away * 0.05], yaw, collide: false, blob: 0 })
         const r = rnd()
         const cp = [x + (rnd() - 0.5) * 0.3, FLOOR_Y, z + away * (0.85 + rnd() * 0.3)] as const

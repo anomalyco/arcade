@@ -1,6 +1,6 @@
 import * as THREE from "three/webgpu"
 import { Builder, FLOOR_Y, M, T, paint } from "./kit"
-import { type DoorState, openable } from "./plan"
+import { type DoorState, lockState, openable } from "./plan"
 import { registerDoor } from "./registry"
 
 // Collapsible scissor gate (freight lifts, cages) as a real door: one sliding leaf in the shared door system, KeyE,
@@ -56,7 +56,7 @@ export function liftGate(b: Builder, g: LiftGateSpec): string {
   const lb = new Builder(b.ctx, `gate-${g.id}`, 0)
   // Stile 33 mm deep (lattice 24, jamb posts 40) and 5 mm short of the leading jamb line: no face coplanar with a jamb post it closes against.
   lb.box(M.darkSteel, 0.005, 0.012, -0.0165, 0.045, h - 0.06, 0.0165)
-  if (!openable(g.state)) lb.rbox(KEY, T(0.06, 1.05, 0.03), 0.06, 0.07, 0.025, 0.008)
+  if (lockState(g.state)) lb.rbox(KEY, T(0.06, 1.05, 0.03), 0.06, 0.07, 0.025, 0.008)
   const lat = new Builder(b.ctx, `gate-${g.id}-lattice`, 0)
   const n = Math.max(4, Math.round(w / 0.14))
   const pitch = w / n

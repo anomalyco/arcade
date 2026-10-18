@@ -1,0 +1,25 @@
+{
+  "note": "Aiden's approved picks (fav = liked). Do not regenerate or replace these files; only loudness-normalise. Use them as style references for the remaining categories.",
+  "exportedAt": "2026-10-18T02:34:03.356Z",
+  "picks": [
+    { "category": "light-switch", "variant": "v3", "prompt": "light switch flicked on and off twice, close mic" },
+    { "category": "amb-hvac", "variant": "v2", "prompt": "large building ventilation system at night, air rushing through vents, deep hum" },
+    { "category": "amb-hvac", "variant": "v3", "prompt": "old air conditioning unit humming in the ceiling with occasional duct tick" },
+    { "category": "amb-machine-room", "variant": "v3", "prompt": "old data center 1984, steady equipment hum and fan roar, occasional disk drive seek" },
+    { "category": "amb-radio-static", "variant": "v2", "prompt": "analog radio white noise with occasional crackle and faint distant tones" },
+    { "category": "int-flashlight", "variant": "v3", "prompt": "heavy duty police flashlight rubber button click" },
+    { "category": "int-keys", "variant": "v2", "prompt": "taking a key ring out of a pocket, keys jingle, inserting key into lock and turning" },
+    { "category": "int-paper", "variant": "v2", "prompt": "picking up a sheet of paper and unfolding it, close mic" },
+    { "category": "int-phone-ring", "variant": "v1", "prompt": "old rotary telephone ringing with mechanical bell, two rings, empty office" },
+    { "category": "int-phone-offhook", "variant": "v3", "prompt": "phone line busy signal, repeating beeps, old landline" },
+    { "category": "int-crt-whine", "variant": "v3", "prompt": "CRT screen switching off, static pop and fading whine" },
+    { "category": "int-lab-glass", "variant": "v2", "prompt": "glass test tubes rattling in a rack" },
+    { "category": "hor-metal-bang", "variant": "v2", "prompt": "far away loud metallic slam somewhere in a concrete basement, long echo" },
+    { "category": "hor-knock", "variant": "v1", "prompt": "three slow knocks on a heavy door, from the other side, quiet empty building" },
+    { "category": "hor-knock", "variant": "v3", "prompt": "slow knocking on a steel door, hollow metallic knocks, reverb" },
+    { "category": "hor-radio-whisper", "variant": "v3", "prompt": "distorted radio transmission, faint distant voice buried in static, cannot make out words" },
+    { "category": "hor-footsteps-other", "variant": "v1", "prompt": "distant footsteps walking in another hallway, slow, echoing, empty building at night" },
+    { "category": "hor-footsteps-other", "variant": "v2", "prompt": "footsteps on the floor above, muffled through the ceiling, slow pacing" },
+    { "category": "hor-sub-rumble", "variant": "v2", "prompt": "massive machinery rumbling far below the floor, low vibration and groan" }
+  ]
+}
