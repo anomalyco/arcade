@@ -2,7 +2,7 @@ import type { Mesh } from "../gpu/mesh"
 import { INST_FLOATS, type Batch } from "../gpu/renderer"
 import { PROP_IDS, propSpec } from "./catalogue"
 import { decodeProp, propTriangles, type PropAsset, type PropLod } from "./format"
-import { DEFAULT_PROP_LOOK, propMesh, type PropLook } from "./mesh"
+import { DEFAULT_PROP_LOOK, propBoxMesh, propMesh, type PropLook } from "./mesh"
 
 /** One placed prop: game-space position of its floor pivot, yaw (0 faces +Z), uniform scale. */
 export type PropInstance = { id: string; x: number; y: number; z: number; yaw: number; scale: number }
@@ -63,11 +63,14 @@ export type PropModelOptions = {
    * Without it shades are plain lit faces.
    */
   lampAux?: number
+  /** Draw a timber box placeholder for anchor props whose `.prop` mesh is still loading or failed to load. */
+  boxFallback?: boolean
 }
 
 /** Registers every loaded prop's LODs as instanced models (`Renderer.addModel`) and rebuilds them when the look changes. */
 export class PropModels {
   private readonly models = new Map<string, number[]>()
+  private readonly fallbacks = new Map<string, { model: number; triangles: number }>()
   private look: PropLook = { ...DEFAULT_PROP_LOOK }
 
   constructor(private readonly host: PropModelHost, readonly library = new PropLibrary(), private readonly options: PropModelOptions = {}) {}
@@ -78,24 +81,46 @@ export class PropModels {
     return propMesh(lod, this.look, shade !== undefined && aux !== undefined ? { from: shade * propSpec(id).size[1], aux } : undefined)
   }
 
-  /** Loads and registers the given props; resolves when all that exist are drawable. */
-  async ensure(ids: readonly string[]): Promise<void> {
-    await this.library.loadAll(ids)
-    for (const id of ids) {
-      if (this.models.has(id)) continue
-      const asset = this.library.get(id)
-      if (asset) this.models.set(id, asset.lods.map(lod => this.host.addModel(this.mesh(id, lod))))
+  private fallback(id: string): { model: number; triangles: number } | undefined {
+    if (!this.options.boxFallback) return undefined
+    let fb = this.fallbacks.get(id)
+    if (!fb) {
+      let spec: ReturnType<typeof propSpec>
+      try {
+        spec = propSpec(id)
+      } catch {
+        return undefined
+      }
+      if (spec.role !== "anchor") return undefined
+      const mesh = propBoxMesh(id)
+      fb = { model: this.host.addModel(mesh), triangles: mesh.count / 3 }
+      this.fallbacks.set(id, fb)
     }
+    return fb
+  }
+
+  /** Loads and registers the given props; each prop becomes drawable as soon as its asset resolves. */
+  async ensure(ids: readonly string[]): Promise<void> {
+    await Promise.all(
+      ids.map(async id => {
+        if (this.models.has(id)) return
+        const asset = await this.library.load(id)
+        if (asset && !this.models.has(id)) {
+          this.models.set(id, asset.lods.map(lod => this.host.addModel(this.mesh(id, lod))))
+        }
+      }),
+    )
   }
 
   has(id: string): boolean {
     return this.models.has(id)
   }
 
-  /** Model index for a prop at a LOD (clamped to the LODs it has). */
+  /** Model index for a prop at a LOD (clamped to the LODs it has), or its box fallback while loading/failed. */
   model(id: string, lod: number): number | undefined {
     const m = this.models.get(id)
-    return m ? m[Math.min(lod, m.length - 1)] : undefined
+    if (m) return m[Math.min(lod, m.length - 1)]
+    return this.fallback(id)?.model
   }
 
   lodCount(id: string): number {
@@ -104,7 +129,8 @@ export class PropModels {
 
   triangles(id: string, lod: number): number {
     const a = this.library.get(id)
-    return a ? propTriangles(a.lods[Math.min(lod, a.lods.length - 1)]!) : 0
+    if (a) return propTriangles(a.lods[Math.min(lod, a.lods.length - 1)]!)
+    return this.fallbacks.get(id)?.triangles ?? 0
   }
 
   setLook(look: PropLook): void {

@@ -156,6 +156,7 @@ export class OutbreakFrameRenderer {
       addSprites: this.addSprites,
       addCount: 0,
       grade: [0, 0, 0, 1],
+      lampGrid: this.frameLighting.lampGrid,
     }
   }
 
@@ -409,6 +410,28 @@ export class OutbreakFrameRenderer {
     const cutRadius = activePeek ? 0.48 + 0.1 * this.peekBlend : 0.22
     const cutHeight = activePeek ? 1.0 - 0.12 * this.peekBlend : 1.0
     const inInteriorView = this.sceneLevel.inInteriorView(town, cutX, cutY)
+    const vehOut = this.vehicleRenderer.collect(
+      vdt,
+      time,
+      town,
+      session.view.vehicles,
+      p.vehicleId,
+      view,
+      cam.eye,
+      this.frameLighting.lights,
+      count,
+      count,
+      frameLightOccluders,
+      this.alphaSprites,
+      0,
+      this.addSprites,
+      addCount,
+      settings.vehicle,
+    )
+    count = vehOut.lights.lightCount
+    let shadowLightCount = vehOut.lights.shadowLightCount
+    addCount = vehOut.lights.addCount
+    const vehAlphaStart = vehOut.lights.alphaCount
     const mapLights = this.frameLighting.collectMapAndInteriorLights({
       town,
       day,
@@ -424,32 +447,10 @@ export class OutbreakFrameRenderer {
       sceneLevel: this.sceneLevel,
       interiors: this.interiors,
       count,
+      shadowLightCount,
     })
     count = mapLights.count
-    let shadowLightCount = mapLights.shadowLightCount
-
-    const vehOut = this.vehicleRenderer.collect(
-      vdt,
-      time,
-      town,
-      session.view.vehicles,
-      p.vehicleId,
-      view,
-      cam.eye,
-      this.frameLighting.lights,
-      count,
-      shadowLightCount,
-      frameLightOccluders,
-      this.alphaSprites,
-      0,
-      this.addSprites,
-      addCount,
-      settings.vehicle,
-    )
-    count = vehOut.lights.lightCount
-    shadowLightCount = vehOut.lights.shadowLightCount
-    addCount = vehOut.lights.addCount
-    const vehAlphaStart = vehOut.lights.alphaCount
+    shadowLightCount = mapLights.shadowLightCount
     const ambLum = (day.ambient[0] + day.ambient[1] + day.ambient[2]) * settings.lighting.skyFill * 0.333
     const weatherOut = this.weatherController.stepAndPrepare({
       dt,

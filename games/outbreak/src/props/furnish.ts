@@ -161,6 +161,15 @@ export function furnishHouse(b: Building, town: Town, density: number, seed: num
 
 export const instancesOf = (f: HouseFurnishing): PropInstance[] => [...f.anchors, ...f.clutter]
 
+/** Unique catalogue prop IDs used by `houses`, ordered with anchors first (`ash` then `elm`) followed by clutter. */
+export function usedPropIds(houses: readonly HouseFurnishing[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const h of houses) for (const p of h.anchors) if (!seen.has(p.id)) { seen.add(p.id); out.push(p.id) }
+  for (const h of houses) for (const p of h.clutter) if (!seen.has(p.id)) { seen.add(p.id); out.push(p.id) }
+  return out
+}
+
 let planned: { key: string; houses: HouseFurnishing[] } = { key: "", houses: [] }
 let cachedOrigin: { key: string; town: Town } | null = null
 

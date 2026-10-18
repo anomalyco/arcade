@@ -53,22 +53,120 @@ try {
   page.on("console", m => { if (m.type() === "error") errors.push(m.text()) })
   await page.goto(`http://127.0.0.1:${port}/?seed=7&bench`)
   await page.waitForFunction(() => (window as any).__arcadeHarness?.ready)
-  const scenes: { name: string; x: number; y: number; zoom: number; hour: number }[] = JSON.parse(process.env.AB_SCENES ?? "null") ?? [
+  const scenes: { name: string; x: number; y: number; zoom: number; hour: number; horde?: number }[] = JSON.parse(process.env.AB_SCENES ?? "null") ?? [
     { name: "street", x: 30, y: 41, zoom: 46, hour: 18 },
     { name: "interior", x: 27.7, y: 31, zoom: 34, hour: 19 },
   ]
+  const wantDiff = process.env.AB_DIFF === "1"
+  if (wantDiff) {
+    await page.addStyleTag({ content: "#status, #hotbar, #stamina, #battery, .callouts, .callout, #hud, .hud, #markers, #prompt { visibility: hidden !important; }" })
+  }
   const out: Record<string, unknown> = {}
   for (const scene of scenes) {
-    const res = await page.evaluate(async ({ scene, A, B, rounds, hackA, hackB, aim }) => {
+    let beautyDiff: Record<string, unknown> | undefined
+    if (wantDiff) {
+      beautyDiff = await page.evaluate(async ({ scene, A, aim, hackA, hackB }) => {
+        const h = (window as any).__arcadeHarness
+        h._savedLampGrid ??= h.render.lampGrid
+        if (h._savedLampGrid) h.render.lampGrid = h._savedLampGrid
+        h.freeze(true); h.reset(7); h.setLab("timeScale", 0); h.setLab("zoom", scene.zoom); h.setLab("hour", scene.hour)
+        for (const [k, v] of Object.entries(A)) h.setLab(k, v)
+        const t0 = performance.now()
+        while (performance.now() - t0 < 8000) {
+          await h.step(1 / 60)
+          if (h.state().props?.ready) break
+          await new Promise((r) => setTimeout(r, 20))
+        }
+        if (scene.horde) {
+          h.setLab("cone", 180); h.setLab("range", 40)
+          h.stageHordes("crossroads", scene.horde)
+          h.setLab("hour", scene.hour)
+          h.setLab("quality", "high")
+          h.setLab("hordes.hordeWatch", false)
+          h.setLab("hideUnseenZombies", true)
+          h.hordeNoise()
+          for (let i = 0; i < 360; i++) await h.step(1 / 60, { mx: 0, my: 0, aim, interact: false })
+        } else {
+          h.pose(scene.x, scene.y, aim)
+          for (let i = 0; i < 12; i++) await h.step(1 / 60)
+        }
+        const canvas = document.querySelector("canvas")!
+        const capture = (fn: string) => {
+          new Function("h", fn)(h)
+          h.renderer.drawTo(h.render)
+          const c = new OffscreenCanvas(canvas.width, canvas.height)
+          const g = c.getContext("2d")!
+          g.drawImage(canvas, 0, 0)
+          return g.getImageData(0, 0, canvas.width, canvas.height)
+        }
+        const p = capture(hackA)
+        await new Promise((r) => setTimeout(r, 20))
+        const q = capture(hackB)
+        const lg = h.render.lampGrid
+        const gridStats = lg
+          ? {
+              lightCount: h.render.lightCount,
+              directLightCount: lg.directLightCount,
+              staticLampCount: lg.lightCount - lg.directLightCount,
+              activeCellCount: lg.activeCellCount,
+              overflowCount: lg.overflowCount,
+            }
+          : null
+        const totalPixels = p.width * p.height
+        let differOver6 = 0
+        let differOver1 = 0
+        let maxChannelDiff = 0
+        let sumAbs = 0
+        let sumSq = 0
+        for (let i = 0; i < p.data.length; i += 4) {
+          const dr = Math.abs(p.data[i]! - q.data[i]!)
+          const dg = Math.abs(p.data[i + 1]! - q.data[i + 1]!)
+          const db = Math.abs(p.data[i + 2]! - q.data[i + 2]!)
+          const l1 = dr + dg + db
+          const mx = Math.max(dr, dg, db)
+          if (mx > maxChannelDiff) maxChannelDiff = mx
+          if (mx > 1) differOver1++
+          if (l1 > 6) differOver6++
+          sumAbs += l1
+          sumSq += dr * dr + dg * dg + db * db
+        }
+        return {
+          ...gridStats,
+          totalPixels,
+          maxChannelDiff,
+          meanAbsDiff: +(sumAbs / (totalPixels * 3)).toFixed(5),
+          rmse: +Math.sqrt(sumSq / (totalPixels * 3)).toFixed(5),
+          shareOver1Pct: +((differOver1 / totalPixels) * 100).toFixed(4),
+          shareOver6Pct: +((differOver6 / totalPixels) * 100).toFixed(4),
+        }
+      }, { scene, A, aim, hackA, hackB })
+      console.log(`DIFF ${scene.name}:`, JSON.stringify(beautyDiff))
+    }
+    const res = await page.evaluate(async ({ scene, A, B, rounds, hackA, hackB, aim, wantDiff }) => {
       const h = (window as any).__arcadeHarness
       const hack = new Function("h", hackB)
       const unhack = new Function("h", hackA)
+      const sameLab = JSON.stringify(A) === JSON.stringify(B)
       const setup = async (lab: Record<string, number | string>) => {
+        h._savedLampGrid ??= h.render.lampGrid
+        if (h._savedLampGrid) h.render.lampGrid = h._savedLampGrid
         h.freeze(true); h.reset(7); h.setLab("timeScale", 0); h.setLab("zoom", scene.zoom); h.setLab("hour", scene.hour)
         for (const [k, v] of Object.entries(lab)) h.setLab(k, v)
-        h.pose(scene.x, scene.y, aim)
-        await h.step(1 / 60)
+        if (scene.horde) {
+          h.setLab("cone", 180); h.setLab("range", 40)
+          h.stageHordes("crossroads", scene.horde)
+          h.setLab("hour", scene.hour)
+          h.setLab("quality", "high")
+          h.setLab("hordes.hordeWatch", false)
+          h.setLab("hideUnseenZombies", true)
+          h.hordeNoise()
+          for (let i = 0; i < 360; i++) await h.step(1 / 60, { mx: 0, my: 0, aim, interact: false })
+        } else {
+          h.pose(scene.x, scene.y, aim)
+          await h.step(1 / 60)
+        }
       }
+      if (sameLab && !wantDiff) await setup(A)
       const time = async () => {
         const v: number[] = []
         for (let i = 0; i < 8; i++) v.push(await h.renderer.measure(h.render))
@@ -78,7 +176,7 @@ try {
       const b: number[] = []
       for (let r = 0; r < rounds; r++) {
         const run = async (variant: "a" | "b") => {
-          await setup(variant === "a" ? A : B)
+          if (!sameLab) await setup(variant === "a" ? A : B)
           if (variant === "b") hack(h)
           else unhack(h)
           ;(variant === "a" ? a : b).push(await time())
@@ -86,10 +184,10 @@ try {
         if (r % 2) { await run("b"); await run("a") } else { await run("a"); await run("b") }
       }
       return { a, b }
-    }, { scene, A, B, rounds, hackA, hackB, aim })
+    }, { scene, A, B, rounds, hackA, hackB, aim, wantDiff })
     const med = (xs: number[]) => { const s = [...xs].sort((p, q) => p - q); return (s[(s.length - 1) >> 1]! + s[s.length >> 1]!) / 2 }
     const diffs = res.a.map((x, i) => res.b[i]! - x)
-    out[scene.name] = { a: med(res.a), b: med(res.b), pairedDeltaMedian: med(diffs), pairedDeltaMad: med(diffs.map(d => Math.abs(d - med(diffs)))), raw: res }
+    out[scene.name] = { a: med(res.a), b: med(res.b), pairedDeltaMedian: med(diffs), pairedDeltaMad: med(diffs.map(d => Math.abs(d - med(diffs)))), beautyDiff, raw: res }
     console.log(`AB ${scene.name} A=${med(res.a).toFixed(3)} ms B=${med(res.b).toFixed(3)} ms paired Δ=${med(diffs).toFixed(3)} ms (MAD ${med(diffs.map(d => Math.abs(d - med(diffs)))).toFixed(3)})`)
   }
   assert.deepEqual(errors, [])

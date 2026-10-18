@@ -166,6 +166,7 @@ export type SceneHooks = {
   diffuseTerm?: string
   combineLighting?: string
   fragmentReturn?: string
+  lampGrid?: boolean
 }
 export const makeSceneShader = (hooks: SceneHooks = {}, looks = false, motion = false) => /* wgsl */ `
 ${common}
@@ -177,6 +178,7 @@ fn look(bit: u32) -> bool { return F.effects.z > 0.5 && (u32(F.effects.y) & bit)
 @group(0) @binding(5) var floorSamp: sampler;
 @group(0) @binding(6) var bounceTex: texture_2d<f32>;
 @group(0) @binding(8) var moonTex: texture_2d<f32>;
+${hooks.lampGrid !== false ? "@group(0) @binding(17) var uLampGrid: texture_2d<u32>;" : ""}
 ${hooks.declarations ?? ""}
 
 struct VIn {
@@ -373,7 +375,16 @@ fn shadowAt(slot: u32, lp: vec2f, hl: f32, size: f32, p: vec2f, y: f32) -> f32 {
 }
 
 struct Lit { diff: vec3f, spec: vec3f }
-
+${hooks.lampGrid !== false ? `
+fn sampleLampGrid(p: vec2f) -> u32 {
+  let uv = ${hooks.mapUv ?? "p * F.map.xy"};
+  if (any(uv < vec2f(0.0)) || any(uv >= vec2f(1.0))) { return 0u; }
+  let dim = textureDimensions(uLampGrid);
+  let cell = clamp(vec2i(uv * vec2f(dim)), vec2i(0), vec2i(dim) - vec2i(1));
+  let g = textureLoad(uLampGrid, cell, 0);
+  return g.x | (g.y << 8u) | (g.z << 16u) | (g.w << 24u);
+}
+` : ""}
 /**
  * Light reaching a surface from the culled lights: windowed inverse-square falloff from the fixture's 3D position,
  * a soft cone, the polar shadow map, wrapped diffuse and an optional glossy highlight. A little of each light's
@@ -384,13 +395,33 @@ fn lightSum(world: vec3f, n: vec3f, V: vec3f, shin: f32, wrap: f32) -> Lit {
   out.diff = vec3f(0.0);
   out.spec = vec3f(0.0);
   var count = u32(F.screen.z);
-  // Outside the union's conservative bounds, skip the entire shadowless monitor suffix.
+  ${hooks.lampGrid !== false ? `let firstLight = select(0u, 1u, count > 0u && lights[0].color.w <= 0.001);
+  var lampList = 0u;
+  if (F.focus.w < -0.5) {
+    lampList = sampleLampGrid(world.xz);
+    count = min(count, u32(-F.focus.w - 1.0));
+  } else if (u32(F.focus.w) < count && (any(world.xz < F.monitorBounds.xy) || any(world.xz > F.monitorBounds.zw))) {
+    count = u32(F.focus.w);
+  }
+  let plan = world.xz + n.xz * 0.04;
+  var nextDirect = firstLight;
+  loop {
+    var i: u32;
+    if (nextDirect < count) {
+      i = nextDirect;
+      nextDirect += 1u;
+    } else {
+      let slot1 = lampList & 0xffu;
+      if (slot1 == 0u) { break; }
+      lampList >>= 8u;
+      i = slot1 - 1u;
+    }` : `// Outside the union's conservative bounds, skip the entire shadowless monitor suffix.
   if (u32(F.focus.w) < count && (any(world.xz < F.monitorBounds.xy) || any(world.xz > F.monitorBounds.zw))) {
     count = u32(F.focus.w);
   }
   let plan = world.xz + n.xz * 0.04;
   let firstLight = select(0u, 1u, count > 0u && lights[0].color.w <= 0.001);
-  for (var i = firstLight; i < count; i++) {
+  for (var i = firstLight; i < count; i++) {`}
     // Most pixels are outside the small monitor pools. Reject using just the position/radius cache line.
     let pos = lights[i].pos;
     let lp = pos.xz;
@@ -770,7 +801,7 @@ fn shadeScene(o: VOut) -> vec4f {
  * Sprites. kind: 0 glow (camera facing), 1 faceted smoke puff, 2 ground ring, 3 jagged ground ring, 4 ground line
  * (tracer, throw arc), 5 dashed ground ring, 6 ground disc, 7 marker "!", 8 ground wedge (claymore cone; extra = half-angle).
  */
-export const sceneShader = (looks = true, motion = false) => makeSceneShader({}, looks, motion)
+export const sceneShader = (looks = true, motion = false) => makeSceneShader({ lampGrid: looks }, looks, motion)
 
 export const spriteShader = (motion = false) => /* wgsl */ `
 ${common}

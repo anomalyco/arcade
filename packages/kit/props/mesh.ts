@@ -1,4 +1,5 @@
-import { MAT, Mesh, type Mat } from "../gpu/mesh"
+import { hex, MAT, Mesh, type Mat } from "../gpu/mesh"
+import { propSpec } from "./catalogue"
 import type { PropLod } from "./format"
 
 /** How a prop's baked data turns into vertex colours. Live Lab knobs; changing them rebuilds the models. */
@@ -36,5 +37,13 @@ export function propMesh(lod: PropLod, look: PropLook = DEFAULT_PROP_LOOK, glow?
       v.push(p[k * 3]!, p[k * 3 + 1]!, p[k * 3 + 2]!, n[k * 3]!, n[k * 3 + 1]!, n[k * 3 + 2]!, r, g, b, mat, lamp ? glow.aux : 0)
     }
   }
+  return mesh
+}
+
+/** Box-furniture placeholder matching a catalogue prop's footprint and height while its `.prop` mesh loads or if it fails. */
+export function propBoxMesh(id: string): Mesh {
+  const [w, h, d] = propSpec(id).size
+  const mesh = new Mesh()
+  mesh.bevelBox(-w / 2, 0, -d / 2, w / 2, Math.max(0.12, h), d / 2, Math.min(0.03, w * 0.05, d * 0.05), hex(0x5c4026), hex(0x6e4e30), MAT.timber, MAT.timber)
   return mesh
 }

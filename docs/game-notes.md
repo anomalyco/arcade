@@ -789,6 +789,27 @@ proven animation techniques to animation.md, not here.
   street / −0.020 ms interior (MADs 0.06/0.11). The look's `ambientFill` and `fogDensity` change nothing in Outbreak's
   frame even at their maximum, so they got no curves.
 
+- **Spatial 2D light-list grid (`uLampGrid`) and staged `.prop` loading for start houses.** `packages/kit/gpu/lamp-grid.ts`
+  precomputes a `192×192` (`0.5 m` cell, `144 KiB` `rgba8uint` at `@binding(17)`) light-list texture on the CPU for static
+  lamps (`lights[directLightCount .. lightCount)`), keeping dynamic lights (player and co-op flashlights, muzzle flashes,
+  and vehicle headlights/taillights) in the contiguous direct prefix `[firstLight .. directLightCount)`. Each cell stores up
+  to 4 1-based light slot indices in ascending slot order, clipped to table-lamp room rects (`cone.w < -2.5`), sconce
+  wall/room bounds (`cone.w = 1.25`), and window spotlight half-spaces (`0.5 < cone.w <= 1.125`), with priority-scored
+  overflow eviction at the cell center (2× boost for shadow-casting room lamps) and dirty-row uploads gated on spatial/active
+  signatures so lamp flicker and stationary frames skip CPU rebuilds and GPU uploads (`0 B` uploaded). In
+  `packages/kit/gpu/shaders.ts`, `sampleLampGrid` packs the 4 `u8` slots into a single `u32` scalar before the `lightSum`
+  loop so texture coordinates and `vec4u` texels do not stay live across `shadowAt`. Paired in-page GPU measurements on
+  `mini` (`scripts/ab-gpu.ts`, 12 alternating rounds at `3456×1894`) show **`-0.230 ms` (MAD `0.056 ms`)** on close street
+  night (`6.557 → 6.283 ms`), **`-0.315 ms` (MAD `0.614 ms`)** on wide street night (`7.470 → 7.150 ms`), **`-0.435 ms`
+  (MAD `0.015 ms`)** on interior night (`9.404 → 8.975 ms`), and **`-0.617 ms` (MAD `0.034 ms`)** on a 500-zombie street
+  horde at night (`9.519 → 8.918 ms`), with `0.0000%` pixel diff (`maxChannelDiff = 0`, `rmse = 0`) on wide street,
+  interior, and horde frames (`rmse = 0.161 / 255`, `0.0015%` pixels `> 1/255` on close street). For start-house furniture
+  (`games/outbreak/src/props/furnish.ts`, `games/outbreak/src/props/dressing.ts`, `packages/kit/props/models.ts`),
+  `usedPropIds(town)` stages the 16 `.prop` meshes used by `furnishedHouses` (anchors first, then clutter: `2,963,900 B`)
+  ahead of the 10 unused library props (`1,367,034 B` deferred to idle after the first furnished frame, **`-31.6%` bytes
+  before first furnished frame** vs `4,330,934 B` for all 26 `PROP_IDS`), while `PropModels` (`boxFallback: true`) serves
+  `propBoxMesh(id)` placeholders while individual `.prop` assets are in flight or if an asset fails.
+
 ## Art direction
 
 ### Outbreak look: one lab, knobs as trims on the day cycle (2026-10-15)
