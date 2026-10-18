@@ -8,9 +8,19 @@ import { GameAudio } from "./audio/game"
 const RADIUS = 0.3
 /** Standing and crouched eye heights above the feet (m). */
 const EYE = 1.65
-const EYE_CROUCH = 1.05
+const EYE_CROUCH = 1.2
 /** Top of the head above the eye. */
 const CROWN = 0.1
+/** Body top when fully crouched (head bent forward): crawl spaces are modelled at 1.15 m and up. Under anything lower
+ *  than the crouched eye, the eye ducks to stay 8 cm under it. */
+const TOP_CROUCH = 1.15
+/** Movement speeds (m/s), measured from the body's animation clips (src/playerb) so the cadence matches: walk is the
+ *  Lab's Walk speed (1.6); jog and sprint are the two Run styles; crouch-walk; backwards and sideways go 0.68×. */
+const JOG = 2.4
+const SPRINT = 4.1
+const CROUCH_SPEED = 1.3
+const WALK_REF = 1.6
+const OFF_AXIS = 0.68
 /** Tallest step the body walks up (and the highest collider it steps over) / drop it follows down without falling. */
 const STEP_UP = 0.45
 const STEP_DOWN = 0.5
@@ -113,6 +123,8 @@ export class Player {
   private time = 0
   private foot = 0
   private floor: Floor | null = null
+  /** Eye limit under a low ceiling (smoothed); 3 m (no limit) when nothing is overhead. */
+  private duck = 3
   private ladderOn: Ladder | null = null
   private ladderFace: PlayerState["ladder"] = null
   /** The game's audio (src/audio/game.ts): only with input enabled, so never in `?shot` mode. */
@@ -126,9 +138,11 @@ export class Player {
   ) {
     ctx.settings["player.crouchMode"] ??= 0
     ctx.settings["player.bob"] ??= 1
+    ctx.settings["player.runStyle"] ??= 0
     ctx.controls.push(
       { key: "player.crouchMode", label: "Crouch key", group: "Player", type: "select", options: [{ value: 0, label: "Hold" }, { value: 1, label: "Toggle" }] },
       { key: "player.bob", label: "Head bob", group: "Player", unit: "×", min: 0, max: 2, step: 0.05 },
+      { key: "player.runStyle", label: "Run style", group: "Player", type: "select", options: [{ value: 0, label: "Jog 2.4 m/s" }, { value: 1, label: "Sprint 4.1 m/s" }] },
     )
     const self = this
     this.state = {
@@ -241,7 +255,28 @@ export class Player {
 
   private get eyeHeight() {
     const c = this.crouch * this.crouch * (3 - 2 * this.crouch)
-    return EYE + (EYE_CROUCH - EYE) * c
+    return Math.min(EYE + (EYE_CROUCH - EYE) * c, this.duck)
+  }
+
+  /** Top of the body above the feet (collisions, headroom): 1.75 standing, 1.15 crouched. */
+  private get bodyTop() {
+    const c = this.crouch * this.crouch * (3 - 2 * this.crouch)
+    return EYE + CROWN + (TOP_CROUCH - EYE - CROWN) * c
+  }
+
+  /** Lowest underside overhead within the body's footprint, above the feet (m; Infinity when clear to 1.8 m). */
+  private ceiling() {
+    const { x, y, z } = this.pos
+    const r2 = (RADIUS - 0.02) ** 2
+    let c = Infinity
+    for (const b of this.ctx.colliders) {
+      const u = b.min[1] - y
+      if (u < 0.9 || u >= c || u > 1.8 || b.max[1] <= b.min[1]) continue
+      const cx = Math.max(b.min[0], Math.min(x, b.max[0]))
+      const cz = Math.max(b.min[2], Math.min(z, b.max[2]))
+      if ((x - cx) ** 2 + (z - cz) ** 2 < r2) c = u
+    }
+    return c
   }
 
   update(dt: number) {
@@ -252,7 +287,7 @@ export class Player {
     const fwd = (k.has("KeyW") || k.has("ArrowUp") ? 1 : 0) - (k.has("KeyS") || k.has("ArrowDown") ? 1 : 0)
     const side = (k.has("KeyD") || k.has("ArrowRight") ? 1 : 0) - (k.has("KeyA") || k.has("ArrowLeft") ? 1 : 0)
     const run = k.has("ShiftLeft") || k.has("ShiftRight")
-    const walk = Number(this.ctx.settings["player.walk"] ?? 1.9)
+    const walk = Number(this.ctx.settings["player.walk"] ?? WALK_REF)
     const len = Math.hypot(fwd, side) || 1
     const sin = Math.sin(this.yaw)
     const cos = Math.cos(this.yaw)
@@ -350,10 +385,21 @@ export class Player {
       return
     }
 
+    // Duck under anything lower than the crouched eye (a 1.15 m crawl space): the eye stays 8 cm under it.
+    const ceil = this.ceiling()
+    const duckTo = ceil < EYE + CROWN ? Math.max(0.95, ceil - 0.08) : 3
+    this.duck += (duckTo - this.duck) * (1 - Math.exp(-dt / (duckTo < this.duck ? 0.1 : 0.2)))
+
     // Horizontal: accelerate towards the wished velocity; friction when there's no input; little air control.
-    const crouchK = 1 - 0.55 * this.crouch
+    // Speeds follow the body's clips: walk, jog or sprint (Lab "Run style"), crouch-walk; backwards and sideways
+    // go 0.68× forward, blended by the input direction.
+    const scale = walk / WALK_REF
+    const runSpeed = Number(this.ctx.settings["player.runStyle"] ?? 0) === 1 ? SPRINT : JOG
+    const base = this.crouch > 0.5 ? CROUCH_SPEED * scale : run ? runSpeed * scale : walk
+    const ahead = Math.max(0, fwd / len)
+    const dirK = OFF_AXIS + (1 - OFF_AXIS) * ahead * ahead
     const stairK = this.stairs > 0 ? 0.75 : 1
-    const wish = (fwd || side ? 1 : 0) * walk * (run && this.crouch < 0.5 ? 2.3 : 1) * crouchK * stairK
+    const wish = (fwd || side ? 1 : 0) * base * dirK * stairK
     const rate = this.grounded ? (fwd || side ? 9 : 11) : 1.2
     const a = 1 - Math.exp(-rate * dt)
     this.vel.x += (wx * wish - this.vel.x) * a
@@ -392,7 +438,7 @@ export class Player {
     if (!this.grounded) {
       this.vel.y -= GRAVITY * dt
       const ny = this.pos.y + this.vel.y * dt
-      const crown = this.eyeHeight + CROWN
+      const crown = this.bodyTop
       if (this.vel.y > 0 && !this.headroom(this.pos.x, this.pos.z, ny + crown)) this.vel.y = 0
       else this.pos.y = ny
       const g = this.groundAt(this.pos.x, this.pos.z, Math.max(this.pos.y, this.pos.y - this.vel.y * dt) + 0.02)
@@ -434,7 +480,7 @@ export class Player {
       this.eyeOffset = Math.max(-0.7, Math.min(0.7, this.eyeOffset))
     }
     const speed = Math.hypot(this.vel.x, this.vel.z)
-    const running = speed > Number(this.ctx.settings["player.walk"] ?? 1.9) * 1.4
+    const running = speed > Number(this.ctx.settings["player.walk"] ?? WALK_REF) * 1.25
     // Gait: one cycle = two footfalls.
     if (stride > 0 && (this.grounded || ladder)) {
       const len = ladder ? 0.6 : running ? STRIDE_RUN : STRIDE_WALK
@@ -548,7 +594,7 @@ export class Player {
    */
   private filteredGround() {
     // Wider at a run, so the climb eases in over the same time at the foot of a flight (a straight ramp is unchanged).
-    const H = 0.3 + 0.2 * Math.max(0, Math.min(1, (Math.hypot(this.vel.x, this.vel.z) - 1.9) / 2.5))
+    const H = 0.3 + 0.2 * Math.max(0, Math.min(1, (Math.hypot(this.vel.x, this.vel.z) - WALK_REF) / 2.5))
     const { x, z } = this.pos
     // Heights are judged against the previous eye base (continuous), not the snapping feet: a tread entering or
     // leaving the window when the body steps would otherwise kink the ramp for a frame.
@@ -601,7 +647,7 @@ export class Player {
    * and no floor slab overhead (a slab's underside is taken as 0.25 m below its walking surface).
    */
   private headroom(x: number, z: number, top: number) {
-    const from = this.pos.y + this.eyeHeight + CROWN - 0.02
+    const from = this.pos.y + this.bodyTop - 0.02
     if (top <= from) return true
     const r2 = (RADIUS - 0.02) ** 2
     for (const b of this.ctx.colliders) {
@@ -624,7 +670,7 @@ export class Player {
     const nx = this.pos.x + dx
     const nz = this.pos.z + dz
     const feet = this.pos.y + STEP_UP
-    const head = this.pos.y + this.eyeHeight + CROWN
+    const head = this.pos.y + this.bodyTop
     for (const b of this.ctx.colliders) {
       if (b.max[1] < feet || b.min[1] > head) continue
       const cx = Math.max(b.min[0], Math.min(nx, b.max[0]))

@@ -55,7 +55,19 @@ const ev = <T>(src: string, arg?: unknown): Promise<T> =>
 const place = (x: number, y: number, z: number, yaw: number, pitch = 0) => ev(`P.pos.x=${x};P.pos.y=${y};P.pos.z=${z};P.yaw=${yaw};P.pitch=${pitch};P.resetMotion()`)
 const pitch = (p: number) => ev(`P.pitch=${p}`)
 const view = (third: boolean) => ev(`B.settings["body.view"]=${third ? 1 : 0}`)
-const pos = () => ev<{ x: number; y: number; z: number; grounded: boolean; onLadder: boolean; state: string }>(`return { ...P.pos, grounded: P.state.grounded, onLadder: P.state.onLadder, state: B.body.debug.state }`)
+const slides: Record<string, number[]> = {}
+const pos = async () => {
+  const p = await ev<{ x: number; y: number; z: number; grounded: boolean; onLadder: boolean; state: string; speed: number; slide: number[]; planted: boolean[]; eyeY: number; headY: number }>(
+    `const b = B.body; const h = b.bones.Head; const v = h.getWorldPosition(b.root.position.clone()); return { ...P.pos, grounded: P.state.grounded, onLadder: P.state.onLadder, state: b.debug.state, speed: P.state.speed, slide: [...b.debug.slide], planted: [...b.debug.planted], eyeY: P.state.eye.y - P.pos.y, headY: v.y + 0.07 - P.pos.y }`,
+  )
+  // Planted-foot slide (cm/s) while moving on the flat, per gait state.
+  if (p.grounded && p.speed > 0.5 && !p.state.startsWith("stairs")) {
+    const key = `${current} ${p.state} ${p.speed.toFixed(1)} m/s`
+    for (let i = 0; i < 2; i++) if (p.planted[i]) (slides[key] ??= []).push(p.slide[i]! * 100)
+  }
+  if (p.state.startsWith("crouch")) (slides[`${current} crouch eye ctrl ${p.eyeY.toFixed(2)} body ${p.headY.toFixed(2)}`] ??= []).push(0)
+  return p
+}
 const wait = (ms: number) => page.waitForTimeout(ms)
 const character = async (id: string) => {
   await ev(`B.settings["player.character"]=${JSON.stringify(id)}`)
@@ -211,7 +223,11 @@ const MOMENTS: Record<string, () => Promise<void>> = {
     await page.keyboard.press("KeyE")
     await wait(550)
     await snap("lift-press", 1.2)
-    await wait(2500)
+    await wait(3500)
+    await pitch(0.05)
+    await snap("lift-riding", 1.2)
+    await wait(6000)
+    await snap("lift-arrived", 1.2)
   },
   ladder: async () => {
     const l = await ev<{ min: number[]; max: number[] }>(`return P.ctx.ladders.find(l => l.min[0] < -55 && l.max[0] > -57.5) ?? P.ctx.ladders[0]`)
@@ -284,4 +300,5 @@ if (files.length) {
   if (p.exitCode !== 0) errors.push(p.stderr.toString())
   else console.log(dest)
 }
+for (const [k, v] of Object.entries(slides)) if (v.length > 2 || k.includes("eye")) console.log(`slide ${k}: ${v.length > 0 ? (v.reduce((a, b) => a + b, 0) / v.length).toFixed(1) : "-"} cm/s avg, ${Math.max(...v).toFixed(1)} max (${v.length})`)
 console.log(JSON.stringify({ frame, errors }))

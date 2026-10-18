@@ -288,6 +288,48 @@
   "refHips": 0.98,
   "fps": 30,
   "clips": {
+   "ascending-stairs-alt": {
+    "kind": "climb",
+    "frames": 37,
+    "duration": 1.2,
+    "loop": true,
+    "inPlace": true,
+    "velocity": [
+     0.0039,
+     0.3796
+    ],
+    "speed": 0.3796,
+    "travel": [
+     0,
+     -0.4715,
+     0.4608
+    ],
+    "rise": 0.384,
+    "yawTotal": 0,
+    "contacts": {
+     "l": [
+      [
+       0.028,
+       0.25
+      ],
+      [
+       0.667,
+       0.972
+      ]
+     ],
+     "r": [
+      [
+       0.194,
+       0.75
+      ]
+     ]
+    },
+    "centred": [
+     -0.018,
+     0.006
+    ],
+    "seamFixed": 0.21
+   },
    "ascending-stairs": {
     "kind": "climb",
     "frames": 42,
@@ -1975,28 +2017,117 @@
     ],
     "seamFixed": 0.04
    },
-   "descending-stairs": {
-    "kind": "broken",
+   "descending-stairs-rootmotion": {
+    "kind": "climb",
     "frames": 29,
     "duration": 0.9333,
-    "loop": false,
+    "loop": true,
     "inPlace": true,
     "velocity": [
-     0.002,
-     0.4484
+     0.0393,
+     0.4455
     ],
-    "speed": 0.4484,
+    "speed": 0.4472,
     "travel": [
      0,
-     0,
-     -0.4742
+     -0.4788,
+     -0.5042
     ],
-    "rise": 0,
+    "rise": -0.5403,
     "yawTotal": 0,
+    "contacts": {
+     "l": [
+      [
+       0.071,
+       0.5
+      ]
+     ],
+     "r": [
+      [
+       0.036,
+       0.107
+      ],
+      [
+       0.571,
+       0.964
+      ]
+     ]
+    },
     "centred": [
      0.013,
-     0.039
-    ]
+     -0.021
+    ],
+    "seamFixed": 0
+   },
+   "descending-stairs-run": {
+    "kind": "climb",
+    "frames": 11,
+    "duration": 0.3333,
+    "loop": true,
+    "inPlace": true,
+    "velocity": [
+     -0.0271,
+     1.0908
+    ],
+    "speed": 1.0911,
+    "travel": [
+     0,
+     -0.0134,
+     -0.3871
+    ],
+    "rise": -1.1613,
+    "yawTotal": 0,
+    "contacts": {
+     "l": [],
+     "r": []
+    },
+    "centred": [
+     -0.023,
+     0.011
+    ],
+    "seamFixed": 0
+   },
+   "descending-stairs": {
+    "kind": "climb",
+    "frames": 29,
+    "duration": 0.9333,
+    "loop": true,
+    "inPlace": true,
+    "velocity": [
+     0.0393,
+     0.4455
+    ],
+    "speed": 0.4472,
+    "travel": [
+     0,
+     -0.0494,
+     -0.5042
+    ],
+    "rise": -0.5403,
+    "yawTotal": 0,
+    "contacts": {
+     "l": [
+      [
+       0.071,
+       0.5
+      ]
+     ],
+     "r": [
+      [
+       0.036,
+       0.107
+      ],
+      [
+       0.571,
+       0.964
+      ]
+     ]
+    },
+    "centred": [
+     0.013,
+     0.071
+    ],
+    "seamFixed": 0
    },
    "falling-idle": {
     "kind": "idle",

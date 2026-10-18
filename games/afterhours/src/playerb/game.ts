@@ -96,7 +96,7 @@ export function createGameBody(ctx: WorldContext, player: Player) {
       const thirdOn = Number(s["body.view"]) === 1
       if (s["body.show"] === false) {
         body.root.visible = false
-        third.apply(false, player, body, 0)
+        third.apply(false, player, body, 0, ctx.colliders)
         return
       }
       body.root.visible = true
@@ -104,7 +104,13 @@ export function createGameBody(ctx: WorldContext, player: Player) {
       // The third-person debug camera shows the first-person placement (eyes at the controller's eye).
       body.eyeAnchor = true
       body.update(dt, player.state)
-      third.apply(thirdOn, player, body, Number(s["body.thirdDist"]))
+      // Ladders: the camera at the body's eyes (the controller keeps it on the rung plane, in front of the face).
+      const vw = body.view.weight
+      if (vw > 1e-3) {
+        camera.position.lerp(body.view.eye, vw)
+        camera.updateMatrixWorld()
+      }
+      third.apply(thirdOn, player, body, Number(s["body.thirdDist"]), ctx.colliders)
       if (s["body.lampShadows"] !== false) shadows(body.root.position)
     },
   }
@@ -149,7 +155,7 @@ function thirdPerson(camera: THREE.PerspectiveCamera) {
   const back = new THREE.Vector3()
   let on = false
   return {
-    apply(want: boolean, player: Player, body: CharacterBody, dist: number) {
+    apply(want: boolean, player: Player, body: CharacterBody, dist: number, colliders: WorldContext["colliders"]) {
       if (want !== on) {
         on = want
         if (on) camera.layers.enable(HEAD_LAYER)
@@ -158,13 +164,42 @@ function thirdPerson(camera: THREE.PerspectiveCamera) {
       if (!on) return
       const st = player.state
       target.set(body.root.position.x, body.root.position.y + 1.2, body.root.position.z)
-      // Behind the view direction, raised by the pitch.
+      // Behind the view direction, raised by the pitch; pulled in in front of walls (a lift car, a corridor).
       back.set(Math.sin(st.yaw) * Math.cos(st.pitch), -Math.sin(st.pitch) + 0.25, Math.cos(st.yaw) * Math.cos(st.pitch)).normalize()
-      camera.position.copy(target).addScaledVector(back, dist)
+      const hit = rayBoxes(target, back, dist, colliders)
+      camera.position.copy(target).addScaledVector(back, Math.max(0.4, hit - 0.2))
       camera.lookAt(target)
       camera.updateMatrixWorld()
     },
   }
+}
+
+/** Nearest hit (≤ max) of a ray against the colliders' boxes, ignoring boxes the origin is inside. */
+function rayBoxes(o: THREE.Vector3, d: THREE.Vector3, max: number, boxes: WorldContext["colliders"]) {
+  let best = max
+  const O = [o.x, o.y, o.z]
+  const D = [d.x, d.y, d.z]
+  for (const b of boxes) {
+    let t0 = 0
+    let t1 = best
+    let inside = true
+    for (let i = 0; i < 3 && t0 <= t1; i++) {
+      const lo = b.min[i]!
+      const hi = b.max[i]!
+      if (O[i]! < lo || O[i]! > hi) inside = false
+      if (Math.abs(D[i]!) < 1e-9) {
+        if (O[i]! < lo || O[i]! > hi) t0 = Infinity
+        continue
+      }
+      let a = (lo - O[i]!) / D[i]!
+      let c = (hi - O[i]!) / D[i]!
+      if (a > c) [a, c] = [c, a]
+      t0 = Math.max(t0, a)
+      t1 = Math.min(t1, c)
+    }
+    if (!inside && t0 <= t1 && t0 < best) best = t0
+  }
+  return best
 }
 
 /**

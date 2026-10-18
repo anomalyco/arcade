@@ -387,7 +387,23 @@ def half_mirror(arm, act, a, b, lift, land, side):
         t = min(1.0, max(0.0, (fr - lift) / max(1, land - lift)))
         t = t * t * (3 - 2 * t)
         miss = max(miss, solve_leg(frames[i], side, Vector((0, 0, h * (1 - 2 * t)))))
-    print("stair repair", act.name, "step rise", round(h, 3), "unreached", round(miss, 3))
+    # The source sinks into a squat at mid-step (hips ~0.25 m lower over the supporting foot than in a walk). Lift
+    # the whole body back toward a walking stance leg (hips at least 0.70 m above the lower ankle; a stair descent
+    # still bends the knee) and re-solve both legs so the feet stay where they are.
+    lifts = []
+    for f in frames:
+        low = min(f["LeftFoot"].translation.z, f["RightFoot"].translation.z)
+        lifts.append(max(0.0, 0.70 - (f["Hips"].translation.z - low)))
+    sm = [sum(lifts[max(0, i - 2): i + 3]) / len(lifts[max(0, i - 2): i + 3]) for i in range(len(lifts))]
+    for f, lz in zip(frames, sm):
+        if lz <= 0:
+            continue
+        up = Vector((0, 0, lz))
+        for n in f:
+            f[n] = Matrix.Translation(f[n].translation + up) @ f[n].to_3x3().to_4x4()
+        for sd in ("Left", "Right"):
+            miss = max(miss, solve_leg(f, sd, -up))
+    print("stair repair", act.name, "step rise", round(h, 3), "max lift", round(max(sm), 3), "unreached", round(miss, 3))
 
     def mir_rot(f, name):
         mn = mirror_name(name) if mirror_name(name) in f else name

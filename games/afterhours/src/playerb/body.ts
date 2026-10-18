@@ -113,6 +113,9 @@ const IDLE = "breathing-idle"
 /** The crouch idle that matches the crouch walks (crouching-idle is a deep squat, its eyes at ~0.8 m). */
 const CROUCH_IDLE = "crouch-idle"
 const TORCH_ARM = /^Left(Shoulder|Arm|ForeArm|Hand)/
+/** The jump clip flings the arms out sideways; in the air they are pulled most of the way to the idle's. */
+const CALM_ARMS = /^(Left|Right)(Shoulder|Arm|ForeArm)$/
+const ARM_CALM = 0.9
 const FINGERS = /^LeftHand(Thumb|Index|Middle|Ring|Pinky)/
 const REACH_ARM = /^Right(Shoulder|Arm|ForeArm|Hand)/
 /** E: the part of each clip that is the reach (clip seconds) and its playback rate. */
@@ -219,6 +222,13 @@ export class CharacterBody {
   private wasGrounded = true
   private stairW = 0
   private stairDir = 0
+  private stairPhase = 0
+  private topW = 0
+  /** Share of the jump / fall clips in the pose (their arms are toned down towards the idle's). */
+  private airW = 0
+  private armSamplers: Sampler[] = []
+  /** First person: where the camera should be when the body, not the controller, places the head (ladders). */
+  readonly view = { weight: 0, eye: new THREE.Vector3() }
   private ladderT = 0
   private ladderW = 0
   private ladderGap = 0.35
@@ -373,7 +383,7 @@ export class CharacterBody {
     }
     this.prepLadder()
     this.eyes = { stand: this.eyeY(IDLE), crouch: this.eyeY(CROUCH_IDLE), crouchWalk: this.eyeY("crouched-walking") }
-    for (const n of [IDLE, CROUCH_IDLE, "ascending-stairs", "descending-stairs", "climbing-ladder", "falling-idle"]) {
+    for (const n of [IDLE, CROUCH_IDLE, "ascending-stairs", "descending-stairs", "descending-stairs-run", "climbing-ladder", "falling-idle"]) {
       if (!this.clips.has(n)) continue
       const m = META.anims.clips[n]!
       const l: Loop = { name: n, action: act(n), duration: m.duration, speed: (m.speed ?? 0) * this.k, dir: 0, offset: 0, w: 0 }
@@ -386,6 +396,8 @@ export class CharacterBody {
       const clip = this.clips.get(INTERACT[kind].clip)
       this.reach[kind] = clip ? this.samplers(clip, REACH_ARM) : []
     }
+    const idleClip = this.clips.get(IDLE)
+    this.armSamplers = idleClip ? this.samplers(idleClip, CALM_ARMS) : []
     this.torchSamplers = []
     const ti = this.clips.get("torch-idle")
     const tw = this.clips.get("torch-walk-forward")
@@ -735,19 +747,31 @@ export class CharacterBody {
     stride = tot > 0 ? stride / tot : 1
     if (tot > 0 && stride > 0.05) this.phase = (this.phase + (speed * dt) / stride) % 1
 
-    // Stairs: the feet's ground rising or falling while walking (|vy| over ~0.12 m/s) swaps in the stair clips.
-    // Going down uses the flat gait (with the pelvis offset): the downloaded "descending-stairs" is a single step into
-    // a squat, not a stair loop (scripts/playerb/mixamo.py marks it "broken"), until a real one is downloaded.
+    // Stairs: the feet's ground rising or falling while walking (|vy| over ~0.12 m/s) swaps in the stair clips (in
+    // place; the controller provides the height). Their phase follows the height climbed, one cycle per clip rise, so
+    // the steps match the treads whatever the walking speed. Going down fast blends in the stair run.
     if (Math.abs(this.vy) > 0.12) this.stairDir = Math.sign(this.vy)
-    const downOk = META.anims.clips["descending-stairs"]?.kind === "climb"
+    const isClimb = (n: string) => META.anims.clips[n]?.kind === "climb" && this.loops.has(n)
+    const downOk = isClimb("descending-stairs")
     const climbing = moving * smooth(0.12, 0.3, Math.abs(this.vy)) * (1 - crouch) * (this.stairDir >= 0 || downOk ? 1 : 0)
     this.stairW += (climbing - this.stairW) * damp(6, dt)
-    const stairs = this.loops.get(this.stairDir >= 0 ? "ascending-stairs" : "descending-stairs")
     const flat = 1 - this.stairW
     for (const [ws, gwt] of set) for (const [l, x] of ws) l.w += x * gwt * flat
-    if (stairs) {
-      stairs.w += this.stairW
-      stairs.action.time = (this.phase * stairs.duration + stairs.offset) % stairs.duration
+    if (this.stairW > 1e-3) {
+      const runDown = this.stairDir < 0 && isClimb("descending-stairs-run") ? smooth(0.8, 1.3, -this.vy) : 0
+      const pick: [string, number][] = this.stairDir >= 0 ? [["ascending-stairs", 1]] : [["descending-stairs", 1 - runDown], ["descending-stairs-run", runDown]]
+      let perCycle = 0
+      for (const [n, x] of pick) {
+        const m = META.anims.clips[n]
+        if (m) perCycle += Math.abs((m.rise ?? 0.33) * m.duration * this.k) * x
+      }
+      this.stairPhase = (this.stairPhase + (Math.abs(this.vy) * dt) / Math.max(0.1, perCycle)) % 1
+      for (const [n, x] of pick) {
+        const l = this.loops.get(n)
+        if (!l || x < 1e-3) continue
+        l.w += this.stairW * x
+        l.action.time = this.stairPhase * l.duration
+      }
     }
 
     // Airborne: the jump clip scrubbed between take-off and landing by vertical velocity; long falls loop falling.
@@ -782,6 +806,7 @@ export class CharacterBody {
       }
     }
     const groundW = 1 - Math.max(this.air, 0)
+    this.airW = Math.min(1, jumpW + (fall?.w ?? 0))
 
     // Ladder: the climb loop phase-locked to the height climbed (one cycle per clip rise; reversed going down). The
     // last metre and a half to the top scrubs the climb onto the top by height, which plays out after the step off.
@@ -886,11 +911,26 @@ export class CharacterBody {
     mixer.update(0)
     this.root.updateMatrixWorld(true)
 
+    this.calmArms()
+    this.topW = topW
     this.applyLook(s, (1 - ladderW) * (1 - topW))
     this.applyInteract(dt, s, ladderW)
     this.applyTorch(dt, s, moving)
     if (this.act) w[`E ${this.act.kind}`] = 1
     this.groundFeet(dt, s, inAir)
+  }
+
+  /** Jump and fall: the arms most of the way to the breathing idle's (the clip's arms fly out like a T). */
+  private calmArms() {
+    const k = this.airW * ARM_CALM
+    if (k < 1e-3) return
+    const idle = this.loops.get(IDLE)
+    const t = idle ? this.idleT % idle.duration : 0
+    for (const smp of this.armSamplers) {
+      _q.fromArray(smp.interp.evaluate(t) as unknown as number[])
+      smp.bone.quaternion.slerp(_q, k)
+    }
+    this.model!.updateMatrixWorld(true)
   }
 
   /** Rotates a bone by `angle` about a world axis (its parent's world matrix must be current). */
@@ -1122,6 +1162,20 @@ export class CharacterBody {
     }
     this.root.position.x = x
     this.root.position.z = z
+
+    // On a ladder (and climbing over its top) the body places the head: the camera belongs at its eyes, not on the
+    // rung plane where the controller stands.
+    const vw = Math.max(this.ladderW, this.topW)
+    this.view.weight = vw
+    if (vw > 1e-3) {
+      this.root.updateMatrixWorld(true)
+      const e = B.Head!.getWorldPosition(_v)
+      e.y += 0.07
+      e.x += Math.sin(this.facing) * 0.1
+      e.z += Math.cos(this.facing) * 0.1
+      if (this.view.eye.lengthSq() === 0 || this.view.eye.distanceToSquared(e) > 1) this.view.eye.copy(e)
+      else this.view.eye.lerp(e, damp(14, dt))
+    } else this.view.eye.set(0, 0, 0)
   }
 
   /** Lens position and beam direction (world), or false while the torch is put away. */

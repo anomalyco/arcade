@@ -29,6 +29,8 @@ sun.position.set(2, 4, 3)
 scene.add(sun)
 const grid = new THREE.GridHelper(10, 40, 0x666a70, 0x33383d)
 scene.add(grid)
+const stairsGroup = new THREE.Group()
+scene.add(stairsGroup)
 const camera = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 0.05, 100)
 
 const fbx = new FBXLoader()
@@ -43,6 +45,7 @@ const rawClips = new Map<string, THREE.AnimationClip>()
 const glbChars = new Map<string, THREE.Object3D>()
 let raw: THREE.Object3D | null = null
 let refRemy: THREE.Object3D | null = null
+let stairsFoot: number | null = null
 let conv: THREE.Object3D | null = null
 
 async function loadRaw(id: string) {
@@ -154,6 +157,36 @@ async function set(id: string, clip: string, frame: number, view: string, mode =
     mc.update(0)
     info = `${id}  ${clip}  frame ${frame}  raw t ${(t0 + frame / 30).toFixed(3)} (clip ${rc.duration.toFixed(3)})  glb t ${(frame / 30).toFixed(3)} (clip ${src.duration.toFixed(3)})`
   }
+  if (params.get("stairs") === "1" && mode !== "bind") {
+    // Put the converted body back on the staircase its clip implies: travel speed·t forward and rise·t up (the root
+    // motion the runtime supplies), steps of rise·T/2 by speed·T/2, the frame-0 supporting foot on a step.
+    const m = (META.anims.clips as Record<string, { duration: number; speed?: number; rise?: number }>)[clip]!
+    const k = META.characters[id]!.hips / 0.98
+    const T = m.duration
+    const sp = (m.speed ?? 0) * k
+    const ri = (m.rise ?? 0) * k
+    const t = frame / 30
+    const footY = () => {
+      c.updateMatrixWorld(true)
+      return Math.min(...["LeftFoot", "RightFoot"].map((n) => c.getObjectByName(n)!.getWorldPosition(new THREE.Vector3()).y))
+    }
+    c.position.set(0, 0, 0)
+    const f0 = stairsFoot ?? footY()
+    if (frame === 0) stairsFoot = f0
+    c.position.set(0, ri * t, sp * t)
+    stairsGroup.clear()
+    const sh = Math.abs(ri) * T / 2
+    const sr = sp * T / 2
+    const mat = new THREE.MeshStandardNodeMaterial({ color: 0x8d8a82, roughness: 0.9 })
+    for (let i = -4; i <= 8; i++) {
+      const top = Math.sign(ri) * i * sh - (f0 - 0.1 * k)
+      const box = new THREE.Mesh(new THREE.BoxGeometry(0.7, 3, sr), mat)
+      box.position.set(0, top - 1.5, (i + 0.5) * sr - sr * 0.5)
+      stairsGroup.add(box)
+    }
+    r.visible = false
+    info += `  stairs ${(sh * 100).toFixed(0)} cm × ${(sr * 100).toFixed(0)} cm`
+  } else r.visible = true
   if (params.get("travel") === "1") {
     // Show the raw clip's own root travel (the raw stairs descend); the converted body stays in place.
     r.updateMatrixWorld(true)
@@ -167,7 +200,9 @@ async function set(id: string, clip: string, frame: number, view: string, mode =
   const at = new THREE.Vector3(0, zoom === "2" ? 1.58 : zoom ? 1.4 : 0.9, 0)
   const d = zoom === "2" ? 1.1 : zoom ? 2.5 : 4.6
   const dir = { side: new THREE.Vector3(1, 0.05, 0), front: new THREE.Vector3(0, 0.05, 1), "3q": new THREE.Vector3(0.7, 0.1, 0.7) }[view] ?? new THREE.Vector3(0, 0.05, 1)
-  if (view === "side") {
+  if (params.get("stairs") === "1") {
+    // (positioned above)
+  } else if (view === "side") {
     // Side by side along the view axis doesn't work from the side: stack them in depth instead.
     r.position.x += 0.55
     r.position.z += -0.6
@@ -176,6 +211,7 @@ async function set(id: string, clip: string, frame: number, view: string, mode =
   } else {
     c.position.z = 0
   }
+  if (params.get("stairs") === "1") at.set(0, c.position.y + 0.9, c.position.z)
   camera.position.copy(at).addScaledVector(dir.normalize(), d)
   camera.lookAt(at)
   label.textContent = `left/back: ${leftRaw ? "RAW FBX" : "converted remy"}   right/front: CONVERTED glb\n${info}`

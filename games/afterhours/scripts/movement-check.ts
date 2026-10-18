@@ -47,7 +47,7 @@ type P = {
   pitch: number
   trace: Sample[] | null
   resetMotion(): void
-  state: { crouch: number; grounded: boolean; speed: number; stepPhase: number }
+  state: { crouch: number; grounded: boolean; speed: number; stepPhase: number; eyeHeight: number }
   ctx: { colliders: { min: number[]; max: number[] }[] }
   onStep(l: (e: { kind: string; surface: string }) => void): () => void
 }
@@ -127,6 +127,7 @@ function smoothness(raw: Sample[]) {
   return { eye60, eyeRaw, body, jerk, fps, rise: raw.at(-1)!.y - raw[0]!.y, frames: raw.length }
 }
 
+const maxStep60 = (tr: Sample[]) => Math.max(0, ...tr.slice(1).map((s, i) => (Math.abs(s.eye - tr[i]!.eye) / Math.max(s.dt, 1 / 240)) / 60))
 const WEST = -42.28
 const EAST = -40.5
 const up = [
@@ -218,6 +219,51 @@ check(apex > 0.42 && apex < 0.52 && landed, `jump: apex ${apex.toFixed(2)} m, ${
 check(dip > 0.015, `landing dip on the camera (${(dip * 100).toFixed(1)} cm)`)
 const landSteps = (await page.evaluate(() => (globalThis as unknown as { __steps?: string[] }).__steps ?? [])) as string[]
 check(landSteps.some((s) => s.startsWith("jump")), "jump event fired")
+
+// A crawl space (underside 1.17 m, the lowest the world models): crouched, the body passes and the eye ducks under it.
+await player(
+  (p, y: number) => p.ctx.colliders.push({ min: [-43.1, y + 1.17, 16.6], max: [-39.7, y + 1.5, 16.8] }),
+  floorY,
+)
+await place(WEST, floorY + 0.02, 17.4, 0)
+await page.keyboard.down("KeyC")
+await page.waitForTimeout(300)
+await player((p) => (p.trace = []), 0)
+await page.keyboard.down("KeyW")
+for (let i = 0; i < 100 && (await pos()).z > 16.7; i++) await page.waitForTimeout(25)
+await page.waitForTimeout(150)
+const under = (await player((p) => ({ eye: p.state.eyeHeight, z: p.pos.z }), 0)) as { eye: number; z: number }
+for (let i = 0; i < 60 && (await pos()).z > 16.3; i++) await page.waitForTimeout(25)
+await page.keyboard.up("KeyW")
+await page.keyboard.up("KeyC")
+const crawlTrace = (await player((p) => {
+  const t = p.trace
+  p.trace = null
+  return t
+}, 0)) as Sample[]
+p = await pos()
+check(p.z < 16.45, `crouched through a 1.17 m crawl space (z ${p.z.toFixed(2)})`)
+check(under.eye <= 1.1, `eye ducked under it (${under.eye.toFixed(3)} m)`)
+check(maxStep60(crawlTrace) < 0.03, `ducking is smooth (max ${(maxStep60(crawlTrace) * 100).toFixed(2)} cm per 60 Hz frame)`)
+
+// Speeds (they set the body's animation cadence): walk, jog, crouch, and backwards/sideways at 0.68×.
+async function speedOf(keys: string[]) {
+  // The lobby (open floor), facing north.
+  await place(0, 0.2, 19, 0)
+  for (const k of keys) await page.keyboard.down(k)
+  await page.waitForTimeout(700)
+  const a = await player((p) => ({ x: p.pos.x, z: p.pos.z, t: performance.now() }), 0)
+  await page.waitForTimeout(600)
+  const b = await player((p) => ({ x: p.pos.x, z: p.pos.z, t: performance.now() }), 0)
+  for (const k of keys) await page.keyboard.up(k)
+  return Math.hypot(b.x - a.x, b.z - a.z) / ((b.t - a.t) / 1000)
+}
+const speeds = { walk: await speedOf(["KeyW"]), jog: await speedOf(["KeyW", "ShiftLeft"]), crouch: await speedOf(["KeyW", "KeyC"]), back: await speedOf(["KeyS"]), side: await speedOf(["KeyD"]) }
+const near = (v: number, want: number) => Math.abs(v - want) < 0.12
+check(
+  near(speeds.walk, 1.6) && near(speeds.jog, 2.4) && near(speeds.crouch, 1.3) && near(speeds.back, 1.6 * 0.68) && near(speeds.side, 1.6 * 0.68),
+  `speeds: walk ${speeds.walk.toFixed(2)}, jog ${speeds.jog.toFixed(2)}, crouch ${speeds.crouch.toFixed(2)}, back ${speeds.back.toFixed(2)}, side ${speeds.side.toFixed(2)} m/s`,
+)
 
 if (logFile) writeFileSync(logFile, JSON.stringify(traces))
 check(errors.length === 0, `no page errors${errors.length ? `: ${errors.slice(0, 3).join(" | ")}` : ""}`)
