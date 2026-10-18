@@ -204,9 +204,23 @@ async function setup(page: Page, s: Omit<Shot, "name">, set: Record<string, numb
         slot.survivor.flashlightOutput = spec.flashlight ? 1 : 0
       }
     }
-    for (const z of s.zombies ?? []) h.spawnZombie(z.x, z.y, "chase", z.aim)
+    ;(s.zombies ?? []).forEach((z, idx) => {
+      h.spawnZombie(z.x, z.y, "chase", z.aim)
+      const a = sim.ai.agents[sim.ai.agents.length - 1]
+      if (a) a.seed = ((idx + 1) * 2654435761) >>> 0
+    })
     for (let i = 0; i < (s.walk ?? 18); i++) {
       pinActors()
+      ;(s.zombies ?? []).forEach((z, idx) => {
+        const a = sim.ai.agents[idx]
+        if (a) {
+          a.x = z.x + Math.cos(z.aim) * i * 0.024
+          a.y = z.y + Math.sin(z.aim) * i * 0.024
+          a.aim = z.aim
+          a.vx = Math.cos(z.aim) * 1.45
+          a.vy = Math.sin(z.aim) * 1.45
+        }
+      })
       await h.step(1 / 60, { mx: 0, my: 0, aim: s.aim })
     }
     const zs = h.session().view.zombies.filter((a: any) => a.state !== "dead").map((a: any) => ({ x: a.x, y: a.y }))
@@ -245,15 +259,56 @@ const H = 1024
 const img = (f: string) => `data:image/png;base64,${readFileSync(f).toString("base64")}`
 
 async function sheet(page: Page, file: string, title: string, rows: { label: string; file: string }[][], tileW: number) {
-  const cols = Math.max(...rows.map(r => r.length))
-  await page.setViewportSize({ width: cols * (tileW + 12) + 12, height: 200 })
-  await page.setContent(`<body style="margin:0;padding:12px;background:#111;color:#ddd;font:15px -apple-system,sans-serif">
-    <div style="font-size:18px;margin:0 0 10px">${title}</div>
-    ${rows.map(r => `<div style="display:flex;gap:12px;margin-bottom:12px">${r.map(t => `<figure style="margin:0;width:${tileW}px">
-      <img src="${img(t.file)}" style="width:${tileW}px;display:block"><figcaption style="margin-top:6px">${t.label}</figcaption></figure>`).join("")}</div>`).join("")}
-  </body>`)
-  await page.waitForFunction(() => [...document.images].every(i => i.complete))
-  await page.screenshot({ path: file, fullPage: true, type: "jpeg", quality: 90 })
+  const payload = rows.map(r => r.map(t => ({ label: t.label, src: img(t.file) })))
+  const jpegDataUrl = await page.evaluate(
+    async ({ title, payload, tileW }) => {
+      const loaded = await Promise.all(
+        payload.map(r =>
+          Promise.all(
+            r.map(async t => {
+              const image = new Image()
+              image.src = t.src
+              await image.decode()
+              return { label: t.label, image, h: Math.round((image.height / image.width) * tileW) }
+            }),
+          ),
+        ),
+      )
+      const cols = Math.max(...loaded.map(r => r.length))
+      const pad = 12
+      const capH = 26
+      const titleH = 32
+      const rowHeights = loaded.map(r => Math.max(...r.map(t => t.h)) + capH)
+      const totalW = cols * (tileW + pad) + pad
+      const totalH = pad + titleH + rowHeights.reduce((a, b) => a + b + pad, 0)
+      const c = document.createElement("canvas")
+      c.width = totalW * 2
+      c.height = totalH * 2
+      const ctx = c.getContext("2d")!
+      ctx.scale(2, 2)
+      ctx.fillStyle = "#111"
+      ctx.fillRect(0, 0, totalW, totalH)
+      ctx.fillStyle = "#ddd"
+      ctx.font = "600 18px -apple-system, sans-serif"
+      ctx.fillText(title, pad, pad + 20)
+      let y = pad + titleH
+      ctx.font = "15px -apple-system, sans-serif"
+      for (let ri = 0; ri < loaded.length; ri++) {
+        const row = loaded[ri]!
+        for (let ci = 0; ci < row.length; ci++) {
+          const item = row[ci]!
+          const x = pad + ci * (tileW + pad)
+          ctx.drawImage(item.image, x, y, tileW, item.h)
+          ctx.fillStyle = "#ddd"
+          ctx.fillText(item.label, x, y + item.h + 19)
+        }
+        y += rowHeights[ri]! + pad
+      }
+      return c.toDataURL("image/jpeg", 0.9)
+    },
+    { title, payload, tileW },
+  )
+  writeFileSync(file, Buffer.from(jpegDataUrl.split(",")[1]!, "base64"))
 }
 
 try {
@@ -267,20 +322,54 @@ try {
       const info = await setup(page, shot, LOOKS[id]!.set)
       const name = `${shot.name}-${id}`
       files[name] = resolve(out, `${name}.png`)
-      await page.screenshot({ path: files[name] })
-      if (info.rect) {
-        const cx = info.rect.x + info.rect.width / 2
-        const cy = info.rect.y + info.rect.height / 2
-        for (const k of [2, 3]) {
-          const clip = {
-            x: Math.max(0, Math.min(W - W / k, cx - W / (2 * k))),
-            y: Math.max(0, Math.min(H - H / k, cy - H / (2 * k))),
-            width: W / k,
-            height: H / k,
+      const cx = info.rect ? info.rect.x + info.rect.width / 2 : W / 2
+      const cy = info.rect ? info.rect.y + info.rect.height / 2 : H / 2
+      const captured = await page.evaluate(
+        ({ cx, cy, W, H, hasRect }) => {
+          const h = (window as any).__arcadeHarness
+          h.renderer.draw(h.render)
+          const game = document.querySelector<HTMLCanvasElement>("#game")
+          if (!game || game.width === 0) return null
+          const fullCanvas = document.createElement("canvas")
+          fullCanvas.width = game.width
+          fullCanvas.height = game.height
+          const fctx = fullCanvas.getContext("2d")!
+          fctx.drawImage(game, 0, 0)
+          const px = fctx.getImageData(game.width >> 1, game.height >> 1, 1, 1).data
+          if (px[0] === 0 && px[1] === 0 && px[2] === 0 && px[3] === 0) return null
+          const res: { full: string; x2?: string; x3?: string } = { full: fullCanvas.toDataURL("image/png") }
+          if (hasRect) {
+            const dpr = game.width / W
+            for (const k of [2, 3] as const) {
+              const cw = W / k
+              const ch = H / k
+              const sx = Math.max(0, Math.min(W - cw, cx - cw / 2)) * dpr
+              const sy = Math.max(0, Math.min(H - ch, cy - ch / 2)) * dpr
+              const sw = Math.round(cw * dpr)
+              const sh = Math.round(ch * dpr)
+              const c = document.createElement("canvas")
+              c.width = sw
+              c.height = sh
+              c.getContext("2d")!.drawImage(fullCanvas, sx, sy, sw, sh, 0, 0, sw, sh)
+              res[k === 2 ? "x2" : "x3"] = c.toDataURL("image/png")
+            }
           }
-          files[`${name}-x${k}`] = resolve(out, `${name}-x${k}.png`)
-          await page.screenshot({ path: files[`${name}-x${k}`], clip })
+          return res
+        },
+        { cx, cy, W, H, hasRect: Boolean(info.rect) },
+      )
+      if (captured) {
+        writeFileSync(files[name], Buffer.from(captured.full.split(",")[1]!, "base64"))
+        if (captured.x2) {
+          files[`${name}-x2`] = resolve(out, `${name}-x2.png`)
+          writeFileSync(files[`${name}-x2`]!, Buffer.from(captured.x2.split(",")[1]!, "base64"))
         }
+        if (captured.x3) {
+          files[`${name}-x3`] = resolve(out, `${name}-x3.png`)
+          writeFileSync(files[`${name}-x3`]!, Buffer.from(captured.x3.split(",")[1]!, "base64"))
+        }
+      } else {
+        await page.screenshot({ path: files[name], timeout: 60000 })
       }
       ;(meta.shots as Record<string, unknown>)[name] = { ...shot, ...info, lookId: id }
       console.log(name, JSON.stringify(info.look), `zombies=${info.zombies}`, `companions=${info.companions}`)
