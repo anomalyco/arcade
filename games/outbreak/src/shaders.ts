@@ -523,6 +523,10 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
       let darkScale = mix(mix(nightUnlitDark, 1.04, litMask), 0.68 * dayShadeScale, sunVal);
       let brightScale = mix(mix(nightUnlitBright, 1.24, litMask), 1.34 * mix(0.78, 1.0, dayShadeScale), sunVal);
       col *= mix(darkScale, brightScale, toe);
+      // Sight glow (OL.art.x): at night what the survivor can see reads as dim grey terrain, so the sight cone, the
+      // body halo and the wedges walls and trees cut out of it stand against the darker charcoal shroud.
+      let glow = OL.art.x * lightRule * outbreakSeen * (1.0 - duskGlow) * select(1.0, 0.0, mat == 12);
+      col += vec3f(dot(outbreakAlbedo, vec3f(0.2126, 0.7152, 0.0722))) * vec3f(0.98, 0.99, 1.0) * (glow * 0.03);
     }
     // Colour comes from light: lit surfaces keep it wherever the scenery is known, not only in sight (light rule on);
     // the sight area adds a small lift, and the hero keeps a little so the survivor reads as today. Soft Bean keeps

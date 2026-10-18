@@ -78,6 +78,10 @@ export type OutbreakLookTrims = {
   dayVignette: number
   /** Film grain floor at every hour (0 off). */
   dayGrain: number
+  /** Dim grey terrain inside the sight cone at night, so the cone and its occluder wedges read against the shroud (0 off). */
+  sightGlow: number
+  /** Painterly ground detail: dirt, leaf litter, stains and cracks on paving and turf, faded out where it would alias (0 off). */
+  groundDetail: number
   /** Share of air cells holding a dust mote; motes only show where a light reaches them (0 is off). */
   dustAmount: number
   /** × how brightly motes catch the light. */
@@ -130,6 +134,8 @@ export const DEFAULT_LOOK_TRIMS: OutbreakLookTrims = {
   dayMuted: 1,
   dayVignette: 0.42,
   dayGrain: 0.05,
+  sightGlow: 1,
+  groundDetail: 1,
   dustAmount: 0.12,
   dustBrightness: 0.7,
   dustSize: 1.5,
@@ -180,6 +186,8 @@ export const lookTrimControls: LabControl[] = [
   { key: "shroudCharcoal", label: "Charcoal outside sight", group: SHROUD, min: 0, max: 1.5, step: 0.05, unit: "×" },
   { key: "shroudGrain", label: "Shroud grain", group: SHROUD, min: 0, max: 3, step: 0.05, unit: "×" },
   { key: "shroudLampKeep", label: "Lamp-lit colour kept out of sight", group: SHROUD, min: 0, max: 1, step: 0.05, unit: "" },
+  { key: "sightGlow", label: "Sight cone glow at night", group: SHROUD, min: 0, max: 3, step: 0.05, unit: "×" },
+  { key: "groundDetail", label: "Painterly ground detail", group: GRADE, min: 0, max: 2, step: 0.05, unit: "×" },
   { key: "dayMuted", label: "Sickly overcast day palette", group: GRADE, min: 0, max: 1.5, step: 0.05, unit: "×" },
   { key: "dayVignette", label: "Vignette at every hour", group: GRADE, min: 0, max: 1.2, step: 0.02, unit: "" },
   { key: "dayGrain", label: "Grain at every hour", group: GRADE, min: 0, max: 0.4, step: 0.01, unit: "" },

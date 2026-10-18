@@ -94,6 +94,33 @@ export const outbreakSurfaceMaterialDeclarationsWgsl = buildSurfaceMaterialDecla
   );
 }
 
+/**
+ * Painterly ground (OL.art.y, Darkwood): dried stains with darker drying rims, lighter scuffed wear, drifts of dusty
+ * earth and a directional brush mottle, all at 0.4–3 m in world space so they hold still under motion. Edges widen
+ * with the pixel footprint, so nothing turns into 1-px static or glitter. Turf swaps stains for dead, khaki grass.
+ */
+fn paintedGround(p: vec2f, colIn: vec3f, dirt: f32, turf: bool) -> vec3f {
+  let amt = clamp(OL.art.y, 0.0, 2.0);
+  if (amt <= 0.001) { return colIn; }
+  let warp = surfaceNoise(p * 0.21 + vec2f(13.1, 4.7));
+  let s = surfaceNoise(p * 0.62 + vec2f(warp * 1.9 + 2.9, 7.3 - warp * 1.4));
+  let aa = max(0.03, surfaceFootprint * 1.4);
+  let stain = smoothstep(0.64 - aa, 0.64 + aa, s);
+  let rim = stain * (1.0 - smoothstep(0.67, 0.73 + aa, s));
+  let scuff = smoothstep(0.30 + aa, 0.30 - aa, s) * smoothstep(0.35, 0.65, warp);
+  let drift = smoothstep(0.58, 0.80, warp) * clamp(dirt, 0.0, 1.5);
+  let brushFade = 1.0 - smoothstep(0.12, 0.40, surfaceFootprint * 2.6);
+  let brush = (surfaceNoise(vec2f(p.x * 2.6 + p.y * 0.9, p.y * 0.8 - p.x * 0.3) + vec2f(warp * 2.0, 3.3)) - 0.5) * brushFade;
+  let lum = dot(colIn, vec3f(0.2126, 0.7152, 0.0722));
+  let earth = vec3f(lum) * vec3f(1.20, 0.98, 0.70);
+  let stainCol = select(colIn * vec3f(0.78, 0.74, 0.66), vec3f(lum) * vec3f(1.22, 1.06, 0.58), turf);
+  var c = mix(colIn, stainCol, stain * 0.7 * amt);
+  c *= 1.0 - rim * 0.16 * amt;
+  c = mix(c, earth * 1.12, scuff * 0.22 * amt);
+  c = mix(c, earth * 0.92, drift * 0.30 * amt);
+  return max(vec3f(0.0), c * (1.0 + brush * 0.16 * amt));
+}
+
 fn evalAsphaltConcrete(pIn: vec2f, baseTint: vec3f, isConcrete: bool, r: MaterialRecipe) -> SurfaceSample {
   let p = select(pIn, pIn - floor(pIn / 96.0) * 96.0, OL.win.z > 0.5);
   let gParams = unpackGroundParams();
@@ -211,6 +238,7 @@ fn evalAsphaltConcrete(pIn: vec2f, baseTint: vec3f, isConcrete: bool, r: Materia
     col = mix(col, vec3f(0.20, 0.12, 0.046), leafMask * 0.86 * dirtAmt);
   }
 
+  col = paintedGround(pIn, col, dirtAmt, false);
   return SurfaceSample(col, roughnessToGloss(localRough, 0.045), localRough, cavity);
 }`,
 })
@@ -229,6 +257,7 @@ export const groundSurfaceHookWgsl = /* wgsl */ `
         let richTurf = col * mix(vec3f(0.64, 0.98, 0.44), vec3f(0.92, 1.16, 0.54), lawnMacro);
         let dampLoam = vec3f(turfLum) * vec3f(0.50, 0.39, 0.25);
         col = mix(richTurf, dampLoam, loamPatch * 0.38) * mix(0.76, 1.04, clamp(F.monitorBounds.w, 0.0, 1.0));
+        col = paintedGround(p, col, 1.0, true);
       } else if (kind == 1) {
         let gParams = unpackGroundParams();
         let pBlock = select(p, p - floor(p / 96.0) * 96.0, OL.win.z > 0.5);

@@ -285,7 +285,9 @@ export const OUTBREAK_SHROUD_UNIFORM_OFFSET = OUTBREAK_BEAN_UNIFORM_OFFSET + 4
 export const OUTBREAK_BEAM_LOOK_UNIFORM_OFFSET = OUTBREAK_SHROUD_UNIFORM_OFFSET + 4
 /** Sight shroud (see `look/world.ts`): coneSharpness, dayShroud, dayMuted, shroudLampKeep. */
 export const OUTBREAK_SIGHT_UNIFORM_OFFSET = OUTBREAK_BEAM_LOOK_UNIFORM_OFFSET + 4
-export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = OUTBREAK_SIGHT_UNIFORM_OFFSET + 4
+/** Darkwood surfaces (see `look/world.ts`): sightGlow, groundDetail, reserved, reserved. This fills `CUSTOM_UNIFORM_BYTES`. */
+export const OUTBREAK_ART_UNIFORM_OFFSET = OUTBREAK_SIGHT_UNIFORM_OFFSET + 4
+export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = OUTBREAK_ART_UNIFORM_OFFSET + 4
 
 export type OutbreakLightingUniformSettings =
   | (OutbreakLightingSettings & Partial<FlashlightBeamSettings> & Partial<UnseenSettings> & {
@@ -591,6 +593,8 @@ export function packOutbreakLightingUniforms(
   out[OUTBREAK_SIGHT_UNIFORM_OFFSET + 1] = look.dayShroud ?? DEFAULT_LOOK_TRIMS.dayShroud
   out[OUTBREAK_SIGHT_UNIFORM_OFFSET + 2] = look.dayMuted ?? DEFAULT_LOOK_TRIMS.dayMuted
   out[OUTBREAK_SIGHT_UNIFORM_OFFSET + 3] = look.shroudLampKeep ?? DEFAULT_LOOK_TRIMS.shroudLampKeep
+  out[OUTBREAK_ART_UNIFORM_OFFSET] = look.sightGlow ?? DEFAULT_LOOK_TRIMS.sightGlow
+  out[OUTBREAK_ART_UNIFORM_OFFSET + 1] = look.groundDetail ?? DEFAULT_LOOK_TRIMS.groundDetail
   // win (offset 76..79): windowOriginX, windowOriginZ, isStreamWindow, buildingCount
   const winOx = state.windowOrigin?.[0] ?? 0
   const winOz = state.windowOrigin?.[1] ?? 0
@@ -1203,6 +1207,7 @@ struct OutbreakLightingUniforms {
   shroud: vec4f, // shroud & unlit: shroudDarkness, outOfLightDesat, outOfSightDarkening, worldSaturation
   beamLook: vec4f, // beamWarmth, beamTightness, zombieRimSpec, nightGrain
   sight: vec4f, // coneSharpness, dayShroud, dayMuted, shroudLampKeep
+  art: vec4f, // sightGlow, groundDetail, reserved, reserved
 }
 @group(0) @binding(13) var<uniform> OL: OutbreakLightingUniforms;
 ${lightRampWgsl}
@@ -1356,6 +1361,10 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, inRoom: 
   let wSpill = max(w, 0.62);
   var col = surfCol;
   let b = nearestHouseRect(world.xz);
+  // Darkwood (OL.sight.y): outdoor pools only where a lamp is actually on, so daylight carries no warm wash or
+  // practical colour, and no sourceless pool follows the survivor.
+  let darkwood = clamp(OL.sight.y, 0.0, 1.0);
+  let lampsOn = mix(1.0, clamp(1.38 - F.monitorBounds.w * 1.38, 0.0, 1.0), darkwood);
   if (!inRoom) {
     let isInView = OL.u5.w > 0.5;
     let groundMask = smoothstep(2.6, 0.35, world.y) * select(1.0, 0.32, mat == 22);
@@ -1372,7 +1381,7 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, inRoom: 
     if (groundMask <= 0.001) { return col; }
     let texAlbedo = surfCol * 1.48 + outbreakAlbedo * 0.21;
     // 1. High-pressure sodium streetlamp (2100K) albedo-multiplying ground pool + wet asphalt sheen
-    let sScale = OL.u1.w;
+    let sScale = OL.u1.w * lampsOn;
     if (sScale > 0.20) {
       let sPos = select(vec2f(b.z + 4.2, b.w + 6.9), vec2f(b.z + 2.0, b.y + 1.0), isInView);
       let dvS = (world.xz - sPos) * select(vec2f(0.85, 0.90), vec2f(1.10, 0.44), isInView);
@@ -1387,8 +1396,8 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, inRoom: 
     }
 
     // 2. Warm 2500K tungsten window & porch bounce + elongated rectangular window sheen (openGlassSheen)
-    let pScale = OL.u1.x;
-    let wScale = OL.u1.y;
+    let pScale = OL.u1.x * lampsOn;
+    let wScale = OL.u1.y * lampsOn;
     if ((pScale > 0.001 || wScale > 0.001) && world.z > b.w - 1.3 && world.z < b.w + 14.5 && world.x > b.x - 5.5 && world.x < b.z + 3.5) {
       let vWL = (world.xz - vec2f(b.x + 2.5, b.w + 0.5)) * vec2f(0.72, 0.64);
       let vWR = (world.xz - vec2f(b.z - 2.75, b.w + 0.5)) * vec2f(0.72, 0.64);
@@ -1402,7 +1411,7 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, inRoom: 
     }
 
     // 3. Warm golden-amber porch/lantern road pool around the survivor on the street — scaled by w*w so Noir street stays dark outside the flashlight
-    if (!isInView && world.y < 0.45 && world.z > b.w + 4.4 && w > 0.15) {
+    if (!isInView && world.y < 0.45 && world.z > b.w + 4.4 && w > 0.15 && darkwood < 0.5) {
       let dp = (world.xz - vec2f(OL.u6.x, OL.u6.y + 0.85)) * vec2f(0.60, 0.76);
       let dp2 = dot(dp, dp);
       if (dp2 < 26.0) {

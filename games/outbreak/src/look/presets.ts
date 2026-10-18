@@ -22,7 +22,7 @@ export type OutbreakLookPreset = {
 const { lookIdea: _, ...TRIMS } = DEFAULT_LOOK_TRIMS
 const TODAY: OutbreakLookKnobs = { ...TRIMS, ...DEFAULT_HERO_LOOK }
 /** The Darkwood v8 knobs at their pre-v8 identity, for every preset that predates them. */
-const PRE_V8 = { coneSharpness: 0, dayShroud: 0, shroudCharcoal: 0, shroudGrain: 0, shroudLampKeep: 1, dayMuted: 0, dayVignette: 0, dayGrain: 0 } as const
+const PRE_V8 = { coneSharpness: 0, dayShroud: 0, shroudCharcoal: 0, shroudGrain: 0, shroudLampKeep: 1, dayMuted: 0, dayVignette: 0, dayGrain: 0, sightGlow: 0, groundDetail: 0 } as const
 const V7: OutbreakLookKnobs = {
   ...TODAY,
   ...PRE_V8,
