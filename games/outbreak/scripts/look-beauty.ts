@@ -2,7 +2,7 @@
  * Beauty stills, zoom options, paired GPU cost and a walking flicker metric for Outbreak's look.
  *
  *   bun scripts/look-beauty.ts --out <dir> --mode stills [--tag final] [--preset today] [--knobs '{"k":1}']
- *   bun scripts/look-beauty.ts --out <dir> --mode zoom [--zooms 46,38,32]
+ *   bun scripts/look-beauty.ts --out <dir> --mode zoom [--zooms 38,46,32]
  *   bun scripts/look-beauty.ts --out <dir> --mode gpu --base <tree>     paired GPU, base tree vs this tree
  *   bun scripts/look-beauty.ts --out <dir> --mode flicker [--base <tree>]
  *   bun scripts/look-beauty.ts --out <dir> --mode sheet --columns 'v8:dir,Darkwood:ref,final:dir'
@@ -29,7 +29,7 @@ const preset = arg("preset", "today")!
 const knobs: Record<string, unknown> = JSON.parse(arg("knobs", "{}")!)
 const baseTree = arg("base")
 const rounds = Number(arg("rounds", "6"))
-const zooms = arg("zooms", "46,38,32")!.split(",").map(Number)
+const zooms = arg("zooms", "38,46,32")!.split(",").map(Number)
 const only = arg("scenes")?.split(",")
 mkdirSync(out, { recursive: true })
 
@@ -64,18 +64,20 @@ const COOP_LINEUP: Companion[] = [
   { id: "tess", index: 3, x: 28.75, y: 40.25, aim: Math.PI / 2 + 0.24, flashlight: true },
 ]
 const NORTH = -Math.PI / 2
+/** The game's default camera distance (`DEFAULT_OUTBREAK_VIEW.zoom`, D-35). */
+const DEFAULT_ZOOM = 38
 const TURNED = Math.PI / 2 - 0.35
 
 /** The beauty set: every scene the brief names, at the default zoom. */
 export const SCENES: Scene[] = [
-  { name: "street-day-14h", label: "Street day 14:00", hour: 14, zoom: 46, x: 27.7, y: 41.0, aim: NORTH, flashlight: false },
-  { name: "street-day-14h-turned", label: "Day 14:00, turned around (cone edge in daylight)", hour: 14, zoom: 46, x: 27.7, y: 41.0, aim: TURNED, flashlight: false },
-  { name: "street-dusk-18h30", label: "Street dusk 18:30", hour: 18.5, zoom: 46, x: 27.7, y: 41.0, aim: NORTH, flashlight: true },
-  { name: "street-night-21h", label: "Night 21:00, flashlight facing the house", hour: 21, zoom: 46, x: 27.7, y: 41.0, aim: NORTH, flashlight: true },
-  { name: "street-night-21h-turned", label: "Night 21:00, flashlight turned around", hour: 21, zoom: 46, x: 27.7, y: 41.0, aim: TURNED, flashlight: true },
-  { name: "start-house-21h", label: "Start house 21:00", hour: 21, zoom: 46, x: 27.7, y: 31.8, aim: NORTH, flashlight: true },
-  { name: "horde-night-21h", label: "Horde night 21:00", hour: 21, zoom: 46, x: 27.7, y: 41.0, aim: NORTH, flashlight: true, horde: true },
-  { name: "coop-survivors-21h", label: "Co-op survivors 21:00", hour: 21, zoom: 46, x: 26.35, y: 39.5, aim: 0.65, flashlight: true, companions: COOP_LINEUP },
+  { name: "street-day-14h", label: "Street day 14:00", hour: 14, zoom: DEFAULT_ZOOM, x: 27.7, y: 41.0, aim: NORTH, flashlight: false },
+  { name: "street-day-14h-turned", label: "Day 14:00, turned around (cone edge in daylight)", hour: 14, zoom: DEFAULT_ZOOM, x: 27.7, y: 41.0, aim: TURNED, flashlight: false },
+  { name: "street-dusk-18h30", label: "Street dusk 18:30", hour: 18.5, zoom: DEFAULT_ZOOM, x: 27.7, y: 41.0, aim: NORTH, flashlight: true },
+  { name: "street-night-21h", label: "Night 21:00, flashlight facing the house", hour: 21, zoom: DEFAULT_ZOOM, x: 27.7, y: 41.0, aim: NORTH, flashlight: true },
+  { name: "street-night-21h-turned", label: "Night 21:00, flashlight turned around", hour: 21, zoom: DEFAULT_ZOOM, x: 27.7, y: 41.0, aim: TURNED, flashlight: true },
+  { name: "start-house-21h", label: "Start house 21:00", hour: 21, zoom: DEFAULT_ZOOM, x: 27.7, y: 31.8, aim: NORTH, flashlight: true },
+  { name: "horde-night-21h", label: "Horde night 21:00", hour: 21, zoom: DEFAULT_ZOOM, x: 27.7, y: 41.0, aim: NORTH, flashlight: true, horde: true },
+  { name: "coop-survivors-21h", label: "Co-op survivors 21:00", hour: 21, zoom: DEFAULT_ZOOM, x: 26.35, y: 39.5, aim: 0.65, flashlight: true, companions: COOP_LINEUP },
 ]
 const scene = (name: string) => SCENES.find(s => s.name === name)!
 

@@ -472,7 +472,7 @@ try {
   await page.evaluate(async () => {
     const h = (window as any).__arcadeHarness
     h.setLab("timeScale", 0)
-    h.setLab("zoom", 46)
+    h.setLab("zoom", 38)
     h.setLab("aiDebugOverlay", true)
     await h.stagePacing("legacy-rush")
     for (let i = 0; i < 6; i++) await h.step(1 / 60)
@@ -483,7 +483,7 @@ try {
   await page.evaluate(async () => {
     const h = (window as any).__arcadeHarness
     h.setLab("timeScale", 0)
-    h.setLab("zoom", 46)
+    h.setLab("zoom", 38)
     h.setLab("aiDebugOverlay", true)
     await h.stagePacing("opening-calm")
     for (let i = 0; i < 6; i++) await h.step(1 / 60)

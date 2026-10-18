@@ -285,7 +285,7 @@ export const OUTBREAK_SHROUD_UNIFORM_OFFSET = OUTBREAK_BEAN_UNIFORM_OFFSET + 4
 export const OUTBREAK_BEAM_LOOK_UNIFORM_OFFSET = OUTBREAK_SHROUD_UNIFORM_OFFSET + 4
 /** Sight shroud (see `look/world.ts`): coneSharpness, dayShroud, dayMuted, shroudLampKeep. */
 export const OUTBREAK_SIGHT_UNIFORM_OFFSET = OUTBREAK_BEAM_LOOK_UNIFORM_OFFSET + 4
-/** Darkwood surfaces (see `look/world.ts`): sightGlow, groundDetail, reserved, reserved. This fills `CUSTOM_UNIFORM_BYTES`. */
+/** Darkwood surfaces (see `look/world.ts`): sightGlow, groundDetail, lampRolloff, reserved. This fills `CUSTOM_UNIFORM_BYTES`. */
 export const OUTBREAK_ART_UNIFORM_OFFSET = OUTBREAK_SIGHT_UNIFORM_OFFSET + 4
 export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = OUTBREAK_ART_UNIFORM_OFFSET + 4
 
@@ -595,6 +595,7 @@ export function packOutbreakLightingUniforms(
   out[OUTBREAK_SIGHT_UNIFORM_OFFSET + 3] = look.shroudLampKeep ?? DEFAULT_LOOK_TRIMS.shroudLampKeep
   out[OUTBREAK_ART_UNIFORM_OFFSET] = look.sightGlow ?? DEFAULT_LOOK_TRIMS.sightGlow
   out[OUTBREAK_ART_UNIFORM_OFFSET + 1] = look.groundDetail ?? DEFAULT_LOOK_TRIMS.groundDetail
+  out[OUTBREAK_ART_UNIFORM_OFFSET + 2] = look.lampRolloff ?? DEFAULT_LOOK_TRIMS.lampRolloff
   // win (offset 76..79): windowOriginX, windowOriginZ, isStreamWindow, buildingCount
   const winOx = state.windowOrigin?.[0] ?? 0
   const winOz = state.windowOrigin?.[1] ?? 0
@@ -1207,7 +1208,7 @@ struct OutbreakLightingUniforms {
   shroud: vec4f, // shroud & unlit: shroudDarkness, outOfLightDesat, outOfSightDarkening, worldSaturation
   beamLook: vec4f, // beamWarmth, beamTightness, zombieRimSpec, nightGrain
   sight: vec4f, // coneSharpness, dayShroud, dayMuted, shroudLampKeep
-  art: vec4f, // sightGlow, groundDetail, reserved, reserved
+  art: vec4f, // sightGlow, groundDetail, lampRolloff, reserved
 }
 @group(0) @binding(13) var<uniform> OL: OutbreakLightingUniforms;
 ${lightRampWgsl}

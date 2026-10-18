@@ -6,7 +6,8 @@ import { makeTown } from "../shared/map"
 import { LocalSession } from "../shared/session"
 import { PropDressing } from "../src/props/dressing"
 import { furnishedHouses, propFloorFootprints, propLamps, usedPropIds } from "../src/props/furnish"
-import { DEFAULT_PROP_SETTINGS } from "../src/props/settings"
+import { DEFAULT_PROP_SETTINGS, PROP_LOD_HYSTERESIS } from "../src/props/settings"
+import { DEFAULT_OUTBREAK_VIEW } from "../src/settings"
 import { propDressingState, propLevelSignature } from "../src/props/state"
 import { buildVignetteLevel } from "../src/vignette/presets"
 
@@ -79,15 +80,15 @@ describe("prop dressing exports for the level bake", () => {
     let rebuilds = 0
     const host = { addModel: () => modelsAdded++, setModel: () => {} }
     const dressing = new PropDressing(host, 63, diskLibrary())
-    const view: [number, number, number, number] = [-1.5, 15, 50, 48] // west edge < 0 triggers streamed window at zoom 46
+    const view: [number, number, number, number] = [-1.5, 15, 50, 48] // west edge < 0 triggers streamed window at zoom 38
 
     // Kick off loading and wait for disk assets to resolve
-    dressing.collect(town, view, DEFAULT_PROP_SETTINGS, 46, { clutterScale: 1, minPropLod: 0 }, true, () => rebuilds++)
+    dressing.collect(town, view, DEFAULT_PROP_SETTINGS, 38, { clutterScale: 1, minPropLod: 0 }, true, () => rebuilds++)
     for (let i = 0; i < 20 && !dressing.ready; i++) await new Promise(r => setTimeout(r, 5))
     expect(dressing.ready).toBe(true)
     expect(modelsAdded).toBeGreaterThan(20)
 
-    const batches = dressing.collect(town, view, DEFAULT_PROP_SETTINGS, 46, { clutterScale: 1, minPropLod: 0 }, true, () => rebuilds++)
+    const batches = dressing.collect(town, view, DEFAULT_PROP_SETTINGS, 38, { clutterScale: 1, minPropLod: 0 }, true, () => rebuilds++)
     expect(batches.length).toBeGreaterThan(5)
     expect(propDressingState.on).toBe(true)
 
@@ -98,9 +99,9 @@ describe("prop dressing exports for the level bake", () => {
       const brokenLib = new PropLibrary("broken/", async () => new Response(null, { status: 404 }))
       const broken = new PropDressing(host, 63, brokenLib)
       let fallbackRebuilds = 0
-      broken.collect(town, view, DEFAULT_PROP_SETTINGS, 46, { clutterScale: 1, minPropLod: 0 }, true, () => fallbackRebuilds++)
+      broken.collect(town, view, DEFAULT_PROP_SETTINGS, 38, { clutterScale: 1, minPropLod: 0 }, true, () => fallbackRebuilds++)
       for (let i = 0; i < 20 && !broken.ready; i++) await new Promise(r => setTimeout(r, 5))
-      const empty = broken.collect(town, view, DEFAULT_PROP_SETTINGS, 46, { clutterScale: 1, minPropLod: 0 }, true, () => fallbackRebuilds++)
+      const empty = broken.collect(town, view, DEFAULT_PROP_SETTINGS, 38, { clutterScale: 1, minPropLod: 0 }, true, () => fallbackRebuilds++)
       expect(empty.length).toBe(0)
       expect(propDressingState.on).toBe(false)
       expect(fallbackRebuilds).toBeGreaterThan(0)
@@ -154,7 +155,7 @@ describe("prop dressing exports for the level bake", () => {
     const view: [number, number, number, number] = [18, 20, 42, 42]
 
     // Frame 1 while Stage 1 fetches are still in flight: only start-house props were requested, and anchors draw box fallbacks
-    const whileLoading = dressing.collect(town, view, DEFAULT_PROP_SETTINGS, 46, { clutterScale: 1, minPropLod: 0 }, true, () => {})
+    const whileLoading = dressing.collect(town, view, DEFAULT_PROP_SETTINGS, 38, { clutterScale: 1, minPropLod: 0 }, true, () => {})
     expect(requested).toEqual(stage1Ids)
     expect(dressing.furnishedReady).toBe(false)
     expect(whileLoading.length).toBeGreaterThan(0)
@@ -167,7 +168,7 @@ describe("prop dressing exports for the level bake", () => {
     expect(requested).toEqual(stage1Ids)
     expect(stage1Bytes).toBe(2963900)
 
-    const furnishedBatches = dressing.collect(town, view, DEFAULT_PROP_SETTINGS, 46, { clutterScale: 1, minPropLod: 0 }, true, () => {})
+    const furnishedBatches = dressing.collect(town, view, DEFAULT_PROP_SETTINGS, 38, { clutterScale: 1, minPropLod: 0 }, true, () => {})
     expect(furnishedBatches.some(b => !fallbackModels.has(b.model))).toBe(true)
 
     // Deferred Stage 2 completes on the idle/macrotask turn
@@ -187,7 +188,7 @@ describe("prop dressing exports for the level bake", () => {
         return new Response(await file.arrayBuffer(), { status: 200 })
       })
       const partial = new PropDressing(host, 63, partialLib)
-      partial.collect(town, view, DEFAULT_PROP_SETTINGS, 46, { clutterScale: 1, minPropLod: 0 }, true, () => {})
+      partial.collect(town, view, DEFAULT_PROP_SETTINGS, 38, { clutterScale: 1, minPropLod: 0 }, true, () => {})
       for (let i = 0; i < 20 && !partial.furnishedReady; i++) await new Promise(r => setTimeout(r, 5))
       expect(partial.models.has("bed")).toBe(false)
       expect(partial.models.has("chesterfield-sofa")).toBe(true)
@@ -227,5 +228,11 @@ describe("prop dressing exports for the level bake", () => {
     // Crossing below 31.5 switches back to LOD0
     const at31 = dressing.collect(town, view, s, 31, { clutterScale: 1, minPropLod: 0 }, true, () => {}).map(b => b.model)
     expect(at31).toEqual(at33)
+  })
+
+  test("the default camera distance sits clear of the LOD hysteresis band", () => {
+    const { zoom } = DEFAULT_OUTBREAK_VIEW
+    const { propLodZoom } = DEFAULT_PROP_SETTINGS
+    expect(Math.abs(zoom - propLodZoom)).toBeGreaterThan(PROP_LOD_HYSTERESIS)
   })
 })

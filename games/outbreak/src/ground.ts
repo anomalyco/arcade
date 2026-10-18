@@ -281,7 +281,9 @@ export const groundSurfaceHookWgsl = /* wgsl */ `
             let walkCore = fastExpNeg(dxWalk2 * 0.8) * smoothstep(wb.w + 4.9, wb.w - 0.5, o.world.z);
             let sideSpread = fastExpNeg(dxWalk2 * 0.133333) * smoothstep(wb.w + 1.9, wb.w + 2.9, o.world.z) * smoothstep(wb.w + 4.7, wb.w + 3.3, o.world.z);
             let extScale = select(1.05, 0.68, OL.u5.w > 0.5) * (1.0 + OL.u8.y * 0.85) * 0.96;
-            let walkPool = (walkCore * 0.88 + sideSpread * 0.35) * OL.u2.y * nightLamps * extScale;
+            // Legacy porch glow painted into the walkway's albedo; the beam then inherited its amber. Lamp roll-off
+            // (OL.art.z) retires it: the porch light's own pool (applySceneLightBounceAndHaze) lights the walk.
+            let walkPool = (walkCore * 0.88 + sideSpread * 0.35) * OL.u2.y * nightLamps * extScale * (1.0 - clamp(OL.art.z, 0.0, 1.0));
             col += col * vec3f(1.26, 0.72, 0.22) * walkPool;
             outbreakPracticalIrr += walkPool * 0.68;
           }

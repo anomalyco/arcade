@@ -326,7 +326,7 @@ try {
   }
   await page.evaluate(() => {
     const h = (window as any).__arcadeHarness
-    h.setLab("zoom", 46)
+    h.setLab("zoom", 38)
     h.setLookPreset("noir")
   })
 

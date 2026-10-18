@@ -82,6 +82,11 @@ export type OutbreakLookTrims = {
   sightGlow: number
   /** Painterly ground detail: dirt, leaf litter, stains and cracks on paving and turf, faded out where it would alias (0 off). */
   groundDetail: number
+  /**
+   * Lamp pools at night roll their brightest channel off with the hue held and go warm white at the hottest point, so
+   * a porch light reads as a warm pool with a hot core instead of a clipped yellow blob (0 off: legacy clip, 2 hotter core).
+   */
+  lampRolloff: number
   /** Share of air cells holding a dust mote; motes only show where a light reaches them (0 is off). */
   dustAmount: number
   /** × how brightly motes catch the light. */
@@ -136,6 +141,7 @@ export const DEFAULT_LOOK_TRIMS: OutbreakLookTrims = {
   dayGrain: 0.05,
   sightGlow: 1,
   groundDetail: 1,
+  lampRolloff: 1,
   dustAmount: 0.12,
   dustBrightness: 0.7,
   dustSize: 1.5,
@@ -168,6 +174,7 @@ export const lookTrimControls: LabControl[] = [
   { key: "bakedLight", label: "Baked room light (pools + bounce)", group: LIGHTS, min: 0, max: 8, step: 0.05, unit: "×" },
   { key: "tableLamps", label: "Live table lamps", group: LIGHTS, type: "select", options: [{ value: -1, label: "Quality tier" }, { value: 0, label: "Off (baked only)" }, { value: 1, label: "1" }, { value: 2, label: "2" }, { value: 4, label: "4" }] },
   { key: "tableLampPower", label: "Table lamp power", group: LIGHTS, min: 0, max: 3, step: 0.05, unit: "×" },
+  { key: "lampRolloff", label: "Lamp hot core & roll-off", group: LIGHTS, min: 0, max: 2, step: 0.05, unit: "×" },
   { key: "lightColour", label: "Colour only from light", group: LIGHT_COLOUR, min: 0, max: 1, step: 1, unit: "" },
   { key: "worldSaturation", label: "Unlit world saturation", group: LIGHT_COLOUR, min: 0, max: 1, step: 0.01, unit: "" },
   { key: "litColour", label: "Lit colour strength", group: LIGHT_COLOUR, min: 0, max: 1.5, step: 0.02, unit: "×" },

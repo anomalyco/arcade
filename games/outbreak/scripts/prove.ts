@@ -28,7 +28,7 @@ try {
   const adapter = await page.evaluate(() => (window as any).__arcadeHarness.adapterInfo)
   assert.match(adapter.architecture, /metal/)
   assert.equal(adapter.vendor, "apple")
-  const pose = async (x: number, y: number, aim: number, hour = 18, zoom = 46) => page.evaluate(async ({ x, y, aim, hour, zoom }) => {
+  const pose = async (x: number, y: number, aim: number, hour = 18, zoom = 38) => page.evaluate(async ({ x, y, aim, hour, zoom }) => {
     const h = (window as any).__arcadeHarness
     h.setLab("timeScale", 0); h.setLab("hour", hour); h.setLab("zoom", zoom)
     h.pose(x, y, aim)

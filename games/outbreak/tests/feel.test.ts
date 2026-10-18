@@ -104,6 +104,25 @@ describe("camera lead", () => {
     expect(Math.abs(trail(1 / 6))).toBeLessThan(0.05)
     expect(trail(0.3)).toBeLessThan(-0.6)
   })
+
+  test("the default lead runs ahead while moving and recentres on a survivor who stops", async () => {
+    const { Camera } = await import("@arcade/kit/client/camera")
+    const { DEFAULT_CAMERA_LEAD, onFootLead } = await import("../src/feel-tuning")
+    expect(DEFAULT_CAMERA_LEAD).toEqual({ cameraMoveLead: 0.3, cameraAimLead: 0 })
+    const cam = new Camera()
+    const p = { x: 0, y: 0, vx: 3.2, vy: 0, aim: 0 }
+    const tick = () => {
+      p.x += p.vx / 60
+      const lead = onFootLead(p, DEFAULT_CAMERA_LEAD)
+      cam.follow(p.x, p.y, lead.x, lead.y, 1 / 60, false)
+    }
+    for (let i = 0; i < 240; i++) tick()
+    expect(cam.x - p.x).toBeGreaterThan(0.3)
+    p.vx = 0
+    p.aim = 1.2
+    for (let i = 0; i < 180; i++) tick()
+    expect(Math.hypot(cam.x - p.x, cam.z - p.y)).toBeLessThan(0.01)
+  })
 })
 
 describe("zombie strike lunge", () => {
