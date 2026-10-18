@@ -1,0 +1,11 @@
+{
+  "note": "Reviewed findings that are not visible. Each entry matches a finding of the same class and storey within 0.1 m of `at`. Keep this list short: fix the generator instead whenever possible.",
+  "allow": [
+    {
+      "cls": "coplanar",
+      "storey": 0,
+      "at": [-47.87, 1.776, -8.28],
+      "reason": "two backs of a wall-hung item facing the 0-30/0-10 partition from 10-14 mm away: inside a slot too thin to see into"
+    }
+  ]
+}

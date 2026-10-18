@@ -116,7 +116,7 @@ export async function buildEast(s: S4, pause: () => Promise<void>) {
   ])
   selectric(sb, -1.95, deskTop, 5.6, Math.PI)
   paper(s, "letter_regret", [-1.95, deskTop + 0.29, 5.62], [0, 0.25, 1], { pin: "none", curl: 0.05 })
-  for (let k = 0; k < 4; k++) paper(s, "letter_regret", [-2.55 + k * 0.004, deskTop + 0.001 + k * 0.0012, 5.35 - k * 0.003], [0, 1, 0], { rotation: 0.08 - k * 0.03, offset: 0.0015 + k * 0.0012, seed: 40 + k })
+  for (let k = 0; k < 4; k++) paper(s, "letter_regret", [-2.55 + k * 0.004, deskTop + 0.001 + k * 0.0012, 5.35 - k * 0.003], [0, 1, 0], { rotation: 0.08 - k * 0.03, offset: 0.005 + k * 0.0036, curl: 0, seed: 40 + k })
   paper(s, "memo_next_of_kin", [-1.15, deskTop, 5.45], [0, 1, 0], { rotation: -0.2 })
   paper(s, "card_extensions", [-0.95, deskTop, 5.8], [0, 1, 0], { rotation: 0.3 })
   paper(s, "sticky_marge", [-0.88, deskTop, 5.15], [0, 1, 0], { rotation: -0.4 })

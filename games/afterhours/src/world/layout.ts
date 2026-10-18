@@ -105,7 +105,7 @@ export const CORE = {
  * into the west end of that storey's corridor (door centre z = 0, width 1.0). A caged ladder continues from the top
  * landing over the parapet onto the roof.
  */
-export const FIRE_ESCAPE = { x: -55, z0: -6, z1: 6, depth: 1.5, door: { z: 0, width: 1.0 } }
+export const FIRE_ESCAPE = { x: -55, z0: -6, z1: 6, depth: 2.1, door: { z: 0, width: 1.0 } }
 
 /** Upper-storey plan: the same double-loaded corridor as the ground floor, the full length of the main block. */
 export const UPPER = { corridor: { min: [-54.65, -1.6] as Vec2, max: [34.65, 1.6] as Vec2 } }

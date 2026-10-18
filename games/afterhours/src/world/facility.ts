@@ -22,7 +22,17 @@ const DEFAULTS = {
   "facility.beaconPeriod": 2.2,
 }
 
-export function build(ctx: WorldContext): WorldModule {
+/** Ends the current task so boot frames and input get a turn (each build phase stays well under a long task). */
+const yieldTask = () => new Promise<void>((r) => setTimeout(r, 0))
+let phaseT = 0
+const phase = async (name: string) => {
+  const t = performance.now()
+  if (phaseT) performance.measure(`facility:${name}`, { start: phaseT, end: t })
+  await yieldTask()
+  phaseT = performance.now()
+}
+
+export async function build(ctx: WorldContext): Promise<WorldModule> {
   for (const [k, v] of Object.entries(DEFAULTS)) if (ctx.settings[k] === undefined) ctx.settings[k] = v
   ctx.controls.push(
     { key: "facility.windowGlow", label: "Lit window brightness", group: "Facility", min: 0, max: 3, step: 0.05 },
@@ -35,17 +45,22 @@ export function build(ctx: WorldContext): WorldModule {
   root.name = "facility"
   ctx.scene.add(root)
 
+  phaseT = performance.now()
   const shell = buildShell(ctx, root)
+  await phase("shell")
 
   const b = new Batch(true)
   const dish = buildDish(ctx, root, b)
   buildRoof(ctx, b)
+  await phase("dish+roof")
   buildDock(ctx, b, root)
   buildGrounds(ctx, b, root)
   buildAnnex(ctx, b)
   b.flush(root, { name: "facility-details" })
+  await phase("dock+grounds")
   // Build every world-frame batch together, with near-coplanar faces separated (no z-fighting anywhere).
-  flushWorld()
+  await flushWorld(yieldTask)
+  await phase("flush")
   // Models stream in after the first frame; colliders and contact shadows are already in place.
   void buildProps(ctx, root)
 

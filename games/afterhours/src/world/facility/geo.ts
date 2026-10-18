@@ -232,12 +232,23 @@ export class QuadBuilder {
  * boxes whose same-facing faces lie within 4 mm and overlap in area, the smaller box's face moves 5 mm past the larger
  * one's (a solid overlap instead of a tie). Faces that only touch along an edge are left alone.
  */
-export function flushWorld() {
+export async function flushWorld(yieldTask: () => Promise<void> = async () => {}) {
   const all: BoxRec[] = pending.flatMap((p) => p.batch.records)
-  for (let pass = 0; pass < 3; pass++) if (!separate(all)) break
+  for (let pass = 0; pass < 3; pass++) {
+    const t0 = performance.now()
+    const moved = separate(all)
+    performance.measure(`facility:separate${pass}`, { start: t0, end: performance.now() })
+    await yieldTask()
+    if (!moved) break
+  }
   for (const p of pending.splice(0)) {
+    const t0 = performance.now()
     p.batch.emitRecords()
+    const t1 = performance.now()
     p.batch.build(p.parent, p.opts)
+    performance.measure(`facility:emit-${p.opts.name}`, { start: t0, end: t1 })
+    performance.measure(`facility:build-${p.opts.name}`, { start: t1, end: performance.now() })
+    await yieldTask()
   }
 }
 
@@ -260,13 +271,13 @@ function separate(all: BoxRec[]) {
         l.push(i)
       })
       for (const [k, list] of bins) {
-        const cand = [...list, ...(bins.get(k + 1) ?? [])]
+        const next = bins.get(k + 1) ?? []
         for (let a = 0; a < list.length; a++) {
           const A = all[list[a]!]!
-          for (const j of cand) {
+          // Each pair once: later members of this bin, then every member of the next bin.
+          for (let q = a + 1; q < list.length + next.length; q++) {
+            const j = q < list.length ? list[q]! : next[q - list.length]!
             const B = all[j]!
-            if (B === A) continue
-            if (list.includes(j) && j <= list[a]!) continue
             const ca = A.b[ax + side * 3]!
             const cb = B.b[ax + side * 3]!
             if (Math.abs(ca - cb) >= COPLANAR) continue

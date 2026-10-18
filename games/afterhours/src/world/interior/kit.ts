@@ -720,11 +720,12 @@ function* separateDepthSteps(builders: Builder[]): Generator<void> {
   // model boxes −3 while this batch runs), so every lookup is a single read.
   const buckets: Map<number, DTri[]> = reg ?? new Map()
   // Buckets: plane (axis, facing, 3.5 mm slab) × 1 m cells in the plane, so a lookup only meets nearby faces.
-  const cellKeys = (t: DTri, c: number, fn: (k: number) => void, big = false) => {
+  const cellKeys = (t: DTri, dSlab: number, fn: (k: number) => void, big = false) => {
     // Numeric key: ((slab · 512 + u cell) · 512 + v cell) · 6 + axis/facing (1 m cells, ±256 m; slabs ±175 m).
     // Faces over more than 16 cells (floors, ceilings, long walls) live in one negative per-slab key instead.
     const af = t.ax * 2 + (t.s > 0 ? 1 : 0)
-    const slab = Math.floor(c / DTOL) + 50000
+    // Integer slab offsets: floor((c ± DTOL) / DTOL) drifts by a slab in floating point.
+    const slab = Math.floor(t.c / DTOL) + 50000 + dSlab
     const gu1 = Math.floor(t.u1)
     const gv1 = Math.floor(t.v1)
     if (big || (gu1 - Math.floor(t.u0) + 1) * (gv1 - Math.floor(t.v0) + 1) > 16) {
@@ -738,7 +739,7 @@ function* separateDepthSteps(builders: Builder[]): Generator<void> {
   // A face is stored in its slab and both neighbours, so a lookup reads one slab only (lookups outnumber stores).
   const put = (m: Map<number, DTri[]>, t: DTri) => {
     for (const d of [-1, 0, 1])
-      cellKeys(t, t.c + d * DTOL, (k) => {
+      cellKeys(t, d, (k) => {
         let l = m.get(k)
         if (!l) m.set(k, (l = []))
         l.push(t)
@@ -746,7 +747,7 @@ function* separateDepthSteps(builders: Builder[]): Generator<void> {
   }
   const remove = (m: Map<number, DTri[]>, t: DTri) => {
     for (const d of [-1, 0, 1])
-      cellKeys(t, t.c + d * DTOL, (k) => {
+      cellKeys(t, d, (k) => {
         const l = m.get(k)
         const i = l ? l.indexOf(t) : -1
         if (i >= 0) l!.splice(i, 1)
@@ -841,7 +842,7 @@ function* separateDepthSteps(builders: Builder[]): Generator<void> {
     // The slab's big faces, then the cells this face covers.
     cellKeys(
       t,
-      t.c,
+      0,
       (k) => {
         const l = m.get(k)
         if (l)
@@ -1987,7 +1988,7 @@ export function ceiling(
   fallen?: (x: number, z: number) => void,
 ) {
   const y0 = CEIL_Y - 0.006
-  // The ceiling plane is structure: fittings yield to it, it never moves.
+  // The ceiling plane and its grid are structure: fittings (troffers, vents) yield to them, they never move.
   b.fixedDepth++
   if (missing <= 0)
     b.box("ceiling_tile", x0, CEIL_Y, z0, x1, CEIL_Y + 0.03, z1, {
@@ -2028,7 +2029,6 @@ export function ceiling(
         )
       }
   }
-  b.fixedDepth--
   for (let k = Math.ceil((x0 - 0.3) / 0.6); 0.3 + k * 0.6 < x1; k++) {
     const x = 0.3 + k * 0.6
     if (x - x0 < 0.05) continue
@@ -2046,6 +2046,7 @@ export function ceiling(
       skip: "XxY",
     })
   }
+  b.fixedDepth--
 }
 
 export type TrofferState =

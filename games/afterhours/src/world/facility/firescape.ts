@@ -10,7 +10,10 @@ import { GRATING, cagedLadder, crossover } from "./access"
 // walkable: landings and treads are floors, the outer railings and the flights' guard rails are colliders.
 
 const W = FIRE_ESCAPE.x // wall face (outward is -X)
-const D = FIRE_ESCAPE.depth
+// Flights need ≥ 0.9 m clear between their guards (a 0.6 m body): 2.1 m deep = a 1.05 m inner walkway beside 1.05 m
+// flights (0.93 m clear). layout.ts still says 1.5 (change requested); the escape builds at 2.1 regardless.
+export const FE_DEPTH = Math.max(FIRE_ESCAPE.depth, 2.1)
+const D = FE_DEPTH
 const XO = W - D // outer edge
 const XS = W - D / 2 // stair / walkway split: flights run in the outer half
 const Z0 = FIRE_ESCAPE.z0

@@ -37,7 +37,7 @@ export function serviceStack(b: Builder, o: ServiceOpts = {}): ServiceHandle {
   const S = SERVICE
   const n = b.storey
   // Walls (centred on the program lines; the hall's west wall and the spine wall are the core's / spine's).
-  const z1 = 10.75
+  const z1 = 10.735 // the 10.675 cross wall's far face: no stub past it
   partition(b, { axis: "z", at: -47.8, from: 1.75, to: z1, finish: [ROOM_BANDS, PLANT_BANDS] })
   partition(b, { axis: "x", at: 10.675, from: -47.8, to: -42.15, finish: [PLANT_BANDS, ROOM_BANDS] })
   partition(b, { axis: "x", at: 6.475, from: -47.8, to: -42.15, finish: [PLANT_BANDS, PLANT_BANDS] })

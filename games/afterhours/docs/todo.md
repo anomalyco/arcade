@@ -100,3 +100,4 @@
 5. Forest empty layers (8–45 empty draws) + double-sided transparent materials drawn twice (forceSinglePass): forest, facility glass, compound fence/car glass, interior_s4_poly.
 - Lamps: s0 52 → merge window lamps at (33.6,1.4,17.6/18.3) + drop 2 of 3 warning lamps; s3 51 → merge 9 window lamps to ≤ 5.
 - Boot gate: longest task < 300 ms, ≤ 180 shader builds, boot < 8 s normal.
+- Interior: waist-high collider ~1 m inside the west façade door z≈-10 (x -53.66..-53.34, z -10.06..-9.74, y 0.16–0.79), probably a prop: move it.

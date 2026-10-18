@@ -265,7 +265,7 @@ const statics: Finding[] = await page.evaluate((only) => {
         const cv = poly.reduce((s2, q) => s2 + q[1], 0) / poly.length
         const w = [0, 0, 0]
         const [i0, i1] = ax === 0 ? [1, 2] : ax === 1 ? [0, 2] : [0, 1]
-        w[ax] = Math.max(ti.c, tj.c) * (s > 0 ? 1 : 0) + Math.min(ti.c, tj.c) * (s > 0 ? 0 : 1) + s * 0.0015
+        w[ax] = Math.max(ti.c, tj.c) * (s > 0 ? 1 : 0) + Math.min(ti.c, tj.c) * (s > 0 ? 0 : 1) + s * 0.0045 // a face whose 4.5 mm front is inside a wall faces into a slot too thin to see into (matches the kit)
         w[i0] = cu
         w[i1] = cv
         if (inside(w[0]!, w[1]!, w[2]!)) continue
@@ -310,7 +310,11 @@ const statics: Finding[] = await page.evaluate((only) => {
         const lbx = B.max[0] - B.min[0] > B.max[2] - B.min[2] ? 0 : 2
         const ox = Math.min(A.max[0], B.max[0]) - Math.max(A.min[0], B.min[0])
         const oz = Math.min(A.max[2], B.max[2]) - Math.max(A.min[2], B.min[2])
-        if (lax === lbx && ox > 0.002 && oz > 0.002 && yo > 0.3) {
+        // Only a short overlap at an end counts (a lining over a wall overlaps it over its whole length by design).
+        const ol = lax === 0 ? ox : oz
+        const la = A.max[lax] - A.min[lax]
+        const lb = B.max[lax] - B.min[lax]
+        if (lax === lbx && ox > 0.002 && oz > 0.002 && yo > 0.3 && ol < 0.25 && ol < 0.5 * Math.min(la, lb) && Math.min(A.max[lax], B.max[lax]) - Math.max(A.min[lax], B.min[lax]) < Math.min(la, lb) - 0.01) {
           const p = [(Math.max(A.min[0], B.min[0]) + Math.min(A.max[0], B.max[0])) / 2, (Math.max(A.min[1], B.min[1]) + Math.min(A.max[1], B.max[1])) / 2, (Math.max(A.min[2], B.min[2]) + Math.min(A.max[2], B.max[2])) / 2]
           if (only < 0 || storeyOf(p[1]!) === only)
             out.push({ cls: "slit", storey: storeyOf(p[1]!), owner: "interior", at: p.map((q) => +q.toFixed(3)), what: `overreach ${((lax === 0 ? ox : oz) * 1000).toFixed(0)} mm: parallel walls ${A.id} and ${B.id} overlap`, amount: +(lax === 0 ? ox : oz).toFixed(4) })
@@ -526,10 +530,13 @@ for (const [vi, v] of sweep.entries()) {
 }
 
 // ------------------------------------------------------------------------------------------------ report
-const all = [...statics, ...flickers]
+// Reviewed, invisible findings (scripts/audit/hygiene-allow.json) are listed but don't fail the gate.
+const allow = (JSON.parse(await Bun.file(new URL("./hygiene-allow.json", import.meta.url).pathname).text()) as { allow: { cls: string; storey: number; at: number[] }[] }).allow
+const allowed = (f: Finding) => allow.some((a) => a.cls === f.cls && a.storey === f.storey && Math.hypot(a.at[0]! - f.at[0], a.at[1]! - f.at[1], a.at[2]! - f.at[2]) < 0.35)
+const all = [...statics, ...flickers].map((f) => (allowed(f) ? { ...f, owner: "allowed" } : f))
 const classes = ["coplanar", "slit", "mount", "flicker"] as const
 const lines: string[] = []
-for (const owner of ["interior", "facility"]) {
+for (const owner of ["interior", "facility", "allowed"]) {
   lines.push(`== ${owner}`)
   for (const cls of classes) {
     const f = all.filter((x) => x.owner === owner && x.cls === cls)

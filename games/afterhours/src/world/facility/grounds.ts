@@ -127,7 +127,9 @@ function shrubGeometry() {
     const y = p.getY(i)
     const z = p.getZ(i)
     const n = 1 + 0.18 * Math.sin(x * 7.1 + z * 3.3) * Math.cos(y * 5.7 - x * 2.1) + 0.08 * Math.sin(z * 13.0 + y * 11.0)
-    p.setXYZ(i, x * n, Math.max(y * n, -0.25) + 0.45, z * n)
+    // Squash the underside instead of clamping it flat (a clamp stacks coplanar faces on one plane).
+    const yy = y * n
+    p.setXYZ(i, x * n, (yy < 0 ? yy * 0.35 : yy) + 0.45, z * n)
   }
   g.deleteAttribute("normal")
   const merged = g.toNonIndexed()

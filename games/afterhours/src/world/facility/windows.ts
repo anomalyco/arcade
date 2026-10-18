@@ -1,6 +1,6 @@
 import * as THREE from "three/webgpu"
 import { Fn, attribute, float, fract, mix, select, sin, smoothstep, step, time, uniform, uv, vec2, vec3, abs, max, exp, length } from "three/tsl"
-import { materialFor } from "../../render/materials"
+import { decalBias, materialFor } from "../../render/materials"
 
 // Window glass and decals for the facility. Two custom graphs, each built once and shared (shader count is the boot
 // cost); plain glass goes through the shared `flat` surface class.
@@ -67,7 +67,10 @@ export function windowMaterial() {
 
 /** Clear glass (storefront, real-room windows, stair slot): a shared flat-class member. */
 export function clearGlassMaterial() {
-  return materialFor("flat", { color: 0x6f8580, roughness: 0.04, metalness: 0, transparent: 0.16, side: THREE.DoubleSide, name: "facility_glass_clear" })
+  const m = materialFor("flat", { color: 0x6f8580, roughness: 0.04, metalness: 0, transparent: 0.16, side: THREE.DoubleSide, name: "facility_glass_clear" })
+  // Thin flat panes: one double-sided pass, not three's back-then-front pair (sorting within a pane doesn't matter).
+  m.forceSinglePass = true
+  return m
 }
 
 let decalMat: THREE.MeshStandardNodeMaterial | undefined
@@ -100,9 +103,7 @@ export function decalMaterial() {
     return mix(stain, shadow, blob)
   })()
   m.depthWrite = false
-  m.polygonOffset = true
-  m.polygonOffsetFactor = -2
-  m.polygonOffsetUnits = -2
+  decalBias(m)
   m.name = "facility_decal"
   return (decalMat = m)
 }
