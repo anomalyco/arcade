@@ -11,6 +11,7 @@ export const propDressingState = {
   on: DEFAULT_PROP_SETTINGS.propsOn,
   density: DEFAULT_PROP_SETTINGS.propClutter,
   seed: DEFAULT_PROP_SETTINGS.propSeed,
+  modelStyle: 0,
 }
 
 /** The part of the level cache key the library owns; unchanged from before clutter was stamped while off. */

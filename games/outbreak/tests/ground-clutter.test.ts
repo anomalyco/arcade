@@ -36,15 +36,17 @@ describe("ground wear, exterior clutter, and ambient motion", () => {
     }
   })
 
-  test("packGroundCfgBits round-trips wearAmount, curbDirt, and puddleWetness in F.map.w", () => {
-    const bits = packGroundCfgBits({ wearAmount: 1.35, curbDirt: 0.85, puddleWetness: 1.65 })
+  test("packGroundCfgBits round-trips wearAmount, curbDirt, puddleWetness, and groundStyle in F.map.w", () => {
+    const bits = packGroundCfgBits({ wearAmount: 1.35, curbDirt: 0.85, puddleWetness: 1.65, groundStyle: 2 })
     expect((bits & (1 << 18)) !== 0).toBe(true)
     const w = (bits & 63) * 0.05
     const d = ((bits >> 6) & 63) * 0.05
     const p = ((bits >> 12) & 63) * 0.05
+    const style = (bits >> 19) & 3
     expect(w).toBeCloseTo(1.35, 5)
     expect(d).toBeCloseTo(0.85, 5)
     expect(p).toBeCloseTo(1.65, 5)
+    expect(style).toBe(2)
   })
 
   test("exterior clutter respects walk paths, doorways, and edge affinity rules", () => {

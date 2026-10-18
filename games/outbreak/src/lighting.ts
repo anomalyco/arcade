@@ -261,7 +261,9 @@ export const OUTBREAK_COLOUR_UNIFORM_OFFSET = OUTBREAK_HERO_UNIFORM_OFFSET + 4
 export const OUTBREAK_DUST_UNIFORM_OFFSET = OUTBREAK_COLOUR_UNIFORM_OFFSET + 4
 /** Soft Bean's surface (see `look/hero.ts`): light wrap, sheen, sheen exponent, own colour in the dark. */
 export const OUTBREAK_BEAN_UNIFORM_OFFSET = OUTBREAK_DUST_UNIFORM_OFFSET + 4
-export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = OUTBREAK_BEAN_UNIFORM_OFFSET + 4
+/** Rendering round axes (see `look/world.ts`): lightSatStyle, modelStyle, styleGrade, groundStyle. */
+export const OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET = OUTBREAK_BEAN_UNIFORM_OFFSET + 4
+export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET + 4
 
 export type OutbreakLightingUniformSettings =
   | (OutbreakLightingSettings & Partial<FlashlightBeamSettings> & Partial<UnseenSettings> & {
@@ -557,6 +559,10 @@ export function packOutbreakLightingUniforms(
   out[OUTBREAK_DUST_UNIFORM_OFFSET + 1] = look.dustBrightness ?? DEFAULT_LOOK_TRIMS.dustBrightness
   out[OUTBREAK_DUST_UNIFORM_OFFSET + 2] = look.dustSize ?? DEFAULT_LOOK_TRIMS.dustSize
   out[OUTBREAK_DUST_UNIFORM_OFFSET + 3] = look.dustLamps ?? DEFAULT_LOOK_TRIMS.dustLamps
+  out[OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET] = look.lightSatStyle ?? DEFAULT_LOOK_TRIMS.lightSatStyle
+  out[OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET + 1] = look.modelStyle ?? DEFAULT_LOOK_TRIMS.modelStyle
+  out[OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET + 2] = look.styleGrade ?? DEFAULT_LOOK_TRIMS.styleGrade
+  out[OUTBREAK_RENDER_ROUND_UNIFORM_OFFSET + 3] = look.groundStyle ?? DEFAULT_LOOK_TRIMS.groundStyle
   // win (offset 76..79): windowOriginX, windowOriginZ, isStreamWindow, buildingCount
   const winOx = state.windowOrigin?.[0] ?? 0
   const winOz = state.windowOrigin?.[1] ?? 0
@@ -1166,6 +1172,7 @@ struct OutbreakLightingUniforms {
   colour: vec4f, // light-colour rule: on, vision lift, bounce weight; baked room light scale
   dust: vec4f, // dust motes: amount, brightness, size, under lamps
   bean: vec4f, // Soft Bean: light wrap, sheen, sheen exponent, own colour in the dark
+  round: vec4f, // rendering round: lightSatStyle, modelStyle, styleGrade, groundStyle
 }
 @group(0) @binding(13) var<uniform> OL: OutbreakLightingUniforms;
 ${lightRampWgsl}

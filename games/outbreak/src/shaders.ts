@@ -239,6 +239,9 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
   } else {
     let inRoom = outbreakInRoom;
     let w = clamp(OL.u0.z, 0.0, 1.0);
+    let satStyle = i32(round(OL.round.x));
+    let modStyle = i32(round(OL.round.y));
+    let gradeStyle = i32(round(OL.round.z));
     ${groundSurfaceHookWgsl}
     if (mat == 4 && !inRoom) {
       // Deep-but-not-crushed eave overhang shadow beneath main roof soffit, porch gable shadow, and foundation shrub occlusion.
@@ -247,10 +250,34 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
       let underPorchGable = step(2.05, o.world.y) * step(abs(o.world.x - (select(21.0, 22.0, o.world.z < 45.0) + 5.7)), 1.62) * step(34.5, o.world.z);
       col *= mix(1.0, 0.52, clamp(eaveShadow + lowShadow + underPorchGable * 0.35, 0.0, 1.0));
       let wallLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
-      col = mix(col, vec3f(wallLum) * vec3f(1.28, 0.96, 0.58), w * 0.74) * 0.96;
-    } else if (mat == 0 && o.world.y > 0.14 && o.world.y < 2.65) {
+      col = mix(col, vec3f(wallLum) * vec3f(1.28, 0.96, 0.58), w * select(0.74, 0.22, satStyle > 0)) * select(0.96, 0.99, satStyle > 0);
+    } else if ((mat == 0 || mat == 3) && o.world.y > 0.03 && o.world.y < 2.68) {
       // Blog Game Tip #9: Local-space power-4 triplanar grain & wear on props, doors, and parked car
-      col *= evalTriplanarPropMod(o.world, n);
+      if (mat == 0 && o.world.y > 0.14 && o.world.y < 2.65) {
+        let grainMod = evalTriplanarPropMod(o.world, n);
+        col *= select(grainMod, 1.0 + (grainMod - 1.0) * select(1.15, 1.65, modStyle == 3), modStyle > 0);
+      }
+      if (modStyle > 0) {
+        // Model shading candidates: vertical floor-contact grounding, satin bevel/top catch, and silhouette rim relief
+        let propGround = mix(select(0.70, 0.58, modStyle == 3), 1.0, smoothstep(0.03, 0.42, o.world.y));
+        col *= propGround;
+        let Vp = normalize(F.cam.xyz - o.world);
+        let contourP = clamp(length(n.xz), 0.0, 1.0);
+        if (modStyle == 1 || modStyle == 2) {
+          let hTop = normalize(Vp + vec3f(0.15, 0.96, 0.22));
+          let satinExp = select(14.0, 26.0, mat == 3);
+          let satinAmp = select(0.075, 0.20, mat == 3) * select(1.0, 1.35, modStyle == 2);
+          let satinSpec = pow(max(0.0, dot(n, hTop)), satinExp) * satinAmp;
+          let bevelCatch = smoothstep(0.22, 0.86, n.y) * contourP * smoothstep(0.18, 1.35, o.world.y) * select(0.22, 0.38, modStyle == 2);
+          col = col * (1.0 + bevelCatch) + (outbreakAlbedo * 0.65 + vec3f(0.04)) * satinSpec * max(F.ambient.w, 0.45);
+        }
+        if (modStyle == 2) {
+          let rimF = 1.0 - max(dot(n, Vp), 0.0);
+          let silRim = (rimF * rimF) * (0.4 + 0.6 * contourP) * smoothstep(0.18, 1.35, o.world.y);
+          let rimTone = mix(vec3f(0.042, 0.056, 0.082), vec3f(0.085, 0.062, 0.034), clamp(outbreakPracticalIrr * 2.2, 0.0, 1.0));
+          col += (outbreakAlbedo * 0.45 + rimTone) * silRim * 0.65;
+        }
+      }
     }
     if (!inRoom) {
       if (mat != 12) {
@@ -263,7 +290,9 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
       }
     } else if (mat != 12) {
       let roomLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
-      col = mix(col, vec3f(roomLum) * vec3f(1.24, 0.92, 0.48), w * 0.58) * mix(0.84, 0.66, w);
+      let roomWash = select(w * 0.58, w * select(0.14, 0.24, satStyle == 3), satStyle > 0);
+      let roomDim = select(mix(0.84, 0.66, w), mix(0.92, 0.82, w), satStyle > 0);
+      col = mix(col, vec3f(roomLum) * vec3f(1.24, 0.92, 0.48), roomWash) * roomDim;
       // Warm amber kitchen sink window pane glow (3D muntins are MAT.timber = 0, panes are MAT.lamp = 2)
       if (mat == 2 && o.world.x > 32.64 && o.world.x < 34.06 && o.world.z > 29.65 && o.world.z < 30.18 && o.world.y > 1.05 && o.world.y < 2.22) {
         col = vec3f(0.58, 0.24, 0.045) * (0.78 + 0.22 * surfaceNoise(o.world.xy * 6.0)) * nightLamps;
@@ -306,7 +335,7 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
       let crownSheen = (ny0 * ny0) * (0.35 + 0.65 * tipWeight) * smoothstep(0.5, 1.6, o.world.y);
       col += outbreakAlbedo * vec3f(0.50, 0.62, 0.90) * OL.u0.y * 0.32 * crownSheen * clamp(1.0 - F.monitorBounds.w * 1.4, 0.0, 1.0);
       let folLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
-      col = mix(col, vec3f(folLum) * vec3f(1.16, 1.02, 0.64), w * 0.38);
+      col = mix(col, vec3f(folLum) * vec3f(1.16, 1.02, 0.64), w * select(0.38, 0.12, satStyle > 0));
       if (o.world.y < 0.48) {
         let lawnPatch = surfaceNoise(o.world.xz * 0.46 + vec2f(1.9, 4.7));
         col *= mix(0.56, 1.06, smoothstep(0.26, 0.76, lawnPatch));
@@ -321,7 +350,11 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
     let beamAdd = evalFlashlight(o.world, n);
     let flashIrr = outbreakFlashMask;
     let lightRule = outbreakLightRule();
-    let litMask = select(outbreakColorMask(flashIrr), 0.8, mat == 2);
+    var litMask = select(outbreakColorMask(flashIrr), 0.8, mat == 2);
+    if (satStyle == 3 && mat != 2) {
+      let eDeep = flashIrr * 1.15 + outbreakPracticalIrr * OL.u16.y * 1.25 + outbreakBounceIrr * max(OL.colour.z, 0.95) * lightRule;
+      litMask = smoothstep(0.05, 0.90, 1.0 - fastExpNeg(eDeep / max(OL.u13.w * 0.82, 0.01)));
+    }
     outbreakLitMask = litMask * lightRule;
     outbreakSeen = 1.0;
     outbreakKnown = 1.0;
@@ -353,10 +386,47 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
       col = applyOutbreakUnseenActor(col, o.world, n);
     }
     col += beamAdd * outbreakSeen;
+    if (modStyle > 0 && (mat == 0 || mat == 3 || mat == 12)) {
+      // Soft shoulder roll-off so near-lens flashlight glare does not bleach the survivor or nearby props into flat white blocks
+      col = col / (1.0 + max(vec3f(0.0), col - vec3f(0.52)) * 0.72);
+    }
+    let sunLit = select(0.0, clamp((F.monitorBounds.w - 0.16) / 0.55, 0.0, 1.0) * select(1.0, 0.45, inRoom), satStyle > 0);
+    let effectiveLitMask = mix(max(litMask, sunLit), litMask, lightRule);
+    if (satStyle > 0 && mat != 6) {
+      let litActive = clamp(effectiveLitMask * mix(outbreakSeen, max(outbreakSeen, outbreakKnown), lightRule), 0.0, 1.0);
+      let colLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
+      let albLum = max(dot(outbreakAlbedo, vec3f(0.2126, 0.7152, 0.0722)), 1e-4);
+      let truePigment = outbreakAlbedo * (colLum / albLum);
+      col = mix(col, truePigment, litActive * select(0.40, 0.50, satStyle == 1));
+      let cLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
+      let chromaBoost = 1.0 + select(0.32, 0.46, satStyle == 3) * litActive;
+      col = max(vec3f(0.0), vec3f(cLum) + (col - vec3f(cLum)) * chromaBoost);
+      if (satStyle == 2) {
+        let unlitSeen = clamp(outbreakSeen * (1.0 - litMask) * lightRule, 0.0, 1.0);
+        let sLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
+        col = mix(col, mix(col, vec3f(sLum) * vec3f(0.76, 0.89, 1.18), 0.62), unlitSeen);
+      } else if (satStyle == 3) {
+        let penumbraGlow = litMask * (1.0 - litMask) * 4.0 * lightRule * outbreakSeen;
+        col += col * vec3f(0.42, 0.18, 0.03) * penumbraGlow;
+      }
+    }
+    if (gradeStyle > 0 && mat != 6) {
+      let gLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
+      if (gradeStyle == 1) {
+        let toe = smoothstep(0.0, 0.14, gLum);
+        col *= mix(0.64, 1.12, toe);
+      } else if (gradeStyle == 2) {
+        let mid = smoothstep(0.02, 0.24, gLum);
+        col *= mix(vec3f(0.68, 0.76, 0.92), vec3f(1.10, 1.06, 0.98), mid);
+      } else if (gradeStyle == 3) {
+        let toe = smoothstep(0.0, 0.18, gLum);
+        col *= mix(vec3f(0.52, 0.48, 0.56), vec3f(1.16, 1.04, 0.88), toe);
+      }
+    }
     // Colour comes from light: lit surfaces keep it wherever the scenery is known, not only in sight (light rule on);
     // the sight area adds a small lift, and the hero keeps a little so the survivor reads as today. Soft Bean keeps
     // its own share of its player colour (OL.bean.w) so teammates stay apart in the dark.
-    let lit = litMask * mix(outbreakSeen, max(outbreakSeen, outbreakKnown), lightRule);
+    let lit = effectiveLitMask * mix(outbreakSeen, max(outbreakSeen, outbreakKnown), lightRule);
     let lift = OL.colour.y * lightRule * outbreakSeen;
     let beanKeep = select(0.0, clamp(OL.bean.w, 0.0, 1.0), mat == 12 && o.aux > 5.5 && o.aux < 6.5);
     let heroKeep = select(beanKeep, 0.25, mat == 12 && o.aux > 4.5 && o.aux < 5.5) * lightRule;
