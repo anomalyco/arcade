@@ -267,9 +267,10 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
     ${groundSurfaceHookWgsl}
     if (mat == 4 && !inRoom) {
       // Deep-but-not-crushed eave overhang shadow beneath main roof soffit, porch gable shadow, and foundation shrub occlusion.
+      let hb = nearestHouseRect(o.world.xz);
       let eaveShadow = smoothstep(2.05, 2.74, o.world.y);
       let lowShadow = (1.0 - smoothstep(0.24, 0.86, o.world.y)) * 0.22;
-      let underPorchGable = step(2.05, o.world.y) * step(abs(o.world.x - (select(21.0, 22.0, o.world.z < 45.0) + 5.7)), 1.62) * step(34.5, o.world.z);
+      let underPorchGable = step(2.05, o.world.y) * step(abs(o.world.x - (hb.x + 5.7)), 1.62) * step(hb.w - 1.0, o.world.z) * step(o.world.z, hb.w + 1.8);
       col *= mix(1.0, 0.48, clamp(eaveShadow + lowShadow + underPorchGable * 0.35, 0.0, 1.0));
       let wallLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
       col = mix(col, vec3f(wallLum) * vec3f(1.28, 0.96, 0.58), w * select(0.74, 0.10, satStyle > 0)) * select(0.96, select(0.92, mix(0.96, 1.18, sunVal), isV5OrV6), satStyle > 0);
@@ -319,7 +320,8 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
         let periphFloor = select(0.46, select(0.28, select(0.56, v6PeriphFloor, isV6), isV5OrV6), gradeStyle > 0);
         let periphSlope = select(0.42, select(0.48, select(0.36, 0.44, isV6), isV5OrV6), gradeStyle > 0);
         let periphShade = mix(1.0, clamp(1.16 - dCenter * periphSlope, periphFloor, 1.0), vigDark);
-        let extCutDim = select(1.0, select(0.54, 0.82, o.world.x > 37.2 || o.world.z > 35.8), OL.u5.w > 0.5);
+        let cb = houseRect(-1);
+        let extCutDim = select(1.0, select(0.54, 0.82, o.world.x > cb.z + 0.2 || o.world.z > cb.w + 0.3 || o.world.x < cb.x - 8.0 || o.world.z < cb.y - 8.0), OL.u5.w > 0.5);
         col *= periphShade * extCutDim;
         let westSweep = smoothstep(35.0, 20.5, o.world.x - (o.world.z - 38.0) * 0.32);
         let duskEastTint = select(vec3f(0.76, 0.92, 1.48), select(vec3f(0.98, 0.86, 0.74), vec3f(0.88, 0.92, 0.84), mat == 22), isV7);
