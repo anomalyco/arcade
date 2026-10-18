@@ -438,6 +438,15 @@ bob, with 1:1 root displacement and `dAim` feed-forward into `gunPos` and `weapo
   reactions (flinch back, spin-twist, knee-buckle), four death variants (fall forward, fall backward, spin crumple,
   collapse to knees), floor knockdown with recovery struggle, prone leg-severed `crawler` hauling (one-leg and
   torso-only via `BONE_SUBTREE_MASK`), and `limping` hip dip (`6.8 cm`).
+- **Zombie strike lunge (`games/outbreak/src/zombie-strikes.ts`, `zombies.ts`)**: zombies had no attack pose, and the
+  kit AI deals damage on the first frame a chaser is in reach, so a hit came from nowhere. `StrikeTracker` pairs each
+  survivor's health drop with the nearest live zombie within `1.8 m` (as the sound director does, so co-op peers get
+  it from snapshots) and `ZombieCrowdRenderer.strike(id)` plays a `0.42 s` lunge: a `70 ms` ease-out thrust, then a
+  smoothstep return. The pelvis and hips move `12 cm` toward the target and drop `3 cm`, the torso pitches in
+  `0.42 rad`, and the hand IK targets move `0.36 m` forward and `0.14 m` up (the lead hand fully, the other at 65%).
+  Elbows end up `0.40 → 0.67 m` in front of the zombie (`tests/feel.test.ts`). The age advances with the hit-stopped
+  draw `dt`, so the lunge freezes with the hit. Lab › Feel › Zombie strike lunge scales it (0 = off). It plays after the
+  hit lands; a real wind-up would need the AI to delay damage (a difficulty change, not presentation).
 
 ## Determinism and performance
 

@@ -1700,6 +1700,22 @@ Candidates from the code audits; measure and playtest before moving any into the
   with body roll reaching 0.144 rad and pitch 0.148 rad. No page or console errors occurred. The startup centre-crop red
   mean stayed within 46.54–47.21 (46.64–47.22 with `off=trauma`, which is now ignored because trauma is baked in).
 
+- **Audit feel with a scripted headless session, not by playing.** `games/outbreak/scripts/feel-audit.ts` steps the
+  real game at 60 Hz through walk, sprint, a miss, shots to a kill, shoves, crowbar swings, getting hit, a door and a
+  fight, recording per frame the camera's trauma, kick, punch, hit-stop and damage flash, the zombie's reaction and
+  every `SoundDirector` event (it runs muted, so the event log is exact), then measures live keydown-to-moved-draw
+  latency, frame intervals and per-call UI/audio cost. It found: zombie strikes with no pose, a camera that trails a
+  sprint by 0.89 m, misses with sound but no visual, a whiffed shove playing a body thud, a 22 ms kill-shot hit-stop
+  under a 28 ms shove, the zombie renderer decaying sim `hitFlash` a second time, and `Dock.sync` forcing layout every
+  frame (0.2–0.3 ms p50, half the per-frame UI cost; now ~0, UI update 0.4–0.5 → 0.2 ms p50). Shared Macs with booted
+  simulators make live frame timing useless (sprint p99 43–260 ms between runs on mini against 17.1 ms on Studio);
+  judge pacing on an idle machine. `scripts/feel-clips.ts` records deterministic muted clips for decisions.
+- **Pair a hit with its attacker from health diffs and show it on the attacker.** Outbreak's zombie strike lunge
+  (`src/zombie-strikes.ts`, details in [animation.md](animation.md)) and the bullet impact flash
+  (`src/bullet-impacts.ts`: flash 70 ms, sparks 120 ms, dust 260 ms, per surface, at the points `shotImpacts` gives the
+  sound, delayed by the round's travel) are presentation fed by state the client already has, so co-op needs no wire
+  fields. Hit-stop per hit kind, the impact flash, the lunge and an on-foot camera lead are typed settings in Lab ›
+  Feel and Lab › Camera (`src/feel-tuning.ts`).
 - **Hit-stop is presentation only.** Freeze or slow what is drawn (`HitStop.step(dt)` in `@arcade/kit/client/camera`),
   never the simulation clock, so prediction and the server stay in step.
 - **Scale shake with trauma squared, and keep feel primitives composable.** `Camera.add(trauma, dir?, kick?)` in
