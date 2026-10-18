@@ -828,6 +828,15 @@ proven animation techniques to animation.md, not here.
   the local choice, tinted a little toward their seat colour. Stills: `games/outbreak/scripts/look-stills.ts`.
 - At the start house at 17:30 most of the frame is lit by the flashlight and the porch, so grade trims read mostly in
   the lamp pools; world saturation needs ×2 or more before the street visibly gains colour under Noir.
+- **Darkwood sight shroud (`AR-52`, `Today · v8` default, 2026-10-18).** Darkwood draws its field of view into a
+  blurred mask and greys, darkens and grains everything outside it at every hour. Outbreak already had the mask (the
+  visibility field); v8 makes it read: a ~5° cone edge and a halo that ends at the awareness radius (`coneSharpness`),
+  the Unseen shroud no longer fading by day nor cancelled by sunlight (`dayShroud`), and two post layers in
+  `games/outbreak/src/unseen/shader.ts` — cold-slate charcoal and coarse crawling grit — whose weights ride the free
+  `GL.pad.x` slot (`FrameInput.postExtra`). The shroud must not count `explored` outdoors, or remembered blocks show as
+  lighter rectangles. Pixel stats at 14:00: meanS 0.234 → 0.089, darkMeanS 0.285 → 0.089; 21:00 street darkMeanS
+  0.084 → 0.033 with lit saturation unchanged (0.60). Paired GPU vs v7 (3456×1894, 6 rounds) sits inside the noise
+  (−1.7 to +0.8 ms, MAD 1.6–4.4 ms). Stills: `rendering-round-stills.ts --mode v8`.
 
 ### Vegetation looks: tree, bush, grass
 
