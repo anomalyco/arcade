@@ -1599,8 +1599,7 @@ export class Renderer {
       effectiveLook &&
       (effectiveCompare.mode ?? 1) === 1 &&
       effectiveLook.painterlySmooth <= 0.01 &&
-      effectiveLook.outlineStrength <= 0.001 &&
-      Math.round(effectiveLook.tonemap) !== 2
+      effectiveLook.outlineStrength <= 0.001
     fp.setPipeline(
       motion
         ? this.motionPipes.composite!

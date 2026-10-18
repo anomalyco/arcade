@@ -24,9 +24,16 @@ export const OUTBREAK_LOOK_PRESETS: readonly OutbreakLookPreset[] = [
   {
     id: "today",
     label: "Today",
-    version: 3,
-    note: "The shipped look: Noir grade by hour, colour only where light falls, Colour Blocks survivors and Former Townsfolk zombies.",
+    version: 4,
+    note: "The shipped look: high-contrast survival horror grade, weathered suburban ground, warm practical & flashlight pools against cold moonlit shadows, LOD0 grounded satin props, Colour Blocks survivors and Former Townsfolk zombies.",
     knobs: TODAY,
+  },
+  {
+    id: "legacy-today",
+    label: "Before: pre-overhaul look",
+    version: 1,
+    note: "The pre-overhaul look before removing the ochre/sepia washes and upgrading the lighting & post-processing stack.",
+    knobs: { ...TODAY, groundStyle: 0, lightSatStyle: 0, modelStyle: 0, styleGrade: 0 },
   },
   {
     id: "hue-colour",

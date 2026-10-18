@@ -593,7 +593,8 @@ fn applyOutbreakFogOfWar(
   let expUv = (world.xz + n.xz * 0.24 - OL.win.xy) * F.map.xy;
   let inExpWin = select(1.0, 0.0, OL.win.z > 0.5 && (any(expUv < vec2f(0.003)) || any(expUv > vec2f(0.997))));
   let explored = max(textureSampleLevel(exploredTex, floorSamp, expUv, 0.0).r * inExpWin, sight.y);
-  outbreakKnown = select(1.0, explored, inRoom && world.y < 2.8);
+  let isOverhaul = OL.round.x > 0.5 || OL.round.z > 0.5;
+  outbreakKnown = select(1.0, select(explored, max(explored, outbreakLitMask * 0.92), isOverhaul), inRoom && world.y < 2.8);
   let fogStyle = i32(floor(OL.u10.x * 0.25 + 1e-4));
   let baseMemDim = OL.u10.z;
   let memDim = clamp(
@@ -613,15 +614,17 @@ fn applyOutbreakFogOfWar(
   }
 
   let luminance = dot(colIn, vec3f(0.2126, 0.7152, 0.0722));
-  let memTint = mix(vec3f(0.86, 0.92, 1.04), vec3f(1.08, 0.98, 0.84), clamp(OL.u16.x, 0.0, 1.0));
+  let baseMemTint = mix(vec3f(0.86, 0.92, 1.04), vec3f(1.08, 0.98, 0.84), clamp(OL.u16.x, 0.0, 1.0));
+  let memTint = select(baseMemTint, mix(vec3f(0.52, 0.86, 1.56), vec3f(1.08, 0.94, 0.74), outbreakLitMask), isOverhaul);
   // Remembered scenery lit by a real light keeps its colour for the grade (the light-colour rule).
   let memSat = mix(select(OL.u10.w, max(OL.u10.w, 0.32), fogStyle == 0), 1.0, outbreakLitMask);
-  let memoryTone = mix(vec3f(luminance) * memTint, colIn, memSat) * memDim;
+  let effMemDim = select(memDim, mix(memDim * 0.76, memDim * 0.94, outbreakLitMask), isOverhaul);
+  let memoryTone = mix(vec3f(luminance) * memTint, colIn, memSat) * effMemDim;
 
   var baseFowCol: vec3f;
   if (inRoom && world.y < 2.8) {
     let shroudScale = clamp(F.effects.w * 2.2, 0.35, 1.0);
-    let roomMem = memoryTone * shroudScale;
+    let roomMem = memoryTone * select(shroudScale, mix(shroudScale * 0.68, 0.62, outbreakLitMask), isOverhaul);
     if (explored >= 0.992 && OL.unseen.mode < 0.5) {
       return mix(roomMem, colIn, visible);
     }
@@ -629,13 +632,19 @@ fn applyOutbreakFogOfWar(
     var shroudNoise = 0.0;
     if (unknownGrainAmt > 0.001) {
       let tSalt = floor(F.cam.w * 16.0) * 7.3;
-      shroudNoise = (hash2(floor(world.xz * 12.0) + vec2f(tSalt, -tSalt)) - 0.5) * unknownGrainAmt * 0.014;
+      shroudNoise = (hash2(floor(world.xz * 12.0) + vec2f(tSalt, -tSalt)) - 0.5) * unknownGrainAmt * select(0.014, 0.002, isOverhaul);
     }
-    let unknownShroud = max(vec3f(0.0015, 0.0018, 0.0024), outbreakAlbedo * 0.012 + vec3f(0.0042, 0.0040, 0.0040) + vec3f(shroudNoise));
+    let legacyShroud = max(vec3f(0.0015, 0.0018, 0.0024), outbreakAlbedo * 0.012 + vec3f(0.0042, 0.0040, 0.0040) + vec3f(shroudNoise));
+    let overhaulShroud = max(
+      vec3f(0.00010, 0.00022, 0.00055),
+      colIn * mix(vec3f(0.04, 0.08, 0.18), vec3f(0.22, 0.18, 0.14), outbreakLitMask) + outbreakAlbedo * vec3f(0.0004, 0.0008, 0.0018),
+    );
+    let unknownShroud = select(legacyShroud, overhaulShroud, isOverhaul);
     let unrevealed = mix(unknownShroud, roomMem, explored);
     baseFowCol = mix(unrevealed, colIn, visible);
   } else {
-    baseFowCol = mix(memoryTone * (0.78 + 0.22 * explored), colIn, visible);
+    let extUnexp = select(0.78 + 0.22 * explored, mix(0.60, 0.88, outbreakLitMask) + (0.40 - 0.12 * outbreakLitMask) * explored, isOverhaul);
+    baseFowCol = mix(memoryTone * extUnexp, colIn, visible);
   }
 
   return applyOutbreakUnseenScene(colIn, baseFowCol, world, n, inRoom, mat, visible, explored, edgeDepth);

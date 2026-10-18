@@ -254,9 +254,11 @@ fn applyOutbreakUnseenPost(
   // Layer 3: Dark shroud — classic darker & desaturated fog of war with soft penumbra fade
   if (aShroud > 0.002) {
     let cLuma = dot(c, vec3f(0.2126, 0.7152, 0.0722));
-    let shroudDark = mix(1.0, 0.22, clamp(aShroud * 0.88, 0.0, 0.94));
-    let shroudMono = vec3f(cLuma) * vec3f(0.80, 0.88, 1.06);
-    c = mix(c, shroudMono, clamp(aShroud * 0.94, 0.0, 0.98)) * shroudDark;
+    let warmLit = clamp((c.r - c.b * 1.12) / max(c.r + 0.0015, 1e-4), 0.0, 1.0);
+    let shroudDark = mix(1.0, mix(0.11, 0.42, warmLit), clamp(aShroud * 0.90, 0.0, 0.96));
+    let shroudMono = vec3f(cLuma) * vec3f(0.46, 0.86, 1.82);
+    let desatAmt = clamp(aShroud * 0.92, 0.0, 0.96) * (1.0 - warmLit * 0.76);
+    c = mix(c, shroudMono, desatAmt) * shroudDark;
   }
 
   // Layer 1: Acid Knife glitch — stepped low-Hz block & scanline UV tear, chroma split, cold slate-indigo wash
@@ -276,6 +278,7 @@ fn applyOutbreakUnseenPost(
   if (aNoise > 0.002) {
     let fTime = floor(G.x * uRate);
     let cLuma = dot(c, vec3f(0.2126, 0.7152, 0.0722));
+    let warmLit = clamp((c.r - c.b * 1.12) / max(c.r + 0.0015, 1e-4), 0.0, 1.0);
     let gCoarse = hash(floor(fragPos * 0.5) + vec2f(fTime * 17.3, -fTime * 11.7)) - 0.5;
     let gFine = hash(floor(fragPos) + vec2f(-fTime * 23.1, fTime * 31.9)) - 0.5;
     let grain = gCoarse * 0.75 + gFine * 0.50;
@@ -283,9 +286,11 @@ fn applyOutbreakUnseenPost(
     let bIdx = bp.y * 4u + bp.x;
     let bayer = (f32(((bIdx & 1u) << 3u) | ((bIdx & 2u) << 1u) | ((bIdx & 4u) >> 1u) | ((bIdx & 8u) >> 3u)) + 0.5) / 16.0 - 0.5;
     let otherDark = clamp(aShroud * 0.75 + aMemory * 0.35 + aGlitch * 0.35, 0.0, 0.85);
-    let silverDim = mix(1.0, mix(0.45, 0.88, otherDark), clamp(aNoise * 0.75, 0.0, 0.86));
-    let silverBase = mix(c, vec3f(cLuma) * vec3f(0.86, 0.92, 1.04), clamp(aNoise * 0.85, 0.0, 0.95)) * silverDim;
-    let noiseVeil = (grain * 0.16 + bayer * 0.10) * aNoise * (0.38 + 0.62 * smoothstep(0.0, 0.24, cLuma + 0.05));
+    let silverDim = mix(1.0, mix(0.36, 0.78, otherDark), clamp(aNoise * 0.75, 0.0, 0.86));
+    let silverDesat = clamp(aNoise * 0.82, 0.0, 0.94) * (1.0 - warmLit * 0.78);
+    let silverBase = mix(c, vec3f(cLuma) * vec3f(0.48, 0.88, 1.78), silverDesat) * silverDim;
+    let shadowGate = smoothstep(0.0012, 0.032, cLuma);
+    let noiseVeil = (grain * 0.12 + bayer * 0.06) * aNoise * shadowGate * min(cLuma * 1.10, 0.035);
     let noisyCol = max(vec3f(0.0), silverBase + vec3f(noiseVeil));
     c = mix(c, noisyCol, clamp(aNoise * 0.95, 0.0, 1.0));
   }

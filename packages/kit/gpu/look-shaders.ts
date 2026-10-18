@@ -66,9 +66,9 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}, variant: LookVariant
       includeNoir
         ? `if (presetIdx == 1) {
       if (mat == 9) { col *= 0.14; }
-      let topCatch = max(0.22, dot(n, vec3f(-0.3504, 0.8210, -0.4505)));
-      let surfBoost = select(0.38, 1.38, mat == 21 || mat == 22);
-      col += (${hooks.lookBaseColor ?? "o.color"}) * vec3f(0.068, 0.068, 0.064) * topCatch * surfBoost * LK.moonIntensity;
+      let topCatch = max(0.12, dot(n, vec3f(-0.3504, 0.8210, -0.4505)));
+      let surfBoost = select(select(0.16, 0.02, interior(o.world.xz)), 0.36, mat == 21 || mat == 22);
+      col += (${hooks.lookBaseColor ?? "o.color"}) * vec3f(0.014, 0.028, 0.062) * topCatch * surfBoost * LK.moonIntensity;
     }`
         : "",
       includePainterly
@@ -492,7 +492,10 @@ ${
   let G = GL.G;
   let L = GL.L;
   let uv = o.uv;
+  let dims = vec2f(textureDimensions(src));
+  let texel = 1.0 / max(dims, vec2f(1.0));
   let fromC = uv - 0.5;
+  let baseCA = ${finish ? finish.chromatic.toFixed(4) : "0.012"};
   let baseBloom = ${finish ? finish.bloom.toFixed(4) : "0.32"};
   let baseVig = ${finish ? finish.vignette.toFixed(4) : "0.45"};
   let baseHuePres = ${finish?.huePreserve ? finish.huePreserve.toFixed(4) : "0.0"};
@@ -527,16 +530,36 @@ ${
   let selectiveColor = clamp(L.selectiveColor, 0.0, 1.5);
   let beamRetain = clamp(flashMask * selectiveColor, 0.0, 1.0);
 
-  let halationTint = vec3f(1.08, 0.34, 0.10) * halation * 0.28;
-  var hdr = centerSamp.rgb * G.w + bloom * (baseBloom * bloomMult + halationTint);
-  let effTemp = mix(temperature, max(temperature, 0.06), beamRetain * 0.88);
+  let caAmt = baseCA + L.chromatic * 0.014;
+  let caVec = fromC * dot(fromC, fromC) * caAmt;
+  var hdrCenter = centerSamp.rgb;
+  let stepClarity = texel * 1.35 + caVec * 0.65;
+  let sNE = clean(textureSampleLevel(src, samp, clamp(uv + stepClarity, vec2f(0.001), vec2f(0.999)), 0.0)).rgb;
+  let sSW = clean(textureSampleLevel(src, samp, clamp(uv - stepClarity, vec2f(0.001), vec2f(0.999)), 0.0)).rgb;
+  if (caAmt > 0.0015) {
+    hdrCenter = vec3f(mix(hdrCenter.r, sNE.r, 0.42), hdrCenter.g, mix(hdrCenter.b, sSW.b, 0.42));
+  }
+  let ringMean = (sNE + sSW) * 0.5;
+  let clarityStrength = clamp((contrast - 0.96) * 0.42, 0.0, 0.34);
+  hdrCenter = max(vec3f(0.0), hdrCenter + (hdrCenter - ringMean) * clarityStrength);
+
+  let bloomPeak = max(bloom.r, max(bloom.g, bloom.b));
+  let bloomGate = smoothstep(0.045, 0.32, bloomPeak);
+  let halationTint = vec3f(1.12, 0.34, 0.09) * halation * 0.32;
+  var hdr = hdrCenter * G.w + bloom * bloomGate * (baseBloom * bloomMult + halationTint);
+  let hdrIn = hdrCenter * G.w;
+  let hdrLuma = dot(hdrIn, vec3f(0.2126, 0.7152, 0.0722));
+  let practicalWarm = clamp((hdrIn.r - hdrIn.b * 1.15) / max(hdrIn.r + 0.002, 1e-4), 0.0, 1.0) * smoothstep(0.006, 0.055, hdrLuma);
+  let effBeamRetain = max(beamRetain, practicalWarm * clamp(selectiveColor * 0.88, 0.0, 1.0));
+  let nightRule = clamp((0.22 - saturation) * 6.0, 0.0, 1.0);
+  let effTemp = mix(temperature * (1.0 - nightRule * 0.90), max(temperature, 0.10), effBeamRetain * 0.90);
   hdr = max(hdr * exposure * vec3f(1.0 + effTemp * 0.24, 1.0 + effTemp * 0.03, 1.0 - effTemp * 0.24), vec3f(0.0));
   if (abs(contrast - 1.0) > 0.001) {
     let uC = max(dot(hdr, vec3f(0.2126, 0.7152, 0.0722)), 1e-4) * 5.5556;
     let kC = clamp(contrast - 1.0, -0.65, 0.65);
     hdr *= ((1.0 + kC) * uC + (1.0 - kC)) / max((1.0 - kC) * uC + (1.0 + kC), 1e-3);
   }
-  var c = lookApplyTonemapFast(hdr, tonemapMode, max(baseHuePres, beamRetain * 0.55));
+  var c = lookApplyTonemapFast(hdr, tonemapMode, max(baseHuePres, effBeamRetain * 0.55));
   if (shoulder > 0.001) {
     let knee = 1.0 - shoulder * 0.45;
     let invSpan = 1.0 / max(1.0 - knee, 0.06);
@@ -544,30 +567,31 @@ ${
     let comp = min(c, vec3f(knee)) + (1.0 - knee) * (over / (vec3f(1.0) + over));
     c = mix(c, comp, clamp(shoulder, 0.0, 1.0));
   }
-  let effToe = toe * (1.0 - 0.65 * beamRetain);
+  let effToe = toe * (1.0 - 0.65 * effBeamRetain);
   if (effToe > 0.001) {
     let toeK = effToe * 0.055;
     let t = c * c / max(c + vec3f(toeK), vec3f(1e-5));
     c = mix(c, t * (1.0 + toeK * 0.5), clamp(effToe * 0.75, 0.0, 0.85));
   }
   let luma = dot(c, vec3f(0.2126, 0.7152, 0.0722));
-  let splitCurve = mix(shadowTint, highlightTint, smoothstep(0.02, 0.55, luma));
-  let activeSplit = mix(vec3f(1.0), splitCurve, clamp(splitTone, 0.0, 1.5));
+  let effShadowTint = mix(shadowTint, vec3f(0.52, 0.88, 1.72), nightRule * (1.0 - effBeamRetain));
+  let splitCurve = mix(effShadowTint, highlightTint, smoothstep(0.02, 0.48, luma));
+  let activeSplit = mix(vec3f(1.0), splitCurve, clamp(max(splitTone, nightRule * 0.82), 0.0, 1.5));
   let mono = vec3f(luma) * activeSplit;
-  let hdrIn = centerSamp.rgb * G.w;
   let warmBias = clamp((hdrIn.r - hdrIn.b * 1.05) / max(hdrIn.r + 0.005, 1e-4) - 0.08, 0.0, 1.0) * clamp(L.practicalWarmth * 1.6, 0.0, 1.0);
+  let coolShadow = clamp((hdrIn.b - hdrIn.r * 1.04) / max(hdrIn.b + 0.002, 1e-4), 0.0, 1.0) * (1.0 - smoothstep(0.02, 0.22, luma));
   let warmTinted = c * mix(activeSplit, vec3f(1.18, 0.88, 0.52), warmBias * 0.65);
-  let effSat = mix(saturation, max(saturation, 0.88), warmBias * 0.82);
+  let effSat = max(mix(saturation, max(saturation, 0.88), warmBias * 0.82), coolShadow * 0.55);
   let outsideCol = mix(mono, warmTinted, effSat);
-  if (beamRetain > 0.001) {
-    let beamSplit = mix(activeSplit, vec3f(1.05, 1.00, 0.94), beamRetain * 0.92);
-    let beamSat = clamp(max(saturation, 1.15 * min(selectiveColor, 1.35)), 0.0, 1.55);
+  if (effBeamRetain > 0.001) {
+    let beamSplit = mix(activeSplit, vec3f(1.06, 0.99, 0.90), effBeamRetain * 0.92);
+    let beamSat = clamp(max(saturation, 1.24 * min(selectiveColor, 1.45)), 0.0, 1.65);
     let beamCol = mix(vec3f(luma) * beamSplit, c * beamSplit, beamSat);
-    c = mix(outsideCol, beamCol, beamRetain);
+    c = mix(outsideCol, beamCol, effBeamRetain);
   } else {
     c = outsideCol;
   }
-  let effCrush = blackCrush * (1.0 - 0.8 * beamRetain);
+  let effCrush = blackCrush * (1.0 - 0.85 * effBeamRetain);
   if (effCrush > 0.0005) {
     let linearCrush = effCrush * 0.045;
     c = max(vec3f(0.0), (c - vec3f(linearCrush)) / max(1.0 - linearCrush, 0.1));
@@ -583,15 +607,16 @@ ${
     let grainVal = (hash(finePx) - 0.5) * 1.45;
     let midMask = smoothstep(0.004, 0.12, luma) * (1.0 - smoothstep(0.75, 1.0, luma));
     let amp = (0.026 + 0.008 * clamp(L.shaftStrength, 0.0, 1.0)) * grainStrength * (0.25 + 0.75 * midMask);
-    c = max(vec3f(0.0), c + vec3f(grainVal * amp * max(luma * 2.2, 0.18)));
+    c = max(vec3f(0.0), c + vec3f(grainVal * amp * (luma * 2.2 + 0.04 * midMask)));
   }
   ${finish?.customPostHook ?? ""}
   c = mix(c, vec3f(0.42, 0.018, 0.024), clamp(G.z, 0.0, 1.0) * smoothstep(0.30, 0.88, vDist));
   let s1 = sqrt(clamp(c, vec3f(0.0), vec3f(1.0)));
   c = mix(s1, sqrt(s1), 0.182);
-  // One code value of interleaved-gradient dither so dark gradients and soft fog edges never band in 8 bits.
-  let ign = fract(52.9829189 * fract(dot(floor(o.pos.xy), vec2f(0.06711056, 0.00583715))));
-  c += (ign - 0.5) / 255.0;
+  // Triangular interleaved-gradient dither so dark gradients and soft fog edges never band in 8 bits.
+  let ign1 = fract(52.9829189 * fract(dot(floor(o.pos.xy), vec2f(0.06711056, 0.00583715))));
+  let ign2 = fract(52.9829189 * fract(dot(floor(o.pos.xy) + vec2f(17.0, 31.0), vec2f(0.06711056, 0.00583715))));
+  c += (ign1 + ign2 - 1.0) / 255.0;
   return vec4f(clamp(c, vec3f(0.0), vec3f(1.0)), 1.0);
 }
 `

@@ -100,10 +100,10 @@ export type OutbreakLookTrims = {
 
 export const DEFAULT_LOOK_TRIMS: OutbreakLookTrims = {
   lookIdea: "today",
-  groundStyle: 0,
-  lightSatStyle: 0,
-  modelStyle: 0,
-  styleGrade: 0,
+  groundStyle: 1,
+  lightSatStyle: 2,
+  modelStyle: 1,
+  styleGrade: 1,
   lookSaturation: 1,
   lookExposure: 1,
   lookContrast: 1,
@@ -190,14 +190,14 @@ export function trimLook(base: LookSettings, t: Partial<OutbreakLookTrims> | und
   Object.assign(out, base)
   if (!t) return out
   const rule = lightRuleWeight(t, darkness)
-  const satStyle = Math.round(t.lightSatStyle ?? 0)
-  const grade = Math.round(t.styleGrade ?? 0)
-  const worldSat = satStyle === 3 ? Math.min(t.worldSaturation ?? 0.06, 0.03) : satStyle >= 1 ? Math.min(t.worldSaturation ?? 0.06, 0.05) : (t.worldSaturation ?? 0.06)
-  const litCol = satStyle >= 1 ? Math.max(t.litColour ?? 0.92, 0.98) : (t.litColour ?? 0.92)
-  const gradeContrast = grade === 1 ? 1.12 : grade === 2 ? 1.18 : grade === 3 ? 1.14 : 1
-  const gradeExp = grade === 1 ? 1.05 : grade === 2 ? 1.02 : grade === 3 ? 1.06 : 1
-  const gradeVig = grade === 1 ? 1.18 : grade === 2 ? 1.24 : grade === 3 ? 1.32 : 1
-  const gradeTemp = grade === 1 ? 0.04 : grade === 2 ? -0.14 : grade === 3 ? 0.10 : 0
+  const satStyle = Math.round(t.lightSatStyle ?? DEFAULT_LOOK_TRIMS.lightSatStyle)
+  const grade = Math.round(t.styleGrade ?? DEFAULT_LOOK_TRIMS.styleGrade)
+  const worldSat = satStyle === 3 ? Math.min(t.worldSaturation ?? 0.06, 0.03) : (t.worldSaturation ?? 0.06)
+  const litCol = satStyle === 3 ? Math.max(t.litColour ?? 0.92, 0.98) : (t.litColour ?? 0.92)
+  const gradeContrast = grade === 2 ? 1.18 : grade === 3 ? 1.14 : 1
+  const gradeExp = grade === 2 ? 1.02 : grade === 3 ? 1.06 : 1
+  const gradeVig = grade === 2 ? 1.24 : grade === 3 ? 1.32 : 1
+  const gradeTemp = grade === 2 ? -0.14 : grade === 3 ? 0.10 : 0
   out.saturation = mix(clamp(base.saturation * (t.lookSaturation ?? 1), 0, 1.6), clamp(worldSat * (t.lookSaturation ?? 1), 0, 1.6), rule)
   out.exposure = base.exposure * (t.lookExposure ?? 1) * gradeExp
   out.contrast = clamp(base.contrast * (t.lookContrast ?? 1) * gradeContrast, 0.6, 1.8)
@@ -220,11 +220,11 @@ export function trimLighting<L extends {
   streetPower: number
 }>(l: L, t: Partial<OutbreakLookTrims> | undefined) {
   if (!t) return l
-  const grade = Math.round(t.styleGrade ?? 0)
-  const power = (t.lampPower ?? 1) * (grade === 1 ? 1.15 : grade === 3 ? 1.28 : 1)
-  const roomMult = (t.roomPools ?? 1) * (grade === 1 ? 1.22 : grade === 3 ? 1.35 : 1)
+  const grade = Math.round(t.styleGrade ?? DEFAULT_LOOK_TRIMS.styleGrade)
+  const power = (t.lampPower ?? 1) * (grade === 3 ? 1.28 : 1)
+  const roomMult = (t.roomPools ?? 1) * (grade === 3 ? 1.35 : 1)
   const skyMult = (t.skyAmbient ?? 1) * (grade === 2 ? 1.18 : grade === 3 ? 0.82 : 1)
-  const moonMult = (t.moonlight ?? 1) * (grade === 2 ? 1.28 : grade === 1 ? 1.12 : 1)
+  const moonMult = (t.moonlight ?? 1) * (grade === 2 ? 1.28 : 1)
   const warmthShift = (t.lampWarmth ?? 0) + (grade === 3 ? 0.14 : grade === 2 ? -0.10 : 0)
   const tightMult = (t.poolTightness ?? 1) * (grade === 3 ? 1.12 : 1)
   return {
