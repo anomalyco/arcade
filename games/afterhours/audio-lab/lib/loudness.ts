@@ -65,6 +65,10 @@ const TARGETS: Record<string, number> = {
   // outdoor night parts: the bed sits very low, one-shots are placed and attenuated at runtime
   "amb-pine-wind": -28, "out-owl": -20, "out-twig": -18, "out-cone": -20, "out-creak": -20, "out-rustle": -22,
   "out-far-animal": -24,
+  // monsters round 2 (designed)
+  "ban2-scream-tear": -12, "ban2-keen-warp": -17, "ban2-whisper-swell": -20, "ban2-choral-wail": -19, "skin2-breath-pant": -19, "skin2-throat-chatter": -18, "skin2-woman-fox": -13, "skin2-howl-sob": -16, "skin2-bones-reshape": -17, "wen2-starving-groan": -19, "wen2-chatter": -18, "wen2-bark-scrape": -17, "wen2-endless-inhale": -21, "wen2-huge-scream": -11, "wen2-silence-sting": -26,
+  // monsters (audition): screams loud, whispers/breath and beds low
+  "ban-keen-wail": -16, "ban-scream-near": -12, "ban-scream-far": -20, "ban-weeping": -26, "ban-whisper-breath": -20, "ban-presence": -27, "skin-wrong-laugh": -17, "skin-call-far": -19, "skin-cry-growl": -17, "skin-animal-human": -15, "skin-clicks-breath": -19, "skin-footsteps-wrong": -17, "wen-bone-creak": -18, "wen-clicks": -18, "wen-starving-breath": -19, "wen-antler-scrape": -17, "wen-distant-moan": -20, "wen-feeding": -22, "wen-silence-sting": -24,
 }
 
 /** Per-category targets in LUFS; "category/variant" keys override for variants with a different intended level. */

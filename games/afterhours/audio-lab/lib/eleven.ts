@@ -49,6 +49,10 @@ export interface ManifestSound {
   previous?: { prompt: string; file: string; score?: number; description?: string; generatedAt: string }
   attempts?: Attempt[]
   loudness?: LoudnessInfo
+  /** Built by design/recipes.ts from sources and lab takes (no ElevenLabs prompt of its own). */
+  designed?: boolean
+  sources?: string[]
+  renamedFrom?: string
 }
 
 export interface Manifest {
@@ -57,7 +61,9 @@ export interface Manifest {
   updatedAt: string
   totalCost: number
   qaCost?: number
-  categories: { id: string; group: string; label: string; intent: string; loop: boolean }[]
+  categories: { id: string; group: string; subgroup?: string; label: string; intent: string; loop: boolean; designed?: boolean }[]
+  /** Designed categories (design/recipes.ts), kept here because they have no prompts.ts entry. */
+  designedCategories?: { id: string; group: string; subgroup?: string; label: string; intent: string; loop: boolean; designed: true }[]
   sounds: ManifestSound[]
 }
 
@@ -123,7 +129,14 @@ export function saveManifest(m: Manifest): Promise<unknown> {
   writeChain = writeChain.then(async () => {
     const order = new Map(CATEGORIES.map((c, i) => [c.id, i]))
     for (const s of m.sounds) if (isApproved(s.category, s.variant)) s.status = "approved"
-    m.categories = CATEGORIES.map((c) => ({ id: c.id, group: c.group, label: c.label, intent: c.intent, loop: !!c.loop }))
+    const cats: Manifest["categories"] = CATEGORIES.map((c) => ({ id: c.id, group: c.group, subgroup: c.subgroup, label: c.label, intent: c.intent, loop: !!c.loop }))
+    // Designed categories go right after the last generated category of their group.
+    for (const d of m.designedCategories ?? []) {
+      let at = -1
+      cats.forEach((c, i) => (c.group === d.group ? (at = i) : null))
+      cats.splice(at >= 0 ? at + 1 : cats.length, 0, d)
+    }
+    m.categories = cats
     m.sounds.sort(
       (a, b) =>
         (order.get(a.category) ?? 999) - (order.get(b.category) ?? 999) ||

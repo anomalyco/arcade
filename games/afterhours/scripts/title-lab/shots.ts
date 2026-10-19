@@ -1,6 +1,6 @@
 // Title Lab captures: the grid and one fullscreen card, to captures/title-lab-*.png (dev server on :5196).
 //
-//   bun src/title-lab/shots.ts [--card <index>]
+//   bun scripts/title-lab/shots.ts [--card <index>]
 import { chromium } from "playwright-core"
 import { existsSync, readdirSync } from "node:fs"
 

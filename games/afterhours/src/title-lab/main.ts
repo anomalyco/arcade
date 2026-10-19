@@ -3,7 +3,7 @@ import { FONTS, GROUPS, loadFonts } from "./fonts"
 import "./lab.css"
 
 // Title Lab (dev only, temporary): the home screen at thumbnail size for every name × font, over a freeze frame of the
-// real menu view (src/title-lab/capture-bg.ts), with the menu's overlays. Style controls are CSS variables and classes
+// real menu view (scripts/title-lab/capture-bg.ts), with the menu's overlays. Style controls are CSS variables and classes
 // on the root, so only names / fonts / case / filters rebuild the grid. State persists in localStorage.
 
 type Treatment = "plain" | "glow" | "vhs" | "jitter" | "tracking" | "typewriter" | "crt"

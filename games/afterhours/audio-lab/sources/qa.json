@@ -1,0 +1,87 @@
+{
+  "pig-squeal": {
+    "description": "A piercing, loud, and harsh vocal squeal from an actual pig in high distress, recorded from a close perspective with natural acoustic space.",
+    "score": 5,
+    "issues": "none"
+  },
+  "elk-bugle": {
+    "description": "Two brief, dry, high-pitched squeaks produced by a small plastic or rubber squeaker toy close to the microphone.",
+    "score": 1,
+    "issues": "Sounds entirely like an artificial novelty squeaker toy rather than a real animal vocalization; lacks the depth, tonal modulation, and trailing grunts of an elk bugle."
+  },
+  "fox-scream": {
+    "description": "A close, loud, high-pitched vocalization of a red fox producing a harsh, raspy, piercing scream with a natural decay and minimal background noise.",
+    "score": 5,
+    "issues": "none"
+  },
+  "woman-scream": {
+    "description": "A close-up studio recording of a female voice emitting two successive high-pitched, shrill screams in a dry acoustic environment with no background noise or music.",
+    "score": 3,
+    "issues": "Performance sounds staged and melodramatic like a classic B-movie trope rather than genuinely raw, visceral, ragged terror."
+  },
+  "throat-drone": {
+    "description": "A close-mic'd male voice producing a sustained, low-register 'ooh' vocal drone in a dry acoustic space with slight pitch wavering.",
+    "score": 2,
+    "issues": "Lacks authentic Tuvan throat singing technique (no subharmonic kargyraa growl or amplified overtones); sounds like ordinary chest-voice vocal chanting."
+  },
+  "heron-croak": {
+    "description": "A close, dry recording of a human voice mimicking a bird or monster with a raspy screech followed by two rhythmic gagging or retching noises. The sound clearly exhibits human vocal tract resonance with no outdoor acoustic space.",
+    "score": 1,
+    "issues": "Obviously a human vocal imitation rather than a genuine great blue heron, lacking the natural guttural resonance and ambient acoustic space of a real bird call."
+  },
+  "bowed-metal": {
+    "description": "High-pitched, friction-based bowing of metal sheets or cymbals, producing bright screeching harmonic overtones and slow resonant metallic drones in a reverberant space.",
+    "score": 5,
+    "issues": "none"
+  },
+  "human-pant": {
+    "description": "Rapid, heavy mouth-breathing and panting recorded extremely close to a dry microphone, resulting in audible wind puffs and plosive diaphragm distortion on the exhales.",
+    "score": 4,
+    "issues": "Direct air blasts hit the microphone capsule causing low-end pop artifacts; performance feels slightly forced/theatrical rather than naturally panicked."
+  },
+  "dog-pant": {
+    "description": "Rapid, rhythmic canine panting with audible wet tongue movements and breath puffs, recorded dry in a close-mic perspective.",
+    "score": 4,
+    "issues": "The vocal resonance and breath volume sound more characteristic of a medium-sized dog rather than a deep, heavy large breed."
+  },
+  "bone-cracks": {
+    "description": "A sequence of dry, quiet knuckle cracking and joint popping sounds recorded close to the microphone in a dead room.",
+    "score": 3,
+    "issues": "Lacks the wet, visceral crunch and violent snapping of broken bones or wet celery; sounds like mundane, casual finger-joint cracking rather than body horror."
+  },
+  "wet-tear": {
+    "description": "A sequence of dry, high-pitched friction squeaks recorded closely with minimal room tone, sounding like a rag or rubber squeegee rubbed against clean glass or a sneaker on a gymnasium floor.",
+    "score": 2,
+    "issues": "Completely lacks wet viscera, fiber-ripping textures, and meaty squelch; sounds like rubber or glass friction rather than tearing flesh."
+  },
+  "wolf-howl": {
+    "description": "A close, dry recording of an adult human voice imitating an owl or cartoon ghost with two rhythmic, breathy 'whoo-oo' vocalizations.",
+    "score": 1,
+    "issues": "This is an obvious human vocal impression rather than an authentic wolf howl, sounding more like an owl hoot or ghost impression and entirely lacking canine vocal qualities and outdoor atmosphere."
+  },
+  "female-choir": {
+    "description": "A multi-part female vocal ensemble sings a sustained open 'ahh' harmony in a large reverberant space, completely a cappella.",
+    "score": 4,
+    "issues": "The harmony is relatively melodic and consonant rather than distinctly dissonant or eerie, though it otherwise fits the brief well."
+  },
+  "sob": {
+    "description": "A close-miked voice performing stylized, melodramatic fake crying vocalizations ('ah-huh') in a dry room with no audible tears, breath catches, or mucus choking.",
+    "score": 2,
+    "issues": "Completely artificial and theatrical performance resembling mock crying or comedic wailing rather than genuine, raw sobbing; lacks physical choking, sniffles, or realistic distress."
+  },
+  "long-inhale": {
+    "description": "A close-up recording of a single breath being exhaled or blown out steadily through rounded lips, creating a soft, hollow rushing air sound that swells and fades over about two and a half seconds.",
+    "score": 2,
+    "issues": "Audibly an exhale or blowing breath rather than an inhale, and too brief to match the requested very long duration."
+  },
+  "teeth-chatter": {
+    "description": "Rapid, steady clicking of a small mechanical plastic ratchet or spinning cog/gear, captured close-mic with dry, direct acoustics.",
+    "score": 2,
+    "issues": "Sounds mechanical like a plastic ratchet or wind-up toy rather than human teeth/jaw; cadence is unnaturally steady and lacks bone-on-enamel impact and organic mouth resonance."
+  },
+  "antler-bark": {
+    "description": "A close-up, dry recording of fingernails or a small light object rapidly scratching and scraping across a textured, papery or cardboard-like surface.",
+    "score": 2,
+    "issues": "Lacks the heavy solid weight, dense bone resonance, and deep fibrous crunch of an antler grinding hard against thick tree bark; sounds thin, light, and papery."
+  }
+}

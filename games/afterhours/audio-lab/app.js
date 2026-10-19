@@ -69,6 +69,14 @@ async function init() {
   state.cats = [...byCat.values()].filter((c) => c.sounds.length)
   // A file that was regenerated keeps its name; move ratings/notes made on the old take aside so they don't
   // silently apply to new audio. Unchanged files keep their records untouched.
+  // Renamed categories: carry ratings and notes over to the new file paths.
+  for (const s of state.manifest.sounds) {
+    if (s.renamedFrom && state.store.sounds[s.renamedFrom] && !state.store.sounds[s.file]) {
+      state.store.sounds[s.file] = state.store.sounds[s.renamedFrom]
+      delete state.store.sounds[s.renamedFrom]
+      save()
+    }
+  }
   let moved = 0
   for (const s of state.manifest.sounds) {
     // A take that was put back (approved originals restored) gets its earlier record back.
@@ -143,12 +151,22 @@ function render() {
   state.cards.clear()
   const vis = visibleCats()
   let lastGroup = null
+  let lastSub = null
   for (const { cat, sounds } of vis) {
     if (cat.group !== lastGroup) {
       lastGroup = cat.group
+      lastSub = null
       const h = document.createElement("h2")
       h.className = "group-title"
       h.textContent = cat.group
+      list.append(h)
+    }
+    if (cat.subgroup && cat.subgroup !== lastSub) {
+      lastSub = cat.subgroup
+      const h = document.createElement("h2")
+      h.className = "sub-title"
+      h.id = `sub-${cat.subgroup.toLowerCase()}`
+      h.textContent = cat.subgroup
       list.append(h)
     }
     const sec = document.createElement("section")
@@ -206,12 +224,21 @@ function renderToc(vis) {
   const toc = $("#toc")
   toc.textContent = ""
   let lastGroup
+  let lastSub
   for (const { cat } of vis) {
     if (cat.group !== lastGroup) {
       lastGroup = cat.group
+      lastSub = undefined
       const g = document.createElement("span")
       g.className = "grp"
       g.textContent = cat.group
+      toc.append(g)
+    }
+    if (cat.subgroup && cat.subgroup !== lastSub) {
+      lastSub = cat.subgroup
+      const g = document.createElement("span")
+      g.className = "sub"
+      g.textContent = `${cat.subgroup}:`
       toc.append(g)
     }
     const a = document.createElement("a")

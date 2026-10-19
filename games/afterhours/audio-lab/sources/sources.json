@@ -1,0 +1,104 @@
+{
+  "pig-squeal": {
+    "prompt": "pig squealing in distress, loud harsh squeal, close",
+    "duration": 2.5,
+    "cost": 25,
+    "at": "2026-10-19T15:34:41.342Z"
+  },
+  "woman-scream": {
+    "prompt": "woman screaming in raw terror, close, ragged, no music",
+    "duration": 3,
+    "cost": 30,
+    "at": "2026-10-19T15:34:41.507Z"
+  },
+  "fox-scream": {
+    "prompt": "red fox vixen screaming at night, harsh shrill scream, close",
+    "duration": 3,
+    "cost": 30,
+    "at": "2026-10-19T15:34:41.623Z"
+  },
+  "elk-bugle": {
+    "prompt": "wildlife recording of a bull elk bugle in a forest, loud eerie whistling scream rising then grunting, distant echo",
+    "duration": 4,
+    "cost": 40,
+    "at": "2026-10-19T15:35:47.024Z"
+  },
+  "heron-croak": {
+    "prompt": "great blue heron harsh croaking call, rough guttural squawk, close",
+    "duration": 2.5,
+    "cost": 25,
+    "at": "2026-10-19T15:34:42.816Z"
+  },
+  "throat-drone": {
+    "prompt": "deep tuvan throat singing, very low growling drone, no melody",
+    "duration": 6,
+    "cost": 60,
+    "at": "2026-10-19T15:34:43.357Z"
+  },
+  "bowed-metal": {
+    "prompt": "bowed metal sheet and cymbal, screeching resonant metallic drone, slow",
+    "duration": 5,
+    "cost": 50,
+    "at": "2026-10-19T15:34:44.212Z"
+  },
+  "bone-cracks": {
+    "prompt": "bones cracking and snapping, joints popping, wet celery snaps, close foley",
+    "duration": 4,
+    "cost": 40,
+    "at": "2026-10-19T15:34:44.233Z"
+  },
+  "wet-tear": {
+    "prompt": "wet flesh tearing and squelching, raw meat pulled apart, close foley",
+    "duration": 3,
+    "cost": 30,
+    "at": "2026-10-19T15:34:44.551Z"
+  },
+  "dog-pant": {
+    "prompt": "large dog panting heavily and fast, close mic",
+    "duration": 3,
+    "cost": 30,
+    "at": "2026-10-19T15:34:45.483Z"
+  },
+  "human-pant": {
+    "prompt": "man breathing heavily, ragged frightened panting, close mic",
+    "duration": 3,
+    "cost": 30,
+    "at": "2026-10-19T15:34:45.697Z"
+  },
+  "wolf-howl": {
+    "prompt": "wildlife field recording of a grey wolf howling at night in a forest, one long howl",
+    "duration": 5,
+    "cost": 50,
+    "at": "2026-10-19T15:35:46.667Z"
+  },
+  "teeth-chatter": {
+    "prompt": "teeth chattering fast and jaw clicking, dry clacking, close mic",
+    "duration": 2.5,
+    "cost": 25,
+    "at": "2026-10-19T15:34:47.037Z"
+  },
+  "long-inhale": {
+    "prompt": "very long slow deep inhale through the mouth, hollow, close mic",
+    "duration": 4,
+    "cost": 40,
+    "at": "2026-10-19T15:34:47.138Z"
+  },
+  "female-choir": {
+    "prompt": "female choir singing a sustained wordless ahh, sorrowful, dissonant, no instruments",
+    "duration": 6,
+    "cost": 60,
+    "at": "2026-10-19T15:34:47.323Z"
+  },
+  "sob": {
+    "prompt": "woman sobbing and choking on tears, close, raw",
+    "duration": 3,
+    "cost": 30,
+    "at": "2026-10-19T15:34:48.314Z"
+  },
+  "antler-bark": {
+    "prompt": "antler scraping hard along tree bark, rough grinding scrape, close",
+    "duration": 3.5,
+    "cost": 35,
+    "at": "2026-10-19T15:34:48.476Z"
+  }
+}

@@ -1,7 +1,7 @@
 // Renders the Title Lab's background once: the real home-screen view (the menu's drift camera, gate and dish in the
 // fog) at 1920×1080 with the menu overlay hidden, full render resolution, written to src/title-lab/home-bg.jpg.
 //
-//   bun src/title-lab/capture-bg.ts        # needs the dev server on :5196
+//   bun scripts/title-lab/capture-bg.ts        # needs the dev server on :5196
 import { chromium } from "playwright-core"
 import { existsSync, readdirSync } from "node:fs"
 
@@ -28,6 +28,6 @@ await page.evaluate(() => {
   for (const sel of ["#shell", "#hud", ".title-card"]) document.querySelectorAll<HTMLElement>(sel).forEach((e) => (e.style.display = "none"))
 })
 await page.waitForTimeout(4000)
-await page.screenshot({ path: `${import.meta.dir}/home-bg.jpg`, type: "jpeg", quality: 90 })
+await page.screenshot({ path: `${import.meta.dir}/../../src/title-lab/home-bg.jpg`, type: "jpeg", quality: 90 })
 await browser.close()
 console.log("wrote src/title-lab/home-bg.jpg")

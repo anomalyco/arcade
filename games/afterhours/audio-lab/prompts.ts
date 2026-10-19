@@ -23,6 +23,8 @@ export interface VariantSpec {
 export interface CategorySpec {
   id: string
   group: string
+  /** Optional sub-header on the audition page (e.g. one per monster). */
+  subgroup?: string
   label: string
   intent: string
   loop?: boolean
@@ -666,6 +668,238 @@ export const CATEGORIES: CategorySpec[] = [
       v("a dog barking twice far away across a valley at night, faint distant echo", 3.5, 0.6),
       v("lone coyote howl far in the distance at night, faint echo", 4, 0.6),
       v("farm dog barking three times very far away, faint", 3.5, 0.55),
+    ],
+  },
+
+  // Monsters (ASHWOOD): banshee, skinwalker, wendigo. Audition only; not wired into the game.
+  {
+    id: "ban-keen-wail",
+    group: "monsters",
+    subgroup: "Banshee",
+    label: "Keening wail",
+    intent: "a long mournful female keening wail rising like an Irish lament, distant and reverberant, eerie; no music or instruments",
+    variants: [
+      v("long mournful female keening wail rising and falling, Irish lament, distant, reverberant, night", 6, 0.6),
+      v("distant woman keening, a slow rising wail of grief, echoing across a misty valley", 6, 0.55),
+      v("ghostly female wail, long and rising, sorrowful, far away in a stone hall, long reverb", 5, 0.6),
+    ],
+  },
+  {
+    id: "ban-scream-near",
+    group: "monsters",
+    subgroup: "Banshee",
+    label: "Scream, near",
+    intent: "a close, piercing, unnatural female shriek that breaks into harsh distortion, horror; short",
+    variants: [
+      v("close piercing female shriek, unnatural and inhuman, breaking into harsh distortion", 2.5, 0.6),
+      v("banshee scream right in front of you, shrill, cracking into a distorted screech", 2.5, 0.55),
+      v("sudden shrill ghostly female scream, very close, ragged and distorted at the peak", 2, 0.6),
+    ],
+  },
+  {
+    id: "ban-scream-far",
+    group: "monsters",
+    subgroup: "Banshee",
+    label: "Scream, far",
+    intent: "the same unnatural female shriek heard far away, through a building or across woods: muffled, distant, reverberant",
+    variants: [
+      v("distant unnatural female shriek far across the woods at night, faint echo", 4, 0.6),
+      v("a woman screaming somewhere far away inside a concrete building, muffled through walls", 4, 0.55),
+      v("faint ghostly scream from far off in a misty forest, long reverberant tail", 4.5, 0.6),
+    ],
+  },
+  {
+    id: "ban-weeping",
+    group: "monsters",
+    subgroup: "Banshee",
+    label: "Weeping (loop)",
+    intent: "soft female sobbing and breathy weeping just out of sight, quiet, intimate, eerie, loopable; no music",
+    loop: true,
+    variants: [
+      loopV("soft female sobbing and breathy weeping, quiet, just out of sight, empty room", 6, 0.6),
+      loopV("a woman weeping quietly in the dark, shaky breaths and soft sobs, slight echo", 6, 0.55),
+      loopV("faint ghostly weeping, breathy sobs drifting in a cold hallway, distant", 5, 0.55),
+    ],
+  },
+  {
+    id: "ban-whisper-breath",
+    group: "monsters",
+    subgroup: "Banshee",
+    label: "Whisper and breath",
+    intent: "a cold breathy exhale and one faint whispered word right at the ear, very close; short",
+    variants: [
+      v("cold breathy exhale and a faint whispered word right at the ear, very close", 1.5, 0.6),
+      v("a woman's whisper in your ear, one word, breathy and cold, close mic", 1.5, 0.55),
+      v("slow ghostly breath on the ear followed by a soft unintelligible whisper", 2, 0.6),
+    ],
+  },
+  {
+    id: "ban-presence",
+    group: "monsters",
+    subgroup: "Banshee",
+    label: "Presence drone (loop)",
+    intent: "a low eerie airy tone with faint choral breath, sustained, for when a ghostly woman is near, loopable; no melody, no beat",
+    loop: true,
+    variants: [
+      loopV("low eerie airy tone with faint breathy female choir, sustained, haunting, no melody", 8, 0.55),
+      loopV("cold ghostly drone, soft airy hum with distant breathing voices, slow swells", 8, 0.5),
+      loopV("dark sustained pad of breath and faint female voices, very low, unsettling, still", 8, 0.55),
+    ],
+  },
+  {
+    id: "skin-wrong-laugh",
+    group: "monsters",
+    subgroup: "Skinwalker",
+    label: "Wrong laugh",
+    intent: "a human laugh that is slightly off in pitch and timing, too long and repeated, uncanny; almost human but not quite",
+    variants: [
+      v("a man's laugh slightly off in pitch and timing, going on too long, repeating, uncanny", 4, 0.6),
+      v("unnatural human laughter in the dark woods, flat and repetitive, wrong rhythm", 4, 0.55),
+      v("distant laugh that repeats the same way over and over, slightly warped pitch, creepy", 4, 0.6),
+    ],
+  },
+  {
+    id: "skin-call-far",
+    group: "monsters",
+    subgroup: "Skinwalker",
+    label: "Far call",
+    intent: "a distant human-like call in the woods at night that is subtly wrong, almost human but not quite",
+    variants: [
+      v("a man calling hello in the distant woods at night, unnatural cadence, slightly wrong voice", 3.5, 0.6),
+      v("distant voice calling help me from the trees, flat and slightly warped, uncanny", 3.5, 0.55),
+      v("faraway shout of hello, repeated with the exact same wrong intonation, echoing forest", 4, 0.6),
+    ],
+  },
+  {
+    id: "skin-cry-growl",
+    group: "monsters",
+    subgroup: "Skinwalker",
+    label: "Cry into growl",
+    intent: "a baby or child crying that gradually turns into an animal sound; horror; no music",
+    variants: [
+      v("a baby crying in the dark woods that slowly turns into an animal screech", 4, 0.6),
+      v("child sobbing in the distance, the cry warping into a wild animal howl", 4, 0.55),
+      v("infant wail at night that becomes a guttural animal cry, distant, eerie", 4, 0.6),
+    ],
+  },
+  {
+    id: "skin-animal-human",
+    group: "monsters",
+    subgroup: "Skinwalker",
+    label: "Animal-human scream",
+    intent: "a coyote or elk-like scream that ends in a human gasp; uncanny",
+    variants: [
+      v("coyote scream in the night forest ending in a sharp human gasp", 3, 0.6),
+      v("elk bugle scream that breaks into a human gasp, distant, eerie", 3, 0.55),
+      v("wild animal shriek that ends with a man's sudden intake of breath, close", 2.5, 0.6),
+    ],
+  },
+  {
+    id: "skin-clicks-breath",
+    group: "monsters",
+    subgroup: "Skinwalker",
+    label: "Clicks and breath",
+    intent: "wet throat clicks and fast huffing breaths of a creature, very close; no voice words",
+    variants: [
+      v("wet throat clicks and fast huffing breaths of a creature, very close, dark", 2.5, 0.6),
+      v("creature breathing fast through its nose with wet clicking in the throat, close mic", 2.5, 0.55),
+      v("rapid animal huffing and moist clicking sounds right behind you", 2, 0.6),
+    ],
+  },
+  {
+    id: "skin-footsteps-wrong",
+    group: "monsters",
+    subgroup: "Skinwalker",
+    label: "Footsteps that change",
+    intent: "bipedal footsteps on a forest floor that shift into a four-legged gallop; uncanny",
+    variants: [
+      v("footsteps walking on forest floor that suddenly change into a four-legged gallop", 4, 0.6),
+      v("a person walking through leaves, then breaking into a fast animal gallop on all fours", 4, 0.55),
+      v("two-legged steps on dirt and needles turning into heavy quadruped running, close", 4, 0.6),
+    ],
+  },
+  {
+    id: "wen-bone-creak",
+    group: "monsters",
+    subgroup: "Wendigo",
+    label: "Bone creak",
+    intent: "dry joint and bone cracking and creaking as something very tall moves slowly, close; horror foley",
+    variants: [
+      v("dry bones and joints cracking and creaking slowly as something very tall moves, close mic", 3, 0.6),
+      v("slow knuckle and spine cracking, brittle bone creaks, close, quiet room", 3, 0.55),
+      v("long creaking of stiff joints and popping bones, a gaunt creature unfolding", 3, 0.6),
+    ],
+  },
+  {
+    id: "wen-clicks",
+    group: "monsters",
+    subgroup: "Wendigo",
+    label: "Clicks",
+    intent: "rapid dry clicking or chattering teeth like a predator in the dark; short",
+    variants: [
+      v("rapid dry clicking and chattering teeth in the dark, predator, close", 2.5, 0.6),
+      v("teeth chattering fast, dry clicks from the dark woods, medium distance", 2.5, 0.55),
+      v("bony clicking sounds in quick bursts, like a creature's jaw, eerie", 2, 0.6),
+    ],
+  },
+  {
+    id: "wen-starving-breath",
+    group: "monsters",
+    subgroup: "Wendigo",
+    label: "Starving breath",
+    intent: "ragged deep hungry breathing with a faint rattle, close behind the listener; no words",
+    variants: [
+      v("ragged deep hungry breathing with a faint rattle, close behind you", 4, 0.6),
+      v("slow starving breaths of a large creature, wheezing rattle in the chest, close mic", 4, 0.55),
+      v("heavy hollow breathing in the dark, raspy rattle, right behind your head", 3.5, 0.6),
+    ],
+  },
+  {
+    id: "wen-antler-scrape",
+    group: "monsters",
+    subgroup: "Wendigo",
+    label: "Antler scrape",
+    intent: "antlers or bone dragging and scraping along wood, a tree trunk or a wall; slow",
+    variants: [
+      v("antlers scraping slowly along a tree trunk, bone on bark, forest at night", 3, 0.6),
+      v("bone dragging along a wooden wall, long scrape and knock, empty building", 3, 0.55),
+      v("antlers scratching against wood planks, slow grinding scrape, close", 3, 0.6),
+    ],
+  },
+  {
+    id: "wen-distant-moan",
+    group: "monsters",
+    subgroup: "Wendigo",
+    label: "Distant moan",
+    intent: "a long hollow starving moan far off in the woods, almost like wind; eerie, no music",
+    variants: [
+      v("long hollow moan far off in the woods at night, almost like wind, starving", 6, 0.6),
+      v("distant mournful creature moan drifting through the trees, airy, faint", 6, 0.55),
+      v("faraway hollow groan rising and fading into the wind, cold forest", 6, 0.6),
+    ],
+  },
+  {
+    id: "wen-feeding",
+    group: "monsters",
+    subgroup: "Wendigo",
+    label: "Feeding (other room)",
+    intent: "muffled wet tearing and crunching heard from another room, restrained, horror",
+    variants: [
+      v("muffled wet tearing and crunching heard from another room, restrained", 4, 0.6),
+      v("something eating behind a closed door, wet chewing and bone crunching, muffled", 4, 0.55),
+      v("faint gruesome feeding sounds through a wall, tearing and cracking, quiet", 4, 0.6),
+    ],
+  },
+  {
+    id: "wen-silence-sting",
+    group: "monsters",
+    subgroup: "Wendigo",
+    label: "Silence sting",
+    intent: "a sudden drop to near silence with a high thin ringing tone, for the moment the forest goes quiet; 3 s",
+    variants: [
+      v("sudden drop to near silence, a high thin ringing tone in the ears", 3, 0.6),
+      v("all sound cuts out, faint high pitched tinnitus ring, eerie stillness", 3, 0.55),
+      v("forest goes silent, soft whoosh then a thin high ringing tone", 3, 0.6),
     ],
   },
 

@@ -30,6 +30,7 @@ if (import.meta.main) {
   const cats = args.category?.split(",")
   const todo = manifest.sounds.filter(
     (s) =>
+      !s.designed &&
       (!cats || cats.includes(s.category)) &&
       (args.all || !s.qa || s.qa.intent !== intentFor(s.category, s.variant)),
   )
