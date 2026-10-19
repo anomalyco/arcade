@@ -3,11 +3,13 @@
  * this module once and passes the registry to the Lab, commands, harness, feel tracker and `NetSession`; a new
  * feature adds one line here and never edits `main.ts`.
  */
+import "./blood/index"
 import "./discovery/index"
 import "./hordes/index"
 import "./look/index"
 import "./map/index"
 import "./melee/index"
+import "./night-lights/index"
 import "./pacing/index"
 import "./progression/index"
 import "./props/index"

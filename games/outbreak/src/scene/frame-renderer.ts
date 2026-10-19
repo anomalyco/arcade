@@ -16,6 +16,7 @@ import { ExteriorClutterRenderer } from "../clutter"
 import { OutbreakCombatFX } from "../combat-fx"
 import type { CoopView } from "../coop-view"
 import { applyOutbreakDayNight } from "../day-night"
+import { BloodStains, setCurrentBloodStains } from "../blood/stains"
 import { ClosetView } from "../discovery/closet"
 import { lowBatteryBeam, type BeamLook } from "../discovery/flashlight"
 import { PageGlance } from "../discovery/glance"
@@ -34,6 +35,7 @@ import { hex } from "../level"
 import { TABLE_LAMP_SLOT } from "../lightbake"
 import { trimLook } from "../look/world"
 import { SURVIVOR_COLOURS, type NetSession } from "../net-session"
+import { NightLightsPresenter, setCurrentNightLights } from "../night-lights/presenter"
 import { PropDressing } from "../props/dressing"
 import type { OutbreakSettings } from "../settings"
 import { shaders } from "../shaders"
@@ -89,6 +91,8 @@ export class OutbreakFrameRenderer {
   readonly groundWear: GroundWearRenderer
   readonly exteriorClutter: ExteriorClutterRenderer
   readonly propDressing: PropDressing
+  readonly blood: BloodStains
+  readonly nightLights: NightLightsPresenter
   readonly ambientMotion: OutbreakAmbientMotion
   readonly weatherController = new OutbreakWeatherController()
   readonly vehicleRenderer: OutbreakVehicleRenderer
@@ -132,6 +136,10 @@ export class OutbreakFrameRenderer {
     this.groundWear = new GroundWearRenderer(this.renderer)
     this.exteriorClutter = new ExteriorClutterRenderer(this.renderer)
     this.propDressing = new PropDressing(this.renderer, TABLE_LAMP_SLOT)
+    this.blood = new BloodStains(this.renderer)
+    setCurrentBloodStains(this.blood)
+    this.nightLights = new NightLightsPresenter(this.renderer)
+    setCurrentNightLights(this.nightLights)
     this.ambientMotion = new OutbreakAmbientMotion(this.renderer)
     this.vehicleRenderer = new OutbreakVehicleRenderer(this.renderer, document.body)
     this.vehicleRenderer.onPop = (v) => vehicleAudio.pop(v.id)
@@ -196,6 +204,7 @@ export class OutbreakFrameRenderer {
     this.avatar.reset()
     this.zombieCrowd.reset()
     this.combatFx.reset()
+    this.blood.reset()
     this.ambientMotion.reset()
     this.vehicleRenderer.reset()
   }
@@ -434,6 +443,7 @@ export class OutbreakFrameRenderer {
     let shadowLightCount = vehOut.lights.shadowLightCount
     addCount = vehOut.lights.addCount
     const vehAlphaStart = vehOut.lights.alphaCount
+    const nightBatches = this.nightLights.collect(session.view, settings.nightLights, cam.groundRect(2.8), camX, camY, day.lamps)
     const mapLights = this.frameLighting.collectMapAndInteriorLights({
       town,
       day,
@@ -450,6 +460,8 @@ export class OutbreakFrameRenderer {
       interiors: this.interiors,
       count,
       shadowLightCount,
+      lampTrim: (lamp, resolved) => this.nightLights.trimLamp(town, settings.nightLights, lamp, resolved, time),
+      extraLights: (lights, n, max, lampPower) => this.nightLights.writeLights(lights, n, max, lampPower, settings.nightLights),
     })
     count = mapLights.count
     shadowLightCount = mapLights.shadowLightCount
@@ -569,6 +581,15 @@ export class OutbreakFrameRenderer {
     )
     const tightView = cam.groundRect(0.8)
     const groundWearBatches = this.groundWear.collectBatches(town, tightView, settings.ground)
+    this.blood.observe({
+      dt: vdt,
+      town,
+      zombies,
+      survivors: session.sim.slots.map((s) => s.survivor),
+      player: p,
+      settings: settings.blood,
+    })
+    const bloodBatches = this.blood.collect(town, tightView, settings.blood)
     const clutterBatches = this.exteriorClutter.collectBatches(town, tightView, settings.ground)
     const motionOut = qProfile.ambientMotion
       ? this.ambientMotion.stepAndCollect(
@@ -599,6 +620,8 @@ export class OutbreakFrameRenderer {
     const rBatches = render.batches
     rBatches.length = 0
     for (let i = 0; i < groundWearBatches.length; i++) rBatches.push(groundWearBatches[i]!)
+    for (let i = 0; i < bloodBatches.length; i++) rBatches.push(bloodBatches[i]!)
+    for (let i = 0; i < nightBatches.length; i++) rBatches.push(nightBatches[i]!)
     for (let i = 0; i < clutterBatches.length; i++) rBatches.push(clutterBatches[i]!)
     for (const b of this.propDressing.collect(
       town,

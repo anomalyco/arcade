@@ -17,7 +17,7 @@ type Pool = Map<number, { data: Float32Array<ArrayBuffer>; count: number }>
  * Where a car's mesh really sits, in a frame with the nose along +x: the street wrecks use clutter model 8 at their
  * authored yaw; anything else is a driveway sedan parked nose-north with its slight parking yaw.
  */
-function carPose(rect: Rect): { x: number; z: number; yaw: number; halfLength: number; halfWidth: number; cabin: readonly [number, number]; halfCabin: number; glassY: number } {
+export function carPose(rect: Rect): { x: number; z: number; yaw: number; halfLength: number; halfWidth: number; cabin: readonly [number, number]; halfCabin: number; glassY: number } {
   const spec = ABANDONED_VEHICLE_SPECS.find((v) => v.rect.every((n, i) => Math.abs(n - rect[i]!) < 0.01))
   if (spec) return { x: spec.x, z: spec.z, yaw: spec.yaw, halfLength: 1.95, halfWidth: 0.8, cabin: [-0.9, 0.7], halfCabin: 0.72, glassY: 0.95 }
   const x = (rect[0] + rect[2]) / 2
@@ -26,13 +26,23 @@ function carPose(rect: Rect): { x: number; z: number; yaw: number; halfLength: n
   return { x, z, yaw, halfLength: 2.02, halfWidth: 0.8, cabin: [-0.85, 0.6], halfCabin: 0.74, glassY: 1.0 }
 }
 
+/** Whether a car's alarm lights are in the on half of their flash (shared by the flashers and Night lights' glow). */
+export function alarmFlashOn(st: { counts: Record<string, number | undefined> }, time: number): boolean {
+  return Boolean(st.counts.alarm) && ds(time) < (st.counts.until ?? 0) && Math.floor((time - (st.counts.start ?? 0) / 10) / (FLASH / 2)) % 2 === 0
+}
+
+/** Whether a car's alarm is wailing now (flashing or between flashes). */
+export function alarmWailing(st: { counts: Record<string, number | undefined> }, time: number): boolean {
+  return Boolean(st.counts.alarm) && ds(time) < (st.counts.until ?? 0)
+}
+
 /**
  * What the slice-4 verbs leave in the world (D-19): cans strung low across a doorway, the same cans scattered once
  * someone walks through, glass where a bottle broke, a car with a window in and its indicators flashing while the
  * alarm wails. Reads ledger stores only, so every co-op client sees the same.
  */
 export class VerbProps {
-  private readonly models: { wire: number; can: number; shard: number; window: number; flasher: number }
+  private readonly models: { wire: number; can: number; shard: number; window: number; flasher: number; tailFlasher: number; headFlasher: number }
   private readonly pool: Pool = new Map()
   private readonly out: Batch[] = []
   /** Proof readout: what was drawn last frame. */
@@ -57,12 +67,19 @@ export class VerbProps {
     for (const [x, h] of [[-0.45, 0.08], [-0.15, 0.05], [0.2, 0.09], [0.45, 0.06]] as const) window.box(x - 0.08, -0.2, -0.016, x + 0.08, -0.2 + h, 0.016, hex(0xb4ccc4), MAT.shiny)
     const flasher = new Mesh()
     flasher.box(-0.11, -0.06, -0.05, 0.11, 0.06, 0.05, hex(0xff7a10), MAT.glow, 2.4)
+    const tailFlasher = new Mesh()
+    tailFlasher.box(-0.11, -0.06, -0.05, 0.11, 0.06, 0.05, hex(0xff1c0c), MAT.glow, 2.6)
+    // Headlights flash with the alarm too: a wide warm-white lens inboard of each indicator.
+    const headFlasher = new Mesh()
+    headFlasher.box(-0.05, -0.07, -0.16, 0.05, 0.07, 0.16, hex(0xfff0d4), MAT.glow, 3)
     this.models = {
       wire: renderer.addModel(wire),
       can: renderer.addModel(can),
       shard: renderer.addModel(shard),
       window: renderer.addModel(window),
       flasher: renderer.addModel(flasher),
+      tailFlasher: renderer.addModel(tailFlasher),
+      headFlasher: renderer.addModel(headFlasher),
     }
   }
 
@@ -129,12 +146,17 @@ export class VerbProps {
         const [gx, gz] = at(lx + fx * 0.55, lz + fz * 0.45)
         this.put(this.models.shard, gx, ground + 0.003, gz, 1.1, 0, 0, 1.8)
       }
-      if (st.counts.alarm && ds(time) < (st.counts.until ?? 0) && Math.floor((time - (st.counts.start ?? 0) / 10) / (FLASH / 2)) % 2 === 0) {
+      if (alarmFlashOn(st, time)) {
         shown.flashing.push(car.key)
+        // Headlights and amber indicators at the nose, the tail lights flashing red with them.
         for (const lx of [-pose.halfLength, pose.halfLength])
           for (const lz of [-pose.halfWidth, pose.halfWidth]) {
             const [fx, fz] = at(lx, lz)
-            this.put(this.models.flasher, fx, ground + 0.55, fz, pose.yaw, 0, 0, 1)
+            this.put(lx < 0 ? this.models.tailFlasher : this.models.flasher, fx, ground + 0.55, fz, pose.yaw, 0, 0, 1)
+            if (lx > 0) {
+              const [hx, hz] = at(lx + 0.02, lz - Math.sign(lz) * 0.3)
+              this.put(this.models.headFlasher, hx, ground + 0.58, hz, pose.yaw, 0, 0, 1)
+            }
           }
       }
     }
