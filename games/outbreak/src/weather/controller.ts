@@ -167,6 +167,8 @@ export class OutbreakWeatherController {
     sprites?: Float32Array
     spriteCount?: number
     support?: (x: number, z: number) => number
+    /** The vegetation gust field's wind direction (degrees from +x toward +z) when it is on, so rain slants with the trees. */
+    windDirDeg?: number
   }): { state: WeatherFrameState; prepareInput: WeatherPrepareInput | null; lightCount: number; spriteCount: number } {
     const s = input.settings
     const dt = Math.max(0, Math.min(0.1, input.dt))
@@ -186,6 +188,7 @@ export class OutbreakWeatherController {
     } else {
       this.sampleCycle(seed, input.simTime, input.hour, s)
       cycleWeatherSettings(this.sample, s, scale, this.shared)
+      if (input.windDirDeg !== undefined) this.shared.windDir = input.windDirDeg
     }
 
     // Strikes the clock passed this frame (the cycle's, from sim time, so every client sees the same ones).

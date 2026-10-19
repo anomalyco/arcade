@@ -21,7 +21,7 @@ export default defineStation({
   title: "Outbreak weather",
   summary:
     "A seeded weather cycle per town (clear, drizzle, rain, storm, mostly at night): rain seen only in light, a wet road with puddles in the gutters, lightning that lifts the shroud for a beat with thunder after it, and rain beds that muffle indoors. Rain masks footsteps from the dead and shortens their sight a little. Tunables are in Backquote › Weather.",
-  order: 127,
+  order: 128,
   prop: "panels",
   color: 0x6c8fb8,
   status: "live",

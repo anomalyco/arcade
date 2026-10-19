@@ -546,6 +546,7 @@ export class OutbreakFrameRenderer {
       sprites: this.addSprites,
       spriteCount: addCount,
       support: (x, z) => supportHeight(town, x, z),
+      windDirDeg: settings.vegetation.vegLook >= 0.5 ? settings.vegetation.vegWindDir : undefined,
     })
     count = weatherOut.lightCount
     addCount = weatherOut.spriteCount
