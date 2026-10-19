@@ -9,6 +9,7 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 const clock = (s: number) => `${Math.floor(Math.max(0, s) / 60)}:${String(Math.ceil(Math.max(0, s)) % 60).padStart(2, "0")}`
 /** Revive markers show for downed teammates within this distance (m). */
 const MARK_RANGE = 28
+const CARD_DELAY_MS = 1400
 
 /** What the run-over card offers; `fresh` asks for a new town (solo only). */
 export type DeathHudActions = { restart(fresh: boolean): void; lobby(): void; canFresh: boolean }
@@ -28,6 +29,8 @@ export class DeathHud {
   private downHtml = ""
   private watchHtml = ""
   private overHtml = ""
+  /** When the run ended (ms, page clock): the card waits a beat so the death lands first. */
+  private overAt: number | null = null
   actions: DeathHudActions | null = null
   /** Proof readout of what is on screen. */
   readonly shown = { down: false, dead: false, watching: null as string | null, marks: [] as number[], over: false }
@@ -62,7 +65,10 @@ export class DeathHud {
     const me = state?.records[local.index]
     const life = lifeIn(state, local.index)
     const t = state?.tuning
-    const over = Boolean(state?.runOver)
+    const ended = Boolean(state?.runOver)
+    if (!ended) this.overAt = null
+    else this.overAt ??= performance.now()
+    const over = ended && performance.now() - (this.overAt ?? 0) > CARD_DELAY_MS
     const shown = this.shown
 
     // Down: the screen closes in and greys as the bleed-out runs; the heartbeat quickens.

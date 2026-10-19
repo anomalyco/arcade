@@ -66,7 +66,8 @@ export type NetSessionOptions = {
   now?: () => number
   WebSocket?: typeof WebSocket
   /** The server runs different shared code; the page should reload into the same room. */
-  onReload?: () => void
+  /** `reason` is "restart" when the room started its world again after a run ended. */
+  onReload?: (reason?: "restart") => void
   /** Feature snapshot hooks: the client feature registry (`src/features.ts`). */
   features: NetSessionFeatures
 }
@@ -425,7 +426,7 @@ export class NetSession implements Session, OutbreakOptimisticHost {
       case "reload":
         this.closed = true
         this.status = msg.reason === "restart" ? "Starting the run again…" : "A new version of Outbreak is out. Reloading…"
-        this.options.onReload?.()
+        this.options.onReload?.(msg.reason)
     }
   }
 

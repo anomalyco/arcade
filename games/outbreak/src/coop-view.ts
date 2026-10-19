@@ -153,9 +153,9 @@ export class CoopView {
       onLobbyChange: () => this.lobby?.sync(this.net),
       storage: sessionStorage,
       features: this.features!,
-      onReload: () => {
+      onReload: (reason) => {
         const last = Number(sessionStorage.getItem("outbreak.coop.reloadAt") ?? 0)
-        if (Date.now() - last < 60_000) return
+        if (reason !== "restart" && Date.now() - last < 60_000) return
         sessionStorage.setItem("outbreak.coop.reloadAt", String(Date.now()))
         location.reload()
       },
