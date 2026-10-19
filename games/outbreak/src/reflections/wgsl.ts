@@ -41,25 +41,20 @@ fn outbreakPothole(q: vec2f, c: vec3f) -> f32 {
 }
 
 /**
- * Standing water (x) and wetness (y) of hard ground at p. The street potholes always hold water; rain (or the Lab's
- * wetness) wets the paving and gathers broad, domain-warped pools a few metres across, never in rows.
+ * Standing water (x), wetness (y) and the share of the water the weather has not already darkened (z) of hard ground
+ * at p. The street potholes always hold water; the weather's puddles (weather/puddles.ts, passed in as weatherPuddle)
+ * stand where its mask says, and the Lab's wetness fills the same low spots when the weather is drier.
  */
-fn outbreakWetMask(p: vec2f, paved: bool, road: bool) -> vec2f {
+fn outbreakWetMask(p: vec2f, road: bool, weatherPuddle: f32) -> vec3f {
   let wet = max(OL.u8.y, OL.refl.z);
-  var pud = 0.0;
+  var own = 0.0;
   if (road && OL.refl.y > 0.5) {
     let q = p - floor(p / 96.0) * 96.0;
-${STREET_PUDDLES.map(([x, z, s]) => `    pud = max(pud, outbreakPothole(q, vec3f(${f(x)}, ${f(z)}, ${f(s)})));`).join("\n")}
+${STREET_PUDDLES.map(([x, z, s]) => `    own = max(own, outbreakPothole(q, vec3f(${f(x)}, ${f(z)}, ${f(s)})));`).join("\n")}
   }
-  let cover = max(OL.u8.z, OL.refl.z * 0.55);
-  if (paved && wet > 0.01 && cover > 0.01) {
-    let w = surfaceNoise(p * 0.19 + vec2f(5.3, 1.7));
-    let n = surfaceNoise(p * 0.43 + vec2f(w * 2.3 + 0.7, 9.1 - w * 1.7));
-    let th = mix(0.9, 0.56, clamp(cover, 0.0, 1.0));
-    let aa = max(0.04, surfaceFootprint * 0.8);
-    pud = max(pud, smoothstep(th - aa, th + aa, n) * clamp(wet * 1.6, 0.0, 1.0));
-  }
-  return vec2f(pud, wet);
+  let labPuddles = OL.refl.z * 0.55;
+  if (labPuddles > OL.u8.z + 0.01) { own = max(own, outbreakPuddleMaskAt(p, road, labPuddles) * clamp(OL.refl.z * 1.6, 0.0, 1.0)); }
+  return vec3f(max(own, weatherPuddle), wet, max(0.0, own - weatherPuddle));
 }
 
 /**
@@ -167,12 +162,12 @@ fn outbreakWetGlints(world: vec3f, puddle: f32, wet: f32) -> vec3f {
  * Wet hard ground outdoors: standing water darkens and takes the lights' images, wet paving a soft streak. Leaves the
  * reflected light in the practical-light colour mask, so reflections keep their colour like a lamp pool.
  */
-fn outbreakWetSurface(world: vec3f, colIn: vec3f, paved: bool, road: bool) -> vec3f {
-  let m = outbreakWetMask(world.xz, paved, road);
+fn outbreakWetSurface(world: vec3f, colIn: vec3f, road: bool, weatherPuddle: f32) -> vec3f {
+  let m = outbreakWetMask(world.xz, road, weatherPuddle);
   if (m.x <= 0.001 && m.y <= 0.01) { return colIn; }
-  // The weather already darkens what rain wets; the Lab's dry-weather wetness darkens its own share.
+  // The weather already darkens what rain wets and its puddles; potholes and the Lab's wetness darken their own share.
   let labWet = max(0.0, OL.refl.z - OL.u8.y);
-  var col = colIn * (1.0 - 0.32 * m.x) * (1.0 - 0.22 * labWet);
+  var col = colIn * (1.0 - 0.5 * m.z) * (1.0 - 0.3 * labWet);
   let glint = outbreakWetGlints(world, m.x, m.y);
   col += glint;
   outbreakPracticalIrr += dot(glint, vec3f(0.2126, 0.7152, 0.0722)) * 1.6;
@@ -324,7 +319,8 @@ fn outbreakMirrorSurface(world: vec3f, nIn: vec3f, uvIn: vec2f, cracked: bool) -
 `
 
 /**
- * Surface step (after the lamp bounce, before the fog of war): mirrors, and wet hard ground outdoors. Ground kinds:
+ * Surface step (after the lamp bounce, before the fog of war; after the weather's wet ground, whose
+ * `outbreakWetPuddle` it reads): mirrors, and wet hard ground outdoors. Ground kinds:
  * 1 road, 2 sidewalk and curb, 3 and 6 paths and drives; the pothole's wet centre, manholes and drain grates are
  * flat shiny props. Matte things (blood, litter, paint) never take reflections.
  */
@@ -336,7 +332,7 @@ export const reflectionSurfaceWgsl = /* wgsl */ `
       let ground = mat == 20 && (gk == 1 || gk == 2 || gk == 3 || gk == 6);
       let flatProp = mat == 10 && o.world.y < 0.06;
       if (ground || flatProp) {
-        col = outbreakWetSurface(o.world, col, true, (mat == 20 && gk == 1) || flatProp);
+        col = outbreakWetSurface(o.world, col, (mat == 20 && gk == 1) || flatProp, outbreakWetPuddle);
       }
     }
 `

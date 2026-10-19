@@ -70,8 +70,8 @@
   its own shape, colour and surface knobs; stills and paired GPU cost: `bun scripts/bean-stills.ts`.
 - Reflections (AR-73, `src/reflections/`, Lab: Backquote › Look · Reflections, "Today" = `reflections` 0): lamps,
   lit windows, fire, police lights and headlights mirrored analytically in standing water and wet paving (the CPU picks
-  up to 8 outdoor lights per frame into `OL.reflLights`; the street potholes always hold water, rain or the Lab's
-  wetness adds pools), and leaning, foxed floor mirrors whose glass computes its own reflection (floor, flashlight,
+  up to 8 outdoor lights per frame into `OL.reflLights`; the street potholes always hold water, the weather's
+  puddle mask or the Lab's wetness adds pools), and leaning, foxed floor mirrors whose glass computes its own reflection (floor, flashlight,
   people in front). Ash always has one on the inner wall's north face; other houses 14 %, some cracked. Placement is
   `mirrorSpot` in `src/interiors/mesh.ts` (its footprint keeps props and details off). Stills and paired GPU:
   `bun scripts/reflections-stills.ts` (via `hivemind run --kind browser`). Tests: `tests/reflections.test.ts`.
