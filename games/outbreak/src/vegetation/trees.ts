@@ -128,6 +128,8 @@ export const vegetationTreeFieldsWgsl = /* wgsl */ `
 
 /** WGSL helpers; declare after `OL`. */
 export const vegetationTreeWgsl = /* wgsl */ `
+/** How much of this fragment the fog of war treats as seen because the torch lights it through the crown (A, C). */
+var<private> outbreakTreeSeen: f32;
 /** Tree canopy (foliage 0 < aux < 2.5) or a swaying limb (timber aux >= 7.5). Shrubs and grass are not trees. */
 fn outbreakIsTreePart(mat: f32, aux: f32) -> bool {
   return (mat > 21.5 && mat < 22.5 && aux > 0.0 && aux < 2.5) || (mat > 23.5 && mat < 24.5 && aux > 7.5);

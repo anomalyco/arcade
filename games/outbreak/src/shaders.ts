@@ -445,7 +445,10 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
     if (OL.vegTrees.y > 0.001 || OL.vegTrees.w > 0.5) {
       col = outbreakTreeSurface(col, litMask * lightRule, sunVal, o.world, mat, o.aux);
       // Crowns the torch lights through keep their colour in the fog of war's colour rule.
-      if (OL.vegTrees.y > 0.001 && mat == 22 && outbreakIsTreePart(22.0, o.aux)) { outbreakLitMask = max(outbreakLitMask, outbreakTreeBeam(o.world)); }
+      if (OL.vegTrees.y > 0.001 && mat == 22 && outbreakIsTreePart(22.0, o.aux)) {
+        outbreakTreeSeen = outbreakTreeBeam(o.world);
+        outbreakLitMask = max(outbreakLitMask, outbreakTreeSeen);
+      }
     }
     outbreakSeen = 1.0;
     outbreakKnown = 1.0;
