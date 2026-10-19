@@ -239,6 +239,14 @@ Vignettes:
 - **3-06**: operations log `03:02 SL link up` · `03:04 — ???` in a shaking hand; the operator's chair pushed back,
   headset dangling.
 - **3-08**: chart paper on the floor in a heap; the last metre shows a regular, heartbeat-like trace.
+- **3-08 (STATIC, beat 1)**: the night of Wed/Thu 17/18 October 1984, after the SL six went down at 22:58. Four
+  night crew died in the listening room; none of them are SL staff. Each wears an IOPS · NIGHT CREW badge:
+  - **D. Kessler**, radio operator: slumped at the console.
+  - **C. Whitlock**, signal technician: by the strip-chart bench. The voice on ch 4 said her name.
+  - **R. Hargrove**, systems analyst, up from 3-09: face down inside the door.
+  - **N. Bellamy**, programmer, up from 3-09: against the west wall.
+  Their receiver log (`log_3_08_night`) runs from 22:10 to 03:03 and ends with "It's coming from SL." and
+  "DON'T TAKE THE HEADPHONES OFF". The bodies are `LISTENING_ROOM_BODIES` in `interior/storeys/s3/listening.ts`.
 - **3-01**: one pigeonhole stuffed with months of uncollected printouts: "HALVERSON, D. — SL".
 
 ### Storey 4 — Directorate / refurbishment (y 15.35)

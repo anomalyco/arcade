@@ -36,7 +36,7 @@ function runs(): Run[] {
     { a: v(x1, z0), b: v(x0, z0), out: new THREE.Vector3(0, 0, -1), endPosts: [true, true] },
     { a: v(x0, z0), b: v(x0, z1), out: new THREE.Vector3(-1, 0, 0), endPosts: [true, true] },
     // Inner security fence: the service yard west of the loading dock (seen behind the dock, concept r5-06).
-    { a: v(-54, -24), b: v(-54, -95), out: new THREE.Vector3(-1, 0, 0), endPosts: [true, true] },
+    { a: v(-54, -24), b: v(-54, z0), out: new THREE.Vector3(-1, 0, 0), endPosts: [true, true] },
   ]
 }
 

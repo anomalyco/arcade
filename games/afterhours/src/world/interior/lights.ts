@@ -150,7 +150,7 @@ export function bankerLamp(b: Builder, x: number, y: number, z: number, yaw = 0,
 }
 
 /** Ceiling pendant: cord, enamel cone shade, bulb, a downward spot (`shadow` hint for hero rooms). */
-export function pendant(b: Builder, x: number, z: number, opts: { drop?: number; on?: boolean; shadow?: boolean; intensity?: number } = {}) {
+export function pendant(b: Builder, x: number, z: number, opts: { drop?: number; on?: boolean; shadow?: boolean; intensity?: number; /** Cone half-angle (rad, default 1.0) and range (m, default 7): an open shade spills wider. */ angle?: number; range?: number } = {}) {
   const drop = opts.drop ?? 0.9
   const y = CEIL_Y - drop
   b.rod(M.rubber, [x, CEIL_Y, z], [x, y + 0.16, z], 0.004, 4)
@@ -161,7 +161,7 @@ export function pendant(b: Builder, x: number, z: number, opts: { drop?: number;
     const bulb = new THREE.SphereGeometry(0.04, 12, 8)
     bulb.translate(x, y + 0.02, z)
     b.add(M.bulbWarm, bulb, { cast: false })
-    b.lamp({ kind: "incandescent", position: [x, y - 0.02, z], direction: [0, -1, 0], color: INCANDESCENT, intensity: opts.intensity ?? 40, range: 7, angle: 1.0, penumbra: 0.6, shadow: opts.shadow ?? false, size: 0.08 })
+    b.lamp({ kind: "incandescent", position: [x, y - 0.02, z], direction: [0, -1, 0], color: INCANDESCENT, intensity: opts.intensity ?? 40, range: opts.range ?? 7, angle: opts.angle ?? 1.0, penumbra: 0.6, shadow: opts.shadow ?? false, size: 0.08 })
   }
 }
 

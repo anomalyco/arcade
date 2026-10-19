@@ -159,6 +159,8 @@ import {
  *   Builder.defer() (run at flush, every wall known) · Builder.solid() / registerSolid() / solidsOf() / newSolidId()
  *   (wall solid registry; wall() registers every span, head and sill) · wall extent.joint/id · addDocuments() ·
  *   Builder.depthGap / fixedDepth / depthObstacles · releaseDepthRegistry(). Vinyl seam strips removed (styles).
+ *   interior/blood.ts: bloodMesh() / bloodMaterial() (procedural pools, smears, spatter, hand/footprints, drips; one
+ *   shader) · s3 workTable(…, height) · pendant({ angle, range }).
  *
  * DEPTH HYGIENE (automatic, at flush; gate: `bun run audit:hygiene`)
  *   - Wall joints close on the registered wall solids (T: sink, L: X walls own the corner, collinear: butt); an end

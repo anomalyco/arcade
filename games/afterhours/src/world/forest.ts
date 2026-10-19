@@ -5,7 +5,8 @@ import { material } from "../render/materials"
 import { forestBase, forestImpostors } from "./forest/textures"
 import { buildTree, impostorInput, impostorSize, type Kind, type TreeModel } from "./forest/species"
 import { VARIANTS, type Trees } from "./forest/placement"
-import { InstLayer, band, foliageMaterial, forestUniforms, impostorMaterial, solidMaterial } from "./forest/render"
+import { InstLayer, ROADSIDE, band, foliageMaterial, forestUniforms, impostorMaterial, lodDistanceCpu, solidMaterial } from "./forest/render"
+import { roadEdgeDistance } from "./height"
 import { buildUndergrowth } from "./forest/undergrowth"
 import { yieldToMain } from "../boot/schedule"
 
@@ -22,6 +23,8 @@ const FOLIAGE_COLOR: Record<Kind, THREE.Color> = {
   snag: new THREE.Color(0.9, 0.85, 0.8),
 }
 
+/** Trees within this many metres of a road edge count as roadside (see `forest.roadReach`). */
+const ROADSIDE_BAND = 14
 const COLLIDER_SLOTS = 320
 const COLLIDER_RADIUS = 26
 
@@ -34,6 +37,7 @@ export async function build(ctx: WorldContext): Promise<WorldModule | void> {
     "forest.fade": 5,
     "forest.wind": 0.35,
     "forest.shadows": 2,
+    "forest.roadReach": 2.2,
   }
   for (const [k, v] of Object.entries(defaults)) if (s[k] === undefined) s[k] = v
   ctx.controls.push(
@@ -41,6 +45,7 @@ export async function build(ctx: WorldContext): Promise<WorldModule | void> {
     { key: "forest.lod1", label: "Mid-detail tree distance", group: "Forest", unit: "m", min: 40, max: 300, step: 5 },
     { key: "forest.far", label: "Far tree cull distance", group: "Forest", unit: "m", min: 150, max: 1400, step: 10 },
     { key: "forest.fade", label: "LOD cross-fade width", group: "Forest", unit: "m", min: 1, max: 20, step: 0.5 },
+    { key: "forest.roadReach", label: "Roadside full-detail reach (headlights)", group: "Forest", unit: "×", min: 1, max: 3, step: 0.1 },
     { key: "forest.wind", label: "Wind", group: "Forest", min: 0, max: 1.5, step: 0.05 },
     { key: "forest.shadows", label: "Near tree shadows (0 off, 1 trunks, 2 trunks + crowns)", group: "Forest", min: 0, max: 2, step: 1 },
   )
@@ -161,6 +166,11 @@ export async function build(ctx: WorldContext): Promise<WorldModule | void> {
   const counts0 = new Int32Array(models.length)
   const counts1 = new Int32Array(models.length)
 
+  // Trees lining the roads stay full-detail further: headlights (and a flashlight from the road) light them side-on,
+  // where the mid model's wide cards would read as flat planes.
+  const roadside = new Uint8Array(trees.count)
+  for (let k = 0; k < trees.count; k++) roadside[k] = roadEdgeDistance(trees.x[k]!, trees.z[k]!) < ROADSIDE_BAND ? 1 : 0
+
   const lastFwd = new THREE.Vector2(0, -1)
   const fwd = new THREE.Vector3()
   const rebuild = (cx: number, cz: number, fx: number, fz: number) => {
@@ -172,13 +182,20 @@ export async function build(ctx: WorldContext): Promise<WorldModule | void> {
     counts1.fill(0)
     let slot = 0
     const reach = d1 + margin
+    const nearHi = d0 - F
+    const midHi = Math.max(d1, d0 + 10) - F
+    const K = num("forest.roadReach")
     forNear(cx, cz, reach, (k) => {
       const x = trees.x[k]!
       const z = trees.z[k]!
       const dx = x - cx
       const dz = z - cz
-      const d = Math.hypot(dx, dz)
-      if (d > reach) return
+      const dist = Math.hypot(dx, dz)
+      if (dist > reach) return
+      const road = roadside[k] === 1
+      // Same remapped distance as the shaders, so lists and bands agree.
+      const d = lodDistanceCpu(dist, road, nearHi, midHi, K)
+      const phase = trees.phase[k]! + (road ? ROADSIDE : 0)
       const vi = trees.variant[k]!
       const m = models[vi]!
       const sc = trees.scale[k]!
@@ -186,12 +203,12 @@ export async function build(ctx: WorldContext): Promise<WorldModule | void> {
       const cy = Math.cos(yaw)
       const sy = Math.sin(yaw)
       const y = trees.y[k]!
-      if (d < d0 + margin && counts0[vi]! < near[vi]!.capacity) near[vi]!.set(counts0[vi]!++, x, y, z, sc, cy, sy, trees.tint[k]!, trees.phase[k]!)
+      if (d < d0 + margin && counts0[vi]! < near[vi]!.capacity) near[vi]!.set(counts0[vi]!++, x, y, z, sc, cy, sy, trees.tint[k]!, phase)
       // Mid trees cast no shadows, so the ones well behind the camera can be skipped (refreshed on turning).
-      const behind = d > 14 && (dx * fx + dz * fz) / d < -0.3
+      const behind = dist > 14 && (dx * fx + dz * fz) / dist < -0.3
       // Saplings (1-3 m) are lost in the undergrowth and fog past the full-detail range: no mid-detail draw for them.
-      if (!behind && m.kind !== "sapling" && d > d0 - F - margin && counts1[vi]! < mid[vi]!.capacity) mid[vi]!.set(counts1[vi]!++, x, y, z, sc, cy, sy, trees.tint[k]!, trees.phase[k]!)
-      if (d < COLLIDER_RADIUS && slot < COLLIDER_SLOTS && m.kind !== "sapling") {
+      if (!behind && m.kind !== "sapling" && d > d0 - F - margin && counts1[vi]! < mid[vi]!.capacity) mid[vi]!.set(counts1[vi]!++, x, y, z, sc, cy, sy, trees.tint[k]!, phase)
+      if (dist < COLLIDER_RADIUS && slot < COLLIDER_SLOTS && m.kind !== "sapling") {
         const r = Math.max(0.12, m.baseRadius * sc * 0.9)
         const b = pool[slot++]!
         b.min[0] = x - r
@@ -230,6 +247,9 @@ export async function build(ctx: WorldContext): Promise<WorldModule | void> {
     bands.lod1.lo.value = d0 - F
     bands.lod1.hi.value = d1 - F
     bands.lod2.lo.value = d1 - F
+    forestUniforms.nearHi.value = d0 - F
+    forestUniforms.midHi.value = d1 - F
+    forestUniforms.roadK.value = num("forest.roadReach")
     // Nothing past the point where the fog leaves ~1 % of a silhouette's contrast, judged at mid-crown height (the
     // fog thins with height, so crowns against the sky carry further than trunks).
     const fog = Number(s["fog.density"] ?? 0) * Math.exp(-12 / Math.max(1, Number(s["fog.height"] ?? 30)))
@@ -241,7 +261,7 @@ export async function build(ctx: WorldContext): Promise<WorldModule | void> {
     }
   }
   applySettings()
-  const sig = () => ["forest.lod0", "forest.lod1", "forest.fade", "forest.wind", "forest.far", "forest.shadows"].map(num).join(",") + s["fog.density"] + s["fog.height"]
+  const sig = () => ["forest.lod0", "forest.lod1", "forest.fade", "forest.wind", "forest.far", "forest.shadows", "forest.roadReach"].map(num).join(",") + s["fog.density"] + s["fog.height"]
   let lastSig = sig()
 
   ;(globalThis as { __forest?: unknown }).__forest = {

@@ -110,7 +110,8 @@ export function createGameBody(ctx: WorldContext, player: Player) {
         void body.setCharacter(id).catch((e: unknown) => console.error("player body:", e))
       }
       const thirdOn = Number(s["body.view"]) === 1
-      if (s["body.show"] === false) {
+      // A seated body (the intro's driver) is shown and updated even with "Show body" off.
+      if (s["body.show"] === false && !body.seated) {
         body.root.visible = false
         third.apply(false, player, body, 0, ctx.colliders)
         return

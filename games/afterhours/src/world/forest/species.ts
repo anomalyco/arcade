@@ -116,7 +116,7 @@ function makeLimbs(spec: Spec, r: Rng, H: number, top: number): Limb[] {
       az += golden + range(r, -0.4, 0.4)
       if (r() < 0.35) continue
       const len = range(r, 0.5, 1.6) * (spec.kind === "pine" ? 0.7 : 1)
-      limbs.push(limb(new THREE.Vector3(0, y + range(r, -0.2, 0.2), 0), az, range(r, -0.5, -0.1), range(r, -0.6, 0.6), len, len * 0.55, 0.05, FOLIAGE.dead, false, 0.2))
+      limbs.push(limb(new THREE.Vector3(0, y + range(r, -0.2, 0.2), 0), az, range(r, -0.5, -0.1), range(r, -0.6, 0.6), len, len * 0.4, 0.05, FOLIAGE.dead, false, 0.2))
     }
   }
   const liveTop = spec.broken ? top : H

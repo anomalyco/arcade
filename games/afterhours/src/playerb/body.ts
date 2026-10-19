@@ -3,6 +3,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js"
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js"
 import ROSTER from "./roster.json"
 import { createTorch } from "./torch"
+import { SeatRig, type SeatHost, type SeatOptions } from "./seat"
 
 // The player's body: one of the roster characters (public/models/characters/<id>.glb), all re-bound offline to one
 // shared skeleton, so the shared clips (anims.glb, Mixamo motion capture) play on any of them unmodified; only the
@@ -279,6 +280,7 @@ export class CharacterBody {
   private torchIdleT = 0
   private bindQ = new Map<THREE.Bone, THREE.Quaternion>()
   private loadSeq = 0
+  private seatRig: SeatRig | null = null
   /** False while the torch hand is busy (a mantle): the beam then follows the view (lighting.ts fallback). */
   private torchHeld = true
   /** Measured eye heights above the feet (m): standing idle, crouch idle, crouch walk. */
@@ -697,9 +699,84 @@ export class CharacterBody {
     this.reachAt = target ? new THREE.Vector3(target.x, target.y, target.z) : null
   }
 
+  /** Seated driving mode (src/playerb/seat.ts has the full API doc). */
+  seat(opts: SeatOptions) {
+    if (this.seatRig) this.seatRig.opts = opts
+    else this.seatRig = new SeatRig(this.seatHost(), opts)
+    this.view.weight = 0
+  }
+  /** Steering-wheel angle (rad, + left) while seated. */
+  steer(angle: number) {
+    this.seatRig?.steer(angle)
+  }
+  /** Seated: the left hand opens the door, t 0→1. */
+  reachDoor(t: number) {
+    this.seatRig?.reachDoor(t)
+  }
+  /** Back to the standing body driven by the PlayerState. */
+  unseat() {
+    if (!this.seatRig) return
+    this.seatRig = null
+    const e = new THREE.Euler().setFromQuaternion(this.root.quaternion, "YXZ")
+    this.facing = e.y
+    this.root.rotation.set(0, this.facing, 0)
+    this.rootY = Number.NaN
+    this.lastY = Number.NaN
+    this.eyeOff.set(0, 0)
+  }
+  get seated() {
+    return this.seatRig !== null
+  }
+
+  private seatHost(): SeatHost {
+    return {
+      root: this.root,
+      torch: this.torch,
+      bones: () => this.bones,
+      model: () => this.model,
+      poseIdle: (dt) => {
+        const mixer = this.mixer
+        if (!mixer) return
+        this.idleT += dt
+        for (const l of this.loops.values()) l.action.setEffectiveWeight(0)
+        for (const a of this.shots.values()) a.setEffectiveWeight(0)
+        const idle = this.loops.get(IDLE)
+        if (idle) {
+          idle.action.setEffectiveWeight(1)
+          idle.action.time = this.idleT % idle.duration
+        }
+        mixer.update(0)
+      },
+      fist: (side, w) => {
+        if (w < 1e-3) return
+        const ti = this.clips.get("torch-idle")
+        if (!ti) return
+        const t = this.torchIdleT % ti.duration
+        for (const smp of this.torchSamplers) {
+          if (!FINGERS.test(smp.bone.name)) continue
+          _q.fromArray(smp.idle.evaluate(t) as unknown as number[])
+          if (side === "Left") smp.bone.quaternion.slerp(_q, w)
+          else {
+            // Mirrored across the body's mid-plane (Mixamo's left/right bone frames mirror in local X).
+            const b = this.bones[`Right${smp.bone.name.slice(4)}`]
+            if (b) b.quaternion.slerp(_q.set(_q.x, -_q.y, -_q.z, _q.w), w)
+          }
+        }
+      },
+      atOrigin: (fn) => this.atOrigin(fn),
+      ik: (a, b, c, t, p) => twoBoneIK(a, b, c, t, p),
+    }
+  }
+
   update(dt: number, s: BodyState) {
     const mixer = this.mixer
     if (!mixer || !this.model) return
+    if (this.seatRig) {
+      this.seatRig.update(dt)
+      this.view.weight = 0
+      this.debug.state = "seated"
+      return
+    }
     const yawGoal = s.yaw + Math.PI
     this.root.position.set(s.pos.x, Number.isNaN(this.rootY) ? s.pos.y : this.rootY, s.pos.z)
     const w = this.debug.weights
@@ -1395,7 +1472,7 @@ function turnWorld(bone: THREE.Object3D, axis: THREE.Vector3, angle: number) {
  * Two-bone IK (upper a, lower b, end c): bends b so |c − a| = |target − a| (clamped to reach), swings a so c lands on
  * the target, then turns the chain about a→target so the middle joint points towards `pole` (world direction).
  */
-function twoBoneIK(a: THREE.Object3D, b: THREE.Object3D, c: THREE.Object3D, target: THREE.Vector3, pole: THREE.Vector3) {
+export function twoBoneIK(a: THREE.Object3D, b: THREE.Object3D, c: THREE.Object3D, target: THREE.Vector3, pole: THREE.Vector3) {
   a.updateWorldMatrix(true, true)
   const A = a.getWorldPosition(new THREE.Vector3())
   const Bp = b.getWorldPosition(new THREE.Vector3())

@@ -13,8 +13,9 @@ import { NightOutdoors } from "./night"
 //   is a low rumble, a close one the sharp crack take). Indoors weather is muffled by the building rather than cut.
 //  Indoors: the building's HVAC (one take on even storeys, the other on odd) and the corridor's room tone as beds;
 //   fluorescent hum from the lit tubes nearest the listener (four positional voices that follow the nearest fixtures,
-//   not one per tube), the flicker take now and then from a flickering tube; the machine room (3-04), the radio static
-//   in the listening room (3-08) and the off-hook phone on the Chief's desk (1-07) as positional loops; a CRT's
+//   not one per tube), the flicker take now and then from a flickering tube; the machine room (3-04) and the off-hook
+//   phone on the Chief's desk (1-07) as positional loops (the listening room's radio, 3-08, is the interior's own:
+//   storeys/s3/listening.ts); a CRT's
 //   whine when passing a lit terminal; and the low drone near the Sublevel's ways in (FL-1, the W-1 risers).
 //  Outdoors: the night is built from parts (night.ts): a very quiet gusting wind in the pines plus sparse positional
 //   one-shots in the trees (rustles, twig snaps, trunk creaks, a pine cone, a distant owl, rarely a far-off coyote),
@@ -40,6 +41,8 @@ export class Ambience {
   private indoor = 0
   /** Listener's right vector on the ground (x, z), for panning thunder by bearing. */
   readonly right = { x: 1, z: 0 }
+  /** The horror layer's level (Lab "Horror layer"; 0 in play mode): scales the Sublevel drone. */
+  horrorLevel = 0
   private cool = new Map<unknown, number>()
   private time = 0
 
@@ -65,7 +68,6 @@ export class Ambience {
     })
     this.spots = [
       spot("3-04", 3, "amb-machine-room", 0.9, 3, 1, 1.2),
-      spot("3-08", 3, "amb-radio-static", 0.55, 1.4, 1.3, 1.0),
       spot("1-07", 1, "int-phone-offhook", 0.45, 0.5, 1.5, 0.8),
     ]
   }
@@ -97,7 +99,7 @@ export class Ambience {
     const near = (p: { x: number; z: number }, r: number) => Math.max(0, 1 - Math.hypot(ear.x - p.x, ear.z - p.z) / r)
     const below = ear.y < SUBLEVEL_Y + 4 ? 1 : 0
     const drone = Math.max(storey === 0 ? near(fl, 12) : 0, near(w1, 8), below)
-    this.drone.set(0.22 * drone * Math.max(indoor, below))
+    this.drone.set(0.22 * drone * Math.max(indoor, below) * this.horrorLevel)
 
     // Fluorescent hum from the nearest lit tubes on this storey.
     if (now >= this.nextHum) {

@@ -56,6 +56,7 @@ import {
 } from "./equipment"
 import { ashtray, cardDeck, consoleDesk, lateralFile, mug, printoutStack, workTable, acousticPanel } from "./furniture"
 import { PLOT } from "./mats"
+import { OPERATOR_CHAIR, OPERATOR_DESK_H, stageListeningRoom } from "./listening"
 
 // North side of storey 3 (z < −1.75): data control, keypunch, UPS, the glazed machine room with its secure zone (tape
 // library, operations console), plotter room, the listening room under the dish, and the open analysis bullpen.
@@ -74,6 +75,7 @@ const screenLamp = (s: S3, p: readonly [number, number, number], intensity = 0.7
 export async function buildNorth(s: S3, pause: () => Promise<void>) {
   const b = s.b
   const rnd = s.rnd
+  let listening: (t: number) => void = () => {}
 
   // ------------------------------------------------------------------ partitions between the north rooms
   for (const x of [G[1], G[3], G[4], G[9], G[10], G[12]]) partition(b, { axis: "z", at: x, from: -21.65, to: -1.75, finish: [ROOM_BANDS, ROOM_BANDS] })
@@ -260,7 +262,7 @@ export async function buildNorth(s: S3, pause: () => Promise<void>) {
   await pause()
 
   // ------------------------------------------------------------------ 3-08 listening room (under the dish)
-  partition(b, { axis: "z", at: 6.2, from: -21.65, to: -14.925, finish: [ROOM_BANDS, ROOM_BANDS], openings: [{ kind: "door", at: -17.2, side: "a", door: { id: "3-08b", state: "closed", room: "3-08b", sign: { number: "3-08B", label: "BOOTH" } } }] })
+  partition(b, { axis: "z", at: 6.2, from: -21.65, to: -14.925, finish: [ROOM_BANDS, ROOM_BANDS], openings: [{ kind: "door", at: -17.2, side: "a", door: { id: "3-08b", state: "open", open: 1.45, room: "3-08b", sign: { number: "3-08B", label: "BOOTH" } } }] })
   partition(b, { axis: "x", at: -14.925, from: 6.2, to: G[12], finish: [ROOM_BANDS, ROOM_BANDS], openings: [{ kind: "glazed", from: 6.8, to: 10.5, sill: 0.95, head: 2.05, mullion: 1.85 }] })
   s.rooms.push(room(b, { id: "3-08", name: "Listening room", rect: rect(G[10], G[12], -14.925, -1.75), exclude: [RISER_W1_OUTER], floor: "linoleum", lit: "none", anchors: [{ kind: "tape", x: 8.0, y: FLOOR_Y + 0.8, z: -14.0 }] }))
   s.rooms.push(room(b, { id: "3-08w", name: "Listening room (recorders)", rect: rect(G[10], 6.2, -21.65, -14.925), floor: "linoleum", lit: "none" }))
@@ -288,18 +290,16 @@ export async function buildNorth(s: S3, pause: () => Promise<void>) {
   for (const z of [-11.3, -10.68]) analyserRack(b, 11.22, z, W)
   for (const z of [-10.0, -9.3]) recorderConsole(b, 11.18, z, W)
   // Operator desk facing the booth window under the single pendant.
-  const od = workTable(b, 8.3, -13.95, 0, 3.0, 0.86)
+  const od = workTable(b, 8.3, -13.95, 0, 3.0, 0.86, undefined, OPERATOR_DESK_H)
   scope(b, 7.2, od, -14.2, S)
   scope(b, 7.65, od, -14.15, S + 0.12)
-  scope(b, 9.4, od, -14.2, S - 0.1)
   screenLamp(s, [7.4, od + 0.15, -13.85], 0.6)
-  headphones(b, 8.45, od, -13.75, 0.4)
   placeModels(b, "telephone", [{ position: [9.9, od, -13.8], yaw: S - 0.4, collide: false, blob: 0 }])
   s.doc("sticky_dish", [8.0, od, -13.7], [0, 1, 0], { rotation: 0.3 })
-  s.doc("printout_greenbar", [8.9, od, -13.85], [0, 1, 0], { rotation: 0.15 })
-  mug(b, 9.0, od, -13.62)
-  placeModels(b, "office_chair", [{ position: [8.1, FLOOR_Y, -12.95], yaw: N + 0.15, inset: 0.15 }])
-  pendant(b, 8.3, -13.45, { drop: 1.05, shadow: true, intensity: 55 })
+  s.doc("printout_greenbar", [8.9, od, -13.95], [0, 1, 0], { rotation: 0.15 })
+  placeModels(b, "office_chair", [{ position: [OPERATOR_CHAIR.x, FLOOR_Y + OPERATOR_CHAIR.dy, OPERATOR_CHAIR.z], yaw: OPERATOR_CHAIR.yaw, inset: 0.15 }])
+  // The one working light: a wide open shade, its spill reaching across the floor to where Hargrove fell.
+  pendant(b, 8.3, -13.45, { drop: 1.05, shadow: true, intensity: 95, angle: 1.4, range: 11 })
   // West bench: strip-chart recorders, the paper heaped on the floor; the teletype under the window.
   const wb = workTable(b, 1.25, -18.0, Math.PI / 2, 3.0, 0.76)
   stripChart(b, 1.25, wb, -17.2, E, 1.1, rnd)
@@ -310,6 +310,8 @@ export async function buildNorth(s: S3, pause: () => Promise<void>) {
   placeModels(b, "stack_chair", [{ position: [2.0, FLOOR_Y, -15.9], yaw: W + 0.6 }])
   // The spine door is propped open with a chair against the leaf.
   placeModels(b, "stack_chair", [{ position: [1.95, FLOOR_Y, -2.75], yaw: E + 0.3, inset: 0.12 }])
+  // STATIC: the night it happened (receiver, aftermath, body anchors): ./listening.ts.
+  listening = stageListeningRoom(s)
   // Booth: acoustic panels, a small desk at the window, headphones on it, a lamp left on.
   for (const z of [-20.4, -18.8, -16.0]) acousticPanel(b, 6.3, z, Math.PI / 2, 1.2, 1.8, 0.4)
   for (const z of [-20.2, -18.4, -16.6]) acousticPanel(b, 11.5, z, -Math.PI / 2, 1.4, 1.8, 0.4)
@@ -381,4 +383,5 @@ export async function buildNorth(s: S3, pause: () => Promise<void>) {
   wastebasket(b, 18.0, -9.0)
   wastebasket(b, 26.0, -14.5)
   void THREE
+  return listening
 }

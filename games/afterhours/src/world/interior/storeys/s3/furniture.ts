@@ -14,14 +14,15 @@ const MUG = paint(0xc8c0a8, 0.3)
 const COFFEE = paint(0x1a0e06, 0.15)
 export const GREENBAR = paint(0xc8d4bc, 0.9)
 
-/** Steel work table (length along local x): laminate top on a steel apron and square legs. Top at 0.74. */
-export function workTable(b: Builder, x: number, z: number, yaw: number, length = 1.8, depth = 0.76, top: Mat = M.laminateTop) {
+/** Steel work table (length along local x): laminate top on a steel apron and square legs. Top at `height` (0.74). */
+export function workTable(b: Builder, x: number, z: number, yaw: number, length = 1.8, depth = 0.76, top: Mat = M.laminateTop, height = 0.74) {
   const m = F(x, z, yaw)
-  b.rbox(top, m, length, 0.03, depth, 0.008, 0, 0.725, 0)
-  b.boxM(STEEL_DESK, m, length - 0.08, 0.08, depth - 0.08, 0, 0.67, 0)
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.boxM(STEEL_DESK, m, 0.04, 0.63, 0.04, sx * (length / 2 - 0.06), 0.315, sz * (depth / 2 - 0.06))
-  coll(b, m, length, 0.74, depth)
-  return FLOOR_Y + 0.74
+  const dh = height - 0.74
+  b.rbox(top, m, length, 0.03, depth, 0.008, 0, 0.725 + dh, 0)
+  b.boxM(STEEL_DESK, m, length - 0.08, 0.08, depth - 0.08, 0, 0.67 + dh, 0)
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.boxM(STEEL_DESK, m, 0.04, 0.63 + dh, 0.04, sx * (length / 2 - 0.06), (0.63 + dh) / 2, sz * (depth / 2 - 0.06))
+  coll(b, m, length, height, depth)
+  return FLOOR_Y + height
 }
 
 /** Terminal carrel: worksurface with 1.3 m fabric side and back screens (back at +Z), a cable grommet. Top 0.73. */

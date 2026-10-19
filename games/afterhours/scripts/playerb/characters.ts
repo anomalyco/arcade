@@ -56,7 +56,7 @@ if (!args.includes("--no-anims")) {
   console.log(`anims.glb ${(size / 1e6).toFixed(2)} MB`)
 }
 const ref = join(src, "anims", "walking.fbx")
-for (const f of readdirSync(join(src, "characters")).filter((f) => f.endsWith(".fbx"))) {
+for (const f of readdirSync(join(src, "characters")).filter((f) => f.endsWith(".fbx") && !f.startsWith("npc-"))) {
   const id = f.replace(/\.fbx$/, "").toLowerCase()
   if (only && !only.includes(id)) continue
   const raw = join(cache, `${id}.glb`)

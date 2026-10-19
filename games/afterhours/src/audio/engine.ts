@@ -142,7 +142,8 @@ export class Sfx {
     return this.listener
   }
 
-  /** Walls (and storey slabs) between the listener and `p`, capped at 4. */
+  /** Walls (and storey slabs) between the listener and `p`, capped at 4. Only wall-height solids (≥ 1.9 m tall)
+   *  count: a desk or a crate between you and a sound doesn't muffle it like a wall. */
   walls(p: { x: number; y: number; z: number }) {
     const o = this.listener
     const dx = p.x - o.x
@@ -157,6 +158,7 @@ export class Sfx {
     const y1 = Math.max(o.y, p.y)
     for (const b of this.colliders) {
       if (b.max[0] < x0 || b.min[0] > x1 || b.max[2] < z0 || b.min[2] > z1 || b.max[1] < y0 || b.min[1] > y1) continue
+      if (b.max[1] - b.min[1] < 1.9) continue
       // Segment vs box (slab test); boxes containing either end (the source's own housing) don't count.
       let t0 = 0
       let t1 = 1
@@ -274,7 +276,7 @@ export class Sfx {
   }
 
   /** A loop voice for `id` (variant `variant`, or the first). */
-  loop(id: SfxId, o: { bus: Bus; ref?: number; rolloff?: number; variant?: number; positional?: boolean }) {
+  loop(id: SfxId, o: LoopOptions) {
     return new LoopVoice(this, id, o)
   }
 
@@ -285,6 +287,20 @@ export class Sfx {
 }
 
 /** A looping sound whose level, position and filter its owner drives each frame. Silent voices release their source. */
+export type LoopOptions = {
+  bus: Bus
+  ref?: number
+  rolloff?: number
+  variant?: number
+  positional?: boolean
+  /**
+   * How much walls muffle it, 0..1 (default 1). Below 1 each wall takes less level and less top end: for a sound
+   * meant to be followed through a building (the listening room's radio), whose real path runs along corridors and
+   * through doorways rather than through the walls the straight line crosses.
+   */
+  occlusion?: number
+}
+
 export class LoopVoice {
   private src: AudioBufferSourceNode | null = null
   private gain: GainNode | null = null
@@ -301,7 +317,7 @@ export class LoopVoice {
   constructor(
     private sfx: Sfx,
     readonly id: SfxId,
-    private o: { bus: Bus; ref?: number; rolloff?: number; variant?: number; positional?: boolean },
+    private o: LoopOptions,
   ) {}
 
   /** Target level (0 silences and, after a while, releases it) and an optional extra low-pass. */
@@ -337,8 +353,9 @@ export class LoopVoice {
         this.occlAt = now
         this.occl = this.sfx.walls(this.pos)
       }
-      level *= OCCLUDE_GAIN ** this.occl
-      cutoff = Math.min(cutoff, 18000 * OCCLUDE_CUTOFF ** this.occl)
+      const k = this.o.occlusion ?? 1
+      level *= (1 - k * (1 - OCCLUDE_GAIN)) ** this.occl
+      cutoff = Math.min(cutoff, 18000 * (1 - k * (1 - OCCLUDE_CUTOFF)) ** this.occl)
       const t = a.ctx.currentTime
       if (this.pn!.positionX) {
         this.pn!.positionX.setTargetAtTime(this.pos.x, t, 0.05)

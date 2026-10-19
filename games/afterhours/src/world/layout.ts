@@ -35,8 +35,10 @@ export const ACCESS_ROAD = {
 }
 
 export const FENCE = {
-  min: [-95, -125] as Vec2,
-  max: [95, 122] as Vec2,
+  /** Pulled in ~15 % (was -95..95 × -125..122): the gate line (max z) stays; 12 m+ clear of the annex/genset, the dock
+   *  court and the fire escape. */
+  min: [-80, -88] as Vec2,
+  max: [82, 122] as Vec2,
   height: 2.5,
   /** Barbed-wire outrigger above the mesh. */
   barbHeight: 0.55,

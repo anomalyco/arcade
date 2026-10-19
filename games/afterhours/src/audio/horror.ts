@@ -1,6 +1,5 @@
 import type { WorldContext } from "../world/context"
-import { interiorRooms } from "../world/interior/registry"
-import { BUILDING, CORE, FREIGHT, storeyY } from "../world/layout"
+import { BUILDING, CORE, FREIGHT } from "../world/layout"
 import type { Sfx } from "./engine"
 
 // The horror layer: now and then, something in the building that isn't you. Never in the first two minutes, then at
@@ -8,8 +7,9 @@ import type { Sfx } from "./engine"
 //  - a heavy metal bang somewhere far off and below (heard through floors and walls, so muffled),
 //  - knocking on a closed door 4–12 m away,
 //  - someone else's footsteps on the floor above (or down another corridor on the top floor),
-//  - a sub-rumble from below when near the core or the freight lift FL-1,
-//  - a whispering radio near the listening room (3-08).
+//  - a sub-rumble from below when near the core or the freight lift FL-1.
+// (The listening room's radio voices are the interior's story beat: storeys/s3/listening.ts.)
+// Off by default in play mode: `level` (Lab "Horror layer") 0 fires nothing; above 0 it scales every event.
 // Every event is positional and occluded like any other sound. `?horror=<s>` (automation only) sets the first delay.
 
 type Event = { kind: string; weight: number; fire: () => void }
@@ -28,9 +28,12 @@ export class Horror {
     this.next = Number.isFinite(first) && ctx.params.has("horror") ? first : 120 + Math.random() * 30
   }
 
+  /** 0 (off) .. 1: set every frame from the Lab's "Horror layer". */
+  level = 0
+
   update(dt: number, ear: { x: number; y: number; z: number }, indoor: number) {
     this.time += dt
-    if (this.time < this.next) return
+    if (this.level <= 0 || this.time < this.next) return
     const events = this.options(ear, indoor)
     const total = events.reduce((s, e) => s + e.weight, 0)
     let r = Math.random() * total
@@ -45,7 +48,7 @@ export class Horror {
   private options(ear: { x: number; y: number; z: number }, indoor: number): Event[] {
     const out: Event[] = []
     const play = (id: Parameters<Sfx["play"]>[0], pos: { x: number; y: number; z: number }, gain: number, ref: number) =>
-      this.sfx.play(id, { bus: "horror", pos, gain, ref, rolloff: 1, jitter: 0.04 })
+      this.sfx.play(id, { bus: "horror", pos, gain: gain * this.level, ref, rolloff: 1, jitter: 0.04 })
     const a = Math.random() * Math.PI * 2
     out.push({
       kind: "metal-bang",
@@ -80,13 +83,6 @@ export class Horror {
       Math.hypot(ear.x - (rect.min[0] + rect.max[0]) / 2, ear.z - (rect.min[1] + rect.max[1]) / 2) < d
     if (near(CORE.stair, 15) || near(CORE.lift, 15) || near(FREIGHT.car, 15)) {
       out.push({ kind: "sub-rumble", weight: 2, fire: () => play("hor-sub-rumble", { x: ear.x, y: ear.y - 6, z: ear.z }, 1, 10) })
-    }
-    const listening = interiorRooms.find((r) => r.storey === 3 && r.id === "3-08")
-    if (listening) {
-      const x = (listening.rect.x0 + listening.rect.x1) / 2
-      const z = (listening.rect.z0 + listening.rect.z1) / 2
-      const y = storeyY(3) + 1
-      if (Math.hypot(ear.x - x, ear.y - y, ear.z - z) < 14) out.push({ kind: "radio-whisper", weight: 2, fire: () => play("hor-radio-whisper", { x, y, z }, 0.8, 2) })
     }
     return out
   }

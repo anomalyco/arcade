@@ -105,6 +105,12 @@ export class Player {
   pitch = 0
   flashlight = false
   fly = false
+  /**
+   * Debug bindings: N toggles fly, digits jump to the viewpoints. The play shell turns them off (its lift floor keys
+   * and every other key keep working); /debug and automation keep them.
+   */
+  debugKeys = true
+  private inputOn = true
   /** Automation only: when an array, every update pushes a sample (time, dt, feet, eye). */
   trace: { t: number; dt: number; x: number; z: number; y: number; eye: number; offset: number; base: number; crouch: number; grounded: boolean }[] | null = null
   private keys = new Set<string>()
@@ -153,6 +159,7 @@ export class Player {
     ctx.settings["player.crouchMode"] ??= 0
     ctx.settings["player.bob"] ??= 1
     ctx.settings["player.runStyle"] ??= 0
+    ctx.settings["player.invertY"] ??= 0
     ctx.settings["player.mantle"] ??= 1
     ctx.settings["player.mantleMin"] ??= 0.4
     ctx.settings["player.mantleMax"] ??= 1.4
@@ -160,6 +167,7 @@ export class Player {
     ctx.controls.push(
       { key: "player.crouchMode", label: "Crouch key", group: "Player", type: "select", options: [{ value: 0, label: "Hold" }, { value: 1, label: "Toggle" }] },
       { key: "player.bob", label: "Head bob", group: "Player", unit: "×", min: 0, max: 2, step: 0.05 },
+      { key: "player.invertY", label: "Invert mouse Y", group: "Player", type: "toggle", on: 1, off: 0 },
       { key: "player.runStyle", label: "Run style", group: "Player", type: "select", options: [{ value: 0, label: "Run 4.5 m/s" }, { value: 1, label: "Jog 2.4 m/s" }] },
       { key: "player.mantle", label: "Climb onto ledges (Space)", group: "Player", type: "toggle", on: 1, off: 0 },
       { key: "player.mantleMin", label: "Climb: lowest ledge", group: "Player", unit: "m", min: 0.3, max: 0.8, step: 0.05 },
@@ -202,17 +210,21 @@ export class Player {
     ;(this as { audio: GameAudio | null }).audio = new GameAudio(ctx, this)
     // Audio unlocks on the first input (a click or a key), never before.
     canvas.addEventListener("click", () => {
+      if (!this.inputOn) return
       this.audio?.unlock()
       canvas.requestPointerLock()
     })
     document.addEventListener("mousemove", (e) => {
-      if (document.pointerLockElement !== canvas) return
+      if (!this.inputOn || document.pointerLockElement !== canvas) return
       const sens = Number(ctx.settings["player.sensitivity"] ?? 1) * 0.0022
+      // `player.invertY` (0/1, or true/false from a settings screen): mouse forward looks down.
+      const v = ctx.settings["player.invertY"]
+      const invert = v === true || Number(v) === 1 ? -1 : 1
       this.yaw -= e.movementX * sens
-      this.pitch = Math.min(1.45, Math.max(-1.45, this.pitch - e.movementY * sens))
+      this.pitch = Math.min(1.45, Math.max(-1.45, this.pitch - e.movementY * sens * invert))
     })
     window.addEventListener("keydown", (e) => {
-      if (isEditableEventTarget(e.target)) return
+      if (!this.inputOn || isEditableEventTarget(e.target)) return
       if (e.code === "Space") e.preventDefault()
       this.audio?.unlock()
       this.keys.add(e.code)
@@ -222,12 +234,12 @@ export class Player {
         this.audio?.flashlight()
       }
       if (e.code === "KeyE") ctx.doors.use()
-      if (e.code === "KeyN") this.fly = !this.fly
+      if (e.code === "KeyN" && this.debugKeys) this.fly = !this.fly
       if (e.code === "Space") this.jumpBuffer = JUMP_BUFFER
       if (e.code === "KeyC") this.crouchToggled = !this.crouchToggled
       const views = Object.keys(VIEWPOINTS) as ViewpointName[]
       const digit = e.code.startsWith("Digit") ? Number(e.code.slice(5)) : 0
-      if (digit >= 1 && digit <= views.length) this.teleport(views[digit - 1]!)
+      if (this.debugKeys && digit >= 1 && digit <= views.length) this.teleport(views[digit - 1]!)
     })
     window.addEventListener("keyup", (e) => {
       this.keys.delete(e.code)
@@ -236,6 +248,19 @@ export class Player {
     })
     window.addEventListener("blur", () => this.keys.clear())
     document.addEventListener("visibilitychange", () => document.hidden && this.keys.clear())
+  }
+
+  /**
+   * Keys, mouse look and the click that captures the pointer reach the controller only while this is on (the play
+   * shell turns it off in the menus, the title card and the pause menu). Turning it off releases every held key.
+   */
+  get inputEnabled() {
+    return this.inputOn
+  }
+  set inputEnabled(on: boolean) {
+    if (on === this.inputOn) return
+    this.inputOn = on
+    if (!on) this.keys.clear()
   }
 
   /** Footstep / landing / jump events (for footstep audio and the body). Returns an unsubscribe function. */

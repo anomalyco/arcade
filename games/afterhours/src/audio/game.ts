@@ -10,6 +10,7 @@ import { Ambience } from "./ambience"
 import { Horror } from "./horror"
 import { LiftSounds } from "./lift"
 import { hooks } from "./hooks"
+import { resolveMode } from "../game/shell/mode"
 
 // The game's audio: one context and mix (context.ts), the shipped samples (engine.ts, sfx-manifest.ts), and what plays
 // them: footsteps, doors (world/doors/audio.ts through `hooks.sfx`), the lift (lift.ts through `hooks.lift`), ambience
@@ -22,7 +23,7 @@ const LEVELS: { key: string; bus: Bus | "master"; label: string; value: number }
   { key: "audio.footsteps", bus: "footsteps", label: "Footsteps", value: 0.8 },
   { key: "audio.doors", bus: "doors", label: "Doors, lift & interactions", value: 0.85 },
   { key: "audio.ambience", bus: "ambience", label: "Ambience & weather", value: 0.75 },
-  { key: "audio.horror", bus: "horror", label: "Horror layer", value: 0.8 },
+  { key: "audio.horror", bus: "horror", label: "Horror & story sounds", value: 0.8 },
   { key: "audio.ui", bus: "ui", label: "Interface", value: 0.6 },
 ]
 
@@ -43,6 +44,10 @@ export class GameAudio {
       ctx.settings[l.key] ??= l.value
       ctx.controls.push({ key: l.key, label: l.label, group: "Audio", min: 0, max: l.bus === "master" ? 1.5 : 1.5, step: 0.05 })
     }
+    // The horror layer (random scares, the Sublevel drone) is off in play mode until the owner wants it; /debug starts
+    // with it on. Story sounds on the horror bus (the listening room's radio voices) are not part of it.
+    ctx.settings["audio.horrorLayer"] ??= resolveMode() === "play" ? 0 : 1
+    ctx.controls.push({ key: "audio.horrorLayer", label: "Horror layer (scares, drone)", group: "Audio", min: 0, max: 1, step: 0.05 })
     this.sfx = new Sfx(ctx.colliders)
     this.footsteps = new Footsteps(ctx, player, this.sfx)
     this.ambience = new Ambience(ctx, this.sfx)
@@ -99,6 +104,9 @@ export class GameAudio {
     const rl = Math.hypot(e[0]!, e[2]!) || 1
     this.ambience.right.x = e[0]! / rl
     this.ambience.right.z = e[2]! / rl
+    const scares = Number(s["audio.horrorLayer"] ?? 0)
+    this.ambience.horrorLevel = scares
+    this.horror.level = scares
     this.ambience.update(dt, this.ear, this.indoor)
     this.horror.update(dt, this.ear, this.indoor)
   }

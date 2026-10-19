@@ -239,7 +239,100 @@ def rebuild_materials(meshes, cid, size=2048):
                 slot.material = done[slot.material.name]
 
 
-def character(fbx, ref_fbx, out, meta_out):
+def tint_uv_region(meshes, pattern, target):
+    """Recolour the texels a mesh's UVs cover (shoes share the body atlas): keep the shading (luminance relative to
+    the region's mean), replace the hue with `target` (display-space RGB)."""
+    import numpy as np  # noqa: F811
+
+    for o in meshes:
+        if not re.search(pattern, o.name, re.I):
+            continue
+        mat = o.material_slots[0].material
+        tex = next((n for n in mat.node_tree.nodes if n.type == "TEX_IMAGE" and n.image and n.image.name.endswith("_color")), None)
+        if tex is None:
+            continue
+        img = tex.image
+        w, h = img.size
+        px = np.array(img.pixels[:], dtype=np.float32).reshape(h, w, 4)
+        mask = np.zeros((h, w), dtype=bool)
+        uv = o.data.uv_layers.active.data
+        for poly in o.data.polygons:
+            idx = list(poly.loop_indices)
+            for t in range(1, len(idx) - 1):
+                tri = np.array([uv[idx[0]].uv, uv[idx[t]].uv, uv[idx[t + 1]].uv]) * [w, h]
+                x0, y0 = np.floor(tri.min(0)).astype(int)
+                x1, y1 = np.ceil(tri.max(0)).astype(int)
+                x0, y0, x1, y1 = max(x0 - 1, 0), max(y0 - 1, 0), min(x1 + 1, w - 1), min(y1 + 1, h - 1)
+                if x1 < x0 or y1 < y0:
+                    continue
+                X, Y = np.meshgrid(np.arange(x0, x1 + 1) + 0.5, np.arange(y0, y1 + 1) + 0.5)
+                (ax, ay), (bx, by), (cx, cy) = tri
+                d = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+                if abs(d) < 1e-9:
+                    continue
+                l1 = ((by - cy) * (X - cx) + (cx - bx) * (Y - cy)) / d
+                l2 = ((cy - ay) * (X - cx) + (ax - cx) * (Y - cy)) / d
+                inside = (l1 >= -0.02) & (l2 >= -0.02) & (1 - l1 - l2 >= -0.02)
+                mask[y0:y1 + 1, x0:x1 + 1] |= inside
+        lum = px[..., 0] * 0.2126 + px[..., 1] * 0.7152 + px[..., 2] * 0.0722
+        mean = float(lum[mask].mean()) if mask.any() else 1.0
+        rel = np.clip(lum / max(mean, 1e-3), 0.3, 1.8)
+        for c in range(3):
+            px[..., c] = np.where(mask, np.clip(target[c] * (0.55 + 0.45 * rel), 0, 1), px[..., c])
+        img.pixels[:] = px.ravel()
+        img.pack()
+        print("tinted", o.name, int(mask.sum()), "texels")
+
+
+def ground_poses(arm, meshes, poses, hip_ratio):
+    """For each pose (Blender bone basis quaternions + Hips basis location at Remy's size), pose this character and
+    measure: lowest skinned vertex (the offset that puts it on the floor), and the heights of the extremities."""
+    out = {}
+    dg = bpy.context.evaluated_depsgraph_get()
+    P = arm.pose.bones
+    for name, pose in poses.items():
+        for pb in P:
+            pb.rotation_mode = "QUATERNION"
+            pb.rotation_quaternion = Quaternion(pose["rot"].get(pb.name, [1, 0, 0, 0]))
+            pb.location = Vector((0, 0, 0))
+        P["Hips"].location = Vector(pose["hips"]) * hip_ratio
+        bpy.context.view_layer.update()
+        dg = bpy.context.evaluated_depsgraph_get()
+        low = 1e9
+        for o in meshes:
+            ev = o.evaluated_get(dg)
+            me = ev.to_mesh()
+            mw = o.matrix_world
+            for v in me.vertices:
+                z = (mw @ v.co).z
+                if z < low:
+                    low = z
+            ev.to_mesh_clear()
+        W = arm.matrix_world
+        ext = {n: round((W @ P[n].head).z - low, 3) for n in ("Head", "LeftHand", "RightHand", "LeftFoot", "RightFoot", "Hips")}
+        rule = pose.get("ground", "lowest")
+        if rule == "feet":
+            # Seated: the feet (sole ~ ankle height in the bind pose) stand on the floor; the chair holds the rest.
+            ank = min((W @ P[n].head).z for n in ("LeftFoot", "RightFoot"))
+            rest_ank = min((W @ arm.data.bones[n].head_local).z for n in ("LeftFoot", "RightFoot"))
+            off = -(ank - rest_ank)
+        else:
+            off = -low
+        desk = None
+        if rule == "feet":
+            pts = [(W @ P[n].head).z for n in ("LeftForeArm", "RightForeArm", "LeftHand", "RightHand")]
+            pts += [((W @ P[n].head + W @ P[n].tail) * 0.5).z for n in ("LeftForeArm", "RightForeArm")]
+            desk = round(min(pts) + off - 0.045, 3)
+        out[name] = {"y": round(off, 4), "extremities": ext, "desk": desk,
+                     "seat": round((W @ P["Hips"].head).z + off - 0.1, 3) if rule == "feet" else None}
+    for pb in P:
+        pb.rotation_quaternion = Quaternion()
+        pb.location = Vector()
+    bpy.context.view_layer.update()
+    return out
+
+
+def character(fbx, ref_fbx, out, meta_out, poses_json=None):
     clear()
     ref, ref_objs, _ = import_fbx(ref_fbx)
     strip_names(ref)
@@ -259,6 +352,8 @@ def character(fbx, ref_fbx, out, meta_out):
         rebind(arm, meshes, ref_rot)
     cid = os.path.splitext(os.path.basename(fbx))[0].lower()
     rebuild_materials(meshes, cid)
+    for pat, rgb in json.loads(os.environ.get("TINT", "{}")).get(cid, {}).items():
+        tint_uv_region(meshes, pat, rgb)
     if (arm.matrix_world @ arm.data.bones["Hips"].head_local).z > 1.5:
         s = REMY_HIPS / (arm.matrix_world @ arm.data.bones["Hips"].head_local).z
         arm.scale = arm.scale * s
@@ -309,6 +404,9 @@ def character(fbx, ref_fbx, out, meta_out):
         o.select_set(True)
     bpy.ops.export_scene.gltf(filepath=out, export_format="GLB", use_selection=True, export_skins=True, export_animations=False,
                               export_morph=False, export_yup=True, export_image_format="WEBP", export_image_quality=88, export_apply=False)
+    if poses_json:
+        with open(poses_json) as f:
+            meta["poses"] = ground_poses(arm, meshes, json.load(f)["poses"], meta["hipRatio"])
     with open(meta_out, "w") as f:
         json.dump(meta, f, indent=1)
 
@@ -596,7 +694,8 @@ CLIPS = {
 
 def anims(src_dir, out, meta_out):
     clear()
-    files = sorted(f for f in os.listdir(src_dir) if f.endswith(".fbx"))
+    # death-*.fbx are NPC corpse poses (mode "poses"), not player clips.
+    files = sorted(f for f in os.listdir(src_dir) if f.endswith(".fbx") and not f.startswith("death-"))
     base = None
     actions = {}
     for f in files:
@@ -847,7 +946,172 @@ def anims(src_dir, out, meta_out):
         json.dump(meta, f, indent=1)
 
 
+# ------------------------------------------------------------------------------------------------------------ poses
+# Corpse poses for NPCs: each death clip's last frame with its root motion collapsed (lying: the head-to-feet axis
+# along +Z three / -Y Blender, centred between head and feet; slumped: hips facing +Z, hips over the origin), plus an
+# authored "slumped in a chair over a desk" pose. Written as one-frame clips (poses.glb, read by the runtime) and as
+# Blender bone bases (poses.json, used by the character builds to put each character's pose on the floor).
+SLUMPED = ("death-slump-wall", "death-slump-wall-idle")
+
+
+def chair_pose(arm):
+    """Seated, trunk folded forward onto a desk: left forearm across the desk under the face, right arm reaching."""
+    P = arm.pose.bones
+    for pb in P:
+        pb.rotation_mode = "QUATERNION"
+        pb.rotation_quaternion = Quaternion()
+        pb.location = Vector()
+    bpy.context.view_layer.update()
+
+    def d(a_deg, side=0.0):
+        a = math.radians(a_deg)
+        return Vector((side, -math.sin(a), math.cos(a))).normalized()
+
+    T = {
+        # Trunk folded forward until the head lies on the forearms on the desk.
+        "Spine": d(22), "Spine1": d(48), "Spine2": d(74), "Neck": d(84), "Head": Vector((0.2, -0.82, -0.53)).normalized(),
+        # Upper arms forward and down to the desk edge, forearms flat on the desk crossing under the face.
+        "LeftArm": Vector((0.25, -0.8, -0.35)).normalized(), "LeftForeArm": Vector((-0.8, -0.6, 0.0)).normalized(),
+        "LeftHand": Vector((-0.75, -0.66, 0.0)).normalized(),
+        "RightArm": Vector((-0.3, -0.85, -0.3)).normalized(), "RightForeArm": Vector((0.55, -0.83, -0.02)).normalized(),
+        "RightHand": Vector((0.45, -0.89, -0.03)).normalized(),
+        "LeftUpLeg": Vector((0.12, -0.99, -0.06)).normalized(), "RightUpLeg": Vector((-0.12, -0.99, -0.06)).normalized(),
+        "LeftLeg": Vector((0.02, -0.12, -0.99)).normalized(), "RightLeg": Vector((-0.02, -0.12, -0.99)).normalized(),
+    }
+    rest_dir = {pb.name: (pb.bone.matrix_local.to_3x3() @ Vector((0, 1, 0))).normalized() for pb in P}
+    for n in order_of(arm):
+        if n not in T and n not in ("LeftFoot", "RightFoot"):
+            continue
+        bpy.context.view_layer.update()
+        pb = P[n]
+        m = pb.matrix.copy()
+        cur = (m.to_3x3() @ Vector((0, 1, 0))).normalized()
+        tgt = T.get(n, rest_dir[n])
+        q = cur.rotation_difference(tgt)
+        h = m.translation.copy()
+        pb.matrix = Matrix.Translation(h) @ q.to_matrix().to_4x4() @ Matrix.Translation(-h) @ m
+    # Fingers: a loose curl (dead hands are not flat).
+    for pb in P:
+        if re.match(r"(Left|Right)Hand(Index|Middle|Ring|Pinky)\d", pb.name):
+            pb.rotation_quaternion = pb.rotation_quaternion @ Quaternion(Vector((1, 0, 0)), math.radians(18))
+    bpy.context.view_layer.update()
+    # Lower the hips so the ankles are back at their standing height (feet on the floor).
+    ank = min(P[n].head.z for n in ("LeftFoot", "RightFoot"))
+    rest = min(arm.data.bones[n].head_local.z for n in ("LeftFoot", "RightFoot"))
+    hm = P["Hips"].matrix.copy()
+    hm.translation.z -= ank - rest
+    P["Hips"].matrix = hm
+    bpy.context.view_layer.update()
+
+
+def poses(src_dir, ref_fbx, out, json_out):
+    clear()
+    arm, objs, acts = import_fbx(ref_fbx)
+    for a in acts:
+        bpy.data.actions.remove(a)
+    for o in objs:
+        if o is not arm:
+            bpy.data.objects.remove(o)
+    strip_names(arm)
+    arm.animation_data_clear()
+    k = REMY_HIPS / (arm.matrix_world @ arm.data.bones["Hips"].head_local).z
+    total = arm.matrix_world.to_scale().x * k
+    arm.scale = arm.scale * k
+    bpy.context.view_layer.update()
+    apply_transforms([arm])
+    P = arm.pose.bones
+    for pb in P:
+        pb.rotation_mode = "QUATERNION"
+    ad = arm.animation_data_create()
+    result = {}
+    names = sorted(f[:-4] for f in os.listdir(src_dir) if f.startswith("death-") and f.endswith(".fbx"))
+    for cid in names + ["death-slump-chair"]:
+        if cid == "death-slump-chair":
+            ad.action = None
+            chair_pose(arm)
+            info = {"kind": "chair", "facing": "hips forward toward the desk", "ground": "feet"}
+        else:
+            o2, objs2, acts2 = import_fbx(os.path.join(src_dir, cid + ".fbx"))
+            act = acts2[0]
+            strip_action(act)
+            for o in objs2:
+                bpy.data.objects.remove(o)
+            for fc in fcurves(act):
+                if fc.data_path.endswith(".location"):
+                    for kp in fc.keyframe_points:
+                        kp.co.y *= total
+            ad.action = act
+            if hasattr(ad, "action_slot") and len(act.slots):
+                ad.action_slot = act.slots[0]
+            bpy.context.scene.frame_set(int(act.frame_range[1]))
+            bpy.context.view_layer.update()
+            slump = cid in SLUMPED
+            hips = P["Hips"].matrix.copy()
+            if slump:
+                f = (hips.to_3x3() @ arm.data.bones["Hips"].matrix_local.to_3x3().inverted() @ Vector((0, -1, 0)))
+                yaw = math.atan2(f.x, -f.y)
+                c = hips.translation.copy()
+            else:
+                head = P["Head"].head.copy()
+                feet = (P["LeftFoot"].head + P["RightFoot"].head) * 0.5
+                ax = head - feet
+                yaw = math.atan2(ax.x, -ax.y)
+                c = (head + feet) * 0.5
+            Tm = Matrix.Rotation(-yaw, 4, "Z") @ Matrix.Translation(Vector((-c.x, -c.y, 0)))
+            mats = {pb.name: pb.matrix.copy() for pb in P}
+            ad.action = None
+            for pb in P:
+                pb.rotation_quaternion = Quaternion()
+                pb.location = Vector()
+            bpy.context.view_layer.update()
+            # Re-apply the frame as pose matrices (top-down), with the root transform on the Hips.
+            for n in order_of(arm):
+                P[n].matrix = (Tm @ mats[n]) if n == "Hips" else (Tm @ mats[n])
+                bpy.context.view_layer.update()
+            bpy.data.actions.remove(act)
+            info = {"kind": "slump" if slump else "lying", "ground": "lowest",
+                    "facing": "hips forward (back to the wall)" if slump else "head toward +Z"}
+            if slump:
+                back = max(P[n].head.y for n in ("Spine2", "Neck", "Head", "Hips"))
+                info["wallBehind"] = round(back + 0.12, 3)
+        info["rot"] = {pb.name: list(pb.rotation_quaternion) for pb in P}
+        info["hips"] = list(P["Hips"].location)
+        name = cid.replace("death-", "")
+        result[name] = info
+        # One-frame clip for the runtime.
+        act = bpy.data.actions.new(name)
+        act.use_fake_user = True
+        ad.action = act
+        for pb in P:
+            for fr in (1, 2):
+                pb.keyframe_insert("rotation_quaternion", frame=fr)
+                if pb.name == "Hips":
+                    pb.keyframe_insert("location", frame=fr)
+        ad.action = None
+        for pb in P:
+            pb.rotation_quaternion = Quaternion()
+            pb.location = Vector()
+        print("POSE", name, info["kind"], info.get("wallBehind"))
+    for name in sorted(result):
+        tr = ad.nla_tracks.new()
+        tr.name = name
+        act = bpy.data.actions[name]
+        st = tr.strips.new(name, 1, act)
+        if hasattr(st, "action_slot") and st.action_slot is None and len(act.slots):
+            st.action_slot = act.slots[0]
+    bpy.ops.object.select_all(action="DESELECT")
+    arm.select_set(True)
+    bpy.context.view_layer.objects.active = arm
+    bpy.ops.export_scene.gltf(filepath=out, export_format="GLB", use_selection=True, export_animations=True,
+                              export_animation_mode="NLA_TRACKS", export_force_sampling=True, export_yup=True,
+                              export_anim_slide_to_zero=True, export_skins=False, export_apply=False)
+    with open(json_out, "w") as f:
+        json.dump({"refHips": REMY_HIPS, "poses": result}, f)
+
+
 if mode == "character":
-    character(*argv[1:5])
+    character(*argv[1:6])
+elif mode == "poses":
+    poses(*argv[1:5])
 elif mode == "anims":
     anims(*argv[1:4])

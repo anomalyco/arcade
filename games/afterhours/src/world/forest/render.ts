@@ -10,6 +10,11 @@ import {
   fract,
   interleavedGradientNoise,
   length,
+  cross,
+  dFdx,
+  dFdy,
+  dot,
+  positionView,
   lights,
   max,
   mod,
@@ -46,6 +51,38 @@ export const forestUniforms = {
   wind: uniform(0.35) as N,
   /** Width of the LOD cross-fade band (m). */
   fade: uniform(5) as N,
+  /** Full/mid detail boundary and mid/far boundary (m), for the roadside distance remap. */
+  nearHi: uniform(29) as N,
+  midHi: uniform(105) as N,
+  /** Roadside trees keep full detail this many times further (headlights reach them). */
+  roadK: uniform(2.2) as N,
+}
+
+/** Instances flagged roadside carry `phase + ROADSIDE` in iB.w (the offset only shifts their sway phase). */
+export const ROADSIDE = 1000
+
+/**
+ * Distance used for LOD bands. Roadside trees (lit by headlights from the road) compress [0, nearHi * k] onto
+ * [0, nearHi] and stretch the rest back to identity at midHi, so they stay full-detail k times further, cross-fade to
+ * mid at the same place in both materials, and still hand over to impostors exactly where every other tree does.
+ * `lodDistanceCpu` must match.
+ */
+function lodDistance(d: N, phase: N) {
+  const U = forestUniforms
+  const road = step(ROADSIDE - 1, phase)
+  const k = float(1).add(road.mul(U.roadK.sub(1)))
+  const b = U.nearHi.mul(k)
+  const near = d.div(k)
+  const mid = U.nearHi.add(d.sub(b).mul(U.midHi.sub(U.nearHi)).div(max(U.midHi.sub(b), 1)))
+  return select(d.lessThan(b), near, select(d.lessThan(U.midHi), mid, d))
+}
+
+export function lodDistanceCpu(d: number, roadside: boolean, nearHi: number, midHi: number, k: number) {
+  if (!roadside) return d
+  const b = nearHi * k
+  if (d < b) return d / k
+  if (d < midHi) return nearHi + ((d - b) * (midHi - nearHi)) / Math.max(midHi - b, 1)
+  return d
 }
 const windDir = vec2(0.83, 0.56)
 
@@ -81,7 +118,7 @@ function instancePosition(b: Band, foliage: boolean, hardSwitch: boolean) {
     }
     const n = normalGeometry as N
     normalLocal.assign(vec3(n.x.mul(c).sub(n.z.mul(s)), n.y, n.x.mul(s).add(n.z.mul(c))))
-    const d = length(forestUniforms.view.xz.sub(a.xz))
+    const d = lodDistance(length(forestUniforms.view.xz.sub(a.xz)), ph)
     const F = forestUniforms.fade
     const lo = hardSwitch ? b.lo.add(F.mul(0.5)) : b.lo.sub(1)
     const hi = hardSwitch ? b.hi.add(F.mul(0.5)) : b.hi.add(F).add(1)
@@ -91,7 +128,7 @@ function instancePosition(b: Band, foliage: boolean, hardSwitch: boolean) {
 }
 
 function ditherMask(b: Band) {
-  const d = varying(length(forestUniforms.view.xz.sub(iA().xz)), "vForestDist") as N
+  const d = varying(lodDistance(length(forestUniforms.view.xz.sub(iA().xz)), iB().w), "vForestDist") as N
   const F = forestUniforms.fade
   // Shift the pattern every frame so TAA resolves the cross-fade into a blend instead of a visible screen door.
   const n = interleavedGradientNoise((screenCoordinate as N).xy.add(fract((time as N).mul(60)).mul(vec2(37.1, 17.3)).floor())) as N
@@ -132,9 +169,15 @@ export function foliageMaterial(atlas: THREE.Texture, color: THREE.Color, b: Ban
   const inner = varying(clamp((attribute("flex", "float") as N).div(1.6), 0, 1), "vInner") as N
   const occl = inner.mul(0.55).add(0.45)
   m.colorNode = vec4(tex.rgb.mul(uniform(color)).mul(tint).mul(occl), tex.a.mul(ditherMask(b)))
-  // Keep the crown normals on both faces (no back-face flip), so cards light like one volume.
+  // Crown normals (out from the trunk and up) make the tree shade like one volume; blending in each card's own face
+  // normal (turned toward the viewer) keeps sprays at different angles from lighting identically, so a headlight or
+  // flashlight close by shows layered branches instead of one flat lit sheet.
   const nWorld = varying(normalLocal, "vCrownNormal") as N
-  m.normalNode = normalize((cameraViewMatrix as N).mul(vec4(nWorld, 0)).xyz)
+  const crown = normalize((cameraViewMatrix as N).mul(vec4(nWorld, 0)).xyz)
+  const pv = positionView as N
+  const face0 = normalize(cross(dFdx(pv) as N, dFdy(pv) as N) as N) as N
+  const face = select(dot(face0, pv).greaterThan(0), face0.negate(), face0)
+  m.normalNode = normalize(crown.mul(0.55).add(face.mul(0.45)))
   return m
 }
 

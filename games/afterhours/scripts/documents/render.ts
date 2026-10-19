@@ -2257,6 +2257,184 @@ const STAND_INS: DocSpec[] = [
 ]
 DOCS.push(...STAND_INS)
 
+// ---------------------------------------------------------------------------------------------------- 3-08 "STATIC"
+/** The four night crew found in 3-08 (src/world/interior/storeys/s3/listening.ts LISTENING_ROOM_BODIES). */
+const NIGHT_CREW: [string, string, string, string][] = [
+  ["badge_kessler", "D. KESSLER", "RADIO OPERATOR", "N-0417"],
+  ["badge_whitlock", "C. WHITLOCK", "SIGNAL TECHNICIAN", "N-0452"],
+  ["badge_hargrove", "R. HARGROVE", "SYSTEMS ANALYST", "N-0388"],
+  ["badge_bellamy", "N. BELLAMY", "PROGRAMMER", "N-0436"],
+]
+/** Clip-on photo ID (CR80 portrait): IOPS band, photo, name, role, NIGHT CREW stripe. */
+function idBadge(id: string, name: string, role: string, no: string): DocSpec {
+  return {
+    id,
+    title: `ID badge: ${name}, ${role.toLowerCase()}, night crew (3-08)`,
+    size: [0.054, 0.086],
+    paper: "card",
+    tags: ["creepy"],
+    density: 7,
+    draw(d) {
+      const w = d.wmm
+      const c = d.ctx
+      d.rect(0, 0, w, 17, 0, "#1f3350", "#1f3350")
+      c.save()
+      c.fillStyle = "#e8e4d8"
+      c.beginPath()
+      c.roundRect(w / 2 - 6.5, 2.2, 13, 2.6, 1.3)
+      c.fill()
+      c.restore()
+      d.print("IOPS", w / 2, 12.2, { pt: 17, font: "Archivo Black", align: "center", color: "#f0ece0", spacing: 1 })
+      d.print("INTERAGENCY OFFICE OF PROPAGATION STUDIES", w / 2, 15.6, { pt: 3.2, align: "center", color: "#c9d2de" })
+      d.print("PINE HOLLOW STATION", w / 2, 21, { pt: 5.5, weight: 700, align: "center", color: "#1f3350", spacing: 0.4 })
+      // Photo: a washed-out head-and-shoulders, the way a 1980s badge laminate fades.
+      const px = 13, py = 24, pw = 28, ph = 32
+      d.rect(px, py, pw, ph, 0.2, "#556070", "#9aa4ae")
+      c.save()
+      c.beginPath()
+      c.rect(px, py, pw, ph)
+      c.clip()
+      c.fillStyle = "#4a4f58"
+      c.beginPath()
+      c.ellipse(px + pw / 2, py + ph + 4, 15, 13, 0, 0, Math.PI * 2)
+      c.fill()
+      c.fillStyle = "#c9a88c"
+      c.beginPath()
+      c.ellipse(px + pw / 2, py + 13, 6.2, 8, 0, 0, Math.PI * 2)
+      c.fill()
+      c.fillStyle = "#3b2f28"
+      c.beginPath()
+      c.ellipse(px + pw / 2, py + 7.5, 6.6, 4, 0, Math.PI, Math.PI * 2)
+      c.fill()
+      c.restore()
+      d.print(name, w / 2, 62, { pt: 9.5, font: "Libre Franklin", weight: 800, align: "center", color: "#141414" })
+      d.print(role, w / 2, 66.8, { pt: 5.8, weight: 600, align: "center", color: "#2a2a2a", spacing: 0.3 })
+      d.print(`NO. ${no}   ·   CSP / 3`, w / 2, 71.4, { pt: 4.8, align: "center", color: "#3a3a3a" })
+      d.rect(0, 74, w, 12, 0, "#b8471e", "#b8471e")
+      d.print("NIGHT CREW", w / 2, 82.3, { pt: 11, font: "Archivo Black", align: "center", color: "#f4efe2", spacing: 0.8 })
+    },
+  }
+}
+
+// The listening room the night it happened (Wed/Thu 17/18 October 1984, the night the SL six went down): the receiver
+// log, the scrawls, the chart strip, and the ID badges of the four night crew who died there (none of them SL staff).
+DOCS.push(
+  {
+    id: "log_3_08_night",
+    title: "Listening room receiver log, night of 17/18 October 1984 (3-08)",
+    size: LETTER,
+    paper: "green",
+    tags: ["desk", "creepy"],
+    draw(d) {
+      d.print("RECEIVER LOG — LISTENING ROOM 3-08", d.wmm / 2, 16, { pt: 12, weight: 800, align: "center" })
+      d.print("Signal Processing · W-1 trunk (SL arrays 1–4) · log every carrier, drift, patch change and tape", d.wmm / 2, 22, { pt: 6.5, align: "center" })
+      d.type("NIGHT OF  17/18 OCT 84     WATCH: D. KESSLER / C. WHITLOCK", 14, 31, { pt: 9 })
+      const cols = [14, 32, 186, 202]
+      ;["TIME", "OBSERVATION", "INIT"].forEach((h, i) => d.print(h, cols[i]! + 1.5, 39, { pt: 7, weight: 700 }))
+      for (let r = 0; r <= 23; r++) d.line(14, 41 + r * 9.4, 202, 41 + r * 9.4, r === 0 ? 0.4 : 0.16, INK.green)
+      for (const x of cols) d.line(x, 34, x, 41 + 23 * 9.4, 0.2, INK.green)
+      const rows: [string, string, string, string?][] = [
+        ["22:10", "RCV-2 on W-1 ch 4 (SL array 2). Noise floor nominal.", "DK"],
+        ["23:00", "Covering 3rd watch (roster struck from Wed). SL crew down 22:58.", "CW"],
+        ["23:30", "Narrowband carrier 1420.406 MHz. Dish stowed - not the dish.", "DK"],
+        ["00:52", "Carrier drifting down, 11 Hz/min. Dir. Halloran x214, no answer.", "DK"],
+        ["01:02", "Strip chart ch 2 out of paper. Reloaded (ops 3-06).", "CW"],
+        ["01:40", "Ch 2 trace periodic, 0.92 Hz. Looks like a heartbeat. Not funny.", "CW"],
+        ["01:58", "Noise floor +6 dB all channels. Hargrove & Bellamy up from 3-09.", "DK"],
+        ["02:15", "It is on every channel. Pulled the W-1 patch: still there.", "CW"],
+        ["02:16", "It's coming from SL.", "CW"],
+        ["02:51", "Voice on ch 4?? Reel 288 recording. Whitlock heard her name.", "DK", INK.ballBlue],
+        ["02:58", "Console phone. Ext 300. Nobody has been on x300 since Wed.", "DK", INK.ballBlue],
+      ]
+      rows.forEach(([t, o, i, c], r) => {
+        const y = 41 + (r + 1) * 9.4 - 2.6
+        const color = c ?? (i === "CW" ? INK.black : INK.ballBlue)
+        d.hand(t, cols[0]! + 2, y, { pt: 14, color })
+        d.hand(o, cols[1]! + 2, y, { pt: 13, color, drift: r > 7 ? -0.012 : 0.002 })
+        d.hand(i, cols[2]! + 3, y, { pt: 14, color })
+      })
+      const y = 41 + (rows.length + 1) * 9.4 - 2.6
+      d.hand("03:03", cols[0]! + 2, y, { pt: 14, color: INK.ballBlue })
+      d.hand("DON'T TAKE THE HEADPHONES OFF", cols[1]! + 3, y + 1, { pt: 19, font: "Nothing You Could Do", color: INK.ballBlue, slant: -0.1 })
+      d.scribble(cols[1]! + 4, y + 9, cols[1]! + 120, y + 14, 0.5, INK.ballBlue)
+      d.coffee(170, 236, 26, 0.3)
+      d.crease(0, 140, d.wmm, 132, 0.8)
+      d.holes(d.wmm / 2, 6)
+    },
+  },
+  ...NIGHT_CREW.map(([id, name, role, no]) => idBadge(id, name, role, no)),
+  {
+    id: "note_coming_from_sl",
+    title: "Torn sheet: IT'S COMING FROM SL (3-08)",
+    size: HALF,
+    paper: "white",
+    tags: ["desk", "floor", "creepy"],
+    draw(d) {
+      d.hand("IT'S COMING", 14, 52, { pt: 54, font: "Permanent Marker", color: INK.black, slant: -0.08 })
+      d.hand("FROM SL", 30, 104, { pt: 64, font: "Permanent Marker", color: INK.black, slant: -0.05 })
+      d.line(24, 114, 190, 118, 0.9, INK.black, 0.9)
+      d.hand("not the dish. under us.", 120, 132, { pt: 15, font: "Reenie Beanie", color: INK.pencil })
+      d.crease(0, 60, d.wmm, 70, 1)
+    },
+  },
+  {
+    id: "sticky_frequency",
+    title: "Sticky note: 1420.406, drifting, 0.92 Hz (3-08)",
+    size: [0.076, 0.076],
+    paper: "sticky",
+    tags: ["desk", "wall", "creepy"],
+    density: 4.4,
+    draw(d) {
+      d.hand("1420.406", 6, 16, { pt: 17, color: INK.ballBlue })
+      d.hand("drift -11 Hz/min", 6, 29, { pt: 12, color: INK.ballBlue })
+      d.hand("0.92 Hz = 55/min", 6, 42, { pt: 12, color: INK.ballBlue })
+      d.hand("who is on ch 4?", 6, 60, { pt: 15, color: INK.red, font: "Nothing You Could Do" })
+    },
+  },
+  {
+    id: "chart_heartbeat",
+    title: "Strip-chart paper, the last metre: a heartbeat-like trace (3-08)",
+    size: [0.26, 0.9],
+    paper: "white",
+    tags: ["floor", "creepy"],
+    density: 2.4,
+    draw(d) {
+      const w = d.wmm, h = d.hmm
+      for (let x = 10; x < w - 9; x += 5) d.line(x, 0, x, h, x % 25 === 10 ? 0.25 : 0.1, "#c4524a", 0.55)
+      for (let y = 0; y < h; y += 5) d.line(10, y, w - 10, y, y % 25 === 0 ? 0.25 : 0.1, "#c4524a", 0.55)
+      d.ctx.save()
+      d.ctx.strokeStyle = "#20203a"
+      d.ctx.lineWidth = 0.55
+      d.ctx.beginPath()
+      // Time runs down the strip; the pen swings across it. A flat noisy floor, then the beat: 0.92 Hz at 25 mm/s.
+      const mid = w / 2
+      for (let y = 4; y < h - 4; y += 0.4) {
+        const beatOn = y > h * 0.32
+        const ph = ((y - h * 0.32) / 27) % 1
+        let v = (Math.sin(y * 3.1) + Math.sin(y * 7.7) * 0.6) * 1.6
+        if (beatOn) {
+          const amp = Math.min(1, (y - h * 0.32) / 60)
+          v *= 0.5
+          if (ph < 0.04) v -= 9 * amp * Math.sin((ph / 0.04) * Math.PI)
+          else if (ph < 0.09) v += 46 * amp * Math.sin(((ph - 0.04) / 0.05) * Math.PI)
+          else if (ph < 0.14) v -= 16 * amp * Math.sin(((ph - 0.09) / 0.05) * Math.PI)
+          else if (ph > 0.3 && ph < 0.44) v += 10 * amp * Math.sin(((ph - 0.3) / 0.14) * Math.PI)
+        }
+        const x = mid + v
+        if (y === 4) d.ctx.moveTo(x, y)
+        else d.ctx.lineTo(x, y)
+      }
+      d.ctx.stroke()
+      d.ctx.restore()
+      d.print("CH 2   25 mm/s   W-1 / SL-2", 12, 8, { pt: 6, color: "#8a3a34" })
+      d.hand("01:40", 12, h * 0.32 + 4, { pt: 13, color: INK.ballBlue })
+      d.hand("?!", w - 34, h * 0.36, { pt: 20, color: INK.ballBlue })
+      d.crease(0, 300, w, 310, 1)
+      d.crease(0, 610, w, 600, 1)
+    },
+  },
+)
+
 // ---------------------------------------------------------------------------------------------------- paper
 const PAPER: Record<Paper, { color: string; rough: number; age: number; grain: number }> = {
   white: { color: "#ece7da", rough: 0.88, age: 0.45, grain: 0.06 },

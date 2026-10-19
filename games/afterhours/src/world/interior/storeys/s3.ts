@@ -62,7 +62,7 @@ export async function build(b: Builder, { pause }: StoreyContext): Promise<Store
   s.doc("plate_jc", [-32.68, FLOOR_Y + 1.5, 1.586], [0, 0, -1], { pin: "none", scale: 0.75, curl: 0 })
   await pause()
 
-  await buildNorth(s, pause)
+  const listening = await buildNorth(s, pause)
   await pause()
   await buildSouth(s, pause)
   s.flushDocs()
@@ -71,6 +71,7 @@ export async function build(b: Builder, { pause }: StoreyContext): Promise<Store
   return {
     update(t) {
       sp.update(t)
+      listening(t)
       for (const r of rooms) r.update(t)
     },
     proxy: null,

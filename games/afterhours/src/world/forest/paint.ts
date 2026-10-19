@@ -137,7 +137,7 @@ function deadTwigs(g: G, r: Rng, ox: number, oy: number) {
       a += range(r, -0.18, 0.18)
       const nx = px + (Math.cos(a) * len) / n
       const ny = py + (Math.sin(a) * len) / n
-      stroke(g, px, py, nx, ny, w * (1 - (i / n) * 0.6), `hsl(30 ${range(r, 6, 14).toFixed(0)}% ${range(r, 22, 34).toFixed(0)}%)`)
+      stroke(g, px, py, nx, ny, w * (1 - (i / n) * 0.6), `hsl(28 ${range(r, 8, 16).toFixed(0)}% ${range(r, 11, 19).toFixed(0)}%)`)
       if (depth > 0 && r() < 0.32) twig(nx, ny, a + (r() < 0.5 ? 1 : -1) * range(r, 0.5, 1.1), len * range(r, 0.25, 0.45), w * 0.6, depth - 1)
       if (r() < 0.08) stroke(g, nx, ny, nx + range(r, -8, 8), ny + range(r, -8, 8), 2, `hsl(28 40% ${range(r, 22, 32).toFixed(0)}%)`)
       px = nx
