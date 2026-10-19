@@ -40,6 +40,10 @@ export const DETAIL_MODELS = [
   "wordKeepOut",
   "wordDontOpen",
   "wordNo",
+  "tv",
+  "crowSit",
+  "crowUp",
+  "crowDown",
 ] as const
 export type DetailModel = (typeof DETAIL_MODELS)[number]
 
@@ -71,7 +75,7 @@ export type DetailSite = {
 
 export type DetailPlacementInput = Pick<
   OutbreakDetailSettings,
-  "worldDetails" | "dtTurnedOver" | "dtMail" | "dtBoxes" | "dtMarks" | "dtBins" | "dtMailboxes" | "dtStreetJunk" | "dtPoliceTape" | "dtSeed"
+  "worldDetails" | "dtTurnedOver" | "dtMail" | "dtBoxes" | "dtMarks" | "dtBins" | "dtMailboxes" | "dtStreetJunk" | "dtPoliceTape" | "dtTvs" | "dtSeed"
 >
 
 /** Most details one building can carry (inside and out); the presenter caps each model's instances on top. */
@@ -218,6 +222,15 @@ export function placeBuildingDetails(town: Town, b: Building, s: DetailPlacement
     }
   }
 
+  // A television left on against a living-room wall, its screen to the room.
+  if (home && s.dtTvs > 0) {
+    const r = rng("tv")
+    if (r.next() < s.dtTvs) {
+      const spot = againstWall(r, b, solids, taken, 0.3, 0.42, 40)
+      if (spot) push(site(town, "tv", spot.x, spot.z, spot.yaw, 0.42, {}, RUG_LIFT))
+    }
+  }
+
   // Turned over: chairs on their backs by the tables, a drawer pulled out and dumped, books off the shelves,
   // smashed plates by the kitchen counters.
   {
@@ -245,6 +258,19 @@ export function placeBuildingDetails(town: Town, b: Building, s: DetailPlacement
         for (const p of anchors((k) => KITCHEN.has(k), 2)) {
           const at = around(r, p.x, p.y, 0.7, 1.0, 10, ok(0.28, 0.5))
           if (at) push(site(town, "crockery", at.x, at.z, r.next() * Math.PI * 2, 0.28, {}, RUG_LIFT))
+        }
+      }
+      // Whoever holed up here painted a warning beside the inner door, on the face the camera sees.
+      const inner = town.doors.find((d) => d.id === `${b.id}-room`)
+      if (inner && r.next() < 0.6) {
+        const word = INNER_WORDS[Math.floor(r.next() * INNER_WORDS.length)]!
+        const w = WORDS.find((o) => o.model === word)!
+        const k = Math.min(1, 0.3 / w.height)
+        const half = (wordWidth(w.text, w.height) * k) / 2
+        const face = inner.rect[3]
+        const wall = s.dtMarks > 0 ? innerWall(town, b, face, inner.rect, half) : null
+        if (wall !== null && inBuildingFootprint(b, wall, face + 0.3)) {
+          push(site(town, word, wall, face + 0.014, 0, 0.1, { y: supportHeight(town, wall, face + 0.3) + 1.0, scale: k }))
         }
       }
     }
@@ -394,6 +420,21 @@ function againstWall(rng: Rng, b: Building, s: BuildingSolids, taken: Taken, out
   return null
 }
 
+/** Warnings painted indoors, beside the door to the back rooms. */
+const INNER_WORDS: readonly DetailModel[] = ["wordDontOpen", "wordDeadInside", "wordKeepOut", "wordHelp"]
+
+/**
+ * Centre x for a word `half` wide on the south face (z = `face`) of the wall the inner door sits in, just past one
+ * side of the door, on solid wall (not past its end): null when neither side has room.
+ */
+function innerWall(town: Town, b: Building, face: number, door: Rect, half: number): number | null {
+  const walls = town.barriers.filter((w) => w.kind === "wall" && Math.abs(w.rect[3] - face) < 0.05 && w.rect[0] >= b.rect[0] - 0.05 && w.rect[2] <= b.rect[2] + 0.05)
+  for (const x of [door[2] + 0.3 + half, door[0] - 0.3 - half]) {
+    if (walls.some((w) => x - half > w.rect[0] + 0.1 && x + half < w.rect[2] - 0.1)) return x
+  }
+  return null
+}
+
 export type CruiserSite = { key: string; x: number; z: number; yaw: number }
 
 /** Off every building, wall, window and fence by `pad`, inside the world (pieces that stand on the road beside cars). */
@@ -470,5 +511,42 @@ export function placeDetails(town: Town, s: DetailPlacementInput, ctx: { turnedO
   const out: DetailSite[] = []
   for (const b of town.buildings) out.push(...placeBuildingDetails(town, b, s, ctx.turnedOver?.has(b.id) ?? false))
   out.push(...placeCarDetails(town, s, ctx.cruisers ?? []))
+  return out
+}
+
+/** A flock of crows on the ground: where, how many, and its own roll for the birds' spots and timing. */
+export type CrowFlock = { key: string; x: number; z: number; birds: number; seed: number }
+
+/** Crows on the front lawns of some homes and at most bodies left outdoors (`dtCrows` scales the odds). */
+export function placeCrowFlocks(town: Town, s: Pick<OutbreakDetailSettings, "worldDetails" | "dtCrows" | "dtSeed">, bodies: readonly { key: string; x: number; y: number }[] = []): CrowFlock[] {
+  if (!s.worldDetails || s.dtCrows <= 0) return []
+  const out: CrowFlock[] = []
+  const taken: Taken = []
+  const add = (key: string, r: Rng, x: number, z: number) => {
+    out.push({ key, x, z, birds: 3 + Math.floor(r.next() * 4), seed: Math.floor(r.next() * 4294967296) >>> 0 })
+    taken.push({ x, z, r: 2 })
+  }
+  for (const body of bodies) {
+    if (town.buildings.some((b) => inBuildingFootprint(b, body.x, body.y))) continue
+    const r = detailRng(town, s.dtSeed, `crows-body:${body.key}`)
+    if (r.next() >= Math.min(1, 0.6 * s.dtCrows)) continue
+    const a = r.next() * Math.PI * 2
+    const x = body.x + Math.cos(a) * 0.9
+    const z = body.y + Math.sin(a) * 0.9
+    if (clearOfBuildings(town, x, z, 0.8) && clearOfTaken(taken, x, z, 2)) add(`body:${body.key}`, r, x, z)
+  }
+  for (const b of town.buildings) {
+    if (!isHome(b)) continue
+    const r = detailRng(town, s.dtSeed, `crows:${b.id}`)
+    if (r.next() >= Math.min(1, 0.3 * s.dtCrows)) continue
+    const street = streetLine(b)
+    for (let t = 0; t < 8; t++) {
+      const x = b.rect[0] - 2 + r.next() * (b.rect[2] - b.rect[0] + 4)
+      const z = b.rect[3] + 1 + r.next() * Math.max(0.5, street - b.rect[3] - 1.2)
+      if (!outdoorFree(town, x, z, 0.9, taken)) continue
+      add(`lawn:${b.id}`, r, x, z)
+      break
+    }
+  }
   return out
 }

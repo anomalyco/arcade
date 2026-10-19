@@ -44,9 +44,11 @@
   layer from the RE Mansion direction (D-30). Indoors: mail behind front doors, moving boxes, and turned-over houses
   (toppled chairs, dumped drawers, books, broken crockery; always where Blood put prints on the walls or a vignette
   broke in). Outdoors: bins and dumpsters, mailboxes, dropped luggage, bikes and prams, police tape on cones round the
-  Night lights police cars, spray-painted search marks and warnings on front walls. Placement is a pure function of
+  Night lights police cars, spray-painted search marks and warnings on front walls. Life: crows on lawns and at
+  bodies that scatter from survivors and gunshots (`crows.ts`, wing flaps from the library), televisions left on that
+  flicker on their room (`TV_LAMP_SLOT`, clipped like table lamps), dogs barking far off at night (`life.ts`). Placement is a pure function of
   the town and `dtSeed` per building and car (`placement.ts`), meshes are box-built (`models.ts`), drawn instanced
-  from `scene/frame-renderer.ts`. Tests: `tests/details.test.ts`.
+  from `scene/frame-renderer.ts`. Tests: `tests/details.test.ts`, `tests/details-life.test.ts`.
 - The look (survivor style, grade, lamps and sky as trims on the day cycle, curated presets) lives in `src/look/`;
   Lab: Backquote › Look · Presets/Hero/Grade/Lights and the `outbreak-look` lab. The look's contract is
   `../../docs/outbreak-art-direction.md`; beauty stills, flicker and paired GPU: `bun scripts/look-beauty.ts`. Stills: `bun scripts/look-stills.ts`
