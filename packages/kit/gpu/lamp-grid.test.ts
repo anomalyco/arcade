@@ -142,6 +142,36 @@ describe("LampGrid (uLampGrid 0.5 m spatial light-list grid)", () => {
     expect(kept).toEqual([2, 4, 5, 6])
   })
 
+  test("reselects overflowing lamps after a height-only change", () => {
+    const grid = new LampGrid({ width: 1, height: 1 })
+    const lights = new Float32Array(MAX_LIGHTS * LIGHT_FLOATS)
+    for (let slot = 0; slot < 5; slot++) {
+      packLight(lights, slot, 0.25, slot === 4 ? 8 : 2, 0.25, 4, 1)
+    }
+    grid.update(lights, 0, 5)
+    expect(grid.cellAt(0, 0)).toEqual([0, 1, 2, 3])
+    grid.markUploaded()
+
+    lights[4 * LIGHT_FLOATS + 1] = 0.5
+    expect(grid.update(lights, 0, 5)).toBe(true)
+    expect(grid.cellAt(0, 0)).toEqual([1, 2, 3, 4])
+    expect(grid.dirtyRows).toEqual({ minRow: 0, rowCount: 1 })
+
+    const fresh = new LampGrid({ width: 1, height: 1 })
+    fresh.update(lights, 0, 5)
+    expect(grid.data).toEqual(fresh.data)
+    grid.markUploaded()
+    expect(grid.update(lights, 0, 5)).toBe(false)
+    expect(grid.dirtyRows).toBeNull()
+
+    // With at most four lamps, height affects shading but cannot change cell membership.
+    grid.update(lights, 0, 4)
+    grid.markUploaded()
+    lights[1] = 7
+    expect(grid.update(lights, 0, 4)).toBe(false)
+    expect(grid.dirtyRows).toBeNull()
+  })
+
   test("updates grid origin when streaming chunks enter and leave", () => {
     const grid = new LampGrid()
     const lights = new Float32Array(MAX_LIGHTS * LIGHT_FLOATS)
