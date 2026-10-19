@@ -260,6 +260,19 @@ export function placeBuildingDetails(town: Town, b: Building, s: DetailPlacement
           if (at) push(site(town, "crockery", at.x, at.z, r.next() * Math.PI * 2, 0.28, {}, RUG_LIFT))
         }
       }
+      // Whoever holed up here painted a warning beside the inner door, on the face the camera sees.
+      const inner = town.doors.find((d) => d.id === `${b.id}-room`)
+      if (inner && r.next() < 0.6) {
+        const word = INNER_WORDS[Math.floor(r.next() * INNER_WORDS.length)]!
+        const w = WORDS.find((o) => o.model === word)!
+        const k = Math.min(1, 0.3 / w.height)
+        const half = (wordWidth(w.text, w.height) * k) / 2
+        const face = inner.rect[3]
+        const wall = s.dtMarks > 0 ? innerWall(town, b, face, inner.rect, half) : null
+        if (wall !== null && inBuildingFootprint(b, wall, face + 0.3)) {
+          push(site(town, word, wall, face + 0.014, 0, 0.1, { y: supportHeight(town, wall, face + 0.3) + 1.0, scale: k }))
+        }
+      }
     }
   }
 
@@ -403,6 +416,21 @@ function againstWall(rng: Rng, b: Building, s: BuildingSolids, taken: Taken, out
     if (!floorFree(b, { ...s, walls: s.walls.filter((o) => o !== w) }, taken, x, z, r, 0.9)) continue
     if (distToRect(x, z, w) < out - 0.02) continue
     return { x, z, yaw: Math.atan2(-nx, nz) }
+  }
+  return null
+}
+
+/** Warnings painted indoors, beside the door to the back rooms. */
+const INNER_WORDS: readonly DetailModel[] = ["wordDontOpen", "wordDeadInside", "wordKeepOut", "wordHelp"]
+
+/**
+ * Centre x for a word `half` wide on the south face (z = `face`) of the wall the inner door sits in, just past one
+ * side of the door, on solid wall (not past its end): null when neither side has room.
+ */
+function innerWall(town: Town, b: Building, face: number, door: Rect, half: number): number | null {
+  const walls = town.barriers.filter((w) => w.kind === "wall" && Math.abs(w.rect[3] - face) < 0.05 && w.rect[0] >= b.rect[0] - 0.05 && w.rect[2] <= b.rect[2] + 0.05)
+  for (const x of [door[2] + 0.3 + half, door[0] - 0.3 - half]) {
+    if (walls.some((w) => x - half > w.rect[0] + 0.1 && x + half < w.rect[2] - 0.1)) return x
   }
   return null
 }

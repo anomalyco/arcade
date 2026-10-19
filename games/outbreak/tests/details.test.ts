@@ -84,6 +84,13 @@ describe("world details placement", () => {
       for (const d of placeDetails(town, all)) {
         if (indoor(d)) continue
         if (onWall(d)) {
+          const inner = town.doors.find((door) => door.id.endsWith("-room") && Math.abs(door.rect[3] + 0.014 - d.z) < 1e-6)
+          if (inner) {
+            // Indoors beside the inner door, clear of it.
+            expect(d.x < inner.rect[0] - 0.3 || d.x > inner.rect[2] + 0.3).toBe(true)
+            expect(town.buildings.some((o) => inBuildingFootprint(o, d.x, d.z + 0.3))).toBe(true)
+            continue
+          }
           const b = town.buildings.find((o) => Math.abs(o.rect[3] + 0.012 - d.z) < 1e-6 && d.x > o.rect[0] && d.x < o.rect[2])!
           expect(b).toBeDefined()
           expect(frontWallSpans(town, b).some((sp) => d.x > sp.a0 && d.x < sp.a1)).toBe(true)
