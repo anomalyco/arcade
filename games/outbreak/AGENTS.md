@@ -42,6 +42,11 @@
   `../../docs/outbreak-art-direction.md`; beauty stills, flicker and paired GPU: `bun scripts/look-beauty.ts`. Stills: `bun scripts/look-stills.ts`
   (via `hivemind run --kind browser`). Defaults stay today's look until Kit picks. Soft Bean (Hero › Survivor style) has
   its own shape, colour and surface knobs; stills and paired GPU cost: `bun scripts/bean-stills.ts`.
+- Special zombies (Runner, Brute, Screamer, Bloater, Riot cop, Lurker) live in `shared/specials/` (kinds, rarity and
+  stats in `kinds.ts`, behaviours in `specials.ts`) and `src/specials/` (silhouettes and accessories drawn by
+  `src/zombies.ts`, gas cloud, Lab). The kind is encoded in the zombie's seed, so clients read it with
+  `specialKindOf(seed)`. Lab: Backquote › Specials (rarity, stats, "Spawn <kind> ahead"); `arcade cmd specials.spawn
+  kind=brute`. Sounds: `src/audio/specials.ts`. Tests: `tests/specials.test.ts`.
 - Driving FX (skid marks, tyre smoke/dust, screech) come from per-wheel slip in `src/vehicles.ts` via `@arcade/kit/vehicle/slip`
   and `@arcade/kit/fx/skids`; Lab › Driving FX and the `outbreak-vehicles` station's drift/burnout variants. Proof:
   `bun scripts/prove-driving-fx.ts` (via `hivemind run --kind browser --fetch captures/driving-fx`).

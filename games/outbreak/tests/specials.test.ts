@@ -21,7 +21,14 @@ import {
   type SpecialsTuning,
 } from "../shared/specials/kinds"
 import { classifySpecials, spawnSpecial, specialsOf } from "../shared/specials/specials"
+import { supportHeight } from "../shared/terrain"
 import type { PistolAmmo } from "../shared/types"
+import { Vision } from "../shared/vision"
+import { SoundDirector, type SoundEvent } from "../src/audio/director"
+import { soundWorld } from "../src/audio/world"
+import { specialAccessoryMeshes, SPECIAL_LOOKS } from "../src/specials/figure"
+import { zombieTuning } from "../src/zombie-profile"
+import { ZombieCrowdRenderer } from "../src/zombies"
 
 const idle = { mx: 0, my: 0, aim: 0, interact: false }
 
@@ -318,5 +325,52 @@ describe("special zombies in co-op", () => {
     }
     expect(checked).toBeGreaterThan(500)
     expect(specials).toBeGreaterThan(0)
+  })
+})
+
+describe("special zombies, read and heard", () => {
+  test("each kind draws with its own scale and accessories", () => {
+    const sim = world(23)
+    const all = [SPECIAL_RUNNER, SPECIAL_BRUTE, SPECIAL_SCREAMER, SPECIAL_BLOATER, SPECIAL_RIOT, SPECIAL_LURKER] as const
+    all.forEach((k, i) => spawnSpecial(sim, k, 40 + i * 2, 50, 0))
+    sim.ai.spawnZombie(sim.town, 40, 54)
+    let model = 0
+    const crowd = new ZombieCrowdRenderer({ addModel: () => model++ })
+    const vision = new Vision()
+    vision.update(44, 50, 0, sightRects(sim.town), { range: 96, cone: 360, awareness: 96 })
+    let batches: ReturnType<ZombieCrowdRenderer["draw"]> = []
+    for (let f = 0; f < 3; f++) {
+      batches = crowd.draw(sim.ai.agents, TICK_DT, (x, z) => supportHeight(sim.town, x, z), vision, [0, 0, 96, 96], { ...zombieTuning, zombieLook: 1 }, false)
+    }
+    const scales = new Set<number>()
+    for (const b of batches) for (let i = 0; i < b.count; i++) scales.add(Math.round(b.data[i * 12 + 7]! * 100) / 100)
+    expect(scales.has(1)).toBe(true)
+    for (const k of all) expect(scales.has(Math.round(SPECIAL_LOOKS[k].scale * 100) / 100)).toBe(true)
+    const accessoryCount = specialAccessoryMeshes().length
+    expect(accessoryCount).toBe(7)
+    // Bib, helmet, shield, shoulders, belly, jaw and eyes: one each.
+    const accessoryBatches = batches.filter((b) => b.count === 1 && b.model < accessoryCount + 9 && b.model >= 9)
+    expect(accessoryBatches.length).toBe(accessoryCount)
+  })
+
+  test("a Screamer's shriek, a Bloater's burst and a bullet off a riot shield are heard", () => {
+    const sim = world(23)
+    const director = new SoundDirector()
+    const listener = { x: 45, y: 46 }
+    const screamer = spawnSpecial(sim, SPECIAL_SCREAMER, 48, 46, Math.PI)!
+    const bloater = spawnSpecial(sim, SPECIAL_BLOATER, 44, 50, 0)!
+    const riot = spawnSpecial(sim, SPECIAL_RIOT, 49, 44, Math.PI)!
+    director.observe(soundWorld(sim), listener)
+    sim.time += 0.1
+    screamer.state = "alert"
+    bloater.state = "dead"
+    riot.aim = Math.PI
+    const p = armed(sim, 45, 44, 0)
+    sim.combat.firePistol(p, sim.ai, sightRects(sim.town), sim.time, ammo(), "player")
+    const events: SoundEvent[] = director.observe(soundWorld(sim), listener)
+    const ids = events.map((e) => `${e.id}@${e.rate ?? 1}`)
+    expect(ids).toContain("zombie.alert@1.55")
+    expect(ids).toContain("zombie.hit@0.5")
+    expect(events.some((e) => e.id === "impact.bullet.metal")).toBe(true)
   })
 })
