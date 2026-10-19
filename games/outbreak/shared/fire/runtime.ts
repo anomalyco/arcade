@@ -331,13 +331,10 @@ export function stepFlamethrower(sim: OutbreakSim, slot: SurvivorSlot, command: 
   for (const a of sim.ai.agents) {
     if (!alive(a) || !inStream(p, a.x, a.y, reach, t.flameCone, 0.35) || !clearLine(p.x, p.y, a.x, a.y, blockers)) continue
     a.hp = Math.max(0, a.hp - t.flameDps * dt)
-    a.hitFlash = 1
-    if (a.hp <= 0) {
-      kill(a, slot.id)
-      ignite(sim, a, slot.id, t)
-      continue
-    }
+    a.hitFlash = Math.max(a.hitFlash, 0.3)
+    // Alight first, so one the stream kills outright still falls charred.
     ignite(sim, a, slot.id, t)
+    if (a.hp <= 0) kill(a, slot.id)
   }
   for (const other of sim.slots) {
     if (other === slot) continue
@@ -404,6 +401,8 @@ export function explode(sim: OutbreakSim, x: number, y: number, by: string, t: F
     const ang = d > 0.05 ? Math.atan2(a.y - y, a.x - x) : hash01(a.id, 3) * Math.PI * 2
     const push = t.dynKnockback * (0.35 + 0.65 * f)
     a.hp = Math.max(0, a.hp - t.dynDamage * f)
+    // The near ones are set alight (before the blast kills them, so they fall charred).
+    if (f > 0.4) ignite(sim, a, by, t)
     a.hitFlash = 1
     a.awareness = 1
     a.lastHitBy = by
@@ -418,7 +417,6 @@ export function explode(sim: OutbreakSim, x: number, y: number, by: string, t: F
       a.stateTime = 0
       a.timer = 1.6 + f * 1.4
     }
-    if (f > 0.4 && alive(a)) ignite(sim, a, by, t)
   }
   for (const s of sim.slots) {
     const p = s.survivor

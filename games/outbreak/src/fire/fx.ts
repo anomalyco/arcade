@@ -180,8 +180,8 @@ export function fireAddSprites(frame: FireFrame, sprites: Float32Array, start: n
       const billow = 0.7 * smooth(0.55, 1, u) * u
       const y = n0.y - sink + ver * spread * 0.5 + billow
       const [r, gg, b] = flameColour(Math.min(1, u * 1.05 + 0.08 * fireHash(i, cycle)))
-      const size = 0.08 + 0.62 * Math.pow(u, 0.85) + 0.3 * smooth(0.6, 1, u)
-      const a = bright * smooth(0, 0.05, u) * (1 - smooth(0.7, 1, u)) * (0.32 + 0.3 * (1 - u))
+      const size = 0.12 + 0.7 * Math.pow(u, 0.85) + 0.3 * smooth(0.6, 1, u)
+      const a = bright * smooth(0, 0.05, u) * (1 - smooth(0.72, 1, u)) * (0.75 + 0.55 * (1 - u))
       push(x, y, z, size, r, gg, b, a)
     }
     // The hot core: a tight bright jet through the first third.
@@ -190,7 +190,7 @@ export function fireAddSprites(frame: FireFrame, sprites: Float32Array, start: n
       const u = fract(time * 4.3 + i / C)
       const dist = len * 0.42 * u
       const w = (fireHash(i, Math.floor(time * 4.3 + i / C)) - 0.5) * 0.12 * u
-      push(n0.x + dx * dist - dy * w, n0.y - 0.05 * u, n0.z + dy * dist + dx * w, 0.07 + 0.14 * u, 1, 0.9, 0.7, bright * 0.55 * (1 - u * 0.6))
+      push(n0.x + dx * dist - dy * w, n0.y - 0.05 * u, n0.z + dy * dist + dx * w, 0.1 + 0.2 * u, 1, 0.9, 0.7, bright * 0.95 * (1 - u * 0.6))
     }
     // Where it comes down: a low glow on the ground under the fire.
     const ex = n0.x + dx * len * 0.82
@@ -486,21 +486,21 @@ export function fireLights(frame: FireFrame, push: (x: number, h: number, z: num
     const k = flicker(time, s.id.length)
     const dx = Math.cos(s.aim)
     const dy = Math.sin(s.aim)
-    add(s.x + dx * len * 0.35, g + 1.1, s.y + dy * len * 0.35, R * 0.85, [1, 0.62, 0.3], 1.25 * P * k)
-    add(s.x + dx * len * 0.85, g + 0.8, s.y + dy * len * 0.85, R, warm, 1.45 * P * flicker(time, s.id.length + 5))
+    add(s.x + dx * len * 0.35, g + 1.1, s.y + dy * len * 0.35, R * 0.85, [1, 0.62, 0.3], 0.6 * P * k)
+    add(s.x + dx * len * 0.85, g + 0.8, s.y + dy * len * 0.85, R, warm, 0.75 * P * flicker(time, s.id.length + 5))
   }
   const agents = agentMap(view)
   for (const st of ring(view, "burn", BURN_RING)) {
     if (!burning(st, time)) continue
     const z = agents.get(burnZombie(st))
     if (!z || !near(view, z.x, z.y)) continue
-    add(z.x, support(z.x, z.y) + 1.25, z.y, R * 0.75, warm, 0.95 * P * burnLevel(st, time) * flicker(time, z.id))
+    add(z.x, support(z.x, z.y) + 1.25, z.y, R * 0.75, warm, 0.45 * P * burnLevel(st, time) * flicker(time, z.id))
   }
   for (const st of ring(view, "fire", FIRE_RING)) {
     if (!fireLit(st, time) || !near(view, st.at!.x, st.at!.y)) continue
     const r = (st.counts.r ?? 0) / 100
     const lvl = 1 - smooth(0.65, 1, lifeAge(st, time))
-    add(st.at!.x, support(st.at!.x, st.at!.y) + 0.5 + r * 0.2, st.at!.y, R * (0.45 + 0.25 * r), warm, (0.35 + 0.35 * r) * P * lvl * flicker(time, Math.round(st.at!.x * 10)))
+    add(st.at!.x, support(st.at!.x, st.at!.y) + 0.5 + r * 0.2, st.at!.y, R * (0.45 + 0.25 * r), warm, (0.15 + 0.2 * r) * P * lvl * flicker(time, Math.round(st.at!.x * 10)))
   }
   for (const st of ring(view, "dyn", DYN_RING)) {
     if (!st.counts.t || !st.at) continue
@@ -510,8 +510,8 @@ export function fireLights(frame: FireFrame, push: (x: number, h: number, z: num
       add(p.x, support(p.x, p.y) + p.h + 0.3, p.y, 2.4, [1, 0.6, 0.25], 0.3 * P * flicker(time * 2.5, st.counts.t))
     } else if (age < 1.2) {
       const g = support(st.at.x, st.at.y)
-      if (age < 0.14) add(st.at.x, g + 2.2, st.at.y, look.dynRadius * 3.2, [1, 0.88, 0.7], 7 * look.blastFlash * (1 - age / 0.14))
-      add(st.at.x, g + 1.4, st.at.y, look.dynRadius * 2, warm, 2.8 * P * Math.pow(1 - age / 1.2, 2))
+      if (age < 0.14) add(st.at.x, g + 2.2, st.at.y, look.dynRadius * 3.2, [1, 0.88, 0.7], 4.5 * look.blastFlash * (1 - age / 0.14))
+      add(st.at.x, g + 1.4, st.at.y, look.dynRadius * 2, warm, 1.8 * P * Math.pow(1 - age / 1.2, 2))
     }
   }
   for (const st of ring(view, "crack", CRACK_RING)) {

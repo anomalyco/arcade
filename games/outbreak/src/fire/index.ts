@@ -106,7 +106,7 @@ export const outbreakFireFeature = registerOutbreakClientFeature({
         felt.set(key, st.counts.t)
         const { x, y } = st.at
         const d = Math.hypot(x - view.player.x, y - view.player.y)
-        ctx.cam.add(Math.max(0, Math.min(1, 1.1 - d / 32)))
+        ctx.cam.add(Math.max(0, Math.min(1, 1.1 - d / 32)) * ctx.settings.fire.blastShake)
         // Blood thrown out from the dead caught in it.
         const R = ctx.settings.fire.dynRadius * 1.2
         let n = 0

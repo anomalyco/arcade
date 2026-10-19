@@ -10,28 +10,52 @@ const MAX_CAND = 40
 
 type Pool = { model: number; data: Float32Array<ArrayBuffer>; count: number }
 
-/** A soot blot: a dark core, ragged lobes round it and a fainter rim, flat on the ground. Unit radius. */
+const UP = [0, 1, 0] as const
+
+/** A ragged flat blob on the ground: a fan from `core` at the centre out through `mid` to `rim` at a wavy edge. */
+function blot(m: Mesh, seed: number, cx: number, cz: number, r: number, core: Rgb, mid: Rgb, rim: Rgb, y = 0): void {
+  const n = 18
+  const amps = [0, 1, 2, 3].map((k) => (0.28 * (0.5 + fireHash(seed, k))) / (k + 1.4))
+  const phases = [0, 1, 2, 3].map((k) => fireHash(seed, k + 9) * Math.PI * 2)
+  const edge = (t: number) => r * Math.max(0.45, 1 + amps.reduce((s, a, k) => s + a * Math.sin((k + 2) * t + phases[k]!), 0))
+  const at = (t: number, f: number): [number, number, number] => [cx + Math.cos(t) * edge(t) * f, y, cz + Math.sin(t) * edge(t) * f]
+  for (let i = 0; i < n; i++) {
+    const t0 = (i / n) * Math.PI * 2
+    const t1 = ((i + 1) / n) * Math.PI * 2
+    // Counter-clockwise in (x, z) seen from above, emitted reversed so the face points up through back-face culling.
+    m.vert([cx, y, cz], UP, core, MAT.lit)
+    m.vert(at(t1, 0.55), UP, mid, MAT.lit)
+    m.vert(at(t0, 0.55), UP, mid, MAT.lit)
+    m.vert(at(t0, 0.55), UP, mid, MAT.lit)
+    m.vert(at(t1, 0.55), UP, mid, MAT.lit)
+    m.vert(at(t1, 1), UP, rim, MAT.lit)
+    m.vert(at(t0, 0.55), UP, mid, MAT.lit)
+    m.vert(at(t1, 1), UP, rim, MAT.lit)
+    m.vert(at(t0, 1), UP, rim, MAT.lit)
+  }
+}
+
+/** Soot on the ground: a ragged dark core and a few smaller blots round it (a crater adds thrown streaks). Unit radius. */
 function scorchMesh(seed: number, crater: boolean): Mesh {
   const m = new Mesh()
-  const soot: Rgb = hex(crater ? 0x0b0a09 : 0x100e0c)
-  const rim: Rgb = hex(crater ? 0x1c1915 : 0x1f1b17)
-  m.prism(0, 0, 0.72, 0.72, 0, 0.003, 14, soot, MAT.lit, 0, true, seed)
-  for (let i = 0; i < 7; i++) {
-    const a = (i / 7) * Math.PI * 2 + fireHash(seed, i) * 0.7
-    const d = 0.45 + fireHash(seed, i + 10) * 0.35
-    const r = 0.22 + fireHash(seed, i + 20) * 0.25
-    m.prism(Math.cos(a) * d, Math.sin(a) * d, r, r, 0, 0.002, 9, i % 2 ? rim : soot, MAT.lit, 0, true, a)
+  const core = hex(0x070605)
+  const mid = hex(crater ? 0x0d0b09 : 0x110e0c)
+  const rim = hex(0x1d1a17)
+  blot(m, seed, 0, 0, crater ? 0.62 : 0.5, core, mid, rim)
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2 + fireHash(seed, i) * 0.9
+    const d = 0.45 + fireHash(seed, i + 10) * 0.3
+    blot(m, seed + i * 17, Math.cos(a) * d, Math.sin(a) * d, 0.12 + fireHash(seed, i + 20) * 0.14, mid, mid, rim, 0.0004)
   }
   if (crater) {
-    // Blast streaks thrown out from the centre, and a ring of broken ground.
     for (let i = 0; i < 11; i++) {
       const a = (i / 11) * Math.PI * 2 + fireHash(seed, i + 30) * 0.4
-      const len = 0.7 + fireHash(seed, i + 40) * 0.8
-      m.yawBox(Math.cos(a) * len * 0.6, Math.sin(a) * len * 0.6, len, 0.06 + 0.05 * fireHash(seed, i + 50), 0, 0.0025, -a, soot, MAT.lit)
+      const len = 0.5 + fireHash(seed, i + 40) * 0.6
+      m.yawBox(Math.cos(a) * (0.55 + len * 0.5), Math.sin(a) * (0.55 + len * 0.5), len, 0.04 + 0.04 * fireHash(seed, i + 50), 0, 0.0008, -a, mid, MAT.lit)
     }
     for (let i = 0; i < 9; i++) {
       const a = (i / 9) * Math.PI * 2 + fireHash(seed, i + 60)
-      m.yawBox(Math.cos(a) * 0.78, Math.sin(a) * 0.78, 0.12, 0.08, 0, 0.03, a, hex(0x2a2520), MAT.lit)
+      m.yawBox(Math.cos(a) * 0.66, Math.sin(a) * 0.66, 0.1, 0.07, 0, 0.025, a, hex(0x24201b), MAT.lit)
     }
   }
   return m
