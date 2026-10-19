@@ -433,7 +433,8 @@ export function buildBloodMeshes(value = 1): BloodModelBuild[] {
     for (let v = 0; v < BLOOD_VARIANTS[kind]; v++) {
       const rng = new Rng(seedOf(kind, v))
       const wall = (BLOOD_WALL_KINDS as readonly string[]).includes(kind)
-      const mat: Mat = kind === "pool" ? MAT.shiny : wall ? MAT.wall : MAT.lit
+      // Matte, pools included: a glossy pool caught the flashlight as a bright reflective blotch.
+      const mat: Mat = wall ? MAT.wall : MAT.lit
       const mesh = new Mesh()
       const p = new Painter(mesh, mat)
       if (kind === "pool") poolShape(p, rng, pal, true)
