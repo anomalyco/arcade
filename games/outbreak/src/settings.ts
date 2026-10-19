@@ -39,6 +39,7 @@ import {
   type OutbreakLightingSettings,
 } from "./lighting"
 import { DEFAULT_PEEK_VIEW, type PeekViewSettings } from "./peek-view"
+import { DEFAULT_ANTI_ALIASING_SETTINGS, type AntiAliasingSettings } from "./anti-aliasing/settings"
 import { DEFAULT_LOOK_TRIMS, type OutbreakLookTrims } from "./look/world"
 import { DEFAULT_NIGHT_LIGHT_SETTINGS, type OutbreakNightLightSettings } from "./night-lights/settings"
 import { DEFAULT_DETAIL_SETTINGS, type OutbreakDetailSettings } from "./details/settings"
@@ -88,7 +89,8 @@ export type OutbreakDayCycleSettings = DayNightCurveSettings & {
 
 export type OutbreakViewSettings = CameraShakeSettings &
   CameraLeadSettings &
-  PeekViewSettings & {
+  PeekViewSettings &
+  AntiAliasingSettings & {
   zoom: number
   diagnostic: number
   quality: QualityMode
@@ -168,6 +170,7 @@ export const DEFAULT_OUTBREAK_VIEW: OutbreakViewSettings = {
   ...cameraShakeDefaults(),
   ...DEFAULT_CAMERA_LEAD,
   ...DEFAULT_PEEK_VIEW,
+  ...DEFAULT_ANTI_ALIASING_SETTINGS,
 }
 
 export const DEFAULT_OUTBREAK_COMBAT: OutbreakCombatSettings = {

@@ -3,6 +3,7 @@
  * this module once and passes the registry to the Lab, commands, harness, feel tracker and `NetSession`; a new
  * feature adds one line here and never edits `main.ts`.
  */
+import "./anti-aliasing/index"
 import "./blood/index"
 import "./bodies/index"
 import "./crafting/index"
