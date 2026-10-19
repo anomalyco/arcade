@@ -150,6 +150,21 @@ proven animation techniques to animation.md, not here.
 
 ## Rendering (WebGPU)
 
+- **Temporal upscaling buys Outbreak's 2× Retina frame back; keep MSAA in the smaller scene pass and add volumetrics
+  after the resolve.** `@arcade/kit/gpu/temporal` (AR-72, after three.js r186 `TAAUNode` + FSR1 RCAS; rules for passes in
+  [rendering-techniques.md](rendering-techniques.md#entries--post--grade)). Outbreak Lab › Anti-aliasing: MSAA (today) /
+  TAA / TAA + upscale, render scale, sharpen, history weight. One combined Studio run (`games/outbreak/scripts/taa-proof.ts`,
+  headless Metal, 3456×1894, 5 rotated rounds, another browser job sharing the GPU, so MADs are wide): GPU (timestamps)
+  MSAA → TAA + upscale 0.67 (2316×1269 internal) street night 9.54 → 7.29 ms, horde night 13.88 → 8.86 ms (paired Δ
+  −2.62, MAD 2.4), start house 11.33 → 8.51 ms (Δ −3.75, MAD 0.51), street day 11.96 → 8.57 ms (Δ −3.92, MAD 1.77);
+  harness step (sim + draw + GPU done) 15.5–18.2 → 12.4–14.3 ms, i.e. under the 16.7 ms budget in every scene where
+  MSAA was over it. TAA at native costs +0.6 to +2.9 ms (one noisy +5 ms). Walking flicker (look-beauty's metric, 1536×1024)
+  night street high-pass P90 0.0135 → 0.0070 TAA → 0.0057 TAA + upscale, start house 0.0128 → 0.0090 → 0.0073, day
+  street 0.0134 → 0.0125 → 0.0112. Lessons: the first run's TAA columns lost the shroud because the resolve clamped
+  the HDR alpha to 0..1 and Outbreak packs `1 + 4 × unseen` there (fixed: alpha unclamped, clipped to the 3×3 range),
+  so the night flicker figures above flatter TAA where the shroud's noise film was missing and the look and ghosting
+  sign-off needs a second run; flame, beam and fast-zombie crops showed no trail, and moving actors are softer under
+  upscaling (no history, wide kernel). Default stays MSAA until then.
 - **Bake detailed textures off the main thread into a small texture-array pool, nearest rooms first, and carry their UV
   in the vertex colour.** Outbreak's rugs (`packages/kit/textures/rug.ts`, `games/outbreak/src/interiors/`) are
   generated from a seed (Persian field, medallion, spandrels, nested borders, knot grid, abrash, wear, fade, fringes;
