@@ -22,6 +22,9 @@
   then `--against before.json` (SimState hashes from `CoopSim` and pure `stepSim`, snapshot wire bytes and survivor-bot
   batch results for fixed seeds), the Outbreak tests, and `bun scripts/parity-capture.ts --label <name>` on one worker
   (`hivemind run --kind browser --worker studio --fetch captures/parity`) then `--compare <dirA> <dirB>`.
+- Difficulty: `tests/difficulty-ramp.test.ts` (in `bun run check`) holds the bot-played ramp inside tolerance bands;
+  `bun scripts/difficulty-ramp.ts` writes the full report and charts. Change a band only with a deliberate difficulty
+  change, in the same PR (`../../docs/outbreak-difficulty.md`).
 - `bun scripts/check-cycles.ts` (part of `bun run check`) fails on any import cycle between Outbreak modules, type
   imports included.
 - Sound lives in `src/audio/` and plays the shared library (`../../docs/sfx-library.md`). `SoundDirector` turns `CoopSim`

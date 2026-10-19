@@ -59,6 +59,8 @@ docs folder. Start with `AGENTS.md` at the root; it says which of these to read 
 - [outbreak-progression.md](outbreak-progression.md): Outbreak's inventory (hotbar, belt, pack, containers, drops)
   and the safehouse workbench, built on the `@arcade/kit/sim/ledger` store-and-rule engine. Read before changing
   items, loot, crafting or `shared/progression.ts`.
+- [outbreak-difficulty.md](outbreak-difficulty.md): the difficulty-ramp playtest (survivor bots, per-hour probe,
+  banded test in `bun run check`, full batch with charts) and how to update its bands. Read before tuning difficulty.
 - [outbreak-discovery.md](outbreak-discovery.md): D-19 "Discovered, Not Told": state read from the world instead of
   labels (beam, boards, open containers), and how the squad learns recipes. Read before adding HUD text or recipes.
 - [outbreak-hud.md](outbreak-hud.md): Outbreak's character HUD, what other games put on the character, and the defaults.

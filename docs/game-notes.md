@@ -140,6 +140,12 @@ proven animation techniques to animation.md, not here.
   an actual kill with a two-second respawn, 240 firing/reload ticks with ammo remaining and no reload delay, and the
   passive/live toggle. `tests/sandbox.test.ts` now verifies five idle minutes and respawning at the original dummy
   position/aim; explicit peaceful mode prevents the B shortcut from reactivating bots. Runtime cost is unmeasured.
+- **Bot-played difficulty curves as a test.** Outbreak's survivor bots play fixed seeds while a read-only per-tick
+  probe (`BotRunConfig.observe`, `shared/difficulty-ramp.ts`) buckets pressure, damage, resources and deaths per game
+  hour and phase. `tests/difficulty-ramp.test.ts` runs 16 games to dawn 3 on up to 4 workers (~4 s on an M-series Mac; one thread on CI took 70 s for 24 games) and holds ratios (night over day,
+  Night 3 over Night 2, ramp-in) and survival per preset inside loose bands; `scripts/difficulty-ramp.ts` is the full
+  report. It found the director's ramp ending at Night 2 (16 zombies, 3 chasers on every later night). See
+  [outbreak-difficulty.md](outbreak-difficulty.md).
 
 ## Rendering (WebGPU)
 

@@ -257,6 +257,8 @@ export type BotRunConfig = {
   /** Optional interval (s) at which to capture full `ForkSnapshotCheckpoint`s during the run. */
   captureCheckpointsEverySeconds?: number
   configLabel?: string
+  /** Read-only probe called once per tick after the world steps (difficulty-ramp telemetry). Must not mutate the sim. */
+  observe?: (sim: CoopSim, slots: readonly SurvivorSlot[], dt: number) => void
 }
 
 export type BotRunResult = {
@@ -696,6 +698,7 @@ export function runHeadlessBotGame(config: BotRunConfig): BotRunResult {
     })
 
     sim.stepWorld(stepDt, timeScale)
+    config.observe?.(sim, slots, stepDt)
 
     let glassStepsAfter = 0
     for (const st of sim.progression.ledger.stores.values()) if (st.id.startsWith("glass:")) glassStepsAfter += st.counts.steps ?? 0
