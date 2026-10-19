@@ -80,6 +80,24 @@ describe("Outbreak weather integration", () => {
     expect(u[35]).toBe(0)
   })
 
+  test("rain follows the roofs when the streaming window swaps buildings without changing their count", () => {
+    const s = { ...DEFAULT_OUTBREAK_WEATHER }
+    setOutbreakWeatherState(s, "rain")
+    const ctrl = new OutbreakWeatherController()
+    const town = makeTown(7, 7, 0.22)
+    const first = ctrl.stepAndPrepare({ ...frame(s), town }).prepareInput!.excludeRects!
+    expect(first).toEqual(town.buildings.map((b) => b.rect))
+    const moved = {
+      ...town,
+      buildings: town.buildings.map((b) => ({ ...b, rect: [b.rect[0] + 96, b.rect[1] + 96, b.rect[2] + 96, b.rect[3] + 96] as typeof b.rect })),
+    }
+    expect(moved.buildings.length).toBe(town.buildings.length)
+    expect(moved.seed).toBe(town.seed)
+    const second = ctrl.stepAndPrepare({ ...frame(s, { simTime: 10.02 }), town: moved }).prepareInput!.excludeRects!
+    expect(second).toEqual(moved.buildings.map((b) => b.rect))
+    expect(second[0]).not.toEqual(first[0])
+  })
+
   test("a forced near strike flashes, lifts the shroud, lights its spot and throws sparks", () => {
     const s = { ...DEFAULT_OUTBREAK_WEATHER }
     setOutbreakWeatherState(s, "storm")
