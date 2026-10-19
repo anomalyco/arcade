@@ -159,6 +159,8 @@ export type CueRecipe = {
   loop?: boolean
   cooldownSeconds?: number
   maxVoices?: number
+  /** Voice priority (0..100, default derived from category). Higher-priority voices steal lower-priority ones and are never stolen by them. */
+  priority?: number
   steal?: StealPolicy
   pitchVariation?: number
   gainVariation?: number
@@ -188,6 +190,8 @@ export type PlayCueOptions = {
   decaySeconds?: number
   pitchVariation?: number
   gainVariation?: number
+  /** Optional voice priority override (0..100). */
+  priority?: number
   /** Logical owner/emitter key for `"replace"` stealing policy. */
   ownerKey?: string
 }
@@ -204,6 +208,7 @@ export type VoiceHandle = {
   readonly id: number
   readonly cueId: string
   readonly category: MixCategory
+  readonly priority: number
   readonly startTime: number
   readonly endTime: number
   readonly active: boolean

@@ -196,12 +196,17 @@ export class OutbreakAudio {
   /** Plays one library sound at a plan position with the entry's range. */
   play(event: SoundEvent): VoiceHandle | null {
     const entry = sfxEntry(event.id)
+    const rolloff = this.settings.audioFalloff ?? 1.55
     const voice = this.runtime.playCue(event.id, {
       time: this.runtime.now + (event.delay ?? 0),
       gain: event.gain,
       rate: event.rate,
       cutoffHz: event.cutoffHz,
-      position: entry.range.max > 0 ? { x: event.x, z: event.y, refDistance: entry.range.ref, maxDistance: entry.range.max, rolloff: 1.4 } : undefined,
+      priority: event.priority,
+      position:
+        entry.range.max > 0
+          ? { x: event.x, z: event.y, refDistance: entry.range.ref * 0.78, maxDistance: entry.range.max, rolloff }
+          : undefined,
     })
     if (voice) {
       this.counts.played++
@@ -267,33 +272,50 @@ export class OutbreakAudio {
   private ambience(frame: AudioFrame): void {
     const day = dayCycle(frame.hour)
     const dark = 1 - day.sun
-    // The day cycle's threat curve (the one the AI and the look follow), raised further by zombies on you.
-    const threat = Math.min(1, day.threat * 0.45 + Math.min(1, frame.pursuing / 3) * 0.55)
-    const muffle = 1 - this.indoor * 0.55
+    // The day cycle's threat curve (the one the AI and the look follow), raised further by zombies on you, plus a hushed indoor room tone.
+    const threat = Math.min(1, day.threat * 0.4 + Math.min(1, frame.pursuing / 3) * 0.55 + this.indoor * 0.14)
+    const muffle = 1 - this.indoor * 0.68
     const wanted: Record<Bed, number> = {
       "ambience.day.suburb": day.sun * muffle,
       "ambience.night.suburb": dark * muffle,
-      "ambience.threat": threat * (0.6 + 0.4 * muffle),
+      "ambience.threat": threat * (0.55 + 0.45 * muffle),
     }
-    const cutoff = 18000 * Math.pow(1100 / 18000, this.indoor)
+    const outdoorCutoff = 14000 * Math.pow(750 / 14000, this.indoor)
+    const threatCutoff = 2600 * Math.pow(420 / 2600, this.indoor * (1 - Math.min(1, frame.pursuing / 3)))
     const ease = Math.min(1, frame.dt * 1.5)
     // The horde: every moving zombie near you beyond the few heard step by step, panned toward the crowd.
     this.hordeLevel += (this.zombieSteps.horde.level - this.hordeLevel) * Math.min(1, frame.dt * 2)
     const hordeGain = this.hordeLevel * muffle * sfxEntry("zombie.horde.shuffle").gain
-    if (!this.live) this.horde = null
-    else if (this.horde?.active) this.horde.setParams({ gain: hordeGain, pan: this.zombieSteps.horde.pan, cutoffHz: cutoff }, 0.2)
-    else if (hordeGain > 0.01) this.horde = this.runtime.playCue("zombie.horde.shuffle", { gain: Math.max(0.01, this.hordeLevel * muffle), ownerKey: "horde" })
+    if (!this.live) {
+      this.horde = null
+    } else if (this.horde?.active) {
+      if (hordeGain < 0.003 && this.zombieSteps.horde.level === 0) {
+        this.horde.stop(0.25)
+        this.horde = null
+      } else {
+        this.horde.setParams({ gain: hordeGain, pan: this.zombieSteps.horde.pan, cutoffHz: outdoorCutoff }, 0.2)
+      }
+    } else if (hordeGain > 0.01) {
+      this.horde = this.runtime.playCue("zombie.horde.shuffle", { gain: Math.max(0.01, hordeGain), cutoffHz: outdoorCutoff, ownerKey: "horde" })
+    }
     for (const bed of BEDS) {
       this.bedLevels[bed] += (wanted[bed] - this.bedLevels[bed]) * ease
       const gain = this.bedLevels[bed] * sfxEntry(bed).gain
+      const cutoff = bed === "ambience.threat" ? threatCutoff : outdoorCutoff
       const voice = this.beds[bed]
       if (!this.live) {
         if (voice) delete this.beds[bed]
         continue
       }
-      if (voice?.active) voice.setParams({ gain, cutoffHz: cutoff }, 0.2)
-      else if (gain > 0.01) {
-        const started = this.runtime.playCue(bed, { gain: Math.max(0.01, this.bedLevels[bed]), ownerKey: bed })
+      if (voice?.active) {
+        if (gain < 0.003 && wanted[bed] < 0.005) {
+          voice.stop(0.35)
+          delete this.beds[bed]
+        } else {
+          voice.setParams({ gain, cutoffHz: cutoff }, 0.2)
+        }
+      } else if (gain > 0.01) {
+        const started = this.runtime.playCue(bed, { gain: Math.max(0.01, gain), cutoffHz: cutoff, ownerKey: bed })
         if (started) this.beds[bed] = started
       }
     }

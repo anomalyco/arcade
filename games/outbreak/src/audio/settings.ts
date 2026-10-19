@@ -10,16 +10,19 @@ export const DEFAULT_AUDIO_SETTINGS = {
   audioMuted: 0,
   ...DEFAULT_VOLUME_SETTINGS,
   audioWeapons: 100,
-  audioMovement: 100,
   audioZombies: 100,
-  audioAmbience: 70,
+  audioImpacts: 95,
+  audioMovement: 85,
+  audioAmbience: 65,
   audioUi: 80,
   /** How much walls and closed doors muffle sound, 0..1. */
   audioOcclusion: 1,
+  /** Distance rolloff exponent for spatial sounds. */
+  audioFalloff: 1.55,
   /** Reverb send level, 0..1. */
   audioReverb: 0.45,
-  /** Simultaneous one-shot voices before the oldest is stolen. */
-  audioVoiceCap: 24,
+  /** Simultaneous one-shot voices before the lowest-priority voice is stolen. */
+  audioVoiceCap: 32,
 }
 
 export type AudioSettings = typeof DEFAULT_AUDIO_SETTINGS
@@ -29,7 +32,7 @@ export const AUDIO_BUS_LEVELS: Record<MixCategory, keyof AudioSettings> = {
   weapon: "audioWeapons",
   foley: "audioMovement",
   voice: "audioZombies",
-  impact: "audioZombies",
+  impact: "audioImpacts",
   ambience: "audioAmbience",
   ui: "audioUi",
   engine: "audioMovement",
@@ -45,12 +48,14 @@ const level = (key: keyof AudioSettings, label: string): LabControl => ({ key, l
 export const audioControls: LabControl[] = [
   { key: "audioMuted", label: "Mute (M)", group: "Volume", type: "toggle" },
   ...volumeControls(OUTBREAK_VOLUME_CHANNELS, "Volume", { voice: "Zombie voices" }),
-  level("audioWeapons", "Weapons"),
-  level("audioMovement", "Footsteps, doors & looting"),
-  level("audioZombies", "Zombies & impacts"),
+  level("audioWeapons", "Weapons & combat"),
+  level("audioZombies", "Zombies (vocals)"),
+  level("audioImpacts", "Impacts & breaches"),
+  level("audioMovement", "Foley & footsteps"),
   level("audioAmbience", "Ambience"),
   level("audioUi", "Interface"),
   { key: "audioOcclusion", label: "Wall occlusion", group: "Audio mix", min: 0, max: 1, step: 0.05, unit: "" },
+  { key: "audioFalloff", label: "Distance falloff", group: "Audio mix", min: 0.8, max: 2.5, step: 0.05, unit: "×" },
   { key: "audioReverb", label: "Reverb", group: "Audio mix", min: 0, max: 1, step: 0.05, unit: "" },
   { key: "audioVoiceCap", label: "Voice cap", group: "Audio mix", min: 8, max: 48, step: 1, unit: "voices" },
 ]

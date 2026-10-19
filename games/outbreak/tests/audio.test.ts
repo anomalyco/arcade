@@ -432,6 +432,20 @@ describe("Outbreak acoustic space", () => {
     occlusion.strength = 0
     expect(occlusion.query(10, 44, inside.x, inside.y)).toBe(0)
   })
+
+  test("mix hierarchy and priority voice stealing keep gunshots and zombie vocals above footsteps", () => {
+    const shotGain = SFX_BY_ID.get("gun.pistol.shot")!.gain
+    const bombGain = SFX_BY_ID.get("bomb.explode")!.gain
+    const alertGain = SFX_BY_ID.get("zombie.alert")!.gain
+    const impactGain = SFX_BY_ID.get("impact.bullet.concrete")!.gain
+    const walkGain = SFX_BY_ID.get("foot.concrete.walk")!.gain
+    const zombieFootGain = SFX_BY_ID.get("zombie.foot.shuffle.concrete")!.gain
+    expect(shotGain).toBeGreaterThan(alertGain)
+    expect(bombGain).toBeGreaterThan(alertGain)
+    expect(alertGain).toBeGreaterThan(impactGain)
+    expect(impactGain).toBeGreaterThan(walkGain)
+    expect(zombieFootGain).toBeLessThan(alertGain)
+  })
 })
 
 describe("a fresh start is quiet", () => {

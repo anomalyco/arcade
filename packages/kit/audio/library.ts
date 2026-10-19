@@ -49,6 +49,10 @@ export type SfxSpec = {
   gainJitter: number
   cooldown?: number
   maxVoices?: number
+  /** Voice priority (0..100). Higher-priority voices steal lower-priority ones and are never stolen by them. */
+  priority?: number
+  /** Brief non-UI bus ducking when this cue fires at high intensity (e.g. gunshots, explosions). */
+  duck?: { seconds: number; depth: number }
   /** What happens when the id or the runtime is out of voices (default: steal the oldest). Crowd sounds drop. */
   steal?: StealPolicy
   /** Full level inside `ref` metres, silent beyond `max`. */
@@ -159,8 +163,8 @@ const CRAFT: Record<CraftKind, { label: string; loop: string; done: string }> = 
 export const SFX_SPECS: readonly SfxSpec[] = [
   // Weapons
   {
-    id: "gun.pistol.shot", label: "Pistol shot", group: "gun", bus: "weapon", variants: 4, target: -19, gain: 1, pitchJitter: 0.05, gainJitter: 0.08,
-    maxVoices: 4, range: { ref: 4, max: 90 }, wet: 0.3, usedBy: OUTBREAK, durationRange: [0.35, 1.6],
+    id: "gun.pistol.shot", label: "Pistol shot", group: "gun", bus: "weapon", variants: 4, target: -19, gain: 1.15, pitchJitter: 0.05, gainJitter: 0.08,
+    maxVoices: 4, priority: 92, duck: { seconds: 0.14, depth: 0.72 }, range: { ref: 4, max: 90 }, wet: 0.3, usedBy: OUTBREAK, durationRange: [0.35, 1.6],
     generate: { prompt: `A single 9mm pistol gunshot, close, dry, sharp crack with a punchy low body and short tail. One shot only. No music, no voice.`, duration: 1.5, candidates: 12, influence: 0.5 },
   },
   {
@@ -236,7 +240,7 @@ export const SFX_SPECS: readonly SfxSpec[] = [
   // Footsteps, sliced from recordings of steady walking and running
   ...(["concrete", "grass", "wood"] as const).flatMap(surface => (["walk", "run"] as const).map((gait): SfxSpec => ({
     id: `foot.${surface}.${gait}`, label: `Footstep ${surface} ${gait}`, group: "foot", bus: "foley", variants: 6, target: gait === "walk" ? -27 : -25,
-    gain: 1, pitchJitter: 0.06, gainJitter: 0.12, maxVoices: 6, range: { ref: 1.5, max: gait === "walk" ? 12 : 18 }, wet: 0.05, usedBy: OUTBREAK,
+    gain: gait === "walk" ? 0.42 : 0.58, pitchJitter: 0.06, gainJitter: 0.12, maxVoices: 5, priority: 35, range: { ref: 1.5, max: gait === "walk" ? 12 : 18 }, wet: 0.05, usedBy: OUTBREAK,
     durationRange: [0.12, 0.45],
     generate: {
       prompt: step({ concrete: "a concrete sidewalk", grass: "short dry grass and soft earth", wood: "old wooden floorboards inside a house" }[surface], gait),
@@ -449,7 +453,7 @@ export const SFX_SPECS: readonly SfxSpec[] = [
   // drop rather than steal when voices run out, so a crowd never pushes out a shot.
   ...(Object.keys(ZOMBIE_STEP) as ZombieStep[]).flatMap(kind => (["concrete", "grass", "wood"] as const).map((surface): SfxSpec => ({
     id: `zombie.foot.${kind}.${surface}`, label: `Zombie ${ZOMBIE_STEP[kind].label} on ${surface}`, group: "zombie", bus: "impact", variants: 5,
-    target: ZOMBIE_STEP[kind].target, gain: 1, pitchJitter: 0.08, gainJitter: 0.15, maxVoices: 3, steal: "drop", range: { ref: 1.5, max: 14 }, wet: 0.06,
+    target: ZOMBIE_STEP[kind].target, gain: 0.55, pitchJitter: 0.08, gainJitter: 0.15, maxVoices: 3, priority: 15, steal: "drop", range: { ref: 1.5, max: 14 }, wet: 0.06,
     usedBy: OUTBREAK, durationRange: ZOMBIE_STEP[kind].range,
     generate: {
       prompt: ZOMBIE_STEP[kind].prompt(SURFACE_PHRASE[surface]), duration: 8, candidates: 2, influence: 0.45,
@@ -457,8 +461,8 @@ export const SFX_SPECS: readonly SfxSpec[] = [
     },
   }))),
   {
-    id: "zombie.horde.shuffle", label: "Horde shuffling", group: "zombie", bus: "impact", variants: 1, loop: true, target: -28, gain: 0.85, pitchJitter: 0, gainJitter: 0,
-    maxVoices: 1, steal: "drop", range: { ref: 0, max: 0 }, wet: 0, usedBy: OUTBREAK, durationRange: [4, 9],
+    id: "zombie.horde.shuffle", label: "Horde shuffling", group: "zombie", bus: "impact", variants: 1, loop: true, target: -28, gain: 0.68, pitchJitter: 0, gainJitter: 0,
+    maxVoices: 1, priority: 100, steal: "drop", range: { ref: 0, max: 0 }, wet: 0, usedBy: OUTBREAK, durationRange: [4, 9],
     generate: { prompt: `A crowd of many people shuffling and dragging their feet slowly across a street a few metres away: dense overlapping scuffs and scrapes, low raspy breathing, no words. ${NO_SPEECH}`, duration: 8, candidates: 3, loop: true, influence: 0.45 },
   },
   {
@@ -558,8 +562,8 @@ export const SFX_SPECS: readonly SfxSpec[] = [
     generate: { prompt: `An old wooden treasure chest lid flung open: a short creak of iron hinges and a bright magical shimmer chime, close. ${NO_SPEECH}`, duration: 1.2, candidates: 4, influence: 0.5 },
   },
   {
-    id: "bomb.explode", label: "Bomb arrow explosion", group: "bow", bus: "impact", variants: 3, target: -16, gain: 0.95, pitchJitter: 0.05, gainJitter: 0.08,
-    maxVoices: 3, range: { ref: 5, max: 60 }, wet: 0.2, usedBy: [...ARCHERS, ...OUTBREAK], durationRange: [0.6, 2.2],
+    id: "bomb.explode", label: "Bomb arrow explosion", group: "bow", bus: "impact", variants: 3, target: -16, gain: 1.18, pitchJitter: 0.05, gainJitter: 0.08,
+    maxVoices: 3, priority: 95, duck: { seconds: 0.32, depth: 0.58 }, range: { ref: 5, max: 60 }, wet: 0.2, usedBy: [...ARCHERS, ...OUTBREAK], durationRange: [0.6, 2.2],
     generate: { prompt: `A small black-powder bomb exploding against a stone wall in a ruined courtyard: a punchy boom with crumbling stone debris raining down and a short echo. ${NO_SPEECH}`, duration: 1.8, candidates: 4, influence: 0.5 },
   },
   {
@@ -663,6 +667,8 @@ export function sfxCues(entries: readonly SfxEntry[]): CueRecipe[] {
     loop: entry.loop,
     cooldownSeconds: entry.cooldown,
     maxVoices: entry.maxVoices,
+    priority: entry.priority,
+    duck: entry.duck,
     steal: entry.steal ?? "steal-oldest",
     pitchVariation: entry.pitchJitter,
     gainVariation: entry.gainJitter,
