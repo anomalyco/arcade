@@ -293,6 +293,25 @@ describe("CoopRoomCore", () => {
     expect(last(b).shared.survivors.find((s) => s.index !== seat)?.crouching).toBeUndefined()
   })
 
+  test("a radio one survivor switches on plays on every client, and one the dead knock down is down for everyone", () => {
+    const core = new CoopRoomCore("test", options, Date.now, "test")
+    const a = client(core, "Ann")
+    const b = client(core, "Bob")
+    run(core, [a, b], 3)
+    Object.assign(core.sim.slot(b.id)!.survivor, { x: 24.5, y: 34.5, aim: -Math.PI / 2 })
+    core.sim.rebuildSolids()
+    run(core, [a, b], 2, (c) => (c === b ? idle(-Math.PI / 2) : idle()))
+    run(core, [b], 1, () => ({ ...idle(-Math.PI / 2), interact: true }))
+    run(core, [a, b], 3)
+    for (const c of [a, b]) {
+      expect(c.ledger.store("radio:ash")?.counts.on).toBe(1)
+      expect(c.ledger.store("radio:ash")?.owner).toBe(b.id)
+    }
+    core.sim.ai.spawnZombie(core.sim.town, 24.5, 35.2, "wander")
+    run(core, [a, b], Math.ceil(7 / TICK_DT))
+    for (const c of [a, b]) expect(c.ledger.store("radio:ash")?.counts).toMatchObject({ on: 0, broken: 1 })
+  })
+
   test("a dropped bundle reaches a teammate, and a seat that expires leaves its kit on the floor", () => {
     let now = 0
     const core = new CoopRoomCore("test", options, () => now, "test")

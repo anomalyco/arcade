@@ -1,6 +1,13 @@
 import type { LabControl } from "@arcade/kit/lab-panel"
+import { DEFAULT_RADIO_TUNING } from "../../shared/radios/radios"
 
 export const DEFAULT_DISCOVERY_SETTINGS = {
+  /** House radios' simulation (AR-56): reach, burst beat, battery, and how the dead knock them down. */
+  ...DEFAULT_RADIO_TUNING,
+  /** How brightly a playing radio's dial glows. */
+  radioDialGlow: 2.2,
+  /** How far a playing radio's speaker and body shake to the music. */
+  radioShake: 1,
   /** The flashlight shows its charge: below the flicker threshold the beam narrows, warms to amber and dims its reach. */
   discoveryLowBeam: true,
   /** How much narrower the beam gets as the battery runs out, as a share of its cone. */

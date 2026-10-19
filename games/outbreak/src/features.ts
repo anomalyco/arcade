@@ -14,6 +14,7 @@ import "./night-lights/index"
 import "./pacing/index"
 import "./progression/index"
 import "./props/index"
+import "./radios/index"
 import "./vehicles/index"
 import "./weather/index"
 

@@ -257,3 +257,37 @@ Lab: Discovery › Stage: broken in, hid, lured, spent alarm; the station's matc
   through a snapshot and a re-seed; a spent alarm car stays quiet.
 - `tests/coop.test.ts`: a vignette reaches every client, and the battery one survivor picks up is gone for everyone.
 - `scripts/discovery-proof.ts vignettes`: stills of each scene, and a step onto the broken-in glass that crunches.
+
+## House radios (AR-56)
+
+The first of the new world interactions Kit asked for after playing ("We need to have other sort of interesting
+interactions in the world"); the rest are proposed in D-37. Code: `shared/radios/` (shared feature `radios`, order 26)
+and `src/radios/` (client feature: Lab, `radios.stage`, harness); drawn by `RadioProps` inside the Discovery props;
+heard through `InventorySounds`.
+
+| | |
+| --- | --- |
+| Where | About 70% of homes (house, ranch, cottage, cabin), fixed per building, on the living-room coffee table (else a dining table). Both classic houses, Ash and Elm, have one |
+| Verb | E at it: **Switch on** / **Switch off** (radio glyph, slashed to switch off) |
+| While it plays | A burst every `radioBeat` (1.5 s) the dead hear out to `radioNoise` (32 m) from the radio itself, muffled by walls and shut doors like any noise: through a wall it carries about half as far, so open a door or window to let it reach the street |
+| Battery | `radioBattery` (60 s) across every time it is switched on; switching off keeps what is left. A flat radio offers nothing |
+| The dead | They investigate the sound to the house, bash their way in if it is shut, and one standing within `radioReach` (1.6 m) of it for `radioBreakTime` (2.5 s) knocks it to the floor: a thud, and it never plays again |
+| State | One ledger store `radio:<building>` {on, start, until, left, beats, near, broken}, times in deciseconds, created on first use, so it snapshots, saves, streams and replicates with no wire changes |
+| Look | Bakelite cabinet with a speaker cloth, knobs and a whip aerial; the dial glows amber (`radioDialGlow`) and the cabinet buzzes (`radioShake`) while it plays; knocked down, it lies on its back on the floor south of the table |
+| Sound | `radio.loop` (an old valve radio playing a scratchy big-band song through static, generated and curated with `scripts/sfx/library.ts`) held while it plays; the switch clicks; it lands with `item.drop` |
+
+Lab: Backquote › **Radios** (simulation: reach, burst beat, battery, knock-down time and reach; look: dial glow, shake;
+stage: off, playing, lure, broken). The values sit in the Discovery settings, which the client already sends as session
+tuning (the shared feature reads its namespace with `discovery` as a legacy source), so no new settings subsystem.
+Station: `outbreak-discovery` › House radio, Radio as a lure.
+
+### Proof
+
+- `tests/radios.test.ts`: the classic houses' radios on their coffee tables; streamed homes deterministic; switching on,
+  bursts on the beat, switching off keeps the battery; a flat radio goes quiet and offers nothing; one of the dead in
+  the house walks over and knocks it down after the break time; one on the street turns towards it; a playing radio
+  through a snapshot ticks the same in both copies; tunables resolve from the Discovery settings.
+- `tests/coop.test.ts`: a radio Bob switches on plays on both clients (his as owner), and one the dead knock down is
+  down for everyone.
+- `scripts/radios-proof.ts` (via `hivemind run --kind browser --fetch captures/outbreak-radios`): stills off, playing and
+  broken, and a muted clip of the lure.
