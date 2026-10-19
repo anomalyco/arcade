@@ -80,7 +80,7 @@ export class LampGrid {
   private prevOriginZ = Number.NaN
   private prevDirectCount = -1
   private prevLightCount = -1
-  private readonly prevSig = new Float32Array(MAX_LIGHTS * 11)
+  private readonly prevSig = new Float32Array(MAX_LIGHTS * 12)
 
   constructor(options: LampGridOptions = {}) {
     this.width = options.width ?? LAMP_GRID_DIM
@@ -373,8 +373,8 @@ export class LampGrid {
     }
   }
 
-  private matchesSignature(lights: Float32Array, start: number, end: number, checkPower: boolean): boolean {
-    const sigLen = (end - start) * 11
+  private matchesSignature(lights: Float32Array, start: number, end: number, checkScore: boolean): boolean {
+    const sigLen = (end - start) * 12
     if (sigLen !== this.prevSigLen) return false
     const sig = this.prevSig
     let o = 0
@@ -397,9 +397,10 @@ export class LampGrid {
         ) {
           return false
         }
-        if (checkPower && sig[o + 10]! !== power) return false
+        // Power and height only affect membership when overlapping lamps compete for four slots.
+        if (checkScore && (sig[o + 10]! !== power || sig[o + 11]! !== lights[b + 1]!)) return false
       }
-      o += 11
+      o += 12
     }
     return true
   }
@@ -422,7 +423,8 @@ export class LampGrid {
       sig[o + 8] = lights[b + 12]!
       sig[o + 9] = lights[b + 13]!
       sig[o + 10] = power
-      o += 11
+      sig[o + 11] = lights[b + 1]!
+      o += 12
     }
     this.prevSigLen = o
   }
