@@ -46,6 +46,7 @@ const glbChars = new Map<string, THREE.Object3D>()
 let raw: THREE.Object3D | null = null
 let refRemy: THREE.Object3D | null = null
 let stairsFoot: number | null = null
+let rootView: number | null = null
 let conv: THREE.Object3D | null = null
 
 async function loadRaw(id: string) {
@@ -115,6 +116,7 @@ async function set(id: string, clip: string, frame: number, view: string, mode =
   r.position.x = -gap
   c.position.x = gap
   let info = `${id}  bind pose`
+  rootView = null
   if (mode !== "bind" && !leftRaw) {
     const src = animsGlb.animations.find((a) => a.name === clip)!
     for (const [o, who] of [[r, "remy"], [c, id]] as const) {
@@ -187,20 +189,48 @@ async function set(id: string, clip: string, frame: number, view: string, mode =
     r.visible = false
     info += `  stairs ${(sh * 100).toFixed(0)} cm × ${(sr * 100).toFixed(0)} cm`
   } else r.visible = true
+  const cm = (META.anims.clips as Record<string, { root?: number[][]; ledge?: number; kind?: string; hands?: Record<string, { palm: number[] }[]> }>)[clip]
+  if (params.get("root") === "1" && mode !== "bind" && cm?.root && leftRaw) {
+    // Root-motion overlay: the raw take travels by itself; the converted (in-place) body gets the extracted root
+    // [x, z, yaw, y] at this frame. Raw is drawn 0.8 m behind (along x) so from the side the two overlay.
+    const f = Math.min(cm.root.length - 1, frame)
+    const [rx, rz, ryaw, ry] = cm.root[f]!
+    c.position.set(rx!, ry!, rz!)
+    c.rotation.set(0, ryaw!, 0)
+    stairsGroup.clear()
+    const mat = new THREE.MeshStandardNodeMaterial({ color: 0x8d8a82, roughness: 0.9, transparent: true, opacity: 0.5 })
+    const end = cm.root[cm.root.length - 1]!
+    const palm = cm.hands ? Object.values(cm.hands).flat()[0]?.palm : undefined
+    if (cm.ledge) {
+      const vault = cm.kind === "vault"
+      const front = vault ? (palm?.[2] ?? end[1]! / 2) - 0.2 : (palm?.[2] ?? end[1]! - 0.5) - 0.05
+      const depth = vault ? 0.4 : 3
+      const box = new THREE.Mesh(new THREE.BoxGeometry(1, cm.ledge, depth), mat)
+      box.position.set(0, cm.ledge / 2, front + depth / 2)
+      stairsGroup.add(box)
+    }
+    r.position.x = -0.8
+    rootView = (end[1]! / 2)
+    info += `  root x ${rx!.toFixed(2)} z ${rz!.toFixed(2)} y ${ry!.toFixed(2)} yaw ${((ryaw! * 180) / Math.PI).toFixed(0)}°`
+  }
   if (params.get("travel") === "1") {
     // Show the raw clip's own root travel (the raw stairs descend); the converted body stays in place.
     r.updateMatrixWorld(true)
     status.rawHips = r.getObjectByName("Hips")!.getWorldPosition(new THREE.Vector3()).toArray()
   }
-  // Raw clips may travel (stairs, door): keep the raw body framed by its hips.
+  // Raw clips may travel (stairs, door): keep the raw body framed by its hips (not in root-overlay mode).
   r.updateMatrixWorld(true)
-  const hr = r.getObjectByName("Hips")!.getWorldPosition(new THREE.Vector3())
-  r.position.x += -gap - hr.x
-  r.position.z += -hr.z
+  if (rootView === null) {
+    const hr = r.getObjectByName("Hips")!.getWorldPosition(new THREE.Vector3())
+    r.position.x += -gap - hr.x
+    r.position.z += -hr.z
+  }
   const at = new THREE.Vector3(0, zoom === "2" ? 1.58 : zoom ? 1.4 : 0.9, 0)
-  const d = zoom === "2" ? 1.1 : zoom ? 2.5 : 4.6
+  const d = zoom === "2" ? 1.1 : zoom ? 2.5 : params.get("root") === "1" ? 7 : 4.6
   const dir = { side: new THREE.Vector3(1, 0.05, 0), front: new THREE.Vector3(0, 0.05, 1), "3q": new THREE.Vector3(0.7, 0.1, 0.7) }[view] ?? new THREE.Vector3(0, 0.05, 1)
-  if (params.get("stairs") === "1") {
+  if (rootView !== null) {
+    at.set(0, 1.0, rootView)
+  } else if (params.get("stairs") === "1") {
     // (positioned above)
   } else if (view === "side") {
     // Side by side along the view axis doesn't work from the side: stack them in depth instead.

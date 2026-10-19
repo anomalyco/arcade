@@ -486,6 +486,97 @@ def foot_contacts(foot, lin, n, stance_v, use_height=True):
     return out
 
 
+def mantle_root(cid, kind, H, hp, yaws, foot, hand, n, info):
+    """Mantles and vaults: extract the root (smoothed hips path forward/sideways, yaw, and for mantles a monotonic
+    rise from the start floor to the ledge top), leave the hips' bob about it in the clip, and mark contacts.
+    Root entries are [x, z, yaw, y] in three space, relative to frame 0 (+z forward = Blender -y)."""
+    k5 = 5
+    sm = np.array([hp[max(0, i - k5): i + k5 + 1].mean(axis=0) for i in range(n + 1)])
+    sm[0], sm[-1] = hp[0], hp[-1]
+    low = lambda i, k: min(foot[k][i][0].z, foot[k][i][1].z)  # noqa: E731
+    floor0 = min(low(0, "l"), low(0, "r"))
+    floor1 = min(low(n, "l"), low(n, "r"))
+    # The floor is z = 0 in every Mixamo take. Mantles start standing on it (or hanging: hang-to-crouch's feet
+    # dangle 0.24 m up), end standing on the ledge top; the ledge height is the end floor.
+    start = "hang" if floor0 > 0.1 else "stand"
+    if kind == "mantle":
+        # Rise: the hips' climb, made monotonic (running max) and ending exactly at the ledge height.
+        rise = np.maximum.accumulate(sm[:, 2] - hp[0, 2])
+        total = floor1
+        rise = rise * (total / rise[-1]) if rise[-1] > 1e-3 else rise
+        ledge = floor1
+    else:
+        rise = np.zeros(n + 1)
+        total = 0.0
+        ledge = None
+    root, new_H = [], []
+    for i in range(n + 1):
+        d = Vector((sm[i][0] - hp[0][0], sm[i][1] - hp[0][1], rise[i]))
+        R = Matrix.Translation(d) @ Matrix.Translation(Vector(hp[0])) @ Matrix.Rotation(yaws[i] - yaws[0], 4, "Z") @ Matrix.Translation(-Vector(hp[0]))
+        new_H.append(R.inverted() @ H[i])
+        root.append([round(float(d.x), 4), round(float(-d.y), 4), round(float(yaws[i] - yaws[0]), 4), round(float(d.z), 4)])
+    info["root"] = root
+    info["yawTotal"] = round(math.degrees(yaws[-1] - yaws[0]), 1)
+    info["travel"] = [round(float(x), 4) for x in hp[-1] - hp[0]]
+    info["rise"] = round(float(total), 4)
+    # Hand contacts: a palm nearly still (< 0.9 m/s) for >= 2 frames, and on the ledge (mantles: within -0.15..+0.25 m
+    # of the ledge height) or on the obstacle (vaults: below the hips, above 0.4 m). Reported per hand as clip times
+    # with the palm position at the first contact frame, [x, y, z] in three axes: y above the floor, x/z relative to
+    # the root at frame 0 (+z forward). The runtime can pin that palm to the real edge for the interval.
+    hands = {}
+    tops = []
+    for k in "lr":
+        P_ = np.array([[p.x, p.y, p.z] for p in hand[k]])
+        V = np.linalg.norm(np.gradient(P_, axis=0), axis=1) * 30
+        if kind == "mantle":
+            where = (P_[:, 2] > ledge - 0.15) & (P_[:, 2] < ledge + 0.12)
+        else:
+            where = (P_[:, 2] < hp[:, 2]) & (P_[:, 2] > 0.4)
+        # In front of the body (a hand at the hip or on a knee is not on the edge): palm ahead of the hips along the
+        # facing by > 10 cm.
+        fwd = np.array([[math.sin(yaws[i]), -math.cos(yaws[i])] for i in range(n + 1)])
+        ahead = np.einsum("ij,ij->i", P_[:, :2] - hp[:, :2], fwd)
+        on = (V < 0.9) & where & ((ahead > 0.1) if kind == "mantle" else True)
+        iv = []
+        i = 0
+        while i <= n:
+            if on[i]:
+                j = i
+                while j <= n and on[j]:
+                    j += 1
+                if j - i >= 2:
+                    p = P_[i] - hp[0]
+                    iv.append({"start": round(i / 30, 4), "end": round((j - 1) / 30, 4),
+                               "palm": [round(float(p[0]), 3), round(float(P_[i][2]), 3), round(float(-p[1]), 3)]})
+                    tops.append(float(P_[i:j, 2].min()))
+                i = j
+            else:
+                i += 1
+        hands[k] = iv
+    info["hands"] = hands
+    # Foot landings on the top (mantles) or back on the ground (vaults): first frame each foot is within 3 cm of the
+    # final floor and still, after having left the floor.
+    land = {}
+    for k in "lr":
+        z = np.array([low(i, k) for i in range(n + 1)])
+        mid = np.array([[(a.x + b.x) / 2, (a.y + b.y) / 2] for a, b in foot[k]])
+        v = np.linalg.norm(np.gradient(mid, axis=0), axis=1) * 30
+        after = min((int(round(c["start"] * 30)) for k2 in "lr" for c in hands[k2]), default=0)
+        left = np.where((z > floor0 + 0.08) & (np.arange(n + 1) >= after))[0]
+        t = None
+        if len(left):
+            for i in range(int(left[0]), n + 1):
+                if abs(z[i] - floor1) < 0.03 and v[i] < 0.5:
+                    t = round(i / 30, 4)
+                    break
+        land[k] = t
+    info["feetLand"] = land
+    # The ledge/obstacle top: mantles from the end floor; vaults from the hands' plant height (palm ~3 cm above).
+    info["ledge"] = round(float(ledge), 3) if ledge is not None else (round(min(tops) - 0.03, 3) if tops else None)
+    info["start"] = start
+    return new_H, info
+
+
 # Clip id -> kind. loop: cyclic locomotion/idle; climb: loop with linear rise removed; one: one-shot (root path out).
 CLIPS = {
     "breathing-idle": "idle", "walking": "loop", "walking-standard": "loop", "walking-backwards": "loop",
@@ -498,6 +589,8 @@ CLIPS = {
     "climbing-ladder": "climb", "climbing-to-top": "one",
     "jump": "jump", "falling-idle": "idle", "opening-door-inwards": "one", "button-pushing": "one", "torch-idle": "idle",
     "torch-inspect-forward": "one", "torch-walk-forward": "loop",
+    "mantle-step-up": "mantle", "mantle-hop-up": "mantle", "mantle-run-jump-high": "mantle",
+    "mantle-hang-to-crouch": "mantle", "vault-one-hand": "vault", "vault-two-hand": "vault",
 }
 
 
@@ -567,11 +660,14 @@ def anims(src_dir, out, meta_out):
             ad.action_slot = act.slots[0]
         f0, f1 = int(act.frame_range[0]), int(act.frame_range[1])
         frames = list(range(f0, f1 + 1))
-        H, foot = [], {"l": [], "r": []}
+        H, foot, hand = [], {"l": [], "r": []}, {"l": [], "r": []}
         for fr in frames:
             bpy.context.scene.frame_set(fr)
             bpy.context.view_layer.update()
             H.append((W @ P["Hips"].matrix).copy())
+            for k, b in (("l", "LeftHand"), ("r", "RightHand")):
+                # Palm centre: between the wrist and the middle-finger knuckle.
+                hand[k].append(((W @ P[b].head) * 0.5 + (W @ P[b.replace("Hand", "HandMiddle1")].head) * 0.5).copy())
             for k, (a, b) in feet.items():
                 pa = W @ P[a].head
                 pb_ = W @ P[b].head
@@ -637,6 +733,8 @@ def anims(src_dir, out, meta_out):
                 if len(idx):
                     info["takeoff"] = round(float(idx[0] / 30), 4)
                     info["land"] = round(float(idx[-1] / 30), 4)
+        elif kind in ("mantle", "vault"):
+            new_H, info = mantle_root(cid, kind, H, hp, yaws, foot, hand, n, info)
         else:
             # One-shot: horizontal root path and yaw out to the meta; the Hips keep the rest.
             root = []

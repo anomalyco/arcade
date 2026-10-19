@@ -125,6 +125,23 @@ for (const id of ["fire-escape-1", "fire-escape-2", "fire-escape-3", "fire-escap
   check(p.z < -1.2, `${id}: open leaf across the landing doesn't trap the walkway (reached z ${p.z.toFixed(2)})`)
 }
 
+// Mantle: the loading dock's edge (1.25 m platform), Space from the yard facing it.
+const dock = await page.evaluate(() => {
+  const cs = (globalThis as unknown as { __afterhoursPlayer: { ctx: { colliders: { min: number[]; max: number[] }[] } } }).__afterhoursPlayer.ctx.colliders
+  const b = cs.find((c) => Math.abs(c.max[1] - 1.25) < 0.06 && c.min[0] < -30 && c.max[0] > -30 && c.max[2] <= -21.5 && c.max[0] - c.min[0] > 5)
+  return b ? { min: b.min, max: b.max } : null
+})
+if (dock) {
+  const zStart = dock.min[2] - 0.75
+  await evalP(`p.pos.x = -30; p.pos.y = 0.6; p.pos.z = ${zStart}; p.yaw = Math.PI; p.pitch = 0; p.resetMotion()`)
+  await page.waitForTimeout(500)
+  const g = (await pos()).y
+  await page.keyboard.press("Space")
+  await page.waitForTimeout(1800)
+  p = await pos()
+  check(Math.abs(p.y - 1.25) < 0.05 && p.z > dock.min[2], `mantle onto the dock edge from the yard (${(1.25 - g).toFixed(2)} m: now at y ${p.y.toFixed(2)}, z ${p.z.toFixed(2)})`)
+} else check(false, "dock edge collider found")
+
 check(errors.length === 0, `no page errors${errors.length ? `: ${errors.slice(0, 3).join(" | ")}` : ""}`)
 await browser.close()
 process.exit(failed ? 1 : 0)

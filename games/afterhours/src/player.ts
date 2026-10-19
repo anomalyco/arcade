@@ -16,9 +16,10 @@ const CROWN = 0.1
  *  than the crouched eye, the eye ducks to stay 8 cm under it. */
 const TOP_CROUCH = 1.15
 /** Movement speeds (m/s), measured from the body's animation clips (src/playerb) so the cadence matches: walk is the
- *  Lab's Walk speed (1.6); jog and sprint are the two Run styles; crouch-walk; backwards and sideways go 0.68×. */
+ *  Lab's Walk speed (1.6); Shift runs (4.5, the default Run style) or jogs (2.4); crouch-walk; backwards and sideways
+ *  go 0.68×. Speeding up into a run eases in over about 0.7 s. */
+const RUN = 4.5
 const JOG = 2.4
-const SPRINT = 4.1
 const CROUCH_SPEED = 1.3
 const WALK_REF = 1.6
 const OFF_AXIS = 0.68
@@ -26,8 +27,10 @@ const OFF_AXIS = 0.68
 const STEP_UP = 0.45
 const STEP_DOWN = 0.5
 const GRAVITY = 9.81
-/** Jump apex ≈ 0.48 m. */
-const JUMP_V = Math.sqrt(2 * GRAVITY * 0.48)
+/** Jump apex 0.62 m (was 0.48); the fall pulls 1.25× harder so the higher jump doesn't float. */
+const JUMP_APEX = 0.62
+const JUMP_V = Math.sqrt(2 * GRAVITY * JUMP_APEX)
+const FALL_G = 1.25
 const COYOTE = 0.12
 const JUMP_BUFFER = 0.15
 /** Eye spring (critically damped, rad/s): absorbs step snaps and landings without lagging on slopes. */
@@ -71,6 +74,12 @@ export type PlayerState = {
    * `plane` its offset, so the rungs are the points p with normal·p = plane.
    */
   ladder: { normal: readonly [number, number, number]; plane: number } | null
+  /**
+   * A mantle (climbing up onto a ledge) in progress, or null. `t` runs 0..1 over `duration` s; `from` is where the feet
+   * were when it started, `to` where they end up on top; `height` = to.y − from.y; `crouch` when the headroom on top
+   * only allows a crouch. The player has no control while it plays (hands on the ledge, pull up, knee over, stand).
+   */
+  mantle: { t: number; duration: number; height: number; from: readonly [number, number, number]; to: readonly [number, number, number]; crouch: boolean } | null
   /** Gait cycle 0..1: a left footfall at 0, a right at 0.5. */
   stepPhase: number
   /** Horizontal speed (m/s). */
@@ -103,6 +112,10 @@ export class Player {
   private grounded = true
   private coyote = 0
   private jumpBuffer = 0
+  /** Feet height when last on the ground (mid-jump ledge heights are measured from it). */
+  private groundY = 0
+  private mantle: NonNullable<PlayerState["mantle"]> & { face: readonly [number, number, number] } | null = null
+  private mantlePitch = 0
   private crouchToggled = false
   private crouch = 0
   private crouchWanted = false
@@ -140,10 +153,18 @@ export class Player {
     ctx.settings["player.crouchMode"] ??= 0
     ctx.settings["player.bob"] ??= 1
     ctx.settings["player.runStyle"] ??= 0
+    ctx.settings["player.mantle"] ??= 1
+    ctx.settings["player.mantleMin"] ??= 0.4
+    ctx.settings["player.mantleMax"] ??= 1.4
+    ctx.settings["player.mantleMaxAir"] ??= 1.7
     ctx.controls.push(
       { key: "player.crouchMode", label: "Crouch key", group: "Player", type: "select", options: [{ value: 0, label: "Hold" }, { value: 1, label: "Toggle" }] },
       { key: "player.bob", label: "Head bob", group: "Player", unit: "×", min: 0, max: 2, step: 0.05 },
-      { key: "player.runStyle", label: "Run style", group: "Player", type: "select", options: [{ value: 0, label: "Jog 2.4 m/s" }, { value: 1, label: "Sprint 4.1 m/s" }] },
+      { key: "player.runStyle", label: "Run style", group: "Player", type: "select", options: [{ value: 0, label: "Run 4.5 m/s" }, { value: 1, label: "Jog 2.4 m/s" }] },
+      { key: "player.mantle", label: "Climb onto ledges (Space)", group: "Player", type: "toggle", on: 1, off: 0 },
+      { key: "player.mantleMin", label: "Climb: lowest ledge", group: "Player", unit: "m", min: 0.3, max: 0.8, step: 0.05 },
+      { key: "player.mantleMax", label: "Climb: highest ledge", group: "Player", unit: "m", min: 0.8, max: 1.6, step: 0.05 },
+      { key: "player.mantleMaxAir", label: "Climb: highest ledge mid-jump", group: "Player", unit: "m", min: 1.2, max: 2.0, step: 0.05 },
     )
     const self = this
     this.state = {
@@ -163,6 +184,7 @@ export class Player {
       running: false,
       onLadder: false,
       ladder: null,
+      mantle: null,
       stepPhase: 0,
       speed: 0,
       get flashlight() {
@@ -267,6 +289,142 @@ export class Player {
     return EYE + CROWN + (TOP_CROUCH - EYE - CROWN) * c
   }
 
+  /**
+   * Looks for a ledge to climb onto along (dx, dz): the nearest collider face within 0.6 m of the body whose top is
+   * `player.mantleMin`..`player.mantleMax` above the feet (`mantleMaxAir` above the ground left, mid-jump) and which
+   * rises from below the knees (not a shelf or a beam overhead); stacked boxes count as one. On top there must be
+   * support (a collider or floor at that height) and room to stand, or at least to crouch; the column the body rises
+   * through and its way over the edge must be clear. Starts the mantle and returns true when all of that holds.
+   * Doors aren't colliders, and the perimeter fence is too high, so neither is ever climbed.
+   */
+  private tryMantle(dx: number, dz: number, air: boolean) {
+    const set = this.ctx.settings
+    if (Number(set["player.mantle"] ?? 1) === 0) return false
+    const minH = Number(set["player.mantleMin"] ?? 0.4)
+    const maxH = Number(set[air ? "player.mantleMaxAir" : "player.mantleMax"] ?? (air ? 1.7 : 1.4))
+    const { x, y, z } = this.pos
+    const ref = air ? this.groundY : y
+    const reach = RADIUS + 0.6
+    let faceT = Infinity
+    let top = -Infinity
+    for (const b of this.ctx.colliders) {
+      const t = b.max[1]
+      if (t - ref < minH || t - ref > maxH || t <= y + STEP_UP || b.min[1] > y + STEP_UP) continue
+      const hit = ray2(x, z, dx, dz, b)
+      if (hit < 0 || hit > reach) continue
+      if (hit < faceT - 0.02 || (Math.abs(hit - faceT) <= 0.02 && t > top)) {
+        faceT = Math.min(faceT, hit)
+        top = t
+      }
+    }
+    if (faceT === Infinity) return false
+    // Stacked boxes: climb to the top of the stack at the face.
+    const fx = x + dx * (faceT + 0.05)
+    const fz = z + dz * (faceT + 0.05)
+    for (let pass = 0; pass < 3; pass++)
+      for (const b of this.ctx.colliders)
+        if (fx >= b.min[0] && fx <= b.max[0] && fz >= b.min[2] && fz <= b.max[2] && b.min[1] <= top + 0.05 && b.max[1] > top) top = b.max[1]
+    if (top - ref > maxH) return false
+    // Room to rise at the start (from the head now to a crouch above the ledge).
+    if (!this.clearColumn(x, z, y + this.bodyTop - 0.02, top + TOP_CROUCH, 0.25)) return false
+    for (const inset of [0.35, 0.25, 0.15]) {
+      const tx = x + dx * (faceT + inset)
+      const tz = z + dz * (faceT + inset)
+      if (!this.supportAt(tx, tz, top)) continue
+      const stand = this.clearColumn(tx, tz, top + 0.05, top + EYE + CROWN, 0.22)
+      if (!stand && !this.clearColumn(tx, tz, top + 0.05, top + TOP_CROUCH, 0.22)) continue
+      // The way over the edge: nothing standing up out of the top between the face and the spot.
+      let way = true
+      for (let i = 0; i <= 3 && way; i++) {
+        const u = faceT + (inset * i) / 3
+        way = this.clearColumn(x + dx * u, z + dz * u, top + 0.05, top + TOP_CROUCH, 0.18)
+      }
+      if (!way) continue
+      const height = top - y
+      const duration = 0.5 + 0.6 * Math.max(0, Math.min(1, (height - 0.4) / 1.0))
+      const near = Math.max(0, faceT - 0.32)
+      this.mantle = {
+        t: 0,
+        duration,
+        height,
+        from: [x, y, z],
+        to: [tx, top, tz],
+        face: [x + dx * near, y, z + dz * near],
+        crouch: !stand,
+      }
+      this.vel.x = this.vel.y = this.vel.z = 0
+      this.grounded = false
+      this.jumpBuffer = 0
+      this.coyote = 0
+      // Hands on the ledge: a small dip as the arms take the weight.
+      this.eyeOffsetV -= 0.35
+      this.emit("jump", 0, 0.3)
+      return true
+    }
+    return false
+  }
+
+  /** One frame of a mantle: rise beside the face, then over the edge onto the spot; the view dips and pitches. */
+  private stepMantle(dt: number) {
+    const m = this.mantle!
+    m.t = Math.min(1, m.t + dt / m.duration)
+    const u = m.t
+    const ss = (v: number) => {
+      const c = Math.max(0, Math.min(1, v))
+      return c * c * (3 - 2 * c)
+    }
+    // Up first (done by 70%), with the knee-over hump just above the ledge; across in two parts: to just short of the
+    // face while rising, then over the top once level with it.
+    const rise = ss(u / 0.7)
+    this.pos.y = m.from[1] + m.height * rise + 0.06 * Math.sin(Math.PI * ss((u - 0.55) / 0.45))
+    const a = ss(u / 0.6)
+    const b = ss((u - 0.62) / 0.38)
+    const px = m.from[0] + (m.face[0] - m.from[0]) * a
+    const pz = m.from[2] + (m.face[2] - m.from[2]) * a
+    this.pos.x = px + (m.to[0] - m.face[0]) * b
+    this.pos.z = pz + (m.to[2] - m.face[2]) * b
+    // Knee over: a half crouch through the middle; a full one on top when the headroom needs it.
+    const want = m.crouch ? (u > 0.45 ? 1 : 0.5 * ss(u / 0.45)) : 0.55 * Math.sin(Math.PI * ss((u - 0.3) / 0.6))
+    this.crouch += (want - this.crouch) * (1 - Math.exp(-dt / 0.08))
+    this.mantlePitch = -0.22 * Math.sin(Math.PI * u)
+    if (u >= 1) {
+      this.pos.x = m.to[0]
+      this.pos.y = m.to[1]
+      this.pos.z = m.to[2]
+      this.mantle = null
+      this.mantlePitch = 0
+      this.grounded = true
+      this.groundY = this.pos.y
+      this.emit("land", 0, 0.25)
+    }
+    this.finish(dt, 0, false)
+  }
+
+  /** Something to stand on at (x, z) at height `top` (± 6 cm): a collider top or a floor. */
+  private supportAt(x: number, z: number, top: number) {
+    for (const b of this.ctx.colliders) if (x >= b.min[0] && x <= b.max[0] && z >= b.min[2] && z <= b.max[2] && Math.abs(b.max[1] - top) < 0.06) return true
+    for (const f of this.ctx.floors) if (x >= f.min[0] && x <= f.max[0] && z >= f.min[1] && z <= f.max[1] && Math.abs(f.y - top) < 0.06) return true
+    return false
+  }
+
+  /** No collider (circle of radius `r` vs box) and no floor slab overhead between heights `lo` and `hi` at (x, z). */
+  private clearColumn(x: number, z: number, lo: number, hi: number, r: number) {
+    if (hi <= lo) return true
+    const r2 = r * r
+    for (const b of this.ctx.colliders) {
+      if (b.min[1] >= hi || b.max[1] <= lo) continue
+      const cx = Math.max(b.min[0], Math.min(x, b.max[0]))
+      const cz = Math.max(b.min[2], Math.min(z, b.max[2]))
+      if ((x - cx) ** 2 + (z - cz) ** 2 < r2) return false
+    }
+    for (const f of this.ctx.floors) {
+      const under = f.y - 0.25
+      if (f.y <= lo + 0.3 || under >= hi) continue
+      if (x >= f.min[0] && x <= f.max[0] && z >= f.min[1] && z <= f.max[1]) return false
+    }
+    return true
+  }
+
   /** Lowest underside overhead within the body's footprint, above the feet (m; Infinity when clear to 1.8 m). */
   private ceiling() {
     const { x, y, z } = this.pos
@@ -298,6 +456,11 @@ export class Player {
     const wx = (-sin * fwd + cos * side) / len
     const wz = (-cos * fwd - sin * side) / len
     this.jumpBuffer = Math.max(0, this.jumpBuffer - dt)
+
+    if (this.mantle && !this.fly) {
+      this.stepMantle(dt)
+      return
+    }
 
     if (this.fly) {
       const sp = (fwd || side ? 1 : 0) * walk * 6 * (run ? 8 : 1)
@@ -398,13 +561,15 @@ export class Player {
     // Speeds follow the body's clips: walk, jog or sprint (Lab "Run style"), crouch-walk; backwards and sideways
     // go 0.68× forward, blended by the input direction.
     const scale = walk / WALK_REF
-    const runSpeed = Number(this.ctx.settings["player.runStyle"] ?? 0) === 1 ? SPRINT : JOG
+    const runSpeed = Number(this.ctx.settings["player.runStyle"] ?? 0) === 1 ? JOG : RUN
     const base = this.crouch > 0.5 ? CROUCH_SPEED * scale : run ? runSpeed * scale : walk
     const ahead = Math.max(0, fwd / len)
     const dirK = OFF_AXIS + (1 - OFF_AXIS) * ahead * ahead
     const stairK = this.stairs > 0 ? 0.75 : 1
     const wish = (fwd || side ? 1 : 0) * base * dirK * stairK
-    const rate = this.grounded ? (fwd || side ? 9 : 11) : 1.2
+    // Into a run the body takes a moment to get going (a short ramp, not a snap); walking and stopping stay crisp.
+    const speeding = wish > walk * 1.3 && wish > Math.hypot(this.vel.x, this.vel.z) + 0.05
+    const rate = this.grounded ? (fwd || side ? (speeding ? 3.2 : 9) : 11) : 1.2
     const a = 1 - Math.exp(-rate * dt)
     this.vel.x += (wx * wish - this.vel.x) * a
     this.vel.z += (wz * wish - this.vel.z) * a
@@ -413,6 +578,19 @@ export class Player {
     if (!this.move(this.vel.x * dt, 0)) this.vel.x *= 0.3
     if (!this.move(0, this.vel.z * dt)) this.vel.z *= 0.3
     const moved = Math.hypot(this.pos.x - x0, this.pos.z - z0)
+
+    // Space at a ledge climbs onto it (mantle) instead of jumping: towards where the player is walking, else where
+    // they face; mid-jump it reaches higher ledges.
+    if (this.grounded) this.groundY = this.pos.y
+    if (this.jumpBuffer > 0) {
+      const dl = fwd > 0 || side ? Math.hypot(wx, wz) || 1 : 0
+      const mx = dl && fwd >= 0 ? wx / dl : -sin
+      const mz = dl && fwd >= 0 ? wz / dl : -cos
+      if (this.tryMantle(mx, mz, !this.grounded && this.coyote <= 0)) {
+        this.finish(dt, 0, false)
+        return
+      }
+    }
 
     // Jump (buffered; coyote time after walking off an edge). Not while crouched under something.
     this.coyote = this.grounded ? COYOTE : Math.max(0, this.coyote - dt)
@@ -440,7 +618,7 @@ export class Player {
       }
     }
     if (!this.grounded) {
-      this.vel.y -= GRAVITY * dt
+      this.vel.y -= GRAVITY * (this.vel.y < 0 ? FALL_G : 1) * dt
       const ny = this.pos.y + this.vel.y * dt
       const crown = this.bodyTop
       if (this.vel.y > 0 && !this.headroom(this.pos.x, this.pos.z, ny + crown)) this.vel.y = 0
@@ -509,6 +687,7 @@ export class Player {
     s.onLadder = ladder
     s.ladder = ladder ? this.ladderFace : null
     s.stepPhase = this.phase
+    s.mantle = this.mantle
     s.speed = speed
     this.apply()
     if (this.trace) this.trace.push({ t: this.time, dt, x: this.pos.x, z: this.pos.z, y: this.pos.y, eye: this.camera.position.y, offset: this.eyeOffset, base: this.base, crouch: this.crouch, grounded: this.grounded })
@@ -533,7 +712,7 @@ export class Player {
     const cx = this.pos.x + Math.cos(this.yaw) * sway
     const cz = this.pos.z - Math.sin(this.yaw) * sway
     this.camera.position.set(cx, eyeY, cz)
-    this.camera.rotation.set(this.pitch, this.yaw, this.roll + sway * 0.25, "YXZ")
+    this.camera.rotation.set(this.pitch + this.mantlePitch, this.yaw, this.roll + sway * 0.25, "YXZ")
     const e = this.state.eye as { x: number; y: number; z: number }
     e.x = cx
     e.y = eyeY
@@ -585,6 +764,14 @@ export class Player {
         floor = f
       }
     }
+    // The tops of solid things count too (a crate, a bookcase, the dock): what a mantle puts the feet on, and what a
+    // low box (under a step) is walked up onto. Thin ones (rails, fence wire) are never stood on.
+    for (const b of this.ctx.colliders) {
+      const t = b.max[1]
+      if (t > maxY || t <= g || !standable(b) || x < b.min[0] || x > b.max[0] || z < b.min[2] || z > b.max[2]) continue
+      g = t
+      floor = topOf(b)
+    }
     this.floor = floor
     return g
   }
@@ -615,6 +802,13 @@ export class Player {
       near.push(f)
       for (const v of [f.min[0] - x, f.max[0] - x]) if (v > -H && v < H) xs.push(v)
       for (const v of [f.min[1] - z, f.max[1] - z]) if (v > -H && v < H) zs.push(v)
+    }
+    // Standable collider tops near the feet (inside a wall's footprint never counts: see `standable`).
+    for (const b of this.ctx.colliders) {
+      if (b.max[1] > maxY || b.max[1] < ref - 0.75 || b.max[0] < x - H || b.min[0] > x + H || b.max[2] < z - H || b.min[2] > z + H || !standable(b)) continue
+      near.push(topOf(b))
+      for (const v of [b.min[0] - x, b.max[0] - x]) if (v > -H && v < H) xs.push(v)
+      for (const v of [b.min[2] - z, b.max[2] - z]) if (v > -H && v < H) zs.push(v)
     }
     xs.sort((a, b) => a - b)
     zs.sort((a, b) => a - b)
@@ -693,4 +887,42 @@ export class Player {
     this.pos.z += dz * k
     return true
   }
+}
+
+/** Distance along the ray (x, z) + t·(dx, dz) to where it enters box `b` in plan, or −1 (already inside counts as 0). */
+function ray2(x: number, z: number, dx: number, dz: number, b: { min: readonly number[]; max: readonly number[] }) {
+  let t0 = 0
+  let t1 = Infinity
+  for (const [o, d, lo, hi] of [
+    [x, dx, b.min[0]!, b.max[0]!],
+    [z, dz, b.min[2]!, b.max[2]!],
+  ] as const) {
+    if (Math.abs(d) < 1e-9) {
+      if (o < lo || o > hi) return -1
+      continue
+    }
+    let a = (lo - o) / d
+    let c = (hi - o) / d
+    if (a > c) [a, c] = [c, a]
+    t0 = Math.max(t0, a)
+    t1 = Math.min(t1, c)
+    if (t0 > t1) return -1
+  }
+  return t0
+}
+
+/** A collider whose top can be stood on: at least 20 cm across both ways. */
+function standable(b: { min: readonly number[]; max: readonly number[] }) {
+  return b.max[0]! - b.min[0]! >= 0.2 && b.max[2]! - b.min[2]! >= 0.2
+}
+
+const tops = new WeakMap<object, Floor>()
+/** A collider's top as a floor (cached per collider). */
+function topOf(b: { min: readonly number[]; max: readonly number[] }): Floor {
+  let f = tops.get(b)
+  if (!f || f.y !== b.max[1]) {
+    f = { min: [b.min[0]!, b.min[2]!], max: [b.max[0]!, b.max[2]!], y: b.max[1]! }
+    tops.set(b, f)
+  }
+  return f
 }

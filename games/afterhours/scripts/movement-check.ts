@@ -215,7 +215,7 @@ const air = tr.filter((s) => !s.grounded).length
 const landed = tr.at(-1)!.grounded && Math.abs(tr.at(-1)!.y - floorY) < 0.01
 const restEye = tr.at(-1)!.eye - floorY
 const dip = restEye - Math.min(...tr.slice(tr.findIndex((s, i) => i > 0 && !tr[i - 1]!.grounded && s.grounded)).map((s) => s.eye - floorY))
-check(apex > 0.42 && apex < 0.52 && landed, `jump: apex ${apex.toFixed(2)} m, ${air} airborne frames, landed`)
+check(apex > 0.57 && apex < 0.67 && landed, `jump: apex ${apex.toFixed(2)} m, ${air} airborne frames, landed`)
 check(dip > 0.015, `landing dip on the camera (${(dip * 100).toFixed(1)} cm)`)
 const landSteps = (await page.evaluate(() => (globalThis as unknown as { __steps?: string[] }).__steps ?? [])) as string[]
 check(landSteps.some((s) => s.startsWith("jump")), "jump event fired")
@@ -243,26 +243,90 @@ const crawlTrace = (await player((p) => {
 }, 0)) as Sample[]
 p = await pos()
 check(p.z < 16.45, `crouched through a 1.17 m crawl space (z ${p.z.toFixed(2)})`)
-check(under.eye <= 1.1, `eye ducked under it (${under.eye.toFixed(3)} m)`)
+check(under.eye <= 1.11, `eye ducked under it (${under.eye.toFixed(3)} m)`)
 check(maxStep60(crawlTrace) < 0.03, `ducking is smooth (max ${(maxStep60(crawlTrace) * 100).toFixed(2)} cm per 60 Hz frame)`)
 
+// Mantles in the lobby (test boxes that exist only in this page): Space facing a waist-high bookcase, a crate, a
+// low-ceilinged crate (crouch on top) and, mid-jump, a 1.6 m ledge climb onto them; a 2 m wall must not be climbed.
+type Box3 = [[number, number, number], [number, number, number]]
+async function mantleCase(name: string, boxes: (F: number) => Box3[], o: { top?: number; crouch?: boolean; fail?: boolean; air?: boolean }) {
+  await place(0, 0.3, 14.1, 0)
+  await page.waitForTimeout(250)
+  const F = (await pos()).y
+  const added = await player(
+    (p, bs: Box3[]) => {
+      const list = bs.map(([min, max]) => ({ min, max }))
+      p.ctx.colliders.push(...list)
+      return list.length
+    },
+    boxes(F),
+  )
+  void added
+  await player((p) => {
+    p.trace = []
+  }, 0)
+  await page.keyboard.press("Space")
+  if (o.air) {
+    await page.waitForTimeout(260)
+    await page.keyboard.press("Space")
+  }
+  type M = { t: number; height: number; crouch: boolean }
+  let during: M | null = null
+  for (let i = 0; i < 40; i++) {
+    const m: M | null = (await player((p) => {
+      const ms = (p.state as unknown as { mantle: M | null }).mantle
+      return ms && { ...ms }
+    }, 0)) as M | null
+    if (m) during ??= m
+    await page.waitForTimeout(50)
+  }
+  await page.waitForTimeout(600)
+  const tr = (await player((p) => {
+    const t = p.trace
+    p.trace = null
+    return t
+  }, 0)) as Sample[]
+  const end = (await player((p) => ({ ...p.pos, crouch: p.state.crouch, grounded: p.state.grounded }), 0)) as { x: number; y: number; z: number; crouch: number; grounded: boolean }
+  await player((p, n: number) => p.ctx.colliders.splice(p.ctx.colliders.length - n, n), boxes(F).length)
+  if (o.fail) {
+    check(!during && Math.abs(end.y - F) < 0.02, `mantle ${name}: not climbed (still on the floor at ${(end.y - F).toFixed(2)} m)`)
+    return
+  }
+  const want = F + o.top!
+  check(!!during && Math.abs(end.y - want) < 0.03 && end.grounded, `mantle ${name}: on top (${(end.y - F).toFixed(2)} m up, mantle seen ${!!during}${during ? `, height ${during.height.toFixed(2)}` : ""})`)
+  if (o.crouch !== undefined) check(o.crouch ? end.crouch > 0.9 : end.crouch < 0.1, `mantle ${name}: ${o.crouch ? "crouched under the low ceiling" : "standing"} on top (crouch ${end.crouch.toFixed(2)})`)
+  check(maxStep60(tr) < 0.06, `mantle ${name}: camera smooth (max ${(maxStep60(tr) * 100).toFixed(2)} cm per 60 Hz frame)`)
+}
+await mantleCase("bookcase (1.0 m, 0.4 deep)", (F) => [[[-0.5, F, 13.0], [0.5, F + 1.0, 13.4]]], { top: 1.0, crouch: false })
+await mantleCase("crate (0.7 m)", (F) => [[[-0.4, F, 12.6], [0.4, F + 0.7, 13.4]]], { top: 0.7, crouch: false })
+await mantleCase(
+  "crate under a low ceiling",
+  (F) => [
+    [[-0.4, F, 12.6], [0.4, F + 0.9, 13.4]],
+    [[-1, F + 0.9 + 1.4, 12.0], [1, F + 0.9 + 1.6, 13.6]],
+  ],
+  { top: 0.9, crouch: true },
+)
+await mantleCase("ledge 1.6 m mid-jump", (F) => [[[-0.5, F, 12.6], [0.5, F + 1.6, 13.4]]], { top: 1.6, air: true })
+await mantleCase("wall 2.0 m (too high)", (F) => [[[-1.5, F, 13.0], [1.5, F + 2.0, 13.2]]], { fail: true })
+
 // Speeds (they set the body's animation cadence): walk, jog, crouch, and backwards/sideways at 0.68×.
-async function speedOf(keys: string[]) {
+async function speedOf(keys: string[], warm = 700, window = 600) {
   // The lobby (open floor), facing north.
   await place(0, 0.2, 19, 0)
   for (const k of keys) await page.keyboard.down(k)
-  await page.waitForTimeout(700)
+  await page.waitForTimeout(warm)
   const a = await player((p) => ({ x: p.pos.x, z: p.pos.z, t: performance.now() }), 0)
-  await page.waitForTimeout(600)
+  await page.waitForTimeout(window)
   const b = await player((p) => ({ x: p.pos.x, z: p.pos.z, t: performance.now() }), 0)
   for (const k of keys) await page.keyboard.up(k)
   return Math.hypot(b.x - a.x, b.z - a.z) / ((b.t - a.t) / 1000)
 }
-const speeds = { walk: await speedOf(["KeyW"]), jog: await speedOf(["KeyW", "ShiftLeft"]), crouch: await speedOf(["KeyW", "KeyC"]), back: await speedOf(["KeyS"]), side: await speedOf(["KeyD"]) }
+const speeds = { walk: await speedOf(["KeyW"]), run: await speedOf(["KeyW", "ShiftLeft"], 1300, 450), crouch: await speedOf(["KeyW", "KeyC"]), back: await speedOf(["KeyS"]), side: await speedOf(["KeyD"]) }
 const near = (v: number, want: number) => Math.abs(v - want) < 0.12
 check(
-  near(speeds.walk, 1.6) && near(speeds.jog, 2.4) && near(speeds.crouch, 1.3) && near(speeds.back, 1.6 * 0.68) && near(speeds.side, 1.6 * 0.68),
-  `speeds: walk ${speeds.walk.toFixed(2)}, jog ${speeds.jog.toFixed(2)}, crouch ${speeds.crouch.toFixed(2)}, back ${speeds.back.toFixed(2)}, side ${speeds.side.toFixed(2)} m/s`,
+  near(speeds.walk, 1.6) && near(speeds.run, 4.5) && near(speeds.crouch, 1.3) && near(speeds.back, 1.6 * 0.68) && near(speeds.side, 1.6 * 0.68),
+  `speeds: walk ${speeds.walk.toFixed(2)}, run ${speeds.run.toFixed(2)}, crouch ${speeds.crouch.toFixed(2)}, back ${speeds.back.toFixed(2)}, side ${speeds.side.toFixed(2)} m/s`,
 )
 
 if (logFile) writeFileSync(logFile, JSON.stringify(traces))

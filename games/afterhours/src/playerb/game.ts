@@ -80,7 +80,23 @@ export function createGameBody(ctx: WorldContext, player: Player) {
   }
 
   // Automation (scripts/character/game-shots.ts): the body and the settings it reads.
-  ;(globalThis as { __afterhoursBody?: unknown }).__afterhoursBody = { body, settings: s }
+  ;(globalThis as { __afterhoursBody?: unknown }).__afterhoursBody = {
+    body,
+    settings: s,
+    /** A visible solid test box (collider + mesh); returns a remover. */
+    testBox(min: [number, number, number], max: [number, number, number]) {
+      const box = { min, max }
+      ctx.colliders.push(box)
+      const m = new THREE.Mesh(new THREE.BoxGeometry(max[0] - min[0], max[1] - min[1], max[2] - min[2]), new THREE.MeshStandardNodeMaterial({ color: 0x6b5a45, roughness: 0.8 }))
+      m.position.set((min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2)
+      m.castShadow = m.receiveShadow = true
+      ctx.scene.add(m)
+      return () => {
+        ctx.scene.remove(m)
+        ctx.colliders.splice(ctx.colliders.indexOf(box), 1)
+      }
+    },
+  }
   const shadows = shadowHook(ctx, player)
   const third = thirdPerson(camera)
   let picked = String(s["player.character"])
@@ -108,6 +124,11 @@ export function createGameBody(ctx: WorldContext, player: Player) {
       const vw = body.view.weight
       if (vw > 1e-3) {
         camera.position.lerp(body.view.eye, vw)
+        camera.updateMatrixWorld()
+      }
+      // Mantle: the eyes go to the hands on the edge while they take the weight.
+      if (body.mantleHandsW > 1e-3 && !thirdOn) {
+        camera.rotateX(-0.45 * body.mantleHandsW)
         camera.updateMatrixWorld()
       }
       third.apply(thirdOn, player, body, Number(s["body.thirdDist"]), ctx.colliders)

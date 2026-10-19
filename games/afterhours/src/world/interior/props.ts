@@ -95,6 +95,24 @@ export function placeModels(b: Builder, name: ModelName, props: Prop[], opts: { 
 
 type Placed = { name: ModelName; lod: 0 | 1; layer: THREE.Group; cast: boolean; matrices: THREE.Matrix4[]; bounds: { x0: number; x1: number; z0: number; z1: number } }
 const queues = new Map<Builder, Placed[]>()
+
+/** Raw access to an attribute: array, stride, offset and the normalisation factor (null for exotic layouts). */
+function reader(A: THREE.BufferAttribute | THREE.InterleavedBufferAttribute) {
+  const il = (A as THREE.InterleavedBufferAttribute).isInterleavedBufferAttribute
+  const a = (il ? (A as THREE.InterleavedBufferAttribute).data.array : (A as THREE.BufferAttribute).array) as ArrayLike<number>
+  const st = il ? (A as THREE.InterleavedBufferAttribute).data.stride : A.itemSize
+  const of = il ? (A as THREE.InterleavedBufferAttribute).offset : 0
+  let k = 1
+  if (A.normalized) {
+    if (a instanceof Int8Array) k = 1 / 127
+    else if (a instanceof Uint8Array) k = 1 / 255
+    else if (a instanceof Int16Array) k = 1 / 32767
+    else if (a instanceof Uint16Array) k = 1 / 65535
+    else return null
+    // three clamps signed normalised values at −1; only −128 / −32768 fall below, by 1/32767 of a step at most.
+  }
+  return { a, st, of, k }
+}
 const pause = () => new Promise<void>((r) => setTimeout(r))
 const tmpV3 = new THREE.Vector3()
 const nrm = new THREE.Matrix3()
@@ -144,8 +162,12 @@ export async function bakeModels(b: Builder) {
     })
   }
   const full = new THREE.Matrix4()
+  const prof = (globalThis as { __interiorProfile?: Record<string, number> }).__interiorProfile
+  let t0 = performance.now()
   for (const bk of buckets.values()) {
+    if (prof) prof.bake = (prof.bake ?? 0) + performance.now() - t0
     await pause()
+    t0 = performance.now()
     // Attribute layout from the first part; parts missing an attribute get zeros.
     const first = bk.parts[0]!.geo
     const names = Object.keys(first.attributes).filter((n) => n !== "position")
@@ -167,18 +189,67 @@ export async function bakeModels(b: Builder) {
       const n = P.count
       // Feet, glides and base plates thinner than 3.5 mm would z-fight with the floor they stand on: thicken to 4.5 mm.
       const base = m.elements[13]!
-      for (let i = 0; i < n; i++) {
-        tmpV3.fromBufferAttribute(P, i).applyMatrix4(full)
-        const dy = tmpV3.y - base
-        if (dy > 1e-4 && dy < 0.0035) tmpV3.y = base + 0.0045
-        pos[(vo + i) * 3] = tmpV3.x
-        pos[(vo + i) * 3 + 1] = tmpV3.y
-        pos[(vo + i) * 3 + 2] = tmpV3.z
-      }
+      // Hot loops on the raw arrays (plain, non-normalized attributes; others take the accessor path below).
+      const e = full.elements
+      const PR = reader(P)
+      if (PR) {
+        const { a, st, of, k } = PR
+        for (let i = 0, o = vo * 3; i < n; i++, o += 3) {
+          const j = i * st + of
+          const x = a[j]! * k, y = a[j + 1]! * k, z = a[j + 2]! * k
+          const w = 1 / (e[3]! * x + e[7]! * y + e[11]! * z + e[15]!)
+          let wy = (e[1]! * x + e[5]! * y + e[9]! * z + e[13]!) * w
+          const dy = wy - base
+          if (dy > 1e-4 && dy < 0.0035) wy = base + 0.0045
+          pos[o] = (e[0]! * x + e[4]! * y + e[8]! * z + e[12]!) * w
+          pos[o + 1] = wy
+          pos[o + 2] = (e[2]! * x + e[6]! * y + e[10]! * z + e[14]!) * w
+        }
+      } else
+        for (let i = 0; i < n; i++) {
+          tmpV3.fromBufferAttribute(P, i).applyMatrix4(full)
+          const dy = tmpV3.y - base
+          if (dy > 1e-4 && dy < 0.0035) tmpV3.y = base + 0.0045
+          pos[(vo + i) * 3] = tmpV3.x
+          pos[(vo + i) * 3 + 1] = tmpV3.y
+          pos[(vo + i) * 3 + 2] = tmpV3.z
+        }
+      const ne = nrm.elements
       for (const ex of extra) {
         const A = geo.getAttribute(ex.n) as THREE.BufferAttribute | undefined
         if (!A) continue
         const dir = ex.n === "normal" || ex.n === "tangent"
+        const AR = A.itemSize === ex.size ? reader(A) : null
+        if (AR) {
+          const { a, st, of, k } = AR
+          const sz = ex.size
+          const out = ex.data
+          if (!dir) {
+            if (st === sz && of === 0 && k === 1 && a instanceof Float32Array) out.set(a.length === n * sz ? a : a.subarray(0, n * sz), vo * sz)
+            else for (let i = 0; i < n; i++) for (let c = 0; c < sz; c++) out[(vo + i) * sz + c] = a[i * st + of + c]! * k
+          } else
+            for (let i = 0; i < n; i++) {
+              const ii = i * st + of
+              const o = (vo + i) * sz
+              const x = a[ii]! * k, y = a[ii + 1]! * k, z = a[ii + 2]! * k
+              let rx: number, ry: number, rz: number
+              if (ex.n === "normal") {
+                rx = ne[0]! * x + ne[3]! * y + ne[6]! * z
+                ry = ne[1]! * x + ne[4]! * y + ne[7]! * z
+                rz = ne[2]! * x + ne[5]! * y + ne[8]! * z
+              } else {
+                rx = e[0]! * x + e[4]! * y + e[8]! * z
+                ry = e[1]! * x + e[5]! * y + e[9]! * z
+                rz = e[2]! * x + e[6]! * y + e[10]! * z
+              }
+              const L = Math.hypot(rx, ry, rz) || 1
+              out[o] = rx / L
+              out[o + 1] = ry / L
+              out[o + 2] = rz / L
+              if (sz === 4) out[o + 3] = a[ii + 3]! * k
+            }
+          continue
+        }
         for (let i = 0; i < n; i++) {
           const o = (vo + i) * ex.size
           if (dir) {
@@ -197,7 +268,10 @@ export async function bakeModels(b: Builder) {
           }
         }
       }
-      if (geo.index) for (let k = 0; k < geo.index.count; k++) index[io++] = geo.index.getX(k) + vo
+      if (geo.index) {
+        const ia = geo.index.array
+        for (let k = 0, c = geo.index.count; k < c; k++) index[io++] = ia[k]! + vo
+      }
       else for (let k = 0; k < n; k++) index[io++] = k + vo
       vo += n
     }
@@ -205,13 +279,19 @@ export async function bakeModels(b: Builder) {
     g.setAttribute("position", new THREE.BufferAttribute(pos, 3))
     for (const ex of extra) g.setAttribute(ex.n, new THREE.BufferAttribute(ex.data, ex.size))
     g.setIndex(new THREE.BufferAttribute(index, 1))
-    g.computeBoundingSphere()
+    // Bounds from one pass (the sphere is the box's: it only has to enclose for culling).
+    g.computeBoundingBox()
+    g.boundingSphere = g.boundingBox!.getBoundingSphere(new THREE.Sphere())
     const mesh = new THREE.Mesh(g, bk.mat)
     mesh.castShadow = bk.cast
     mesh.receiveShadow = true
     mesh.matrixAutoUpdate = false
     mesh.userData.bounds = bk.bounds
     bk.layer.add(mesh)
+  }
+  if (prof) {
+    prof.bake = (prof.bake ?? 0) + performance.now() - t0
+    prof.bakeDoneAt = Math.max(prof.bakeDoneAt ?? 0, performance.now())
   }
 }
 

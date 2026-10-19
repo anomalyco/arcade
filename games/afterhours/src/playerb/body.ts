@@ -39,6 +39,19 @@ export type BodyState = {
   readonly flashlight: boolean
   /** The camera (first person); E aims the hand at the crosshair from here. */
   readonly eye?: { x: number; y: number; z: number }
+  /**
+   * A mantle in progress (src/player.ts): t 0..1, the feet's start and end, the ledge height above the start, whether
+   * it ends crouched; `face` (optional) is where the feet stop short of the ledge face.
+   */
+  readonly mantle?: {
+    t: number
+    duration: number
+    height: number
+    from: readonly [number, number, number]
+    to: readonly [number, number, number]
+    crouch: boolean
+    face?: readonly [number, number, number]
+  } | null
   /** The ladder's rung plane (normal towards the climber, normal·p = plane) while climbing. */
   readonly ladder?: { normal: readonly [number, number, number]; plane: number } | null
 }
@@ -59,6 +72,7 @@ export type BodyOptions = {
 export type Interaction = "button" | "door"
 
 type ClipMeta = {
+  ledge?: number
   kind: string
   duration: number
   velocity?: number[]
@@ -114,6 +128,10 @@ const IDLE = "breathing-idle"
 const CROUCH_IDLE = "crouch-idle"
 const TORCH_ARM = /^Left(Shoulder|Arm|ForeArm|Hand)/
 /** The jump clip flings the arms out sideways; in the air they are pulled most of the way to the idle's. */
+/** Mantle clips, by the ledge height they're picked for (see mantleWeights). */
+const MANTLES = ["mantle-step-up", "mantle-run-jump-high", "mantle-hang-to-crouch"]
+/** Share of the mantle's camera taken by the body's eyes (the rest stays on the controller's eye path). */
+const MANTLE_VIEW = 0.85
 const CALM_ARMS = /^(Left|Right)(Shoulder|Arm|ForeArm)$/
 const ARM_CALM = 0.9
 const FINGERS = /^LeftHand(Thumb|Index|Middle|Ring|Pinky)/
@@ -223,6 +241,12 @@ export class CharacterBody {
   private stairW = 0
   private stairDir = 0
   private stairPhase = 0
+  private mantleWarp = new Map<string, { ys: number[]; L: number; t0: number; tTop: number; dur: number; fps: number }>()
+  /** Share of the mantle clips in the pose, and of the hands on the ledge. */
+  private mantleW = 0
+  /** Hands on a ledge (0..1): the game tips the view down to them (src/playerb/game.ts). */
+  mantleHandsW = 0
+  private wasMantle = false
   private topW = 0
   /** Share of the jump / fall clips in the pose (their arms are toned down towards the idle's). */
   private airW = 0
@@ -255,6 +279,8 @@ export class CharacterBody {
   private torchIdleT = 0
   private bindQ = new Map<THREE.Bone, THREE.Quaternion>()
   private loadSeq = 0
+  /** False while the torch hand is busy (a mantle): the beam then follows the view (lighting.ts fallback). */
+  private torchHeld = true
   /** Measured eye heights above the feet (m): standing idle, crouch idle, crouch walk. */
   eyes = { stand: 1.62, crouch: 1.15, crouchWalk: 1.25 }
 
@@ -389,7 +415,20 @@ export class CharacterBody {
       const l: Loop = { name: n, action: act(n), duration: m.duration, speed: (m.speed ?? 0) * this.k, dir: 0, offset: 0, w: 0 }
       this.loops.set(n, l)
     }
-    for (const n of ["jump", "left-turn-90", "right-turn-90", "climbing-to-top"]) if (this.clips.has(n)) this.shots.set(n, act(n))
+    for (const n of ["jump", "left-turn-90", "right-turn-90", "climbing-to-top", ...MANTLES]) if (this.clips.has(n)) this.shots.set(n, act(n))
+    this.mantleWarp = new Map()
+    for (const n of MANTLES) {
+      const m = META.anims.clips[n]
+      if (!m?.root || !this.clips.has(n)) continue
+      const ys = m.root.map((r) => r[3] ?? 0)
+      const L = m.ledge ?? ys[ys.length - 1]!
+      const fps = META.anims.fps
+      let f0 = 0
+      for (let f = 0; f < ys.length; f++) if (ys[f]! < 0.02 * L) f0 = f
+      let fTop = ys.findIndex((y) => y >= 0.98 * L)
+      if (fTop < 0) fTop = ys.length - 1
+      this.mantleWarp.set(n, { ys, L, t0: f0 / fps, tTop: fTop / fps, dur: m.duration, fps })
+    }
 
     // Upper-body layers: tracks sampled directly and applied after the mixer (bone masks).
     for (const kind of Object.keys(INTERACT) as Interaction[]) {
@@ -779,11 +818,15 @@ export class CharacterBody {
 
     // Airborne: the jump clip scrubbed between take-off and landing by vertical velocity; long falls loop falling.
     const jm = META.anims.clips.jump
-    if (!s.grounded && !s.onLadder && this.wasGrounded) this.airT = 0
+    const mantle = s.mantle ?? null
+    // A mantle is neither a jump nor a landing (the controller has the feet off the ground throughout).
+    if (mantle || this.wasMantle) this.wasGrounded = true
+    if (!s.grounded && !s.onLadder && !mantle && this.wasGrounded) this.airT = 0
     if (s.grounded && !this.wasGrounded && this.topOut < 0) this.landT = 0
     const leftLadder = this.ladderW > 0.5 && !s.onLadder
-    this.wasGrounded = s.grounded || s.onLadder
-    const inAir = !s.grounded && !s.onLadder
+    this.wasGrounded = s.grounded || s.onLadder || !!mantle
+    this.wasMantle = !!mantle
+    const inAir = !s.grounded && !s.onLadder && !mantle
     this.air += ((inAir ? 1 : 0) - this.air) * damp(inAir ? 18 : 14, dt)
     this.airT += dt
     this.landT += dt
@@ -863,7 +906,13 @@ export class CharacterBody {
       cidle.action.time = this.idleT % cidle.duration
     }
     let turnW = 0
-    if (s.onLadder && s.ladder) {
+    const mw = this.mantleWeights(mantle)
+    if (mantle) {
+      // Square to the ledge.
+      this.turn = null
+      const face = Math.atan2(mantle.to[0] - mantle.from[0], mantle.to[2] - mantle.from[2])
+      this.facing += wrapPi(face - this.facing) * damp(16, dt)
+    } else if (s.onLadder && s.ladder) {
       this.turn = null
       const face = Math.atan2(-s.ladder.normal[0], -s.ladder.normal[2])
       this.facing += wrapPi(face - this.facing) * damp(12, dt)
@@ -896,7 +945,7 @@ export class CharacterBody {
     this.root.rotation.y = this.facing
 
     // Apply weights: the one-shots take their share from everything else.
-    const over = Math.min(1, turnW + jumpW + (s.onLadder ? 0 : topW))
+    const over = Math.min(1, turnW + jumpW + (s.onLadder ? 0 : topW) + this.mantleW)
     const rest = 1 - over
     for (const l of this.loops.values()) {
       const wt = l.w * (l.name === "falling-idle" ? 1 : rest)
@@ -905,22 +954,108 @@ export class CharacterBody {
       if (GAITS.walk.includes(l.name) || GAITS.jog.includes(l.name) || GAITS.run.includes(l.name) || GAITS.crouch.includes(l.name)) l.action.time = (l.offset + this.phase * l.duration) % l.duration
     }
     for (const [n, a] of this.shots) {
-      const wt = n === "jump" ? jumpW : n === "climbing-to-top" ? topW : this.turn?.clip === n ? turnW : 0
+      const wt = n === "jump" ? jumpW : n === "climbing-to-top" ? topW : this.turn?.clip === n ? turnW : (mw.get(n) ?? 0) * this.mantleW
       a.setEffectiveWeight(wt)
       if (wt > 0.01) w[n] = wt
     }
     this.debug.phase = this.phase
-    this.debug.state = this.topT >= 0 ? "ladder top" : inAir ? "air" : s.onLadder ? "ladder" : this.turn ? "turn" : speed < 0.1 ? (crouch > 0.5 ? "crouch" : "idle") : crouch > 0.5 ? "crouch walk" : this.stairW > 0.5 ? "stairs" : "move"
+    this.debug.state = mantle ? `mantle ${mantle.t.toFixed(2)}` : this.topT >= 0 ? "ladder top" : inAir ? "air" : s.onLadder ? "ladder" : this.turn ? "turn" : speed < 0.1 ? (crouch > 0.5 ? "crouch" : "idle") : crouch > 0.5 ? "crouch walk" : this.stairW > 0.5 ? "stairs" : "move"
     mixer.update(0)
     this.root.updateMatrixWorld(true)
 
     this.calmArms()
     this.topW = topW
-    this.applyLook(s, (1 - ladderW) * (1 - topW))
+    this.applyLook(s, (1 - ladderW) * (1 - topW) * (1 - this.mantleW))
     this.applyInteract(dt, s, ladderW)
     this.applyTorch(dt, s, moving)
+    this.applyMantleHands(s)
     if (this.act) w[`E ${this.act.kind}`] = 1
     this.groundFeet(dt, s, inAir)
+  }
+
+  /**
+   * Mantle: the clip(s) for this ledge height and their times. Each clip is time-warped onto the controller's timing:
+   * up to t = 0.7 the clip time is where its hips' climb (`root` y, monotonic) has reached the share of the rise the
+   * controller has done; after that the clip's way over the top plays out to its end by t = 1. The clips are in place
+   * (their root path is removed) and the body stands at the controller's feet, so the climb stretches to the real
+   * height. step-up below ~0.6 m, run-jump-high ~0.85–1.3 m, hang-to-crouch above that or when it ends crouched.
+   */
+  private mantleWeights(m: BodyState["mantle"] | null) {
+    const out = new Map<string, number>()
+    const target = m ? smooth(0, 0.1, m.t) * (1 - smooth(0.9, 1, m.t)) : 0
+    // In fast, out with the landing (the controller's crouch and idle take over).
+    this.mantleW = m ? target : this.mantleW * 0.8
+    if (!m) return out
+    const h = m.height
+    let wS = 1 - smooth(0.6, 0.85, h)
+    let wR = smooth(0.6, 0.85, h) * (1 - smooth(1.25, 1.45, h))
+    let wH = smooth(1.25, 1.45, h)
+    if (m.crouch && h > 0.8) [wS, wR, wH] = [0, 0, 1]
+    const ws: [string, number][] = [
+      ["mantle-step-up", wS],
+      ["mantle-run-jump-high", wR],
+      ["mantle-hang-to-crouch", wH],
+    ]
+    let tot = 0
+    for (const [n, x] of ws) if (this.mantleWarp.has(n)) tot += x
+    const ss = (v: number) => {
+      const c = THREE.MathUtils.clamp(v, 0, 1)
+      return c * c * (3 - 2 * c)
+    }
+    for (const [n, x] of ws) {
+      const W = this.mantleWarp.get(n)
+      const a = this.shots.get(n)
+      if (!W || !a || tot <= 0 || x <= 0) continue
+      out.set(n, x / tot)
+      let time: number
+      if (m.t < 0.7) {
+        const goal = ss(m.t / 0.7) * W.L
+        let f = Math.floor(W.t0 * W.fps)
+        while (f < W.ys.length - 1 && W.ys[f + 1]! < goal) f++
+        const y0 = W.ys[f]!
+        const y1 = W.ys[Math.min(W.ys.length - 1, f + 1)]!
+        time = Math.max(W.t0, (f + (y1 > y0 ? THREE.MathUtils.clamp((goal - y0) / (y1 - y0), 0, 1) : 0)) / W.fps)
+        time = Math.min(time, W.tTop)
+      } else time = W.tTop + (W.dur - W.tTop) * ((m.t - 0.7) / 0.3)
+      a.time = Math.min(time, W.dur - 1e-3)
+    }
+    return out
+  }
+
+  /**
+   * Mantle: both palms on the real ledge edge (in from the face, a shoulder width apart) while the body rises and
+   * starts over the top, for ledges above ~0.75 m (lower ones are stepped up without hands).
+   */
+  private applyMantleHands(s: BodyState) {
+    const m = s.mantle
+    const want = m && m.height > 0.7 ? smooth(0.04, 0.16, m.t) * (1 - smooth(0.68, 0.86, m.t)) * smooth(0.7, 0.8, m.height) : 0
+    this.mantleHandsW = want
+    const B = this.bones
+    if (!m || want < 1e-3 || !B.LeftArm || !B.RightArm) return
+    const d = _v.set(m.to[0] - m.from[0], 0, m.to[2] - m.from[2])
+    if (d.lengthSq() < 1e-6) d.set(Math.sin(this.facing), 0, Math.cos(this.facing))
+    d.normalize()
+    // The face: where the controller stopped short of it (0.32 m), else 0.25 m back from the spot on top.
+    const edge = new THREE.Vector3()
+    if (m.face) edge.set(m.face[0], 0, m.face[2]).addScaledVector(d, 0.32)
+    else edge.set(m.to[0], 0, m.to[2]).addScaledVector(d, -0.25)
+    edge.y = m.to[1]
+    const left = new THREE.Vector3(d.z, 0, -d.x)
+    for (const [side, sgn] of [["Left", 1], ["Right", -1]] as const) {
+      const arm = B[`${side}Arm`]!
+      const fore = B[`${side}ForeArm`]!
+      const hand = B[`${side}Hand`]!
+      // Palm on top, 6 cm in from the edge; the wrist a little behind and above it.
+      const palm = edge.clone().addScaledVector(left, sgn * 0.21).addScaledVector(d, 0.06)
+      palm.y += 0.02
+      const wrist = palm.addScaledVector(d, -0.07).addScaledVector(UP, 0.05)
+      const cur = hand.getWorldPosition(new THREE.Vector3())
+      wrist.lerp(cur, 1 - want)
+      // Elbows out to the side and back.
+      const pole = new THREE.Vector3().copy(d).multiplyScalar(-0.6).addScaledVector(left, sgn * 0.8).addScaledVector(UP, -0.3)
+      twoBoneIK(arm, fore, hand, wrist, pole)
+    }
+    this.model!.updateMatrixWorld(true)
   }
 
   /** Jump and fall: the arms most of the way to the breathing idle's (the clip's arms fly out like a T). */
@@ -1013,8 +1148,11 @@ export class CharacterBody {
    * little with the gait. The right hand stays free for E.
    */
   private applyTorch(dt: number, s: BodyState, moving: number) {
-    this.carryW += ((s.flashlight && !s.onLadder && this.topT < 0 ? 1 : 0) - this.carryW) * damp(7, dt)
-    this.torch.visible = this.carryW > 0.35
+    // Mantling the torch stays in the left fist on the ledge (the beam falls back to the view; see torchLens).
+    const climbing = !!s.mantle && this.mantleW > 0.3
+    this.carryW += ((s.flashlight && !s.onLadder && this.topT < 0 && !s.mantle ? 1 : 0) - this.carryW) * damp(climbing ? 20 : 7, dt)
+    this.torch.visible = this.carryW > 0.35 || (s.flashlight && !!s.mantle)
+    this.torchHeld = !climbing
     const B = this.bones
     if (this.carryW < 1e-3 || !this.torch.parent || !B.LeftArm || !B.LeftForeArm || !B.LeftHand || !B.Head) return
     const w = smooth(0, 1, this.carryW)
@@ -1135,7 +1273,7 @@ export class CharacterBody {
     const gr = this.opts.ground(fr.x, fr.z, top)
     const k = 1 / (1 + Math.exp((fl.y - base - (fr.y - base)) / 0.02))
     let target = k * gl + (1 - k) * gr
-    const ladderish = s.onLadder || this.topT >= 0
+    const ladderish = s.onLadder || this.topT >= 0 || !!s.mantle
     if (inAir || ladderish || this.stairW > 0.3) target = s.pos.y + this.yOff
     if (Number.isNaN(this.rootY) || Math.abs(target - this.rootY) > 1 || ladderish) this.rootY = target
     this.rootY += (target - this.rootY) * damp(inAir ? 40 : this.stairW > 0.3 ? 8 : 18, dt)
@@ -1144,7 +1282,7 @@ export class CharacterBody {
 
     // First person: the eye point (ahead of the Head bone) under the camera. Not on a ladder (the hands must reach the
     // rungs there).
-    const anchor = this.eyeAnchor && this.ladderW < 0.5 && this.topT < 0
+    const anchor = this.eyeAnchor && this.ladderW < 0.5 && this.topT < 0 && this.mantleW < 0.5
     if (anchor) {
       const e = B.Head!.getWorldPosition(_v)
       // The head faces the view (applyLook), so the eyes are ahead of it along the view's heading.
@@ -1174,7 +1312,8 @@ export class CharacterBody {
 
     // On a ladder (and climbing over its top) the body places the head: the camera belongs at its eyes, not on the
     // rung plane where the controller stands.
-    const vw = Math.max(this.ladderW, this.topW)
+    // A mantle too: the camera rides with the head as it comes over the edge (no camera inside the arms or chest).
+    const vw = Math.max(this.ladderW, this.topW, this.mantleW * MANTLE_VIEW)
     this.view.weight = vw
     if (vw > 1e-3) {
       this.root.updateMatrixWorld(true)
@@ -1189,7 +1328,7 @@ export class CharacterBody {
 
   /** Lens position and beam direction (world), or false while the torch is put away. */
   torchLens(pos: THREE.Vector3, dir: THREE.Vector3) {
-    if (!this.torch.visible || !this.torch.parent) return false
+    if (!this.torch.visible || !this.torch.parent || !this.torchHeld) return false
     const lens = this.torch.userData.lens as THREE.Object3D
     lens.updateWorldMatrix(true, false)
     lens.getWorldPosition(pos)

@@ -62,6 +62,7 @@ await page.addInitScript(() => {
     __walk: { frames: number[]; events: Ev[]; loaf: { start: number; dur: number; scripts: string[] }[]; marker?: number }
     __afterhoursDebug?: { renderer: unknown }
   }
+  performance.setResourceTimingBufferSize(10000)
   const W = (g.__walk = { frames: [] as number[], events: [] as Ev[], loaf: [] as { start: number; dur: number; scripts: string[] }[] })
   const tick = (t: number) => {
     W.frames.push(t)

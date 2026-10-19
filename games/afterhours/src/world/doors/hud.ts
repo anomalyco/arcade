@@ -1,18 +1,35 @@
 import { keyPromptHtml } from "@arcade/kit/client/key-cap"
 import { onKeyLayoutChange } from "@arcade/kit/client/controls"
 
-// The door prompt: one small key-cap row just under the screen centre (`E Open`, `E Close`, `E Locked`), fading in
-// and out. Rebuilt only when the verb changes or the key-label setting does.
+// The interaction prompt: a quiet line just under the screen centre (`E Open`, `E Close`, `E Locked`) in the
+// documents' typewriter face, warm off-white at low contrast, with the kit's minimal key glyph (a thin outline, no
+// glossy cap; the QWERTY label of physical KeyE). Fades in and out. The lift's prompts take the same look (class
+// `door-prompt akc-minimal`, inline style copied from this one), and so does the help bar (src/style.css).
 
 export type DoorVerb = "Open" | "Close" | "Locked" | null
+
+/** The HUD's typewriter face (public/fonts/SpecialElite-hud.woff2), registered once as "Afterhours Type". */
+export function installHudType() {
+  if (typeof document === "undefined" || (globalThis as { __ahType?: boolean }).__ahType) return
+  ;(globalThis as { __ahType?: boolean }).__ahType = true
+  const face = new FontFace("Afterhours Type", `url(${new URL("fonts/SpecialElite-hud.woff2", document.baseURI).href})`, { display: "swap" })
+  face
+    .load()
+    .then((f) => document.fonts.add(f))
+    .catch(() => {})
+}
+
+const INK = "rgba(206, 196, 174, 0.66)"
+const INK_LOCKED = "rgba(186, 128, 108, 0.7)"
 
 export class DoorPrompt {
   private el: HTMLDivElement
   private verb: DoorVerb = null
 
   constructor() {
+    installHudType()
     this.el = document.createElement("div")
-    this.el.className = "door-prompt"
+    this.el.className = "door-prompt akc-minimal"
     Object.assign(this.el.style, {
       position: "fixed",
       left: "50%",
@@ -20,15 +37,15 @@ export class DoorPrompt {
       transform: "translate(-50%, 0)",
       pointerEvents: "none",
       opacity: "0",
-      transition: "opacity 0.18s ease",
-      font: "12px/1 ui-monospace, Menlo, monospace",
-      letterSpacing: "0.12em",
+      transition: "opacity 0.35s ease, color 0.3s ease",
+      font: '12px/1 "Afterhours Type", "American Typewriter", "Courier New", monospace',
+      letterSpacing: "0.16em",
       textTransform: "uppercase",
-      color: "rgba(226, 234, 228, 0.82)",
-      textShadow: "0 1px 3px rgba(0, 0, 0, 0.8)",
+      color: INK,
+      textShadow: "0 0 5px rgba(0, 0, 0, 0.75)",
       zIndex: "3",
     } satisfies Partial<CSSStyleDeclaration>)
-    this.el.style.setProperty("--akc-size", "22px")
+    this.el.style.setProperty("--akc-size", "17px")
     document.body.append(this.el)
     onKeyLayoutChange(() => this.render())
   }
@@ -40,15 +57,15 @@ export class DoorPrompt {
     else this.el.style.opacity = "0"
   }
 
-  /** Brief red tint when a locked door is tried. */
+  /** A dull red for a moment when a locked door is tried. */
   flash() {
-    this.el.style.color = "rgba(240, 168, 140, 0.95)"
-    setTimeout(() => (this.el.style.color = "rgba(226, 234, 228, 0.82)"), 450)
+    this.el.style.color = INK_LOCKED
+    setTimeout(() => (this.el.style.color = INK), 600)
   }
 
   private render() {
     if (!this.verb) return
-    this.el.innerHTML = keyPromptHtml("KeyE", this.verb)
-    this.el.style.opacity = this.verb === "Locked" ? "0.75" : "1"
+    this.el.innerHTML = keyPromptHtml("KeyE", this.verb, { minimal: true })
+    this.el.style.opacity = this.verb === "Locked" ? "0.6" : "0.9"
   }
 }

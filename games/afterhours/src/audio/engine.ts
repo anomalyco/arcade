@@ -4,9 +4,10 @@ import { audio, type Bus, type SharedAudio } from "./context"
 import { SFX, type SfxId, type SfxVariant } from "./sfx-manifest"
 
 // Sample playback for the shipped sounds (src/audio/sfx-manifest.ts, public/sfx/**).
-//  - Loading is lazy and never blocks boot: one-shots are fetched in the background a few seconds after the first
-//    frame (`prefetch`) and decoded once the context exists; loops are fetched and decoded only when first needed.
-//    A one-shot asked for before it is decoded is skipped (and its load started), never stalled on.
+//  - Loading is lazy and never blocks boot or the first key press: one-shots are fetched and decoded in idle time a few
+//    seconds after boot, one file per idle slice (`prepare`), with an OfflineAudioContext, so no running context (and
+//    no user input) is needed; the decoded buffers play in the real context once it is unlocked. Loops are fetched and
+//    decoded only when first needed. A one-shot asked for before it is decoded is skipped (and its load started).
 //  - `play` fires a one-shot: no-repeat variant choice, pitch and gain jitter, optional position (an equal-power
 //    panner with inverse-distance rolloff) and occlusion: each wall between the listener and the source (counted on
 //    the world's colliders, plus one per storey slab) takes 45% of the level and closes a low-pass.
@@ -29,6 +30,8 @@ export type PlayOptions = {
   /** Extra low-pass (Hz) on top of occlusion. */
   lowpass?: number
   highpass?: number
+  /** Low-shelf boost (dB) at 180 Hz: heavier impacts. */
+  lowBoost?: number
   /** Start offset into the take (s); negative values delay the start. */
   offset?: number
   /** Specific variant index. */
@@ -51,11 +54,6 @@ export class Sfx {
 
   constructor(private colliders: Box[]) {}
 
-  /** Fetches (bytes only) every one-shot's files in the background. */
-  prefetch() {
-    for (const e of Object.values(SFX)) if (!e.loop) for (const v of e.variants) this.fetchBytes(v.url)
-  }
-
   private fetchBytes(url: string) {
     let p = this.bytes.get(url)
     if (!p) {
@@ -67,11 +65,17 @@ export class Sfx {
     return p
   }
 
-  private decode(a: SharedAudio, v: SfxVariant): Promise<AudioBuffer | null> {
+  private offline: OfflineAudioContext | null = null
+  private queued = false
+
+  /** Decoding works without a running context: an offline one at the files' rate (buffers play in any context). */
+  private decode(v: SfxVariant): Promise<AudioBuffer | null> {
     let p = this.decoding.get(v.url)
     if (!p) {
+      this.offline ??= new OfflineAudioContext(1, 1, 48000)
+      const off = this.offline
       p = this.fetchBytes(v.url)
-        .then((b) => (b ? a.ctx.decodeAudioData(b.slice(0)) : null))
+        .then((b) => (b ? off.decodeAudioData(b) : null))
         .then((buf) => {
           if (buf) {
             this.decoded.set(v.url, buf)
@@ -85,18 +89,23 @@ export class Sfx {
     return p
   }
 
-  /** Decodes everything already fetched (call after unlock). */
-  decodeAll() {
-    const a = audio()
-    if (!a) return
-    for (const e of Object.values(SFX)) if (!e.loop) for (const v of e.variants) void this.decode(a, v)
+  /** Fetches and decodes every one-shot in idle time, one file per idle slice (call once, any time after boot). */
+  prepare() {
+    if (this.queued) return
+    this.queued = true
+    const queue = Object.values(SFX).flatMap((e) => (e.loop ? [] : [...e.variants]))
+    const idle = globalThis.requestIdleCallback ?? ((f: () => void) => setTimeout(f, 16))
+    const next = () => {
+      const v = queue.shift()
+      if (!v) return
+      void this.decode(v).then(() => idle(next, { timeout: 1000 }))
+    }
+    idle(next, { timeout: 1000 })
   }
 
   /** Starts loading an id's variants (loops: on demand). */
   load(id: SfxId) {
-    const a = audio()
-    if (!a) return Promise.resolve()
-    return Promise.all(SFX[id].variants.map((v) => this.decode(a, v))).then(() => {})
+    return Promise.all(SFX[id].variants.map((v) => this.decode(v))).then(() => {})
   }
 
   ready(id: SfxId) {
@@ -196,7 +205,7 @@ export class Sfx {
     const v = SFX[id].variants[i]!
     const buf = this.decoded.get(v.url)
     if (!buf) {
-      void this.decode(a, v)
+      void this.decode(v)
       this.stats.skipped++
       return null
     }
@@ -213,6 +222,13 @@ export class Sfx {
       cutoff = Math.min(cutoff, 18000 * OCCLUDE_CUTOFF ** w)
     }
     let node: AudioNode = src
+    if (o.lowBoost) {
+      const sh = ctx.createBiquadFilter()
+      sh.type = "lowshelf"
+      sh.frequency.value = 180
+      sh.gain.value = o.lowBoost
+      node = node.connect(sh)
+    }
     if (o.highpass) {
       const hp = ctx.createBiquadFilter()
       hp.type = "highpass"
@@ -264,8 +280,7 @@ export class Sfx {
 
   /** @internal */
   decoder(v: SfxVariant) {
-    const a = audio()
-    return a ? this.decode(a, v) : Promise.resolve(null)
+    return this.decode(v)
   }
 }
 

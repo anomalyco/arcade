@@ -28,7 +28,7 @@ const chrome = readdirSync(cache)
 const browser = await chromium.launch({ executablePath: chrome, headless: true, args: ["--enable-unsafe-webgpu", "--mute-audio", "--use-angle=metal"] })
 const page = await browser.newPage({ viewport: { width: 640, height: 640 } })
 page.on("pageerror", (e) => console.log("ERR", e.message))
-await page.goto(`http://localhost:5196/scripts/playerb/compare.html?char=${chars[0]}&mode=bind${args.includes("--stairs") ? "&stairs=1" : ""}`)
+await page.goto(`http://localhost:5196/scripts/playerb/compare.html?char=${chars[0]}&mode=bind${args.includes("--stairs") ? "&stairs=1" : ""}${args.includes("--root") ? "&root=1" : ""}`)
 await page.waitForFunction(() => (globalThis as { __cmp?: { ready: boolean } }).__cmp?.ready, null, { timeout: 180_000 })
 type C = { set(id: string, clip: string, frame: number, view: string, mode?: string, zoom?: string): Promise<void> }
 const zoom = flag("zoom", "")
@@ -73,7 +73,7 @@ if (args[0] === "bind") {
       const frames = Math.round(meta.anims.clips[clip]!.duration * 30)
       const files: string[] = []
       for (let i = 0; i < n; i++) files.push(await shot(id, clip, Math.round((i * frames) / n), view, "pair", `${out}/_${id}-${clip}-${i}.png`))
-      sheet(files, n, `${out}/${id}-${clip}-${view}${args.includes("--stairs") ? "-stairs" : ""}.png`)
+      sheet(files, n, `${out}/${id}-${clip}-${view}${args.includes("--stairs") ? "-stairs" : ""}${args.includes("--root") ? "-root" : ""}.png`)
     }
   }
 }

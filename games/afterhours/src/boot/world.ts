@@ -2,7 +2,7 @@ import * as THREE from "three/webgpu"
 import type { WorldContext, WorldModule } from "../world/context"
 import { VIEWPOINTS, type ViewpointName } from "../world/layout"
 import { MATERIAL_CONTROLS, MATERIAL_SETTINGS, bindMaterialSettings, loadMaterials } from "../render/materials"
-import { createAtmosphere, insideBuilding } from "../render/atmosphere"
+import { createAtmosphere } from "../render/atmosphere"
 import { createLighting } from "../render/lighting"
 import { createPost } from "../render/post"
 import { Player } from "../player"
@@ -13,6 +13,7 @@ import { nextFrame, yieldToMain } from "./schedule"
 import { createWarmup } from "./warmup"
 import { distanceTo } from "./priority"
 import { modelLoadsPending } from "./loads"
+import { MODELS as MODEL_LIBRARY, initModels, preloadModels, type ModelName } from "../render/models"
 
 // The world boot, shared by the game (src/main.ts) and the Look Lab. `bootWorld` builds only terrain plus the render rig
 // and resolves when the first frame can be drawn. The caller starts its frame loop (calling `render`) and then awaits
@@ -32,9 +33,16 @@ export const MODULES: Record<string, () => Promise<WorldBuilder>> = {
 }
 /** Built before the first frame, straight into the scene. */
 export const FIRST_FRAME = new Set(["terrain"])
-/** Build and stream order after the first frame, by where the player starts. */
-const OUTDOOR_ORDER = ["forest", "roads", "compound", "facility", "interior"]
-const INDOOR_ORDER = ["interior", "facility", "compound", "roads", "forest"]
+/**
+ * Build order after the first frame. Everything warms behind the loading screen, so the order is about the critical
+ * path, not the view: the interior goes first because its follow-up furniture bake (after `build()` returns) can then
+ * overlap the other modules' builds and shader compiles instead of trailing at the end.
+ */
+const BUILD_ORDER = ["interior", "facility", "forest", "roads", "compound"]
+/** Relative boot cost per module (build + compile, measured), for the loading bar. */
+const STAGE_WEIGHT: Record<string, number> = { forest: 0.6, roads: 0.5, compound: 0.4, facility: 1.5, interior: 3 }
+const BODY_WEIGHT = 0.3
+const MODELS_WEIGHT = 1
 
 export type BootOptions = {
   /** Start viewpoint (default: `?view=` or "road"). */
@@ -52,6 +60,8 @@ export type StreamHooks = {
   onShown?: (name: string, done: number, total: number) => void
   /** Every module has built, so `ctx.controls` is complete (create the Lab panel here). */
   onBuilt?: () => void
+  /** What the boot is doing now and how far it is (0..1 of the whole warm-up, weighted by measured stage cost). */
+  onProgress?: (stage: string, fraction: number) => void
 }
 
 export type World = Awaited<ReturnType<typeof bootWorld>>
@@ -76,6 +86,10 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
   await renderer.init()
   performance.mark("gpu:init:end")
   if (!(renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend) fail("WebGPU unavailable: running on the WebGL fallback")
+  // Every prop/vehicle GLB starts downloading and transcoding now, overlapping the terrain build and shader compiles,
+  // instead of when each builder first asks (the interior's furniture otherwise arrives seconds into the boot).
+  initModels(renderer)
+  preloadModels(Object.keys(MODEL_LIBRARY) as ModelName[])
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
   renderer.setSize(canvas.clientWidth || innerWidth, canvas.clientHeight || innerHeight, false)
   renderer.toneMapping = THREE.AgXToneMapping
@@ -111,7 +125,7 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
     .catch((e) => fail(`materials: ${e}`))
     .finally(() => performance.mark("materials:end"))
 
-  type Staged = { name: string; root: THREE.Object3D }
+  type Staged = { name: string; root: THREE.Object3D; update?: WorldModule["update"] }
   const updates: NonNullable<WorldModule["update"]>[] = []
   /** Builds a module; non-first-frame ones go into a detached group so they can be compiled before they're shown. */
   async function buildModule(name: string): Promise<Staged | null> {
@@ -125,7 +139,7 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
       root.name ||= name
       const mod = await (m as WorldBuilder).build({ ...ctx, scene: root as THREE.Scene })
       if (mod?.update) updates.push(mod.update)
-      if (root !== scene) staged = { name, root }
+      if (root !== scene) staged = { name, root, update: mod?.update }
     } catch (e) {
       fail(`${name}: ${e instanceof Error ? (e.stack ?? e.message) : e}`)
     }
@@ -187,21 +201,41 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
     for (let i = 0; i < 120 && !warmup.ready; i++) await nextFrame()
     warmup.setCovered(true)
     const eye = camera.getWorldPosition(new THREE.Vector3())
-    const order = insideBuilding(eye) ? INDOOR_ORDER : OUTDOOR_ORDER
+    const order = BUILD_ORDER
     const pending = wanted.filter((n) => !FIRST_FRAME.has(n))
     pending.sort((a, b) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99))
     // Builds run one after another (main-thread CPU); each module's warm-up starts as soon as it's built and overlaps the
     // next build (warm-ups mostly wait on the GPU process). Behind the cover the order of arrival doesn't matter.
     // Only what the game draws now is warmed here; what it hides (other storeys, far furniture) warms after the reveal.
     let done = 0
+    // Progress: each stage's share is roughly what it costs on a typical boot (build ~40%, compile ~60% of a module).
+    const total = pending.reduce((a, n) => a + (STAGE_WEIGHT[n] ?? 1), 0) + BODY_WEIGHT + MODELS_WEIGHT
+    let progressed = 0
+    let stage = ""
+    const advance = (w: number, next?: string) => {
+      progressed += w
+      if (next) stage = next
+      hooks.onProgress?.(stage, Math.min(1, progressed / total))
+    }
     const warming: Promise<void>[] = []
     for (const name of pending) {
+      advance(0, `building ${name}`)
       const s = await buildModule(name)
+      const w = STAGE_WEIGHT[name] ?? 1
       if (!s) {
+        advance(w)
         hooks.onShown?.(name, ++done, pending.length + 1)
         continue
       }
+      advance(w * 0.4, `compiling shaders · ${name}`)
       warmup.track(s.root)
+      // One update first so the module applies its own visibility for this view (the interior hides storeys you're not
+      // near): only what it actually draws from here is warmed behind the loading screen.
+      try {
+        s.update?.(0, 0, camera)
+      } catch (e) {
+        fail(`${s.name} update: ${e instanceof Error ? e.message : e}`)
+      }
       performance.mark(`queue:${s.name}:${Math.round(distanceTo(s.root, eye))}m`)
       performance.mark(`mod:${s.name}:compile:start`)
       warming.push(
@@ -214,25 +248,36 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
             scene.add(s.root)
             performance.mark(`mod:${s.name}:shown`)
             revealed = true
+            advance(w * 0.6)
             hooks.onShown?.(name, ++done, pending.length + 1)
           }),
       )
     }
+    advance(0, "compiling shaders")
     await Promise.all(warming)
     hooks.onBuilt?.()
     // The player character (model + animation library) and its torch.
+    advance(0, "character")
     await gameBody.body.ready.catch(() => {})
     await warmup.warm(gameBody.body.root).catch(() => {})
     performance.mark("body:warm")
+    advance(BODY_WEIGHT, "props and furniture")
     // Models still downloading, and builders' own follow-up work (the interior bakes its furniture after build),
     // land under the tracked module roots and warm on their own: wait until no GLB is in flight, nothing is warming and
     // nothing new has arrived for a while.
-    const QUIET_MS = 400
+    const QUIET_MS = 250
+    let modelsIn = false
     for (;;) {
       await warmup.idle()
+      if (!modelsIn && modelLoadsPending() === 0) {
+        modelsIn = true
+        performance.mark("boot:models-in")
+      }
       if (modelLoadsPending() === 0 && performance.now() - warmup.lastArrival > QUIET_MS) break
       await new Promise((r) => setTimeout(r, 50))
     }
+    performance.mark(`boot:last-arrival:${Math.round(warmup.lastArrival)}`)
+    advance(MODELS_WEIGHT)
     hooks.onShown?.("models", ++done, pending.length + 1)
     warmup.setCovered(false)
     post.setBooting(false)
@@ -240,8 +285,20 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
     performance.mark("boot:warm")
     // What the game hid at the reveal compiles now in slices around frames, nearest first, so it's ready before you
     // walk up to it (if not, it compiles when first drawn: a hitch, never a hole).
+    deferred.push(...warmup.takeHidden())
     performance.mark(`boot:deferred:${deferred.length}`)
-    background = warmup.warmObjects(deferred).then(() => void performance.mark("boot:background"))
+    warmup.uploadGeometry(deferred)
+    performance.mark("boot:geometry-uploaded")
+    background = (async () => {
+      await warmup.warmObjects(deferred)
+      performance.mark("boot:background")
+      // Hidden objects builders add later (furniture bakes) keep warming in the background as they arrive.
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 1000))
+        const more = warmup.takeHidden()
+        if (more.length) await warmup.warmObjects(more)
+      }
+    })()
   }
 
   return {

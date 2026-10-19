@@ -11,8 +11,11 @@ import { surfaceAt, type Surface } from "./surfaces"
 // carpet is a muffled, quieter linoleum step; tile and the computer room's access floor are brighter linoleum (the
 // access floor with a faint hollow ring); chequer plate is a darker grating step; dry asphalt is a darker concrete one.
 // Per step: no-repeat variant, pitch and level jitter, the two feet slightly apart in pitch and pan, level by speed and
-// crouch, a run a little brighter. Landings add a body thud and the second foot, jumps a light scuff. Steps go to the
-// footsteps bus, so they pick up the room or outdoor reverb.
+// crouch (walk 0 dB, run +6 dB and heavier, crouch −12 dB). Landings add a body thud and the second foot, jumps a
+// light scuff. Steps go to the footsteps bus, so they pick up the room or outdoor reverb.
+
+/** A walking step's level (the reference: −6 dB under the first mix, which players found too loud). */
+const WALK_LEVEL = 0.22
 
 type Voicing = { id: SfxId; rate: number; gain: number; lowpass?: number; highpass?: number; ring?: number[] }
 
@@ -54,8 +57,10 @@ export class Footsteps {
     if (surface === "asphalt" && Math.random() > wet) surface = "concrete"
     const v = VOICING[surface]
     this.stats.surfaces[surface] = (this.stats.surfaces[surface] ?? 0) + 1
-    // Level by gait: a walk is quiet, a jog a little louder, a sprint loud; crouching is quieter still.
-    const crouch = 1 - 0.45 * s.crouch
+    // Level by gait, relative to a walk (0 dB, quiet): a run's steps +3 dB each, heavier (low boost, a touch lower),
+    // which with their faster cadence measures about +7 dB of loudness (scripts/audio-levels.ts); a crouch-walk about
+    // −11 dB.
+    const crouch = 1 - 0.73 * s.crouch
     const right = e.foot === "right"
     const pan = right ? 0.08 : -0.08
     const foot = right ? 1.015 : 0.985
@@ -64,12 +69,14 @@ export class Footsteps {
       return
     }
     const run = e.kind === "land" || s.running
-    const gait = Math.max(0.3, Math.min(0.95, 0.12 + 0.2 * e.speed))
+    const pace = Math.max(0, Math.min(1, (e.speed - 1.6) / 2.9))
+    const gait = WALK_LEVEL * 10 ** ((3 * pace) / 20)
     const level = (e.kind === "land" ? 0.5 + 0.5 * e.intensity : gait) * crouch * v.gain
     this.sfx.play(v.id, {
       bus: "footsteps",
       gain: level * (0.88 + Math.random() * 0.24),
-      rate: v.rate * foot * (run ? 1.04 : 1),
+      rate: v.rate * foot * (run ? 0.97 : 1),
+      lowBoost: 5 * pace,
       jitter: 0.035,
       pan,
       lowpass: v.lowpass,

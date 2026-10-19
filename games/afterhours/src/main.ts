@@ -96,8 +96,9 @@ const reveal = () => {
 }
 
 await world.stream({
-  onShown: (name, done, total) => loader.stream(`warming · ${name}`, done, total),
+  onProgress: (stage, f) => loader.progress(stage, f),
   // Created once every module has added its controls.
   onBuilt: () => new LabPanel(world.ctx.settings, world.ctx.controls, params, () => player.release(), { open: false, presets: false }),
 })
+loader.progress("settling", 1)
 settle = SETTLE_FRAMES

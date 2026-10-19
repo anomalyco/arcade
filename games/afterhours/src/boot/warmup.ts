@@ -36,6 +36,13 @@ export type Warmup = {
   track(root: THREE.Object3D): void
   /** Resolves when no late arrival is being warmed. */
   idle(): Promise<void>
+  /**
+   * Creates the GPU vertex/index buffers of these objects now (cheap behind the loading screen), so compiling them later
+   * during play doesn't upload big merged meshes in a frame.
+   */
+  uploadGeometry(objects: THREE.Object3D[]): void
+  /** Hidden late arrivals since the last call (see `lateArrival`). */
+  takeHidden(): THREE.Object3D[]
   /** performance.now() of the last object added under a tracked root after its build (0 if none yet). */
   readonly lastArrival: number
   /**
@@ -47,7 +54,7 @@ export type Warmup = {
 
 /** Materials compiled concurrently per warm-up (behind the loading screen / during play). */
 const CHAINS_COVERED = 10
-const CHAINS_PLAY = 3
+const CHAINS_PLAY = 1
 
 /**
  * @param sliceMs main-thread time per frame that background compiles may take before yielding to rendering
@@ -163,8 +170,21 @@ export function createWarmup(renderer: THREE.WebGPURenderer, scene: THREE.Scene,
     return null
   }
   let lastArrival = 0
+  // Late arrivals the game hides (under a hidden storey, far furniture): not waited for and not masked; queued for
+  // `takeHidden()` so they can warm in the background like what `warm({ visibleOnly })` left over.
+  const hiddenLate: THREE.Object3D[] = []
   const lateArrival = (obj: THREE.Object3D, root: { waiting: boolean; held: THREE.Object3D[] }) => {
+    // Builders' follow-up work (the interior bakes furniture after build) is CPU that would otherwise run during play:
+    // every arrival, hidden or not, holds the loading screen until they stop.
     lastArrival = performance.now()
+    let shown = true
+    for (let a: THREE.Object3D | null = obj; a && shown; a = a.parent) shown = a.visible
+    if (!shown) {
+      obj.traverse((o) => {
+        if (isDrawable(o)) hiddenLate.push(o)
+      })
+      return
+    }
     const mine: THREE.Object3D[] = []
     obj.traverse((o) => {
       if (isDrawable(o) && !hiddenMask.has(o)) {
@@ -283,6 +303,20 @@ export function createWarmup(renderer: THREE.WebGPURenderer, scene: THREE.Scene,
     },
     track(root) {
       if (!tracked.has(root)) tracked.set(root, { waiting: true, held: [] })
+    },
+    uploadGeometry(objects) {
+      const attrs = r._attributes
+      const seen = new Set<unknown>()
+      for (const o of objects) {
+        const g = (o as Any).geometry as THREE.BufferGeometry | undefined
+        if (!g || seen.has(g)) continue
+        seen.add(g)
+        for (const a of Object.values(g.attributes)) attrs.update(a, 1)
+        if (g.index) attrs.update(g.index, 2)
+      }
+    },
+    takeHidden() {
+      return hiddenLate.splice(0)
     },
     get lastArrival() {
       return lastArrival

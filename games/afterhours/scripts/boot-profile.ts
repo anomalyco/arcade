@@ -212,6 +212,8 @@ async function once(browser: Browser): Promise<Run> {
       frames: g.__boot.frames,
       complete: g.__afterhours?.completeAt ?? null,
       gpuMs: g.__afterhours?.gpuMs ?? null,
+      // Interior build profile (busy ms per phase, world/interior.ts), when present.
+      interior: (globalThis as { __interiorProfile?: Record<string, number> }).__interiorProfile ?? null,
     }
   })
   await context.close()

@@ -8,6 +8,7 @@ import { HEAD_TOP, LOBBY, STOREYS } from "./core"
 import { ROOM_BANDS } from "./styles"
 import { STYLES } from "./styles"
 import { liftAudio } from "../../audio/hooks"
+import { keyCapHtml, keyPromptHtml } from "@arcade/kit/client/key-cap"
 
 // A working lift in the core: walk in, aim at a button on the car panel (G, 1–4, door open / close, alarm) and press E
 // (the car goes straight there, calls pressed meanwhile are queued), or press E at a landing's call button. The scissor
@@ -163,9 +164,9 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
     car.cyl(M.darkSteel, P.clone().multiply(T(bt.x, bt.y, 0.012, 0, Math.PI / 2)), r + 0.006, r + 0.006, 0.01, 16)
     car.cyl(bt.kind === "alarm" ? M.red : M.beige, P.clone().multiply(T(bt.x, bt.y, 0.018, 0, Math.PI / 2)), r - 0.005, r - 0.005, 0.006, 16)
   }
-  carRootLegend = panelLegend(panelX, z0 + 0.0165)
+  carRootLegend = panelLegend(panelX, z0 + 0.0205)
   // Position indicator: a row of lamps over the door (the lit one is a separate mesh).
-  for (let k = 0; k < LEVELS; k++) car.cyl(M.diffuserOff, T(indicatorX(k), DOOR.h + 0.12, z0 + 0.005, 0, Math.PI / 2), 0.022, 0.022, 0.01, 14, { cast: false })
+  for (let k = -1; k < LEVELS; k++) car.cyl(M.diffuserOff, T(indicatorX(k), DOOR.h + 0.12, z0 + 0.005, 0, Math.PI / 2), 0.022, 0.022, 0.01, 14, { cast: false })
   // Inspection certificate in its frame, and scuffs.
   car.rbox(M.frame, T(x0 + 0.008, 1.55, z1 - 0.5, Math.PI / 2), 0.24, 0.3, 0.012, 0.004)
   addDocuments(car, [{ id: "cert_elevator", position: [x0 + 0.014, 1.55, z1 - 0.5], normal: [1, 0, 0], pin: "none", curl: 0, size: [0.2, 0.26] }])
@@ -217,7 +218,7 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
   })
   const litLamp = new THREE.Mesh(new THREE.CylinderGeometry(0.0225, 0.0225, 0.011, 14).rotateX(Math.PI / 2), litMat)
   litLamp.position.set(0, DOOR.h + 0.12, z0 + 0.006)
-  carRoot.add(...litButtons, litLamp, carRootLegend!, indicatorLegend(z0 + 0.003))
+  carRoot.add(...litButtons, litLamp, carRootLegend!, indicatorLegend(z0 + 0.0045))
   const litCall = new THREE.Mesh(new THREE.CylinderGeometry(0.0185, 0.0185, 0.009, 16).rotateX(Math.PI / 2), litMat)
   litCall.visible = false
   parent.add(litCall)
@@ -293,7 +294,9 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
   let stallAt = -1
   let jolt = 0
   let pressed = false
+  let inCarNow = false
   let pushed = -1
+  let keyNote = 0
   let idleT = 0
   let pushedT = 0
   const aimDir = new THREE.Vector3()
@@ -302,6 +305,22 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
   // Sounds come from the game audio (src/audio/lift.ts) through this hook; silent until it exists, never in `?shot`.
   const audio = shot ? null : liftAudio()
 
+  // Floor keys inside the car (physical codes): Digit0 = G, Digit1..4 = floors 1–4, Minus = the SL key switch. Window
+  // capture listener: it runs before the player's handler and swallows the digit so the debug viewpoints don't fire.
+  let floorKey: number | null = null
+  addEventListener(
+    "keydown",
+    (e: KeyboardEvent) => {
+      if (!inCarNow || e.target instanceof HTMLInputElement) return
+      const k = FLOOR_KEYS.indexOf(e.code)
+      if (k < 0) return
+      e.stopImmediatePropagation()
+      e.preventDefault()
+      if (!e.repeat) floorKey = k
+      audio?.unlock()
+    },
+    { capture: true },
+  )
   addEventListener("keydown", (e: KeyboardEvent) => {
     if (e.code !== "KeyE" || e.repeat || e.target instanceof HTMLInputElement) return
     pressed = true
@@ -312,12 +331,21 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
 
   const prompt = shot ? null : document.createElement("div")
   if (prompt) {
-    prompt.style.cssText =
-      "position:fixed;left:50%;top:58%;transform:translateX(-50%);font:13px/1.4 ui-monospace,monospace;color:#cfd8d2;letter-spacing:.08em;text-shadow:0 1px 2px #000;pointer-events:none;opacity:0;transition:opacity .2s"
-    prompt.innerHTML = `<span style="display:inline-block;border:1px solid #9aa;border-radius:3px;padding:0 6px;margin-right:8px">E</span><span></span>`
+    // Shared interaction prompt look (door prompt class + kit key caps); only placement is set here.
+    prompt.className = "door-prompt akc-minimal"
+    prompt.style.cssText = "position:fixed;left:50%;top:58%;transform:translate(-50%,0);pointer-events:none;opacity:0"
+    prompt.innerHTML = `<span></span>`
     document.body.appendChild(prompt)
   }
   const promptText = prompt?.lastElementChild as HTMLSpanElement | undefined
+  /** Prompt rows through the shared key caps (`@arcade/kit/client/key-cap`). */
+  const promptHtml = (want: string) => {
+    if (want === "call") return keyPromptHtml("KeyE", "Call lift")
+    if (want === "sl") return `${keyCapHtml("Minus")} <span class="akp-label">SL: key switch, no key</span>`
+    if (want === "keys")
+      return `<span class="akp">${keyCapHtml("Digit1")}–${keyCapHtml("Digit4")} · ${keyCapHtml("Digit0")} G · ${keyCapHtml("Minus")} SL <span class="akp-label">choose stop</span></span>` // (not "floor": the body treats a "floor"/"lift" prompt as an E-button reach)
+    return keyPromptHtml("KeyE", BUTTONS[Number(want.slice(4))]!.prompt)
+  }
   let promptShown = ""
 
   // Floors called (car buttons and landing calls) and not yet served, in the order pressed.
@@ -396,6 +424,22 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
           }
         })
       }
+      inCarNow = inCar
+      if (floorKey !== null) {
+        // A floor key is a press of that panel control: it lights, the hand reaches for it, the press clunks.
+        const bi = BUTTONS.findIndex((b) => (floorKey === FLOOR_KEYS.length - 1 ? b.kind === "key" : b.kind === "floor" && b.floor === floorKey))
+        const bt = BUTTONS[bi]!
+        floorKey = null
+        if (inCar) {
+          audio?.clunk(0.25)
+          const at = { x: panelX + bt.x, y: carFloor.y + PANEL_Y + bt.y, z: z0 + 0.024 }
+          ;(globalThis as { __afterhoursBody?: { body?: { interact?: (k: string, t?: unknown) => void } } }).__afterhoursBody?.body?.interact?.("button", at)
+          if (bt.kind === "floor") request(bt.floor!)
+          else keyNote = 2
+          pushed = bi
+          pushedT = 0.25
+        }
+      }
       let atCall = -1
       for (let s = 0; s < LEVELS; s++) {
         if (Math.abs(feet - carFloorY(s)) > 0.7) continue
@@ -429,11 +473,29 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
           : !inCar && atCall >= 0
             ? { label: "Call lift", at: [CALL.x, carFloorY(atCall) + CALL.y + 0.04, CALL.z - 0.02] }
             : null
+      keyNote = Math.max(0, keyNote - dt)
       if (prompt && promptText) {
-        const want = aimed >= 0 ? BUTTONS[aimed]!.prompt : !inCar && atCall >= 0 && (atCall !== cur || doorWant === 0) ? "Call lift" : ""
+        const want =
+          aimed >= 0
+            ? `aim:${aimed}`
+            : keyNote > 0
+              ? "sl"
+              : inCar
+                ? "keys"
+                : !inCar && atCall >= 0 && (atCall !== cur || doorWant === 0)
+                  ? "call"
+                  : ""
         if (want !== promptShown) {
           promptShown = want
-          if (want) promptText.textContent = want
+          if (want) {
+            // Take the doors' prompt look as it is now (font, colour, key-cap size): one shared style, set over there.
+            const shared = [...document.querySelectorAll<HTMLElement>(".door-prompt")].find((el) => el !== prompt)
+            if (shared) {
+              prompt.style.cssText = shared.style.cssText
+              prompt.style.transform = "translate(-50%, 0)"
+            }
+            promptText.innerHTML = promptHtml(want)
+          }
           prompt.style.opacity = want ? "1" : "0"
         }
       }
@@ -588,6 +650,8 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
 const ROT_Y_PI = new THREE.Matrix4().makeRotationY(Math.PI)
 /** Storey names on the panel and indicators (the building's own: G for the ground floor, then 1–4). */
 const FLOOR_NAMES = ["G", "1", "2", "3", "4"]
+/** Physical keys for the stops inside the car, by floor index (G, 1–4), then the SL key switch. */
+const FLOOR_KEYS = ["Digit0", "Digit1", "Digit2", "Digit3", "Digit4", "Minus"]
 const PANEL_Y = 1.05
 type PanelButton = { kind: "floor" | "open" | "close" | "alarm" | "key"; floor?: number; x: number; y: number; label: string; prompt: string }
 /** Car panel controls in the panel's frame (x right, y up, metres from the panel centre). */
@@ -650,22 +714,23 @@ function panelLegend(x: number, z: number) {
 /** Storey figures under the position lamps over the car door (canvas, 1 px = 1 mm). */
 function indicatorLegend(z: number) {
   const c = document.createElement("canvas")
-  c.width = 520
+  c.width = 620
   c.height = 60
   const g = c.getContext("2d")!
   g.fillStyle = "#1c1d1b"
-  g.fillRect(0, 0, 520, 60)
+  g.fillRect(0, 0, 620, 60)
   g.fillStyle = "#c9c6b8"
   g.textAlign = "center"
   g.textBaseline = "middle"
   g.font = "bold 34px Helvetica, Arial, sans-serif"
-  FLOOR_NAMES.forEach((n, k) => g.fillText(n, 60 + k * 100, 32))
+  // Same stops as the panel: SL (keyed, its lamp never lights: the shaft ends at G), G, 1–4.
+  ;["SL", ...FLOOR_NAMES].forEach((n, k) => g.fillText(n, 60 + k * 100, 32))
   const tex = new THREE.CanvasTexture(c)
   tex.colorSpace = THREE.SRGBColorSpace
   const m = new THREE.MeshStandardNodeMaterial({ map: tex, roughness: 0.6, metalness: 0.3 })
   m.name = "interior_lift_indicator_legend"
-  const plate = new THREE.Mesh(new THREE.PlaneGeometry(0.52, 0.06), m)
-  plate.position.set(DOOR.c, DOOR.h + 0.06, z)
+  const plate = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.06), m)
+  plate.position.set(DOOR.c - 0.05, DOOR.h + 0.06, z)
   return plate
 }
 const indicatorX = (k: number) => DOOR.c - 0.2 + k * 0.1

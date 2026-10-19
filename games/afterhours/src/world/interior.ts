@@ -20,8 +20,25 @@ export { interiorRooms, interiorDoors } from "./interior/registry"
 // slabs between them, the stair core from the ground to the roof and the lift. Each storey is its own group so only
 // the storeys near the player draw while they're inside; the core is always drawn (the stairwell sees them all).
 
+/** Build profile (automation): busy ms per phase between yields, in `__interiorProfile`. */
+const prof: Record<string, number> = ((globalThis as { __interiorProfile?: Record<string, number> }).__interiorProfile = {})
+let profLabel = "start"
+let profT = performance.now()
+const phase = (label: string) => {
+  const t = performance.now()
+  prof[profLabel] = (prof[profLabel] ?? 0) + t - profT
+  profLabel = label
+  profT = t
+}
 /** Yields to the browser between chunks so the build never blocks a frame for long. */
-const pause = () =>
+const pause = () => {
+  const t = performance.now()
+  prof[profLabel] = (prof[profLabel] ?? 0) + t - profT
+  return pauseRaw().then(() => {
+    profT = performance.now()
+  })
+}
+const pauseRaw = () =>
   new Promise<void>((r) => {
     const s = (globalThis as { scheduler?: { yield?: () => Promise<void> } }).scheduler
     if (s?.yield) s.yield().then(r)
@@ -43,17 +60,21 @@ export async function build(ctx: WorldContext): Promise<WorldModule> {
     const b = new Builder(ctx, `storey-${i}`, i)
     // Automation only: `kitdemo=<storey>` replaces that storey with the kit's reference layout (API check).
     const mod = Number(ctx.params.get("kitdemo") ?? -1) === i ? kitDemo : STOREY_MODULES[i]!
+    phase(`s${i}:gen`)
     const h = await mod.build(b, { storey: i, pause })
     if (h.update) updates.push(h.update)
     proxies[i] = h.proxy ?? null
     await pause()
+    phase(`s${i}:flush`)
     await b.flushAsync(ctx.scene, pause)
+    phase(`s${i}:after`)
     void bakeModels(b)
     groups[i] = b.group
     builders[i] = b
     await pause()
   }
   // Core and lift first: storey walls resolve their joints against the core's colliders when they flush.
+  phase("core")
   const core = new Builder(ctx, "core")
   buildSlabs(core)
   await buildCore(core, pause)
@@ -64,12 +85,16 @@ export async function build(ctx: WorldContext): Promise<WorldModule> {
   const coreLift = new Group()
   coreLift.name = "interior:core-lift"
   ctx.scene.add(coreLift)
+  phase("lift")
   const lift = buildLift(ctx, coreLift)
   await buildOne(first)
   for (let i = 0; i < BUILDING.main.storeys; i++) if (i !== first) await buildOne(i)
   releaseDepthRegistry(ctx)
   // Lit-window cards shown from outside instead of the storeys (after every storey registered its lamps).
+  phase("proxies")
   const windowProxies = await buildWindowProxies(ctx, BUILDING.main.storeys, pause)
+  phase("tail")
+  for (const [k, v] of Object.entries((globalThis as { __interiorDepthPhase?: Record<string, number> }).__interiorDepthPhase ?? {})) prof[`depth:${k}`] = v
   // The 3 a.m. lighting state is the one truth for lamps and windows: report drift (a listed source with no lamp).
   for (const m of checkNightState(ctx.lamps)) console.warn(`interior lighting state: ${m}`)
 

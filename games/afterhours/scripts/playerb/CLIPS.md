@@ -47,6 +47,7 @@ Ignore the other translation tracks, which hold Remy's bone lengths.
     - `climb`: loop with its linear rise removed
     - `jump`
     - `one`: one-shot
+    - `mantle` / `vault`: one-shot with root motion; see the mantle fields below
     - `broken`: unusable source, see below
   - `loop`: true when the clip wraps seamlessly.
   - `inPlace`: always true. All travel has been taken out of the glb and is reported in the fields below.
@@ -66,6 +67,30 @@ Ignore the other translation tracks, which hold Remy's bone lengths.
     height is removed; the dip before take-off and on landing is kept.
   - `seamFixed`: degrees of end-vs-start mismatch that was spread over the loop.
   - `centred`: the constant offset (m) that was removed to put the clip over the origin.
+
+## Mantles and vaults
+
+These clips are `mantle-step-up`, `mantle-hop-up`, `mantle-run-jump-high`, `mantle-hang-to-crouch`, `vault-one-hand`
+and `vault-two-hand`. Their extra fields:
+
+- `root`: one entry per frame, `[x, z, yaw, y]` relative to frame 0, at Remy's size (+z forward, +x the character's
+  left; the floor is at y = 0).
+  - Forward and sideways come from the hips path smoothed over ±5 frames, so the in-clip bob stays in the hips.
+  - `y` (mantles only) is the hips' climb made monotonic and scaled to end exactly at `ledge`.
+  - Vaults have `y` = 0: their jump arc stays in the hips.
+- The glb's hips keep only the motion relative to that path. To play a clip, place the body at `root[f]`; to match a
+  different ledge height, stretch `y`.
+- `ledge`: the height the clip implies (m). For mantles it's the floor the feet end on; for vaults it's the hand-plant
+  height minus 3 cm.
+- `start`: `"stand"`, or `"hang"` for `mantle-hang-to-crouch`, which starts hanging with its feet 0.24 m up.
+- `hands`: `{l, r}`, a list of contacts each `{start, end, palm}`.
+  - `start` and `end` are clip times (s).
+  - `palm` is `[x, y, z]` at the first contact frame: y above the floor, x and z relative to the frame-0 root.
+  - A contact is a palm that is nearly still (under 0.9 m/s) and on the ledge, meaning −15 to +12 cm of `ledge` and
+    ahead of the hips, or on the obstacle for vaults.
+  - Use these intervals to pin the palm onto the real edge.
+- `feetLand`: `{l, r}`, the clip time at which each foot first rests on its final floor after a hand contact, or
+  null.
 
 ## Known source problems
 

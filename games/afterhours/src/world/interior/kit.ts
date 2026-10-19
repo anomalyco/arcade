@@ -24,7 +24,13 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 import type { Lamp, WorldContext } from "../context"
 import { BUILDING } from "../layout"
 import { material, materialFor, type MaterialName } from "../../render/materials"
-import { DOCUMENTS, type DocumentId, type DocumentPlacement, documentGeometry, documentMaterial } from "../../render/documents"
+import {
+  DOCUMENTS,
+  type DocumentId,
+  type DocumentPlacement,
+  documentGeometry,
+  documentMaterial,
+} from "../../render/documents"
 
 /*
  * INTERIOR KIT — the shared construction API for storey agents. Storey files import everything from `./api`:
@@ -586,6 +592,22 @@ const FACES: [number, number, number, number[][]][] = [
  */
 const QUAD = [0, 1, 2, 0, 2, 3]
 
+/** Shared template geometries (rounded boxes, cylinders) by their exact parameters: built once, reused by every call
+ *  with the same size (the builder copies them transformed; nothing writes to them). */
+const templates = new Map<string, THREE.BufferGeometry>()
+const templateGeo = (key: string, make: () => THREE.BufferGeometry) => {
+  let g = templates.get(key)
+  if (!g) {
+    g = make()
+    if (!g.getAttribute("normal")) g.computeVertexNormals()
+    templates.set(key, g)
+  }
+  return g
+}
+const xMat = new THREE.Matrix4()
+const xOff = new THREE.Matrix4()
+const xNormal = new THREE.Matrix3()
+
 /**
  * Depth hygiene (run at flush over a storey's builders), the generic cure for z-fighting:
  *  1. Structural faces (walls, floors, joints: emitted under `fixedDepth`) that lie on the same plane (within 3.5 mm,
@@ -627,9 +649,7 @@ export function addDocuments(b: Builder, list: readonly DocumentPlacement[]) {
     // Flat sheets lie on model desks whose catalogue height can be a millimetre short of the real top: 5 mm there.
     b.add(
       documentMaterial(),
-      documentGeometry([
-        { ...p, offset: Math.max(p.offset ?? 0, Math.abs(p.normal?.[1] ?? 0) > 0.9 ? 0.005 : 0.004) },
-      ]),
+      documentGeometry([{ ...p, offset: Math.max(p.offset ?? 0, Math.abs(p.normal?.[1] ?? 0) > 0.9 ? 0.005 : 0.004) }]),
       {
         worldUV: false,
         cast: false,
@@ -730,13 +750,17 @@ function* separateDepthSteps(builders: Builder[]): Generator<void> {
     const slab = Math.floor(t.c / DTOL) + 50000 + dSlab
     const gu1 = Math.floor(t.u1)
     const gv1 = Math.floor(t.v1)
+    // Keys are hashed to small integers (V8 keeps them unboxed, Map lookups stay fast); a collision only adds a
+    // candidate, which `overlaps` (axis, facing, plane, extents) rejects.
     if (big || (gu1 - Math.floor(t.u0) + 1) * (gv1 - Math.floor(t.v0) + 1) > 16) {
-      fn(-(slab * 6 + af + 1))
+      fn((((slab * 6 + af) * 2654435761) >>> 3) | 1)
       if (!big) return
     }
-    const pre = slab * 512
-    for (let gu = Math.floor(t.u0); gu <= gu1; gu++)
-      for (let gv = Math.floor(t.v0); gv <= gv1; gv++) fn(((pre + gu + 256) * 512 + gv + 256) * 6 + af)
+    const h0 = Math.imul(slab, 73856093) ^ af
+    for (let gu = Math.floor(t.u0); gu <= gu1; gu++) {
+      const h1 = h0 ^ Math.imul(gu + 256, 19349663)
+      for (let gv = Math.floor(t.v0); gv <= gv1; gv++) fn(((h1 ^ Math.imul(gv + 256, 83492791)) & 0x1fffffff) << 1)
+    }
   }
   // A face is stored in its slab and both neighbours, so a lookup reads one slab only (lookups outnumber stores).
   const put = (m: Map<number, DTri[]>, t: DTri) => {
@@ -822,24 +846,57 @@ function* separateDepthSteps(builders: Builder[]): Generator<void> {
   // A primitive's axis-aligned faces merged per plane (0.5 mm) into rectangles: a cylinder cap or a subdivided face is
   // one entry, which keeps the lookups cheap.
   function rectsOf(pi: number): DTri[] {
+    // Allocation-light: triangle math inline, one rect object per plane (a short array, searched linearly).
     const p = prims[pi]!
     const a = p.pt.pos
-    const by = new Map<number, DTri>()
+    const out: DTri[] = []
+    const keys: number[] = []
     for (let v = p.s; v + 2 < p.e; v += 3) {
-      const t = triOf(pi, a, v)
-      if (!t) continue
-      const k = Math.round(t.c / 0.0005) * 6 + t.ax * 2 + (t.s > 0 ? 1 : 0)
-      const r = by.get(k)
-      if (!r) by.set(k, t)
-      else {
-        r.u0 = Math.min(r.u0, t.u0)
-        r.u1 = Math.max(r.u1, t.u1)
-        r.v0 = Math.min(r.v0, t.v0)
-        r.v1 = Math.max(r.v1, t.v1)
+      const o = v * 3
+      const ux = a[o + 3]! - a[o]!,
+        uy = a[o + 4]! - a[o + 1]!,
+        uz = a[o + 5]! - a[o + 2]!
+      const wx = a[o + 6]! - a[o]!,
+        wy = a[o + 7]! - a[o + 1]!,
+        wz = a[o + 8]! - a[o + 2]!
+      const nx = uy * wz - uz * wy,
+        ny = uz * wx - ux * wz,
+        nz = ux * wy - uy * wx
+      const L2 = nx * nx + ny * ny + nz * nz
+      if (L2 < 1e-18) continue
+      const k2 = 0.999 * L2
+      const ax = nx * nx > k2 ? 0 : ny * ny > k2 ? 1 : nz * nz > k2 ? 2 : -1
+      if (ax < 0) continue
+      const s = (ax === 0 ? nx : ax === 1 ? ny : nz) > 0 ? 1 : -1
+      const i0 = ax === 0 ? 1 : 0
+      const i1 = ax === 2 ? 1 : 2
+      const c = (a[o + ax]! + a[o + 3 + ax]! + a[o + 6 + ax]!) / 3
+      const p0 = a[o + i0]!,
+        p1 = a[o + 3 + i0]!,
+        p2 = a[o + 6 + i0]!
+      const q0 = a[o + i1]!,
+        q1 = a[o + 3 + i1]!,
+        q2 = a[o + 6 + i1]!
+      const u0 = Math.min(p0, p1, p2),
+        u1 = Math.max(p0, p1, p2)
+      const v0 = Math.min(q0, q1, q2),
+        v1 = Math.max(q0, q1, q2)
+      const key = Math.round(c / 0.0005) * 6 + ax * 2 + (s > 0 ? 1 : 0)
+      const j = keys.indexOf(key)
+      if (j < 0) {
+        keys.push(key)
+        out.push({ pr: pi, vi: v, ax, s, c, u0, u1, v0, v1 })
+      } else {
+        const r = out[j]!
+        if (u0 < r.u0) r.u0 = u0
+        if (u1 > r.u1) r.u1 = u1
+        if (v0 < r.v0) r.v0 = v0
+        if (v1 > r.v1) r.v1 = v1
       }
     }
-    return [...by.values()]
+    return out
   }
+
   const near = (t: DTri, m: Map<number, DTri[]>, fn: (o: DTri) => void) => {
     const st = ++depthStamp
     // The slab's big faces, then the cells this face covers.
@@ -859,6 +916,8 @@ function* separateDepthSteps(builders: Builder[]): Generator<void> {
     )
   }
   const overlaps = (t: DTri, o: DTri) =>
+    t.ax === o.ax &&
+    t.s === o.s &&
     Math.abs(t.c - o.c) < DTOL &&
     Math.min(t.u1, o.u1) - Math.max(t.u0, o.u0) > 0.0005 &&
     Math.min(t.v1, o.v1) - Math.max(t.v0, o.v0) > 0.0005
@@ -1252,6 +1311,15 @@ export class Builder {
   }
 
   add(mat: Mat, g: THREE.BufferGeometry, opts: AddOpts = {}) {
+    this.addXform(mat, g, null, opts)
+    g.dispose()
+  }
+
+  /**
+   * Appends `g` transformed by `m` (positions affine, normals by the normal matrix, renormalised: the same result as
+   * `g.applyMatrix4(m)` then `add`) without touching `g`, so shared template geometries can be reused.
+   */
+  private addXform(mat: Mat, g: THREE.BufferGeometry, m: THREE.Matrix4 | null, opts: AddOpts = {}) {
     const p = this.part(mat, opts.cast ?? true)
     if (!g.getAttribute("normal")) g.computeVertexNormals()
     const pos = g.getAttribute("position")
@@ -1261,17 +1329,62 @@ export class Builder {
     const n = index ? index.count : pos.count
     const world = opts.worldUV ?? true
     const oy = this.oy
+    const e = m ? m.elements : null
+    if (m) xNormal.getNormalMatrix(m)
+    const ne = xNormal.elements
+    // Raw arrays (the kit's own geometries are plain Float32 attributes); accessors otherwise.
+    const plain = (A: THREE.BufferAttribute | THREE.InterleavedBufferAttribute | undefined) =>
+      !!A && !(A as THREE.InterleavedBufferAttribute).isInterleavedBufferAttribute && !A.normalized
+    const fast = plain(pos) && plain(nor) && (!uv || plain(uv))
+    const pa = fast ? (pos as THREE.BufferAttribute).array : null
+    const na = fast ? (nor as THREE.BufferAttribute).array : null
+    const ua = fast && uv ? (uv as THREE.BufferAttribute).array : null
+    const ia = index ? index.array : null
+    const P = p.pos,
+      N = p.nor,
+      U = p.uv
     for (let k = 0; k < n; k++) {
-      const i = index ? index.getX(k) : k
-      tmpV.fromBufferAttribute(pos, i)
-      tmpN.fromBufferAttribute(nor, i)
-      p.pos.push(tmpV.x, tmpV.y + oy, tmpV.z)
-      p.nor.push(tmpN.x, tmpN.y, tmpN.z)
-      if (world || !uv) uvFor(tmpV.x, tmpV.y, tmpV.z, tmpN.x, tmpN.y, tmpN.z, p.uv)
-      else p.uv.push(uv.getX(i), uv.getY(i))
+      const i = ia ? ia[k]! : k
+      let x: number, y: number, z: number, nx: number, ny: number, nz: number
+      if (pa) {
+        x = pa[i * 3]!
+        y = pa[i * 3 + 1]!
+        z = pa[i * 3 + 2]!
+        nx = na![i * 3]!
+        ny = na![i * 3 + 1]!
+        nz = na![i * 3 + 2]!
+      } else {
+        tmpV.fromBufferAttribute(pos, i)
+        tmpN.fromBufferAttribute(nor, i)
+        x = tmpV.x
+        y = tmpV.y
+        z = tmpV.z
+        nx = tmpN.x
+        ny = tmpN.y
+        nz = tmpN.z
+      }
+      if (e) {
+        const tx = e[0]! * x + e[4]! * y + e[8]! * z + e[12]!
+        const ty = e[1]! * x + e[5]! * y + e[9]! * z + e[13]!
+        const tz = e[2]! * x + e[6]! * y + e[10]! * z + e[14]!
+        x = tx
+        y = ty
+        z = tz
+        const mx = ne[0]! * nx + ne[3]! * ny + ne[6]! * nz
+        const my = ne[1]! * nx + ne[4]! * ny + ne[7]! * nz
+        const mz = ne[2]! * nx + ne[5]! * ny + ne[8]! * nz
+        const L = Math.sqrt(mx * mx + my * my + mz * mz) || 1
+        nx = mx / L
+        ny = my / L
+        nz = mz / L
+      }
+      P.push(x, y + oy, z)
+      N.push(nx, ny, nz)
+      if (world || !uv) uvFor(x, y, z, nx, ny, nz, U)
+      else if (ua) U.push(ua[i * 2]!, ua[i * 2 + 1]!)
+      else U.push(uv.getX(i), uv.getY(i))
     }
     this.paintVerts(p, mat, n)
-    g.dispose()
   }
 
   /** Axis-aligned box from min to max corners (emitted directly: the interior has thousands of them). */
@@ -1337,10 +1450,9 @@ export class Builder {
 
   /** Bevelled box (rounded edges) of size w×h×d centred at the origin of `m` plus an offset. */
   rbox(mat: Mat, m: THREE.Matrix4, w: number, h: number, d: number, r = 0.02, ox = 0, oy = 0, oz = 0, opts?: AddOpts) {
-    const g = new RoundedBoxGeometry(w, h, d, 2, Math.min(r, w / 2 - 1e-3, h / 2 - 1e-3, d / 2 - 1e-3))
-    g.translate(ox, oy, oz)
-    g.applyMatrix4(m)
-    this.add(mat, g, opts)
+    const rr = Math.min(r, w / 2 - 1e-3, h / 2 - 1e-3, d / 2 - 1e-3)
+    const g = templateGeo(`rb|${w}|${h}|${d}|${rr}`, () => new RoundedBoxGeometry(w, h, d, 2, rr))
+    this.addXform(mat, g, xMat.multiplyMatrices(m, xOff.makeTranslation(ox, oy, oz)), opts)
   }
 
   cyl(
@@ -1352,9 +1464,12 @@ export class Builder {
     seg = 12,
     opts?: AddOpts & { open?: boolean },
   ) {
-    const g = new THREE.CylinderGeometry(rTop, rBot, h, seg, 1, opts?.open ?? false)
-    g.applyMatrix4(m)
-    this.add(mat, g, opts)
+    const open = opts?.open ?? false
+    const g = templateGeo(
+      `cy|${rTop}|${rBot}|${h}|${seg}|${open}`,
+      () => new THREE.CylinderGeometry(rTop, rBot, h, seg, 1, open),
+    )
+    this.addXform(mat, g, m, opts)
   }
 
   /** Flat quad of w×h in the local XY plane facing local +Z, keeping its own 0..1 UVs. */
@@ -1609,6 +1724,7 @@ export class Builder {
   }
 
   private flushFinish(parent: THREE.Object3D) {
+    const tFinish = performance.now()
     if (this.smallB) this.smallB.separated = true
     if (this.smallB) {
       this.smallB.flush(this.small)
@@ -1625,8 +1741,27 @@ export class Builder {
         g.setAttribute("color", new THREE.Float32BufferAttribute(p.col, 3))
         g.setAttribute("rm", new THREE.Float32BufferAttribute(p.rm, 2))
       }
-      g.computeBoundingSphere()
-      g.computeBoundingBox()
+      // Bounds in one pass over the positions; the sphere is the box's (culling only needs it to enclose).
+      let x0 = Infinity,
+        y0 = Infinity,
+        z0 = Infinity,
+        x1 = -Infinity,
+        y1 = -Infinity,
+        z1 = -Infinity
+      const P = p.pos
+      for (let i = 0; i < P.length; i += 3) {
+        const x = P[i]!,
+          y = P[i + 1]!,
+          z = P[i + 2]!
+        if (x < x0) x0 = x
+        if (x > x1) x1 = x
+        if (y < y0) y0 = y
+        if (y > y1) y1 = y
+        if (z < z0) z0 = z
+        if (z > z1) z1 = z
+      }
+      g.boundingBox = new THREE.Box3(new THREE.Vector3(x0, y0, z0), new THREE.Vector3(x1, y1, z1))
+      g.boundingSphere = g.boundingBox.getBoundingSphere(new THREE.Sphere())
       const mesh = new THREE.Mesh(g, p.mat)
       mesh.name = `${this.group.name}:${p.mat.name}`
       mesh.castShadow = p.cast
@@ -1636,6 +1771,7 @@ export class Builder {
     }
     this.parts.clear()
     parent.add(this.group)
+    depthPhase.finish = (depthPhase.finish ?? 0) + performance.now() - tFinish
   }
 }
 
@@ -1963,7 +2099,16 @@ export function door(b: Builder, x: number, z: number, o: DoorOpts): string[] {
         if (!(sd > 0 && o.plateDoc)) b.boxM(M.plate, F, 0.16, 0.1, 0.012, w / 2 + 0.22, 1.5, sd * (d + 0.006))
         else {
           const v = new THREE.Vector3(w / 2 + 0.22, 1.5, d).applyMatrix4(F)
-          addDocuments(b, [{ id: o.plateDoc, position: [v.x, v.y, v.z], normal: [Math.sin(o.rot), 0, Math.cos(o.rot)], pin: "none", curl: 0, size: [0.155, 0.095] }])
+          addDocuments(b, [
+            {
+              id: o.plateDoc,
+              position: [v.x, v.y, v.z],
+              normal: [Math.sin(o.rot), 0, Math.cos(o.rot)],
+              pin: "none",
+              curl: 0,
+              size: [0.155, 0.095],
+            },
+          ])
         }
       }
   })

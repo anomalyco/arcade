@@ -3,7 +3,7 @@ import type { WorldContext } from "../world/context"
 import type { Player } from "../player"
 import { insideBuilding } from "../render/atmosphere"
 import { CORE, INTERIOR } from "../world/layout"
-import { audio, BUSES, setLevels, setSpace, unlockAudio, type Bus } from "./context"
+import { audio, BUSES, prepareAudio, setLevels, setSpace, unlockAudio, type Bus } from "./context"
 import { Sfx } from "./engine"
 import { Footsteps } from "./footsteps"
 import { Ambience } from "./ambience"
@@ -14,8 +14,8 @@ import { hooks } from "./hooks"
 // The game's audio: one context and mix (context.ts), the shipped samples (engine.ts, sfx-manifest.ts), and what plays
 // them: footsteps, doors (world/doors/audio.ts through `hooks.sfx`), the lift (lift.ts through `hooks.lift`), ambience
 // and weather, the horror layer, and the interface. Created by the player only when input is enabled, so never in
-// `?shot` mode; silent until the first click or key press. One-shots are fetched in the background a few seconds
-// after boot and decoded on unlock; loops load when first needed. Lab: Audio group (master and one level per bus).
+// `?shot` mode; silent until the first click or key press. One-shots are fetched and decoded in idle time a few
+// seconds after boot (no input needed); loops load when first needed. Lab: Audio group (master and one level per bus).
 
 const LEVELS: { key: string; bus: Bus | "master"; label: string; value: number }[] = [
   { key: "audio.master", bus: "master", label: "Master volume", value: 1 },
@@ -50,18 +50,35 @@ export class GameAudio {
     hooks.sfx = this.sfx
     hooks.lift = new LiftSounds(this.sfx, () => this.unlock())
     hooks.paper = () => this.paper()
-    // After the first frames: fetch the one-shots' bytes in the background (decoded once the context exists).
-    // (Idle time a few seconds in, so it never competes with the first frame or the world streaming in.)
-    setTimeout(() => (globalThis.requestIdleCallback ?? ((f: () => void) => setTimeout(f, 0)))(() => this.sfx.prefetch(), { timeout: 4000 }), 5000)
+    // Soon after the first frame, in idle time while the world is still streaming in behind the boot overlay: the
+    // context (suspended, silent), its reverbs, then every one-shot fetched and decoded one at a time. The first key
+    // press then only resumes the context.
+    setTimeout(() => this.prepare(), 1200)
     ;(globalThis as { __afterhoursAudio?: GameAudio }).__afterhoursAudio = this
   }
 
-  /** From a user-input handler. */
+  private prepared = false
+
+  /** Everything that can be readied before input, in idle time. */
+  private prepare() {
+    if (this.prepared) return
+    this.prepared = true
+    const idle = globalThis.requestIdleCallback ?? ((f: () => void) => setTimeout(f, 0))
+    idle(
+      () => {
+        prepareAudio()
+        this.sfx.prepare()
+      },
+      { timeout: 4000 },
+    )
+  }
+
+  /** From a user-input handler: only creates/resumes the context (decoding is already under way in idle time). */
   unlock() {
     if (!unlockAudio()) return
     if (this.unlocked) return
     this.unlocked = true
-    this.sfx.decodeAll()
+    this.prepare()
   }
 
   update(dt: number, camera: THREE.PerspectiveCamera) {

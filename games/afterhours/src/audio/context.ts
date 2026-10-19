@@ -29,11 +29,48 @@ let shared: SharedAudio | null = null
 let roomSend: GainNode | null = null
 let outSend: GainNode | null = null
 
-/** Creates (first call) or resumes the context. Call only from a user-input handler. */
+/** Set by the first user input; until then nothing plays even where a browser would let the context run. */
+let unlocked = false
+let impulses: { room: AudioBuffer; out: AudioBuffer; noise: AudioBuffer } | null = null
+
+/**
+ * Prepares, before any input (behind the boot overlay, in idle time), everything the first key press would otherwise
+ * stall on: the two reverb impulses, the noise buffer and the context itself with its whole mix, created suspended
+ * (creating an AudioContext costs ~90 ms of main thread; it makes no sound until `unlockAudio` resumes it on input).
+ */
+export function prepareAudio() {
+  if (!impulses) makeImpulses()
+  createContext()
+}
+
+function makeImpulses() {
+  if (typeof AudioBuffer === "undefined") return
+  const rate = 48000
+  const noise = new AudioBuffer({ numberOfChannels: 1, length: rate * 2, sampleRate: rate })
+  const d = noise.getChannelData(0)
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1
+  impulses = {
+    // Interior: dense early reflections off hard walls, 1.1 s tail, darkening as it decays.
+    room: impulse(rate, 1.1, 2400, 0.012, 7),
+    // Exterior: a faint slap off the building and trees, 0.5 s, mostly low.
+    out: impulse(rate, 0.5, 1100, 0.06, 2),
+    noise,
+  }
+}
+
+/** Resumes the context (creating it first if `prepareAudio` hasn't run). Call only from a user-input handler. */
 export function unlockAudio(): SharedAudio | null {
+  createContext()
+  if (!shared) return null
+  unlocked = true
+  if (shared.ctx.state === "suspended") void shared.ctx.resume()
+  return shared
+}
+
+function createContext() {
   if (!shared) {
     const Ctor = globalThis.AudioContext ?? (globalThis as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
-    if (!Ctor) return null
+    if (!Ctor) return
     const ctx = new Ctor({ latencyHint: "interactive" })
     const master = ctx.createGain()
     // A gentle limiter so a thunder crack over rain never clips.
@@ -46,16 +83,12 @@ export function unlockAudio(): SharedAudio | null {
     master.connect(limiter).connect(ctx.destination)
     const world = ctx.createGain()
     world.connect(master)
-    const n = ctx.sampleRate * 2
-    const noise = ctx.createBuffer(1, n, ctx.sampleRate)
-    const d = noise.getChannelData(0)
-    for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1
-    // Interior: dense early reflections off hard walls, 1.1 s tail, darkening as it decays.
+    if (!impulses) makeImpulses()
+    const { noise, room: roomIr, out: outIr } = impulses!
     const room = ctx.createConvolver()
-    room.buffer = impulse(ctx, 1.1, 2400, 0.012, 7)
-    // Exterior: a faint slap off the building and trees, 0.5 s, mostly low.
+    room.buffer = roomIr
     const out = ctx.createConvolver()
-    out.buffer = impulse(ctx, 0.5, 1100, 0.06, 2)
+    out.buffer = outIr
     roomSend = ctx.createGain()
     outSend = ctx.createGain()
     roomSend.gain.value = 0
@@ -69,13 +102,11 @@ export function unlockAudio(): SharedAudio | null {
     }
     shared = { ctx, master, buses, bus: world, noise }
   }
-  if (shared.ctx.state === "suspended") void shared.ctx.resume()
-  return shared
 }
 
 /** The context once unlocked and running, else null (nothing plays before user input). */
 export function audio(): SharedAudio | null {
-  return shared && shared.ctx.state === "running" ? shared : null
+  return unlocked && shared && shared.ctx.state === "running" ? shared : null
 }
 
 /** Master and category levels (linear, eased). */
@@ -98,10 +129,9 @@ export function setSpace(indoor: number, size: number) {
 }
 
 /** Stereo exponentially decaying noise with early reflections, low-passed over time (1-pole, cutoff falls). */
-function impulse(ctx: AudioContext, seconds: number, cutoff: number, gap: number, taps: number) {
-  const rate = ctx.sampleRate
+function impulse(rate: number, seconds: number, cutoff: number, gap: number, taps: number) {
   const n = Math.floor(seconds * rate)
-  const buf = ctx.createBuffer(2, n, rate)
+  const buf = new AudioBuffer({ numberOfChannels: 2, length: n, sampleRate: rate })
   for (let c = 0; c < 2; c++) {
     const d = buf.getChannelData(c)
     let lp = 0
