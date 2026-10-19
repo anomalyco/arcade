@@ -56,8 +56,8 @@ export type WorldContext = { town: Town; ai: OutbreakAISubsystem; time: number; 
 /** A survivor looking closely at a reinforced barricade: which, for how long, and where they stood last tick. */
 export type Study = { portal: string; t: number; x: number; y: number }
 
-/** Selected-item behaviour on the primary button. */
-export type HeldUse = "fire" | "melee" | "shove" | "heal" | "throw" | "set"
+/** Selected-item behaviour on the primary button; `use` is an item a feature runs itself (fire & explosives). */
+export type HeldUse = "fire" | "melee" | "shove" | "heal" | "throw" | "set" | "use"
 
 export type OutbreakProgressionSnapshot = {
   tuning: ProgressionTuning

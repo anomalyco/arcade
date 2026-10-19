@@ -385,7 +385,9 @@ describe("loot from building archetypes", () => {
       expect(part.at.y).toBeLessThan(hardware.rect[1] + 5.5)
     }
     const empty = lootSites(town, { ...T, lootRate: 0 })
-    expect(empty.stores.every((s) => (s.initial as unknown[]).every((x) => (x as { item: string }).item === "toolbox" || (x as { item: string }).item === "car-battery"))).toBe(true)
+    // With no loot, only the back room's fixed things are left: the bench parts and the fire one (a pressure tank, maybe a flamethrower).
+    const fixed = new Set(["toolbox", "car-battery", "pressure-tank", "flamethrower"])
+    expect(empty.stores.every((s) => (s.initial as unknown[]).every((x) => fixed.has((x as { item: string }).item)))).toBe(true)
   })
 })
 

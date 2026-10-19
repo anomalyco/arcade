@@ -30,6 +30,8 @@ describe("crafting rows", () => {
       ["lure", false, -1],
       ["battery", false, -1],
       ["tripwire", false, -1],
+      ["molotov", false, -1],
+      ["flamethrower", false, -1],
     ])
     expect(rows[0]).toMatchObject({ ok: true, cost: [{ item: "chem", need: 1, have: 1 }] })
     // The survivor starts with two planks and no scrap, and spiked boards are made at a workbench.
