@@ -19,13 +19,14 @@ const [EVENING, NIGHT1, DAY2, NIGHT2, DAY3, NIGHT3] = [0, 1, 2, 3, 4, 5]
 
 /**
  * Fraction of runs alive at dawn 1 and dawn 3, per preset. Values with the D-40 night ramp (Gentle Start, Rising) in
- * comments; Today's (night ramp off) in brackets.
+ * comments; Today's (night ramp off) in brackets. AR-65 (zombies no longer wedge in doorways) moved Skilled dawn 3 from
+ * 0.5 to 0.25 and Expert's from 1 to 0.75: houses stopped being a free fortress. Bands unchanged.
  */
 const SURVIVAL_BANDS: Record<BotSkillPresetId, { dawn1: [number, number]; dawn3: [number, number] }> = {
-  Novice: { dawn1: [0, 0.75], dawn3: [0, 0.5] }, // 0.25, 0 [0, 0]
+  Novice: { dawn1: [0, 0.75], dawn3: [0, 0.5] }, // 0, 0 [0, 0]
   Casual: { dawn1: [0.5, 1], dawn3: [0, 0.75] }, // 1, 0 [0.5, 0.25]
-  Skilled: { dawn1: [0.75, 1], dawn3: [0.25, 1] }, // 1, 0.5 [1, 0.75]
-  Expert: { dawn1: [0.75, 1], dawn3: [0.25, 1] }, // 1, 1 [1, 1]
+  Skilled: { dawn1: [0.75, 1], dawn3: [0.25, 1] }, // 1, 0.25 [1, 0.75]
+  Expert: { dawn1: [0.75, 1], dawn3: [0.25, 1] }, // 1, 0.75 [1, 1]
   Perfect: { dawn1: [0, 1], dawn3: [0, 1] },
 }
 
@@ -38,19 +39,19 @@ const PRESSURE_BANDS = {
   /** Night 1 living zombies over the evening's: the director ramps in. */
   nightOneRampIn: [2.5, 10], // 3.9 [5.5]
   /** Night 1 chasers: the night ramp holds Night 1 to 2. */
-  nightOneChasers: [0.3, 2], // 1.18 [2.23]
+  nightOneChasers: [0.3, 2], // 1.10 [2.23]
   /** Night 2 living zombies: above the director's own 16. */
   nightTwoLiving: [17, 26], // 19.0 [16.0]
   /** Living zombies, Night 3 over Night 2: still rising. */
   nightThreeLivingOverTwo: [1.05, 1.6], // 1.16 [1.0]
   /** Aware zombies at night over the day before it: nights are harder than days. */
-  nightOverDay2: [1.3, 5], // 2.19 [1.9]
-  nightOverDay3: [1.2, 5], // 2.29 [1.51]
+  nightOverDay2: [1.3, 5], // 2.33 [1.9]
+  nightOverDay3: [1.2, 5], // 2.19 [1.51]
   /** Aware zombies, Night 3 over Night 2: rising, without a cliff. */
-  nightThreeOverTwo: [1.1, 2], // 1.32 [1.03]
+  nightThreeOverTwo: [1.1, 2], // 1.23 [1.03]
   /** Active chasers at night. */
-  nightTwoChasers: [1.5, 4], // 2.62 [2.37]
-  nightThreeChasers: [3, 5.5], // 3.89 [2.56]
+  nightTwoChasers: [1.5, 4], // 2.89 [2.37]
+  nightThreeChasers: [3, 5.5], // 3.94 [2.56]
 } as const
 
 const within = (name: string, value: number, [lo, hi]: readonly [number, number]) => {
