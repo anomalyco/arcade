@@ -266,16 +266,17 @@ export function stageListeningRoom(s: S3): (t: number) => void {
     const sfx = hooks.sfx
     if (!sfx) return
     if (!voice) {
-      // Low rolloff: faint along the spine and at the stair door on 3, walls muffle it (the engine occludes).
-      // (Tuned with scripts/audio-radio.ts: soft wall occlusion, as its real path runs along the corridors.)
-      voice = sfx.loop("amb-radio-static", { bus: "ambience", positional: true, ref: 2.5, rolloff: 0.25, occlusion: 0.3 })
+      // Heard only in 3-08 and faintly at its corridor door (the radio stands ~15 m in from it): an 18 m range,
+      // fading from 12.6 m, silent beyond it and on other floors; full wall muffling, so only the open doorway lets it
+      // out (scripts/audio-radio.ts). `voice.stop()` silences it for good (the transmitter switch).
+      voice = sfx.loop("amb-radio-static", { bus: "ambience", positional: true, ref: 2.5, rolloff: 0.5, range: 18 })
       voice.at(src.x, src.y, src.z)
     }
     voice.set(0.72 + 1.44 * level)
     voice.update(dt, t)
     if (t > nextVoice) {
       nextVoice = t + 22 + Math.random() * 30
-      sfx.play("hor-radio-whisper", { bus: "horror", pos: { x: src.x, y: src.y, z: src.z }, ref: 2, rolloff: 0.6, gain: 0.5, jitter: 0.05 })
+      sfx.play("hor-radio-whisper", { bus: "horror", pos: { x: src.x, y: src.y, z: src.z }, ref: 2.5, rolloff: 0.5, range: 18, gain: 0.5, jitter: 0.05 })
     }
   }
 }

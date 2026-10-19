@@ -38,6 +38,16 @@ export type PlayOptions = {
   variant?: number
   /** Count walls between the listener and `pos` (default true when positional). */
   occlude?: boolean
+  /** Audible range (m) for a positional sound: fades out towards it, silent beyond it or more than 2.5 m above/below. */
+  range?: number
+}
+
+/** Level factor for a source `range` m audible: full within 70% of it, smooth to 0 at it; 0 a storey away. */
+function rangeFade(ear: { x: number; y: number; z: number }, p: { x: number; y: number; z: number }, range: number) {
+  if (Math.abs(p.y - ear.y) > 2.5) return 0
+  const d = Math.hypot(p.x - ear.x, p.z - ear.z)
+  const u = Math.max(0, Math.min(1, (range - d) / (range * 0.3)))
+  return u * u * (3 - 2 * u)
 }
 
 const OCCLUDE_GAIN = 0.55
@@ -217,6 +227,11 @@ export class Sfx {
     const jit = o.jitter ?? 0.03
     src.playbackRate.value = (o.rate ?? 1) * (1 - jit + Math.random() * 2 * jit)
     let gain = o.gain ?? 1
+    if (o.pos && o.range) {
+      const f = rangeFade(this.listener, o.pos, o.range)
+      if (f <= 0) return null
+      gain *= f
+    }
     let cutoff = o.lowpass ?? 20000
     if (o.pos && o.occlude !== false) {
       const w = this.walls(o.pos)
@@ -299,6 +314,8 @@ export type LoopOptions = {
    * through doorways rather than through the walls the straight line crosses.
    */
   occlusion?: number
+  /** Audible range (m): fades out towards it, silent (and released) beyond it or a storey away. */
+  range?: number
 }
 
 export class LoopVoice {
@@ -320,10 +337,30 @@ export class LoopVoice {
     private o: LoopOptions,
   ) {}
 
-  /** Target level (0 silences and, after a while, releases it) and an optional extra low-pass. */
+  private stopped = false
+
+  /** Target level (0 silences and, after a while, releases it) and an optional extra low-pass. Ignored once stopped. */
   set(level: number, cutoff = 20000) {
-    this.target = level
+    this.target = this.stopped ? 0 : level
     this.cutoff = cutoff
+  }
+
+  /** Stops it for good (a switch turned off): a short fade, then the source is released; `set` no longer starts it. */
+  stop() {
+    this.stopped = true
+    this.target = 0
+    const a = audio()
+    if (a && this.gain) this.gain.gain.setTargetAtTime(0, a.ctx.currentTime, 0.06)
+    this.silentFor = 2.7
+  }
+
+  /** Undoes `stop`. */
+  resume() {
+    this.stopped = false
+  }
+
+  get isStopped() {
+    return this.stopped
   }
 
   at(x: number, y: number, z: number) {
@@ -335,7 +372,8 @@ export class LoopVoice {
   update(dt: number, now: number) {
     const a = audio()
     if (!a) return
-    if (this.target <= 0.0005) {
+    const fade = this.o.positional && this.o.range ? rangeFade(this.sfx.ear, this.pos, this.o.range) : 1
+    if (this.target * fade <= 0.0005) {
       this.silentFor += dt
       if (this.src) this.gain!.gain.setTargetAtTime(0, a.ctx.currentTime, 0.25)
       if (this.src && this.silentFor > 3) this.release()
@@ -346,7 +384,7 @@ export class LoopVoice {
       this.start(a)
       return
     }
-    let level = this.target
+    let level = this.target * fade
     let cutoff = this.cutoff
     if (this.o.positional) {
       if (now - this.occlAt > 0.3) {

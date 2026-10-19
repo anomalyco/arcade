@@ -160,7 +160,8 @@ import {
  *   (wall solid registry; wall() registers every span, head and sill) · wall extent.joint/id · addDocuments() ·
  *   Builder.depthGap / fixedDepth / depthObstacles · releaseDepthRegistry(). Vinyl seam strips removed (styles).
  *   interior/blood.ts: bloodMesh() / bloodMaterial() (procedural pools, smears, spatter, hand/footprints, drips; one
- *   shader) · s3 workTable(…, height) · pendant({ angle, range }).
+ *   shader) · s3 workTable(…, height) · pendant({ angle, range }) · attachToLeaf() (door-leaf signs and notes;
+ *   addDocuments puts sheets on a leaf face onto the leaf automatically).
  *
  * DEPTH HYGIENE (automatic, at flush; gate: `bun run audit:hygiene`)
  *   - Wall joints close on the registered wall solids (T: sink, L: X walls own the corner, collinear: butt); an end
@@ -647,7 +648,9 @@ let depthStamp = 0
 export function addDocuments(b: Builder, list: readonly DocumentPlacement[]) {
   const save = b.depthGap
   b.depthGap = 0.004
-  for (const p of list)
+  for (const p of list) {
+    // A sheet taped to a door leaf goes on the leaf (it swings with the door), not into the static batch.
+    if (onDoorLeaf(b, p)) continue
     // Flat sheets lie on model desks whose catalogue height can be a millimetre short of the real top: 5 mm there.
     b.add(
       documentMaterial(),
@@ -657,7 +660,60 @@ export function addDocuments(b: Builder, list: readonly DocumentPlacement[]) {
         cast: false,
       },
     )
+  }
   b.depthGap = save
+}
+
+/** Door leaves built by `door()`, per world: the leaf object, its hinge (world) and closed yaw, size. */
+type LeafRec = { leaf: THREE.Object3D; hinge: THREE.Vector3; yaw: number; width: number; thickness: number }
+const leafRegistry = new WeakMap<WorldContext, LeafRec[]>()
+const _lp = new THREE.Vector3()
+const _ln = new THREE.Vector3()
+
+/** The leaf whose face (closed pose) a point lies on with a facing normal, if any. */
+function leafAt(ctx: WorldContext, world: THREE.Vector3, normal: THREE.Vector3 | null, slack = 0.03) {
+  for (const r of leafRegistry.get(ctx) ?? []) {
+    _lp.copy(world).sub(r.hinge).applyAxisAngle(UP_AXIS, -r.yaw)
+    if (_lp.x < -0.01 || _lp.x > r.width + 0.01 || _lp.y < -0.01 || _lp.y > DOOR_H + 0.01) continue
+    if (Math.abs(_lp.z) > r.thickness / 2 + slack) continue
+    if (normal) {
+      _ln.copy(normal).applyAxisAngle(UP_AXIS, -r.yaw)
+      if (Math.abs(_ln.z) < 0.9) continue
+    }
+    return r
+  }
+  return null
+}
+const UP_AXIS = new THREE.Vector3(0, 1, 0)
+
+/**
+ * Puts something that belongs on a door leaf (a sign, sticker, note, nameplate: built in world coordinates at the
+ * leaf's closed pose) onto the leaf, so it swings with the door. Returns false when (x, y, z) is on no leaf.
+ * `y` is in the builder's storey frame (FLOOR_Y-based), like every builder coordinate.
+ */
+export function attachToLeaf(b: Builder, object: THREE.Object3D, x: number, y: number, z: number, normal?: readonly [number, number, number]) {
+  const r = leafAt(b.ctx, new THREE.Vector3(x, y + b.oy, z), normal ? new THREE.Vector3(...normal) : null)
+  if (!r) return false
+  const inv = new THREE.Matrix4().makeRotationY(r.yaw).setPosition(r.hinge).invert()
+  object.applyMatrix4(inv)
+  r.leaf.add(object)
+  return true
+}
+
+function onDoorLeaf(b: Builder, p: DocumentPlacement) {
+  const n = p.normal ?? [0, 0, 1]
+  if (Math.abs(n[1]) > 0.5) return false
+  const at = new THREE.Vector3(p.position[0], p.position[1] + b.oy, p.position[2])
+  const r = leafAt(b.ctx, at, new THREE.Vector3(...n))
+  if (!r) return false
+  const g = documentGeometry([{ ...p, position: [at.x, at.y, at.z], offset: Math.max(p.offset ?? 0, 0.002) }])
+  g.applyMatrix4(new THREE.Matrix4().makeRotationY(r.yaw).setPosition(r.hinge).invert())
+  const mesh = new THREE.Mesh(g, documentMaterial())
+  mesh.name = `leaf-doc:${p.id}`
+  mesh.receiveShadow = true
+  mesh.castShadow = false
+  r.leaf.add(mesh)
+  return true
 }
 
 /** Frees the world's depth registry (call once every interior builder has flushed). */
@@ -2138,6 +2194,10 @@ export function door(b: Builder, x: number, z: number, o: DoorOpts): string[] {
     }
     leaf.rotation.y = o.rot + (mirror ? Math.PI : 0)
     b.group.add(leaf)
+    let recs = leafRegistry.get(b.ctx)
+    if (!recs) leafRegistry.set(b.ctx, (recs = []))
+    recs.push({ leaf, hinge: new THREE.Vector3(v.x, v.y + b.oy, v.z), yaw: leaf.rotation.y, width: lw, thickness: t })
+    ;(globalThis as { __interiorLeaves?: LeafRec[] }).__interiorLeaves = recs
     b.ctx.doors.add({
       id: ids[i],
       leaf,

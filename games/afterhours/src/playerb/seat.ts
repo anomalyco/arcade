@@ -84,6 +84,13 @@ const DRIVE_CLIP = "driving-idle"
 const EYE_UP = 0.07
 const EYE_AHEAD = 0.09
 /** The hands turn with the wheel up to this (rad); past it the rim slides through them (no hand-over-hand). */
+/** Wheel grip: the palm faces back towards the driver (PALM_BACK) and out (PALM_OUT) on the rim. */
+const PALM_OUT = 1
+const PALM_BACK = 0.8
+const TUNE = { gap: 0.017, x: 0, tilt: 0 }
+;(globalThis as { __seatTune?: unknown }).__seatTune = TUNE
+/** Finger half-thickness per finger (m), for the contact with the rim tube. */
+const FINGER_R: Record<string, number> = { Index: 0.013, Middle: 0.013, Ring: 0.0125, Pinky: 0.0115 }
 /** The hands follow the wheel's turn up to about this much (rad), softly (see `turn` in update). */
 const HOLD = (24 * Math.PI) / 180
 /** The step-out clip, its length (s) and when the left hand reaches the door (s). */
@@ -474,13 +481,36 @@ export class SeatRig {
       const roll = new THREE.Quaternion().setFromAxisAngle(nW, -(clock - clipClock))
       const S0 = hub.clone().addScaledVector(upW, Math.cos(clock) * w.radius).addScaledVector(rightW, Math.sin(clock) * w.radius)
       const G = S0.clone().sub(hub).applyQuaternion(turn).add(hub)
-      const rot = turn.clone().multiply(roll)
-      let handQ = rot.clone().multiply(Q0)
-      let wrist = G.clone().sub(G0.clone().sub(P0).applyQuaternion(rot))
-      let fistW = 0
-      const E0 = P(`${side}ForeArm`)
-      const A0 = P(`${side}Arm`)
-      let pole = E0.clone().sub(A0.clone().add(P0).multiplyScalar(0.5))
+      void roll
+      void Q0
+      // The grip, solved on the real rim: the closed fist (fitted once: its barrel axis through the curled fingers,
+      // index side = "lens", +Y towards the palm) with that axis along the rim's tangent (index side towards 12
+      // o'clock) and its centre on the rim tube's centre line, the palm on the rim's outer face towards the driver, so
+      // the fingers wrap round behind it (dash side) and the thumb comes round the inside. Then the fingers are
+      // closed onto the tube (wrapFingers).
+      const C = G
+      const radial = C.clone().sub(hub).normalize()
+      const tang = new THREE.Vector3().crossVectors(nW, radial).normalize()
+      const lens = tang.multiplyScalar(side === "Left" ? -1 : 1)
+      if (lens.dot(upW.clone().applyQuaternion(turn)) < 0) lens.negate()
+      // The palm on the rim's outer face, facing the hub (and a little towards the driver); the open fingers run
+      // from there over the dash side, so closed they wrap behind the rim and back on its inner side.
+      const palmFace = radial.clone().multiplyScalar(-PALM_OUT).addScaledVector(nW, TUNE.tilt).normalize()
+      let fingersDir = nW.clone().addScaledVector(palmFace, -nW.dot(palmFace)).normalize()
+      let handQ = this.palmQuat(palmFace, fingersDir, fit, side)
+      // Index towards 12 o'clock; if this hand's chirality puts it the other way, the fingers run the other way.
+      const idxDir = new THREE.Vector3().copy(fit.thumb).applyQuaternion(handQ)
+      if (idxDir.dot(lens) < 0) {
+        fingersDir = fingersDir.negate()
+        handQ = this.palmQuat(palmFace, fingersDir, fit, side)
+      }
+      const hs = hand.getWorldScale(_v).x
+      const palmAt = C.clone().addScaledVector(palmFace, -(w.tube ?? 0.016) - TUNE.gap).addScaledVector(fingersDir, TUNE.x)
+      let wrist = palmAt.sub(fit.palmPos.clone().multiplyScalar(hs).applyQuaternion(handQ))
+      let fistW = 1
+      const sgn = side === "Left" ? 1 : -1
+      // Forearm from below and outside: elbow down, out and back.
+      let pole = U.clone().multiplyScalar(-1).addScaledVector(R, -0.5 * sgn).addScaledVector(F, -0.3)
       this.debug[side] = { clipClockDeg: +((clipClock * 180) / Math.PI).toFixed(0), clockDeg: +((clock * 180) / Math.PI).toFixed(0) } as never
       this.targets[side].copy(G)
 
@@ -521,6 +551,7 @@ export class SeatRig {
       const sh = B[`${side}Shoulder`]
       if (sh) {
         const A = arm.getWorldPosition(new THREE.Vector3())
+        const E0 = P(`${side}ForeArm`)
         const len = A.distanceTo(E0) + E0.distanceTo(P0)
         const need = A.distanceTo(wrist) - len * REACH_MAX
         if (need > 0) {
@@ -539,6 +570,7 @@ export class SeatRig {
       fore.updateWorldMatrix(false, true)
       setWorldQuat(hand, handQ)
       if (fistW > 1e-3) host.fist(side, fistW)
+      if (!(side === "Left" && this.door > 0)) this.wrapFingers(side, C, hub, nW, w.radius, w.tube ?? 0.016)
     }
     model.updateMatrixWorld(true)
     // Automation/debug: where each fist ended up relative to its target (m), and the markers.
@@ -551,6 +583,74 @@ export class SeatRig {
     // The eyes, in the car's frame (breathing included).
     const e = B.Head!.getWorldPosition(new THREE.Vector3()).addScaledVector(U, EYE_UP).addScaledVector(F, EYE_AHEAD)
     this.eyeLocal.copy(wheel.parent!.worldToLocal(e))
+  }
+
+  /**
+   * Closes each finger onto the rim tube: per phalanx (knuckle, middle, tip), the joint turned about its flex axis
+   * (square to the finger and the palm normal) so the next joint lands at the tube's surface plus the finger's
+   * half-thickness, measured from the segment's nearest point to the tube's centre line (world). Contact, not a fixed curl: fingers never poke through
+   * the rim or hover off it.
+   */
+  private wrapFingers(side: "Left" | "Right", C: THREE.Vector3, hub: THREE.Vector3, nW: THREE.Vector3, radius: number, tube: number) {
+    const B = this.host.bones()
+    const toTube = (p: THREE.Vector3) => {
+      const g = p.clone().sub(hub)
+      g.addScaledVector(nW, -g.dot(nW))
+      return p.distanceTo(hub.clone().add(g.setLength(radius)).addScaledVector(nW, p.clone().sub(hub).dot(nW)))
+    }
+    const tubeD = (p: THREE.Vector3) => {
+      const g = p.clone().sub(hub)
+      const along = g.dot(nW)
+      const pl = g.clone().addScaledVector(nW, -along)
+      return p.distanceTo(hub.clone().add(pl.setLength(radius)))
+    }
+    void toTube
+    void C
+    const hand = B[`${side}Hand`]!
+    const P = (n: string) => B[n]!.getWorldPosition(new THREE.Vector3())
+    const H = P(`${side}Hand`)
+    const fing = P(`${side}HandMiddle1`).sub(H).normalize()
+    const across = P(`${side}HandIndex1`).sub(P(`${side}HandPinky1`)).normalize()
+    // The flex axis: fingers curl about the knuckle line (index ↔ pinky), towards the palm.
+    const flexSign = side === "Left" ? 1 : -1
+    void hand
+    void fing
+    for (const f of ["Index", "Middle", "Ring", "Pinky"]) {
+      const want = tube + FINGER_R[f]!
+      for (let i = 1; i <= 3; i++) {
+        const b = B[`${side}Hand${f}${i}`]
+        const n = B[`${side}Hand${f}${i + 1}`]
+        if (!b || !n) continue
+        const axis = across.clone().multiplyScalar(flexSign)
+        // Bisection on the extra curl (−0.6..+1.4 rad) for the child joint's distance to the tube = want.
+        let lo = -0.6
+        let hi = 1.4
+        const q0 = b.quaternion.clone()
+        const err = (a: number) => {
+          b.quaternion.copy(q0)
+          turnWorld(b, axis, a)
+          // The segment's nearest point to the tube (its middle cuts closest, a chord), not only the next joint.
+          const pa = b.getWorldPosition(new THREE.Vector3())
+          const pb = n.getWorldPosition(new THREE.Vector3())
+          return Math.min(tubeD(pb), tubeD(pa.clone().lerp(pb, 0.5)), tubeD(pa.lerp(pb, 0.75))) - want
+        }
+        // Distance falls as the finger curls in towards the tube, then rises past it: take the first crossing.
+        const elo = err(lo)
+        const ehi = err(hi)
+        let a = 0
+        if (elo > 0 && ehi < 0) {
+          for (let k = 0; k < 14; k++) {
+            const m = (lo + hi) / 2
+            if (err(m) > 0) lo = m
+            else hi = m
+          }
+          a = (lo + hi) / 2
+        } else a = Math.abs(elo) < Math.abs(ehi) ? lo : (elo > 0 ? hi : 0)
+        b.quaternion.copy(q0)
+        turnWorld(b, axis, a)
+      }
+    }
+    this.host.model()!.updateMatrixWorld(true)
   }
 
   /** Hand world rotation that puts the fist's grip frame (-Z = barrel, +Y = palm side) on `lens` / `toPalm`. */

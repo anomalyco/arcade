@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>ASHWOOD · Monster Lab</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; height: 100%; background: #0b0d0e; overflow: hidden; font: 12px/1.4 system-ui, sans-serif; color: #dde; }
+      canvas { display: block; width: 100vw; height: 100vh; }
+      #ui { position: fixed; left: 10px; top: 10px; width: 300px; display: flex; flex-direction: column; gap: 5px; max-height: calc(100vh - 20px); overflow: auto; background: rgba(14, 16, 18, 0.78); border: 1px solid #2a2f35; border-radius: 8px; padding: 10px; box-sizing: border-box; }
+      .row { display: flex; flex-wrap: wrap; gap: 3px; }
+      button { font: inherit; color: #dde; background: #22272d; border: 1px solid #363c44; border-radius: 5px; padding: 3px 7px; cursor: pointer; }
+      button:hover { border-color: #5a626c; }
+      button.on { background: #c9813a; border-color: #c9813a; color: #111; }
+      label { opacity: 0.6; text-transform: uppercase; letter-spacing: 0.06em; font-size: 10px; margin-top: 4px; }
+      #bname { opacity: 0.8; font-style: italic; }
+      input[type="range"] { width: 100%; }
+      #badge { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); padding: 5px 12px; border-radius: 6px; font-weight: 600; letter-spacing: 0.04em; background: rgba(20, 22, 24, 0.7); }
+      #badge.stand { background: #b8321f; color: #fff; }
+      #info { position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%); padding: 4px 10px; border-radius: 6px; background: rgba(14, 16, 18, 0.7); white-space: nowrap; }
+      #loading { position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%); opacity: 0.8; }
+      #concept { position: fixed; right: 10px; top: 10px; width: 180px; border-radius: 6px; border: 1px solid #2a2f35; cursor: zoom-in; opacity: 0.92; }
+      #concept.big { width: min(60vw, 900px); cursor: zoom-out; opacity: 1; }
+      #hint { opacity: 0.55; font-size: 11px; }
+    </style>
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <div id="badge"></div>
+    <img id="concept" alt="concept art" title="Concept art (click to enlarge)" />
+    <div id="info"></div>
+    <div id="loading">Starting WebGPU…</div>
+    <div id="ui">
+      <label>Monster</label><div class="row" id="monsters"></div>
+      <label>Scene</label><div class="row" id="scenes"></div>
+      <label>Camera</label><div class="row" id="cams"></div>
+      <label>Clip / behaviour</label><div id="bname"></div><div class="row" id="clips"></div>
+      <label>Playback speed</label><div class="row" id="speeds"></div>
+      <label>Motion</label><div class="row" id="motion"></div>
+      <label>Scale <span id="scaleOut"></span></label><input id="scale" type="range" min="0.5" max="1.5" step="0.01" value="1" />
+      <label>Sounds (from the head)</label><div class="row" id="sounds"></div>
+      <label>Auto behaviour sounds</label><div class="row" id="auto"></div>
+      <label>Flashlight (F)</label><div class="row" id="flash"></div>
+      <div id="hint">First person: click to look, WASD move, Shift faster, Esc to release. Orbit: drag, wheel.</div>
+    </div>
+    <script type="module" src="/src/monster-lab/main.ts"></script>
+  </body>
+</html>

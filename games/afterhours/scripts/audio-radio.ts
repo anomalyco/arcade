@@ -1,8 +1,9 @@
-// The listening room's radio as a beacon (storeys/s3/listening.ts): records the mix standing still at the storey-3
-// stair door (hall side), the corridor midpoint on the way and inside the room (3-08), first with only the radio
-// (the game's own ambience paused, every other bus muted), then with the ambience beds back, and prints the radio's
-// loudness at each spot and how far it sits over or under the beds there. One headless browser (960×600), closed at
-// the end. Expects the dev server on :5196.
+// The listening room's radio (storeys/s3/listening.ts) along the way from the lot: records the mix standing still at
+// the entrance, in the lobby, at the storey-3 stair door (hall side), in the corridor right outside 3-08 and inside
+// 3-08, first with only the radio (the game's own ambience paused, every other bus muted), then with the ambience
+// back, and prints the radio's loudness at each spot against the ambience there (−70 LUFS is the meter's floor:
+// silent). The horror layer is set as in play mode (off) and its events are listed; the play-mode default is read from
+// a `?play` page. One headless browser (960×600), closed at the end. Dev server on :5196.
 //
 //   bun scripts/audio-radio.ts
 import { chromium } from "playwright-core"
@@ -27,22 +28,26 @@ try {
   const errors: string[] = []
   page.on("pageerror", (e) => errors.push(e.message))
   await page.routeWebSocket(/.*/, () => {})
-  await page.goto("http://localhost:5196/?view=corridor&only=terrain,interior")
+  await page.goto("http://localhost:5196/?view=entrance&only=terrain,facility,interior")
   await page.waitForFunction(() => {
     const s = (globalThis as { __afterhours?: { ready: boolean; complete: boolean } }).__afterhours
     return !!s?.complete && s.ready
   }, null, { timeout: 240_000 })
   const run = <T>(body: string) => page.evaluate(`(async () => { const p = globalThis.__afterhoursPlayer; const A = globalThis.__afterhoursAudio; ${body} })()`) as Promise<T>
-  const Y = 11.56
-  const room = await run<{ x: number; z: number }>(`
-    const { interiorRooms } = await import("/src/world/interior/registry.ts")
+  const Y3 = 11.56
+  const room = await run<{ x: number; z: number; door: { x: number; z: number } | null }>(`
+    const { interiorRooms, interiorDoors } = await import("/src/world/interior/registry.ts")
     const r = interiorRooms.find((r) => r.storey === 3 && r.id === "3-08")
-    return { x: (r.rect.x0 + r.rect.x1) / 2, z: (r.rect.z0 + r.rect.z1) / 2 }
+    const d = interiorDoors.filter((d) => d.storey === 3 && d.room === "3-08").sort((a, b) => Math.abs(a.z + 1.75) - Math.abs(b.z + 1.75))[0]
+    return { x: (r.rect.x0 + r.rect.x1) / 2, z: (r.rect.z0 + r.rect.z1) / 2, door: d ? { x: d.x, z: d.z } : null }
   `)
-  const spots: [string, number, number][] = [
-    ["stair door (hall side)", -40.0, 15.3],
-    ["corridor midpoint", -17, 0],
-    ["inside 3-08", room.x, room.z],
+  const door = room.door ?? { x: 8, z: -1.75 }
+  const spots: [string, number, number, number][] = [
+    ["entrance (outside)", 0, 0.2, 24.5],
+    ["lobby", 0, 0.2, 15],
+    ["storey-3 stair door", -40.0, Y3, 15.3],
+    ["corridor outside 3-08", door.x, Y3, door.z + 0.9],
+    ["inside 3-08", room.x, Y3, room.z],
   ]
   // Only the radio: the game's ambience paused before audio starts, every other bus muted (the radio's voices too).
   await run(`
@@ -51,6 +56,8 @@ try {
     const s = p.ctx.settings
     for (const k of ["audio.footsteps", "audio.doors", "audio.horror", "audio.ui"]) s[k] = 0
     s["audio.horrorLayer"] = 0
+    // No lightning: a thunder landing in a measurement window would swamp it.
+    s["weather.lightning"] = 0
   `)
   await page.keyboard.press("KeyQ")
   await page.waitForTimeout(2500)
@@ -69,8 +76,8 @@ try {
       await run("A.ambience.update = A.ambience.__update")
       await page.waitForTimeout(3000)
     }
-    for (const [label, x, z] of spots) {
-      await run(`p.pos.x = ${x}; p.pos.y = ${Y + 0.05}; p.pos.z = ${z}; p.yaw = 0; p.pitch = 0; p.resetMotion()`)
+    for (const [label, x, y, z] of spots) {
+      await run(`p.pos.x = ${x}; p.pos.y = ${y + 0.05}; p.pos.z = ${z}; p.yaw = 0; p.pitch = 0; p.resetMotion()`)
       await page.waitForTimeout(1800)
       const a = await now()
       await page.waitForTimeout(4000)
@@ -96,6 +103,10 @@ try {
     const t = marks.find((m) => m.label === label && m.pass !== "radio")!
     const radio = lufs(r.a, r.b)
     const total = lufs(t.a, t.b)
+    if (radio <= -69.9) {
+      console.log(`${label.padEnd(24)} radio silent · ambience ${total.toFixed(1)} LUFS`)
+      continue
+    }
     // The beds alone: the total's energy minus the radio's.
     const rest = 10 ** (total / 10) - 10 ** (radio / 10)
     // Within measurement noise of the radio alone: the beds are drowned (more than ~10 dB under it).
@@ -105,6 +116,13 @@ try {
       console.log(`${label.padEnd(24)} radio ${radio.toFixed(1)} LUFS · beds ${beds.toFixed(1)} · radio ${(radio - beds >= 0 ? "+" : "") + (radio - beds).toFixed(1)} dB over the beds`)
     }
   }
+  const scares = await run<{ t: number; kind: string }[]>("return A.horror.log")
+  console.log(`horror events during the walk (layer off, as in play): ${scares.length ? JSON.stringify(scares) : "none"}`)
+  // The play-mode default of the horror layer.
+  await page.goto("http://localhost:5196/?play")
+  await page.waitForFunction(() => !!(globalThis as { __afterhoursAudio?: unknown }).__afterhoursAudio, null, { timeout: 240_000 })
+  const playDefault = await page.evaluate(() => (globalThis as unknown as { __afterhoursPlayer: { ctx: { settings: Record<string, unknown> } } }).__afterhoursPlayer.ctx.settings["audio.horrorLayer"])
+  console.log(`play mode: audio.horrorLayer = ${playDefault}`)
   console.log(errors.length ? `page errors: ${errors.slice(0, 3).join(" | ")}` : "no page errors")
 } finally {
   await browser.close()

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>ASHWOOD · Creature Forge</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; height: 100%; background: #0b0d0e; overflow: hidden; font: 12px/1.4 system-ui, sans-serif; color: #dde; }
+      canvas { display: block; width: 100vw; height: 100vh; }
+      #ui { position: fixed; left: 10px; top: 10px; display: flex; flex-direction: column; gap: 5px; background: rgba(14, 16, 18, 0.78); border: 1px solid #2a2f35; border-radius: 8px; padding: 10px; }
+      .row { display: flex; flex-wrap: wrap; gap: 3px; }
+      button { font: inherit; color: #dde; background: #22272d; border: 1px solid #363c44; border-radius: 5px; padding: 3px 7px; cursor: pointer; }
+      button.on { background: #c9813a; border-color: #c9813a; color: #111; }
+      label { opacity: 0.6; text-transform: uppercase; letter-spacing: 0.06em; font-size: 10px; margin-top: 4px; }
+      #info { position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%); padding: 4px 10px; border-radius: 6px; background: rgba(14, 16, 18, 0.7); white-space: nowrap; }
+      body.clean #ui, body.clean #info { display: none; }
+    </style>
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <div id="ui">
+      <label>Mode</label><div class="row" id="modes"></div>
+      <label>Scene</label><div class="row" id="scenes"></div>
+      <label>Camera</label><div class="row" id="cams"></div>
+      <label>Flashlight (F)</label><div class="row" id="flash"></div>
+    </div>
+    <div id="info"></div>
+    <script type="module" src="/src/creatures/preview/main.ts"></script>
+  </body>
+</html>
