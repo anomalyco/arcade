@@ -212,6 +212,31 @@ export const CONTAINER_SLOTS = 4
 /** Chance a container holds an empty bottle or two to throw (D-19 verbs). */
 const BOTTLE_CHANCE: Partial<Record<Prop["kind"], number>> = { counter: 0.45, fridge: 0.35, shelf: 0.12 }
 
+/**
+ * Road flares and canned food (AR-56), on rolls of their own after everything else, so every container keeps the
+ * contents it always had: flares where cars and the police are, food in kitchens and the grocery.
+ */
+const EXTRA_LOOT: Readonly<Record<string, Partial<Record<Prop["kind"], readonly Roll[]>>>> = {
+  house: { shelf: [{ item: "flare", chance: 0.08 }], counter: [{ item: "food", chance: 0.22 }], fridge: [{ item: "food", chance: 0.18 }] },
+  garage: { shelf: [{ item: "flare", chance: 0.4, max: 2 }], counter: [{ item: "flare", chance: 0.3 }] },
+  gas_station: { shelf: [{ item: "flare", chance: 0.35, max: 2 }, { item: "food", chance: 0.3 }], counter: [{ item: "food", chance: 0.25 }] },
+  police: { shelf: [{ item: "flare", chance: 0.4, max: 2 }], counter: [{ item: "flare", chance: 0.25 }] },
+  hardware: { shelf: [{ item: "flare", chance: 0.25 }] },
+  warehouse: { shelf: [{ item: "flare", chance: 0.2 }] },
+  grocery: { shelf: [{ item: "food", chance: 0.5, max: 2 }], counter: [{ item: "food", chance: 0.3 }] },
+  diner: { counter: [{ item: "food", chance: 0.35 }], fridge: [{ item: "food", chance: 0.3 }] },
+  cabin: { counter: [{ item: "food", chance: 0.3 }], shelf: [{ item: "flare", chance: 0.12 }] },
+}
+
+/** Adds the flare and food rolls for a container of `kind` in a `tableKey` building to `contents`, from `rng`. */
+export function rollExtraLoot(contents: Stack[], tableKey: string, kind: Prop["kind"], rng: Rng, lootRate: number): void {
+  for (const roll of EXTRA_LOOT[tableKey]?.[kind] ?? []) {
+    const hit = rng.next() < roll.chance * lootRate
+    const n = (roll.min ?? 1) + rng.int((roll.max ?? roll.min ?? 1) - (roll.min ?? 1) + 1)
+    if (hit && contents.length < CONTAINER_SLOTS && !contents.some((s) => s.item === roll.item)) contents.push({ item: roll.item, count: n })
+  }
+}
+
 export type LootSite = {
   /** Ledger store id, `loot:<prop index>`. */
   id: string
@@ -244,6 +269,7 @@ export function lootSites(town: Town, tuning: ProgressionTuning): { sites: LootS
   const rng = new Rng((town.seed ^ 0x5c3e19a7) >>> 0)
   const meleeRng = new Rng((town.seed ^ 0x3b9a71d3) >>> 0)
   const bottleRng = new Rng((town.seed ^ 0x6b0771e5) >>> 0)
+  const extraRng = new Rng((town.seed ^ 0x2f1a9c53) >>> 0)
   const sites: LootSite[] = []
   const stores: StoreSpec[] = []
   const backRoomShelves = new Map<string, number[]>()
@@ -265,6 +291,7 @@ export function lootSites(town: Town, tuning: ProgressionTuning): { sites: LootS
     // Empty bottles on their own roll, so every other container keeps the contents it always had.
     const bottles = BOTTLE_CHANCE[p.kind] ?? 0
     if (bottleRng.next() < bottles * tuning.lootRate && contents.length < CONTAINER_SLOTS) contents.push({ item: "bottle", count: 1 + bottleRng.int(2) })
+    rollExtraLoot(contents, tableKey, p.kind, extraRng, tuning.lootRate)
     const id = `loot:${i}`
     sites.push({ id, propIndex: i, kind: p.kind, label: CONTAINER_LABELS[p.kind] ?? p.kind, rect: shape.rect, x: p.x, y: p.y, buildingId: building?.id ?? null })
     stores.push({ id, mode: "slots", scope: "shared", size: CONTAINER_SLOTS, revealed: false, at: { x: p.x, y: p.y }, initial: contents })

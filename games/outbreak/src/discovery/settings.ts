@@ -1,4 +1,8 @@
 import type { LabControl } from "@arcade/kit/lab-panel"
+import { DEFAULT_BODIES_TUNING } from "../../shared/bodies/bodies"
+import { DEFAULT_DOG_TUNING } from "../../shared/dogs/dogs"
+import { DEFAULT_FLARE_TUNING } from "../../shared/flares/flares"
+import { DEFAULT_LIGHTS_TUNING } from "../../shared/lights-out/lights"
 import { DEFAULT_RADIO_TUNING } from "../../shared/radios/radios"
 
 export const DEFAULT_DISCOVERY_SETTINGS = {
@@ -8,6 +12,15 @@ export const DEFAULT_DISCOVERY_SETTINGS = {
   radioDialGlow: 2.2,
   /** How far a playing radio's speaker and body shake to the music. */
   radioShake: 1,
+  /** World interactions' simulation (AR-56): Lights Out, road flares, bodies to search and chained dogs. */
+  ...DEFAULT_LIGHTS_TUNING,
+  ...DEFAULT_FLARE_TUNING,
+  ...DEFAULT_BODIES_TUNING,
+  ...DEFAULT_DOG_TUNING,
+  /** How hard a barking dog lunges against its chain. */
+  dogLunge: 1,
+  /** How hard a dog wags its tail. */
+  dogWag: 1,
   /** The flashlight shows its charge: below the flicker threshold the beam narrows, warms to amber and dims its reach. */
   discoveryLowBeam: true,
   /** How much narrower the beam gets as the battery runs out, as a share of its cone. */

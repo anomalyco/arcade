@@ -4,9 +4,13 @@
  * feature adds one line here and never edits `main.ts`.
  */
 import "./blood/index"
+import "./bodies/index"
 import "./crafting/index"
 import "./discovery/index"
+import "./dogs/index"
+import "./flares/index"
 import "./hordes/index"
+import "./lights-out/index"
 import "./look/index"
 import "./map/index"
 import "./melee/index"

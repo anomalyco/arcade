@@ -10,7 +10,7 @@ const POSES = 3
 
 type Pool = Map<number, { data: Float32Array<ArrayBuffer>; count: number }>
 
-const LOOK = {
+export const BODY_LOOK = {
   survivor: { top: hex(0x56633e), legs: hex(0x2f3a50), skin: hex(0xc0906c), hair: hex(0x2a2018), shoes: hex(0x1e1a16) },
   zombie: { top: hex(0x5a4f44), legs: hex(0x3a3630), skin: hex(0x7f8c74), hair: hex(0x2a2a24), shoes: hex(0x24201c) },
 } as const
@@ -19,7 +19,7 @@ const LOOK = {
  * A body face down on the floor, head along +x from the hips at the origin, in one of three falls: arms flung past the
  * head, one arm under and the legs crossed, or curled on its side.
  */
-function body(look: (typeof LOOK)[keyof typeof LOOK], pose: number): Mesh {
+export function bodyMesh(look: (typeof BODY_LOOK)[keyof typeof BODY_LOOK], pose: number): Mesh {
   const m = new Mesh()
   const limb = (cx: number, cz: number, len: number, w: number, h: number, yaw: number, col: Rgb) => m.yawBox(cx, cz, len, w, 0, h, yaw, col, MAT.lit)
   if (pose === 2) {
@@ -85,8 +85,8 @@ export class VignetteProps {
     for (const [x, h] of [[-0.38, 0.14], [-0.1, 0.08], [0.18, 0.16], [0.4, 0.1]] as const) pane.box(x - 0.08, -0.32, -0.02, x + 0.08, -0.32 + h, 0.02, hex(0xb4ccc4), MAT.shiny)
     for (const [x, h] of [[-0.3, 0.09], [0.28, 0.12]] as const) pane.box(x - 0.07, 0.32 - h, -0.02, x + 0.07, 0.32, 0.02, hex(0xb4ccc4), MAT.shiny)
     this.models = {
-      survivor: Array.from({ length: POSES }, (_, i) => renderer.addModel(body(LOOK.survivor, i))),
-      zombie: Array.from({ length: POSES }, (_, i) => renderer.addModel(body(LOOK.zombie, i))),
+      survivor: Array.from({ length: POSES }, (_, i) => renderer.addModel(bodyMesh(BODY_LOOK.survivor, i))),
+      zombie: Array.from({ length: POSES }, (_, i) => renderer.addModel(bodyMesh(BODY_LOOK.zombie, i))),
       blood: renderer.addModel(blood),
       casing: renderer.addModel(casing),
       bat: renderer.addModel(bat),

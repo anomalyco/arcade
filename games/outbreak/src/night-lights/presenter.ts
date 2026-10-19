@@ -1,11 +1,14 @@
 import { MAT, Mesh, type Mat, type Rgb } from "@arcade/kit/gpu/mesh"
 import { INST_FLOATS, type Batch, type Renderer } from "@arcade/kit/gpu/renderer"
 import { LIGHT_FLOATS, MAX_MAP_LIGHTS } from "@arcade/kit/limits"
+import type { StoreState } from "@arcade/kit/sim/ledger"
 import { carStoreId } from "../../shared/discovery/verbs"
+import { lampDark, lampStoreId } from "../../shared/lights-out/lights"
 import type { Lamp, Town } from "../../shared/map"
 import type { SessionView } from "../../shared/session"
 import { supportHeight } from "../../shared/terrain"
 import { alarmFlashOn, alarmWailing, carPose } from "../discovery/verbs"
+import { flareLights } from "../flares/props"
 import type { ResolvedLamp } from "../lighting"
 import { lampFlickerPhase, lampKey, neonLevel, placeNightLights, sodiumLevel, type NeonColour, type NightSite } from "./placement"
 import type { OutbreakNightLightSettings } from "./settings"
@@ -52,8 +55,12 @@ export class NightLightsPresenter {
   private readonly flicker = new Map<string, number>()
   private readonly cand: Candidate[] = []
   private readonly candData = new Float32Array(64 * LIGHT_FLOATS)
+  /** Road flares among this frame's candidates (they light whether or not the practicals are on). */
+  private flares = 0
+  /** The ledger as of this frame's `collect`, for lamps shot out or switched off (Lights Out). */
+  private stores: ReadonlyMap<string, StoreState> | null = null
   /** Proof readout of the last frame. */
-  readonly shown = { sites: 0, lights: 0, alarms: 0, cruisers: 0, beacons: 0, neon: 0, armed: 0, flickering: 0 }
+  readonly shown = { sites: 0, lights: 0, alarms: 0, cruisers: 0, beacons: 0, neon: 0, armed: 0, flickering: 0, flares: 0, dark: 0 }
 
   constructor(renderer: Pick<Renderer, "addModel">) {
     const lens = (build: (m: Mesh, col: Rgb, mat: Mat, aux: number) => void, on: number, off: number): Model => {
@@ -116,8 +123,17 @@ export class NightLightsPresenter {
     this.sites = placeNightLights(town, s)
   }
 
-  /** Dying sodium lamps: dims the resolved street lamp and its bulb in step (called per lamp before it is packed). */
+  /**
+   * Called per lamp before it is packed: a lamp shot out or switched off (Lights Out, from the ledger) gives no light
+   * and its bulb goes dark; a dying sodium lamp dims the resolved light and its bulb in step.
+   */
   trimLamp(town: Town, s: OutbreakNightLightSettings, lamp: Lamp, resolved: ResolvedLamp, time: number): void {
+    if ((lamp.kind === "street" || lamp.kind === "porch") && this.stores && lampDark(this.stores.get(lampStoreId(lamp)))) {
+      resolved.power = 0
+      resolved.fixtureBrightness = 0
+      this.shown.dark++
+      return
+    }
     if (lamp.kind !== "street") return
     const fk = `${town.seed}:${s.nightLights}:${s.nlSodiumFlicker}:${s.nlSeed}`
     if (fk !== this.flickerKey) {
@@ -179,8 +195,11 @@ export class NightLightsPresenter {
     this.cand.length = 0
     const sh = this.shown
     sh.lights = sh.alarms = sh.cruisers = sh.beacons = sh.neon = sh.armed = 0
-    sh.flickering = 0
+    sh.flickering = sh.dark = 0
     const { town, time, progression } = view
+    this.stores = progression.ledger.stores
+    this.flares = flareLights(view, camX, camY, s, (x, z) => supportHeight(town, x, z), (x, h, z, r, c, power) => this.light(camX, camY, x, h, z, r, c, power))
+    sh.flares = this.flares
     this.ensureSites(town, s)
     sh.sites = this.sites.length
     if (!s.nightLights) return this.out
@@ -270,12 +289,16 @@ export class NightLightsPresenter {
     return this.out
   }
 
-  /** Packs the nearest candidates into `lights` from slot `count`, up to `nlMaxLights`; returns the new count. */
+  /**
+   * Packs the nearest candidates into `lights` from slot `count`, up to `nlMaxLights` practicals plus the burning
+   * road flares; returns the new count.
+   */
   writeLights(lights: Float32Array, count: number, max: number, lampPower: Float32Array, s: OutbreakNightLightSettings): number {
     lampPower[NIGHT_LAMP_SLOT] = s.nightLights ? 0.9 * Math.min(1.5, Math.max(0.2, s.nlPower)) : 0
-    if (!s.nightLights) return count
+    if (!s.nightLights && !this.flares) return count
     this.cand.sort((a, b) => a.d2 - b.d2)
-    const n = Math.min(this.cand.length, Math.max(0, Math.round(s.nlMaxLights)), Math.max(0, max - count))
+    const cap = (s.nightLights ? Math.max(0, Math.round(s.nlMaxLights)) : 0) + Math.min(4, this.flares)
+    const n = Math.min(this.cand.length, cap, Math.max(0, max - count))
     for (let i = 0; i < n; i++) {
       const src = this.cand[i]!.o
       lights.set(this.candData.subarray(src, src + LIGHT_FLOATS), (count + i) * LIGHT_FLOATS)

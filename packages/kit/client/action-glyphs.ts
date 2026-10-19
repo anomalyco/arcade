@@ -48,6 +48,9 @@ export type ActionGlyph =
   | "finish"
   | "radio-on"
   | "radio-off"
+  | "light-on"
+  | "light-off"
+  | "feed"
 
 /** A fill (default) or, with `w`, a round-capped stroke of that width in grid units. */
 type Shape = { d: string; w?: number; evenodd?: boolean }
@@ -98,7 +101,10 @@ const wardrobe = (x: number, w: number): Shape[] => [{ d: rect(x, 2, w, 18) }, {
 
 const radio: Shape[] = [{ d: "M5 9L11 3.5", w: 1.6 }, { d: rrect(2, 9, 15, 12, 1.5) + circle(7, 15, 3) + rect(11.5, 12, 3.5, 2), evenodd: true }, { d: circle(7, 15, 1.2) }]
 
-const GLYPHS: Record<Exclude<ActionGlyph, "no-battery" | "no-keys" | "empty-tank" | "radio-off">, Shape[]> = {
+/** A bulb: glass globe over a ribbed screw base. */
+const bulb: Shape[] = [{ d: "M12 3.5A6 6 0 0 1 15.5 14.4V16.5H8.5V14.4A6 6 0 0 1 12 3.5Z" }, { d: rect(8.75, 17.5, 6.5, 1.5) + rect(9.25, 20, 5.5, 1.5) }]
+
+const GLYPHS: Record<Exclude<ActionGlyph, "no-battery" | "no-keys" | "empty-tank" | "radio-off" | "light-off">, Shape[]> = {
   "door-open": [doorFrame, { d: "M3 4.5L9.5 2.5V21.5L3 19.5Z" + circle(5.6, 12, 1.2), evenodd: true }],
   "door-close": [{ d: rect(5, 2, 14, 20) + rect(8, 5, 8, 5) + rect(8, 13, 8, 6), evenodd: true }],
   lock: [{ d: "M7 11V8A5 5 0 0 1 17 8V11H14.5V8A2.5 2.5 0 0 0 9.5 8V11Z" }, lockBody],
@@ -166,6 +172,8 @@ const GLYPHS: Record<Exclude<ActionGlyph, "no-battery" | "no-keys" | "empty-tank
     { d: "M7 5L3.5 2", w: 2.4 },
   ],
   "radio-on": [...radio, { d: "M19.4 11.5Q21.2 15 19.4 18.5", w: 1.6 }, { d: "M21.6 9.8Q24 15 21.6 20.2", w: 1.6 }],
+  "light-on": [...bulb, { d: "M12 0.8V1.8M3.6 4.2L4.4 5M20.4 4.2L19.6 5M1.5 10H2.6M21.4 10H22.5", w: 1.5 }],
+  feed: [{ d: circle(5, 9.5, 2.6) + circle(5, 14.5, 2.6) + circle(19, 9.5, 2.6) + circle(19, 14.5, 2.6) }, { d: rect(5, 10.25, 14, 3.5) }],
   finish: [
     { d: "M8 2H15V11.5L20.5 14C21.6 14.5 22 15.4 22 16.5V18.5H6V15C6 14 6.6 13.3 7.6 13.2L8 13.1Z" },
     { d: rrect(5.5, 19, 17, 2.5, 1) },
@@ -174,11 +182,12 @@ const GLYPHS: Record<Exclude<ActionGlyph, "no-battery" | "no-keys" | "empty-tank
 }
 
 /** Glyphs drawn as another glyph with a bar cut through it. */
-export const SLASHED: Readonly<Record<"no-battery" | "no-keys" | "empty-tank" | "radio-off", ActionGlyph>> = {
+export const SLASHED: Readonly<Record<"no-battery" | "no-keys" | "empty-tank" | "radio-off" | "light-off", ActionGlyph>> = {
   "no-battery": "battery",
   "no-keys": "key",
   "empty-tank": "refuel",
   "radio-off": "radio-on",
+  "light-off": "light-on",
 }
 
 export const ACTION_GLYPHS: readonly ActionGlyph[] = [...(Object.keys(GLYPHS) as ActionGlyph[]), ...(Object.keys(SLASHED) as ActionGlyph[])]

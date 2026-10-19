@@ -1,6 +1,7 @@
 import type { CraftKind, PickupClass } from "@arcade/kit/audio"
 import type { StoreState } from "@arcade/kit/sim/ledger"
 import { dayCycle } from "../../shared/day-cycle"
+import { DEFAULT_DOG_TUNING } from "../../shared/dogs/dogs"
 import { matStoreId, TINKER_MATERIALS } from "../../shared/discovery/tinker"
 import { RECIPES } from "../../shared/progression"
 import type { SoundActor, SoundEvent } from "./types"
@@ -102,6 +103,8 @@ export class InventorySounds {
   private smashed = new Set<string>()
   /** House radios (AR-56): each one's last on/broken state, for the switch's click and the thud when it is knocked down. */
   private radios = new Map<string, { on: number; broken: number }>()
+  /** World interactions (AR-56): lamps, flares, dogs and bodies as last heard. */
+  private world = new Map<string, { a: number; b: number; c: number }>()
   private started = false
   readonly holds: SoundHold[] = []
 
@@ -115,6 +118,7 @@ export class InventorySounds {
     this.trips.clear()
     this.smashed.clear()
     this.radios.clear()
+    this.world.clear()
     this.started = false
   }
 
@@ -187,6 +191,10 @@ export class InventorySounds {
           this.radioSound(sid, st, time, emit)
           continue
         }
+        if (sid.startsWith("lamp:") || sid.startsWith("flare:") || sid.startsWith("dog:") || sid.startsWith("body:")) {
+          this.worldSound(sid, st, time, emit)
+          continue
+        }
         if (sid.startsWith("glass:") || sid.startsWith("trip:") || sid.startsWith("car:")) {
           this.verbSound(sid, st, time, emit)
           continue
@@ -223,6 +231,37 @@ export class InventorySounds {
     if (prev && broken && !prev.broken) emit({ id: "item.drop", x: at.x, y: at.y, source: "radio", gain: 1.3 })
     this.radios.set(sid, { on, broken })
     if (on && !broken && time * 10 < (st.counts.until ?? 0)) this.holds.push({ key: `radio:${sid}`, id: "radio.loop", x: at.x, y: at.y })
+  }
+
+  /**
+   * World interactions (AR-56): a lamp's glass popping when it is shot out and its switch clicking; a flare striking
+   * and hissing while it burns; a chained dog barking on its beat, yelping when the dead kill it and eating when fed;
+   * a body that stirs under the hand groaning.
+   */
+  private worldSound(sid: string, st: StoreState, time: number, emit: (e: SoundEvent) => void): void {
+    const at = st.at
+    if (!at) return
+    const prev = this.world.get(sid)
+    const c = st.counts
+    if (sid.startsWith("lamp:")) {
+      if (prev && c.broken && !prev.a) emit({ id: "impact.bullet.glass", x: at.x, y: at.y, source: "lamp", gain: 1.4 })
+      if (prev && !c.broken && (c.off ?? 0) !== prev.b) emit({ id: "flashlight.click", x: at.x, y: at.y, source: "lamp" })
+      this.world.set(sid, { a: c.broken ?? 0, b: c.off ?? 0, c: 0 })
+    } else if (sid.startsWith("flare:")) {
+      if (!prev) emit({ id: "flare.ignite", x: at.x, y: at.y, source: "flare" })
+      this.world.set(sid, { a: 1, b: 0, c: 0 })
+      if (time * 10 < (c.until ?? 0)) this.holds.push({ key: `flare:${sid}`, id: "flare.loop", x: at.x, y: at.y })
+    } else if (sid.startsWith("dog:")) {
+      // Barks keep the dog's beat from when it started; the store only says it is barking.
+      const beat = c.bark && !c.dead ? Math.floor(Math.max(0, time - (c.since ?? 0) / 10) / DEFAULT_DOG_TUNING.dogBeat) + 1 : 0
+      if (prev && beat > prev.a) emit({ id: "dog.bark", x: at.x, y: at.y, source: "dog" })
+      if (prev && c.dead && !prev.b) emit({ id: "dog.yelp", x: at.x, y: at.y, source: "dog" })
+      if (prev && (c.hush ?? 0) > prev.c) emit({ id: "dog.eat", x: at.x, y: at.y, source: "dog" })
+      this.world.set(sid, { a: beat, b: c.dead ?? 0, c: c.hush ?? 0 })
+    } else {
+      if (prev && c.rise && !prev.a) emit({ id: "zombie.groan.idle", x: at.x, y: at.y, source: "body", gain: 1.2 })
+      this.world.set(sid, { a: c.rise ?? 0, b: 0, c: 0 })
+    }
   }
 
   /** A bottle breaking, cans strung across a doorway rattling as someone walks through, a car window going in and its alarm wailing. */
