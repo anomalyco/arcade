@@ -5,6 +5,7 @@ import { baseRun, tallCabinet, upperRun, WALNUT_KITCHEN } from "../src/interiors
 import { emitInteriorDecor } from "../src/interiors/mesh"
 import { interiorSettings, planInterior } from "../src/interiors/plan"
 import { boardPlank, emitCraftWindow, emitFaceWindow } from "../src/interiors/windows"
+import { interiorDeclarationsWgsl, outbreakInteriorRefs } from "../src/interiors/wgsl"
 import { bloodWord } from "../src/details/models"
 
 /** Every triangle's winding agrees with its stored normal, so back-face culling keeps the visible side. */
@@ -120,5 +121,24 @@ describe("interior craft pass (AR-69)", () => {
     const c = new Mesh()
     bloodWord(c, "STAY QUIET", 0.26)
     expect(c.v.length).toBeGreaterThan(0)
+  })
+})
+
+describe("interior texture addressing", () => {
+  const wgsl = interiorDeclarationsWgsl(outbreakInteriorRefs)
+  const body = (name: string) => wgsl.slice(wgsl.indexOf(`fn ${name}(`), wgsl.indexOf("\n}\n", wgsl.indexOf(`fn ${name}(`)))
+
+  test("wallpaper, parquet and floor plates wrap with the repeat sampler at a size-aware mip", () => {
+    const tile = body("interiorTileSample")
+    expect(tile).toContain("materialSampler")
+    expect(tile).toContain("fract(uv)")
+    expect(tile).toContain("textureDimensions(detailTex)")
+    expect(tile).toContain("textureNumLevels(detailTex)")
+    for (const fn of ["themedWall", "themedFloor", "interiorFloorPlate"]) {
+      expect(body(fn)).toContain("interiorTileSample(")
+      // The clamp-to-edge detail sampler smears world-space tiles at their edge.
+      expect(body(fn)).not.toContain("detailSamp")
+      expect(body(fn)).not.toContain("materialMipLod")
+    }
   })
 })

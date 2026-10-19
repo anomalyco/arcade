@@ -70,6 +70,7 @@ switches it all back for comparison, and **Wall wear** scales the wall shading.
 | Property | Standard | Where |
 | --- | --- | --- |
 | Smallest painted detail | 0.04–0.08 m (a plank seam, a grout line, a tide-line rim). Narrower terms widen or fade with `surfaceFootprint`. | `themedFloor`, `interiorWallWear` in `src/interiors/wgsl.ts` |
+| Tiled textures | Wallpaper, parquet and floor plates repeat seamlessly in world space: the repeat material sampler with `fract` coordinates (the detail sampler clamps, for rugs), and an explicit mip from the layer's real size (Lab rug resolution), so motifs hold still while walking instead of shimmering. | `interiorTileSample` in `src/interiors/wgsl.ts` |
 | Large variation | 0.5–3 m mottling or macro tone on every face, so no long wall or floor reads as one flat colour. | same |
 | Smallest modelled edge | 10–30 mm: chamfers, door stiles proud of fields, reveals between fronts, sill drip edges. A surface the camera sees edge-on gets a lit top. | `cabinetry.ts`, `windows.ts`, `skirting` in `mesh.ts` |
 | Joins | Every wall meets the floor with a skirting (0.14 m, 32 mm proud, chamfered top) and the ceiling line with the cap moulding. Plain rooms add a dado rail where the dado paint stops. Nothing coplanar with a wall; pieces stand 2–10 mm proud of what they sit on. | `skirting`, `dadoRail`, `emitWallCapMoulding` |

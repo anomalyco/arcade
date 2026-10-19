@@ -76,6 +76,18 @@ fn rugLayer(key: i32) -> f32 {
   return select(select(select(e.x, e.y, k == 1), e.z, k == 2), e.w, k == 3);
 }
 
+/**
+ * A tiled lookup in the detail array: the repeat material sampler wraps the bilinear footprint across the tile edge
+ * (the detail sampler clamps for rugs and plates), fract keeps world-scale coordinates precise, and the explicit mip
+ * follows the layer's real size (Lab rug resolution), so the wrap leaves neither a filter nor a derivative seam.
+ */
+fn interiorTileSample(layer: i32, uv: vec2f, tilesPerMetre: f32, bias: f32) -> vec4f {
+  let size = f32(textureDimensions(detailTex).x);
+  let top = f32(textureNumLevels(detailTex) - 1u);
+  let lod = clamp(log2(max(surfaceFootprint * tilesPerMetre * size, 1.0)) - bias, 0.0, top);
+  return textureSampleLevel(detailTex, materialSampler, fract(uv), layer, lod);
+}
+
 fn interiorBuildingAt(p: vec2f) -> i32 {
   let n = ${r.buildingCount};
   for (var i = 0; i < 8; i++) {
@@ -111,9 +123,7 @@ fn interiorFloorPlate(p: vec2f, bi: i32) -> vec4f {
   let w = ${r.plate("bi")};
   if (w < 1.0) { return vec4f(0.0); }
   let tile = max(${r.floor}.x, 0.5);
-  let lod = clamp(log2(max(surfaceFootprint * 1024.0 / tile, 1.0)), 0.0, 9.0);
-  // The detail sampler clamps, so wrap by hand (explicit LOD, so the wrap leaves no derivative seam).
-  let t = textureSampleLevel(detailTex, detailSamp, fract(p / tile), i32(floor(w)), lod);
+  let t = interiorTileSample(i32(floor(w)), p / tile, 1.0 / tile, 0.0);
   let macroV = 0.84 + 0.32 * surfaceNoise(p * 0.21 + vec2f(3.7, 8.1));
   return vec4f(t.rgb * fract(w) * 4.0 * macroV, 1.0);
 }
@@ -179,7 +189,7 @@ fn themedWall(base: vec3f, a: f32, y: f32, t: i32, variant: f32) -> vec3f {
     // Flocked damask: crimson, bottle green or navy (mansion), deep teal with gold (castle).
     let scale = 1.0 / 0.53;
     let uv = vec2f(a, -y) * scale;
-    let m = textureSampleLevel(detailTex, detailSamp, uv, 0, materialMipLod(scale)).r;
+    let m = interiorTileSample(0, uv, scale, 0.35).r;
     var ground = vec3f(0.115, 0.018, 0.016);
     var motif = vec3f(0.048, 0.006, 0.006);
     if (t == 4) { ground = vec3f(0.018, 0.045, 0.042); motif = vec3f(0.16, 0.11, 0.035); }
@@ -192,7 +202,7 @@ fn themedWall(base: vec3f, a: f32, y: f32, t: i32, variant: f32) -> vec3f {
     // Farmhouse: yellowed floral stripe paper, water-stained and grimy toward the floor.
     let scale = 1.0 / 0.34;
     let uv = vec2f(a, -y) * scale;
-    let m = textureSampleLevel(detailTex, detailSamp, uv, 0, materialMipLod(scale)).g;
+    let m = interiorTileSample(0, uv, scale, 0.35).g;
     let paper = mix(vec3f(0.30, 0.25, 0.15), vec3f(0.20, 0.17, 0.09), variant);
     let stripe = mix(vec3f(0.13, 0.15, 0.08), vec3f(0.17, 0.07, 0.05), step(0.5, variant));
     let stain = smoothstep(0.55, 0.85, surfaceNoise(vec2f(a * 0.7, y * 0.35) + vec2f(1.7, 4.2)));
@@ -249,7 +259,7 @@ fn themedFloor(base: vec3f, p: vec2f, t: i32, variant: f32) -> vec3f {
   if (t == 1 || t == 4) {
     let plank = 0.075;
     let scale = 1.0 / (plank * 8.0);
-    let s = textureSampleLevel(detailTex, detailSamp, p * scale, 0, materialMipLod(scale));
+    let s = interiorTileSample(0, p * scale, scale, 0.35);
     let wood = select(vec3f(0.115, 0.058, 0.026), vec3f(0.070, 0.036, 0.018), t == 4 || variant > 0.6);
     let tone = 0.62 + 0.62 * s.b;
     let macroV = 0.85 + 0.3 * surfaceNoise(p * 0.45 + vec2f(5.2, 1.3));
