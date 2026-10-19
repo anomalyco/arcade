@@ -23,7 +23,7 @@ export default defineStation({
   title: "Outbreak trees and wind",
   summary:
     "Trees, hedges, shrubs and grass in the town with species, bare trees, swaying limbs and one travelling gust field (AR-66). Backquote › Vegetation; Today is one setting away.",
-  order: 125,
+  order: 127,
   prop: "tree",
   color: 0x4f6b3a,
   status: "review",
