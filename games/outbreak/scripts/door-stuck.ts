@@ -249,7 +249,7 @@ export function summarize(results: DoorScenarioResult[]): DoorStuckSummary {
 
 if (import.meta.main) {
   const all = process.argv.includes("--all")
-  const results = doorScenarios().map(runDoorScenario)
+  const results = doorScenarios().map((s) => runDoorScenario(s))
   const sum = summarize(results)
   for (const r of results) {
     const total = r.stuck.reduce((a, b) => a + b, 0)
