@@ -11,6 +11,7 @@ import { dressSurfaces, footprintOf, furnishRoom, placementTriangles, type Place
 import { hash2 } from "@arcade/kit/sim/rng"
 import { makeTown, propShape, type Building, type Town } from "../../shared/map"
 import { emitInteriorDecor } from "../interiors/mesh"
+import { interiorSettings } from "../interiors/plan"
 import type { TableLamp } from "../lightbake"
 import { furnishedHouse, propDressingState, REPLACED_KINDS } from "./state"
 
@@ -105,7 +106,8 @@ export function furnishHouse(b: Building, town: Town, density: number, seed: num
       case "bed": a = fitAnchor("bed", rect, wallSide(rect, walls, long === "z" ? ["n", "s"] : ["w", "e"])); break
       case "coffee": a = fitAnchor("coffee-table", rect, null, long === "z" ? Math.PI / 2 : 0); break
       case "shelf": a = fitAnchor("bookcase", rect, wallSide(rect, walls)); break
-      case "dresser": a = fitAnchor(rect[2] - rect[0] > 1.7 || rect[3] - rect[1] > 1.7 ? "sideboard" : "dresser", rect, wallSide(rect, walls)); break
+      // A bedroom gets a chest of drawers (AR-69): the mahogany sideboard read as a hot red slab under the lamp.
+      case "dresser": a = fitAnchor((interiorSettings.craft && room === "bedroom") || !(rect[2] - rect[0] > 1.7 || rect[3] - rect[1] > 1.7) ? "dresser" : "sideboard", rect, wallSide(rect, walls)); break
       case "nightstand": a = fitAnchor("nightstand", rect, wallSide(rect, walls)); break
       case "counter": a = fitAnchor("kitchen-counter", rect, wallSide(rect, walls)); break
       case "fridge": a = fitAnchor("fridge-1970s", rect, wallSide(rect, walls)); break
@@ -188,7 +190,7 @@ export function furnishedHouses(town: Town): HouseFurnishing[] {
   const { on, density, seed } = propDressingState
   if (!on) return []
   const full = originFurnishTown(town)
-  const key = `${full.seed}/${full.houseSeed}/${density}/${seed}`
+  const key = `${full.seed}/${full.houseSeed}/${density}/${seed}/${interiorSettings.craft}`
   if (key !== planned.key) planned = { key, houses: full.buildings.filter(furnishedHouse).map(b => furnishHouse(b, full, density, seed)) }
   return planned.houses
 }

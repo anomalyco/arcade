@@ -4,6 +4,7 @@ import { inBuildingFootprint, propShape, type Town } from "../shared/map"
 import { LocalSession } from "../shared/session"
 import { buildDetailMeshes } from "../src/details/models"
 import {
+  BLOOD_WORDS,
   BUILDING_DETAIL_BUDGET,
   DETAIL_MODELS,
   frontWallSpans,
@@ -11,6 +12,7 @@ import {
   placeBuildingDetails,
   placeCarDetails,
   placeDetails,
+  wordWidth,
   type DetailSite,
 } from "../src/details/placement"
 import { DEFAULT_DETAIL_SETTINGS, detailControls, type OutbreakDetailSettings } from "../src/details/settings"
@@ -37,7 +39,7 @@ function towns(): Town[] {
 
 const INDOOR = new Set(["chair", "crockery", "mail", "boxes2", "boxes3", "books", "drawer", "tv"])
 const indoor = (d: DetailSite) => INDOOR.has(d.model)
-const onWall = (d: DetailSite) => d.model === "markX" || d.model.startsWith("word")
+const onWall = (d: DetailSite) => d.model === "markX" || d.model.startsWith("word") || d.model.startsWith("blood")
 
 describe("world details placement", () => {
   test("seeded from the town and dtSeed: the same town places the same details; a reroll moves them", () => {
@@ -126,6 +128,46 @@ describe("world details placement", () => {
     expect(hit.some((d) => d.model === "chair" || d.model === "crockery" || d.model === "drawer")).toBe(true)
     // A toppled chair lies on its back or its side.
     for (const c of hit.filter((d) => d.model === "chair")) expect(Math.abs(c.roll) + Math.abs(c.pitch)).toBeCloseTo(Math.PI / 2, 5)
+  })
+
+  test("indoor warnings are written in blood (Today's spray one toggle away) and nothing else moves", () => {
+    const town = towns()[0]!
+    const ash = town.buildings.find((b) => b.id === "ash")!
+    const seeds = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    let found = 0
+    for (const dtSeed of seeds) {
+      const blood = placeBuildingDetails(town, ash, settings({ dtSeed }), true)
+      const spray = placeBuildingDetails(town, ash, settings({ dtSeed, dtBloodWriting: false }), true)
+      expect(blood.length).toBe(spray.length)
+      blood.forEach((d, i) => {
+        const o = spray[i]!
+        if (d.model.startsWith("blood")) {
+          found++
+          expect(o.model.startsWith("word")).toBe(true)
+          expect(d.z).toBeCloseTo(o.z, 6)
+          expect(d.y - o.y).toBeCloseTo(0.22, 6)
+        } else {
+          expect(d).toEqual(o)
+        }
+      })
+    }
+    expect(found).toBeGreaterThan(0)
+    // Every phrase is hand-drawn within its placement width, runs drip below the letters, and lies on the wall plane.
+    const meshes = buildDetailMeshes()
+    for (const w of BLOOD_WORDS) {
+      const v = meshes[DETAIL_MODELS.indexOf(w.model)]!.v
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, minZ = Infinity, maxZ = -Infinity
+      for (let i = 0; i < v.length; i += 11) {
+        minX = Math.min(minX, v[i]!); maxX = Math.max(maxX, v[i]!); minY = Math.min(minY, v[i + 1]!)
+        minZ = Math.min(minZ, v[i + 2]!); maxZ = Math.max(maxZ, v[i + 2]!)
+      }
+      const half = wordWidth(w.text, w.height) / 2
+      expect(minX).toBeGreaterThan(-half * 1.12)
+      expect(maxX).toBeLessThan(half * 1.12)
+      expect(minY).toBeLessThan(-w.height * 0.2)
+      expect(minZ).toBeGreaterThan(0.003)
+      expect(maxZ).toBeLessThan(0.011)
+    }
   })
 
   test("police cars get a ring of cones and tape; tape is cut into ~1 m segments", () => {

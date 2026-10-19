@@ -102,7 +102,7 @@ export class DetailsPresenter {
 
   private plan(town: Town, s: OutbreakDetailSettings, night: OutbreakNightLightSettings): void {
     const o = town.windowOrigin ?? [0, 0]
-    const sig = `${town.seed}:${town.houseSeed}:${s.worldDetails}:${s.dtTurnedOver}:${s.dtMail}:${s.dtBoxes}:${s.dtMarks}:${s.dtBins}:${s.dtMailboxes}:${s.dtStreetJunk}:${s.dtPoliceTape}:${s.dtSeed}`
+    const sig = `${town.seed}:${town.houseSeed}:${s.worldDetails}:${s.dtTurnedOver}:${s.dtMail}:${s.dtBoxes}:${s.dtMarks}:${s.dtBloodWriting}:${s.dtBins}:${s.dtMailboxes}:${s.dtStreetJunk}:${s.dtPoliceTape}:${s.dtSeed}`
     const incidents = this.incidents(town)
     const fk = `${sig}:${o[0]},${o[1]}:${town.buildings.length}:${(town.vehicles ?? []).length}:${this.incidentKey}:${night.nightLights}:${night.nlCruisers}:${night.nlSeed}`
     if (fk === this.frameKey) return

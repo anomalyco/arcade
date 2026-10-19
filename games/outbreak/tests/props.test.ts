@@ -166,7 +166,8 @@ describe("prop dressing exports for the level bake", () => {
     for (let i = 0; i < 20 && !dressing.furnishedReady; i++) await new Promise(r => setTimeout(r, 1))
     expect(dressing.furnishedReady).toBe(true)
     expect(requested).toEqual(stage1Ids)
-    expect(stage1Bytes).toBe(2963900)
+    // The bedroom stands a dresser rather than the sideboard (AR-69).
+    expect(stage1Bytes).toBe(2945748)
 
     const furnishedBatches = dressing.collect(town, view, DEFAULT_PROP_SETTINGS, 38, { clutterScale: 1, minPropLod: 0 }, true, () => {})
     expect(furnishedBatches.some(b => !fallbackModels.has(b.model))).toBe(true)

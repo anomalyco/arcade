@@ -1,6 +1,6 @@
 import { MAT, Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
 import { MAX_MAP_LIGHTS } from "@arcade/kit/limits"
-import { DETAIL_MODELS, LETTER_ADVANCE, MARK_X_SIZE, WORDS, type DetailModel } from "./placement"
+import { BLOOD_WORDS, DETAIL_MODELS, LETTER_ADVANCE, MARK_X_SIZE, WORDS, type DetailModel } from "./placement"
 
 /**
  * Low-poly meshes for the world details, one per `DETAIL_MODELS` entry. Every piece is built at the instance origin on
@@ -255,6 +255,144 @@ const FONT: Record<string, readonly (readonly [number, number, number, number])[
   S: [[2, 4, 0, 4], [0, 4, 0, 2], [0, 2, 2, 2], [2, 2, 2, 0], [2, 0, 0, 0]],
   T: [[0, 4, 2, 4], [1, 4, 1, 0]],
   U: [[0, 4, 0, 0], [0, 0, 2, 0], [2, 0, 2, 4]],
+  B: [[0, 0, 0, 4], [0, 4, 1.4, 4], [1.4, 4, 1.8, 3.3], [1.8, 3.3, 1.3, 2.1], [0, 2.1, 1.5, 2.1], [1.5, 2.1, 2, 1.1], [2, 1.1, 1.5, 0], [1.5, 0, 0, 0]],
+  C: [[2, 4, 0, 4], [0, 4, 0, 0], [0, 0, 2, 0]],
+  F: [[0, 0, 0, 4], [0, 4, 2, 4], [0, 2.1, 1.5, 2.1]],
+  M: [[0, 0, 0, 4], [0, 4, 1, 2], [1, 2, 2, 4], [2, 4, 2, 0]],
+  Q: [[0, 0, 0, 4], [0, 4, 2, 4], [2, 4, 2, 0], [2, 0, 0, 0], [1.2, 1, 2.3, -0.4]],
+  R: [[0, 0, 0, 4], [0, 4, 1.5, 4], [1.5, 4, 2, 3.2], [2, 3.2, 1.5, 2.2], [1.5, 2.2, 0, 2.2], [0.9, 2.2, 2, 0]],
+  V: [[0, 4, 1, 0], [1, 0, 2, 4]],
+  W: [[0, 4, 0.45, 0], [0.45, 0, 1, 2.2], [1, 2.2, 1.55, 0], [1.55, 0, 2, 4]],
+  Y: [[0, 4, 1, 2.1], [2, 4, 1, 2.1], [1, 2.1, 1, 0]],
+}
+
+/** Small deterministic hash stream for the hand-written letters (fixed per phrase, so every client draws the same). */
+function handRng(text: string): () => number {
+  let h = 2166136261
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619)
+  return () => {
+    h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d)
+    h = Math.imul(h ^ (h >>> 12), 0x297a2d39)
+    h ^= h >>> 15
+    return (h >>> 0) / 4294967296
+  }
+}
+
+const BLOOD_THIN = hex(0x5c0c08)
+const BLOOD_THICK = hex(0x2a0503)
+const mixRgb = (a: Rgb, b: Rgb, t: number): Rgb => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]
+
+/**
+ * A ribbon on the wall plane through `pts` (x, y) with a half-width per point: consecutive quads share their edges,
+ * so a stroke reads as one wet smear. Thicker parts are darker (blood pools and dries dark where it was laid on heavy).
+ */
+function ribbon(m: Mesh, pts: readonly (readonly [number, number])[], half: readonly number[], ref: number, z: number): void {
+  const n = pts.length
+  const side = (i: number): [number, number] => {
+    const a = pts[Math.max(0, i - 1)]!, b = pts[Math.min(n - 1, i + 1)]!
+    const dx = b[0] - a[0], dy = b[1] - a[1]
+    const l = Math.hypot(dx, dy) || 1
+    return [-dy / l, dx / l]
+  }
+  for (let i = 0; i < n - 1; i++) {
+    const [ax, ay] = pts[i]!, [bx, by] = pts[i + 1]!
+    const [anx, any] = side(i), [bnx, bny] = side(i + 1)
+    const ha = half[i]!, hb = half[i + 1]!
+    const t = Math.min(1, Math.max(0, ((ha + hb) / 2 / ref - 0.55) / 0.75))
+    m.quad([ax - anx * ha, ay - any * ha, z], [bx - bnx * hb, by - bny * hb, z], [bx + bnx * hb, by + bny * hb, z], [ax + anx * ha, ay + any * ha, z], [0, 0, 1], mixRgb(BLOOD_THIN, BLOOD_THICK, t), MAT.lit)
+  }
+}
+
+/** A run of blood from (x, y) straight down `len`, thinning as it goes and ending in a dark bead. */
+function drip(m: Mesh, x: number, y: number, len: number, w: number, z: number, rnd: () => number): void {
+  const steps = 5
+  const pts: [number, number][] = []
+  const half: number[] = []
+  for (let k = 0; k <= steps; k++) {
+    const t = k / steps
+    pts.push([x + Math.sin(t * 3 + rnd() * 0.4) * w * 0.25, y - len * t])
+    half.push(w * (1 - 0.45 * t))
+  }
+  ribbon(m, pts, half, w * 1.6, z)
+  // The bead: a small diamond-ish blob wider than the run.
+  const by = y - len, bw = w * 1.15
+  m.quad([x - bw, by, z + 0.0002], [x, by - bw * 1.3, z + 0.0002], [x + bw, by, z + 0.0002], [x, by + bw * 0.9, z + 0.0002], [0, 0, 1], BLOOD_THICK, MAT.lit)
+}
+
+/**
+ * Warnings written in blood with a hand (AR-69): each stroke is a tapered ribbon that starts loaded and runs dry, its
+ * line wobbling a little, letters leaning and drifting off the baseline; runs drip from the heaviest low points and
+ * end in beads; a smear where the hand dragged and a few flecks. Matte (MAT.lit, no gloss), colour only where light
+ * falls on it, which the look already enforces. Drawn on the wall plane facing +Z like the spray words, the same
+ * width (`wordWidth`) so placement fits it.
+ */
+export function bloodWord(m: Mesh, text: string, height: number): void {
+  const rnd = handRng(text)
+  const u = height / 4
+  const width = (text.length * LETTER_ADVANCE - 0.22) * height
+  const base = u * 0.24
+  let x = -width / 2
+  let layer = 0
+  const z = () => 0.004 + Math.min(0.006, layer++ * 0.00018)
+  let baseline = 0
+  for (let i = 0; i < text.length; i++) {
+    const strokes = FONT[text[i]!]
+    baseline += (rnd() - 0.5) * u * 0.18
+    const lean = (rnd() - 0.4) * 0.16
+    const scale = 0.9 + rnd() * 0.2
+    if (strokes) {
+      let lowest: [number, number, number] | null = null
+      for (const [a, b, c, d] of strokes) {
+        const p = (gx: number, gy: number): [number, number] => [x + (gx * scale + gy * lean) * u, baseline + gy * scale * u]
+        const [x0, y0] = p(a, b), [x1, y1] = p(c, d)
+        const len = Math.hypot(x1 - x0, y1 - y0)
+        const n = Math.max(3, Math.ceil(len / (u * 0.3)))
+        const load = 1.05 + rnd() * 0.35
+        const wob = (rnd() - 0.5) * u * 0.12
+        const pts: [number, number][] = []
+        const half: number[] = []
+        const nx = -(y1 - y0) / (len || 1), ny = (x1 - x0) / (len || 1)
+        for (let k = 0; k <= n; k++) {
+          const t = k / n
+          const bow = Math.sin(t * Math.PI) * wob
+          pts.push([x0 + (x1 - x0) * t + nx * bow, y0 + (y1 - y0) * t + ny * bow])
+          // Loaded at the first touch, a slight swell, then running dry at the end of the pull.
+          const pressure = load * (1 - 0.5 * t) * (0.75 + 0.25 * Math.sin(t * Math.PI))
+          half.push(base * Math.max(0.35, pressure) * (k === 0 || k === n ? 0.7 : 1))
+        }
+        ribbon(m, pts, half, base, z())
+        // Remember the heavy low point of the letter for its drip.
+        const lowY = Math.min(y0, y1), lowX = y0 < y1 ? x0 : x1
+        const heavy = y0 <= y1 ? half[0]! : half[n]!
+        if (!lowest || lowY < lowest[1]) lowest = [lowX, lowY, heavy]
+        // Horizontal pulls shed runs from where they were heaviest.
+        if (Math.abs(y1 - y0) < u * 0.5 && rnd() < 0.45) {
+          const t = 0.15 + rnd() * 0.35
+          drip(m, x0 + (x1 - x0) * t, y0 + (y1 - y0) * t - base * 0.4, u * (0.4 + rnd() * 1.4), base * 0.38, z(), rnd)
+        }
+      }
+      if (lowest && rnd() < 0.75) drip(m, lowest[0], lowest[1] - lowest[2] * 0.3, u * (0.8 + rnd() * 2.6), lowest[2] * 0.42, z(), rnd)
+    }
+    x += LETTER_ADVANCE * height
+  }
+  // A smear where the hand dragged through under part of the phrase, and a few flecks flicked off it.
+  const sx = -width / 2 + rnd() * width * 0.5
+  const sw = width * (0.18 + rnd() * 0.22)
+  const sy = -u * (0.5 + rnd() * 0.4)
+  const pts: [number, number][] = []
+  const half: number[] = []
+  for (let k = 0; k <= 6; k++) {
+    const t = k / 6
+    pts.push([sx + sw * t, sy + Math.sin(t * 2.4) * u * 0.12])
+    half.push(base * (1.3 - t * 0.9) * (0.8 + rnd() * 0.25))
+  }
+  ribbon(m, pts, half, base, z())
+  for (let k = 0; k < 7; k++) {
+    const fx = (rnd() - 0.5) * width * 1.05, fy = (rnd() - 0.3) * height * 1.2
+    const r = base * (0.25 + rnd() * 0.45)
+    const zz = z()
+    m.quad([fx - r, fy, zz], [fx, fy - r, zz], [fx + r, fy, zz], [fx, fy + r, zz], [0, 0, 1], BLOOD_THICK, MAT.lit)
+  }
 }
 
 /** Hand-sprayed words: each letter drifts and leans a little (fixed per letter, so every client sees the same). */
@@ -367,6 +505,8 @@ function buildModel(m: Mesh, id: DetailModel): void {
     case "crowUp": return crow(m, "up")
     case "crowDown": return crow(m, "down")
     default: {
+      const blood = BLOOD_WORDS.find((w) => w.model === id)
+      if (blood) return bloodWord(m, blood.text, blood.height)
       const i = WORDS.findIndex((w) => w.model === id)
       const w = WORDS[i]!
       return sprayWord(m, w.text, w.height, hex(WORD_COLOURS[i % WORD_COLOURS.length]!))
