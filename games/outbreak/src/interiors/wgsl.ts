@@ -208,14 +208,13 @@ fn themedWall(base: vec3f, a: f32, y: f32, t: i32, variant: f32) -> vec3f {
 }
 
 /**
- * 70s plaster for unthemed rooms (AR-69): warm putty paint over a darker painted dado below the chair rail, with
- * slow roller-coat tone. Replaces the façade colour the walls carried inside.
+ * 70s plaster for unthemed rooms (AR-69): warm putty paint over a darker painted dado below the chair rail.
+ * Replaces the façade colour the walls carried inside; its tone variation comes from interiorWallWear's mottling.
  */
-fn plasterWall(a: f32, y: f32, variant: f32) -> vec3f {
+fn plasterWall(y: f32, variant: f32) -> vec3f {
   let paint = mix(vec3f(0.30, 0.27, 0.20), vec3f(0.25, 0.26, 0.20), variant);
   let dado = mix(vec3f(0.12, 0.085, 0.055), vec3f(0.075, 0.09, 0.07), step(0.5, variant));
-  let coat = 0.92 + 0.16 * surfaceNoise(vec2f(a * 1.3, y * 0.5) + vec2f(7.1, 3.3));
-  return select(paint, dado, y < 0.92) * coat;
+  return select(paint, dado, y < 0.92);
 }
 
 /**
@@ -223,7 +222,8 @@ fn plasterWall(a: f32, y: f32, variant: f32) -> vec3f {
  * shade down to the skirting, corner and furniture occlusion from the floor bake in front of the face, water streaks
  * running down from the top, an uneven rising-damp tide line with a darker rim, and 0.5–2 m mottling so long walls
  * never read flat. Streaks run vertically (the wall's uncompressed screen axis) and every narrow term widens or fades
- * with the pixel footprint, so it holds still while walking. \`k\` scales it all (0 = Today).
+ * with the pixel footprint, so it holds still while walking. \`k\` scales it all (0 = Today). Two noise taps and one
+ * bake fetch: this is compiled into every surface pipeline variant, so it stays small (SwiftShader smoke startup).
  */
 fn interiorWallWear(albedoIn: vec3f, a: f32, y: f32, front: vec2f, k: f32) -> vec3f {
   if (k <= 0.0) { return albedoIn; }
@@ -232,7 +232,7 @@ fn interiorWallWear(albedoIn: vec3f, a: f32, y: f32, front: vec2f, k: f32) -> ve
   let occ = smoothstep(0.08, 0.6, floorData(front).r);
   let sn = surfaceNoise(vec2f(a * 2.6, y * 0.22 + 3.7));
   let streak = smoothstep(0.6, 0.84, sn) * smoothstep(0.9, 2.6, y) * (1.0 - smoothstep(0.035, 0.09, fw));
-  let tide = 0.4 + 0.26 * surfaceNoise(vec2f(a * 0.55 + 11.3, 1.9));
+  let tide = 0.53 + 0.065 * (sin(a * 1.73 + 0.4) + sin(a * 0.61 + 2.3));
   let below = 1.0 - smoothstep(tide - 0.03 - fw, tide + 0.02 + fw, y);
   let rimW = max(0.035, fw * 1.5);
   let rim = exp(-abs(y - tide) / rimW) * (0.035 / rimW);
@@ -321,7 +321,7 @@ export function interiorMaterialWgsl(r: InteriorWgslRefs, classicKitchen: boolea
             let wallA = o.world.x + o.world.z;
             let wear = ${r.floor2}.z;
             if (th > 0) { albedo = themedWall(albedo, wallA, o.world.y, th, variant); }
-            else if (wear > 0.0) { albedo = plasterWall(wallA, o.world.y, variant); }
+            else if (wear > 0.0) { albedo = plasterWall(o.world.y, variant); }
             albedo = interiorWallWear(albedo, wallA, o.world.y, o.world.xz + n.xz * 0.2, wear);
           }
         } else {
