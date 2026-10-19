@@ -51,6 +51,11 @@ export class OutbreakFxParticles {
     support: (x: number, z: number) => number
   }): Particles | undefined {
     const p = this.particles
+    // All Today: nothing of ours is drawn, so drop what is still alive rather than let it burn out.
+    if (o.fire.look.fireStyle !== 1 && !o.air.worldSmoke) {
+      p.reset()
+      return undefined
+    }
     p.update(o.dt, [], o.support)
     const view = o.fire.view
     this.wrecks.length = 0
@@ -76,7 +81,9 @@ export class OutbreakFxParticles {
     if (flashlight > 0 && flashlight < count && air.smokeBeamCatch > 0) {
       const k = flashlight * LIGHT_FLOATS
       out.set(lights.subarray(k, k + 8), 0)
-      out[7] = lights[k + 7]! * air.smokeBeamCatch * 0.6
+      // The scene shades the beam with its own radiance curve (FLASH_RADIANCE, a softened inverse square); the
+      // particle shader's linear-squared falloff needs about five times the power to read the same in the air.
+      out[7] = lights[k + 7]! * air.smokeBeamCatch * 5
       out[8] = lights[k + 8]!
       out[9] = lights[k + 9]!
       out[10] = lights[k + 10]!
@@ -102,7 +109,8 @@ export class OutbreakFxParticles {
       const k = pick[j]!.i * LIGHT_FLOATS
       const o = n * LIGHT_FLOATS
       out.set(lights.subarray(k, k + 8), o)
-      out[o + 7] = lights[k + 7]! * air.smokeLampCatch
+      // Surfaces take about twice a point light's power up close (`lightAttenuation`); match that in the air.
+      out[o + 7] = lights[k + 7]! * air.smokeLampCatch * 2
     }
     this.lighting.lightCount = n
   }

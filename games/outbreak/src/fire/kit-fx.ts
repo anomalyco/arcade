@@ -102,7 +102,7 @@ export class FlameFx {
     s.bounce = 0
     s.r = 0.5 * look.flameBrightness
     s.g = s.b = 1
-    s.alpha = 0.95
+    s.alpha = 0.86
     s.temperature = o.heat * look.flameHeat
     s.turbulence = (0.75 + 0.4 * this.random()) * look.flameTurbulence
     s.ease = 2.2
@@ -207,7 +207,7 @@ export class FlameFx {
       const dz = Math.sin(s.aim)
       const len = reach * (0.3 + 0.7 * smooth(0, 0.16, time - since))
       const key = `stream:${s.id}`
-      const n = this.births(key, 75 * dens, dt)
+      const n = this.births(key, 64 * dens, dt)
       for (let i = 0; i < n; i++) {
         const life = 0.42 + r() * 0.2
         const drag = 2.3
@@ -220,9 +220,9 @@ export class FlameFx {
         const k = r() * 0.15
         this.flame(p, frame, n0.x + dx * k, n0.y + (r() - 0.5) * 0.04, n0.z + dz * k, vx, ver * v, vz, {
           life,
-          size: 0.12 + r() * 0.05,
-          grow: 0.75 + 0.35 * r() + len * 0.06,
-          heat: 1.25 + 0.25 * r(),
+          size: 0.07 + r() * 0.04,
+          grow: 0.34 + 0.22 * r() + len * 0.03,
+          heat: 1.2 + 0.25 * r(),
           rise: 3.4,
           drag,
         })
@@ -304,19 +304,19 @@ export class FlameFx {
         spawnExplosion(p, null, x, g, y, burst, r)
         this.shown.blasts++
       }
-      const rate = (5 + rad * rad * 16) * dens * lvl
+      const rate = (9 + rad * rad * 26) * dens * lvl
       for (let i = this.births(key, rate, dt); i > 0; i--) {
         const rr = Math.sqrt(r()) * rad * 0.85
         const a = r() * Math.PI * 2
         const fx = x + Math.cos(a) * rr
         const fz = y + Math.sin(a) * rr
         const edge = 1 - 0.45 * (rr / Math.max(0.1, rad))
-        this.flame(p, frame, fx, support(fx, fz) + 0.06, fz, (r() - 0.5) * 0.3, 0.7 + r() * 0.8 * edge, (r() - 0.5) * 0.3, {
-          life: (0.38 + r() * 0.3) * (0.75 + 0.35 * edge),
-          size: (0.11 + r() * 0.08) * (0.75 + 0.35 * Math.sqrt(rad)),
-          grow: (0.22 + 0.18 * r()) * (0.8 + 0.4 * edge),
+        this.flame(p, frame, fx, support(fx, fz) + 0.05, fz, (r() - 0.5) * 0.3, 0.8 + r() * 0.9 * edge, (r() - 0.5) * 0.3, {
+          life: (0.3 + r() * 0.24) * (0.75 + 0.35 * edge),
+          size: (0.07 + r() * 0.05) * (0.8 + 0.3 * Math.sqrt(rad)),
+          grow: (0.16 + 0.12 * r()) * (0.8 + 0.4 * edge),
           heat: 0.85 + r() * 0.3,
-          rise: 3,
+          rise: 3.6,
         })
       }
       for (let i = this.births(`${key}:smoke`, (1 + rad * 2.5) * lvl, dt); i > 0; i--) {

@@ -82,7 +82,7 @@ const SCENES: Scene[] = [
       { frames: 20, cmd: { aim: 0 } },
       { frames: 300, cmd: { aim: 0 }, first: { fire: true } },
     ],
-    still: 168,
+    still: 190,
   },
   {
     name: "steam",
@@ -120,7 +120,7 @@ async function openPage(): Promise<Page> {
     console.log("harness never ready; page errors:", JSON.stringify(errors))
     throw e
   }
-  await evalIn(page, `h.freeze(); h.setLab("timeScale", 0); h.setLab("zombieCount", 0); h.session().ai.agents.length = 0; h.setZoomRaw(${zoom})`)
+  await evalIn(page, `h.freeze(); h.setLab("timeScale", 0); h.setLab("zombieCount", 0); try { h.setLab("death.deathMode", 0) } catch {}; h.session().ai.agents.length = 0; h.setZoomRaw(${zoom})`)
   await page.addStyleTag({
     content: `#clip-label{position:fixed;left:16px;top:12px;z-index:99;font:600 18px -apple-system,sans-serif;color:#fff;text-shadow:0 1px 3px #000;pointer-events:none}`,
   })
@@ -139,7 +139,10 @@ async function play(page: Page, s: Scene, onFrame: (i: number) => Promise<void>)
       const cmd: Record<string, unknown> = { ...(beat.cmd ?? {}), ...(j === 0 ? (beat.first ?? {}) : {}) }
       if (s.name === "steam") cmd.aim = (await page.evaluate(() => (window as any).__airAim as number)) + 0.32 * Math.sin(i / 70)
       await page.evaluate(async (cmd) => {
-        await (window as any).__arcadeHarness.step(1 / 60, cmd)
+        const h = (window as any).__arcadeHarness
+        // Keep the survivor up with the beam on through the whole reel.
+        Object.assign(h.state().player, { health: h.state().player.maxHealth ?? 100, battery: 1, batteryDepleted: false, flashlightOn: true })
+        await h.step(1 / 60, cmd)
       }, cmd)
       await onFrame(i)
     }
@@ -168,31 +171,26 @@ try {
     mkdirSync(dir, { recursive: true })
     const gpu: Record<string, unknown> = {}
     for (const s of SCENES) {
-      for (const [tag, knobs] of [["today", TODAY], ["kit", KIT]] as const) {
-        await setKnobs(page, knobs)
-        let done = false
-        await play(page, s, async (i) => {
-          if (i !== s.still || done) return
-          done = true
-          await page.screenshot({ path: resolve(dir, `${s.name}-${tag}.jpg`), type: "jpeg", quality: 90 })
-          if (tag === "kit") {
-            // Paired GPU on this frozen frame: the same particles and stores, Today's draw vs the kit's.
-            const a: number[] = []
-            const b: number[] = []
-            for (let r = 0; r < 6; r++) {
-              for (const isB of r % 2 ? [true, false] : [false, true]) {
-                await setKnobs(page, isB ? KIT : TODAY)
-                await page.evaluate(async () => (window as any).__arcadeHarness.step(0, {}))
-                ;(isB ? b : a).push(await frameMs(page))
-              }
-            }
-            await setKnobs(page, KIT)
-            const d = a.map((x, k) => b[k]! - x)
-            gpu[s.name] = { todayMs: +med(a).toFixed(3), kitMs: +med(b).toFixed(3), deltaMs: +med(d).toFixed(3), fx: await evalIn(page, `return h.state().fx`) }
-            console.log(s.name, JSON.stringify(gpu[s.name]))
-          }
-        })
-      }
+      // One run per scene: at the still frame, the kit look, then the same frozen moment redrawn as Today (its sprites
+      // and scorch are analytic, so they draw at once; Today also drops the kit pool). GPU: that frame both ways.
+      await setKnobs(page, KIT)
+      let done = false
+      await play(page, s, async (i) => {
+        if (i !== s.still || done) return
+        done = true
+        await page.screenshot({ path: resolve(dir, `${s.name}-kit.jpg`), type: "jpeg", quality: 90 })
+        const fx = await evalIn(page, `return h.state().fx`)
+        const b: number[] = []
+        for (let r = 0; r < 3; r++) b.push(await frameMs(page))
+        await setKnobs(page, TODAY)
+        await page.evaluate(async () => (window as any).__arcadeHarness.step(0, {}))
+        await page.screenshot({ path: resolve(dir, `${s.name}-today.jpg`), type: "jpeg", quality: 90 })
+        const a: number[] = []
+        for (let r = 0; r < 3; r++) a.push(await frameMs(page))
+        await setKnobs(page, KIT)
+        gpu[s.name] = { todayMs: +med(a).toFixed(3), kitMs: +med(b).toFixed(3), deltaMs: +(med(b) - med(a)).toFixed(3), fx }
+        console.log(s.name, JSON.stringify(gpu[s.name]))
+      })
     }
     writeFileSync(resolve(out, "gpu.json"), JSON.stringify(gpu, null, 2))
   }
