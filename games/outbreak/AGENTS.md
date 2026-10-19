@@ -87,3 +87,8 @@
   escape card, in `shared/way-out/` (all state in the `wayout` ledger store, nothing on the wire) and
   `src/way-out/`. Lab: Backquote › Way Out (Off = endless survival), `arcade cmd wayout.*`, station
   `outbreak-way-out`. How it works: `../../docs/outbreak-way-out.md`. Tests: `tests/way-out.test.ts`.
+- Hearing, sound cues and peek (AR-67): the dead hear through building shells (`shared/hearing.ts`; shut houses keep
+  footsteps in, open doors and windows carry; Lab › Hearing, "Today" = walls only), the HUD's sound cues draw the
+  reach they hear (`src/sound-cues/`, Lab › Sound cues, `../../docs/outbreak-hud.md#sound-cues`), and peeking eases
+  camera, sight and roof cut together (`src/peek-view.ts`, Lab › Peek). Tests: `tests/hearing.test.ts`,
+  `tests/sound-cues.test.ts`, `tests/peek-view.test.ts`.

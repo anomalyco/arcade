@@ -2,6 +2,7 @@ import { cameraShakeControls } from "@arcade/kit/client/camera"
 import type { DiscoveryHost } from "./discovery/stage"
 import { motionBlurControls } from "@arcade/kit/gpu/motion-blur"
 import { cameraLeadControls, feelControls } from "./feel-tuning"
+import { peekViewControls } from "./peek-view"
 import type { LabControl, LabPanel } from "@arcade/kit/lab-panel"
 import { LOOK_PRESETS, LOOK_PRESET_IDS, applyLookPreset, resolveLookPresetId, type LookSettings } from "@arcade/kit/look"
 import {
@@ -212,6 +213,7 @@ export function buildOutbreakLabControls(host: OutbreakLabControlHost): LabContr
     },
     ...cameraShakeControls,
     ...cameraLeadControls,
+    ...peekViewControls,
     ...feelControls,
     ...motionBlurControls,
     {

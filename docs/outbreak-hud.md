@@ -77,6 +77,26 @@ Ring shape (Ring, Wheel, Arc) and Health on character apply to every style that 
 ("Noise 32 m" for actions heard 9 m or more away) are off by default since Kit didn't like them; Lab › HUD › Noise
 callouts turns them back on. `ActorFeedback` still reports them, and `CharacterHud` drops them unless the setting is on.
 
+## Sound cues
+
+`games/outbreak/src/sound-cues/` (AR-67, Lab › Sound cues) draws every noise the dead can hear on a Canvas 2D layer
+over the scene, so the player learns what is safe:
+
+- **Reach rings** (default). Each ring is drawn at the reach the dead have for that noise right now: `radius × hearingScale × √nightFactor`, through
+  `crowdHearingReach` in `shared/ai.ts`. A wavefront runs out to it once (0.6 s, ease-out). The ring fades in over 0.18 s, holds, then fades out
+  over 0.45 s. For a noise made inside a building, a dashed ring shows how far it carries indoors and a solid ring shows what
+  gets outside (`shared/hearing.ts`), and the label reads "muffled" when nothing does. A chip at the source names the sound
+  ("Shot", "Glass", "Alarm", "Radio") and gives the reach in metres. Your noise is ink, teammates' grey, the world's amber, the
+  dead's and danger red.
+- **Off-screen** sounds the survivor would hear get a chevron on the screen edge, with the name beside it.
+- **Your footsteps** keep a dashed ring at your feet while they carry. Indoors, a solid ring shows what reaches the street. Crouching draws nothing,
+  because the crowd doesn't hear it.
+- **Unseen dead** moving within earshot (three at most) get a soft three-arc mark that opens toward you. It sits near them,
+  never on them, and glides between spots.
+- **Source marks** is the second style: a small pulse at each source, with the reach drawn only for your own noises. **Today**
+  brings back the Unseen shroud's ground ripples (`collectFogSoundSprites`), which the new layer replaces.
+- Reduced motion keeps the fades and drops the travel.
+
 Key names follow the controls rule (docs/controls.md): bindings are physical `KeyboardEvent.code`, and labels are the
 QWERTY name of that key on every layout. The "Empty, R to reload" callout draws R with the shared key cap
 (`keyCapHtml` from `@arcade/kit/client/key-cap`, passed as the callout's `keyCap` option), and the world prompt's

@@ -1235,6 +1235,11 @@ export type AIWorldContext = {
   targets: readonly PerceptionTarget[]
   /** Shared per-goal flow fields; hunters farther than a few metres from their goal steer by these instead of A*. */
   flow?: FlowFieldCache
+  /**
+   * How one listener hears one noise, replacing the straight-line wall and door muffling of `attenuateNoise` (a game
+   * can muffle noise inside shut buildings, say). Gets the listener's perception scale and the crowd's config.
+   */
+  hearNoise?: (ev: NoiseEvent, lx: number, ly: number, perceptionScale: number, config: AIConfig) => AttenuatedNoise
 }
 
 /** Above this many living agents the crowd paths by shared flow fields (when `flowFields` is 1, the default). */
@@ -1684,18 +1689,10 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
         if (ev.sourceId === selfSource) continue
         // Groans from other zombies only pull wanderers/searchers, not already-chasing zombies
         if (ev.kind === "groan" && (a.state === "chase" || a.state === "alert" || a.state === "bash")) continue
-        const att = attenuateNoise(
-          ev.x,
-          ev.y,
-          ev.radius,
-          ev.loudness,
-          a.x,
-          a.y,
-          walls,
-          closedDoors,
-          config,
-          a.perceptionScale * Math.sqrt(nightFactor),
-        )
+        const hearScale = a.perceptionScale * Math.sqrt(nightFactor)
+        const att = ctx.hearNoise
+          ? ctx.hearNoise(ev, a.x, a.y, hearScale, config)
+          : attenuateNoise(ev.x, ev.y, ev.radius, ev.loudness, a.x, a.y, walls, closedDoors, config, hearScale)
         if (!att.audible) continue
         const freshness = clamp(1 - (time - ev.time) / Math.max(0.2, ev.ttl), 0.2, 1)
         const score = att.perceivedLoudness * freshness

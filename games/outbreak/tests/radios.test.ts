@@ -141,8 +141,11 @@ describe("the dead and a playing radio", () => {
     expect(sim.time - at).toBeGreaterThanOrEqual(R.radioBreakTime - 0.2)
   })
 
-  test("the dead out on the street turn towards the house it plays in", () => {
+  /** Ash's radio playing for six seconds with one of the dead out on the street 12 m off; the window towards it open or shut. */
+  function streetZombie(windowOpen: boolean) {
     const { sim, tick, slot } = room({ ann: BEFORE_ASH })
+    sim.town.windows.find((w) => w.id === "ash-south-west")!.open = windowOpen
+    sim.ai.rebuildTopology(sim.town)
     const site = radioSites(sim.town).find((s) => s.id === ASH)!
     const z = sim.ai.spawnZombie(sim.town, 20, 44, "wander")
     const d0 = Math.hypot(z.x - site.x, z.y - site.y)
@@ -150,8 +153,19 @@ describe("the dead and a playing radio", () => {
     tick({ ann: { interact: true } })
     Object.assign(slot("ann").survivor, { x: 70, y: 70 })
     tick({}, ticks(6))
+    return { z, d0, d: Math.hypot(z.x - site.x, z.y - site.y) }
+  }
+
+  test("the dead out on the street turn towards the house it plays in, through an open window", () => {
+    const { z, d0, d } = streetZombie(true)
     expect(["investigate", "search", "alert", "chase", "bash"]).toContain(z.state)
-    expect(Math.hypot(z.x - site.x, z.y - site.y)).toBeLessThan(d0 - 1.5)
+    expect(d).toBeLessThan(d0 - 1.5)
+  })
+
+  test("with the house shut it carries about half as far, and the street stays quiet", () => {
+    const { z } = streetZombie(false)
+    expect(z.state).toBe("wander")
+    expect(z.lastHeardNoiseId).toBe(0)
   })
 })
 
