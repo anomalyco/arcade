@@ -2,6 +2,7 @@ import { runHeadlessBotGame, type BotRunConfig, type CauseOfDeath } from "./bot-
 import type { CoopSim, SurvivorSlot } from "./coop-sim"
 import { DEFAULT_PACING_TUNING } from "./pacing"
 import { buildingAt } from "./progression/loot"
+import { SPECIAL_NONE, specialKindOf } from "./specials/kinds"
 import { BOT_SKILL_PRESET_ORDER, type BotSkillPresetId } from "./survivor-bot"
 
 /**
@@ -65,6 +66,8 @@ export type RampHour = {
   aware: number
   /** Mean director-counted active chasers. */
   chasers: number
+  /** Mean living special zombies (runner, brute, screamer, bloater, riot cop, lurker). */
+  specials: number
   /** Fraction of the time the lead survivor was inside a building, and hidden in a closet. */
   indoors: number
   hidden: number
@@ -108,6 +111,7 @@ const emptyHour = (hour: number, phase: number): RampHour => ({
   living: 0,
   aware: 0,
   chasers: 0,
+  specials: 0,
   indoors: 0,
   hidden: 0,
   hits: 0,
@@ -146,6 +150,7 @@ export function runRampProbe(config: BotRunConfig): RampRun {
     const h = hours[index]!
     let living = 0
     let aware = 0
+    let specials = 0
     for (const a of sim.ai.agents) {
       if (a.state === "dead") {
         if (!dead.has(a.id)) {
@@ -155,6 +160,7 @@ export function runRampProbe(config: BotRunConfig): RampRun {
         continue
       }
       living++
+      if (specialKindOf(a.seed) !== SPECIAL_NONE) specials++
       if (a.state !== "wander" && a.state !== "stagger" && a.state !== "knockdown" && a.state !== "crawler") aware++
     }
     const ledger = sim.progression.ledger
@@ -165,6 +171,7 @@ export function runRampProbe(config: BotRunConfig): RampRun {
     h.living += living * dt
     h.aware += aware * dt
     h.chasers += sim.ai.pacing.telemetry.activeChasers * dt
+    h.specials += specials * dt
     if (buildingAt(sim.town, p.x, p.y)) h.indoors += dt
     if (sim.progression.verbs.hiddenIn(slot.id)) h.hidden += dt
     if (prev) {
@@ -198,6 +205,7 @@ export function runRampProbe(config: BotRunConfig): RampRun {
     h.living /= h.seconds
     h.aware /= h.seconds
     h.chasers /= h.seconds
+    h.specials /= h.seconds
     h.indoors /= h.seconds
     h.hidden /= h.seconds
   }
@@ -229,6 +237,7 @@ export type RampPhaseStats = {
   living: number
   aware: number
   chasers: number
+  specials: number
   indoors: number
   hidden: number
   hitsPerMin: number
@@ -305,6 +314,7 @@ export function summarizeRamp(runs: readonly RampRun[], phases: number): RampSum
           acc.living += h.living * h.seconds
           acc.aware += h.aware * h.seconds
           acc.chasers += h.chasers * h.seconds
+          acc.specials += h.specials * h.seconds
           acc.indoors += h.indoors * h.seconds
           acc.hidden += h.hidden * h.seconds
           acc.hits += h.hits
@@ -335,6 +345,7 @@ export function summarizeRamp(runs: readonly RampRun[], phases: number): RampSum
         living: seconds ? round(acc.living / seconds, 2) : 0,
         aware: seconds ? round(acc.aware / seconds, 2) : 0,
         chasers: seconds ? round(acc.chasers / seconds, 2) : 0,
+        specials: seconds ? round(acc.specials / seconds, 2) : 0,
         indoors: seconds ? round(acc.indoors / seconds, 2) : 0,
         hidden: seconds ? round(acc.hidden / seconds, 2) : 0,
         hitsPerMin: seconds ? round((acc.hits / seconds) * 60, 2) : 0,
@@ -376,6 +387,7 @@ export type RampHourCurve = {
   living: number
   aware: number
   chasers: number
+  specials: number
   indoors: number
   hidden: number
   hitsPerMin: number
@@ -401,6 +413,7 @@ export function rampHourCurves(runs: readonly RampRun[], preset: BotSkillPresetI
       living: mean((h) => h.living),
       aware: mean((h) => h.aware),
       chasers: mean((h) => h.chasers),
+      specials: mean((h) => h.specials),
       indoors: mean((h) => h.indoors),
       hidden: mean((h) => h.hidden),
       hitsPerMin: mean((h) => (h.seconds ? (h.hits / h.seconds) * 60 : 0)),

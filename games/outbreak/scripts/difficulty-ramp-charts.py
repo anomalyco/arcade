@@ -27,7 +27,7 @@ def shade_nights(ax, hours):
 
 def hour_ticks(ax, hours):
     ticks = [0] + [h for h in range(1, hours, 12)]
-    labels = ["17:30"] + [("N" if (h - 1) % 24 == 0 else "D") + str((h - 1) // 24 + 1 + ((h - 1) % 24 != 0)) for h in ticks[1:]]
+    labels = [""] + [("N" if (h - 1) % 24 == 0 else "D") + str((h - 1) // 24 + 1 + ((h - 1) % 24 != 0)) for h in ticks[1:]]
     ax.set_xticks(ticks)
     ax.set_xticklabels(labels)
 
@@ -54,7 +54,7 @@ def per_hour(metrics, name, title):
 
 per_hour([("alive", "alive fraction")], "survival.png", "Survival by game hour (all seeds)")
 per_hour(
-    [("living", "living zombies"), ("aware", "aware zombies"), ("chasers", "active chasers"), ("hitsPerMin", "hits / min"), ("damage", "damage / hour")],
+    [("living", "living zombies"), ("aware", "aware zombies"), ("chasers", "active chasers"), ("specials", "specials"), ("hitsPerMin", "hits / min"), ("damage", "damage / hour")],
     "pressure.png",
     "Zombie pressure by game hour (mean over survivors alive)",
 )

@@ -138,6 +138,7 @@ function report(
   table("Living zombies", "Mean living director population while the survivor is alive.", (x) => x.living.toFixed(1))
   table("Aware zombies", "Mean zombies investigating, alerted, chasing, bashing or searching.", (x) => x.aware.toFixed(2))
   table("Active chasers", "Mean director-counted chasers.", (x) => x.chasers.toFixed(2))
+  table("Special zombies", "Mean living specials (runner, brute, screamer, bloater, riot cop, lurker).", (x) => x.specials.toFixed(2))
   table("Hits per minute", "Separate damage events on the survivor per real minute.", (x) => x.hitsPerMin.toFixed(2))
   table("Damage per game hour", "", (x) => x.damagePerHour.toFixed(1))
   table("Kills per game hour", "", (x) => x.killsPerHour.toFixed(2))
