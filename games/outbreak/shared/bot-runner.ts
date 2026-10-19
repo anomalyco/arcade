@@ -8,6 +8,7 @@ import { DEFAULT_PACING_TUNING } from "./pacing"
 import { buildingAt } from "./progression/loot"
 import type { ProgressionTuning } from "./progression/tuning"
 import type { Command } from "./session"
+import type { SessionTuning } from "./sim-types"
 import {
   BOT_SKILL_PRESET_ORDER,
   BOT_SKILL_PRESETS,
@@ -154,6 +155,7 @@ export type BotReplayLog = {
   skillOverrides?: Partial<BotSkillConfig>
   aiConfig?: Partial<AIConfig>
   progressionTuning?: Partial<ProgressionTuning>
+  sessionTuning?: SessionTuning
   worldMode: WorldMode
   totalTicks: number
   frames: ReplayTickFrame[]
@@ -259,6 +261,8 @@ export type BotRunConfig = {
   configLabel?: string
   /** Read-only probe called once per tick after the world steps (difficulty-ramp telemetry). Must not mutate the sim. */
   observe?: (sim: CoopSim, slots: readonly SurvivorSlot[], dt: number) => void
+  /** Session tuning passed to every `stepWorld` (e.g. `{ nightRampMode: 0 }` for the pre-D-40 ramp). Default: the shipped defaults. */
+  sessionTuning?: SessionTuning
 }
 
 export type BotRunResult = {
@@ -694,7 +698,7 @@ export function runHeadlessBotGame(config: BotRunConfig): BotRunResult {
       return { smashed: Boolean(st?.counts.smashed), alarm: Boolean(st?.counts.alarm) }
     })
 
-    sim.stepWorld(stepDt, timeScale)
+    sim.stepWorld(stepDt, timeScale, config.sessionTuning)
     config.observe?.(sim, slots, stepDt)
 
     let glassStepsAfter = 0
@@ -1101,6 +1105,7 @@ export function runHeadlessBotGame(config: BotRunConfig): BotRunResult {
             skillOverrides: config.skillOverrides,
             aiConfig: config.aiConfig,
             progressionTuning: config.progressionTuning,
+            ...(config.sessionTuning ? { sessionTuning: config.sessionTuning } : {}),
             worldMode,
             totalTicks: finalTick,
             frames: replayFrames,
@@ -1156,7 +1161,7 @@ export class BotReplayPlayer {
       const cmd = frame.commands[i] ?? { mx: 0, my: 0, aim: 0, interact: false }
       this.sim.stepSurvivor(this.slots[i]!, cmd, stepDt)
     }
-    this.sim.stepWorld(stepDt, this.log.timeScale)
+    this.sim.stepWorld(stepDt, this.log.timeScale, this.log.sessionTuning)
     return frame.commands[0] ?? null
   }
 

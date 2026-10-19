@@ -1,4 +1,5 @@
 import { registerOutbreakSharedFeature } from "../feature-registry"
+import { nightRampTuning, withNightRampSpecials } from "../night-ramp/ramp"
 import { DEFAULT_SPECIALS_TUNING, specialsTuning, type SpecialsTuning } from "./kinds"
 import { createSpecialsState, specialHitOutcome, stepSpecials, stepSpecialsLate, type SpecialsState } from "./specials"
 
@@ -16,9 +17,9 @@ export const outbreakSpecialsSharedFeature = registerOutbreakSharedFeature<Speci
     return structuredClone(state)
   },
   stepWorld: ({ sim, dt, resolved, state }) => {
-    stepSpecials(sim, state, specialsTuning(resolved), dt, resolved.flashlight)
+    stepSpecials(sim, state, withNightRampSpecials(specialsTuning(resolved), nightRampTuning(resolved.features)), dt, resolved.flashlight)
   },
   stepWorldLate: ({ sim, dt, resolved, state }) => {
-    stepSpecialsLate(sim, state, specialsTuning(resolved), dt)
+    stepSpecialsLate(sim, state, withNightRampSpecials(specialsTuning(resolved), nightRampTuning(resolved.features)), dt)
   },
 })
