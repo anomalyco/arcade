@@ -889,7 +889,7 @@ export function encodeShared(
   w.f32(timeF32)
   w.u16(hourQuant)
   w.u16(sim.revision & 0xffff)
-  w.u8(sectionFlags)
+  w.uvar(sectionFlags)
   if (isDelta) w.u32(baseSnap.tick)
 
   // Write Survivors
@@ -1103,7 +1103,7 @@ export function decodeShared(
   const time = r.f32()
   const hour = r.u16() / 2000
   const revision = r.u16()
-  const sectionFlags = r.u8()
+  const sectionFlags = r.uvar()
   const isDelta = Boolean(sectionFlags & SEC_DELTA)
   const baseTick = isDelta ? r.u32() : 0
   const baseSnap = isDelta ? history?.get(baseTick) : undefined
@@ -1711,7 +1711,7 @@ export function inspectSnapshotBreakdown(
   r.f32()
   r.u16()
   r.u16()
-  const sectionFlags = r.u8()
+  const sectionFlags = r.uvar()
   const isDelta = Boolean(sectionFlags & SEC_DELTA)
   const baseTick = isDelta ? r.u32() : 0
   const baseZombiesCount =

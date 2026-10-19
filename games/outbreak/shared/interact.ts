@@ -36,6 +36,7 @@ export type InteractActionId =
   | "disarm"
   | "arm"
   | "feed"
+  | "revive"
 /** `modifier: "shift"` marks an alternative taken with Shift+E (smash a container instead of searching it). */
 export type InteractAction = { id: InteractActionId; label: string; hold?: boolean; modifier?: "shift" }
 

@@ -126,6 +126,8 @@ export interface OutbreakSim {
   readonly slots: SurvivorSlot[]
   readonly featureStates: Map<string, unknown>
   vehicleSolids: Rect[]
+  /** Survivor collision (walls, shut doors, furniture), for features that move a survivor themselves. */
+  solids: Rect[]
   hour: number
   time: number
   revision: number

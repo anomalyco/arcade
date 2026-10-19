@@ -74,6 +74,8 @@ function glyphFor(kind: string, action: InteractAction): ActionGlyph | null {
       return "string"
     case "feed":
       return "feed"
+    case "revive":
+      return "revive"
     case "enter":
       return VEHICLE[label] ?? null
     default:
@@ -144,6 +146,8 @@ export const PROMPT_ACTIONS: readonly { kind: string; action: InteractAction }[]
   { kind: "body", action: a("search", "Search") },
   { kind: "body", action: a("take", "Take all") },
   { kind: "dog", action: a("feed", "Feed") },
+  { kind: "downed", action: a("revive", "Revive", { hold: true }) },
+  { kind: "fallen", action: a("take", "Take all") },
   { kind: "stash", action: a("store", "Store held item") },
   { kind: "stash", action: a("deposit", "Deposit supplies", { hold: true }) },
   { kind: "vehicle", action: a("enter", "Drive") },

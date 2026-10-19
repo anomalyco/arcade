@@ -599,6 +599,7 @@ export function runHeadlessBotGame(config: BotRunConfig): BotRunResult {
   const maxTicks = Math.round(maxDurationSeconds / stepDt)
   const sampleIntervalTicks = Math.max(1, Math.round(15 / stepDt))
   let finalTick = 0
+  const fallen = new Array<boolean>(playerCount).fill(false)
 
   for (let tick = 1; tick <= maxTicks; tick++) {
     finalTick = tick
@@ -608,7 +609,9 @@ export function runHeadlessBotGame(config: BotRunConfig): BotRunResult {
     for (let i = 0; i < slots.length; i++) {
       const slot = slots[i]!
       const bot = bots[i]!
-      const cmd = slot.survivor.health > 0 ? bot.step(stepDt, worldView) : { mx: 0, my: 0, aim: slot.survivor.aim, interact: false }
+      // A bot that fell stays out: revived or back at dawn (`shared/death`), it no longer plays.
+      if (slot.survivor.health <= 0) fallen[i] = true
+      const cmd = !fallen[i] ? bot.step(stepDt, worldView) : { mx: 0, my: 0, aim: slot.survivor.aim, interact: false }
       tickCommands.push(cmd)
 
       const heldItem = sim.progression.selected(slot.id)?.item ?? "hands"
@@ -941,14 +944,14 @@ export function runHeadlessBotGame(config: BotRunConfig): BotRunResult {
     }
 
     // Check termination: in solo, when player dies; in co-op, when all survivors die
-    const anyAlive = slots.some((s) => s.survivor.health > 0)
+    const anyAlive = slots.some((s, i) => !fallen[i] && s.survivor.health > 0)
     if (!anyAlive) {
       break
     }
   }
 
   const lead = slots[0]!.survivor
-  const survived = slots.some((s) => s.survivor.health > 0)
+  const survived = slots.some((s, i) => !fallen[i] && s.survivor.health > 0)
   const survivalTime = Number(sim.time.toFixed(2))
   const { nightsSurvived, completedNights } = computeNightsSurvived(sim.elapsedHours, startHour)
   const tel = sim.ai.pacing.telemetry

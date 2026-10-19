@@ -119,7 +119,12 @@ export class OutbreakFrameRenderer {
     this.renderer.addPass("alpha", this.dust)
     this.footfall = (x: number, y: number, speed: number) => audio.footstep(x, y, speed)
     coop.onFootfall = this.footfall
-    coop.hidden = (id) => Boolean(session().view.progression.verbs.hiddenIn(id))
+    coop.hidden = (id) => {
+      const s = session()
+      if (s.view.progression.verbs.hiddenIn(id)) return true
+      const slot = s.sim.slot(id)
+      return Boolean(slot && outbreakClientFeatures.hidesSurvivor(s.sim, slot))
+    }
     this.avatar = new Survivor(this.renderer)
     this.avatar.onFootfall = this.footfall
     this.zombieCrowd = new ZombieCrowdRenderer(this.renderer)
@@ -224,6 +229,8 @@ export class OutbreakFrameRenderer {
     this.zombieCrowd.reset()
     this.combatFx.reset()
     this.vehicleRenderer.reset()
+    // A restart after a run ends starts clean: no stains from the last run's fights and falls.
+    this.blood.reset()
     this.feelTracker.reset(session().view.player)
     this.ambientMotion.reset()
     frameUi.reset()
@@ -308,10 +315,13 @@ export class OutbreakFrameRenderer {
     cam.zoomOffset =
       settings.view.zoom - 24 + speedPullback + (settings.discovery.discoveryBenchZoom - settings.view.zoom) * lean.blend
     const drawn = coop.pose(p)
+    // A feature may look from elsewhere (a dead survivor watching a teammate): camera, sight and hearing follow it.
+    const eye = outbreakClientFeatures.viewpoint(session, coop)
+    const look = eye ? { ...drawn, x: eye.x, y: eye.y, aim: eye.aim } : drawn
     const watch = settings.hordes.hordeWatch ? hordeWatchPoint(session.sim) : null
-    const camX = watch ? watch.x : drawn.x + (activePeek ? activePeek.camOffsetX * this.peekBlend : 0) + lean.dx
-    const camY = watch ? watch.y : drawn.y + (activePeek ? activePeek.camOffsetY * this.peekBlend : 0) + lean.dy
-    const footLead = localVehicle || watch || activePeek ? null : onFootLead(p, settings.view)
+    const camX = watch ? watch.x : look.x + (activePeek ? activePeek.camOffsetX * this.peekBlend : 0) + lean.dx
+    const camY = watch ? watch.y : look.y + (activePeek ? activePeek.camOffsetY * this.peekBlend : 0) + lean.dy
+    const footLead = localVehicle || watch || activePeek || eye ? null : onFootLead(p, settings.view)
     const lookAheadX = localVehicle ? localVehicle.vx * 0.22 : (footLead?.x ?? 0)
     const lookAheadY = localVehicle ? localVehicle.vy * 0.22 : (footLead?.y ?? 0)
     cam.follow(camX, camY, lookAheadX, lookAheadY, dt, false, Boolean(localVehicle))
@@ -324,7 +334,7 @@ export class OutbreakFrameRenderer {
         localVehicle.hasBattery &&
         !localVehicle.wreck,
     )
-    const effectiveVisionAim = drivingHeadlights && localVehicle ? localVehicle.h : p.aim
+    const effectiveVisionAim = eye ? eye.aim : drivingHeadlights && localVehicle ? localVehicle.h : p.aim
     const lowBeam = lowBatteryBeam(
       settings.flashlight,
       p.battery,
@@ -333,7 +343,7 @@ export class OutbreakFrameRenderer {
       this.beamLookScratch,
     )
     const { mode, windowMoved, visChanged } = this.sceneLevel.stepFrame({
-      drawn,
+      drawn: look,
       activePeek,
       view,
       watch,
@@ -357,7 +367,7 @@ export class OutbreakFrameRenderer {
       coop.otherPositions(),
     )
     const day = dayCycle(hour)
-    const unseenEval = evaluateUnseenFrame(settings.unseen, day.darkness, p.health, p.maxHealth, settings.look)
+    const unseenEval = evaluateUnseenFrame(settings.unseen, day.darkness, eye ? eye.health : p.health, eye ? eye.maxHealth : p.maxHealth, settings.look)
     // Pose the bodies first: the flashlight rides the survivor's pistol or hand.
     const lift = vaultLift(p)
     const riderSink = localVehicle ? (localVehicle.spec.seats[p.seatIndex ?? 0]?.sink ?? 0.48) : 0
@@ -370,6 +380,9 @@ export class OutbreakFrameRenderer {
     )
     const { vision } = this.sceneLevel
     const coopBatches = coop.bodies(vdt, time, town, vision, settings.survivor)
+    const featureFrame = { session, coop, cam, renderer: this.renderer, settings, vision, dt: vdt, w, h }
+    const localSlot = "local" in session ? session.local : session.slot
+    const hideLocal = outbreakClientFeatures.hidesSurvivor(session.sim, localSlot)
     const beamState = this.frameLighting.beginFrameLights({
       p,
       town,
@@ -423,8 +436,8 @@ export class OutbreakFrameRenderer {
     addCount = fxOut.addCount
     count = this.frameLighting.addMuzzleLight(fxOut.muzzleLight, count, this.sceneLevel.lightOccluders)
 
-    const cutX = activePeek ? activePeek.cutX : drawn.x
-    const cutY = activePeek ? activePeek.cutY : drawn.y
+    const cutX = activePeek ? activePeek.cutX : look.x
+    const cutY = activePeek ? activePeek.cutY : look.y
     const cutFlag = activePeek ? 1 + this.peekBlend : 1
     const cutRadius = activePeek ? 0.48 + 0.1 * this.peekBlend : 0.22
     const cutHeight = activePeek ? 1.0 - 0.12 * this.peekBlend : 1.0
@@ -656,8 +669,9 @@ export class OutbreakFrameRenderer {
       rBatches.push(b)
     for (let i = 0; i < vehOut.batches.length; i++) rBatches.push(vehOut.batches[i]!)
     for (let i = 0; i < motionOut.batches.length; i++) rBatches.push(motionOut.batches[i]!)
-    if (!this.closetView.hidden) for (let i = 0; i < survivorBatches.length; i++) rBatches.push(survivorBatches[i]!)
+    if (!this.closetView.hidden && !hideLocal) for (let i = 0; i < survivorBatches.length; i++) rBatches.push(survivorBatches[i]!)
     for (let i = 0; i < coopBatches.length; i++) rBatches.push(coopBatches[i]!)
+    outbreakClientFeatures.frameBatches(featureFrame, rBatches)
     for (let i = 0; i < fxOut.batches.length; i++) rBatches.push(fxOut.batches[i]!)
     const discoveryBatches = this.discoveryProps.collect(
       session.view,
@@ -699,10 +713,10 @@ export class OutbreakFrameRenderer {
     audio.update({
       dt,
       world: soundWorld(session.sim),
-      listener: drawn,
+      listener: look,
       hour,
       revision: session.view.revision,
-      pursuing: pursuers(zombies, drawn.x, drawn.y),
+      pursuing: pursuers(zombies, look.x, look.y),
       packOpen: frameUi.inventoryHud.packOpen,
     })
     vehicleAudio.update(dt, time, session.view.vehicles, drawn, p.vehicleId, (id) =>
@@ -723,5 +737,6 @@ export class OutbreakFrameRenderer {
       vehicleRenderer: this.vehicleRenderer,
       botsLab,
     })
+    outbreakClientFeatures.frameOverlay({ ...featureFrame, dt })
   }
 }
