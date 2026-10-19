@@ -954,6 +954,23 @@ proven animation techniques to animation.md, not here.
   +0.29 ms yard night, +0.23 ms yard day, both inside the MAD (1.1 / 2.2 ms; this worker's clocks swing).
   Stills and clips: `bun scripts/vegetation-stills.ts --clip --gpu` (via `hivemind run --kind browser`).
 
+- **Tree looks A–C for D-41 (AR-74)** (`packages/kit/gpu/foliage-looks.ts`; `games/outbreak/src/vegetation/trees.ts`;
+  Lab › Vegetation › Tree look, station `outbreak-vegetation`; Today stays default). A Deadwood: limbs as two curved
+  segments with a lateral kink between them (tangent-continuous, so they twist instead of zig-zagging), kink growing
+  with limb level (trunks 0.2×), broken stubs, near-black bark, sparse dark clumps or bare. B Fluffy: overlapping
+  clusters of 0.3 m six-point leaf cards on ellipsoid shells over dark inner mounds, with shading normals pushed 88%
+  out from the crown centre (the Tiny Glade / Bruno trick), so a crown lights as one soft volume. C: A's structure with
+  B's clusters on limb ends and gaps between. Cards are opaque geometry: alpha-to-coverage is not in Outbreak's level
+  pipelines and would cost HSR on every tree chunk. Learned: (1) a ground-level torch never lights the crown tops a
+  38 m camera sees, and trees cut sight wedges, so crowns in the beam rendered as flat shroud-grey slabs; a plan-cone
+  "torch through the crown" term (`outbreakTreeBeam`) that also marks the crown as seen for the fog of war fixes it;
+  (2) seeding `Rng` with nearby seeds gives correlated first draws (seed 300000 → 0.997, 0.001), so looks hash the seed
+  first (`lookRng`); (3) Outbreak's street lamps are nearly dead (power ~0.03, radius ~4.5 m), so lamps don't light
+  trees. Tree vertices for the 36 origin trees: Lively 96.5k, A 78k, B 95k, C 130k. Paired GPU at 3456×1894 on Pro
+  (5 pairs, vs Lively): A +0.53 / +0.39 ms (street night / yard day, MAD ≤ 0.06), B −0.02 / −0.04 (noise), C +0.50 /
+  +0.47 (MAD ≤ 0.05); A and C's cost is the per-fragment tree shade and beam terms. Stills, clips, GPU:
+  `bun scripts/tree-looks-stills.ts --clip --gpu`.
+
 - **Blackout's C look pass** (`games/blackout/src/render/shaders.ts`, `lighting.ts`, and the Lab's Look group).
   A darker teal shadow grade, reduced colour fringing and grain, warm-white tubes, amber desk lights, tan wall faces,
   stronger baked contact AO, blue cap bevels and more visible floor pattern move the seeded office frame toward C.
