@@ -1361,6 +1361,78 @@ function findBlockingPortal(
   return best
 }
 
+/** Body radius the crowd collides with (m). */
+const BODY_RADIUS = 0.28
+const funnelAim: Vec = { x: 0, y: 0 }
+
+/**
+ * Doorway funnel. A body steering at `(tx, ty)` through an open door's plane has to be inside the door's clear span
+ * (the opening less a body radius each side) for as long as it is within a body radius of the wall, or it catches the
+ * jamb. When the straight line would leave that span inside the band, this writes a better aim to `funnelAim`: the
+ * span's mouth on the agent's side while it lines up, then straight across to the far mouth. Returns false (aim
+ * unchanged) when the line already clears both jambs or crosses no nearby open door.
+ */
+function funnelThroughDoor(ax: number, ay: number, tx: number, ty: number, portals: readonly NavPortal[]): boolean {
+  for (let i = 0; i < portals.length; i++) {
+    const p = portals[i]!
+    if (p.kind !== "door" || !p.open || (p.barricadePlanks ?? 0) > 0) continue
+    const r = p.rect
+    if (ax < r[0] - 2.5 || ax > r[2] + 2.5 || ay < r[1] - 2.5 || ay > r[3] + 2.5) continue
+    // Door-local frame: u along the opening, v across it.
+    const horizontal = r[2] - r[0] > r[3] - r[1]
+    const u0 = horizontal ? r[0] : r[1]
+    const u1 = horizontal ? r[2] : r[3]
+    const vc = horizontal ? (r[1] + r[3]) * 0.5 : (r[0] + r[2]) * 0.5
+    const halfT = (horizontal ? r[3] - r[1] : r[2] - r[0]) * 0.5
+    const au = horizontal ? ax : ay
+    const av = (horizontal ? ay : ax) - vc
+    const tu = horizontal ? tx : ty
+    const tv = (horizontal ? ty : tx) - vc
+    const band = halfT + BODY_RADIUS + 0.04
+    const agentIn = Math.abs(av) < band
+    const targetIn = Math.abs(tv) < band
+    const crossing = av * tv < 0
+    // In the doorway proper (within the wall's thickness, plus a little).
+    const inDoorway = Math.abs(av) <= halfT + 0.06
+    // Through this door: from one side to the other, aiming into the doorway from outside, or standing in it.
+    if (!(crossing || (targetIn && !agentIn) || inDoorway)) continue
+    const side = crossing || !agentIn ? Math.sign(av) || 1 : -Math.sign(tv) || Math.sign(av) || 1
+    const dv = tv - av
+    const uAt = (v: number) => (Math.abs(dv) > 1e-6 ? au + ((tu - au) * (v - av)) / dv : tu)
+    const crossU = targetIn && !crossing ? tu : uAt(0)
+    if (crossU < u0 - 1.2 || crossU > u1 + 1.2) continue
+    const margin = 0.05
+    let lo = u0 + BODY_RADIUS + margin
+    let hi = u1 - BODY_RADIUS - margin
+    if (lo > hi) lo = hi = (u0 + u1) * 0.5
+    // Where the straight line meets each band edge (the agent's own u if it is already inside the band).
+    const nearV = side * band
+    const farV = -side * band
+    const uNear = agentIn ? au : uAt(nearV)
+    const uFar = targetIn ? tu : uAt(farV)
+    if (uNear >= lo && uNear <= hi && uFar >= lo && uFar <= hi) return false
+    let aimU: number
+    let aimV: number
+    if (!agentIn) {
+      // Line up on the near mouth first, a body radius off the wall face, then step into the band.
+      aimU = clamp(crossU, lo, hi)
+      aimV = side * (band - 0.08)
+    } else if (au < lo - 0.02 || au > hi + 0.02) {
+      // In the band beside the opening (against the wall face): slide along it into the span.
+      aimU = clamp(au, lo, hi)
+      aimV = av - side * 0.12
+    } else {
+      // In the span: straight across to the far mouth, then out.
+      aimU = clamp(uFar, lo, hi)
+      aimV = farV - side * 0.2
+    }
+    funnelAim.x = horizontal ? aimU : aimV + vc
+    funnelAim.y = horizontal ? aimV + vc : aimU
+    return true
+  }
+  return false
+}
+
 function computeWindowClamberDest(win: NavPortal, fromX: number, fromY: number): { toX: number; toY: number; aim: number } {
   const [x0, y0, x1, y1] = win.rect
   const horizontal = x1 - x0 > y1 - y0
@@ -1784,6 +1856,9 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
     let moveDirX = 0
     let moveDirY = 0
     let desiredSpeed = 0
+    // The point being steered at (NaN when steering by direction only), for the corner slide's choice of side.
+    let steerX = Number.NaN
+    let steerY = Number.NaN
 
     if (a.state === "wander") {
       a.timer -= dt
@@ -1853,6 +1928,8 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
           const ed = Math.hypot(effGoalX - a.x, effGoalY - a.y) || 1
           moveDirX = (effGoalX - a.x) / ed
           moveDirY = (effGoalY - a.y) / ed
+          steerX = effGoalX
+          steerY = effGoalY
         } else {
           const repathDue = time >= a.repathAt || a.path.length === 0
           let routed = false
@@ -1896,6 +1973,20 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
           const wd = Math.hypot(wdx, wdy) || 1
           moveDirX = wdx / wd
           moveDirY = wdy / wd
+          steerX = wp.x
+          steerY = wp.y
+        }
+        // Through an open doorway, line up on its clear span rather than clipping a jamb.
+        if (funnelThroughDoor(a.x, a.y, steerX, steerY, portals)) {
+          const fdx = funnelAim.x - a.x
+          const fdy = funnelAim.y - a.y
+          const fd = Math.hypot(fdx, fdy)
+          if (fd > 1e-3) {
+            moveDirX = fdx / fd
+            moveDirY = fdy / fd
+            steerX = funnelAim.x
+            steerY = funnelAim.y
+          }
         }
 
         if (isCrawler) {
@@ -2033,7 +2124,13 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
         const d1 = Math.hypot(probe1.x - prevX, probe1.y - prevY)
         const d2 = Math.hypot(probe2.x - prevX, probe2.y - prevY)
         if (Math.max(d1, d2) > expectedStep * 0.45) {
-          const bestProbe = d1 >= d2 ? probe1 : probe2
+          // Both sides open: slide the way that closes on the steering point (a jamb corner is passed, not fled).
+          const bothOpen = Math.min(d1, d2) > expectedStep * 0.45
+          const toward =
+            bothOpen && !Number.isNaN(steerX)
+              ? Math.hypot(probe1.x - steerX, probe1.y - steerY) <= Math.hypot(probe2.x - steerX, probe2.y - steerY)
+              : d1 >= d2
+          const bestProbe = toward ? probe1 : probe2
           a.x = bestProbe.x
           a.y = bestProbe.y
         }

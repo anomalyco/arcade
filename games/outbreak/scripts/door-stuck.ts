@@ -3,8 +3,8 @@
  *
  * A survivor stands still on one side of a door (kept alive); 1–6 relentless chasers start on the other side and
  * must get to them, through the open door or by bashing the shut one down. A zombie counts as stuck while it is
- * not bashing, not staggered and not yet through the doorway (0.6 m past its far face) or within reach of the
- * survivor, and has moved less than 0.1 m over the last 2 s. Crowding at the survivor once through is not counted. CPU only, deterministic: `bun scripts/door-stuck.ts` prints the table; `tests/door-stuck.test.ts` holds the
+ * not bashing, not staggered and not yet through the doorway (0.6 m past its far face, in the survivor's room) or within
+ * reach of the survivor, and has moved less than 0.1 m over the last 2 s. Crowding at the survivor once through is not counted. CPU only, deterministic: `bun scripts/door-stuck.ts` prints the table; `tests/door-stuck.test.ts` holds the
  * budget.
  */
 import { clearLine, distToRect, type Rect } from "@arcade/kit/sim/geom"
@@ -18,6 +18,8 @@ import type { AIAgent } from "../shared/ai"
 
 export type DoorScenario = {
   seed: number
+  /** "procedural" builds every house from the chunk generator (cottages, ranches, houses) instead of the start block. */
+  world?: "procedural"
   doorId: string
   open: boolean
   /** Which side of the door the zombies start on: "south" is the street side of a front door. */
@@ -54,7 +56,7 @@ function sideSign(side: "north" | "south"): number {
 }
 
 function wallRects(session: LocalSession): Rect[] {
-  return session.view.town.barriers.filter((b) => b.kind === "wall" || b.kind === "window").map((b) => b.rect)
+  return session.view.town.barriers.map((b) => b.rect)
 }
 
 /** A spot on `side` of the door at perpendicular distance `depth` and lateral `lateral`, clear and in the door's room. */
@@ -103,14 +105,16 @@ function zombieSpots(session: LocalSession, door: Door, side: "north" | "south",
 }
 
 export function scenarioLabel(s: DoorScenario): string {
-  return `seed ${s.seed} ${s.doorId} ${s.open ? "open" : "shut"} from ${s.zombieSide} ×${s.zombies} ${s.layout}${s.special ? ` ${s.special}` : ""}`
+  return `${s.world ? "proc " : ""}seed ${s.seed} ${s.doorId} ${s.open ? "open" : "shut"} from ${s.zombieSide} ×${s.zombies} ${s.layout}${s.special ? ` ${s.special}` : ""}`
 }
 
 export function runDoorScenario(
   s: DoorScenario,
   trace?: (time: number, zombies: readonly AIAgent[], session: LocalSession, door: Door) => void,
 ): DoorScenarioResult {
-  const session = new LocalSession(s.seed, s.seed, 0.22, { zombieCount: 0, openingCalm: 0 })
+  const session = s.world
+    ? new LocalSession(s.seed, s.seed, 0.22, { zombieCount: 0, openingCalm: 0 }, s.world)
+    : new LocalSession(s.seed, s.seed, 0.22, { zombieCount: 0, openingCalm: 0 })
   const town = session.view.town
   const door = town.doors.find((d) => d.id === s.doorId)
   if (!door) throw new Error(`no door ${s.doorId}`)
@@ -135,6 +139,7 @@ export function runDoorScenario(
     zs.push(z)
   }
 
+  const walls = wallRects(session)
   const seconds = s.seconds ?? 20
   const ticks = Math.round(seconds / TICK_DT)
   const histLen = Math.round(WINDOW / TICK_DT)
@@ -165,7 +170,8 @@ export function runDoorScenario(
     for (let k = 0; k < zs.length; k++) {
       const z = zs[k]!
       if (arrivedAt[k]! >= 0) continue
-      const through = survivorSide === "north" ? z.y < door.rect[1] - 0.6 : z.y > door.rect[3] + 0.6
+      const past = survivorSide === "north" ? z.y < door.rect[1] - 0.6 : z.y > door.rect[3] + 0.6
+      const through = past && clearLine(z.x, z.y, home.x, home.y, walls)
       if (through || Math.hypot(z.x - home.x, z.y - home.y) <= REACH) {
         arrivedAt[k] = (t + 1) * TICK_DT
         run[k] = 0
@@ -207,6 +213,16 @@ export function doorScenarios(seeds: readonly number[] = [7, 19]): DoorScenario[
           out.push({ seed, doorId, open, zombieSide, zombies: 4, layout: "fan" })
           out.push({ seed, doorId, open, zombieSide, zombies: 6, layout: "line" })
           out.push({ seed, doorId, open, zombieSide, zombies: 3, layout: "hug" })
+        }
+      }
+    }
+    // Generated houses: every front and back-room door the chunk generator puts round the start.
+    const proc = new LocalSession(seed, seed, 0.22, { zombieCount: 0 }, "procedural")
+    for (const door of proc.view.town.doors) {
+      for (const open of [true, false]) {
+        for (const zombieSide of ["south", "north"] as const) {
+          out.push({ seed, world: "procedural", doorId: door.id, open, zombieSide, zombies: 4, layout: "fan" })
+          out.push({ seed, world: "procedural", doorId: door.id, open, zombieSide, zombies: 3, layout: "hug" })
         }
       }
     }

@@ -54,6 +54,14 @@ When a deliberate difficulty change moves a curve out of its band:
 3. Never widen a band to get an unrelated change through. A band failing on a change that was not about difficulty
    is the test working.
 
+## Zombies through doors (AR-65)
+
+Zombies used to wedge on door jambs (`docs/game-notes.md`, Crowds). With the doorway funnel they come through, and the
+CI batch (4 presets × 4 seeds × 3 nights) moved inside its bands: Skilled alive at dawn 3 0.5 → 0.25 (median nights
+2.65 → 1.63), Expert 1 → 0.75, Novice at dawn 1 0.25 → 0; Night 2 / Night 3 chasers 2.62 / 3.89 → 2.89 / 3.94. No
+band changed. Skilled dawn 3 now sits on its lower edge: if a later change drops it below, check whether doors (or
+anything else) made houses safer or deadlier before touching the band.
+
 ## The night ramp (D-40, Gentle Start, Rising)
 
 `games/outbreak/shared/night-ramp/` raises the challenge every night instead of letting the director's own ramp level

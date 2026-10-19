@@ -1328,6 +1328,16 @@ Candidates from the code audits; measure and playtest before moving any into the
   Stuck share fell to 0.6–0.8%; at 400 zombies a crowd crossing the hardware store reached the far side in 45 s
   instead of 90 s, and a door funnel had 0 wall crossings instead of 24. Below 64 zombies the game still uses A*
   and is bit-identical to before, so the survivor-bot curves don't move. Bench: `scripts/horde-bench.ts`.
+- **Steer through a doorway's clear span, not its nav cells (AR-65).** Door nav cells are carved to within 0.12 m
+  of a jamb, so straight lines and string-pulled paths crossed a 1.4 m door at an angle and the body (r 0.28) caught
+  the jamb; the corner slide then took the tangent away from the door on a tie and the zombie rocked there for good.
+  `funnelThroughDoor` in `packages/kit/sim/ai.ts` runs after a hunter picks its steering point: if the straight line
+  leaves the opening-less-a-radius-each-side while within a radius of the wall, it aims at that span's near mouth,
+  then straight across to the far one. The corner slide now picks the side that closes on the steering point. In
+  `games/outbreak/scripts/door-stuck.ts` (422 scenarios: every start-block and generated door, open and shut, both
+  sides, crowds of 1–6, Brute, Runner) wedged time fell from 553 s to 1.8 s and zombies not through in 20 s from 43
+  of 1,418 to 0. Survivor bots die a little more (Skilled alive at dawn 3: 0.5 → 0.25); houses were partly a fortress
+  because the dead jammed in their doors. Test: `games/outbreak/tests/door-stuck.test.ts`.
 - **A horde off screen is a point, not 800 agents.** `games/outbreak/shared/hordes/` keeps an abstract horde as a
   position, a goal and a head count in JSON feature state. It hears loud noises from radius × 2.5 (× the AI hearing
   scale), through walls, because a building attenuates sound so much that a horde behind one would never react.
