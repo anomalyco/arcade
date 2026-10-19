@@ -1,7 +1,7 @@
-# Afterhours: world build brief (shared by every agent)
+# Ashwood (games/afterhours): world build brief (shared by every agent)
 
-We are building a walkable, near-photoreal night environment in the browser: a secret federal research facility in
-the pine forest outside a small town, 1984. It has to look like the approved concept art, run fast in the browser
+We are building a walkable, near-photoreal night environment in the browser: a secret federal research facility (IOPS
+Ashwood Outpost) in the pine forest of Ashwood State Forest, outside a small town, 1984. It has to look like the approved concept art, run fast in the browser
 on WebGPU, and be walkable in first person.
 
 ## Target look (study these images first; they are the spec)

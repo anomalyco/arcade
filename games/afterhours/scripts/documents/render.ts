@@ -2,7 +2,7 @@
 // Every document is drawn with Canvas 2D in millimetres: typewriter/print/handwriting text, stamps, forms, then paper
 // ageing (grain, yellowing, foxing, creases, pin holes, coffee rings). Outputs three atlases — base colour, a height
 // map turned into a normal map (creases, grain), ORM (roughness per material) — and a manifest of UV rects.
-// All content is original and follows docs/building-program.md (Pine Hollow Station, the Sublevel); everyone is invented.
+// All content is original and follows docs/building-program.md (IOPS Ashwood Outpost, the north array); everyone is invented.
 
 type Ctx = CanvasRenderingContext2D
 type Paper = "white" | "onion" | "yellow" | "goldenrod" | "pink" | "green" | "manila" | "card" | "legal" | "greenbar" | "polaroid" | "poster" | "sticky" | "plate" | "timecard" | "chalk" | "white_board" | "gypsum" | "felt" | "bronze" | "newsprint" | "blueprint" | "concrete" | "brass_plate"
@@ -333,21 +333,22 @@ class Draw {
 }
 
 // ---------------------------------------------------------------------------------------------------- content
-// Lore follows docs/building-program.md: Pine Hollow Station (Atmospheric Propagation Research Facility) of the
-// fictional Interagency Office of Propagation Studies (IOPS); the Sublevel (SL), freight lift FL-1, riser W-1, the six
-// "SL" time cards punched IN at 22:58, keycards (Comms, Sublevel, Server, Signal, Containment, Plant), room numbers
+// Lore follows docs/building-program.md: Ashwood Outpost (Atmospheric Propagation Research Facility) of the
+// fictional Interagency Office of Propagation Studies (IOPS); the north array (NA, a sensor field in the woods north of
+// the fence), riser W-1 (the array trunk), the night field team: six staff who badged out to the array at 22:58 and
+// are unaccounted for (time cards IN, never OUT); keycards (Comms, Field, Server, Signal, Containment, Plant), room numbers
 // (storey-room, e.g. 0-38 Security office) and the per-floor vignettes.
-const STATION = "PINE HOLLOW STATION"
+const STATION = "ASHWOOD OUTPOST"
 const AGENCY = "INTERAGENCY OFFICE OF PROPAGATION STUDIES"
 const FACILITY = "ATMOSPHERIC PROPAGATION RESEARCH FACILITY"
-/** Telephone extensions, shared by every document that quotes one. Ext. 300 (Field Operations / FL-1) is "disconnected". */
+/** Telephone extensions, shared by every document that quotes one. Ext. 300 (Field Operations hut, north array) is "disconnected". */
 const EXT = {
   operator: "0", lobby: "200", director: "214", execSec: "215", records: "211", progChief: "217", payroll: "219",
   facilities: "230", receiving: "236", badges: "238", cafeteria: "240", ops: "246", compMgr: "262", labMgr: "268",
   labSafety: "270", lab4: "275", listening: "288", security: "299", fieldOps: "300", emergency: "333",
 }
-/** The six on the Sublevel rotation (cards punched IN 22:58, never out). */
-const SL_SIX = ["D. Halverson", "E. Lindqvist", "P. Moreau", "B. Szabo", "K. Dorsey", "A. Nakamura"]
+/** The six of the night field team (cards punched IN 22:58, never out). */
+const FIELD_SIX = ["D. Halverson", "E. Lindqvist", "P. Moreau", "B. Szabo", "K. Dorsey", "A. Nakamura"]
 const letterhead = (d: Draw, y = 18) => {
   d.print(AGENCY, d.wmm / 2, y, { font: "Libre Franklin", pt: 9.5, weight: 700, align: "center", spacing: 0.5 })
   d.print(STATION + " · " + FACILITY, d.wmm / 2, y + 5, { pt: 6.8, align: "center", spacing: 0.3 })
@@ -509,7 +510,7 @@ function evacMap(storey: number): DocSpec {
       d.print("YOU ARE HERE", X(here) + 3.5, Z(storey === 0 ? 18.5 : 12) + 1.2, { pt: 6, weight: 800, color: "#b3261e" })
       d.print("ASSEMBLY POINT: SOUTH LOT, BY THE FLAGPOLE.  DO NOT ASSEMBLE IN THE NORTH LOT.", 12, d.hmm - 14, { pt: 7.5, weight: 700 })
       d.print(`Protective Services ext. ${EXT.security} · Emergency ext. ${EXT.emergency} · Plan rev. 6/84`, 12, d.hmm - 9, { pt: 6.5 })
-      if (storey === 0) d.print("FL-1 and the Sublevel are not exits.", d.wmm - 12, d.hmm - 9, { pt: 6.5, align: "right" })
+      if (storey === 0) d.print("FL-1 and the north gate are not exits.", d.wmm - 12, d.hmm - 9, { pt: 6.5, align: "right" })
       if (storey === 4) d.hand("west side — keep out (by order)", 30, Z(-12), { pt: 13, color: INK.black, font: "Caveat", slant: -0.03 })
     },
   }
@@ -544,24 +545,24 @@ function plate(id: string, title: string, lines: [string, string?], o: { sub?: s
   }
 }
 
-/** Punched time card (one of the six "SL" cards: IN 22:58, never OUT). */
+/** Punched time card (one of the six field-team cards: IN 22:58, never OUT). */
 function timeCard(id: string, name: string, number: string): DocSpec {
   return {
     id,
-    title: `Time card: ${name} (SL, punched IN 22:58)`,
+    title: `Time card: ${name} (night field team, punched IN 22:58)`,
     size: [0.0825, 0.187],
     paper: "timecard",
     tags: ["wall", "desk", "creepy"],
     density: 4.2,
     draw(d) {
-      d.print("PINE HOLLOW STA.", d.wmm / 2, 8, { pt: 8, weight: 800, align: "center" })
+      d.print("ASHWOOD OUTPOST", d.wmm / 2, 8, { pt: 8, weight: 800, align: "center" })
       d.print("WEEKLY TIME CARD", d.wmm / 2, 12.5, { pt: 6, align: "center" })
       d.print("NO.", 5, 20, { pt: 6, weight: 700 })
       d.type(number, 14, 20.5, { pt: 11, font: "Courier Prime" })
       d.print("NAME", 5, 27, { pt: 6, weight: 700 })
       d.hand(name, 16, 27.5, { pt: 15, color: INK.black })
       d.print("DEPT.", 5, 34, { pt: 6, weight: 700 })
-      d.hand("Field Ops — SL", 18, 34.5, { pt: 13, color: INK.black })
+      d.hand("Field Ops — N. array", 18, 34.5, { pt: 13, color: INK.black })
       d.print("WEEK ENDING  OCT 20 1984", 5, 41, { pt: 6, weight: 700 })
       const cols = ["IN", "OUT", "IN", "OUT"]
       cols.forEach((c, i) => d.print(c, 14 + i * 16 + 6, 49, { pt: 6, weight: 700, align: "center" }))
@@ -576,7 +577,7 @@ function timeCard(id: string, name: string, number: string): DocSpec {
       punch(1, 0, "06:58", "T", INK.black)
       punch(1, 1, "15:01", "T", INK.black)
       punch(2, 0, "22:58", "W")
-      d.print("SL", d.wmm - 8, 21, { pt: 16, font: "Archivo Black", align: "center", color: "#a3241c" })
+      d.print("F", d.wmm - 8, 21, { pt: 16, font: "Archivo Black", align: "center", color: "#a3241c" })
     },
   }
 }
@@ -593,7 +594,7 @@ const DOCS: DocSpec[] = [
       const y = memoHead(d, "All Station Personnel", "G. Pruitt, Chief, Protective Services", "October 9, 1984", "Night sign-in (after 2200)")
       const body =
         "Effective Monday 15 October, all personnel remaining on station after 2200 hours will sign in AND out at the lobby guard desk (0-01). This includes contractors on the fourth floor and visiting staff from IOPS.\n" +
-        "Receiving (0-16), the FL-1 gates and the W-1 riser cupboards are to be shut and locked overnight on every floor. If you find any of them open, do not go in. Close what you can and call Protective Services, ext. " + EXT.security + ".\n" +
+        "Receiving (0-16), the dock doors and the W-1 riser cupboards are to be shut and locked overnight on every floor. If you find any of them open, do not go in. Close what you can and call Protective Services, ext. " + EXT.security + ".\n" +
         "Several entries last week showed a sign-in with no sign-out. I am sure these are oversights. Please be careful.\n" +
         "Questions to my office, 0-38."
       const yy = d.typeLines(d.wrap(body, 62), 25, y, 4.5)
@@ -608,34 +609,34 @@ const DOCS: DocSpec[] = [
   },
   {
     id: "memo_carbon_inventory",
-    title: "Carbon copy: Sublevel equipment inventory",
+    title: "Carbon copy: north array field-kit inventory",
     size: LETTER,
     paper: "onion",
     tags: ["desk", "clipboard"],
     draw(d) {
       const o = { color: INK.carbon, carbon: true, fade: 0.85 }
       d.type(AGENCY + " - " + STATION, 25, 20, { ...o, pt: 8.5 })
-      const y = memoHead(d, "H. Yost, Property Control", "P. Moreau, Field Operations (SL)", "Oct. 3, 1984", "Inventory, Sublevel (SL)", 32, o)
+      const y = memoHead(d, "H. Yost, Property Control", "P. Moreau, Field Operations", "Oct. 3, 1984", "Inventory, north array field kit", 32, o)
       const items = [
         "QTY  DESCRIPTION                           TAG NO.",
-        " 6   Dosimeter, film badge                 PHS-40871..76",
-        " 1   Sensor head, SL-ARRAY 2               PHS-40904",
-        " 4   Headset, closed back                  PHS-41022",
-        " 1   Strip-chart recorder, 6-ch.           PHS-38815",
-        " 1   Lamp, caged, 24 V (FL-1 car)          PHS-39760",
+        " 6   Dosimeter, film badge                 AWO-40871..76",
+        " 1   Sensor head, N. ARRAY 2               AWO-40904",
+        " 4   Headset, closed back                  AWO-41022",
+        " 1   Strip-chart recorder, 6-ch.           AWO-38815",
+        " 1   Lamp, caged, 24 V (field hut)         AWO-39760",
         " 12  Core trays, 1 m                       --",
-        " 6   Cot, folding                          PHS-12002..07",
+        " 6   Cot, folding                          AWO-12002..07",
         " 1   Cot, folding                          MISSING",
       ]
       let yy = d.typeLines(items, 25, y, 4.6, { ...o, font: "Courier Prime" })
-      yy = d.typeLines(d.wrap("Item tagged MISSING last signed for on the night of 9/28. FL-1 inner gate latch replaced 10/2. Recommend the W-1 trunk cupboard alarm on 3 and 4 be reconnected. Request 6 replacement badges (see Lab Safety, 2-20).", 62), 25, yy + 6, 4.6, o)
+      yy = d.typeLines(d.wrap("Item tagged MISSING last signed for on the night of 9/28. North gate latch replaced 10/2. Recommend the W-1 trunk cupboard alarm on 3 and 4 be reconnected. Request 6 replacement badges (see Lab Safety, 2-20).", 62), 25, yy + 6, 4.6, o)
       d.type("PM:dk     cc: File, Protective Services (2)", 25, yy + 10, { ...o, pt: 9 })
       d.crease(0, d.hmm / 2, d.wmm, d.hmm / 2, 0.6)
     },
   },
   {
-    id: "notice_sublevel",
-    title: "Notice: unauthorized access to the Sublevel",
+    id: "notice_north_array",
+    title: "Notice: unauthorized access to the north array (the woods past the north fence)",
     size: LETTER,
     paper: "white",
     tags: ["board", "wall", "creepy"],
@@ -643,19 +644,19 @@ const DOCS: DocSpec[] = [
     draw(d) {
       letterhead(d)
       d.print("NOTICE TO ALL PERSONNEL", d.wmm / 2, 48, { pt: 18, weight: 800, align: "center", spacing: 0.8 })
-      d.print("Unauthorized access to the Sublevel (SL)", d.wmm / 2, 58, { pt: 12, weight: 600, align: "center" })
+      d.print("Unauthorized access to the north array", d.wmm / 2, 58, { pt: 12, weight: 600, align: "center" })
       const body = [
-        "Freight lift FL-1 serves the Sublevel ONLY and is restricted to",
-        "Field Operations staff holding a SUBLEVEL keycard and a dosimeter.",
-        "Passenger lift and stair users: there is no SL stop. Do not ask.",
+        "The woods past the north fence (the north array) are restricted to",
+        "Field Operations staff holding a FIELD keycard and a dosimeter.",
+        "The north gate is not a shortcut to the county road. Do not ask.",
         "",
-        "Sounds reported from the FL-1 shaft or from the W-1 riser",
+        "Sounds reported from the tree line or from the W-1 riser",
         "cupboards on any floor are to be logged on IOPS Form 41-C and",
-        "are NOT to be investigated. Do not open a W-1 cupboard to check",
+        "are NOT to be investigated. Do not go to the tree line to check",
         "on anyone. Telephone Protective Services, ext. " + EXT.security + ", instead.",
         "",
-        "If FL-1 is called to the ground floor and no one is in the car,",
-        "close both gates and                                                    .",
+        "If the north gate is found open after dark and no one is there,",
+        "close it and                                                    .",
       ]
       body.forEach((l, i) => d.print(l, 28, 76 + i * 5.6, { pt: 10 }))
       d.redact(58, 76 + 10 * 5.6 - 3.6, 100)
@@ -757,12 +758,12 @@ const DOCS: DocSpec[] = [
         ["10/15", "M. Brandt", "4388", "2205", "2350", "MB"],
         ["10/16", "S. Vance", "4425", "2300", "0410", "SV"],
         ["10/16", "T. Okafor", "4417", "2210", "0122", "TO"],
-        ["10/17", "D. Halverson", "SL-1", "2258", "", ""],
-        ["10/17", "E. Lindqvist", "SL-2", "2258", "", ""],
-        ["10/17", "P. Moreau", "SL-3", "2258", "", ""],
-        ["10/17", "B. Szabo", "SL-4", "2258", "", ""],
-        ["10/17", "K. Dorsey", "SL-5", "2258", "", ""],
-        ["10/17", "A. Nakamura", "SL-6", "2258", "", ""],
+        ["10/17", "D. Halverson", "F-1", "2258", "", ""],
+        ["10/17", "E. Lindqvist", "F-2", "2258", "", ""],
+        ["10/17", "P. Moreau", "F-3", "2258", "", ""],
+        ["10/17", "B. Szabo", "F-4", "2258", "", ""],
+        ["10/17", "K. Dorsey", "F-5", "2258", "", ""],
+        ["10/17", "A. Nakamura", "F-6", "2258", "", ""],
         ["10/17", "W. Farris (contr. 4th fl.)", "V-12", "2330", "0200", "WF"],
         ["10/18", "S. Vance", "4425", "2310", "", ""],
       ]
@@ -783,14 +784,14 @@ const DOCS: DocSpec[] = [
       d.ctx.bezierCurveTo(206, 38 + 6 * 8.6 - 7, 206, 38 + 11 * 8.6, 150, 38 + 11 * 8.6)
       d.ctx.stroke()
       d.ctx.restore()
-      d.hand("6 down FL-1 — none out", 150, 38 + 15 * 8.6, { pt: 14, color: INK.red, font: "Caveat", slant: -0.04 })
+      d.hand("6 out to the array — none back", 150, 38 + 15 * 8.6, { pt: 14, color: INK.red, font: "Caveat", slant: -0.04 })
       d.hand("see me — GP", 160, 38 + 17 * 8.6, { pt: 14, color: INK.red, font: "Caveat" })
       d.holes(d.wmm / 2, 6)
     },
   },
   {
     id: "roster_operators",
-    title: "Operator watch roster, week of Oct 15 (SL names struck out)",
+    title: "Operator watch roster, week of Oct 15 (field-team names struck out)",
     size: LETTER,
     paper: "white",
     tags: ["board", "wall", "creepy"],
@@ -804,7 +805,7 @@ const DOCS: DocSpec[] = [
       days.forEach((s, i) => d.type(s, x0 + 30 + i * cw, 56, { pt: 8.5 }))
       const watches = ["0700-1500", "1500-2300", "2300-0700"]
       const crew = [["Okafor", "Brandt", "Vance"], ["Kowalski", "Pell", "Lindqvist"], ["Halverson", "Szabo", "Dorsey"]]
-      const sl = new Set(["Lindqvist", "Halverson", "Szabo", "Dorsey"])
+      const field = new Set(["Lindqvist", "Halverson", "Szabo", "Dorsey"])
       for (let w = 0; w < 3; w++) {
         d.type(watches[w]!, x0, 66 + w * 22, { pt: 9 })
         for (let i = 0; i < 7; i++)
@@ -812,7 +813,7 @@ const DOCS: DocSpec[] = [
             const name = crew[w]![(i + k + w) % 3]!
             const y = 66 + w * 22 + k * 6
             d.type(name, x0 + 30 + i * cw, y, { pt: 8, font: "Courier Prime" })
-            if (sl.has(name) && i >= 2) {
+            if (field.has(name) && i >= 2) {
               d.scribble(x0 + 29 + i * cw, y - 1.2, x0 + 50 + i * cw, y - 1.4, 0.55, INK.red)
               d.scribble(x0 + 29 + i * cw, y - 0.6, x0 + 50 + i * cw, y - 1.8, 0.55, INK.red)
             }
@@ -821,7 +822,7 @@ const DOCS: DocSpec[] = [
       for (let w = 0; w <= 3; w++) d.line(x0, 60 + w * 22, d.wmm - 18, 60 + w * 22, 0.2)
       d.type("Swaps must be approved by the Manager, Computing (3-22).", 25, 140, { pt: 9.5 })
       d.type("Third watch: two on the console at all times. No exceptions.", 25, 145, { pt: 9.5 })
-      d.hand("struck = SL rotation from Wed. Do not schedule. Do not call.", 26, 162, { pt: 14, color: INK.red, font: "Caveat", slant: -0.02 })
+      d.hand("struck = night field team from Wed. Do not schedule. Do not call.", 26, 162, { pt: 14, color: INK.red, font: "Caveat", slant: -0.02 })
       d.hand("Lindqvist called the console Thurs 0300 from x300??", 30, 174, { pt: 14, color: INK.ballBlue, font: "Reenie Beanie", slant: 0.03 })
       d.holes(15, 7)
       d.holes(d.wmm - 15, 7)
@@ -829,46 +830,47 @@ const DOCS: DocSpec[] = [
     },
   },
   {
-    id: "roster_sl_rotation",
-    title: "Records: SL rotation roster 1981–84, names crossed out in red",
+    id: "roster_field_team",
+    title: "Records: field team roster 1981–84, the current six crossed out in red",
     size: LETTER,
     paper: "white",
     tags: ["desk", "creepy"],
     copy: true,
     draw(d) {
       letterhead(d, 16)
-      d.type("PERSONNEL - SL ROTATION 1981-84 (FIELD OPERATIONS)", 25, 38, { pt: 10.5 })
+      d.type("PERSONNEL - FIELD TEAMS 1981-84 (FIELD OPERATIONS)", 25, 38, { pt: 10.5 })
       d.type("PROGRAM ADMINISTRATION - RECORDS CENTER 1-01 - DO NOT REMOVE", 25, 43.5, { pt: 8.5 })
       const names = [
         "Abernathy, C.", "Brennan, M.", "Castellanos, R.", "Dahl, P.", "Eckhart, J.", "Fenwick, S.", "Grady, T.", "Hollis, A.",
         "Ivers, N.", "Jessup, L.", "Kranz, O.", "Lomax, B.", "Mercer, F.", "Novak, H.", "Ortega, V.", "Pace, W.", "Quill, D.", "Rourke, E.",
         "Halverson, D.", "Lindqvist, E.", "Moreau, P.", "Szabo, B.", "Dorsey, K.", "Nakamura, A.",
       ]
-      d.type("ROT.  NAME              BADGE   IN       OUT", 25, 54, { pt: 9, font: "Courier Prime" })
+      d.type("TEAM  NAME              BADGE   IN       OUT", 25, 54, { pt: 9, font: "Courier Prime" })
       names.forEach((n, i) => {
         const rot = String(Math.floor(i / 6) + 1).padStart(2, "0")
         const cur = i >= 18
         const yr = ["81", "82", "83", "84"][Math.floor(i / 6)]!
-        const line = `${rot}    ${n.padEnd(18)}${String(4100 + i * 7)}    ${cur ? "10/17/84" : `0${(i % 9) + 1}/${10 + (i % 18)}/${yr}`}  ${cur ? "" : "--"}`
+        const out = `${String(((i * 5) % 12) + 1).padStart(2, "0")}/${String(((i * 7) % 27) + 1).padStart(2, "0")}/${yr}`
+        const line = `${rot}    ${n.padEnd(18)}${String(4100 + i * 7)}    ${cur ? "10/17/84" : `0${(i % 9) + 1}/${10 + (i % 18)}/${yr}`}  ${cur ? "" : out}`
         const y = 61 + i * 6.4
         d.type(line, 25, y, { pt: 9, font: "Courier Prime" })
-        if (!cur || i % 3 === 0) d.scribble(24, y - 1.3, 178, y - 1.6, 0.5, INK.red)
+        if (cur) d.scribble(24, y - 1.3, 178, y - 1.6, 0.5, INK.red)
       })
-      d.hand("all 4 rotations — 0 OUT", 120, 230, { pt: 15, color: INK.red, font: "Caveat", slant: -0.04 })
+      d.hand("this team — 0 OUT", 120, 230, { pt: 15, color: INK.red, font: "Caveat", slant: -0.04 })
       d.crease(0, d.hmm / 2, d.wmm, d.hmm / 2, 0.6)
     },
   },
   {
     id: "memo_next_of_kin",
-    title: "Memo: SL rotation — next of kin letters (6)",
+    title: "Memo: night field team — next of kin letters (6)",
     size: LETTER,
     paper: "white",
     tags: ["desk", "creepy"],
     draw(d) {
       letterhead(d)
-      const y = memoHead(d, "Chief, Program Administration (1-07)", "R. Halloran, Director", "October 18, 1984", "Re: SL rotation - next of kin letters (6)")
+      const y = memoHead(d, "Chief, Program Administration (1-07)", "R. Halloran, Director", "October 18, 1984", "Re: night field team - next of kin letters (6)")
       const body =
-        "Please have Personnel prepare letters for the next of kin of the six staff on the current SL rotation, using the 1983 wording. Do not date them. Do not send them. Hold in the vault (1-01v) until I instruct you otherwise.\n" +
+        "Please have Personnel prepare letters for the next of kin of the six staff of the night field team. Use the standard wording. Do not date them. Do not send them. Hold in the vault (1-01v) until I instruct you otherwise.\n" +
         "Word processing is not to keep copies on disk. Type them yourself or have Mrs. Kemper do it after hours.\n" +
         "Payroll will continue to pay all six through the end of the quarter."
       const yy = d.typeLines(d.wrap(body, 62), 25, y, 4.6)
@@ -894,14 +896,14 @@ const DOCS: DocSpec[] = [
       d.type("Merritt Falls", 25, 68)
       d.type("Dear Mrs. Lindqvist:", 25, 82)
       const body =
-        "On behalf of the Interagency Office of Propagation Studies it is my duty to write to you about your daughter Ellen, a valued member of the Field Operations staff at Pine Hollow Station since 1982. We regret to inform you that"
+        "On behalf of the Interagency Office of Propagation Studies it is my duty to write to you about your daughter Ellen, a valued member of the Field Operations staff at Ashwood Outpost since 1982. We regret to inform you that"
       d.typeLines(d.wrap(body, 62), 25, 94, 4.6)
       d.type("x", 98, 112.4, { fade: 0.4 })
     },
   },
   {
     id: "security_log",
-    title: "Protective Services night log (last entry 01:40, FL-1 called)",
+    title: "Protective Services night log (last entry 01:40, something at the tree line)",
     size: LETTER,
     paper: "white",
     tags: ["desk", "clipboard", "creepy"],
@@ -915,13 +917,13 @@ const DOCS: DocSpec[] = [
       const e: [string, string][] = [
         ["22:00", "On duty. Lobby secured. 3 on station (TO, JK, MB)."],
         ["22:40", "Round 1 - all floors - OK. 4th fl west hoarding shut."],
-        ["22:58", "Field Ops x6 badged thru 0-15. FL-1 down. Per Dir."],
+        ["22:58", "Field Ops x6 badged out thru 0-15 to the array. Per Dir."],
         ["23:30", "Contractor Farris signed in (4th fl site office)."],
         ["00:10", "Booth: radio check OK. North lot dark."],
         ["00:45", "Round 2 - W-1 cupboard 3rd fl warm to touch. Locked."],
         ["01:12", "Lab 2-27 hot plate on? Light under door. Left it - R. back?"],
-        ["01:25", "FL-1 call light lit at 0-15 for ~5 sec. Car still at SL."],
-        ["01:40", "SL freight lift called. No one on camera."],
+        ["01:25", "North fence alarm, zone 7 (tree line), ~5 sec. Reset."],
+        ["01:40", "Dock cam: something at the tree line. Gone."],
       ]
       e.forEach(([t, s], r) => {
         const y = 40 + (r + 1) * 8.6 - 2.2
@@ -956,8 +958,8 @@ const DOCS: DocSpec[] = [
         ["00:15", "Halon panel trouble lamp - reset.", "", "TO"],
         ["01:02", "Listening rm (3-08) strip chart out of paper. Reloaded.", "", "TO"],
         ["01:58", "W-1 trunk noise floor +6 dB, all channels.", "SIGLOG", "TO"],
-        ["02:30", "Print run to 3-01, HALVERSON pigeonhole full.", "SLRPT", "TO"],
-        ["03:02", "SL link up.", "SLLNK", "TO"],
+        ["02:30", "Print run to 3-01, HALVERSON pigeonhole full.", "NARPT", "TO"],
+        ["03:02", "Array link up.", "NALNK", "TO"],
       ]
       e.forEach((row, r) => row.forEach((v, i) => v && d.hand(v, cols[i]! + 2, 36 + (r + 1) * 8.8 - 2.2, { pt: 14, color: INK.ballBlue })))
       const y = 36 + 8 * 8.8 - 2.2
@@ -1018,7 +1020,7 @@ const DOCS: DocSpec[] = [
         d.print(f, 24, y, { pt: 10, weight: 800 })
         d.type(s, 46, y, { pt: 9.5 })
       })
-      d.print("Keys issued: master J (janitor), EL/JC. NOT issued: Comms, Sublevel, Server, Signal, Containment.", 16, 130, { pt: 8 })
+      d.print("Keys issued: master J (janitor), EL/JC. NOT issued: Comms, Field, Server, Signal, Containment.", 16, 130, { pt: 8 })
       d.hand("If the Director calls down, do what he says and don't ask. — Supv.", 16, 150, { pt: 14, color: INK.ballBlue, font: "Caveat" })
       d.hand("radio is ch. 2. booth is ch. 3.", 16, 162, { pt: 14, color: INK.ballBlue, font: "Caveat" })
       d.holes(d.wmm / 2, 6)
@@ -1057,7 +1059,7 @@ const DOCS: DocSpec[] = [
     tags: ["board", "clipboard"],
     draw(d) {
       d.print("FALL BOWLING LEAGUE — SIGN UP", d.wmm / 2, 22, { pt: 15, weight: 800, align: "center" })
-      d.print("Thursdays 7:00 PM · Pine Hollow Lanes · teams of four · $3/week incl. shoes", d.wmm / 2, 29, { pt: 8, align: "center" })
+      d.print("Thursdays 7:00 PM · Ashwood Lanes · teams of four · $3/week incl. shoes", d.wmm / 2, 29, { pt: 8, align: "center" })
       d.print("NAME", 22, 42, { pt: 8, weight: 700 })
       d.print("EXT.", 100, 42, { pt: 8, weight: 700 })
       d.print("AVG", 128, 42, { pt: 8, weight: 700 })
@@ -1094,7 +1096,7 @@ const DOCS: DocSpec[] = [
       d.print("THE FALL!", d.wmm / 2, 54, { pt: 36, font: "Archivo Black", align: "center" })
       d.image("bowling", 58, 62, 100, 82, "grayscale(1) contrast(1.4)", 0.9)
       d.print("STATION BOWLING LEAGUE", d.wmm / 2, 158, { pt: 16, weight: 800, align: "center", spacing: 0.5 })
-      d.print("Thursdays · 7 PM · Pine Hollow Lanes, Route 9", d.wmm / 2, 167, { pt: 11, align: "center" })
+      d.print("Thursdays · 7 PM · Ashwood Lanes, Route 9", d.wmm / 2, 167, { pt: 11, align: "center" })
       d.print("Season starts October 4 · teams of four · all skill levels", d.wmm / 2, 174, { pt: 10, align: "center" })
       d.print("See Doris in Payroll (1-09) or call ext. " + EXT.payroll, d.wmm / 2, 184, { pt: 11, weight: 700, align: "center" })
       tabs(d, 9, 232, "BOWLING · Doris x" + EXT.payroll, [2, 5, 6])
@@ -1115,7 +1117,7 @@ const DOCS: DocSpec[] = [
       const l = ["Grey long-hair tabby, 9 yrs, very friendly. Answers to Biscuit.", "Last seen by the RECEIVING DOCK on Tues. Oct 2 around 11 PM.", "He never goes near the north lot. Please check sheds and garages."]
       l.forEach((s, i) => d.print(s, d.wmm / 2, 186 + i * 6, { pt: 10, align: "center" }))
       d.print("REWARD · Marge Duquette, Cafeteria, ext. " + EXT.cafeteria + " or 555-0142", d.wmm / 2, 210, { pt: 10.5, weight: 800, align: "center" })
-      d.hand("on the dock camera 10/9 3am, by FL-1 gate? — S.V.", 26, 226, { pt: 14, color: INK.ballBlue, font: "Reenie Beanie", slant: -0.03 })
+      d.hand("on the dock camera 10/9 3am, at the tree line? — S.V.", 26, 226, { pt: 14, color: INK.ballBlue, font: "Reenie Beanie", slant: -0.03 })
       tabs(d, 8, 238, "BISCUIT 555-0142", [1, 4], 700)
       d.holes(d.wmm / 2, 6)
     },
@@ -1259,7 +1261,7 @@ const DOCS: DocSpec[] = [
       box(14, 34, 94, 12, "REQUESTED BY", "R. ESPOSITO")
       box(108, 34, 46, 12, "DEPT. / ROOM", "SS / 2-27")
       box(154, 34, 48, 12, "DATE", "10-11-84")
-      box(14, 46, 94, 12, "CHARGE ACCOUNT", "84-SS-0331-SL")
+      box(14, 46, 94, 12, "CHARGE ACCOUNT", "84-SS-0331-NA")
       box(108, 46, 94, 12, "DELIVER TO", "2-27 ANALYTICAL LAB 4")
       const cols = [14, 30, 48, 150, 176, 202]
       ;["QTY", "UNIT", "DESCRIPTION", "UNIT $", "TOTAL"].forEach((h, i) => d.print(h, cols[i]! + 1.2, 64, { pt: 6.5, weight: 700 }))
@@ -1278,8 +1280,8 @@ const DOCS: DocSpec[] = [
       items.forEach((row, r) => row.forEach((v, i) => d.type(v, cols[i]! + 1.5, 66 + (r + 1) * 7.5 - 2, { pt: 9, font: "Courier Prime" })))
       box(150, 66 + 16 * 7.5, 52, 10, "TOTAL", "$233.95")
       box(14, 200, 94, 18, "JUSTIFICATION")
-      d.type("SL CORE INTAKE BACKLOG. ISOLATOR", 16, 211, { pt: 8.5, font: "Courier Prime" })
-      d.type("GLOVE TORN 10/9 (TRAY SL-14).", 16, 215.5, { pt: 8.5, font: "Courier Prime" })
+      d.type("ARRAY CORE INTAKE BACKLOG. ISOLATOR", 16, 211, { pt: 8.5, font: "Courier Prime" })
+      d.type("GLOVE TORN 10/9 (TRAY NA-14).", 16, 215.5, { pt: 8.5, font: "Courier Prime" })
       box(108, 200, 94, 18, "APPROVED (LAB MANAGER)")
       d.hand("D. Amundsen", 120, 214, { pt: 18, font: "Nothing You Could Do", color: INK.black })
       d.stamp(["APPROVED", "OCT 12 1984"], 70, 240, -0.08, INK.green)
@@ -1288,7 +1290,7 @@ const DOCS: DocSpec[] = [
   },
   {
     id: "printout_greenbar",
-    title: "Green-bar printout: SL link log (03:02 link up, 03:04 saturated)",
+    title: "Green-bar printout: north array link log (03:02 link up, 03:04 saturated)",
     size: [0.378, 0.279],
     paper: "greenbar",
     tags: ["desk", "floor", "creepy"],
@@ -1296,7 +1298,7 @@ const DOCS: DocSpec[] = [
     draw(d) {
       const left = 14
       const lines: string[] = []
-      lines.push("IOPS/PHS  COMPUTING CENTRE  SLLNK - W-1 TRUNK  RUN 84.291.03     PAGE 0117")
+      lines.push("IOPS/AWO  COMPUTING CENTRE  NALNK - W-1 TRUNK  RUN 84.291.03     PAGE 0117")
       lines.push("DATE      TIME(L)   CHAN   FREQ(KHZ)   LEVEL(DB)   SNR    FLAG   OPER")
       lines.push("--------  --------  -----  ----------  ----------  -----  -----  ----")
       let t = 2 * 3600 + 54 * 60
@@ -1311,10 +1313,10 @@ const DOCS: DocSpec[] = [
         const lvl = anomalous ? (-12.0 + rand()).toFixed(1) : (-71 + rand() * 6).toFixed(1)
         const snr = anomalous ? "  41.8" : rr(2, 9).toFixed(1).padStart(6)
         const flag = anomalous ? "*****" : up ? " LINK" : "     "
-        lines.push(`10/18/84  ${hh}:${mm}:${ss}  SL-${(i % 6) + 1}  ${f.padStart(10)}  ${lvl.padStart(10)}  ${snr}  ${flag}  ${anomalous ? "----" : "TO  "}`)
+        lines.push(`10/18/84  ${hh}:${mm}:${ss}  NA-${(i % 6) + 1}  ${f.padStart(10)}  ${lvl.padStart(10)}  ${snr}  ${flag}  ${anomalous ? "----" : "TO  "}`)
       }
       lines.push("")
-      lines.push("*** LEVEL EXCEEDS CALIBRATED RANGE - ALL SL CHANNELS IN PHASE ***")
+      lines.push("*** LEVEL EXCEEDS CALIBRATED RANGE - ALL ARRAY CHANNELS IN PHASE ***")
       lines.push("*** OPERATOR NOT AT CONSOLE 03:04:31 - ***")
       lines.forEach((l, i) => d.type(l, left + 6, 14 + i * 6.35 - 1.5, { pt: 9, font: "VT323", color: "#2a2a30" }))
       d.hand("03:04 again", 255, 160, { pt: 18, color: INK.red, font: "Caveat", slant: -0.08 })
@@ -1419,7 +1421,7 @@ const DOCS: DocSpec[] = [
       d.hand("EXTENSIONS", 6, 9.5, { pt: 15, color: INK.black, font: "Caveat" })
       const e = [`Guard desk ... ${EXT.lobby}`, `Security 0-38 ... ${EXT.security}`, `Facilities ... ${EXT.facilities}`, `Lab Safety ... ${EXT.labSafety}`, `Ops console ... ${EXT.ops}`, `Director ... ${EXT.director}`]
       e.forEach((s, i) => d.hand(s, 6, 12 + (i + 1) * 8.6 - 1.5, { pt: 13.5, color: INK.ballBlue }))
-      d.hand("300 = SL ??", 80, 12 + 6 * 8.6 - 1.5, { pt: 13.5, color: INK.red })
+      d.hand("300 = field hut ??", 80, 12 + 6 * 8.6 - 1.5, { pt: 13.5, color: INK.red })
     },
   },
   {
@@ -1479,7 +1481,7 @@ const DOCS: DocSpec[] = [
         [4, "bowling 7pm", INK.ballBlue],
         [12, "PAYDAY", INK.green],
         [15, "sign-in rule", INK.ballBlue],
-        [17, "SL rot. 6", INK.red],
+        [17, "field team 6", INK.red],
         [26, "PAYDAY", INK.green],
         [31, "party - caf.", INK.ballBlue],
       ]
@@ -1515,7 +1517,7 @@ const DOCS: DocSpec[] = [
         d.type(v, 166, 54 + i * 6.6, { pt: 10 })
       })
       const yy = 54 + rows.length * 6.6 + 6
-      d.type("Ext. 300 (Field Operations / FL-1 lobby) was disconnected", 28, yy, { pt: 9.5 })
+      d.type("Ext. 300 (Field Operations hut, north array) was disconnected", 28, yy, { pt: 9.5 })
       d.type("in 1983. Report any call from 300 to Protective Services.", 28, yy + 5, { pt: 9.5 })
       d.hand("again", 150, yy + 13, { pt: 15, color: INK.red, font: "Caveat" })
       d.holes(d.wmm / 2, 6)
@@ -1539,7 +1541,7 @@ const DOCS: DocSpec[] = [
   },
   {
     id: "checklist_rounds",
-    title: "Night rounds checklist (FL-1 gate open at 0310)",
+    title: "Night rounds checklist (dock man door open at 0310)",
     size: LETTER,
     paper: "white",
     tags: ["clipboard", "creepy"],
@@ -1547,7 +1549,7 @@ const DOCS: DocSpec[] = [
       d.print("NIGHT ROUNDS CHECKLIST", d.wmm / 2, 20, { pt: 15, weight: 800, align: "center" })
       d.print("Protective Services · IOPS Form PS-7 · one sheet per watch · initial each check", d.wmm / 2, 26, { pt: 7.5, align: "center" })
       d.hand("Date: 10/17/84    Officer: S. Vance", 20, 38, { pt: 15, color: INK.black })
-      const stops = ["Lobby doors locked (0-01)", "Staff entrance 0-10 latched", "Receiving roll-ups down (0-16)", "FL-1 gates SHUT, both (0-15)", "EL / TC doors locked, all floors", "W-1 cupboards locked, all floors", "2-27 / 2-04 hot plates & hoods off", "Machine room temp < 70°F (3-04)", "4th fl. west hoarding shut", "Guard booth radio check, ch. 3"]
+      const stops = ["Lobby doors locked (0-01)", "Staff entrance 0-10 latched", "Receiving roll-ups down (0-16)", "Dock man door bolted (0-16)", "EL / TC doors locked, all floors", "W-1 cupboards locked, all floors", "2-27 / 2-04 hot plates & hoods off", "Machine room temp < 70°F (3-04)", "4th fl. west hoarding shut", "Guard booth radio check, ch. 3"]
       const times = ["2300", "0100", "0300", "0500"]
       times.forEach((t, i) => d.print(t, 130 + i * 18, 50, { pt: 8, weight: 700 }))
       stops.forEach((s, r) => {
@@ -1560,7 +1562,7 @@ const DOCS: DocSpec[] = [
           if (done && rand() < 0.5) d.hand("SV", 136 + i * 18, y, { pt: 10, color: INK.black })
         })
       })
-      d.hand("FL-1 gate OPEN 0310. Shut it. Open again 0318.", 20, 186, { pt: 14, color: INK.black, font: "Caveat", slant: -0.02 })
+      d.hand("Dock door OPEN 0310. Shut it. Open again 0318.", 20, 186, { pt: 14, color: INK.black, font: "Caveat", slant: -0.02 })
       d.hand("Car at ground. Empty. Called 300 — it rang.", 20, 196, { pt: 14, color: INK.black, font: "Caveat", slant: -0.015 })
       d.holes(d.wmm / 2, 6)
     },
@@ -1580,8 +1582,8 @@ const DOCS: DocSpec[] = [
       for (let r = 0; r <= 24; r++) d.line(12, 34 + r * 11.5, 238, 34 + r * 11.5, 0.25)
       for (const x of cols) d.line(x, 27, x, 34 + 24 * 11.5, 0.25)
       const e: [string, string, string][] = [
-        ["H. Yost", "Property", "6/84"], ["Chief, Prog. Admin", "1-07", "7/84"], ["D. Halverson", "Field Ops SL", "8/84"],
-        ["Records", "1-01", "9/84"], ["E. Lindqvist", "Field Ops SL", "10/9"], ["D. Halverson", "3-01 pigeonhole", "10/16"],
+        ["H. Yost", "Property", "6/84"], ["Chief, Prog. Admin", "1-07", "7/84"], ["D. Halverson", "Field Ops", "8/84"],
+        ["Records", "1-01", "9/84"], ["E. Lindqvist", "Field Ops", "10/9"], ["D. Halverson", "3-01 pigeonhole", "10/16"],
         ["Director", "4-14", "10/17"],
       ]
       e.forEach((row, r) => {
@@ -1596,7 +1598,7 @@ const DOCS: DocSpec[] = [
   timeCard("timecard_lindqvist", "E. Lindqvist", "1052"),
   {
     id: "board_dosimeter",
-    title: "Sign: SUBLEVEL — DOSIMETER REQUIRED (0-15)",
+    title: "Sign: NORTH ARRAY — DOSIMETER REQUIRED (0-15)",
     size: [0.45, 0.3],
     paper: "plate",
     tags: ["wall"],
@@ -1604,10 +1606,10 @@ const DOCS: DocSpec[] = [
     draw(d) {
       d.fill(0, 0, d.wmm, d.hmm, "#e8c31a")
       d.fill(0, 0, d.wmm, 70, "#141414")
-      d.print("SUBLEVEL", d.wmm / 2, 52, { pt: 110, font: "Archivo Black", align: "center", color: "#e8c31a" })
+      d.print("NORTH ARRAY", d.wmm / 2, 52, { pt: 86, font: "Archivo Black", align: "center", color: "#e8c31a" })
       d.print("DOSIMETER REQUIRED", d.wmm / 2, 118, { pt: 64, font: "Archivo Black", align: "center", color: "#141414" })
-      d.print("FREIGHT LIFT FL-1 · FIELD OPERATIONS ONLY · SUBLEVEL KEYCARD", d.wmm / 2, 160, { pt: 22, font: "Libre Franklin", weight: 800, align: "center", color: "#141414" })
-      d.print("Take a badge from the rack. Return it when you come up.", d.wmm / 2, 200, { pt: 22, font: "Libre Franklin", weight: 600, align: "center", color: "#141414" })
+      d.print("NORTH GATE · FIELD OPERATIONS ONLY · FIELD KEYCARD", d.wmm / 2, 160, { pt: 22, font: "Libre Franklin", weight: 800, align: "center", color: "#141414" })
+      d.print("Take a badge from the rack. Return it when you come back in.", d.wmm / 2, 200, { pt: 22, font: "Libre Franklin", weight: 600, align: "center", color: "#141414" })
       d.print("Survey out at 0-14 before entering the clean side.", d.wmm / 2, 228, { pt: 22, font: "Libre Franklin", weight: 600, align: "center", color: "#141414" })
       d.rect(6, 6, d.wmm - 12, d.hmm - 12, 2, "#141414")
       d.hand("6 OUT", d.wmm - 110, d.hmm - 26, { pt: 46, font: "Permanent Marker", color: "#a3241c", slant: -0.05 })
@@ -1615,14 +1617,14 @@ const DOCS: DocSpec[] = [
   },
   {
     id: "stencil_w1",
-    title: "Stencil: W-1 — SL TRUNK (riser cupboard)",
+    title: "Stencil: W-1 — ARRAY TRUNK (riser cupboard)",
     size: [0.36, 0.12],
     paper: "plate",
     tags: ["wall"],
     density: 1.2,
     draw(d) {
       d.fill(0, 0, d.wmm, d.hmm, "#8d9088")
-      d.print("W-1 — SL TRUNK", d.wmm / 2, 62, { pt: 90, font: "Archivo Black", align: "center", color: "#1a1a1a", alpha: 0.88 })
+      d.print("W-1 — ARRAY TRUNK", d.wmm / 2, 62, { pt: 72, font: "Archivo Black", align: "center", color: "#1a1a1a", alpha: 0.88 })
       d.print("NO ACCESS WITHOUT SIGNAL KEYCARD · DO NOT OPEN", d.wmm / 2, 96, { pt: 26, font: "Archivo Black", align: "center", color: "#1a1a1a", alpha: 0.85 })
       // Stencil bridges.
       for (let x = 20; x < d.wmm; x += 13) d.fill(x, 26, 1.4, 42, "#8d9088", 0.8)
@@ -1745,7 +1747,7 @@ function board(id: string, title: string, size: [number, number], kind: "chalk" 
       const chalk = kind === "chalk"
       // Ghosts of wiped writing.
       for (let i = 0; i < 9; i++)
-        d.hand(pick(["f = c / λ", "Δt = 12.4 ms", "∮ E·dl", "α = 0.031", "SL-3 ↔ SL-5", "N = 6", "h ≈ 410 m"]), rr(30, d.wmm - 300), rr(80, d.hmm - 40), {
+        d.hand(pick(["f = c / λ", "Δt = 12.4 ms", "∮ E·dl", "α = 0.031", "NA-3 ↔ NA-5", "N = 6", "h ≈ 410 m"]), rr(30, d.wmm - 300), rr(80, d.hmm - 40), {
           pt: rr(120, 180),
           color: chalk ? "rgba(220,225,215,0.07)" : "rgba(40,60,120,0.06)",
           font: "Caveat",
@@ -1766,7 +1768,7 @@ function dayCard(id: string, name: string, number: string): DocSpec {
     tags: ["wall", "desk"],
     density: 3.4,
     draw(d) {
-      d.print("PINE HOLLOW STA.", d.wmm / 2, 8, { pt: 8, weight: 800, align: "center" })
+      d.print("ASHWOOD OUTPOST", d.wmm / 2, 8, { pt: 8, weight: 800, align: "center" })
       d.print("WEEKLY TIME CARD", d.wmm / 2, 12.5, { pt: 6, align: "center" })
       d.print("NO.", 5, 20, { pt: 6, weight: 700 })
       d.type(number, 14, 20.5, { pt: 11, font: "Courier Prime" })
@@ -1849,10 +1851,10 @@ const STAND_INS: DocSpec[] = [
       d.hand("↓", 1150, 420, { pt: 260, font: "Permanent Marker", color: "#c8501a" })
     },
   },
-  board("chalkboard_equations", "Chalkboard, 3-09 analysis bullpen: propagation equations and SL source fixes", [4.2, 1.1], "chalk", (d, ink) => {
+  board("chalkboard_equations", "Chalkboard, 3-09 analysis bullpen: propagation equations and north array source fixes", [4.2, 1.1], "chalk", (d, ink) => {
     ink("E(z) = E₀ · e^(−αz)      α = 0.031 / m (wet granite)", 120, 190)
     ink("λ = c / f  →  f = 11.905 kHz,  λ ≈ 25.2 km", 120, 340)
-    ink("Δφ(SL-1…SL-6) = 0.0° ± 0.3°   ALL SIX IN PHASE", 120, 490)
+    ink("Δφ(NA-1…NA-6) = 0.0° ± 0.3°   ALL SIX IN PHASE", 120, 490)
     ink("⇒ source not a point?  or it is everywhere at once", 120, 640, 208)
     ink("depth fix:  h = 410 m (Aug)   388 m (Sep)   361 m (Oct)", 120, 800)
     ink("rising 25 m / month", 2700, 800, 240, "#e8b0a0")
@@ -1868,7 +1870,7 @@ const STAND_INS: DocSpec[] = [
   board("chalkboard_agenda", "Chalkboard, Conference A (1-02): staff meeting agenda", [3.0, 1.1], "chalk", (d, ink) => {
     ink("STAFF MTG  — Mon 10/15", 100, 170, 272)
     ink("1. FY85 contracts — IOPS renewal (due 11/1)", 120, 330)
-    ink("2. SL rotation staffing — 6 → Field Ops Wed.", 120, 470)
+    ink("2. Night field team — 6 out to the array Wed.", 120, 470)
     ink("3. Payroll: hold letters (see Dir.)", 120, 610)
     ink("4. Parking — north lot CLOSED", 120, 750)
     ink("5. Bowling — forfeits", 120, 890)
@@ -1879,12 +1881,12 @@ const STAND_INS: DocSpec[] = [
     ink("M₁V₁ = M₂V₂", 120, 340)
     ink("0.100 M NaOH  ·  25.00 mL sample  ·  phenolphthalein", 120, 490)
     ink("endpoint: faint pink 30 s", 120, 640)
-    ink("SL core leachate: pH 3.1 (?!) — redo w/ fresh std.", 120, 800, 224)
+    ink("NA core leachate: pH 3.1 (?!) — redo w/ fresh std.", 120, 800, 224)
     ink("goggles ON", 2700, 980, 224)
   }),
   board("chalkboard_wiped", "Chalkboard, wiped with ghosts of writing (generic)", [2.4, 1.1], "chalk", (d, ink) => {
     ink("intake log — see binder", 120, 250, 208, "rgba(230,232,222,0.55)")
-    ink("SL-14  →  2-10 ONLY", 140, 520, 256)
+    ink("NA-14  →  2-10 ONLY", 140, 520, 256)
   }),
   board("whiteboard_ops", "Whiteboard, operations console 3-06: shift and tape schedule", [2.6, 1.1], "white", (d, ink) => {
     ink("OPS — WEEK OF 10/15", 90, 150, 256)
@@ -1892,19 +1894,19 @@ const STAND_INS: DocSpec[] = [
     ink("2300–0700   Okafor  /  ———", 100, 300)
     ink("0700–1500   Brandt  /  Vance", 100, 430)
     ink("TAPE MOUNTS:  RCV-288, 289 (SIGLOG)", 100, 560)
-    ink("SL LINK WINDOW 0300–0315 — DO NOT IPL", 100, 700, 240, "#a3241c")
+    ink("ARRAY LINK WINDOW 0300–0315 — DO NOT IPL", 100, 700, 240, "#a3241c")
     ink("call 3-22 if link drops (NOT x300)", 100, 840, 208)
     ink("Halverson printouts → 3-01 (uncollected)", 100, 980, 192)
   }),
   {
     id: "inout_board_1_09",
-    title: "Magnetic in/out board face, Personnel & Payroll (1-09): 22 names, IN / OUT / SL columns",
+    title: "Magnetic in/out board face, Personnel & Payroll (1-09): 22 names, IN / OUT / FIELD columns",
     size: [1.2, 22 * 0.045 + 0.16],
     paper: "white_board",
     tags: ["wall"],
     density: 0.85,
     draw(d) {
-      // Matches s1 furniture inOutBoard: name strips x −0.5..0, columns IN 0.05..0.25, OUT 0.25..0.42, SL 0.42..0.6.
+      // Matches s1 furniture inOutBoard: name strips x −0.5..0, columns IN 0.05..0.25, OUT 0.25..0.42, FIELD 0.42..0.6.
       const cx = d.wmm / 2
       const top = (v: number) => d.hmm / 2 - v * 1000 + 10
       d.fill(cx - 580, top(0.5 * (22 * 0.045 + 0.16) - 0.025) - 25, 1160, 50, "#2b2e31")
@@ -1912,7 +1914,7 @@ const STAND_INS: DocSpec[] = [
       d.print("IN", cx + 150, top(0.5 * (22 * 0.045 + 0.16) - 0.05) + 9, { pt: 62, font: "Archivo Black", align: "center", color: "#e9e6dc" })
       d.print("OUT", cx + 335, top(0.5 * (22 * 0.045 + 0.16) - 0.05) + 9, { pt: 62, font: "Archivo Black", align: "center", color: "#e9e6dc" })
       d.fill(cx + 430, top(0.5 * (22 * 0.045 + 0.16) - 0.05) - 15, 150, 30, "#a3241c")
-      d.print("SL", cx + 510, top(0.5 * (22 * 0.045 + 0.16) - 0.05) + 9, { pt: 62, font: "Archivo Black", align: "center", color: "#f1ece0" })
+      d.print("FIELD", cx + 510, top(0.5 * (22 * 0.045 + 0.16) - 0.05) + 9, { pt: 40, font: "Archivo Black", align: "center", color: "#f1ece0" })
       for (const u of [0.05, 0.25, 0.42]) d.line(cx + u * 1000, top(0.5 * (22 * 0.045 + 0.16) - 0.09), cx + u * 1000, d.hmm - 30, 4, "#3a3a3a", 0.8)
       IN_OUT_NAMES.forEach((n, r) => {
         const v = (22 * 0.045 + 0.16) / 2 - 0.11 - r * 0.045
@@ -1922,7 +1924,7 @@ const STAND_INS: DocSpec[] = [
         d.type(n.toUpperCase(), cx - 485, y + 12, { pt: 72, font: "Courier Prime" })
         d.line(cx + 50, y + 22, cx + 600, y + 22, 1.2, "#bdbab0", 0.7)
       })
-      d.hand("SL: back Fri? — D.K.", cx + 60, d.hmm - 40, { pt: 70, color: INK.red, font: "Caveat" })
+      d.hand("FIELD: back Fri? — D.K.", cx + 60, d.hmm - 40, { pt: 70, color: INK.red, font: "Caveat" })
     },
   },
   {
@@ -1934,7 +1936,7 @@ const STAND_INS: DocSpec[] = [
     density: 0.7,
     draw(d) {
       const t = (s: string, x: number, y: number, pt: number) => d.print(s, x, y, { pt, font: "Libre Franklin", weight: 600, color: "#e8e6df", spacing: 2 })
-      t("PINE HOLLOW STATION", 50, 90, 64)
+      t("ASHWOOD OUTPOST", 50, 90, 64)
       t("FLOOR DIRECTORY", 50, 140, 40)
       const rows: [string, string][] = [
         ["4", "DIRECTORATE · RECEIVER ROOM"], ["4W", "CLOSED — REFURBISHMENT"], ["3", "COMPUTING & SIGNAL PROCESSING"], ["3", "TERMINAL POOL · DATA CONTROL"],
@@ -1946,7 +1948,7 @@ const STAND_INS: DocSpec[] = [
         t(f, 50, y, 40)
         t(s, 150, y, 32)
       })
-      t("SL — AUTHORIZED PERSONNEL ONLY", 50, 1060, 28)
+      t("NORTH ARRAY — AUTHORIZED PERSONNEL ONLY", 50, 1060, 28)
     },
   },
   {
@@ -1959,7 +1961,7 @@ const STAND_INS: DocSpec[] = [
     draw(d) {
       const gold = "#e2c27a"
       d.rect(8, 8, d.wmm - 16, d.hmm - 16, 2, gold)
-      d.print("PINE HOLLOW STATION", d.wmm / 2, 52, { pt: 56, font: "Archivo Black", align: "center", color: gold })
+      d.print("ASHWOOD OUTPOST", d.wmm / 2, 52, { pt: 56, font: "Archivo Black", align: "center", color: gold })
       d.print("ATMOSPHERIC PROPAGATION RESEARCH FACILITY", d.wmm / 2, 92, { pt: 26, font: "Libre Franklin", weight: 800, align: "center", color: gold })
       d.print("DEDICATED JUNE 9, 1979", d.wmm / 2, 140, { pt: 30, font: "Libre Franklin", weight: 700, align: "center", color: gold })
       d.print("\"TO LISTEN TO THE EARTH AND THE SKY\"", d.wmm / 2, 180, { pt: 22, font: "Libre Franklin", weight: 600, align: "center", color: gold })
@@ -1985,7 +1987,7 @@ const STAND_INS: DocSpec[] = [
         m(lab, 120 + i * 120, 760, 40, "#151515")
       })
       m("$ (000)", 90, 200, 36, "#151515")
-      m("Oct: SL contract on HOLD", 60, 820, 44, "#a3241c")
+      m("Oct: array contract on HOLD", 60, 820, 44, "#a3241c")
     },
   },
   {
@@ -2013,7 +2015,7 @@ const STAND_INS: DocSpec[] = [
       d.print("4TH FLOOR — WEST · STRIP-OUT", x0, 70, { pt: 34, weight: 800, color: w })
       // Title block.
       d.rect(740, 380, 140, 220, 1.5, w)
-      ;["PINE HOLLOW STA.", "4th FL. REFURB", "SHEET A-4.1", "DRN: WF", "DATE: 8/84", "SCALE 1:100"].forEach((s, i) => d.print(s, 748, 405 + i * 30, { pt: 15, weight: 700, color: w }))
+      ;["ASHWOOD OUTPOST", "4th FL. REFURB", "SHEET A-4.1", "DRN: WF", "DATE: 8/84", "SCALE 1:100"].forEach((s, i) => d.print(s, 748, 405 + i * 30, { pt: 15, weight: 700, color: w }))
       d.print("ALL WORK HALTED 9/26", 60, 540, { pt: 30, weight: 800, color: "#ffd8a0" })
     },
   },
@@ -2033,7 +2035,7 @@ const STAND_INS: DocSpec[] = [
       for (let i = 0; i < 18; i++) d.rect(80 + (i % 6) * 110, 130 + Math.floor(i / 6) * 130, 40, 80, 1.2, b, "#c9d2ea")
       d.print("2×4 TROFFERS · SEE E-4.2", 60, 540, { pt: 22, weight: 700, color: b })
       d.rect(740, 380, 140, 220, 1.2, b)
-      ;["PINE HOLLOW STA.", "SHEET E-4.1", "DRN: WF", "DATE: 8/84"].forEach((s, i) => d.print(s, 748, 405 + i * 30, { pt: 15, weight: 700, color: b }))
+      ;["ASHWOOD OUTPOST", "SHEET E-4.1", "DRN: WF", "DATE: 8/84"].forEach((s, i) => d.print(s, 748, 405 + i * 30, { pt: 15, weight: 700, color: b }))
     },
   },
   {
@@ -2076,21 +2078,21 @@ const STAND_INS: DocSpec[] = [
         const a = (i / 7) * Math.PI * 2
         d.print(s, cx + Math.cos(a) * (R + 4), cy + Math.sin(a) * (R + 4), { pt: 12, weight: 700, align: "center", color: "#5a4a7a" })
       })
-      d.print("SL INTAKE AIR  °F", cx, cy - 4, { pt: 10, weight: 700, align: "center", color: "#5a4a7a" })
+      d.print("CORE STORE AIR  °F", cx, cy - 4, { pt: 10, weight: 700, align: "center", color: "#5a4a7a" })
       d.hand("10/15", cx - 12, cy + 12, { pt: 12, color: INK.black })
     },
   },
   {
     id: "printout_teletype",
-    title: "Teletype paper roll output: SL link console log",
+    title: "Teletype paper roll output: north array link console log",
     size: [0.22, 0.3],
     paper: "white",
     tags: ["desk"],
     density: 2.6,
     draw(d) {
       const l = [
-        "PHS SLLNK 84.291", "", "0258 SL-1 CARRIER OK", "0258 SL-2 CARRIER OK", "0259 SL-3 CARRIER OK", "0259 SL-4 CARRIER OK",
-        "0300 SL-5 CARRIER OK", "0300 SL-6 CARRIER OK", "0302 LINK UP 6/6", "0303 LEVEL HIGH SL-1..6", "0304 LEVEL HIGH SL-1..6",
+        "AWO NALNK 84.291", "", "0258 NA-1 CARRIER OK", "0258 NA-2 CARRIER OK", "0259 NA-3 CARRIER OK", "0259 NA-4 CARRIER OK",
+        "0300 NA-5 CARRIER OK", "0300 NA-6 CARRIER OK", "0302 LINK UP 6/6", "0303 LEVEL HIGH NA-1..6", "0304 LEVEL HIGH NA-1..6",
         "0304 PHASE LOCK 6/6", "0304 ?? ?? ?? ??", "0305 HELLO", "0305 HELLO", "0305 HELLO", "0306 CARRIER LOST",
       ]
       l.forEach((s, i) => d.type(s, 12, 18 + i * 15, { pt: 11, font: "Courier Prime" }))
@@ -2101,11 +2103,11 @@ const STAND_INS: DocSpec[] = [
   sign("sign_halon_area", "Sign: WARNING — HALON 1301 PROTECTED AREA (machine room door)", [0.26, 0.32], "#e8c31a", "#141414", [["WARNING", 60], ["HALON 1301", 50], ["PROTECTED AREA", 30], ["WHEN ALARM SOUNDS", 22], ["LEAVE ROOM AT ONCE", 22], ["DO NOT ENTER UNTIL", 20], ["VENTILATED", 20]], { border: "#141414" }),
   sign("sign_chem_store", "Plate: CHEMICAL STORE 2-01, under the hazard diamond", [0.3, 0.09], "#2b2e31", "#e9e6dc", [["CHEMICAL STORE 2-01", 34], ["FLAMMABLES · CORROSIVES · KEY: LAB MGR 2-08", 13]]),
   sign("sign_cold_room", "Plate: COLD ROOM 4 °C (2-06)", [0.4, 0.14], "#2f6a44", "#f1ece0", [["COLD ROOM  4 °C", 46], ["KEEP DOOR SHUT · INSIDE RELEASE ON LATCH", 16]]),
-  sign("sign_sensor_store", "Placard: SL-ARRAY 2 — SENSOR HEADS (2-25)", [0.6, 0.14], "#e8c31a", "#141414", [["SL-ARRAY 2 — SENSOR HEADS", 44], ["SIGN OUT WITH FIELD OPS · DO NOT POWER ON BENCH", 15]]),
-  sign("plate_sl_link", "Legend plate: SL LINK STATUS (3-06)", [0.26, 0.22], "#2b2e31", "#e9e6dc", [["SL LINK STATUS", 30], ["1   2   3   4   5   6", 34], ["GREEN = CARRIER", 16], ["RED = LOST", 16]]),
+  sign("sign_sensor_store", "Placard: N. ARRAY 2 — SENSOR HEADS (2-25)", [0.6, 0.14], "#e8c31a", "#141414", [["N. ARRAY 2 — SENSOR HEADS", 44], ["SIGN OUT WITH FIELD OPS · DO NOT POWER ON BENCH", 15]]),
+  sign("plate_array_link", "Legend plate: ARRAY LINK STATUS (3-06)", [0.26, 0.22], "#2b2e31", "#e9e6dc", [["ARRAY LINK STATUS", 30], ["1   2   3   4   5   6", 34], ["GREEN = CARRIER", 16], ["RED = LOST", 16]]),
   sign("label_rack_in", "Time-card rack label: IN", [0.4, 0.05], "#ece7da", "#141414", [["IN", 60]]),
   sign("label_rack_out", "Time-card rack label: OUT", [0.4, 0.05], "#ece7da", "#141414", [["OUT", 60]]),
-  sign("label_rack_sl", "Time-card rack strip: SL (red)", [0.4, 0.05], "#a3241c", "#f1ece0", [["SL — FIELD OPERATIONS", 40]]),
+  sign("label_rack_field", "Time-card rack strip: FIELD TEAM (red)", [0.4, 0.05], "#a3241c", "#f1ece0", [["FIELD TEAM — NORTH ARRAY", 34]]),
   {
     id: "lift_dial",
     title: "Lift floor indicator dial face (semicircle: G 1 2 3 4)",
@@ -2134,7 +2136,6 @@ const STAND_INS: DocSpec[] = [
       d.fill(0, 0, d.wmm, d.hmm, "#b9b8b0")
       ;["4", "3", "2", "1", "G"].forEach((s, i) => d.print(s, 22, 60 + i * 55, { pt: 50, font: "Archivo Black", align: "center", color: "#1a1a1a" }))
       d.print("ALARM", 50, 340, { pt: 22, weight: 800, align: "center", color: "#a3241c" })
-      d.print("SL ⌧ KEY", 50, 380, { pt: 20, weight: 800, align: "center", color: "#1a1a1a" })
       d.print("CAP. 2500 LB", 50, 20, { pt: 14, weight: 700, align: "center", color: "#1a1a1a" })
     },
   },
@@ -2149,14 +2150,13 @@ const STAND_INS: DocSpec[] = [
       d.rect(6, 6, d.wmm - 12, d.hmm - 12, 1, "#3b4f8e")
       d.print("CERTIFICATE OF INSPECTION", d.wmm / 2, 30, { pt: 15, weight: 800, align: "center", color: "#3b4f8e" })
       d.print("PASSENGER ELEVATOR", d.wmm / 2, 42, { pt: 11, weight: 700, align: "center" })
-      const r: [string, string][] = [["LOCATION", "PINE HOLLOW STATION, CORE"], ["CAR NO.", "P-1"], ["CAPACITY", "2500 LB / 16 PERSONS"], ["SERVES", "G, 1, 2, 3, 4"], ["INSPECTED", "MAY 14, 1984"], ["EXPIRES", "MAY 31, 1985"]]
+      const r: [string, string][] = [["LOCATION", "ASHWOOD OUTPOST, CORE"], ["CAR NO.", "P-1"], ["CAPACITY", "2500 LB / 16 PERSONS"], ["SERVES", "G, 1, 2, 3, 4"], ["INSPECTED", "MAY 14, 1984"], ["EXPIRES", "MAY 31, 1985"]]
       r.forEach(([k, v], i) => {
         d.print(k, 16, 70 + i * 22, { pt: 8, weight: 700 })
         d.type(v, 62, 70 + i * 22, { pt: 9, font: "Courier Prime" })
       })
       d.hand("H. Grieve", 100, 225, { pt: 18, font: "Nothing You Could Do", color: INK.black })
       d.print("STATE ELEVATOR INSPECTOR", d.wmm / 2, 245, { pt: 7, align: "center" })
-      d.hand("SL stop? not on cert", 14, 205, { pt: 12, color: INK.pencil, font: "Reenie Beanie" })
     },
   },
   {
@@ -2215,21 +2215,21 @@ const STAND_INS: DocSpec[] = [
     },
   })),
   ...Array.from({ length: 12 }, (_, i) => smallLabel(`locker_${String(i + 1).padStart(2, "0")}`, `Locker number plate ${i + 1}`, [0.06, 0.03], [String(i + 1)], { paper: "brass_plate", tags: ["wall"] })),
-  ...["SL −120 m  TRAYS 1–40", "SL −180 m  TRAYS 41–88", "SL −240 m  TRAYS 89–130", "SL −300 m  TRAYS 131–160", "SL −361 m  SPECIMENS", "SL −388 m  SPECIMENS", "SL −410 m  DO NOT OPEN", "WATER  SL-W1…W12"].map((s, i) =>
+  ...["NA −120 m  TRAYS 1–40", "NA −180 m  TRAYS 41–88", "NA −240 m  TRAYS 89–130", "NA −300 m  TRAYS 131–160", "NA −361 m  SPECIMENS", "NA −388 m  SPECIMENS", "NA −410 m  DO NOT OPEN", "WATER  NA-W1…W12"].map((s, i) =>
     smallLabel(`label_depth_${i + 1}`, `Archive shelf label: ${s}`, [0.12, 0.025], [s], { tags: ["wall"] }),
   ),
-  ...["SL-03 · 361 m · 9/12/84", "SL-07 · 372 m · 9/20/84", "SL-11 · 388 m · 10/1/84", "SL-14 · 401 m · 10/9/84", "SL-W4 water · 10/2", "SL-16 · 410 m · 10/17"].map((s, i) =>
+  ...["NA-03 · 361 m · 9/12/84", "NA-07 · 372 m · 9/20/84", "NA-11 · 388 m · 10/1/84", "NA-14 · 401 m · 10/9/84", "NA-W4 water · 10/2", "NA-16 · 410 m · 10/17"].map((s, i) =>
     smallLabel(`label_jar_${i + 1}`, `Specimen jar label: ${s}`, [0.07, 0.035], s.split(" · ").slice(0, 2).concat(s.split(" · ")[2] ?? ""), { hand: true }),
   ),
   ...["CORE 81-07  118–121 m", "CORE 82-22  204–207 m", "CORE 83-40  296–299 m", "CORE 84-11  388–391 m"].map((s, i) => smallLabel(`label_core_${i + 1}`, `Core box end label: ${s}`, [0.1, 0.05], s.split("  "), { hand: true })),
-  smallLabel("label_tray_sl14", "Tray label: SL-14 (containment)", [0.08, 0.03], ["SL-14  10/9"], { hand: true, color: INK.red }),
-  smallLabel("tag_sl_array", "Sensor head tag: SL-ARRAY 2", [0.06, 0.04], ["SL-ARRAY 2", "HEAD 07"], { hand: true }),
+  smallLabel("label_tray_na14", "Tray label: NA-14 (containment)", [0.08, 0.03], ["NA-14  10/9"], { hand: true, color: INK.red }),
+  smallLabel("tag_north_array", "Sensor head tag: N. ARRAY 2", [0.06, 0.04], ["N. ARRAY 2", "HEAD 07"], { hand: true }),
   smallLabel("label_chem_key", "Key cabinet label: CHEM STORE", [0.12, 0.05], ["CHEM STORE 2-01", "RETURN HERE"], {}),
   ...["RESPIRATORS", "FILM · DARKROOM", "SPILL KIT", "GLASSWARE"].map((s, i) => smallLabel(`label_cabinet_${i + 1}`, `Cabinet label: ${s}`, [0.16, 0.06], [s], { tags: ["wall"] })),
   ...["A – BAL", "BAN – CAR", "CAS – DOR", "DOS – FEN", "FER – HAL", "HAM – KEM", "KEN – LIN", "LIP – MOR"].map((s, i) =>
     smallLabel(`label_catalogue_${i + 1}`, `Card catalogue drawer label: ${s}`, [0.04, 0.016], [s]),
   ),
-  ...["CONTRACTS 1982", "CONTRACTS 1983", "CONTRACTS 1984", "PERSONNEL A–L", "PERSONNEL M–Z", "SL ROTATION 81–84", "PAYROLL FY84", "IOPS CORRESP."].map((s, i) =>
+  ...["CONTRACTS 1982", "CONTRACTS 1983", "CONTRACTS 1984", "PERSONNEL A–L", "PERSONNEL M–Z", "FIELD TEAMS 81–84", "PAYROLL FY84", "IOPS CORRESP."].map((s, i) =>
     smallLabel(`label_file_${i + 1}`, `File / shelving range label: ${s}`, [0.08, 0.04], [s], { tags: ["wall", "desk"] }),
   ),
   ...[
@@ -2286,7 +2286,7 @@ function idBadge(id: string, name: string, role: string, no: string): DocSpec {
       c.restore()
       d.print("IOPS", w / 2, 12.2, { pt: 17, font: "Archivo Black", align: "center", color: "#f0ece0", spacing: 1 })
       d.print("INTERAGENCY OFFICE OF PROPAGATION STUDIES", w / 2, 15.6, { pt: 3.2, align: "center", color: "#c9d2de" })
-      d.print("PINE HOLLOW STATION", w / 2, 21, { pt: 5.5, weight: 700, align: "center", color: "#1f3350", spacing: 0.4 })
+      d.print("ASHWOOD OUTPOST", w / 2, 21, { pt: 5.5, weight: 700, align: "center", color: "#1f3350", spacing: 0.4 })
       // Photo: a washed-out head-and-shoulders, the way a 1980s badge laminate fades.
       const px = 13, py = 24, pw = 28, ph = 32
       d.rect(px, py, pw, ph, 0.2, "#556070", "#9aa4ae")
@@ -2316,8 +2316,9 @@ function idBadge(id: string, name: string, role: string, no: string): DocSpec {
   }
 }
 
-// The listening room the night it happened (Wed/Thu 17/18 October 1984, the night the SL six went down): the receiver
-// log, the scrawls, the chart strip, and the ID badges of the four night crew who died there (none of them SL staff).
+// The listening room the night it happened (Wed/Thu 17/18 October 1984, the night the six of the field team went out to
+// the north array and did not come back): the receiver log, the scrawls, the chart strip, and the ID badges of the four
+// night crew who died there (none of them field-team staff).
 DOCS.push(
   {
     id: "log_3_08_night",
@@ -2327,22 +2328,22 @@ DOCS.push(
     tags: ["desk", "creepy"],
     draw(d) {
       d.print("RECEIVER LOG — LISTENING ROOM 3-08", d.wmm / 2, 16, { pt: 12, weight: 800, align: "center" })
-      d.print("Signal Processing · W-1 trunk (SL arrays 1–4) · log every carrier, drift, patch change and tape", d.wmm / 2, 22, { pt: 6.5, align: "center" })
+      d.print("Signal Processing · W-1 trunk (north array 1–6) · log every carrier, drift, patch change and tape", d.wmm / 2, 22, { pt: 6.5, align: "center" })
       d.type("NIGHT OF  17/18 OCT 84     WATCH: D. KESSLER / C. WHITLOCK", 14, 31, { pt: 9 })
       const cols = [14, 32, 186, 202]
       ;["TIME", "OBSERVATION", "INIT"].forEach((h, i) => d.print(h, cols[i]! + 1.5, 39, { pt: 7, weight: 700 }))
       for (let r = 0; r <= 23; r++) d.line(14, 41 + r * 9.4, 202, 41 + r * 9.4, r === 0 ? 0.4 : 0.16, INK.green)
       for (const x of cols) d.line(x, 34, x, 41 + 23 * 9.4, 0.2, INK.green)
       const rows: [string, string, string, string?][] = [
-        ["22:10", "RCV-2 on W-1 ch 4 (SL array 2). Noise floor nominal.", "DK"],
-        ["23:00", "Covering 3rd watch (roster struck from Wed). SL crew down 22:58.", "CW"],
+        ["22:10", "RCV-2 on W-1 ch 4 (array station 2). Noise floor nominal.", "DK"],
+        ["23:00", "Covering 3rd watch (roster struck from Wed). Field team out 22:58.", "CW"],
         ["23:30", "Narrowband carrier 1420.406 MHz. Dish stowed - not the dish.", "DK"],
         ["00:52", "Carrier drifting down, 11 Hz/min. Dir. Halloran x214, no answer.", "DK"],
         ["01:02", "Strip chart ch 2 out of paper. Reloaded (ops 3-06).", "CW"],
         ["01:40", "Ch 2 trace periodic, 0.92 Hz. Looks like a heartbeat. Not funny.", "CW"],
         ["01:58", "Noise floor +6 dB all channels. Hargrove & Bellamy up from 3-09.", "DK"],
         ["02:15", "It is on every channel. Pulled the W-1 patch: still there.", "CW"],
-        ["02:16", "It's coming from SL.", "CW"],
+        ["02:16", "It's coming from the woods.", "CW"],
         ["02:51", "Voice on ch 4?? Reel 288 recording. Whitlock heard her name.", "DK", INK.ballBlue],
         ["02:58", "Console phone. Ext 300. Nobody has been on x300 since Wed.", "DK", INK.ballBlue],
       ]
@@ -2364,16 +2365,16 @@ DOCS.push(
   },
   ...NIGHT_CREW.map(([id, name, role, no]) => idBadge(id, name, role, no)),
   {
-    id: "note_coming_from_sl",
-    title: "Torn sheet: IT'S COMING FROM SL (3-08)",
+    id: "note_coming_from_woods",
+    title: "Torn sheet: IT'S COMING FROM THE WOODS (3-08)",
     size: HALF,
     paper: "white",
     tags: ["desk", "floor", "creepy"],
     draw(d) {
       d.hand("IT'S COMING", 14, 52, { pt: 54, font: "Permanent Marker", color: INK.black, slant: -0.08 })
-      d.hand("FROM SL", 30, 104, { pt: 64, font: "Permanent Marker", color: INK.black, slant: -0.05 })
-      d.line(24, 114, 190, 118, 0.9, INK.black, 0.9)
-      d.hand("not the dish. under us.", 120, 132, { pt: 15, font: "Reenie Beanie", color: INK.pencil })
+      d.hand("FROM THE WOODS", 16, 104, { pt: 50, font: "Permanent Marker", color: INK.black, slant: -0.05 })
+      d.line(16, 114, 196, 118, 0.9, INK.black, 0.9)
+      d.hand("not the dish. north of us. the array. it's coming in.", 60, 132, { pt: 15, font: "Reenie Beanie", color: INK.pencil })
       d.crease(0, 60, d.wmm, 70, 1)
     },
   },
@@ -2426,7 +2427,7 @@ DOCS.push(
       }
       d.ctx.stroke()
       d.ctx.restore()
-      d.print("CH 2   25 mm/s   W-1 / SL-2", 12, 8, { pt: 6, color: "#8a3a34" })
+      d.print("CH 2   25 mm/s   W-1 / NA-2", 12, 8, { pt: 6, color: "#8a3a34" })
       d.hand("01:40", 12, h * 0.32 + 4, { pt: 13, color: INK.ballBlue })
       d.hand("?!", w - 34, h * 0.36, { pt: 20, color: INK.ballBlue })
       d.crease(0, 300, w, 310, 1)

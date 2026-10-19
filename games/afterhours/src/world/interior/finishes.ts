@@ -1,5 +1,5 @@
 import * as THREE from "three/webgpu"
-import { atan, float, fract, mix, positionWorld, sin, smoothstep, step, uv, vec3 } from "three/tsl"
+import { atan, float, fract, mix, positionWorld, sin, smoothstep, uv, vec3 } from "three/tsl"
 import { decalBias, materialFor } from "../../render/materials"
 import { aaFade, aaStep } from "./kit"
 
@@ -14,7 +14,9 @@ export const blindMats = (() => {
     const shade = mix(float(0.94), mix(float(0.55), float(1), aaStep(0.12, f)), aaFade(positionWorld.y.mul(40)))
     m.colorNode = vec3(0.62, 0.6, 0.53).mul(shade)
     if (open) {
-      m.opacityNode = step(f, 0.62)
+      // Gaps between slats only while the slats are resolvable (period ≥ ~4 px): once they go sub-pixel the cut-out
+      // aliases against the TAA jitter (a 16-frame shimmer of whatever is bright behind), so the blind closes up.
+      m.opacityNode = mix(float(1), float(1).sub(aaStep(0.62, f)), aaFade(positionWorld.y.mul(40)))
       m.alphaTest = 0.5
     }
     m.name = open ? "interior_blind_open" : "interior_blind"

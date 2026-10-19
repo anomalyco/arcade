@@ -31,7 +31,7 @@ const status: Status = { ready: false, complete: false, completeAt: null, frames
 
 const mode = resolveMode()
 const debug = mode === "debug"
-if (debug) document.title = "STATIC · debug"
+if (debug) document.title = "ASHWOOD · debug"
 // Play mode ignores the query string: no automation overrides reach the world.
 const params = debug ? new URLSearchParams(location.search) : new URLSearchParams()
 const shot = params.has("shot")

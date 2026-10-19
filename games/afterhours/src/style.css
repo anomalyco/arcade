@@ -48,22 +48,12 @@ html, body { margin: 0; height: 100%; background: #030605; overflow: hidden; }
   position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
   padding-top: 24vh; box-sizing: border-box;
 }
+/* The title: Rubik Glitch (public/fonts/RubikGlitch-title.woff2, registered by menu.ts) with only a faint glow, so
+   nothing fights the face's own glitch cuts. */
 .shell-title {
-  position: relative; margin: 0; font: 200 clamp(64px, 10.5vw, 164px)/1 "Helvetica Neue", "Avenir Next", system-ui, sans-serif;
-  letter-spacing: 0.42em; padding-left: 0.42em; color: rgba(234, 238, 230, 0.9);
-  text-shadow: 0 0 22px rgba(190, 225, 210, 0.16);
-  animation: shell-tear 11s steps(1) infinite;
-}
-.shell-title::before, .shell-title::after {
-  content: attr(data-text); position: absolute; inset: 0; padding-left: inherit; pointer-events: none; mix-blend-mode: screen;
-}
-.shell-title::before { color: rgba(255, 70, 60, 0.22); transform: translateX(-1.5px); }
-.shell-title::after { color: rgba(60, 200, 255, 0.2); transform: translateX(1.5px); }
-@keyframes shell-tear {
-  0%, 93.9%, 95.2%, 100% { transform: none; clip-path: none; opacity: 1; }
-  94% { transform: translateX(6px) skewX(-6deg); clip-path: inset(48% 0 34% 0); }
-  94.4% { transform: translateX(-3px); clip-path: none; opacity: 0.8; }
-  94.8% { transform: translateX(2px); clip-path: inset(10% 0 70% 0); }
+  position: relative; margin: 0; font: 400 clamp(56px, 9.5vw, 150px)/1 "Ashwood Title", "Helvetica Neue", system-ui, sans-serif;
+  letter-spacing: 0.24em; padding-left: 0.24em; color: rgba(234, 238, 230, 0.92); font-synthesis: none;
+  text-shadow: 0 0 22px rgba(234, 238, 230, 0.18), 0 0 70px rgba(234, 238, 230, 0.07);
 }
 .shell-sub {
   margin-top: 22px; font-size: 11px; letter-spacing: 0.5em; padding-left: 0.5em; text-transform: uppercase; color: var(--dim);
@@ -179,3 +169,25 @@ html, body { margin: 0; height: 100%; background: #030605; overflow: hidden; }
   text-transform: uppercase; color: rgba(228, 224, 210, 0.3); opacity: 0; transition: opacity 1.2s ease;
 }
 .title-card-skip.on { opacity: 1; }
+
+/* ---- Play-mode control hints (src/game/shell/hints.ts) ---- */
+
+.hints {
+  position: fixed; inset: 0; z-index: 4; pointer-events: none; opacity: 0; transition: opacity 0.4s ease;
+  font: 10.5px/1.4 "Afterhours Type", "American Typewriter", "Courier New", monospace; letter-spacing: 0.14em;
+  text-transform: uppercase; color: rgba(206, 196, 174, 0.5); text-shadow: 0 0 4px rgba(0, 0, 0, 0.85);
+}
+.hints.on { opacity: 1; }
+.hints-strip {
+  position: absolute; left: 22px; bottom: 20px; max-width: min(560px, 60vw); display: flex; flex-wrap: wrap; gap: 6px 16px;
+  opacity: 0; transform: translateY(4px); transition: opacity 1.6s ease, transform 1.6s ease;
+}
+.hints-strip.on { opacity: 1; transform: none; transition-duration: 0.5s; }
+.hints-strip.dim { opacity: 0.32; transform: none; transition-duration: 4s; }
+.hints-item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.hints-toast {
+  position: absolute; left: 50%; bottom: 72px; transform: translate(-50%, 4px); display: inline-flex; align-items: center; gap: 8px;
+  font-size: 12px; letter-spacing: 0.16em; color: rgba(214, 204, 182, 0.82); white-space: nowrap;
+  opacity: 0; transition: opacity 0.9s ease, transform 0.9s ease;
+}
+.hints-toast.on { opacity: 1; transform: translate(-50%, 0); }

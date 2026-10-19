@@ -80,28 +80,46 @@ try {
       B.body.seat({ hip, eye, wheel: { object: c.steering, radius: 0.147 }, doorHandle: handle, doorEdge: edge })
       // Exposure up a little so the cabin reads in the capture.
       B.settings["post.exposure"] = Number(B.settings["post.exposure"] ?? -2.2) + 1.5
-      const S = (G.__seatTest = { curvature: 0, door: 0, view: "fp", t: 0, eye })
+      const S = (G.__seatTest = { curvature: 0, door: 0, view: "fp", t: 0, eye, exit: -1, rate: 1 })
+      // A soft lamp over the dash so close-ups read (automation only).
+      const PL = (scene as any).constructor
+      void PL
       P.update = (dt: number) => {
         S.t += dt
         c.update(dt, S.t, 4, 0, S.curvature)
         // The swing the API doc recommends: pushed ~25° open by the palm (t 0.6–0.9), then swinging free.
         const ss = (v: number) => (v <= 0 ? 0 : v >= 1 ? 1 : v * v * (3 - 2 * v))
-        c.doorAmount = 0.1 * ss((S.door - 0.6) / 0.3) + 0.9 * ss((S.door - 0.9) / 0.1)
+        if (S.exit >= 0) {
+          // The step-out clip: the door follows the hand (inverse of PlayerCar's swing curve, 1.12 rad open).
+          S.exit = Math.min(5.8, S.exit + dt * (S.rate ?? 1))
+          const ang = B.body.exitCar(S.exit)
+          if (ang !== null) c.doorAmount = 1 - Math.pow(Math.max(0, 1 - Math.min(1, ang / 1.12)), 1 / 2.2)
+        } else c.doorAmount = 0.1 * ss((S.door - 0.6) / 0.3) + 0.9 * ss((S.door - 0.9) / 0.1)
         B.body.steer(c.wheelAngle)
         B.body.reachDoor(S.door)
         c.root.updateMatrixWorld(true)
         const v = new V()
         if (S.view === "fp") {
           camera.layers.disable(4)
-          eye.getWorldPosition(v)
+          if (!B.body.seatEye(v)) eye.getWorldPosition(v)
           camera.position.copy(v)
           camera.quaternion.copy(c.body.getWorldQuaternion(camera.quaternion.clone()))
+          // Stepping out, the view turns with the body towards the door (and on round), as the intro's keys do.
+          if (S.exit >= 0) camera.rotateY(1.2 * Math.min(1, S.exit / 2.2))
           // The intro's driving pitch (-0.035) plus a slight glance down.
           camera.rotateX(-0.08)
+        } else if (S.view === "handL" || S.view === "handR") {
+          // Close-up of one hand on the rim, from above and behind the driver's shoulder.
+          camera.layers.enable(4)
+          const hb = B.body.bones[S.view === "handL" ? "LeftHand" : "RightHand"]
+          const hp = hb.getWorldPosition(new V())
+          const local = c.body.worldToLocal(hp.clone())
+          camera.position.copy(c.body.localToWorld(local.clone().add(new V(S.view === "handL" ? -0.12 : 0.12, 0.22, 0.2))))
+          camera.lookAt(hp)
         } else {
           camera.layers.enable(4)
-          const p = S.view === "front" ? [-0.25, 1.22, -1.45] : [-1.85, 1.25, -0.45]
-          const at = S.view === "front" ? [-0.37, 0.95, 0.05] : [-0.45, 0.95, -0.15]
+          const p = S.view === "front" ? [-0.25, 1.22, -1.45] : S.view === "out" ? [-3.6, 1.5, 1.6] : [-1.85, 1.25, -0.45]
+          const at = S.view === "front" ? [-0.37, 0.95, 0.05] : S.view === "out" ? [-1.2, 0.9, -0.2] : [-0.45, 0.95, -0.15]
           camera.position.set(p[0], p[1], p[2]).applyMatrix4(c.body.matrixWorld)
           camera.lookAt(new V(at[0], at[1], at[2]).applyMatrix4(c.body.matrixWorld))
         }
@@ -116,24 +134,53 @@ try {
   const wait = (ms: number) => page.waitForTimeout(ms)
   const set = (src: string) => page.evaluate((src) => new Function("S", src)((globalThis as unknown as { __seatTest: unknown }).__seatTest), src)
   const onlyFp = process.argv.includes("--fp")
-  const MOMENTS: [string, string, number][] = [
+  const exitMode = process.argv.includes("--exit")
+  const MOMENTS: [string, string, number][] = exitMode
+    ? [0.4, 0.9, 1.5, 2.2, 3.0, 3.8, 4.6, 5.6].map((t) => [`exit-${t}`, `S.rate = 0; S.exit = ${t}`, 400] as [string, string, number])
+    : [
     ["straight", `S.curvature = 0; S.door = 0`, 1500],
-    ["left", `S.curvature = 0.035`, 1500],
-    ["right", `S.curvature = -0.035`, 1800],
-    ["bigleft", `S.curvature = 0.09`, 2200],
+    // Wheel ≈ +35°, -35°, +60° (the route's gentle bends and its sharpest).
+    ["left", `S.curvature = 0.0135`, 1500],
+    ["right", `S.curvature = -0.0135`, 1800],
+    ["bigleft", `S.curvature = 0.024`, 2200],
     ["door-handle", `S.curvature = 0; S.door = 0.4`, 1500],
     ["door-push", `S.door = 0.8`, 900],
     ["door-out", `S.door = 1`, 900],
   ]
+  if (exitMode) {
+    // Run the clip once at real speed (the door follows the hand), then freeze at each moment.
+    await set(`S.exit = 0; S.rate = 1`)
+    await wait(6200)
+    await set(`S.exit = 0; S.rate = 0`)
+  }
   for (const [name, src, ms] of MOMENTS) {
     await set(src)
     await wait(ms)
     const row: string[] = []
     if (onlyFp && name.startsWith("door")) continue
-    for (const view of onlyFp ? ["fp"] : ["fp", "front", "side"]) {
+    if (exitMode) await set(`S.hold = S.exit`)
+    for (const view of exitMode ? ["fp", "out"] : onlyFp ? ["fp", "handL", "handR"] : ["fp", "front", "side"]) {
       await set(`S.view = "${view}"`)
       await wait(150)
-      if (view === "fp") console.log(name, JSON.stringify(await page.evaluate(() => (globalThis as any).__afterhoursBody.body.seatRig?.debug)))
+      if (view === "fp")
+        console.log(
+          name,
+          JSON.stringify(
+            await page.evaluate(() => {
+              const b = (globalThis as any).__afterhoursBody.body
+              const B = b.bones
+              const P = (n: string) => B[n].getWorldPosition(B[n].position.clone())
+              const r: Record<string, unknown> = { dbg: b.seatRig?.debug }
+              for (const s of ["Left", "Right"]) {
+                const a = P(`${s}Arm`), e = P(`${s}ForeArm`), h = P(`${s}Hand`)
+                r[s] = { elbowDeg: +((e.clone().sub(a).angleTo(h.clone().sub(e)) * 180) / Math.PI).toFixed(0), reach: +a.distanceTo(h).toFixed(3), arm: +(a.distanceTo(e) + e.distanceTo(h)).toFixed(3) }
+              }
+              const eye = (globalThis as any).__seatTest.eye.getWorldPosition(P("Head").clone())
+              r.headToEye = +P("Head").distanceTo(eye).toFixed(3)
+              return r
+            }),
+          ),
+        )
       const f = `${tiles}/${name}-${view}.png`
       await page.screenshot({ path: f })
       row.push(f)

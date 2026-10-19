@@ -47,6 +47,51 @@ export const FENCE = {
   gate: { x0: -5.5, x1: 5.5 },
 }
 
+/**
+ * North gate in the north fence line (z = FENCE.min[1]): a 3.6 m double swing gate the field staff used to reach the
+ * north array; found standing open. The track runs from the dock court's north edge through the gate and ends at the
+ * future array site in the woods (`NORTH_TRACK.points`, last point).
+ */
+export const NORTH_GATE = { x0: -21.8, x1: -18.2 }
+
+export const NORTH_TRACK = {
+  /** Gravel width (m); the forest keeps `clear` metres either side of the centre line free of trees. */
+  width: 3.2,
+  clear: 4,
+  points: [
+    [-29, -43.2],
+    [-25, -58],
+    [-20.5, -78],
+    [-20, -92],
+    [-23.5, -110],
+    [-29, -126],
+    [-28, -140],
+  ] as Vec2[],
+}
+
+/** Samples the north track's centre line (Catmull-Rom), about `step` metres apart. */
+export function northTrackSamples(step = 1): Vec2[] {
+  return catmullRom(NORTH_TRACK.points, step)
+}
+
+let northCache: Vec2[] | null = null
+/** Distance (m) from (x, z) to the north track's centre line; large when far (cheap bounding-box reject). */
+export function northTrackDistance(x: number, z: number) {
+  if (x < -45 || x > -5 || z > -38 || z < -150) return 1e9
+  const pts = (northCache ??= northTrackSamples(2))
+  let best = 1e9
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [ax, az] = pts[i]!
+    const [bx, bz] = pts[i + 1]!
+    const dx = bx - ax
+    const dz = bz - az
+    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)))
+    const d = Math.hypot(x - ax - dx * t, z - az - dz * t)
+    if (d < best) best = d
+  }
+  return best
+}
+
 /** Guard booth just outside the fence, east of the gate (see concept r5-03 / r3-01). */
 export const BOOTH = { x: 9, z: 127.5, w: 3.4, d: 2.8, h: 2.9 }
 
@@ -115,13 +160,11 @@ export const UPPER = { corridor: { min: [-54.65, -1.6] as Vec2, max: [34.65, 1.6
 /** Ground-floor spine east of the lobby (building program §0); the upper storeys use `UPPER.corridor`. */
 export const CORRIDOR_EAST = { min: [1.6, -1.6] as Vec2, max: [34.65, 1.6] as Vec2 }
 
-/** Freight lift FL-1 between the ground floor (receiving / decon) and the Sublevel only. */
-export const FREIGHT = { car: { min: [-36.85, -19.6] as Vec2, max: [-33.25, -14.6] as Vec2 }, stops: ["SL", 0] as const }
+/** Freight lift FL-1 off receiving / the clean side: car parked at the ground stop, out of service (gates locked). */
+export const FREIGHT = { car: { min: [-36.85, -19.6] as Vec2, max: [-33.25, -14.6] as Vec2 }, stops: [0] as const }
 
-/** Sublevel floor height (placeholder until the Sublevel is built). */
-export const SUBLEVEL_Y = -6.2
-
-/** Riser W-1 under the dish feed: a locked cupboard on every storey, trunk down to the Sublevel. */
+/** Riser W-1 under the dish feed: a locked cupboard on every storey, the array trunk (dish feed and the north-array
+ *  cable, out under the north lot to the woods). */
 export const RISER = { min: [5.4, -4.6] as Vec2, max: [6.6, -3.4] as Vec2 }
 
 /** Ground-floor door through the main block's east wall into the annex. */
@@ -147,7 +190,10 @@ export type ViewpointName = keyof typeof VIEWPOINTS
 
 /** Samples the access road centre line as a Catmull-Rom spline, `step` metres apart (approximately). */
 export function accessRoadSamples(step = 2): Vec2[] {
-  const p = ACCESS_ROAD.points
+  return catmullRom(ACCESS_ROAD.points, step)
+}
+
+function catmullRom(p: readonly Vec2[], step: number): Vec2[] {
   const out: Vec2[] = []
   for (let i = 0; i < p.length - 1; i++) {
     const p0 = p[Math.max(i - 1, 0)]!

@@ -25,7 +25,7 @@ How to place (`documentGeometry`/`documentMesh`, or the storeys' existing `docs.
 | `storeys/s4/west.ts:232–234` (drawings pinned on the 4-02 west wall) | blue/white quads with felt strokes | `blueprint_4th_floor` (×2), `whiteprint_ceiling` (×2) | 0.9×0.62 | wall x −26.135, normal [1,0,0], `pin:"tack"`; the 0.6×0.9 one: `whiteprint_ceiling` with `rotation: π/2` |
 | `storeys/s4/east.ts:236–237` + `s4/props.ts:289–295` (`nameCard`, 4-12) | blank tent cards | `namecard_01` … `namecard_12` | 0.21×0.095 | two documents per tent (each face), normals ± along the card's facing, tilted ±0.32 rad like the current faces; the face-down card (n === 7) shows `namecard_08` on the table side only |
 | `storeys/s4/east.ts:289` (4-10 side table papers) | 3 blank sheets | `memo_next_of_kin`, `work_order_halt`, `letter_regret` | Letter / half | flat, `normal:[0,1,0]` |
-| `storeys/s4/east.ts:374` (4-14 desk paper stack) | blank box | `note_repeated` (top), `roster_sl_rotation` | Legal / Letter | flat on the stack top, offsets stacked |
+| `storeys/s4/east.ts:374` (4-14 desk paper stack) | blank box | `note_repeated` (top), `roster_field_team` | Legal / Letter | flat on the stack top, offsets stacked |
 | `storeys/s4/east.ts:193` (4-11 rubidium/bench keys) | 6 felt dots | keep (key caps, not text) | | |
 | `storeys/s4/props.ts:174` (`frame`, construction photos) | blank photo face | `polaroid_dish` scaled (`scale: w/0.088`) or leave photos | | |
 | `storeys/s4/props.ts:217–223` (shredder strips) | strips | keep (shredded paper) | | |
@@ -36,7 +36,7 @@ How to place (`documentGeometry`/`documentMesh`, or the storeys' existing `docs.
 |---|---|---|---|---|
 | `storeys/s3/north.ts:370–375` (3-09 chalkboard) | 7 rows of chalk strokes | `chalkboard_equations` | 4.2×1.1 | over the board face (x 11.701), normal [1,0,0], `pin:"none", curl:0, offset:0.001`; delete the stroke loop |
 | `storeys/s3/north.ts:240–241` (3-06 whiteboard) | dark-steel rule lines | `whiteboard_ops` | 2.6×1.1 | board face x −15.31+0.004, normal [−1,0,0]; delete the 6 rule boxes |
-| `storeys/s3/north.ts:248` (SL link status panel legend) | felt rectangle | `plate_sl_link` | 0.26×0.22 | x −4.765, centre y FLOOR+1.61, z −13.4, normal [−1,0,0], `size:[0.4,0.22]` |
+| `storeys/s3/north.ts:248` (north-array link status panel legend) | felt rectangle | `plate_array_link` | 0.26×0.22 | x −4.765, centre y FLOOR+1.61, z −13.4, normal [−1,0,0], `size:[0.4,0.22]` |
 | `storeys/s3/north.ts:259, 379`, `s3/south.ts:289, 307` (`wallPapers`) | blank pinned quads | pick from tags `board`/`wall`: `roster_operators`, `ops_log`, `printout_greenbar`, `calendar_oct84`, `memo_signin`, `directory_extensions` | | see kit `wallPapers` below |
 | `storeys/s3.ts:59` (halon panel by the machine-room door) | felt rectangle | `sign_halon_area` | 0.26×0.32 | x −16.75, y FLOOR+1.6, z −1.584, normal [0,0,1], `pin:"none", curl:0` |
 | `storeys/s3/equipment.ts:122` (`halonBank` tags) | blank paper | `tag_halon` | 0.12×0.16 | one per bottle, on the bottle face, `size:[0.12,0.16]` |
@@ -60,8 +60,8 @@ How to place (`documentGeometry`/`documentMesh`, or the storeys' existing `docs.
 | `storeys/s2/north.ts:455–456` (`archive` depth labels on shelf lips) | blank paper strip | `label_depth_1..8` (by shelf level) | 0.12×0.025 | shelf-lip face, `size:[0.12,0.025]` |
 | `storeys/s2/props.ts:292–296` (`jar` labels) | blank band | `label_jar_1..6` (cycle) | 0.07×0.035 | on the jar's front (curve is negligible), `size:[r*1.1*2, h*0.28]` |
 | `storeys/s2/props.ts:306–312` (`coreBox` end label) | blank | `label_core_1..4` | 0.1×0.05 | box end face, `size:[0.1,0.05]` |
-| `storeys/s2/north.ts:618` (containment tray label) | blank | `label_tray_sl14` | 0.08×0.03 | on the tray rim |
-| `storeys/s2/south.ts:373` (`sensorHead` tag) | blank | `tag_sl_array` | 0.06×0.04 | `size:[0.04,0.06]` rotated with the tag |
+| `storeys/s2/north.ts:618` (containment tray label) | blank | `label_tray_na14` | 0.08×0.03 | on the tray rim |
+| `storeys/s2/south.ts:373` (`sensorHead` tag) | blank | `tag_north_array` | 0.06×0.04 | `size:[0.04,0.06]` rotated with the tag |
 | `storeys/s2/north.ts:502` (2-08 key cabinet label) | blank | `label_chem_key` | 0.12×0.05 | key cabinet face |
 | `storeys/s2/props.ts:437` (`tallCabinet` label) | blank plate | `label_cabinet_1..4` (respirators, film, spill kit, glassware) | 0.16×0.06 | door face |
 | `storeys/s2/props.ts:202` (`bottle` label bands) | blank band | keep (too small to read; ~2 cm) or `label_jar_*` on hero bottles | | |
@@ -75,12 +75,12 @@ How to place (`documentGeometry`/`documentMesh`, or the storeys' existing `docs.
 
 | Call site | Stand-in | Document id | Size | Placement |
 |---|---|---|---|---|
-| `storeys/s1/furniture.ts:290–305` (`inOutBoard`, 1-09) | blank name strips, felt rules | `inout_board_1_09` | 1.2×1.15 (rows 22) | covers the board face exactly (built to its geometry: name strips at u −0.5..0, IN/OUT/SL columns at 0.05/0.25/0.42); place at the board centre, `offset:0.003`, `pin:"none", curl:0`; keep the magnets on top; delete the paper strips and felt rules |
+| `storeys/s1/furniture.ts:290–305` (`inOutBoard`, 1-09) | blank name strips, felt rules | `inout_board_1_09` | 1.2×1.15 (rows 22) | covers the board face exactly (built to its geometry: name strips at u −0.5..0, IN/OUT/FIELD columns at 0.05/0.25/0.42); place at the board centre, `offset:0.003`, `pin:"none", curl:0`; keep the magnets on top; delete the paper strips and felt rules |
 | `storeys/s1.ts:281` (1-02 chalkboard) | kit smears | `chalkboard_agenda` | 3.0×1.1 | see kit `chalkboard` |
 | `storeys/s1/furniture.ts:265–268` (`flipChart` sheets) | blank | `flipchart_contracts` | 0.66×0.84 | pad face; the thrown-over sheet stays blank (back side) |
 | `storeys/s1/furniture.ts:556–557` (`fillShelf` label cards) | paper + felt bar | `label_file_1..8` | 0.08×0.04 | `size:[0.14,0.08]` |
 | `storeys/s1/furniture.ts:201–204` (`cardCatalogue` drawer labels) | blank | `label_catalogue_1..8` | | `size:[0.04,0.014]` |
-| `storeys/s1/furniture.ts:399` (`securityContainer` label) | blank | `label_file_6` ("SL ROTATION 81–84") | | |
+| `storeys/s1/furniture.ts:399` (`securityContainer` label) | blank | `label_file_6` ("FIELD TEAMS 81–84") | | |
 | `storeys/s1/furniture.ts:114, 223, 235, 242` (briefcase papers, copier trays, printer paper) | blank sheets | top sheets: `memo_next_of_kin` (briefcase, 1-07), `form_requisition` (copier), `letter_regret` (daisy-wheel printer feed, `size:[0.38,0.4]`) | | flat / along the sheet |
 | `storeys/s1.ts:220` (records carriage end-panel label) | blank paper | `label_file_*` by range | | `size:[0.24,0.15]` |
 | `storeys/s1.ts:243` (sorting table papers) | blank | `envelope_interoffice`, `memo_carbon_inventory` | | flat |
@@ -92,7 +92,7 @@ How to place (`documentGeometry`/`documentMesh`, or the storeys' existing `docs.
 |---|---|---|---|---|
 | `storeys/s0/lobby.ts:168–188` (`directory`, 0-02 felt letter board) | blurred `feltText` bars | `directory_board` | 0.9×1.1 | felt face (zWall + 0.052), normal [0,0,1], `pin:"none", curl:0, offset:0.001`; delete the `feltText` loop |
 | `storeys/s0/lobby.ts:161–162` (bronze plaque) | lampShade bars | `plaque_dedication` | 0.42×0.26 | on the plaque face (zw + 0.016), keep the four rivets |
-| `storeys/s0/west.ts:182–183` (`rack` labels, time clock) | blank strips, red SL strip | `label_rack_in`, `label_rack_out`, `label_rack_sl` | 0.4×0.05 | over each strip, `size:[0.4,0.05]`, normal [−1,0,0] |
+| `storeys/s0/west.ts:182–183` (`rack` labels, time clock) | blank strips, red FIELD TEAM strip | `label_rack_in`, `label_rack_out`, `label_rack_field` | 0.4×0.05 | over each strip, `size:[0.4,0.05]`, normal [−1,0,0] |
 | `storeys/s0/west.ts:180` (OUT-rack cards) | blank cards | `timecard_day_1..4` (cycle) | 0.0825×0.187 | in the pockets, `size:[0.08,0.1]` (only the top shows) |
 | `storeys/s0/west.ts:120–123` (time clock face) | felt hands/marks | keep (clock hands) | | |
 | `storeys/s0/west.ts:515` (0-17 lab chalkboard smears) | smears | `chalkboard_wiped` | 2.4×1.1 | board face |

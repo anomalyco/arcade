@@ -256,7 +256,13 @@ function wallBoxes(b: Batch, f: Facade, mat: "concrete_wall") {
   // Openings that start at a floor (doors, storefront, storeys) are cut from 12 mm under it, so the wall's sill face
   // never lies in a floor's plane (ours or the interior's finishes at +0.01).
   const floorish = (y: number) => Math.abs(((y - FY + 0.01) % SH + SH) % SH - 0.01) < 0.012 || Math.abs(y - BUILDING.dock.height) < 0.012
-  const holes = f.holes.map((h) => (floorish(h.y0) ? { ...h, y0: h.y0 - 0.012 } : h))
+  // Main-block window openings are cut 4 mm wider each side than the steel frame, so the concrete jambs never lie in
+  // the plane of the interior lining's window reveals (which stop on the frame line).
+  const JAMB = f.name.startsWith("main") ? 0.004 : 0
+  const holes = f.holes.map((h) => {
+    const g = floorish(h.y0) ? { ...h, y0: h.y0 - 0.012 } : h
+    return h.kind === "window" && JAMB ? { ...g, u0: g.u0 - JAMB, u1: g.u1 + JAMB } : g
+  })
   const ys = new Set([f.y0, f.y1])
   for (const h of holes) {
     ys.add(Math.max(f.y0, Math.min(f.y1, h.y0)))
@@ -348,8 +354,9 @@ export function buildShell(ctx: WorldContext, root: THREE.Object3D): ShellResult
       const fr = 0.06
       fbox(b, "metal_dark", f, h.u0, h.u1, h.y0 + 0.02, h.y0 + 0.02 + fr, GLASS_D - 0.04, GLASS_D + 0.04)
       fbox(b, "metal_dark", f, h.u0, h.u1, h.y1 - fr, h.y1, GLASS_D - 0.04, GLASS_D + 0.04)
-      fbox(b, "metal_dark", f, h.u0, h.u0 + fr, h.y0, h.y1, GLASS_D - 0.04, GLASS_D + 0.04)
-      fbox(b, "metal_dark", f, h.u1 - fr, h.u1, h.y0, h.y1, GLASS_D - 0.04, GLASS_D + 0.04)
+      // Side frames fill the 4 mm jamb clearance (see wallBoxes).
+      fbox(b, "metal_dark", f, h.u0 - 0.004, h.u0 + fr, h.y0, h.y1, GLASS_D - 0.04, GLASS_D + 0.04)
+      fbox(b, "metal_dark", f, h.u1 - fr, h.u1 + 0.004, h.y0, h.y1, GLASS_D - 0.04, GLASS_D + 0.04)
       const paneW = (h.u1 - h.u0 - fr * 2) / PANES
       for (let p = 1; p < PANES; p++) {
         const m = h.u0 + fr + paneW * p

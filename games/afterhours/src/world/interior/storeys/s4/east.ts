@@ -138,7 +138,7 @@ export async function buildEast(s: S4, pause: () => Promise<void>) {
   b.rbox(M.laminateTop, T(-1.9, FLOOR_Y + 0.73, -10.0), 1.5, 0.03, 0.75, 0.006)
   for (const [dx, dz] of [[-0.68, -0.32], [0.68, -0.32], [-0.68, 0.32], [0.68, 0.32]]) b.rod(M.steel, [-1.9 + dx!, FLOOR_Y, -10.0 + dz!], [-1.9 + dx!, FLOOR_Y + 0.72, -10.0 + dz!], 0.015, 6)
   b.collide(-2.65, FLOOR_Y, -10.38, -1.15, FLOOR_Y + 0.75, -9.62)
-  paper(s, "roster_sl_rotation", [-2.1, FLOOR_Y + 0.746, -10.0], [0, 1, 0], { rotation: 0.1 })
+  paper(s, "roster_field_team", [-2.1, FLOOR_Y + 0.746, -10.0], [0, 1, 0], { rotation: 0.1 })
   paper(s, "memo_carbon_inventory", [-1.6, FLOOR_Y + 0.746, -9.9], [0, 1, 0], { rotation: -0.25 })
   sb.box(M.cardboard, -1.55, FLOOR_Y + 0.745, -10.3, -1.2, FLOOR_Y + 0.99, -10.05)
   await pause()
@@ -245,7 +245,7 @@ export async function buildEast(s: S4, pause: () => Promise<void>) {
   b.box(M.beige, 33.95, CEIL_Y - 0.12, tz - 1.4, 34.1, CEIL_Y - 0.01, tz + 1.4)
   b.box(paint1(), 34.0, CEIL_Y - 2.0, tz - 1.3, 34.006, CEIL_Y - 0.12, tz + 1.3, { cast: false })
   b.box(M.darkSteel, 33.98, CEIL_Y - 2.03, tz - 1.32, 34.03, CEIL_Y - 2.0, tz + 1.32)
-  // Map wall: survey sheet of the county in a walnut frame, pins at the station and the SL sites.
+  // Map wall: survey sheet of the county in a walnut frame, pins at the station and the north-array sites in the woods.
   const mw = 4.2
   const mh = 1.7
   b.quad(SURVEY_MAP, T(11.665, FLOOR_Y + 1.55, -10.0, Math.PI / 2), mw, mh, { cast: false })
@@ -368,7 +368,7 @@ export async function buildEast(s: S4, pause: () => Promise<void>) {
   deskLamp(b, 28.35, deskTop, 13.35, yawToward(0.3, 0.6), true, { shadow: true, intensity: 70 })
   paper(s, "printout_greenbar", [28.5, deskTop, 14.2], [0, 1, 0], { rotation: Math.PI / 2 + 0.1 })
   paper(s, "polaroid_corridor", [28.3, deskTop, 14.6], [0, 1, 0], { rotation: 0.5 })
-  paper(s, "roster_sl_rotation", [28.75, deskTop, 13.7], [0, 1, 0], { rotation: 1.3 })
+  paper(s, "roster_field_team", [28.75, deskTop, 13.7], [0, 1, 0], { rotation: 1.3 })
   for (let k = 0; k < 10; k++) {
     const a = rnd() * Math.PI * 2
     const d = 0.8 + rnd() * 2.4

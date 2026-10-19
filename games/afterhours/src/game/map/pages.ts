@@ -8,11 +8,15 @@ import {
   FIRE_ESCAPE,
   FREIGHT,
   INTERIOR,
+  NORTH_GATE,
+  NORTH_TRACK,
   PARKING_LOT,
   POWER,
   RISER,
   accessRoadSamples,
   countyRoadSamples,
+  northTrackDistance,
+  northTrackSamples,
   type Vec2,
 } from "../../world/layout"
 import { WINDOWS, type Face } from "../../world/interior/plan"
@@ -104,10 +108,10 @@ function header(o: Sheet, index: number) {
   o.text(PAGE_TITLES[index]!, 12, 31, { font: FONT.title, pt: 46, weight: 700 })
   o.text(SUBTITLES[index]!, 12.5, 40, { pt: 12, weight: 700, spacing: 0.5 })
   o.text(SHEET_NO[index]!, W - 12, 24, { font: FONT.title, pt: 24, weight: 700, align: "right" })
-  o.text("IOPS · PINE HOLLOW STATION", W - 12, 31, { font: FONT.title, pt: 9, weight: 500, align: "right", spacing: 0.3 })
+  o.text(index === 0 ? "IOPS · ASHWOOD OUTPOST" : `IOPS · ASHWOOD OUTPOST · ${PAGE_TITLES[index]}`, W - 12, 31, { font: FONT.title, pt: 9, weight: 500, align: "right", spacing: 0.3 })
   o.text(`SHEET ${index + 1} OF ${PAGE_COUNT} · REV. 6 · 6/84`, W - 12, 36, { pt: 7, weight: 600, align: "right" })
   // Minor print line at the foot.
-  o.text("ATMOSPHERIC PROPAGATION RESEARCH FACILITY · PROJECT PH-79-014 · REDUCED COPY — DO NOT SCALE", W - 12, Hs - 9, { pt: 6, weight: 500, align: "right" })
+  o.text("ATMOSPHERIC PROPAGATION RESEARCH FACILITY · PROJECT AW-79-014 · REDUCED COPY — DO NOT SCALE", W - 12, Hs - 9, { pt: 6, weight: 500, align: "right" })
 }
 
 function northArrow(o: Sheet, x: number, y: number, r = 6) {
@@ -410,6 +414,7 @@ function drawSite(o: Sheet, job: PageJob) {
       const z = o.rr(-150, 175)
       if (x > FENCE.min[0] - 8 && x < FENCE.max[0] + 8 && z > FENCE.min[1] - 8 && z < FENCE.max[1] + 4) continue
       if (road.some(([rx, rz]) => Math.hypot(rx - x, rz - z) < 14)) continue
+      if (northTrackDistance(x, z) < 8) continue
       if (Math.abs(x - BOOTH.x) < 20 && Math.abs(z - BOOTH.z) < 16) continue
       treeSymbol(o, SX(x), SZ(z), o.rr(1.4, 2.1))
     }
@@ -420,19 +425,31 @@ function drawSite(o: Sheet, job: PageJob) {
   // Fence and gate.
   const [fx0, fz0] = FENCE.min
   const [fx1, fz1] = FENCE.max
-  const fence: [number, number][] = [[FENCE.gate.x0, fz1], [fx0, fz1], [fx0, fz0], [fx1, fz0], [fx1, fz1], [FENCE.gate.x1, fz1]]
-  o.poly(fence.map(([x, z]) => [SX(x), SZ(z)] as [number, number]), 0.3)
-  for (let i = 0; i < fence.length - 1; i++) {
-    const [ax, az] = fence[i]!
-    const [bx, bz] = fence[i + 1]!
-    const len = Math.hypot(bx - ax, bz - az)
-    for (let t = 7; t < len; t += 14) {
-      const x = SX(ax + ((bx - ax) * t) / len)
-      const y = SZ(az + ((bz - az) * t) / len)
-      o.line(x - 0.8, y - 0.8, x + 0.8, y + 0.8, 0.18)
-      o.line(x - 0.8, y + 0.8, x + 0.8, y - 0.8, 0.18)
+  // Two runs: south gate → west → north gate, and north gate → east → south gate.
+  const runs: [number, number][][] = [
+    [[FENCE.gate.x0, fz1], [fx0, fz1], [fx0, fz0], [NORTH_GATE.x0, fz0]],
+    [[NORTH_GATE.x1, fz0], [fx1, fz0], [fx1, fz1], [FENCE.gate.x1, fz1]],
+  ]
+  for (const fence of runs) {
+    o.poly(fence.map(([x, z]) => [SX(x), SZ(z)] as [number, number]), 0.3)
+    for (let i = 0; i < fence.length - 1; i++) {
+      const [ax, az] = fence[i]!
+      const [bx, bz] = fence[i + 1]!
+      const len = Math.hypot(bx - ax, bz - az)
+      for (let t = 7; t < len; t += 14) {
+        const x = SX(ax + ((bx - ax) * t) / len)
+        const y = SZ(az + ((bz - az) * t) / len)
+        o.line(x - 0.8, y - 0.8, x + 0.8, y + 0.8, 0.18)
+        o.line(x - 0.8, y + 0.8, x + 0.8, y - 0.8, 0.18)
+      }
     }
   }
+  // North track: dashed edges from the dock court through the north gate to the array site.
+  const nt = northTrackSamples(2)
+  const nhw = NORTH_TRACK.width / 2
+  o.poly(offsetLine(nt, nhw, (p) => [SX(p[0]), SZ(p[1])]), 0.25, INK.toner, { dash: [1.2, 0.8] })
+  o.poly(offsetLine(nt, -nhw, (p) => [SX(p[0]), SZ(p[1])]), 0.25, INK.toner, { dash: [1.2, 0.8] })
+  o.text("N. GATE", SX(NORTH_GATE.x1) + 2, SZ(fz0) - 1.5, { pt: 8.5, weight: 800 })
   o.text("FENCE", SX(fx0) + 2, SZ(60), { pt: 8.5, weight: 800, rot: -Math.PI / 2 })
   o.text("GATE", SX(FENCE.gate.x0) - 2, SZ(fz1) + 4, { pt: 10, weight: 800, align: "right" })
   o.rect(SX(BOOTH.x - BOOTH.w / 2), SZ(BOOTH.z - BOOTH.d / 2), BOOTH.w * SC, BOOTH.d * SC, 0.3, INK.toner, INK.toner)
@@ -542,7 +559,7 @@ function floorNotes(q: Sheet, storey: number, plan: StoreyPlan | undefined) {
     const off = at("0-30", -51, 6)
     const sec = at("0-38", 13, 15)
     notes.push(
-      { text: ["SL rotation — 6 unaccounted"], at: [118, 30], to: [fl1[0] + 4, fl1[1] - 4], ring: [fl1[0], fl1[1], 7, 6] },
+      { text: ["field team — 6 unaccounted"], at: [118, 30], to: [fl1[0] + 4, fl1[1] - 4], ring: [fl1[0], fl1[1], 7, 6] },
       { text: ["your office — keys in the cabinet"], at: [16, Hs - 12], to: [off[0] + 1, off[1] + 5] },
       { text: ["guard desk empty?"], at: [150, Hs - 12], to: [sec[0], sec[1] + 6] },
     )
@@ -551,7 +568,7 @@ function floorNotes(q: Sheet, storey: number, plan: StoreyPlan | undefined) {
     const board = at("1-09", 0, -12)
     notes.push(
       { text: ["Chief's office — memo re: the 6?"], at: [82, 30], to: [chief[0], chief[1] - 5] },
-      { text: ["in/out board — 6 still on SL"], at: [118, Hs - 12], to: [board[0] + 3, board[1] + 6] },
+      { text: ["in/out board — 6 still out (field)"], at: [118, Hs - 12], to: [board[0] + 3, board[1] + 6] },
     )
   } else if (storey === 2) {
     const lab = at("2-27", 14, 12)

@@ -1,7 +1,7 @@
 import * as THREE from "three/webgpu"
 import type { WorldContext } from "../context"
 import { heightAt } from "../height"
-import { FENCE } from "../layout"
+import { FENCE, NORTH_GATE } from "../layout"
 import { material, materialFor } from "../../render/materials"
 import { Batch, box, cyl, matrix, rod } from "./geo"
 import { fenceVeil, flat, signBlank, signInk, signPlate as signPlateMat, signRed, signYellow } from "./mats"
@@ -33,10 +33,12 @@ function runs(): Run[] {
     { a: v(g1, z1), b: v(PED_GATE.x0, z1), out: new THREE.Vector3(0, 0, 1), endPosts: [true, true] },
     { a: v(PED_GATE.x1, z1), b: v(x1, z1), out: new THREE.Vector3(0, 0, 1), endPosts: [true, true] },
     { a: v(x1, z1), b: v(x1, z0), out: new THREE.Vector3(1, 0, 0), endPosts: [true, true] },
-    { a: v(x1, z0), b: v(x0, z0), out: new THREE.Vector3(0, 0, -1), endPosts: [true, true] },
+    // North line, east of the north gate (the west part is appended last so sign indices stay put).
+    { a: v(x1, z0), b: v(NORTH_GATE.x1, z0), out: new THREE.Vector3(0, 0, -1), endPosts: [true, true] },
     { a: v(x0, z0), b: v(x0, z1), out: new THREE.Vector3(-1, 0, 0), endPosts: [true, true] },
     // Inner security fence: the service yard west of the loading dock (seen behind the dock, concept r5-06).
     { a: v(-54, -24), b: v(-54, z0), out: new THREE.Vector3(-1, 0, 0), endPosts: [true, true] },
+    { a: v(NORTH_GATE.x0, z0), b: v(x0, z0), out: new THREE.Vector3(0, 0, -1), endPosts: [true, true] },
   ]
 }
 

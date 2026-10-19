@@ -3,6 +3,7 @@ import { CREDITS, GAME_TITLE, HOME, MENU } from "./copy"
 import { FOV_RANGE, SENSITIVITY_RANGE, type Quality, type ShellSettings } from "./settings"
 import { createStatic } from "./static"
 import { createTuner } from "./tuner"
+import type { ControlsMode } from "./hints"
 
 // The home screen and the pause menu (one overlay, two screens) with the Character, Settings and Credits panels.
 // Pure DOM; play.ts decides what the buttons do.
@@ -25,10 +26,16 @@ export type MenuHooks = {
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 
 /** The documents' typewriter face (public/fonts/SpecialElite-hud.woff2) for the menu and title card. */
+/** The menu's faces: the typewriter (items, subtitle, title card) and Rubik Glitch for the ASHWOOD title. */
 function registerFont() {
-  const face = new FontFace("Static Type", `url(${new URL("fonts/SpecialElite-hud.woff2", document.baseURI).href})`, { display: "swap" })
-  document.fonts.add(face)
-  void face.load().catch(() => {})
+  const faces = [
+    new FontFace("Static Type", `url(${new URL("fonts/SpecialElite-hud.woff2", document.baseURI).href})`, { display: "swap" }),
+    new FontFace("Ashwood Title", `url(${new URL("fonts/RubikGlitch-title.woff2", document.baseURI).href})`, { display: "block" }),
+  ]
+  for (const face of faces) {
+    document.fonts.add(face)
+    void face.load().catch(() => {})
+  }
 }
 
 export function createMenu(root: HTMLElement, settings: ShellSettings, hooks: MenuHooks) {
@@ -173,9 +180,11 @@ export function createMenu(root: HTMLElement, settings: ShellSettings, hooks: Me
       slider("Master volume", settings.master, 0, 1, 0.05, pct, (v) => (settings.master = v)),
       slider("Sound effects", settings.sfx, 0, 1, 0.05, pct, (v) => (settings.sfx = v)),
       slider("Ambience", settings.ambience, 0, 1, 0.05, pct, (v) => (settings.ambience = v)),
+      slider("Menu static", settings.menuStatic, 0, 1, 0.05, pct, (v) => (settings.menuStatic = v)),
       slider("Mouse sensitivity", settings.sensitivity, SENSITIVITY_RANGE[0], SENSITIVITY_RANGE[1], 0.05, (v) => `${v.toFixed(2)}×`, (v) => (settings.sensitivity = v)),
       choice("Invert Y", [{ value: false, label: "Off" }, { value: true, label: "On" }], () => settings.invertY, (v) => (settings.invertY = v)),
       slider("Field of view", settings.fov, FOV_RANGE[0], FOV_RANGE[1], 1, (v) => `${v}°`, (v) => (settings.fov = v)),
+      choice<ControlsMode>("Show controls", [{ value: "always", label: "Always" }, { value: "auto", label: "Fade after a while" }, { value: "off", label: "Off" }], () => settings.controls, (v) => (settings.controls = v)),
       choice<Quality>("Graphics", [{ value: "low", label: "Low" }, { value: "medium", label: "Medium" }, { value: "high", label: "High" }], () => settings.quality, (v) => (settings.quality = v)),
       button(MENU.back, () => open("main"), "shell-back"),
     )
@@ -188,7 +197,7 @@ export function createMenu(root: HTMLElement, settings: ShellSettings, hooks: Me
     const body = document.createElement("div")
     body.className = "shell-credits"
     const p = (text: string, cls = "") => `<p${cls ? ` class="${cls}"` : ""}>${esc(text)}</p>`
-    body.innerHTML = [p(CREDITS.intro), p(CREDITS.mixamo), p(CREDITS.cmu), p(CREDITS.textures), p(CREDITS.font), `<h3>${esc(CREDITS.modelsHeading)}</h3><ul class="shell-models"><li>…</li></ul>`, p(CREDITS.cc0)].join("")
+    body.innerHTML = [p(CREDITS.intro), p(CREDITS.mixamo), p(CREDITS.cmu), p(CREDITS.textures), p(CREDITS.font), p(CREDITS.titleFont), `<h3>${esc(CREDITS.modelsHeading)}</h3><ul class="shell-models"><li>…</li></ul>`, p(CREDITS.cc0)].join("")
     credPanel.replaceChildren(heading(MENU.credits), body, button(MENU.back, () => open("main"), "shell-back"))
     if (creditsLoaded) return
     creditsLoaded = true

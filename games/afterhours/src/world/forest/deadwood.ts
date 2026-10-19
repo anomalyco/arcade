@@ -1,5 +1,5 @@
 import { compoundDistance, fbm, heightAt, roadEdgeDistance } from "../height"
-import { VIEWPOINTS, WORLD_HALF } from "../layout"
+import { VIEWPOINTS, WORLD_HALF, northTrackDistance } from "../layout"
 import { VARIANTS, type Trees } from "./placement"
 import { hash3 } from "./rng"
 
@@ -110,7 +110,7 @@ export function deadwoodInCell(trees: Trees, ci: number, cj: number, size: numbe
     const hb = heightAt(x + dx, z + dz)
     const hm = heightAt(x, z)
     const road = Math.min(roadEdgeDistance(x, z), roadEdgeDistance(x + dx, z + dz), roadEdgeDistance(x - dx, z - dz))
-    const comp = Math.min(compoundDistance(x + dx, z + dz), compoundDistance(x - dx, z - dz))
+    const comp = Math.min(compoundDistance(x + dx, z + dz), compoundDistance(x - dx, z - dz), northTrackDistance(x, z) - 2)
     const onView = VIEW_POINTS.some(([vx, vz]) => Math.hypot(vx - x, vz - z) < len / 2 + 4)
     const flat = Math.abs(ha - hb) < 0.35 + rad && Math.abs(hm - (ha + hb) / 2) < 0.3 + rad * 0.5
     if (road > 6 && comp > 8 && !onView && flat && clearOfTrunks(trees, x - dx, z - dz, x + dx, z + dz, rad)) {
@@ -124,7 +124,7 @@ export function deadwoodInCell(trees: Trees, ci: number, cj: number, size: numbe
   if (hash3(ci, cj, 80) < pStump) {
     const x = x0 + hash3(ci, cj, 96) * size
     const z = z0 + hash3(ci, cj, 97) * size
-    if (roadEdgeDistance(x, z) > 4 && compoundDistance(x, z) > 6 && clearOfTrunks(trees, x, z, x + 0.01, z, 0.5)) {
+    if (roadEdgeDistance(x, z) > 4 && compoundDistance(x, z) > 6 && northTrackDistance(x, z) > 3 && clearOfTrunks(trees, x, z, x + 0.01, z, 0.5)) {
       out.push({ kind: "stump", shape: hash3(ci, cj, 86) < 0.5 ? 0 : 1, x, y: heightAt(x, z), z, scale: 0.6 + hash3(ci, cj, 98) * 0.7, yaw: hash3(ci, cj, 99) * 6.28 })
     }
   }

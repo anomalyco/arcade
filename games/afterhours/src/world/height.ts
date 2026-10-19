@@ -1,4 +1,4 @@
-import { ACCESS_ROAD, BOOTH, COUNTY_ROAD, FENCE, WORLD_HALF, accessRoadSamples, countyRoadSamples, type Vec2 } from "./layout"
+import { ACCESS_ROAD, BOOTH, COUNTY_ROAD, FENCE, NORTH_TRACK, WORLD_HALF, accessRoadSamples, countyRoadSamples, northTrackDistance, type Vec2 } from "./layout"
 
 // Terrain height. Roads and the compound sit on flat ground at y = 0; rolling hills rise away from them, with gravel
 // shoulders, a shallow drainage ditch beside every road and small hummocks on the forest floor.
@@ -239,7 +239,9 @@ export function heightAt(x: number, z: number) {
   const comp = compoundDistance(x, z)
   let h = sampleGrid(coarse, x, z)
   if (road > DITCH.center - DITCH.halfWidth) h += ditchAt(road, comp)
-  const m = microMask(road, comp)
+  let m = microMask(road, comp)
+  // The gravel north track gets a smooth bed (its ribbon follows this height a few cm up), easing into the hummocks.
+  if (m > 0) m *= smoothstep(NORTH_TRACK.width / 2 + 0.2, NORTH_TRACK.width / 2 + 2.5, northTrackDistance(x, z))
   if (m > 0) h += microAt(x, z) * m
   return h
 }

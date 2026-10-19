@@ -13,3 +13,9 @@ from github.com/google/fonts:
 - `LibreFranklin-map.woff2`: Libre Franklin by Impallari Type (OFL, variable weight), the plan lettering.
 - `Oswald-map.woff2`: Oswald by Vernon Adams (OFL, variable weight), title block and sheet numbers.
 - `ArchivoBlack-Regular-map.woff2`: Archivo Black by Omnibus-Type (OFL), the rubber stamps.
+
+# Title font (src/game/shell, the home screen)
+
+`RubikGlitch-title.woff2`: Rubik Glitch by The Rubik Filtered Project Authors (SIL Open Font License 1.1; licence
+text in `OFL-RubikGlitch.txt`), from github.com/google/fonts `ofl/rubikglitch`, subset to space, digits and A–Z a–z
+for the ASHWOOD title (`pyftsubset --flavor=woff2 --layout-features='*'`).

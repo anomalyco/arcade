@@ -111,7 +111,7 @@ function staffEntrance(b: Builder, docs: Docs): RoomHandle[] {
   b.box(M.darkSteel, -54.61, y + 0.95, -8.85, -54.55, y + 1.0, -8.55)
   placeModels(b, "fire_extinguisher", [{ position: [-54.61 + MODELS.fire_extinguisher.size[2] / 2 + 0.02, y + 0.42, -8.7], yaw: yawToward(1, 0), collide: false, blob: 0 }])
 
-  // Time clock between the two card racks on the east wall: OUT rack (south) full, IN rack (north) with six SL cards.
+  // Time clock between the two card racks on the east wall: OUT rack (south) full, IN rack (north) with the six field-team cards.
   const xw = -47.86
   const clock = T(xw - 0.11, y + 1.42, -7.2, -Math.PI / 2)
   b.rbox(M.beige, clock, 0.34, 0.44, 0.2, 0.03)
@@ -131,7 +131,7 @@ function staffEntrance(b: Builder, docs: Docs): RoomHandle[] {
   hookRail(b, -52.6, -13.015, Math.PI, 2.2, 7)
   garment(b, -53.3, FLOOR_Y + 1.65, -13.02, Math.PI, CLOTH_DARK, 1.0)
   garment(b, -51.9, FLOOR_Y + 1.65, -13.02, Math.PI, paint(0x3a3226, 0.9), 0.9)
-  corkBoard(b, docs, -52.6, -13.015, 0, 1, 1.1, 0.8, ["notice_sublevel", "notice_nightshift", "flyer_bowling", "memo_coffee"], 11, FLOOR_Y + 1.85)
+  corkBoard(b, docs, -52.6, -13.015, 0, 1, 1.1, 0.8, ["notice_north_array", "notice_nightshift", "flyer_bowling", "memo_coffee"], 11, FLOOR_Y + 1.85)
   docs.wall("map_evac_0", -54.61, FLOOR_Y + 1.5, -12.0, 1, 0, { pin: "tack" })
   wastebasket(b, -48.25, -2.3)
   placeModels(b, "wet_floor_sign", [{ position: [-53.5, y, -9.9], yaw: 0.6, inset: 0.05 }])
@@ -170,16 +170,16 @@ function rack(b: Builder, docs: Docs, xw: number, zc: number, isIn: boolean) {
       const z = zc - 0.16 + col * 0.32
       const py = y0 + 0.08 + row * 0.115
       b.box(M.steel, xw - 0.03, py, z - 0.11, xw - 0.012, py + 0.035, z + 0.11, { cast: false })
-      // IN rack: the top three pockets of each column hold the SL cards, tabbed red; the rest are empty.
+      // IN rack: the top three pockets of each column hold the field-team cards, tabbed red; the rest are empty.
       // OUT rack: most pockets hold the day staff's cards.
-      const sl = isIn && row >= 5
-      const has = sl || (!isIn && rnd() < 0.8)
-      if (sl) b.box(M.red, xw - 0.031, py + 0.036, z - 0.1, xw - 0.029, py + 0.046, z - 0.06, { cast: false })
+      const field = isIn && row >= 5
+      const has = field || (!isIn && rnd() < 0.8)
+      if (field) b.box(M.red, xw - 0.031, py + 0.036, z - 0.1, xw - 0.029, py + 0.046, z - 0.06, { cast: false })
       if (!has) continue
-      if (sl) docs.add(row % 2 ? "timecard_halverson" : "timecard_lindqvist", [xw - 0.019, py + 0.07, z], [-1, 0, 0], { pin: "none", curl: 0.05, rotation: (rnd() - 0.5) * 0.06, scale: 0.9 })
+      if (field) docs.add(row % 2 ? "timecard_halverson" : "timecard_lindqvist", [xw - 0.019, py + 0.07, z], [-1, 0, 0], { pin: "none", curl: 0.05, rotation: (rnd() - 0.5) * 0.06, scale: 0.9 })
       else b.box(M.paper, xw - 0.022, py + 0.01, z - 0.04, xw - 0.019, py + 0.11, z + 0.04, { cast: false })
     }
-  // Rack labels (blank strips; IN rack has a red "SL" strip across its top row).
+  // Rack labels (blank strips; IN rack has a red "FIELD TEAM" strip across its top row).
   b.box(M.paper, xw - 0.014, y0 + 1.01, zc - 0.2, xw - 0.012, y0 + 1.06, zc + 0.2, { cast: false })
   if (isIn) b.box(M.red, xw - 0.016, y0 + 0.66, zc - 0.31, xw - 0.014, y0 + 0.68, zc + 0.31, { cast: false })
 }
@@ -275,7 +275,7 @@ function changeAndDecon(b: Builder, docs: Docs): RoomHandle[] {
     b.rbox(k % 2 ? M.jugWhite : M.beige, T(u, v - 0.07, -14.265), 0.05, 0.08, 0.012, 0.004)
   }
   docs.wall("board_dosimeter", bx, FLOOR_Y + 2.0, -14.152, 0, -1, { pin: "none", curl: 0 })
-  docs.wall("notice_sublevel", -37.06, FLOOR_Y + 1.55, -15.3, -1, 0, { pin: "tape" })
+  docs.wall("notice_north_array", -37.06, FLOOR_Y + 1.55, -15.3, -1, 0, { pin: "tape" })
   return [r12, r13, r14, r15]
 }
 
@@ -320,18 +320,18 @@ function freightLift(b: Builder, docs: Docs) {
   b.box(M.darkSteel, (c.x0 + c.x1) / 2 - 0.1, top + 0.04, c.z0 - 0.04, (c.x0 + c.x1) / 2 + 0.1, top + 0.3, c.z1 + 0.04)
   for (const [x0, x1, z0, z1] of [[c.x0, c.x1, c.z0, c.z0 + 0.02], [c.x1 - 0.02, c.x1, c.z0, c.z1]] as const) b.collide(x0, y, z0, x1, top, z1)
   bulkhead(b, (c.x0 + c.x1) / 2, top, (c.z0 + c.z1) / 2 + 1.0, 0, 0, false)
-  // Car operating panel on the east lining: SL / 0 buttons, key switch, emergency stop.
+  // Car operating panel on the east lining: two stop buttons (one lit), key switch, emergency stop.
   const op = T(c.x1 - 0.025, y + 1.3, c.z1 - 0.45, -Math.PI / 2)
   b.rbox(M.steel, op, 0.2, 0.4, 0.02, 0.005)
   for (const k of [0, 1]) b.cyl(k ? M.amberGlow : M.darkSteel, op.clone().multiply(T(0, 0.08 - k * 0.09, -0.014, 0, Math.PI / 2)), 0.022, 0.022, 0.01, 12)
   b.cyl(KEY, op.clone().multiply(T(0, -0.1, -0.014, 0, Math.PI / 2)), 0.016, 0.016, 0.012, 12)
   b.cyl(M.red, op.clone().multiply(T(0, -0.16, -0.016, 0, Math.PI / 2)), 0.02, 0.025, 0.02, 12)
-  // Landing gates (static, shut and locked: keycard sublevel) with indicators and call stations.
+  // Landing gates (shut and locked: the lift is out of service) with indicators and call stations.
   // Light over the receiving-side gate.
   bulkhead(b, -35.0, y + 2.75, zs + 0.075, 0, 1, true, 8, { range: 5 })
-  // Real gates in the door system (kit liftGate): locked with the sublevel keycard, they fold when unlocked.
-  liftGate(b, { axis: "z", at: -37.0, from: gz0, to: gz1, id: "FL-1W", state: "keycard:sublevel", room: "FL-1", sign: { number: "FL-1", label: "FREIGHT — SUBLEVEL" } })
-  liftGate(b, { axis: "x", at: zs, from: -36.4, to: -33.6, id: "FL-1S", state: "keycard:sublevel", room: "FL-1", sign: { number: "FL-1", label: "FREIGHT — SUBLEVEL" } })
+  // Real gates in the door system (kit liftGate): locked (plant keycard), they fold when unlocked.
+  liftGate(b, { axis: "z", at: -37.0, from: gz0, to: gz1, id: "FL-1W", state: "keycard:plant", room: "FL-1", sign: { number: "FL-1", label: "FREIGHT — OUT OF SERVICE" } })
+  liftGate(b, { axis: "x", at: zs, from: -36.4, to: -33.6, id: "FL-1S", state: "keycard:plant", room: "FL-1", sign: { number: "FL-1", label: "FREIGHT — OUT OF SERVICE" } })
   // Position indicator over each gate (0 lit), key-switch call station, hazard floor stripes, signs.
   for (const [ix, iz, yaw] of [[-37.09, (gz0 + gz1) / 2, -Math.PI / 2], [-35.0, zs + 0.09, 0]] as const) {
     const m = T(ix, y + 2.62, iz, yaw)
@@ -344,7 +344,7 @@ function freightLift(b: Builder, docs: Docs) {
   b.cyl(KEY, cs.clone().multiply(T(0, 0.05, 0.016, 0, Math.PI / 2)), 0.016, 0.016, 0.012, 12)
   b.cyl(M.darkSteel, cs.clone().multiply(T(0, -0.05, 0.016, 0, Math.PI / 2)), 0.022, 0.022, 0.01, 12)
   b.box(M.hazard, -36.4, FLOOR_Y, zs + 0.09, -33.6, FLOOR_Y + LAYER, zs + 0.6, { cast: false })
-  docs.wall("notice_sublevel", -32.3, FLOOR_Y + 1.6, zs + 0.078, 0, 1, { pin: "tape" })
+  docs.wall("notice_north_array", -32.3, FLOOR_Y + 1.6, zs + 0.078, 0, 1, { pin: "tape" })
   docs.wall("board_dosimeter", -35.0, FLOOR_Y + 2.92, zs + 0.078, 0, 1, { pin: "none", curl: 0, scale: 0.8 })
 }
 

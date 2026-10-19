@@ -45,7 +45,7 @@ const centre = (name: string) => {
 /** Door hinge line (vertical) at the door's front edge, a little inside its outer skin. */
 const HINGE = new THREE.Vector3(bounds.door_fl!.min[0]! + 0.06, 0, bounds.door_fl!.min[2]! + 0.03)
 /** Fully open door angle (rad). */
-const DOOR_OPEN = 1.12
+export const DOOR_OPEN = 1.12
 const WHEEL_R = (bounds.wheel_rl!.max[1]! - bounds.wheel_rl!.min[1]!) / 2
 /** Overall steering ratio (wheel turns per road-wheel turn) for a late-70s full-size car with power steering. */
 const STEER_RATIO = 15
@@ -524,7 +524,7 @@ export class PlayerCar {
   /** Parked: contact shadow on, and solid (a collider for the player and the lamps' glow occlusion). */
   park() {
     this.shadow.visible = true
-    if (this.collider) return
+    if (this.collider) this.unparkCollider()
     const yaw = this.root.rotation.y
     const hx = CAR_SIZE.width / 2 - 0.08
     const hz = CAR_SIZE.length / 2 - 0.08
@@ -536,9 +536,18 @@ export class PlayerCar {
     this.ctx.colliders.push(this.collider)
   }
 
+  /** The parked car's collider (null while driving). */
+  footprint(): Box | null {
+    return this.collider
+  }
+
   /** Driving again (a replayed intro): no contact shadow, not a collider. */
   unpark() {
     this.shadow.visible = false
+    this.unparkCollider()
+  }
+
+  private unparkCollider() {
     if (!this.collider) return
     const i = this.ctx.colliders.indexOf(this.collider)
     if (i >= 0) this.ctx.colliders.splice(i, 1)

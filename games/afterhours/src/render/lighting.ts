@@ -27,7 +27,7 @@ import { initMirrors } from "./mirrors"
 import { createLightning } from "./lightning"
 import type { Lamp, WorldContext } from "../world/context"
 import type { Player } from "../player"
-import { fogSigma, opticalDepth } from "./atmosphere"
+import { BOUNCE_LAMPS, bounceLamps, fogSigma, opticalDepth } from "./atmosphere"
 import type { LightMask } from "./clustered"
 import { inside, lampZone, storeyAt, storeySlab, type LampZone } from "./volumes"
 import { addControls, flag, num, renderState, type LampRuntime } from "./shared"
@@ -336,6 +336,7 @@ export function createLighting(ctx: WorldContext, player: Player) {
     },
     { key: "light.spillInterior", label: "Spot spill/bounce indoors", group: "Lighting", min: 0, max: 0.6, step: 0.01, value: 0.22 },
     { key: "light.spillExterior", label: "Spot spill outdoors", group: "Lighting", min: 0, max: 0.3, step: 0.005, value: 0.02 },
+    { key: "light.bounce", label: "Interior bounce from lamps", group: "Lighting", unit: "×", min: 0, max: 0.2, step: 0.002, value: 0.035 },
     { key: "light.sodiumShift", label: "Sodium deepening (towards orange)", group: "Lighting", min: 0, max: 1, step: 0.01, value: 0.6 },
     { key: "light.flicker", label: "Flicker", group: "Lighting", unit: "×", min: 0, max: 2, step: 0.05, value: 1 },
     { key: "glow.strength", label: "Emitter glow", group: "Lighting", unit: "×", min: 0, max: 4, step: 0.05, value: 1 },
@@ -343,7 +344,7 @@ export function createLighting(ctx: WorldContext, player: Player) {
     { key: "flash.intensity", label: "Intensity (peak)", group: "Flashlight", unit: "cd", min: 0, max: 2000, step: 5, value: 110 },
     { key: "flash.angle", label: "Spill half-angle", group: "Flashlight", unit: "°", min: 15, max: 60, step: 1, value: 40 },
     { key: "flash.range", label: "Range", group: "Flashlight", unit: "m", min: 5, max: 80, step: 1, value: 40 },
-    { key: "flash.lag", label: "Sway lag", group: "Flashlight", unit: "s", min: 0, max: 0.4, step: 0.01, value: 0.09 },
+    { key: "flash.lag", label: "Sway lag", group: "Flashlight", unit: "s", min: 0, max: 0.4, step: 0.01, value: 0 },
     { key: "flash.scatter", label: "Beam in fog", group: "Flashlight", unit: "×", min: 0, max: 2, step: 0.01, value: 0.15 },
     { key: "flash.near", label: "Beam fade-in distance", group: "Flashlight", unit: "m", min: 0, max: 8, step: 0.1, value: 3 },
     { key: "light.shadowBias", label: "Shadow bias (slope-scaled)", group: "Lighting", unit: "texels", min: 0, max: 4, step: 0.05, value: 1 },
@@ -645,6 +646,7 @@ export function createLighting(ctx: WorldContext, player: Player) {
   const occPoint = new THREE.Vector3()
 
   const tmpCam = new THREE.Vector3()
+  const bounceOrder: Rig[] = []
   let lastSpill = [NaN, NaN]
   const fwd = new THREE.Vector3()
   const order: Rig[] = []
@@ -739,6 +741,22 @@ export function createLighting(ctx: WorldContext, player: Player) {
         const gs = glowJump ? 1 : dt / 0.15
         r.glowVis = r.glowVis < glowTarget ? Math.min(glowTarget, r.glowVis + gs) : Math.max(glowTarget, r.glowVis - gs)
       }
+
+      // Lamp bounce: the nearest lit interior lamps on the camera's storey feed the indirect term (atmosphere.ts).
+      bounceOrder.length = 0
+      if (camInside) {
+        for (const r of rigs) if (r.zone.interior && r.zone.storey === camStorey && r.vis > 0.01 && r.level > 0.02 && r.distance < 30) bounceOrder.push(r)
+        bounceOrder.sort((a, b) => a.distance - b.distance)
+      }
+      const bk = num(ctx, "light.bounce")
+      const nb = Math.min(BOUNCE_LAMPS, bounceOrder.length)
+      for (let i = 0; i < nb; i++) {
+        const r = bounceOrder[i]!
+        const k = r.lamp.intensity * r.scale * r.level * r.vis * bk
+        bounceLamps.A[i]!.set(r.pos.x, r.pos.y, r.pos.z, Math.max(4, r.lamp.range * 1.3))
+        bounceLamps.B[i]!.set(r.color.r * k, r.color.g * k, r.color.b * k, r.mask.y0 + 0.12)
+      }
+      bounceLamps.count.value = nb
 
       // Glow occlusion, a slice of lamps per frame.
       for (let k = 0; k < Math.min(jump ? glowRigs.length : OCC_PER_FRAME, glowRigs.length); k++) {

@@ -64,7 +64,7 @@ export async function build(b: Builder, { pause }: StoreyContext): Promise<Store
   wallDoc(k, "map_evac_2", -36.6, FLOOR_Y + 1.5, -1.598, 0, 1, { pin: "tape" })
   wallDoc(k, "map_evac_2", 30.4, FLOOR_Y + 1.5, 1.598, 0, -1, { pin: "tape" })
   wallDoc(k, "notice_firedoors", -53.6, FLOOR_Y + 1.5, -1.598, 0, 1, { pin: "tape" })
-  wallDoc(k, "notice_sublevel", 22.6, FLOOR_Y + 1.55, -1.598, 0, 1, { pin: "tack" })
+  wallDoc(k, "notice_north_array", 22.6, FLOOR_Y + 1.55, -1.598, 0, 1, { pin: "tack" })
   wallDoc(k, "poster_chemical", -7.0, FLOOR_Y + 1.5, 1.598, 0, -1, { pin: "tape" })
   await pause()
 

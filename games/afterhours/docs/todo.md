@@ -59,7 +59,7 @@
 - Kit: room() extra openings in facade lining (doors/dock openings).
 - Kit: bulletin() only faces -z (spine bulletins wrong on north wall): also from s2.
 - Doors: pair-door focus picks the far leaf (0-35f, 0-35, 0-39 far side).
-- Kit: shared bulkhead fixture; screen variant taking custom node materials (CCTV, slide, TV static); lift-gate primitive registering real leaves for FL-1; FL-1 moving car (later: Sublevel).
+- Kit: shared bulkhead fixture; screen variant taking custom node materials (CCTV, slide, TV static); lift-gate primitive registering real leaves for FL-1; FL-1 car (out of service, ground stop only).
 - Kit: retire lobby.ts/corridor.ts/rooms.ts/placeProps/storeys.ts/furnish.ts once kit no longer imports from them.
 - s0: time-clock and FL-1 areas too dark to read vignettes; emergency pack by core door.
 

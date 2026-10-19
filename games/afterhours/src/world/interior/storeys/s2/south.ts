@@ -112,7 +112,7 @@ export async function buildSouth(k: K, pause: () => Promise<void>): Promise<Room
     const lv = shelfUnit(b, ex - 0.25, z, yawToward(-1, 0), 1.2, 0.5)
     for (const y of lv.slice(1, 4)) for (let i = 0; i < 3; i++) k.s.rbox(M.cardboard, T(ex - 0.28, y, z - 0.38 + i * 0.38), 0.4, 0.22, 0.32, 0.01, 0, 0.11, 0)
   }
-  corkBoard(k, ex, FLOOR_Y + 1.5, 9.4, -1, 0, 1.2, 0.8, ["poster_chemical", "notice_sublevel", "poster_radiation", "map_evac_2"])
+  corkBoard(k, ex, FLOOR_Y + 1.5, 9.4, -1, 0, 1.2, 0.8, ["poster_chemical", "notice_north_array", "poster_radiation", "map_evac_2"])
   wallDoc(k, "calendar_oct84", ex, FLOOR_Y + 1.6, 12.0, -1, 0, { pin: "tack" })
   wastebasket(b, -50.4, 12.6)
   // Gas store: cylinders chained to the west wall, a regulator bench, a cylinder hand truck.
@@ -190,7 +190,7 @@ export async function buildSouth(k: K, pause: () => Promise<void>): Promise<Room
   sensorHead(k, ...pt(wb, 0.7, 0.9, 0.15), true)
   placeModels(b, "office_chair", [{ position: [-12.5, FLOOR_Y, 8.9], yaw: chairYaw(0, -1) + 0.4, inset: 0.15 }])
   flatDoc(k, "work_order_night", -13.2, FLOOR_Y + 0.9, 8.2, 0.3)
-  // Sensor-head rack "SL-ARRAY 2", cable reels, parts shelving.
+  // Sensor-head rack "N. ARRAY 2", cable reels, parts shelving.
   const rx = G[9] - 0.06 - 0.25
   for (const z of [6.5, 7.72]) {
     const lv = shelfUnit(b, rx, z, yawToward(-1, 0), 1.2, 0.5)

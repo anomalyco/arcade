@@ -179,7 +179,7 @@ export function riserW1(b: Builder, o: { face?: "north" | "south" | "east" | "we
   const t = 0.1
   const face = o.face ?? "south"
   const door = (axisFace: string, at: number): POpening[] =>
-    face === axisFace ? [{ kind: "door", at, side: face === "south" || face === "east" ? "b" : "a", door: { id: "W-1", state: o.state ?? "locked", width: 0.8, sign: { number: "W-1", label: "SL TRUNK" } } }] : []
+    face === axisFace ? [{ kind: "door", at, side: face === "south" || face === "east" ? "b" : "a", door: { id: "W-1", state: o.state ?? "locked", width: 0.8, sign: { number: "W-1", label: "ARRAY TRUNK" } } }] : []
   const cx = (r.x0 + r.x1) / 2
   const cz = (r.z0 + r.z1) / 2
   partition(b, { axis: "x", at: r.z0 - t / 2, from: r.x0 - t, to: r.x1 + t, thickness: t, finish: [ROOM_BANDS, PLANT_BANDS], openings: door("north", cx) })

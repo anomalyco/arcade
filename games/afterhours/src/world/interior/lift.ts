@@ -149,24 +149,25 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
   car.box(M.darkSteel, x0, h - 0.02, z0, x1, h, z1, { cast: false })
   for (let k = 1; k < 11; k++) car.box(M.darkSteel, x0 + 0.3 + k * 0.145, h - 0.12, z0 + 0.35, x0 + 0.305 + k * 0.145, h - 0.02, z1 - 0.35, { cast: false })
   for (let k = 1; k < 13; k++) car.box(M.darkSteel, x0 + 0.3, h - 0.12, z0 + 0.35 + k * 0.145, x1 - 0.3, h - 0.02, z0 + 0.355 + k * 0.145, { cast: false })
-  // Car operating panel on the front return, right of the door: one button per stop (G, 1–4), the keyed SL switch
-  // (the shaft stops at G: key not issued), door open / close and the alarm bell. Engraved faceplate legend.
+  // Car operating panel on the front return, right of the door, at hand height: a big brushed plate, one large button
+  // per stop (4 at the top, G at the bottom) with an engraved, backlit numeral beside it, door open / close and the
+  // alarm. A small lamp over it.
   const panelX = (DX1 + x1) / 2
   const P = T(panelX, PANEL_Y, z0 + 0.008)
-  car.rbox(steel, P, 0.24, 0.62, 0.016, 0.006)
+  car.rbox(steel, P, PANEL_W, PANEL_H, 0.016, 0.008)
   for (const bt of BUTTONS) {
-    if (bt.kind === "key") {
-      car.cyl(M.darkSteel, P.clone().multiply(T(bt.x, bt.y, 0.014, 0, Math.PI / 2)), 0.02, 0.02, 0.012, 16)
-      car.box(M.steel, panelX + bt.x - 0.003, PANEL_Y + bt.y - 0.011, z0 + 0.02, panelX + bt.x + 0.003, PANEL_Y + bt.y + 0.011, z0 + 0.025)
-      continue
-    }
-    const r = bt.kind === "alarm" ? 0.022 : 0.024
-    car.cyl(M.darkSteel, P.clone().multiply(T(bt.x, bt.y, 0.012, 0, Math.PI / 2)), r + 0.006, r + 0.006, 0.01, 16)
-    car.cyl(bt.kind === "alarm" ? M.red : M.beige, P.clone().multiply(T(bt.x, bt.y, 0.018, 0, Math.PI / 2)), r - 0.005, r - 0.005, 0.006, 16)
+    const r = BUTTON_R[bt.kind]
+    car.cyl(M.darkSteel, P.clone().multiply(T(bt.x, bt.y, 0.012, 0, Math.PI / 2)), r + 0.007, r + 0.007, 0.01, 20)
+    car.cyl(bt.kind === "alarm" ? M.red : M.beige, P.clone().multiply(T(bt.x, bt.y, 0.018, 0, Math.PI / 2)), r - 0.005, r - 0.005, 0.006, 20)
   }
+  // Panel lamp: a small steel hood over the plate with a glowing strip under it; the legend itself is backlit (no
+  // extra scene light: a new light would recompile every lit material).
+  car.box(M.darkSteel, panelX - PANEL_W / 2, PANEL_Y + PANEL_H / 2 + 0.01, z0 - 0.005, panelX + PANEL_W / 2, PANEL_Y + PANEL_H / 2 + 0.03, z0 + 0.07)
+  car.box(M.bulbWarm, panelX - PANEL_W / 2 + 0.03, PANEL_Y + PANEL_H / 2 + 0.002, z0 + 0.03, panelX + PANEL_W / 2 - 0.03, PANEL_Y + PANEL_H / 2 + 0.01, z0 + 0.06, { cast: false })
   carRootLegend = panelLegend(panelX, z0 + 0.0205)
-  // Position indicator: a row of lamps over the door (the lit one is a separate mesh).
-  for (let k = -1; k < LEVELS; k++) car.cyl(M.diffuserOff, T(indicatorX(k), DOOR.h + 0.12, z0 + 0.005, 0, Math.PI / 2), 0.022, 0.022, 0.01, 14, { cast: false })
+  // Position indicator over the door: a dark plate with large numerals G 1 2 3 4 and the direction arrows; the
+  // current stop's numeral (and the arrow while travelling) light amber (separate meshes, below).
+  car.box(M.darkSteel, DOOR.c - IND.w / 2 - 0.02, IND.y - IND.h / 2 - 0.02, z0 - 0.01, DOOR.c + IND.w / 2 + 0.02, IND.y + IND.h / 2 + 0.02, z0 + 0.005, { cast: false })
   // Inspection certificate in its frame, and scuffs.
   car.rbox(M.frame, T(x0 + 0.008, 1.55, z1 - 0.5, Math.PI / 2), 0.24, 0.3, 0.012, 0.004)
   addDocuments(car, [{ id: "cert_elevator", position: [x0 + 0.014, 1.55, z1 - 0.5], normal: [1, 0, 0], pin: "none", curl: 0, size: [0.2, 0.26] }])
@@ -210,15 +211,14 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
   const litMat = glow(0x221100, 0xff8c26, 3, "lift_lit")
   // One lit cap per control (floor calls stay lit until served; door/alarm buttons light while pressed).
   const litButtons = BUTTONS.map((bt) => {
-    const r = (bt.kind === "alarm" ? 0.022 : 0.024) - 0.004
+    const r = BUTTON_R[bt.kind] - 0.004
     const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.007, 16).rotateX(Math.PI / 2), litMat)
     m.position.set(panelX + bt.x, PANEL_Y + bt.y, z0 + 0.0305)
     m.visible = false
     return m
   })
-  const litLamp = new THREE.Mesh(new THREE.CylinderGeometry(0.0225, 0.0225, 0.011, 14).rotateX(Math.PI / 2), litMat)
-  litLamp.position.set(0, DOOR.h + 0.12, z0 + 0.006)
-  carRoot.add(...litButtons, litLamp, carRootLegend!, indicatorLegend(z0 + 0.0045))
+  const ind = indicator(z0 + 0.0095)
+  carRoot.add(...litButtons, carRootLegend!, ind.plate, ...ind.lit)
   const litCall = new THREE.Mesh(new THREE.CylinderGeometry(0.0185, 0.0185, 0.009, 16).rotateX(Math.PI / 2), litMat)
   litCall.visible = false
   parent.add(litCall)
@@ -296,7 +296,6 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
   let pressed = false
   let inCarNow = false
   let pushed = -1
-  let keyNote = 0
   let idleT = 0
   let pushedT = 0
   const aimDir = new THREE.Vector3()
@@ -305,7 +304,7 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
   // Sounds come from the game audio (src/audio/lift.ts) through this hook; silent until it exists, never in `?shot`.
   const audio = shot ? null : liftAudio()
 
-  // Floor keys inside the car (physical codes): Digit0 = G, Digit1..4 = floors 1–4, Minus = the SL key switch. Window
+  // Floor keys inside the car (physical codes): Digit0 = G, Digit1..4 = floors 1–4. Window
   // capture listener: it runs before the player's handler and swallows the digit so the debug viewpoints don't fire.
   let floorKey: number | null = null
   addEventListener(
@@ -341,12 +340,10 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
   /** Prompt rows through the shared key caps (`@arcade/kit/client/key-cap`). */
   const promptHtml = (want: string) => {
     if (want === "call") return keyPromptHtml("KeyE", "Call lift")
-    if (want === "sl") return `${keyCapHtml("Minus")} <span class="akp-label">SL: key switch, no key</span>`
-    if (want === "keys")
-      return `<span class="akp">${keyCapHtml("Digit1")}–${keyCapHtml("Digit4")} · ${keyCapHtml("Digit0")} G · ${keyCapHtml("Minus")} SL <span class="akp-label">choose stop</span></span>` // (not "floor": the body treats a "floor"/"lift" prompt as an E-button reach)
     return keyPromptHtml("KeyE", BUTTONS[Number(want.slice(4))]!.prompt)
   }
   let promptShown = ""
+  const stops = shot ? null : stopsList()
 
   // Floors called (car buttons and landing calls) and not yet served, in the order pressed.
   const queue: number[] = []
@@ -427,15 +424,14 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
       inCarNow = inCar
       if (floorKey !== null) {
         // A floor key is a press of that panel control: it lights, the hand reaches for it, the press clunks.
-        const bi = BUTTONS.findIndex((b) => (floorKey === FLOOR_KEYS.length - 1 ? b.kind === "key" : b.kind === "floor" && b.floor === floorKey))
+        const bi = BUTTONS.findIndex((b) => b.kind === "floor" && b.floor === floorKey)
         const bt = BUTTONS[bi]!
         floorKey = null
         if (inCar) {
           audio?.clunk(0.25)
           const at = { x: panelX + bt.x, y: carFloor.y + PANEL_Y + bt.y, z: z0 + 0.024 }
           ;(globalThis as { __afterhoursBody?: { body?: { interact?: (k: string, t?: unknown) => void } } }).__afterhoursBody?.body?.interact?.("button", at)
-          if (bt.kind === "floor") request(bt.floor!)
-          else keyNote = 2
+          request(bt.floor!)
           pushed = bi
           pushedT = 0.25
         }
@@ -473,18 +469,13 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
           : !inCar && atCall >= 0
             ? { label: "Call lift", at: [CALL.x, carFloorY(atCall) + CALL.y + 0.04, CALL.z - 0.02] }
             : null
-      keyNote = Math.max(0, keyNote - dt)
       if (prompt && promptText) {
         const want =
           aimed >= 0
             ? `aim:${aimed}`
-            : keyNote > 0
-              ? "sl"
-              : inCar
-                ? "keys"
-                : !inCar && atCall >= 0 && (atCall !== cur || doorWant === 0)
-                  ? "call"
-                  : ""
+            : !inCar && atCall >= 0 && (atCall !== cur || doorWant === 0)
+              ? "call"
+              : ""
         if (want !== promptShown) {
           promptShown = want
           if (want) {
@@ -597,8 +588,13 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
       lampPos[1] = carY + h - 0.2
       lamp.zone = ZONES[Math.max(0, Math.min(LEVELS - 1, Math.round(pos)))]!
       const near = Math.round(pos)
-      litLamp.position.x = indicatorX(near)
-      litLamp.visible = light > 0.1
+      const moving = phase === "depart" || phase === "moving" || phase === "stall" || phase === "level"
+      const dirUp = target > cur
+      ind.lit.forEach((m, k) => {
+        // Cells: 0..4 = G..4, 5 up, 6 down.
+        m.visible = light > 0.1 && (k === near || (moving && (k === 5 ? dirUp : k === 6 ? !dirUp : false) && Math.sin(time * 6) > -0.4))
+      })
+      stops?.update(inCar, moving || phase === "closing", cur, near, target)
       BUTTONS.forEach((bt, i) => {
         const m = litButtons[i]!
         if (bt.kind === "floor") m.visible = (phase !== "idle" && bt.floor === target) || queue.includes(bt.floor!)
@@ -650,88 +646,231 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
 const ROT_Y_PI = new THREE.Matrix4().makeRotationY(Math.PI)
 /** Storey names on the panel and indicators (the building's own: G for the ground floor, then 1–4). */
 const FLOOR_NAMES = ["G", "1", "2", "3", "4"]
-/** Physical keys for the stops inside the car, by floor index (G, 1–4), then the SL key switch. */
-const FLOOR_KEYS = ["Digit0", "Digit1", "Digit2", "Digit3", "Digit4", "Minus"]
-const PANEL_Y = 1.05
-type PanelButton = { kind: "floor" | "open" | "close" | "alarm" | "key"; floor?: number; x: number; y: number; label: string; prompt: string }
-/** Car panel controls in the panel's frame (x right, y up, metres from the panel centre). */
+/** What each stop is, for the in-car list (docs/building-program.md). */
+const FLOOR_ROOMS = ["Ground · lobby, security", "Level 1 · administration", "Level 2 · sample sciences", "Level 3 · computing, signals", "Level 4 · directorate"]
+/** Physical keys for the stops inside the car, by floor index (G, 1–4). */
+const FLOOR_KEYS = ["Digit0", "Digit1", "Digit2", "Digit3", "Digit4"]
+/** Car panel: centre height above the car floor and plate size (metres). */
+const PANEL_Y = 1.2
+const PANEL_W = 0.34
+const PANEL_H = 0.86
+type PanelButton = { kind: "floor" | "open" | "close" | "alarm"; floor?: number; x: number; y: number; label: string; prompt: string }
+const BUTTON_R = { floor: 0.03, open: 0.026, close: 0.026, alarm: 0.026 } as const
+/** Car panel controls in the panel's frame (x right, y up, metres from the panel centre): 4 at the top … G. */
 const BUTTONS: PanelButton[] = [
-  ...FLOOR_NAMES.map((n, k) => ({ kind: "floor" as const, floor: k, x: -0.035, y: -0.13 + k * 0.075, label: n, prompt: `Floor ${n}` })),
-  { kind: "key", x: -0.035, y: 0.245, label: "SL", prompt: "Floor SL: key switch (no key)" },
-  { kind: "open", x: -0.05, y: -0.215, label: "\u25C0\u2502\u25B6", prompt: "Lift: door open" },
-  { kind: "close", x: 0.035, y: -0.215, label: "\u25B6\u2502\u25C0", prompt: "Lift: door close" },
-  { kind: "alarm", x: -0.035, y: -0.272, label: "ALARM", prompt: "Lift: alarm" },
+  ...FLOOR_NAMES.map((n, k) => ({ kind: "floor" as const, floor: k, x: -0.075, y: -0.14 + k * 0.09, label: n, prompt: `Floor ${n}` })),
+  { kind: "open", x: -0.075, y: -0.25, label: "open", prompt: "Lift: door open" },
+  { kind: "close", x: 0.055, y: -0.25, label: "close", prompt: "Lift: door close" },
+  { kind: "alarm", x: -0.075, y: -0.345, label: "ALARM", prompt: "Lift: alarm" },
 ]
 
-/** Engraved faceplate (canvas texture, 1 px = 1 mm) over the car panel, the controls' raised parts drawn on top. */
+/** Engraved, backlit faceplate (canvas texture, 1 px = 1 mm) over the car panel; the controls' raised parts on top. */
 function panelLegend(x: number, z: number) {
+  const W = Math.round(PANEL_W * 1000) - 10
+  const H = Math.round(PANEL_H * 1000) - 10
   const c = document.createElement("canvas")
-  c.width = 220
-  c.height = 600
+  c.width = W
+  c.height = H
   const g = c.getContext("2d")!
-  g.fillStyle = "#8f938f"
-  g.fillRect(0, 0, 220, 600)
-  for (let k = 0; k < 600; k += 3) {
+  // Emissive mask: the backlit legend only.
+  const e = document.createElement("canvas")
+  e.width = W
+  e.height = H
+  const ge = e.getContext("2d")!
+  ge.fillStyle = "#000"
+  ge.fillRect(0, 0, W, H)
+  g.fillStyle = "#9a9e9a"
+  g.fillRect(0, 0, W, H)
+  for (let k = 0; k < H; k += 3) {
     g.fillStyle = `rgba(255,255,255,${0.03 + ((k * 7) % 11) / 220})`
-    g.fillRect(0, k, 220, 1)
+    g.fillRect(0, k, W, 1)
   }
-  const px = (u: number) => (u + 0.11) * 1000
-  const py = (v: number) => (0.3 - v) * 1000
-  g.fillStyle = "#151614"
-  g.textAlign = "left"
-  g.textBaseline = "middle"
-  g.font = "bold 13px Helvetica, Arial, sans-serif"
-  g.fillText("CAR 1  ·  1600 LB  ·  10 PERS", 14, 16)
-  g.font = "11px Helvetica, Arial, sans-serif"
-  g.fillText("IN CASE OF FIRE USE STAIRS", 14, 32)
-  for (const bt of BUTTONS) {
-    if (bt.kind === "floor" || bt.kind === "key") {
-      g.font = "bold 34px Helvetica, Arial, sans-serif"
-      g.fillText(bt.label, px(bt.x + 0.045), py(bt.y) + 1)
-    } else if (bt.kind === "alarm") {
-      g.font = "bold 18px Helvetica, Arial, sans-serif"
-      g.fillStyle = "#7a1410"
-      g.fillText(bt.label, px(bt.x + 0.035), py(bt.y) + 1)
-      g.fillStyle = "#151614"
-    } else {
-      g.font = "16px Helvetica, Arial, sans-serif"
-      g.textAlign = "center"
-      g.fillText(bt.label, px(bt.x), py(bt.y) - 36)
-      g.textAlign = "left"
+  const px = (u: number) => u * 1000 + W / 2
+  const py = (v: number) => H / 2 - v * 1000
+  // Engraved text: dark cut with a light lower lip; `lit` also draws it into the backlight mask.
+  const cut = (t: string, X: number, Y: number, font: string, lit = 0, colour = "#121311") => {
+    for (const ctx of lit ? [g, ge] : [g]) {
+      ctx.font = font
+      ctx.textBaseline = "middle"
+      ctx.textAlign = "left"
+    }
+    g.fillStyle = "rgba(255,255,255,0.55)"
+    g.fillText(t, X + 1, Y + 2)
+    g.fillStyle = colour
+    g.fillText(t, X, Y)
+    if (lit) {
+      ge.fillStyle = `rgba(255,236,200,${lit})`
+      ge.fillText(t, X, Y)
     }
   }
+  const sans = (px: number, w = "bold") => `${w} ${px}px Helvetica, Arial, sans-serif`
+  cut("CAR 1 · 1600 LB · 10 PERS", 14, 18, sans(12, "bold"))
+  for (const bt of BUTTONS) {
+    const X = px(bt.x + 0.055)
+    const Y = py(bt.y)
+    if (bt.kind === "floor") cut(bt.label, X, Y + 3, sans(64), 0.85)
+    else if (bt.kind === "alarm") cut("ALARM", X, Y + 2, sans(26), 0.5, "#7a1410")
+  }
+  // Door open ◀|▶ and close ▶|◀, drawn as arrows under the two buttons.
+  const arrows = (bx: number, by: number, open: boolean) => {
+    const X = px(bx)
+    const Y = py(by) + 50
+    for (const ctx of [g, ge]) {
+      ctx.fillStyle = ctx === g ? "#121311" : "rgba(255,236,200,0.5)"
+      ctx.fillRect(X - 1.5, Y - 11, 3, 22)
+      for (const s of [-1, 1]) {
+        ctx.beginPath()
+        const tip = open ? X + s * 26 : X + s * 4
+        const base = open ? X + s * 8 : X + s * 22
+        ctx.moveTo(tip, Y)
+        ctx.lineTo(base, Y - 10)
+        ctx.lineTo(base, Y + 10)
+        ctx.closePath()
+        ctx.fill()
+      }
+    }
+  }
+  const op = BUTTONS.find((b) => b.kind === "open")!
+  const cl = BUTTONS.find((b) => b.kind === "close")!
+  arrows(op.x, op.y, true)
+  arrows(cl.x, cl.y, false)
 
   const tex = new THREE.CanvasTexture(c)
   tex.colorSpace = THREE.SRGBColorSpace
-  tex.anisotropy = 4
-  const m = new THREE.MeshStandardNodeMaterial({ map: tex, roughness: 0.45, metalness: 0.55 })
+  tex.anisotropy = 8
+  const etex = new THREE.CanvasTexture(e)
+  etex.colorSpace = THREE.SRGBColorSpace
+  const m = new THREE.MeshStandardNodeMaterial({ map: tex, emissiveMap: etex, emissive: 0xffffff, emissiveIntensity: 1.1, roughness: 0.5, metalness: 0.2 })
   m.name = "interior_lift_faceplate"
-  const plate = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.6), m)
+  const plate = new THREE.Mesh(new THREE.PlaneGeometry(W / 1000, H / 1000), m)
   plate.position.set(x, PANEL_Y, z)
   return plate
 }
 
-/** Storey figures under the position lamps over the car door (canvas, 1 px = 1 mm). */
-function indicatorLegend(z: number) {
-  const c = document.createElement("canvas")
-  c.width = 620
-  c.height = 60
-  const g = c.getContext("2d")!
-  g.fillStyle = "#1c1d1b"
-  g.fillRect(0, 0, 620, 60)
-  g.fillStyle = "#c9c6b8"
-  g.textAlign = "center"
-  g.textBaseline = "middle"
-  g.font = "bold 34px Helvetica, Arial, sans-serif"
-  // Same stops as the panel: SL (keyed, its lamp never lights: the shaft ends at G), G, 1–4.
-  ;["SL", ...FLOOR_NAMES].forEach((n, k) => g.fillText(n, 60 + k * 100, 32))
-  const tex = new THREE.CanvasTexture(c)
-  tex.colorSpace = THREE.SRGBColorSpace
-  const m = new THREE.MeshStandardNodeMaterial({ map: tex, roughness: 0.6, metalness: 0.3 })
-  m.name = "interior_lift_indicator_legend"
-  const plate = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.06), m)
-  plate.position.set(DOOR.c - 0.05, DOOR.h + 0.06, z)
-  return plate
+/** Position indicator over the car door: 5 stops (G, 1–4) and the up/down arrows. */
+const IND = { w: 0.66, h: 0.15, y: DOOR.h + 0.105 }
+const IND_CELLS = [...FLOOR_NAMES, "▲", "▼"]
+/** Cell centre x (relative to DOOR.c) for cell k: stops 0..4, then the arrow column (up over down). */
+const indCell = (k: number) => {
+  const cw = IND.w / 6
+  if (k < 5) return { x: -IND.w / 2 + cw * (k + 0.5), y: 0, w: cw, h: IND.h }
+  return { x: IND.w / 2 - cw / 2, y: k === 5 ? IND.h / 4 : -IND.h / 4, w: cw, h: IND.h / 2 }
 }
-const indicatorX = (k: number) => DOOR.c - 0.2 + k * 0.1
+function indicator(z: number) {
+  const draw = (lit: boolean) => {
+    const c = document.createElement("canvas")
+    c.width = 760
+    c.height = 150
+    const g = c.getContext("2d")!
+    g.fillStyle = lit ? "#000" : "#141513"
+    g.fillRect(0, 0, 760, 150)
+    g.textAlign = "center"
+    g.textBaseline = "middle"
+    IND_CELLS.forEach((t, k) => {
+      const cell = indCell(k)
+      const X = (cell.x + IND.w / 2) * 1000
+      const Y = (IND.h / 2 - cell.y) * 1000
+      g.font = k >= 5 ? "bold 52px Helvetica, Arial, sans-serif" : "bold 104px Helvetica, Arial, sans-serif"
+      g.fillStyle = lit ? "#ffb04a" : "#45443d"
+      g.fillText(t, X, Y + 4)
+    })
+    const tex = new THREE.CanvasTexture(c)
+    tex.colorSpace = THREE.SRGBColorSpace
+    return tex
+  }
+  const m = new THREE.MeshStandardNodeMaterial({ map: draw(false), roughness: 0.5, metalness: 0.2 })
+  m.name = "interior_lift_indicator_legend"
+  const plate = new THREE.Mesh(new THREE.PlaneGeometry(IND.w, IND.h), m)
+  plate.position.set(DOOR.c, IND.y, z)
+  // Lit numerals: one emissive material on the lit atlas; each cell is a small quad with that cell's UVs.
+  const litTex = draw(true)
+  const lm = new THREE.MeshBasicNodeMaterial({ map: litTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })
+  lm.name = "interior_lift_indicator_lit"
+  const lit = IND_CELLS.map((_, k) => {
+    const cell = indCell(k)
+    const geo = new THREE.PlaneGeometry(cell.w, cell.h)
+    const u0 = (cell.x - cell.w / 2 + IND.w / 2) / IND.w
+    const v0 = (cell.y - cell.h / 2 + IND.h / 2) / IND.h
+    const uv = geo.attributes.uv!
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, u0 + uv.getX(i) * (cell.w / IND.w), v0 + uv.getY(i) * (cell.h / IND.h))
+    const mesh = new THREE.Mesh(geo, lm)
+    mesh.position.set(DOOR.c + cell.x, IND.y + cell.y, z + 0.0045)
+    mesh.visible = false
+    return mesh
+  })
+  return { plate, lit }
+}
+
+/**
+ * The in-car stops list (HUD, right edge): the panel's stops top to bottom, each with its key cap and what is there;
+ * where you are dimmed, the chosen stop highlighted and "GOING UP · 3" while the car travels. Never says "lift" or
+ * "floor" (the body reads those words as an E-button reach).
+ */
+function stopsList() {
+  const INK = "rgba(214, 205, 184, 0.86)"
+  const el = document.createElement("div")
+  el.className = "lift-stops akc-minimal"
+  Object.assign(el.style, {
+    position: "fixed",
+    right: "3.2vw",
+    top: "50%",
+    transform: "translateY(-50%)",
+    pointerEvents: "none",
+    opacity: "0",
+    transition: "opacity 0.4s ease",
+    font: '15px/1 "Afterhours Type", "American Typewriter", "Courier New", monospace',
+    letterSpacing: "0.12em",
+    textTransform: "uppercase",
+    color: INK,
+    textShadow: "0 0 6px rgba(0, 0, 0, 0.9)",
+    zIndex: "3",
+    display: "grid",
+    gap: "10px",
+  } satisfies Partial<CSSStyleDeclaration>)
+  el.style.setProperty("--akc-size", "24px")
+  const style = document.createElement("style")
+  style.textContent = `
+.lift-stops .ls-row { display: flex; align-items: center; gap: 14px; transition: opacity 0.3s ease, color 0.3s ease; }
+.lift-stops .akc-cap { opacity: 1; box-shadow: inset 0 0 0 1.5px currentColor; }
+.lift-stops .akc-t { font-size: 1em; }
+.lift-stops .ls-head { font-size: 13px; letter-spacing: 0.2em; opacity: 0.7; margin-bottom: 4px; }
+.lift-stops .ls-sub { opacity: 0.55; font-size: 12px; }
+.lift-stops .ls-here { opacity: 0.38; }
+.lift-stops .ls-sel { color: #ffc070; }
+`
+  document.head.append(style)
+  // Top to bottom, as on the panel: 4 3 2 1 G.
+  const rows = [4, 3, 2, 1, 0].map((f) => {
+    const r = document.createElement("div")
+    r.className = "ls-row"
+    const key = keyCapHtml(`Digit${f}`, { label: String(f) })
+    const [name, what] = FLOOR_ROOMS[f]!.split(" · ")
+    r.innerHTML = `${key}<span>${name}</span><span class="ls-sub">${what}</span><span class="ls-tag ls-sub"></span>`
+    el.append(r)
+    return { f, r, tag: r.lastElementChild as HTMLSpanElement }
+  })
+  const head = document.createElement("div")
+  head.className = "ls-head"
+  el.prepend(head)
+  document.body.append(el)
+  let key = ""
+  return {
+    update(inCar: boolean, moving: boolean, cur: number, near: number, target: number) {
+      const k = `${inCar}|${moving}|${cur}|${near}|${target}`
+      if (k === key) return
+      key = k
+      el.style.opacity = inCar ? "1" : "0"
+      const dir = target > cur ? "Going up" : "Going down"
+      head.textContent = moving ? `${dir} · ${FLOOR_NAMES[target]}` : "Choose a stop"
+      for (const { f, r, tag } of rows) {
+        const here = !moving && f === cur
+        const sel = moving && f === target
+        r.className = `ls-row${here ? " ls-here" : ""}${sel ? " ls-sel" : ""}`
+        // While travelling the rest of the list fades back; the chosen stop stays up.
+        r.style.opacity = moving && !sel ? "0.22" : ""
+        tag.textContent = here ? "· you are here" : sel ? (near === target ? "· arriving" : "· next") : ""
+      }
+    },
+  }
+}
 const needleAngle = (pos: number) => -1.2 + (pos / (LEVELS - 1)) * 2.4

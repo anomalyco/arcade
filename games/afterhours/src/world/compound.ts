@@ -2,6 +2,7 @@ import * as THREE from "three/webgpu"
 import type { WorldContext, WorldModule } from "./context"
 import { buildFence } from "./compound/fence"
 import { buildGate } from "./compound/gate"
+import { buildNorth } from "./compound/north"
 import { buildBooth } from "./compound/booth"
 import { buildLot, WALK_Y } from "./compound/lot"
 import { buildProps } from "./compound/props"
@@ -19,6 +20,7 @@ export function build(ctx: WorldContext): WorldModule | void {
   const parts: [string, () => void][] = [
     ["fence", () => buildFence(ctx, root)],
     ["gate", () => void ticks.push(buildGate(ctx, root))],
+    ["north", () => buildNorth(ctx, root)],
     ["booth", () => buildBooth(ctx, root)],
     [
       "lot",

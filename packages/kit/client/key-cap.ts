@@ -175,13 +175,13 @@ export const KEY_CAP_CSS = `
   font-weight: inherit;
   letter-spacing: 0;
   box-shadow: inset 0 0 0 1px currentColor;
-  opacity: 0.75;
+  opacity: 0.9;
   transform: none;
   transition: opacity 120ms ease-out;
 }
 .akc-min[data-down="true"] .akc-cap,
 .akc-minimal .akc[data-down="true"] .akc-cap { transform: none; box-shadow: inset 0 0 0 1px currentColor; opacity: 1; }
-.akc-min .akc-t, .akc-minimal .akc-t { font-size: 0.82em; }
+.akc-min .akc-t, .akc-minimal .akc-t { font-size: 0.92em; }
 .akc-min.akc-hold::before, .akc-minimal .akc-hold::before { background: none; }
 .akc-min .akc-ring, .akc-minimal .akc-ring { --akc-ring: currentColor; --akc-track: color-mix(in srgb, currentColor 25%, transparent); }
 @media (prefers-reduced-motion: reduce) {

@@ -252,7 +252,7 @@ export async function build(b: Builder, { pause }: StoreyContext): Promise<Store
   stepStool(b, openAisle, -16.2, 0)
   put("cardboard_box", { position: [openAisle + 0.05, FLOOR_Y, -14.4], yaw: 0.4, collide: false, blob: 0, tilt: new THREE.Euler(0.0, 0, 1.45) })
   put("cardboard_box", { position: [openAisle - 0.1, FLOOR_Y, -18.9], yaw: 1.2 })
-  paper.flat("roster_sl_rotation", -46.0 + 0.84, FLOOR_Y + 1.066, -1.675 + 0.075 + 0.14, 0.12)
+  paper.flat("roster_field_team", -46.0 + 0.84, FLOOR_Y + 1.066, -1.675 + 0.075 + 0.14, 0.12)
   for (const [id, dx, dz, t] of [
     ["envelope_interoffice", 0.1, -13.6, 0.7],
     ["memo_carbon_inventory", -0.2, -13.1, -0.4],
@@ -345,7 +345,7 @@ export async function build(b: Builder, { pause }: StoreyContext): Promise<Store
       paper.flat("memo_next_of_kin", cx - 0.1, DESK_TOP + 0.006, dz - 0.05, 0.12)
       paper.flat("sticky_dont", cx - 0.35, DESK_TOP + 0.006, dz + 0.14, -0.3)
       ashtray(b, cx - 0.5, DESK_TOP, dz + 0.28, rnd, 6)
-      paper.flat("roster_sl_rotation", cx + 0.62, DESK_TOP + 0.09, dz + 0.06, 0.3, { offset: 0.002 })
+      paper.flat("roster_field_team", cx + 0.62, DESK_TOP + 0.09, dz + 0.06, 0.3, { offset: 0.002 })
     } else {
       put("telephone", { position: [cx + 0.6, DESK_TOP, dz - 0.1], yaw: face(0, -1) - 0.3, collide: false, blob: 0 })
       paper.flat(rnd() < 0.5 ? "form_requisition" : "envelope_interoffice", cx + 0.1, DESK_TOP + 0.006, dz - 0.05, rnd() - 0.5)
@@ -414,7 +414,7 @@ export async function build(b: Builder, { pause }: StoreyContext): Promise<Store
       if (i % 2 === 0) paper.flat(rnd() < 0.5 ? "envelope_interoffice" : "form_requisition", dp[0], DESK_TOP, dp[2], rnd() * 6)
       if (i % 4 === 1) wastebasket(b, ...xz(pt(m, 0.8, 0, -0.65)))
     }
-  // In/out board on the east wall: every name OUT except six on the SL line.
+  // In/out board on the east wall: every name OUT except six on the FIELD line.
   inOutBoard(b, G[13] - 0.06 - 0.025, FLOOR_Y + 1.5, -8.0, face(-1, 0), 22, [3, 7, 8, 12, 17, 20])
   paper.wall("roster_operators", G[13] - 0.062, FLOOR_Y + 1.55, -6.9, -1, 0, { pin: "pin", pinColor: "red" })
   // Files in the west wing: card-file cabinets and a typing table.
@@ -432,7 +432,7 @@ export async function build(b: Builder, { pause }: StoreyContext): Promise<Store
   deskLamp(b, 13.6, DESK_TOP, -18.35, face(0, -1) - 0.4, true, { intensity: 45 })
   put("telephone", { position: [14.9, DESK_TOP, -18.7], yaw: face(0, -1) - 0.4, collide: false, blob: 0 })
   blotter(b, 14.3, DESK_TOP, -18.6, 0)
-  paper.flat("roster_sl_rotation", 14.3, DESK_TOP + 0.006, -18.55, -0.1)
+  paper.flat("roster_field_team", 14.3, DESK_TOP + 0.006, -18.55, -0.1)
   paper.flat("sticky_marge", 14.0, DESK_TOP + 0.007, -18.4, 0.4)
   verticalBlinds(b, "z", 11.68, -21.3, -17.0, rnd, { y0: 0.15, open: 0.3 })
   await pause()

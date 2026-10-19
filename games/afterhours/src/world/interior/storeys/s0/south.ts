@@ -154,7 +154,7 @@ function auditorium(b: Builder, docs: Docs): RoomHandle[] {
   P(b, "z", -20.8, 1.75, 21.65, [PANEL_BANDS, ROOM_BANDS])
   // Foyer: coat hooks, a notice board, an ashtray stand.
   hookRail(b, -20.86, 5.0, -Math.PI / 2, 2.4, 8)
-  corkBoard(b, docs, -26.14, 5.6, 1, 0, 1.2, 0.8, ["notice_north_lot", "notice_sublevel", "calendar_oct84"], 35, FLOOR_Y + 1.2)
+  corkBoard(b, docs, -26.14, 5.6, 1, 0, 1.2, 0.8, ["notice_north_lot", "notice_north_array", "calendar_oct84"], 35, FLOOR_Y + 1.2)
   b.cyl(M.steel, T(-21.5, y + 0.33, 2.6), 0.13, 0.15, 0.66, 18)
   b.cyl(M.darkSteel, T(-21.5, y + 0.665, 2.6), 0.12, 0.12, 0.01, 18, { cast: false })
   b.collide(-21.65, y, 2.45, -21.35, y + 0.67, 2.75)
@@ -221,9 +221,9 @@ function personnel(b: Builder, docs: Docs): RoomHandle[] {
   docs.flat("signin_sheet", -9.7, y + 0.951, 17.0, -Math.PI / 2 + 0.1)
   docs.flat("envelope_interoffice", -9.65, y + 0.951, 17.7, -Math.PI / 2 - 0.2, { offset: 0.003 })
   placeModels(b, "office_chair", [{ position: [-10.6, y, 17.4], yaw: yawToward(1, 0) + 0.4, inset: 0.12 }])
-  docs.flat("roster_sl_rotation", -17.0, y + MODELS.office_desk.size[1], 6.1, 0.3)
+  docs.flat("roster_field_team", -17.0, y + MODELS.office_desk.size[1], 6.1, 0.3)
   wastebasket(b, -12.0, 9.0)
-  corkBoard(b, docs, -15.0, 1.75, 0, 1, 1.4, 0.8, ["memo_signin", "notice_sublevel", "roster_operators", "flyer_bowling"], 36, FLOOR_Y + 1.25)
+  corkBoard(b, docs, -15.0, 1.75, 0, 1, 1.4, 0.8, ["memo_signin", "notice_north_array", "roster_operators", "flyer_bowling"], 36, FLOOR_Y + 1.25)
 
   // Badge room: backdrop, camera on a tripod, a stool, laminator on a table, a photo lamp (off).
   b.box(paint(0x2a3a5a, 0.85), -2.0, y + 0.6, 4.2, -1.76, y + 2.3, 5.8, { cast: false })

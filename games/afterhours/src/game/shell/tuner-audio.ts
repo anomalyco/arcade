@@ -1,13 +1,15 @@
 import { setLevels, unlockAudio, type SharedAudio } from "../../audio/context"
 
-// The loading screen's sound, synthesised (no assets): the shared noise buffer through a harsh high-shelved path and
-// a bandpassed path that narrows as the signal comes in, random swells, crackles, a faint formant "voice" mid-way, and a
-// relay-like thunk at the lock, after which only a whisper of hiss stays under the menu. Everything goes through one
-// gain and an analyser into the shared "ui" bus (so the master volume applies). Silent until a user input starts it.
+// The loading screen's sound, synthesised (no assets): the shared noise buffer through a full-band path and a bandpassed
+// path that narrows as the signal comes in, random swells, sparse crackles, a faint formant "voice" mid-way, and a
+// relay-like thunk at the lock, after which it falls silent. Everything goes through a 5 kHz low-pass, the player's
+// "Menu static" volume and an analyser into the shared "ui" bus (scaled by the SFX slider; the master volume applies).
+// Silent until a user input starts it; never starts after the lock.
 
 type Graph = {
   a: SharedAudio
   out: GainNode
+  level: GainNode
   analyser: AnalyserNode
   harsh: GainNode
   band: GainNode
@@ -19,6 +21,15 @@ type Graph = {
   sources: AudioScheduledSourceNode[]
 }
 
+/** Level of every static layer (hiss, swells, crackles, ghost voice): −18 dB from the first take. The thunk is apart. */
+const STATIC_GAIN = 0.125
+/** Crackles a further −6 dB on top. */
+const CRACKLE_GAIN = 0.5
+/** The "Menu static" setting that plays at STATIC_GAIN; the slider scales linearly from it (0 = off). */
+export const MENU_STATIC_DEFAULT = 0.25
+/** The lock thunk's level (about −2 dB from its first take). */
+const THUNK_GAIN = 0.8
+
 const bump = (x: number, c: number, w: number) => Math.max(0, 1 - ((x - c) / w) ** 2)
 
 export function createTunerAudio() {
@@ -28,6 +39,7 @@ export function createTunerAudio() {
   let nextSwell = 0
   let nextCrackle = 0
   let nextSyllable = 0
+  let volume = MENU_STATIC_DEFAULT
   const buf = new Float32Array(1024)
 
   function build(a: SharedAudio): Graph {
@@ -36,9 +48,15 @@ export function createTunerAudio() {
     const out = ctx.createGain()
     out.gain.setValueAtTime(0, t)
     out.gain.setTargetAtTime(1, t, 0.25)
+    const lp = ctx.createBiquadFilter()
+    lp.type = "lowpass"
+    lp.frequency.value = 5000
+    lp.Q.value = 0.5
+    const level = ctx.createGain()
+    level.gain.value = volume / MENU_STATIC_DEFAULT
     const analyser = ctx.createAnalyser()
     analyser.fftSize = 1024
-    out.connect(analyser)
+    out.connect(lp).connect(level).connect(analyser)
     analyser.connect(a.buses.ui)
 
     const noise = (rate: number) => {
@@ -55,7 +73,7 @@ export function createTunerAudio() {
     const shelf = ctx.createBiquadFilter()
     shelf.type = "highshelf"
     shelf.frequency.value = 3200
-    shelf.gain.value = 6
+    shelf.gain.value = -4
     const harsh = ctx.createGain()
     harsh.gain.value = 0
     n1.connect(shelf).connect(harsh).connect(out)
@@ -104,23 +122,23 @@ export function createTunerAudio() {
     syllable.connect(voice).connect(tel).connect(out)
     saw.start(t)
     vib.start(t)
-    return { a, out, analyser, harsh, band, bp, crackle, voice, syllable, saw, sources: [n1, n2, saw, vib] }
+    return { a, out, level, analyser, harsh, band, bp, crackle, voice, syllable, saw, sources: [n1, n2, saw, vib] }
   }
 
   /** Start (or resume) from a user-input handler. `levels`: the player's master and ui-bus volumes. */
-  function start(levels: { master: number; ui: number }) {
-    if (graph) return
+  function start(levels: { master: number; ui: number; menuStatic: number }) {
+    volume = levels.menuStatic
+    if (graph || locked || volume <= 0) return
     const a = unlockAudio()
     if (!a) return
     setLevels(levels.master, { ui: levels.ui })
     graph = build(a)
-    if (locked) {
-      // Started after the lock: only the whisper.
-      const t = a.ctx.currentTime
-      graph.band.gain.setTargetAtTime(0.012, t, 0.4)
-      graph.bp.frequency.value = 2600
-      graph.bp.Q.value = 1.2
-    }
+  }
+
+  /** The "Menu static" slider, live. */
+  function setVolume(v: number) {
+    volume = v
+    if (graph) graph.level.gain.setTargetAtTime(v / MENU_STATIC_DEFAULT, graph.a.ctx.currentTime, 0.05)
   }
 
   /** Per frame with the tuner's signal (0..1). */
@@ -134,18 +152,18 @@ export function createTunerAudio() {
       swell = 1 + (Math.random() * 2 - 1) * (0.25 + 0.35 * (1 - s))
       nextSwell = t + 0.25 + Math.random() * 0.7
     }
-    harsh.gain.setTargetAtTime(0.32 * (1 - s) ** 1.6 * swell, t, 0.08)
-    band.gain.setTargetAtTime((0.14 * Math.sin(Math.PI * Math.min(1, s * 1.05)) ** 0.6 + 0.02) * (0.7 + 0.3 * swell), t, 0.1)
+    harsh.gain.setTargetAtTime(STATIC_GAIN * 0.32 * (1 - s) ** 1.6 * swell, t, 0.08)
+    band.gain.setTargetAtTime(STATIC_GAIN * (0.14 * Math.sin(Math.PI * Math.min(1, s * 1.05)) ** 0.6 + 0.02) * (0.7 + 0.3 * swell), t, 0.1)
     bp.frequency.setTargetAtTime(700 + 1800 * s, t, 0.2)
     bp.Q.setTargetAtTime(0.7 + 5 * s, t, 0.2)
     if (t >= nextCrackle) {
       const amp = 0.25 + Math.random() * 0.5
-      crackle.gain.setValueAtTime(amp * (0.4 + 0.6 * (1 - s)), t)
+      crackle.gain.setValueAtTime(STATIC_GAIN * CRACKLE_GAIN * amp * (0.4 + 0.6 * (1 - s)), t)
       crackle.gain.setTargetAtTime(0, t + 0.004, 0.008 + Math.random() * 0.02)
-      const rate = 7 * (1 - s) + 1.2
+      const rate = 4 * (1 - s) + 0.6
       nextCrackle = t - Math.log(1 - Math.random()) / rate
     }
-    voice.gain.setTargetAtTime(0.06 * bump(s, 0.62, 0.28), t, 0.3)
+    voice.gain.setTargetAtTime(STATIC_GAIN * 0.06 * bump(s, 0.62, 0.28), t, 0.3)
     if (t >= nextSyllable) {
       const on = Math.random() < 0.62
       syllable.gain.setTargetAtTime(on ? 1 : 0, t, 0.025)
@@ -166,10 +184,10 @@ export function createTunerAudio() {
     crackle.gain.cancelScheduledValues(t)
     crackle.gain.setTargetAtTime(0, t, 0.02)
     voice.gain.setTargetAtTime(0, t, 0.05)
-    band.gain.setTargetAtTime(0.012, t + 0.05, 0.25)
-    bp.frequency.setTargetAtTime(2600, t, 0.1)
-    bp.Q.setTargetAtTime(1.2, t, 0.1)
+    // Silence after the lock: the hiss dies under the thunk and the nodes are freed.
+    band.gain.setTargetAtTime(0, t + 0.05, 0.2)
     thunk(a, out)
+    setTimeout(() => stop(0.4), 1600)
   }
 
   function thunk(a: SharedAudio, out: AudioNode) {
@@ -180,7 +198,7 @@ export function createTunerAudio() {
     osc.frequency.exponentialRampToValueAtTime(38, t + 0.18)
     const og = ctx.createGain()
     og.gain.setValueAtTime(0, t)
-    og.gain.linearRampToValueAtTime(0.55, t + 0.004)
+    og.gain.linearRampToValueAtTime(THUNK_GAIN * 0.55, t + 0.004)
     og.gain.setTargetAtTime(0, t + 0.01, 0.06)
     osc.connect(og).connect(out)
     osc.start(t)
@@ -191,7 +209,7 @@ export function createTunerAudio() {
     lp.type = "lowpass"
     lp.frequency.value = 1100
     const cg = ctx.createGain()
-    cg.gain.setValueAtTime(0.35, t)
+    cg.gain.setValueAtTime(THUNK_GAIN * 0.35, t)
     cg.gain.setTargetAtTime(0, t, 0.012)
     click.connect(lp).connect(cg).connect(out)
     click.start(t, Math.random())
@@ -211,6 +229,7 @@ export function createTunerAudio() {
 
   return {
     start,
+    setVolume,
     update,
     lock,
     stop,

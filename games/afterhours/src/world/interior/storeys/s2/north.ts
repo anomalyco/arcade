@@ -432,7 +432,7 @@ function coldRoom(k: K) {
   plate(b, -19.9, FLOOR_Y + 1.7, zDoor + 0.05, 0, 1, 0.4, 0.14, P.green, "sign_cold_room")
 }
 
-/** 2-07: long aisles of steel shelving — jars in fluid and waxed core boxes, labelled by SL depth. */
+/** 2-07: long aisles of steel shelving — jars in fluid and waxed core boxes, labelled by borehole depth (north array). */
 function archive(k: K) {
   const b = k.b
   const W = 1.2
@@ -477,7 +477,7 @@ function archive(k: K) {
   b.collide(-10.5, FLOOR_Y, -14.3, -9.7, FLOOR_Y + 0.12, -13.7)
   k.b.rbox(P.blueGrey, T(-9.6, FLOOR_Y, -15.2, 0.2), 0.4, 0.3, 0.3, 0.02, 0, 0.15, 0)
   wallClipboard(k, "form_requisition", -15.34, FLOOR_Y + 1.5, -3.0, 1, 0)
-  wallDoc(k, "notice_sublevel", -4.66, FLOOR_Y + 1.55, -2.6, -1, 0, { pin: "tack" })
+  wallDoc(k, "notice_north_array", -4.66, FLOOR_Y + 1.55, -2.6, -1, 0, { pin: "tack" })
 }
 
 /** 2-08 write-up desks, MSDS shelves, the riser door; offices: lab manager (key cabinet) and safety officer. */
@@ -608,8 +608,8 @@ function containment(k: K) {
     b.boxM(GLASS(), pb, 0.4, 0.3, 0.004, 0, 0.27, s * 0.212, { cast: false })
     b.boxM(M.steel, pb, 0.04, 0.12, 0.03, 0.22, 0.25, s * 0.225)
   }
-  wallDoc(k, "notice_sublevel", G[13] + 0.062, FLOOR_Y + 1.55, -7.8, 1, 0, { pin: "tape" })
-  // Lab: the isolator facing the observation window, its torn glove; tray SL-14 empty, lid on the floor.
+  wallDoc(k, "notice_north_array", G[13] + 0.062, FLOOR_Y + 1.55, -7.8, 1, 0, { pin: "tape" })
+  // Lab: the isolator facing the observation window, its torn glove; tray NA-14 empty, lid on the floor.
   isolator(k, 28.0, -4.6, Math.PI)
   const tm = table(b, 31.6, -6.0, Math.PI, 1.4, 0.7, 0.9, P.stainless, P.stainless)
   const tp = pt(tm, 0.2, 0.9, 0)

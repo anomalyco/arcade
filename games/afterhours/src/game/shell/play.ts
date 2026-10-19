@@ -1,5 +1,3 @@
-import { keyCapHtml } from "@arcade/kit/client/key-cap"
-import { moveClusterLabel, onKeyLayoutChange } from "@arcade/kit/client/controls"
 import type { World } from "../../boot/world"
 import { heightAt } from "../../world/height"
 import { Flow, type GameContext } from "../flow"
@@ -11,6 +9,7 @@ import { createMenu } from "./menu"
 import { createSettingsApplier, loadSettings, saveSettings } from "./settings"
 import { createTitleCard } from "./title"
 import { createTunerAudio } from "./tuner-audio"
+import { createHints } from "./hints"
 
 // Play mode: the home screen over a slow drift past the foggy station while the world loads behind it, then
 // Play → title card → intro (src/game/intro) → explore, with an Esc pause menu. Owns input gating: the controller's
@@ -19,7 +18,8 @@ import { createTunerAudio } from "./tuner-audio"
 
 /** Seconds the pause menu ducks the master volume to. */
 const PAUSE_DUCK = 0.35
-const HINT_KEY = "static.hinted"
+/** The night ambience (wind, rain, forest) under the home screen and the title card: −12 dB. */
+const MENU_AMBIENCE = 0.25
 /** The ui bus's default level (src/audio/game.ts), scaled by the SFX slider as settings.ts does. */
 const UI_LEVEL = 0.6
 /** Seconds into the lock's vertical roll when the picture catches (the thunk). */
@@ -36,9 +36,8 @@ export function createPlayShell(canvas: HTMLCanvasElement, hud: HTMLElement) {
   let pendingPlay = false
   let run: AbortController | null = null
   let skip: AbortController | null = null
-  let controlsHint = false
-  /** The controls hint's countdown starts the first time the mouse is captured in explore. */
-  let hintTimer = 0
+  /** Control hints (the bottom-left strip and the one-time contextual hints), created with the world. */
+  let hints: ReturnType<typeof createHints> | null = null
   /** The loading screen's static: started by the first input, stopped for good at Play. */
   const tunerAudio = createTunerAudio()
   let tunerDone = false
@@ -52,21 +51,26 @@ export function createPlayShell(canvas: HTMLCanvasElement, hud: HTMLElement) {
     if (to !== "explore") map?.lower()
   })
 
+  /** Applies the player's settings with the ducks for where the run is (pause, the menus). */
+  const levels = () => apply?.(settings, flow.paused ? PAUSE_DUCK : 1, flow.phase === "menu" || flow.phase === "title" ? MENU_AMBIENCE : 1)
+  flow.onPhase(() => levels())
   const menu = createMenu(document.body, settings, {
     play,
     resume,
     quit,
     settingsChanged(s) {
       saveSettings(s)
-      apply?.(s, flow.paused ? PAUSE_DUCK : 1)
+      hints?.setMode(s.controls)
+      tunerAudio.setVolume(s.menuStatic)
+      levels()
     },
     characterChanged(id) {
       if (world) world.ctx.settings["player.character"] = id
     },
     input() {
       if (!tunerDone && !tunerAudio.playing) {
-        tunerAudio.start({ master: settings.master, ui: UI_LEVEL * settings.sfx })
-        if (tunerAudio.playing) menu.soundOn()
+        tunerAudio.start({ master: settings.master, ui: UI_LEVEL * settings.sfx, menuStatic: settings.menuStatic })
+        menu.soundOn()
       }
       world?.player.audio?.unlock()
     },
@@ -105,6 +109,7 @@ export function createPlayShell(canvas: HTMLCanvasElement, hud: HTMLElement) {
         return
       }
       // The intro owns its keys (hold Space/Esc to skip); Esc pauses only in explore (or the pointer-lock loss does).
+      if (flow.phase === "explore" && !flow.paused && e.code === "KeyH" && !e.repeat) hints?.toggle()
       if (flow.phase === "explore" && e.code === "Escape" && !e.repeat) {
         if (map?.raised) map.lower()
         else pause()
@@ -161,13 +166,7 @@ export function createPlayShell(canvas: HTMLCanvasElement, hud: HTMLElement) {
     }
     if (r.signal.aborted) return
     flow.set("explore")
-    try {
-      controlsHint = !localStorage.getItem(HINT_KEY)
-      localStorage.setItem(HINT_KEY, "1")
-    } catch {
-      controlsHint = true
-    }
-    hintTimer = 0
+    hints?.setActive(true)
     updateHint()
   }
 
@@ -175,7 +174,7 @@ export function createPlayShell(canvas: HTMLCanvasElement, hud: HTMLElement) {
     if (flow.paused || flow.phase === "menu") return
     flow.setPaused(true)
     world?.player.release()
-    apply?.(settings, PAUSE_DUCK)
+    levels()
     menu.show("pause")
     updateHint()
     if (locked()) document.exitPointerLock()
@@ -184,21 +183,20 @@ export function createPlayShell(canvas: HTMLCanvasElement, hud: HTMLElement) {
   function resume() {
     menu.show("none")
     flow.setPaused(false)
-    apply?.(settings)
+    levels()
     lock()
     updateHint()
   }
 
   function quit() {
-    clearTimeout(hintTimer)
-    controlsHint = false
+    hints?.setActive(false)
     run?.abort()
     run = null
     title.hide()
     flow.set("menu")
     world?.player.release()
     if (world) world.ctx.settings["body.show"] = false
-    apply?.(settings)
+    levels()
     if (locked()) document.exitPointerLock()
     menu.show("home")
     updateHint()
@@ -209,17 +207,8 @@ export function createPlayShell(canvas: HTMLCanvasElement, hud: HTMLElement) {
       hud.innerHTML = ""
       return
     }
-    if (!locked()) {
-      hud.innerHTML = `<div class="hint">${HINT.look}</div>`
-      return
-    }
-    if (controlsHint && !hintTimer) hintTimer = window.setTimeout(() => ((controlsHint = false), updateHint()), HINT.seconds * 1000)
-    const cap = (code: string) => keyCapHtml(code, { minimal: true })
-    hud.innerHTML = controlsHint
-      ? `<div class="hint akc-minimal">${moveClusterLabel()} move · ${cap("ShiftLeft")} run · ${cap("KeyC")} crouch · ${cap("Space")} jump · ${cap("KeyE")} use · ${cap("KeyF")} flashlight · ${cap("KeyM")} map · ${cap("Escape")} pause</div>`
-      : ""
+    hud.innerHTML = locked() ? "" : `<div class="hint">${HINT.look}</div>`
   }
-  onKeyLayoutChange(updateHint)
 
   /** The home screen's camera: a slow sway up the access road towards the gate, the dish in the fog beyond it. */
   function drift(w: World, time: number) {
@@ -231,7 +220,7 @@ export function createPlayShell(canvas: HTMLCanvasElement, hud: HTMLElement) {
     cam.updateMatrixWorld()
   }
 
-  ;(globalThis as { __static?: unknown }).__static = { mode: "play", flow, settings, play, pause, resume, quit, skip: () => skip?.abort(), tuner: { level: () => tunerAudio.level(), playing: () => tunerAudio.playing }, get map() { return map } }
+  ;(globalThis as { __static?: unknown }).__static = { mode: "play", flow, settings, play, pause, resume, quit, skip: () => skip?.abort(), tuner: { level: () => tunerAudio.level(), playing: () => tunerAudio.playing }, get map() { return map }, get hints() { return hints } }
 
   return {
     flow,
@@ -242,14 +231,17 @@ export function createPlayShell(canvas: HTMLCanvasElement, hud: HTMLElement) {
     attach(w: World) {
       world = w
       apply = createSettingsApplier(w.ctx, w.camera)
-      apply(settings)
+      levels()
       w.ctx.settings["body.show"] = false
       w.player.debugKeys = false
       w.player.inputEnabled = inputOpen()
+      hints = createHints(w.ctx, w.player)
+      hints.setMode(settings.controls)
     },
-    /** After the world drew a frame (same task): the loading screen's picture. */
+    /** After the world drew a frame (same task): the loading screen's picture, the hints' darkness check. */
     afterRender(source: HTMLCanvasElement) {
       menu.snapshot(source)
+      hints?.afterRender(source)
     },
     /** Everything is streamed and warm: Play can start. */
     ready() {
@@ -273,6 +265,7 @@ export function createPlayShell(canvas: HTMLCanvasElement, hud: HTMLElement) {
       // Outside play the controller doesn't step, so its audio (levels, listener, night ambience) is stepped here.
       else world.player.audio?.update(dt, world.camera)
       flow.update(dt, time)
+      hints?.update(dt, flow.phase === "explore" && !flow.paused)
     },
   }
 }

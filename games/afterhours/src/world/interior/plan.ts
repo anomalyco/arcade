@@ -142,9 +142,9 @@ export const SERVICE = {
   footprint: [rect(-47.8, -42.15, 1.75, 10.75), rect(-36.15, -26.2, 1.75, 9.75)],
 }
 
-/** Riser W-1: locked cupboard on every storey (dish feed → SL trunk). */
+/** Riser W-1: locked cupboard on every storey (dish feed and the north-array trunk). */
 export const RISER_W1 = rect(RISER.min[0], RISER.max[0], RISER.min[1], RISER.max[1])
-/** Freight lift FL-1 (ground ↔ Sublevel). */
+/** Freight lift FL-1 (ground stop only; out of service). */
 export const FL1 = { car: rect(FREIGHT.car.min[0], FREIGHT.car.max[0], FREIGHT.car.min[1], FREIGHT.car.max[1]), stops: FREIGHT.stops }
 /** Ground east spine and the annex door (storey 0 only). */
 export const EAST_SPINE = rect(CORRIDOR_EAST.min[0], CORRIDOR_EAST.max[0], CORRIDOR_EAST.min[1], CORRIDOR_EAST.max[1])

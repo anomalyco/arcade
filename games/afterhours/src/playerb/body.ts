@@ -5,6 +5,18 @@ import ROSTER from "./roster.json"
 import { createTorch } from "./torch"
 import { SeatRig, type SeatHost, type SeatOptions } from "./seat"
 
+/**
+ * Albedo scale for the body while it sits inside the car: the cabin's roof and pillars occlude the many unshadowed
+ * clustered lamps (only a couple of lamps have shadow maps), which otherwise light the driver's hands and arms as if
+ * they stood in the open. 1 = outside.
+ */
+const cabinShade = { value: 1 }
+const shadedMats: THREE.MeshStandardNodeMaterial[] = []
+function applyCabinShade() {
+  for (const m of shadedMats) m.color.copy(m.userData.baseColor as THREE.Color).multiplyScalar(cabinShade.value)
+}
+const CABIN_SHADE = 0.3
+
 // The player's body: one of the roster characters (public/models/characters/<id>.glb), all re-bound offline to one
 // shared skeleton, so the shared clips (anims.glb, Mixamo motion capture) play on any of them unmodified; only the
 // Hips translation is scaled to the character's hip height. Built by scripts/playerb/characters.ts.
@@ -135,6 +147,23 @@ const MANTLES = ["mantle-step-up", "mantle-run-jump-high", "mantle-hang-to-crouc
 const MANTLE_VIEW = 0.85
 const CALM_ARMS = /^(Left|Right)(Shoulder|Arm|ForeArm)$/
 const ARM_CALM = 0.9
+/** Flashlight carry: the hand's aim stays within ±AIM_YAW of the body's facing; aim and joints turn at most this fast. */
+const AIM_YAW = (70 * Math.PI) / 180
+/** The body's yaw rate limit (rad/s). */
+const FACING_RATE = 11
+/** Most the view may lead the body's front (rad): past it the body is carried round with the view at once. */
+const BODY_LEAD = (45 * Math.PI) / 180
+/** The body catches the view up to BODY_LEAD at this rate (rad/s): fast, but a 150° gap after a mantle is a turn. */
+const LEAD_RATE = 22
+/** Torch hand IK target limits (body frame): wrist speed (m/s) and fist turn rate (rad/s). */
+const WRIST_SPEED = 4
+const HAND_RATE = 30
+/** The chest and head's turn towards the view, max rate (rad/s). */
+const LOOK_RATE = 7
+const TWIST_MAX = (85 * Math.PI) / 180
+/** Arm joints may turn at most this fast (rad/s, local): a hand flip becomes a quick turn instead of a pop. */
+const ARM_RATE = 40
+const ARM_BONES = ["LeftShoulder", "LeftArm", "LeftForeArm", "LeftHand", "RightShoulder", "RightArm", "RightForeArm", "RightHand"]
 const FINGERS = /^LeftHand(Thumb|Index|Middle|Ring|Pinky)/
 const REACH_ARM = /^Right(Shoulder|Arm|ForeArm|Hand)/
 /** E: the part of each clip that is the reach (clip seconds) and its playback rate. */
@@ -281,6 +310,7 @@ export class CharacterBody {
   private bindQ = new Map<THREE.Bone, THREE.Quaternion>()
   private loadSeq = 0
   private seatRig: SeatRig | null = null
+  private seatAction: THREE.AnimationAction | null = null
   /** False while the torch hand is busy (a mantle): the beam then follows the view (lighting.ts fallback). */
   private torchHeld = true
   /** Measured eye heights above the feet (m): standing idle, crouch idle, crouch walk. */
@@ -694,6 +724,8 @@ export class CharacterBody {
    * the hand goes for; without one it goes for the crosshair at arm's length.
    */
   interact(kind: Interaction = "button", target?: { x: number; y: number; z: number }) {
+    // Never while seated (the driver's hands are on the wheel; a reach queued then would also fire on standing up).
+    if (this.seatRig) return
     if (this.act && this.act.t < 0.6) return
     this.act = { kind, t: 0 }
     this.reachAt = target ? new THREE.Vector3(target.x, target.y, target.z) : null
@@ -703,11 +735,19 @@ export class CharacterBody {
   seat(opts: SeatOptions) {
     if (this.seatRig) this.seatRig.opts = opts
     else this.seatRig = new SeatRig(this.seatHost(), opts)
+
     this.view.weight = 0
   }
   /** Steering-wheel angle (rad, + left) while seated. */
   steer(angle: number) {
     this.seatRig?.steer(angle)
+  }
+  /**
+   * The step-out from the driver's seat (Mixamo driving-exit-car), `t` seconds in (0..5.8). Returns the door's opening
+   * angle (rad) the left hand implies, or null before it reaches the door. Then `unseat()` (src/playerb/seat.ts).
+   */
+  exitCar(t: number) {
+    return this.seatRig?.exit(t) ?? null
   }
   /** Seated: the left hand opens the door, t 0→1. */
   reachDoor(t: number) {
@@ -717,12 +757,22 @@ export class CharacterBody {
   unseat() {
     if (!this.seatRig) return
     this.seatRig = null
+    this.armPrev.clear()
+    this.prevFacing = Number.NaN
+    this.seatAction?.setEffectiveWeight(0)
+    this.seatAction = null
     const e = new THREE.Euler().setFromQuaternion(this.root.quaternion, "YXZ")
     this.facing = e.y
     this.root.rotation.set(0, this.facing, 0)
     this.rootY = Number.NaN
     this.lastY = Number.NaN
     this.eyeOff.set(0, 0)
+  }
+  /** Seated: the head's eye point (world), where the first-person camera belongs. */
+  seatEye(out: THREE.Vector3) {
+    if (!this.seatRig || !this.model) return false
+    this.seatRig.eye(out)
+    return true
   }
   get seated() {
     return this.seatRig !== null
@@ -734,18 +784,50 @@ export class CharacterBody {
       torch: this.torch,
       bones: () => this.bones,
       model: () => this.model,
-      poseIdle: (dt) => {
+      poseIdle: (dt, name) => {
         const mixer = this.mixer
         if (!mixer) return
         this.idleT += dt
         for (const l of this.loops.values()) l.action.setEffectiveWeight(0)
         for (const a of this.shots.values()) a.setEffectiveWeight(0)
-        const idle = this.loops.get(IDLE)
-        if (idle) {
-          idle.action.setEffectiveWeight(1)
-          idle.action.time = this.idleT % idle.duration
+        const clip = (name && this.clips.get(name)) || null
+        if (clip) {
+          const a = mixer.clipAction(clip)
+          if (!a.isRunning()) a.play()
+          a.timeScale = 0
+          a.setEffectiveWeight(1)
+          a.time = this.idleT % clip.duration
+          this.seatAction = a
+        } else {
+          const idle = this.loops.get(IDLE)
+          if (idle) {
+            idle.action.setEffectiveWeight(1)
+            idle.action.time = this.idleT % idle.duration
+          }
         }
         mixer.update(0)
+      },
+      clipPose: (name, t) => {
+        const mixer = this.mixer
+        const clip = this.clips.get(name)
+        if (!mixer || !clip) return
+        for (const l of this.loops.values()) l.action.setEffectiveWeight(0)
+        for (const a of this.shots.values()) a.setEffectiveWeight(0)
+        this.seatAction?.setEffectiveWeight(0)
+        const a = mixer.clipAction(clip)
+        if (!a.isRunning()) a.play()
+        a.timeScale = 0
+        a.setEffectiveWeight(1)
+        a.time = Math.min(t, clip.duration - 1e-3)
+        this.seatAction = a
+        mixer.update(0)
+      },
+      clipRoot: (name, t) => {
+        const m = META.anims.clips[name]
+        if (!m?.root) return { x: 0, z: 0, yaw: 0 }
+        const f = Math.min(m.root.length - 1, (t / m.duration) * (m.root.length - 1))
+        const r = sampleRoot(m.root, f)
+        return { x: r[0]! * this.k, z: r[1]! * this.k, yaw: r[2]! }
       },
       fist: (side, w) => {
         if (w < 1e-3) return
@@ -769,9 +851,19 @@ export class CharacterBody {
   }
 
   update(dt: number, s: BodyState) {
+    this.lastDt = dt
+    const vcp = Math.cos(s.pitch)
+    this.viewDir.set(-Math.sin(s.yaw) * vcp, Math.sin(s.pitch), -Math.cos(s.yaw) * vcp)
     const mixer = this.mixer
     if (!mixer || !this.model) return
+    // Inside the car the cabin shades the driver; out of it (and stepping out, as the body clears the door) it doesn't.
+    const shadeWant = this.seatRig ? CABIN_SHADE + (1 - CABIN_SHADE) * this.seatRig.outside() : 1
+    const before = cabinShade.value
+    cabinShade.value += (shadeWant - cabinShade.value) * damp(6, dt)
+    if (Math.abs(shadeWant - cabinShade.value) < 1e-3) cabinShade.value = shadeWant
+    if (cabinShade.value !== before) applyCabinShade()
     if (this.seatRig) {
+      if (this.root.parent && new URLSearchParams(location.search).has("introRig")) this.seatRig.showMarkers(this.root.parent)
       this.seatRig.update(dt)
       this.view.weight = 0
       this.debug.state = "seated"
@@ -812,7 +904,9 @@ export class CharacterBody {
     this.smoothVel.y += (vf - this.smoothVel.y) * kv
     const speed = this.smoothVel.length()
     const ang = Math.atan2(this.smoothVel.x, this.smoothVel.y)
-    const crouch = smooth(0.2, 0.8, s.crouch)
+    // The controller ducks in ~0.15 s (its eye); the body's crouch pose blends a little slower so the spine doesn't snap.
+    this.crouchS += (s.crouch - this.crouchS) * damp(9, dt)
+    const crouch = smooth(0.2, 0.8, this.crouchS)
     for (const l of this.loops.values()) l.w = 0
 
     // Vertical speed of the feet's ground (stairs, ladders) from the controller's position (its vel.y is the jump).
@@ -1019,6 +1113,24 @@ export class CharacterBody {
         } else this.facing = yawGoal
       } else if (Math.abs(d) > (60 * Math.PI) / 180) this.facing += wrapPi(yawGoal - this.facing) * damp(6, dt)
     }
+    // The body turns at most FACING_RATE (an airborne snap, a hand-back from a mantle or a fast spin stays a turn).
+    if (dt > 0 && dt < 0.25 && !Number.isNaN(this.prevFacing) && !this.pose) {
+      const d = wrapPi(this.facing - this.prevFacing)
+      const m = FACING_RATE * dt
+      if (Math.abs(d) > m) this.facing = this.prevFacing + Math.sign(d) * m
+    }
+    // The body never lets the view get more than BODY_LEAD from its front (walking, standing, turning in place): the
+    // hand and torch can then always point along the view. Not on a ladder, mantling or climbing over a ladder top.
+    if (!s.onLadder && !s.mantle && this.topOut < 0 && !this.pose) {
+      const off = wrapPi(this.facing - yawGoal)
+      if (Math.abs(off) > BODY_LEAD) {
+        const want = yawGoal + Math.sign(off) * BODY_LEAD
+        const d = wrapPi(want - this.facing)
+        const m = LEAD_RATE * Math.min(dt, 0.1)
+        this.facing += Math.abs(d) > m ? Math.sign(d) * m : d
+      }
+    }
+    this.prevFacing = this.facing
     this.root.rotation.y = this.facing
 
     // Apply weights: the one-shots take their share from everything else.
@@ -1046,6 +1158,7 @@ export class CharacterBody {
     this.applyInteract(dt, s, ladderW)
     this.applyTorch(dt, s, moving)
     this.applyMantleHands(s)
+    this.limitArms(dt)
     if (this.act) w[`E ${this.act.kind}`] = 1
     this.groundFeet(dt, s, inAir)
   }
@@ -1148,6 +1261,52 @@ export class CharacterBody {
     this.model!.updateMatrixWorld(true)
   }
 
+  /**
+   * Continuity filter for the arms after every layer: each joint's local rotation kept in the previous frame's
+   * quaternion hemisphere and turned at most ARM_RATE towards this frame's (a pose discontinuity, wherever it comes
+   * from, becomes a fast but continuous turn). Reset after a gap (load, seat hand-back, teleport-sized dt).
+   */
+  private limitArms(dt: number) {
+    if (dt <= 0) return
+    const fresh = dt > 0.25 || this.armPrevFor !== this.model
+    this.armPrevFor = this.model
+    const max = ARM_RATE * dt
+    for (const n of ARM_BONES) {
+      const b = this.bones[n]
+      if (!b) continue
+      // The torch arm is solved exactly onto the view each frame (continuous by construction): there the limit fades out
+      // as the carry comes in fully, so it never drags the barrel off the beam (a binding limit averages two IK
+      // solutions into a wrong pose), but still smooths the hand-back from a ladder or a mantle.
+      // (The torch arm's continuity is enforced on its IK targets instead: see applyTorch.)
+      if (n.startsWith("Left") && this.carryW > 1e-3 && this.mantleHandsW < 1e-3) {
+        this.armPrev.get(n)?.copy(b.quaternion)
+        continue
+      }
+      const lim = max
+      let p = this.armPrev.get(n)
+      if (!p) this.armPrev.set(n, (p = b.quaternion.clone()))
+      else if (!fresh) {
+        if (p.dot(b.quaternion) < 0) b.quaternion.set(-b.quaternion.x, -b.quaternion.y, -b.quaternion.z, -b.quaternion.w)
+        const ang = p.angleTo(b.quaternion)
+        if (ang > lim) {
+          const goal = b.quaternion.clone()
+          b.quaternion.copy(p).rotateTowards(goal, lim)
+        }
+      }
+      p.copy(b.quaternion)
+    }
+    this.model!.updateMatrixWorld(true)
+  }
+  private armPrev = new Map<string, THREE.Quaternion>()
+  private lookRel = 0
+  /** The view's forward (world), from the controller's yaw/pitch. */
+  private viewDir = new THREE.Vector3(0, 0, -1)
+  private crouchS = 0
+  private lookOut = 0
+  private lastDt = 1 / 60
+  private prevFacing = Number.NaN
+  private armPrevFor: THREE.Object3D | null = null
+
   /** Rotates a bone by `angle` about a world axis (its parent's world matrix must be current). */
   private rotWorld(bone: THREE.Bone, axis: THREE.Vector3, angle: number) {
     if (Math.abs(angle) < 1e-5) return
@@ -1162,7 +1321,17 @@ export class CharacterBody {
     const k = this.look * weight
     if (k < 1e-3) return
     const pitch = THREE.MathUtils.clamp(s.pitch, -1.25, 1.1) * k
-    const yaw = THREE.MathUtils.clamp(wrapPi(s.yaw + Math.PI - this.facing), -1.3, 1.3) * k
+    // The view's yaw away from the feet, unwrapped against last frame's (a view behind the body doesn't flip the
+    // chest from one shoulder to the other as it crosses ±180°), then clamped.
+    const raw = s.yaw + Math.PI - this.facing
+    this.lookRel += wrapPi(raw - this.lookRel)
+    if (Math.abs(this.lookRel) > Math.PI * 1.5) this.lookRel = wrapPi(this.lookRel)
+    // Turned at a bounded rate: when the view swings round behind the body (an ambiguous shoulder) the chest swings
+    // across in ~0.4 s instead of popping.
+    const want = THREE.MathUtils.clamp(this.lookRel, -1.3, 1.3)
+    const m = LOOK_RATE * Math.max(0, Math.min(0.1, this.lastDt))
+    this.lookOut += THREE.MathUtils.clamp(want - this.lookOut, -m, m)
+    const yaw = this.lookOut * k
     // Model +X is the character's left: a negative turn about it tips the face up.
     const leftAxis = _left.set(1, 0, 0).applyQuaternion(this.root.quaternion)
     for (const [name, kp, ky] of LOOK) {
@@ -1227,11 +1396,14 @@ export class CharacterBody {
   private applyTorch(dt: number, s: BodyState, moving: number) {
     // Mantling the torch stays in the left fist on the ledge (the beam falls back to the view; see torchLens).
     const climbing = !!s.mantle && this.mantleW > 0.3
-    this.carryW += ((s.flashlight && !s.onLadder && this.topT < 0 && !s.mantle ? 1 : 0) - this.carryW) * damp(climbing ? 20 : 7, dt)
-    this.torch.visible = this.carryW > 0.35 || (s.flashlight && !!s.mantle)
+    this.carryW += ((s.flashlight && !s.onLadder && this.topT < 0 && !s.mantle ? 1 : 0) - this.carryW) * damp(climbing ? 10 : 7, dt)
+    this.torch.visible = this.carryW > 0.7 || (s.flashlight && !!s.mantle)
     this.torchHeld = !climbing
     const B = this.bones
-    if (this.carryW < 1e-3 || !this.torch.parent || !B.LeftArm || !B.LeftForeArm || !B.LeftHand || !B.Head) return
+    if (this.carryW < 1e-3 || !this.torch.parent || !B.LeftArm || !B.LeftForeArm || !B.LeftHand || !B.Head) {
+      this.tPrev = null
+      return
+    }
     const w = smooth(0, 1, this.carryW)
     this.torchIdleT += dt
     const ti = this.clips.get("torch-idle")!
@@ -1245,18 +1417,23 @@ export class CharacterBody {
 
     // Aim: the view direction, lagged a little (the hand follows the head).
     const c = this.carry
-    const cp = Math.cos(s.pitch)
-    _v.set(-Math.sin(s.yaw) * cp, Math.sin(s.pitch), -Math.cos(s.yaw) * cp)
-    if (c.aim.lengthSq() < 0.5) c.aim.copy(_v)
-    else c.aim.lerp(_v, damp(14, dt)).normalize()
+    // The aim is the view itself (the body keeps the view within BODY_LEAD of its front, so the arm can follow it):
+    // its yaw only clamped to ±AIM_YAW of the body as a safety net. No smoothing: the torch points where you look.
+    const bodyYaw = this.facing + Math.PI
+    const rel = THREE.MathUtils.clamp(wrapPi(s.yaw - bodyYaw), -AIM_YAW, AIM_YAW)
+    const ay = bodyYaw + rel
+    const apt = THREE.MathUtils.clamp(s.pitch, -1.45, 1.45)
+    const cp = Math.cos(apt)
+    c.aim.set(-Math.sin(ay) * cp, Math.sin(apt), -Math.cos(ay) * cp)
     const aim = c.aim
 
     // The arm, built forward from the shoulder (so the pose reads in mirrors and shadows, not only in first person):
     // the upper arm hangs down, swung forward with the aim (and when looking down, so the hand is in view); the
     // forearm points forward and down from the elbow, rising as the aim rises. A fist holds the barrel across the
     // forearm, so a forearm angled ~55° down plus a little wrist cock points the barrel level along the view.
-    const yawF = _v.set(-Math.sin(s.yaw), 0, -Math.cos(s.yaw))
-    const left = _left.set(-Math.cos(s.yaw), 0, Math.sin(s.yaw))
+    // The arm's frame is the body's (its facing), so the shoulder, elbow and pole stay continuous whatever the view does.
+    const yawF = _v.set(-Math.sin(bodyYaw), 0, -Math.cos(bodyYaw))
+    const left = _left.set(-Math.cos(bodyYaw), 0, Math.sin(bodyYaw))
     const ap = Math.asin(THREE.MathUtils.clamp(aim.y, -1, 1))
     const ph = this.phase * Math.PI * 2
     const swing = moving * 0.07 * Math.sin(ph)
@@ -1280,10 +1457,16 @@ export class CharacterBody {
     // forearm as the aim allows (the rest is wrist bend).
     const handQ = _q2
     const A = _z.copy(aim)
+    // The roll reference: the forearm line, blended (smoothly, before it degenerates) into the body's back-and-up
+    // direction when the aim comes close to the forearm's line (looking steeply down), so it never flips over.
     const Bw = _y.copy(fdir).negate()
     Bw.addScaledVector(A, -Bw.dot(A))
-    if (Bw.lengthSq() < 1e-6) Bw.copy(UP).addScaledVector(A, -A.y)
-    Bw.normalize()
+    const fall = new THREE.Vector3().copy(yawF).negate().add(UP)
+    fall.addScaledVector(A, -fall.dot(A))
+    if (fall.lengthSq() < 1e-8) fall.copy(left).addScaledVector(A, -left.dot(A))
+    fall.normalize()
+    const k = smooth(0.35, 0.8, Bw.length())
+    Bw.normalize().multiplyScalar(k).addScaledVector(fall, 1 - k).normalize()
     const Cw = _x.crossVectors(A, Bw)
     const a0 = _v5.set(0, 0, -1)
     const b0 = _v6.copy(this.forearmLocal)
@@ -1294,19 +1477,45 @@ export class CharacterBody {
     c.grip.copy(wrist)
     const cur = B.LeftHand.getWorldPosition(new THREE.Vector3())
     wrist.lerp(cur, 1 - w)
+    handQ.slerpQuaternions(B.LeftHand.getWorldQuaternion(new THREE.Quaternion()), handQ.clone(), w)
+    // Continuity of the targets, in the body's frame: the wrist moves at most WRIST_SPEED and the fist turns at most
+    // HAND_RATE per second (a hand-back or an ambiguous pose becomes a quick move, never a pop); the IK below is exact.
+    const rootInv = new THREE.Matrix4().copy(this.root.matrixWorld).invert()
+    const rq = this.root.getWorldQuaternion(new THREE.Quaternion())
+    const wl = wrist.clone().applyMatrix4(rootInv)
+    const ql = rq.clone().invert().multiply(handQ)
+    if (this.tPrev && dt > 0 && dt < 0.25) {
+      const dp = wl.clone().sub(this.tPrev.p)
+      const mp = WRIST_SPEED * dt
+      if (dp.length() > mp) wl.copy(this.tPrev.p).addScaledVector(dp.normalize(), mp)
+      if (this.tPrev.q.dot(ql) < 0) ql.set(-ql.x, -ql.y, -ql.z, -ql.w)
+      const mq = HAND_RATE * dt
+      if (this.tPrev.q.angleTo(ql) > mq) {
+        const goal = ql.clone()
+        ql.copy(this.tPrev.q).rotateTowards(goal, mq)
+      }
+      wrist.copy(wl).applyMatrix4(this.root.matrixWorld)
+      handQ.copy(rq).multiply(ql)
+    }
+    this.tPrev = { p: wl, q: ql }
     const pole = elbow.clone().sub(shoulder.clone().add(wrist).multiplyScalar(0.5))
     twoBoneIK(B.LeftArm, B.LeftForeArm, B.LeftHand, wrist, pole)
     // The fist's orientation, half of its twist taken by the forearm (no candy-wrapped wrist).
     const fa = B.LeftForeArm
     const local = _qb.copy(fa.getWorldQuaternion(_qc)).invert().multiply(handQ)
     const curLocal = B.LeftHand.quaternion
-    _qd.copy(curLocal).slerp(local, w)
-    const tw = _qe.set(0, _qd.y, 0, _qd.w).normalize()
+    _qd.copy(local)
+    void curLocal
+    if (_qd.w < 0) _qd.set(-_qd.x, -_qd.y, -_qd.z, -_qd.w)
+    // Twist about the forearm (Mixamo bone axis Y), clamped to the forearm's pronation range.
+    let twa = 2 * Math.atan2(_qd.y, _qd.w)
+    twa = THREE.MathUtils.clamp(wrapPi(twa), -TWIST_MAX, TWIST_MAX)
+    const tw = _qe.setFromAxisAngle(_v5.set(0, 1, 0), twa)
     const half = _qc.identity().slerp(tw, 0.5)
     fa.quaternion.multiply(half)
     fa.updateWorldMatrix(false, false)
     _qb.copy(fa.getWorldQuaternion(_qc)).invert().multiply(handQ)
-    B.LeftHand.quaternion.slerp(_qb, w)
+    B.LeftHand.quaternion.copy(_qb)
     B.LeftArm.updateWorldMatrix(false, true)
   }
 
@@ -1317,6 +1526,8 @@ export class CharacterBody {
   readonly carry = { upper: 0.28, out: 0.2, wrist: 0.95, inward: 0.25, aim: new THREE.Vector3(), grip: new THREE.Vector3() }
   /** Torch-local direction from the wrist to the elbow in the torch-idle grip (placeTorch). */
   private forearmLocal = new THREE.Vector3(0, 1, 0)
+  /** Last frame's torch-hand IK targets (body frame). */
+  private tPrev: { p: THREE.Vector3; q: THREE.Quaternion } | null = null
 
   /** Pelvis height onto the planted foot's ground, first-person eye anchoring, ladder placement and the slide meter. */
   private groundFeet(dt: number, s: BodyState, inAir: boolean) {
@@ -1409,7 +1620,8 @@ export class CharacterBody {
     const lens = this.torch.userData.lens as THREE.Object3D
     lens.updateWorldMatrix(true, false)
     lens.getWorldPosition(pos)
-    dir.set(0, 0, -1).transformDirection(lens.matrixWorld)
+    // The beam goes where the player looks (the camera's forward), from the lens; the hand only places the emitter.
+    dir.copy(this.viewDir)
     return true
   }
 
@@ -1611,6 +1823,9 @@ function nodeMaterial(src: THREE.MeshStandardMaterial | THREE.MeshStandardMateri
   })
   m.name = src.name
   if (src.normalMap) m.normalScale.copy(src.normalScale)
+  // The cabin shade scales the albedo colour (a uniform the material already has: no new pipelines).
+  m.userData.baseColor = m.color.clone()
+  shadedMats.push(m)
   if (src.transparent || src.alphaTest > 0 || /hair|lash/i.test(src.name)) {
     m.alphaTest = 0.4
     m.alphaToCoverage = true

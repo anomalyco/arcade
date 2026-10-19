@@ -687,6 +687,7 @@ CLIPS = {
     "climbing-ladder": "climb", "climbing-to-top": "one",
     "jump": "jump", "falling-idle": "idle", "opening-door-inwards": "one", "button-pushing": "one", "torch-idle": "idle",
     "torch-inspect-forward": "one", "torch-walk-forward": "loop",
+    "driving-idle": "idle", "driving-horn": "idle", "driving-enter-car": "one", "driving-exit-car": "one",
     "mantle-step-up": "mantle", "mantle-hop-up": "mantle", "mantle-run-jump-high": "mantle",
     "mantle-hang-to-crouch": "mantle", "vault-one-hand": "vault", "vault-two-hand": "vault",
 }
@@ -790,7 +791,8 @@ def anims(src_dir, out, meta_out):
             lin = np.outer(np.arange(n + 1) / max(n, 1), travel)
             if kind != "climb":
                 lin[:, 2] = 0
-            if kind == "jump":
+            if kind == "jump" or cid.startswith("driving-"):
+                # Jump: the controller flies the body. Driving: the seated hips keep their full translation.
                 lin[:] = 0
             new_H = [Matrix.Translation(Vector(-lin[i])) @ H[i] for i in range(n + 1)]
             # Ground velocity: hips travel minus the planted foot's own motion (in-place clips move the foot back).
@@ -850,7 +852,7 @@ def anims(src_dir, out, meta_out):
             info["root"] = root
             info["yawTotal"] = round(math.degrees(yaws[-1] - yaws[0]), 1)
             info["travel"] = [round(float(x), 4) for x in travel]
-        if kind in ("loop", "idle", "climb", "jump", "broken"):
+        if kind in ("loop", "idle", "climb", "jump", "broken") and not cid.startswith("driving-"):
             # Centre the body over the origin: some takes stand metres away (the ladder clip's hips sit 2 m to the
             # side). Keep the cyclic sway about the mean, remove the mean offset from the rest position.
             rest_h = (W @ arm.data.bones["Hips"].head_local)

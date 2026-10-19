@@ -107,12 +107,71 @@ export async function spawnCorpse(character: CorpseCharacter, pose: CorpsePose, 
   root.add(body)
   root.updateMatrixWorld(true)
   if (opts.blood) applyCorpseBlood(root, opts.blood)
+  // The pose never changes, so bake it into plain meshes: a GPU-skinned corpse shimmers along every silhouette under
+  // TAA (the stand-still flicker sweep flagged the 3-08 bodies; static copies measure clean), and skips skinning cost.
+  // The skinned originals stay in the hierarchy, hidden, for callers that read the bones or raycast and measure the
+  // skinned meshes (badges, blood pools, colliders).
+  const skinned: THREE.SkinnedMesh[] = []
+  body.traverse((o) => {
+    if ((o as THREE.SkinnedMesh).isSkinnedMesh) skinned.push(o as THREE.SkinnedMesh)
+  })
+  const toRoot = new THREE.Matrix4()
+  const rootInv = root.matrixWorld.clone().invert()
+  for (const s of skinned) {
+    toRoot.multiplyMatrices(rootInv, s.matrixWorld)
+    const mesh = new THREE.Mesh(bakePose(s, toRoot), s.material)
+    mesh.name = s.name
+    mesh.castShadow = s.castShadow
+    mesh.receiveShadow = s.receiveShadow
+    mesh.renderOrder = s.renderOrder
+    root.add(mesh)
+    s.visible = false
+    mesh.updateMatrix()
+    mesh.matrixAutoUpdate = false
+  }
   body.traverse((o) => {
     o.matrixAutoUpdate = false
-    const m = o as THREE.SkinnedMesh
-    if (m.isSkinnedMesh) m.frustumCulled = false
   })
   return root
+}
+
+/** The skinned mesh's current pose as a static geometry in the frame `to` maps its local space into. */
+function bakePose(s: THREE.SkinnedMesh, to: THREE.Matrix4) {
+  const g = s.geometry.clone()
+  const P = g.attributes.position as THREE.BufferAttribute
+  const N = g.attributes.normal as THREE.BufferAttribute | undefined
+  const Tn = g.attributes.tangent as THREE.BufferAttribute | undefined
+  const si = g.attributes.skinIndex as THREE.BufferAttribute
+  const sw = g.attributes.skinWeight as THREE.BufferAttribute
+  s.skeleton.update()
+  const bones = s.skeleton.boneMatrices!
+  const blend = new THREE.Matrix4()
+  const full = new THREE.Matrix4()
+  const nm = new THREE.Matrix3()
+  const v = new THREE.Vector3()
+  const e = blend.elements
+  for (let i = 0; i < P.count; i++) {
+    e.fill(0)
+    for (let k = 0; k < 4; k++) {
+      const w = sw.getComponent(i, k)
+      if (!w) continue
+      const o = si.getComponent(i, k) * 16
+      for (let j = 0; j < 16; j++) e[j]! += w * bones[o + j]!
+    }
+    full.multiplyMatrices(to, s.bindMatrixInverse).multiply(blend).multiply(s.bindMatrix)
+    P.setXYZ(i, ...v.fromBufferAttribute(P, i).applyMatrix4(full).toArray())
+    if (N || Tn) nm.getNormalMatrix(full)
+    if (N) N.setXYZ(i, ...v.fromBufferAttribute(N, i).applyMatrix3(nm).normalize().toArray())
+    if (Tn) {
+      v.set(Tn.getX(i), Tn.getY(i), Tn.getZ(i)).transformDirection(full)
+      Tn.setXYZ(i, v.x, v.y, v.z)
+    }
+  }
+  g.deleteAttribute("skinIndex")
+  g.deleteAttribute("skinWeight")
+  g.computeBoundingBox()
+  g.computeBoundingSphere()
+  return g
 }
 
 /** Pose metadata (kind, wall distance) and this character's chair seat / desk heights, for placing props. */

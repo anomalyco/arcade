@@ -83,7 +83,7 @@ export async function buildNorth(s: S3, pause: () => Promise<void>) {
   // ------------------------------------------------------------------ 3-01 data control / I/O counter
   s.rooms.push(room(b, { id: "3-01", name: "Data control", rect: rect(G[0], G[1], -21.65, -1.75), floor: "linoleum", lit: "none", anchors: [{ kind: "bin", x: -48.6, y: FLOOR_Y, z: -2.4 }] }))
   const label = pigeonholes(b, -48.04, -7.4, W, 16, 6, rnd, 61)
-  // Label for the stuffed cubby: a time card taped across its lip, "HALVERSON, D. — SL".
+  // Label for the stuffed cubby: a time card taped across its lip, "HALVERSON, D. — FIELD".
   s.doc("timecard_halverson", [label[0] - 0.002, label[1] + 0.035, label[2]], [-1, 0, 0], { rotation: Math.PI / 2, scale: 0.8, pin: "tape" })
   const t1 = workTable(b, -52.2, -2.55, 0, 2.2, 0.76)
   for (let k = 0; k < 5; k++) cardDeck(b, -53.0 + k * 0.32, t1, -2.6 + (rnd() - 0.5) * 0.2, (rnd() - 0.5) * 0.4, 0.03 + rnd() * 0.05)
@@ -244,9 +244,9 @@ export async function buildNorth(s: S3, pause: () => Promise<void>) {
   s.doc("roster_operators", [-4.66, FLOOR_Y + 1.5, -15.5], [-1, 0, 0], { pin: "pin" })
   placeModels(b, "filing_cabinet", [-5.3, -5.8].map((x) => ({ position: [x, FLOOR_Y, -21.61 + 0.27] as const, yaw: S })))
   placeModels(b, "wall_clock", [{ position: [-10.0, FLOOR_Y + 2.45, -21.6 + 0.03], yaw: S, collide: false, blob: 0 }])
-  // SL link status panel on the wall by the window: lamps blinking, one red lamp steady.
+  // North-array link status panel on the wall by the window: lamps blinking, one red lamp steady.
   b.rbox(paint(0x3a3e3c, 0.5, 0.4), T(-4.72, FLOOR_Y + 1.6, -13.4, -Math.PI / 2), 0.5, 0.36, 0.08, 0.01)
-  s.doc("plate_sl_link", [-4.76, FLOOR_Y + 1.61, -13.4], [-1, 0, 0], { pin: "none", curl: 0, size: [0.4, 0.22] })
+  s.doc("plate_array_link", [-4.76, FLOOR_Y + 1.61, -13.4], [-1, 0, 0], { pin: "none", curl: 0, size: [0.4, 0.22] })
   wastebasket(b, -11.0, -13.3)
   await pause()
 
@@ -269,7 +269,7 @@ export async function buildNorth(s: S3, pause: () => Promise<void>) {
   s.rooms.push(room(b, { id: "3-08b", name: "Listening booth", rect: rect(6.2, G[12], -21.65, -14.925), floor: M.carpet, lit: "none", windows: { blinds: "random", radiators: "convector" } }))
   riserW1(b, { face: "west" })
   s.doc("stencil_w1", [5.3 - 0.002, FLOOR_Y + 2.35, -4.0], [-1, 0, 0], { pin: "none", curl: 0 })
-  // Coax bundle out of the riser, along the ceiling on hangers to the recorder racks: "SL".
+  // Coax bundle out of the riser (the north-array trunk), along the ceiling on hangers to the recorder racks.
   const cy = CEIL_Y - 0.14
   const run: [number, number][] = [[6.0, -4.75], [6.0, -11.6], [10.9, -11.6]]
   for (let k = 0; k < 4; k++) {

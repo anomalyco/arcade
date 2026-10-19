@@ -190,7 +190,7 @@ export function stageListeningRoom(s: S3): (t: number) => void {
 
   // ---- the operator's desk the morning after
   s.doc("log_3_08_night", [7.72, od, -13.86], [0, 1, 0], { rotation: -0.08, curl: 0.05 })
-  s.doc("note_coming_from_sl", [6.9, FLOOR_Y, -12.6], [0, 1, 0], { rotation: 2.6 })
+  s.doc("note_coming_from_woods", [6.9, FLOOR_Y, -12.6], [0, 1, 0], { rotation: 2.6 })
   // Headphones pulled off, hanging by the cord from the desk edge.
   headphones(b, 8.98, od, -13.53, 0.5, 0.44)
   // The coffee cup on its side, the spill across the desk and dripped onto the floor.

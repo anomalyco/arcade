@@ -1,7 +1,7 @@
 import type { Lamp, WorldContext } from "../world/context"
 import { interiorRooms, type RoomEntry } from "../world/interior/registry"
 import { NIGHT_ROOMS } from "../world/interior/lighting-state"
-import { BUILDING, FREIGHT, RISER, SUBLEVEL_Y, storeyY } from "../world/layout"
+import { BUILDING, FREIGHT, RISER, storeyY } from "../world/layout"
 import { weather, type Lightning } from "../world/weather"
 import type { LoopVoice, Sfx } from "./engine"
 import { NightOutdoors } from "./night"
@@ -16,7 +16,8 @@ import { NightOutdoors } from "./night"
 //   not one per tube), the flicker take now and then from a flickering tube; the machine room (3-04) and the off-hook
 //   phone on the Chief's desk (1-07) as positional loops (the listening room's radio, 3-08, is the interior's own:
 //   storeys/s3/listening.ts); a CRT's
-//   whine when passing a lit terminal; and the low drone near the Sublevel's ways in (FL-1, the W-1 risers).
+//   whine when passing a lit terminal; and the low drone on the building's north side (FL-1 by the dock, facing the
+//   woods) and at the W-1 risers (the north-array trunk).
 //  Outdoors: the night is built from parts (night.ts): a very quiet gusting wind in the pines plus sparse positional
 //   one-shots in the trees (rustles, twig snaps, trunk creaks, a pine cone, a distant owl, rarely a far-off coyote),
 //   muffled by the building. It replaces the forest-night bed, whose pick sounded like a highway.
@@ -41,7 +42,7 @@ export class Ambience {
   private indoor = 0
   /** Listener's right vector on the ground (x, z), for panning thunder by bearing. */
   readonly right = { x: 1, z: 0 }
-  /** The horror layer's level (Lab "Horror layer"; 0 in play mode): scales the Sublevel drone. */
+  /** The horror layer's level (Lab "Horror layer"; 0 in play mode): scales the north-side drone. */
   horrorLevel = 0
   private cool = new Map<unknown, number>()
   private time = 0
@@ -93,13 +94,12 @@ export class Ambience {
     this.hvac[1].set(storey % 2 === 1 ? 0.32 * indoor : 0)
     this.tone.set(0.55 * indoor)
 
-    // The drone near the Sublevel's ways in: FL-1 (ground floor) and the W-1 risers, and below ground.
+    // The drone on the north side (FL-1 by the dock, facing the woods) and at the W-1 risers (the array trunk).
     const fl = { x: (FREIGHT.car.min[0] + FREIGHT.car.max[0]) / 2, z: (FREIGHT.car.min[1] + FREIGHT.car.max[1]) / 2 }
     const w1 = { x: (RISER.min[0] + RISER.max[0]) / 2, z: (RISER.min[1] + RISER.max[1]) / 2 }
     const near = (p: { x: number; z: number }, r: number) => Math.max(0, 1 - Math.hypot(ear.x - p.x, ear.z - p.z) / r)
-    const below = ear.y < SUBLEVEL_Y + 4 ? 1 : 0
-    const drone = Math.max(storey === 0 ? near(fl, 12) : 0, near(w1, 8), below)
-    this.drone.set(0.22 * drone * Math.max(indoor, below) * this.horrorLevel)
+    const drone = Math.max(storey === 0 ? near(fl, 12) : 0, near(w1, 8))
+    this.drone.set(0.22 * drone * indoor * this.horrorLevel)
 
     // Fluorescent hum from the nearest lit tubes on this storey.
     if (now >= this.nextHum) {

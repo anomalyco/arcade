@@ -1,7 +1,7 @@
 # Document atlas credits
 
 Built by `bun scripts/build-documents.ts` from `scripts/documents/render.ts`. All text, forms, names, the "Interagency
-Office of Propagation Studies" and Pine Hollow Station (see docs/building-program.md) and Merritt Falls are invented for this project; no real agencies,
+Office of Propagation Studies" and Ashwood Outpost (see docs/building-program.md) and Merritt Falls are invented for this project; no real agencies,
 logos or brands.
 
 - Fonts (github.com/google/fonts): Special Elite, Permanent Marker (Apache 2.0); Courier Prime, Caveat, Reenie Beanie,

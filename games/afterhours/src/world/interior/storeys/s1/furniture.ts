@@ -288,8 +288,8 @@ export function slideProjector(b: Builder, x: number, y: number, z: number, yaw:
 }
 
 /** Magnetic in/out board on a wall at height y (back on the wall, local +Z): name strips with IN/OUT columns and an
- *  "SL" column; `slRows` rows have their magnet on the SL line, the rest OUT. */
-export function inOutBoard(b: Builder, x: number, y: number, z: number, yaw: number, rows: number, slRows: number[]) {
+ *  "FIELD" column; `fieldRows` rows have their magnet on the FIELD line, the rest OUT. */
+export function inOutBoard(b: Builder, x: number, y: number, z: number, yaw: number, rows: number, fieldRows: number[]) {
   const m = T(x, y, z, yaw)
   const w = 1.2
   const rh = 0.045
@@ -303,9 +303,9 @@ export function inOutBoard(b: Builder, x: number, y: number, z: number, yaw: num
   for (let r = 0; r < rows; r++) {
     const v = h / 2 - 0.11 - r * rh
     b.boxM(M.paper, m, 0.5, rh - 0.01, 0.003, -0.25, v, -0.005, { cast: false })
-    const sl = slRows.includes(r)
-    const u = sl ? 0.51 : 0.335
-    b.cyl(sl ? P.magnetRed : P.magnetGreen, m.clone().multiply(T(u, v, -0.012, 0, Math.PI / 2)), 0.014, 0.014, 0.01, 12, { cast: false })
+    const field = fieldRows.includes(r)
+    const u = field ? 0.51 : 0.335
+    b.cyl(field ? P.magnetRed : P.magnetGreen, m.clone().multiply(T(u, v, -0.012, 0, Math.PI / 2)), 0.014, 0.014, 0.01, 12, { cast: false })
   }
 }
 

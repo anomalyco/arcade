@@ -1,5 +1,5 @@
 import { compoundDistance, fbm, heightAt, roadEdgeDistance, smoothstep } from "../height"
-import { ACCESS_ROAD, POWER, WORLD_HALF, accessRoadSamples } from "../layout"
+import { ACCESS_ROAD, NORTH_TRACK, POWER, WORLD_HALF, accessRoadSamples, northTrackDistance } from "../layout"
 import { hash3 } from "./rng"
 import type { Kind } from "./species"
 
@@ -145,6 +145,7 @@ export function placeTrees(settings: Settings): Trees {
       // Treeline 6–12 m outside the fence, wavering with low-frequency noise so the cut isn't straight.
       const lineWobble = fbm(x, z, 2, 1 / 45, seed + 41) * 3
       if (road < clear || comp < 7 + lineWobble + hash3(i, j, seed + 4) * 4) continue
+      if (northTrackDistance(x, z) < NORTH_TRACK.clear + hash3(i, j, seed + 42) * 2.5) continue
       if (nearAccess(x, z) && powerDist(x, z) < 5.5) continue
       const D = fbm(x, z, 3, 1 / 120, seed + 7) * 0.5 + 0.5
       const p = Math.min(0.97, Math.max(0.05, (D - 0.12) * 1.8)) * density
@@ -177,6 +178,7 @@ export function placeTrees(settings: Settings): Trees {
       if (o < 0 || occ[o]! >= 1) continue
       const road = roadEdgeDistance(x, z)
       const comp = compoundDistance(x, z)
+      if (northTrackDistance(x, z) < NORTH_TRACK.clear - 0.5 + hash3(i, j, seed + 43) * 1.5) continue
       if (road < 4 + hash3(i, j, seed + 23) * 2.5 || comp < 4.5 + fbm(x, z, 2, 1 / 45, seed + 41) * 2.5 + hash3(i, j, seed + 27) * 2) continue
       if (nearAccess(x, z) && powerDist(x, z) < 3.5) continue
       const edge = 1 - smoothstep(5, 20, Math.min(road, comp - 5))
@@ -203,6 +205,7 @@ export function placeTrees(settings: Settings): Trees {
       const road = roadEdgeDistance(x, z)
       const comp = compoundDistance(x, z)
       if (road < 3.4 || comp < 2.5 + hash3(i, j, seed + 36) * 2) continue
+      if (northTrackDistance(x, z) < NORTH_TRACK.width / 2 + 0.6 + hash3(i, j, seed + 44) * 1.2) continue
       const edge = 1 - smoothstep(4, 16, Math.min(road, comp - 3))
       if (h0 > (0.08 + edge * 0.22) * density) continue
       add(x, z, pick("sapling", hash3(i, j, seed + 33)), 0.45 + hash3(i, j, seed + 34) * 1.1, hash3(i, j, seed + 35))

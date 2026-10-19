@@ -1,4 +1,4 @@
-# Afterhours: building program (main block, storeys 0–4)
+# Ashwood: building program (main block, storeys 0–4), IOPS Ashwood Outpost
 
 The plan every interior agent builds to. It replaces the current "15 identical 5.4 × 19.9 m tubes per side, a
 quarter of the doors openable" pattern (`storeys.ts` `roomsFor`) with a building that has a reason for every room.
@@ -20,21 +20,24 @@ windows have no fixture; the storey-2 drench shower stands in a corridor. Rules 
 
 ## 1. Building logic
 
-**Pine Hollow Station** — Atmospheric Propagation Research Facility, operated since 1979 for the (fictional)
-*Interagency Office of Propagation Studies* (IOPS). Public story: ionospheric and low-frequency radio propagation
+**Ashwood Outpost** (IOPS Ashwood Outpost) — Atmospheric Propagation Research Facility, operated since 1979 for the
+(fictional) *Interagency Office of Propagation Studies* (IOPS), in a clearing in Ashwood State Forest. Public story: ionospheric and low-frequency radio propagation
 research, weather data. The 25 m dish on the roof is the station's public face, but it is tilted to point **down at
-the ground north of the building**. In 1981 a signal source was found under the north lot. The **Sublevel** (SL) was
-dug to reach it, and since then the building's real work runs vertically:
+the ground north of the building**. In 1981 a signal source was found in the woods north of the lot. Field Operations
+fenced it off and ring it with the **north array** (NA): six sensor stations and boreholes in the trees past the north
+fence, cabled back to the building through riser W-1 (the array trunk). Since then the building's real work points
+north:
 
 ```
 roof dish ──feed──▶ 4 Receiver Room ──riser W-1──▶ 3 Listening Room + Computing Centre (logs, analysis)
                                                    │
-SL (excavation) ──freight lift FL-1──▶ 0 Receiving + Decon ──▶ 2 Sample Sciences (cores, water, "specimens")
+north array (woods) ──trunk / field team──▶ 0 Receiving + Decon ──▶ 2 Sample Sciences (cores, water, "specimens")
                                                    │
-                     1 Program Administration (personnel "rotations", contracts, records of what happened)
+                     1 Program Administration (field teams, contracts, records of what happened)
 ```
 
-**Signal comes down, samples come up.** Each floor sees a different part of that.
+**Signal comes in from the woods, samples come back.** On the night of 17/18 October 1984 the night field team (six
+staff) badged out to the array at 22:58 and never came back: **six staff unaccounted for**. Each floor sees a different part of that.
 
 | Department | Staff (day) | Where | At 3 a.m. |
 |---|---|---|---|
@@ -43,9 +46,9 @@ SL (excavation) ──freight lift FL-1──▶ 0 Receiving + Decon ──▶ 2
 | Protective Services (security) | 14 (3 at night) | 0 lobby, booth | lobby guard missing, booth guard outside |
 | Facilities & Plant (incl. the night janitor, the player) | 12 (2 at night) | 0 west, annex | player's home base |
 | Sample Sciences (geochemistry, microbiology, analytical) | 31 | 2 | an experiment still running |
-| Instrumentation (sensors for SL arrays, electronics) | 9 | 2 south | bench lamp on |
+| Instrumentation (sensors for the north array, electronics) | 9 | 2 south | bench lamp on |
 | Computing & Signal Processing (operators 24/7, programmers, analysts) | 34 | 3 | operator missing, system logged an event at 03:04 |
-| Field Operations / Sublevel Program | 16 | SL, ground decon | 6 names marked "SL" on the in/out board, none out |
+| Field Operations (north array) | 16 | the woods, ground decon | 6 names on the FIELD line of the in/out board, none back |
 | Food service, mail, PBX, library | 9 | 0, 1 | gone home |
 | **Total** | **≈ 176** | | |
 
@@ -75,10 +78,10 @@ SL (excavation) ──freight lift FL-1──▶ 0 Receiving + Decon ──▶ 2
 | Fountain alcove | spine wall at x −30.9, z 1.6 | — | `drinking_fountain` between the WC doors | — |
 
   The ground floor's existing CLOSET (−32.6..−29.4, 1.75..5.0) is already JC-0, so the stack lines up.
-- **Vertical circulation:** core stair + passenger lift (0–4; lift panel gets a keyed "SL" button, later); west fire
-  escape (door at spine west end, every upper storey); **freight lift FL-1, ground ↔ Sublevel only** (new, §0);
-  riser **W-1** (x 5.4..6.6, z −4.6..−3.4) from the dish feed through 4 and 3 down to the SL, a locked cupboard on
-  every floor stencilled "W-1 — SL TRUNK".
+- **Vertical circulation:** core stair + passenger lift (G, 1–4); west fire escape (door at spine west end, every
+  upper storey); **freight lift FL-1** off receiving, ground stop only, out of service (gates locked, §0);
+  riser **W-1** (x 5.4..6.6, z −4.6..−3.4) from the dish feed through 4 and 3 down to the ground and out under the north
+  lot to the array, a locked cupboard on every floor stencilled "W-1 — ARRAY TRUNK".
 - **Circulation shapes differ by floor:** 0 spine + link + lobby + a decon sequence; 1 spine with open-plan edges
   (the corridor becomes an aisle) and a suite with internal doors; 2 lab suites (support room → lab, internal doors);
   3 glazed machine-room spine + a **racetrack** (second corridor parallel to the spine in the south wing); 4 stud-wall
@@ -120,8 +123,8 @@ with the real rooms below.
 | 0-11 | Health unit | −54.65..−47.8 | −21.65..−13.15 | exam couch, cot, sink + eyewash, scale, cabinet | — | from 0-10 C |
 | 0-12/13 | Change rooms M / W | −47.8..−42.4 / −42.4..−37.0 | −14.0..−1.75 | lockers, benches, basins, mirror; yellow coveralls | W: one troffer flickering | spine x −46, −40 C; north to 0-14 C |
 | 0-14 | Decon showers (r4-04) | −47.8..−40.0 | −21.65..−14.15 | 4 shower stalls, drench head, floor drains, curb, boot rack, hose reel | 1 troffer (cold) | from 0-12/13 C; east to 0-15 C |
-| 0-15 | Clean side / FL-1 lobby | −40.0..−37.0 | −21.65..−14.15 | bench, rubber matting, "SUBLEVEL — DOSIMETER REQUIRED" board, dosimeter rack (2 badges missing) | caged bulkhead (incandescent) | gate to FL-1 **K:sublevel** |
-| 0-16 | Receiving & Stores | −37.0..−25.65 (+ −25.65..−20.8 for z < −9.75) | −21.65..−1.75 | dock roll-ups, FL-1 car (x −36.85..−33.25, z −20.5..−15.5; collapsible gate both sides, signposted), `pallet`, `hand_truck`, `steel_shelves`, `cardboard_box`, `drum_steel`, platform scale, foreman's desk + clipboard | 1 troffer + dock sodium through the open roll-up | spine double x −28 O (wedge); FL-1 south gate **K:sublevel** |
+| 0-15 | Clean side / FL-1 lobby | −40.0..−37.0 | −21.65..−14.15 | bench, rubber matting, "NORTH ARRAY — DOSIMETER REQUIRED" board, dosimeter rack (2 badges missing) | caged bulkhead (incandescent) | gate to FL-1 **K:plant** (out of service) |
+| 0-16 | Receiving & Stores | −37.0..−25.65 (+ −25.65..−20.8 for z < −9.75) | −21.65..−1.75 | dock roll-ups, FL-1 car (x −36.85..−33.25, z −20.5..−15.5; collapsible gate both sides, signposted), `pallet`, `hand_truck`, `steel_shelves`, `cardboard_box`, `drum_steel`, platform scale, foreman's desk + clipboard | 1 troffer + dock sodium through the open roll-up | spine double x −28 O (wedge); FL-1 south gate **K:plant** (out of service) |
 | 0-17 | Sample intake lab (existing LAB) + core store | −25.5..−17.0 / −25.5..−15.4 | −9.6..−1.75 / −21.65..−9.75 | lab as built; core store: core trays on `steel_shelves`, sample fridge, intake ledger | lab panel (exists) | lab x −21 O (exists); lab → core store C |
 | 0-18 | Reprographics & supply | −15.4..−4.6 | −21.65..−1.75 | 2 copiers, offset duplicator, paper on `pallet`, supply shelving, guillotine | copier ready glow only | spine x −14 C |
 | 0-19 | Mail & messenger | −4.6..6.2 | −21.65..−1.75 | pigeonholes, sorting table, mail carts, Dutch door; parcel cage at the window end | — | Dutch door x 3.5 C |
@@ -141,8 +144,8 @@ Doors ≈ 44; K/L: FL-1 ×2, TC, armory, annex = 5 → **≈ 89% openable**.
 
 Vignettes:
 - **Security office**: the guard's chair pushed back, a cigarette burnt to the filter in the ashtray, logbook last
-  entry `01:40 — SL freight lift called. No one on camera.` The dock monitor shows the FL-1 gate open.
-- **Time clock**: six cards punched IN at 22:58, never out; their slots labelled "SL".
+  entry `01:40 — Dock cam: something at the tree line. Gone.` The dock monitor shows the dock man door open.
+- **Time clock**: six cards punched IN at 22:58, never out; their slots labelled "FIELD TEAM".
 - **Auditorium**: projector fan still running on the slide nobody turned off.
 
 ### Storey 1 — Program Administration (y 3.95)
@@ -171,11 +174,11 @@ Doors ≈ 26 (open-plan has none); K/L: vault only → **≈ 96%**.
 
 Vignettes:
 - **1-07**: the Chief's coat still on his chair, briefcase open, phone off the hook on the blotter; a memo:
-  "Re: SL rotation — next of kin letters (6)".
-- **1-09**: on the in/out board every name is OUT except six on the SL line; a Selectric with a half-typed letter
+  "Re: night field team — next of kin letters (6)".
+- **1-09**: on the in/out board every name is OUT except six on the FIELD line; a Selectric with a half-typed letter
   "…regret to inform you that…". One chair, of 24, is turned to face the windows.
-- **1-01**: one mobile shelving aisle cranked open, step stool, a box "PERSONNEL — SL ROTATION 1981–84" pulled and
-  spilt; a roster on the counter with names crossed out in red.
+- **1-01**: one mobile shelving aisle cranked open, step stool, a box "PERSONNEL — FIELD TEAMS 1981–84" pulled and
+  spilt; a roster on the counter with this team's six names crossed out in red.
 
 ### Storey 2 — Sample Sciences (y 7.75)
 
@@ -191,14 +194,14 @@ the cross corridor; every eyewash/drench shower is listed below, inside its lab.
 | 2-04 | Geochem Lab 2 | −42.4..−31.6 | −21.65..−1.75 | glass partition at z −11.9: write-up desks south, 3 peninsulas north; 3 fume hoods; `chemistry_set` ×1; **eyewash + drench inside the spine door** | **one fume hood's light on** (fluorescent inside the hood) | spine x −40 C |
 | 2-05 | Microbiology suite | −31.6..−20.8 | gowning/media prep −11.85..−1.75; lab −21.65..−12.0 | gowning bench, coat hooks, small autoclave; lab: biosafety cabinet, CO₂ incubators, 2 `microscope`, centrifuge, sink + **eyewash** | **BSC UV lamp** (violet, warning kind) | spine C; internal C |
 | 2-06 | Cold room (4 °C) + freezer alcove | −20.8..−15.4 | −11.85..−1.75 | insulated walk-in, latch handle, sample racks, dial thermometer; −80 °C chest freezers outside it | bulkhead lamp inside (incandescent) | spine C; walk-in C (no inside release knob — horror beat) |
-| 2-07 | Specimen archive (r4-02) | −15.4..−4.6 (+ −20.8..−15.4 for z < −12) | −21.65..−1.75 | long aisles of `steel_shelves`: jars in fluid (merged procedural), core boxes, labels by SL depth | one aisle troffer, flickering | spine x −10 C |
+| 2-07 | Specimen archive (r4-02) | −15.4..−4.6 (+ −20.8..−15.4 for z < −12) | −21.65..−1.75 | long aisles of `steel_shelves`: jars in fluid (merged procedural), core boxes, labels by borehole depth (NA) | one aisle troffer, flickering | spine x −10 C |
 | 2-08 | Lab manager + safety office / write-up | −4.6..6.2 | perimeter 2 offices; interior bullpen | lab manager: **key cabinet** (chem store key), MSDS binders; 6 write-up desks | — | spine O; offices C |
 | 2-09 | Darkroom + EM room | 6.2..17.0 | darkroom interior; EM perimeter | darkroom: light-trap labyrinth entry, enlarger, trays, prints drying on a line; EM: microscope column, console, chilled-water lines | **red safelight** (incandescent, red) | spine C; EM C |
 | 2-10 | Containment lab (r3-04) | airlock 17.0..22.4 / lab 22.4..34.65 | −11.85..−1.75 / −21.65..−1.75 | airlock with decon shower + eyewash; glovebox isolator, pass box; **observation window to the spine x 24..32**; biohazard placard, intercom | isolator lamp (fluorescent) seen through the window | **K:containment** (signposted) |
 | 2-20 | Lab safety office | −54.65..−47.8 | 1.75..21.65 | respirators, spill kits, first aid, shower test log, `filing_cabinet` | — | C |
 | 2-22 | Gas cylinder store | −47.8..−42.15 | 10.75..21.65 | cylinders chained to the wall, regulator bench | — | J |
 | 2-24 | Biochem teaching lab + PPE foyer | −36.0..−20.8 / foyer −26.2..−20.8 | 9.75..21.65 / 1.75..9.6 | 4 island benches, `lab_stool`, sinks; **eyewash at the foyer-side sink, drench by the exit**; foyer: coat hooks, goggles cabinet | — | spine C; foyer → lab O |
-| 2-25 | Electronics & sensor lab | −20.8..−4.6 | 1.75..21.65 | instrument benches, scopes, soldering stations, parts drawers, cable reels, a rack of sensor heads tagged "SL-ARRAY 2" | `desk_lamp` on one bench | spine O |
+| 2-25 | Electronics & sensor lab | −20.8..−4.6 | 1.75..21.65 | instrument benches, scopes, soldering stations, parts drawers, cable reels, a rack of sensor heads tagged "N. ARRAY 2" | `desk_lamp` on one bench | spine O |
 | 2-26 | Lab break room | −4.6..6.2 | 1.75..21.65 | kitchenette open to the spine (cased opening); `vending_machine`, tables, `lounge_chair` ×2, `water_cooler`, ashtrays | vending glow + 1 troffer | (open) |
 | 2-27 | Analytical Lab 4 | 6.2..22.4 | 1.75..21.65 | 4 peninsulas, perimeter benches, 2 fume hoods, marble balance tables, glass partition at z 15.6 with write-up desks at the windows, `chemistry_set`, `microscope`; **eyewash + drench at both doors** | 4 troffers south half (2 lamps) + hot-plate glow | spine x 8 O; x 20 C |
 | 2-28 | Glasswash & autoclave | 22.4..34.65 | 1.75..9.6 | glasswasher, drying racks, large autoclave, DI water system, floor drain, wet floor | 1 troffer | spine O (propped by a cart) |
@@ -209,7 +212,7 @@ Doors ≈ 30; K: chem store, containment → **≈ 93%**.
 Vignettes:
 - **2-27**: a hot plate still on under a beaker boiled dry to a brown crust; a kitchen timer stopped at 01:12; note
   "back in 5 — R."
-- **2-10**: one isolator glove torn and hanging inside out; tray "SL-14" empty, its lid on the floor.
+- **2-10**: one isolator glove torn and hanging inside out; tray "NA-14" empty, its lid on the floor.
 - **2-20**: the weekly safety-shower test log, signed every week until 3 October, then blank.
 
 ### Storey 3 — Computing & Signal Processing Centre (y 11.55)
@@ -226,7 +229,7 @@ The spine's north wall is glass for 24 m (the machine room); the south wing has 
 | 3-05 | Tape library | −31.6..−15.4 | −21.65..−12.0 | reel racks (`steel_shelves` + reel cans), tape cleaner, carts | 1 troffer | inside secure zone C |
 | 3-06 | Operations console | −15.4..−4.6 | −21.65..−12.0 | consoles facing an internal window into 3-04, schedule board, logbook, coffee, `office_chair` pushed back | console CRT + `desk_lamp` | inside secure zone C |
 | 3-07 | Plotter & map room | −4.6..0.8 | −21.65..−1.75 | pen plotter mid-plot, flat-file map cabinets, light table | light table (fluorescent, cool) | spine C |
-| 3-08 | **Listening room** (r3-03), under the dish | 0.8..11.6 | −21.65..−1.75 | riser W-1 drops through the ceiling (coax bundle labelled "SL"); reel-to-reel racks, spectrum analysers, strip-chart recorders spilling paper, scopes, headphones, teletype; listening booth 6.2..11.6 × −21.65..−15.0 with an observation window | **single pendant** (incandescent, shadow) + scope glows | spine **O** (propped with a chair) |
+| 3-08 | **Listening room** (r3-03), under the dish | 0.8..11.6 | −21.65..−1.75 | riser W-1 drops through the ceiling (the north-array coax bundle); reel-to-reel racks, spectrum analysers, strip-chart recorders spilling paper, scopes, headphones, teletype; listening booth 6.2..11.6 × −21.65..−15.0 with an observation window | **single pendant** (incandescent, shadow) + scope glows | spine **O** (propped with a chair) |
 | 3-09 | Data analysis bullpen | 11.6..34.65 | −21.65..−1.75 | desk clusters with `crt_terminal`, wall plots and maps, big chalkboard of equations; corridor edge open with half-height file cabinets x 13..33 | 2 `desk_lamp` + 3 CRTs | (open) |
 | 3-20 | Operators' rest room | −54.65..−47.8 | 1.75..21.65 | cot, lockers, `television`, coffee | `television` static glow | C |
 | 3-22 | Manager, Computing | −47.8..−42.15 | 10.75..21.65 | desk, `desk_lamp`, wall chart | — | C |
@@ -236,18 +239,18 @@ The spine's north wall is glass for 24 m (the machine room); the south wing has 
 Doors ≈ 30; K: UPS, machine room → **≈ 93%** (the secure zone's internal doors only open once you're inside).
 
 Vignettes:
-- **3-06**: operations log `03:02 SL link up` · `03:04 — ???` in a shaking hand; the operator's chair pushed back,
+- **3-06**: operations log `03:02 Array link up` · `03:04 — ???` in a shaking hand; the operator's chair pushed back,
   headset dangling.
 - **3-08**: chart paper on the floor in a heap; the last metre shows a regular, heartbeat-like trace.
-- **3-08 (STATIC, beat 1)**: the night of Wed/Thu 17/18 October 1984, after the SL six went down at 22:58. Four
-  night crew died in the listening room; none of them are SL staff. Each wears an IOPS · NIGHT CREW badge:
+- **3-08 (STATIC, beat 1)**: the night of Wed/Thu 17/18 October 1984, after the six of the night field team went out to the
+  array at 22:58. Four night crew died in the listening room; none of them are field-team staff. Each wears an IOPS · NIGHT CREW badge:
   - **D. Kessler**, radio operator: slumped at the console.
   - **C. Whitlock**, signal technician: by the strip-chart bench. The voice on ch 4 said her name.
   - **R. Hargrove**, systems analyst, up from 3-09: face down inside the door.
   - **N. Bellamy**, programmer, up from 3-09: against the west wall.
-  Their receiver log (`log_3_08_night`) runs from 22:10 to 03:03 and ends with "It's coming from SL." and
+  Their receiver log (`log_3_08_night`) runs from 22:10 to 03:03 and ends with "It's coming from the woods." and
   "DON'T TAKE THE HEADPHONES OFF". The bodies are `LISTENING_ROOM_BODIES` in `interior/storeys/s3/listening.ts`.
-- **3-01**: one pigeonhole stuffed with months of uncollected printouts: "HALVERSON, D. — SL".
+- **3-01**: one pigeonhole stuffed with months of uncollected printouts: "HALVERSON, D. — FIELD".
 
 ### Storey 4 — Directorate / refurbishment (y 15.35)
 
@@ -306,7 +309,7 @@ across the spine; the 3-25 racetrack loops so the player can be followed or circ
 | 3 | 2 | mop the glasswash floor, turn off the hot plate in 2-27 | chem-store key in 2-08 → 2-01; containment keycard on the safety officer's desk |
 | 4 | 3 | lights trip on storey 3: reset breakers in EL-3, then the machine-room breakers in 3-03 | server keycard from the operators' rest room locker; listening-room tape |
 | 5 | 4 | "do not enter" on the work order; follow the sound | signal keycard (Director's files, 4-16) → 4-11; Director's note |
-| 6 | 0 → SL | FL-1 freight lift / lift SL button | sublevel key (from 4-11 or the Director) |
+| 6 | 0 → outside | the dock or the north gate, out to the tree line and the array | field keycard (from 4-11 or the Director) |
 
 **Systems that need this plan:** per-floor EL rooms drive lighting zones (fuses, blackouts, emergency packs);
 keycards are door `locked` flags flipped at runtime (`ctx.doors`); escape routes on every floor = core stair + west
@@ -359,8 +362,7 @@ per storey); `await pause()` between rooms; vignettes as small props in `b.small
 
 1. Ground east spine: `INTERIOR.corridorEast = { min: [1.6, −1.6], max: [34.65, 1.6] }` (or reuse `UPPER.corridor` on
    storey 0).
-2. `FREIGHT = { car: { min: [−36.85, −20.5], max: [−33.25, −15.5] }, stops: ["SL", 0] }` and a `SUBLEVEL` y
-   placeholder.
+2. `FREIGHT = { car: { min: [−36.85, −20.5], max: [−33.25, −15.5] }, stops: [0] }` (out of service).
 3. `RISER = { min: [5.4, −4.6], max: [6.6, −3.4] }` (under the dish feed at x 6, z −4).
 4. Ground door in the main east wall at z ≈ −8 into the annex (facility shell hole).
 5. Facility `windows.ts` lit-window silhouettes should follow the §3 pattern.

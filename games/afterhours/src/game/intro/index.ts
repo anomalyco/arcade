@@ -3,7 +3,7 @@ import type { World } from "../../boot/world"
 import type { Flow } from "../flow"
 import { weather } from "../../world/weather"
 import { BUILDING } from "../../world/layout"
-import { PlayerCar, SEATS, type Seat } from "./car"
+import { DOOR_OPEN, PlayerCar, SEATS, type Seat } from "./car"
 import { IntroAudio } from "./audio"
 import { buildRoute, PARKED, type Route, type RouteSample } from "./route"
 import { createSkip } from "./skip"
@@ -63,6 +63,21 @@ const FADE_IN = 2.6
  */
 const PARK = { shift: 0.9, ignition: 1.7, keys: 2.3, lights: 3.4, reach: 5.2, step: 8.0, shut: 11.6, done: 12.2 }
 const REACH_S = 2.6
+/** The Mixamo driving-exit-car clip (`body.exitCar`), from PARK.reach: door beat, swing out, stand up (s). */
+const EXIT_S = 5.8
+/**
+ * The camera's look through the exit clip (car frame, relative yaw/pitch), at seconds into it: the eyes go to the
+ * handle, follow the door out, look down at the step out of the car, then up and round to the building (`end` is set
+ * from the entrance). "handle"/"edge" aim at those anchors.
+ */
+const EXIT_LOOK: { t: number; at?: "handle" | "edge"; yaw?: number; pitch?: number }[] = [
+  { t: 0, at: "handle" },
+  { t: 0.9, at: "handle" },
+  { t: 2.1, at: "edge" },
+  { t: 3.1, yaw: 1.25, pitch: -0.32 },
+  { t: 4.3, yaw: 0.95, pitch: -0.08 },
+  { t: EXIT_S, yaw: 0, pitch: 0.02 },
+]
 const STEP_S = 3.6
 /** The seated body lets go of the door this far into the step-out, as the view turns out of the car (s). */
 const UNSEAT_AT = 0.85
@@ -226,6 +241,13 @@ export async function runIntro(ic: IntroContext): Promise<void> {
   const body = seatBody()
   body?.seat(c.seatOptions())
   const lookAt = new THREE.Vector3()
+  const seatEyeW = new THREE.Vector3()
+  const seatEyeLocal = new THREE.Vector3()
+  let haveSeatEye = false
+  // The exit clip (driving-exit-car) when the body has it; else the older reach + keyed step-out.
+  const exiting = !!body && typeof (body as { exitCar?: unknown }).exitCar === "function"
+  let exitDoor = 0
+  const exitFrom = { yaw: 0, pitch: 0 }
   const total = r.duration + PARK.done
   let time = Math.max(0, ic.startAt ?? 0)
   let skipping = -1
@@ -277,6 +299,13 @@ export async function runIntro(ic: IntroContext): Promise<void> {
       }
     } else time += dt * debugRate.value
 
+    // The seated body's real eyes, in the car body's frame. The body is posed after this hook runs (in the world's
+    // update, from the car as last placed), so read it now, while the car's matrices are still the ones it was posed
+    // against; then it rides this frame's car pose like the seat does.
+    if (body?.seated && body.seatEye(seatEyeW)) {
+      seatEyeLocal.copy(c.body.worldToLocal(seatEyeW))
+      haveSeatEye = true
+    }
     const T0 = r.duration
     // ---- the car
     const driving = time < T0
@@ -292,14 +321,29 @@ export async function runIntro(ic: IntroContext): Promise<void> {
       sound.engineOn = time < T0 + PARK.ignition ? 1 : 0
       sound.radioOn = time < T0 + PARK.ignition ? smooth(clamp01((time - 1) / 3)) : 0
       const reach = clamp01((p - PARK.reach) / REACH_S)
-      const opened = doorFromHand(reach, p - PARK.reach - REACH_S)
-      c.doorAmount = p < PARK.shut ? opened : opened * Math.max(0, 1 - (p - PARK.shut) / 0.42)
-      if (body) {
-        if (p - PARK.step < UNSEAT_AT) {
-          if (!body.seated) body.seat(c.seatOptions())
-          body.reachDoor(reach)
-        } else if (body.seated) body.unseat()
+      let opened: number
+      if (exiting) {
+        // The exit clip: the hand opens the door, the door follows it (angle → open fraction; the swing is linear).
+        const et = p - PARK.reach
+        if (et < EXIT_S) {
+          if (!body!.seated) body!.seat(c.seatOptions())
+          const angle = et > 0 ? body!.exitCar(et) : null
+          if (angle !== null) exitDoor = Math.max(exitDoor, clamp01(angle / DOOR_OPEN))
+        } else if (body!.seated) {
+          // Hand over from where the clip ends: the eyes stay where they last were.
+          body!.unseat()
+        }
+        opened = exitDoor
+      } else {
+        opened = doorFromHand(reach, p - PARK.reach - REACH_S)
+        if (body) {
+          if (p - PARK.step < UNSEAT_AT) {
+            if (!body.seated) body.seat(c.seatOptions())
+            body.reachDoor(reach)
+          } else if (body.seated) body.unseat()
+        }
       }
+      c.doorAmount = p < PARK.shut ? opened : opened * Math.max(0, 1 - (p - PARK.shut) / 0.42)
     }
     body?.steer(c.wheelAngle)
     c.update(dt, time, st.speed, st.accel, st.curvature)
@@ -312,11 +356,12 @@ export async function runIntro(ic: IntroContext): Promise<void> {
       once("shift", T0 + PARK.shift, time, () => sound.play("light-switch", 0.35, { rate: 0.55, lowpass: 1400 }))
       once("keys", T0 + PARK.keys, time, () => sound.play("int-keys", 0.5, { lowpass: 5000 }))
       once("lights", T0 + PARK.lights, time, () => sound.play("light-switch", 0.55, { rate: 0.8 }))
-      once("door", T0 + PARK.reach + REACH_S * 0.44, time, () => sound.play("door-office-wood", 0.35, { rate: 0.75, lowpass: 2200 }))
+      if (exiting ? exitDoor > 0.01 : time >= T0 + PARK.reach + REACH_S * 0.44)
+        once("door", 0, time, () => sound.play("door-office-wood", 0.35, { rate: 0.75, lowpass: 2200 }))
       once("shut", T0 + PARK.shut + 0.35, time, () => sound.play("door-office-wood", 0.55, { rate: 0.6, lowpass: 1500, lowBoost: 6 }))
     }
     // The cabin muffles the forest until the door opens.
-    const open = clamp01((p - PARK.reach - REACH_S * 0.44) / 1.2)
+    const open = exiting ? smooth(clamp01(c.doorAmount * 4)) : clamp01((p - PARK.reach - REACH_S * 0.44) / 1.2)
     s["audio.ambience"] = ambience * (0.4 + 0.6 * open)
 
     // ---- the camera
@@ -340,8 +385,42 @@ export async function runIntro(ic: IntroContext): Promise<void> {
     let yaw: number
     let pitch: number
     let free = 1
-    if (stepT <= 0) {
-      eye.set(SEATS[0]!.eye[0], SEATS[0]!.eye[1], SEATS[0]!.eye[2])
+    let viaBody = false
+    if (exiting && p >= PARK.reach) {
+      // The exit clip: the camera at the body's eyes throughout (held where they ended once it hands over), the look
+      // keyed through EXIT_LOOK; free look fades out as the driver gets moving.
+      viaBody = true
+      if (haveSeatEye) eye.copy(seatEyeLocal)
+      else eye.set(SEATS[0]!.eye[0], SEATS[0]!.eye[1], SEATS[0]!.eye[2])
+      const et = Math.min(p - PARK.reach, EXIT_S)
+      let i = 0
+      while (i < EXIT_LOOK.length - 2 && et > EXIT_LOOK[i + 1]!.t) i++
+      const A = EXIT_LOOK[i]!
+      const B = EXIT_LOOK[i + 1]!
+      const u = smooth(clamp01((et - A.t) / (B.t - A.t)))
+      const dir = (k: (typeof EXIT_LOOK)[number]) => {
+        if (k.at) {
+          const a = aim(c.anchorLocal(k.at, lookAt), eye)
+          // The eyes do part of the work: the head turns ~80% of the way (a little past the edge: out of the gap).
+          return k.at === "edge" ? { yaw: (a.yaw + 0.25) * 0.8, pitch: (a.pitch + 0.12) * 0.8 } : { yaw: a.yaw * 0.8, pitch: a.pitch * 0.8 }
+        }
+        return { yaw: k === EXIT_LOOK[EXIT_LOOK.length - 1] ? entranceYaw : k.yaw!, pitch: k.pitch! }
+      }
+      const da = dir(A)
+      const db = dir(B)
+      // Start from wherever the look was when the clip began.
+      if (i === 0 && u < 1) {
+        da.yaw = exitFrom.yaw + (da.yaw - exitFrom.yaw) * smooth(clamp01(et / 0.5))
+        da.pitch = exitFrom.pitch + (da.pitch - exitFrom.pitch) * smooth(clamp01(et / 0.5))
+      }
+      yaw = da.yaw + (db.yaw - da.yaw) * u
+      pitch = da.pitch + (db.pitch - da.pitch) * u
+      free = 1 - smooth(clamp01(et / 1.2))
+    } else if (stepT <= 0) {
+      if (haveSeatEye) eye.copy(seatEyeLocal)
+      else eye.set(SEATS[0]!.eye[0], SEATS[0]!.eye[1], SEATS[0]!.eye[2])
+      // The step-out starts from where the eyes are now.
+      keys[0]!.p = [eye.x, eye.y, eye.z]
       // In the beat of silence the eyes go up to the building.
       const look = smooth(clamp01((p - PARK.lights - 0.6) / 1.6))
       yaw = headYaw * (1 - look) + 0.06 * look
@@ -351,8 +430,8 @@ export async function runIntro(ic: IntroContext): Promise<void> {
       if (reach > 0) {
         const toHandle = smooth(clamp01(reach / 0.28))
         const toEdge = smooth(clamp01((reach - 0.5) / 0.35))
-        const h = aim(c.anchorLocal("handle", lookAt))
-        const g = aim(c.anchorLocal("edge", lookAt))
+        const h = aim(c.anchorLocal("handle", lookAt), eye)
+        const g = aim(c.anchorLocal("edge", lookAt), eye)
         // The eyes do part of the work: the head turns ~80% of the way.
         const ty = (h.yaw + (g.yaw + 0.25 - h.yaw) * toEdge) * 0.8
         const tp = (h.pitch + (g.pitch + 0.12 - h.pitch) * toEdge) * 0.8
@@ -361,6 +440,8 @@ export async function runIntro(ic: IntroContext): Promise<void> {
       }
       keys[0]!.yaw = yaw
       keys[0]!.pitch = pitch
+      exitFrom.yaw = yaw
+      exitFrom.pitch = pitch
     } else {
       const k = sampleKeys(keys, Math.min(stepT, STEP_S), eye)
       yaw = k.yaw
@@ -371,12 +452,18 @@ export async function runIntro(ic: IntroContext): Promise<void> {
     pitch += lookPitch * free
     // Eye rides the body (pitch/roll), the head steadies half of it; standing outside it is the ground's frame.
     c.root.updateMatrixWorld(true)
-    const outside = smooth(clamp01((stepT - 1.6) / 1.4))
+    const outside = viaBody ? 0 : smooth(clamp01((stepT - 1.6) / 1.4))
     eye.applyMatrix4(outside > 0.5 ? c.root.matrixWorld : c.body.matrixWorld)
     bodyQ.copy(c.body.quaternion).slerp(q.identity(), 0.5 + 0.5 * outside)
     camera.position.copy(eye)
     e.set(pitch, yaw, 0, "YXZ")
     camera.quaternion.setFromEuler(e).premultiply(bodyQ).premultiply(c.root.quaternion)
+    if (fired.has("skipped")) {
+      // Skipped: under the black the view is already where the player will stand.
+      const sp = standPose(c, r)
+      camera.position.set(sp.x, sp.y + PLAYER_EYE, sp.z)
+      camera.rotation.set(0.02, sp.yaw, 0, "YXZ")
+    }
     if (debugAim.at) camera.lookAt(debugAim.at)
     camera.updateMatrixWorld()
     // Fade in from black at the start.
@@ -421,21 +508,24 @@ export async function runIntro(ic: IntroContext): Promise<void> {
       resolveDone()
       return
     }
-    // Hand over: the player stands where the camera is, looking where it looks.
+    // The car parked solid in its stall, door shut, lights off (also after a skip from anywhere in the drive).
+    c.releaseBeam(player)
+    settle(world, c, r)
+    // Hand over. Played through: the player stands where the camera is, looking where it looks. Skipped: at the
+    // step-out spot beside the driver's door (where the exit clip ends), facing the building. Either way the feet are
+    // on the ground and outside the car's collider.
+    const skipped = fired.has("skipped")
+    const sp = standPose(c, r)
     const cam = camera.position
     const f = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion)
-    player.pos.x = cam.x
-    player.pos.z = cam.z
-    player.pos.y = r.groundAt(cam.x, cam.z)
-    player.yaw = Math.atan2(-f.x, -f.z)
-    player.pitch = Math.asin(Math.max(-1, Math.min(1, f.y)))
+    const at = skipped ? { x: sp.x, z: sp.z } : clearOfCar(c, cam.x, cam.z) ?? { x: sp.x, z: sp.z }
+    player.pos.x = at.x
+    player.pos.z = at.z
+    player.pos.y = r.groundAt(at.x, at.z)
+    player.yaw = skipped ? sp.yaw : Math.atan2(-f.x, -f.z)
+    player.pitch = skipped ? 0.02 : Math.asin(Math.max(-1, Math.min(1, f.y)))
     player.release()
     player.resetMotion()
-    c.releaseBeam(player)
-    c.lights.head = c.lights.tail = c.lights.brake = c.lights.dash = 0
-    c.doorAmount = 0
-    c.update(0.016, time, 0, 0, 0)
-    c.park()
     sound.stop()
     s["audio.ambience"] = saved.ambience as never
     s["body.show"] = saved.bodyShow as never
@@ -482,6 +572,7 @@ export async function runIntro(ic: IntroContext): Promise<void> {
     },
     car: c,
     route: r,
+    sound,
     woods,
     /** Point the camera at a world point (null: back to the cutscene's own look). */
     aim(p: [number, number, number] | null) {
@@ -495,10 +586,37 @@ export async function runIntro(ic: IntroContext): Promise<void> {
   return done
 }
 
+/** Player eye height standing (src/player.ts EYE) and body radius (RADIUS) plus a margin. */
+const PLAYER_EYE = 1.65
+const PLAYER_CLEAR = 0.3 + 0.12
+/** Where the driver ends up standing after getting out: 1.8 m left of the driver's seat, a little back. */
+const STAND_LOCAL = new THREE.Vector3(SEATS[0]!.eye[0] - 1.8, 0, 0.25)
+
+/** The step-out spot (world, feet on the ground) beside the parked car, and the yaw that faces the building. */
+function standPose(c: PlayerCar, r: Route) {
+  const end = r.sample(r.duration, sampleOut)
+  const cy = Math.cos(end.yaw)
+  const sy = Math.sin(end.yaw)
+  // Model-space x/z rotated by the parked heading (yaw about +Y).
+  const x = end.x + STAND_LOCAL.x * cy + STAND_LOCAL.z * sy
+  const z = end.z - STAND_LOCAL.x * sy + STAND_LOCAL.z * cy
+  void c
+  const yaw = Math.atan2(-(BUILDING.entrance.x - x), -(BUILDING.entrance.z + 6 - z))
+  return { x, y: r.groundAt(x, z), z, yaw }
+}
+
+/** (x, z) if a standing player there is clear of the parked car's footprint, else null. */
+function clearOfCar(c: PlayerCar, x: number, z: number) {
+  const box = c.footprint()
+  if (!box) return { x, z }
+  const inside = x > box.min[0] - PLAYER_CLEAR && x < box.max[0] + PLAYER_CLEAR && z > box.min[2] - PLAYER_CLEAR && z < box.max[2] + PLAYER_CLEAR
+  return inside ? null : { x, z }
+}
+
 /** Yaw/pitch (car frame, model convention) from the driver's eye to a point in the car body's frame. */
-function aim(p: THREE.Vector3) {
-  const e = SEATS[0]!.eye
-  const dx = p.x - e[0], dy = p.y - e[1], dz = p.z - e[2]
+function aim(p: THREE.Vector3, from?: THREE.Vector3) {
+  const e = from ? [from.x, from.y, from.z] : SEATS[0]!.eye
+  const dx = p.x - e[0]!, dy = p.y - e[1]!, dz = p.z - e[2]!
   return { yaw: Math.atan2(-dx, -dz), pitch: Math.atan2(dy, Math.hypot(dx, dz)) }
 }
 const debugRate = { value: 1 }

@@ -4,6 +4,7 @@ import { LOG_SHAPES, STUMP_SHAPES, deadwoodInCell } from "./deadwood"
 import { deadwoodMaterials, logGeometry, stumpGeometry } from "./deadwood-mesh"
 import type { Trees } from "./placement"
 import { SHOULDER, compoundDistance, fbm, heightAt, roadEdgeDistance } from "../height"
+import { NORTH_TRACK, northTrackDistance } from "../layout"
 import { hash3, rng, range } from "./rng"
 import { CELL, UNDER, cellRect } from "./paint"
 import { InstLayer, band, foliageMaterial } from "./render"
@@ -165,7 +166,7 @@ export function buildUndergrowth(ctx: WorldContext, atlas: THREE.Texture, trees:
         const z = z0 + (j + hash3(ci * 16 + i, cj * 16 + j, 79)) * SUB
         const road = roadEdgeDistance(x, z)
         const comp = compoundDistance(x, z)
-        if (road < SHOULDER + 0.4 || comp < 0.8) continue
+        if (road < SHOULDER + 0.4 || comp < 0.8 || northTrackDistance(x, z) < NORTH_TRACK.width / 2 + 0.3) continue
         const yaw = h * 40
         const tint = 0.75 + hash3(ci * 16 + i, cj * 16 + j, 80) * 0.45
         const verge = road < 7.5 || comp < 6

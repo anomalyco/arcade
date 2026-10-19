@@ -13,6 +13,11 @@ import {
   select,
   smoothstep,
   uniform,
+  uniformArray,
+  Loop,
+  length,
+  dot,
+  max as tslMax,
   vec2,
   vec3,
   float,
@@ -55,6 +60,37 @@ export const fogUniforms = {
 }
 
 const envGround = uniform(0.12)
+
+/**
+ * Lamp bounce: the nearest lit interior lamps (filled each frame by the lighting rig) as soft omni sources of
+ * indirect light. Gives unlit corners and walls the gradient real bounce has (brighter near a lit fitting, falling
+ * away into corners and across a room), instead of the flat constant ambient that made them read unlit.
+ */
+export const BOUNCE_LAMPS = 8
+const blankV4 = () => Array.from({ length: BOUNCE_LAMPS }, () => new THREE.Vector4())
+export const bounceLamps = {
+  A: blankV4(), // position.xyz, range
+  B: blankV4(), // radiance rgb (already × bounce strength), storey slab bottom (y0)
+  count: uniform(0, "int"),
+}
+const bounceA = uniformArray(bounceLamps.A, "vec4") as N
+const bounceB = uniformArray(bounceLamps.B, "vec4") as N
+const lampBounce = (p: N, n: N) => {
+  const acc = vec3(0).toVar()
+  ;(Loop as N)(bounceLamps.count, ({ i }: N) => {
+    const A = bounceA.element(i)
+    const B = bounceB.element(i)
+    const toL = A.xyz.sub(p)
+    const d = length(toL).max(0.05)
+    // Same storey only (floors and ceilings stop bounce), fading out over the lamp's range.
+    const sameFloor = smoothstep(B.w.sub(0.15), B.w.add(0.05), p.y).mul(smoothstep(B.w.add(3.6), B.w.add(3.3), p.y))
+    const win = d.div(A.w).pow(4).oneMinus().clamp().pow(2)
+    // Indirect light arrives from all around but mostly from the lit side: faces turned to the fitting get more.
+    const facing = tslMax(dot(n, toL.div(d)), 0).mul(0.6).add(0.4)
+    acc.addAssign(B.rgb.mul(facing).mul(win).mul(sameFloor).div(d.mul(d).add(2.5)))
+  })
+  return acc
+}
 
 /** CPU mirror of the fog for per-lamp transmittance. */
 const fogCpu = { density: 0.014, falloff: 1 / 28, base: 0, interior: 0.004 }
@@ -236,7 +272,9 @@ export function createAtmosphere(ctx: WorldContext) {
     // a little brighter from below than above so ceilings don't fall to black — cheap stand-in for interior GI.
     const ins = insideNode(positionWorld, 0.05, false)
     const up = (normalWorld as N).y
-    const bounce = fogUniforms.interiorAmbient.mul(mix(float(1.15), float(0.8), up.mul(0.5).add(0.5)))
+    const bounce = fogUniforms.interiorAmbient
+      .mul(mix(float(1.15), float(0.8), up.mul(0.5).add(0.5)))
+      .add(lampBounce(positionWorld, normalWorld))
     // Lightning adds a flat cool skylight outdoors (the whole cloud deck lit for a moment).
     const outdoorEnv = envNode.add(fogUniforms.flashAmbient)
     ;(ctx.scene as unknown as { environmentNode: N }).environmentNode = mix(outdoorEnv, envNode.mul(fogUniforms.envInterior).add(bounce), ins)

@@ -44,7 +44,7 @@ export class GameAudio {
       ctx.settings[l.key] ??= l.value
       ctx.controls.push({ key: l.key, label: l.label, group: "Audio", min: 0, max: l.bus === "master" ? 1.5 : 1.5, step: 0.05 })
     }
-    // The horror layer (random scares, the Sublevel drone) is off in play mode until the owner wants it; /debug starts
+    // The horror layer (random scares, the north-side drone) is off in play mode until the owner wants it; /debug starts
     // with it on. Story sounds on the horror bus (the listening room's radio voices) are not part of it.
     ctx.settings["audio.horrorLayer"] ??= resolveMode() === "play" ? 0 : 1
     ctx.controls.push({ key: "audio.horrorLayer", label: "Horror layer (scares, drone)", group: "Audio", min: 0, max: 1, step: 0.05 })

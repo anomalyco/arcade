@@ -64,7 +64,8 @@ const browser = await chromium.launch({ executablePath: chrome, headless: true, 
 const page = await browser.newPage({ viewport: { width: 640, height: 400 }, deviceScaleFactor: 1 })
 const errors: string[] = []
 page.on("pageerror", (e) => errors.push(e.message))
-await page.goto(`${base}scripts/audit/audit.html?view=corridor`)
+// body=0: the first-person body (hands in idle sway) fills the sweep's centre crop and reads as flicker.
+await page.goto(`${base}scripts/audit/audit.html?view=corridor&body=0`)
 await page.waitForFunction(() => {
   const s = (globalThis as { __afterhours?: { ready: boolean; complete: boolean } }).__afterhours
   return !!s?.complete && s.ready && !!(globalThis as { __interior?: unknown }).__interior
@@ -440,6 +441,11 @@ await page.evaluate(() => {
   s["grade.grain"] = 0
   s["light.flicker"] = 0
   s["forest.wind"] = 0
+  // Lightning lights every window for a few frames at random: weather, not geometry.
+  s["weather.lightning"] = 0
+  // Auto-resolution drops the render scale under headless load at random moments and TAAU then shows its jitter on
+  // high-contrast detail: pin full scale so every view is measured the same way.
+  s["post.autoRes"] = false
   // Dying lamps flicker by design (their own per-lamp amount): steady them so only geometry can shimmer.
   for (const l of g.__interior.ctx.lamps) if (l.flicker) l.flicker = 0
 })
