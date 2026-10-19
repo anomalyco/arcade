@@ -6,6 +6,7 @@
 import "./blood/index"
 import "./bodies/index"
 import "./crafting/index"
+import "./details/index"
 import "./discovery/index"
 import "./dogs/index"
 import "./flares/index"

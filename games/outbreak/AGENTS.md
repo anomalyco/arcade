@@ -40,6 +40,13 @@
   is grounded like furniture (`propFloorFootprints`), and table lamps bake pools (`propLamps`), with shades glowing on
   `TABLE_LAMP_SLOT`. On by default; Lab: Backquote › Props ("Furnish start houses") and the Lab's `props` station.
   Stills and paired GPU cost: `bun scripts/props-stills.ts` (via `hivemind run --kind browser`).
+- World details (`src/details/`, Lab: Backquote › Details, station `outbreak-details`): the lived-in, then-abandoned
+  layer from the RE Mansion direction (D-30). Indoors: mail behind front doors, moving boxes, and turned-over houses
+  (toppled chairs, dumped drawers, books, broken crockery; always where Blood put prints on the walls or a vignette
+  broke in). Outdoors: bins and dumpsters, mailboxes, dropped luggage, bikes and prams, police tape on cones round the
+  Night lights police cars, spray-painted search marks and warnings on front walls. Placement is a pure function of
+  the town and `dtSeed` per building and car (`placement.ts`), meshes are box-built (`models.ts`), drawn instanced
+  from `scene/frame-renderer.ts`. Tests: `tests/details.test.ts`.
 - The look (survivor style, grade, lamps and sky as trims on the day cycle, curated presets) lives in `src/look/`;
   Lab: Backquote › Look · Presets/Hero/Grade/Lights and the `outbreak-look` lab. The look's contract is
   `../../docs/outbreak-art-direction.md`; beauty stills, flicker and paired GPU: `bun scripts/look-beauty.ts`. Stills: `bun scripts/look-stills.ts`
