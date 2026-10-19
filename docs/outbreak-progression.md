@@ -88,6 +88,8 @@ no guessing. Rules: `shared/discovery/recipes.ts` and `recipe-board.ts`; the HUD
 | Reinforced barricade | scrap and the toolbox installed (or a hardware flyer) | when boarding up | +1 scrap a board | Each board holds 180 instead of 100 |
 | Flashlight battery | scrap, chem and the generator wired in | at a lit workbench with the generator | 1 scrap, 1 chem | A spare battery (`R` with the flashlight in hand) |
 | Can tripwire | one disarmed | anywhere | 2 scrap | Rattles when something walks through a doorway |
+| Molotov | a bottle and chem | anywhere | 1 bottle, 1 chem | Thrown; bursts into a pool of fire that sets the dead alight |
+| Flamethrower | a gas can, scrap and a pressure tank installed | at a lit workbench with the tank | the tank, 1 gas can, 3 scrap | See Fire & explosives below |
 
 Costs are Progression › Craft cost × these (the HUD reads the live ledger rule, so they always agree).
 
@@ -100,6 +102,31 @@ Bots make bench recipes at the bench with the same digit (`canCraftUseful` in `s
 `tests/recipe-board.test.ts` (filling in, parts, pages, the bench's E, where things are made, a restored fork) and
 `tests/crafting.test.ts` (rows, costs, hints, tips); stills of a new player's walkthrough:
 `bun scripts/crafting-proof.ts` (via `hivemind run --kind browser`).
+
+## Fire & explosives (AR-62)
+
+`shared/fire/` (rules) and `src/fire/` (drawing, Lab). Progression leaves these items alone on the button (`heldUse`
+returns "use") and the fire feature uses them. Everything every seat sees is a fixed ring of shared ledger stores
+(`fire:`, `burn:`, `scorch:`, `dyn:`, `crack:`, `trap:` and `flamer:<seat>`), made once and reused, so how much burns
+is bounded and nothing is added to the wire.
+
+| Item | Where | How it plays |
+| --- | --- | --- |
+| Flamethrower | The hardware store's keyed back room in 60% of towns (seeded); 1–1.2% on garage and warehouse shelves; or made at a bench with a pressure tank installed | Hold fire to spray a short cone (6.5 m, 16°). A full tank lasts 9 s; `R` or an empty tank refuels from a gas can. The dead in the stream catch fire, panic, burn down (15/s for 6 s), light the street, set alight others they brush and fall charred. It roars (22 m) and its light pulls in the dead who see it, most at night. Friendly fire. Fire licks the ground where it lands (2.4 s) and leaves scorch marks |
+| Gas can (`fuel`, belt) | Gas stations and garages (15–35%), hardware, warehouses, cabins, rarely houses | Refuels the flamethrower; one goes into making it |
+| Pressure tank (part) | Always in the hardware back room; 5–6% on garage, gas station and warehouse shelves | Install at a bench to fill in the flamethrower recipe; making one uses it up |
+| Dynamite | Hardware 3%, warehouse 5%, cabin 6% shelves | Thrown on a 2.6 s fuse. The blast (4.8 m) kills and throws the dead, hurts survivors, blows in barricades and doors, leaves a crater, flashes and is heard 60 m off |
+| Firecrackers | Gas station 12% and grocery 6% counters, garages, houses | Thrown; the string skitters 6 m and pops for 7 s, each burst heard 20 m off: a moving lure |
+| Molotov | Made from a bottle and chem | Thrown 11 m; a 2.3 m pool of fire for 7 s |
+| Flare gun (3 shots) | Police 4–8%, garage and gas station counters, cabins | Fires a road flare 26 m that pulls the dead into its red light, far from you |
+| Bear trap | Cabin 15% and hardware 6% shelves | Set just ahead; the first of the dead to step in takes 45 and is held 8 s |
+
+Rare rolls use their own seeded stream (`RARE_LOOT` and `rollRareLoot` in `shared/progression/loot.ts`), so the
+older loot rolls of every town are unchanged. Fire on the ground never spreads unless Lab › Fire & explosives › Fire
+spreads is raised. Tunables, the look (flame brightness and density, embers, smoke, light, charring, light budget),
+Give and Stage actions are in Lab › Fire & explosives; `arcade cmd fire.give item=dynamite count=2` and
+`arcade cmd fire.stage scene=burning` do the same, and the `outbreak-fire` Lab station stages each item. Tests:
+`tests/fire.test.ts`; sounds (reused library samples): `src/audio/inventory.ts`, `tests/audio.test.ts`.
 
 ## Lab
 

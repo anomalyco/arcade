@@ -73,3 +73,9 @@
   or being alone kills, the body keeps their kit, the dead watch a teammate until dawn, and everyone dead ends the run.
   Lab: Backquote › Death ("Today" = nobody dies) with Down/Kill/Revive me and teammate actions; `arcade cmd death.kill`.
   Rules and wire: `../../docs/outbreak-coop.md#death`. Tests: `tests/death.test.ts`.
+- Fire & explosives (AR-62): the flamethrower, dynamite, firecrackers, molotovs, the flare gun and bear traps live in
+  `shared/fire/` (rules over fixed rings of shared ledger stores, nothing on the wire) and `src/fire/` (analytic flame
+  and smoke sprites, fire light packed after the night lights in `extraLights`, scorch, rigs and charring, drawn from
+  `scene/frame-renderer.ts`). Lab: Backquote › Fire & explosives, `arcade cmd fire.stage scene=…`, station
+  `outbreak-fire`. Items, loot and recipes: `../../docs/outbreak-progression.md#fire--explosives-ar-62`. Tests:
+  `tests/fire.test.ts`.

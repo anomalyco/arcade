@@ -364,3 +364,41 @@ describe("a fresh start is quiet", () => {
     expect(director.holds.filter((h) => h.key.startsWith("alarm:"))).toEqual([])
   })
 })
+
+describe("fire & explosives sounds (AR-62)", () => {
+  test("every sound they use is in Outbreak's slice of the shared library", () => {
+    return Bun.file(new URL("../src/audio/inventory.ts", import.meta.url).pathname)
+      .text()
+      .then((text) => {
+        const body = text.slice(text.indexOf("private fireSound"))
+        const used = [...body.matchAll(/id: "([a-z.-]+)"/g)].map((m) => m[1]!)
+        expect(used.length).toBeGreaterThan(6)
+        for (const id of used) expect(SFX_BY_ID.get(id)?.usedBy, id).toContain("outbreak")
+      })
+  })
+
+  test("a thrown stick of dynamite hisses on its fuse and blows once", () => {
+    const session = new LocalSession(7, 7, 0.22, { zombieCount: 0 })
+    const director = new SoundDirector()
+    const p = session.view.player
+    Object.assign(p, { x: 30, y: 44, vx: 0, vy: 0, aim: 0 })
+    const ledger = session.sim.progression.ledger
+    ledger.apply({ kind: "grant", actor: "player", item: "dynamite", count: 1 })
+    const slot = session.sim.progression.hotbar("player")!.slots.findIndex((s) => s?.item === "dynamite")
+    ledger.apply({ kind: "select", actor: "player", slot })
+    const hear = () => ids(director.observe(soundWorld(session.sim), p))
+    hear()
+    session.update(TICK_DT, { ...idle, fire: true }, 0)
+    const heard = hear()
+    let fuse = director.holds.some((h) => h.key.startsWith("dyn:"))
+    for (let i = 0; i < 4 / TICK_DT; i++) {
+      session.update(TICK_DT, idle, 0)
+      heard.push(...hear())
+      fuse ||= director.holds.some((h) => h.key.startsWith("dyn:"))
+    }
+    expect(heard).toContain("flare.ignite")
+    expect(fuse).toBe(true)
+    expect(heard.filter((id) => id === "bomb.explode")).toHaveLength(1)
+    expect(director.holds.some((h) => h.key.startsWith("dyn:"))).toBe(false)
+  })
+})

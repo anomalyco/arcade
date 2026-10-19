@@ -6,9 +6,14 @@
  */
 import { keyCapHtml } from "@arcade/kit/client/key-cap"
 import { keyLabel } from "@arcade/kit/client/controls"
+import { FIRE_ITEMS } from "../../shared/fire/fire"
 import { BELT_ITEMS, HOTBAR_SIZE, PACK_SIZE } from "../../shared/progression"
 import type { SessionView } from "../../shared/session"
+import { itemIcon } from "../discovery/icons"
 import { flip, hudMotion, RollingNumber, snapToPixels, type HudMotion } from "./motion"
+
+/** Hotbar items drawn with their pencil glyph beside the label (fire & explosives, AR-62). */
+const GLYPH_SLOTS: ReadonlySet<string> = new Set(FIRE_ITEMS)
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 
@@ -226,15 +231,17 @@ export class Dock {
       const def = s ? ledger.items.get(s.item) : undefined
       const label = s ? (def?.shortLabel ?? s.item) : ""
       const extra = s?.item === "flashlight" ? keyCapHtml("KeyF", { className: "slot-cap" }) : ""
+      const glyph = s && GLYPH_SLOTS.has(s.item) ? itemIcon(s.item, 14) : ""
       const itemKey = `${s?.item ?? ""}|${extra}`
       if (itemKey !== slot.key) {
         const had = slot.key !== ""
         slot.key = itemKey
-        slot.item.innerHTML = s ? `<span class="slot-label">${esc(label)}</span>${extra}` : ""
+        slot.item.innerHTML = s ? `${glyph}<span class="slot-label">${esc(label)}</span>${extra}` : ""
         if (animate && s) this.motion.enter(slot.item, "default", { y: had ? 0 : 6 })
         if (animate && !s && had) this.pulse(slot.el)
       }
-      const count = s?.item === "pistol" ? p.magAmmo : s && s.count > 1 ? s.count : null
+      // A charged fire item counts its charge: the flamethrower's fuel (%), the flare gun's shots.
+      const count = s?.item === "pistol" ? p.magAmmo : s && GLYPH_SLOTS.has(s.item) && s.charge !== undefined ? Math.ceil(s.charge) : s && s.count > 1 ? s.count : null
       slot.el.dataset.count = String(count !== null)
       if (count !== null) slot.roll.set(count, animate && slot.count !== null)
       if (animate && count !== null && slot.count !== null && count > slot.count) this.pulse(slot.el)

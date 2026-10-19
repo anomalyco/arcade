@@ -40,6 +40,7 @@
 #hotbar .slot[data-selected="true"] .slot-key { color: var(--hud-ink-2) }
 #hotbar .slot[data-on="true"] .slot-item { color: var(--hud-warm) }
 #hotbar .slot-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0 }
+#hotbar .slot-item .glyph { flex: none; margin-right: -2px; opacity: .85 }
 #hotbar .slot .slot-cap { margin-left: var(--hud-1) }
 #hotbar .slot .slot-cap .akc-cap { font-size: 9px; transition: box-shadow var(--m-default-ms, .3s) var(--m-default, ease) }
 #hotbar .slot[data-on="true"] .slot-cap .akc-cap { box-shadow: 0 0.14em 0 var(--akc-edge), 0 0 0 1px rgb(0 0 0 / .6), 0 0 8px rgb(241 196 106 / .55) }

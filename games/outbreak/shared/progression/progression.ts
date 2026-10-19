@@ -19,7 +19,7 @@ import { INTERACT_RANGE, type InteractAction, type InteractActorState, type Inte
 import { DEFAULT_LOADOUT, loadoutSpec, type LoadoutId } from "../loadout"
 import { sightRects, type Door, type Town } from "../map"
 import { ACTOR_STORES, CATALOG, ITEMS, RECIPES, type Recipe } from "./catalog"
-import { benchSites, buildingAt, CONTAINER_SLOTS, LOOT_TABLES, lootSites, rollExtraLoot, type BenchSite, type LootSite } from "./loot"
+import { benchSites, buildingAt, CONTAINER_SLOTS, LOOT_TABLES, lootSites, rareLootRng, rollExtraLoot, rollRareLoot, type BenchSite, type LootSite } from "./loot"
 import { CHANNEL_SLACK, pickProgressionTuning, progressionRules, type ProgressionTuning } from "./tuning"
 import type {
   HeldUse,
@@ -55,6 +55,8 @@ const LURE_RANGE = 11
 const BENCH_LIGHT_FLASHLIGHT = 0.2
 const BENCH_LIGHT_LAMP = 0.2
 const GENERATOR_LIGHT = 0.8
+/** Items whose primary button a feature handles in its own survivor action (`shared/fire`). */
+const FEATURE_ITEMS: ReadonlySet<ItemId> = new Set(["flamethrower", "dynamite", "firecrackers", "molotov", "flare-gun", "bear-trap"])
 
 export class OutbreakProgression implements ProgressionHost {
   readonly ledger: Ledger
@@ -191,6 +193,7 @@ export class OutbreakProgression implements ProgressionHost {
           }
         }
         rollExtraLoot(initial, tableKey, c.kind, cRng, this.tuning.lootRate)
+        rollRareLoot(initial, tableKey, c.kind, rareLootRng(this.town.seed, c.propIndex), this.tuning.lootRate)
         st = this.ledger.createStore({
           id: c.id,
           mode: "slots",
@@ -257,6 +260,8 @@ export class OutbreakProgression implements ProgressionHost {
     if (item === "medkit" || item === "bandage") return "heal"
     if (item === "noisemaker" || item === "bottle" || item === "flare") return "throw"
     if (item === "cans") return "set"
+    // The flamethrower, dynamite, firecrackers, molotovs, the flare gun and bear traps are used by `shared/fire`.
+    if (item && FEATURE_ITEMS.has(item)) return "use"
     // Food is for a chained dog (`shared/dogs`); with it in hand the button shoves, as empty hands do.
     if (item === "food") return "shove"
     return this.ledger.count(`${id}/hotbar`, "pistol") > 0 ? "fire" : "shove"
@@ -972,6 +977,7 @@ export class OutbreakProgression implements ProgressionHost {
       case "missing_requirement":
         if (ev.item === "toolbox") return "Needs the toolbox installed"
         if (ev.item === "car-battery") return "Needs the generator wired in"
+        if (ev.item === "pressure-tank") return "Needs a pressure tank installed"
         if (ev.item === "crowbar") return "Needs a crowbar"
         return "Not learned yet"
       case "already_known":

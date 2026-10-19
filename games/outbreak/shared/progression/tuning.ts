@@ -168,6 +168,12 @@ export function progressionRules(t: ProgressionTuning): Rule[] {
     { id: "throw:lure", label: "Throw", consume: { noisemaker: 1 } },
     { id: "throw:bottle", label: "Throw", consume: { bottle: 1 } },
     { id: "throw:flare", label: "Throw", consume: { flare: 1 } },
+    // Fire & explosives (`shared/fire/`).
+    { id: "throw:dynamite", label: "Throw", consume: { dynamite: 1 } },
+    { id: "throw:firecrackers", label: "Throw", consume: { firecrackers: 1 } },
+    { id: "throw:molotov", label: "Throw", consume: { molotov: 1 } },
+    { id: "set:bear-trap", label: "Set", consume: { "bear-trap": 1 } },
+    { id: "refuel:flamethrower", label: "Refuel", consume: { fuel: 1 } },
     { id: "feed:dog", label: "Feed", consume: { food: 1 } },
     { id: "set:tripwire", label: "Stringing cans", duration: t.tripSetTime, consume: { cans: 1 } },
     { id: "disarm:tripwire", label: "Disarming", duration: t.tripDisarmTime },

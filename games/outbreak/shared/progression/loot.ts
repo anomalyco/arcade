@@ -237,6 +237,60 @@ export function rollExtraLoot(contents: Stack[], tableKey: string, kind: Prop["k
   }
 }
 
+/**
+ * Fire & explosives (`shared/fire/`): rare one-offs on rolls of their own after everything else, with their own
+ * random stream, so every container keeps the contents it always had. Gas cans where cars are kept and sold; dynamite
+ * in warehouses, cabins and hardware back rooms; firecrackers in drawers and at the gas station till; flare guns at the
+ * police station and in cabins; bear traps in cabins; pressure tanks (for a home-made flamethrower) in garages; and a
+ * flamethrower itself, very rarely, on a garage or warehouse shelf (and in the hardware store's back room, below).
+ */
+export const RARE_LOOT: Readonly<Record<string, Partial<Record<Prop["kind"], readonly Roll[]>>>> = {
+  house: {
+    shelf: [{ item: "fuel", chance: 0.02 }],
+    dresser: [{ item: "firecrackers", chance: 0.025 }],
+    nightstand: [{ item: "firecrackers", chance: 0.02 }],
+  },
+  hardware: { shelf: [{ item: "fuel", chance: 0.14 }, { item: "bear-trap", chance: 0.06 }, { item: "dynamite", chance: 0.03 }] },
+  garage: {
+    shelf: [{ item: "fuel", chance: 0.3 }, { item: "pressure-tank", chance: 0.06 }, { item: "firecrackers", chance: 0.04 }, { item: "flamethrower", chance: 0.012 }],
+    counter: [{ item: "fuel", chance: 0.15 }, { item: "flare-gun", chance: 0.025 }],
+  },
+  gas_station: {
+    shelf: [{ item: "fuel", chance: 0.35 }, { item: "pressure-tank", chance: 0.05 }],
+    counter: [{ item: "firecrackers", chance: 0.12 }, { item: "fuel", chance: 0.15 }, { item: "flare-gun", chance: 0.03 }],
+  },
+  warehouse: { shelf: [{ item: "fuel", chance: 0.12 }, { item: "dynamite", chance: 0.05 }, { item: "pressure-tank", chance: 0.05 }, { item: "flamethrower", chance: 0.01 }] },
+  police: { shelf: [{ item: "flare-gun", chance: 0.08 }], counter: [{ item: "flare-gun", chance: 0.04 }] },
+  grocery: { counter: [{ item: "firecrackers", chance: 0.06 }] },
+  cabin: {
+    shelf: [{ item: "bear-trap", chance: 0.15 }, { item: "dynamite", chance: 0.06 }, { item: "fuel", chance: 0.1 }],
+    dresser: [{ item: "flare-gun", chance: 0.05 }],
+  },
+}
+
+/** The random stream for a streamed container's rare roll (its own, so the other rolls are untouched). */
+export const rareLootRng = (seed: number, propIndex: number) => new Rng((seed ^ Math.imul(propIndex + 977, 0x7f4a7c15) ^ 0x1f3d5b79) >>> 0)
+
+/** Adds the fire & explosives rolls for a container of `kind` in a `tableKey` building to `contents`, from `rng`. */
+export function rollRareLoot(contents: Stack[], tableKey: string, kind: Prop["kind"], rng: Rng, lootRate: number): void {
+  for (const roll of RARE_LOOT[tableKey]?.[kind] ?? []) {
+    const hit = rng.next() < roll.chance * lootRate
+    if (hit && contents.length < CONTAINER_SLOTS && !contents.some((s) => s.item === roll.item)) contents.push({ item: roll.item, count: roll.min ?? 1 })
+  }
+}
+
+/**
+ * The hardware store's keyed back room: always a pressure tank beside the toolbox and the car battery, and in most
+ * towns (from the seed) a flamethrower someone left with it.
+ */
+export function backRoomFire(town: Pick<Town, "seed">, buildingId: string): ItemId[] {
+  const rng = new Rng((town.seed ^ 0x51f1a3e7 ^ Math.imul(buildingId.length + 1, 0x2545f491)) >>> 0)
+  return rng.next() < BACK_ROOM_FLAMETHROWER ? ["pressure-tank", "flamethrower"] : ["pressure-tank"]
+}
+
+/** Share of towns whose hardware back room holds a flamethrower. */
+export const BACK_ROOM_FLAMETHROWER = 0.6
+
 export type LootSite = {
   /** Ledger store id, `loot:<prop index>`. */
   id: string
@@ -270,6 +324,7 @@ export function lootSites(town: Town, tuning: ProgressionTuning): { sites: LootS
   const meleeRng = new Rng((town.seed ^ 0x3b9a71d3) >>> 0)
   const bottleRng = new Rng((town.seed ^ 0x6b0771e5) >>> 0)
   const extraRng = new Rng((town.seed ^ 0x2f1a9c53) >>> 0)
+  const rareRng = new Rng((town.seed ^ 0x7e3b1d29) >>> 0)
   const sites: LootSite[] = []
   const stores: StoreSpec[] = []
   const backRoomShelves = new Map<string, number[]>()
@@ -292,6 +347,7 @@ export function lootSites(town: Town, tuning: ProgressionTuning): { sites: LootS
     const bottles = BOTTLE_CHANCE[p.kind] ?? 0
     if (bottleRng.next() < bottles * tuning.lootRate && contents.length < CONTAINER_SLOTS) contents.push({ item: "bottle", count: 1 + bottleRng.int(2) })
     rollExtraLoot(contents, tableKey, p.kind, extraRng, tuning.lootRate)
+    rollRareLoot(contents, tableKey, p.kind, rareRng, tuning.lootRate)
     const id = `loot:${i}`
     sites.push({ id, propIndex: i, kind: p.kind, label: CONTAINER_LABELS[p.kind] ?? p.kind, rect: shape.rect, x: p.x, y: p.y, buildingId: building?.id ?? null })
     stores.push({ id, mode: "slots", scope: "shared", size: CONTAINER_SLOTS, revealed: false, at: { x: p.x, y: p.y }, initial: contents })
@@ -307,6 +363,15 @@ export function lootSites(town: Town, tuning: ProgressionTuning): { sites: LootS
       if (slots.length >= CONTAINER_SLOTS) slots.pop()
       slots.unshift({ item: part, count: 1 })
     })
+    // Fire & explosives: the pressure tank (and maybe a flamethrower) on the back room's last shelf.
+    const fire = backRoomFire(town, b.id)
+    const spec = stores[shelves[shelves.length - 1]!]!
+    const slots = spec.initial as Stack[]
+    for (const item of fire) {
+      if (slots.some((s) => s.item === item)) continue
+      if (slots.length >= CONTAINER_SLOTS) slots.pop()
+      slots.unshift({ item, count: 1 })
+    }
   }
   return { sites, stores }
 }

@@ -5,6 +5,7 @@
 import "./bodies/index"
 import "./death/index"
 import "./discovery/index"
+import "./fire/index"
 import "./dogs/index"
 import "./flares/index"
 import "./hordes/index"

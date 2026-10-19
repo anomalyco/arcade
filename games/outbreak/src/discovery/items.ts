@@ -2,6 +2,7 @@ import { MAT, Mesh } from "@arcade/kit/gpu/mesh"
 import type { Renderer } from "@arcade/kit/gpu/renderer"
 import { MELEE_WEAPON_IDS } from "../../shared/combat"
 import { hex } from "../level"
+import { buildFireItemMeshes } from "../fire/items"
 import { buildMeleeWeaponMeshes } from "../survivor"
 
 /** Each item as a small prop, origin at its base centre, long axis along +x. Read by shape and colour, never a label. */
@@ -24,6 +25,14 @@ const FOOTPRINT: Record<string, number> = {
   "car-battery": 0.32,
   flashlight: 0.2,
   pistol: 0.2,
+  fuel: 0.26,
+  "pressure-tank": 0.38,
+  flamethrower: 0.6,
+  dynamite: 0.22,
+  firecrackers: 0.2,
+  molotov: 0.3,
+  "flare-gun": 0.2,
+  "bear-trap": 0.5,
 }
 
 export function buildItemMeshes(): Record<string, Mesh> {
@@ -133,6 +142,7 @@ export function buildItemMeshes(): Record<string, Mesh> {
   // Melee weapons lie flat: the held meshes, rolled onto their side.
   const weapons = buildMeleeWeaponMeshes(0)
   for (const id of MELEE_WEAPON_IDS) out[id] = weapons[id]
+  Object.assign(out, buildFireItemMeshes())
   return out
 }
 
