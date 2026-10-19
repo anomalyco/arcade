@@ -28,6 +28,7 @@ import {
   type FlashlightState as SurvivorFlashlightState,
   type FlashlightTuning,
 } from "./flashlight"
+import { DEFAULT_HEARING_TUNING, HearingMap, hearingControls, type HearingTuning } from "./hearing"
 import { EXTERIOR_VEHICLE_COLLIDERS, propShape, sightRects, SIZE, solidRects, type Town } from "./map"
 import {
   canSpawnZombieAt,
@@ -52,18 +53,20 @@ import {
   type PacingTuning,
 } from "./pacing"
 
-export type AIConfig = KitAIConfig & PacingTuning
+export type AIConfig = KitAIConfig & PacingTuning & HearingTuning
 
 /** Outbreak's zombie AI before D-22 (Balanced Curve). Saved presets that carry these values keep them. */
 export const LEGACY_AI_CONFIG: AIConfig = {
   ...KIT_DEFAULT_AI_CONFIG,
   ...LEGACY_PACING_TUNING,
+  ...DEFAULT_HEARING_TUNING,
 }
 
 /** D-22 Balanced Curve, tuned by the survivor-bot CMA-ES search (games/outbreak/scripts/run-bot-tuning.ts). */
 export const DEFAULT_AI_CONFIG: AIConfig = {
   ...KIT_DEFAULT_AI_CONFIG,
   ...DEFAULT_PACING_TUNING,
+  ...DEFAULT_HEARING_TUNING,
   zombieCount: 16,
   sightRange: 15,
   hearingScale: 0.75,
@@ -139,6 +142,7 @@ export const aiControls = [
     ],
   },
   ...pacingControls,
+  ...hearingControls,
 ] as const
 
 export type PortalState = {
@@ -232,6 +236,8 @@ export class OutbreakAISubsystem {
   private manualSpawnOnly = false
   private walls: Rect[] = []
   private closedDoors: Rect[] = []
+  /** Building shells for the crowd's hearing (`shared/hearing.ts`). */
+  readonly hearing = new HearingMap()
   private sightBlockers: Rect[] = []
   private solids: Rect[] = []
   private portals: NavPortal[] = []
@@ -334,6 +340,7 @@ export class OutbreakAISubsystem {
       .filter((d) => !d.open || (this.portalStates.get(d.id)?.barricadePlanks ?? 0) > 0)
       .map((d) => d.rect)
     this.sightBlockers = sightRects(town)
+    this.hearing.rebuild(town, this.walls, this.closedDoors, (id) => this.portalStates.get(id)?.barricadePlanks ?? 0)
 
     const baseSolids = solidRects(town)
     const extraBarricadeSolids: Rect[] = []
@@ -455,6 +462,18 @@ export class OutbreakAISubsystem {
       count++
     }
     return count
+  }
+
+  /** The crowd's hearing hook for this tick: building shells unless the Lab picked Today. */
+  private hearNoiseFor(): HearingMap["hear"] | undefined {
+    const c = this.config
+    const t = this.hearing.tuning
+    t.hearingModel = c.hearingModel ?? DEFAULT_HEARING_TUNING.hearingModel
+    t.hearingShutCarry = c.hearingShutCarry ?? DEFAULT_HEARING_TUNING.hearingShutCarry
+    t.hearingShutLoss = c.hearingShutLoss ?? DEFAULT_HEARING_TUNING.hearingShutLoss
+    t.hearingOpenCarry = c.hearingOpenCarry ?? DEFAULT_HEARING_TUNING.hearingOpenCarry
+    t.hearingOpenLoss = c.hearingOpenLoss ?? DEFAULT_HEARING_TUNING.hearingOpenLoss
+    return t.hearingModel >= 1 ? this.hearing.hear : undefined
   }
 
   emitNoise(
@@ -630,6 +649,7 @@ export class OutbreakAISubsystem {
       config: threatConfig,
       targets,
       flow: this.flow,
+      hearNoise: this.hearNoiseFor(),
     })
 
     this.pacing.stepAfterCrowd(
