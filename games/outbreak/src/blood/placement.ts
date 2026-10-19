@@ -1,5 +1,6 @@
 import { distToRect, rayRect, type Rect } from "@arcade/kit/sim/geom"
 import { Rng } from "@arcade/kit/sim/rng"
+import { bodySites } from "../../shared/bodies/bodies"
 import { chooseVignettes, vignetteScene } from "../../shared/discovery/vignettes"
 import { buildingFootprint, EXTERIOR_VEHICLE_COLLIDERS, inBuildingFootprint, propShape, SIZE, type Building, type Town } from "../../shared/map"
 import { supportHeight } from "../../shared/terrain"
@@ -310,6 +311,8 @@ export function placeAmbientBlood(town: Town, s: AmbientBloodInput): BloodStamp[
     for (const body of scene.bodies) bodies.push(body)
     if (v.kind === "broken-in" || v.kind === "hid") scenes.add(v.target)
   }
+  // The dead survivors left to search (AR-56) lie in pools of their own; the vignette's one is above.
+  for (const body of bodySites(town)) if (!body.vignette) bodies.push({ x: body.x, y: body.y, who: "survivor" })
   for (const b of town.buildings) houseBlood(p, town, b, s, bodies, scenes.has(b.id))
   for (const c of town.chunks) streetBlood(p, town, c, s, bodies)
   return p.out

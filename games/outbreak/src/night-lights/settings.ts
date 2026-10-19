@@ -28,6 +28,12 @@ export type OutbreakNightLightSettings = {
   nlMaxLights: number
   /** Reroll which cars, shops and lamps get a light (separate from the town seed). */
   nlSeed: number
+  /** Brightness of a burning road flare's red light (AR-56; flares light whether or not the practicals are on). */
+  nlFlarePower: number
+  /** How far a road flare's light reaches. */
+  nlFlareRadius: number
+  /** How much smoke a burning flare gives off (0 for none). */
+  nlFlareSmoke: number
 }
 
 export const DEFAULT_NIGHT_LIGHT_SETTINGS: OutbreakNightLightSettings = {
@@ -42,6 +48,9 @@ export const DEFAULT_NIGHT_LIGHT_SETTINGS: OutbreakNightLightSettings = {
   nlStrobeRate: 1,
   nlMaxLights: 8,
   nlSeed: 0,
+  nlFlarePower: 1.1,
+  nlFlareRadius: 7,
+  nlFlareSmoke: 1,
 }
 
 const GROUP = "Night lights"
@@ -58,4 +67,7 @@ export const nightLightControls: LabControl[] = [
   { key: "nlStrobeRate", label: "Strobe speed", group: GROUP, min: 0.25, max: 3, step: 0.05, unit: "×" },
   { key: "nlMaxLights", label: "Most lights at once", group: GROUP, min: 0, max: 16, step: 1, unit: "" },
   { key: "nlSeed", label: "Reroll", group: GROUP, min: 0, max: 99, step: 1, unit: "" },
+  { key: "nlFlarePower", label: "Road flare brightness", group: GROUP, min: 0, max: 4, step: 0.05, unit: "×" },
+  { key: "nlFlareRadius", label: "Road flare light reach", group: GROUP, min: 1, max: 16, step: 0.5, unit: "m" },
+  { key: "nlFlareSmoke", label: "Road flare smoke", group: GROUP, min: 0, max: 3, step: 0.05, unit: "×" },
 ]

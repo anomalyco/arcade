@@ -392,6 +392,33 @@ export const SFX_SPECS: readonly SfxSpec[] = [
     generate: { prompt: `A single click of a metal flashlight's rubber tail switch, tiny and crisp, very close. ${NO_SPEECH}`, duration: 0.5, candidates: 4, influence: 0.6 },
   },
 
+  // World interactions (AR-56): road flares and chained dogs
+  {
+    id: "flare.ignite", label: "Road flare struck", group: "flare", bus: "foley", variants: 2, target: -19, gain: 0.85, pitchJitter: 0.05, gainJitter: 0.08,
+    maxVoices: 2, range: { ref: 2, max: 18 }, wet: 0.12, usedBy: OUTBREAK, durationRange: [0.4, 1.8],
+    generate: { prompt: `A road safety flare struck and igniting: a scratchy strike, a sharp fizzing whoosh as it catches, then a fierce sputtering hiss. ${NO_SPEECH}`, duration: 1.5, candidates: 4, influence: 0.55 },
+  },
+  {
+    id: "flare.loop", label: "Road flare burning", group: "flare", bus: "foley", variants: 1, loop: true, target: -27, gain: 0.8, pitchJitter: 0, gainJitter: 0,
+    maxVoices: 3, range: { ref: 1.5, max: 14 }, wet: 0.1, usedBy: OUTBREAK, durationRange: [2, 7],
+    generate: { prompt: `A red road flare burning on asphalt: a steady harsh fizzing hiss with little crackles and sputters, constant. ${NO_SPEECH}`, duration: 4, candidates: 2, loop: true, influence: 0.5 },
+  },
+  {
+    id: "dog.bark", label: "Chained dog barking", group: "dog", bus: "voice", variants: 4, target: -16, gain: 0.95, pitchJitter: 0.06, gainJitter: 0.1,
+    cooldown: 0.25, maxVoices: 3, range: { ref: 3, max: 40 }, wet: 0.25, usedBy: OUTBREAK, durationRange: [0.2, 1.2],
+    generate: { prompt: `A big guard dog on a chain barking hard at a stranger outdoors at night: two loud aggressive barks, deep and hoarse. ${NO_SPEECH}`, duration: 1, candidates: 6, influence: 0.55 },
+  },
+  {
+    id: "dog.yelp", label: "Dog yelps and goes quiet", group: "dog", bus: "voice", variants: 2, target: -17, gain: 0.9, pitchJitter: 0.05, gainJitter: 0.08,
+    maxVoices: 2, range: { ref: 3, max: 30 }, wet: 0.25, usedBy: OUTBREAK, durationRange: [0.3, 1.6],
+    generate: { prompt: `A dog yelping sharply in pain, a short whimper, then silence. ${NO_SPEECH}`, duration: 1.2, candidates: 4, influence: 0.5 },
+  },
+  {
+    id: "dog.eat", label: "Dog wolfing food", group: "dog", bus: "foley", variants: 2, target: -22, gain: 0.85, pitchJitter: 0.05, gainJitter: 0.08,
+    maxVoices: 2, range: { ref: 1.5, max: 10 }, wet: 0.08, usedBy: OUTBREAK, durationRange: [0.5, 2.2],
+    generate: { prompt: `A hungry dog wolfing down food from a tin bowl: eager chomping, licking and the bowl scraping, close up. ${NO_SPEECH}`, duration: 1.8, candidates: 4, influence: 0.5 },
+  },
+
   // Zombies and bodies
   {
     id: "zombie.groan.idle", label: "Zombie idle groan", group: "zombie", bus: "voice", variants: 6, target: -20, gain: 0.8, pitchJitter: 0.08, gainJitter: 0.15,

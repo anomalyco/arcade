@@ -45,6 +45,8 @@ export const ITEMS: readonly ItemDef[] = [
   { id: "noisemaker", label: "Noisemaker", shortLabel: "LURE", tag: "tool", slot: 4, stack: 3 },
   { id: "bottle", label: "Bottle", shortLabel: "BOTTLE", tag: "tool", slot: 4, stack: 3 },
   { id: "cans", label: "Can Tripwire", shortLabel: "CANS", tag: "tool", slot: 4, stack: 2 },
+  { id: "flare", label: "Road Flare", shortLabel: "FLARE", tag: "tool", slot: 4, stack: 3 },
+  { id: "food", label: "Canned Food", shortLabel: "FOOD", tag: "tool", slot: 3, stack: 3 },
 
   { id: "ammo", label: "9mm Ammo", shortLabel: "9mm", tag: "ammo", maxCount: 24 },
   { id: "plank", label: "Wood Plank", shortLabel: "Planks", tag: "resource", maxCount: 6, discovers: ["seen:plank"] },

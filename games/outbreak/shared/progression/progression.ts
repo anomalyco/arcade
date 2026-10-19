@@ -20,7 +20,7 @@ import { INTERACT_RANGE, type InteractAction, type InteractActorState, type Inte
 import { DEFAULT_LOADOUT, loadoutSpec, type LoadoutId } from "../loadout"
 import { sightRects, type Door, type Town } from "../map"
 import { ACTOR_STORES, CATALOG, ITEMS, RECIPES, type Recipe } from "./catalog"
-import { benchSites, buildingAt, CONTAINER_SLOTS, LOOT_TABLES, lootSites, type BenchSite, type LootSite } from "./loot"
+import { benchSites, buildingAt, CONTAINER_SLOTS, LOOT_TABLES, lootSites, rollExtraLoot, type BenchSite, type LootSite } from "./loot"
 import { CHANNEL_SLACK, pickProgressionTuning, progressionRules, type ProgressionTuning } from "./tuning"
 import type {
   HeldUse,
@@ -202,6 +202,7 @@ export class OutbreakProgression implements ProgressionHost {
             initial.push({ item: roll.item, count: n })
           }
         }
+        rollExtraLoot(initial, tableKey, c.kind, cRng, this.tuning.lootRate)
         st = this.ledger.createStore({
           id: c.id,
           mode: "slots",
@@ -266,8 +267,10 @@ export class OutbreakProgression implements ProgressionHost {
     const item = this.selected(id)?.item
     if (isMeleeWeapon(item)) return "melee"
     if (item === "medkit" || item === "bandage") return "heal"
-    if (item === "noisemaker" || item === "bottle") return "throw"
+    if (item === "noisemaker" || item === "bottle" || item === "flare") return "throw"
     if (item === "cans") return "set"
+    // Food is for a chained dog (`shared/dogs`); with it in hand the button shoves, as empty hands do.
+    if (item === "food") return "shove"
     return this.ledger.count(`${id}/hotbar`, "pistol") > 0 ? "fire" : "shove"
   }
 
@@ -322,7 +325,8 @@ export class OutbreakProgression implements ProgressionHost {
   /** The store an interaction target reads from, for strips (containers, drops, the stash and the bench). */
   storeFor(target: { kind: string; id: string } | undefined): string | null {
     if (!target) return null
-    if (target.kind === "container" || target.kind === "drop") return target.id
+    // `body`: a dead survivor searched like a container (`shared/bodies`).
+    if (target.kind === "container" || target.kind === "drop" || target.kind === "body") return target.id
     if (target.kind === "bench" || target.kind === "stash") return target.id.replace(/#.*$/, "")
     return null
   }
@@ -553,8 +557,10 @@ export class OutbreakProgression implements ProgressionHost {
       const use = this.heldUse(slot.id)
       if (use === "heal") this.startHeal(slot)
       else if (use === "throw") {
-        if (this.selected(slot.id)?.item === "bottle") this.verbs.throwBottle(slot, world)
-        else this.throwLure(slot, world)
+        // A road flare is thrown by its own feature (`shared/flares`, a survivor action after this one).
+        const item = this.selected(slot.id)?.item
+        if (item === "bottle") this.verbs.throwBottle(slot, world)
+        else if (item === "noisemaker") this.throwLure(slot, world)
       } else if (use === "set") this.verbs.setTripwire(slot, world)
     }
     if (cmd.drop) this.dropHeld(slot)

@@ -4,6 +4,9 @@ import type { Stack } from "@arcade/kit/sim/ledger"
 import type { OutbreakAISubsystem } from "../../shared/ai"
 import type { LootSite } from "../../shared/progression"
 import type { SessionView } from "../../shared/session"
+import { BodyProps } from "../bodies/props"
+import { DogProps } from "../dogs/props"
+import { FlareProps } from "../flares/props"
 import { hex } from "../level"
 import { RadioProps } from "../radios/props"
 import { BarricadeBoards } from "./barricades"
@@ -87,6 +90,10 @@ export class DiscoveryProps {
   readonly vignettes: VignetteProps
   /** House radios (AR-56). */
   readonly radios: RadioProps
+  /** Burning road flares, dead survivors to search and chained dogs (AR-56). */
+  readonly flares: FlareProps
+  readonly bodies: BodyProps
+  readonly dogs: DogProps
   private readonly items: ItemModels
   private readonly fixtureModels: Record<Fixture["model"], number>
   private readonly itemData = new Map<number, { data: Float32Array<ArrayBuffer>; count: number }>()
@@ -102,6 +109,9 @@ export class DiscoveryProps {
     this.verbs = new VerbProps(renderer)
     this.vignettes = new VignetteProps(renderer)
     this.radios = new RadioProps(renderer)
+    this.flares = new FlareProps(renderer)
+    this.bodies = new BodyProps(renderer)
+    this.dogs = new DogProps(renderer)
     const wood = hex(0x6e4e30)
     const drawer = new Mesh()
     drawer.box(-0.45, -0.14, 0.01, 0.45, -0.12, 0.34, hex(0x4a3420), MAT.timber)
@@ -140,6 +150,9 @@ export class DiscoveryProps {
     for (const b of this.verbs.collect(view, time, support)) out.push(b)
     for (const b of this.vignettes.collect(view, support)) out.push(b)
     for (const b of this.radios.collect(view, time, settings, support)) out.push(b)
+    for (const b of this.flares.collect(view, time, support)) out.push(b)
+    for (const b of this.bodies.collect(view, support)) out.push(b)
+    for (const b of this.dogs.collect(view, ai.agents, settings, support)) out.push(b)
     for (const v of this.itemData.values()) v.count = 0
     for (const v of this.fixtureData.values()) v.count = 0
     this.shown.clear()

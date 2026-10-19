@@ -176,6 +176,8 @@ export function progressionRules(t: ProgressionTuning): Rule[] {
     { id: "heal:bandage", label: "Bandaging", duration: t.healTime * 0.66, consume: { bandage: 1 } },
     { id: "throw:lure", label: "Throw", consume: { noisemaker: 1 } },
     { id: "throw:bottle", label: "Throw", consume: { bottle: 1 } },
+    { id: "throw:flare", label: "Throw", consume: { flare: 1 } },
+    { id: "feed:dog", label: "Feed", consume: { food: 1 } },
     { id: "set:tripwire", label: "Stringing cans", duration: t.tripSetTime, consume: { cans: 1 } },
     { id: "disarm:tripwire", label: "Disarming", duration: t.tripDisarmTime },
     { id: "arm:tripwire", label: "Stringing cans", duration: t.tripSetTime },
