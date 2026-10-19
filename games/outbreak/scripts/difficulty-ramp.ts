@@ -14,15 +14,13 @@ import type { BotRunConfig } from "../shared/bot-runner"
 import {
   RAMP_PHASE_LABELS,
   rampHourCurves,
-  runRampProbe,
   secondsToDawn,
   summarizeRamp,
   type RampPresetSummary,
   type RampRun,
 } from "../shared/difficulty-ramp"
+import { runRampBatch } from "./difficulty-ramp-pool"
 import { BOT_SKILL_PRESET_ORDER, type BotSkillPresetId } from "../shared/survivor-bot"
-
-declare const self: Worker
 
 async function main() {
   const arg = (name: string) => process.argv.find((a) => a.startsWith(`--${name}=`))?.split("=")[1]
@@ -41,7 +39,7 @@ async function main() {
     seeds.map((seed) => ({ seed, preset, maxDurationSeconds: secondsToDawn(nights), timeScale: 240, tickDt: 1 / 15 })),
   )
   const t0 = performance.now()
-  const runs = await runPool(jobs, workers)
+  const runs = await runRampBatch(jobs, workers)
   const seconds = (performance.now() - t0) / 1000
   runs.sort((a, b) => presets.indexOf(a.preset) - presets.indexOf(b.preset) || a.seed - b.seed)
 
@@ -70,27 +68,6 @@ async function main() {
     })
     if (res.exitCode !== 0) console.warn("difficulty-ramp: charts skipped (needs uv and matplotlib)")
   }
-}
-
-function runPool(jobs: BotRunConfig[], size: number): Promise<RampRun[]> {
-  return new Promise((done) => {
-    const results: RampRun[] = []
-    let next = 0
-    let finished = 0
-    const pool = Array.from({ length: Math.min(size, jobs.length) }, () => new Worker(import.meta.url))
-    const feed = (w: Worker) => {
-      if (next >= jobs.length) return w.terminate()
-      w.postMessage({ id: next, config: jobs[next++] })
-    }
-    for (const w of pool) {
-      w.onmessage = (ev: MessageEvent<{ run: RampRun }>) => {
-        results.push(ev.data.run)
-        if (++finished === jobs.length) done(results)
-        feed(w)
-      }
-      feed(w)
-    }
-  })
 }
 
 const pct = (v: number) => `${Math.round(v * 100)}%`
@@ -157,10 +134,4 @@ function report(
   return lines.join("\n")
 }
 
-if (!Bun.isMainThread) {
-  self.onmessage = (event: MessageEvent<{ id: number; config: BotRunConfig }>) => {
-    self.postMessage({ id: event.data.id, run: runRampProbe(event.data.config) })
-  }
-} else {
-  await main()
-}
+await main()

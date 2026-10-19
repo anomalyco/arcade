@@ -5,7 +5,7 @@ deterministic headless games, and a read-only probe records what happened in eac
 
 | Tool | What | When |
 | --- | --- | --- |
-| `games/outbreak/tests/difficulty-ramp.test.ts` | 4 presets × 6 fixed seeds to dawn 3 (~13 s), curves held inside tolerance bands | Every `bun run check` and CI |
+| `games/outbreak/tests/difficulty-ramp.test.ts` | 4 presets × 4 fixed seeds to dawn 3 on up to 4 workers (~4 s on Studio, ~20 s on CI), curves held inside tolerance bands | Every `bun run check` and CI |
 | `games/outbreak/scripts/difficulty-ramp.ts` | Any presets × seeds × nights, `report.md`, JSON and PNG charts | By hand, before and after a difficulty change |
 
 D-22 tuned survival per preset (`shared/difficulty-tuner.ts`, `scripts/run-bot-tuning.ts`). This checks the shape of
@@ -36,7 +36,7 @@ bun scripts/difficulty-ramp.ts --seeds=12 --nights=5 --workers=2 --out=<dir>
 bun scripts/difficulty-ramp.ts --presets=Novice,Expert --seeds=101,107 --no-charts
 ```
 
-It runs bots on Bun workers (`--workers`, default cores − 2) and is CPU only. Charts come from
+It runs bots on Bun workers (`scripts/difficulty-ramp-pool.ts`, shared with the test; `--workers`, default cores − 2) and is CPU only. Charts come from
 `scripts/difficulty-ramp-charts.py` through `uv run --with matplotlib`: `survival.png`, `pressure.png`,
 `resources.png` and `phases.png`. Route big batches through HiveMind like other heavy jobs.
 

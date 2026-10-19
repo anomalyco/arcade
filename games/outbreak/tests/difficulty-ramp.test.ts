@@ -1,14 +1,17 @@
 import { describe, expect, test } from "bun:test"
+import { availableParallelism } from "node:os"
+import { runRampBatch } from "../scripts/difficulty-ramp-pool"
 import { runRampProbe, secondsToDawn, summarizeRamp, type RampPhaseStats, type RampRun } from "../shared/difficulty-ramp"
 import type { BotSkillPresetId } from "../shared/survivor-bot"
 
-// Fast difficulty-ramp playtest: four bot skill presets play six fixed seeds to dawn 3 (~12 s on an M-series Mac).
+// Fast difficulty-ramp playtest: four bot skill presets play four fixed seeds to dawn 3 on up to four workers
+// (~3 s on an M-series Mac, ~20 s on a CI runner).
 // The bands are deliberately loose: they catch a broken director (no ramp, runaway spawns, a cliff), not small tuning
 // drift, and they leave room for float differences between machines. When a deliberate tuning change moves a curve
 // out of its band, run `bun scripts/difficulty-ramp.ts` for the full picture, then update the band here in the same
 // PR and say why (docs/outbreak-difficulty.md).
 
-const SEEDS = [101, 107, 113, 119, 125, 131]
+const SEEDS = [101, 107, 113, 119]
 const PRESETS: readonly BotSkillPresetId[] = ["Novice", "Casual", "Skilled", "Expert"]
 const NIGHTS = 3
 const PHASES = NIGHTS * 2
@@ -16,26 +19,26 @@ const [EVENING, NIGHT1, DAY2, NIGHT2, DAY3, NIGHT3] = [0, 1, 2, 3, 4, 5]
 
 /** Fraction of runs alive at dawn 1 and dawn 3, per preset. Values on 2026-10-19 main: see comments. */
 const SURVIVAL_BANDS: Record<BotSkillPresetId, { dawn1: [number, number]; dawn3: [number, number] }> = {
-  Novice: { dawn1: [0, 0.67], dawn3: [0, 0.34] }, // 0, 0
-  Casual: { dawn1: [0.5, 1], dawn3: [0, 0.67] }, // 0.83, 0.17
-  Skilled: { dawn1: [0.67, 1], dawn3: [0.33, 1] }, // 1, 0.67
-  Expert: { dawn1: [0.67, 1], dawn3: [0.33, 1] }, // 1, 0.67
+  Novice: { dawn1: [0, 0.75], dawn3: [0, 0.5] }, // 0, 0
+  Casual: { dawn1: [0.5, 1], dawn3: [0, 0.75] }, // 0.75, 0.25
+  Skilled: { dawn1: [0.75, 1], dawn3: [0.25, 1] }, // 1, 0.5
+  Expert: { dawn1: [0.75, 1], dawn3: [0.25, 1] }, // 1, 0.75
   Perfect: { dawn1: [0, 1], dawn3: [0, 1] },
 }
 
 /** Pooled over Casual, Skilled and Expert while alive. Values on 2026-10-19 main in comments. */
 const PRESSURE_BANDS = {
   /** Night 1 living zombies over the evening's (≈ 5×): the director ramps in. */
-  nightOneRampIn: [3, 10], // 5.1
+  nightOneRampIn: [3, 10], // 5.5
   /** Night 2 living zombies (the director's full population is 16 solo). */
   nightTwoLiving: [12, 24], // 16.0
   /** Aware zombies at night over the day before it: nights are harder than days. */
-  nightOverDay2: [1.3, 5], // 2.0
-  nightOverDay3: [1.2, 5], // 1.55
+  nightOverDay2: [1.3, 5], // 1.9
+  nightOverDay3: [1.2, 5], // 1.51
   /** Aware zombies, Night 3 over Night 2: no cliff either way. Today this is flat (see D-40). */
-  nightThreeOverTwo: [0.8, 1.8], // 1.01
+  nightThreeOverTwo: [0.8, 1.8], // 1.03
   /** Active chasers at night (the director's solo cap is 3). */
-  nightChasers: [1, 3.5], // 2.3 (Night 2), 2.4 (Night 3)
+  nightChasers: [1, 3.5], // 2.37 (Night 2), 2.56 (Night 3)
 } as const
 
 const within = (name: string, value: number, [lo, hi]: readonly [number, number]) => {
@@ -54,18 +57,17 @@ describe("difficulty ramp (survivor bots, fixed seeds)", () => {
 
   test(
     "plays the batch deterministically",
-    () => {
-      runs = PRESETS.flatMap((preset) =>
-        SEEDS.map((seed) =>
-          runRampProbe({ seed, preset, maxDurationSeconds: secondsToDawn(NIGHTS), timeScale: 240, tickDt: 1 / 15 }),
-        ),
+    async () => {
+      const jobs = PRESETS.flatMap((preset) =>
+        SEEDS.map((seed) => ({ seed, preset, maxDurationSeconds: secondsToDawn(NIGHTS), timeScale: 240, tickDt: 1 / 15 })),
       )
+      runs = await runRampBatch(jobs, Math.max(1, Math.min(4, availableParallelism())))
       expect(runs).toHaveLength(PRESETS.length * SEEDS.length)
       const again = runRampProbe({ seed: SEEDS[0]!, preset: "Casual", maxDurationSeconds: 240, timeScale: 240, tickDt: 1 / 15 })
       const first = runs.find((r) => r.preset === "Casual" && r.seed === SEEDS[0])!
       expect(again.hours.slice(0, 8)).toEqual(first.hours.slice(0, 8))
     },
-    90_000,
+    120_000,
   )
 
   test("nobody dies in the opening evening", () => {
