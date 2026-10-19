@@ -26,7 +26,7 @@ import { runRampBatch } from "./difficulty-ramp-pool"
 import { BOT_SKILL_PRESET_ORDER, type BotSkillPresetId } from "../shared/survivor-bot"
 
 async function main() {
-  const arg = (name: string) => process.argv.find((a) => a.startsWith(`--${name}=`))?.split("=")[1]
+  const arg = (name: string) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3)
   const seedArg = arg("seeds") ?? "24"
   const seeds = seedArg.includes(",")
     ? seedArg.split(",").map(Number)

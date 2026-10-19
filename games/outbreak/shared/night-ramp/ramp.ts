@@ -31,18 +31,20 @@ export type NightRampTuning = {
   lateAmmoFromNight: number
   /** Share of the dead that carry rounds. */
   lateAmmoChance: number
-  /** Rounds a carrier drops, from min to max. */
+  /** Rounds a carrier drops (and a dawn cache holds), from min to max. */
   lateAmmoMin: number
   lateAmmoMax: number
+  /** Each dawn from the day after `lateAmmoFromNight`, this many searched, emptied containers hold a few rounds again. */
+  dawnAmmoCaches: number
 }
 
 export const DEFAULT_NIGHT_RAMP_TUNING: NightRampTuning = {
   nightRampMode: 1,
   nightOneChasers: 2,
-  nightOnePopulation: 1,
-  nightPopulationStep: 4,
-  nightPopulationCeiling: 32,
-  nightChaserStep: 1,
+  nightOnePopulation: 0.65,
+  nightPopulationStep: 3,
+  nightPopulationCeiling: 30,
+  nightChaserStep: 0.5,
   nightChaserCeiling: 6,
   nightSpecialStep: 0.03,
   nightSpecialCap: 0.2,
@@ -50,6 +52,7 @@ export const DEFAULT_NIGHT_RAMP_TUNING: NightRampTuning = {
   lateAmmoChance: 0.5,
   lateAmmoMin: 2,
   lateAmmoMax: 5,
+  dawnAmmoCaches: 2,
 }
 
 /** Lab controls (Backquote › Night ramp). Every value is live; the population and caps apply from the next tick. */
@@ -75,6 +78,7 @@ export const nightRampControls = [
   { key: "lateAmmoChance", label: "Dead carrying rounds", group: "Night ramp", min: 0, max: 1, step: 0.05, unit: "×" },
   { key: "lateAmmoMin", label: "Rounds carried (min)", group: "Night ramp", min: 1, max: 12, step: 1, unit: "" },
   { key: "lateAmmoMax", label: "Rounds carried (max)", group: "Night ramp", min: 1, max: 12, step: 1, unit: "" },
+  { key: "dawnAmmoCaches", label: "Rounds left at dawn", group: "Night ramp", min: 0, max: 8, step: 1, unit: "caches" },
 ] as const
 
 export function nightRampTuning(features: Readonly<Record<string, Record<string, unknown>>> | undefined): NightRampTuning {
@@ -119,13 +123,28 @@ export function withNightRampSpecials(specials: SpecialsTuning, t: NightRampTuni
 
 /** Rounds a zombie that just died leaves behind, fixed by the town seed and its id (empty for most). */
 export function lateAmmoDrop(t: NightRampTuning, night: number, townSeed: number, zombieId: number): Stack[] {
-  if (t.nightRampMode <= 0 || t.lateAmmoFromNight <= 0 || night < t.lateAmmoFromNight) return []
+  if (!lateAmmoActive(t, night)) return []
   const a = mix32((townSeed ^ Math.imul(zombieId + 0x2f, 0x9e3779b1) ^ 0x6c8e9cf5) >>> 0)
   if (a / 4294967296 >= t.lateAmmoChance) return []
+  return [{ item: "ammo", count: lateAmmoCount(t, mix32((a ^ 0x2545f491) >>> 0)) }]
+}
+
+/** Whether late rounds are on for this night (the night count rises at dusk, so night 2 covers Night 2 and Day 3). */
+export const lateAmmoActive = (t: NightRampTuning, night: number): boolean =>
+  t.nightRampMode > 0 && t.lateAmmoFromNight > 0 && night >= t.lateAmmoFromNight
+
+/** A round count from `lateAmmoMin..lateAmmoMax` picked by `roll`. */
+export function lateAmmoCount(t: NightRampTuning, roll: number): number {
   const lo = Math.max(1, Math.round(Math.min(t.lateAmmoMin, t.lateAmmoMax)))
   const hi = Math.max(lo, Math.round(Math.max(t.lateAmmoMin, t.lateAmmoMax)))
-  const b = mix32((a ^ 0x2545f491) >>> 0)
-  return [{ item: "ammo", count: lo + (b % (hi - lo + 1)) }]
+  return lo + ((roll >>> 0) % (hi - lo + 1))
+}
+
+/** Deterministic order key for picking dawn caches: town seed, night and the store's id. */
+export function cacheRoll(townSeed: number, night: number, storeId: string): number {
+  let h = (townSeed ^ Math.imul(night + 0x11, 0x85ebca6b)) >>> 0
+  for (let i = 0; i < storeId.length; i++) h = Math.imul(h ^ storeId.charCodeAt(i), 16777619)
+  return mix32(h >>> 0)
 }
 
 export const lateAmmoDropId = (zombieId: number) => `drop:rounds:${zombieId}`
