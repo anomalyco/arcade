@@ -102,9 +102,9 @@ export class DetailsPresenter {
 
   private plan(town: Town, s: OutbreakDetailSettings, night: OutbreakNightLightSettings): void {
     const o = town.windowOrigin ?? [0, 0]
-    const sig = `${town.seed}:${town.houseSeed}:${s.worldDetails}:${s.dtTurnedOver}:${s.dtMail}:${s.dtBoxes}:${s.dtMarks}:${s.dtBloodWriting}:${s.dtBins}:${s.dtMailboxes}:${s.dtStreetJunk}:${s.dtPoliceTape}:${s.dtSeed}`
+    const sig = `${town.seed}:${town.houseSeed}:${s.worldDetails}:${s.dtTurnedOver}:${s.dtMail}:${s.dtBoxes}:${s.dtMarks}:${s.dtBloodWriting}:${s.dtBins}:${s.dtMailboxes}:${s.dtStreetJunk}:${s.dtPoliceTape}:${s.dtTvs}:${s.dtSeed}`
     const incidents = this.incidents(town)
-    const fk = `${sig}:${o[0]},${o[1]}:${town.buildings.length}:${(town.vehicles ?? []).length}:${this.incidentKey}:${night.nightLights}:${night.nlCruisers}:${night.nlSeed}`
+    const fk = `${sig}:${o[0]},${o[1]}:${town.buildings.length}:${(town.vehicles ?? []).length}:${this.incidentKey}:${night.nightLights}:${night.nlCruisers}:${night.nlSeed}:${s.dtCrows}`
     if (fk === this.frameKey) return
     this.frameKey = fk
     const all: DetailSite[] = []
@@ -158,9 +158,12 @@ export class DetailsPresenter {
     this.shown.drawn = 0
     if (!s.worldDetails) {
       this.shown.planned = 0
+      this.shown.tvs = 0
       this.tvs = []
       this.crows.reset()
+      this.shown.crows = this.crows.counts()
       this.crowKey = ""
+      this.frameKey = ""
       return this.out
     }
     this.plan(town, s, night)
