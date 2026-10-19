@@ -10,6 +10,8 @@ import { DEFAULT_HERO_LOOK, type HeroLookSettings } from "./look/hero"
 import { DEFAULT_LIT_WINDOWS, windowLampBuilding, windowsLit } from "./look/lit-windows"
 import { DEFAULT_LOOK_TRIMS, trimLighting, type OutbreakLookTrims } from "./look/world"
 import { addLampPool, tableLampPool, type BakeLamp, type TableLamp } from "./lightbake"
+import { REFLECTION_LIGHT_FLOATS, REFLECTION_LIGHTS } from "./reflections/lights"
+import { packReflectionUniforms, REFLECTION_UNIFORM_FLOATS } from "./reflections/settings"
 import { DEFAULT_LIGHT_CURVES, LIGHT_CURVES, LIGHT_RAMP_FLOATS, lightRampFieldsWgsl, lightRampWgsl, packLightRamps } from "./light-ramps"
 
 /** Cobra-head streetlamp posts: south-east curb over the street, and the east sidewalk beside the house. */
@@ -293,7 +295,11 @@ export const OUTBREAK_ART_UNIFORM_OFFSET = OUTBREAK_SIGHT_UNIFORM_OFFSET + 4
 export const OUTBREAK_NIGHT_UNIFORM_OFFSET = OUTBREAK_ART_UNIFORM_OFFSET + 4
 /** The town-wide wind field for vegetation (`FoliageGust`, see `vegetation/settings.ts`). */
 export const OUTBREAK_VEG_GUST_UNIFORM_OFFSET = OUTBREAK_NIGHT_UNIFORM_OFFSET + 4
-export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = OUTBREAK_VEG_GUST_UNIFORM_OFFSET + FOLIAGE_GUST_FLOATS
+/** Reflections (see `reflections/settings.ts`): `refl` (wet strength, puddles, Lab wetness, ripple) then `mirror`. */
+export const OUTBREAK_REFLECT_UNIFORM_OFFSET = OUTBREAK_VEG_GUST_UNIFORM_OFFSET + FOLIAGE_GUST_FLOATS
+/** Wet reflections' lights this frame (see `reflections/lights.ts`): each light's mirror image, packed per frame. */
+export const OUTBREAK_REFLECT_LIGHTS_UNIFORM_OFFSET = OUTBREAK_REFLECT_UNIFORM_OFFSET + REFLECTION_UNIFORM_FLOATS
+export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = OUTBREAK_REFLECT_LIGHTS_UNIFORM_OFFSET + REFLECTION_LIGHTS * REFLECTION_LIGHT_FLOATS
 
 export type OutbreakLightingUniformSettings =
   | (OutbreakLightingSettings & Partial<FlashlightBeamSettings> & Partial<UnseenSettings> & {
@@ -615,6 +621,7 @@ export function packOutbreakLightingUniforms(
   out[OUTBREAK_NIGHT_UNIFORM_OFFSET + 1] = Math.max(0.5, look.nightSightRadius ?? DEFAULT_LOOK_TRIMS.nightSightRadius)
   out[OUTBREAK_NIGHT_UNIFORM_OFFSET + 2] = Math.max(0.5, look.nightSightFalloff ?? DEFAULT_LOOK_TRIMS.nightSightFalloff)
   out[OUTBREAK_NIGHT_UNIFORM_OFFSET + 3] = 0
+  packReflectionUniforms(look, state.weather?.rippleIntensity ?? 0, out, OUTBREAK_REFLECT_UNIFORM_OFFSET)
   // win (offset 76..79): windowOriginX, windowOriginZ, isStreamWindow, buildingCount
   const winOx = state.windowOrigin?.[0] ?? 0
   const winOz = state.windowOrigin?.[1] ?? 0
@@ -1242,6 +1249,9 @@ struct OutbreakLightingUniforms {
   art: vec4f, // sightGlow, groundDetail, lampRolloff, wetGloss (AR-71)
   night: vec4f, // night sight: weight this frame, readable radius, fade distance, reserved
   vegGust: FoliageGust,
+  refl: vec4f, // reflections: wet strength (0 off), pothole puddles on, Lab wetness, rain ripple
+  mirror: vec4f, // mirrors: detail (0 baked, 1 live lights, 2 people), age, on, reserved
+  reflLights: array<vec4f, ${(REFLECTION_LIGHTS * REFLECTION_LIGHT_FLOATS) / 4}>, // wet reflections: per light, image x, z, plan distance from the eye, size (0 ends); colour
 }
 @group(0) @binding(13) var<uniform> OL: OutbreakLightingUniforms;
 ${lightRampWgsl}

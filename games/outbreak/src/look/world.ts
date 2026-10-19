@@ -1,5 +1,6 @@
 import type { LabControl } from "@arcade/kit/lab-panel"
 import type { LookSettings } from "@arcade/kit/look"
+import { DEFAULT_REFLECTION_TRIMS, reflectionControls, type ReflectionTrims } from "../reflections/settings"
 import { DEFAULT_LIT_WINDOWS } from "./lit-windows"
 
 /**
@@ -114,7 +115,7 @@ export type OutbreakLookTrims = {
   nightSightFalloff: number
   /** Share of houses that still have a lamp on behind their front windows at night (1: every house, today's look). */
   litWindows: number
-}
+} & ReflectionTrims
 
 export const DEFAULT_LOOK_TRIMS: OutbreakLookTrims = {
   lookIdea: "today",
@@ -166,6 +167,7 @@ export const DEFAULT_LOOK_TRIMS: OutbreakLookTrims = {
   nightSightRadius: 4.5,
   nightSightFalloff: 5,
   litWindows: DEFAULT_LIT_WINDOWS,
+  ...DEFAULT_REFLECTION_TRIMS,
 }
 
 const GRADE = "Look · Grade"
@@ -224,6 +226,7 @@ export const lookTrimControls: LabControl[] = [
   { key: "dustBrightness", label: "Mote brightness", group: AIR, min: 0, max: 4, step: 0.05, unit: "×" },
   { key: "dustSize", label: "Mote size", group: AIR, min: 0.4, max: 3, step: 0.05, unit: "×" },
   { key: "dustLamps", label: "Motes under lamps", group: AIR, min: 0, max: 1, step: 1, unit: "" },
+  ...reflectionControls,
 ]
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))

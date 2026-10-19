@@ -98,8 +98,9 @@ fn outbreakGutter(xz: vec2f) -> f32 {
   return max(gz, gx);
 }
 /** Where water stands, 0..1: low spots and road gutters fill first, spreading as OL.u8.z (standing water) rises. */
-fn outbreakPuddleMask(xz: vec2f, onRoad: bool) -> f32 {
-  let puddles = clamp(OL.u8.z, 0.0, 1.0);
+fn outbreakPuddleMask(xz: vec2f, onRoad: bool) -> f32 { return outbreakPuddleMaskAt(xz, onRoad, clamp(OL.u8.z, 0.0, 1.0)); }
+/** The same mask for a given standing water 0..1 (the reflections' Lab wetness uses it when the weather is dry). */
+fn outbreakPuddleMaskAt(xz: vec2f, onRoad: bool, puddles: f32) -> f32 {
   if (puddles <= 0.001) { return 0.0; }
   let field = outbreakWetNoise(xz * 0.19 + vec2f(3.1, 7.4)) * 0.7 + outbreakWetNoise(xz * 0.53 + vec2f(11.3, 2.9)) * 0.3
     + select(0.0, outbreakGutter(xz) * 0.28, onRoad);

@@ -601,6 +601,7 @@ export class OutbreakFrameRenderer {
       sceneLevel: this.sceneLevel,
       interiors: this.interiors,
       renderer: this.renderer,
+      lightCount: count,
     })
     const lightningFlash = weatherNow.flash
     this.frameLighting.packFrameBuffer({

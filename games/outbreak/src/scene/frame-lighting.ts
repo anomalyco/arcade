@@ -34,6 +34,8 @@ import {
   OUTBREAK_VEG_GUST_UNIFORM_OFFSET,
   OUTBREAK_INTERIOR_UNIFORM_OFFSET,
   OUTBREAK_LIGHTING_UNIFORM_FLOATS,
+  OUTBREAK_REFLECT_LIGHTS_UNIFORM_OFFSET,
+  OUTBREAK_REFLECT_UNIFORM_OFFSET,
   packOutbreakLightingUniforms,
   resolveLampLight,
   STREET_LAMP_POSTS,
@@ -44,6 +46,7 @@ import { originFurnishTown, propLamps } from "../props/furnish"
 import { resolveBeamColor } from "../look/world"
 import type { OutbreakSettings } from "../settings"
 import type { Survivor } from "../survivor"
+import { packReflectionLights } from "../reflections/lights"
 import { TableLampLights } from "../table-lamps"
 import { vegetationGust } from "../vegetation/settings"
 import type { UnseenFrameEvaluation } from "../unseen"
@@ -555,6 +558,7 @@ export class OutbreakFrameLighting {
     readonly sceneLevel: OutbreakSceneLevel
     readonly interiors: InteriorPresenter
     readonly renderer: Renderer
+    readonly lightCount: number
   }): FrameInput["volume"] {
     const {
       dt,
@@ -575,6 +579,7 @@ export class OutbreakFrameLighting {
       sceneLevel,
       interiors,
       renderer,
+      lightCount,
     } = input
     const {
       flashlightSlot,
@@ -642,6 +647,9 @@ export class OutbreakFrameLighting {
     )
     settings.flashlight.flashlightCone = tunedCone
     settings.flashlight.flashlightRange = tunedRange
+    if (this.lightingUniforms[OUTBREAK_REFLECT_UNIFORM_OFFSET]! > 0) {
+      packReflectionLights(this.lights, lightCount, activeBuildings, cam.groundRect(0.2), cam.eye, (x, z) => supportHeight(town, x, z), this.lightingUniforms, OUTBREAK_REFLECT_LIGHTS_UNIFORM_OFFSET)
+    } else this.lightingUniforms.fill(0, OUTBREAK_REFLECT_LIGHTS_UNIFORM_OFFSET, OUTBREAK_LIGHTING_UNIFORM_FLOATS)
     packFoliageUniforms(foliageSettings, this.lightingUniforms, OUTBREAK_FOLIAGE_UNIFORM_OFFSET)
     packFoliageActors(foliageActors(p, zombies), this.lightingUniforms, OUTBREAK_FOLIAGE_UNIFORM_OFFSET + FOLIAGE_WIND_FLOATS)
     packFoliageGust(vegetationGust(settings.vegetation), this.lightingUniforms, OUTBREAK_VEG_GUST_UNIFORM_OFFSET)

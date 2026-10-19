@@ -10,7 +10,7 @@ import type { PropInstance } from "@arcade/kit/props/models"
 import { dressSurfaces, footprintOf, furnishRoom, placementTriangles, type PlacedProp, type Rect, type Surface, type WallSide } from "@arcade/kit/props/placement"
 import { hash2 } from "@arcade/kit/sim/rng"
 import { makeTown, propShape, type Building, type Town } from "../../shared/map"
-import { emitInteriorDecor } from "../interiors/mesh"
+import { emitInteriorDecor, type MirrorSpot } from "../interiors/mesh"
 import { interiorSettings } from "../interiors/plan"
 import type { TableLamp } from "../lightbake"
 import { furnishedHouse, propDressingState, REPLACED_KINDS } from "./state"
@@ -132,10 +132,11 @@ export function furnishHouse(b: Building, town: Town, density: number, seed: num
     }
   }
 
-  // Standing pieces the themed decor already put on the walls (fireplace, clock, desk), so clutter keeps off them.
+  // Standing pieces the themed decor already put on the walls (fireplace, clock, desk, mirror), so clutter keeps off them.
   const decor: Rect[] = []
-  emitInteriorDecor(new Mesh(), b, town, undefined, undefined, decor)
-  const exclude = new Set<string>(decor.length ? ["grandfather-clock", "typewriter"] : [])
+  const mirrors: MirrorSpot[] = []
+  emitInteriorDecor(new Mesh(), b, town, undefined, undefined, decor, mirrors)
+  const exclude = new Set<string>(decor.length > mirrors.length ? ["grandfather-clock", "typewriter"] : [])
   const lamps: Rect[] = town.lamps.filter(l => l.kind === "room" && l.x > bx0 && l.x < bx1 && l.y > bz0 && l.y < bz1).map(l => [l.x - 0.3, l.y - 0.3, l.x + 0.3, l.y + 0.3])
   const occupied: Rect[] = [...props.map(p => propShape(p)!.rect), ...anchors.map(a => a.footprint), ...decor, ...lamps]
   const doors = town.doors.filter(d => d.id.startsWith(`${b.id}-`)).map(d => d.rect)
