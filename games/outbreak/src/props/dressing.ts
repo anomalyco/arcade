@@ -5,7 +5,7 @@ import type { QualityProfile } from "@arcade/kit/quality"
 import type { Rect } from "@arcade/kit/sim/geom"
 import type { Town } from "../../shared/map"
 import { furnishedHouses, instancesOf, usedPropIds, type HouseFurnishing } from "./furnish"
-import type { OutbreakPropSettings } from "./settings"
+import { PROP_LOD_HYSTERESIS, type OutbreakPropSettings } from "./settings"
 import { propDressingState } from "./state"
 
 const NONE: readonly Batch[] = []
@@ -97,12 +97,11 @@ export class PropDressing {
       this.releaseStage2 = null
       queueMicrotask(release)
     }
-    const hysteresis = 2.5
     if (this.currentZoomLod === null) {
       this.currentZoomLod = zoom > s.propLodZoom ? 1 : 0
-    } else if (this.currentZoomLod === 0 && zoom > s.propLodZoom + hysteresis) {
+    } else if (this.currentZoomLod === 0 && zoom > s.propLodZoom + PROP_LOD_HYSTERESIS) {
       this.currentZoomLod = 1
-    } else if (this.currentZoomLod === 1 && zoom < s.propLodZoom - hysteresis) {
+    } else if (this.currentZoomLod === 1 && zoom < s.propLodZoom - PROP_LOD_HYSTERESIS) {
       this.currentZoomLod = 0
     }
     const lod = Math.max(quality.minPropLod, this.currentZoomLod)

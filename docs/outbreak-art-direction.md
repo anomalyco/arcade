@@ -47,6 +47,11 @@ Measured reference values (from the reference report, 384×256 downsample): nigh
 6. **Painted ground, not noise.** Ground detail is dirt drifts, dried stains with darker rims, scuffed wear,
    leaf litter and cracks at 0.4–3 m in world space (`paintedGround` in `src/ground.ts`, `groundDetail`). Every
    term fades or widens with `surfaceFootprint`, so it holds still while walking.
+7. **Lamps are pools with a hot core.** A porch, window or room lamp reads as a warm pool: a small warm-white core
+   where its light is strongest, amber falloff around it and dark beyond. Never a clipped, flat yellow blob. Lamp
+   light is added light, never painted into albedo, so the flashlight crossing a pool keeps its own colour.
+   `lampRolloff` (Look · Lights) rolls lamp-lit surfaces off with the hue held and turns the hottest part warm white,
+   weighted by how much of the light is lamp rather than beam.
 
 ## Targets by hour
 
@@ -56,6 +61,11 @@ Measured reference values (from the reference report, 384×256 downsample): nigh
 | Dusk 18:30 | Low-key peat-amber light sinking into slate. No neon sunset, no blue rim. | meanL 0.086, meanS 0.087, lit S 0.39. |
 | Night 21:00 | Near black outside light. The beam and a few lamps are the world. | meanL 0.047, p50L 0.035. Turned around: beam ground 0.31–0.74, cone outside the beam 0.06, shroud 0.03. |
 | Start house 21:00 | Warm interior pools held by walls; grey memory elsewhere. | meanL 0.053, lit S 0.37. |
+
+The default camera distance is 38 since D-35 (was 46; the AR-53 numbers above were taken at 46). At 38 with the
+lamp roll-off (same seed and size): day meanL 0.149, meanS 0.091; dusk meanL 0.092, lit S 0.39; night facing the
+house meanL 0.052, p50L 0.035, lit S 0.47 (was 0.50, from the yellow blob); turned around p90L 0.16; start house
+meanL 0.063, lit S 0.35.
 
 ## Flashlight spec
 
@@ -99,7 +109,7 @@ v7. Earlier presets (v4–v6, Legacy, rendering-round ideas) and their shader br
 
 ## Proof
 
-`games/outbreak/scripts/look-beauty.ts`, always through `hivemind run --kind browser` (headless, muted):
+`games/outbreak/scripts/look-beauty.ts`, always through `hivemind run --kind browser` (headless, muted). Scenes use the default camera distance (38):
 
 - `--mode stills [--variants '{"name":{knobs}}'] [--scenes a,b]`: the eight beauty scenes with pixel stats.
 - `--mode flicker --base <git archive of main>`: walking temporal metric (tile RMS and high-pass RMS between

@@ -150,7 +150,7 @@ export const DEFAULT_OUTBREAK_DAY_CYCLE: OutbreakDayCycleSettings = {
 }
 
 export const DEFAULT_OUTBREAK_VIEW: OutbreakViewSettings = {
-  zoom: 46,
+  zoom: 38,
   diagnostic: 0,
   quality: "auto",
   ...cameraShakeDefaults(),

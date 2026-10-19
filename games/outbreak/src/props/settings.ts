@@ -24,3 +24,6 @@ export const DEFAULT_PROP_SETTINGS: OutbreakPropSettings = {
   propAO: DEFAULT_PROP_LOOK.ao,
   propSaturation: 1,
 }
+
+/** Zoom band (± m around `propLodZoom`) inside which props keep their current LOD, so small zoom changes never flip it. */
+export const PROP_LOD_HYSTERESIS = 2.5

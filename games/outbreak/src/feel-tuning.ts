@@ -52,7 +52,7 @@ export const hitStopSeconds = (ms: number) => Math.max(0, ms) / 1000
  */
 export const DEFAULT_CAMERA_LEAD = {
   /** Lead along the survivor's velocity, in seconds of travel (0.17 s cancels the trail at any speed). */
-  cameraMoveLead: 0,
+  cameraMoveLead: 0.3,
   /** Lead toward the aim, in metres. */
   cameraAimLead: 0,
 }
