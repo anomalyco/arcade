@@ -116,39 +116,41 @@ fn outbreakPuddleMask(xz: vec2f, onRoad: bool) -> f32 {
 export const outbreakWetGroundWgsl = /* wgsl */ `
     var outbreakWetPuddle = 0.0;
     let outbreakWet = outbreakWetness();
-    if (outbreakWet > 0.002 && !inRoom && mat == 20 && n.y > 0.75 && o.world.y < 0.4) {
+    if (outbreakWet > 0.002 && !inRoom && mat == 20 && n.y > 0.75) {
       let gKind = i32(round(o.aux));
       let hard = gKind == 1 || gKind == 2 || gKind == 3;
       outbreakWetPuddle = select(0.0, outbreakPuddleMask(o.world.xz, gKind == 1), hard);
       let soak = select(0.16, select(0.30, 0.38, gKind == 1), hard);
-      col *= (1.0 - outbreakWet * soak) * (1.0 - outbreakWetPuddle * 0.32);
+      col *= (1.0 - outbreakWet * soak) * (1.0 - outbreakWetPuddle * 0.62);
     }
 `
 
 /**
  * Wet gloss only in light (after the flashlight's irradiance is known; needs `flashIrr`, `outbreakPracticalIrr`,
- * `beamAdd`). Puddles catch the beam and lamps; outside light nothing changes, so there is no pattern in the dark.
- * Raindrop rings break the puddles' sheen up, band-limited by the pixel footprint.
+ * `beamAdd`). From this high camera a puddle mirrors the dark sky, so in the beam it reads as a darker pool with a thin
+ * film of light and raindrop rings glinting on it; outside light nothing changes, so there is no pattern in the dark.
+ * The rings are at least 1.2 pixels wide (energy kept), so they never sparkle.
  */
 export const outbreakWetSheenWgsl = /* wgsl */ `
     if (outbreakWet > 0.002 && outbreakWetPuddle + outbreakWet > 0.01) {
       let gloss = clamp(OL.art.w, 0.0, 2.0);
-      let film = outbreakWet * 0.10 + outbreakWetPuddle * 0.55;
+      let film = outbreakWet * 0.08 + outbreakWetPuddle * 0.10;
       var ring = 0.0;
       if (outbreakWetPuddle > 0.05) {
-        let fade = 1.0 - smoothstep(0.04, 0.16, surfaceFootprint);
+        let fade = 1.0 - smoothstep(0.05, 0.18, surfaceFootprint);
         if (fade > 0.01) {
           let q = o.world.xz * 2.6;
           let cell = floor(q);
           let h = outbreakWetHash(cell);
           let age = fract(surfaceTime * 1.6 + h);
           let r = length(fract(q) - 0.5 - (vec2f(outbreakWetHash(cell + 7.1), h) - 0.5) * 0.4);
-          let band = max(0.0, 1.0 - abs(r - (0.05 + age * 0.38)) * 20.0);
-          ring = band * band * (1.0 - age) * fade;
+          let width = max(0.05, surfaceFootprint * 2.6 * 1.2);
+          let band = max(0.0, 1.0 - abs(r - (0.05 + age * 0.38)) / width);
+          ring = band * band * (0.05 / width) * (1.0 - age) * fade * outbreakWetPuddle;
         }
       }
       let lightIrr = clamp(flashIrr, 0.0, 2.0) + clamp(outbreakPracticalIrr, 0.0, 2.0) * 0.6;
-      let sheen = beamAdd * film * (0.55 + 0.9 * ring) + vec3f(1.0, 0.62, 0.30) * clamp(outbreakPracticalIrr, 0.0, 2.0) * outbreakWetPuddle * 0.05 * (0.6 + ring);
+      let sheen = beamAdd * (film + 0.5 * ring) + vec3f(1.0, 0.62, 0.30) * clamp(outbreakPracticalIrr, 0.0, 2.0) * outbreakWetPuddle * 0.04 * (0.5 + 2.0 * ring);
       col += sheen * gloss * smoothstep(0.0, 0.08, lightIrr) * outbreakSeen;
     }
 `

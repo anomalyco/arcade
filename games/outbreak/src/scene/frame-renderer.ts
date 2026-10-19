@@ -512,12 +512,12 @@ export class OutbreakFrameRenderer {
         outbreakClientFeatures.frameLights(
           featureFrame,
           lights,
-          this.details.writeLights(lights, this.fire.writeLights(lights, this.nightLights.writeLights(lights, n, max, lampPower, settings.nightLights), max, settings.fire.fireMaxLights), max, lampPower, settings.details, {
+          this.weatherController.writeLights(lights, this.details.writeLights(lights, this.fire.writeLights(lights, this.nightLights.writeLights(lights, n, max, lampPower, settings.nightLights), max, settings.fire.fireMaxLights), max, lampPower, settings.details, {
             cutX,
             cutY,
             interior: inInteriorView,
             night: day.lamps,
-          }),
+          }), max),
           max,
         ),
     })
@@ -741,7 +741,7 @@ export class OutbreakFrameRenderer {
     render.view = view
     render.grade[0] = time
     render.grade[1] = settings.view.diagnostic
-    render.grade[2] = Math.max(lightningFlash * 0.35, cam.damageFlash)
+    render.grade[2] = cam.damageFlash
     render.grade[3] = settings.lighting.exposure
     render.motionBlur = {
       settings: {

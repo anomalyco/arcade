@@ -89,7 +89,7 @@ try {
   // The street at 22:00, the beam east along the road, three of the dead out in the dark beyond it.
   await record("storm", "Storm night, 22:00: rain in the flashlight, lightning", scene(22, 42, 24, 44, 0.12, "storm", [[14, 37], [36, 52], [44, 36]]), [
     { frames: 50, aim: 0.12, still: "storm-night", stillAfter: 48 },
-    { frames: 130, aim: 0.12, at: `return h.flashLightning(true, { bearing: -0.55, dist: 22 })`, still: "storm-flash", stillAfter: 2 },
+    { frames: 130, aim: 0.12, at: `return h.flashLightning(true, { bearing: -2.84, dist: 16.8 })`, still: "storm-flash", stillAfter: 2 },
     { frames: 50, aim: [0.12, -0.25] },
     { frames: 110, aim: -0.25, at: `return h.flashLightning(false)` },
   ])
@@ -98,6 +98,13 @@ try {
     { frames: 40, aim: 0.3 },
     { frames: 120, aim: [0.3, 0.75], still: "wet-street", stillAfter: 20 },
   ])
+  // The same shot held clear, for comparison (stills only).
+  await ev(scene(22, 36, 24, 44, 0.45, "clear"))
+  for (let i = 0; i < 20; i++) await page.evaluate(async () => (window as any).__arcadeHarness.step(1 / 60, { aim: 0.45 }))
+  await page.screenshot({ path: resolve(out, "dry-street.png"), timeout: 120_000 })
+  await ev(scene(22, 36, 24, 44, 0.45, "rain"))
+  for (let i = 0; i < 20; i++) await page.evaluate(async () => (window as any).__arcadeHarness.step(1 / 60, { aim: 0.45 }))
+  await page.screenshot({ path: resolve(out, "wet-street-same.png"), timeout: 120_000 })
   // A drizzle front by day: fine streaks against the shade, a damp road, no puddles yet.
   await record("drizzle", "Drizzle, 14:00", scene(14, 42, 24, 44, 0.12, "drizzle"), [{ frames: 90, aim: 0.12, still: "drizzle-day", stillAfter: 60 }])
 

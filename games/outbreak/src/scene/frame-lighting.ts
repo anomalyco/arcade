@@ -742,11 +742,11 @@ export class OutbreakFrameLighting {
     // Rain brings cloud; lightning lights everything for a moment in cold blue-white, from the strike's side of the sky.
     const overcast = Math.max(settings.weather.weather, (weather?.overcast ?? 0) * 0.6)
     const ambScale = settings.lighting.skyFill * (1 - overcast * 0.3)
-    const ambAdd = lightningFlash * 0.16
+    const ambAdd = lightningFlash * 0.3
     frame[28] = day.ambient[0] * ambScale + ambAdd * 0.86
     frame[29] = day.ambient[1] * ambScale + ambAdd * 0.94
     frame[30] = day.ambient[2] * ambScale + ambAdd * 1.1
-    frame[31] = day.strength * settings.lighting.moonFill * (1 - overcast * 0.85) + lightningFlash * 0.65
+    frame[31] = day.strength * settings.lighting.moonFill * (1 - overcast * 0.85) + lightningFlash * 1.1
     const focusX = activePeek ? p.x + (activePeek.cutX - p.x) * peekBlend : p.x
     const focusY = activePeek ? p.y + (activePeek.cutY - p.y) * peekBlend : p.y
     const focus = cam.project(focusX, 1, focusY, w, h)

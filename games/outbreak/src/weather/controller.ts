@@ -233,7 +233,7 @@ export class OutbreakWeatherController {
     this.surface.ripple = st.rippleIntensity
     this.surface.wetGloss = s.weatherWetGloss
 
-    let lightCount = input.lightCount
+    const lightCount = input.lightCount
     let spriteCount = input.spriteCount ?? 0
     for (let i = this.marks.length - 1; i >= 0; i--) {
       const m = this.marks[i]!
@@ -242,7 +242,6 @@ export class OutbreakWeatherController {
         this.marks.splice(i, 1)
         continue
       }
-      lightCount = this.writeMarkLight(m, age, input.lights, lightCount, input.maxLights)
       if (input.sprites) spriteCount = this.writeMarkSprites(m, age, input.sprites, spriteCount)
     }
 
@@ -270,7 +269,7 @@ export class OutbreakWeatherController {
         r: input.lights[base + 4]!,
         g: input.lights[base + 5]!,
         b: input.lights[base + 6]!,
-        power: hasCone ? power * 1.45 : power * 1.25,
+        power: hasCone ? power * 2.2 : power * 1.25,
         dx: input.lights[base + 8]!,
         dz: input.lights[base + 9]!,
         cosHalf: input.lights[base + 10]!,
@@ -295,6 +294,18 @@ export class OutbreakWeatherController {
       cameraDist: input.zoom,
     }
     return this.resultScratch
+  }
+
+  /**
+   * Near strikes' lights (flash, then smoulder) packed with the map's extra lights, before the lamp grid is built so
+   * the scene shades them. They trail the strike by a frame. Returns the new count.
+   */
+  writeLights(lights: Float32Array, count: number, max: number): number {
+    for (const m of this.marks) {
+      const age = this.clock - m.t
+      if (age <= STRIKE_MARK_LIFE) count = this.writeMarkLight(m, age, lights, count, max)
+    }
+    return count
   }
 
   /** A near strike lands on the street lamp or tree nearest where it fell, within 14 m, else on open ground. */

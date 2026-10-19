@@ -94,8 +94,12 @@ describe("Outbreak weather integration", () => {
     expect(ctrl.shroudLift).toBeGreaterThan(0.1)
     expect(ctrl.reveal).toBeGreaterThan(0.2)
     expect(ctrl.marks.length).toBe(1)
-    expect(out.lightCount).toBe(2)
     expect(out.spriteCount).toBeGreaterThan(10)
+    // Its light goes in with the map's extra lights (before the lamp grid), not after the frame's lights.
+    expect(out.lightCount).toBe(1)
+    const lights = new Float32Array(16 * 4)
+    expect(ctrl.writeLights(lights, 1, 4)).toBe(2)
+    expect(lights[16 + 7]).toBeGreaterThan(1)
     ctrl.endFrame()
     expect(ctrl.strikes.length).toBe(0)
   })
