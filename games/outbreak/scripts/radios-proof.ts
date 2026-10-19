@@ -59,22 +59,35 @@ try {
   assert.deepEqual((report["radio-playing"] as any).shown.playing, ["radio:ash"])
   assert.deepEqual((report["radio-broken"] as any).shown.broken, ["radio:ash"])
 
-  // The lure, as a clip: 30 frames a second, two sim ticks a frame (real time).
-  const site = await stage("radio-lure", 20.5)
+  // The lure, as a clip: 30 frames a second, two sim ticks a frame (real time). Dusk, so the street reads without the
+  // torch, a short sight range and the camera pulled back, so the dead go for the radio and both it and the survivor
+  // stay in frame.
+  const site = await stage("radio-lure", 18.6)
+  await page.evaluate(() => {
+    const h = (window as any).__arcadeHarness
+    h.setLab("sightRange", 6)
+    h.setZoomRaw(48)
+  })
   report.site = site
   const frames = join(out, "clip-frames")
   mkdirSync(frames, { recursive: true })
   const timeline: unknown[] = []
   let brokenAt = -1
-  for (let i = 0; i < 30 * 40; i++) {
+  let frame = 0
+  for (let i = 0; i < 30 * 30; i++) {
     const s = await step(2)
     if (i % 15 === 0) timeline.push({ t: (i / 30).toFixed(1), radio: s.radios.states["radio:ash"], zombies: s.zombies })
-    await page.screenshot({ path: join(frames, `${String(i).padStart(4, "0")}.png`) })
+    try {
+      await page.screenshot({ path: join(frames, `${String(frame).padStart(4, "0")}.jpg`), type: "jpeg", quality: 88, timeout: 10_000 })
+      frame++
+    } catch (e) {
+      timeline.push({ t: (i / 30).toFixed(1), skipped: String(e).slice(0, 120) })
+    }
     if (brokenAt < 0 && s.radios.states["radio:ash"] === "broken") brokenAt = i
     if (brokenAt >= 0 && i > brokenAt + 60) break
   }
-  report.lure = { timeline, brokenAtSeconds: brokenAt >= 0 ? brokenAt / 30 : null }
-  const ff = Bun.spawnSync(["ffmpeg", "-y", "-loglevel", "error", "-framerate", "30", "-i", join(frames, "%04d.png"), "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "22", join(out, "lure.mp4")])
+  report.lure = { timeline, frames: frame, brokenAtSeconds: brokenAt >= 0 ? brokenAt / 30 : null }
+  const ff = Bun.spawnSync(["ffmpeg", "-y", "-loglevel", "error", "-framerate", "30", "-i", join(frames, "%04d.jpg"), "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "22", join(out, "lure.mp4")])
   report.clip = ff.exitCode === 0 ? "lure.mp4" : `ffmpeg failed (${ff.exitCode})`
   assert.deepEqual(errors, [])
   report.ok = true

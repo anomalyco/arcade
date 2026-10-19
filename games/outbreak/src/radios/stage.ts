@@ -50,7 +50,7 @@ export function stageRadio(host: DiscoveryHost, session: StageSession, scene: Ra
       const b = sim.town.buildings.find((x) => x.id === site.buildingId)!
       const street = b.rect[3] + 7
       for (let i = 0; i < 6; i++) ai.spawnZombie(sim.town, b.rect[0] - 4 + i * 3.2, street + (i % 2) * 1.6, "wander")
-      host.pose(site.x + 8, street + 6, -Math.PI / 2)
+      host.pose(site.x + 8, street + 9, -Math.PI / 2)
       break
     }
     case "radio-broken": {
