@@ -178,8 +178,12 @@ fn resolveAt(frag: vec2f) -> vec4f {
   let pIn = uv * inSize;
   let maxTap = vec2i(inSize) - 1;
   let centre = clamp(vec2i(round(pIn - 0.5 + U.jitter.xy)), vec2i(0), maxTap);
+  // Two reconstructions of the current frame: a tight kernel in output pixels to accumulate (sharp once converged)
+  // and a wider one in input pixels for pixels without history (disoccluded or reactive), where one sample shows.
   var sum = vec4f(0.0);
   var wsum = 0.0;
+  var soft = vec4f(0.0);
+  var wsoft = 0.0;
   var m1 = vec3f(0.0);
   var m2 = vec3f(0.0);
   var lo = vec4f(1e9);
@@ -193,9 +197,13 @@ fn resolveAt(frag: vec2f) -> vec4f {
       let c = vec4f(compress(max(raw.rgb, vec3f(0.0))), clamp(raw.a, 0.0, 1.0));
       let y = vec4f(toYCoCg(c.rgb), c.a);
       let delta = pIn - (vec2f(q) + 0.5 - U.jitter.xy);
-      let w = exp(-2.29 * dot(delta, delta));
+      let deltaOut = delta * outSize / inSize;
+      let w = exp(-2.29 * dot(deltaOut, deltaOut));
       sum += c * w;
       wsum += w;
+      let ws = exp(-2.29 * dot(delta, delta));
+      soft += c * ws;
+      wsoft += ws;
       m1 += y.xyz;
       m2 += y.xyz * y.xyz;
       lo = min(lo, y);
@@ -207,7 +215,8 @@ fn resolveAt(frag: vec2f) -> vec4f {
       }
     }
   }
-  let current = sum / max(wsum, 1e-5);
+  let sharp = sum / max(wsum, 1e-5);
+  let wide = soft / max(wsoft, 1e-5);
 
   // Reproject the closest tap by depth (camera motion), and test the previous frame's depth there.
   let ndc = sampleNdc(closestTap);
@@ -230,14 +239,14 @@ fn resolveAt(frag: vec2f) -> vec4f {
     valid = best < U.params.x;
   }
 
-  // Variance clip in YCoCg: generous when still (stable), tight when moving (no ghosts).
+  // Variance clip in YCoCg: generous when still (stable), tighter when moving.
   let motionPx = length((historyUv - uv) * outSize);
   let moving = saturate(motionPx / 24.0);
   let mean = m1 / 9.0;
   let sigma = sqrt(max(m2 / 9.0 - mean * mean, vec3f(0.0)));
-  let gamma = mix(1.25, 0.75, moving);
-  let boxLo = max(lo.xyz, mean - gamma * sigma);
-  let boxHi = min(hi.xyz, mean + gamma * sigma);
+  let gamma = mix(1.0, 0.75, moving);
+  let boxLo = mean - gamma * sigma;
+  let boxHi = mean + gamma * sigma;
   let history = sampleHistory(historyUv);
   let hc = compress(history.rgb);
   let hy = clipToBox(toYCoCg(hc), boxLo, boxHi);
@@ -248,6 +257,7 @@ fn resolveAt(frag: vec2f) -> vec4f {
   var cw = U.jitter.z + 0.2 * saturate(motionPx / 48.0);
   cw = mix(cw, 0.8, reactive);
   cw = select(1.0, saturate(cw), valid);
+  let current = mix(sharp, wide, select(1.0, reactive, valid));
   let outY = mix(hy, toYCoCg(current.rgb), cw);
   return vec4f(expand(max(fromYCoCg(outY), vec3f(0.0))), mix(ha, current.a, cw));
 }
@@ -306,6 +316,7 @@ fn tap(p: vec2i) -> vec3f {
 
 const TEX_RENDER = globalThis.GPUTextureUsage?.RENDER_ATTACHMENT ?? 0x10
 const TEX_BIND = globalThis.GPUTextureUsage?.TEXTURE_BINDING ?? 0x04
+const TEX_COPY_SRC = globalThis.GPUTextureUsage?.COPY_SRC ?? 0x01
 
 export type TemporalState = {
   mode: AntiAliasingMode
@@ -425,7 +436,7 @@ export class TemporalResolve {
     this.inH = inH
     this.history = [0, 1].map((i) => d.createTexture({ label: `temporal history ${i}`, size: [outW, outH], format: this.format, usage: TEX_RENDER | TEX_BIND }))
     this.historyViews = this.history.map((t) => t.createView())
-    this.output = d.createTexture({ label: "temporal output", size: [outW, outH], format: this.format, usage: TEX_RENDER | TEX_BIND })
+    this.output = d.createTexture({ label: "temporal output", size: [outW, outH], format: this.format, usage: TEX_RENDER | TEX_BIND | TEX_COPY_SRC })
     this.outputView = this.output.createView()
     this.prevLin = d.createTexture({ label: "temporal previous depth", size: [inW, inH], format: "r32float", usage: TEX_RENDER | TEX_BIND })
     this.prevLinView = this.prevLin.createView()
