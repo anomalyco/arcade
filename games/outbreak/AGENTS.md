@@ -79,3 +79,7 @@
   `scene/frame-renderer.ts`). Lab: Backquote › Fire & explosives, `arcade cmd fire.stage scene=…`, station
   `outbreak-fire`. Items, loot and recipes: `../../docs/outbreak-progression.md#fire--explosives-ar-62`. Tests:
   `tests/fire.test.ts`.
+- The Way Out (AR-64): a seeded far-off destination found through three tiers of clues, a signal, a stand until
+  dawn and the escape card, in `shared/way-out/` (all state in the `wayout` ledger store, nothing on the wire) and
+  `src/way-out/`. Lab: Backquote › Way Out (Off = endless survival), `arcade cmd wayout.*`, station
+  `outbreak-way-out`. How it works: `../../docs/outbreak-way-out.md`. Tests: `tests/way-out.test.ts`.

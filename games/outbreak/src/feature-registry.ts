@@ -58,6 +58,8 @@ export interface OutbreakClientFeatureFrameHooks {
   hidesSurvivor?(sim: CoopSim, slot: SurvivorSlot): boolean
   /** Extra instanced batches for the scene. */
   batches?(ctx: OutbreakClientFrameContext): readonly Batch[]
+  /** Extra point lights packed after the night, fire and detail lights (`LIGHT_FLOATS` each); returns the new count. */
+  lights?(ctx: OutbreakClientFrameContext, lights: Float32Array, count: number, max: number): number
   /** Screen overlay, after the frame is drawn and the camera has settled. */
   overlay?(ctx: OutbreakClientFrameContext): void
 }
@@ -236,6 +238,11 @@ export class OutbreakClientFeatureRegistry
       const batches = feature.frame?.batches?.(ctx)
       if (batches) for (let i = 0; i < batches.length; i++) out.push(batches[i]!)
     }
+  }
+
+  frameLights(ctx: OutbreakClientFrameContext, lights: Float32Array, count: number, max: number): number {
+    for (const feature of this.list()) if (feature.frame?.lights) count = feature.frame.lights(ctx, lights, count, max)
+    return count
   }
 
   frameOverlay(ctx: OutbreakClientFrameContext): void {

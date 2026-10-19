@@ -15,12 +15,15 @@ export type CompassInput = {
   radius: number
   opacity: number
   range: number
+  /** Objective pins (the way out): a bearing and distance on the ring however far away. */
+  pins?: readonly { x: number; y: number; label: string }[]
 }
 
 const RING_POINTS = 64
 const INK = "#ece6d2"
 const SHADOW = "rgba(8, 10, 12, 0.75)"
 const MARKER_INK = "#d0583f"
+const OBJECTIVE_INK = "#d9a441"
 
 /**
  * A thin ring on the ground around the survivor with bearings to marks, teammates, pings, safehouses and nearby known
@@ -160,6 +163,13 @@ export class MapCompass {
       if (near(m.x, m.y)) continue
       const [x, y] = at(bearing(m.x, m.y))
       drawPin(ctx, x, y + 4, m.label, MARKER_INK, INK, 0.8)
+      label(distText(m.x, m.y), x, y + 13)
+      bearings++
+    }
+    for (const m of input.pins ?? []) {
+      if (near(m.x, m.y)) continue
+      const [x, y] = at(bearing(m.x, m.y))
+      drawPin(ctx, x, y + 4, "★", OBJECTIVE_INK, INK, 0.85)
       label(distText(m.x, m.y), x, y + 13)
       bearings++
     }

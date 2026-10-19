@@ -5,6 +5,7 @@ import { MACRO_SIZE } from "../../shared/world"
 import { drawBadge, type Ctx2D } from "./icons"
 import { blockName, DISTRICT_LABELS, groupSightings, POI_LABELS, type MapBuilding, type MapMarker, type MapMemory } from "./memory"
 import { LABEL_FONT, MONO_FONT, type MapPalette } from "./style"
+import type { MapObjectives } from "./objectives"
 import { MapTiles, type MapViewport } from "./tiles"
 
 export type MapActor = { x: number; y: number; aim: number; colour: string; name: string; self?: boolean }
@@ -19,6 +20,8 @@ export type MapLive = {
   vehicles: readonly MapVehicle[]
   hordeMemory: number
   place: string
+  /** Features' objectives: pinned places, their routes, rough areas, crossed-out spots (`objectives.ts`). */
+  objectives?: MapObjectives
 }
 
 /** Hordes are groups of at least this many zombies; smaller sightings are drawn as small marks up close. */
@@ -26,6 +29,8 @@ export const HORDE_SIZE = 5
 export const MIN_ZOOM = 0.08
 export const MAX_ZOOM = 10
 const MARKER_INK = "#b23a26"
+/** Objectives (the way out) are drawn in the warm ink of the HUD, apart from the player's own red marks. */
+const OBJECTIVE_INK = "#d9a441"
 
 /** Keeps a CSS-pixel canvas at device resolution so text and lines stay sharp at DPR 2. */
 function fit(canvas: HTMLCanvasElement, w: number, h: number, dpr: number): boolean {
@@ -686,6 +691,7 @@ export class MapScreen {
       ctx.fillText(p.label, Math.round(sx), Math.round(sy - 15))
     }
     ctx.globalAlpha = 1
+    if (live.objectives) this.drawObjectives(ctx, live.objectives, live.time)
     for (const m of this.memory.markers) {
       const [sx, sy] = this.toScreen(m.x, m.y)
       if (sx < -20 || sy < -30 || sx > v.w + 20 || sy > v.h + 20) continue
@@ -693,6 +699,83 @@ export class MapScreen {
     }
     const actors = [...live.actors].sort((a, b) => Number(Boolean(a.self)) - Number(Boolean(b.self)))
     for (const a of actors) this.drawActor(ctx, a, live.time)
+  }
+
+  private drawObjectives(ctx: Ctx2D, o: MapObjectives, time: number): void {
+    const v = this.view
+    const P = this.palette
+    ctx.save()
+    ctx.strokeStyle = OBJECTIVE_INK
+    ctx.fillStyle = OBJECTIVE_INK
+    for (const a of o.areas) {
+      const [sx, sy] = this.toScreen(a.x, a.y)
+      const r = Math.max(14, a.r * v.zoom)
+      ctx.globalAlpha = 0.12
+      ctx.beginPath()
+      ctx.arc(sx, sy, r, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.globalAlpha = 0.85
+      ctx.setLineDash([5, 4])
+      ctx.lineWidth = 1.5
+      ctx.stroke()
+      ctx.setLineDash([])
+      ctx.font = `700 12px ${MONO_FONT}`
+      ctx.lineWidth = 3
+      ctx.strokeStyle = P.halo
+      ctx.strokeText(a.label, Math.round(sx), Math.round(sy))
+      ctx.fillText(a.label, Math.round(sx), Math.round(sy))
+      ctx.strokeStyle = OBJECTIVE_INK
+    }
+    ctx.globalAlpha = 0.9
+    ctx.lineWidth = 2.5
+    ctx.setLineDash([7, 5])
+    ctx.lineDashOffset = -time * 6
+    for (const route of o.routes) {
+      ctx.beginPath()
+      route.forEach((p, i) => {
+        const [sx, sy] = this.toScreen(p.x, p.y)
+        if (i === 0) ctx.moveTo(sx, sy)
+        else ctx.lineTo(sx, sy)
+      })
+      ctx.stroke()
+    }
+    ctx.setLineDash([])
+    ctx.lineDashOffset = 0
+    ctx.globalAlpha = 1
+    for (const c of o.crosses) {
+      const [sx, sy] = this.toScreen(c.x, c.y)
+      if (sx < -20 || sy < -20 || sx > v.w + 20 || sy > v.h + 20) continue
+      ctx.lineWidth = 3.5
+      ctx.strokeStyle = P.halo
+      ctx.beginPath()
+      ctx.moveTo(sx - 6, sy - 6)
+      ctx.lineTo(sx + 6, sy + 6)
+      ctx.moveTo(sx + 6, sy - 6)
+      ctx.lineTo(sx - 6, sy + 6)
+      ctx.stroke()
+      ctx.lineWidth = 2
+      ctx.strokeStyle = MARKER_INK
+      ctx.stroke()
+      if (c.label && v.zoom >= 0.6) {
+        ctx.font = `600 10px ${MONO_FONT}`
+        ctx.lineWidth = 3
+        ctx.strokeStyle = P.halo
+        ctx.strokeText(c.label, Math.round(sx), Math.round(sy + 14))
+        ctx.fillStyle = P.label
+        ctx.fillText(c.label, Math.round(sx), Math.round(sy + 14))
+      }
+    }
+    for (const pin of o.pins) {
+      const [sx, sy] = this.toScreen(pin.x, pin.y)
+      drawPin(ctx, sx, sy, "★", OBJECTIVE_INK, P.badge, 1.25)
+      ctx.font = `700 12px ${MONO_FONT}`
+      ctx.lineWidth = 3
+      ctx.strokeStyle = P.halo
+      ctx.strokeText(pin.label, Math.round(sx), Math.round(sy + 13))
+      ctx.fillStyle = P.label
+      ctx.fillText(pin.label, Math.round(sx), Math.round(sy + 13))
+    }
+    ctx.restore()
   }
 
   private drawActor(ctx: Ctx2D, a: MapActor, time: number): void {

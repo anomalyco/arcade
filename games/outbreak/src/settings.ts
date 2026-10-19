@@ -17,6 +17,7 @@ import { DEFAULT_HORDE_TUNING, type HordeTuning } from "../shared/hordes/index"
 import { DEFAULT_NIGHT_RAMP_TUNING, type NightRampTuning } from "../shared/night-ramp/ramp"
 import { DEFAULT_DEATH_TUNING, type DeathTuning } from "../shared/death/rules"
 import { DEFAULT_FIRE_SETTINGS, type OutbreakFireSettings } from "./fire/settings"
+import { DEFAULT_WAY_OUT_TUNING, type WayOutTuning } from "../shared/way-out/tuning"
 import { DEFAULT_SPECIALS_TUNING, type SpecialsTuning } from "../shared/specials/kinds"
 import type { WorldMode } from "../shared/world"
 import { DEFAULT_AUDIO_SETTINGS, type AudioSettings } from "./audio"
@@ -240,6 +241,7 @@ export type OutbreakSubsystemMap = {
   nightRamp: NightRampTuning
   death: DeathTuning
   fire: OutbreakFireSettings
+  wayOut: WayOutTuning
 }
 
 export type OutbreakSubsystemKey = keyof OutbreakSubsystemMap
@@ -319,6 +321,7 @@ export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "nightRamp",
   "death",
   "fire",
+  "wayOut",
 ] as const
 
 export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
@@ -361,6 +364,7 @@ export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
     nightRamp: { ...DEFAULT_NIGHT_RAMP_TUNING },
     death: { ...DEFAULT_DEATH_TUNING },
     fire: { ...DEFAULT_FIRE_SETTINGS },
+    wayOut: { ...DEFAULT_WAY_OUT_TUNING },
   }
 }
 

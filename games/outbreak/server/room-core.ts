@@ -29,6 +29,7 @@ import {
   type SharedSnapshot,
 } from "../shared/net-protocol"
 import type { DeathState } from "../shared/death/rules"
+import { wayOutWon } from "../shared/way-out/state"
 import type { Command } from "../shared/session"
 
 /** A dropped player's survivor (inventory, ammo, position) is kept this long for a reconnect. */
@@ -371,9 +372,9 @@ export class CoopRoomCore {
     }
   }
 
-  /** True once every survivor in the room is dead (`shared/death`). */
+  /** True once every survivor in the room is dead (`shared/death`) or the squad escaped (`shared/way-out`). */
   get runOver(): boolean {
-    return Boolean(this.sim.getFeatureState<DeathState>("death")?.runOver)
+    return Boolean(this.sim.getFeatureState<DeathState>("death")?.runOver) || wayOutWon(this.sim.progression.ledger)
   }
 
   /**

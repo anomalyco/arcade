@@ -25,6 +25,7 @@ import "./props/index"
 import "./radios/index"
 import "./specials/index"
 import "./vehicles/index"
+import "./way-out/index"
 import "./weather/index"
 
 export { outbreakClientFeatures } from "./feature-registry"

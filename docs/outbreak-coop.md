@@ -153,6 +153,8 @@ alive ──0 HP──▶ down ──bleed-out runs out──▶ dead ──squa
 - Lab › Death has Down me, Kill me, Revive me, Add a teammate, Down teammate and Kill teammate (offline); commands
   `death.down`, `death.kill`, `death.revive` (`who=mate` for the teammate) and `death.mate`. Tests:
   `tests/death.test.ts`.
+- When everyone is dead the run is over; when the squad escapes by The Way Out the run is won, and `runOver` is true
+  for both so Restart works from either card ([outbreak-way-out.md](outbreak-way-out.md#state-and-co-op)).
 
 ## Sound
 

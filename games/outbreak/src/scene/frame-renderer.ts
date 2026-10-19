@@ -503,12 +503,17 @@ export class OutbreakFrameRenderer {
       shadowLightCount,
       lampTrim: (lamp, resolved) => this.nightLights.trimLamp(town, settings.nightLights, lamp, resolved, time),
       extraLights: (lights, n, max, lampPower) =>
-        this.details.writeLights(lights, this.fire.writeLights(lights, this.nightLights.writeLights(lights, n, max, lampPower, settings.nightLights), max, settings.fire.fireMaxLights), max, lampPower, settings.details, {
-          cutX,
-          cutY,
-          interior: inInteriorView,
-          night: day.lamps,
-        }),
+        outbreakClientFeatures.frameLights(
+          featureFrame,
+          lights,
+          this.details.writeLights(lights, this.fire.writeLights(lights, this.nightLights.writeLights(lights, n, max, lampPower, settings.nightLights), max, settings.fire.fireMaxLights), max, lampPower, settings.details, {
+            cutX,
+            cutY,
+            interior: inInteriorView,
+            night: day.lamps,
+          }),
+          max,
+        ),
     })
     count = mapLights.count
     shadowLightCount = mapLights.shadowLightCount
