@@ -180,6 +180,21 @@ export const TRAP_RING = 8
 export const FIRE_ITEMS = ["flamethrower", "dynamite", "firecrackers", "molotov", "flare-gun", "bear-trap"] as const
 export type FireItem = (typeof FIRE_ITEMS)[number]
 
+/** A stable hash of two integers to [0, 1): the sim's per-event variation, and the client's matching presentation. */
+export function fireHash(a: number, b: number): number {
+  let h = Math.imul(a ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(b + 0x632be5ab, 0xc2b2ae35)
+  h ^= h >>> 16
+  h = Math.imul(h, 0x7feb352d)
+  h ^= h >>> 15
+  return (h >>> 0) / 4294967296
+}
+
+/** Seconds between a firecracker string's beats; about a third of beats are skipped (`crackerPops`). */
+export const CRACK_BEAT = 0.32
+
+/** Whether beat `n` of a firecracker string lit at `t` (deciseconds) pops. */
+export const crackerPops = (t: number, n: number) => fireHash(t, n) >= 0.33
+
 export const ds = (seconds: number) => Math.round(seconds * 10)
 export const cm = (metres: number) => Math.round(metres * 100)
 

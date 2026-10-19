@@ -404,6 +404,8 @@ export class ZombieCrowdRenderer {
   readonly batches: Batch[] = []
   /** Each foot contact of an animated zombie (plan x, y, body speed m/s, how much that foot drags, shamble variant). */
   onFootfall?: (agentId: number, x: number, y: number, speed: number, drag: number, variant: string) => void
+  /** How charred each burning or burnt zombie is (0..1, by id), set each frame by the fire presenter's caller. */
+  charred: ReadonlyMap<number, number> | null = null
   /** Seconds into each live strike lunge, by agent id (presentation only; see `strike`). */
   private readonly strikes = new Map<number, number>()
   /** Lab › Feel › Zombie strike lunge (0 = off). */
@@ -1048,9 +1050,10 @@ export class ZombieCrowdRenderer {
       // A sleeping Lurker is a shadow until the light finds it.
       const shade = (0.88 + ((a.id * 19) % 7) * 0.035) * (kind === SPECIAL_LURKER && a.state === "wander" ? 0.45 : 1)
       const visFade = hideUnseen || !unseenMode ? Math.min(1.0, 0.25 + 0.75 * visWeight) : 1.0
-      const tintR = !isVisible && debugOverlay ? 0.55 : shade * (unseenMode > 0 ? visFade : 1.0)
-      const tintG = !isVisible && debugOverlay ? 0.72 : shade * 0.98 * (unseenMode > 0 ? visFade : 1.0)
-      const tintB = !isVisible && debugOverlay ? 0.85 : shade * 0.94 * (unseenMode > 0 ? visFade : 1.0)
+      const char = this.charred?.get(a.id) ?? 0
+      const tintR = !isVisible && debugOverlay ? 0.55 : shade * (1 - 0.8 * char) * (unseenMode > 0 ? visFade : 1.0)
+      const tintG = !isVisible && debugOverlay ? 0.72 : shade * 0.98 * (1 - 0.86 * char) * (unseenMode > 0 ? visFade : 1.0)
+      const tintB = !isVisible && debugOverlay ? 0.85 : shade * 0.94 * (1 - 0.9 * char) * (unseenMode > 0 ? visFade : 1.0)
       const alpha = !isVisible && debugOverlay ? 0.58 : unseenMode > 0 ? 1.0 : Math.min(1.0, 0.25 + 0.75 * visWeight)
       const bOff = s * BONE_STRIDE
       const pelvisOff = bOff

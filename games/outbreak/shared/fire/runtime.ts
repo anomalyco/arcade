@@ -4,18 +4,21 @@ import type { Ledger, StoreState } from "@arcade/kit/sim/ledger"
 import { dayCycle } from "../day-cycle"
 import { DEFAULT_FLARE_TUNING, FLARE_STRIKE_NOISE, type FlareTuning } from "../flares/flares"
 import { pullToward } from "../flares/runtime"
-import { sightRects, type Door } from "../map"
+import { sightRects, type Door, type Town } from "../map"
 import type { Command, OutbreakSim, SurvivorSlot } from "../sim-types"
 import {
   BURN_RING,
   burnZombie,
+  CRACK_BEAT,
   CRACK_RING,
   cm,
+  crackerPops,
   crackerAt,
   DEFAULT_FIRE_TUNING,
   ds,
   DYN_RING,
   FIRE_RING,
+  fireHash,
   fireLit,
   flamerId,
   ringId,
@@ -51,13 +54,7 @@ function rand(state: FireState): number {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296
 }
 
-function hash01(a: number, b: number): number {
-  let h = Math.imul(a ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(b + 0x632be5ab, 0xc2b2ae35)
-  h ^= h >>> 16
-  h = Math.imul(h, 0x7feb352d)
-  h ^= h >>> 15
-  return (h >>> 0) / 4294967296
-}
+const hash01 = fireHash
 
 const seatOf = (state: FireState, id: string): Seat =>
   (state.seats[id] ??= { drain: 0, refuelUntil: -1e9, beat: -1e9, patchAt: -1e9, scorchAt: -1e9, lastOn: -1e9, emptyAt: -1e9 })
@@ -261,10 +258,15 @@ function setFlamer(sim: OutbreakSim, seat: string, on: boolean): void {
   touch(ledger, st)
 }
 
-/** The stream's reach from `slot` this tick: its range, cut short by the first wall. */
+/** A stream's reach from `(x, y)` along `aim`: its range, cut short by the first wall (the client draws the same). */
+export function reachFrom(town: Town, x: number, y: number, aim: number, range: number): number {
+  return Math.max(0.4, Math.min(range, raycast(x, y, Math.cos(aim), Math.sin(aim), sightRects(town), range)))
+}
+
+/** The stream's reach from `slot` this tick. */
 export function streamReach(sim: OutbreakSim, slot: SurvivorSlot, t: FireTuning): number {
   const p = slot.survivor
-  return Math.max(0.4, Math.min(t.flameRange, raycast(p.x, p.y, Math.cos(p.aim), Math.sin(p.aim), sightRects(sim.town), t.flameRange)))
+  return reachFrom(sim.town, p.x, p.y, p.aim, t.flameRange)
 }
 
 /** Whether `(x, y)` is in the cone of a stream from `p` reaching `reach`, with `pad` metres of slack for a body. */
@@ -503,11 +505,11 @@ function stepFirecrackers(sim: OutbreakSim, state: FireState, t: FireTuning): vo
       continue
     }
     const since = sim.time - (st.counts.t ?? 0) / 10
-    const due = Math.floor(since / 0.32)
+    const due = Math.floor(since / CRACK_BEAT)
     if ((state.beats[id] ?? -1) >= due) continue
     state.beats[id] = due
     // Irregular: skip about a third of the beats.
-    if (hash01(st.counts.t ?? 0, due) < 0.33) continue
+    if (!crackerPops(st.counts.t ?? 0, due)) continue
     const at = crackerAt(st, sim.time)
     sim.ai.emitNoise(at.x, at.y, t.crackNoise, "firecracker", sim.time, st.owner ?? "fire", 1.5)
   }

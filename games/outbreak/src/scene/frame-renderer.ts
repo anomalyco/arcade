@@ -25,6 +25,8 @@ import { BenchLean } from "../discovery/lean"
 import { DiscoveryProps } from "../discovery/props"
 import { outbreakClientFeatures } from "../features"
 import { OutbreakFeelTracker } from "../feel-events"
+import { charOf, fireAddSprites, type FireFrame } from "../fire/fx"
+import { FirePresenter, setCurrentFire } from "../fire/presenter"
 import { onFootLead } from "../feel-tuning"
 import { collectFogSoundSprites } from "../fog-of-war"
 import { GroundWearRenderer } from "../ground"
@@ -94,6 +96,7 @@ export class OutbreakFrameRenderer {
   readonly propDressing: PropDressing
   readonly blood: BloodStains
   readonly nightLights: NightLightsPresenter
+  readonly fire: FirePresenter
   readonly details: DetailsPresenter
   readonly ambientMotion: OutbreakAmbientMotion
   readonly weatherController = new OutbreakWeatherController()
@@ -104,7 +107,7 @@ export class OutbreakFrameRenderer {
   readonly lookCompare: { mode: LookCompareMode; wipeSplit: number } = { mode: 1, wipeSplit: 0.5 }
   private readonly beamLookScratch: BeamLook = { low: 0, cone: 0, range: 0, warmth: 0, color: [1, 1, 1] }
   private readonly alphaSprites = new Float32Array(1024 * SPRITE_FLOATS)
-  private readonly addSprites = new Float32Array(256 * SPRITE_FLOATS)
+  private readonly addSprites = new Float32Array(1536 * SPRITE_FLOATS)
   readonly render: FrameInput
   peekBlend = 0
   private lastPeek: PeekInfo | null = null
@@ -147,6 +150,8 @@ export class OutbreakFrameRenderer {
     setCurrentBloodStains(this.blood)
     this.nightLights = new NightLightsPresenter(this.renderer)
     setCurrentNightLights(this.nightLights)
+    this.fire = new FirePresenter(this.renderer)
+    setCurrentFire(this.fire)
     this.details = new DetailsPresenter(this.renderer)
     setCurrentDetails(this.details)
     this.details.crows.onScatter = (x, z, birds) => {
@@ -404,6 +409,8 @@ export class OutbreakFrameRenderer {
     let { count } = beamState
     const { sightAim, sightCone, sightAwareness } = beamState
 
+    const charred = charOf(session.view, settings.fire)
+    this.zombieCrowd.charred = charred.size ? charred : null
     const zombieBatches = this.zombieCrowd.draw(
       zombies,
       vdt,
@@ -464,6 +471,19 @@ export class OutbreakFrameRenderer {
     let shadowLightCount = vehOut.lights.shadowLightCount
     addCount = vehOut.lights.addCount
     const vehAlphaStart = vehOut.lights.alphaCount
+    const fireFrame: FireFrame = {
+      view: session.view,
+      survivors: [
+        { id: session.view.actorId, x: drawn.x, y: drawn.y, aim: p.aim },
+        ...coop.others.map((s) => ({ id: s.id, x: s.survivor.x, y: s.survivor.y, aim: s.survivor.aim })),
+      ],
+      support: (x, z) => supportHeight(town, x, z),
+      look: settings.fire,
+      bones: (id) => this.zombieCrowd.getAgentBones(id)?.bones,
+    }
+    addCount = fireAddSprites(fireFrame, this.addSprites, addCount)
+    this.fire.gatherLights(fireFrame, camX, camY)
+    const fireBatches = this.fire.collect(fireFrame, cam.groundRect(2.8))
     const nightBatches = this.nightLights.collect(session.view, settings.nightLights, cam.groundRect(2.8), camX, camY, day.lamps)
     const mapLights = this.frameLighting.collectMapAndInteriorLights({
       town,
@@ -483,7 +503,7 @@ export class OutbreakFrameRenderer {
       shadowLightCount,
       lampTrim: (lamp, resolved) => this.nightLights.trimLamp(town, settings.nightLights, lamp, resolved, time),
       extraLights: (lights, n, max, lampPower) =>
-        this.details.writeLights(lights, this.nightLights.writeLights(lights, n, max, lampPower, settings.nightLights), max, lampPower, settings.details, {
+        this.details.writeLights(lights, this.fire.writeLights(lights, this.nightLights.writeLights(lights, n, max, lampPower, settings.nightLights), max, settings.fire.fireMaxLights), max, lampPower, settings.details, {
           cutX,
           cutY,
           interior: inInteriorView,
@@ -637,7 +657,7 @@ export class OutbreakFrameRenderer {
         )
       : { alphaCount: fogSoundAlphaCount, batches: [] as readonly Batch[] }
     const { render } = this
-    render.alphaCount = motionOut.alphaCount
+    render.alphaCount = this.fire.smoke(fireFrame, this.alphaSprites, motionOut.alphaCount)
     render.addCount = addCount
     render.splatter =
       settings.combat.bloodStyle === 0
@@ -655,6 +675,7 @@ export class OutbreakFrameRenderer {
     for (let i = 0; i < groundWearBatches.length; i++) rBatches.push(groundWearBatches[i]!)
     for (let i = 0; i < bloodBatches.length; i++) rBatches.push(bloodBatches[i]!)
     for (let i = 0; i < nightBatches.length; i++) rBatches.push(nightBatches[i]!)
+    for (let i = 0; i < fireBatches.length; i++) rBatches.push(fireBatches[i]!)
     for (let i = 0; i < clutterBatches.length; i++) rBatches.push(clutterBatches[i]!)
     for (let i = 0; i < detailBatches.length; i++) rBatches.push(detailBatches[i]!)
     for (const b of this.propDressing.collect(
