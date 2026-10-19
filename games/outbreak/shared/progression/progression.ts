@@ -14,8 +14,7 @@ import { isMeleeWeapon, MELEE_WEAPONS, type MeleeDurabilityHandle, type MeleeWea
 import { dayCycle } from "../day-cycle"
 import { FieldVerbs } from "../discovery/field-verbs"
 import { FoundKnowledge } from "../discovery/knowledge"
-import { Tinkering } from "../discovery/tinkering"
-import { ALL_PAIRS, benchOfMat, MAT_SLOTS, matStoreId } from "../discovery/tinker"
+import { RecipeBoard } from "../discovery/recipe-board"
 import { INTERACT_RANGE, type InteractAction, type InteractActorState, type InteractionHandler, type RawInteractCandidate } from "../interact"
 import { DEFAULT_LOADOUT, loadoutSpec, type LoadoutId } from "../loadout"
 import { sightRects, type Door, type Town } from "../map"
@@ -40,8 +39,8 @@ import type {
  * Outbreak's inventory and safehouse progression, on top of `@arcade/kit/sim/ledger`.
  *
  * Furniture containers are stores you search (quiet or smash) and then see into; ground drops are stores too. Each
- * house has a workbench and a stash sharing one store: installing parts raises the bench tier. What the squad finds
- * out for themselves (tinkering at the bench mat, pages, practice, the field verbs) is built from the discovery parts
+ * house has a workbench and a stash sharing one store: installing parts adds recipes to the board. What the squad finds
+ * out for themselves (the recipe board, pages, practice, the field verbs) is built from the discovery parts
  * in `shared/discovery/`, which work on this ledger through `ProgressionHost`.
  *
  * The sim calls `act` for a survivor's command, `step` once per tick, and reads `notices` for feedback. Everything
@@ -52,7 +51,7 @@ const DROP_RANGE = 1.6
 const PING_SECONDS = 6
 const BUNDLE = { ammo: 6, plank: 2 } as const
 const LURE_RANGE = 11
-/** Light at a bench: one flashlight plus the room lamp clears the research threshold at night; the generator alone does. */
+/** Light at a bench: one flashlight plus the room lamp clears the bench threshold at night; the generator alone does. */
 const BENCH_LIGHT_FLASHLIGHT = 0.2
 const BENCH_LIGHT_LAMP = 0.2
 const GENERATOR_LIGHT = 0.8
@@ -66,15 +65,15 @@ export class OutbreakProgression implements ProgressionHost {
   tuning: ProgressionTuning
   private nextId = 1
   private generatorAt = new Map<string, number>()
-  /** The world as of the last command or tick, for interactions that need light (tinkering). */
+  /** The world as of the last command or tick, for interactions that need light (bench crafting). */
   private world: WorldContext | undefined
   private actorOf = new WeakMap<object, ProgressionSlot>()
-  /** The bench mat and the corkboard (`shared/discovery/tinkering.ts`). */
-  readonly tinkering = new Tinkering(this)
+  /** The bench's recipe board and its corkboard (`shared/discovery/recipe-board.ts`). */
+  readonly board = new RecipeBoard(this)
   /** Pages, practice, study and held-out buildings (`shared/discovery/knowledge.ts`). */
-  readonly knowledge = new FoundKnowledge(this, this.tinkering)
+  readonly knowledge = new FoundKnowledge(this, this.board)
   /** Closets, tripwires, cars, bottles, glass, repairs and vignettes (`shared/discovery/field-verbs.ts`). */
-  readonly verbs = new FieldVerbs(this, this.tinkering, this.knowledge)
+  readonly verbs = new FieldVerbs(this, this.board, this.knowledge)
 
   snapshot(): OutbreakProgressionSnapshot {
     return {
@@ -108,7 +107,6 @@ export class OutbreakProgression implements ProgressionHost {
     }
     this.knowledge.restore(snap)
     this.ensureContainerStores()
-    this.ensureMatStores()
     for (const slot of slots) {
       this.actorOf.set(slot.survivor, slot)
       this.project(slot)
@@ -134,7 +132,6 @@ export class OutbreakProgression implements ProgressionHost {
       knowledgeStore: "team/known",
     })
     // Nothing is announced: a new material, a lesson or a better bench shows on the bench and its corkboard (D-19).
-    this.ensureMatStores()
     this.knowledge.ensurePageStores()
     this.verbs.ensureVerbStores()
   }
@@ -149,15 +146,6 @@ export class OutbreakProgression implements ProgressionHost {
 
   get lastWorld(): WorldContext | undefined {
     return this.world
-  }
-
-  /** The mat on each bench: two slots for materials, and what they make. Created for snapshots that predate it. */
-  private ensureMatStores(): void {
-    for (const b of this.benches) {
-      const id = matStoreId(b.id)
-      if (this.ledger.store(id)) continue
-      this.ledger.createStore({ id, mode: "slots", scope: "shared", size: MAT_SLOTS, accepts: ["resource", "tool"], at: { x: b.bench.x, y: b.bench.y } })
-    }
   }
 
   /** Applies Lab tuning: recipe costs and times change at once; a new loot rate restocks unsearched containers. */
@@ -343,7 +331,7 @@ export class OutbreakProgression implements ProgressionHost {
     return 1 + (this.ledger.count(benchId, "toolbox") > 0 ? 1 : 0) + (this.ledger.count(benchId, "car-battery") > 0 ? 1 : 0)
   }
 
-  /** Recipes the squad can craft in the field, in strip order. */
+  /** Recipes the squad has learned, in board order (digit 1 = index 0). Bench recipes only make at a workbench. */
   craftable(): Recipe[] {
     return RECIPES.filter((r) => r.produces && this.learned(r.id))
   }
@@ -368,7 +356,7 @@ export class OutbreakProgression implements ProgressionHost {
     return [
       this.containerHandler(),
       this.dropHandler(),
-      this.tinkering.benchHandler(),
+      this.board.benchHandler(),
       this.stashHandler(),
       this.knowledge.pageHandler(),
       ...this.verbs.handlers(),
@@ -667,9 +655,6 @@ export class OutbreakProgression implements ProgressionHost {
       this.feedback(slot, res.events)
       return
     }
-    // At a bench, lay out one particular pair (`ALL_PAIRS` index; -1 clears the mat). Bots use this; players tap E.
-    if (target?.kind !== "bench" || pick.index >= ALL_PAIRS.length) return
-    this.tinkering.setMat(slot, target.id, pick.index)
   }
 
   private startBarricade(slot: ProgressionSlot, world: WorldContext): number {
@@ -861,6 +846,7 @@ export class OutbreakProgression implements ProgressionHost {
       world.ai.rebuildTopology(world.town)
       topologyChanged = true
     }
+    this.board.fillIn()
     this.knowledge.stepStudy(dt, world)
     this.verbs.step(dt, world)
     for (const slot of world.slots) this.project(slot)
@@ -903,8 +889,6 @@ export class OutbreakProgression implements ProgressionHost {
       light: world ? this.lightFor(slot, world) : 1,
       check: (tx) => {
         if (tx.kind !== "run") return null
-        // The mat is shared: if someone changed it mid-try, the try comes to nothing.
-        if (tx.rule.startsWith("tinker:") && tx.station && !this.tinkering.stillMatches(tx.station, tx.rule)) return "mat changed"
         if (!world) return null
         if (tx.rule.startsWith("barricade") && tx.ref && world.ai.getBarricadePlanks(tx.ref) >= 3) return "fully boarded"
         if (tx.rule.startsWith("heal:") && slot.survivor.health >= slot.survivor.maxHealth) return "not hurt"
@@ -919,7 +903,7 @@ export class OutbreakProgression implements ProgressionHost {
 
   private lightFor(slot: ProgressionSlot, world: WorldContext): number {
     const ch = this.ledger.channel(slot.id)
-     const station = ch?.tx.kind === "run" && ch.tx.station ? (ch.tx.station.startsWith("mat:") ? benchOfMat(ch.tx.station) : ch.tx.station) : undefined
+    const station = ch?.tx.kind === "run" && ch.tx.station ? ch.tx.station : undefined
     const bench = station ?? this.benches.find((b) => Math.hypot(slot.survivor.x - b.bench.x, slot.survivor.y - b.bench.y) < 3)?.id
     return bench ? this.benchLight(bench, world.hour, world.slots.map((s) => s.survivor)) : dayCycle(world.hour).sun
   }
@@ -959,7 +943,6 @@ export class OutbreakProgression implements ProgressionHost {
       const recipe = RECIPES.find((r) => `craft:${r.id}` === ev.rule)
       if (recipe) this.notify(slot, `Crafted ${recipe.label}`, "result", "craft")
     }
-    if (ev.rule.startsWith("tinker:") && ev.station) this.tinkering.tinkered(slot, ev.rule, ev.station, ev.ref ?? "", world)
     this.verbs.ran(slot, ev, world)
     return false
   }
@@ -982,11 +965,13 @@ export class OutbreakProgression implements ProgressionHost {
         return ev.store?.startsWith("bench:") ? "The stash is full" : "Inventory full"
       case "low_light":
         return "Too dark"
+      case "wrong_station":
+        return "At a workbench"
       case "missing_item":
         return ev.item ? `Need ${this.ledger.label(ev.item, true).toLowerCase()}` : "Missing materials"
       case "missing_requirement":
-        if (ev.item === "toolbox") return "Needs the toolbox installed (tier 2)"
-        if (ev.item?.startsWith("seen:")) return "Find the materials first"
+        if (ev.item === "toolbox") return "Needs the toolbox installed"
+        if (ev.item === "car-battery") return "Needs the generator wired in"
         if (ev.item === "crowbar") return "Needs a crowbar"
         return "Not learned yet"
       case "already_known":

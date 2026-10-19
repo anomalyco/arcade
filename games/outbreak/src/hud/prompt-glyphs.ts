@@ -1,7 +1,7 @@
 /**
  * Which glyph stands for each world-prompt action (D-25, Bold Glyph), and which word, if any, still shows beside it.
  * Words stay only where the glyph alone would be ambiguous: a locked door you can't open (versus the Lock action),
- * the item a ground drop holds, and riding as a passenger. Every action keeps its full label for assistive tech.
+ * the item a ground drop holds, riding as a passenger, and the workbench's recipe board. Every action keeps its full label for assistive tech.
  */
 import { actionGlyphHtml, type ActionGlyph } from "@arcade/kit/client/action-glyphs"
 import type { InteractAction } from "../../shared/interact"
@@ -27,7 +27,7 @@ const VEHICLE: Readonly<Record<string, ActionGlyph>> = {
 }
 
 /** Words kept beside the glyph, by label. */
-const KEEP: Readonly<Record<string, string>> = { Locked: "Locked", Ride: "Ride" }
+const KEEP: Readonly<Record<string, string>> = { Locked: "Locked", Ride: "Ride", Recipes: "Recipes" }
 
 function glyphFor(kind: string, action: InteractAction): ActionGlyph | null {
   const { id, label } = action
@@ -58,9 +58,7 @@ function glyphFor(kind: string, action: InteractAction): ActionGlyph | null {
       return label === "Take all" || label === "Pick up all" ? "take-all" : "take"
     case "install":
       return "install"
-    case "place":
-      return label === "Swap" ? "swap" : "place"
-    case "tinker":
+    case "board":
       return "tinker"
     case "read":
       return "read"
@@ -131,11 +129,7 @@ export const PROMPT_ACTIONS: readonly { kind: string; action: InteractAction }[]
   { kind: "drop", action: a("take", "Pick up 9mm Ammo") },
   { kind: "drop", action: a("take", "Pick up all") },
   { kind: "bench", action: a("install", "Install") },
-  { kind: "bench", action: a("take", "Take") },
-  { kind: "bench", action: a("place", "Lay out") },
-  { kind: "bench", action: a("place", "Swap") },
-  { kind: "bench", action: a("take", "Take back") },
-  { kind: "bench", action: a("tinker", "Tinker", { hold: true }) },
+  { kind: "bench", action: a("board", "Recipes") },
   { kind: "page", action: a("read", "Read") },
   { kind: "closet", action: a("hide", "Hide") },
   { kind: "closet", action: a("hide", "Leave") },

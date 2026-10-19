@@ -71,12 +71,12 @@ export class PageGlance {
   /** Holds a page up for `seconds` (Lab, proofs, and reading). */
   show(site: Pick<PageSite, "recipe" | "style">, seconds: number): void {
     const recipe = RECIPES.find((r) => r.id === site.recipe)
-    if (!recipe?.tinker) return
+    if (!recipe?.sketch) return
     this.showing = `${site.style}:${site.recipe}`
     this.left = this.total = Math.max(0.1, seconds)
     if (!this.el) return
     const result = itemIcon(RESULT_GLYPH[recipe.id] ?? recipe.produces ?? recipe.id, 64)
-    const [a, b] = recipe.tinker
+    const [a, b] = recipe.sketch
     this.el.dataset.style = site.style
     this.el.innerHTML =
       `<div class="page-head">${site.style === "flyer" ? result : ""}</div>` +

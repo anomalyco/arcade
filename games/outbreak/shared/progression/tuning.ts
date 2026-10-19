@@ -1,5 +1,4 @@
 import type { ItemId, Rule } from "@arcade/kit/sim/ledger"
-import { ideaToken, pairCost } from "../discovery/tinker"
 import { RECIPES } from "./catalog"
 
 /** Metres of slack past interaction range before a timed action is cancelled for walking off. */
@@ -19,12 +18,8 @@ export type ProgressionTuning = {
   medkitHeal: number
   bandageHeal: number
   craftTime: number
-  /** How long trying two materials together on the bench mat takes (the key predates tinkering). */
-  researchTime: number
-  /** Light needed at the bench to tinker (daylight, the generator or flashlights). */
+  /** Light needed to make something at the workbench (daylight, the generator or flashlights; the key predates D-39). */
   researchLight: number
-  /** How far a failed try clatters. */
-  clatterNoise: number
   /** Board-up time once fully practised, as a share of the first boards' (practice: ten boards nailed). */
   practiceTimeFloor: number
   /** Board-up noise once fully practised, as a share of the first boards'. */
@@ -61,7 +56,7 @@ export type ProgressionTuning = {
   alarmTime: number
   /** How far stepping on broken glass upright carries (crouch to step softly). */
   glassStepNoise: number
-  /** Multiplies every field-craft cost (rounded, at least 1). */
+  /** Multiplies every craft cost (rounded, at least 1). */
   costScale: number
   pryTime: number
   pryNoise: number
@@ -83,10 +78,8 @@ export const progressionControls = [
   { key: "healTime", label: "Medkit time", group: "Progression", min: 0.3, max: 5, step: 0.1, unit: "s" },
   { key: "medkitHeal", label: "Medkit heal", group: "Progression", min: 5, max: 100, step: 5, unit: "HP" },
   { key: "bandageHeal", label: "Bandage heal", group: "Progression", min: 5, max: 100, step: 5, unit: "HP" },
-  { key: "craftTime", label: "Field craft time", group: "Progression", min: 0.2, max: 6, step: 0.1, unit: "s" },
-  { key: "researchTime", label: "Tinker time", group: "Progression", min: 0.2, max: 10, step: 0.1, unit: "s" },
-  { key: "researchLight", label: "Light needed to tinker", group: "Progression", min: 0, max: 1.2, step: 0.05, unit: "" },
-  { key: "clatterNoise", label: "Failed tinker clatter", group: "Progression", min: 0, max: 20, step: 0.5, unit: "m" },
+  { key: "craftTime", label: "Craft time", group: "Progression", min: 0.2, max: 6, step: 0.1, unit: "s" },
+  { key: "researchLight", label: "Light needed at the bench", group: "Progression", min: 0, max: 1.2, step: 0.05, unit: "" },
   { key: "practiceTimeFloor", label: "Practised board-up time", group: "Progression", min: 0.2, max: 1, step: 0.05, unit: "×" },
   { key: "practiceNoiseFloor", label: "Practised board-up noise", group: "Progression", min: 0.2, max: 1, step: 0.05, unit: "×" },
   { key: "watchRange", label: "Learn by watching within", group: "Progression", min: 0, max: 20, step: 0.5, unit: "m" },
@@ -105,7 +98,7 @@ export const progressionControls = [
   { key: "alarmNoise", label: "Car alarm", group: "Verbs", min: 0, max: 50, step: 1, unit: "m" },
   { key: "alarmTime", label: "Car alarm length", group: "Verbs", min: 2, max: 60, step: 1, unit: "s" },
   { key: "glassStepNoise", label: "Glass underfoot", group: "Verbs", min: 0, max: 20, step: 0.5, unit: "m" },
-  { key: "costScale", label: "Field-craft cost", group: "Progression", min: 0.25, max: 3, step: 0.25, unit: "×" },
+  { key: "costScale", label: "Craft cost", group: "Progression", min: 0.25, max: 3, step: 0.25, unit: "×" },
   { key: "pryTime", label: "Pry time", group: "Progression", min: 0.2, max: 4, step: 0.1, unit: "s" },
   { key: "pryNoise", label: "Pry noise", group: "Progression", min: 0, max: 30, step: 0.5, unit: "m" },
   { key: "lureNoise", label: "Noisemaker radius", group: "Progression", min: 5, max: 60, step: 1, unit: "m" },
@@ -127,9 +120,7 @@ export const DEFAULT_PROGRESSION_TUNING: ProgressionTuning = {
   medkitHeal: 45,
   bandageHeal: 25,
   craftTime: 2,
-  researchTime: 2.5,
   researchLight: 0.35,
-  clatterNoise: 6,
   practiceTimeFloor: 0.6,
   practiceNoiseFloor: 0.63,
   watchRange: 8,
@@ -186,25 +177,19 @@ export function progressionRules(t: ProgressionTuning): Rule[] {
     { id: "unlock", label: "Unlocking", consume: { key: 1 } },
     { id: "pry", label: "Prying the door", duration: t.pryTime, noise: t.pryNoise, requires: { crowbar: 1 } },
   ]
-  // Tinkering at the bench mat. The game picks the rule from what is on the mat (`judgeMat`), so a rule's cost is
-  // always exactly the mat's two materials; the label never gives the outcome away.
-  const tinker = { label: "Tinkering", duration: t.researchTime, station: "mat", lightMin: t.researchLight } as const
-  rules.push({ id: "tinker:clatter", ...tinker })
   for (const r of RECIPES) {
-    if (r.tinker) {
-      rules.push({ id: `tinker:${r.id}`, ...tinker, consume: pairCost(r.tinker), produce: { [`learned:${r.id}`]: 1 }, produceTo: "team/known" })
-      rules.push({ id: `tinker:idea:${r.id}`, ...tinker, produce: { [ideaToken(r.id)]: 1 }, produceTo: "team/known" })
-    }
-    if (r.produces && r.craft) {
-      rules.push({
-        id: `craft:${r.id}`,
-        label: `Crafting ${r.label}`,
-        duration: t.craftTime,
-        requires: { [`learned:${r.id}`]: 1 },
-        consume: scaleCost(r.craft, t.costScale),
-        produce: { [r.produces]: 1 },
-      })
-    }
+    if (!r.produces || !r.craft) continue
+    rules.push({
+      id: `craft:${r.id}`,
+      label: `Crafting ${r.label}`,
+      duration: t.craftTime,
+      requires: { [`learned:${r.id}`]: 1 },
+      consume: scaleCost(r.craft, t.costScale),
+      produce: { [r.produces]: 1 },
+      // Bench recipes are made at a lit workbench, from the bench's stock first, with their part installed.
+      ...(r.bench ? { station: "bench", lightMin: t.researchLight } : {}),
+      ...(r.part ? { installed: { [r.part]: 1 } } : {}),
+    })
   }
   return rules
 }

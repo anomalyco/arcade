@@ -39,14 +39,12 @@ export const DEFAULT_DISCOVERY_SETTINGS = {
   discoveryFadeWords: true,
   /** Uses of a kind of prompt (doors, windows, containers…) before its words fade. */
   discoveryFadeUses: 3,
-  /** At a workbench the camera leans in, so the mat and the corkboard's sketches can be read. */
+  /** At a workbench the camera leans in, so the corkboard's sketches can be read. */
   discoveryBenchFocus: true,
   /** Camera distance while leaning in at a workbench. */
   discoveryBenchZoom: 7.5,
   /** How far towards the bench the camera centre moves while leaning in (0 stays on the survivor). */
   discoveryBenchCentre: 0.8,
-  /** Seconds the mat's materials shake and settle after a try that came to nothing. */
-  discoveryClatterTime: 0.55,
   /** Size of a page lying in a building (flyer, chart, photo), against its size on the corkboard. */
   discoveryPageScale: 1.5,
   /** Reading a page holds its diagram up to the camera for a moment, with no words. */
@@ -70,7 +68,6 @@ export const discoveryControls: LabControl[] = [
   { key: "discoveryBenchFocus", label: "Camera leans in at the bench", group: "Discovery" },
   { key: "discoveryBenchZoom", label: "Bench camera distance", group: "Discovery", min: 6, max: 30, step: 0.5, unit: "m" },
   { key: "discoveryBenchCentre", label: "Bench camera centring", group: "Discovery", min: 0, max: 1, step: 0.05, unit: "" },
-  { key: "discoveryClatterTime", label: "Failed try shake", group: "Discovery", min: 0, max: 1.5, step: 0.05, unit: "s" },
   { key: "discoveryPageScale", label: "Page size in buildings", group: "Discovery", min: 0.5, max: 3, step: 0.1, unit: "×" },
   { key: "discoveryPageGlance", label: "Reading shows the page's diagram", group: "Discovery" },
   { key: "discoveryGlanceTime", label: "Page diagram time", group: "Discovery", min: 0.5, max: 5, step: 0.1, unit: "s" },

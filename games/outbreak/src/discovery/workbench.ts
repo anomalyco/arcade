@@ -1,10 +1,10 @@
 import { MAT, Mesh } from "@arcade/kit/gpu/mesh"
 import { INST_FLOATS, type Batch, type Renderer } from "@arcade/kit/gpu/renderer"
-import { ALL_PAIRS, matStoreId, pairKey, pinStoreId, readPin, TINKER_MATERIALS, type PinSource } from "../../shared/discovery/tinker"
+import { pinStoreId, readPin, type PinSource } from "../../shared/discovery/recipes"
 import { RECIPES, type BenchSite, type OutbreakProgression } from "../../shared/progression"
 import { hex } from "../level"
-import { isLongItem, registerItemModels, type ItemModels } from "./items"
-import { CARD, foundCard, ideaCard, pinMesh, SCRAP, sketchCard, triedCard } from "./sketches"
+import { registerItemModels, type ItemModels } from "./items"
+import { CARD, foundCard, ideaCard, pinMesh, sketchCard } from "./sketches"
 
 const RANGE = 24
 const MAX = 64
@@ -15,19 +15,15 @@ const BOARD_SETBACK = 0.36
 const BENCH_TOP = 0.955
 /** The board's face, out from the board along its normal. */
 const FACE = 0.016
-/** Where recipe sketches and crossed-out tries sit up the board's slope. */
+/** Where recipe sketches sit up the board's slope. */
 const SKETCH_U = 0.27
-const TRIED_U = 0.085
 const SLOT_PITCH = 0.285
 /** Recipe cards share the board's length (1.47 m of cork), crowding a little as recipes are added. */
 const SKETCH_PITCH = Math.min(SLOT_PITCH, 1.22 / Math.max(1, RECIPES.length - 1))
 
-const FAILED_PAIRS = ALL_PAIRS.map(([a, b]) => pairKey(a, b)).filter((p) => !RECIPES.some((r) => r.tinker && pairKey(r.tinker[0], r.tinker[1]) === p))
-
 const FOUND_STYLES = ["flyer", "chart", "photo"] as const
 
 type Pool = Map<number, { data: Float32Array<ArrayBuffer>; count: number }>
-type Mover = { x: number; y: number; channel: { kind: string; elapsed: number; duration: number; x: number; y: number } | null }
 
 /** Frame of a bench: rect edges, the mat's centre and size, and the board's foot. */
 export function benchFrame(site: Pick<BenchSite, "bench">) {
@@ -54,22 +50,19 @@ export function onBoard(site: Pick<BenchSite, "bench">, u: number, v: number, li
 
 /** Corkboard slot of a recipe (fixed, so empty cork shows how much is still to find). */
 export const sketchSlot = (recipe: string) => (RECIPES.findIndex((r) => r.id === recipe) - (RECIPES.length - 1) / 2) * SKETCH_PITCH
-export const triedSlot = (pair: string) => (FAILED_PAIRS.indexOf(pair) - (FAILED_PAIRS.length - 1) / 2) * SLOT_PITCH
 
 /**
- * The safehouse workbench as the squad's notebook (D-19 slice 2): the felt mat with what is laid out on it, the
- * corkboard of pinned sketches, ideas and crossed-out tries, and the parts installed in the bench (toolbox on top,
- * car battery on the shelf under it). A try that came to nothing shakes the mat's materials. Reads ledger state only.
+ * The safehouse workbench as the squad's recipe board (D-39): the felt mat, the corkboard of pinned sketches and the
+ * ideas waiting on a part, and the parts installed in the bench (toolbox on top, car battery on the shelf under it).
+ * Reads ledger state only.
  */
 export class WorkbenchProps {
   private readonly items: ItemModels
-  private readonly models: { mat: number; board: number; pin: number; sketch: Map<string, number>; idea: Map<string, number>; tried: Map<string, number>; found: Map<string, number> }
+  private readonly models: { mat: number; board: number; pin: number; sketch: Map<string, number>; idea: Map<string, number>; found: Map<string, number> }
   private readonly pool: Pool = new Map()
   private readonly out: Batch[] = []
-  private readonly shake = new Map<string, number>()
-  private readonly lastChannel = new Map<number, { bench: string; progress: number; mat: string } | null>()
-  /** Proof readout: bench id → what is on its mat and which cards are pinned. */
-  readonly shown = new Map<string, { mat: string[]; sketches: string[]; ideas: string[]; tried: string[]; found: string[]; shaking: boolean }>()
+  /** Proof readout: bench id → which cards are pinned. */
+  readonly shown = new Map<string, { sketches: string[]; ideas: string[]; found: string[] }>()
 
   constructor(renderer: Pick<Renderer, "addModel">, items?: ItemModels) {
     this.items = items ?? registerItemModels(renderer)
@@ -90,14 +83,12 @@ export class WorkbenchProps {
     const idea = new Map<string, number>()
     const found = new Map<string, number>()
     for (const r of RECIPES) {
-      sketch.set(r.id, renderer.addModel(sketchCard(r.id, r.tinker)))
-      if (!r.tinker) continue
-      idea.set(r.id, renderer.addModel(ideaCard(r.id, r.tinker)))
-      for (const style of FOUND_STYLES) found.set(`${style}:${r.id}`, renderer.addModel(foundCard(style, r.id, r.tinker)))
+      sketch.set(r.id, renderer.addModel(sketchCard(r.id, r.sketch)))
+      if (!r.sketch) continue
+      if (r.part) idea.set(r.id, renderer.addModel(ideaCard(r.id, r.sketch, r.part)))
+      for (const style of FOUND_STYLES) found.set(`${style}:${r.id}`, renderer.addModel(foundCard(style, r.id, r.sketch)))
     }
-    const tried = new Map<string, number>()
-    for (const p of FAILED_PAIRS) tried.set(p, renderer.addModel(triedCard(p.split("+") as [string, string])))
-    this.models = { mat: renderer.addModel(mat), board: renderer.addModel(board), pin: renderer.addModel(pinMesh()), sketch, idea, tried, found }
+    this.models = { mat: renderer.addModel(mat), board: renderer.addModel(board), pin: renderer.addModel(pinMesh()), sketch, idea, found }
   }
 
   /** The model of a found page: a flyer, chart or photo for `recipe`. */
@@ -114,44 +105,20 @@ export class WorkbenchProps {
   collect(
     progression: OutbreakProgression,
     centre: { x: number; y: number },
-    survivors: readonly Mover[],
     seatColour: (seat: number) => readonly [number, number, number],
-    clatterTime: number,
-    dt: number,
     support: (x: number, z: number) => number,
   ): readonly Batch[] {
     for (const v of this.pool.values()) v.count = 0
     this.out.length = 0
     this.shown.clear()
-    this.noticeClatter(progression, survivors, clatterTime)
-    const board = progression.tinkering.corkboard()
+    const board = progression.board.corkboard()
     const found: string[] = []
     for (const site of progression.benches) {
       found.length = 0
       if (Math.abs(site.bench.x - centre.x) > RANGE || Math.abs(site.bench.y - centre.y) > RANGE) continue
       const f = benchFrame(site)
       const ground = support(site.bench.x, site.bench.y)
-      const shakeLeft = this.shake.get(site.id) ?? 0
-      if (shakeLeft > 0) this.shake.set(site.id, Math.max(0, shakeLeft - dt))
-
-      // The felt mat, and what lies on it: two materials side by side, or what they made in the middle.
       this.put(this.models.mat, f.mat.x, ground + BENCH_TOP, f.mat.z, 0, 0, 0, 1)
-      const mat = progression.tinkering.mat(site.id)
-      const k = clatterTime > 0 ? shakeLeft / clatterTime : 0
-      mat.forEach((s, i) => {
-        const model = this.items.model(s.item)
-        if (model === undefined) return
-        const made = !(TINKER_MATERIALS as readonly string[]).includes(s.item)
-        const side = made ? 0 : i === 0 ? -1 : 1
-        const hop = Math.abs(Math.sin(k * Math.PI * 3)) * 0.035 * k
-        const jig = Math.sin(k * 23 + i * 2.1) * 0.35 * k
-        const long = isLongItem(s.item)
-        const scale = long ? 0.72 : made ? 0.95 : 0.8
-        // Held weapons are modelled from the grip; lay them centred on the mat, along it.
-        const shift = long ? -0.38 * scale : 0
-        const lift = long ? 0.03 * scale : 0
-        this.put(model, f.mat.x + side * 0.055 + jig * 0.04, ground + BENCH_TOP + 0.005 + lift + hop, f.mat.z + side * 0.13 + shift, Math.PI / 2 + side * 0.12 + jig, 0, long ? Math.PI / 2 : 0, scale)
-      })
 
       // Parts installed in the bench: the red toolbox on top at the near end, the car battery on the shelf below.
       const toolbox = this.items.model("toolbox")
@@ -159,7 +126,7 @@ export class WorkbenchProps {
       const car = this.items.model("car-battery")
       if (car !== undefined && progression.ledger.count(site.id, "car-battery") > 0) this.put(car, (f.a + f.r) / 2 - 0.05, ground + 0.38, f.c + 0.45, 0.1, 0, 0, 1)
 
-      // The corkboard: recipe slots up top, crossed-out tries along the foot.
+      // The corkboard: a slot per recipe, so empty cork shows how much is still to find.
       const foot = onBoard(site, 0, 0, 0)
       this.put(this.models.board, foot.x, ground + foot.y, foot.z, 0, BOARD_TILT, 0, 1)
       for (const r of RECIPES) {
@@ -174,34 +141,10 @@ export class WorkbenchProps {
         const head = onBoard(site, SKETCH_U + CARD.w / 2 - 0.022, sketchSlot(r.id), FACE + 0.003)
         this.put(this.models.pin, head.x, ground + head.y, head.z, 0, BOARD_TILT, 0, 1, colour)
       }
-      for (const pair of board.tried) {
-        const at = onBoard(site, TRIED_U, triedSlot(pair))
-        const model = this.models.tried.get(pair)
-        if (model === undefined) continue
-        this.put(model, at.x, ground + at.y, at.z, 0, BOARD_TILT, 0, 1)
-        const head = onBoard(site, TRIED_U + SCRAP.w / 2 - 0.014, triedSlot(pair), FACE + 0.003)
-        this.put(this.models.pin, head.x, ground + head.y, head.z, 0, BOARD_TILT, 0, 0.8, [0.78, 0.62, 0.3])
-      }
-      this.shown.set(site.id, { mat: mat.map((s) => s.item), sketches: board.learned, ideas: board.ideas, tried: board.tried, found: [...found], shaking: shakeLeft > 0 })
+      this.shown.set(site.id, { sketches: board.learned, ideas: board.ideas, found: [...found] })
     }
     for (const [model, v] of this.pool) if (v.count) this.out.push({ model, data: v.data, count: v.count })
     return this.out
-  }
-
-  /** A survivor's try at a mat ended (rather than being walked away from) with the mat as it was: it clattered. */
-  private noticeClatter(progression: OutbreakProgression, survivors: readonly Mover[], clatterTime: number): void {
-    const key = (bench: string) => progression.contents(matStoreId(bench)).map((s) => s.item).join("+")
-    survivors.forEach((s, i) => {
-      const prev = this.lastChannel.get(i) ?? null
-      const ch = s.channel?.kind === "tinker" ? s.channel : null
-      if (ch) {
-        const site = progression.benches.find((b) => Math.hypot(b.bench.x - ch.x, b.bench.y - ch.y) < 0.5)
-        if (site) this.lastChannel.set(i, { bench: site.id, progress: ch.elapsed / Math.max(0.01, ch.duration), mat: key(site.id) })
-        return
-      }
-      if (prev && prev.progress >= 0.8 && key(prev.bench) === prev.mat) this.shake.set(prev.bench, clatterTime)
-      this.lastChannel.set(i, null)
-    })
   }
 
   private put(

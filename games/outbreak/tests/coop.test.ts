@@ -21,7 +21,7 @@ import {
   type SharedSnapshot,
 } from "../shared/net-protocol"
 import type { Command } from "../shared/session"
-import { ALL_PAIRS, matStoreId, pairKey, pinStoreId, readPin } from "../shared/discovery/tinker"
+import { pinStoreId, readPin } from "../shared/discovery/recipes"
 import { vignetteDropId, vignetteGlassId, vignetteStoreId } from "../shared/discovery/vignettes"
 import { OutbreakProgression, type Ledger } from "../shared/progression"
 import { outbreakClientFeatures as features } from "../src/features"
@@ -198,7 +198,7 @@ describe("CoopRoomCore", () => {
     for (const c of [a, b]) expect(c.ledger.count(site.id, "medkit")).toBe(0)
   })
 
-  test("a sketch made at the bench reaches every client with its maker's seat", () => {
+  test("a recipe the board fills in reaches every client with a brass pin, and one survivor makes it at the bench", () => {
     const core = new CoopRoomCore("test", options, Date.now, "test")
     const a = client(core, "Ann")
     const b = client(core, "Bob")
@@ -207,24 +207,24 @@ describe("CoopRoomCore", () => {
     const progression = core.sim.progression
     const ledger = progression.ledger
     const bench = progression.benches.find((x) => x.id === "bench:ash")!
-    ledger.apply({ kind: "grant", actor: b.id, item: "chem", count: 2 })
-    Object.assign(core.sim.slot(a.id)!.survivor, { x: bench.bench.x - 0.8, y: bench.bench.y - 0.4, aim: 0 })
+    expect(progression.learned("spiked-board")).toBe(false)
+    ledger.apply({ kind: "grant", actor: b.id, item: "scrap", count: 2 })
+    run(core, [a, b], 6)
+    expect(progression.learned("spiked-board")).toBe(true)
+    for (const c of [a, b]) {
+      expect(c.ledger.count("team/known", "learned:spiked-board")).toBe(1)
+      expect(readPin(c.ledger.store(pinStoreId("spiked-board")), "spiked-board")).toMatchObject({ seat: null, source: "sketch" })
+    }
+    // Spiked boards are made at a workbench: Bob stands at it and presses its row's digit.
     Object.assign(core.sim.slot(b.id)!.survivor, { x: bench.bench.x - 0.8, y: bench.bench.y + 0.4, aim: 0 })
     core.sim.rebuildSolids()
     run(core, [a, b], 2)
-    const chems = ALL_PAIRS.findIndex(([x, y]) => pairKey(x, y) === "chem+chem")
-    run(core, [b], 1, () => ({ ...idle(0), pick: { mode: "bench", index: chems } }))
-    run(core, [b], 1, () => ({ ...idle(0), interact: true, interactHeld: true }))
-    run(core, [b], Math.ceil(0.45 / TICK_DT), () => ({ ...idle(0), interactHeld: true }))
-    run(core, [a, b], Math.ceil(3 / TICK_DT))
-    expect(progression.learned("bandage")).toBe(true)
-    const seat = core.sim.slot(b.id)!.index
-    for (const c of [a, b]) {
-      expect(c.ledger.count("team/known", "learned:bandage")).toBe(1)
-      expect(c.ledger.count(matStoreId(bench.id), "bandage")).toBe(1)
-      expect(readPin(c.ledger.store(pinStoreId("bandage")), "bandage")).toMatchObject({ actor: b.id, seat })
-      expect(c.notices.filter((t) => /learned/i.test(t))).toEqual([])
-    }
+    const row = progression.craftable().findIndex((r) => r.id === "spiked-board")
+    run(core, [b], 1, () => ({ ...idle(0), pick: { mode: "craft", index: row } }))
+    run(core, [a, b], Math.ceil((progression.tuning.craftTime + 0.5) / TICK_DT))
+    // What Bob carries is his own: the room and his client have the board.
+    expect(ledger.count(b.id, "spiked-board")).toBe(1)
+    expect(b.ledger.count(b.id, "spiked-board")).toBe(1)
   })
 
   test("a page one survivor reads is gone for everyone, and goes up on every client's board as theirs", () => {

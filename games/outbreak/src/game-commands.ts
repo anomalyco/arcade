@@ -291,7 +291,7 @@ export function registerOutbreakGameCommands(host: OutbreakGameCommandsHost): vo
         shortLabel: "HUD State",
         category: "Scene",
         undoable: false,
-        args: { state: { type: "string", description: "idle (dim dock), awake, pack (Tab open), craft (hold Q open), vehicle or icons (the prompt glyph sheet)" } },
+        args: { state: { type: "string", description: "idle (dim dock), awake, pack (Tab open), craft (recipe panel open), vehicle or icons (the prompt glyph sheet)" } },
         enabled: () => Boolean(host.inventoryHud),
         run: (_ctx, args) => {
           const inv = host.inventoryHud!

@@ -84,7 +84,7 @@ export interface ProgressionHost {
   readonly town: Town
   readonly tuning: ProgressionTuning
   readonly benches: readonly BenchSite[]
-  /** The world as of the last command or tick (time for car alarms, light for tinkering). */
+  /** The world as of the last command or tick (time for car alarms, light for bench crafting). */
   readonly lastWorld: WorldContext | undefined
   /** The survivor slot behind an interaction actor. */
   slotOf(actor: object): ProgressionSlot | undefined

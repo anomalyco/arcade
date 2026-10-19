@@ -49,7 +49,7 @@ function scriptedCommand(rng: Rng, tick: number, aim: number): Command {
   if (rng.next() < 0.02) c.hotbarSlot = rng.int(5)
   if (rng.next() < 0.01) c.hotbarDelta = rng.next() < 0.5 ? -1 : 1
   if (rng.next() < 0.01) c.drop = true
-  if (rng.next() < 0.02) c.pick = { mode: (["take", "bench", "craft", "pack"] as const)[rng.int(4)]!, index: rng.int(3) }
+  if (rng.next() < 0.02) c.pick = { mode: (["take", "craft", "pack"] as const)[rng.int(3)]!, index: rng.int(3) }
   return c
 }
 

@@ -41,7 +41,7 @@ export default defineStation({
     sound("horde", "Horde bed", "Many feet shuffling: rises with the moving crowd near you", "zombie.horde.shuffle"),
     sound("pickups", "Pickups", "One sound per item class: tool, ammo, medical, part, key, battery, scrap, plank", "pickup.tool"),
     sound("crafting", "Crafting", "Medical, tinkering and woodwork loops while a craft runs, and their finishing sounds", "craft.tinker.loop"),
-    sound("bench", "Workbench", "Deposits, research and the generator at night", "bench.research.loop"),
+    sound("bench", "Workbench", "Deposits and the generator at night", "bench.research.loop"),
     sound("footsteps", "Footsteps", "Wood, concrete and grass, walk and run, sliced on the transient", "foot.wood.walk"),
     sound("doors", "Doors", "Open, close, locked rattle and the zombie bash", "door.wood.open"),
     sound("barricade", "Barricade", "Hammering a plank onto a window", "barricade.hammer"),

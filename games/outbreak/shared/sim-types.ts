@@ -80,7 +80,7 @@ export type Command = {
   crouch?: boolean
   /** H hold: vehicle horn. */
   horn?: boolean
-  /** A digit while a strip is open (container, stash, bench, field craft or pack). */
+  /** A digit while a strip is open (container, stash, the recipe panel or pack). */
   pick?: { mode: PickMode; index: number }
 }
 

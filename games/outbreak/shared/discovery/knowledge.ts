@@ -6,7 +6,7 @@ import { buildingAt } from "../progression/loot"
 import { CHANNEL_SLACK } from "../progression/tuning"
 import type { OutbreakProgressionSnapshot, ProgressionActor, ProgressionHost, ProgressionSlot, Study, WorldContext } from "../progression/types"
 import { HELD_OUT_PLANKS, heldOutWindow, looksReinforced, pageSite, PIN_FOUND, practiceFactor, type PageSite } from "./found"
-import type { Tinkering } from "./tinkering"
+import type { RecipeBoard } from "./recipe-board"
 
 const PAGE_RANGE = 1.4
 /** How square on, in radians, a survivor must face a reinforced barricade to study it. */
@@ -37,7 +37,7 @@ export class FoundKnowledge {
 
   constructor(
     private readonly host: ProgressionHost,
-    private readonly tinkering: Tinkering,
+    private readonly board: RecipeBoard,
   ) {}
 
   snapshot(): KnowledgeSnapshot {
@@ -97,7 +97,7 @@ export class FoundKnowledge {
   private readPage(slot: ProgressionSlot, site: PageSite): boolean {
     const res = this.host.ledger.apply({ kind: "drain", store: site.id, item: "page", actor: slot.id })
     if (!res.ok) return false
-    this.tinkering.learnRecipe(slot, site.recipe, { x: site.x, y: site.y }, PIN_FOUND[site.style])
+    this.board.learnRecipe(slot, site.recipe, { x: site.x, y: site.y }, PIN_FOUND[site.style])
     return true
   }
 
@@ -186,7 +186,7 @@ export class FoundKnowledge {
       const still = prev && prev.portal === target.id && Math.hypot(p.x - prev.x, p.y - prev.y) <= STUDY_STILL * dt + 1e-6
       const t = still ? prev.t + dt : 0
       if (t + 1e-6 >= this.host.tuning.studyTime) {
-        this.tinkering.learnRecipe(slot, "reinforced", { x: target.x, y: target.y }, 0)
+        this.board.learnRecipe(slot, "reinforced", { x: target.x, y: target.y }, 0)
         for (const k of Object.keys(this.study)) delete this.study[k]
         return
       }

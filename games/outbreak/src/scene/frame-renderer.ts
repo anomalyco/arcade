@@ -665,11 +665,7 @@ export class OutbreakFrameRenderer {
       settings.discovery,
       time,
       (x, z) => supportHeight(town, x, z),
-      {
-        survivors: session.sim.slots.map((s) => s.survivor),
-        seatColour: seatTint,
-        dt,
-      },
+      { seatColour: seatTint },
     )
     for (let i = 0; i < discoveryBatches.length; i++) rBatches.push(discoveryBatches[i]!)
     for (let i = 0; i < zombieBatches.length; i++) rBatches.push(zombieBatches[i]!)

@@ -25,7 +25,7 @@ const variants: StationVariant[] = [
     id: "skilled-solo",
     group: "Skill",
     label: "Skilled solo (perception & intent)",
-    note: "Skilled bot (200 ms reaction, 0.055 rad aim error, 0.45 stamina reserve) looting Ash House, researching at the workbench, and kiting with the live perception & utility overlay.",
+    note: "Skilled bot (200 ms reaction, 0.055 rad aim error, 0.45 stamina reserve) looting Ash House, making things at the workbench, and kiting with the live perception & utility overlay.",
     setup: setupBotVariant({ preset: 2, count: 1, overlay: true, scene: "opening-calm" }),
   },
   {
@@ -46,7 +46,7 @@ const variants: StationVariant[] = [
     id: "coop-squad-4p",
     group: "Skill",
     label: "4-player co-op bot squad",
-    note: "Four Skilled survivor bots sharing container searches, workbench research, squad pings, and ammo/plank bundle drops against co-op scaled hordes.",
+    note: "Four Skilled survivor bots sharing container searches, the workbench, squad pings, and ammo/plank bundle drops against co-op scaled hordes.",
     setup: setupBotVariant({ preset: 2, count: 4, overlay: true, scene: "first-contact" }),
   },
   {

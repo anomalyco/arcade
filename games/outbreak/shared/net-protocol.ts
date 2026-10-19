@@ -302,8 +302,7 @@ const ACTIONS: readonly (InteractActionId | undefined)[] = [
   "pry",
   "enter",
   "install",
-  "place",
-  "tinker",
+  "board",
   "read",
   "hide",
   "disarm",
@@ -311,7 +310,7 @@ const ACTIONS: readonly (InteractActionId | undefined)[] = [
 ]
 /** The action byte's top bit: crouching (every flag bit is taken). */
 const CROUCH_BIT = 0x80
-const PICKS: readonly PickMode[] = ["take", "bench", "craft", "pack"]
+const PICKS: readonly PickMode[] = ["take", "craft", "pack"]
 
 const q3 = (v: number) => Math.round(v * 1000) / 1000
 

@@ -1,7 +1,7 @@
-// Headless Metal walkthrough of crafting as a new player meets it: the opening frame, picking up a material, Q with
-// nothing learned, the workbench mat and corkboard, a failed and a good try, field craft, a craft and its notice, and a
-// short cost. `--phase variants` stages the same moments under each Lab crafting style (Crafting › Style).
-// Run from games/outbreak: bun scripts/crafting-proof.ts [--phase audit|variants] (fleet: hivemind run --kind browser).
+// Headless Metal walkthrough of crafting as a new player meets it (D-39 Recipe Board, D-38 Panel And Tips): the opening
+// frame, C with nothing picked up, picking up chem and scrap (the board fills in), the workbench and its board, a bench
+// recipe made there, the recipe panel in the street, a craft and its notice, and a short cost.
+// Run from games/outbreak: bun scripts/crafting-proof.ts (fleet: hivemind run --kind browser).
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
@@ -9,7 +9,7 @@ import { chromium, type Page } from "playwright-core"
 import { createServer } from "vite"
 
 const root = resolve(import.meta.dir, "..")
-const phase = process.argv.includes("--phase") ? process.argv[process.argv.indexOf("--phase") + 1]! : "audit"
+const phase = process.argv.includes("--phase") ? process.argv[process.argv.indexOf("--phase") + 1]! : "board"
 const out = resolve(process.env.LEASE_OUT ?? resolve(root, "../../captures/outbreak-crafting"), phase)
 mkdirSync(out, { recursive: true })
 
@@ -108,14 +108,15 @@ async function snap(page: Page, name: string, caption: string, crop?: string) {
   console.log(`${name}: ${caption}\n  ${text}`)
 }
 
-async function setStyle(page: Page, style: number) {
-  await page.evaluate((style) => (window as any).__arcadeHarness.setLab("craftStyle", style), style)
-}
-
-/** Walks a fresh survivor through finding chem, the bench, a try, field craft and a craft. Returns nothing; snaps. */
-async function walkthrough(page: Page, tag: string) {
+/** Walks a fresh survivor through C, finding chem and scrap, the bench's board, a bench recipe and field crafting. */
+async function walkthrough(page: Page) {
   await fresh(page)
-  await snap(page, `${tag}01-opening`, "The first frame of a run: what tells you crafting exists?")
+  await snap(page, "01-opening", "The first frame of a run")
+  await sim(page, `if (!hud.craftOpen) hud.toggleCraft()`)
+  await step(page, 20)
+  await snap(page, "02-c-nothing-yet", "C before picking anything up: every recipe listed, each saying what fills it in", "#craft, #dock")
+  await sim(page, `hud.close()`)
+  await step(page, 20)
 
   // A dresser with chem and scrap in it.
   const dresser = await sim(page, `const c = view.containers.find((x) => x.kind === "dresser" && x.buildingId === "ash"); return { id: c.id, x: c.x, y: c.y }`)
@@ -125,64 +126,44 @@ async function walkthrough(page: Page, tag: string) {
   await step(page, 80)
   await step(page, 1, { interact: true })
   await step(page, 6)
-  await snap(page, `${tag}02-picked-up`, "Took chem and scrap from a dresser: is there any sign they make something?", "#prompt, .callouts, #dock, #craft-tip")
+  assert.equal(await sim(page, `return progression.learned("bandage") && progression.learned("spiked-board")`), true, "chem and scrap fill in the bandage and the spiked board")
+  await snap(page, "03-picked-up", "Took chem and scrap: the bandage and the spiked board fill in on the bench", "#prompt, .callouts, #dock, #craft-tip")
 
-  // Hold Q with nothing learned.
-  await sim(page, `if (!hud.craftOpen) hud.toggleCraft()`)
-  await step(page, 20)
-  await snap(page, `${tag}03-q-nothing-learned`, "Hold Q before learning anything", "#craft, #dock")
-  await sim(page, `hud.close()`)
-  await step(page, 20)
-
-  // The Ash workbench by day.
+  // The Ash workbench by day: E opens its board.
   const bench = await sim(page, `const b = progression.benches.find((b) => b.id === "bench:ash"); return { id: b.id, x: b.bench.x, y: b.bench.y }`)
   await stage(page, { x: bench.x - 0.85, y: bench.y, aim: 0 })
-  await sim(page, `ledger.apply({ kind: "grant", actor: view.actorId, item: "plank", count: 1 })`)
   await step(page, 30)
-  await snap(page, `${tag}04-bench`, "Walk up to the workbench: E lays out, nothing says what it is for", "#prompt, #craft-tip")
+  await snap(page, "04-bench", "Walk up to the workbench: E says Recipes", "#prompt, #craft-tip")
+  await sim(page, `hud.openBench()`)
   await step(page, 1, { interact: true })
-  await step(page, 30)
-  const first = await sim(page, `return progression.tinkering.mat(${JSON.stringify(bench.id)}).map((s) => s.item).join("+")`)
-  await snap(page, `${tag}05-laid-out`, `Tap E: the mat takes a pair (${first})`, "#prompt, #craft-tip")
-  // A try that clatters.
-  await step(page, 1, { interact: true, interactHeld: true })
-  await step(page, 200, { interactHeld: true })
   await step(page, 20)
-  await snap(page, `${tag}06-clatter`, `Hold E on ${first}: it clatters; a crossed-out scrap goes up`, "#prompt, .callouts, #craft-tip")
-  // Cycle to chem+chem and assemble.
-  for (let i = 0; i < 12 && (await sim(page, `return progression.tinkering.mat(${JSON.stringify(bench.id)}).map((s) => s.item).join("+")`)) !== "chem+chem"; i++) await step(page, 1, { interact: true })
-  await step(page, 1, { interact: true, interactHeld: true })
-  await step(page, 200, { interactHeld: true })
-  await step(page, 30)
-  assert.equal(await sim(page, `return progression.learned("bandage")`), true, "chem+chem teaches the bandage")
-  await snap(page, `${tag}07-assembled`, "chem+chem assembled a bandage on the mat and pinned a sketch", "#prompt, .callouts, #craft-tip")
-  await step(page, 1, { interact: true })
-  await step(page, 30)
-  await snap(page, `${tag}08-took-bandage`, "Tap E takes the bandage: is there a sign it can now be made anywhere?", "#prompt, .callouts, #dock, #craft-tip")
+  await snap(page, "05-board", "E: the bench's board, with the corkboard behind", "#craft, #dock")
+  const row = await sim(page, `return progression.craftable().findIndex((r) => r.id === "spiked-board")`)
+  await sim(page, `hud.digit(${row}, view)`)
+  await step(page, 1, { pick: { mode: "craft", index: row } })
+  await step(page, 150)
+  assert.equal(await sim(page, `return ledger.count(view.actorId, "spiked-board")`), 1, "the bench makes a spiked board")
+  await snap(page, "06-made-at-bench", "Made a spiked board at the bench", "#craft, .callouts, #dock")
 
-  // Field craft in the street with a chem in hand.
+  // The recipe panel in the street with a chem in hand.
   await stage(page, { x: 44, y: 44, aim: 0, hour: 16 })
-  await sim(page, `ledger.apply({ kind: "grant", actor: view.actorId, item: "chem", count: 1 })`)
+  await sim(page, `hud.close(); ledger.apply({ kind: "grant", actor: view.actorId, item: "chem", count: 1 })`)
   await step(page, 20)
-  await snap(page, `${tag}09a-ready`, "Picked up a chem with the bandage learned: does anything say it can be made?", "#craft-tip, #dock")
+  await snap(page, "07-ready", "Picked up a chem with the bandage on the board", "#craft-tip, #dock")
   await sim(page, `if (!hud.craftOpen) hud.toggleCraft()`)
   await step(page, 20)
-  await snap(page, `${tag}09-field-craft`, "Hold Q: the field-craft strip with the bandage learned", "#craft, #dock")
-  await sim(page, `ledger.apply({ kind: "grant", actor: view.actorId, item: "learned:lure", store: "team/known" }); ledger.apply({ kind: "grant", actor: view.actorId, item: "learned:spiked-board", store: "team/known" })`)
-  await step(page, 10)
-  await snap(page, `${tag}10-field-craft-three`, "Three learned recipes, one affordable", "#craft, #dock")
-  await sim(page, `hud.digit(0, view)`)
-  await step(page, 1, { pick: { mode: "craft", index: 0 } })
-  await step(page, 50)
-  await snap(page, `${tag}11-crafting`, "Digit 1: crafting (2 s, sprinting cancels)", "#craft, .callouts, #dock")
-  await step(page, 90)
-  await snap(page, `${tag}12-crafted`, "Crafted: where did it go?", "#craft, .callouts, #dock")
+  await snap(page, "08-panel", "C in the street: the bandage ready, the spiked board says At a workbench", "#craft, #dock")
+  const bandage = await sim(page, `return progression.craftable().findIndex((r) => r.id === "bandage")`)
+  await sim(page, `hud.digit(${bandage}, view)`)
+  await step(page, 1, { pick: { mode: "craft", index: bandage } })
+  await step(page, 150)
+  await snap(page, "09-crafted", "Made a bandage", "#craft, .callouts, #dock")
   await sim(page, `if (!hud.craftOpen) hud.toggleCraft()`)
   await step(page, 20)
-  await snap(page, `${tag}13-short`, "Hold Q with nothing to spend: rows dimmed, which material is missing?", "#craft, #dock")
-  await step(page, 1, { pick: { mode: "craft", index: 0 } })
+  await snap(page, "10-short", "C with nothing to spend: the short material in caution, and where it turns up", "#craft, #dock")
+  await step(page, 1, { pick: { mode: "craft", index: bandage } })
   await step(page, 10)
-  await snap(page, `${tag}14-short-press`, "Press 1 anyway", "#craft, .callouts, #dock")
+  await snap(page, "11-short-press", "Press its digit anyway: Need chem", "#craft, .callouts, #dock")
   await sim(page, `hud.close()`)
 }
 
@@ -199,13 +180,7 @@ try {
   const adapter = await page.evaluate(() => (window as any).__arcadeHarness.adapterInfo)
   assert.match(adapter.architecture, /metal/)
 
-  if (phase === "audit") await walkthrough(page, "")
-  else {
-    for (const [style, name] of [[0, "today"], [1, "panel"], [2, "tips"], [3, "both"]] as const) {
-      await setStyle(page, style)
-      await walkthrough(page, `${name}-`)
-    }
-  }
+  await walkthrough(page)
 
   assert.deepEqual(errors, [])
   writeFileSync(resolve(out, "index.json"), JSON.stringify({ adapter, shots }, null, 2))

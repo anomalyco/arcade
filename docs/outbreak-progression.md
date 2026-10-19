@@ -53,71 +53,70 @@ Each house archetype places a workbench on the back bedroom's east wall and the 
 (`makeTown`); `benchSites` finds them, so a new house archetype only has to place the two props. Both read one shared
 store, `bench:<house>`.
 
-- **Install.** Carrying the hardware toolbox, `E` at the bench installs it (tier 2); the car battery wires up a
-  generator (light 0.8, and an 18 m hum every 3 s at night).
+- **Install.** Carrying the hardware toolbox, `E` at the bench installs it; the car battery wires up a generator
+  (light 0.8, and an 18 m hum every 3 s at night). Each part fills in recipes on the board (below).
+- **Recipes.** Otherwise `E` at the bench opens its recipe board (the same panel as `C`, drawing on the bench's stock).
 - **Stash.** `E` stores the held item (not the flashlight or pistol); digits take items back; hold `E` deposits belt
   materials. Installed parts stay.
 
 ## How crafting works
 
-Crafting is two steps in two places: **learn** a recipe once, then **make** it anywhere.
+D-39 (Recipe Board) and D-38 (Panel And Tips): every recipe has a place on the workbench from the start, and there is
+no guessing. Rules: `shared/discovery/recipes.ts` and `recipe-board.ts`; the HUD: `src/crafting/`.
 
-1. **Find materials.** Planks, scrap, chem (cloth and alcohol) and batteries go on the belt. Where each turns up most
-   comes from `LOOT_TABLES` (`whereToFind` in `src/crafting/model.ts`): chem in pharmacies and groceries, scrap in
-   garages and hardware stores, and so on.
-2. **Learn at a workbench** (D-19: tried, not told; `docs/outbreak-discovery.md` slice 2). Every safehouse has one in
-   the back bedroom. Tap `E` lays the next pair of belt materials you can make up on its mat; hold `E` tries them
-   (2.5 s, needs light 0.35: daylight, or a flashlight on at night). A right pair makes the thing on the mat, teaches
-   the whole squad and pins a sketch on the corkboard. A pair that needs the toolbox pins a faint idea; any other pair
-   clatters (a 6 m noise) and a crossed-out scrap remembers it. Recipes are also learned from pages in shops, by
-   studying reinforced boards, and by disarming a can tripwire.
-3. **Make it anywhere.** Hold `Q` opens field craft above the dock; it stays open until `Q`, `Escape` or a craft. A
-   digit makes that row (2 s, sprinting or walking away cancels), from your belt plus the bench's stock when you face
-   the bench or the stash. Short rows dim; pressing one anyway leaves the strip open with "Need chem" and the like.
-   "Crafted Bandage" confirms it, and the item goes to its usual hand slot.
+1. **Pick up materials.** Planks, scrap, chem and batteries go on the belt. The first time the squad picks one up
+   (`seen:<material>` in `team/known`), every recipe it feeds whose materials have now all been seen **fills in**: the
+   squad learns it and its pencil sketch goes up on the corkboard with a brass pin. Nothing is announced in words
+   (D-19); a tip above the dock says it is on the workbench.
+2. **Bench parts fill in the rest.** A recipe that needs a part shows as a faint idea on the corkboard, with the part
+   drawn in red, until one is installed in any of the squad's benches: the toolbox fills in reinforcing, the generator
+   (car battery) fills in flashlight batteries. Pages in shops, studying a reinforced window and disarming a can
+   tripwire still teach recipes early, pinned in the finder's colour.
+3. **Make it.** `C` (physical `KeyC`, on foot; in a vehicle it changes seat) opens the recipe panel above the dock,
+   and `E` at a workbench opens the same panel as the bench's board. Every recipe is listed by name with a pencil
+   glyph: learned rows have their digit and have/need per material, the short one in caution with where it turns
+   up; rows still to find say what fills them in ("Pick up chem", "Install a toolbox", "Disarm a can tripwire"). A
+   digit makes that row (2 s; walking off cancels), from the belt plus the bench's stock at a bench or stash. Bench
+   recipes say "At a workbench" away from one, and need light 0.35 there (daylight, the generator or a flashlight).
+   `C`, `Escape` or walking away from the bench closes it. `Q` only pings.
 
-| Recipe | Learn (mat pair, tier) | Craft | Does |
-| --- | --- | --- | --- |
-| Bandage | chem + chem (1) | 1 chem | Heals 25 in about a second |
-| Noisemaker | scrap + battery (1) | 1 scrap, 1 battery | A thrown lure that calls the dead for 8 s |
-| Spiked board | plank + scrap (1) | 1 plank, 2 scrap | Melee: +30 damage, 1.6× stagger, longer reach |
-| Flashlight battery | scrap + chem (2) | 1 scrap, 1 chem | A spare battery (`R` with the flashlight in hand) |
-| Can tripwire | disarm one | 2 scrap | Rattles when something walks through a doorway |
-| Reinforced barricade | scrap + scrap (2), or a hardware flyer | none | Each board also takes a scrap and holds 180 instead of 100 |
+| Recipe | Fills in when the squad has | Made | Cost | Does |
+| --- | --- | --- | --- | --- |
+| Bandage | chem | anywhere | 1 chem | Heals 25 in about a second |
+| Noisemaker | scrap and a battery | anywhere | 1 scrap, 1 battery | A thrown lure that calls the dead for 8 s |
+| Spiked board | plank and scrap | at a lit workbench | 1 plank, 2 scrap | Melee: +30 damage, 1.6× stagger, longer reach |
+| Reinforced barricade | scrap and the toolbox installed (or a hardware flyer) | when boarding up | +1 scrap a board | Each board holds 180 instead of 100 |
+| Flashlight battery | scrap, chem and the generator wired in | at a lit workbench with the generator | 1 scrap, 1 chem | A spare battery (`R` with the flashlight in hand) |
+| Can tripwire | one disarmed | anywhere | 2 scrap | Rattles when something walks through a doorway |
 
-Costs are Progression › Field-craft cost × these (the HUD reads the live ledger rule, so they always agree).
+Costs are Progression › Craft cost × these (the HUD reads the live ledger rule, so they always agree).
 
-**Crafting HUD styles** (Lab: Backquote › Crafting › Style; `src/crafting/`). Today's strip is the default until Kit
-picks on the arcade board:
+**Tips** (Lab: Backquote › Crafting): one line above the dock when a recipe fills in ("Bandage on the workbench · `C`
+make it anywhere", or "`E` make it there" for bench recipes), when a pickup makes a learned recipe affordable, and on
+walking up to a workbench. Each shows `craftTipUses` times per browser (`localStorage["arcade.outbreak.craftTips"]`,
+Lab › Crafting › Forget shown tips), for `craftTipTime` seconds, and never on the first look at a save or room.
 
-| Style | Hold Q shows | Tips |
-| --- | --- | --- |
-| Today | one row per learned recipe: digit, a pencil glyph of what it makes and of what it takes; no words; nothing learned is an empty card | none |
-| Recipe panel | every recipe by name: learned rows with digit and have/need per material, the short one in caution with where it turns up; unlearned rows say how they are learned | none |
-| Teaching tips | today's strip (nothing learned says to try pairs at a workbench) | one line above the dock at the moments that teach: a new material, walking up to the bench, a recipe learned ("hold Q, craft it anywhere"), a pickup that makes a learned recipe affordable |
-| Panel and tips | the recipe panel | the tips |
-
-Each tip shows `craftTipUses` times per browser (`localStorage["arcade.outbreak.craftTips"]`, Lab › Crafting › Forget
-shown tips), for `craftTipTime` seconds, and never on the first look at a save or room. Proof:
-`tests/crafting.test.ts`; stills of every style through a new player's walkthrough:
-`bun scripts/crafting-proof.ts --phase variants` (via `hivemind run --kind browser`).
+Bots make bench recipes at the bench with the same digit (`canCraftUseful` in `shared/survivor-bot.ts`). Proof:
+`tests/recipe-board.test.ts` (filling in, parts, pages, the bench's E, where things are made, a restored fork) and
+`tests/crafting.test.ts` (rows, costs, hints, tips); stills of a new player's walkthrough:
+`bun scripts/crafting-proof.ts` (via `hivemind run --kind browser`).
 
 ## Lab
 
 Every tunable is a typed row in the shared LabPanel's **Progression** group (`progressionControls` in
-`shared/progression/tuning.ts`, bound by `src/progression/lab.ts`): loot rate, search, smash, board-up, heal, craft,
-research and pry times, their noise, the light research needs, a recipe cost multiplier, reinforced plank HP, heal
+`shared/progression/tuning.ts`, bound by `src/progression/lab.ts`): loot rate, search, smash, board-up, heal, craft
+and pry times, their noise, the light bench recipes need, a recipe cost multiplier, reinforced plank HP, heal
 amounts, noisemaker radius and duration, and the generator hum. Costs and times apply at once; a new loot rate
 restocks containers nobody has searched. In co-op the room keeps its defaults. The group also has actions to give
 bench materials, learn every recipe, restock, and jump to the Ash workbench.
 
 The Lab overworld's **Outbreak inventory and workbench** station (`games/lab/src/stations/outbreak-progression.ts`)
 opens the live game and stages each scene with the `progression.stage` command: an unsearched dresser, its strip,
-the bench by day and by night, the generator, field crafting and hand-offs.
+the bench by day and by night, the generator, the recipe panel and hand-offs.
 
 ## Rules and channels
 
-Timed actions (search, barricade, heal, pry, research, craft) are ledger channels. The sim cancels a channel when the
+Timed actions (search, barricade, heal, pry, craft) are ledger channels. The sim cancels a channel when the
 survivor walks more than about 2.9 m from it or sprints, and the ledger re-validates it when it completes, so a
 finished channel cannot spend what someone else took meanwhile. Game effects outside the ledger (barricade planks in
 the AI, health, door state) run on the `ran` event; vetoes such as "already boarded 3/3" come from `LedgerEnv.check`.
@@ -136,7 +135,7 @@ take is one transaction on the room, so two survivors grabbing the last item in 
 - `games/outbreak/tests/progression.test.ts`: every call site (routing, both search speeds, take one/all and full,
   cancel by walking away, medkit, crowbar, noisemaker, keyed doors, drops, pings, battery swap, barricade, loot tables,
   the command tuple).
-- `games/outbreak/tests/coop.test.ts`: same-tick take race, two seats researching the same recipe (learned once,
-  paid once), a bundle hand-off, an expired seat's kit on the floor, all through encoded snapshots and a mirror.
+- `games/outbreak/tests/coop.test.ts`: same-tick take race, a recipe the board fills in reaching every client and
+  made at the bench by one seat, a bundle hand-off, an expired seat's kit on the floor, all through encoded snapshots and a mirror.
 - `games/outbreak/scripts/inventory-proof.ts`: headless Metal stills of the strip, HUD, hand-offs, keyed door, the
-  bench panel, research in progress and the field-craft strip.
+  bench, its recipe board, a spiked board made there and the recipe panel in the street.

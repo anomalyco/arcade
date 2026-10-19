@@ -5,7 +5,7 @@ import { sightRects } from "../map"
 import { buildingAt } from "../progression/loot"
 import type { ProgressionHost, ProgressionSlot, WorldContext } from "../progression/types"
 import type { FoundKnowledge } from "./knowledge"
-import type { Tinkering } from "./tinkering"
+import type { RecipeBoard } from "./recipe-board"
 import {
   carSites,
   carStoreId,
@@ -54,7 +54,7 @@ export class FieldVerbs {
 
   constructor(
     private readonly host: ProgressionHost,
-    private readonly tinkering: Tinkering,
+    private readonly board: RecipeBoard,
     private readonly knowledge: FoundKnowledge,
   ) {}
 
@@ -189,7 +189,7 @@ export class FieldVerbs {
     st.counts.down = 1
     st.rev = ++this.host.ledger.rev
     this.host.ledger.apply({ kind: "grant", actor: slot.id, item: "cans", count: 1 })
-    this.tinkering.learnRecipe(slot, "tripwire", at, 0)
+    this.board.learnRecipe(slot, "tripwire", at, 0)
     this.host.project(slot)
   }
 

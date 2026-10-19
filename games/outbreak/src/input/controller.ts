@@ -4,6 +4,7 @@ import type { FrameClock } from "../../shared/clock"
 import { HOLD_DURATION } from "../../shared/interact"
 import { LocalSession, type Command } from "../../shared/session"
 import type { BotsLabController } from "../bots-lab"
+import { CRAFT_KEY } from "../crafting/settings"
 import type { InventoryHud } from "../inventory-hud"
 import { MAP_KEY, type OutbreakMap } from "../map/map"
 import type { NetSession } from "../net-session"
@@ -22,8 +23,9 @@ export interface OutbreakInputHost {
 }
 
 /**
- * Translates keyboard, mouse, wheel, and tap-vs-hold (`KeyG`/`KeyQ`) input into fixed-tick `Command` substeps
- * for `session.update`, while routing HUD/map shortcuts (`Digit1`–`Digit9`, `Tab`, `Escape`, `KeyN`).
+ * Translates keyboard, mouse, wheel, and tap-vs-hold (`KeyG`) input into fixed-tick `Command` substeps for
+ * `session.update`, while routing HUD/map shortcuts (`Digit1`–`Digit9`, `Tab`, `Escape`, `KeyN`, `KeyC` recipes,
+ * `KeyQ` ping).
  */
 export class OutbreakInputController {
   readonly input: Input
@@ -32,7 +34,7 @@ export class OutbreakInputController {
   private pendingFlashlightToggle = false
   private pendingBarricade = false
   private pendingVerbs: Partial<Command> = {}
-  // KeyG and KeyQ are tap-or-hold: the tap fires on release, the hold once it has lasted HOLD_DURATION.
+  // KeyG is tap-or-hold: the tap fires on release, the hold once it has lasted HOLD_DURATION.
   private readonly holds = new Map<string, { at: number; fired: boolean }>()
 
   constructor(private readonly host: OutbreakInputHost) {
@@ -63,13 +65,24 @@ export class OutbreakInputController {
         } else if (meant.pick) this.pendingVerbs.pick = meant.pick
       }
       if (code === "KeyB") this.pendingBarricade = true
-      if (code === "KeyE") inventoryHud.noteUse(session.view.prompt)
+      if (code === "KeyE") {
+        const prompt = session.view.prompt
+        inventoryHud.noteUse(prompt)
+        // The workbench's E opens its recipe board (the sim has nothing to do for it).
+        if (prompt?.kind === "bench" && prompt.primary.id === "board") {
+          if (inventoryHud.craftOpen) inventoryHud.close()
+          else inventoryHud.openBench()
+        }
+      }
+      // C is the recipe panel on foot; in a vehicle it changes seat (`Input.takeSeat`).
+      if (code === CRAFT_KEY && !session.view.player.vehicleId) inventoryHud.toggleCraft()
+      if (code === "KeyQ") this.pendingVerbs.ping = true
       if (code === "Tab") inventoryHud.togglePack()
       if (code === "Escape") inventoryHud.close()
       if (code === MAP_KEY) map.toggle()
       else if (code === "Escape") map.close()
       else map.key(code)
-      if (code === "KeyG" || code === "KeyQ") this.holds.set(code, { at: performance.now(), fired: false })
+      if (code === "KeyG") this.holds.set(code, { at: performance.now(), fired: false })
     }
     this.input.onWheel = (delta) => {
       if (delta !== 0) this.pendingHotbarDelta += Math.sign(delta)
@@ -85,19 +98,13 @@ export class OutbreakInputController {
   }
 
   private pollHolds(now: number): void {
-    const { inventoryHud } = this.host
     for (const [code, h] of this.holds) {
       const down = this.input.held(code)
       if (down && !h.fired && now - h.at >= HOLD_DURATION * 1000) {
         h.fired = true
-        if (code === "KeyG") this.pendingVerbs.bundle = true
-        else if (!inventoryHud.craftOpen) inventoryHud.toggleCraft()
+        this.pendingVerbs.bundle = true
       } else if (!down) {
-        if (!h.fired) {
-          if (code === "KeyG") this.pendingVerbs.drop = true
-          else if (inventoryHud.craftOpen) inventoryHud.close()
-          else this.pendingVerbs.ping = true
-        }
+        if (!h.fired) this.pendingVerbs.drop = true
         this.holds.delete(code)
       }
     }

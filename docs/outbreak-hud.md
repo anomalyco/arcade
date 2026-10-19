@@ -142,7 +142,7 @@ Reduced motion (the system setting or Lab › HUD motion › Reduced motion) dro
 The belt of supplies, the five hand slots and the pack chip sit in one dock at the bottom centre (`src/hud/dock.ts`,
 `dock.css`). It never hides, in any style. Kit found it odd that Tab made the pack disappear, because Diegetic hid
 the whole bar unless a slot had just changed. The dock now settles to 50 % opacity after 3 s without a change and
-brightens on any change to the belt, hands or pack, while the pack or field craft is open, and while the cursor is
+brightens on any change to the belt, hands or pack, while the pack or the recipe panel is open, and while the cursor is
 over it (Lab › HUD motion › Idle dock opacity, Dim dock after). It brightens on the snappy spring and dims on the
 slow one.
 
@@ -165,7 +165,7 @@ with no jumps or pops, with and without reduced motion. `hud-polish-proof.ts` al
 each surface sits on a whole device-pixel row at DPR 1, 1.5 and 2.
 
 The `outbreak-hud` Lab station has variants for each HUD state as well as each style: Dock idle, Dock after a pickup,
-Pack open, Field craft and Driving, each staged by the `hud.state` command.
+Pack open, Recipe panel and Driving, each staged by the `hud.state` command.
 
 ## World prompt
 
@@ -217,11 +217,11 @@ and collapses the first time its key is pressed, remembered per browser, while t
 blocking state shows as one word under the gauge (No battery, No keys, Empty tank). The whole group rises in on
 getting in and fades out on getting out.
 
-## Map sheet and field craft
+## Map sheet and the recipe panel
 
 The map sheet settles in from scale .98 with a 3 px blur on the smooth spring and fades out on the snappy one,
-letting clicks through while it fades. Field craft (hold Q) rises out of the dock and folds back into it. What it draws (the
-wordless strip or the recipe panel) and the crafting tip card above the dock are `src/crafting/ui.ts`; see "How crafting
+letting clicks through while it fades. The recipe panel (`C`, or `E` at a workbench) rises out of the dock and folds
+back into it. What it draws and the crafting tip card above the dock are `src/crafting/ui.ts`; see "How crafting
 works" in [outbreak-progression.md](outbreak-progression.md#how-crafting-works).
 
 ## Diegetic ground ring

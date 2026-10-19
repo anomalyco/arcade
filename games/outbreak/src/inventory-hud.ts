@@ -46,8 +46,10 @@ function destination(progression: OutbreakProgression, item: string): "belt" | "
  */
 export class InventoryHud {
   packOpen = false
-  /** The field-craft strip (hold Q). */
+  /** The recipe panel (`C`, or E at a workbench). */
   craftOpen = false
+  /** The panel was opened by E at a workbench, so walking away from it folds the panel away. */
+  private craftAtBench = false
   /** How many finishers the player has performed this session; the small bare key cap fades out after 2. */
   finisherCount = 0
   private wasFinishing = false
@@ -69,7 +71,7 @@ export class InventoryHud {
     private readonly discovery: () => DiscoverySettings = () => DEFAULT_DISCOVERY_SETTINGS,
     /** Dock dimming (Lab › HUD). */
     dockSettings: DockSettings & Partial<PromptGlyphSettings> = DEFAULT_DOCK_SETTINGS,
-    /** Crafting HUD style and tips (Lab › Crafting). */
+    /** Crafting tips (Lab › Crafting). */
     crafting: () => CraftingSettings = () => DEFAULT_CRAFTING_SETTINGS,
   ) {
     this.craft = new CraftUi(els.craft, crafting)
@@ -91,7 +93,7 @@ export class InventoryHud {
   /** The bottom dock: belt, hand slots and pack. */
   readonly dock: Dock | null = null
 
-  /** What field craft draws and the crafting tips (src/crafting/ui.ts). */
+  /** What the recipe panel draws and the crafting tips (src/crafting/ui.ts). */
   readonly craft: CraftUi
 
   /** How often this browser has acted on each kind of prompt; words drop off once an action is familiar. */
@@ -144,7 +146,7 @@ export class InventoryHud {
   digit(index: number, view: SessionView): Partial<Command> {
     if (this.craftOpen) {
       if (index >= view.progression.craftable().length) return {}
-      // A craft that cannot be paid for leaves the strip open beside its "Need …" notice.
+      // A craft that cannot be made here leaves the panel open beside its notice.
       if (this.craft.affordable(view, index)) this.craftOpen = false
       return { pick: { mode: "craft", index } }
     }
@@ -161,6 +163,14 @@ export class InventoryHud {
 
   toggleCraft(): void {
     this.craftOpen = !this.craftOpen
+    this.craftAtBench = false
+    this.packOpen = false
+  }
+
+  /** E at a workbench: opens its recipe board (the same panel, drawing on the bench's stock too). */
+  openBench(): void {
+    this.craftOpen = true
+    this.craftAtBench = true
     this.packOpen = false
   }
 
@@ -265,8 +275,9 @@ export class InventoryHud {
     return `<div class="strip"><div class="strip-items">${items}</div>${line}</div>`
   }
 
-  /** Field craft (hold Q): rises out of the dock and folds back; `CraftUi` draws what is in it and the tips. */
+  /** The recipe panel: rises out of the dock and folds back; `CraftUi` draws what is in it and the tips. */
   private syncCraft(view: SessionView): void {
+    if (this.craftAtBench && view.prompt?.kind !== "bench") this.craftOpen = this.craftAtBench = false
     this.craft.syncTip(view, this.craftOpen)
     const el = this.els.craft
     if (!el) return

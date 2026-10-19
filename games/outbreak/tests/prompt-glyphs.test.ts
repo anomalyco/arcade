@@ -71,7 +71,7 @@ describe("prompt glyphs (D-25)", () => {
 
   test("words stay only where the glyph is ambiguous", () => {
     const words = PROMPT_ACTIONS.map(({ kind, action }) => [`${kind}: ${action.label}`, promptGlyph(kind, action).word] as const).filter(([, w]) => w)
-    expect(Object.fromEntries(words)).toEqual({ "door: Locked": "Locked", "drop: Pick up 9mm Ammo": "9mm Ammo", "vehicle: Ride": "Ride" })
+    expect(Object.fromEntries(words)).toEqual({ "door: Locked": "Locked", "drop: Pick up 9mm Ammo": "9mm Ammo", "bench: Recipes": "Recipes", "vehicle: Ride": "Ride" })
   })
 
   test("doors and windows share verbs but not glyphs", () => {
