@@ -52,6 +52,13 @@ Measured reference values (from the reference report, 384×256 downsample): nigh
    light is added light, never painted into albedo, so the flashlight crossing a pool keeps its own colour.
    `lampRolloff` (Look · Lights) rolls lamp-lit surfaces off with the hue held and turns the hottest part warm white,
    weighted by how much of the light is lamp rather than beam.
+8. **Without a light, night sight is short.** At night with the flashlight off, sight reads dim grey out to
+   `nightSightRadius` (4.5 m) and fades to dark over `nightSightFalloff` (5 m); places a real light reaches stay in
+   sight (Look · Night sight, `src/look/night-sight.ts`, `outbreakNightReach`). The client's vision range shrinks to the
+   dark edge too, so zombies past it are hidden like anything else out of sight. `nightSight` 0 is the v8 look.
+9. **The town is abandoned: few lamps are left on.** Only `litWindows` (20%) of houses, by a stable roll on the
+   building id (`src/look/lit-windows.ts`), glow behind their windows and spill window light; the rest have dark glass.
+   A lit window is warm tungsten, brightest low in the pane and dimmer behind half-drawn curtains, never a flat slab.
 
 ## Targets by hour
 
@@ -94,7 +101,9 @@ lands about a metre in front of the survivor and runs to its range, lighting the
   ring blue. Don't bring back `cold-moonlight`-style presets.
 - **Washes.** No full-screen colour wash, no warm pool that follows the survivor, no lamp light by day.
 - **Glitter and 1-px noise.** No `hash2(floor(p * k))` terms at sub-pixel scale, no specular sparkle on matte
-  ground. PR #245 removed them; the flicker check below guards it.
+  ground. PR #245 removed them; the flicker check below guards it. Scattered litter is jittered per cell, varies in
+  size and is darker than the ground it lies on; a flake centred in every grid cell reads as rows of bright dots in
+  the beam (AR-70). Blood is matte, pools included.
 - **Coordinate hacks.** No hard-coded world coordinates in shaders (#247); use building and camera uniforms.
 - **A second shader path per look.** One surface path (`buildOutbreakSurfaceWgsl`); earlier looks are knob sets.
   Follow the register-pressure rules in [rendering-techniques.md](rendering-techniques.md).
@@ -102,8 +111,9 @@ lands about a metre in front of the survivor and runs to its range, lighting the
 ## Settings and Before presets
 
 Every v8 value is a typed, documented knob in `src/look/world.ts` (`DEFAULT_LOOK_TRIMS`, Lab: Backquote › Look) or
-`DEFAULT_FLASHLIGHT_BEAM` (Backquote › Flashlight). The presets in `src/look/presets.ts` are `today` (v8, the
-identity and Reset) and one Before preset, `today-v7` (the Dying Light pass), expressed only through knobs: the
+`DEFAULT_FLASHLIGHT_BEAM` (Backquote › Flashlight). The presets in `src/look/presets.ts` are `today` (v9, the
+identity and Reset), `today-v8` (before night sight and rare lit windows: `nightSight` 0, `litWindows` 1) and
+`today-v7` (the Dying Light pass), expressed only through knobs: the
 v8-only terms are gated by `dayShroud`, `dayMuted`, `shroudLampKeep`, `sightGlow` and `groundDetail`, which are 0 in
 v7. Earlier presets (v4–v6, Legacy, rendering-round ideas) and their shader branches were removed in AR-53.
 
