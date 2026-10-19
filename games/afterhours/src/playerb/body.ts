@@ -152,7 +152,10 @@ const AIM_YAW = (70 * Math.PI) / 180
 /** The body's yaw rate limit (rad/s). */
 const FACING_RATE = 11
 /** Most the view may lead the body's front (rad): past it the body is carried round with the view at once. */
-const BODY_LEAD = (45 * Math.PI) / 180
+const BODY_LEAD = (25 * Math.PI) / 180
+/** Flashlight grip: the palm faces inward (GRIP_IN) and down (GRIP_DOWN), around the barrel. */
+const GRIP_IN = 0.75
+const GRIP_DOWN = 0.65
 /** The body catches the view up to BODY_LEAD at this rate (rad/s): fast, but a 150° gap after a mantle is a turn. */
 const LEAD_RATE = 22
 /** Torch hand IK target limits (body frame): wrist speed (m/s) and fist turn rate (rad/s). */
@@ -164,6 +167,31 @@ const TWIST_MAX = (85 * Math.PI) / 180
 /** Arm joints may turn at most this fast (rad/s, local): a hand flip becomes a quick turn instead of a pop. */
 const ARM_RATE = 40
 const ARM_BONES = ["LeftShoulder", "LeftArm", "LeftForeArm", "LeftHand", "RightShoulder", "RightArm", "RightForeArm", "RightHand"]
+/** The flashlight carry clips (Mixamo Torch series, left hand) and the locomotion state each one stands for. */
+const CARRY_CLIPS: [string, string][] = [
+  ["carry-idle", "idle"],
+  ["carry-walk-forward", "fwd"],
+  ["carry-walk-back", "back"],
+  ["carry-walk-left", "left"],
+  ["carry-walk-right", "right"],
+  ["carry-run-forward", "run"],
+  ["carry-crouch-idle", "cidle"],
+  ["carry-crouch-walk-forward", "cwalk"],
+]
+const CARRY_ARM = /^Left(Shoulder|Arm|ForeArm|Hand)/
+/** The old hand-built IK carry (kept for reference; off). */
+const CARRY_IK = false
+/** Aim correction on the carried flashlight (wrist + forearm), at most this (rad). */
+const CARRY_AIM = (25 * Math.PI) / 180
+/** First-person nudge of the carrying hand (m): towards the body's centre line and down. */
+const CARRY_IN = 0.15
+const CARRY_DOWN = 0.03
+/** The barrel's droop below level in the carry grip (rad). */
+const CARRY_TILT = (12 * Math.PI) / 180
+/** First-person grip spot from the eye, in the view's frame (m): ahead, below, left. */
+const FP_GRIP = [0.4, 0.2, 0.16] as const
+/** Torch +Y (barrel axis → palm) in the view frame: right, up. */
+const FP_ROLL = [-0.85, 0.5]
 const FINGERS = /^LeftHand(Thumb|Index|Middle|Ring|Pinky)/
 const REACH_ARM = /^Right(Shoulder|Arm|ForeArm|Hand)/
 /** E: the part of each clip that is the reach (clip seconds) and its playback rate. */
@@ -477,8 +505,17 @@ export class CharacterBody {
         const w = tw.tracks.find((x) => x.name === `${s.bone.name}.quaternion`)
         if (w) this.torchSamplers.push({ bone: s.bone, idle: s.interp, walk: interpOf(w) })
       }
-      this.placeTorch()
     }
+    // The carry layer: Mixamo's Torch series (left hand), left shoulder → fingertips, one per locomotion state.
+    this.carry2 = []
+    for (const [name, role] of CARRY_CLIPS) {
+      const clip = this.clips.get(name)
+      if (!clip) continue
+      const m = META.anims.clips[name]
+      const offset = m?.kind === "loop" ? this.leftContact(mixer.clipAction(clip), clip.duration) : 0
+      this.carry2.push({ name, role, clip, offset, samplers: this.samplers(clip, CARRY_ARM), w: 0 })
+    }
+    if (this.carry2.length || (ti && tw)) this.placeTorch()
     mixer.update(0)
   }
 
@@ -679,7 +716,7 @@ export class CharacterBody {
    */
   private placeTorch() {
     const mixer = this.mixer!
-    const a = mixer.clipAction(this.clips.get("torch-idle")!)
+    const a = mixer.clipAction(this.clips.get(this.clips.has("carry-idle") ? "carry-idle" : "torch-idle")!)
     this.atOrigin(() => {
       a.play()
       a.setEffectiveWeight(1)
@@ -705,9 +742,23 @@ export class CharacterBody {
       M.decompose(this.torch.position, this.torch.quaternion, this.torch.scale)
       this.torch.scale.setScalar(1 / hand.getWorldScale(new THREE.Vector3()).x)
       hand.add(this.torch)
+      // The fist's frame in the hand bone's space: the barrel axis (index side = lens) and the palm normal (for a
+      // left hand cross(fingers, index − pinky) points out of the palm).
+      const inv = hand.matrixWorld.clone().invert()
+      const fing = P("LeftHandMiddle1").sub(P("LeftHand")).normalize()
+      const across = P("LeftHandIndex1").sub(P("LeftHandPinky1")).normalize()
+      this.gripAxisLocal.copy(axis).transformDirection(inv)
+      this.palmLocal.copy(new THREE.Vector3().crossVectors(fing, across)).transformDirection(inv)
       this.torch.updateMatrixWorld(true)
       const fw = P("LeftForeArm").sub(P("LeftHand")).normalize()
       this.forearmLocal.copy(fw).transformDirection(this.torch.matrixWorld.clone().invert())
+      // The Torch clips hold a torch upright in the fist (knuckles forward). A flashlight is the same fist with the
+      // wrist flexed (knuckles down, thumb on top): one fixed hand rotation, in the hand's frame, taking the barrel
+      // from the clip's upright to the body's forward, a little below level. Model space here is world (+Z forward).
+      const want = new THREE.Vector3(0, -Math.sin(CARRY_TILT), Math.cos(CARRY_TILT))
+      const turn = new THREE.Quaternion().setFromUnitVectors(axis.clone(), want)
+      const hq = hand.getWorldQuaternion(new THREE.Quaternion())
+      this.carryFix.copy(hq).invert().multiply(turn).multiply(hq)
       a.setEffectiveWeight(0)
       a.stop()
     })
@@ -1156,11 +1207,13 @@ export class CharacterBody {
     this.topW = topW
     this.applyLook(s, (1 - ladderW) * (1 - topW) * (1 - this.mantleW))
     this.applyInteract(dt, s, ladderW)
-    this.applyTorch(dt, s, moving)
     this.applyMantleHands(s)
     this.limitArms(dt)
     if (this.act) w[`E ${this.act.kind}`] = 1
     this.groundFeet(dt, s, inAir)
+    // The torch arm last: it is placed relative to the camera, after the body has been moved under it.
+    this.root.updateMatrixWorld(true)
+    this.applyTorch(dt, s, moving)
   }
 
   /**
@@ -1394,6 +1447,103 @@ export class CharacterBody {
    * little with the gait. The right hand stays free for E.
    */
   private applyTorch(dt: number, s: BodyState, moving: number) {
+    if (!CARRY_IK && this.carry2.length) return this.applyCarry(dt, s)
+    this.applyTorchIK(dt, s, moving)
+  }
+
+  /**
+   * The flashlight carry from recorded motion: the Torch-series clips play on the left shoulder, arm, hand and fingers,
+   * weighted by the same locomotion blend as the legs (idle / walk 4 directions / run / crouch) and on their phase;
+   * then a gentle first-person nudge of the hand (in and down, by swinging the upper arm) and an aim correction on
+   * the forearm and wrist (≤ CARRY_AIM) so the barrel follows the view. The beam itself comes from the view.
+   */
+  private applyCarry(dt: number, s: BodyState) {
+    const climbing = !!s.mantle && this.mantleW > 0.3
+    this.carryW += ((s.flashlight && !s.onLadder && this.topT < 0 && !s.mantle ? 1 : 0) - this.carryW) * damp(climbing ? 10 : 7, dt)
+    this.torch.visible = this.carryW > 0.7 || (s.flashlight && !!s.mantle)
+    this.torchHeld = !climbing
+    const B = this.bones
+    if (this.carryW < 1e-3 || !this.torch.parent || !B.LeftArm || !B.LeftForeArm || !B.LeftHand) return
+    const w = smooth(0, 1, this.carryW)
+    this.torchIdleT += dt
+    // Weights from the locomotion loops' current weights (their names → the carry role).
+    const lw = (n: string) => this.loops.get(n)?.w ?? 0
+    const role: Record<string, number> = {
+      idle: lw(IDLE),
+      cidle: lw(CROUCH_IDLE),
+      fwd: lw("walking") + lw("ascending-stairs") + lw("descending-stairs") + lw("descending-stairs-run"),
+      back: lw("walking-backwards") + lw("jog-backward"),
+      left: lw("left-strafe-walking") + lw("jog-strafe-left"),
+      right: lw("right-strafe-walking") + lw("jog-strafe-right"),
+      run: lw("jog-forward") + lw("running"),
+      cwalk: lw("crouched-walking") + lw("crouch-walk-back") + lw("crouch-walk-left") + lw("crouch-walk-right"),
+    }
+    let tot = 0
+    for (const c of this.carry2) tot += (c.w = role[c.role] ?? 0)
+    if (tot < 1e-4) {
+      const idle = this.carry2.find((c) => c.role === "idle")
+      if (idle) idle.w = tot = 1
+    }
+    // Blend the clips' rotations per bone (sign-aligned, normalised), then over the pose by the carry weight.
+    const acc = new Map<THREE.Bone, THREE.Quaternion>()
+    for (const c of this.carry2) {
+      if (c.w <= 1e-4) continue
+      const k = c.w / tot
+      const t = c.role === "idle" || c.role === "cidle" ? this.torchIdleT % c.clip.duration : (c.offset + this.phase * c.clip.duration) % c.clip.duration
+      for (const smp of c.samplers) {
+        _q.fromArray(smp.interp.evaluate(t) as unknown as number[])
+        let a = acc.get(smp.bone)
+        if (!a) acc.set(smp.bone, (a = new THREE.Quaternion(0, 0, 0, 0)))
+        if (a.x * _q.x + a.y * _q.y + a.z * _q.z + a.w * _q.w < 0) _q.set(-_q.x, -_q.y, -_q.z, -_q.w)
+        a.set(a.x + _q.x * k, a.y + _q.y * k, a.z + _q.z * k, a.w + _q.w * k)
+      }
+    }
+    for (const [bone, q] of acc) bone.quaternion.slerp(q.normalize(), w)
+    B.LeftHand.quaternion.multiply(_q.identity().slerp(this.carryFix, w))
+    this.model!.updateMatrixWorld(true)
+
+    // First person: the fist placed at a fixed spot low-left in the view (only the forearm enters the frame) with the
+    // barrel exactly along the view (tail nearest the eye, the head and lens leading away), knuckles up, thumb on
+    // top; arm by two-bone IK from the clip's shoulder, elbow down and out. The body renders once for every pass, so
+    // third person shows the same: the clip's carry arm, raised to point the light where the player looks.
+    const fw = this.viewDir
+    const yawV = s.yaw
+    const right = new THREE.Vector3(Math.cos(yawV), 0, -Math.sin(yawV))
+    const upv = new THREE.Vector3().crossVectors(right, fw).normalize()
+    const eye = s.eye ? new THREE.Vector3(s.eye.x, s.eye.y, s.eye.z) : B.Head!.getWorldPosition(new THREE.Vector3()).addScaledVector(UP, 0.07)
+    const grip = eye.clone().addScaledVector(fw, FP_GRIP[0]).addScaledVector(upv, -FP_GRIP[1]).addScaledVector(right, -FP_GRIP[2])
+    // Torch frame: -Z along the view; +Y (axis → palm) towards the body's centre and a little down: palm in, thumb up.
+    const Zt = fw.clone().negate()
+    const Yt = right.clone().multiplyScalar(FP_ROLL[0]).addScaledVector(upv, FP_ROLL[1])
+    Yt.addScaledVector(Zt, -Yt.dot(Zt)).normalize()
+    const Xt = new THREE.Vector3().crossVectors(Yt, Zt)
+    const torchQ = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(Xt, Yt, Zt))
+    const handQ = torchQ.multiply(this.torch.quaternion.clone().invert())
+    const hs = B.LeftHand.getWorldScale(new THREE.Vector3()).x
+    const wrist = grip.clone().sub(this.torch.position.clone().multiplyScalar(hs).applyQuaternion(handQ))
+    const cur = B.LeftHand.getWorldPosition(new THREE.Vector3())
+    const curQ = B.LeftHand.getWorldQuaternion(new THREE.Quaternion())
+    wrist.lerp(cur, 1 - w)
+    handQ.slerpQuaternions(curQ, handQ.clone(), w)
+    const sh = B.LeftArm.getWorldPosition(new THREE.Vector3())
+    const pole = UP.clone().multiplyScalar(-1).addScaledVector(right, -0.6).addScaledVector(fw, -0.2)
+    void sh
+    twoBoneIK(B.LeftArm, B.LeftForeArm, B.LeftHand, wrist, pole)
+    // Half the hand's twist about the forearm taken by the forearm (no candy-wrapped wrist), then the hand exactly.
+    const fa = B.LeftForeArm
+    const local = fa.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(handQ)
+    if (local.w < 0) local.set(-local.x, -local.y, -local.z, -local.w)
+    const twa = THREE.MathUtils.clamp(wrapPi(2 * Math.atan2(local.y, local.w)), -TWIST_MAX, TWIST_MAX)
+    fa.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(_v5.set(0, 1, 0), twa * 0.5))
+    fa.updateWorldMatrix(false, true)
+    B.LeftHand.quaternion.copy(fa.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(handQ))
+    B.LeftArm.updateWorldMatrix(false, true)
+    const barrel = new THREE.Vector3(0, 0, -1).transformDirection(this.torch.matrixWorld)
+    const ang = barrel.angleTo(this.viewDir)
+    ;(this.debug as Record<string, unknown>).carry = { aimErr: +((ang * 180) / Math.PI).toFixed(1) }
+  }
+
+  private applyTorchIK(dt: number, s: BodyState, moving: number) {
     // Mantling the torch stays in the left fist on the ledge (the beam falls back to the view; see torchLens).
     const climbing = !!s.mantle && this.mantleW > 0.3
     this.carryW += ((s.flashlight && !s.onLadder && this.topT < 0 && !s.mantle ? 1 : 0) - this.carryW) * damp(climbing ? 10 : 7, dt)
@@ -1453,27 +1603,22 @@ export class CharacterBody {
     const fdir = new THREE.Vector3().copy(yawF).multiplyScalar(Math.cos(fe)).addScaledVector(UP, Math.sin(fe)).addScaledVector(left, -inward).normalize()
     const wrist = new THREE.Vector3().copy(elbow).addScaledVector(fdir, lf)
 
-    // Torch frame: -Z along the aim; the torch-idle grip's forearm line (fitted in placeTorch) as close to the actual
-    // forearm as the aim allows (the rest is wrist bend).
+    // The grip, solved explicitly on the hand (the torch-idle clip holds a burning torch upright; only its fist shape
+    // is used): the fist's barrel axis (index side = lens) along the aim, and its palm facing in and down, wrapped
+    // under and around the barrel, so the back of the hand faces out and up, the thumb lies over the top towards the
+    // lens and the knuckles point forward and out. The torch is fixed in the fist, so its lens points along the aim.
     const handQ = _q2
     const A = _z.copy(aim)
-    // The roll reference: the forearm line, blended (smoothly, before it degenerates) into the body's back-and-up
-    // direction when the aim comes close to the forearm's line (looking steeply down), so it never flips over.
-    const Bw = _y.copy(fdir).negate()
-    Bw.addScaledVector(A, -Bw.dot(A))
-    const fall = new THREE.Vector3().copy(yawF).negate().add(UP)
-    fall.addScaledVector(A, -fall.dot(A))
-    if (fall.lengthSq() < 1e-8) fall.copy(left).addScaledVector(A, -left.dot(A))
-    fall.normalize()
-    const k = smooth(0.35, 0.8, Bw.length())
-    Bw.normalize().multiplyScalar(k).addScaledVector(fall, 1 - k).normalize()
-    const Cw = _x.crossVectors(A, Bw)
-    const a0 = _v5.set(0, 0, -1)
-    const b0 = _v6.copy(this.forearmLocal)
-    b0.addScaledVector(a0, -b0.dot(a0)).normalize()
-    const c0 = new THREE.Vector3().crossVectors(a0, b0)
-    _m.makeBasis(A, Bw, Cw).multiply(new THREE.Matrix4().makeBasis(a0, b0, c0).transpose())
-    handQ.setFromRotationMatrix(_m).multiply(_qa.copy(this.torch.quaternion).invert())
+    const Np = _y.copy(left).multiplyScalar(-GRIP_IN).addScaledVector(UP, -GRIP_DOWN)
+    Np.addScaledVector(A, -Np.dot(A))
+    if (Np.lengthSq() < 1e-4) Np.copy(yawF).addScaledVector(A, -A.dot(yawF))
+    Np.normalize()
+    const l1 = _v5.copy(this.gripAxisLocal).normalize()
+    const l2 = _v6.copy(this.palmLocal).addScaledVector(l1, -this.palmLocal.dot(l1)).normalize()
+    const l3 = new THREE.Vector3().crossVectors(l1, l2)
+    const w3 = _x.crossVectors(A, Np)
+    _m.makeBasis(A, Np, w3).multiply(new THREE.Matrix4().makeBasis(l1, l2, l3).transpose())
+    handQ.setFromRotationMatrix(_m)
     c.grip.copy(wrist)
     const cur = B.LeftHand.getWorldPosition(new THREE.Vector3())
     wrist.lerp(cur, 1 - w)
@@ -1517,15 +1662,33 @@ export class CharacterBody {
     _qb.copy(fa.getWorldQuaternion(_qc)).invert().multiply(handQ)
     B.LeftHand.quaternion.copy(_qb)
     B.LeftArm.updateWorldMatrix(false, true)
+    // The thumb over the top of the barrel, pointing along it towards the lens.
+    const t1 = B.LeftHandThumb1
+    const t4 = B.LeftHandThumb4
+    if (t1 && t4 && w > 0.5) {
+      const top = _v5.copy(UP).addScaledVector(A, -A.y).normalize()
+      const goal = this.torch.getWorldPosition(new THREE.Vector3()).addScaledVector(A, 0.055).addScaledVector(top, 0.024).addScaledVector(left, -0.006)
+      const base = t1.getWorldPosition(new THREE.Vector3())
+      const cur = t4.getWorldPosition(new THREE.Vector3()).sub(base)
+      const want = goal.sub(base)
+      const ax = new THREE.Vector3().crossVectors(cur, want)
+      if (ax.lengthSq() > 1e-12) this.rotWorld(t1, ax.normalize(), Math.min(1.6, cur.angleTo(want)) * w)
+      t1.updateWorldMatrix(false, true)
+    }
   }
 
   /**
    * Flashlight carry: upper arm forward of hanging (rad) and out (× its length), forearm elevation below the aim (rad;
    * the barrel is held across the fist) and how far it points across the body.
    */
-  readonly carry = { upper: 0.28, out: 0.2, wrist: 0.95, inward: 0.25, aim: new THREE.Vector3(), grip: new THREE.Vector3() }
+  readonly carry = { upper: 0.8, out: 0.2, wrist: 0.2, inward: 0.3, aim: new THREE.Vector3(), grip: new THREE.Vector3() }
   /** Torch-local direction from the wrist to the elbow in the torch-idle grip (placeTorch). */
   private forearmLocal = new THREE.Vector3(0, 1, 0)
+  /** Fixed hand rotation (hand-local) turning the clip's upright torch grip into a forward flashlight grip. */
+  private carryFix = new THREE.Quaternion()
+  private carry2: { name: string; role: string; clip: THREE.AnimationClip; offset: number; samplers: Sampler[]; w: number }[] = []
+  private gripAxisLocal = new THREE.Vector3(0, 0, 1)
+  private palmLocal = new THREE.Vector3(0, -1, 0)
   /** Last frame's torch-hand IK targets (body frame). */
   private tPrev: { p: THREE.Vector3; q: THREE.Quaternion } | null = null
 

@@ -690,6 +690,9 @@ CLIPS = {
     "driving-idle": "idle", "driving-horn": "idle", "driving-enter-car": "one", "driving-exit-car": "one",
     "mantle-step-up": "mantle", "mantle-hop-up": "mantle", "mantle-run-jump-high": "mantle",
     "mantle-hang-to-crouch": "mantle", "vault-one-hand": "vault", "vault-two-hand": "vault",
+    "carry-idle": "idle", "carry-walk-forward": "loop", "carry-walk-back": "loop", "carry-walk-left": "loop",
+    "carry-walk-right": "loop", "carry-run-forward": "loop", "carry-crouch-idle": "idle",
+    "carry-crouch-walk-forward": "loop",
 }
 
 

@@ -30,9 +30,9 @@ type Kind = {
 }
 
 const KINDS: Kind[] = [
-  { id: "out-rustle", every: 11, near: 16, far: 45, height: [0.2, 4], gain: 0.55, ref: 6, rolloff: 0.45, jitter: 0.08 },
+  { id: "out-rustle", every: 22, near: 16, far: 45, height: [0.2, 4], gain: 0.4, ref: 6, rolloff: 0.45, jitter: 0.08 },
   { id: "out-twig", every: 17, near: 18, far: 50, height: [0, 0.3], gain: 0.6, ref: 6, rolloff: 0.45, jitter: 0.1 },
-  { id: "out-creak", every: 21, near: 20, far: 60, height: [3, 12], gain: 0.55, ref: 10, rolloff: 0.4, jitter: 0.07 },
+  { id: "out-creak", every: 42, near: 20, far: 60, height: [3, 12], gain: 0.4, ref: 10, rolloff: 0.4, jitter: 0.07 },
   { id: "out-cone", every: 34, near: 16, far: 40, height: [0, 1], gain: 0.55, ref: 5, rolloff: 0.5, jitter: 0.08 },
   { id: "out-owl", every: 55, near: 60, far: 140, height: [8, 18], gain: 0.5, ref: 30, rolloff: 0.5, jitter: 0.04 },
   { id: "out-far-animal", every: 200, near: 180, far: 200, height: [0, 2], gain: 0.4, ref: 60, rolloff: 0.6, jitter: 0.05 },
@@ -40,6 +40,8 @@ const KINDS: Kind[] = [
 
 const MIN_DIST = 16
 const MIN_GAP = 2.5
+/** Night one-shots allowed through the car's closed cabin per ride. */
+const CABIN_EVENTS = 2
 const WIND_LEVEL = 0.55
 /** Building footprints (x/z) that shadow sources behind them. */
 const BLOCKS = [BUILDING.main, BUILDING.annex]
@@ -52,6 +54,9 @@ export class NightOutdoors {
   private next = new Map<SfxId, number>()
   private lastAny = -1e9
   private time = 0
+  /** In the car's closed cabin (set by the ambience): at most `CABIN_EVENTS` (far-carrying, muffled) per ride. */
+  cabin = false
+  private cabinEvents = 0
   /** Automation: one-shots fired. */
   readonly log: { t: number; id: SfxId; d: number; muffled: boolean }[] = []
 
@@ -73,6 +78,7 @@ export class NightOutdoors {
 
   update(dt: number, ear: { x: number; y: number; z: number }, indoor: number) {
     this.time += dt
+    if (!this.cabin) this.cabinEvents = 0
     const now = this.time
     const out = 1 - indoor
 
@@ -82,7 +88,7 @@ export class NightOutdoors {
       const lull = this.gustTarget > 0.5 ? Math.random() < 0.6 : Math.random() < 0.25
       this.nextGust = now + 3 + Math.random() * 6
       this.gustTarget = lull ? 0.1 + Math.random() * 0.2 : 0.6 + Math.random() * 0.4
-      if (this.gustTarget > 0.85 && out > 0.5 && Math.random() < 0.5) this.fire(KINDS[Math.random() < 0.7 ? 0 : 2]!, ear, indoor, 12, 30)
+      if (this.gustTarget > 0.85 && out > 0.5 && Math.random() < 0.25) this.fire(KINDS[Math.random() < 0.7 ? 0 : 2]!, ear, indoor, 12, 30)
     }
     this.gust += (this.gustTarget - this.gust) * (1 - Math.exp(-dt / 1.6))
     const shelter = 1 - 0.5 * Math.max(0, 1 - this.wallDistance(ear) / 10)
@@ -96,13 +102,14 @@ export class NightOutdoors {
       const rate = indoor > 0.5 ? (k.ref >= 25 ? 0.5 : 0) : 1
       this.next.set(k.id, now + this.interval(k) / Math.max(0.05, rate))
       if (rate === 0 || now - this.lastAny < MIN_GAP) continue
-      this.fire(k, ear, indoor)
+      if (this.cabin && this.cabinEvents >= CABIN_EVENTS) continue
+      if (this.fire(k, ear, indoor) && this.cabin) this.cabinEvents++
     }
   }
 
   private fire(k: Kind, ear: { x: number; y: number; z: number }, indoor: number, near = k.near, far = k.far) {
     const p = this.placeInTrees(ear, near, far)
-    if (!p) return
+    if (!p) return false
     const ground = ear.y - 1.6
     const pos = { x: p.x, y: ground + k.height[0] + Math.random() * (k.height[1] - k.height[0]), z: p.z }
     const d = Math.hypot(pos.x - ear.x, pos.z - ear.z)
@@ -117,9 +124,10 @@ export class NightOutdoors {
     gain *= 1 - 0.85 * indoor
     if (indoor > 0.5) lowpass = Math.min(lowpass, 600)
     const src = this.sfx.play(k.id, { bus: "ambience", pos, ref: k.ref, rolloff: k.rolloff, gain, lowpass, jitter: k.jitter, occlude: false })
-    if (!src) return
+    if (!src) return false
     this.lastAny = this.time
     this.log.push({ t: +this.time.toFixed(1), id: k.id, d: Math.round(d), muffled: behind || indoor > 0.5 })
+    return true
   }
 
   /** A point in the forest within [near, far]: the trees start 10–15 m beyond the fence, so from inside the compound

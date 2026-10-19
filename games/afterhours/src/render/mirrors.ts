@@ -16,6 +16,7 @@ import {
   dot,
   floor,
   min,
+  output,
 } from "three/tsl"
 import type { WorldContext } from "../world/context"
 import { addControls, flag, num, renderState } from "./shared"
@@ -109,7 +110,13 @@ function mirrorMaterial(width: number, height: number, age: number, live: N) {
     return c.mul(vec3(0.84, 0.87, 0.83)).mul(silver).mul(live)
   })()
   m.emissiveNode = reflection
+  // While live the glass shows only its reflection: no direct lighting on top (a torch or lamp highlight on the
+  // surface washed the reflected room out to a bright disc and hid the player's reflection).
+  ;(m as unknown as { outputNode: unknown }).outputNode = mix(output, vec4(reflection, 1), live)
   // Where the silver is gone you see the dark backing; when not live, a dull grey sheen from the room's light.
+  // Silvered glass has no diffuse and its specular IS the reflection: while live, lamps and the flashlight add nothing
+  // to the surface (their highlight on the glass washed the reflected room out to a bright disc); a dull grey
+  // sheen only when the glass isn't rendering.
   m.colorNode = vec3(0.025, 0.027, 0.026).add(vec3(0.06).mul(live.oneMinus()))
   m.roughnessNode = float(0.22)
   return m
@@ -176,9 +183,22 @@ export function initMirrors(ctx: WorldContext, extraHidden: () => THREE.Object3D
   }
 
   const mirrorFrustum = new THREE.Frustum()
+  let frameNo = 0
+  let taggedFor = -1
+  // The flashlight's beam bounced off the live glass: a real spot light at the torch's mirror image, aimed along the
+  // reflected beam, so you see yourself (and the room behind you) lit by your own torch in the mirror. Always in the
+  // light list (adding it later would recompile every material); zero when unused.
+  const bounce = new THREE.SpotLight(0xffffff, 0, 30, 0.4, 0.6, 2)
+  bounce.castShadow = false
+  ctx.scene.add(bounce, bounce.target)
+  const hitP = new THREE.Vector3()
+  const ray = new THREE.Ray()
+  const local = new THREE.Vector3()
+  const inv = new THREE.Matrix4()
   renderState.beforeRender.push(() => {
     for (const m of mirrors) m.live.value = 0
     renderState.mirrorFrustum = null
+    bounce.intensity = 0
     if (!mirrors.length || !flag(ctx, "mirror.on")) return
     camera.updateMatrixWorld()
     camPos.setFromMatrixPosition(camera.matrixWorld)
@@ -220,6 +240,15 @@ export function initMirrors(ctx: WorldContext, extraHidden: () => THREE.Object3D
     // A glass with `userData.reflectLayer` (washrooms) reflects only that layer plus the player (body + head): the
     // rest of the world never reaches it anyway and skipping it roughly halves the cost. Lights are unaffected.
     const only = best.mesh.userData.reflectLayer as number | undefined
+    // three only renders lights whose layers the camera sees: a layer-limited mirror camera must still see the
+    // lamps, the torch and its bounce (they live on layer 0), or the reflection is lit by ambient alone (the player
+    // reflected as a black silhouette). Lights stream in with modules, so re-tag now and then.
+    if (only !== undefined && (frameNo++ % 30 === 0 || taggedFor !== only)) {
+      taggedFor = only
+      scene.traverse((o) => {
+        if ((o as THREE.Light).isLight) o.layers.enable(only)
+      })
+    }
     virtualCam.layers.mask =
       only !== undefined ? (1 << only) | (1 << BODY_LAYER) | (1 << HEAD_LAYER) : camera.layers.mask | (1 << HEAD_LAYER)
     // Sampling matrix: plain projection × view (before the oblique clip below, which only trims geometry behind
@@ -266,6 +295,33 @@ export function initMirrors(ctx: WorldContext, extraHidden: () => THREE.Object3D
     shared.texel.value.set(1 / w, 1 / h)
     shared.blur.value = num(ctx, "mirror.blur")
 
+    // Torch bounce: where the beam's axis meets the glass (inside its rectangle, with a soft margin).
+    const f = renderState.flash
+    if (f.on && f.candela && f.light) {
+      ray.set(f.pos, f.dir)
+      plane.setFromNormalAndCoplanarPoint(best!.normal, best!.center)
+      if (f.dir.dot(best!.normal) < -0.05 && ray.intersectPlane(plane, hitP)) {
+        inv.copy(best!.mesh.matrixWorld).invert()
+        local.copy(hitP).applyMatrix4(inv)
+        const g = best!.mesh.geometry as THREE.PlaneGeometry
+        const hw = g.parameters.width / 2 + 0.4
+        const hh = g.parameters.height / 2 + 0.4
+        const inside = Math.max(0, 1 - Math.max(Math.abs(local.x) / hw, Math.abs(local.y) / hh)) ** 0.5
+        if (inside > 0) {
+          const d = plane.distanceToPoint(f.pos)
+          bounce.position.copy(f.pos).addScaledVector(best!.normal, -2 * d)
+          bounce.target.position.copy(bounce.position).add(_p.copy(f.dir).reflect(best!.normal))
+          bounce.angle = f.angle ?? 0.4
+          bounce.penumbra = f.light.penumbra
+          bounce.distance = f.light.distance
+          bounce.color.copy(f.light.color)
+          // ~85 % reflectance, less where the silver has gone; only the part of the beam that lands on the glass.
+          bounce.intensity = f.candela * 0.8 * inside
+          bounce.target.updateMatrixWorld()
+        }
+      }
+    }
+
     // Hide what must not appear in the reflection: every mirror (no feedback) and the lamp glow sprites (their
     // G-buffer MRT override would replace the colour in a single-target render).
     const hidden: THREE.Object3D[] = [...mirrors.map((m) => m.mesh), ...extraHidden()]
@@ -283,10 +339,12 @@ export function initMirrors(ctx: WorldContext, extraHidden: () => THREE.Object3D
     renderer.autoClear = prevClear
     hidden.forEach((o, i) => (o.visible = was[i]!))
     best.live.value = 1
+
+
     lastMs = performance.now() - t0
   })
 
-  const api = { cpuMs: () => lastMs, count: () => mirrors.length, rt: shared.rt, mirrors, virtualCam, player }
+  const api = { cpuMs: () => lastMs, count: () => mirrors.length, rt: shared.rt, mirrors, virtualCam, player, bounce }
   if (ctx.params.has("perf")) (globalThis as { __afterhoursMirrors?: unknown }).__afterhoursMirrors = api
   return api
 }

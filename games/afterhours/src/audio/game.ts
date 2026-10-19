@@ -38,7 +38,7 @@ export class GameAudio {
 
   constructor(
     private ctx: WorldContext,
-    player: Player,
+    private player: Player,
   ) {
     for (const l of LEVELS) {
       ctx.settings[l.key] ??= l.value
@@ -106,6 +106,8 @@ export class GameAudio {
     this.ambience.right.z = e[2]! / rl
     const scares = Number(s["audio.horrorLayer"] ?? 0)
     this.ambience.horrorLevel = scares
+    // Seated in the car (the controller's locomotion off): the closed cabin.
+    this.ambience.cabin += ((this.player.locomotion ? 0 : 1) - this.ambience.cabin) * (1 - Math.exp(-dt * 4))
     this.horror.level = scares
     this.ambience.update(dt, this.ear, this.indoor)
     this.horror.update(dt, this.ear, this.indoor)

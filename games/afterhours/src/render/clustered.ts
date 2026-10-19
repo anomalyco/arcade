@@ -1,5 +1,5 @@
 import { DataTexture, FloatType, RGBAFormat, type Light } from "three/webgpu"
-import { Break, Fn, If, Loop, clamp, directPointLight, dot, float, int, ivec2, log, positionView, positionWorld, screenCoordinate, smoothstep, textureLoad, uniform, vec4 } from "three/tsl"
+import { Break, Fn, If, Loop, length, roughness, clamp, directPointLight, dot, float, int, ivec2, log, positionView, positionWorld, screenCoordinate, smoothstep, textureLoad, uniform, vec4 } from "three/tsl"
 import { Vector2 } from "three/webgpu"
 import { insideNode } from "./volumes"
 import { ClusteredLighting } from "three/addons/lighting/ClusteredLighting.js"
@@ -8,7 +8,7 @@ import ClusteredLightsNode from "three/addons/tsl/lighting/ClusteredLightsNode.j
 // Forward+ clustered lighting with a spot cone per light. three's ClusteredLightsNode only shades omni point lights;
 // sodium heads, fluorescent panels and window spills are directional, so every point light may carry
 // `userData.cone = { dir: [x, y, z] (world, unit), cosOuter, cosInner }` and the shading loop applies the cone.
-// Extra rows in the light data texture hold it (row 2: dir + cos outer, row 3: cos inner + mask, row 4: spill).
+// Extra rows in the light data texture hold it (row 2: dir + cos outer, row 3: cos inner + mask, row 4: spill, emitter radius).
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type N = any
@@ -87,6 +87,7 @@ class ConeClusteredLightsNode extends Base {
       data[line * 3 + o + 2] = mask?.y0 ?? -1e5
       data[line * 3 + o + 3] = mask?.y1 ?? 1e5
       data[line * 4 + o] = (lights[order[i]!]!.userData.spill as number | undefined) ?? 0
+      data[line * 4 + o + 1] = (lights[order[i]!]!.userData.radius as number | undefined) ?? 0
     }
   }
 
@@ -122,13 +123,21 @@ class ConeClusteredLightsNode extends Base {
           const cosA = dot(lightVector.normalize().negate(), dirView)
           // Spill: real fixtures throw some light outside their cone, and in a room the pool bounces off the floor
           // onto the walls; a small per-light floor on the cone stands in for both.
-          const spill = (textureLoad(self._lightsTexture, ivec2(idx, 4)) as N).x
+          const row4 = textureLoad(self._lightsTexture, ivec2(idx, 4)) as N
+          const spill = row4.x
           const cone = (smoothstep as N)(c.w, ci, cosA).mul(spill.oneMinus()).add(spill).mul(zoneW).mul(yW)
+          // Area-light highlight (Karis' sphere-light approximation): a panel or globe of radius r seen at distance d
+          // widens the specular lobe to α' = α + r / 2d, so a troffer mirrors as a soft patch on glossy lino instead of
+          // a pin-point dot. Roughness is restored after each light.
+          const saved = (roughness as N).toVar()
+          const a2 = saved.mul(saved).add(row4.y.div(length(lightVector).mul(2).max(0.05))).min(1)
+          ;(roughness as N).assign(a2.sqrt().max(saved))
           builder.lightsNode.setupDirectLight(
             builder,
             this,
             directPointLight({ color: color.mul(cone), lightVector, cutoffDistance: distance, decayExponent: decay } as N),
           )
+          ;(roughness as N).assign(saved)
         })
       })
     }, "void")()

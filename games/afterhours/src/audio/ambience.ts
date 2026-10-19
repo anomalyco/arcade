@@ -42,6 +42,8 @@ export class Ambience {
   private indoor = 0
   /** Listener's right vector on the ground (x, z), for panning thunder by bearing. */
   readonly right = { x: 1, z: 0 }
+  /** In the car's closed cabin (0..1, eased; the intro's seated drive): outdoor ambience ducked and low-passed. */
+  cabin = 0
   /** The horror layer's level (Lab "Horror layer"; 0 in play mode): scales the north-side drone. */
   horrorLevel = 0
   private cool = new Map<unknown, number>()
@@ -79,15 +81,19 @@ export class Ambience {
     const M = BUILDING.main
     const storey = Math.max(0, Math.min(M.storeys, Math.round((ear.y - 1.6 - BUILDING.floorY) / M.storeyHeight)))
 
-    // Rain (only when it rains), muffled by the building indoors.
+    // Rain (only when it rains), muffled by the building indoors, and by the car's closed cabin (−12 dB, dull).
     this.indoor = indoor
     const rain = weather.rain
-    const out = 1 - 0.8 * indoor
-    const cut = 20000 * (1 - indoor) + 650 * indoor
+    const shut = Math.max(indoor, 0.88 * this.cabin)
+    const out = 1 - 0.85 * shut
+    const cut = 20000 * (1 - shut) + 650 * shut
     this.rain.set(0.6 * out * rain, cut)
     this.rainThunder.set(0.32 * out * rain, cut)
 
-    this.night.update(dt, ear, indoor)
+    // The night outdoors: in the cabin it is muffled like indoors (only the far-carrying calls get through, faint and
+    // dull) and at most two of those during the whole drive.
+    this.night.cabin = this.cabin > 0.5
+    this.night.update(dt, ear, shut)
 
     // Building beds.
     this.hvac[0].set(storey % 2 === 0 ? 0.32 * indoor : 0)
@@ -185,7 +191,7 @@ export class Ambience {
           variant,
           gain: gain * (1 - 0.55 * indoor),
           pan,
-          lowpass: Math.min(lowpass, indoor > 0.5 ? 450 : 20000),
+          lowpass: Math.min(lowpass, indoor > 0.5 || this.cabin > 0.5 ? 450 : 20000),
           jitter: 0.04,
         })
       },

@@ -37,6 +37,10 @@ export type FlashState = {
   range: number
   cosOuter: number
   cosInner: number
+  /** The flashlight as a surface light (for the mirror bounce): candela, half-angle, the light itself. */
+  candela?: number
+  angle?: number
+  light?: THREE.SpotLight
 }
 
 export const renderState = {

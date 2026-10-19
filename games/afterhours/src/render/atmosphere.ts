@@ -66,7 +66,7 @@ const envGround = uniform(0.12)
  * indirect light. Gives unlit corners and walls the gradient real bounce has (brighter near a lit fitting, falling
  * away into corners and across a room), instead of the flat constant ambient that made them read unlit.
  */
-export const BOUNCE_LAMPS = 8
+export const BOUNCE_LAMPS = 12
 const blankV4 = () => Array.from({ length: BOUNCE_LAMPS }, () => new THREE.Vector4())
 export const bounceLamps = {
   A: blankV4(), // position.xyz, range
@@ -219,7 +219,7 @@ export function createAtmosphere(ctx: WorldContext) {
     { key: "sky.glow", label: "Horizon glow", group: "Fog", min: 0, max: 2, step: 0.01, value: 0.35 },
     { key: "env.intensity", label: "Fog skylight (ambient + reflections)", group: "Fog", unit: "×", min: 0, max: 3, step: 0.01, value: 1 },
     { key: "env.interior", label: "Skylight left indoors", group: "Fog", min: 0, max: 1, step: 0.01, value: 0.06 },
-    { key: "env.interiorGI", label: "Interior bounce (ambient GI)", group: "Fog", min: 0, max: 0.2, step: 0.001, value: 0.08 },
+    { key: "env.interiorGI", label: "Interior bounce (ambient GI)", group: "Fog", min: 0, max: 0.2, step: 0.001, value: 0.035 },
     { key: "fog.interiorTone", label: "Interior haze brightness", group: "Fog", min: 0, max: 0.05, step: 0.0005, value: 0.004 },
     { key: "env.ground", label: "Ground bounce", group: "Fog", min: 0, max: 1, step: 0.01, value: 0.12 },
   ])

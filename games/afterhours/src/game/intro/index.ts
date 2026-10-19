@@ -227,6 +227,9 @@ export async function runIntro(ic: IntroContext): Promise<void> {
   const saved = { bodyShow: s["body.show"], ambience: s["audio.ambience"], fly: player.fly }
   s["body.show"] = false
   player.fly = false
+  // Seated: no walking, jumping or crouching (Space only feeds the hold-to-skip), no step sounds; the audio hears the
+  // closed cabin. Given back at the hand-over (played, skipped or aborted).
+  player.locomotion = false
   const hud = document.querySelector<HTMLElement>("#hud")
   const hudDisplay = hud?.style.display ?? ""
   if (hud) hud.style.display = "none"
@@ -489,6 +492,7 @@ export async function runIntro(ic: IntroContext): Promise<void> {
   const finish = (aborted = false) => {
     if (finished) return
     finished = true
+    player.locomotion = true
     if (stopCurrent === stop) stopCurrent = null
     unhook()
     ic.signal?.removeEventListener("abort", onAbort)

@@ -111,6 +111,7 @@ export class Player {
    */
   debugKeys = true
   private inputOn = true
+  private moveOn = true
   /** Automation only: when an array, every update pushes a sample (time, dt, feet, eye). */
   trace: { t: number; dt: number; x: number; z: number; y: number; eye: number; offset: number; base: number; crouch: number; grounded: boolean }[] | null = null
   private keys = new Set<string>()
@@ -212,7 +213,11 @@ export class Player {
     canvas.addEventListener("click", () => {
       if (!this.inputOn) return
       this.audio?.unlock()
-      canvas.requestPointerLock()
+      // (Browsers can refuse the lock, e.g. right after Esc released it; that's not an error worth surfacing.)
+      try {
+        const p = canvas.requestPointerLock() as unknown as Promise<void> | undefined
+        p?.catch?.(() => {})
+      } catch {}
     })
     document.addEventListener("mousemove", (e) => {
       if (!this.inputOn || document.pointerLockElement !== canvas) return
@@ -235,8 +240,8 @@ export class Player {
       }
       if (e.code === "KeyE") ctx.doors.use()
       if (e.code === "KeyN" && this.debugKeys) this.fly = !this.fly
-      if (e.code === "Space") this.jumpBuffer = JUMP_BUFFER
-      if (e.code === "KeyC") this.crouchToggled = !this.crouchToggled
+      if (e.code === "Space" && this.moveOn) this.jumpBuffer = JUMP_BUFFER
+      if (e.code === "KeyC" && this.moveOn) this.crouchToggled = !this.crouchToggled
       const views = Object.keys(VIEWPOINTS) as ViewpointName[]
       const digit = e.code.startsWith("Digit") ? Number(e.code.slice(5)) : 0
       if (this.debugKeys && digit >= 1 && digit <= views.length) this.teleport(views[digit - 1]!)
@@ -261,6 +266,24 @@ export class Player {
     if (on === this.inputOn) return
     this.inputOn = on
     if (!on) this.keys.clear()
+  }
+
+  /**
+   * The body can move (default). Off while the player sits in the car (the intro): no walking, jumping, crouching or
+   * mantling, no footstep/jump sounds or step events, Space and C do nothing here (the intro's hold-to-skip reads its
+   * own keys); mouse look still turns `yaw`/`pitch`. `update` then steps nothing at all: the phase that parks the body
+   * (the intro) drives doors, weather and audio itself, as it already does. Turning it back on releases held keys and
+   * any buffered jump. The audio treats it as "in the car's closed cabin" (outdoor ambience ducked and low-passed).
+   */
+  get locomotion() {
+    return this.moveOn
+  }
+  set locomotion(on: boolean) {
+    if (on === this.moveOn) return
+    this.moveOn = on
+    this.keys.clear()
+    this.jumpBuffer = 0
+    this.vel.x = this.vel.y = this.vel.z = 0
   }
 
   /** Footstep / landing / jump events (for footstep audio and the body). Returns an unsubscribe function. */
@@ -466,6 +489,11 @@ export class Player {
   }
 
   update(dt: number) {
+    // Seated (`locomotion` off): nothing moves and nothing here steps; the intro drives doors, weather and audio.
+    if (!this.moveOn) {
+      this.jumpBuffer = 0
+      return
+    }
     this.ctx.doors.update(dt)
     weather.update(dt)
     this.audio?.update(dt, this.camera)

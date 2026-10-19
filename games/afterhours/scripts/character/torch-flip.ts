@@ -79,7 +79,8 @@ try {
         }
         if (e > 3) M.beamBad++
       }
-      if (body.torch.visible && body.torchHeld && !P.state.mantle) {
+      // First-person barrel vs view, once the carry has fully blended in (held, not on a ladder or mantling).
+      if (body.torch.visible && body.torchHeld && !P.state.mantle && !P.state.onLadder && body.carryW > 0.99) {
         const barrel = new V(0, 0, -1).transformDirection(body.torch.matrixWorld)
         M.barrelMax = Math.max(M.barrelMax, (barrel.angleTo(fwd) * 180) / Math.PI)
       }
@@ -240,7 +241,7 @@ const frames = Object.values(results).reduce((a, r) => a + r.frames, 0)
 const beamBad = Object.values(results).reduce((a, r) => a + r.beamBad, 0)
 const beamMax = Math.max(...Object.values(results).map((r) => r.beamMax))
 const barrelMax = Math.max(...Object.values(results).map((r) => r.barrelMax))
-console.log(`TOTAL flags ${total} over ${frames} frames; beam vs view: max ${beamMax.toFixed(1)}°, ${beamBad} frames over 3°; torch barrel vs view: max ${barrelMax.toFixed(1)}°`)
+console.log(`TOTAL flags ${total} over ${frames} frames; beam vs view: max ${beamMax.toFixed(1)}°, ${beamBad} frames over 3°; first-person torch barrel vs view: max ${barrelMax.toFixed(1)}° (${barrelMax < 12 ? "PASS" : "FAIL"} < 12°)`)
 if (files.length) {
   const n = Math.min(files.length, 8)
   const f = files.slice(0, n)

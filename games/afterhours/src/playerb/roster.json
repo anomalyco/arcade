@@ -995,6 +995,282 @@
      0
     ]
    },
+   "carry-crouch-idle": {
+    "kind": "idle",
+    "frames": 206,
+    "duration": 6.8333,
+    "loop": true,
+    "inPlace": true,
+    "velocity": [
+     0,
+     0
+    ],
+    "speed": 0,
+    "travel": [
+     0,
+     0,
+     0
+    ],
+    "rise": 0,
+    "yawTotal": 0,
+    "centred": [
+     0.009,
+     0.022
+    ],
+    "seamFixed": 0
+   },
+   "carry-crouch-walk-forward": {
+    "kind": "loop",
+    "frames": 34,
+    "duration": 1.1,
+    "loop": true,
+    "inPlace": true,
+    "velocity": [
+     -0.0014,
+     1.2901
+    ],
+    "speed": 1.2901,
+    "travel": [
+     0,
+     0,
+     0
+    ],
+    "rise": 0,
+    "yawTotal": 0,
+    "contacts": {
+     "l": [
+      [
+       0.242,
+       0.697
+      ]
+     ],
+     "r": [
+      [
+       0.727,
+       1.242
+      ]
+     ]
+    },
+    "centred": [
+     0.033,
+     -0.015
+    ],
+    "seamFixed": 0
+   },
+   "carry-idle": {
+    "kind": "idle",
+    "frames": 191,
+    "duration": 6.3333,
+    "loop": true,
+    "inPlace": true,
+    "velocity": [
+     0,
+     0
+    ],
+    "speed": 0,
+    "travel": [
+     0,
+     0,
+     0
+    ],
+    "rise": 0,
+    "yawTotal": 0,
+    "centred": [
+     0.009,
+     0.017
+    ],
+    "seamFixed": 0.42
+   },
+   "carry-run-forward": {
+    "kind": "loop",
+    "frames": 21,
+    "duration": 0.6667,
+    "loop": true,
+    "inPlace": true,
+    "velocity": [
+     0.0102,
+     3.5656
+    ],
+    "speed": 3.5656,
+    "travel": [
+     0,
+     0,
+     0
+    ],
+    "rise": 0,
+    "yawTotal": 0,
+    "contacts": {
+     "l": [
+      [
+       0.4,
+       0.55
+      ]
+     ],
+     "r": [
+      [
+       0.9,
+       1.05
+      ]
+     ]
+    },
+    "centred": [
+     0.016,
+     -0.004
+    ],
+    "seamFixed": 0.14
+   },
+   "carry-walk-back": {
+    "kind": "loop",
+    "frames": 36,
+    "duration": 1.1667,
+    "loop": true,
+    "inPlace": true,
+    "velocity": [
+     0.0008,
+     -1.0887
+    ],
+    "speed": 1.0887,
+    "travel": [
+     0,
+     0,
+     0
+    ],
+    "rise": 0,
+    "yawTotal": 0,
+    "contacts": {
+     "l": [
+      [
+       0.314,
+       0.771
+      ]
+     ],
+     "r": [
+      [
+       0.771,
+       1.257
+      ]
+     ]
+    },
+    "centred": [
+     0.049,
+     0.007
+    ],
+    "seamFixed": 0
+   },
+   "carry-walk-forward": {
+    "kind": "loop",
+    "frames": 34,
+    "duration": 1.1,
+    "loop": true,
+    "inPlace": true,
+    "velocity": [
+     -0.001,
+     1.3989
+    ],
+    "speed": 1.3989,
+    "travel": [
+     0,
+     0,
+     0
+    ],
+    "rise": 0,
+    "yawTotal": 0,
+    "contacts": {
+     "l": [
+      [
+       0.303,
+       0.758
+      ]
+     ],
+     "r": [
+      [
+       0.788,
+       1.242
+      ]
+     ]
+    },
+    "centred": [
+     0.033,
+     0.006
+    ],
+    "seamFixed": 2.13
+   },
+   "carry-walk-left": {
+    "kind": "loop",
+    "frames": 35,
+    "duration": 1.1333,
+    "loop": true,
+    "inPlace": true,
+    "velocity": [
+     -1.3769,
+     0
+    ],
+    "speed": 1.3769,
+    "travel": [
+     0,
+     0,
+     0
+    ],
+    "rise": 0,
+    "yawTotal": 0,
+    "contacts": {
+     "l": [
+      [
+       0.294,
+       0.735
+      ]
+     ],
+     "r": [
+      [
+       0.765,
+       1.206
+      ]
+     ]
+    },
+    "centred": [
+     0.005,
+     0.064
+    ],
+    "seamFixed": 0.25
+   },
+   "carry-walk-right": {
+    "kind": "loop",
+    "frames": 36,
+    "duration": 1.1667,
+    "loop": true,
+    "inPlace": true,
+    "velocity": [
+     1.2606,
+     -0.0015
+    ],
+    "speed": 1.2606,
+    "travel": [
+     0,
+     0,
+     0
+    ],
+    "rise": 0,
+    "yawTotal": 0,
+    "contacts": {
+     "l": [
+      [
+       0.343,
+       0.8
+      ]
+     ],
+     "r": [
+      [
+       0.8,
+       1.286
+      ]
+     ]
+    },
+    "centred": [
+     0.058,
+     -0.023
+    ],
+    "seamFixed": 0
+   },
    "climbing-ladder": {
     "kind": "climb",
     "frames": 24,

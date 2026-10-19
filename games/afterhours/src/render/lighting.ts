@@ -336,7 +336,7 @@ export function createLighting(ctx: WorldContext, player: Player) {
     },
     { key: "light.spillInterior", label: "Spot spill/bounce indoors", group: "Lighting", min: 0, max: 0.6, step: 0.01, value: 0.22 },
     { key: "light.spillExterior", label: "Spot spill outdoors", group: "Lighting", min: 0, max: 0.3, step: 0.005, value: 0.02 },
-    { key: "light.bounce", label: "Interior bounce from lamps", group: "Lighting", unit: "×", min: 0, max: 0.2, step: 0.002, value: 0.035 },
+    { key: "light.bounce", label: "Interior bounce from lamps", group: "Lighting", unit: "×", min: 0, max: 4, step: 0.005, value: 0.15 },
     { key: "light.sodiumShift", label: "Sodium deepening (towards orange)", group: "Lighting", min: 0, max: 1, step: 0.01, value: 0.6 },
     { key: "light.flicker", label: "Flicker", group: "Lighting", unit: "×", min: 0, max: 2, step: 0.05, value: 1 },
     { key: "glow.strength", label: "Emitter glow", group: "Lighting", unit: "×", min: 0, max: 4, step: 0.05, value: 1 },
@@ -716,6 +716,7 @@ export function createLighting(ctx: WorldContext, player: Player) {
           // Spots in rooms and semi-open spaces (bays, booth, doorways) light the space around their pool by bounce;
           // street and yard heads stay tight so the night between them stays black.
           r.point.userData.spill = r.dir ? (r.mask.mode === 2 ? spillOut : spillIn) : 0
+          r.point.userData.radius = (l.size ?? 0.1) * 0.5
           if (r.zone.interior) [r.mask.y0, r.mask.y1] = storeySlab(r.zone.storey)
           else [r.mask.y0, r.mask.y1] = [-1e5, 1e5]
         }
@@ -745,15 +746,17 @@ export function createLighting(ctx: WorldContext, player: Player) {
       // Lamp bounce: the nearest lit interior lamps on the camera's storey feed the indirect term (atmosphere.ts).
       bounceOrder.length = 0
       if (camInside) {
-        for (const r of rigs) if (r.zone.interior && r.zone.storey === camStorey && r.vis > 0.01 && r.level > 0.02 && r.distance < 30) bounceOrder.push(r)
+        for (const r of rigs) if (r.zone.interior && r.zone.storey === camStorey && r.lamp.intensity > 0 && r.pos.y > -500 && r.level > 0.02 && r.distance < 30) bounceOrder.push(r)
         bounceOrder.sort((a, b) => a.distance - b.distance)
       }
       const bk = num(ctx, "light.bounce")
       const nb = Math.min(BOUNCE_LAMPS, bounceOrder.length)
+      if (ctx.params.has("perf")) (globalThis as { __bounceN?: number }).__bounceN = nb
       for (let i = 0; i < nb; i++) {
         const r = bounceOrder[i]!
-        const k = r.lamp.intensity * r.scale * r.level * r.vis * bk
-        bounceLamps.A[i]!.set(r.pos.x, r.pos.y, r.pos.z, Math.max(4, r.lamp.range * 1.3))
+        // Not × vis: a lamp culled from direct shading (behind the camera) still lights the room by bounce.
+        const k = r.lamp.intensity * r.scale * r.level * bk
+        bounceLamps.A[i]!.set(r.pos.x, r.pos.y, r.pos.z, Math.max(9, r.lamp.range * 2.2))
         bounceLamps.B[i]!.set(r.color.r * k, r.color.g * k, r.color.b * k, r.mask.y0 + 0.12)
       }
       bounceLamps.count.value = nb
@@ -895,6 +898,9 @@ export function createLighting(ctx: WorldContext, player: Player) {
       fs.cosOuter = Math.cos(angle * 0.4)
       // In the fog the beam is its hot centre (the spill is too dim to show): a narrow cone.
       fs.cosInner = Math.cos(angle * 0.12)
+      fs.candela = flash.intensity
+      fs.angle = angle
+      fs.light = flash
 
       // Glow instances.
       pixelAngle.value = renderState.pixelAngle
