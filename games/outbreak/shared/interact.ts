@@ -64,6 +64,8 @@ export type PeekInfo = {
   awareness: number
   camOffsetX: number
   camOffsetY: number
+  /** Looking through a shut door's peephole (the eye is past the door) rather than a window. */
+  peephole: boolean
 }
 
 export type InteractActorState = {
@@ -724,7 +726,9 @@ export function peekInfoFor(town: Town, actor: Pick<InteractActorState, "x" | "y
     const lookingNorth = actor.y >= wy
     const dir = lookingNorth ? -1 : 1
     const eyeX = Math.max(x0 + 0.25, Math.min(x1 - 0.25, actor.x))
-    const eyeY = (dir < 0 ? y0 : y1) + dir * 0.35
+    // Through a window the eye sits in the opening, so both sides of the wall stay in its awareness; a peephole's eye
+    // is just past the shut door, which blocks sight.
+    const eyeY = "peephole" in win ? (dir < 0 ? y0 : y1) + dir * 0.35 : wy
     const cutX = wx
     const cutY = insideBuilding ? actor.y : Math.max(bz0 + 1.2, Math.min(bz1 - 1.2, wy - 1.85))
     return {
@@ -740,6 +744,7 @@ export function peekInfoFor(town: Town, actor: Pick<InteractActorState, "x" | "y
       awareness,
       camOffsetX: 0,
       camOffsetY: dir * 1.45,
+      peephole: "peephole" in win,
     }
   } else {
     const lookingWest = actor.x >= wx
@@ -747,7 +752,7 @@ export function peekInfoFor(town: Town, actor: Pick<InteractActorState, "x" | "y
     const split = bz0 + 5.6
     const inSouthRoom = actor.y >= split
     const eyeY = inSouthRoom ? Math.max(split + 0.42, Math.min(y1 - 0.2, actor.y)) : Math.min(split - 0.42, Math.max(y0 + 0.2, actor.y))
-    const eyeX = (dir < 0 ? x0 : x1) + dir * 0.35
+    const eyeX = "peephole" in win ? (dir < 0 ? x0 : x1) + dir * 0.35 : wx
     const cutX = insideBuilding ? actor.x : Math.max(bx0 + 1.2, Math.min(bx1 - 1.2, wx - 1.85))
     const cutY = eyeY
     return {
@@ -763,6 +768,7 @@ export function peekInfoFor(town: Town, actor: Pick<InteractActorState, "x" | "y
       awareness,
       camOffsetX: dir * 1.45,
       camOffsetY: 0,
+      peephole: "peephole" in win,
     }
   }
 }

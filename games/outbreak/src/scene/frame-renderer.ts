@@ -4,7 +4,7 @@ import { humanProfiles } from "@arcade/kit/human-profile"
 import { createLookSettings, type LookCompareMode } from "@arcade/kit/look"
 import type { AdaptiveQualityController } from "@arcade/kit/quality"
 import { dayCycle } from "../../shared/day-cycle"
-import { vaultLift, type PeekInfo } from "../../shared/interact"
+import { vaultLift } from "../../shared/interact"
 import { SIZE } from "../../shared/map"
 import type { LocalSession } from "../../shared/session"
 import { supportHeight } from "../../shared/terrain"
@@ -31,6 +31,7 @@ import { onFootLead } from "../feel-tuning"
 import { collectFogSoundSprites } from "../fog-of-war"
 import { GroundWearRenderer } from "../ground"
 import { renderFlowOverlay } from "../hordes/flow-overlay"
+import { PeekView, sightAsPeek } from "../peek-view"
 import { SOUND_CUES_TODAY } from "../sound-cues/settings"
 import { hordeWatchPoint } from "../hordes/stage"
 import type { OutbreakFrameUi } from "../hud/frame-ui"
@@ -110,8 +111,8 @@ export class OutbreakFrameRenderer {
   private readonly alphaSprites = new Float32Array(1024 * SPRITE_FLOATS)
   private readonly addSprites = new Float32Array(1536 * SPRITE_FLOATS)
   readonly render: FrameInput
-  peekBlend = 0
-  private lastPeek: PeekInfo | null = null
+  /** The eased peek blend (camera lean, sight, roof cut): `src/peek-view.ts`. */
+  private readonly peekView = new PeekView()
   lastDayNightHour = -1
   private readonly footfall: (x: number, y: number, speed: number) => void
 
@@ -213,9 +214,12 @@ export class OutbreakFrameRenderer {
     })
   }
 
+  get peekBlend(): number {
+    return this.peekView.blend
+  }
+
   resetPeek(): void {
-    this.peekBlend = 0
-    this.lastPeek = null
+    this.peekView.reset()
   }
 
   resetForRegenerate(): void {
@@ -296,14 +300,7 @@ export class OutbreakFrameRenderer {
 
     const vdt = hitStop.step(dt, !cam.isReducedMotion())
     motionBurst.step(dt, settings.motion.burstDecay)
-    if (peek) {
-      this.lastPeek = peek
-      this.peekBlend = Math.min(1, this.peekBlend + dt * 6.5)
-    } else {
-      this.peekBlend = Math.max(0, this.peekBlend - dt * 5.5)
-      if (this.peekBlend <= 0.001) this.lastPeek = null
-    }
-    const activePeek = peek ?? (this.peekBlend > 0.001 ? this.lastPeek : null)
+    const activePeek = this.peekView.step(dt, peek, settings.view)
     const w = innerWidth
     const h = innerHeight
     const { width: targetW, height: targetH } = qualityController.canvasDimensions(w, h, devicePixelRatio)
@@ -327,8 +324,9 @@ export class OutbreakFrameRenderer {
     const eye = outbreakClientFeatures.viewpoint(session, coop)
     const look = eye ? { ...drawn, x: eye.x, y: eye.y, aim: eye.aim } : drawn
     const watch = settings.hordes.hordeWatch ? hordeWatchPoint(session.sim) : null
-    const camX = watch ? watch.x : look.x + (activePeek ? activePeek.camOffsetX * this.peekBlend : 0) + lean.dx
-    const camY = watch ? watch.y : look.y + (activePeek ? activePeek.camOffsetY * this.peekBlend : 0) + lean.dy
+    const peekLean = this.peekView.lean(activePeek, settings.view)
+    const camX = watch ? watch.x : look.x + peekLean.x + lean.dx
+    const camY = watch ? watch.y : look.y + peekLean.y + lean.dy
     const footLead = localVehicle || watch || activePeek || eye ? null : onFootLead(p, settings.view)
     const lookAheadX = localVehicle ? localVehicle.vx * 0.22 : (footLead?.x ?? 0)
     const lookAheadY = localVehicle ? localVehicle.vy * 0.22 : (footLead?.y ?? 0)
@@ -350,9 +348,12 @@ export class OutbreakFrameRenderer {
       settings.discovery,
       this.beamLookScratch,
     )
+    const smoothPeek = (settings.view.peekStyle ?? 1) !== 0
+    const peekSight = this.peekView.sight(activePeek, peek, p, effectiveVisionAim, settings.vision, settings.view)
     const { mode, windowMoved, visChanged } = this.sceneLevel.stepFrame({
       drawn: look,
       activePeek,
+      visionPeek: smoothPeek ? (activePeek ? sightAsPeek(activePeek, peekSight) : null) : peek,
       view,
       watch,
       localVehicle,
@@ -397,6 +398,7 @@ export class OutbreakFrameRenderer {
       peek,
       activePeek,
       peekBlend: this.peekBlend,
+      sight: smoothPeek && activePeek ? peekSight : null,
       playerGroundY,
       localVehicle,
       drivingHeadlights,
@@ -446,10 +448,12 @@ export class OutbreakFrameRenderer {
     addCount = fxOut.addCount
     count = this.frameLighting.addMuzzleLight(fxOut.muzzleLight, count, this.sceneLevel.lightOccluders)
 
-    const cutX = activePeek ? activePeek.cutX : look.x
-    const cutY = activePeek ? activePeek.cutY : look.y
+    // Smooth peeks slide the roof cut from the survivor to the room and grow it, instead of jumping there.
+    const cutBlend = smoothPeek ? this.peekBlend : 1
+    const cutX = activePeek ? look.x + (activePeek.cutX - look.x) * cutBlend : look.x
+    const cutY = activePeek ? look.y + (activePeek.cutY - look.y) * cutBlend : look.y
     const cutFlag = activePeek ? 1 + this.peekBlend : 1
-    const cutRadius = activePeek ? 0.48 + 0.1 * this.peekBlend : 0.22
+    const cutRadius = activePeek ? (smoothPeek ? 0.22 + 0.36 * this.peekBlend : 0.48 + 0.1 * this.peekBlend) : 0.22
     const cutHeight = activePeek ? 1.0 - 0.12 * this.peekBlend : 1.0
     const inInteriorView = this.sceneLevel.inInteriorView(town, cutX, cutY)
     const vehOut = this.vehicleRenderer.collect(

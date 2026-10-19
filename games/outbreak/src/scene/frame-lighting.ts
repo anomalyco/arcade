@@ -230,6 +230,8 @@ export class OutbreakFrameLighting {
     readonly peek: PeekInfo | null
     readonly activePeek: PeekInfo | null
     readonly peekBlend: number
+    /** Where sight looks from while a smooth peek eases (`PeekView.sight`); null keeps the linear blend. */
+    readonly sight?: { x: number; y: number; aim: number; cone: number; awareness: number } | null
     readonly playerGroundY: number
     readonly localVehicle: OutbreakVehicle | undefined
     readonly drivingHeadlights: boolean
@@ -262,15 +264,20 @@ export class OutbreakFrameLighting {
     } = input
     const { blockers, lightOccluders, lightWalls } = sceneLevel
     this.lights.fill(0)
-    const sightX = activePeek ? p.x + (activePeek.eyeX - p.x) * peekBlend : p.x
-    const sightY = activePeek ? p.y + (activePeek.eyeY - p.y) * peekBlend : p.y
-    const sightAim = peek ? peek.aim : effectiveVisionAim
-    const sightCone = activePeek
-      ? effectiveVisionSettings.cone + (Math.max(effectiveVisionSettings.cone, activePeek.cone) - effectiveVisionSettings.cone) * peekBlend
-      : effectiveVisionSettings.cone
-    const sightAwareness = activePeek
-      ? effectiveVisionSettings.awareness + (Math.max(effectiveVisionSettings.awareness, activePeek.awareness) - effectiveVisionSettings.awareness) * peekBlend
-      : effectiveVisionSettings.awareness
+    const { sight } = input
+    const sightX = sight ? sight.x : activePeek ? p.x + (activePeek.eyeX - p.x) * peekBlend : p.x
+    const sightY = sight ? sight.y : activePeek ? p.y + (activePeek.eyeY - p.y) * peekBlend : p.y
+    const sightAim = sight ? sight.aim : peek ? peek.aim : effectiveVisionAim
+    const sightCone = sight
+      ? sight.cone
+      : activePeek
+        ? effectiveVisionSettings.cone + (Math.max(effectiveVisionSettings.cone, activePeek.cone) - effectiveVisionSettings.cone) * peekBlend
+        : effectiveVisionSettings.cone
+    const sightAwareness = sight
+      ? sight.awareness
+      : activePeek
+        ? effectiveVisionSettings.awareness + (Math.max(effectiveVisionSettings.awareness, activePeek.awareness) - effectiveVisionSettings.awareness) * peekBlend
+        : effectiveVisionSettings.awareness
     writeLightSlot(
       this.lights,
       0,

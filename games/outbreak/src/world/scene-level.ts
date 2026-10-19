@@ -32,6 +32,8 @@ export interface OutbreakSceneLevelHost {
 export interface OutbreakSceneLevelFrameInput {
   readonly drawn: { x: number; y: number }
   readonly activePeek: PeekInfo | null
+  /** The peek sight looks through this frame (eased by `PeekView`), or null; defaults to the session's peek. */
+  readonly visionPeek?: PeekInfo | null
   readonly view: readonly [number, number, number, number]
   readonly watch: { x: number; y: number } | null
   readonly localVehicle: OutbreakVehicle | undefined
@@ -270,7 +272,7 @@ export class OutbreakSceneLevel {
       effectiveVisionAim,
       this.blockers,
       watch ? { ...effectiveVisionSettings, cone: 360, range: Math.max(effectiveVisionSettings.range, 40) } : effectiveVisionSettings,
-      watch ? null : peek,
+      watch ? null : input.visionPeek !== undefined ? input.visionPeek : peek,
       flashVisionActive && !watch
         ? {
             active: true,
