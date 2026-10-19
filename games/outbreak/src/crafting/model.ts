@@ -55,7 +55,7 @@ export function craftRows(progression: OutbreakProgression, actorId: string, sta
   })
 }
 
-const PART_HINT: Record<string, string> = { toolbox: "Install a toolbox", "car-battery": "Wire in the generator" }
+const PART_HINT: Record<string, string> = { toolbox: "Install a toolbox", "car-battery": "Wire in the generator", "pressure-tank": "Install a pressure tank" }
 
 /** How a recipe still to find fills in, in a few words: the material not yet picked up, or the part to install. */
 export function learnHint(progression: OutbreakProgression, recipe: Recipe): string {
@@ -69,7 +69,7 @@ export function learnHint(progression: OutbreakProgression, recipe: Recipe): str
 /** What stops a learned row, in a few words. */
 export function blockedHint(row: CraftRow): string {
   if (row.blocked === "bench") return "At a workbench"
-  if (row.blocked === "part") return row.recipe.part === "car-battery" ? "At a bench with the generator" : "At a bench with a toolbox"
+  if (row.blocked === "part") return row.recipe.part === "car-battery" ? "At a bench with the generator" : row.recipe.part === "pressure-tank" ? "At a bench with a pressure tank" : "At a bench with a toolbox"
   return ""
 }
 

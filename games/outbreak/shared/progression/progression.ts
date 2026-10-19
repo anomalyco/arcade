@@ -977,6 +977,7 @@ export class OutbreakProgression implements ProgressionHost {
       case "missing_requirement":
         if (ev.item === "toolbox") return "Needs the toolbox installed"
         if (ev.item === "car-battery") return "Needs the generator wired in"
+        if (ev.item === "pressure-tank") return "Needs a pressure tank installed"
         if (ev.item === "crowbar") return "Needs a crowbar"
         return "Not learned yet"
       case "already_known":

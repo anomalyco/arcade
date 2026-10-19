@@ -125,6 +125,9 @@ export class WorkbenchProps {
       if (toolbox !== undefined && progression.ledger.count(site.id, "toolbox") > 0) this.put(toolbox, f.a + 0.18, ground + BENCH_TOP, f.e - 0.15, 0.06, 0, 0, 0.8)
       const car = this.items.model("car-battery")
       if (car !== undefined && progression.ledger.count(site.id, "car-battery") > 0) this.put(car, (f.a + f.r) / 2 - 0.05, ground + 0.38, f.c + 0.45, 0.1, 0, 0, 1)
+      // A pressure tank installed for the flamethrower (AR-62) stands on the shelf beside it.
+      const tank = this.items.model("pressure-tank")
+      if (tank !== undefined && progression.ledger.count(site.id, "pressure-tank") > 0) this.put(tank, f.r - 0.25, ground + 0.38, f.c + 0.4, 0, 0, 0, 1)
 
       // The corkboard: a slot per recipe, so empty cork shows how much is still to find.
       const foot = onBoard(site, 0, 0, 0)
