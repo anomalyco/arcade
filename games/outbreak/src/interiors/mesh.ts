@@ -341,24 +341,141 @@ function faceFootprint(f: Face, a: number, w: number, d: number): Rect {
   return f.axis === "x" ? [a - w / 2, lo, a + w / 2, hi] : [lo, a - w / 2, hi, a + w / 2]
 }
 
-/** `footprints` (optional) receives the floor rects of the standing pieces (fireplace, clock, desk) so other dressing can keep off them. */
-export function emitInteriorDecor(m: Mesh, b: Building, town: Town, plan: InteriorPlan = planInterior(b, town.houseSeed), sconces?: number[], footprints?: Rect[]): void {
+/**
+ * A leaning floor mirror (reflections): its glass faces +z, the side of the room the camera looks at, with the
+ * frame's foot `MIRROR_LEAN` out from the wall at `x`, `z` (the wall face) and its top against the wall.
+ */
+export type MirrorSpot = { buildingId: string; x: number; z: number; start: boolean; cracked: boolean }
+
+/** Frame width along the wall, height and how far the foot stands out from the wall (m). */
+export const MIRROR_W = 0.62
+export const MIRROR_H = 1.86
+export const MIRROR_LEAN = 0.4
+/** Every house gets a roll; this share (and always the start house) has a mirror. */
+export const MIRROR_CHANCE = 0.14
+
+/** The floor a mirror's foot and lean take up, so props and details keep off it. */
+export const mirrorFootprint = (s: MirrorSpot): Rect => [s.x - MIRROR_W / 2 - 0.05, s.z, s.x + MIRROR_W / 2 + 0.05, s.z + MIRROR_LEAN + 0.12]
+
+type Span = { f: Face; a0: number; a1: number }
+
+/** `spans` with [lo, hi] removed from the ones on face `f`. */
+function cutSpans(spans: readonly Span[], f: Face, lo: number, hi: number): Span[] {
+  return spans.flatMap(p => {
+    if (p.f !== f || hi <= p.a0 || lo >= p.a1) return [p]
+    const out: Span[] = []
+    if (lo > p.a0) out.push({ f, a0: p.a0, a1: lo })
+    if (hi < p.a1) out.push({ f, a0: hi, a1: p.a1 })
+    return out
+  })
+}
+
+/**
+ * Which 0.25 m floor cells of a building a survivor can walk to from its front door, through door gaps but not walls
+ * or windows: some wall faces belong to closed-off rooms nobody ever sees.
+ */
+function walkableFromDoor(b: Building, town: Town): ((x: number, z: number) => boolean) | null {
+  const front = town.doors.find(d => d.id === `${b.id}-front`)
+  if (!front) return null
+  const [bx0, bz0, bx1, bz1] = b.rect
+  const S = 0.25
+  const nx = Math.ceil((bx1 - bx0) / S), nz = Math.ceil((bz1 - bz0) / S)
+  const walls = town.barriers.filter(w => w.kind !== "fence" && w.rect[2] > bx0 - 0.3 && w.rect[0] < bx1 + 0.3 && w.rect[3] > bz0 - 0.3 && w.rect[1] < bz1 + 0.3).map(w => w.rect)
+  const open = (i: number, k: number) => {
+    const x = bx0 + (i + 0.5) * S, z = bz0 + (k + 0.5) * S
+    if (!inBuildingFootprint(b, x, z)) return false
+    return !walls.some(r => x > r[0] - 0.06 && x < r[2] + 0.06 && z > r[1] - 0.06 && z < r[3] + 0.06)
+  }
+  const seen = new Uint8Array(nx * nz)
+  const cx = (front.rect[0] + front.rect[2]) / 2, cz = (front.rect[1] + front.rect[3]) / 2
+  const mx = (bx0 + bx1) / 2 - cx, mz = (bz0 + bz1) / 2 - cz
+  const inward = Math.abs(mx) > Math.abs(mz) ? [Math.sign(mx), 0] : [0, Math.sign(mz)]
+  const si = Math.floor((cx + inward[0]! * 0.6 - bx0) / S), sk = Math.floor((cz + inward[1]! * 0.6 - bz0) / S)
+  if (si < 0 || sk < 0 || si >= nx || sk >= nz || !open(si, sk)) return null
+  const queue = [si + sk * nx]
+  seen[queue[0]!] = 1
+  while (queue.length) {
+    const c = queue.pop()!
+    const i = c % nx, k = (c - i) / nx
+    for (const [di, dk] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      const a = i + di, e = k + dk
+      if (a < 0 || e < 0 || a >= nx || e >= nz || seen[a + e * nx] || !open(a, e)) continue
+      seen[a + e * nx] = 1
+      queue.push(a + e * nx)
+    }
+  }
+  return (x, z) => {
+    const i = Math.floor((x - bx0) / S), k = Math.floor((z - bz0) / S)
+    return i >= 0 && k >= 0 && i < nx && k < nz && seen[i + k * nx] === 1
+  }
+}
+
+/**
+ * Picks a mirror for a house from the wall spans its other dressing left free: only faces turned to the camera (+z)
+ * in rooms you can walk into, clear of doors by 1.5 m (blood warnings go beside the inner door), on its own roll so
+ * nothing else moves.
+ */
+function mirrorSpot(b: Building, town: Town, free: readonly Span[]): MirrorSpot | null {
+  if (!isResidential(b)) return null
+  const rng = new Rng(buildingSeed(b, town.houseSeed) ^ 0x2b6e9d41)
+  const start = b.id === "ash"
+  const roll = rng.next()
+  if (!start && roll >= MIRROR_CHANCE) return null
+  const need = MIRROR_W + 0.24
+  const doors = town.doors.filter(d => d.rect[0] < b.rect[2] && d.rect[2] > b.rect[0] && d.rect[1] < b.rect[3] && d.rect[3] > b.rect[1])
+  const walkable = walkableFromDoor(b, town)
+  let spans = free.filter(s => s.f.axis === "x" && s.f.side === 1 && (!walkable || walkable((s.a0 + s.a1) / 2, s.f.at + 0.8)))
+  if (b.kind === "house") {
+    // The house plan's built-in kitchen run on the north kitchen wall (`architecture.ts`), which no prop records.
+    const [, z, r] = b.rect
+    for (const f of new Set(spans.map(s => s.f))) if (Math.abs(f.at - (z + 5.72)) < 0.05) spans = cutSpans(spans, f, r - 6.05, r - 1.28)
+  }
+  for (const d of doors) {
+    for (const f of new Set(spans.map(s => s.f))) {
+      if (d.rect[1] <= f.at + 0.3 && d.rect[3] >= f.at - 0.3) spans = cutSpans(spans, f, d.rect[0] - 1.5, d.rect[2] + 1.5)
+    }
+  }
+  spans = spans.filter(s => s.a1 - s.a0 >= need).sort((p, q) => (q.a1 - q.a0) - (p.a1 - p.a0) || p.a0 - q.a0)
+  if (!spans.length) return null
+  const { a0, a1, f } = spans[0]!
+  const at = f.at
+  const t = start ? 0.5 : 0.25 + 0.5 * rng.next()
+  const x = a0 + need / 2 + (a1 - a0 - need) * t
+  return { buildingId: b.id, x, z: at, start, cracked: !start && rng.next() < 0.45 }
+}
+
+/**
+ * `footprints` (optional) receives the floor rects of the standing pieces (fireplace, clock, desk, mirror) so other
+ * dressing can keep off them; `mirrors` (optional) receives the house's mirror. The mirror itself is drawn by
+ * `src/reflections/` (it is not in this mesh), so the Lab can show or hide it live; its footprint is reserved either way.
+ */
+export function emitInteriorDecor(m: Mesh, b: Building, town: Town, plan: InteriorPlan = planInterior(b, town.houseSeed), sconces?: number[], footprints?: Rect[], mirrors?: MirrorSpot[]): void {
   const craft = interiorSettings.craft > 0
   if (!interiorSettings.decor || (plan.theme === "plain" && !craft)) return
   const faces = interiorFaces(b, town)
   if (craft) for (const f of faces) skirting(m, f, plan.theme)
   if (interiorSettings.wainscot) for (const f of faces) (plan.theme === "plain" ? dadoRail(m, f) : wainscot(m, f, plan.theme))
   const rng = new Rng(buildingSeed(b, town.houseSeed) ^ 0x7f4a7c15)
+  const placeMirror = (free: readonly Span[]) => {
+    const spot = mirrorSpot(b, town, free)
+    if (!spot) return
+    footprints?.push(mirrorFootprint(spot))
+    mirrors?.push(spot)
+  }
   if (plan.theme === "plain") {
     // 70s plaster rooms: a couple of plain-framed pictures on the longest free walls, nothing grand.
-    const spans: { f: Face; a0: number; a1: number }[] = []
+    const spans: Span[] = []
     for (const f of faces) if (!f.window && f.a1 - f.a0 > 1.2) for (const [a0, a1] of freeSpans(f, town, b)) spans.push({ f, a0, a1 })
     spans.sort((p, q) => (q.a1 - q.a0) - (p.a1 - p.a0) || p.a0 - q.a0)
+    let free: Span[] = spans
     for (const s of spans.slice(0, isResidential(b) ? 2 : 1)) {
       const w = 0.5 + rng.next() * 0.35
       if (s.a1 - s.a0 < w + 0.4) continue
-      painting(m, s.f, s.a0 + (s.a1 - s.a0) * (0.35 + 0.3 * rng.next()), w, w * (0.75 + rng.next() * 0.5), 1.62, rng, false)
+      const a = s.a0 + (s.a1 - s.a0) * (0.35 + 0.3 * rng.next())
+      painting(m, s.f, a, w, w * (0.75 + rng.next() * 0.5), 1.62, rng, false)
+      free = cutSpans(free, s.f, a - w / 2 - 0.2, a + w / 2 + 0.2)
     }
+    placeMirror(free)
     return
   }
   const solid = faces.filter(f => !f.window && f.a1 - f.a0 > 1.2)
@@ -416,6 +533,19 @@ export function emitInteriorDecor(m: Mesh, b: Building, town: Town, plan: Interi
       if (sconces) pushSconcePair(sconces, p.f, p.a, half, b, town)
     }
   }
+  placeMirror(slots)
+}
+
+/** Every house mirror in a town (`emitInteriorDecor` picks them; `src/reflections/` draws them). */
+export function collectMirrors(town: Town): MirrorSpot[] {
+  const out: MirrorSpot[] = []
+  const scratch = new Mesh()
+  for (const b of town.buildings) {
+    if (!isResidential(b)) continue
+    scratch.v.length = 0
+    emitInteriorDecor(scratch, b, town, undefined, undefined, undefined, out)
+  }
+  return out
 }
 
 /** Sconce lights of a town's buildings, as `emitInteriorDecor` places them (for levels built on the main thread). */
