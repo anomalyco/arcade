@@ -50,6 +50,8 @@ async function fresh(page: Page) {
     h.setLab("timeScale", 0)
     h.setLab("zombieCount", 0)
     h.inventoryHud().resetFamiliar()
+    h.resetCraftTips()
+    h.setLab("craftTipTime", 12)
     for (let i = 0; i < 4; i++) await h.step()
   })
 }
@@ -106,7 +108,7 @@ async function snap(page: Page, name: string, caption: string, crop?: string) {
   console.log(`${name}: ${caption}\n  ${text}`)
 }
 
-async function setStyle(page: Page, style: string) {
+async function setStyle(page: Page, style: number) {
   await page.evaluate((style) => (window as any).__arcadeHarness.setLab("craftStyle", style), style)
 }
 
@@ -160,7 +162,10 @@ async function walkthrough(page: Page, tag: string) {
 
   // Field craft in the street with a chem in hand.
   await stage(page, { x: 44, y: 44, aim: 0, hour: 16 })
-  await sim(page, `ledger.apply({ kind: "grant", actor: view.actorId, item: "chem", count: 1 }); if (!hud.craftOpen) hud.toggleCraft()`)
+  await sim(page, `ledger.apply({ kind: "grant", actor: view.actorId, item: "chem", count: 1 })`)
+  await step(page, 20)
+  await snap(page, `${tag}09a-ready`, "Picked up a chem with the bandage learned: does anything say it can be made?", "#craft-tip, #dock")
+  await sim(page, `if (!hud.craftOpen) hud.toggleCraft()`)
   await step(page, 20)
   await snap(page, `${tag}09-field-craft`, "Hold Q: the field-craft strip with the bandage learned", "#craft, #dock")
   await sim(page, `ledger.apply({ kind: "grant", actor: view.actorId, item: "learned:lure", store: "team/known" }); ledger.apply({ kind: "grant", actor: view.actorId, item: "learned:spiked-board", store: "team/known" })`)
@@ -195,9 +200,9 @@ try {
 
   if (phase === "audit") await walkthrough(page, "")
   else {
-    for (const style of ["today", "recipes", "hints"]) {
+    for (const [style, name] of [[0, "today"], [1, "panel"], [2, "tips"], [3, "both"]] as const) {
       await setStyle(page, style)
-      await walkthrough(page, `${style}-`)
+      await walkthrough(page, `${name}-`)
     }
   }
 

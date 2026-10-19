@@ -4,6 +4,7 @@
  * feature adds one line here and never edits `main.ts`.
  */
 import "./blood/index"
+import "./crafting/index"
 import "./discovery/index"
 import "./hordes/index"
 import "./look/index"

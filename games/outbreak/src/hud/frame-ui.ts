@@ -79,6 +79,7 @@ export class OutbreakFrameUi {
       (index) => SURVIVOR_COLOURS[index % SURVIVOR_COLOURS.length]!.css,
       () => settings.discovery,
       settings.hud,
+      () => settings.crafting,
     )
   }
 

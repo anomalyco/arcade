@@ -6,7 +6,8 @@ import { holdProgress, type InteractAction, type InteractTarget } from "../share
 import { HOTBAR_SIZE, PACK_SIZE, type OutbreakProgression } from "../shared/progression"
 import type { Command, SessionView } from "../shared/session"
 import { supportHeight } from "../shared/terrain"
-import { itemIcon } from "./discovery/icons"
+import { CraftUi } from "./crafting/ui"
+import { DEFAULT_CRAFTING_SETTINGS, type CraftingSettings } from "./crafting/settings"
 import { DEFAULT_DISCOVERY_SETTINGS, type DiscoverySettings } from "./discovery/settings"
 import { DEFAULT_DOCK_SETTINGS, Dock, type DockSettings } from "./hud/dock"
 import { hudMotion, snapToPixels } from "./hud/motion"
@@ -51,6 +52,7 @@ export class InventoryHud {
   finisherCount = 0
   private wasFinishing = false
   private craftShown = false
+  private craftHtml = ""
   private readonly markers = new Map<string, { el: HTMLElement; html: string; w: number; h: number; leaving: boolean }>()
 
   constructor(
@@ -67,7 +69,10 @@ export class InventoryHud {
     private readonly discovery: () => DiscoverySettings = () => DEFAULT_DISCOVERY_SETTINGS,
     /** Dock dimming (Lab › HUD). */
     dockSettings: DockSettings & Partial<PromptGlyphSettings> = DEFAULT_DOCK_SETTINGS,
+    /** Crafting HUD style and tips (Lab › Crafting). */
+    crafting: () => CraftingSettings = () => DEFAULT_CRAFTING_SETTINGS,
   ) {
+    this.craft = new CraftUi(els.craft, crafting)
     this.glyphs = "promptIcons" in dockSettings ? (dockSettings as PromptGlyphSettings) : DEFAULT_PROMPT_GLYPH_SETTINGS
     const { belt, hotbar, pack } = els
     const dock = belt?.closest<HTMLElement>("#dock")
@@ -85,6 +90,9 @@ export class InventoryHud {
 
   /** The bottom dock: belt, hand slots and pack. */
   readonly dock: Dock | null = null
+
+  /** What field craft draws and the crafting tips (src/crafting/ui.ts). */
+  readonly craft: CraftUi
 
   /** How often this browser has acted on each kind of prompt; words drop off once an action is familiar. */
   private readonly familiar = loadFamiliar()
@@ -135,8 +143,10 @@ export class InventoryHud {
   /** What a digit (0-based) does now: take from the open strip, swap a pack slot in, or select a hotbar slot. */
   digit(index: number, view: SessionView): Partial<Command> {
     if (this.craftOpen) {
-      if (index < view.progression.craftable().length) this.craftOpen = false
-      return index < view.progression.craftable().length ? { pick: { mode: "craft", index } } : {}
+      if (index >= view.progression.craftable().length) return {}
+      // A craft that cannot be paid for leaves the strip open beside its "Need …" notice.
+      if (this.craft.affordable(view, index)) this.craftOpen = false
+      return { pick: { mode: "craft", index } }
     }
     if (this.packOpen && index < PACK_SIZE) return { pick: { mode: "pack", index } }
     const store = this.stripStore(view, view.prompt)
@@ -255,11 +265,9 @@ export class InventoryHud {
     return `<div class="strip"><div class="strip-items">${items}</div>${line}</div>`
   }
 
-  /**
-   * Field craft (hold Q): one row per learned recipe, drawn as what it makes and what it takes. No names; a cost the
-   * survivor cannot meet is dimmed. Nothing learned yet shows a blank card.
-   */
+  /** Field craft (hold Q): rises out of the dock and folds back; `CraftUi` draws what is in it and the tips. */
   private syncCraft(view: SessionView): void {
+    this.craft.syncTip(view, this.craftOpen)
     const el = this.els.craft
     if (!el) return
     if (!this.craftOpen) {
@@ -279,22 +287,9 @@ export class InventoryHud {
       el.style.transformOrigin = "50% 100%"
       hudMotion.enter(el, "smooth", { y: 6 })
     }
-    const progression = view.progression
-    const ledger = progression.ledger
-    const bench = view.prompt?.kind === "bench" ? view.prompt.id : undefined
-    const rows = progression.craftable().map((r, i) => {
-      let ok = true
-      const cost = Object.entries(r.craft ?? {})
-        .map(([item, n]) => {
-          const have = ledger.count(view.actorId, item) + (bench ? ledger.count(bench, item) : 0)
-          if (have < n) ok = false
-          return `<span class="cost" data-short="${have < n}">${Array.from({ length: n }, () => itemIcon(item, 18)).join("")}</span>`
-        })
-        .join("")
-      return `<div class="craft-row" data-off="${!ok}">${keyCapHtml(`Digit${i + 1}`)}${itemIcon(r.produces!, 26)}<span class="from">${cost}</span></div>`
-    })
-    const html = rows.length ? `${rows.join("")}<div class="strip-h">${keyCapHtml("KeyQ")}</div>` : `<div class="craft-row" data-blank="true"></div>`
-    if (el.innerHTML !== html) {
+    const html = this.craft.html(view)
+    if (this.craftHtml !== html) {
+      this.craftHtml = html
       el.innerHTML = html
       el.hidden = false
       snapToPixels(el)

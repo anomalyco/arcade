@@ -977,7 +977,7 @@ export class OutbreakProgression implements ProgressionHost {
       case "low_light":
         return "Too dark"
       case "missing_item":
-        return ev.item ? `Need ${this.ledger.label(ev.item).toLowerCase()}` : "Missing materials"
+        return ev.item ? `Need ${this.ledger.label(ev.item, true).toLowerCase()}` : "Missing materials"
       case "missing_requirement":
         if (ev.item === "toolbox") return "Needs the toolbox installed (tier 2)"
         if (ev.item?.startsWith("seen:")) return "Find the materials first"
