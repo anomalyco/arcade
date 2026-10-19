@@ -6,11 +6,12 @@ import { LocalSession } from "../shared/session"
 import { PISTOL_RELOAD_TIME, type CombatShotEvent } from "../shared/combat"
 import { DEFAULT_PROGRESSION_TUNING } from "../shared/progression"
 import { SoundDirector, type SoundEvent, type SoundWorld, type SoundZombie } from "../src/audio/director"
-import { shotImpacts } from "../src/audio/impacts"
+import { meleeImpact, shotImpacts } from "../src/audio/impacts"
 import { PICKUP_SOUND } from "../src/audio/inventory"
 import { RELOAD_EVENTS, RELOAD_STARTS } from "../src/audio/reload"
 import { ZombieFootsteps } from "../src/audio/zombie-steps"
-import { SoundOcclusion, surfaceAt } from "../src/audio/space"
+import { FOOT_SURFACES, footstepEvent, SoundOcclusion, stepMovementMode, surfaceAt, zombieStepEvent } from "../src/audio/space"
+import { planInterior } from "../src/interiors/plan"
 import { pursuers, soundWorld } from "../src/audio/world"
 import { createOutbreakSettings, resolveWorldMode } from "../src/settings"
 
@@ -315,11 +316,110 @@ describe("Outbreak sound director", () => {
 
 describe("Outbreak acoustic space", () => {
   const town = new LocalSession(7).view.town
-  test("surfaces follow the town layout", () => {
+  test("surfaces follow the town layout across all 11 floor and ground materials", () => {
     const house = town.buildings.find((b) => b.kind === "house")!
+    const pharmacy = town.buildings.find((b) => b.kind === "pharmacy")!
+    // Wood floor in living room, front porch deck, and NW garden shed
     expect(surfaceAt(town, (house.rect[0] + house.rect[2]) / 2, house.rect[3] - 1)).toBe("wood")
+    expect(surfaceAt(town, house.rect[0] + 5.7, house.rect[3] + 0.6)).toBe("wood")
+    expect(surfaceAt(town, house.rect[0] - 2.0, house.rect[1] + 1.4)).toBe("wood")
+    // Tile in house SE kitchen, NE washroom wing, and pharmacy interior
+    expect(surfaceAt(town, house.rect[2] - 2.0, house.rect[3] - 1.5)).toBe("tile")
+    expect(surfaceAt(town, house.rect[0] + 10.5, house.rect[1] + 3.0)).toBe("tile")
+    expect(surfaceAt(town, (pharmacy.rect[0] + pharmacy.rect[2]) / 2, (pharmacy.rect[1] + pharmacy.rect[3]) / 2)).toBe("tile")
+    // Woven rug / carpet inside residential rooms
+    const rug = planInterior(house, town.houseSeed).rugs[0]!
+    expect(surfaceAt(town, (rug.rect[0] + rug.rect[2]) / 2, (rug.rect[1] + rug.rect[3]) / 2)).toBe("carpet")
+    // Gravel driveway along the west side of the lot
+    expect(surfaceAt(town, house.rect[0] - 1.5, house.rect[1] + 5.0)).toBe("gravel")
+    // Street asphalt/concrete and front walkway
     expect(surfaceAt(town, 10, 44)).toBe("concrete")
+    expect(surfaceAt(town, house.rect[0] + 5.7, house.rect[3] + 1.8)).toBe("concrete")
+    // Curb-verge dirt/moss strip and tree root ring
+    expect(surfaceAt(town, 14, 39.5)).toBe("dirt")
+    const tree = town.props.find((p) => p.kind === "tree")!
+    expect(surfaceAt(town, tree.x, tree.y)).toBe("dirt")
+    // Standing rainwater puddle in street pothole
+    expect(surfaceAt(town, 25.6, 42.15)).toBe("puddle")
+    // Metal manhole cover, storm drain grate, and parked car body
+    expect(surfaceAt(town, 33.45, 43.85)).toBe("metal")
+    expect(surfaceAt(town, 24.65, 40.12)).toBe("metal")
+    expect(surfaceAt(town, 12.2, 46.2)).toBe("metal")
+    // Open yard lawn grass
     expect(surfaceAt(town, 4, 20)).toBe("grass")
+    // Broken glass and blood pool overlays
+    expect(surfaceAt(town, 28, 33, { glass: [{ x: 28, y: 33 }] })).toBe("glass")
+    expect(surfaceAt(town, 28, 33, { blood: [{ x: 28, y: 33, r: 0.6 }] })).toBe("blood")
+    expect(FOOT_SURFACES).toHaveLength(11)
+  })
+
+  test("footstep loudness and cadence follow crouch/walk/run movement mode, local attenuation, and surface character", () => {
+    const house = town.buildings.find((b) => b.kind === "house")!
+    const rug = planInterior(house, town.houseSeed).rugs[0]!
+    const rugX = (rug.rect[0] + rug.rect[2]) / 2
+    const rugY = (rug.rect[1] + rug.rect[3]) / 2
+
+    // Stationary pivot / aim turn (< 0.25 m/s) stays silent
+    expect(stepMovementMode(0.1)).toBe("idle")
+    expect(footstepEvent(town, 10, 44, 0.1, { local: true })).toBeNull()
+
+    // Crouch vs walk vs sprint on concrete
+    const crouch = footstepEvent(town, 10, 44, 1.9, { local: true, crouching: true })!
+    const walk = footstepEvent(town, 10, 44, 3.4, { local: true })!
+    const run = footstepEvent(town, 10, 44, 5.6, { local: true })!
+    const peerWalk = footstepEvent(town, 10, 44, 3.4, { local: false })!
+    expect(crouch.mode).toBe("crouch")
+    expect(walk.mode).toBe("walk")
+    expect(run.mode).toBe("run")
+    expect(crouch.event.gain!).toBeLessThan(walk.event.gain! * 0.55)
+    expect(walk.event.gain!).toBeLessThan(run.event.gain! * 0.7)
+    expect(walk.event.gain!).toBeLessThan(peerWalk.event.gain!)
+
+    // Crouching over broken glass steps carefully without crunching it
+    const woodX = (house.rect[0] + house.rect[2]) / 2
+    const woodY = house.rect[3] - 1
+    const walkGlass = footstepEvent(town, woodX, woodY, 3.4, { extra: { glass: [{ x: woodX, y: woodY }] } })!
+    const crouchGlass = footstepEvent(town, woodX, woodY, 1.9, { crouching: true, extra: { glass: [{ x: woodX, y: woodY }] } })!
+    expect(walkGlass.surface).toBe("glass")
+    expect(crouchGlass.surface).toBe("wood")
+
+    // Carpet is softer and more low-passed than gravel or puddle
+    const carpetStep = footstepEvent(town, rugX, rugY, 3.4, { local: true })!
+    const gravelStep = footstepEvent(town, house.rect[0] - 1.5, house.rect[1] + 5.0, 3.4, { local: true })!
+    const puddleStep = footstepEvent(town, 25.6, 42.15, 3.4, { local: true })!
+    expect(carpetStep.event.gain!).toBeLessThan(gravelStep.event.gain!)
+    expect(carpetStep.event.cutoffHz!).toBeLessThan(gravelStep.event.cutoffHz!)
+    expect(puddleStep.surface).toBe("puddle")
+
+    // Zombie and Brute footsteps adapt to surface
+    for (const s of FOOT_SURFACES) {
+      const zEv = zombieStepEvent(s, "shuffle", 10, 44, 1.2)
+      const bEv = zombieStepEvent(s, "brute", 10, 44, 1.5)
+      expect(SFX_BY_ID.has(zEv.id), zEv.id).toBe(true)
+      expect(SFX_BY_ID.has(bEv.id), bEv.id).toBe(true)
+    }
+  })
+
+  test("bullet and melee impacts distinguish car body, metal, wood, glass, concrete/plaster and dirt/grass", () => {
+    const house = town.buildings.find((b) => b.id === "ash")!
+    const shop = town.buildings.find((b) => b.kind === "hardware")!
+    const win = town.windows.find((w) => w.id === "ash-south-west")!
+    const wx = (win.rect[0] + win.rect[2]) / 2
+
+    // Bullet stopping in open lawn/dirt vs car body
+    const dirtShot = shotImpacts(town, { id: 9, time: 0, fromX: 4, fromY: 20, toX: 8, toY: 20, aim: 0, hitZombieId: null, killed: false, detachBone: null, seed: 1 })
+    expect(dirtShot[0]?.material).toBe("dirt")
+    expect(dirtShot[0]?.cutoffHz).toBeLessThanOrEqual(2000)
+    const carShot = shotImpacts(town, { id: 10, time: 0, fromX: 10, fromY: 46.2, toX: 13.7, toY: 46.2, aim: 0, hitZombieId: null, killed: false, detachBone: null, seed: 1 })
+    expect(carShot[0]?.material).toBe("car")
+
+    // Melee swings into world surfaces when no zombie is struck
+    expect(meleeImpact(town, { x: 20.5, y: 31, aim: 0, reach: 2.0 })?.material).toBe("wood")
+    expect(meleeImpact(town, { x: 51.5, y: 28, aim: 0, reach: 2.0 })?.material).toBe("concrete")
+    expect(meleeImpact(town, { x: wx, y: house.rect[3] + 1.0, aim: -Math.PI / 2, reach: 1.5 })?.material).toBe("glass")
+    expect(meleeImpact(town, { x: 12.8, y: 46.2, aim: 0, reach: 1.8 })?.material).toBe("car")
+    expect(meleeImpact(town, { x: 4, y: 20, aim: 0, reach: 1.6, groundStrike: true })?.material).toBe("dirt")
+    void shop
   })
 
   test("walls and closed doors muffle, open air does not", () => {

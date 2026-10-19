@@ -1,5 +1,6 @@
 import type { AIState } from "../../shared/ai"
 import type { CombatMeleeEvent, CombatShotEvent } from "../../shared/combat"
+import type { Town } from "../../shared/map"
 import {
   DEFAULT_SPECIALS_TUNING,
   hitFromFront,
@@ -11,6 +12,7 @@ import {
   SPECIAL_RIOT,
   SPECIAL_SCREAMER,
 } from "../../shared/specials/kinds"
+import { surfaceAt, zombieStepEvent } from "./space"
 import type { SoundEvent } from "./types"
 
 export type SpecialSoundZombie = { id: number; x: number; y: number; state: AIState; seed?: number; aim?: number }
@@ -52,6 +54,7 @@ export class SpecialSounds {
     listener: { x: number; y: number },
     emit: (e: SoundEvent) => void,
     rng: () => number,
+    town?: Town,
   ): void {
     const t = this.tuning
     const dt = Math.max(0, Math.min(0.25, time - this.lastTime))
@@ -89,7 +92,8 @@ export class SpecialSounds {
           const speed = Math.hypot(z.x - m.x, z.y - m.y) / dt
           if (speed > 0.35 && time >= m.next) {
             m.next = time + t.bruteStep * Math.max(0.6, Math.min(1.4, 1.6 / Math.max(0.6, speed)))
-            emit({ id: "body.vault", ...at, rate: 0.5 + rng() * 0.06, gain: 0.55 })
+            const surf = town ? surfaceAt(town, z.x, z.y) : "concrete"
+            emit(zombieStepEvent(surf, "brute", z.x, z.y, speed, rng))
           }
         }
       }

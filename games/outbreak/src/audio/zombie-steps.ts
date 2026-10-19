@@ -1,6 +1,7 @@
-import type { SfxSurface, ZombieStep } from "@arcade/kit/audio"
+import type { ZombieStep } from "@arcade/kit/audio"
 import { resolveDragFoot, resolveZombieVariant } from "@arcade/kit/shamble-crouch"
 import type { SoundZombie } from "./director"
+import { zombieStepEvent, type FootSurface } from "./space"
 
 export const ZOMBIE_STEP_TUNING = {
   /** Zombie feet further than this stay silent (m). */
@@ -8,15 +9,15 @@ export const ZOMBIE_STEP_TUNING = {
   /** Only the nearest few moving zombies are heard step by step; the rest of a crowd is the horde bed. */
   voices: 4,
   /** Steps per second across the whole crowd, and the burst allowed above it. */
-  rate: 8,
-  burst: 4,
+  rate: 6,
+  burst: 3,
   /** The horde bed counts moving zombies within this radius (m), full at this many near ones. */
   hordeRadius: 22,
   hordeFull: 8,
 }
 
 /** One zombie footstep to play: a library id at a plan position. */
-export type ZombieStepSound = { id: string; x: number; y: number; gain: number }
+export type ZombieStepSound = { id: string; x: number; y: number; gain: number; rate?: number; cutoffHz?: number }
 
 const MAX_QUEUE = 64
 const RIG_FRESH = 0.6
@@ -67,7 +68,7 @@ export class ZombieFootsteps {
     this.qVariant[i] = variant
   }
 
-  update(zombies: readonly SoundZombie[], listener: { x: number; y: number }, time: number, dt: number, surface: (x: number, y: number) => SfxSurface): readonly ZombieStepSound[] {
+  update(zombies: readonly SoundZombie[], listener: { x: number; y: number }, time: number, dt: number, surface: (x: number, y: number) => FootSurface): readonly ZombieStepSound[] {
     this.time = time
     const t = this.tuning
     const out = this.out
@@ -143,7 +144,15 @@ export class ZombieFootsteps {
       const variant = this.qVariant[i]!
       const kind: ZombieStep = drag >= 0.35 ? "drag" : variant === "limper" || variant === "lunger" ? "step" : "shuffle"
       const speed = this.qSpeed[i]!
-      out.push({ id: `zombie.foot.${kind}.${surface(x, y)}`, x, y, gain: kind === "drag" ? 0.9 : 0.75 + 0.25 * Math.min(1, speed / 1.6) })
+      const ev = zombieStepEvent(surface(x, y), kind, x, y, speed)
+      out.push({
+        id: ev.id,
+        x: ev.x,
+        y: ev.y,
+        gain: ev.gain ?? 0.75,
+        ...(ev.rate !== undefined ? { rate: ev.rate } : {}),
+        ...(ev.cutoffHz !== undefined ? { cutoffHz: ev.cutoffHz } : {}),
+      })
       this.counts.played++
     }
     this.queued = 0

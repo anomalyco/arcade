@@ -3,7 +3,7 @@ import type { AIState } from "../../shared/ai"
 import { MELEE_WEAPONS, type CombatMeleeEvent, type CombatShotEvent } from "../../shared/combat"
 import type { Town } from "../../shared/map"
 import { DeathSounds, type DeathSoundWorld } from "./death"
-import { impactDelay, shotImpacts } from "./impacts"
+import { impactDelay, meleeImpact, shotImpacts } from "./impacts"
 import { InventorySounds, type SoundHold, type SoundProgression } from "./inventory"
 import { RELOAD_STARTS, reloadElapsed } from "./reload"
 import { SpecialSounds } from "./specials"
@@ -65,6 +65,7 @@ export class SoundDirector {
   private shots = new Set<number>()
   private meleeSwings = new Set<number>()
   private meleeHits = new Set<string>()
+  private meleeSurfaceHits = new Set<number>()
   private meleeBreaks = new Set<number>()
   private zombies = new Map<number, AIState>()
   private groanedAt = new Map<number, number>()
@@ -97,6 +98,7 @@ export class SoundDirector {
     this.shots.clear()
     this.meleeSwings.clear()
     this.meleeHits.clear()
+    this.meleeSurfaceHits.clear()
     this.meleeBreaks.clear()
     this.zombies.clear()
     this.deaths.clear()
@@ -135,7 +137,16 @@ export class SoundDirector {
         }
       } else if (this.started && !shot.confirmedLocal && !shot.tentativeHit) {
         for (const hit of shotImpacts(world.town, shot, (id) => world.portals.get(id)?.barricadePlanks ?? 0)) {
-          emit({ id: `impact.bullet.${hit.surface}`, x: hit.x, y: hit.y, delay: impactDelay(hit.t), gain: hit.through ? 0.8 : 1, source: "shot" })
+          emit({
+            id: `impact.bullet.${hit.surface}`,
+            x: hit.x,
+            y: hit.y,
+            delay: impactDelay(hit.t),
+            gain: hit.through ? 0.8 : 1,
+            ...(hit.rate !== undefined ? { rate: hit.rate } : {}),
+            ...(hit.cutoffHz !== undefined ? { cutoffHz: hit.cutoffHz } : {}),
+            source: "shot",
+          })
         }
       }
     }
@@ -208,6 +219,22 @@ export class SoundDirector {
             emit({ id: "zombie.death", x: h.x, y: h.y, delay: 0.08, source: "zombie" })
           }
         }
+        if (m.hits.length === 0 && !m.hitDoorId && !m.confirmedLocal && !this.meleeSurfaceHits.has(m.id)) {
+          const surfHit = meleeImpact(world.town, m, (id) => world.portals.get(id)?.barricadePlanks ?? 0)
+          if (surfHit) {
+            this.meleeSurfaceHits.add(m.id)
+            emit({
+              id: surfHit.id,
+              x: surfHit.x,
+              y: surfHit.y,
+              delay: 0.035,
+              gain: surfHit.gain,
+              ...(surfHit.rate !== undefined ? { rate: surfHit.rate } : {}),
+              ...(surfHit.cutoffHz !== undefined ? { cutoffHz: surfHit.cutoffHz } : {}),
+              source: m.attackerId,
+            })
+          }
+        }
         if (m.weaponBroke && !this.meleeBreaks.has(m.id)) {
           this.meleeBreaks.add(m.id)
           emit({ id: "melee.break", x: m.x, y: m.y, delay: 0.04, source: m.attackerId })
@@ -215,6 +242,7 @@ export class SoundDirector {
       }
       if (this.meleeSwings.size > 256) this.meleeSwings = new Set(world.meleeSwings.map((m) => m.id))
       if (this.meleeHits.size > 512) this.meleeHits.clear()
+      if (this.meleeSurfaceHits.size > 256) this.meleeSurfaceHits.clear()
       if (this.meleeBreaks.size > 128) this.meleeBreaks.clear()
     }
 
@@ -249,7 +277,7 @@ export class SoundDirector {
       if (z.state !== "stagger" && z.state !== "knockdown" && t - (this.groanedAt.get(z.id) ?? -Infinity) >= this.tuning.groanPerZombie) candidates.push(z)
     }
     for (const id of this.zombies.keys()) if (!seen.has(id)) { this.zombies.delete(id); this.groanedAt.delete(id) }
-    this.specials.observe(world.zombies, world.shots, world.meleeSwings, t, listener, emit, this.rng)
+    this.specials.observe(world.zombies, world.shots, world.meleeSwings, t, listener, emit, this.rng, world.town)
     if (candidates.length && t >= this.nextGroan) {
       const z = candidates[Math.floor(this.rng() * candidates.length)]!
       this.groanedAt.set(z.id, t)

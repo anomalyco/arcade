@@ -120,8 +120,9 @@ export class OutbreakFrameRenderer {
     this.interiors = new InteriorPresenter(device, (view) => this.renderer.setDetailTextureArray(view))
     this.dust = new DustPass(this.renderer.passContext)
     this.renderer.addPass("alpha", this.dust)
-    this.footfall = (x: number, y: number, speed: number) => audio.footstep(x, y, speed)
-    coop.onFootfall = this.footfall
+    this.footfall = (x: number, y: number, speed: number) =>
+      audio.footstep(x, y, speed, { local: true, crouching: Boolean(session().view.player.crouching) })
+    coop.onFootfall = (x: number, y: number, speed: number) => audio.footstep(x, y, speed, { local: false })
     coop.hidden = (id) => {
       const s = session()
       if (s.view.progression.verbs.hiddenIn(id)) return true

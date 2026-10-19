@@ -4,7 +4,7 @@ import type { Town } from "../../shared/map"
 import { SoundDirector, type SoundEvent, type SoundWorld } from "./director"
 import type { SoundHold } from "./inventory"
 import { AUDIO_BUS_LEVELS, DEFAULT_AUDIO_SETTINGS, type AudioSettings } from "./settings"
-import { indoors, SoundOcclusion, surfaceAt } from "./space"
+import { footstepEvent, indoors, SoundOcclusion, surfaceAt } from "./space"
 import { ZombieFootsteps } from "./zombie-steps"
 
 export type AudioFrame = {
@@ -22,8 +22,6 @@ export type AudioFrame = {
 }
 
 const STORAGE_KEY = "outbreak.audio.v1"
-/** Above this speed a footfall is a run (between walk 3.4 and sprint 5.6 m/s). */
-const RUN_SPEED = 4.4
 const EAR_HEIGHT = 1.7
 /** Lateral metres for near-full pan: the top-down camera frames about 30 m across. */
 const PAN_SCALE = 12
@@ -53,6 +51,9 @@ export class OutbreakAudio {
   private unlocked = false
   private indoor = 0
   private town: Town | null = null
+  private listenerPos = { x: 0, y: 0 }
+  private localCrouching = false
+  private glassSpots: { x: number; y: number }[] = []
   private saved = ""
   private savedVolume = ""
   private applied = ""
@@ -146,6 +147,16 @@ export class OutbreakAudio {
     const t0 = performance.now()
     const { world, listener } = frame
     this.town = world.town
+    this.listenerPos.x = listener.x
+    this.listenerPos.y = listener.y
+    const localSlot = world.survivors.find((s) => Math.hypot(s.survivor.x - listener.x, s.survivor.y - listener.y) < 0.5) ?? world.survivors[0]
+    this.localCrouching = Boolean(localSlot?.survivor.crouching)
+    this.glassSpots.length = 0
+    if (world.progression?.ledger.stores) {
+      for (const [sid, st] of world.progression.ledger.stores) {
+        if (sid.startsWith("glass:") && st.at) this.glassSpots.push(st.at)
+      }
+    }
     this.occlusion.sync(world.town, frame.revision)
     this.apply()
     this.runtime.setListener({ x: listener.x, z: listener.y, vx: 0, vz: 0, rightX: 1, rightZ: 0, earHeight: EAR_HEIGHT, panScale: PAN_SCALE })
@@ -167,7 +178,8 @@ export class OutbreakAudio {
     }
     // Zombie feet: the nearest few step by step, within the crowd budget and never into the last free voices.
     const town = world.town
-    const steps = this.zombieSteps.update(world.zombies, listener, world.time, frame.dt, (x, y) => surfaceAt(town, x, y))
+    const extra = this.glassSpots.length > 0 ? { glass: this.glassSpots } : undefined
+    const steps = this.zombieSteps.update(world.zombies, listener, world.time, frame.dt, (x, y) => surfaceAt(town, x, y, extra))
     if (live) for (const step of steps) {
       if (this.runtime.activeVoiceCount >= this.runtime.maxVoices - CROWD_HEADROOM) break
       if (this.play({ ...step, source: "zombie" })) this.counts.zombieSteps++
@@ -188,6 +200,7 @@ export class OutbreakAudio {
       time: this.runtime.now + (event.delay ?? 0),
       gain: event.gain,
       rate: event.rate,
+      cutoffHz: event.cutoffHz,
       position: entry.range.max > 0 ? { x: event.x, z: event.y, refDistance: entry.range.ref, maxDistance: entry.range.max, rolloff: 1.4 } : undefined,
     })
     if (voice) {
@@ -232,12 +245,19 @@ export class OutbreakAudio {
   }
 
   /** A foot contact from the rig (local or remote survivor), on whatever surface it landed on. */
-  footstep(x: number, y: number, speed: number): void {
+  footstep(x: number, y: number, speed: number, opts?: { local?: boolean; crouching?: boolean }): void {
+    const isLocal = opts?.local ?? Math.hypot(x - this.listenerPos.x, y - this.listenerPos.y) < 0.9
+    const crouching = opts?.crouching ?? (isLocal ? this.localCrouching : false)
+    if (!this.town) {
+      if (speed >= 0.25) this.counts.footsteps++
+      return
+    }
+    const extra = this.glassSpots.length > 0 ? { glass: this.glassSpots } : undefined
+    const step = footstepEvent(this.town, x, y, speed, { local: isLocal, crouching, extra })
+    if (!step) return
     this.counts.footsteps++
-    if (!this.live || !this.town) return
-    const run = speed > RUN_SPEED
-    const gain = run ? 1 : 0.75 + 0.25 * Math.min(1, speed / 3.4)
-    this.play({ id: `foot.${surfaceAt(this.town, x, y)}.${run ? "run" : "walk"}`, x, y, gain, source: "foot" })
+    if (!this.live) return
+    this.play(step.event)
   }
 
   /**
