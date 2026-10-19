@@ -105,6 +105,7 @@ export const outbreakSceneHooks: SceneHooks = {
     let fw = applyFoliageWindField(o.world, o.normal, v.matAux.y, v.matAux.x, F.cam.w, F.cam.xyz, OL.veg, OL.vegGust, OL.vegActors);
     o.world = fw[0];
     o.normal = fw[1];
+    if (OL.vegTrees.w > 0.5 && v.matAux.y > 0.0 && v.matAux.y < 2.5) { o.world = outbreakTreeBurnVertex(o.world, v.matAux.x); }
   }`,
   declarations: /* wgsl */ `
 @group(0) @binding(9) var exploredTex: texture_2d<f32>;
@@ -441,6 +442,7 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
     }
     let effectiveLitMask = mix(max(litMask, sunLit), max(litMask, sunLit * 0.85), lightRule);
     outbreakLitMask = max(litMask * lightRule, sunLit);
+    if (OL.vegTrees.y > 0.001 || OL.vegTrees.w > 0.5) { col = outbreakTreeSurface(col, litMask * lightRule, sunVal, o.world, mat, o.aux); }
     outbreakSeen = 1.0;
     outbreakKnown = 1.0;
     var zombieRimMask = 0.0;

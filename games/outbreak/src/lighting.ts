@@ -11,6 +11,8 @@ import { DEFAULT_LIT_WINDOWS, windowLampBuilding, windowsLit } from "./look/lit-
 import { DEFAULT_LOOK_TRIMS, trimLighting, type OutbreakLookTrims } from "./look/world"
 import { addLampPool, tableLampPool, type BakeLamp, type TableLamp } from "./lightbake"
 import { REFLECTION_LIGHT_FLOATS, REFLECTION_LIGHTS } from "./reflections/lights"
+import { vegetationBuild } from "./vegetation/settings"
+import { VEG_TREE_UNIFORM_FLOATS, vegetationTreeFieldsWgsl, vegetationTreeWgsl } from "./vegetation/trees"
 import { packReflectionUniforms, REFLECTION_UNIFORM_FLOATS } from "./reflections/settings"
 import { DEFAULT_LIGHT_CURVES, LIGHT_CURVES, LIGHT_RAMP_FLOATS, lightRampFieldsWgsl, lightRampWgsl, packLightRamps } from "./light-ramps"
 
@@ -296,7 +298,9 @@ export const OUTBREAK_NIGHT_UNIFORM_OFFSET = OUTBREAK_ART_UNIFORM_OFFSET + 4
 /** The town-wide wind field for vegetation (`FoliageGust`, see `vegetation/settings.ts`). */
 export const OUTBREAK_VEG_GUST_UNIFORM_OFFSET = OUTBREAK_NIGHT_UNIFORM_OFFSET + 4
 /** Reflections (see `reflections/settings.ts`): `refl` (wet strength, puddles, Lab wetness, ripple) then `mirror`. */
-export const OUTBREAK_REFLECT_UNIFORM_OFFSET = OUTBREAK_VEG_GUST_UNIFORM_OFFSET + FOLIAGE_GUST_FLOATS
+/** Tree look shading and burning trees (see `vegetation/trees.ts`): `vegTrees` then `vegBurn`. */
+export const OUTBREAK_VEG_TREES_UNIFORM_OFFSET = OUTBREAK_VEG_GUST_UNIFORM_OFFSET + FOLIAGE_GUST_FLOATS
+export const OUTBREAK_REFLECT_UNIFORM_OFFSET = OUTBREAK_VEG_TREES_UNIFORM_OFFSET + VEG_TREE_UNIFORM_FLOATS
 /** Wet reflections' lights this frame (see `reflections/lights.ts`): each light's mirror image, packed per frame. */
 export const OUTBREAK_REFLECT_LIGHTS_UNIFORM_OFFSET = OUTBREAK_REFLECT_UNIFORM_OFFSET + REFLECTION_UNIFORM_FLOATS
 export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = OUTBREAK_REFLECT_LIGHTS_UNIFORM_OFFSET + REFLECTION_LIGHTS * REFLECTION_LIGHT_FLOATS
@@ -1027,6 +1031,38 @@ export function bakeOutbreakBounce(town: Town, tableLamps: readonly TableLamp[] 
 }
 
 /**
+ * A long tree shadow along the moon/dusk direction (the same (0.79, 0.61) the round crown shadows lean): an ellipse
+ * 1.6x the crown radius long, offset 1.5 m downwind of the trunk, streaked by limbs across it.
+ */
+function stampLongTreeShadow(moon: Float32Array, mw: number, mh: number, scale: number, x: number, z: number, rCrown: number): void {
+  const dx0 = 0.79
+  const dz0 = 0.61
+  const cx = x + dx0 * 1.5
+  const cz = z + dz0 * 1.5
+  const ra = rCrown * 1.6
+  const rb = rCrown * 0.95
+  const ext = ra + 0.5
+  const x0 = Math.max(0, Math.floor((cx - ext) / scale))
+  const x1 = Math.min(mw - 1, Math.ceil((cx + ext) / scale))
+  const z0 = Math.max(0, Math.floor((cz - ext) / scale))
+  const z1 = Math.min(mh - 1, Math.ceil((cz + ext) / scale))
+  for (let iz = z0; iz <= z1; iz++) {
+    const dz = (iz + 0.5) * scale - cz
+    for (let ix = x0; ix <= x1; ix++) {
+      const idx = iz * mw + ix
+      if (moon[idx]! <= 0.1) continue
+      const dx = (ix + 0.5) * scale - cx
+      const along = dx * dx0 + dz * dz0
+      const across = -dx * dz0 + dz * dx0
+      const u2 = (along / ra) ** 2 + (across / rb) ** 2
+      if (u2 >= 1) continue
+      const limbs = 0.62 + 0.38 * Math.abs(Math.sin(across * 3.4 + along * 0.9 + x * 1.7))
+      moon[idx] = Math.min(moon[idx]!, 1 - (1 - u2) * 0.55 * limbs)
+    }
+  }
+}
+
+/**
  * Concrete Baking Recommendation #2:
  * Bakes a 768x768 (12.5cm/texel, 576 KiB) soft directional moon & tree-canopy shadow mask (`moonTex` at `@binding(8)`),
  * with 2x2 sub-texel window mullion coverage inside houses and soft exterior building/tree-crown shadows.
@@ -1065,8 +1101,14 @@ export function bakeOutbreakMoonMask(town: Town): BakedMap {
     }
   }
 
-  // Soft spherical/dappled tree-crown canopy attenuation on exterior ground
+  // Soft spherical/dappled tree-crown canopy attenuation on exterior ground. Deadwood and Darkwood trees (tree looks 1
+  // and 3) throw longer, darker, branch-streaked moon shadows instead.
+  const longShadows = vegetationBuild.lively && (vegetationBuild.treeLook === 1 || vegetationBuild.treeLook === 3)
   for (const t of trees) {
+    if (longShadows) {
+      stampLongTreeShadow(moon, mw, mh, scale, t.x, t.y, 2.15 + t.variant * 0.75)
+      continue
+    }
     const rCrown = 2.15 + t.variant * 0.75
     const cx = t.x + 0.45
     const cz = t.y + 0.35
@@ -1248,7 +1290,7 @@ struct OutbreakLightingUniforms {
   sight: vec4f, // coneSharpness, dayShroud, dayMuted, shroudLampKeep
   art: vec4f, // sightGlow, groundDetail, lampRolloff, wetGloss (AR-71)
   night: vec4f, // night sight: weight this frame, readable radius, fade distance, reserved
-  vegGust: FoliageGust,
+  vegGust: FoliageGust,${vegetationTreeFieldsWgsl}
   refl: vec4f, // reflections: wet strength (0 off), pothole puddles on, Lab wetness, rain ripple
   mirror: vec4f, // mirrors: detail (0 baked, 1 live lights, 2 people), age, on, reserved
   reflLights: array<vec4f, ${(REFLECTION_LIGHTS * REFLECTION_LIGHT_FLOATS) / 4}>, // wet reflections: per light, image x, z, plan distance from the eye, size (0 ends); colour
@@ -1259,6 +1301,7 @@ ${lightRampWgsl}
 
 export const outbreakLightingDeclarationsWgsl = /* wgsl */ `
 ${outbreakLightingStructWgsl}
+${vegetationTreeWgsl}
 var<private> outbreakFlashMask: f32;
 var<private> outbreakFlashIrr: f32;
 var<private> outbreakAlbedo: vec3f;

@@ -1,4 +1,5 @@
 import { MAT, Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
+import { buildTreeLook } from "@arcade/kit/gpu/foliage-looks"
 import { buildFoliageTree, emitGrassTuft, emitHydrangeaPanicles, foliageSettings, HYDRANGEA_DRIED } from "@arcade/kit/gpu/foliage"
 import { Rng } from "@arcade/kit/sim/rng"
 import { inBuildingFootprint, type Building, type Town } from "../shared/map"
@@ -122,7 +123,9 @@ function parkedSedan(m:Mesh,cx:number,cz:number,ground:number) {
 /** Broadleaf scaffold: layered bough clusters, bent-normal peripheral leaf rosettes, interior canopy AO and base grass tufts. */
 export function plant(m:Mesh,x:number,z:number,h:number,radius:number,seed:number,ground:number) {
   plantFootprints.push({x,z,radius,tree:h>2.1,ground})
-  buildFoliageTree(m,x,z,h,radius,seed,ground,foliageSettings,undefined,vegetationBuild)
+  // Tree looks A–C (D-41) replace Lively's trees only; shrubs keep the lively builder.
+  if (h>2.1&&vegetationBuild.lively&&vegetationBuild.treeLook>0) buildTreeLook(m,vegetationBuild.treeLook,x,z,h,radius,seed,ground,vegetationBuild)
+  else buildFoliageTree(m,x,z,h,radius,seed,ground,foliageSettings,undefined,vegetationBuild)
 }
 
 /** Ground footprints of every plant() since the level build cleared it; the floor map bakes their contact shade. */
