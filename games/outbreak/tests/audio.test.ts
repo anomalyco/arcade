@@ -72,6 +72,43 @@ describe("Outbreak sound director", () => {
     expect(opened[0]!.x).toBeCloseTo((door.rect[0] + door.rect[2]) / 2)
   })
 
+  test("portal sounds retain order and history across unchanged frames and unloaded geometry", () => {
+    const sim = new CoopSim(7, 7, 0.22, { zombieCount: 0 })
+    const listener = sim.addSurvivor("a", 0).survivor
+    const director = new SoundDirector()
+    const door = sim.town.doors[0]!
+    const window = sim.town.windows[0]!
+    const doorState = sim.ai.portalStates.get(door.id)!
+    const windowState = sim.ai.portalStates.get(window.id)!
+    const hear = () => director.observe(soundWorld(sim), listener)
+    const portalEvents = () => hear().filter((e) => ["door", "window", "barricade", "bash"].includes(e.source ?? ""))
+    expect(hear()).toEqual([])
+    expect(portalEvents()).toEqual([])
+    door.open = !door.open
+    door.locked = !door.locked
+    doorState.barricadePlanks++
+    doorState.lastBashTime = 1
+    const changed = portalEvents()
+    expect(ids(changed)).toEqual(["door.locked", door.open ? "door.wood.open" : "door.wood.close", "barricade.hammer", "door.bash"])
+    for (const event of changed) expect(event).toMatchObject({ x: (door.rect[0] + door.rect[2]) / 2, y: (door.rect[1] + door.rect[3]) / 2 })
+    expect(portalEvents()).toEqual([])
+    // Each sub-threshold timestamp still becomes the baseline for the next frame.
+    for (let i = 0; i < 4; i++) {
+      doorState.lastBashTime += 0.0006
+      expect(portalEvents()).toEqual([])
+    }
+    sim.town.doors.splice(0, 1)
+    doorState.barricadePlanks = 0
+    doorState.lastBashTime = 2
+    expect(portalEvents()).toEqual([])
+    sim.town.doors.unshift(door)
+    expect(ids(portalEvents())).toEqual(["barricade.break", "door.bash"])
+    window.open = !window.open
+    windowState.barricadePlanks++
+    expect(ids(portalEvents())).toEqual(["window.slide", "barricade.hammer"])
+    expect(portalEvents()).toEqual([])
+  })
+
   test("a shove that connects thuds; a whiff is only a whoosh", () => {
     const session = new LocalSession(7, 7, 0.22, { zombieCount: 0 })
     const director = new SoundDirector()

@@ -1887,6 +1887,13 @@ Candidates from the code audits; measure and playtest before moving any into the
 
 ## Audio
 
+- **Check state changes before finding sound geometry (AR-76).** Outbreak's `src/audio/director.ts` skips door centres
+  and portal geometry searches when their remembered state is unchanged. Missing geometry still leaves history
+  untouched, preserving sounds when a streamed portal returns. `scripts/cpu-review-bench.ts --baseline=<base-game-dir>`
+  alternates old/new production directors: seven Studio M5 Max/Bun pairs with 110 portals reduced median paired CPU
+  cost by 48.4% (separate medians 0.1248→0.0663 ms/frame), with identical 3,000-frame event traces. The 20-portal
+  case was noisy; no small-scene gain is claimed. This measures sound-event generation, not Web Audio or GPU time.
+
 - **Never start a cue on its synthesized stand-in while the real file is loading (AR-40).** `SampleBank.getBuffer`
   synthesizes a fallback for any sample not yet decoded, and Outbreak starts its three ambience beds on the player's
   first key press, while `loadAll` has only begun. Each bed's stand-in is a constant 2 s sweep from 180 to 90 Hz with

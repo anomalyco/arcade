@@ -179,6 +179,7 @@ export function runCoopBenchScenario(cfg: ScenarioConfig) {
   const snapStart = clients.map((c) => c.snapshotCount)
 
   const stepMs: number[] = []
+  const frameMs: number[] = []
   let snapshotTicks = 0
   const ticks = Math.round(cfg.seconds / TICK_DT)
   const startTick = net.tick
@@ -195,6 +196,7 @@ export function runCoopBenchScenario(cfg: ScenarioConfig) {
     stepMs.push(performance.now() - t0)
     if (core.tick !== before && core.tick % 3 === 0) snapshotTicks++
     clients.forEach((c, k) => {
+      const frameStart = performance.now()
       const phase = i / 90 + k * 1.7
       c.update(TICK_DT, {
         mx: Math.cos(phase),
@@ -208,11 +210,13 @@ export function runCoopBenchScenario(cfg: ScenarioConfig) {
       const lastSeq = c.predictor.unacked.at(-1)?.seq
       if (lastSeq !== undefined) sentAtByClient[k]!.set(lastSeq, net.now)
       c.sync(TICK_DT)
+      frameMs.push(performance.now() - frameStart)
     })
   }
 
   const sortedStep = [...stepMs].sort((a, b) => a - b)
   const sortedDecode = [...decodeMs].sort((a, b) => a - b)
+  const sortedFrame = [...frameMs].sort((a, b) => a - b)
   const corrMags = corrections.map((c) => c.mag).sort((a, b) => a - b)
   const firstHalfCorr = corrections.filter((c) => c.tick < midTick).map((c) => c.mag)
   const secondHalfCorr = corrections.filter((c) => c.tick >= midTick).map((c) => c.mag)
@@ -252,6 +256,11 @@ export function runCoopBenchScenario(cfg: ScenarioConfig) {
       mean: +meanOf(decodeMs).toFixed(4),
       p50: +pct(sortedDecode, 0.5).toFixed(4),
       p95: +pct(sortedDecode, 0.95).toFixed(4),
+    },
+    clientFrameMs: {
+      mean: +meanOf(frameMs).toFixed(4),
+      p50: +pct(sortedFrame, 0.5).toFixed(4),
+      p95: +pct(sortedFrame, 0.95).toFixed(4),
     },
     downKBps,
     downKBpsMean: +meanOf(downKBps).toFixed(2),
