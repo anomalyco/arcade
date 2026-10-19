@@ -636,6 +636,9 @@ export class CoopSim implements OutbreakSim {
         }
       }
     })
+    for (const feature of outbreakSharedFeatures.list()) {
+      feature.stepWorldLate?.({ sim: this, dt, timeScale, resolved, state: this.featureStates.get(feature.id) })
+    }
     this.rewind.record(Math.round(this.time * 60), this.time, this.ai.agents, (a) => (a as { state?: string }).state !== "dead")
     for (const slot of this.slots) this.refreshPrompt(slot)
   }

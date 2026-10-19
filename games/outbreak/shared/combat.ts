@@ -514,7 +514,16 @@ export type OutbreakCombatSnapshot = {
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
 
+/** One hit about to land on a zombie, as a feature's `ZombieHitRule` sees it. */
+export type ZombieHit = { kind: "shot" | "melee" | "shove"; fromX: number; fromY: number; damage: number; heavy: boolean }
+/** What lands: the damage, and whether the zombie reacts (stagger, knockdown, lost limbs) or shrugs it off. */
+export type ZombieHitOutcome = { damage: number; react: boolean }
+/** Lets a feature armour a zombie or make it shrug off blows (special zombies). `null`: the hit lands as it is. */
+export type ZombieHitRule = (z: AIAgent, hit: ZombieHit) => ZombieHitOutcome | null
+
 export class OutbreakCombatSubsystem {
+  /** Installed per simulation by features that change how hits land (`shared/specials`). */
+  hitRule: ZombieHitRule | null = null
   readonly shots: CombatShotEvent[] = []
   readonly meleeSwings: CombatMeleeEvent[] = []
   private nextShotId = 1
@@ -658,7 +667,10 @@ export class OutbreakCombatSubsystem {
       const perpDist = Math.sqrt(Math.max(0, fx * fx + fy * fy - proj * proj))
       const perpSide = fx * -dy + fy * dx
 
-      const damage = bestT < 6.5 ? 55 : 42
+      const baseDamage = bestT < 6.5 ? 55 : 42
+      const outcome = this.hitRule?.(bestZombie, { kind: "shot", fromX: ox, fromY: oy, damage: baseDamage, heavy: false })
+      const damage = outcome ? outcome.damage : baseDamage
+      const react = outcome ? outcome.react : true
       bestZombie.hp = Math.max(0, bestZombie.hp - damage)
       bestZombie.hitFlash = 1.0
       bestZombie.awareness = 1.0
@@ -683,6 +695,8 @@ export class OutbreakCombatSubsystem {
         if (detachBone && !bestZombie.detachedLimbs.includes(detachBone)) {
           bestZombie.detachedLimbs.push(detachBone)
         }
+      } else if (!react) {
+        // Armour or sheer mass: the round lands but the zombie keeps coming.
       } else if (perpDist >= 0.14 || (bestT >= 6.5 && rng.next() < 0.42)) {
         // Off-center hip/leg shot or medium-range impact: can blow a leg off (crawler), knock down, or cripple into a limp
         const legRoll = rng.next()
@@ -1301,7 +1315,15 @@ export class OutbreakCombatSubsystem {
           downedMult *
           headMult *
           toughScale
-        const damage = Math.max(1, Math.round(rawDamage))
+        const outcome = this.hitRule?.(z, {
+          kind: "melee",
+          fromX: player.x,
+          fromY: player.y,
+          damage: Math.max(1, Math.round(rawDamage)),
+          heavy: ev.heavy,
+        })
+        const damage = outcome ? Math.max(0, Math.round(outcome.damage)) : Math.max(1, Math.round(rawDamage))
+        const react = outcome ? outcome.react : true
         const wasDowned = z.state === "knockdown"
         const wasCrawler = z.state === "crawler" || hasSeveredLeg(z)
         z.hp = Math.max(0, z.hp - damage)
@@ -1350,6 +1372,8 @@ export class OutbreakCombatSubsystem {
           } else if (ev.heavy || ev.combo === 3 || headshot) {
             detachBone = headshot && !z.detachedLimbs.includes("head") ? "head" : rng.pick(armChoices)
           }
+        } else if (!react) {
+          // Armour or sheer mass: the blow lands but does not move it.
         } else {
           // Non-lethal leg severing -> Crawler (including second-leg severing -> torso-only crawler)
           const canSeverLeg =
@@ -1524,15 +1548,19 @@ export class OutbreakCombatSubsystem {
 
       const ux = dx / (d || 1)
       const uy = dy / (d || 1)
-      z.state = "stagger"
-      z.stateTime = 0
-      z.timer = 0.72 * mods.stagger
-      z.staggerVx = ux * 6.2 * mods.stagger
-      z.staggerVy = uy * 6.2 * mods.stagger
+      const outcome = this.hitRule?.(z, { kind: "shove", fromX: player.x, fromY: player.y, damage: mods.damage, heavy: false })
+      const shoveDamage = outcome ? outcome.damage : mods.damage
+      if (!outcome || outcome.react) {
+        z.state = "stagger"
+        z.stateTime = 0
+        z.timer = 0.72 * mods.stagger
+        z.staggerVx = ux * 6.2 * mods.stagger
+        z.staggerVy = uy * 6.2 * mods.stagger
+      }
       z.hitFlash = 0.65
       z.lastHitBy = attackerId
       // Bare hands never kill; a crowbar or spiked board can finish a wounded zombie.
-      z.hp = mods.damage > 15 ? z.hp - mods.damage : Math.max(1, z.hp - mods.damage)
+      z.hp = mods.damage > 15 ? z.hp - shoveDamage : Math.max(1, z.hp - shoveDamage)
       if (z.hp <= 0) {
         z.hp = 0
         z.state = "dead"

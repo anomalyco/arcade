@@ -75,6 +75,11 @@ change the offline session.
     (`±127 cm`) position deltas, 8-bit aim and optional state/HP/FX sub-flags (with non-urgent mid/far/idle zombies
     throttled to 10 Hz / 5 Hz), door/window bitfields + sparse non-zero barricade planks (omitted completely when
     `revision` is unchanged since `baseTick`), and new shots/bashes/pings/lures since `baseTick`.
+  - Special zombies (`shared/specials/`) add no field: a special's kind rides in its zombie seed (low nibble plus a
+    12-bit check, `encodeSpecialSeed`), and a special's seed is never the id's default, so the full zombie record
+    already carries it. Deltas never resend a seed, so every zombie is rolled before the snapshot that first carries
+    it: in the feature's `stepWorld` (chunk and horde spawns) and its `stepWorldLate` (director spawns during the
+    crowd step). `tests/specials.test.ts` checks every zombie in every snapshot against the room.
   - `personal`: binary-packed `ack`, `f32` position/aim/stamina/battery/flashlight/noise, discrete flags/ammo/planks,
     and an optional bitmask for active timers, peek/hold/vault/channel state, filtered ledger deltas and notices.
 

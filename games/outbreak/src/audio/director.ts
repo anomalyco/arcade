@@ -5,11 +5,12 @@ import type { Town } from "../../shared/map"
 import { impactDelay, shotImpacts } from "./impacts"
 import { InventorySounds, type SoundHold, type SoundProgression } from "./inventory"
 import { RELOAD_STARTS, reloadElapsed } from "./reload"
+import { SpecialSounds } from "./specials"
 import type { SoundActor, SoundEvent } from "./types"
 
 export type { SoundActor, SoundEvent } from "./types"
 
-export type SoundZombie = { id: number; x: number; y: number; state: AIState; vx?: number; vy?: number; seed?: number; drag?: number }
+export type SoundZombie = { id: number; x: number; y: number; state: AIState; vx?: number; vy?: number; seed?: number; drag?: number; aim?: number }
 
 /** What the director reads each frame. `CoopSim` provides all of it offline and in co-op (from snapshots). */
 export type SoundWorld = {
@@ -72,6 +73,8 @@ export class SoundDirector {
   private bashes = new Map<string, number>()
   private actors = new Map<string, ActorMemory>()
   private readonly inventory = new InventorySounds()
+  /** Shrieks, gurgles, heavy steps and shield rings for special zombies. */
+  readonly specials = new SpecialSounds()
   private nextGroan = 0
   private lastAlert = -Infinity
   private readonly rng: () => number
@@ -91,6 +94,7 @@ export class SoundDirector {
     this.deaths.clear()
     this.actors.clear()
     this.inventory.reset()
+    this.specials.reset()
   }
 
   /** Sounds held for as long as something lasts, as of the last `observe`: crafts, research, noisemakers, generators. */
@@ -235,6 +239,7 @@ export class SoundDirector {
       if (z.state !== "stagger" && z.state !== "knockdown" && t - (this.groanedAt.get(z.id) ?? -Infinity) >= this.tuning.groanPerZombie) candidates.push(z)
     }
     for (const id of this.zombies.keys()) if (!seen.has(id)) { this.zombies.delete(id); this.groanedAt.delete(id) }
+    this.specials.observe(world.zombies, world.shots, world.meleeSwings, t, listener, emit, this.rng)
     if (candidates.length && t >= this.nextGroan) {
       const z = candidates[Math.floor(this.rng() * candidates.length)]!
       this.groanedAt.set(z.id, t)
