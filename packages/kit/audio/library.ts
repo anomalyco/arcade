@@ -579,7 +579,7 @@ export const SFX_SPECS: readonly SfxSpec[] = [
   },
   {
     id: "wings.flap", label: "Wing flap", group: "bow", bus: "foley", variants: 3, target: -24, gain: 0.75, pitchJitter: 0.08, gainJitter: 0.1,
-    cooldown: 0.06, maxVoices: 3, range: { ref: 2, max: 18 }, wet: 0.05, usedBy: ARCHERS, durationRange: [0.12, 0.6],
+    cooldown: 0.06, maxVoices: 3, range: { ref: 2, max: 18 }, wet: 0.05, usedBy: ["archers", "outbreak"], durationRange: [0.12, 0.6],
     generate: { prompt: `A single powerful flap of large feathered wings: a deep soft whump of air and feathers, close and dry. One flap only. ${NO_SPEECH}`, duration: 0.5, candidates: 4, influence: 0.55 },
   },
 

@@ -40,6 +40,10 @@ export const DETAIL_MODELS = [
   "wordKeepOut",
   "wordDontOpen",
   "wordNo",
+  "tv",
+  "crowSit",
+  "crowUp",
+  "crowDown",
 ] as const
 export type DetailModel = (typeof DETAIL_MODELS)[number]
 
@@ -71,7 +75,7 @@ export type DetailSite = {
 
 export type DetailPlacementInput = Pick<
   OutbreakDetailSettings,
-  "worldDetails" | "dtTurnedOver" | "dtMail" | "dtBoxes" | "dtMarks" | "dtBins" | "dtMailboxes" | "dtStreetJunk" | "dtPoliceTape" | "dtSeed"
+  "worldDetails" | "dtTurnedOver" | "dtMail" | "dtBoxes" | "dtMarks" | "dtBins" | "dtMailboxes" | "dtStreetJunk" | "dtPoliceTape" | "dtTvs" | "dtSeed"
 >
 
 /** Most details one building can carry (inside and out); the presenter caps each model's instances on top. */
@@ -215,6 +219,15 @@ export function placeBuildingDetails(town: Town, b: Building, s: DetailPlacement
         const spot = againstWall(r, b, solids, taken, 0.34, 0.36, 40)
         if (spot) push(site(town, r.next() < 0.5 ? "boxes2" : "boxes3", spot.x, spot.z, spot.yaw + (r.next() - 0.5) * 0.3, 0.36, { scale: 0.9 + r.next() * 0.2 }, RUG_LIFT))
       }
+    }
+  }
+
+  // A television left on against a living-room wall, its screen to the room.
+  if (home && s.dtTvs > 0) {
+    const r = rng("tv")
+    if (r.next() < s.dtTvs) {
+      const spot = againstWall(r, b, solids, taken, 0.3, 0.42, 40)
+      if (spot) push(site(town, "tv", spot.x, spot.z, spot.yaw, 0.42, {}, RUG_LIFT))
     }
   }
 
@@ -470,5 +483,42 @@ export function placeDetails(town: Town, s: DetailPlacementInput, ctx: { turnedO
   const out: DetailSite[] = []
   for (const b of town.buildings) out.push(...placeBuildingDetails(town, b, s, ctx.turnedOver?.has(b.id) ?? false))
   out.push(...placeCarDetails(town, s, ctx.cruisers ?? []))
+  return out
+}
+
+/** A flock of crows on the ground: where, how many, and its own roll for the birds' spots and timing. */
+export type CrowFlock = { key: string; x: number; z: number; birds: number; seed: number }
+
+/** Crows on the front lawns of some homes and at most bodies left outdoors (`dtCrows` scales the odds). */
+export function placeCrowFlocks(town: Town, s: Pick<OutbreakDetailSettings, "worldDetails" | "dtCrows" | "dtSeed">, bodies: readonly { key: string; x: number; y: number }[] = []): CrowFlock[] {
+  if (!s.worldDetails || s.dtCrows <= 0) return []
+  const out: CrowFlock[] = []
+  const taken: Taken = []
+  const add = (key: string, r: Rng, x: number, z: number) => {
+    out.push({ key, x, z, birds: 3 + Math.floor(r.next() * 4), seed: Math.floor(r.next() * 4294967296) >>> 0 })
+    taken.push({ x, z, r: 2 })
+  }
+  for (const body of bodies) {
+    if (town.buildings.some((b) => inBuildingFootprint(b, body.x, body.y))) continue
+    const r = detailRng(town, s.dtSeed, `crows-body:${body.key}`)
+    if (r.next() >= Math.min(1, 0.6 * s.dtCrows)) continue
+    const a = r.next() * Math.PI * 2
+    const x = body.x + Math.cos(a) * 0.9
+    const z = body.y + Math.sin(a) * 0.9
+    if (clearOfBuildings(town, x, z, 0.8) && clearOfTaken(taken, x, z, 2)) add(`body:${body.key}`, r, x, z)
+  }
+  for (const b of town.buildings) {
+    if (!isHome(b)) continue
+    const r = detailRng(town, s.dtSeed, `crows:${b.id}`)
+    if (r.next() >= Math.min(1, 0.3 * s.dtCrows)) continue
+    const street = streetLine(b)
+    for (let t = 0; t < 8; t++) {
+      const x = b.rect[0] - 2 + r.next() * (b.rect[2] - b.rect[0] + 4)
+      const z = b.rect[3] + 1 + r.next() * Math.max(0.5, street - b.rect[3] - 1.2)
+      if (!outdoorFree(town, x, z, 0.9, taken)) continue
+      add(`lawn:${b.id}`, r, x, z)
+      break
+    }
+  }
   return out
 }

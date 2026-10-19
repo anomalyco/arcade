@@ -35,7 +35,7 @@ function towns(): Town[] {
   })
 }
 
-const INDOOR = new Set(["chair", "crockery", "mail", "boxes2", "boxes3", "books", "drawer"])
+const INDOOR = new Set(["chair", "crockery", "mail", "boxes2", "boxes3", "books", "drawer", "tv"])
 const indoor = (d: DetailSite) => INDOOR.has(d.model)
 const onWall = (d: DetailSite) => d.model === "markX" || d.model.startsWith("word")
 
@@ -68,7 +68,7 @@ describe("world details placement", () => {
         expect(sites.length).toBeLessThanOrEqual(BUILDING_DETAIL_BUDGET)
         for (const d of sites.filter(indoor)) {
           expect(inBuildingFootprint(b, d.x, d.z)).toBe(true)
-          for (const w of town.barriers) if (w.kind !== "fence") expect(distToRect(d.x, d.z, w.rect)).toBeGreaterThan(d.model.startsWith("boxes") ? 0.25 : d.r)
+          for (const w of town.barriers) if (w.kind !== "fence") expect(distToRect(d.x, d.z, w.rect)).toBeGreaterThan(d.model.startsWith("boxes") || d.model === "tv" ? 0.25 : d.r)
           for (const p of town.props) {
             const s = propShape(p)
             if (s && p.kind !== "tree") expect(distToRect(d.x, d.z, s.rect)).toBeGreaterThan(d.r)

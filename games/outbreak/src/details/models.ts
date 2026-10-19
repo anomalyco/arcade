@@ -1,4 +1,5 @@
 import { MAT, Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
+import { MAX_MAP_LIGHTS } from "@arcade/kit/limits"
 import { DETAIL_MODELS, LETTER_ADVANCE, MARK_X_SIZE, WORDS, type DetailModel } from "./placement"
 
 /**
@@ -6,6 +7,9 @@ import { DETAIL_MODELS, LETTER_ADVANCE, MARK_X_SIZE, WORDS, type DetailModel } f
  * the ground (wall marks: bottom centre on the wall face, facing +Z). Matte materials only (lit, timber, brick and a
  * little shiny metal), muted pigments: the look keeps colour for what light falls on, so nothing here glows or glints.
  */
+
+/** Map-light fixture slot the television screens glow on (MAT.lamp aux); the presenter sets its flicker each frame. */
+export const TV_LAMP_SLOT = MAX_MAP_LIGHTS - 4
 
 const hex = (v: number): Rgb => [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255]
 
@@ -289,6 +293,41 @@ function markX(m: Mesh): void {
   stroke(m, s * 0.1, -0.02, s * 0.12, -0.16, 0.012, col)
 }
 
+/** A 1980s set on a low cabinet, screen to +Z (MAT.lamp on `TV_LAMP_SLOT`), rabbit-ear aerial on top. */
+function tv(m: Mesh): void {
+  const wood = hex(0x2e1e12), plastic = hex(0x1c1c1e)
+  m.box(-0.46, 0, -0.22, 0.46, 0.46, 0.22, wood, MAT.timber, 0, hex(0x3a2616))
+  m.box(-0.42, 0.06, 0.22, -0.02, 0.4, 0.23, hex(0x1e140c), MAT.timber)
+  m.box(0.02, 0.06, 0.22, 0.42, 0.4, 0.23, hex(0x1e140c), MAT.timber)
+  m.bevelBox(-0.32, 0.46, -0.2, 0.32, 0.94, 0.2, 0.04, plastic, hex(0x26262a), MAT.lit)
+  m.box(-0.25, 0.53, 0.2, 0.17, 0.87, 0.215, hex(0x8e9aa2), MAT.lamp, TV_LAMP_SLOT)
+  for (const y of [0.6, 0.68, 0.76]) m.box(0.21, y, 0.2, 0.27, y + 0.03, 0.212, hex(0x4a4a4c), MAT.lit)
+  m.yawBox(-0.05, -0.05, 0.012, 0.012, 0.94, 1.3, 0, hex(0x6a6a6a), MAT.shiny)
+  m.box(-0.2, 0.94, -0.06, 0.12, 0.96, -0.04, hex(0x6a6a6a), MAT.shiny)
+}
+
+const CROW = hex(0x0e0f12), CROW_SHEEN = hex(0x1a1c22), BEAK = hex(0x26262a)
+
+/** A crow facing +X, feet at the origin. `wings`: folded on the ground, up mid-flap, or spread level. */
+function crow(m: Mesh, wings: "folded" | "up" | "down"): void {
+  const air = wings !== "folded"
+  if (!air) for (const z of [-0.025, 0.025]) m.box(-0.01, 0, z - 0.008, 0.01, 0.08, z + 0.008, BEAK, MAT.lit)
+  m.bevelBox(-0.13, 0.07, -0.055, 0.1, 0.18, 0.055, 0.03, CROW, CROW_SHEEN, MAT.lit)
+  m.bevelBox(0.08, 0.13, -0.04, 0.17, 0.22, 0.04, 0.02, CROW, CROW_SHEEN, MAT.lit)
+  m.box(0.17, 0.165, -0.014, 0.24, 0.19, 0.014, BEAK, MAT.lit)
+  m.box(-0.27, 0.11, -0.045, -0.12, 0.135, 0.045, CROW, MAT.lit)
+  if (!air) return
+  // Two-sided wing planes from the shoulder: raised mid-beat, or level at the bottom of the stroke.
+  const tipY = wings === "up" ? 0.42 : 0.12
+  const tipZ = wings === "up" ? 0.26 : 0.4
+  for (const side of [-1, 1]) {
+    const a = [0.06, 0.17, side * 0.05], b = [-0.1, 0.17, side * 0.05]
+    const c = [-0.18, tipY, side * tipZ], d = [0.0, tipY + 0.01, side * (tipZ - 0.04)]
+    m.quadAuto(a, b, c, d, CROW, MAT.lit)
+    m.quadAuto(d, c, b, a, CROW, MAT.lit)
+  }
+}
+
 const WORD_COLOURS = [0x7a1a12, 0x6e6a5c, 0x7a1a12, 0x8a3412, 0x7a1a12, 0x6e6a5c]
 
 /** Builds every detail mesh, in `DETAIL_MODELS` order. */
@@ -323,6 +362,10 @@ function buildModel(m: Mesh, id: DetailModel): void {
     case "tape": return tape(m)
     case "tapeTail": return tapeTail(m)
     case "markX": return markX(m)
+    case "tv": return tv(m)
+    case "crowSit": return crow(m, "folded")
+    case "crowUp": return crow(m, "up")
+    case "crowDown": return crow(m, "down")
     default: {
       const i = WORDS.findIndex((w) => w.model === id)
       const w = WORDS[i]!

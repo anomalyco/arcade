@@ -144,6 +144,9 @@ export class OutbreakFrameRenderer {
     setCurrentNightLights(this.nightLights)
     this.details = new DetailsPresenter(this.renderer)
     setCurrentDetails(this.details)
+    this.details.crows.onScatter = (x, z, birds) => {
+      for (let i = 0; i < Math.min(3, birds); i++) audio.play({ id: "wings.flap", x, y: z, delay: i * 0.07, gain: 0.85, rate: 1.15 + i * 0.08, source: "crow" })
+    }
     this.ambientMotion = new OutbreakAmbientMotion(this.renderer)
     this.vehicleRenderer = new OutbreakVehicleRenderer(this.renderer, document.body)
     this.vehicleRenderer.onPop = (v) => vehicleAudio.pop(v.id)
@@ -466,7 +469,13 @@ export class OutbreakFrameRenderer {
       count,
       shadowLightCount,
       lampTrim: (lamp, resolved) => this.nightLights.trimLamp(town, settings.nightLights, lamp, resolved, time),
-      extraLights: (lights, n, max, lampPower) => this.nightLights.writeLights(lights, n, max, lampPower, settings.nightLights),
+      extraLights: (lights, n, max, lampPower) =>
+        this.details.writeLights(lights, this.nightLights.writeLights(lights, n, max, lampPower, settings.nightLights), max, lampPower, settings.details, {
+          cutX,
+          cutY,
+          interior: inInteriorView,
+          night: day.lamps,
+        }),
     })
     count = mapLights.count
     shadowLightCount = mapLights.shadowLightCount
@@ -596,7 +605,12 @@ export class OutbreakFrameRenderer {
     })
     const bloodBatches = this.blood.collect(town, tightView, settings.blood)
     const clutterBatches = this.exteriorClutter.collectBatches(town, tightView, settings.ground)
-    const detailBatches = this.details.collect(town, tightView, settings.details, settings.nightLights)
+    const detailBatches = this.details.collect(town, tightView, settings.details, settings.nightLights, {
+      dt: vdt,
+      time,
+      threats: session.sim.slots.map((s) => s.survivor),
+      noises,
+    })
     const motionOut = qProfile.ambientMotion
       ? this.ambientMotion.stepAndCollect(
           dt,
@@ -685,6 +699,7 @@ export class OutbreakFrameRenderer {
     render.postParams = unseenEval.postParams
     render.postExtra = unseenEval.postExtra
     this.renderer.render(render)
+    this.details.stepLife(time, settings.details, day.lamps, drawn, (e) => audio.play(e))
     audio.update({
       dt,
       world: soundWorld(session.sim),
