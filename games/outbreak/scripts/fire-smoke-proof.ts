@@ -10,6 +10,7 @@ import { createServer } from "vite"
  *
  *   bun scripts/fire-smoke-proof.ts --mode stills   Today vs kit fire stills per scene, plus paired GPU (stills/, gpu.json)
  *   bun scripts/fire-smoke-proof.ts --mode clip     one labelled clip as JPEG frames (clip/NNNN.jpg, 30 fps)
+ *   bun scripts/fire-smoke-proof.ts --mode all      both, on one page
  *
  * Output goes to captures/fire-smoke/. "Today" is `fireStyle` 0, `worldSmoke` 0 and `beamDustStyle` 0.
  */
@@ -108,8 +109,17 @@ async function openPage(): Promise<Page> {
     if (m.type() === "error" || /wgsl|WGSL|validation/i.test(m.text())) errors.push(m.text())
   })
   ;(page as any).errors = errors
-  await page.goto(`http://127.0.0.1:${port}/?solo&seed=7&bench&quality=balanced`)
-  await page.waitForFunction(() => (window as any).__arcadeHarness?.ready, null, { timeout: 120_000 })
+  page.on("console", (m) => {
+    if (m.type() === "error" || m.type() === "warning") console.log(`[page:${m.type()}] ${m.text().slice(0, 300)}`)
+  })
+  await page.goto(`http://127.0.0.1:${port}/?solo&seed=7&bench&quality=balanced`, { timeout: 300_000 })
+  try {
+    // A cold Vite compile on a busy worker can take minutes.
+    await page.waitForFunction(() => (window as any).__arcadeHarness?.ready, null, { timeout: 420_000 })
+  } catch (e) {
+    console.log("harness never ready; page errors:", JSON.stringify(errors))
+    throw e
+  }
   await evalIn(page, `h.freeze(); h.setLab("timeScale", 0); h.setLab("zombieCount", 0); h.session().ai.agents.length = 0; h.setZoomRaw(${zoom})`)
   await page.addStyleTag({
     content: `#clip-label{position:fixed;left:16px;top:12px;z-index:99;font:600 18px -apple-system,sans-serif;color:#fff;text-shadow:0 1px 3px #000;pointer-events:none}`,
@@ -152,7 +162,7 @@ const med = (xs: number[]) => {
 
 try {
   const page = await openPage()
-  if (mode === "stills") {
+  if (mode === "stills" || mode === "all") {
     const dir = resolve(out, "stills")
     rmSync(dir, { recursive: true, force: true })
     mkdirSync(dir, { recursive: true })
@@ -185,7 +195,8 @@ try {
       }
     }
     writeFileSync(resolve(out, "gpu.json"), JSON.stringify(gpu, null, 2))
-  } else {
+  }
+  if (mode === "clip" || mode === "all") {
     const dir = resolve(out, "clip")
     rmSync(dir, { recursive: true, force: true })
     mkdirSync(dir, { recursive: true })
