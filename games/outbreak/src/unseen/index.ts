@@ -18,7 +18,6 @@ export {
 } from "./settings"
 export {
   outbreakUnseenFieldWgsl,
-  outbreakUnseenPostBaselineHookWgsl,
   outbreakUnseenPostHookWgsl,
   outbreakUnseenPostWgsl,
   outbreakUnseenSceneWgsl,

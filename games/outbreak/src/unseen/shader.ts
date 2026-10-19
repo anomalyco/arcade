@@ -365,5 +365,3 @@ export const outbreakUnseenFieldWgsl = resolveWgsl(unseenFieldSnippet)
 export const outbreakUnseenSceneWgsl = resolveWgsl(unseenSceneSnippet)
 export const outbreakUnseenPostWgsl = resolveWgsl(unseenPostSnippet)
 export const outbreakUnseenPostHookWgsl = "c = applyOutbreakUnseenPost(c, centerSamp, uv, o.pos.xy, G, GL.pad);"
-export const outbreakUnseenPostBaselineHookWgsl =
-  "c = applyOutbreakUnseenPost(c, clean(textureSampleLevel(src, samp, uv, 0.0)), uv, o.pos.xy, G, grade.look);"
