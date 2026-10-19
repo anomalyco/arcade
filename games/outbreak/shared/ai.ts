@@ -251,6 +251,8 @@ export class OutbreakAISubsystem {
   private closedDoors: Rect[] = []
   /** Building shells for the crowd's hearing (`shared/hearing.ts`). */
   readonly hearing = new HearingMap()
+  /** The weather's pull on the crowd's senses this tick (`shared/weather/`): rain masks noise and shortens sight. */
+  readonly weatherSense = { hearing: 1, sight: 1 }
   private sightBlockers: Rect[] = []
   private solids: Rect[] = []
   private portals: NavPortal[] = []
@@ -592,7 +594,8 @@ export class OutbreakAISubsystem {
       ...this.config,
       flashlightBoost: this.config.flashlightBoost * (0.5 + 0.5 * calm),
       aggression: this.config.aggression * (0.65 + 0.35 * this.threat),
-      sightRange: this.config.sightRange * (0.72 + 0.28 * this.threat),
+      sightRange: this.config.sightRange * (0.72 + 0.28 * this.threat) * this.weatherSense.sight,
+      hearingScale: this.config.hearingScale * this.weatherSense.hearing,
       walkSpeed: this.config.walkSpeed * (0.82 + 0.18 * this.threat),
       chaseSpeed: this.config.chaseSpeed * (0.88 + 0.12 * this.threat),
     }

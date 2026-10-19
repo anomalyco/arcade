@@ -374,6 +374,10 @@ export type OutbreakLightingFrameState = {
     puddleCoverage: number
     rippleIntensity: number
     snowAmount: number
+    /** Wet gloss in light, 0..2 (AR-71; `OL.art.w`). */
+    wetGloss?: number
+    /** Lightning this frame 0..1 times how far it lifts the shroud: the shroud and out-of-light darkening ease off. */
+    shroudLift?: number
   }
   windowOrigin?: readonly [number, number]
   isStreamWindow?: boolean
@@ -589,9 +593,11 @@ export function packOutbreakLightingUniforms(
   out[OUTBREAK_DUST_UNIFORM_OFFSET + 1] = look.dustBrightness ?? DEFAULT_LOOK_TRIMS.dustBrightness
   out[OUTBREAK_DUST_UNIFORM_OFFSET + 2] = look.dustSize ?? DEFAULT_LOOK_TRIMS.dustSize
   out[OUTBREAK_DUST_UNIFORM_OFFSET + 3] = look.dustLamps ?? DEFAULT_LOOK_TRIMS.dustLamps
-  out[OUTBREAK_SHROUD_UNIFORM_OFFSET] = look.shroudDarkness ?? DEFAULT_LOOK_TRIMS.shroudDarkness
+  // A lightning flash lights the whole town for a moment: the shroud and the out-of-light darkening ease off (AR-71).
+  const keep = 1 - Math.max(0, Math.min(1, state.weather?.shroudLift ?? 0))
+  out[OUTBREAK_SHROUD_UNIFORM_OFFSET] = (look.shroudDarkness ?? DEFAULT_LOOK_TRIMS.shroudDarkness) * keep
   out[OUTBREAK_SHROUD_UNIFORM_OFFSET + 1] = look.outOfLightDesat ?? DEFAULT_LOOK_TRIMS.outOfLightDesat
-  out[OUTBREAK_SHROUD_UNIFORM_OFFSET + 2] = look.outOfSightDarkening ?? DEFAULT_LOOK_TRIMS.outOfSightDarkening
+  out[OUTBREAK_SHROUD_UNIFORM_OFFSET + 2] = (look.outOfSightDarkening ?? DEFAULT_LOOK_TRIMS.outOfSightDarkening) * keep
   out[OUTBREAK_SHROUD_UNIFORM_OFFSET + 3] = look.worldSaturation ?? DEFAULT_LOOK_TRIMS.worldSaturation
   out[OUTBREAK_BEAM_LOOK_UNIFORM_OFFSET] = look.beamWarmth ?? DEFAULT_LOOK_TRIMS.beamWarmth
   out[OUTBREAK_BEAM_LOOK_UNIFORM_OFFSET + 1] = look.beamTightness ?? DEFAULT_LOOK_TRIMS.beamTightness
@@ -604,6 +610,7 @@ export function packOutbreakLightingUniforms(
   out[OUTBREAK_ART_UNIFORM_OFFSET] = look.sightGlow ?? DEFAULT_LOOK_TRIMS.sightGlow
   out[OUTBREAK_ART_UNIFORM_OFFSET + 1] = look.groundDetail ?? DEFAULT_LOOK_TRIMS.groundDetail
   out[OUTBREAK_ART_UNIFORM_OFFSET + 2] = look.lampRolloff ?? DEFAULT_LOOK_TRIMS.lampRolloff
+  out[OUTBREAK_ART_UNIFORM_OFFSET + 3] = state.weather?.wetGloss ?? 1
   out[OUTBREAK_NIGHT_UNIFORM_OFFSET] = state.nightSightWeight ?? 0
   out[OUTBREAK_NIGHT_UNIFORM_OFFSET + 1] = Math.max(0.5, look.nightSightRadius ?? DEFAULT_LOOK_TRIMS.nightSightRadius)
   out[OUTBREAK_NIGHT_UNIFORM_OFFSET + 2] = Math.max(0.5, look.nightSightFalloff ?? DEFAULT_LOOK_TRIMS.nightSightFalloff)
@@ -1207,7 +1214,7 @@ struct OutbreakLightingUniforms {
   u5: vec4f, // flashColorR, flashColorG, flashColorB, inInteriorView
   u6: vec4f, // playerX, playerY, playerH, exposure
   u7: vec4f, // streetHeadX, streetHeadY, streetHeadZ, streetAirHaze
-  u8: vec4f, // actorLampShadow, weatherWetness, weatherPuddles, weatherSnow
+  u8: vec4f, // actorLampShadow, weatherWetness, weatherPuddles (standing water 0..1), weatherSnow
   u9: vec4f, // zombie0X, zombie0Y, zombie1X, zombie1Y
   u10: vec4f, // fogStyle × 4, fogEdgeSoftness, fogMemoryDim, fogMemorySaturation
   veg: FoliageWindConfig,
@@ -1232,7 +1239,7 @@ struct OutbreakLightingUniforms {
   shroud: vec4f, // shroud & unlit: shroudDarkness, outOfLightDesat, outOfSightDarkening, worldSaturation
   beamLook: vec4f, // beamWarmth, beamTightness, zombieRimSpec, nightGrain
   sight: vec4f, // coneSharpness, dayShroud, dayMuted, shroudLampKeep
-  art: vec4f, // sightGlow, groundDetail, lampRolloff, reserved
+  art: vec4f, // sightGlow, groundDetail, lampRolloff, wetGloss (AR-71)
   night: vec4f, // night sight: weight this frame, readable radius, fade distance, reserved
   vegGust: FoliageGust,
 }
@@ -1397,10 +1404,8 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, inRoom: 
     let groundMask = smoothstep(2.6, 0.35, world.y) * select(1.0, 0.32, mat == 22);
     var wetPuddle = 0.0;
     if (OL.u8.y > 0.01 && world.y < 0.35 && n.y > 0.75) {
-      // 3.7:1 camera-stretched puddle streaks along z toward F.cam.xz
-      let q = abs(fract(world.xz * vec2f(0.24, 0.065) + vec2f(0.2, 0.4)) - 0.5) * 2.0;
-      wetPuddle = OL.u8.y * (0.45 + 0.95 * q.x * q.y);
-      col *= 1.0 - wetPuddle * select(0.14, 0.28, world.z > b.w + 4.3 && world.z < b.w + 12.7);
+      // Wet ground and standing water (AR-71, weather/puddles.ts) brighten lamp pools a little; darkening is done there.
+      wetPuddle = OL.u8.y * 0.35 + outbreakPuddleMask(world.xz, true) * 0.65;
     }
     if (OL.u8.w > 0.01 && n.y > 0.45) {
       col = mix(col, vec3f(0.16, 0.20, 0.28) * (0.45 + 0.55 * F.ambient.w) + surfCol * 1.4, OL.u8.w * 0.55 * n.y);

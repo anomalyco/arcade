@@ -275,8 +275,9 @@ export const groundSurfaceHookWgsl = /* wgsl */ `
         let crown = 1.0 - abs(roadU * 2.0 - 1.0);
         let dxRoad = (p.x - F.eye.x) * 0.055;
         let centerFocus = max(0.0, 1.0 - dxRoad * dxRoad);
-        let sheen = (0.52 + 0.48 * crown) * (0.54 + 0.46 * centerFocus) * (0.72 + col.g * 3.8) * (gParams.z + OL.u8.y * 1.45);
-        col = col * (1.0 - OL.u8.y * 0.22) + vec3f(0.022, 0.036, 0.068) * max(F.ambient.w, 0.0) * OL.u2.y * sheen;
+        // Wet roads darken and gloss only in light (AR-71, weather/puddles.ts), not as a sheen band here.
+        let sheen = (0.52 + 0.48 * crown) * (0.54 + 0.46 * centerFocus) * (0.72 + col.g * 3.8) * gParams.z;
+        col = col + vec3f(0.022, 0.036, 0.068) * max(F.ambient.w, 0.0) * OL.u2.y * sheen;
       } else if (kind == 2 || kind == 6) {
         let pBlock = select(p, p - floor(p / 96.0) * 96.0, OL.win.z > 0.5);
         let inVerge = (pBlock.y > 39.28 && pBlock.y < 39.80) || (pBlock.y > 48.20 && pBlock.y < 48.72);
@@ -290,7 +291,7 @@ export const groundSurfaceHookWgsl = /* wgsl */ `
             let dxWalk2 = dxWalk * dxWalk;
             let walkCore = fastExpNeg(dxWalk2 * 0.8) * smoothstep(wb.w + 4.9, wb.w - 0.5, o.world.z);
             let sideSpread = fastExpNeg(dxWalk2 * 0.133333) * smoothstep(wb.w + 1.9, wb.w + 2.9, o.world.z) * smoothstep(wb.w + 4.7, wb.w + 3.3, o.world.z);
-            let extScale = select(1.05, 0.68, OL.u5.w > 0.5) * (1.0 + OL.u8.y * 0.85) * 0.96;
+            let extScale = select(1.05, 0.68, OL.u5.w > 0.5) * 0.96;
             // Legacy porch glow painted into the walkway's albedo; the beam then inherited its amber. Lamp roll-off
             // (OL.art.z) retires it: the porch light's own pool (applySceneLightBounceAndHaze) lights the walk.
             let walkPool = (walkCore * 0.88 + sideSpread * 0.35) * OL.u2.y * nightLamps * extScale * (1.0 - clamp(OL.art.z, 0.0, 1.0));

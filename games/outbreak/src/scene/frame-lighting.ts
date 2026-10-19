@@ -24,7 +24,7 @@ import type { WorldMode } from "../../shared/world"
 import type { OutbreakVehicle } from "../../shared/vehicles"
 import type { CoopView } from "../coop-view"
 import type { BeamLook } from "../discovery/flashlight"
-import { beamPose, beamScreenRect, beamWeatherAir } from "../flashlight-beam"
+import { beamPose, beamScreenRect } from "../flashlight-beam"
 import { packGroundCfgBits } from "../ground"
 import { InteriorPresenter, SCONCE_LAMP_SLOT, SconceLights } from "../interiors"
 import { TABLE_LAMP_SLOT, type TableLamp } from "../lightbake"
@@ -544,6 +544,10 @@ export class OutbreakFrameLighting {
           readonly puddleCoverage: number
           readonly rippleIntensity: number
           readonly snowAmount: number
+          readonly wetGloss?: number
+          readonly shroudLift?: number
+          /** Extra beam air from rain and mist (0..2). */
+          readonly air?: number
         }
       | undefined
     readonly unseenEval: UnseenFrameEvaluation
@@ -620,7 +624,7 @@ export class OutbreakFrameLighting {
         flashlightPitch,
         invViewProj: mat4.inverse(cam.viewProj, this.invViewProj),
         beamReach,
-        weatherAir: settings.weather.weatherEnabled ? beamWeatherAir({ intensity: settings.weather.weatherIntensity, mist: settings.weather.weatherMist }) : 0,
+        weatherAir: activeWeather?.air ?? 0,
         frameDt: fieldSnap || Math.hypot(sightX - this.lastSightX, sightY - this.lastSightY) > 2.5 ? 0 : dt,
         inInteriorView,
         streetHead: nearestStreetHead(camX, camY, currentIsStreamWindow),
@@ -683,6 +687,8 @@ export class OutbreakFrameLighting {
     readonly cutHeight: number
     readonly day: DayCycleSample
     readonly lightningFlash: number
+    /** The weather's sky this frame: overcast, the flash's shroud lift and the direction its light comes from. */
+    readonly weather?: { readonly overcast: number; readonly shroudLift: number; readonly strikeDir: readonly [number, number, number] }
     readonly sightAim: number
     readonly sightCone: number
     readonly sightAwareness: number
@@ -706,6 +712,7 @@ export class OutbreakFrameLighting {
       cutHeight,
       day,
       lightningFlash,
+      weather,
       sightAim,
       sightCone,
       sightAwareness,
@@ -732,12 +739,14 @@ export class OutbreakFrameLighting {
     frame[25] = cutY
     frame[26] = cutFlag
     frame[27] = cutRadius
-    const ambScale = settings.lighting.skyFill * (1 - settings.weather.weather * 0.3)
+    // Rain brings cloud; lightning lights everything for a moment in cold blue-white, from the strike's side of the sky.
+    const overcast = Math.max(settings.weather.weather, (weather?.overcast ?? 0) * 0.6)
+    const ambScale = settings.lighting.skyFill * (1 - overcast * 0.3)
     const ambAdd = lightningFlash * 0.16
-    frame[28] = day.ambient[0] * ambScale + ambAdd
-    frame[29] = day.ambient[1] * ambScale + ambAdd
-    frame[30] = day.ambient[2] * ambScale + ambAdd
-    frame[31] = day.strength * settings.lighting.moonFill * (1 - settings.weather.weather * 0.85) + lightningFlash * 0.65
+    frame[28] = day.ambient[0] * ambScale + ambAdd * 0.86
+    frame[29] = day.ambient[1] * ambScale + ambAdd * 0.94
+    frame[30] = day.ambient[2] * ambScale + ambAdd * 1.1
+    frame[31] = day.strength * settings.lighting.moonFill * (1 - overcast * 0.85) + lightningFlash * 0.65
     const focusX = activePeek ? p.x + (activePeek.cutX - p.x) * peekBlend : p.x
     const focusY = activePeek ? p.y + (activePeek.cutY - p.y) * peekBlend : p.y
     const focus = cam.project(focusX, 1, focusY, w, h)
@@ -745,9 +754,14 @@ export class OutbreakFrameLighting {
     frame[33] = 1 - (focus.y / h) * 2
     frame[34] = cutHeight
     frame[35] = count
-    frame[36] = day.direction[0]
-    frame[37] = day.direction[1]
-    frame[38] = day.direction[2]
+    const sky = weather && lightningFlash > 0.001 ? Math.min(1, lightningFlash * 1.5) : 0
+    const dx = day.direction[0] + ((weather?.strikeDir[0] ?? 0) - day.direction[0]) * sky
+    const dy = day.direction[1] + ((weather?.strikeDir[1] ?? 0) - day.direction[1]) * sky
+    const dz = day.direction[2] + ((weather?.strikeDir[2] ?? 0) - day.direction[2]) * sky
+    const dl = Math.hypot(dx, dy, dz) || 1
+    frame[36] = dx / dl
+    frame[37] = dy / dl
+    frame[38] = dz / dl
     frame[39] = day.sun
     frame[40] = 1 / SIZE
     frame[41] = 1 / SIZE
@@ -756,6 +770,6 @@ export class OutbreakFrameLighting {
     frame[44] = sightAim
     frame[45] = Math.cos((sightCone * Math.PI) / 360)
     frame[46] = sightAwareness
-    frame[47] = settings.vision.shroud
+    frame[47] = settings.vision.shroud * (1 - (weather?.shroudLift ?? 0))
   }
 }

@@ -47,8 +47,12 @@ const PRESSURE_BANDS = {
   /** Aware zombies at night over the day before it: nights are harder than days. */
   nightOverDay2: [1.3, 5], // 2.33 [1.9]
   nightOverDay3: [1.2, 5], // 2.19 [1.51]
-  /** Aware zombies, Night 3 over Night 2: rising, without a cliff. */
-  nightThreeOverTwo: [1.1, 2], // 1.23 [1.03]
+  /**
+   * Aware zombies, Night 3 over Night 2: rising, without a cliff. AR-71 weather: rain masks noise, and two of the four
+   * seeds rain or storm through Night 3 at this clock, so fewer of the dead turn: 1.17 with the weather off, 1.08 on.
+   * The lower bound moved from 1.1 to 1.0 for that; living zombies and chasers still rise (the next two bands).
+   */
+  nightThreeOverTwo: [1.0, 2], // 1.08 (weather on; 1.17 off) [1.03]
   /** Active chasers at night. */
   nightTwoChasers: [1.5, 4], // 2.89 [2.37]
   nightThreeChasers: [3, 5.5], // 3.94 [2.56]
