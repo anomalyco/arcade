@@ -3,8 +3,8 @@ import { dayCycle } from "../../shared/day-cycle"
 import type { Town } from "../../shared/map"
 import { SoundDirector, type SoundEvent, type SoundWorld } from "./director"
 import type { SoundHold } from "./inventory"
-import { AUDIO_BUS_LEVELS, DEFAULT_AUDIO_SETTINGS, type AudioSettings } from "./settings"
-import { indoors, SoundOcclusion, surfaceAt } from "./space"
+import { AUDIO_BUS_LEVELS, DEFAULT_AUDIO_SETTINGS, SURFACE_STEP_SETTING_KEYS, type AudioSettings } from "./settings"
+import { footstepEvent, indoors, SoundOcclusion, SURFACE_STEP_PROFILES, surfaceAt } from "./space"
 import { ZombieFootsteps } from "./zombie-steps"
 
 export type AudioFrame = {
@@ -22,8 +22,6 @@ export type AudioFrame = {
 }
 
 const STORAGE_KEY = "outbreak.audio.v1"
-/** Above this speed a footfall is a run (between walk 3.4 and sprint 5.6 m/s). */
-const RUN_SPEED = 4.4
 const EAR_HEIGHT = 1.7
 /** Lateral metres for near-full pan: the top-down camera frames about 30 m across. */
 const PAN_SCALE = 12
@@ -53,6 +51,9 @@ export class OutbreakAudio {
   private unlocked = false
   private indoor = 0
   private town: Town | null = null
+  private listenerPos = { x: 0, y: 0 }
+  private localCrouching = false
+  private glassSpots: { x: number; y: number }[] = []
   private saved = ""
   private savedVolume = ""
   private applied = ""
@@ -128,11 +129,15 @@ export class OutbreakAudio {
     const key = AUDIO_KEYS.map((k) => s[k]).join() + (rt.ctx ? "1" : "0")
     if (key === this.applied) return
     this.applied = key
+    const today = s.audioMode === 0
     rt.setMuted(Boolean(s.audioMuted))
     rt.setVolume(s.volumeMaster / 100)
-    rt.maxVoices = Math.round(s.audioVoiceCap)
+    rt.maxVoices = today ? 24 : Math.round(s.audioVoiceCap)
     rt.setReverbWet(s.audioReverb)
-    for (const bus of MIX_CATEGORIES) rt.setBusGain(bus, ((s[AUDIO_BUS_LEVELS[bus]] as number) / 100) * busVolume(s, bus))
+    for (const bus of MIX_CATEGORIES) {
+      const level = today && (bus === "foley" || bus === "impact") ? 100 : (s[AUDIO_BUS_LEVELS[bus]] as number)
+      rt.setBusGain(bus, (level / 100) * busVolume(s, bus))
+    }
     this.occlusion.strength = s.audioOcclusion
     this.savedVolume = saveVolumeSettings(this.options.storage, "outbreak", s, this.savedVolume)
     const saved = JSON.stringify({ muted: Boolean(s.audioMuted) })
@@ -146,6 +151,16 @@ export class OutbreakAudio {
     const t0 = performance.now()
     const { world, listener } = frame
     this.town = world.town
+    this.listenerPos.x = listener.x
+    this.listenerPos.y = listener.y
+    const localSlot = world.survivors.find((s) => Math.hypot(s.survivor.x - listener.x, s.survivor.y - listener.y) < 0.5) ?? world.survivors[0]
+    this.localCrouching = Boolean(localSlot?.survivor.crouching)
+    this.glassSpots.length = 0
+    if (world.progression?.ledger.stores) {
+      for (const [sid, st] of world.progression.ledger.stores) {
+        if (sid.startsWith("glass:") && st.at) this.glassSpots.push(st.at)
+      }
+    }
     this.occlusion.sync(world.town, frame.revision)
     this.apply()
     this.runtime.setListener({ x: listener.x, z: listener.y, vx: 0, vz: 0, rightX: 1, rightZ: 0, earHeight: EAR_HEIGHT, panScale: PAN_SCALE })
@@ -167,7 +182,12 @@ export class OutbreakAudio {
     }
     // Zombie feet: the nearest few step by step, within the crowd budget and never into the last free voices.
     const town = world.town
-    const steps = this.zombieSteps.update(world.zombies, listener, world.time, frame.dt, (x, y) => surfaceAt(town, x, y))
+    const today = this.settings.audioMode === 0
+    const extra = !today && this.glassSpots.length > 0 ? { glass: this.glassSpots } : undefined
+    const steps = this.zombieSteps.update(world.zombies, listener, world.time, frame.dt, (x, y) => {
+      const surf = surfaceAt(town, x, y, extra)
+      return today ? SURFACE_STEP_PROFILES[surf].baseSurface : surf
+    })
     if (live) for (const step of steps) {
       if (this.runtime.activeVoiceCount >= this.runtime.maxVoices - CROWD_HEADROOM) break
       if (this.play({ ...step, source: "zombie" })) this.counts.zombieSteps++
@@ -184,11 +204,19 @@ export class OutbreakAudio {
   /** Plays one library sound at a plan position with the entry's range. */
   play(event: SoundEvent): VoiceHandle | null {
     const entry = sfxEntry(event.id)
+    const today = this.settings.audioMode === 0
+    const rolloff = today ? 1.25 : (this.settings.audioFalloff ?? 1.55)
+    const refScale = today ? 1.0 : 0.78
     const voice = this.runtime.playCue(event.id, {
       time: this.runtime.now + (event.delay ?? 0),
       gain: event.gain,
       rate: event.rate,
-      position: entry.range.max > 0 ? { x: event.x, z: event.y, refDistance: entry.range.ref, maxDistance: entry.range.max, rolloff: 1.4 } : undefined,
+      cutoffHz: event.cutoffHz,
+      priority: event.priority,
+      position:
+        entry.range.max > 0
+          ? { x: event.x, z: event.y, refDistance: entry.range.ref * refScale, maxDistance: entry.range.max, rolloff }
+          : undefined,
     })
     if (voice) {
       this.counts.played++
@@ -232,12 +260,34 @@ export class OutbreakAudio {
   }
 
   /** A foot contact from the rig (local or remote survivor), on whatever surface it landed on. */
-  footstep(x: number, y: number, speed: number): void {
+  footstep(x: number, y: number, speed: number, opts?: { local?: boolean; crouching?: boolean }): void {
+    const isLocal = opts?.local ?? Math.hypot(x - this.listenerPos.x, y - this.listenerPos.y) < 0.9
+    const crouching = opts?.crouching ?? (isLocal ? this.localCrouching : false)
+    if (this.settings.audioMode === 0) {
+      if (speed <= 0.1) return
+      this.counts.footsteps++
+      if (!this.live || !this.town) return
+      const base = SURFACE_STEP_PROFILES[surfaceAt(this.town, x, y)].baseSurface
+      this.play({ id: `foot.${base}.${speed > 4.4 ? "run" : "walk"}`, x, y, source: "foot" })
+      return
+    }
+    if (!this.town) {
+      if (speed >= 0.25) this.counts.footsteps++
+      return
+    }
+    const extra = this.glassSpots.length > 0 ? { glass: this.glassSpots } : undefined
+    const s = this.settings
+    const step = footstepEvent(this.town, x, y, speed, {
+      local: isLocal,
+      crouching,
+      extra,
+      selfScale: (s.audioSelfStep ?? 100) / 100,
+      surfaceScale: (surf) => ((s[SURFACE_STEP_SETTING_KEYS[surf]] as number) ?? 100) / 100,
+    })
+    if (!step) return
     this.counts.footsteps++
-    if (!this.live || !this.town) return
-    const run = speed > RUN_SPEED
-    const gain = run ? 1 : 0.75 + 0.25 * Math.min(1, speed / 3.4)
-    this.play({ id: `foot.${surfaceAt(this.town, x, y)}.${run ? "run" : "walk"}`, x, y, gain, source: "foot" })
+    if (!this.live) return
+    this.play(step.event)
   }
 
   /**
@@ -247,33 +297,50 @@ export class OutbreakAudio {
   private ambience(frame: AudioFrame): void {
     const day = dayCycle(frame.hour)
     const dark = 1 - day.sun
-    // The day cycle's threat curve (the one the AI and the look follow), raised further by zombies on you.
-    const threat = Math.min(1, day.threat * 0.45 + Math.min(1, frame.pursuing / 3) * 0.55)
-    const muffle = 1 - this.indoor * 0.55
+    // The day cycle's threat curve (the one the AI and the look follow), raised further by zombies on you, plus a hushed indoor room tone.
+    const threat = Math.min(1, day.threat * 0.4 + Math.min(1, frame.pursuing / 3) * 0.55 + this.indoor * 0.14)
+    const muffle = 1 - this.indoor * 0.68
     const wanted: Record<Bed, number> = {
       "ambience.day.suburb": day.sun * muffle,
       "ambience.night.suburb": dark * muffle,
-      "ambience.threat": threat * (0.6 + 0.4 * muffle),
+      "ambience.threat": threat * (0.55 + 0.45 * muffle),
     }
-    const cutoff = 18000 * Math.pow(1100 / 18000, this.indoor)
+    const outdoorCutoff = 14000 * Math.pow(750 / 14000, this.indoor)
+    const threatCutoff = 2600 * Math.pow(420 / 2600, this.indoor * (1 - Math.min(1, frame.pursuing / 3)))
     const ease = Math.min(1, frame.dt * 1.5)
     // The horde: every moving zombie near you beyond the few heard step by step, panned toward the crowd.
     this.hordeLevel += (this.zombieSteps.horde.level - this.hordeLevel) * Math.min(1, frame.dt * 2)
     const hordeGain = this.hordeLevel * muffle * sfxEntry("zombie.horde.shuffle").gain
-    if (!this.live) this.horde = null
-    else if (this.horde?.active) this.horde.setParams({ gain: hordeGain, pan: this.zombieSteps.horde.pan, cutoffHz: cutoff }, 0.2)
-    else if (hordeGain > 0.01) this.horde = this.runtime.playCue("zombie.horde.shuffle", { gain: Math.max(0.01, this.hordeLevel * muffle), ownerKey: "horde" })
+    if (!this.live) {
+      this.horde = null
+    } else if (this.horde?.active) {
+      if (hordeGain < 0.003 && this.zombieSteps.horde.level === 0) {
+        this.horde.stop(0.25)
+        this.horde = null
+      } else {
+        this.horde.setParams({ gain: hordeGain, pan: this.zombieSteps.horde.pan, cutoffHz: outdoorCutoff }, 0.2)
+      }
+    } else if (hordeGain > 0.01) {
+      this.horde = this.runtime.playCue("zombie.horde.shuffle", { gain: Math.max(0.01, hordeGain), cutoffHz: outdoorCutoff, ownerKey: "horde" })
+    }
     for (const bed of BEDS) {
       this.bedLevels[bed] += (wanted[bed] - this.bedLevels[bed]) * ease
       const gain = this.bedLevels[bed] * sfxEntry(bed).gain
+      const cutoff = bed === "ambience.threat" ? threatCutoff : outdoorCutoff
       const voice = this.beds[bed]
       if (!this.live) {
         if (voice) delete this.beds[bed]
         continue
       }
-      if (voice?.active) voice.setParams({ gain, cutoffHz: cutoff }, 0.2)
-      else if (gain > 0.01) {
-        const started = this.runtime.playCue(bed, { gain: Math.max(0.01, this.bedLevels[bed]), ownerKey: bed })
+      if (voice?.active) {
+        if (gain < 0.003 && wanted[bed] < 0.005) {
+          voice.stop(0.35)
+          delete this.beds[bed]
+        } else {
+          voice.setParams({ gain, cutoffHz: cutoff }, 0.2)
+        }
+      } else if (gain > 0.01) {
+        const started = this.runtime.playCue(bed, { gain: Math.max(0.01, gain), cutoffHz: cutoff, ownerKey: bed })
         if (started) this.beds[bed] = started
       }
     }

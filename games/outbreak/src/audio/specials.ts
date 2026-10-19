@@ -1,5 +1,6 @@
 import type { AIState } from "../../shared/ai"
 import type { CombatMeleeEvent, CombatShotEvent } from "../../shared/combat"
+import type { Town } from "../../shared/map"
 import {
   DEFAULT_SPECIALS_TUNING,
   hitFromFront,
@@ -11,6 +12,7 @@ import {
   SPECIAL_RIOT,
   SPECIAL_SCREAMER,
 } from "../../shared/specials/kinds"
+import { surfaceAt, zombieStepEvent } from "./space"
 import type { SoundEvent } from "./types"
 
 export type SpecialSoundZombie = { id: number; x: number; y: number; state: AIState; seed?: number; aim?: number }
@@ -52,6 +54,7 @@ export class SpecialSounds {
     listener: { x: number; y: number },
     emit: (e: SoundEvent) => void,
     rng: () => number,
+    town?: Town,
   ): void {
     const t = this.tuning
     const dt = Math.max(0, Math.min(0.25, time - this.lastTime))
@@ -70,26 +73,27 @@ export class SpecialSounds {
       const at = { x: z.x, y: z.y, source: "zombie" }
       if (prev && prev.state !== z.state) {
         if (kind === SPECIAL_SCREAMER && z.state === "alert" && d <= t.shriekHearing) {
-          emit({ id: "zombie.alert", ...at, rate: 1.55, gain: 1.6 })
-          emit({ id: "zombie.alert", ...at, rate: 1.8, gain: 1.2, delay: 0.28 })
-          emit({ id: "zombie.alert", ...at, rate: 1.35, gain: 1.3, delay: 0.7 })
+          emit({ id: "zombie.alert", ...at, rate: 1.55, gain: 1.15, cutoffHz: 4200, priority: 92 })
+          emit({ id: "zombie.alert", ...at, rate: 1.36, gain: 0.85, cutoffHz: 3600, delay: 0.26, priority: 90 })
+          emit({ id: "zombie.alert", ...at, rate: 1.22, gain: 0.72, cutoffHz: 3200, delay: 0.56, priority: 88 })
         } else if (kind === SPECIAL_BLOATER && z.state === "dead" && d <= t.shriekHearing) {
-          emit({ id: "zombie.hit", ...at, rate: 0.5, gain: 1.7 })
-          emit({ id: "zombie.death", ...at, rate: 0.62, gain: 1.1, delay: 0.05 })
-          emit({ id: "body.vault", ...at, rate: 0.55, gain: 0.9, delay: 0.12 })
+          emit({ id: "zombie.hit", ...at, rate: 0.5, gain: 1.15, cutoffHz: 1800, priority: 88 })
+          emit({ id: "zombie.death", ...at, rate: 0.78, gain: 0.95, delay: 0.04, priority: 85 })
+          emit({ id: "melee.hit.blade", ...at, rate: 0.84, gain: 0.85, delay: 0.09, priority: 85 })
         } else if (kind === SPECIAL_LURKER && prev.state === "wander" && z.state !== "dead" && d <= t.hearing) {
-          emit({ id: "zombie.alert", ...at, rate: 0.72, gain: 1.4 })
+          emit({ id: "zombie.alert", ...at, rate: 0.84, gain: 1.1, priority: 85 })
         }
       }
       if (z.state !== "dead" && d <= t.hearing) {
         if (kind === SPECIAL_BLOATER && time >= m.next) {
           m.next = time + t.gurgleEvery * (0.75 + rng() * 0.5)
-          emit({ id: "zombie.groan.idle", ...at, rate: 0.52 + rng() * 0.08, gain: 0.85 })
+          emit({ id: "zombie.groan.idle", ...at, rate: 0.76 + rng() * 0.06, gain: 0.72, cutoffHz: 1400 })
         } else if (kind === SPECIAL_BRUTE && dt > 0) {
           const speed = Math.hypot(z.x - m.x, z.y - m.y) / dt
           if (speed > 0.35 && time >= m.next) {
             m.next = time + t.bruteStep * Math.max(0.6, Math.min(1.4, 1.6 / Math.max(0.6, speed)))
-            emit({ id: "body.vault", ...at, rate: 0.5 + rng() * 0.06, gain: 0.55 })
+            const surf = town ? surfaceAt(town, z.x, z.y) : "concrete"
+            emit(zombieStepEvent(surf, "brute", z.x, z.y, speed, rng))
           }
         }
       }

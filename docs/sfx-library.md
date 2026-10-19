@@ -50,6 +50,8 @@ the reused UI files keep theirs. Per-file provenance (take, prompt influence, re
 | `melee.break` | 2 | impact | 0.80–0.85 | 12 | ElevenLabs, 2 of 3 |
 | `foot.{concrete,grass,wood}.walk` | 6 each | foley | 0.30–0.42 | 13–14 | ElevenLabs, steps sliced from 2 takes |
 | `foot.{concrete,grass,wood}.run` | 6 each | foley | 0.19–0.30 | 10–11 | ElevenLabs, steps sliced from 2 takes |
+| `foot.{puddle,gravel,tile}.walk` | 3 each | foley | 0.15–0.41 | 6–7 | ElevenLabs, steps sliced from 2 takes |
+| `foot.glass.step` | 3 | foley | 0.35–0.70 | 10 | ElevenLabs, 3 of 4 |
 | `door.wood.open` | 3 | foley | 0.97–1.20 | 19 | ElevenLabs, 3 of 4 |
 | `door.wood.close` | 3 | foley | 0.71–1.00 | 13 | ElevenLabs, 3 of 4 |
 | `door.locked` | 3 | foley | 0.91–1.00 | 16 | ElevenLabs, 3 of 4 |
@@ -82,8 +84,11 @@ the reused UI files keep theirs. Per-file provenance (take, prompt influence, re
 | `zombie.horde.shuffle` | 1 loop | impact | 7.4 | 55 | ElevenLabs, 1 of 3 |
 | `zombie.death` | 4 | voice | 1.80–1.83 | 45 | ElevenLabs, 4 of 5 |
 | `body.hurt` | 4 | voice | 0.54–0.68 | 15 | ElevenLabs, 4 of 5 |
+| `body.heartbeat` | 2 | voice | 0.65–0.85 | 7 | ElevenLabs, 2 of 3 |
 | `body.vault` | 2 | foley | 0.66–1.20 | 10 | ElevenLabs, 2 of 3 |
 | `body.breath.exhausted` | 2 | voice | 2.34–2.41 | 28 | ElevenLabs, 2 of 3 |
+| `creature.crow.caw` | 2 | ambience | 0.89–1.05 | 14 | ElevenLabs, 2 of 3 |
+| `vehicle.alarm.loop` | 1 loop | foley | 3.50 | 26 | ElevenLabs, 1 of 2 |
 | `ambience.night.suburb` | 1 loop | ambience | 23.4 | 287 | ElevenLabs, 1 of 3 |
 | `ambience.day.suburb` | 1 loop | ambience | 23.4 | 210 | ElevenLabs, 1 of 3 |
 | `ambience.threat` | 1 loop | ambience | 23.4 | 215 | ElevenLabs, 1 of 2 |

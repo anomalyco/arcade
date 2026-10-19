@@ -251,8 +251,8 @@ export class InventorySounds {
       this.world.set(sid, { a: c.broken ?? 0, b: c.off ?? 0, c: 0 })
     } else if (sid.startsWith("flare:")) {
       if (!prev) emit({ id: "flare.ignite", x: at.x, y: at.y, source: "flare" })
-      // A flare gun's shot: a dull pop where it was fired from.
-      if (!prev && c.gun && time - (c.t ?? 0) / 10 < 0.5) emit({ id: "gun.pistol.shot", x: at.x + (c.fx ?? 0) / 100, y: at.y + (c.fy ?? 0) / 100, source: "flare-gun", gain: 0.55, rate: 0.62 })
+      // A flare gun's shot: a hollow signal-pistol pop where it was fired from.
+      if (!prev && c.gun && time - (c.t ?? 0) / 10 < 0.5) emit({ id: "gun.pistol.shot", x: at.x + (c.fx ?? 0) / 100, y: at.y + (c.fy ?? 0) / 100, source: "flare-gun", gain: 0.62, rate: 0.82, cutoffHz: 2600 })
       this.world.set(sid, { a: 1, b: 0, c: 0 })
       if (time * 10 < (c.until ?? 0)) this.holds.push({ key: `flare:${sid}`, id: "flare.loop", x: at.x, y: at.y })
     } else if (sid.startsWith("dog:")) {
@@ -316,15 +316,18 @@ export class InventorySounds {
         const now = Math.floor((time - (c.t ?? 0) / 10) / CRACK_BEAT)
         if (!fresh && now > beat && crackerPops(c.t ?? 0, now)) {
           const p = crackerAt(st, time)
-          emit({ id: "gun.pistol.shot", x: p.x, y: p.y, source: "firecrackers", gain: 0.32, rate: 1.7 + 0.2 * ((now * 7) % 3) })
+          emit({ id: "gun.pistol.shot", x: p.x, y: p.y, source: "firecrackers", gain: 0.35, rate: 1.32 + 0.08 * ((now * 7) % 3), cutoffHz: 6500 })
         }
         beat = now
       } else beat = 0
       this.fire.set(sid, { a: c.t ?? 0, b: 0, c: beat })
       return
     } else if (sid.startsWith("trap:")) {
-      if (fresh) emit({ id: "gun.pistol.slide", x: at.x, y: at.y, source: "bear-trap", gain: 1.1, rate: 0.7 })
-      if (c.snap && !prev?.b && time - c.snap / 10 < 0.5) emit({ id: "melee.break", x: at.x, y: at.y, source: "bear-trap", gain: 1.3, rate: 0.8 })
+      if (fresh) emit({ id: "gun.pistol.mag-in", x: at.x, y: at.y, source: "bear-trap", gain: 0.85, rate: 0.92 })
+      if (c.snap && !prev?.b && time - c.snap / 10 < 0.5) {
+        emit({ id: "melee.hit.metal", x: at.x, y: at.y, source: "bear-trap", gain: 1.05, rate: 0.94 })
+        emit({ id: "gun.pistol.slide", x: at.x, y: at.y, source: "bear-trap", gain: 0.72, rate: 0.9, delay: 0.02 })
+      }
       this.fire.set(sid, { a: c.t ?? 0, b: c.snap ?? 0, c: 0 })
       return
     }
@@ -340,7 +343,7 @@ export class InventorySounds {
       const steps = st.counts.steps ?? 0
       const heard = this.glass.get(sid)
       if (heard === undefined && !st.counts.keep) emit({ id: "glass.break", x: at.x, y: at.y, source: "bottle" })
-      if (heard !== undefined && steps > heard) emit({ id: "glass.break", x: at.x, y: at.y, source: "glass-step", gain: 0.35 })
+      if (heard !== undefined && steps > heard) emit({ id: "foot.glass.step", x: at.x, y: at.y, source: "glass-step", gain: 0.75 })
       this.glass.set(sid, steps)
     } else if (sid.startsWith("trip:")) {
       const armed = st.counts.armed ?? 0
@@ -352,7 +355,7 @@ export class InventorySounds {
         this.smashed.add(sid)
       }
       // A vignette's car (`old`) rang out long ago; only an alarm someone set off wails.
-      if (st.counts.alarm && !st.counts.old && time * 10 < (st.counts.until ?? 0)) this.holds.push({ key: `alarm:${sid}`, id: "lure.loop", x: at.x, y: at.y })
+      if (st.counts.alarm && !st.counts.old && time * 10 < (st.counts.until ?? 0)) this.holds.push({ key: `alarm:${sid}`, id: "vehicle.alarm.loop", x: at.x, y: at.y })
     }
   }
 }

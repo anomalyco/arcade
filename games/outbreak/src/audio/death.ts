@@ -19,8 +19,7 @@ type Memory = { state: LifeState; nextBeat: number }
 
 /**
  * Sounds for going down, the heartbeat while down, a revive, death and the run's end, from the death state alone (no
- * wire fields), so co-op peers hear the same. There is no heartbeat or sting in the library: the heartbeat is a soft
- * grass footfall pitched far down, struck twice; the sting is a bite, a last cry and a low pitched-down bash.
+ * wire fields), so co-op peers hear the same. Uses the dedicated `body.heartbeat` cue while bleeding out.
  */
 export class DeathSounds {
   readonly tuning = { ...DEATH_SOUND_TUNING }
@@ -45,35 +44,36 @@ export class DeathSounds {
       const d = Math.hypot(s.x - listener.x, s.y - listener.y)
       if (prev && prev.state !== s.state) {
         if (s.state === "down") {
-          emit({ id: "body.hurt", ...at, rate: 0.72, gain: 1.3 })
-          emit({ id: "body.vault", ...at, rate: 0.6, gain: 1.1, delay: 0.14 })
+          emit({ id: "body.hurt", ...at, rate: 0.88, gain: 1.15 })
+          emit({ id: "melee.shove", ...at, rate: 0.84, gain: 0.9, cutoffHz: 1100, delay: 0.14 })
           m.nextBeat = time + 0.6
         } else if (s.state === "dead") {
-          // Heard wherever the listener is: a bite, the last cry, then a low boom.
+          // Heard wherever the listener is: a bite, the last cry, then a dark low thud.
           const here = { x: listener.x, y: listener.y, source: "death" }
-          emit({ id: "zombie.attack", ...at, rate: 0.85, gain: 1.2 })
-          emit({ id: "body.hurt", ...here, rate: 0.58, gain: 1.1, delay: 0.16 })
-          emit({ id: "door.bash", ...here, rate: 0.42, gain: 1.4, delay: 0.38 })
+          emit({ id: "zombie.attack", ...at, rate: 0.9, gain: 1.1 })
+          emit({ id: "body.hurt", ...here, rate: 0.82, gain: 1.0, delay: 0.16 })
+          emit({ id: "door.bash", ...here, rate: 0.78, gain: 1.05, cutoffHz: 420, delay: 0.38 })
         } else if (prev.state === "down") {
           emit({ id: "body.breath.exhausted", ...at, gain: 0.9 })
         }
+        m.state = s.state
       }
       if (s.state === "down" && time >= m.nextBeat) {
         const left = s.bleedMax > 0 ? Math.max(0, Math.min(1, s.bleed / s.bleedMax)) : 0
         const gap = t.heartbeatFast + (t.heartbeatSlow - t.heartbeatFast) * left
         m.nextBeat = time + gap
         if (d <= t.heartbeatHearing) {
-          const gain = d < 0.5 ? 1.35 : 1.0 - (d / t.heartbeatHearing) * 0.6
-          emit({ id: "foot.grass.run", ...at, rate: 0.42, gain })
-          emit({ id: "foot.grass.run", ...at, rate: 0.38, gain: gain * 0.7, delay: 0.17 })
+          const gain = d < 0.5 ? 1.0 : 0.85 - (d / t.heartbeatHearing) * 0.55
+          const rate = Number((1.08 - left * 0.12).toFixed(3))
+          emit({ id: "body.heartbeat", ...at, rate, gain, cutoffHz: 480 })
         }
       }
     }
     for (const index of this.memory.keys()) if (!seen.has(index)) this.memory.delete(index)
     if (world.runOver && !this.wasOver) {
       const here = { x: listener.x, y: listener.y, source: "death" }
-      emit({ id: "door.bash", ...here, rate: 0.34, gain: 1.2, delay: 1.2 })
-      emit({ id: "zombie.groan.idle", ...here, rate: 0.7, gain: 0.8, delay: 1.6 })
+      emit({ id: "door.bash", ...here, rate: 0.74, gain: 1.0, cutoffHz: 360, delay: 1.2 })
+      emit({ id: "zombie.groan.idle", ...here, rate: 0.84, gain: 0.8, delay: 1.6 })
     }
     this.wasOver = world.runOver
   }

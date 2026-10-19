@@ -130,6 +130,7 @@ type InternalVoice = {
   cueId: string
   ownerKey: string
   category: MixCategory
+  priority: number
   startTime: number
   endTime: number
   active: boolean
@@ -142,6 +143,19 @@ type InternalVoice = {
   synthLayers: ScheduledLayerNodes[]
   stop(fadeSeconds?: number): void
   setParams(params: VoiceUpdateParams, tau?: number): void
+}
+
+function defaultCuePriority(cue: CueRecipe): number {
+  if (cue.priority !== undefined) return cue.priority
+  if (cue.loop || cue.category === "ambience") return 100
+  if (cue.id === "bomb.explode" || cue.id === "body.hurt") return 95
+  if (cue.id.startsWith("foot.")) return 35
+  if (cue.id.startsWith("zombie.foot.")) return 15
+  if (cue.category === "weapon" || cue.category === "spell") return 90
+  if (cue.category === "voice") return 80
+  if (cue.category === "impact") return 70
+  if (cue.category === "ui") return 65
+  return 55
 }
 
 export type AudioRuntimeOptions = {
@@ -627,9 +641,9 @@ export class AudioRuntime {
       occlusion = typeof q === "boolean" ? (q ? 1 : 0) : clamp(q, 0, 1)
     }
     if (occlusion > 0) {
-      gain *= 1 - 0.36 * occlusion
-      cutoffHz = Math.min(cutoffHz, 16500 * Math.pow(950 / 16500, occlusion))
-      wet = Math.min(0.68, wet + 0.16 * occlusion)
+      gain *= 1 - 0.52 * occlusion
+      cutoffHz = Math.min(cutoffHz, 16500 * Math.pow(580 / 16500, occlusion))
+      wet = Math.min(0.72, wet + 0.22 * occlusion)
     }
 
     return {
@@ -732,11 +746,13 @@ export class AudioRuntime {
       return null
     }
 
-    const t = options.time ?? this.now
-    this.pruneVoices(t)
+    const nowTime = this.now
+    const t = options.time ?? nowTime
+    const isDelayed = options.time !== undefined && options.time > nowTime + 0.005
+    this.pruneVoices(nowTime)
 
-    // Cooldown check
-    if (cue.cooldownSeconds && cue.cooldownSeconds > 0) {
+    // Cooldown check (immediate triggers only; explicitly scheduled follow-up layers/echoes do not self-cancel)
+    if (!isDelayed && cue.cooldownSeconds && cue.cooldownSeconds > 0) {
       const last = this.lastCueTrigger.get(cue.id)
       if (last !== undefined && t - last < cue.cooldownSeconds - 1e-6) {
         this.droppedVoices++
@@ -752,6 +768,7 @@ export class AudioRuntime {
 
     const ownerKey = options.ownerKey ?? cue.id
     const stealPolicy = cue.steal ?? "steal-oldest"
+    const priority = options.priority ?? defaultCuePriority(cue)
 
     // 1. If policy is "replace", fade out any active voice with the same ownerKey
     if (stealPolicy === "replace") {
@@ -779,14 +796,16 @@ export class AudioRuntime {
       this.stolenVoices++
     }
 
-    // 3. Enforce global maxVoices budget
+    // 3. Enforce global maxVoices budget with priority-aware voice stealing
     if (this.voices.size >= this.maxVoices) {
       if (stealPolicy === "drop") {
         this.droppedVoices++
         return null
       }
-      // Beds and other loops are never the victim of an unrelated one-shot: steal the oldest finite voice.
-      const finite = [...this.voices.values()].filter(v => Number.isFinite(v.endTime)).sort((a, b) => a.startTime - b.startTime)
+      // Beds and other loops are never the victim of an unrelated one-shot: steal the lowest-priority (then oldest) finite voice.
+      const finite = [...this.voices.values()]
+        .filter(v => Number.isFinite(v.endTime) && v.priority <= priority)
+        .sort((a, b) => a.priority - b.priority || a.startTime - b.startTime)
       const victim = finite[0]
       if (!victim && !cue.loop) {
         this.droppedVoices++
@@ -799,7 +818,9 @@ export class AudioRuntime {
       }
     }
 
-    this.lastCueTrigger.set(cue.id, t)
+    if (!isDelayed) {
+      this.lastCueTrigger.set(cue.id, t)
+    }
 
     // Coupled Strike variation (inspired by Cuelume: harder strikes are louder and brighter together)
     const pitchVar = options.pitchVariation ?? cue.pitchVariation ?? 0
@@ -924,6 +945,7 @@ export class AudioRuntime {
       cueId: cue.id,
       ownerKey,
       category: cue.category,
+      priority,
       startTime: t,
       endTime: cue.loop ? Infinity : maxEndTime,
       active: true,
@@ -938,7 +960,7 @@ export class AudioRuntime {
         if (!voice.active) return
         voice.active = false
         const stopAt = this.now
-        const fade = Math.max(0.008, fadeSeconds)
+        const fade = Math.max(0.012, fadeSeconds)
         holdParam(voiceGain.gain, stopAt, 0)
         voiceGain.gain.linearRampToValueAtTime(0, stopAt + fade)
         holdParam(voiceSend.gain, stopAt, 0)
@@ -1025,19 +1047,32 @@ export class AudioRuntime {
 
     const envGain = ctx.createGain()
     const peak = Math.max(0, (layer.gain ?? 1) * picked.gain * (layer.envelope?.peak ?? 1) * gainScale)
-    const attack = Math.max(0.001, attackOverride ?? layer.envelope?.attack ?? 0.002)
     const naturalDuration = buf.duration / playbackRate
-    const decay = Math.max(0.02, decayOverride ?? layer.envelope?.decay ?? naturalDuration)
+    const explicitDecay = decayOverride ?? layer.envelope?.decay
+    const attack = isLoop
+      ? Math.max(0.015, attackOverride ?? layer.envelope?.attack ?? 0.02)
+      : Math.max(0.002, attackOverride ?? layer.envelope?.attack ?? 0.003)
+    const decay = Math.max(0.02, explicitDecay ?? naturalDuration)
 
     envGain.gain.setValueAtTime(0, startTime)
     envGain.gain.linearRampToValueAtTime(peak, startTime + attack)
 
     let endTime = Infinity
     if (!isLoop) {
-      const effectiveDur = Math.min(naturalDuration, attack + decay + 0.04)
-      endTime = startTime + effectiveDur
-      envGain.gain.setTargetAtTime(0, startTime + attack, fallTime(decay))
-      envGain.gain.linearRampToValueAtTime(0, endTime)
+      if (explicitDecay !== undefined) {
+        const hold = Math.max(0, layer.envelope?.hold ?? 0)
+        const effectiveDur = Math.min(naturalDuration, attack + hold + decay + 0.04)
+        endTime = startTime + effectiveDur
+        if (hold > 0) envGain.gain.setValueAtTime(peak, startTime + attack + hold)
+        envGain.gain.setTargetAtTime(0, startTime + attack + hold, fallTime(decay))
+        envGain.gain.linearRampToValueAtTime(0, endTime)
+      } else {
+        endTime = startTime + naturalDuration
+        const release = Math.min(0.015, Math.max(0.004, naturalDuration * 0.12))
+        const holdEnd = Math.max(startTime + attack, endTime - release)
+        envGain.gain.setValueAtTime(peak, holdEnd)
+        envGain.gain.linearRampToValueAtTime(0, endTime)
+      }
     }
 
     let head: AudioNode = src

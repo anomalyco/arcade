@@ -179,6 +179,30 @@ describe("voice budget, cooldowns, stealing policies, and listener cleanup", () 
     const tel = runtime.telemetry()
     expect(tel.activeVoices).toBeLessThanOrEqual(4)
     expect(tel.stolenVoices).toBeGreaterThan(0)
+
+    // Priority-based voice stealing: low-priority footsteps cannot steal high-priority gunshots,
+    // while high-priority gunshots steal low-priority footsteps.
+    const { runtime: prioRt } = createTestRuntime(11, 2)
+    const entries = selectSfx(["gun.pistol.shot", "foot.concrete.walk"])
+    prioRt.registerManifest(sfxManifest(entries))
+    prioRt.registerCues(sfxCues(entries))
+    prioRt.scheduleTime = 0
+    const f1 = prioRt.playCue("foot.concrete.walk")
+    const f2 = prioRt.playCue("foot.concrete.walk")
+    expect(f1?.active).toBe(true)
+    expect(f2?.active).toBe(true)
+    // High-priority gunshot steals a low-priority footstep
+    const g1 = prioRt.playCue("gun.pistol.shot")
+    expect(g1?.active).toBe(true)
+    expect(f1?.active).toBe(false)
+    const g2 = prioRt.playCue("gun.pistol.shot")
+    expect(g2?.active).toBe(true)
+    expect(f2?.active).toBe(false)
+    // Low-priority footstep cannot steal either active gunshot
+    const f3 = prioRt.playCue("foot.concrete.walk")
+    expect(f3).toBeNull()
+    expect(g1?.active).toBe(true)
+    expect(g2?.active).toBe(true)
   })
 
   test("spatialization, Doppler, box occlusion query, mute listener cleanup, and dispose", () => {

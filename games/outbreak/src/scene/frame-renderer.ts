@@ -120,8 +120,9 @@ export class OutbreakFrameRenderer {
     this.interiors = new InteriorPresenter(device, (view) => this.renderer.setDetailTextureArray(view))
     this.dust = new DustPass(this.renderer.passContext)
     this.renderer.addPass("alpha", this.dust)
-    this.footfall = (x: number, y: number, speed: number) => audio.footstep(x, y, speed)
-    coop.onFootfall = this.footfall
+    this.footfall = (x: number, y: number, speed: number) =>
+      audio.footstep(x, y, speed, { local: true, crouching: Boolean(session().view.player.crouching) })
+    coop.onFootfall = (x: number, y: number, speed: number) => audio.footstep(x, y, speed, { local: false })
     coop.hidden = (id) => {
       const s = session()
       if (s.view.progression.verbs.hiddenIn(id)) return true
@@ -155,7 +156,8 @@ export class OutbreakFrameRenderer {
     this.details = new DetailsPresenter(this.renderer)
     setCurrentDetails(this.details)
     this.details.crows.onScatter = (x, z, birds) => {
-      for (let i = 0; i < Math.min(3, birds); i++) audio.play({ id: "wings.flap", x, y: z, delay: i * 0.07, gain: 0.85, rate: 1.15 + i * 0.08, source: "crow" })
+      audio.play({ id: "creature.crow.caw", x, y: z, delay: 0.02, gain: 0.75, source: "crow" })
+      for (let i = 0; i < Math.min(3, birds); i++) audio.play({ id: "wings.flap", x, y: z, delay: i * 0.07, gain: 0.75, rate: 1.08 + i * 0.06, source: "crow" })
     }
     this.ambientMotion = new OutbreakAmbientMotion(this.renderer)
     this.vehicleRenderer = new OutbreakVehicleRenderer(this.renderer, document.body)

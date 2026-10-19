@@ -29,9 +29,12 @@
   `DirectorEscalation`.
 - `bun scripts/check-cycles.ts` (part of `bun run check`) fails on any import cycle between Outbreak modules, type
   imports included.
-- Sound lives in `src/audio/` and plays the shared library (`../../docs/sfx-library.md`). `SoundDirector` turns `CoopSim`
-  state changes into sounds; add a sound there by diffing state, not by adding wire fields or sim events. Never play
-  sound audibly in proofs: `bun scripts/prove-audio.ts` (via `hivemind run --kind browser`) uses `--mute-audio`.
+- Sound lives in `src/audio/` and plays the shared library (`../../docs/sfx-library.md`, mix & material rules in
+  `../../docs/audio-design.md#4-outbreak-sound-pass-mix-hierarchy-11-surface-materials--voice-priority`). `SoundDirector`
+  turns `CoopSim` state changes into sounds; `surfaceAt(town, x, y, extra)` resolves 11 floor/ground materials for
+  gait-scaled footsteps and impacts; Lab: Backquote › Sound (`Today` vs `Sound pass`, bus levels, per-surface footstep
+  sliders, occlusion, falloff, reverb, voice cap). Never play sound audibly in proofs: `bun scripts/prove-audio.ts`
+  (via `hivemind run --kind browser`) uses `--mute-audio`.
 - The survivor (`src/survivor.ts`) and zombies (`src/zombies.ts`) use the shared rig's IK, arms and profiles but keep their own stride clocks and terrain support. Motion rules and known gaps: `../../docs/animation.md`. All shared docs: `../../docs/README.md`.
 - Rugs and Resident Evil interior themes live in `src/interiors/` (plan, mesh emitters, WGSL, `RugPool`); the rug
   generator and its Worker are in `@arcade/kit/textures`. Lab: Backquote › Rugs & interiors, the Lab's Rugs section and the

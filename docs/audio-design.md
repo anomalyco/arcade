@@ -167,3 +167,50 @@ void lab({
 - **Independent pitch/time stretching**: Sample layers expose `rate` (`AudioBufferSourceNode.playbackRate`), which shifts pitch and duration together. Phase-vocoder or WSOLA time-stretching is not implemented.
 - **Granular sample synthesis**: Continuous engine and spell voices use band-limited procedural synthesis (`PeriodicWave` cylinder harmonics, modal partials, and filtered noise) plus crossfaded loops rather than a granular cloud scheduler.
 - **Node-graph authoring UI**: All interactive tuning lives in the shared `LabPanel` (`packages/kit/lab-panel.ts`).
+
+---
+
+## 4. Outbreak Sound Pass: Mix Hierarchy, 11-Surface Materials & Voice Priority
+
+### 4.1 Sample Envelope Semantics & Priority Voice Stealing (`@arcade/kit/audio`)
+- **Recorded Sample vs. Procedural Envelope**: In `AudioRuntime.scheduleSampleLayer`, recorded one-shot samples from `SFX_LIBRARY` (`layer.envelope === undefined`) play at their curated natural envelope with click-free fade-in (`fadeInSeconds`, default `2 ms`) and tail fade-out (`fadeOutSeconds`, default `8 ms`), rather than being crushed by the procedural synth fallback's `0.22 s` exponential `-60 dB` decay curve (`DEFAULT_ENVELOPE.decay`). Procedural sample+synth recipes in `DEFAULT_CUES` retain explicit `envelope.decay` curves.
+- **Priority-Based Voice Stealing**: `CueRecipe`, `SfxSpec`, `PlayCueOptions`, and Outbreak's `SoundEvent` carry an integer `priority` (`1..100`, default `50`). When `activeVoices.size >= maxVoices`, `AudioRuntime.enforceVoiceBudget` first evicts the oldest non-looping voice whose `priority` is strictly lower than the incoming cue's priority (lowest priority first, oldest tie-breaker), before falling back to stealing the oldest voice of equal priority (`steal-oldest`) or dropping (`drop`). Continuous loops (`ownerKey` / `loop: true`) are never stolen by one-shots.
+- **Scheduled Cooldowns**: `AudioRuntime.playCue` checks `playAt - lastAt < cooldownSeconds` (where `playAt = max(now, options.time)`), so future-delayed cues such as shell casings (`+0.38 s`) and bullet impacts (`+d / 360 s`) never falsely trip their own cooldown when another cue was scheduled slightly further ahead.
+
+### 4.2 6-Tier Mix Hierarchy & Measured Offline Loudness
+Outbreak enforces a clear 6-tier loudness hierarchy across 6 independent Lab mix buses (`audioWeapons: 100%`, `audioZombies: 100%`, `audioImpacts: 95%`, `audioMovement: 85%`, `audioUi: 80%`, `audioAmbience: 65%`), with `32` voices (`CROWD_HEADROOM = 8` reserved above zombie footsteps), steeper spatial rolloff (`audioFalloff = 1.55`, `refDistance × 0.78`), and stronger wall low-pass occlusion (`22000 → 520 Hz` and `(1 - 0.58 * occ)²` gain):
+
+| Tier | Category | Bus | Priority | Representative Cues | Offline Measured Level (at listener / 1 m) |
+| --- | --- | --- | --: | --- | --- |
+| **1 (Loudest)** | Gunshots, explosions, Screamer shriek, car alarm | `weapon` / `voice` / `foley` | `85–100` | `gun.pistol.shot` (`-9 LUFS`, `0.88`), `bomb.explode` (`-8 LUFS`, `0.95`), `zombie.screamer.scream` (`-10 LUFS`, `0.92`) | `-11.0` to `-14.0 LUFS` (`-1.4` to `-3.5 dBFS` peak) |
+| **2** | Zombie attacks, alerts, deaths, Brute slam, survivor hurt | `voice` / `impact` | `72–88` | `zombie.attack` (`-16 LUFS`, `0.58`), `zombie.alert` (`-17 LUFS`, `0.52`), `body.hurt` (`-17 LUFS`, `0.55`) | `-17.4` to `-20.0 LUFS` (`-5.1` to `-6.9 dBFS` peak) |
+| **3** | Bullet/melee impacts, glass break, door bash, barricade break | `impact` (`95%`) | `55–78` | `zombie.hit` (`0.54`), `impact.bullet.*` (`0.40–0.46`), `glass.break` (`0.62`), `door.bash` (`0.62`) | `-19.3` to `-22.5 LUFS` (`-6.2` to `-9.5 dBFS` peak) |
+| **4** | Doors, windows, reload parts, pickups, teammate & zombie steps | `foley` (`85%`) / `impact` | `18–60` | `door.wood.open` (`0.38`), `gun.pistol.slide` (`0.36`), `zombie.foot.*` (`0.18–0.22`, `drop`) | `-24.5` to `-31.0 LUFS` (`-11.0` to `-16.5 dBFS` peak) |
+| **5 (Quiet)** | Local player self-footsteps (`crouch` / `walk` / `run`) | `foley` (`85%`) | `28` | `foot.<surface>.{walk,run}` × `profile.gain` × `modeGain` × `0.62` self-scale | Crouch: `-43` to `-49 LUFS`; Walk: `-34` to `-36 LUFS`; Sprint: `-28` to `-29 LUFS` (**16–22 dB below pistol shot**) |
+| **6 (Bed)** | Day/night suburb beds, threat drone, distant life | `ambience` (`65%`) | `45–50` | `ambience.day.suburb` (`0.16`), `ambience.night.suburb` (`0.18`), `ambience.threat` (`0.20`), `creature.crow.caw` (`0.30`) | `-34.5` to `-39.5 LUFS` outdoor; `-45+ LUFS` muffled indoors (`750 Hz` LPF) |
+
+### 4.3 Pure 11-Surface Material Resolver (`surfaceAt`) & Material Impacts
+`surfaceAt(town, x, y, extra?)` in `games/outbreak/src/audio/space.ts` resolves any world coordinate `(x, y)` to one of 11 `FootSurface` materials, matching `ground.ts`, `level.ts`, `interiors/plan.ts`, `interiors/wgsl.ts`, `discovery/vignettes.ts`, and `blood/stains.ts`:
+
+| Surface | World Geometry | Footstep Cue (`walk` / `run`) | `profile.gain` | `rate` | `cutoffHz` |
+| --- | --- | --- | --: | --: | --: |
+| `concrete` | Asphalt streets (`39.78..48.22`), sidewalks (`37.9..39.28`, `48.72..50.1`), front walkways, commercial concrete | `foot.concrete.{walk,run}` | `0.62` | `1.00` | `5200 Hz` |
+| `grass` | Open lawns and yards outside road bands and driveways | `foot.grass.{walk,run}` | `0.68` | `1.00` | `4200 Hz` |
+| `wood` | House interiors (outside kitchen/bath/rugs), front porches, garden sheds, church | `foot.wood.{walk,run}` | `0.72` | `1.00` | `4800 Hz` |
+| `tile` | House SE kitchen & NE washroom wing, pharmacy, grocery, diner, clinic, police station | `foot.tile.walk` / `foot.concrete.run` | `0.74` | `1.08` | `7800 Hz` |
+| `carpet` | Interior rugs (`planInterior(b, houseSeed).rugs`) | `foot.grass.{walk,run}` | `0.42` | `0.88` | `1550 Hz` |
+| `gravel` | West gravel driveways (`[x0 - 3.0, x0 - 0.35]`) | `foot.gravel.walk` / `foot.grass.run` | `0.82` | `1.06` | `6800 Hz` |
+| `dirt` | Curb-verge moss/dirt strips (`39.28..39.78`, `48.22..48.72`) and tree dirt rings (`r <= 0.72 m`) | `foot.grass.{walk,run}` | `0.64` | `0.88` | `2600 Hz` |
+| `puddle` | Wet street potholes (`STREET_PUDDLES` in `ground.ts`) | `foot.puddle.walk` | `0.85` | `1.08` | `5800 Hz` |
+| `metal` | Manhole covers, storm drain grates, exterior vehicle roofs/bonnets, warehouse floor | `impact.bullet.metal` | `0.52` | `1.16` | `4600 Hz` |
+| `glass` | Broken bottle/window shard stores (`glass:*`) and vignette glass (skipped when crouching) | `foot.glass.step` | `0.68` | `1.04` | `7400 Hz` |
+| `blood` | Live spreading blood pools (`currentBloodStains().poolUnder`) and ambient blood pools | `foot.puddle.walk` | `0.56` | `0.84` | `2200 Hz` |
+
+Bullet (`shotImpacts`) and melee (`meleeImpact`) world impacts resolve hit geometry to `zombie.hit` (flesh), `impact.bullet.wood` (wooden doors, boards, house wood siding, wood fences, trees, indoor wood furniture), `impact.bullet.plaster` (interior plaster walls), `impact.bullet.concrete` (commercial brick/concrete facades, street), `impact.bullet.metal` (vehicles, warehouses, chain-link fences, dumpsters, appliances), and `impact.bullet.glass` (intact window panes).
+
+### 4.4 Lab `Sound` Group Controls
+`games/outbreak/src/audio/settings.ts` exposes all tunables in the shared `LabPanel` under **Sound**:
+- **Sound profile** (`audioMode`): `Sound pass (balanced & materials)` (`1`, default) vs `Today` (`0`, pre-pass 3-surface baseline) one click away.
+- **Mix buses**: `audioWeapons`, `audioZombies`, `audioImpacts`, `audioMovement`, `audioAmbience`, `audioUi` (`0..100%`).
+- **Footsteps by surface**: `audioSelfStep` plus per-surface loudness sliders (`audioStepConcrete`, `audioStepGrass`, `audioStepWood`, `audioStepTile`, `audioStepCarpet`, `audioStepGravel`, `audioStepDirt`, `audioStepPuddle`, `audioStepMetal`, `audioStepGlass`, `audioStepBlood`, `0..200%`).
+- **Spatial & engine**: `audioOcclusion` (`0..1`), `audioFalloff` (`0.8..2.5×`), `audioReverb` (`0..1`), and `audioVoiceCap` (`8..48 voices`, default `32`).

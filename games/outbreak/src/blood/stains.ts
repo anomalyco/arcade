@@ -291,7 +291,8 @@ export class BloodStains {
     this.counts.fight = this.used
   }
 
-  private poolUnder(x: number, y: number): boolean {
+  /** True when `(x, y)` lies inside an ambient or active fight blood pool. */
+  poolUnder(x: number, y: number): boolean {
     for (const a of this.ambientPools) {
       const r = 0.42 * a.scale
       if (Math.abs(a.x - x) < r && Math.abs(a.z - y) < r && Math.hypot(a.x - x, a.z - y) < r) return true
