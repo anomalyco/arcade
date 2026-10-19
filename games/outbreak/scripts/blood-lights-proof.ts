@@ -80,6 +80,7 @@ function chromiumPath(): string {
 
 async function open(browser: Browser, url: string, width: number, height: number, dpr: number): Promise<Page> {
   const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: dpr })
+  page.setDefaultTimeout(180000)
   await page.addInitScript(() => {
     const request = GPUAdapter.prototype.requestDevice
     GPUAdapter.prototype.requestDevice = function (desc: GPUDeviceDescriptor = {}) {
@@ -154,7 +155,7 @@ async function setup(page: Page, s: Scene, k: Record<string, unknown> = knobs) {
 
 async function capture(page: Page, file: string, s: Scene, k: Record<string, unknown> = knobs) {
   const res = await setup(page, s, k)
-  await page.screenshot({ path: file })
+  await page.screenshot({ path: file, timeout: 180000 })
   meta.shots[file.split("/").pop()!] = { scene: s.name, ...res }
   console.log("captured", file.split("/").pop(), JSON.stringify(res))
   return file
@@ -193,7 +194,7 @@ async function flicker(page: Page, label: string, s: Scene) {
       const h = (window as any).__arcadeHarness
       await h.step(1 / 60, { mx: 0.78, my: -0.28, aim })
     }, { aim: s.aim })
-    if (i >= 8) frames.push((await page.screenshot({ type: "png" })).toString("base64"))
+    if (i >= 8) frames.push((await page.screenshot({ type: "png", timeout: 180000 })).toString("base64"))
   }
   const res = await page.evaluate(async (frames: string[]) => {
     const W = 768, H = 512
@@ -340,7 +341,7 @@ try {
           Object.assign(h.state().player, { x: s.x, y: s.y, vx: 0, vy: 0 })
           await h.step(1 / 30, { mx: 0, my: 0, aim: s.aim })
         }, { s })
-        await page.screenshot({ path: resolve(dir, `f${String(i).padStart(4, "0")}.jpg`), type: "jpeg", quality: 92 })
+        await page.screenshot({ path: resolve(dir, `f${String(i).padStart(4, "0")}.jpg`), type: "jpeg", quality: 92, timeout: 180000 })
       }
       meta.lights = await page.evaluate(() => (window as any).__arcadeHarness.state().nightLights)
       await page.close()

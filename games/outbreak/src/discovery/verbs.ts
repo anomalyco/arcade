@@ -42,7 +42,7 @@ export function alarmWailing(st: { counts: Record<string, number | undefined> },
  * alarm wails. Reads ledger stores only, so every co-op client sees the same.
  */
 export class VerbProps {
-  private readonly models: { wire: number; can: number; shard: number; window: number; flasher: number; tailFlasher: number }
+  private readonly models: { wire: number; can: number; shard: number; window: number; flasher: number; tailFlasher: number; headFlasher: number }
   private readonly pool: Pool = new Map()
   private readonly out: Batch[] = []
   /** Proof readout: what was drawn last frame. */
@@ -69,6 +69,9 @@ export class VerbProps {
     flasher.box(-0.11, -0.06, -0.05, 0.11, 0.06, 0.05, hex(0xff7a10), MAT.glow, 2.4)
     const tailFlasher = new Mesh()
     tailFlasher.box(-0.11, -0.06, -0.05, 0.11, 0.06, 0.05, hex(0xff1c0c), MAT.glow, 2.6)
+    // Headlights flash with the alarm too: a wide warm-white lens inboard of each indicator.
+    const headFlasher = new Mesh()
+    headFlasher.box(-0.05, -0.07, -0.16, 0.05, 0.07, 0.16, hex(0xfff0d4), MAT.glow, 3)
     this.models = {
       wire: renderer.addModel(wire),
       can: renderer.addModel(can),
@@ -76,6 +79,7 @@ export class VerbProps {
       window: renderer.addModel(window),
       flasher: renderer.addModel(flasher),
       tailFlasher: renderer.addModel(tailFlasher),
+      headFlasher: renderer.addModel(headFlasher),
     }
   }
 
@@ -144,11 +148,15 @@ export class VerbProps {
       }
       if (alarmFlashOn(st, time)) {
         shown.flashing.push(car.key)
-        // Amber indicators at the nose, the tail lights flashing red with them.
+        // Headlights and amber indicators at the nose, the tail lights flashing red with them.
         for (const lx of [-pose.halfLength, pose.halfLength])
           for (const lz of [-pose.halfWidth, pose.halfWidth]) {
             const [fx, fz] = at(lx, lz)
             this.put(lx < 0 ? this.models.tailFlasher : this.models.flasher, fx, ground + 0.55, fz, pose.yaw, 0, 0, 1)
+            if (lx > 0) {
+              const [hx, hz] = at(lx + 0.02, lz - Math.sign(lz) * 0.3)
+              this.put(this.models.headFlasher, hx, ground + 0.58, hz, pose.yaw, 0, 0, 1)
+            }
           }
       }
     }

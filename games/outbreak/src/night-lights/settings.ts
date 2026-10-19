@@ -8,7 +8,7 @@ import type { LabControl } from "@arcade/kit/lab-panel"
 export type OutbreakNightLightSettings = {
   /** Every coloured night practical on or off. */
   nightLights: boolean
-  /** A wailing car alarm throws its flashing light on the street (amber nose, red tail). */
+  /** A wailing car alarm flashes its headlights, indicators and tail lights and throws the light on the street. */
   nlAlarmCars: boolean
   /** Cars with an armed alarm blink a small red light on the dash. */
   nlArmedLeds: boolean

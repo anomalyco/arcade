@@ -204,9 +204,11 @@ export class NightLightsPresenter {
         const c = Math.cos(pose.yaw)
         const sn = Math.sin(pose.yaw)
         const g = supportHeight(town, pose.x, pose.z)
-        const nose = pose.halfLength + 0.45
-        this.light(camX, camY, pose.x + c * nose, g + 0.65, pose.z + sn * nose, 5.2, [1, 0.42, 0.06], 0.32 * pw * strobe)
-        this.light(camX, camY, pose.x - c * nose, g + 0.65, pose.z - sn * nose, 5.2, [1, 0.07, 0.04], 0.36 * pw * strobe)
+        // Headlights throw warm white ahead (tinted by the indicators), the tail lights red behind.
+        const nose = pose.halfLength + 1.1
+        const tail = pose.halfLength + 0.45
+        this.light(camX, camY, pose.x + c * nose, g + 0.7, pose.z + sn * nose, 6, [1, 0.74, 0.42], 0.4 * pw * strobe)
+        this.light(camX, camY, pose.x - c * tail, g + 0.65, pose.z - sn * tail, 5.2, [1, 0.07, 0.04], 0.36 * pw * strobe)
       }
     }
 
