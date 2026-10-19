@@ -118,6 +118,11 @@ export class OutbreakAudio {
     this.apply()
   }
 
+  /** How far inside the listener is, eased through doorways (0 street, 1 indoors). */
+  get indoorLevel(): number {
+    return this.indoor
+  }
+
   get live(): boolean {
     const ctx = this.runtime.ctx
     return Boolean(ctx && ctx.state === "running" && !this.runtime.muted)

@@ -101,3 +101,12 @@
   reach they hear (`src/sound-cues/`, Lab › Sound cues, `../../docs/outbreak-hud.md#sound-cues`), and peeking eases
   camera, sight and roof cut together (`src/peek-view.ts`, Lab › Peek). Tests: `tests/hearing.test.ts`,
   `tests/sound-cues.test.ts`, `tests/peek-view.test.ts`.
+- Weather (AR-71): a seeded cycle per town (clear, drizzle, rain, storm; storms rare and only after dark) that is a
+  pure function of `town.seed`, `sim.time` and `hour`, so nothing is on the wire (`shared/weather/`: `schedule.ts`,
+  `lightning.ts`; rain masks zombie hearing and sight through `ai.weatherSense`). `src/weather/` draws it: rain only in
+  light through the kit `WeatherRenderer`, wet ground and the puddle mask other features read (`puddles.ts`:
+  `outbreakPuddleMask`/`outbreakWetness` in WGSL, `puddleMaskAt` on the CPU, `OL.u8.yz`), lightning that lifts the
+  shroud for a beat (`Vision.skyFlash`, presentation only) with near strikes on lamps and trees, and rain beds and
+  thunder (`audio.ts`). Lab: Backquote › Weather ("Today (always clear)" turns it off), `arcade cmd weather.set
+  state=storm|rain|drizzle|clear|cycle`, `arcade cmd weather.flash`, station `outbreak-weather`. Tests:
+  `tests/weather-cycle.test.ts`, `tests/weather.test.ts`.

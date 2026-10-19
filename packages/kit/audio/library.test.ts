@@ -14,8 +14,8 @@ const REQUIRED = [
   ...["concrete", "grass", "wood"].flatMap(s => [`foot.${s}.walk`, `foot.${s}.run`]),
 ]
 
-/** Budget for files the library owns (compressed, MB). */
-const LIBRARY_MB = 3
+/** Budget for files the library owns (compressed, MB). 3 → 4 for Outbreak's three stereo rain beds and thunder (AR-71, +0.96 MB). */
+const LIBRARY_MB = 4
 
 describe("sound library catalogue", () => {
   test("ids are unique, semantic and include every id the games use", () => {

@@ -239,9 +239,12 @@ describe("OutbreakClientFeatureRegistry", () => {
     expect(controls.some((c) => c.key === "weatherEnabled")).toBe(true)
     expect(controls.some((c) => c.key === "triggerWeatherLightning")).toBe(true)
     const commands = weatherFeature?.gameCommands?.({} as any) ?? []
-    expect(commands.map((c) => c.id)).toEqual(["weather.preset", "weather.strike"])
+    expect(commands.map((c) => c.id)).toEqual(["weather.set", "weather.flash", "weather.preset", "weather.strike"])
+    expect(controls.some((c) => c.key === "weather.weatherCycle")).toBe(true)
     const methods = weatherFeature?.harnessMethods?.({} as any, {} as any) ?? {}
     expect(typeof methods.setWeatherPreset).toBe("function")
+    expect(typeof methods.setWeatherState).toBe("function")
+    expect(typeof methods.flashLightning).toBe("function")
     expect(typeof methods.strikeLightning).toBe("function")
   })
 

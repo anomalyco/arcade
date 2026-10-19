@@ -1,5 +1,6 @@
 import type { Camera } from "@arcade/kit/client/camera"
 import { Renderer, SPRITE_FLOATS, type Batch, type FrameInput } from "@arcade/kit/gpu/renderer"
+import { MAX_LIGHTS } from "@arcade/kit/limits"
 import { humanProfiles } from "@arcade/kit/human-profile"
 import { createLookSettings, type LookCompareMode } from "@arcade/kit/look"
 import type { AdaptiveQualityController } from "@arcade/kit/quality"
@@ -48,6 +49,7 @@ import { Survivor } from "../survivor"
 import { evaluateUnseenFrame } from "../unseen"
 import type { OutbreakVehicleAudio } from "../vehicle-audio"
 import { OutbreakVehicleRenderer } from "../vehicles"
+import { WeatherAudio } from "../weather/audio"
 import { OutbreakWeatherController } from "../weather/controller"
 import { OutbreakSceneLevel } from "../world/scene-level"
 import { zombieProfile } from "../zombie-profile"
@@ -102,6 +104,7 @@ export class OutbreakFrameRenderer {
   readonly details: DetailsPresenter
   readonly ambientMotion: OutbreakAmbientMotion
   readonly weatherController = new OutbreakWeatherController()
+  private readonly weatherAudio = new WeatherAudio()
   readonly vehicleRenderer: OutbreakVehicleRenderer
   readonly frameLighting = new OutbreakFrameLighting()
   readonly lookSettings = createLookSettings("noir")
@@ -408,6 +411,8 @@ export class OutbreakFrameRenderer {
     let { count } = beamState
     const { sightAim, sightCone, sightAwareness } = beamState
 
+    // Lightning lets the dead in line of sight show past the cone for a moment (last frame's flash).
+    vision.skyFlash = this.weatherController.reveal
     const charred = charOf(session.view, settings.fire)
     this.zombieCrowd.charred = charred.size ? charred : null
     const zombieBatches = this.zombieCrowd.draw(
@@ -507,12 +512,12 @@ export class OutbreakFrameRenderer {
         outbreakClientFeatures.frameLights(
           featureFrame,
           lights,
-          this.details.writeLights(lights, this.fire.writeLights(lights, this.nightLights.writeLights(lights, n, max, lampPower, settings.nightLights), max, settings.fire.fireMaxLights), max, lampPower, settings.details, {
+          this.weatherController.writeLights(lights, this.details.writeLights(lights, this.fire.writeLights(lights, this.nightLights.writeLights(lights, n, max, lampPower, settings.nightLights), max, settings.fire.fireMaxLights), max, lampPower, settings.details, {
             cutX,
             cutY,
             interior: inInteriorView,
             night: day.lamps,
-          }),
+          }), max),
           max,
         ),
     })
@@ -535,15 +540,29 @@ export class OutbreakFrameRenderer {
       lightCount: count,
       ambientLum: ambLum,
       particleScale: qProfile.weatherParticleScale,
+      maxLights: MAX_LIGHTS,
+      simTime: time,
+      hour,
+      sprites: this.addSprites,
+      spriteCount: addCount,
+      support: (x, z) => supportHeight(town, x, z),
+      windDirDeg: settings.vegetation.vegLook >= 0.5 ? settings.vegetation.vegWindDir : undefined,
     })
-    const activeWeather = weatherOut.prepareInput
-      ? {
-          wetness: weatherOut.state.wetness,
-          puddleCoverage: weatherOut.state.puddleCoverage,
-          rippleIntensity: weatherOut.state.rippleIntensity,
-          snowAmount: weatherOut.state.snowAmount,
-        }
-      : undefined
+    count = weatherOut.lightCount
+    addCount = weatherOut.spriteCount
+    const weatherNow = this.weatherController
+    const activeWeather =
+      weatherOut.prepareInput || weatherNow.flash > 0.001
+        ? {
+            wetness: weatherNow.surface.wetness,
+            puddleCoverage: weatherNow.surface.puddles,
+            rippleIntensity: weatherNow.surface.ripple,
+            snowAmount: weatherOut.state.snowAmount,
+            wetGloss: weatherNow.surface.wetGloss,
+            shroudLift: weatherNow.shroudLift,
+            air: weatherNow.air,
+          }
+        : undefined
     const volume = this.frameLighting.packUniformsAndVolume({
       dt,
       p,
@@ -564,7 +583,7 @@ export class OutbreakFrameRenderer {
       interiors: this.interiors,
       renderer: this.renderer,
     })
-    const lightningFlash = weatherOut.prepareInput ? weatherOut.state.flash : 0
+    const lightningFlash = weatherNow.flash
     this.frameLighting.packFrameBuffer({
       cam,
       time,
@@ -584,6 +603,7 @@ export class OutbreakFrameRenderer {
       cutHeight,
       day,
       lightningFlash,
+      weather: weatherNow,
       sightAim,
       sightCone,
       sightAwareness,
@@ -722,7 +742,7 @@ export class OutbreakFrameRenderer {
     render.view = view
     render.grade[0] = time
     render.grade[1] = settings.view.diagnostic
-    render.grade[2] = Math.max(lightningFlash * 0.35, cam.damageFlash)
+    render.grade[2] = cam.damageFlash
     render.grade[3] = settings.lighting.exposure
     render.motionBlur = {
       settings: {
@@ -747,6 +767,8 @@ export class OutbreakFrameRenderer {
       pursuing: pursuers(zombies, look.x, look.y),
       packOpen: frameUi.inventoryHud.packOpen,
     })
+    this.weatherAudio.update(audio, dt, look, weatherNow, settings.weather)
+    weatherNow.endFrame()
     vehicleAudio.update(dt, time, session.view.vehicles, drawn, p.vehicleId, (id) =>
       this.vehicleRenderer.tyreAudio(id),
     )

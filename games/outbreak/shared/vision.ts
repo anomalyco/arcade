@@ -37,6 +37,11 @@ export class Vision {
   y = 0
   aim = 0
   settings: VisionSettings = { ...DEFAULT_VISION }
+  /**
+   * Lightning (AR-71, presentation only): 0..1 while a flash lights the town. Actors in line of sight within range count
+   * as seen at this weight whatever the cone, so a flash shows the dead around you and they linger as ghosts after.
+   */
+  skyFlash = 0
 
   setWindowOrigin(ox: number, oy: number): boolean {
     if (ox === this.originX && oy === this.originY) return false
@@ -335,6 +340,7 @@ export class Vision {
           wSample = Math.max(wSample, fWeight * fRangeWeight)
         }
       }
+      if (this.skyFlash > 0 && sDist <= this.settings.range) wSample = Math.max(wSample, this.skyFlash)
       if (wSample <= 0) continue
       const w = wSample * (k === 0 ? 1 : 0.92)
       if (w > best) best = w

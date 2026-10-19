@@ -62,6 +62,15 @@ CI batch (4 presets × 4 seeds × 3 nights) moved inside its bands: Skilled aliv
 band changed. Skilled dawn 3 now sits on its lower edge: if a later change drops it below, check whether doors (or
 anything else) made houses safer or deadlier before touching the band.
 
+## Weather (AR-71)
+
+Rain masks noise (zombies hear 30% less at full rain) and costs them 12% of their sight range, so on a wet night fewer
+zombies notice the survivors. Storms come only after dark, so the effect lands mostly on Night 2–3. In the CI batch
+the Night 3 / Night 2 aware ratio dropped from 1.17 to 1.08 and nothing else moved out of its band, so
+`nightThreeOverTwo`'s lower edge went from 1.1 to 1.0. That is the deliberate change: weather makes some nights a
+little easier to sneak through rather than adding a difficulty step. Survival and chaser bands are unchanged. Lab ›
+Weather › "Rain masks noise" and "Rain shortens zombie sight" tune it; "Today (always clear)" restores the old ratio.
+
 ## The night ramp (D-40, Gentle Start, Rising)
 
 `games/outbreak/shared/night-ramp/` raises the challenge every night instead of letting the director's own ramp level

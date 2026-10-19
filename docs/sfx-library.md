@@ -92,6 +92,10 @@ the reused UI files keep theirs. Per-file provenance (take, prompt influence, re
 | `ambience.night.suburb` | 1 loop | ambience | 23.4 | 287 | ElevenLabs, 1 of 3 |
 | `ambience.day.suburb` | 1 loop | ambience | 23.4 | 210 | ElevenLabs, 1 of 3 |
 | `ambience.threat` | 1 loop | ambience | 23.4 | 215 | ElevenLabs, 1 of 2 |
+| `ambience.rain.{light,heavy}` | 1 loop each | ambience | 23.9 | 248–254 | ElevenLabs, 1 of 3 each (Outbreak weather, AR-71) |
+| `ambience.rain.roof` | 1 loop | ambience | 23.9 | 252 | ElevenLabs, 1 of 3 (regenerated once: the first takes sat near -45 LUFS) |
+| `weather.thunder.crack` | 3 | ambience | 5.5–5.7 | 29–30 | ElevenLabs, 3 of 5 (near strikes) |
+| `weather.thunder.roll` | 3 | ambience | 6.4–6.6 | 31–33 | ElevenLabs, 3 of 5 (far strikes) |
 | `creature.bees.swarm` | 3 | foley | 1.47–1.54 | 28 | ElevenLabs, 3 of 4 (Brawl's bee swarm) |
 | `crowd.applause` | 3 | foley | 1.96–2.00 | 36 | ElevenLabs, 3 of 4 (Brawl's Standing Ovation) |
 | `cooking.sizzle` | 3 | foley | 1.28 | 21 | ElevenLabs, 3 of 4 (Brawl's pan and grease) |
@@ -186,6 +190,12 @@ clipped applause take and one dull sizzle.
 - Silent until the first pointer or key press. `M` mutes (persisted in `outbreak.audio.v1`); the player volumes (Master, Effects, Ambience, Zombie voices) are `@arcade/kit/audio` volume settings saved per game (`arcade.volume.outbreak.v1`). A cue whose sample is still loading is skipped rather than played as its synthesized stand-in.
   Automated browsers start muted. The Lab panel's **Audio** group sets master, weapons, movement, zombies, ambience and
   UI levels, wall occlusion, reverb and the voice cap (24). Loops are never stolen by one-shots.
+
+- Weather (`src/weather/audio.ts`, AR-71): two outdoor rain beds (light and heavy) cross-fade on the weather
+  cycle's rain intensity, and indoors they duck and lose their top end while the roof bed takes over
+  (`OutbreakAudio.indoorLevel`). Each lightning strike schedules thunder at the strike's distance over 343 m/s (times
+  Lab › Weather › Thunder delay): a crack for strikes within 450 m, a roll beyond. The weather batch cost 3,883
+  ElevenLabs credits and added 0.96 MB, so the kit library budget (`LIBRARY_MB`) went from 3 to 4 MB.
 
 Measured again after the second batch (same proof, mini worker, 250 shipped files, 2,156 KB, all decoded): a miss into
 Ash's front wall from the lawn played `impact.bullet.wood`; a reload played its four parts; a crowbar, the pack and a

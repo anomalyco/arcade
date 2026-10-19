@@ -12,7 +12,7 @@ import type { CueRecipe, MixCategory, SampleAssetMeta, StealPolicy } from "./typ
 export type SfxGroup =
   | "gun" | "melee" | "foot" | "door" | "window" | "glass" | "barricade" | "search" | "pickup" | "flashlight"
   | "zombie" | "body" | "ambience" | "ui" | "impact" | "craft" | "bench" | "item" | "pack" | "lure" | "generator" | "radio" | "vehicle"
-  | "flare" | "dog" | "creature" | "crowd" | "cooking" | "bow"
+  | "flare" | "dog" | "creature" | "crowd" | "cooking" | "bow" | "weather"
 
 export type SfxSurface = "concrete" | "grass" | "wood"
 
@@ -543,6 +543,33 @@ export const SFX_SPECS: readonly SfxSpec[] = [
     id: "ambience.threat", label: "Threat drone", group: "ambience", bus: "ambience", variants: 1, loop: true, target: -32, gain: 1, pitchJitter: 0, gainJitter: 0,
     range: { ref: 0, max: 0 }, wet: 0, usedBy: OUTBREAK, durationRange: [10, 31],
     generate: { prompt: `Ominous low ambient drone for a horror game: deep slow rumbling tone, hollow wind, faint distant moans echoing across empty streets. ${NO_SPEECH}`, duration: 24, candidates: 2, loop: true, influence: 0.4 },
+  },
+
+  // Weather (Outbreak storms, AR-71)
+  {
+    id: "ambience.rain.light", label: "Light rain", group: "weather", bus: "ambience", variants: 1, loop: true, target: -30, gain: 1, pitchJitter: 0, gainJitter: 0,
+    range: { ref: 0, max: 0 }, wet: 0, usedBy: OUTBREAK, durationRange: [10, 31],
+    generate: { prompt: `Field recording of light steady rain falling outdoors at night on a quiet suburban street: soft even patter on asphalt, leaves and a car roof, gentle drips from gutters. Clearly audible, close and detailed. No thunder, no traffic, no wind roar. ${NO_SPEECH}`, duration: 24, candidates: 3, loop: true, influence: 0.45 },
+  },
+  {
+    id: "ambience.rain.heavy", label: "Heavy rain", group: "weather", bus: "ambience", variants: 1, loop: true, target: -27, gain: 1, pitchJitter: 0, gainJitter: 0,
+    range: { ref: 0, max: 0 }, wet: 0, usedBy: OUTBREAK, durationRange: [10, 31],
+    generate: { prompt: `Field recording of a heavy downpour outdoors on a suburban street: dense loud rain hammering asphalt and roofs, gutters overflowing and splashing, a steady powerful wash of water. Full and rich. No thunder, no traffic. ${NO_SPEECH}`, duration: 24, candidates: 3, loop: true, influence: 0.45 },
+  },
+  {
+    id: "ambience.rain.roof", label: "Rain on the roof", group: "weather", bus: "ambience", variants: 1, loop: true, target: -30, gain: 1, pitchJitter: 0, gainJitter: 0,
+    range: { ref: 0, max: 0 }, wet: 0, usedBy: OUTBREAK, durationRange: [10, 31],
+    generate: { prompt: `Loud steady rain drumming hard on a shingle roof directly overhead, recorded close in the attic: dense rapid pattering and drips from the eaves, full, rich and clearly audible. No thunder. ${NO_SPEECH}`, duration: 24, candidates: 3, loop: true, influence: 0.45 },
+  },
+  {
+    id: "weather.thunder.crack", label: "Thunder crack (near)", group: "weather", bus: "ambience", variants: 3, target: -16, gain: 0.95, pitchJitter: 0.05, gainJitter: 0.08,
+    cooldown: 0.3, maxVoices: 2, priority: 80, range: { ref: 40, max: 400 }, wet: 0.35, usedBy: OUTBREAK, durationRange: [2, 9],
+    generate: { prompt: `A very close lightning strike: an instant violent tearing crack of thunder, then a deep booming rumble rolling away. Outdoors, huge and powerful. ${NO_SPEECH}`, duration: 6, candidates: 5, influence: 0.55 },
+  },
+  {
+    id: "weather.thunder.roll", label: "Thunder roll (far)", group: "weather", bus: "ambience", variants: 3, target: -21, gain: 0.85, pitchJitter: 0.06, gainJitter: 0.1,
+    cooldown: 0.5, maxVoices: 2, priority: 70, range: { ref: 40, max: 400 }, wet: 0.3, usedBy: OUTBREAK, durationRange: [3, 10],
+    generate: { prompt: `Distant thunder: a long low rolling rumble of thunder far away across the sky, slowly swelling and fading. Outdoors, deep and soft, no sharp crack. ${NO_SPEECH}`, duration: 7, candidates: 5, influence: 0.55 },
   },
 
   // Party brawler powers

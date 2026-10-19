@@ -16,6 +16,7 @@ import { outbreakLightingDeclarationsWgsl } from "./lighting"
 import { outbreakBeanFragmentStartWgsl, outbreakHeroWgsl } from "./look/shader"
 import { outbreakUnseenPostHookWgsl, outbreakUnseenPostWgsl } from "./unseen"
 import { interiorDeclarationsWgsl, interiorFragmentStartWgsl, interiorMaterialWgsl, outbreakInteriorRefs } from "./interiors/wgsl"
+import { outbreakPuddleDeclarationsWgsl, outbreakWetGroundWgsl, outbreakWetSheenWgsl } from "./weather/puddles"
 
 export const outbreakPostFinish: PostFinishOptions = {
   chromatic: 0.001,
@@ -110,6 +111,7 @@ export const outbreakSceneHooks: SceneHooks = {
 ${foliageWindDeclarationsWgsl}
 ${outbreakLightingDeclarationsWgsl}
 ${outbreakSurfaceMaterialDeclarationsWgsl}
+${outbreakPuddleDeclarationsWgsl}
 /** Active building slot i (0..7) has the L-plan bungalow footprint (u17.w bits 0..7). */
 fn slotLPlan(i: i32) -> bool { return ((u32(OL.u17.w) >> u32(i)) & 1u) == 1u; }
 /** Building slot i still has a lamp on behind its windows (u17.w bits 16..23, look/lit-windows.ts). */
@@ -281,6 +283,7 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
     let unlitDesat = clamp(OL.shroud.y, 0.0, 1.5);
     let sightDark = clamp(OL.shroud.z, 0.0, 2.0);
     ${groundSurfaceHookWgsl}
+    ${outbreakWetGroundWgsl}
     if (mat == 4 && !inRoom) {
       // Deep-but-not-crushed eave overhang shadow beneath main roof soffit, porch gable shadow, and foundation shrub occlusion.
       let hb = nearestHouseRect(o.world.xz);
@@ -520,6 +523,7 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
       col = applyOutbreakUnseenActor(col, o.world, n);
     }
     col += beamAdd * outbreakSeen * select(1.0, 0.16, mat == 12);
+    ${outbreakWetSheenWgsl}
     if (mat == 0 || mat == 3 || mat == 10 || mat == 12 || (mat == 20 && nightLamps > 0.2)) {
       // Soft shoulder roll-off so near-lens flashlight glare does not bleach the survivor, props, or dark macadam asphalt
       let shKnee = select(0.52, 0.62, mat == 20);
