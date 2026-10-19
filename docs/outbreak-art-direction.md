@@ -62,6 +62,11 @@ Measured reference values (from the reference report, 384×256 downsample): nigh
 | Night 21:00 | Near black outside light. The beam and a few lamps are the world. | meanL 0.047, p50L 0.035. Turned around: beam ground 0.31–0.74, cone outside the beam 0.06, shroud 0.03. |
 | Start house 21:00 | Warm interior pools held by walls; grey memory elsewhere. | meanL 0.053, lit S 0.37. |
 
+The default camera distance is 38 since D-35 (was 46; the AR-53 numbers above were taken at 46). At 38 with the
+lamp roll-off (same seed and size): day meanL 0.149, meanS 0.091; dusk meanL 0.092, lit S 0.39; night facing the
+house meanL 0.052, p50L 0.035, lit S 0.47 (was 0.50, from the yellow blob); turned around p90L 0.16; start house
+meanL 0.063, lit S 0.35.
+
 ## Flashlight spec
 
 A dirty halogen torch (`beamWarmth` 0.45, about 3800–4000K): a **wide, evenly lit wedge with a crisp edge** that
@@ -104,7 +109,7 @@ v7. Earlier presets (v4–v6, Legacy, rendering-round ideas) and their shader br
 
 ## Proof
 
-`games/outbreak/scripts/look-beauty.ts`, always through `hivemind run --kind browser` (headless, muted):
+`games/outbreak/scripts/look-beauty.ts`, always through `hivemind run --kind browser` (headless, muted). Scenes use the default camera distance (38):
 
 - `--mode stills [--variants '{"name":{knobs}}'] [--scenes a,b]`: the eight beauty scenes with pixel stats.
 - `--mode flicker --base <git archive of main>`: walking temporal metric (tile RMS and high-pass RMS between
