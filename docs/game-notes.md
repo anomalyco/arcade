@@ -329,6 +329,10 @@ proven animation techniques to animation.md, not here.
     and spark sprites, with no fire system. Thunder is delayed by distance / 343 m/s.
   - Rain streaks, splashes and drips still come from the kit `WeatherRenderer`, with settings blended between the kit
     drizzle, rain and storm presets on the cycle's intensity; its own lightning is off and the cycle drives the flash.
+    With the vegetation gust field on (AR-66, Lively), the rain takes its wind direction, so streaks slant with the trees.
+  - Two traps found on the first clip: lights written after `collectMapAndInteriorLights` builds the lamp grid are never
+    shaded (pack extra lights through its `extraLights` chain), and the old weather code fed the flash into
+    `render.grade[2]`, which is the red damage vignette, so every strike tinted the screen edges red.
 
 - **Stamp level bakes locally, measure the command-buffer timestamp envelope, pace single-in-flight frames, and pack crowds in `Float32Array` SoA.**
   - **Level bakes (`games/outbreak/src/level.ts`, `games/carrier/shared/seabed.ts`, `islands.ts`):** Replacing Outbreak's per-texel `384×384` `buildingFootprint`/wall/tree/furniture scan with local bounding-box stamping drops the floor contact AO + indoor mask bake from **270.00 ms warm (941 ms cold) → 1.49 ms (181× faster)** and `compileLevel` from **692.33 ms cold / 794.39 ms warm → 291.02 ms cold / 98.24 ms warm** with `diffBytes = 0` and `diffPixels = 0`. In Carrier, memoizing coral clump head offsets in `dotCell`, stamping island/reef/bank blobs over their local bounding boxes instead of scanning open-ocean texels, and skipping uniform EDT columns/rows cuts `bakeSeabed(1024)` from **434.0 → 102.7 ms** (4.2×) and `bakeSeabed(2048)` from **1,934.0 → 418.4 ms warm / 788.8 ms cold** (4.6×) with `diffBytes = 0` across all 16,777,216 bytes.
