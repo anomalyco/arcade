@@ -8,7 +8,7 @@ import {
   type PostFinishOptions,
   type SceneHooks,
 } from "@arcade/kit/gpu/shaders"
-import { foliageWindDeclarationsWgsl } from "@arcade/kit/gpu/foliage"
+import { FOLIAGE_LIMB_AUX, foliageWindDeclarationsWgsl } from "@arcade/kit/gpu/foliage"
 import { flashlightVolumeShader } from "./flashlight-beam"
 import { outbreakFogOfWarDeclarationsWgsl, visibilityFieldShader } from "./fog-of-war"
 import { groundSurfaceHookWgsl, outbreakSurfaceMaterialDeclarationsWgsl, outbreakSurfaceMaterialWgsl } from "./ground"
@@ -99,8 +99,8 @@ export const outbreakSceneHooks: SceneHooks = {
     outbreakPracticalIrr = max(0.0, dot(lit.diff, vec3f(0.2126, 0.7152, 0.0722)) - dot(OL.u5.rgb, vec3f(0.2126, 0.7152, 0.0722)) * outbreakFlashIrr) * GAIN;`,
   fragmentStart: `let dWorldX = dpdx(o.world); let dWorldY = dpdy(o.world); surfaceFootprint = sqrt(max(dot(dWorldX, dWorldX), dot(dWorldY, dWorldY))); surfaceTime = F.cam.w; ${outbreakBeanFragmentStartWgsl} ${interiorFragmentStartWgsl}`,
   vertex: /* wgsl */ `
-  if (v.matAux.x > 21.5 && v.matAux.x < 22.5) {
-    let fw = applyFoliageVertexWind(o.world, o.normal, v.matAux.y, F.cam.w, F.cam.xyz, OL.veg, OL.vegActors);
+  if ((v.matAux.x > 21.5 && v.matAux.x < 22.5) || (v.matAux.x > 23.5 && v.matAux.x < 24.5 && v.matAux.y > ${FOLIAGE_LIMB_AUX - 0.5})) {
+    let fw = applyFoliageWindField(o.world, o.normal, v.matAux.y, v.matAux.x, F.cam.w, F.cam.xyz, OL.veg, OL.vegGust, OL.vegActors);
     o.world = fw[0];
     o.normal = fw[1];
   }`,
@@ -361,7 +361,9 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
       let backNormal = max(0.0, dot(-n, keyDir));
       let transLobe = (forwardScatter * 0.55 + backNormal * 0.45) * F.ambient.w * 0.28 * tipWeight * transK * sunFactor;
       // Flashlight transmission: leaves and blades inside the beam glow warm olive (thin-lamina scatter, any facing).
-      if (OL.u4.z > 0.001 && o.world.y < 2.4) {
+      // Lively vegetation lets the glow climb into the lower crown, so trees in the beam catch it as dark silhouettes.
+      let leafReach = select(2.4, 4.4, OL.vegGust.on > 0.5);
+      if (OL.u4.z > 0.001 && o.world.y < leafReach) {
         let fRel = o.world.xz - OL.u3.xy;
         let fAlong = dot(fRel, OL.u3.zw);
         let fRange = max(2.8, OL.u4.y);
@@ -370,7 +372,7 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
           let fCone = 0.12 + max(0.0, fAlong) * max(0.12, OL.u4.x);
           if (fAcross < fCone * 1.25) {
             let axT = clamp(1.0 - fAlong / fRange, 0.0, 1.0);
-            let inBeam = smoothstep(-0.05, 0.3, fAlong) * (1.0 - smoothstep(fCone * 0.7, fCone * 1.25, fAcross)) * (axT * sqrt(axT)) * (1.0 - smoothstep(1.4, 2.4, o.world.y));
+            let inBeam = smoothstep(-0.05, 0.3, fAlong) * (1.0 - smoothstep(fCone * 0.7, fCone * 1.25, fAcross)) * (axT * sqrt(axT)) * (1.0 - smoothstep(leafReach - 1.0, leafReach, o.world.y)) * select(1.0, 0.75, o.world.y > 2.4);
             let facing = max(0.0, dot(-n.xz, OL.u3.zw)) * 0.5 + 0.5;
             col += outbreakAlbedo * OL.u5.rgb * vec3f(1.05, 1.3, 0.5) * inBeam * facing * OL.u4.z * (0.10 + 0.22 * tipWeight) * transK;
           }

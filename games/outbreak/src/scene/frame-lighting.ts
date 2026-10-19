@@ -4,6 +4,7 @@ import {
   FOLIAGE_WIND_FLOATS,
   foliageSettings,
   packFoliageActors,
+  packFoliageGust,
   packFoliageUniforms,
 } from "@arcade/kit/gpu/foliage"
 import { LampGrid, type FrameInput, type Renderer } from "@arcade/kit/gpu/renderer"
@@ -30,6 +31,7 @@ import { TABLE_LAMP_SLOT, type TableLamp } from "../lightbake"
 import {
   BEAM_QUALITY_TIERS,
   OUTBREAK_FOLIAGE_UNIFORM_OFFSET,
+  OUTBREAK_VEG_GUST_UNIFORM_OFFSET,
   OUTBREAK_INTERIOR_UNIFORM_OFFSET,
   OUTBREAK_LIGHTING_UNIFORM_FLOATS,
   packOutbreakLightingUniforms,
@@ -43,6 +45,7 @@ import { resolveBeamColor } from "../look/world"
 import type { OutbreakSettings } from "../settings"
 import type { Survivor } from "../survivor"
 import { TableLampLights } from "../table-lamps"
+import { vegetationGust } from "../vegetation/settings"
 import type { UnseenFrameEvaluation } from "../unseen"
 import type { OutbreakSceneLevel } from "../world/scene-level"
 
@@ -637,6 +640,7 @@ export class OutbreakFrameLighting {
     settings.flashlight.flashlightRange = tunedRange
     packFoliageUniforms(foliageSettings, this.lightingUniforms, OUTBREAK_FOLIAGE_UNIFORM_OFFSET)
     packFoliageActors(foliageActors(p, zombies), this.lightingUniforms, OUTBREAK_FOLIAGE_UNIFORM_OFFSET + FOLIAGE_WIND_FLOATS)
+    packFoliageGust(vegetationGust(settings.vegetation), this.lightingUniforms, OUTBREAK_VEG_GUST_UNIFORM_OFFSET)
     const deferRugWork = !inInteriorView && (Math.abs(p.vx) > 0.05 || Math.abs(p.vy) > 0.05)
     interiors.update(activeBuildings, town.houseSeed, p.x, p.y, performance.now(), deferRugWork)
     interiors.pack(this.lightingUniforms, OUTBREAK_INTERIOR_UNIFORM_OFFSET, activeBuildings, town.houseSeed)

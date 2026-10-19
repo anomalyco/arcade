@@ -43,6 +43,7 @@ import { DEFAULT_LOOK_TRIMS, type OutbreakLookTrims } from "./look/world"
 import { DEFAULT_NIGHT_LIGHT_SETTINGS, type OutbreakNightLightSettings } from "./night-lights/settings"
 import { DEFAULT_DETAIL_SETTINGS, type OutbreakDetailSettings } from "./details/settings"
 import { DEFAULT_PROP_SETTINGS, type OutbreakPropSettings } from "./props/settings"
+import { DEFAULT_VEGETATION_SETTINGS, type OutbreakVegetationSettings } from "./vegetation/settings"
 import { survivorAimTuning, type SurvivorAimTuning } from "./survivor"
 import { applyUnseenModePreset, DEFAULT_UNSEEN_SETTINGS, type UnseenSettings } from "./unseen"
 import { DEFAULT_OUTBREAK_WEATHER, type OutbreakWeatherSettings } from "./weather/settings"
@@ -245,6 +246,7 @@ export type OutbreakSubsystemMap = {
   death: DeathTuning
   fire: OutbreakFireSettings
   wayOut: WayOutTuning
+  vegetation: OutbreakVegetationSettings
 }
 
 export type OutbreakSubsystemKey = keyof OutbreakSubsystemMap
@@ -286,7 +288,8 @@ export type OutbreakSettings = OutbreakSubsystemMap &
   OutbreakBloodSettings &
   OutbreakNightLightSettings &
   OutbreakDetailSettings &
-  SpecialsTuning
+  SpecialsTuning &
+  OutbreakVegetationSettings
 
 export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "lighting",
@@ -325,6 +328,7 @@ export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "death",
   "fire",
   "wayOut",
+  "vegetation",
 ] as const
 
 export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
@@ -368,6 +372,7 @@ export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
     death: { ...DEFAULT_DEATH_TUNING },
     fire: { ...DEFAULT_FIRE_SETTINGS },
     wayOut: { ...DEFAULT_WAY_OUT_TUNING },
+    vegetation: { ...DEFAULT_VEGETATION_SETTINGS },
   }
 }
 

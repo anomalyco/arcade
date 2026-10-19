@@ -8,6 +8,7 @@ import { interiorSettings, interiorSignature, planInterior } from "./interiors/p
 import { emitCraftWindow } from "./interiors/windows"
 import { propFloorFootprints, propLamps } from "./props/furnish"
 import { propLevelSignature, replacedByLibrary } from "./props/state"
+import { vegetationSignature } from "./vegetation/settings"
 import { bakeOutbreakBounce, bakeOutbreakMoonMask, stampOutbreakVertexTone } from "./lighting"
 import { emitGravelDriveway, emitLawnPatches, emitPathTufts, emitStreetVerge, emitTreeCollar } from "./yard"
 import { Rng } from "@arcade/kit/sim/rng"
@@ -167,7 +168,7 @@ export type OriginLevel = Omit<LevelData, "chunks" | "glass"> & { chunks: Origin
 /** Cache immutable static generation; doors and actors stay in dynamic batches. */
 const levelCache = new Map<string, OriginLevel>()
 export function buildLevel(town: Town): OriginLevel {
-  const key=`${town.seed}/${town.houseSeed}/${town.terrain}/${town.foliageDensity??1}/${archSettings.houseDecay}/${archSettings.clutterDensity}/${archSettings.weathering}/${archSettings.clutterSeed}/${interiorSignature()}/${propLevelSignature()}`
+  const key=`${town.seed}/${town.houseSeed}/${town.terrain}/${town.foliageDensity??1}/${archSettings.houseDecay}/${archSettings.clutterDensity}/${archSettings.weathering}/${archSettings.clutterSeed}/${interiorSignature()}/${propLevelSignature()}/${vegetationSignature()}`
   const cached=levelCache.get(key)
   if(cached)return cached
   const level=compileLevel(town)

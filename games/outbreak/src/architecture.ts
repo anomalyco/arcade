@@ -8,6 +8,7 @@ import type { Frame } from "./interiors/frame"
 import { emitBuildingRugs, emitInteriorDecor, emitWallCapMoulding } from "./interiors/mesh"
 import { interiorSettings, planInterior } from "./interiors/plan"
 import { boardPlank, emitFaceWindow } from "./interiors/windows"
+import { vegetationBuild } from "./vegetation/settings"
 
 const rgb = (v:number):Rgb => [(v>>16&255)/255,(v>>8&255)/255,(v&255)/255]
 type Point = [number,number,number]
@@ -121,7 +122,7 @@ function parkedSedan(m:Mesh,cx:number,cz:number,ground:number) {
 /** Broadleaf scaffold: layered bough clusters, bent-normal peripheral leaf rosettes, interior canopy AO and base grass tufts. */
 export function plant(m:Mesh,x:number,z:number,h:number,radius:number,seed:number,ground:number) {
   plantFootprints.push({x,z,radius,tree:h>2.1,ground})
-  buildFoliageTree(m,x,z,h,radius,seed,ground,foliageSettings)
+  buildFoliageTree(m,x,z,h,radius,seed,ground,foliageSettings,undefined,vegetationBuild)
 }
 
 /** Ground footprints of every plant() since the level build cleared it; the floor map bakes their contact shade. */
