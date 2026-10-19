@@ -3,7 +3,7 @@
 Frozen production build of HEAD `011b6dca` plus the uncommitted working tree at audit time (doors.ts, lighting.ts,
 mirrors.ts, dock.ts, shell.ts, services.ts, s0/west.ts, washroom.ts; diff saved as `$TMPDIR/ah-audit/snapshot.diff`),
 built with `bunx vite build -c scripts/audit/vite.config.ts` and served on :5231. Headless Chromium on Metal, muted.
-Evidence paths below are relative to `$TMPDIR/ah-audit/out/` (`$TMPDIR/ah-audit/out/`).
+Evidence paths below are relative to `$TMPDIR/ah-audit/out/`.
 
 ## Summary
 

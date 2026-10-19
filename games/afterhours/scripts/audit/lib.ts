@@ -2,10 +2,12 @@
 // `bun scripts/audit/serve.ts <dir>`), the headless Metal browser (muted), and page helpers over the game's globals.
 import { chromium, type Browser, type Page } from "playwright-core"
 import { existsSync, readdirSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 
 export const BASE = process.env.AH_BASE ?? "http://localhost:5231/"
 export const AUDIT = `${BASE}scripts/audit/audit.html`
-export const OUT = process.env.AH_OUT ?? "$TMPDIR/ah-audit/out"
+export const OUT = process.env.AH_OUT ?? join(process.env.TMPDIR ?? tmpdir(), "ah-audit/out")
 
 export async function launch(): Promise<Browser> {
   const cache = `${process.env.HOME}/Library/Caches/ms-playwright`

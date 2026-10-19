@@ -2,8 +2,9 @@
 import { chromium, type Browser } from "playwright-core"
 import { existsSync, readdirSync, statSync } from "node:fs"
 import { join, extname } from "node:path"
+import { tmpdir } from "node:os"
 
-export const TMP = "$TMPDIR/ah-perf"
+export const TMP = join(process.env.TMPDIR ?? tmpdir(), "ah-perf")
 
 export function arg(args: string[], name: string, def?: string) {
   const i = args.indexOf(`--${name}`)
