@@ -86,15 +86,26 @@ export class SoundDirector {
   readonly wayOut = new WayOutSounds()
   private nextGroan = 0
   private lastAlert = -Infinity
-  private readonly rng: () => number
+  private rng: () => number
   readonly tuning = { ...DIRECTOR_TUNING }
 
-  constructor(seed = 11) {
+  constructor(private readonly seed = 11) {
     this.rng = mulberry32(seed)
   }
 
+  /** Forgets everything, as a fresh director: a new run starts its clock and ids at 0, so no cooldown may carry over. */
   reset(): void {
     this.started = false
+    this.rng = mulberry32(this.seed)
+    this.nextGroan = 0
+    this.lastAlert = -Infinity
+    this.groanedAt.clear()
+    this.alertedAt.clear()
+    this.attackedAt.clear()
+    this.doors.clear()
+    this.windows.clear()
+    this.planks.clear()
+    this.bashes.clear()
     this.shots.clear()
     this.meleeSwings.clear()
     this.meleeHits.clear()

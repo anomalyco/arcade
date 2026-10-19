@@ -96,6 +96,9 @@ over the scene, so the player learns what is safe:
 - **Source marks** is the second style: a small pulse at each source, with the reach drawn only for your own noises. **Today**
   brings back the Unseen shroud's ground ripples (`collectFogSoundSprites`), which the new layer replaces.
 - Reduced motion keeps the fades and drops the travel.
+- **Co-op**: every client draws the room's cues. The noises come over the wire (`shared/noises/`, see
+  [outbreak-coop.md](outbreak-coop.md#sound)) and each client keeps the crowd's threat at the room's from the replicated
+  hour, so rings are the same size for everyone. `tests/coop-noises.test.ts` checks a teammate's shot, a dog and a radio.
 
 Key names follow the controls rule (docs/controls.md): bindings are physical `KeyboardEvent.code`, and labels are the
 QWERTY name of that key on every layout. The "Empty, R to reload" callout draws R with the shared key cap

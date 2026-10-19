@@ -81,6 +81,7 @@ change the offline session.
     it: in the feature's `stepWorld` (chunk and horde spawns) and its `stepWorldLate` (director spawns during the
     crowd step). `tests/specials.test.ts` checks every zombie in every snapshot against the room.
   - Death (`shared/death/`) adds a section (bit 256): see [Death](#death).
+  - Noises (`shared/noises/`) add a section (bit 512): see [Sound](#sound).
   - `personal`: binary-packed `ack`, `f32` position/aim/stamina/battery/flashlight/noise, discrete flags/ammo/planks,
     and an optional bitmask for active timers, peek/hold/vault/channel state, filtered ledger deltas and notices.
 
@@ -163,6 +164,16 @@ Co-op adds nothing to the wire for sound. The client's `CoopSim`, filled from sn
 planks, bashes and zombie states are heard where they happen, and remote survivors' replicated flashlight, reload,
 health and exhaustion become sounds at their positions; their footsteps come from their rigs' foot contacts. Like the
 rest of the shared world, a remote shot or door is heard one snapshot late.
+
+What the dead hear does go on the wire, for the sound cues, the Unseen ripples, crows and callouts that read the noise
+bus (`view.noises`): a client never steps the crowd, so its own bus would stay empty. The noises section (bit 512,
+`shared/noises/net.ts`) carries each noise the room's bus made since the base snapshot's newest id (`upTo`), once, with
+its room id, kind (a byte), cm position and radius, ms age, loudness and ttl, and whose it was (a seat, or the source
+id: `zombie-12`, `radio`, a dog). Footsteps stay off it (yours come from `personal`, teammates' draw nothing), and so do
+noises too far from the recipient's bubble to be heard (`bubbleHalfExtent + 1.5 × radius + 8 m`); at most 24 a
+snapshot, about 18 bytes each, and nothing when the room was quiet. The client feature (`src/noises/`) adds them to its
+bus under the same ids and seat ids, prunes it by ttl, and sets the crowd's threat from the replicated hour as the room
+does, so cue rings match the room's. `tests/coop-noises.test.ts` checks it through the real room code.
 
 ## Known gaps
 

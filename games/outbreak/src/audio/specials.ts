@@ -44,6 +44,7 @@ export class SpecialSounds {
     this.memory.clear()
     this.heardShots.clear()
     this.heardHits.clear()
+    this.lastTime = 0
   }
 
   observe(

@@ -152,6 +152,12 @@ export class OutbreakAudio {
     }
   }
 
+  /** A new session (Restart, New town, joining a room): its clock and ids start again, so forget the last one's. */
+  resetForSession(): void {
+    this.director.reset()
+    this.zombieSteps.reset()
+  }
+
   update(frame: AudioFrame): void {
     const t0 = performance.now()
     const { world, listener } = frame
