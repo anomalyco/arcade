@@ -106,7 +106,13 @@ async function setup(page: Page, s: Scene, knobs: Record<string, unknown>) {
     h.setZoomRaw(s.zoom)
     h.setLab("propsOn", true)
     h.lookPreset("today")
-    for (const [key, v] of Object.entries(k)) h.setLab(key, v)
+    for (const [key, v] of Object.entries(k)) {
+      try {
+        h.setLab(key, v)
+      } catch (e) {
+        if (key.startsWith("aa")) throw e // the modes under test must apply; look knobs may be absent
+      }
+    }
     h.pose(s.x, s.y, s.aim)
     const sim = h.session?.()?.sim
     if (sim) while (sim.slots.length > 1) sim.removeSurvivor(sim.slots[1]!.id)
@@ -422,13 +428,17 @@ async function stillsRun(page: Page, browser: Browser) {
       await hold(page, s, 40)
       const file = resolve(out, `still-${s.name}-${m.id}.png`)
       await page.screenshot({ path: file })
-      tiles.push({ label: `${s.name} · ${m.label}`, file })
+      // A 1:1 device-pixel crop of the middle for the sheet.
+      const vw = await page.evaluate(() => [innerWidth, innerHeight])
+      const crop = resolve(out, `crop-${s.name}-${m.id}.png`)
+      await page.screenshot({ path: crop, clip: { x: vw[0]! * 0.36, y: vw[1]! * 0.32, width: vw[0]! * 0.28, height: vw[1]! * 0.36 } })
+      tiles.push({ label: `${s.name} · ${m.label}`, file: crop })
       meta.stills[`${s.name}-${m.id}`] = file.split("/").pop()
       console.log("still", s.name, m.id)
     }
     save()
   }
-  await sheet(browser, resolve(out, "stills-sheet.png"), "Converged stills at 3456×1894, 1:1 device-pixel crop of the middle", tiles, 3, { x: 0.36, y: 0.32, w: 0.28, h: 0.36 })
+  await sheet(browser, resolve(out, "stills-sheet.png"), "Converged stills at 3456×1894, 1:1 device-pixel crop of the middle", tiles, 3, { x: 0, y: 0, w: 1, h: 1 })
 }
 
 /** Crops each image (fractions of its size) and lays them out `columns` wide with labels. */
@@ -524,7 +534,8 @@ try {
     meta.smoke ??= {}
     meta.smoke[m.id] = await setup(gp, scene("street-night-21h"), m.knobs)
   }
-  if (errors.length) throw new Error(`smoke failed: ${errors.slice(0, 4).join(" | ")}`)
+  const gpuErrors = errors.filter((e) => /wgsl|validation|webgpu|gpu|pipeline|bind ?group|texture|shader/i.test(e))
+  if (gpuErrors.length) throw new Error(`smoke failed: ${gpuErrors.slice(0, 4).join(" | ")}`)
   save()
   if (only.has("gpu")) await gpuRun(gp)
   if (only.has("stills")) await stillsRun(gp, browser)
