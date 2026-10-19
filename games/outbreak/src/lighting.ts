@@ -1,4 +1,5 @@
 import type { BakedMap, FloorMap } from "@arcade/kit/gpu/level"
+import { FOLIAGE_GUST_FLOATS } from "@arcade/kit/gpu/foliage"
 import { VERT_BYTES } from "@arcade/kit/gpu/mesh"
 import type { LabControl } from "@arcade/kit/lab-panel"
 import type { LookPresetId } from "@arcade/kit/look"
@@ -290,7 +291,9 @@ export const OUTBREAK_SIGHT_UNIFORM_OFFSET = OUTBREAK_BEAM_LOOK_UNIFORM_OFFSET +
 export const OUTBREAK_ART_UNIFORM_OFFSET = OUTBREAK_SIGHT_UNIFORM_OFFSET + 4
 /** Night sight (see `look/night-sight.ts`): this frame's weight, readable radius, fade distance, reserved. */
 export const OUTBREAK_NIGHT_UNIFORM_OFFSET = OUTBREAK_ART_UNIFORM_OFFSET + 4
-export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = OUTBREAK_NIGHT_UNIFORM_OFFSET + 4
+/** The town-wide wind field for vegetation (`FoliageGust`, see `vegetation/settings.ts`). */
+export const OUTBREAK_VEG_GUST_UNIFORM_OFFSET = OUTBREAK_NIGHT_UNIFORM_OFFSET + 4
+export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = OUTBREAK_VEG_GUST_UNIFORM_OFFSET + FOLIAGE_GUST_FLOATS
 
 export type OutbreakLightingUniformSettings =
   | (OutbreakLightingSettings & Partial<FlashlightBeamSettings> & Partial<UnseenSettings> & {
@@ -1231,6 +1234,7 @@ struct OutbreakLightingUniforms {
   sight: vec4f, // coneSharpness, dayShroud, dayMuted, shroudLampKeep
   art: vec4f, // sightGlow, groundDetail, lampRolloff, reserved
   night: vec4f, // night sight: weight this frame, readable radius, fade distance, reserved
+  vegGust: FoliageGust,
 }
 @group(0) @binding(13) var<uniform> OL: OutbreakLightingUniforms;
 ${lightRampWgsl}

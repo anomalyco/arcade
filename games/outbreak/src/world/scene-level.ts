@@ -21,6 +21,7 @@ import { easeNightSight, nightSightRange, nightSightTarget } from "../look/night
 import { packLightOccluders, windowStateKey } from "../light-occluders"
 import type { NetSession } from "../net-session"
 import { resolveWorldMode, type OutbreakSettings } from "../settings"
+import { syncVegetationBuild } from "../vegetation/settings"
 import { useOriginBuild, WorldClientStreamer } from "../world-streamer"
 
 export interface OutbreakSceneLevelHost {
@@ -152,6 +153,7 @@ export class OutbreakSceneLevel {
     archSettings.clutterDensity = settings.ground.clutterDensity
     archSettings.weathering = settings.world.weathering
     archSettings.clutterSeed = settings.ground.clutterSeed
+    syncVegetationBuild(settings.vegetation)
     const mode = resolveWorldMode(settings.world.worldMode)
     session.sim.worldStream.mode = mode
     const p = session.view.player
@@ -198,6 +200,7 @@ export class OutbreakSceneLevel {
 
   stepFrame(input: OutbreakSceneLevelFrameInput): OutbreakSceneLevelFrameResult {
     const { settings, renderer } = this.host
+    if (syncVegetationBuild(settings.vegetation)) this.rebuildLevel()
     const session = this.host.session()
     const { player: p, town, time, peek } = session.view
     const { drawn, activePeek, view, watch, localVehicle, drivingHeadlights, effectiveVisionAim, lowBeam } = input

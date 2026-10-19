@@ -2,6 +2,7 @@ import { emitBuildingRugs, emitInteriorDecor, emitWallCapMoulding } from "./inte
 import { interiorSettings, interiorSignature, planInterior } from "./interiors/plan"
 import { emitCraftWindow } from "./interiors/windows"
 import { propDressingState, propLevelSignature } from "./props/state"
+import { vegetationBuild, vegetationSignature } from "./vegetation/settings"
 import type { LevelChunk, LevelData } from "@arcade/kit/gpu/level"
 import { emitGrassClump, emitGrassTuft, foliageSettings, scatterGrassClumps } from "@arcade/kit/gpu/foliage"
 import { MAT, Mesh, VERT_BYTES, type Mat, type Rgb } from "@arcade/kit/gpu/mesh"
@@ -457,7 +458,7 @@ function emitStreamedLot(b: Building, id: number, chunk: WorldChunk, town: Town,
 }
 
 function getPropTemplate(p: Prop): PackedPropTemplate {
-  const key = p.kind === "tree" ? `tree:${Math.min(TREE_TEMPLATE_BUCKETS - 1, Math.floor(p.variant * TREE_TEMPLATE_BUCKETS))}` : p.kind
+  const key = p.kind === "tree" ? `tree:${Math.min(TREE_TEMPLATE_BUCKETS - 1, Math.floor(p.variant * TREE_TEMPLATE_BUCKETS))}:${vegetationSignature()}` : p.kind
   let tpl = propTemplates.get(key)
   if (tpl) return tpl
   const m = new Mesh()
@@ -1789,6 +1790,7 @@ export class WorldClientStreamer {
           clutterSeed: archSettings.clutterSeed,
           interior: { ...interiorSettings },
           props: { ...propDressingState },
+          veg: { ...vegetationBuild },
         })
         break
       }
@@ -1838,7 +1840,7 @@ export class WorldClientStreamer {
     cx: number,
     cy: number,
   ): string {
-    return `${seed}:${houseSeed}:${terrain}:${foliageDensity}:${mode}:${archSettings.houseDecay}:${archSettings.clutterDensity}:${archSettings.weathering}:${archSettings.clutterSeed}:${interiorSignature()}:${propLevelSignature()}:${cx},${cy}`
+    return `${seed}:${houseSeed}:${terrain}:${foliageDensity}:${mode}:${archSettings.houseDecay}:${archSettings.clutterDensity}:${archSettings.weathering}:${archSettings.clutterSeed}:${interiorSignature()}:${propLevelSignature()}:${vegetationSignature()}:${cx},${cy}`
   }
 
   getOrCompileChunk(
@@ -2072,7 +2074,7 @@ export class WorldClientStreamer {
     this.chunkFadeAlpha = maxFadeProgress
 
     const { rx, ry } = WorldClientStreamer.computeRenderRadius(viewRect)
-    const winKey = `${town.seed}:${town.houseSeed}:${town.terrain}:${foliageDensity}:${mode}:${archSettings.houseDecay}:${archSettings.clutterDensity}:${archSettings.weathering}:${archSettings.clutterSeed}:${interiorSignature()}:${propLevelSignature()}:${this.center.cx},${this.center.cy}:${rx},${ry}`
+    const winKey = `${town.seed}:${town.houseSeed}:${town.terrain}:${foliageDensity}:${mode}:${archSettings.houseDecay}:${archSettings.clutterDensity}:${archSettings.weathering}:${archSettings.clutterSeed}:${interiorSignature()}:${propLevelSignature()}:${vegetationSignature()}:${this.center.cx},${this.center.cy}:${rx},${ry}`
     const centerMoved = winKey !== this.lastWindowKey
 
     if (!centerMoved && !this.outerRingDirty) {

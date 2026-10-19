@@ -700,8 +700,12 @@ function emitTaperedLimb(
   steps = 3,
   sides = 6,
   collarFlare = 0,
+  flex0 = -1,
+  flex1 = -1,
 ): void {
   const rings: { pt: Point; n: Point }[][] = []
+  // Swaying limbs carry aux = FOLIAGE_LIMB_AUX + flex (0 at the root, 1 where a leaf clump hangs); -1 keeps aux 0 (static).
+  const limbAux = (t: number) => (flex0 < 0 ? 0 : FOLIAGE_LIMB_AUX + flex0 + (flex1 - flex0) * t)
   const baseCol = scaleRgb(bark, 0.78)
   const upperCol = scaleRgb(bark, 1.04)
 
@@ -753,13 +757,15 @@ function emitTaperedLimb(
       const a1 = rA[next]!
       const b1 = rB[next]!
       const b0 = rB[i]!
-      m.vert(a0.pt, a0.n, colA, MAT.timber, 0)
-      m.vert(b0.pt, b0.n, colB, MAT.timber, 0)
-      m.vert(b1.pt, b1.n, colB, MAT.timber, 0)
+      const auxA = limbAux(s / steps)
+      const auxB = limbAux((s + 1) / steps)
+      m.vert(a0.pt, a0.n, colA, MAT.timber, auxA)
+      m.vert(b0.pt, b0.n, colB, MAT.timber, auxB)
+      m.vert(b1.pt, b1.n, colB, MAT.timber, auxB)
 
-      m.vert(a0.pt, a0.n, colA, MAT.timber, 0)
-      m.vert(b1.pt, b1.n, colB, MAT.timber, 0)
-      m.vert(a1.pt, a1.n, colA, MAT.timber, 0)
+      m.vert(a0.pt, a0.n, colA, MAT.timber, auxA)
+      m.vert(b1.pt, b1.n, colB, MAT.timber, auxB)
+      m.vert(a1.pt, a1.n, colA, MAT.timber, auxA)
     }
   }
 }
@@ -1141,6 +1147,36 @@ function emitBoughCluster(
   }
 }
 
+/** Timber limb vertices with aux at or above this sway with their canopy (aux − `FOLIAGE_LIMB_AUX` = flex, 0..1). */
+export const FOLIAGE_LIMB_AUX = 8
+
+/**
+ * Build-time vegetation options beside the look parameters. `lively` gives each tree a species by seed, leaves some
+ * bare, encodes limb flex so branches sway with their clumps and adds stray shoots to shrubs; off reproduces today's
+ * meshes vertex for vertex. `quality` (0 low, 1 medium, 2 high) scales clump and sprig counts on lively trees.
+ */
+export type FoliageBuildOptions = {
+  lively: boolean
+  quality: number
+  /** Fraction of trees left bare (dead or leafless), 0..0.5. */
+  deadTrees: number
+  /** 0: every tree follows the tree look; 1: trees pick oak, maple, birch or pine by seed. */
+  variety: number
+}
+export const FOLIAGE_BUILD_TODAY: Readonly<FoliageBuildOptions> = { lively: false, quality: 1, deadTrees: 0, variety: 0 }
+export const FOLIAGE_BUILD_LIVELY: Readonly<FoliageBuildOptions> = { lively: true, quality: 1, deadTrees: 0.14, variety: 0.7 }
+
+/** The species a lively tree takes from its seed (null keeps the tree look), and whether it stands bare. */
+export function foliageTreeSpecies(seed: number, opts: Readonly<FoliageBuildOptions>): { species: TreePresetId | null; dead: boolean } {
+  if (!opts.lively) return { species: null, dead: false }
+  const pick = new Rng((seed ^ 0x5eed7) >>> 0)
+  const roll = pick.next()
+  const dead = pick.next() < opts.deadTrees
+  if (roll >= opts.variety) return { species: null, dead }
+  const r = roll / Math.max(1e-6, opts.variety)
+  return { species: r < 0.4 ? "oak" : r < 0.64 ? "maple" : r < 0.8 ? "birch" : "pine", dead }
+}
+
 /**
  * Production tree & shrub generator used by both Outbreak (`architecture.ts`) and the Lab Foliage workbench.
  */
@@ -1152,14 +1188,21 @@ export function buildFoliageTree(
   radius: number,
   seed: number,
   ground: number,
-  params: Readonly<FoliageParams> = foliageSettings,
+  lookParams: Readonly<FoliageParams> = foliageSettings,
   shapeOverride?: FoliageCrownShape,
+  opts: Readonly<FoliageBuildOptions> = FOLIAGE_BUILD_TODAY,
 ): void {
   const isTree = h > 2.1
   if (!isTree && shapeOverride === undefined) {
-    buildFoliageBush(m, x, z, h, radius, seed, ground, params)
+    buildFoliageBush(m, x, z, h, radius, seed, ground, lookParams, opts)
     return
   }
+  const lively = opts.lively && isTree
+  const { species, dead } = shapeOverride === undefined && isTree ? foliageTreeSpecies(seed, opts) : { species: null, dead: false }
+  let params: Readonly<FoliageParams> = lookParams
+  if (species && species !== lookParams.treePreset) params = { ...lookParams, ...TREE_PRESETS[species].values, treePreset: species }
+  if (lively) params = { ...params, porosity: Math.min(0.85, params.porosity + 0.12) }
+  const quality = Math.round(Math.min(2, Math.max(0, opts.quality)))
   const rng = new Rng(seed)
   const naturalHabit: FoliageCrownShape = (["dome", "layered", "spreading", "dome"] as const)[Math.abs(seed) & 3]!
   const shape: FoliageCrownShape =
@@ -1173,8 +1216,9 @@ export function buildFoliageTree(
   const leanX = (rng.next() - 0.5) * (isTree ? 0.26 : 0.14)
   const leanZ = (rng.next() - 0.5) * (isTree ? 0.26 : 0.14)
 
-  const barkColor: Rgb =
-    params.treePreset === "birch" || shape === "columnar"
+  const barkColor: Rgb = dead
+    ? [0.37, 0.34, 0.30]
+    : params.treePreset === "birch" || shape === "columnar"
       ? [0.64, 0.61, 0.56]
       : params.treePreset === "pine" || shape === "conical"
         ? [0.28, 0.21, 0.16]
@@ -1196,6 +1240,8 @@ export function buildFoliageTree(
       4,
       7,
       0.48,
+      lively ? 0 : -1,
+      lively ? 0.12 : -1,
     )
   }
 
@@ -1248,7 +1294,8 @@ export function buildFoliageTree(
   const cosPitch = Math.cos(angleRad)
   const sinPitch = Math.sin(angleRad)
   const isHeroTree = !isTree || Math.abs(x) < 12 || (x > 11 && x < 46 && z > 18 && z < 56)
-  const clumpsPerBough = isTree ? (isHeroTree ? Math.max(1, Math.round(params.clumpCount)) : 1) : 1
+  const baseClumps = isTree ? (isHeroTree ? Math.max(1, Math.round(params.clumpCount)) : 1) : 1
+  const clumpsPerBough = lively ? Math.max(1, baseClumps + (quality === 2 ? 1 : quality === 0 ? -1 : 0)) : baseClumps
   const clumpScale = isTree
     ? params.clumpSize * Math.max(0.45, Math.min(1.65, radiusRatio))
     : radius * (0.50 + rng.next() * 0.14)
@@ -1256,8 +1303,10 @@ export function buildFoliageTree(
     ? params.leafCardSize * Math.max(0.55, Math.min(1.55, radiusRatio))
     : Math.max(0.11, radius * 0.24)
   // Distance/perimeter LOD: full card density on hero street/house trees, lighter on outer town trees
-  const sprigsPerClump = isHeroTree ? 3 : 2
-  const edgeSprigs = isHeroTree ? 1 : 0
+  const sprigsPerClump = (isHeroTree ? 3 : 2) + (lively ? quality - 1 : 0)
+  const edgeSprigs = lively ? (quality === 0 ? 0 : quality === 2 ? (isHeroTree ? 2 : 1) : isHeroTree ? 1 : 0) : isHeroTree ? 1 : 0
+  // Bare trees: a few dry clumps cling to some boughs; the rest of the crown is limbs and twigs.
+  const deadPalette: Rgb[] = [[0.40, 0.33, 0.21], [0.35, 0.30, 0.20], [0.44, 0.36, 0.22]]
 
   for (let b = 0; b < boughs; b++) {
     const baseAngle = (b * Math.PI * 2) / boughs + (rng.next() - 0.5) * (isTree ? 0.42 : 0.58)
@@ -1307,7 +1356,20 @@ export function buildFoliageTree(
 
     if (isTree) {
       const rBough0 = 0.078 * (1 - tierFrac * 0.32) * Math.max(0.75, Math.min(1.25, heightRatio))
-      emitTaperedLimb(m, start, midCtrl, tip, rBough0, rBough0 * 0.28, barkColor, 3, 5, 0.22)
+      emitTaperedLimb(m, start, midCtrl, tip, rBough0, rBough0 * 0.28, barkColor, 3, 5, 0.22, lively ? 0.08 : -1, lively ? 1 : -1)
+      if (dead) {
+        // Twigs splaying from the bough's outer half: a bare crown reads as a fan of fine limbs against the ground.
+        const twigs = 2 + Math.floor(rng.next() * 2)
+        for (let t = 0; t < twigs; t++) {
+          const along = 0.5 + rng.next() * 0.45
+          const tw0: Point = [start[0] + (tip[0] - start[0]) * along, start[1] + (tip[1] - start[1]) * along, start[2] + (tip[2] - start[2]) * along]
+          const ta = baseAngle + (rng.next() - 0.5) * 1.5
+          const tl = reach * (0.32 + rng.next() * 0.3)
+          const tw2: Point = [tw0[0] + Math.cos(ta) * tl, tw0[1] + tl * (0.25 + rng.next() * 0.45), tw0[2] + Math.sin(ta) * tl]
+          const tw1: Point = [(tw0[0] + tw2[0]) * 0.5, (tw0[1] + tw2[1]) * 0.5 + 0.06, (tw0[2] + tw2[2]) * 0.5]
+          emitTaperedLimb(m, tw0, tw1, tw2, rBough0 * 0.42, 0.006, barkColor, 2, 3, 0, 0.5, 1)
+        }
+      }
     }
 
     const boughClumps = inGap ? 1 : clumpsPerBough
@@ -1331,12 +1393,13 @@ export function buildFoliageTree(
           start[2] + (tip[2] - start[2]) * 0.48,
         ]
         const forkMid: Point = [(forkStart[0] + cx) * 0.5, (forkStart[1] + cy) * 0.5 + 0.08, (forkStart[2] + cz) * 0.5]
-        emitTaperedLimb(m, forkStart, forkMid, [cx, cy, cz], 0.036, 0.014, barkColor, 2, 4, 0)
+        emitTaperedLimb(m, forkStart, forkMid, [cx, cy, cz], 0.036, 0.014, barkColor, 2, 4, 0, lively ? 0.5 : -1, lively ? 1 : -1)
       }
+      if (dead && rng.next() > 0.22) continue
 
-      const clusterTone = palette[(b + cIdx + Math.floor(rng.next() * 2)) % palette.length]!
+      const clusterTone = dead ? deadPalette[(b + cIdx) % deadPalette.length]! : palette[(b + cIdx + Math.floor(rng.next() * 2)) % palette.length]!
       const subScale = cIdx === 0 ? 1.0 : 0.78 + rng.next() * 0.18
-      const rx = clumpScale * subScale * (inGap ? 0.72 : 0.92 + rng.next() * 0.22)
+      const rx = clumpScale * subScale * (inGap ? 0.72 : 0.92 + rng.next() * 0.22) * (dead ? 0.55 : 1)
       const ry = rx * (shape === "layered" ? 0.48 : isTree ? 0.68 : 0.78)
       const flexBase = 0.22 + 0.78 * clamp01((cy - ground) / Math.max(1.0, h))
 
@@ -1365,29 +1428,31 @@ export function buildFoliageTree(
   }
 
   // Crown apex bouquet
-  const crownTone = palette[Math.abs(seed) % palette.length]!
-  const apexRx = clumpScale * (shape === "conical" ? 0.64 : 0.94)
-  const apexRy = apexRx * (shape === "layered" ? 0.52 : 0.72)
-  emitBoughCluster(
-    m,
-    x + leanX * 0.55,
-    ground + h * (isTree ? 0.85 : 0.70),
-    z + leanZ * 0.55,
-    apexRx,
-    apexRy,
-    crownCenter,
-    rng,
-    crownTone,
-    sprigsPerClump + 2,
-    cardScale * 0.95,
-    params.canopyAO,
-    params.normalSoftness,
-    0.95,
-    5,
-    0,
-    edgeSprigs,
-    true,
-  )
+  if (!dead) {
+    const crownTone = palette[Math.abs(seed) % palette.length]!
+    const apexRx = clumpScale * (shape === "conical" ? 0.64 : 0.94)
+    const apexRy = apexRx * (shape === "layered" ? 0.52 : 0.72)
+    emitBoughCluster(
+      m,
+      x + leanX * 0.55,
+      ground + h * (isTree ? 0.85 : 0.70),
+      z + leanZ * 0.55,
+      apexRx,
+      apexRy,
+      crownCenter,
+      rng,
+      crownTone,
+      sprigsPerClump + 2,
+      cardScale * 0.95,
+      params.canopyAO,
+      params.normalSoftness,
+      0.95,
+      5,
+      0,
+      edgeSprigs,
+      true,
+    )
+  }
 
   // Root-flare curved grass & sprawling bramble/weed shoots around the base
   const coverCount = isTree ? 4 : 3
@@ -1426,6 +1491,7 @@ export function buildFoliageBush(
   seed: number,
   ground: number,
   params: Readonly<FoliageParams> = foliageSettings,
+  opts: Readonly<FoliageBuildOptions> = FOLIAGE_BUILD_TODAY,
 ): void {
   const rng = new Rng(seed ^ 0x2b5e)
   const from = m.v.length
@@ -1542,6 +1608,20 @@ export function buildFoliageBush(
   const blossoms = Math.round(18 * params.bushFlowers)
   if (blossoms >= 2) {
     emitHydrangeaPanicles(m, x, ground, z, H, R, seed, blossoms, FOLIAGE_BUSH_AUX)
+  }
+
+  if (opts.lively) {
+    // Stray shoots past the clipped or rounded crown (nobody has trimmed since the outbreak): they break the hedge's
+    // silhouette and, at full flex, wave in the wind ahead of the mass. Their own Rng keeps the rest of the bush intact.
+    const shootRng = new Rng((seed ^ 0x51007) >>> 0)
+    const shoots = 2 + Math.floor(shootRng.next() * (2 + opts.quality))
+    const shootCol = scaleRgb(tones[1]!, 1.12)
+    for (let k = 0; k < shoots; k++) {
+      const a = shootRng.next() * Math.PI * 2
+      const up = 0.35 + shootRng.next() * 0.5
+      const root: Point = [x + Math.cos(a) * R * 0.62, ground + H * (0.72 + shootRng.next() * 0.2), z + Math.sin(a) * R * 0.62]
+      emitLeafSprig(m, root, normalize3(Math.cos(a), up, Math.sin(a)), leaf * (2.0 + shootRng.next() * 0.9), [x, ground + H * 0.4, z], centre, 0.7, shootRng, scaleRgb(tones[0]!, 0.9), shootCol, 1, 3, FOLIAGE_BUSH_AUX)
+    }
   }
 
   if (wild > 0.4) {
@@ -2115,6 +2195,40 @@ export const FOLIAGE_WIND_FLOATS = FoliageWindConfigStruct.floatCount
 export const FOLIAGE_ACTOR_FLOATS = FoliageActorsStruct.floatCount
 export const FOLIAGE_MAX_ACTORS = 8
 
+/**
+ * The town-wide wind field (`applyFoliageWindField`): `on` 0 keeps today's per-plant wobble, 1 drives every canopy,
+ * limb, shrub and blade from one travelling gust field. Distances in metres, speed in m/s, direction as a unit xz vector.
+ */
+export const FoliageGustStruct = wgslStruct("FoliageGust", {
+  on: "f32",
+  strength: "f32",
+  gustScale: "f32",
+  gustSpeed: "f32",
+  dirX: "f32",
+  dirZ: "f32",
+  branchSway: "f32",
+  leafFlutter: "f32",
+  bushSway: "f32",
+  grassSway: "f32",
+  trunkBend: "f32",
+  canopyOpen: "f32",
+})
+export const FOLIAGE_GUST_FLOATS = FoliageGustStruct.floatCount
+
+export type FoliageGust = { readonly [K in keyof typeof FoliageGustStruct.schema]: number }
+
+/** Today's wind: the field is off and every plant keeps the per-vertex wobble driven by `FoliageWindConfig`. */
+export const FOLIAGE_GUST_OFF: FoliageGust = {
+  on: 0, strength: 0, gustScale: 24, gustSpeed: 5, dirX: 0.88, dirZ: 0.47,
+  branchSway: 0, leafFlutter: 0, bushSway: 0, grassSway: 0, trunkBend: 0, canopyOpen: 0,
+}
+
+/** Pack the wind field (12 floats); `dirX`/`dirZ` are normalised here. */
+export function packFoliageGust(g: FoliageGust, out: Float32Array = FoliageGustStruct.createBuffer(), offset = 0): Float32Array {
+  const len = Math.hypot(g.dirX, g.dirZ) || 1
+  return FoliageGustStruct.pack({ ...g, dirX: g.dirX / len, dirZ: g.dirZ / len }, out as Float32Array<ArrayBuffer>, offset)
+}
+
 /** Pack live uniform-boundary foliage parameters into `FoliageWindConfig` (12 floats). */
 export function packFoliageUniforms(
   params: Readonly<FoliageParams>,
@@ -2178,6 +2292,8 @@ fn defaultFoliageWindConfig() -> FoliageWindConfig {
     0.30, 0.50, 1.10, 0.85
   );
 }
+
+${FoliageGustStruct.wgsl}
 
 fn noFoliageActors() -> FoliageActors {
   return FoliageActors(0.0, 0.0, 0.0, 0.0, array<vec4f, 4>(vec4f(0.0), vec4f(0.0), vec4f(0.0), vec4f(0.0)));
@@ -2275,6 +2391,147 @@ fn applyFoliageVertexWind(pos: vec3f, normal: vec3f, aux: f32, time: f32, eye: v
     let push = foliageTrample(pos, bladeT, cfg, actors);
     let wx = windDir.x * along + crossDir.x * across + push.x;
     let wz = windDir.y * along + crossDir.y * across + push.y;
+    p.x += wx;
+    p.z += wz;
+    if (!isShell) {
+      p.y -= (wx * wx + wz * wz) * 1.45 + (abs(wx) + abs(wz)) * 0.14 * bladeT + length(push) * 0.45 * bladeT;
+    }
+    n = normalize(n + vec3f(wx * 3.6, 0.0, wz * 3.6));
+  }
+  return array<vec3f, 2>(p, n);
+}
+
+fn foliageGustHash(p: vec2f) -> f32 {
+  let q = fract(p * vec2f(0.1031, 0.1030));
+  let r = q + dot(q, q.yx + 33.33);
+  return fract((r.x + r.y) * r.x);
+}
+
+/** Smooth value noise (quintic fade): band-limited, so the field never adds detail finer than its cell. */
+fn foliageGustNoise(p: vec2f) -> f32 {
+  let i = floor(p);
+  let f = p - i;
+  let u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+  let a = foliageGustHash(i);
+  let b = foliageGustHash(i + vec2f(1.0, 0.0));
+  let c = foliageGustHash(i + vec2f(0.0, 1.0));
+  let d = foliageGustHash(i + vec2f(1.0, 1.0));
+  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+/**
+ * Gust strength 0..~1.2 at a ground point: elongated gust fronts (cells \`gustScale\` long downwind, 1.6x wider across)
+ * travel downwind at \`gustSpeed\`, over a slow town-wide swell. A pure function of position and sim time, so co-op
+ * clients see the same gusts.
+ */
+fn foliageGustAt(xz: vec2f, time: f32, g: FoliageGust) -> f32 {
+  let dir = vec2f(g.dirX, g.dirZ);
+  let across = vec2f(-dir.y, dir.x);
+  let s = max(4.0, g.gustScale);
+  let u = (dot(xz, dir) - time * g.gustSpeed) / s;
+  let v = dot(xz, across) / (s * 1.6);
+  let n = foliageGustNoise(vec2f(u, v)) * 0.65 + foliageGustNoise(vec2f(u * 2.1 + 3.7, v * 2.1 - 1.3)) * 0.35;
+  let front = smoothstep(0.32, 0.82, n);
+  let swell = 0.5 + 0.5 * sin(time * 0.21 + 1.3);
+  return front * (0.6 + 0.6 * swell);
+}
+
+/** Bough-level displacement shared by canopies and their limbs: a downwind lean in gusts plus a slow branch sway. */
+fn foliageBoughSway(pos: vec3f, time: f32, wind: f32, g: FoliageGust, cfg: FoliageWindConfig) -> vec2f {
+  let dir = vec2f(g.dirX, g.dirZ);
+  let across = vec2f(-dir.y, dir.x);
+  let hw = clamp((pos.y - 0.35) * 0.26, 0.0, 1.25);
+  let bend = hw * sqrt(hw);
+  let fq = max(0.1, cfg.treeWindFreq);
+  let ph = dot(pos, vec3f(0.55, 0.31, 0.47));
+  let oscA = sin(time * fq * 1.9 + ph) * 0.62 + sin(time * fq * 3.1 + ph * 1.7 + 1.1) * 0.38;
+  let oscB = sin(time * fq * 1.6 - ph * 1.3 + 2.3);
+  let lean = wind * 0.30;
+  let osc = 0.10 * (0.35 + wind);
+  return (dir * (lean + oscA * osc) + across * (oscB * osc * 0.6)) * g.branchSway * bend;
+}
+
+/**
+ * Wind for foliage (\`mat\` 22) and swaying tree limbs (\`mat\` 24 with aux >= ${FOLIAGE_LIMB_AUX}): with \`g.on\` 0 it is exactly
+ * \`applyFoliageVertexWind\` (limbs stay still). With the field on, one travelling gust field drives three layers:
+ * bough sway (canopies and their limbs together; trunks barely move), leaf flutter (small, fading with distance from the
+ * camera so it never glitters) and shrub and blade bend; the canopy parts around the first actor within \`canopyOpen\` m.
+ */
+fn applyFoliageWindField(pos: vec3f, normal: vec3f, aux: f32, mat: f32, time: f32, eye: vec3f, cfg: FoliageWindConfig, g: FoliageGust, actors: FoliageActors) -> array<vec3f, 2> {
+  let isLimb = mat > 23.5;
+  if (g.on < 0.5) {
+    if (isLimb) { return array<vec3f, 2>(pos, normal); }
+    return applyFoliageVertexWind(pos, normal, aux, time, eye, cfg, actors);
+  }
+  var p = pos;
+  var n = normal;
+  let dir = vec2f(g.dirX, g.dirZ);
+  let across = vec2f(-dir.y, dir.x);
+  let gust = foliageGustAt(pos.xz, time, g);
+  let wind = g.strength * (0.3 + 0.9 * gust);
+  // Leaf flutter fades out away from the camera's ground point, before it can turn into per-pixel shimmer.
+  let near = 1.0 - smoothstep(26.0, 52.0, length(pos.xz - eye.xz));
+  if (isLimb) {
+    let flex = clamp(aux - ${FOLIAGE_LIMB_AUX}.0, 0.0, 1.0);
+    // Boughs follow their clumps (flex 1 at the clump); the trunk (flex <= 0.12) only leans by \`trunkBend\`.
+    let sway = foliageBoughSway(pos, time, wind, g, cfg) * flex * mix(g.trunkBend, 1.0, smoothstep(0.1, 0.3, flex));
+    p.x += sway.x;
+    p.z += sway.y;
+    return array<vec3f, 2>(p, n);
+  }
+  if (aux > 2.5) {
+    let flex = clamp(aux - 3.0, 0.0, 1.0);
+    let ph = pos.x * 0.9 + pos.z * 0.7 + pos.y * 1.3;
+    let rustle = (sin(time * 2.6 + ph) + 0.4 * sin(time * 5.3 + ph * 1.7)) * (0.3 + wind) * 0.05;
+    let lean = wind * 0.09;
+    let sway = (dir * (lean + rustle) + across * rustle * 0.6) * g.bushSway * flex;
+    let flutter = sin(time * 11.0 + dot(pos, vec3f(4.3, 6.1, 5.2))) * g.leafFlutter * 0.018 * (0.3 + wind) * flex * near;
+    let push = foliageTrample(pos, flex * 0.75, cfg, actors);
+    p.x += sway.x + push.x + flutter * across.x;
+    p.z += sway.y + push.y + flutter * across.y;
+    p.y -= length(push) * 0.35 + length(sway) * 0.2;
+    n = normalize(n + vec3f(sway.x + push.x, 0.0, sway.y + push.y) * 2.0 + vec3f(across.x, 0.0, across.y) * flutter * 9.0);
+  } else if (aux > 0.0) {
+    let tip = clamp(aux, 0.0, 1.0);
+    let sway = foliageBoughSway(pos, time, wind, g, cfg);
+    let fl = sin(time * 11.0 + dot(pos, vec3f(4.3, 6.1, 5.2))) * 0.65 + sin(time * 17.0 + dot(pos, vec3f(-3.1, 5.3, 2.7))) * 0.35;
+    let flutter = fl * g.leafFlutter * 0.03 * (0.3 + wind) * tip * near;
+    p.x += sway.x + flutter * across.x;
+    p.z += sway.y + flutter * across.y;
+    p.y -= length(sway) * 0.18 - flutter * 0.4;
+    // Leaves turning in the wind: the normal rocks with the flutter, so lit leaves catch and lose the light.
+    n = normalize(n + vec3f(sway.x, 0.0, sway.y) * 1.2 + vec3f(across.x, 0.6, across.y) * flutter * 10.0);
+    if (g.canopyOpen > 0.05 && actors.count > 0.5 && pos.y > 1.7) {
+      let d = pos.xz - actors.p[0].xy;
+      let dist = length(d);
+      let R = g.canopyOpen;
+      if (dist < R) {
+        let f = 1.0 - dist / R;
+        let k = f * f * R * 0.8 * smoothstep(1.7, 2.5, pos.y);
+        p.x += d.x / max(dist, 0.05) * k;
+        p.z += d.y / max(dist, 0.05) * k;
+        p.y -= k * 0.25;
+      }
+    }
+  } else if (aux < -0.02) {
+    let isShell = aux < -1.5;
+    let bladeT = select(clamp(-aux, 0.0, 1.0), clamp(-aux - 2.0, 0.0, 1.0), isShell);
+    let bendWeight = bladeT * bladeT;
+    let fade = 1.0 - smoothstep(34.0, 72.0, length(eye - pos)) * cfg.distanceFade * 0.55;
+    let l = dot(pos.xz, dir) * 0.42 + time * 1.45;
+    let u = dot(pos.xz, across) * 0.42;
+    let phi = fract(sin(dot(floor(pos.xz * 4.0), vec2f(12.9898, 78.233))) * 43758.5453) * 6.28318;
+    let swell = sin(l + phi);
+    let turb = sin(l * 2.30 - u * 1.70 + time * 2.75 + phi * 1.37);
+    let flutter = sin(time * 5.0 + pos.x * 0.35 + pos.z * 0.22 + bladeT * 2.5 + phi) * 0.16;
+    let scaleAmt = select(0.13, 0.085, isShell);
+    let amt = cfg.grassWind * g.grassSway * scaleAmt * bendWeight * fade;
+    // Gust fronts lay the blades over downwind as they pass: visible bands rolling across a lawn.
+    let along = (gust * 1.1 * g.strength + (swell * 0.45 + turb * 0.16 + flutter) * (0.4 + wind)) * amt;
+    let acrossAmt = (turb * 0.14 + flutter * 0.6) * (0.4 + wind) * amt * 0.7;
+    let push = foliageTrample(pos, bladeT, cfg, actors);
+    let wx = dir.x * along + across.x * acrossAmt + push.x;
+    let wz = dir.y * along + across.y * acrossAmt + push.y;
     p.x += wx;
     p.z += wz;
     if (!isShell) {
