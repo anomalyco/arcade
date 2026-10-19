@@ -1207,6 +1207,28 @@ braking never marked, and the sprite skids (RGB 0.02, 9 s) vanished on dark Noir
   segments and peaks at ~110 smoke samples; a hard stop from 14 m/s lays ~90; 4,096 segments on screen cost
   +0.05–0.08 ms GPU (paired). Screech follows slip frame by frame (`after.json` → `stationDrift.screech`).
 
+### Outbreak fire on the kit explosion look, world smoke and soft beam dust (AR-68, 2026-10-19)
+
+Outbreak's analytic flame sprites blew out to white on lit zombies and its dynamite was a flat white disk. Fire now
+emits the kit explosion's particles into one kit pool (`games/outbreak/src/scene/fx-particles.ts`), drawn through the
+kit renderer's `fxParticles` path; Today is one Lab setting away (Fire style, World smoke, Beam dust = 0).
+
+- Fire: rolling `fireball` billows with soot `smoke` and embers for the stream, burning figures and ground fire;
+  dynamite is `spawnExplosion` with the "barrel" preset sized to the blast radius, molotovs the "pop". The fire lights
+  (warm, flickering, through the existing light path) are unchanged, so nothing blows out.
+- Smoke is a new kit kind (`smoke`, 8): the fireball's noise shape without heat, settling onto `windX`/`windZ`. It is
+  lit only by ambient and real lights. The flashlight is passed as a plan-cone spot (`spotCones`), so smoke catches the
+  beam and nothing outside it. Point lamps need ×2 and the beam ×5 the scene power to read the same in the air (the
+  scene shades with softer falloff curves). At 0.8× sky ambient, unlit smoke read as a grey ghost over the black
+  unseen area; 0.4× keeps it dark until lit.
+- Fire under the Noir colour mask needs `keepColour` (low destination alpha), or the mask greys it.
+- World smoke sources (manholes, drains, cars, wrecks, chimneys) are a pure function of the town and seed; the
+  nearest 14 within 30 m emit. Soft beam dust is `air/dust.ts` style 1.
+- Measured (`games/outbreak/scripts/fire-smoke-proof.ts`, headless Metal 1280×720, paired Today→kit on one frozen
+  frame, quiet worker): flamethrower on eight +0.76 ms, molotov +0.57, burning +0.13, dynamite blast +0.02, steam
+  within noise; 300–460 live particles of 2,048, none dropped. On a loaded worker the pairs swing by ±3 ms, so compare
+  only runs taken back to back.
+
 ## Researched, not yet adopted
 
 ### Blackout snapshot rate (2026-10-16)

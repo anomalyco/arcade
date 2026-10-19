@@ -77,7 +77,8 @@ const SCENES: Scene[] = [
   {
     name: "dynamite",
     label: "Dynamite",
-    setup: `h.stageFire("dynamite")`,
+    // A shorter throw than the default 10 m keeps the blast in frame (and the survivor outside it).
+    setup: `h.setLab("dynThrow", 6.5); h.stageFire("dynamite")`,
     beats: [
       { frames: 20, cmd: { aim: 0 } },
       { frames: 300, cmd: { aim: 0 }, first: { fire: true } },
@@ -87,7 +88,7 @@ const SCENES: Scene[] = [
   {
     name: "steam",
     label: "Sewer steam in the beam",
-    setup: `h.session().ai.agents.length = 0; const src = h.stageAir("steam"); window.__airAim = h.state().player.aim`,
+    setup: `h.session().ai.agents.length = 0; window.__airSrc = h.stageAir("steam"); console.warn("steam source", JSON.stringify(window.__airSrc), JSON.stringify(h.resolveTargetRect({ world: [window.__airSrc.x, 0.5, window.__airSrc.z] })), JSON.stringify(h.resolveTargetRect({ objectId: "player" })))`,
     beats: [{ frames: 300 }],
     still: 200,
   },
@@ -137,13 +138,18 @@ async function play(page: Page, s: Scene, onFrame: (i: number) => Promise<void>)
   for (const beat of s.beats) {
     for (let j = 0; j < beat.frames; j++, i++) {
       const cmd: Record<string, unknown> = { ...(beat.cmd ?? {}), ...(j === 0 ? (beat.first ?? {}) : {}) }
-      if (s.name === "steam") cmd.aim = (await page.evaluate(() => (window as any).__airAim as number)) + 0.32 * Math.sin(i / 70)
-      await page.evaluate(async (cmd) => {
+      const sway = s.name === "steam" ? 0.18 * Math.sin(i / 60) : null
+      await page.evaluate(async ({ cmd, sway }) => {
         const h = (window as any).__arcadeHarness
+        const src = (window as any).__airSrc
+        if (sway !== null && src) {
+          const p = h.state().player
+          cmd.aim = Math.atan2(src.z - p.y, src.x - p.x) + sway
+        }
         // Keep the survivor up with the beam on through the whole reel.
         Object.assign(h.state().player, { health: h.state().player.maxHealth ?? 100, battery: 1, batteryDepleted: false, flashlightOn: true })
         await h.step(1 / 60, cmd)
-      }, cmd)
+      }, { cmd, sway })
       await onFrame(i)
     }
   }

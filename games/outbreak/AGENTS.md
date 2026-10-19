@@ -86,11 +86,19 @@
   Lab: Backquote › Death ("Today" = nobody dies) with Down/Kill/Revive me and teammate actions; `arcade cmd death.kill`.
   Rules and wire: `../../docs/outbreak-coop.md#death`. Tests: `tests/death.test.ts`.
 - Fire & explosives (AR-62): the flamethrower, dynamite, firecrackers, molotovs, the flare gun and bear traps live in
-  `shared/fire/` (rules over fixed rings of shared ledger stores, nothing on the wire) and `src/fire/` (analytic flame
-  and smoke sprites, fire light packed after the night lights in `extraLights`, scorch, rigs and charring, drawn from
-  `scene/frame-renderer.ts`). Lab: Backquote › Fire & explosives, `arcade cmd fire.stage scene=…`, station
-  `outbreak-fire`. Items, loot and recipes: `../../docs/outbreak-progression.md#fire--explosives-ar-62`. Tests:
-  `tests/fire.test.ts`.
+  `shared/fire/` (rules over fixed rings of shared ledger stores, nothing on the wire) and `src/fire/` (fire light
+  packed after the night lights in `extraLights`, rigs and charring, drawn from `scene/frame-renderer.ts`). The look
+  (AR-68) is the kit explosion fire: `src/fire/kit-fx.ts` emits kit `fireball`/`smoke`/`spark` particles for the stream,
+  burning figures, ground fire and crackers, dynamite is `spawnExplosion` with the kit "barrel" preset, molotovs the
+  "pop", and scorch is kit decals. Lab › Fire & explosives look › Fire style 0 is Today's analytic sprites. Lab:
+  Backquote › Fire & explosives, `arcade cmd fire.stage scene=…`, station `outbreak-fire`. Items, loot and recipes:
+  `../../docs/outbreak-progression.md#fire--explosives-ar-62`. Tests: `tests/fire.test.ts`.
+- The air (AR-68, `src/air/`): world smoke from manholes, storm drains, smouldering cars, wrecks and chimneys
+  (`air/smoke.ts`, placement a pure function of the town and `smokeSeed`, nearest 14 sources within 30 m) and soft
+  beam dust (`air/dust.ts` style 1). Smoke and the kit fire share one kit particle pool in `scene/fx-particles.ts`,
+  drawn by the kit renderer's `fxParticles` path and lit only by the beam (a plan-cone spot) and the strongest lamps
+  and fire lights, so smoke is dark until a light finds it. Lab › World smoke / Beam dust (0 is Today), `arcade cmd
+  air.stage scene=steam|car`, station `outbreak-fire` › Smoke & dust. Tests: `tests/air.test.ts`.
 - The Way Out (AR-64): a seeded far-off destination found through three tiers of clues, reached by car (gas cans
   only, hotwire with a toolbox, roadblocks cleared by dynamite or bolt cutters), a signal, a stand until dawn and the
   escape card, in `shared/way-out/` (all state in the `wayout` ledger store, nothing on the wire) and

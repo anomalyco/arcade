@@ -78,8 +78,8 @@ export function smokeSources(town: Town, s: SmokePlacement, wrecks: readonly { i
 
 /** Albedo, opacity, start size, rise and rate per kind (before the Lab's multipliers). */
 const LOOK: Record<SmokeKind, { shade: number; alpha: number; size: number; vy: number; rate: number; grow: number }> = {
-  steam: { shade: 0.62, alpha: 0.3, size: 0.32, vy: 1.1, rate: 2.6, grow: 1.25 },
-  drain: { shade: 0.58, alpha: 0.24, size: 0.26, vy: 0.8, rate: 2.2, grow: 1.1 },
+  steam: { shade: 0.72, alpha: 0.42, size: 0.42, vy: 1.2, rate: 3.6, grow: 1.5 },
+  drain: { shade: 0.66, alpha: 0.32, size: 0.32, vy: 0.9, rate: 2.8, grow: 1.3 },
   car: { shade: 0.15, alpha: 0.42, size: 0.24, vy: 0.75, rate: 2.4, grow: 1.35 },
   chimney: { shade: 0.34, alpha: 0.26, size: 0.2, vy: 0.55, rate: 1.4, grow: 1.5 },
 }

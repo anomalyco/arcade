@@ -74,7 +74,7 @@ export const DEFAULT_AIR_SETTINGS: OutbreakAirSettings = {
   smokeWindAngle: 28,
   smokeBeamCatch: 1,
   smokeLampCatch: 1,
-  smokeAmbient: 0.8,
+  smokeAmbient: 0.4,
   smokeDayThin: 0.55,
   smokeMaxSources: 14,
   smokeRange: 30,
