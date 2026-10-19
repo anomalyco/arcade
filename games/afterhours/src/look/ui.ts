@@ -26,6 +26,7 @@ export type LookUiDeps = {
   getCameraPreset: () => CameraPreset | null
 }
 
+// concept/ is local-only (gitignored); without it the reference overlay stays empty.
 const CONCEPTS = import.meta.glob("../../concept/r*.png", { eager: true, query: "?url", import: "default" }) as Record<string, string>
 const conceptUrl = (file: string) => CONCEPTS[`../../concept/${file}`] ?? ""
 const STORE = "afterhours.look.variants"
@@ -327,8 +328,10 @@ export function createLookUi(d: LookUiDeps) {
     concept = file
     conceptSelect.value = file
     const url = conceptUrl(file)
-    ref.src = url
-    ;(side.firstChild as HTMLImageElement).src = url
+    for (const img of [ref, side.firstChild as HTMLImageElement]) {
+      if (url) img.src = url
+      else img.removeAttribute("src")
+    }
   }
   function setMode(m: Mode) {
     mode = m

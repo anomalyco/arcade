@@ -6,7 +6,8 @@ on WebGPU, and be walkable in first person.
 
 ## Target look (study these images first; they are the spec)
 
-`games/afterhours/concept/` — the approved set:
+`games/afterhours/concept/` — the approved set. It is local-only: the folder is gitignored and not in the repository,
+so ask the owner for a copy if it is missing.
 
 - `r3-01-lab-exterior.png`, `r5-01-corridor-junction.png` (actually another exterior): parking lot, low concrete
   building, big radio dish on the roof, chain-link fence with barbed wire, sodium lamp, station wagon.

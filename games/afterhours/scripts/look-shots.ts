@@ -29,6 +29,11 @@ const extra = flag("q") ?? ""
 const frames = Number(flag("frames") ?? 60)
 const tryFile = flag("try")
 const outDir = flag("out") ?? `${import.meta.dir}/../captures/look`
+const conceptDir = `${import.meta.dir}/../concept`
+if (!existsSync(conceptDir)) {
+  console.error("concept/ is missing: the concept art is local-only and not in git; copy it into games/afterhours/concept/")
+  process.exit(1)
+}
 const cams = CAMERA_PRESETS.filter((c) => c.concept && (!args.length || args.includes(c.id)))
 const W = 1536
 const H = 1024
@@ -95,7 +100,7 @@ if (tryFile) {
   const tries = JSON.parse(readFileSync(tryFile, "utf8")) as Record<string, Omit<CameraPreset, "id" | "label">[]>
   for (const [id, list] of Object.entries(tries)) {
     const cam = CAMERA_PRESETS.find((c) => c.id === id)!
-    const shots: string[] = [b64(readFileSync(`${import.meta.dir}/../concept/${cam.concept}`))]
+    const shots: string[] = [b64(readFileSync(`${conceptDir}/${cam.concept}`))]
     for (const c of list) {
       await place({ ...cam, ...c })
       shots.push(b64(await page.screenshot({ type: "jpeg", quality: 80 })))
@@ -118,7 +123,7 @@ if (tryFile) {
 for (const cam of cams) {
   await place(cam.id)
   const shot = await page.screenshot({ type: "png" })
-  const concept = readFileSync(`${import.meta.dir}/../concept/${cam.concept}`)
+  const concept = readFileSync(`${conceptDir}/${cam.concept}`)
   const url = b64
   await pair.setContent(`<body style="margin:0;background:#000;display:flex;font:14px ui-monospace,Menlo,monospace;color:#fff">
     <div style="position:relative"><img src="${url(shot)}" width="${W}" height="${H}" style="display:block">

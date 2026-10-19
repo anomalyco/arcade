@@ -1,2 +1,10 @@
 captures/
 mixamo-src/
+public/models/npc/
+# concept art is local-only (BRIEF.md)
+concept/
+# scratch and build junk
+.tmp/
+scripts/.*-tmp.ts
+__pycache__/
+*.pyc
