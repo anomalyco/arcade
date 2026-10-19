@@ -892,7 +892,7 @@ proven animation techniques to animation.md, not here.
   around the survivor (vertex push, no discard, so canopies stay in `fsSolid`). Lively trees pick oak/maple/birch/pine
   by seed, ~14% stand bare, mounds are rounder (four rings) and shaded lit-outward/dark toward the trunk, the flashlight
   reaches the lower crown, and shrubs grow stray shoots. Today (`vegLook` 0) is the old meshes vertex for vertex and the
-  old wobble. Static vertices 322k → 374k (Medium detail); paired GPU at 3456×1894 on Pro (M-series, Metal, 10 pairs):
+  old wobble. Origin static vertices 351k → 403k (Medium detail); paired GPU at 3456×1894 on Pro (M-series, Metal, 10 pairs):
   +0.29 ms yard night, +0.23 ms yard day, both inside the MAD (1.1 / 2.2 ms; this worker's clocks swing).
   Stills and clips: `bun scripts/vegetation-stills.ts --clip --gpu` (via `hivemind run --kind browser`).
 
