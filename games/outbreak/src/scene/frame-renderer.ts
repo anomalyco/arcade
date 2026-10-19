@@ -242,8 +242,9 @@ export class OutbreakFrameRenderer {
   }
 
   resetForSession(nextSeed: number): void {
-    const { cam, settings, frameUi, session } = this.host
+    const { cam, settings, frameUi, session, audio } = this.host
     this.resetPeek()
+    audio.resetForSession()
     this.avatar.reset()
     this.zombieCrowd.reset()
     this.combatFx.reset()

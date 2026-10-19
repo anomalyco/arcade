@@ -4,6 +4,7 @@ import type { LedgerDelta } from "@arcade/kit/sim/ledger"
 import type { AIState } from "./ai"
 import type { CombatMeleeEvent, CombatShotEvent, MeleeWeaponId } from "./combat"
 import type { DeathSnapshot } from "./death/rules"
+import type { NoisesSnapshot } from "./noises/types"
 import type { LoadoutId, SurvivorVariant } from "./loadout"
 import type { Survivor } from "./sim-types"
 import type { Notice } from "./types"
@@ -156,6 +157,8 @@ export type SharedSnapshot = {
   meleeSwings?: CombatMeleeEvent[]
   /** Who is down or dead, fallen bodies and the run's end (`shared/death`). */
   death?: DeathSnapshot
+  /** Noises the dead heard since the base snapshot, near the recipient (`shared/noises`). */
+  noises?: NoisesSnapshot
 }
 
 /** The private part: what to reconcile against, the ledger stores this player can see that changed, and notices. */

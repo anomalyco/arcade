@@ -335,6 +335,34 @@ describe("Outbreak sound director", () => {
     expect(pursuers(zombies, listener.x, listener.y)).toBe(100)
   })
 
+  test("a reset director plays a new run exactly as a fresh one: no cooldowns, deadlines or memory from the last run", () => {
+    /** One run from time 0: a crowd that groans, a shot that kills, a door, then the whole crowd giving chase. */
+    const run = (director: SoundDirector, seconds: number, killId: number) => {
+      const { world, zombies } = crowd(20)
+      const shots: CombatShotEvent[] = []
+      const door = world.town.doors[0]!
+      const out: string[] = []
+      for (let f = 0; f <= seconds * 60; f++) {
+        const t = f / 60
+        if (f === 5 * 60) shots.push({ id: 1, time: t, fromX: 37, fromY: 37, toX: zombies[killId]!.x, toY: zombies[killId]!.y, aim: 0, hitZombieId: killId + 1, killed: true, detachBone: null, seed: 1 })
+        if (f === 5 * 60 + 1) zombies[killId]!.state = "dead"
+        if (f === 6 * 60) door.open = !door.open
+        if (f === (seconds - 4) * 60) for (const z of zombies) if (z.state !== "dead") z.state = "chase"
+        for (const e of director.observe({ ...world, time: t, shots }, { x: 37, y: 37 })) out.push(`${t.toFixed(3)} ${e.id} ${e.x.toFixed(2)},${e.y.toFixed(2)} ${(e.delay ?? 0).toFixed(3)}`)
+      }
+      return out
+    }
+    const reused = new SoundDirector(5)
+    run(reused, 120, 3)
+    reused.reset()
+    const again = run(reused, 30, 3)
+    const fresh = run(new SoundDirector(5), 30, 3)
+    expect(fresh.some((e) => e.includes("zombie.groan.idle"))).toBe(true)
+    expect(fresh.some((e) => e.includes("zombie.alert"))).toBe(true)
+    expect(fresh.some((e) => e.includes("zombie.death"))).toBe(true)
+    expect(again).toEqual(fresh)
+  })
+
   test("director cost with 100 zombies stays far under a frame", () => {
     const { world, zombies } = crowd(100)
     const director = new SoundDirector()

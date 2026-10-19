@@ -118,6 +118,7 @@ export class InventorySounds {
     this.radios.clear()
     this.world.clear()
     this.fire.clear()
+    this.holds.length = 0
     this.started = false
   }
 
