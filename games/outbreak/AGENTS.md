@@ -57,6 +57,12 @@
   flicker on their room (`TV_LAMP_SLOT`, clipped like table lamps), dogs barking far off at night (`life.ts`). Placement is a pure function of
   the town and `dtSeed` per building and car (`placement.ts`), meshes are box-built (`models.ts`), drawn instanced
   from `scene/frame-renderer.ts`. Tests: `tests/details.test.ts`, `tests/details-life.test.ts`.
+- Vegetation (AR-66, `src/vegetation/`, Lab: Backquote › Vegetation, station `outbreak-vegetation`): Lively (default)
+  gives trees species, bare trees and swaying limbs, shrubs stray shoots, and drives every canopy, limb, shrub and blade
+  from one gust field (`applyFoliageWindField` in `@arcade/kit/gpu/foliage`, sim time + position only); Today restores
+  the old meshes and wobble. Build options reach `plant()` through `vegetationBuild` (synced each frame by
+  `world/scene-level.ts`, sent to the world Worker, part of every level/chunk cache key). Stills, wind clips and paired
+  GPU: `bun scripts/vegetation-stills.ts --clip --gpu` (via `hivemind run --kind browser`).
 - The look (survivor style, grade, lamps and sky as trims on the day cycle, curated presets) lives in `src/look/`;
   Lab: Backquote › Look · Presets/Hero/Grade/Lights and the `outbreak-look` lab. The look's contract is
   `../../docs/outbreak-art-direction.md`; beauty stills, flicker and paired GPU: `bun scripts/look-beauty.ts`. Stills: `bun scripts/look-stills.ts`

@@ -882,6 +882,20 @@ proven animation techniques to animation.md, not here.
   and the beam/sheen terms did not recover the interior cost (18.28 ms), so it is the fuller canopy coverage and
   vertices. Grass density is cheap: GPU street 17.65 / 17.69 / 17.75 ms at density 0.5 / 1.0 / 1.5.
 
+- **Lively vegetation and one town-wide gust field (AR-66)** (`packages/kit/gpu/foliage.ts` `FoliageBuildOptions`,
+  `applyFoliageWindField`; `games/outbreak/src/vegetation/`; Lab › Vegetation, station `outbreak-vegetation`). The old
+  wind moved canopies ~3 cm (under a pixel at zoom 38) and limbs not at all, so the town read as still. Now one
+  band-limited value-noise gust field (fronts `vegGustScale` m long, travelling downwind at `vegGustSpeed`) reads only
+  sim time and world position (co-op clients match) and drives three layers: bough lean and sway (canopy and limbs
+  together: limb vertices carry aux = 8 + flex, the trunk barely leans), leaf flutter that rocks the normal and fades
+  26–52 m from the camera's ground point (no glitter), and shrubs and blades laid over as fronts pass. Crowns part
+  around the survivor (vertex push, no discard, so canopies stay in `fsSolid`). Lively trees pick oak/maple/birch/pine
+  by seed, ~14% stand bare, mounds are rounder (four rings) and shaded lit-outward/dark toward the trunk, the flashlight
+  reaches the lower crown, and shrubs grow stray shoots. Today (`vegLook` 0) is the old meshes vertex for vertex and the
+  old wobble. Static vertices 322k → 374k (Medium detail); paired GPU at 3456×1894 on Pro (M-series, Metal, 10 pairs):
+  +0.29 ms yard night, +0.23 ms yard day, both inside the MAD (1.1 / 2.2 ms; this worker's clocks swing).
+  Stills and clips: `bun scripts/vegetation-stills.ts --clip --gpu` (via `hivemind run --kind browser`).
+
 - **Blackout's C look pass** (`games/blackout/src/render/shaders.ts`, `lighting.ts`, and the Lab's Look group).
   A darker teal shadow grade, reduced colour fringing and grain, warm-white tubes, amber desk lights, tan wall faces,
   stronger baked contact AO, blue cap bevels and more visible floor pattern move the seeded office frame toward C.

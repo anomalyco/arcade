@@ -116,6 +116,7 @@ Proven per-pass measurements and benchmark logs live in [`docs/game-notes.md`](g
 | Perimeter tree sprig LOD (`isPerimeterTree`) | **have** | `packages/kit/gpu/foliage.ts:1031` (`5` vs `9` sprigs/clump beyond outer lot bounds) | Cut Outbreak static verts `456k → 262k` | `2026-10-14-foliage-lab/progress.md` Round 1 |
 | Interactive character/zombie foliage contact bending | **have** | `packages/kit/gpu/foliage.ts` (`foliageTrample`, `packFoliageActors`, `nearestFoliageActors`), `games/outbreak/src/main.ts` (player + 7 nearest zombies) | ≤8 actors × distance test per foliage vertex in `vsStatic` | Lamplight (`docs/game-techniques.md`: `foliage_touch`, `docs/rendering-tricks.md` §3), GoT GDC 2021 |
 | Flashlight leaf transmission (thin lamina, any facing) | **have** | `games/outbreak/src/shaders.ts` (`mat == 22` beam block), `packages/kit/lab/foliage.ts` (`transAcc`) | ~15 ALU ops on foliage fragments | Darkwood, Dead Nation |
+| Travelling gust field: bough lean/sway (canopy + limbs), leaf flutter, shrub and blade lay-over, canopy parting | **have** (Outbreak Lively) | `packages/kit/gpu/foliage.ts` (`applyFoliageWindField`, `FoliageGust`), `games/outbreak/src/vegetation/` | +0.2–0.3 ms paired at 3456×1894 (inside noise) | AR-66, [game-notes.md](game-notes.md#vegetation-looks-tree-bush-grass) |
 | Climbing procedural ivy & hanging soffit curtains (Luft) | **missing** | — | `0 ms` runtime (static mesh gen) | Lamplight (`docs/game-techniques.md`: `ivy`, `docs/research.md` §Vegetation.2) |
 
 ### Entries — Vegetation
