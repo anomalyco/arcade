@@ -7,7 +7,6 @@ import { FOG_SIZE, Vision } from "../shared/vision"
 import {
   CombinedFogMemory,
   DEFAULT_FOG_OF_WAR,
-  ZombieMemoryTracker,
   collectFogSoundSprites,
   fogOfWarControls,
   jitteredSoundOrigin,
@@ -71,51 +70,6 @@ describe("Outbreak actor visibility & fog-of-war rules", () => {
 
     // Distant unexplored corner (90, 90 -> cell (180, 180)) remains 0
     expect(comb.filtered[180 * FOG_SIZE + 180]).toBe(0)
-  })
-
-  test("ZombieMemoryTracker freezes last-known position on LOS exit, fades over time, and clears when spot is seen empty", () => {
-    const town = makeTown(7)
-    const v = new Vision()
-    const tracker = new ZombieMemoryTracker()
-    const agent = createAIAgent(1, 7, 27.7, 27.5, Math.PI / 2)
-
-    // Open door and see zombie at (27.7, 27.5) at t = 1.0s
-    toggleDoor(town, 27.7, 30.2)
-    v.update(27.7, 31, -Math.PI / 2, sightRects(town))
-    tracker.recordSeen(
-      agent.id,
-      agent.x,
-      agent.y,
-      agent.aim,
-      {
-        pelvis: { p: [agent.x, 0.9, agent.y], x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] },
-      },
-      new Set(),
-      1.0,
-    )
-
-    // Close door and zombie walks away unseen to (24.5, 25.5)
-    toggleDoor(town, 27.7, 30.2)
-    v.update(27.7, 31, -Math.PI / 2, sightRects(town))
-    agent.x = 24.5
-    agent.y = 25.5
-
-    // At t = 2.0s (1.0s after losing sight), ghost still sits at the FROZEN (27.7, 27.5) spot, never leaking (24.5, 25.5)
-    const g1 = tracker.getActiveGhost(agent, v, 2.0, 3.2)
-    expect(g1).not.toBeNull()
-    expect(g1!.ghost.x).toBeCloseTo(27.7, 4)
-    expect(g1!.ghost.y).toBeCloseTo(27.5, 4)
-    expect(g1!.alpha).toBeGreaterThan(0.2)
-
-    // At t = 5.0s (past 3.2s duration), ghost expires
-    expect(tracker.getActiveGhost(agent, v, 5.0, 3.2)).toBeNull()
-
-    // Re-record at (27.7, 27.5) at t = 6.0s, move zombie to (24.5, 25.5), then open door so player sees (27.7, 27.5) is empty
-    tracker.recordSeen(agent.id, 27.7, 27.5, agent.aim, {}, new Set(), 6.0)
-    toggleDoor(town, 27.7, 30.2)
-    v.update(27.7, 31, -Math.PI / 2, sightRects(town))
-    expect(v.visible(27.7, 27.5)).toBe(true)
-    expect(tracker.getActiveGhost(agent, v, 6.2, 3.2)).toBeNull()
   })
 
   test("collectFogSoundSprites emits spatially uncertain ripples for unseen zombies without revealing exact coordinates", () => {

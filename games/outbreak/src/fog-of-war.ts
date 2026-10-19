@@ -1,7 +1,6 @@
 import { SPRITE_FLOATS, type VisibilityFieldShader } from "@arcade/kit/gpu/renderer"
 import { foliageWindDeclarationsWgsl } from "@arcade/kit/gpu/foliage"
 import { common } from "@arcade/kit/gpu/shaders"
-import type { BoneId, BonePose } from "@arcade/kit/human-pose"
 import type { LabControl } from "@arcade/kit/lab-panel"
 import type { AIAgent, NoiseEvent } from "../shared/ai"
 import type { SceneryMemory } from "../shared/scenery-memory"
@@ -152,95 +151,6 @@ export class CombinedFogMemory {
       }
     }
     return true
-  }
-}
-
-export type ZombieLastKnownGhost = {
-  id: number
-  x: number
-  y: number
-  yaw: number
-  bones: BonePose
-  hiddenBones: Set<BoneId>
-  seenAt: number
-}
-
-/**
- * Tracks last-known positions & poses of zombies when they were in the player's authoritative LOS.
- * Once a zombie steps out of sight, its frozen memory silhouette fades over `fogGhostDuration` seconds,
- * and clears immediately if the player regains line of sight to that spot and sees the zombie is gone.
- */
-export class ZombieMemoryTracker {
-  private readonly ghosts = new Map<number, ZombieLastKnownGhost>()
-
-  reset(): void {
-    this.ghosts.clear()
-  }
-
-  recordSeen(
-    id: number,
-    x: number,
-    y: number,
-    yaw: number,
-    bones: BonePose,
-    hiddenBones: Set<BoneId>,
-    time: number,
-  ): void {
-    const clonedBones: BonePose = {}
-    for (const [k, f] of Object.entries(bones)) {
-      if (f) {
-        clonedBones[k as BoneId] = {
-          p: [...f.p],
-          x: [...f.x],
-          y: [...f.y],
-          z: [...f.z],
-        }
-      }
-    }
-    this.ghosts.set(id, {
-      id,
-      x,
-      y,
-      yaw,
-      bones: clonedBones,
-      hiddenBones: new Set(hiddenBones),
-      seenAt: time,
-    })
-  }
-
-  remove(id: number): void {
-    this.ghosts.delete(id)
-  }
-
-  /**
-   * Returns active fading memory ghosts for zombies currently outside LOS.
-   */
-  getActiveGhost(
-    agent: AIAgent,
-    vision: Vision,
-    time: number,
-    maxDuration: number,
-  ): { ghost: ZombieLastKnownGhost; alpha: number } | null {
-    if (maxDuration <= 0.05 || agent.state === "dead") {
-      this.ghosts.delete(agent.id)
-      return null
-    }
-    const g = this.ghosts.get(agent.id)
-    if (!g) return null
-    const age = Math.max(0, time - g.seenAt)
-    if (age >= maxDuration) {
-      this.ghosts.delete(agent.id)
-      return null
-    }
-    // If the player can currently see the last-known spot and the zombie has moved away from it, clear the memory
-    if (Math.hypot(agent.x - g.x, agent.y - g.y) > 0.85 && vision.visible(g.x, g.y)) {
-      this.ghosts.delete(agent.id)
-      return null
-    }
-    const u = age / maxDuration
-    const alpha = Math.pow(1 - u, 1.55) * 0.56
-    if (alpha <= 0.02) return null
-    return { ghost: g, alpha }
   }
 }
 
