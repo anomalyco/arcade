@@ -486,7 +486,8 @@ fn applyOutbreakFogOfWar(
   warmth: f32,
 ) -> vec3f {
   let sight = fieldSight3(world, n);
-  let visible = sight.x;
+  // Crowns hide the ground they stand over from sight; a crown the torch lights through counts as seen (tree looks).
+  let visible = max(sight.x, outbreakTreeSeen);
   let edgeDepth = sight.z;
   outbreakSeen = visible;
   outbreakUnseenAlpha = 0.0;

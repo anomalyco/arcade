@@ -689,7 +689,7 @@ function scaleRgb(c: Rgb, k: number): Rgb {
  * Multi-step curved & tapered timber branch/trunk with smooth radial vertex normals
  * and optional root-collar buttress flare (`collarFlare > 0`).
  */
-function emitTaperedLimb(
+export function emitTaperedLimb(
   m: Mesh,
   p0: Point,
   p1: Point,
@@ -979,14 +979,14 @@ function emitBrushyLeafCard(
 }
 
 /** Lively mound shading: the crown centre the clump is lit away from, and the sunlit leaf colour. */
-type MoundStyle = { crown: Point; lit: Rgb }
+export type MoundStyle = { crown: readonly [number, number, number]; lit: Rgb }
 
 /**
  * Closed lumpy leaf mound: an apex fan plus rings of jittered ellipsoid points with soft ellipsoid normals.
  * It gives each bough or bush lobe an opaque mass (no see-through gaps from above) for ~72 vertices; the
  * scalloped rosettes placed on its surface provide the leafy silhouette and lit tips.
  */
-function emitLeafMound(
+export function emitLeafMound(
   m: Mesh,
   cx: number,
   cy: number,
@@ -1176,9 +1176,14 @@ export type FoliageBuildOptions = {
   deadTrees: number
   /** 0: every tree follows the tree look; 1: trees pick oak, maple, birch or pine by seed. */
   variety: number
+  /**
+   * Tree look (`foliage-looks.ts`, lively only): 0 the lively crowns above, 1 Deadwood, 2 Fluffy, 3 Darkwood. The
+   * caller dispatches; `buildFoliageTree` itself always builds look 0.
+   */
+  treeLook: number
 }
-export const FOLIAGE_BUILD_TODAY: Readonly<FoliageBuildOptions> = { lively: false, quality: 1, deadTrees: 0, variety: 0 }
-export const FOLIAGE_BUILD_LIVELY: Readonly<FoliageBuildOptions> = { lively: true, quality: 1, deadTrees: 0.14, variety: 0.7 }
+export const FOLIAGE_BUILD_TODAY: Readonly<FoliageBuildOptions> = { lively: false, quality: 1, deadTrees: 0, variety: 0, treeLook: 0 }
+export const FOLIAGE_BUILD_LIVELY: Readonly<FoliageBuildOptions> = { lively: true, quality: 1, deadTrees: 0.14, variety: 0.7, treeLook: 0 }
 
 /** The species a lively tree takes from its seed (null keeps the tree look), and whether it stands bare. */
 export function foliageTreeSpecies(seed: number, opts: Readonly<FoliageBuildOptions>): { species: TreePresetId | null; dead: boolean } {

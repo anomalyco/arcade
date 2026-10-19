@@ -151,6 +151,7 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
     match: (s) =>
       s === "@arcade/kit/gpu/surface-materials" ||
       s === "@arcade/kit/gpu/foliage" ||
+      s === "@arcade/kit/gpu/foliage-looks" ||
       s === "@arcade/kit/textures" ||
       s.startsWith("@arcade/kit/textures/"),
   },

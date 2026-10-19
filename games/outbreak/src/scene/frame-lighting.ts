@@ -32,6 +32,7 @@ import {
   BEAM_QUALITY_TIERS,
   OUTBREAK_FOLIAGE_UNIFORM_OFFSET,
   OUTBREAK_VEG_GUST_UNIFORM_OFFSET,
+  OUTBREAK_VEG_TREES_UNIFORM_OFFSET,
   OUTBREAK_INTERIOR_UNIFORM_OFFSET,
   OUTBREAK_LIGHTING_UNIFORM_FLOATS,
   OUTBREAK_REFLECT_LIGHTS_UNIFORM_OFFSET,
@@ -49,6 +50,7 @@ import type { Survivor } from "../survivor"
 import { packReflectionLights } from "../reflections/lights"
 import { TableLampLights } from "../table-lamps"
 import { vegetationGust } from "../vegetation/settings"
+import { packVegetationTrees } from "../vegetation/trees"
 import type { UnseenFrameEvaluation } from "../unseen"
 import type { OutbreakSceneLevel } from "../world/scene-level"
 
@@ -653,6 +655,7 @@ export class OutbreakFrameLighting {
     packFoliageUniforms(foliageSettings, this.lightingUniforms, OUTBREAK_FOLIAGE_UNIFORM_OFFSET)
     packFoliageActors(foliageActors(p, zombies), this.lightingUniforms, OUTBREAK_FOLIAGE_UNIFORM_OFFSET + FOLIAGE_WIND_FLOATS)
     packFoliageGust(vegetationGust(settings.vegetation), this.lightingUniforms, OUTBREAK_VEG_GUST_UNIFORM_OFFSET)
+    packVegetationTrees(settings.vegetation, town, p.x, p.y, this.lightingUniforms, OUTBREAK_VEG_TREES_UNIFORM_OFFSET)
     const deferRugWork = !inInteriorView && (Math.abs(p.vx) > 0.05 || Math.abs(p.vy) > 0.05)
     interiors.update(activeBuildings, town.houseSeed, p.x, p.y, performance.now(), deferRugWork)
     interiors.pack(this.lightingUniforms, OUTBREAK_INTERIOR_UNIFORM_OFFSET, activeBuildings, town.houseSeed)
