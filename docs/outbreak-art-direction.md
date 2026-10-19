@@ -60,6 +60,26 @@ Measured reference values (from the reference report, 384×256 downsample): nigh
    building id (`src/look/lit-windows.ts`), glow behind their windows and spill window light; the rest have dark glass.
    A lit window is warm tungsten, brightest low in the pane and dimmer behind half-drawn curtains, never a flat slab.
 
+## Interior material and detail standard
+
+The floors set the bar (AR-42/AR-46): every interior surface should hold detail at the same density and stay as
+still while walking. Anything built for interiors meets these numbers. The craft pass (AR-69) brought walls, windows,
+cabinets and blood writing up to them; Lab: Backquote › Rugs & interiors › **Interior craft** (Today / Craft pass)
+switches it all back for comparison, and **Wall wear** scales the wall shading.
+
+| Property | Standard | Where |
+| --- | --- | --- |
+| Smallest painted detail | 0.04–0.08 m (a plank seam, a grout line, a tide-line rim). Narrower terms widen or fade with `surfaceFootprint`. | `themedFloor`, `interiorWallWear` in `src/interiors/wgsl.ts` |
+| Large variation | 0.5–3 m mottling or macro tone on every face, so no long wall or floor reads as one flat colour. | same |
+| Smallest modelled edge | 10–30 mm: chamfers, door stiles proud of fields, reveals between fronts, sill drip edges. A surface the camera sees edge-on gets a lit top. | `cabinetry.ts`, `windows.ts`, `skirting` in `mesh.ts` |
+| Joins | Every wall meets the floor with a skirting (0.14 m, 32 mm proud, chamfered top) and the ceiling line with the cap moulding. Plain rooms add a dado rail where the dado paint stops. Nothing coplanar with a wall; pieces stand 2–10 mm proud of what they sit on. | `skirting`, `dadoRail`, `emitWallCapMoulding` |
+| Wall surface | Painted plaster or wallpaper, then wear: cove shade under the ceiling, contact shade down to the skirting, occlusion from furniture in front (the floor bake), vertical water streaks from the top, a rising-damp tide line with a darker rim. Streaks run vertically, the wall's uncompressed screen axis. | `plasterWall`, `interiorWallWear` |
+| Fitted furniture | Toe-kick, framed fronts with a recessed field, a dark reveal between fronts, pulls on standoffs, counter with overhang, edge band and backsplash, a sink well that is actually deep. Generated library furniture is the reference for detail. | `cabinetry.ts`, `props/` |
+| Windows | One builder for street and room: casing and sill with a drip edge outside, jamb liners through the wall, two sashes with meeting rail and glazing bars, stool, apron and casing inside, cloth drapes. Boards across a window use the barricade board (0.13 × 0.05 m, `BOARD`). | `emitCraftWindow`, `emitFaceWindow` in `windows.ts` |
+| Materials | Matte by default (`MAT.lit`, `MAT.timber`, brick). `MAT.shiny` only for small metal (pulls, taps, rods); glass is the only reflective surface. Nothing glows unless a lamp lights it (`MAT.lamp` slots, owned by lighting). | |
+| Wall writing | Painted by hand in blood: tapered strokes that run dry, letters that lean and drift off the baseline, drips from the low points ending in beads, a smear and flecks. Darker where thick, matte, aligned to the wall plane, about 1.2 m above the floor. Details › "Indoor warnings in blood" off shows Today's spray font. | `bloodWord` in `src/details/models.ts`, `BLOOD_WORDS` in `placement.ts` |
+| Cost | Bounded and seeded: geometry comes from the building plan and seed only. The AR-69 pass adds about 9% triangles to the origin level (107k → 117k); shader wear is a few noise taps per wall pixel. | `tests/interiors-craft.test.ts` |
+
 ## Targets by hour
 
 | Hour | Target | Final (AR-53, seed 7, 1536×1024) |
