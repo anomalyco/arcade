@@ -6,6 +6,7 @@ import type { InteractAction, InteractionHandler, RawInteractCandidate } from ".
 import type { OutbreakSim, Survivor, SurvivorSlot } from "../sim-types"
 import { aabbOf, boxOf, CHEM_REFUEL, distToBox, speedOf, VEH_ENTER_SPEED, VEH_REACH, type OutbreakVehicle, type VehicleRefuelRule } from "../vehicles"
 import { EVENT_BLOWN, EVENT_CUT, EVENT_HOTWIRED } from "./clues"
+import { landmarkRects } from "./landmark"
 import { roadblocksOf, ROADBLOCK_WORDS, type Roadblock } from "./roadblocks"
 import { planOf, wayOutStore, type WayOutState } from "./runtime"
 import { ds, WAY_OUT_STORE } from "./state"
@@ -55,11 +56,52 @@ export function pushOutOfBlocks(sim: OutbreakSim, survivor: Survivor, radius: nu
   }
 }
 
+/** How near a gas station a stopped car is at its pumps (m, as `shared/vehicles.ts` has it), and how often to say so (s). */
+const PUMP_REACH = 6.5
+const PUMP_TELL_EVERY = 45
+
+/** A driver stopped at a gas station hears the pumps are dry, so nobody waits for a fill that will not come. */
+export function tellPumpsDry(sim: OutbreakSim, state: WayOutState): void {
+  if (!carProjectOn(state.tuning)) return
+  for (const v of sim.vehicles.list) {
+    if (v.wreck || !v.seats[0] || speedOf(v) > 1.2 || v.fuel >= v.maxFuel - 1) continue
+    if (sim.time - (state.pumpsToldAt[v.id] ?? -Infinity) < PUMP_TELL_EVERY) continue
+    const atPumps = sim.town.buildings.some((b) => (b.archetype ?? b.kind) === "gas_station" && distToRect(v.x, v.y, b.rect) < PUMP_REACH)
+    if (!atPumps) continue
+    state.pumpsToldAt[v.id] = sim.time
+    const driver = sim.slots.find((s) => s.id === v.seats[0])
+    if (driver) sim.progression.notify(driver, "The pumps are dry. Gas cans only.", "warning", "vehicle")
+  }
+}
+
+/** The dead's body radius against the destination's solids and the roadblocks (m, as the nav mesh uses). */
+const DEAD_RADIUS = 0.28
+
+/**
+ * The dead do not walk through the destination's hull, booth or wall, nor a roadblock: after the crowd steps, any
+ * near one is pushed back out (they slide along it, and squeeze through a roadblock's gap as people do).
+ */
+export function keepDeadOut(sim: OutbreakSim, t: WayOutTuning): void {
+  if (!t.wayOut) return
+  const plan = planOf(sim, t)
+  const landmark = landmarkRects(plan)
+  const blocks = standingBlocks(sim, t)
+  for (const a of sim.ai.agents) {
+    if (a.state === "dead") continue
+    if (Math.abs(a.x - plan.x) < 40 && Math.abs(a.y - plan.y) < 40) pushOut(a, DEAD_RADIUS, landmark)
+    for (const b of blocks) if (Math.abs(a.x - b.x) < 14 && Math.abs(a.y - b.y) < 14) pushOut(a, DEAD_RADIUS, b.walk)
+  }
+}
+
 function touch(sim: OutbreakSim, st: StoreState): void {
   st.rev = ++sim.progression.ledger.rev
 }
 
-function event(sim: OutbreakSim, st: StoreState, code: number, by?: SurvivorSlot): void {
+function event(sim: OutbreakSim, st: StoreState, code: number, by?: SurvivorSlot, at?: { x: number; y: number }): void {
+  if (at) {
+    st.counts.ex = Math.round(at.x * 10)
+    st.counts.ey = Math.round(at.y * 10)
+  }
   st.counts.last = code
   st.counts.lastAt = Math.max((st.counts.lastAt ?? 0) + 1, ds(sim.time))
   st.counts.lastBy = by ? by.index + 1 : 0
@@ -77,7 +119,8 @@ export function clearBlock(sim: OutbreakSim, state: WayOutState, index: number, 
   st.counts[`rb:${index}`] = how
   st.counts[`rbs:${index}`] = 1
   if (st.counts.cutI === index + 1) st.counts.cut = 0
-  event(sim, st, how === 1 ? EVENT_BLOWN : EVENT_CUT, by)
+  const b = roadblocksOf(planOf(sim, state.tuning), state.tuning)[index]
+  event(sim, st, how === 1 ? EVENT_BLOWN : EVENT_CUT, by, b ? (how === 2 ? b.lock : b) : undefined)
   tell(sim, how === 1 ? "The roadblock is blown apart. The road is open." : "The chain is cut. The gate swings open.")
   return true
 }
@@ -150,13 +193,15 @@ export function stepWayOutHolds(ctx: OutbreakSimStepSurvivorContext<WayOutState>
     st.counts.hwV = v.id
     st.counts.hwAt = ds(sim.time)
     st.counts.hwBy = slot.index + 1
+    st.counts.hx = Math.round(v.x * 10)
+    st.counts.hy = Math.round(v.y * 10)
     st.counts.hw = Math.min(HOLD_FULL, before + Math.round((dt / Math.max(0.1, t.hotwireTime)) * HOLD_FULL))
     if (Math.floor(st.counts.hw / 2000) !== Math.floor(before / 2000)) sim.ai.emitNoise(v.x, v.y, t.hotwireNoise, "search", sim.time, slot.id, 0.7)
     if (st.counts.hw >= HOLD_FULL) {
       v.hasKeys = true
       v.modified = true
       st.counts.hw = 0
-      event(sim, st, EVENT_HOTWIRED, slot)
+      event(sim, st, EVENT_HOTWIRED, slot, v)
       sim.progression.notify(slot, "Hotwired. It'll start.", "result", "vehicle")
     } else touch(sim, st)
     return
@@ -171,6 +216,8 @@ export function stepWayOutHolds(ctx: OutbreakSimStepSurvivorContext<WayOutState>
     const before = st.counts.cut ?? 0
     st.counts.cutI = index + 1
     st.counts.cutAt = ds(sim.time)
+    st.counts.hx = Math.round(b.lock.x * 10)
+    st.counts.hy = Math.round(b.lock.y * 10)
     st.counts.cut = Math.min(HOLD_FULL, before + Math.round((dt / Math.max(0.1, t.cutTime)) * HOLD_FULL))
     if (Math.floor(st.counts.cut / 2500) !== Math.floor(before / 2500)) sim.ai.emitNoise(b.lock.x, b.lock.y, t.cutNoise, "bash", sim.time, slot.id, 0.6)
     if (st.counts.cut >= HOLD_FULL) return { topologyChanged: clearBlock(sim, state, index, 2, slot) }

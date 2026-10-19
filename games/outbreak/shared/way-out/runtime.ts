@@ -39,6 +39,8 @@ export type WayOutState = {
   sites: ClueSite[]
   /** The last noise-bus event checked for blasts at the roadblocks. */
   blastSeen: number
+  /** When each car's driver was last told the pumps are dry. */
+  pumpsToldAt: Record<number, number>
 }
 
 /** Arriving this near the destination confirms it (m). */
@@ -50,7 +52,7 @@ const SIGNAL_REACH = 1.8
 const isDark = (hour: number) => dayCycle(hour).darkness >= 0.5
 
 export function createWayOutState(sim: OutbreakSim): WayOutState {
-  return { tuning: DEFAULT_WAY_OUT_TUNING, wasDark: isDark(sim.hour), siege: [], sitesKey: "", sites: [], blastSeen: 0 }
+  return { tuning: DEFAULT_WAY_OUT_TUNING, wasDark: isDark(sim.hour), siege: [], sitesKey: "", sites: [], blastSeen: 0, pumpsToldAt: {} }
 }
 
 export const planOf = (sim: Pick<OutbreakSim, "town">, t: WayOutTuning): WayOutPlan => wayOutPlan(sim.town.seed, sim.town.houseSeed, t)
@@ -129,6 +131,8 @@ export function signalEvac(sim: OutbreakSim, state: WayOutState, by?: SurvivorSl
   st.counts.standEnd = t.standRule === STAND_FIXED ? ds(sim.time + Math.max(1, t.standHold)) : 0
   st.counts.wave = 0
   st.counts.nextWave = ds(sim.time + 3)
+  st.counts.ex = Math.round(plan.signal.x * 10)
+  st.counts.ey = Math.round(plan.signal.y * 10)
   event(sim, st, EVENT_SIGNAL, by)
   sim.ai.emitNoise(plan.x, plan.y, 70, "horn", sim.time, by?.id ?? "wayout", 2.5)
   tell(sim, `Signal sent. Hold the ${DESTINATION_WORDS[plan.kind].place} until ${t.standRule === STAND_FIXED ? "they come" : "dawn"}.`)
