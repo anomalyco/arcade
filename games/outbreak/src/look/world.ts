@@ -1,5 +1,6 @@
 import type { LabControl } from "@arcade/kit/lab-panel"
 import type { LookSettings } from "@arcade/kit/look"
+import { DEFAULT_LIT_WINDOWS } from "./lit-windows"
 
 /**
  * Trims on top of the day cycle: the Day → Dusk → Noir blend still sets the look and the lights for the hour, and
@@ -101,6 +102,18 @@ export type OutbreakLookTrims = {
   tableLamps: number
   /** × live table-lamp power. */
   tableLampPower: number
+  /**
+   * Night sight without a light (0 off: today, the whole sight cone reads to its range). At night with the flashlight
+   * off, what the survivor can see falls off with distance: readable out to `nightSightRadius`, dark by
+   * `nightSightRadius + nightSightFalloff`. Places a real light reaches (lamps, windows, fires) stay visible.
+   */
+  nightSight: number
+  /** Metres of dim readability around the survivor at night without a light. */
+  nightSightRadius: number
+  /** Metres over which night sight fades from readable to dark beyond the radius. */
+  nightSightFalloff: number
+  /** Share of houses that still have a lamp on behind their front windows at night (1: every house, today's look). */
+  litWindows: number
 }
 
 export const DEFAULT_LOOK_TRIMS: OutbreakLookTrims = {
@@ -149,6 +162,10 @@ export const DEFAULT_LOOK_TRIMS: OutbreakLookTrims = {
   bakedLight: 4,
   tableLamps: -1,
   tableLampPower: 1,
+  nightSight: 1,
+  nightSightRadius: 4.5,
+  nightSightFalloff: 5,
+  litWindows: DEFAULT_LIT_WINDOWS,
 }
 
 const GRADE = "Look · Grade"
@@ -156,6 +173,7 @@ const LIGHTS = "Look · Lights"
 const LIGHT_COLOUR = "Look · Light colour"
 const AIR = "Look · Air"
 const SHROUD = "Look · Sight shroud"
+const NIGHT_SIGHT = "Look · Night sight"
 
 export const lookTrimControls: LabControl[] = [
   { key: "lookSaturation", label: "World saturation", group: GRADE, min: 0, max: 3, step: 0.05, unit: "×" },
@@ -198,6 +216,10 @@ export const lookTrimControls: LabControl[] = [
   { key: "dayMuted", label: "Sickly overcast day palette", group: GRADE, min: 0, max: 1.5, step: 0.05, unit: "×" },
   { key: "dayVignette", label: "Vignette at every hour", group: GRADE, min: 0, max: 1.2, step: 0.02, unit: "" },
   { key: "dayGrain", label: "Grain at every hour", group: GRADE, min: 0, max: 0.4, step: 0.01, unit: "" },
+  { key: "nightSight", label: "Sight falls off without a light (0 = today)", group: NIGHT_SIGHT, min: 0, max: 1, step: 0.05, unit: "" },
+  { key: "nightSightRadius", label: "Readable radius at night", group: NIGHT_SIGHT, min: 1, max: 15, step: 0.25, unit: "m" },
+  { key: "nightSightFalloff", label: "Fade to dark over", group: NIGHT_SIGHT, min: 0.5, max: 15, step: 0.25, unit: "m" },
+  { key: "litWindows", label: "Houses with a lamp left on (1 = every house)", group: LIGHTS, min: 0, max: 1, step: 0.05, unit: "" },
   { key: "dustAmount", label: "Dust motes", group: AIR, min: 0, max: 1, step: 0.05, unit: "" },
   { key: "dustBrightness", label: "Mote brightness", group: AIR, min: 0, max: 4, step: 0.05, unit: "×" },
   { key: "dustSize", label: "Mote size", group: AIR, min: 0.4, max: 3, step: 0.05, unit: "×" },

@@ -4,6 +4,7 @@ import { MAT, Mesh } from "@arcade/kit/gpu/mesh"
 import type { Batch, Renderer } from "@arcade/kit/gpu/renderer"
 import { MAX_OCCLUDERS, OCC_FLOATS } from "@arcade/kit/limits"
 import type { PeekInfo } from "../../shared/interact"
+import { dayCycle } from "../../shared/day-cycle"
 import { sightRects, type Building, type Town } from "../../shared/map"
 import { SceneryMemory } from "../../shared/scenery-memory"
 import type { LocalSession } from "../../shared/session"
@@ -16,6 +17,7 @@ import type { BeamLook } from "../discovery/flashlight"
 import { CombinedFogMemory } from "../fog-of-war"
 import { collectSconces } from "../interiors"
 import { buildLevel, hex } from "../level"
+import { easeNightSight, nightSightRange, nightSightTarget } from "../look/night-sight"
 import { packLightOccluders, windowStateKey } from "../light-occluders"
 import type { NetSession } from "../net-session"
 import { resolveWorldMode, type OutbreakSettings } from "../settings"
@@ -98,6 +100,11 @@ export class OutbreakSceneLevel {
   blockers: readonly (readonly [number, number, number, number])[]
   revision = -1
   lightOccluders = 0
+  /** Night sight's eased weight this frame (0 none, 1 full; `look/night-sight.ts`), for the lighting uniforms. */
+  nightSightWeight = 0
+  private nightSightTime = 0
+  /** The vision settings the drawn sight uses this frame (headlights widen it). */
+  visionSettings: { range: number; cone: number; awareness: number }
   private lightWindowKey = 0
   // Walls, closed doors and closed windows: what stops light (sight passes windows, light only open ones).
   lightWalls: readonly (readonly [number, number, number, number])[]
@@ -112,6 +119,7 @@ export class OutbreakSceneLevel {
     this.sashBatch = { model: renderer.addModel(createSashMesh()), data: this.sashData, count: 0 }
     this.blockers = sightRects(session().view.town)
     this.lightWalls = this.blockers
+    this.visionSettings = host.settings.vision
   }
 
   private applyLevelData(data: LevelData): void {
@@ -241,7 +249,11 @@ export class OutbreakSceneLevel {
           if (!streamed.geometryOnly) {
             windowMoved = this.vision.setWindowOrigin(streamed.origin[0], streamed.origin[1])
             this.scenery.setWindowOrigin(streamed.origin[0], streamed.origin[1], town)
-            this.combinedFog.markDirty()
+            // The combined memory is indexed by window cell and only ever grows, so a moved window would keep the old
+            // window's explored cells at their old indices: straight-edged ghost rectangles. Rebuild it from the
+            // reloaded vision and scenery instead.
+            if (windowMoved) this.combinedFog.reset()
+            else this.combinedFog.markDirty()
           }
         }
       }
@@ -255,6 +267,11 @@ export class OutbreakSceneLevel {
       this.lightOccluders = packed.count
       this.lightWalls = packed.walls
     }
+    // Night sight: without a light at night, sight fades to dark a few metres out (Look › Night sight).
+    const nightLit = drivingHeadlights ? 1 : Math.min(1, p.flashlightOutput * 4) * (settings.flashlight.flashlightIntensity > 0.01 ? 1 : 0)
+    const nightTarget = watch ? 0 : nightSightTarget(settings.look, dayCycle(session.view.hour).darkness, nightLit)
+    this.nightSightWeight = easeNightSight(this.nightSightWeight, nightTarget, time - this.nightSightTime)
+    this.nightSightTime = time
     const effectiveVisionSettings = drivingHeadlights
       ? {
           ...settings.vision,
@@ -262,6 +279,13 @@ export class OutbreakSceneLevel {
           cone: Math.max(settings.vision.cone, 130),
         }
       : settings.vision
+    this.visionSettings = effectiveVisionSettings
+    // The drawn sight keeps its full range (lit places far off stay in sight; the shader fades the rest), but who
+    // and what counts as seen on the client stops where night sight goes dark.
+    const actorVisionSettings =
+      this.nightSightWeight > 0.001
+        ? { ...effectiveVisionSettings, range: nightSightRange(effectiveVisionSettings.range, settings.look, this.nightSightWeight) }
+        : effectiveVisionSettings
     const flashVisionActive =
       (drivingHeadlights || p.flashlightOutput > 0.01) &&
       (drivingHeadlights ? settings.vehicle.headlightPower * 0.85 : settings.flashlight.flashlightIntensity) > 0.01
@@ -271,7 +295,7 @@ export class OutbreakSceneLevel {
       watch ? watch.y : p.y,
       effectiveVisionAim,
       this.blockers,
-      watch ? { ...effectiveVisionSettings, cone: 360, range: Math.max(effectiveVisionSettings.range, 40) } : effectiveVisionSettings,
+      watch ? { ...effectiveVisionSettings, cone: 360, range: Math.max(effectiveVisionSettings.range, 40) } : actorVisionSettings,
       watch ? null : input.visionPeek !== undefined ? input.visionPeek : peek,
       flashVisionActive && !watch
         ? {
@@ -282,7 +306,7 @@ export class OutbreakSceneLevel {
           }
         : null,
     )
-    if (this.scenery.update(town, this.vision) || visChanged) {
+    if (this.scenery.update(town, this.vision) || visChanged || windowMoved) {
       this.combinedFog.markDirty()
       this.combinedFog.update(this.vision, this.scenery, true)
       renderer.setVisibility(this.combinedFog.filtered, FOG_SIZE, FOG_SIZE)

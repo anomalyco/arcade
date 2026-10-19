@@ -446,6 +446,14 @@ describe("Procedural world generation & chunk streaming", () => {
     const vehiclePending = vehicleStreamer.pendingBakeCount
     expect(vehiclePending).toBeGreaterThan(walkPending)
 
+    // Outer-ring chunks in view are pre-warmed even when they sit off to the side of the walk (no hard unbuilt edge)
+    const sideStreamer = new WorldClientStreamer()
+    ;(sideStreamer as unknown as { lastViewRect: readonly number[] }).lastViewRect = [-5, 35, 35, 60]
+    sideStreamer.prewarmAround(16, 48, 7, 7, 0.22, 1, "streaming", 0, -3)
+    const queued = (sideStreamer as unknown as { bakeQueue: { cx: number; cy: number }[] }).bakeQueue
+    expect(queued.some((q) => q.cx === -1 && q.cy === 1)).toBe(true)
+    expect(queued.some((q) => q.cx === 1 && q.cy === 3)).toBe(false)
+
     // Late-arriving chunk fade ramps chunkFadeAlpha from >0 to 1 over 0.28s and clears
     streamer.triggerChunkFade("4,1", 10.0)
     const fadeMid = streamer.updateWindow(px, py, session.view.town, "streaming", maxZoomView, 0, 0, 10.14)

@@ -75,6 +75,7 @@ export const SCENES: Scene[] = [
   { name: "street-dusk-18h30", label: "Street dusk 18:30", hour: 18.5, zoom: DEFAULT_ZOOM, x: 27.7, y: 41.0, aim: NORTH, flashlight: true },
   { name: "street-night-21h", label: "Night 21:00, flashlight facing the house", hour: 21, zoom: DEFAULT_ZOOM, x: 27.7, y: 41.0, aim: NORTH, flashlight: true },
   { name: "street-night-21h-turned", label: "Night 21:00, flashlight turned around", hour: 21, zoom: DEFAULT_ZOOM, x: 27.7, y: 41.0, aim: TURNED, flashlight: true },
+  { name: "street-night-21h-dark", label: "Night 21:00, no flashlight, facing the houses (night sight)", hour: 21, zoom: DEFAULT_ZOOM, x: 27.7, y: 41.0, aim: NORTH, flashlight: false },
   { name: "start-house-21h", label: "Start house 21:00", hour: 21, zoom: DEFAULT_ZOOM, x: 27.7, y: 31.8, aim: NORTH, flashlight: true },
   { name: "horde-night-21h", label: "Horde night 21:00", hour: 21, zoom: DEFAULT_ZOOM, x: 27.7, y: 41.0, aim: NORTH, flashlight: true, horde: true },
   { name: "coop-survivors-21h", label: "Co-op survivors 21:00", hour: 21, zoom: DEFAULT_ZOOM, x: 26.35, y: 39.5, aim: 0.65, flashlight: true, companions: COOP_LINEUP },

@@ -115,8 +115,8 @@ fn paintedGround(p: vec2f, colIn: vec3f, dirt: f32, turf: bool) -> vec3f {
   let earth = vec3f(lum) * vec3f(1.20, 0.98, 0.70);
   let stainCol = select(colIn * vec3f(0.78, 0.74, 0.66), vec3f(lum) * vec3f(1.22, 1.06, 0.58), turf);
   var c = mix(colIn, stainCol, stain * 0.7 * amt);
-  c *= 1.0 - rim * 0.16 * amt;
-  c = mix(c, earth * 1.12, scuff * 0.22 * amt);
+  c *= 1.0 - rim * 0.08 * amt;
+  c = mix(c, earth * 1.12, scuff * 0.14 * amt);
   c = mix(c, earth * 0.92, drift * 0.30 * amt);
   return max(vec3f(0.0), c * (1.0 + brush * 0.16 * amt));
 }
@@ -185,11 +185,16 @@ fn evalAsphaltConcrete(pIn: vec2f, baseTint: vec3f, isConcrete: bool, r: Materia
     col *= 1.0 - dampSlab * 0.14;
     localRough = mix(localRough, 0.38, dampSlab * 0.75);
 
-    let sLeafQ = p * 5.6 + vec2f(n1 - 0.5, n2 - 0.5) * 1.3;
-    let sLeafH = hash2(floor(sLeafQ) + vec2f(7.3, 2.1));
-    let sLeafD = fract(sLeafQ) - 0.5;
-    let sLeafMask = step(0.80 - 0.12 * borderSpill, sLeafH) * (1.0 - smoothstep(0.0196, 0.1024, dot(sLeafD, sLeafD))) * (1.0 - smoothstep(0.16, 0.52, surfaceFootprint * 5.6));
-    col = mix(col, vec3f(0.18, 0.11, 0.042), sLeafMask * 0.78 * dirtAmt);
+    // Dead leaves: a few per square metre, each off-centre in its cell and its own size (a centred flake per cell read
+    // as rows of dots), and darker than the slab so the beam shows matte litter, not bright specks.
+    let sLeafQ = p * 2.8 + vec2f(n1 - 0.5, n2 - 0.5) * 0.9;
+    let sLeafCell = floor(sLeafQ);
+    let sLeafH = hash2(sLeafCell + vec2f(7.3, 2.1));
+    let sLeafJ = vec2f(hash2(sLeafCell + vec2f(1.9, 8.3)), hash2(sLeafCell + vec2f(6.1, 0.7))) - 0.5;
+    let sLeafD = (fract(sLeafQ) - 0.5 - sLeafJ * 0.5) * vec2f(1.0, 1.4);
+    let sLeafR = 0.022 + 0.036 * fract(sLeafH * 13.7);
+    let sLeafMask = step(0.84 - 0.16 * borderSpill, sLeafH) * (1.0 - smoothstep(sLeafR * 0.45, sLeafR, dot(sLeafD, sLeafD))) * (1.0 - smoothstep(0.16, 0.52, surfaceFootprint * 2.8));
+    col = mix(col, col * vec3f(0.74, 0.58, 0.40), sLeafMask * 0.8 * dirtAmt);
   } else {
     let roadU = clamp((p.y - 40.0) * 0.125, 0.0, 1.0);
     let dRut = min(abs(roadU - 0.26), abs(roadU - 0.74));
@@ -230,12 +235,17 @@ fn evalAsphaltConcrete(pIn: vec2f, baseTint: vec3f, isConcrete: bool, r: Materia
     col = mix(col, col * 0.16, clamp(crack + spallPocket * 0.85, 0.0, 1.0) * 0.85);
     cavity = (1.0 - crack * 0.46) * gutterShade;
 
-    let qLeaf = p * 5.4 + vec2f(n1 - 0.5, n2 - 0.5) * 1.45;
-    let leafH = hash2(floor(qLeaf) + vec2f(4.7, 9.1));
-    let leafUv = (fract(qLeaf) - 0.5) * vec2f(1.0, 1.45);
+    // Dead leaves drift into the gutters and thin out toward the crown; jittered, sized per cell and darker than the
+    // asphalt, so the beam doesn't pick out a grid of bright dots.
+    let qLeaf = p * 2.6 + vec2f(n1 - 0.5, n2 - 0.5) * 0.9;
+    let leafCell = floor(qLeaf);
+    let leafH = hash2(leafCell + vec2f(4.7, 9.1));
+    let leafJ = vec2f(hash2(leafCell + vec2f(2.3, 5.9)), hash2(leafCell + vec2f(9.4, 1.6))) - 0.5;
+    let leafUv = (fract(qLeaf) - 0.5 - leafJ * 0.5) * vec2f(1.0, 1.45);
+    let leafR = 0.022 + 0.036 * fract(leafH * 17.3);
     let gutterLeafBias = 1.0 - smoothstep(0.0, 1.85 + gutterWarp, gutterDist);
-    let leafMask = step(0.78 - 0.12 * gutterLeafBias, leafH) * (1.0 - smoothstep(0.0196, 0.1024, dot(leafUv, leafUv))) * (0.28 + 0.72 * gutterLeafBias) * (1.0 - smoothstep(0.16, 0.52, surfaceFootprint * 5.4));
-    col = mix(col, vec3f(0.20, 0.12, 0.046), leafMask * 0.86 * dirtAmt);
+    let leafMask = step(0.86 - 0.18 * gutterLeafBias, leafH) * (1.0 - smoothstep(leafR * 0.45, leafR, dot(leafUv, leafUv))) * (0.15 + 0.85 * gutterLeafBias) * (1.0 - smoothstep(0.16, 0.52, surfaceFootprint * 2.6));
+    col = mix(col, col * vec3f(0.74, 0.58, 0.40), leafMask * 0.8 * dirtAmt);
   }
 
   col = paintedGround(pIn, col, dirtAmt, false);

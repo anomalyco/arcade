@@ -553,13 +553,13 @@ ${outbreakUnseenSceneWgsl}
 /** Live sight (x) and soft fine-grained memory (y) from the visibility field, gated to the current sight range. */
 fn fieldSight(world: vec3f, n: vec3f) -> vec2f {
   let uv = (world.xz + n.xz * 0.09 - OL.win.xy) * F.map.xy;
-  let inWin = select(1.0, 0.0, OL.win.z > 0.5 && (any(uv < vec2f(0.003)) || any(uv > vec2f(0.997))));
+  let inWin = outbreakWindowFade(uv);
   let fv = textureSampleLevel(visField, floorSamp, uv, 0.0).rg * inWin;
   let dEyeV = world.xz - lights[0].pos.xz;
   let r0 = max(0.0, lights[0].pos.w - 0.6);
   let r1 = lights[0].pos.w + 0.4;
   let gate = 1.0 - smoothstep(r0 * r0, r1 * r1, dot(dEyeV, dEyeV));
-  return vec2f(fv.x * gate, fv.y);
+  return vec2f(fv.x * gate * outbreakNightReach(world.xz), fv.y);
 }
 
 /**
@@ -584,7 +584,7 @@ fn applyOutbreakFogOfWar(
     return colIn;
   }
   let expUv = (world.xz + n.xz * 0.24 - OL.win.xy) * F.map.xy;
-  let inExpWin = select(1.0, 0.0, OL.win.z > 0.5 && (any(expUv < vec2f(0.003)) || any(expUv > vec2f(0.997))));
+  let inExpWin = outbreakWindowFade(expUv);
   let explored = max(textureSampleLevel(exploredTex, floorSamp, expUv, 0.0).r * inExpWin, sight.y);
   let sunVal = clamp(F.monitorBounds.w, 0.0, 1.0);
   let duskVal = smoothstep(0.42, 0.22, F.monitorBounds.y) * (1.0 - smoothstep(0.25, 0.75, sunVal));
