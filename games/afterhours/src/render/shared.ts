@@ -28,6 +28,9 @@ export type LampRuntime = {
   mask: { mode: 0 | 1 | 2; y0: number; y1: number }
 }
 
+/** Distance (m) at which `flash.reach` sets the adapted floor of the flashlight beam's centre (lighting.ts). */
+export const FLASH_REACH_AT = 30
+
 export type FlashState = {
   on: boolean
   pos: THREE.Vector3

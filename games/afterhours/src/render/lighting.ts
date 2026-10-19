@@ -39,7 +39,7 @@ import type { Player } from "../player"
 import { BOUNCE_LAMPS, bounceLamps, fogSigma, opticalDepth } from "./atmosphere"
 import type { LightMask } from "./clustered"
 import { inside, lampZone, storeyAt, storeySlab, type LampZone } from "./volumes"
-import { addControls, flag, num, renderState, type LampRuntime } from "./shared"
+import { FLASH_REACH_AT, addControls, flag, num, renderState, type LampRuntime } from "./shared"
 
 // The light rig. Every registered lamp becomes an unshadowed clustered point light (Forward+, culled per cluster); a
 // small pool of shadowed spot lights is handed to the nearest important `shadow: true` fixtures and cross-faded as the
@@ -255,26 +255,25 @@ function flickerLevel(r: Rig, time: number, scale: number) {
   }
 }
 
-/** Within this distance of the lens the beam's hot centre falls off with the inverse square, past it with `throw`. */
-const FLASH_THROW_REF = 2
-
 /**
  * The flashlight's colour node, a shaped beam: a hot centre, a faint soft reflector ring and a wide dim spill (an
  * incandescent torch with a stippled reflector: the ring is a few percent, not a hard caustic halo), with two
  * corrections the punctual light can't express on its own.
  *
- * Throw (eye adaptation): physically a 1/d² beam lights the floor at your feet ~200× brighter than a wall 28 m away,
+ * Reach (eye adaptation): physically a 1/d² beam lights the floor at your feet ~200× brighter than a wall 28 m away,
  * and with one fixed exposure the far wall reads black (0.3 lux at 220 cd) while the floor pool is bright. The hot
- * centre stays inverse-square within FLASH_THROW_REF and falls as 1/d^throw beyond (continuous there), so the near pool
- * is unchanged and the beam's centre still reads, dimly, at 25–35 m. The ring and spill stay inverse-square: near
- * walls and the corridor around the beam don't brighten.
+ * centre never falls below an adapted floor of `reach` lux at FLASH_REACH_AT, falling as 1/d^throw: for the 220 cd
+ * torch that takes over ~2 m out, so the pool at your feet is unchanged and the beam's centre still reads, dimly, at
+ * 25–35 m. A floor in lux rather than a gain leaves bright beams alone (the intro's 4200 cd headlamps borrow this
+ * light and are only lifted far down the road). The ring and spill stay inverse-square: near walls and the corridor
+ * around the beam don't brighten.
  *
  * Lens size: a punctual light mirrored in a glossy floor is a tiny, very bright point (the "floating dot" under the
  * torch). The specular lobe is widened as for a sphere light of radius `lens` (Karis' representative-point
  * normalisation, α' = α + r / 2d with energy (α/α')²), and the light scaled by (diffuse + soft specular) / (diffuse
  * + point specular), so diffuse is untouched and only the highlight softens and dims.
  */
-function flashColorNode(lightPos: N, throwExp: N, lens: N) {
+function flashColorNode(lightPos: N, candela: N, reachLux: N, throwExp: N, lens: N) {
   return Fn(([coord]: [N], builder: { material?: THREE.Material }) => {
     // r = 1 at the cone edge (flash.angle, ~48°). A hot centre ~8° wide (r ≈ 0.13), a faint reflector ring just
     // outside it, and a wide dim spill (~9 % of the peak) that falls smoothly to nothing at the cone edge (no rim).
@@ -287,7 +286,8 @@ function flashColorNode(lightPos: N, throwExp: N, lens: N) {
     const ang = atan(coord.y.sub(0.5), coord.x.sub(0.5))
     const wobble = ang.mul(5).sin().mul(0.03).add(ang.mul(3).add(1.3).sin().mul(0.02)).add(1)
     const d = length((lightPos as N).sub(positionWorld)).max(1e-3)
-    const reach = d.div(FLASH_THROW_REF).max(1).pow(float(2).sub(throwExp))
+    const floor = (reachLux as N).mul(d.div(FLASH_REACH_AT).pow((throwExp as N).negate()))
+    const reach = floor.mul(d.mul(d)).div((candela as N).max(1e-3)).max(1)
     // The hot centre slightly warmer than the spill.
     const beam = vec3(1, 0.95, 0.85).mul(hot.mul(wobble).mul(reach)).add(vec3(1, 0.97, 0.92).mul(ring.add(spill)))
     if (!(builder.material as { isMeshStandardNodeMaterial?: boolean } | undefined)?.isMeshStandardNodeMaterial) return beam
@@ -388,11 +388,11 @@ export function createLighting(ctx: WorldContext, player: Player) {
     { key: "flash.intensity", label: "Intensity (peak)", group: "Flashlight", unit: "cd", min: 0, max: 2000, step: 5, value: 220 },
     { key: "flash.angle", label: "Spill half-angle", group: "Flashlight", unit: "°", min: 15, max: 60, step: 1, value: 48 },
     { key: "flash.range", label: "Range", group: "Flashlight", unit: "m", min: 5, max: 80, step: 1, value: 60 },
-    { key: "flash.throw", label: "Centre falloff exponent past 2 m (2 = inverse square)", group: "Flashlight", min: 0.5, max: 2, step: 0.05, value: 0.7 },
+    { key: "flash.reach", label: `Adapted beam centre at ${FLASH_REACH_AT} m`, group: "Flashlight", unit: "lux", min: 0, max: 40, step: 0.5, value: 8 },
+    { key: "flash.throw", label: "Adapted centre falloff exponent", group: "Flashlight", min: 0.3, max: 2, step: 0.05, value: 0.7 },
     { key: "flash.lens", label: "Lens size (soft highlight)", group: "Flashlight", unit: "m", min: 0, max: 0.4, step: 0.01, value: 0.1 },
     { key: "flash.lag", label: "Sway lag", group: "Flashlight", unit: "s", min: 0, max: 0.4, step: 0.01, value: 0 },
-    { key: "flash.scatter", label: "Beam in fog", group: "Flashlight", unit: "×", min: 0, max: 2, step: 0.01, value: 0.15 },
-    { key: "flash.beamLength", label: "Beam length in fog", group: "Flashlight", unit: "m", min: 1, max: 60, step: 0.5, value: 20 },
+    { key: "flash.scatter", label: "Beam in fog", group: "Flashlight", unit: "×", min: 0, max: 2, step: 0.01, value: 0.8 },
     { key: "flash.near", label: "Beam fade-in distance", group: "Flashlight", unit: "m", min: 0, max: 8, step: 0.1, value: 3 },
     { key: "light.shadowBias", label: "Shadow bias (slope-scaled)", group: "Lighting", unit: "texels", min: 0, max: 4, step: 0.05, value: 1 },
     { key: "flash.shadows", label: "Casts shadows", group: "Flashlight", type: "toggle", value: true },
@@ -529,9 +529,11 @@ export function createLighting(ctx: WorldContext, player: Player) {
   // still shadow map (no sub-texel re-quantisation shimmer from the sway filter's endless tiny convergence).
   const appliedDir = new THREE.Vector3(0, 0, -1)
   const appliedPos = new THREE.Vector3()
-  const flashThrow = uniform(1)
+  const flashCandela = uniform(0)
+  const flashReach = uniform(8)
+  const flashThrow = uniform(0.7)
   const flashLens = uniform(0.1)
-  ;(flash as unknown as { colorNode: unknown }).colorNode = flashColorNode(flashBiasPos, flashThrow, flashLens)
+  ;(flash as unknown as { colorNode: unknown }).colorNode = flashColorNode(flashBiasPos, flashCandela, flashReach, flashThrow, flashLens)
   scene.add(flash, flash.target)
   const flashDir = new THREE.Vector3(0, 0, -1)
   const flashPos = new THREE.Vector3()
@@ -924,8 +926,10 @@ export function createLighting(ctx: WorldContext, player: Player) {
       flash.angle = angle
       flash.distance = num(ctx, "flash.range")
       flashThrow.value = num(ctx, "flash.throw")
+      flashReach.value = num(ctx, "flash.reach")
       flashLens.value = num(ctx, "flash.lens")
       flash.intensity = num(ctx, "flash.intensity") * flashLevel
+      flashCandela.value = flash.intensity
       flash.color.copy(flashColor)
       // The flashlight never leaves the light list (toggling its visibility would change every material's light
       // set and recompile them all on F): off is zero intensity and a frozen shadow map.
