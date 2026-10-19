@@ -113,7 +113,7 @@ is bounded and nothing is added to the wire.
 | Item | Where | How it plays |
 | --- | --- | --- |
 | Flamethrower | The hardware store's keyed back room in 60% of towns (seeded); 1–1.2% on garage and warehouse shelves; or made at a bench with a pressure tank installed | Hold fire to spray a short cone (6.5 m, 16°). A full tank lasts 9 s; `R` or an empty tank refuels from a gas can. The dead in the stream catch fire, panic, burn down (15/s for 6 s), light the street, set alight others they brush and fall charred. It roars (22 m) and its light pulls in the dead who see it, most at night. Friendly fire. Fire licks the ground where it lands (2.4 s) and leaves scorch marks |
-| Gas can (`fuel`, belt) | Gas stations and garages (15–35%), hardware, warehouses, cabins, rarely houses | Refuels the flamethrower; one goes into making it |
+| Gas can (`fuel`, belt) | Gas stations and garages (15–35%), hardware, warehouses, cabins, rarely houses | Refuels the flamethrower; one goes into making it. With The Way Out's car project, the only fuel for cars (40% a can) |
 | Pressure tank (part) | Always in the hardware back room; 5–6% on garage, gas station and warehouse shelves | Install at a bench to fill in the flamethrower recipe; making one uses it up |
 | Dynamite | Hardware 3%, warehouse 5%, cabin 6% shelves | Thrown on a 2.6 s fuse. The blast (4.8 m) kills and throws the dead, hurts survivors, blows in barricades and doors, leaves a crater, flashes and is heard 60 m off |
 | Firecrackers | Gas station 12% and grocery 6% counters, garages, houses | Thrown; the string skitters 6 m and pops for 7 s, each burst heard 20 m off: a moving lure |
@@ -131,8 +131,10 @@ Give and Stage actions are in Lab › Fire & explosives; `arcade cmd fire.give i
 ## The Way Out (AR-64)
 
 A run can now be won. The Way Out's clues are notes on home furniture, flyers on searched bodies and a torn map on
-police station counters; a flare lit at the destination signals the evac; everything it tracks lives in one shared
-`wayout` ledger counters store, not in anyone's inventory. How a winning run goes:
+police station counters; a flare lit at the destination signals the evac; gas cans fuel the car, a toolbox hotwires
+it, and dynamite or bolt cutters (`bolt-cutters`, a pack part on hardware, garage and warehouse shelves, rolled after
+the fire rolls) clear the roadblocks on the way. Everything it tracks lives in one shared `wayout` ledger counters
+store, not in anyone's inventory. How a winning run goes:
 [outbreak-way-out.md](outbreak-way-out.md).
 
 ## Lab

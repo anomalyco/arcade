@@ -51,6 +51,7 @@ export const PICKUP_SOUND: Readonly<Record<string, `pickup.${PickupClass | "ammo
   "bear-trap": "pickup.part",
   fuel: "pickup.part",
   "pressure-tank": "pickup.part",
+  "bolt-cutters": "pickup.part",
 }
 
 /** Which crafting sound each recipe makes. */

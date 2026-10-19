@@ -15,6 +15,9 @@ import type { Ledger, StoreState } from "@arcade/kit/sim/ledger"
  * | `missed`, `late` | the way out is gone; the late boat has been used |
  * | `won`, `wonNight`, `played` | escaped at, on that night, after this many seconds of play |
  * | `esc:<index>`, `kills:<index>` | who made it out, and each survivor's kills at the end |
+ * | `rb:<i>`, `rbs:<i>` | roadblock `i` is gone (1 blown, 2 cut); it has been seen (or the soldier's orders marked it) |
+ * | `hw`, `hwV`, `hwAt`, `hwBy` | a hotwire in progress (ten-thousandths), on which car, last held at, by whom (slot index + 1) |
+ * | `cut`, `cutI`, `cutAt` | a chain being cut (ten-thousandths), at roadblock `cutI - 1`, last held at |
  */
 
 export const WAY_OUT_STORE = "wayout"
@@ -40,6 +43,12 @@ export type WayOutView = {
   played: number
   escaped: number[]
   kills: Record<number, number>
+  /** Roadblocks gone (index → 1 blown, 2 cut) and seen. */
+  cleared: Record<number, number>
+  seen: Set<number>
+  /** A hotwire in progress (0–1) on car `car`, and a chain being cut (0–1) at roadblock `block`. */
+  hotwire: { car: number; progress: number; by: number } | null
+  cut: { block: number; progress: number } | null
 }
 
 export function readWayOut(st: StoreState | undefined): WayOutView | null {
@@ -48,11 +57,15 @@ export function readWayOut(st: StoreState | undefined): WayOutView | null {
   const clues = new Set<string>()
   const escaped: number[] = []
   const kills: Record<number, number> = {}
+  const cleared: Record<number, number> = {}
+  const seen = new Set<number>()
   for (const [k, v] of Object.entries(c)) {
     if (!v) continue
     if (k.startsWith("c:")) clues.add(k.slice(2))
     else if (k.startsWith("esc:")) escaped.push(Number(k.slice(4)))
     else if (k.startsWith("kills:")) kills[Number(k.slice(6))] = v
+    else if (k.startsWith("rb:")) cleared[Number(k.slice(3))] = v
+    else if (k.startsWith("rbs:")) seen.add(Number(k.slice(4)))
   }
   escaped.sort((a, b) => a - b)
   return {
@@ -75,6 +88,10 @@ export function readWayOut(st: StoreState | undefined): WayOutView | null {
     played: c.played ?? 0,
     escaped,
     kills,
+    cleared,
+    seen,
+    hotwire: c.hw ? { car: c.hwV ?? 0, progress: c.hw / 10000, by: (c.hwBy ?? 0) - 1 } : null,
+    cut: c.cut ? { block: (c.cutI ?? 0) - 1, progress: c.cut / 10000 } : null,
   }
 }
 

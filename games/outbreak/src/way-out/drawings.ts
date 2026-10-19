@@ -29,7 +29,7 @@ const ARROW = '<path d="M30 42 H86 M72 30 L88 42 L72 54"/>'
 const X_MARK = (x: number, y: number) => `<path d="M${x - 6} ${y - 6} l12 12 M${x + 6} ${y - 6} l-12 12"/>`
 
 /** A clue's drawing: the place itself for the rumours, the map, the sign and the orders for the direction. */
-export function clueArt(kind: ClueKind | "signal" | "escaped" | "missed" | "left", place: DestinationKind, bearing = 0): string {
+export function clueArt(kind: ClueKind | "signal" | "escaped" | "missed" | "left" | "blown" | "cut" | "hotwired", place: DestinationKind, bearing = 0): string {
   switch (kind) {
     case "radio":
       return svg(RADIO)
@@ -56,6 +56,12 @@ export function clueArt(kind: ClueKind | "signal" | "escaped" | "missed" | "left
     case "missed":
     case "left":
       return svg(`${PLACE[place]}<path d="M14 14 L106 74" stroke-width="3"/>`)
+    case "blown":
+      return svg(`<path d="M10 70 H110" stroke-dasharray="6 6"/><path d="M18 62 q4 -10 14 -10 h12 q6 0 8 10 Z"/><path d="M80 64 q2 -9 12 -9 h8 q6 0 8 9"/><path d="M60 52 l-6 -14 l10 6 l2 -16 l6 14 l10 -8 l-4 16"/><path d="M40 30 l-8 -6 M84 26 l8 -6 M30 44 h-10"/>`)
+    case "cut":
+      return svg(`<path d="M20 70 V22 M100 70 V22"/><path d="M20 26 L46 30 V70 M100 26 L74 30 V70" stroke-width="1.8"/><path d="M54 44 q6 -6 12 0" stroke-width="3"/><path d="M50 52 l-14 16 M70 52 l14 16"/><circle cx="60" cy="48" r="3"/>`)
+    case "hotwired":
+      return svg(`<path d="M22 58 q2 -14 14 -16 l10 -12 h28 l12 12 q12 2 14 16 Z"/><circle cx="38" cy="60" r="7"/><circle cx="82" cy="60" r="7"/><path d="M60 16 q-8 6 0 12 q8 6 0 12" stroke-width="1.8"/><path d="M52 12 l4 4 M68 12 l-4 4"/>`)
   }
 }
 

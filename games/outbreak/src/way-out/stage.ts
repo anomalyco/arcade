@@ -6,6 +6,7 @@ import type { WayOutTuning } from "../../shared/way-out/tuning"
 import { broadcastOn, carriesFlyer } from "../../shared/way-out/clues"
 import { arrivalHeading } from "../../shared/way-out/landmark"
 import { clueSites, evacuate, nearDawnHour, planOf, revealTo, seedOf, signalEvac, type WayOutState } from "../../shared/way-out/runtime"
+import { roadblocksOf } from "../../shared/way-out/roadblocks"
 import { WAY_OUT_STORE } from "../../shared/way-out/state"
 import type { DiscoveryHost } from "../discovery/stage"
 
@@ -15,11 +16,14 @@ import type { DiscoveryHost } from "../discovery/stage"
  * - `note` / `flyer`: beside a home's note, or kneeling at a body that carries a flyer (search it).
  * - `police-map`: in the police station a block south of town, at the torn map piece.
  * - `road-sign` / `soldier`: at the sign and the dead soldier along the route.
+ * - `car-repair`: by day beside a car with no keys and an empty tank, carrying a toolbox and two gas cans (hold E to
+ *   hotwire it, then get in to pour them in).
+ * - `roadblock`: at night before the route's first roadblock, carrying bolt cutters and dynamite, a car behind you.
  * - `destination`: at the destination at night, confirmed, before the signal.
  * - `final-stand`: signalled, the siege on, an hour before dawn, armed.
  * - `escape-card`: the squad got out; the card.
  */
-export const WAY_OUT_SCENES = ["radio", "note", "flyer", "police-map", "road-sign", "soldier", "destination", "final-stand", "escape-card"] as const
+export const WAY_OUT_SCENES = ["radio", "note", "flyer", "police-map", "road-sign", "soldier", "car-repair", "roadblock", "destination", "final-stand", "escape-card"] as const
 export type WayOutScene = (typeof WAY_OUT_SCENES)[number]
 
 export type WayOutStageSession = { sim: CoopSim }
@@ -34,12 +38,28 @@ export function resetWayOut(sim: CoopSim): void {
   st.siege = []
 }
 
+/** Grants items to the local survivor (what does not fit is dropped by the ledger as usual). */
+export function giveAll(sim: CoopSim, actor: string, items: readonly (readonly [string, number])[]): void {
+  for (const [item, count] of items) sim.progression.ledger.apply({ kind: "grant", actor, item, count })
+  const slot = sim.slots.find((s) => s.id === actor)
+  if (slot) sim.progression.project(slot)
+}
+
+/** Everything the car project and the roadblocks ask for. */
+export const CAR_PARTS: readonly (readonly [string, number])[] = [
+  ["toolbox", 1],
+  ["car-battery", 1],
+  ["bolt-cutters", 1],
+  ["fuel", 3],
+  ["dynamite", 2],
+]
+
 function clearDead(sim: CoopSim): void {
   for (const z of sim.ai.agents) z.state = "dead"
 }
 
 /** Moves the local survivor to a place along or beside the plan, facing the way given. */
-export function teleportTo(host: DiscoveryHost, sim: CoopSim, to: "destination" | "sign" | "soldier" | "police" | "signal", tuning: WayOutTuning): { x: number; y: number } {
+export function teleportTo(host: DiscoveryHost, sim: CoopSim, to: "destination" | "sign" | "soldier" | "police" | "signal" | "roadblock", tuning: WayOutTuning): { x: number; y: number } {
   const plan = planOf(sim, tuning)
   const h = arrivalHeading(plan.arrival)
   let x = plan.x - Math.cos(h) * 20
@@ -53,6 +73,13 @@ export function teleportTo(host: DiscoveryHost, sim: CoopSim, to: "destination" 
     x = spot.x + Math.cos(spot.yaw) * 1.3
     y = spot.y + Math.sin(spot.yaw) * 1.3
     aim = spot.yaw + Math.PI
+  } else if (to === "roadblock") {
+    // 14 m short of the first roadblock, on the town side, facing it.
+    const b = roadblocksOf(plan, tuning)[0]
+    if (!b) return teleportTo(host, sim, "sign", tuning)
+    x = b.x - b.dx * 14
+    y = b.y - b.dy * 14
+    aim = Math.atan2(b.dy, b.dx)
   } else if (to === "police") {
     // The police station in block (0, 1): stream it in, then stand at its map piece.
     host.pose(48, 112, Math.PI / 2)
@@ -124,6 +151,25 @@ export function stageWayOut(host: DiscoveryHost, session: WayOutStageSession, sc
       host.setHour(22)
       revealTo(sim, state, 2)
       return teleportTo(host, sim, "soldier", tuning)
+    case "car-repair": {
+      host.setHour(10)
+      revealTo(sim, state, 2)
+      // On the road a block south of the town's crossroads, clear of the cars parked there.
+      const at = { x: 41.8, y: 70 }
+      sim.vehicles.spawnVehicle("sedan", 44, 70, Math.PI / 2, { fuel: 0, hasKeys: false, hasBattery: true })
+      giveAll(sim, view.actorId, [["toolbox", 1], ["fuel", 2]])
+      host.pose(at.x, at.y, 0)
+      return at
+    }
+    case "roadblock": {
+      host.setHour(22)
+      revealTo(sim, state, 3)
+      const at = teleportTo(host, sim, "roadblock", tuning)
+      const b = roadblocksOf(planOf(sim, tuning), tuning)[0]
+      if (b) sim.vehicles.spawnVehicle("sedan", b.x - b.dx * 22, b.y - b.dy * 22, Math.atan2(b.dy, b.dx), { fuel: 70 })
+      giveAll(sim, view.actorId, [["bolt-cutters", 1], ["dynamite", 2]])
+      return at
+    }
     case "destination":
       host.setHour(23)
       revealTo(sim, state, 3)

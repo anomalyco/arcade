@@ -6,14 +6,19 @@ import type { SessionView } from "../../shared/session"
 import type { ClueSite } from "../../shared/way-out/clues"
 import { arrivalHeading, LANDMARK_SOLIDS, landmarkToWorld } from "../../shared/way-out/landmark"
 import { DESTINATION_KINDS, type DestinationKind, type WayOutPlan } from "../../shared/way-out/plan"
+import type { Roadblock, RoadblockKind } from "../../shared/way-out/roadblocks"
 import type { WayOutView } from "../../shared/way-out/state"
 import { BODY_LOOK, bodyMesh } from "../discovery/vignettes"
 import { hex } from "../level"
+import { clearedBlockMesh, scorchMesh, standingBlockMesh } from "./roadblocks"
 
 const MAX = 32
 const RANGE = 34
 /** The destination is drawn (and lit) from this far, so its lights read down the road before you arrive (m). */
 const LANDMARK_RANGE = 110
+/** Roadblocks are drawn (and lit) from this far (m). */
+const BLOCK_RANGE = 80
+const BLOCK_KINDS: readonly RoadblockKind[] = ["wreck", "police", "gate"]
 const SOLDIER_LOOK = { top: hex(0x4c5434), legs: hex(0x3f4630), skin: hex(0xa88468), hair: hex(0x3a3c2c), shoes: hex(0x1c1a14) } as const
 
 /** Floodlights in the landmark's frame: where the pole stands and which way its head points (radians, landmark frame). */
@@ -170,10 +175,22 @@ type Pool = Map<number, { data: Float32Array<ArrayBuffer>; count: number }>
  * there is light), and its signal post. Reads the plan and the `wayout` store only.
  */
 export class WayOutProps {
-  private readonly models: { note: number; map: number; sign: number; soldier: number; flood: number; beacon: number; landmark: Record<DestinationKind, number>; post: Record<DestinationKind, number> }
+  private readonly models: {
+    note: number
+    map: number
+    sign: number
+    soldier: number
+    flood: number
+    beacon: number
+    landmark: Record<DestinationKind, number>
+    post: Record<DestinationKind, number>
+    block: Record<RoadblockKind, number>
+    cleared: Record<RoadblockKind, number>
+    scorch: number
+  }
   private readonly pool: Pool = new Map()
   private readonly out: Batch[] = []
-  readonly shown = { clues: [] as string[], landmark: false, lights: 0 }
+  readonly shown = { clues: [] as string[], landmark: false, lights: 0, blocks: [] as string[] }
 
   constructor(renderer: Pick<Renderer, "addModel">) {
     const per = (f: (k: DestinationKind) => Mesh) => Object.fromEntries(DESTINATION_KINDS.map((k) => [k, renderer.addModel(f(k))])) as Record<DestinationKind, number>
@@ -186,10 +203,20 @@ export class WayOutProps {
       beacon: renderer.addModel(beacon()),
       landmark: per(landmarkMesh),
       post: per(signalPost),
+      block: Object.fromEntries(BLOCK_KINDS.map((k) => [k, renderer.addModel(standingBlockMesh(k))])) as Record<RoadblockKind, number>,
+      cleared: Object.fromEntries(BLOCK_KINDS.map((k) => [k, renderer.addModel(clearedBlockMesh(k))])) as Record<RoadblockKind, number>,
+      scorch: renderer.addModel(scorchMesh()),
     }
   }
 
-  collect(view: SessionView, plan: WayOutPlan, wv: WayOutView | null, sites: readonly ClueSite[], support: (x: number, z: number) => number): readonly Batch[] {
+  collect(
+    view: SessionView,
+    plan: WayOutPlan,
+    wv: WayOutView | null,
+    sites: readonly ClueSite[],
+    support: (x: number, z: number) => number,
+    blocks: readonly Roadblock[] = [],
+  ): readonly Batch[] {
     for (const v of this.pool.values()) v.count = 0
     this.out.length = 0
     const p = view.player
@@ -206,6 +233,16 @@ export class WayOutProps {
       } else if (c.kind === "sign") this.put(this.models.sign, c.x, g, c.y, c.yaw)
       else if (c.kind === "soldier") this.put(this.models.soldier, c.x, g + 0.008, c.y, c.yaw)
       shown.clues.push(c.id)
+    }
+    shown.blocks.length = 0
+    for (const b of blocks) {
+      if (Math.abs(b.x - p.x) > BLOCK_RANGE || Math.abs(b.y - p.y) > BLOCK_RANGE) continue
+      const gone = wv?.cleared[b.index] ?? 0
+      const yaw = Math.atan2(b.dy, b.dx) + (b.side < 0 ? Math.PI : 0)
+      const g = support(b.x, b.y)
+      this.put(gone ? this.models.cleared[b.kind] : this.models.block[b.kind], b.x, g, b.y, yaw)
+      if (gone === 1) this.put(this.models.scorch, b.x, g, b.y, yaw)
+      shown.blocks.push(`${b.kind}:${gone ? (gone === 1 ? "blown" : "cut") : "standing"}`)
     }
     shown.landmark = false
     if (Math.abs(plan.x - p.x) <= LANDMARK_RANGE && Math.abs(plan.y - p.y) <= LANDMARK_RANGE) {
@@ -227,10 +264,18 @@ export class WayOutProps {
   }
 
   /** The destination's floodlights and beacon, packed after the other lights; returns the new count. */
-  writeLights(view: SessionView, plan: WayOutPlan, wv: WayOutView | null, support: (x: number, z: number) => number, lights: Float32Array, count: number, max: number): number {
+  writeLights(
+    view: SessionView,
+    plan: WayOutPlan,
+    wv: WayOutView | null,
+    support: (x: number, z: number) => number,
+    lights: Float32Array,
+    count: number,
+    max: number,
+    blocks: readonly Roadblock[] = [],
+  ): number {
     this.shown.lights = 0
     const p = view.player
-    if (Math.abs(plan.x - p.x) > LANDMARK_RANGE || Math.abs(plan.y - p.y) > LANDMARK_RANGE) return count
     const night = dayCycle(view.hour).lamps
     if (night < 0.05) return count
     const add = (x: number, h: number, z: number, r: number, c: readonly [number, number, number], power: number) => {
@@ -251,6 +296,22 @@ export class WayOutProps {
       count++
       this.shown.lights++
     }
+    // A roadblock reads at night by its own light: the police lamps blink red and blue, a wreck still smoulders.
+    for (const b of blocks) {
+      if (wv?.cleared[b.index] || Math.abs(b.x - p.x) > BLOCK_RANGE || Math.abs(b.y - p.y) > BLOCK_RANGE) continue
+      const g = support(b.x, b.y)
+      if (b.kind === "police") {
+        const on = Math.sin(view.time * 6 + b.index) > 0
+        for (const s of [-1, 1]) {
+          const z = s * 6.6 * -b.side
+          add(b.x + b.dy * -z, g + 1.8, b.y - b.dx * -z, 9, on === s > 0 ? [1, 0.16, 0.12] : [0.2, 0.35, 1], 0.9 * night)
+        }
+      } else if (b.kind === "wreck") {
+        const flicker = 0.75 + 0.25 * Math.sin(view.time * 9.3 + b.index) * Math.sin(view.time * 4.1)
+        add(b.x, g + 1.2, b.y, 7, [1, 0.5, 0.18], 0.8 * flicker * night)
+      }
+    }
+    if (Math.abs(plan.x - p.x) > LANDMARK_RANGE || Math.abs(plan.y - p.y) > LANDMARK_RANGE) return count
     for (const f of FLOODS[plan.kind]) {
       // The pool falls a few metres out from the pole, the way its head points.
       const a = arrivalHeading(plan.arrival) + f.aim

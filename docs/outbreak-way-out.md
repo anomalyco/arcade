@@ -23,13 +23,20 @@ Code: `games/outbreak/shared/way-out/` (rules), `games/outbreak/src/way-out/` (d
    the goal line gives the bearing and the distance by road.
 3. **Confirmed.** Two kinds of direction clue, or arriving. The place and the route are pinned on the map (N), the
    compass ring points at it with its distance, and a toast shows the place.
-4. **The drive.** It is too far to walk before night (the note and the map say so). Today's cars work as they did;
-   the car project and roadblocks on the route are the next slice (see "Planned").
-5. **Signal.** At the destination, press E at the signal post, light a flare in the zone, or sound a car horn there.
+4. **The car.** It is too far to walk before night (the note and the map say so), and a tank does not go far: flat out
+   a sedan burns its tank in about 1.9 km. The gas station pumps are dry, so the project is gas cans (garages and gas
+   stations), poured in when you get in, 40% each; and a car you can start: keys from a house, a car battery from the
+   hardware store, or hotwire one with the hardware store's toolbox (hold E, noisy). The goal line shows how far the
+   tank goes beside the distance.
+5. **The roadblocks.** Past the dead soldier the route is blocked, twice by default: a pile-up, a police roadblock or
+   a chained gate across the road and both verges. People squeeze through a gap at one kerb; cars cannot, and ramming
+   one only damages the car. Dynamite clears any of them, bolt cutters (a new rare part) open a gate, or drive round by
+   the next road. The soldier's orders say how far on the first one is, and mark them all on the map.
+6. **Signal.** At the destination, press E at the signal post, light a flare in the zone, or sound a car horn there.
    The beacon starts flashing and the siege begins.
-6. **Final stand.** Waves of the dead come in from every side (4 every 14 s, one more every 3 waves, at most 30 alive,
+7. **Final stand.** Waves of the dead come in from every side (4 every 14 s, one more every 3 waves, at most 30 alive,
    spawning 30 m out), on top of the night ramp. Hold the zone until it gets light.
-7. **Escape.** At dawn everyone alive or down within 16 m of the crossroads goes. The card says "Escaped by ferry on
+8. **Escape.** At dawn everyone alive or down within 16 m of the crossroads goes. The card says "Escaped by ferry on
    Night 4", who made it out (3 of 4 survivors, each with their kills or what took them), day, nights, kills and time
    played, with Restart, New town (solo) and Lobby.
 
@@ -59,13 +66,33 @@ survivors and cars. It is drawn from 110 m, so its lights read down the road bef
 | Rumour | Evacuation flyer | 30% of bodies (fixed per body) | Search the body |
 | Direction | Torn map piece | Last counter of every police station; block (0, 1) always has one | E: Take map |
 | Direction | Road sign | Pavement 300 m along the route, mid-block | E: Read |
-| Direction | Dead soldier with orders | Verge 620 m along the route | E: Search |
+| Direction | Dead soldier with orders (and how far on the first roadblock is; marks them all on the map) | Verge 620 m along the route | E: Search |
 | Confirmed | Two kinds of direction clue, or arriving within 60 m | | |
 
 Every tier has more than one way in, so a run is never stuck: the police station and the two roadside clues always
 exist, and arriving confirms on its own. Drawings come first (`src/way-out/drawings.ts`): the place in a few strokes,
 the radio, the flyer, the torn map with its arrow and cross, the sign, the orders; a few words go under them
 (`clueWords` in `clues.ts`).
+
+## The car and the roadblocks
+
+`shared/way-out/car.ts` (rules) and `roadblocks.ts` (where they are), on with Lab › Way Out › The car: "A project".
+
+- **Fuel.** The vehicles subsystem asks `refuelRule()` how tanks fill (`shared/vehicles.ts`: Chem into an empty tank
+  and free pumps, as before). The car project answers: a gas can (`fuel`, belt) per pour, `canFill` (40%) each, into
+  any tank with room for a whole can, all you carry, when you get in or press the throttle; the pumps are dry. Gas cans
+  are the flamethrower's fuel too.
+- **Keys.** A key from a house dresser or a car battery from the hardware store work as before. With a toolbox in
+  your pack and no key, a car with no keys offers Hotwire (hold E, 6 s, heard 14 m off). Progress is in the store, so
+  a teammate sees it; let go and it lapses.
+- **Roadblocks.** `roadblocksOf(plan)` puts `roadblocks` (2) of them in the middle of road stretches between the
+  soldier (+140 m) and 220 m short of the destination, at least 90 m apart, each a seeded pile-up (35%), police
+  roadblock (25%) or chained gate (40%). Each spans 24 m across the road and verges and is added to the cars' solids;
+  people are pushed out of all of it but a 1.2 m gap at one kerb, so on foot nobody is ever stuck. Any explosion on
+  the noise bus within `blastReach` (3 m) of one clears it (dynamite: `shared/fire/`); bolt cutters (`bolt-cutters`,
+  pack, 10% of hardware, 5% of garage and 6% of warehouse shelves) cut a gate's padlock (hold E, 4 s). The road grid
+  means there is always a way round. They read at night by their own light: the police lamps blink red and blue, a
+  pile-up smoulders.
 
 ## Clock
 
@@ -79,8 +106,9 @@ again the next night (before the deadline). "The evac comes: After a fixed hold"
 ## State and co-op
 
 Everything every seat sees is one shared ledger counters store, `wayout` (`state.ts`): the tier, each clue found, the
-latest event and who caused it, nights, the deadline, the signal and siege, and the escape (who, on which night, kills
-and time). It snapshots, saves and reaches every client like any shared store, so the feature adds nothing to the
+latest event and who caused it, nights, the deadline, the signal and siege, the escape (who, on which night, kills
+and time), the roadblocks gone and seen, and the hotwire or cut in progress. It snapshots,
+saves and reaches every client like any shared store, so the feature adds nothing to the
 wire. Clue prompts, the signal post, the HUD, the map and the props all read it. The room's `runOver` is true once the
 squad escaped, so Restart works from the escape card as from the run-over card. After the escape nobody moves, is
 seen or is hurt while the card is up.
@@ -92,28 +120,29 @@ to the car is a follow-up; the down are carried aboard if they are in the zone a
 
 Backquote › Way Out holds every value: On/Off, destination, distances, deadline, missing it, the broadcast's hours
 and reach, note and flyer shares, sign and soldier distances, the evac radius, the stand rule and hold, and the siege
-(wave size, growth, interval, cap, radius). Actions: Reveal rumour/direction/confirmed, Teleport to the destination or
-the road sign, Start the final stand, Win now, Forget the way out, and a Stage action per station view. Commands (offline):
+(wave size, growth, interval, cap, radius). The car rows: the car project, a gas can's fill, the hotwire hold and noise, how many
+roadblocks, the cut hold and noise, how near a blast clears one. Actions: Reveal rumour/direction/confirmed, Teleport
+to the destination, the road sign or the first roadblock, Give car parts, Start the final stand, Win now, Forget the
+way out, and a Stage action per station view. Commands (offline):
 
 ```
 arcade cmd wayout.reveal tier=3
-arcade cmd wayout.teleport to=destination   # or signal, sign, soldier, police
+arcade cmd wayout.teleport to=destination   # or signal, sign, soldier, police, roadblock
+arcade cmd wayout.give                      # toolbox, car battery, bolt cutters, 3 gas cans, 2 dynamite
 arcade cmd wayout.stand
 arcade cmd wayout.signal
 arcade cmd wayout.win
-arcade cmd wayout.stage scene=final-stand   # radio, note, flyer, police-map, road-sign, soldier, destination, final-stand, escape-card
+arcade cmd wayout.stage scene=final-stand   # radio, note, flyer, police-map, road-sign, soldier, car-repair, roadblock, destination, final-stand, escape-card
 ```
 
 ## Bots and difficulty
 
-Bots ignore the goal: nothing it adds touches the town until someone finds a clue, and the siege only spawns after a
-signal at the destination. `tests/difficulty-ramp.test.ts` passes unchanged. "Off" is checked against a sim without
+Bots ignore the goal: nothing it adds touches the town until someone finds a clue, the siege only spawns after a
+signal at the destination, and bots do not drive (so dry pumps and gas cans do not touch them). `tests/difficulty-ramp.test.ts` passes unchanged. "Off" is checked against a sim without
 the feature registered: identical `SimState` hashes.
 
 ## Planned
 
-- **The car as a project**: keys from the owner's house or a hotwire with a toolbox, a dead battery, and fuel only
-  from gas cans (shared with the flamethrower); readable prompts with key caps.
-- **Roadblocks** on the route: wreck pile-ups and a burnt-out police roadblock (dynamite), a chained gate (bolt cutters,
-  a new rare item), or a detour; the soldier's orders say which way in is open.
-- Sound for the clues, the signal and the escape; zombie pathing around the landmark's solids.
+- Sound for the clues, the signal, hotwiring, cutting and the escape; zombie pathing around the landmark's and the
+  roadblocks' solids (the dead walk through them today).
+- A flat tyre as another car part; a key for each car in its owner's house; carrying a downed friend to the car.

@@ -5,13 +5,17 @@ import {
   clueKindOfCode,
   clueWords,
   deadlineText,
+  EVENT_BLOWN,
+  EVENT_CUT,
   EVENT_ESCAPED,
+  EVENT_HOTWIRED,
   EVENT_LATE_BOAT,
   EVENT_LEFT_BEHIND,
   EVENT_MISSED,
   EVENT_SIGNAL,
 } from "../../shared/way-out/clues"
 import { DESTINATION_WORDS, roughDistance, type WayOutPlan } from "../../shared/way-out/plan"
+import type { Roadblock } from "../../shared/way-out/roadblocks"
 import type { WayOutView } from "../../shared/way-out/state"
 import type { WayOutTuning } from "../../shared/way-out/tuning"
 import { clueArt, placeArt } from "./drawings"
@@ -38,6 +42,12 @@ export type WayOutHudInput = {
   /** Game seconds per real second, for the stand's countdown. */
   timeScale: number
   name: (index: number) => string
+  /** The route's roadblocks still standing (for the soldier's orders). */
+  blocks: readonly Roadblock[]
+  /** The car the local survivor is driving: fuel (%) and how far that goes at full throttle (m). */
+  car: { fuel: number; range: number } | null
+  /** A hold in progress by the local survivor: hotwiring a car, cutting a chain. */
+  hold: { label: string; progress: number } | null
 }
 
 /** `lines` are HTML (escaped where they are words). */
@@ -128,7 +138,7 @@ export class WayOutHud {
     const kind = clueKindOfCode(v.last)
     const by = v.lastBy >= 0 && i.slots.length > 1 ? i.name(v.lastBy) : null
     if (kind) {
-      const words = clueWords(kind, plan, deadline)
+      const words = clueWords(kind, plan, deadline, i.blocks)
       const bearing = Math.atan2(plan.y - 44, plan.x - 44)
       this.queue.push({ art: clueArt(kind, plan.kind, bearing), title: words.title, lines: (by ? [...words.lines, `Found by ${by}`] : words.lines).map(esc), tone: "clue" })
       if (v.tier >= 3 && this.seenTier < 3 && kind !== "arrive") {
@@ -142,6 +152,12 @@ export class WayOutHud {
       this.queue.push({ art: placeArt(plan.kind), title: `One more ${w.craft}`, lines: [esc(`Leaves ${deadlineText(deadline)}.`)], tone: "warm" })
     } else if (v.last === EVENT_MISSED) {
       this.queue.push({ art: clueArt("missed", plan.kind), title: `The last ${w.craft} has gone`, lines: ["There is no way out now. Survive."], tone: "danger" })
+    } else if (v.last === EVENT_BLOWN || v.last === EVENT_CUT) {
+      const lines = [v.last === EVENT_BLOWN ? "Blown apart." : "The chain is cut.", "The road is open."]
+      this.queue.push({ art: clueArt(v.last === EVENT_BLOWN ? "blown" : "cut", plan.kind), title: "Road open", lines: (by ? [...lines, `By ${by}`] : lines).map(esc), tone: "warm" })
+    } else if (v.last === EVENT_HOTWIRED) {
+      const lines = ["It'll start.", i.tuning.carProject ? "The pumps are dry. Gas cans only." : ""].filter(Boolean)
+      this.queue.push({ art: clueArt("hotwired", plan.kind), title: "Hotwired", lines: (by ? [...lines, `By ${by}`] : lines).map(esc), tone: "warm" })
     } else if (v.last !== EVENT_ESCAPED) {
       // Unknown codes stay quiet.
     }
@@ -170,7 +186,9 @@ export class WayOutHud {
   private drawGoal(i: WayOutHudInput | null): void {
     let html = ""
     const v = i?.view
-    if (i && v && !v.won && v.tier > 0) {
+    if (i?.hold) {
+      html = `<b>${esc(i.hold.label)}</b> ${keyCapHtml("KeyE", { hold: true, progress: i.hold.progress })}`
+    } else if (i && v && !v.won && v.tier > 0) {
       const plan = i.plan
       const w = DESTINATION_WORDS[plan.kind]
       const deadline = v.deadline || i.tuning.deadlineNight
@@ -186,6 +204,8 @@ export class WayOutHud {
       } else if (v.tier >= 3) html = `<b>${esc(w.short)}</b> <span>${roughDistance(d)} · pinned ${keyCapHtml("KeyN")}</span> ${when}`
       else if (v.tier >= 2) html = `<b>${esc(w.short)}?</b> <span>${esc(plan.bearing)} of town, ${roughDistance(plan.distance)} by road</span> ${when}`
       else html = `<b>A way out?</b> <span>${esc(w.short)}. Find where.</span> ${when}`
+      // Driving there: how far the tank goes, so you know whether to find gas cans first.
+      if (i.car && v.tier >= 2 && !v.signalled && !v.missed) html += ` <em${i.car.range < d ? ' class="owo-urgent"' : ""}>Tank ${Math.round(i.car.fuel)}% · ${roughDistance(i.car.range)}</em>`
     }
     if (html !== this.goalHtml) {
       this.goalHtml = html
