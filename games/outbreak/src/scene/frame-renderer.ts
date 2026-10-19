@@ -17,6 +17,7 @@ import { OutbreakCombatFX } from "../combat-fx"
 import type { CoopView } from "../coop-view"
 import { applyOutbreakDayNight } from "../day-night"
 import { BloodStains, setCurrentBloodStains } from "../blood/stains"
+import { DetailsPresenter, setCurrentDetails } from "../details/presenter"
 import { ClosetView } from "../discovery/closet"
 import { lowBatteryBeam, type BeamLook } from "../discovery/flashlight"
 import { PageGlance } from "../discovery/glance"
@@ -93,6 +94,7 @@ export class OutbreakFrameRenderer {
   readonly propDressing: PropDressing
   readonly blood: BloodStains
   readonly nightLights: NightLightsPresenter
+  readonly details: DetailsPresenter
   readonly ambientMotion: OutbreakAmbientMotion
   readonly weatherController = new OutbreakWeatherController()
   readonly vehicleRenderer: OutbreakVehicleRenderer
@@ -140,6 +142,8 @@ export class OutbreakFrameRenderer {
     setCurrentBloodStains(this.blood)
     this.nightLights = new NightLightsPresenter(this.renderer)
     setCurrentNightLights(this.nightLights)
+    this.details = new DetailsPresenter(this.renderer)
+    setCurrentDetails(this.details)
     this.ambientMotion = new OutbreakAmbientMotion(this.renderer)
     this.vehicleRenderer = new OutbreakVehicleRenderer(this.renderer, document.body)
     this.vehicleRenderer.onPop = (v) => vehicleAudio.pop(v.id)
@@ -205,6 +209,7 @@ export class OutbreakFrameRenderer {
     this.zombieCrowd.reset()
     this.combatFx.reset()
     this.blood.reset()
+    this.details.reset()
     this.ambientMotion.reset()
     this.vehicleRenderer.reset()
   }
@@ -591,6 +596,7 @@ export class OutbreakFrameRenderer {
     })
     const bloodBatches = this.blood.collect(town, tightView, settings.blood)
     const clutterBatches = this.exteriorClutter.collectBatches(town, tightView, settings.ground)
+    const detailBatches = this.details.collect(town, tightView, settings.details, settings.nightLights)
     const motionOut = qProfile.ambientMotion
       ? this.ambientMotion.stepAndCollect(
           dt,
@@ -623,6 +629,7 @@ export class OutbreakFrameRenderer {
     for (let i = 0; i < bloodBatches.length; i++) rBatches.push(bloodBatches[i]!)
     for (let i = 0; i < nightBatches.length; i++) rBatches.push(nightBatches[i]!)
     for (let i = 0; i < clutterBatches.length; i++) rBatches.push(clutterBatches[i]!)
+    for (let i = 0; i < detailBatches.length; i++) rBatches.push(detailBatches[i]!)
     for (const b of this.propDressing.collect(
       town,
       tightView,

@@ -36,6 +36,7 @@ import {
 } from "./lighting"
 import { DEFAULT_LOOK_TRIMS, type OutbreakLookTrims } from "./look/world"
 import { DEFAULT_NIGHT_LIGHT_SETTINGS, type OutbreakNightLightSettings } from "./night-lights/settings"
+import { DEFAULT_DETAIL_SETTINGS, type OutbreakDetailSettings } from "./details/settings"
 import { DEFAULT_PROP_SETTINGS, type OutbreakPropSettings } from "./props/settings"
 import { survivorAimTuning, type SurvivorAimTuning } from "./survivor"
 import { applyUnseenModePreset, DEFAULT_UNSEEN_SETTINGS, type UnseenSettings } from "./unseen"
@@ -231,6 +232,7 @@ export type OutbreakSubsystemMap = {
   props: OutbreakPropSettings
   blood: OutbreakBloodSettings
   nightLights: OutbreakNightLightSettings
+  details: OutbreakDetailSettings
   specials: SpecialsTuning
 }
 
@@ -272,6 +274,7 @@ export type OutbreakSettings = OutbreakSubsystemMap &
   OutbreakPropSettings &
   OutbreakBloodSettings &
   OutbreakNightLightSettings &
+  OutbreakDetailSettings &
   SpecialsTuning
 
 export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
@@ -305,6 +308,7 @@ export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "props",
   "blood",
   "nightLights",
+  "details",
   "specials",
 ] as const
 
@@ -343,6 +347,7 @@ export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
     props: { ...DEFAULT_PROP_SETTINGS },
     blood: { ...DEFAULT_BLOOD_SETTINGS },
     nightLights: { ...DEFAULT_NIGHT_LIGHT_SETTINGS },
+    details: { ...DEFAULT_DETAIL_SETTINGS },
     specials: { ...DEFAULT_SPECIALS_TUNING },
   }
 }
