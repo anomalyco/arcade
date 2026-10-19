@@ -70,11 +70,12 @@
   its own shape, colour and surface knobs; stills and paired GPU cost: `bun scripts/bean-stills.ts`.
 - Reflections (AR-73, `src/reflections/`, Lab: Backquote › Look · Reflections, "Today" = `reflections` 0): lamps,
   lit windows, fire, police lights and headlights mirrored analytically in standing water and wet paving (the CPU picks
-  up to 8 outdoor lights per frame into `OL.reflLights`; the street potholes always hold water, the weather's
-  puddle mask or the Lab's wetness adds pools), and leaning, foxed floor mirrors whose glass computes its own reflection (floor, flashlight,
-  people in front). Ash always has one on the inner wall's north face; other houses 14 %, some cracked. Placement is
-  `mirrorSpot` in `src/interiors/mesh.ts` (its footprint keeps props and details off). Stills and paired GPU:
-  `bun scripts/reflections-stills.ts` (via `hivemind run --kind browser`). Tests: `tests/reflections.test.ts`.
+  up to 8 outdoor lights per frame into `OL.reflLights`; the street potholes always hold water, the weather's puddle
+  mask or the Lab's wetness adds pools), and leaning, foxed floor mirrors whose glass computes its own reflection
+  (floor, flashlight, people in front). Ash always has one beside the bedroom door, facing the living room; other
+  houses 14 %, some cracked. Placement is `mirrorSpot` in `src/interiors/mesh.ts` (its footprint keeps props and
+  details off). Stills and paired GPU: `bun scripts/reflections-stills.ts` (via `hivemind run --kind browser`). Tests:
+  `tests/reflections.test.ts`.
 - Special zombies (Runner, Brute, Screamer, Bloater, Riot cop, Lurker) live in `shared/specials/` (kinds, rarity and
   stats in `kinds.ts`, behaviours in `specials.ts`) and `src/specials/` (silhouettes and accessories drawn by
   `src/zombies.ts`, gas cloud, Lab). The kind is encoded in the zombie's seed, so clients read it with
