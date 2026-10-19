@@ -36,10 +36,10 @@ type Scene = { name: string; label: string; hour: number; zoom: number; x: numbe
 
 const NORTH = -Math.PI / 2
 export const SCENES: Scene[] = [
-  { name: "fight-day", label: "Street 14:00, 35 s after a horde was shot", hour: 14, zoom: 46, x: 27.7, y: 41.2, aim: NORTH, fight: true, after: 35 },
-  { name: "fight-night", label: "Street 21:00, 35 s after a horde was shot", hour: 21, zoom: 46, x: 27.7, y: 41.2, aim: NORTH, fight: true, after: 35 },
-  { name: "house-night", label: "Start house 21:00 (Ash was broken into)", hour: 21, zoom: 46, x: 28.4, y: 31.6, aim: -0.5 },
-  { name: "alarm-night", label: "Hardware frontage 21:00: car alarm, police bar, shop beacon", hour: 21, zoom: 46, x: 51.5, y: 45.2, aim: -0.15, alarm: true },
+  { name: "fight-day", label: "Street 14:00, 35 s after a horde was shot", hour: 14, zoom: 38, x: 27.7, y: 41.2, aim: NORTH, fight: true, after: 35 },
+  { name: "fight-night", label: "Street 21:00, 35 s after a horde was shot", hour: 21, zoom: 38, x: 27.7, y: 41.2, aim: NORTH, fight: true, after: 35 },
+  { name: "house-night", label: "Start house 21:00 (Ash was broken into)", hour: 21, zoom: 38, x: 28.4, y: 31.6, aim: -0.5 },
+  { name: "alarm-night", label: "Hardware frontage 21:00: car alarm, police bar, shop beacon", hour: 21, zoom: 38, x: 51.5, y: 45.2, aim: -0.15, alarm: true },
 ]
 // Wanderers to the north, shot in this order; one crawler comes in from the west.
 const HORDE: [number, number][] = [[27.0, 37.0], [28.6, 37.3], [26.0, 37.9], [29.6, 38.0], [27.9, 36.2], [25.3, 38.6]]
