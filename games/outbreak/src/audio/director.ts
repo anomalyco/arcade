@@ -292,7 +292,7 @@ export class SoundDirector {
       const prev = this.doors.get(d.id)
       const now = { open: d.open, locked: Boolean(d.locked) }
       this.doors.set(d.id, now)
-      if (!prev) continue
+      if (!prev || (prev.locked === now.locked && prev.open === now.open)) continue
       const at = center(d.rect)
       if (prev.locked !== now.locked) emit({ id: "door.locked", ...at, source: "door" })
       if (prev.open !== now.open) emit({ id: now.open ? "door.wood.open" : "door.wood.close", ...at, source: "door" })
@@ -303,13 +303,16 @@ export class SoundDirector {
       if (prev !== undefined && prev !== w.open) emit({ id: "window.slide", ...center(w.rect), source: "window" })
     }
     for (const [id, st] of world.portals) {
+      const prevPlanks = this.planks.get(id)
+      const prevBash = this.bashes.get(id)
+      // Most frames change neither value. Resolve geometry only for new or changed state; missing geometry must
+      // still leave memory untouched so a streamed-out portal can sound its changes when it returns.
+      if (prevPlanks === st.barricadePlanks && prevBash === st.lastBashTime) continue
       const rect = world.town.doors.find((d) => d.id === id)?.rect ?? world.town.windows.find((w) => w.id === id)?.rect
       if (!rect) continue
-      const prevPlanks = this.planks.get(id)
       this.planks.set(id, st.barricadePlanks)
       if (prevPlanks !== undefined && st.barricadePlanks > prevPlanks) emit({ id: "barricade.hammer", ...center(rect), source: "barricade" })
       if (prevPlanks !== undefined && st.barricadePlanks < prevPlanks) emit({ id: "barricade.break", ...center(rect), source: "barricade" })
-      const prevBash = this.bashes.get(id)
       this.bashes.set(id, st.lastBashTime)
       if (prevBash !== undefined && st.lastBashTime > prevBash + 1e-3) emit({ id: "door.bash", ...center(rect), source: "bash" })
     }

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { DEFAULT_AI_CONFIG, LEGACY_AI_CONFIG } from "../shared/ai"
 import { TICK_DT } from "../shared/clock"
 import { COOP_TUNING } from "../shared/coop-config"
+import { DEFAULT_FLASHLIGHT_TUNING } from "../shared/flashlight"
 import { LocalSession, resolveSessionTuning } from "../shared/session"
 import { DEFAULT_STAMINA_TUNING } from "../shared/stamina"
 import {
@@ -58,6 +59,7 @@ describe("Outbreak subsystem-namespaced settings & migration", () => {
     expect(session.ai.config.walkSpeed).toBe(1.65)
 
     const coopResolved = resolveSessionTuning(COOP_TUNING)
+    expect(coopResolved).toEqual(resolveSessionTuning({ stamina: DEFAULT_STAMINA_TUNING, flashlight: DEFAULT_FLASHLIGHT_TUNING }))
     expect(coopResolved.stamina).toEqual(DEFAULT_STAMINA_TUNING)
     expect(coopResolved.ai).toBeUndefined()
   })

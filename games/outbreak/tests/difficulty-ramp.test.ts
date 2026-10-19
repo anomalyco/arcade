@@ -78,7 +78,9 @@ describe("difficulty ramp (survivor bots, fixed seeds)", () => {
       const jobs = PRESETS.flatMap((preset) =>
         SEEDS.map((seed) => ({ seed, preset, maxDurationSeconds: secondsToDawn(NIGHTS), timeScale: 240, tickDt: 1 / 15 })),
       )
-      runs = await runRampBatch(jobs, Math.max(1, Math.min(4, availableParallelism())))
+      const workers = Number(process.env.OUTBREAK_RAMP_WORKERS ?? 4)
+      if (!Number.isInteger(workers) || workers < 1) throw new Error("OUTBREAK_RAMP_WORKERS must be a positive integer")
+      runs = await runRampBatch(jobs, Math.max(1, Math.min(4, workers, availableParallelism())))
       expect(runs).toHaveLength(PRESETS.length * SEEDS.length)
       const again = runRampProbe({ seed: SEEDS[0]!, preset: "Casual", maxDurationSeconds: 240, timeScale: 240, tickDt: 1 / 15 })
       const first = runs.find((r) => r.preset === "Casual" && r.seed === SEEDS[0])!
