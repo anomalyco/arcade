@@ -4,7 +4,8 @@ import { sampleTable } from "../ramp-table"
 
 export const PARTICLE_CAPACITY = 2048
 export const PARTICLE_STRIDE = 28
-export type ParticleKind = "soft" | "spark" | "debris" | "water" | "fire" | "shock" | "scorch" | "fireball"
+/** `smoke` is a lit, noise-shaped billow (the fireball's shape without its heat) that drifts toward `windX`/`windZ`. */
+export type ParticleKind = "soft" | "spark" | "debris" | "water" | "fire" | "shock" | "scorch" | "fireball" | "smoke"
 export type ParticleSpec = {
   kind: ParticleKind; life: number; size: number; growth: number; gravity: number; drag: number
   bounce: number; r: number; g: number; b: number; alpha: number
@@ -43,7 +44,7 @@ export function lifeRamp(key: string, build: () => LifeRamp): number {
   rampKeys.set(key, id)
   return id
 }
-const kinds: Record<ParticleKind,number> = {soft:0,spark:1,debris:2,water:3,fire:4,shock:5,scorch:6,fireball:7}
+const kinds: Record<ParticleKind,number> = {soft:0,spark:1,debris:2,water:3,fire:4,shock:5,scorch:6,fireball:7,smoke:8}
 
 /** Births queued by trailing or popping particles during `update`, spawned once the pool is compacted. */
 const BIRTH_CAPACITY = 512
@@ -96,6 +97,12 @@ export class Particles {
         const age=p[i+7],seed=p[i+18],turb=p[i+20]||0.7
         p[i]+=Math.sin(age*4.4+seed)*0.32*turb*dt
         p[i+2]+=Math.cos(age*4.1+seed*1.3)*0.32*turb*dt
+      }else if(kind===8){
+        // Smoke settles onto the wind (drag sets how fast) and meanders slowly with its turbulence.
+        const age=p[i+7],seed=p[i+18],turb=p[i+20]
+        p[i+4]+=this.windX*(1-drag);p[i+6]+=this.windZ*(1-drag)
+        p[i]+=Math.sin(age*1.3+seed)*0.22*turb*dt
+        p[i+2]+=Math.cos(age*1.1+seed*1.7)*0.22*turb*dt
       }
       p[i]+=p[i+4]*dt;p[i+1]+=p[i+5]*dt;p[i+2]+=p[i+6]*dt
       const trail=p[i+22]
@@ -146,7 +153,7 @@ export class Particles {
     for(let n=0;n<this.count;n++) {
       const i=n*PARTICLE_STRIDE,k=n*16,age=p[i+7],life=p[i+8],t=age/life,kind=p[i+16],ease=p[i+21]||1
       const growthCurve=ease!==1?(1-Math.pow(Math.max(0,1-t),ease))*life:age
-      const fade=kind===6?Math.min(1,t*18)*Math.pow(Math.max(0,1-t),1.35):kind===5?Math.pow(Math.max(0,1-t),1.75):kind===7?Math.min(1,t*18)*Math.min(1,(1-t)*2.35):Math.min(1,(1-t)*4)
+      const fade=kind===6?Math.min(1,t*18)*Math.pow(Math.max(0,1-t),1.35):kind===5?Math.pow(Math.max(0,1-t),1.75):kind===7?Math.min(1,t*18)*Math.min(1,(1-t)*2.35):kind===8?smoothFade(t):Math.min(1,(1-t)*4)
       const ramp=p[i+26]?ramps[p[i+26]]:undefined
       if(ramp){
         const tint=ramp.tint,size=ramp.size?sampleTable(ramp.size,t):1,opacity=ramp.opacity?sampleTable(ramp.opacity,t):1
@@ -158,11 +165,17 @@ export class Particles {
         o[k+4]=p[i+12];o[k+5]=p[i+13];o[k+6]=p[i+14];o[k+7]=p[i+15]*fade
       }
       o[k+8]=p[i+4];o[k+9]=p[i+5];o[k+10]=p[i+6];o[k+11]=kind
-      o[k+12]=p[i+18]+(kind===5||kind===6?0:age*2);o[k+13]=t;o[k+14]=p[i+19];o[k+15]=p[i+20]
+      // Smoke's noise drifts slowly so it rolls instead of boiling.
+      o[k+12]=p[i+18]+(kind===5||kind===6?0:kind===8?age*0.25:age*2);o[k+13]=t;o[k+14]=p[i+19];o[k+15]=p[i+20]
     }
   }
 }
 const flatGround=()=>0
+/** Smoke opacity over life: eases in over the first fifth, thins over the second half (smooth both ends, no pop). */
+function smoothFade(t:number){
+  const a=Math.min(1,t*5),b=Math.max(0,Math.min(1,(1-t)*2))
+  return a*a*(3-2*a)*b*b*(3-2*b)
+}
 
 /** Rate or distance emission with fractional carry and teleport rejection. Bounded to 128 births per step. */
 export class Emitter {

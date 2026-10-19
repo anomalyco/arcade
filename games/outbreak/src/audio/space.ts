@@ -34,7 +34,7 @@ export type SurfaceExtras = {
 }
 
 /** Cast-iron manhole centres per 96 m macro-block (`src/ground.ts`). */
-const MANHOLES: readonly (readonly [number, number])[] = [
+export const MANHOLES: readonly (readonly [number, number])[] = [
   [33.45, 43.85],
   [43.85, 43.95],
   [44.20, 29.60],
@@ -42,7 +42,7 @@ const MANHOLES: readonly (readonly [number, number])[] = [
 ]
 
 /** Storm drain curb grates per 96 m macro-block (`src/ground.ts`): [x, z, halfW, halfD]. */
-const STORM_DRAINS: readonly (readonly [number, number, number, number])[] = [
+export const STORM_DRAINS: readonly (readonly [number, number, number, number])[] = [
   [24.65, 40.12, 0.48, 0.22],
   [33.80, 40.12, 0.48, 0.22],
   [31.35, 47.88, 0.48, 0.22],

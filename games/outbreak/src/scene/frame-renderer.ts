@@ -55,6 +55,7 @@ import { OutbreakSceneLevel } from "../world/scene-level"
 import { zombieProfile } from "../zombie-profile"
 import { ZombieCrowdRenderer } from "../zombies"
 import { OutbreakFrameLighting } from "./frame-lighting"
+import { OutbreakFxParticles, setCurrentFx } from "./fx-particles"
 
 const seatTint = (seat: number) => {
   const c = hex(SURVIVOR_COLOURS[seat % SURVIVOR_COLOURS.length]!.torso)
@@ -107,6 +108,7 @@ export class OutbreakFrameRenderer {
   private readonly weatherAudio = new WeatherAudio()
   readonly vehicleRenderer: OutbreakVehicleRenderer
   readonly frameLighting = new OutbreakFrameLighting()
+  readonly fx = new OutbreakFxParticles()
   readonly lookSettings = createLookSettings("noir")
   private readonly gradedLook = createLookSettings("noir")
   readonly lookCompare: { mode: LookCompareMode; wipeSplit: number } = { mode: 1, wipeSplit: 0.5 }
@@ -158,6 +160,7 @@ export class OutbreakFrameRenderer {
     setCurrentNightLights(this.nightLights)
     this.fire = new FirePresenter(this.renderer)
     setCurrentFire(this.fire)
+    setCurrentFx(this.fx)
     this.details = new DetailsPresenter(this.renderer)
     setCurrentDetails(this.details)
     this.details.crows.onScatter = (x, z, birds) => {
@@ -235,6 +238,7 @@ export class OutbreakFrameRenderer {
     this.details.reset()
     this.ambientMotion.reset()
     this.vehicleRenderer.reset()
+    this.fx.reset()
   }
 
   resetForSession(nextSeed: number): void {
@@ -248,6 +252,7 @@ export class OutbreakFrameRenderer {
     this.blood.reset()
     this.feelTracker.reset(session().view.player)
     this.ambientMotion.reset()
+    this.fx.reset()
     frameUi.reset()
     this.weatherController.reset(nextSeed)
     this.sceneLevel.resetForSession()
@@ -523,6 +528,20 @@ export class OutbreakFrameRenderer {
     })
     count = mapLights.count
     shadowLightCount = mapLights.shadowLightCount
+    // Kit particles: the kit fire and world smoke, lit by the beam as a spot and the strongest lamps and fires.
+    this.render.fxParticles = this.fx.step({
+      dt: vdt,
+      fire: fireFrame,
+      town,
+      air: settings.air,
+      vehicles: session.view.vehicles,
+      day,
+      skyFill: settings.lighting.skyFill,
+      interior: inInteriorView,
+      support: fireFrame.support,
+    })
+    this.fx.packLights(this.frameLighting.lights, count, beamState.flashlightSlot, camX, camY, settings.air)
+    this.render.fxLighting = this.fx.lighting
     const ambLum = (day.ambient[0] + day.ambient[1] + day.ambient[2]) * settings.lighting.skyFill * 0.333
     const weatherOut = this.weatherController.stepAndPrepare({
       dt,
@@ -734,7 +753,7 @@ export class OutbreakFrameRenderer {
     rBatches.push(doorBatch)
     if (openWindows) rBatches.push(sashBatch)
     render.lightCount = count
-    this.dust.frame(count, qProfile.tier, settings.look.dustAmount > 0)
+    this.dust.frame(count, qProfile.tier, settings.look.dustAmount > 0, settings.air)
     render.shadowLightCount = shadowLightCount
     render.occluderCount = frameLightOccluders
     render.volume = volume

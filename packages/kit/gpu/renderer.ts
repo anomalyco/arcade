@@ -154,6 +154,19 @@ export type FrameInput = {
   skidsVisible?: boolean
   splatterLegacy?:boolean
   fxParticles?: Particles
+  /**
+   * How `fxParticles` are lit and composited; omitted keeps the defaults (the frame ambient with a floor, the first
+   * eight frame lights as points, alpha composited over). `lights` uses the frame's `LIGHT_FLOATS` stride.
+   */
+  fxLighting?: {
+    ambient?: readonly [number, number, number]
+    lights?: Float32Array
+    lightCount?: number
+    /** Spot lights only light particles inside their plan cone (`cone.xyz`, spot when 0.5 < `cone.w`). */
+    spotCones?: boolean
+    /** Lower HDR alpha by particle coverage (Looks that read alpha as one minus a colour mask keep fire in colour). */
+    keepColour?: boolean
+  }
   weather?: WeatherPrepareInput | null
   smoke?: SmokeVolumes
   smokeEnabled?: boolean
@@ -1388,14 +1401,16 @@ export class Renderer {
     }
     if (f.fxParticles && f.fxParticles.count > 0) {
       this.particleRenderer ??= new ParticleRenderer(d, DEPTH, SAMPLES)
+      const fl = f.fxLighting
       this.particleRenderer.setFrame({
         vp: f.frame,
         eye: [f.frame[16]!, f.frame[17]!, f.frame[18]!],
         debug: 0,
-        ambient: [Math.max(0.18, f.frame[28]!), Math.max(0.2, f.frame[29]!), Math.max(0.24, f.frame[30]!)],
-        lights: f.lights,
-        lightCount: f.lightCount,
+        ambient: fl?.ambient ?? [Math.max(0.18, f.frame[28]!), Math.max(0.2, f.frame[29]!), Math.max(0.24, f.frame[30]!)],
+        lights: fl?.lights ?? f.lights,
+        lightCount: fl?.lights ? (fl.lightCount ?? 0) : f.lightCount,
         lightStride: LIGHT_FLOATS,
+        spotCones: fl?.spotCones,
       })
       this.particleRenderer.upload(f.fxParticles)
     }
@@ -1645,7 +1660,7 @@ export class Renderer {
       pass.draw(6, addCount)
     }
     if(f.splatter)this.splatterRenderer!.draw(pass,motion)
-    if(f.fxParticles&&f.fxParticles.count>0)this.particleRenderer!.draw(pass,motion)
+    if(f.fxParticles&&f.fxParticles.count>0)this.particleRenderer!.draw(pass,motion,Boolean(f.fxLighting?.keepColour))
     if(f.weather)this.weatherRenderer!.draw(pass,motion)
     if (this.passes.count("alpha")) {
       // Splatter, particles and weather bind their own groups; alpha plugins get the scene's back.

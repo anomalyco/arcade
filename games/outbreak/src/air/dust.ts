@@ -4,6 +4,7 @@ import { common } from "@arcade/kit/gpu/shaders"
 import type { QualityTier } from "@arcade/kit/quality"
 import { beamShapeWgsl, lensVisibilityWgsl } from "../flashlight-beam"
 import { outbreakLightingStructWgsl } from "../lighting"
+import type { OutbreakAirSettings } from "./settings"
 
 /** Mote cells the flashlight beam may cover (0.32 m cells over the beam's bounding box). */
 export const FLASH_MOTES = 18432
@@ -20,6 +21,11 @@ export const DUST_LAMPS_BY_TIER: Readonly<Record<QualityTier, number>> = { high:
  * where its light reaches it, with that light's falloff and cone or wall cut; the fragment stage shadows it through
  * the light's polar row (so motes never glint behind a wall or under a table) and hides it outside the survivor's
  * sight. Additive into the HDR target, depth-tested against the scene, destination alpha (the colour mask) kept.
+ *
+ * Two styles (Lab › Beam dust): Today's fine motes that glint as they turn (amount, size and brightness from Look ›
+ * Air), and soft motes: sparser, larger soft discs drawn at least `beamDustMinPx` wide (dimmer rather than smaller,
+ * so they never glitter), steady in brightness, drifting slowly, and faded near the lens, near the ground and as they
+ * rise toward the camera (`BD`, group 1).
  */
 export const dustShader = /* wgsl */ `
 ${common}
@@ -29,6 +35,14 @@ ${outbreakLightingStructWgsl}
 @group(0) @binding(14) var visField: texture_2d<f32>;
 ${beamShapeWgsl}
 ${lensVisibilityWgsl}
+
+/** Beam dust style (a: soft on, amount, radius cm, brightness; b: drift, depth fade, lamps, smallest px). */
+struct BeamDust { a: vec4f, b: vec4f }
+@group(1) @binding(0) var<uniform> BD: BeamDust;
+fn softDust() -> bool { return BD.a.x > 0.5; }
+fn dustAmount() -> f32 { return select(OL.dust.x, BD.a.y, softDust()); }
+fn dustBright() -> f32 { return select(OL.dust.y, BD.a.w, softDust()); }
+fn dustLamps() -> f32 { return select(OL.dust.w, BD.b.z, softDust()); }
 
 const FLASH_MOTES: u32 = ${FLASH_MOTES}u;
 const LAMP_MOTES: u32 = ${LAMP_MOTES}u;
@@ -60,11 +74,11 @@ fn cellOf(k: u32, lo: vec3f, hi: vec3f, c: f32) -> vec4f {
 fn moteAt(cell: vec3f, c: f32) -> vec4f {
   let h = hash3(cell);
   let g = hash3(cell + vec3f(17.31, 5.17, 11.71));
-  if (g.x > OL.dust.x) { return vec4f(0.0, 0.0, 0.0, -1.0); }
-  let t = F.cam.w;
+  if (g.x > dustAmount()) { return vec4f(0.0, 0.0, 0.0, -1.0); }
+  let t = F.cam.w * select(1.0, BD.b.x, softDust());
   let w = vec3f(0.11, 0.07, 0.09) + g * 0.16;
   let orbit = vec3f(sin(t * w.x + h.y * 6.283), sin(t * w.y + h.z * 6.283) * 0.6, cos(t * w.z + h.x * 6.283));
-  return vec4f((cell + vec3f(0.5) + (h - vec3f(0.5)) * 0.55 + orbit * 0.2) * c, g.y);
+  return vec4f((cell + vec3f(0.5) + (h - vec3f(0.5)) * 0.55 + orbit * select(0.2, 0.32, softDust())) * c, g.y);
 }
 
 const CORNERS = array<vec2f, 6>(vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0), vec2f(-1.0, 1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0));
@@ -77,7 +91,7 @@ const CORNERS = array<vec2f, 6>(vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0,
   o.col = vec3f(0.0);
   o.lens = vec3f(0.0);
   o.slot = 0u;
-  if (OL.dust.x <= 0.001 || OL.dust.y <= 0.001) { return o; }
+  if (dustAmount() <= 0.001 || dustBright() <= 0.001) { return o; }
   var p: vec3f;
   var seed: f32;
   if (ii < FLASH_MOTES) {
@@ -108,7 +122,7 @@ const CORNERS = array<vec2f, 6>(vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0,
     o.lens = lens;
     o.slot = u32(round(OL.u4.w)) + 1u;
   } else {
-    if (OL.dust.w < 0.5) { return o; }
+    if (dustLamps() < 0.5) { return o; }
     let j = ii - FLASH_MOTES;
     let li = j / LAMP_MOTES + 1u;
     if (li >= u32(F.screen.z)) { return o; }
@@ -156,15 +170,30 @@ const CORNERS = array<vec2f, 6>(vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0,
     o.slot = select(0u, li + 1u, L.extra.y > 0.5);
   }
   // A slow glint as each flake turns, and the size kept above a pixel (dimmer instead of smaller).
-  let glint = 0.45 + 0.55 * pow(0.5 + 0.5 * sin(F.cam.w * (0.7 + 2.1 * seed) + seed * 40.0), 3.0);
+  var glint = 0.45 + 0.55 * pow(0.5 + 0.5 * sin(F.cam.w * (0.7 + 2.1 * seed) + seed * 40.0), 3.0);
   let clip = F.viewProj * vec4f(p, 1.0);
   if (clip.w <= 0.0) { return o; }
   let clipX = F.viewProj * vec4f(p + vec3f(0.25, 0.0, 0.0), 1.0);
   let ppm = length((clipX.xy / clipX.w - clip.xy / clip.w) * F.screen.xy * 0.5) * 4.0;
-  let worldR = (0.008 + 0.012 * fract(seed * 7.13)) * OL.dust.z;
-  let rpx = max(worldR * ppm, 0.85);
+  var worldR = (0.008 + 0.012 * fract(seed * 7.13)) * OL.dust.z;
+  var minPx = 0.85;
+  var energy = 2.0;
+  if (softDust()) {
+    // Steady (a slow ±12% breath, no blink), a little defocused as it rises toward the camera, and faded where it would
+    // read as a hard dot: right at the lens, in the floor, or high up near the lens's height.
+    glint = 0.88 + 0.12 * sin(F.cam.w * (0.2 + 0.3 * seed) + seed * 40.0);
+    let fade = clamp(BD.b.y, 0.0, 1.0);
+    let rise = clamp((p.y - 0.9) / 1.4, 0.0, 1.0);
+    worldR = BD.a.z * 0.01 * (0.65 + 0.7 * fract(seed * 7.13)) * (1.0 + 0.9 * fade * rise);
+    minPx = max(1.0, BD.b.w);
+    energy = 1.2;
+    let nearLens = smoothstep(0.35, 1.5, length(p - o.lens));
+    let lowFade = smoothstep(0.08, 0.55, p.y - OL.u19.z);
+    o.col *= mix(1.0, nearLens * lowFade * (1.0 - 0.45 * rise), fade);
+  }
+  let rpx = max(worldR * ppm, minPx);
   let shrink = worldR * ppm / rpx;
-  o.col *= glint * OL.dust.y * shrink * shrink;
+  o.col *= glint * dustBright() * pow(shrink, energy);
   let quad = rpx + 1.25;
   let corner = CORNERS[vi];
   o.pos = clip + vec4f(corner * quad * 2.0 / F.screen.xy * clip.w, 0.0, 0.0);
@@ -174,7 +203,9 @@ const CORNERS = array<vec2f, 6>(vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0,
 }
 
 @fragment fn fs(o: VO) -> @location(0) vec4f {
-  let a = exp(-dot(o.q, o.q) * 1.6);
+  // Today: a gaussian dot. Soft: a soft-edged disc with a gentle core, like an out-of-focus mote.
+  let qr = length(o.q);
+  let a = select(exp(-dot(o.q, o.q) * 1.6), (1.0 - smoothstep(0.45, 1.12, qr)) * (0.7 + 0.3 * exp(-qr * qr * 2.0)), softDust());
   if (a < 0.004) { return vec4f(0.0); }
   var vis = 1.0;
   if (o.slot > 0u) { vis = lensVis((o.slot - 1u) * RAYS, o.world - o.lens, o.lens.y); }
@@ -191,14 +222,24 @@ const CORNERS = array<vec2f, 6>(vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0,
  */
 export class DustPass implements ScenePass {
   private readonly pipe: GPURenderPipeline
+  private readonly device: GPUDevice
+  private readonly styleBuf: GPUBuffer
+  private readonly styleGroup: GPUBindGroup
+  private readonly style = new Float32Array(8)
   private instances = 0
 
   constructor(ctx: PassContext) {
     const d = ctx.device
+    this.device = d
+    this.styleBuf = d.createBuffer({ label: "outbreak beam dust", size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
+    const styleLayout = d.createBindGroupLayout({
+      entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } }],
+    })
+    this.styleGroup = d.createBindGroup({ layout: styleLayout, entries: [{ binding: 0, resource: { buffer: this.styleBuf } }] })
     const module = d.createShaderModule({ code: dustShader, label: "outbreak dust motes" })
     this.pipe = d.createRenderPipeline({
       label: "outbreak dust motes",
-      layout: d.createPipelineLayout({ bindGroupLayouts: [ctx.frameLayout] }),
+      layout: d.createPipelineLayout({ bindGroupLayouts: [ctx.frameLayout, styleLayout] }),
       vertex: { module, entryPoint: "vs" },
       fragment: {
         module,
@@ -217,15 +258,33 @@ export class DustPass implements ScenePass {
     })
   }
 
-  /** This frame's work: `lightCount` lights in the buffer (slot 0 is the eye), at `tier`, with dust `on`. */
-  frame(lightCount: number, tier: QualityTier, on: boolean) {
+  /**
+   * This frame's work: `lightCount` lights in the buffer (slot 0 is the eye), at `tier`, with Today's dust `on`; the
+   * Beam dust settings (`air`) switch to soft motes and decide on their own amount.
+   */
+  frame(lightCount: number, tier: QualityTier, on: boolean, air?: OutbreakAirSettings) {
+    const soft = Boolean(air && air.beamDustStyle === 1)
     const lamps = Math.min(Math.max(0, lightCount - 1), DUST_LAMPS_BY_TIER[tier])
-    this.instances = on ? FLASH_MOTES + lamps * LAMP_MOTES : 0
+    const active = soft ? air!.beamDustAmount > 0 && air!.beamDustBrightness > 0 : on
+    this.instances = active ? FLASH_MOTES + lamps * LAMP_MOTES : 0
+    const u = this.style
+    u[0] = soft ? 1 : 0
+    if (soft) {
+      u[1] = air!.beamDustAmount
+      u[2] = air!.beamDustSize
+      u[3] = air!.beamDustBrightness
+      u[4] = air!.beamDustDrift
+      u[5] = air!.beamDustDepthFade
+      u[6] = air!.beamDustLamps
+      u[7] = air!.beamDustMinPx
+    }
+    if (this.instances) this.device.queue.writeBuffer(this.styleBuf, 0, u)
   }
 
   draw(pass: GPURenderPassEncoder) {
     if (!this.instances) return
     pass.setPipeline(this.pipe)
+    pass.setBindGroup(1, this.styleGroup)
     pass.draw(6, this.instances)
   }
 }

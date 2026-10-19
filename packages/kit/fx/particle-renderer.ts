@@ -2,8 +2,9 @@ import { wgslStruct } from "../gpu/wgsl"
 import { PARTICLE_CAPACITY, Particles } from "./particles"
 
 /**
- * Typed WGSL layout for `ParticleRenderer` frame uniforms (88 floats / 352 bytes).
- * Preserves the exact binary layout of `[vp(16), eye(3), debug(1), ambient(3), lightCount(1), lights(64)]`.
+ * Typed WGSL layout for `ParticleRenderer` frame uniforms (120 floats / 480 bytes).
+ * Keeps the original `[vp(16), eye(3), debug(1), ambient(3), lightCount(1), lights(64)]` prefix, then one plan cone per
+ * light (`[dirX, dirZ, cosHalf, on]`, written only when `setFrame` is asked for `spotCones`).
  */
 export const ParticleFrameStruct = wgslStruct("Frame", {
   vp: "mat4x4f",
@@ -12,6 +13,7 @@ export const ParticleFrameStruct = wgslStruct("Frame", {
   ambient: "vec3f",
   lightCount: "f32",
   lights: "array<vec4f, 16>",
+  cones: "array<vec4f, 8>",
 })
 
 export type ParticleLightInput = {
@@ -34,6 +36,11 @@ export type ParticleFrameInput = {
   lightCount?: number
   lightStride?: number
   minLightPower?: number
+  /**
+   * Read each light's plan cone from floats 8..11 of its stride (`[dirX, dirZ, cosHalf, w]`, a spot when 0.5 < w):
+   * spot lights then only light particles inside their cone, with a soft edge. Off by default (every light a point).
+   */
+  spotCones?: boolean
 }
 
 export const blackbodyFireWgsl = /* wgsl */ `
@@ -57,6 +64,7 @@ struct Out {
   @location(2) world: vec3f,
   @location(3) @interpolate(flat) kind: f32,
   @location(4) @interpolate(flat) misc: vec4f,
+  @location(5) @interpolate(flat) emit: f32,
 }
 fn hash2(p: vec2f) -> f32 {
   return fract(sin(dot(p, vec2f(127.1, 311.7))) * 43758.5453);
@@ -112,7 +120,15 @@ ${blackbodyFireWgsl}
   var light=F.ambient;
   for(var l=0;l<min(8,i32(F.lightCount));l++){
     let pos=F.lights[l*2];let color=F.lights[l*2+1];let delta=pos.xyz-s.pos.xyz;let d=length(delta);
-    if(d<pos.w){light+=color.rgb*color.w*pow(1.0-d/pos.w,2.0)*(0.35+0.65*max(0.0,dot(normal,delta/max(d,0.01))));}
+    if(d<pos.w){
+      var k=color.w*pow(1.0-d/pos.w,2.0)*(0.35+0.65*max(0.0,dot(normal,delta/max(d,0.01))));
+      let cone=F.cones[l];
+      if(cone.w>0.5){
+        let plan=-delta.xz;let pl=length(plan);
+        if(pl>0.05){k*=smoothstep(cone.z-0.07,cone.z+0.05,dot(plan/pl,cone.xy));}
+      }
+      light+=color.rgb*k;
+    }
   }
   if(kind==2.0&&s.misc.w>0.0){light=min(light,vec3f(1.45,1.25,1.05));}
   if(kind==1.0){
@@ -130,6 +146,8 @@ ${blackbodyFireWgsl}
   o.position=F.vp*vec4f(clipWorld,1);o.uv=c;
   o.color=vec4f(select(s.color.rgb*light,light,kind==7.0),s.color.a);
   o.world=world;o.kind=kind;o.misc=s.misc;
+  // A fireball's red channel scales its incandescence (1 in every explosion preset).
+  o.emit=select(1.0,s.color.r,kind==7.0);
   if(F.debug==5.0){o.color=vec4f(normal*0.5+0.5,s.color.a);}
   return o;
 }
@@ -166,13 +184,34 @@ ${blackbodyFireWgsl}
     let extLight=clamp(o.color.rgb,vec3f(0.20,0.21,0.23),vec3f(0.96,0.90,0.84));
     let sootTint=mix(vec3f(0.036,0.033,0.031),vec3f(0.22,0.22,0.23),clamp(age*0.82+puffUp*0.26,0.0,1.0));
     let sootRgb=sootTint*extLight*(0.42+0.88*puffUp);
-    let blackbody=blackbodyFire(T);
+    let blackbody=blackbodyFire(T)*o.emit;
     let incand=smoothstep(0.16,0.36,T);
     let rgb=mix(sootRgb,blackbody,incand);
     if(F.debug==2.0){return vec4f(0.12,0.025,0.008,0.06);}
     if(F.debug==1.0){return vec4f(vec3f(alpha,alpha*0.4,1.0-alpha)*alpha,alpha);}
     if(F.debug==3.0){return vec4f(extLight*puffUp*alpha,alpha);}
     return vec4f(rgb*alpha,alpha);
+  }
+  if(o.kind==8.0){
+    // Lit smoke: the fireball's warped billow lobes without its heat, softer edged and slower, thinning as it ages.
+    let r=length(o.uv);
+    if(r>=0.98){discard;}
+    let seed=o.misc.x;let age=clamp(o.misc.y,0.0,1.0);let turb=max(0.2,o.misc.w);
+    let q=o.uv*(1.55+turb*0.55)+vec2f(cos(seed*1.3)*3.7,sin(seed*1.7)*3.7-age*1.1);
+    let warp=vec2f(vnoise(q*1.1+vec2f(0.0,-age*1.3)),vnoise(q*1.1+vec2f(7.4,age*1.1)))-0.5;
+    let n1=vnoise(q+warp*(0.9*turb));
+    let n2=vnoise(q*2.15-warp*1.05+vec2f(age*1.0,-age*1.6));
+    let billow=n1*0.62+n2*0.38;
+    let lobe=0.6+(billow-0.48)*(0.46+turb*0.22);
+    let soft=mix(0.2,0.36,age);
+    let shapeMask=(1.0-smoothstep(lobe-soft,lobe+soft,r))*(1.0-smoothstep(0.78,1.0,r));
+    let groundSoft=select(1.0,smoothstep(0.0,0.28,o.world.y),o.world.y<0.3&&o.world.y>-0.5);
+    alpha*=shapeMask*groundSoft*(0.6+0.4*billow);
+    if(alpha<0.003){discard;}
+    let shade=clamp(0.78+0.55*(billow-0.5)+0.2*o.uv.y,0.35,1.2);
+    if(F.debug==2.0){return vec4f(0.12,0.025,0.008,0.06);}
+    if(F.debug==1.0){return vec4f(vec3f(alpha,alpha*0.4,1.0-alpha)*alpha,alpha);}
+    return vec4f(o.color.rgb*shade*alpha,alpha);
   }
   if(o.kind==5.0){
     let r=length(o.uv);
@@ -229,6 +268,7 @@ const DEBUG_OFFSET = ParticleFrameStruct.offsetOf("debug")
 const AMBIENT_OFFSET = ParticleFrameStruct.offsetOf("ambient")
 const LIGHT_COUNT_OFFSET = ParticleFrameStruct.offsetOf("lightCount")
 const LIGHTS_OFFSET = ParticleFrameStruct.offsetOf("lights")
+const CONES_OFFSET = ParticleFrameStruct.offsetOf("cones")
 
 /** One instanced HDR draw. Non-debris extra vertices degenerate; debris gets six genuinely lit faces. */
 export class ParticleRenderer {
@@ -240,7 +280,8 @@ export class ParticleRenderer {
   private readonly pipeline: GPURenderPipeline
   private readonly heat: GPURenderPipeline
   private motionPipeline?: GPURenderPipeline
-  private readonly makePipe: (heat: boolean, motion: boolean) => GPURenderPipeline
+  private readonly keepPipelines: (GPURenderPipeline | undefined)[] = []
+  private readonly makePipe: (heat: boolean, motion: boolean, keepColour?: boolean) => GPURenderPipeline
   private count = 0
   constructor(
     private readonly device: GPUDevice,
@@ -280,7 +321,7 @@ export class ParticleRenderer {
     })
     const bindGroupLayouts = opts.extraBindGroupLayouts ? [...opts.extraBindGroupLayouts, layout] : [layout]
     const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts })
-    this.makePipe = (heat: boolean, motion: boolean) =>
+    this.makePipe = (heat: boolean, motion: boolean, keepColour = false) =>
       device.createRenderPipeline({
         layout: pipelineLayout,
         vertex: {
@@ -306,7 +347,9 @@ export class ParticleRenderer {
               format: "rgba16float",
               blend: {
                 color: { srcFactor: "one", dstFactor: heat ? "one" : "one-minus-src-alpha" },
-                alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha" },
+                alpha: keepColour
+                  ? { srcFactor: "zero", dstFactor: "one-minus-src-alpha" }
+                  : { srcFactor: "one", dstFactor: "one-minus-src-alpha" },
               },
             },
             ...(motion ? [{ format: "rgba16float" as const, writeMask: 0 }] : []),
@@ -340,6 +383,7 @@ export class ParticleRenderer {
     }
     if (input.lights !== undefined) {
       u.fill(0, LIGHTS_OFFSET)
+      const cones = input.spotCones && input.lights instanceof Float32Array && (input.lightStride ?? 8) >= 12
       let written = 0
       if (input.lights instanceof Float32Array) {
         const stride = input.lightStride ?? 8
@@ -349,6 +393,7 @@ export class ParticleRenderer {
           const k = i * stride
           if (input.lights[k + 7]! <= minPower) continue
           for (let j = 0; j < 8; j++) u[LIGHTS_OFFSET + written * 8 + j] = input.lights[k + j]!
+          if (cones) for (let j = 0; j < 4; j++) u[CONES_OFFSET + written * 4 + j] = input.lights[k + 8 + j]!
           written++
         }
       } else {
@@ -379,10 +424,15 @@ export class ParticleRenderer {
     this.device.queue.writeBuffer(this.buffer, 0, this.uniforms)
     if (p.count) this.device.queue.writeBuffer(this.instances, 0, p.instances.buffer, 0, p.count * 64)
   }
-  draw(pass: GPURenderPassEncoder, motion = false) {
+  /**
+   * `keepColour` lowers destination alpha by each particle's coverage instead of compositing it over, for hosts whose
+   * Look reads HDR alpha as one minus a colour mask (Outbreak's Noir): fire and the smoke it lights keep their colour.
+   */
+  draw(pass: GPURenderPassEncoder, motion = false, keepColour = false) {
     if (!this.count) return
     if (motion && !this.motionPipeline) this.motionPipeline = this.makePipe(false, true)
-    pass.setPipeline(this.uniforms[DEBUG_OFFSET] === 2 ? this.heat : motion ? this.motionPipeline! : this.pipeline)
+    const keep = keepColour ? (this.keepPipelines[motion ? 1 : 0] ??= this.makePipe(false, motion, true)) : null
+    pass.setPipeline(this.uniforms[DEBUG_OFFSET] === 2 ? this.heat : keep ?? (motion ? this.motionPipeline! : this.pipeline))
     pass.setBindGroup(this.bindGroupIndex, this.group)
     pass.setVertexBuffer(0, this.instances)
     pass.draw(36, this.count)
