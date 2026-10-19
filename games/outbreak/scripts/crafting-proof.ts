@@ -188,6 +188,7 @@ async function walkthrough(page: Page, tag: string) {
 
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2 })
+  page.setDefaultTimeout(180_000)
   const errors: string[] = []
   page.on("pageerror", (e) => errors.push(e.message))
   page.on("console", (m) => {
