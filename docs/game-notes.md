@@ -165,6 +165,17 @@ proven animation techniques to animation.md, not here.
   so the night flicker figures above flatter TAA where the shroud's noise film was missing and the look and ghosting
   sign-off needs a second run; flame, beam and fast-zombie crops showed no trail, and moving actors are softer under
   upscaling (no history, wide kernel). Default stays MSAA until then.
+- **From a steep top-down camera, mirror known lights analytically instead of tracing reflections.** The things a
+  puddle would show (lamp heads, lit windows, fire) are mostly off screen, so SSR would miss them and a planar pass
+  doubles the scene. Outbreak (`games/outbreak/src/reflections/`, AR-73) picks up to 8 outdoor lights per frame on the
+  CPU and computes each one's image in flat water there (`k = h / (h + eye height)` of the way to the eye, the kit
+  floor-highlight math; cone lights only where they point), passing image, size, plan distance and colour in two vec4f
+  each, so the ground shader's loop is a distance test per light and never reads the light buffer or the shadow map.
+  The first build, which read the light buffer and did the image maths per pixel, measured `+2.22 ms` paired on a wet
+  street at 3456×1894 (`pro`). Figures occlude lights behind them by comparing plan distance from the eye. A mirror
+  needs no pass either: its glass intersects the reflected ray with the floor plane and the people's cylinders. Mirrors
+  placed from the interior's free wall spans must also avoid fixtures the house plan builds itself (Ash's kitchen run is
+  geometry, not a prop): the first placement hid the mirror inside the cabinets.
 - **Bake detailed textures off the main thread into a small texture-array pool, nearest rooms first, and carry their UV
   in the vertex colour.** Outbreak's rugs (`packages/kit/textures/rug.ts`, `games/outbreak/src/interiors/`) are
   generated from a seed (Persian field, medallion, spandrels, nested borders, knot grid, abrash, wear, fade, fringes;
