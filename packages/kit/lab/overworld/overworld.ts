@@ -523,10 +523,10 @@ export function createOverworld(opts: { host: OverworldHost; diorama: OverworldD
     if (p) void travel(p.station.id)
   })
   host.canvas.addEventListener("pointermove", e => {
-    if (view !== "overworld" || e.buttons) return
+    if (view !== "overworld" || e.buttons) { host.canvas.dataset.hoverTarget = "false"; return }
     const p = pick(e)
     if (p && p.station.id !== highlighted) setHighlight(p.station.id)
-    host.canvas.style.cursor = p ? "pointer" : ""
+    host.canvas.dataset.hoverTarget = String(Boolean(p))
   })
 
   // ── keyboard ─────────────────────────────────────────────────────────────────────────────────────────────────

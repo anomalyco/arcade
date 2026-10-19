@@ -1,16 +1,29 @@
 // Headless proof for the Lab Overworld through the dev router (`bun run dev`): the map loads with only shared
 // sections, number keys glide into stations, variants apply, Esc returns, a game station loads its adapters on
 // demand, and a voice note (Chrome's fake microphone fed a spoken WAV) goes through the dev server to the board.
-//   bun games/lab/scripts/prove-overworld.ts --base http://127.0.0.1:5197 [--out dir] [--no-board]
+//   bun games/lab/scripts/prove-overworld.ts --serve [--out dir] [--no-board]     starts its own dev server (hivemind)
+//   bun games/lab/scripts/prove-overworld.ts --base http://127.0.0.1:5197 ...      uses a running one
+// Run it through the fleet: hivemind run --kind browser -- bun games/lab/scripts/prove-overworld.ts --serve --no-board
 // Never plays sound: the WAV is written with `say -o` and only fed to the fake capture device.
 import assert from "node:assert/strict"
-import { execFileSync } from "node:child_process"
+import { execFileSync, spawn } from "node:child_process"
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { chromium, type Page } from "playwright-core"
 
 const arg = (name: string) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : undefined }
-const base = arg("--base") ?? "http://127.0.0.1:5180"
+let base = arg("--base") ?? "http://127.0.0.1:5180"
+// The voice-note route is loopback-only, so a fleet job serves the Lab itself.
+const server = process.argv.includes("--serve")
+  ? spawn("bun", ["scripts/dev.ts"], { cwd: resolve(import.meta.dir, "../../.."), env: { ...process.env, PORT: arg("--port") ?? "5297", ARCADE_NO_GLOBAL_STATE: "1" }, stdio: ["ignore", "pipe", "inherit"] })
+  : null
+if (server) {
+  base = `http://127.0.0.1:${arg("--port") ?? "5297"}`
+  await new Promise<void>((done, fail) => {
+    const timer = setTimeout(() => fail(new Error("dev server did not start in 60 s")), 60_000)
+    server.stdout!.on("data", (chunk: Buffer) => { if (chunk.toString().includes("Arcade dev:")) { clearTimeout(timer); done() } })
+  })
+}
 const out = resolve(arg("--out") ?? resolve(import.meta.dir, "../../../captures/lab-overworld"))
 const board = !process.argv.includes("--no-board")
 mkdirSync(out, { recursive: true })
@@ -59,6 +72,17 @@ try {
   report.stations = labels
   assert(labels >= 13, `expected 13 stations, saw ${labels}`)
   await page.waitForTimeout(800)
+  // The OS cursor shows over the map (the drawn glyph is hidden with the chrome), as a pointer over a plot.
+  await page.mouse.move(40, 400)
+  await page.mouse.move(42, 402)
+  const cursorOff = await page.evaluate(() => getComputedStyle(document.querySelector("canvas")!).cursor)
+  const label = await page.locator(".ow-label").first().boundingBox()
+  await page.mouse.move(label!.x + label!.width / 2, label!.y - 40)
+  await page.mouse.move(label!.x + label!.width / 2 + 2, label!.y - 42)
+  const cursorOn = await page.evaluate(() => getComputedStyle(document.querySelector("canvas")!).cursor)
+  report.cursor = { map: cursorOff, plot: cursorOn }
+  assert.notEqual(cursorOff, "none", "a cursor shows over the map")
+  assert.equal(cursorOn, "pointer", "a pointer shows over a plot")
   await page.screenshot({ path: resolve(out, "01-overworld.png") })
 
   // Quick travel: key 1 glides into Explosions.
@@ -140,4 +164,5 @@ try {
   writeFileSync(resolve(out, "report.json"), JSON.stringify(report, null, 2))
   console.log(JSON.stringify(report, null, 2))
   await browser.close()
+  server?.kill()
 }

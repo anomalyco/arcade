@@ -171,6 +171,15 @@ const CURSOR_CSS = /* css */ `
 canvas[data-custom-cursor="active"] {
   cursor: none !important;
 }
+
+/* The drawn glyph lives in the viewport HUD, which is hidden with the workbench chrome (Backquote, Overworld). */
+.lab-workbench[data-closed="true"] canvas[data-custom-cursor="active"] {
+  cursor: default !important;
+}
+
+.lab-workbench[data-closed="true"] canvas[data-custom-cursor="active"][data-hover-target="true"] {
+  cursor: pointer !important;
+}
 `
 
 export function ensureViewportCursorStyles(doc: Document = document): void {
