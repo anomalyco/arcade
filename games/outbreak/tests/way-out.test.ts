@@ -1,0 +1,371 @@
+import { describe, expect, test } from "bun:test"
+import { CoopRoomCore } from "../server/room-core"
+import { BUILD } from "../shared/build.gen"
+import { TICK_DT } from "../shared/clock"
+import { DEFAULT_COOP_ROOM } from "../shared/coop-config"
+import { CoopSim, hashSimState } from "../shared/coop-sim"
+import type { BodiesState } from "../shared/bodies/runtime"
+import { forceLife } from "../shared/death/runtime"
+import { DEFAULT_DEATH_TUNING } from "../shared/death/rules"
+import { outbreakSharedFeatures } from "../shared/feature-registry"
+import { radioStoreId, ds as rds } from "../shared/radios/radios"
+import type { RadiosState } from "../shared/radios/runtime"
+import type { Command, SessionTuning, SurvivorSlot } from "../shared/sim-types"
+import { generateWorldChunk, MACRO_SIZE } from "../shared/world"
+import { broadcastOn, carriesFlyer, EVENT_ESCAPED, EVENT_LEFT_BEHIND, EVENT_MISSED, policeSites, roadSites } from "../shared/way-out/clues"
+import { outbreakWayOutSharedFeature } from "../shared/way-out/index"
+import { alongRoute, DESTINATION_KINDS, routeLength, TOWN_CROSSROADS, wayOutPlan } from "../shared/way-out/plan"
+import { nearDawnHour, planOf, seedOf, type WayOutState } from "../shared/way-out/runtime"
+import { wayOutOf, WAY_OUT_STORE } from "../shared/way-out/state"
+import { DEFAULT_WAY_OUT_TUNING, MISSED_LATE_BOAT, STAND_FIXED, type WayOutTuning } from "../shared/way-out/tuning"
+import { outbreakClientFeatures as features } from "../src/features"
+import { NetSession } from "../src/net-session"
+import { Loopback } from "./loopback"
+
+const T = DEFAULT_WAY_OUT_TUNING
+const idle = (aim = 0): Command => ({ mx: 0, my: 0, aim, interact: false })
+const quiet = (seed = 7, houseSeed = seed) => new CoopSim(seed, houseSeed, 0.22, { zombieCount: 0, directorPacing: 0 })
+const tuning = (patch: Partial<WayOutTuning> = {}): SessionTuning => ({ wayOut: { ...T, ...patch } }) as SessionTuning
+const stateOf = (sim: CoopSim) => sim.getFeatureState<WayOutState>("wayOut")!
+const view = (sim: CoopSim) => wayOutOf(sim.progression.ledger)
+
+function step(sim: CoopSim, ticks: number, tune: SessionTuning = tuning(), timeScale = 1, cmd: (slot: SurvivorSlot) => Command = (s) => idle(s.survivor.aim)): void {
+  for (let i = 0; i < ticks; i++) {
+    for (const slot of sim.slots) sim.stepSurvivor(slot, cmd(slot), TICK_DT, tune)
+    sim.stepWorld(TICK_DT, timeScale, tune)
+  }
+}
+
+const place = (sim: CoopSim, slot: SurvivorSlot, x: number, y: number, aim = 0) => {
+  Object.assign(slot.survivor, { x, y, aim })
+  sim.rebuildCollision()
+}
+
+/** Steps until it gets light (the clock run fast from just before dawn). */
+function toDawn(sim: CoopSim, tune: SessionTuning, cmd?: (slot: SurvivorSlot) => Command): void {
+  sim.hour = nearDawnHour()
+  step(sim, 2, tune, 1, cmd)
+  for (let i = 0; i < 600 && stateOf(sim).wasDark; i++) step(sim, 1, tune, 600, cmd)
+}
+
+describe("The Way Out: the destination", () => {
+  test("one per town, the same every time, 1.5–3 km out by road on the road grid", () => {
+    const kinds = new Set<string>()
+    for (let seed = 1; seed <= 60; seed++) {
+      const a = wayOutPlan(seed, seed * 7 + 1, T)
+      const b = wayOutPlan(seed, seed * 7 + 1, { ...T })
+      expect(b).toEqual(a)
+      kinds.add(a.kind)
+      expect(a.distance).toBeGreaterThanOrEqual(T.minDistance)
+      expect(a.distance).toBeLessThanOrEqual(T.maxDistance)
+      expect(routeLength(a.route)).toBe(a.distance)
+      expect(a.route[0]).toEqual(TOWN_CROSSROADS)
+      expect(a.route.at(-1)).toEqual({ x: a.x, y: a.y })
+      // Every leg runs along a road: one coordinate is on a road line (44 + 96n) the whole way.
+      for (let i = 0; i < a.route.length - 1; i++) {
+        const p = a.route[i]!
+        const q = a.route[i + 1]!
+        expect(p.x === q.x || p.y === q.y).toBe(true)
+        const fixed = p.x === q.x ? p.x : p.y
+        expect((((fixed - 44) % MACRO_SIZE) + MACRO_SIZE) % MACRO_SIZE).toBe(0)
+      }
+    }
+    expect(kinds.size).toBe(DESTINATION_KINDS.length)
+    // Another town, another way out.
+    expect(wayOutPlan(7, 7, T)).not.toEqual(wayOutPlan(7, 8, T))
+  })
+
+  test("distance and kind follow the tuning", () => {
+    const near = wayOutPlan(11, 11, { ...T, minDistance: 400, maxDistance: 500 })
+    expect(near.distance).toBeGreaterThanOrEqual(384)
+    expect(near.distance).toBeLessThanOrEqual(500)
+    for (let k = 0; k < 4; k++) expect(wayOutPlan(11, 11, { ...T, destination: k }).kind).toBe(DESTINATION_KINDS[k]!)
+  })
+
+  test("the road sign and the soldier lie on the route's pavement, clear of buildings", () => {
+    for (let seed = 1; seed <= 25; seed++) {
+      const plan = wayOutPlan(seed, seed, T)
+      for (const site of roadSites(plan)) {
+        const spot = site.kind === "sign" ? plan.sign : plan.soldier
+        const p = alongRoute(plan.route, spot.along)
+        expect(Math.abs(Math.hypot(site.x - p.x, site.y - p.y) - 5)).toBeLessThan(0.05)
+        const cx = Math.floor(site.x / 32)
+        const cy = Math.floor(site.y / 32)
+        const chunk = generateWorldChunk(seed, seed, cx, cy, "streaming")
+        for (const b of chunk.buildings) {
+          const inside = site.x > b.rect[0] && site.x < b.rect[2] && site.y > b.rect[1] && site.y < b.rect[3]
+          expect(inside).toBe(false)
+        }
+      }
+    }
+  })
+})
+
+describe("The Way Out: clues", () => {
+  test("the chain is always completable: a police station a block south of town holds a map piece, and the route has a sign and a soldier", () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      // Block (0, 1) is always civic; its police station stands in chunk (1, 3).
+      const chunk = generateWorldChunk(seed, seed, 1, 3, "streaming")
+      const town = { buildings: chunk.buildings, props: chunk.props } as Parameters<typeof policeSites>[0]
+      expect(policeSites(town).length).toBeGreaterThan(0)
+      expect(roadSites(wayOutPlan(seed, seed, T)).map((s) => s.kind)).toEqual(["sign", "soldier"])
+    }
+  })
+
+  test("rumour, direction, confirmed: reading the sign then searching the soldier pins it", () => {
+    const sim = quiet()
+    const a = sim.addSurvivor("a", 0)
+    step(sim, 2)
+    expect(view(sim)?.tier).toBe(0)
+    const plan = planOf(sim, T)
+    const handler = sim.registry.get("clue")!
+    // Walk (teleport) to the sign: its prompt is offered, and reading it gives the direction.
+    place(sim, a, plan.sign.x + 0.9, plan.sign.y)
+    sim.refreshPrompt(a)
+    const offered = handler.candidates(sim.town, a.survivor).map((c) => c.id)
+    expect(offered).toContain("sign")
+    expect(handler.execute(sim.town, a.survivor, "sign", "read").handled).toBe(true)
+    expect(view(sim)?.tier).toBe(2)
+    expect(a.notices.at(-1)?.key).toBe("wayout")
+    // Reading it again changes nothing.
+    expect(handler.execute(sim.town, a.survivor, "sign", "read").handled).toBe(false)
+    place(sim, a, plan.soldier.x + 0.8, plan.soldier.y)
+    expect(handler.execute(sim.town, a.survivor, "soldier", "search").handled).toBe(true)
+    expect(view(sim)?.tier).toBe(3)
+  })
+
+  test("a broadcast on a playing radio is a rumour, only while it is on and only close by", () => {
+    const sim = quiet()
+    const a = sim.addSurvivor("a", 0)
+    step(sim, 2)
+    const r = sim.getFeatureState<RadiosState>("radios")!.sites[0]!
+    expect(r).toBeDefined()
+    sim.progression.ledger.createStore({ id: radioStoreId(r.buildingId), mode: "counters", scope: "shared", initial: { on: 1, start: rds(sim.time), until: rds(sim.time + 600) } })
+    place(sim, a, r.x + 1, r.y + 1)
+    // Off air: nothing.
+    const offAir = [0.1, 0.5, 1, 1.5].map((h) => 9 + h).find((h) => !broadcastOn(h, T.broadcastEvery, T.broadcastLength))!
+    sim.hour = offAir
+    step(sim, 3)
+    expect(view(sim)?.tier ?? 0).toBe(0)
+    sim.hour = 10.1
+    expect(broadcastOn(sim.hour, T.broadcastEvery, T.broadcastLength)).toBe(true)
+    place(sim, a, r.x + T.radioHear + 3, r.y)
+    step(sim, 3)
+    expect(view(sim)?.tier ?? 0).toBe(0)
+    place(sim, a, r.x + 1, r.y + 1)
+    step(sim, 3)
+    expect(view(sim)?.tier).toBe(1)
+    expect(view(sim)?.clues.has("radio")).toBe(true)
+  })
+
+  test("searching a body that carries a flyer is a rumour; homes hold notes", () => {
+    const sim = quiet()
+    sim.addSurvivor("a", 0)
+    const tune = tuning({ flyerShare: 1, noteShare: 1 })
+    step(sim, 2, tune)
+    const body = sim.getFeatureState<BodiesState>("bodies")!.sites[0]!
+    expect(carriesFlyer(seedOf(sim), body.key, 1)).toBe(true)
+    sim.progression.ledger.store(body.id)!.revealed = true
+    step(sim, 1, tune)
+    expect(view(sim)?.clues.has(`flyer:${body.key}`)).toBe(true)
+    expect(view(sim)?.tier).toBe(1)
+    const notes = stateOf(sim).sites.filter((s) => s.kind === "note")
+    expect(notes.length).toBeGreaterThan(0)
+  })
+
+  test("arriving at the destination confirms it, whatever was found before", () => {
+    const sim = quiet()
+    const a = sim.addSurvivor("a", 0)
+    step(sim, 2)
+    const plan = planOf(sim, T)
+    place(sim, a, plan.x - 30, plan.y)
+    step(sim, 2)
+    expect(view(sim)?.tier).toBe(3)
+    expect(view(sim)?.clues.has("arrive")).toBe(true)
+  })
+})
+
+describe("The Way Out: the stand and the escape", () => {
+  test("signal at the post, hold until dawn against the siege, and the squad in the zone escapes", () => {
+    const sim = quiet()
+    const a = sim.addSurvivor("a", 0)
+    const b = sim.addSurvivor("b", 1)
+    const tune = tuning()
+    step(sim, 2, tune)
+    const plan = planOf(sim, T)
+    place(sim, a, plan.signal.x + 0.6, plan.signal.y)
+    place(sim, b, plan.x - 200, plan.y)
+    step(sim, 1, tune)
+    const post = sim.registry.get("signal")!
+    expect(post.candidates(sim.town, a.survivor).length).toBe(1)
+    expect(post.execute(sim.town, a.survivor, "signal", "toggle").handled).toBe(true)
+    expect(view(sim)?.signalled).toBe(true)
+    const before = sim.ai.agents.filter((z) => z.state !== "dead").length
+    step(sim, Math.ceil(4 / TICK_DT), tune)
+    expect(sim.ai.agents.filter((z) => z.state !== "dead").length).toBeGreaterThan(before)
+    expect(view(sim)?.wave).toBeGreaterThan(0)
+    // Hold still at the post (the dead are made harmless here so the test is about the clock).
+    for (const z of sim.ai.agents) z.state = "dead"
+    toDawn(sim, tune, () => idle(0))
+    const v = view(sim)!
+    expect(v.won).toBe(true)
+    expect(v.last).toBe(EVENT_ESCAPED)
+    expect(v.escaped).toEqual([a.index])
+    expect(v.wonNight).toBeGreaterThanOrEqual(1)
+    // Once out: nothing moves, nothing hurts.
+    const x = a.survivor.x
+    step(sim, 5, tune, 1, () => ({ mx: 1, my: 0, aim: 0, interact: false }))
+    expect(a.survivor.x).toBe(x)
+    expect(a.prompt).toBeUndefined()
+  })
+
+  test("a flare burning in the zone or a horn there signals too; the fixed hold ends the stand", () => {
+    const sim = quiet()
+    const a = sim.addSurvivor("a", 0)
+    const tune = tuning({ standRule: STAND_FIXED, standHold: 20 })
+    step(sim, 2, tune)
+    const plan = planOf(sim, T)
+    place(sim, a, plan.x + 2, plan.y + 2)
+    sim.progression.ledger.createStore({ id: "flare:test", mode: "counters", scope: "shared", owner: a.id, at: { x: plan.x, y: plan.y }, initial: { t: rds(sim.time), until: rds(sim.time + 30) } })
+    step(sim, 1, tune)
+    expect(view(sim)?.signalled).toBe(true)
+    for (let i = 0; i < Math.ceil(21 / TICK_DT); i++) {
+      for (const z of sim.ai.agents) z.state = "dead"
+      step(sim, 1, tune)
+    }
+    expect(view(sim)?.won).toBe(true)
+  })
+
+  test("nobody in the zone at dawn: it leaves without them and they can signal again", () => {
+    const sim = quiet()
+    const a = sim.addSurvivor("a", 0)
+    const tune = tuning({ siegeWave: 0 })
+    step(sim, 2, tune)
+    const plan = planOf(sim, T)
+    place(sim, a, plan.signal.x + 0.6, plan.signal.y)
+    sim.registry.get("signal")!.execute(sim.town, a.survivor, "signal", "toggle")
+    place(sim, a, plan.x + 90, plan.y)
+    toDawn(sim, tune)
+    const v = view(sim)!
+    expect(v.won).toBe(false)
+    expect(v.last).toBe(EVENT_LEFT_BEHIND)
+    expect(v.signalled).toBe(false)
+  })
+
+  test("the deadline: after the dawn of the last night the way out is gone, unless a late boat is allowed", () => {
+    for (const rule of [0, MISSED_LATE_BOAT]) {
+      const sim = quiet()
+      sim.addSurvivor("a", 0)
+      const tune = tuning({ deadlineNight: 1, missedRule: rule, lateNights: 2 })
+      step(sim, 2, tune)
+      expect(view(sim)?.night).toBe(1)
+      toDawn(sim, tune)
+      const v = view(sim)!
+      if (rule === MISSED_LATE_BOAT) {
+        expect(v.missed).toBe(false)
+        expect(v.late).toBe(true)
+        expect(v.deadline).toBe(3)
+      } else {
+        expect(v.missed).toBe(true)
+        expect(v.last).toBe(EVENT_MISSED)
+        // Gone means gone: the post offers nothing.
+        const plan = planOf(sim, T)
+        const a = sim.slots[0]!
+        place(sim, a, plan.signal.x + 0.6, plan.signal.y)
+        expect(sim.registry.get("signal")!.candidates(sim.town, a.survivor)).toEqual([])
+      }
+    }
+  })
+
+  test("the dead never escape; the down are carried aboard; kills go on the card", () => {
+    const sim = quiet()
+    const a = sim.addSurvivor("a", 0)
+    const b = sim.addSurvivor("b", 1)
+    const c = sim.addSurvivor("c", 2)
+    const tune = tuning({ standRule: STAND_FIXED, standHold: 5, siegeWave: 0 })
+    step(sim, 2, tune)
+    const plan = planOf(sim, T)
+    for (const [s, dx] of [[a, 1], [b, 2], [c, 3]] as const) place(sim, s, plan.x + dx, plan.y + 1)
+    forceLife(sim, b, "down", DEFAULT_DEATH_TUNING)
+    forceLife(sim, c, "dead", DEFAULT_DEATH_TUNING)
+    sim.getFeatureState<{ records: Record<number, { kills: number }> }>("death")!.records[a.index]!.kills = 7
+    sim.registry.get("signal")!
+    stateOf(sim)
+    place(sim, a, plan.signal.x + 0.6, plan.signal.y)
+    sim.registry.get("signal")!.execute(sim.town, a.survivor, "signal", "toggle")
+    step(sim, Math.ceil(6 / TICK_DT), tune)
+    const v = view(sim)!
+    expect(v.won).toBe(true)
+    expect(v.escaped).toEqual([a.index, b.index])
+    expect(v.kills[a.index]).toBe(7)
+  })
+})
+
+describe("The Way Out: co-op and Off", () => {
+  test("clients see the clues and the escape; a won room restarts", () => {
+    let virtualMs = 0
+    const core = new CoopRoomCore("test", { ...DEFAULT_COOP_ROOM, zombieCount: 0 }, () => virtualMs, BUILD)
+    const net = new Loopback(core, 2)
+    const ann = new NetSession({ features, url: "loop", room: "test", name: "Ann", now: () => net.now, WebSocket: net.socketClass() })
+    const tick = (n: number) => {
+      for (let i = 0; i < n; i++) {
+        virtualMs = net.now * 1000
+        net.step()
+        if (core.phase === "lobby") core.start()
+        ann.update(TICK_DT, idle(0))
+        ann.sync(TICK_DT)
+      }
+    }
+    tick(30)
+    expect(ann.connected).toBe(true)
+    const sa = core.sim.slot(ann.id)!
+    const plan = planOf(core.sim, T)
+    // The client computes the same plan and offers the same clue prompts.
+    expect(planOf(ann.sim, T)).toEqual(plan)
+    place(core.sim, sa, plan.sign.x + 0.9, plan.sign.y)
+    tick(20)
+    expect(core.sim.registry.get("clue")!.execute(core.sim.town, sa.survivor, "sign", "read").handled).toBe(true)
+    tick(10)
+    expect(wayOutOf(ann.sim.progression.ledger)?.tier).toBe(2)
+    expect(ann.view.notices.some((n) => n.key === "wayout")).toBe(true)
+    // Escape: the client sees it and the room may restart.
+    place(core.sim, sa, plan.signal.x + 0.6, plan.signal.y)
+    tick(10)
+    const state = core.sim.getFeatureState<WayOutState>("wayOut")!
+    state.tuning = { ...state.tuning }
+    core.sim.registry.get("signal")!.execute(core.sim.town, sa.survivor, "signal", "toggle")
+    core.sim.hour = nearDawnHour()
+    for (let i = 0; i < 4000 && !core.runOver; i++) {
+      for (const z of core.sim.ai.agents) z.state = "dead"
+      tick(1)
+    }
+    expect(core.runOver).toBe(true)
+    tick(5)
+    expect(wayOutOf(ann.sim.progression.ledger)?.won).toBe(true)
+    const old = core.sim
+    ann.restart()
+    tick(6)
+    expect(core.sim).not.toBe(old)
+    expect(core.runOver).toBe(false)
+    ann.close()
+  })
+
+  test("Off is endless survival, exactly as without the feature", () => {
+    const run = (registered: boolean) => {
+      if (!registered) outbreakSharedFeatures.unregister("wayOut")
+      try {
+        const sim = new CoopSim(7, 7, 0.22, { zombieCount: 6 })
+        sim.addSurvivor("a", 0)
+        const tune = tuning({ wayOut: 0 })
+        step(sim, 300, tune, 120, (s) => ({ mx: 0.4, my: 0.2, aim: 0.3, interact: false, sprint: true }))
+        const snap = sim.toSnapshot()
+        delete (snap.featureStates as Record<string, unknown>).wayOut
+        expect(sim.progression.ledger.store(WAY_OUT_STORE)).toBeUndefined()
+        return hashSimState(snap)
+      } finally {
+        if (!registered) outbreakSharedFeatures.register(outbreakWayOutSharedFeature)
+      }
+    }
+    expect(run(true)).toBe(run(false))
+  })
+})

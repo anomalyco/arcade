@@ -1,0 +1,68 @@
+/* The Way Out (AR-64): the goal line, clue toasts with their drawings, and the escape card, in the Noir HUD tokens
+   (hud/tokens.css). The card mirrors the run-over card (death/death.css) in warm instead of red. */
+.owo-goal {
+  position: fixed; left: 50%; top: 14px; transform: translateX(-50%); z-index: 9; pointer-events: none; display: none;
+  max-width: min(760px, 92vw); padding: var(--hud-2) var(--hud-5); border-radius: var(--hud-r-panel);
+  background: var(--hud-surface); box-shadow: inset 0 0 0 1px var(--hud-line), var(--hud-shadow);
+  color: var(--hud-ink-2); font: 500 var(--hud-sm)/var(--hud-sm-lh) var(--hud-font); white-space: nowrap; font-variant-numeric: tabular-nums;
+  align-items: center; gap: var(--hud-3);
+}
+.owo-goal[data-on="true"] { display: flex }
+.owo-goal b { color: var(--hud-warm); font-weight: 700; letter-spacing: .04em }
+.owo-goal em { font-style: normal; color: var(--hud-ink-3); padding-left: var(--hud-3); border-left: 1px solid var(--hud-line) }
+.owo-goal em.owo-urgent { color: var(--hud-danger) }
+.owo-goal .owo-dim { color: var(--hud-ink-3) }
+.owo-goal .akc, .owo-toast .akc { vertical-align: middle }
+
+.owo-toast {
+  position: fixed; left: 50%; top: 22%; transform: translate(-50%, 0); z-index: 11; pointer-events: none;
+  display: flex; flex-direction: column; align-items: center; gap: var(--hud-2); text-align: center;
+  max-width: min(420px, 86vw); padding: var(--hud-5) var(--hud-6) var(--hud-5);
+  background: var(--hud-surface); border-radius: 12px; box-shadow: inset 0 0 0 1px var(--hud-line-2), 0 18px 40px rgb(0 0 0 / .5);
+  color: var(--hud-ink-2); font: 500 var(--hud-md)/var(--hud-md-lh) var(--hud-font);
+  opacity: 0; visibility: hidden;
+}
+.owo-toast[data-on="true"] { visibility: visible; animation: owo-toast 6.5s ease both }
+@keyframes owo-toast {
+  0% { opacity: 0; transform: translate(-50%, 8px) }
+  6% { opacity: 1; transform: translate(-50%, 0) }
+  88% { opacity: 1; transform: translate(-50%, 0) }
+  100% { opacity: 0; transform: translate(-50%, -4px) }
+}
+.owo-toast .owo-art { color: var(--hud-ink); margin-bottom: var(--hud-2) }
+.owo-toast b { color: var(--hud-ink); font: 700 20px/24px var(--hud-font); letter-spacing: .14em; text-transform: uppercase }
+.owo-toast[data-tone="warm"] b, .owo-toast[data-tone="warm"] .owo-art { color: var(--hud-warm) }
+.owo-toast[data-tone="danger"] b, .owo-toast[data-tone="danger"] .owo-art { color: var(--hud-danger) }
+
+.owo-over {
+  position: fixed; inset: 0; z-index: 31; display: none; place-items: center;
+  background: radial-gradient(ellipse at 50% 45%, rgb(18 14 9 / .45), rgb(4 3 3 / .88));
+}
+.owo-over[data-on="true"] { display: grid; animation: owo-in 1.2s ease both }
+@keyframes owo-in { from { opacity: 0 } to { opacity: 1 } }
+.owo-card {
+  min-width: 340px; max-width: min(480px, 90vw); padding: var(--hud-7); display: flex; flex-direction: column; gap: var(--hud-5);
+  background: var(--hud-surface); border-radius: 14px; box-shadow: inset 0 0 0 1px var(--hud-line-2), 0 24px 60px rgb(0 0 0 / .6);
+  color: var(--hud-ink); font: 500 var(--hud-lg)/var(--hud-lg-lh) var(--hud-font); font-variant-numeric: tabular-nums;
+}
+.owo-card .owo-art { color: var(--hud-warm); align-self: center }
+.owo-eyebrow { color: var(--hud-warm); font: 700 var(--hud-xs)/var(--hud-xs-lh) var(--hud-font); letter-spacing: .28em; text-transform: uppercase }
+.owo-name { font: 700 26px/30px var(--hud-font); letter-spacing: .01em }
+.owo-sub { color: var(--hud-ink-2) }
+.owo-stats { display: flex; gap: var(--hud-6); padding: var(--hud-4) 0; border-top: 1px solid var(--hud-line); border-bottom: 1px solid var(--hud-line) }
+.owo-stats div { display: flex; flex-direction: column; gap: var(--hud-1) }
+.owo-stats span { color: var(--hud-ink-3); font-size: var(--hud-xs); letter-spacing: .14em; text-transform: uppercase }
+.owo-stats b { font: 700 20px/24px var(--hud-font); color: var(--hud-warm) }
+.owo-squad { display: flex; flex-direction: column; gap: var(--hud-2); color: var(--hud-ink-2); font-size: var(--hud-md) }
+.owo-squad div { display: flex; justify-content: space-between; gap: var(--hud-5) }
+.owo-squad div[data-out="false"] { opacity: .6 }
+.owo-squad b { color: var(--hud-ink); font-weight: 600 }
+.owo-actions { display: flex; gap: var(--hud-4); flex-wrap: wrap }
+.owo-actions button {
+  flex: 1; padding: var(--hud-4) var(--hud-5); border: 0; border-radius: 8px; cursor: pointer;
+  background: var(--hud-raised); color: var(--hud-ink); font: 600 var(--hud-md)/var(--hud-md-lh) var(--hud-font);
+  box-shadow: inset 0 0 0 1px var(--hud-line);
+}
+.owo-actions button:hover { box-shadow: inset 0 0 0 1px var(--hud-line-2) }
+.owo-actions button.owo-primary { background: var(--hud-warm); color: #171512 }
+.owo-actions button[hidden] { display: none }

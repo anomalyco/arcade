@@ -128,6 +128,13 @@ Give and Stage actions are in Lab › Fire & explosives; `arcade cmd fire.give i
 `arcade cmd fire.stage scene=burning` do the same, and the `outbreak-fire` Lab station stages each item. Tests:
 `tests/fire.test.ts`; sounds (reused library samples): `src/audio/inventory.ts`, `tests/audio.test.ts`.
 
+## The Way Out (AR-64)
+
+A run can now be won. The Way Out's clues are notes on home furniture, flyers on searched bodies and a torn map on
+police station counters; a flare lit at the destination signals the evac; everything it tracks lives in one shared
+`wayout` ledger counters store, not in anyone's inventory. How a winning run goes:
+[outbreak-way-out.md](outbreak-way-out.md).
+
 ## Lab
 
 Every tunable is a typed row in the shared LabPanel's **Progression** group (`progressionControls` in

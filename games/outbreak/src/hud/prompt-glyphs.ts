@@ -35,6 +35,7 @@ function glyphFor(kind: string, action: InteractAction): ActionGlyph | null {
     case "toggle":
       if (kind === "radio") return label === "Switch off" ? "radio-off" : "radio-on"
       if (kind === "lamp") return label === "Switch off" ? "light-off" : "light-on"
+      if (kind === "signal") return "light-on"
       if (label === "Open") return kind === "window" ? "window-open" : "door-open"
       if (label === "Close") return kind === "window" ? "window-close" : "door-close"
       return null
@@ -158,4 +159,8 @@ export const PROMPT_ACTIONS: readonly { kind: string; action: InteractAction }[]
   { kind: "vehicle", action: a("enter", "No keys") },
   { kind: "vehicle", action: a("enter", "Refuel") },
   { kind: "vehicle", action: a("enter", "Empty tank") },
+  { kind: "clue", action: a("read", "Read") },
+  { kind: "clue", action: a("take", "Take map") },
+  { kind: "clue", action: a("search", "Search") },
+  { kind: "signal", action: a("toggle", "Signal") },
 ]

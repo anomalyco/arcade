@@ -6,6 +6,7 @@ import { chunkKey, generateWorldChunk } from "../../shared/world"
 import type { CoopView } from "../coop-view"
 import { SURVIVOR_COLOURS } from "../net-session"
 import type { MapFrame } from "./map"
+import { mapObjectives } from "./objectives"
 import type { MapVehicle } from "./screen"
 
 export type MapGameInput = {
@@ -69,5 +70,6 @@ export function gameMapFrame(g: MapGameInput): MapFrame {
       sim.vehicles.list.map((v) => ({ x: v.x, y: v.y, heading: v.h, length: v.spec.length, width: v.spec.width, colour: v.wreck ? "#7a6e62" : undefined })),
     project: (x, y, z) => cam.project(x, y, z, g.w, g.h),
     ground: g.ground,
+    objectives: mapObjectives(sim),
   }
 }

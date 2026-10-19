@@ -4,6 +4,7 @@ import { districtAtBlock, MACRO_CHUNKS, type WorldMode } from "../../shared/worl
 import { MapCompass, MapMinimap, type Project } from "./compass"
 import { blockName, DISTRICT_LABELS, groupSightings, MapMemory, type ChunkSource, type VisionWindow } from "./memory"
 import { MapScreen, type MapActor, type MapPing, type MapVehicle } from "./screen"
+import type { MapObjectives } from "./objectives"
 import { MINIMAP_COMPASS, MINIMAP_CORNER, type MapSettings } from "./settings"
 import { PALETTES } from "./style"
 import { MapTiles } from "./tiles"
@@ -35,6 +36,8 @@ export type MapFrame = {
   vehicles: readonly MapVehicle[]
   project: Project
   ground: number
+  /** Features' objectives (the way out), drawn on the sheet and as bearings on the compass ring. */
+  objectives?: MapObjectives
 }
 
 const OBSERVE_MS = 200
@@ -207,6 +210,7 @@ export class OutbreakMap {
       vehicles: f.vehicles.filter((v) => this.memory.explored(v.x, v.y)),
       hordeMemory: this.settings.mapHordeMemory,
       place: this.placeName(f.self.x, f.self.y),
+      objectives: f.objectives,
     }
     if (this.isOpen) {
       this.screen.render(live, 3)
@@ -231,6 +235,7 @@ export class OutbreakMap {
           radius: this.settings.mapCompassRadius,
           opacity: this.settings.mapCompassOpacity,
           range: this.settings.mapCompassRange,
+          pins: f.objectives?.pins,
         })
       } else if (mode === MINIMAP_CORNER) {
         this.compass.hide()
