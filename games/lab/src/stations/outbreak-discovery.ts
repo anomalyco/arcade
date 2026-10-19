@@ -7,6 +7,11 @@ const stage = (scene: string): StationCommand[] => [
   { command: "discovery.stage", args: { scene } },
 ]
 
+const radio = (scene: string): StationCommand[] => [
+  { command: "scene.set-param", args: { key: "timeScale", value: 0 } },
+  { command: "radios.stage", args: { scene } },
+]
+
 const variants: StationVariant[] = [
   { id: "low-flashlight", group: "House", label: "Low flashlight", note: "12% battery at night: the beam narrows, shortens, warms to amber and sputters. No ring, no words.", setup: stage("low-flashlight") },
   { id: "weakened-barricade", group: "House", label: "Weakened barricade", note: "Three boards at half strength from inside: one flush, one bowed and split, one hanging from a nail.", setup: stage("weakened-barricade") },
@@ -25,6 +30,8 @@ const variants: StationVariant[] = [
   { id: "peephole", group: "Stealth and noise", label: "Peephole", note: "Shift+E at a shut front door looks out through it at the porch without opening up. E stops.", setup: stage("peephole") },
   { id: "bottle", group: "Stealth and noise", label: "Throwing a bottle", note: "Bottles in hand on the street. Click to throw one: it breaks where it lands, loud, and beside a car it can set the alarm off.", setup: stage("bottle") },
   { id: "car-alarm", group: "Stealth and noise", label: "Car alarm", note: "A car with its window put in and the alarm going: indicators flashing and a wail every beat until the battery dies. Half the abandoned cars have one.", setup: stage("car-alarm") },
+  { id: "radio-off", group: "Stealth and noise", label: "House radio", note: "Ash's radio on the living-room table at night. E switches it on: it plays until its battery runs down, calling the dead to the house; E again saves what is left.", setup: radio("radio-off") },
+  { id: "radio-lure", group: "Stealth and noise", label: "Radio as a lure", note: "The radio playing in Ash's house with the front door open and six of the dead on the street. They turn and go in to it, and once they stand at it a moment they knock it to the floor.", setup: radio("radio-lure") },
   { id: "repair", group: "House", label: "Crowbar repair", note: "A worn barricade and a crowbar in hand. B re-nails it to full instead of adding a board; practice makes it faster and quieter.", setup: stage("repair") },
   { id: "broken-in", group: "Vignettes", label: "Broken in", note: "A house broken into through its side window: glass on the floor, a survivor down with a snapped bat, the zombie that came through. Walk over the glass upright and it crunches; crouch to step softly. The bat left a scrap.", setup: stage("broken-in") },
   { id: "hid", group: "Vignettes", label: "Hid in the closet", note: "The dead in front of a bedroom closet, spent casings at its door, a battery left behind. Somebody hid in there and lived.", setup: stage("hid") },
@@ -36,7 +43,7 @@ export default defineStation({
   id: "outbreak-discovery",
   title: "Outbreak: Discovered, Not Told",
   summary:
-    "State read from the world instead of labels: the flashlight's charge in its beam, barricade health in its boards, containers that open to show what is inside, prompt words that fade once you know them, and a workbench where two materials tried together on the mat pin a pencil sketch to the corkboard. Knowledge is found too: flyers, charts and photos left in buildings, a reinforced window to study, and hands that board up faster and quieter with practice or from watching a teammate. New verbs are learned by doing: crouching, closets and peepholes, bottles, can tripwires and car alarms as lures, and crowbar repairs. Small seeded scenes in every district show what happened to the people before you: a house broken into, someone who hid, bottles that drew the dead away, a car alarm that called them. Tunables are in the Discovery, Progression and Verbs groups.",
+    "State read from the world instead of labels: the flashlight's charge in its beam, barricade health in its boards, containers that open to show what is inside, prompt words that fade once you know them, and a workbench where two materials tried together on the mat pin a pencil sketch to the corkboard. Knowledge is found too: flyers, charts and photos left in buildings, a reinforced window to study, and hands that board up faster and quieter with practice or from watching a teammate. New verbs are learned by doing: crouching, closets and peepholes, bottles, can tripwires, car alarms and house radios as lures, and crowbar repairs. Small seeded scenes in every district show what happened to the people before you: a house broken into, someone who hid, bottles that drew the dead away, a car alarm that called them. Tunables are in the Discovery, Progression, Verbs and Radios groups.",
   order: 121,
   prop: "panels",
   color: 0xd8b878,
@@ -47,8 +54,8 @@ export default defineStation({
   pickOne: true,
   variants: variants.map((v) => ({ ...v, url: page })),
   board: { feature: "AR-29", decision: "D-19" },
-  metrics: [{ label: "Discovery tests", value: "6 + 12 tinkering + 12 found + 19 verbs + 6 vignettes + 4 co-op", source: "games/outbreak/tests/discovery.test.ts, tinker.test.ts, found.test.ts, verbs.test.ts, vignettes.test.ts, coop.test.ts" }],
-  paths: ["games/outbreak/shared/discovery", "games/outbreak/src/discovery"],
+  metrics: [{ label: "Discovery tests", value: "6 + 12 tinkering + 12 found + 19 verbs + 6 vignettes + 8 radios + 4 co-op", source: "games/outbreak/tests/discovery.test.ts, tinker.test.ts, found.test.ts, verbs.test.ts, vignettes.test.ts, radios.test.ts, coop.test.ts" }],
+  paths: ["games/outbreak/shared/discovery", "games/outbreak/src/discovery", "games/outbreak/shared/radios", "games/outbreak/src/radios"],
   branches: ["discovery*"],
   links: [{ label: "Play Outbreak", href: "/arcade/outbreak/?seed=7" }],
 })
