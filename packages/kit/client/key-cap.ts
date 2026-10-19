@@ -8,7 +8,8 @@
  *   keyPromptHtml("KeyE", "Open", { hold: true })       // cap + verb, the usual prompt row
  *
  * Styles install themselves on first use. Theme with `--akc-face`, `--akc-ink`, `--akc-edge`, `--akc-ring` and
- * `--akc-track` on any ancestor.
+ * `--akc-track` on any ancestor. Minimal variant (`{ minimal: true }`, or class `akc-minimal` on any ancestor): no
+ * glossy cap, just a thin outline in the surrounding text colour and font, for quiet in-world prompts.
  */
 import { keyLabel } from "./controls"
 
@@ -23,6 +24,8 @@ export type KeyCapOptions = {
   label?: string
   /** Extra class names for the outer element. */
   className?: string
+  /** Minimal variant: a thin outlined glyph in the surrounding text colour and font instead of the glossy cap. */
+  minimal?: boolean
 }
 
 const WIDE: Readonly<Record<string, string>> = {
@@ -74,7 +77,7 @@ export function keyCapHtml(code: string, options: KeyCapOptions = {}): string {
   const shape = mouse ? "mouse" : WIDE[code] ?? (label.length > 1 ? "wide" : "")
   const capClass = `akc-cap${shape ? ` akc-${shape}` : ""}`
   const face = mouse ? mouseSvg(mouse) : `<span class="akc-t">${esc(label)}</span>`
-  const extra = options.className ? ` ${options.className}` : ""
+  const extra = (options.minimal ? " akc-min" : "") + (options.className ? ` ${options.className}` : "")
   const downAttr = down ? ` data-down="true"` : ""
   if (!options.hold) {
     return `<kbd class="akc${extra}" aria-label="${esc(name)}"${downAttr}><span class="${capClass}">${face}</span></kbd>`
@@ -160,6 +163,27 @@ export const KEY_CAP_CSS = `
   filter: drop-shadow(0 0 0.25em rgba(255, 255, 255, 0.55));
 }
 .akp { display: inline-flex; align-items: center; gap: 0.45em; white-space: nowrap; }
+.akc-min .akc-cap,
+.akc-minimal .akc-cap {
+  min-width: var(--akc-size, 1.45em);
+  height: var(--akc-size, 1.45em);
+  padding: 0 0.32em;
+  border-radius: 0.14em;
+  background: none;
+  color: inherit;
+  font-family: inherit;
+  font-weight: inherit;
+  letter-spacing: 0;
+  box-shadow: inset 0 0 0 1px currentColor;
+  opacity: 0.75;
+  transform: none;
+  transition: opacity 120ms ease-out;
+}
+.akc-min[data-down="true"] .akc-cap,
+.akc-minimal .akc[data-down="true"] .akc-cap { transform: none; box-shadow: inset 0 0 0 1px currentColor; opacity: 1; }
+.akc-min .akc-t, .akc-minimal .akc-t { font-size: 0.82em; }
+.akc-min.akc-hold::before, .akc-minimal .akc-hold::before { background: none; }
+.akc-min .akc-ring, .akc-minimal .akc-ring { --akc-ring: currentColor; --akc-track: color-mix(in srgb, currentColor 25%, transparent); }
 @media (prefers-reduced-motion: reduce) {
   .akc-cap, .akc[data-down="true"] .akc-cap { transition: none; transform: none; }
   .akc-hold[data-down="true"] .akc-ring { filter: none; }

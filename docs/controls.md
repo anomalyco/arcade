@@ -91,6 +91,7 @@ installs itself on first use.
 | Call | Draws |
 | --- | --- |
 | `keyCapHtml("KeyE")` | Light key cap with the QWERTY label, dark outline and drop shadow so it reads over night, Noir and bright scenes |
+| `keyCapHtml("KeyE", { minimal: true })` (or class `akc-minimal` on any ancestor) | Minimal variant: no cap face or shadow, a thin outline in the surrounding text's colour and font at reduced opacity, for quiet in-world prompts (Afterhours) |
 | `keyCapHtml("KeyE", { hold: true, progress })` | Round cap inside a ring; the ring fills clockwise from the top with `progress` (0..1) and the cap sits pressed while `progress > 0` |
 | `keyCapHtml("ShiftLeft")`, `keyCapHtml("Space")` | Wide caps (Shift, Ctrl, Alt, Tab, Enter, Esc, Backspace) and a wider Space bar |
 | `keyCapHtml("Mouse0")`, `keyCapHtml("Mouse2")` | Mouse icon with the left or right button filled (`Mouse1`, `Wheel` fill the wheel) |
