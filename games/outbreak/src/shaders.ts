@@ -361,7 +361,9 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
       let backNormal = max(0.0, dot(-n, keyDir));
       let transLobe = (forwardScatter * 0.55 + backNormal * 0.45) * F.ambient.w * 0.28 * tipWeight * transK * sunFactor;
       // Flashlight transmission: leaves and blades inside the beam glow warm olive (thin-lamina scatter, any facing).
-      if (OL.u4.z > 0.001 && o.world.y < 2.4) {
+      // Lively vegetation lets the glow climb into the lower crown, so trees in the beam catch it as dark silhouettes.
+      let leafReach = select(2.4, 4.4, OL.vegGust.on > 0.5);
+      if (OL.u4.z > 0.001 && o.world.y < leafReach) {
         let fRel = o.world.xz - OL.u3.xy;
         let fAlong = dot(fRel, OL.u3.zw);
         let fRange = max(2.8, OL.u4.y);
@@ -370,7 +372,7 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
           let fCone = 0.12 + max(0.0, fAlong) * max(0.12, OL.u4.x);
           if (fAcross < fCone * 1.25) {
             let axT = clamp(1.0 - fAlong / fRange, 0.0, 1.0);
-            let inBeam = smoothstep(-0.05, 0.3, fAlong) * (1.0 - smoothstep(fCone * 0.7, fCone * 1.25, fAcross)) * (axT * sqrt(axT)) * (1.0 - smoothstep(1.4, 2.4, o.world.y));
+            let inBeam = smoothstep(-0.05, 0.3, fAlong) * (1.0 - smoothstep(fCone * 0.7, fCone * 1.25, fAcross)) * (axT * sqrt(axT)) * (1.0 - smoothstep(leafReach - 1.0, leafReach, o.world.y)) * select(1.0, 0.75, o.world.y > 2.4);
             let facing = max(0.0, dot(-n.xz, OL.u3.zw)) * 0.5 + 0.5;
             col += outbreakAlbedo * OL.u5.rgb * vec3f(1.05, 1.3, 0.5) * inBeam * facing * OL.u4.z * (0.10 + 0.22 * tipWeight) * transK;
           }

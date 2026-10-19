@@ -63,7 +63,7 @@ describe("vegetation build options", () => {
     expect(count(1)).toBeLessThan(count(2))
   })
 
-  test("lively shrubs add stray shoots; today's shrubs are unchanged", () => {
+  test("lively shrubs are rounder and grow stray shoots; today's shrubs are unchanged", () => {
     const bush = (opts = FOLIAGE_BUILD_TODAY) => {
       const m = new Mesh()
       buildFoliageTree(m, 4, 4, 1.3, 0.9, 99, 0, params, undefined, opts)
@@ -74,8 +74,7 @@ describe("vegetation build options", () => {
     expect(bush()).toEqual(plain.v)
     const lively = bush(FOLIAGE_BUILD_LIVELY)
     expect(lively.length).toBeGreaterThan(plain.v.length)
-    // The crown is untouched (shoots go on after it, from their own Rng).
-    expect(lively.slice(0, 2200)).toEqual(plain.v.slice(0, 2200))
+    expect(bush(FOLIAGE_BUILD_LIVELY)).toEqual(lively)
   })
 })
 

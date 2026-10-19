@@ -1,7 +1,7 @@
 /**
  * Stills, wind clips and paired GPU cost of Outbreak's vegetation (Backquote › Vegetation), one headless run:
  *
- *   bun scripts/vegetation-stills.ts --out <dir> [--label before|after] [--clip] [--gpu] [--look today|lively]
+ *   bun scripts/vegetation-stills.ts --out <dir> [--clip] [--gpu]
  *
  * Stills: the start house's front yard and the woodland trees beside it at zoom 38 by day (13:00), at dusk (19:30) and
  * at night (23:00, flashlight on the trees), plus a closer zoom-22 crop of one tree. `--clip` records 4 s of wind (sim
@@ -23,8 +23,8 @@ const arg = (name: string, fallback?: string) => {
 }
 const flag = (name: string) => process.argv.includes(`--${name}`)
 const out = resolve(arg("out", resolve(root, "../../captures/vegetation"))!)
-const label = arg("label", "after")!
-const look = arg("look") as "today" | "lively" | undefined
+type VegLook = "today" | "lively"
+const LOOKS: { label: string; look: VegLook }[] = [{ label: "before", look: "today" }, { label: "after", look: "lively" }]
 const rounds = Number(arg("rounds", "8"))
 mkdirSync(out, { recursive: true })
 
@@ -52,19 +52,22 @@ const browser = await chromium.launch({ executablePath, headless: true, args: ["
 type Shot = { name: string; hour: number; zoom: number; x: number; y: number; aim: number; flashlight: boolean }
 // Front walk of origin house 0 (rect 22..37 × 24..35.5): woodland trees and the driveway hedge to the west, the yard
 // tree and corner shrubs to the east, street trees across the road.
-const YARD = { x: 26.5, y: 40.5 }
+const YARD = { x: 22, y: 41 }
+// Aim -2.25 points the beam north-west at the woodland oaks (x ≈ 16.5–17, z ≈ 32–36).
+const AT_WOODS = -2.25
 const shots: Shot[] = [
-  { name: "yard-13h-z38", hour: 13, zoom: 38, ...YARD, aim: Math.PI, flashlight: false },
-  { name: "yard-1930h-z38", hour: 19.5, zoom: 38, ...YARD, aim: Math.PI, flashlight: true },
-  { name: "yard-23h-z38", hour: 23, zoom: 38, ...YARD, aim: Math.PI * 0.93, flashlight: true },
-  { name: "tree-13h-z22", hour: 13, zoom: 22, x: 19.5, y: 39, aim: Math.PI, flashlight: false },
-  { name: "tree-23h-z22", hour: 23, zoom: 22, x: 20.5, y: 39.5, aim: Math.PI * 0.9, flashlight: true },
+  { name: "yard-13h-z38", hour: 13, zoom: 38, ...YARD, aim: AT_WOODS, flashlight: false },
+  { name: "yard-1930h-z38", hour: 19.5, zoom: 38, ...YARD, aim: AT_WOODS, flashlight: true },
+  { name: "yard-23h-z38", hour: 23, zoom: 38, ...YARD, aim: AT_WOODS, flashlight: true },
+  { name: "tree-13h-z22", hour: 13, zoom: 22, x: 21.5, y: 39.5, aim: -2.3, flashlight: false },
+  { name: "tree-23h-z22", hour: 23, zoom: 22, x: 21.5, y: 39.5, aim: -2.3, flashlight: true },
+  { name: "under-1930h-z30", hour: 19.5, zoom: 30, x: 17.2, y: 36.4, aim: Math.PI, flashlight: true },
 ]
 const HUD = "#status, #hotbar, #stamina, #battery, .callouts, .callout, #hud, .hud, #markers, #prompt, #lab-panel, .knobs-root"
 const errors: string[] = []
-const meta: Record<string, unknown> = { label, look: look ?? null, shots: {} }
+const meta: Record<string, unknown> = { shots: {} }
 
-async function setup(page: Page, s: Omit<Shot, "name">, vegLook?: string) {
+async function setup(page: Page, s: Omit<Shot, "name">, vegLook: VegLook) {
   await page.evaluate(async ({ s, vegLook }) => {
     const h = (window as any).__arcadeHarness
     h.freeze(true)
@@ -72,7 +75,7 @@ async function setup(page: Page, s: Omit<Shot, "name">, vegLook?: string) {
     h.setQuality("high")
     h.setLab("timeScale", 0)
     h.setLab("hour", s.hour)
-    if (vegLook) h.setLab("vegLook", vegLook === "today" ? 0 : 1)
+    h.setLab("vegLook", vegLook === "today" ? 0 : 1)
     h.setZoomRaw(s.zoom)
     h.pose(s.x, s.y, s.aim)
     const p = h.state().player
@@ -102,7 +105,7 @@ async function clip(page: Page, name: string, s: Omit<Shot, "name">, sweep: numb
   const dir = resolve(out, `${name}-frames`)
   rmSync(dir, { recursive: true, force: true })
   mkdirSync(dir, { recursive: true })
-  await setup(page, s, look)
+  await setup(page, s, "lively")
   const frames = 120
   for (let f = 0; f < frames; f++) {
     const aim = s.aim + Math.sin((f / frames) * Math.PI * 2) * sweep
@@ -123,16 +126,18 @@ try {
   const page = await open(1536, 1024, 1)
   meta.adapter = await page.evaluate(() => (window as any).__arcadeHarness.adapterInfo)
   await page.addStyleTag({ content: `${HUD} { visibility: hidden !important; }` })
-  for (const shot of shots) {
-    await setup(page, shot, look)
-    await page.screenshot({ path: resolve(out, `${label}-${shot.name}.png`) })
-    ;(meta.shots as Record<string, unknown>)[shot.name] = shot
-    console.log(shot.name)
+  for (const { label, look } of LOOKS) {
+    for (const shot of shots) {
+      await setup(page, shot, look)
+      await page.screenshot({ path: resolve(out, `${label}-${shot.name}.png`) })
+      ;(meta.shots as Record<string, unknown>)[shot.name] = shot
+      console.log(label, shot.name)
+    }
   }
   if (flag("clip")) {
     await page.setViewportSize({ width: 1280, height: 720 })
-    await clip(page, `${label}-wind-night`, { hour: 23, zoom: 38, ...YARD, aim: Math.PI * 0.95, flashlight: true }, 0.35)
-    await clip(page, `${label}-wind-day`, { hour: 13, zoom: 38, ...YARD, aim: Math.PI, flashlight: false }, 0)
+    await clip(page, "wind-night", { hour: 23, zoom: 38, ...YARD, aim: AT_WOODS, flashlight: true }, 0.35)
+    await clip(page, "wind-day", { hour: 13, zoom: 38, ...YARD, aim: AT_WOODS, flashlight: false }, 0)
   }
   await page.close()
 
@@ -140,8 +145,8 @@ try {
     const gpuPage = await open(1728, 947, 2)
     meta.gpuViewport = await gpuPage.evaluate(() => [innerWidth * devicePixelRatio, innerHeight * devicePixelRatio])
     const scenes = [
-      { name: "yard night", hour: 23, zoom: 38, ...YARD, aim: Math.PI * 0.93, flashlight: true },
-      { name: "yard day", hour: 13, zoom: 38, ...YARD, aim: Math.PI, flashlight: false },
+      { name: "yard night", hour: 23, zoom: 38, ...YARD, aim: AT_WOODS, flashlight: true },
+      { name: "yard day", hour: 13, zoom: 38, ...YARD, aim: AT_WOODS, flashlight: false },
     ]
     const med = (xs: number[]) => { const s = [...xs].sort((p, q) => p - q); return (s[(s.length - 1) >> 1]! + s[s.length >> 1]!) / 2 }
     const gpu: Record<string, unknown> = {}
@@ -167,7 +172,7 @@ try {
   }
   meta.errors = errors
 } finally {
-  writeFileSync(resolve(out, `${label}-meta.json`), JSON.stringify(meta, null, 2))
+  writeFileSync(resolve(out, "meta.json"), JSON.stringify(meta, null, 2))
   await browser.close()
   await server.close()
 }

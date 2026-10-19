@@ -978,6 +978,9 @@ function emitBrushyLeafCard(
   }
 }
 
+/** Lively mound shading: the crown centre the clump is lit away from, and the sunlit leaf colour. */
+type MoundStyle = { crown: Point; lit: Rgb }
+
 /**
  * Closed lumpy leaf mound: an apex fan plus rings of jittered ellipsoid points with soft ellipsoid normals.
  * It gives each bough or bush lobe an opaque mass (no see-through gaps from above) for ~72 vertices; the
@@ -996,8 +999,10 @@ function emitLeafMound(
   auxOffset: number,
   flex: number,
   segs = 6,
+  style?: MoundStyle,
 ): void {
-  const polar = [0.0, 0.78, 1.72]
+  // Lively crowns: a fourth ring below the equator rounds the silhouette (no hexagon outline from above).
+  const polar = style ? [0.0, 0.62, 1.25, 1.95] : [0.0, 0.78, 1.72]
   const rings: { p: Point; n: Point; t: number }[][] = []
   const phase = rng.next() * Math.PI * 2
   for (let k = 0; k < polar.length; k++) {
@@ -1014,12 +1019,20 @@ function emitLeafMound(
     }
     rings.push(ring)
   }
-  const col = (t: number, p: Point): Rgb => {
+  const col = (t: number, p: Point, n: Point): Rgb => {
     const w = noise2(p[0] * 2.1 + p[1], p[2] * 2.1 - p[1])
-    return mixRgb(deepCol, midCol, clamp01(t * 1.25 + (w - 0.5) * 0.3))
+    const base = mixRgb(deepCol, midCol, clamp01(t * 1.25 + (w - 0.5) * 0.3))
+    if (!style) return base
+    // Clump depth from above: faces turned out of the crown and up catch the light, faces turned in toward the trunk
+    // (the crevices between clumps) fall into the crown's shade.
+    const o = normalize3(p[0] - style.crown[0], (p[1] - style.crown[1]) * 0.8 + 0.25, p[2] - style.crown[2])
+    const e = n[0] * o[0] + n[1] * o[1] + n[2] * o[2]
+    const lit = clamp01((e - 0.15) / 0.75) * (0.35 + 0.65 * t)
+    const inward = clamp01(-e * 1.4)
+    return scaleRgb(mixRgb(base, style.lit, lit * 0.7), 1 - 0.4 * inward)
   }
   const vert = (v: { p: Point; n: Point; t: number }) =>
-    m.vert(v.p, v.n, col(v.t, v.p), MAT.foliage, auxOffset + clamp01(flex * (0.35 + 0.65 * v.t)))
+    m.vert(v.p, v.n, col(v.t, v.p, v.n), MAT.foliage, auxOffset + clamp01(flex * (0.35 + 0.65 * v.t)))
   const apex = rings[0]![0]!
   for (let i = 0; i < segs; i++) {
     const a = rings[1]![i]!, b = rings[1]![(i + 1) % segs]!
@@ -1061,6 +1074,7 @@ function emitBoughCluster(
   sprigs = 0,
   mound = false,
   moundSegs = 6,
+  lively = false,
 ): void {
   const domePivot: Point = [cx, cy - ry * 0.28, cz]
   // Note: vertex colors are sRGB (raised to ^2.2 in vs), so 0.58 sRGB = 0.30 linear (deep uncrushed 70s olive-walnut shadow)
@@ -1070,7 +1084,7 @@ function emitBoughCluster(
   const midCol = scaleRgb(base, midShade)
   const sunlitCol = scaleRgb(base, 1.24)
 
-  if (mound) emitLeafMound(m, cx, cy, cz, rx * 0.9, ry * 0.92, deepCol, midCol, rng, auxOffset, flexBase, moundSegs)
+  if (mound) emitLeafMound(m, cx, cy, cz, rx * 0.9, ry * 0.92, deepCol, midCol, rng, auxOffset, flexBase, moundSegs, lively ? { crown: crownCenter, lit: sunlitCol } : undefined)
   const totalCards = Math.max(mound ? 2 : 3, Math.round(sprigDensity))
   for (let s = 0; s < totalCards; s++) {
     // With a mound for mass, rosettes go only on the mid/outer shells where they break the silhouette.
@@ -1303,6 +1317,8 @@ export function buildFoliageTree(
     ? params.leafCardSize * Math.max(0.55, Math.min(1.55, radiusRatio))
     : Math.max(0.11, radius * 0.24)
   // Distance/perimeter LOD: full card density on hero street/house trees, lighter on outer town trees
+  // Lively mounds are rounder (more segments, a fourth ring) on medium and high detail.
+  const moundSegs = lively ? [isHeroTree ? 6 : 5, isHeroTree ? 8 : 7, isHeroTree ? 10 : 8][quality]! : isHeroTree ? 6 : 5
   const sprigsPerClump = (isHeroTree ? 3 : 2) + (lively ? quality - 1 : 0)
   const edgeSprigs = lively ? (quality === 0 ? 0 : quality === 2 ? (isHeroTree ? 2 : 1) : isHeroTree ? 1 : 0) : isHeroTree ? 1 : 0
   // Bare trees: a few dry clumps cling to some boughs; the rest of the crown is limbs and twigs.
@@ -1422,7 +1438,8 @@ export function buildFoliageTree(
         0,
         inGap ? 0 : edgeSprigs,
         true,
-        isHeroTree ? 6 : 5,
+        moundSegs,
+        lively,
       )
     }
   }
@@ -1451,6 +1468,8 @@ export function buildFoliageTree(
       0,
       edgeSprigs,
       true,
+      lively ? moundSegs + 1 : 6,
+      lively,
     )
   }
 
@@ -1546,7 +1565,8 @@ export function buildFoliageBush(
       FOLIAGE_BUSH_AUX,
       sprigs,
       true,
-      5,
+      opts.lively ? 7 : 5,
+      opts.lively,
     )
   }
   const topR = R * (0.56 + 0.1 * wild)
@@ -1569,6 +1589,8 @@ export function buildFoliageBush(
     FOLIAGE_BUSH_AUX,
     sprigs,
     true,
+    opts.lively ? 8 : 6,
+    opts.lively,
   )
 
   // Clip toward a rounded box (flat top, straight sides) by `trim`, bend normals to match, and darken the skirt.

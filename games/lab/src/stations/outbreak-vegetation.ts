@@ -13,8 +13,8 @@ const variants: StationVariant[] = [
   { id: "veg-lively", group: "Vegetation", boardOption: "2", label: "Lively", note: "Oak, maple, birch and pine by seed, a few bare trees, limbs that sway with their clumps, stray shoots on the hedges, and one gust field rolling across the town: crowns lean and sway, leaves flutter near the camera, lawns lay over as gusts pass. Canopies part over the survivor.", setup: lively },
   { id: "veg-gale", group: "Vegetation", label: "Gale", note: "Wind 2×, short fast gusts: for tuning the layers, not for play.", setup: [...lively, set("vegWind", 2), set("vegGustScale", 14), set("vegGustSpeed", 9)] },
   { id: "veg-today", group: "Vegetation", boardOption: "1", label: "Today (before)", note: "The shipped trees and per-plant wobble, every tree the same oak recipe.", setup: [set("vegLook", 0)] },
-  { id: "yard-night", group: "Shot", label: "Front yard, night", note: "23:00, flashlight on the woodland trees and the driveway hedge west of Ash's house.", setup: shot(23, 38, pose(26.5, 40.5, Math.PI * 0.93, { flashlight: true })) },
-  { id: "yard-day", group: "Shot", label: "Front yard, day", note: "13:00 from the front walk: street trees, yard tree, foundation shrubs and the lawn.", setup: shot(13, 38, pose(26.5, 40.5, Math.PI)) },
+  { id: "yard-night", group: "Shot", label: "Front yard, night", note: "23:00, flashlight on the woodland trees and the driveway hedge west of Ash's house.", setup: shot(23, 38, pose(22, 41, -2.25, { flashlight: true })) },
+  { id: "yard-day", group: "Shot", label: "Front yard, day", note: "13:00 from the front walk: street trees, yard tree, foundation shrubs and the lawn.", setup: shot(13, 38, pose(22, 41, -2.25)) },
   { id: "under-tree", group: "Shot", label: "Under a tree", note: "Standing under the woodland oaks at dusk: the crown parts so the survivor stays readable.", setup: shot(19.5, 30, pose(17.2, 36.4, Math.PI, { flashlight: true })) },
 ]
 
