@@ -1,6 +1,10 @@
 import type { Rect } from "@arcade/kit/sim/geom"
 import { propShape, type Building, type Prop, type Town } from "../map"
 import { DESTINATION_WORDS, roughDistance, type WayOutPlan } from "./plan"
+import { hash01 } from "./hash"
+import { ROADBLOCK_WORDS, type Roadblock } from "./roadblocks"
+
+export { hash01 }
 
 /**
  * The Way Out's clues (AR-64), in three tiers. Drawings first, a few words under them (D-19's spirit).
@@ -31,6 +35,9 @@ export const EVENT_LATE_BOAT = 11
 export const EVENT_LEFT_BEHIND = 12
 export const EVENT_ESCAPED = 13
 export const EVENT_UNSEEN = 14
+export const EVENT_BLOWN = 15
+export const EVENT_CUT = 16
+export const EVENT_HOTWIRED = 17
 
 export function clueKindOfCode(code: number): ClueKind | null {
   for (const [k, v] of Object.entries(CLUE_CODE)) if (v === code) return k as ClueKind
@@ -40,14 +47,6 @@ export function clueKindOfCode(code: number): ClueKind | null {
 /** A clue lying in the world: a note on a table, a map piece on a counter, the sign, the soldier. */
 export type ClueSite = { id: string; kind: ClueKind; x: number; y: number; z: number; yaw: number; buildingId?: string; rect: Rect }
 
-export function hash01(s: string): number {
-  let h = 2166136261
-  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619)
-  h ^= h >>> 15
-  h = Math.imul(h, 0x2c1b3c6d)
-  h ^= h >>> 12
-  return (h >>> 0) / 4294967296
-}
 
 const HOMES: readonly string[] = ["house", "ranch", "cottage", "cabin"]
 const NOTE_HOSTS: readonly Prop["kind"][] = ["table", "dresser", "nightstand", "counter"]
@@ -119,7 +118,7 @@ export function broadcastOn(hour: number, every: number, length: number): boolea
 export const deadlineText = (night: number) => `dawn, Day ${night + 1}`
 
 /** What each clue says, in as few words as it can: the drawing carries the rest. */
-export function clueWords(kind: ClueKind, plan: WayOutPlan, deadlineNight: number): { title: string; lines: string[] } {
+export function clueWords(kind: ClueKind, plan: WayOutPlan, deadlineNight: number, blocks: readonly Roadblock[] = []): { title: string; lines: string[] } {
   const w = DESTINATION_WORDS[plan.kind]
   switch (kind) {
     case "radio":
@@ -133,7 +132,14 @@ export function clueWords(kind: ClueKind, plan: WayOutPlan, deadlineNight: numbe
     case "sign":
       return { title: `${w.short} →`, lines: [`${roughDistance(Math.max(0, plan.distance - plan.sign.along))}`] }
     case "soldier":
-      return { title: "Orders", lines: [`Hold the ${w.place} until ${deadlineText(deadlineNight)}.`, `The road in from the ${plan.arrival} is open.`] }
+      return {
+        title: "Orders",
+        lines: [
+          `Hold the ${w.place} until ${deadlineText(deadlineNight)}.`,
+          blocks.length ? `${ROADBLOCK_WORDS[blocks[0]!.kind].name} ${roughDistance(blocks[0]!.along - plan.soldier.along)} on. Go round a block.` : "",
+          `The road in from the ${plan.arrival} is open.`,
+        ].filter(Boolean),
+      }
     case "arrive":
       return { title: w.short, lines: ["Signal them. Then hold until dawn."] }
   }

@@ -243,6 +243,7 @@ export function rollExtraLoot(contents: Stack[], tableKey: string, kind: Prop["k
  * in warehouses, cabins and hardware back rooms; firecrackers in drawers and at the gas station till; flare guns at the
  * police station and in cabins; bear traps in cabins; pressure tanks (for a home-made flamethrower) in garages; and a
  * flamethrower itself, very rarely, on a garage or warehouse shelf (and in the hardware store's back room, below).
+ * Bolt cutters, for the Way Out's chained gates (`shared/way-out/`), sit on hardware, garage and warehouse shelves.
  */
 export const RARE_LOOT: Readonly<Record<string, Partial<Record<Prop["kind"], readonly Roll[]>>>> = {
   house: {
@@ -250,16 +251,16 @@ export const RARE_LOOT: Readonly<Record<string, Partial<Record<Prop["kind"], rea
     dresser: [{ item: "firecrackers", chance: 0.025 }],
     nightstand: [{ item: "firecrackers", chance: 0.02 }],
   },
-  hardware: { shelf: [{ item: "fuel", chance: 0.14 }, { item: "bear-trap", chance: 0.06 }, { item: "dynamite", chance: 0.03 }] },
+  hardware: { shelf: [{ item: "fuel", chance: 0.14 }, { item: "bear-trap", chance: 0.06 }, { item: "dynamite", chance: 0.03 }, { item: "bolt-cutters", chance: 0.1 }] },
   garage: {
-    shelf: [{ item: "fuel", chance: 0.3 }, { item: "pressure-tank", chance: 0.06 }, { item: "firecrackers", chance: 0.04 }, { item: "flamethrower", chance: 0.012 }],
+    shelf: [{ item: "fuel", chance: 0.3 }, { item: "pressure-tank", chance: 0.06 }, { item: "firecrackers", chance: 0.04 }, { item: "flamethrower", chance: 0.012 }, { item: "bolt-cutters", chance: 0.05 }],
     counter: [{ item: "fuel", chance: 0.15 }, { item: "flare-gun", chance: 0.025 }],
   },
   gas_station: {
     shelf: [{ item: "fuel", chance: 0.35 }, { item: "pressure-tank", chance: 0.05 }],
     counter: [{ item: "firecrackers", chance: 0.12 }, { item: "fuel", chance: 0.15 }, { item: "flare-gun", chance: 0.03 }],
   },
-  warehouse: { shelf: [{ item: "fuel", chance: 0.12 }, { item: "dynamite", chance: 0.05 }, { item: "pressure-tank", chance: 0.05 }, { item: "flamethrower", chance: 0.01 }] },
+  warehouse: { shelf: [{ item: "fuel", chance: 0.12 }, { item: "dynamite", chance: 0.05 }, { item: "pressure-tank", chance: 0.05 }, { item: "flamethrower", chance: 0.01 }, { item: "bolt-cutters", chance: 0.06 }] },
   police: { shelf: [{ item: "flare-gun", chance: 0.08 }], counter: [{ item: "flare-gun", chance: 0.04 }] },
   grocery: { counter: [{ item: "firecrackers", chance: 0.06 }] },
   cabin: {

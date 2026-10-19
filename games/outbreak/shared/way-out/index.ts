@@ -1,5 +1,7 @@
 import { pushOut } from "@arcade/kit/sim/geom"
 import { registerOutbreakSharedFeature } from "../feature-registry"
+import type { OutbreakSim } from "../sim-types"
+import { blockCarRects, gateHandler, hotwireHandler, pushOutOfBlocks, stepRoadblocks, stepWayOutHolds, wayOutRefuel } from "./car"
 import { landmarkRects } from "./landmark"
 import { clueHandler, createWayOutState, planOf, runWon, signalHandler, stepWayOut, type WayOutState } from "./runtime"
 import { DEFAULT_WAY_OUT_TUNING, wayOutTuning, type WayOutTuning } from "./tuning"
@@ -18,16 +20,18 @@ export const outbreakWayOutSharedFeature = registerOutbreakSharedFeature<WayOutS
     const of = () => sim.getFeatureState<WayOutState>("wayOut")
     registry.register(clueHandler(sim, of))
     registry.register(signalHandler(sim, of))
+    registry.register(hotwireHandler(sim, of))
+    registry.register(gateHandler(sim, of))
+    // The car project: gas cans only, the pumps dry (Chem as before when it is off).
+    sim.vehicles.refuelRule = () => wayOutRefuel(of()?.tuning ?? DEFAULT_WAY_OUT_TUNING)
   },
-  // The destination's hull, booth, hangar or wall stops survivors and cars (appended after the vehicles feature's rebuild).
-  onChunkSync: (sim, state) => {
-    if (state.tuning.wayOut) sim.vehicleSolids.push(...landmarkRects(planOf(sim, state.tuning)))
-  },
-  onTopologyChanged: (sim, state) => {
-    if (state.tuning.wayOut) sim.vehicleSolids.push(...landmarkRects(planOf(sim, state.tuning)))
-  },
+  // The destination's hull, booth, hangar or wall and the standing roadblocks stop cars (appended after the vehicles
+  // feature's rebuild).
+  onChunkSync: (sim, state) => addCarSolids(sim, state.tuning),
+  onTopologyChanged: (sim, state) => addCarSolids(sim, state.tuning),
   pushOutSurvivor: (sim, survivor, radius, state) => {
     if (!state.tuning.wayOut) return
+    pushOutOfBlocks(sim, survivor, radius, state.tuning)
     const plan = planOf(sim, state.tuning)
     if (Math.abs(survivor.x - plan.x) > 40 || Math.abs(survivor.y - plan.y) > 40) return
     pushOut(survivor, radius, landmarkRects(plan))
@@ -46,8 +50,18 @@ export const outbreakWayOutSharedFeature = registerOutbreakSharedFeature<WayOutS
     slot.peek = null
     return true
   },
+  stepSurvivorActions: (ctx) => stepWayOutHolds(ctx, wayOutTuning(ctx.resolved.features)),
+  stepWorld: ({ sim, resolved, state }) => {
+    state.tuning = wayOutTuning(resolved.features)
+    return { topologyChanged: stepRoadblocks(sim, state) }
+  },
   stepWorldLate: ({ sim, resolved, state }) => {
     state.tuning = wayOutTuning(resolved.features)
     stepWayOut(sim, state)
   },
 })
+
+function addCarSolids(sim: OutbreakSim, t: WayOutTuning): void {
+  if (!t.wayOut) return
+  sim.vehicleSolids.push(...landmarkRects(planOf(sim, t)), ...blockCarRects(sim, t))
+}

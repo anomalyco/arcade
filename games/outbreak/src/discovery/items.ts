@@ -33,6 +33,7 @@ const FOOTPRINT: Record<string, number> = {
   molotov: 0.3,
   "flare-gun": 0.2,
   "bear-trap": 0.5,
+  "bolt-cutters": 0.45,
 }
 
 export function buildItemMeshes(): Record<string, Mesh> {
@@ -143,6 +144,7 @@ export function buildItemMeshes(): Record<string, Mesh> {
   const weapons = buildMeleeWeaponMeshes(0)
   for (const id of MELEE_WEAPON_IDS) out[id] = weapons[id]
   Object.assign(out, buildFireItemMeshes())
+  out["bolt-cutters"] = boltCuttersMesh()
   return out
 }
 
@@ -157,3 +159,15 @@ export function registerItemModels(renderer: Pick<Renderer, "addModel">): ItemMo
 
 /** Melee weapons are modelled held (blade up); lying down they roll onto their flat side. */
 export const isLongItem = (item: string) => (MELEE_WEAPON_IDS as readonly string[]).includes(item)
+
+/** Bolt cutters lying flat (the Way Out's chained gates): two red-gripped handles, short steel jaws. */
+function boltCuttersMesh(): Mesh {
+  const m = new Mesh()
+  const steel = hex(0x5c6064)
+  for (const s of [-1, 1]) {
+    m.yawBox(0.02, s * 0.04, 0.42, 0.025, 0, 0.03, s * 0.12, steel, MAT.shiny)
+    m.yawBox(-0.13, s * 0.06, 0.18, 0.04, 0, 0.035, s * 0.12, hex(0xa02a1e), MAT.lit)
+    m.yawBox(0.25, s * 0.012, 0.08, 0.03, 0, 0.032, s * -0.2, hex(0x3a3c3e), MAT.shiny)
+  }
+  return m
+}

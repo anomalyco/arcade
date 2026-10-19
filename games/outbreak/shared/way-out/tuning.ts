@@ -39,6 +39,20 @@ export type WayOutTuning = {
   siegeMax: number
   /** How far out the siege spawns (m). */
   siegeRadius: number
+  /** 1: the car is a project: the pumps are dry, only gas cans fill a tank, and a toolbox hotwires a car with no keys. 0: cars as they were. */
+  carProject: number
+  /** Fuel one gas can pours into a tank (% of a full tank). */
+  canFill: number
+  /** Seconds holding E to hotwire a car with a toolbox, and how far the noise carries (m). */
+  hotwireTime: number
+  hotwireNoise: number
+  /** Roadblocks across the route, between the dead soldier and the destination. */
+  roadblocks: number
+  /** Seconds holding E to cut a chained gate with bolt cutters, and how far the noise carries (m). */
+  cutTime: number
+  cutNoise: number
+  /** A dynamite blast this near a roadblock clears it (m from its edge). */
+  blastReach: number
 }
 
 export const DEFAULT_WAY_OUT_TUNING: WayOutTuning = {
@@ -64,6 +78,14 @@ export const DEFAULT_WAY_OUT_TUNING: WayOutTuning = {
   siegeGrowth: 3,
   siegeMax: 30,
   siegeRadius: 30,
+  carProject: 1,
+  canFill: 40,
+  hotwireTime: 6,
+  hotwireNoise: 14,
+  roadblocks: 2,
+  cutTime: 4,
+  cutNoise: 10,
+  blastReach: 3,
 }
 
 export const MISSED_ENDLESS = 0
@@ -140,4 +162,21 @@ export const wayOutControls = [
   { key: "wayOut.siegeGrowth", field: "siegeGrowth", label: "Wave grows every", group: G, min: 1, max: 20, step: 1, unit: "waves" },
   { key: "wayOut.siegeMax", field: "siegeMax", label: "Siege at most", group: G, min: 0, max: 80, step: 1, unit: "alive" },
   { key: "wayOut.siegeRadius", field: "siegeRadius", label: "Siege spawns at", group: G, min: 10, max: 60, step: 1, unit: "m" },
+  {
+    key: "wayOut.carProject",
+    field: "carProject",
+    label: "The car",
+    group: G,
+    options: [
+      { label: "As before (pumps work)", value: 0 },
+      { label: "A project (gas cans only, hotwire)", value: 1 },
+    ],
+  },
+  { key: "wayOut.canFill", field: "canFill", label: "A gas can fills", group: G, min: 5, max: 100, step: 5, unit: "%" },
+  { key: "wayOut.hotwireTime", field: "hotwireTime", label: "Hotwire hold", group: G, min: 0.5, max: 30, step: 0.5, unit: "s" },
+  { key: "wayOut.hotwireNoise", field: "hotwireNoise", label: "Hotwire noise", group: G, min: 0, max: 40, step: 1, unit: "m" },
+  { key: "wayOut.roadblocks", field: "roadblocks", label: "Roadblocks on the route", group: G, min: 0, max: 4, step: 1, unit: "" },
+  { key: "wayOut.cutTime", field: "cutTime", label: "Cut a chain", group: G, min: 0.5, max: 20, step: 0.5, unit: "s" },
+  { key: "wayOut.cutNoise", field: "cutNoise", label: "Cutting noise", group: G, min: 0, max: 40, step: 1, unit: "m" },
+  { key: "wayOut.blastReach", field: "blastReach", label: "Dynamite clears a block within", group: G, min: 0, max: 10, step: 0.5, unit: "m" },
 ] as const

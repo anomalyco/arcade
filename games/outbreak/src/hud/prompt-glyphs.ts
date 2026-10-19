@@ -163,4 +163,6 @@ export const PROMPT_ACTIONS: readonly { kind: string; action: InteractAction }[]
   { kind: "clue", action: a("take", "Take map") },
   { kind: "clue", action: a("search", "Search") },
   { kind: "signal", action: a("toggle", "Signal") },
+  { kind: "hotwire", action: a("install", "Hotwire", { hold: true }) },
+  { kind: "gate", action: a("disarm", "Cut chain", { hold: true }) },
 ]

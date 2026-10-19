@@ -12,7 +12,11 @@ import { radioStoreId, ds as rds } from "../shared/radios/radios"
 import type { RadiosState } from "../shared/radios/runtime"
 import type { Command, SessionTuning, SurvivorSlot } from "../shared/sim-types"
 import { generateWorldChunk, MACRO_SIZE } from "../shared/world"
-import { broadcastOn, carriesFlyer, EVENT_ESCAPED, EVENT_LEFT_BEHIND, EVENT_MISSED, policeSites, roadSites } from "../shared/way-out/clues"
+import { DEFAULT_FIRE_TUNING } from "../shared/fire/fire"
+import { explode } from "../shared/fire/runtime"
+import { BOLT_CUTTERS } from "../shared/way-out/car"
+import { broadcastOn, carriesFlyer, EVENT_BLOWN, EVENT_CUT, EVENT_ESCAPED, EVENT_HOTWIRED, EVENT_LEFT_BEHIND, EVENT_MISSED, policeSites, roadSites } from "../shared/way-out/clues"
+import { roadblocksOf } from "../shared/way-out/roadblocks"
 import { outbreakWayOutSharedFeature } from "../shared/way-out/index"
 import { alongRoute, DESTINATION_KINDS, routeLength, TOWN_CROSSROADS, wayOutPlan } from "../shared/way-out/plan"
 import { nearDawnHour, planOf, seedOf, type WayOutState } from "../shared/way-out/runtime"
@@ -298,6 +302,129 @@ describe("The Way Out: the stand and the escape", () => {
     expect(v.won).toBe(true)
     expect(v.escaped).toEqual([a.index, b.index])
     expect(v.kills[a.index]).toBe(7)
+  })
+})
+
+const holdE = (s: SurvivorSlot): Command => ({ ...idle(s.survivor.aim), interactHeld: true })
+const give = (sim: CoopSim, slot: SurvivorSlot, item: string, count = 1) => {
+  sim.progression.ledger.apply({ kind: "grant", actor: slot.id, item, count })
+  sim.progression.project(slot)
+}
+const hasRect = (rects: readonly (readonly number[])[], r: readonly number[]) => rects.some((x) => x.every((v, i) => v === r[i]))
+
+describe("The Way Out: the car and the roadblocks", () => {
+  test("roadblocks lie across the route past the soldier, spaced, with a gap people fit through and cars do not", () => {
+    let gates = 0
+    for (let seed = 1; seed <= 40; seed++) {
+      const plan = wayOutPlan(seed, seed, T)
+      const blocks = roadblocksOf(plan, T)
+      expect(roadblocksOf(plan, { ...T })).toEqual(blocks)
+      expect(blocks.length).toBeGreaterThan(0)
+      expect(blocks.length).toBeLessThanOrEqual(T.roadblocks)
+      expect(roadblocksOf(plan, { ...T, roadblocks: 0 })).toEqual([])
+      let prev = plan.soldier.along
+      for (const b of blocks) {
+        expect(b.along - prev).toBeGreaterThanOrEqual(90)
+        expect(b.along).toBeLessThanOrEqual(plan.distance - 139)
+        prev = b.along
+        const p = alongRoute(plan.route, b.along)
+        expect(Math.hypot(p.x - b.x, p.y - b.y)).toBeLessThan(0.01)
+        // The car box spans the road and both verges; the gap is inside it but in no walk box.
+        const across = b.dx ? b.car[3] - b.car[1] : b.car[2] - b.car[0]
+        expect(across).toBeGreaterThanOrEqual(24)
+        const inRect = (r: readonly number[], x: number, y: number) => x > r[0]! && x < r[2]! && y > r[1]! && y < r[3]!
+        expect(inRect(b.car, b.gap.x, b.gap.y)).toBe(true)
+        expect(b.walk.some((r) => inRect(r, b.gap.x, b.gap.y))).toBe(false)
+        const gapWide = b.dx ? Math.min(...b.walk.map((r) => Math.abs((r[1]! + r[3]!) / 2 - b.gap.y))) : Math.min(...b.walk.map((r) => Math.abs((r[0]! + r[2]!) / 2 - b.gap.x)))
+        expect(gapWide).toBeGreaterThan(0)
+        if (b.kind === "gate") gates++
+      }
+    }
+    expect(gates).toBeGreaterThan(5)
+  })
+
+  test("a standing roadblock stops cars and people outside its gap; a blast clears it and the road opens", () => {
+    const sim = quiet()
+    const a = sim.addSurvivor("a", 0)
+    const tune = tuning()
+    step(sim, 2, tune)
+    const b = roadblocksOf(planOf(sim, T), T)[0]!
+    place(sim, a, b.x - b.dx * 10, b.y - b.dy * 10)
+    step(sim, 2, tune)
+    expect(hasRect(sim.vehicleSolids, b.car)).toBe(true)
+    expect(view(sim)?.seen.has(0)).toBe(true)
+    // Into a walk box: pushed out. At the gap: through.
+    const wall = b.walk[0]!
+    place(sim, a, (wall[0] + wall[2]) / 2, (wall[1] + wall[3]) / 2)
+    step(sim, 1, tune)
+    const inWall = a.survivor.x > wall[0] && a.survivor.x < wall[2] && a.survivor.y > wall[1] && a.survivor.y < wall[3]
+    expect(inWall).toBe(false)
+    place(sim, a, b.gap.x, b.gap.y)
+    step(sim, 1, tune)
+    expect(Math.hypot(a.survivor.x - b.gap.x, a.survivor.y - b.gap.y)).toBeLessThan(0.2)
+    // A blast far off does nothing; dynamite at the block clears it.
+    place(sim, a, b.x - b.dx * 20, b.y - b.dy * 20)
+    explode(sim, b.x - b.dx * 30, b.y - b.dy * 30, a.id, DEFAULT_FIRE_TUNING)
+    step(sim, 1, tune)
+    expect(view(sim)?.cleared[0]).toBeUndefined()
+    explode(sim, b.x - b.dx * 3, b.y - b.dy * 3, a.id, DEFAULT_FIRE_TUNING)
+    step(sim, 1, tune)
+    expect(view(sim)?.cleared[0]).toBe(1)
+    expect(view(sim)?.last).toBe(EVENT_BLOWN)
+    expect(hasRect(sim.vehicleSolids, b.car)).toBe(false)
+  })
+
+  test("bolt cutters open a chained gate: hold E at the padlock", () => {
+    let seed = 1
+    while (!roadblocksOf(wayOutPlan(seed, seed, T), T).some((b) => b.kind === "gate")) seed++
+    const sim = quiet(seed)
+    const a = sim.addSurvivor("a", 0)
+    const tune = tuning()
+    step(sim, 2, tune)
+    const gate = roadblocksOf(planOf(sim, T), T).find((b) => b.kind === "gate")!
+    place(sim, a, gate.lock.x - gate.dx * 0.6, gate.lock.y - gate.dy * 0.6, Math.atan2(gate.dy, gate.dx))
+    step(sim, 1, tune)
+    expect(a.prompt?.kind).not.toBe("gate")
+    give(sim, a, BOLT_CUTTERS)
+    step(sim, 1, tune)
+    expect(a.prompt?.kind).toBe("gate")
+    // Letting go loses the cut; holding it through finishes it.
+    step(sim, Math.ceil(1 / TICK_DT), tune, 1, holdE)
+    expect(view(sim)?.cut?.progress).toBeGreaterThan(0.1)
+    step(sim, 40, tune)
+    expect(view(sim)?.cut).toBeNull()
+    step(sim, Math.ceil((T.cutTime + 0.5) / TICK_DT), tune, 1, holdE)
+    expect(view(sim)?.cleared[gate.index]).toBe(2)
+    expect(view(sim)?.last).toBe(EVENT_CUT)
+    expect(hasRect(sim.vehicleSolids, gate.car)).toBe(false)
+  })
+
+  test("a toolbox hotwires a car with no keys; gas cans fill a tank, the pumps are dry, Chem no longer does", () => {
+    const sim = quiet()
+    const a = sim.addSurvivor("a", 0)
+    const tune = tuning()
+    step(sim, 2, tune)
+    const v = sim.vehicles.spawnVehicle("sedan", 44, 70, Math.PI / 2, { fuel: 0, hasKeys: false })
+    place(sim, a, 41.8, 70, 0)
+    step(sim, 1, tune)
+    expect(a.prompt?.kind).toBe("vehicle")
+    give(sim, a, "toolbox")
+    step(sim, 1, tune)
+    expect(a.prompt?.kind).toBe("hotwire")
+    step(sim, Math.ceil((T.hotwireTime + 0.5) / TICK_DT), tune, 1, holdE)
+    expect(v.hasKeys).toBe(true)
+    expect(view(sim)?.last).toBe(EVENT_HOTWIRED)
+    // Chem does nothing for an empty tank now; two gas cans pour in when you get in.
+    give(sim, a, "chem", 4)
+    give(sim, a, "fuel", 2)
+    expect(sim.vehicles.enter(a, v, sim.progression, sim.ai, sim.time)).toBe(true)
+    expect(v.fuel).toBe(T.canFill * 2)
+    expect(sim.progression.ledger.count(a.id, "chem")).toBe(4)
+    expect(sim.progression.ledger.count(a.id, "fuel")).toBe(0)
+    expect(sim.vehicles.refuelRule().pumps).toBe(false)
+    // As before with the car project off: Chem fills an empty tank to 55, the pumps work.
+    step(sim, 1, tuning({ carProject: 0 }))
+    expect(sim.vehicles.refuelRule()).toMatchObject({ item: "chem", pumps: true })
   })
 })
 

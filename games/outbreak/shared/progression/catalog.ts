@@ -65,6 +65,8 @@ export const ITEMS: readonly ItemDef[] = [
   { id: "toolbox", label: "Hardware Toolbox", shortLabel: "Toolbox", tag: "part" },
   { id: "car-battery", label: "Car Battery", shortLabel: "Car battery", tag: "part", slots: 2 },
   { id: "pressure-tank", label: "Pressure Tank", shortLabel: "Tank", tag: "part" },
+  // The Way Out (`shared/way-out/`): cuts the chain on a gate across the route.
+  { id: "bolt-cutters", label: "Bolt Cutters", shortLabel: "Cutters", tag: "part" },
 
   { id: "seen:plank", label: "Planks", tag: "knowledge" },
   { id: "seen:scrap", label: "Scrap", tag: "knowledge" },

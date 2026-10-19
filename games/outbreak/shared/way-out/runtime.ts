@@ -26,6 +26,7 @@ import {
   type ClueSite,
 } from "./clues"
 import { DESTINATION_WORDS, planSeed, wayOutPlan, type WayOutPlan } from "./plan"
+import { roadblocksOf } from "./roadblocks"
 import { ds, WAY_OUT_STORE } from "./state"
 import { DEFAULT_WAY_OUT_TUNING, MISSED_LATE_BOAT, STAND_FIXED, type WayOutTuning } from "./tuning"
 
@@ -36,6 +37,8 @@ export type WayOutState = {
   siege: number[]
   sitesKey: string
   sites: ClueSite[]
+  /** The last noise-bus event checked for blasts at the roadblocks. */
+  blastSeen: number
 }
 
 /** Arriving this near the destination confirms it (m). */
@@ -47,7 +50,7 @@ const SIGNAL_REACH = 1.8
 const isDark = (hour: number) => dayCycle(hour).darkness >= 0.5
 
 export function createWayOutState(sim: OutbreakSim): WayOutState {
-  return { tuning: DEFAULT_WAY_OUT_TUNING, wasDark: isDark(sim.hour), siege: [], sitesKey: "", sites: [] }
+  return { tuning: DEFAULT_WAY_OUT_TUNING, wasDark: isDark(sim.hour), siege: [], sitesKey: "", sites: [], blastSeen: 0 }
 }
 
 export const planOf = (sim: Pick<OutbreakSim, "town">, t: WayOutTuning): WayOutPlan => wayOutPlan(sim.town.seed, sim.town.houseSeed, t)
@@ -105,8 +108,12 @@ export function findClue(sim: OutbreakSim, state: WayOutState, id: string, kind:
   }
   const tier = arrived || kinds.size >= 2 ? 3 : kinds.size >= 1 ? 2 : 1
   st.counts.tier = Math.max(st.counts.tier ?? 0, tier)
+  const plan = planOf(sim, t)
+  const blocks = roadblocksOf(plan, t)
+  // The soldier's orders mark the roadblocks on the map.
+  if (kind === "soldier") for (const b of blocks) st.counts[`rbs:${b.index}`] = 1
   event(sim, st, CLUE_CODE[kind], by)
-  const words = clueWords(kind, planOf(sim, t), st.counts.deadline ?? t.deadlineNight)
+  const words = clueWords(kind, plan, st.counts.deadline ?? t.deadlineNight, blocks.filter((b) => !st.counts[`rb:${b.index}`]))
   tell(sim, `${words.title} — ${words.lines.join(" ")}`)
   return true
 }

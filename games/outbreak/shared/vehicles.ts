@@ -963,6 +963,28 @@ export type OutbreakVehicleSnapshot = {
 }
 
 /**
+ * How a tank is filled. Chem by default; The Way Out's car project (`shared/way-out/`) makes it gas cans only, poured
+ * into any tank with room, with the gas station pumps dry.
+ */
+export type VehicleRefuelRule = {
+  /** Belt item poured in, how many make one fill, and the fuel one fill adds (tank units). */
+  item: string
+  count: number
+  fill: number
+  /** Pour into a tank with room for a whole fill (false: only into an empty tank, and the fill sets the level). */
+  topUp: boolean
+  /** Gas station pumps fill the tank for free. */
+  pumps: boolean
+  /** How the warnings name it. */
+  name: string
+}
+
+export const CHEM_REFUEL: VehicleRefuelRule = { item: "chem", count: 2, fill: 55, topUp: false, pumps: true, name: "Chem" }
+
+const canPour = (v: Pick<OutbreakVehicle, "fuel" | "maxFuel">, r: VehicleRefuelRule) => (r.topUp ? v.fuel + r.fill <= v.maxFuel + 0.01 : v.fuel <= 0.01)
+const refuelHint = (r: VehicleRefuelRule) => (r.pumps ? `refuel with ${r.name} or at a Gas Station` : `pour in a ${r.name}`)
+
+/**
  * Authoritative vehicle subsystem for Outbreak (`CoopSim`).
  * Manages vehicle spawning across streaming chunks, `ChunkDelta` persistence when a vehicle is left somewhere,
  * entering/exiting/seat-cycling, battery/key/fuel checks, OBB physics, engine/horn noise, zombie roadkill,
@@ -976,6 +998,8 @@ export class OutbreakVehicleSubsystem {
   private lastEngineNoiseAt = new Map<number, number>()
   private lastHornNoiseAt = new Map<number, number>()
   private actorOf = new WeakMap<object, VehicleRiderSlot>()
+  /** How tanks are filled; a feature may change it (The Way Out's car project). */
+  refuelRule: () => VehicleRefuelRule = () => CHEM_REFUEL
 
   constructor(worldStream: StreamingWorld, town: Town, tuning?: Partial<VehicleTuning>) {
     if (tuning) Object.assign(this.tuning, tuning)
@@ -1155,14 +1179,15 @@ export class OutbreakVehicleSubsystem {
     progression: OutbreakProgression,
   ): { canInstallBattery: boolean; canUnlockKey: boolean; canRefuel: boolean } {
     const l = progression.ledger
+    const r = this.refuelRule()
     return {
       canInstallBattery: !v.hasBattery && l.count(slotId, "car-battery") > 0,
       canUnlockKey: !v.hasKeys && l.count(slotId, "key") > 0,
-      canRefuel: v.fuel <= 0.01 && l.count(slotId, "chem") >= 2,
+      canRefuel: canPour(v, r) && l.count(slotId, r.item) >= r.count,
     }
   }
 
-  /** Consumes carried items (`car-battery`, `key`, `chem`) to ready a vehicle if the survivor has them. */
+  /** Consumes carried items (`car-battery`, `key`, the refuel item) to ready a vehicle if the survivor has them. */
   trySupplyVehicle(slot: VehicleRiderSlot, v: OutbreakVehicle, progression: OutbreakProgression): boolean {
     const l = progression.ledger
     let supplied = false
@@ -1189,15 +1214,20 @@ export class OutbreakVehicleSubsystem {
         supplied = true
       }
     }
-    if (v.fuel <= 0.01 && l.count(slot.id, "chem") >= 2) {
-      const beltId = `${slot.id}/belt`
-      if (l.count(beltId, "chem") >= 2) {
-        l.apply({ kind: "drain", store: beltId, item: "chem", count: 2 })
-        v.fuel = Math.min(v.maxFuel, 55)
-        v.modified = true
-        progression.notify(slot, "Refueled tank (+55% fuel)", "result", "vehicle")
-        supplied = true
-      }
+    const r = this.refuelRule()
+    const beltId = `${slot.id}/belt`
+    let poured = 0
+    while (canPour(v, r) && l.count(slot.id, r.item) >= r.count && l.count(beltId, r.item) >= r.count) {
+      l.apply({ kind: "drain", store: beltId, item: r.item, count: r.count })
+      v.fuel = r.topUp ? Math.min(v.maxFuel, v.fuel + r.fill) : Math.min(v.maxFuel, r.fill)
+      v.modified = true
+      poured++
+      if (!r.topUp) break
+    }
+    if (poured) {
+      const text = r.topUp ? `Poured in ${poured} ${r.name}${poured > 1 ? "s" : ""} (${Math.round((v.fuel / v.maxFuel) * 100)}% fuel)` : `Refueled tank (+${r.fill}% fuel)`
+      progression.notify(slot, text, "result", "vehicle")
+      supplied = true
     }
     if (supplied) progression.project(slot)
     return supplied
@@ -1253,7 +1283,7 @@ export class OutbreakVehicleSubsystem {
       } else if (!v.hasKeys) {
         progression.notify(slot, "No keys — search house dressers or nightstands for a Key", "warning", "vehicle")
       } else if (v.fuel <= 0) {
-        progression.notify(slot, "Empty fuel tank — refuel with Chem or at a Gas Station", "warning", "vehicle")
+        progression.notify(slot, `Empty fuel tank — ${refuelHint(this.refuelRule())}`, "warning", "vehicle")
       }
     }
     this.sit(v, p, seat)
@@ -1504,7 +1534,7 @@ export class OutbreakVehicleSubsystem {
             ? "Dead battery — needs a Car Battery"
             : !v.hasKeys
               ? "No ignition key — search houses for a Key"
-              : "Out of fuel — refuel with Chem or at a Gas Station"
+              : `Out of fuel — ${refuelHint(this.refuelRule())}`
           progression.notify(slot, reason, "warning", "vehicle")
           ai.emitNoise(v.x, v.y, 7.5, "door", time, slot.id, 0.5)
         }
@@ -1594,7 +1624,7 @@ export class OutbreakVehicleSubsystem {
           if (driver) progression.notify(driver, "Out of fuel!", "warning", "vehicle")
         }
       }
-      if (!v.wreck && v.fuel < v.maxFuel - 1 && speedOf(v) < 1.2 && driver) {
+      if (!v.wreck && v.fuel < v.maxFuel - 1 && speedOf(v) < 1.2 && driver && this.refuelRule().pumps) {
         const nearGas = town.buildings.some(
           (b) => (b.archetype ?? b.kind) === "gas_station" && distToRect(v.x, v.y, b.rect) < 6.5,
         )
