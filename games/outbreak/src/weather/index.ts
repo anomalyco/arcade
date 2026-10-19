@@ -110,10 +110,16 @@ export const outbreakWeatherFeature = registerOutbreakClientFeature({
         undoable: false,
         args: {
           near: { type: "boolean", description: "Within 100 m, hitting a pole or tree (default true)" },
+          bearing: { type: "number", description: "Plan bearing from the survivor in radians (0 = east, π/2 = south); random if omitted" },
+          dist: { type: "number", description: "Metres from the survivor; random if omitted" },
         },
         enabled: () => true,
         run: async (_ctx, args) => {
-          const strike = host.weatherController.flashNow({ near: args?.near === undefined ? true : Boolean(args.near) })
+          const strike = host.weatherController.flashNow({
+            near: args?.near === undefined ? true : Boolean(args.near),
+            bearing: typeof args?.bearing === "number" ? args.bearing : undefined,
+            dist: typeof args?.dist === "number" ? args.dist : undefined,
+          })
           host.draw(1 / 60)
           await host.device.queue.onSubmittedWorkDone()
           return { strike }
@@ -166,8 +172,8 @@ export const outbreakWeatherFeature = registerOutbreakClientFeature({
       host.lab.refresh()
       return value
     },
-    flashLightning(near = true) {
-      return host.weatherController.flashNow({ near })
+    flashLightning(near = true, at: { bearing?: number; dist?: number } = {}) {
+      return host.weatherController.flashNow({ near, ...at })
     },
     strikeLightning(seed?: number) {
       return host.weatherController.flashNow({ seed })
