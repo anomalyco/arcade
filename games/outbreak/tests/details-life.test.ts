@@ -4,8 +4,10 @@ import { inBuildingFootprint } from "../shared/map"
 import { LocalSession } from "../shared/session"
 import { CROW_FLIGHT, CrowFlocks, type CrowPose } from "../src/details/crows"
 import { DistantLife, tvLevel, type LifeSound } from "../src/details/life"
+import { DetailsPresenter } from "../src/details/presenter"
 import { placeBuildingDetails, placeCrowFlocks, type CrowFlock } from "../src/details/placement"
-import { DEFAULT_DETAIL_SETTINGS } from "../src/details/settings"
+import { DEFAULT_DETAIL_SETTINGS, type OutbreakDetailSettings } from "../src/details/settings"
+import { DEFAULT_NIGHT_LIGHT_SETTINGS } from "../src/night-lights/settings"
 
 const town = () => {
   const s = new LocalSession(7, 7, 0.22, { zombieCount: 0 }, "streaming")
@@ -112,5 +114,46 @@ describe("televisions and distant dogs", () => {
     }
     expect(run(0, true)).toEqual([])
     expect(run(1, false)).toEqual([])
+  })
+})
+
+describe("details presenter settings cache", () => {
+  const frame = { dt: 1 / 60, time: 1, threats: [], noises: [] }
+  const world = [-1e4, -1e4, 1e4, 1e4] as const
+  const presenter = () => {
+    let id = 0
+    return new DetailsPresenter({ addModel: () => id++ })
+  }
+  const collect = (p: DetailsPresenter, t: ReturnType<typeof town>, s: OutbreakDetailSettings) => {
+    p.collect(t, world, s, DEFAULT_NIGHT_LIGHT_SETTINGS, frame)
+    const c = p.shown.crows
+    return { tvs: p.shown.tvs, flocks: c.ground + c.flying + c.gone }
+  }
+  const lively = { ...DEFAULT_DETAIL_SETTINGS, dtTvs: 1, dtCrows: 2 }
+  const empty = { ...lively, dtTvs: 0, dtCrows: 0 }
+
+  test("collect places the televisions and crows the settings ask for", () => {
+    const t = town()
+    const got = collect(presenter(), t, lively)
+    expect(got.tvs).toBeGreaterThan(0)
+    expect(got.flocks).toBe(placeCrowFlocks(t, lively, bodySites(t)).length)
+    expect(got.flocks).toBeGreaterThan(0)
+  })
+
+  test("changing television and crow density takes effect on the next frame", () => {
+    const t = town()
+    const p = presenter()
+    const before = collect(p, t, lively)
+    expect(before.tvs).toBeGreaterThan(0)
+    expect(collect(p, t, empty)).toEqual({ tvs: 0, flocks: 0 })
+    expect(collect(p, t, lively)).toEqual(before)
+  })
+
+  test("World details off then on brings the televisions and crows back", () => {
+    const t = town()
+    const p = presenter()
+    const before = collect(p, t, lively)
+    expect(collect(p, t, { ...lively, worldDetails: false })).toEqual({ tvs: 0, flocks: 0 })
+    expect(collect(p, t, lively)).toEqual(before)
   })
 })

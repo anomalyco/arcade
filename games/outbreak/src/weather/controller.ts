@@ -114,10 +114,12 @@ export class OutbreakWeatherController {
     return this.flashNow({ seed })
   }
 
+  /** Roofs keep rain out; the streaming window can swap buildings without changing how many there are, so match each rect. */
   private ensureTownGeometry(town: Town): void {
-    if (this.cachedTownSeed === town.seed && this.excludeRects.length === town.buildings.length) return
+    const buildings = town.buildings
+    if (this.cachedTownSeed === town.seed && this.excludeRects.length === buildings.length && buildings.every((b, i) => b.rect === this.excludeRects[i])) return
     this.cachedTownSeed = town.seed
-    this.excludeRects = town.buildings.map((b) => b.rect)
+    this.excludeRects = buildings.map((b) => b.rect)
   }
 
   /** Eaves of the buildings nearest the survivor: front and back drip lines just outside the walls. */
