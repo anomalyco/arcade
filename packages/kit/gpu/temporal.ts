@@ -194,7 +194,8 @@ fn resolveAt(frag: vec2f) -> vec4f {
     for (var dx = -1; dx <= 1; dx++) {
       let q = clamp(centre + vec2i(dx, dy), vec2i(0), maxTap);
       let raw = textureLoad(curTex, q, 0);
-      let c = vec4f(compress(max(raw.rgb, vec3f(0.0))), clamp(raw.a, 0.0, 1.0));
+      // Alpha is carried unclamped: games pack masks into it (Outbreak: 1 + 4 × unseen shroud, negative flash mask).
+      let c = vec4f(compress(max(raw.rgb, vec3f(0.0))), raw.a);
       let y = vec4f(toYCoCg(c.rgb), c.a);
       let delta = pIn - (vec2f(q) + 0.5 - U.jitter.xy);
       let deltaOut = delta * outSize / inSize;

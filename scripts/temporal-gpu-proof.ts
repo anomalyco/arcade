@@ -44,6 +44,7 @@ fn ground(p: vec2f) -> f32 {
   let rd = b.xyz / b.w - ro;
   var hit = ro + rd * (-ro.y / rd.y);
   var col = vec3f(ground(hit.xz));
+  var alpha = -0.6;
   if (U.light.w > 0.5) {
     col *= select(0.15, 2.0, distance(hit.xz, U.light.xy) < U.light.z);
   }
@@ -52,11 +53,12 @@ fn ground(p: vec2f) -> f32 {
     if (top.x > U.box.x && top.x < U.box.z && top.z > U.box.y && top.z < U.box.w) {
       hit = top;
       col = vec3f(2.5, 0.3, 0.2);
+      alpha = 3.0;
     }
   }
   let clip = U.vp * vec4f(hit, 1.0);
   var out: FO;
-  out.color = vec4f(col, 1.0);
+  out.color = vec4f(col, alpha); // a packed mask outside 0..1, like Outbreak's shroud
   out.depth = clip.z / clip.w;
   return out;
 }
@@ -129,6 +131,7 @@ const taa = new TemporalResolve(device, "rgba16float", SAMPLES)
 const createErr = await device.popErrorScope()
 if (createErr) throw new Error(`pipeline creation: ${createErr.message}`)
 
+let lastAlpha = new Float32Array(0)
 async function readOutput(): Promise<Float32Array> {
   const bpr = Math.ceil((OUT_W * 8) / 256) * 256
   const buf = device.createBuffer({ size: bpr * OUT_H, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ })
@@ -142,9 +145,11 @@ async function readOutput(): Promise<Float32Array> {
     return e === 0 ? s * 2 ** -14 * (m / 1024) : e === 31 ? NaN : s * 2 ** (e - 15) * (1 + m / 1024)
   }
   const out = new Float32Array(OUT_W * OUT_H)
+  lastAlpha = new Float32Array(OUT_W * OUT_H)
   for (let y = 0; y < OUT_H; y++) for (let x = 0; x < OUT_W; x++) {
     const o = (y * bpr) / 2 + x * 4
     out[y * OUT_W + x] = 0.2126 * half(u16[o]!) + 0.7152 * half(u16[o + 1]!) + 0.0722 * half(u16[o + 2]!)
+    lastAlpha[y * OUT_W + x] = half(u16[o + 3]!)
   }
   buf.unmap()
   buf.destroy()
@@ -253,6 +258,15 @@ await step(still, popBox)
 const outPop = await readOutput()
 const gtPop = truth(still, popBox)
 const [px0, py0] = proj(-1, -1), [px1, py1] = proj(1, 1)
+const inside = (x: number, y: number) => x > Math.min(px0!, px1!) + 2 && x < Math.max(px0!, px1!) - 2 && y > Math.min(py0!, py1!) + 2 && y < Math.max(py0!, py1!) - 2
+let aIn = 0, nIn = 0, aOut = 0, nOut = 0
+for (let y = 4; y < OUT_H - 4; y++) for (let x = 4; x < OUT_W - 4; x++) {
+  const a = lastAlpha[y * OUT_W + x]!
+  if (inside(x, y)) { aIn += a; nIn++ } else if (y > Math.max(py0!, py1!) + 6) { aOut += a; nOut++ }
+}
+// Packed alpha must survive the resolve (box 3.0, ground -0.6).
+results.alphaInsideBox = +(aIn / nIn).toFixed(3)
+results.alphaGround = +(aOut / nOut).toFixed(3)
 results.popInsideRmse = +rmse(outPop, gtPop, (x, y) => x > Math.min(px0!, px1!) + 2 && x < Math.max(px0!, px1!) - 2 && y > Math.min(py0!, py1!) + 2 && y < Math.max(py0!, py1!) - 2).toFixed(4)
 
 // 5. A torch pool sweeping over still ground (lighting changes, depth doesn't): only the clip can stop a smear.
@@ -283,6 +297,8 @@ const ok =
   (results.panConverged as number) < (results.stillFrame1 as number) &&
   (results.boxTrailRmse as number) < 0.25 &&
   (results.popInsideRmse as number) < 0.25 &&
+  Math.abs((results.alphaInsideBox as number) - 3) < 0.05 &&
+  Math.abs((results.alphaGround as number) + 0.6) < 0.02 &&
   (results.torchTrailRmse as number) < (results.torchFrame1TrailRmse as number) * 1.1
 console.log(ok ? "PASS" : "FAIL")
 if (!ok) throw new Error("temporal GPU proof failed")
