@@ -111,6 +111,11 @@ export interface OutbreakSharedFeature<
   ): { handled?: boolean; topologyChanged?: boolean } | void
   /** Advances shared world state for this feature once per simulation tick (`OutbreakSim.stepWorld`). */
   stepWorld?(ctx: OutbreakSimStepWorldContext<TState>): { topologyChanged?: boolean } | void
+  /**
+   * Runs once per tick after the crowd has stepped and its attacks have landed, so a feature sees every zombie the
+   * director spawned this tick before the snapshot goes out (e.g. special zombies taking their kind).
+   */
+  stepWorldLate?(ctx: OutbreakSimStepWorldContext<TState>): void
   /** Transforms the survivor perception proxy passed to `ai.stepSurvivors` (e.g. vehicle headlights and engine noise). */
   transformAISurvivor?(
     sim: OutbreakSim,
