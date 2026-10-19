@@ -48,7 +48,8 @@ export class CraftUi {
   html(view: SessionView): string {
     const rows = craftRows(view.progression, view.actorId, craftStation(view.progression, view.prompt))
     const s = this.settings()
-    if (this.craftEl) this.craftEl.dataset.style = showsPanel(s) ? "panel" : "strip"
+    const style = showsPanel(s) ? "panel" : "strip"
+    if (this.craftEl && this.craftEl.dataset.style !== style) this.craftEl.dataset.style = style
     return showsPanel(s) ? this.panelHtml(view, rows) : this.stripHtml(rows, showsTips(s))
   }
 
