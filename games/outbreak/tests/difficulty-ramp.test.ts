@@ -32,7 +32,7 @@ const PRESSURE_BANDS = {
   /** Aware zombies at night over the day before it: nights are harder than days. */
   nightOverDay2: [1.3, 5], // 2.0
   nightOverDay3: [1.2, 5], // 1.55
-  /** Aware zombies, Night 3 over Night 2: no cliff either way. Today this is flat (see D-37). */
+  /** Aware zombies, Night 3 over Night 2: no cliff either way. Today this is flat (see D-40). */
   nightThreeOverTwo: [0.8, 1.8], // 1.01
   /** Active chasers at night (the director's solo cap is 3). */
   nightChasers: [1, 3.5], // 2.3 (Night 2), 2.4 (Night 3)
