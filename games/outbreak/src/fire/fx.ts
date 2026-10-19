@@ -150,10 +150,12 @@ export function fireAddSprites(frame: FireFrame, sprites: Float32Array, start: n
   const bright = look.flameBrightness
   const dens = Math.max(0.2, look.flameDensity)
   const embers = look.fireEmbers
+  // The kit fire (`kit-fx.ts`) draws everything below but the pilot light and the flare gun's streak.
+  const today = look.fireStyle !== 1
 
   // ── The stream ──
   const tan = Math.tan((look.flameCone * Math.PI) / 180)
-  for (const { s, reach, since } of sprayers(frame)) {
+  for (const { s, reach, since } of today ? sprayers(frame) : []) {
     const g = support(s.x, s.y)
     const n0 = nozzle(s, g)
     const dx = Math.cos(s.aim)
@@ -217,7 +219,7 @@ export function fireAddSprites(frame: FireFrame, sprites: Float32Array, start: n
 
   // ── Burning figures ──
   const agents = agentMap(view)
-  for (const st of ring(view, "burn", BURN_RING)) {
+  for (const st of ring(view, "burn", today ? BURN_RING : 0)) {
     const z = agents.get(burnZombie(st))
     if (!z || !near(view, z.x, z.y)) continue
     if (burning(st, time)) {
@@ -264,7 +266,7 @@ export function fireAddSprites(frame: FireFrame, sprites: Float32Array, start: n
   }
 
   // ── Fire on the ground ──
-  for (const st of ring(view, "fire", FIRE_RING)) {
+  for (const st of ring(view, "fire", today ? FIRE_RING : 0)) {
     if (!fireLit(st, time) || !near(view, st.at!.x, st.at!.y)) continue
     const { x, y } = st.at!
     const r = (st.counts.r ?? 0) / 100
@@ -304,7 +306,7 @@ export function fireAddSprites(frame: FireFrame, sprites: Float32Array, start: n
   }
 
   // ── Dynamite: the fuse, then the blast ──
-  for (const st of ring(view, "dyn", DYN_RING)) {
+  for (const st of ring(view, "dyn", today ? DYN_RING : 0)) {
     if (!st.counts.t || !st.at || !near(view, st.at.x, st.at.y)) continue
     const age = blastAge(st, time)
     if (age < 0) {
@@ -354,7 +356,7 @@ export function fireAddSprites(frame: FireFrame, sprites: Float32Array, start: n
   }
 
   // ── Firecrackers: the string glowing where it has got to, a flash and sparks on each pop ──
-  for (const st of ring(view, "crack", CRACK_RING)) {
+  for (const st of ring(view, "crack", today ? CRACK_RING : 0)) {
     if (!fireLit(st, time) || !near(view, st.at!.x, st.at!.y)) continue
     const at = crackerAt(st, time)
     const g = support(at.x, at.y)
@@ -403,7 +405,7 @@ export function fireAlphaSprites(frame: FireFrame, sprites: Float32Array, start:
   const { view, look, support } = frame
   const time = view.time
   const amt = look.fireSmoke
-  if (amt <= 0) return start
+  if (amt <= 0 || look.fireStyle === 1) return start
   const puff = (x: number, z: number, g: number, i: number, seed: number, rate: number, rise: number, size: number, a: number) => {
     const u = fract(time * rate + fireHash(seed, i))
     const drift = Math.sin(time * 0.7 + i * 1.3 + seed) * 0.35 * u

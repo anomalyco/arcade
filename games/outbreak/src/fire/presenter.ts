@@ -128,7 +128,8 @@ export class FirePresenter {
     const inView = (x: number, z: number, m = 3) => x > x0 - m && x < x1 + m && z > y0 - m && z < y1 + m
     const sh = this.shown
     sh.scorch = sh.dynamite = sh.traps = 0
-    if (look.fireChar > 0) {
+    // The kit fire draws scorch as noise decals (`kit-fx.ts`).
+    if (look.fireChar > 0 && look.fireStyle !== 1) {
       for (let k = 0; k < SCORCH_RING; k++) {
         const st = ledger.store(ringId("scorch", k))
         if (!st?.at || !st.counts.r || !inView(st.at.x, st.at.y)) continue

@@ -26,8 +26,21 @@ supply actual scene lights separately. Soft billboards fade analytically against
 
 Create `ParticleRenderer(device, depthFormat, samples)`, call `setFrame({ vp, eye, ambient, lights, lightCount, debug })`,
 call `upload(pool)`, then `draw(hdrPass)`. The HDR format is `rgba16float`; depth defaults to `depth24plus`, with four samples.
-`ParticleFrameStruct` (`wgslStruct` in `particle-renderer.ts`) defines the 88-float uniform layout (`vp`, `eye`, `debug`,
-`ambient`, `lightCount`, and up to eight 8-float `lights` as `[x, y, z, radius, r, g, b, power]`).
+`ParticleFrameStruct` (`wgslStruct` in `particle-renderer.ts`) defines the 120-float uniform layout (`vp`, `eye`, `debug`,
+`ambient`, `lightCount`, up to eight 8-float `lights` as `[x, y, z, radius, r, g, b, power]`, and eight `cones`).
+With `setFrame({ ..., lightStride: 12, spotCones: true })` the `lights` array uses the scene's 12-float `LIGHT_FLOATS`
+layout and a light whose slot 11 is 1 is a plan-cone spot (direction in slots 8–9, cos half-angle in 10), so a flashlight lights only the
+smoke in its beam. `draw(pass, motion, keepColour)`: `keepColour` writes low destination alpha so a game's colour mask
+(Outbreak's Noir) keeps fire in colour.
+
+Kind `smoke` (8) is a lit, noise-shaped billow (the fireball's shape without its heat): it settles onto
+`windX`/`windZ` at the spec's drag, meanders by its `turbulence`, fades in and out smoothly and rolls slowly. It is lit
+only by `ambient` and the frame's lights, so at night it stays dark until a light reaches it. A `fireball`'s emissive
+is scaled by its `r`, which is 1 in every explosion preset; lower it for a duller ember glow.
+
+The kit `Renderer` draws a game's own pool with `FrameInput.fxParticles`; `FrameInput.fxLighting` (`ambient`, `lights`,
+`lightCount`, `spotCones`, `keepColour`) overrides the lights it is drawn with. Outbreak uses both
+(`games/outbreak/src/scene/fx-particles.ts`).
 
 The clutter worktree's current `Fx` particles carry the same position, velocity, colour, size/growth, gravity,
 drag and life concepts. Its game-specific collision and damage rules can remain there while it writes this

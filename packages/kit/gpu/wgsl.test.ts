@@ -85,7 +85,7 @@ describe("wgslStruct & resolveWgsl", () => {
 
   test("converted uniform structs match exact float counts and eliminate u0..u15 swizzles", () => {
     expect(LookUniformsStruct.floatCount).toBe(64)
-    expect(ParticleFrameStruct.floatCount).toBe(88)
+    expect(ParticleFrameStruct.floatCount).toBe(120)
     expect(VolumeFrameStruct.floatCount).toBe(136)
     expect(FoliageWindConfigStruct.floatCount).toBe(12)
     expect(FoliageActorsStruct.floatCount).toBe(20)
@@ -157,6 +157,18 @@ describe("wgslStruct & resolveWgsl", () => {
     expect(Array.from(pr.uniforms.subarray(0, 16))).toEqual(vp)
     expect(Array.from(pr.uniforms.subarray(16, 24))).toEqual([10, 20, 30, 3, 0.20000000298023224, 0.30000001192092896, 0.4000000059604645, 1])
     expect(Array.from(pr.uniforms.subarray(24, 32))).toEqual([1, 2, 3, 8, 0.8999999761581421, 0.5, 0.10000000149011612, 2.5])
+
+    // Strided lights carry plan cones only when asked; skipped dark lights do not shift them.
+    const lights = new Float32Array(48)
+    lights.set([1, 2, 3, 9, 1, 1, 1, 2, 0.6, 0.8, 0.85, 1], 0)
+    lights.set([4, 5, 6, 7, 1, 0.5, 0.2, 0], 16)
+    lights.set([7, 8, 9, 6, 1, 0.5, 0.2, 1.5, 0, 0, 0, 0], 32)
+    const cones = ParticleFrameStruct.offsetOf("cones")
+    pr.setFrame({ lights, lightCount: 3, lightStride: 16 })
+    expect(Array.from(pr.uniforms.subarray(cones, cones + 4))).toEqual([0, 0, 0, 0])
+    pr.setFrame({ lights, lightCount: 3, lightStride: 16, spotCones: true })
+    expect(pr.uniforms[ParticleFrameStruct.offsetOf("lightCount")]).toBe(2)
+    expect(Array.from(pr.uniforms.subarray(cones, cones + 8)).map((v) => Math.round(v * 100) / 100)).toEqual([0.6, 0.8, 0.85, 1, 0, 0, 0, 0])
   })
 
   test("specializes Look scene & post variants and surface material slots without .replace()", () => {
