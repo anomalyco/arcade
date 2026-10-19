@@ -1,4 +1,6 @@
 import type { CoopSim } from "../../shared/coop-sim"
+import type { DeathState } from "../../shared/death/rules"
+import type { DeathSoundWorld } from "./death"
 import type { SoundWorld } from "./director"
 
 /** The director's view of a `CoopSim`: the offline session's and the co-op client's (filled from snapshots) alike. */
@@ -13,6 +15,23 @@ export function soundWorld(sim: CoopSim): SoundWorld {
     survivors: sim.slots,
     progression: sim.progression,
     hour: sim.hour,
+    death: deathSoundWorld(sim),
+  }
+}
+
+function deathSoundWorld(sim: CoopSim): DeathSoundWorld | undefined {
+  const state = sim.getFeatureState<DeathState>("death")
+  if (!state) return undefined
+  const t = state.tuning
+  const standing = sim.slots.filter((s) => (state.records[s.index]?.state ?? "alive") === "alive").length
+  const bleedMax = standing > 0 ? t.bleedOut : t.soloBleedOut
+  return {
+    runOver: state.runOver,
+    survivors: sim.slots.map((s) => {
+      const rec = state.records[s.index]
+      const life = rec?.state ?? "alive"
+      return { index: s.index, x: s.survivor.x, y: s.survivor.y, state: life, bleed: rec?.bleed ?? 0, bleedMax }
+    }),
   }
 }
 

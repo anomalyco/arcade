@@ -265,6 +265,11 @@ export class NetSession implements Session, OutbreakOptimisticHost {
     this.ws?.close()
   }
 
+  /** Asks the room to start its world again once the run is over (every client then reloads into it). */
+  restart(): void {
+    this.send({ t: "restart" })
+  }
+
   leave(): void {
     this.send({ t: "leave" })
     this.storage?.removeItem?.(TOKEN_KEY + this.options.room)
@@ -419,7 +424,7 @@ export class NetSession implements Session, OutbreakOptimisticHost {
         return
       case "reload":
         this.closed = true
-        this.status = "A new version of Outbreak is out. Reloading…"
+        this.status = msg.reason === "restart" ? "Starting the run again…" : "A new version of Outbreak is out. Reloading…"
         this.options.onReload?.()
     }
   }

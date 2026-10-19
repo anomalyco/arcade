@@ -28,6 +28,7 @@ import {
   type ServerMsg,
   type SharedSnapshot,
 } from "../shared/net-protocol"
+import type { DeathState } from "../shared/death/rules"
 import type { Command } from "../shared/session"
 
 /** A dropped player's survivor (inventory, ammo, position) is kept this long for a reconnect. */
@@ -65,7 +66,8 @@ type ConnState = { seatId: string | null; tokens: number; at: number; bytes: num
 
 /** One co-op room's world and seats, independent of the transport so tests and benchmarks can drive it. */
 export class CoopRoomCore {
-  readonly sim: CoopSim
+  /** The room's world; `restart` replaces it once a run is over. */
+  sim: CoopSim
   readonly seats: Seats<SeatData>
   phase: RoomPhase
   tick = 0
@@ -248,6 +250,10 @@ export class CoopRoomCore {
       return
     }
     if (this.phase === "lobby") return
+    if (msg.t === "restart") {
+      if (this.runOver) this.restart()
+      return
+    }
     if (msg.a && msg.a > seat.data.ackSnapTick && seat.data.history.get(msg.a)) {
       seat.data.ackSnapTick = msg.a
     }
@@ -363,6 +369,29 @@ export class CoopRoomCore {
     for (const [conn, s] of this.conns) {
       if (s.seatId) this.send(conn, { t: "roster", players, phase: this.phase, hostId })
     }
+  }
+
+  /** True once every survivor in the room is dead (`shared/death`). */
+  get runOver(): boolean {
+    return Boolean(this.sim.getFeatureState<DeathState>("death")?.runOver)
+  }
+
+  /**
+   * Starts the room's world again after a run ended: the same neighbourhood, every seat back at the safehouse with
+   * its starting kit. Clients reload into it (they keep their seat tokens), so nothing of the old run lingers.
+   */
+  restart(): void {
+    const o = this.options
+    this.sim = new CoopSim(o.seed, o.houseSeed, o.terrain, { zombieCount: o.zombieCount })
+    for (const seat of this.seats.all) {
+      const slot = this.sim.addSurvivor(seat.id, seat.index)
+      if (seat.data.loadout !== DEFAULT_LOADOUT) this.sim.progression.setLoadout(slot, seat.data.loadout)
+      Object.assign(seat.data, { slot, jitter: new JitterBuffer(commandOps, JITTER), ledgerRev: 0, ackSnapTick: 0, viewTick: 0, lastSnapTick: -SNAPSHOT_EVERY })
+      seat.data.history.clear()
+    }
+    this.shooters.clear()
+    this.lastBubbleSnaps.clear()
+    for (const [conn, s] of this.conns) if (s.seatId) this.send(conn, { t: "reload", reason: "restart" })
   }
 
   /** True while anyone is connected or a dropped survivor is still within its grace window. */

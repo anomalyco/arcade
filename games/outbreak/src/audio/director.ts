@@ -2,6 +2,7 @@ import { mulberry32 } from "@arcade/kit/sim/rng"
 import type { AIState } from "../../shared/ai"
 import { MELEE_WEAPONS, type CombatMeleeEvent, type CombatShotEvent } from "../../shared/combat"
 import type { Town } from "../../shared/map"
+import { DeathSounds, type DeathSoundWorld } from "./death"
 import { impactDelay, shotImpacts } from "./impacts"
 import { InventorySounds, type SoundHold, type SoundProgression } from "./inventory"
 import { RELOAD_STARTS, reloadElapsed } from "./reload"
@@ -24,6 +25,8 @@ export type SoundWorld = {
   /** Items, drops, benches, pings and lures (absent in tests that only need combat and doors). */
   progression?: SoundProgression
   hour?: number
+  /** Down and dead survivors and the run's end (`shared/death`). */
+  death?: DeathSoundWorld
 }
 
 export const DIRECTOR_TUNING = {
@@ -75,6 +78,8 @@ export class SoundDirector {
   private readonly inventory = new InventorySounds()
   /** Shrieks, gurgles, heavy steps and shield rings for special zombies. */
   readonly specials = new SpecialSounds()
+  /** Going down, the heartbeat while down, a revive, death and the run's end. */
+  readonly death = new DeathSounds()
   private nextGroan = 0
   private lastAlert = -Infinity
   private readonly rng: () => number
@@ -95,6 +100,7 @@ export class SoundDirector {
     this.actors.clear()
     this.inventory.reset()
     this.specials.reset()
+    this.death.reset()
   }
 
   /** Sounds held for as long as something lasts, as of the last `observe`: crafts, noisemakers, generators. */
@@ -334,6 +340,7 @@ export class SoundDirector {
     }
     for (const id of this.actors.keys()) if (!present.has(id)) this.actors.delete(id)
     this.inventory.observe(world.progression, world.hour ?? 12, world.survivors, out, world.time)
+    this.death.observe(world.death, t, listener, emit)
 
     this.started = true
     return out

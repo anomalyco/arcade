@@ -3,6 +3,7 @@
  * this list once; a new feature adds one line here and never edits `coop-sim.ts`.
  */
 import "./bodies/index"
+import "./death/index"
 import "./discovery/index"
 import "./dogs/index"
 import "./flares/index"

@@ -3,6 +3,7 @@ import type { InterestConfig } from "@arcade/kit/net/interest"
 import type { LedgerDelta } from "@arcade/kit/sim/ledger"
 import type { AIState } from "./ai"
 import type { CombatMeleeEvent, CombatShotEvent, MeleeWeaponId } from "./combat"
+import type { DeathSnapshot } from "./death/rules"
 import type { LoadoutId, SurvivorVariant } from "./loadout"
 import type { Survivor } from "./sim-types"
 import type { Notice } from "./types"
@@ -44,6 +45,8 @@ export type ClientMsg =
   | { t: "ready"; ready: boolean }
   | { t: "start" }
   | { t: "leave" }
+  /** After a run is over: start the room's world again (`shared/death`). */
+  | { t: "restart" }
 
 export type ServerMsg =
   | {
@@ -64,7 +67,8 @@ export type ServerMsg =
     }
   | { t: "roster"; players: RosterEntry[]; phase?: RoomPhase; hostId?: string }
   | { t: "error"; message: string }
-  | { t: "reload" }
+  /** `restart`: the room started its world again after a run ended; otherwise a new build is out. */
+  | { t: "reload"; reason?: "restart" }
   | { t: "pong"; c: number }
 
 /** [mx, my, aim, flags, hotbarSlot (−1 none), hotbarDelta, interactAction code, pick code (mode·8 + index + 1)] */
@@ -150,6 +154,8 @@ export type SharedSnapshot = {
   bashes: { portal: number; age: number; planks: number }[]
   shots: (CombatShotEvent & { shooter: number })[]
   meleeSwings?: CombatMeleeEvent[]
+  /** Who is down or dead, fallen bodies and the run's end (`shared/death`). */
+  death?: DeathSnapshot
 }
 
 /** The private part: what to reconcile against, the ledger stores this player can see that changed, and notices. */

@@ -1,12 +1,18 @@
+import type { Camera } from "@arcade/kit/client/camera"
+import type { Batch, Renderer } from "@arcade/kit/gpu/renderer"
 import type { LabControl } from "@arcade/kit/lab-panel"
 import type { LabCommand } from "@arcade/kit/lab/commands"
+import type { CoopSim, SurvivorSlot } from "../shared/coop-sim"
 import type { PersonalSnapshot, SharedSnapshot } from "../shared/net-protocol"
+import type { LocalSession } from "../shared/session"
+import type { Vision } from "../shared/vision"
+import type { CoopView } from "./coop-view"
 import type { OutbreakFeelFeatures, OutbreakFeelFrameContext, OutbreakFeelTracker } from "./feel-events"
 import type { OutbreakCommandFeatures, OutbreakGameCommandsHost } from "./game-commands"
 import type { OutbreakHarness, OutbreakHarnessFeatures, OutbreakHarnessHost } from "./harness"
 import type { OutbreakLabControlHost, OutbreakLabFeatures } from "./lab-controls"
 import type { NetSession, NetSessionFeatures } from "./net-session"
-import type { OutbreakSubsystemKey } from "./settings"
+import type { OutbreakSettings, OutbreakSubsystemKey } from "./settings"
 
 export interface OutbreakClientFeatureFeelHooks {
   /** Resets any presentation-only edge/dedup state owned by this feature when the player or session resets. */
@@ -25,6 +31,35 @@ export interface OutbreakClientFeatureNetHooks {
   onReconcileLocal?(net: NetSession, personal: PersonalSnapshot, shared: SharedSnapshot): void
   /** Interpolates remote feature entities between snapshots `a` and `b` at render factor `t` (60 Hz frame sync). */
   onSyncFrame?(net: NetSession, a: SharedSnapshot, b: SharedSnapshot, t: number, span: number, over?: number, dt?: number): void
+}
+
+/** One rendered frame, as the frame renderer hands it to features (`frame` hooks). */
+export interface OutbreakClientFrameContext {
+  readonly session: LocalSession | NetSession
+  readonly coop: CoopView
+  readonly cam: Camera
+  readonly renderer: Renderer
+  readonly settings: OutbreakSettings
+  readonly vision: Vision
+  /** Seconds since the last frame (hit-stop applied for `batches`). */
+  readonly dt: number
+  /** CSS pixel size of the view. */
+  readonly w: number
+  readonly h: number
+}
+
+/** Where the camera, sight shroud and listener sit instead of the local survivor (e.g. watching a teammate). */
+export type OutbreakClientViewpoint = { x: number; y: number; aim: number; health: number; maxHealth: number }
+
+export interface OutbreakClientFeatureFrameHooks {
+  /** The viewpoint for this frame, or null to look from the local survivor as usual. */
+  viewpoint?(session: LocalSession | NetSession, coop: CoopView): OutbreakClientViewpoint | null
+  /** Whether a survivor's standing body is left undrawn this frame (the feature draws them itself). */
+  hidesSurvivor?(sim: CoopSim, slot: SurvivorSlot): boolean
+  /** Extra instanced batches for the scene. */
+  batches?(ctx: OutbreakClientFrameContext): readonly Batch[]
+  /** Screen overlay, after the frame is drawn and the camera has settled. */
+  overlay?(ctx: OutbreakClientFrameContext): void
 }
 
 export interface OutbreakClientFeature {
@@ -60,6 +95,8 @@ export interface OutbreakClientFeature {
   readonly feel?: OutbreakClientFeatureFeelHooks
   /** Co-op client snapshot reconciliation and interpolation hooks (`NetSession`). */
   readonly netSession?: OutbreakClientFeatureNetHooks
+  /** Per-frame presentation hooks (`scene/frame-renderer.ts`): viewpoint, hidden bodies, batches and overlay. */
+  readonly frame?: OutbreakClientFeatureFrameHooks
 }
 
 function compareFeatures(a: { id: string; order?: number }, b: { id: string; order?: number }): number {
@@ -178,6 +215,31 @@ export class OutbreakClientFeatureRegistry
       }
     }
     return addCount
+  }
+
+  /** The first feature viewpoint for this frame, or null. */
+  viewpoint(session: LocalSession | NetSession, coop: CoopView): OutbreakClientViewpoint | null {
+    for (const feature of this.list()) {
+      const v = feature.frame?.viewpoint?.(session, coop)
+      if (v) return v
+    }
+    return null
+  }
+
+  hidesSurvivor(sim: CoopSim, slot: SurvivorSlot): boolean {
+    for (const feature of this.list()) if (feature.frame?.hidesSurvivor?.(sim, slot)) return true
+    return false
+  }
+
+  frameBatches(ctx: OutbreakClientFrameContext, out: Batch[]): void {
+    for (const feature of this.list()) {
+      const batches = feature.frame?.batches?.(ctx)
+      if (batches) for (let i = 0; i < batches.length; i++) out.push(batches[i]!)
+    }
+  }
+
+  frameOverlay(ctx: OutbreakClientFrameContext): void {
+    for (const feature of this.list()) feature.frame?.overlay?.(ctx)
   }
 
   applyNetWorld(net: NetSession, shared: SharedSnapshot): boolean {

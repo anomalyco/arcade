@@ -168,6 +168,19 @@ export class BloodStains {
     })
   }
 
+  /** A pool spreading under a survivor who went down or died (AR-61). */
+  survivorPool(town: Town, settings: OutbreakBloodSettings, x: number, y: number, key: number): void {
+    if (settings.bloodPoolSize <= 0) return
+    const sc = settings.bloodPoolSize * (1 + mix32(key, 8) * 0.3)
+    this.floorStamp({ dt: 0, town, zombies: [], survivors: [], player: { x, y, health: 0 }, settings }, "pool", x, y, mix32(key, 9) * 6.28, sc, key ^ 0x51, Math.max(0.1, settings.bloodPoolSpread))
+  }
+
+  /** A smear behind a downed survivor dragging themselves from (x0, y0) to (x1, y1). */
+  survivorDrag(town: Town, settings: OutbreakBloodSettings, x0: number, y0: number, x1: number, y1: number, key: number): void {
+    if (!settings.bloodTrails) return
+    this.floorStamp({ dt: 0, town, zombies: [], survivors: [], player: { x: x1, y: y1, health: 0 }, settings }, "drag", (x0 + x1) / 2, (y0 + y1) / 2, Math.atan2(y1 - y0, x1 - x0), 0.62, key ^ 0x77)
+  }
+
   /** A splat up the first wall or shut door within reach of a hit, facing back toward it. */
   private wallSplat(f: BloodFrame, x: number, y: number, dx: number, dy: number, key: number): void {
     const reach = 1.7

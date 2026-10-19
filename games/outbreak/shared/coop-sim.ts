@@ -37,19 +37,14 @@ import { OutbreakProgression } from "./progression/progression"
 import type { ProgressionTuning } from "./progression/tuning"
 import type { OutbreakProgressionSnapshot, ProgressionCommand, WorldContext } from "./progression/types"
 import { resolveSessionTuning } from "./session-tuning"
+import { SPAWN_POINTS } from "./spawn-points"
 import type { Command, OutbreakSim, SessionTuning, Survivor, SurvivorSlot } from "./sim-types"
 import { createStaminaState, DEFAULT_STAMINA_TUNING, stepStamina } from "./stamina"
 import type { Notice } from "./types"
 import { OutbreakVehicleSubsystem, vehicleSolidRects, type OutbreakVehicleSnapshot } from "./vehicles"
 import { StreamingWorld, type StreamingWorldSnapshot, type WorldMode } from "./world"
 
-/** Where survivors start: the single-player spot first, then beside it. */
-export const SPAWN_POINTS: readonly (readonly [number, number])[] = [
-  [27.7, 41],
-  [29.3, 41.2],
-  [26.1, 41.2],
-  [27.7, 42.6],
-]
+export { SPAWN_POINTS }
 
 export const MAX_SURVIVORS = SPAWN_POINTS.length
 

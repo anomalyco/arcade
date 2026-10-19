@@ -52,7 +52,7 @@ export interface OutbreakNetSectionDecodeContext {
 }
 
 export interface OutbreakNetSectionCodec<TState = unknown, TSection = unknown, TWritePayload = TSection> {
-  /** Bit flag in the snapshot `sections` header (e.g. 64 for vehicles, 128 for melee). */
+  /** Bit flag in the snapshot `sections` header (e.g. 64 for vehicles, 128 for melee, 256 for death; a varint, so bits past 128 cost a byte). */
   readonly bit: number
   /** Property key on `SharedSnapshot` where decoded section data is stored. */
   readonly key: keyof SharedSnapshot | string
