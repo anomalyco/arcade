@@ -22,10 +22,10 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, wri
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 
-type Licence = "CC0-1.0" | "CC-BY-4.0"
+type Licence = "CC0-1.0" | "CC-BY-4.0" | "CC-BY-SA-4.0"
 type Source =
   | { site: "polyhaven"; id: string; res?: "1k" | "2k" }
-  | { site: "sketchfab"; uid: string; path: string; title: string; author: string; licence: Licence }
+  | { site: "sketchfab"; uid: string; shard: string; path: string; title: string; author: string }
 
 export type ModelSource = {
   src: Source
@@ -49,13 +49,15 @@ export type ModelSource = {
   note: string
 }
 
-const objaverse = (uid: string, shard: string, title: string, author: string, licence: Licence = "CC-BY-4.0"): Source => ({
+// The licence is not declared here: it is read from the Objaverse metadata of the copy we download (see licenceOf),
+// which can differ from the model's current Sketchfab page.
+const objaverse = (uid: string, shard: string, title: string, author: string): Source => ({
   site: "sketchfab",
   uid,
+  shard,
   path: `glbs/${shard}/${uid}.glb`,
   title,
   author,
-  licence,
 })
 
 /** Output name → source. Names are the keys of `MODELS` in src/render/models.ts. */
@@ -335,6 +337,24 @@ const download = async (url: string, file: string) => {
   if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`)
   await Bun.write(file, res)
   return file
+}
+
+const OBJAVERSE_LICENCES: Record<string, Licence> = { cc0: "CC0-1.0", by: "CC-BY-4.0", "by-sa": "CC-BY-SA-4.0" }
+const shardMeta = new Map<string, Promise<Record<string, { license?: string }>>>()
+async function licenceOf(src: Source): Promise<Licence> {
+  if (src.site === "polyhaven") return "CC0-1.0"
+  let meta = shardMeta.get(src.shard)
+  if (!meta) {
+    meta = download(
+      `https://huggingface.co/datasets/allenai/objaverse/resolve/main/metadata/${src.shard}.json.gz`,
+      join(work, "metadata", `${src.shard}.json.gz`),
+    ).then((f) => JSON.parse(new TextDecoder().decode(Bun.gunzipSync(readFileSync(f)))))
+    shardMeta.set(src.shard, meta)
+  }
+  const raw = (await meta)[src.uid]?.license
+  const licence = raw && OBJAVERSE_LICENCES[raw]
+  if (!licence) throw new Error(`${src.uid} (${src.title}): Objaverse licence "${raw}" is not one we can ship`)
+  return licence
 }
 
 async function fetchSource(name: string, src: Source): Promise<string> {
@@ -912,6 +932,9 @@ const manifest: Record<string, Stats & { source: string; licence: Licence }> = e
 for (const k of Object.keys(manifest)) if (!(k in MODEL_SOURCES)) delete manifest[k]
 for (const f of readdirSync(outDir)) if (f.endsWith(".glb") && !(f.slice(0, -4) in MODEL_SOURCES)) rmSync(join(outDir, f))
 
+const licences: Record<string, Licence> = {}
+for (const [name, spec] of Object.entries(MODEL_SOURCES)) licences[name] = await licenceOf(spec.src)
+
 const sourceLabel = (s: Source) => (s.site === "polyhaven" ? `polyhaven:${s.id}` : `sketchfab:${s.uid}`)
 for (const [name, spec] of Object.entries(MODEL_SOURCES)) {
   const output = join(outDir, `${name}.glb`)
@@ -920,7 +943,7 @@ for (const [name, spec] of Object.entries(MODEL_SOURCES)) {
   const t0 = performance.now()
   const input = await fetchSource(name, spec.src)
   const stats = await convert(name, spec, input, output)
-  manifest[name] = { ...stats, source: sourceLabel(spec.src), licence: spec.src.site === "polyhaven" ? "CC0-1.0" : spec.src.licence }
+  manifest[name] = { ...stats, source: sourceLabel(spec.src), licence: licences[name]! }
   console.log(
     `${name}: ${stats.tris} tris, ${(stats.bytes / 1024).toFixed(0)} KB, ${stats.size.join(" × ")} m, ${stats.meshes} prims (${((performance.now() - t0) / 1000).toFixed(1)} s)`,
   )
@@ -930,18 +953,28 @@ const ordered = Object.fromEntries(Object.keys(MODEL_SOURCES).filter((k) => mani
 writeFileSync(manifestFile, JSON.stringify(ordered, null, 1) + "\n")
 
 // Credits
+const LICENCE_LINKS: Record<Licence, string> = {
+  "CC0-1.0": "CC0 1.0",
+  "CC-BY-4.0": "[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)",
+  "CC-BY-SA-4.0": "[CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)",
+}
 const rows = Object.entries(MODEL_SOURCES).map(([name, { src, note }]) => {
   const m = ordered[name]
   const stat = m ? `${m.tris.toLocaleString("en")} | ${(m.bytes / 1024).toFixed(0)} KB` : "– | –"
   if (src.site === "polyhaven")
     return `| \`${name}.glb\` | [${src.id}](https://polyhaven.com/a/${src.id}) | Poly Haven | CC0 1.0 | ${stat} | ${note} |`
-  const lic = src.licence === "CC0-1.0" ? "CC0 1.0" : "[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)"
+  const lic = LICENCE_LINKS[licences[name]!]
   return `| \`${name}.glb\` | [${src.title}](https://sketchfab.com/3d-models/${src.uid}) | ${src.author} | ${lic} | ${stat} | ${note} |`
 })
-const byLines = Object.values(MODEL_SOURCES)
-  .map((s) => s.src)
-  .filter((s): s is Extract<Source, { site: "sketchfab" }> => s.site === "sketchfab" && s.licence === "CC-BY-4.0")
-  .map((s) => `- "${s.title}" by ${s.author} (https://sketchfab.com/3d-models/${s.uid}), CC BY 4.0, modified (rescaled, re-centred, optimised).`)
+const byLines = Object.entries(MODEL_SOURCES)
+  .filter(([name, { src }]) => src.site === "sketchfab" && licences[name] !== "CC0-1.0")
+  .map(([name, { src }]) => {
+    const s = src as Extract<Source, { site: "sketchfab" }>
+    const lic = licences[name] === "CC-BY-SA-4.0"
+      ? "CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/), modified (rescaled, re-centred, optimised); this modified version is also CC BY-SA 4.0"
+      : "CC BY 4.0, modified (rescaled, re-centred, optimised)"
+    return `- "${s.title}" by ${s.author} (https://sketchfab.com/3d-models/${s.uid}), ${lic}.`
+  })
 const total = Object.values(ordered).reduce((a, m) => a + m.bytes, 0)
 writeFileSync(
   join(outDir, "CREDITS.md"),
@@ -956,14 +989,15 @@ No brands or real logos: vehicles are invented marques ("Fairheaven", "Negotiato
 
 - Poly Haven assets are **CC0 1.0** (https://polyhaven.com/license); no attribution required.
 - Sketchfab assets were fetched from the Objaverse 1.0 mirror (https://huggingface.co/datasets/allenai/objaverse),
-  which redistributes each model under its original licence. **CC BY 4.0 assets require attribution**: ship the
-  credit lines below in the game's credits.
+  which redistributes each model under the licence recorded in its metadata (read by the script; it can differ from
+  the model's current Sketchfab page). **CC BY 4.0 and CC BY-SA 4.0 assets require attribution**: ship the credit
+  lines below in the game's credits. CC BY-SA files stay CC BY-SA after our modifications.
 
 | File | Asset | Author / site | Licence | Tris | Size | Use |
 | --- | --- | --- | --- | --- | --- | --- |
 ${rows.join("\n")}
 
-## Required attribution (CC BY 4.0)
+## Required attribution (CC BY 4.0, CC BY-SA 4.0)
 
 ${byLines.join("\n")}
 `,

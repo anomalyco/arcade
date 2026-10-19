@@ -7,7 +7,8 @@ leather work boots), hair `short02`, skinned to MPFB's `game_engine` skeleton wi
 
 - MakeHuman base mesh, targets, rigs and weights (via MPFB 2.0.18): **CC0 1.0**.
   https://extensions.blender.org/add-ons/mpfb/ — the MPFB code is GPL-3.0, but its output (the generated mesh, rig and
-  weights) is CC0 per the MakeHuman licence: http://www.makehumancommunity.org/content/license_explanation.html
+  weights) is CC0 per the MakeHuman licence (§C assets CC0, §D output unrestricted):
+  https://github.com/makehumancommunity/makehuman/blob/master/LICENSE.md
 - MakeHuman system assets (clothes, shoes, skin, hair): **CC0 1.0**, explicitly released in September 2020 (Data
   Collection AB, Joel Palmius, Jonas Hauquier). Pack: makehuman_system_assets_cc0.zip,
   https://files.makehumancommunity.org/asset_packs/makehuman_system_assets/

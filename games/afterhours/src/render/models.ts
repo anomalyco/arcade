@@ -6,7 +6,7 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js"
 import type { Box } from "../world/context"
 
 // Realistic prop and vehicle library: one web-optimised .glb per model in public/models/, fetched and normalised by
-// scripts/fetch-models.ts (sources and licences in public/models/CREDITS.md; CC BY 4.0 ones need the credit lines).
+// scripts/fetch-models.ts (sources and licences in public/models/CREDITS.md; CC BY and CC BY-SA ones need the credit lines).
 //
 // Conventions for every model:
 //   - metres, Y up, real-world scale;
@@ -41,7 +41,7 @@ export type ModelInfo = {
   /** Triangles of the simplified LOD1 copy, when the file has one. */
   readonly lod1?: number
   readonly kb: number
-  readonly licence: "CC0-1.0" | "CC-BY-4.0"
+  readonly licence: "CC0-1.0" | "CC-BY-4.0" | "CC-BY-SA-4.0"
   readonly note: string
 }
 
@@ -73,7 +73,7 @@ export const MODELS = {
   trashbag: { size: [0.528, 0.575, 0.463], tris: 4482, kb: 457, licence: "CC0-1.0", note: "full black bin bag" },
   hand_truck: { size: [0.593, 1.403, 0.693], tris: 13220, kb: 723, licence: "CC0-1.0", note: "two-wheel hand truck (dock)" },
   office_desk: { size: [2, 0.787, 0.947], tris: 6898, lod1: 1500, kb: 409, licence: "CC0-1.0", note: "steel tanker desk" },
-  office_chair: { size: [0.758, 0.98, 0.721], tris: 9450, lod1: 1499, kb: 431, licence: "CC-BY-4.0", note: "fabric swivel task chair" },
+  office_chair: { size: [0.758, 0.98, 0.721], tris: 9450, lod1: 1499, kb: 431, licence: "CC-BY-SA-4.0", note: "fabric swivel task chair" },
   stack_chair: { size: [0.566, 1.006, 0.675], tris: 5072, lod1: 1000, kb: 401, licence: "CC0-1.0", note: "moulded stacking chair" },
   filing_cabinet: { size: [0.44, 1.32, 0.512], tris: 2227, kb: 538, licence: "CC-BY-4.0", note: "four-drawer steel filing cabinet" },
   filing_cabinet_open: { size: [0.643, 1.32, 1.033], tris: 1432, kb: 285, licence: "CC-BY-4.0", note: "dark filing cabinet, one drawer pulled open" },

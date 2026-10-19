@@ -3,6 +3,9 @@
 Candidate SFX generated with ElevenLabs `eleven_text_to_sound_v2` (mp3 44.1 kHz 64 kb/s) for auditioning. Not wired
 into the game; picks get curated into the shared library later (see `docs/sfx-library.md`).
 
+Licence: the takes and the shipped `public/sfx/*.ogg` may only be used inside the game, never published as standalone
+audio files or a sound collection (ElevenCreative Terms, Exhibit 4 §2); see `public/sfx/CREDITS.md`.
+
 - Serve: `bun games/afterhours/audio-lab/serve.ts --port 5199` then open http://localhost:5199/
 - Prompts live in `prompts.ts`; files in `sfx/<category>/v<N>.mp3`; `sfx/manifest.json` records prompt, duration,
   prompt_influence, loop and credit cost per file.

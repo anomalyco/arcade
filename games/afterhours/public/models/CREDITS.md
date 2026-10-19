@@ -9,8 +9,9 @@ No brands or real logos: vehicles are invented marques ("Fairheaven", "Negotiato
 
 - Poly Haven assets are **CC0 1.0** (https://polyhaven.com/license); no attribution required.
 - Sketchfab assets were fetched from the Objaverse 1.0 mirror (https://huggingface.co/datasets/allenai/objaverse),
-  which redistributes each model under its original licence. **CC BY 4.0 assets require attribution**: ship the
-  credit lines below in the game's credits.
+  which redistributes each model under the licence recorded in its metadata (read by the script; it can differ from
+  the model's current Sketchfab page). **CC BY 4.0 and CC BY-SA 4.0 assets require attribution**: ship the credit
+  lines below in the game's credits. CC BY-SA files stay CC BY-SA after our modifications.
 
 | File | Asset | Author / site | Licence | Tris | Size | Use |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -40,7 +41,7 @@ No brands or real logos: vehicles are invented marques ("Fairheaven", "Negotiato
 | `trashbag.glb` | [trashbag](https://polyhaven.com/a/trashbag) | Poly Haven | CC0 1.0 | 4,482 | 457 KB | full black bin bag |
 | `hand_truck.glb` | [hand_truck](https://polyhaven.com/a/hand_truck) | Poly Haven | CC0 1.0 | 13,220 | 723 KB | two-wheel hand truck (dock) |
 | `office_desk.glb` | [metal_office_desk](https://polyhaven.com/a/metal_office_desk) | Poly Haven | CC0 1.0 | 6,898 | 409 KB | steel tanker desk |
-| `office_chair.glb` | [Office Chair](https://sketchfab.com/3d-models/b228a29fa84544c2be501c295653ffe7) | nokillnando | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | 9,450 | 431 KB | fabric swivel task chair |
+| `office_chair.glb` | [Office Chair](https://sketchfab.com/3d-models/b228a29fa84544c2be501c295653ffe7) | nokillnando | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) | 9,450 | 431 KB | fabric swivel task chair |
 | `stack_chair.glb` | [SchoolChair_01](https://polyhaven.com/a/SchoolChair_01) | Poly Haven | CC0 1.0 | 5,072 | 401 KB | moulded stacking chair |
 | `filing_cabinet.glb` | [File Cabinet](https://sketchfab.com/3d-models/f0742791a0ea432db1f432c24de83867) | LtxxwSibeRia | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | 2,227 | 538 KB | four-drawer steel filing cabinet |
 | `filing_cabinet_open.glb` | [File Cabinet](https://sketchfab.com/3d-models/e7fec8b453ef4105ace383dde017485c) | Shorty_Digitan | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | 1,432 | 285 KB | dark filing cabinet, one drawer pulled open |
@@ -75,7 +76,7 @@ No brands or real logos: vehicles are invented marques ("Fairheaven", "Negotiato
 | `fluorescent_light.glb` | [mounted_fluorescent_lights](https://polyhaven.com/a/mounted_fluorescent_lights) | Poly Haven | CC0 1.0 | 3,540 | 165 KB | surface-mount fluorescent tube fixture |
 | `security_camera.glb` | [security_camera_01](https://polyhaven.com/a/security_camera_01) | Poly Haven | CC0 1.0 | 13,571 | 303 KB | housed CCTV camera on bracket |
 
-## Required attribution (CC BY 4.0)
+## Required attribution (CC BY 4.0, CC BY-SA 4.0)
 
 - "Fairheaven SW '84 - Low poly model" by Daniel Zhabotinsky (https://sketchfab.com/3d-models/aa0becb6e854422596cac6b21bf79787), CC BY 4.0, modified (rescaled, re-centred, optimised).
 - "Fairheaven LT '80 - Low poly model" by Daniel Zhabotinsky (https://sketchfab.com/3d-models/e2678da920cc4be68dbc193727919ffb), CC BY 4.0, modified (rescaled, re-centred, optimised).
@@ -87,7 +88,7 @@ No brands or real logos: vehicles are invented marques ("Fairheaven", "Negotiato
 - "Classic Park Bench (Low Poly)" by berkgedik (https://sketchfab.com/3d-models/01a5b64427984632bb44242da3813bb1), CC BY 4.0, modified (rescaled, re-centred, optimised).
 - "Worn Traffic Cone" by kuuttisiitonen (https://sketchfab.com/3d-models/1cbffb4169684e5a84ba186882bd55d7), CC BY 4.0, modified (rescaled, re-centred, optimised).
 - "Pallet" by maestronoov (https://sketchfab.com/3d-models/d30bd5cc3eeb4052904fd85988402868), CC BY 4.0, modified (rescaled, re-centred, optimised).
-- "Office Chair" by nokillnando (https://sketchfab.com/3d-models/b228a29fa84544c2be501c295653ffe7), CC BY 4.0, modified (rescaled, re-centred, optimised).
+- "Office Chair" by nokillnando (https://sketchfab.com/3d-models/b228a29fa84544c2be501c295653ffe7), CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/), modified (rescaled, re-centred, optimised); this modified version is also CC BY-SA 4.0.
 - "File Cabinet" by LtxxwSibeRia (https://sketchfab.com/3d-models/f0742791a0ea432db1f432c24de83867), CC BY 4.0, modified (rescaled, re-centred, optimised).
 - "File Cabinet" by Shorty_Digitan (https://sketchfab.com/3d-models/e7fec8b453ef4105ace383dde017485c), CC BY 4.0, modified (rescaled, re-centred, optimised).
 - "Vintage Terminal" by NoMoreFeelings (https://sketchfab.com/3d-models/847c174b86e24d868d25217ca2297886), CC BY 4.0, modified (rescaled, re-centred, optimised).
