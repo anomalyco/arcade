@@ -11,7 +11,7 @@ import type { CueRecipe, MixCategory, SampleAssetMeta, StealPolicy } from "./typ
  */
 export type SfxGroup =
   | "gun" | "melee" | "foot" | "door" | "window" | "glass" | "barricade" | "search" | "pickup" | "flashlight"
-  | "zombie" | "body" | "ambience" | "ui" | "impact" | "craft" | "bench" | "item" | "pack" | "lure" | "generator" | "vehicle"
+  | "zombie" | "body" | "ambience" | "ui" | "impact" | "craft" | "bench" | "item" | "pack" | "lure" | "generator" | "radio" | "vehicle"
   | "creature" | "crowd" | "cooking" | "bow"
 
 export type SfxSurface = "concrete" | "grass" | "wood"
@@ -380,6 +380,11 @@ export const SFX_SPECS: readonly SfxSpec[] = [
     id: "lure.loop", label: "Noisemaker going off", group: "lure", bus: "foley", variants: 1, loop: true, target: -24, gain: 0.85, pitchJitter: 0, gainJitter: 0,
     maxVoices: 3, range: { ref: 2, max: 30 }, wet: 0.15, usedBy: OUTBREAK, durationRange: [2, 7],
     generate: { prompt: `A cheap battery-powered noisemaker lying on the ground: rapid harsh electronic beeping and a buzzing tin rattle, loud and repetitive, constant. ${NO_SPEECH}`, duration: 4, candidates: 2, loop: true, influence: 0.5 },
+  },
+  {
+    id: "radio.loop", label: "Old radio playing", group: "radio", bus: "foley", variants: 1, loop: true, target: -24, gain: 0.85, pitchJitter: 0, gainJitter: 0,
+    maxVoices: 3, range: { ref: 2, max: 30 }, wet: 0.2, usedBy: OUTBREAK, durationRange: [3, 8],
+    generate: { prompt: `An old tabletop valve radio in an empty house playing a scratchy 1940s big-band song, thin and tinny through a small speaker, with crackle and hiss of static drifting over it, constant. ${NO_SPEECH}`, duration: 6, candidates: 3, loop: true, influence: 0.5 },
   },
   {
     id: "flashlight.click", label: "Flashlight click", group: "flashlight", bus: "foley", variants: 3, target: -26, gain: 0.8, pitchJitter: 0.05, gainJitter: 0.06,

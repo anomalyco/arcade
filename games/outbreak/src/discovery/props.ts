@@ -5,6 +5,7 @@ import type { OutbreakAISubsystem } from "../../shared/ai"
 import type { LootSite } from "../../shared/progression"
 import type { SessionView } from "../../shared/session"
 import { hex } from "../level"
+import { RadioProps } from "../radios/props"
 import { BarricadeBoards } from "./barricades"
 import { isLongItem, registerItemModels, type ItemModels } from "./items"
 import type { DiscoverySettings } from "./settings"
@@ -84,6 +85,8 @@ export class DiscoveryProps {
   readonly verbs: VerbProps
   /** Bodies, casings and broken panes the environmental vignettes leave (D-19 slice 5). */
   readonly vignettes: VignetteProps
+  /** House radios (AR-56). */
+  readonly radios: RadioProps
   private readonly items: ItemModels
   private readonly fixtureModels: Record<Fixture["model"], number>
   private readonly itemData = new Map<number, { data: Float32Array<ArrayBuffer>; count: number }>()
@@ -98,6 +101,7 @@ export class DiscoveryProps {
     this.bench = new WorkbenchProps(renderer, this.items)
     this.verbs = new VerbProps(renderer)
     this.vignettes = new VignetteProps(renderer)
+    this.radios = new RadioProps(renderer)
     const wood = hex(0x6e4e30)
     const drawer = new Mesh()
     drawer.box(-0.45, -0.14, 0.01, 0.45, -0.12, 0.34, hex(0x4a3420), MAT.timber)
@@ -135,6 +139,7 @@ export class DiscoveryProps {
     for (const b of this.bench.collect(view.progression, view.player, squad.survivors, squad.seatColour, settings.discoveryClatterTime, squad.dt, support)) out.push(b)
     for (const b of this.verbs.collect(view, time, support)) out.push(b)
     for (const b of this.vignettes.collect(view, support)) out.push(b)
+    for (const b of this.radios.collect(view, time, settings, support)) out.push(b)
     for (const v of this.itemData.values()) v.count = 0
     for (const v of this.fixtureData.values()) v.count = 0
     this.shown.clear()

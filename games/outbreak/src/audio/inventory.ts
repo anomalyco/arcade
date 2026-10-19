@@ -100,6 +100,8 @@ export class InventorySounds {
   private glass = new Map<string, number>()
   private trips = new Map<string, number>()
   private smashed = new Set<string>()
+  /** House radios (AR-56): each one's last on/broken state, for the switch's click and the thud when it is knocked down. */
+  private radios = new Map<string, { on: number; broken: number }>()
   private started = false
   readonly holds: SoundHold[] = []
 
@@ -112,6 +114,7 @@ export class InventorySounds {
     this.glass.clear()
     this.trips.clear()
     this.smashed.clear()
+    this.radios.clear()
     this.started = false
   }
 
@@ -180,6 +183,10 @@ export class InventorySounds {
       let dropCount = 0
       let newDrop = false
       for (const [sid, st] of stores) {
+        if (sid.startsWith("radio:")) {
+          this.radioSound(sid, st, time, emit)
+          continue
+        }
         if (sid.startsWith("glass:") || sid.startsWith("trip:") || sid.startsWith("car:")) {
           this.verbSound(sid, st, time, emit)
           continue
@@ -202,6 +209,20 @@ export class InventorySounds {
       if (newLure || progression.lures.length !== this.lures.size) this.lures = new Set(progression.lures.map((l) => l.id))
     }
     this.started = true
+  }
+
+  /** A house radio: its switch clicks, it plays while it has battery, and it lands with a thud when the dead knock it down. */
+  private radioSound(sid: string, st: StoreState, time: number, emit: (e: SoundEvent) => void): void {
+    const at = st.at
+    if (!at) return
+    const on = st.counts.on ?? 0
+    const broken = st.counts.broken ?? 0
+    const prev = this.radios.get(sid)
+    // A radio running flat goes quiet without a click; only a hand on the switch makes one.
+    if (prev && on !== prev.on && !broken && (on || (st.counts.left ?? 0) > 0)) emit({ id: "flashlight.click", x: at.x, y: at.y, source: "radio" })
+    if (prev && broken && !prev.broken) emit({ id: "item.drop", x: at.x, y: at.y, source: "radio", gain: 1.3 })
+    this.radios.set(sid, { on, broken })
+    if (on && !broken && time * 10 < (st.counts.until ?? 0)) this.holds.push({ key: `radio:${sid}`, id: "radio.loop", x: at.x, y: at.y })
   }
 
   /** A bottle breaking, cans strung across a doorway rattling as someone walks through, a car window going in and its alarm wailing. */
