@@ -55,8 +55,11 @@ export function radioHandler(sim: OutbreakSim, id: string): InteractionHandler {
         if (now === "dead" || now === "broken") continue
         const playing = now === "playing"
         const primary: InteractAction = { id: "toggle", label: playing ? "Switch off" : "Switch on" }
-        // Small and on a table: it wins over the table and whatever is near it, as a page does.
-        out.push({ kind: "radio", id: site.id, label: "Radio", rect: site.rect, worldX: site.x, worldY: site.y, primary, actions: [primary], priority: 3 })
+        // Small and on a table: looked at, it wins over the table and whatever is near it, as a page does; with your
+        // back to it, the window or door you face keeps the prompt.
+        const facing = Math.cos(actor.aim - Math.atan2(site.y - actor.y, site.x - actor.x))
+        const priority = facing > 0.3 ? 3 : 0
+        out.push({ kind: "radio", id: site.id, label: "Radio", rect: site.rect, worldX: site.x, worldY: site.y, primary, actions: [primary], priority })
       }
       return out
     },

@@ -92,6 +92,15 @@ describe("switching a radio on and off", () => {
     expect(noises("radio").length).toBe(before)
   })
 
+  test("between the radio and the window, the way you face picks the prompt", () => {
+    const { tick, slot } = room({ ann: BEFORE_ASH })
+    tick()
+    expect(slot("ann").prompt?.kind).toBe("radio")
+    Object.assign(slot("ann").survivor, { y: 34.98, aim: Math.PI / 2 })
+    tick()
+    expect(slot("ann").prompt?.id).toBe("ash-south-west")
+  })
+
   test("its battery runs down across plays; a flat radio goes quiet and offers nothing", () => {
     const { tick, slot, state } = room({ ann: BEFORE_ASH }, { radioBattery: 5 })
     tick()
