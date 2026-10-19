@@ -25,6 +25,7 @@ const arg = (name: string, fallback?: string) => {
 const flag = (name: string) => process.argv.includes(`--${name}`)
 const out = resolve(arg("out", resolve(root, "../../captures/tree-looks"))!)
 const rounds = Number(arg("rounds", "6"))
+const only = arg("shots")
 mkdirSync(out, { recursive: true })
 
 const LOOKS = [
@@ -146,6 +147,7 @@ try {
   for (const look of LOOKS) {
     await useLook(page, look.treeLook)
     for (const shot of shots) {
+      if (only && !only.split(",").some((n) => shot.name.includes(n))) continue
       await setup(page, shot)
       await page.screenshot({ path: resolve(out, `${look.label}-${shot.name}.png`) })
       console.log(look.label, shot.name)

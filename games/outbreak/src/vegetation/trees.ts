@@ -168,7 +168,7 @@ fn outbreakTreeBeam(world: vec3f) -> f32 {
   let across = abs(dot(rel, vec2f(-OL.u3.w, OL.u3.z)));
   let cone = 0.3 + max(0.0, along) * max(0.12, OL.u4.x);
   let t = clamp(1.0 - along / range, 0.0, 1.0);
-  return smoothstep(-0.2, 0.6, along) * (1.0 - smoothstep(cone * 0.75, cone * 1.3, across)) * sqrt(t) * clamp(OL.u4.z, 0.0, 1.0);
+  return smoothstep(-0.2, 0.6, along) * (1.0 - smoothstep(cone * 0.75, cone * 1.3, across)) * smoothstep(0.0, 0.35, t);
 }
 
 /**
