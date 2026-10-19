@@ -110,3 +110,7 @@
   thunder (`audio.ts`). Lab: Backquote › Weather ("Today (always clear)" turns it off), `arcade cmd weather.set
   state=storm|rain|drizzle|clear|cycle`, `arcade cmd weather.flash`, station `outbreak-weather`. Tests:
   `tests/weather-cycle.test.ts`, `tests/weather.test.ts`.
+- Anti-aliasing (AR-72, `src/anti-aliasing/`, Lab › Anti-aliasing; values in the view settings): MSAA (today, default),
+  TAA, or TAA + upscale from a render scale, on the shared temporal resolve (`@arcade/kit/gpu/temporal`; rules for scene
+  passes under it in `../../docs/rendering-techniques.md`). Paired GPU, frame time, walking flicker, ghosting crops,
+  stills and a side-by-side clip in one run: `bun scripts/taa-proof.ts --out <dir>` (via `hivemind run --kind browser`).
