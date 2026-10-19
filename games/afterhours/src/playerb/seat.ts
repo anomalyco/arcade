@@ -87,7 +87,7 @@ const EYE_AHEAD = 0.09
 /** Wheel grip: the palm faces back towards the driver (PALM_BACK) and out (PALM_OUT) on the rim. */
 const PALM_OUT = 1
 const PALM_BACK = 0.8
-const TUNE = { gap: 0.017, x: 0, tilt: 0 }
+const TUNE = { gap: 0, x: 0, tilt: 0 }
 ;(globalThis as { __seatTune?: unknown }).__seatTune = TUNE
 /** Finger half-thickness per finger (m), for the contact with the rim tube. */
 const FINGER_R: Record<string, number> = { Index: 0.013, Middle: 0.013, Ring: 0.0125, Pinky: 0.0115 }
@@ -134,6 +134,11 @@ export class SeatRig {
   readonly debug: Record<string, unknown> = {}
   private door = 0
   private released = 0
+  /** Per-hand palm stand-off correction (m), servoed so the palm's skin touches the rim (palm thickness differs). */
+  private palmGap = { Left: 0, Right: 0 }
+  private palmVerts: { mesh: THREE.SkinnedMesh; Left: number[]; Right: number[] } | null = null
+  /** Measured finger half-thickness per side+finger (m), from the character's mesh. */
+  private fingerR: Record<string, number> = {}
   /** Torso recline (rad) for this seat, found on the first frame. */
   private recline: number | null = null
   /** Seat travel forward (m) for this seat, found on the first frame. */
@@ -505,7 +510,7 @@ export class SeatRig {
         handQ = this.palmQuat(palmFace, fingersDir, fit, side)
       }
       const hs = hand.getWorldScale(_v).x
-      const palmAt = C.clone().addScaledVector(palmFace, -(w.tube ?? 0.016) - TUNE.gap).addScaledVector(fingersDir, TUNE.x)
+      const palmAt = C.clone().addScaledVector(palmFace, -(w.tube ?? 0.016) - TUNE.gap - this.palmGap[side]).addScaledVector(fingersDir, TUNE.x)
       let wrist = palmAt.sub(fit.palmPos.clone().multiplyScalar(hs).applyQuaternion(handQ))
       let fistW = 1
       const sgn = side === "Left" ? 1 : -1
@@ -573,6 +578,7 @@ export class SeatRig {
       if (!(side === "Left" && this.door > 0)) this.wrapFingers(side, C, hub, nW, w.radius, w.tube ?? 0.016)
     }
     model.updateMatrixWorld(true)
+    this.closePalms(hub, nW, w.radius, w.tube ?? 0.016)
     // Automation/debug: where each fist ended up relative to its target (m), and the markers.
     for (const side of ["Left", "Right"] as const) {
       const f = this.fistCentre(side)
@@ -616,15 +622,12 @@ export class SeatRig {
     void hand
     void fing
     for (const f of ["Index", "Middle", "Ring", "Pinky"]) {
-      const want = tube + FINGER_R[f]!
+      const want = tube + (this.fingerR[`${side}${f}`] ?? FINGER_R[f]!) + 0.002
       for (let i = 1; i <= 3; i++) {
         const b = B[`${side}Hand${f}${i}`]
         const n = B[`${side}Hand${f}${i + 1}`]
         if (!b || !n) continue
         const axis = across.clone().multiplyScalar(flexSign)
-        // Bisection on the extra curl (−0.6..+1.4 rad) for the child joint's distance to the tube = want.
-        let lo = -0.6
-        let hi = 1.4
         const q0 = b.quaternion.clone()
         const err = (a: number) => {
           b.quaternion.copy(q0)
@@ -634,23 +637,144 @@ export class SeatRig {
           const pb = n.getWorldPosition(new THREE.Vector3())
           return Math.min(tubeD(pb), tubeD(pa.clone().lerp(pb, 0.5)), tubeD(pa.lerp(pb, 0.75))) - want
         }
-        // Distance falls as the finger curls in towards the tube, then rises past it: take the first crossing.
-        const elo = err(lo)
-        const ehi = err(hi)
+        // Curl in from open (−0.6 rad) in steps until the segment first touches the tube, then bisect that step. The
+        // distance falls, touches, and (curled further) the chord would pass through and out again: always the first
+        // touch. Never touching: the closest approach.
+        let prev = -0.6
+        let ePrev = err(prev)
         let a = 0
-        if (elo > 0 && ehi < 0) {
-          for (let k = 0; k < 14; k++) {
-            const m = (lo + hi) / 2
-            if (err(m) > 0) lo = m
-            else hi = m
+        let bestA = prev
+        let bestE = Math.abs(ePrev)
+        if (ePrev <= 0) a = prev
+        else {
+          let found = false
+          for (let x = -0.5; x <= 1.6 + 1e-6; x += 0.1) {
+            const e = err(x)
+            if (Math.abs(e) < bestE) {
+              bestE = Math.abs(e)
+              bestA = x
+            }
+            if (e <= 0) {
+              let lo = prev
+              let hi = x
+              for (let k = 0; k < 8; k++) {
+                const m = (lo + hi) / 2
+                if (err(m) > 0) lo = m
+                else hi = m
+              }
+              a = lo
+              found = true
+              break
+            }
+            prev = x
+            ePrev = e
           }
-          a = (lo + hi) / 2
-        } else a = Math.abs(elo) < Math.abs(ehi) ? lo : (elo > 0 ? hi : 0)
+          if (!found) a = bestA
+        }
         b.quaternion.copy(q0)
         turnWorld(b, axis, a)
       }
     }
+    // The thumb: wherever a segment sits inside the tube, swung out about the axis that lifts it off the centre line.
+    for (let i = 1; i <= 3; i++) {
+      const b = B[`${side}HandThumb${i}`]
+      const n = B[`${side}HandThumb${i + 1}`]
+      if (!b || !n) continue
+      const want = tube + (this.fingerR[`${side}Index`] ?? 0.01)
+      for (let it = 0; it < 12; it++) {
+        const pa = b.getWorldPosition(new THREE.Vector3())
+        const pb = n.getWorldPosition(new THREE.Vector3())
+        const mid = pa.clone().lerp(pb, 0.6)
+        const e = Math.min(tubeD(pb), tubeD(mid)) - want
+        if (e >= 0) break
+        // Away from the tube's centre line at that point.
+        const g = mid.clone().sub(hub)
+        const along = g.dot(nW)
+        const c = hub.clone().add(g.addScaledVector(nW, -along).setLength(radius)).addScaledVector(nW, 0)
+        const away = mid.clone().sub(c).normalize()
+        const ax = new THREE.Vector3().crossVectors(pb.clone().sub(pa), away)
+        if (ax.lengthSq() < 1e-12) break
+        turnWorld(b, ax.normalize(), 0.08)
+      }
+    }
     this.host.model()!.updateMatrixWorld(true)
+  }
+
+  /**
+   * Measures the palm's skin (the vertices skinned mostly to each hand bone) against the rim tube's surface and
+   * servos `palmGap` so the closest one just touches it: no gap, no palm sunk into the rim, whatever the
+   * character's hand.
+   */
+  private closePalms(hub: THREE.Vector3, nW: THREE.Vector3, radius: number, tube: number) {
+    const model = this.host.model()!
+    if (!this.palmVerts || !this.palmVerts.mesh.parent || !model.getObjectById(this.palmVerts.mesh.id)) {
+      let mesh: THREE.SkinnedMesh | null = null
+      model.traverse((o) => {
+        const m = o as THREE.SkinnedMesh
+        if (!mesh && m.isSkinnedMesh && !/head/i.test(m.name) && m.skeleton.bones.some((b) => b.name === "LeftHand") && m.geometry.attributes.position!.count > 3000) mesh = m
+      })
+      if (!mesh) return
+      const m = mesh as THREE.SkinnedMesh
+      const si = m.geometry.attributes.skinIndex!
+      const sw = m.geometry.attributes.skinWeight!
+      const idx = { Left: m.skeleton.bones.findIndex((b) => b.name === "LeftHand"), Right: m.skeleton.bones.findIndex((b) => b.name === "RightHand") }
+      const lists: { Left: number[]; Right: number[] } = { Left: [], Right: [] }
+      // Each vertex's dominant bone: the hand → palm list; a finger phalanx → its skin thickness sample.
+      const bones = m.skeleton.bones
+      const thick = new Map<string, number[]>()
+      const v = new THREE.Vector3()
+      m.updateMatrixWorld(true)
+      for (let i = 0; i < si.count; i++) {
+        let best = -1
+        let bw = 0
+        for (let k = 0; k < 4; k++) {
+          const wg = sw.getComponent(i, k)
+          if (wg > bw) {
+            bw = wg
+            best = si.getComponent(i, k)
+          }
+        }
+        if (best === idx.Left) lists.Left.push(i)
+        else if (best === idx.Right) lists.Right.push(i)
+        const b = bones[best]
+        const fm = b && /^(Left|Right)Hand(Index|Middle|Ring|Pinky)[123]$/.exec(b.name)
+        if (fm && b.children[0]) {
+          m.getVertexPosition(i, v).applyMatrix4(m.matrixWorld)
+          const a = b.getWorldPosition(new THREE.Vector3())
+          const c = b.children[0]!.getWorldPosition(new THREE.Vector3())
+          const seg = c.clone().sub(a)
+          const t = THREE.MathUtils.clamp(v.clone().sub(a).dot(seg) / seg.lengthSq(), 0, 1)
+          const d = v.distanceTo(a.addScaledVector(seg, t))
+          const key = `${fm[1]}${fm[2]}`
+          let arr = thick.get(key)
+          if (!arr) thick.set(key, (arr = []))
+          arr.push(d)
+        }
+      }
+      // Finger half-thickness: the 85th percentile of its skin's distance from the bone line (this character's hand).
+      this.fingerR = {}
+      for (const [k, arr] of thick) {
+        arr.sort((x, y) => x - y)
+        this.fingerR[k] = arr[Math.floor(arr.length * 0.85)] ?? 0.009
+      }
+      this.palmVerts = { mesh: m, ...lists }
+    }
+    const pv = this.palmVerts
+    const v = new THREE.Vector3()
+    for (const side of ["Left", "Right"] as const) {
+      let min = Infinity
+      for (const i of pv[side]) {
+        pv.mesh.getVertexPosition(i, v).applyMatrix4(pv.mesh.matrixWorld)
+        const g = v.clone().sub(hub)
+        const along = g.dot(nW)
+        g.addScaledVector(nW, -along)
+        min = Math.min(min, v.distanceTo(hub.clone().add(g.setLength(radius))) - tube)
+      }
+      if (!Number.isFinite(min)) continue
+      // Touching: the closest palm vertex 1 mm outside the tube.
+      this.palmGap[side] = THREE.MathUtils.clamp(this.palmGap[side] + (0.001 - min) * 0.6, -0.03, 0.03)
+      ;(this.debug as Record<string, unknown>)[`palm${side}`] = +(min * 100).toFixed(2)
+    }
   }
 
   /** Hand world rotation that puts the fist's grip frame (-Z = barrel, +Y = palm side) on `lens` / `toPalm`. */

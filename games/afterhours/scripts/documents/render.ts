@@ -2346,6 +2346,7 @@ DOCS.push(
         ["02:16", "It's coming from the woods.", "CW"],
         ["02:51", "Voice on ch 4?? Reel 288 recording. Whitlock heard her name.", "DK", INK.ballBlue],
         ["02:58", "Console phone. Ext 300. Nobody has been on x300 since Wed.", "DK", INK.ballBlue],
+        ["03:01", "DO NOT CUT THE CARRIER. it keeps it away.", "DK", INK.red],
       ]
       rows.forEach(([t, o, i, c], r) => {
         const y = 41 + (r + 1) * 9.4 - 2.6

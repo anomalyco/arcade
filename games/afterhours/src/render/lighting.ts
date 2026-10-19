@@ -1,9 +1,12 @@
 import * as THREE from "three/webgpu"
 import {
+  BRDF_GGX,
+  F_Schlick,
   Fn as TslFn,
   abs,
   atan,
   cameraPosition,
+  cameraViewMatrix,
   exp,
   float,
   instancedDynamicBufferAttribute,
@@ -11,8 +14,13 @@ import {
   max,
   mrt,
   normalWorld,
+  positionView,
+  positionViewDirection,
   positionWorld,
   reference,
+  roughness,
+  specularColor,
+  specularF90,
   uniform,
   texture,
   normalize,
@@ -22,6 +30,7 @@ import {
   vec3,
   vec4,
 } from "three/tsl"
+import * as TSL from "three/tsl"
 import { ConeClusteredLighting } from "./clustered"
 import { initMirrors } from "./mirrors"
 import { createLightning } from "./lightning"
@@ -40,6 +49,8 @@ import { addControls, flag, num, renderState, type LampRuntime } from "./shared"
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type N = any
 const Fn = TslFn as N
+// Material property nodes r186 exports but its typings don't list yet.
+const { diffuseContribution, specularColorBlended } = TSL as unknown as Record<string, N>
 
 const MAX_POOL = 6
 /** Emitter glow instances (buffers are allocated once at this size so late lamps never reallocate them). */
@@ -244,24 +255,57 @@ function flickerLevel(r: Rig, time: number, scale: number) {
   }
 }
 
+/** Within this distance of the lens the beam's hot centre falls off with the inverse square, past it with `throw`. */
+const FLASH_THROW_REF = 2
+
 /**
- * Shaped flashlight beam: a hot centre, a faint soft reflector ring and a wide dim spill (an incandescent torch with
- * a stippled reflector: the ring is a few percent, not a hard caustic halo).
+ * The flashlight's colour node, a shaped beam: a hot centre, a faint soft reflector ring and a wide dim spill (an
+ * incandescent torch with a stippled reflector: the ring is a few percent, not a hard caustic halo), with two
+ * corrections the punctual light can't express on its own.
+ *
+ * Throw (eye adaptation): physically a 1/d² beam lights the floor at your feet ~200× brighter than a wall 28 m away,
+ * and with one fixed exposure the far wall reads black (0.3 lux at 220 cd) while the floor pool is bright. The hot
+ * centre stays inverse-square within FLASH_THROW_REF and falls as 1/d^throw beyond (continuous there), so the near pool
+ * is unchanged and the beam's centre still reads, dimly, at 25–35 m. The ring and spill stay inverse-square: near
+ * walls and the corridor around the beam don't brighten.
+ *
+ * Lens size: a punctual light mirrored in a glossy floor is a tiny, very bright point (the "floating dot" under the
+ * torch). The specular lobe is widened as for a sphere light of radius `lens` (Karis' representative-point
+ * normalisation, α' = α + r / 2d with energy (α/α')²), and the light scaled by (diffuse + soft specular) / (diffuse
+ * + point specular), so diffuse is untouched and only the highlight softens and dims.
  */
-const flashCookie = Fn(([coord]: [N]) => {
-  // r = 1 at the cone edge (flash.angle, ~40°). A hot centre ~9° wide (r ≈ 0.2), a faint reflector ring just outside
-  // it, and a wide dim spill (~12 % of the peak) that falls smoothly to nothing at the cone edge (no hard rim).
-  const r = length(coord.xy.sub(0.5)).mul(2)
-  const hot = exp(r.div(0.13).pow(2).negate())
-  const ring = exp(r.sub(0.27).div(0.05).pow(2).negate()).mul(0.06)
-  const s = smoothstep(1, 0.05, r)
-  const spill = s.mul(s.add(1)).mul(0.11)
-  // Slight lens/reflector imperfection so the spot isn't perfectly round.
-  const ang = atan(coord.y.sub(0.5), coord.x.sub(0.5))
-  const wobble = ang.mul(5).sin().mul(0.03).add(ang.mul(3).add(1.3).sin().mul(0.02)).add(1)
-  // The hot centre slightly warmer than the spill.
-  return vec3(1, 0.95, 0.85).mul(hot.mul(wobble)).add(vec3(1, 0.97, 0.92).mul(ring.add(spill)))
-})
+function flashColorNode(lightPos: N, throwExp: N, lens: N) {
+  return Fn(([coord]: [N], builder: { material?: THREE.Material }) => {
+    // r = 1 at the cone edge (flash.angle, ~48°). A hot centre ~8° wide (r ≈ 0.13), a faint reflector ring just
+    // outside it, and a wide dim spill (~9 % of the peak) that falls smoothly to nothing at the cone edge (no rim).
+    const r = length(coord.xy.sub(0.5)).mul(2)
+    const hot = exp(r.div(0.13).pow(2).negate())
+    const ring = exp(r.sub(0.27).div(0.05).pow(2).negate()).mul(0.06)
+    const s = smoothstep(1, 0.05, r)
+    const spill = s.mul(s.add(1)).mul(0.09)
+    // Slight lens/reflector imperfection so the spot isn't perfectly round.
+    const ang = atan(coord.y.sub(0.5), coord.x.sub(0.5))
+    const wobble = ang.mul(5).sin().mul(0.03).add(ang.mul(3).add(1.3).sin().mul(0.02)).add(1)
+    const d = length((lightPos as N).sub(positionWorld)).max(1e-3)
+    const reach = d.div(FLASH_THROW_REF).max(1).pow(float(2).sub(throwExp))
+    // The hot centre slightly warmer than the spill.
+    const beam = vec3(1, 0.95, 0.85).mul(hot.mul(wobble).mul(reach)).add(vec3(1, 0.97, 0.92).mul(ring.add(spill)))
+    if (!(builder.material as { isMeshStandardNodeMaterial?: boolean } | undefined)?.isMeshStandardNodeMaterial) return beam
+    const L = (cameraViewMatrix as N).mul(vec4(lightPos, 1)).xyz.sub(positionView).normalize()
+    const H = L.add(positionViewDirection).normalize()
+    const dotVH = (positionViewDirection as N).dot(H).clamp()
+    const F = (F_Schlick as N)({ f0: specularColor, f90: specularF90, dotVH })
+    const alpha = (roughness as N).pow2().max(1e-4)
+    const alpha2 = alpha.add((lens as N).div(d.mul(2))).min(1)
+    const point = (BRDF_GGX as N)({ lightDirection: L, f0: specularColorBlended, f90: float(1), roughness })
+    const soft = (BRDF_GGX as N)({ lightDirection: L, f0: specularColorBlended, f90: float(1), roughness: alpha2.sqrt() }).mul(alpha.div(alpha2).pow2())
+    const diffuse = (diffuseContribution as N).mul(1 / Math.PI).mul(F.oneMinus())
+    const lum = vec3(0.2126, 0.7152, 0.0722)
+    const dl = diffuse.dot(lum)
+    const k = dl.add(soft.dot(lum)).div(dl.add(point.dot(lum)).max(1e-6))
+    return beam.mul(k)
+  })
+}
 
 /**
  * Slope-scaled, distance-aware depth bias for a spot light's perspective shadow map, evaluated per receiving
@@ -341,11 +385,14 @@ export function createLighting(ctx: WorldContext, player: Player) {
     { key: "light.flicker", label: "Flicker", group: "Lighting", unit: "×", min: 0, max: 2, step: 0.05, value: 1 },
     { key: "glow.strength", label: "Emitter glow", group: "Lighting", unit: "×", min: 0, max: 4, step: 0.05, value: 1 },
     { key: "glow.size", label: "Glow size", group: "Lighting", unit: "×", min: 0.2, max: 4, step: 0.05, value: 1 },
-    { key: "flash.intensity", label: "Intensity (peak)", group: "Flashlight", unit: "cd", min: 0, max: 2000, step: 5, value: 110 },
-    { key: "flash.angle", label: "Spill half-angle", group: "Flashlight", unit: "°", min: 15, max: 60, step: 1, value: 40 },
-    { key: "flash.range", label: "Range", group: "Flashlight", unit: "m", min: 5, max: 80, step: 1, value: 40 },
+    { key: "flash.intensity", label: "Intensity (peak)", group: "Flashlight", unit: "cd", min: 0, max: 2000, step: 5, value: 220 },
+    { key: "flash.angle", label: "Spill half-angle", group: "Flashlight", unit: "°", min: 15, max: 60, step: 1, value: 48 },
+    { key: "flash.range", label: "Range", group: "Flashlight", unit: "m", min: 5, max: 80, step: 1, value: 60 },
+    { key: "flash.throw", label: "Centre falloff exponent past 2 m (2 = inverse square)", group: "Flashlight", min: 0.5, max: 2, step: 0.05, value: 0.7 },
+    { key: "flash.lens", label: "Lens size (soft highlight)", group: "Flashlight", unit: "m", min: 0, max: 0.4, step: 0.01, value: 0.1 },
     { key: "flash.lag", label: "Sway lag", group: "Flashlight", unit: "s", min: 0, max: 0.4, step: 0.01, value: 0 },
     { key: "flash.scatter", label: "Beam in fog", group: "Flashlight", unit: "×", min: 0, max: 2, step: 0.01, value: 0.15 },
+    { key: "flash.beamLength", label: "Beam length in fog", group: "Flashlight", unit: "m", min: 1, max: 60, step: 0.5, value: 20 },
     { key: "flash.near", label: "Beam fade-in distance", group: "Flashlight", unit: "m", min: 0, max: 8, step: 0.1, value: 3 },
     { key: "light.shadowBias", label: "Shadow bias (slope-scaled)", group: "Lighting", unit: "texels", min: 0, max: 4, step: 0.05, value: 1 },
     { key: "flash.shadows", label: "Casts shadows", group: "Flashlight", type: "toggle", value: true },
@@ -482,7 +529,9 @@ export function createLighting(ctx: WorldContext, player: Player) {
   // still shadow map (no sub-texel re-quantisation shimmer from the sway filter's endless tiny convergence).
   const appliedDir = new THREE.Vector3(0, 0, -1)
   const appliedPos = new THREE.Vector3()
-  ;(flash as unknown as { colorNode: unknown }).colorNode = flashCookie
+  const flashThrow = uniform(1)
+  const flashLens = uniform(0.1)
+  ;(flash as unknown as { colorNode: unknown }).colorNode = flashColorNode(flashBiasPos, flashThrow, flashLens)
   scene.add(flash, flash.target)
   const flashDir = new THREE.Vector3(0, 0, -1)
   const flashPos = new THREE.Vector3()
@@ -874,8 +923,8 @@ export function createLighting(ctx: WorldContext, player: Player) {
       const angle = (num(ctx, "flash.angle") * Math.PI) / 180
       flash.angle = angle
       flash.distance = num(ctx, "flash.range")
-      // Tight depth range for the beam: precision where the floor actually is.
-      flash.shadow.camera.far = Math.min(flash.distance, 25)
+      flashThrow.value = num(ctx, "flash.throw")
+      flashLens.value = num(ctx, "flash.lens")
       flash.intensity = num(ctx, "flash.intensity") * flashLevel
       flash.color.copy(flashColor)
       // The flashlight never leaves the light list (toggling its visibility would change every material's light

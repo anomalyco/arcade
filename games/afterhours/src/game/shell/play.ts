@@ -10,6 +10,7 @@ import { createSettingsApplier, loadSettings, saveSettings } from "./settings"
 import { createTitleCard } from "./title"
 import { createTunerAudio } from "./tuner-audio"
 import { createHints } from "./hints"
+import { AUTOPLAY_KEY, startEncounters } from "../encounters"
 
 // Play mode: the home screen over a slow drift past the foggy station while the world loads behind it, then
 // Play → title card → intro (src/game/intro) → explore, with an Esc pause menu. Owns input gating: the controller's
@@ -47,6 +48,9 @@ export function createPlayShell(canvas: HTMLCanvasElement, hud: HTMLElement) {
     if (to === "explore" && world) {
       map ??= createMap(world, { active: () => flow.playerActive })
       startObjectives(flow, world.camera, run?.signal)
+      // The Wendigo hunter: dormant until the 3-08 transmitter is switched off (src/game/hunter).
+      const w = world
+      void import("../hunter").then((m) => run?.signal.aborted || m.installHunter(w, { flow, signal: run?.signal }))
     }
     if (to !== "explore") map?.lower()
   })
@@ -97,6 +101,8 @@ export function createPlayShell(canvas: HTMLCanvasElement, hud: HTMLElement) {
   addEventListener(
     "keydown",
     (e: KeyboardEvent) => {
+      // A modal game screen (the death screen) owns the keys.
+      if (document.body.dataset.modal) return
       if (menu.screen !== "none") {
         menu.key(e)
         e.stopImmediatePropagation()
@@ -165,6 +171,8 @@ export function createPlayShell(canvas: HTMLCanvasElement, hud: HTMLElement) {
       w.player.teleport("lot")
     }
     if (r.signal.aborted) return
+    // Encounters (and the checkpoints they restore) before explore: its first objective lands the "arrival" checkpoint.
+    startEncounters(ctx, { resume })
     flow.set("explore")
     hints?.setActive(true)
     updateHint()
@@ -252,7 +260,13 @@ export function createPlayShell(canvas: HTMLCanvasElement, hud: HTMLElement) {
       }, LOCK_THUNK_S * 1000)
       // The intro's car loads and compiles while the home screen is up (idle time), not under the title card.
       if (world) void prepareIntro(world).catch((e: unknown) => console.error("intro prepare:", e))
-      if (pendingPlay && world) void start(world)
+      // "Start over" from the death screen reloads the page straight into a new run.
+      let auto = false
+      try {
+        auto = sessionStorage.getItem(AUTOPLAY_KEY) === "1"
+        sessionStorage.removeItem(AUTOPLAY_KEY)
+      } catch {}
+      if ((pendingPlay || auto) && world) void start(world)
     },
     /** One frame of the shell before the world renders: menu camera, controller, then the run's hooks. */
     frame(dt: number, time: number) {

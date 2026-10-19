@@ -1,8 +1,8 @@
 {
   "model": "eleven_text_to_sound_v2",
   "format": "mp3_44100_64",
-  "updatedAt": "2026-10-19T15:59:22.462Z",
-  "totalCost": 59602,
+  "updatedAt": "2026-10-19T21:15:40.809Z",
+  "totalCost": 60332,
   "categories": [
     {
       "id": "foot-linoleum",
@@ -661,6 +661,13 @@
       "intent": "the moment the forest goes silent: a short whoosh into near silence, a sub drop, and a high thin ringing tone left hanging; 3 s",
       "loop": false,
       "designed": true
+    },
+    {
+      "id": "story-car-alarm",
+      "group": "story",
+      "label": "Car alarm, far off (heard from storey 3)",
+      "intent": "a 1980s car alarm going off far away outdoors in a parking lot: a classic electronic siren whooping up and down with a horn honking in a pattern, heard muffled from inside a concrete building upstairs; no music, no voices",
+      "loop": false
     },
     {
       "id": "ui-notify",
@@ -15256,6 +15263,227 @@
       }
     },
     {
+      "category": "story-car-alarm",
+      "group": "story",
+      "variant": "v1",
+      "prompt": "distant car alarm whoop siren and pulsing horn honk, muffled through thick window, interior concrete room perspective",
+      "duration": 5,
+      "influence": 0.6000000000000001,
+      "loop": false,
+      "file": "sfx/story-car-alarm/v1.mp3",
+      "bytes": 40586,
+      "cost": 50,
+      "generatedAt": "2026-10-19T21:13:07.393Z",
+      "qa": {
+        "description": "A sharp, dry electronic siren whooping rapidly up and down in pitch, recorded close-up with no environmental reverb or filtering.",
+        "score": 3,
+        "issues": "Completely dry and close-up rather than distant and muffled indoors; lacks car horn honking.",
+        "intent": "a 1980s car alarm going off far away outdoors in a parking lot: a classic electronic siren whooping up and down with a horn honking in a pattern, heard muffled from inside a concrete building upstairs; no music, no voices",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-19T21:13:07.393Z"
+      },
+      "status": "regenerated",
+      "previous": {
+        "prompt": "1980s car alarm going off far away in a parking lot at night, electronic siren whooping up and down with horn honks, heard muffled through the walls from upstairs in a concrete building",
+        "file": "sfx/_previous/story-car-alarm/v1-1792444315284.mp3",
+        "score": 2,
+        "description": "An emergency vehicle electronic siren wails continuously with an undulating pitch, reverberating across an open outdoor space at medium distance.",
+        "generatedAt": "2026-10-19T21:11:55.284Z"
+      },
+      "attempts": [
+        {
+          "prompt": "car alarm rhythmic horn honking and electronic chirps, distant outdoors, muffled perspective inside concrete room",
+          "influence": 0.55,
+          "score": 2,
+          "description": "A harsh, dry electronic car horn or buzzer blares in repeated rhythmic bursts from a close, direct perspective with no noticeable reverberation or ambient environment.",
+          "issues": "Completely dry and close-mic'd rather than distant and muffled through concrete walls; lacks the classic whooping electronic siren layer of an 80s car alarm.",
+          "cost": 50,
+          "chosen": false
+        },
+        {
+          "prompt": "distant car alarm whoop siren and pulsing horn honk, muffled through thick window, interior concrete room perspective",
+          "influence": 0.6000000000000001,
+          "score": 3,
+          "description": "A sharp, dry electronic siren whooping rapidly up and down in pitch, recorded close-up with no environmental reverb or filtering.",
+          "issues": "Completely dry and close-up rather than distant and muffled indoors; lacks car horn honking.",
+          "cost": 50,
+          "chosen": true
+        },
+        {
+          "prompt": "faint car alarm with pulsing horn honks and siren whoops, muffled outside through concrete wall, distant interior perspective",
+          "influence": 0.65,
+          "score": 2,
+          "description": "A bright, clear electronic emergency siren cycling rapidly in pitch with close-to-medium perspective and sharp high-frequency presence.",
+          "issues": "Lacks the alternating horn honk pattern; completely unmuffled instead of filtered through a concrete building; perspective is dry and direct rather than distant outdoors.",
+          "cost": 50,
+          "chosen": false
+        }
+      ],
+      "loudness": {
+        "metric": "momentary-max",
+        "target": -16,
+        "raw": {
+          "integrated": -32.1,
+          "momentaryMax": -32.1,
+          "truePeak": -21.9
+        },
+        "out": {
+          "integrated": -16.4,
+          "momentaryMax": -16.4,
+          "truePeak": -6.5
+        },
+        "gainDb": 16.1,
+        "limitedDb": 0,
+        "take": "2026-10-19T21:13:07.393Z",
+        "at": "2026-10-19T21:13:07.665Z"
+      }
+    },
+    {
+      "category": "story-car-alarm",
+      "group": "story",
+      "variant": "v2",
+      "prompt": "vintage car alarm sounding outdoors, electronic siren tones and rhythmic horn honks, distant, muffled through closed window",
+      "duration": 5,
+      "influence": 0.5,
+      "loop": false,
+      "file": "sfx/story-car-alarm/v2.mp3",
+      "bytes": 40586,
+      "cost": 50,
+      "generatedAt": "2026-10-19T21:13:50.780Z",
+      "qa": {
+        "description": "A clean, upfront, and unmuffled electronic emergency siren wailing with an alternating rising and falling pitch, recorded close and dry with no significant acoustic space.",
+        "score": 2,
+        "issues": "Lacks the required muffled low-pass filtering of being indoors, sounds close rather than distant, and is missing the rhythmic car horn honking layer.",
+        "intent": "a 1980s car alarm going off far away outdoors in a parking lot: a classic electronic siren whooping up and down with a horn honking in a pattern, heard muffled from inside a concrete building upstairs; no music, no voices",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-19T21:13:50.780Z"
+      },
+      "status": "regenerated",
+      "previous": {
+        "prompt": "distant old car alarm, rising and falling siren wail and rhythmic horn beeps, outside a building, muffled, heard through a window from the third floor",
+        "file": "sfx/_previous/story-car-alarm/v2-1792444315471.mp3",
+        "score": 1,
+        "description": "A person, likely a woman or child, emitting repeated loud, high-pitched shrieks and screams in a moderately reverberant space.",
+        "generatedAt": "2026-10-19T21:11:55.471Z"
+      },
+      "attempts": [
+        {
+          "prompt": "vintage car alarm sounding outdoors, electronic siren tones and rhythmic horn honks, distant, muffled through closed window",
+          "influence": 0.5,
+          "score": 2,
+          "description": "A clean, upfront, and unmuffled electronic emergency siren wailing with an alternating rising and falling pitch, recorded close and dry with no significant acoustic space.",
+          "issues": "Lacks the required muffled low-pass filtering of being indoors, sounds close rather than distant, and is missing the rhythmic car horn honking layer.",
+          "cost": 50,
+          "chosen": true
+        },
+        {
+          "prompt": "car alarm with rhythmic horn honking and electronic whoop siren, distant outdoor parking lot, muffled indoors through concrete walls",
+          "influence": 0.55,
+          "score": 2,
+          "description": "An emergency vehicle electronic siren wailing up and down with moderate outdoor street reverb, recorded clearly with bright high frequencies.",
+          "issues": "This is an emergency vehicle (police/ambulance) siren rather than a car alarm with alternating tones and honking horn; it is bright and open outdoors rather than muffled inside a concrete building upstairs.",
+          "cost": 50,
+          "chosen": false
+        },
+        {
+          "prompt": "distant car alarm, rhythmic horn honks and whooping alarm tones, muffled through thick concrete walls, interior room perspective",
+          "influence": 0.6,
+          "score": 1,
+          "description": "Rapid, high-pitched squeaking of a rubber toy or bulb horn being squeezed rhythmically, recorded dry and intimately close with no background acoustics.",
+          "issues": "Completely unrelated sound; sounds like a squeaky toy or dog toy up close rather than an electronic siren/horn muffled from outdoors.",
+          "cost": 50,
+          "chosen": false
+        }
+      ],
+      "loudness": {
+        "metric": "momentary-max",
+        "target": -16,
+        "raw": {
+          "integrated": -18.4,
+          "momentaryMax": -18.4,
+          "truePeak": -9.7
+        },
+        "out": {
+          "integrated": -16.5,
+          "momentaryMax": -16.5,
+          "truePeak": -7.7
+        },
+        "gainDb": 2.4,
+        "limitedDb": 0,
+        "take": "2026-10-19T21:13:50.780Z",
+        "at": "2026-10-19T21:13:50.923Z"
+      }
+    },
+    {
+      "category": "story-car-alarm",
+      "group": "story",
+      "variant": "v3",
+      "prompt": "far off car alarm siren cycling up and down with honking horn, night, outdoors, muffled and distant",
+      "duration": 4.5,
+      "influence": 0.6,
+      "loop": false,
+      "file": "sfx/story-car-alarm/v3.mp3",
+      "bytes": 36406,
+      "cost": 45,
+      "generatedAt": "2026-10-19T21:11:55.063Z",
+      "loudness": {
+        "metric": "momentary-max",
+        "target": -16,
+        "raw": {
+          "integrated": -39.7,
+          "momentaryMax": -39.7,
+          "truePeak": -28.1
+        },
+        "out": {
+          "integrated": -16.3,
+          "momentaryMax": -16.3,
+          "truePeak": -4.8
+        },
+        "gainDb": 23.7,
+        "limitedDb": 0,
+        "take": "2026-10-19T21:11:55.063Z",
+        "at": "2026-10-19T21:11:55.202Z"
+      },
+      "qa": {
+        "description": "An emergency vehicle siren wails continuously in an open outdoor space with natural environmental reverberation.",
+        "score": 2,
+        "issues": "It is an emergency response vehicle siren instead of a multi-tone car alarm with honking horns, and it sounds crisp and outdoor rather than muffled from inside a concrete room.",
+        "intent": "a 1980s car alarm going off far away outdoors in a parking lot: a classic electronic siren whooping up and down with a horn honking in a pattern, heard muffled from inside a concrete building upstairs; no music, no voices",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-19T21:12:10.946Z"
+      },
+      "status": "kept",
+      "attempts": [
+        {
+          "prompt": "rhythmic car horn honking and whooping car alarm, distant outdoors, muffled through closed window inside concrete room",
+          "influence": 0.6,
+          "score": 2,
+          "description": "Rapid, rhythmic honking of a modern automobile horn recorded at close-to-medium perspective outdoors with minimal slapback reverb.",
+          "issues": "Missing the electronic whooping siren, and the perspective is dry and upfront rather than muffled and distant from inside a concrete building.",
+          "cost": 45,
+          "chosen": false
+        },
+        {
+          "prompt": "1980s car alarm alternating electronic whoops and horn honks, heavily muffled through thick glass inside a concrete room, distant",
+          "influence": 0.65,
+          "score": 2,
+          "description": "A very loud, harsh, close-up electronic siren emitting rapid, high-pitched warbling alarm tones in a dry acoustic environment with no audible distance.",
+          "issues": "Completely lacking the distant outdoor acoustics and upstairs concrete muffling; completely dry and piercing close-up; lacks the requested car horn honking.",
+          "cost": 45,
+          "chosen": false
+        },
+        {
+          "prompt": "distant car alarm with alternating horn honks and electronic whoops, heavily muffled through thick concrete walls, interior room perspective",
+          "influence": 0.7,
+          "score": 2,
+          "description": "A dry, un-muffled electronic siren tone wailing repeatedly in an alternating pitch cycle with no room reverb or outdoor reflections.",
+          "issues": "Completely dry and close-mic'd rather than distant and muffled; lacks car horn honking entirely; sounds like a direct synth/alarm tone rather than an outdoor event heard from inside.",
+          "cost": 45,
+          "chosen": false
+        }
+      ]
+    },
+    {
       "category": "ui-notify",
       "group": "ui",
       "variant": "v1",
@@ -15735,7 +15963,7 @@
         "bone-cracks",
         "wen-bone-creak/v1-v3"
       ],
-      "status": "added",
+      "status": "approved",
       "loudness": {
         "metric": "momentary-max",
         "target": -19,
@@ -15829,7 +16057,7 @@
         "woman-scream",
         "bowed-metal"
       ],
-      "status": "added",
+      "status": "approved",
       "loudness": {
         "metric": "momentary-max",
         "target": -11,
@@ -15876,7 +16104,7 @@
         "pig-squeal",
         "bowed-metal"
       ],
-      "status": "added",
+      "status": "approved",
       "loudness": {
         "metric": "momentary-max",
         "target": -12,
@@ -15970,7 +16198,7 @@
         "fox-scream",
         "heron-croak"
       ],
-      "status": "added",
+      "status": "approved",
       "loudness": {
         "metric": "momentary-max",
         "target": -13,
@@ -16902,7 +17130,7 @@
         "pig-squeal",
         "bowed-metal"
       ],
-      "status": "added",
+      "status": "approved",
       "loudness": {
         "metric": "momentary-max",
         "target": -12,
@@ -16992,7 +17220,7 @@
         "dog-pant",
         "wen-starving-breath/v1-v3"
       ],
-      "status": "added",
+      "status": "approved",
       "loudness": {
         "metric": "momentary-max",
         "target": -19,
@@ -17228,7 +17456,7 @@
         "throat-drone",
         "ban-weeping/v1-v3"
       ],
-      "status": "added",
+      "status": "approved",
       "loudness": {
         "metric": "momentary-max",
         "target": -16,
@@ -17554,7 +17782,7 @@
         "wen-clicks/v3",
         "skin-clicks-breath/v1"
       ],
-      "status": "added",
+      "status": "approved",
       "loudness": {
         "metric": "momentary-max",
         "target": -18,

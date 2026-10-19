@@ -11,6 +11,7 @@ import { type DocumentId, documentMesh } from "../../../../render/documents"
 import { type CorpseCharacter, type CorpsePose, corpseInfo, spawnCorpse } from "../../../npc/corpse"
 import type { S3 } from "./common"
 import { headphones, sub } from "./equipment"
+import { transmitterRack } from "./transmitter"
 
 // STATIC, beat 1: the listening room 3-08 the morning after. The receiver on the operator desk is still on: static
 // that swells and, now and then, a broken voice, positional, so the player can follow it down the spine from the
@@ -102,11 +103,11 @@ export const LISTENING_ROOM_BODIES: readonly BodyAnchor[] = [
       { bone: "RightHand", radius: 0.11, run: 1.2 },
       { bone: "LeftForeArm", offset: [0, 0.1, 0], radius: 0.12, run: 1, strength: 0.7 },
     ],
-    position: [7.35, Y3, -9.7],
-    yaw: yawZ(-0.45, 1),
-    facing: face(-0.45, 1),
+    position: [9.7, Y3, -7.95],
+    yaw: yawZ(1, 0.06),
+    facing: face(1, 0.06),
     contact: { surface: "floor", y: Y3 },
-    note: "Face down in the pendant's light, in line with the spine door (seen from the corridor), head and a reaching arm towards the spine door: he dragged himself from the console towards it (up from 3-09).",
+    note: "Face down at the foot of the transmitter (TX-1), a reaching arm towards it: he dragged himself from the console to it and didn't get there, or tried to keep it on (up from 3-09). His bloody handprints are on the cabinet under the TX POWER switch.",
   },
   {
     id: "3-08-wall",
@@ -242,6 +243,10 @@ export function stageListeningRoom(s: S3): (t: number) => void {
   }
   const bodies = streamBodies(b)
 
+  // ---- TX-1, the transmitter still on the air: its switch silences the radio (and everything after it)
+  const tx = transmitterRack(b)
+  let silenced = false
+
   // ---- the radio: static that swells, and now and then a broken voice
   let voice: LoopVoice | null = null
   let last = 0
@@ -261,8 +266,18 @@ export function stageListeningRoom(s: S3): (t: number) => void {
     swell += (target - swell) * Math.min(1, dt * 0.8)
     const flutter = 0.85 + 0.15 * Math.sin(t * 23.1) * Math.sin(t * 7.3)
     const level = swell * flutter
-    needle.rotation.z = 0.75 - level * 1.4
     bodies()
+    tx.update(t, level)
+    if (!tx.on) {
+      // Cut: the static stops dead, the receiver's needle falls back to its stop, no more voices.
+      needle.rotation.z += (0.75 - needle.rotation.z) * 0.15
+      if (!silenced) {
+        silenced = true
+        voice?.stop()
+      }
+      return
+    }
+    needle.rotation.z = 0.75 - level * 1.4
     const sfx = hooks.sfx
     if (!sfx) return
     if (!voice) {
@@ -457,15 +472,15 @@ function roomBlood(od: number, floor: (x: number, z: number) => number): BloodSp
     { kind: "hand", at: [2.341, y + 1.18, -1.8], normal: [1, 0, 0], up: [0, 1, 0.25], size: [0.1, 0.27], seed: 5, age: 0.6 },
     { kind: "hand", at: [1.88, y + 0.62, -1.75], normal: [0, 0, -1], size: HAND_SIZE, rot: -0.5, seed: 7, age: 0.7, alpha: 0.85 },
     { kind: "hand", at: [7.95, y + 1.32, -14.925], normal: [0, 0, 1], size: HAND_SIZE, rot: -0.15, seed: 9, age: 0.55, alpha: 0.85 },
-    // Hargrove dragged himself from the middle of the room towards the door: a long drag, wettest at his feet,
-    // and his hands' smears ahead of him on the floor by the door.
+    // Hargrove dragged himself from by the console to the transmitter: a long drag, wettest where he started, and
+    // his hands' smears ahead of him at the foot of the rack.
     // (The smear's wet end, −u, is where he started; +u runs towards his feet.)
-    ...drag([7.75, -12.85], [7.7, -10.9], 0.55, 13),
+    ...drag([7.75, -12.85], [8.75, -8.35], 0.55, 13),
     { kind: "pool", at: [7.6, y, -12.9], size: [0.42, 0.34], rot: 0.5, seed: 14, age: 0.45 },
     { kind: "spray", at: [7.3, y, -13.0], size: [1.2, 0.9], rot: 0.5, seed: 36, age: 0.45 },
     // His hands' last smears, reaching past his head towards the door.
-    { kind: "smear", at: [6.75, y, -8.0], size: [0.55, 0.16], rot: Math.atan2(-1, -0.45) + 0.15, seed: 15, age: 0.5 },
-    { kind: "smear", at: [6.45, y, -8.15], size: [0.45, 0.13], rot: Math.atan2(-1, -0.45) - 0.1, seed: 16, age: 0.5 },
+    { kind: "smear", at: [10.62, y, -7.8], size: [0.42, 0.14], rot: Math.atan2(-0.08, 1) + 0.15, seed: 15, age: 0.5 },
+    { kind: "smear", at: [10.55, y, -8.15], size: [0.36, 0.12], rot: Math.atan2(-0.08, 1) - 0.12, seed: 16, age: 0.5 },
     // Bellamy: the smear where he slid down the west wall, impact spray where his head hit it, cast-off arcs above.
     { kind: "smear", at: [0.86, y + 0.62, -12.62], normal: [1, 0, 0], up: [0, 0, 1], size: [0.85, 0.36], seed: 18, age: 0.5 },
     { kind: "spray", at: [0.86, y + 0.95, -12.6], normal: [1, 0, 0], size: [0.9, 0.8], seed: 23, age: 0.4 },
@@ -491,7 +506,7 @@ function roomBlood(od: number, floor: (x: number, z: number) => number): BloodSp
   // The footprints: something walked out through the blood. Out of the pool under Kessler's chair, around Hargrove,
   // through the door and west along the corridor towards the stair, fading as the blood wore off its feet. Too long,
   // too narrow, three long toes; the stride doesn't settle (long, short, long-long).
-  const path: [number, number][] = [[8.1, -12.75], [8.55, -10.6], [8.3, -8.4], [6.0, -6.3], [4.0, -4.6], [2.6, -3.4], [2.5, -2.6], [2.55, -1.2], [1.6, -0.1], [-0.5, 0.35], [-6.0, 0.5], [-12.5, 0.3]]
+  const path: [number, number][] = [[8.1, -12.75], [7.6, -10.6], [7.2, -8.4], [6.0, -6.3], [4.0, -4.6], [2.6, -3.4], [2.5, -2.6], [2.55, -1.2], [1.6, -0.1], [-0.5, 0.35], [-6.0, 0.5], [-12.5, 0.3]]
   const lens: number[] = []
   let total = 0
   for (let i = 1; i < path.length; i++) {

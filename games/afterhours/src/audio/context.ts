@@ -26,6 +26,7 @@ export type SharedAudio = {
 }
 
 let shared: SharedAudio | null = null
+const ducks = {} as Record<Bus, GainNode>
 let roomSend: GainNode | null = null
 let outSend: GainNode | null = null
 
@@ -98,7 +99,9 @@ function createContext() {
     const buses = {} as Record<Bus, GainNode>
     for (const b of BUSES) {
       buses[b] = ctx.createGain()
-      buses[b].connect(b === "ui" ? master : world)
+      // A duck stage after the user's level: story beats lower a bus here without touching the saved settings.
+      ducks[b] = ctx.createGain()
+      buses[b].connect(ducks[b]).connect(b === "ui" ? master : world)
     }
     shared = { ctx, master, buses, bus: world, noise }
   }
@@ -150,4 +153,23 @@ function impulse(rate: number, seconds: number, cutoff: number, gap: number, tap
     }
   }
   return buf
+}
+
+/**
+ * Ducks a bus for a story beat, independent of (and never written to) the user's volume settings: down to `level`
+ * (linear, 0..1) over `attackS`, held `holdS`, back to full over `releaseS`. A new duck on the same bus replaces the
+ * old one from wherever it is. Silent no-op before the audio is unlocked (nothing is playing then anyway).
+ *
+ *   duck("ambience", 0.03, 1.2, 20, 5)   // the transmitter switch: the building goes quiet, then slowly returns
+ */
+export function duck(bus: Bus, level: number, attackS: number, holdS: number, releaseS: number) {
+  const g = ducks[bus]
+  if (!shared || !g) return
+  const t = shared.ctx.currentTime
+  const p = g.gain
+  p.cancelScheduledValues(t)
+  p.setValueAtTime(p.value, t)
+  p.linearRampToValueAtTime(Math.max(0, Math.min(1, level)), t + Math.max(0.01, attackS))
+  p.setValueAtTime(Math.max(0, Math.min(1, level)), t + Math.max(0.01, attackS) + Math.max(0, holdS))
+  p.linearRampToValueAtTime(1, t + Math.max(0.01, attackS) + Math.max(0, holdS) + Math.max(0.01, releaseS))
 }

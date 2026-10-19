@@ -4,7 +4,7 @@ import { loadMaterials } from "../../render/materials"
 import { buildForest, buildStudio, type LabScene } from "../../monster-lab/scenes"
 import { createLabPost } from "../../monster-lab/post"
 import { createWendigo, type WendigoMode, type WendigoStance } from "../wendigo"
-import { BIPED } from "../wendigo/animate"
+import { BIPED, STOOP } from "../wendigo/animate"
 
 // Creature Forge preview (dev only): orbit the procedural Wendigo in a studio or the night forest with a flashlight,
 // switch modes, or run the stalk → freeze → rear → lunge sequence.
@@ -72,10 +72,12 @@ function setFlash(on: boolean) {
 
 // Automation only: ?biped={"pitch":1.1} overrides the upright-stance numbers for tuning.
 if (params.get("biped")) Object.assign(BIPED, JSON.parse(params.get("biped")!))
+if (params.get("stoopk")) Object.assign(STOOP, JSON.parse(params.get("stoopk")!))
 const w = createWendigo()
 scene.add(w.root)
 await w.ready
 w.root.traverse((o) => (o.castShadow = true))
+if (w.animator && params.has("stoop")) w.animator.stoop = Number(params.get("stoop"))
 
 type Seq = "seq" | "gaits"
 let mode: WendigoMode | Seq = (params.get("mode") as WendigoMode | Seq) ?? "idle"
@@ -222,6 +224,25 @@ setCam(params.get("cam") ?? "front")
  */
 const _m = new THREE.Vector3()
 const _inv = new THREE.Matrix4()
+/** The real top of the antlers: every antler vertex through the head bone (they're rigid on it). */
+const _av = new THREE.Vector3()
+function antlerTop() {
+  const rig = w.rig!
+  const part = rig.data.parts.find((p) => p.name === "antlers")
+  if (!part) return 0
+  const hi = rig.bones.findIndex((b) => b.name === "head")
+  const head = rig.data.bones[hi]!.head
+  const m = rig.bones[hi]!.matrixWorld
+  let top = -Infinity
+  const pos = rig.data.positions
+  for (let k = part.start; k < part.start + part.count; k += 9) {
+    const v = rig.data.indices[k]!
+    _av.set(pos[v * 3]! - head[0], pos[v * 3 + 1]! - head[1], pos[v * 3 + 2]! - head[2]).applyMatrix4(m)
+    if (_av.y > top) top = _av.y
+  }
+  return top - w.root.position.y
+}
+
 function measure(): Record<string, number[]> {
   const rig = w.rig!
   _inv.copy(w.root.matrixWorld).invert()
@@ -346,7 +367,7 @@ function step(dt: number) {
   // Height of the antler tips (the mesh's highest point is ~1.0 m above the head bone).
   if (w.rig) {
     w.rig.byName.get("head")!.getWorldPosition(_hp)
-    status.top = _hp.y + 1.05
+    status.top = antlerTop()
     status.meas = measure()
   }
   if (cam === "track") {

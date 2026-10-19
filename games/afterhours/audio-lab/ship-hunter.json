@@ -1,0 +1,10 @@
+{
+  "note": "Monster takes shipped for the Wendigo hunter (src/game/hunter), from Aiden's approved monster picks 2026-10-19 (picks-aiden-2026-10-19-monsters.json and -round2.json).",
+  "picks": [
+    { "category": "wen-distant-moan", "variant": "v2" },
+    { "category": "wen-distant-moan", "variant": "v3" },
+    { "category": "wen2-starving-groan", "variant": "v1" },
+    { "category": "wen2-chatter", "variant": "v3" },
+    { "category": "wen2-huge-scream", "variant": "v1" }
+  ]
+}

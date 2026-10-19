@@ -17,13 +17,15 @@ export class Flow {
   paused = false
   /** Lets the player walk before `explore` (an intro that hands over control early). Reset on every phase change. */
   playerControl = false
+  /** A scripted moment (src/game/encounters) has the camera: the controller neither reads input nor moves. */
+  hold = false
   private phaseListeners = new Set<(to: Phase, from: Phase) => void>()
   private pauseListeners = new Set<(paused: boolean) => void>()
   private updates = new Set<UpdateHook>()
 
   /** True when the controller should read input and move this frame. */
   get playerActive() {
-    return !this.paused && (this.phase === "explore" || this.playerControl)
+    return !this.paused && !this.hold && (this.phase === "explore" || this.playerControl)
   }
 
   set(phase: Phase) {
@@ -31,6 +33,7 @@ export class Flow {
     if (from === phase) return
     this.phase = phase
     this.playerControl = false
+    this.hold = false
     if (phase === "menu") this.setPaused(false)
     for (const l of this.phaseListeners) l(phase, from)
   }

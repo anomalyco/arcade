@@ -8,6 +8,7 @@ import { HEAD_TOP, LOBBY, STOREYS } from "./core"
 import { ROOM_BANDS } from "./styles"
 import { STYLES } from "./styles"
 import { liftAudio } from "../../audio/hooks"
+import { liftEvents } from "./lift-events"
 import { keyCapHtml, keyPromptHtml } from "@arcade/kit/client/key-cap"
 
 // A working lift in the core: walk in, aim at a button on the car panel (G, 1–4, door open / close, alarm) and press E
@@ -399,6 +400,7 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
     vision.instanceMatrix.needsUpdate = true
   }
 
+  liftEvents.state = () => ({ phase, cur, target, pos, doorT, inCar: inCarNow })
   return {
     update(dt: number, time: number, camera: THREE.PerspectiveCamera) {
       dt = Math.min(dt, 0.05)
@@ -498,6 +500,7 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
         doorT = Math.max(0, doorT - dt / 2.2)
         if (doorT === 0) {
           phase = "depart"
+          liftEvents.emit("depart", target)
           timer = 0
           audio?.clunk(1)
         }
@@ -551,6 +554,7 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
         if (timer > 0.7) {
           jolt = 0
           phase = "opening"
+          liftEvents.emit("arrive", cur)
         }
       } else if (phase === "opening") {
         doorT = Math.min(1, doorT + dt / 2)

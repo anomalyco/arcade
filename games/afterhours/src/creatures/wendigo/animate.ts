@@ -52,6 +52,8 @@ export const BIPED = {
   armOut: 0.3,
   armFwd: 0.12,
 }
+/** The stoop under a low ceiling, added to BIPED at `stoop` = 1 (fits the antlers under ~2.9 m). */
+export const STOOP = { hipDrop: 0.3, lean: 0.3, hunch: 0.15, neck: 0.25, head: 0.8 }
 const UPRIGHT_SPEED = 0.62
 const LUNGE_SPEED = 5.5
 const _v = new THREE.Vector3()
@@ -101,6 +103,10 @@ export class WendigoAnimator {
   private fingerNext = 1
   private rng: () => number
   private initialised = false
+  /** 0..1: stoop under a low ceiling while upright (a 2.9 m room fits at 1). */
+  stoop = 0
+  /** How close the lunge brings the skull to its target (m). 3 stops short; a kill goes into the lens. */
+  lungeStop = 3
   /** The material's sway clock (tendrils); frozen with the creature. */
   sway: { value: number } | null = null
   private frontIK: { uarm: number; farm: number; hand: number; f: number[][]; side: number }[] = []
@@ -216,7 +222,7 @@ export class WendigoAnimator {
         if (u.target && mode === "lunge") {
           this.bone("head").getWorldPosition(_p)
           const skullDist = Math.hypot(u.target.x - _p.x, u.target.z - _p.z)
-          const brake = Math.max(0, skullDist - 3.0 * scale) / (0.25 * LUNGE_SPEED * scale)
+          const brake = Math.max(0, skullDist - this.lungeStop * scale) / (0.25 * LUNGE_SPEED * scale)
           target *= Math.min(1, brake)
         }
       }
@@ -285,14 +291,14 @@ export class WendigoAnimator {
     const arm = this.armSwing.step(this.bipedGait && mode === "stalk" ? this.armTarget : this.armTarget * 0.25, dt)
     const hips = this.bone("hips")
     const gY = (gF * (1 - up) + gH * (1 + up)) / 2
-    hips.position.y += gY / scale - low * 0.22 * (1 - up * 0.7) + up * BIPED.hipLift - rear * 0.06 + breath * 0.006
+    hips.position.y += gY / scale - low * 0.22 * (1 - up * 0.7) + up * (BIPED.hipLift - this.stoop * STOOP.hipDrop) - rear * 0.06 + breath * 0.006
     hips.position.z += -up * 0.02 - rear * 0.05 + (mode === "lunge" && lungeT < 0.2 ? -0.08 * smooth01(lungeT / 0.2) : 0)
     hips.position.x += sway * 0.5
     // Standing pivots the whole body up about the hips: hunched when upright, nearly vertical when rearing.
-    this.rot("hips", -up * BIPED.pitch - rear * 0.25 - pitchG * (1 - up) - reach * 0.12, sway * 0.5 * (1 + up), sway * 2)
+    this.rot("hips", -up * (BIPED.pitch - this.stoop * STOOP.lean) - rear * 0.25 - pitchG * (1 - up) - reach * 0.12, sway * 0.5 * (1 + up), sway * 2)
     for (const [i, n] of ["spine1", "spine2", "spine3", "spine4"].entries()) {
       // Upright: the upper back curls forward into a hunch.
-      const hunch = up * (1 - rear) * (i < 2 ? -0.02 : BIPED.hunch)
+      const hunch = up * (1 - rear) * (i < 2 ? -0.02 : BIPED.hunch + this.stoop * STOOP.hunch)
       this.rot(n, -rear * 0.07 + hunch + (i < 2 ? 1 : -1) * low * 0.06 + breath * 0.008, -sway * (i - 1.5) * 0.6, sway * 0.8)
     }
     // Ribs heave; belly sucks in on the in-breath.
@@ -327,7 +333,7 @@ export class WendigoAnimator {
     const ly = this.lookYaw.step(yaw, dt, mode === "lunge" ? 14 : 4)
     const lp = this.lookPitch.step(pitch, dt, mode === "lunge" ? 14 : 4)
     // Upright, the neck still juts forward and the skull hangs: it bends down to cancel most of the torso's pitch.
-    const neckLift = up * BIPED.neck + rear * 0.18 - low * 0.12
+    const neckLift = up * (BIPED.neck + this.stoop * STOOP.neck) + rear * 0.18 - low * 0.12
     const share = [0.25, 0.3, 0.25]
     for (const [i, n] of ["neck1", "neck2", "neck3"].entries()) {
       this.rot(n, -lp * share[i]! * 0.8 + neckLift + Math.sin(t * 0.4 + i) * 0.015, 0, Math.sin(t * 0.31) * 0.05 * (i + 1) * (mode === "idle" ? 1 : 0.4))
@@ -336,7 +342,7 @@ export class WendigoAnimator {
     _v.set(0, 1, 0)
     for (const [i, n] of ["neck1", "neck2", "neck3"].entries()) this.rotWorld(n, _v, ly * share[i]!)
     const tilt = mode === "idle" ? Math.sin(t * 0.37) * 0.22 : Math.sin(t * 0.5) * 0.06
-    this.rot("head", -lp * 0.2 + this.snap.pitch.x - rear * 0.1 - reach * 0.2 + up * BIPED.head, 0, tilt + this.snap.roll.x)
+    this.rot("head", -lp * 0.2 + this.snap.pitch.x - rear * 0.1 - reach * 0.2 + up * (BIPED.head + this.stoop * STOOP.head), 0, tilt + this.snap.roll.x)
     this.rotWorld("head", _v.set(0, 1, 0), ly * 0.2 + this.snap.yaw.x)
     this.rot("jaw", jaw * 0.55, 0, Math.sin(t * 13) * 0.01 * jaw)
 

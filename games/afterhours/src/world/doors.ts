@@ -156,6 +156,9 @@ class Door implements DoorHandle {
   touched = false
   /** Seconds at rest open (closer countdown). */
   idle = 0
+  /** Moved by an agent through `Doors.drive` (no door-system sounds; the agent plays its own) at `rate` × speed. */
+  driven = false
+  rate = 1
   /** Open fraction at the start of this frame (push velocity), and the frame of the last push contact. */
   t0 = 0
   contact = -9
@@ -451,6 +454,8 @@ export class Doors {
     d.plan = null
     d.free = true
     d.slow = false
+    d.driven = false
+    d.rate = 1
     d.touched = true
     d.idle = 0
     d.active = true
@@ -494,22 +499,38 @@ export class Doors {
     return { sound: d.spec.sound ?? "steel", kind: d.profile.kind, panic: d.panic, control: d.height < 1.2, x: c.x, y: c.y, z: c.z }
   }
 
-  /** Sets a door's target (and its partner's). */
-  command(d: Door, target: number, partner: boolean) {
+  /**
+   * Moves a door for an agent other than the player (the hunter, src/game/hunter): towards `target` (0 shut, 1 open),
+   * swinging away from the point `from`, at `rate` × the normal speed, without the door system's own sounds (the agent
+   * plays positional ones). The player's next use or push, or the door's closer, gives it back its sounds.
+   */
+  drive(id: string, target: number, o: { from?: { x: number; z: number }; rate?: number } = {}) {
+    const d = this.byId.get(id)
+    if (!d || d.locked) return false
+    const p = d.spec.double ? this.byId.get(d.spec.double) : undefined
+    for (const e of p ? [d, p] : [d]) if (o.from && target > 0 && e.t < 0.05 && !e.spec.slide && (e.spec.swing ?? "auto") === "auto") e.dir = this.sideDir(e, o.from.x, o.from.z)
+    this.command(d, target, true, o.rate ?? 1)
+    return true
+  }
+
+  /** Sets a door's target (and its partner's). `driven` (a rate): an agent's silent `drive`. */
+  command(d: Door, target: number, partner: boolean, driven = 0) {
+    d.driven = driven > 0
+    d.rate = driven > 0 ? driven : 1
     if (target === d.target && !d.free) return
     d.free = false
     d.slow = false
     d.touched = true
     d.idle = 0
     const atRest = !d.active || (Math.abs(d.v) < 1e-3 && d.hold <= 0)
-    if (atRest && target > 0 && d.t < 0.05 && !d.spec.slide && (d.spec.swing ?? "auto") === "auto") d.dir = this.awayDir(d)
+    if (atRest && !driven && target > 0 && d.t < 0.05 && !d.spec.slide && (d.spec.swing ?? "auto") === "auto") d.dir = this.awayDir(d)
     d.target = target
     d.active = true
     if (atRest) {
       // From rest the latch (or the gate's chain) releases first; mid-swing a reversal just brakes and turns round.
       d.hold = d.profile.hesitate * (target > d.t ? 1 : 0.5)
       d.plan = null
-      if (this.audio && this.player) {
+      if (this.audio && this.player && !driven) {
         const v = this.voiceOf(d)
         if (v.control) this.audio.control(v)
         else if (d.profile.kind === "rollup" || d.profile.kind === "slide") this.audio.moveStart(v)
@@ -517,7 +538,7 @@ export class Doors {
       }
     }
     const p = partner && d.spec.double ? this.byId.get(d.spec.double) : undefined
-    if (p) this.command(p, target, false)
+    if (p) this.command(p, target, false, driven)
   }
 
   /** Swing sign that moves the leaf's free edge away from the player (by side of the door plane, else facing). */
@@ -619,6 +640,8 @@ export class Doors {
       if (d.rattle > 0) d.rattle = Math.max(0, d.rattle - dt)
       const sound = d.spec.sound ?? "steel"
       const prof = d.profile
+      // An agent's door (`drive`) is silent here: the agent plays its own sounds.
+      const audio = d.driven ? null : this.audio
       let left = dt
       while (left > 1e-6) {
         const h = Math.min(SUB, left)
@@ -640,7 +663,7 @@ export class Doors {
             d.v = 0
           }
           d.target = t
-        } else t = stepMotion(d, prof, d.target, speed * (d.slow ? 0.55 : 1), h)
+        } else t = stepMotion(d, prof, d.target, speed * (d.slow ? 0.55 : 1) * d.rate, h)
         const latched = d.target === 0 && t === 0 && prev > 0
         if (p && t !== prev) {
           const before = d.penetration(p.x, p.z, feet, head, PLAYER_R)
@@ -654,8 +677,8 @@ export class Doors {
             break
           }
         } else d.pose(t)
-        if (latched && this.audio && d.height >= 1.2) this.audio.latch(sound, prof.kind, this.pan(d), Math.abs(d.v) * prof.duration, this.voiceOf(d))
-        if (bump > 0.6) this.audio?.bump(sound, this.pan(d), Math.min(1, bump / 3))
+        if (latched && audio && d.height >= 1.2) audio.latch(sound, prof.kind, this.pan(d), Math.abs(d.v) * prof.duration, this.voiceOf(d))
+        if (bump > 0.6) audio?.bump(sound, this.pan(d), Math.min(1, bump / 3))
         if (d.free && t === 0) {
           d.v = 0
           d.free = false
@@ -671,11 +694,11 @@ export class Doors {
       d.t0 = d.t
       if (prof.teeth) {
         const tooth = Math.floor(d.t * prof.teeth + 1e-6)
-        if (tooth !== d.tooth && this.audio) this.audio.tick(this.pan(d))
+        if (tooth !== d.tooth && audio) audio.tick(this.pan(d))
         d.tooth = tooth
       }
       // Leaf speed relative to the peak of a full swing (1.875 / duration for the quintic curve).
-      if (d.height >= 1.2) this.audio?.motion(d.id, sound, prof.kind, (Math.abs(d.v) * prof.duration) / (1.875 * Math.max(0.05, speed)), this.pan(d), dt)
+      if (d.height >= 1.2) audio?.motion(d.id, sound, prof.kind, (Math.abs(d.v) * prof.duration) / (1.875 * Math.max(0.05, speed)), this.pan(d), dt)
       if (!d.free && d.t === d.target && !d.plan && d.hold <= 0 && d.rattle === 0) {
         d.v = 0
         d.pose(d.t)
@@ -687,6 +710,8 @@ export class Doors {
           if (d.idle > CLOSER_DELAY) {
             d.idle = 0
             d.touched = false
+            d.driven = false
+            d.rate = 1
             d.slow = true
             d.target = 0
             d.hold = 0.25

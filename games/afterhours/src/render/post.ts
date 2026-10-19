@@ -257,6 +257,9 @@ export function createPost(ctx: WorldContext) {
   const lightD = uniformArray(LD, "vec4") as N
   const LE = blank() // raw emitter output (rgb, before fog scaling) and local fog extinction, for wet glints
   const lightE = uniformArray(LE, "vec4") as N
+  // Beam length (0: `scatter.coneLength`) and the falloff exponent past 2 m (2: inverse square; the flashlight's throw).
+  const LF = blank()
+  const lightF = uniformArray(LF, "vec4") as N
   const glintStrength = uniform(1)
   const lightCount = uniform(0, "int")
   const phaseG = uniform(0.6)
@@ -281,6 +284,8 @@ export function createPost(ctx: WorldContext) {
       const B = lightB.element(i)
       const C = lightC.element(i)
       const D = lightD.element(i)
+      const Fb = lightF.element(i)
+      const beamLen = Fb.x.greaterThan(0).select(Fb.x, coneLen)
       const toL = A.xyz.sub(ro).toVar()
       const s0 = dot(toL, rd).toVar()
       const h = sqrt(max(dot(toL, toL).sub(s0.mul(s0)), 0)).max(0.03).toVar()
@@ -310,7 +315,7 @@ export function createPost(ctx: WorldContext) {
           const yW = smoothstep(D.z.sub(0.3), D.z, sp.y).mul(smoothstep(D.w.add(0.3), D.w, sp.y))
           // Visible beam length: the concept's lamps show a short soft cone under the head that dies well above the
           // ground, not a column of light all the way down (extra falloff beyond inverse-square, a stylised choice).
-          const beam = exp(ld.div(coneLen).negate())
+          const beam = exp(ld.div(beamLen).negate()).mul(ld.mul(0.5).max(1).pow(float(2).sub(Fb.y)))
           const win = ld.div(A.w).pow(4).oneMinus().clamp().pow(2).mul(smoothstep(0, D.x, ld)).mul(zoneW).mul(yW).mul(beam)
           const cosT = dot(ln, rd).negate()
           const hg = g2.oneMinus().div(pow(g2.add(1).sub(g.mul(2).mul(cosT)).max(1e-4), 1.5))
@@ -784,7 +789,10 @@ export function createPost(ctx: WorldContext) {
     mask?: LightMask,
     raw = 0,
     sigmaHere = 0,
+    beamLen = 0,
+    throwExp = 2,
   ) => {
+    LF[i]!.set(beamLen, throwExp, 0, 0)
     LD[i]!.set(near, mask?.mode ?? 0, mask?.y0 ?? -1e5, mask?.y1 ?? 1e5)
     LE[i]!.set(rad.r * raw, rad.g * raw, rad.b * raw, sigmaHere)
     LA[i]!.set(pos.x, pos.y, pos.z, range)
@@ -924,7 +932,7 @@ export function createPost(ctx: WorldContext) {
       if (f.on && budget > 0) {
         // The flashlight is at the camera, so its own fog (σ there) and no extinction to the eye.
         const sigma = fogSigma(camPos.value)
-        pushLight(count++, f.pos, f.range, f.radiance, sigma, f.dir, f.cosOuter, f.cosInner, num(ctx, "flash.near"))
+        pushLight(count++, f.pos, f.range, f.radiance, sigma, f.dir, f.cosOuter, f.cosInner, num(ctx, "flash.near"), undefined, 0, 0, num(ctx, "flash.beamLength"), num(ctx, "flash.throw"))
       }
       scattering.clear()
       for (const r of candidates) {

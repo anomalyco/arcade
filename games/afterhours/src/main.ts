@@ -8,6 +8,7 @@ import { bootWorld } from "./boot/world"
 import { resolveMode } from "./game/shell/mode"
 import { createPlayShell } from "./game/shell/play"
 import { createMap } from "./game/map"
+import { hunterControls } from "./game/hunter/settings"
 import "./style.css"
 
 // The game page: boot overlay, HUD, frame loop and automation status around the shared world boot (src/boot/world.ts).
@@ -51,6 +52,9 @@ const world = await bootWorld(canvas, params, {
 })
 const { renderer, camera, player } = world
 shell?.attach(world)
+// The Wendigo hunter's Lab controls exist before the panel is built; the hunter itself loads after streaming.
+hunterControls(world.ctx)
+let hunter: { update(dt: number): void } | null = null
 // Debug has no run phases: the clipboard map (M) is there from the start. Play creates it at explore (shell/play.ts).
 if (!shell) createMap(world)
 
@@ -77,7 +81,10 @@ const tick = () => {
   last = now
   time += dt
   if (shell) shell.frame(dt, time)
-  else if (!shot) player.update(dt)
+  else if (!shot) {
+    player.update(dt)
+    hunter?.update(dt)
+  }
   const t0 = performance.now()
   world.render(dt, time)
   shell?.afterRender(renderer.domElement)
@@ -128,6 +135,8 @@ await world.stream({
   },
 })
 // `?intro` (debug): the opening cutscene straight after boot (src/game/intro), its car warmed behind the loader.
+// Debug: the hunter (src/game/hunter), dormant until the 3-08 transmitter is switched off; `?hunter` starts it now.
+if (debug && !shot) hunter = (await import("./game/hunter")).installHunter(world, { start: params.get("hunter"), debug: params.has("hunterDebug") })
 const intro = params.has("intro") ? await import("./game/intro") : null
 if (intro) await intro.prepareIntro(world)
 if (shell) shell.progress("settling", 1)

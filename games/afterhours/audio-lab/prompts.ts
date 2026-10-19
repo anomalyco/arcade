@@ -903,6 +903,20 @@ export const CATEGORIES: CategorySpec[] = [
     ],
   },
 
+  // Story beats
+  {
+    id: "story-car-alarm",
+    group: "story",
+    label: "Car alarm, far off (heard from storey 3)",
+    intent:
+      "a 1980s car alarm going off far away outdoors in a parking lot: a classic electronic siren whooping up and down with a horn honking in a pattern, heard muffled from inside a concrete building upstairs; no music, no voices",
+    variants: [
+      v("1980s car alarm going off far away in a parking lot at night, electronic siren whooping up and down with horn honks, heard muffled through the walls from upstairs in a concrete building", 5, 0.55),
+      v("distant old car alarm, rising and falling siren wail and rhythmic horn beeps, outside a building, muffled, heard through a window from the third floor", 5, 0.5),
+      v("far off car alarm siren cycling up and down with honking horn, night, outdoors, muffled and distant", 4.5, 0.6),
+    ],
+  },
+
   // UI
   {
     id: "ui-notify",
