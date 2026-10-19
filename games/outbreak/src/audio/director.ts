@@ -265,7 +265,7 @@ export class SoundDirector {
       this.deaths.delete(z.id)
       if (!near(z.x, z.y)) continue
       if (prev !== undefined && prev !== "knockdown" && z.state === "knockdown") {
-        emit({ id: "body.vault", x: z.x, y: z.y, delay: 0.14, gain: 0.85, source: "zombie" })
+        emit({ id: "melee.shove", x: z.x, y: z.y, delay: 0.12, gain: 0.72, rate: 0.86, cutoffHz: 1600, source: "zombie" })
       }
       if (prev !== undefined && QUIET.has(prev) && LOUD.has(z.state)) {
         if (t - (this.alertedAt.get(z.id) ?? -Infinity) >= this.tuning.alertPerZombie && t - this.lastAlert >= this.tuning.alertGap) {

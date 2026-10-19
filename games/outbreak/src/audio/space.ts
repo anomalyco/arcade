@@ -214,14 +214,14 @@ export const SURFACE_STEP_PROFILES: Readonly<Record<FootSurface, SurfaceStepProf
   concrete: { baseSurface: "concrete", gain: 0.62, rate: 1.0, cutoffHz: 5200 },
   grass: { baseSurface: "grass", gain: 0.68, rate: 1.0, cutoffHz: 4200 },
   wood: { baseSurface: "wood", gain: 0.72, rate: 1.0, cutoffHz: 4800 },
-  tile: { baseSurface: "concrete", gain: 0.74, rate: 1.18, cutoffHz: 7800 },
+  tile: { baseSurface: "concrete", fallbackCue: { walk: "foot.tile.walk", run: "foot.tile.walk" }, gain: 0.74, rate: 1.08, cutoffHz: 7800 },
   carpet: { baseSurface: "grass", gain: 0.42, rate: 0.88, cutoffHz: 1550 },
-  gravel: { baseSurface: "grass", gain: 0.82, rate: 1.12, cutoffHz: 6800 },
+  gravel: { baseSurface: "grass", fallbackCue: { walk: "foot.gravel.walk", run: "foot.gravel.walk" }, gain: 0.82, rate: 1.06, cutoffHz: 6800 },
   dirt: { baseSurface: "grass", gain: 0.64, rate: 0.88, cutoffHz: 2600 },
-  puddle: { baseSurface: "grass", fallbackCue: { walk: "foot.grass.run", run: "foot.grass.run" }, gain: 0.85, rate: 1.24, cutoffHz: 5400 },
-  metal: { baseSurface: "concrete", fallbackCue: { walk: "impact.bullet.metal", run: "impact.bullet.metal" }, gain: 0.52, rate: 1.32, cutoffHz: 4600 },
-  glass: { baseSurface: "concrete", fallbackCue: { walk: "impact.bullet.glass", run: "impact.bullet.glass" }, gain: 0.62, rate: 1.22, cutoffHz: 7200 },
-  blood: { baseSurface: "grass", fallbackCue: { walk: "zombie.hit", run: "zombie.hit" }, gain: 0.48, rate: 1.35, cutoffHz: 2400 },
+  puddle: { baseSurface: "grass", fallbackCue: { walk: "foot.puddle.walk", run: "foot.puddle.walk" }, gain: 0.85, rate: 1.08, cutoffHz: 5800 },
+  metal: { baseSurface: "concrete", fallbackCue: { walk: "impact.bullet.metal", run: "impact.bullet.metal" }, gain: 0.52, rate: 1.16, cutoffHz: 4600 },
+  glass: { baseSurface: "concrete", fallbackCue: { walk: "foot.glass.step", run: "foot.glass.step" }, gain: 0.68, rate: 1.04, cutoffHz: 7400 },
+  blood: { baseSurface: "grass", fallbackCue: { walk: "foot.puddle.walk", run: "foot.puddle.walk" }, gain: 0.56, rate: 0.84, cutoffHz: 2200 },
 }
 
 /** Movement mode from planar speed (m/s): matches Outbreak's crouch (1.9), walk (3.4) and sprint (5.6) speeds. */

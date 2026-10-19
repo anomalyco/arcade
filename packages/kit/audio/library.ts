@@ -247,6 +247,38 @@ export const SFX_SPECS: readonly SfxSpec[] = [
       duration: 6, candidates: 2, influence: 0.45, slice: { minGapSeconds: gait === "walk" ? 0.32 : 0.2, maxSeconds: gait === "walk" ? 0.42 : 0.3 },
     },
   }))),
+  {
+    id: "foot.puddle.walk", label: "Footstep puddle walk", group: "foot", bus: "foley", variants: 3, target: -26, gain: 0.48, pitchJitter: 0.07, gainJitter: 0.12,
+    maxVoices: 4, priority: 35, range: { ref: 1.5, max: 14 }, wet: 0.08, usedBy: OUTBREAK, durationRange: [0.1, 0.55],
+    generate: {
+      prompt: `One adult in boots walking steadily through shallow rainwater puddles on wet asphalt: distinct crisp water splashes and wet boot steps with a clear pause between each step, close and dry. ${NO_SPEECH}`,
+      duration: 5, candidates: 2, influence: 0.5, slice: { minGapSeconds: 0.32, maxSeconds: 0.45 },
+    },
+  },
+  {
+    id: "foot.gravel.walk", label: "Footstep gravel walk", group: "foot", bus: "foley", variants: 3, target: -26, gain: 0.46, pitchJitter: 0.06, gainJitter: 0.12,
+    maxVoices: 4, priority: 35, range: { ref: 1.5, max: 14 }, wet: 0.05, usedBy: OUTBREAK, durationRange: [0.1, 0.5],
+    generate: {
+      prompt: `One adult in sturdy boots walking at a steady pace on loose crushed gravel: crisp dry stone crunching under each step with a clear pause between steps, close and dry. ${NO_SPEECH}`,
+      duration: 5, candidates: 2, influence: 0.5, slice: { minGapSeconds: 0.32, maxSeconds: 0.42 },
+    },
+  },
+  {
+    id: "foot.tile.walk", label: "Footstep tile walk", group: "foot", bus: "foley", variants: 3, target: -27, gain: 0.44, pitchJitter: 0.05, gainJitter: 0.1,
+    maxVoices: 4, priority: 35, range: { ref: 1.5, max: 12 }, wet: 0.08, usedBy: OUTBREAK, durationRange: [0.08, 0.45],
+    generate: {
+      prompt: `One adult in hard-soled shoes walking steadily on a hard ceramic tile kitchen floor: crisp clean heel-toe clicks with a pause between each step, close and dry. ${NO_SPEECH}`,
+      duration: 5, candidates: 2, influence: 0.5, slice: { minGapSeconds: 0.32, maxSeconds: 0.38 },
+    },
+  },
+  {
+    id: "foot.glass.step", label: "Step on broken glass", group: "glass", bus: "foley", variants: 2, target: -24, gain: 0.65, pitchJitter: 0.06, gainJitter: 0.1,
+    maxVoices: 3, priority: 55, range: { ref: 2, max: 18 }, wet: 0.1, usedBy: OUTBREAK, durationRange: [0.12, 1.1],
+    generate: {
+      prompt: `A single heavy boot stepping down onto small broken glass shards on a floor: a sharp gritty crunch and grinding crackle of glass fragments underfoot, short and dry. One step only. ${NO_SPEECH}`,
+      duration: 0.9, candidates: 4, influence: 0.55,
+    },
+  },
 
   // Doors, windows, barricades
   {
@@ -479,6 +511,21 @@ export const SFX_SPECS: readonly SfxSpec[] = [
     id: "body.breath.exhausted", label: "Out of breath", group: "body", bus: "voice", variants: 2, target: -24, gain: 0.75, pitchJitter: 0.03, gainJitter: 0.06,
     cooldown: 3, maxVoices: 1, range: { ref: 1.5, max: 8 }, wet: 0.05, usedBy: OUTBREAK, durationRange: [1, 3],
     generate: { prompt: `A man out of breath after sprinting: three heavy ragged pants, close and dry. No words. ${NO_SPEECH}`, duration: 2.5, candidates: 3, influence: 0.5 },
+  },
+  {
+    id: "body.heartbeat", label: "Downed heartbeat", group: "body", bus: "voice", variants: 2, target: -24, gain: 0.85, pitchJitter: 0.03, gainJitter: 0.06,
+    maxVoices: 2, priority: 85, range: { ref: 1.5, max: 9 }, wet: 0.04, usedBy: OUTBREAK, durationRange: [0.2, 1.2],
+    generate: { prompt: `A single human heartbeat lub-dub heard from inside the chest: two close deep muffled low-frequency thumps, warm and internal, no high frequencies, short. One heartbeat only. ${NO_SPEECH}`, duration: 0.9, candidates: 4, influence: 0.55 },
+  },
+  {
+    id: "creature.crow.caw", label: "Crow caw", group: "creature", bus: "voice", variants: 2, target: -23, gain: 0.72, pitchJitter: 0.06, gainJitter: 0.1,
+    cooldown: 0.15, maxVoices: 2, priority: 55, range: { ref: 2.5, max: 28 }, wet: 0.18, usedBy: OUTBREAK, durationRange: [0.18, 1.3],
+    generate: { prompt: `A single American crow cawing sharply outdoors as it takes flight: one harsh raspy caw, natural and dry. ${NO_SPEECH}`, duration: 1.0, candidates: 4, influence: 0.55 },
+  },
+  {
+    id: "vehicle.alarm.loop", label: "Car alarm wailing", group: "vehicle", bus: "foley", variants: 1, loop: true, target: -24, gain: 0.78, pitchJitter: 0, gainJitter: 0,
+    maxVoices: 2, priority: 85, range: { ref: 3, max: 38 }, wet: 0.2, usedBy: OUTBREAK, durationRange: [2.5, 6.5],
+    generate: { prompt: `A parked car security alarm going off outdoors: rhythmic pulsing car horn honks and electronic siren chirps repeating steadily at a constant tempo, clear and urgent. ${NO_SPEECH}`, duration: 5, candidates: 2, loop: true, influence: 0.5 },
   },
 
   // Ambience beds (seamless loops)

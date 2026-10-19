@@ -446,6 +446,60 @@ describe("Outbreak acoustic space", () => {
     expect(impactGain).toBeGreaterThan(walkGain)
     expect(zombieFootGain).toBeLessThan(alertGain)
   })
+
+  test("dedicated samples play for downed heartbeat, car alarms, broken glass steps, puddle/gravel/tile footsteps, and crows", () => {
+    for (const id of [
+      "foot.puddle.walk",
+      "foot.gravel.walk",
+      "foot.tile.walk",
+      "foot.glass.step",
+      "body.heartbeat",
+      "creature.crow.caw",
+      "vehicle.alarm.loop",
+    ]) {
+      expect(SFX_BY_ID.has(id), id).toBe(true)
+    }
+
+    // Puddle, gravel, tile and glass steps resolve to their dedicated library cues
+    const house = town.buildings.find((b) => b.kind === "house")!
+    expect(footstepEvent(town, 25.6, 42.15, 3.4)?.event.id).toBe("foot.puddle.walk")
+    expect(footstepEvent(town, house.rect[0] - 1.5, house.rect[1] + 5.0, 3.4)?.event.id).toBe("foot.gravel.walk")
+    expect(footstepEvent(town, house.rect[2] - 2.0, house.rect[3] - 1.5, 3.4)?.event.id).toBe("foot.tile.walk")
+    expect(footstepEvent(town, 10, 44, 3.4, { extra: { glass: [{ x: 10, y: 44 }] } })?.event.id).toBe("foot.glass.step")
+
+    // Downed survivor emits body.heartbeat rather than pitched-down foot.grass.run
+    const director = new SoundDirector()
+    const sim = new CoopSim(7, 7, 0.22, { zombieCount: 0 })
+    const a = sim.addSurvivor("a", 0)
+    director.observe(
+      { ...soundWorld(sim), death: { runOver: false, survivors: [{ index: 0, x: a.survivor.x, y: a.survivor.y, state: "alive", bleed: 10, bleedMax: 10 }] } },
+      a.survivor,
+    )
+    const downEvents = director.observe(
+      { ...soundWorld(sim), time: 1.0, death: { runOver: false, survivors: [{ index: 0, x: a.survivor.x, y: a.survivor.y, state: "down", bleed: 8, bleedMax: 10 }] } },
+      a.survivor,
+    )
+    const beatEvents = director.observe(
+      { ...soundWorld(sim), time: 2.0, death: { runOver: false, survivors: [{ index: 0, x: a.survivor.x, y: a.survivor.y, state: "down", bleed: 7, bleedMax: 10 }] } },
+      a.survivor,
+    )
+    expect(ids(downEvents)).toContain("body.hurt")
+    expect(ids(downEvents)).not.toContain("body.vault")
+    expect(ids(beatEvents)).toContain("body.heartbeat")
+    expect(ids(beatEvents)).not.toContain("foot.grass.run")
+
+    // Triggering a fresh car alarm holds vehicle.alarm.loop instead of lure.loop
+    const car = sim.progression.verbs.cars[0]!
+    sim.progression.ledger.createStore({
+      id: `car:${car.key}`,
+      mode: "counters",
+      scope: "shared",
+      at: { x: car.x, y: car.y },
+      initial: { smashed: 1, alarm: 1, until: 100 },
+    })
+    director.observe({ ...soundWorld(sim), time: 2.5 }, a.survivor)
+    expect(director.holds.find((h) => h.key.startsWith("alarm:"))?.id).toBe("vehicle.alarm.loop")
+  })
 })
 
 describe("a fresh start is quiet", () => {

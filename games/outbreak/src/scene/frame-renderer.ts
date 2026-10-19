@@ -156,7 +156,8 @@ export class OutbreakFrameRenderer {
     this.details = new DetailsPresenter(this.renderer)
     setCurrentDetails(this.details)
     this.details.crows.onScatter = (x, z, birds) => {
-      for (let i = 0; i < Math.min(3, birds); i++) audio.play({ id: "wings.flap", x, y: z, delay: i * 0.07, gain: 0.85, rate: 1.15 + i * 0.08, source: "crow" })
+      audio.play({ id: "creature.crow.caw", x, y: z, delay: 0.02, gain: 0.75, source: "crow" })
+      for (let i = 0; i < Math.min(3, birds); i++) audio.play({ id: "wings.flap", x, y: z, delay: i * 0.07, gain: 0.75, rate: 1.08 + i * 0.06, source: "crow" })
     }
     this.ambientMotion = new OutbreakAmbientMotion(this.renderer)
     this.vehicleRenderer = new OutbreakVehicleRenderer(this.renderer, document.body)
