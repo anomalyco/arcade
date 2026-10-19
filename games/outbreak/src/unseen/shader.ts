@@ -74,16 +74,37 @@ export const unseenSceneSnippet = wgslSnippet(
   /* wgsl */ `
 var<private> outbreakUnseenAlpha: f32;
 
+/** 1 inside the streamed lit window, fading to 0 over its last 3 m so its edge never shows as a hard line. */
+fn outbreakWindowFade(uv: vec2f) -> f32 {
+  if (OL.win.z < 0.5) { return 1.0; }
+  let edge = min(min(uv.x, uv.y), min(1.0 - uv.x, 1.0 - uv.y));
+  return smoothstep(0.003, 0.034, edge);
+}
+
+/**
+ * Night sight (OL.night, look/night-sight.ts): at night without a light, sight reads out to the radius and fades to
+ * dark over the fade distance. Places a real light reaches (outbreakLitMask, left by the surface) stay in sight.
+ */
+fn outbreakNightReach(p: vec2f) -> f32 {
+  let k = clamp(OL.night.x, 0.0, 1.0);
+  if (k <= 0.001) { return 1.0; }
+  let d = length(p - lights[0].pos.xz);
+  let fall = smoothstep(OL.night.y, OL.night.y + OL.night.z, d);
+  let litKeep = smoothstep(0.06, 0.42, outbreakLitMask);
+  return 1.0 - k * fall * (1.0 - litKeep);
+}
+
 fn fieldSight3(world: vec3f, n: vec3f) -> vec3f {
   let uv = (world.xz + n.xz * 0.09 - OL.win.xy) * F.map.xy;
-  let inWin = select(1.0, 0.0, OL.win.z > 0.5 && (any(uv < vec2f(0.003)) || any(uv > vec2f(0.997))));
+  let inWin = outbreakWindowFade(uv);
   let fv = textureSampleLevel(visField, floorSamp, uv, 0.0).rgb * inWin;
   let dEyeV = world.xz - lights[0].pos.xz;
   let r0 = max(0.0, lights[0].pos.w - 0.6);
   let r1 = lights[0].pos.w + 0.4;
   let gate = 1.0 - smoothstep(r0 * r0, r1 * r1, dot(dEyeV, dEyeV));
-  let vis = fv.x * gate;
-  let edgeD = max(fv.z, 1.0 - gate);
+  let reach = outbreakNightReach(world.xz);
+  let vis = fv.x * gate * reach;
+  let edgeD = max(max(fv.z, 1.0 - gate), 1.0 - reach);
   return vec3f(vis, fv.y, edgeD);
 }
 

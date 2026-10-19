@@ -228,7 +228,7 @@ describe("Outbreak look", () => {
   })
 
   test("only today, the v7 Before preset and knob-only look ideas remain", () => {
-    expect(OUTBREAK_LOOK_PRESETS.map(p => p.id)).toEqual(["today", "today-v7", "deeper-noir", "warm-practicals", "vivid-world", "big-walk"])
+    expect(OUTBREAK_LOOK_PRESETS.map(p => p.id)).toEqual(["today", "today-v8", "today-v7", "deeper-noir", "warm-practicals", "vivid-world", "big-walk"])
   })
 
   test("Darkwood v8: the sight shroud holds by day and packs its charcoal and grain weights for the post pass", () => {

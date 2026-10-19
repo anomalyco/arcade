@@ -22,7 +22,7 @@ export type OutbreakLookPreset = {
 const { lookIdea: _, ...TRIMS } = DEFAULT_LOOK_TRIMS
 const TODAY: OutbreakLookKnobs = { ...TRIMS, ...DEFAULT_HERO_LOOK }
 /** The Darkwood v8 knobs at their pre-v8 identity, for every preset that predates them. */
-const PRE_V8 = { coneSharpness: 0, dayShroud: 0, shroudCharcoal: 0, shroudGrain: 0, shroudLampKeep: 1, dayMuted: 0, dayVignette: 0, dayGrain: 0, sightGlow: 0, groundDetail: 0, lampRolloff: 0 } as const
+const PRE_V8 = { coneSharpness: 0, dayShroud: 0, shroudCharcoal: 0, shroudGrain: 0, shroudLampKeep: 1, dayMuted: 0, dayVignette: 0, dayGrain: 0, sightGlow: 0, groundDetail: 0, lampRolloff: 0, nightSight: 0, litWindows: 1 } as const
 const V7: OutbreakLookKnobs = {
   ...TODAY,
   ...PRE_V8,
@@ -43,9 +43,17 @@ export const OUTBREAK_LOOK_PRESETS: readonly OutbreakLookPreset[] = [
   {
     id: "today",
     label: "Today",
-    version: 8,
-    note: "The shipped look (v8): Darkwood pass — a crisp sight cone with a dark, grainy charcoal shroud outside it by day and night, near-black nights where the dirty halogen flashlight and the few lamps are the world, a sickly overcast olive-khaki day, and heavy grain and vignette at every hour.",
+    version: 9,
+    note: "The shipped look (v9): Darkwood pass — a crisp sight cone with a dark, grainy charcoal shroud outside it by day and night, near-black nights where the dirty halogen flashlight and the few lamps are the world, a sickly overcast olive-khaki day, and heavy grain and vignette at every hour. Without the flashlight, night sight fades to dark a few metres out, and only a few houses still have a lamp on.",
     knobs: TODAY,
+    beam: DEFAULT_FLASHLIGHT_BEAM,
+  },
+  {
+    id: "today-v8",
+    label: "Before: Today v8 (see the whole cone at night, every window lit)",
+    version: 8,
+    note: "v8 before the night-sight pass: without the flashlight the whole sight cone reads to its range at night, and every house has its front windows lit.",
+    knobs: { ...TODAY, nightSight: 0, litWindows: 1 },
     beam: DEFAULT_FLASHLIGHT_BEAM,
   },
   {

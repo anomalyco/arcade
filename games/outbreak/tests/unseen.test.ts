@@ -120,8 +120,8 @@ describe("outbreak unseen visibility & post-process", () => {
     expect(unseenUniformsStruct.byteSize).toBe(32)
     expect(OUTBREAK_UNSEEN_UNIFORM_OFFSET).toBe(228)
     // The falloff curves' flags and tables follow the unseen block (see light-ramps.ts).
-    // Then the simple survivor's surface, the light-colour rule, the dust motes, Soft Bean, the shroud/unlit controls, the beam look and the sight shroud (one vec4f each).
-    expect(OUTBREAK_LIGHTING_UNIFORM_FLOATS).toBe(236 + LIGHT_RAMP_FLOATS + 32)
+    // Then the simple survivor's surface, the light-colour rule, the dust motes, Soft Bean, the shroud/unlit controls, the beam look, the sight shroud, the Darkwood surfaces and night sight (one vec4f each).
+    expect(OUTBREAK_LIGHTING_UNIFORM_FLOATS).toBe(236 + LIGHT_RAMP_FLOATS + 36)
     expect(OUTBREAK_LIGHTING_UNIFORM_FLOATS * 4).toBeLessThanOrEqual(CUSTOM_UNIFORM_BYTES)
 
     const settings = createOutbreakSettings()

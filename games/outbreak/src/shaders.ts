@@ -112,6 +112,28 @@ ${outbreakLightingDeclarationsWgsl}
 ${outbreakSurfaceMaterialDeclarationsWgsl}
 /** Active building slot i (0..7) has the L-plan bungalow footprint (u17.w bits 0..7). */
 fn slotLPlan(i: i32) -> bool { return ((u32(OL.u17.w) >> u32(i)) & 1u) == 1u; }
+/** Building slot i still has a lamp on behind its windows (u17.w bits 16..23, look/lit-windows.ts). */
+fn slotWindowsLit(i: i32) -> bool { return ((u32(OL.u17.w) >> u32(16 + i)) & 1u) == 1u; }
+/**
+ * Window glass and the warm glow boxes behind it (MAT.lamp in the 0.84..2.18 m opening band, within 0.35 m inside a
+ * resident building's rect): 1 when that building has a lamp on, 0 when it is dark, and 1 for anything that isn't a window, so
+ * other lamps are untouched. Buildings outside the resident slots are dark.
+ */
+fn outbreakWindowLit(p: vec3f, glass: bool) -> f32 {
+  if (p.y < 0.84 || p.y > 2.18) { return select(1.0, 0.0, glass); }
+  let nBld = i32(OL.win.w);
+  for (var i = 0; i < 8; i++) {
+    if (i >= nBld) { break; }
+    let b = OL.bldRects[i];
+    // Glass and its glow boxes sit in the wall, inside the rect; porch lanterns hang just outside it.
+    let inOuter = p.x > b.x - 0.05 && p.x < b.z + 0.05 && p.z > b.y - 0.05 && p.z < b.w + 0.05;
+    if (!inOuter) { continue; }
+    let inCore = p.x > b.x + 0.35 && p.x < b.z - 0.35 && p.z > b.y + 0.35 && p.z < b.w - 0.35;
+    if (inCore && !glass) { return 1.0; }
+    return select(0.0, 1.0, slotWindowsLit(i));
+  }
+  return select(1.0, 0.0, glass);
+}
 /** Whether the rect last returned by houseRect is an L-plan bungalow (cut and lit by wing, not by rect). */
 var<private> houseIsL: bool;
 fn houseRect(id: i32) -> vec4f {
@@ -201,10 +223,27 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
   let duskGlow = smoothstep(0.42, 0.22, F.monitorBounds.y) * (1.0 - smoothstep(0.25, 0.75, sunVal));
   // Darkwood trims (look/world.ts): the shroud holding by day and the colour lamp-lit places keep out of sight.
   let dayShroud = clamp(OL.sight.y, 0.0, 1.0);
+  var windowLit = 1.0;
+  if (mat == 2 && OL.u5.w < 0.5) {
+    // The warm glow boxes behind a dark house's windows go out with it.
+    windowLit = outbreakWindowLit(o.world, false);
+    col *= mix(0.04, 1.0, windowLit);
+  }
   if (mat == 6) {
-    // Clear window glass without milky white wash so rich warm amber interior & dark drapes read crisply.
+    // Window glass from outside. Most houses are dark: black glass with a faint cool sheen high in the pane. A house
+    // with a lamp left on (outbreakWindowLit) glows warm tungsten, brightest low in the pane where the lamp is,
+    // falling off upward and dimmer behind half-drawn curtains, so it reads as a lit room, not a flat amber slab.
     let outsideView = OL.u5.w < 0.5;
-    col = select(vec3f(0.012, 0.022, 0.045), vec3f(0.28, 0.145, 0.036) * nightLamps, outsideView);
+    windowLit = outbreakWindowLit(o.world, true) * nightLamps;
+    let sheen = smoothstep(1.2, 2.1, o.world.y);
+    let darkGlass = vec3f(0.010, 0.013, 0.018) * (1.0 + sheen);
+    let along = select(o.world.x, o.world.z, abs(n.x) > abs(n.z));
+    let curtain = smoothstep(0.28, 0.64, surfaceNoise(vec2f(along * 0.85 + 3.1, floor(along * 0.35) * 1.7)));
+    let v = clamp((o.world.y - 0.9) / 1.25, 0.0, 1.0);
+    let fall = mix(1.0, 0.34, v * v);
+    let tungsten = mix(vec3f(0.24, 0.115, 0.034), vec3f(0.30, 0.17, 0.065), (1.0 - v) * 0.7);
+    let litGlass = tungsten * fall * mix(0.42, 1.0, curtain);
+    col = select(vec3f(0.012, 0.022, 0.045), mix(darkGlass, litGlass, windowLit), outsideView);
   } else if (mat == 21) {
     // Weathered slate-taupe shingles: eave lift, course steps and a ridge rim; peat-amber at dusk, heavy overcast by day.
     let eave = smoothstep(2.82, 3.62, o.world.y);
@@ -568,7 +607,7 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
     let effUnseenAlpha = rawUnseen * (1.0 - smoothstep(0.04, 0.28, litCancel) * mix(lampKeep, 1.0, max(outbreakSeen, zombieRimMask)));
     outbreakFlashMask = select(baseFlashMask, baseFlashMask - effUnseenAlpha, effUnseenAlpha > 0.0);
   }
-  if (mat == 6) { outbreakFlashMask = 0.55; }
+  if (mat == 6) { outbreakFlashMask = 0.55 * windowLit; }
   ${includeLampAirAndActorShadow ? "if (mat != 6) { col += evalLampAir(o.world, OL.u5.w > 0.5); }" : ""}
   if (i32(round(F.map.z)) == 8) {
     let fieldDiag = fieldSight(o.world, n);

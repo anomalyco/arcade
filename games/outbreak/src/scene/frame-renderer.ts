@@ -361,13 +361,7 @@ export class OutbreakFrameRenderer {
       effectiveVisionAim,
       lowBeam,
     })
-    const effectiveVisionSettings = drivingHeadlights
-      ? {
-          ...settings.vision,
-          range: Math.max(settings.vision.range, settings.vehicle.headlightRange + 4),
-          cone: Math.max(settings.vision.cone, 130),
-        }
-      : settings.vision
+    const effectiveVisionSettings = this.sceneLevel.visionSettings
     const frameLightOccluders = this.sceneLevel.packFlashlightActorCasters(
       p.x,
       p.y,

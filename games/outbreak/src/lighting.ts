@@ -6,6 +6,7 @@ import { inBuildingFootprint, SIZE, type Building, type Lamp, type Town } from "
 import { unseenUniformsStruct, type UnseenFrameEvaluation, type UnseenSettings } from "./unseen"
 import { INTERIOR_UNIFORM_FLOATS, interiorUniformFieldsWgsl } from "./interiors/wgsl"
 import { DEFAULT_HERO_LOOK, type HeroLookSettings } from "./look/hero"
+import { DEFAULT_LIT_WINDOWS, windowLampBuilding, windowsLit } from "./look/lit-windows"
 import { DEFAULT_LOOK_TRIMS, trimLighting, type OutbreakLookTrims } from "./look/world"
 import { addLampPool, tableLampPool, type BakeLamp, type TableLamp } from "./lightbake"
 import { DEFAULT_LIGHT_CURVES, LIGHT_CURVES, LIGHT_RAMP_FLOATS, lightRampFieldsWgsl, lightRampWgsl, packLightRamps } from "./light-ramps"
@@ -285,9 +286,11 @@ export const OUTBREAK_SHROUD_UNIFORM_OFFSET = OUTBREAK_BEAN_UNIFORM_OFFSET + 4
 export const OUTBREAK_BEAM_LOOK_UNIFORM_OFFSET = OUTBREAK_SHROUD_UNIFORM_OFFSET + 4
 /** Sight shroud (see `look/world.ts`): coneSharpness, dayShroud, dayMuted, shroudLampKeep. */
 export const OUTBREAK_SIGHT_UNIFORM_OFFSET = OUTBREAK_BEAM_LOOK_UNIFORM_OFFSET + 4
-/** Darkwood surfaces (see `look/world.ts`): sightGlow, groundDetail, lampRolloff, reserved. This fills `CUSTOM_UNIFORM_BYTES`. */
+/** Darkwood surfaces (see `look/world.ts`): sightGlow, groundDetail, lampRolloff, reserved. */
 export const OUTBREAK_ART_UNIFORM_OFFSET = OUTBREAK_SIGHT_UNIFORM_OFFSET + 4
-export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = OUTBREAK_ART_UNIFORM_OFFSET + 4
+/** Night sight (see `look/night-sight.ts`): this frame's weight, readable radius, fade distance, reserved. */
+export const OUTBREAK_NIGHT_UNIFORM_OFFSET = OUTBREAK_ART_UNIFORM_OFFSET + 4
+export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = OUTBREAK_NIGHT_UNIFORM_OFFSET + 4
 
 export type OutbreakLightingUniformSettings =
   | (OutbreakLightingSettings & Partial<FlashlightBeamSettings> & Partial<UnseenSettings> & {
@@ -374,6 +377,8 @@ export type OutbreakLightingFrameState = {
   windowBuildings?: readonly Building[]
   unseen?: Partial<UnseenFrameEvaluation>
   chunkFadeAlpha?: number
+  /** Night sight's eased weight this frame (`look/night-sight.ts`); 0 or absent is off. */
+  nightSightWeight?: number
 }
 
 /**
@@ -520,7 +525,7 @@ export function packOutbreakLightingUniforms(
   out[N + 24] = state.flashlightBounceHeight ?? state.playerH + 0.3
   out[N + 25] = 1 / Math.max(1e-3, halfRad)
   out[N + 26] = state.chunkFadeAlpha ?? 0
-  out[N + 27] = windowBuildingBits(state.windowBuildings ?? [])
+  out[N + 27] = windowBuildingBits(state.windowBuildings ?? [], litWindowShareOf(state.settings))
   // Volumetric beam: inverse view-projection, then density, dust, glare, samples; air boost, indoors, ground, reserved
   const B = OUTBREAK_BEAM_UNIFORM_OFFSET
   if (state.invViewProj) for (let i = 0; i < 16; i++) out[B + i] = state.invViewProj[i]!
@@ -596,6 +601,10 @@ export function packOutbreakLightingUniforms(
   out[OUTBREAK_ART_UNIFORM_OFFSET] = look.sightGlow ?? DEFAULT_LOOK_TRIMS.sightGlow
   out[OUTBREAK_ART_UNIFORM_OFFSET + 1] = look.groundDetail ?? DEFAULT_LOOK_TRIMS.groundDetail
   out[OUTBREAK_ART_UNIFORM_OFFSET + 2] = look.lampRolloff ?? DEFAULT_LOOK_TRIMS.lampRolloff
+  out[OUTBREAK_NIGHT_UNIFORM_OFFSET] = state.nightSightWeight ?? 0
+  out[OUTBREAK_NIGHT_UNIFORM_OFFSET + 1] = Math.max(0.5, look.nightSightRadius ?? DEFAULT_LOOK_TRIMS.nightSightRadius)
+  out[OUTBREAK_NIGHT_UNIFORM_OFFSET + 2] = Math.max(0.5, look.nightSightFalloff ?? DEFAULT_LOOK_TRIMS.nightSightFalloff)
+  out[OUTBREAK_NIGHT_UNIFORM_OFFSET + 3] = 0
   // win (offset 76..79): windowOriginX, windowOriginZ, isStreamWindow, buildingCount
   const winOx = state.windowOrigin?.[0] ?? 0
   const winOz = state.windowOrigin?.[1] ?? 0
@@ -647,6 +656,7 @@ export function resolveLampLight(
   s: OutbreakLightingSettings,
   inInteriorView: boolean,
   out?: ResolvedLamp,
+  litWindowShare = DEFAULT_LIT_WINDOWS,
 ): ResolvedLamp {
   const master = dayLamps * s.lighting
   const w = Math.max(0, Math.min(1, s.practicalWarmth))
@@ -730,7 +740,10 @@ export function resolveLampLight(
 
   if (lamp.kind === "window") {
     const interiorDim = inInteriorView ? 0.46 : 1.0
-    const power = master * lamp.power * s.windowPower * interiorDim
+    // Most houses are dark: only the ones with a lamp left on (look/lit-windows.ts) spill window light.
+    const bld = windowLampBuilding(lamp, buildings)
+    const on = bld ? (windowsLit(bld, litWindowShare) ? 1 : 0) : 1
+    const power = master * lamp.power * s.windowPower * interiorDim * on
     const r = lamp.radius * 0.80 * invTight
     dst.lx = lamp.x
     dst.lh = 1.42
@@ -741,7 +754,7 @@ export function resolveLampLight(
     dst.color[1] = 0.54 - 0.04 * w
     dst.color[2] = 0.15 - 0.04 * w
     dst.power = power
-    dst.fixtureBrightness = master * s.windowPower * (inInteriorView ? 0.68 : 1.32)
+    dst.fixtureBrightness = master * s.windowPower * (inInteriorView ? 0.68 : 1.32) * on
     dst.cone[0] = 0
     dst.cone[1] = 1
     dst.cone[2] = -0.65
@@ -1158,17 +1171,25 @@ export function stampOutbreakVertexTone(buf: ArrayBuffer): ArrayBuffer {
 
 /**
  * Per streamed-window building slot (0..7): bit i when it has the L-plan bungalow footprint (roof cut and interior
- * by wing), bit 8 + i when it is an authored origin house (tiled kitchen). Exact in a float up to 2^24.
+ * by wing), bit 8 + i when it is an authored origin house (tiled kitchen), bit 16 + i when a lamp is still on behind
+ * its windows (`look/lit-windows.ts`, `litShare` of buildings). Exact in a float up to 2^24.
  */
-export function windowBuildingBits(buildings: readonly { id: string; kind: string }[]): number {
+export function windowBuildingBits(buildings: readonly { id: string; kind: string }[], litShare = 0): number {
   let bits = 0
   for (let i = 0; i < Math.min(8, buildings.length); i++) {
     const b = buildings[i]!
     if (!b.id) continue
     if (b.kind === "house") bits |= 1 << i
     if (b.id === "ash" || b.id === "elm") bits |= 1 << (8 + i)
+    if (windowsLit(b, litShare)) bits |= 1 << (16 + i)
   }
   return bits
+}
+
+/** The lit-window share from either uniform settings shape (`litWindows` in the look trims). */
+function litWindowShareOf(raw: OutbreakLightingUniformSettings): number {
+  const look = "look" in raw ? raw.look : undefined
+  return look?.litWindows ?? DEFAULT_LOOK_TRIMS.litWindows
 }
 
 /** Custom uniform block at binding 13, shared by the scene shader and the visibility-field compute pass. */
@@ -1209,6 +1230,7 @@ struct OutbreakLightingUniforms {
   beamLook: vec4f, // beamWarmth, beamTightness, zombieRimSpec, nightGrain
   sight: vec4f, // coneSharpness, dayShroud, dayMuted, shroudLampKeep
   art: vec4f, // sightGlow, groundDetail, lampRolloff, reserved
+  night: vec4f, // night sight: weight this frame, readable radius, fade distance, reserved
 }
 @group(0) @binding(13) var<uniform> OL: OutbreakLightingUniforms;
 ${lightRampWgsl}

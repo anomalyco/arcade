@@ -459,7 +459,7 @@ export class OutbreakFrameLighting {
     const maxUnshadowed = qProfile.maxUnshadowedLamps
     for (let i = 0; i < town.lamps.length; i++) {
       const lamp = town.lamps[i]!
-      const resolved = resolveLampLight(lamp, town.buildings, day.lamps, settings.lighting, inInteriorView, this.scratchResolvedLamp)
+      const resolved = resolveLampLight(lamp, town.buildings, day.lamps, settings.lighting, inInteriorView, this.scratchResolvedLamp, settings.look.litWindows)
       input.lampTrim?.(lamp, resolved)
       this.lampPower[i] = resolved.fixtureBrightness
       if (resolved.power <= 0.001) continue
@@ -628,6 +628,7 @@ export class OutbreakFrameLighting {
         windowBuildings: activeBuildings,
         unseen: unseenEval,
         chunkFadeAlpha: currentIsStreamWindow ? sceneLevel.worldStreamer.chunkFadeAlpha : 0,
+        nightSightWeight: sceneLevel.nightSightWeight,
       },
       flashRgb,
       this.lightingUniforms,
