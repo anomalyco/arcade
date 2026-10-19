@@ -145,6 +145,19 @@ export const aiControls = [
   ...hearingControls,
 ] as const
 
+/** The crowd's perception factor for a 0..1 nocturnal threat: 0.68 by day up to `nightMultiplier` at night. */
+export function crowdNightFactor(threat: number, nightMultiplier: number): number {
+  return 0.68 + threat * (0.32 + (nightMultiplier - 1))
+}
+
+/**
+ * Metres one of the dead (perception 1) hears a noise of radius 1 in the open, now: what the HUD's sound cues draw so
+ * the player learns what is safe. The crowd scales noise by `hearingScale` and the square root of the night factor.
+ */
+export function crowdHearingReach(config: Pick<AIConfig, "hearingScale" | "nightMultiplier">, threat: number): number {
+  return config.hearingScale * Math.sqrt(crowdNightFactor(threat, config.nightMultiplier))
+}
+
 export type PortalState = {
   integrity: number
   barricadePlanks: number
@@ -574,7 +587,7 @@ export class OutbreakAISubsystem {
     // 0 at the start of the opening calm, 1 once it has passed: beams carry half as far while the opening is calm
     const calm = openingThreat(1, time, this.config)
     // Peaceful during the day (0.68× calmer perception/speed), rising through dusk to full nocturnal threat at night
-    const nightFactor = 0.68 + this.threat * (0.32 + (this.config.nightMultiplier - 1))
+    const nightFactor = crowdNightFactor(this.threat, this.config.nightMultiplier)
     const threatConfig: AIConfig = {
       ...this.config,
       flashlightBoost: this.config.flashlightBoost * (0.5 + 0.5 * calm),

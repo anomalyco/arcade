@@ -776,7 +776,7 @@ export class OutbreakCombatSubsystem {
     player.reloadRemaining = PISTOL_RELOAD_TIME
     player.channel = null
     player.noise = Math.max(player.noise, RELOAD_NOISE)
-    ai.emitNoise(player.x, player.y, RELOAD_NOISE, "door", time, attackerId, 0.35)
+    ai.emitNoise(player.x, player.y, RELOAD_NOISE, "reload", time, attackerId, 0.35)
     return true
   }
 

@@ -31,6 +31,7 @@ import { onFootLead } from "../feel-tuning"
 import { collectFogSoundSprites } from "../fog-of-war"
 import { GroundWearRenderer } from "../ground"
 import { renderFlowOverlay } from "../hordes/flow-overlay"
+import { SOUND_CUES_TODAY } from "../sound-cues/settings"
 import { hordeWatchPoint } from "../hordes/stage"
 import type { OutbreakFrameUi } from "../hud/frame-ui"
 import { InteriorPresenter, SCONCE_LAMP_SLOT } from "../interiors"
@@ -615,8 +616,9 @@ export class OutbreakFrameRenderer {
           debugAlphaCount,
         )
       : debugAlphaCount
+    // The Unseen shroud's ground ripples are the sound cues' Today style (AR-67); the HUD layer replaces them.
     const effectiveFogSettings =
-      unseenEval.active && unseenEval.hideZombies
+      unseenEval.active && unseenEval.hideZombies && settings.hud.soundCueStyle === SOUND_CUES_TODAY
         ? {
             ...settings.fog,
             fogSoundCues: Math.max(settings.fog.fogSoundCues, Math.min(1.0, 0.55 * unseenEval.effectiveStrength)),
