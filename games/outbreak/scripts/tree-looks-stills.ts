@@ -2,7 +2,7 @@
  * Stills, night wind clips and paired GPU cost of the D-41 tree looks (Backquote › Vegetation › Tree look), one
  * headless run:
  *
- *   bun scripts/tree-looks-stills.ts --out <dir> [--clip] [--gpu] [--rounds 6]
+ *   bun scripts/tree-looks-stills.ts --out <dir> [--clip] [--gpu] [--rounds 6] [--shots name,…|none] [--clips c,b]
  *
  * Stills (1536×1024, zoom 38 unless noted) for Today (Lively, #273), A Deadwood, B Fluffy and C Darkwood: the start
  * house's front yard by day, the yard at night with the flashlight on the woodland trees, the west street lamp at night
@@ -144,7 +144,7 @@ try {
   const page = await open(1536, 1024, 1)
   meta.adapter = await page.evaluate(() => (window as any).__arcadeHarness.adapterInfo)
   await page.addStyleTag({ content: `${HUD} { visibility: hidden !important; }` })
-  for (const look of LOOKS) {
+  for (const look of only === "none" ? [] : LOOKS) {
     await useLook(page, look.treeLook)
     for (const shot of shots) {
       if (only && !only.split(",").some((n) => shot.name.includes(n))) continue
@@ -155,8 +155,9 @@ try {
   }
   if (flag("clip")) {
     await page.setViewportSize({ width: 1280, height: 720 })
-    await clip(page, "c-darkwood-night-wind", 3)
-    await clip(page, "b-fluffy-night-wind", 2)
+    const clips = arg("clips", "c,b")!.split(",")
+    if (clips.includes("c")) await clip(page, "c-darkwood-night-wind", 3)
+    if (clips.includes("b")) await clip(page, "b-fluffy-night-wind", 2)
   }
   await page.close()
 
