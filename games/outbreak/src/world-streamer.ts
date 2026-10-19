@@ -1,5 +1,6 @@
 import { emitBuildingRugs, emitInteriorDecor, emitWallCapMoulding } from "./interiors/mesh"
-import { interiorSettings, interiorSignature } from "./interiors/plan"
+import { interiorSettings, interiorSignature, planInterior } from "./interiors/plan"
+import { emitCraftWindow } from "./interiors/windows"
 import { propDressingState, propLevelSignature } from "./props/state"
 import type { LevelChunk, LevelData } from "@arcade/kit/gpu/level"
 import { emitGrassClump, emitGrassTuft, foliageSettings, scatterGrassClumps } from "@arcade/kit/gpu/foliage"
@@ -11,6 +12,7 @@ import {
   buildingFootprint,
   CHUNK,
   frontageEnd,
+  inBuildingFootprint,
   makeTown,
   propShape,
   SIZE,
@@ -1073,7 +1075,12 @@ export function compileSingleWorldChunk(
       mainScratch.box(x, 2.16, z, r, 2.78, end, color, MAT.wall, 20, wallTopCol)
       mainScratch.box(x + 0.03, 2.78, z + 0.03, r - 0.03, 2.8, end - 0.03, wallCapCol, MAT.lit)
       emitWallCapMoulding(mainScratch, x, z, r, end)
-      if (r - x > 1) {
+      const owner = interiorSettings.craft ? chunk.buildings.find((o) => x >= o.rect[0] - 0.05 && r <= o.rect[2] + 0.05 && z >= o.rect[1] - 0.05 && end <= o.rect[3] + 0.05) : undefined
+      if (owner) {
+        const horizontal = r - x >= end - z
+        const out = (horizontal ? inBuildingFootprint(owner, (x + r) * 0.5, z - 0.3) : inBuildingFootprint(owner, x - 0.3, (z + end) * 0.5)) ? 1 : -1
+        emitCraftWindow({ low: opaqueScratch, high: mainScratch, glass: glassScratch }, b.rect, { out, theme: planInterior(owner, houseSeed).theme, cool: !horizontal })
+      } else if (r - x > 1) {
         const zm = (z + end) * 0.5
         opaqueScratch.box(x - 0.06, 0.79, z - 0.06, r + 0.06, 0.86, end + 0.1, sillCol, MAT.wall)
         mainScratch.box(x - 0.06, 2.14, z - 0.05, r + 0.06, 2.22, end + 0.08, sillCol, MAT.wall)

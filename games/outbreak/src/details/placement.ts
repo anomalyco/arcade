@@ -40,6 +40,16 @@ export const DETAIL_MODELS = [
   "wordKeepOut",
   "wordDontOpen",
   "wordNo",
+  "bloodDontOpen",
+  "bloodDeadInside",
+  "bloodKeepOut",
+  "bloodHelpUs",
+  "bloodTheyHear",
+  "bloodStayQuiet",
+  "bloodNotDead",
+  "bloodGoAway",
+  "bloodBitten",
+  "bloodHide",
   "tv",
   "crowSit",
   "crowUp",
@@ -55,6 +65,19 @@ export const WORDS: readonly { model: DetailModel; text: string; height: number 
   { model: "wordKeepOut", text: "KEEP OUT", height: 0.32 },
   { model: "wordDontOpen", text: "DONT OPEN", height: 0.3 },
   { model: "wordNo", text: "NO", height: 0.5 },
+]
+/** Indoor warnings written in blood (AR-69), smaller and more varied than the spray paint outside. */
+export const BLOOD_WORDS: readonly { model: DetailModel; text: string; height: number }[] = [
+  { model: "bloodDontOpen", text: "DONT OPEN", height: 0.3 },
+  { model: "bloodDeadInside", text: "DEAD INSIDE", height: 0.26 },
+  { model: "bloodKeepOut", text: "KEEP OUT", height: 0.3 },
+  { model: "bloodHelpUs", text: "HELP US", height: 0.32 },
+  { model: "bloodTheyHear", text: "THEY HEAR", height: 0.28 },
+  { model: "bloodStayQuiet", text: "STAY QUIET", height: 0.26 },
+  { model: "bloodNotDead", text: "NOT DEAD", height: 0.3 },
+  { model: "bloodGoAway", text: "GO AWAY", height: 0.32 },
+  { model: "bloodBitten", text: "BITTEN", height: 0.34 },
+  { model: "bloodHide", text: "HIDE", height: 0.38 },
 ]
 /** Letter advance and word space in letter-height units (the font is 2 wide by 4 tall plus spacing). */
 export const LETTER_ADVANCE = 0.72
@@ -75,7 +98,7 @@ export type DetailSite = {
 
 export type DetailPlacementInput = Pick<
   OutbreakDetailSettings,
-  "worldDetails" | "dtTurnedOver" | "dtMail" | "dtBoxes" | "dtMarks" | "dtBins" | "dtMailboxes" | "dtStreetJunk" | "dtPoliceTape" | "dtTvs" | "dtSeed"
+  "worldDetails" | "dtTurnedOver" | "dtMail" | "dtBoxes" | "dtMarks" | "dtBloodWriting" | "dtBins" | "dtMailboxes" | "dtStreetJunk" | "dtPoliceTape" | "dtTvs" | "dtSeed"
 >
 
 /** Most details one building can carry (inside and out); the presenter caps each model's instances on top. */
@@ -263,14 +286,18 @@ export function placeBuildingDetails(town: Town, b: Building, s: DetailPlacement
       // Whoever holed up here painted a warning beside the inner door, on the face the camera sees.
       const inner = town.doors.find((d) => d.id === `${b.id}-room`)
       if (inner && r.next() < 0.6) {
-        const word = INNER_WORDS[Math.floor(r.next() * INNER_WORDS.length)]!
-        const w = WORDS.find((o) => o.model === word)!
-        const k = Math.min(1, 0.3 / w.height)
+        // One draw either way, so everything placed after it is unchanged by the blood-writing toggle.
+        const roll = r.next()
+        const blood = s.dtBloodWriting !== false
+        const word = blood ? BLOOD_WORDS[Math.floor(roll * BLOOD_WORDS.length)]!.model : INNER_WORDS[Math.floor(roll * INNER_WORDS.length)]!
+        const w = (blood ? BLOOD_WORDS : WORDS).find((o) => o.model === word)!
+        const k = blood ? 1 : Math.min(1, 0.3 / w.height)
         const half = (wordWidth(w.text, w.height) * k) / 2
         const face = inner.rect[3]
         const wall = s.dtMarks > 0 ? innerWall(town, b, face, inner.rect, half) : null
         if (wall !== null && inBuildingFootprint(b, wall, face + 0.3)) {
-          push(site(town, word, wall, face + 0.014, 0, 0.1, { y: supportHeight(town, wall, face + 0.3) + 1.0, scale: k }))
+          // Blood is written higher, about where a hand reaches without stooping, and runs down from there.
+          push(site(town, word, wall, face + 0.014, 0, 0.1, { y: supportHeight(town, wall, face + 0.3) + (blood ? 1.22 : 1.0), scale: k }))
         }
       }
     }

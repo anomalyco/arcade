@@ -4,7 +4,8 @@ import { CHUNK, SIZE, BUILDING_RECTS, buildingFootprint, frontageEnd, inBuilding
 import { terrainVertex, supportHeight } from "../shared/terrain"
 import { house, plant, plantFootprints, archSettings } from "./architecture"
 import { emitWallCapMoulding } from "./interiors/mesh"
-import { interiorSignature } from "./interiors/plan"
+import { interiorSettings, interiorSignature, planInterior } from "./interiors/plan"
+import { emitCraftWindow } from "./interiors/windows"
 import { propFloorFootprints, propLamps } from "./props/furnish"
 import { propLevelSignature, replacedByLibrary } from "./props/state"
 import { bakeOutbreakBounce, bakeOutbreakMoonMask, stampOutbreakVertexTone } from "./lighting"
@@ -302,7 +303,17 @@ function compileLevel(town: Town): OriginLevel {
       const house=town.buildings[owner]!
       const lamp=town.lamps.findIndex(l=>l.kind==="room"&&l.x>house.rect[0]&&l.x<house.rect[2]&&l.y>house.rect[1]&&l.y<house.rect[3])
       const g = at(x, z, true)
-      if (r - x > 1) {
+      if (interiorSettings.craft) {
+        const horizontal = r - x >= end - z
+        const out = (horizontal ? inBuildingFootprint(house, (x + r) / 2, z - .3) : inBuildingFootprint(house, x - .3, (z + end) / 2)) ? 1 : -1
+        const isLeftWin = x < house.rect[0] + 5
+        emitCraftWindow({ low: m, high: m, glass: g }, b.rect, {
+          out, theme: planInterior(house, town.houseSeed).theme, lamp, cool: !horizontal,
+          glow: bay => horizontal
+            ? [hex(isLeftWin ? (bay === 0 ? 0xa25618 : 0x8e4a14) : (bay === 0 ? 0xae5c1a : 0xbe661e)), hex(isLeftWin ? 0x783e10 : 0x884612)]
+            : [hex(0x7a4a1c), hex(0x5e3812)],
+        })
+      } else if (r - x > 1) {
         const zm = (z + end) / 2
         const isLeftWin = x < house.rect[0] + 5
         // Projecting weathered putty-taupe sill + water-stain apron, and interior walnut sill

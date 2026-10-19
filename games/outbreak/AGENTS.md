@@ -39,6 +39,9 @@
 - Rugs and Resident Evil interior themes live in `src/interiors/` (plan, mesh emitters, WGSL, `RugPool`); the rug
   generator and its Worker are in `@arcade/kit/textures`. Lab: Backquote › Rugs & interiors, the Lab's Rugs section and the
   `rugs-interiors` station. Proof: `bun scripts/interiors-proof.ts --phase after` (via `hivemind run --kind browser`).
+  Windows (`windows.ts`), fitted cabinets (`cabinetry.ts`), skirting and wall wear follow the interior material
+  standard in [docs/outbreak-art-direction.md](../../docs/outbreak-art-direction.md); the **Interior craft** setting
+  (Today / Craft pass) gates them.
 - Generated furniture (`@arcade/kit/props`, pipeline in `scripts/props/README.md`) furnishes the start block's houses
   from `src/props/`: anchors replace the gameplay furniture's boxes one for one (collisions stay `PROP_SHAPES`), and
   clutter is client-only. The level bake reads the same plan through `propDressingState`: floor clutter over 0.3 m

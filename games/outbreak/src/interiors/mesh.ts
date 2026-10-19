@@ -138,6 +138,50 @@ function wainscot(m: Mesh, f: Face, theme: InteriorTheme): void {
   faceBox(m, f, (f.a0 + f.a1) / 2, 0, len, 0.035, top - 0.04, top, rgb(w.rail), w.mat, rgb(w.rail))
 }
 
+/** Skirting and rail paint or stain per theme (AR-69); the same trim colours as the windows' room casing. */
+const TRIM: Record<InteriorTheme, { trim: number; mat: number }> = {
+  plain: { trim: 0x5e5442, mat: MAT.lit },
+  mansion: { trim: 0x3a2212, mat: MAT.timber },
+  village: { trim: 0x34201a, mat: MAT.timber },
+  baker: { trim: 0x3a2c1e, mat: MAT.timber },
+  station: { trim: 0x22342a, mat: MAT.lit },
+}
+
+/**
+ * A moulded skirting board along a room face (AR-69): 0.14 m board standing 32 mm proud with a chamfered top that
+ * catches the light, so the wall meets the floor with a line as clear as the floor's own plank seams.
+ */
+function skirting(m: Mesh, f: Face, theme: InteriorTheme): void {
+  const t = TRIM[theme]
+  const col = rgb(t.trim), top = rgb(Math.min(0xffffff, t.trim + 0x0c0a08))
+  const len = f.a1 - f.a0
+  if (len < 0.1) return
+  const a = (f.a0 + f.a1) / 2
+  faceBox(m, f, a, 0, len, 0.032, 0.13, 0.27, col, t.mat, rgb(t.trim))
+  // Chamfer: from the board's front top edge back to the wall face, 15 mm higher.
+  const n0 = f.at + f.side * 0.032, n1 = f.at + f.side * 0.012
+  const y0 = 0.27, y1 = 0.288
+  if (f.axis === "x") {
+    const pts = [[f.a0, y0, n0], [f.a1, y0, n0], [f.a1, y1, n1], [f.a0, y1, n1]]
+    if (f.side > 0) m.quadAuto(pts[0]!, pts[1]!, pts[2]!, pts[3]!, top, t.mat as typeof MAT.lit)
+    else m.quadAuto(pts[1]!, pts[0]!, pts[3]!, pts[2]!, top, t.mat as typeof MAT.lit)
+  } else {
+    const pts = [[n0, y0, f.a1], [n0, y0, f.a0], [n1, y1, f.a0], [n1, y1, f.a1]]
+    if (f.side > 0) m.quadAuto(pts[0]!, pts[1]!, pts[2]!, pts[3]!, top, t.mat as typeof MAT.lit)
+    else m.quadAuto(pts[1]!, pts[0]!, pts[3]!, pts[2]!, top, t.mat as typeof MAT.lit)
+  }
+}
+
+/** Plain rooms' painted dado rail at the line where the darker dado paint stops (`plasterWall` in wgsl.ts). */
+function dadoRail(m: Mesh, f: Face): void {
+  const len = f.a1 - f.a0
+  if (len < 0.25) return
+  const y = f.window ? 0.74 : 0.9
+  const col = rgb(TRIM.plain.trim)
+  faceBox(m, f, (f.a0 + f.a1) / 2, 0, len, 0.026, y, y + 0.045, col, MAT.lit, rgb(0x6c614c))
+  faceBox(m, f, (f.a0 + f.a1) / 2, 0, len, 0.014, y - 0.02, y, rgb(0x4a4234), MAT.lit)
+}
+
 const CAP_COVE = rgb(0x2a1a10)
 const CAP_BEAD = rgb(0x84603a)
 
@@ -299,10 +343,24 @@ function faceFootprint(f: Face, a: number, w: number, d: number): Rect {
 
 /** `footprints` (optional) receives the floor rects of the standing pieces (fireplace, clock, desk) so other dressing can keep off them. */
 export function emitInteriorDecor(m: Mesh, b: Building, town: Town, plan: InteriorPlan = planInterior(b, town.houseSeed), sconces?: number[], footprints?: Rect[]): void {
-  if (plan.theme === "plain" || !interiorSettings.decor) return
+  const craft = interiorSettings.craft > 0
+  if (!interiorSettings.decor || (plan.theme === "plain" && !craft)) return
   const faces = interiorFaces(b, town)
-  if (interiorSettings.wainscot) for (const f of faces) wainscot(m, f, plan.theme)
+  if (craft) for (const f of faces) skirting(m, f, plan.theme)
+  if (interiorSettings.wainscot) for (const f of faces) (plan.theme === "plain" ? dadoRail(m, f) : wainscot(m, f, plan.theme))
   const rng = new Rng(buildingSeed(b, town.houseSeed) ^ 0x7f4a7c15)
+  if (plan.theme === "plain") {
+    // 70s plaster rooms: a couple of plain-framed pictures on the longest free walls, nothing grand.
+    const spans: { f: Face; a0: number; a1: number }[] = []
+    for (const f of faces) if (!f.window && f.a1 - f.a0 > 1.2) for (const [a0, a1] of freeSpans(f, town, b)) spans.push({ f, a0, a1 })
+    spans.sort((p, q) => (q.a1 - q.a0) - (p.a1 - p.a0) || p.a0 - q.a0)
+    for (const s of spans.slice(0, isResidential(b) ? 2 : 1)) {
+      const w = 0.5 + rng.next() * 0.35
+      if (s.a1 - s.a0 < w + 0.4) continue
+      painting(m, s.f, s.a0 + (s.a1 - s.a0) * (0.35 + 0.3 * rng.next()), w, w * (0.75 + rng.next() * 0.5), 1.62, rng, false)
+    }
+    return
+  }
   const solid = faces.filter(f => !f.window && f.a1 - f.a0 > 1.2)
   type Slot = { f: Face; a0: number; a1: number }
   const slots: Slot[] = []

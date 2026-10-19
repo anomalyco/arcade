@@ -18,7 +18,7 @@ export const interiorUniformFieldsWgsl = /* wgsl */ `
   bldTheme: array<vec4f, 2>, // theme id per window building (0..7)
   bldPlate: array<vec4f, 2>, // floor plate per window building: layer + brightness / 4, 0 none
   floorCfg: vec4f, // plate tile (m), decal density, decal strength, decal atlas layer (0 off)
-  floorCfg2: vec4f, // skirting grime, unused`
+  floorCfg2: vec4f, // skirting grime, decal seed, wall wear, unused`
 
 /**
  * Kinds in the 4×4 decal atlas (`decals/floor-decals.webp`, row-major): 0 cup ring, 1 water stain, 2 mould,
@@ -207,6 +207,43 @@ fn themedWall(base: vec3f, a: f32, y: f32, t: i32, variant: f32) -> vec3f {
   return base;
 }
 
+/**
+ * 70s plaster for unthemed rooms (AR-69): warm putty paint over a darker painted dado below the chair rail.
+ * Replaces the façade colour the walls carried inside; its tone variation comes from interiorWallWear's mottling.
+ */
+fn plasterWall(y: f32, variant: f32) -> vec3f {
+  let paint = mix(vec3f(0.30, 0.27, 0.20), vec3f(0.25, 0.26, 0.20), variant);
+  let dado = mix(vec3f(0.12, 0.085, 0.055), vec3f(0.075, 0.09, 0.07), step(0.5, variant));
+  return select(paint, dado, y < 0.92);
+}
+
+/**
+ * Wear on every interior wall face (AR-69), held to the floors' scale: a cove shade under the ceiling and a contact
+ * shade down to the skirting, corner and furniture occlusion from the floor bake in front of the face, water streaks
+ * running down from the top, an uneven rising-damp tide line with a darker rim, and 0.5–2 m mottling so long walls
+ * never read flat. Streaks run vertically (the wall's uncompressed screen axis) and every narrow term widens or fades
+ * with the pixel footprint, so it holds still while walking. \`k\` scales it all (0 = Today). Two noise taps and one
+ * bake fetch: this is compiled into every surface pipeline variant, so it stays small (SwiftShader smoke startup).
+ */
+fn interiorWallWear(albedoIn: vec3f, a: f32, y: f32, front: vec2f, k: f32) -> vec3f {
+  if (k <= 0.0) { return albedoIn; }
+  let fw = surfaceFootprint;
+  let shade = mix(0.6, 1.0, smoothstep(0.13, 0.8, y)) * mix(1.0, 0.68, smoothstep(2.0, 2.62, y));
+  let occ = smoothstep(0.08, 0.6, floorData(front).r);
+  let sn = surfaceNoise(vec2f(a * 2.6, y * 0.22 + 3.7));
+  let streak = smoothstep(0.6, 0.84, sn) * smoothstep(0.9, 2.6, y) * (1.0 - smoothstep(0.035, 0.09, fw));
+  let tide = 0.53 + 0.065 * (sin(a * 1.73 + 0.4) + sin(a * 0.61 + 2.3));
+  let below = 1.0 - smoothstep(tide - 0.03 - fw, tide + 0.02 + fw, y);
+  let rimW = max(0.035, fw * 1.5);
+  let rim = exp(-abs(y - tide) / rimW) * (0.035 / rimW);
+  let mottle = 0.86 + 0.28 * surfaceNoise(vec2f(a * 0.7, y * 0.9) + vec2f(5.3, 2.1));
+  let l = dot(albedoIn, vec3f(0.2126, 0.7152, 0.0722));
+  let stain = vec3f(l) * vec3f(0.62, 0.52, 0.36);
+  var c = mix(albedoIn, stain, clamp(streak * 0.5 + below * 0.3 + rim * 0.4, 0.0, 1.0) * min(k, 1.0));
+  c *= mix(1.0, shade * (1.0 - 0.4 * occ) * mottle, min(k, 1.0));
+  return c * mix(1.0, 0.9, max(k - 1.0, 0.0) * 2.0);
+}
+
 /** Themed floor: herringbone parquet, checker tiles or tired planks. */
 fn themedFloor(base: vec3f, p: vec2f, t: i32, variant: f32) -> vec3f {
   if (t == 1 || t == 4) {
@@ -280,7 +317,13 @@ export function interiorMaterialWgsl(r: InteriorWgslRefs, classicKitchen: boolea
         let th = interiorThemeOf(bi);
         let variant = clamp(fract(${r.theme("bi")}) / 0.45, 0.0, 1.0);
         if (mat == 4) {
-          if (th > 0 && interior(o.world.xz + n.xz * 0.3)) { albedo = themedWall(albedo, o.world.x + o.world.z, o.world.y, th, variant); }
+          if (interior(o.world.xz + n.xz * 0.3)) {
+            let wallA = o.world.x + o.world.z;
+            let wear = ${r.floor2}.z;
+            if (th > 0) { albedo = themedWall(albedo, wallA, o.world.y, th, variant); }
+            else if (wear > 0.0) { albedo = plasterWall(o.world.y, variant); }
+            albedo = interiorWallWear(albedo, wallA, o.world.y, o.world.xz + n.xz * 0.2, wear);
+          }
         } else {
           ${classicKitchen ? `let kb = ${r.buildingRect("bi")};
           let pk = o.world.xz;

@@ -20,6 +20,8 @@ export type OutbreakDetailSettings = {
   dtBoxes: number
   /** Share of buildings with a spray-painted search mark or warning on the front wall. */
   dtMarks: number
+  /** Indoor warnings hand-written in blood (AR-69: dripping, uneven strokes, varied phrases); off is Today's spray font. */
+  dtBloodWriting: boolean
   /** Wheelie bins by the driveways and dumpsters beside the shops. */
   dtBins: boolean
   /** A mailbox at the end of each front path. */
@@ -48,6 +50,7 @@ export const DEFAULT_DETAIL_SETTINGS: OutbreakDetailSettings = {
   dtMail: true,
   dtBoxes: 0.45,
   dtMarks: 0.3,
+  dtBloodWriting: true,
   dtBins: true,
   dtMailboxes: true,
   dtStreetJunk: 1,
@@ -68,6 +71,7 @@ export const detailControls: LabControl[] = [
   { key: "dtMail", label: "Mail inside front doors", group: GROUP, type: "toggle" },
   { key: "dtBoxes", label: "Moving boxes", group: GROUP, min: 0, max: 1, step: 0.05, unit: "" },
   { key: "dtMarks", label: "Spray-painted marks and warnings", group: GROUP, min: 0, max: 1, step: 0.05, unit: "" },
+  { key: "dtBloodWriting", label: "Indoor warnings in blood (off: Today)", group: GROUP, type: "toggle" },
   { key: "dtBins", label: "Bins and dumpsters", group: GROUP, type: "toggle" },
   { key: "dtMailboxes", label: "Mailboxes", group: GROUP, type: "toggle" },
   { key: "dtStreetJunk", label: "Dropped luggage, bikes and prams", group: GROUP, min: 0, max: 2, step: 0.05, unit: "×" },

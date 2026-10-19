@@ -26,6 +26,10 @@ export type InteriorLabSettings = SconceLightSettings & {
   wainscot: number
   /** Moulded wall tops (cove and bead along both faces). */
   wallCaps: number
+  /** Interior craft pass (AR-69): 1 craft walls, windows, cabinets and trim; 0 Today. */
+  interiorCraft: number
+  /** Painted-wall wear (water streaks, rising damp, corner and ceiling shade), 0 off. */
+  wallWear: number
   /** Spike (AR-42): Ash's living room and hall floor drawn from a painted plate (0 off, 1 on). */
   paintedPlate: number
   plateBrightness: number
@@ -51,6 +55,8 @@ export const DEFAULT_INTERIOR_SETTINGS: InteriorLabSettings = {
   interiorDecor: 1,
   wainscot: 1,
   wallCaps: 1,
+  interiorCraft: 1,
+  wallWear: 1,
   paintedPlate: 1,
   plateBrightness: 1.7,
   floorPlates: 1,
@@ -63,7 +69,7 @@ export const DEFAULT_INTERIOR_SETTINGS: InteriorLabSettings = {
 }
 
 /** Keys whose change rebuilds static level geometry (rug quads, decor) rather than updating uniforms. */
-export const INTERIOR_STRUCTURAL_KEYS = new Set(["interiorTheme", "rugSeed", "interiorDecor", "wainscot", "wallCaps"])
+export const INTERIOR_STRUCTURAL_KEYS = new Set(["interiorTheme", "rugSeed", "interiorDecor", "wainscot", "wallCaps", "interiorCraft"])
 
 export function interiorControls(onStructural: () => void, onPool: () => void, onSource: () => void = () => {}): LabControl[] {
   const group = "Rugs & interiors"
@@ -76,6 +82,8 @@ export function interiorControls(onStructural: () => void, onPool: () => void, o
     { key: "rugRelief", label: "Pile relief", group, min: 0, max: 2, step: 0.05, unit: "×" },
     { key: "interiorDecor", label: "RE dressing", group, type: "toggle", change: onStructural },
     { key: "wainscot", label: "Wainscoting", group, type: "toggle", change: onStructural },
+    { key: "interiorCraft", label: "Interior craft", group, type: "select", options: [{ value: 0, label: "Today" }, { value: 1, label: "Craft pass (AR-69)" }], change: onStructural },
+    { key: "wallWear", label: "Wall wear (stains, damp, shade)", group, min: 0, max: 1.5, step: 0.05, unit: "×" },
     { key: "wallCaps", label: "Moulded wall tops", group: "Look · Detail", type: "toggle", change: onStructural },
     { key: "sconceLights", label: "Lit sconce pairs", group, type: "select", options: [{ value: -1, label: "Quality tier" }, { value: 0, label: "Off" }, { value: 1, label: "1" }, { value: 2, label: "2" }, { value: 3, label: "3" }, { value: 4, label: "4" }] },
     { key: "sconcePower", label: "Sconce brightness", group, min: 0, max: 3, step: 0.05, unit: "×" },
@@ -169,6 +177,7 @@ export class InteriorPresenter {
     interiorSettings.decor = this.settings.interiorDecor
     interiorSettings.wainscot = this.settings.wainscot
     interiorSettings.wallCaps = this.settings.wallCaps
+    interiorSettings.craft = this.settings.interiorCraft
   }
 
   /** Applies one changed setting; returns what the host must do ("structural" rebuilds the level). */
@@ -287,7 +296,8 @@ export class InteriorPresenter {
     out[c + 23] = decals
     out[c + 24] = this.settings.skirtingGrime
     out[c + 25] = (interiorSettings.rugSeed * 0x9e37 + 0x2c1b) & 0xffff
-    out[c + 26] = 0
+    // Wall wear only rides with the craft pass, so Today is one setting away.
+    out[c + 26] = this.settings.interiorCraft ? this.settings.wallWear : 0
     out[c + 27] = 0
   }
 

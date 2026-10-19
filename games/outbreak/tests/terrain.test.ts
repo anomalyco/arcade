@@ -4,6 +4,7 @@ import { clearLine, distToRect } from "@arcade/kit/sim/geom"
 import { groundHeight, supportHeight } from "../shared/terrain"
 import { buildLevel } from "../src/level"
 import { archSettings, resolveHouseDecay } from "../src/architecture"
+import { interiorSettings } from "../src/interiors/plan"
 import { Vision } from "../shared/vision"
 import { SceneryMemory } from "../shared/scenery-memory"
 
@@ -80,6 +81,7 @@ test("furnished houses retain a clear entrance-to-room lane and supported setbac
 test("house decay state, clutter density, weathering and clutter seed vary meshes deterministically", () => {
   const town = makeTown(7)
   const saved = { ...archSettings }
+  const craft = interiorSettings.craft
   try {
     archSettings.houseDecay = 0
     expect(resolveHouseDecay(town, 0)).toBe(3)
@@ -92,10 +94,15 @@ test("house decay state, clutter density, weathering and clutter seed vary meshe
     archSettings.houseDecay = 4
     const barricaded = buildLevel(town)
     expect(barricaded.chunks).not.toEqual(tidy.chunks)
+    // The craft pass drops the architecture's flat clutter slabs (the details pass dresses rooms), so indoor
+    // clutter density only shows in Today.
+    interiorSettings.craft = 0
+    const todayBarricaded = buildLevel(town)
     archSettings.clutterDensity = 0
     const emptyClutter = buildLevel(town)
-    expect(emptyClutter.chunks).not.toEqual(barricaded.chunks)
+    expect(emptyClutter.chunks).not.toEqual(todayBarricaded.chunks)
   } finally {
     Object.assign(archSettings, saved)
+    interiorSettings.craft = craft
   }
 }, 20_000)
