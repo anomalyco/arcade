@@ -1,6 +1,6 @@
 /**
  * Pencil glyphs for materials and what they make, matching the corkboard sketches: 24×24 SVG strokes in
- * `currentColor`, so the field-craft strip reads by shape instead of words.
+ * `currentColor`, so the recipe panel reads by shape first.
  */
 const PATHS: Record<string, string> = {
   plank: '<path d="M3 15.5 19.5 5l1.5 2.5L4.5 18z"/><circle cx="6.5" cy="15" r=".6"/><circle cx="17.5" cy="8" r=".6"/>',

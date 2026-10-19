@@ -28,8 +28,6 @@ export type ActionGlyph =
   | "take"
   | "take-all"
   | "install"
-  | "place"
-  | "swap"
   | "tinker"
   | "read"
   | "hide"
@@ -139,8 +137,6 @@ const GLYPHS: Record<Exclude<ActionGlyph, "no-battery" | "no-keys" | "empty-tank
   take: [...hand(), { d: circle(5.2, 14.6, 2.1) }],
   "take-all": [...hand(-3), { d: circle(5.2, 11.6, 2.1) }, { d: rrect(2, 18, 9, 2.5, 1) + rrect(12.5, 18, 9, 2.5, 1) + rrect(7, 21, 9, 2.5, 1) }],
   install: [{ d: "M17.51 3.38A5.5 5.5 0 1 0 20.62 6.49L17.41 9.7L14.3 6.59Z" }, { d: "M4.5 19.5L12 12", w: 3.2 }],
-  place: [{ d: "M12 14L6.5 8.5H10V2.5H14V8.5H17.5Z" }, { d: rrect(2.5, 17, 19, 4.5, 1) }],
-  swap: [{ d: rect(3, 6.5, 12, 3) + "M14.5 3L20.5 8L14.5 13Z" }, { d: rect(9, 14.5, 12, 3) + "M9.5 11L3.5 16L9.5 21Z" }],
   tinker: [{ d: gear(12, 12, 8, 10.5, 7.6, 3.2), evenodd: true }],
   read: [{ d: "M5 2H15L20 7V22H5Z" + rect(8, 9.5, 9, 2) + rect(8, 13.5, 9, 2) + rect(8, 17.5, 6, 2), evenodd: true }],
   hide: [{ d: rect(4, 2, 16, 18) + rect(11.25, 4, 1.5, 14) + circle(9.5, 11, 1) + circle(14.5, 11, 1), evenodd: true }, { d: rect(5, 20, 2.5, 2.5) + rect(16.5, 20, 2.5, 2.5) }],

@@ -52,6 +52,7 @@ export const DRAWINGS: Readonly<Record<string, Drawing>> = {
   ],
   cell: [rect(-0.4, -0.9, 0.4, 0.55), rect(-0.15, 0.55, 0.15, 0.8), [[0.12, 0.35], [-0.15, -0.12], [0.12, -0.12], [-0.12, -0.65]]],
   toolbox: [rect(-0.85, -0.55, 0.85, 0.3), [[-0.3, 0.3], [-0.3, 0.62], [0.3, 0.62], [0.3, 0.3]], [[-0.85, -0.05], [0.85, -0.05]]],
+  "car-battery": [rect(-0.85, -0.7, 0.85, 0.4), rect(-0.6, 0.4, -0.35, 0.62), rect(0.35, 0.4, 0.6, 0.62), [[-0.6, -0.15], [-0.35, -0.15]], [[0.35, -0.15], [0.6, -0.15]], [[0.475, -0.28], [0.475, -0.02]]],
   // Cans strung across a doorway: the frame, the line low across it, and three cans hanging off it.
   cans: [
     [[-0.9, -0.95], [-0.9, 0.9], [0.9, 0.9], [0.9, -0.95]],
@@ -74,7 +75,6 @@ const GRAPHITE = hex(0x343334)
 const FAINT = hex(0x9a927e)
 const RED_PENCIL = hex(0xa0342a)
 const PAPER = hex(0xd8ceb2)
-const OLD_PAPER = hex(0xc4b896)
 
 /** A pencil on a card: strokes as thin boxes just proud of the paper, wobbling a little like a hand drew them. */
 class Pen {
@@ -125,14 +125,11 @@ class Pen {
 
 /** Card sizes: x across the card (along the board's slope), y down it (along the bench). */
 export const CARD = { w: 0.2, h: 0.25 } as const
-export const SCRAP = { w: 0.1, h: 0.13 } as const
 const THICK = 0.003
 const W = 0.0042
 
-function paper(m: Mesh, w: number, h: number, colour: Rgb, torn = false): void {
+function paper(m: Mesh, w: number, h: number, colour: Rgb): void {
   m.box(-w / 2, 0, -h / 2, w / 2, THICK, h / 2, colour, MAT.lit)
-  // A torn scrap has a ragged lower edge: a few nicks out of the paper colour, drawn as darker slivers.
-  if (torn) for (let i = 0; i < 4; i++) m.box(-w / 2 + (i + 0.3) * (w / 4), THICK, h / 2 - 0.006, -w / 2 + (i + 0.6) * (w / 4), THICK + 0.0006, h / 2, hex(0x8a7e62), MAT.lit)
 }
 
 /** A finished sketch: the two materials, a plus, an arrow down, and what they make (or just the thing, for no pair). */
@@ -141,7 +138,7 @@ export function sketchCard(recipe: string, pair: readonly [string, string] | und
   paper(m, CARD.w, CARD.h, PAPER)
   const pen = new Pen(m, recipe.length * 7.1 + 3, THICK)
   if (!pair) {
-    // Learned by taking one apart, not on the mat: the thing itself, drawn large.
+    // Learned by taking one apart, not from materials: the thing itself, drawn large.
     pen.draw(RESULT_DRAWING[recipe] ?? "scrap", 0, 0, 0.075, W * 1.15, GRAPHITE)
     return m
   }
@@ -156,8 +153,8 @@ export function sketchCard(recipe: string, pair: readonly [string, string] | und
   return m
 }
 
-/** An idea that needs a better bench: the same sketch, faint and broken, with the toolbox drawn in red in the corner. */
-export function ideaCard(recipe: string, pair: readonly [string, string]): Mesh {
+/** An idea waiting on a bench part: the same sketch, faint and broken, with the part drawn in red in the corner. */
+export function ideaCard(recipe: string, pair: readonly [string, string], part: string): Mesh {
   const m = new Mesh()
   paper(m, CARD.w, CARD.h, PAPER)
   const pen = new Pen(m, recipe.length * 5.3 + 11, THICK)
@@ -165,19 +162,7 @@ export function ideaCard(recipe: string, pair: readonly [string, string]): Mesh 
   pen.draw(pair[1], 0.05, 0.065, 0.036, W, FAINT, 0.008)
   pen.line(0, 0.016, 0, -0.026, W, FAINT, 0.008)
   pen.draw(RESULT_DRAWING[recipe] ?? "scrap", 0, -0.072, 0.048, W, FAINT, 0.01)
-  pen.draw("toolbox", 0.066, -0.1, 0.026, W, RED_PENCIL)
-  return m
-}
-
-/** A pair that came to nothing: a torn scrap with the two materials and a red cross through them. */
-export function triedCard(pair: readonly [string, string]): Mesh {
-  const m = new Mesh()
-  paper(m, SCRAP.w, SCRAP.h, OLD_PAPER, true)
-  const pen = new Pen(m, pair[0].length * 3.7 + pair[1].length * 1.3, THICK)
-  pen.draw(pair[0], -0.024, 0.01, 0.019, W * 0.85, GRAPHITE)
-  pen.draw(pair[1], 0.024, 0.01, 0.019, W * 0.85, GRAPHITE)
-  pen.line(-0.04, 0.045, 0.04, -0.03, W * 1.1, RED_PENCIL)
-  pen.line(-0.04, -0.03, 0.04, 0.045, W * 1.1, RED_PENCIL)
+  pen.draw(part, 0.066, -0.1, 0.026, W, RED_PENCIL)
   return m
 }
 

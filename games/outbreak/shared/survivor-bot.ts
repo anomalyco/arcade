@@ -5,7 +5,6 @@ import { samplePointLightLevel } from "./ai"
 import { PISTOL_MAG_SIZE, PISTOL_RANGE, SHOVE_RANGE } from "./combat"
 import type { CoopSim, SurvivorSlot } from "./coop-sim"
 import { dayCycle } from "./day-cycle"
-import { matStoreId, pairCost, pairIndex, TINKER_MATERIALS } from "./discovery/tinker"
 import { carStoreId, hideStoreId, tripLine, tripStoreId } from "./discovery/verbs"
 import { DEFAULT_FLASHLIGHT_TUNING, flashlightAwarenessAt } from "./flashlight"
 import { INTERACT_RANGE, type InteractTarget } from "./interact"
@@ -776,7 +775,7 @@ export class SurvivorBot {
       return this.lastCommand
     }
 
-    // 2. If currently executing a timed progression channel (search, research, craft, heal, barricade, pry),
+    // 2. If currently executing a timed progression channel (search, craft, heal, barricade, pry),
     // hold still so the channel completes unless an approaching threat forces an emergency abort.
     if (p.channel) {
       const imminentBite = this.perceivedThreats.some(
@@ -1397,32 +1396,24 @@ export class SurvivorBot {
     return null
   }
 
-  /** A recipe the squad lacks that this bot can lay out on the bench mat and assemble (bots know the pairs). */
-  private canResearchAnyAtBench(world: BotWorldView, benchId: string): { pairIndex: number; label: string } | null {
-    const tier = world.progression.tier(benchId)
-    const mat = matStoreId(benchId)
-    for (const r of RECIPES) {
-      if (!r.tinker || world.progression.learned(r.id) || r.tier > tier) continue
-      const pair = r.tinker
-      const ok = Object.entries(pairCost(pair)).every(
-        ([item, needed]) => world.progression.ledger.count(`${this.actorId}/belt`, item) + world.progression.ledger.count(mat, item) >= needed,
-      )
-      if (ok) return { pairIndex: pairIndex(pair), label: r.label }
-    }
-    return null
-  }
-
-  private canFieldCraftUseful(world: BotWorldView, p: SurvivorSlot["survivor"]): { craftIndex: number; label: string } | null {
+  /**
+   * A learned recipe worth making now. Away from a bench only what makes anywhere; at `benchId`, only the bench
+   * recipes (spiked boards, batteries), paid from the belt and the bench's stock, with their part installed.
+   */
+  private canCraftUseful(world: BotWorldView, p: SurvivorSlot["survivor"], benchId: string | null = null): { craftIndex: number; label: string } | null {
     const craftable = world.progression.craftable()
     const healItem = this.hasHealingItemInHotbar(world)
     const meleeItem = this.hasMeleeWeaponInHotbar(world)
     const lureItem = this.hasLureInHotbar(world)
+    const ledger = world.progression.ledger
 
     for (let i = 0; i < craftable.length; i++) {
       const r = craftable[i]!
-      if (!r.craft) continue
-      const hasMats = Object.entries(r.craft).every(
-        ([mat, count]) => world.progression.ledger.count(`${this.actorId}/belt`, mat) >= count,
+      if (!r.craft || Boolean(r.bench) !== Boolean(benchId)) continue
+      if (r.part && (!benchId || ledger.count(benchId, r.part) <= 0)) continue
+      const cost = ledger.rules.get(`craft:${r.id}`)?.consume ?? r.craft
+      const hasMats = Object.entries(cost).every(
+        ([mat, count]) => ledger.count(`${this.actorId}/belt`, mat) + (benchId ? ledger.count(benchId, mat) : 0) >= count,
       )
       if (!hasMats) continue
       if (r.id === "bandage" && (!healItem || p.health < 85)) {
@@ -1434,7 +1425,7 @@ export class SurvivorBot {
       if (r.id === "lure" && !lureItem) {
         return { craftIndex: i, label: r.label }
       }
-      if (r.id === "battery" && p.battery < 0.45 && world.progression.ledger.count(`${this.actorId}/belt`, "battery") === 0) {
+      if (r.id === "battery" && p.battery < 0.45 && ledger.count(`${this.actorId}/belt`, "battery") === 0) {
         return { craftIndex: i, label: r.label }
       }
     }
@@ -1904,23 +1895,23 @@ export class SurvivorBot {
       })
     }
 
-    // 6. WORKBENCH: has parts in pack, or a recipe it can lay out on the mat and assemble at a known bench
+    // 6. WORKBENCH: has parts in pack, or a bench recipe worth making at a known bench
     const benchSite = this.knownBenches.get("bench:ash") ?? [...this.knownBenches.values()][0]
     if (benchSite && chaserCount === 0 && nearestDist > 9.0) {
-      const researchable = this.canResearchAnyAtBench(world, benchSite.id)
+      const benchJob = this.canCraftUseful(world, p, benchSite.id)
       const hasPart = this.hasWorkbenchPartInPack(world)
       const benchLight = world.progression.benchLight(
         benchSite.id,
         world.hour,
         world.slots.map((s) => s.survivor),
       )
-      if ((hasPart || researchable) && benchLight + 0.2 >= world.progression.tuning.researchLight) {
+      if ((hasPart || benchJob) && benchLight + 0.2 >= world.progression.tuning.researchLight) {
         const d = Math.hypot(benchSite.bench.x - p.x, benchSite.bench.y - p.y)
         candidates.push({
           intent: "workbench",
-          score: 64 + (hasPart ? 12 : 0) + (researchable ? 10 : 0) - d * 0.4 + noise(),
-          reason: researchable
-            ? `Tinkering ${researchable.label} at Workbench`
+          score: 64 + (hasPart ? 12 : 0) + (benchJob ? 10 : 0) - d * 0.4 + noise(),
+          reason: benchJob
+            ? `Making ${benchJob.label} at Workbench`
             : `Installing upgrade part at Workbench`,
           targetX: benchSite.bench.x,
           targetY: benchSite.bench.y,
@@ -1931,7 +1922,7 @@ export class SurvivorBot {
 
     // 7. FIELD CRAFT: can craft a needed bandage, spiked-board, lure, or battery right now
     if (nearestDist > 5.5) {
-      const craftJob = this.canFieldCraftUseful(world, p)
+      const craftJob = this.canCraftUseful(world, p)
       if (craftJob) {
         candidates.push({
           intent: "craft",
@@ -2444,20 +2435,13 @@ export class SurvivorBot {
             cmd.interact = true
             return cmd
           }
-          // Whatever the mat made waits there: take it.
-          const onMat = world.progression.tinkering.mat(benchId)
-          if (onMat.some((s) => !(TINKER_MATERIALS as readonly string[]).includes(s.item))) {
-            cmd.interact = true
-            return cmd
-          }
-          const job = this.canResearchAnyAtBench(world, benchId)
+          const job = this.canCraftUseful(world, p, benchId)
           if (job) {
             if (!p.flashlightOn && !p.batteryDepleted) {
               cmd.flashlight = true
             }
-            // Lay out the pair, then hold E to try it.
-            if (pairIndex(onMat.map((s) => s.item)) !== job.pairIndex) cmd.pick = { mode: "bench", index: job.pairIndex }
-            else cmd.interactHeld = true
+            // A bench recipe from the board: the digit for its row, as a player presses it.
+            cmd.pick = { mode: "craft", index: job.craftIndex }
             return cmd
           }
         }
@@ -2465,7 +2449,7 @@ export class SurvivorBot {
       }
 
       case "craft": {
-        const job = this.canFieldCraftUseful(world, p)
+        const job = this.canCraftUseful(world, p)
         if (job) {
           cmd.pick = { mode: "craft", index: job.craftIndex }
           return cmd

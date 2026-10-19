@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { TICK_DT } from "../shared/clock"
 import { CoopSim, type SurvivorSlot } from "../shared/coop-sim"
 import { heldOutWindow, looksReinforced, PAGE_BY_ARCHETYPE, pageSite, practiceFactor, PRACTICE_FULL } from "../shared/discovery/found"
-import { pinStoreId, readPin } from "../shared/discovery/tinker"
+import { pinStoreId, readPin } from "../shared/discovery/recipes"
 import { DEFAULT_PROGRESSION_TUNING } from "../shared/progression"
 import type { Command } from "../shared/session"
 

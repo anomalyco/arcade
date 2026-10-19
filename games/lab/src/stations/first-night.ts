@@ -17,7 +17,7 @@ const variants: StationVariant[] = [
   {
     id: "safehouse-workbench",
     label: "Safehouse & workbench (17:48)",
-    note: "About 35 s in, the last daylight plus the flashlight light the bench (0.46 >= 0.35 required), so the player researches before first contact (about 42 s). Opening calm eases zombie perception in over 50 s.",
+    note: "About 35 s in, the last daylight plus the flashlight light the bench (0.46 >= 0.35 required), so the player can make things there before first contact (about 42 s). Opening calm eases zombie perception in over 50 s.",
     setup: stage("safehouse-workbench"),
   },
   {

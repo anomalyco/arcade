@@ -17,7 +17,7 @@ export class BenchLean {
     if (settings.discoveryBenchFocus && !p.vehicleId) {
       // A page lying in a building gets the same closer look, so its drawing can be made out before reading it.
       if (view.prompt?.kind === "bench" || view.prompt?.kind === "page") bench = { x: view.prompt.worldX, y: view.prompt.worldY }
-      else if (p.channel?.kind === "tinker") bench = { x: p.channel.x, y: p.channel.y }
+      else if (p.channel?.kind === "craft" && p.channel.targetId.startsWith("bench:")) bench = { x: p.channel.x, y: p.channel.y }
     }
     if (bench) {
       this.x = bench.x

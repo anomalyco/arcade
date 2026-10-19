@@ -13,7 +13,7 @@ Code: `shared/discovery/` (simulation, deterministic) and `src/discovery/` (pres
 | --- | --- | --- |
 | Battery ring, "Battery low", "Battery dead" | Below the flicker threshold the beam narrows (25%), shortens (30%) and warms to amber on top of the sim's dimming and sputter | `src/discovery/flashlight.ts`, applied in `main.ts` for the local beam, vision cone and lighting pack |
 | "New material: Scrap. Bench recipes: …" on first pickup | Nothing. The material is still noted (`seen:*` in `team/known`) | `shared/progression.ts` |
-| Belt pills always on screen | Belt counts show only while the pack (Tab) or field craft (hold Q) is open. Since the HUD polish (#141) the dock owns this: always there, dimmed when idle (`src/hud/dock.ts`) | `src/hud/dock.ts` |
+| Belt pills always on screen | Belt counts show only while the pack (Tab) or the recipe panel (C) is open. Since the HUD polish (#141) the dock owns this: always there, dimmed when idle (`src/hud/dock.ts`) | `src/hud/dock.ts` |
 | Barricades flat at any health | Boards bow inward and split at half health and hang from one nail near the end; damage comes off the last board nailed | `shared/discovery/barricade.ts`, `src/discovery/barricades.ts` |
 | Container strip `[1] 9mm ×6 …` | A searched container stays open (dresser drawer pulled out, cabinet and fridge doors swung wide, shelf top) with what is left inside as small props; the prompt is a bare key cap | `src/discovery/props.ts`, `src/discovery/items.ts` |
 | Drop and noisemaker labels | Drops lie on the floor as props; a thrown noisemaker rattles where it landed | `src/discovery/props.ts` |
@@ -38,60 +38,42 @@ client the moment they are hit. The AI's portal state already snapshots and rest
 - `scripts/discovery-proof.ts` (via `hivemind run --kind browser --fetch captures/outbreak-discovery`): stills of
   the beam at full and 12%, boards at three wears, opened containers, drops, and the dock dim until Tab.
 
-## Slice 2: workbench tinkering and the corkboard
+## Slice 2: the recipe board and the corkboard
 
-The bench's recipe list is gone. Each workbench has a felt **mat** (`mat:<house>`, two slots) and a **corkboard**
-leaning on its pegboard. Nothing says what makes what; you try pairs.
+Superseded on 2026-10-18 by D-39 (Recipe Board), after Kit found blind pair-tinkering inscrutable. The mat and its
+pairs, clatters and crossed-out tries are gone; what the squad finds out still goes up on the corkboard. How crafting
+works now is in `docs/outbreak-progression.md#how-crafting-works`.
 
-| Input | What happens |
-| --- | --- |
-| Carrying a toolbox or car battery, tap E | It is installed: the red toolbox sits on the bench top, the car battery on the shelf below. No tier notice |
-| Tap E | The mat takes the next pair you can make up from your belt plus what is on it (plank+plank, plank+scrap, … battery+battery, then empty, which gives everything back). Bots use `pick: { mode: "bench", index }` with an `ALL_PAIRS` index |
-| Hold E (two materials on the mat, enough light) | A 2.5 s try (`researchTime`, light ≥ `researchLight`). The tap is deferred while E is held (`deferPrimary`), so a hold never swaps the pair first |
-| Tap E with something made on the mat | Take it |
-
-What a try does (`judgeMat` in `shared/discovery/tinker.ts`):
-
-| Pair | Bench | Outcome |
-| --- | --- | --- |
-| plank+scrap → spiked board, chem+chem → bandage, scrap+battery → noisemaker | any | **Assemble**: the pair is used up, the thing lies on the mat, `learned:<id>` goes into `team/known`, and the first time a `pin:<id>` store records the maker (owner = actor id, `seat` = slot index + 1) for the pin's colour |
-| scrap+chem → flashlight battery, scrap+scrap → reinforced boards | no toolbox | **Almost**: nothing used; `idea:<id>` pins a faint, dashed sketch with a red toolbox in its corner |
-| same | toolbox installed | Assemble |
-| anything else (or reinforcing again once known) | any | **Clatter**: nothing used, a 6 m noise (`clatterNoise`) at the bench, and the first time `tried:<pair>` pins a crossed-out scrap at the board's foot so nobody tries it twice |
-
-The game picks the ledger rule from the mat (`tinker:<id>`, `tinker:idea:<id>`, `tinker:clatter`), all labelled
-"Tinkering" so the hold gives nothing away; a rule's cost is exactly the mat's pair, consumed from the mat. When a try
-finishes the ledger re-checks the mat, so if a teammate swapped it mid-try the try comes to nothing ("mat changed"
-veto). Two survivors holding E on one pair: the first to finish (actor id order, as the ledger steps channels)
-assembles it and is credited; the other's try is vetoed.
-
-Everything is ledger state (mat stores, pin stores, knowledge tokens), so it is deterministic, survives
-`toSnapshot`/`fromSnapshot`, saves with the ledger and reaches co-op clients through ledger deltas. "Squad learned …",
-"Workbench tier 2 …" and the other learning notices are gone; "Too dark" stays as the one refusal.
+- **Filling in** (`shared/discovery/recipes.ts`, `recipe-board.ts`): each recipe has a sketch of two materials and,
+  for some, a bench part. Once every material in a recipe's sketch has been picked up (`seen:<material>`) and its part
+  is installed in any of the squad's benches, `RecipeBoard.fillIn` (once a tick) grants `learned:<id>` and creates its
+  `pin:<id>` store with no seat (a brass pin). Pages, study and taking cans down still call `learnRecipe`, which pins in
+  the learner's seat colour (owner = actor id, `seat` = slot index + 1, `found` = the page style).
+- **The bench's E**: carrying a part installs it; otherwise it is `board` ("Recipes"), which the sim treats as a no-op
+  and the client answers by opening the recipe panel on the bench's stock.
+- Everything is ledger state (pin stores, knowledge tokens), so it is deterministic, survives
+  `toSnapshot`/`fromSnapshot`, saves with the ledger and reaches co-op clients through ledger deltas. No notice says a
+  recipe filled in; "Too dark", "At a workbench" and the missing part are the refusals.
 
 **Corkboard** (`src/discovery/workbench.ts`, `sketches.ts`): every recipe has a fixed slot, so bare cork shows how
 much is left to find. A sketch is pencil strokes on paper: the two materials, a plus, an arrow down, and what they
-make; its pin is the maker's seat colour (brass when the knowledge came another way). The board is tilted 40° back
-from the bench top so the game camera reads it. **Leaning in**: at a bench, or while tinkering, the camera eases to
-7.5 m (`discoveryBenchZoom`) and 80% of the way to the bench (`discoveryBenchCentre`); the prompt hangs below the
-bench. A try that came to nothing shakes the mat's materials (`discoveryClatterTime`) and plays the item-drop sound;
-an assembly plays the bench chime.
+make; its pin is the learner's seat colour, or brass when the board filled it in. A recipe whose materials are all in
+but whose part is not shows as a faint idea with the part (toolbox or car battery) drawn in red. The board is tilted
+40° back from the bench top so the game camera reads it. **Leaning in**: at a bench, or while making something there,
+the camera eases to 7.5 m (`discoveryBenchZoom`) and 80% of the way to the bench (`discoveryBenchCentre`); the
+prompt hangs below the bench.
 
-**Field craft** (hold Q) is drawn, not written: per learned recipe, a pencil glyph of what it makes and glyphs of
-what it takes, dimmed when you are short (`src/discovery/icons.ts`).
-
-Lab: Discovery › Stage: bench tinker, corkboard, dark bench; the station's matching variants. Progression keeps the
-tinker time, light and clatter tunables.
+Lab: Discovery › Stage: recipe board, corkboard, dark bench; the station's matching variants.
 
 ### Proof
 
-- `tests/tinker.test.ts`: pair rules; E cycling and giving back; assemble, pin and take; clatter noise and one
-  crossed-out scrap; the tier-2 idea then assembling with the toolbox; too dark then lit; a hold that does not swap;
-  co-op attribution (Bob makes it, his seat); two holds on one pair assemble once; a mid-try snapshot whose fork
-  finishes the same way; two rooms fed the same commands end with identical ledgers.
-- `tests/coop.test.ts`: a sketch made at the bench reaches both clients' mirrors with its maker's seat.
-- `scripts/discovery-proof.ts bench`: stills of the laid-out pair, the assembled board and its sketch, an idea and a
-  crossed-out try, a full corkboard, the dark bench refused then lit, and the wordless field-craft strip.
+- `tests/recipe-board.test.ts`: the fill-in rules; picking up materials fills in with a brass pin and no notice;
+  the toolbox and generator fill in what waits on them; a page pins as the finder's; the bench's E opens the board and
+  spends nothing; a carried part installs; bandages anywhere, spiked boards only at a lit bench, batteries only with
+  the generator; a restored fork fills in the same recipes on the same tick.
+- `tests/coop.test.ts`: a recipe the board fills in reaches both clients' mirrors, and one seat makes it at the bench.
+- `scripts/discovery-proof.ts bench`: stills of the bench's board, a full corkboard, the dark bench refused then lit,
+  and the recipe panel.
 
 ## Slice 3: found knowledge
 
@@ -165,7 +147,7 @@ New things to do, each read from the world rather than explained. Simulation in 
 | Crouch | hold Ctrl (`ControlLeft`/`ControlRight`) | Half speed (`crouchSpeed`), footsteps at `crouchNoise` (1.2 m), no sprint, and 55% as much of you to see (`crouchVisibility`, scaling the AI's sight and close-range sensing through `PerceptionTarget.visibility`). The rig drops its hips and leans over its knees | `Command.crouch`; wire bit 0x80 of the action byte, remote survivors in bit 7 of the health byte, the personal snapshot's flag 32 |
 | Hide | E at a bedroom closet | One survivor per closet: still, silent, flashlight off and invisible to the dead (visibility 0). The view goes dark behind louvre slats; E steps back out in front of it. A chaser that loses you walks to where it last saw you and searches | `hide:<closet>` {in, owner}. Every house bedroom has one closet (`closetSpot`), pushed after the other props so nothing seeded earlier moved |
 | Peephole | Shift+E at a shut outer door | Looks out through the door (120° cone) the way a window peek does; E or opening the door stops. Bedroom and back-room doors (`-room`) have none | `peekingWindowId` = the door id |
-| Can tripwire | E at a line; Mouse0 with cans in hand near a doorway (`tripSetTime`) | Pharmacies, police stations and clinics start with cans across their front door. Walking through upright springs them: a 13 m rattle (`tripNoise`) and the cans on the floor. Crouching steps over; the dead always spring them. E works an armed line loose quietly (`tripDisarmTime`), leaves the cans in hand and teaches the recipe (pinned as a sketch, there is no tinker pair; crafted from two scrap). Sprung cans: E picks them up, hold E strings them again | `trip:<portal>` {armed, down}. A line hangs a stride from the opening on the side the camera sees (`tripLine`): inside an east, west or north wall, across the step outside a south one, whose height hides two metres of floor |
+| Can tripwire | E at a line; Mouse0 with cans in hand near a doorway (`tripSetTime`) | Pharmacies, police stations and clinics start with cans across their front door. Walking through upright springs them: a 13 m rattle (`tripNoise`) and the cans on the floor. Crouching steps over; the dead always spring them. E works an armed line loose quietly (`tripDisarmTime`), leaves the cans in hand and teaches the recipe (pinned as a sketch, nothing else fills it in; crafted from two scrap). Sprung cans: E picks them up, hold E strings them again | `trip:<portal>` {armed, down}. A line hangs a stride from the opening on the side the camera sees (`tripLine`): inside an east, west or north wall, across the step outside a south one, whose height hides two metres of floor |
 | Bottle | Mouse0 with a bottle in hand | Thrown up to `bottleRange` (12 m), it breaks where it lands: a 15 m noise and glass on the ground. Bottles turn up in counters, fridges and shelves on their own random stream, so other loot is unchanged | `glass:<n>` {t} |
 | Car alarm | E at an abandoned car, or a bottle breaking near one | About half the cars have a working alarm, fixed per car. E puts a window in (glass on the road). An alarm car wails at `alarmNoise` (30 m) on a beat for `alarmTime` (20 s), flashing its indicators, then the battery is dead | `car:<key>` {smashed, alarm, start, until} in deciseconds |
 | Repair | B with a crowbar in hand at a damaged barricade | Re-nails it to full (planks × 100) in `repairTime`, scaled by practice like boarding up (mastery `repair`; watchers gain `watchShare`). A sound barricade still takes a board as before | the AI's portal state |

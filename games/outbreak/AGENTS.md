@@ -62,7 +62,8 @@
 - Driving FX (skid marks, tyre smoke/dust, screech) come from per-wheel slip in `src/vehicles.ts` via `@arcade/kit/vehicle/slip`
   and `@arcade/kit/fx/skids`; Lab › Driving FX and the `outbreak-vehicles` station's drift/burnout variants. Proof:
   `bun scripts/prove-driving-fx.ts` (via `hivemind run --kind browser --fetch captures/driving-fx`).
-- Crafting's HUD (field craft on hold Q, the recipe panel, teaching tips) lives in `src/crafting/`; rules stay in
-  `shared/progression/` and `shared/discovery/tinker*.ts`. Lab: Backquote › Crafting › Style (Today stays default until
-  Kit picks). How it works: `../../docs/outbreak-progression.md#how-crafting-works`. Stills of every style:
-  `bun scripts/crafting-proof.ts --phase variants` (via `hivemind run --kind browser`).
+- Crafting (D-39 Recipe Board, D-38 Panel And Tips): picking up materials fills recipes in on the workbench board
+  (`shared/discovery/recipes.ts`, `recipe-board.ts`); the recipe panel on `C` (or `E` at a bench) and the teaching tips
+  live in `src/crafting/`; `Q` only pings. Lab: Backquote › Crafting. How it works:
+  `../../docs/outbreak-progression.md#how-crafting-works`. Stills of a new player's walkthrough:
+  `bun scripts/crafting-proof.ts` (via `hivemind run --kind browser`).

@@ -20,7 +20,7 @@ const variants: StationVariant[] = [
   { id: "dock-idle", group: "State", label: "Dock idle", note: "No change for a few seconds: the belt and hand slots settle dim (Lab › HUD motion › Idle dock opacity).", setup: state("idle") },
   { id: "dock-awake", group: "State", label: "Dock after a pickup", note: "Something changed: the dock brightens, counts roll and new supplies slide in.", setup: state("awake") },
   { id: "pack", group: "State", label: "Pack open (Tab)", note: "The pack grows out of its chip at the end of the belt; Tab again folds it back.", setup: state("pack") },
-  { id: "craft", group: "State", label: "Field craft (hold Q)", note: "Field craft rises out of the dock.", setup: state("craft") },
+  { id: "craft", group: "State", label: "Recipe panel (C)", note: "The recipe panel rises out of the dock.", setup: state("craft") },
   { id: "vehicle", group: "State", label: "Driving", note: "Fuel on the dashboard gauge, key hints that fade after first use.", setup: state("vehicle") },
   // D-25 (Bold Glyph): the action glyph set the world prompt draws beside its key cap.
   { id: "prompt-icons", group: "State", label: "Prompt icons", note: "Every action glyph at 16, 20 and 24 px with the prompts that use it; walk to a door to see one live.", setup: state("icons") },

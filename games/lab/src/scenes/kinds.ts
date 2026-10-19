@@ -113,7 +113,7 @@ export const LAB_KINDS: readonly LabKind[] = [
     play: "Play",
   },
   { id: "hud", label: "HUD", subject: "The HUD through a night moment", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page },
-  { id: "progression", label: "Progression", subject: "Inventory, research and the workbench", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page },
+  { id: "progression", label: "Progression", subject: "Inventory, recipes and the workbench", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page },
   { id: "pacing", label: "Pacing", subject: "Outbreak's first night: waves, threat and quiet", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
   { id: "outbreak-vehicle", label: "Outbreak vehicle", subject: "Outbreak's cars: finding keys and a battery, headlights, running down the horde", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Drive" },
   { id: "map", label: "Map", subject: "Outbreak's town map and its districts", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page },

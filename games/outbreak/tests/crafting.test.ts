@@ -32,8 +32,8 @@ describe("crafting rows", () => {
       ["tripwire", false, -1],
     ])
     expect(rows[0]).toMatchObject({ ok: true, cost: [{ item: "chem", need: 1, have: 1 }] })
-    // The survivor starts with two planks and no scrap.
-    expect(rows[1]).toMatchObject({ ok: false, cost: [{ item: "plank", need: 1, have: 2 }, { item: "scrap", need: 2, have: 0 }] })
+    // The survivor starts with two planks and no scrap, and spiked boards are made at a workbench.
+    expect(rows[1]).toMatchObject({ ok: false, blocked: "bench", cost: [{ item: "plank", need: 1, have: 2 }, { item: "scrap", need: 2, have: 0 }] })
     expect(rows[2]!.ok).toBe(false)
   })
 
@@ -75,32 +75,40 @@ describe("crafting rows", () => {
     expect(session.view.notices.map((n) => n.text)).toContain("Need chem")
   })
 
-  test("every recipe says how it is learned and every material where it turns up", () => {
-    for (const r of RECIPES.filter((r) => r.produces)) expect(learnHint(r).length).toBeGreaterThan(4)
-    expect(learnHint(RECIPES.find((r) => r.id === "battery")!)).toContain("toolbox")
-    expect(learnHint(RECIPES.find((r) => r.id === "tripwire")!)).toContain("tripwire")
+  test("every recipe still to find says what fills it in, and every material where it turns up", () => {
+    const { progression, give, step } = setup()
+    const hint = (id: string) => learnHint(progression, RECIPES.find((r) => r.id === id)!)
+    for (const r of RECIPES.filter((r) => r.produces)) expect(learnHint(progression, r).length).toBeGreaterThan(4)
+    expect(hint("bandage")).toBe("Pick up chem")
+    expect(hint("battery")).toBe("Pick up scrap and chem")
+    expect(hint("tripwire")).toContain("tripwire")
+    give("scrap")
+    give("chem")
+    step()
+    expect(hint("battery")).toBe("Wire in the generator")
     expect(whereToFind("chem")).toContain("pharmacies")
     for (const m of ["plank", "scrap", "chem", "battery"]) expect(whereToFind(m).split(", ").length).toBe(2)
   })
 })
 
 describe("crafting coach", () => {
-  test("says nothing on the first look, then teaches materials, the bench, a recipe learned and one ready", () => {
+  test("says nothing on the first look, then teaches the bench, a recipe filling in and one ready", () => {
     const { progression, learn, give } = setup()
     const look = (atBench = false) => coachState(progression, "player", atBench)
     let before = look()
     expect(coachTips(null, before)).toEqual([])
-    give("chem")
-    let now = look()
-    expect(coachTips(before, now)).toEqual([{ kind: "materials" }])
-    before = now
-    now = look(true)
+    let now = look(true)
     expect(coachTips(before, now)).toEqual([{ kind: "bench" }])
     before = now
+    give("chem")
     learn("bandage")
     now = look(true)
     // Learned with a chem on the belt: the lesson, not "ready" as well.
-    expect(coachTips(before, now)).toEqual([{ kind: "learned", recipe: "bandage" }])
+    expect(coachTips(before, now)).toEqual([{ kind: "learned", recipe: "bandage", bench: false }])
+    before = now
+    learn("spiked-board")
+    now = look(true)
+    expect(coachTips(before, now)).toEqual([{ kind: "learned", recipe: "spiked-board", bench: true }])
     before = now
     progression.ledger.apply({ kind: "drain", store: "player/belt", item: "chem", count: 1 })
     now = look()

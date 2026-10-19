@@ -1,6 +1,6 @@
-/* Crafting HUD (src/crafting/ui.ts): the recipe panel hold Q opens, the empty strip's hint and the tip above the dock.
+/* Crafting HUD (src/crafting/ui.ts): the recipe panel C and the workbench open, and the tip above the dock.
    Same tokens as the dock and prompts (tokens.css). */
-#craft .craft-empty, #craft-tip { display: flex; align-items: center; gap: var(--hud-3); color: var(--hud-ink-2); --akc-size: 16px }
+#craft-tip { display: flex; align-items: center; gap: var(--hud-3); color: var(--hud-ink-2); --akc-size: 16px }
 
 #craft-tip { padding: var(--hud-3) var(--hud-4); white-space: nowrap; align-self: center }
 #craft-tip[hidden] { display: none }
@@ -8,7 +8,7 @@
 #craft-tip .glyph { display: block; color: var(--hud-ink) }
 #craft-tip .sep { width: 1px; height: 12px; background: var(--hud-line-2); margin: 0 var(--hud-1) }
 
-#craft[data-style="panel"] { padding: var(--hud-3) var(--hud-4) var(--hud-4); width: 340px; --akc-size: 16px }
+#craft { padding: var(--hud-3) var(--hud-4) var(--hud-4); width: 340px; --akc-size: 16px }
 #craft .cp-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--hud-2) }
 #craft .cp-head > span:first-child { font-size: var(--hud-xs); letter-spacing: .07em; text-transform: uppercase; color: var(--hud-ink-3) }
 #craft .cp-keys { display: inline-flex; align-items: center; gap: var(--hud-2); font-size: var(--hud-xs); color: var(--hud-ink-3); --akc-size: 14px }

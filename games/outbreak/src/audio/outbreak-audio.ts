@@ -203,7 +203,7 @@ export class OutbreakAudio {
   }
 
   /**
-   * Held positional loops (crafting, research, prying, noisemakers, the generator): started when they appear, stopped
+   * Held positional loops (crafting, prying, noisemakers, the generator): started when they appear, stopped
    * with a short fade when they end, and re-spatialised each frame as the listener moves.
    */
   private held(holds: readonly SoundHold[], live: boolean): void {

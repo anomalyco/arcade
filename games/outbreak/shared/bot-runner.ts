@@ -513,6 +513,16 @@ export function runHeadlessBotGame(config: BotRunConfig): BotRunResult {
           y: Number(lead.y.toFixed(1)),
         })
       }
+    } else if (ev.kind === "changed" && ev.delta > 0 && ev.store === "team/known" && ev.item.startsWith("learned:")) {
+      recipesResearched.push(ev.item.replace(/^learned:/, ""))
+      timeline.push({
+        t: Number(sim.time.toFixed(1)),
+        hour: Number(sim.hour.toFixed(2)),
+        kind: "research",
+        detail: `Learned ${ev.item.replace(/^learned:/, "")}`,
+        x: Number(lead.x.toFixed(1)),
+        y: Number(lead.y.toFixed(1)),
+      })
     } else if (ev.kind === "changed" && ev.delta > 0 && ev.actor) {
       if (ev.store.endsWith("/belt") || ev.store.endsWith("/hotbar") || ev.store.endsWith("/pack")) {
         itemsTaken += ev.delta
@@ -530,19 +540,6 @@ export function runHeadlessBotGame(config: BotRunConfig): BotRunResult {
           y: Number(lead.y.toFixed(1)),
         })
       }
-    } else if (ev.kind === "unlocked" && ev.source === "rule" && ev.item.startsWith("learned:")) {
-      recipesResearched.push(ev.item.replace(/^learned:/, ""))
-      if (timeToWorkbench === null) {
-        timeToWorkbench = Number(sim.time.toFixed(2))
-      }
-      timeline.push({
-        t: Number(sim.time.toFixed(1)),
-        hour: Number(sim.hour.toFixed(2)),
-        kind: "research",
-        detail: `Researched ${ev.label}`,
-        x: Number(lead.x.toFixed(1)),
-        y: Number(lead.y.toFixed(1)),
-      })
     } else if (ev.kind === "ran") {
       if (ev.rule.startsWith("craft:")) {
         itemsCrafted++

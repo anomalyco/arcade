@@ -34,7 +34,7 @@ const SOLO_ROUTE: readonly WaypointStep[] = [
   { until: 24.0, x: 27.7, y: 30.2, aim: -Math.PI / 2, interactAtArrival: true },
   // 24..31 s: search bedroom dresser (29.55, 25.7)
   { until: 31.0, x: 29.55, y: 25.7, aim: -Math.PI / 2, interactAtArrival: true },
-  // 31..39 s: reach Ash workbench (30.05, 26.3), deposit & research by the last daylight and the flashlight
+  // 31..39 s: reach Ash workbench (30.05, 26.3), install parts by the last daylight and the flashlight
   { until: 39.0, x: 30.05, y: 26.3, aim: 0, interactAtArrival: true, benchResearch: true },
   // 39..46 s: walk back out of Ash House to front porch/street
   { until: 46.0, x: 27.7, y: 37.5, aim: Math.PI / 2 },

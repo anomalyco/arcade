@@ -1,6 +1,5 @@
 import type { ActorStoreTemplate, ItemDef, ItemId } from "@arcade/kit/sim/ledger"
 import { MELEE_WEAPON_IDS, MELEE_WEAPONS } from "../combat"
-import { tinkerKnowledgeItems } from "../discovery/tinker"
 
 /**
  * What Outbreak's ledger holds: the items, the survivor's stores and the recipes.
@@ -87,22 +86,27 @@ export type Recipe = {
   produces?: ItemId
   /** What it does, for docs and the Lab; players learn it by using the thing. */
   note: string
-  /** Bench tier it assembles at (2 needs the toolbox installed). */
-  tier: 1 | 2
-  /** The two materials that make it on the bench mat; none for what can only be learned by taking one apart. */
-  tinker?: readonly [ItemId, ItemId]
-  /** Field-craft cost once learned. */
+  /**
+   * The two materials its sketch shows. Picking each up fills the recipe in on the bench board (D-39); none for what
+   * can only be learned another way (taking a tripwire apart).
+   */
+  sketch?: readonly [ItemId, ItemId]
+  /** A bench part it waits on: it fills in once one is installed, and is made at a bench that has it. */
+  part?: ItemId
+  /** Made only at a workbench (from your belt and the bench's stock). */
+  bench?: boolean
+  /** Crafting cost once learned. */
   craft?: Readonly<Record<ItemId, number>>
 }
 
 export const RECIPES: readonly Recipe[] = [
-  { id: "bandage", label: "Bandage", produces: "bandage", note: "Heals 25 in a second", tier: 1, tinker: ["chem", "chem"], craft: { chem: 1 } },
-  { id: "lure", label: "Noisemaker", produces: "noisemaker", note: "Throw it; the dead go to the noise", tier: 1, tinker: ["scrap", "battery"], craft: { scrap: 1, battery: 1 } },
-  { id: "spiked-board", label: "Spiked Board", produces: "spiked-board", note: "Wider, harder shoves", tier: 1, tinker: ["plank", "scrap"], craft: { plank: 1, scrap: 2 } },
-  { id: "reinforced", label: "Reinforced Barricade", note: "Each board takes a scrap and holds 80% longer", tier: 2, tinker: ["scrap", "scrap"] },
-  { id: "battery", label: "Flashlight Battery", produces: "battery", note: "A full charge for the flashlight", tier: 2, tinker: ["scrap", "chem"], craft: { scrap: 1, chem: 1 } },
-  { id: "tripwire", label: "Can Tripwire", produces: "cans", note: "Strung across a doorway, it rattles when something walks through. Learned by disarming one", tier: 1, craft: { scrap: 2 } },
+  { id: "bandage", label: "Bandage", produces: "bandage", note: "Heals 25 in a second", sketch: ["chem", "chem"], craft: { chem: 1 } },
+  { id: "lure", label: "Noisemaker", produces: "noisemaker", note: "Throw it; the dead go to the noise", sketch: ["scrap", "battery"], craft: { scrap: 1, battery: 1 } },
+  { id: "spiked-board", label: "Spiked Board", produces: "spiked-board", note: "Wider, harder shoves", sketch: ["plank", "scrap"], bench: true, craft: { plank: 1, scrap: 2 } },
+  { id: "reinforced", label: "Reinforced Barricade", note: "Each board takes a scrap and holds 80% longer", sketch: ["scrap", "scrap"], part: "toolbox" },
+  { id: "battery", label: "Flashlight Battery", produces: "battery", note: "A full charge for the flashlight, charged off the generator", sketch: ["scrap", "chem"], part: "car-battery", bench: true, craft: { scrap: 1, chem: 1 } },
+  { id: "tripwire", label: "Can Tripwire", produces: "cans", note: "Strung across a doorway, it rattles when something walks through. Learned by disarming one", craft: { scrap: 2 } },
 ]
 
-/** The ledger catalog: items plus the corkboard's ideas and crossed-out tries. */
-export const CATALOG: readonly ItemDef[] = [...ITEMS, ...tinkerKnowledgeItems(RECIPES)]
+/** The ledger catalog. */
+export const CATALOG: readonly ItemDef[] = ITEMS

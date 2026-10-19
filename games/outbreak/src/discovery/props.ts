@@ -141,12 +141,12 @@ export class DiscoveryProps {
     settings: DiscoverySettings,
     time: number,
     support: (x: number, z: number) => number,
-    squad: { survivors: Parameters<WorkbenchProps["collect"]>[2]; seatColour: (seat: number) => readonly [number, number, number]; dt: number } = { survivors: [], seatColour: () => [1, 1, 1], dt: 0 },
+    squad: { seatColour: (seat: number) => readonly [number, number, number] } = { seatColour: () => [1, 1, 1] },
   ): readonly Batch[] {
     const out = this.out
     out.length = 0
     for (const b of this.barricades.collect(view.town, ai, support)) out.push(b)
-    for (const b of this.bench.collect(view.progression, view.player, squad.survivors, squad.seatColour, settings.discoveryClatterTime, squad.dt, support)) out.push(b)
+    for (const b of this.bench.collect(view.progression, view.player, squad.seatColour, support)) out.push(b)
     for (const b of this.verbs.collect(view, time, support)) out.push(b)
     for (const b of this.vignettes.collect(view, support)) out.push(b)
     for (const b of this.radios.collect(view, time, settings, support)) out.push(b)

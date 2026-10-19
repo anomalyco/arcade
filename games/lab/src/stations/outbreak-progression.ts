@@ -7,10 +7,10 @@ const stage = (scene: string): StationCommand[] => [{ command: "scene.set-param"
 const variants: StationVariant[] = [
   { id: "search", label: "Unsearched dresser", note: "E searches quietly (1.2 s), Shift+E smashes it open (0.35 s, loud).", setup: stage("search") },
   { id: "strip", label: "Container strip", note: "Searched: the dresser stays open with what is inside (Discovery group: turn off Opened containers show contents for the old list). E takes all.", setup: stage("strip") },
-  { id: "bench", label: "Workbench, day", note: "E installs the toolbox (tier 2). Then tap E to lay two materials on the mat and hold E to try them.", setup: stage("bench") },
-  { id: "dark-bench", label: "Workbench, night", note: "Too dark to tinker with the flashlight off. Press F and try again.", setup: stage("dark-bench") },
+  { id: "bench", label: "Workbench, day", note: "E installs the toolbox, which fills in reinforcing. E again opens the bench's recipe board; a digit makes a row.", setup: stage("bench") },
+  { id: "dark-bench", label: "Workbench, night", note: "Too dark to make bench recipes with the flashlight off. Press F and try again.", setup: stage("dark-bench") },
   { id: "generator", label: "Generator wired", note: "The car battery lights the bench at night and hums at 18 m.", setup: stage("generator") },
-  { id: "field-craft", label: "Field craft", note: "Hold Q anywhere; digits craft what the squad has learned.", setup: stage("field-craft") },
+  { id: "field-craft", label: "Field craft", note: "C anywhere opens the recipe panel; digits make what the squad has learned (bench recipes say where).", setup: stage("field-craft") },
   { id: "handoff", label: "Hand-offs", note: "A dropped medkit, a supply bundle, a ping and a noisemaker.", setup: stage("handoff") },
   {
     id: "first-night",
@@ -25,7 +25,7 @@ export default defineStation({
   id: "outbreak-progression",
   title: "Outbreak inventory and workbench",
   summary:
-    "The live game's belt, hotbar, pack and container strips, and the safehouse workbench where the squad tinkers recipes out of pairs of materials. Tunables are in the Progression group.",
+    "The live game's belt, hotbar, pack and container strips, and the safehouse workbench whose recipe board fills in as the squad picks up materials. Tunables are in the Progression group.",
   order: 113,
   prop: "panels",
   color: 0xc5cfb8,

@@ -1,6 +1,6 @@
 import type { OutbreakAISubsystem } from "../../shared/ai"
 import { PIN_FOUND, type PageSite } from "../../shared/discovery/found"
-import { ideaToken, matStoreId, pinStoreId, triedToken } from "../../shared/discovery/tinker"
+import { pinStoreId } from "../../shared/discovery/recipes"
 import { carStoreId, ds, hideStoreId, tripStoreId } from "../../shared/discovery/verbs"
 import { vignetteDropId, vignetteScene, type VignetteKind, type VignetteScene } from "../../shared/discovery/vignettes"
 import type { SessionView } from "../../shared/session"
@@ -18,7 +18,7 @@ export const DISCOVERY_SCENES = [
   "weakened-barricade",
   "open-containers",
   "drops",
-  "bench-tinker",
+  "bench-board",
   "corkboard",
   "dark-bench",
   "page",
@@ -243,32 +243,29 @@ export function stageDiscovery(host: DiscoveryHost, scene: DiscoveryScene, ai: O
       host.pose(scene.x - 2.5, car.rect[3] + 2.6, Math.atan2(car.y - car.rect[3] - 2.6, 2.5))
       return
     }
-    case "bench-tinker": {
-      // Daylight, a handful of materials, and plank + scrap already laid on the mat: hold E to try them.
-      const bench = atBench(host, 15, [["plank", 1], ["scrap", 3], ["chem", 2], ["battery", 1]])
+    case "bench-board": {
+      // Daylight at the bench with plank, scrap and chem picked up: the board has filled in and E has opened it.
+      atBench(host, 15, [["plank", 1], ["scrap", 3], ["chem", 2]])
       view.player.flashlightOn = false
-      ledger.apply({ kind: "deposit", actor: view.actorId, to: matStoreId(bench), items: { plank: 1, scrap: 1 } })
+      view.progression.board.fillIn()
+      if (!host.hud.craftOpen) host.hud.toggleCraft()
       return
     }
     case "corkboard": {
-      // A few days in: three sketches by three players, an idea waiting on the toolbox, two crossed-out tries, and
-      // a fresh spiked board on the mat.
-      const bench = atBench(host, 15, [["scrap", 2], ["chem", 1]])
+      // A few days in: three sketches by three players, and ideas waiting on the toolbox and the generator.
+      atBench(host, 15, [["scrap", 2], ["chem", 1]])
       view.player.flashlightOn = false
       pin(view, "bandage", 0)
       pin(view, "spiked-board", 1)
       pin(view, "lure", 2)
-      for (const token of [ideaToken("battery"), triedToken("plank+plank"), triedToken("plank+chem")]) {
-        if (!ledger.count("team/known", token)) ledger.apply({ kind: "grant", actor: view.actorId, item: token, store: "team/known" })
-      }
-      if (!view.progression.tinkering.mat(bench).length) ledger.apply({ kind: "grant", actor: view.actorId, item: "spiked-board", store: matStoreId(bench) })
       return
     }
     case "dark-bench": {
-      // Night with the flashlight off: too dark to try the pair on the mat until a beam is on it.
-      const bench = atBench(host, 23, [["chem", 2]])
+      // Night with the flashlight off: a spiked board is on the board, but it is too dark to make it until a beam is on it.
+      atBench(host, 23, [["plank", 1], ["scrap", 2]])
       view.player.flashlightOn = false
-      ledger.apply({ kind: "deposit", actor: view.actorId, to: matStoreId(bench), items: { chem: 2 } })
+      view.progression.board.fillIn()
+      if (!host.hud.craftOpen) host.hud.toggleCraft()
       return
     }
     case "page": {

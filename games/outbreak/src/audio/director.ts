@@ -97,7 +97,7 @@ export class SoundDirector {
     this.specials.reset()
   }
 
-  /** Sounds held for as long as something lasts, as of the last `observe`: crafts, research, noisemakers, generators. */
+  /** Sounds held for as long as something lasts, as of the last `observe`: crafts, noisemakers, generators. */
   get holds(): readonly SoundHold[] {
     return this.inventory.holds
   }

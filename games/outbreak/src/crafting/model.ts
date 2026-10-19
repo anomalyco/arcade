@@ -1,32 +1,32 @@
+import { recipeMaterials } from "../../shared/discovery/recipes"
 import { RECIPES, type Recipe } from "../../shared/progression/catalog"
 import { LOOT_TABLES } from "../../shared/progression/loot"
 import type { OutbreakProgression } from "../../shared/progression"
 
 /**
- * What the crafting HUD reads: one row per recipe that makes something, with what it costs against what the survivor
- * (plus the bench they stand at) has. Costs come from the live ledger rule, so the Lab's cost multiplier shows too.
+ * What the recipe panel reads (D-39): one row per recipe that makes something, with what it costs against what the
+ * survivor (plus the bench they stand at) has. Costs come from the live ledger rule, so the Lab's cost multiplier shows.
  */
 
 export type CraftCost = { item: string; need: number; have: number }
 export type CraftRow = {
   recipe: Recipe
   learned: boolean
-  /** The digit index that crafts it (learned rows only, in `craftable()` order), or -1. */
+  /** The digit index that makes it (learned rows only, in `craftable()` order), or -1. */
   index: number
   cost: CraftCost[]
-  /** Learned and every cost met. */
+  /** What stops a learned row being made here, other than materials: away from a bench, or its part not installed. */
+  blocked: "bench" | "part" | null
+  /** Learned, makeable here, and every cost met. */
   ok: boolean
 }
 
-/**
- * The store field craft also draws on here: the bench (or its stash) the survivor faces, as the sim does
- * (`OutbreakProgression.pick`).
- */
+/** The store crafting also draws on here: the bench (or its stash) the survivor faces, as the sim does. */
 export function craftStation(progression: OutbreakProgression, prompt: { kind: string; id: string } | undefined): string | null {
   return prompt && (prompt.kind === "bench" || prompt.kind === "stash") ? progression.storeFor(prompt) : null
 }
 
-/** The live cost of crafting `recipe`: the ledger rule's consume, falling back to the catalog. */
+/** The live cost of making `recipe`: the ledger rule's consume, falling back to the catalog. */
 export function craftCost(progression: OutbreakProgression, recipe: Recipe): Readonly<Record<string, number>> {
   return progression.ledger.rules.get(`craft:${recipe.id}`)?.consume ?? recipe.craft ?? {}
 }
@@ -43,14 +43,34 @@ export function craftRows(progression: OutbreakProgression, actorId: string, sta
       need,
       have: ledger.count(actorId, item) + (station ? ledger.count(station, item) : 0),
     }))
-    return { recipe, learned: isLearned, index: isLearned ? learned.indexOf(recipe) : -1, cost, ok: isLearned && cost.every((c) => c.have >= c.need) }
+    const blocked = recipe.bench && !station ? "bench" : recipe.part && (!station || ledger.count(station, recipe.part) <= 0) ? "part" : null
+    return {
+      recipe,
+      learned: isLearned,
+      index: isLearned ? learned.indexOf(recipe) : -1,
+      cost,
+      blocked,
+      ok: isLearned && !blocked && cost.every((c) => c.have >= c.need),
+    }
   })
 }
 
-/** How a recipe is learned, in a few words. */
-export function learnHint(recipe: Recipe): string {
-  if (!recipe.tinker) return recipe.id === "tripwire" ? "Disarm a can tripwire" : "Found, not made"
-  return recipe.tier > 1 ? "Workbench with a toolbox" : "Try pairs at a workbench"
+const PART_HINT: Record<string, string> = { toolbox: "Install a toolbox", "car-battery": "Wire in the generator" }
+
+/** How a recipe still to find fills in, in a few words: the material not yet picked up, or the part to install. */
+export function learnHint(progression: OutbreakProgression, recipe: Recipe): string {
+  const from = recipeMaterials(recipe)
+  if (!from.length) return recipe.id === "tripwire" ? "Disarm a can tripwire" : "Found, not made"
+  const missing = from.filter((m) => !progression.seen(m))
+  if (missing.length) return `Pick up ${missing.map((m) => progression.ledger.label(m, true).toLowerCase()).join(" and ")}`
+  return recipe.part ? (PART_HINT[recipe.part] ?? "Install a part") : "Fills in at the bench"
+}
+
+/** What stops a learned row, in a few words. */
+export function blockedHint(row: CraftRow): string {
+  if (row.blocked === "bench") return "At a workbench"
+  if (row.blocked === "part") return row.recipe.part === "car-battery" ? "At a bench with the generator" : "At a bench with a toolbox"
+  return ""
 }
 
 const BUILDING_NAMES: Record<string, string> = {
@@ -86,24 +106,20 @@ export function whereToFind(item: string): string {
 }
 
 /** What the coach knows about the squad between frames. */
-export type CoachState = { seen: number; learned: string[]; ready: string[]; atBench: boolean }
+export type CoachState = { learned: string[]; ready: string[]; atBench: boolean }
 
 export type CoachTip =
-  /** A new kind of material found and nothing learned yet: point at the workbench. */
-  | { kind: "materials" }
-  /** At a workbench with materials and nothing learned: how the mat works. */
-  | { kind: "bench" }
-  /** A recipe was just learned: it can now be made anywhere. */
-  | { kind: "learned"; recipe: string }
+  /** A recipe just filled in on the bench (or was learned from a page): what it is and where it is made. */
+  | { kind: "learned"; recipe: string; bench: boolean }
   /** A pickup just made a learned recipe affordable. */
   | { kind: "ready"; recipe: string }
+  /** Standing at a workbench: E opens its board. */
+  | { kind: "bench" }
 
 /** Snapshot of what the coach compares from frame to frame. */
 export function coachState(progression: OutbreakProgression, actorId: string, atBench: boolean): CoachState {
-  const seen = (["plank", "scrap", "chem", "battery"] as const).filter((m) => progression.seen(m)).length
   const rows = craftRows(progression, actorId, null)
   return {
-    seen,
     learned: RECIPES.filter((r) => progression.learned(r.id)).map((r) => r.id),
     ready: rows.filter((r) => r.ok).map((r) => r.recipe.id),
     atBench,
@@ -119,14 +135,11 @@ export function coachTips(before: CoachState | null, now: CoachState): CoachTip[
   const tips: CoachTip[] = []
   for (const id of now.learned) {
     const recipe = RECIPES.find((r) => r.id === id)
-    if (!before.learned.includes(id) && recipe?.produces) tips.push({ kind: "learned", recipe: id })
+    if (!before.learned.includes(id) && recipe?.produces) tips.push({ kind: "learned", recipe: id, bench: Boolean(recipe.bench) })
   }
   if (!tips.length) {
     for (const id of now.ready) if (!before.ready.includes(id) && before.learned.includes(id)) tips.push({ kind: "ready", recipe: id })
   }
-  if (now.learned.length === 0) {
-    if (now.atBench && !before.atBench && now.seen > 0) tips.push({ kind: "bench" })
-    if (now.seen > before.seen) tips.push({ kind: "materials" })
-  }
+  if (now.atBench && !before.atBench) tips.push({ kind: "bench" })
   return tips
 }
