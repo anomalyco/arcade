@@ -1,5 +1,5 @@
 import { MAT, Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
-import { buildFoliageTree, emitGrassTuft, emitHydrangeaPanicles, foliageSettings } from "@arcade/kit/gpu/foliage"
+import { buildFoliageTree, emitGrassTuft, emitHydrangeaPanicles, foliageSettings, HYDRANGEA_DRIED } from "@arcade/kit/gpu/foliage"
 import { Rng } from "@arcade/kit/sim/rng"
 import type { Building, Town } from "../shared/map"
 import { supportHeight } from "../shared/terrain"
@@ -341,8 +341,8 @@ export function housePlanting(m:Mesh,b:Building,id:number,town:Town,opts:HousePl
       rng,
     })
   }
-  // Delicate creamy-white blossom flecks on the front-right corner bush
-  if(hydrangea)emitHydrangeaPanicles(m,r-1.08,supportHeight(town,r-1.08,e+.62),e+.62,1.16,.84,(opts.seed ?? town.houseSeed)+31)
+  // Dried autumn hydrangea heads on the front-right corner bush (fresh white ones sparkled as specks under a window lamp)
+  if(hydrangea)emitHydrangeaPanicles(m,r-1.08,supportHeight(town,r-1.08,e+.62),e+.62,1.16,.84,(opts.seed ?? town.houseSeed)+31,16,0,HYDRANGEA_DRIED)
   // Framing woodland & street trees + irregular driveway fence hedge matching target-sodium70s-street & target-sodium70s-open.
   for(const [px,pz,ph,pr] of [
     // Overgrown border hedge along the left driveway picket fence + overarching left woodland canopies

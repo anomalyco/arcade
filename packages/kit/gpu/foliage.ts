@@ -1567,6 +1567,21 @@ export function buildFoliageBush(
  * Emits delicate creamy-white / pale-celadon / warm-ivory hydrangea blossom flecks
  * nestled organically across the outer foliage of a corner bush.
  */
+/** Creamy-white fresh hydrangea heads (the default). */
+export const HYDRANGEA_FRESH: readonly Rgb[] = [
+  [0.82, 0.86, 0.78],
+  [0.74, 0.80, 0.70],
+  [0.88, 0.87, 0.78],
+  [0.68, 0.75, 0.64],
+]
+/** Heads left to dry on the bush through autumn: papery tan and rust, darker than fresh, so they don't sparkle under a lamp. */
+export const HYDRANGEA_DRIED: readonly Rgb[] = [
+  [0.36, 0.29, 0.20],
+  [0.30, 0.24, 0.17],
+  [0.40, 0.31, 0.21],
+  [0.27, 0.22, 0.16],
+]
+
 export function emitHydrangeaPanicles(
   m: Mesh,
   x: number,
@@ -1577,14 +1592,9 @@ export function emitHydrangeaPanicles(
   seed: number,
   count = 16,
   auxOffset = 0,
+  palette: readonly Rgb[] = HYDRANGEA_FRESH,
 ): void {
   const rng = new Rng(seed ^ 0x6f1a)
-  const palette: readonly Rgb[] = [
-    [0.82, 0.86, 0.78],
-    [0.74, 0.80, 0.70],
-    [0.88, 0.87, 0.78],
-    [0.68, 0.75, 0.64],
-  ]
   for (let i = 0; i < count; i++) {
     const a = i * 2.39996 + (rng.next() - 0.5) * 0.36
     const rFrac = 0.22 + Math.sqrt((i + 0.4) / count) * 0.74

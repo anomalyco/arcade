@@ -249,7 +249,11 @@ export class OutbreakSceneLevel {
           if (!streamed.geometryOnly) {
             windowMoved = this.vision.setWindowOrigin(streamed.origin[0], streamed.origin[1])
             this.scenery.setWindowOrigin(streamed.origin[0], streamed.origin[1], town)
-            this.combinedFog.markDirty()
+            // The combined memory is indexed by window cell and only ever grows, so a moved window would keep the old
+            // window's explored cells at their old indices: straight-edged ghost rectangles. Rebuild it from the
+            // reloaded vision and scenery instead.
+            if (windowMoved) this.combinedFog.reset()
+            else this.combinedFog.markDirty()
           }
         }
       }
@@ -302,7 +306,7 @@ export class OutbreakSceneLevel {
           }
         : null,
     )
-    if (this.scenery.update(town, this.vision) || visChanged) {
+    if (this.scenery.update(town, this.vision) || visChanged || windowMoved) {
       this.combinedFog.markDirty()
       this.combinedFog.update(this.vision, this.scenery, true)
       renderer.setVisibility(this.combinedFog.filtered, FOG_SIZE, FOG_SIZE)

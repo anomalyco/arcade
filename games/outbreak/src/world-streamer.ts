@@ -1964,13 +1964,19 @@ export class WorldClientStreamer {
       }
     }
 
-    // 3. When zoomed out (5×5 frustum), also pre-warm the remaining 5×5 outer-ring chunks
-    if (wideFrustum) {
-      for (let dy = -2; dy <= 2; dy++) {
-        for (let dx = -2; dx <= 2; dx++) {
-          if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) continue
-          enqueue(cCx + dx, cCy + dy, 9 + Math.abs(dx) + Math.abs(dy))
-        }
+    // 3. Outer-ring chunks the camera can see (or nearly can): the corridor only looks along the walk, so a chunk off
+    // to the side or behind stayed unbuilt (a hard black edge on screen) until the survivor walked toward it. When
+    // zoomed out (5×5 frustum), pre-warm the whole outer ring.
+    const vr = this.lastViewRect
+    for (let dy = -2; dy <= 2; dy++) {
+      for (let dx = -2; dx <= 2; dx++) {
+        if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) continue
+        const cx = cCx + dx
+        const cy = cCy + dy
+        const seen =
+          wideFrustum ||
+          (vr !== undefined && (cx + 1) * CHUNK >= vr[0] - 12 && cx * CHUNK <= vr[2] + 12 && (cy + 1) * CHUNK >= vr[1] - 12 && cy * CHUNK <= vr[3] + 12)
+        if (seen) enqueue(cx, cy, 9 + Math.abs(dx) + Math.abs(dy))
       }
     }
 
