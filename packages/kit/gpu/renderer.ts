@@ -59,8 +59,19 @@ import {
   type ScenePass,
 } from "./pass-graph"
 import { BloomPyramid, DEFAULT_BLOOM_LEVELS, GrowableInstanceBuffer, SceneTargets, uploadSplitSprites } from "./targets"
+import {
+  TemporalResolve,
+  internalSize,
+  jitterViewProj,
+  temporalEnabled,
+  temporalScale,
+  type TemporalSettings,
+  type TemporalState,
+} from "./temporal"
 
 export type { PassContext, PassSlot, ScenePass }
+export type { AntiAliasingMode, TemporalSettings, TemporalState } from "./temporal"
+export { TEMPORAL_DEFAULTS } from "./temporal"
 
 const SAMPLES = 4
 const HDR: GPUTextureFormat = "rgba16float"
@@ -307,6 +318,15 @@ export class Renderer {
   /** Exponential moving average of GPU queue-completion latency (ms). */
   emaGpuMs = 0
   private bloomLevels = BLOOM_LEVELS
+  private temporalSettings: TemporalSettings | null = null
+  private temporal: TemporalResolve | null = null
+  private bloomSource: GPUTexture | null = null
+  private spriteModule!: GPUShaderModule
+  private reactivePipe: GPURenderPipeline | null = null
+  private readonly unjittered = new Float32Array(22)
+  /** Size the scene renders at: the output size, or smaller under temporal upscaling. */
+  internalWidth = 0
+  internalHeight = 0
   private readonly drawRanges: { model: number; first: number; count: number; alpha: boolean }[] = []
 
   constructor(
@@ -572,6 +592,7 @@ export class Renderer {
     const layout = d.createPipelineLayout({ bindGroupLayouts: [sceneLayout] })
     const scene = this.module(shaders?.scene ?? sceneShader(), "scene")
     const sprite = this.module(shaders?.sprite ?? spriteShader(), "sprite")
+    this.spriteModule = sprite
     const pipe = (module: GPUShaderModule, vs: string, buffers: GPUVertexBufferLayout[], blend?: GPUBlendState, depthWrite = true, cullMode: GPUCullMode = "back", fs = "fs", motion = false, alphaToCoverage = false) =>
       d.createRenderPipeline({
         layout,
@@ -683,10 +704,21 @@ export class Renderer {
     this.makeSceneGroup()
   }
 
-  private drawVolume(enc: GPUCommandEncoder, downscale: number, rect?: readonly [number, number, number, number]): void {
+  /**
+   * Marches the volumetric light at the internal size and adds it into `target` (`tw` × `th`): the resolved scene,
+   * or the temporal output so the beam never enters the history.
+   */
+  private drawVolume(
+    enc: GPUCommandEncoder,
+    downscale: number,
+    rect: readonly [number, number, number, number] | undefined,
+    target: GPUTextureView,
+    tw: number,
+    th: number,
+  ): void {
     const v = this.volume!
-    const w = Math.max(1, Math.ceil(this.width / downscale))
-    const h = Math.max(1, Math.ceil(this.height / downscale))
+    const w = Math.max(1, Math.ceil(this.targets.width / downscale))
+    const h = Math.max(1, Math.ceil(this.targets.height / downscale))
     if (!v.tex || v.tex.width !== w || v.tex.height !== h) {
       v.tex?.destroy()
       v.tex = this.device.createTexture({ size: [w, h], format: HDR, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING })
@@ -710,8 +742,8 @@ export class Renderer {
     march.setBindGroup(0, v.group)
     march.draw(3)
     march.end()
-    const add = enc.beginRenderPass({ colorAttachments: [{ view: this.targets.hdrView, loadOp: "load", storeOp: "store" }] })
-    scissor(add, this.width, this.height)
+    const add = enc.beginRenderPass({ colorAttachments: [{ view: target, loadOp: "load", storeOp: "store" }] })
+    scissor(add, tw, th)
     add.setPipeline(v.composite)
     add.setBindGroup(0, v.compositeGroup!)
     add.draw(3)
@@ -752,6 +784,7 @@ export class Renderer {
   /** Static level: opaque chunks (each culled against the view), translucent glass and haze chunks, and the baked floor map. */
   setLevel(level: LevelData): void {
     this.previousFrame = null
+    this.temporal?.reset()
     const STREAM_SLOT_COUNT = 25
     const isStreamedSlots =
       level.chunks.length > 0 &&
@@ -915,12 +948,25 @@ export class Renderer {
     this.device.queue.writeTexture({ texture: this.bounceTex }, data, { bytesPerRow: w * 4 }, [w, h])
   }
 
+  /** Output (canvas) size. The scene renders at `internalWidth` × `internalHeight`, smaller under temporal upscaling. */
   resize(w: number, h: number): void {
-    if (!this.targets.resize(w, h)) return
+    if (w === this.width && h === this.height && this.targets.width) return
     this.width = w
     this.height = h
     this.measureTarget?.destroy()
     this.measureTarget = null
+    this.applyInternalSize()
+  }
+
+  private applyInternalSize(): void {
+    const [iw, ih] = internalSize(this.width, this.height, temporalScale(this.temporalSettings))
+    this.internalWidth = iw
+    this.internalHeight = ih
+    if (this.temporalSettings) {
+      this.temporal ??= new TemporalResolve(this.device, HDR, SAMPLES)
+      this.temporal.resize(this.width, this.height, iw, ih)
+    }
+    if (!this.targets.resize(iw, ih)) return
     this.sharedBlurGroups = null
     this.blurReady = false
     this.previousFrame = null
@@ -928,14 +974,73 @@ export class Renderer {
     this.velocityMSAA?.destroy()
     this.velocity = this.velocityMSAA = null
     this.velocityAttachment = null
-    this.smokeRenderer.resize(w, h, this.targets.depthView)
-    this.bloomPyramid.resize({
-      hdr: this.targets.hdr,
-      hdrView: this.targets.hdrView,
-      layout: this.postLayout,
-      sampler: this.sampler,
-      gradeBuffer: this.gradeBuf,
-    })
+    this.smokeRenderer.resize(iw, ih, this.targets.depthView)
+    this.bloomSource = null
+  }
+
+  /**
+   * Opt-in temporal anti-aliasing (`"taa"`) or upscaling (`"taau"`); `null` or `"msaa"` is today's MSAA-only path.
+   * Cheap to call every frame: only a change of mode or render scale reallocates.
+   */
+  setTemporal(settings: TemporalSettings | null): void {
+    const next = temporalEnabled(settings) ? { ...settings } : null
+    const prev = this.temporalSettings
+    this.temporalSettings = next
+    if (!next || !prev) this.temporal?.reset()
+    if (temporalScale(prev) !== temporalScale(next) || !next !== !prev) {
+      if (this.width) this.applyInternalSize()
+    }
+  }
+
+  getTemporal(): TemporalSettings | null {
+    return this.temporalSettings ? { ...this.temporalSettings } : null
+  }
+
+  /** Drops the temporal history (camera cut or teleport the eye-jump check would miss). */
+  resetTemporalHistory(): void {
+    this.temporal?.reset()
+  }
+
+  /** Temporal resolve telemetry, or null when it is off. */
+  get temporalState(): TemporalState | null {
+    return this.temporalSettings && this.temporal ? this.temporal.state(this.temporalSettings.mode) : null
+  }
+
+  /** Points bloom and the composite at the image they should read: the temporal output or the resolved scene. */
+  private syncBloomSource(src: GPUTexture, view: GPUTextureView): void {
+    if (this.bloomSource === src) return
+    this.bloomSource = src
+    this.bloomPyramid.resize({ hdr: src, hdrView: view, layout: this.postLayout, sampler: this.sampler, gradeBuffer: this.gradeBuf })
+    // Both hold views of the bloom chain just rebuilt.
+    this.sharedBlurGroups = null
+    this.velocity?.destroy()
+    this.velocityMSAA?.destroy()
+    this.velocity = this.velocityMSAA = null
+    this.velocityAttachment = null
+  }
+
+  /** Alpha and additive sprites re-drawn without depth into the temporal reactive mask. */
+  private ensureReactivePipe(): GPURenderPipeline {
+    if (this.reactivePipe) return this.reactivePipe
+    const layout = this.device.createPipelineLayout({ bindGroupLayouts: [this.sceneLayout] })
+    const spriteLayout: GPUVertexBufferLayout = {
+      arrayStride: SPRITE_FLOATS * 4,
+      stepMode: "instance",
+      attributes: [
+        { shaderLocation: 0, offset: 0, format: "float32x4" },
+        { shaderLocation: 1, offset: 16, format: "float32x4" },
+        { shaderLocation: 2, offset: 32, format: "float32x4" },
+      ],
+    }
+    const add: GPUBlendState = { color: { srcFactor: "one", dstFactor: "one" }, alpha: { srcFactor: "one", dstFactor: "one" } }
+    this.reactivePipe = this.device.createRenderPipeline({
+        label: "temporal reactive sprites",
+        layout,
+        vertex: { module: this.spriteModule, entryPoint: "vs", buffers: [spriteLayout] },
+        fragment: { module: this.spriteModule, entryPoint: "fs", targets: [{ format: "rgba8unorm", blend: add }] },
+        primitive: { topology: "triangle-list", cullMode: "none" },
+      })
+    return this.reactivePipe
   }
 
   setVisibility(data: Uint8Array<ArrayBuffer>, w: number, h: number): void {
@@ -1036,7 +1141,7 @@ export class Renderer {
   private prepareMotion(): void {
     this.ensureMotionPipes()
     if (this.velocity) return
-    const d = this.device, size = [this.width, this.height]
+    const d = this.device, size = [this.targets.width, this.targets.height]
     this.velocity = d.createTexture({ size, format: HDR, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING })
     this.velocityMSAA = d.createTexture({ size, format: HDR, sampleCount: SAMPLES, usage: GPUTextureUsage.RENDER_ATTACHMENT })
     this.velocityView = this.velocity.createView()
@@ -1201,9 +1306,35 @@ export class Renderer {
     })
   }
 
+  /**
+   * Draws one frame. Under temporal AA the game's view-projection and screen size are swapped, for this frame only, for
+   * the jittered matrix and the internal size, so every pass that reads the frame (scene, sprites, splatter, particles,
+   * skids, volume) renders jittered at the internal size; the game's array is restored afterwards.
+   */
   private draw(f: FrameInput, targetView?: GPUTextureView): void {
+    const s = this.temporalSettings
+    const motion = !this.shaders && !!(f.frame[45]! & 1024)
+    const taa = s && this.temporal && !motion ? this.temporal : null
+    if (!taa || !s) return this.encodeFrame(f, targetView, null, false)
+    const fr = f.frame
+    this.unjittered.set(fr.subarray(0, 22))
+    const reactive = f.alphaCount + f.addCount > 0
+    const [jx, jy] = taa.begin(fr, s, reactive)
+    jitterViewProj(fr, jx, jy, this.internalWidth, this.internalHeight)
+    fr[20] = this.internalWidth
+    fr[21] = this.internalHeight
+    try {
+      this.encodeFrame(f, targetView, taa, reactive)
+    } finally {
+      fr.set(this.unjittered, 0)
+    }
+  }
+
+  private encodeFrame(f: FrameInput, targetView: GPUTextureView | undefined, taa: TemporalResolve | null, reactive: boolean): void {
     const d = this.device
     const motion = !this.shaders && !!(f.frame[45]! & 1024)
+    if (taa) this.syncBloomSource(taa.output, taa.outputView)
+    else this.syncBloomSource(this.targets.hdr, this.targets.hdrView)
     const effectiveLook = f.look !== undefined ? f.look : this.activeLook
     const effectiveCompare = f.lookCompare ?? this.activeLookCompare
     const hasPostParams = Boolean(f.postParams && f.postParams[0] > 0.5)
@@ -1450,7 +1581,7 @@ export class Renderer {
     const hasSmoke = !!(f.smoke && f.smokeEnabled && f.smoke.count)
     const pass = enc.beginRenderPass(
       this.targets.configureMainPass({
-        storeDepth: hasSmoke || runSharedBlur,
+        storeDepth: hasSmoke || runSharedBlur || !!taa,
         timestampWrites: this.timing && !f.shadowLightCount ? this.timer!.start : undefined,
         extraColorAttachment: motion ? this.velocityAttachment : null,
       }),
@@ -1523,6 +1654,24 @@ export class Renderer {
     }
     pass.end()
 
+    if (taa && reactive) {
+      const rp = enc.beginRenderPass({
+        label: "temporal reactive",
+        colorAttachments: [{ view: taa.reactiveView, loadOp: "clear", storeOp: "store", clearValue: [0, 0, 0, 0] }],
+      })
+      rp.setPipeline(this.ensureReactivePipe())
+      rp.setBindGroup(0, this.sceneGroup)
+      if (alphaCount) {
+        rp.setVertexBuffer(0, this.sprites, 0)
+        rp.draw(6, alphaCount)
+      }
+      if (addCount) {
+        rp.setVertexBuffer(0, this.sprites, addOffset)
+        rp.draw(6, addCount)
+      }
+      rp.end()
+    }
+
     if (f.smoke && f.smokeEnabled && f.smoke.count) {
       for (let i = 0; i < 16; i++) this.smokeMatrix[i] = f.frame[i]!
       mat4.inverse(this.smokeMatrix, this.smokeInverse)
@@ -1538,14 +1687,15 @@ export class Renderer {
       this.smokeRenderer.render(enc, this.targets.hdrView, f.smoke)
     }
 
-    if (this.volume && f.volume) this.drawVolume(enc, f.volume.downscale, f.volume.rect)
+    if (this.volume && f.volume && !taa) this.drawVolume(enc, f.volume.downscale, f.volume.rect, this.targets.hdrView, this.targets.width, this.targets.height)
 
     let activeDown0: GPUBindGroup | undefined
     let activeComposite = this.bloomPyramid.compositeGroup
     if (runSharedBlur && mb) {
       this.sharedBlur ??= new MotionBlur(d, HDR, true)
-      if (!this.sharedBlurGroups || this.sharedBlurGroups.w !== this.width || this.sharedBlurGroups.h !== this.height) {
-        this.sharedBlur.resize(this.width, this.height, this.targets.hdrView, this.targets.depthView)
+      const tw = this.targets.width, th = this.targets.height
+      if (!this.sharedBlurGroups || this.sharedBlurGroups.w !== tw || this.sharedBlurGroups.h !== th) {
+        this.sharedBlur.resize(tw, th, this.targets.hdrView, this.targets.depthView)
         const down0Param = this.bloomPyramid.downParams[0]!
         this.sharedBlurGroups = {
           down0: this.bloomPyramid.makeBindGroup(
@@ -1564,8 +1714,8 @@ export class Renderer {
             this.bloomPyramid.views[0]!,
             this.gradeBuf,
           ),
-          w: this.width,
-          h: this.height,
+          w: tw,
+          h: th,
         }
       }
       const curVP = f.frame.subarray(0, 16)
@@ -1590,8 +1740,15 @@ export class Renderer {
         mb.settings.burst,
       )
       this.sharedBlur.encode(enc)
-      activeDown0 = this.sharedBlurGroups.down0
-      activeComposite = this.sharedBlurGroups.composite
+      if (!taa) {
+        activeDown0 = this.sharedBlurGroups.down0
+        activeComposite = this.sharedBlurGroups.composite
+      }
+    }
+    if (taa) {
+      // Blur (when on) runs on the internal image first; the beam is added after the resolve, never into the history.
+      taa.encode(enc, runSharedBlur ? this.sharedBlur!.output : this.targets.hdrView, this.targets.depthView, this.temporalSettings!.sharpen > 0.001)
+      if (this.volume && f.volume) this.drawVolume(enc, f.volume.downscale, f.volume.rect, taa.outputView, this.width, this.height)
     }
     this.bloomPyramid.encode(enc, this.pipes.down!, this.pipes.up!, activeDown0, this.bloomLevels)
     const output = this.timing ? this.measureView : (targetView ?? this.context.getCurrentTexture().createView())
