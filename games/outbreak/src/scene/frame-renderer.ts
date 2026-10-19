@@ -229,6 +229,8 @@ export class OutbreakFrameRenderer {
     this.zombieCrowd.reset()
     this.combatFx.reset()
     this.vehicleRenderer.reset()
+    // A restart after a run ends starts clean: no stains from the last run's fights and falls.
+    this.blood.reset()
     this.feelTracker.reset(session().view.player)
     this.ambientMotion.reset()
     frameUi.reset()

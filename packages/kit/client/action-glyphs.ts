@@ -49,6 +49,7 @@ export type ActionGlyph =
   | "light-on"
   | "light-off"
   | "feed"
+  | "revive"
 
 /** A fill (default) or, with `w`, a round-capped stroke of that width in grid units. */
 type Shape = { d: string; w?: number; evenodd?: boolean }
@@ -170,6 +171,14 @@ const GLYPHS: Record<Exclude<ActionGlyph, "no-battery" | "no-keys" | "empty-tank
   "radio-on": [...radio, { d: "M19.4 11.5Q21.2 15 19.4 18.5", w: 1.6 }, { d: "M21.6 9.8Q24 15 21.6 20.2", w: 1.6 }],
   "light-on": [...bulb, { d: "M12 0.8V1.8M3.6 4.2L4.4 5M20.4 4.2L19.6 5M1.5 10H2.6M21.4 10H22.5", w: 1.5 }],
   feed: [{ d: circle(5, 9.5, 2.6) + circle(5, 14.5, 2.6) + circle(19, 9.5, 2.6) + circle(19, 14.5, 2.6) }, { d: rect(5, 10.25, 14, 3.5) }],
+  revive: [
+    {
+      d:
+        circle(12, 12, 10.5) +
+        poly([[10, 5.5], [14, 5.5], [14, 10], [18.5, 10], [18.5, 14], [14, 14], [14, 18.5], [10, 18.5], [10, 14], [5.5, 14], [5.5, 10], [10, 10]]),
+      evenodd: true,
+    },
+  ],
   finish: [
     { d: "M8 2H15V11.5L20.5 14C21.6 14.5 22 15.4 22 16.5V18.5H6V15C6 14 6.6 13.3 7.6 13.2L8 13.1Z" },
     { d: rrect(5.5, 19, 17, 2.5, 1) },

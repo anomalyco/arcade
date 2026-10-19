@@ -69,3 +69,7 @@
   live in `src/crafting/`; `Q` only pings. Lab: Backquote › Crafting. How it works:
   `../../docs/outbreak-progression.md#how-crafting-works`. Stills of a new player's walkthrough:
   `bun scripts/crafting-proof.ts` (via `hivemind run --kind browser`).
+- Death (AR-61, `shared/death/`, `src/death/`): at 0 HP a survivor goes down, a teammate holds E to revive, bleed-out
+  or being alone kills, the body keeps their kit, the dead watch a teammate until dawn, and everyone dead ends the run.
+  Lab: Backquote › Death ("Today" = nobody dies) with Down/Kill/Revive me and teammate actions; `arcade cmd death.kill`.
+  Rules and wire: `../../docs/outbreak-coop.md#death`. Tests: `tests/death.test.ts`.

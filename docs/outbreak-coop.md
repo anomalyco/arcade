@@ -80,6 +80,7 @@ change the offline session.
     already carries it. Deltas never resend a seed, so every zombie is rolled before the snapshot that first carries
     it: in the feature's `stepWorld` (chunk and horde spawns) and its `stepWorldLate` (director spawns during the
     crowd step). `tests/specials.test.ts` checks every zombie in every snapshot against the room.
+  - Death (`shared/death/`) adds a section (bit 256): see [Death](#death).
   - `personal`: binary-packed `ack`, `f32` position/aim/stamina/battery/flashlight/noise, discrete flags/ammo/planks,
     and an optional bitmask for active timers, peek/hold/vault/channel state, filtered ledger deltas and notices.
 
@@ -109,6 +110,50 @@ packet drop):
 With the default 28 zombies, a 4-client headless run of `coop-smoke.ts --players=4` against `wrangler dev` measured
 **4.14–4.21 KB/s down and 1.95 KB/s up per client** (down from 18–23 KB/s).
 
+## Death
+
+`shared/death/` (AR-61), the same rules offline and in a room. Lab › Death (Backquote) holds every value; "Death:
+Today (nobody dies)" is the game as it was, where health stops at 0 and nothing else happens.
+
+```
+alive ──0 HP──▶ down ──bleed-out runs out──▶ dead ──squad's next dawn──▶ alive at the safehouse, starting kit
+                 │  ▲                          │
+   teammate holds E│  │                          └── everyone dead ──▶ run over
+   for 4 s ────────┘  └ back up with 30 HP
+```
+
+- **Down** (at 0 HP, checked after the crowd's attacks each tick): out of any car or closet, whatever they were doing
+  cancelled. They can only crawl (0.45 m/s); no shots, swings, reloads, items or doors, and no prompt of their own.
+  The dead keep feeding: each point of damage takes 0.12 s off the bleed-out instead of health. Bleed-out is 30 s
+  while a teammate stands, 6 s alone (solo, or once nobody is left standing).
+- **Revive**: a standing teammate within 1.6 m holds E ("Revive" prompt, the `downed` interaction). Progress fills
+  over 4 s and resets if they let go for a quarter second or step away.
+- **Dead**: the body stays where they fell (`FallenBody`, ledger store `fallen:<seat>:<n>` holding their hotbar, belt
+  and pack; a teammate takes it all with E), their light goes out and the crowd can no longer see or hear them. In
+  co-op they watch a standing teammate (camera, sight shroud and listener follow that teammate) until the squad's
+  next dawn, then wake at their spawn point beside the Ash House with full health and the standard kit. "The dead
+  come back: Never" keeps them dead until the run ends.
+- **Run over** when every survivor is dead: a card with the survivor's name, cause ("Taken by a Brute on Night 3", from
+  the nearest zombie when they went down), day, nights survived and kills (the last blow, `lastHitBy`), plus
+  Restart, New town (solo) and Lobby. A room's Restart (`{t:"restart"}`, accepted only once the run is over) builds a
+  fresh `CoopSim` for every seat and sends `{t:"reload", reason:"restart"}`; clients reload and rejoin with their
+  seat tokens.
+- **On the wire**: the death section (bit 256; the header's section flags are a varint, so bits past 128 cost a
+  byte): the down and dead with cause, bleed-out (0.1 s), revive progress and reviver, the fallen bodies, and at the
+  end the dawns and every seat's kills. Sent whole when it differs from the acked base snapshot, omitted otherwise
+  (the base's carries over), so a quiet run costs nothing. `NetSession` writes it into its `CoopSim`'s death state,
+  which drives the prompt, prediction (a downed client crawls), presentation and sound.
+- **Presentation** (`src/death/`, through the client registry's `frame` hooks): the down screen tightens and drains of
+  colour as the bleed-out runs, with a heartbeat that quickens; "Down" markers over downed teammates with the hold-E
+  key cap whose ring fills as you revive; downed and dead survivors lie face down in their seat's colours over a
+  blood pool and smear; a death sting. Sounds are library samples re-pitched (`src/audio/death.ts`): there is no
+  heartbeat or sting sample yet.
+- **Bots** treat a survivor's first fall as final (`shared/bot-runner.ts`), so the ramp's survival numbers keep
+  describing the first death. They do not revive teammates.
+- Lab › Death has Down me, Kill me, Revive me, Add a teammate, Down teammate and Kill teammate (offline); commands
+  `death.down`, `death.kill`, `death.revive` (`who=mate` for the teammate) and `death.mate`. Tests:
+  `tests/death.test.ts`.
+
 ## Sound
 
 Co-op adds nothing to the wire for sound. The client's `CoopSim`, filled from snapshots, drives the same
@@ -124,9 +169,9 @@ rest of the shared world, a remote shot or door is heard one snapshot late.
 - Remote survivors show body, flashlight, name tag, and the character HUD (callouts and health, reload and exhaustion
   rings, see [outbreak-hud.md](outbreak-hud.md)) built from replicated flags, but not their pistol. Reload progress
   is timed on the viewer's side because the snapshot carries only a reloading flag.
-- No death or downed state, no persistence: a room resets once every survivor has been gone for 60 s. A survivor
-  whose seat expires leaves what they carried on the floor. No lobby or
-  quick join; rooms are links only. Lab tuning, spawns and the AI debug overlay only affect the offline session.
+- No persistence: a room resets once every survivor has been gone for 60 s. A survivor whose seat expires leaves what
+  they carried on the floor. No quick join; rooms are links only. Lab tuning, spawns and the AI debug overlay only
+  affect the offline session (so a room always plays the default Death rules).
 - Blackout and Brawl share `@arcade/kit/net/room-core`, which now uses the same `seats` tokens, `jitter-buffer` and
   per-socket rate limit as this room; Getaway still carries its own room loop. Blackout draws remote soldiers and vehicles through
   `SnapshotBuffer` and predicts with `Predictor`; `@arcade/kit/net/{rewind,interest}` are ready for it to add 20-tick
