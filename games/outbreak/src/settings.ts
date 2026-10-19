@@ -14,6 +14,7 @@ import { DEFAULT_PACING_TARGETS, type PacingTargetConfig } from "../shared/diffi
 import { BOT_SKILL_PRESETS } from "../shared/survivor-bot"
 import { DEFAULT_VEHICLE_TUNING, type VehicleTuning } from "../shared/vehicles"
 import { DEFAULT_HORDE_TUNING, type HordeTuning } from "../shared/hordes/index"
+import { DEFAULT_NIGHT_RAMP_TUNING, type NightRampTuning } from "../shared/night-ramp/ramp"
 import { DEFAULT_SPECIALS_TUNING, type SpecialsTuning } from "../shared/specials/kinds"
 import type { WorldMode } from "../shared/world"
 import { DEFAULT_AUDIO_SETTINGS, type AudioSettings } from "./audio"
@@ -234,6 +235,7 @@ export type OutbreakSubsystemMap = {
   nightLights: OutbreakNightLightSettings
   details: OutbreakDetailSettings
   specials: SpecialsTuning
+  nightRamp: NightRampTuning
 }
 
 export type OutbreakSubsystemKey = keyof OutbreakSubsystemMap
@@ -310,6 +312,7 @@ export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "nightLights",
   "details",
   "specials",
+  "nightRamp",
 ] as const
 
 export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
@@ -349,6 +352,7 @@ export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
     nightLights: { ...DEFAULT_NIGHT_LIGHT_SETTINGS },
     details: { ...DEFAULT_DETAIL_SETTINGS },
     specials: { ...DEFAULT_SPECIALS_TUNING },
+    nightRamp: { ...DEFAULT_NIGHT_RAMP_TUNING },
   }
 }
 

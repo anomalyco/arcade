@@ -6,7 +6,7 @@ deterministic headless games, and a read-only probe records what happened in eac
 | Tool | What | When |
 | --- | --- | --- |
 | `games/outbreak/tests/difficulty-ramp.test.ts` | 4 presets × 4 fixed seeds to dawn 3 on up to 4 workers (~4 s on Studio, ~20 s on CI), curves held inside tolerance bands | Every `bun run check` and CI |
-| `games/outbreak/scripts/difficulty-ramp.ts` | Any presets × seeds × nights, `report.md`, JSON and PNG charts | By hand, before and after a difficulty change |
+| `games/outbreak/scripts/difficulty-ramp.ts` | Any presets × seeds × nights, `report.md`, JSON and PNG charts; `--today` turns the night ramp off, `--set=key=value,…` tries session tuning | By hand, before and after a difficulty change |
 
 D-22 tuned survival per preset (`shared/difficulty-tuner.ts`, `scripts/run-bot-tuning.ts`). This checks the shape of
 the challenge over time: how pressure, damage, resources and deaths move from the evening through each night and day.
@@ -54,7 +54,56 @@ When a deliberate difficulty change moves a curve out of its band:
 3. Never widen a band to get an unrelated change through. A band failing on a change that was not about difficulty
    is the test working.
 
-## What it showed (2026-10-19)
+## The night ramp (D-40, Gentle Start, Rising)
+
+`games/outbreak/shared/night-ramp/` raises the challenge every night instead of letting the director's own ramp level
+off at Night 2. It counts nights (darkness ≥ 0.5) and hands the director a `DirectorEscalation` each tick before the
+crowd steps (`shared/pacing.ts`). Lab: Backquote › Night ramp. **Night ramp: Today** switches all of it off and is
+byte-identical to the game before D-40 (checked with bot runs against origin/main).
+
+| Setting | Default | Does |
+| --- | --: | --- |
+| `nightOneChasers` | 2 | Solo chaser ceiling during Night 1 (and the evening) |
+| `nightOnePopulation` | 0.65× | Solo population target during Night 1 |
+| `nightPopulationStep` / `nightPopulationCeiling` | +3 / 30 | Zombies added per night after the first, and the most there will be (solo) |
+| `nightChaserStep` / `nightChaserCeiling` | +0.5 / 6 | Chasers added per night after the first (floored: +0, +1, +1, +2…), and the most |
+| `nightSpecialStep` / `nightSpecialCap` | 0.03 / 0.20 | Special-zombie chance per night and its cap, in place of the Specials group's 0.012 / 0.08 |
+| `lateAmmoFromNight`, `lateAmmoChance`, `lateAmmoMin`/`Max` | 2, 0.5, 2–5 | From Night 2, half the dead leave 2–5 rounds where they fall (`drop:rounds:<id>`) |
+| `dawnAmmoCaches` | 2 | Each dawn from Day 3, two containers already searched and emptied hold 2–5 rounds again |
+
+Special zombies are rolled when a zombie appears. Under Today the population stops growing at Night 2, so few new
+zombies appear and the rising chance was barely felt (0.3–0.7 alive at once). With the population rising every night
+there are new rolls, and Expert bots met 1.1, 2.1 and 3.2 specials at once on Nights 3, 4 and 5.
+
+### Before and after (small sample)
+
+5 presets × 12 seeds × 5 nights on main 8b6d70d2 (with Recipe Board crafting), `--today` against the defaults. These
+are 60 runs each, so treat them as indicative. Each cell is the fraction alive at that dawn.
+
+| Preset | Today median nights | D1 | D2 | D3 | D4 | D5 | Rising median nights | D1 | D2 | D3 | D4 | D5 |
+| --- | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: |
+| Novice | 0.60 | 8% | 0% | 0% | 0% | 0% | 0.85 | 50% | 0% | 0% | 0% | 0% |
+| Casual | 1.79 | 67% | 50% | 25% | 17% | 17% | 1.41 | 92% | 42% | 0% | 0% | 0% |
+| Skilled | 4.60 | 92% | 75% | 67% | 58% | 50% | 2.38 | 100% | 75% | 42% | 42% | 17% |
+| Expert | 5.01 | 83% | 75% | 67% | 67% | 67% | 4.08 | 100% | 67% | 67% | 50% | 33% |
+| Perfect | 5.01 | 100% | 100% | 92% | 83% | 83% | 4.52 | 100% | 100% | 83% | 67% | 42% |
+
+Skilled bots while alive, Night 1 → Night 5:
+
+| | Today | Rising |
+| --- | --- | --- |
+| Living zombies | 11 → 15 → 16 → 16 → 16 | 7 → 18 → 22 → 25 → 27 |
+| Night chasers | 2.0 → 2.4 → 2.8 → 2.8 → 2.6 | 1.0 → 2.6 → 3.9 → 3.9 → 4.8 |
+| Specials at once | 0.3 → 0.3 → 0.4 → 0.5 → 0.3 | 0.1 → 0.5 → 0.7 → 2.0 → 1.1 |
+
+Ammo picked up on Day 3 and later rose from mostly zero to roughly 0.5–1.8 rounds a day for the bots. They rarely kill,
+so a player who fights will find more. A first draft with +4 zombies and +1 chaser per night and no Night 1 population
+cut was a cliff at Night 2 (Skilled alive at dawn 2: 92% → 33%).
+
+The CI bands moved with D-40 in the same change: the Night 1 hold (chasers ≤ 2), Night 2 population above 16,
+Night 3 over Night 2 (living and aware) and Night 3 chasers ≥ 3 all fail with the night ramp off.
+
+## What it showed before D-40 (2026-10-19)
 
 Small sample on main with special zombies, flares, dogs, bodies and Lights Out: 5 presets × 12 seeds × 5 nights
 (`--seeds=12 --nights=5`), 60 runs. Treat the numbers as indicative.

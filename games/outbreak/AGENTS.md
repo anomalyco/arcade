@@ -24,7 +24,9 @@
   (`hivemind run --kind browser --worker studio --fetch captures/parity`) then `--compare <dirA> <dirB>`.
 - Difficulty: `tests/difficulty-ramp.test.ts` (in `bun run check`) holds the bot-played ramp inside tolerance bands;
   `bun scripts/difficulty-ramp.ts` writes the full report and charts. Change a band only with a deliberate difficulty
-  change, in the same PR (`../../docs/outbreak-difficulty.md`).
+  change, in the same PR (`../../docs/outbreak-difficulty.md`). The night ramp (D-40, `shared/night-ramp/`, Lab › Night
+  ramp; "Today" turns it off) raises population, chasers, specials and late rounds each night through the director's
+  `DirectorEscalation`.
 - `bun scripts/check-cycles.ts` (part of `bun run check`) fails on any import cycle between Outbreak modules, type
   imports included.
 - Sound lives in `src/audio/` and plays the shared library (`../../docs/sfx-library.md`). `SoundDirector` turns `CoopSim`

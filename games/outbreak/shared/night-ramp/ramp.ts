@@ -58,7 +58,8 @@ export const DEFAULT_NIGHT_RAMP_TUNING: NightRampTuning = {
 /** Lab controls (Backquote › Night ramp). Every value is live; the population and caps apply from the next tick. */
 export const nightRampControls = [
   {
-    key: "nightRampMode",
+    key: "nightRamp.nightRampMode",
+    field: "nightRampMode",
     label: "Night ramp",
     group: "Night ramp",
     options: [
@@ -66,19 +67,19 @@ export const nightRampControls = [
       { label: "Gentle start, rising", value: 1 },
     ],
   },
-  { key: "nightOneChasers", label: "Night 1 chasers", group: "Night ramp", min: 0, max: 6, step: 1, unit: "" },
-  { key: "nightOnePopulation", label: "Night 1 population", group: "Night ramp", min: 0.3, max: 1.5, step: 0.05, unit: "×" },
-  { key: "nightPopulationStep", label: "Zombies added per night", group: "Night ramp", min: 0, max: 16, step: 1, unit: "" },
-  { key: "nightPopulationCeiling", label: "Population ceiling", group: "Night ramp", min: 8, max: 100, step: 1, unit: "" },
-  { key: "nightChaserStep", label: "Chasers added per night", group: "Night ramp", min: 0, max: 3, step: 0.25, unit: "" },
-  { key: "nightChaserCeiling", label: "Chaser ceiling", group: "Night ramp", min: 1, max: 12, step: 1, unit: "" },
-  { key: "nightSpecialStep", label: "Special chance per night", group: "Night ramp", min: 0, max: 0.1, step: 0.005, unit: "" },
-  { key: "nightSpecialCap", label: "Special chance cap", group: "Night ramp", min: 0, max: 0.5, step: 0.01, unit: "" },
-  { key: "lateAmmoFromNight", label: "Dead carry rounds from night", group: "Night ramp", min: 0, max: 6, step: 1, unit: "" },
-  { key: "lateAmmoChance", label: "Dead carrying rounds", group: "Night ramp", min: 0, max: 1, step: 0.05, unit: "×" },
-  { key: "lateAmmoMin", label: "Rounds carried (min)", group: "Night ramp", min: 1, max: 12, step: 1, unit: "" },
-  { key: "lateAmmoMax", label: "Rounds carried (max)", group: "Night ramp", min: 1, max: 12, step: 1, unit: "" },
-  { key: "dawnAmmoCaches", label: "Rounds left at dawn", group: "Night ramp", min: 0, max: 8, step: 1, unit: "caches" },
+  { key: "nightRamp.nightOneChasers", field: "nightOneChasers", label: "Night 1 chasers", group: "Night ramp", min: 0, max: 6, step: 1, unit: "" },
+  { key: "nightRamp.nightOnePopulation", field: "nightOnePopulation", label: "Night 1 population", group: "Night ramp", min: 0.3, max: 1.5, step: 0.05, unit: "×" },
+  { key: "nightRamp.nightPopulationStep", field: "nightPopulationStep", label: "Zombies added per night", group: "Night ramp", min: 0, max: 16, step: 1, unit: "" },
+  { key: "nightRamp.nightPopulationCeiling", field: "nightPopulationCeiling", label: "Population ceiling", group: "Night ramp", min: 8, max: 100, step: 1, unit: "" },
+  { key: "nightRamp.nightChaserStep", field: "nightChaserStep", label: "Chasers added per night", group: "Night ramp", min: 0, max: 3, step: 0.25, unit: "" },
+  { key: "nightRamp.nightChaserCeiling", field: "nightChaserCeiling", label: "Chaser ceiling", group: "Night ramp", min: 1, max: 12, step: 1, unit: "" },
+  { key: "nightRamp.nightSpecialStep", field: "nightSpecialStep", label: "Special chance per night", group: "Night ramp", min: 0, max: 0.1, step: 0.005, unit: "" },
+  { key: "nightRamp.nightSpecialCap", field: "nightSpecialCap", label: "Special chance cap", group: "Night ramp", min: 0, max: 0.5, step: 0.01, unit: "" },
+  { key: "nightRamp.lateAmmoFromNight", field: "lateAmmoFromNight", label: "Dead carry rounds from night", group: "Night ramp", min: 0, max: 6, step: 1, unit: "" },
+  { key: "nightRamp.lateAmmoChance", field: "lateAmmoChance", label: "Dead carrying rounds", group: "Night ramp", min: 0, max: 1, step: 0.05, unit: "×" },
+  { key: "nightRamp.lateAmmoMin", field: "lateAmmoMin", label: "Rounds carried (min)", group: "Night ramp", min: 1, max: 12, step: 1, unit: "" },
+  { key: "nightRamp.lateAmmoMax", field: "lateAmmoMax", label: "Rounds carried (max)", group: "Night ramp", min: 1, max: 12, step: 1, unit: "" },
+  { key: "nightRamp.dawnAmmoCaches", field: "dawnAmmoCaches", label: "Rounds left at dawn", group: "Night ramp", min: 0, max: 8, step: 1, unit: "caches" },
 ] as const
 
 export function nightRampTuning(features: Readonly<Record<string, Record<string, unknown>>> | undefined): NightRampTuning {
