@@ -251,7 +251,7 @@ heard through `InventorySounds`.
 | --- | --- |
 | Where | About 70% of homes (house, ranch, cottage, cabin), fixed per building, on the living-room coffee table (else a dining table). Both classic houses, Ash and Elm, have one |
 | Verb | E at it: **Switch on** / **Switch off** (radio glyph, slashed to switch off) |
-| While it plays | A burst every `radioBeat` (1.5 s) the dead hear out to `radioNoise` (32 m) from the radio itself, muffled by walls and shut doors like any noise: through a wall it carries about half as far, so open a door or window to let it reach the street |
+| While it plays | A burst every `radioBeat` (1.5 s) the dead hear out to `radioNoise` (32 m) from the radio itself, muffled by the house's shell like any noise (`shared/hearing.ts`): shut, it carries about half as far (0.6× − 3 m), so open a door or window to let it reach the street |
 | Battery | `radioBattery` (60 s) across every time it is switched on; switching off keeps what is left. A flat radio offers nothing |
 | The dead | They investigate the sound to the house, bash their way in if it is shut, and one standing within `radioReach` (1.6 m) of it for `radioBreakTime` (2.5 s) knocks it to the floor: a thud, and it never plays again |
 | State | One ledger store `radio:<building>` {on, start, until, left, beats, near, broken}, times in deciseconds, created on first use, so it snapshots, saves, streams and replicates with no wire changes |
