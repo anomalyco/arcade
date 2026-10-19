@@ -177,8 +177,8 @@ export function meleeImpact(
   const uy = Math.sin(swing.aim)
   const maxT = Math.max(0.4, swing.reach)
   let bestT = maxT
-  let surface: ImpactSurface | null = null
-  let material: ImpactMaterial | null = null
+  let surface = null as ImpactSurface | null
+  let material = null as ImpactMaterial | null
 
   const testRect = (rect: Rect, surf: ImpactSurface, mat: ImpactMaterial = surf) => {
     const t = rayRect(swing.x, swing.y, ux, uy, rect, bestT)
@@ -209,7 +209,7 @@ export function meleeImpact(
         const hy = swing.y + uy * t
         const ws = wallSurface(town.buildings.find((bd) => distToRect(hx, hy, pad(bd.rect, 0.3)) === 0), hx - ux * 0.25, hy - uy * 0.25)
         surface = ws
-        material = ws
+        material = ws as ImpactMaterial
       }
     }
   }

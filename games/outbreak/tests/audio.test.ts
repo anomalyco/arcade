@@ -10,6 +10,7 @@ import { meleeImpact, shotImpacts } from "../src/audio/impacts"
 import { PICKUP_SOUND } from "../src/audio/inventory"
 import { RELOAD_EVENTS, RELOAD_STARTS } from "../src/audio/reload"
 import { ZombieFootsteps } from "../src/audio/zombie-steps"
+import { audioControls, DEFAULT_AUDIO_SETTINGS, SURFACE_STEP_SETTING_KEYS } from "../src/audio/settings"
 import { FOOT_SURFACES, footstepEvent, SoundOcclusion, stepMovementMode, surfaceAt, zombieStepEvent } from "../src/audio/space"
 import { planInterior } from "../src/interiors/plan"
 import { pursuers, soundWorld } from "../src/audio/world"
@@ -568,5 +569,53 @@ describe("fire & explosives sounds (AR-62)", () => {
     expect(fuse).toBe(true)
     expect(heard.filter((id) => id === "bomb.explode")).toHaveLength(1)
     expect(director.holds.some((h) => h.key.startsWith("dyn:"))).toBe(false)
+  })
+})
+
+describe("Lab Sound controls & settings", () => {
+  test("exposes Today vs Sound pass, bus volumes, per-surface footstep sliders, falloff and voice cap in the Sound group", () => {
+    const soundGroup = audioControls.filter((c) => c.group === "Sound")
+    const keys = new Set(soundGroup.map((c) => c.key))
+
+    // Today vs Sound pass profile selector is first in Sound group
+    const modeCtrl = soundGroup.find((c) => c.key === "audioMode")
+    expect(modeCtrl).toBeDefined()
+    expect(modeCtrl && "options" in modeCtrl ? modeCtrl.options.map((o) => o.label) : []).toContain("Today")
+    expect(DEFAULT_AUDIO_SETTINGS.audioMode).toBe(1)
+
+    // Mix bus sliders
+    for (const k of ["audioWeapons", "audioZombies", "audioImpacts", "audioMovement", "audioAmbience", "audioUi"]) {
+      expect(keys.has(k), k).toBe(true)
+    }
+
+    // Player self-step and every FootSurface has a dedicated loudness slider in Sound
+    expect(keys.has("audioSelfStep")).toBe(true)
+    for (const surf of FOOT_SURFACES) {
+      const settingKey = SURFACE_STEP_SETTING_KEYS[surf]
+      expect(keys.has(settingKey), `${surf} -> ${settingKey}`).toBe(true)
+      expect(DEFAULT_AUDIO_SETTINGS[settingKey]).toBe(100)
+    }
+
+    // Spatial & engine controls
+    for (const k of ["audioOcclusion", "audioFalloff", "audioReverb", "audioVoiceCap"]) {
+      expect(keys.has(k), k).toBe(true)
+    }
+
+    // Forwarding on OutbreakSettings works for all new keys
+    const settings = createOutbreakSettings(new URLSearchParams())
+    expect(settings.audio.audioMode).toBe(1)
+    expect(settings.audio.audioStepPuddle).toBe(100)
+    expect(settings.audio.audioVoiceCap).toBe(32)
+
+    // footstepEvent honours selfScale and surfaceScale function
+    const sim = new CoopSim(7, 7, 0.22, { zombieCount: 0 })
+    const base = footstepEvent(sim.town, 38, 44, 3.4, { local: true })!
+    const boosted = footstepEvent(sim.town, 38, 44, 3.4, {
+      local: true,
+      selfScale: 0.5,
+      surfaceScale: (surf) => (surf === "concrete" ? 1.5 : 1.0),
+    })!
+    expect(boosted.surface).toBe("concrete")
+    expect(boosted.event.gain).toBeCloseTo(base.event.gain! * 0.5 * 1.5, 2)
   })
 })

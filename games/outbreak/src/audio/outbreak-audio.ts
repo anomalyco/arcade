@@ -3,8 +3,8 @@ import { dayCycle } from "../../shared/day-cycle"
 import type { Town } from "../../shared/map"
 import { SoundDirector, type SoundEvent, type SoundWorld } from "./director"
 import type { SoundHold } from "./inventory"
-import { AUDIO_BUS_LEVELS, DEFAULT_AUDIO_SETTINGS, type AudioSettings } from "./settings"
-import { footstepEvent, indoors, SoundOcclusion, surfaceAt } from "./space"
+import { AUDIO_BUS_LEVELS, DEFAULT_AUDIO_SETTINGS, SURFACE_STEP_SETTING_KEYS, type AudioSettings } from "./settings"
+import { footstepEvent, indoors, SoundOcclusion, SURFACE_STEP_PROFILES, surfaceAt } from "./space"
 import { ZombieFootsteps } from "./zombie-steps"
 
 export type AudioFrame = {
@@ -129,11 +129,15 @@ export class OutbreakAudio {
     const key = AUDIO_KEYS.map((k) => s[k]).join() + (rt.ctx ? "1" : "0")
     if (key === this.applied) return
     this.applied = key
+    const today = s.audioMode === 0
     rt.setMuted(Boolean(s.audioMuted))
     rt.setVolume(s.volumeMaster / 100)
-    rt.maxVoices = Math.round(s.audioVoiceCap)
+    rt.maxVoices = today ? 24 : Math.round(s.audioVoiceCap)
     rt.setReverbWet(s.audioReverb)
-    for (const bus of MIX_CATEGORIES) rt.setBusGain(bus, ((s[AUDIO_BUS_LEVELS[bus]] as number) / 100) * busVolume(s, bus))
+    for (const bus of MIX_CATEGORIES) {
+      const level = today && (bus === "foley" || bus === "impact") ? 100 : (s[AUDIO_BUS_LEVELS[bus]] as number)
+      rt.setBusGain(bus, (level / 100) * busVolume(s, bus))
+    }
     this.occlusion.strength = s.audioOcclusion
     this.savedVolume = saveVolumeSettings(this.options.storage, "outbreak", s, this.savedVolume)
     const saved = JSON.stringify({ muted: Boolean(s.audioMuted) })
@@ -178,8 +182,12 @@ export class OutbreakAudio {
     }
     // Zombie feet: the nearest few step by step, within the crowd budget and never into the last free voices.
     const town = world.town
-    const extra = this.glassSpots.length > 0 ? { glass: this.glassSpots } : undefined
-    const steps = this.zombieSteps.update(world.zombies, listener, world.time, frame.dt, (x, y) => surfaceAt(town, x, y, extra))
+    const today = this.settings.audioMode === 0
+    const extra = !today && this.glassSpots.length > 0 ? { glass: this.glassSpots } : undefined
+    const steps = this.zombieSteps.update(world.zombies, listener, world.time, frame.dt, (x, y) => {
+      const surf = surfaceAt(town, x, y, extra)
+      return today ? SURFACE_STEP_PROFILES[surf].baseSurface : surf
+    })
     if (live) for (const step of steps) {
       if (this.runtime.activeVoiceCount >= this.runtime.maxVoices - CROWD_HEADROOM) break
       if (this.play({ ...step, source: "zombie" })) this.counts.zombieSteps++
@@ -196,7 +204,9 @@ export class OutbreakAudio {
   /** Plays one library sound at a plan position with the entry's range. */
   play(event: SoundEvent): VoiceHandle | null {
     const entry = sfxEntry(event.id)
-    const rolloff = this.settings.audioFalloff ?? 1.55
+    const today = this.settings.audioMode === 0
+    const rolloff = today ? 1.25 : (this.settings.audioFalloff ?? 1.55)
+    const refScale = today ? 1.0 : 0.78
     const voice = this.runtime.playCue(event.id, {
       time: this.runtime.now + (event.delay ?? 0),
       gain: event.gain,
@@ -205,7 +215,7 @@ export class OutbreakAudio {
       priority: event.priority,
       position:
         entry.range.max > 0
-          ? { x: event.x, z: event.y, refDistance: entry.range.ref * 0.78, maxDistance: entry.range.max, rolloff }
+          ? { x: event.x, z: event.y, refDistance: entry.range.ref * refScale, maxDistance: entry.range.max, rolloff }
           : undefined,
     })
     if (voice) {
@@ -253,12 +263,27 @@ export class OutbreakAudio {
   footstep(x: number, y: number, speed: number, opts?: { local?: boolean; crouching?: boolean }): void {
     const isLocal = opts?.local ?? Math.hypot(x - this.listenerPos.x, y - this.listenerPos.y) < 0.9
     const crouching = opts?.crouching ?? (isLocal ? this.localCrouching : false)
+    if (this.settings.audioMode === 0) {
+      if (speed <= 0.1) return
+      this.counts.footsteps++
+      if (!this.live || !this.town) return
+      const base = SURFACE_STEP_PROFILES[surfaceAt(this.town, x, y)].baseSurface
+      this.play({ id: `foot.${base}.${speed > 4.4 ? "run" : "walk"}`, x, y, source: "foot" })
+      return
+    }
     if (!this.town) {
       if (speed >= 0.25) this.counts.footsteps++
       return
     }
     const extra = this.glassSpots.length > 0 ? { glass: this.glassSpots } : undefined
-    const step = footstepEvent(this.town, x, y, speed, { local: isLocal, crouching, extra })
+    const s = this.settings
+    const step = footstepEvent(this.town, x, y, speed, {
+      local: isLocal,
+      crouching,
+      extra,
+      selfScale: (s.audioSelfStep ?? 100) / 100,
+      surfaceScale: (surf) => ((s[SURFACE_STEP_SETTING_KEYS[surf]] as number) ?? 100) / 100,
+    })
     if (!step) return
     this.counts.footsteps++
     if (!this.live) return

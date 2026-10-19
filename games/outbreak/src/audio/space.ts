@@ -245,7 +245,7 @@ export function footstepEvent(
   x: number,
   y: number,
   speed: number,
-  opts?: { local?: boolean; crouching?: boolean; extra?: SurfaceExtras; surfaceScale?: number },
+  opts?: { local?: boolean; crouching?: boolean; extra?: SurfaceExtras; surfaceScale?: number | ((surface: FootSurface) => number); selfScale?: number },
 ): { event: SoundEvent; surface: FootSurface; mode: "crouch" | "walk" | "run" } | null {
   const mode = stepMovementMode(speed, opts?.crouching)
   if (mode === "idle") return null
@@ -270,8 +270,8 @@ export function footstepEvent(
         : 0.85 + 0.15 * Math.max(0, Math.min(1, (speed - 4.4) / 1.4))
 
   // The local survivor's boots are 0.2 m from the listener (inside refDistance), so attenuate self-steps to sit below combat/vocals.
-  const selfScale = opts?.local ? 0.62 : 1.0
-  const surfScale = opts?.surfaceScale ?? 1.0
+  const selfScale = opts?.local ? 0.62 * (opts?.selfScale ?? 1.0) : 1.0
+  const surfScale = typeof opts?.surfaceScale === "function" ? opts.surfaceScale(surface) : (opts?.surfaceScale ?? 1.0)
   const gain = Number((profile.gain * modeGain * selfScale * surfScale).toFixed(3))
   const baseRate = hasDirect ? 1.0 : profile.rate
   const rate = Number((baseRate * (mode === "crouch" ? 0.92 : mode === "run" ? 1.04 : 1.0)).toFixed(3))
