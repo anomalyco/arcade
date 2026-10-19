@@ -507,7 +507,7 @@ export const SFX_SPECS: readonly SfxSpec[] = [
   },
   {
     id: "cooking.sizzle", label: "Pan sizzle", group: "cooking", bus: "foley", variants: 3, target: -22, gain: 0.8, pitchJitter: 0.06, gainJitter: 0.1,
-    cooldown: 0.15, maxVoices: 3, range: { ref: 2, max: 18 }, wet: 0.05, usedBy: BRAWL, durationRange: [0.6, 1.8],
+    cooldown: 0.15, maxVoices: 3, range: { ref: 2, max: 18 }, wet: 0.05, usedBy: [...BRAWL, ...OUTBREAK], durationRange: [0.6, 1.8],
     generate: { prompt: `A hot oily frying pan slapped down on a surface: a sharp burst of loud sizzling hiss and crackling fat that dies away quickly, close and dry. ${NO_SPEECH}`, duration: 1.3, candidates: 4, influence: 0.55 },
   },
 
@@ -559,7 +559,7 @@ export const SFX_SPECS: readonly SfxSpec[] = [
   },
   {
     id: "bomb.explode", label: "Bomb arrow explosion", group: "bow", bus: "impact", variants: 3, target: -16, gain: 0.95, pitchJitter: 0.05, gainJitter: 0.08,
-    maxVoices: 3, range: { ref: 5, max: 60 }, wet: 0.2, usedBy: ARCHERS, durationRange: [0.6, 2.2],
+    maxVoices: 3, range: { ref: 5, max: 60 }, wet: 0.2, usedBy: [...ARCHERS, ...OUTBREAK], durationRange: [0.6, 2.2],
     generate: { prompt: `A small black-powder bomb exploding against a stone wall in a ruined courtyard: a punchy boom with crumbling stone debris raining down and a short echo. ${NO_SPEECH}`, duration: 1.8, candidates: 4, influence: 0.5 },
   },
   {

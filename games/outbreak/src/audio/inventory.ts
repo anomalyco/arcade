@@ -2,6 +2,7 @@ import type { CraftKind, PickupClass } from "@arcade/kit/audio"
 import type { StoreState } from "@arcade/kit/sim/ledger"
 import { dayCycle } from "../../shared/day-cycle"
 import { DEFAULT_DOG_TUNING } from "../../shared/dogs/dogs"
+import { blastAge, CRACK_BEAT, crackerAt, crackerPops, dynamiteAt, fireLit } from "../../shared/fire/fire"
 import { RECIPES } from "../../shared/progression"
 import type { SoundActor, SoundEvent } from "./types"
 
@@ -42,10 +43,18 @@ export const PICKUP_SOUND: Readonly<Record<string, `pickup.${PickupClass | "ammo
   cans: "pickup.item",
   toolbox: "pickup.part",
   "car-battery": "pickup.part",
+  flamethrower: "pickup.tool",
+  "flare-gun": "pickup.tool",
+  dynamite: "pickup.item",
+  firecrackers: "pickup.item",
+  molotov: "pickup.item",
+  "bear-trap": "pickup.part",
+  fuel: "pickup.part",
+  "pressure-tank": "pickup.part",
 }
 
 /** Which crafting sound each recipe makes. */
-export const CRAFT_KIND: Readonly<Record<string, CraftKind>> = { bandage: "medical", lure: "tinker", "spiked-board": "wood", battery: "tinker", tripwire: "tinker" }
+export const CRAFT_KIND: Readonly<Record<string, CraftKind>> = { bandage: "medical", lure: "tinker", "spiked-board": "wood", battery: "tinker", tripwire: "tinker", molotov: "tinker", flamethrower: "tinker" }
 
 /** Channel kinds with a held sound, and what plays when one finishes rather than being cancelled. */
 function channelSound(kind: string, label: string): { loop: string; done: string | null } | null {
@@ -91,6 +100,8 @@ export class InventorySounds {
   private radios = new Map<string, { on: number; broken: number }>()
   /** World interactions (AR-56): lamps, flares, dogs and bodies as last heard. */
   private world = new Map<string, { a: number; b: number; c: number }>()
+  /** Fire & explosives (AR-62): each ring store's last heard throw time, state and beat. */
+  private fire = new Map<string, { a: number; b: number; c: number }>()
   private started = false
   readonly holds: SoundHold[] = []
 
@@ -105,6 +116,7 @@ export class InventorySounds {
     this.smashed.clear()
     this.radios.clear()
     this.world.clear()
+    this.fire.clear()
     this.started = false
   }
 
@@ -184,6 +196,10 @@ export class InventorySounds {
           this.verbSound(sid, st, time, emit)
           continue
         }
+        if (sid.startsWith("flamer:") || sid.startsWith("burn:") || sid.startsWith("fire:") || sid.startsWith("dyn:") || sid.startsWith("crack:") || sid.startsWith("trap:")) {
+          this.fireSound(sid, st, time, survivors, emit)
+          continue
+        }
         if (!sid.startsWith("drop:")) continue
         dropCount++
         if (this.drops.has(sid)) continue
@@ -234,6 +250,8 @@ export class InventorySounds {
       this.world.set(sid, { a: c.broken ?? 0, b: c.off ?? 0, c: 0 })
     } else if (sid.startsWith("flare:")) {
       if (!prev) emit({ id: "flare.ignite", x: at.x, y: at.y, source: "flare" })
+      // A flare gun's shot: a dull pop where it was fired from.
+      if (!prev && c.gun && time - (c.t ?? 0) / 10 < 0.5) emit({ id: "gun.pistol.shot", x: at.x + (c.fx ?? 0) / 100, y: at.y + (c.fy ?? 0) / 100, source: "flare-gun", gain: 0.55, rate: 0.62 })
       this.world.set(sid, { a: 1, b: 0, c: 0 })
       if (time * 10 < (c.until ?? 0)) this.holds.push({ key: `flare:${sid}`, id: "flare.loop", x: at.x, y: at.y })
     } else if (sid.startsWith("dog:")) {
@@ -247,6 +265,69 @@ export class InventorySounds {
       if (prev && c.rise && !prev.a) emit({ id: "zombie.groan.idle", x: at.x, y: at.y, source: "body", gain: 1.2 })
       this.world.set(sid, { a: c.rise ?? 0, b: 0, c: 0 })
     }
+  }
+
+  /**
+   * Fire & explosives (AR-62), all reused samples: the flamethrower's ignition and roar (a flare's strike and hiss held
+   * on the sprayer), a sizzle as one of the dead catches, a molotov's glass and whoosh and its pool's hiss, a lit fuse
+   * hissing until the blast, firecrackers' pops on their beat, and a bear trap's clack when set and its snap.
+   */
+  private fireSound(sid: string, st: StoreState, time: number, survivors: readonly { id: string; survivor: SoundActor }[], emit: (e: SoundEvent) => void): void {
+    const at = st.at
+    const c = st.counts
+    const prev = this.fire.get(sid)
+    // A ring store is made the first time its slot is used, so a store not heard before counts if it is recent.
+    const fresh = Boolean(c.t) && (prev ? prev.a !== c.t : time - (c.t ?? 0) / 10 < 0.5)
+    if (sid.startsWith("flamer:")) {
+      const seat = sid.slice(7)
+      const s = survivors.find((x) => x.id === seat)?.survivor
+      const on = c.on ?? 0
+      if (s && on && !prev?.b) emit({ id: "flare.ignite", x: s.x, y: s.y, source: "flamethrower", gain: 1.3, rate: 0.78 })
+      if (s && on) this.holds.push({ key: sid, id: "flare.loop", x: s.x, y: s.y })
+      this.fire.set(sid, { a: c.t ?? 0, b: on, c: 0 })
+      return
+    }
+    if (!at) return
+    if (sid.startsWith("burn:")) {
+      if (fresh) emit({ id: "cooking.sizzle", x: at.x, y: at.y, source: "burn", gain: 0.9, rate: 0.8 })
+    } else if (sid.startsWith("fire:")) {
+      if (fresh && c.src === 1) {
+        emit({ id: "glass.break", x: at.x, y: at.y, source: "molotov" })
+        emit({ id: "flare.ignite", x: at.x, y: at.y, source: "molotov", gain: 1.4, rate: 0.7, delay: 0.05 })
+      }
+      if (c.src === 1 && fireLit(st, time)) this.holds.push({ key: sid, id: "flare.loop", x: at.x, y: at.y })
+    } else if (sid.startsWith("dyn:")) {
+      const age = blastAge(st, time)
+      const p = c.t && age < 0 ? dynamiteAt(st, time) : null
+      if (fresh && p) emit({ id: "flare.ignite", x: p.x, y: p.y, source: "fuse", gain: 0.8, rate: 1.25 })
+      if (p) this.holds.push({ key: sid, id: "flare.loop", x: p.x, y: p.y })
+      const blown = c.t && age >= 0 ? 1 : 0
+      if (blown && (!prev?.b || fresh) && age < 0.5) {
+        emit({ id: "bomb.explode", x: at.x, y: at.y, source: "dynamite", gain: 1.5, rate: 0.82 })
+        emit({ id: "barricade.break", x: at.x, y: at.y, source: "dynamite", gain: 1.2, delay: 0.08 })
+      }
+      this.fire.set(sid, { a: c.t ?? 0, b: blown, c: 0 })
+      return
+    } else if (sid.startsWith("crack:")) {
+      let beat = prev?.c ?? 0
+      if (fresh) emit({ id: "flare.ignite", x: at.x, y: at.y, source: "firecrackers", gain: 0.7, rate: 1.4 })
+      if (fireLit(st, time)) {
+        const now = Math.floor((time - (c.t ?? 0) / 10) / CRACK_BEAT)
+        if (!fresh && now > beat && crackerPops(c.t ?? 0, now)) {
+          const p = crackerAt(st, time)
+          emit({ id: "gun.pistol.shot", x: p.x, y: p.y, source: "firecrackers", gain: 0.32, rate: 1.7 + 0.2 * ((now * 7) % 3) })
+        }
+        beat = now
+      } else beat = 0
+      this.fire.set(sid, { a: c.t ?? 0, b: 0, c: beat })
+      return
+    } else if (sid.startsWith("trap:")) {
+      if (fresh) emit({ id: "gun.pistol.slide", x: at.x, y: at.y, source: "bear-trap", gain: 1.1, rate: 0.7 })
+      if (c.snap && !prev?.b && time - c.snap / 10 < 0.5) emit({ id: "melee.break", x: at.x, y: at.y, source: "bear-trap", gain: 1.3, rate: 0.8 })
+      this.fire.set(sid, { a: c.t ?? 0, b: c.snap ?? 0, c: 0 })
+      return
+    }
+    this.fire.set(sid, { a: c.t ?? 0, b: 0, c: 0 })
   }
 
   /** A bottle breaking, cans strung across a doorway rattling as someone walks through, a car window going in and its alarm wailing. */
