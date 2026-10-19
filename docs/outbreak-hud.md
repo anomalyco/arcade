@@ -220,7 +220,9 @@ getting in and fades out on getting out.
 ## Map sheet and field craft
 
 The map sheet settles in from scale .98 with a 3 px blur on the smooth spring and fades out on the snappy one,
-letting clicks through while it fades. Field craft (hold Q) rises out of the dock and folds back into it.
+letting clicks through while it fades. Field craft (hold Q) rises out of the dock and folds back into it. What it draws (the
+wordless strip or the recipe panel) and the crafting tip card above the dock are `src/crafting/ui.ts`; see "How crafting
+works" in [outbreak-progression.md](outbreak-progression.md#how-crafting-works).
 
 ## Diegetic ground ring
 

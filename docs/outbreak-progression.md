@@ -53,25 +53,54 @@ Each house archetype places a workbench on the back bedroom's east wall and the 
 (`makeTown`); `benchSites` finds them, so a new house archetype only has to place the two props. Both read one shared
 store, `bench:<house>`.
 
-- **Discover.** The first time anyone picks up scrap, chem, planks or batteries, everyone hears which recipes it feeds,
-  and the bench lists every recipe whose materials the squad has seen.
-- **Deposit.** `E` at the bench (or hold `E` at the stash) moves belt materials and pack parts into it; ammo and
-  keys stay on you. Installing the hardware toolbox makes it tier 2, and the car battery wires up a generator.
-- **Research.** A digit at the bench researches a recipe (2.5 s) using the bench's stock first, then yours. It needs
-  light of 0.35: daylight indoors gives 0.9, the room lamp at night 0.2, each flashlight at the bench 0.2, the
-  generator 0.8. At night one survivor with a flashlight on can research; with it off it is too dark. The generator
-  also hums (18 m) every 3 s at night. What one survivor learns, the squad knows.
-- **Craft.** Hold `Q` anywhere for the field-craft strip and press a digit (2 s, cancelled by sprinting). At a bench
-  the same rows craft from its stock too.
-- **Stash.** `E` stores the held item (not the flashlight or pistol); digits take items back. Installed parts stay.
+- **Install.** Carrying the hardware toolbox, `E` at the bench installs it (tier 2); the car battery wires up a
+  generator (light 0.8, and an 18 m hum every 3 s at night).
+- **Stash.** `E` stores the held item (not the flashlight or pistol); digits take items back; hold `E` deposits belt
+  materials. Installed parts stay.
 
-| Recipe | Research (tier) | Craft | Does |
+## How crafting works
+
+Crafting is two steps in two places: **learn** a recipe once, then **make** it anywhere.
+
+1. **Find materials.** Planks, scrap, chem (cloth and alcohol) and batteries go on the belt. Where each turns up most
+   comes from `LOOT_TABLES` (`whereToFind` in `src/crafting/model.ts`): chem in pharmacies and groceries, scrap in
+   garages and hardware stores, and so on.
+2. **Learn at a workbench** (D-19: tried, not told; `docs/outbreak-discovery.md` slice 2). Every safehouse has one in
+   the back bedroom. Tap `E` lays the next pair of belt materials you can make up on its mat; hold `E` tries them
+   (2.5 s, needs light 0.35: daylight, or a flashlight on at night). A right pair makes the thing on the mat, teaches
+   the whole squad and pins a sketch on the corkboard. A pair that needs the toolbox pins a faint idea; any other pair
+   clatters (a 6 m noise) and a crossed-out scrap remembers it. Recipes are also learned from pages in shops, by
+   studying reinforced boards, and by disarming a can tripwire.
+3. **Make it anywhere.** Hold `Q` opens field craft above the dock; it stays open until `Q`, `Escape` or a craft. A
+   digit makes that row (2 s, sprinting or walking away cancels), from your belt plus the bench's stock when you face
+   the bench or the stash. Short rows dim; pressing one anyway leaves the strip open with "Need chem" and the like.
+   "Crafted Bandage" confirms it, and the item goes to its usual hand slot.
+
+| Recipe | Learn (mat pair, tier) | Craft | Does |
 | --- | --- | --- | --- |
-| Bandage | 2 chem (1) | 1 chem | Heals 25 in about a second |
-| Noisemaker | 2 scrap, 1 battery (1) | 1 scrap, 1 battery | A thrown lure that calls the dead for 8 s |
-| Spiked board | 1 plank, 2 scrap (1) | 1 plank, 2 scrap | Melee: +30 damage, 1.6× stagger, longer reach |
-| Reinforced barricade | 2 planks, 3 scrap (2) | none | Each board also takes a scrap and holds 180 instead of 100 |
-| Flashlight battery | 2 scrap, 1 chem (2) | 1 scrap, 1 chem | A spare battery (`R` with the flashlight in hand) |
+| Bandage | chem + chem (1) | 1 chem | Heals 25 in about a second |
+| Noisemaker | scrap + battery (1) | 1 scrap, 1 battery | A thrown lure that calls the dead for 8 s |
+| Spiked board | plank + scrap (1) | 1 plank, 2 scrap | Melee: +30 damage, 1.6× stagger, longer reach |
+| Flashlight battery | scrap + chem (2) | 1 scrap, 1 chem | A spare battery (`R` with the flashlight in hand) |
+| Can tripwire | disarm one | 2 scrap | Rattles when something walks through a doorway |
+| Reinforced barricade | scrap + scrap (2), or a hardware flyer | none | Each board also takes a scrap and holds 180 instead of 100 |
+
+Costs are Progression › Field-craft cost × these (the HUD reads the live ledger rule, so they always agree).
+
+**Crafting HUD styles** (Lab: Backquote › Crafting › Style; `src/crafting/`). Today's strip is the default until Kit
+picks on the arcade board:
+
+| Style | Hold Q shows | Tips |
+| --- | --- | --- |
+| Today | one row per learned recipe: digit, a pencil glyph of what it makes and of what it takes; no words; nothing learned is an empty card | none |
+| Recipe panel | every recipe by name: learned rows with digit and have/need per material, the short one in caution with where it turns up; unlearned rows say how they are learned | none |
+| Teaching tips | today's strip (nothing learned says to try pairs at a workbench) | one line above the dock at the moments that teach: a new material, walking up to the bench, a recipe learned ("hold Q, craft it anywhere"), a pickup that makes a learned recipe affordable |
+| Panel and tips | the recipe panel | the tips |
+
+Each tip shows `craftTipUses` times per browser (`localStorage["arcade.outbreak.craftTips"]`, Lab › Crafting › Forget
+shown tips), for `craftTipTime` seconds, and never on the first look at a save or room. Proof:
+`tests/crafting.test.ts`; stills of every style through a new player's walkthrough:
+`bun scripts/crafting-proof.ts --phase variants` (via `hivemind run --kind browser`).
 
 ## Lab
 

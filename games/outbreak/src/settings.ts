@@ -23,6 +23,7 @@ import { DEFAULT_FOG_OF_WAR, type FogOfWarSettings } from "./fog-of-war"
 import { DEFAULT_GROUND_SETTINGS, type GroundSettings } from "./ground"
 import { DEFAULT_HUD_SETTINGS, type HudSettings } from "./hud"
 import { DEFAULT_BLOOD_SETTINGS, type OutbreakBloodSettings } from "./blood/settings"
+import { DEFAULT_CRAFTING_SETTINGS, type CraftingSettings } from "./crafting/settings"
 import { DEFAULT_DISCOVERY_SETTINGS, type DiscoverySettings } from "./discovery/settings"
 import { DEFAULT_MAP_SETTINGS, type MapSettings } from "./map/settings"
 import {
@@ -214,6 +215,7 @@ export type OutbreakSubsystemMap = {
   audio: AudioSettings
   progression: ProgressionTuning
   discovery: DiscoverySettings
+  crafting: CraftingSettings
   world: OutbreakWorldSettings
   vision: OutbreakVisionSettings
   materials: OutbreakMaterialSettings
@@ -253,6 +255,7 @@ export type OutbreakSettings = OutbreakSubsystemMap &
   AudioSettings &
   ProgressionTuning &
   DiscoverySettings &
+  CraftingSettings &
   OutbreakWorldSettings &
   OutbreakVisionSettings &
   OutbreakMaterialSettings &
@@ -284,6 +287,7 @@ export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "audio",
   "progression",
   "discovery",
+  "crafting",
   "world",
   "vision",
   "materials",
@@ -320,6 +324,7 @@ export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
     audio: { ...DEFAULT_AUDIO_SETTINGS },
     progression: { ...DEFAULT_PROGRESSION_TUNING },
     discovery: { ...DEFAULT_DISCOVERY_SETTINGS },
+    crafting: { ...DEFAULT_CRAFTING_SETTINGS },
     world: { ...DEFAULT_OUTBREAK_WORLD },
     vision: { ...DEFAULT_OUTBREAK_VISION },
     materials: { ...DEFAULT_OUTBREAK_MATERIALS },
