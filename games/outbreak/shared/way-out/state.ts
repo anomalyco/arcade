@@ -18,6 +18,7 @@ import type { Ledger, StoreState } from "@arcade/kit/sim/ledger"
  * | `rb:<i>`, `rbs:<i>` | roadblock `i` is gone (1 blown, 2 cut); it has been seen (or the soldier's orders marked it) |
  * | `hw`, `hwV`, `hwAt`, `hwBy` | a hotwire in progress (ten-thousandths), on which car, last held at, by whom (slot index + 1) |
  * | `cut`, `cutI`, `cutAt` | a chain being cut (ten-thousandths), at roadblock `cutI - 1`, last held at |
+ * | `hx`, `hy`, `ex`, `ey` | where the hold is, and where the latest event happened (decimetres), for sound |
  */
 
 export const WAY_OUT_STORE = "wayout"

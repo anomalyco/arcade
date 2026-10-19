@@ -1,7 +1,7 @@
 import { pushOut } from "@arcade/kit/sim/geom"
 import { registerOutbreakSharedFeature } from "../feature-registry"
 import type { OutbreakSim } from "../sim-types"
-import { blockCarRects, gateHandler, hotwireHandler, pushOutOfBlocks, stepRoadblocks, stepWayOutHolds, wayOutRefuel } from "./car"
+import { blockCarRects, gateHandler, hotwireHandler, keepDeadOut, pushOutOfBlocks, stepRoadblocks, stepWayOutHolds, tellPumpsDry, wayOutRefuel } from "./car"
 import { landmarkRects } from "./landmark"
 import { clueHandler, createWayOutState, planOf, runWon, signalHandler, stepWayOut, type WayOutState } from "./runtime"
 import { DEFAULT_WAY_OUT_TUNING, wayOutTuning, type WayOutTuning } from "./tuning"
@@ -53,10 +53,12 @@ export const outbreakWayOutSharedFeature = registerOutbreakSharedFeature<WayOutS
   stepSurvivorActions: (ctx) => stepWayOutHolds(ctx, wayOutTuning(ctx.resolved.features)),
   stepWorld: ({ sim, resolved, state }) => {
     state.tuning = wayOutTuning(resolved.features)
+    tellPumpsDry(sim, state)
     return { topologyChanged: stepRoadblocks(sim, state) }
   },
   stepWorldLate: ({ sim, resolved, state }) => {
     state.tuning = wayOutTuning(resolved.features)
+    keepDeadOut(sim, state.tuning)
     stepWayOut(sim, state)
   },
 })

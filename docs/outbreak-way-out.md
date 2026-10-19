@@ -80,8 +80,8 @@ the radio, the flyer, the torn map with its arrow and cross, the sign, the order
 
 - **Fuel.** The vehicles subsystem asks `refuelRule()` how tanks fill (`shared/vehicles.ts`: Chem into an empty tank
   and free pumps, as before). The car project answers: a gas can (`fuel`, belt) per pour, `canFill` (40%) each, into
-  any tank with room for a whole can, all you carry, when you get in or press the throttle; the pumps are dry. Gas cans
-  are the flamethrower's fuel too.
+  any tank with room for a whole can, all you carry, when you get in or press the throttle; the pumps are dry (a driver
+  stopped at a gas station is told so). Gas cans are the flamethrower's fuel too.
 - **Keys.** A key from a house dresser or a car battery from the hardware store work as before. With a toolbox in
   your pack and no key, a car with no keys offers Hotwire (hold E, 6 s, heard 14 m off). Progress is in the store, so
   a teammate sees it; let go and it lapses.
@@ -92,7 +92,16 @@ the radio, the flyer, the torn map with its arrow and cross, the sign, the order
   the noise bus within `blastReach` (3 m) of one clears it (dynamite: `shared/fire/`); bolt cutters (`bolt-cutters`,
   pack, 10% of hardware, 5% of garage and 6% of warehouse shelves) cut a gate's padlock (hold E, 4 s). The road grid
   means there is always a way round. They read at night by their own light: the police lamps blink red and blue, a
-  pile-up smoulders.
+  pile-up smoulders. The dead are pushed out of them (and out of the destination's solids) after the crowd steps, so
+  they slide along them and come through the gap as people do.
+
+## Sound
+
+`src/way-out/sounds.ts`, observed by the sound director from the `wayout` store alone, so a co-op client hears what
+the room did. Library samples: paper for a clue, tinkering held while a car is hotwired and a click when it catches,
+the cutters working at a padlock and the gate swinging open, metal coming down after a roadblock's blast (the blast
+is the dynamite's own), the flare at the signal, a chime at the escape, a groan when the way out is lost. Hold and
+event positions are in the store (`hx`, `hy`, `ex`, `ey`).
 
 ## Clock
 
@@ -143,6 +152,6 @@ the feature registered: identical `SimState` hashes.
 
 ## Planned
 
-- Sound for the clues, the signal, hotwiring, cutting and the escape; zombie pathing around the landmark's and the
-  roadblocks' solids (the dead walk through them today).
 - A flat tyre as another car part; a key for each car in its owner's house; carrying a downed friend to the car.
+- The dead's nav mesh does not know the destination or the roadblocks (they are pushed out, not routed round); the
+  craft (boat, convoy, plane, helicopter) is not drawn arriving at dawn; recorded sounds for the horn and the craft.

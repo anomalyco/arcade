@@ -7,6 +7,7 @@ import { impactDelay, shotImpacts } from "./impacts"
 import { InventorySounds, type SoundHold, type SoundProgression } from "./inventory"
 import { RELOAD_STARTS, reloadElapsed } from "./reload"
 import { SpecialSounds } from "./specials"
+import { WayOutSounds } from "../way-out/sounds"
 import type { SoundActor, SoundEvent } from "./types"
 
 export type { SoundActor, SoundEvent } from "./types"
@@ -80,6 +81,8 @@ export class SoundDirector {
   readonly specials = new SpecialSounds()
   /** Going down, the heartbeat while down, a revive, death and the run's end. */
   readonly death = new DeathSounds()
+  /** The Way Out (AR-64): clues, hotwiring, cutting, roadblocks, the signal and the escape. */
+  readonly wayOut = new WayOutSounds()
   private nextGroan = 0
   private lastAlert = -Infinity
   private readonly rng: () => number
@@ -101,6 +104,7 @@ export class SoundDirector {
     this.inventory.reset()
     this.specials.reset()
     this.death.reset()
+    this.wayOut.reset()
   }
 
   /** Sounds held for as long as something lasts, as of the last `observe`: crafts, noisemakers, generators. */
@@ -341,6 +345,7 @@ export class SoundDirector {
     for (const id of this.actors.keys()) if (!present.has(id)) this.actors.delete(id)
     this.inventory.observe(world.progression, world.hour ?? 12, world.survivors, out, world.time)
     this.death.observe(world.death, t, listener, emit)
+    this.wayOut.observe(world.progression?.ledger, listener, emit, this.inventory.holds)
 
     this.started = true
     return out

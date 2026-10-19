@@ -17,6 +17,10 @@ import { explode } from "../shared/fire/runtime"
 import { BOLT_CUTTERS } from "../shared/way-out/car"
 import { broadcastOn, carriesFlyer, EVENT_BLOWN, EVENT_CUT, EVENT_ESCAPED, EVENT_HOTWIRED, EVENT_LEFT_BEHIND, EVENT_MISSED, policeSites, roadSites } from "../shared/way-out/clues"
 import { roadblocksOf } from "../shared/way-out/roadblocks"
+import { landmarkRects } from "../shared/way-out/landmark"
+import { WayOutSounds } from "../src/way-out/sounds"
+import type { SoundEvent } from "../src/audio/types"
+import type { SoundHold } from "../src/audio/inventory"
 import { outbreakWayOutSharedFeature } from "../shared/way-out/index"
 import { alongRoute, DESTINATION_KINDS, routeLength, TOWN_CROSSROADS, wayOutPlan } from "../shared/way-out/plan"
 import { nearDawnHour, planOf, seedOf, type WayOutState } from "../shared/way-out/runtime"
@@ -425,6 +429,80 @@ describe("The Way Out: the car and the roadblocks", () => {
     // As before with the car project off: Chem fills an empty tank to 55, the pumps work.
     step(sim, 1, tuning({ carProject: 0 }))
     expect(sim.vehicles.refuelRule()).toMatchObject({ item: "chem", pumps: true })
+  })
+})
+
+describe("The Way Out: polish", () => {
+  test("the dead do not walk through the destination's solids or a roadblock, but squeeze through its gap", () => {
+    const sim = quiet()
+    const a = sim.addSurvivor("a", 0)
+    const tune = tuning()
+    step(sim, 2, tune)
+    const plan = planOf(sim, T)
+    const b = roadblocksOf(plan, T)[0]!
+    place(sim, a, b.x - b.dx * 30, b.y - b.dy * 30)
+    const wall = b.walk[0]!
+    const solid = landmarkRects(plan)[0]!
+    const inside = (r: readonly number[], p: { x: number; y: number }) => p.x > r[0]! && p.x < r[2]! && p.y > r[1]! && p.y < r[3]!
+    const z1 = sim.ai.spawnZombie(sim.town, (wall[0] + wall[2]) / 2, (wall[1] + wall[3]) / 2, "wander")
+    const z2 = sim.ai.spawnZombie(sim.town, (solid[0] + solid[2]) / 2, (solid[1] + solid[3]) / 2, "wander")
+    const z3 = sim.ai.spawnZombie(sim.town, b.gap.x, b.gap.y, "wander")
+    step(sim, 1, tune)
+    expect(inside(wall, z1)).toBe(false)
+    expect(inside(solid, z2)).toBe(false)
+    expect(Math.hypot(z3.x - b.gap.x, z3.y - b.gap.y)).toBeLessThan(0.5)
+  })
+
+  test("a driver stopped at a gas station hears the pumps are dry", () => {
+    const sim = quiet()
+    const a = sim.addSurvivor("a", 0)
+    const tune = tuning()
+    step(sim, 2, tune)
+    // The nearest gas station in the streamed world: walk there so its chunk loads.
+    let at: { x: number; y: number } | null = null
+    for (let r = 0; r < 12 && !at; r++) {
+      for (let cx = -r; cx <= r && !at; cx++) {
+        for (let cy = -r; cy <= r && !at; cy++) {
+          if (Math.max(Math.abs(cx), Math.abs(cy)) !== r) continue
+          const g = generateWorldChunk(7, 7, cx, cy, "streaming").buildings.find((x) => (x.archetype ?? x.kind) === "gas_station")
+          if (g) at = { x: (g.rect[0] + g.rect[2]) / 2, y: g.rect[3] + 3 }
+        }
+      }
+    }
+    expect(at).not.toBeNull()
+    place(sim, a, at!.x, at!.y)
+    step(sim, 2, tune)
+    const station = sim.town.buildings.find((x) => (x.archetype ?? x.kind) === "gas_station")!
+    expect(station).toBeDefined()
+    const v = sim.vehicles.spawnVehicle("sedan", station.rect[0] - 4, (station.rect[1] + station.rect[3]) / 2, Math.PI / 2, { fuel: 30 })
+    v.seats[0] = a.id
+    a.survivor.vehicleId = v.id
+    step(sim, 2, tune)
+    expect(a.notices.some((n) => n.text?.includes("pumps are dry"))).toBe(true)
+    expect(v.fuel).toBeLessThan(31)
+  })
+
+  test("sounds come from the store: a clue, the hotwire held and caught, a blast, the escape", () => {
+    const stores = new Map<string, { counts: Record<string, number> }>()
+    const sounds = new WayOutSounds()
+    const run = () => {
+      const out: SoundEvent[] = []
+      const holds: SoundHold[] = []
+      sounds.observe({ stores } as never, { x: 1, y: 2 }, (e) => out.push(e), holds)
+      return { ids: out.map((e) => e.id), holds: holds.map((h) => h.id) }
+    }
+    expect(run()).toEqual({ ids: [], holds: [] })
+    stores.set(WAY_OUT_STORE, { counts: { last: 5, lastAt: 10 } })
+    expect(run().ids).toEqual(["pickup.item"])
+    expect(run().ids).toEqual([])
+    stores.get(WAY_OUT_STORE)!.counts = { last: 5, lastAt: 10, hw: 4000, hx: 440, hy: 700 }
+    expect(run()).toEqual({ ids: [], holds: ["craft.tinker.loop"] })
+    stores.get(WAY_OUT_STORE)!.counts = { last: EVENT_HOTWIRED, lastAt: 11, ex: 440, ey: 700 }
+    expect(run().ids).toEqual(["craft.tinker.done", "flashlight.click"])
+    stores.get(WAY_OUT_STORE)!.counts = { last: EVENT_BLOWN, lastAt: 12 }
+    expect(run().ids).toEqual(["melee.hit.metal", "impact.bullet.metal"])
+    stores.get(WAY_OUT_STORE)!.counts = { last: EVENT_ESCAPED, lastAt: 13 }
+    expect(run().ids).toEqual(["bench.research.done"])
   })
 })
 

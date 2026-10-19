@@ -35,7 +35,7 @@ export default defineStation({
   pickOne: true,
   variants: variants.map((v) => ({ ...v, url: page })),
   board: { feature: "AR-64" },
-  metrics: [{ label: "Way Out tests", value: "19 sim", source: "games/outbreak/tests/way-out.test.ts" }],
+  metrics: [{ label: "Way Out tests", value: "22 sim", source: "games/outbreak/tests/way-out.test.ts" }],
   paths: ["games/outbreak/shared/way-out", "games/outbreak/src/way-out"],
   branches: ["outbreak-way-out*"],
   links: [{ label: "Play Outbreak", href: "/arcade/outbreak/?seed=7" }],
