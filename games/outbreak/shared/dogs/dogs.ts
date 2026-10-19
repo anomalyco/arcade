@@ -60,6 +60,8 @@ export type DogSite = {
 /** Homes that might keep a dog in the yard, and how many do, fixed per building. */
 const DOG_HOMES: readonly string[] = ["house", "ranch", "cottage", "cabin"]
 const DOG_CHANCE = 0.2
+/** The start house's neighbour always keeps one, so a dog is there to meet from the first minute. */
+const ALWAYS: readonly string[] = ["elm"]
 const CHAIN = 2.2
 
 function hash01(s: string): number {
@@ -87,7 +89,7 @@ function open(town: Town, x: number, y: number, r: number): boolean {
 /** A home's dog, if it keeps one: staked in a side yard where the camera sees it, the kennel against the stake. */
 export function dogSite(town: Town, b: Building): DogSite | null {
   if (!DOG_HOMES.includes(b.archetype ?? b.kind)) return null
-  if (hash01(`${town.seed}:dog:${b.id}`) >= DOG_CHANCE) return null
+  if (!ALWAYS.includes(b.id) && hash01(`${town.seed}:dog:${b.id}`) >= DOG_CHANCE) return null
   const [x0, y0, x1, y1] = b.rect
   const my = (y0 + y1) / 2
   const east = hash01(`${town.seed}:dog-side:${b.id}`) < 0.5

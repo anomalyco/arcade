@@ -12,6 +12,12 @@ const radio = (scene: string): StationCommand[] => [
   { command: "radios.stage", args: { scene } },
 ]
 
+/** World interactions (AR-56): each feature's own `<feature>.stage` command. */
+const world = (command: string, scene: string): StationCommand[] => [
+  { command: "scene.set-param", args: { key: "timeScale", value: 1 } },
+  { command, args: { scene } },
+]
+
 const variants: StationVariant[] = [
   { id: "low-flashlight", group: "House", label: "Low flashlight", note: "12% battery at night: the beam narrows, shortens, warms to amber and sputters. No ring, no words.", setup: stage("low-flashlight") },
   { id: "weakened-barricade", group: "House", label: "Weakened barricade", note: "Three boards at half strength from inside: one flush, one bowed and split, one hanging from a nail.", setup: stage("weakened-barricade") },
@@ -32,6 +38,16 @@ const variants: StationVariant[] = [
   { id: "car-alarm", group: "Stealth and noise", label: "Car alarm", note: "A car with its window put in and the alarm going: indicators flashing and a wail every beat until the battery dies. Half the abandoned cars have one.", setup: stage("car-alarm") },
   { id: "radio-off", group: "Stealth and noise", label: "House radio", note: "Ash's radio on the living-room table at night. E switches it on: it plays until its battery runs down, calling the dead to the house; E again saves what is left.", setup: radio("radio-off") },
   { id: "radio-lure", group: "Stealth and noise", label: "Radio as a lure", note: "The radio playing in Ash's house with the front door open and six of the dead on the street. They turn and go in to it, and once they stand at it a moment they knock it to the floor.", setup: radio("radio-lure") },
+  { id: "lamp-street", group: "World interactions", label: "Shoot out a street lamp", note: "Night, pistol in hand, aimed at the head of the street lamp by Ash's house. Click: the glass pops and rains on the pavement, the lamp is dark for good, and the dead see less of you under it.", setup: world("lights.stage", "lamp-street") },
+  { id: "lamp-porch", group: "World interactions", label: "Porch light switch", note: "On Ash's porch step facing the switch. E switches the porch light off (and on again); face the door and the door keeps the prompt.", setup: world("lights.stage", "lamp-porch") },
+  { id: "lamp-out", group: "World interactions", label: "A lamp shot out", note: "The street lamp by Ash's house already shot out: glass under it and a dark pool where the light was.", setup: world("lights.stage", "lamp-out") },
+  { id: "flare-hand", group: "World interactions", label: "Road flares in hand", note: "Night on the street south of Ash's house, three road flares in hand and six of the dead up the road. Click to throw one: it burns red for half a minute and the dead who can see it go and stand in its light.", setup: world("flares.stage", "flare-hand") },
+  { id: "flare-lit", group: "World interactions", label: "A burning flare", note: "The same street with a flare already burning in the road: red light, smoke, and the dead turning towards it.", setup: world("flares.stage", "flare-lit") },
+  { id: "body", group: "World interactions", label: "A body to search", note: "Dusk beside the dead survivor by Ash's porch. E searches it like a drawer (short and quiet) and what it carried shows above it; E or the digits take it.", setup: world("bodies.stage", "body") },
+  { id: "body-rising", group: "World interactions", label: "A body that rises", note: "The same body as it stirs under your hand: rarely (fixed per body from the seed) one was only nearly dead. It gets up and comes for you, and what it carried falls where it lay.", setup: world("bodies.stage", "body-rising") },
+  { id: "dog", group: "World interactions", label: "Chained dog", note: "Dusk at Elm's side yard, a tin of food in hand. The dog barks at you and at the dead, which warns you and calls them; E feeds it and it hushes and knows you.", setup: world("dogs.stage", "dog") },
+  { id: "dog-fed", group: "World interactions", label: "A fed dog", note: "The same dog just fed: tail going, its bowl by the kennel. From now on it only barks at the dead.", setup: world("dogs.stage", "dog-fed") },
+  { id: "dog-dead", group: "World interactions", label: "A dog the dead got to", note: "Stay among the dead a barking dog called for long enough and they kill it.", setup: world("dogs.stage", "dog-dead") },
   { id: "repair", group: "House", label: "Crowbar repair", note: "A worn barricade and a crowbar in hand. B re-nails it to full instead of adding a board; practice makes it faster and quieter.", setup: stage("repair") },
   { id: "broken-in", group: "Vignettes", label: "Broken in", note: "A house broken into through its side window: glass on the floor, a survivor down with a snapped bat, the zombie that came through. Walk over the glass upright and it crunches; crouch to step softly. The bat left a scrap.", setup: stage("broken-in") },
   { id: "hid", group: "Vignettes", label: "Hid in the closet", note: "The dead in front of a bedroom closet, spent casings at its door, a battery left behind. Somebody hid in there and lived.", setup: stage("hid") },
@@ -43,7 +59,7 @@ export default defineStation({
   id: "outbreak-discovery",
   title: "Outbreak: Discovered, Not Told",
   summary:
-    "State read from the world instead of labels: the flashlight's charge in its beam, barricade health in its boards, containers that open to show what is inside, prompt words that fade once you know them, and a workbench where two materials tried together on the mat pin a pencil sketch to the corkboard. Knowledge is found too: flyers, charts and photos left in buildings, a reinforced window to study, and hands that board up faster and quieter with practice or from watching a teammate. New verbs are learned by doing: crouching, closets and peepholes, bottles, can tripwires, car alarms and house radios as lures, and crowbar repairs. Small seeded scenes in every district show what happened to the people before you: a house broken into, someone who hid, bottles that drew the dead away, a car alarm that called them. Tunables are in the Discovery, Progression, Verbs and Radios groups.",
+    "State read from the world instead of labels: the flashlight's charge in its beam, barricade health in its boards, containers that open to show what is inside, prompt words that fade once you know them, and a workbench where two materials tried together on the mat pin a pencil sketch to the corkboard. Knowledge is found too: flyers, charts and photos left in buildings, a reinforced window to study, and hands that board up faster and quieter with practice or from watching a teammate. New verbs are learned by doing: crouching, closets and peepholes, bottles, can tripwires, car alarms and house radios as lures, and crowbar repairs. World interactions: street lamps and porch lights you can shoot out or switch off, road flares that pull the dead into their red light, dead survivors to search (one now and then rises), and chained dogs that bark at everything until fed. Small seeded scenes in every district show what happened to the people before you: a house broken into, someone who hid, bottles that drew the dead away, a car alarm that called them. Tunables are in the Discovery, Progression, Verbs, Radios, Lights out, Flares, Bodies and Dogs groups (flare light and smoke under Night lights).",
   order: 121,
   prop: "panels",
   color: 0xd8b878,
@@ -54,8 +70,8 @@ export default defineStation({
   pickOne: true,
   variants: variants.map((v) => ({ ...v, url: page })),
   board: { feature: "AR-29", decision: "D-19" },
-  metrics: [{ label: "Discovery tests", value: "6 + 12 tinkering + 12 found + 19 verbs + 6 vignettes + 8 radios + 4 co-op", source: "games/outbreak/tests/discovery.test.ts, tinker.test.ts, found.test.ts, verbs.test.ts, vignettes.test.ts, radios.test.ts, coop.test.ts" }],
-  paths: ["games/outbreak/shared/discovery", "games/outbreak/src/discovery", "games/outbreak/shared/radios", "games/outbreak/src/radios"],
+  metrics: [{ label: "Discovery tests", value: "6 + 12 tinkering + 12 found + 19 verbs + 6 vignettes + 8 radios + 15 world interactions + 4 co-op", source: "games/outbreak/tests/discovery.test.ts, tinker.test.ts, found.test.ts, verbs.test.ts, vignettes.test.ts, radios.test.ts, world-interactions.test.ts, coop.test.ts" }],
+  paths: ["games/outbreak/shared/discovery", "games/outbreak/src/discovery", "games/outbreak/shared/radios", "games/outbreak/src/radios", "games/outbreak/shared/lights-out", "games/outbreak/shared/flares", "games/outbreak/shared/bodies", "games/outbreak/shared/dogs"],
   branches: ["discovery*"],
   links: [{ label: "Play Outbreak", href: "/arcade/outbreak/?seed=7" }],
 })

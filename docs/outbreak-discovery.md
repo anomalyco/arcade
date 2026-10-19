@@ -291,3 +291,35 @@ Station: `outbreak-discovery` › House radio, Radio as a lure.
   down for everyone.
 - `scripts/radios-proof.ts` (via `hivemind run --kind browser --fetch captures/outbreak-radios`): stills off, playing and
   broken, and a muted clip of the lure.
+
+## World interactions: Lights Out, road flares, bodies, chained dogs (AR-56, D-37)
+
+Kit's picks from D-37 (1, 4, 7, 8). Each is a shared feature (`shared/<feature>/`: domain file, `runtime.ts`,
+`index.ts` registration) and a client feature (`src/<feature>/index.ts`: Lab controls, `<feature>.stage` command,
+harness), one line each in `shared/features.ts` and `src/features.ts`. State is ledger stores only, so it snapshots,
+streams and replicates with no wire changes. Tunables are spread into the Discovery settings; each shared feature reads
+its own namespace with `discovery` as a legacy source. AI hooks stay small: lures go through `ai.emitNoise` and through
+the zombies' existing investigate target, never `ai.ts`.
+
+| | Lights Out (`lights`, order 27) | Road flares (`flares`, 28) | Bodies To Search (`bodies`, 29) | Chained dogs (`dogs`, 30) |
+| --- | --- | --- | --- | --- |
+| Where | Every street lamp and porch light | Loot: garages, police, gas stations, hardware, warehouses, a few house shelves, bodies (rolls of their own, so old containers keep their contents) | The `broken-in` vignette's survivor, plus ~16% of buildings (by the front door) and ~12% of abandoned cars (beside it) | ~20% of homes in a side yard, and always Elm, next to the start house |
+| Verb | Shoot a lamp's head (pistol); E at a porch switch beside the front door, only when faced (else the door keeps the prompt) | Fire with a flare selected throws it (`flareThrow` 11 m, stops at walls) | E **Search** (`bodySearchTime` 1.6 s, `bodySearchNoise` 4 m), then **Take all** or digits | E **Feed** (needs Canned Food: kitchens, grocery, diner, bodies) |
+| Effect | Dark for good (shot) or until switched on; `lamp.power` is 0 on the sim's town so `samplePointLightLevel` (zombie sight) drops; glass on the ground (verbs' `glass:` store, crunches, swept like a bottle's); pop noise `lampPopNoise` 9 m | Burns `flareSeconds` 30 s; every `flareBeat` the dead in `flareReach` (16 m at night, shorter by day) with clear sight past walls and shut doors, not chasing, go to investigate a spot of their own round it | `bodyRiseChance` 8% (fixed per body; never the vignette's) rise `bodyRiseDelay` 0.7 s after you reach: a zombie spawns chasing you and the loot drops as `drop:body:<key>` | Barks every `dogBeat` 1.1 s (noise `dogBarkNoise` 22 m) while the dead or an unfed survivor are within `dogSense` 11 m in sight; fed: quiet for `dogHushTime` 120 s and never barks at survivors again; the dead within its chain for `dogKillTime` 3 s kill it |
+| State | `lamp:<x>,<y>` {broken, off, t} | `flare:<n>` {t, until}, deleted when out | `body:<key>` slots + {rise, risen} | `dog:<building>` {bark, since, fed, hush, near, dead} |
+| Look | Night-lights presenter's `trimLamp` zeros the lamp and its bulb from the ledger | `FlareProps` stick with a glowing tip; red sputtering light packed by the night-lights presenter even with practicals off (`nlFlarePower`, `nlFlareRadius`); smoke and core as feel sprites (`nlFlareSmoke`) | `BodyProps`: the vignettes' survivor mesh, a satchel until emptied, a shudder as it rises; a blood pool each (`src/blood/placement.ts`) | `DogProps`: kennel, stake, chain links; strains and lunges barking, lies at the kennel quiet, wags fed (bowl by the kennel), on its side dead (`dogLunge`, `dogWag`) |
+| Sound | `impact.bullet.glass`; switch `flashlight.click` | `flare.ignite`, `flare.loop` (new, ElevenLabs) | `search.rummage` (channel); a groan as it stirs | `dog.bark`, `dog.yelp`, `dog.eat` (new, ElevenLabs) |
+| Glyph | `light-on`, `light-off` (slashed) | n/a | search, take-all | `feed` (a bone) |
+
+Items: `flare` (Road Flare, hotbar slot 4, stack 3, rule `throw:flare`) and `food` (Canned Food, slot 3, stack 3, rule
+`feed:dog`; held, the button shoves). Lab: Backquote › Lights out, Flares, Bodies, Dogs (stages included). Station:
+`outbreak-discovery` › World interactions.
+
+### Proof
+
+- `tests/world-interactions.test.ts` (15): a shot past a street lamp breaks it once (glass, pop, power 0, darker under
+  it); a lamp behind a wall is safe; the porch switch toggles off and on and the door keeps its prompt when faced; a
+  dark lamp stays dark in a restored fork; throwing a flare uses one, burns and goes out; the dead in sight go to it,
+  chasers do not, walls hide it; bodies are deterministic and searchable, a rising one spawns a chaser and drops its
+  loot, vignette bodies never rise; Elm's dog barks on a beat, feeding hushes it and needs food, a fed dog still barks
+  at the dead, the dead kill it.

@@ -12,7 +12,7 @@ import type { CueRecipe, MixCategory, SampleAssetMeta, StealPolicy } from "./typ
 export type SfxGroup =
   | "gun" | "melee" | "foot" | "door" | "window" | "glass" | "barricade" | "search" | "pickup" | "flashlight"
   | "zombie" | "body" | "ambience" | "ui" | "impact" | "craft" | "bench" | "item" | "pack" | "lure" | "generator" | "radio" | "vehicle"
-  | "creature" | "crowd" | "cooking" | "bow"
+  | "flare" | "dog" | "creature" | "crowd" | "cooking" | "bow"
 
 export type SfxSurface = "concrete" | "grass" | "wood"
 
