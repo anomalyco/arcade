@@ -15,6 +15,7 @@ import "./pacing/index"
 import "./progression/index"
 import "./props/index"
 import "./radios/index"
+import "./specials/index"
 import "./vehicles/index"
 import "./weather/index"
 

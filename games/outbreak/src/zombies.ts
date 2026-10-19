@@ -32,6 +32,8 @@ import {
   zombieArchetypeIndex,
   zombiePalette,
 } from "./look/refined-figure"
+import { specialKindOf, SPECIAL_LURKER, type SpecialKind } from "../shared/specials/kinds"
+import { applySpecialPalette, SpecialAccessories, specialCrouch, specialHeadLift, specialHunch, specialLook } from "./specials/figure"
 import { zombieProfile, type ZombieTuning } from "./zombie-profile"
 import { STRIKE_TIME, strikeEnvelope } from "./zombie-strikes"
 
@@ -408,6 +410,13 @@ export class ZombieCrowdRenderer {
   strikeScale = 1
   private overlayCanvas: HTMLCanvasElement | null = null
   private overlayCtx: CanvasRenderingContext2D | null = null
+  /** Special zombies' helmets, shields, bellies and jaws (`src/specials/figure.ts`). */
+  private readonly accessories: SpecialAccessories
+  /** The zombie being drawn: its whole-body scale about the ground point under it. */
+  private agentScale = 1
+  private agentOx = 0
+  private agentOy = 0
+  private agentOz = 0
 
   // Flat Structure-of-Arrays (SoA) per-agent animation state (zero per-frame heap allocations)
   private capacity = INITIAL_AGENT_CAPACITY
@@ -457,6 +466,7 @@ export class ZombieCrowdRenderer {
     if (maxAgents > this.capacity) this.growCapacity(maxAgents)
     this.addModel = renderer.addModel.bind(renderer)
     this.models = buildZombiePartMeshes().map((m) => renderer.addModel(m))
+    this.accessories = new SpecialAccessories(renderer)
     this.partData = Array.from({ length: PART_COUNT }, () => new Float32Array(MAX_INSTANCES_PER_PART * INST_FLOATS))
     this.poolBatches = Array.from({ length: PART_COUNT }, (_, i) => ({
       model: this.models[i]!,
@@ -742,14 +752,15 @@ export class ZombieCrowdRenderer {
       data = this.partData[partIndex]!
       offset = count * INST_FLOATS
     }
-    data[offset] = b[fOff]!
-    data[offset + 1] = b[fOff + 1]!
-    data[offset + 2] = b[fOff + 2]!
+    const sc = this.agentScale
+    data[offset] = this.agentOx + (b[fOff]! - this.agentOx) * sc
+    data[offset + 1] = this.agentOy + (b[fOff + 1]! - this.agentOy) * sc
+    data[offset + 2] = this.agentOz + (b[fOff + 2]! - this.agentOz) * sc
     data[offset + 3] = yaw
     data[offset + 4] = tintR * this.partTint[partIndex * 3]!
     data[offset + 5] = tintG * this.partTint[partIndex * 3 + 1]!
     data[offset + 6] = tintB * this.partTint[partIndex * 3 + 2]!
-    data[offset + 7] = 1
+    data[offset + 7] = sc
     data[offset + 8] = 0
     data[offset + 9] = 0
     data[offset + 10] = alpha
@@ -797,14 +808,15 @@ export class ZombieCrowdRenderer {
       data = this.partData[partIndex]!
       offset = count * INST_FLOATS
     }
-    data[offset] = b[fOff]!
-    data[offset + 1] = b[fOff + 1]!
-    data[offset + 2] = b[fOff + 2]!
+    const sc = this.agentScale
+    data[offset] = this.agentOx + (b[fOff]! - this.agentOx) * sc
+    data[offset + 1] = this.agentOy + (b[fOff + 1]! - this.agentOy) * sc
+    data[offset + 2] = this.agentOz + (b[fOff + 2]! - this.agentOz) * sc
     data[offset + 3] = yaw
     data[offset + 4] = tintR * this.partTint[partIndex * 3]!
     data[offset + 5] = tintG * this.partTint[partIndex * 3 + 1]!
     data[offset + 6] = tintB * this.partTint[partIndex * 3 + 2]!
-    data[offset + 7] = 1
+    data[offset + 7] = sc
     data[offset + 8] = p
     data[offset + 9] = r
     data[offset + 10] = alpha
@@ -863,6 +875,10 @@ export class ZombieCrowdRenderer {
     this.ghostPartCounts[partIndex] = count + 1
   }
 
+  private emitSpecial(kind: SpecialKind, bOff: number, hidden: number, shade: number, flash: number, alpha: number): void {
+    this.accessories.emit(kind, this.currBones, bOff, hidden, this.agentScale, this.agentOx, this.agentOy, this.agentOz, shade, flash, alpha)
+  }
+
   draw(
     agents: readonly AIAgent[],
     dt: number,
@@ -901,6 +917,8 @@ export class ZombieCrowdRenderer {
     if (!refined) this.partTint.fill(1)
     this.partCounts.fill(0)
     this.ghostPartCounts.fill(0)
+    this.accessories.begin()
+    this.agentScale = 1
     if (refined) {
       this.archPartCounts.fill(0)
       this.archGhostPartCounts.fill(0)
@@ -1012,6 +1030,13 @@ export class ZombieCrowdRenderer {
 
       const s = this.ensureSlot(a, support)
       if (refined) zombiePalette(a.seed, this.partTint, a.id, undead)
+      const kind = specialKindOf(a.seed)
+      const look = specialLook(kind)
+      if (look && refined) applySpecialPalette(kind, this.partTint)
+      this.agentScale = look ? look.scale : 1
+      this.agentOx = a.x
+      this.agentOy = look ? support(a.x, a.y) : 0
+      this.agentOz = a.y
       let hidden = this.hiddenMask[s]!
       if (a.detachedLimbs.length > 0) {
         for (let i = 0; i < a.detachedLimbs.length; i++) {
@@ -1020,7 +1045,8 @@ export class ZombieCrowdRenderer {
         this.hiddenMask[s] = hidden
       }
 
-      const shade = 0.88 + ((a.id * 19) % 7) * 0.035
+      // A sleeping Lurker is a shadow until the light finds it.
+      const shade = (0.88 + ((a.id * 19) % 7) * 0.035) * (kind === SPECIAL_LURKER && a.state === "wander" ? 0.45 : 1)
       const visFade = hideUnseen || !unseenMode ? Math.min(1.0, 0.25 + 0.75 * visWeight) : 1.0
       const tintR = !isVisible && debugOverlay ? 0.55 : shade * (unseenMode > 0 ? visFade : 1.0)
       const tintG = !isVisible && debugOverlay ? 0.72 : shade * 0.98 * (unseenMode > 0 ? visFade : 1.0)
@@ -1223,6 +1249,7 @@ export class ZombieCrowdRenderer {
           this.emitBone(bOff, uaIdx, 3, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
           this.emitBone(bOff, faIdx, 4, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
         }
+        if (kind) this.emitSpecial(kind, bOff, hidden, tintR, a.hitFlash, alpha)
         continue
       }
 
@@ -1366,6 +1393,7 @@ export class ZombieCrowdRenderer {
           this.emitBone(bOff, uaIdx, 3, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
           this.emitBone(bOff, faIdx, 4, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
         }
+        if (kind) this.emitSpecial(kind, bOff, hidden, tintR, a.hitFlash, alpha)
         continue
       }
       if (this.collapse[s]! > 0) {
@@ -1617,7 +1645,7 @@ export class ZombieCrowdRenderer {
       this.twistX[s] = twx
       this.twistV[s] = twv
 
-      const height = baseHeight - rdx
+      const height = baseHeight - rdx - (kind ? specialCrouch(kind, a.state) : 0)
       // A strike that just landed: the body lunges at its target, weight over the front foot, the torso pitches in
       // and both hands thrust out, the lead hand furthest.
       const strikeAge = this.strikes.get(a.id)
@@ -1670,7 +1698,8 @@ export class ZombieCrowdRenderer {
       const torsoPy = bBuf[pelvisOff + 1]! + bBuf[pelvisOff + 7]! * RIG.waist
       const torsoPz = bBuf[pelvisOff + 2]! + bBuf[pelvisOff + 8]! * RIG.waist
       writeYawFrame(bBuf, torsoOff, torsoPx, torsoPy, torsoPz, cx + staggerYaw)
-      pitchInPlace(bBuf, torsoOff, -0.04 - lean - shambleMod.torsoPitchAdd - bashPulse - staggerRecoil - 0.42 * strikeU)
+      const hunch = kind ? specialHunch(kind, speed, a.state) : 0
+      pitchInPlace(bBuf, torsoOff, -0.04 - lean - shambleMod.torsoPitchAdd - bashPulse - staggerRecoil - 0.42 * strikeU - hunch)
       pitchInPlace(bBuf, torsoOff, -clamp(torsoLean, -0.15, 0.35))
       rollInPlace(bBuf, torsoOff, clamp(torsoRoll, -0.2, 0.2))
       rollInPlace(bBuf, torsoOff, shambleMod.torsoRollAdd + staggerCant + limpRoll * 0.75)
@@ -1679,7 +1708,7 @@ export class ZombieCrowdRenderer {
       const headPy = torsoPy + bBuf[torsoOff + 4]! * 0.02 + bBuf[torsoOff + 7]! * RIG.neckY
       const headPz = torsoPz + bBuf[torsoOff + 5]! * 0.02 + bBuf[torsoOff + 8]! * RIG.neckY
       writeYawFrame(bBuf, headOff, headPx, headPy, headPz, hxAng + staggerYaw * 0.8)
-      pitchInPlace(bBuf, headOff, -0.12 * torsoLean - shambleMod.headPitchAdd - staggerRecoil * 0.6)
+      pitchInPlace(bBuf, headOff, -0.12 * torsoLean - shambleMod.headPitchAdd - staggerRecoil * 0.6 + (kind ? specialHeadLift(kind, hunch, a.state) : 0))
       rollInPlace(bBuf, headOff, headTilt + shambleMod.headRollAdd + staggerCant * 0.5)
 
       this.emitBone(bOff, 0, 0, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
@@ -1833,6 +1862,7 @@ export class ZombieCrowdRenderer {
         this.emitBone(bOff, uaIdx, 3, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
         this.emitBone(bOff, faIdx, 4, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
       }
+      if (kind) this.emitSpecial(kind, bOff, hidden, tintR, a.hitFlash, alpha)
 
       if (isVisible) {
         this.seenAt[s] = time
@@ -1844,7 +1874,9 @@ export class ZombieCrowdRenderer {
       }
     }
 
+    this.agentScale = 1
     this.batches.length = 0
+    this.batches.push(...this.accessories.collect())
     if (refined) {
       for (let i = 0; i < ARCH_BUCKET_COUNT; i++) {
         const count = this.archPartCounts[i]!

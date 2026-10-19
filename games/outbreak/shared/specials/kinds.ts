@@ -101,7 +101,7 @@ export function specialKindFromId(id: string): SpecialKind {
 /** Rarity, phase ramp and stats. Flat numbers so the session tuning and the Lab panel carry them as they are. */
 export type SpecialsTuning = {
   /** 1: specials appear. 0: every zombie is ordinary. */
-  specials: number
+  specialsOn: number
   /** Multiplies every chance below. */
   specialRate: number
   /** Chance that a zombie appearing by day is special, on the first day. */
@@ -158,7 +158,7 @@ export type SpecialsTuning = {
 }
 
 export const DEFAULT_SPECIALS_TUNING: SpecialsTuning = {
-  specials: 1,
+  specialsOn: 1,
   specialRate: 1,
   specialDayChance: 0.004,
   specialNightChance: 0.025,
@@ -225,8 +225,8 @@ const c = (field: keyof SpecialsTuning, label: string, min: number, max: number,
 /** The Lab's Specials group (Backquote › Specials). */
 export const specialsControls: readonly Control[] = [
   {
-    key: "specials.specials",
-    field: "specials",
+    key: "specials.specialsOn",
+    field: "specialsOn",
     label: "Special zombies",
     group: "Specials",
     options: [
@@ -303,7 +303,7 @@ export type SpecialPhase = { darkness: number; night: number }
 
 /** Chance that a zombie appearing now is special. */
 export function specialChance(t: SpecialsTuning, phase: SpecialPhase): number {
-  if (t.specials <= 0) return 0
+  if (t.specialsOn <= 0) return 0
   const d = Math.max(0, Math.min(1, phase.darkness))
   const base = t.specialDayChance + (t.specialNightChance - t.specialDayChance) * d
   const ramp = t.specialRampPerNight * Math.max(0, phase.night - 1)

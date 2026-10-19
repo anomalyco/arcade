@@ -73,7 +73,7 @@ describe("special zombie kinds", () => {
   test("the kind rides in the seed, and ordinary seeds never read as special", () => {
     for (let k = SPECIAL_RUNNER; k <= SPECIAL_LURKER; k++) {
       for (const seed of [0, 1, 0xdeadbeef, 123456789, 0xffffffff]) {
-        expect(specialKindOf(encodeSpecialSeed(seed, k as 1))).toBe(k)
+        expect(specialKindOf(encodeSpecialSeed(seed, k as 1)) as number).toBe(k)
       }
     }
     let accidental = 0
@@ -117,7 +117,7 @@ describe("special zombie kinds", () => {
     expect(night1.runners).toBeGreaterThan(0)
     expect(night4.rate).toBeGreaterThan(night1.rate)
     expect(night4.rate).toBeLessThanOrEqual(DEFAULT_SPECIALS_TUNING.specialMaxChance + 0.02)
-    expect(specialChance({ ...DEFAULT_SPECIALS_TUNING, specials: 0 }, { darkness: 1, night: 5 })).toBe(0)
+    expect(specialChance({ ...DEFAULT_SPECIALS_TUNING, specialsOn: 0 }, { darkness: 1, night: 5 })).toBe(0)
   })
 
   test("Lurkers are placed in unlit rooms, out of the start house", () => {

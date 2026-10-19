@@ -14,6 +14,7 @@ import { DEFAULT_PACING_TARGETS, type PacingTargetConfig } from "../shared/diffi
 import { BOT_SKILL_PRESETS } from "../shared/survivor-bot"
 import { DEFAULT_VEHICLE_TUNING, type VehicleTuning } from "../shared/vehicles"
 import { DEFAULT_HORDE_TUNING, type HordeTuning } from "../shared/hordes/index"
+import { DEFAULT_SPECIALS_TUNING, type SpecialsTuning } from "../shared/specials/kinds"
 import type { WorldMode } from "../shared/world"
 import { DEFAULT_AUDIO_SETTINGS, type AudioSettings } from "./audio"
 import { DAY_NIGHT_CURVES, DEFAULT_DAY_NIGHT_CURVES, type DayNightCurveSettings } from "./day-night"
@@ -230,6 +231,7 @@ export type OutbreakSubsystemMap = {
   props: OutbreakPropSettings
   blood: OutbreakBloodSettings
   nightLights: OutbreakNightLightSettings
+  specials: SpecialsTuning
 }
 
 export type OutbreakSubsystemKey = keyof OutbreakSubsystemMap
@@ -269,7 +271,8 @@ export type OutbreakSettings = OutbreakSubsystemMap &
   OutbreakLookTrims &
   OutbreakPropSettings &
   OutbreakBloodSettings &
-  OutbreakNightLightSettings
+  OutbreakNightLightSettings &
+  SpecialsTuning
 
 export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "lighting",
@@ -302,6 +305,7 @@ export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "props",
   "blood",
   "nightLights",
+  "specials",
 ] as const
 
 export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
@@ -339,6 +343,7 @@ export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
     props: { ...DEFAULT_PROP_SETTINGS },
     blood: { ...DEFAULT_BLOOD_SETTINGS },
     nightLights: { ...DEFAULT_NIGHT_LIGHT_SETTINGS },
+    specials: { ...DEFAULT_SPECIALS_TUNING },
   }
 }
 
