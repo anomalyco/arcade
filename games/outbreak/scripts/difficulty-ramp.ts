@@ -6,11 +6,14 @@
 // Usage (CPU only, from games/outbreak):
 //   hivemind run --fetch captures/difficulty-ramp -- bun scripts/difficulty-ramp.ts
 //   bun scripts/difficulty-ramp.ts --seeds=24 --nights=5 --presets=Novice,Expert --out=captures/difficulty-ramp
+//   bun scripts/difficulty-ramp.ts --today                       # the pre-D-40 ramp (night ramp off)
+//   bun scripts/difficulty-ramp.ts --set=nightPopulationStep=6,nightChaserCeiling=5   # try session tuning values
 // Charts need `uv` (matplotlib through `uv run --with matplotlib`); pass --no-charts to skip them.
 import { mkdirSync, writeFileSync } from "node:fs"
 import { availableParallelism } from "node:os"
 import { join, resolve } from "node:path"
 import type { BotRunConfig } from "../shared/bot-runner"
+import type { SessionTuning } from "../shared/sim-types"
 import {
   RAMP_PHASE_LABELS,
   rampHourCurves,
@@ -23,7 +26,7 @@ import { runRampBatch } from "./difficulty-ramp-pool"
 import { BOT_SKILL_PRESET_ORDER, type BotSkillPresetId } from "../shared/survivor-bot"
 
 async function main() {
-  const arg = (name: string) => process.argv.find((a) => a.startsWith(`--${name}=`))?.split("=")[1]
+  const arg = (name: string) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3)
   const seedArg = arg("seeds") ?? "24"
   const seeds = seedArg.includes(",")
     ? seedArg.split(",").map(Number)
@@ -32,11 +35,18 @@ async function main() {
   const nights = Number(arg("nights") ?? 5)
   const out = resolve(arg("out") ?? "captures/difficulty-ramp")
   const workers = Number(arg("workers") ?? Math.max(1, Math.min(10, availableParallelism() - 2)))
+  const set: Record<string, number> = {}
+  for (const pair of arg("set")?.split(",") ?? []) {
+    const [k, v] = pair.split("=")
+    if (k && v !== undefined && Number.isFinite(Number(v))) set[k] = Number(v)
+  }
+  if (process.argv.includes("--today")) set.nightRampMode = 0
+  const sessionTuning = Object.keys(set).length ? (set as SessionTuning) : undefined
   const phases = nights * 2
   const hours = 1 + nights * 24 - 12
 
   const jobs: BotRunConfig[] = presets.flatMap((preset) =>
-    seeds.map((seed) => ({ seed, preset, maxDurationSeconds: secondsToDawn(nights), timeScale: 240, tickDt: 1 / 15 })),
+    seeds.map((seed) => ({ seed, preset, maxDurationSeconds: secondsToDawn(nights), timeScale: 240, tickDt: 1 / 15, sessionTuning })),
   )
   const t0 = performance.now()
   const runs = await runRampBatch(jobs, workers)
@@ -46,9 +56,9 @@ async function main() {
   const summary = summarizeRamp(runs, phases)
   const curves = Object.fromEntries(presets.map((p) => [p, rampHourCurves(runs, p, hours)]))
   mkdirSync(out, { recursive: true })
-  writeFileSync(join(out, "summary.json"), JSON.stringify({ seeds, presets, nights, summary, curves }, null, 1))
+  writeFileSync(join(out, "summary.json"), JSON.stringify({ seeds, presets, nights, set, summary, curves }, null, 1))
   writeFileSync(join(out, "runs.json"), JSON.stringify(runs))
-  writeFileSync(join(out, "report.md"), report(summary.byPreset, presets, phases, seeds.length, nights, runs))
+  writeFileSync(join(out, "report.md"), report(summary.byPreset, presets, phases, seeds.length, nights, runs, set))
   console.log(`difficulty-ramp: ${runs.length} runs in ${seconds.toFixed(1)} s on ${workers} workers → ${out}`)
   for (const preset of presets) {
     const s = summary.byPreset[preset]!
@@ -79,11 +89,14 @@ function report(
   seedCount: number,
   nights: number,
   runs: readonly RampRun[],
+  set: Record<string, number>,
 ): string {
   const labels = RAMP_PHASE_LABELS.slice(0, phases)
   const lines: string[] = []
   lines.push(`# Outbreak difficulty ramp`, "")
   lines.push(`${presets.length} presets × ${seedCount} seeds, solo, ${nights} nights (to dawn ${nights}).`, "")
+  const tuned = Object.entries(set).map(([k, v]) => `${k}=${v}`).join(", ")
+  lines.push(`Session tuning: ${tuned || "shipped defaults"}.`, "")
   lines.push(`## Survival`, "")
   lines.push(`Fraction of runs alive at the end of each phase.`, "")
   lines.push(`| Preset | Median nights | ${labels.join(" | ")} |`)

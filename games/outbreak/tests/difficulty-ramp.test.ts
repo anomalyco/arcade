@@ -17,28 +17,40 @@ const NIGHTS = 3
 const PHASES = NIGHTS * 2
 const [EVENING, NIGHT1, DAY2, NIGHT2, DAY3, NIGHT3] = [0, 1, 2, 3, 4, 5]
 
-/** Fraction of runs alive at dawn 1 and dawn 3, per preset. Values on 2026-10-19 main: see comments. */
+/**
+ * Fraction of runs alive at dawn 1 and dawn 3, per preset. Values with the D-40 night ramp (Gentle Start, Rising) in
+ * comments; Today's (night ramp off) in brackets.
+ */
 const SURVIVAL_BANDS: Record<BotSkillPresetId, { dawn1: [number, number]; dawn3: [number, number] }> = {
-  Novice: { dawn1: [0, 0.75], dawn3: [0, 0.5] }, // 0, 0
-  Casual: { dawn1: [0.5, 1], dawn3: [0, 0.75] }, // 0.75, 0.25
-  Skilled: { dawn1: [0.75, 1], dawn3: [0.25, 1] }, // 1, 0.5
-  Expert: { dawn1: [0.75, 1], dawn3: [0.25, 1] }, // 1, 0.75
+  Novice: { dawn1: [0, 0.75], dawn3: [0, 0.5] }, // 0.25, 0 [0, 0]
+  Casual: { dawn1: [0.5, 1], dawn3: [0, 0.75] }, // 1, 0 [0.5, 0.25]
+  Skilled: { dawn1: [0.75, 1], dawn3: [0.25, 1] }, // 1, 0.5 [1, 0.75]
+  Expert: { dawn1: [0.75, 1], dawn3: [0.25, 1] }, // 1, 1 [1, 1]
   Perfect: { dawn1: [0, 1], dawn3: [0, 1] },
 }
 
-/** Pooled over Casual, Skilled and Expert while alive. Values on 2026-10-19 main in comments. */
+/**
+ * Pooled over Casual, Skilled and Expert while alive. Values with the D-40 night ramp in comments, Today's in
+ * brackets. The Night 1 hold, Night 2 population, Night 3 over Night 2 and Night 3 chaser bands fail with the night
+ * ramp off: they are what D-40 asked for.
+ */
 const PRESSURE_BANDS = {
-  /** Night 1 living zombies over the evening's (≈ 5×): the director ramps in. */
-  nightOneRampIn: [3, 10], // 5.5
-  /** Night 2 living zombies (the director's full population is 16 solo). */
-  nightTwoLiving: [12, 24], // 16.0
+  /** Night 1 living zombies over the evening's: the director ramps in. */
+  nightOneRampIn: [2.5, 10], // 3.9 [5.5]
+  /** Night 1 chasers: the night ramp holds Night 1 to 2. */
+  nightOneChasers: [0.3, 2], // 1.18 [2.23]
+  /** Night 2 living zombies: above the director's own 16. */
+  nightTwoLiving: [17, 26], // 19.0 [16.0]
+  /** Living zombies, Night 3 over Night 2: still rising. */
+  nightThreeLivingOverTwo: [1.05, 1.6], // 1.16 [1.0]
   /** Aware zombies at night over the day before it: nights are harder than days. */
-  nightOverDay2: [1.3, 5], // 1.9
-  nightOverDay3: [1.2, 5], // 1.51
-  /** Aware zombies, Night 3 over Night 2: no cliff either way. Today this is flat (see D-40). */
-  nightThreeOverTwo: [0.8, 1.8], // 1.03
-  /** Active chasers at night (the director's solo cap is 3). */
-  nightChasers: [1, 3.5], // 2.37 (Night 2), 2.56 (Night 3)
+  nightOverDay2: [1.3, 5], // 2.19 [1.9]
+  nightOverDay3: [1.2, 5], // 2.29 [1.51]
+  /** Aware zombies, Night 3 over Night 2: rising, without a cliff. */
+  nightThreeOverTwo: [1.1, 2], // 1.32 [1.03]
+  /** Active chasers at night. */
+  nightTwoChasers: [1.5, 4], // 2.62 [2.37]
+  nightThreeChasers: [3, 5.5], // 3.89 [2.56]
 } as const
 
 const within = (name: string, value: number, [lo, hi]: readonly [number, number]) => {
@@ -87,13 +99,15 @@ describe("difficulty ramp (survivor bots, fixed seeds)", () => {
     expect(phase("Novice", NIGHT1).damagePerHour).toBeGreaterThan(phase("Skilled", NIGHT1).damagePerHour)
   })
 
-  test("pressure ramps in, nights beat days, and there is no cliff", () => {
+  test("Night 1 holds, then every night rises without a cliff (D-40)", () => {
     within("Night 1 / evening living zombies", pooled(NIGHT1, "living") / pooled(EVENING, "living"), PRESSURE_BANDS.nightOneRampIn)
+    within("Night 1 chasers", pooled(NIGHT1, "chasers"), PRESSURE_BANDS.nightOneChasers)
     within("Night 2 living zombies", pooled(NIGHT2, "living"), PRESSURE_BANDS.nightTwoLiving)
+    within("Night 3 / Night 2 living zombies", pooled(NIGHT3, "living") / pooled(NIGHT2, "living"), PRESSURE_BANDS.nightThreeLivingOverTwo)
     within("Night 2 / Day 2 aware zombies", pooled(NIGHT2, "aware") / pooled(DAY2, "aware"), PRESSURE_BANDS.nightOverDay2)
     within("Night 3 / Day 3 aware zombies", pooled(NIGHT3, "aware") / pooled(DAY3, "aware"), PRESSURE_BANDS.nightOverDay3)
     within("Night 3 / Night 2 aware zombies", pooled(NIGHT3, "aware") / pooled(NIGHT2, "aware"), PRESSURE_BANDS.nightThreeOverTwo)
-    within("Night 2 chasers", pooled(NIGHT2, "chasers"), PRESSURE_BANDS.nightChasers)
-    within("Night 3 chasers", pooled(NIGHT3, "chasers"), PRESSURE_BANDS.nightChasers)
+    within("Night 2 chasers", pooled(NIGHT2, "chasers"), PRESSURE_BANDS.nightTwoChasers)
+    within("Night 3 chasers", pooled(NIGHT3, "chasers"), PRESSURE_BANDS.nightThreeChasers)
   })
 })

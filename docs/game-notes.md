@@ -144,7 +144,8 @@ proven animation techniques to animation.md, not here.
   probe (`BotRunConfig.observe`, `shared/difficulty-ramp.ts`) buckets pressure, damage, resources and deaths per game
   hour and phase. `tests/difficulty-ramp.test.ts` runs 16 games to dawn 3 on up to 4 workers (~4 s on an M-series Mac; one thread on CI took 70 s for 24 games) and holds ratios (night over day,
   Night 3 over Night 2, ramp-in) and survival per preset inside loose bands; `scripts/difficulty-ramp.ts` is the full
-  report. It found the director's ramp ending at Night 2 (16 zombies, 3 chasers on every later night). See
+  report. It found the director's ramp ending at Night 2 (16 zombies, 3 chasers on every later night); the D-40 night
+  ramp (`shared/night-ramp/`, a per-tick `DirectorEscalation`) now lifts both every night up to a ceiling. See
   [outbreak-difficulty.md](outbreak-difficulty.md).
 
 ## Rendering (WebGPU)

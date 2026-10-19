@@ -107,6 +107,23 @@ export type PacingSurvivorView = {
 
 export type FirstEncounterStage = "grace" | "staged" | "completed"
 
+/**
+ * Extra pressure the director applies on top of its own ramp, set each tick by a feature before the crowd steps
+ * (the night ramp, `shared/night-ramp/`). Never snapshotted: it is recomputed from the clock every tick.
+ */
+export type DirectorEscalation = {
+  /** Multiplies the solo population target. */
+  populationScale: number
+  /** Zombies added to the solo population target. */
+  populationBonus: number
+  /** Chasers added to `maxActiveNearPlayer`. */
+  chaserBonus: number
+  /** Hard ceiling on solo chasers (0 = none), applied before co-op scaling. */
+  chaserCap: number
+}
+
+export const NO_ESCALATION: DirectorEscalation = { populationScale: 1, populationBonus: 0, chaserBonus: 0, chaserCap: 0 }
+
 export type PacingTelemetry = {
   ramp: number
   timeProgress: number
@@ -583,6 +600,7 @@ export class OutbreakPacingDirector {
   private waveCooldown = 18.0
   inViewSpawns = 0
   behindSpawns = 0
+  escalation: DirectorEscalation = NO_ESCALATION
   telemetry: PacingTelemetry = {
     ramp: 0,
     timeProgress: 0,
@@ -703,12 +721,13 @@ export class OutbreakPacingDirector {
       (0.52 * timeProgress + 0.22 * exploreProgress + 0.26 * timeProgress * threat) * (0.72 + 0.28 * threat)
     const ramp = clamp(baseRamp + noiseBoost * 0.55, 0, 1)
 
+    const esc = this.escalation
     const initPop = initialSpawnCount(config.zombieCount, config.initialDensity, pCount, config.directorPacing)
-    const fullPop =
-      config.zombieCount <= 0 ? 0 : Math.min(100, Math.max(initPop, Math.round(config.zombieCount * coopScale)))
+    const soloPop = Math.max(0, config.zombieCount * esc.populationScale + esc.populationBonus)
+    const fullPop = config.zombieCount <= 0 ? 0 : Math.min(100, Math.max(initPop, Math.round(soloPop * coopScale)))
     const desiredPopulation = config.zombieCount <= 0 ? 0 : Math.round(lerp(initPop, fullPop, ramp))
 
-    const baseMaxActive = Math.max(1, Math.round(config.maxActiveNearPlayer))
+    const baseMaxActive = Math.max(1, Math.round(config.maxActiveNearPlayer + esc.chaserBonus))
     let soloCap: number
     if (time < 36 && this.noiseHeat < 0.45) {
       soloCap = Math.min(baseMaxActive, 1)
@@ -718,6 +737,7 @@ export class OutbreakPacingDirector {
       const rampCap = lerp(Math.min(2, baseMaxActive), baseMaxActive, clamp(ramp * 1.35 + this.noiseHeat * 0.45, 0, 1))
       soloCap = Math.min(baseMaxActive, Math.max(1, Math.round(rampCap)))
     }
+    if (esc.chaserCap > 0) soloCap = Math.min(soloCap, Math.max(1, Math.round(esc.chaserCap)))
     const effectiveMaxActive = Math.max(1, Math.round(soloCap * chaserScale))
 
     return {
