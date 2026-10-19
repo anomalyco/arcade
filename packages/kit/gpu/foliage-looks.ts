@@ -355,9 +355,9 @@ function buildDarkwood(m: Mesh, x: number, z: number, h: number, radius: number,
   for (const t of tips) {
     // Clumps sit on the limb ends, with gaps between them so the gnarled limbs show through the crown.
     const inner = t.level < s.depth
-    if (leafy > 0 && rng.next() < (inner ? 0.5 : 0.18)) continue
+    if (leafy > 0 && rng.next() < (inner ? 0.55 : 0.3)) continue
     leafy++
-    const rc = radius * (0.38 + rng.next() * 0.12) * (inner ? 0.8 : 1)
+    const rc = radius * (0.34 + rng.next() * 0.1) * (inner ? 0.8 : 1)
     const tint = scale(mix(base, leafColour(rng, DARKWOOD_GREENS, DARKWOOD_AUTUMN, autumnShare), 0.25), 0.9 + rng.next() * 0.2)
     cardCluster(m, rng, add(t.p, t.dir, rc * 0.3), rc, rc * 0.72, crown, cards, size, palette(tint), flexAt(t.p[1], ground, h), 0.68, 0.85)
   }

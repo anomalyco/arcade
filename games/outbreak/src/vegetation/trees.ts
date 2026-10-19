@@ -155,6 +155,21 @@ fn outbreakTreeBurnVertex(p: vec3f, mat: f32) -> vec3f {
 }
 
 /**
+ * How much of the flashlight's plan cone covers a crown point, at any height. The camera sees crown tops the torch
+ * below can't reach directly, so this stands in for light through the leaves (like the leaf transmission glow).
+ */
+fn outbreakTreeBeam(world: vec3f) -> f32 {
+  if (OL.u4.z <= 0.001) { return 0.0; }
+  let rel = world.xz - OL.u3.xy;
+  let along = dot(rel, OL.u3.zw);
+  let range = max(2.8, OL.u4.y);
+  let across = abs(dot(rel, vec2f(-OL.u3.w, OL.u3.z)));
+  let cone = 0.3 + max(0.0, along) * max(0.12, OL.u4.x);
+  let t = clamp(1.0 - along / range, 0.0, 1.0);
+  return smoothstep(-0.2, 0.6, along) * (1.0 - smoothstep(cone * 0.75, cone * 1.3, across)) * sqrt(t) * clamp(OL.u4.z, 0.0, 1.0);
+}
+
+/**
  * Tree look shading and burn, before the fog of war. Shade (Deadwood, Darkwood): outside light the canopy and limbs
  * sink to near-black, grey, a little less by day; where a flashlight, lamp, window or fire lands (\`litMask\`) they keep
  * and enrich their colour. Burn: char toward black, embers glowing while it burns.
@@ -165,11 +180,17 @@ fn outbreakTreeSurface(col: vec3f, litMask: f32, sunVal: f32, world: vec3f, mat:
   let shade = clamp(OL.vegTrees.y, 0.0, 1.5);
   let lum = dot(c, vec3f(0.2126, 0.7152, 0.0722));
   if (shade > 0.001) {
+    let leaf = mat == 22;
     let desat = clamp(mix(0.85, 0.5, sunVal) * shade, 0.0, 1.0);
     let dark = clamp(1.0 - mix(0.78, 0.38, sunVal) * shade, 0.05, 1.0);
     let unlit = mix(c, vec3f(lum) * vec3f(1.0, 0.97, 0.92), desat) * dark;
-    let rich = max(mix(vec3f(lum), c, 1.0 + 0.4 * clamp(OL.vegTrees.z, 0.0, 1.5)), vec3f(0.0));
-    c = mix(unlit, rich, smoothstep(0.04, 0.55, litMask));
+    let beam = outbreakTreeBeam(world);
+    // Leaves enrich in light; bark keeps its own colour (a warm torch on enriched bark reads orange).
+    var rich = select(c, max(mix(vec3f(lum), c, 1.0 + 0.4 * clamp(OL.vegTrees.z, 0.0, 1.5)), vec3f(0.0)), leaf);
+    // Torchlight through the crown: the camera sees tops the torch below can't reach, so the beam's plan cone lends
+    // the leaves their own colour, lit by the beam.
+    rich += select(vec3f(0.0), outbreakAlbedo * OL.u5.rgb * vec3f(1.0, 1.15, 0.7) * beam * 0.45 * shade, leaf);
+    c = mix(unlit, rich, max(smoothstep(0.04, 0.55, litMask), beam * select(0.5, 1.0, leaf)));
   }
   if (OL.vegTrees.w > 0.5) {
     let b = outbreakTreeBurnAt(world).w;

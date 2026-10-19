@@ -368,7 +368,7 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
       let transLobe = (forwardScatter * 0.55 + backNormal * 0.45) * F.ambient.w * 0.28 * tipWeight * transK * sunFactor;
       // Flashlight transmission: leaves and blades inside the beam glow warm olive (thin-lamina scatter, any facing).
       // Lively vegetation lets the glow climb into the lower crown, so trees in the beam catch it as dark silhouettes.
-      let leafReach = select(2.4, 4.4, OL.vegGust.on > 0.5);
+      let leafReach = select(select(2.4, 4.4, OL.vegGust.on > 0.5), 7.5, OL.vegTrees.y > 0.001);
       if (OL.u4.z > 0.001 && o.world.y < leafReach) {
         let fRel = o.world.xz - OL.u3.xy;
         let fAlong = dot(fRel, OL.u3.zw);
@@ -442,7 +442,11 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
     }
     let effectiveLitMask = mix(max(litMask, sunLit), max(litMask, sunLit * 0.85), lightRule);
     outbreakLitMask = max(litMask * lightRule, sunLit);
-    if (OL.vegTrees.y > 0.001 || OL.vegTrees.w > 0.5) { col = outbreakTreeSurface(col, litMask * lightRule, sunVal, o.world, mat, o.aux); }
+    if (OL.vegTrees.y > 0.001 || OL.vegTrees.w > 0.5) {
+      col = outbreakTreeSurface(col, litMask * lightRule, sunVal, o.world, mat, o.aux);
+      // Crowns the torch lights through keep their colour in the fog of war's colour rule.
+      if (OL.vegTrees.y > 0.001 && mat == 22 && outbreakIsTreePart(22.0, o.aux)) { outbreakLitMask = max(outbreakLitMask, outbreakTreeBeam(o.world)); }
+    }
     outbreakSeen = 1.0;
     outbreakKnown = 1.0;
     var zombieRimMask = 0.0;

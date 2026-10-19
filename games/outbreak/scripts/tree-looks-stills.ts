@@ -63,8 +63,8 @@ const AT_WOODS = -2.25
 const shots: Shot[] = [
   { name: "1-yard-day", hour: 13, zoom: 38, ...YARD, aim: AT_WOODS, flashlight: false },
   { name: "2-street-night-flashlight", hour: 23, zoom: 38, x: 21, y: 40.5, aim: AT_WOODS, flashlight: true },
-  { name: "3-under-lamp", hour: 22.5, zoom: 38, x: 10.6, y: 45.2, aim: 0.95, flashlight: false },
-  { name: "4-under-tree", hour: 22, zoom: 30, x: 16.2, y: 35.2, aim: 0.6, flashlight: true },
+  { name: "3-under-lamp", hour: 22.5, zoom: 32, x: 11.2, y: 50.4, aim: -0.37, flashlight: false },
+  { name: "4-under-tree", hour: 19.5, zoom: 30, x: 16.4, y: 34.6, aim: Math.PI, flashlight: true },
 ]
 const HUD = "#status, #hotbar, #stamina, #battery, .callouts, .callout, #hud, .hud, #markers, #prompt, #lab-panel, .knobs-root"
 const errors: string[] = []
@@ -87,6 +87,8 @@ async function setup(page: Page, s: Omit<Shot, "name">) {
     h.freeze(true)
     h.setQuality("high")
     h.setLab("timeScale", 0)
+    // Steady sodium lamps, so the lamp shot isn't caught in a dying lamp's dim phase.
+    h.setLab("nlSodiumFlicker", 0)
     h.setLab("hour", s.hour)
     h.setZoomRaw(s.zoom)
     h.pose(s.x, s.y, s.aim)
@@ -119,11 +121,11 @@ async function clip(page: Page, name: string, treeLook: number) {
   rmSync(dir, { recursive: true, force: true })
   mkdirSync(dir, { recursive: true })
   await useLook(page, treeLook)
-  const s = { hour: 23, zoom: 34, x: 21, y: 40.5, aim: AT_WOODS, flashlight: true }
+  const s = { hour: 23, zoom: 30, x: 20, y: 40.5, aim: -2.3, flashlight: true }
   await setup(page, s)
   const frames = 120
   for (let f = 0; f < frames; f++) {
-    const aim = s.aim + Math.sin((f / frames) * Math.PI * 2) * 0.5
+    const aim = s.aim + Math.sin((f / frames) * Math.PI * 2) * 0.38
     await page.evaluate(async aim => {
       const h = (window as any).__arcadeHarness
       await h.step(1 / 30, { mx: 0, my: 0, aim })
