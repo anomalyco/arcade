@@ -1,0 +1,132 @@
+/* HUD Lab: the stage is 1600×900 design px scaled by --scale; variant styles below the lab UI. */
+html, body { margin: 0; height: 100%; background: #0b0e0d; color: #cfd6cf; font: 13px/1.4 system-ui, sans-serif; }
+#app { display: flex; height: 100%; }
+.hl-side { width: 300px; flex: none; overflow-y: auto; padding: 16px 16px 40px; box-sizing: border-box; background: #121615; border-right: 1px solid #222a28; }
+.hl-side h1 { margin: 0 0 4px; font: 600 15px/1.2 system-ui; letter-spacing: 0.08em; text-transform: uppercase; }
+.hl-side h2 { margin: 14px 0 6px; font: 600 11px system-ui; letter-spacing: 0.1em; text-transform: uppercase; color: #7d8a85; }
+.hl-help, .hl-note { margin: 0 0 10px; color: #7d8a85; font-size: 11.5px; }
+.hl-note { margin-top: -4px; color: #a08a68; font-style: italic; }
+.hl-field { display: grid; grid-template-columns: 74px minmax(0, 1fr); align-items: center; gap: 6px; margin: 0 0 8px; color: #9aa8a2; font-size: 12px; }
+.hl-field select { width: 100%; background: #0b0e0d; color: #e6ece6; border: 1px solid #2a3330; border-radius: 4px; padding: 4px; }
+.hl-check { display: block; margin: 6px 0 8px; font-size: 12px; color: #9aa8a2; }
+.hl-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin: 0 0 8px; }
+.hl-btns button { background: #0b0e0d; color: #b8c4be; border: 1px solid #2a3330; border-radius: 4px; padding: 6px; cursor: pointer; font: 12px system-ui; }
+.hl-btns button.accent { border-color: #e8a254; color: #f0d7b0; grid-column: span 2; }
+.hl-json { margin: 0; padding: 8px; background: #0b0e0d; border: 1px solid #222a28; border-radius: 4px; color: #7d8a85; font: 11px/1.4 ui-monospace, Menlo, monospace; }
+
+.hl-main { flex: 1; overflow-y: auto; padding: 14px; display: grid; grid-template-columns: 1fr; gap: 14px; align-content: start; }
+.hl-main.grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.hl-card { margin: 0; }
+.hl-card figcaption { padding: 4px 2px 0; font-size: 12px; color: #9aa8a2; }
+.hl-frame { position: relative; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 3px; background: #000; outline: 1px solid #1c2321; }
+.hl-stage { position: absolute; left: 0; top: 0; width: 1600px; height: 900px; transform: scale(var(--scale, 0.5)); transform-origin: 0 0; background: center / cover #000; overflow: hidden; }
+.layer { position: absolute; inset: 0; pointer-events: none; }
+
+/* Shared inks. */
+.hl-stage {
+  --type: "Afterhours Type", "American Typewriter", "Courier New", monospace;
+  --hand: "Caveat Map", "Bradley Hand", cursive;
+  --ink: rgba(214, 204, 182, 0.86);
+  --ball: #1c1a20;
+  --paper: #e9e2cf;
+}
+
+/* ---- Objectives ---- */
+.obj { position: absolute; }
+.obj-current {
+  left: 50%; top: 22px; transform: translate(-50%, 0); font: 12px/1.4 var(--type); letter-spacing: 0.16em; text-transform: uppercase;
+  color: rgba(214, 204, 182, 0.82); text-shadow: 0 0 5px rgba(0, 0, 0, 0.9); white-space: nowrap;
+}
+.obj-current.enter { animation: o-fade 1.1s ease both; }
+
+/* A torn slip of map paper with ballpoint, taped at the top-right. */
+.obj-note {
+  right: 54px; top: 40px; max-width: 300px; padding: 18px 22px 16px; transform: rotate(var(--rot, -2deg));
+  background: linear-gradient(170deg, #efe8d6, #e2d9c1); color: var(--ball);
+  font: 28px/1.05 var(--hand); box-shadow: 0 8px 18px rgba(0, 0, 0, 0.45), 0 1px 0 rgba(255, 255, 255, 0.4) inset;
+  clip-path: polygon(0 3%, 7% 0, 18% 2%, 31% 0, 46% 3%, 61% 0, 77% 2%, 90% 0, 100% 2%, 99% 97%, 85% 100%, 66% 98%, 48% 100%, 29% 97%, 12% 100%, 1% 98%);
+  filter: brightness(0.82) saturate(0.85);
+}
+.obj-note .tape { position: absolute; left: 50%; top: -6px; width: 96px; height: 26px; transform: translate(-50%, 0) rotate(2deg); background: rgba(196, 182, 140, 0.72); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35); }
+.obj-note.enter { animation: o-note 0.7s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
+@keyframes o-note { from { opacity: 0; transform: translate(40px, -60px) rotate(9deg); } to { opacity: 1; transform: rotate(var(--rot, -2deg)); } }
+
+/* Embossed label tape. */
+.obj-dymo {
+  left: 48px; top: 44px; padding: 7px 14px 6px; display: flex; gap: 1px; background: linear-gradient(#1b1d1f, #0d0e10);
+  border-radius: 3px; box-shadow: 0 3px 10px rgba(0, 0, 0, 0.55), 0 1px 0 rgba(255, 255, 255, 0.08) inset; transform: rotate(-0.6deg);
+}
+.obj-dymo b { font: 400 21px/1 "Archivo Map", "Arial Black", sans-serif; letter-spacing: 0.06em; color: #e9ece6; text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.9), 0 1px 0 rgba(255, 255, 255, 0.35); transform: scaleY(0.92); }
+.obj-dymo.enter b { animation: o-fade 0.1s steps(1) both; animation-delay: calc(var(--i) * 55ms + 0.3s); }
+.obj-dymo.enter { animation: o-slide 0.5s ease both; }
+@keyframes o-slide { from { opacity: 0; transform: translateX(-30px) rotate(-0.6deg); } to { opacity: 1; transform: rotate(-0.6deg); } }
+
+/* Small caps at the corner. */
+.obj-smallcaps { left: 46px; top: 40px; font: 15px/1.5 var(--type); letter-spacing: 0.14em; font-variant: small-caps; color: var(--ink); text-shadow: 0 0 6px rgba(0, 0, 0, 0.95); }
+.obj-smallcaps small { display: block; font-size: 10px; letter-spacing: 0.3em; text-transform: uppercase; opacity: 0.5; }
+
+/* A centred title that types in and goes away. */
+.obj-transient {
+  left: 50%; top: 34%; transform: translate(-50%, 0); font: 26px/1.3 var(--type); letter-spacing: 0.08em; color: rgba(232, 224, 204, 0.92);
+  text-shadow: 0 0 10px rgba(0, 0, 0, 0.95), 0 0 2px #000; white-space: nowrap; transition: opacity 1.8s ease;
+}
+.obj-transient:not(.enter) { opacity: 0.35; }
+.obj-transient.out { opacity: 0; }
+
+/* The map's corner peeking in from the right edge. */
+.obj-tab { right: -14px; top: 110px; display: flex; align-items: stretch; transform: rotate(-3deg); }
+.obj-tab .paper {
+  display: block; padding: 12px 34px 12px 16px; max-width: 260px; background: linear-gradient(#efe8d6, #ddd3bb); color: var(--ball);
+  font: 26px/1.05 var(--hand); box-shadow: -6px 8px 16px rgba(0, 0, 0, 0.5); filter: brightness(0.8);
+}
+.obj-tab small { display: block; font: 10px/1.6 var(--type); letter-spacing: 0.2em; color: #4c4a52; }
+.obj-tab .clip { width: 18px; background: linear-gradient(90deg, #6b4a2a, #4b331c); box-shadow: -2px 4px 10px rgba(0, 0, 0, 0.5); border-radius: 3px 0 0 3px; }
+.obj-tab.enter { animation: o-tab 0.6s cubic-bezier(0.2, 0.8, 0.3, 1.1) both; }
+@keyframes o-tab { from { transform: translateX(110%) rotate(-3deg); } to { transform: rotate(-3deg); } }
+
+/* Paper tape off a teletype. */
+.obj-teletype {
+  left: 50%; top: 20px; transform: translate(-50%, 0); padding: 6px 18px; background: linear-gradient(#d9cfa5, #c9bd8e); color: #2a2620;
+  font: 14px/1.2 var(--type); letter-spacing: 0.12em; white-space: nowrap; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5); filter: brightness(0.78);
+  min-width: 560px; text-align: left;
+}
+.obj-teletype::before, .obj-teletype::after { content: ""; position: absolute; top: 0; bottom: 0; width: 10px; background: radial-gradient(circle, rgba(0, 0, 0, 0.35) 1.5px, transparent 2px) 0 0 / 10px 7px; }
+.obj-teletype::before { left: 3px; }
+.obj-teletype::after { right: 3px; }
+
+/* One italic serif line at the bottom. */
+.obj-serif { left: 50%; bottom: 36px; transform: translate(-50%, 0); font: italic 20px/1.3 Georgia, "Times New Roman", serif; color: rgba(226, 218, 198, 0.78); text-shadow: 0 0 8px rgba(0, 0, 0, 0.95); white-space: nowrap; }
+.obj-serif.enter { animation: o-fade 1.4s ease both; }
+@keyframes o-fade { from { opacity: 0; } to { opacity: 1; } }
+
+/* ---- Hints ---- */
+.hint { position: absolute; font: 12px/1.4 var(--type); letter-spacing: 0.14em; text-transform: uppercase; color: rgba(206, 196, 174, 0.55); text-shadow: 0 0 4px rgba(0, 0, 0, 0.9); --akc-size: 18px; }
+.hint span { display: inline-flex; align-items: center; gap: 7px; transition: opacity 1.4s ease, max-width 1.4s ease; }
+.hint-corner { left: 26px; bottom: 22px; display: flex; gap: 18px; opacity: 0.6; }
+.hint-strip { left: 26px; bottom: 22px; display: flex; gap: 18px; }
+.hint-strip .gone, .hint-hand .gone { opacity: 0; }
+.hint-context { left: 50%; top: 66%; transform: translate(-50%, 0); display: inline-flex; align-items: center; gap: 9px; font-size: 14px; color: rgba(222, 212, 190, 0.88); transition: opacity 0.9s ease; }
+.hint-context.enter { animation: o-rise 0.8s ease both; }
+.hint-context.out { opacity: 0; }
+@keyframes o-rise { from { opacity: 0; transform: translate(-50%, 6px); } to { opacity: 1; transform: translate(-50%, 0); } }
+.hint-hand { left: 30px; bottom: 20px; display: flex; gap: 22px; text-transform: none; letter-spacing: 0; }
+.hint-hand span { gap: 4px; }
+.hint-hand em { font: 25px/1 var(--hand); color: rgba(226, 218, 198, 0.72); font-style: normal; }
+.hint-hand.enter span, .hint-strip.enter span, .hint-corner.enter span { animation: o-fade 0.8s ease both; }
+.hk { width: 30px; height: 30px; fill: none; stroke: rgba(226, 218, 198, 0.7); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.hk text { fill: rgba(226, 218, 198, 0.8); stroke: none; font: 19px var(--hand); text-anchor: middle; }
+
+/* ---- E prompts ---- */
+.prompt { position: absolute; left: 50%; top: 58%; transform: translate(-50%, 0); white-space: nowrap; display: inline-flex; align-items: center; gap: 9px; }
+.prompt-current {
+  --akc-size: 18px; padding: 5px 11px 6px; border-radius: 3px; font: 13px/1 var(--type); letter-spacing: 0.16em; text-transform: uppercase;
+  color: rgba(214, 204, 182, 0.9); background: rgba(4, 6, 5, 0.55); box-shadow: 0 0 16px 6px rgba(4, 6, 5, 0.35); text-shadow: 0 0 3px #000;
+}
+.prompt-slip {
+  padding: 4px 10px; gap: 8px; background: linear-gradient(#ece5d2, #d9cfb7); color: #1f1d22; font: 14px/1.2 var(--type); letter-spacing: 0.12em;
+  text-transform: uppercase; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5); transform: translate(-50%, 0) rotate(-0.8deg); filter: brightness(0.82);
+}
+.prompt-slip b { font-weight: 400; padding: 0 5px; border: 1px solid currentColor; border-radius: 2px; }
+.prompt-hand { gap: 4px; filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.95)); }
+.prompt-hand em { font: 28px/1 var(--hand); font-style: normal; color: rgba(232, 224, 204, 0.88); }
+.prompt-hand .hk { width: 34px; height: 34px; }
