@@ -1,3 +1,4 @@
+import { reactivePipelineDescriptor } from "../gpu/reactive"
 import type { WeatherSettings } from "./settings"
 import type { WeatherEave, WeatherExcludeRect, WeatherFrameState, WeatherLight } from "./state"
 
@@ -509,6 +510,9 @@ export type WeatherPrepareInput = {
   cameraDist?: number
 }
 
+/** The host renderer's camera for this frame (see `WeatherRenderer.prepare`). */
+export type WeatherCamera = { viewProj: ArrayLike<number>; width: number; height: number }
+
 export class WeatherRenderer {
   private readonly uniformData = new Float32Array(WEATHER_UNIFORM_FLOATS)
   private readonly uniformBuf: GPUBuffer
@@ -520,6 +524,8 @@ export class WeatherRenderer {
   private motionStreakPipe?: GPURenderPipeline
   private motionSplashPipe?: GPURenderPipeline
   private motionMistPipe?: GPURenderPipeline
+  private readonly describe: (vs: string, fs: string) => GPURenderPipelineDescriptor
+  private reactivePipes?: { streak: GPURenderPipeline; splash: GPURenderPipeline; mist: GPURenderPipeline }
 
   nearCount = 0
   farCount = 0
@@ -565,8 +571,7 @@ export class WeatherRenderer {
       alpha: { srcFactor: "zero", dstFactor: "one" },
     }
     const pipeLayout = d.createPipelineLayout({ bindGroupLayouts: [this.layout] })
-    const makePipe = (vs: string, fs: string, mod = module, mrt = false) =>
-      d.createRenderPipeline({
+    this.describe = (vs: string, fs: string, mod = module, mrt = false): GPURenderPipelineDescriptor => ({
         label: `weather-${vs}${mrt ? "-mrt" : ""}`,
         layout: pipeLayout,
         vertex: { module: mod, entryPoint: vs },
@@ -586,6 +591,7 @@ export class WeatherRenderer {
         },
         multisample: { count: this.sampleCount },
       })
+    const makePipe = (vs: string, fs: string) => d.createRenderPipeline(this.describe(vs, fs))
 
     this.streakPipe = makePipe("streakVs", "streakFs")
     this.splashPipe = makePipe("splashVs", "splashFs")
@@ -639,7 +645,12 @@ export class WeatherRenderer {
     })
   }
 
-  prepare(input: WeatherPrepareInput): void {
+  /**
+   * `camera` replaces the input's projection and pixel size in the shader only (LOD and density still follow
+   * `input.viewportWidth`): the host renderer passes its jittered matrix and internal size under temporal AA, so rain
+   * renders on the same sub-pixel grid as the scene it falls through.
+   */
+  prepare(input: WeatherPrepareInput, camera?: WeatherCamera): void {
     const { settings, state } = input
     const eaves = input.eaves ?? []
     const lod = computeWeatherLod(settings, input.cameraDist ?? 34, eaves.length > 0, input.viewportWidth)
@@ -655,7 +666,8 @@ export class WeatherRenderer {
 
     const u = this.uniformData
     u.fill(0)
-    for (let i = 0; i < 16; i++) u[i] = input.viewProj[i] ?? 0
+    const viewProj = camera?.viewProj ?? input.viewProj
+    for (let i = 0; i < 16; i++) u[i] = viewProj[i] ?? 0
 
     const ex = input.eye[0] ?? 0
     const ey = input.eye[1] ?? 10
@@ -673,8 +685,8 @@ export class WeatherRenderer {
     u[22] = focusZ
     u[23] = 0
 
-    const vpW = Math.max(1, input.viewportWidth)
-    const vpH = Math.max(1, input.viewportHeight)
+    const vpW = Math.max(1, camera?.width ?? input.viewportWidth)
+    const vpH = Math.max(1, camera?.height ?? input.viewportHeight)
     const fov = input.fovYRad ?? 0.65
     const focalPx = vpH / (2 * Math.tan(fov * 0.5))
     u[24] = vpW
@@ -734,7 +746,7 @@ export class WeatherRenderer {
     u[58] = input.ambientLum ?? 0.35
     u[59] = eaveCount
 
-    const hiDpiBoost = vpW > 2200 ? 1.24 : 1.0
+    const hiDpiBoost = input.viewportWidth > 2200 ? 1.24 : 1.0
     if (settings.snowMode) {
       u[60] = 0.78
       u[61] = 0.85
@@ -812,8 +824,34 @@ export class WeatherRenderer {
     }
     if (hasStreaks) {
       pass.setPipeline(motionMrt ? this.motionStreakPipe! : this.streakPipe)
-      if (this.nearCount > 0) pass.draw(6, this.nearCount, 0, 0)
-      if (this.farCount > 0) pass.draw(6, this.farCount, 0, NEAR_BASE * MAX_DENSITY_SCALE)
+      this.drawStreaks(pass)
     }
+  }
+
+  /** Redraws this frame's rain, splashes and mist into the temporal reactive mask (`@arcade/kit/gpu/reactive`). */
+  drawReactive(pass: GPURenderPassEncoder): void {
+    const hasStreaks = this.nearCount > 0 || this.farCount > 0
+    const hasSplashes = this.splashCount > 0 || this.dripCount > 0
+    if (!hasStreaks && !hasSplashes && !this.mistCount) return
+    const twin = (vs: string, fs: string) => this.device.createRenderPipeline(reactivePipelineDescriptor(this.describe(vs, fs)))
+    const p = (this.reactivePipes ??= { streak: twin("streakVs", "streakFs"), splash: twin("splashVs", "splashFs"), mist: twin("mistVs", "mistFs") })
+    pass.setBindGroup(0, this.group)
+    if (this.mistCount) {
+      pass.setPipeline(p.mist)
+      pass.draw(6, this.mistCount)
+    }
+    if (hasSplashes) {
+      pass.setPipeline(p.splash)
+      pass.draw(12, this.splashCount + this.dripCount)
+    }
+    if (hasStreaks) {
+      pass.setPipeline(p.streak)
+      this.drawStreaks(pass)
+    }
+  }
+
+  private drawStreaks(pass: GPURenderPassEncoder): void {
+    if (this.nearCount > 0) pass.draw(6, this.nearCount, 0, 0)
+    if (this.farCount > 0) pass.draw(6, this.farCount, 0, NEAR_BASE * MAX_DENSITY_SCALE)
   }
 }

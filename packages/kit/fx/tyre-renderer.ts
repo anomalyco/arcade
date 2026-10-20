@@ -1,3 +1,4 @@
+import { reactivePipelineDescriptor } from "../gpu/reactive"
 import { SMOKE_CAPACITY, SMOKE_STRIDE, type SmokeTrail } from "./smoke-trail"
 
 /** Unlit smoke and dust colour: Getaway's night street. Hosts with a frame ambient (Noir) pass their own expression. */
@@ -70,6 +71,8 @@ export class SmokeRenderer {
   private readonly pipeline: GPURenderPipeline
   private readonly motionPipeline: GPURenderPipeline
   private readonly noise: GPUTexture
+  private readonly descriptor: GPURenderPipelineDescriptor
+  private reactivePipe?: GPURenderPipeline
   private count = 0
   constructor(private readonly device: GPUDevice, main: GPUBindGroupLayout, common: string, depthFormat: GPUTextureFormat = "depth24plus-stencil8", cone?: string, base?: string, dust?: string) {
     const d = device
@@ -88,7 +91,7 @@ export class SmokeRenderer {
       { binding: 1, resource: d.createSampler({ minFilter: "linear", magFilter: "linear", addressModeU: "repeat", addressModeV: "repeat", addressModeW: "repeat" }) },
     ] })
     const module = d.createShaderModule({ code: tyreShader(common, cone, base, dust) })
-    const descriptor: GPURenderPipelineDescriptor = {
+    const descriptor: GPURenderPipelineDescriptor = this.descriptor = {
       layout: d.createPipelineLayout({ bindGroupLayouts: [main, layout] }),
       vertex: { module, entryPoint: "vs", buffers: [{ arrayStride: 32, stepMode: "instance", attributes: [{ shaderLocation: 0, offset: 0, format: "float32x4" }, { shaderLocation: 1, offset: 16, format: "float32x4" }] }] },
       fragment: { module, entryPoint: "fs", targets: [{ format: "rgba16float", blend: { color: { srcFactor: "one", dstFactor: "one-minus-src-alpha" }, alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha" } } }] },
@@ -107,6 +110,12 @@ export class SmokeRenderer {
   draw(pass: GPURenderPassEncoder, motion = false) {
     if (!this.count) return
     pass.setBindGroup(1, this.group); pass.setPipeline(motion ? this.motionPipeline : this.pipeline); pass.setVertexBuffer(0, this.instances); pass.draw(6, this.count)
+  }
+  /** Redraws the billows into the temporal reactive mask (`@arcade/kit/gpu/reactive`), with the host's group 0 bound. */
+  drawReactive(pass: GPURenderPassEncoder) {
+    if (!this.count) return
+    this.reactivePipe ??= this.device.createRenderPipeline(reactivePipelineDescriptor(this.descriptor))
+    pass.setBindGroup(1, this.group); pass.setPipeline(this.reactivePipe); pass.setVertexBuffer(0, this.instances); pass.draw(6, this.count)
   }
   destroy() { this.instances.destroy(); this.noise.destroy() }
 }

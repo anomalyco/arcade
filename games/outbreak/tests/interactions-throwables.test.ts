@@ -148,6 +148,21 @@ describe("throwables", () => {
     expect(end.x).toBeCloseTo(st.at!.x, 5)
   })
 
+  test("a throw in flight is drawn into TAA's reactive mask", async () => {
+    const { InteractionsPresenter } = await import("../src/interactions/presenter")
+    let models = 0
+    const presenter = new InteractionsPresenter({ addModel: () => models++ })
+    const { sim, hold, throwFor, ledger, slot } = room(street)
+    hold("rock")
+    throwFor(0.75)
+    const st = ledger.store("toss:0")!
+    const flying = presenter.collect(sim, slot, st.counts.t! / 10 + st.counts.fl! / 20)
+    expect(presenter.shown.flying).toBe(1)
+    // The rock, and only the rock: furniture and the aim preview stay out.
+    expect(flying.filter((b) => b.reactive).map((b) => b.count)).toEqual([1])
+    expect(flying.some((b) => !b.reactive)).toBe(true)
+  })
+
   test("some houses have one lying about, seeded from the town alone", () => {
     const sim = new CoopSim(7, 7, 0.22, { zombieCount: 0 })
     const houses = sim.town.buildings.filter((b) => b.kind === "house")

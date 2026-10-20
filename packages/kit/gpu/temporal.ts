@@ -7,13 +7,15 @@
  * Blackman-Harris weights), reprojects the history by depth (the closest of the 3×3 taps, so edges follow the
  * foreground), rejects it where the previous frame's depth disagrees (disocclusion) or it falls off screen, clips it
  * to the YCoCg variance box of the neighbourhood (tighter when moving), and blends in a reversible tone-compressed
- * space so bright sparks don't dominate. A reactive mask (sprites re-drawn without depth) raises the current weight
- * where alpha and additive effects move without depth. History stays unsharpened; RCAS runs on the way out.
+ * space so bright sparks don't dominate. A reactive mask (`./reactive`: sprites, particles, rain, splatter drops, smoke,
+ * plugin motes and `reactive` batches re-drawn without depth) raises the current weight where things move on their
+ * own. History stays unsharpened; RCAS runs on the way out.
  *
  * Reprojection is camera-only: the world, which is most of a top-down frame, reprojects exactly; moving actors without
  * a velocity buffer fall back to the disocclusion test and the clip, and keep their MSAA edges.
  */
 import { mat4 } from "wgpu-matrix"
+import { REACTIVE_FORMAT } from "./reactive"
 
 export type AntiAliasingMode = "msaa" | "taa" | "taau"
 
@@ -441,7 +443,7 @@ export class TemporalResolve {
     this.outputView = this.output.createView()
     this.prevLin = d.createTexture({ label: "temporal previous depth", size: [inW, inH], format: "r32float", usage: TEX_RENDER | TEX_BIND })
     this.prevLinView = this.prevLin.createView()
-    this.reactive = d.createTexture({ label: "temporal reactive", size: [inW, inH], format: "rgba8unorm", usage: TEX_RENDER | TEX_BIND })
+    this.reactive = d.createTexture({ label: "temporal reactive", size: [inW, inH], format: REACTIVE_FORMAT, usage: TEX_RENDER | TEX_BIND | TEX_COPY_SRC })
     this.reactiveView = this.reactive.createView()
     this.groups = null
     this.reset()

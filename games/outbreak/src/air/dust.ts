@@ -1,4 +1,5 @@
 import { foliageWindDeclarationsWgsl } from "@arcade/kit/gpu/foliage"
+import { reactivePipelineDescriptor } from "@arcade/kit/gpu/reactive"
 import type { PassContext, ScenePass } from "@arcade/kit/gpu/renderer"
 import { common } from "@arcade/kit/gpu/shaders"
 import type { QualityTier } from "@arcade/kit/quality"
@@ -222,6 +223,8 @@ const CORNERS = array<vec2f, 6>(vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0,
  */
 export class DustPass implements ScenePass {
   private readonly pipe: GPURenderPipeline
+  private readonly descriptor: GPURenderPipelineDescriptor
+  private reactivePipe?: GPURenderPipeline
   private readonly device: GPUDevice
   private readonly styleBuf: GPUBuffer
   private readonly styleGroup: GPUBindGroup
@@ -237,7 +240,7 @@ export class DustPass implements ScenePass {
     })
     this.styleGroup = d.createBindGroup({ layout: styleLayout, entries: [{ binding: 0, resource: { buffer: this.styleBuf } }] })
     const module = d.createShaderModule({ code: dustShader, label: "outbreak dust motes" })
-    this.pipe = d.createRenderPipeline({
+    this.descriptor = {
       label: "outbreak dust motes",
       layout: d.createPipelineLayout({ bindGroupLayouts: [ctx.frameLayout, styleLayout] }),
       vertex: { module, entryPoint: "vs" },
@@ -255,7 +258,8 @@ export class DustPass implements ScenePass {
       primitive: { topology: "triangle-list" },
       depthStencil: { format: ctx.depth, depthWriteEnabled: false, depthCompare: ctx.depthCompare ?? "less-equal" },
       multisample: { count: ctx.samples },
-    })
+    }
+    this.pipe = d.createRenderPipeline(this.descriptor)
   }
 
   /**
@@ -284,6 +288,15 @@ export class DustPass implements ScenePass {
   draw(pass: GPURenderPassEncoder) {
     if (!this.instances) return
     pass.setPipeline(this.pipe)
+    pass.setBindGroup(1, this.styleGroup)
+    pass.draw(6, this.instances)
+  }
+
+  /** The motes drift and glint on their own: under TAA they go into the reactive mask too. */
+  drawReactive(pass: GPURenderPassEncoder) {
+    if (!this.instances) return
+    this.reactivePipe ??= this.device.createRenderPipeline(reactivePipelineDescriptor(this.descriptor))
+    pass.setPipeline(this.reactivePipe)
     pass.setBindGroup(1, this.styleGroup)
     pass.draw(6, this.instances)
   }

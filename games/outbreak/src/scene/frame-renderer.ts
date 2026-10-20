@@ -281,6 +281,8 @@ export class OutbreakFrameRenderer {
     this.ambientMotion.reset()
     this.vehicleRenderer.reset()
     this.fx.reset()
+    // A new town under the same camera must not blend into the last one's TAA history.
+    this.renderer.resetTemporalHistory()
   }
 
   resetForSession(nextSeed: number): void {
@@ -301,6 +303,8 @@ export class OutbreakFrameRenderer {
     this.weatherAudio.reset()
     this.sceneLevel.resetForSession()
     this.frameLighting.resetForSession()
+    // Restart and New town can open at the same camera: the TAA history is the old run's frame.
+    this.renderer.resetTemporalHistory()
     cam.snap(session().view.player.x, session().view.player.y)
     cam.dist = settings.view.zoom
   }

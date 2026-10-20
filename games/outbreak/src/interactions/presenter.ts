@@ -28,6 +28,7 @@ export type AimPreview = { plan: TossPlan; power: number; x: number; y: number }
 export class InteractionsPresenter {
   private readonly items = new Map<string, number>()
   private readonly furniture = new Map<string, number>()
+  private readonly thrown = new Set<number>()
   private readonly dot: number
   private readonly ring: number
   private readonly data = new Map<number, Float32Array<ArrayBuffer>>()
@@ -42,7 +43,10 @@ export class InteractionsPresenter {
     const meshes = buildItemMeshes()
     for (const item of THROWABLE_ITEMS) {
       const mesh = meshes[item]
-      if (mesh) this.items.set(item, renderer.addModel(mesh))
+      if (!mesh) continue
+      const model = renderer.addModel(mesh)
+      this.items.set(item, model)
+      this.thrown.add(model)
     }
     for (const [key, mesh] of Object.entries(buildFurnitureMeshes())) this.furniture.set(key, renderer.addModel(mesh))
     const aim = buildAimMeshes()
@@ -131,7 +135,8 @@ export class InteractionsPresenter {
       this.rings.set([gx, supportHeight(town, gx, gy) + 0.02, gy, time * 1.5, tint[0], tint[1], tint[2], scale, 0, 0, 1, 0], rings * INST_FLOATS)
       rings++
     }
-    for (const [model, n] of this.counts) if (n) this.out.push({ model, data: this.data.get(model)!, count: n })
+    // Items in flight go into the TAA reactive mask; furniture slides with whoever drags it.
+    for (const [model, n] of this.counts) if (n) this.out.push({ model, data: this.data.get(model)!, count: n, reactive: this.thrown.has(model) })
     if (dots) this.out.push({ model: this.dot, data: this.dots, count: dots })
     if (rings) this.out.push({ model: this.ring, data: this.rings, count: rings })
     return this.out
