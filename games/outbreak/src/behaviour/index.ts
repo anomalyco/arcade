@@ -1,14 +1,16 @@
 import type { LabControl } from "@arcade/kit/lab-panel"
 import type { LabCommand } from "@arcade/kit/lab/commands"
+import { LIGHT_FLOATS } from "@arcade/kit/limits"
 import { ACT_NONE, ACTIVITY_NAMES, attentionOf } from "../../shared/behaviour/activities"
 import { applyReplicatedActivities, behaviourOf } from "../../shared/behaviour/mind"
+import { dayCycle } from "../../shared/day-cycle"
 import { behaviourControls, DEFAULT_BEHAVIOUR_TUNING } from "../../shared/behaviour/tuning"
 import type { OutbreakSim } from "../../shared/sim-types"
 import { supportHeight } from "../../shared/terrain"
 import { registerOutbreakClientFeature } from "../feature-registry"
 import { BehaviourOverlay } from "./overlay"
 import { BehaviourPoser } from "./pose"
-import { BEHAVIOUR_SCENES, stageBehaviour, type BehaviourScene } from "./stage"
+import { BEHAVIOUR_SCENES, WATCHABLE_SCENES, stageBehaviour, type BehaviourScene, type StagedBehaviour } from "./stage"
 
 /**
  * Zombie behaviour (AR-91), client half: Backquote › Zombie behaviour ("Zombie behaviour: Today" turns it off), the
@@ -23,9 +25,14 @@ let poseSim: OutbreakSim | null = null
 const activityOf = (id: number) => (poseSim ? (behaviourOf(poseSim)?.minds[id]?.act ?? ACT_NONE) : ACT_NONE)
 poser.world = { activity: activityOf, survivors }
 
-function stage(sim: OutbreakSim, scene: string) {
+/** Where the camera watches a scene the dead play out alone (`watch`), or null to follow the survivor. */
+let watching: { x: number; y: number } | null = null
+
+function stage(sim: OutbreakSim, scene: string, watch = false): StagedBehaviour | { error: string } {
   if (!(BEHAVIOUR_SCENES as readonly string[]).includes(scene)) return { error: `unknown scene "${scene}" (${BEHAVIOUR_SCENES.join(", ")})` }
-  return stageBehaviour(sim, scene as BehaviourScene)
+  const out = stageBehaviour(sim, scene as BehaviourScene, { watch })
+  watching = out.watch && out.centre ? { ...out.centre } : null
+  return out
 }
 
 function summary(sim: OutbreakSim) {
@@ -57,7 +64,7 @@ export const outbreakBehaviourFeature = registerOutbreakClientFeature({
         type: "action",
         run: () => {
           if (!host.progressionHost.offline()) return
-          stage(host.session().sim, scene)
+          stage(host.session().sim, scene, WATCHABLE_SCENES.includes(scene))
         },
       }),
     ),
@@ -69,10 +76,13 @@ export const outbreakBehaviourFeature = registerOutbreakClientFeature({
       shortLabel: "Behaviour",
       category: "Scene",
       undoable: false,
-      args: { scene: { type: "string", description: `Scene (${BEHAVIOUR_SCENES.join(", ")})` } },
+      args: {
+        scene: { type: "string", description: `Scene (${BEHAVIOUR_SCENES.join(", ")})` },
+        watch: { type: "boolean", description: "Hide the survivor indoors and watch the dead from the scene's centre (rest, herd, feed, light, lightning, crowd)" },
+      },
       enabled: () => !host.coop.net,
       run: async (_ctx, args) => {
-        const out = stage(host.session().sim, String(args?.scene ?? "crowd"))
+        const out = stage(host.session().sim, String(args?.scene ?? "crowd"), Boolean(args?.watch))
         await host.harness().step(1 / 60)
         return out
       },
@@ -80,8 +90,12 @@ export const outbreakBehaviourFeature = registerOutbreakClientFeature({
   ],
   harnessMethods: (host) => ({
     /** Stages a behaviour scene around the survivor (`listen`, `follow`, `search`, `rest`, `herd`, `feed`, …). */
-    stageBehaviour(scene: string) {
-      return stage(host.session().sim, scene)
+    stageBehaviour(scene: string, watch = false) {
+      return stage(host.session().sim, scene, watch)
+    },
+    /** Stops watching a staged scene: the camera follows the survivor again. */
+    stopWatchingBehaviour() {
+      watching = null
     },
   }),
   harnessState: (host) => ({ behaviour: summary(host.session().sim) }),
@@ -93,7 +107,10 @@ export const outbreakBehaviourFeature = registerOutbreakClientFeature({
     },
   },
   feel: {
-    reset: () => poser.reset(),
+    reset: () => {
+      poser.reset()
+      watching = null
+    },
     processFrame: ({ session, zombieCrowd, settings, addCount }) => {
       const tuning = settings.behaviour
       if (tuning.zbMode < 1) {
@@ -109,6 +126,35 @@ export const outbreakBehaviourFeature = registerOutbreakClientFeature({
     },
   },
   frame: {
+    viewpoint: (session) => {
+      if (!watching) return null
+      const p = session.view.player
+      // Moving takes the camera back.
+      if (Math.hypot(p.vx, p.vy) > 0.6) {
+        watching = null
+        return null
+      }
+      return { x: watching.x, y: watching.y, aim: -Math.PI / 2, health: p.health, maxHealth: p.maxHealth, allAround: true }
+    },
+    // A watched night scene has no torch on it: a wide, faint moon pool over the scene so the dead read.
+    lights: ({ session }, lights, count, max) => {
+      const dark = watching ? dayCycle(session.view.hour).darkness : 0
+      if (!watching || dark < 0.05 || count >= max) return count
+      const o = count * LIGHT_FLOATS
+      lights.fill(0, o, o + LIGHT_FLOATS)
+      lights[o] = watching.x
+      lights[o + 1] = supportHeight(session.sim.town, watching.x, watching.y) + 9
+      lights[o + 2] = watching.y
+      lights[o + 3] = 26
+      lights[o + 4] = 0.62
+      lights[o + 5] = 0.72
+      lights[o + 6] = 0.95
+      lights[o + 7] = 1.4 * dark
+      lights[o + 11] = -1
+      lights[o + 14] = 0.12
+      lights[o + 15] = -1
+      return count + 1
+    },
     overlay: ({ session, settings, cam, w, h }) => {
       if (!settings.behaviour.zbOverlay) return overlay.hide()
       const sim = session.sim

@@ -49,7 +49,15 @@ export interface OutbreakClientFrameContext {
 }
 
 /** Where the camera, sight shroud and listener sit instead of the local survivor (e.g. watching a teammate). */
-export type OutbreakClientViewpoint = { x: number; y: number; aim: number; health: number; maxHealth: number }
+export type OutbreakClientViewpoint = {
+  x: number
+  y: number
+  aim: number
+  health: number
+  maxHealth: number
+  /** Sight looks every way from here (a watched scene) instead of along `aim`. */
+  allAround?: boolean
+}
 
 export interface OutbreakClientFeatureFrameHooks {
   /** The viewpoint for this frame, or null to look from the local survivor as usual. */
