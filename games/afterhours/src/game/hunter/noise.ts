@@ -4,9 +4,10 @@
 // `radius` is how far the noise carries in the open (m). The hunter attenuates it by distance, every wall-height solid
 // on the straight line between them, and the storeys in between (src/game/hunter/senses.ts). Reference radii:
 //   crouch-walk 1.5 · walk 7 · jog 10 · sprint 18–40 (kind "sprint": carries through walls and floors) · landing 6–14 · flashlight click 2.5 · door eased open 7 · door banged 18 ·
-//   lift clunk 14–28 · something knocked over 14 · the transmitter switch 30
+//   lift clunk 14–28 · a hold-E search 3–5 ("search"), a metal locker 8–10 ("search") · the truck's engine starting or
+//   the dock's roll-up door ("engine", 90: heard anywhere in the building; it comes straight there at a rush) · something knocked over 14 · the transmitter switch 30
 
-export type NoiseKind = "step" | "sprint" | "land" | "door" | "lift" | "flashlight" | "knock" | "voice" | "switch" | "other"
+export type NoiseKind = "step" | "sprint" | "land" | "door" | "lift" | "flashlight" | "knock" | "search" | "engine" | "voice" | "switch" | "other"
 
 export type NoiseEvent = {
   x: number

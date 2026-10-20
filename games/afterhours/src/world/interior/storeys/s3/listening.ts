@@ -11,6 +11,7 @@ import { type DocumentId, documentMesh } from "../../../../render/documents"
 import { type CorpseCharacter, type CorpsePose, corpseInfo, spawnCorpse } from "../../../npc/corpse"
 import type { S3 } from "./common"
 import { headphones, sub } from "./equipment"
+import { transmitter } from "./transmitter-state"
 import { glassCrack } from "./glass-crack"
 import { type RadioRoom, transmitterRack } from "./transmitter"
 
@@ -27,6 +28,8 @@ import { type RadioRoom, transmitterRack } from "./transmitter"
 const Y3 = FLOOR_Y + storeyY(3) - storeyY(0)
 /** The warning blotter on the operator desk, under Kessler's head and arms (world x/z). */
 const BLOTTER = { x: 8.27, z: -13.85 }
+/** The vehicle sign-out clipboard on the corridor face of the 3-08 wall (world x/z, height over the floor). */
+export const SIGNOUT = { x: 3.95, y: 1.45, z: -1.6 + 0.012 }
 /** The note under Kessler's head and folded arms (world x/z, on the blotter). */
 const NOTE = { x: 8.4, z: -13.68 }
 /** Where Kessler lies after he's pushed off the desk (body centre, world x/z). */
@@ -197,6 +200,10 @@ export function stageListeningRoom(s: S3): (t: number) => void {
 
   // ---- the operator's desk the morning after
   s.doc("log_3_08_night", [7.56, od, -13.86], [0, 1, 0], { rotation: -0.08, curl: 0.05 })
+  // Corridor side of the 3-08 door: the vehicle sign-out clipboard (src/game/search: the key trail starts here).
+  b.rbox(paint(0x6b5236, 0.7, 0), T(SIGNOUT.x, FLOOR_Y + SIGNOUT.y, -1.6 + 0.004), 0.24, 0.33, 0.006, 0.003)
+  b.boxM("metal_galvanized", T(SIGNOUT.x, FLOOR_Y + SIGNOUT.y + 0.15, -1.6 + 0.012), 0.09, 0.02, 0.01, 0, 0, 0)
+  s.doc("vehicle_signout", [SIGNOUT.x, FLOOR_Y + SIGNOUT.y - 0.015, -1.6 + 0.0075], [0, 0, 1], { pin: "none", curl: 0.03 })
   // The night's duty roster by the door: six names, the four here and the two sent out to the array.
   s.doc("roster_3_08_duty", [4.1, FLOOR_Y + 1.5, -1.75 - 0.002], [0, 0, -1], { pin: "tape", rotation: 0.02 })
   s.doc("note_coming_from_woods", [6.9, FLOOR_Y, -12.6], [0, 1, 0], { rotation: 2.6 })
@@ -304,7 +311,8 @@ export function stageListeningRoom(s: S3): (t: number) => void {
     }
     voice.set(0.72 + 1.44 * level)
     voice.update(dt, t)
-    if (t > nextVoice) {
+    // The whispers end once the warning has been read (the room's last voice was the call).
+    if (t > nextVoice && !transmitter.reached("revealed")) {
       nextVoice = t + 22 + Math.random() * 30
       sfx.play("hor-radio-whisper", { bus: "horror", pos: { x: src.x, y: src.y, z: src.z }, ref: 2.5, rolloff: 0.5, range: 18, gain: 0.5, jitter: 0.05 })
     }

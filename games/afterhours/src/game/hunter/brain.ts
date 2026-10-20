@@ -33,6 +33,19 @@ type Task = Goal & { look: number; kind: "go" | "room" | "door" | "spot"; room?:
 
 export type CatchInfo = { x: number; y: number; z: number; mode: HunterMode }
 
+/**
+ * A step of the player's way out that it patrols until it's done (the key trail: Hargrove's locker, the key cabinet in
+ * 0-30, the loading dock). The interior agent sets the real ones (`HunterHandle.setTrail`) and marks each done
+ * (`completeTrail`); these defaults follow the building program (lockers in the 0-12 change room, facilities 0-30,
+ * receiving 0-16 by the dock).
+ */
+export type TrailStep = { id: string; x: number; z: number; s: number; done?: boolean }
+export const DEFAULT_TRAIL: TrailStep[] = [
+  { id: "locker", x: -45.1, z: -8.5, s: 0 },
+  { id: "keys", x: -51.2, z: 6.2, s: 0 },
+  { id: "dock", x: -31.0, z: -15.0, s: 0 },
+]
+
 const UP = new THREE.Vector3(0, 1, 0)
 
 function mulberry(seed: number) {
@@ -80,6 +93,12 @@ export class Hunter {
   creature: Wendigo | null = null
   catches = 0
   onCatch: (info: CatchInfo) => void = () => {}
+  /** The key trail it patrols (pending steps only). */
+  keyTrail: TrailStep[] = DEFAULT_TRAIL.map((t) => ({ ...t }))
+  /** When it last had a trail on the player (saw them, heard them, or was hunting them), and when it spawned. */
+  private hadTrailAt = 0
+  private nextPresence = 0
+  private presenceLast: string[] = []
 
   private rng: () => number
   private tasks: Task[] = []
@@ -94,7 +113,6 @@ export class Hunter {
   private nextVocal = 0
   private nextStep = 0
   private foot = 0
-  private nextKnock = 0
   private doorIdx = 0
   private doorWait: { door: number; t: number; bash: boolean } | null = null
   private ownDoors = new Set<string>()
@@ -102,6 +120,7 @@ export class Hunter {
   private visited = new Map<string, number>()
   private ambushAt = -99
   private glimpseAt = -99
+  private lastInvestigate: (Goal & { t: number }) | null = null
   /** Last sprint it heard (for your heading), and when it last had a fix on you by sight or a sprint. */
   private sprintFix: Goal & { t: number } | null = null
   private trackAt = -99
@@ -198,6 +217,7 @@ export class Hunter {
     this.prepare()
     this.creature?.root.position.copy(this.pos)
     this.time = Math.max(this.time, 0.001)
+    this.hadTrailAt = this.time
     this.note(`spawn ${s}`)
     if (opts.toward) this.investigate(opts.toward, 0.4, "spawn")
     else this.setMode("roam")
@@ -291,6 +311,9 @@ export class Hunter {
   }
 
   private react(p: Goal, e: NoiseEvent, strength: number) {
+    if (strength > 0.15 || e.kind === "sprint" || e.kind === "engine") this.hadTrailAt = this.time
+    // The truck's engine or the dock door: it knows exactly where that is, and comes straight there at a rush.
+    if (e.kind === "engine") return this.rushTo(p, e.y, "hears the engine")
     if (e.kind === "sprint") return this.sprintHeard(p, e.y)
     if (this.mode === "hunt") {
       // Out of sight, a noise tells it where you went (that's fair: it heard you).
@@ -309,6 +332,16 @@ export class Hunter {
     const score = strength * (e.radius >= 10 ? 1.3 : 1)
     const threshold = this.mode === "investigate" ? Math.max(0.08, this.interest * 0.7) : 0.06
     if (score >= threshold) this.investigate(p, strength, e.kind)
+  }
+
+  /** Straight to `p` at rush speed (a hunt by sound), whatever it was doing. */
+  private rushTo(p: Goal, y: number, why: string) {
+    this.memory = { ...p, y, t: this.time, seen: false, vx: 0, vz: 0 }
+    this.trackAt = this.time
+    if (this.mode !== "hunt") this.startHunt()
+    this.rushing = true
+    this.repathAt = 0
+    this.note(why)
   }
 
   /**
@@ -396,6 +429,7 @@ export class Hunter {
     }
     this.seeing = visible
     if (visible) {
+      this.hadTrailAt = this.time
       const close = dist < 4
       this.awareness = close ? 1 : Math.min(1, this.awareness + dt * (0.8 + 3 * Math.max(0, 1 - dist / range)))
       this.seenAt = this.time
@@ -413,6 +447,13 @@ export class Hunter {
 
   private investigate(p: Goal, strength: number, why: string) {
     if (this.mode === "hunt") return
+    // The same noise again (a search going on, footsteps in one place): it is already on its way there.
+    const li = this.lastInvestigate
+    if (this.mode === "investigate" && li && li.s === p.s && Math.hypot(li.x - p.x, li.z - p.z) < 3 && this.time - li.t < 2) {
+      li.t = this.time
+      return
+    }
+    this.lastInvestigate = { ...p, t: this.time }
     const was = this.mode
     this.mode = "investigate"
     this.interest = Math.max(strength, was === "investigate" ? this.interest * 0.8 : 0)
@@ -475,8 +516,26 @@ export class Hunter {
   }
 
   private roam() {
-    // Rarely, an ambush at a chokepoint near where it heard things.
     const recent = this.heat.filter((h) => this.time - h.t < 120)
+    const pending = this.keyTrail.filter((t) => !t.done)
+    // Now and then an ambush at the core stair on the player's likely way: between the storey it last had evidence of
+    // them on (what it saw or heard, or 3-08's storey, where it came for them) and the next step of the key trail.
+    if (pending.length && this.time - this.ambushAt > 80 && this.rng() < 0.14) {
+      const from = this.memory?.s ?? recent[recent.length - 1]?.s ?? 3
+      const to = pending[0]!.s
+      const lo = Math.min(from, to)
+      const hi = Math.max(from, to)
+      const landings = this.nav.chokepoints.filter((k, i) => k.s >= lo && k.s <= hi && i % 2 === 0)
+      const k = landings[Math.floor(this.rng() * landings.length)]
+      if (k) {
+        this.ambushAt = this.time
+        this.setMode("ambush")
+        this.tasks = [{ ...k, look: 12 + this.rng() * 10, kind: "go" }]
+        this.note(`ambush at the stair, storey ${k.s}`)
+        return
+      }
+    }
+    // Rarely, an ambush at a chokepoint near where it heard things.
     if (recent.length && this.time - this.ambushAt > 120 && this.rng() < 0.06) {
       const c = recent[recent.length - 1]!
       let best = this.nav.chokepoints[0]!
@@ -501,13 +560,33 @@ export class Hunter {
       const d = Math.hypot(r.px - this.pos.x, r.pz - this.pos.z) + Math.abs(r.s - this.s) * 14
       let heat = 0
       for (const h of recent) heat += h.w * Math.exp(-(this.time - h.t) / 90) * Math.exp(-(Math.hypot(h.x - r.px, h.z - r.pz) + Math.abs(h.s - r.s) * 10) / 12)
-      const score = Math.min(1, since / 240) + 1.5 * Math.min(1.5, heat) + this.rng() * 0.5 - d / 90
+      // The key trail's places it hasn't seen the player finish are patrolled: rooms near them weigh more.
+      let trail = 0
+      for (const t of pending) trail += Math.exp(-(Math.hypot(t.x - r.px, t.z - r.pz) + Math.abs(t.s - r.s) * 12) / 9)
+      const score = Math.min(1, since / 240) + 1.5 * Math.min(1.5, heat) + 1.3 * Math.min(1.2, trail) + this.rng() * 0.5 - d / 90
       if (score > bs) {
         bs = score
         best = r
       }
     }
+    // The trail's places themselves (and the stair between them) are patrol stops too.
+    for (const t of pending) {
+      const key = `trail:${t.id}`
+      const since = this.time - (this.visited.get(key) ?? -999)
+      if (since < 40) continue
+      const d = Math.hypot(t.x - this.pos.x, t.z - this.pos.z) + Math.abs(t.s - this.s) * 14
+      const score = Math.min(1, since / 240) + 1.4 + this.rng() * 0.5 - d / 90
+      if (score > bs) {
+        bs = score
+        const p = this.nav.snap(t.s, t.x, t.z, 4)
+        if (p) {
+          this.tasks = [{ ...p, s: t.s, look: 3 + this.rng() * 4, kind: "room", room: key }]
+          best = null
+        }
+      }
+    }
     if (best) this.tasks = [{ x: best.px, z: best.pz, s: best.s, look: 2 + this.rng() * 3, kind: "room", room: best.key }]
+    else if (this.tasks.length) return
     else {
       const k = this.nav.chokepoints[Math.floor(this.rng() * this.nav.chokepoints.length)]!
       this.tasks = [{ ...k, look: 3, kind: "go" }]
@@ -567,7 +646,11 @@ export class Hunter {
       case "search":
         if (now > this.searchUntil) {
           this.note("gives up")
-          this.voice.vocal(this.headPos(), "moan", 0.9)
+          // Losing the trail: now and then a scream that carries through the building, else a moan.
+          if (this.time - this.lastScream > 60 && this.rng() < 0.5) {
+            this.lastScream = this.time
+            this.voice.vocal(this.headPos(), "scream", 0.75)
+          } else this.voice.vocal(this.headPos(), "moan", 0.9)
           this.nextVocal = now + 20
           this.setMode("roam")
           return
@@ -852,30 +935,87 @@ export class Hunter {
       this.nextBreath = now + (fast ? 1.0 : this.mode === "ambush" ? 4.5 : 3.0) * (0.85 + this.rng() * 0.3)
       this.voice.breath(this.headPos(), fast)
     }
-    // Vocalisations by mode.
-    if (now >= this.nextVocal && this.mode !== "ambush" && this.mode !== "caught") {
-      const k = this.mode === "search" ? "chatter" : this.mode === "hunt" ? "chatter" : this.rng() < 0.6 ? "groan" : "moan"
-      this.voice.vocal(this.headPos(), k, this.mode === "hunt" ? 1 : 0.8)
-      this.nextVocal = now + (this.mode === "hunt" ? 5 + this.rng() * 4 : this.mode === "search" ? 9 + this.rng() * 6 : 22 + this.rng() * 25)
-    }
-    // Knocking things over: hugging furniture in a room at speed (or, rarely, roaming).
-    if (now >= this.nextKnock && sp > 0.8) {
-      this.nextKnock = now + 0.5
-      const g = this.nav.grids[this.s]
-      const c = this.nav.cellAt(this.pos.x, this.pos.z)
-      const hugging = g && c >= 0 && g.clear[c]! <= 1 && g.door[c]! < 0
-      const room = this.nav.roomAt(this.s, this.pos.x, this.pos.z)
-      const chance = (sp > 3 ? 0.18 : 0.012) * 0.5
-      if (hugging && room && this.rng() < chance) {
-        this.nextKnock = now + 5
-        const fx = Math.sin(this.heading)
-        const fz = Math.cos(this.heading)
-        this.voice.knock({ x: this.pos.x + fx * 0.6, y: this.pos.y + 0.4, z: this.pos.z + fz * 0.6 })
-        this.note("knocks something over")
-      }
-    }
+    this.presence(now, sp)
     this.voice.lights(this.pos, dt, this.mode === "dormant" ? 0 : num(this.ctx, "hunter.lights"), now)
     void CELL
+  }
+
+  /**
+   * The creature's presence, so it can be followed by ear: every few seconds (more often roaming or searching than
+   * still), one of what it would really be doing where it is, never the same kind twice running:
+   *   a groan, moan or chatter (variants and pitch rotate) · a snort · claws or antlers scraping along the wall it's
+   *   passing · a door it brushes creaking on its hinges · something knocked over off the furniture it's hugging ·
+   *   its breath carried down the ventilation duct when it's under a return grille (voice.ts `duct`).
+   * All at its real position (the duct breath also at the grille the duct carries it to), distance- and
+   * wall-occluded like every sound. In an ambush it keeps still and quiet (breath only).
+   */
+  private presence(now: number, sp: number) {
+    if (now < this.nextPresence || this.mode === "dormant" || this.mode === "caught") return
+    const m = this.mode
+    this.nextPresence = now + (m === "hunt" ? 3 + this.rng() * 3 : m === "ambush" ? 9 + this.rng() * 6 : 3.5 + this.rng() * 5)
+    const g = this.nav.grids[this.s]
+    const c = this.nav.cellAt(this.pos.x, this.pos.z)
+    const clear = g && c >= 0 ? g.clear[c]! : 4
+    const room = this.nav.roomAt(this.s, this.pos.x, this.pos.z)
+    const head = this.headPos()
+    const fx = Math.sin(this.heading)
+    const fz = Math.cos(this.heading)
+    const opts: { k: string; w: number; fire: () => void }[] = []
+    if (m === "ambush") opts.push({ k: "duct", w: 1, fire: () => this.voice.duct(head, true) })
+    else {
+      opts.push({ k: "vocal", w: m === "hunt" ? 1.6 : 1.3, fire: () => this.voice.vocal(head, m === "hunt" || m === "search" ? (this.rng() < 0.7 ? "chatter" : "groan") : (["groan", "moan", "chatter"] as const)[Math.floor(this.rng() * 3)]!, m === "hunt" ? 1 : 0.8) })
+      opts.push({ k: "snort", w: 0.8, fire: () => this.voice.snort(head) })
+      if (clear <= 2 && sp > 0.4) {
+        // The wall side: whichever side has the nearer blocked cell.
+        const side = this.wallSide()
+        opts.push({ k: "scrape", w: 1.6, fire: () => this.voice.scrape({ x: this.pos.x + side.x * 0.45, y: this.pos.y + (this.stance === "biped" ? 1.9 : 1.1), z: this.pos.z + side.z * 0.45 }, sp) })
+      }
+      const door = this.nav.doors.find((d) => d.s === this.s && d.h.amount > 0.08 && d.h.amount < 0.92 && Math.hypot(d.cx - this.pos.x, d.cz - this.pos.z) < 2.2)
+      if (door)
+        opts.push({
+          k: "creak",
+          w: 1.4,
+          fire: () => {
+            const to = Math.max(0.05, Math.min(1, door.h.amount + (this.rng() < 0.5 ? -0.3 : 0.3)))
+            this.ctx.doors.drive(door.id, to, { rate: 0.25 })
+            this.ownDoors.add(door.id)
+            this.voice.creak({ x: door.cx, y: this.pos.y + 1.2, z: door.cz })
+          },
+        })
+      if (clear <= 1 && room && sp > 0.3)
+        opts.push({
+          k: "knock",
+          w: sp > 3 ? 1.5 : 0.7,
+          fire: () => {
+            this.voice.knock({ x: this.pos.x + fx * 0.6, y: this.pos.y + 0.4, z: this.pos.z + fz * 0.6 })
+            this.note("knocks something over")
+          },
+        })
+      opts.push({ k: "duct", w: 1.1, fire: () => this.voice.duct(head, false) })
+    }
+    const fresh = opts.filter((o) => !this.presenceLast.includes(o.k))
+    const pool = fresh.length ? fresh : opts
+    let r = this.rng() * pool.reduce((a, o) => a + o.w, 0)
+    const pick = pool.find((o) => (r -= o.w) <= 0) ?? pool[0]!
+    pick.fire()
+    this.presenceLast.push(pick.k)
+    if (this.presenceLast.length > 2) this.presenceLast.shift()
+  }
+
+  /** Unit vector (x, z) towards the nearer wall or furniture beside it. */
+  private wallSide() {
+    const rx = Math.cos(this.heading)
+    const rz = -Math.sin(this.heading)
+    const probe = (k: number) => {
+      const g = this.nav.grids[this.s]
+      for (let d = 0.25; d <= 1; d += 0.25) {
+        const c = this.nav.cellAt(this.pos.x + rx * d * k, this.pos.z + rz * d * k)
+        if (!g || c < 0 || !g.walk[c]) return d
+      }
+      return 9
+    }
+    const k = probe(1) <= probe(-1) ? 1 : -1
+    return { x: rx * k, z: rz * k }
   }
 
   private checkCatch() {
@@ -899,6 +1039,7 @@ export class Hunter {
     this.time += dt
     this.grace = Math.max(0, this.grace - dt)
     this.interest = Math.max(0, this.interest - dt * 0.04)
+    if (this.mode === "hunt" || this.mode === "investigate") this.hadTrailAt = this.time
     this.hear()
     if (this.time >= this.visionAt) {
       const step = 0.1
@@ -916,6 +1057,16 @@ export class Hunter {
       this.trail.push({ t: +this.time.toFixed(2), x: +this.pos.x.toFixed(2), z: +this.pos.z.toFixed(2), s: this.s, mode: this.mode })
       if (this.trail.length > 4000) this.trail.splice(0, 1000)
     }
+  }
+
+  /**
+   * Seconds since it last had a trail on the player: 0 while dormant, hunting, or investigating (going to something it
+   * heard or saw of them, including its first run at 3-08's transmission); counting once it is searching, roaming or
+   * waiting in ambush.
+   */
+  lostPlayerFor() {
+    if (this.mode === "dormant" || this.mode === "hunt" || this.mode === "investigate") return 0
+    return Math.max(0, this.time - this.hadTrailAt)
   }
 
   /** Stands where it is, listening, for `seconds` (then roams): scripted beats and automation. */

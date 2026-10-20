@@ -13,9 +13,53 @@ import { existsSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-const NAME = "car_sedan_b"
-/** Must match MODEL_SOURCES.car_sedan_b in scripts/fetch-models.ts (importing that script would run it). */
-const spec = { uid: "892b2684fb37442299bfad9222cf331c", yaw: 90, size: { axis: "z" as const, m: 5.1 } }
+/** Per model: the source (must match MODEL_SOURCES in scripts/fetch-models.ts; importing that script would run it),
+ *  the driver's-door / steering / lamp source nodes, and where the map goes. `bun scripts/intro/car-parts.ts [model]`. */
+const MODELS: Record<string, { uid: string; yaw: number; size: { axis: "x" | "y" | "z"; m: number }; parts: [string, RegExp][]; extra: RegExp; out: string }> = {
+  car_sedan_b: {
+    uid: "892b2684fb37442299bfad9222cf331c",
+    yaw: 90,
+    size: { axis: "z", m: 5.1 },
+    parts: [
+      ["door_fl", /^(Door_FL|Door_FL_Inner|Glass_Door_FL|Doorcard_FL|Sidemirror_Left)$/],
+      ["steering", /^Steering_wheel$/],
+      ["wheel_fl", /^Wheel_FL$/],
+      ["wheel_fr", /^Wheel_FR$/],
+      ["wheel_rl", /^Wheel_RL$/],
+      ["wheel_rr", /^Wheel_RR$/],
+      ["headlight", /^Headlight_glass$/],
+      ["stoplight", /^Stoplight_glass$/],
+      ["turnsignal", /^Turnsignals_glass$/],
+      ["reverse", /^Reverselights$/],
+      ["dashboard", /^Dashboard$/],
+    ],
+    extra: /^(Doorcard_FL|Seats|Glass_Door_FL|Door_FL_Inner)$/,
+    out: "src/game/intro/car-parts.json",
+  },
+  car_pickup: {
+    uid: "6c48c94be8974dc7a5932f697c0ba68f",
+    yaw: -90,
+    size: { axis: "z", m: 4.5 },
+    parts: [
+      ["door_fl", /^(Door_left|Door_innerl_left|Door_glass_left|Doorcard_left)$/],
+      ["steering", /^Steering_wheel$/],
+      ["wheel_fl", /^Wheel_FL$/],
+      ["wheel_fr", /^Wheel_FR$/],
+      ["wheel_rl", /^Wheel_RL$/],
+      ["wheel_rr", /^Wheel_RR$/],
+      ["headlight", /^Headlights_Riverside88_lights_0$/],
+      ["stoplight", /^Stioplights_glass$/],
+      ["turnsignal", /^Turnsignal_glass_(front|rear)$/],
+      ["reverse", /^Reverselights_glass$/],
+      ["dashboard", /^Dashboard$/],
+    ],
+    extra: /^(Doorcard_left|Seats|Door_glass_left|Door_innerl_left)$/,
+    out: "src/game/escape/truck-parts.json",
+  },
+}
+const NAME = process.argv[2] ?? "car_sedan_b"
+const spec = MODELS[NAME]
+if (!spec) throw new Error(`unknown model ${NAME}: ${Object.keys(MODELS).join(", ")}`)
 const tools = join(tmpdir(), "afterhours-gltf-tools")
 const work = join(tmpdir(), "afterhours-models")
 if (!existsSync(join(tools, "node_modules/@gltf-transform/functions"))) throw new Error("run `bun scripts/fetch-models.ts` first (installs the glTF tools)")
@@ -29,19 +73,7 @@ const srcFile = join(work, `${spec.uid}.glb`)
 if (!existsSync(srcFile)) throw new Error(`${srcFile} missing: run \`bun scripts/fetch-models.ts ${NAME} \``)
 
 /** Part label per source node name (first match wins); everything else is the body (0). */
-const PARTS: [string, RegExp][] = [
-  ["door_fl", /^(Door_FL|Door_FL_Inner|Glass_Door_FL|Doorcard_FL|Sidemirror_Left)$/],
-  ["steering", /^Steering_wheel$/],
-  ["wheel_fl", /^Wheel_FL$/],
-  ["wheel_fr", /^Wheel_FR$/],
-  ["wheel_rl", /^Wheel_RL$/],
-  ["wheel_rr", /^Wheel_RR$/],
-  ["headlight", /^Headlight_glass$/],
-  ["stoplight", /^Stoplight_glass$/],
-  ["turnsignal", /^Turnsignals_glass$/],
-  ["reverse", /^Reverselights$/],
-  ["dashboard", /^Dashboard$/],
-]
+const PARTS = spec.parts
 const labelOf = (name: string) => {
   const i = PARTS.findIndex(([, re]) => re.test(name))
   return i < 0 ? 0 : i + 1
@@ -83,7 +115,7 @@ await src.transform(fn.uninstance())
 const orient = rotY(spec.yaw)
 const srcTris: { label: number; v: number[][]; node: string }[] = []
 /** Source nodes whose bounds are recorded too (rig points: the door card for the inner handle, the seats for the hip). */
-const EXTRA = /^(Doorcard_FL|Seats|Glass_Door_FL|Door_FL_Inner)$/
+const EXTRA = spec.extra
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const scene = src.getRoot().getDefaultScene() ?? src.getRoot().listScenes()[0]
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -276,7 +308,7 @@ const result = {
   nodes,
   steering,
 }
-const file = join(import.meta.dir, "../../src/game/intro/car-parts.json")
+const file = join(import.meta.dir, "../..", spec.out)
 writeFileSync(file, JSON.stringify(result) + "\n")
 console.log(`wrote ${file}`)
 for (const [n, v] of Object.entries(info)) console.log(n.padEnd(11), v.tris, "tris", "min", v.min, "max", v.max)

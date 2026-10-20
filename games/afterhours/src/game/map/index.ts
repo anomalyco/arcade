@@ -7,7 +7,10 @@ import { Clipboard, PAGE_H, PAGE_W } from "./clipboard"
 import { pulseObjective } from "../objective"
 import { BRIEFING } from "../objectives"
 import { collectPlan, planKey } from "./data"
-import { PAGE_COUNT, PAGE_TITLES, pageOfStorey, type SiteFacts } from "./pages"
+import { INVENTORY_PAGE, PAGE_COUNT, PAGE_TITLES, pageOfStorey, type SiteFacts } from "./pages"
+import { carriedItems, mapMarks, onInventory, readNotes } from "../inventory"
+/** Sheets on the clipboard: the plans (PAGE_COUNT) and the inventory sheet last. */
+const SHEETS = PAGE_COUNT + 1
 import type { Request, Response } from "./pages.worker"
 
 // The player's clipboard map. M raises it into view (first person, held in front of the camera), M or Esc lowers it.
@@ -90,8 +93,8 @@ export function createMap(host: MapHost, options: MapOptions = {}): MapHandle {
   if (camera.parent !== root) root.add(camera)
 
   // ----------------------------------------------------------------------------------------------- pages
-  const textures: (THREE.Texture | null)[] = Array(PAGE_COUNT).fill(null)
-  const bitmaps: (ImageBitmap | null)[] = Array(PAGE_COUNT).fill(null)
+  const textures: (THREE.Texture | null)[] = Array(SHEETS).fill(null)
+  const bitmaps: (ImageBitmap | null)[] = Array(SHEETS).fill(null)
   let worker: Worker | null = null
   let facts: SiteFacts | null = null
   let jobSeq = 0
@@ -129,7 +132,17 @@ export function createMap(host: MapHost, options: MapOptions = {}): MapHandle {
     const index = queue.shift()!
     plan ??= collectPlan(ctx)
     busy = true
-    worker.postMessage({ type: "page", job: ++jobSeq, index, plan, facts, width: SHEET_PX, briefing: BRIEFING } satisfies Request)
+    worker.postMessage({
+      type: "page",
+      job: ++jobSeq,
+      index,
+      plan,
+      facts,
+      width: SHEET_PX,
+      briefing: BRIEFING,
+      marks: mapMarks(),
+      inventory: { items: carriedItems().map((i) => ({ name: i.name, desc: i.desc, key: i.key })), notes: readNotes().map((n) => ({ title: n.title, text: n.text })) },
+    } satisfies Request)
   }
   /** Queues pages (nearest the given page first). */
   const request = (pages: number[], refresh = false) => {
@@ -141,10 +154,10 @@ export function createMap(host: MapHost, options: MapOptions = {}): MapHandle {
     }
     void startWorker().then(pump)
   }
-  const allNear = (p: number) => [...Array(PAGE_COUNT).keys()].sort((a, b) => Math.abs(a - p) - Math.abs(b - p))
+  const allNear = (p: number) => [...Array(SHEETS).keys()].sort((a, b) => Math.abs(a - p) - Math.abs(b - p))
 
   const texFor = (p: number): THREE.Texture | null => {
-    if (p < 0 || p >= PAGE_COUNT) return null
+    if (p < 0 || p >= SHEETS) return null
     if (textures[p]) return textures[p]
     const bm = bitmaps[p]
     if (!bm) return null
@@ -161,7 +174,7 @@ export function createMap(host: MapHost, options: MapOptions = {}): MapHandle {
   }
   /** GPU copies only for the page in view and its neighbours. */
   const refreshTextures = () => {
-    for (let p = 0; p < PAGE_COUNT; p++) {
+    for (let p = 0; p < SHEETS; p++) {
       const near = Math.abs(p - page) <= 1 || p === flipPage
       if (!near && textures[p]) {
         textures[p]!.dispose()
@@ -197,7 +210,7 @@ export function createMap(host: MapHost, options: MapOptions = {}): MapHandle {
   const raise = (at?: number) => {
     if (!raised) {
       const loc = locationPage()
-      if (at !== undefined) page = Math.max(0, Math.min(PAGE_COUNT - 1, at))
+      if (at !== undefined) page = Math.max(0, Math.min(SHEETS - 1, at))
       else if (loc !== lastLocation) page = loc
       lastLocation = loc
       raised = true
@@ -205,7 +218,7 @@ export function createMap(host: MapHost, options: MapOptions = {}): MapHandle {
       request(allNear(page))
       refreshTextures()
     } else if (at !== undefined) {
-      page = Math.max(0, Math.min(PAGE_COUNT - 1, at))
+      page = Math.max(0, Math.min(SHEETS - 1, at))
       refreshTextures()
     }
   }
@@ -216,7 +229,7 @@ export function createMap(host: MapHost, options: MapOptions = {}): MapHandle {
   const flip = (dir: -1 | 1) => {
     if (!raised) return
     const next = page + dir
-    if (next < 0 || next >= PAGE_COUNT) return
+    if (next < 0 || next >= SHEETS) return
     // A flip still in the air lands at once.
     if (flipPage >= 0) endFlip()
     flipDir = dir
@@ -231,7 +244,7 @@ export function createMap(host: MapHost, options: MapOptions = {}): MapHandle {
       flipPage = next
     }
     board.setFlip(texFor(flipPage), dir > 0 ? 0 : 1)
-    request([page + dir].filter((p) => p >= 0 && p < PAGE_COUNT))
+    request([page + dir].filter((p) => p >= 0 && p < SHEETS))
     refreshTextures()
     paperSound()
   }
@@ -466,6 +479,17 @@ export function createMap(host: MapHost, options: MapOptions = {}): MapHandle {
       render(dt, t)
     }
   }
+
+  // The inventory sheet and the plans with the player's marks redraw when what they carry or have read changes (the
+  // plan data is kept; only these sheets are queued again).
+  onInventory(() => {
+    const pages = [INVENTORY_PAGE, ...mapMarks().map((m) => pageOfStorey(m.storey))]
+    for (const p of new Set(pages)) {
+      pending.add(p)
+      if (!queue.includes(p)) queue.push(p)
+    }
+    if (bitmaps.some(Boolean)) void startWorker().then(pump)
+  })
 
   // Automation only: `?map=<page>` raises the clipboard at that page (0 site … 6 roof), `map.study=1` holds it close.
   const qp = ctx.params.get("map")

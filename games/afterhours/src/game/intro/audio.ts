@@ -63,6 +63,12 @@ export class IntroAudio {
   radioOn = 0
   /** Engine: 0 off, 1 running; `rpm` follows load and speed. */
   engineOn = 0
+  /** The starter motor is cranking (engine not yet running): a slow, labouring chug. */
+  starter = 0
+  /** Extra engine level (×), e.g. a blip as it catches. */
+  boost = 1
+  /** Radio level (× the intro's): the escape truck's is fainter. */
+  radioLevel = 1
   private rpm = 0
 
   constructor(private sfx: Sfx | null) {
@@ -220,7 +226,7 @@ export class IntroAudio {
     if (sp) {
       const now = sp.a.ctx.currentTime
       const duck = t < this.voiceUntil ? 0.55 : 1
-      sp.staticGain.gain.setTargetAtTime(this.radioOn * STATIC_GAIN * (0.45 + 0.85 * drift) * duck, now, 0.25)
+      sp.staticGain.gain.setTargetAtTime(this.radioOn * this.radioLevel * STATIC_GAIN * (0.45 + 0.85 * drift) * duck, now, 0.25)
       sp.staticLp.frequency.setTargetAtTime(1600 + 1900 * drift, now, 0.2)
       if (this.radioOn > 0.5 && t > this.nextWhisper) {
         this.nextWhisper = t + 7 + Math.random() * 6
@@ -229,7 +235,7 @@ export class IntroAudio {
           // Re-route the take into the speaker (the engine connected it to the horror bus through its gain chain).
           src.disconnect()
           const g = sp.a.ctx.createGain()
-          g.gain.value = VOICE_GAIN * this.radioOn
+          g.gain.value = VOICE_GAIN * this.radioOn * this.radioLevel
           src.connect(g).connect(sp.meters.voice)
           g.connect(sp.in)
           this.voiceUntil = t + (src.buffer?.duration ?? 6) * 0.8
@@ -240,13 +246,15 @@ export class IntroAudio {
     if (!s) return
     const now = s.a.ctx.currentTime
     // V8 firing frequency = rpm / 60 × 4. Idle ~650 rpm; a loose automatic: rpm follows speed and load.
-    const target = this.engineOn > 0 ? 650 + speed * 95 + Math.max(0, accel) * 160 : 0
+    const target = this.engineOn > 0 ? 650 + speed * 95 + Math.max(0, accel) * 160 : this.starter > 0 ? 210 : 0
     this.rpm += (target - this.rpm) * (1 - Math.exp(-dt * (this.engineOn > 0 ? 2.5 : 1.2)))
     const f = Math.max(8, (this.rpm / 60) * 4)
     for (const o of s.oscs) o.frequency.setTargetAtTime(f, now, 0.05)
     s.lp.frequency.setTargetAtTime(140 + this.rpm * 0.12, now, 0.1)
-    const running = Math.min(1, this.rpm / 600)
-    s.hum.gain.setTargetAtTime(HUM_GAIN * running * (0.75 + 0.25 * Math.min(1, Math.max(0, accel))), now, 0.08)
+    const running = Math.min(1, this.rpm / (this.starter > 0 ? 200 : 600))
+    // Cranking: each compression stroke loads the starter (a pulse ~4× a second), louder and rougher than a run.
+    const chug = this.starter > 0 && this.engineOn <= 0 ? 1.4 * (0.35 + 0.65 * Math.abs(Math.sin(t * Math.PI * 4.2)) ** 3) : 1
+    s.hum.gain.setTargetAtTime(HUM_GAIN * this.boost * chug * Math.max(running, this.starter > 0 ? 1 : 0) * (0.75 + 0.25 * Math.min(1, Math.max(0, accel))), now, this.starter > 0 ? 0.02 : 0.08)
     s.road.gain.setTargetAtTime(Math.min(ROAD_MAX, speed * 0.0013), now, 0.15)
     s.roadBp.frequency.setTargetAtTime(260 + speed * 22, now, 0.2)
     s.out.gain.setTargetAtTime(1, now, 0.3)

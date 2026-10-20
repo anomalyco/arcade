@@ -60,8 +60,9 @@ export async function buildSouth(s: S3, pause: () => Promise<void>) {
       anchors: [{ kind: "keycard:server", x: -48.3, y: FLOOR_Y + 1.4, z: 7.6 }],
     }),
   )
-  lockers(b, -48.095, 5.0, Math.PI / 2, 6)
-  lockers(b, -48.095, 7.8, Math.PI / 2, 4)
+  // Operators' lockers, numbered 9 to 18 (Hargrove's is 14: the key trail, src/game/search).
+  lockers(b, -48.095, 5.0, Math.PI / 2, 6, 9)
+  lockers(b, -48.095, 7.8, Math.PI / 2, 4, 15)
   cot(b, -53.9, 10.6, Math.PI / 2)
   kitchenette(b, -52.3, 2.06, Math.PI, 1.8, { coffeeOn: true })
   const tvp = staticTV(b, -51.1, 18.3, N)

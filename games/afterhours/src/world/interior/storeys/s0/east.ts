@@ -1,3 +1,5 @@
+import { keyCabinetOn } from "./key-cabinet"
+import { securityKeyBox } from "../../search-spots"
 import * as THREE from "three/webgpu"
 import { MODELS } from "../../../../render/models"
 import {
@@ -353,19 +355,12 @@ function security(b: Builder, docs: Docs): RoomHandle {
   b.boxM(LED_AMBER, T(cx - 0.75, top, 10.6), 0.02, 0.01, 0.004, 0.08, 0.08, 0.122, { cast: false })
   placeModels(b, "telephone", [{ position: [cx + 0.75, top, 10.7], yaw: Math.PI - 0.3, collide: false }])
   deskLamp(b, cx - 0.55, top, 11.2, Math.PI - 0.5, true, { intensity: 55 })
-  // Key box on the east wall (door open), alarm panel by the lobby door.
-  const kb = T(16.94 - 0.05, y + 1.45, 14.5, -Math.PI / 2)
-  b.rbox(M.cabinet, kb, 0.5, 0.6, 0.08, 0.008)
-  b.boxM(M.felt, kb, 0.44, 0.54, 0.004, 0, 0, -0.04)
-  const rnd = rng(38)
-  for (let rr = 0; rr < 4; rr++)
-    for (let c = 0; c < 6; c++) {
-      if (rnd() < 0.2) continue
-      const p = ptIn(kb, -0.17 + c * 0.07, 0.18 - rr * 0.13, -0.05)
-      b.rod(M.steel, [p[0], p[1], p[2]], [p[0] - 0.02, p[1], p[2]], 0.003, 4)
-      b.box(KEY_BRASS, p[0] - 0.026, p[1] - 0.06, p[2] - 0.006, p[0] - 0.02, p[1] - 0.005, p[2] + 0.006, { cast: false })
-    }
-  b.boxM(M.cabinet, kb.clone().multiply(T(0.25, 0, -0.04, -1.9)), 0.5, 0.6, 0.015, 0.25, 0, 0)
+  // Key box on the east wall (door open): the Facilities cabinet's key on its own hook, "FAC. CAB." (src/game/search).
+  {
+    const kb = keyCabinetOn(b, 16.94, y + 1.45, 14.5, { open: true, seed: 38, footer: "PROTECTIVE SERVICES 0-38 · SIGN OUT EVERY KEY", special: { col: 2, row: 1, label: "FAC. CAB.", fob: 0xd8c25a, keys: 1 } })
+    securityKeyBox.keys = kb.keys
+    securityKeyBox.at = kb.keys.userData.at as [number, number, number]
+  }
   const ap = T(9.21 + 0.04, y + 1.5, 13.4, Math.PI / 2)
   b.rbox(M.beige, ap, 0.35, 0.28, 0.06, 0.01)
   for (let k = 0; k < 6; k++) b.boxM(k === 2 ? M.hazardRed : k === 0 ? LED_GREEN : M.hazardOff, ap, 0.02, 0.012, 0.004, -0.12 + k * 0.045, 0.08, 0.032, { cast: false })

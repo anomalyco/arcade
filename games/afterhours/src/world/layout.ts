@@ -74,11 +74,39 @@ export function northTrackSamples(step = 1): Vec2[] {
   return catmullRom(NORTH_TRACK.points, step)
 }
 
+/**
+ * Dirt logging road on from the north track's end (its first point is the track's last), ~300 m winding north through
+ * the pines: the escape truck's way out (src/game/escape). `northTrackDistance` covers it too, so the forest keeps it
+ * clear of trees and undergrowth and the terrain smooths its bed like the track's.
+ */
+export const LOGGING_ROAD = {
+  width: 3.0,
+  points: [
+    [-29, -126],
+    [-28, -140],
+    [-35, -162],
+    [-34, -190],
+    [-23, -216],
+    [-19, -246],
+    [-29, -276],
+    [-43, -300],
+    [-46, -330],
+    [-37, -360],
+    [-31, -390],
+    [-38, -420],
+  ] as Vec2[],
+}
+
+/** Samples the logging road's centre line (Catmull-Rom), about `step` metres apart. */
+export function loggingRoadSamples(step = 1): Vec2[] {
+  return catmullRom(LOGGING_ROAD.points, step)
+}
+
 let northCache: Vec2[] | null = null
-/** Distance (m) from (x, z) to the north track's centre line; large when far (cheap bounding-box reject). */
+/** Distance (m) from (x, z) to the north track's (or the logging road's) centre line; large when far (cheap reject). */
 export function northTrackDistance(x: number, z: number) {
-  if (x < -45 || x > -5 || z > -38 || z < -150) return 1e9
-  const pts = (northCache ??= northTrackSamples(2))
+  if (x < -70 || x > 5 || z > -38 || z < -440) return 1e9
+  const pts = (northCache ??= [...northTrackSamples(2), ...loggingRoadSamples(2).slice(1)])
   let best = 1e9
   for (let i = 0; i < pts.length - 1; i++) {
     const [ax, az] = pts[i]!

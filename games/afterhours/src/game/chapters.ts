@@ -2,6 +2,9 @@ import type { Player } from "../player"
 import { BUILDING } from "../world/layout"
 import { transmitter, type TransmitterPhase } from "../world/interior/storeys/s3/transmitter-state"
 import { PARKED } from "./intro/route"
+import { SHED, TRUCK_PARK } from "./escape/places"
+import type { ItemId, NoteId } from "./inventory"
+import { keyCabinet, securityKeyBox } from "../world/interior/search-spots"
 import { type Checkpoint, restorePlayer, setLastCheckpoint } from "./checkpoint"
 import { CHAIN, story } from "./objectives"
 import { setObjective } from "./objective"
@@ -14,7 +17,7 @@ import { setObjective } from "./objective"
 //   play mode:  /?play&start=3-08     (ids below), or F9 on the home screen for a list
 //   debug:      Lab → Story
 
-export type ChapterId = "arrival" | "lobby" | "3-08" | "tx-on" | "after-call" | "after-reveal" | "ambush"
+export type ChapterId = "arrival" | "lobby" | "3-08" | "tx-on" | "after-call" | "after-reveal" | "ambush" | "hide" | "keys-trail" | "cabinet-key" | "escape" | "escape-truck" | "ending"
 
 type Chapter = {
   id: ChapterId
@@ -26,6 +29,9 @@ type Chapter = {
   at: [number, number, number]
   yaw: number
   pitch?: number
+  /** Carried / read at this point (src/game/inventory). */
+  items?: ItemId[]
+  notes?: NoteId[]
 }
 
 const Y0 = BUILDING.floorY + 0.01
@@ -39,6 +45,12 @@ export const CHAPTERS: readonly Chapter[] = [
   { id: "after-call", label: "After the call (push the body)", stage: 3, phase: "transmitted", visited308: true, at: [8.45, Y3, -12.45], yaw: 0.05, pitch: -0.5 },
   { id: "after-reveal", label: "After the reveal (Hide, hunter on)", stage: 4, phase: "revealed", visited308: true, at: [8.45, Y3, -12.45], yaw: 0.05, pitch: -0.5 },
   { id: "ambush", label: "Lift ambush armed (storey 3 lift lobby)", stage: 2, phase: "off", visited308: true, at: [-37.9, Y3, 17.2], yaw: Math.PI },
+  { id: "hide", label: "Hidden: find the truck keys (3-08)", stage: 5, phase: "aftermath", visited308: true, at: [7.6, Y3, -12.6], yaw: 0.1, pitch: -0.4 },
+  { id: "keys-trail", label: "Cabinet tag read (go to Security 0-38)", stage: 7, phase: "aftermath", visited308: true, at: [-49.4, Y0, 3.4], yaw: -1.57, notes: ["signout", "cabinet-tag"] },
+  { id: "cabinet-key", label: "Cabinet key in hand (Security 0-38)", stage: 8, phase: "aftermath", visited308: true, at: [15.6, Y0, 14.5], yaw: -1.57, items: ["cabinet-key"], notes: ["signout", "cabinet-tag"] },
+  { id: "escape", label: "Truck keys in hand (0-30)", stage: 9, phase: "aftermath", visited308: true, at: [-49.4, Y0, 3.4], yaw: -1.57, items: ["cabinet-key", "truck-keys"], notes: ["signout", "cabinet-tag"] },
+  { id: "escape-truck", label: "At Truck 2 with the keys (motor-pool shed)", stage: 9, phase: "aftermath", visited308: true, at: [TRUCK_PARK.x - 1.75, SHED.y, TRUCK_PARK.z - 0.4], yaw: -Math.PI / 2 + 0.25, items: ["cabinet-key", "truck-keys"], notes: ["signout", "cabinet-tag"] },
+  { id: "ending", label: "Ending (the drive, 5 s before the road ambush)", stage: 0, phase: "off", visited308: false, at: [-25, 0, -58], yaw: Math.PI },
 ]
 
 /** Chapter select is available (dev server or a local preview, never on the public site). */
@@ -51,13 +63,14 @@ export function chapterCheckpoint(c: Chapter, groundY: (x: number, z: number) =>
   const [x, y, z] = c.at
   return {
     id: `chapter:${c.id}`,
-    pos: { x, y: c.id === "arrival" ? groundY(x, z) : y, z },
+    pos: { x, y: c.id === "arrival" || c.id === "ending" ? groundY(x, z) : y, z },
     yaw: c.yaw,
     pitch: c.pitch ?? 0,
     storey: Math.max(0, Math.round((y - BUILDING.floorY) / BUILDING.main.storeyHeight)),
     stage: c.stage,
     visited308: c.visited308,
     transmitter: c.phase,
+    inventory: { items: [...(c.items ?? [])], notes: [...(c.notes ?? [])], searched: [...(c.items?.includes("cabinet-key") ? ["story:security-key"] : []), ...(c.items?.includes("truck-keys") ? ["story:key-cabinet"] : [])] },
     at: performance.now(),
   }
 }
@@ -73,8 +86,13 @@ export async function jumpToChapter(c: Chapter, player: Player, groundY: (x: num
   // The hunter has to be in place before the beat moves past the reveal (its entry hooks onto it; the restore then
   // replaces the entry with "somewhere far away, a grace period").
   const { hunterHandle } = await import("./hunter")
-  if (c.phase === "revealed") for (let i = 0; i < 100 && !hunterHandle(); i++) await new Promise((r) => setTimeout(r, 100))
+  if (c.phase === "revealed" || c.phase === "aftermath") for (let i = 0; i < 100 && !hunterHandle(); i++) await new Promise((r) => setTimeout(r, 100))
   transmitter.set(c.phase)
+  if (c.items?.includes("cabinet-key") && securityKeyBox.keys) securityKeyBox.keys.visible = false
+  if (c.items?.includes("truck-keys")) {
+    keyCabinet.open()
+    if (keyCabinet.keys) keyCabinet.keys.visible = false
+  }
   const cp = chapterCheckpoint(c, groundY)
   setLastCheckpoint(cp)
   if (restart) restart()
@@ -86,5 +104,6 @@ export async function jumpToChapter(c: Chapter, player: Player, groundY: (x: num
     const h = hunterHandle()
     if (h) cp.stage >= 4 ? h.restore() : h.sleep()
   }
+  if (c.id === "ending") void import("./encounters/road-ambush").then((m) => m.startEndingDrive(5))
   if (c.id === "ambush") void (globalThis as { __ashwoodAmbush?: { arm(): Promise<void> } }).__ashwoodAmbush?.arm()
 }

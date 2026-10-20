@@ -1,3 +1,4 @@
+import { addSearchSpot } from "./search-spots"
 import * as THREE from "three/webgpu"
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js"
 import { float, floor, fract, hash, mix, positionWorld, step, time, vec3 } from "three/tsl"
@@ -244,7 +245,8 @@ export function shelvingRows(b: Builder, r: { x0: number; x1: number; z0: number
 }
 
 /** Bank of steel lockers (n doors along local x), back at +Z: louvred doors, handles, number plates (blank). */
-export function lockers(b: Builder, x: number, z: number, yaw: number, n = 6) {
+/** A bank of `n` lockers; `first` numbers their doors (searchable, src/game/search) from that number. */
+export function lockers(b: Builder, x: number, z: number, yaw: number, n = 6, first = 1) {
   const m = frame(x, z, yaw)
   const w = 0.38
   const len = n * w
@@ -256,6 +258,8 @@ export function lockers(b: Builder, x: number, z: number, yaw: number, n = 6) {
     for (let s = 0; s < 5; s++) b.boxM(M.frame, m, w - 0.12, 0.008, 0.008, u, 1.6 + s * 0.035, -0.228)
     b.boxM(M.steel, m, 0.025, 0.12, 0.03, u + w / 2 - 0.06, 1.1, -0.235)
     b.boxM(M.plate, m, 0.06, 0.03, 0.004, u, 1.85, -0.227, { cast: false })
+    const hp = new THREE.Vector3(u, 1.1, -0.26).applyMatrix4(m)
+    addSearchSpot({ id: `locker@${b.storey}:${hp.x.toFixed(2)},${hp.z.toFixed(2)}`, kind: "locker", storey: b.storey, at: [hp.x, hp.y + b.oy, hp.z], number: first + k })
     const pp = new THREE.Vector3(u, 1.85, -0.229).applyMatrix4(m)
     const nn = new THREE.Vector3(0, 0, -1).transformDirection(m)
     addDocuments(b, [{ id: `locker_${String((k % 12) + 1).padStart(2, "0")}` as DocumentId, position: [pp.x, pp.y, pp.z], normal: [nn.x, 0, nn.z], pin: "none", curl: 0, size: [0.06, 0.03] }])

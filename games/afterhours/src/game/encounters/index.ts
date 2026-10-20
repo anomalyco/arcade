@@ -4,6 +4,7 @@ import { clearCheckpoints, lastCheckpoint, restorePlayer, trackCheckpoints } fro
 import { CHAIN, story } from "../objectives"
 import { setObjective } from "../objective"
 import { startLiftAmbush } from "./lift-ambush"
+import { bindRoadAmbush } from "./road-ambush"
 import { hunterHandle, type HunterHandle } from "../hunter"
 
 // Scripted monster encounters for a run (play mode), and what happens when one kills you: the death screen, restart
@@ -21,6 +22,7 @@ export type EncounterShell = {
 
 export function startEncounters(g: GameContext, shell: EncounterShell) {
   const death = createDeathScreen()
+  bindRoadAmbush(g)
   const offTrack = trackCheckpoints(g.player)
   const canvas = g.world.renderer.domElement
 

@@ -139,6 +139,7 @@ export function noiseDistance(nav: NavGraph, e: NoiseEvent, ear: { x: number; y:
   const walls = nav.hits(e.x, e.y + 1.0, e.z, ear.x, ear.y + 1.0, ear.z, 5, true)
   // A sprint's pounding and the lift's machinery travel through the structure: walls and slabs cost them far less.
   if (e.kind === "sprint") return d + walls * 2 + storeys * 4
+  if (e.kind === "engine") return d + walls + storeys * 3
   return d + walls * 3.5 + storeys * (e.kind === "lift" ? 3 : 9)
 }
 

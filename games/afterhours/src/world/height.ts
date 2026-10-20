@@ -1,4 +1,4 @@
-import { ACCESS_ROAD, BOOTH, COUNTY_ROAD, FENCE, NORTH_TRACK, WORLD_HALF, accessRoadSamples, countyRoadSamples, northTrackDistance, type Vec2 } from "./layout"
+import { ACCESS_ROAD, BOOTH, COUNTY_ROAD, FENCE, NORTH_TRACK, WORLD_HALF, accessRoadSamples, countyRoadSamples, loggingRoadSamples, northTrackDistance, northTrackSamples, type Vec2 } from "./layout"
 
 // Terrain height. Roads and the compound sit on flat ground at y = 0; rolling hills rise away from them, with gravel
 // shoulders, a shallow drainage ditch beside every road and small hummocks on the forest floor.
@@ -27,7 +27,13 @@ export const GATE_APRON = [-16, FENCE.max[1], Math.max(16, BOOTH.x + BOOTH.w / 2
 /** Hills: `HILL_AMP` metres of fbm, faded in between these distances from the road edge / compound. */
 export const HILL = { amp: 19, roadFade: [7, 48] as const, compoundFade: [12, 70] as const }
 
+/** Dirt tracks (north track + logging road): the bed is level across and eased along, cut and filled into the hills. */
+export const TRACK = { half: 1.6, bench: 1.2, fade: 9, maxGrade: 0.08, smooth: 18 }
+
 export const coarse = new Float32Array(GRID_N * GRID_N)
+/** Distance (m) to the nearest dirt-track centre line, and the track bed height there (filled near tracks only). */
+export const trackDist = new Float32Array(GRID_N * GRID_N)
+export const trackElev = new Float32Array(GRID_N * GRID_N)
 export const roadDist = new Float32Array(GRID_N * GRID_N)
 export const micro = new Float32Array(MICRO_N * MICRO_N)
 
@@ -119,6 +125,56 @@ function stampRoad(samples: Vec2[], halfWidth: number) {
   }
 }
 
+/** Track bed heights along the centre line: the hills smoothed along the track, then grade-limited both ways. */
+function trackProfile(pts: Vec2[], step: number) {
+  const raw = pts.map(([x, z]) => sampleGrid(coarse, x, z))
+  const k = Math.max(1, Math.round(TRACK.smooth / step))
+  const out = raw.map((_, i) => {
+    let s = 0
+    let n = 0
+    for (let j = Math.max(0, i - k); j <= Math.min(raw.length - 1, i + k); j++) {
+      s += raw[j]!
+      n++
+    }
+    return s / n
+  })
+  // Pin the start (it leaves the flat compound) and limit the grade.
+  out[0] = raw[0]!
+  const g = TRACK.maxGrade * step
+  for (let i = 1; i < out.length; i++) out[i] = Math.min(out[i - 1]! + g, Math.max(out[i - 1]! - g, out[i]!))
+  for (let i = out.length - 2; i >= 0; i--) out[i] = Math.min(out[i + 1]! + g, Math.max(out[i + 1]! - g, out[i]!))
+  return out
+}
+
+function stampTrack(pts: Vec2[], elev: number[]) {
+  const R = TRACK.half + TRACK.bench + TRACK.fade + GRID_CELL * 2
+  for (let s = 0; s < pts.length - 1; s++) {
+    const [ax, az] = pts[s]!
+    const [bx, bz] = pts[s + 1]!
+    const abx = bx - ax
+    const abz = bz - az
+    const len2 = abx * abx + abz * abz || 1
+    const i0 = Math.max(0, Math.floor((Math.min(ax, bx) - R + WORLD_HALF) / GRID_CELL))
+    const i1 = Math.min(GRID_N - 1, Math.ceil((Math.max(ax, bx) + R + WORLD_HALF) / GRID_CELL))
+    const j0 = Math.max(0, Math.floor((Math.min(az, bz) - R + WORLD_HALF) / GRID_CELL))
+    const j1 = Math.min(GRID_N - 1, Math.ceil((Math.max(az, bz) + R + WORLD_HALF) / GRID_CELL))
+    for (let j = j0; j <= j1; j++) {
+      const z = -WORLD_HALF + j * GRID_CELL
+      for (let i = i0; i <= i1; i++) {
+        const x = -WORLD_HALF + i * GRID_CELL
+        let t = ((x - ax) * abx + (z - az) * abz) / len2
+        t = t < 0 ? 0 : t > 1 ? 1 : t
+        const d = Math.hypot(x - ax - abx * t, z - az - abz * t)
+        const k = j * GRID_N + i
+        if (d < trackDist[k]!) {
+          trackDist[k] = d
+          trackElev[k] = elev[s]! + (elev[s + 1]! - elev[s]!) * t
+        }
+      }
+    }
+  }
+}
+
 function bake() {
   const t0 = performance.now()
   roadDist.fill(ROAD_DIST_MAX)
@@ -135,6 +191,12 @@ function bake() {
       coarse[k] = mask > 0 ? (fbm(x, z, 5, 1 / 230, 3) * HILL.amp + 2.2) * mask : 0
     }
   }
+
+  trackDist.fill(ROAD_DIST_MAX)
+  const north = northTrackSamples(3)
+  // The logging road continues from the north track's last point; profile them as one line.
+  const track = [...north, ...loggingRoadSamples(3).slice(1)]
+  stampTrack(track, trackProfile(track, 3))
 
   // Periodic micro relief: hummocks (8 m), root mounds (2-4 m) and lumps (0.5-1 m), normalised to about [-1, 1].
   const P = MICRO_SIZE
@@ -238,6 +300,13 @@ export function heightAt(x: number, z: number) {
   const road = sampleGrid(roadDist, x, z)
   const comp = compoundDistance(x, z)
   let h = sampleGrid(coarse, x, z)
+  const td = sampleGrid(trackDist, x, z)
+  if (td < TRACK.half + TRACK.bench + TRACK.fade) {
+    // Level bed plus a flat bench either side, then the natural slope eased back in (a cut on the uphill side, a fill
+    // on the downhill side).
+    const w = smoothstep(TRACK.half + TRACK.bench, TRACK.half + TRACK.bench + TRACK.fade, td)
+    h = sampleGrid(trackElev, x, z) * (1 - w) + h * w
+  }
   if (road > DITCH.center - DITCH.halfWidth) h += ditchAt(road, comp)
   let m = microMask(road, comp)
   // The gravel north track gets a smooth bed (its ribbon follows this height a few cm up), easing into the hummocks.

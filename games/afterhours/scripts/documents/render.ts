@@ -2362,6 +2362,9 @@ DOCS.push(
       d.hand("03:03", cols[0]! + 2, y, { pt: 14, color: INK.ballBlue })
       d.hand("DON'T TAKE THE HEADPHONES OFF", cols[1]! + 3, y + 1, { pt: 19, font: "Nothing You Could Do", color: INK.ballBlue, slant: -0.1 })
       d.scribble(cols[1]! + 4, y + 9, cols[1]! + 120, y + 14, 0.5, INK.ballBlue)
+      // The last entry, after the headphones line: shakier, blue ballpoint.
+      d.hand("03:12", cols[0]! + 2, y + 9.4 * 2, { pt: 14, color: INK.ballBlue })
+      d.hand("Hargrove wants to take Truck 2 into town. Told him wait for light.", cols[1]! + 2, y + 9.4 * 2, { pt: 13, color: INK.ballBlue, slant: -0.02 })
       d.coffee(170, 236, 26, 0.3)
       d.crease(0, 140, d.wmm, 132, 0.8)
       d.holes(d.wmm / 2, 6)
@@ -2395,6 +2398,53 @@ DOCS.push(
       d.hand("4 here. 2 out.", 120, 150, { pt: 16, color: INK.ballBlue, font: "Caveat", slant: -0.03 })
       d.holes(15, 7)
       d.holes(d.wmm - 15, 7)
+    },
+  },
+  {
+    id: "vehicle_signout",
+    title: "Clipboard sheet by 3-08: VEHICLE SIGN-OUT (Truck 2 keys back in the 0-30 cabinet)",
+    size: [0.216, 0.279],
+    paper: "white",
+    tags: ["wall", "clipboard"],
+    density: 4.2,
+    draw(d) {
+      d.fill(0, 0, d.wmm, d.hmm, "#cfcbbf")
+      d.print("VEHICLE SIGN-OUT", d.wmm / 2, 20, { pt: 17, weight: 800, align: "center" })
+      d.print("Facilities & Plant · station vehicles · keys from / back to the key cabinet, 0-30", d.wmm / 2, 27, { pt: 7, align: "center" })
+      const cols = [10, 34, 62, 90, 118, 206]
+      ;["DATE", "VEHICLE", "OUT", "IN", "NOTES / INIT."].forEach((h, i) => d.print(h, cols[i]! + 2, 38, { pt: 7.5, weight: 700 }))
+      for (let r = 0; r <= 18; r++) d.line(10, 41 + r * 11.5, 206, 41 + r * 11.5, r === 0 ? 0.45 : 0.2)
+      for (const x of cols) d.line(x, 33, x, 41 + 18 * 11.5, 0.22)
+      const rows: string[][] = [
+        ["10/12", "TRUCK 1", "07:10", "11:45", "dump run. JK"],
+        ["10/12", "VAN", "13:00", "16:20", "mail, Merritt Falls. MB"],
+        ["10/14", "TRUCK 2", "08:30", "09:15", "fuel. TO"],
+        ["10/15", "TRUCK 1", "06:50", "08:05", "N gate check. SV"],
+        ["10/16", "VAN", "12:40", "15:55", "parts, County. MB"],
+        ["10/17", "TRUCK 1", "07:05", "07:40", "SV"],
+        ["10/17", "TRUCK 2", "21:40", "23:55", "keys returned to Facilities 0-30 key cabinet. RH"],
+      ]
+      rows.forEach((row, r) => {
+        const y = 41 + (r + 1) * 11.5 - 3.4
+        const last = r === rows.length - 1
+        row.forEach((v, i) => {
+          if (i < 4) d.hand(v, cols[i]! + 2, y, { pt: 15, color: last ? INK.black : INK.ballBlue })
+        })
+        // The notes column wraps onto a second line when it has to.
+        const note = row[4]!
+        const words = note.split(" ")
+        let line = ""
+        let ly = y
+        for (const w of words) {
+          if ((line + " " + w).length > 30) {
+            d.hand(line, cols[4]! + 2, ly, { pt: 13, color: last ? INK.black : INK.ballBlue })
+            ly += 5
+            line = w
+          } else line = line ? `${line} ${w}` : w
+        }
+        d.hand(line, cols[4]! + 2, ly, { pt: 13, color: last ? INK.black : INK.ballBlue })
+      })
+      d.holes(d.wmm / 2, 5)
     },
   },
   {

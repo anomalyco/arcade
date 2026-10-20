@@ -4,6 +4,7 @@ import { BUILDING, UPPER } from "../world/layout"
 import { completeObjective, clearObjective, setObjective } from "./objective"
 import { roomById } from "../world/interior/registry"
 import { onReveal, onTransmitted } from "../world/interior/storeys/s3/transmitter-state"
+import { hasItem, hasNote, onInventory } from "./inventory"
 
 // The run's objective chain (play mode): set when explore starts, advanced by simple zone checks on the camera and the
 // 3-08 radio-room beat (world/interior/storeys/s3/transmitter.ts):
@@ -14,6 +15,14 @@ import { onReveal, onTransmitted } from "../world/interior/storeys/s3/transmitte
 //   call over         → "Check the body at the desk"
 //   body moved        → the warning under it            ← checkpoint "3-08:transmitted"; story.revealed
 //                       (a beat of silence, the scream, the car, the glass: the Wendigo is in) → "Hide."
+//   hidden             → "Find the truck keys"         ← checkpoint "hide:over" (the hunter lost you for 30 s, or 90 s)
+//   then the key trail (src/game/search, src/game/inventory), each step from what you carry or have read:
+//     the vehicle sign-out by 3-08      → "Facilities office, 0-30"                     ← checkpoint "trail:signout"
+//     the locked cabinet's tag           → "Get the cabinet key from Security (0-38)"  ← checkpoint "trail:tag"
+//     the FAC. CAB. key from the key box → "Facilities office, 0-30"                   ← checkpoint "trail:cabinet-key"
+//     the Truck 2 keys from the cabinet  → "Escape. The truck is in the loading dock." ← checkpoint "trail:keys"
+//   (Hargrove's body, his note and locker 14 are flavour: never objectives.)
+//   (`onObjective` listeners hear each new stage; the escape drive picks up from the last one.)
 
 export const OBJECTIVES = {
   transmission: "Find out why the radio went silent. Check the map (M)",
@@ -21,9 +30,20 @@ export const OBJECTIVES = {
   report: "Report what you found",
   body: "Check the body at the desk",
   hide: "Hide.",
+  keys: "Find the truck keys",
+  cabinet: "Facilities office, 0-30",
+  security: "Get the cabinet key from Security (0-38)",
+  office: "Facilities office, 0-30",
+  escape: "Escape. The truck is in the loading dock.",
 } as const
 /** The objective line for each story stage (checkpoint restores show `CHAIN[stage]`). */
-export const CHAIN = [OBJECTIVES.transmission, OBJECTIVES.radio, OBJECTIVES.report, OBJECTIVES.body, OBJECTIVES.hide]
+export const CHAIN = [OBJECTIVES.transmission, OBJECTIVES.radio, OBJECTIVES.report, OBJECTIVES.body, OBJECTIVES.hide, OBJECTIVES.keys, OBJECTIVES.cabinet, OBJECTIVES.security, OBJECTIVES.office, OBJECTIVES.escape]
+/** Stage numbers past "Hide." (CHAIN indices). */
+export const STAGE = { hide: 4, keys: 5, cabinet: 6, security: 7, office: 8, escape: 9 } as const
+/** Hiding: over once the hunter has lost the player for HIDE_LOST s (after at least HIDE_MIN s), or at HIDE_MAX s. */
+const HIDE_MIN = 30
+const HIDE_LOST = 30
+const HIDE_MAX = 90
 /** "Hide." comes this long after the warning is seen (s): right after the struck-through line fades. */
 const HIDE_AFTER = 3
 
@@ -46,62 +66,101 @@ export function onCheckpoint(fn: (id: string) => void) {
  *  body, 4 "Hide."), whether 3-08 has been entered, and whether the warning has been seen (the hunter is coming). */
 export const story = { stage: 0, visited308: false, revealed: false }
 
+const objectiveListeners = new Set<(stage: number, text: string) => void>()
+/** Each new objective stage (CHAIN index) as it is set. Returns an unsubscribe. */
+export function onObjective(fn: (stage: number, text: string) => void) {
+  objectiveListeners.add(fn)
+  return () => objectiveListeners.delete(fn)
+}
+
+/** The key-trail stage from what the player carries and has read. */
+export function trailStage() {
+  if (hasItem("truck-keys")) return STAGE.escape
+  if (hasItem("cabinet-key")) return STAGE.office
+  if (hasNote("cabinet-tag")) return STAGE.security
+  if (hasNote("signout")) return STAGE.cabinet
+  return STAGE.keys
+}
+
 function checkpoint(id: string) {
   checkpoints.push(id)
   for (const l of checkpointListeners) l(id)
 }
 
-/** `from`: resume at a stage (a checkpoint restore) instead of the start of the chain. */
+/** `from`: resume at a stage (a checkpoint restore) instead of the start of the chain. The stage lives in
+ *  `story.stage` (a checkpoint restore sets it there too). */
 export function startObjectives(flow: Flow, camera: THREE.Camera, signal?: AbortSignal, from = 0) {
-  let stage = from
   let next = 0
-  const advance = (text: string) => {
-    stage++
+  const go = (stage: number, delay = 1700) => {
+    if (stage <= story.stage && delay > 0) return
+    story.stage = stage
     completeObjective()
     clearTimeout(next)
-    next = window.setTimeout(() => setObjective(text), 1700)
+    const text = CHAIN[stage]!
+    next = window.setTimeout(() => {
+      setObjective(text)
+      for (const l of objectiveListeners) l(stage, text)
+    }, delay)
   }
   story.stage = from
   if (from >= 2) story.visited308 = true
   if (from >= 4) story.revealed = true
   setObjective(CHAIN[Math.min(CHAIN.length - 1, from)]!)
   if (from === 0) checkpoint("arrival")
-  const off = flow.onUpdate(() => {
+  // Hiding: the hunter's mode (globalThis.__ashwoodHunter), else the timer alone.
+  let hideT = 0
+  let lostT = 0
+  const huntMode = () => (globalThis as { __ashwoodHunter?: { hunter?: { mode?: string } } }).__ashwoodHunter?.hunter?.mode
+  const off = flow.onUpdate((dt) => {
     const p = camera.position
     const s = floorOf(p.y)
-    if (stage === 0 && s === 3 && p.x > SPINE.min[0] && p.x < SPINE.max[0] && p.z > SPINE.min[1] && p.z < SPINE.max[1]) advance(OBJECTIVES.radio)
+    const stage = story.stage
+    if (stage === 0 && s === 3 && p.x > SPINE.min[0] && p.x < SPINE.max[0] && p.z > SPINE.min[1] && p.z < SPINE.max[1]) go(1)
     else if (stage === 1 && s === 3) {
       const r = roomById(3, "3-08")?.rect ?? ROOM_3_08
       if (p.x > r.x0 && p.x < r.x1 && p.z > r.z0 && p.z < r.z1) {
-        advance(OBJECTIVES.report)
+        go(2)
         story.visited308 = true
         checkpoint("3-08:entered")
       }
+    } else if (stage === STAGE.hide) {
+      hideT += dt
+      const m = huntMode()
+      lostT = m === "hunt" || m === "caught" ? 0 : lostT + dt
+      if ((hideT > HIDE_MIN && lostT > HIDE_LOST) || hideT > HIDE_MAX) {
+        go(Math.max(STAGE.keys, trailStage()))
+        checkpoint("hide:over")
+      }
     }
-    story.stage = stage
   })
+  const trail = () => {
+    if (story.stage < STAGE.keys) return
+    const t = trailStage()
+    if (t <= story.stage) return
+    go(t, 1500)
+    if (t === STAGE.cabinet) checkpoint("trail:signout")
+    else if (t === STAGE.security) checkpoint("trail:tag")
+    else if (t === STAGE.office) checkpoint("trail:cabinet-key")
+    else if (t === STAGE.escape) checkpoint("trail:keys")
+  }
+  const offInv = onInventory(trail)
   // The radio-room beat runs on the world's clock.
   const offTx = onTransmitted(() => {
-    if (stage >= 3) return
-    stage = 3
-    story.stage = 3
+    if (story.stage >= 3) return
     story.visited308 = true
-    completeObjective()
-    clearTimeout(next)
-    next = window.setTimeout(() => setObjective(OBJECTIVES.body), 1700)
+    go(3)
   })
   const offReveal = onReveal(() => {
-    if (stage >= 4) return
-    stage = 4
-    story.stage = 4
+    if (story.stage >= 4) return
     story.revealed = true
-    completeObjective()
-    clearTimeout(next)
+    hideT = 0
+    lostT = 0
+    go(4, HIDE_AFTER * 1000)
     checkpoint("3-08:transmitted")
-    next = window.setTimeout(() => setObjective(OBJECTIVES.hide), HIDE_AFTER * 1000)
   })
   const stop = () => {
     off()
+    offInv()
     offTx()
     offReveal()
     clearTimeout(next)

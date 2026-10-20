@@ -2,6 +2,7 @@ import type { Player } from "../player"
 import { onCheckpoint, story } from "./objectives"
 import { transmitter, type TransmitterPhase } from "../world/interior/storeys/s3/transmitter-state"
 import { BUILDING } from "../world/layout"
+import { type InventoryState, inventoryState, restoreInventory } from "./inventory"
 
 // Story checkpoints (play mode): a snapshot of where the player stood and how far the story got, taken whenever the
 // objective chain lands a checkpoint (src/game/objectives.ts: "arrival" right after the intro, "3-08:entered",
@@ -20,6 +21,8 @@ export type Checkpoint = {
   stage: number
   visited308: boolean
   transmitter: TransmitterPhase
+  /** What the player carried and had read (src/game/inventory). */
+  inventory?: InventoryState
   at: number
 }
 
@@ -37,6 +40,7 @@ export function snapshot(id: string, player: Player): Checkpoint {
     stage: id === "arrival" ? 0 : id === "3-08:entered" ? 2 : id === "3-08:transmitted" ? 4 : story.stage,
     visited308: story.visited308 || id !== "arrival",
     transmitter: transmitter.phase,
+    inventory: inventoryState(),
     at: performance.now(),
   }
 }
@@ -73,6 +77,7 @@ export function restorePlayer(player: Player, cp: Checkpoint) {
   player.release()
   player.resetMotion()
   story.visited308 = cp.visited308
+  if (cp.inventory) restoreInventory(cp.inventory)
 }
 
 /** Clears the run's checkpoint (start over). */

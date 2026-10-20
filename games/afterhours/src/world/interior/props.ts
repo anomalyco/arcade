@@ -1,3 +1,4 @@
+import { addSearchSpot } from "./search-spots"
 import * as THREE from "three/webgpu"
 import { float, smoothstep, uv } from "three/tsl"
 import { MODELS, type ModelInfo, type ModelName, type Placement, loadModel, modelCollider, yawToward } from "../../render/models"
@@ -72,6 +73,9 @@ export function placeModels(b: Builder, name: ModelName, props: Prop[], opts: { 
     bounds.z0 = Math.min(bounds.z0, p.position[2] - 1)
     bounds.z1 = Math.max(bounds.z1, p.position[2] + 1)
     if ((p.collide ?? true) && !p.tilt) b.ctx.colliders.push(modelCollider(name, world, p.inset ?? 0.03))
+    // Desks and filing cabinets standing on the floor are searchable (src/game/search).
+    if ((name === "office_desk" || name === "filing_cabinet") && !p.tilt && Math.abs(p.position[1] - FLOOR_Y) < 0.05)
+      addSearchSpot({ id: `${name}@${b.storey}:${p.position[0].toFixed(2)},${p.position[2].toFixed(2)}`, kind: name === "office_desk" ? "desk" : "cabinet", storey: b.storey, at: [p.position[0], world.position[1] + (name === "office_desk" ? 0.55 : 0.9), p.position[2]] })
     // Square-on models are depth obstacles: procedural details placed against them are kept 4.5 mm clear.
     const yq = ((p.yaw ?? 0) / (Math.PI / 2)) % 1
     if (!p.tilt && (Math.abs(yq) < 1e-3 || Math.abs(Math.abs(yq) - 1) < 1e-3)) b.depthObstacles.push(modelCollider(name, world, 0))

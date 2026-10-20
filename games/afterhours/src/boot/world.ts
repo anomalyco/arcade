@@ -30,6 +30,8 @@ export const MODULES: Record<string, () => Promise<WorldBuilder>> = {
   facility: () => import("../world/facility"),
   forest: () => import("../world/forest"),
   interior: () => import("../world/interior"),
+  loggingRoad: () => import("../world/logging-road"),
+  motorPool: () => import("../world/motor-pool"),
 }
 /** Built before the first frame, straight into the scene. */
 export const FIRST_FRAME = new Set(["terrain"])
@@ -38,9 +40,9 @@ export const FIRST_FRAME = new Set(["terrain"])
  * path, not the view: the interior goes first because its follow-up furniture bake (after `build()` returns) can then
  * overlap the other modules' builds and shader compiles instead of trailing at the end.
  */
-const BUILD_ORDER = ["interior", "facility", "forest", "roads", "compound"]
+const BUILD_ORDER = ["interior", "facility", "forest", "roads", "compound", "loggingRoad", "motorPool"]
 /** Relative boot cost per module (build + compile, measured), for the loading bar. */
-const STAGE_WEIGHT: Record<string, number> = { forest: 0.6, roads: 0.5, compound: 0.4, facility: 1.5, interior: 3 }
+const STAGE_WEIGHT: Record<string, number> = { forest: 0.6, roads: 0.5, compound: 0.4, facility: 1.5, interior: 3, loggingRoad: 0.05, motorPool: 0.15 }
 const BODY_WEIGHT = 0.3
 const MODELS_WEIGHT = 1
 

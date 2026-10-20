@@ -21,6 +21,8 @@ import {
 } from "../../api"
 import { type Docs, PANEL_BANDS, SLIDE, corkBoard, garment, hookRail, rng, table } from "./common"
 import { P, door } from "./west"
+import { keyCabinetOn } from "./key-cabinet"
+import { keyCabinet } from "../../search-spots"
 
 // South of the west spine: facilities office (0-30, the player's base) and workshop (0-31) with its store (0-33), the
 // briefing auditorium and foyer (0-35, projector beam), personnel & badge office (0-36) and the badge room (0-36b).
@@ -67,21 +69,15 @@ function facilities(b: Builder, docs: Docs): RoomHandle[] {
   b.boxM("metal_galvanized", clip, 0.08, 0.012, 0.025, 0, 0.012, -0.14)
   docs.flat("work_order_night", -51.0, top + 0.0065, 5.1, 0.2, { scale: 0.95 })
   docs.flat("work_order_halt", -51.9, top + 0.001, 5.3, -0.25)
-  // Key cabinet (open, a gap where the ring was taken... it's still there: the player takes it).
-  const kc = T(-47.86 - 0.05, y + 1.45, 3.3, -Math.PI / 2)
-  b.rbox(M.cabinet, kc, 0.55, 0.65, 0.08, 0.008)
-  b.boxM(M.felt, kc, 0.49, 0.59, 0.004, 0, 0, -0.04)
-  const rnd = rng(30)
-  for (let rr = 0; rr < 4; rr++)
-    for (let c = 0; c < 6; c++) {
-      const p = ptIn(kc, -0.2 + c * 0.08, 0.2 - rr * 0.14, -0.05)
-      b.rod(M.steel, p, [p[0] - 0.02, p[1], p[2]], 0.003, 4)
-      if (rnd() < 0.8) b.box(KEY, p[0] - 0.026, p[1] - 0.06, p[2] - 0.006, p[0] - 0.02, p[1] - 0.005, p[2] + 0.006, { cast: false })
-    }
-  const ring = new THREE.TorusGeometry(0.035, 0.004, 6, 16)
-  ring.applyMatrix4(T(-47.95, y + 1.12, 3.3, Math.PI / 2))
-  b.add(M.steel, ring)
-  b.boxM(M.cabinet, kc.clone().multiply(T(-0.275, 0, -0.04, 1.9)), 0.55, 0.65, 0.015, -0.275, 0, 0)
+  // Key cabinet (./key-cabinet.ts): shut and locked, its key in Hargrove's locker (3-20); TRUCK 2 on the top right hook.
+  // (The east wall's finished room face is at x −47.86.)
+  {
+    const kc = keyCabinetOn(b, -47.862, y + 1.45, 3.3, { card: ["FACILITIES 0-30", "VEHICLES · PLANT"], tag: ["CABINET KEY HELD AT", "SECURITY, 0-38"] })
+    keyCabinet.door = kc.door
+    keyCabinet.keys = kc.keys
+    keyCabinet.at = kc.at
+    keyCabinet.open = kc.open
+  }
   // Radio chargers on a shelf, coat rack with the night jacket, filing cabinets, notice board.
   b.rbox(M.wood, T(-54.4, y + 1.1, 2.6), 0.4, 0.03, 1.2, 0.006)
   for (let k = 0; k < 4; k++) {

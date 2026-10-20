@@ -1,6 +1,6 @@
 import * as THREE from "three/webgpu"
 import type { Box, WorldContext, WorldModule } from "./context"
-import { WORLD_HALF } from "./layout"
+import { WORLD_HALF, northTrackDistance } from "./layout"
 import { material } from "../render/materials"
 import { forestBase, forestImpostors } from "./forest/textures"
 import { buildTree, impostorInput, impostorSize, type Kind, type TreeModel } from "./forest/species"
@@ -169,7 +169,12 @@ export async function build(ctx: WorldContext): Promise<WorldModule | void> {
   // Trees lining the roads stay full-detail further: headlights (and a flashlight from the road) light them side-on,
   // where the mid model's wide cards would read as flat planes.
   const roadside = new Uint8Array(trees.count)
-  for (let k = 0; k < trees.count; k++) roadside[k] = roadEdgeDistance(trees.x[k]!, trees.z[k]!) < ROADSIDE_BAND ? 1 : 0
+  for (let k = 0; k < trees.count; k++) {
+    const x = trees.x[k]!
+    const z = trees.z[k]!
+    // The north track and logging road are measured from their centre lines, so add half a lane.
+    roadside[k] = roadEdgeDistance(x, z) < ROADSIDE_BAND || northTrackDistance(x, z) < ROADSIDE_BAND + 1.5 ? 1 : 0
+  }
 
   const lastFwd = new THREE.Vector2(0, -1)
   const fwd = new THREE.Vector3()

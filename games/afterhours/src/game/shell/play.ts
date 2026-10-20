@@ -11,6 +11,8 @@ import { createTitleCard } from "./title"
 import { createTunerAudio } from "./tuner-audio"
 import { createHints } from "./hints"
 import { AUTOPLAY_KEY, startEncounters } from "../encounters"
+// Static: its input listeners must register before the shell's input gate (src/game/escape/input.ts).
+import { startEscape } from "../escape"
 
 // Play mode: the home screen over a slow drift past the foggy station while the world loads behind it, then
 // Play → title card → intro (src/game/intro) → explore, with an Esc pause menu. Owns input gating: the controller's
@@ -51,9 +53,14 @@ export function createPlayShell(canvas: HTMLCanvasElement, hud: HTMLElement) {
     if (to === "explore" && world) {
       map ??= createMap(world, { active: () => flow.playerActive })
       startObjectives(flow, world.camera, run?.signal, objectivesFrom)
+      // Searching desks, cabinets, lockers and bodies (hold E): the key trail (src/game/search).
+      const w0 = world
+      void import("../search").then((m) => run?.signal.aborted || m.startSearch({ flow, camera: w0.camera, player: w0.player }, run?.signal))
       // The Wendigo hunter: dormant until the 3-08 transmitter is switched off (src/game/hunter).
       const w = world
       void import("../hunter").then((m) => run?.signal.aborted || m.installHunter(w, { flow, signal: run?.signal }))
+      // Truck 2 and the drive out (src/game/escape).
+      startEscape({ world, flow, hud, signal: run?.signal })
     }
     if (to !== "explore") map?.lower()
   })

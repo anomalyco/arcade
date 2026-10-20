@@ -6,6 +6,7 @@ import { renderState } from "../../render/shared"
 import { flat, shadowLayer } from "../../world/compound/mats"
 import type { SeatOptions } from "../../playerb/seat"
 import PARTS from "./car-parts.json"
+import type { ModelName } from "../../render/models"
 
 // The player's car: a 1980 four-door government-fleet sedan (the shared `car_sedan_b` model, "Negotiator '80", CC BY 4.0
 // Daniel Zhabotinsky; see public/models/CREDITS.md). The shipped model is one baked mesh; it is split here, by the
@@ -24,61 +25,76 @@ import PARTS from "./car-parts.json"
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type N = any
 
-const MODEL = "car_sedan_b" as const
-/** Model bounds (MODELS.car_sedan_b.size). */
-export const CAR_SIZE = { width: 1.997, height: 1.424, length: 5.1 }
-
 /** Seats: eye point in model space (where a seated adult's eyes are) and the door that serves it. */
 export type Seat = { id: string; eye: readonly [number, number, number]; door: "door_fl" | null; driver: boolean }
-export const SEATS: readonly Seat[] = [
-  { id: "driver", eye: [-0.37, 1.18, 0.22], door: "door_fl", driver: true },
-  { id: "front-passenger", eye: [0.38, 1.12, 0.14], door: null, driver: false },
-  { id: "rear-left", eye: [-0.4, 1.1, 1.05], door: null, driver: false },
-  { id: "rear-right", eye: [0.4, 1.1, 1.05], door: null, driver: false },
-]
 
-const bounds = PARTS.bounds as Record<string, { min: number[]; max: number[] }>
-const centre = (name: string) => {
-  const b = bounds[name]!
-  return new THREE.Vector3((b.min[0]! + b.max[0]!) / 2, (b.min[1]! + b.max[1]!) / 2, (b.min[2]! + b.max[2]!) / 2)
+type V3 = readonly [number, number, number]
+/** Part map written by scripts/intro/car-parts.ts. */
+export type PartMap = {
+  parts: string[]
+  primitives: { mesh: string; tris: number; labels: number[] }[]
+  bounds: Record<string, { min: number[]; max: number[] }>
+  steering: { centre: number[]; axis: number[] }
 }
-/** Door hinge line (vertical) at the door's front edge, a little inside its outer skin. */
-const HINGE = new THREE.Vector3(bounds.door_fl!.min[0]! + 0.06, 0, bounds.door_fl!.min[2]! + 0.03)
-/** Fully open door angle (rad). */
-export const DOOR_OPEN = 1.12
-const WHEEL_R = (bounds.wheel_rl!.max[1]! - bounds.wheel_rl!.min[1]!) / 2
-/** Overall steering ratio (wheel turns per road-wheel turn) for a late-70s full-size car with power steering. */
-const STEER_RATIO = 15
-const WHEELBASE = centre("wheel_rl").z - centre("wheel_fl").z
-
-/** Headlamp and tail lamp emitters (model space). */
-const HEAD = [
-  [-0.55, 0.672, -2.33],
-  [0.55, 0.672, -2.33],
-] as const
-const TAIL = [
-  [-0.6, 0.632, 2.36],
-  [0.6, 0.632, 2.36],
-] as const
-const DASH = [-0.36, 0.93, -0.66] as const
-
-export type CarLights = { head: number; tail: number; brake: number; dash: number }
 
 /**
- * Anchors for the seated body (src/playerb/seat.ts `SeatOptions`), in car model space. Hip: the driver's H-point;
- * handle: the pull lever on the door card; edge: where the palm pushes the door, high on the card near its free edge.
- * The door card's inner face is at x ≈ -0.668, its top at y ≈ 0.93 (car-parts.json `nodes`).
+ * Everything model-specific about a drivable vehicle: the shared model, its part map (scripts/intro/car-parts.ts),
+ * size, seats, lamp emitters, the seated-body anchors and the steering-wheel rim.
  */
-const RIG = {
-  hip: [-0.37, 0.53, 0.08],
-  handle: [-0.655, 0.83, -0.48],
-  edge: [-0.655, 0.88, 0.02],
-} as const
-/** Steering-wheel rim: radius to the centre of the rim tube, and the tube's own radius (m; 0.163 outer). */
-const WHEEL_RADIUS = 0.147
-const WHEEL_TUBE = 0.016
-/** Triangles of the model's steering wheel whose centre is further than this from the column are its rim (m). */
-const RIM_CUT = 0.128
+export type VehicleSpec = {
+  model: ModelName
+  parts: PartMap
+  size: { width: number; height: number; length: number }
+  seats: readonly Seat[]
+  /** Headlamp and tail lamp emitters, instrument cluster (model space). */
+  head: readonly V3[]
+  tail: readonly V3[]
+  dash: V3
+  /** Seated-body anchors: hip (H-point), inner door handle, palm spot on the door card (model space). */
+  rig: { hip: V3; handle: V3; edge: V3 }
+  /** Steering-wheel rim: radius to the tube centre, tube radius, and the radial cut that finds the model's rim. */
+  rim: { radius: number; tube: number; cut: number }
+  /** Overall steering ratio. */
+  steerRatio: number
+  /** Where the shadowed beam starts (model space, between the headlamps). */
+  beam: V3
+}
+
+/** The intro's 1980 government-fleet sedan (car_sedan_b, "Negotiator '80"). */
+export const SEDAN: VehicleSpec = {
+  model: "car_sedan_b",
+  parts: PARTS as PartMap,
+  size: { width: 1.997, height: 1.424, length: 5.1 },
+  seats: [
+    { id: "driver", eye: [-0.37, 1.18, 0.22], door: "door_fl", driver: true },
+    { id: "front-passenger", eye: [0.38, 1.12, 0.14], door: null, driver: false },
+    { id: "rear-left", eye: [-0.4, 1.1, 1.05], door: null, driver: false },
+    { id: "rear-right", eye: [0.4, 1.1, 1.05], door: null, driver: false },
+  ],
+  head: [
+    [-0.55, 0.672, -2.33],
+    [0.55, 0.672, -2.33],
+  ],
+  tail: [
+    [-0.6, 0.632, 2.36],
+    [0.6, 0.632, 2.36],
+  ],
+  dash: [-0.36, 0.93, -0.66],
+  // The door card's inner face is at x ≈ -0.668, its top at y ≈ 0.93 (car-parts.json `nodes`).
+  rig: { hip: [-0.37, 0.53, 0.08], handle: [-0.655, 0.83, -0.48], edge: [-0.655, 0.88, 0.02] },
+  // 0.163 outer.
+  rim: { radius: 0.147, tube: 0.016, cut: 0.128 },
+  steerRatio: 15,
+  beam: [0, 0.7, -2.62],
+}
+
+/** Model bounds of the intro sedan. */
+export const CAR_SIZE = SEDAN.size
+export const SEATS: readonly Seat[] = SEDAN.seats
+/** Fully open door angle (rad). */
+export const DOOR_OPEN = 1.12
+
+export type CarLights = { head: number; tail: number; brake: number; dash: number }
 
 type Lit = { lamp: Lamp; pos: number[]; dir: THREE.Vector3 | null; local: THREE.Vector3; localDir: THREE.Vector3 | null; base: number }
 
@@ -105,14 +121,29 @@ export class PlayerCar {
   private ctx: WorldContext
   private beam = { borrowed: false, saved: null as typeof renderState.torchLens, settings: {} as Record<string, unknown>, player: null as { flashlight: boolean } | null }
 
-  constructor(ctx: WorldContext) {
+  readonly spec: VehicleSpec
+  private bounds: PartMap["bounds"]
+  /** Door hinge line (vertical) at the door's front edge, a little inside its outer skin. */
+  private hinge: THREE.Vector3
+  private wheelR: number
+  private wheelbase: number
+
+  constructor(ctx: WorldContext, spec: VehicleSpec = SEDAN) {
     this.ctx = ctx
+    this.spec = spec
+    this.bounds = spec.parts.bounds
+    const bd = this.bounds
+    this.hinge = new THREE.Vector3(bd.door_fl!.min[0]! + 0.06, 0, bd.door_fl!.min[2]! + 0.03)
+    this.wheelR = (bd.wheel_rl!.max[1]! - bd.wheel_rl!.min[1]!) / 2
+    this.wheelbase = this.centre("wheel_rl").z - this.centre("wheel_fl").z
+    const RIG = spec.rig
+    const HINGE = this.hinge
     this.root.name = "player-car"
     this.root.add(this.body)
     this.body.add(this.door, this.steering)
     const a = this.anchors
     a.hip.position.set(...RIG.hip)
-    a.eye.position.set(...SEATS[0]!.eye)
+    a.eye.position.set(...spec.seats[0]!.eye)
     a.hip.name = "seat-hip"
     a.eye.name = "seat-eye"
     a.handle.name = "door-handle"
@@ -126,10 +157,15 @@ export class PlayerCar {
     this.shadow.visible = false
   }
 
+  private centre(name: string) {
+    const b = this.bounds[name]!
+    return new THREE.Vector3((b.min[0]! + b.max[0]! ) / 2, (b.min[1]! + b.max[1]!) / 2, (b.min[2]! + b.max[2]!) / 2)
+  }
+
   /** Loads and splits the model, registers the lamps (dark) and compiles everything with `warm`. Idempotent. */
   prepare(warm: (o: THREE.Object3D) => Promise<unknown>) {
     this.ready ??= (async () => {
-      const model = await loadModel(MODEL)
+      const model = await loadModel(this.spec.model)
       this.split(model)
       this.addLamps()
       // The rig gives exterior spots a little spill (bounce) outside their cones, re-applied whenever a lamp moves;
@@ -152,11 +188,11 @@ export class PlayerCar {
     model.updateMatrixWorld(true)
     const meshes: THREE.Mesh[] = []
     model.traverse((o) => (o as THREE.Mesh).isMesh && meshes.push(o as THREE.Mesh))
-    const names = PARTS.parts
-    for (const prim of PARTS.primitives) {
+    const names = this.spec.parts.parts
+    for (const prim of this.spec.parts.primitives) {
       const mesh = meshes.find((m) => (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position!.count) / 3 === prim.tris)
       if (!mesh) {
-        console.warn(`intro car: no ${MODEL} mesh with ${prim.tris} triangles; the model changed, re-run scripts/intro/car-parts.ts`)
+        console.warn(`intro car: no ${this.spec.model} mesh with ${prim.tris} triangles; the model changed, re-run scripts/intro/car-parts.ts`)
         continue
       }
       const src = mesh.geometry
@@ -197,17 +233,17 @@ export class PlayerCar {
       parent.add(part)
     }
     if (name === "door_fl") {
-      this.door.position.copy(HINGE)
-      pivoted(this.door, HINGE)
+      this.door.position.copy(this.hinge)
+      pivoted(this.door, this.hinge)
     } else if (name === "steering") {
-      const c = new THREE.Vector3(...(PARTS.steering.centre as [number, number, number]))
-      const axis = new THREE.Vector3(...(PARTS.steering.axis as [number, number, number])).normalize()
+      const c = new THREE.Vector3(...(this.spec.parts.steering.centre as [number, number, number]))
+      const axis = new THREE.Vector3(...(this.spec.parts.steering.axis as [number, number, number])).normalize()
       this.steering.position.copy(c)
       this.steering.userData.axis = axis
       pivoted(this.steering, c)
       this.roundRim(part, axis)
     } else if (name.startsWith("wheel_")) {
-      const c = centre(name)
+      const c = this.centre(name)
       const steer = new THREE.Group()
       const spin = new THREE.Group()
       steer.position.copy(c)
@@ -253,7 +289,7 @@ export class PlayerCar {
       b.fromBufferAttribute(pos, idx.getX(t + 1)).applyMatrix4(m)
       c.fromBufferAttribute(pos, idx.getX(t + 2)).applyMatrix4(m)
       const centroid = a.clone().add(b).add(c).divideScalar(3)
-      if (radial(centroid) > RIM_CUT) {
+      if (radial(centroid) > this.spec.rim.cut) {
         ring.add(centroid)
         ringN++
       } else keep.push(idx.getX(t), idx.getX(t + 1), idx.getX(t + 2))
@@ -268,7 +304,7 @@ export class PlayerCar {
     g.setIndex(keep)
     g.boundingSphere = geo.boundingSphere
     part.geometry = g
-    const torus = new THREE.TorusGeometry(WHEEL_RADIUS, WHEEL_TUBE, 12, 64)
+    const torus = new THREE.TorusGeometry(this.spec.rim.radius, this.spec.rim.tube, 12, 64)
     const rim = new THREE.Mesh(torus, flat(0x16120f, 0.42))
     rim.name = "car-steering-rim"
     rim.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), axis)
@@ -305,7 +341,7 @@ export class PlayerCar {
       const cx = (a.x + b.x + c.x) / 3
       const cy = (a.y + b.y + c.y) / 3
       // The instrument cluster: behind the wheel, upper dash, facing back towards the driver.
-      if (Math.abs(cx - DASH[0]) < 0.26 && cy > 0.78 && Math.abs(n.z) > 0.3) keep.push(idx.getX(t), idx.getX(t + 1), idx.getX(t + 2))
+      if (Math.abs(cx - this.spec.dash[0]) < 0.26 && cy > 0.78 && Math.abs(n.z) > 0.3) keep.push(idx.getX(t), idx.getX(t + 1), idx.getX(t + 2))
     }
     if (!keep.length) return null
     const g = new THREE.BufferGeometry()
@@ -346,10 +382,11 @@ export class PlayerCar {
         base,
       })
     }
-    for (const h of HEAD) {
+    const DASH = this.spec.dash
+    for (const h of this.spec.head) {
       add({ kind: "incandescent", position: [...h], direction: [0, -0.06, -1], color: [1, 0.84, 0.62], intensity: 0, range: 48, angle: 0.5, penumbra: 0.75, size: 0.11 }, h, [0, -0.06, -1], 1)
     }
-    for (const t of TAIL) {
+    for (const t of this.spec.tail) {
       add({ kind: "incandescent", position: [t[0], t[1], t[2] + 0.04], direction: [0, -0.15, 1], color: [1, 0.035, 0.012], intensity: 0, range: 5, angle: 1.25, penumbra: 0.9, size: 0.07 }, [t[0], t[1], t[2] + 0.04], [0, -0.15, 1], 1)
     }
     // Instrument light on the driver's hands, the wheel rim and the headliner (a "window" lamp: no emitter halo).
@@ -373,14 +410,14 @@ export class PlayerCar {
     }
     for (let k = 0; k < 4; k++) {
       const grow = 0.5 - k * 0.18
-      const m = new THREE.Mesh(rr(CAR_SIZE.width + grow, CAR_SIZE.length + grow, CAR_SIZE.width * 0.25 + grow * 0.4), layer)
+      const m = new THREE.Mesh(rr(this.spec.size.width + grow, this.spec.size.length + grow, this.spec.size.width * 0.25 + grow * 0.4), layer)
       m.position.y = 0.006 + k * 0.001
       m.renderOrder = 2
       m.receiveShadow = false
       this.shadow.add(m)
     }
     for (const name of ["wheel_fl", "wheel_fr", "wheel_rl", "wheel_rr"]) {
-      const c = centre(name)
+      const c = this.centre(name)
       for (let k = 0; k < 3; k++) {
         const g = new THREE.CircleGeometry(1, 16)
         g.scale(0.2 - k * 0.05, 0.36 - k * 0.09, 1)
@@ -406,11 +443,11 @@ export class PlayerCar {
    */
   update(dt: number, time: number, speed: number, accel: number, curvature: number) {
     // Steering: Ackermann angle for the curvature, the wheel lagging the road slightly as a driver's hands would.
-    const road = Math.atan(WHEELBASE * curvature)
-    const want = road * STEER_RATIO
+    const road = Math.atan(this.wheelbase * curvature)
+    const want = road * this.spec.steerRatio
     this.steerAngle += (want - this.steerAngle) * (1 - Math.exp(-dt * 6))
-    const steerRoad = this.steerAngle / STEER_RATIO
-    this.spin -= (speed * dt) / WHEEL_R
+    const steerRoad = this.steerAngle / this.spec.steerRatio
+    this.spin -= (speed * dt) / this.wheelR
     for (const w of this.wheels) {
       w.steer.rotation.y = w.front ? steerRoad : 0
       w.spin.rotation.x = this.spin
@@ -471,7 +508,7 @@ export class PlayerCar {
    */
   seatOptions(): SeatOptions {
     const a = this.anchors
-    return { hip: a.hip, eye: a.eye, wheel: { object: this.steering, radius: WHEEL_RADIUS, tube: WHEEL_TUBE }, doorHandle: a.handle, doorEdge: a.edge }
+    return { hip: a.hip, eye: a.eye, wheel: { object: this.steering, radius: this.spec.rim.radius, tube: this.spec.rim.tube }, doorHandle: a.handle, doorEdge: a.edge }
   }
 
   /** An anchor's position in the car body's frame (model space as the body sits): where the driver looks. */
@@ -502,12 +539,12 @@ export class PlayerCar {
     const side = new THREE.Vector3().crossVectors(axis, up)
     a.hip.getWorldPosition(m[0]!.position)
     this.steering.getWorldPosition(m[1]!.position)
-    m[2]!.position.copy(up).multiplyScalar(WHEEL_RADIUS).applyMatrix4(this.steering.matrixWorld)
+    m[2]!.position.copy(up).multiplyScalar(this.spec.rim.radius).applyMatrix4(this.steering.matrixWorld)
     a.eye.getWorldPosition(m[3]!.position)
     a.handle.getWorldPosition(m[4]!.position)
     a.edge.getWorldPosition(m[5]!.position)
-    m[6]!.position.copy(side).multiplyScalar(WHEEL_RADIUS).applyMatrix4(this.steering.matrixWorld)
-    m[7]!.position.copy(side).multiplyScalar(-WHEEL_RADIUS).applyMatrix4(this.steering.matrixWorld)
+    m[6]!.position.copy(side).multiplyScalar(this.spec.rim.radius).applyMatrix4(this.steering.matrixWorld)
+    m[7]!.position.copy(side).multiplyScalar(-this.spec.rim.radius).applyMatrix4(this.steering.matrixWorld)
   }
 
   /** Steering-wheel angle (rad, + left). */
@@ -527,7 +564,7 @@ export class PlayerCar {
 
   /** World position + direction of the shadowed beam (between the headlamps, aimed down the road). */
   private beamAt(pos: THREE.Vector3, dir: THREE.Vector3) {
-    pos.set(0, 0.7, -2.62).applyMatrix4(this.body.matrixWorld)
+    pos.set(...this.spec.beam).applyMatrix4(this.body.matrixWorld)
     dir.set(0, -0.042, -1).applyQuaternion(this.body.getWorldQuaternion(tmpQ)).normalize()
     return true
   }
@@ -573,23 +610,29 @@ export class PlayerCar {
 
   /** Model-space seat eye to world. */
   seatWorld(seat: Seat | string, out = new THREE.Vector3()) {
-    const s = typeof seat === "string" ? SEATS.find((x) => x.id === seat)! : seat
+    const s = typeof seat === "string" ? this.spec.seats.find((x) => x.id === seat)! : seat
     return out.set(s.eye[0], s.eye[1], s.eye[2]).applyMatrix4(this.body.matrixWorld)
   }
 
-  /** Parked: contact shadow on, and solid (a collider for the player and the lamps' glow occlusion). */
+  /**
+   * Parked: contact shadow on, and solid (a collider for the player and the lamps' glow occlusion). The collider is one
+   * box object that stays in `ctx.colliders` for good (moved out of the world while driving): other systems index the
+   * array (the hunter's nav grid), so it must never be spliced out.
+   */
   park() {
     this.shadow.visible = true
-    if (this.collider) this.unparkCollider()
     const yaw = this.root.rotation.y
-    const hx = CAR_SIZE.width / 2 - 0.08
-    const hz = CAR_SIZE.length / 2 - 0.08
+    const hx = this.spec.size.width / 2 - 0.08
+    const hz = this.spec.size.length / 2 - 0.08
     const c = Math.abs(Math.cos(yaw)), sn = Math.abs(Math.sin(yaw))
     const ex = hx * c + hz * sn
     const ez = hx * sn + hz * c
     const { x, y, z } = this.root.position
-    this.collider = { min: [x - ex, y, z - ez], max: [x + ex, y + CAR_SIZE.height - 0.05, z + ez] }
-    this.ctx.colliders.push(this.collider)
+    const box = this.box ?? (this.box = { min: [0, 0, 0], max: [0, 0, 0] })
+    box.min = [x - ex, y, z - ez]
+    box.max = [x + ex, y + this.spec.size.height - 0.05, z + ez]
+    if (!this.ctx.colliders.includes(box)) this.ctx.colliders.push(box)
+    this.collider = box
   }
 
   /** The parked car's collider (null while driving). */
@@ -603,10 +646,12 @@ export class PlayerCar {
     this.unparkCollider()
   }
 
+  private box: Box | null = null
   private unparkCollider() {
     if (!this.collider) return
-    const i = this.ctx.colliders.indexOf(this.collider)
-    if (i >= 0) this.ctx.colliders.splice(i, 1)
+    // Out of the world (far below), never out of the array.
+    this.collider.min = [0, -1e4, 0]
+    this.collider.max = [0, -1e4 + 0.01, 0]
     this.collider = null
   }
 

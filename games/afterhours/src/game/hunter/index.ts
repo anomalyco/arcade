@@ -4,7 +4,7 @@ import { onReveal, transmitter } from "../../world/interior/storeys/s3/transmitt
 import { playCarDestroyed } from "../../audio/story"
 import { PARKED } from "../intro/route"
 import { LOT_Y } from "../../world/compound/lot"
-import { Hunter, type CatchInfo } from "./brain"
+import { DEFAULT_TRAIL, Hunter, type CatchInfo, type TrailStep } from "./brain"
 import { HunterDebug, type PlayerTrail } from "./debug"
 import { NavGraph, storeyOf } from "./nav"
 import { PlayerNoises } from "./senses"
@@ -43,6 +43,19 @@ export type HunterHandle = {
   enter(): void
   /** After a checkpoint load: the creature somewhere far from the player, memory wiped, a grace period. */
   restore(grace?: number): void
+  /**
+   * Seconds since it last had a trail on the player (saw them, heard them clearly, or was hunting them); 0 while
+   * dormant or hunting. For the post-reveal "Hide." → keys objective switch (e.g. switch once this passes ~20 s).
+   */
+  lostPlayerFor(): number
+  /**
+   * The key trail it patrols while roaming: the steps the player still has to do (e.g. Hargrove's locker, the key
+   * cabinet in 0-30, the dock), in order. Defaults to `DEFAULT_TRAIL` (brain.ts). Rooms near pending steps and the core
+   * stair between them are patrolled more, and it sometimes waits at the stair on the way to the next one.
+   */
+  setTrail(steps: TrailStep[]): void
+  /** A trail step is done (the locker searched, the keys taken): it stops patrolling there. */
+  completeTrail(id: string): void
   /** Out of the building again, dormant (a checkpoint from before the reveal); `enter()` brings it back. */
   sleep(): void
   /** What happens when it catches the player (the creature agent's death and jump-scare path). */
@@ -53,6 +66,7 @@ export type HunterHandle = {
 let current: HunterHandle | null = null
 /** The live hunter, if one is installed (checkpoints, the death flow). */
 export const hunterHandle = () => current
+export { DEFAULT_TRAIL, type TrailStep }
 
 export function installHunter(world: World, o: { flow?: Flow; signal?: AbortSignal; start?: string | null; debug?: boolean } = {}): HunterHandle {
   current?.dispose()
@@ -185,6 +199,13 @@ export function installHunter(world: World, o: { flow?: Flow; signal?: AbortSign
     sleep() {
       entryT = -1
       hunter.sleep()
+    },
+    lostPlayerFor: () => hunter.lostPlayerFor(),
+    setTrail(steps) {
+      hunter.keyTrail = steps.map((t) => ({ ...t }))
+    },
+    completeTrail(id) {
+      for (const t of hunter.keyTrail) if (t.id === id) t.done = true
     },
     setCatchHandler(fn) {
       catchHandler = fn

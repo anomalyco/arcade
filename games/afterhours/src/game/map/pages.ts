@@ -47,7 +47,19 @@ export type SiteFacts = {
   aisleX: number
 }
 
-export type PageJob = { index: number; plan: PlanData; facts: SiteFacts; width: number; briefing: string[] }
+export type PageJob = {
+  index: number
+  plan: PlanData
+  facts: SiteFacts
+  width: number
+  briefing: string[]
+  /** Handwritten marks the notes the player has read put on the floor plans (src/game/inventory MAP_MARKS). */
+  marks?: { storey: number; room: string; text: string[] }[]
+  /** The inventory sheet (page INVENTORY_PAGE): items carried and notes read. */
+  inventory?: { items: { name: string; desc: string; key?: boolean }[]; notes: { title: string; text: string[] }[] }
+}
+/** The inventory sheet, after the roof (not a plan: drawn as a plain ruled page). */
+export const INVENTORY_PAGE = PAGE_COUNT
 
 /**
  * Forest landmarks the briefer marked by hand on the vicinity map. Approximate by nature (world metres, +z south);
@@ -78,6 +90,7 @@ export async function drawPage(job: PageJob): Promise<ImageBitmap> {
   const px = job.width
   const mm = px / W
   const ph = Math.round(Hs * mm)
+  if (job.index === INVENTORY_PAGE) return drawInventory(job, px, ph, mm)
   const { c: orig, g: og } = canvas(px, ph)
   const { c: out, g } = canvas(px, ph)
   const seed = 1984 + job.index * 101
@@ -95,7 +108,10 @@ export async function drawPage(job: PageJob): Promise<ImageBitmap> {
   g.setTransform(mm, 0, 0, mm, 0, 0)
   if (site) siteNotes(q, job.briefing)
   else if (roof) roofNotes(q)
-  else floorNotes(q, job.index - 1, job.plan.storeys[job.index - 1])
+  else {
+    floorNotes(q, job.index - 1, job.plan.storeys[job.index - 1])
+    markNotes(q, job.index - 1, job.plan.storeys[job.index - 1], job.marks ?? [])
+  }
   copyStamp(q, job.index)
   grain(g, seed + 11, 8, site ? 0.26 : 0.14)
   return out.transferToImageBitmap()
@@ -632,3 +648,62 @@ function siteNotes(q: Sheet, briefing: string[]) {
 }
 
 export type { Ctx }
+
+// ------------------------------------------------------------------------------------------------ the key trail
+
+/** The player's own marks from the notes they've read: red pen, a ring round the room and a short line by it. */
+function markNotes(q: Sheet, storey: number, plan: StoreyPlan | undefined, marks: NonNullable<PageJob["marks"]>) {
+  OY = storey === 0 ? 60 : 52
+  const notes: Note[] = []
+  for (const m of marks) {
+    if (m.storey !== storey) continue
+    const [x, y] = roomAt(plan, m.room, 0, 0)
+    // Text above the room where there's room, else below it.
+    const up = y > 90
+    notes.push({ text: m.text, at: [Math.max(14, Math.min(W - 70, x - 18)), up ? y - 20 : y + 16], ring: [x, y, 10, 7], pt: 20, color: INK.red })
+  }
+  writeNotes(q, notes)
+}
+
+/** The inventory sheet: a plain ruled page, "CARRIED" and "NOTES" in the player's hand. */
+function drawInventory(job: PageJob, px: number, ph: number, mm: number): ImageBitmap {
+  const { c: out, g } = canvas(px, ph)
+  g.fillStyle = "#e9e5d8"
+  g.fillRect(0, 0, px, ph)
+  g.setTransform(mm, 0, 0, mm, 0, 0)
+  const q = new Sheet(g, mm, W, Hs, 4242)
+  for (let y = 22; y < Hs - 8; y += 7.4) q.line(8, y, W - 8, y, 0.12, "rgba(70,110,170,0.5)")
+  q.line(26, 0, 26, Hs, 0.2, "rgba(180,40,30,0.5)")
+  const inv = job.inventory ?? { items: [], notes: [] }
+  q.hand("CARRIED", 30, 18, { pt: 30, color: INK.ballBlue })
+  let y = 30
+  if (!inv.items.length) q.hand("nothing yet", 34, y, { pt: 18, color: INK.pencil })
+  for (const it of [...inv.items].sort((a, b) => Number(!!b.key) - Number(!!a.key))) {
+    if (y > Hs - 20) break
+    q.hand(it.name, 34, y, { pt: 20, color: it.key ? INK.red : INK.ballBlue })
+    for (const w of q.wrap(it.desc, W / 2 - 46, 14, FONT.hand, 400)) {
+      y += 5.2
+      q.hand(w, 40, y, { pt: 14, color: INK.pencil })
+    }
+    y += 8
+  }
+  // Notes, in a column on the right, each copied out in full.
+  const x0 = W / 2 + 6
+  q.hand("NOTES", x0, 18, { pt: 30, color: INK.ballBlue })
+  let ny = 30
+  if (!inv.notes.length) q.hand("none read", x0 + 4, ny, { pt: 18, color: INK.pencil })
+  for (const n of inv.notes) {
+    if (ny > Hs - 14) break
+    q.hand(n.title, x0, ny, { pt: 17, color: INK.red })
+    ny += 6.4
+    for (const l of n.text) {
+      for (const w of q.wrap(l, W / 2 - 20, 15, FONT.hand, 400)) {
+        if (ny > Hs - 10) break
+        q.hand(w, x0 + 3, ny, { pt: 15, color: INK.ballBlue })
+        ny += 5.6
+      }
+    }
+    ny += 3
+  }
+  return out.transferToImageBitmap()
+}

@@ -5,6 +5,17 @@ import type { PlayOptions } from "../../audio/engine"
 import type { SfxId } from "../../audio/sfx-manifest"
 import { surfaceAt, type Surface } from "../../audio/surfaces"
 import { storeyOf } from "./nav"
+import { storeyY } from "../../world/layout"
+
+/**
+ * The ventilation, as the hunter hears it (the building has no modelled ducts): a return-air grille in the spine's
+ * ceiling at every bay centre on every storey, joined along the spine by its trunk duct and between storeys by the
+ * riser in the service stack (x −45). A breath under one grille comes out of the others, duller and quieter the longer
+ * the duct run.
+ */
+const GRILLES_X = Array.from({ length: 16 }, (_, i) => -50.5 + 5.4 * i)
+const RISER_X = -45
+const grilleY = (s: number) => storeyY(s) + 2.9
 
 // Every sound the Wendigo makes, played where it actually is: positional (equal-power panner, inverse distance) and
 // occluded like every other sound in the game (src/audio/engine.ts `walls`: each wall-height solid on the line takes
@@ -37,12 +48,24 @@ const FLOOR = 0.002
 
 export type VoiceLog = { t: number; id: string; x: number; y: number; z: number; gain: number; walls: number; heard: number }
 
+/** Rotating choices: never the same as the last one. */
+function rotate<T>(items: readonly T[], last: { i: number }) {
+  let i = Math.floor(Math.random() * items.length)
+  if (items.length > 1 && i === last.i) i = (i + 1 + Math.floor(Math.random() * (items.length - 1))) % items.length
+  last.i = i
+  return items[i]!
+}
+
 export class Voice {
+  private lastVocal = { i: -1 }
+  private lastGroanOffset = { i: -1 }
   /** Automation: sounds played (and skipped as inaudible), with where they came from and the level at the ear. */
   readonly log: VoiceLog[] = []
   private noise: AudioBuffer | null = null
-  private flick = new Map<Lamp, { base: number; until: number; off: boolean; next: number; sound: number }>()
+  private flick = new Map<Lamp, { base: number; until: number; off: boolean; next: number; sound: number; buzz: number }>()
   private lamps: Lamp[][] = []
+  /** No lamp sound (flicker take, buzz) from any lamp before this: one at a time, every few seconds at most. */
+  private lampSoundAt = 0
 
   constructor(private ctx: WorldContext) {
     for (const l of ctx.lamps) {
@@ -57,15 +80,31 @@ export class Voice {
     return hooks.sfx?.ear ?? { x: 0, y: 0, z: 0 }
   }
 
-  /** Level a sound would reach the ear with (distance rolloff × walls), and the walls counted. */
+  /**
+   * Storey slabs the engine's wall count misses: it takes one slab per 3.2 m of height difference, so a sound at the
+   * ceiling below (a lamp, its breath) heard from just above that slab counts none. The real count is the storey floors
+   * strictly between the two heights; the shortfall (×1.5, as the engine weighs a slab) is extra occlusion.
+   */
+  private missedSlabs(p: P) {
+    const e = this.ear
+    const lo = Math.min(p.y, e.y)
+    const hi = Math.max(p.y, e.y)
+    let real = 0
+    for (let k = 1; k <= 5; k++) if (storeyY(k) > lo + 0.05 && storeyY(k) < hi - 0.05) real++
+    const engine = Math.min(3, Math.floor((hi - lo) / 3.2))
+    return Math.max(0, real - engine) * 1.5
+  }
+
+  /** Level a sound would reach the ear with (distance rolloff × walls), and the walls counted (slabs corrected). */
   private level(p: P, gain: number, ref: number, rolloff: number) {
     const sfx = hooks.sfx
-    if (!sfx) return { g: 0, w: 0 }
+    if (!sfx) return { g: 0, w: 0, extra: 0 }
     const e = sfx.ear
     const d = Math.hypot(p.x - e.x, p.y - e.y, p.z - e.z)
     const dist = ref / (ref + rolloff * Math.max(0, d - ref))
-    const w = sfx.walls(p)
-    return { g: gain * dist * 0.55 ** w, w }
+    const extra = this.missedSlabs(p)
+    const w = Math.min(5.5, sfx.walls(p) + extra)
+    return { g: gain * dist * 0.55 ** w, w, extra }
   }
 
   /** A shipped one-shot at `p` (horror bus), unless it would be inaudible. */
@@ -73,10 +112,13 @@ export class Voice {
     const sfx = hooks.sfx
     const ref = o.ref ?? 2
     const roll = o.rolloff ?? 1
-    const { g, w } = this.level(p, o.gain ?? 1, ref, roll)
+    const { g, w, extra } = this.level(p, o.gain ?? 1, ref, roll)
     this.record(id, p, o.gain ?? 1, w, g)
     if (!sfx || g < FLOOR) return null
-    return sfx.play(id, { ...o, bus: "horror", pos: { x: p.x, y: p.y, z: p.z }, ref, rolloff: roll })
+    // The engine occludes by its own wall count; the slabs it missed are applied here (level and low-pass).
+    const gain = (o.gain ?? 1) * 0.55 ** extra
+    const lowpass = extra > 0 ? Math.min(o.lowpass ?? 20000, 18000 * 0.3 ** (w)) : o.lowpass
+    return sfx.play(id, { ...o, gain, lowpass, bus: "horror", pos: { x: p.x, y: p.y, z: p.z }, ref, rolloff: roll })
   }
 
   private record(id: string, p: P, gain: number, walls: number, heard: number) {
@@ -165,6 +207,26 @@ export class Voice {
       rolloff: 1.1,
     })
     if (onAllFours && v.claws > 0) this.claws(p, v.claws * (0.6 + 0.6 * weight))
+    // The weight of it: a low thump under each heavier footfall, the part that carries through a slab.
+    if (weight > 0.35) this.thud(p, weight)
+  }
+
+  /** A body-weight thump on the floor (50–75 Hz): what is heard of its footfalls from the storey above or below. */
+  private thud(p: P, weight: number) {
+    this.proc("thud", p, 0.5 * weight, 2.5, 0.9, (ac, out, t) => {
+      const o = ac.createOscillator()
+      const f = 52 + Math.random() * 22
+      o.frequency.setValueAtTime(f * 1.5, t)
+      o.frequency.exponentialRampToValueAtTime(f, t + 0.08)
+      const g = ac.createGain()
+      g.gain.setValueAtTime(0, t)
+      g.gain.linearRampToValueAtTime(1, t + 0.006)
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.22)
+      o.connect(g).connect(out)
+      o.start(t)
+      o.stop(t + 0.25)
+      return t + 0.3
+    })
   }
 
   /** Ragged breath near the head: an inhale then a long wet exhale (`fast` while hunting). */
@@ -206,10 +268,138 @@ export class Voice {
 
   /** A vocalisation: "groan" (starving groan / distant moan), "chatter", "scream" (huge scream). */
   vocal(p: P, kind: "groan" | "moan" | "chatter" | "scream", gain = 1) {
-    if (kind === "scream") return this.play("wen2-huge-scream", p, { gain: 1.3 * gain, ref: 6, rolloff: 0.8, jitter: 0.03, lowBoost: 4 })
-    if (kind === "chatter") return this.play("wen2-chatter", p, { gain: 0.9 * gain, ref: 2.5, rolloff: 1.1, jitter: 0.06 })
-    if (kind === "moan") return this.play("wen-distant-moan", p, { gain: 0.9 * gain, ref: 4, rolloff: 0.9, jitter: 0.05 })
-    return this.play("wen2-starving-groan", p, { gain: 0.8 * gain, ref: 3, rolloff: 1, jitter: 0.05, offset: Math.random() < 0.5 ? 0 : 2.5 })
+    // Pitch wanders (0.86–1.08) so no two sound alike; the long groan starts at one of several points in the take.
+    const rate = 0.86 + Math.random() * 0.22
+    if (kind === "scream") return this.play("wen2-huge-scream", p, { gain: 1.3 * gain, ref: 6, rolloff: 0.8, rate: 0.92 + Math.random() * 0.12, jitter: 0, lowBoost: 4 })
+    if (kind === "chatter") return this.play("wen2-chatter", p, { gain: 0.9 * gain, ref: 2.5, rolloff: 1.0, rate, jitter: 0.02 })
+    if (kind === "moan") return this.play("wen-distant-moan", p, { gain: 0.9 * gain, ref: 4, rolloff: 0.85, rate, jitter: 0.02 })
+    return this.play("wen2-starving-groan", p, { gain: 0.8 * gain, ref: 3, rolloff: 0.95, rate, jitter: 0.02, offset: rotate([0, 2.5, 5, 7.2], this.lastGroanOffset) })
+  }
+
+  /** A short wet snort / huff through the nose (procedural), close-range. */
+  snort(p: P) {
+    this.proc("snort", p, 0.45, 1.6, 1.3, (ac, out, t) => {
+      const n = 1 + Math.floor(Math.random() * 3)
+      for (let i = 0; i < n; i++) {
+        const at = t + i * (0.16 + Math.random() * 0.1)
+        const src = ac.createBufferSource()
+        src.buffer = this.noiseBuffer(ac)
+        const bp = ac.createBiquadFilter()
+        bp.type = "bandpass"
+        bp.frequency.value = 700 + Math.random() * 600
+        bp.Q.value = 2
+        const g = ac.createGain()
+        g.gain.setValueAtTime(0, at)
+        g.gain.linearRampToValueAtTime(1, at + 0.015)
+        g.gain.exponentialRampToValueAtTime(0.001, at + 0.12 + Math.random() * 0.08)
+        src.connect(bp).connect(g).connect(out)
+        src.start(at, Math.random() * 1.5, 0.25)
+      }
+      return t + 0.8
+    })
+  }
+
+  /** Claws or antler tips dragged along the wall it's passing (0.6–1.6 s, rougher the faster). */
+  scrape(p: P, speed: number) {
+    const len = 0.6 + Math.random() * 1.0
+    this.proc("scrape", p, 0.4, 2, 1.0, (ac, out, t) => {
+      const src = ac.createBufferSource()
+      src.buffer = this.noiseBuffer(ac)
+      const bp = ac.createBiquadFilter()
+      bp.type = "bandpass"
+      bp.frequency.setValueAtTime(1800 + Math.random() * 1500, t)
+      bp.frequency.linearRampToValueAtTime(1200 + Math.random() * 900, t + len)
+      bp.Q.value = 4
+      // Stick-slip: a fast irregular grain on the level.
+      const grain = ac.createGain()
+      grain.gain.value = 0.5
+      const lfo = ac.createOscillator()
+      lfo.type = "square"
+      lfo.frequency.value = 22 + speed * 9 + Math.random() * 10
+      const depth = ac.createGain()
+      depth.gain.value = 0.5
+      lfo.connect(depth).connect(grain.gain)
+      const g = ac.createGain()
+      g.gain.setValueAtTime(0, t)
+      g.gain.linearRampToValueAtTime(1, t + 0.05)
+      g.gain.setValueAtTime(0.9, t + len * 0.7)
+      g.gain.linearRampToValueAtTime(0, t + len)
+      src.connect(bp).connect(grain).connect(g).connect(out)
+      src.start(t, Math.random() * 1, len + 0.05)
+      lfo.start(t)
+      lfo.stop(t + len + 0.05)
+      return t + len
+    })
+  }
+
+  /** A door's hinges creaking as it is brushed (a slow stick-slip squeal). */
+  creak(p: P) {
+    const len = 0.9 + Math.random() * 1.1
+    this.proc("creak", p, 0.35, 2, 1.0, (ac, out, t) => {
+      const o = ac.createOscillator()
+      o.type = "sawtooth"
+      const f = 9 + Math.random() * 7
+      o.frequency.setValueAtTime(f, t)
+      o.frequency.linearRampToValueAtTime(f * (1.6 + Math.random()), t + len)
+      const bp = ac.createBiquadFilter()
+      bp.type = "bandpass"
+      bp.frequency.value = 900 + Math.random() * 700
+      bp.Q.value = 8
+      const g = ac.createGain()
+      g.gain.setValueAtTime(0, t)
+      g.gain.linearRampToValueAtTime(1, t + 0.1)
+      g.gain.linearRampToValueAtTime(0.6, t + len * 0.8)
+      g.gain.linearRampToValueAtTime(0, t + len)
+      o.connect(bp).connect(g).connect(out)
+      o.start(t)
+      o.stop(t + len + 0.05)
+      return t + len
+    })
+  }
+
+  /**
+   * Breath into the ventilation: under a spine return grille (within 3 m) its breath also comes out of the grille
+   * nearest the listener, carried along the trunk duct and the riser (hollow, band-limited, fading with the run;
+   * silent past 40 m of duct or when the listener is not within 9 m of a grille). Away from a grille, just its breath.
+   */
+  duct(head: P, quiet: boolean) {
+    this.breath(head, false)
+    const s = storeyOf(head.y - 2)
+    const gx = GRILLES_X.reduce((a, x) => (Math.abs(x - head.x) < Math.abs(a - head.x) ? x : a))
+    if (Math.hypot(gx - head.x, head.z) > 3) return
+    const ear = this.ear
+    const es = storeyOf(ear.y - 1.6)
+    const ex = GRILLES_X.reduce((a, x) => (Math.abs(x - ear.x) < Math.abs(a - ear.x) ? x : a))
+    if (Math.hypot(ex - ear.x, ear.z) > 9) return
+    const run = s === es ? Math.abs(gx - ex) : Math.abs(gx - RISER_X) + Math.abs(ex - RISER_X) + 3.8 * Math.abs(s - es)
+    if (run > 40 || (s === es && Math.abs(gx - ex) < 1)) return
+    const k = (1 - run / 40) * (quiet ? 0.5 : 1)
+    const at = { x: ex, y: grilleY(es), z: 0 }
+    this.proc("duct-breath", at, 0.5 * k, 1.5, 1.2, (ac, out, t) => {
+      const dur = 2.4
+      const src = ac.createBufferSource()
+      src.buffer = this.noiseBuffer(ac)
+      const bp = ac.createBiquadFilter()
+      bp.type = "bandpass"
+      bp.frequency.value = 380 + Math.random() * 120
+      bp.Q.value = 3
+      // The duct's tube resonance: a short feedback delay.
+      const dl = ac.createDelay(0.05)
+      dl.delayTime.value = 0.011 + Math.random() * 0.006
+      const fb = ac.createGain()
+      fb.gain.value = 0.55
+      const g = ac.createGain()
+      g.gain.setValueAtTime(0, t)
+      g.gain.linearRampToValueAtTime(0.7, t + dur * 0.35)
+      g.gain.linearRampToValueAtTime(1, t + dur * 0.55)
+      g.gain.linearRampToValueAtTime(0, t + dur)
+      src.connect(bp).connect(g)
+      g.connect(out)
+      g.connect(dl).connect(fb).connect(dl)
+      fb.connect(out)
+      src.start(t, Math.random() * 1, dur + 0.05)
+      return t + dur + 0.3
+    })
   }
 
   /** A door it moves: "open" (eased, the latch and leaf), "bash" (shouldered open), "slam" (shut hard), "close". */
@@ -255,22 +445,53 @@ export class Voice {
       const d = Math.hypot(l.position[0] - p.x, l.position[2] - p.z)
       if (d > 7) continue
       let st = this.flick.get(l)
-      if (!st) this.flick.set(l, (st = { base: l.intensity, until: 0, off: false, next: now + Math.random() * 0.6, sound: 0 }))
+      if (!st) this.flick.set(l, (st = { base: l.intensity, until: 0, off: false, next: now + Math.random() * 0.6, sound: 0, buzz: 0 }))
       const k = Math.min(1, amount * (1 - d / 7) * 1.6)
       if (now >= st.next) {
         st.off = !st.off
         if (st.off) {
           st.until = now + 0.04 + Math.random() * 0.2 * k
           st.next = st.until
-          if (now > st.sound && Math.random() < 0.35 * k) {
-            st.sound = now + 5
+          if (now > st.sound && now > this.lampSoundAt && Math.random() < 0.35 * k) {
+            st.sound = now + 6
+            this.lampSoundAt = now + 2.5 + Math.random() * 2
             this.play("light-fluoro-flicker", { x: l.position[0], y: l.position[1], z: l.position[2] }, { gain: 0.35, ref: 1.5, rolloff: 1.2, jitter: 0.06 })
           }
-        } else st.next = now + (0.15 + Math.random() * 1.6) / (0.3 + k)
+        } else {
+          st.next = now + (0.15 + Math.random() * 1.6) / (0.3 + k)
+          // The tube restriking: a short electrical buzz at the fixture.
+          if (now > st.buzz && now > this.lampSoundAt && Math.random() < 0.4 * k) {
+            st.buzz = now + 4
+            this.lampSoundAt = now + 2.5 + Math.random() * 2
+            this.buzz({ x: l.position[0], y: l.position[1], z: l.position[2] })
+          }
+        }
       }
       l.intensity = st.base * (st.off ? 0.05 + 0.25 * (1 - k) : 1 - 0.15 * k * Math.random())
     }
     void dt
+  }
+
+  /** A fluorescent tube's ballast buzzing as it restrikes (120 Hz and its harmonics, 0.15–0.4 s). */
+  private buzz(p: P) {
+    const len = 0.15 + Math.random() * 0.25
+    this.proc("tube-buzz", p, 0.12, 1.2, 1.3, (ac, out, t) => {
+      const o = ac.createOscillator()
+      o.type = "sawtooth"
+      o.frequency.value = 120
+      const hp = ac.createBiquadFilter()
+      hp.type = "highpass"
+      hp.frequency.value = 400
+      const g = ac.createGain()
+      g.gain.setValueAtTime(0, t)
+      g.gain.linearRampToValueAtTime(1, t + 0.01)
+      g.gain.setValueAtTime(1, t + len - 0.03)
+      g.gain.linearRampToValueAtTime(0, t + len)
+      o.connect(hp).connect(g).connect(out)
+      o.start(t)
+      o.stop(t + len + 0.02)
+      return t + len
+    })
   }
 
   /** Restores every lamp it touched. */
