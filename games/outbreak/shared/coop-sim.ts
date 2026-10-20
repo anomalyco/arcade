@@ -137,7 +137,7 @@ function cloneSurvivorState(s: Survivor): Survivor {
 
 /**
  * The authoritative Outbreak world for any number of survivors. `LocalSession` runs it with one survivor; the co-op
- * room runs it with up to four. Each tick: `stepSurvivor` for every survivor's command(s), then `stepWorld` once.
+ * room runs it with up to six. Each tick: `stepSurvivor` for every survivor's command(s), then `stepWorld` once.
  * Doors, windows, barricades, loot containers, ground drops, workbenches, zombies, shots and the clock are shared;
  * hotbar, belt, pack, stamina, battery and channels belong to each survivor. Items live in `progression.ledger`.
  */

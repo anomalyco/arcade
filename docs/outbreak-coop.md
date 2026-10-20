@@ -1,6 +1,6 @@
 # Outbreak co-op
 
-Two to four survivors share one neighbourhood. One player presses **Host co-op**, which creates a room and copies a
+Two to six survivors share one neighbourhood. One player presses **Host co-op**, which creates a room and copies a
 link (`/arcade/outbreak/?room=<code>`); friends open the link and drop in. Without `?room`, Outbreak is the same
 offline single-player `LocalSession` as before.
 
@@ -68,7 +68,7 @@ change the offline session.
 - Down, text: `welcome` (public id, private token, seat index, room options), `roster`, `pong`, `error`, `reload`.
 - Down, binary snapshot at 20 Hz (adapted by `BandwidthPacer`): `frame(personal, shared)`.
   - `shared` (cached per `(viewerBubble, baseTick)` so survivors in the same chunk bubble with the same acked tick
-    encode once): header (`tick`, `time`, `hour`, `revision`, `sectionFlags`, optional `baseTick`), all 1–4 survivors
+    encode once): header (`tick`, `time`, `hour`, `revision`, `sectionFlags`, optional `baseTick`), all 1–6 survivors
     (12 B each: `i32` cm position, 12-bit aim + 4-bit flags, 7-bit light + exhausted bit, health, optional recoil/lift),
     interest-culled zombies inside the recipient's `128 × 128 m` bubble (`±64 m` around their `3 × 3` chunk window)
     delta-compressed against `baseSnap.zombies` via a changed-entity bitfield, 1-byte nibble (`±7 cm`) or 2-byte `i8`

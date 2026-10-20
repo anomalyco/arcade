@@ -450,7 +450,7 @@ export class OutbreakLobby {
           <div>
             <div class="ob-lobby-eyebrow">FIRST NIGHT · 17:30 DUSK</div>
             <h1 id="ob-lobby-title" class="ob-lobby-title">OUTBREAK</h1>
-            <p class="ob-lobby-sub">Choose your survivor and starting kit. Run solo or open a co-op room for up to four survivors.</p>
+            <p class="ob-lobby-sub">Choose your survivor and starting kit. Run solo or open a co-op room for up to six survivors.</p>
           </div>
           <label class="ob-lobby-callsign">
             <span class="ob-lobby-label">CALLSIGN</span>

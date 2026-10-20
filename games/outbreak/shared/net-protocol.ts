@@ -42,6 +42,7 @@ import { isLoadoutId, isSurvivorVariant } from "./loadout"
 import type { ChannelView, Notice, PickMode } from "./types"
 import type { Command, Survivor } from "./sim-types"
 import { packPlanks, unpackPlanks } from "./discovery/barricade"
+import { SPAWN_POINTS } from "./spawn-points"
 import type { VehicleKind } from "./vehicles/types"
 import type { ChunkCoord } from "./world"
 import type {
@@ -400,6 +401,9 @@ const STATES: readonly AIState[] = [
 const BONES: readonly CombatShotEvent["detachBone"][] = [null, ...DETACHABLE_BONES]
 const MELEE_BONES: readonly CombatMeleeHit["detachBone"][] = [null, ...DETACHABLE_BONES]
 const MELEE_PHASES: readonly MeleeSwingPhase[] = ["idle", "windup", "active", "recovery"]
+/** Survivor header byte: the low 6 bits hold `index * WEAPON_CODES + weapon` (weapon 0 = none), bits 6–7 are flags. */
+const WEAPON_CODES = MELEE_WEAPON_IDS.length + 1
+if (SPAWN_POINTS.length * WEAPON_CODES > 64) throw new Error("survivor header byte cannot hold every seat and melee weapon")
 
 
 
@@ -900,7 +904,7 @@ export function encodeShared(
     const wpnIdx = s.meleeWeapon ? MELEE_WEAPON_IDS.indexOf(s.meleeWeapon) + 1 : 0
     const phaseIdx = s.meleePhase ? Math.max(0, MELEE_PHASES.indexOf(s.meleePhase)) : 0
     const hasExtra = recoilByte > 0 || liftByte > 0 || phaseIdx > 0
-    w.u8((s.index & 0x03) | ((wpnIdx & 0x0f) << 2) | (phaseIdx > 0 ? 64 : 0) | (hasExtra ? 128 : 0))
+    w.u8((s.index * WEAPON_CODES + wpnIdx) | (phaseIdx > 0 ? 64 : 0) | (hasExtra ? 128 : 0))
     w.i32(cm(s.x)).i32(cm(s.y))
     const flags4 = (s.flashlightOn ? 1 : 0) | (s.sprinting ? 2 : 0) | (s.pistol ? 4 : 0) | (s.reloading ? 8 : 0)
     w.u16(packAngle12(s.aim) | (flags4 << 12))
@@ -1111,8 +1115,8 @@ export function decodeShared(
   const survivors: RemoteSurvivor[] = []
   for (let n = r.u8(), i = 0; i < n; i++) {
     const idxByte = r.u8()
-    const index = idxByte & 0x03
-    const wpnIdx = (idxByte >>> 2) & 0x0f
+    const index = Math.floor((idxByte & 0x3f) / WEAPON_CODES)
+    const wpnIdx = (idxByte & 0x3f) % WEAPON_CODES
     const hasMeleePhase = Boolean(idxByte & 64)
     const hasExtra = Boolean(idxByte & 128)
     const x = r.i32() / 100
