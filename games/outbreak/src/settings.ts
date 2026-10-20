@@ -45,6 +45,7 @@ import { DEFAULT_LOOK_TRIMS, type OutbreakLookTrims } from "./look/world"
 import { DEFAULT_NIGHT_LIGHT_SETTINGS, type OutbreakNightLightSettings } from "./night-lights/settings"
 import { DEFAULT_DETAIL_SETTINGS, type OutbreakDetailSettings } from "./details/settings"
 import { DEFAULT_PROP_SETTINGS, type OutbreakPropSettings } from "./props/settings"
+import { DEFAULT_HOUSE_VARIETY_SETTINGS, syncHouseVariety, type HouseVarietySettings } from "./houses/settings"
 import { DEFAULT_VEGETATION_SETTINGS, type OutbreakVegetationSettings } from "./vegetation/settings"
 import { survivorAimTuning, type SurvivorAimTuning } from "./survivor"
 import { applyUnseenModePreset, DEFAULT_UNSEEN_SETTINGS, type UnseenSettings } from "./unseen"
@@ -62,7 +63,7 @@ export type OutbreakWorldSettings = {
   foliageDensity: number
   houseDecay: number
   weathering: number
-}
+} & HouseVarietySettings
 
 export type OutbreakVisionSettings = {
   cone: number
@@ -137,6 +138,7 @@ export const DEFAULT_OUTBREAK_WORLD: OutbreakWorldSettings = {
   foliageDensity: 1,
   houseDecay: 0,
   weathering: 1,
+  ...DEFAULT_HOUSE_VARIETY_SETTINGS,
 }
 
 export const DEFAULT_OUTBREAK_VISION: OutbreakVisionSettings = {
@@ -445,6 +447,7 @@ export function createOutbreakSettings(params?: URLSearchParams): OutbreakSettin
     const layersInUrl = [...params.keys()].some((k) => /unseen(Glitch|GlitchEdge|Warp|Shroud|Memory|Noise)$/.test(k))
     if (u.unseenMode !== 9 && !layersInUrl) applyUnseenModePreset(u, u.unseenMode)
   }
+  syncHouseVariety(settings.world)
   return settings
 }
 

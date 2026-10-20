@@ -1,3 +1,4 @@
+import { resetHouseVariety } from "../shared/houses/variety"
 import { ByteWriter } from "@arcade/kit/net/bytes"
 import { AckHistory } from "@arcade/kit/net/interest"
 import { Glide, lerp, lerpAngle, SnapshotBuffer } from "@arcade/kit/net/interpolate"
@@ -145,6 +146,8 @@ export class NetSession implements Session, OutbreakOptimisticHost {
 
   constructor(readonly options: NetSessionOptions) {
     const o = DEFAULT_COOP_ROOM
+    // The room builds the default houses; so must every client (Lab › World · Variety is offline only).
+    resetHouseVariety()
     this.sim = new CoopSim(o.seed, o.houseSeed, o.terrain, { zombieCount: 0 })
     this.local = this.sim.addSurvivor("local", 0)
     this.view = slotView(this.sim, () => this.local)
