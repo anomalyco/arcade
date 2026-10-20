@@ -4,7 +4,7 @@ import { basename, resolve, sep } from "node:path"
 import { chromium } from "playwright-core"
 
 const game = basename(process.cwd())
-assert(["blackout", "getaway", "outbreak", "carrier", "lab", "brawl", "archers"].includes(game), `Unknown game: ${game}`)
+assert(["blackout", "getaway", "outbreak", "carrier", "lab", "brawl", "archers", "walkers"].includes(game), `Unknown game: ${game}`)
 const prefix = `/arcade/${game}/`
 const root = resolve(`dist/arcade/${game}`)
 assert(await Bun.file(resolve(root, "index.html")).exists(), "Build the game before running smoke")
@@ -72,6 +72,8 @@ try {
       archers: ["#hud .notice", "#hud .strip .slot"],
       getaway: ["#overlay .nogpu p", '#overlay [data-act="solo"]'],
       carrier: ["#hud .notice", '.mn [data-act="quick"]'],
+      // Canvas 2D and Web Workers, no WebGPU: ready once the first generation has been scored.
+      walkers: ["#toast", '#app[data-ready] #stats b'],
     }[game]
     const failure = document.querySelector(sel[0])?.textContent
     if (failure && /needs WebGPU|No WebGPU adapter is available|WebGPU could not start/.test(failure)) return failure
