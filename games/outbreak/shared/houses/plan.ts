@@ -311,7 +311,7 @@ function furnish(rooms: LRoom[], inners: Rect[], zones: Rect[], windowRects: Rec
           ? [[host.prop.x, host.rect[3] + 0.36], [host.prop.x, host.rect[1] - 0.36], [host.rect[0] - 0.36, host.prop.y], [host.rect[2] + 0.36, host.prop.y]]
           : [[(inner[0] + inner[2]) / 2 + (rng.next() - 0.5), (inner[1] + inner[3]) / 2 + (rng.next() - 0.5)]]
         for (const [cx, cz] of tries) {
-          if (free(rectAt("chair", cx, cz), inner)) {
+          if (free(rectAt("chair", cx, cz), inner) && !blindSlot(rectAt("chair", cx, cz), inner, placed.filter((p) => p !== host))) {
             put("chair", cx, cz, ri, it)
             break
           }
@@ -319,12 +319,14 @@ function furnish(rooms: LRoom[], inners: Rect[], zones: Rect[], windowRects: Rec
         continue
       }
       if (!it.side) {
-        // Free-standing: near the middle, nudged until it fits.
+        // Free-standing: near the middle, nudged until it fits, first with a walkway (1.1 m) round
+        // it on every side so nothing gets snagged between it and the next piece, then anywhere it fits.
         const mx = (inner[0] + inner[2]) / 2, mz = (inner[1] + inner[3]) / 2
-        for (let k = 0; k < 12; k++) {
+        const roomy = (r: Rect) => r[0] >= inner[0] + 1.1 && r[2] <= inner[2] - 1.1 && r[1] >= inner[1] + 1.1 && r[3] <= inner[3] - 1.1 && !placed.some((p) => overlaps(p.rect, r, 1.1))
+        for (let k = 0; k < 16; k++) {
           const cx = mx + (rng.next() - 0.5) * Math.max(0, inner[2] - inner[0] - w) * 0.8
           const cz = mz + (rng.next() - 0.5) * Math.max(0, inner[3] - inner[1] - d) * 0.8
-          if (free(rectAt(it.kind, cx, cz), inner)) {
+          if (free(rectAt(it.kind, cx, cz), inner) && (k >= 12 || (k < 8 ? roomy(rectAt(it.kind, cx, cz)) : !blindSlot(rectAt(it.kind, cx, cz), inner, placed)))) {
             put(it.kind, cx, cz, ri, it)
             break
           }
@@ -352,6 +354,9 @@ function furnish(rooms: LRoom[], inners: Rect[], zones: Rect[], windowRects: Rec
           if (it.kind === "closet" && !free([r[0], r[3], r[2], r[3] + 0.7], inner)) continue
           // Tall pieces keep off the windows.
           if (h > 0.95 && TALL.has(it.kind) && windowRects.some((wr) => overlaps(wr, r, 0.35))) continue
+          // No blind slot beside it along the wall: a gap to the corner or the next piece is flush or a walkway, never a
+          // dead end the dead walk into and cannot turn out of.
+          if (blindSlot(r, inner, placed)) continue
           put(it.kind, cx, cz, ri, it)
           done = true
         }
@@ -359,6 +364,21 @@ function furnish(rooms: LRoom[], inners: Rect[], zones: Rect[], windowRects: Rec
     }
   })
   return placed
+}
+
+/**
+ * Whether a piece leaves a 0.1–1.1 m slot (under two of the dead's 0.5 m nav cells once padded) between itself and a wall or another piece beside it: a gap is flush or a
+ * walkway, never a dead end the dead walk into and cannot turn out of.
+ */
+function blindSlot(r: Rect, inner: Rect, placed: readonly Placed[]): boolean {
+  const slot = (g: number) => g > 0.1 && g < 1.1
+  if (slot(r[0] - inner[0]) || slot(inner[2] - r[2]) || slot(r[1] - inner[1]) || slot(inner[3] - r[3])) return true
+  for (const p of placed) {
+    const q = p.rect
+    if (q[1] < r[3] && q[3] > r[1] && (slot(r[0] - q[2]) || slot(q[0] - r[2]))) return true
+    if (q[0] < r[2] && q[2] > r[0] && (slot(r[1] - q[3]) || slot(q[1] - r[3]))) return true
+  }
+  return false
 }
 
 // --- reachability ----------------------------------------------------------------------------------------------------
