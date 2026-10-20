@@ -2,8 +2,10 @@ import { describe, expect, test } from "bun:test"
 import { pushOut } from "@arcade/kit/sim/geom"
 import { createAIAgent, type AIAgent } from "../shared/ai"
 import {
+  ACT_CLIMB_CAR,
   ACT_CLIMB_FENCE,
   ACT_FEED,
+  ACT_FLINCH,
   ACT_FOLLOW,
   ACT_FREEZE,
   ACT_GIVE_UP,
@@ -22,6 +24,7 @@ import { TICK_DT } from "../shared/clock"
 import { CoopSim, hashSimState } from "../shared/coop-sim"
 import { outbreakSharedFeatures } from "../shared/feature-registry"
 import { outbreakBehaviourSharedFeature } from "../shared/behaviour/index"
+import { EXTERIOR_VEHICLE_COLLIDERS } from "../shared/map"
 import { decodeShared, encodeShared } from "../shared/net-protocol"
 
 const idle = { mx: 0, my: 0, aim: 0, interact: false }
@@ -258,6 +261,43 @@ describe("behaviours", () => {
     })
     expect(climbed).toBe(true)
     expect(Math.sign(a.y - fy)).toBe(-side)
+  })
+
+  test("a chaser climbs over a parked car's bonnet, across it and never along it", () => {
+    const sim = world(23)
+    const car = (sim.town.vehicles ?? EXTERIOR_VEHICLE_COLLIDERS).find((r) => r[2] - r[0] > r[3] - r[1] && r[3] - r[1] <= 2.4 && walkable(sim, (r[0] + r[2]) / 2, r[1] - 1.1) && walkable(sim, (r[0] + r[2]) / 2, r[3] + 2))!
+    expect(car).toBeDefined()
+    const cx = (car[0] + car[2]) / 2
+    const sv = sim.slots[0]!.survivor
+    Object.assign(sv, { x: cx, y: car[3] + 2, flashlightOn: true, flashlightOutput: 1 })
+    const a = zombie(sim, 1, cx, car[1] - 0.9, seedWith((p) => p.freshness > 0.8), Math.PI / 2)
+    Object.assign(a, { state: "chase", awareness: 1, targetX: sv.x, targetY: sv.y })
+    let climbed = false
+    step(sim, 4, NO_SPECIALS, () => {
+      if (zombieActivity(sim, a.id) === ACT_CLIMB_CAR) climbed = true
+    })
+    expect(climbed).toBe(true)
+    expect(a.y).toBeGreaterThan(car[3])
+  })
+
+  test("nothing climbs through a wall or a closed door: a boarded front door is still bashed down", () => {
+    const sim = world(23)
+    const door = sim.town.doors.find((d) => d.id === "ash-front")!
+    door.open = false
+    sim.rebuildSolids()
+    const sv = sim.slots[0]!.survivor
+    Object.assign(sv, { x: 27.7, y: 34.4, aim: Math.PI / 2, flashlightOn: true, flashlightOutput: 1 })
+    const a = zombie(sim, 1, 27.7, 36.1, seedWith((p) => p.freshness > 0.8), -Math.PI / 2)
+    Object.assign(a, { state: "chase", awareness: 1, targetX: sv.x, targetY: sv.y })
+    let opened = -1
+    step(sim, 6, NO_SPECIALS, () => {
+      const act = zombieActivity(sim, a.id)
+      expect(act === ACT_CLIMB_CAR || act === ACT_CLIMB_FENCE || act === ACT_SNAGGED).toBe(false)
+      // The beam only reaches its face once the door is down.
+      if (!door.open) expect(act).not.toBe(ACT_FLINCH)
+      if (door.open && opened < 0) opened = sim.time
+    })
+    expect(opened).toBeGreaterThan(0)
   })
 
   test("lightning freezes the dead out in the open for a beat", () => {

@@ -3,7 +3,7 @@ import type { AIAgent, AIState } from "../ai"
 import type { BodiesState } from "../bodies/runtime"
 import { dayCycle } from "../day-cycle"
 import type { DeathState } from "../death/rules"
-import { inBuildingFootprint, sightRects, type Building } from "../map"
+import { EXTERIOR_VEHICLE_COLLIDERS, inBuildingFootprint, sightRects, type Building } from "../map"
 import type { OutbreakSim } from "../sim-types"
 import { mix32 } from "../specials/kinds"
 import { strikesBetween } from "../weather/lightning"
@@ -400,7 +400,7 @@ export function stepBehaviourBefore(
         const toZ = Math.atan2(a.y - s.y, a.x - s.x)
         if (Math.abs(angleDiff(toZ, s.aim)) > 0.32) continue
         if (Math.abs(angleDiff(toZ + Math.PI, a.aim)) > 1.0) continue
-        if (!clearLine(s.x, s.y, a.x, a.y, sightRects(sim.town))) continue
+        if (!seesThrough(sim, s.x, s.y, a.x, a.y)) continue
         start(st, m, ACT_FLINCH, time + 0.42, s.x, s.y)
         m.cool = time + 4.5
         a.aim += (h01(a.seed, Math.floor(time)) < 0.5 ? -1 : 1) * 0.35
@@ -619,7 +619,7 @@ function tryClimb(sim: OutbreakSim, st: BehaviourState, a: AIAgent, m: ZombieMin
     }
   }
   if (dist < 8) {
-    for (const r of sim.vehicleSolids) {
+    for (const r of sim.town.vehicles ?? EXTERIOR_VEHICLE_COLLIDERS) {
       const w = r[2] - r[0]
       const h = r[3] - r[1]
       if (Math.min(w, h) > 2.4) continue
@@ -646,6 +646,8 @@ function tryClimb(sim: OutbreakSim, st: BehaviourState, a: AIAgent, m: ZombieMin
   pushOut(probe, 0.3, sim.vehicleSolids)
   if (Math.hypot(probe.x - to.x, probe.y - to.y) > 0.08 || !sim.ai.nav.walkable(probe)) return
   for (const r of sim.town.barriers) if (r.kind !== "fence" && inRect(probe.x, probe.y, r.rect, 0.25)) return
+  // Only the fence or the car is in the way: never through a wall, a closed door or into a building.
+  if (buildingAt(sim, probe.x, probe.y) !== buildingAt(sim, a.x, a.y) || !seesThrough(sim, a.x, a.y, probe.x, probe.y)) return
   const snag = !car && h01(a.seed, Math.floor(sim.time), 131) < 0.16 * Math.min(2, t.zbClimb)
   const base = car ? 1.5 + 0.8 * (1 - p.freshness) : 1.05 + 0.75 * (1 - p.freshness)
   const duration = base + (snag ? 1.4 + 0.8 * h01(a.seed, 132) : 0)
@@ -662,13 +664,28 @@ function tryClimb(sim: OutbreakSim, st: BehaviourState, a: AIAgent, m: ZombieMin
 
 // ── After the crowd steps ──────────────────────────────────────────────────────────────────────────────────────
 
+let doorsAt = -1
+let doorsOf: unknown = null
+const shut: Rect[] = []
+
+/** Nothing solid between the two points: walls, buildings and closed or boarded doors. */
+function seesThrough(sim: OutbreakSim, x0: number, y0: number, x1: number, y1: number): boolean {
+  if (!clearLine(x0, y0, x1, y1, sightRects(sim.town))) return false
+  if (doorsAt !== sim.time || doorsOf !== sim.town) {
+    doorsAt = sim.time
+    doorsOf = sim.town
+    shut.length = 0
+    for (const d of sim.town.doors) if (!d.open || (sim.ai.getBarricadePlanks(d.id) ?? 0) > 0) shut.push(d.rect)
+  }
+  return clearLine(x0, y0, x1, y1, shut)
+}
+
 export function stepBehaviourAfter(sim: OutbreakSim, st: BehaviourState): void {
   const t = st.tuning
   if (!behaviourOn(t)) return
   const time = sim.time
   const agents = sim.ai.agents
   const minds = st.minds
-  const blockers = sightRects(sim.town)
 
   for (let i = 0; i < agents.length; i++) {
     const a = agents[i]!
@@ -708,7 +725,7 @@ export function stepBehaviourAfter(sim: OutbreakSim, st: BehaviourState): void {
         if (!om || om.followAt > 0 || isClimbing(om.act) || om.act === ACT_FEED) continue
         const op = zombiePersonality(o.seed, leaderScratch)
         if (op.sociability < 1 - 0.75 * Math.min(1.3, t.zbFollow)) continue
-        if (!clearLine(o.x, o.y, a.x, a.y, blockers)) continue
+        if (!seesThrough(sim, o.x, o.y, a.x, a.y)) continue
         om.followAt = time + op.reaction * (isResting(om.act) ? 1.6 : 1)
         om.fx = a.targetX
         om.fy = a.targetY
