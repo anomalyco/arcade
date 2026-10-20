@@ -128,6 +128,19 @@
   `src/zombies.ts`, gas cloud, Lab). The kind is encoded in the zombie's seed, so clients read it with
   `specialKindOf(seed)`. Lab: Backquote › Specials (rarity, stats, "Spawn <kind> ahead"); `arcade cmd specials.spawn
   kind=brute`. Sounds: `src/audio/specials.ts`. Tests: `tests/specials.test.ts`.
+- Characters (AR-88, `shared/characters/`, `src/characters/`, Lab: Backquote › Characters, "Today" = `chStyle` 0,
+  station `outbreak-characters`, `arcade cmd characters.stage scene=callings|knock|stove|bed|fence|wedding|leash`): the
+  dead hint at who they were. Callings come from the seed (`callingIndex`: the six Townsfolk outfits plus mail carrier,
+  jogger, bathrobe with one slipper, night guard, courier, bride, groom; meshes in `src/look/refined-figure.ts`), clothes
+  and skin by days since turning (`turnedAgo`). Habit loops: `habitSites(town)` (knocking from inside its own shut front
+  door, a cold stove, over a bed, tangled in a fence, slow-dancing bride and groom at the church) is a pure function of
+  the town; the sim pins a fresh, unaware wanderer to a free site out of everyone's reach (never closer to a survivor
+  than it was), re-picks its seed to the site's calling, dulls its senses while it is lost in the habit and gives it a
+  beat to let go once it notices. Clients play the habit on any still, wandering zombie standing on a site, so nothing
+  is on the wire. The renderer adds empty dog leads, heads turning to noises and a flinch from the torch
+  (`src/zombies.ts`, from `characterFrame`). Audio hooks: `onCharacterBeat` (knocks) and `leakingEarbuds()` in
+  `src/characters/frame.ts`. A porch body with its car in the drive carries the keys (`shared/bodies/bodies.ts`).
+  Tests: `tests/characters.test.ts`.
 - Driving FX (skid marks, tyre smoke/dust, screech) come from per-wheel slip in `src/vehicles.ts` via `@arcade/kit/vehicle/slip`
   and `@arcade/kit/fx/skids`; Lab › Driving FX and the `outbreak-vehicles` station's drift/burnout variants. Proof:
   `bun scripts/prove-driving-fx.ts` (via `hivemind run --kind browser --fetch captures/driving-fx`).

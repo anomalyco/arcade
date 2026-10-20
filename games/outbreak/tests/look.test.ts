@@ -1,3 +1,4 @@
+import { BASE_CALLINGS } from "../shared/characters/callings"
 import { describe, expect, test } from "bun:test"
 import { createLookSettings } from "@arcade/kit/look"
 import { flashlightColor } from "../shared/flashlight"
@@ -329,7 +330,7 @@ describe("Outbreak look", () => {
       expect([...bufA]).toEqual([...bufB])
       tintSet.add([...bufA.slice(0, 9)].map(v => v.toFixed(3)).join(","))
     }
-    expect(archSet.size).toBe(ZOMBIE_ARCHETYPES.length)
+    expect(archSet.size).toBe(BASE_CALLINGS)
     expect(tintSet.size).toBeGreaterThan(16)
 
     // ZombieCrowdRenderer buckets pelvis/torso/head by archetype and shares limb/foot instancing for zombieLook = 1,

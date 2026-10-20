@@ -155,6 +155,7 @@ the feature registered: identical `SimState` hashes.
 
 ## Planned
 
-- A flat tyre as another car part; a key for each car in its owner's house; carrying a downed friend to the car.
+- A flat tyre as another car part; a key for each car in its owner's house (so far only a body on its own porch with its
+  car in the drive carries the keys, AR-88, never at the start house); carrying a downed friend to the car.
 - The dead's nav mesh does not know the destination or the roadblocks (they are pushed out, not routed round); the
   craft (boat, convoy, plane, helicopter) is not drawn arriving at dawn; recorded sounds for the horn and the craft.

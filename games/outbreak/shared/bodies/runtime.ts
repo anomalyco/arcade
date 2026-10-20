@@ -32,9 +32,11 @@ export function ensureBodyStores(sim: OutbreakSim, state: BodiesState): void {
   const rate = sim.progression.tuning.lootRate
   for (const b of state.sites) {
     if (ledger.store(b.id)) continue
-    ledger.createStore({ id: b.id, mode: "slots", scope: "shared", size: BODY_SLOTS, revealed: false, at: { x: b.x, y: b.y }, initial: bodyLoot(sim.town, b.key, rate) })
+    ledger.createStore({ id: b.id, mode: "slots", scope: "shared", size: BODY_SLOTS, revealed: false, at: { x: b.x, y: b.y }, initial: bodyLoot(sim.town, b.key, rate, Boolean(b.ownCar)) })
   }
 }
+
+const keysIn = (sim: OutbreakSim, store: string) => sim.progression.contents(store).reduce((n, s) => n + (s.item === "key" ? s.count : 0), 0)
 
 /** Whether a body rises when someone reaches for it. */
 export const rises = (b: BodySite, tuning: BodiesTuning) => !b.vignette && b.riseRoll < tuning.bodyRiseChance
@@ -74,7 +76,12 @@ export function bodyHandler(sim: OutbreakSim, id: string): InteractionHandler {
       const ledger = sim.progression.ledger
       const st = ledger.store(b.id)
       if (!st || st.counts.rise) return { handled: false }
-      if (action === "take") return { handled: sim.progression.take(slot, b.id), kind: "body", targetId, action }
+      if (action === "take") {
+        const keysBefore = b.ownCar ? keysIn(sim, b.id) : 0
+        const handled = sim.progression.take(slot, b.id)
+        if (handled && keysBefore > keysIn(sim, b.id)) sim.progression.notify(slot, "Their car keys. It's still in the drive.", "result", `own-car:${b.key}`)
+        return { handled, kind: "body", targetId, action }
+      }
       if (action !== "search" || st.revealed) return { handled: false }
       const t = state.tuning
       if (rises(b, t)) {

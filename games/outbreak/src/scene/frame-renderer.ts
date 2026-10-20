@@ -57,6 +57,7 @@ import { OutbreakWeatherController } from "../weather/controller"
 import { OutbreakSceneLevel } from "../world/scene-level"
 import { zombieProfile } from "../zombie-profile"
 import { ZombieCrowdRenderer } from "../zombies"
+import { characterFrame } from "../characters/frame"
 import { OutbreakFrameLighting } from "./frame-lighting"
 import { OutbreakFxParticles, setCurrentFx } from "./fx-particles"
 
@@ -464,6 +465,7 @@ export class OutbreakFrameRenderer {
     vision.skyFlash = this.weatherController.reveal
     const charred = charOf(session.view, settings.fire)
     this.zombieCrowd.charred = charred.size ? charred : null
+    this.zombieCrowd.characters = characterFrame(settings.characters, town, noises, [p, ...coop.others.map((o) => o.survivor)])
     const zombieBatches = this.zombieCrowd.draw(
       zombies,
       vdt,
