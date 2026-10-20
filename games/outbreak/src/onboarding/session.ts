@@ -1,3 +1,4 @@
+import type { LoadoutId } from "../../shared/loadout"
 import { stageTraining, TRAINING_HOUSE, type TrainingState } from "../../shared/onboarding/training"
 import type { LocalSession } from "../../shared/session"
 
@@ -7,6 +8,28 @@ export function stageTrainingSession(session: LocalSession): LocalSession {
   if (state) stageTraining(session.sim, state)
   session.rebuildCollision()
   return session
+}
+
+/**
+ * Turns a freshly made offline session into the lobby's practice space: the training room's house, dawn and chained
+ * target, with the survivor holding `loadout` instead of the room's empty hands.
+ */
+export function stagePracticeSession(session: LocalSession, loadout: LoadoutId): LocalSession {
+  session.sim.progression.setLoadout(session.slot, loadout)
+  const state = session.sim.getFeatureState<TrainingState>("onboarding")
+  if (state) stageTraining(session.sim, state, true)
+  session.rebuildCollision()
+  return session
+}
+
+/** Swaps the practising survivor's kit for `loadout` (the lobby's pick changed): a fresh kit, as the run would issue. */
+export function swapPracticeKit(session: LocalSession, loadout: LoadoutId): void {
+  session.sim.progression.setLoadout(session.slot, loadout)
+}
+
+export function isPracticeSession(session: unknown): session is LocalSession {
+  const sim = (session as Partial<LocalSession> | null)?.sim
+  return Boolean(sim?.getFeatureState<TrainingState>("onboarding")?.practice)
 }
 
 export function isTrainingSession(session: unknown): session is LocalSession {

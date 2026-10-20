@@ -46,6 +46,12 @@ Cross-game keyboard and mouse conventions for Getaway, Blackout, Outbreak, Carri
      the belt, or a crowbar in hand on a damaged barricade), with pips for the boards already up; a boarded door drops
      its E caps because E is refused there. B acts on the same opening the prompt points at
      (`OutbreakProgression.barricadeTarget`), never a different one nearer by.
+   - **The lobby over the practice space keeps only `Enter`** (AR-89, Kit: "While loading out you can train").
+     While the lobby is open you play in a local practice space, so every gameplay key is the game's; `Enter` plays
+     solo, or in a room readies, then starts the night (host, or once all are ready). The menu keys (`Digit1`–`Digit4`
+     survivor, `KeyH`, `KeyT`, `KeyR`, `KeyC`, `Escape`) apply only with Lab › Onboarding › Practise in the lobby off,
+     where the panel's caps show them; over the practice space the panel draws only the `Enter` caps
+     (`src/lobby/keys.ts`, `lobbyKeyAction`).
    - **Which target wins**: when several are in reach, the prompt's target is the best of distance and facing
      (`INTERACT_FACING_WEIGHT` 1 since AR-89, was 0.45), so the cursor picks between targets up to about half a metre
      apart. Corner brackets outline the exact target (Lab › Controls › Outline what E acts on) and close in while E is

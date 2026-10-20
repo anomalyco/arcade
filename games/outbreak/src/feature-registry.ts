@@ -72,10 +72,15 @@ export interface OutbreakClientFeatureFrameHooks {
   overlay?(ctx: OutbreakClientFrameContext): void
 }
 
-/** What a feature gets when the game makes an offline session (`main.ts` `makeSession`; never for a co-op room). */
+/**
+ * What a feature gets when the game makes the next session (`main.ts` `makeSession`). A feature may return a local
+ * session even in a co-op room (the lobby's practice space); otherwise the room's session or the normal offline one.
+ */
 export interface OutbreakClientSessionContext {
   readonly seed: number
   readonly settings: OutbreakSettings
+  /** The lobby and the co-op room, if any (`coop.net` is null while the lobby is over the practice space). */
+  readonly coop: CoopView
   /** Builds the normal offline session for `seed`, with the solo starting kit. */
   make(seed: number): LocalSession
   /** Ends the current session and makes the next one (`main.ts` `reset`). */
@@ -117,7 +122,7 @@ export interface OutbreakClientFeature {
   readonly netSession?: OutbreakClientFeatureNetHooks
   /** Per-frame presentation hooks (`scene/frame-renderer.ts`): viewpoint, hidden bodies, batches and overlay. */
   readonly frame?: OutbreakClientFeatureFrameHooks
-  /** Makes the next offline session instead of the normal one (e.g. the training room), or null to leave it be. */
+  /** Makes the next session instead of the normal one (the lobby's practice space, the training room), or null. */
   session?(ctx: OutbreakClientSessionContext): LocalSession | null
 }
 

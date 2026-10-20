@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import { DEFAULT_PROGRESSION_TUNING } from "../shared/progression/tuning"
 import {
+  createTrainingState,
   leftTheHouse,
+  PRACTICE_RESPAWN_SECONDS,
   TRAINING_CHAIN,
   TRAINING_DRESSER,
   TRAINING_HOUR,
@@ -10,11 +12,19 @@ import {
   type TrainingState,
 } from "../shared/onboarding/training"
 import { LocalSession } from "../shared/session"
+import type { LoadoutId } from "../shared/loadout"
+import { CoopRoomCore } from "../server/room-core"
+import { DEFAULT_COOP_ROOM } from "../shared/coop-config"
+import { lobbyKeyAction } from "../src/lobby/keys"
 import { BEATS, TrainingGuide } from "../src/onboarding/beats"
-import { boardsUp, carryBoards, isTrainingSession, stageTrainingSession } from "../src/onboarding/session"
+import { outbreakOnboardingFeature } from "../src/onboarding"
+import { quietHint, startPractice, stepPractice } from "../src/onboarding/practice"
+import { boardsUp, carryBoards, isPracticeSession, isTrainingSession, stageTrainingSession } from "../src/onboarding/session"
 import { stageBeat } from "../src/onboarding/stage"
 import {
+  DEFAULT_TRAINING_SETTINGS,
   forgetTraining,
+  PRACTICE_OFF,
   markTrainingDone,
   requestTraining,
   takeTrainingRequest,
@@ -80,11 +90,11 @@ describe("training room", () => {
   })
 
   test("training never kills", () => {
-    const state: TrainingState = { active: true, chained: 1 }
+    const state: TrainingState = { active: true, chained: 1, practice: false, respawnAt: -1 }
     expect(trainingDamage({ health: 100 }, 40, state)).toBe(10)
     expect(trainingDamage({ health: 21 }, 40, state)).toBe(1)
     expect(trainingDamage({ health: 15 }, 40, state)).toBe(0)
-    expect(trainingDamage({ health: 100 }, 40, { active: false, chained: -1 })).toBe(40)
+    expect(trainingDamage({ health: 100 }, 40, createTrainingState())).toBe(40)
   })
 
   test("a real run's sim is untouched by the feature", () => {
@@ -208,5 +218,139 @@ describe("when the training room runs", () => {
     expect(takeTrainingRequest(TRAINING_OFF, store)).toBe(true)
     forgetTraining(store)
     expect(trainingDone(store)).toBe(false)
+  })
+})
+
+function practiceSpace(loadout: LoadoutId = "standard") {
+  const pr = startPractice(new LocalSession(7), loadout)
+  const { session } = pr
+  const step = (cmd: Record<string, unknown> = {}, n = 1) => {
+    for (let i = 0; i < n; i++) session.update(TICK, { mx: 0, my: 0, aim: session.view.player.aim, ...cmd } as never, 240)
+  }
+  return { pr, session, step, has: (item: string) => session.sim.progression.ledger.count(session.view.actorId, item) }
+}
+
+/** A stand-in for the lobby and room the session hook reads (`CoopView`). */
+function fakeCoop(open: boolean, net: unknown = null) {
+  const lobby = { isOpen: open, practice: false, loadout: "standard" as LoadoutId }
+  return { lobby, net, coop: { lobby, net } as never }
+}
+
+function hookCtx(coop: never) {
+  return {
+    seed: 7,
+    settings: { hud: { ...DEFAULT_TRAINING_SETTINGS } } as never,
+    coop,
+    make: (seed: number) => new LocalSession(seed),
+    restart: () => {},
+  }
+}
+
+describe("lobby practice space (Kit: \"While loading out you can train\")", () => {
+  test("the training room's house, dawn and chained target, with the kit you picked", () => {
+    const { session, step, has } = practiceSpace("breacher")
+    expect(isPracticeSession(session)).toBe(true)
+    expect(has("pistol")).toBe(1)
+    expect(has("plank")).toBe(2)
+    expect(has("pipe")).toBe(1)
+    step({}, 60 * 5)
+    expect(session.view.hour).toBeCloseTo(TRAINING_HOUR)
+    expect(session.view.zombies.length).toBe(1)
+  })
+
+  test("changing the lobby's kit swaps it live, a fresh kit each time", () => {
+    const { pr, has } = practiceSpace()
+    expect(has("pipe")).toBe(0)
+    stepPractice(pr, "breacher", TICK, false)
+    expect([pr.loadout, has("pipe")]).toEqual(["breacher", 1])
+    stepPractice(pr, "medic", TICK, false)
+    expect([has("pipe"), has("bandage"), has("pistol")]).toEqual([0, 1, 1])
+    stepPractice(pr, "medic", TICK, false)
+    expect(has("bandage")).toBe(1)
+  })
+
+  test("the chained one comes back so there is always something to swing at", () => {
+    const { session, step } = practiceSpace()
+    const first = session.view.zombies[0]!
+    first.hp = 0
+    first.state = "dead"
+    step({}, Math.ceil((PRACTICE_RESPAWN_SECONDS + 0.5) / TICK))
+    const alive = session.view.zombies.filter((z) => z.state !== "dead")
+    expect(alive.length).toBe(1)
+    expect(alive[0]!.id).not.toBe(first.id)
+    expect(Math.hypot(alive[0]!.x - TRAINING_CHAIN.x, alive[0]!.y - TRAINING_CHAIN.y)).toBeLessThanOrEqual(TRAINING_CHAIN.length + 0.5)
+  })
+
+  test("hints only suggest: the first one waits for the lobby to land, and the prompt quiets it in reach", () => {
+    const { pr } = practiceSpace()
+    expect(stepPractice(pr, "standard", 0.1, false)).toBeNull()
+    expect(stepPractice(pr, "standard", 1, false)?.beat).toBe("move")
+    const hint = { beat: "search", keys: [], at: "self", target: TRAINING_DRESSER } as const
+    expect(quietHint(hint, { id: TRAINING_DRESSER, kind: "container" } as never)).toBeNull()
+    expect(quietHint(hint, undefined)).toBe(hint)
+  })
+
+  test("the open lobby makes the practice session, kept while it stays open; the run is a fresh one", () => {
+    const hook = outbreakOnboardingFeature.session!
+    const solo = fakeCoop(true)
+    const space = hook(hookCtx(solo.coop))
+    expect(isPracticeSession(space)).toBe(true)
+    expect(solo.lobby.practice).toBe(true)
+    // Practice changes the house: boards up, the dresser emptied, hours of dawn.
+    space!.sim.ai.addBarricadePlank("ash-east")
+    expect(hook(hookCtx(solo.coop))).toBe(space)
+    // Play Solo: the lobby closes and the run is the normal session, with nothing carried over.
+    solo.lobby.isOpen = false
+    expect(hook(hookCtx(solo.coop))).toBeNull()
+    expect(solo.lobby.practice).toBe(false)
+    const run = new LocalSession(7)
+    expect(isTrainingSession(run) || isPracticeSession(run)).toBe(false)
+    expect(run.sim.ai.getBarricadePlanks("ash-east")).toBe(0)
+  })
+
+  test("in a co-op room each player practises locally, and the room's run is the room's session", () => {
+    const hook = outbreakOnboardingFeature.session!
+    const room = fakeCoop(true)
+    const space = hook(hookCtx(room.coop))
+    expect(isPracticeSession(space)).toBe(true)
+    room.lobby.isOpen = false
+    expect(hook(hookCtx(fakeCoop(false, {}).coop))).toBeNull()
+    // Off: today's paused lobby, no local session.
+    const off = fakeCoop(true)
+    const ctx = hookCtx(off.coop)
+    ;(ctx.settings as { hud: { lobbyPractice: number } }).hud.lobbyPractice = PRACTICE_OFF
+    expect(hook(ctx)).toBeNull()
+    expect(off.lobby.practice).toBe(false)
+  })
+
+  test("the room's sim never turns into a practice space", () => {
+    const room = new CoopRoomCore("practice", DEFAULT_COOP_ROOM, Date.now, "test")
+    expect(room.sim.getFeatureState<TrainingState>("onboarding")).toMatchObject({ active: false, practice: false })
+  })
+})
+
+describe("lobby keys over the practice space", () => {
+  const coop = { mode: "coop" as const, practice: true, training: false, ready: false, canStart: false }
+  test("the game keeps every key but Enter, so nothing practising leaves the room or blocks Ready", () => {
+    for (const code of ["KeyW", "KeyE", "KeyF", "KeyB", "KeyR", "KeyC", "KeyH", "KeyT", "Tab", "Digit1", "Escape", "Space"]) {
+      expect(lobbyKeyAction(code, coop)).toBeNull()
+      expect(lobbyKeyAction(code, { ...coop, mode: "start" })).toBeNull()
+    }
+    expect(lobbyKeyAction("Enter", { ...coop, mode: "start" })).toEqual({ act: "solo" })
+    expect(lobbyKeyAction("Enter", coop)).toEqual({ act: "ready" })
+    expect(lobbyKeyAction("Enter", { ...coop, ready: true, canStart: true })).toEqual({ act: "start" })
+    expect(lobbyKeyAction("Enter", { ...coop, ready: true })).toEqual({ act: "unready" })
+  })
+
+  test("without it, today's menu keys", () => {
+    const menu = { ...coop, practice: false, training: true }
+    expect(lobbyKeyAction("Digit2", menu)).toEqual({ act: "variant", variant: 1 })
+    expect(lobbyKeyAction("KeyR", menu)).toEqual({ act: "ready" })
+    expect(lobbyKeyAction("KeyC", menu)).toEqual({ act: "copy" })
+    expect(lobbyKeyAction("Escape", menu)).toEqual({ act: "leave" })
+    expect(lobbyKeyAction("Enter", menu)).toBeNull()
+    expect(lobbyKeyAction("Enter", { ...menu, mode: "start" })).toEqual({ act: "solo" })
+    expect(lobbyKeyAction("KeyT", { ...menu, mode: "start" })).toEqual({ act: "training" })
+    expect(lobbyKeyAction("KeyH", { ...menu, mode: "start" })).toEqual({ act: "host" })
   })
 })

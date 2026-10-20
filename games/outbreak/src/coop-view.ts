@@ -44,7 +44,8 @@ function actorVisibility(vision: Vision, x: number, y: number): number {
 export class CoopView {
   readonly hud: CoopHud
   readonly lobby: OutbreakLobby | null
-  net: NetSession | null
+  /** The co-op room's session, also while its lobby is over the practice space. */
+  private roomNet: NetSession | null = null
   room: string | null
   soloVariant: SurvivorVariant = 0
   soloLoadout: LoadoutId = DEFAULT_LOADOUT
@@ -106,9 +107,10 @@ export class CoopView {
               if (patch.variant !== undefined) this.soloVariant = patch.variant
               if (patch.loadout !== undefined) this.soloLoadout = patch.loadout
               if (patch.name !== undefined) this.soloName = patch.name
-              if (this.net) {
-                this.net.pick(patch)
-              } else if (patch.loadout !== undefined) {
+              if (this.roomNet) {
+                this.roomNet.pick(patch)
+              } else if (patch.loadout !== undefined && !this.practising) {
+                // Over the practice space the kit swaps live (`src/onboarding`); otherwise the session restarts with it.
                 this.onSessionChange?.()
               }
             },
@@ -121,9 +123,33 @@ export class CoopView {
     }
   }
 
-  /** True while the Start/Loadout screen or pre-game Co-op Lobby is open. */
+  /** True while the Start/Loadout screen or pre-game Co-op Lobby is open over a still frame (no practice space). */
   get paused(): boolean {
-    return Boolean(this.lobby?.isOpen)
+    return Boolean(this.lobby?.isOpen) && !this.practising
+  }
+
+  /** The lobby is open over the practice space (`src/onboarding`): the session is a local one, not the room's. */
+  get practising(): boolean {
+    return Boolean(this.lobby?.isOpen && this.lobby.practice)
+  }
+
+  /**
+   * The room's session for playing in it, or null offline. Null too while its lobby is over the practice space: each
+   * player practises alone in a local session, so features, bodies, lights and tags all treat that as offline.
+   */
+  get net(): NetSession | null {
+    return this.practising ? null : this.roomNet
+  }
+
+  set net(net: NetSession | null) {
+    this.roomNet = net
+  }
+
+  /** Syncs the lobby with the room; when the room's run starts under the practice space, makes the room the session. */
+  private syncLobby(): void {
+    const was = this.practising
+    this.lobby?.sync(this.roomNet)
+    if (was && !this.lobby?.isOpen) this.onSessionChange?.()
   }
 
   /** Applies the chosen Solo starting kit to an offline `LocalSession`. */
@@ -141,7 +167,7 @@ export class CoopView {
     loadout: LoadoutId,
     useLobby: boolean,
   ): NetSession {
-    this.net?.close()
+    this.roomNet?.close()
     this.avatars.clear()
     this.hud.nameTags([])
     const dir = coopBasePath()
@@ -153,7 +179,7 @@ export class CoopView {
       variant,
       loadout,
       lobby: useLobby,
-      onLobbyChange: () => this.lobby?.sync(this.net),
+      onLobbyChange: () => this.syncLobby(),
       storage: sessionStorage,
       features: this.features!,
       onReload: (reason) => {
@@ -173,7 +199,7 @@ export class CoopView {
   }
 
   leaveRoom(): void {
-    this.net?.leave()
+    this.roomNet?.leave()
     this.net = null
     this.room = null
     this.avatars.clear()
@@ -200,19 +226,19 @@ export class CoopView {
 
   /** Seat/survivor palette for the local survivor (variant 0 is the default offline look). */
   get localPalette(): { torso: number; legs: number } | null {
-    const variant = this.net?.id ? this.net.variant : this.soloVariant
+    const variant = this.roomNet?.id ? this.roomNet.variant : this.soloVariant
     if (variant === 0) return null
     return SURVIVOR_COLOURS[variant % SURVIVOR_COLOURS.length]!
   }
 
   /** Seat / character variant index for the local survivor (0 offline default, or lobby-picked variant). */
   get localVariant(): number {
-    return this.net?.id ? this.net.variant : this.soloVariant
+    return this.roomNet?.id ? this.roomNet.variant : this.soloVariant
   }
 
   /** Callsign for the local survivor (from the co-op roster or lobby callsign field). */
   get localName(): string {
-    if (this.net?.id) return this.net.nameOf(this.net.index)
+    if (this.roomNet?.id) return this.roomNet.nameOf(this.roomNet.index)
     return this.soloName || this.lobby?.name || "Survivor"
   }
 
@@ -319,7 +345,7 @@ export class CoopView {
   /** Menu, roster and name tags; call after the camera is updated. */
   overlay(cam: Camera, w: number, h: number, town: Town, vision: Vision, localPlayer?: { x: number; y: number }): void {
     this.hud.update()
-    this.lobby?.sync(this.net)
+    this.syncLobby()
     if (this.paused) {
       this.hud.nameTags([])
       return
@@ -331,7 +357,8 @@ export class CoopView {
       return
     }
     const tags: NameTag[] = []
-    if (localPlayer && (net || this.lobby)) {
+    // Practising alone, your own tag would only sit on the hints over you.
+    if (localPlayer && (net || this.lobby) && !this.practising) {
       const proj = cam.project(localPlayer.x, supportHeight(town, localPlayer.x, localPlayer.y) + 2.05, localPlayer.y, w, h)
       const localId = net ? net.local.id : "local"
       tags.push({
@@ -377,7 +404,7 @@ export class CoopView {
 
   /** Automation view of the room for proofs and smoke tests. */
   inspect() {
-    const net = this.net
+    const net = this.roomNet
     if (!net) {
       return this.lobby
         ? {

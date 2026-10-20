@@ -73,8 +73,8 @@ docs folder. Start with `AGENTS.md` at the root; it says which of these to read 
   in other games and six ranked systems for Outbreak. Read before adding team mechanics, specials or roles.
 - [outbreak-secrets.md](outbreak-secrets.md): the town's unstated backstory and its secrets in three tiers (subtle,
   strange, hidden), with the cellar chain's solution. Spoilers. Read before adding lore, easter eggs or world details.
-- [outbreak-onboarding.md](outbreak-onboarding.md): the training room (AR-89): Ash at dawn, wordless beats, skip and
-  persistence, solo only.
+- [outbreak-onboarding.md](outbreak-onboarding.md): practising in the lobby while you pick and wait, solo or in a
+  room, and the guided training room one setting away (AR-89): Ash at dawn, wordless hints, the keys over the lobby.
 - [outbreak-hud.md](outbreak-hud.md): Outbreak's character HUD, what other games put on the character, and the defaults.
 - [outbreak-map.md](outbreak-map.md): Outbreak's map (N): what it shows, its input, the optional compass ring and
   minimap, and how per-chunk memory and cached tiles keep it cheap in a streamed world.

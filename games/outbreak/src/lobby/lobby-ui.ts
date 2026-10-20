@@ -16,6 +16,7 @@ import { copyInviteLink, inviteLink, playerName, savePlayerName } from "../coop-
 import { requestTraining } from "../onboarding/state"
 import type { NetSession } from "../net-session"
 import { SURVIVORS, survivorSpec, type SurvivorLookSpec } from "./survivors"
+import { lobbyKeyAction } from "./keys"
 import { lobbyWaitingOn } from "./waiting"
 
 export type LobbyMode = "closed" | "start" | "coop"
@@ -114,6 +115,7 @@ export class OutbreakLobby {
   private copiedUntil = 0
   private lastKey = ""
   private net: NetSession | null = null
+  private practising = false
 
   constructor(
     parent: HTMLElement,
@@ -142,6 +144,27 @@ export class OutbreakLobby {
 
   get isOpen(): boolean {
     return this.mode !== "closed"
+  }
+
+  /**
+   * The practice space is live behind the lobby (`src/onboarding`, set when the session is made): the panel docks to
+   * the side over the world and the game keeps every key but Enter.
+   */
+  get practice(): boolean {
+    return this.practising
+  }
+
+  set practice(on: boolean) {
+    if (on === this.practising) return
+    this.practising = on
+    this.root.classList.toggle("is-practice", on)
+    if (this.isOpen) this.render(true)
+  }
+
+  /** Slides the practice panel out of the way while the bag is open. */
+  tuck(on: boolean): void {
+    const v = String(on)
+    if (this.root.dataset.tucked !== v) this.root.dataset.tucked = v
   }
 
   openStart(): void {
@@ -185,6 +208,7 @@ export class OutbreakLobby {
     return {
       open: this.isOpen,
       mode: this.mode,
+      practice: this.practising,
       name: this.name,
       variant: this.variant,
       loadout: this.loadout,
@@ -261,49 +285,46 @@ export class OutbreakLobby {
     const active = document.activeElement
     if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "SELECT")) return
     if (e.metaKey || e.ctrlKey || e.altKey || e.code === "Backquote") return
-    e.stopImmediatePropagation()
+    if (this.mode === "coop" && !this.net) return
+    const action = lobbyKeyAction(e.code, {
+      mode: this.mode === "coop" ? "coop" : "start",
+      practice: this.practice,
+      training: !this.practice,
+      ready: Boolean(this.net?.ready),
+      canStart: this.canStartCoop(),
+    })
+    // Over the practice space the game keeps every key the lobby does not use; the paused menu keeps them all.
+    if (action || !this.practice) e.stopImmediatePropagation()
+    if (!action) return
+    e.preventDefault()
+    if (action.act === "variant") this.selectVariant(action.variant)
+    else this.act(action.act)
+  }
 
-    if (e.code === "Digit1" || e.code === "Digit2" || e.code === "Digit3" || e.code === "Digit4") {
-      e.preventDefault()
-      const idx = (Number(e.code.slice(-1)) - 1) as SurvivorVariant
-      this.selectVariant(idx)
-      return
-    }
-    if (this.mode === "start") {
-      if (e.code === "Enter") {
-        e.preventDefault()
-        this.triggerSolo()
-      } else if (e.code === "KeyH") {
-        e.preventDefault()
-        this.triggerHost()
-      } else if (e.code === "KeyT") {
-        e.preventDefault()
-        this.triggerSolo(true)
-      } else if (e.code === "Escape") {
-        e.preventDefault()
-        this.triggerSolo()
-      }
-      return
-    }
-    if (this.mode === "coop" && this.net) {
-      if (e.code === "KeyR") {
-        e.preventDefault()
-        this.net.setReady(!this.net.ready)
-        this.render(true)
-      } else if (e.code === "KeyC") {
-        e.preventDefault()
-        this.copyInvite(this.net.options.room)
-      } else if (e.code === "Enter" && this.canStartCoop()) {
-        e.preventDefault()
-        this.net.start()
-      } else if (e.code === "Escape") {
-        e.preventDefault()
-        this.callbacks.onLeaveCoop()
-      }
-    }
+  private act(act: string): void {
+    const net = this.net
+    if (act === "solo") this.triggerSolo()
+    else if (act === "training") this.triggerSolo(true)
+    else if (act === "host") this.triggerHost()
+    else if (act === "join") this.triggerJoin()
+    else if (act === "leave") this.callbacks.onLeaveCoop()
+    else if (!net) return
+    else if (act === "copy") void this.copyInvite(net.options.room)
+    else if (act === "ready" || act === "unready") {
+      net.setReady(act === "ready")
+      this.render(true)
+    } else if (act === "toggle-ready") {
+      net.setReady(!net.ready)
+      this.render(true)
+    } else if (act === "start" && this.canStartCoop()) net.start()
   }
 
   private onClick(e: MouseEvent): void {
+    // Over the practice space a focused button would take the next Space (vault) as a click.
+    if (this.practice) queueMicrotask(() => {
+      const active = document.activeElement as HTMLElement | null
+      if (active?.tagName === "BUTTON") active.blur()
+    })
     const el = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-act], [data-variant], [data-loadout]")
     if (!el) return
     if (el.dataset.variant !== undefined) {
@@ -317,24 +338,7 @@ export class OutbreakLobby {
       return
     }
     const act = el.dataset.act
-    if (act === "solo") {
-      this.triggerSolo()
-    } else if (act === "training") {
-      this.triggerSolo(true)
-    } else if (act === "host") {
-      this.triggerHost()
-    } else if (act === "join") {
-      this.triggerJoin()
-    } else if (act === "copy" && this.net) {
-      this.copyInvite(this.net.options.room)
-    } else if (act === "ready" && this.net) {
-      this.net.setReady(!this.net.ready)
-      this.render(true)
-    } else if (act === "start" && this.net && this.canStartCoop()) {
-      this.net.start()
-    } else if (act === "leave") {
-      this.callbacks.onLeaveCoop()
-    }
+    if (act) this.act(act === "ready" ? "toggle-ready" : act)
   }
 
   /** Starts solo; the first time in a browser (or with `training`, always) it begins in the training room (AR-89). */
@@ -400,6 +404,7 @@ export class OutbreakLobby {
       loadout: this.loadout,
       joinCode: this.joinCode,
       joinError: this.joinError,
+      practice: this.practising,
       copied,
       net: net
         ? {
@@ -417,6 +422,8 @@ export class OutbreakLobby {
     if (!force && stateKey === this.lastKey) return
     this.lastKey = stateKey
 
+    // Over the practice space only Enter is the lobby's; the other keys practise.
+    const menuCap = (code: string) => (this.practice ? "" : keyCapHtml(code))
     const survivorCards = SURVIVORS.map((s, idx) => {
       const selected = this.variant === s.variant
       const owner =
@@ -428,7 +435,9 @@ export class OutbreakLobby {
         ? `<span class="ob-lobby-tag is-you">Selected</span>`
         : owner
           ? `<span class="ob-lobby-tag is-taken">${esc(owner.name)}</span>`
-          : `<span class="ob-lobby-cap">${keyCapHtml(`Digit${idx + 1}`)}</span>`
+          : this.practice
+            ? ""
+            : `<span class="ob-lobby-cap">${keyCapHtml(`Digit${idx + 1}`)}</span>`
       return `<button type="button" class="ob-lobby-card${selected ? " is-selected" : ""}${taken ? " is-taken" : ""}" data-variant="${s.variant}" aria-pressed="${selected}" ${taken ? 'aria-disabled="true"' : ""} style="--surv-accent:${s.css}">
         <div class="ob-lobby-card-top">
           ${avatarBadgeSvg(s)}
@@ -491,12 +500,16 @@ export class OutbreakLobby {
             </button>
             <button type="button" class="ob-lobby-btn is-accent" data-act="host">
               <span>Host Co-op</span>
-              ${keyCapHtml("KeyH")}
+              ${menuCap("KeyH")}
             </button>
-            <button type="button" class="ob-lobby-btn" data-act="training">
+            ${
+              this.practice
+                ? ""
+                : `<button type="button" class="ob-lobby-btn" data-act="training">
               <span>Training Room</span>
               ${keyCapHtml("KeyT")}
-            </button>
+            </button>`
+            }
           </div>
           <div class="ob-lobby-join-bar">
             <input type="text" class="ob-lobby-input ob-lobby-code-input" data-role="join-code" placeholder="Room code or link…" value="${esc(this.joinCode)}" spellcheck="false" autocomplete="off" aria-label="Room code" />
@@ -573,7 +586,7 @@ export class OutbreakLobby {
         </div>
         <button type="button" class="ob-lobby-btn is-accent" data-act="copy">
           <span>${copied ? "Copied Link" : "Copy Invite Link"}</span>
-          ${keyCapHtml("KeyC")}
+          ${menuCap("KeyC")}
         </button>
       </div>
 
@@ -604,18 +617,18 @@ export class OutbreakLobby {
       <footer class="ob-lobby-footer">
         <button type="button" class="ob-lobby-btn" data-act="leave">
           <span>Leave Room</span>
-          ${keyCapHtml("Escape")}
+          ${menuCap("Escape")}
         </button>
         <div class="ob-lobby-primary-actions">
           <button type="button" class="ob-lobby-btn${net?.ready ? " is-ready" : " is-primary is-call"}" data-act="ready" aria-pressed="${Boolean(net?.ready)}">
-            <span>${net?.ready ? "Ready ✓" : "Click to Ready Up"}</span>
-            ${keyCapHtml("KeyR")}
+            <span>${net?.ready ? "Ready ✓" : this.practice ? "Ready" : "Click to Ready Up"}</span>
+            ${this.practice ? (net?.ready ? "" : keyCapHtml("Enter")) : keyCapHtml("KeyR")}
           </button>
           ${
             isHost
               ? `<button type="button" class="ob-lobby-btn is-primary" data-act="start" ${canStart ? "" : "disabled"}>
                   <span>Start Night</span>
-                  ${keyCapHtml("Enter")}
+                  ${!this.practice || net?.ready ? keyCapHtml("Enter") : ""}
                 </button>`
               : `<button type="button" class="ob-lobby-btn${net?.ready ? " is-primary" : ""}" data-act="start" ${canStart ? "" : "disabled"}>
                   <span>${canStart ? "Start Night" : waitingOn.button}</span>
@@ -1086,6 +1099,70 @@ function installLobbyStyles(): void {
   color: var(--hud-red, #d45248);
   margin-top: -6px;
 }
+/* Practice space (AR-89, Kit: "While loading out you can train"): the world stays live and the lobby docks left. */
+.ob-lobby-backdrop.is-practice {
+  display: block;
+  padding: 0;
+  background: none;
+  backdrop-filter: none;
+  pointer-events: none;
+}
+.ob-lobby-backdrop.is-practice .ob-lobby-dialog {
+  position: absolute;
+  left: 14px;
+  top: 12px;
+  width: 316px;
+  max-height: calc(100vh - 150px);
+  padding: 14px 15px;
+  gap: 12px;
+  pointer-events: auto;
+  background: rgb(16 15 13 / 0.96);
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 140ms ease;
+}
+.ob-lobby-backdrop.is-practice[data-tucked="true"] .ob-lobby-dialog {
+  transform: translateX(calc(-100% - 20px));
+  opacity: 0;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) { .ob-lobby-backdrop.is-practice .ob-lobby-dialog { transition: none } }
+.is-practice .ob-lobby-header { gap: 10px }
+.is-practice .ob-lobby-title { font-size: 19px }
+.is-practice .ob-lobby-sub,
+.is-practice .ob-lobby-hint,
+.is-practice .ob-lobby-card-detail,
+.is-practice .ob-lobby-seat.is-empty { display: none }
+.is-practice .ob-lobby-callsign { min-width: 0; width: 100% }
+.is-practice .ob-lobby-tag.is-you { display: none }
+.is-practice .ob-lobby-kit-head { flex-direction: column; align-items: flex-start; gap: 2px }
+body:has(.ob-lobby-backdrop.is-practice:not([hidden]):not([data-tucked="true"])) #coop { visibility: hidden }
+.is-practice .ob-lobby-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px }
+.is-practice .ob-lobby-card,
+.is-practice .ob-lobby-kit { padding: 7px 8px; gap: 3px }
+.is-practice .ob-lobby-kit .ob-lobby-kit-desc { display: none }
+.is-practice .ob-lobby-kit.is-selected { grid-column: 1 / -1 }
+.is-practice .ob-lobby-kit.is-selected .ob-lobby-kit-desc { display: block }
+.is-practice .ob-lobby-roster { grid-template-columns: 1fr; gap: 5px }
+.is-practice .ob-lobby-seat { padding: 6px 9px }
+.is-practice .ob-lobby-invite-bar { padding: 8px 10px }
+.is-practice .ob-lobby-footer {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  position: sticky;
+  bottom: -14px;
+  z-index: 1;
+  margin: 0 -15px -14px;
+  padding: 10px 15px 14px;
+  background: rgb(16 15 13 / 0.98);
+}
+.is-practice .is-coop .ob-lobby-footer { flex-direction: column-reverse }
+.is-practice .ob-lobby-invite-info { display: none }
+.is-practice .ob-lobby-invite-bar .ob-lobby-btn { flex: 1; justify-content: center }
+.is-practice .ob-lobby-primary-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px }
+.is-practice .ob-lobby-primary-actions .ob-lobby-btn { justify-content: center }
+.is-practice .ob-lobby-primary-actions .ob-lobby-btn:first-child { grid-column: 1 / -1 }
+.is-practice .is-coop .ob-lobby-primary-actions .ob-lobby-btn:first-child { grid-column: auto }
+.is-practice .ob-lobby-join-bar .ob-lobby-code-input { flex: 1; width: auto; min-width: 0 }
 `
   document.head.appendChild(style)
 }

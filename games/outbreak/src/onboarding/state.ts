@@ -7,10 +7,20 @@ export const TRAINING_FIRST_TIME = 1
 /** Every solo start from the lobby begins in the training room. */
 export const TRAINING_ALWAYS = 2
 
-/** Training room settings (AR-89); the values live in the HUD settings (Backquote › Onboarding). */
+/** Today: the lobby is a paused menu over a still frame. */
+export const PRACTICE_OFF = 0
+/** The lobby stands you in the practice space while you pick and wait (default; Kit: "While loading out you can train"). */
+export const PRACTICE_ON = 1
+
+/** Onboarding settings (AR-89); the values live in the HUD settings (Backquote › Onboarding). */
 export const DEFAULT_TRAINING_SETTINGS = {
-  /** 1 First time (default), 2 Every solo start, 0 Off (Today). */
-  trainingRoom: TRAINING_FIRST_TIME,
+  /** 1 Practise in the lobby (default), 0 Today's paused lobby. */
+  lobbyPractice: PRACTICE_ON,
+  /**
+   * The guided room before a solo run: 0 Off (default, since the lobby's practice space replaced it), 1 First solo
+   * start, 2 Every solo start.
+   */
+  trainingRoom: TRAINING_OFF,
 }
 
 export type TrainingSettings = typeof DEFAULT_TRAINING_SETTINGS
@@ -67,13 +77,22 @@ export function takeTrainingRequest(mode: number, store: Storage | null = storag
 
 export const trainingControls: LabControl[] = [
   {
-    key: "trainingRoom",
-    label: "Training room",
+    key: "lobbyPractice",
+    label: "Practise in the lobby",
     group: "Onboarding",
     options: [
+      { label: "On", value: PRACTICE_ON },
+      { label: "Off (Today: paused menu)", value: PRACTICE_OFF },
+    ],
+  },
+  {
+    key: "trainingRoom",
+    label: "Guided room before a solo run",
+    group: "Onboarding",
+    options: [
+      { label: "Off", value: TRAINING_OFF },
       { label: "First solo start", value: TRAINING_FIRST_TIME },
       { label: "Every solo start", value: TRAINING_ALWAYS },
-      { label: "Off (Today)", value: TRAINING_OFF },
     ],
   },
 ]
