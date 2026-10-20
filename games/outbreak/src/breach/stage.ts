@@ -47,14 +47,18 @@ export function stageBreach(host: BreachStageHost, scene: BreachScene): { scene:
   const inside = scene === "brace" ? { x: 27.7, y: 34.9 } : scene === "burst" ? { x: 24.6, y: 33.3 } : { x: 27.7, y: 32.6 }
   const lookAt = scene === "burst" ? { x: 24.5, y: 35.4 } : { x: 27.7, y: 35.4 }
   ph.pose(inside.x, inside.y, Math.atan2(lookAt.y - inside.y, lookAt.x - inside.x))
+  // Each scene starts with Ash whole and rested, whatever the last scene's dead did to them.
+  for (const slot of sim.slots) Object.assign(slot.survivor, { health: slot.survivor.maxHealth, stamina: 1, exhausted: false, regenCooldown: 0 })
 
   const pushers = scene === "crush" ? 5 : scene === "brace" ? 3 : scene === "sound" ? 1 : scene === "holed" ? 2 : 1
   const at = scene === "burst" ? { x: 24.5, y: 36.0 } : { x: 27.7, y: 36.0 }
+  const attackers: number[] = []
   for (let i = 0; i < pushers; i++) {
     const z = ai.spawnZombie(town, at.x - 0.42 * (pushers - 1) * 0.5 + i * 0.42, at.y + (i % 2) * 0.35, "chase", -Math.PI / 2)
     z.targetX = inside.x
     z.targetY = inside.y
     z.awareness = 1
+    attackers.push(z.id)
   }
   const st = ai.portalStates.get(DOOR)!
   const w = (state.portals[DOOR] = freshWear())
@@ -77,30 +81,43 @@ export function stageBreach(host: BreachStageHost, scene: BreachScene): { scene:
     ai.portalStates.get(WINDOW)!.barricadeHp = 18
   }
   // Hold the wear stages where they are: the dead keep pushing, but the door doesn't lose more.
-  if (["sound", "cracked", "split", "failing", "holed"].includes(scene)) holdWear(sim, { integrity: st.integrity, holed: scene === "holed" })
-  else holdWear(sim, null)
+  const wear = ["sound", "cracked", "split", "failing", "holed"].includes(scene) ? { integrity: st.integrity, holed: scene === "holed" } : null
+  holds.set(sim, { wear, attackers, target: inside })
   if (session.rebuildCollision) session.rebuildCollision()
   else ai.rebuildTopology(town)
   return { scene, portal: scene === "burst" ? WINDOW : DOOR, zombies: ai.agents.length }
 }
 
-type Held = { integrity: number; holed: boolean }
-const holds = new WeakMap<OutbreakSim, Held | null>()
-
-/** Pins Ash's front door at a wear stage (null releases it), so a staged stage holds while the dead hit it. */
-function holdWear(sim: OutbreakSim, held: Held | null): void {
-  holds.set(sim, held)
+type Held = {
+  /** Ash's front door pinned at a wear stage while the dead hit it; null lets it break. */
+  wear: { integrity: number; holed: boolean } | null
+  attackers: number[]
+  target: { x: number; y: number }
 }
+const holds = new WeakMap<OutbreakSim, Held>()
 
-/** Called each frame by the client feature: keeps a held stage's integrity where it was staged. */
+/**
+ * Called each frame by the client feature. Keeps a held stage's integrity where it was staged, and keeps the staged
+ * dead on the door: Ash's house is the starting safehouse, where the director calms chasers in the first minute.
+ */
 export function applyStageHold(sim: OutbreakSim): void {
   const held = holds.get(sim)
   if (!held) return
+  for (const a of sim.ai.agents) {
+    if (!held.attackers.includes(a.id) || (a.state !== "wander" && a.state !== "search" && a.state !== "investigate")) continue
+    a.state = "chase"
+    a.stateTime = 0
+    a.repathAt = 0
+    a.awareness = 1
+    a.targetX = held.target.x
+    a.targetY = held.target.y
+  }
+  if (!held.wear) return
   const st = sim.ai.portalStates.get(DOOR)
-  if (st) st.integrity = held.integrity
+  if (st) st.integrity = held.wear.integrity
   const w = sim.getFeatureState<BreachState>("breach")?.portals[DOOR]
   if (w) {
     w.givingAt = -1
-    w.holed = held.holed
+    w.holed = held.wear.holed
   }
 }

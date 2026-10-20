@@ -235,12 +235,14 @@ describe("readable door breaches (AR-97)", () => {
 })
 
 describe("staged door scenes (outbreak-breach station)", () => {
-  test("each breach scene gives the way it is labelled, and wear stages hold", async () => {
+  test("each breach scene gives the way it is labelled, staged one after another in one session", async () => {
     const { LocalSession } = await import("../shared/session")
     const { stageBreach, applyStageHold } = await import("../src/breach/stage")
     const expectKind: Record<string, number> = { giving: KIND_HINGES, "split-door": KIND_SPLIT, crush: KIND_CRUSH, boards: KIND_BOARDS, burst: KIND_BURST }
+    // One session, as the station and the clip use it: by the second scene the director's safehouse calm would turn
+    // the staged dead away from the door unless the stage keeps them on it.
+    const session = new LocalSession(7, 7, 0.22, { zombieCount: 0, openingCalm: 0 })
     for (const scene of ["holed", "giving", "split-door", "crush", "boards", "burst", "brace"] as const) {
-      const session = new LocalSession(7, 7, 0.22, { zombieCount: 0, openingCalm: 0 })
       const host = {
         progressionHost: {
           view: () => session.view,
@@ -254,7 +256,7 @@ describe("staged door scenes (outbreak-breach station)", () => {
       const staged = stageBreach(host, scene)
       const aim = session.view.player.aim
       let braced = 0
-      for (let i = 0; i < 60 * 8; i++) {
+      for (let i = 0; i < 60 * 4; i++) {
         session.update(TICK_DT, { mx: 0, my: 0, aim, interact: false }, 0)
         applyStageHold(session.sim)
         braced = Math.max(braced, session.sim.getFeatureState<BreachState>("breach")!.portals[staged.portal]?.braced ?? 0)
@@ -269,7 +271,7 @@ describe("staged door scenes (outbreak-breach station)", () => {
         expect(braced).toBe(1)
         continue
       }
-      const first = session.sim.getFeatureState<BreachState>("breach")!.events.find((e) => e.portalId === staged.portal)
+      const first = session.sim.getFeatureState<BreachState>("breach")!.events.findLast((e) => e.portalId === staged.portal)
       expect(`${scene}:${first?.kind}`).toBe(`${scene}:${expectKind[scene]}`)
     }
   }, 30_000)
