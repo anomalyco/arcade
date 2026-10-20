@@ -151,7 +151,7 @@ function pretrainedRunner(): Runner | null {
   if (!S.compare) return null
   const p = pretrainedFor(creature(), task())
   // The pre-trained one runs whatever level is on (a lower heist stage, another course seed), so it stays comparable.
-  return p ? policyRunner(p, "pretrained", creature() === "human" ? "best human" : task() === "heist" ? "pro thief" : "pre-trained", reward(), task() === "heist" || task() === "course" ? { ...env(), stage: mode === "train" ? trainer.env.stage : S.stage } : p.env) : null
+  return p ? policyRunner(p, "pretrained", creature() === "human" ? (p.gait?.steps === 0 ? "trained balance" : "best human") : task() === "heist" ? "pro thief" : "pre-trained", reward(), task() === "heist" || task() === "course" ? { ...env(), stage: mode === "train" ? trainer.env.stage : S.stage } : p.env) : null
 }
 
 function nextShow(): Show | null {
@@ -176,7 +176,7 @@ function nextShow(): Show | null {
 }
 
 function replayLabel(p: SavedPolicy): string {
-  if (p.creature === "human") return `best human · stage ${p.env.stage}`
+  if (p.creature === "human") return p.gait?.steps === 0 ? "human · balance lesson" : `best human · stage ${p.env.stage}`
   if (p === pretrainedFor(p.creature, p.env.task)) return p.env.task === "heist" ? "pro thief" : "pre-trained"
   return `best · gen ${p.generation}${p.env.task === "heist" ? ` · stage ${p.env.stage}` : ""}`
 }
@@ -420,6 +420,8 @@ function renderStats(): void {
     parts.push(`<b>Replay</b> ${replayLabel(replayPolicy)} · fitness ${replayPolicy.fitness.toFixed(2)} · ${heist ? (replayPolicy.outcome === "finished" ? `escaped in ${replayPolicy.time?.toFixed(1)} s` : replayPolicy.outcome ?? "") : `${replayPolicy.distance.toFixed(1)} m`} · found after ${fmtSteps(replayPolicy.steps)} sim steps${replayPolicy.trainedSeconds ? ` · headless run took ${fmtTime(replayPolicy.trainedSeconds * 1000)}` : ""}`)
     if (heist && lead) parts.push(`${HEIST_STAGES[lead.env.stage]} · gem ${lead.carrying ? (lead.human ? "◆ in hand" : "◆ in its mouth") : "on the pedestal"} · ${lead.outcome === "caught" ? "<b>CAUGHT</b>" : lead.alarms ? `<b>${lead.alarms} alarm${lead.alarms > 1 ? "s" : ""}</b>` : "no alarms"} · ${nearMisses} near miss${nearMisses === 1 ? "" : "es"}`)
     if (replayCheck) parts.push(replayCheck)
+    if (replayPolicy.creature === "human" && replayPolicy.gait?.steps === 0) parts.push("<b>Balance only · walking and heist skills not learned yet</b>")
+    if (replayPolicy.training) parts.push(`${replayPolicy.training.attempts} training runs · ${fmtTime(replayPolicy.training.seconds * 1000)} total`)
   } else if (heist) {
     const st = trainer.env.stage
     parts.push(`<b>Gen ${h.length}</b>${running ? "" : " · paused"}`, `<b>Stage ${st}/${HEIST_MAX_STAGE}</b> ${HEIST_STAGES[st]}${S.curriculum && st < HEIST_MAX_STAGE ? " (next stage after two clean escapes in a row)" : ""}`)

@@ -316,6 +316,10 @@ export function parsePolicy(value: unknown): SavedPolicy | null {
     return null
   }
   if (v.params.length !== paramCount(shape) || !v.params.every((x) => typeof x === "number" && Number.isFinite(x))) return null
+  if (v.training !== undefined) {
+    const t = v.training
+    if (!t || !Number.isInteger(t.attempts) || t.attempts < 1 || typeof t.seconds !== "number" || !Number.isFinite(t.seconds) || t.seconds < 0 || typeof t.summary !== "string") return null
+  }
   if (v.reward !== undefined) {
     const r = v.reward as Record<string, unknown> | null
     if (!r || typeof r !== "object" || !Object.keys(DEFAULT_REWARD).every((k) => typeof r[k] === "number" && Number.isFinite(r[k]))) return null

@@ -59,7 +59,7 @@ if (values["replay-only"]) {
   await browser.close()
   server.stop(true)
   await Bun.write(join(out, "human-replay.json"), JSON.stringify({ result, errors, seconds: at() }, null, 2))
-  const ff = Bun.spawnSync(["ffmpeg", "-y", "-loglevel", "error", "-i", await video.path(), "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "22", "-movflags", "+faststart", join(out, "human-replay.mp4")])
+  const ff = Bun.spawnSync(["ffmpeg", "-y", "-loglevel", "error", "-sseof", "-12", "-i", await video.path(), "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "22", "-movflags", "+faststart", join(out, "human-replay.mp4")])
   if (ff.exitCode || errors.length || !result.includes("replay matches")) throw new Error(JSON.stringify({ result, errors, ffmpeg: ff.stderr.toString() }))
   console.log(result, `\nwrote ${out}`)
   process.exit(0)

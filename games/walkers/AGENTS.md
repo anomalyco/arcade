@@ -97,3 +97,8 @@
   stage-zero policy a completed heist. Curriculum saves each passed stage before moving up.
 - One muted headless replay capture: `scripts/capture.ts --replay-only --creature human` against the built game;
   it checks that browser fitness matches the saved headless score. Upload to AR-104 only, never Slack.
+- **Training result (Oct20): incomplete.** Three Pro runs, six workers, **24m16s** actual training. The shipped
+  human policy balances for30s with .056m drift, no illegal contacts, .9994 duty and .000773m/s slip. It has taken
+  no steps; cadence, stride length and CoT are undefined. It has not learned walking, duck/crawl/vault, timed waiting,
+  plate pressing, hand pickup or escape. UI says **Balance only**. Two attempts to start the8s walking fine-tune
+  were capacity-gated for30min each. The trained quadruped remains the completed heist option.
