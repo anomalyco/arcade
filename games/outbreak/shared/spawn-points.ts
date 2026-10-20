@@ -4,4 +4,6 @@ export const SPAWN_POINTS: readonly (readonly [number, number])[] = [
   [29.3, 41.2],
   [26.1, 41.2],
   [27.7, 42.6],
+  [29.3, 42.6],
+  [26.1, 42.6],
 ]
