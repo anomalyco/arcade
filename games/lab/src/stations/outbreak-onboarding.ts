@@ -33,7 +33,7 @@ export default defineStation({
   title: "Outbreak onboarding",
   summary:
     "The training room (your house at dawn, wordless key caps and glyphs, 2–3 minutes, hold Esc to skip) and the clearer E prompts that came out of Aiden's \"everything is E\". Pick a beat to jump there, or a prompt style.",
-  order: 138,
+  order: 139,
   prop: "figure",
   color: 0xf1c46a,
   status: "review",
