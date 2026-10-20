@@ -19,11 +19,11 @@ const EXPECTED_HASHES = {
   // Then -> cc9073ae1c60ea1d918adf4d411f88b948a0ae092fcdaf725e7a12f82d51caec for the strafe pass: this run circles
   // while aiming, so the soldier now turns its hips toward travel, side-steps without crossing or crosses over at run
   // speed, flips to backpedal without a hip jump, and tracks its knees over its boots.
-  // Then -> 6e5c62d4da767bf37e4471a893b07520d4c2b34453a7f917fde2c2bcccada277 for the strafe-legs pass (AR-95): slow
+  // Then -> cdbd2c8dfafd3f4305d03fecc6279e4c7d2afc1fc847789b2cda4bce96388b96 for the strafe-legs pass (AR-95): slow
   // side-steps keep squarer hips (sideStepTurn 0.3 -> 0.2, per 100STYLE), the ball stays put at toe-off, toe-first
-  // swings clear the floor, a planted boot pivots on its ball, and a boot out of its hip's reach steps first, so the
+  // swings clear the floor, a lifting boot starts from where it pivoted on its ball, and a boot out of its hip's reach steps first, so the
   // circle run's skate and overstretch drop (survivor-legs.ts: skate 21.7 -> 8.5 cm, overstretch 17.2 -> 11.5 cm).
-  new: "6e5c62d4da767bf37e4471a893b07520d4c2b34453a7f917fde2c2bcccada277",
+  new: "cdbd2c8dfafd3f4305d03fecc6279e4c7d2afc1fc847789b2cda4bce96388b96",
 } as const
 
 type Api = {

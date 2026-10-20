@@ -356,13 +356,7 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
       m.contacts[i]! += dt
       m.stances[i] = moving ? clamp(m.contacts[i]! / stanceDur, 0, 1) : 0
       // Pivot at the locked contact, never translate the planted boot.
-      const yaw = a.legYaw + clamp(angleDiff(f.yaw, a.legYaw), -0.96, 0.96)
-      if (Math.abs(yaw - f.yaw) > 1e-6) {
-        // The boot pivots on its locked ball; keep the ankle point on that pivot so lift-off starts where the boot is.
-        const ball = m.toes[i]!
-        f.yaw = yaw
-        f.p[0] = ball[0] - Math.cos(yaw) * RIG.foot; f.p[2] = ball[2] - Math.sin(yaw) * RIG.foot
-      }
+      f.yaw = a.legYaw + clamp(angleDiff(f.yaw, a.legYaw), -0.96, 0.96)
       continue
     }
     m.stances[i] = 0
@@ -470,6 +464,9 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
     const settleReady = !travelling && !moving && metrics[i]!.err > 0.24 && m.contacts[i]! >= 0.05
     if (a.feet[i]!.planted && supported && (phaseReady || (overstretched && m.contacts[i]! >= 0.04) || settleReady)) {
       const f = a.feet[i]!
+      // The boot pivoted on its locked ball while planted; lift off from the ankle point that pivot left it at.
+      const ball = m.toes[i]!
+      f.p = [ball[0] - Math.cos(f.yaw) * RIG.foot, f.p[1], ball[2] - Math.sin(f.yaw) * RIG.foot]
       f.planted = false; f.lift = [f.p[0], 0, f.p[2]]; f.liftYaw = f.yaw
       m.swings[i] = 0; m.stances[i] = 0
       if (m.redirectFrom) m.redirectFrom[i] = 0

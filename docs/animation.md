@@ -387,8 +387,9 @@ floor. Its own clock skated 58 to 64 cm per contact in a crouch, and an A/D reve
   ball slid back about 11 cm along the floor; the ankle is now re-anchored to the pitch the boot takes.
 - **Toe-first swings clear the floor.** Backward, sideways and on-the-spot swings keep the ball and toe 3 cm up until
   the last fifth of swing (forward swings 1.5 cm late in swing only); before, a back-diagonal toe dragged 22 cm.
-- **Pivot on the ball, keep the ankle on it.** A planted boot that turns with the hips now moves its ankle point
-  around the locked ball, so lift-off starts where the boot is (a standing flick jumped the boot 13 to 21 cm).
+- **Lift off from where the boot pivoted.** A planted boot turns with the hips on its locked ball while its contact
+  point stays put; at lift-off the swing starts from the ankle point that pivot left (a standing flick jumped the
+  boot 13 to 21 cm).
   On-the-spot steps lift the boot nearly flat (`relaxed` × 0.3 at gait 0) and rise at once.
 - **`turnStep`** (0.8 rad, was a hard-coded 1.05) is the aim twist that makes a standing body step round.
 

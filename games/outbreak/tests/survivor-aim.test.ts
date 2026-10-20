@@ -166,7 +166,9 @@ test("aiming while walking, running, strafing and backpedalling respects twist l
         () => 0,
         { aimTwistLimit: twistLim },
       )
-      const fts = (s as unknown as { feet: { planted: boolean }[] }).feet
+      // The shared-rig legs (the default) keep their contacts in `loco`; Today's in `feet`.
+      const st = s as unknown as { feet: { planted: boolean }[]; loco: { feet: { planted: boolean }[] } }
+      const fts = s.aimTuning.legs === 0 ? st.feet : st.loco.feet
       const curPlanted: [boolean, boolean] = [fts[0]!.planted, fts[1]!.planted]
       const toes: [V3, V3] = [
         [...s.bones["left.toe"]!.p],
