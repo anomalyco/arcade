@@ -432,13 +432,15 @@ function markX(m: Mesh): void {
 }
 
 /** A 1980s set on a low cabinet, screen to +Z (MAT.lamp on `TV_LAMP_SLOT`), rabbit-ear aerial on top. */
-function tv(m: Mesh): void {
+function tv(m: Mesh, on = true): void {
   const wood = hex(0x2e1e12), plastic = hex(0x1c1c1e)
   m.box(-0.46, 0, -0.22, 0.46, 0.46, 0.22, wood, MAT.timber, 0, hex(0x3a2616))
   m.box(-0.42, 0.06, 0.22, -0.02, 0.4, 0.23, hex(0x1e140c), MAT.timber)
   m.box(0.02, 0.06, 0.22, 0.42, 0.4, 0.23, hex(0x1e140c), MAT.timber)
   m.bevelBox(-0.32, 0.46, -0.2, 0.32, 0.94, 0.2, 0.04, plastic, hex(0x26262a), MAT.lit)
-  m.box(-0.25, 0.53, 0.2, 0.17, 0.87, 0.215, hex(0x8e9aa2), MAT.lamp, TV_LAMP_SLOT)
+  // A set whose power died shows a dead, dusty grey-green screen instead of the glow.
+  if (on) m.box(-0.25, 0.53, 0.2, 0.17, 0.87, 0.215, hex(0x8e9aa2), MAT.lamp, TV_LAMP_SLOT)
+  else m.box(-0.25, 0.53, 0.2, 0.17, 0.87, 0.215, hex(0x262a26), MAT.lit)
   for (const y of [0.6, 0.68, 0.76]) m.box(0.21, y, 0.2, 0.27, y + 0.03, 0.212, hex(0x4a4a4c), MAT.lit)
   m.yawBox(-0.05, -0.05, 0.012, 0.012, 0.94, 1.3, 0, hex(0x6a6a6a), MAT.shiny)
   m.box(-0.2, 0.94, -0.06, 0.12, 0.96, -0.04, hex(0x6a6a6a), MAT.shiny)
@@ -464,6 +466,61 @@ function crow(m: Mesh, wings: "folded" | "up" | "down"): void {
     m.quadAuto(a, b, c, d, CROW, MAT.lit)
     m.quadAuto(d, c, b, a, CROW, MAT.lit)
   }
+}
+
+/** Two T-posts 3.2 m apart (`LINE_HALF` each way along X) and the cord between them at `CORD_Y`. */
+function linePosts(m: Mesh): void {
+  const post = hex(0x4a463e), cord = hex(0x7a766c)
+  for (const x of [-1.6, 1.6]) {
+    m.box(x - 0.035, 0, -0.035, x + 0.035, 1.9, 0.035, post, MAT.timber)
+    m.box(x - 0.025, 1.84, -0.28, x + 0.025, 1.89, 0.28, post, MAT.timber)
+  }
+  for (const z of [-0.22, 0, 0.22]) m.box(-1.6, 1.81 + (z === 0 ? 0.01 : 0), z - 0.006, 1.6, 1.822 + (z === 0 ? 0.01 : 0), z + 0.006, cord, MAT.lit)
+}
+
+/** Washing hanging from the cord at the origin (top edge on y = 0, down -Y, along X), with pegs on top. */
+function washing(m: Mesh, kind: "sheet" | "shirt" | "towel"): void {
+  const peg = hex(0x6a5a40)
+  if (kind === "sheet") {
+    const cloth = hex(0x9a978c), fold = hex(0x8a877c)
+    m.box(-0.46, -0.98, -0.01, 0.46, -0.02, 0.01, cloth, MAT.lit)
+    m.box(-0.46, -0.98, -0.02, 0.46, -0.9, 0.012, fold, MAT.lit)
+    for (const x of [-0.42, 0, 0.42]) m.box(x - 0.012, -0.05, -0.016, x + 0.012, 0.03, 0.016, peg, MAT.timber)
+  } else if (kind === "shirt") {
+    const cloth = hex(0x6c6250), dark = hex(0x5a5242)
+    m.box(-0.2, -0.66, -0.012, 0.2, -0.02, 0.012, cloth, MAT.lit)
+    m.yawBox(-0.25, 0, 0.14, 0.022, -0.32, -0.04, 0, cloth, MAT.lit)
+    m.yawBox(0.25, 0, 0.14, 0.022, -0.32, -0.04, 0, cloth, MAT.lit)
+    m.box(-0.08, -0.07, -0.016, 0.08, -0.02, 0.016, dark, MAT.lit)
+    for (const x of [-0.17, 0.17]) m.box(x - 0.012, -0.05, -0.018, x + 0.012, 0.03, 0.018, peg, MAT.timber)
+  } else {
+    const cloth = hex(0x6e3a30), band = hex(0x8a7e66)
+    m.box(-0.22, -0.56, -0.012, 0.22, -0.02, 0.012, cloth, MAT.lit)
+    m.box(-0.22, -0.48, -0.015, 0.22, -0.44, 0.015, band, MAT.lit)
+    for (const x of [-0.18, 0.18]) m.box(x - 0.012, -0.05, -0.016, x + 0.012, 0.03, 0.016, peg, MAT.timber)
+  }
+}
+
+/**
+ * A car's front door swung open, hinged at the origin and running back along -X: the lower panel in the body paint
+ * `vehicle-mesh.ts` gives that kind, a dark window frame and glass above, a mirror at the hinge.
+ */
+function carDoor(m: Mesh, paint: number, top: number): void {
+  const trim = hex(0x1e2024), glass = hex(0x141c24)
+  m.box(-1.02, 0.3, -0.03, -0.02, 0.8, 0.03, hex(paint), MAT.lit, 0, hex(top))
+  m.box(-1.0, 0.8, -0.022, -0.04, 0.84, 0.022, trim, MAT.lit)
+  m.box(-1.0, 0.84, -0.012, -0.08, 1.2, 0.012, glass, MAT.lit)
+  m.box(-1.0, 0.84, -0.02, -0.96, 1.22, 0.02, trim, MAT.lit)
+  m.box(-0.12, 0.84, -0.02, -0.06, 1.22, 0.02, trim, MAT.lit)
+  m.box(-1.0, 1.19, -0.02, -0.06, 1.23, 0.02, trim, MAT.lit)
+  m.box(-0.08, 0.86, 0.02, 0.04, 0.95, 0.12, trim, MAT.lit)
+  m.box(-0.36, 0.58, 0.03, -0.24, 0.61, 0.05, hex(0x3a3a3c), MAT.lit)
+}
+
+/** A spent 9 mm case, drawn a little larger than life so it reads from the game camera; matte, so it never glints. */
+function casing(m: Mesh): void {
+  m.box(-0.022, 0, -0.008, 0.022, 0.016, 0.008, hex(0x8a6c30), MAT.lit, 0, hex(0x9a7a3a))
+  m.box(-0.026, 0.002, -0.009, -0.021, 0.014, 0.009, hex(0x6e5424), MAT.lit)
 }
 
 const WORD_COLOURS = [0x7a1a12, 0x6e6a5c, 0x7a1a12, 0x8a3412, 0x7a1a12, 0x6e6a5c]
@@ -504,6 +561,16 @@ function buildModel(m: Mesh, id: DetailModel): void {
     case "crowSit": return crow(m, "folded")
     case "crowUp": return crow(m, "up")
     case "crowDown": return crow(m, "down")
+    case "tvOff": return tv(m, false)
+    case "linePosts": return linePosts(m)
+    case "sheet": return washing(m, "sheet")
+    case "shirt": return washing(m, "shirt")
+    case "towel": return washing(m, "towel")
+    case "carDoorSedan": return carDoor(m, 0x886b42, 0xa28252)
+    case "carDoorCruiser": return carDoor(m, 0xc8c4b8, 0xdad6ca)
+    case "carDoorPickup": return carDoor(m, 0x42523c, 0x56684e)
+    case "carDoorVan": return carDoor(m, 0x4c545c, 0x646e78)
+    case "casing": return casing(m)
     default: {
       const blood = BLOOD_WORDS.find((w) => w.model === id)
       if (blood) return bloodWord(m, blood.text, blood.height)

@@ -171,6 +171,7 @@ export class OutbreakFrameRenderer {
       dt: 0,
       time: 0,
       town: session().view.town,
+      hour: 12,
       darkness: 0,
       sun: 1,
       night: 1,
@@ -717,11 +718,16 @@ export class OutbreakFrameRenderer {
     })
     const bloodBatches = this.blood.collect(town, tightView, settings.blood)
     const clutterBatches = this.exteriorClutter.collectBatches(town, tightView, settings.ground)
+    const night = townNight(session.sim)
     const detailBatches = this.details.collect(town, tightView, settings.details, settings.nightLights, {
       dt: vdt,
       time,
       threats: session.sim.slots.map((s) => s.survivor),
       noises,
+      night,
+      storm: weatherNow.sample.storm,
+      vehicles: session.view.vehicles,
+      shots: session.view.shots,
     })
     const motionOut = qProfile.ambientMotion
       ? this.ambientMotion.stepAndCollect(
@@ -741,9 +747,10 @@ export class OutbreakFrameRenderer {
     lf.dt = vdt
     lf.time = time
     lf.town = town
+    lf.hour = hour
     lf.darkness = day.darkness
     lf.sun = day.sun
-    lf.night = townNight(session.sim)
+    lf.night = night
     lf.view = tightView
     lf.beamTo = beamState.count
     lf.lampPower = this.frameLighting.lampPower

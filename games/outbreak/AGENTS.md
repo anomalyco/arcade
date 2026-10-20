@@ -71,8 +71,13 @@
   Today): moths circling lit fixtures (`swarms.ts`, glow from the frame's `lampPower`), flies over bodies and bins seen
   only in light, eyes under yard trees that catch the torch and bolt plus one rare pair from night 2 that does not
   (`eyeshine.ts`), breath in the cold beam (`breath.ts`). All are renderer alpha/additive sprites (in the TAA reactive
-  mask) lit on the CPU by `BeamProbe` (`light-probe.ts`) from the frame's torch slots. Tests: `tests/details.test.ts`,
-  `tests/details-life.test.ts`, `tests/details-touches.test.ts`.
+  mask) lit on the CPU by `BeamProbe` (`light-probe.ts`) from the frame's torch slots. Leftover life (`leftovers.ts`,
+  `sprinkler.ts`): washing on lines in the yards swinging with the gust field, parked cars (still where they spawned,
+  empty) left with a door open and a dome light that dies over nights 2–4, a front-lawn sprinkler on a 06:36–07:18
+  timer losing pressure daily, brass from every shot that stays where it fell (seeded from the shot), and televisions
+  that go dark one by one ("Town runs down night by night"; the night is `townNight`: the Way Out's shared count, else
+  the night ramp's). Tests: `tests/details.test.ts`, `tests/details-life.test.ts`, `tests/details-touches.test.ts`,
+  `tests/details-leftovers.test.ts`.
 - Houses (AR-79, `shared/houses/` generator, `src/houses/` meshes, Lab: Backquote › World · Variety, station
   `outbreak-houses`): streamed homes outside the origin block get a form (bungalow, colonial, ranch, duplex, shotgun,
   farmhouse, trailer, apartment, corner store), a condition (kept, derelict, burnt, under construction), their own
