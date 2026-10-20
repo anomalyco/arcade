@@ -199,6 +199,10 @@ chasers 3.81, Skilled alive at dawn 3 0.75, Expert 0.5. On the CI runner the sam
 0.993 (the platforms' floats differ, and the ratio sat at 1.01 before); AR-91 has since moved that band's lower edge
 to 0.9.
 
+One B boards an opening up all the way (AR-96 boarding), so bots that board finish sooner. Batch after it: Night 3 /
+Night 2 aware 1.07 → 1.21, Night 3 chasers 3.81 → 3.76, Expert alive at dawn 3 0.5 → 0.75. No band moved. Prying
+boards off is a player verb; bots never pry.
+
 ## Door breaches (AR-97)
 
 Readable breaches (`shared/breach/`) add a 1.1 s warning beat before a door gives, bracing, and a broken door that

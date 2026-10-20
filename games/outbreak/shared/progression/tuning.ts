@@ -60,6 +60,10 @@ export type ProgressionTuning = {
   costScale: number
   pryTime: number
   pryNoise: number
+  /** Seconds to pry one board off a door or window (hold E at it, AR-96). */
+  unboardTime: number
+  /** How far prying a board off carries. */
+  unboardNoise: number
   lureNoise: number
   lureSeconds: number
   generatorNoise: number
@@ -101,6 +105,8 @@ export const progressionControls = [
   { key: "costScale", label: "Craft cost", group: "Progression", min: 0.25, max: 3, step: 0.25, unit: "×" },
   { key: "pryTime", label: "Pry time", group: "Progression", min: 0.2, max: 4, step: 0.1, unit: "s" },
   { key: "pryNoise", label: "Pry noise", group: "Progression", min: 0, max: 30, step: 0.5, unit: "m" },
+  { key: "unboardTime", label: "Pry a board off", group: "Verbs", min: 0.2, max: 5, step: 0.1, unit: "s" },
+  { key: "unboardNoise", label: "Prying a board off", group: "Verbs", min: 0, max: 30, step: 0.5, unit: "m" },
   { key: "lureNoise", label: "Noisemaker radius", group: "Progression", min: 5, max: 60, step: 1, unit: "m" },
   { key: "lureSeconds", label: "Noisemaker duration", group: "Progression", min: 1, max: 30, step: 0.5, unit: "s" },
   { key: "generatorNoise", label: "Generator hum", group: "Progression", min: 0, max: 40, step: 1, unit: "m" },
@@ -142,6 +148,8 @@ export const DEFAULT_PROGRESSION_TUNING: ProgressionTuning = {
   costScale: 1,
   pryTime: 1.2,
   pryNoise: 12,
+  unboardTime: 1.6,
+  unboardNoise: 9,
   lureNoise: 30,
   lureSeconds: 8,
   generatorNoise: 18,
@@ -182,6 +190,7 @@ export function progressionRules(t: ProgressionTuning): Rule[] {
     { id: "swap:battery", label: "Fresh battery", consume: { battery: 1 } },
     { id: "unlock", label: "Unlocking", consume: { key: 1 } },
     { id: "pry", label: "Prying the door", duration: t.pryTime, noise: t.pryNoise, requires: { crowbar: 1 } },
+    { id: "unboard", label: "Prying a board off", duration: t.unboardTime, noise: t.unboardNoise },
   ]
   for (const r of RECIPES) {
     if (!r.produces || !r.craft) continue

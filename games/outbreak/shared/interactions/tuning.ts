@@ -31,6 +31,11 @@ export type InteractionsTuning = {
   haulSpeed: number
   /** Share of walking speed while carrying a car battery (1 = no penalty, Today). */
   heavyCarry: number
+  // ── Boarding (`boards.ts`) ──
+  /** 1: one B keeps nailing boards until the opening is full; 0 is Today: one board per press. */
+  boardChain: number
+  /** 1: hold E at a boarded door or window to pry a board off and keep the plank; 0 is Today: boards stay. */
+  pryBoards: number
 }
 
 export const DEFAULT_INTERACTIONS_TUNING: InteractionsTuning = {
@@ -47,6 +52,8 @@ export const DEFAULT_INTERACTIONS_TUNING: InteractionsTuning = {
   haul: 1,
   haulSpeed: 0.55,
   heavyCarry: 0.85,
+  boardChain: 1,
+  pryBoards: 1,
 }
 
 const TODAY_ON = [
@@ -55,6 +62,7 @@ const TODAY_ON = [
 ] as const
 const T = "Interactions · Throwables"
 const D = "Interactions · Drag & brace"
+const B = "Interactions · Boarding"
 
 export const interactionsControls = [
   { key: "interactions.throwables", field: "throwables", label: "Throwables", group: T, options: TODAY_ON },
@@ -70,6 +78,8 @@ export const interactionsControls = [
   { key: "interactions.haul", field: "haul", label: "Drag a downed teammate", group: D, options: TODAY_ON },
   { key: "interactions.haulSpeed", field: "haulSpeed", label: "Hauling speed", group: D, min: 0.2, max: 1, step: 0.05, unit: "× walk" },
   { key: "interactions.heavyCarry", field: "heavyCarry", label: "Carrying a car battery", group: D, min: 0.3, max: 1, step: 0.05, unit: "× walk" },
+  { key: "interactions.boardChain", field: "boardChain", label: "One B boards it up", group: B, options: TODAY_ON },
+  { key: "interactions.pryBoards", field: "pryBoards", label: "Hold E pries a board off", group: B, options: TODAY_ON },
 ] as const
 
 export function interactionsTuning(features: Readonly<Record<string, Record<string, unknown>>> | undefined): InteractionsTuning {

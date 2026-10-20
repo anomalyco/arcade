@@ -549,6 +549,15 @@ export class OutbreakAISubsystem {
     return true
   }
 
+  /** Takes one plank off, with its share of the barricade's hp. False when nothing is nailed there. */
+  removeBarricadePlank(portalId: string): boolean {
+    const st = this.portalStates.get(portalId)
+    if (!st || st.barricadePlanks <= 0) return false
+    st.barricadeHp = st.barricadePlanks > 1 ? st.barricadeHp - st.barricadeHp / st.barricadePlanks : 0
+    st.barricadePlanks--
+    return true
+  }
+
   getBarricadePlanks(portalId: string): number {
     return this.portalStates.get(portalId)?.barricadePlanks ?? 0
   }

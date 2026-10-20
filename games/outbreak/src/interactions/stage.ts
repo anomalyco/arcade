@@ -3,14 +3,20 @@ import type { CoopSim } from "../../shared/coop-sim"
 import type { SessionView } from "../../shared/session"
 import type { InteractionsState } from "../../shared/interactions/index"
 import { setDown } from "../../shared/interactions/drag"
-import { FURNITURE_KINDS, furnStoreId, type FurnitureKind } from "../../shared/interactions/furniture"
+import { FURNITURE_KINDS, furnKind, furnStoreId, type FurnitureKind } from "../../shared/interactions/furniture"
 import type { DiscoveryHost } from "../discovery/stage"
+import type { BreachState } from "../../shared/breach/rules"
+import { THROWABLES } from "../../shared/interactions/throwables"
+import { DEFAULT_DEATH_TUNING } from "../../shared/death/rules"
+import { forceLife } from "../../shared/death/runtime"
 
 /** Staged scenes for the `outbreak-interactions` Lab station, the `interactions.stage` command and the clip. */
-export const INTERACTION_SCENES = ["baseball", "can", "bottle", "brick", "drag", "brace"] as const
+export const INTERACTION_SCENES = ["baseball", "can", "bottle", "brick", "drag", "brace", "board", "pry"] as const
 export type InteractionScene = (typeof INTERACTION_SCENES)[number]
 
 type StageSession = { sim: CoopSim; ai: OutbreakAISubsystem }
+
+const THROWN = Object.keys(THROWABLES)
 
 /** Puts Ash's first loose piece as a `kind` at `(x, y)` (unbraced, standing), clearing any drag or brace. */
 function loosePiece(sim: CoopSim, kind: FurnitureKind, x: number, y: number, yaw = 0) {
@@ -25,6 +31,26 @@ function loosePiece(sim: CoopSim, kind: FurnitureKind, x: number, y: number, yaw
   st.counts = { k: FURNITURE_KINDS.indexOf(kind), yaw: Math.round(yaw * 100) }
   st.rev = ++ledger.rev
   return st
+}
+
+/** Takes every throwable off the survivor, so the next scene's item has a hotbar slot. */
+function emptyHands(view: SessionView): void {
+  const ledger = view.progression.ledger
+  for (const st of [...ledger.stores.values()]) {
+    if (!st.id.startsWith(`${view.actorId}/`)) continue
+    for (const item of THROWN) {
+      const n = ledger.count(st.id, item)
+      if (n > 0) ledger.apply({ kind: "drain", store: st.id, item, count: n })
+    }
+  }
+}
+
+/** Hangs Ash's front door back up if the dead tore it off in an earlier scene (`shared/breach`). */
+function mendDoor(sim: CoopSim, id: string): void {
+  const breach = sim.getFeatureState<BreachState>("breach")
+  if (breach) delete breach.portals[id]
+  const st = sim.ai.portalStates.get(id)
+  if (st) st.integrity = 100
 }
 
 function inHand(view: SessionView, item: string, count: number): void {
@@ -46,6 +72,9 @@ function inHand(view: SessionView, item: string, count: number): void {
  *   the street. E takes hold of it; walk it to the door and E braces it.
  * - `brace`: the dresser already braced against the front door and the dead outside coming for it: they bash it
  *   until it is shoved over.
+ * - `board`: night inside Ash's front door, bare, three planks in the belt and the dead in the street. One B nails all
+ *   three.
+ * - `pry`: morning inside the same door with three boards on it. Hold E: one comes off and goes back in the belt.
  */
 export function stageInteraction(host: DiscoveryHost, session: StageSession, scene: InteractionScene): { x: number; y: number } {
   const view = host.view()
@@ -53,6 +82,16 @@ export function stageInteraction(host: DiscoveryHost, session: StageSession, sce
   const ledger = view.progression.ledger
   for (const st of [...ledger.stores.values()]) if (st.id.startsWith("toss:") || st.id.startsWith("drop:t:")) ledger.deleteStore(st.id)
   for (const z of ai.agents) z.state = "dead"
+  // Every scene starts on its feet at full health, whatever the last one did to the survivor.
+  const me = sim.slot(view.actorId)
+  if (me) {
+    forceLife(sim, me, "alive", DEFAULT_DEATH_TUNING)
+    me.survivor.health = me.survivor.maxHealth
+    sim.progression.ledger.cancel(me.id)
+    // A light on in the dark is what the dead see first; the lures want them looking at the throw.
+    me.survivor.flashlightOn = scene !== "can" && scene !== "bottle"
+  }
+  emptyHands(view)
   const ash = view.town.buildings.find((b) => b.id === "ash")!
   const street = ash.rect[3] + 7
   const x = (ash.rect[0] + ash.rect[2]) / 2
@@ -67,10 +106,33 @@ export function stageInteraction(host: DiscoveryHost, session: StageSession, sce
     host.pose(cx, cy, -Math.PI / 2)
     return { x: cx, y: cy }
   }
+  if (scene === "board" || scene === "pry") {
+    host.setHour(scene === "board" ? 21.5 : 7.5)
+    const door = view.town.doors.find((d) => d.id === "ash-front")!
+    mendDoor(sim, door.id)
+    door.open = false
+    while (ai.getBarricadePlanks(door.id) > 0) ai.removeBarricadePlank(door.id)
+    if (scene === "pry") for (let i = 0; i < 3; i++) ai.addBarricadePlank(door.id)
+    ai.rebuildTopology(view.town)
+    sim.rebuildSolids()
+    const cx = (door.rect[0] + door.rect[2]) / 2
+    if (scene === "board") {
+      for (let i = 0; i < 3; i++) ai.spawnZombie(view.town, cx - 2 + i * 2, door.rect[3] + 7 + (i % 2), "wander")
+      const have = ledger.count(view.actorId, "plank")
+      if (have < 3) ledger.apply({ kind: "grant", actor: view.actorId, item: "plank", count: 3 - have })
+    }
+    const st = ledger.store(furnStoreId("ash", 0))
+    if (st?.at && Math.abs(st.at.x - cx) < 2 && Math.abs(st.at.y - door.rect[1]) < 3) loosePiece(sim, furnKind(st), cx + 3, door.rect[1] - 3)
+    host.pose(cx, door.rect[1] - 1.1, Math.PI / 2)
+    return { x: cx, y: door.rect[1] - 1.1 }
+  }
   if (scene === "drag" || scene === "brace") {
     host.setHour(22)
     const door = view.town.doors.find((d) => d.id === "ash-front")!
+    mendDoor(sim, door.id)
+    while (ai.getBarricadePlanks(door.id) > 0) ai.removeBarricadePlank(door.id)
     door.open = false
+    ai.rebuildTopology(view.town)
     sim.rebuildSolids()
     const cx = (door.rect[0] + door.rect[2]) / 2
     const inside = door.rect[1] - 1
@@ -84,6 +146,9 @@ export function stageInteraction(host: DiscoveryHost, session: StageSession, sce
       st.at = { x: cx, y: door.rect[1] - 0.6 }
       const state = sim.getFeatureState<InteractionsState>("interactions")!
       setDown(sim, state.drag, me, st, state.tuning)
+      // Already battered, and a bang on the door from inside to bring the dead to it.
+      st.counts.hp = 90
+      ai.emitNoise(cx, inside, 24, "bash", sim.time, "stage", 1.5)
       host.pose(cx - 0.6, inside - 2.2, Math.PI / 2)
       return { x: cx, y: inside - 2.2 }
     }

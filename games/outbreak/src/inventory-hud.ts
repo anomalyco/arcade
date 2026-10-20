@@ -311,10 +311,12 @@ export class InventoryHud {
     const board = clarityOn(this.clarity, "promptBoardKey") ? boardPrompt(view, prompt) : null
     const blocked = blockedByBoards(prompt, board)
     // A hold-only target (a fallen teammate's kit) shows its action once, on the ring.
-    const tap = prompt.primary.hold && prompt.secondary ? "" : this.actionHtml(prompt, prompt.primary)
-    if (blocked) {
+    // Hold E pries a board off a boarded opening (`shared/interactions/boards.ts`); its tap is refused on a door.
+    const pryOff = Boolean(board && board.planks > 0 && prompt.secondary?.id === "pry")
+    const tap = (prompt.primary.hold && prompt.secondary) || blocked ? "" : this.actionHtml(prompt, prompt.primary)
+    if (blocked && !pryOff) {
       // E is refused on a boarded door ("Blocked by barricade"): say it is boarded instead of offering Open.
-    } else if (prompt.secondary && !(board && board.planks > 0)) {
+    } else if (prompt.secondary && (!(board && board.planks > 0) || pryOff)) {
       const held = this.actionHtml(prompt, prompt.secondary)
       const cap = keyCapHtml("KeyE", { hold: true })
       parts.push(`<span class="akp akp-dual">${cap}${tap ? `<span class="akp-label">${tap}</span>` : ""}${held ? `<span class="akp-hold"><i aria-hidden="true"></i>${held}</span>` : ""}</span>`)

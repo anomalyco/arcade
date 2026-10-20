@@ -1,6 +1,7 @@
 import type { DeathState } from "../death/rules"
 import { registerOutbreakSharedFeature } from "../feature-registry"
 import type { OutbreakSim } from "../sim-types"
+import { registerPryBoards } from "./boards"
 import { createDragState, dragSpeed, furnitureHandler, holdsFor, pushOutOfFurniture, restingFurniture, seedFurniture, stepDragged, stepHauls, type DragState } from "./drag"
 import { createTossState, seedThrowables, stepTosses, stepWindup, type TossState } from "./tosses"
 import { DEFAULT_INTERACTIONS_TUNING, interactionsTuning, type InteractionsTuning } from "./tuning"
@@ -23,6 +24,7 @@ export const outbreakInteractionsSharedFeature = registerOutbreakSharedFeature<I
   createState: () => ({ tuning: { ...DEFAULT_INTERACTIONS_TUNING }, toss: createTossState(), drag: createDragState() }),
   registerInteractions: (sim, registry) => {
     registry.register(furnitureHandler(sim, () => sim.getFeatureState<InteractionsState>("interactions")))
+    registerPryBoards(sim, registry, () => sim.getFeatureState<InteractionsState>("interactions")?.tuning)
   },
   movementScale: (sim, slot, state) => dragSpeed(sim, state.drag, slot, state.tuning),
   pushOutSurvivor: (sim, survivor, radius, state) => pushOutOfFurniture(sim, state.drag, survivor, radius),
@@ -34,6 +36,7 @@ export const outbreakInteractionsSharedFeature = registerOutbreakSharedFeature<I
   stepWorld: ({ sim, resolved, state }) => {
     const t = (state.tuning = interactionsTuning(resolved.features))
     sim.progression.tossBottles = t.throwables > 0
+    sim.progression.chainBoards = t.boardChain > 0
     if (t.throwables > 0) seedThrowables(sim, state.toss, t)
     if (t.furniture > 0) seedFurniture(sim, state.drag, t)
     const holds = sim.ai.portalHolds as (ReturnType<typeof holdsFor> | null)
