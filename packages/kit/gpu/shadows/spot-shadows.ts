@@ -67,13 +67,16 @@ export class SpotShadowPicker {
   readonly slots: SpotSlot[] = []
   private lastEye: Vec3 | null = null
   private worldDirty = true
+  private snap = true
 
   constructor(count = 2) {
     this.resize(count)
   }
 
+  /** Changing the slot count is a settings change, not motion: the next update snaps instead of fading in. */
   resize(count: number): void {
     const n = Math.max(0, Math.min(MAX_SPOT_SHADOWS, Math.round(count)))
+    if (n !== this.slots.length) this.snap = true
     while (this.slots.length > n) this.slots.pop()
     while (this.slots.length < n) this.slots.push({ id: null, weight: 0, dirty: true, light: null })
   }
@@ -89,7 +92,8 @@ export class SpotShadowPicker {
   }
 
   update(candidates: readonly SpotCandidate[], eye: Vec3, dt: number): readonly SpotSlot[] {
-    const jump = !this.lastEye || Math.hypot(eye[0] - this.lastEye[0], eye[1] - this.lastEye[1], eye[2] - this.lastEye[2]) > 1.5
+    const jump = this.snap || !this.lastEye || Math.hypot(eye[0] - this.lastEye[0], eye[1] - this.lastEye[1], eye[2] - this.lastEye[2]) > 1.5
+    this.snap = false
     this.lastEye = [eye[0], eye[1], eye[2]]
     const step = jump ? 1 : dt / FADE_S
     const held = new Set<number>()
