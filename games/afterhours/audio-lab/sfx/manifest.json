@@ -1,8 +1,8 @@
 {
   "model": "eleven_text_to_sound_v2",
   "format": "mp3_44100_64",
-  "updatedAt": "2026-10-20T00:15:45.918Z",
-  "totalCost": 64382,
+  "updatedAt": "2026-10-20T03:17:36.034Z",
+  "totalCost": 64466,
   "categories": [
     {
       "id": "foot-linoleum",
@@ -670,11 +670,92 @@
       "loop": false
     },
     {
-      "id": "story-call-reply",
+      "id": "story-call-player-m-r4",
       "group": "story",
       "subgroup": "Radio-room call",
-      "label": "County dispatcher",
-      "intent": "an older dispatcher, flat, procedural and authoritative, over a narrow crackling AM-style radio (squelch and key click at the start, roger beep or squelch tail at the end, carrier hiss, brief dropouts), tired 3 a.m. professional turning clipped and serious, a flat firm \"Do not move\", intelligible: \"Ashwood, County dispatch, copy. Units are on the way. I need you to stay right where you are. Do not move.\"",
+      "label": "Player radio report (male), round 4 — radio",
+      "intent": "a regular man (not a narrator) panicking on a radio handset, natural conversational speed with words running together, no artificial pauses, one hitch on \"they're... they're\": \"County, County, this is Ashwood Outpost, do you read? I'm up at the station, and they're... they're all dead, four of them, there's two more I can't find anywhere, please, I need somebody out here.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-player-m-r4-clean",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "Player radio report (male), round 4 — clean",
+      "intent": "a regular man (not a narrator) panicking on a radio handset, natural conversational speed with words running together, no artificial pauses, one hitch on \"they're... they're\": \"County, County, this is Ashwood Outpost, do you read? I'm up at the station, and they're... they're all dead, four of them, there's two more I can't find anywhere, please, I need somebody out here.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-reply-r4",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "County dispatcher, round 4 — radio",
+      "intent": "an older dispatcher (Bill), tired 3 a.m. professional turning clipped and serious, a faster natural pace with real fluctuation in the voice, over a heavy AM-style radio: \"Ashwood, County dispatch, copy. Units are on the way. I need you to stay right where you are. Do not move.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-reply-r4-clean",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "County dispatcher, round 4 — clean",
+      "intent": "an older dispatcher (Bill), tired 3 a.m. professional turning clipped and serious, a faster natural pace with real fluctuation in the voice, over a heavy AM-style radio: \"Ashwood, County dispatch, copy. Units are on the way. I need you to stay right where you are. Do not move.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-player-m",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "Player radio report (male) — radio",
+      "intent": "a calm but shaken adult male voice speaking through a radio handset, every word intelligible: \"Ashwood Outpost to County. I've found the station staff. Four dead. Two unaccounted for. Requesting assistance.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-player-m-clean",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "Player radio report (male) — clean",
+      "intent": "a calm but shaken adult male voice speaking, every word intelligible: \"Ashwood Outpost to County. I've found the station staff. Four dead. Two unaccounted for. Requesting assistance.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-player-f",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "Player radio report (female) — radio",
+      "intent": "a calm but shaken adult female voice speaking through a radio handset, every word intelligible: \"Ashwood Outpost to County. I've found the station staff. Four dead. Two unaccounted for. Requesting assistance.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-player-f-clean",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "Player radio report (female) — clean",
+      "intent": "a calm but shaken adult female voice speaking, every word intelligible: \"Ashwood Outpost to County. I've found the station staff. Four dead. Two unaccounted for. Requesting assistance.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-player-remy",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "Player radio report — Remy — radio",
+      "intent": "a young man (early 20s, casual) speaking through a radio handset, shaken but holding it together (a breath or two, one restart, tightening on \"dead\", pleading at the end), realistic not acted, every word intelligible: \"County, County, this is Ashwood Outpost, do you read? I'm up at the station and they're... they're all dead. Four of them. There's two more I can't find anywhere. Please, I need somebody out here.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-player-remy-clean",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "Player radio report — Remy — clean",
+      "intent": "a young man (early 20s, casual) speaking, shaken but holding it together (a breath or two, one restart, tightening on \"dead\", pleading at the end), realistic not acted, every word intelligible: \"County, County, this is Ashwood Outpost, do you read? I'm up at the station and they're... they're all dead. Four of them. There's two more I can't find anywhere. Please, I need somebody out here.\"",
       "loop": false,
       "designed": true
     },
@@ -682,8 +763,89 @@
       "id": "story-call-player-james",
       "group": "story",
       "subgroup": "Radio-room call",
-      "label": "Player radio call (male)",
+      "label": "Player radio report — James — radio",
       "intent": "a young man in a hoodie and cap (rougher, lower voice) speaking through a radio handset, shaken but holding it together (a breath or two, one restart, tightening on \"dead\", pleading at the end), realistic not acted, every word intelligible: \"County, County, this is Ashwood Outpost, do you read? I'm up at the station and they're... they're all dead. Four of them. There's two more I can't find. Please, I need somebody out here.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-player-james-clean",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "Player radio report — James — clean",
+      "intent": "a young man in a hoodie and cap (rougher, lower voice) speaking, shaken but holding it together (a breath or two, one restart, tightening on \"dead\", pleading at the end), realistic not acted, every word intelligible: \"County, County, this is Ashwood Outpost, do you read? I'm up at the station and they're... they're all dead. Four of them. There's two more I can't find. Please, I need somebody out here.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-player-louise",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "Player radio report — Louise — radio",
+      "intent": "a professional woman in her thirties or forties (suit) speaking through a radio handset, shaken but holding it together (a breath or two, one restart, tightening on \"dead\", pleading at the end), realistic not acted, every word intelligible: \"County, County, this is Ashwood Outpost, do you read? I'm up at the station and they're... they're all dead. Four of them. There are two more I can't find anywhere. Please, I need somebody out here.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-player-louise-clean",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "Player radio report — Louise — clean",
+      "intent": "a professional woman in her thirties or forties (suit) speaking, shaken but holding it together (a breath or two, one restart, tightening on \"dead\", pleading at the end), realistic not acted, every word intelligible: \"County, County, this is Ashwood Outpost, do you read? I'm up at the station and they're... they're all dead. Four of them. There are two more I can't find anywhere. Please, I need somebody out here.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-player-megan",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "Player radio report — Megan — radio",
+      "intent": "a young woman in her early twenties (casual, bright) speaking through a radio handset, shaken but holding it together (a breath or two, one restart, tightening on \"dead\", pleading at the end), realistic not acted, every word intelligible: \"County, County, this is Ashwood Outpost, do you read? I'm up at the station and they're... they're all dead. Four of them. Two more, I don't know where they are. Please, I need somebody out here.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-player-megan-clean",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "Player radio report — Megan — clean",
+      "intent": "a young woman in her early twenties (casual, bright) speaking, shaken but holding it together (a breath or two, one restart, tightening on \"dead\", pleading at the end), realistic not acted, every word intelligible: \"County, County, this is Ashwood Outpost, do you read? I'm up at the station and they're... they're all dead. Four of them. Two more, I don't know where they are. Please, I need somebody out here.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-player-kate",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "Player radio report — Kate — radio",
+      "intent": "a woman in her late twenties or thirties (mature, steady) speaking through a radio handset, shaken but holding it together (a breath or two, one restart, tightening on \"dead\", pleading at the end), realistic not acted, every word intelligible: \"County, County, this is Ashwood Outpost, do you read? I'm up at the station and they're... they're all dead. Four of them. There's two more I can't find anywhere. Please, I need somebody out here.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-player-kate-clean",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "Player radio report — Kate — clean",
+      "intent": "a woman in her late twenties or thirties (mature, steady) speaking, shaken but holding it together (a breath or two, one restart, tightening on \"dead\", pleading at the end), realistic not acted, every word intelligible: \"County, County, this is Ashwood Outpost, do you read? I'm up at the station and they're... they're all dead. Four of them. There's two more I can't find anywhere. Please, I need somebody out here.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-reply",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "County dispatcher reply — radio",
+      "intent": "an older dispatcher, flat, procedural and authoritative, over a narrow crackling AM-style radio (squelch and key click at the start, roger beep or squelch tail at the end, carrier hiss, brief dropouts), tired 3 a.m. professional turning clipped and serious, a flat firm \"Do not move\", intelligible: \"Ashwood, County dispatch, copy. Units are on the way. I need you to stay right where you are. Do not move.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-reply-clean",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "County dispatcher reply — clean",
+      "intent": "an older dispatcher, flat, procedural and authoritative, tired 3 a.m. professional turning clipped and serious, a flat firm \"Do not move\", intelligible: \"Ashwood, County dispatch, copy. Units are on the way. I need you to stay right where you are. Do not move.\"",
       "loop": false,
       "designed": true
     },
@@ -17772,44 +17934,87 @@
     {
       "category": "story-call-reply",
       "group": "story",
-      "variant": "v6",
-      "prompt": "Dispatcher radio: story-call-reply-clean/v6.mp3 band-passed 400 Hz–2.8 kHz, saturated, compressed 8:1, crushed, AM flutter and crackle, carrier hiss, two dropouts, squelch burst and key click in, squelch tail out. Voice Bill.",
-      "duration": 10.6,
+      "variant": "v7",
+      "prompt": "Dispatcher radio: story-call-reply-clean/v7.mp3 band-passed 400 Hz–2.8 kHz, saturated, compressed 8:1, crushed, AM flutter and crackle, carrier hiss, two dropouts, squelch burst and key click in, a soft, quiet squelch tail out (no beep, no click). Voice Jay (library: Midwest, gravel, grounded).",
+      "duration": 7.47,
       "influence": 0,
       "loop": false,
-      "file": "sfx/story-call-reply/v6.mp3",
-      "bytes": 85293,
+      "file": "sfx/story-call-reply/v7.mp3",
+      "bytes": 60333,
       "cost": 0,
-      "generatedAt": "2026-10-19T23:38:59.954Z",
+      "generatedAt": "2026-10-20T03:17:29.391Z",
       "designed": true,
       "sources": [
-        "story-call-reply-clean/v6.mp3"
+        "story-call-reply-clean/v7.mp3"
       ],
       "loudness": {
         "metric": "momentary-max",
         "target": -17,
         "raw": {
-          "integrated": -15.1,
-          "momentaryMax": -15.1,
+          "integrated": -13.9,
+          "momentaryMax": -13.9,
           "truePeak": -1.5
         },
         "out": {
           "integrated": -17.4,
           "momentaryMax": -17.4,
-          "truePeak": -3.9
+          "truePeak": -5.1
         },
-        "gainDb": -1.9,
+        "gainDb": -3.1,
         "limitedDb": 0,
-        "take": "2026-10-19T23:38:59.954Z",
-        "at": "2026-10-19T23:39:00.250Z"
+        "take": "2026-10-20T03:17:29.391Z",
+        "at": "2026-10-20T03:17:30.159Z"
       },
       "qa": {
-        "description": "A close, bandpass-filtered mature male voice delivers dispatch dialogue with mild static and faint background carrier noise, cutting off cleanly at the end.",
+        "description": "A close-mic'd adult male voice delivers dispatch dialogue through a bandpass radio filter with underlying static hiss, beginning with a subtle click and ending on a brief squelch tail burst.",
         "score": 4,
-        "issues": "Missing a distinct opening key-click/squelch burst, roger beep or prominent squelch tail, and radio transmission dropouts.",
+        "issues": "Lacks the distinct initial mic key click/squelch burst and roger beep, and the radio processing sounds slightly digital/clean rather than authentic crackling 1980s AM RF static with brief dropouts.",
         "intent": "an older dispatcher, flat, procedural and authoritative, over a narrow crackling AM-style radio (squelch and key click at the start, roger beep or squelch tail at the end, carrier hiss, brief dropouts), tired 3 a.m. professional turning clipped and serious, a flat firm \"Do not move\", intelligible: \"Ashwood, County dispatch, copy. Units are on the way. I need you to stay right where you are. Do not move.\"",
         "model": "gemini-3.8-flash",
-        "at": "2026-10-19T23:39:05.876Z"
+        "at": "2026-10-20T03:17:36.028Z"
+      }
+    },
+    {
+      "category": "story-call-reply",
+      "group": "story",
+      "variant": "v8",
+      "prompt": "Dispatcher radio: story-call-reply-clean/v8.mp3 band-passed 400 Hz–2.8 kHz, saturated, compressed 8:1, crushed, AM flutter and crackle, carrier hiss, two dropouts, squelch burst and key click in, squelch tail out. Voice Joe Scott (library: deep, gravelly, authentic).",
+      "duration": 7.7,
+      "influence": 0,
+      "loop": false,
+      "file": "sfx/story-call-reply/v8.mp3",
+      "bytes": 62061,
+      "cost": 0,
+      "generatedAt": "2026-10-20T02:55:49.053Z",
+      "designed": true,
+      "sources": [
+        "story-call-reply-clean/v8.mp3"
+      ],
+      "loudness": {
+        "metric": "momentary-max",
+        "target": -17,
+        "raw": {
+          "integrated": -14.1,
+          "momentaryMax": -14.1,
+          "truePeak": -1.5
+        },
+        "out": {
+          "integrated": -17.5,
+          "momentaryMax": -17.5,
+          "truePeak": -4.5
+        },
+        "gainDb": -2.9,
+        "limitedDb": 0,
+        "take": "2026-10-20T02:55:49.053Z",
+        "at": "2026-10-20T02:55:49.822Z"
+      },
+      "qa": {
+        "description": "A close-mic'd male voice reads dispatch instructions through a narrow-band AM radio filter, complete with intro key clicks, constant carrier hiss, crackle, and an outro squelch tail.",
+        "score": 4,
+        "issues": "The vocal delivery has a slightly synthetic, text-to-speech cadence rather than the full organic nuance of a tired human dispatcher.",
+        "intent": "an older dispatcher, flat, procedural and authoritative, over a narrow crackling AM-style radio (squelch and key click at the start, roger beep or squelch tail at the end, carrier hiss, brief dropouts), tired 3 a.m. professional turning clipped and serious, a flat firm \"Do not move\", intelligible: \"Ashwood, County dispatch, copy. Units are on the way. I need you to stay right where you are. Do not move.\"",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-20T02:55:56.312Z"
       }
     }
   ],
@@ -17950,11 +18155,92 @@
       "designed": true
     },
     {
-      "id": "story-call-reply",
+      "id": "story-call-player-m-r4",
       "group": "story",
       "subgroup": "Radio-room call",
-      "label": "County dispatcher",
-      "intent": "an older dispatcher, flat, procedural and authoritative, over a narrow crackling AM-style radio (squelch and key click at the start, roger beep or squelch tail at the end, carrier hiss, brief dropouts), tired 3 a.m. professional turning clipped and serious, a flat firm \"Do not move\", intelligible: \"Ashwood, County dispatch, copy. Units are on the way. I need you to stay right where you are. Do not move.\"",
+      "label": "Player radio report (male), round 4 — radio",
+      "intent": "a regular man (not a narrator) panicking on a radio handset, natural conversational speed with words running together, no artificial pauses, one hitch on \"they're... they're\": \"County, County, this is Ashwood Outpost, do you read? I'm up at the station, and they're... they're all dead, four of them, there's two more I can't find anywhere, please, I need somebody out here.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-player-m-r4-clean",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "Player radio report (male), round 4 — clean",
+      "intent": "a regular man (not a narrator) panicking on a radio handset, natural conversational speed with words running together, no artificial pauses, one hitch on \"they're... they're\": \"County, County, this is Ashwood Outpost, do you read? I'm up at the station, and they're... they're all dead, four of them, there's two more I can't find anywhere, please, I need somebody out here.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-reply-r4",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "County dispatcher, round 4 — radio",
+      "intent": "an older dispatcher (Bill), tired 3 a.m. professional turning clipped and serious, a faster natural pace with real fluctuation in the voice, over a heavy AM-style radio: \"Ashwood, County dispatch, copy. Units are on the way. I need you to stay right where you are. Do not move.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-reply-r4-clean",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "County dispatcher, round 4 — clean",
+      "intent": "an older dispatcher (Bill), tired 3 a.m. professional turning clipped and serious, a faster natural pace with real fluctuation in the voice, over a heavy AM-style radio: \"Ashwood, County dispatch, copy. Units are on the way. I need you to stay right where you are. Do not move.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-player-m",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "Player radio report (male) — radio",
+      "intent": "a calm but shaken adult male voice speaking through a radio handset, every word intelligible: \"Ashwood Outpost to County. I've found the station staff. Four dead. Two unaccounted for. Requesting assistance.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-player-m-clean",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "Player radio report (male) — clean",
+      "intent": "a calm but shaken adult male voice speaking, every word intelligible: \"Ashwood Outpost to County. I've found the station staff. Four dead. Two unaccounted for. Requesting assistance.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-player-f",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "Player radio report (female) — radio",
+      "intent": "a calm but shaken adult female voice speaking through a radio handset, every word intelligible: \"Ashwood Outpost to County. I've found the station staff. Four dead. Two unaccounted for. Requesting assistance.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-player-f-clean",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "Player radio report (female) — clean",
+      "intent": "a calm but shaken adult female voice speaking, every word intelligible: \"Ashwood Outpost to County. I've found the station staff. Four dead. Two unaccounted for. Requesting assistance.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-player-remy",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "Player radio report — Remy — radio",
+      "intent": "a young man (early 20s, casual) speaking through a radio handset, shaken but holding it together (a breath or two, one restart, tightening on \"dead\", pleading at the end), realistic not acted, every word intelligible: \"County, County, this is Ashwood Outpost, do you read? I'm up at the station and they're... they're all dead. Four of them. There's two more I can't find anywhere. Please, I need somebody out here.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-player-remy-clean",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "Player radio report — Remy — clean",
+      "intent": "a young man (early 20s, casual) speaking, shaken but holding it together (a breath or two, one restart, tightening on \"dead\", pleading at the end), realistic not acted, every word intelligible: \"County, County, this is Ashwood Outpost, do you read? I'm up at the station and they're... they're all dead. Four of them. There's two more I can't find anywhere. Please, I need somebody out here.\"",
       "loop": false,
       "designed": true
     },
@@ -17962,8 +18248,89 @@
       "id": "story-call-player-james",
       "group": "story",
       "subgroup": "Radio-room call",
-      "label": "Player radio call (male)",
+      "label": "Player radio report — James — radio",
       "intent": "a young man in a hoodie and cap (rougher, lower voice) speaking through a radio handset, shaken but holding it together (a breath or two, one restart, tightening on \"dead\", pleading at the end), realistic not acted, every word intelligible: \"County, County, this is Ashwood Outpost, do you read? I'm up at the station and they're... they're all dead. Four of them. There's two more I can't find. Please, I need somebody out here.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-player-james-clean",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "Player radio report — James — clean",
+      "intent": "a young man in a hoodie and cap (rougher, lower voice) speaking, shaken but holding it together (a breath or two, one restart, tightening on \"dead\", pleading at the end), realistic not acted, every word intelligible: \"County, County, this is Ashwood Outpost, do you read? I'm up at the station and they're... they're all dead. Four of them. There's two more I can't find. Please, I need somebody out here.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-player-louise",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "Player radio report — Louise — radio",
+      "intent": "a professional woman in her thirties or forties (suit) speaking through a radio handset, shaken but holding it together (a breath or two, one restart, tightening on \"dead\", pleading at the end), realistic not acted, every word intelligible: \"County, County, this is Ashwood Outpost, do you read? I'm up at the station and they're... they're all dead. Four of them. There are two more I can't find anywhere. Please, I need somebody out here.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-player-louise-clean",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "Player radio report — Louise — clean",
+      "intent": "a professional woman in her thirties or forties (suit) speaking, shaken but holding it together (a breath or two, one restart, tightening on \"dead\", pleading at the end), realistic not acted, every word intelligible: \"County, County, this is Ashwood Outpost, do you read? I'm up at the station and they're... they're all dead. Four of them. There are two more I can't find anywhere. Please, I need somebody out here.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-player-megan",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "Player radio report — Megan — radio",
+      "intent": "a young woman in her early twenties (casual, bright) speaking through a radio handset, shaken but holding it together (a breath or two, one restart, tightening on \"dead\", pleading at the end), realistic not acted, every word intelligible: \"County, County, this is Ashwood Outpost, do you read? I'm up at the station and they're... they're all dead. Four of them. Two more, I don't know where they are. Please, I need somebody out here.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-player-megan-clean",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "Player radio report — Megan — clean",
+      "intent": "a young woman in her early twenties (casual, bright) speaking, shaken but holding it together (a breath or two, one restart, tightening on \"dead\", pleading at the end), realistic not acted, every word intelligible: \"County, County, this is Ashwood Outpost, do you read? I'm up at the station and they're... they're all dead. Four of them. Two more, I don't know where they are. Please, I need somebody out here.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-player-kate",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "Player radio report — Kate — radio",
+      "intent": "a woman in her late twenties or thirties (mature, steady) speaking through a radio handset, shaken but holding it together (a breath or two, one restart, tightening on \"dead\", pleading at the end), realistic not acted, every word intelligible: \"County, County, this is Ashwood Outpost, do you read? I'm up at the station and they're... they're all dead. Four of them. There's two more I can't find anywhere. Please, I need somebody out here.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-player-kate-clean",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "Player radio report — Kate — clean",
+      "intent": "a woman in her late twenties or thirties (mature, steady) speaking, shaken but holding it together (a breath or two, one restart, tightening on \"dead\", pleading at the end), realistic not acted, every word intelligible: \"County, County, this is Ashwood Outpost, do you read? I'm up at the station and they're... they're all dead. Four of them. There's two more I can't find anywhere. Please, I need somebody out here.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-reply",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "County dispatcher reply — radio",
+      "intent": "an older dispatcher, flat, procedural and authoritative, over a narrow crackling AM-style radio (squelch and key click at the start, roger beep or squelch tail at the end, carrier hiss, brief dropouts), tired 3 a.m. professional turning clipped and serious, a flat firm \"Do not move\", intelligible: \"Ashwood, County dispatch, copy. Units are on the way. I need you to stay right where you are. Do not move.\"",
+      "loop": false,
+      "designed": true
+    },
+    {
+      "id": "story-call-reply-clean",
+      "group": "story",
+      "subgroup": "Radio-room call",
+      "label": "County dispatcher reply — clean",
+      "intent": "an older dispatcher, flat, procedural and authoritative, tired 3 a.m. professional turning clipped and serious, a flat firm \"Do not move\", intelligible: \"Ashwood, County dispatch, copy. Units are on the way. I need you to stay right where you are. Do not move.\"",
       "loop": false,
       "designed": true
     }
@@ -22752,6 +23119,141 @@
       },
       "archivedFrom": "sfx/story-call-player-megan/v10.mp3",
       "archivedAt": "2026-10-20T00:14:44.708Z"
+    },
+    {
+      "category": "story-call-reply",
+      "group": "story",
+      "variant": "v6",
+      "prompt": "Dispatcher radio: story-call-reply-clean/v6.mp3 band-passed 400 Hz–2.8 kHz, saturated, compressed 8:1, crushed, AM flutter and crackle, carrier hiss, two dropouts, squelch burst and key click in, squelch tail out. Voice Bill.",
+      "duration": 10.6,
+      "influence": 0,
+      "loop": false,
+      "file": "sfx/_previous/story-call-reply/v6-1792453139954.mp3",
+      "bytes": 85293,
+      "cost": 0,
+      "generatedAt": "2026-10-19T23:38:59.954Z",
+      "designed": true,
+      "sources": [
+        "story-call-reply-clean/v6.mp3"
+      ],
+      "loudness": {
+        "metric": "momentary-max",
+        "target": -17,
+        "raw": {
+          "integrated": -15.1,
+          "momentaryMax": -15.1,
+          "truePeak": -1.5
+        },
+        "out": {
+          "integrated": -17.4,
+          "momentaryMax": -17.4,
+          "truePeak": -3.9
+        },
+        "gainDb": -1.9,
+        "limitedDb": 0,
+        "take": "2026-10-19T23:38:59.954Z",
+        "at": "2026-10-19T23:39:00.250Z"
+      },
+      "qa": {
+        "description": "A close, bandpass-filtered mature male voice delivers dispatch dialogue with mild static and faint background carrier noise, cutting off cleanly at the end.",
+        "score": 4,
+        "issues": "Missing a distinct opening key-click/squelch burst, roger beep or prominent squelch tail, and radio transmission dropouts.",
+        "intent": "an older dispatcher, flat, procedural and authoritative, over a narrow crackling AM-style radio (squelch and key click at the start, roger beep or squelch tail at the end, carrier hiss, brief dropouts), tired 3 a.m. professional turning clipped and serious, a flat firm \"Do not move\", intelligible: \"Ashwood, County dispatch, copy. Units are on the way. I need you to stay right where you are. Do not move.\"",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-19T23:39:05.876Z"
+      },
+      "archivedFrom": "sfx/story-call-reply/v6.mp3",
+      "archivedAt": "2026-10-20T02:55:13.856Z"
+    },
+    {
+      "category": "story-call-reply-clean",
+      "group": "story",
+      "variant": "v7",
+      "prompt": "TTS eleven_multilingual_v2, voice Jay (library: Midwest, gravel, grounded), settings {\"stability\":0.4,\"similarity_boost\":0.75,\"style\":0.35,\"use_speaker_boost\":true}: Ashwood, County dispatch, copy. Units are on the way, I need you to stay right where you are. Do not move.",
+      "duration": null,
+      "influence": 0,
+      "loop": false,
+      "file": "sfx/_previous/story-call-reply-clean/v7-1792464923763.mp3",
+      "bytes": 52915,
+      "cost": 42,
+      "generatedAt": "2026-10-20T02:55:23.763Z",
+      "designed": true,
+      "sources": [
+        "elevenlabs-tts:Jay (library: Midwest, gravel, grounded)"
+      ],
+      "loudness": {
+        "metric": "momentary-max",
+        "target": -18,
+        "raw": {
+          "integrated": -22.5,
+          "momentaryMax": -22.5,
+          "truePeak": -1.4
+        },
+        "out": {
+          "integrated": -18.1,
+          "momentaryMax": -18.1,
+          "truePeak": -1.8
+        },
+        "gainDb": 5.4,
+        "limitedDb": 6.8,
+        "take": "2026-10-20T02:55:23.763Z",
+        "at": "2026-10-20T02:55:24.618Z"
+      },
+      "qa": {
+        "description": "A clean, dry close-mic vocal recording of a male voice reading dispatch instructions with a stiff, somewhat synthetic or TTS-like cadence and no environmental or radio processing.",
+        "score": 3,
+        "issues": "Performance sounds rigid/synthetic rather than like an older, tired human professional; lacks radio filtering, static, or dispatch mic character.",
+        "intent": "an older dispatcher, flat, procedural and authoritative, tired 3 a.m. professional turning clipped and serious, a flat firm \"Do not move\", intelligible: \"Ashwood, County dispatch, copy. Units are on the way. I need you to stay right where you are. Do not move.\"",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-20T02:55:31.194Z"
+      },
+      "archivedFrom": "sfx/story-call-reply-clean/v7.mp3",
+      "archivedAt": "2026-10-20T02:56:22.676Z"
+    },
+    {
+      "category": "story-call-reply-clean",
+      "group": "story",
+      "variant": "v8",
+      "prompt": "TTS eleven_multilingual_v2, voice Joe Scott (library: deep, gravelly, authentic), settings {\"stability\":0.4,\"similarity_boost\":0.75,\"style\":0.35,\"use_speaker_boost\":true}: Ashwood, County dispatch, copy. Units are on the way, I need you to stay right where you are. Do not move.",
+      "duration": null,
+      "influence": 0,
+      "loop": false,
+      "file": "sfx/_previous/story-call-reply-clean/v8-1792464942561.mp3",
+      "bytes": 55632,
+      "cost": 42,
+      "generatedAt": "2026-10-20T02:55:42.561Z",
+      "designed": true,
+      "sources": [
+        "elevenlabs-tts:Joe Scott (library: deep, gravelly, authentic)"
+      ],
+      "loudness": {
+        "metric": "momentary-max",
+        "target": -18,
+        "raw": {
+          "integrated": -18.9,
+          "momentaryMax": -18.9,
+          "truePeak": -4.8
+        },
+        "out": {
+          "integrated": -18.4,
+          "momentaryMax": -18.4,
+          "truePeak": -4.2
+        },
+        "gainDb": 0.9,
+        "limitedDb": 0,
+        "take": "2026-10-20T02:55:42.561Z",
+        "at": "2026-10-20T02:55:42.936Z"
+      },
+      "qa": {
+        "description": "A dry, close-mic'd studio voiceover of a mature male speaking the exact script in a calm, authoritative, and serious tone without any room reverb.",
+        "score": 4,
+        "issues": "Completely clean studio vocal lacking radio processing, EQ bandpass, static, or dispatch mic clicks appropriate for radio communications.",
+        "intent": "an older dispatcher, flat, procedural and authoritative, tired 3 a.m. professional turning clipped and serious, a flat firm \"Do not move\", intelligible: \"Ashwood, County dispatch, copy. Units are on the way. I need you to stay right where you are. Do not move.\"",
+        "model": "gemini-3.8-flash",
+        "at": "2026-10-20T02:55:48.294Z"
+      },
+      "archivedFrom": "sfx/story-call-reply-clean/v8.mp3",
+      "archivedAt": "2026-10-20T02:56:22.676Z"
     }
   ]
 }

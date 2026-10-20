@@ -1,5 +1,16 @@
 {
-  "note": "Aiden's story picks 2026-10-19 (approved): story-car-alarm v1, \"far off (heard from storey 3)\".",
+  "note": "Aiden's story picks 2026-10-19 (approved): story-car-alarm v1, \"far off (heard from storey 3)\"; story-call-reply v7 (Jay), re-rendered with a soft squelch tail (the roger beep and hard squelch burst at the end removed).",
   "exportedAt": "2026-10-19",
-  "picks": [{ "category": "story-car-alarm", "variant": "v1", "notes": "far off (heard from storey 3), good" }]
+  "picks": [
+    {
+      "category": "story-car-alarm",
+      "variant": "v1",
+      "notes": "far off (heard from storey 3), good"
+    },
+    {
+      "category": "story-call-reply",
+      "variant": "v7",
+      "notes": "picked; end bang removed (soft tail)"
+    }
+  ]
 }

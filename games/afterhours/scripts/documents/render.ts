@@ -2398,22 +2398,20 @@ DOCS.push(
     },
   },
   {
-    id: "blotter_warning",
-    title: "Desk pad, operator desk 3-08: the warning in black marker (TRANSMITTING WAKES IT …)",
+    id: "blotter_plain",
+    title: "Desk blotter, operator desk 3-08 (plain, old ink blots)",
     size: [0.86, 0.6],
     paper: "card",
-    tags: ["desk", "creepy"],
-    density: 1.35,
+    tags: ["desk"],
+    density: 0.8,
     draw(d) {
       const w = d.wmm
       const h = d.hmm
-      // A big desk pad: buff blotting paper in a leather frame (corner pockets, a side rail). The blood on it is the
-      // room's own blood (world decals, s3/listening.ts), not drawn here.
-      d.fill(0, 0, w, h, "#8e897c")
-      d.fill(0, 0, 26, h, "#3a2a1e")
-      d.fill(w - 26, 0, 26, h, "#3a2a1e")
+      d.fill(0, 0, w, h, "#171c19")
+      d.fill(0, 0, 26, h, "#1a1410")
+      d.fill(w - 26, 0, 26, h, "#1a1410")
       for (const [x, y, sx, sy] of [[26, 0, 1, 1], [w - 26, 0, -1, 1], [26, h, 1, -1], [w - 26, h, -1, -1]] as const) {
-        d.ctx.fillStyle = "#3a2a1e"
+        d.ctx.fillStyle = "#1a1410"
         d.ctx.beginPath()
         d.ctx.moveTo(x, y)
         d.ctx.lineTo(x + sx * 90, y)
@@ -2421,7 +2419,6 @@ DOCS.push(
         d.ctx.closePath()
         d.ctx.fill()
       }
-      // Old ink blots and ring marks under the writing.
       d.coffee(640, 420, 46, 0.18)
       for (let k = 0; k < 14; k++) {
         d.ctx.fillStyle = `rgba(30, 40, 90, ${rr(0.05, 0.14)})`
@@ -2429,18 +2426,33 @@ DOCS.push(
         d.ctx.ellipse(rr(60, w - 60), rr(40, h - 40), rr(4, 18), rr(2, 8), rr(0, 3), 0, Math.PI * 2)
         d.ctx.fill()
       }
-      const ink = "#0b0b0b"
-      // Big, fast, pressed hard: fills the pad.
-      d.hand("TRANSMITTING", 60, 128, { pt: 230, font: "Permanent Marker", color: ink, slant: -0.03 })
-      d.hand("WAKES IT", 150, 222, { pt: 230, font: "Permanent Marker", color: ink, slant: -0.05 })
-      d.line(70, 238, 780, 228, 4, ink, 0.95)
-      d.hand("IT HEARS THE SIGNAL", 64, 312, { pt: 165, font: "Permanent Marker", color: ink, slant: -0.04 })
-      d.hand("MARSH AND DELACROIX", 64, 392, { pt: 120, font: "Permanent Marker", color: ink, slant: -0.03 })
-      d.hand("WENT INTO THE WOODS", 64, 452, { pt: 120, font: "Permanent Marker", color: ink, slant: -0.035 })
-      d.hand("NOT SEEN SINCE", 300, 510, { pt: 105, font: "Permanent Marker", color: ink, slant: -0.05 })
-      // The last line: smaller, shaking, drifting downhill; a pen stroke trailing off the end.
-      d.hand("keep it OFF", 90, 572, { pt: 150, font: "Permanent Marker", color: "#0b0b0b", slant: -0.16, drift: -0.004 })
-      d.scribble(470, 568, 640, 585, 2.2, "#141010")
+    },
+  },
+  {
+    id: "note_dont_turn_on",
+    title: "Torn sheet under Kessler's head: DO NOT TURN ON THE RADIO / it hears it (3-08)",
+    size: [0.18, 0.22],
+    paper: "white",
+    tags: ["desk", "creepy"],
+    density: 7,
+    draw(d) {
+      // Off-white, slightly grey and aged (not bright under the torch).
+      d.fill(0, 0, d.wmm, d.hmm, "#a9aca8")
+      // A legal-pad sheet torn off fast: ruled, the top edge ragged.
+      for (let y = 20; y < d.hmm; y += 7) d.line(0, y, d.wmm, y, 0.2, "#4a7ab8", 0.45)
+      d.line(16, 0, 16, d.hmm, 0.3, "#b3261e", 0.5)
+      for (let x = 0; x < d.wmm; x += 3) d.fill(x, 0, 3, rr(0.5, 3.5), "#2a2a2a", 0.85)
+      const ink = "#0c0c0c"
+      // Black marker, one clean stroke per letter (a slight hand tremor in the slant, no blotting).
+      d.hand("DO NOT", 20, 48, { pt: 60, font: "Permanent Marker", color: ink, slant: -0.04 })
+      d.hand("TURN ON", 18, 84, { pt: 60, font: "Permanent Marker", color: ink, slant: -0.05 })
+      d.hand("THE RADIO", 14, 118, { pt: 54, font: "Permanent Marker", color: ink, slant: -0.03 })
+      d.line(16, 124, 168, 120, 1.6, ink, 0.95)
+      d.hand("it hears it", 28, 154, { pt: 44, font: "Permanent Marker", color: ink, slant: -0.08 })
+      d.hand("Marsh and Delacroix went", 20, 176, { pt: 24, font: "Caveat", color: INK.ballBlue, slant: -0.02 })
+      d.hand("out to the woods.", 20, 189, { pt: 24, font: "Caveat", color: INK.ballBlue, slant: -0.03 })
+      d.hand("never came back", 60, 204, { pt: 24, font: "Caveat", color: INK.ballBlue, slant: -0.06 })
+      d.crease(0, 105, d.wmm, 112, 0.8)
     },
   },
   {
@@ -2526,7 +2538,7 @@ const PAPER: Record<Paper, { color: string; rough: number; age: number; grain: n
   manila: { color: "#cfae74", rough: 0.92, age: 0.5, grain: 0.1 },
   card: { color: "#efebdf", rough: 0.85, age: 0.4, grain: 0.05 },
   legal: { color: "#f0e08a", rough: 0.86, age: 0.35, grain: 0.05 },
-  greenbar: { color: "#ece9dc", rough: 0.86, age: 0.35, grain: 0.05 },
+  greenbar: { color: "#bcc2bb", rough: 0.86, age: 0.35, grain: 0.05 },
   polaroid: { color: "#eeece4", rough: 0.6, age: 0.3, grain: 0.03 },
   poster: { color: "#efebe0", rough: 0.7, age: 0.4, grain: 0.04 },
   sticky: { color: "#efe07a", rough: 0.86, age: 0.25, grain: 0.04 },

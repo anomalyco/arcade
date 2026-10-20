@@ -66,6 +66,9 @@ export function installHunter(world: World, o: { flow?: Flow; signal?: AbortSign
   const debug = new HunterDebug(hunter, nav, playerTrail)
   if (o.debug) ctx.settings["hunter.debug"] = 1
   console.info(`hunter: nav ${nav.buildMs.toFixed(0)} ms, ${nav.doors.length} doors, ${nav.rooms.length} rooms`)
+  // Its sounds and the entry's are decoded now (one-shots not yet decoded are skipped, and the long ones decode last).
+  for (const id of ["wen2-huge-scream", "wen2-starving-groan", "wen2-chatter", "wen-distant-moan", "hor-metal-bang", "story-car-alarm", "int-lab-glass", "int-mop-bucket", "door-fire-steel", "door-office-wood", "door-panic-bar", "light-fluoro-flicker", "foot-linoleum", "foot-stairwell", "foot-grating"] as const)
+    void hooks.sfx?.load(id)
 
   // Catching the player: until the death path lands, a stub (event + a red flash in debug).
   let catchHandler: ((info: CatchInfo) => void) | null = null

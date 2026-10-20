@@ -601,7 +601,8 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
         // Cells: 0..4 = G..4, 5 up, 6 down.
         m.visible = light > 0.1 && (k === near || (moving && (k === 5 ? dirUp : k === 6 ? !dirUp : false) && Math.sin(time * 6) > -0.4))
       })
-      stops?.update(inCar, moving || phase === "closing", cur, near, target)
+      // The stop list is for inside the car only: gone the moment the eye is past the car's front edge.
+      stops?.update(inCar && camera.position.z > z0, moving || phase === "closing", cur, near, target)
       BUTTONS.forEach((bt, i) => {
         const m = litButtons[i]!
         if (bt.kind === "floor") m.visible = (phase !== "idle" && bt.floor === target) || queue.includes(bt.floor!)
@@ -867,6 +868,8 @@ function stopsList() {
       const k = `${inCar}|${moving}|${cur}|${near}|${target}`
       if (k === key) return
       key = k
+      // Fades in, but leaves at once (stepping out into the lobby).
+      el.style.transition = inCar ? "opacity 0.4s ease" : "none"
       el.style.opacity = inCar ? "1" : "0"
       const dir = target > cur ? "Going up" : "Going down"
       head.textContent = moving ? `${dir} · ${FLOOR_NAMES[target]}` : "Choose a stop"

@@ -83,35 +83,50 @@ async function hunterDeath(tag: string) {
   return at
 }
 
-async function rideAndDie(tag: string) {
-  // Into the car at its current floor, then send it to storey 2.
+let pounceAt = 0
+async function rideAndDie(tag: string, walkOut: boolean) {
+  // Into the car at its current floor, facing the doors, then send it to another floor.
   const st = (await G(page, "globalThis.__interior.lift.state()")) as Any
-  await put(-37.85, STOREY(st.cur) + 0.02, 21.2)
+  await put(-37.85, STOREY(st.cur) + 0.02, 20.3)
+  await G(page, "(() => { const p = globalThis.__afterhoursPlayer; p.yaw = 0; p.pitch = -0.05 })()")
   await page.waitForTimeout(800)
   const dest = st.cur === 2 ? 1 : 2
   await G(page, `globalThis.__interior.lift.press("${dest}")`)
-  await page.waitForFunction(() => (globalThis as Any).__ashwoodAmbush?.phase === "waiting", null, { timeout: 60_000 }).catch(async (e) => {
-    console.log("no ambush:", JSON.stringify(await G(page, "({ amb: globalThis.__ashwoodAmbush.phase, lift: globalThis.__interior.lift.state(), pos: { ...globalThis.__afterhoursPlayer.pos }, paused: globalThis.__static.flow.paused, hold: globalThis.__static.flow.hold, hunter: globalThis.__ashwoodHunter?.hunter.mode })")))
-    throw e
-  })
+  await page.waitForFunction(() => (globalThis as Any).__ashwoodAmbush?.phase === "lurk", null, { timeout: 60_000 })
   const at = Date.now() - t0
-  console.log(`ambush triggered at storey ${dest} (+${(at / 1000).toFixed(1)} s)`)
-  await page.waitForFunction(() => ["beat", "lunge", "dead"].includes((globalThis as Any).__ashwoodAmbush?.phase), null, { timeout: 10_000 })
-  await shot(`${tag}-beat`)
-  await page.waitForFunction(() => ["lunge", "dead"].includes((globalThis as Any).__ashwoodAmbush?.phase), null, { timeout: 5_000 })
-  await page.waitForTimeout(280)
-  await shot(`${tag}-lunge`)
+  console.log(`${tag}: arrived at storey ${dest}, lurking (+${(at / 1000).toFixed(1)} s)`)
+  const s0 = (await G(page, "({ hold: globalThis.__static.flow.hold, scare: document.body.dataset.scare ?? null, visible: globalThis.__ashwoodAmbush.visible })")) as Any
+  check(!s0.hold && s0.scare === null && !s0.visible, `${tag}: arrival is ordinary (no hold, HUD up, creature not drawn) ${JSON.stringify(s0)}`)
+  await page.waitForFunction(() => ((globalThis as Any).__interior.lift.state().doorT ?? 0) > 0.8, null, { timeout: 10_000 })
+  await shot(`${tag}-open`)
+  // Stills (second ride): hold the pounce part-way and just before the hit.
+  if (!walkOut) await G(page, "globalThis.__ashwoodAmbush.freezeAt = 0.4")
+  if (walkOut) await page.keyboard.down("KeyW")
+  await page.waitForFunction(() => ["pounce", "dead"].includes((globalThis as Any).__ashwoodAmbush?.phase), null, { timeout: 15_000 })
+  if (!pounceAt) pounceAt = Date.now() - t0
+  const how = (await G(page, "({ z: globalThis.__afterhoursPlayer.pos.z, doorT: globalThis.__interior.lift.state().doorT })")) as Any
+  console.log(`${tag}: pounce at player z ${how.z.toFixed(2)} (threshold 19.45), doorT ${how.doorT.toFixed(2)}`)
+  if (walkOut) check(how.z < 19.6, `${tag}: it came as the player stepped out`)
+  if (!walkOut) {
+    await page.waitForTimeout(500)
+    await shot(`${tag}-pounce`)
+    await G(page, "globalThis.__ashwoodAmbush.freezeAt = 0.93")
+    await page.waitForTimeout(500)
+    await shot(`${tag}-near`)
+    await G(page, "globalThis.__ashwoodAmbush.freezeAt = null")
+  } else {
+    await page.waitForTimeout(150)
+    await shot(`${tag}-pounce`)
+  }
   await page.waitForFunction(() => (globalThis as Any).__ashwoodAmbush?.phase === "dead", null, { timeout: 5_000 })
+  if (walkOut) await page.keyboard.up("KeyW")
   await shot(`${tag}-contact`)
   await page.waitForTimeout(150)
   await shot(`${tag}-flood`)
   await page.waitForTimeout(2600)
   await shot(`${tag}-death`)
-  const s = (await G(page, "({ paused: globalThis.__static.flow.paused, modal: document.body.dataset.modal, lock: !!document.pointerLockElement, stats: globalThis.__ashwoodAmbush.stats })")) as Any
+  const s = (await G(page, "({ paused: globalThis.__static.flow.paused, modal: document.body.dataset.modal, lock: !!document.pointerLockElement })")) as Any
   check(s.paused === true && s.modal === "death" && !s.lock, `${tag}: world paused, death screen up, pointer free`)
-  const fm = (s.stats.frameMs as number[]).slice(-200)
-  console.log(`${tag}: warm ${s.stats.warmMs} ms; scare frames ${fm.length}, max ${Math.max(...fm)} ms, >33 ms: ${fm.filter((x) => x > 33).length}; ${fm.join(",")}`)
-  await G(page, "globalThis.__ashwoodAmbush.stats.frameMs.length = 0")
   return at
 }
 
@@ -132,7 +147,7 @@ try {
   const cp = JSON.parse(((await G(page, "sessionStorage.getItem('afterhours.checkpoint')")) as string) ?? "{}")
   check(cp.id === "3-08:entered", `3-08 checkpoint (${cp.id}), Wendigo warmed in ${await G(page, "globalThis.__ashwoodAmbush.stats.warmMs")} ms`)
   await shot("308")
-  const scareAt = await rideAndDie("first")
+  const scareAt = await rideAndDie("first", true)
   let hunterAt = 0
 
   // Restart from checkpoint: back in 3-08, playing.
@@ -142,7 +157,7 @@ try {
   const inside = r.pos.x > 0.8 && r.pos.x < 11.6 && r.pos.z > -21.65 && r.pos.z < -1.75 && Math.abs(r.pos.y - STOREY(3)) < 0.5
   check(!r.paused && !r.hold && r.modal === null && inside && r.amb === "armed", `restart: back in 3-08 and playing (${JSON.stringify(r)})`)
   await shot("restart")
-  await rideAndDie("second")
+  await rideAndDie("second", false)
 
   // Restart again (pre-reveal checkpoint): the hunter must be asleep.
   await page.click("text=Restart from checkpoint")
@@ -176,8 +191,9 @@ try {
   await ctx.close()
   renameSync(raw, `${out}/ambush-raw.webm`)
   // The first scare: from 1.5 s before the doors open to the death screen.
-  const ss = Math.max(0, scareAt / 1000 - 0.5)
-  Bun.spawnSync(["ffmpeg", "-v", "error", "-y", "-ss", ss.toFixed(2), "-i", `${out}/ambush-raw.webm`, "-t", "9", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20", `${out}/ambush-scare.mp4`])
+  const ss = Math.max(0, pounceAt / 1000 - 4.5)
+  void scareAt
+  Bun.spawnSync(["ffmpeg", "-v", "error", "-y", "-ss", ss.toFixed(2), "-i", `${out}/ambush-raw.webm`, "-t", "8", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20", `${out}/ambush-scare.mp4`])
   console.log(`video: ${out}/ambush-scare.mp4 (from +${ss.toFixed(1)} s of ambush-raw.webm)`)
   const hs = Math.max(0, hunterAt / 1000 - 1.5)
   Bun.spawnSync(["ffmpeg", "-v", "error", "-y", "-ss", hs.toFixed(2), "-i", `${out}/ambush-raw.webm`, "-t", "7", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20", `${out}/hunter-scare.mp4`])

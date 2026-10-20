@@ -494,6 +494,14 @@ export class WendigoAnimator {
     if (over > 0 || over < -0.15) this.ceilWant = Math.min(1.4, Math.max(0, this.ceilStoop.x + over * 1.05 + (over > 0 ? 0.03 : 0.05)))
   }
 
+  /** Puts it straight into a stance (no rise or drop): for scripted moments that start mid-action. */
+  snapStance(st: WendigoStance) {
+    this.stance = st
+    this.up.x = st === "biped" ? 1 : 0
+    this.up.v = 0
+    if ((st === "biped") !== this.bipedGait) this.setGait(st === "biped", this.root)
+  }
+
   /** Switch the stepper between four-legged and two-legged gaits. */
   private setGait(biped: boolean, root: THREE.Object3D) {
     const st = this.stepper

@@ -1,5 +1,5 @@
 {
-  "note": "Provisional picks made by the audio owner (Aiden repicks in the audition page). story-car-alarm v1 is Aiden's approved pick (picks-aiden-2026-10-19-story.json). Radio-room call, round 4 (the owner's final scripts, eleven_v3, dialogue-edited to ~12 s, radio-processed): story-call-player-remy v8 (Liam), -james v5 (Harry), -louise v7 (Lily), -megan v9 (Jessica), -kate v7 (Sarah); story-call-reply v5 (Bill, option 1b, heavy AM treatment). Fallbacks story-call-player-m v2 (Eric) and -f v2 (Sarah) still carry the older script. Earlier takes stay in the lab.",
+  "note": "Provisional picks made by the audio owner (Aiden repicks in the audition page). story-car-alarm v1 is Aiden's approved pick (picks-aiden-2026-10-19-story.json). Radio-room call, round 4 (the owner's final scripts, eleven_v3, dialogue-edited to ~12 s, radio-processed): story-call-player-remy v8 (Liam), -james v5 (Harry), -louise v7 (Lily), -megan v9 (Jessica), -kate v7 (Sarah); story-call-reply v7 (Jay, approved by Aiden; soft squelch tail). Fallbacks story-call-player-m v2 (Eric) and -f v2 (Sarah) still carry the older script. Earlier takes stay in the lab.",
   "picks": [
     {
       "category": "story-car-alarm",
@@ -15,7 +15,7 @@
     },
     {
       "category": "story-call-reply",
-      "variant": "v5"
+      "variant": "v7"
     },
     {
       "category": "story-call-player-remy",

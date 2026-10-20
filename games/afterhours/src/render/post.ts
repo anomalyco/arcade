@@ -189,8 +189,8 @@ export function createPost(ctx: WorldContext) {
     { key: "grade.warmSaturation", label: "Warm-hue saturation (practicals)", group: "Grade", min: 0, max: 2, step: 0.01, value: 1.4 },
     { key: "grade.halation", label: "Halation", group: "Grade", min: 0, max: 1, step: 0.01, value: 0.08 },
     { key: "grade.distortion", label: "Lens distortion (barrel)", group: "Grade", min: -0.1, max: 0.15, step: 0.005, value: 0 },
-    { key: "grade.interiorTemperature", label: "Indoor temperature", group: "Grade", unit: "← blue · amber →", min: -1, max: 1, step: 0.01, value: 0.25 },
-    { key: "grade.interiorTint", label: "Indoor tint", group: "Grade", unit: "← green · magenta →", min: -1, max: 1, step: 0.01, value: -0.45 },
+    { key: "grade.interiorTemperature", label: "Indoor temperature", group: "Grade", unit: "← blue · amber →", min: -1, max: 1, step: 0.01, value: 0.08 },
+    { key: "grade.interiorTint", label: "Indoor tint", group: "Grade", unit: "← green · magenta →", min: -1, max: 1, step: 0.01, value: -0.16 },
     { key: "grade.interiorExposure", label: "Indoor grade exposure", group: "Grade", unit: "EV", min: -2, max: 2, step: 0.05, value: 0 },
     { key: "rain.on", label: "Drizzle (streaks in lamp light)", group: "Weather", type: "toggle", value: false },
     { key: "rain.brightness", label: "Drizzle catch-light", group: "Weather", unit: "×", min: 0, max: 100, step: 1, value: 30 },
@@ -753,18 +753,25 @@ export function createPost(ctx: WorldContext) {
       }
       const mapped = curve(peak).min(1)
       const huePreserve = hdr.mul(mapped.div(peak))
-      const perChannel = vec3(curve(hdr.r), curve(hdr.g), curve(hdr.b)).min(1)
-      let ldr: N = mix(huePreserve, perChannel, smoothstep(4, 40, peak))
+      // Hottest cores burn out towards NEUTRAL white along the same hue (path to white), never by clipping channels
+      // one at a time, which turned warm-lit white paper lemon yellow (R and G clip, B doesn't).
+      const toWhite = smoothstep(3, 30, peak)
+      let ldr: N = mix(huePreserve, vec3(mapped), toWhite.mul(0.85))
       // Saturation around luminance.
       const l2 = luminance(ldr)
       // Film keeps practicals' orange rich even in a cool, desaturated grade: warm hues (red > green > blue) get
       // their own saturation, so lit windows and sodium heads stay amber instead of drifting to beige.
       const mx = max(max(ldr.r, ldr.g), ldr.b).max(1e-5)
-      const warmth = smoothstep(0.15, 0.45, ldr.r.sub(ldr.b).div(mx)).mul(smoothstep(0.02, 0.12, mx))
+      // Orange-red only (green well below red): yellow-white surfaces under tungsten are not boosted.
+      const warmth = smoothstep(0.15, 0.45, ldr.r.sub(ldr.b).div(mx))
+        .mul(smoothstep(0.2, 0.4, ldr.r.sub(ldr.g).div(mx)))
+        .mul(smoothstep(0.02, 0.12, mx))
       ldr = mix(vec3(l2), ldr, mix(grade.saturation, grade.warmSaturation, warmth)).max(0)
       ldr = sRGBTransferOETF(ldr)
       // Contrast around mid-grey, then the lifted teal floor of a night film print.
-      ldr = ldr.sub(0.42).mul(grade.contrast).add(0.42).clamp()
+      ldr = ldr.sub(0.42).mul(grade.contrast).add(0.42).max(0)
+      // Hue-preserving clip: scale the colour back into range by its largest channel instead of clamping each.
+      ldr = ldr.div(max(max(ldr.r, ldr.g), ldr.b).max(1))
       // Grade curve: gamma on the mids (after contrast), keeping black and white points.
       ldr = ldr.pow(grade.gamma)
       const liftCol = vec3(0.55, 1.05, 1.0).mul(grade.lift)

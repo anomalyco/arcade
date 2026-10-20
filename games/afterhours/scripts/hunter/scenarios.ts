@@ -2,7 +2,7 @@
 // player with real key presses along nav routes (an autopilot turns the view), and checks what the hunter does.
 //
 //   bun scripts/hunter/scenarios.ts                 # all
-//   bun scripts/hunter/scenarios.ts noise stairs    # some: noise sight escape door stairs lift below
+//   bun scripts/hunter/scenarios.ts noise stairs    # some: noise sight escape door stairs sprint lift below
 //
 // Writes captures/hunter/scenario-<name>.png (top-down trace) and prints a PASS/FAIL line per check.
 import { mkdirSync, writeFileSync } from "node:fs"
@@ -84,7 +84,7 @@ async function until(pred: string, timeoutS: number) {
   return -1
 }
 async function reset(cx: number, cz: number, cs: number, heading: number, hold = 9999) {
-  await setH(`h.release(); h.spawn(${cx}, ${cz}, ${cs}); h.grace = 0; h.heading = ${heading}; h.hold(${hold}); h.heard.length = 0; h.heat.length = 0; h.memory = null; h.awareness = 0`)
+  await setH(`h.release(); h.spawn(${cx}, ${cz}, ${cs}); h.grace = 0; h.heading = ${heading}; h.hold(${hold}); h.heard.length = 0; h.heat.length = 0; h.memory = null; h.awareness = 0; h.catches = 0`)
 }
 async function lights(page: Page, on: boolean) {
   await inPage(page, ({ P }, on: boolean) => {
@@ -95,20 +95,21 @@ async function lights(page: Page, on: boolean) {
 
 // ------------------------------------------------------------------------------------------------ noise
 if (run("noise")) {
-  console.log("\n# noise attracts it (storey 2 linoleum corridor; crouch-walking 10–12 m away is unheard, running is heard)")
+  console.log("\n# noise attracts it (storey 2 linoleum corridor: crouch-walking 8–10 m off unheard, walking closer heard → investigate)")
   await place(page, -10, Y(2), 0, -Math.PI / 2)
   await reset(-20, 0, 2, Math.PI)
   const since = await hTime()
-  await pilot(-8, 0, "crouch", 6)
+  await pilot(-11.5, 0, "crouch", 6)
   const quiet = await hunterState(page)
   check(quiet.mode === "roam", `crouch-walk unheard: mode ${quiet.mode}`)
-  await pilot(0, 0, "run", 6)
-  const heard = await until(`h.mode === "investigate"`, 3)
+  await pilot(-15, 0, "walk", 6)
+  const heard = await until(`h.heard.some((e) => e.heard && e.e.kind === "step") && h.mode !== "roam"`, 3)
   const st = await hunterState(page)
   const goal = await inPage(page, ({ H }) => H.hunter.goal)
-  check(heard >= 0, `running heard → investigate (${st.mode}), goal ${goal ? `${goal.x.toFixed(1)},${goal.z.toFixed(1)}` : "-"}, player at ${st.player.x},${st.player.z}`)
+  check(heard >= 0, `walking within ~6 m heard → reacts (${st.mode}), goal ${goal ? `${goal.x.toFixed(1)},${goal.z.toFixed(1)}` : "-"}, player at ${st.player.x},${st.player.z}`)
   const arrived = await until(`Math.hypot(h.pos.x - (${st.player.x}), h.pos.z - (${st.player.z})) < 6`, 25)
   check(arrived >= 0, `went to the noise (${arrived.toFixed(1)} s)`)
+  await setH(`h.release(); h.hold(9999)`)
   await trace("noise", 2, since)
 }
 
@@ -133,30 +134,26 @@ if (run("sight")) {
 
 // ------------------------------------------------------------------------------------------------ escape
 if (run("escape")) {
-  console.log("\n# breaking line of sight and crouching escapes (storey 0: spine → link → lobby → 0-38, crouched in the dark)")
+  console.log("\n# breaking line of sight and going quiet escapes (storey 1: seen in the spine, sprint, duck into the cubicles, crouch)")
   await inPage(page, ({ H }) => (H.handle.hunter.ctx.settings["hunter.searchTime"] = 25))
-  await place(page, -12, Y(0), 0, -Math.PI / 2)
-  await reset(-30, 0, 0, Math.PI / 2)
+  await place(page, -6, Y(1), 0, Math.PI / 2)
+  await reset(-24, 0, 1, Math.PI / 2)
   const since = await hTime()
   await lights(page, true)
-  await sleep(300)
-  const p = pilot(0, 0.2, "run", 8)
   const t = await until(`h.mode === "hunt"`, 4)
-  await p
   check(t >= 0, `hunt began (${t.toFixed(2)} s)`)
+  // Away east down the spine, then off it among the cubicle pods; torch off, crouched and still behind a panel.
+  await pilot(5, 0.3, "run", 6)
   await lights(page, false)
-  // Round the corner into the link, on through the lobby into the security office, then crouch in its far corner.
-  await pilot(0, 11, "run", 6)
-  await pilot(10.5, 14, "run", 6)
-  await pilot(16.2, 20.6, "crouch", 14)
+  await pilot(7.6, 9.4, "crouch", 12)
   await keys(["KeyC"], true)
-  const lost = await until(`h.mode === "search"`, 15)
-  check(lost >= 0, `lost: search after ${lost.toFixed(1)} s`)
-  const gaveUp = await until(`h.mode === "roam" || h.catches > 0`, 45)
+  const lost = await until(`h.mode === "search" || h.catches > 0`, 20)
+  check(lost >= 0 && (await hunterState(page)).catches === 0, `lost: search after ${lost.toFixed(1)} s`)
+  const gaveUp = await until(`h.mode === "roam" || h.mode === "ambush" || h.catches > 0`, 45)
   await keys(["KeyC"], false)
   const st = await hunterState(page)
   check(gaveUp >= 0 && st.catches === 0, `escaped: ${st.catches} catches, mode ${st.mode}`)
-  await trace("escape", 0, since)
+  await trace("escape", 1, since)
   await inPage(page, ({ H }) => (H.handle.hunter.ctx.settings["hunter.searchTime"] = 35))
 }
 
@@ -180,17 +177,18 @@ if (run("door")) {
     await inPage(page, ({ D }, id: string) => D.get(id).open(), room.door)
     await place(page, room.dx + 3, Y(3), 0, Math.PI / 2)
     await sleep(2500)
-    // It is down the corridor, looking away (south); a few running steps bring it.
-    await reset(room.dx - 14, 0, 3, 0)
+    // It is far down the corridor; the player walks in, shuts the door and crouches in the far corner (dark).
+    await reset(room.dx - 24, 0, 3, -Math.PI / 2)
     const since = await hTime()
-    await pilot(room.dx + 0.3, -0.4, "run", 4)
-    const t = await until(`h.mode === "investigate"`, 4)
-    check(t >= 0, `heard the steps → investigate (${t.toFixed(2)} s)`)
     await pilot(room.dx, room.dz - 1.4, "walk", 4)
     await inPage(page, ({ D }, id: string) => D.get(id).close(), room.door)
     const corner = { x: room.rect.x0 + 0.9, z: room.rect.z0 + 0.9 }
     await pilot(corner.x, corner.z, "crouch", 25)
     await keys(["KeyC"], true)
+    // Something clatters at the door (the player's own noise, say): it comes to look.
+    await inPage(page, ({ H }, d: number[]) => H.noise({ x: d[0], y: 0.15 + 3 * 3.8, z: d[1] + 0.8 }, 30, "knock"), [room.dx, room.dz])
+    const t = await until(`h.heard.some((e) => e.heard && e.e.kind === "knock")`, 4)
+    check(t >= 0, `heard the noise at the door (${t.toFixed(2)} s)`)
     const st0 = await hunterState(page)
     console.log(`  hidden at ${st0.player.x},${st0.player.z}; hunter ${st0.mode} at ${st0.x},${st0.z}`)
     // It comes to the noise, checks round it, and moves on.
@@ -223,6 +221,54 @@ if (run("stairs")) {
   const down = await until(`h.s === 1 && Math.abs(h.pos.y - 3.95) < 0.2`, 60)
   check(down >= 0, `back down to storey 1 (${down.toFixed(1)} s)`)
   await trace("stairs", 2, since)
+}
+
+// ------------------------------------------------------------------------------------------------ sprint
+if (run("sprint")) {
+  console.log("\n# sprinting is heard across floors (creature on storey 0; the player walks, then sprints back and forth, on storey 3)")
+  await place(page, -32, Y(3), 0, -Math.PI / 2)
+  await reset(-25, 0, 0, Math.PI / 2)
+  const since = await hTime()
+  // Walking the storey-3 spine: unheard three floors down.
+  await pilot(-20, 0, "walk", 10)
+  const walked = await hunterState(page)
+  check(walked.mode === "roam", `walking on storey 3 unheard from storey 0 (mode ${walked.mode})`)
+  // Sprinting the storey-3 spine, back and forth, as a player tearing through the halls would.
+  const t0 = Date.now()
+  let running = true
+  const sprint = (async () => {
+    for (let leg = 0; running && leg < 12; leg++) await pilot(leg % 2 ? -30 : 12, 0, "run", 12)
+  })()
+  const heard = await until(`h.mode === "hunt"`, 6)
+  check(heard >= 0, `sprint heard from three floors down → hunt (${heard.toFixed(2)} s)`)
+  // Speed on the stair (on all fours, at rush speed).
+  await inPage(page, ({ H }) => {
+    const g = globalThis as unknown as { __stair: { v: number; quad: number; n: number } }
+    g.__stair = { v: 0, quad: 0, n: 0 }
+    const f = () => {
+      const h = H.hunter
+      if (h.pos.x < -39.5 && h.pos.z > 18.7 && h.mode === "hunt") {
+        g.__stair.v = Math.max(g.__stair.v, Math.hypot(h.vel.x, h.vel.z))
+        g.__stair.n++
+        if (h.stance === "quad") g.__stair.quad++
+      }
+      if (h.s < 3 || h.pos.z > 16) requestAnimationFrame(f)
+    }
+    requestAnimationFrame(f)
+  })
+  const up = await until(`h.s === 3 && Math.abs(h.pos.y - ${Y(3)}) < 0.2`, 40)
+  const tUp = (Date.now() - t0) / 1000
+  check(up >= 0 && tUp < 30, `reached storey 3 ${tUp.toFixed(1)} s after the sprint began (target well under 30 s)`)
+  const stair = await inPage(page, () => (globalThis as unknown as { __stair: { v: number; quad: number; n: number } }).__stair)
+  check(stair.n > 0 && stair.quad === stair.n && stair.v > 4, `stairs on all fours at speed (max ${stair.v.toFixed(1)} m/s, quad ${stair.quad}/${stair.n} samples)`)
+  const caught = await until(`h.catches > 0`, 40)
+  const tCaught = (Date.now() - t0) / 1000
+  running = false
+  await inPage(page, () => ((globalThis as unknown as { __pilot: { done: boolean } }).__pilot.done = true))
+  await sprint
+  check(caught >= 0, `sprinting is not safe: caught ${tCaught.toFixed(1)} s after the sprint began`)
+  await trace("sprint", 3, since)
+  await setH(`h.release(); h.hold(9999)`)
 }
 
 // ------------------------------------------------------------------------------------------------ lift

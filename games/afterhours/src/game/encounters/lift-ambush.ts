@@ -6,12 +6,16 @@ import { CORE } from "../../world/layout"
 import { FLOOR_Y, STOREY_H } from "../../world/interior/api"
 import { createWendigo, type Wendigo } from "../../creatures/wendigo"
 import { audio } from "../../audio/context"
+import { aimBone } from "../../creatures/kit/ik"
 
 // The lift ambush (the first Wendigo beat). Once the player has been in the radio room (3-08), riding the lift is
-// fatal: when the car levels at any floor and its doors start to open, the Wendigo is already standing in that floor's
-// lift lobby, upright, stooped under the 2.9 m ceiling, facing the doors. A held beat once the doors are open far
-// enough to see it, then the scream and the lunge: the skull and antlers rush into the lens, the camera shakes and
-// jolts, the screen floods red, and the death screen (src/game/death) takes over.
+// fatal, but nothing says so: the ride and the doors opening are perfectly normal and the lobby looks empty. The
+// Wendigo is out of sight beside the opening (flat against the lobby wall, never drawn until it moves). The moment
+// the player steps out over the threshold (or, if they wait inside, a short random delay after the doors are fully
+// open, or as soon as they try to close them) it comes in from the side: the skull fills the view in ~0.25 s, the
+// scream hits on the same frame, a hard jolt, the red flood, the death screen (src/game/death). No camera takeover,
+// no held beat, no hidden HUD: the player has control until the hit.
+// (The hunter's catch, `killFrom`, keeps its short turn-and-beat version.)
 //
 // The creature, its shaders and the scream are loaded and warmed when the player first enters 3-08, so the scare
 // never hitches. Automation: `__ashwoodAmbush` (state, `arm()`, `trigger(storey)`).
@@ -36,7 +40,14 @@ export type AmbushHooks = {
   onAmbush?: () => void
 }
 
-export type AmbushPhase = "idle" | "loading" | "armed" | "waiting" | "beat" | "lunge" | "dead"
+export type AmbushPhase = "idle" | "loading" | "armed" | "lurk" | "pounce" | "waiting" | "beat" | "lunge" | "dead"
+/** Seconds the skull takes from beside the door into the lens. */
+const _dn = new THREE.Vector3(0, -0.12, 0)
+const POUNCE_S = 0.35
+/** Where the neck joint ends up in front of the eye (m); the skull, snout first, reaches to ~0.15 m. */
+const END_D = 0.85
+/** The landing doors' lobby face (the threshold the player steps over). */
+const THRESHOLD_Z = 19.45
 
 export function startLiftAmbush(g: GameContext, hooks: AmbushHooks) {
   const { scene, camera, flow, world } = g
@@ -120,32 +131,66 @@ export function startLiftAmbush(g: GameContext, hooks: AmbushHooks) {
   /** What killed the player this time ("lift" or "hunter"), for automation. */
   let cause = ""
 
-  /** Places it in the lobby of storey `s`, upright and stooped, facing the doors, and takes the camera. */
+  let waitLeft = Infinity
+  const from = new THREE.Vector3()
+  const to = new THREE.Vector3()
+  const want = new THREE.Vector3()
+  const fwd = new THREE.Vector3()
+  const side = new THREE.Vector3()
+
+  /** The car has levelled at storey `s` with the doors opening: it waits beside them, unseen. */
   const trigger = (s: number) => {
     if (!wendigo || phase !== "armed") return false
     storey = s
     ground = floorY(s)
     stance = "biped"
-    beat = BEAT
     cause = "lift"
-    phase = "waiting"
+    phase = "lurk"
+    waitLeft = Infinity
     t = 0
-    stats.ambushAt = performance.now()
-    flow.hold = true
-    g.player.release()
-    // Nothing on screen but the doors: the stop list, prompts, hints and the objective go.
-    hud(true)
     const w = wendigo
     const a = w.animator!
     a.stoop = 1
     a.lungeStop = 0.15
+    w.root.visible = false
     w.root.position.set(DOOR_X, ground, STAND_Z)
-    w.root.rotation.set(0, 0, 0)
-    w.root.visible = true
-    // Snap straight into the upright, stooped pose (no visible rise), and let the springs settle.
-    for (let i = 0; i < 60; i++) w.update(1 / 30, { mode: "idle", stance: "biped", target: camera.position })
-    camBase.copy(camera.position)
+    for (let i = 0; i < 40; i++) w.update(1 / 30, { mode: "idle", stance: "biped" })
     return true
+  }
+
+  /**
+   * It comes from beside the opening (the side the view points away from), already in the air: it appears ~2.8 m out
+   * and 30° off centre, face first, and rushes straight at the eye.
+   */
+  const pounce = () => {
+    phase = "pounce"
+    t = 0
+    stats.ambushAt = performance.now()
+    const eye = camera.position
+    camera.getWorldDirection(fwd)
+    fwd.y = 0
+    fwd.normalize()
+    side.set(-fwd.z, 0, fwd.x)
+    const sgn = eye.x > DOOR_X ? -1 : 1
+    const a = 0.55 * sgn
+    from.set(fwd.x * Math.cos(a) - fwd.z * Math.sin(a), 0, fwd.x * Math.sin(a) + fwd.z * Math.cos(a)).multiplyScalar(2.8).add(eye)
+    from.x = Math.min(CORE.liftLobby.max[0] - 0.3, Math.max(CORE.liftLobby.min[0] + 0.3, from.x))
+    from.z = Math.min(from.z, THRESHOLD_Z - 0.3)
+    from.y = eye.y - 0.05
+    const w = wendigo!
+    // On all fours, head low and forward: the skull leads, the body springs up behind it, the antlers trail.
+    stance = "quad"
+    w.animator!.stoop = 0
+    w.animator!.snapStance("quad")
+    w.root.rotation.set(0, Math.atan2(eye.x - from.x, eye.z - from.z), 0)
+    w.root.position.set(from.x, ground, from.z)
+    w.update(1 / 60, { mode: "lunge", stance, target: eye, velocity: vel.set(0, 0, 0) })
+    w.root.visible = true
+    w.setShade(1)
+    // Cold key from just above the eye: the pale skull pops against the dark lobby.
+    killLight.intensity = 10
+    killLight.distance = 4
+    playScream()
   }
 
   const offArrive = liftEvents.on((e, s) => {
@@ -201,9 +246,67 @@ export function startLiftAmbush(g: GameContext, hooks: AmbushHooks) {
     stats.frameMs.push(Math.round(dt * 1000))
     t += dt
     const w = wendigo
-    const doorT = liftEvents.state?.()?.doorT ?? 1
+    const lift = liftEvents.state?.()
+    const doorT = lift?.doorT ?? 1
     w.root.updateMatrixWorld(true)
     w.rig!.byName.get("head")!.getWorldPosition(head)
+    if (phase === "lurk") {
+      // Unseen beside the doors until the player steps out, waits too long, or tries to shut the doors.
+      const eye = camera.position
+      const out = eye.z < THRESHOLD_Z && Math.abs(eye.y - (ground + 1.6)) < 1.2
+      if (doorT >= 0.999 && waitLeft === Infinity) waitLeft = 0.8 + Math.random() * 1.7
+      waitLeft -= dt
+      if (out || waitLeft <= 0 || lift?.phase === "closing") pounce()
+      else return
+    }
+    if (phase === "pounce") {
+      // The skull from beside the door into the lens in POUNCE_S, easing in hard (it's already at speed when seen).
+      if (api.freezeAt !== null && t / POUNCE_S >= api.freezeAt) t = api.freezeAt * POUNCE_S
+      const k = Math.min(1, t / POUNCE_S)
+      const e = 1 - (1 - k) ** 2
+      to.copy(camera.position).addScaledVector(fwd, END_D)
+      to.y -= 0.05
+      want.lerpVectors(from, to, e)
+      vel.subVectors(want, head).divideScalar(Math.max(dt, 1e-3))
+      vel.y = 0
+      w.update(dt, { mode: "lunge", stance, target: camera.position, velocity: vel })
+      w.root.updateMatrixWorld(true)
+      w.rig!.byName.get("head")!.getWorldPosition(head)
+      // Place the body so the skull is on its path (the feet leave the floor: it springs).
+      w.root.position.add(vel.subVectors(want, head))
+      w.root.position.y = Math.max(ground, Math.min(ground + 0.9, w.root.position.y))
+      w.root.rotation.y = Math.atan2(camera.position.x - want.x, camera.position.z - want.z)
+      // Face first: the skull's snout points into the lens (the antlers trail above and behind it), jaw wide.
+      w.root.updateMatrixWorld(true)
+      const rig = w.rig!
+      const hi = rig.bones.indexOf(rig.byName.get("head")!)
+      rig.byName.get("head")!.getWorldPosition(head)
+      aimBone(rig, hi, look.subVectors(camera.position, head).add(_dn))
+      const dist = want.distanceTo(camera.position)
+      // Only the last few centimetres dim (so the contact frame never burns out); the key light does the rest.
+      const sh = Math.min(1, Math.max(0, (dist - END_D) / 0.8))
+      w.setShade(0.6 + 0.4 * sh)
+      if (k >= 1) {
+        // The hit: control ends here.
+        phase = "dead"
+        flow.hold = true
+        g.player.release()
+        camBase.copy(camera.position)
+        jolt = 1
+        hooks.flood()
+        w.update(1 / 60, { mode: "freeze" })
+        let n = 0
+        const hit = () => {
+          n++
+          jolt *= 0.84
+          applyShake(3.5 * jolt)
+          if (n < 22) requestAnimationFrame(hit)
+          else hooks.onKill()
+        }
+        requestAnimationFrame(hit)
+      }
+      return
+    }
     if (phase === "waiting") {
       w.update(dt, { mode: "idle", stance: "biped", target: camera.position })
       // Turn the view to the doors as they open (the player looks up from the panel).
@@ -307,6 +410,7 @@ export function startLiftAmbush(g: GameContext, hooks: AmbushHooks) {
       wendigo.root.visible = false
       wendigo.setShade(1)
       killLight.intensity = 0
+      killLight.distance = 6
       wendigo.animator!.stoop = 0
       wendigo.animator!.lungeStop = 3
     }
@@ -316,6 +420,12 @@ export function startLiftAmbush(g: GameContext, hooks: AmbushHooks) {
   const api = {
     get phase() {
       return phase
+    },
+    /** Automation: hold the pounce at this fraction (0..1) for a still; null runs it. */
+    freezeAt: null as number | null,
+    /** Automation: is the creature drawn right now. */
+    get visible() {
+      return !!wendigo?.root.visible
     },
     stats,
     preload,

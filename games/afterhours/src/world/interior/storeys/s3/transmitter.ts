@@ -3,7 +3,7 @@ import { keyPromptHtml } from "@arcade/kit/client/key-cap"
 import { hooks } from "../../../../audio/hooks"
 import type { LoopVoice } from "../../../../audio/engine"
 import { SFX, type SfxId } from "../../../../audio/sfx-manifest"
-import { playCarDestroyed, playerVoice } from "../../../../audio/story"
+import { playCarDestroyed, playerVoice, playLine, preloadLines } from "../../../../audio/story"
 import { showSubtitle } from "../../../../game/shell/subtitles"
 import { type Builder, CEIL_Y, FLOOR_Y, M, T, paint, yawToward } from "../../api"
 import { type BloodSpot, HAND_SIZE, bloodMesh } from "../../blood"
@@ -238,11 +238,13 @@ export function transmitterRack(b: Builder): RadioRoom {
       hum.at(c.x, c.y + b.oy, c.z)
     }
     transmitter.set("warming")
+    preloadLines([playerVoice("call-player"), "story-call-reply"])
   }
   const transmit = () => {
     if (transmitter.phase !== "on") return
     callAt = now
     call = buildCall()
+    preloadLines(call.lines.map((l) => l.sfx ?? null))
     fired.clear()
     body()?.interact?.("button", { x: micWorld.x, y: micWorld.y - 0.14, z: micWorld.z + 0.02 })
     hooks.sfx?.play("light-switch", { bus: "doors", pos: { x: micWorld.x, y: micWorld.y, z: micWorld.z }, ref: 1.5, gain: 0.8, rate: 1.4 })
@@ -322,7 +324,7 @@ export function transmitterRack(b: Builder): RadioRoom {
         if (!shot) showSubtitle(l.who, l.text, l.dur)
         if (l.static) staticBurst(l.static, l.who === "COUNTY" ? 0.7 : 0.9)
         // The player's own voice is close (the mic is at their mouth); County comes out of the receiver.
-        if (l.sfx) hooks.sfx?.play(l.sfx, l.who === "YOU" ? { bus: "horror", pos: { x: cam.position.x, y: cam.position.y, z: cam.position.z }, ref: 1.2, occlude: false } : { bus: "horror", pos: RX, ref: 2, rolloff: 0.6 })
+        if (l.sfx) playLine(l.sfx, l.who === "YOU" ? { bus: "horror", pos: { x: cam.position.x, y: cam.position.y, z: cam.position.z }, ref: 1.2, occlude: false } : { bus: "horror", pos: RX, ref: 2, rolloff: 0.6 })
       })
       if (ct > call.end) transmitter.set("transmitted")
     }

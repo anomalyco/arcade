@@ -1154,10 +1154,10 @@ export const SFX: Record<SfxId, SfxEntry> = {
     "stereo": false,
     "variants": [
       {
-        "url": "sfx/story-call-reply/v5.ogg",
-        "duration": 10.536,
-        "hit": 5.048,
-        "from": "story-call-reply/v5"
+        "url": "sfx/story-call-reply/v7.ogg",
+        "duration": 7.473,
+        "hit": 0.339,
+        "from": "story-call-reply/v7"
       }
     ]
   },

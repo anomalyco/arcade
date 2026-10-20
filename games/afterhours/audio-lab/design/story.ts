@@ -42,13 +42,14 @@ export const FINAL_LINE3: Record<string, string> = {
 }
 const finalScript = (id: string) =>
   `[shaken, trying to hold it together] County, County, this is Ashwood Outpost, do you read? [breath] I'm up at the station and they're... they're all [voice tightens] dead. Four of them. ${FINAL_LINE3[id]} [pleading] Please, I need somebody out here.`
+const REPLY_PLAIN = "Ashwood, County dispatch, copy. Units are on the way, I need you to stay right where you are. Do not move."
 const REPLY_FINAL = "Ashwood, County dispatch, copy. Units are on the way. I need you to stay right where you are. Do not move."
 const REPLY_FINAL_TAGGED = "[tired, 3 a.m., professional] Ashwood, County dispatch, copy. [clipped, serious] Units are on the way. I need you to stay right where you are. [flat, firm] Do not move."
 const REPLY_NEW = "Copy, Ashwood. We are dispatching units. Stay where you are. Do NOT move."
 const REPLY_NEW_TAGGED = "[flat, procedural, authoritative] Copy, Ashwood. We are dispatching units. Stay where you are. [firm, emphatic] Do NOT move."
 
 type Mode = "radio" | "broken" | "dispatch"
-type Take = { voice: string; name: string; text: string; settings: Record<string, number | boolean>; variant?: string; mode?: Mode; fit?: number; model?: string }
+type Take = { voice: string; name: string; text: string; settings: Record<string, number | boolean>; variant?: string; mode?: Mode; fit?: number; model?: string; softEnd?: boolean }
 
 // Round 4 of the radio call (Aiden: the v3 tags and the pause trimming read "AI"): eleven_multilingual_v2, low
 // stability, high style, continuous text with commas and one restart, no post-hoc edits. One male and one female
@@ -153,6 +154,10 @@ const LINES: Line[] = [
       // Round 4: final copy (option 1b).
       { voice: "pqHfZKP75CvOlQylNhV4", name: "Bill", text: REPLY_FINAL_TAGGED, settings: { stability: 0.5 }, mode: "dispatch", variant: "v5" },
       { voice: "pqHfZKP75CvOlQylNhV4", name: "Bill", text: REPLY_FINAL_TAGGED, settings: { stability: 1 }, mode: "dispatch", variant: "v6" },
+      // Round 5 (owner: "his voice sucks"): a tired small-town sheriff's dispatcher at 3 a.m., middle-aged, slightly
+      // gravelly, unhurried and human. Library voices, eleven_multilingual_v2, plain text, no tags or edits.
+      { voice: "8hmpa25DrgOJjzYgU64z", name: "Jay (library: Midwest, gravel, grounded)", text: REPLY_PLAIN, settings: { stability: 0.4, similarity_boost: 0.75, style: 0.35, use_speaker_boost: true }, model: "eleven_multilingual_v2", mode: "dispatch", variant: "v7", softEnd: true },
+      { voice: "0l6EZBgVj5gBcvxdAQTR", name: "Joe Scott (library: deep, gravelly, authentic)", text: REPLY_PLAIN, settings: { stability: 0.4, similarity_boost: 0.75, style: 0.35, use_speaker_boost: true }, model: "eleven_multilingual_v2", mode: "dispatch", variant: "v8" },
     ],
   },
 ]
@@ -218,7 +223,11 @@ function voiced(x: D.Mono) {
 
 /** Heavier dispatcher treatment: narrow band, hard compression and saturation, AM crackle and flutter, carrier hiss,
  *  two brief dropouts, squelch burst and key click in, roger beep and squelch tail out. */
-function dispatch(clean: D.Mono, r: D.Rng, k: number): D.Mono {
+/** A quiet, crackle-free squelch tail: soft attack, short decay (no click or thump at the end of the clip). */
+const softTail = (r: D.Rng) => D.envelope(D.filter(narrowNoise(0.32, r), "lowpass", 2400), [[0, 0], [0.03, 1], [0.1, 0.6], [0.32, 0]])
+const narrowNoise = (s: number, r: D.Rng) => D.filter(D.filter(D.noise(s, r), "highpass", 400), "lowpass", 2800)
+
+function dispatch(clean: D.Mono, r: D.Rng, k: number, softEnd = false): D.Mono {
   const narrow = (x: D.Mono) => D.filter(D.filter(D.filter(D.filter(x, "highpass", 400), "highpass", 400), "lowpass", 2800), "lowpass", 2800)
   let v = narrow(D.trim(clean, 50))
   v = compress(D.drive(D.peakNorm(v, 0.9), 4), -30, 8, 14)
@@ -241,8 +250,11 @@ function dispatch(clean: D.Mono, r: D.Rng, k: number): D.Mono {
   v = narrow(y)
   const L = D.dur(v)
   const pre = 0.32
-  const hiss = D.gain(narrow(D.noise(L + pre + 0.6, r)), 0.06)
-  const crackle = D.gain(staticBurst(L + pre + 0.6, r, 1.5), 0.03)
+  const bedLen = L + pre + 0.6
+  // With a soft end the beds fade out under the tail (crackle stops with the voice) so nothing pops at the very end.
+  const fadeOut = (x: D.Mono, until: number) => (softEnd ? D.envelope(x, [[0, 1], [until - 0.35, 1], [until, 0]]) : x)
+  const hiss = fadeOut(D.gain(narrow(D.noise(bedLen, r)), 0.06), bedLen - 0.05)
+  const crackle = fadeOut(D.gain(staticBurst(bedLen, r, 1.5), 0.03), softEnd ? L + 0.05 : bedLen)
   const beep = D.toMono(D.mix([{ x: D.tone(0.09, () => 1200, [[0, 0], [0.005, 1], [0.085, 1], [0.09, 0]]) }, { x: D.tone(0.09, () => 1600, [[0, 0], [0.005, 1], [0.085, 1], [0.09, 0]]), at: 0.09 }]))
   return D.toMono(
     D.mix([
@@ -251,8 +263,8 @@ function dispatch(clean: D.Mono, r: D.Rng, k: number): D.Mono {
       { x: hiss, at: 0.05 },
       { x: crackle, at: 0.05 },
       { x: v, at: pre },
-      ...(k === 0 ? [{ x: beep, at: pre + L + 0.08, gain: 0.25 }] : []),
-      { x: squelch(r), at: pre + L + (k === 0 ? 0.28 : 0.06), gain: 0.8 },
+      ...(k === 0 && !softEnd ? [{ x: beep, at: pre + L + 0.08, gain: 0.25 }] : []),
+      softEnd ? { x: softTail(r), at: pre + L + 0.05, gain: 0.12 } : { x: squelch(r), at: pre + L + (k === 0 ? 0.28 : 0.06), gain: 0.8 },
     ]),
   )
 }
@@ -299,6 +311,8 @@ function radio(clean: D.Mono, r: D.Rng, broken: boolean): D.Mono {
 const mono2 = (x: D.Mono): D.Stereo => [x, x.slice()]
 
 const processOnly = process.argv.includes("--process")
+/** `--only story-call-reply/v7`: restrict the run (with --process: re-render just that take). */
+const only = process.argv.includes("--only") ? process.argv[process.argv.indexOf("--only") + 1] : null
 const m = await loadManifest()
 const story = LINES.flatMap((l) => [
   { id: l.id, group: "story", subgroup: l.subgroup ?? "Radio-room call", label: `${l.label} — radio`, intent: l.intent, loop: false, designed: true as const },
@@ -319,9 +333,10 @@ for (const line of LINES) {
     const cleanCat = story.find((c) => c.id === `${line.id}-clean`)!
     // Archived takes (taken off the page) are never regenerated or re-processed.
     const gone = (f: string) => (m.archived ?? []).some((a) => a.archivedFrom === f)
+    if (only && `${line.id}/${variant}` !== only) continue
     if (gone(radioFile) && (gone(cleanFile) || !m.sounds.some((s) => s.file === cleanFile))) continue
-    if (!existsSync(join(ROOT, cleanFile))) {
-      if (processOnly || gone(cleanFile)) continue
+    if (!existsSync(join(ROOT, cleanFile)) && !gone(cleanFile)) {
+      if (processOnly) continue
       const { audio, cost } = await tts(t.voice, t.text, t.settings, t.model)
       spent += Number.isFinite(cost) ? cost : 0
       m.totalCost += Number.isFinite(cost) ? cost : 0
@@ -342,7 +357,10 @@ for (const line of LINES) {
     if (!processOnly && existsSync(join(ROOT, radioFile)) && m.sounds.some((s) => s.file === radioFile)) continue
     // Process from the untouched TTS take.
     const raw = join(ROOT, cleanFile.replace(/^sfx\//, "sfx-raw/"))
-    let clean = await D.load(existsSync(raw) ? raw : join(ROOT, cleanFile))
+    // The clean take may be archived off the page (sfx/_previous/<cat>/raw/…); render from the untouched TTS file.
+    const archivedClean = (m.archived ?? []).find((a) => a.archivedFrom === cleanFile)
+    const archivedRaw = archivedClean ? join(ROOT, archivedClean.file.replace(/\/([^/]+)$/, "/raw/$1")) : ""
+    let clean = await D.load(existsSync(raw) ? raw : existsSync(join(ROOT, cleanFile)) ? join(ROOT, cleanFile) : existsSync(archivedRaw) ? archivedRaw : join(ROOT, archivedClean!.file))
     let edit = ""
     if (t.fit) {
       const before = D.dur(D.trim(clean, 50))
@@ -353,13 +371,13 @@ for (const line of LINES) {
     }
     const mode: Mode = t.mode ?? (line.id === "story-call-reply" ? "broken" : "radio")
     const rr = D.rng(7 + k * 31 + line.id.length)
-    const out = mode === "dispatch" ? dispatch(clean, rr, k % 2) : radio(clean, rr, mode === "broken")
+    const out = mode === "dispatch" ? dispatch(clean, rr, k % 2, t.softEnd) : radio(clean, rr, mode === "broken")
     await D.save(join(ROOT, radioFile), mono2(D.peakNorm(out, 0.89)))
     const entry: ManifestSound = {
       category: line.id, group: "story", variant,
       prompt:
         mode === "dispatch"
-          ? `Dispatcher radio: ${cleanFile.replace("sfx/", "")} band-passed 400 Hz–2.8 kHz, saturated, compressed 8:1, crushed, AM flutter and crackle, carrier hiss, two dropouts, squelch burst and key click in, ${k % 2 === 0 ? "roger beep and " : ""}squelch tail out. Voice ${t.name}.`
+          ? `Dispatcher radio: ${cleanFile.replace("sfx/", "")} band-passed 400 Hz–2.8 kHz, saturated, compressed 8:1, crushed, AM flutter and crackle, carrier hiss, two dropouts, squelch burst and key click in, ${t.softEnd ? "a soft, quiet squelch tail out (no beep, no click)." : `${k % 2 === 0 ? "roger beep and " : ""}squelch tail out.`} Voice ${t.name}.`
           : `${mode === "broken" ? "Radio, broken up" : "Radio handset"}: ${cleanFile.replace("sfx/", "")} band-passed 300 Hz–3 kHz (24 dB/oct), driven, compressed${mode === "broken" ? " 4:1" : " 5:1 (breaths brought up)"}, light crush, key-up click, static bed and squelch tail${mode === "broken" ? ", dropouts and static bursts between words" : ""}. Voice ${t.name}.${edit} Script: ${t.text}`,
       duration: +(out.length / D.SR).toFixed(2), influence: 0, loop: false, file: radioFile, bytes: 0, cost: 0, generatedAt: new Date().toISOString(),
       designed: true, sources: [cleanFile.replace("sfx/", "")],

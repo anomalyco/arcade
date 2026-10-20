@@ -27,6 +27,8 @@ import { type RadioRoom, transmitterRack } from "./transmitter"
 const Y3 = FLOOR_Y + storeyY(3) - storeyY(0)
 /** The warning blotter on the operator desk, under Kessler's head and arms (world x/z). */
 const BLOTTER = { x: 8.27, z: -13.85 }
+/** The note under Kessler's head and folded arms (world x/z, on the blotter). */
+const NOTE = { x: 8.4, z: -13.68 }
 /** Where Kessler lies after he's pushed off the desk (body centre, world x/z). */
 const OPERATOR_FLOOR = { x: 9.95, z: -12.8 } // clear of the chair base (its feet towards it)
 /** Operator desk top (lewis's slump-chair pose wants 0.79) and the office chair under him. */
@@ -241,22 +243,24 @@ export function stageListeningRoom(s: S3): (t: number) => void {
   const tx = transmitterRack(b)
   const bodies = streamBodies(b, tx)
   // The warning on the blotter under Kessler, shown when he's moved (marker on the desk blotter, his blood on it).
-  const warn = documentMesh([{ id: "blotter_warning", position: [BLOTTER.x, DESK_Y, BLOTTER.z], normal: [0, 1, 0], rotation: -0.03, offset: 0.0055, curl: 0, pin: "none" }])
-  warn.name = "doc:blotter_warning"
-  // His blood on the pad (the room's blood, so it matches): where his head and forearm lay, run and dripping.
+  // A plain desk blotter (no writing) is always there. The note is a single torn sheet that lay under his head and
+  // folded arms, so it's hidden until he's moved (it only shows then); his blood smeared across it.
+  const plainPad = documentMesh([{ id: "blotter_plain", position: [BLOTTER.x, DESK_Y, BLOTTER.z], normal: [0, 1, 0], rotation: -0.03, offset: 0.0055, curl: 0, pin: "none" }])
+  plainPad.name = "doc:blotter_plain"
+  b.small.add(plainPad)
+  const warn = documentMesh([{ id: "note_dont_turn_on", position: [NOTE.x, DESK_Y, NOTE.z], normal: [0, 1, 0], rotation: 0.18, offset: 0.0085, curl: 0.04, pin: "none" }])
+  warn.name = "doc:note_dont_turn_on"
   const by = DESK_Y - b.oy
-  const padBlood = bloodMesh(
+  const noteBlood = bloodMesh(
     [
-      { kind: "smear", at: [BLOTTER.x + 0.18, by + 0.006, BLOTTER.z + 0.08], size: [0.34, 0.12], rot: 0.35, seed: 61, age: 0.8, clip: DESK_TOP, alpha: 0.85 },
-      { kind: "pool", at: [BLOTTER.x + 0.3, by + 0.006, BLOTTER.z + 0.2], size: [0.16, 0.12], rot: 1.1, seed: 62, age: 0.8, clip: DESK_TOP },
-      { kind: "hand", at: [BLOTTER.x - 0.33, by + 0.006, BLOTTER.z - 0.16], size: HAND_SIZE, rot: 2.6, seed: 63, age: 0.85, clip: DESK_TOP, alpha: 0.8 },
-      { kind: "trail", at: [BLOTTER.x, by + 0.006, BLOTTER.z + 0.24], size: [0.7, 0.08], rot: 0.1, seed: 64, age: 0.8, clip: DESK_TOP },
+      { kind: "smear", at: [NOTE.x + 0.08, by + 0.0095, NOTE.z + 0.1], size: [0.14, 0.05], rot: 0.5, seed: 61, age: 0.8, clip: DESK_TOP, alpha: 0.8 },
+      { kind: "spray", at: [NOTE.x + 0.1, by + 0.0095, NOTE.z - 0.1], size: [0.08, 0.07], seed: 62, age: 0.8, clip: DESK_TOP, alpha: 0.85 },
     ],
-    "blood:3-08-pad",
+    "blood:3-08-note",
   )
-  padBlood.position.y = b.oy
+  noteBlood.position.y = b.oy
   const pad = new THREE.Group()
-  pad.add(warn, padBlood)
+  pad.add(warn, noteBlood)
   b.small.add(pad)
   tx.setWarning(pad)
 

@@ -544,7 +544,8 @@ export function createLighting(ctx: WorldContext, player: Player) {
   const lensPos = new THREE.Vector3()
   const lensDir = new THREE.Vector3()
   const fwd2 = new THREE.Vector3()
-  const flashColor = new THREE.Color(1, 0.93, 0.82)
+  // Incandescent torch, ~3200 K at low saturation (the cookie is neutral; colour lives here).
+  const flashColor = new THREE.Color(1, 0.86, 0.7)
   let flashLevel = 0
 
   // ---------------------------------------------------------------- emitter glows

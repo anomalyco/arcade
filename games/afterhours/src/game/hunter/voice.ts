@@ -281,11 +281,15 @@ export class Voice {
 
   // ----------------------------------------------------------------------------------------- the entry
 
-  /** The far scream outside: distant, through the building's shell and floors (muffled, not occluded per wall). */
+  /**
+   * The far scream outside, by the car: heard through the building exactly as the car's crunches and alarm are
+   * (audio/story.ts: not occluded per wall, one 1500 Hz low-pass, the same reference distance), so the scream and the
+   * wreck read as one place outside, not one far off and one close by.
+   */
   farScream(p: P) {
     const sfx = hooks.sfx
     this.record("wen2-huge-scream:far", p, 1, 0, 1)
-    sfx?.play("wen2-huge-scream", { bus: "horror", pos: p, ref: 25, rolloff: 0.7, gain: 0.9, lowpass: 1100, occlude: false, rate: 0.92, jitter: 0, lowBoost: 3 })
+    sfx?.play("wen2-huge-scream", { bus: "horror", pos: p, ref: 30, rolloff: 0.5, gain: 1.0, lowpass: 1500, occlude: false, rate: 0.92, jitter: 0, lowBoost: 3 })
   }
 
   /** The lobby's glass breaking: a heavy impact, the shatter and glass raining down. */

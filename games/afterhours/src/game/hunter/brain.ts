@@ -102,6 +102,11 @@ export class Hunter {
   private visited = new Map<string, number>()
   private ambushAt = -99
   private glimpseAt = -99
+  /** Last sprint it heard (for your heading), and when it last had a fix on you by sight or a sprint. */
+  private sprintFix: Goal & { t: number } | null = null
+  private trackAt = -99
+  /** A hunt begun by hearing a sprint (it rushes, out of sight); a chase begun by sight keeps its hunt speed. */
+  private rushing = false
   private interest = 0
   private lookTarget = new THREE.Vector3()
   private searchUntil = 0
@@ -239,6 +244,7 @@ export class Hunter {
   private setMode(m: HunterMode) {
     if (m === this.mode) return
     this.mode = m
+    this.rushing = false
     this.tasks = []
     this.task = null
     this.route = null
@@ -266,7 +272,7 @@ export class Hunter {
       let z = e.z
       if (heard) {
         // Fainter → vaguer: the position heard wanders up to 3.5 m from the source.
-        const off = 0.4 + (1 - strength) * 3.1
+        const off = e.kind === "sprint" ? 0.3 + (1 - strength) * 1.2 : 0.4 + (1 - strength) * 3.1
         const a = this.rng() * Math.PI * 2
         const p = this.nav.snap(es, e.x + Math.cos(a) * off * this.rng(), e.z + Math.sin(a) * off * this.rng(), 3.5) ?? this.nav.snap(es, e.x, e.z, 3)
         if (p) {
@@ -285,6 +291,7 @@ export class Hunter {
   }
 
   private react(p: Goal, e: NoiseEvent, strength: number) {
+    if (e.kind === "sprint") return this.sprintHeard(p, e.y)
     if (this.mode === "hunt") {
       // Out of sight, a noise tells it where you went (that's fair: it heard you).
       if (this.time - this.seenAt > 0.5 && strength > 0.15 && this.memory) {
@@ -302,6 +309,40 @@ export class Hunter {
     const score = strength * (e.radius >= 10 ? 1.3 : 1)
     const threshold = this.mode === "investigate" ? Math.max(0.08, this.interest * 0.7) : 0.06
     if (score >= threshold) this.investigate(p, strength, e.kind)
+  }
+
+  /**
+   * A sprint: it knows the floor and roughly where, and comes at once, running (a hunt by sound: out of sight it rushes
+   * at `hunter.speedRush`, on all fours, the stairs included). Successive sprint fixes give it your heading, so it
+   * aims ahead of you to cut you off.
+   */
+  private sprintHeard(p: Goal, y: number) {
+    const f = this.sprintFix
+    let vx = 0
+    let vz = 0
+    const dt = f ? this.time - f.t : 0
+    if (f && f.s === p.s && dt > 0.15 && dt < 2.5) {
+      vx = (p.x - f.x) / dt
+      vz = (p.z - f.z) / dt
+      const v = Math.hypot(vx, vz)
+      if (v > 5) {
+        vx *= 5 / v
+        vz *= 5 / v
+      }
+      if (this.memory && !this.memory.seen) {
+        vx = 0.5 * vx + 0.5 * this.memory.vx
+        vz = 0.5 * vz + 0.5 * this.memory.vz
+      }
+    }
+    this.sprintFix = { x: p.x, z: p.z, s: p.s, t: this.time }
+    if (this.mode === "hunt" && this.time - this.seenAt < 0.5) return
+    this.memory = { ...p, y, t: this.time, seen: false, vx, vz }
+    this.trackAt = this.time
+    if (this.mode !== "hunt") {
+      this.note("hears a sprint")
+      this.startHunt()
+      this.rushing = true
+    } else this.repathAt = Math.min(this.repathAt, this.time + 0.15)
   }
 
   private see(dt: number) {
@@ -494,6 +535,8 @@ export class Hunter {
         const m = this.memory
         if (!m) return this.setMode("roam")
         const lost = now - this.seenAt
+        // Its latest fix on you: seen, or a sprint heard.
+        const fix = now - Math.max(this.seenAt, this.trackAt)
         const ps = this.player.state.pos
         if (lost < 0.15) {
           // In sight: straight at you when the floor allows, else re-route often.
@@ -503,17 +546,21 @@ export class Hunter {
             this.directTo({ x: ps.x, z: ps.z, s: this.s })
           } else if (now >= this.repathAt) {
             this.repathAt = now + 0.3
-            this.goTo({ x: m.x, z: m.z, s: m.s })
+            this.rechase({ x: m.x, z: m.z, s: m.s })
           }
         } else {
-          // Out of sight: on to where you were heading (a guess from your last velocity, not your position).
+          // Out of sight: on to where you were heading (a guess from your last velocity, not your position); after a
+          // sprint, ahead of you by about the time it needs to get there (cutting you off).
+          const bySound = !m.seen && fix < 3
           if (now >= this.repathAt) {
-            this.repathAt = now + 0.6
-            const k = Math.min(lost, 1.2) * 0.9
+            this.repathAt = now + (bySound ? 0.35 : 0.6)
+            const dist = Math.hypot(m.x - this.pos.x, m.z - this.pos.z) + Math.abs(m.s - this.s) * 10
+            const k = bySound ? Math.min(1.5, dist / num(this.ctx, "hunter.speedRush")) : Math.min(lost, 1.2) * 0.9
             const p = this.nav.snap(m.s, m.x + m.vx * k, m.z + m.vz * k, 3) ?? { x: m.x, z: m.z }
-            this.goTo({ x: p.x, z: p.z, s: m.s })
+            this.rechase({ x: p.x, z: p.z, s: m.s })
           }
-          if ((lost > 1 && !this.route) || lost > 7) this.startSearch()
+          // Searches once it is where it last knew you to be (after a sprint, however long the run there takes).
+          if ((fix > 1 && !this.route) || (m.seen && fix > 7)) this.startSearch()
         }
         return
       }
@@ -564,6 +611,19 @@ export class Hunter {
 
   // --------------------------------------------------------------------------------------------- movement
 
+  /** On a stair leg of its route (re-planning there would snap it back to a landing). */
+  private onStair() {
+    const r = this.route
+    return !!r && !!(r.pts[this.wp]?.stair || r.pts[this.wp - 1]?.stair)
+  }
+
+  /** Re-plans a chase to `g`, unless it is on the stair or the goal has barely moved. */
+  private rechase(g: Goal) {
+    const o = this.goal
+    if (this.route && (this.onStair() || (o && o.s === g.s && Math.hypot(o.x - g.x, o.z - g.z) < 1.5))) return
+    this.goTo(g)
+  }
+
   /** Routes to a goal (A* and the stair); false when unreachable. */
   private goTo(g: Goal) {
     const r = this.nav.route({ x: this.pos.x, z: this.pos.z, s: this.s }, g)
@@ -593,7 +653,8 @@ export class Hunter {
   private speedFor() {
     switch (this.mode) {
       case "hunt":
-        return num(this.ctx, "hunter.speedHunt")
+        // Out of sight, closing on a sprint it heard: faster than you can run.
+        return this.rushing && this.time - this.seenAt > 0.5 ? num(this.ctx, "hunter.speedRush") : num(this.ctx, "hunter.speedHunt")
       case "investigate":
         return num(this.ctx, "hunter.speedInvestigate") * (this.interest > 0.6 ? 1.5 : 1)
       case "search":
@@ -652,7 +713,8 @@ export class Hunter {
       let w = r.pts[this.wp]
       while (w) {
         const d = Math.hypot(w.x - this.pos.x, w.z - this.pos.z)
-        if (d > (w.stair ? 0.35 : 0.3)) break
+        // At a run the stair's turns are taken wide (a waypoint counts as reached further out), so it keeps its speed.
+        if (d > (w.stair ? Math.max(0.35, Math.hypot(this.vel.x, this.vel.z) * 0.14) : 0.3)) break
         this.wp++
         w = r.pts[this.wp]
       }
@@ -666,17 +728,31 @@ export class Hunter {
         dx /= d
         dz /= d
         this.progress = r.cum[this.wp]! - d
-        if (w.stair || r.pts[this.wp - 1]?.stair) want = Math.min(want, this.mode === "hunt" ? 3.2 : 1.4)
+        if ((w.stair || r.pts[this.wp - 1]?.stair) && this.mode !== "hunt") want = Math.min(want, 1.4)
         // Ease into the last waypoint.
         if (this.wp === r.pts.length - 1) want = Math.min(want, 0.6 + d * 1.5)
       }
     }
-    const accel = this.mode === "hunt" ? 10 : 5
-    const tx = dx * want
-    const tz = dz * want
-    const k = 1 - Math.exp(-accel * dt / Math.max(0.5, want || 1))
-    this.vel.x += (tx - this.vel.x) * k
-    this.vel.z += (tz - this.vel.z) * k
+    if (this.mode === "hunt" && want > 0) {
+      // Hunting it steers like a running animal: the heading swings round (up to 10 rad/s) and the speed holds,
+      // easing off only into a sharp turn, so the stair's switchbacks and the corridor corners don't stop it dead.
+      const sp = Math.hypot(this.vel.x, this.vel.z)
+      const des = Math.atan2(dx, dz)
+      const cur = sp > 0.3 ? Math.atan2(this.vel.x, this.vel.z) : des
+      const dh = Math.atan2(Math.sin(des - cur), Math.cos(des - cur))
+      const h = cur + Math.sign(dh) * Math.min(Math.abs(dh), 10 * dt)
+      const target = want * (Math.abs(dh) > 1.2 ? 0.6 : 1)
+      const nsp = sp + Math.max(-20 * dt, Math.min(10 * dt, target - sp))
+      this.vel.x = Math.sin(h) * nsp
+      this.vel.z = Math.cos(h) * nsp
+    } else {
+      const accel = this.mode === "hunt" ? 14 : 5
+      const tx = dx * want
+      const tz = dz * want
+      const k = 1 - Math.exp(-accel * dt / Math.max(0.5, want || 1))
+      this.vel.x += (tx - this.vel.x) * k
+      this.vel.z += (tz - this.vel.z) * k
+    }
     this.pos.x += this.vel.x * dt
     this.pos.z += this.vel.z * dt
     // Feet on the floor (treads on the stair); the storey follows.

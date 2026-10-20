@@ -569,6 +569,13 @@ export class Doors {
     return (Math.sign(side) || 1) * w
   }
 
+  /** The door is out of earshot for the procedural (non-positional) door sounds: another storey, or over 14 m away. */
+  private far(d: Door) {
+    const p = this.player?.pos
+    if (!p) return false
+    return Math.abs(d.hy - p.y) > 2.5 || Math.hypot(d.hx - p.x, d.hz - p.z) > 14
+  }
+
   private pan(d: Door) {
     const p = this.player
     if (!p) return 0
@@ -653,8 +660,12 @@ export class Doors {
       if (d.rattle > 0) d.rattle = Math.max(0, d.rattle - dt)
       const sound = d.spec.sound ?? "steel"
       const prof = d.profile
-      // An agent's door (`drive`) is silent here: the agent plays its own sounds.
+      // An agent's door (`drive`) is silent here: the agent plays its own sounds. Far from the player (another storey, or
+      // more than 14 m off) only the positional recordings play: the procedural latch, bump, ratchet and creak have no
+      // position, so a door shutting on its closer elsewhere in the building would sound as if it were beside you.
       const audio = d.driven ? null : this.audio
+      const far = this.far(d)
+      const proc = far ? null : audio
       // A leaf stopped against the player waits a moment before trying again (no stutter of tiny moves and creaks).
       if (d.blocked > 0) d.blocked = Math.max(0, d.blocked - dt)
       const held = this.time - d.contactAt < 0.4
@@ -707,10 +718,10 @@ export class Doors {
           }
         } else d.pose(t)
         // The latch only on a real close (a leaf arriving with some speed), never on a creep into the frame.
-        if (latched && audio && d.height >= 1.2 && Math.abs(d.v) * prof.duration > 0.08) audio.latch(sound, prof.kind, this.pan(d), Math.abs(d.v) * prof.duration, this.voiceOf(d))
+        if (latched && audio && (!far || (sound === "steel" && prof.kind === "swing")) && d.height >= 1.2 && Math.abs(d.v) * prof.duration > 0.08) audio.latch(sound, prof.kind, this.pan(d), Math.abs(d.v) * prof.duration, this.voiceOf(d))
         if (bump > 1 && this.time - d.bumpAt > 1.5) {
           d.bumpAt = this.time
-          audio?.bump(sound, this.pan(d), Math.min(1, bump / 3))
+          proc?.bump(sound, this.pan(d), Math.min(1, bump / 3))
         }
         if (d.free && t === 0) {
           d.v = 0
@@ -727,11 +738,11 @@ export class Doors {
       d.t0 = d.t
       if (prof.teeth) {
         const tooth = Math.floor(d.t * prof.teeth + 1e-6)
-        if (tooth !== d.tooth && audio) audio.tick(this.pan(d))
+        if (tooth !== d.tooth && proc) proc.tick(this.pan(d))
         d.tooth = tooth
       }
       // Leaf speed relative to the peak of a full swing (1.875 / duration for the quintic curve).
-      if (d.height >= 1.2) audio?.motion(d.id, sound, prof.kind, (Math.abs(d.v) * prof.duration) / (1.875 * Math.max(0.05, speed)), this.pan(d), dt)
+      if (d.height >= 1.2) proc?.motion(d.id, sound, prof.kind, (Math.abs(d.v) * prof.duration) / (1.875 * Math.max(0.05, speed)), this.pan(d), dt)
       if (!d.free && d.t === d.target && !d.plan && d.hold <= 0 && d.rattle === 0) {
         d.v = 0
         d.pose(d.t)

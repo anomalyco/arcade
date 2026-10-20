@@ -24,8 +24,8 @@ export const OBJECTIVES = {
 } as const
 /** The objective line for each story stage (checkpoint restores show `CHAIN[stage]`). */
 export const CHAIN = [OBJECTIVES.transmission, OBJECTIVES.radio, OBJECTIVES.report, OBJECTIVES.body, OBJECTIVES.hide]
-/** "Hide." comes this long after the warning is seen (s): after the scream and the car. */
-const HIDE_AFTER = 7.5
+/** "Hide." comes this long after the warning is seen (s): right after the struck-through line fades. */
+const HIDE_AFTER = 3
 
 /** The briefing, handwritten across the top of the clipboard's first sheet (two lines: underlined, then smaller). */
 export const BRIEFING = ["Station radio silent 48 hrs.", "Last contact from radio room 3-08. Find out why."]
