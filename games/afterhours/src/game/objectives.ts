@@ -16,8 +16,8 @@ import { onReveal, onTransmitted } from "../world/interior/storeys/s3/transmitte
 //                       (a beat of silence, the scream, the car, the glass: the Wendigo is in) → "Hide."
 
 export const OBJECTIVES = {
-  transmission: "Find out why the radio went silent — check the map (M)",
-  radio: "Find the radio room — 3-08",
+  transmission: "Find out why the radio went silent. Check the map (M)",
+  radio: "Find the radio room: 3-08",
   report: "Report what you found",
   body: "Check the body at the desk",
   hide: "Hide.",

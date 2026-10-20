@@ -160,10 +160,14 @@ html, body { margin: 0; height: 100%; background: #030605; overflow: hidden; }
   font: 16px/1.9 "Static Type", "American Typewriter", "Courier New", monospace; letter-spacing: 0.06em;
   color: rgba(228, 224, 210, 0.86); text-shadow: 0 0 8px rgba(255, 245, 225, 0.12);
 }
-.title-card-text p { margin: 0; min-height: 1.9em; }
-.title-card-text p.lead { font-size: 20px; letter-spacing: 0.1em; margin-bottom: 0.3em; }
-.title-card-text i { display: inline-block; width: 0; height: 1em; vertical-align: -0.12em; margin-left: 2px; }
-.title-card-text p.typing i { border-left: 1px solid currentColor; animation: title-caret 1.05s steps(1) infinite; }
+.title-card-text p { margin: 0; min-height: 1.9em; white-space: pre; }
+.title-card-text p.blank { min-height: 1.1em; }
+.title-card-text .rest { visibility: hidden; }
+/* The block cursor: zero width so it never shifts the line; blinks only while idle (the lead, line ends, the end). */
+.title-card-text i { display: inline-block; position: relative; width: 0; height: 1em; vertical-align: -0.12em; visibility: hidden; }
+.title-card-text p.at i { visibility: visible; }
+.title-card-text i::after { content: ""; position: absolute; left: 1px; top: 0.05em; bottom: -0.05em; width: 0.55em; background: currentColor; opacity: 0.75; }
+.title-card-text.idle i::after { animation: title-caret 1.05s steps(1) infinite; }
 @keyframes title-caret { 50% { opacity: 0; } }
 .title-card-skip {
   position: absolute; right: 40px; bottom: 34px; font: 12px/1 "Static Type", monospace; letter-spacing: 0.3em;

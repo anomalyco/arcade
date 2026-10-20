@@ -53,6 +53,14 @@ export function trackCheckpoints(player: Player) {
 
 export const lastCheckpoint = () => last
 
+/** Makes `cp` the run's last checkpoint (a chapter jump, src/game/chapters.ts). */
+export function setLastCheckpoint(cp: Checkpoint) {
+  last = cp
+  try {
+    sessionStorage.setItem("afterhours.checkpoint", JSON.stringify(last))
+  } catch {}
+}
+
 /** Puts the player back where the checkpoint was taken (velocity, crouch and air state cleared). */
 export function restorePlayer(player: Player, cp: Checkpoint) {
   const p = player.pos as { x: number; y: number; z: number }

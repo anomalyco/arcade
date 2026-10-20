@@ -431,7 +431,7 @@ export class CharacterBody {
       const a = splitArm(m, /^Left(Arm|ForeArm|Hand)/)
       if (a) this.armParts.push(a)
       // The right forearm and hand too: in first person no hand is ever seen (owner decision), even looking down.
-      const r = splitArm(m, /^Right(ForeArm|Hand)/)
+      const r = splitArm(m, /^Right(Arm|ForeArm|Hand)/)
       if (r) this.armParts.push(r)
     }
   }

@@ -5,7 +5,7 @@ export const GAME_TITLE = "ASHWOOD"
 
 export const HOME = {
   /** Under the title. */
-  subtitle: "Ashwood Outpost · 1984",
+  subtitle: "Ashwood Station · 1984",
   /** The VCR overlay in the corners. */
   osdChannel: "CH 03",
   osdStamp: "OCT 19 1984  01:52",
@@ -30,31 +30,31 @@ export const MENU = {
   waiting: "Tuning in…",
 }
 
-export type TitleCard = {
-  /** Lines typed one after another; the first is set larger. */
-  lines: string[]
-  /** Seconds the finished card stays up before it fades. */
-  hold: number
-}
-
+/** The prelude: one screen, typed out once in full and left up (picked in prelude-lab, panel B). */
 export const TITLE_CARD = {
-  cards: [
-    { lines: ["October 19, 1984", "Ashwood Outpost", "Interagency Office of Propagation Studies"], hold: 2.4 },
-    { lines: ["The station's radio has been silent for two days."], hold: 2.4 },
-    { lines: ["Nobody answers the phone."], hold: 2.2 },
-    { lines: ["You've been sent to find out why."], hold: 2.8 },
-  ] satisfies TitleCard[],
-  /** Typewriter speed, characters per second. */
-  typeRate: 38,
-  /** Pause between lines of one card. */
-  linePause: 0.45,
-  fadeIn: 0.9,
-  fadeOut: 1.4,
-  /** Black between cards. */
-  gap: 0.6,
-  /** Black before the first card and after the last. */
-  lead: 1.2,
-  tail: 1.0,
+  /** Centred lines; an empty string is a blank line. */
+  lines: [
+    "October 19, 1984",
+    "",
+    "Six researchers work at Ashwood Research Station,",
+    "a remote government lab in the mountains.",
+    "",
+    "On October 17, their radio went silent.",
+    "No one has heard from them since.",
+    "",
+    "You've been sent up there to find out why.",
+  ],
+  /** Typewriter speed, characters per second (an even rhythm). */
+  typeRate: 14,
+  /** Extra pause at each line end, in characters' time. */
+  lineEnd: 4,
+  /** Seconds of black before the first character. */
+  lead: 0.9,
+  /** Seconds the finished text holds before it dims. */
+  dwell: 6,
+  /** Seconds the text takes to dim, and the level it dims to, before the intro takes over. */
+  dimTime: 3,
+  dimTo: 0.16,
   skip: "Space to skip",
 }
 

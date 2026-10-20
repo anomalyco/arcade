@@ -1,4 +1,4 @@
-# Ashwood: building program (main block, storeys 0–4), IOPS Ashwood Outpost
+# Ashwood: building program (main block, storeys 0–4), Ashwood Research Station (IOPS · Ashwood Station)
 
 The plan every interior agent builds to. It replaces the current "15 identical 5.4 × 19.9 m tubes per side, a
 quarter of the doors openable" pattern (`storeys.ts` `roomsFor`) with a building that has a reason for every room.
@@ -20,7 +20,7 @@ windows have no fixture; the storey-2 drench shower stands in a corridor. Rules 
 
 ## 1. Building logic
 
-**Ashwood Outpost** (IOPS Ashwood Outpost) — Atmospheric Propagation Research Facility, operated since 1979 for the
+**Ashwood Research Station** (on signs and documents "IOPS · Ashwood Station"; the radio callsign is still "Ashwood Outpost") — Atmospheric Propagation Research Facility, operated since 1979 for the
 (fictional) *Interagency Office of Propagation Studies* (IOPS), in a clearing in Ashwood State Forest. Public story: ionospheric and low-frequency radio propagation
 research, weather data. The 25 m dish on the roof is the station's public face, but it is tilted to point **down at
 the ground north of the building**. In 1981 a signal source was found in the woods north of the lot. Field Operations

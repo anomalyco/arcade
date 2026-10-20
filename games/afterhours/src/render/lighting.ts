@@ -55,6 +55,8 @@ const { diffuseContribution, specularColorBlended } = TSL as unknown as Record<s
 const MAX_POOL = 6
 /** A layer nothing renders, so the flashlight's shadow camera keeps its own mask (see the flashlight update). */
 const FLASH_SPARE_LAYER = 5
+/** How far in front of the hand-held flashlight's lens plane the spot's apex is kept (m). */
+const FLASH_AHEAD = 0.025
 /** Emitter glow instances (buffers are allocated once at this size so late lamps never reallocate them). */
 const GLOW_CAPACITY = 1024
 /** Within this distance of the building shell, lamps on both sides of its walls stay on (doors, windows). */
@@ -932,6 +934,13 @@ export function createLighting(ctx: WorldContext, player: Player) {
       if (frame < 3 || appliedDir.angleTo(flashDir) > deadAng || appliedPos.distanceToSquared(handPos) > deadPos) {
         appliedDir.copy(flashDir)
         appliedPos.copy(handPos)
+      }
+      // A spot lights nothing behind its apex (its cone is < 90°): keep the apex at least FLASH_AHEAD in front of the
+      // lens plane, whatever the smoothing above did, so the flashlight held in view (and the hand) never catches its
+      // own beam.
+      if (inHand) {
+        const behind = FLASH_AHEAD - fwd.copy(appliedPos).sub(lensPos).dot(appliedDir)
+        if (behind > 0) appliedPos.addScaledVector(appliedDir, behind)
       }
       flash.position.copy(appliedPos)
       flash.target.position.copy(appliedPos).addScaledVector(appliedDir, 10)

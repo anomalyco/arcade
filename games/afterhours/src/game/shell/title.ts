@@ -1,7 +1,9 @@
 import { TITLE_CARD } from "./copy"
 
-// The title card: typewriter lines on black, card by card, with slow fades (copy and timings in copy.ts). Resolves
-// when it has finished or `skip` fires; the black stays up (the caller fades it away when the intro starts).
+// The prelude: the whole text (copy.ts TITLE_CARD) typed out once on one black screen, an even typewriter rhythm with
+// a block cursor that blinks only while idle; it stays up for the dwell, dims, and resolves into the intro. The full
+// text is laid out from the start (untyped characters hidden), so lines never shift as they type. `skip()` (Space,
+// click) first completes the text, then continues. The black stays up; the caller fades it away when the intro starts.
 
 const wait = (s: number, signal: AbortSignal) =>
   new Promise<void>((resolve) => {
@@ -23,61 +25,81 @@ export function createTitleCard(root: HTMLElement) {
   const text = el.firstElementChild as HTMLDivElement
   const skipHint = el.lastElementChild as HTMLDivElement
   skipHint.textContent = TITLE_CARD.skip
+  /** Aborts the step under way: the typing (completes the text), then the dwell and dim (continues). */
+  let step: AbortController | null = null
 
-  async function card(lines: string[], hold: number, signal: AbortSignal) {
+  function layout() {
     text.innerHTML = ""
     text.style.transition = "none"
-    text.style.opacity = "0"
-    const spans = lines.map((_, i) => {
+    text.style.opacity = "1"
+    return TITLE_CARD.lines.map((line) => {
       const p = document.createElement("p")
-      if (i === 0) p.className = "lead"
+      if (!line) p.className = "blank"
       const typed = document.createElement("span")
       const caret = document.createElement("i")
-      p.append(typed, caret)
+      const rest = document.createElement("span")
+      rest.className = "rest"
+      rest.textContent = line
+      p.append(typed, caret, rest)
       text.append(p)
-      return { p, typed, caret }
+      return { p, typed, rest, line }
     })
-    void text.offsetWidth
-    text.style.transition = `opacity ${TITLE_CARD.fadeIn}s ease`
-    text.style.opacity = "1"
-    for (let i = 0; i < lines.length && !signal.aborted; i++) {
-      const line = lines[i]!
-      const s = spans[i]!
-      s.p.classList.add("typing")
-      for (let c = 1; c <= line.length && !signal.aborted; c++) {
-        s.typed.textContent = line.slice(0, c)
-        // A typewriter's rhythm: a little longer after punctuation and between words.
-        const ch = line[c - 1]
-        const k = ch === "," || ch === "." ? 5 : ch === " " ? 1.6 : 0.7 + Math.random() * 0.6
-        await wait(k / TITLE_CARD.typeRate, signal)
-      }
-      s.p.classList.remove("typing")
-      if (i < lines.length - 1) await wait(TITLE_CARD.linePause, signal)
-    }
-    await wait(hold, signal)
-    text.style.transition = `opacity ${TITLE_CARD.fadeOut}s ease`
-    text.style.opacity = "0"
-    await wait(TITLE_CARD.fadeOut, signal)
   }
 
   return {
     el,
-    /** Plays every card; resolves at the end or as soon as `signal` aborts (skip / quit). */
+    /** First call completes the typing; the next continues into the intro. */
+    skip() {
+      step?.abort()
+    },
+    /** Types the prelude, holds, dims; resolves at the end, after a second skip, or when `signal` aborts (quit). */
     async play(signal: AbortSignal) {
       el.classList.remove("out")
       el.classList.add("on")
       skipHint.classList.remove("on")
       setTimeout(() => skipHint.classList.add("on"), 1500)
-      await wait(TITLE_CARD.lead, signal)
-      const cards = TITLE_CARD.cards
-      for (let i = 0; i < cards.length && !signal.aborted; i++) {
-        await card(cards[i]!.lines, cards[i]!.hold, signal)
-        if (i < cards.length - 1) await wait(TITLE_CARD.gap, signal)
+      const rows = layout()
+      const base = 1 / TITLE_CARD.typeRate
+      const at = (row: number | null) => rows.forEach((r, i) => r.p.classList.toggle("at", i === row))
+
+      // Typing: one character per tick of an even clock; the caret blinks only while idle (lead, line ends).
+      let typing = (step = new AbortController())
+      const stop = AbortSignal.any([signal, typing.signal])
+      at(0)
+      text.classList.add("idle")
+      await wait(TITLE_CARD.lead, stop)
+      for (let i = 0; i < rows.length && !stop.aborted; i++) {
+        const r = rows[i]!
+        at(i)
+        text.classList.remove("idle")
+        for (let c = 1; c <= r.line.length && !stop.aborted; c++) {
+          r.typed.textContent = r.line.slice(0, c)
+          r.rest.textContent = r.line.slice(c)
+          await wait(base, stop)
+        }
+        text.classList.add("idle")
+        await wait(base * TITLE_CARD.lineEnd, stop)
       }
-      text.style.transition = `opacity 0.4s ease`
-      text.style.opacity = "0"
-      skipHint.classList.remove("on")
-      if (!signal.aborted) await wait(TITLE_CARD.tail, signal)
+      // Done (or skipped): everything shown, the caret resting after the last line.
+      for (const r of rows) {
+        r.typed.textContent = r.line
+        r.rest.textContent = ""
+      }
+      at(rows.length - 1)
+      text.classList.add("idle")
+      if (signal.aborted) return
+
+      // Dwell, then dim; a skip here continues straight away.
+      typing = step = new AbortController()
+      const hold = AbortSignal.any([signal, typing.signal])
+      await wait(TITLE_CARD.dwell, hold)
+      if (!signal.aborted) {
+        skipHint.classList.remove("on")
+        text.style.transition = `opacity ${hold.aborted ? 0.6 : TITLE_CARD.dimTime}s ease`
+        text.style.opacity = String(TITLE_CARD.dimTo)
+        await wait(hold.aborted ? 0.6 : TITLE_CARD.dimTime, signal)
+      }
+      step = null
     },
     /** Fades the black away over `seconds` (the world shows through). */
     fadeOut(seconds = 1.6) {
@@ -86,6 +108,7 @@ export function createTitleCard(root: HTMLElement) {
       setTimeout(() => el.classList.remove("on", "out"), seconds * 1000)
     },
     hide() {
+      step?.abort()
       el.classList.remove("on", "out")
     },
   }

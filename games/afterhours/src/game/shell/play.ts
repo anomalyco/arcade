@@ -44,10 +44,13 @@ export function createPlayShell(canvas: HTMLCanvasElement, hud: HTMLElement) {
   let tunerDone = false
   /** The clipboard map (src/game/map), created the first time a run reaches explore. Esc lowers it before pausing. */
   let map: MapHandle | null = null
+  /** Dev chapter select (src/game/chapters.ts): the chapter the next run jumps to, skipping the title and intro. */
+  let pendingChapter: string | null = new URLSearchParams(location.search).get("start")
+  let objectivesFrom = 0
   flow.onPhase((to) => {
     if (to === "explore" && world) {
       map ??= createMap(world, { active: () => flow.playerActive })
-      startObjectives(flow, world.camera, run?.signal)
+      startObjectives(flow, world.camera, run?.signal, objectivesFrom)
       // The Wendigo hunter: dormant until the 3-08 transmitter is switched off (src/game/hunter).
       const w = world
       void import("../hunter").then((m) => run?.signal.aborted || m.installHunter(w, { flow, signal: run?.signal }))
@@ -83,7 +86,7 @@ export function createPlayShell(canvas: HTMLCanvasElement, hud: HTMLElement) {
     },
   })
   const title = createTitleCard(document.body)
-  title.el.addEventListener("click", () => skip?.abort())
+  title.el.addEventListener("click", () => title.skip())
   const locked = () => document.pointerLockElement === canvas
   /**
    * Input reaches the controller in active play, and in the intro (its cutscene stands in for `player.update` and reads
@@ -103,13 +106,20 @@ export function createPlayShell(canvas: HTMLCanvasElement, hud: HTMLElement) {
     (e: KeyboardEvent) => {
       // A modal game screen (the death screen) owns the keys.
       if (document.body.dataset.modal) return
+      // Dev: F9 on the home screen lists the story chapters (src/game/chapters.ts).
+      if (e.code === "F9" && !e.repeat && flow.phase === "menu") {
+        e.preventDefault()
+        e.stopImmediatePropagation()
+        void toggleChapters()
+        return
+      }
       if (menu.screen !== "none") {
         menu.key(e)
         e.stopImmediatePropagation()
         return
       }
       if (flow.phase === "title") {
-        if (e.code === "Space" || e.code === "Enter" || e.code === "Escape") skip?.abort()
+        if ((e.code === "Space" || e.code === "Enter" || e.code === "Escape") && !e.repeat) title.skip()
         e.preventDefault()
         e.stopImmediatePropagation()
         return
@@ -130,7 +140,7 @@ export function createPlayShell(canvas: HTMLCanvasElement, hud: HTMLElement) {
     if (!locked()) {
       // Esc with the map up releases the pointer lock first: it lowers the map instead of opening the pause menu.
       if (map?.raised && !flow.paused) map.lower()
-      else if (flow.phase === "title") skip?.abort()
+      else if (flow.phase === "title") title.skip()
       else if ((flow.phase === "intro" || flow.phase === "explore") && !flow.paused) pause()
     }
     updateHint()
@@ -145,7 +155,37 @@ export function createPlayShell(canvas: HTMLCanvasElement, hud: HTMLElement) {
     void start(world)
   }
 
-  async function start(w: World) {
+  /** Dev: a small list over the home screen; a click starts that chapter. */
+  let chapterList: HTMLDivElement | null = null
+  async function toggleChapters() {
+    const c = await import("../chapters")
+    if (!c.chaptersEnabled()) return
+    if (chapterList) {
+      chapterList.remove()
+      chapterList = null
+      return
+    }
+    const el = (chapterList = document.createElement("div"))
+    el.className = "chapter-select"
+    el.style.cssText = "position:fixed;left:24px;bottom:24px;z-index:50;display:grid;gap:4px;padding:10px 12px;background:rgba(10,10,10,.82);font:12px/1.4 monospace;color:#d8d0bc;letter-spacing:.06em"
+    el.innerHTML = `<div style="opacity:.6">CHAPTER SELECT (dev)</div>`
+    for (const ch of c.CHAPTERS) {
+      const b = document.createElement("button")
+      b.textContent = ch.label
+      b.style.cssText = "all:unset;cursor:pointer;padding:2px 0"
+      b.onclick = () => {
+        el.remove()
+        chapterList = null
+        pendingChapter = ch.id
+        play()
+      }
+      el.append(b)
+    }
+    document.body.append(el)
+  }
+
+  async function start(w: World): Promise<void> {
+    if (pendingChapter) return startChapter(w, pendingChapter)
     pendingPlay = false
     menu.setWaiting(false)
     tunerDone = true
@@ -175,6 +215,43 @@ export function createPlayShell(canvas: HTMLCanvasElement, hud: HTMLElement) {
     startEncounters(ctx, { resume })
     flow.set("explore")
     hints?.setActive(true)
+    updateHint()
+  }
+
+  /** Dev: a run that skips the title card and intro and jumps to a story chapter by the checkpoint restore. */
+  async function startChapter(w: World, id: string): Promise<void> {
+    pendingChapter = null
+    const c = await import("../chapters")
+    const ch = c.chapterById(id)
+    if (!ch || !c.chaptersEnabled()) {
+      console.warn(`chapter: unknown or disabled "${id}"`)
+      return start(w)
+    }
+    // The beat only moves forward: a chapter behind it needs a fresh page.
+    if (!c.chapterReachable(ch)) {
+      location.href = `${location.pathname}?play&start=${ch.id}`
+      return
+    }
+    pendingPlay = false
+    menu.setWaiting(false)
+    tunerDone = true
+    tunerAudio.stop()
+    w.player.audio?.unlock()
+    lock()
+    menu.show("none")
+    title.hide()
+    run?.abort()
+    const r = (run = new AbortController())
+    skip = new AbortController()
+    flow.set("intro")
+    w.ctx.settings["body.show"] = true
+    const ctx: GameContext = { world: w, ctx: w.ctx, player: w.player, camera: w.camera, scene: w.scene, flow, hud, signal: r.signal }
+    const enc = startEncounters(ctx, { resume })
+    objectivesFrom = ch.stage
+    flow.set("explore")
+    objectivesFrom = 0
+    hints?.setActive(true)
+    await c.jumpToChapter(ch, w.player, heightAt, enc.restart)
     updateHint()
   }
 
@@ -266,7 +343,7 @@ export function createPlayShell(canvas: HTMLCanvasElement, hud: HTMLElement) {
         auto = sessionStorage.getItem(AUTOPLAY_KEY) === "1"
         sessionStorage.removeItem(AUTOPLAY_KEY)
       } catch {}
-      if ((pendingPlay || auto) && world) void start(world)
+      if ((pendingPlay || auto || pendingChapter) && world) void start(world)
     },
     /** One frame of the shell before the world renders: menu camera, controller, then the run's hooks. */
     frame(dt: number, time: number) {

@@ -4,7 +4,7 @@ import { atlasMaterial } from "./models"
 
 // Set-dressing paperwork for the 1984 station: memos, notices, rosters, forms, posters, a green-bar printout,
 // polaroids, sticky notes — legible up close, all invented content following docs/building-program.md (Ashwood
-// Outpost, the north array, freight lift FL-1, riser W-1, room numbers and vignettes). Built by scripts/build-documents.ts into one KTX2 atlas (public/models/documents/); the
+// Station, the north array, freight lift FL-1, riser W-1, room numbers and vignettes). Built by scripts/build-documents.ts into one KTX2 atlas (public/models/documents/); the
 // whole set is ONE material that shares the model library's shader, so every piece of paper in the building plus its
 // pins and tape can be one merged draw.
 //

@@ -413,12 +413,13 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
       camera.getWorldDirection(aimDir)
       let aimed = -1
       if (inCar) {
-        let best = 0.04
+        // Nearest button to the crosshair within ~7° (the buttons are 9 cm apart), out to 2.2 m, no minimum distance.
+        let best = 0.12
         BUTTONS.forEach((bt, i) => {
           aimP.set(panelX + bt.x, carFloor.y + PANEL_Y + bt.y, z0 + 0.024).sub(camera.position)
           const t = aimP.dot(aimDir)
-          if (t < 0.15 || t > 1.5) return
-          const d = aimP.addScaledVector(aimDir, -t).length() / Math.max(0.6, t)
+          if (t < 0.02 || aimP.length() > 2.2) return
+          const d = Math.atan2(aimP.addScaledVector(aimDir, -t).length(), t)
           if (d < best) {
             best = d
             aimed = i

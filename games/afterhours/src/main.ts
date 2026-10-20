@@ -127,6 +127,27 @@ const reveal = () => {
   performance.mark("boot:complete")
 }
 
+// Debug: Lab → Story, the dev chapter select (src/game/chapters.ts): jump to a point in the story by its checkpoint.
+if (debug && !shot) {
+  const chapters = await import("./game/chapters")
+  const { heightAt } = await import("./world/height")
+  for (const ch of chapters.CHAPTERS)
+    world.ctx.controls.push({
+      key: `story.${ch.id}`,
+      label: ch.label,
+      group: "Story",
+      type: "action",
+      run: () => {
+        if (!chapters.chapterReachable(ch)) location.href = `${location.pathname}?view=corridor&story=${ch.id}`
+        else void chapters.jumpToChapter(ch, player, heightAt)
+      },
+    })
+  const at = params.get("story")
+  if (at) {
+    const ch = chapters.chapterById(at)
+    if (ch) setTimeout(() => void chapters.jumpToChapter(ch, player, heightAt), 2500)
+  }
+}
 await world.stream({
   onProgress: (stage, f) => (shell ? shell.progress(stage, 0.15 + 0.85 * f) : loader.progress(stage, f)),
   // Created once every module has added its controls (debug only).

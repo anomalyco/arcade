@@ -108,7 +108,7 @@ function header(o: Sheet, index: number) {
   o.text(PAGE_TITLES[index]!, 12, 31, { font: FONT.title, pt: 46, weight: 700 })
   o.text(SUBTITLES[index]!, 12.5, 40, { pt: 12, weight: 700, spacing: 0.5 })
   o.text(SHEET_NO[index]!, W - 12, 24, { font: FONT.title, pt: 24, weight: 700, align: "right" })
-  o.text(index === 0 ? "IOPS · ASHWOOD OUTPOST" : `IOPS · ASHWOOD OUTPOST · ${PAGE_TITLES[index]}`, W - 12, 31, { font: FONT.title, pt: 9, weight: 500, align: "right", spacing: 0.3 })
+  o.text(index === 0 ? "IOPS · ASHWOOD STATION" : `IOPS · ASHWOOD STATION · ${PAGE_TITLES[index]}`, W - 12, 31, { font: FONT.title, pt: 9, weight: 500, align: "right", spacing: 0.3 })
   o.text(`SHEET ${index + 1} OF ${PAGE_COUNT} · REV. 6 · 6/84`, W - 12, 36, { pt: 7, weight: 600, align: "right" })
   // Minor print line at the foot.
   o.text("ATMOSPHERIC PROPAGATION RESEARCH FACILITY · PROJECT AW-79-014 · REDUCED COPY · DO NOT SCALE", W - 12, Hs - 9, { pt: 6, weight: 500, align: "right" })

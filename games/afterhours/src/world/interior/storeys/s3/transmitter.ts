@@ -29,6 +29,9 @@ const FRONT = -D / 2
 /** The switch (local, on the front): centre height, and its world position for aiming and the hand reach. */
 const SW_Y = 1.08
 const SW_U = 0.22
+/** Interaction reach (m from the eye) and aim cone (rad from the crosshair) for the switch, the mic and the body. */
+const REACH = 2.2
+const AIM_CONE = 0.34
 /** Warm-up after the switch is thrown (s). */
 const WARM_UP = 2.1
 /** The beat of silence after the reveal before the car goes (s); the hunter's scream lands inside it. */
@@ -264,12 +267,12 @@ export function transmitterRack(b: Builder): RadioRoom {
 
   type Target = { at: THREE.Vector3; label: string; act: () => void; r: number } | null
   const targets = (): Target[] => [
-    transmitter.phase === "off" ? { at: swWorld, label: "TX power: switch on", act: switchOn, r: 0.09 } : null,
+    transmitter.phase === "off" ? { at: swWorld, label: "TX power: switch on", act: switchOn, r: 0.25 } : null,
     transmitter.phase === "off" || transmitter.phase === "warming"
-      ? { at: micWorld, label: transmitter.phase === "off" ? "Mic: dead, no carrier (TX-1 is off)" : "Mic: warming up…", act: noop, r: 0.12 }
+      ? { at: micWorld, label: transmitter.phase === "off" ? "Mic: dead, no carrier (TX-1 is off)" : "Mic: warming up…", act: noop, r: 0.2 }
       : null,
-    transmitter.phase === "on" ? { at: micWorld, label: "Mic: key and report", act: transmit, r: 0.12 } : null,
-    transmitter.phase === "transmitted" && operator ? { at: operator.chest, label: "Move the body", act: reveal, r: 0.18 } : null,
+    transmitter.phase === "on" ? { at: micWorld, label: "Mic: key and report", act: transmit, r: 0.2 } : null,
+    transmitter.phase === "transmitted" && operator ? { at: operator.chest, label: "Move the body", act: reveal, r: 0.4 } : null,
   ]
   let aimed: Target = null
   let shownLabel = ""
@@ -282,6 +285,15 @@ export function transmitterRack(b: Builder): RadioRoom {
     const dt = Math.min(0.1, Math.max(0, t - now))
     now = t
     const ph = transmitter.phase
+    // A chapter jump (src/game/chapters.ts) moves the phase without the interactions: catch the room up.
+    if (ph !== "warming" && transmitter.reached("on") && !carrier) carrier = true
+    if (transmitter.reached("revealed") && operator && !operator.pivot) {
+      operator.seated.visible = !operator.onFloor
+      if (operator.onFloor) operator.onFloor.visible = true
+      operator.pivot = new THREE.Group()
+      operator.t = 2
+    }
+    if (transmitter.reached("revealed") && warning && !warning.visible) warning.visible = true
     // Warm-up, then on the air.
     if (ph === "warming") {
       const k = Math.min(1, (t - switchedAt) / WARM_UP)
@@ -342,7 +354,8 @@ export function transmitterRack(b: Builder): RadioRoom {
       transmitter.set("aftermath")
     }
 
-    // Aim.
+    // Aim: forgiving. Within REACH of the control, inside a ~17° cone from the crosshair or within the control's own
+    // hit volume (`r`, metres round it), with no minimum distance; of several, the one nearest the crosshair wins.
     cam.getWorldDirection(dir)
     aimed = null
     let best = Infinity
@@ -350,11 +363,14 @@ export function transmitterRack(b: Builder): RadioRoom {
       if (!tg) continue
       to.copy(tg.at).sub(cam.position)
       const dist = to.length()
+      if (dist > REACH) continue
       const along = to.dot(dir)
-      if (dist > 1.9 || along < 0.2) continue
-      const off = to.addScaledVector(dir, -along).length() / Math.max(0.6, along)
-      if (off < tg.r && off < best) {
-        best = off
+      const perp = to.addScaledVector(dir, -along).length()
+      const angle = Math.atan2(perp, along)
+      // Very close (inside its hit volume): any look in its general direction counts.
+      const ok = dist < tg.r ? along > -0.05 : angle < AIM_CONE || (along > 0 && perp < tg.r)
+      if (ok && angle < best) {
+        best = angle
         aimed = tg
       }
     }

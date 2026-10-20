@@ -18,7 +18,7 @@ const TREATMENTS: { id: Treatment; label: string }[] = [
 ]
 const COLORS = { white: ["Off-white", "234 238 230"], amber: ["Amber", "240 170 84"], green: ["Pale green", "176 238 196"], red: ["Red", "222 74 58"] } as const
 type ColorKey = keyof typeof COLORS
-const SUBTITLES = ["", "ASHWOOD OUTPOST · 1984", "OUTPOST 7 · OCTOBER 1984", "A TRANSMISSION"]
+const SUBTITLES = ["", "ASHWOOD STATION · 1984", "OUTPOST 7 · OCTOBER 1984", "A TRANSMISSION"]
 const DEFAULT_NAMES = ["ASHWOOD"]
 /** Bumped when the defaults change; saved state from older versions gets the new names and subtitles once. */
 const NAMES_VERSION = 3

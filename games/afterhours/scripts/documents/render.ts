@@ -2,7 +2,7 @@
 // Every document is drawn with Canvas 2D in millimetres: typewriter/print/handwriting text, stamps, forms, then paper
 // ageing (grain, yellowing, foxing, creases, pin holes, coffee rings). Outputs three atlases — base colour, a height
 // map turned into a normal map (creases, grain), ORM (roughness per material) — and a manifest of UV rects.
-// All content is original and follows docs/building-program.md (IOPS Ashwood Outpost, the north array); everyone is invented.
+// All content is original and follows docs/building-program.md (IOPS · Ashwood Station, the north array); everyone is invented.
 
 type Ctx = CanvasRenderingContext2D
 type Paper = "white" | "onion" | "yellow" | "goldenrod" | "pink" | "green" | "manila" | "card" | "legal" | "greenbar" | "polaroid" | "poster" | "sticky" | "plate" | "timecard" | "chalk" | "white_board" | "gypsum" | "felt" | "bronze" | "newsprint" | "blueprint" | "concrete" | "brass_plate"
@@ -333,12 +333,12 @@ class Draw {
 }
 
 // ---------------------------------------------------------------------------------------------------- content
-// Lore follows docs/building-program.md: Ashwood Outpost (Atmospheric Propagation Research Facility) of the
+// Lore follows docs/building-program.md: Ashwood Research Station, "Ashwood Station" on paper (Atmospheric Propagation Research Facility) of the
 // fictional Interagency Office of Propagation Studies (IOPS); the north array (NA, a sensor field in the woods north of
 // the fence), riser W-1 (the array trunk); the night duty roster of 17/18 Oct: six staff, four found dead in 3-08,
 // two (Marsh, Delacroix: field technicians sent out to the array) unaccounted for (time cards IN, never OUT); keycards (Comms, Field, Server, Signal, Containment, Plant), room numbers
 // (storey-room, e.g. 0-38 Security office) and the per-floor vignettes.
-const STATION = "ASHWOOD OUTPOST"
+const STATION = "ASHWOOD STATION"
 const AGENCY = "INTERAGENCY OFFICE OF PROPAGATION STUDIES"
 const FACILITY = "ATMOSPHERIC PROPAGATION RESEARCH FACILITY"
 /** Telephone extensions, shared by every document that quotes one. Ext. 300 (Field Operations hut, north array) is "disconnected". */
@@ -556,7 +556,7 @@ function timeCard(id: string, name: string, number: string, dept: string): DocSp
     tags: ["wall", "desk", "creepy"],
     density: 4.2,
     draw(d) {
-      d.print("ASHWOOD OUTPOST", d.wmm / 2, 8, { pt: 8, weight: 800, align: "center" })
+      d.print("ASHWOOD STATION", d.wmm / 2, 8, { pt: 8, weight: 800, align: "center" })
       d.print("WEEKLY TIME CARD", d.wmm / 2, 12.5, { pt: 6, align: "center" })
       d.print("NO.", 5, 20, { pt: 6, weight: 700 })
       d.type(number, 14, 20.5, { pt: 11, font: "Courier Prime" })
@@ -897,7 +897,7 @@ const DOCS: DocSpec[] = [
       d.type("Merritt Falls", 25, 68)
       d.type("Dear Mrs. Marsh:", 25, 82)
       const body =
-        "On behalf of the Interagency Office of Propagation Studies it is my duty to write to you about your daughter Ellen, a valued member of the Field Operations staff at Ashwood Outpost since 1982. We regret to inform you that"
+        "On behalf of the Interagency Office of Propagation Studies it is my duty to write to you about your daughter Ellen, a valued member of the Field Operations staff at Ashwood Research Station since 1982. We regret to inform you that"
       d.typeLines(d.wrap(body, 62), 25, 94, 4.6)
       d.type("x", 98, 112.4, { fade: 0.4 })
     },
@@ -1770,7 +1770,7 @@ function dayCard(id: string, name: string, number: string): DocSpec {
     tags: ["wall", "desk"],
     density: 3.4,
     draw(d) {
-      d.print("ASHWOOD OUTPOST", d.wmm / 2, 8, { pt: 8, weight: 800, align: "center" })
+      d.print("ASHWOOD STATION", d.wmm / 2, 8, { pt: 8, weight: 800, align: "center" })
       d.print("WEEKLY TIME CARD", d.wmm / 2, 12.5, { pt: 6, align: "center" })
       d.print("NO.", 5, 20, { pt: 6, weight: 700 })
       d.type(number, 14, 20.5, { pt: 11, font: "Courier Prime" })
@@ -1938,7 +1938,7 @@ const STAND_INS: DocSpec[] = [
     density: 0.7,
     draw(d) {
       const t = (s: string, x: number, y: number, pt: number) => d.print(s, x, y, { pt, font: "Libre Franklin", weight: 600, color: "#e8e6df", spacing: 2 })
-      t("ASHWOOD OUTPOST", 50, 90, 64)
+      t("ASHWOOD STATION", 50, 90, 64)
       t("FLOOR DIRECTORY", 50, 140, 40)
       const rows: [string, string][] = [
         ["4", "DIRECTORATE · RECEIVER ROOM"], ["4W", "CLOSED FOR REFURBISHMENT"], ["3", "COMPUTING & SIGNAL PROCESSING"], ["3", "TERMINAL POOL · DATA CONTROL"],
@@ -1963,7 +1963,7 @@ const STAND_INS: DocSpec[] = [
     draw(d) {
       const gold = "#e2c27a"
       d.rect(8, 8, d.wmm - 16, d.hmm - 16, 2, gold)
-      d.print("ASHWOOD OUTPOST", d.wmm / 2, 52, { pt: 56, font: "Archivo Black", align: "center", color: gold })
+      d.print("ASHWOOD STATION", d.wmm / 2, 52, { pt: 56, font: "Archivo Black", align: "center", color: gold })
       d.print("ATMOSPHERIC PROPAGATION RESEARCH FACILITY", d.wmm / 2, 92, { pt: 26, font: "Libre Franklin", weight: 800, align: "center", color: gold })
       d.print("DEDICATED JUNE 9, 1979", d.wmm / 2, 140, { pt: 30, font: "Libre Franklin", weight: 700, align: "center", color: gold })
       d.print("\"TO LISTEN TO THE EARTH AND THE SKY\"", d.wmm / 2, 180, { pt: 22, font: "Libre Franklin", weight: 600, align: "center", color: gold })
@@ -2017,7 +2017,7 @@ const STAND_INS: DocSpec[] = [
       d.print("4TH FLOOR WEST · STRIP-OUT", x0, 70, { pt: 34, weight: 800, color: w })
       // Title block.
       d.rect(740, 380, 140, 220, 1.5, w)
-      ;["ASHWOOD OUTPOST", "4th FL. REFURB", "SHEET A-4.1", "DRN: WF", "DATE: 8/84", "SCALE 1:100"].forEach((s, i) => d.print(s, 748, 405 + i * 30, { pt: 15, weight: 700, color: w }))
+      ;["ASHWOOD STATION", "4th FL. REFURB", "SHEET A-4.1", "DRN: WF", "DATE: 8/84", "SCALE 1:100"].forEach((s, i) => d.print(s, 748, 405 + i * 30, { pt: 15, weight: 700, color: w }))
       d.print("ALL WORK HALTED 9/26", 60, 540, { pt: 30, weight: 800, color: "#ffd8a0" })
     },
   },
@@ -2037,7 +2037,7 @@ const STAND_INS: DocSpec[] = [
       for (let i = 0; i < 18; i++) d.rect(80 + (i % 6) * 110, 130 + Math.floor(i / 6) * 130, 40, 80, 1.2, b, "#c9d2ea")
       d.print("2×4 TROFFERS · SEE E-4.2", 60, 540, { pt: 22, weight: 700, color: b })
       d.rect(740, 380, 140, 220, 1.2, b)
-      ;["ASHWOOD OUTPOST", "SHEET E-4.1", "DRN: WF", "DATE: 8/84"].forEach((s, i) => d.print(s, 748, 405 + i * 30, { pt: 15, weight: 700, color: b }))
+      ;["ASHWOOD STATION", "SHEET E-4.1", "DRN: WF", "DATE: 8/84"].forEach((s, i) => d.print(s, 748, 405 + i * 30, { pt: 15, weight: 700, color: b }))
     },
   },
   {
@@ -2152,7 +2152,7 @@ const STAND_INS: DocSpec[] = [
       d.rect(6, 6, d.wmm - 12, d.hmm - 12, 1, "#3b4f8e")
       d.print("CERTIFICATE OF INSPECTION", d.wmm / 2, 30, { pt: 15, weight: 800, align: "center", color: "#3b4f8e" })
       d.print("PASSENGER ELEVATOR", d.wmm / 2, 42, { pt: 11, weight: 700, align: "center" })
-      const r: [string, string][] = [["LOCATION", "ASHWOOD OUTPOST, CORE"], ["CAR NO.", "P-1"], ["CAPACITY", "2500 LB / 16 PERSONS"], ["SERVES", "G, 1, 2, 3, 4"], ["INSPECTED", "MAY 14, 1984"], ["EXPIRES", "MAY 31, 1985"]]
+      const r: [string, string][] = [["LOCATION", "ASHWOOD STATION, CORE"], ["CAR NO.", "P-1"], ["CAPACITY", "2500 LB / 16 PERSONS"], ["SERVES", "G, 1, 2, 3, 4"], ["INSPECTED", "MAY 14, 1984"], ["EXPIRES", "MAY 31, 1985"]]
       r.forEach(([k, v], i) => {
         d.print(k, 16, 70 + i * 22, { pt: 8, weight: 700 })
         d.type(v, 62, 70 + i * 22, { pt: 9, font: "Courier Prime" })
@@ -2288,7 +2288,7 @@ function idBadge(id: string, name: string, role: string, no: string): DocSpec {
       c.restore()
       d.print("IOPS", w / 2, 12.2, { pt: 17, font: "Archivo Black", align: "center", color: "#f0ece0", spacing: 1 })
       d.print("INTERAGENCY OFFICE OF PROPAGATION STUDIES", w / 2, 15.6, { pt: 3.2, align: "center", color: "#c9d2de" })
-      d.print("ASHWOOD OUTPOST", w / 2, 21, { pt: 5.5, weight: 700, align: "center", color: "#1f3350", spacing: 0.4 })
+      d.print("ASHWOOD STATION", w / 2, 21, { pt: 5.5, weight: 700, align: "center", color: "#1f3350", spacing: 0.4 })
       // Photo: a washed-out head-and-shoulders, the way a 1980s badge laminate fades.
       const px = 13, py = 24, pw = 28, ph = 32
       d.rect(px, py, pw, ph, 0.2, "#556070", "#9aa4ae")
