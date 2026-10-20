@@ -3,7 +3,7 @@
 // the soundscape's real seeded output, the game's beds and footsteps, the runtime's spatial model, wall occlusion and
 // reverb, then measures loudness per stem.
 //
-//   bun scripts/soundscape-reel.ts [--out <dir>] [--seconds 90] [--t0 <sim seconds>] [--night 1]
+//   bun scripts/soundscape-reel.ts [--out <dir>] [--seconds 92] [--t0 <sim seconds>] [--night 1] [--hour 2.94] [--rain 0.42]
 //
 // Writes reel.wav (+ reel.m4a when ffmpeg is present), stems (scape / beds / steps) and loudness.json.
 import { mkdirSync, writeFileSync } from "node:fs"
@@ -104,10 +104,11 @@ function at(t: number): { x: number; y: number; speed: number } {
 }
 
 // 02:59:30 on night `NIGHT`; the clock runs a game hour every two real minutes. A drizzle eases off over the walk.
-const START_HOUR = 3 - 30 / 3600 - 6 / 120
+const START_HOUR = Number(arg("hour", String(3 - 30 / 3600 - 6 / 120)))
 const hourAt = (t: number) => START_HOUR + t / 120
 const absAt = (t: number) => 24 * (NIGHT - 1) + 24 + hourAt(t)
-const rainAt = (t: number) => (t < 60 ? 0.42 : Math.max(0, 0.42 * (1 - (t - 60) / 18)))
+const RAIN = Number(arg("rain", "0.42"))
+const rainAt = (t: number) => (t < 60 ? RAIN : Math.max(0, RAIN * (1 - (t - 60) / 18)))
 const wetAt = (t: number) => Math.min(0.75, 0.55 + t / 400)
 
 // --- Samples -------------------------------------------------------------------------------------------------------
@@ -269,7 +270,8 @@ function render(stems: ReadonlySet<Stem>, t0: number, beds: Record<string, Float
     const s1 = Math.min(N, s0 + BLOCK)
     for (const v of voices) {
       if (!v.alive) continue
-      const a = 1 - Math.exp((-2 * Math.PI * Math.min(v.cutoff, 20000)) / SR)
+      // 24 kHz bakes are linearly resampled here, so keep their images above 11 kHz out (Web Audio resamples cleanly).
+      const a = 1 - Math.exp((-2 * Math.PI * Math.min(v.cutoff, v.srcRate < SR ? 11000 : 20000)) / SR)
       const step = (v.rate * v.srcRate) / SR
       for (let i = Math.max(s0, v.start); i < s1; i++) {
         if (v.gainTarget >= 0) v.gain += (v.gainTarget - v.gain) * 0.0008
@@ -423,7 +425,7 @@ function findStart(): number {
         if (id.startsWith("scape.gunshot") && t < 30) early++
       }
     }
-    if (siren > 40 && gun > 0 && early > 0) return t0
+    if ((siren > 40 && gun > 0 && early > 0) || NIGHT > 3) return t0
   }
   return 4000
 }

@@ -40,8 +40,10 @@
   clocks strike the hour), dripping taps, fridges that hum until the house's power fails (`housePowered`, pure, for
   anyone who wants TVs to agree), creaks, settling, pipe knocks, wind and curtains at open or broken windows, a music
   box that plays once a night when someone steps in, phones, and one haunted phone per few houses that rings at 3 AM
-  until someone walks up and the machine answers. Outside: rain on cars, puddles and leaves, gutters after rain,
-  porch chimes on gusts, insects by day. Distance: sirens and other survivors' gunfire that thin out each night and
+  until someone walks up and the machine answers, smoke alarms chirping on dying batteries for three nights, open
+  doors creaking on gusts. Outside: rain on cars, puddles and leaves, gutters after rain, porch chimes on gusts,
+  insects by day, a dawn chorus that grows each night, street lamps humming (dying sodium ones stutter), neon buzzing,
+  dispatch calling the abandoned cruisers (fewer calls each night, then none), shop alarm bells running down. Distance: sirens and other survivors' gunfire that thin out each night and
   stop (the last sirens wind down mid-wail, the fourth night's shots are three and then one), a far car alarm, an owl
   from night 2, a church bell striking the hours for the blocks around it (thirteen at midnight on night 3). Seeded on
   town seed and sim time; presentation only (nothing reaches zombie hearing). Other features ask for sounds through

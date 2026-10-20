@@ -19,6 +19,7 @@ export const SCAPE_LAYERS = [
   "gutters",
   "insects",
   "owl",
+  "electrics",
   "hooks",
 ] as const
 export type ScapeLayer = (typeof SCAPE_LAYERS)[number]
@@ -39,6 +40,7 @@ export const SCAPE_LAYER_GROUP: Record<ScapeLayer, "interior" | "exterior" | "di
   gutters: "exterior",
   insects: "exterior",
   owl: "distant",
+  electrics: "exterior",
   hooks: "exterior",
 }
 
@@ -92,7 +94,16 @@ export const SCAPE_SOUNDS: readonly ScapeSoundDef[] = [
   { id: "scape.gutter.drip", label: "Gutter dripping", layer: "gutters", bake: (sr) => dsp.gutterDrip(sr), gain: 0.24, range: { ref: 0.8, max: 12 }, wet: 0.2, maxVoices: 3 },
   { id: "scape.insects", label: "Insects by day", layer: "insects", bake: (sr) => dsp.insectsDay(sr), loop: true, gain: 0.07, range: { ref: 2, max: 22 }, wet: 0.1 },
   { id: "scape.owl", label: "Owl", layer: "owl", bake: (sr) => dsp.owl(sr), gain: 0.18, range: { ref: 0, max: 0 }, wet: 0.45, maxVoices: 1 },
+  { id: "scape.bird.0", label: "Songbird at dawn", layer: "insects", bake: (sr) => dsp.birdSong(sr, 40), gain: 0.28, range: { ref: 2, max: 30 }, wet: 0.3, maxVoices: 2 },
+  { id: "scape.bird.1", label: "Songbird at dawn", layer: "insects", bake: (sr) => dsp.birdSong(sr, 41), gain: 0.28, range: { ref: 2, max: 30 }, wet: 0.3, maxVoices: 2 },
+  { id: "scape.bird.2", label: "Songbird at dawn", layer: "insects", bake: (sr) => dsp.birdSong(sr, 42), gain: 0.28, range: { ref: 2, max: 30 }, wet: 0.3, maxVoices: 2 },
   { id: "scape.church.bell", label: "Church bell striking the hour", layer: "clocks", bake: (sr) => dsp.churchBell(sr), gain: 0.3, range: { ref: 8, max: 150 }, wet: 0.5, maxVoices: 3 },
+  { id: "scape.radio.call", label: "Police radio in an empty cruiser", layer: "electrics", bake: (sr) => dsp.radioCall(sr), gain: 0.22, range: { ref: 1.5, max: 22 }, wet: 0.2, maxVoices: 2 },
+  { id: "scape.neon.buzz", label: "Neon sign buzz", layer: "electrics", bake: (sr) => dsp.neonBuzz(sr), loop: true, gain: 0.12, range: { ref: 1, max: 10 }, wet: 0.1 },
+  { id: "scape.lamp.buzz", label: "Street lamp hum", layer: "electrics", bake: (sr) => dsp.lampBuzz(sr), loop: true, gain: 0.07, range: { ref: 1.5, max: 9 }, wet: 0.1 },
+  { id: "scape.alarm.bell", label: "Shop alarm bell", layer: "electrics", bake: (sr) => dsp.alarmBell(sr), loop: true, gain: 0.1, range: { ref: 2, max: 45 }, wet: 0.35 },
+  { id: "scape.smoke.chirp", label: "Smoke alarm low battery", layer: "oddities", bake: (sr) => dsp.smokeChirp(sr), gain: 0.16, range: { ref: 1, max: 16 }, wet: 0.25, maxVoices: 2 },
+  { id: "scape.door.creak", label: "Open door swinging on its hinge", layer: "wind", bake: (sr) => dsp.doorCreak(sr), gain: 0.16, range: { ref: 1, max: 14 }, wet: 0.25, maxVoices: 2 },
   // For other features, through `hooks.ts` (the life layer, the dead's habits).
   { id: "scape.tv", label: "Television left on", layer: "hooks", bake: (sr) => dsp.tvLeftOn(sr), loop: true, gain: 0.16, range: { ref: 0.8, max: 12 }, wet: 0.2 },
   { id: "scape.life.rustle", label: "Something bolting through a shrub", layer: "hooks", bake: (sr) => dsp.rustle(sr), gain: 0.3, range: { ref: 1, max: 22 }, wet: 0.2, maxVoices: 2 },
