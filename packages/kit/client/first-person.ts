@@ -12,6 +12,8 @@ export class FirstPerson {
   speed = 2.1
   sensitivity = 0.002
   fov = 68
+  near = 0.08
+  far = 350
   flashlight = false
   readonly eye: [number, number, number] = [0, 1.7, 0]
   readonly direction: [number, number, number] = [0, 0, -1]
@@ -63,7 +65,7 @@ export class FirstPerson {
     this.direction[1] = Math.sin(this.pitch)
     this.direction[2] = -c * Math.cos(this.pitch)
     mat4.lookAt(this.eye, this.eye.map((v, i) => v + this.direction[i]!), [0, 1, 0], this.view)
-    mat4.perspective(this.fov * Math.PI / 180, aspect, 0.08, 350, this.projection)
+    mat4.perspective(this.fov * Math.PI / 180, aspect, this.near, this.far, this.projection)
     mat4.multiply(this.projection, this.view, this.viewProj)
     return this.viewProj
   }

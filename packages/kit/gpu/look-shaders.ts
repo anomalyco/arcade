@@ -27,6 +27,11 @@ export type PostFinishOptions = {
    * display-linear luminance) and emitters above `hot` bloom fully, replacing the soft-knee threshold.
    */
   bloomGate?: { cap: number; hot: number }
+  /** Optional full composite body, using the standard src/bloom/grade bindings and VO input. */
+  composite?: string
+  /** Scene-linear bloom prefilter. Zero threshold/knee includes the dark image for diffusion. */
+  bloomThreshold?: number
+  bloomKnee?: number
 }
 
 export type LookVariantMode = "noir" | "painterly" | "generic"

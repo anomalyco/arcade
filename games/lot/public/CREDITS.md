@@ -23,8 +23,8 @@ The Objaverse snapshot names it **'80s Generic USA Station wagon – Low poly mo
 
 ## Procedural work and reference
 
-Building shell, lamp, parking markings and diamond fence are generated here. Pines use Arcade's shared foliage generator.
-Aiden's Ashwood exterior informed the metre scale, camera, palette and arrangement. This scene is a smaller independent composition, not an asset-for-asset port.
+The exterior geometry is converted from Aiden's Ashwood procedural builders: building shell, dish, guard booth, barriers, lamps, roads, utility poles, wires, fence, and seeded conifer limbs and placement. The foliage atlas uses Ashwood's procedural painter. `ashwood/scene.json` records source hashes for the conversion.
+Ashwood's home drift supplies the camera. Its fog and film-grade equations are ported to kit shaders; scanned building materials, interiors, SSR, and full volumetric lighting are not included in this exterior conversion.
 No Mixamo assets or Three.js runtime are included.
 
 Regenerate downloads with `bun run fetch-assets` in `games/lot`. The script refuses a wagon licence other than the verified CC BY grant. Original licence metadata and source SHA-256 are retained in `assets/source-metadata.json`.

@@ -4,6 +4,7 @@ import { ALL_EXTENSIONS } from "@gltf-transform/extensions"
 import { vec3 } from "wgpu-matrix"
 import { Mesh, MAT, packVerts } from "@arcade/kit/gpu/mesh"
 import { packTexturedVerts } from "@arcade/kit/gpu/textured-mesh"
+import type { SourceScene } from "../src/world"
 
 test("UV extension preserves the compact ABI, full UV range and vertex alignment", () => {
   const mesh = new Mesh()
@@ -16,6 +17,31 @@ test("UV extension preserves the compact ABI, full UV range and vertex alignment
   expect(bytes.slice(32, 56)).toEqual(compact.slice(24, 48))
   expect([floats[6], floats[7], floats[14], floats[15]]).toEqual([-12.5, 32.25, 0.125, 1])
   expect(() => packTexturedVerts(mesh.v, [1, 2])).toThrow("UV count")
+})
+
+test("baked exterior ships complete, finite, triangle-aligned geometry within hosting limits", async () => {
+  const base = new URL("../public/ashwood/", import.meta.url)
+  const scene: SourceScene = await Bun.file(new URL("scene.json", base)).json()
+  expect(scene.version).toBe(1)
+  expect(scene.treeCount).toBeGreaterThan(100)
+  for (const kind of ["solid", "ground", "foliage", "fence"] as const) {
+    expect(scene.files[kind].length).toBeGreaterThan(0)
+    for (const name of scene.files[kind]) {
+      const file = Bun.file(new URL(name, base))
+      expect(file.size).toBeLessThan(25 * 1024 * 1024)
+      const bytes = Bun.gunzipSync(new Uint8Array(await file.arrayBuffer()))
+      const stride = kind === "solid" ? 24 : 32
+      expect(bytes.byteLength).toBeGreaterThan(0)
+      expect(bytes.byteLength % (stride * 3)).toBe(0)
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+      let finite = true
+      for (let offset = 0; offset < bytes.byteLength; offset += stride) {
+        for (const component of [0, 4, 8]) finite &&= Number.isFinite(view.getFloat32(offset + component, true))
+      }
+      expect(finite).toBe(true)
+    }
+  }
+  expect(await Bun.file(new URL("paint.js", base)).exists()).toBe(true)
 })
 
 test("shipped wagon is licensed, grounded, metre-scaled and has normals/UVs", async () => {

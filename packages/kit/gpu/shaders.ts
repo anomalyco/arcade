@@ -1018,8 +1018,8 @@ fn clean(c: vec4f) -> vec4f {
     let exposed = max(dot(col, vec3f(0.2126, 0.7152, 0.0722)) * ${looks ? "grade.frame.w" : "G.w"}, 1e-5);
     let hot = ${finish.bloomGate.hot.toFixed(4)};
     col *= mix(min(1.0, ${finish.bloomGate.cap.toFixed(4)} / exposed), 1.0, smoothstep(hot, hot * 2.0, exposed));` : `let br = max(col.r, max(col.g, col.b));
-    let knee = 0.5;
-    let th = 0.9;
+    let knee = ${(finish?.bloomKnee ?? 0.5).toFixed(4)};
+    let th = ${(finish?.bloomThreshold ?? 0.9).toFixed(4)};
     var soft = clamp(br - th + knee, 0.0, 2.0 * knee);
     soft = soft * soft / (4.0 * knee + 1e-4);
     col *= max(soft, br - th) / max(br, 1e-4);`}
@@ -1048,6 +1048,7 @@ fn hash(p: vec2f) -> f32 {
 
 // G: time, desaturate, flash, exposure
 @fragment fn composite(o: VO) -> @location(0) vec4f {
+  ${finish?.composite ?? /* wgsl */ `
   ${looks ? "let G = grade.frame; let enhanced = grade.look.x > 0.5;" : ""}
   let uv = o.uv;
   let fromC = uv - 0.5;
@@ -1097,6 +1098,7 @@ fn hash(p: vec2f) -> f32 {
   let ign = fract(52.9829189 * fract(dot(floor(px), vec2f(0.06711056, 0.00583715))));
   c += (ign - 0.5) / 255.0 * step(0.001, l);` : `c += grain * ${finish ? finish.grain.toFixed(4) : looks ? "select(0.022, 0.009, enhanced)" : "0.022"} * (1.0 - l * 0.6);`}
   return vec4f(c, 1.0);
+  `}
 }
 `
 
