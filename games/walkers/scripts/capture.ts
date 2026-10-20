@@ -11,7 +11,7 @@ import { join, resolve, sep } from "node:path"
 import { parseArgs } from "node:util"
 import { chromium } from "playwright-core"
 
-const { values } = parseArgs({ options: { creature: { type: "string", default: "biped" }, task: { type: "string", default: "room" }, max: { type: "string", default: "170" }, speed: { type: "string", default: "2" }, heist: { type: "boolean", default: false }, train: { type: "string", default: "22" } } })
+const { values } = parseArgs({ options: { creature: { type: "string", default: "biped" }, task: { type: "string", default: "room" }, max: { type: "string", default: "170" }, speed: { type: "string", default: "2" }, heist: { type: "boolean", default: false }, train: { type: "string", default: "22" }, "replay-only": { type: "boolean", default: false } } })
 const out = resolve(process.env.LEASE_OUT ?? "../../captures/walkers")
 mkdirSync(out, { recursive: true })
 const prefix = "/arcade/walkers/"
@@ -37,7 +37,7 @@ const errors: string[] = []
 page.on("pageerror", (e) => errors.push(e.message))
 const t0 = Date.now()
 const at = () => (Date.now() - t0) / 1000
-const query = values.heist ? "creature=quadruped&task=heist&speed=1.5&panel=0&compare=0" : `creature=${values.creature}&task=${values.task}&speed=${values.speed}&panel=0`
+const query = values["replay-only"] ? `creature=${values.creature}&task=heist&speed=1&panel=0&compare=0&autostart=0` : values.heist ? "creature=quadruped&task=heist&speed=1.5&panel=0&compare=0" : `creature=${values.creature}&task=${values.task}&speed=${values.speed}&panel=0`
 await page.goto(`http://127.0.0.1:${server.port}${prefix}?${query}`, { waitUntil: "load" })
 await page.waitForSelector("#app[data-ready]", { state: "attached" })
 const marks: Record<string, number> = { loaded: at() }
@@ -49,6 +49,21 @@ const read = () =>
     return { gens: h.length, finished: last?.finished ?? 0, best: last?.bestEver ?? 0, distance: last?.bestDistance ?? 0 }
   })
 const log: string[] = []
+if (values["replay-only"]) {
+  await page.keyboard.press("KeyP")
+  await page.waitForFunction(() => /replay matches|replay scored/.test(document.getElementById("stats")!.textContent ?? ""), null, { timeout: 90_000 })
+  const result = await page.locator("#stats").innerText()
+  await page.screenshot({ path: join(out, "human-replay.png") })
+  const video = page.video()!
+  await context.close()
+  await browser.close()
+  server.stop(true)
+  await Bun.write(join(out, "human-replay.json"), JSON.stringify({ result, errors, seconds: at() }, null, 2))
+  const ff = Bun.spawnSync(["ffmpeg", "-y", "-loglevel", "error", "-i", await video.path(), "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "22", "-movflags", "+faststart", join(out, "human-replay.mp4")])
+  if (ff.exitCode || errors.length || !result.includes("replay matches")) throw new Error(JSON.stringify({ result, errors, ffmpeg: ff.stderr.toString() }))
+  console.log(result, `\nwrote ${out}`)
+  process.exit(0)
+}
 if (values.heist) await heist()
 let s = await read()
 while (at() < Number(values.max)) {

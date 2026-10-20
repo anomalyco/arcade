@@ -98,5 +98,8 @@ export class Chart {
     line((s) => s.mean, "rgba(143,193,255,0.8)", 1.25)
     line((s) => s.center, "rgba(232,238,244,0.55)", 1)
     line((s) => s.best, "#ff7a59", 1.75)
+    // Red ticks mark generations containing human runs penalised for illegal contact.
+    ctx.fillStyle = "#ff5066"
+    history.forEach((s, i) => { if (s.unrealistic) ctx.fillRect(X(i), padT + h - 4, 2, 4) })
   }
 }

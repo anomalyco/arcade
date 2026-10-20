@@ -1,10 +1,11 @@
 // Tasks and the environment settings that pick a level. A saved policy keeps its Env so its replay rebuilds the room.
 
-import { courseLevel, heistLevel, roomLevel, roughLevel, stepsLevel, wallLevel, type Level } from "./level"
+import { courseLevel, heistLevel, humanHeistLevel, roomLevel, roughLevel, stepsLevel, wallLevel, type Level } from "./level"
 
 export type TaskId = "room" | "wall" | "steps" | "rough" | "course" | "heist"
 
 export type Env = {
+  human?: boolean
   task: TaskId
   /** Obstacle-course seed. */
   seed: number
@@ -29,7 +30,7 @@ export const TASKS: Record<TaskId, TaskDef> = {
 export const TASK_IDS = Object.keys(TASKS) as TaskId[]
 
 export const envFor = (task: TaskId, over: Partial<Env> = {}): Env => ({ task, seed: 1, stage: 0, laserSpeed: 1, extra: 0, ...over })
-export const envKey = (e: Env): string => `${e.task}:${e.task === "course" ? e.seed : 0}:${e.task === "heist" ? `${e.stage}:${e.laserSpeed}:${e.extra}` : ""}`
+export const envKey = (e: Env): string => `${e.human ? "human:" : ""}${e.task}:${e.task === "course" ? e.seed : 0}:${e.task === "heist" ? `${e.stage}:${e.laserSpeed}:${e.extra}` : ""}`
 
 const cache = new Map<string, Level>()
 export function levelFor(e: Env): Level {
@@ -42,7 +43,7 @@ export function levelFor(e: Env): Level {
       : e.task === "steps" ? stepsLevel()
       : e.task === "rough" ? roughLevel()
       : e.task === "course" ? courseLevel(e.seed)
-      : heistLevel({ stage: e.stage, laserSpeed: e.laserSpeed, extra: e.extra })
+       : (e.human ? humanHeistLevel : heistLevel)({ stage: e.stage, laserSpeed: e.laserSpeed, extra: e.extra })
     cache.set(key, lv)
   }
   return lv

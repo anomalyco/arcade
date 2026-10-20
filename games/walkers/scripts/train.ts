@@ -65,6 +65,11 @@ const t0 = performance.now()
 const every = Number(values.every)
 for (let g = 0; g < gens && performance.now() < deadline; g++) {
   const s = await trainer.generation()
+  if (values.out && trainer.env.stage > s.stage) {
+    const checkpoint = values.out.replace(/\.json$/, `-stage${s.stage}.json`)
+    await Bun.write(checkpoint, JSON.stringify({ ...trainer.best!, trainedSeconds: Math.round((performance.now() - t0) / 1000) }) + "\n")
+    console.log(`curriculum checkpoint ${checkpoint}`)
+  }
   if (values["until-stage"] && s.stage >= Number(values["until-stage"]) && s.finished >= Math.ceil(trainer.es.population * 0.5)) {
     console.log(`gen ${s.gen}: half the population escapes at stage ${s.stage}`)
     break

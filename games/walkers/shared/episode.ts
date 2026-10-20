@@ -16,6 +16,8 @@ import type { Level } from "./level"
 import { DEFAULT_PHYSICS, JointMode, World, groundHeight, jointAngle, jointSpeed, makeBox, makeCapsule, makeJoint, makeStatics, raySegment, type Body, type Joint, type Statics } from "./physics"
 import { Policy, type PolicyShape } from "./policy"
 import { envFor, envKey, levelFor, type Env, type TaskId } from "./tasks"
+import { HumanControl } from "./human"
+import { HumanRealism, type GaitMetrics } from "./realism"
 
 export const CONTROL_HZ = 60
 export const SUBSTEPS = 2
@@ -32,6 +34,8 @@ export const HAZARD_RANGE = 1.5
 const SMOOTHING = 0.4
 
 export type RewardSettings = {
+  /** Human realism strength, 0 = loose, 1 = enforced. Optional for v2 saved policies. */
+  realism?: number
   /** Episode length (s); the heist gets heistSeconds. */
   seconds: number
   heistSeconds: number
@@ -69,13 +73,13 @@ export const TRIP_STEPS = 3
 export const DEFAULT_REWARD: RewardSettings = { seconds: 14, heistSeconds: 30, progress: 1, upright: 0.15, effort: 0.04, fall: 1.5, finish: 0.5, phase: 0.9, gem: 2, escape: 8, alarm: 2, exposure: 4, maxAlarms: 0 }
 
 export type Outcome = "running" | "timeout" | "fell" | "finished" | "caught"
-export type EpisodeResult = { fitness: number; distance: number; time: number; outcome: Outcome; gem: boolean; alarms: number }
+export type EpisodeResult = { fitness: number; distance: number; time: number; outcome: Outcome; gem: boolean; alarms: number; gait?: GaitMetrics }
 
 export const observationSize = (c: CreatureDef): number =>
   6 + 2 * actuated(c).length + c.feet.length + 2 + LOOKAHEAD.length + WHISKERS.length + LASER_RAYS.length + 2 + 2 + 5
 export const policyShape = (id: CreatureId, hidden: number): PolicyShape => {
   const c = CREATURES[id]
-  return { inputs: observationSize(c), hidden, outputs: actuated(c).length }
+  return { inputs: observationSize(c), hidden, outputs: actuated(c).length + (id === "human" ? 1 : 0) }
 }
 
 const staticsCache = new Map<string, Statics>()
@@ -87,6 +91,8 @@ export function staticsFor(env: Env, level: Level): Statics {
 }
 
 export class Episode {
+  readonly human: HumanControl | null
+  readonly realism: HumanRealism | null
   readonly creature: CreatureDef
   readonly env: Env
   readonly level: Level
@@ -129,13 +135,15 @@ export class Episode {
   constructor(creature: CreatureId, task: TaskId | Env, readonly policy: Policy | null, readonly reward: RewardSettings = DEFAULT_REWARD) {
     const def = CREATURES[creature]
     this.creature = def
-    this.env = typeof task === "string" ? envFor(task) : task
+    this.env = { ...(typeof task === "string" ? envFor(task) : task), ...(creature === "human" ? { human: true } : {}) }
+    this.human = creature === "human" ? new HumanControl() : null
+    this.realism = this.human ? new HumanRealism() : null
     this.level = levelFor(this.env)
     const statics = staticsFor(this.env, this.level)
     const bodies: Body[] = def.bodies.map((b) => makeCapsule(b.x, b.y + groundHeight(statics, b.x), b.a, b.hl, b.r, b.m, b.friction ?? 0.8, 0))
     const joints: Joint[] = def.joints.map((j) =>
       makeJoint(bodies, j.a, j.b, j.x, j.y + groundHeight(statics, j.x), {
-        lower: j.lower, upper: j.upper, mode: j.mode === "motor" ? JointMode.Motor : JointMode.Spring, maxTorque: j.torque, kp: j.kp ?? 12, maxSpeed: j.maxSpeed ?? 10,
+        lower: j.lower, upper: j.upper, mode: j.mode === "motor" ? JointMode.Motor : JointMode.Spring, maxTorque: j.torque, kp: j.kp ?? 12, maxSpeed: j.maxSpeed ?? 10, hill: this.human ? j.maxSpeed ?? 8 : 0,
       }))
     this.n = bodies.length
     for (const p of this.level.props) {
@@ -152,7 +160,7 @@ export class Episode {
     this.world = new World(bodies, joints, statics, DEFAULT_PHYSICS)
     this.motors = actuated(def)
     this.obs = new Float64Array(observationSize(def))
-    this.action = new Float64Array(this.motors.length)
+    this.action = new Float64Array(this.motors.length + (this.human ? 1 : 0))
     this.targets = new Float64Array(this.motors.length)
     this.goal = this.level.goal
     this.seconds = this.level.gem ? reward.heistSeconds : Math.max(reward.seconds, this.level.seconds ?? 0)
@@ -167,6 +175,11 @@ export class Episode {
 
   get mouth(): Body {
     return this.world.bodies[this.creature.mouth]!
+  }
+
+  gripAt(): [number, number] {
+    const m = this.mouth
+    return this.human ? [m.x + m.c * (m.hl + .02), m.y + m.s * (m.hl + .02)] : [m.x, m.y]
   }
 
   get distance(): number {
@@ -185,6 +198,7 @@ export class Episode {
     const gem = this.level.gem
     if (!gem) return null
     if (!this.carrying) return [gem.x, gem.y]
+    if (this.human) return this.gripAt()
     const m = this.mouth
     return [m.x + m.c * (m.hl + 0.02), m.y + m.s * (m.hl + 0.02) - 0.02]
   }
@@ -221,11 +235,12 @@ export class Episode {
       obs[k++] = jointSpeed(bodies, j) * 0.1
     }
     for (const f of c.feet) obs[k++] = bodies[f]!.contact ? 1 : 0
-    sincos((6.283185307179586 * this.time) / this.reward.phase, sc)
+    // Keep the v2 operation order: reassociating multiply/divide changes chaotic saved replays.
+    sincos(this.human ? 6.283185307179586 * this.human.phase : (6.283185307179586 * this.time) / this.reward.phase, sc)
     obs[k++] = sc[0]
     obs[k++] = sc[1]
     for (const dx of LOOKAHEAD) obs[k++] = Math.max(-1, Math.min(1, (groundHeight(world.statics, t.x + dx) - ground) * 3))
-    const m = this.mouth
+    const m = this.human ? bodies[2]! : this.mouth
     const ox = m.x, oy = m.y
     for (const a of WHISKERS) {
       sincos(a, sc)
@@ -299,17 +314,21 @@ export class Episode {
     const { world, reward, creature: c, motors, targets } = this
     const u = controls ?? (this.policy ? this.policy.act(this.observe(), this.action) : this.action)
     if (u !== this.action) for (let i = 0; i < this.action.length; i++) this.action[i] = u[i] ?? 0
+    const humanTargets = (this.policy || controls) ? this.human?.step(world, this.action, CONTROL_DT) : null
     for (let i = 0; i < motors.length; i++) {
       const j = world.joints[motors[i]!]!
       let a = this.action[i]!
       if (!(a === a)) a = 0
       if (a > 1) a = 1
       else if (a < -1) a = -1
-      const goal = a >= 0 ? a * j.upper : -a * j.lower
-      targets[i]! += (goal - targets[i]!) * SMOOTHING
+      const goal = humanTargets ? Math.max(j.lower, Math.min(j.upper, humanTargets[i]!)) : a >= 0 ? a * j.upper : -a * j.lower
+      targets[i]! += (goal - targets[i]!) * (this.human ? .18 : SMOOTHING)
       j.target = targets[i]!
     }
-    for (let s = 0; s < SUBSTEPS; s++) world.step(SUB_DT)
+    for (let s = 0; s < SUBSTEPS; s++) {
+      world.step(SUB_DT)
+      this.realism?.energy(world, SUB_DT)
+    }
     this.steps++
     this.time = this.steps * CONTROL_DT
     this.updateHazards()
@@ -326,9 +345,10 @@ export class Episode {
     const upright = c.fallTilt === Infinity ? 0 : Math.max(0, 1 - (tilt * tilt) / (c.fallTilt * c.fallTilt))
     const gem = this.level.gem
     if (gem && !this.carrying) {
-      const m = this.mouth
-      const dx = m.x - gem.x, dy = m.y - gem.y
-      if (dx * dx + dy * dy < 0.35 * 0.35) {
+      const [mx, my] = this.gripAt()
+      const dx = mx - gem.x, dy = my - gem.y
+      const reach = this.human ? .16 : .35
+      if (dx * dx + dy * dy < reach * reach) {
         this.carrying = true
         this.gemTime = this.time
         this.fitness += reward.gem
@@ -340,7 +360,18 @@ export class Episode {
     // the first wall) outscored walking into it, and the population never found out what lies past it.
     const gained = credited - this.credited
     this.fitness += reward.progress * gained * (1 + reward.upright * upright) - reward.effort * effort * CONTROL_DT
+    // Human lesson zero also trains balance. Without survival shaping ES preferred an immediate collapse
+    // to a longer, costly fall; later lessons remove this incentive to stand in front of a beam.
+    if (this.human && this.env.task === "heist" && this.env.stage === 0) this.fitness += .5 * CONTROL_DT
     this.credited = credited
+    if (this.realism) {
+      const strength = reward.realism ?? 1
+      this.fitness -= this.realism.step(world, this.level, this.time, CONTROL_DT, strength)
+      // Mechanical effort, scaled by body weight; unlike torque-squared this charges fast flailing.
+      let power = 0
+      for (const j of world.joints) power += Math.abs(j.torque * jointSpeed(world.bodies, j))
+      this.fitness -= strength * .2 * power / (75 * 9.81) * CONTROL_DT
+    }
     const d = t.x - this.startX
     if (d > this.best) this.best = d
 
@@ -376,6 +407,7 @@ export class Episode {
     for (const b of world.bodies) if (!(b.x === b.x && b.y === b.y && b.a === b.a)) broken = true
     let fell = broken || Math.abs(tilt) > c.fallTilt
     for (const i of c.fallOn) if (world.bodies[i]!.ground) fell = true
+    if (this.realism && (reward.realism ?? 1) > .5) fell ||= this.realism.fall || this.realism.illegalContactSeconds > .12
     if (reward.maxAlarms > 0 && this.alarms >= reward.maxAlarms) this.end("caught")
     else if (fell) {
       this.end("fell")
@@ -413,7 +445,7 @@ export class Episode {
   }
 
   result(): EpisodeResult {
-    return { fitness: this.fitness, distance: this.distance, time: this.time, outcome: this.outcome, gem: this.carrying, alarms: this.alarms }
+    return { fitness: this.fitness, distance: this.distance, time: this.time, outcome: this.outcome, gem: this.carrying, alarms: this.alarms, ...(this.realism ? { gait: this.realism.metrics(this.distance) } : {}) }
   }
 }
 

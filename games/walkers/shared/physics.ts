@@ -75,6 +75,11 @@ export type Joint = {
   maxSpeed: number
   /** Target angle (relative, like lower/upper). */
   target: number
+  /** Muscle force–velocity: above 0, the torque available while the joint already turns the way the motor pushes
+   *  falls linearly to a fifth at this speed (rad/s), and resisting a joint turning against it allows 1.3× (Hill). */
+  hill: number
+  /** Torque limit for this substep (maxTorque, scaled by the force–velocity curve). */
+  limit: number
   /** Motor torque applied during the last step (N·m). */
   torque: number
   px: number
@@ -224,7 +229,7 @@ export function makeBox(x: number, y: number, a: number, hx: number, hy: number,
 
 const GROUND: Body = makeBox(0, 0, 0, 0, 0, 0, GROUND_FRICTION, -2)
 
-export type JointOptions = { lower: number; upper: number; mode?: JointMode; maxTorque?: number; kp?: number; maxSpeed?: number }
+export type JointOptions = { lower: number; upper: number; mode?: JointMode; maxTorque?: number; kp?: number; maxSpeed?: number; hill?: number }
 
 /** A revolute joint at world point (x, y); b = -1 pins a to the world. Angles are relative to the pose at creation. */
 export function makeJoint(bodies: readonly Body[], a: number, b: number, x: number, y: number, o: JointOptions): Joint {
@@ -236,7 +241,7 @@ export function makeJoint(bodies: readonly Body[], a: number, b: number, x: numb
     lax: A.c * ax + A.s * ay, lay: -A.s * ax + A.c * ay,
     lbx: B.c * bx + B.s * by, lby: -B.s * bx + B.c * by,
     ref: B.a - A.a, lower: o.lower, upper: o.upper, mode: o.mode ?? JointMode.Free, maxTorque: o.maxTorque ?? 0, kp: o.kp ?? 10, maxSpeed: o.maxSpeed ?? 10,
-    target: 0, torque: 0, px: 0, py: 0, lowerImpulse: 0, upperImpulse: 0, motorImpulse: 0,
+    target: 0, hill: o.hill ?? 0, limit: o.maxTorque ?? 0, torque: 0, px: 0, py: 0, lowerImpulse: 0, upperImpulse: 0, motorImpulse: 0,
   }
 }
 
@@ -305,6 +310,18 @@ export class World {
     this.driveKinematic(this.time, true)
     this.collide()
     const invDt = 1 / dt
+
+    for (const j of joints) {
+      if (j.hill <= 0) {
+        j.limit = j.maxTorque
+        continue
+      }
+      const A = bodies[j.a]!, B = this.body(j.b)
+      const w = B.w - A.w
+      const push = j.target - (B.a - A.a - j.ref)
+      const along = push >= 0 ? w : -w
+      j.limit = along >= 0 ? j.maxTorque * Math.max(0.2, 1 - (0.8 * along) / j.hill) : j.maxTorque * 1.3
+    }
 
     // Warm start.
     for (const j of joints) {
@@ -388,7 +405,7 @@ export class World {
       let ws = j.kp * (j.target - angle)
       if (ws > j.maxSpeed) ws = j.maxSpeed
       else if (ws < -j.maxSpeed) ws = -j.maxSpeed
-      const max = j.maxTorque * dt
+      const max = j.limit * dt
       let imp = axial * (ws - (B.w - A.w))
       const next = Math.max(-max, Math.min(max, j.motorImpulse + imp))
       imp = next - j.motorImpulse

@@ -52,6 +52,7 @@ export class WorkerPool {
     const n = params.length / rows
     const chunk = Math.max(1, Math.ceil(rows / (this.workers.length * 3)))
     const out: EvalResponse = { id: 0, fitness: new Float64Array(rows), distance: new Float64Array(rows), steps: new Float64Array(rows), outcome: new Uint8Array(rows), gem: new Uint8Array(rows), alarms: new Uint8Array(rows) }
+    out.unrealistic = new Uint8Array(rows)
     let next = 0
     let pending = 0
     this.busy = true
@@ -86,6 +87,7 @@ export class WorkerPool {
           out.outcome.set(r.outcome, start)
           out.gem.set(r.gem, start)
           out.alarms.set(r.alarms, start)
+          if (r.unrealistic) out.unrealistic!.set(r.unrealistic, start)
           pending--
           feed(w)
         }
@@ -103,6 +105,7 @@ export class WorkerPool {
 }
 
 export type GenerationStats = {
+  unrealistic?: number
   gen: number
   /** Best and mean fitness of the perturbed population, and the mean policy's own fitness. */
   best: number
@@ -179,13 +182,15 @@ export class Trainer {
 
   constructor(options: TrainerOptions, private evaluator: Evaluator) {
     this.creature = options.creature
-    this.env = { ...options.env }
+    this.env = { ...options.env, ...(options.creature === "human" ? { human: true } : {}) }
     this.curriculum = options.curriculum ?? true
     this.hidden = options.hidden
     this.reward = options.reward ?? DEFAULT_REWARD
     const shape = policyShape(options.creature, options.hidden)
     const seed = options.seed ?? 1
     const init = options.init && options.init.length === paramCount(shape) ? options.init : initParams(shape, mulberry32(seed ^ 0x9e3779b9))
+    // Start humans near neutral posture, not randomly folded knees. The hidden sensory features remain random.
+    if (!options.init && options.creature === "human") init.fill(0, shape.hidden * (shape.inputs + 1))
     this.es = new Es(init, options.es ?? DEFAULT_ES, seed)
   }
 
@@ -268,6 +273,7 @@ export class Trainer {
       gems,
       clean,
       alarms,
+      unrealistic: results.unrealistic?.reduce((a, b) => a + b, 0) ?? 0,
       stage: env.stage,
       steps,
       totalSteps: this.totalSteps,
@@ -310,6 +316,7 @@ export function parsePolicy(value: unknown): SavedPolicy | null {
   if (v.reward !== undefined) {
     const r = v.reward as Record<string, unknown> | null
     if (!r || typeof r !== "object" || !Object.keys(DEFAULT_REWARD).every((k) => typeof r[k] === "number" && Number.isFinite(r[k]))) return null
+    if (r.realism !== undefined && (typeof r.realism !== "number" || !Number.isFinite(r.realism) || r.realism < 0 || r.realism > 1)) return null
   }
   return v as SavedPolicy
 }
