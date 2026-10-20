@@ -466,6 +466,26 @@ Every profile value has a labelled control with units in the shared Lab (Backquo
 Characters page). Blackout also keeps an Old/New switch: Old is the gait before the shared rig, kept for side-by-side
 comparison. Presentation settings never touch simulation or network state.
 
+## Reference clips
+
+`games/blackout/scripts/animation/reference-clips.ts` pose-diffs our gaits against openly licensed clips at the
+clip's own ground speed: 100STYLE mocap (CC BY 4.0; Neutral, Zombie, DragLeftLeg, Crouched and Swat walks) and
+Quaternius UAL keyframed game clips (CC0; Walk, Jog, Sprint, Crouch walk, Zombie walk). `--bake` writes 32-sample
+cycles to `games/blackout/src/dev/reference-clips.json` for the Characters page's **Reference** Lab group, which
+walks a grey ghost of the chosen clip beside the selected actor (phase from the actor's travelled distance, off by
+default). Never add Mixamo or Bandai Namco data there: Mixamo forbids redistribution and any ML use, and Bandai
+Namco's set is non-commercial, so those stay runtime-fetched measurement references only.
+
+What the first pass (2026-10-19, `8404f9ab`) showed, angle RMSE at matched speed:
+
+| Ours vs reference | Overall | Biggest differences |
+| --- | --- | --- |
+| Outbreak zombie vs 100STYLE Zombie (0.79 m/s) | 31.3° | Shoulder flexion 58.9° (both zombie references hold the arms out level; ours hang and reach low), cadence 114 vs 86 steps/min |
+| Outbreak zombie vs Quaternius zombie (0.73 m/s) | 25.1° | Shoulder 57.2°, trunk 17° vs 39° hunch, knee never straightens (34–83°) in the keyframed clip |
+| Outbreak sneak vs 100STYLE Crouched (0.88 m/s) | 30.1° | Knee 63.5°: ours is a deep fixed squat (knee 90–116°) where the mocap bends 20–73°; our swing heel kicks up behind |
+| Survivor walk vs 100STYLE Neutral (0.93 m/s) | 16.1° | Forearm and shoulder ~20–24°; our trunk pitch moves 0.3° per cycle vs 6.4° |
+| Survivor run vs Quaternius jog / sprint | 20.7° / 27.1° | Trunk lean 9–12° vs 23° / 37° (game clips lean much harder) |
+
 ## Known gaps
 
 - **Run late-swing knee extension still leads mocap by ~8°.** Walk leg RMSE is now **8.07°** (hip 4.48°, knee 10.94°,

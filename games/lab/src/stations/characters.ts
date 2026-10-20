@@ -18,6 +18,14 @@ const strafes = [
   ["soldier-strafe", "Soldier circle strafe", "soldier", "circle", 4.2, "Rifle soldier at game speed (4.2 m/s) circling its target."],
 ] as const
 
+// Grey ghost beside the actor playing an openly licensed reference cycle (reference-clips.ts --bake).
+const references = [
+  ["ref-zombie-100style", "Zombie vs 100STYLE zombie", "outbreak-zombie", "action.walk", "style-zombie-walk", "100STYLE Zombie mocap (CC BY 4.0): arms held out level, slower 86 steps/min shamble."],
+  ["ref-zombie-ual", "Zombie vs Quaternius zombie", "outbreak-zombie", "action.walk", "ual-zombie-walk", "Quaternius UAL2 keyframed zombie walk (CC0): deep 39° hunch, arms forward."],
+  ["ref-survivor-walk", "Survivor walk vs 100STYLE", "survivor", "action.walk", "style-neutral-walk", "100STYLE Neutral walk mocap (CC BY 4.0) beside the procedural walk."],
+  ["ref-survivor-jog", "Survivor run vs Quaternius jog", "survivor", "action.run", "ual-jog", "Quaternius UAL1 keyframed jog (CC0): 23° lean vs our 9–15°."],
+] as const
+
 export default defineStation({
   id: "characters",
   title: "Characters & animation",
@@ -41,6 +49,14 @@ export default defineStation({
         : "Previous rigid 0.19 m boot block without ball-of-foot bend (shorter 0.58 m steps at 144.6 steps/min).",
       url: `/arcade/blackout/characters.html#${actor}`,
       setup: [{ command: action }, { command: "character.toe-joint", args: { enabled: toeJoint } }],
+    })),
+    ...references.map(([id, label, actor, action, clip, note]): StationVariant => ({
+      id,
+      group: "Reference",
+      label,
+      note,
+      url: `/arcade/blackout/characters.html#${actor}`,
+      setup: [{ command: action }, { command: "character.reference", args: { clip } }],
     })),
     ...strafes.map(([id, label, actor, mode, speed, note]): StationVariant => ({
       id,

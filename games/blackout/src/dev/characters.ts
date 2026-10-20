@@ -31,6 +31,7 @@ import { wizardModels, wizardWeapon } from "../render/wizard"
 import { outbreakPersonModels, zombieModels } from "../render/zombie"
 import { juiceSettings } from "../ui/debug-overlay"
 import { modelForBone, registerPartModels } from "./rig-demo"
+import { REFERENCE_CLIP_IDS, ReferenceGhost, referenceGhostControls, referenceGhostDefaults } from "./reference-ghost"
 import { registerDevControl } from "@arcade/kit/dev-control"
 import {
   LabCommandRegistry,
@@ -49,6 +50,7 @@ const H = 20
 const round2 = (n: number) => Math.round(n * 100) / 100
 const round3 = (n: number) => Math.round(n * 1000) / 1000
 const round4 = (n: number) => Math.round(n * 10000) / 10000
+const REFERENCE_TINT = [0.72, 0.76, 0.84] as const
 
 function buildStageMap(): MapDef {
   const b = new Builder()
@@ -543,6 +545,18 @@ async function main() {
     })
   }
 
+  const referenceGhost = new ReferenceGhost()
+  for (const key of Object.keys(referenceGhostDefaults) as (keyof typeof referenceGhostDefaults)[]) {
+    Object.defineProperty(labSettingsProxy, key, {
+      enumerable: true,
+      configurable: true,
+      get: () => referenceGhost.settings[key],
+      set: (value: never) => {
+        referenceGhost.settings[key] = value
+      },
+    })
+  }
+
   const labControls: LabControl[] = [
     {
       key: "profilePreset",
@@ -555,6 +569,7 @@ async function main() {
       ],
     },
     ...humanProfileControls.map(c => ({ ...c, group: "Profile" })),
+    ...referenceGhostControls,
   ]
 
   function syncLabDefaultsForActor(actor: StageActor) {
@@ -587,6 +602,7 @@ async function main() {
     },
   )
   labToggleBtn.setAttribute("aria-pressed", String(labPanel.visible))
+  Object.assign(labPanel.navigation.defaults, referenceGhostDefaults)
 
   function applyPresetToActor(actor: StageActor, preset: HumanPreset) {
     actor.preset = preset
@@ -886,6 +902,25 @@ async function main() {
         const raw = String(ctx?.args?.action ?? "walk").toLowerCase()
         setAction(raw === "stop" || raw === "idle" ? "idle" : raw === "run" ? "run" : "walk")
         return { actorId: selected.id, action: selected.action }
+      },
+    },
+    {
+      id: "character.reference",
+      aliases: ["reference.ghost"],
+      label: "Show Reference Clip Ghost",
+      shortLabel: "Reference ghost",
+      category: "Object",
+      args: {
+        clip: { type: "string", enum: REFERENCE_CLIP_IDS, description: "Reference clip id, or off" },
+        offset: { type: "number", description: "Sideways offset from the selected actor in metres (default 0.9)" },
+      },
+      enabled: () => true,
+      run: ctx => {
+        referenceGhost.settings.referenceClip = String(ctx?.args?.clip ?? "off")
+        const offset = Number(ctx?.args?.offset ?? referenceGhostDefaults.referenceOffset)
+        if (Number.isFinite(offset)) referenceGhost.settings.referenceOffset = offset
+        const clip = referenceGhost.clip
+        return { actorId: selected.id, clip: clip?.id ?? "off", source: clip?.source ?? null, licence: clip?.licence ?? null }
       },
     },
     {
@@ -1518,6 +1553,7 @@ async function main() {
       if (actor.avatar.body) actor.previousBones = bodyBones(actor.avatar.body)
       stepActor(actor, dt)
     }
+    referenceGhost.step(selected.avatar.x, selected.avatar.y, selected.avatar.aim, dt)
     if (followSelected) {
       const k = 1 - Math.exp(-dt * 12)
       orbitState.focusX += (selected.avatar.x - orbitState.focusX) * k
@@ -1553,6 +1589,9 @@ async function main() {
         emit(push, modelForBone(actor.models, piece.bone), piece.frame, actor.color, 0)
       }
     }
+
+    const ghost = referenceGhost.body(selected.avatar.x, selected.avatar.y)
+    if (ghost) emitBody(push, { ...ghost, gun: null, pump: null, mag: null }, "rifle", REFERENCE_TINT, selected.models, 0, 0.55)
 
     f.batches.push(...batches)
     renderer.render(f)

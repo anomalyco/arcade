@@ -132,6 +132,59 @@ export function extractBonePoseJoints(pose: BonePose): RigJointMap {
   return extractBodyJoints(b)
 }
 
+/**
+ * Inverse of `extractBodyJoints`: part frames for a joint map (e.g. a retargeted reference clip), so the game's own
+ * part models can draw it. Limb frames point +y from child to parent like `limb`; the pelvis and torso take their
+ * side axis from the hip and shoulder bars.
+ */
+export function jointsToBody(j: RigJointMap): HumanBody {
+  const up: V3 = [0, 1, 0]
+  const cross = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+  const basis = (p: V3, y: V3, side: V3): Frame => {
+    const yy = norm(y)
+    const z = norm(sub(side, [yy[0] * dot(side, yy), yy[1] * dot(side, yy), yy[2] * dot(side, yy)]))
+    return { p, x: cross(yy, z), y: yy, z }
+  }
+  const hipBar = sub(j.hipR, j.hipL)
+  const shoulderBar = sub(j.shoulderR, j.shoulderL)
+  const torso = basis(j.waist, sub(j.chest, j.waist), shoulderBar)
+  const fwd = torso.x
+  const lim = (from: V3, to: V3, ref: V3): Frame => {
+    const y = norm(sub(from, to))
+    let x = sub(ref, [y[0] * dot(ref, y), y[1] * dot(ref, y), y[2] * dot(ref, y)])
+    if (len(x) < 0.25) x = sub(up, [y[0] * y[1], y[1] * y[1], y[2] * y[1]])
+    x = norm(x)
+    return { p: from, x, y, z: cross(x, y) }
+  }
+  // Foot frames: +x along the sole toward the ball, +y up, with the ankle RIG.ankle above the sole line.
+  const foot = (ankle: V3, ball: V3): Frame => {
+    const toBall = sub(ball, ankle)
+    const ang = Math.atan2(-RIG.ankle, RIG.foot)
+    const yaw = Math.atan2(toBall[2], toBall[0])
+    const pitch = Math.atan2(toBall[1], Math.hypot(toBall[0], toBall[2])) - ang
+    const x: V3 = [Math.cos(pitch) * Math.cos(yaw), Math.sin(pitch), Math.cos(pitch) * Math.sin(yaw)]
+    const z = norm(cross(x, up))
+    return { p: ankle, x, y: cross(z, x), z }
+  }
+  const toe = (ball: V3, tip: V3, ft: Frame): Frame => {
+    const x = norm(sub(tip, ball))
+    const z = norm(cross(x, ft.y))
+    return { p: ball, x, y: cross(z, x), z }
+  }
+  const ftL = foot(j.ankleL, j.ballL), ftR = foot(j.ankleR, j.ballR)
+  return {
+    pelvis: basis(j.pelvis, up, hipBar),
+    torso,
+    head: basis(j.neck, sub(j.headTop, j.neck), shoulderBar),
+    ua: [lim(j.shoulderL, j.elbowL, fwd), lim(j.shoulderR, j.elbowR, fwd)],
+    fa: [lim(j.elbowL, j.wristL, fwd), lim(j.elbowR, j.wristR, fwd)],
+    th: [lim(j.hipL, j.kneeL, fwd), lim(j.hipR, j.kneeR, fwd)],
+    sh: [lim(j.kneeL, j.ankleL, fwd), lim(j.kneeR, j.ankleR, fwd)],
+    ft: [ftL, ftR],
+    toe: [toe(j.ballL, j.toeL, ftL), toe(j.ballR, j.toeR, ftR)],
+  }
+}
+
 export type NormalizedPose = {
   /** Normalized 3D joints where pelvis is at [0, pelvisBobNorm, 0] and standing hip height = 1 (ground at y = -1). */
   joints: RigJointMap
@@ -485,13 +538,11 @@ const mv3 = (m: Mat3, v: V3): V3 => [
   m[3] * v[0] + m[4] * v[1] + m[5] * v[2],
   m[6] * v[0] + m[7] * v[1] + m[8] * v[2],
 ]
-function rotZXY(zd: number, xd: number, yd: number): Mat3 {
-  const z = zd * RAD, x = xd * RAD, y = yd * RAD
-  const cz = Math.cos(z), sz = Math.sin(z), cx = Math.cos(x), sx = Math.sin(x), cy = Math.cos(y), sy = Math.sin(y)
-  const Rz: Mat3 = [cz, -sz, 0, sz, cz, 0, 0, 0, 1]
-  const Rx: Mat3 = [1, 0, 0, 0, cx, -sx, 0, sx, cx]
-  const Ry: Mat3 = [cy, 0, sy, 0, 1, 0, -sy, 0, cy]
-  return mul3(mul3(Rz, Rx), Ry)
+function axisRot(axis: "X" | "Y" | "Z", deg: number): Mat3 {
+  const c = Math.cos(deg * RAD), s = Math.sin(deg * RAD)
+  if (axis === "X") return [1, 0, 0, 0, c, -s, 0, s, c]
+  if (axis === "Y") return [c, 0, s, 0, 1, 0, -s, 0, c]
+  return [c, -s, 0, s, c, 0, 0, 0, 1]
 }
 
 export type BvhClip = {
@@ -533,14 +584,15 @@ export function parseBvh(text: string): BvhClip {
     const rot: Record<string, Mat3> = {}
     let c = 0
     for (const j of joints) {
-      let lp: V3, lr: Mat3
-      if (j.channels.length === 6) {
-        lp = [row[c]! * 0.01, row[c + 1]! * 0.01, row[c + 2]! * 0.01]
-        lr = rotZXY(row[c + 3]!, row[c + 4]!, row[c + 5]!)
-        c += 6
-      } else {
-        lp = [j.offset[0] * 0.01, j.offset[1] * 0.01, j.offset[2] * 0.01]
-        lr = [1, 0, 0, 0, 1, 0, 0, 0, 1]
+      // Channels are applied in the order the joint lists them; joints without position channels sit at their offset.
+      const lp: V3 = [j.offset[0] * 0.01, j.offset[1] * 0.01, j.offset[2] * 0.01]
+      let lr: Mat3 = [1, 0, 0, 0, 1, 0, 0, 0, 1]
+      for (const ch of j.channels) {
+        const v = row[c++]!
+        if (ch === "Xposition") lp[0] = v * 0.01
+        else if (ch === "Yposition") lp[1] = v * 0.01
+        else if (ch === "Zposition") lp[2] = v * 0.01
+        else lr = mul3(lr, axisRot(ch[0] as "X" | "Y" | "Z", v))
       }
       if (j.parent === -1) {
         pos[j.name] = lp
