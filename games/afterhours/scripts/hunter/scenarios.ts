@@ -134,18 +134,23 @@ if (run("sight")) {
 
 // ------------------------------------------------------------------------------------------------ escape
 if (run("escape")) {
-  console.log("\n# breaking line of sight and going quiet escapes (storey 1: seen in the spine, sprint, duck into the cubicles, crouch)")
+  console.log("\n# breaking line of sight and going quiet escapes (storey 0: seen at ~18 m, sprint round the corner, on to 0-38, crouch)")
   await inPage(page, ({ H }) => (H.handle.hunter.ctx.settings["hunter.searchTime"] = 25))
-  await place(page, -6, Y(1), 0, Math.PI / 2)
-  await reset(-24, 0, 1, Math.PI / 2)
+  await place(page, -12, Y(0), 0, -Math.PI / 2)
+  await reset(-30, 0, 0, Math.PI / 2)
   const since = await hTime()
   await lights(page, true)
+  await sleep(300)
+  const p = pilot(0, 0.2, "run", 8)
   const t = await until(`h.mode === "hunt"`, 4)
+  await p
   check(t >= 0, `hunt began (${t.toFixed(2)} s)`)
-  // Away east down the spine, then off it among the cubicle pods; torch off, crouched and still behind a panel.
-  await pilot(5, 0.3, "run", 6)
   await lights(page, false)
-  await pilot(7.6, 9.4, "crouch", 12)
+  // Round the corner (out of sight); the sprint is still heard, so it follows by ear, at its hunt speed (a chase it
+  // began by sight); in the security office the player goes quiet, crouched in the dark far corner.
+  await pilot(0, 11, "run", 6)
+  await pilot(10.5, 14, "run", 6)
+  await pilot(16.2, 20.6, "crouch", 14)
   await keys(["KeyC"], true)
   const lost = await until(`h.mode === "search" || h.catches > 0`, 20)
   check(lost >= 0 && (await hunterState(page)).catches === 0, `lost: search after ${lost.toFixed(1)} s`)
@@ -153,7 +158,7 @@ if (run("escape")) {
   await keys(["KeyC"], false)
   const st = await hunterState(page)
   check(gaveUp >= 0 && st.catches === 0, `escaped: ${st.catches} catches, mode ${st.mode}`)
-  await trace("escape", 1, since)
+  await trace("escape", 0, since)
   await inPage(page, ({ H }) => (H.handle.hunter.ctx.settings["hunter.searchTime"] = 35))
 }
 
