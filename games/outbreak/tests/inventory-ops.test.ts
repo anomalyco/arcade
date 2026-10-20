@@ -88,7 +88,7 @@ describe("inventory moves (AR-94)", () => {
     step(sim, me, { from: { at: "belt", slot: 0 }, to: { at: "mate", slot: mate.index }, count: 3 })
     expect(l.count("player", "ammo")).toBe(ammoBefore - 7)
     expect(l.count("mate1", "ammo")).toBe(mateBefore + 3)
-    expect(mate.notices.some((n) => /Got/.test(n.text))).toBe(true)
+    expect(mate.notices.some((n) => /gave you/.test(n.text))).toBe(true)
 
     // Out of reach: nothing moves and the giver is told why.
     mate.survivor.x += 10

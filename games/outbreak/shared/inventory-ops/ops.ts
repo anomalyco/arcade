@@ -3,6 +3,7 @@ import type { ItemId, LedgerEvent, Stack } from "@arcade/kit/sim/ledger"
 import { lifeOf } from "../death/runtime"
 import { sightRects } from "../map"
 import { BELT_ITEMS } from "../progression/catalog"
+import { GIVE_RANGE } from "../progression/give"
 import type { OutbreakSim, SurvivorSlot } from "../sim-types"
 import type { InvAt, InventoryOp, InvRef } from "./types"
 
@@ -14,8 +15,8 @@ export { packInventoryOp, unpackInventoryOp } from "./wire"
  * stash or body you face, the ground in front of you and a teammate in reach. Every move is a run of the ledger's own
  * transactions (swap, take, deposit, drop), so the room decides and the filtered ledger deltas replicate it.
  */
-/** Furthest a teammate can be handed something (metres, centre to centre). */
-export const GIVE_RANGE = 3
+/** Furthest a teammate can be handed something: G's reach (AR-93), so the bag offers whoever G would. */
+export { GIVE_RANGE }
 
 /** The store behind an own end (`hotbar`, `pack`, `belt`), or null. */
 function ownStore(actor: string, at: InvAt): string | null {
@@ -176,16 +177,8 @@ export function applyInventoryOp(sim: OutbreakSim, slot: SurvivorSlot, op: Inven
       progression.notify(slot, `Dropped ${labelOf(sim, src.stack.item, moved)}`, "info", "inventory")
       return finish(moved)
     }
-    let left = 0
-    for (const id of dropIds) {
-      if (!ledger.store(id)) continue
-      const res = ledger.apply({ kind: "take", actor: mate.id, from: id }, progression.envFor(mate))
-      left += res.left ?? (res.ok ? 0 : (ledger.store(id) ? progression.contents(id).reduce((n, s) => n + s.count, 0) : 0))
-    }
-    progression.project(mate)
-    const what = labelOf(sim, src.stack.item, moved)
-    progression.notify(slot, left > 0 ? `Their hands are full: ${what} is at their feet` : `Handed over ${what}`, "result", "inventory")
-    progression.notify(mate, left > 0 ? `${what} for you, at your feet` : `Got ${what}`, "result", "inventory")
+    // The teammate takes it at once (AR-93's hand-over: notices name both, what doesn't fit stays at their feet).
+    for (const id of dropIds) if (ledger.store(id)) progression.handOver(slot, mate, id)
     return finish(moved)
   }
 

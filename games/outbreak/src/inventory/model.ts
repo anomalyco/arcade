@@ -128,7 +128,7 @@ const own = (at: InvAt) => at === "hotbar" || at === "pack" || at === "belt"
  */
 export function moveFor(model: InvModel, from: InvRef, to: InvRef, count = 0): InventoryOp | null {
   const src = cellAt(model, from)
-  if (!src?.stack) return null
+  if (!src?.stack || src.def?.bound) return null
   if (from.at === to.at && (from.slot === to.slot || to.slot < 0)) return null
   if (from.at === "belt" && (to.at === "hotbar" || to.at === "pack")) return null
   if (from.at === "target") {
@@ -152,7 +152,7 @@ export function moveFor(model: InvModel, from: InvRef, to: InvRef, count = 0): I
  */
 export function quickMoveFor(model: InvModel, from: InvRef): InventoryOp | null {
   const src = cellAt(model, from)
-  if (!src?.stack) return null
+  if (!src?.stack || src.def?.bound) return null
   if (from.at === "target") return src.blocked ? null : { from, to: { at: "me", slot: 0 } }
   if (model.target) return moveFor(model, from, { at: "target", slot: -1 })
   if (from.at === "hotbar") return moveFor(model, from, { at: "pack", slot: -1 })
