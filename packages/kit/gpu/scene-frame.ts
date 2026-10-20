@@ -28,7 +28,7 @@ export type SceneLight = {
    */
   spot?: { axis: readonly [number, number, number]; cosOuter: number; cosInner: number }
   /**
-   * Physical torch (`lights/beam.ts`): axis pointing down or level and the half-angle the shared beam profile scales
+   * Physical torch (`lights/beam.ts`): axis (any direction) and the half-angle the shared beam profile scales
    * to. Takes the cone slot; only physical-light hooks shade it.
    */
   beam?: { axis: readonly [number, number, number]; halfAngle: number }

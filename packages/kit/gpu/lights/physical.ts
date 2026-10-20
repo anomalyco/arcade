@@ -155,15 +155,14 @@ fn pbrFalloff(d: f32, r: f32, s: f32) -> f32 {
 
 /**
  * A light's 3D spot cone (Light.cone.w in [2.5, 4.5)): axis xz in cone.xy with y pointing down, cos outer in cone.z,
- * cos inner in cone.w − 3; or a torch beam (cone.w >= 4.5, half-angle cone.w − 5) shaped by the shared beam profile
+ * cos inner in cone.w − 3; or a torch beam (cone.w >= 4.5: axis x, z, y in cone.xyz, half-angle cone.w − 5) shaped by the shared beam profile
  * (\`lights/beam.ts\`). Returns 1 for other lights (the kit's plan cones and game-shaped cones keep their own code).
  */
 fn pbrCone(L: Light, ldir: vec3f, spill: f32) -> f32 {
   if (L.cone.w < 2.5) { return 1.0; }
+  if (L.cone.w >= 4.5) { return kitBeamProfile(kitBeamAngle(dot(-ldir, L.cone.xzy)) / (L.cone.w - 5.0), pbrBeamA(), pbrBeamB()); }
   let axis = vec3f(L.cone.x, -sqrt(max(1.0 - dot(L.cone.xy, L.cone.xy), 0.0)), L.cone.y);
-  let cosT = dot(-ldir, axis);
-  if (L.cone.w >= 4.5) { return kitBeamProfile(kitBeamAngle(cosT) / (L.cone.w - 5.0), pbrBeamA(), pbrBeamB()); }
-  let c = smoothstep(L.cone.z, L.cone.w - 3.0, cosT);
+  let c = smoothstep(L.cone.z, L.cone.w - 3.0, dot(-ldir, axis));
   return mix(spill, 1.0, c);
 }
 

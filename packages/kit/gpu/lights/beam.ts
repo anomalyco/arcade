@@ -7,7 +7,8 @@ import type { LabControl } from "../../lab-panel"
  * `smoothstep(cosOuter, cosInner)` spot (Aiden's) for a torch: the core reads as the bulb's hot spot and the spill
  * keeps the ground just outside the beam from going black.
  *
- * Physical lights use it for `SceneLight.beam` lights (`physicalLightHooks`, cone.w = 5 + half-angle); the distance
+ * Physical lights use it for `SceneLight.beam` lights (`physicalLightHooks`, cone = (axis.x, axis.z, axis.y, 5 +
+ * half-angle), so a torch can point up as well as down); the distance
  * falloff stays physical (windowed inverse-square). Outbreak's near-lens softening (1 / (1 + d²/s²), s = 6 m) is a
  * top-down readability choice and stays in Outbreak. All beam lights in a scene share one profile.
  */
@@ -57,12 +58,12 @@ export function packBeamProfile<T extends Float32Array>(p: BeamProfile, out: T =
 /** The beam's angular reach: past this angle it throws nothing, so a spot shadow frustum or culling can stop there. */
 export const beamReach = (halfAngle: number, p: BeamProfile) => Math.min(Math.PI * 0.95, halfAngle * Math.max(p.spillWidth, 1) * 1.7)
 
-/** Packs a beam into the kit `Light.cone` slot: axis (pointing down or level) xz, 0, 5 + half-angle. */
+/** Packs a beam into the kit `Light.cone` slot: unit axis x, z, y (any direction), 5 + half-angle. */
 export function beamCone(axis: readonly [number, number, number], halfAngle: number): [number, number, number, number] {
-  const len = Math.hypot(axis[0], axis[1], axis[2]) || 1
-  if (axis[1] / len > 1e-6) throw new Error("Beam axes point down or level (light.cone stores y ≤ 0)")
+  const len = Math.hypot(axis[0], axis[1], axis[2])
+  if (!(len > 0)) throw new Error("Beam axis must be non-zero")
   if (!(halfAngle > 0 && halfAngle < 1.5)) throw new Error("Beam half-angle must be in (0, 1.5) rad")
-  return [axis[0] / len, axis[2] / len, 0, 5 + halfAngle]
+  return [axis[0] / len, axis[2] / len, axis[1] / len, 5 + halfAngle]
 }
 
 const bell = (x: number) => 1 / (1 + x * x * (1 + 0.35 * x * x))

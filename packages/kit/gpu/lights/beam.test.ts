@@ -33,8 +33,9 @@ describe("beam profile", () => {
 
   test("packs into the uniform, the cone slot and the scene frame", () => {
     expect(Array.from(packBeamProfile(DARKWOOD_BEAM)).map((v) => +v.toFixed(4))).toEqual([0.8, 0.2, 0.34, 0.02, 1.5, 0.1, 0, 0])
-    expect(beamCone([0, -1, 0], 0.36)).toEqual([0, 0, 0, 5.36])
-    expect(() => beamCone([0, 1, 0], 0.36)).toThrow()
+    expect(beamCone([0, -2, 0], 0.36)).toEqual([0, 0, -1, 5.36])
+    expect(beamCone([0, 0.6, 0.8], 0.36)).toEqual([0, 0.8, 0.6, 5.36])
+    expect(() => beamCone([0, 0, 0], 0.36)).toThrow()
     expect(() => beamCone([0, -1, 0], 1.6)).toThrow()
     const lights = new SceneLights()
     lights.update([{ x: 0, y: 0, h: 1.3, r: 9, color: [1, 1, 1], power: 1, beam: { axis: [0.6, -0.3, 0.8], halfAngle: 0.36 } }], [])
