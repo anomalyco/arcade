@@ -1,6 +1,7 @@
 import { blocked, SFX_BY_ID, type SfxSurface, type ZombieStep } from "@arcade/kit/audio"
 import type { Rect } from "@arcade/kit/sim/geom"
 import { chooseVignettes, vignetteScene } from "../../shared/discovery/vignettes"
+import { BARE_ROOMS, TILED_ROOMS } from "../../shared/houses/style"
 import { EXTERIOR_VEHICLE_COLLIDERS, frontageEnd, inBuildingFootprint, sightRects, SIZE, type Building, type Town } from "../../shared/map"
 import { placeAmbientBlood } from "../blood/placement"
 import { DEFAULT_BLOOD_SETTINGS } from "../blood/settings"
@@ -99,6 +100,8 @@ function interiorSurface(building: Building, town: Town, x: number, y: number): 
     if (x >= rx0 && x <= rx1 && y >= rz0 && y <= rz1) return "carpet"
   }
   const arch = building.archetype ?? building.kind
+  const room = building.style?.rooms.find((r) => x >= r.rect[0] && x <= r.rect[2] && y >= r.rect[1] && y <= r.rect[3])
+  if (room) return TILED_ROOMS.has(room.type) ? "tile" : BARE_ROOMS.has(room.type) ? "concrete" : "wood"
   if (isResidential(building)) {
     if (building.kind === "house") {
       const [bx0, bz0, bx1, bz1] = building.rect

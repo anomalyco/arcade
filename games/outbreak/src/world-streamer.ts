@@ -21,6 +21,7 @@ import {
   type Prop,
   type Town,
 } from "../shared/map"
+import { houseVariety, houseVarietyKey } from "../shared/houses/variety"
 import { supportHeight, terrainVertex } from "../shared/terrain"
 import {
   generateWorldChunk,
@@ -389,7 +390,7 @@ function neighbourhood(chunk: WorldChunk, town: Town, mode: WorldMode): { buildi
     for (let dx = -1; dx <= 1; dx++) {
       if (!dx && !dy) continue
       const cx = chunk.cx + dx, cy = chunk.cy + dy
-      const key = `${town.seed}:${town.houseSeed}:${cx}:${cy}:${mode}`
+      const key = `${town.seed}:${town.houseSeed}:${cx}:${cy}:${mode}:${houseVarietyKey()}`
       let n = neighbourChunks.get(key)
       if (n) neighbourChunks.delete(key)
       else {
@@ -1791,6 +1792,7 @@ export class WorldClientStreamer {
           interior: { ...interiorSettings },
           props: { ...propDressingState },
           veg: { ...vegetationBuild },
+          variety: { ...houseVariety, weights: { ...houseVariety.weights } },
         })
         break
       }
@@ -1840,7 +1842,7 @@ export class WorldClientStreamer {
     cx: number,
     cy: number,
   ): string {
-    return `${seed}:${houseSeed}:${terrain}:${foliageDensity}:${mode}:${archSettings.houseDecay}:${archSettings.clutterDensity}:${archSettings.weathering}:${archSettings.clutterSeed}:${interiorSignature()}:${propLevelSignature()}:${vegetationSignature()}:${cx},${cy}`
+    return `${seed}:${houseSeed}:${terrain}:${foliageDensity}:${mode}:${archSettings.houseDecay}:${archSettings.clutterDensity}:${archSettings.weathering}:${archSettings.clutterSeed}:${interiorSignature()}:${propLevelSignature()}:${vegetationSignature()}:${houseVarietyKey()}:${cx},${cy}`
   }
 
   getOrCompileChunk(

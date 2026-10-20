@@ -1,3 +1,4 @@
+import { setHouseVariety, type HouseVariety } from "../shared/houses/variety"
 import { generateWorldChunk, type WorldMode } from "../shared/world"
 import { archSettings } from "./architecture"
 import { interiorSettings } from "./interiors/plan"
@@ -24,6 +25,7 @@ export type WorldWorkerRequest =
       interior?: typeof interiorSettings
       props?: typeof propDressingState
       veg?: typeof vegetationBuild
+      variety?: HouseVariety
     }
   | {
       type: "recycle"
@@ -51,6 +53,7 @@ ctx.onmessage = (ev: MessageEvent<WorldWorkerRequest>) => {
   if (req.interior) Object.assign(interiorSettings, req.interior)
   if (req.props) Object.assign(propDressingState, req.props)
   if (req.veg) Object.assign(vegetationBuild, req.veg)
+  if (req.variety) setHouseVariety(req.variety)
   const worldChunk = generateWorldChunk(req.seed, req.houseSeed, req.cx, req.cy, req.mode)
   const compiled = compileSingleWorldChunk(
     worldChunk,
