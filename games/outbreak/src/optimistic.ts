@@ -328,7 +328,13 @@ export function stepOutbreakOptimisticTick(
     }
   }
 
-  // Optimistic door, window, and item pickup on the press frame
+  // Optimistic door, window, and item pickup on the press frame. A toggle bumps the local revision like a snapshot's
+  // topology change would: the room's confirming snapshot then matches and changes nothing, so without it the light
+  // casters, sight blockers and sound occlusion kept the old door.
+  const portalChanged = () => {
+    sim.revision++
+    sim.rebuildSolids()
+  }
   if (firstPass && (command.interact || command.pick?.mode === "take") && !p.vault) {
     const target = selectInteractTarget(town, p, sim.registry)
     const action = command.interactAction ?? (command.sprint && target?.alt ? target.alt.id : target?.primary.id)
@@ -338,7 +344,7 @@ export function stepOutbreakOptimisticTick(
         const prevOpen = door.open
         const nextOpen = !door.open
         door.open = nextOpen
-        sim.rebuildSolids()
+        portalChanged()
         host.optimistic.predict({
           seq,
           kind: "door",
@@ -347,13 +353,13 @@ export function stepOutbreakOptimisticTick(
           reapply: () => {
             if (door.open !== nextOpen) {
               door.open = nextOpen
-              sim.rebuildSolids()
+              portalChanged()
             }
           },
           rollback: () => {
             if (door.open !== prevOpen) {
               door.open = prevOpen
-              sim.rebuildSolids()
+              portalChanged()
             }
           },
         })
@@ -364,7 +370,7 @@ export function stepOutbreakOptimisticTick(
         const prevOpen = win.open
         const nextOpen = !win.open
         win.open = nextOpen
-        sim.rebuildSolids()
+        portalChanged()
         host.optimistic.predict({
           seq,
           kind: "window",
@@ -373,13 +379,13 @@ export function stepOutbreakOptimisticTick(
           reapply: () => {
             if (win.open !== nextOpen) {
               win.open = nextOpen
-              sim.rebuildSolids()
+              portalChanged()
             }
           },
           rollback: () => {
             if (win.open !== prevOpen) {
               win.open = prevOpen
-              sim.rebuildSolids()
+              portalChanged()
             }
           },
         })

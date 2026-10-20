@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { OCC_FLOATS } from "@arcade/kit/limits"
 import { makeTown, sightRects } from "../shared/map"
-import { OPEN_WINDOW_SILL, packLightOccluders, WALL_CASTER_HEIGHT, windowStateKey } from "../src/light-occluders"
+import { OPEN_WINDOW_SILL, openingStateKey, packLightOccluders, WALL_CASTER_HEIGHT, windowStateKey } from "../src/light-occluders"
 
 describe("light occluders", () => {
   const town = makeTown(7)
@@ -44,5 +44,15 @@ describe("light occluders", () => {
     expect(windowStateKey(town)).not.toBe(before)
     town.windows[1]!.open = !town.windows[1]!.open
     expect(windowStateKey(town)).toBe(before)
+  })
+
+  test("opening or closing a door or a window changes the casters' key without a revision", () => {
+    const before = openingStateKey(town)
+    for (const flip of [() => (town.doors[2]!.open = !town.doors[2]!.open), () => (town.windows[3]!.open = !town.windows[3]!.open)]) {
+      flip()
+      expect(openingStateKey(town)).not.toBe(before)
+      flip()
+      expect(openingStateKey(town)).toBe(before)
+    }
   })
 })

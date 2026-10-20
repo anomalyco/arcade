@@ -18,7 +18,7 @@ import { CombinedFogMemory } from "../fog-of-war"
 import { collectSconces } from "../interiors"
 import { buildLevel, hex } from "../level"
 import { easeNightSight, nightSightRange, nightSightTarget } from "../look/night-sight"
-import { packLightOccluders, windowStateKey } from "../light-occluders"
+import { openingStateKey, packLightOccluders } from "../light-occluders"
 import type { NetSession } from "../net-session"
 import { resolveWorldMode, type OutbreakSettings } from "../settings"
 import { syncVegetationBuild } from "../vegetation/settings"
@@ -84,7 +84,7 @@ export class OutbreakSceneLevel {
   private nightSightTime = 0
   /** The vision settings the drawn sight uses this frame (headlights widen it). */
   visionSettings: { range: number; cone: number; awareness: number }
-  private lightWindowKey = 0
+  private lightOpeningKey = 0
   // Walls, closed doors and closed windows: what stops light (sight passes windows, light only open ones).
   lightWalls: readonly (readonly [number, number, number, number])[]
   private readonly doorData = new Float32Array(64 * 12)
@@ -239,10 +239,10 @@ export class OutbreakSceneLevel {
         }
       }
     }
-    const windowKey = windowStateKey(town)
-    if (this.revision !== session.view.revision || windowKey !== this.lightWindowKey) {
+    const openingKey = openingStateKey(town)
+    if (this.revision !== session.view.revision || openingKey !== this.lightOpeningKey) {
       this.revision = session.view.revision
-      this.lightWindowKey = windowKey
+      this.lightOpeningKey = openingKey
       this.blockers = sightRects(town)
       const packed = packLightOccluders(town, this.blockers, this.occluders, MAX_OCCLUDERS - 4)
       this.lightOccluders = packed.count
