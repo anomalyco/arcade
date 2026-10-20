@@ -106,7 +106,26 @@ type HabitPose = {
 }
 
 const KNOCK_PERIOD = 2.6
-const KNOCK_TIMES = [0, 0.3, 0.6] as const
+/** Three slow blows, timed to the soundscape's `scape.habit.knock` (struck once a cycle, at 0). */
+const KNOCK_TIMES = [0.02, 0.64, 1.41] as const
+const BED_PERIOD = (Math.PI * 2) / 0.9
+const FENCE_PERIOD = 3.4
+/** Waltz time: a sway each way per bar of the gramophone's 3/4 at 0.4 s a beat. */
+const DANCE_PERIOD = 2.4
+
+/** When in its cycle each habit makes the sound someone could hear (period, phase, both s); the wedding is a held loop. */
+const HABIT_CUES: Partial<Record<HabitKind, readonly [number, number]>> = {
+  knock: [KNOCK_PERIOD, 0],
+  stove: [7.3, 2.1],
+  // At the sway's peak, as the weight goes over onto the mattress.
+  bed: [BED_PERIOD, BED_PERIOD / 4],
+  // At the hardest pull on the wire.
+  fence: [FENCE_PERIOD, FENCE_PERIOD / 4],
+}
+
+function crossed(p0: number, p1: number, at: number): boolean {
+  return (p0 < at && p1 >= at) || (p1 < p0 && (at > p0 || at <= p1))
+}
 
 /** How far into a knock (0..1, 1 at the contact) the hand is at time `t` into the cycle. */
 function knockEnvelope(t: number): number {
@@ -145,7 +164,7 @@ function habitPose(kind: HabitKind, t: number, hand: 0 | 1, out: HabitPose): voi
     out.headRoll = 0.08
   } else if (kind === "fence") {
     // Both hands through the wire, rattling it; every few seconds a hard pull back.
-    const tug = Math.max(0, Math.sin((t * Math.PI * 2) / 3.4)) ** 6
+    const tug = Math.max(0, Math.sin((t * Math.PI * 2) / FENCE_PERIOD)) ** 6
     const rattle = Math.sin(t * 43) * 0.018
     set(0, 0.54 - 0.12 * tug + rattle, -0.06, 0.08, 1)
     set(1, 0.54 - 0.12 * tug - rattle, -0.04, 0.08, 1)
@@ -164,11 +183,11 @@ function habitPose(kind: HabitKind, t: number, hand: 0 | 1, out: HabitPose): voi
     set(1, 0.14, -0.5, 0.02, 0.85)
     out.torsoPitch = -0.3
     out.headPitch = -0.55
-    out.torsoRoll = 0.06 * Math.sin(t * 0.9)
-    out.headRoll = 0.1 * Math.sin(t * 0.9 - 0.5)
+    out.torsoRoll = 0.06 * Math.sin((t * Math.PI * 2) / BED_PERIOD)
+    out.headRoll = 0.1 * Math.sin((t * Math.PI * 2) / BED_PERIOD - 0.5)
   } else {
     // Bride and groom: slow-dancing, hands out to each other, swaying the same way in the world (mirrored in each).
-    const sway = Math.sin((t * Math.PI * 2) / 2.8) * (kind === "bride" ? 1 : -1)
+    const sway = Math.sin((t * Math.PI * 2) / DANCE_PERIOD) * (kind === "bride" ? 1 : -1)
     set(0, 0.3, -0.08, -0.06, 0.9)
     set(1, 0.3, -0.08, -0.06, 0.9)
     out.torsoRoll = 0.07 * sway
@@ -1176,14 +1195,15 @@ export class ZombieCrowdRenderer {
     for (let idx = 0; idx < agents.length; idx++) {
       const a = agents[idx]!
       if (beats && a.state === "wander" && Math.abs(a.vx) + Math.abs(a.vy) < 0.05) {
-        // A knock is heard whether or not anyone can see who is knocking.
+        // A habit is heard whether or not anyone can see who is at it.
         if (a.x > vx0 - 12 && a.x < vx1 + 12 && a.y > vy0 - 12 && a.y < vy1 + 12) {
           const site = chars!.habits!.at(a.x, a.y)
-          if (site?.kind === "knock") {
-            const p0 = habitTime("knock", prevTime, a.id) % KNOCK_PERIOD
-            const p1 = habitTime("knock", time, a.id) % KNOCK_PERIOD
-            for (const k of KNOCK_TIMES) if ((p0 < k && p1 >= k) || (p1 < p0 && (k > p0 || k <= p1))) chars!.onBeat({ id: a.id, kind: "knock", x: site.x, y: site.y })
-          }
+          const cue = site && HABIT_CUES[site.kind]
+          if (site && cue) {
+            const p0 = habitTime(site.kind, prevTime, a.id) % cue[0]
+            const p1 = habitTime(site.kind, time, a.id) % cue[0]
+            if (crossed(p0, p1, cue[1])) chars!.onBeat({ id: a.id, kind: site.kind, x: site.x, y: site.y })
+          } else if (site && chars!.dancing.length < 4) chars!.dancing.push({ id: a.id, x: site.x, y: site.y })
         }
       }
       if (a.x < vx0 - 3 || a.x > vx1 + 3 || a.y < vy0 - 3 || a.y > vy1 + 3) continue

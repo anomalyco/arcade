@@ -138,8 +138,9 @@
   than it was), re-picks its seed to the site's calling, dulls its senses while it is lost in the habit and gives it a
   beat to let go once it notices. Clients play the habit on any still, wandering zombie standing on a site, so nothing
   is on the wire. The renderer adds empty dog leads, heads turning to noises and a flinch from the torch
-  (`src/zombies.ts`, from `characterFrame`). Audio hooks: `onCharacterBeat` (knocks) and `leakingEarbuds()` in
-  `src/characters/frame.ts`. A porch body with its car in the drive carries the keys (`shared/bodies/bodies.ts`).
+  (`src/zombies.ts`, from `characterFrame`). Sounds (`src/characters/sounds.ts`, through the
+  soundscape's hooks): each habit's cue once a cycle (the knock's hand is timed to `scape.habit.knock`), the waltz at
+  the dancing couple, joggers' earbuds leaking a tinny loop. A porch body with its car in the drive carries the keys (`shared/bodies/bodies.ts`).
   Tests: `tests/characters.test.ts`.
 - Driving FX (skid marks, tyre smoke/dust, screech) come from per-wheel slip in `src/vehicles.ts` via `@arcade/kit/vehicle/slip`
   and `@arcade/kit/fx/skids`; Lab › Driving FX and the `outbreak-vehicles` station's drift/burnout variants. Proof:

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import type { AIAgent } from "../shared/ai"
 import {
   BASE_CALLINGS,
@@ -19,8 +19,10 @@ import { inBuildingFootprint, sightRects } from "../shared/map"
 import { encodeSpecialSeed, specialKindOf, SPECIAL_BRUTE, SPECIAL_NONE } from "../shared/specials/kinds"
 import { supportHeight } from "../shared/terrain"
 import { Vision } from "../shared/vision"
+import { clearAmbientCalls } from "../src/audio/soundscape/hooks"
 import { characterFrame, type CharacterBeat } from "../src/characters/frame"
 import { DEFAULT_CHARACTER_SETTINGS } from "../src/characters/settings"
+import { earbudLeak } from "../src/characters/sounds"
 import { zombieArchetypeIndex } from "../src/look/refined-figure"
 import { zombieTuning } from "../src/zombie-profile"
 import { ZombieCrowdRenderer } from "../src/zombies"
@@ -198,6 +200,8 @@ describe("habit loops", () => {
 })
 
 describe("drawing characters", () => {
+  // Drawn habits ask the soundscape for their sounds; leave its queue empty for the next file.
+  afterEach(() => clearAmbientCalls())
   function scene() {
     const sim = world()
     const st = charactersOf(sim)
@@ -217,18 +221,20 @@ describe("drawing characters", () => {
   const draw = (crowd: ZombieCrowdRenderer, agents: readonly AIAgent[], vision: Vision, site: HabitSite, time: number) =>
     crowd.draw(agents, 1 / 60, () => 0, vision, [site.x - 20, site.y - 20, site.x + 20, site.y + 20], { ...zombieTuning, zombieLook: 1 }, false, time)
 
-  test("a knocker knocks three times a cycle, heard even when nobody can see it", () => {
+  test("a knocker's run of three knocks is heard once a cycle, even when nobody can see it", () => {
     const { sim, site, crowd } = scene()
     const beats: CharacterBeat[] = []
     const blind = new Vision()
     blind.update(site.x + 80, site.y + 80, 0, sightRects(sim.town), { range: 1, cone: 10, awareness: 1 })
-    for (let f = 0; f < 60 * 5.2; f++) {
+    const onBeat = characterFrame(DEFAULT_CHARACTER_SETTINGS, sim.town, [], [])!.onBeat
+    for (let f = 0; f < 60 * 5.4; f++) {
       const frame = characterFrame(DEFAULT_CHARACTER_SETTINGS, sim.town, [], [])!
       frame.onBeat = (b) => beats.push(b)
       crowd.characters = frame
       draw(crowd, sim.ai.agents, blind, site, f / 60)
     }
-    expect(beats.length).toBe(6)
+    characterFrame(DEFAULT_CHARACTER_SETTINGS, sim.town, [], [])!.onBeat = onBeat
+    expect(beats.length).toBe(2)
     expect(beats.every((b) => b.kind === "knock" && b.x === site.x)).toBe(true)
   })
 
@@ -298,4 +304,20 @@ describe("who the bodies were", () => {
       for (const b of bodySites(new CoopSim(seed, seed).town)) if (b.key === "porch:ash") expect(b.ownCar).toBeUndefined()
     }
   })
+})
+
+test("a jogger's earbuds leak a quiet, tinny, seamless loop", () => {
+  const sr = 24000
+  const pcm = earbudLeak(sr)
+  expect(pcm.length).toBe(Math.round(sr * (60 / 128) * 16))
+  let peak = 0
+  let low = 0
+  for (let i = 0; i < pcm.length; i++) {
+    expect(Number.isFinite(pcm[i]!)).toBe(true)
+    peak = Math.max(peak, Math.abs(pcm[i]!))
+    low += pcm[i]!
+  }
+  expect(peak).toBeCloseTo(0.5, 5)
+  // High-passed: next to no DC or bass left.
+  expect(Math.abs(low / pcm.length)).toBeLessThan(0.001)
 })

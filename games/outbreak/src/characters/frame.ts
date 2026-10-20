@@ -2,11 +2,12 @@ import type { NoiseEvent } from "../../shared/ai"
 import { HabitSiteIndex, type HabitKind } from "../../shared/characters/sites"
 import type { Town } from "../../shared/map"
 import type { OutbreakCharacterSettings } from "./settings"
+import { holdCharacterSounds, playCharacterBeat } from "./sounds"
 
 /** A torch the dead may flinch from: a survivor's position, aim and whether the light is on. */
 export type CharacterBeam = { x: number; y: number; aim: number; on: boolean }
 
-/** A beat of a habit someone could hear (a knock on a door from inside), for the audio layer to pick up. */
+/** A beat of a habit someone could hear (a run of knocks on a door from inside, a pan, bedsprings, a fence), once a cycle. */
 export type CharacterBeat = { id: number; kind: HabitKind; x: number; y: number }
 
 /**
@@ -23,15 +24,16 @@ export type ZombieCharacterFrame = {
   flinch: boolean
   noises: readonly NoiseEvent[]
   beams: readonly CharacterBeam[]
-  /** Called on each audible habit beat (knocks), presentation only. */
+  /** Called on each audible habit beat, presentation only. */
   onBeat: (beat: CharacterBeat) => void
   /** Joggers drawn this frame whose earbuds still leak tinny music (filled by the renderer). */
   earbuds: { id: number; x: number; y: number }[]
+  /** The bride and groom dancing within earshot this frame (filled by the renderer; the waltz plays at them). */
+  dancing: { id: number; x: number; y: number }[]
 }
 
 const index = new HabitSiteIndex()
 const beams: CharacterBeam[] = []
-const listeners = new Set<(beat: CharacterBeat) => void>()
 const frame: ZombieCharacterFrame = {
   callings: true,
   wear: true,
@@ -41,24 +43,9 @@ const frame: ZombieCharacterFrame = {
   flinch: true,
   noises: [],
   beams,
-  onBeat: (beat) => {
-    for (const l of listeners) l(beat)
-  },
+  onBeat: playCharacterBeat,
   earbuds: [],
-}
-
-/**
- * Subscribe to habit beats (a knock from behind a front door: `kind` "knock" at the door's inside). Returns the
- * unsubscribe. For `src/audio/` to play a muffled knock; presentation only.
- */
-export function onCharacterBeat(listener: (beat: CharacterBeat) => void): () => void {
-  listeners.add(listener)
-  return () => listeners.delete(listener)
-}
-
-/** Joggers drawn last frame whose earbuds leak music: `{ id, x, y }` in plan metres, for a faint tinny loop. */
-export function leakingEarbuds(): readonly { id: number; x: number; y: number }[] {
-  return frame.earbuds
+  dancing: [],
 }
 
 /** The habit sites the client sees in `town` (for Lab staging and tests). */
@@ -74,6 +61,9 @@ export function characterFrame(
   noises: readonly NoiseEvent[],
   survivors: readonly { x: number; y: number; aim: number; flashlightOn?: boolean }[],
 ): ZombieCharacterFrame | null {
+  holdCharacterSounds(frame)
+  frame.earbuds.length = 0
+  frame.dancing.length = 0
   if (!settings || settings.chStyle < 1) return null
   frame.callings = settings.chCallings
   frame.wear = settings.chWear
@@ -87,6 +77,5 @@ export function characterFrame(
   frame.noises = noises
   beams.length = 0
   for (const s of survivors) beams.push({ x: s.x, y: s.y, aim: s.aim, on: Boolean(s.flashlightOn) })
-  frame.earbuds.length = 0
   return frame
 }

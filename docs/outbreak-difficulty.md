@@ -154,6 +154,28 @@ Night 1 0.65× and its later rises hold wherever you are (residents left out ret
 survivor walks and then drives out; `tests/population-streaming.test.ts` holds them within half of it to 4 over it
 while driving the town's road for 15 game hours. The bot batch plays in town, so no difficulty band moved.
 
+## Characters (AR-88)
+
+Habit loops (`shared/characters/habits.ts`) pin a fresh, unaware wanderer to a site (a front door, a stove, a bed, a
+fence, the church) at least 16 m from every survivor and never closer than it already was. While it is lost in the
+habit it stands still and senses at 0.55× (`chHabitSenses`); when it notices someone it is fully alert at once but
+takes a 1 s beat to let go (`chHabitLetGo`) before it moves. Callings, wear and the rest are presentation only.
+
+3 presets × 72 seeds × 5 nights, `--workers=2`, habits on against `--set=habits=0` on the same base (pre-rebase on
+91c32da2). The CI bands pass with habits on and none moved. Each cell is the fraction alive at that dawn:
+
+| Preset | Off median nights | D1 | D2 | D3 | D4 | D5 | On median nights | D1 | D2 | D3 | D4 | D5 |
+| --- | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: |
+| Casual | 1.57 | 79% | 35% | 6% | 3% | 0% | 1.39 | 74% | 25% | 7% | 4% | 1% |
+| Skilled | 2.29 | 89% | 61% | 40% | 29% | 18% | 2.37 | 94% | 64% | 43% | 33% | 19% |
+| Expert | 3.70 | 97% | 78% | 60% | 47% | 35% | 3.21 | 92% | 76% | 56% | 43% | 32% |
+
+At 72 runs a cell is good to about ±6 points. Skilled does slightly better, dawn 5 is unchanged for everyone, and
+Expert sits 2–5 points lower all the way through. The one gap past the noise is Casual at dawn 2 (35% → 25%): a
+zombie at a door or a stove stays inside a house the survivor walks into, where a wanderer would have drifted out.
+Expert's median moves half a night because its curve crosses 50% between dawn 3 and 4, so a few points move the median a
+lot. If a band breaks early in the run, try `chHabitSenses` 0.4 before changing the band.
+
 ## Zombies through doors (AR-65)
 
 Zombies used to wedge on door jambs (`docs/game-notes.md`, Crowds). With the doorway funnel they come through, and the
