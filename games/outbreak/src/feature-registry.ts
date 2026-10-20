@@ -64,6 +64,16 @@ export interface OutbreakClientFeatureFrameHooks {
   overlay?(ctx: OutbreakClientFrameContext): void
 }
 
+/** What a feature gets when the game makes an offline session (`main.ts` `makeSession`; never for a co-op room). */
+export interface OutbreakClientSessionContext {
+  readonly seed: number
+  readonly settings: OutbreakSettings
+  /** Builds the normal offline session for `seed`, with the solo starting kit. */
+  make(seed: number): LocalSession
+  /** Ends the current session and makes the next one (`main.ts` `reset`). */
+  restart(): void
+}
+
 export interface OutbreakClientFeature {
   /** Unique feature identifier (e.g. `"map"`, `"weather"`, `"pacing"`, `"progression"`, `"vehicles"`, `"melee"`). */
   readonly id: string
@@ -99,6 +109,8 @@ export interface OutbreakClientFeature {
   readonly netSession?: OutbreakClientFeatureNetHooks
   /** Per-frame presentation hooks (`scene/frame-renderer.ts`): viewpoint, hidden bodies, batches and overlay. */
   readonly frame?: OutbreakClientFeatureFrameHooks
+  /** Makes the next offline session instead of the normal one (e.g. the training room), or null to leave it be. */
+  session?(ctx: OutbreakClientSessionContext): LocalSession | null
 }
 
 function compareFeatures(a: { id: string; order?: number }, b: { id: string; order?: number }): number {
@@ -224,6 +236,15 @@ export class OutbreakClientFeatureRegistry
     for (const feature of this.list()) {
       const v = feature.frame?.viewpoint?.(session, coop)
       if (v) return v
+    }
+    return null
+  }
+
+  /** The first feature's offline session for `ctx`, or null for the normal one. */
+  startSession(ctx: OutbreakClientSessionContext): LocalSession | null {
+    for (const feature of this.list()) {
+      const s = feature.session?.(ctx)
+      if (s) return s
     }
     return null
   }

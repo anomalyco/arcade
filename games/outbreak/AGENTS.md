@@ -247,3 +247,7 @@
   through `src/inventory/hooks.ts`. How it works: `../../docs/outbreak-hud.md#inventory-styles-ar-94`. Stills and the
   Ground Pack clip: `bun scripts/inventory-styles-proof.ts --clip` (via `hivemind run --kind browser`). Tests:
   `tests/inventory-ops.test.ts`, `tests/inventory-styles.test.ts`.
+- Training room (AR-89, `shared/onboarding/`, `src/onboarding/`, Lab: Backquote › Onboarding, station
+  `outbreak-onboarding`): the first solo start wakes you in Ash at dawn with one wordless hint at a time, hold Esc to
+  skip, the street cuts to the run with your boards up. Its own throwaway sim; the shared feature is inert unless
+  staged, so runs, bots and co-op never see it. `../../docs/outbreak-onboarding.md`. Tests: `tests/training-room.test.ts`.

@@ -41,7 +41,8 @@ export class StateWatch {
       if (!was || fresh) return
       const x = (rect[0]! + rect[2]!) / 2
       const y = (rect[1]! + rect[3]!) / 2
-      const z = kind === "door" ? 1.2 : 1.5
+      // Low on the opening, so it rises clear of the prompt that hangs over it.
+      const z = kind === "door" ? 0.35 : 0.8
       if (now.planks > was.planks) out.push({ key: id, glyph: "board-up", x, y, z, planks: Math.min(MAX_PLANKS, now.planks) })
       else if (now.open !== was.open) out.push({ key: id, glyph: kind === "door" ? (now.open ? "door-open" : "door-close") : now.open ? "window-open" : "window-close", x, y, z })
       else if (now.locked !== was.locked) out.push({ key: id, glyph: now.locked ? "lock" : "unlock", x, y, z })
@@ -54,7 +55,7 @@ export class StateWatch {
       const st = view.progression.ledger.store(c.id)
       if (!st?.revealed || this.revealed.has(c.id)) continue
       this.revealed.add(c.id)
-      if (!fresh) out.push({ key: c.id, glyph: "search", x: c.x, y: c.y, z: 1.1 })
+      if (!fresh) out.push({ key: c.id, glyph: "search", x: c.x, y: c.y, z: 0.4 })
     }
     return out
   }
