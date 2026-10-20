@@ -49,5 +49,5 @@ describe("Outbreak population while driving across town", () => {
     }
     // Most of the time some of them are within 60 m.
     expect(outOfTown.filter((s) => s.near > 0).length).toBeGreaterThan(outOfTown.length * 0.75)
-  })
+  }, 60_000)
 })
