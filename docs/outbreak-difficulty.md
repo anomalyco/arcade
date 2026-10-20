@@ -195,7 +195,9 @@ up or throw the new items on purpose (they may pick one up as "dropped supplies"
 Loose furniture (up to two pieces a house) moves bots' paths. Before bots knew about it (`survivorObstacles`) they
 walked into chairs, and in one placement Night 3 chasers fell from 3.67 to 1.6. With bots pathing round the pieces
 the batch sits beside its baseline; on `overnight` with AR-97's breaches: Night 3 / Night 2 aware 1.07, Night 3
-chasers 3.81, Skilled alive at dawn 3 0.75, Expert 0.5. No band moved.
+chasers 3.81, Skilled alive at dawn 3 0.75, Expert 0.5. On the CI runner the same batch gave Night 3 / Night 2 aware
+0.993 (the platforms' floats differ, and the ratio sat at 1.01 before); AR-91 has since moved that band's lower edge
+to 0.9.
 
 ## Door breaches (AR-97)
 
