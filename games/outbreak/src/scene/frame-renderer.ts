@@ -40,6 +40,7 @@ import type { OutbreakFrameUi } from "../hud/frame-ui"
 import { InteriorPresenter, SCONCE_LAMP_SLOT } from "../interiors"
 import { hex } from "../level"
 import { TABLE_LAMP_SLOT } from "../lightbake"
+import { setWindowPower } from "../look/lit-windows"
 import { trimLook } from "../look/world"
 import { SURVIVOR_COLOURS, type NetSession } from "../net-session"
 import { NightLightsPresenter, setCurrentNightLights } from "../night-lights/presenter"
@@ -167,11 +168,15 @@ export class OutbreakFrameRenderer {
     setCurrentFx(this.fx)
     this.details = new DetailsPresenter(this.renderer)
     setCurrentDetails(this.details)
+    setWindowPower(this.details.powered)
     this.lifeFrame = {
       dt: 0,
       time: 0,
       town: session().view.town,
       hour: 12,
+      wetness: 0,
+      rain: 0,
+      puddles: 0,
       darkness: 0,
       sun: 1,
       night: 1,
@@ -182,6 +187,7 @@ export class OutbreakFrameRenderer {
       lampPower: this.frameLighting.lampPower,
       survivors: [],
       noises: [],
+      zombies: [],
       vision: { visible: () => false },
       ledger: session().sim.progression.ledger,
     }
@@ -411,6 +417,7 @@ export class OutbreakFrameRenderer {
       coop.otherPositions(),
     )
     const day = dayCycle(hour)
+    const night = townNight(session.sim)
     const unseenEval = evaluateUnseenFrame(settings.unseen, day.darkness, eye ? eye.health : p.health, eye ? eye.maxHealth : p.maxHealth, settings.look)
     // Pose the bodies first: the flashlight rides the survivor's pistol or hand.
     const lift = vaultLift(p)
@@ -718,13 +725,13 @@ export class OutbreakFrameRenderer {
     })
     const bloodBatches = this.blood.collect(town, tightView, settings.blood)
     const clutterBatches = this.exteriorClutter.collectBatches(town, tightView, settings.ground)
-    const night = townNight(session.sim)
     const detailBatches = this.details.collect(town, tightView, settings.details, settings.nightLights, {
       dt: vdt,
       time,
       threats: session.sim.slots.map((s) => s.survivor),
       noises,
       night,
+      absHour: session.sim.elapsedHours > 0 ? session.sim.ai.config.startHour + session.sim.elapsedHours : 24 * (night - 1) + hour,
       storm: weatherNow.sample.storm,
       vehicles: session.view.vehicles,
       shots: session.view.shots,
@@ -748,6 +755,9 @@ export class OutbreakFrameRenderer {
     lf.time = time
     lf.town = town
     lf.hour = hour
+    lf.wetness = weatherNow.surface.wetness
+    lf.rain = weatherNow.sample.rain
+    lf.puddles = weatherNow.surface.puddles
     lf.darkness = day.darkness
     lf.sun = day.sun
     lf.night = night
@@ -756,6 +766,7 @@ export class OutbreakFrameRenderer {
     lf.lampPower = this.frameLighting.lampPower
     lf.survivors = session.sim.slots
     lf.noises = noises
+    lf.zombies = zombies
     lf.vision = vision
     lf.ledger = session.sim.progression.ledger
     const life = this.details.writeLife(lf, settings.details, this.alphaSprites, render.alphaCount, this.addSprites, addCount)

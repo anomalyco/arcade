@@ -4,8 +4,9 @@ import { LIGHT_FLOATS } from "@arcade/kit/limits"
 import type { Rect } from "@arcade/kit/sim/geom"
 import { bodySites } from "../../shared/bodies/bodies"
 import { chooseVignettes } from "../../shared/discovery/vignettes"
-import type { Building, Town } from "../../shared/map"
+import { inBuildingFootprint, type Building, type Town } from "../../shared/map"
 import { supportHeight } from "../../shared/terrain"
+import { housePlan, housePowered } from "../audio/soundscape/houses"
 import { currentBloodStains } from "../blood/stains"
 import { emitInteriorDecor } from "../interiors/mesh"
 import { placeNightLights } from "../night-lights/placement"
@@ -39,6 +40,8 @@ export type DetailFrame = {
   threats: readonly CrowThreat[]
   noises: readonly CrowNoise[]
   night?: number
+  /** Game hours since the run's first midnight (the soundscape's clock), for each house's power. */
+  absHour?: number
   storm?: number
   vehicles?: readonly DoorVehicle[]
   shots?: readonly ShotLike[]
@@ -46,7 +49,7 @@ export type DetailFrame = {
 
 type DoorVehicle = Parameters<typeof openDoorOf>[1]
 
-type Tv = { x: number; z: number; h: number; phase: number; clip: Rect; site: DetailSite; dies: number }
+type Tv = { x: number; z: number; h: number; phase: number; clip: Rect; site: DetailSite; building: string }
 
 /** Reach (m) of a dome light left on in a car with its door open. */
 export const DOME_RADIUS = 2.6
@@ -71,7 +74,11 @@ export class DetailsPresenter {
   private readonly dome = { on: false, x: 0, y: 0, z: 0, phase: 0, d2: 0 }
   readonly casings = new Casings()
   private night = 1
+  private absHour = 12
   private decay = true
+  /** The hour each house loses power (the soundscape's `housePlan`, so televisions and windows die with the fridge). */
+  private readonly power = new Map<string, number>()
+  private powerSeed = Number.NaN
   private carKey = ""
   private carSites: DetailSite[] = []
   private frameKey = ""
@@ -142,7 +149,12 @@ export class DetailsPresenter {
     const all: DetailSite[] = []
     const live = new Set<string>()
     this.lines = []
+    if (town.seed !== this.powerSeed || this.power.size > 256) {
+      this.powerSeed = town.seed
+      this.power.clear()
+    }
     for (const b of town.buildings) {
+      if (!this.power.has(b.id)) this.power.set(b.id, housePlan(town, b).powerLoss)
       const turned = incidents.has(b.id)
       const key = `${sig}:${b.rect.join(",")}:${turned}:${s.lifeTouches}:${s.lfLaundry}`
       let hit = this.perBuilding.get(b.id)
@@ -173,9 +185,8 @@ export class DetailsPresenter {
         const x = d.x - Math.sin(d.yaw) * 0.55
         const z = d.z + Math.cos(d.yaw) * 0.55
         const phase = ((i * 0.618 + d.x * 0.37 + d.z * 0.11) % 1 + 1) % 1
-        // Each set's power gives out on its own night (2nd to 5th) when the town runs down.
-        const dies = 2 + Math.floor(((phase * 7.13) % 1) * 4)
-        return { x, z, h: d.y + 0.75, phase, clip: tableLampClip({ x, z, h: d.y + 0.75 }, walls, TV_RADIUS), site: d, dies }
+        const building = town.buildings.find((b) => inBuildingFootprint(b, d.x, d.z))?.id ?? ""
+        return { x, z, h: d.y + 0.75, phase, clip: tableLampClip({ x, z, h: d.y + 0.75 }, walls, TV_RADIUS), site: d, building }
       })
     this.shown.tvs = this.tvs.length
     const bodies = bodySites(town)
@@ -194,6 +205,7 @@ export class DetailsPresenter {
     this.out.length = 0
     this.shown.drawn = 0
     if (!s.worldDetails) {
+      this.decay = false
       this.shown.planned = 0
       this.shown.tvs = 0
       this.tvs = []
@@ -206,6 +218,7 @@ export class DetailsPresenter {
     this.plan(town, s, night)
     this.time = frame.time
     this.night = frame.night ?? 1
+    this.absHour = frame.absHour ?? 24 * (this.night - 1) + 12
     this.decay = s.lifeTouches && s.lfDecay
     this.tvLevelNow = tvLevel(0.37, frame.time)
     this.crows.step(frame.dt, frame.time, s.dtCrowScare, frame.threats, frame.noises)
@@ -233,9 +246,21 @@ export class DetailsPresenter {
 
   private tvDead(d: DetailSite): boolean {
     if (!this.decay) return false
-    for (const tv of this.tvs) if (tv.site === d) return this.night >= tv.dies
+    for (const tv of this.tvs) if (tv.site === d) return !this.powered(tv.building)
     return false
   }
+
+  /**
+   * Whether a building still has mains power ("Town runs down night by night"): each house fails at its own hour, the
+   * one its fridge stops humming at in the soundscape, and its television and lit windows go with it.
+   */
+  readonly powered = (id: string): boolean => {
+    if (!this.decay) return true
+    this.powerProbe.powerLoss = this.power.get(id) ?? Infinity
+    return housePowered(this.powerProbe, this.absHour)
+  }
+
+  private readonly powerProbe = { powerLoss: Infinity }
 
   private readonly emitPose = (model: DetailModel, x: number, y: number, z: number, yaw: number, pitch: number, roll: number): void => {
     this.put(model, x, y, z, yaw, 1, pitch, roll)
@@ -336,7 +361,7 @@ export class DetailsPresenter {
     let best: Tv | null = null
     let bd = 81
     for (const tv of this.tvs) {
-      if (this.decay && this.night >= tv.dies) continue
+      if (this.decay && !this.powered(tv.building)) continue
       const d = (tv.x - at.cutX) ** 2 + (tv.z - at.cutY) ** 2
       if (d < bd) {
         bd = d

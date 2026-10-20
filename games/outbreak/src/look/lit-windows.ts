@@ -12,15 +12,25 @@ function roll(id: string): number {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296
 }
 
+let powered: ((id: string) => boolean) | null = null
+
+/**
+ * Whether a building's mains are still live (Details · Life › "Town runs down night by night" follows each house's
+ * power, the one its fridge hums on); `null` keeps every house powered.
+ */
+export function setWindowPower(fn: ((id: string) => boolean) | null): void {
+  powered = fn
+}
+
 /**
  * Whether a building still has a lamp on behind its windows at night. The town is abandoned, so most houses are
- * dark; `share` of them (by a stable roll on the id) had a lamp left on when their people fled. Presentation only.
+ * dark; `share` of them (by a stable roll on the id) had a lamp left on when their people fled, and it burns until
+ * the house loses power. Presentation only.
  */
 export function windowsLit(building: Pick<Building, "id">, share: number): boolean {
-  if (!building.id) return false
-  if (share >= 1) return true
-  if (share <= 0) return false
-  return roll(building.id) < share
+  if (!building.id || share <= 0) return false
+  if (share < 1 && roll(building.id) >= share) return false
+  return !powered || powered(building.id)
 }
 
 /** The building a front-window lamp sits outside of (window lamps hang just past the front wall), if any. */

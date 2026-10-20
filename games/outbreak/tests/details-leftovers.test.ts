@@ -7,6 +7,7 @@ import { DETAIL_MODELS, type DetailModel } from "../src/details/placement"
 import { DEFAULT_DETAIL_SETTINGS } from "../src/details/settings"
 import { jetAngle, placeSprinklers, SPRINKLER_OFF, SPRINKLER_ON, sprinklerReach, writeSprinklers, type Sprinkler } from "../src/details/sprinkler"
 import { DEFAULT_NIGHT_LIGHT_SETTINGS } from "../src/night-lights/settings"
+import { housePlan } from "../src/audio/soundscape/houses"
 import { SPRITE_FLOATS } from "@arcade/kit/gpu/renderer"
 
 const session = () => {
@@ -166,24 +167,27 @@ describe("sprinkler at first light", () => {
 })
 
 describe("the town runs down", () => {
-  test("televisions go dark night by night when the town runs down, and stay on when it does not", () => {
+  test("televisions die with their house's power, the hour its fridge stops humming, and stay on when the town does not run down", () => {
     const t = session().view.town
     let id = 0
     const p = new DetailsPresenter({ addModel: () => id++ })
     const s = { ...DEFAULT_DETAIL_SETTINGS, dtTvs: 1 }
-    const count = (night: number, decay = true) => {
-      const batches = p.collect(t, [-1e4, -1e4, 1e4, 1e4], { ...s, lfDecay: decay }, DEFAULT_NIGHT_LIGHT_SETTINGS, { dt: 1 / 60, time: 1, threats: [], noises: [], night })
+    const count = (absHour: number, decay = true) => {
+      const batches = p.collect(t, [-1e4, -1e4, 1e4, 1e4], { ...s, lfDecay: decay }, DEFAULT_NIGHT_LIGHT_SETTINGS, { dt: 1 / 60, time: 1, threats: [], noises: [], night: 1, absHour })
       const n = (m: DetailModel) => batches.find((b) => b.model === DETAIL_MODELS.indexOf(m))?.count ?? 0
       return { on: n("tv"), off: n("tvOff") }
     }
-    const first = count(1)
-    expect(first.on).toBeGreaterThan(1)
-    expect(first.off).toBe(0)
-    const later = count(6)
-    expect(later.on).toBe(0)
-    expect(later.off).toBe(first.on)
-    expect(count(6, false)).toEqual(first)
-    const mid = count(3)
-    expect(mid.on + mid.off).toBe(first.on)
+    const all = count(14, false)
+    expect(all.on).toBeGreaterThan(1)
+    expect(all.off).toBe(0)
+    const first = count(14)
+    const later = count(200)
+    expect(first.on + first.off).toBe(all.on)
+    expect(later.on + later.off).toBe(all.on)
+    expect(first.off).toBeLessThanOrEqual(later.off)
+    for (const b of t.buildings) expect(p.powered(b.id)).toBe(housePlan(t, b).powerLoss > 200)
+    expect(t.buildings.some((b) => !p.powered(b.id))).toBe(true)
+    count(200, false)
+    expect(t.buildings.every((b) => p.powered(b.id))).toBe(true)
   })
 })
