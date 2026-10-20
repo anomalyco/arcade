@@ -40,7 +40,7 @@
         <div class="row pick"><span class="lbl">Task</span><span class="row" id="tasks"></span></div>
       </div>
       <canvas id="chart"></canvas>
-      <div id="note">Each generation, 65 copies of a tiny neural network (a few hundred weights) are nudged with random noise and each runs one episode of a deterministic rigid-body sim. The nudges that went further are averaged into the next brain. No gradients, no backprop: a 2D walker needs a few million to a few tens of millions of sim steps, which takes a minute or two here.</div>
+      <div id="note">Each generation, 65 copies of a tiny neural network (a few hundred weights) are nudged with random noise and each runs one episode of a deterministic rigid-body sim. The nudges that went further are averaged into the next brain. No gradients, no backprop. The inchworm and quadruped get across in about 10 M sim steps; the biped needs about 35 M (roughly 750 generations), which is under a minute on an 8-core machine.</div>
       <div id="toast"></div>
     </div>
     <script type="module" src="/src/main.ts"></script>

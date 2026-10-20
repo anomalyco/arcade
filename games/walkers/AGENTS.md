@@ -25,8 +25,12 @@
   physics, creatures, observations or reward needs it (the pretrained test checks each file replays to its exact
   recorded score).
 - Measured on the Studio (Bun, 4 workers): the quadruped and inchworm cross the room in ~200 generations (~10 M sim
-  steps, ~10 s); the biped learns to run across it in ~1200 generations (~50 M steps, ~30 s). The browser is a
-  little slower per worker.
+  steps, ~10 s); the biped learns to run across it in ~750–1200 generations (~35–50 M steps, 30–60 s). Headless
+  Chrome on the Studio trains at ~50 generations/s (~2.4 M steps/s) with 8 workers, so the default biped (seed 7)
+  crosses after ~15 s. V8 and JavaScriptCore run the sim at the same speed. HiveMind browser jobs on loaded workers
+  ran ~25x slower (~2 gen/s), so judge speed on a real machine, not a capture lease.
+- Training runs in `shared/train-worker.ts` (a coordinator worker that owns the Trainer and nested eval workers);
+  `src/remote-trainer.ts` is the page's proxy. The page only pulls a population when it is about to show one.
 - URL params (automation only): `?creature=`, `?task=`, `?speed=`, `?ghosts=`, `?workers=`, `?seed=`,
   `?autostart=0`, `?compare=0`, `?panel=0`. `window.walkers` exposes settings, the trainer and history.
 - `bun run check` (tsc, server tsc, tests, build); CI also smoke-loads the bundle. Pushing to `main` deploys
