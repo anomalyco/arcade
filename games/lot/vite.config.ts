@@ -1,6 +1,8 @@
 import { defineConfig } from "vite"
+import { textureAssets } from "../../scripts/texture-assets"
 
 export default defineConfig({
+  plugins: [textureAssets()],
   base: "/arcade/lot/",
   build: {
     outDir: "dist/arcade/lot",
