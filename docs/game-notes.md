@@ -875,6 +875,19 @@ proven animation techniques to animation.md, not here.
   before first furnished frame** vs `4,330,934 B` for all 26 `PROP_IDS`), while `PropModels` (`boxFallback: true`) serves
   `propBoxMesh(id)` placeholders while individual `.prop` assets are in flight or if an asset fails.
 
+- **Lamp fog as a half-res volume slot with its own history (AR-105, 2026-10-20).** Aiden's Afterhours fog is now kit
+  code (`packages/kit/gpu/fog-scatter.ts`, `volume-pass.ts`). The approach is analytic height fog plus 4 equiangular
+  samples per lamp (top 16 per frame), drawn as a volume slot at half resolution. The slot keeps its own history,
+  reprojected with the unjittered view-projection, and composites after TAA through a depth-aware upsample, writing
+  alpha 0 so Outbreak's shroud still dims it.
+  - Two lessons. First, slide interleaved gradient noise by 5.588 px a frame for the per-pixel jitter. Golden-ratio
+    offsets converged to IGN's diagonal pattern in the wet streaks. Second, the slot's own history steadies the
+    equiangular noise about 3.6× (`scripts/fog-gpu-proof.ts`) before TAA sees it.
+  - It costs **+1.39 ms** on Outbreak street night at 3456×1894 on mini (paired `ab-gpu.ts`, MAD 0.006 ms). Seen from Outbreak's
+    top-down camera it adds only a faint glow round each lamp (2% of pixels change by more than 6/255), so it stays
+    a Lab option (Backquote › Lamp fog) behind the default Today look. It reads in first person, where the view ray
+    runs along the cones.
+
 ## Art direction
 
 ### Outbreak look: one lab, knobs as trims on the day cycle (2026-10-15)
