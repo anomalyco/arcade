@@ -1,6 +1,6 @@
 // Which render objects recompute their full cache key every frame, and why (material.version bump vs needsUpdate).
 async () => {
-  const { renderer } = globalThis.__afterhoursDebug
+  const { renderer } = globalThis.__ashwoodDebug
   const objects = renderer._objects
   let proto = null
   const counts = new Map()
@@ -26,7 +26,7 @@ async () => {
   }
   // Track material.version per frame.
   const mats = new Set()
-  globalThis.__afterhoursDebug.scene.traverse((o) => { if (o.material) for (const m of [o.material].flat()) mats.add(m) })
+  globalThis.__ashwoodDebug.scene.traverse((o) => { if (o.material) for (const m of [o.material].flat()) mats.add(m) })
   const v0 = new Map([...mats].map((m) => [m, m.version]))
   const frames = 60
   await new Promise((r) => { let n = 0; const t = () => (++n >= frames ? r() : requestAnimationFrame(t)); requestAnimationFrame(t) })

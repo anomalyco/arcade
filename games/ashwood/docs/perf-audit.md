@@ -528,7 +528,7 @@ main-thread CPU per frame (median of 200):
 - **Lighting / post (`render/lighting.ts`, `render/post.ts`)**: GPU cost is resolution-bound (render scale 0.5 saves
   3.3 of 8.4 ms; SSR, GTAO, TAAU, scattering, bloom each ≤0.6 ms). Keep dynamic resolution as the main lever; don't
   trust per-pass timestamp queries on Apple (use `frame-profile.ts --ablate`). The `?perf` handle
-  (`__afterhoursRender`) made ablation possible; keep it.
+  (`__ashwoodRender`) made ablation possible; keep it.
 - **Boot (`main.ts`, `src/boot/*`)**: lower `STREAMING_FRAME_MS` to ~8–10 fps or render a cheaper frame (skip
   SSR/GTAO/bloom) while modules stream; keep `scripts/boot-profile.ts` plus `bench/boot-trace.ts` as the regression
   check, with the node-build count (`nodeBuilds.count`, now 297) as the number to drive down (target ≤120).

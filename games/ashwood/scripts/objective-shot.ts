@@ -24,11 +24,11 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
 const errors: string[] = []
 page.on("pageerror", (e) => errors.push(e.message))
 await page.goto("http://localhost:5196/?shot=1&view=lobby")
-await page.waitForFunction(() => ((globalThis as { __afterhours?: { frames: number } }).__afterhours?.frames ?? 0) > 20, null, { timeout: 180_000 })
+await page.waitForFunction(() => ((globalThis as { __ashwood?: { frames: number } }).__ashwood?.frames ?? 0) > 20, null, { timeout: 180_000 })
 for (const [name, at] of Object.entries(SPOTS)) {
   await page.evaluate(async (at) => {
     const g = globalThis as Record<string, any>
-    const p = g.__afterhoursPlayer
+    const p = g.__ashwoodPlayer
     ;[p.pos.x, p.pos.y, p.pos.z, p.yaw, p.pitch] = at
     p.resetMotion()
     p.apply()

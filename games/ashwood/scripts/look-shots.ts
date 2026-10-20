@@ -60,9 +60,9 @@ page.on("pageerror", (e) => errors.push(e.message))
 page.on("console", (m) => m.type() === "error" && errors.push(m.text()))
 const started = performance.now()
 await page.goto(`${base}look.html?shot=1&cam=${cams[0]?.id ?? "r3-01"}&look=${look}&quality=${quality}${extra ? `&${extra}` : ""}`)
-const status = () => page.evaluate(() => (globalThis as unknown as { __afterhours: Status }).__afterhours ?? { frames: 0, complete: false, errors: ["page reloaded"], frameMs: [] })
+const status = () => page.evaluate(() => (globalThis as unknown as { __ashwood: Status }).__ashwood ?? { frames: 0, complete: false, errors: ["page reloaded"], frameMs: [] })
 await page.waitForFunction((n) => {
-  const s = (globalThis as { __afterhours?: Status }).__afterhours
+  const s = (globalThis as { __ashwood?: Status }).__ashwood
   return !!s && ((s.complete && s.frames >= n) || s.errors.length > 0)
 }, frames, { timeout: 180_000 }).catch((e: Error) => errors.push(e.message))
 const bootS = (performance.now() - started) / 1000
@@ -70,7 +70,7 @@ const bootS = (performance.now() - started) / 1000
 const ready = () =>
   page
     .waitForFunction(() => {
-      const s = (globalThis as { __afterhours?: Status; __look?: unknown }).__afterhours
+      const s = (globalThis as { __ashwood?: Status; __look?: unknown }).__ashwood
       return !!(globalThis as { __look?: unknown }).__look && !!s && s.complete && s.frames >= 10
     }, undefined, { timeout: 180_000 })
     .catch((e: Error) => errors.push(e.message))
@@ -87,7 +87,7 @@ const place = async (p: unknown) => {
     if (!ok) continue
     const from = (await status()).frames
     const done = await page
-      .waitForFunction((n) => ((globalThis as { __afterhours?: Status }).__afterhours?.frames ?? 0) >= n, from + frames, { timeout: 60_000 })
+      .waitForFunction((n) => ((globalThis as { __ashwood?: Status }).__ashwood?.frames ?? 0) >= n, from + frames, { timeout: 60_000 })
       .then(() => true)
       .catch(() => false)
     if (done && (await status()).frames >= from + frames) return

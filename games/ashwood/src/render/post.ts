@@ -1109,6 +1109,6 @@ export function createPost(ctx: WorldContext) {
     },
   }
   // Automation hook for GPU-time breakdowns: scripts render frames back-to-back with settings toggled.
-  if (ctx.params.has("perf") || import.meta.env.DEV) (globalThis as { __afterhoursRender?: unknown }).__afterhoursRender = { renderer, scene, camera, settings: ctx.settings, render: api.render, state: renderState, scale: () => ({ autoScale, ...scaleState }), scattering: () => [...scattering].map((r) => r.lamp.position.join(",")).sort().join(" ") }
+  if (ctx.params.has("perf") || import.meta.env.DEV) (globalThis as { __ashwoodRender?: unknown }).__ashwoodRender = { renderer, scene, camera, settings: ctx.settings, render: api.render, state: renderState, scale: () => ({ autoScale, ...scaleState }), scattering: () => [...scattering].map((r) => r.lamp.position.join(",")).sort().join(" ") }
   return api
 }

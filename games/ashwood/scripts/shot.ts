@@ -60,7 +60,7 @@ for (const view of views) {
   const result = await page
     .waitForFunction(
       (n) => {
-        const s = (globalThis as { __afterhours?: { frames: number; errors: string[]; frameMs: number[]; gpuMs: number | null } }).__afterhours
+        const s = (globalThis as { __ashwood?: { frames: number; errors: string[]; frameMs: number[]; gpuMs: number | null } }).__ashwood
         return s && (s.frames >= n || s.errors.length > 0) ? s : null
       },
       frames,

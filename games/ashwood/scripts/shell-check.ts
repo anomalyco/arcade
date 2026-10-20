@@ -39,13 +39,13 @@ const check = (ok: boolean, what: string) => {
 const shot = async (page: Page, name: string) => {
   if (shots) await page.screenshot({ path: `${out}/shell-${name}${prod ? "-prod" : ""}.png` })
 }
-type G = { __static?: { mode: string; flow: { phase: string; paused: boolean }; skip(): void }; __afterhours?: { complete: boolean; errors: string[] }; __afterhoursPlayer?: { pos: { x: number; z: number }; fly: boolean }; __afterhoursDebug?: { camera: { fov: number } } }
+type G = { __static?: { mode: string; flow: { phase: string; paused: boolean }; skip(): void }; __ashwood?: { complete: boolean; errors: string[] }; __ashwoodPlayer?: { pos: { x: number; z: number }; fly: boolean }; __ashwoodDebug?: { camera: { fov: number } } }
 const state = (page: Page) =>
   page.evaluate(() => {
     const g = globalThis as unknown as G
-    return { mode: g.__static?.mode ?? "debug", phase: g.__static?.flow.phase, paused: g.__static?.flow.paused, complete: g.__afterhours?.complete, errors: g.__afterhours?.errors ?? [], pos: g.__afterhoursPlayer ? { ...g.__afterhoursPlayer.pos } : null, fly: g.__afterhoursPlayer?.fly, fov: g.__afterhoursDebug?.camera.fov, lab: !!document.querySelector("[data-lab-panel]") }
+    return { mode: g.__static?.mode ?? "debug", phase: g.__static?.flow.phase, paused: g.__static?.flow.paused, complete: g.__ashwood?.complete, errors: g.__ashwood?.errors ?? [], pos: g.__ashwoodPlayer ? { ...g.__ashwoodPlayer.pos } : null, fly: g.__ashwoodPlayer?.fly, fov: g.__ashwoodDebug?.camera.fov, lab: !!document.querySelector("[data-lab-panel]") }
   })
-const complete = (page: Page) => page.waitForFunction(() => (globalThis as unknown as G).__afterhours?.complete, null, { timeout: 180_000 })
+const complete = (page: Page) => page.waitForFunction(() => (globalThis as unknown as G).__ashwood?.complete, null, { timeout: 180_000 })
 
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
 const errors: string[] = []
@@ -85,7 +85,7 @@ try {
   await page.click(".shell-back >> visible=true")
   await page.click("text=Character")
   await page.click(".shell-list button[data-id='kate']")
-  check((await page.evaluate(() => localStorage.getItem("afterhours.character"))) === "kate", "character saved")
+  check((await page.evaluate(() => localStorage.getItem("ashwood.character"))) === "kate", "character saved")
   await page.click(".shell-back >> visible=true")
 
   await page.reload()

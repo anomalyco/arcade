@@ -1,6 +1,6 @@
 // Objects that still compose their local matrix every frame (matrixAutoUpdate), by top-level group and type.
 async () => {
-  const { scene } = globalThis.__afterhoursDebug
+  const { scene } = globalThis.__ashwoodDebug
   const by = {}
   let total = 0, auto = 0
   scene.traverse((o) => {

@@ -29,8 +29,8 @@ export type LookUiDeps = {
 // concept/ is local-only (gitignored); without it the reference overlay stays empty.
 const CONCEPTS = import.meta.glob("../../concept/r*.png", { eager: true, query: "?url", import: "default" }) as Record<string, string>
 const conceptUrl = (file: string) => CONCEPTS[`../../concept/${file}`] ?? ""
-const STORE = "afterhours.look.variants"
-const UI_STORE = "afterhours.look.ui"
+const STORE = "ashwood.look.variants"
+const UI_STORE = "ashwood.look.ui"
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> & { cls?: string } = {}, ...kids: (Node | string)[]) => {
   const e = document.createElement(tag)
@@ -237,7 +237,7 @@ export function createLookUi(d: LookUiDeps) {
     }),
     button("Export", "Download every saved variant and both slots as JSON", () => {
       const blob = new Blob([JSON.stringify({ version: 1, variants, slots: { A: lookOnly(slotSettings("A")), B: lookOnly(slotSettings("B")) } }, null, 2)], { type: "application/json" })
-      const a = el("a", { href: URL.createObjectURL(blob), download: "afterhours-look-variants.json" })
+      const a = el("a", { href: URL.createObjectURL(blob), download: "ashwood-look-variants.json" })
       a.click()
       URL.revokeObjectURL(a.href)
     }),
@@ -426,7 +426,7 @@ export function createLookUi(d: LookUiDeps) {
       if (stale && !capturing && now - pendingSince > 300) void captureAB(sig)
     }
     if (mode === "sheet" && !capturing && sig !== sheetSig && now - pendingSince > 300) void captureSheet(sig)
-    const s = (globalThis as { __afterhours?: { frameMs: number[] } }).__afterhours?.frameMs ?? []
+    const s = (globalThis as { __ashwood?: { frameMs: number[] } }).__ashwood?.frameMs ?? []
     const recent = s.slice(-30).sort((a, b) => a - b)
     const ms = recent.length ? recent[recent.length >> 1]!.toFixed(1) : "—"
     status.textContent = flashText || `${ms} ms · editing ${editing}: ${labels[editing]} · ${state.quality}${state.freeze ? " · frozen" : ""}`

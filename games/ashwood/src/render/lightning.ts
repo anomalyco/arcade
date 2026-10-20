@@ -99,7 +99,7 @@ export function createLightning(ctx: WorldContext) {
     const on = (m as { onLightning?: (cb: (e: LightningEvent) => void) => void }).onLightning
     on?.((e) => strike(e))
   })
-  if (ctx.params.has("perf")) (globalThis as { __afterhoursLightning?: unknown }).__afterhoursLightning = { strike, test: (d: number) => strike(testStrike(camera, d)), clock, state: () => ({ active: active.length, sun: sun.intensity, glow: fogUniforms.flashGlow.value.r, amb: fogUniforms.flashAmbient.value.r }) }
+  if (ctx.params.has("perf")) (globalThis as { __ashwoodLightning?: unknown }).__ashwoodLightning = { strike, test: (d: number) => strike(testStrike(camera, d)), clock, state: () => ({ active: active.length, sun: sun.intensity, glow: fogUniforms.flashGlow.value.r, amb: fogUniforms.flashAmbient.value.r }) }
 
   const dir = new THREE.Vector3()
   const camPos = new THREE.Vector3()

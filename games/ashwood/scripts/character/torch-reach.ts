@@ -33,10 +33,10 @@ page.on("pageerror", (e) => errors.push(e.message))
 page.on("console", (m) => m.type() === "error" && errors.push(m.text().slice(0, 300)))
 await page.routeWebSocket(/.*/, () => {})
 await page.goto(`http://localhost:5196/?view=corridor${extra ? `&${extra}` : ""}`)
-await page.waitForFunction(() => (globalThis as { __afterhours?: { complete: boolean } }).__afterhours?.complete, null, { timeout: 240_000 })
+await page.waitForFunction(() => (globalThis as { __ashwood?: { complete: boolean } }).__ashwood?.complete, null, { timeout: 240_000 })
 await page.addStyleTag({ content: "#hud{display:none!important}" })
 const ev = <T>(src: string): Promise<T> =>
-  page.evaluate((src) => new Function("P", "B", "D", src)((globalThis as Record<string, unknown>).__afterhoursPlayer, (globalThis as Record<string, unknown>).__afterhoursBody, (globalThis as Record<string, unknown>).__afterhoursDebug), src) as Promise<T>
+  page.evaluate((src) => new Function("P", "B", "D", src)((globalThis as Record<string, unknown>).__ashwoodPlayer, (globalThis as Record<string, unknown>).__ashwoodBody, (globalThis as Record<string, unknown>).__ashwoodDebug), src) as Promise<T>
 const wait = (ms: number) => page.waitForTimeout(ms)
 const place = (x: number, y: number, z: number, yaw: number, pitch = 0) => ev(`P.pos.x=${x};P.pos.y=${y};P.pos.z=${z};P.yaw=${yaw};P.pitch=${pitch};P.resetMotion()`)
 

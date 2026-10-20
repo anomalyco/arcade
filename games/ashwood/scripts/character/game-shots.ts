@@ -41,17 +41,17 @@ page.on("console", (m) => m.type() === "error" && errors.push(m.text().slice(0, 
 await page.routeWebSocket(/.*/, () => {})
 const t0 = Date.now()
 await page.goto(`http://localhost:5196/?view=lot&character=${chars[0]}`)
-await page.waitForFunction(() => (globalThis as { __afterhours?: { complete: boolean } }).__afterhours?.complete, null, { timeout: 240_000 })
+await page.waitForFunction(() => (globalThis as { __ashwood?: { complete: boolean } }).__ashwood?.complete, null, { timeout: 240_000 })
 console.log(`world complete in ${((Date.now() - t0) / 1000).toFixed(1)} s`)
 await page.addStyleTag({ content: "#hud{display:none!important}" })
 await page.evaluate((ev) => {
-  const s = (globalThis as unknown as { __afterhoursBody: { settings: Record<string, number> } }).__afterhoursBody.settings
+  const s = (globalThis as unknown as { __ashwoodBody: { settings: Record<string, number> } }).__ashwoodBody.settings
   s["post.exposure"] = Number(s["post.exposure"] ?? -2.2) + ev
 }, ev0)
 
 type Ctx = { page: Page }
 const ev = <T>(src: string, arg?: unknown): Promise<T> =>
-  page.evaluate(({ src, arg }) => new Function("P", "B", "arg", src)((globalThis as Record<string, unknown>).__afterhoursPlayer, (globalThis as Record<string, unknown>).__afterhoursBody, arg), { src, arg }) as Promise<T>
+  page.evaluate(({ src, arg }) => new Function("P", "B", "arg", src)((globalThis as Record<string, unknown>).__ashwoodPlayer, (globalThis as Record<string, unknown>).__ashwoodBody, arg), { src, arg }) as Promise<T>
 const place = (x: number, y: number, z: number, yaw: number, pitch = 0) => ev(`P.pos.x=${x};P.pos.y=${y};P.pos.z=${z};P.yaw=${yaw};P.pitch=${pitch};P.resetMotion()`)
 const pitch = (p: number) => ev(`P.pitch=${p}`)
 const view = (third: boolean) => ev(`B.settings["body.view"]=${third ? 1 : 0}`)
@@ -72,7 +72,7 @@ const wait = (ms: number) => page.waitForTimeout(ms)
 const character = async (id: string) => {
   await ev(`B.settings["player.character"]=${JSON.stringify(id)}`)
   await page.waitForFunction((id) => {
-    const b = (globalThis as unknown as { __afterhoursBody: { body: { character: string } } }).__afterhoursBody.body
+    const b = (globalThis as unknown as { __ashwoodBody: { body: { character: string } } }).__ashwoodBody.body
     return b.character === id
   }, id, { timeout: 60_000 })
   await wait(400)
@@ -270,7 +270,7 @@ for (const [name, fn] of Object.entries(MOMENTS)) {
   }
 }
 const frame = await page.evaluate(() => {
-  const a = (globalThis as unknown as { __afterhours: { frameMs: number[] } }).__afterhours.frameMs
+  const a = (globalThis as unknown as { __ashwood: { frameMs: number[] } }).__ashwood.frameMs
   const s = [...a].sort((x, y) => x - y)
   return { median: s[s.length >> 1], p95: s[Math.floor(s.length * 0.95)] }
 })

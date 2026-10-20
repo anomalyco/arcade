@@ -60,7 +60,7 @@ await page.addInitScript(() => {
   type Ev = { t: number; kind: string; ms: number; what?: string }
   const g = globalThis as unknown as {
     __walk: { frames: number[]; events: Ev[]; loaf: { start: number; dur: number; scripts: string[] }[]; marker?: number }
-    __afterhoursDebug?: { renderer: unknown }
+    __ashwoodDebug?: { renderer: unknown }
   }
   performance.setResourceTimingBufferSize(10000)
   const W = (g.__walk = { frames: [] as number[], events: [] as Ev[], loaf: [] as { start: number; dur: number; scripts: string[] }[] })
@@ -92,7 +92,7 @@ await page.addInitScript(() => {
   // three internals, hooked as soon as the renderer exists.
   const hook = setInterval(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const r = g.__afterhoursDebug?.renderer as any
+    const r = g.__ashwoodDebug?.renderer as any
     if (!r?._nodes || !r._textures || !r.backend) return
     clearInterval(hook)
     const wrap = (obj: any, key: string, kind: string, filter: (args: any[], self: any) => string | null | undefined) => {
@@ -145,7 +145,7 @@ const playable = await page
 // The walk, driven through the real keyboard; only the heading is set directly (no pointer lock headless).
 type P = { pos: { x: number; y: number; z: number }; yaw: number }
 const player = <T,>(fn: (p: P, arg: number[]) => T, arg: number[] = []) =>
-  page.evaluate(({ src, arg }) => new Function("p", "arg", `return (${src})(p, arg)`)((globalThis as unknown as { __afterhoursPlayer: P }).__afterhoursPlayer, arg), { src: fn.toString(), arg }) as Promise<T>
+  page.evaluate(({ src, arg }) => new Function("p", "arg", `return (${src})(p, arg)`)((globalThis as unknown as { __ashwoodPlayer: P }).__ashwoodPlayer, arg), { src: fn.toString(), arg }) as Promise<T>
 const route: { x: number; z: number; door?: boolean; run?: boolean }[] = [
   { x: -14, z: 66, run: true },
   { x: 2, z: 46, run: true },
@@ -187,12 +187,12 @@ if (left > 0) await page.waitForTimeout(left)
 
 const { profile } = (await cdp.send("Profiler.stop")) as { profile: Profile }
 const data = await page.evaluate(() => {
-  const g = globalThis as unknown as { __walk: unknown; __afterhours?: { completeAt: number | null } }
+  const g = globalThis as unknown as { __walk: unknown; __ashwood?: { completeAt: number | null } }
   const res = (performance.getEntriesByType("resource") as PerformanceResourceTiming[])
     .filter((r) => /\.(glb|ktx2|ogg|opus|webm|mp3|wav|m4a)(\?|$)/.test(r.name))
     .map((r) => ({ name: r.name.split("/").pop()!.split("?")[0]!, start: r.startTime, end: r.responseEnd }))
   const marks = performance.getEntriesByType("mark").map((m) => ({ name: m.name, t: m.startTime }))
-  return { walk: g.__walk, res, marks, complete: g.__afterhours?.completeAt ?? null }
+  return { walk: g.__walk, res, marks, complete: g.__ashwood?.completeAt ?? null }
 })
 const pos = await player((p) => [p.pos.x, p.pos.y, p.pos.z])
 await context.close()

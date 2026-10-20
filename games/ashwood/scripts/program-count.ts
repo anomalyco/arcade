@@ -35,11 +35,11 @@ const errors: string[] = []
 page.on("pageerror", (e) => errors.push(e.message))
 page.on("console", (m) => m.type() === "error" && errors.push(m.text()))
 await page.goto(`http://localhost:${port}/?shot=1&view=${view}${extra ? `&${extra}` : ""}`)
-await page.waitForFunction(() => (globalThis as { __afterhours?: { complete: boolean; frames: number } }).__afterhours?.complete === true, undefined, { timeout: 180_000 })
+await page.waitForFunction(() => (globalThis as { __ashwood?: { complete: boolean; frames: number } }).__ashwood?.complete === true, undefined, { timeout: 180_000 })
 await page.waitForTimeout(1500)
 const result = await page.evaluate(() => {
   type Stage = { name: string; stage: string }
-  const dbg = (globalThis as { __afterhoursDebug?: { renderer: { _pipelines: { programs: Record<string, Map<string, Stage>>; caches: Map<string, unknown> } }; scene: { traverse: (f: (o: { material?: unknown; isMesh?: boolean }) => void) => void } } }).__afterhoursDebug!
+  const dbg = (globalThis as { __ashwoodDebug?: { renderer: { _pipelines: { programs: Record<string, Map<string, Stage>>; caches: Map<string, unknown> } }; scene: { traverse: (f: (o: { material?: unknown; isMesh?: boolean }) => void) => void } } }).__ashwoodDebug!
   const p = dbg.renderer._pipelines
   const byName = new Map<string, { v: number; f: number }>()
   for (const stage of ["vertex", "fragment"] as const) {

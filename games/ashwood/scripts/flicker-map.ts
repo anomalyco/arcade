@@ -53,7 +53,7 @@ const errors: string[] = []
 page.on("pageerror", (e) => errors.push(e.message))
 await page.goto(`http://localhost:5196/look.html?shot=1&cam=r5-05`)
 await page.waitForFunction(() => {
-  const s = (globalThis as { __afterhours?: { complete: boolean; frames: number } }).__afterhours
+  const s = (globalThis as { __ashwood?: { complete: boolean; frames: number } }).__ashwood
   return !!(globalThis as { __look?: unknown }).__look && !!s && s.complete && s.frames >= 10
 }, undefined, { timeout: 240_000 })
 

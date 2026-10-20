@@ -144,7 +144,7 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
 
   const scene = new THREE.Scene()
   const camera = new THREE.PerspectiveCamera(68, (canvas.clientWidth || innerWidth) / (canvas.clientHeight || innerHeight), Number(params.get("near") ?? 0.15), 1600)
-  ;(globalThis as { __afterhoursDebug?: unknown }).__afterhoursDebug = { renderer, scene, camera }
+  ;(globalThis as { __ashwoodDebug?: unknown }).__ashwoodDebug = { renderer, scene, camera }
   const ctx: WorldContext = {
     scene,
     renderer,
@@ -220,7 +220,7 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
   // `bootSlice` (ms, automation/A-B only): compile time allowed per frame while streaming.
   createEncounterLights(scene) // encounter/death lights, dark, before the warm-up (adding lights later rebuilds lit materials)
   const warmup = createWarmup(renderer, scene, camera, Number(params.get("bootSlice") ?? 8))
-  ;(globalThis as { __afterhoursDebug?: Record<string, unknown> }).__afterhoursDebug!.warmup = warmup
+  ;(globalThis as { __ashwoodDebug?: Record<string, unknown> }).__ashwoodDebug!.warmup = warmup
   // Dynamic resolution would read capped/hitchy streaming frames as slow ones; paused until the world is in.
   post.setBooting(true)
   const view = options.view ?? ((params.get("view") ?? "road") as ViewpointName)

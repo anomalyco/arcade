@@ -58,7 +58,7 @@ try {
   await page.keyboard.press("KeyE") // start
   await page.waitForTimeout(2500)
   // The roll-up's button (the door system's control, as E on it would press it).
-  await page.evaluate(() => (globalThis as any).__afterhoursPlayer.ctx.doors.get("motor-pool-button").open())
+  await page.evaluate(() => (globalThis as any).__ashwoodPlayer.ctx.doors.get("motor-pool-button").open())
   await page.waitForTimeout(4500)
   await page.evaluate(() => ((globalThis as any).__ashwoodEscape.autopilot = true))
   const t0 = Date.now()

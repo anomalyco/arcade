@@ -308,7 +308,7 @@ if (run("below")) {
       for (const p of h.trail) best = Math.min(best, Math.hypot(p.x - l.x, p.z - l.z))
       return { x: l.x, y: l.y, z: l.z, walls: l.walls, heard: l.heard, off: +best.toFixed(2) }
     })
-    return { n: steps.length, played: h.voice.log.length, sfx: (globalThis as unknown as { __afterhoursAudio?: { sfx: { stats: { played: Record<string, number> } } } }).__afterhoursAudio?.sfx.stats.played, out }
+    return { n: steps.length, played: h.voice.log.length, sfx: (globalThis as unknown as { __ashwoodAudio?: { sfx: { stats: { played: Record<string, number> } } } }).__ashwoodAudio?.sfx.stats.played, out }
   })
   await inPage(page, ({ H }) => (H.hunter.ctx.settings["hunter.speedInvestigate"] = 1.8))
   const n = res.out.length

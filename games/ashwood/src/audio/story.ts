@@ -62,7 +62,7 @@ const shipped = (id: string): id is SfxId => id in SFX && SFX[id as SfxId].varia
 /**
  * The sfx id of a spoken line in the selected character's own voice. Lines are named `story-<line>-<character>`
  * (e.g. `story-call-player-kate`); the character is the one the picker stored (`savedCharacter()`, localStorage
- * "afterhours.character"). Falls back to `story-<line>-m` / `-f` for that character, then `story-<line>`; null when
+ * "ashwood.character"). Falls back to `story-<line>-m` / `-f` for that character, then `story-<line>`; null when
  * nothing is shipped for the line.
  *
  *   const id = playerVoice("call-player")

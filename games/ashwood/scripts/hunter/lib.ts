@@ -30,7 +30,7 @@ export async function launch(query: string, size = { width: 1280, height: 720 })
   const t0 = Date.now()
   await page.goto(`http://localhost:5196/?${query}`)
   await page.waitForFunction(() => {
-    const s = (globalThis as { __afterhours?: { ready: boolean; complete: boolean } }).__afterhours
+    const s = (globalThis as { __ashwood?: { ready: boolean; complete: boolean } }).__ashwood
     return !!s?.complete && s.ready && !!(globalThis as { __ashwoodHunter?: unknown }).__ashwoodHunter
   }, null, { timeout: 300_000 })
   /** Seconds from the page opening (the start of a recorded video) to the world being ready. */
@@ -42,8 +42,8 @@ export async function launch(query: string, size = { width: 1280, height: 720 })
 export function inPage<T, R>(page: Page, fn: (api: Api, arg: T) => R, arg?: T): Promise<R> {
   return page.evaluate(
     ({ src, arg }) => {
-      const g = globalThis as unknown as { __ashwoodHunter: unknown; __afterhoursPlayer: unknown; __afterhoursAudio: unknown; __afterhoursDoors: unknown }
-      const api = { H: g.__ashwoodHunter, P: g.__afterhoursPlayer, A: g.__afterhoursAudio, D: g.__afterhoursDoors }
+      const g = globalThis as unknown as { __ashwoodHunter: unknown; __ashwoodPlayer: unknown; __ashwoodAudio: unknown; __ashwoodDoors: unknown }
+      const api = { H: g.__ashwoodHunter, P: g.__ashwoodPlayer, A: g.__ashwoodAudio, D: g.__ashwoodDoors }
       return new Function("api", "arg", `return (${src})(api, arg)`)(api, arg)
     },
     { src: fn.toString(), arg },

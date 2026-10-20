@@ -450,15 +450,15 @@ function endCard() {
     }
     option("Play again", () => {
       try {
-        sessionStorage.removeItem("afterhours.checkpoint")
-        sessionStorage.setItem("afterhours.autoplay", "1")
+        sessionStorage.removeItem("ashwood.checkpoint")
+        sessionStorage.setItem("ashwood.autoplay", "1")
       } catch {}
       // A clean page (drops a dev `?start=` chapter, so it really starts over).
       location.href = location.pathname
     })
     option("Main menu", () => {
       try {
-        sessionStorage.removeItem("afterhours.checkpoint")
+        sessionStorage.removeItem("ashwood.checkpoint")
       } catch {}
       // A clean page (drops a dev `?start=` chapter, so it really starts over).
       location.href = location.pathname

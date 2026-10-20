@@ -50,7 +50,7 @@ export function trackCheckpoints(player: Player) {
   return onCheckpoint((id) => {
     last = snapshot(id, player)
     try {
-      sessionStorage.setItem("afterhours.checkpoint", JSON.stringify(last))
+      sessionStorage.setItem("ashwood.checkpoint", JSON.stringify(last))
     } catch {}
   })
 }
@@ -61,7 +61,7 @@ export const lastCheckpoint = () => last
 export function setLastCheckpoint(cp: Checkpoint) {
   last = cp
   try {
-    sessionStorage.setItem("afterhours.checkpoint", JSON.stringify(last))
+    sessionStorage.setItem("ashwood.checkpoint", JSON.stringify(last))
   } catch {}
 }
 
@@ -84,6 +84,6 @@ export function restorePlayer(player: Player, cp: Checkpoint) {
 export function clearCheckpoints() {
   last = null
   try {
-    sessionStorage.removeItem("afterhours.checkpoint")
+    sessionStorage.removeItem("ashwood.checkpoint")
   } catch {}
 }

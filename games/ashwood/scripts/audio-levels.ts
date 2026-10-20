@@ -28,10 +28,10 @@ try {
   await page.routeWebSocket(/.*/, () => {})
   await page.goto("http://localhost:5196/?view=corridor&only=terrain,interior")
   await page.waitForFunction(() => {
-    const s = (globalThis as { __afterhours?: { ready: boolean; complete: boolean } }).__afterhours
+    const s = (globalThis as { __ashwood?: { ready: boolean; complete: boolean } }).__ashwood
     return !!s?.complete && s.ready
   }, null, { timeout: 240_000 })
-  const run = <T>(body: string) => page.evaluate(`(async () => { const p = globalThis.__afterhoursPlayer; const A = globalThis.__afterhoursAudio; ${body} })()`) as Promise<T>
+  const run = <T>(body: string) => page.evaluate(`(async () => { const p = globalThis.__ashwoodPlayer; const A = globalThis.__ashwoodAudio; ${body} })()`) as Promise<T>
   await page.keyboard.press("KeyQ")
   await page.waitForTimeout(2500)
   await run(`

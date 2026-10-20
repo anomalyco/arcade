@@ -133,7 +133,7 @@ const snap = (d: any) => ({
   })
   // Hook three's node builder as soon as the renderer exists.
   let dbg: any
-  Object.defineProperty(g, "__afterhoursDebug", {
+  Object.defineProperty(g, "__ashwoodDebug", {
     configurable: true,
     get: () => dbg,
     set(v) {
@@ -194,7 +194,7 @@ await cdp.send("Profiler.setSamplingInterval", { interval: 200 })
 await cdp.send("Profiler.start")
 const t0 = performance.now()
 await page.goto(`http://localhost:${port}/?shot=1&view=${view}`)
-await page.waitForFunction(() => (globalThis as any).__afterhours?.complete, undefined, { timeout: 240_000, polling: 100 })
+await page.waitForFunction(() => (globalThis as any).__ashwood?.complete, undefined, { timeout: 240_000, polling: 100 })
 const { profile } = (await cdp.send("Profiler.stop")) as { profile: any }
 const wallS = (performance.now() - t0) / 1000
 if (profileOut) writeFileSync(profileOut, JSON.stringify(profile))
@@ -243,7 +243,7 @@ for (let i = 0; i < profile.samples.length; i++) {
 const result = await page.evaluate(async (doReplay) => {
   const g = globalThis as any
   const log = g.__gpuLog
-  const { renderer } = g.__afterhoursDebug
+  const { renderer } = g.__ashwoodDebug
   const device: GPUDevice = renderer.backend.device
   const marks: Record<string, number> = {}
   for (const m of performance.getEntriesByType("mark")) marks[m.name] ??= +m.startTime.toFixed(0)

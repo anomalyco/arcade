@@ -53,11 +53,11 @@ async function dumpColliders(): Promise<Box[]> {
   try {
     const page = await browser.newPage({ viewport: { width: 640, height: 360 } })
     await page.goto("http://localhost:5196/?shot=1&view=lot&body=0&copen=ctl-gate,ctl-boom")
-    await page.waitForFunction(() => (globalThis as { __afterhours?: { complete: boolean } }).__afterhours?.complete, undefined, { timeout: 240_000 })
+    await page.waitForFunction(() => (globalThis as { __ashwood?: { complete: boolean } }).__ashwood?.complete, undefined, { timeout: 240_000 })
     // The boom takes 4 s to rise once the compound's tick sees its button pressed.
     await page.waitForTimeout(6000)
     return await page.evaluate(() => {
-      const p = (globalThis as unknown as { __afterhoursPlayer: { ctx: { colliders: Box[] } } }).__afterhoursPlayer
+      const p = (globalThis as unknown as { __ashwoodPlayer: { ctx: { colliders: Box[] } } }).__ashwoodPlayer
       return p.ctx.colliders.filter((b) => b.max[1] > -100).map((b) => ({ min: [...b.min], max: [...b.max] }))
     })
   } finally {

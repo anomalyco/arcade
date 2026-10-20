@@ -20,25 +20,25 @@ try {
     const errors: string[] = []
     page.on("pageerror", (e) => errors.push(e.message))
     await page.goto(`http://localhost:5196/?intro&introAt=${t}`)
-    await page.waitForFunction(() => (globalThis as any).__afterhoursIntro && (globalThis as any).__afterhours?.complete, undefined, { timeout: 240000 })
+    await page.waitForFunction(() => (globalThis as any).__ashwoodIntro && (globalThis as any).__ashwood?.complete, undefined, { timeout: 240000 })
     await page.waitForTimeout(800)
-    const before = await page.evaluate(() => (globalThis as any).__afterhoursIntro.time)
+    const before = await page.evaluate(() => (globalThis as any).__ashwoodIntro.time)
     await page.keyboard.down("Space")
     await page.waitForTimeout(1200)
     await page.keyboard.up("Space")
     // Hand-over: the cutscene restores the player's own update.
-    await page.waitForFunction(() => !Object.prototype.hasOwnProperty.call((globalThis as any).__afterhoursPlayer, "update"), undefined, { timeout: 20000 })
+    await page.waitForFunction(() => !Object.prototype.hasOwnProperty.call((globalThis as any).__ashwoodPlayer, "update"), undefined, { timeout: 20000 })
     await page.waitForTimeout(1500)
     const r = await page.evaluate(() => {
       const G = globalThis as any
-      const p = G.__afterhoursPlayer
-      const car = G.__afterhoursIntro.car
+      const p = G.__ashwoodPlayer
+      const car = G.__ashwoodIntro.car
       const box = car.footprint()
       const { x, y, z } = p.pos
       const inside = box && x > box.min[0] - 0.3 && x < box.max[0] + 0.3 && z > box.min[2] - 0.3 && z < box.max[2] + 0.3
       const solid = box && p.ctx.colliders.includes(box)
-      const ground = G.__afterhoursIntro.route.groundAt(x, z)
-      const cam = G.__afterhoursDebug.camera.position
+      const ground = G.__ashwoodIntro.route.groundAt(x, z)
+      const cam = G.__ashwoodDebug.camera.position
       const local = car.root.worldToLocal(cam.clone())
       return { x: +x.toFixed(2), y: +y.toFixed(3), z: +z.toFixed(2), ground: +ground.toFixed(3), eye: +(cam.y - y).toFixed(2), carLocal: [+local.x.toFixed(2), +local.z.toFixed(2)], yaw: +p.yaw.toFixed(2), inside, solid, door: car.doorAmount, doorRot: +car.door.rotation.y.toFixed(3) }
     })

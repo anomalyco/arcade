@@ -31,7 +31,7 @@ const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, r
 const page = await ctx.newPage()
 const errors: string[] = []
 page.on("pageerror", (e) => errors.push(e.message))
-type G = { __afterhours?: { complete: boolean; completeAt: number | null }; __static?: { tuner: { level(): number; playing(): boolean } } }
+type G = { __ashwood?: { complete: boolean; completeAt: number | null }; __static?: { tuner: { level(): number; playing(): boolean } } }
 const t0 = Date.now()
 await page.goto(base)
 await page.waitForSelector("#shell", { timeout: 30_000 })
@@ -43,7 +43,7 @@ for (;;) {
   const s = await page.evaluate(() => {
     const g = globalThis as unknown as G
     const el = document.querySelector<HTMLElement>("#shell")
-    return { level: g.__static?.tuner.level() ?? null, playing: g.__static?.tuner.playing() ?? false, world: el?.dataset.world, readout: el?.querySelector(".shell-load span")?.textContent ?? "", complete: !!g.__afterhours?.complete }
+    return { level: g.__static?.tuner.level() ?? null, playing: g.__static?.tuner.playing() ?? false, world: el?.dataset.world, readout: el?.querySelector(".shell-load span")?.textContent ?? "", complete: !!g.__ashwood?.complete }
   })
   const t = Date.now() - t0
   samples.push(`${(t / 1000).toFixed(2).padStart(6)} s  ${String(s.world).padEnd(8)} ${s.level === null || !isFinite(s.level) ? "   silent" : `${s.level.toFixed(1).padStart(6)} dB`}  ${s.readout}`)

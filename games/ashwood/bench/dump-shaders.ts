@@ -14,12 +14,12 @@ const server = serve(dir, 5224)
 const browser = await launch()
 const page = await browser.newPage({ viewport: { width: 1536, height: 1024 } })
 await page.goto(`http://localhost:5224/?shot=1&view=${view}`)
-await page.waitForFunction(() => (globalThis as any).__afterhours?.complete, undefined, { timeout: 240_000, polling: 200 })
+await page.waitForFunction(() => (globalThis as any).__ashwood?.complete, undefined, { timeout: 240_000, polling: 200 })
 const dump = await page.evaluate(() => {
-  const { renderer } = (globalThis as any).__afterhoursDebug
+  const { renderer } = (globalThis as any).__ashwoodDebug
   const P = renderer._pipelines
   const progs = (m: Map<string, any>) => [...m.values()].map((s) => ({ id: s.id, name: s.name, stage: s.stage, code: s.code, usedTimes: s.usedTimes }))
-  const { scene } = (globalThis as any).__afterhoursDebug
+  const { scene } = (globalThis as any).__ashwoodDebug
   const limit = renderer.backend.capabilities.getUniformBufferLimit()
   const inst: Record<string, { meshes: number; uniformPath: number; instances: number; materials: Set<unknown> }> = {}
   const meshes: Record<string, { meshes: number; materials: Set<unknown> }> = {}

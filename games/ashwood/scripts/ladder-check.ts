@@ -18,7 +18,7 @@ page.on("pageerror", (e) => errors.push(e.message))
 await page.routeWebSocket(/.*/, () => {})
 await page.goto("http://localhost:5196/?view=dock&only=terrain,facility")
 await page.waitForFunction(() => {
-  const s = (globalThis as { __afterhours?: { ready: boolean; complete: boolean } }).__afterhours
+  const s = (globalThis as { __ashwood?: { ready: boolean; complete: boolean } }).__ashwood
   return !!s?.complete && s.ready
 }, null, { timeout: 240_000 })
 
@@ -28,12 +28,12 @@ const check = (ok: boolean, what: string) => {
   if (!ok) failed++
 }
 type Sample = { t: number; dt: number; x: number; z: number; y: number; eye: number; grounded: boolean }
-const P = "(globalThis.__afterhoursPlayer)"
+const P = "(globalThis.__ashwoodPlayer)"
 const evalP = <T>(body: string): Promise<T> => page.evaluate(`(() => { const p = ${P}; ${body} })()`) as Promise<T>
 const pos = () => evalP<{ x: number; y: number; z: number; grounded: boolean }>("return { ...p.pos, grounded: p.state.grounded }")
 
 const ladder = await page.evaluate(() => {
-  const ls = (globalThis as unknown as { __afterhoursPlayer: { ctx: { ladders: { min: number[]; max: number[] }[] } } }).__afterhoursPlayer.ctx.ladders
+  const ls = (globalThis as unknown as { __ashwoodPlayer: { ctx: { ladders: { min: number[]; max: number[] }[] } } }).__ashwoodPlayer.ctx.ladders
   return ls.find((l) => l.min[1] < 0.5 && l.max[0] < -55) ?? null
 })
 check(!!ladder, `drop ladder volume ${ladder ? `[${ladder.min.map((v) => v.toFixed(2))}]–[${ladder.max.map((v) => v.toFixed(2))}]` : "missing"}`)
@@ -91,7 +91,7 @@ check(p.y < 1.3, `W looking down descends (y ${p.y.toFixed(2)})`)
 
 // The caged ladder from the top landing over the parapet to the roof (facing the building, +x).
 const cage = await page.evaluate(() => {
-  const ls = (globalThis as unknown as { __afterhoursPlayer: { ctx: { ladders: { min: number[]; max: number[] }[] } } }).__afterhoursPlayer.ctx.ladders
+  const ls = (globalThis as unknown as { __ashwoodPlayer: { ctx: { ladders: { min: number[]; max: number[] }[] } } }).__ashwoodPlayer.ctx.ladders
   return ls.find((l) => l.max[1] > 15) ?? null
 })
 if (cage) {
@@ -108,7 +108,7 @@ if (cage) {
 // walking along the walkway into it from the side it opens towards swings it back, so the way north is never shut.
 for (const id of ["fire-escape-1", "fire-escape-2", "fire-escape-3", "fire-escape-4"]) {
   const info = await page.evaluate((id) => {
-    const d = (globalThis as unknown as { __afterhoursDoors: { get(id: string): { hy: number; open(): void } | undefined } }).__afterhoursDoors.get(id)
+    const d = (globalThis as unknown as { __ashwoodDoors: { get(id: string): { hy: number; open(): void } | undefined } }).__ashwoodDoors.get(id)
     if (!d) return null
     d.open()
     return { y: d.hy }
@@ -127,7 +127,7 @@ for (const id of ["fire-escape-1", "fire-escape-2", "fire-escape-3", "fire-escap
 
 // Mantle: the loading dock's edge (1.25 m platform), Space from the yard facing it.
 const dock = await page.evaluate(() => {
-  const cs = (globalThis as unknown as { __afterhoursPlayer: { ctx: { colliders: { min: number[]; max: number[] }[] } } }).__afterhoursPlayer.ctx.colliders
+  const cs = (globalThis as unknown as { __ashwoodPlayer: { ctx: { colliders: { min: number[]; max: number[] }[] } } }).__ashwoodPlayer.ctx.colliders
   const b = cs.find((c) => Math.abs(c.max[1] - 1.25) < 0.06 && c.min[0] < -30 && c.max[0] > -30 && c.max[2] <= -21.5 && c.max[0] - c.min[0] > 5)
   return b ? { min: b.min, max: b.max } : null
 })

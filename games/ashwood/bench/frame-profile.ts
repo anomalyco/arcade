@@ -93,12 +93,12 @@ for (const dpr of dprs) for (const view of views) {
   page.on("console", (m) => m.type() === "error" && errors.push(m.text()))
   const t0 = performance.now()
   await page.goto(`http://localhost:${port}/?shot=1&perf=1&view=${view}${extra ? `&${extra}` : ""}`)
-  await page.waitForFunction(() => (globalThis as any).__afterhours?.complete, undefined, { timeout: 180_000, polling: 100 })
+  await page.waitForFunction(() => (globalThis as any).__ashwood?.complete, undefined, { timeout: 180_000, polling: 100 })
   const bootS = (performance.now() - t0) / 1000
   await page.waitForTimeout(2500)
 
   const scene = await page.evaluate(() => {
-    const { renderer, scene } = (globalThis as any).__afterhoursDebug
+    const { renderer, scene } = (globalThis as any).__ashwoodDebug
     const s = { objects: 0, meshes: 0, visibleMeshes: 0, instanced: 0, instances: 0, batched: 0, lines: 0, points: 0, lights: 0, shadowLights: 0, materials: new Set<unknown>(), geometries: new Set<unknown>(), triangles: 0 }
     scene.traverse((o: any) => {
       s.objects++
@@ -143,7 +143,7 @@ for (const dpr of dprs) for (const view of views) {
   }
 
   const run = await page.evaluate(async (N) => {
-    const { renderer, scene } = (globalThis as any).__afterhoursDebug
+    const { renderer, scene } = (globalThis as any).__ashwoodDebug
     const backend = renderer.backend
     const now = () => performance.now()
     const acc = { frame: [] as number[], interval: [] as number[], render: new Map<string, { ms: number; n: number; draws: number }>(), umw: 0, project: 0, renderObjects: 0, finish: 0, draws: 0, computeCalls: 0, passes: 0 }
@@ -304,7 +304,7 @@ for (const dpr of dprs) for (const view of views) {
   // the wait until the GPU is done; and throughput of K back-to-back frames. Repeat with the bare scene pass straight
   // to the canvas (no post) to split scene vs post.
   const gpu = await page.evaluate(async (doAblate: boolean) => {
-    const { renderer, scene, camera } = (globalThis as any).__afterhoursDebug
+    const { renderer, scene, camera } = (globalThis as any).__ashwoodDebug
     const device: GPUDevice = renderer.backend.device
     const anim = renderer._animation
     const loop = anim._animationLoop
@@ -383,7 +383,7 @@ for (const dpr of dprs) for (const view of views) {
     for (const o of hidden) o.visible = true
     // Ablation through the post rig's live settings (exposed with ?perf): pipelined ms/frame per feature off.
     const ablation: Record<string, unknown> = {}
-    const rig = (globalThis as any).__afterhoursRender
+    const rig = (globalThis as any).__ashwoodRender
     if (doAblate && rig?.settings) {
       const S = rig.settings
       const frame = () => {

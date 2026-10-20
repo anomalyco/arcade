@@ -34,23 +34,23 @@ const page = await browser.newPage({ viewport: { width: w, height: h } })
 const errors: string[] = []
 page.on("pageerror", (e) => errors.push(e.message))
 await page.goto(`http://localhost:5225/?shot=1&perf=1&view=road`)
-await page.waitForFunction(() => (globalThis as any).__afterhours?.complete, undefined, { timeout: 300_000, polling: 200 })
+await page.waitForFunction(() => (globalThis as any).__ashwood?.complete, undefined, { timeout: 300_000, polling: 200 })
 await page.waitForTimeout(1500)
 
 // Install the per-draw hooks once.
 await page.evaluate(() => {
   const g = globalThis as any
-  const { renderer, scene } = g.__afterhoursDebug
+  const { renderer, scene } = g.__ashwoodDebug
   const backend = renderer.backend
   const st: any = (g.__census = { armed: false, rec: false, draws: [], label: "", frameDone: null })
   const render = renderer.render
   renderer.render = function (sc: any, cam: any) {
     const prev = st.label
-    st.label = sc === scene ? (cam?.isCamera && cam !== g.__afterhoursDebug.camera ? (cam.name || "camera:other") : "scene") : sc?.isScene ? `scene:${sc.name || "?"}` : sc?.isMesh ? `quad:${sc.material?.name || "?"}` : "?"
+    st.label = sc === scene ? (cam?.isCamera && cam !== g.__ashwoodDebug.camera ? (cam.name || "camera:other") : "scene") : sc?.isScene ? `scene:${sc.name || "?"}` : sc?.isMesh ? `quad:${sc.material?.name || "?"}` : "?"
     try { return render.call(this, sc, cam) } finally { st.label = prev }
   }
   // Mirror renders call renderer.render(scene, virtualCam): label them by camera.
-  const mir = g.__afterhoursMirrors
+  const mir = g.__ashwoodMirrors
   if (mir?.virtualCam) mir.virtualCam.name = "mirror"
   const draw = backend.draw
   backend.draw = function (ro: any, info: any) {
@@ -107,10 +107,10 @@ for (const v of views) {
   const cam = camFor(v)
   const res = await page.evaluate(async ({ cam, v }) => {
     const g = globalThis as any
-    const { camera, scene } = g.__afterhoursDebug
+    const { camera, scene } = g.__ashwoodDebug
     const st = g.__census
     if (cam === "mirror") {
-      const mirrors = g.__afterhoursMirrors?.mirrors ?? []
+      const mirrors = g.__ashwoodMirrors?.mirrors ?? []
       if (!mirrors.length) return { error: "no mirrors" }
       // Lowest storey's first mirror.
       const m = [...mirrors].sort((a: any, b: any) => a.center.y - b.center.y)[0]
@@ -199,7 +199,7 @@ for (const v of views) {
 
 // Whole-scene inventory (not just what's drawn): meshes and triangles per module/sub-group, hidden vs shown.
 const inventory = await page.evaluate(() => {
-  const { scene } = (globalThis as any).__afterhoursDebug
+  const { scene } = (globalThis as any).__ashwoodDebug
   const out: Record<string, { meshes: number; materials: Set<number>; tris: number }> = {}
   scene.traverse((o: any) => {
     if (!o.isMesh) return

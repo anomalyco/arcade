@@ -32,11 +32,11 @@ await page.routeWebSocket(/.*/, () => {})
 // The first night one-shot 2 s into the recording; no horror event (automation-only parameters).
 await page.goto("http://localhost:5196/?view=entrance&night=5&horror=9999")
 await page.waitForFunction(() => {
-  const s = (globalThis as { __afterhours?: { ready: boolean; complete: boolean } }).__afterhours
+  const s = (globalThis as { __ashwood?: { ready: boolean; complete: boolean } }).__ashwood
   return !!s?.complete && s.ready
 }, null, { timeout: 300_000 })
 
-const evalP = <T>(body: string) => page.evaluate(`(async () => { const p = globalThis.__afterhoursPlayer; const A = globalThis.__afterhoursAudio; ${body} })()`) as Promise<T>
+const evalP = <T>(body: string) => page.evaluate(`(async () => { const p = globalThis.__ashwoodPlayer; const A = globalThis.__ashwoodAudio; ${body} })()`) as Promise<T>
 const pos = () => evalP<{ x: number; y: number; z: number }>("return { ...p.pos }")
 const place = (x: number, y: number, z: number, yaw: number) =>
   evalP(`p.pos.x = ${x}; p.pos.y = ${y}; p.pos.z = ${z}; p.yaw = ${yaw}; p.pitch = 0; p.resetMotion()`)

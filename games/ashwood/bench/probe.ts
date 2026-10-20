@@ -17,7 +17,7 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
 const errors: string[] = []
 page.on("pageerror", (e) => errors.push(e.message))
 await page.goto(`http://localhost:5227/arcade/ashwood/${q}`)
-await page.waitForFunction((p) => (globalThis as any).__static?.flow?.phase === p || (p === "any" && (globalThis as any).__afterhours?.complete), phase, { timeout: 300_000, polling: 250 })
+await page.waitForFunction((p) => (globalThis as any).__static?.flow?.phase === p || (p === "any" && (globalThis as any).__ashwood?.complete), phase, { timeout: 300_000, polling: 250 })
 await page.waitForTimeout(wait)
 if (cpu > 1) await (await page.context().newCDPSession(page)).send("Emulation.setCPUThrottlingRate", { rate: cpu })
 const src = await Bun.file(script).text()

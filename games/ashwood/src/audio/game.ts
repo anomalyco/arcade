@@ -59,7 +59,7 @@ export class GameAudio {
     // context (suspended, silent), its reverbs, then every one-shot fetched and decoded one at a time. The first key
     // press then only resumes the context.
     setTimeout(() => this.prepare(), 1200)
-    ;(globalThis as { __afterhoursAudio?: GameAudio }).__afterhoursAudio = this
+    ;(globalThis as { __ashwoodAudio?: GameAudio }).__ashwoodAudio = this
   }
 
   private prepared = false

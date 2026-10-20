@@ -28,7 +28,7 @@ export const DEATHS: Record<DeathName, string> = { ...DEATHS_NEW, ...DEATHS_OLD 
 const NAMES = Object.keys(DEATHS) as DeathName[]
 /** The hunter's catch uses this until the owner picks (death-lab.html "Use in game" stores the pick, dev only). */
 export const DEATH_DEFAULT: DeathName = "charge"
-const PICK_KEY = "afterhours.deathVariant"
+const PICK_KEY = "ashwood.deathVariant"
 export function deathVariant(): DeathName {
   try {
     const v = localStorage.getItem(PICK_KEY)

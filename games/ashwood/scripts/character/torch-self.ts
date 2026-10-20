@@ -34,14 +34,14 @@ const files: string[] = []
 let total = 0
 try {
   await page.goto(`http://localhost:5196/?view=corridor&character=${char}`)
-  await page.waitForFunction(() => (globalThis as { __afterhours?: { complete: boolean } }).__afterhours?.complete, null, { timeout: 240_000 })
+  await page.waitForFunction(() => (globalThis as { __ashwood?: { complete: boolean } }).__ashwood?.complete, null, { timeout: 240_000 })
   await page.addStyleTag({ content: "#hud{display:none!important}" })
   await page.evaluate(async () => {
     const G = globalThis as any
     const url = "/src/render/shared.ts"
     const RS = (await import(url)).renderState
-    const { scene, camera } = G.__afterhoursDebug
-    const body = G.__afterhoursBody.body
+    const { scene, camera } = G.__ashwoodDebug
+    const body = G.__ashwoodBody.body
     const V = camera.position.constructor
     const M = (G.__self = { frames: 0, lit: 0, litFrames: 0, worst: -9, on: false })
     RS.beforeRender.push(() => {
@@ -77,7 +77,7 @@ try {
       if (litNow) M.litFrames++
     })
   })
-  const ev = (src: string) => page.evaluate((src) => new Function("P", "M", src)((globalThis as any).__afterhoursPlayer, (globalThis as any).__self), src)
+  const ev = (src: string) => page.evaluate((src) => new Function("P", "M", src)((globalThis as any).__ashwoodPlayer, (globalThis as any).__self), src)
   type Sc = [string, string[], boolean]
   const SC: Sc[] = [
     ["stand", [], false],

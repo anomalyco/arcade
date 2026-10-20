@@ -11,7 +11,7 @@
 //
 // Reads the `performance.mark`s main.ts and src/boot/ place (boot:*, gpu:*, materials:*, mod:<name>:*, frame:*),
 // resource timings (JS modules, textures), long tasks and every rAF interval, and prints one row per metric in ms
-// from navigation start. "complete" is when main.ts reports every module streamed in (`__afterhours.complete`).
+// from navigation start. "complete" is when main.ts reports every module streamed in (`__ashwood.complete`).
 import { chromium, type Browser } from "playwright-core"
 import { existsSync, readdirSync, writeFileSync } from "node:fs"
 
@@ -171,7 +171,7 @@ async function once(browser: Browser): Promise<Run> {
   await page
     .waitForFunction(
       () => {
-        const s = (globalThis as { __afterhours?: { complete?: boolean; frames: number; errors: string[] } }).__afterhours
+        const s = (globalThis as { __ashwood?: { complete?: boolean; frames: number; errors: string[] } }).__ashwood
         // Older main.ts had no `complete`; there the world is in once frames start.
         return !!s && (s.complete ?? s.frames > 0)
       },
@@ -201,7 +201,7 @@ async function once(browser: Browser): Promise<Run> {
     const isTex = (r: PerformanceResourceTiming) => /\.(jpe?g|png|webp|ktx2|avif)(\?|$)/.test(r.name)
     const g = globalThis as unknown as {
       __boot: { long: { start: number; dur: number }[]; frames: number[] }
-      __afterhours?: { completeAt?: number; gpuMs?: number | null }
+      __ashwood?: { completeAt?: number; gpuMs?: number | null }
     }
     return {
       marks,
@@ -211,8 +211,8 @@ async function once(browser: Browser): Promise<Run> {
       tex: sum(res.filter(isTex)),
       longTasks: g.__boot.long,
       frames: g.__boot.frames,
-      complete: g.__afterhours?.completeAt ?? null,
-      gpuMs: g.__afterhours?.gpuMs ?? null,
+      complete: g.__ashwood?.completeAt ?? null,
+      gpuMs: g.__ashwood?.gpuMs ?? null,
     }
   })
   await context.close()

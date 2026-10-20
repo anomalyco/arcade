@@ -106,7 +106,7 @@ export function createGameBody(ctx: WorldContext, player: Player) {
   }
 
   // Automation (scripts/character/game-shots.ts): the body and the settings it reads.
-  ;(globalThis as { __afterhoursBody?: unknown }).__afterhoursBody = {
+  ;(globalThis as { __ashwoodBody?: unknown }).__ashwoodBody = {
     body,
     settings: s,
     /** A visible solid test box (collider + mesh); returns a remover. */

@@ -50,7 +50,7 @@ async function record(name: string, at: number | "door", secs: number) {
     if (at === "door") {
       // Find the route's duration first (no cutscene), then start a little before the hand leaves the wheel.
       await page.goto(`http://localhost:5196/?view=lot&character=${char}`)
-      await page.waitForFunction(() => (globalThis as { __afterhours?: { complete: boolean } }).__afterhours?.complete, null, { timeout: 240_000 })
+      await page.waitForFunction(() => (globalThis as { __ashwood?: { complete: boolean } }).__ashwood?.complete, null, { timeout: 240_000 })
       const dur = await page.evaluate(async () => {
         const url = "/src/game/intro/route.ts"
         const m = await import(url)
@@ -59,7 +59,7 @@ async function record(name: string, at: number | "door", secs: number) {
       startAt = dur + 3.6
     }
     await page.goto(`http://localhost:5196/?intro&introAt=${startAt}&character=${char}${extraQ ? `&${extraQ}` : ""}`)
-    await page.waitForFunction(() => (globalThis as { __afterhours?: { complete: boolean } }).__afterhours?.complete, null, { timeout: 240_000 })
+    await page.waitForFunction(() => (globalThis as { __ashwood?: { complete: boolean } }).__ashwood?.complete, null, { timeout: 240_000 })
     await page.addStyleTag({ content: "#hud{display:none!important}" })
     // Let the fade-in finish.
     await page.waitForTimeout(2600)
@@ -76,7 +76,7 @@ async function record(name: string, at: number | "door", secs: number) {
     for (let k = 0; k < secs; k++) {
       await page.waitForTimeout(1000)
       misses.push(await page.evaluate(() => {
-        const b = (globalThis as any).__afterhoursBody?.body
+        const b = (globalThis as any).__ashwoodBody?.body
         const d = b?.seatRig?.debug
         return d ? [d.Left?.miss, d.Right?.miss, d.Left?.clockDeg, d.Right?.clockDeg] : null
       }))

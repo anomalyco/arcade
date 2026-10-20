@@ -72,7 +72,7 @@ page.on("pageerror", (e) => errors.push(e.message))
 // body=0: the first-person body (hands in idle sway) fills the sweep's centre crop and reads as flicker.
 await page.goto(`${base}scripts/audit/audit.html?view=corridor&body=0`)
 await page.waitForFunction(() => {
-  const s = (globalThis as { __afterhours?: { ready: boolean; complete: boolean } }).__afterhours
+  const s = (globalThis as { __ashwood?: { ready: boolean; complete: boolean } }).__ashwood
   return !!s?.complete && s.ready && !!(globalThis as { __interior?: unknown }).__interior
 }, null, { timeout: 600_000 })
 // Furniture bakes after its models load.
@@ -84,7 +84,7 @@ export type Finding = { cls: "coplanar" | "slit" | "mount" | "flicker"; storey: 
 // ------------------------------------------------------------------------------------------------ static checks
 const statics: Finding[] = await page.evaluate((only) => {
   const g = globalThis as any
-  const scene = g.__afterhoursDebug.scene
+  const scene = g.__ashwoodDebug.scene
   const interior = g.__interior
   const solids: { min: number[]; max: number[]; id: number }[] = interior.solids
   const colliders: { min: number[]; max: number[] }[] = interior.ctx.colliders
@@ -393,7 +393,7 @@ const views: View[] = await page.evaluate(({ only, torch }) => {
   }
   const out: any[] = []
   // Doors.
-  for (const d of g.__afterhoursDoors.all() as any[]) {
+  for (const d of g.__ashwoodDoors.all() as any[]) {
     if (d.slide || String(d.id).endsWith(":b")) continue
     const st = storeyOf(d.hy)
     if (d.hy < -1 || d.hy > 19.5) continue
@@ -482,8 +482,8 @@ await page.evaluate(() => {
   s["post.autoRes"] = false
   // The game's camera sees the body (3) and first-person viewmodel (6) layers too; with body=0 nothing is on them, but
   // anything else carrying those layers (a mirror's reflect-only stand-ins once shared 6) must be in the sweep's view.
-  g.__afterhoursDebug.camera.layers.enable(3)
-  g.__afterhoursDebug.camera.layers.enable(6)
+  g.__ashwoodDebug.camera.layers.enable(3)
+  g.__ashwoodDebug.camera.layers.enable(6)
   // Dying lamps flicker by design (their own per-lamp amount): steady them so only geometry can shimmer.
   for (const l of g.__interior.ctx.lamps) if (l.flicker) l.flicker = 0
 })
@@ -494,13 +494,13 @@ for (const [vi, v] of sweep.entries()) {
   // The floor views run with the flashlight on (the doors and corners with it off, as before).
   if ((v.kind === "floor") !== torchOn) {
     torchOn = !torchOn
-    await page.evaluate((on) => ((globalThis as any).__afterhoursPlayer.flashlight = on), torchOn)
+    await page.evaluate((on) => ((globalThis as any).__ashwoodPlayer.flashlight = on), torchOn)
   }
   const r = await page.evaluate(
     async ({ v, crop }) => {
       const g = globalThis as any
-      const p = g.__afterhoursPlayer
-      const cam = g.__afterhoursDebug.camera
+      const p = g.__ashwoodPlayer
+      const cam = g.__ashwoodDebug.camera
       p.fly = true
       p.pos.x = v.cam[0]
       p.pos.z = v.cam[2]

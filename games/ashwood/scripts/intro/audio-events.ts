@@ -26,22 +26,22 @@ try {
   page.on("pageerror", (e) => errors.push(e.message))
   await page.routeWebSocket(/.*/, () => {})
   await page.goto("http://localhost:5196/?view=road&intro&night=4")
-  await page.waitForFunction(() => !!(globalThis as { __afterhoursIntro?: unknown }).__afterhoursIntro, null, { timeout: 300_000 })
+  await page.waitForFunction(() => !!(globalThis as { __ashwoodIntro?: unknown }).__ashwoodIntro, null, { timeout: 300_000 })
   type Snap = { time: number; total: number; seated: boolean; night: { t: number; id: string; d: number; muffled: boolean }[]; played: Record<string, number>; pos: { x: number; y: number; z: number } }
   const snap = () =>
     page.evaluate(() => {
       const g = globalThis as unknown as {
-        __afterhoursIntro: { time: number; total: number }
-        __afterhoursPlayer: { locomotion: boolean; pos: { x: number; y: number; z: number } }
-        __afterhoursAudio: { ambience: { night: { log: { t: number; id: string; d: number; muffled: boolean }[] } }; sfx: { stats: { played: Record<string, number> } } }
+        __ashwoodIntro: { time: number; total: number }
+        __ashwoodPlayer: { locomotion: boolean; pos: { x: number; y: number; z: number } }
+        __ashwoodAudio: { ambience: { night: { log: { t: number; id: string; d: number; muffled: boolean }[] } }; sfx: { stats: { played: Record<string, number> } } }
       }
       return {
-        time: g.__afterhoursIntro.time,
-        total: g.__afterhoursIntro.total,
-        seated: !g.__afterhoursPlayer.locomotion,
-        night: [...g.__afterhoursAudio.ambience.night.log],
-        played: { ...g.__afterhoursAudio.sfx.stats.played },
-        pos: { ...g.__afterhoursPlayer.pos },
+        time: g.__ashwoodIntro.time,
+        total: g.__ashwoodIntro.total,
+        seated: !g.__ashwoodPlayer.locomotion,
+        night: [...g.__ashwoodAudio.ambience.night.log],
+        played: { ...g.__ashwoodAudio.sfx.stats.played },
+        pos: { ...g.__ashwoodPlayer.pos },
       }
     }) as Promise<Snap>
   // A click unlocks the audio (a key could be read by the cutscene).

@@ -1,6 +1,6 @@
 // CPU-side copies of GPU data still held by JS: geometry attribute arrays and texture images, by module and largest.
 async () => {
-  const { scene, renderer } = globalThis.__afterhoursDebug
+  const { scene, renderer } = globalThis.__ashwoodDebug
   const seen = new Set()
   const byMod = {}
   const big = []

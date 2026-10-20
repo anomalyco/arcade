@@ -57,7 +57,7 @@ for (const route of routes) {
   page.on("pageerror", (e) => errors.push(e.message))
   page.on("console", (m) => m.type() === "error" && errors.push(m.text().slice(0, 200)))
   await page.addInitScript((intro: boolean) => {
-    if (intro) sessionStorage.setItem("afterhours.autoplay", "1")
+    if (intro) sessionStorage.setItem("ashwood.autoplay", "1")
     const g = globalThis as any
     const M = (g.__rp = { on: false, frames: [] as number[], draws: [] as number[], tris: [] as number[], long: [] as { t: number; d: number }[], loaf: [] as { t: number; d: number; s: string }[], heap: [] as number[] })
     new PerformanceObserver((l) => {
@@ -73,7 +73,7 @@ for (const route of routes) {
     const tick = (t: number) => {
       if (M.on) {
         if (last) M.frames.push(t - last)
-        const info = g.__afterhoursDebug?.renderer?.info?.render
+        const info = g.__ashwoodDebug?.renderer?.info?.render
         if (info) {
           M.draws.push(info.drawCalls)
           M.tris.push(info.triangles)
@@ -110,7 +110,7 @@ for (const route of routes) {
 
   await page.evaluate(() => {
     const g = globalThis as any
-    const r = g.__afterhoursDebug.renderer
+    const r = g.__ashwoodDebug.renderer
     const M = g.__rp
     M.uploadMap = new Map()
     M.sync = {}
@@ -146,7 +146,7 @@ for (const route of routes) {
   if (route === "lot" || route === "s3" || route === "reveal") {
     await page.evaluate((route) => {
       const g = globalThis as any
-      const p = g.__afterhoursPlayer
+      const p = g.__ashwoodPlayer
       const key = (type: string, code: string) => dispatchEvent(new KeyboardEvent(type, { code, key: code === "KeyE" ? "e" : code === "KeyW" ? "w" : "Shift", bubbles: true }))
       let pts: [number, number, boolean?][]
       if (route === "lot") {
@@ -208,7 +208,7 @@ for (const route of routes) {
       await page.evaluate(() => dispatchEvent(new KeyboardEvent("keydown", { code: "KeyE", key: "e" })))
       await page.evaluate(() => setTimeout(() => dispatchEvent(new KeyboardEvent("keyup", { code: "KeyE", key: "e" })), 80))
       await page.waitForTimeout(2500)
-      await page.evaluate(() => (globalThis as any).__afterhoursPlayer.ctx.doors.get("motor-pool-button")?.open())
+      await page.evaluate(() => (globalThis as any).__ashwoodPlayer.ctx.doors.get("motor-pool-button")?.open())
       await page.waitForTimeout(4500)
       await page.evaluate(() => {
         const e = (globalThis as any).__ashwoodEscape
@@ -308,7 +308,7 @@ for (const route of routes) {
     const M = g.__rp
     // Owner of each uploaded attribute: the mesh/geometry attribute name it belongs to.
     const owner = new Map<unknown, string>()
-    g.__afterhoursDebug.scene.traverse((o: any) => {
+    g.__ashwoodDebug.scene.traverse((o: any) => {
       const geo = o.geometry
       if (!geo) return
       const path: string[] = []

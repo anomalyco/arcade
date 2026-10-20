@@ -435,7 +435,7 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
         if (inCar) {
           audio?.clunk(0.25)
           const at = { x: panelX + bt.x, y: carFloor.y + PANEL_Y + bt.y, z: z0 + 0.024 }
-          ;(globalThis as { __afterhoursBody?: { body?: { interact?: (k: string, t?: unknown) => void } } }).__afterhoursBody?.body?.interact?.("button", at)
+          ;(globalThis as { __ashwoodBody?: { body?: { interact?: (k: string, t?: unknown) => void } } }).__ashwoodBody?.body?.interact?.("button", at)
           request(bt.floor!)
           pushed = bi
           pushedT = 0.25
@@ -467,8 +467,8 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
       openHeld = Math.max(0, openHeld - dt)
       alarmT = Math.max(0, alarmT - dt)
       // Hand-reach hook (body/IK): the aimed control's world position and label, else null.
-      const hook = globalThis as { __afterhoursLiftAim?: { label: string; at: [number, number, number] } | null }
-      hook.__afterhoursLiftAim =
+      const hook = globalThis as { __ashwoodLiftAim?: { label: string; at: [number, number, number] } | null }
+      hook.__ashwoodLiftAim =
         aimed >= 0
           ? { label: BUTTONS[aimed]!.prompt, at: [panelX + BUTTONS[aimed]!.x, carFloor.y + PANEL_Y + BUTTONS[aimed]!.y, z0 + 0.024] }
           : !inCar && atCall >= 0

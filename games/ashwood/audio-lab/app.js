@@ -1,4 +1,4 @@
-const STORE_KEY = "afterhours-audio-lab:v1"
+const STORE_KEY = "ashwood-audio-lab:v1"
 const $ = (s, el = document) => el.querySelector(s)
 
 const state = {

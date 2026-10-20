@@ -36,14 +36,14 @@ await page.routeWebSocket(/.*/, () => {})
 const rows: string[][] = []
 try {
   await page.goto(`http://localhost:5196/?view=lot&character=${char}`)
-  await page.waitForFunction(() => (globalThis as { __afterhours?: { complete: boolean } }).__afterhours?.complete, null, { timeout: 240_000 })
+  await page.waitForFunction(() => (globalThis as { __ashwood?: { complete: boolean } }).__ashwood?.complete, null, { timeout: 240_000 })
   await page.addStyleTag({ content: "#hud{display:none!important}" })
   const setupErr = await page.evaluate(async () => {
     try {
       const G = globalThis as unknown as Record<string, any>
-      const P = G.__afterhoursPlayer
-      const B = G.__afterhoursBody
-      const { renderer, scene, camera } = G.__afterhoursDebug
+      const P = G.__ashwoodPlayer
+      const B = G.__ashwoodBody
+      const { renderer, scene, camera } = G.__ashwoodDebug
       const url = "/src/game/intro/index.ts"
       const intro = await import(url)
       const world = { ctx: P.ctx, scene, warmup: { warm: (o: unknown) => renderer.compileAsync(o, camera, scene) } }
@@ -167,7 +167,7 @@ try {
           name,
           JSON.stringify(
             await page.evaluate(() => {
-              const b = (globalThis as any).__afterhoursBody.body
+              const b = (globalThis as any).__ashwoodBody.body
               const B = b.bones
               const P = (n: string) => B[n].getWorldPosition(B[n].position.clone())
               const r: Record<string, unknown> = { dbg: b.seatRig?.debug }

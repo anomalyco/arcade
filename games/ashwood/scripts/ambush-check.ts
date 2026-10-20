@@ -39,11 +39,11 @@ const shot = (name: string) => page.screenshot({ path: `${out}/ambush-${name}.pn
 
 /** Feet position (the controller's state object is live). */
 const put = (x: number, y: number, z: number) =>
-  G(page, `(() => { const p = globalThis.__afterhoursPlayer; p.pos.x = ${x}; p.pos.y = ${y}; p.pos.z = ${z}; p.resetMotion(); })()`)
+  G(page, `(() => { const p = globalThis.__ashwoodPlayer; p.pos.x = ${x}; p.pos.y = ${y}; p.pos.z = ${z}; p.resetMotion(); })()`)
 const STOREY = (s: number) => 0.16 + s * 3.8
 
 async function intoRun() {
-  await page.waitForFunction(() => (globalThis as Any).__afterhours?.complete, null, { timeout: 180_000 })
+  await page.waitForFunction(() => (globalThis as Any).__ashwood?.complete, null, { timeout: 180_000 })
   await page.waitForTimeout(1500)
   if ((await phase()) === "menu") await page.click("text=Play")
   // Skip the title card (Space) and the intro (hold Space) until explore.
@@ -86,7 +86,7 @@ async function rideAndDie(tag: string, walkOut: boolean) {
   // Into the car at its current floor, facing the doors, then send it to another floor.
   const st = (await G(page, "globalThis.__interior.lift.state()")) as Any
   await put(-37.85, STOREY(st.cur) + 0.02, 20.3)
-  await G(page, "(() => { const p = globalThis.__afterhoursPlayer; p.yaw = 0; p.pitch = -0.05 })()")
+  await G(page, "(() => { const p = globalThis.__ashwoodPlayer; p.yaw = 0; p.pitch = -0.05 })()")
   await page.waitForTimeout(800)
   const dest = st.cur === 2 ? 1 : 2
   await G(page, `globalThis.__interior.lift.press("${dest}")`)
@@ -102,7 +102,7 @@ async function rideAndDie(tag: string, walkOut: boolean) {
   if (walkOut) await page.keyboard.down("KeyW")
   await page.waitForFunction(() => ["pounce", "dead"].includes((globalThis as Any).__ashwoodAmbush?.phase), null, { timeout: 15_000 })
   if (!pounceAt) pounceAt = Date.now() - t0
-  const how = (await G(page, "({ z: globalThis.__afterhoursPlayer.pos.z, doorT: globalThis.__interior.lift.state().doorT })")) as Any
+  const how = (await G(page, "({ z: globalThis.__ashwoodPlayer.pos.z, doorT: globalThis.__interior.lift.state().doorT })")) as Any
   console.log(`${tag}: pounce at player z ${how.z.toFixed(2)} (threshold 19.45), doorT ${how.doorT.toFixed(2)}`)
   if (walkOut) check(how.z < 19.6, `${tag}: it came as the player stepped out`)
   if (!walkOut) {
@@ -132,17 +132,17 @@ try {
   await page.goto(base)
   await intoRun()
   check((await phase()) === "explore", "explore after the intro")
-  const cps0 = (await G(page, "sessionStorage.getItem('afterhours.checkpoint')")) as string | null
+  const cps0 = (await G(page, "sessionStorage.getItem('ashwood.checkpoint')")) as string | null
   check(!!cps0 && JSON.parse(cps0).id === "arrival", `arrival checkpoint (${cps0 && JSON.parse(cps0).id})`)
   // Into 3-08 (storey 3): the objective advances, the checkpoint lands, the Wendigo loads and warms.
   await put(6, STOREY(3) + 0.02, 0)
   await page.waitForTimeout(2500)
   await put(5.5, STOREY(3) + 0.02, -10)
   await page.waitForTimeout(3000)
-  console.log("after teleport", JSON.stringify(await G(page, "({ pos: { ...globalThis.__afterhoursPlayer.pos }, cam: globalThis.__afterhoursPlayer.state?.eye, amb: globalThis.__ashwoodAmbush?.phase, obj: document.querySelector('.objective')?.textContent, cp: sessionStorage.getItem('afterhours.checkpoint')?.slice(0, 60), active: globalThis.__static.flow.playerActive, paused: globalThis.__static.flow.paused })")))
+  console.log("after teleport", JSON.stringify(await G(page, "({ pos: { ...globalThis.__ashwoodPlayer.pos }, cam: globalThis.__ashwoodPlayer.state?.eye, amb: globalThis.__ashwoodAmbush?.phase, obj: document.querySelector('.objective')?.textContent, cp: sessionStorage.getItem('ashwood.checkpoint')?.slice(0, 60), active: globalThis.__static.flow.playerActive, paused: globalThis.__static.flow.paused })")))
   await shot("teleport")
   await page.waitForFunction(() => (globalThis as Any).__ashwoodAmbush?.phase === "armed", null, { timeout: 60_000 })
-  const cp = JSON.parse(((await G(page, "sessionStorage.getItem('afterhours.checkpoint')")) as string) ?? "{}")
+  const cp = JSON.parse(((await G(page, "sessionStorage.getItem('ashwood.checkpoint')")) as string) ?? "{}")
   check(cp.id === "3-08:entered", `3-08 checkpoint (${cp.id}), Wendigo warmed in ${await G(page, "globalThis.__ashwoodAmbush.stats.warmMs")} ms`)
   await shot("308")
   const scareAt = await rideAndDie("first", true)
@@ -151,7 +151,7 @@ try {
   // Restart from checkpoint: back in 3-08, playing.
   await page.click("text=Restart from checkpoint")
   await page.waitForTimeout(1200)
-  const r = (await G(page, "({ phase: globalThis.__static.flow.phase, paused: globalThis.__static.flow.paused, hold: globalThis.__static.flow.hold, pos: { ...globalThis.__afterhoursPlayer.pos }, amb: globalThis.__ashwoodAmbush.phase, modal: document.body.dataset.modal ?? null })")) as Any
+  const r = (await G(page, "({ phase: globalThis.__static.flow.phase, paused: globalThis.__static.flow.paused, hold: globalThis.__static.flow.hold, pos: { ...globalThis.__ashwoodPlayer.pos }, amb: globalThis.__ashwoodAmbush.phase, modal: document.body.dataset.modal ?? null })")) as Any
   const inside = r.pos.x > 0.8 && r.pos.x < 11.6 && r.pos.z > -21.65 && r.pos.z < -1.75 && Math.abs(r.pos.y - STOREY(3)) < 0.5
   check(!r.paused && !r.hold && r.modal === null && inside && r.amb === "armed", `restart: back in 3-08 and playing (${JSON.stringify(r)})`)
   await shot("restart")
@@ -164,24 +164,24 @@ try {
   // The reveal (as if the warning had been read): the checkpoint lands; then the hunter is put in the storey 3
   // corridor 10 m from the player and hunts them down.
   await G(page, `(() => { const t = globalThis.__ashwoodTransmitter; for (const p of ["warming", "on", "transmitting", "transmitted", "revealed"]) t.set(p) })()`)
-  await page.waitForFunction(() => JSON.parse(sessionStorage.getItem("afterhours.checkpoint") ?? "{}").id === "3-08:transmitted", null, { timeout: 20_000 })
+  await page.waitForFunction(() => JSON.parse(sessionStorage.getItem("ashwood.checkpoint") ?? "{}").id === "3-08:transmitted", null, { timeout: 20_000 })
   check(true, "reveal checkpoint 3-08:transmitted")
   hunterAt = await hunterDeath("hunter1")
   await page.click("text=Restart from checkpoint")
   await page.waitForTimeout(1500)
-  const hr = (await G(page, "(() => { const h = globalThis.__ashwoodHunter.hunter; const p = globalThis.__afterhoursPlayer.pos; return { mode: h.mode, grace: h.grace, dist: Math.hypot(h.pos.x - p.x, h.pos.z - p.z), s: h.s, paused: globalThis.__static.flow.paused, amb: globalThis.__ashwoodAmbush.phase } })()")) as Any
+  const hr = (await G(page, "(() => { const h = globalThis.__ashwoodHunter.hunter; const p = globalThis.__ashwoodPlayer.pos; return { mode: h.mode, grace: h.grace, dist: Math.hypot(h.pos.x - p.x, h.pos.z - p.z), s: h.s, paused: globalThis.__static.flow.paused, amb: globalThis.__ashwoodAmbush.phase } })()")) as Any
   check(hr.mode !== "dormant" && hr.grace > 0 && hr.dist > 10 && !hr.paused && hr.amb === "armed", `post-reveal restart: hunter restored far away with grace (${JSON.stringify(hr)})`)
   await shot("hunter-restart")
   await hunterDeath("hunter2")
 
   // Start over: a fresh page straight into the intro.
   await page.click("text=Start over")
-  await page.waitForFunction(() => (globalThis as Any).__afterhours?.complete, null, { timeout: 180_000 })
+  await page.waitForFunction(() => (globalThis as Any).__ashwood?.complete, null, { timeout: 180_000 })
   await page.waitForFunction(() => (globalThis as Any).__static?.flow.phase === "intro" || (globalThis as Any).__static?.flow.phase === "title", null, { timeout: 60_000 })
   check(true, `start over: reloaded into ${await phase()}`)
   await page.waitForTimeout(3000)
   await shot("startover")
-  check((await G(page, "sessionStorage.getItem('afterhours.checkpoint')")) === null, "start over cleared the checkpoint")
+  check((await G(page, "sessionStorage.getItem('ashwood.checkpoint')")) === null, "start over cleared the checkpoint")
 
   check(stubWarnings.length === 0, `no "death path not wired yet" warning (${stubWarnings.length})`)
   check(errors.length === 0, `no page errors (${errors.slice(0, 3).join(" | ")})`)

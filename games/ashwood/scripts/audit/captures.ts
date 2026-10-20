@@ -20,7 +20,7 @@ const browser = await launch()
 for (const n of names) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
   await page.goto(`${AUDIT}?shot=1&view=corridor&icam=${SHOTS[n]}`)
-  await page.waitForFunction(() => ((globalThis as any).__afterhours?.frames ?? 0) >= 40, null, { timeout: 240_000 })
+  await page.waitForFunction(() => ((globalThis as any).__ashwood?.frames ?? 0) >= 40, null, { timeout: 240_000 })
   await page.screenshot({ path: `${OUT}/shots/${n}.png` })
   console.log(`${OUT}/shots/${n}.png`)
   await page.close()

@@ -22,7 +22,7 @@ const canvas = document.querySelector<HTMLCanvasElement>("#view")!
 const stage = document.querySelector<HTMLDivElement>("#stage")!
 const loader = createLoader(shot)
 const status: Status = { ready: false, complete: false, frames: 0, errors: [], frameMs: [] }
-;(globalThis as { __afterhours?: Status }).__afterhours = status
+;(globalThis as { __ashwood?: Status }).__ashwood = status
 if (shot) document.body.classList.add("shot")
 
 const world = await bootWorld(canvas, params, { view: "lot", errors: status.errors, onStep: (label, f) => loader.step(label, f) })

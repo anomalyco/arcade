@@ -3,7 +3,7 @@ import * as THREE from "three/webgpu"
 /**
  * Seated driving mode for the player body (src/playerb/body.ts), for the intro cutscene (src/game/intro).
  *
- * API (on the CharacterBody; `createGameBody(...).body` in the game, `__afterhoursBody.body` for automation):
+ * API (on the CharacterBody; `createGameBody(...).body` in the game, `__ashwoodBody.body` for automation):
  *
  *   body.seat({ hip, eye?, wheel: { object, radius, axis? }, doorHandle, doorEdge })
  *     Sits the body down. Call once (again to change seat); the body then ignores the controller's PlayerState and

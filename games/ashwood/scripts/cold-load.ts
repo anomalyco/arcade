@@ -133,9 +133,9 @@ const playable = await page
   .then((h) => h.jsonValue() as Promise<{ t: number; state: string }>)
   .catch(() => ({ t: NaN, state: "timeout" }))
 const page2 = await page.evaluate(() => {
-  const g = globalThis as unknown as { __cold: { long: { start: number; dur: number }[] }; __afterhours?: { errors: string[] }; __afterhoursDebug?: { renderer: { info: { memory: Record<string, number> } } } }
+  const g = globalThis as unknown as { __cold: { long: { start: number; dur: number }[] }; __ashwood?: { errors: string[] }; __ashwoodDebug?: { renderer: { info: { memory: Record<string, number> } } } }
   const label = document.querySelector(".shell-load span")?.textContent ?? ""
-  return { long: g.__cold.long, errors: g.__afterhours?.errors ?? [], label, memory: g.__afterhoursDebug?.renderer.info.memory ?? null }
+  return { long: g.__cold.long, errors: g.__ashwood?.errors ?? [], label, memory: g.__ashwoodDebug?.renderer.info.memory ?? null }
 })
 clearInterval(heapTimer)
 await context.close()

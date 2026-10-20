@@ -30,7 +30,7 @@ page.on("pageerror", (e) => errors.push(e.message))
 await page.routeWebSocket(/.*/, () => {})
 await page.goto("http://localhost:5196/?view=corridor&only=terrain,interior")
 await page.waitForFunction(() => {
-  const s = (globalThis as { __afterhours?: { ready: boolean; complete: boolean } }).__afterhours
+  const s = (globalThis as { __ashwood?: { ready: boolean; complete: boolean } }).__ashwood
   return !!s?.complete && s.ready
 }, null, { timeout: 240_000 })
 
@@ -52,7 +52,7 @@ type P = {
   onStep(l: (e: { kind: string; surface: string }) => void): () => void
 }
 const player = <T>(fn: (p: P, arg: T) => unknown, arg: T) =>
-  page.evaluate(({ src, arg }) => new Function("p", "arg", `return (${src})(p, arg)`)((globalThis as unknown as { __afterhoursPlayer: P }).__afterhoursPlayer, arg), { src: fn.toString(), arg })
+  page.evaluate(({ src, arg }) => new Function("p", "arg", `return (${src})(p, arg)`)((globalThis as unknown as { __ashwoodPlayer: P }).__ashwoodPlayer, arg), { src: fn.toString(), arg })
 const pos = () => player((p) => ({ ...p.pos }), 0) as Promise<{ x: number; y: number; z: number }>
 
 async function place(x: number, y: number, z: number, yaw: number) {

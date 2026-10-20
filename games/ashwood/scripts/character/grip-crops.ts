@@ -40,14 +40,14 @@ for (const char of chars) {
   await page.routeWebSocket(/.*/, () => {})
   try {
     await page.goto(`http://localhost:5196/?view=corridor&character=${char}`)
-    await page.waitForFunction(() => (globalThis as { __afterhours?: { complete: boolean } }).__afterhours?.complete, null, { timeout: 240_000 })
+    await page.waitForFunction(() => (globalThis as { __ashwood?: { complete: boolean } }).__ashwood?.complete, null, { timeout: 240_000 })
     await page.addStyleTag({ content: "#hud{display:none!important}" })
     await page.evaluate(() => {
       const G = globalThis as any
-      const s = G.__afterhoursBody.settings
+      const s = G.__ashwoodBody.settings
       s["post.exposure"] = Number(s["post.exposure"] ?? -2.2) + 2
-      const b = G.__afterhoursBody.body
-      const PL = G.__afterhoursDebug.scene.children.find((o: any) => o.isPointLight)?.constructor
+      const b = G.__ashwoodBody.body
+      const PL = G.__ashwoodDebug.scene.children.find((o: any) => o.isPointLight)?.constructor
       if (PL) {
         const l = new PL(0xffffff, 1.2, 1.5, 2)
         l.position.set(0.25, 0.25, 0.1)
@@ -57,12 +57,12 @@ for (const char of chars) {
     const row: string[] = []
     for (const [name, pitch, keys] of SHOTS) {
       await page.evaluate((p) => {
-        const P = (globalThis as any).__afterhoursPlayer
+        const P = (globalThis as any).__ashwoodPlayer
         P.pos.x = -14; P.pos.y = 0.1; P.pos.z = 0.2; P.yaw = 1.57; P.pitch = p; P.resetMotion(); P.flashlight = true
       }, pitch)
       for (const k of keys) await page.keyboard.down(k)
       await page.waitForTimeout(1300)
-      const g = await page.evaluate(() => ({ grip: (globalThis as any).__afterhoursBody.body.debug.grip, wrist: (globalThis as any).__afterhoursBody.body.debug.wrist }))
+      const g = await page.evaluate(() => ({ grip: (globalThis as any).__ashwoodBody.body.debug.grip, wrist: (globalThis as any).__ashwoodBody.body.debug.wrist }))
       const f = `${tiles}/${char}-${name}.png`
       await page.screenshot({ path: f, clip: { x: 80, y: 330, width: 450, height: 270 } })
       for (const k of keys) await page.keyboard.up(k)

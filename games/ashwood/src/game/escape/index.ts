@@ -52,7 +52,7 @@ const NOISE = { engine: 60, rollup: 32, crash: 24 }
 type State = "outside" | "seated" | "cranking" | "running" | "handover"
 type SeatBody = CharacterBody & { seated: boolean; seat(o: unknown): void; unseat(): void; steer(a: number): void; seatEye(out: THREE.Vector3): boolean }
 const seatBody = (): SeatBody | null => {
-  const b = (globalThis as { __afterhoursBody?: { body?: SeatBody } }).__afterhoursBody?.body
+  const b = (globalThis as { __ashwoodBody?: { body?: SeatBody } }).__ashwoodBody?.body
   return b && typeof b.seat === "function" ? b : null
 }
 

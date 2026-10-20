@@ -206,7 +206,7 @@ export class Player {
     ctx.doors.attach(ctx, { pos: this.pos, camera })
     // Weather (src/world/weather.ts): Lab controls always; the automatic storm only with input (never in `?shot`).
     weather.install(ctx, enabled)
-    ;(globalThis as { __afterhoursPlayer?: Player }).__afterhoursPlayer = this
+    ;(globalThis as { __ashwoodPlayer?: Player }).__ashwoodPlayer = this
     if (!enabled) return
     ;(this as { audio: GameAudio | null }).audio = new GameAudio(ctx, this)
     // Audio unlocks on the first input (a click or a key), never before.

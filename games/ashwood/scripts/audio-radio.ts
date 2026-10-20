@@ -30,10 +30,10 @@ try {
   await page.routeWebSocket(/.*/, () => {})
   await page.goto("http://localhost:5196/?view=entrance&only=terrain,facility,interior")
   await page.waitForFunction(() => {
-    const s = (globalThis as { __afterhours?: { ready: boolean; complete: boolean } }).__afterhours
+    const s = (globalThis as { __ashwood?: { ready: boolean; complete: boolean } }).__ashwood
     return !!s?.complete && s.ready
   }, null, { timeout: 240_000 })
-  const run = <T>(body: string) => page.evaluate(`(async () => { const p = globalThis.__afterhoursPlayer; const A = globalThis.__afterhoursAudio; ${body} })()`) as Promise<T>
+  const run = <T>(body: string) => page.evaluate(`(async () => { const p = globalThis.__ashwoodPlayer; const A = globalThis.__ashwoodAudio; ${body} })()`) as Promise<T>
   const Y3 = 11.56
   const room = await run<{ x: number; z: number; door: { x: number; z: number } | null }>(`
     const { interiorRooms, interiorDoors } = await import("/src/world/interior/registry.ts")
@@ -120,8 +120,8 @@ try {
   console.log(`horror events during the walk (layer off, as in play): ${scares.length ? JSON.stringify(scares) : "none"}`)
   // The play-mode default of the horror layer.
   await page.goto("http://localhost:5196/?play")
-  await page.waitForFunction(() => !!(globalThis as { __afterhoursAudio?: unknown }).__afterhoursAudio, null, { timeout: 240_000 })
-  const playDefault = await page.evaluate(() => (globalThis as unknown as { __afterhoursPlayer: { ctx: { settings: Record<string, unknown> } } }).__afterhoursPlayer.ctx.settings["audio.horrorLayer"])
+  await page.waitForFunction(() => !!(globalThis as { __ashwoodAudio?: unknown }).__ashwoodAudio, null, { timeout: 240_000 })
+  const playDefault = await page.evaluate(() => (globalThis as unknown as { __ashwoodPlayer: { ctx: { settings: Record<string, unknown> } } }).__ashwoodPlayer.ctx.settings["audio.horrorLayer"])
   console.log(`play mode: audio.horrorLayer = ${playDefault}`)
   console.log(errors.length ? `page errors: ${errors.slice(0, 3).join(" | ")}` : "no page errors")
 } finally {

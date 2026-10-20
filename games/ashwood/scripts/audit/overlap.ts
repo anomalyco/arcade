@@ -6,11 +6,11 @@ import { launch, AUDIT, OUT } from "./lib"
 const browser = await launch()
 const page = await browser.newPage({ viewport: { width: 400, height: 300 } })
 await page.goto(`${AUDIT}?shot=1&view=corridor&only=interior,facility&${process.env.ZQ ?? ""}`)
-await page.waitForFunction(() => (globalThis as any).__afterhours?.frames > 30, null, { timeout: 240000 })
+await page.waitForFunction(() => (globalThis as any).__ashwood?.frames > 30, null, { timeout: 240000 })
 await new Promise((r) => setTimeout(r, 4000))
 await page.evaluate((t) => ((globalThis as any).__zf_tol = t), Number(process.argv[3] ?? 0.0003))
 const res = await page.evaluate(() => {
-  const { scene } = (globalThis as any).__afterhoursDebug
+  const { scene } = (globalThis as any).__ashwoodDebug
   const TOL = 0.002
   type Tri = { m: number; ax: number; s: number; c: number; p: number[][] }
   const meshes: string[] = []

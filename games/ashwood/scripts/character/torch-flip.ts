@@ -38,7 +38,7 @@ const results: Record<string, { frames: number; flags: number; worst: number; wo
 try {
   const load = async (q: string) => {
     await page.goto(`http://localhost:5196/?${q}`)
-    await page.waitForFunction(() => (globalThis as { __afterhours?: { complete: boolean } }).__afterhours?.complete, null, { timeout: 240_000 })
+    await page.waitForFunction(() => (globalThis as { __ashwood?: { complete: boolean } }).__ashwood?.complete, null, { timeout: 240_000 })
     await page.addStyleTag({ content: "#hud{display:none!important}" })
     await install()
   }
@@ -48,13 +48,13 @@ try {
     const url = "/src/render/shared.ts"
     const RS = (await import(url)).renderState
     const G = globalThis as any
-    const P = G.__afterhoursPlayer
-    const B = G.__afterhoursBody
+    const P = G.__ashwoodPlayer
+    const B = G.__ashwoodBody
     const body = B.body
     const Q = body.root.quaternion.constructor
     const prev = { hand: new Q(), torch: new Q(), twist: 0, ok: false, root: new Q(), chest: new Q(), fore: new Q() }
     const M = (G.__flip = { on: false, t: 0, spin: 0, sweep: 0, frames: 0, flags: [] as unknown[], worst: 0, worstAt: "", label: "", flagNow: false, beamMax: 0, beamAt: "", barrelMax: 0, beamBad: 0 })
-    const cam = G.__afterhoursDebug.camera
+    const cam = G.__ashwoodDebug.camera
     const V = cam.position.constructor
     const tw = (q: any) => 2 * Math.atan2(q.y, q.w)
     const t0q = () => new Q()
@@ -131,7 +131,7 @@ try {
     requestAnimationFrame(step)
   })
   await load("view=corridor")
-  const ev = <T>(src: string): Promise<T> => page.evaluate((src) => new Function("P", "B", "M", src)((globalThis as any).__afterhoursPlayer, (globalThis as any).__afterhoursBody, (globalThis as any).__flip), src) as Promise<T>
+  const ev = <T>(src: string): Promise<T> => page.evaluate((src) => new Function("P", "B", "M", src)((globalThis as any).__ashwoodPlayer, (globalThis as any).__ashwoodBody, (globalThis as any).__flip), src) as Promise<T>
   const wait = (ms: number) => page.waitForTimeout(ms)
   type Sc = { name: string; place: string; keys: string[]; spin: number; sweep: number; during?: () => Promise<void> }
   const SC: Sc[] = [
@@ -212,7 +212,7 @@ try {
     await page.keyboard.down("Space")
     await wait(1600)
     await page.keyboard.up("Space")
-    await page.waitForFunction(() => !(globalThis as any).__afterhoursBody.body.seated, null, { timeout: 20_000 }).catch(() => {})
+    await page.waitForFunction(() => !(globalThis as any).__ashwoodBody.body.seated, null, { timeout: 20_000 }).catch(() => {})
     await wait(2500)
     await ev(`P.flashlight = true; M.flags = []; M.frames = 0; M.worst = 0; M.t = 0; M.beamMax = 0; M.beamBad = 0; M.barrelMax = 0; M.label = "after-intro"; M.spin = 7; M.sweep = 1.5`)
     await wait(400)

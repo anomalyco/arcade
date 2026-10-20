@@ -1,6 +1,6 @@
 // Prelude Lab captures: the grid and one fullscreen frame mid-type, to captures/prelude-lab-*.png (dev server :5196).
 //
-//   bun src/prelude-lab/shots.ts [--draft memo] [--panel 0]
+//   bun scripts/prelude-lab/shots.ts [--draft memo] [--panel 0]
 import { chromium } from "playwright-core"
 import { existsSync, readdirSync } from "node:fs"
 

@@ -29,7 +29,7 @@ await page.routeWebSocket(/.*/, () => {})
 type G = { __static?: { flow: { phase: string } } }
 try {
   await page.goto("http://localhost:5196/")
-  await page.evaluate((c) => localStorage.setItem("afterhours.character", c), char)
+  await page.evaluate((c) => localStorage.setItem("ashwood.character", c), char)
   await page.reload()
   await page.waitForSelector(".shell-play", { timeout: 240_000 })
   await page.waitForTimeout(800)
@@ -46,7 +46,7 @@ try {
   await page.waitForFunction(() => (globalThis as unknown as G).__static?.flow.phase === "explore", null, { timeout: 40_000 })
   console.log("explore")
   await page.waitForTimeout(2000)
-  const ev = (src: string) => page.evaluate((src) => new Function("P", src)((globalThis as any).__afterhoursPlayer), src)
+  const ev = (src: string) => page.evaluate((src) => new Function("P", src)((globalThis as any).__ashwoodPlayer), src)
   await ev(`P.flashlight = true`)
   // Past a washroom mirror (ground floor), then into 3-08.
   await ev(`P.pos.x=-34.6; P.pos.y=0.3; P.pos.z=3.1; P.yaw=-Math.PI/2; P.pitch=0; P.resetMotion()`)

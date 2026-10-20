@@ -1,5 +1,5 @@
 async () => {
-  const { scene } = globalThis.__afterhoursDebug
+  const { scene } = globalThis.__ashwoodDebug
   const by = {}
   scene.traverse((o) => {
     if (!o.matrixAutoUpdate || o.isLight || o.isBone) return

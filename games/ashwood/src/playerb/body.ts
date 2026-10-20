@@ -109,7 +109,7 @@ export const CHARACTERS = Object.values(META.characters)
   .sort((a, b) => a.name.localeCompare(b.name))
 
 /** The picked character, shared by the game and bodyb.html (localStorage). */
-const CHARACTER_KEY = "afterhours.character"
+const CHARACTER_KEY = "ashwood.character"
 export const DEFAULT_CHARACTER = META.characters.remy ? "remy" : CHARACTERS[0]!.id
 export function savedCharacter() {
   try {

@@ -38,7 +38,7 @@ for (const char of chars) {
   await page.routeWebSocket(/.*/, () => {})
   try {
     await page.goto(`http://localhost:5196/?intro&introAt=${at}&character=${char}`)
-    await page.waitForFunction(() => (globalThis as { __afterhours?: { complete: boolean } }).__afterhours?.complete, null, { timeout: 240_000 })
+    await page.waitForFunction(() => (globalThis as { __ashwood?: { complete: boolean } }).__ashwood?.complete, null, { timeout: 240_000 })
     await page.addStyleTag({ content: "#hud{display:none!important}" })
     await page.waitForTimeout(2500)
     // Palm / fingers to the rim tube over ~8 s of driving.
@@ -59,8 +59,8 @@ for (const char of chars) {
     // Debug lamp over the wheel, the intro frozen; first person then the dash view.
     await page.evaluate(async () => {
       const G = globalThis as any
-      const { scene, camera } = G.__afterhoursDebug
-      const I = G.__afterhoursIntro
+      const { scene, camera } = G.__ashwoodDebug
+      const I = G.__ashwoodIntro
       const url = "/src/render/shared.ts"
       const RS = (await import(url)).renderState
       const car = I.car
@@ -87,10 +87,10 @@ for (const char of chars) {
       [1, 0],
     ] as const) {
       if (k === 1) {
-        await page.evaluate(() => ((globalThis as any).__afterhoursIntro.rate = 1))
+        await page.evaluate(() => ((globalThis as any).__ashwoodIntro.rate = 1))
         await page.waitForTimeout(2200)
       }
-      await page.evaluate((r) => ((globalThis as any).__afterhoursIntro.rate = r), rate)
+      await page.evaluate((r) => ((globalThis as any).__ashwoodIntro.rate = r), rate)
       await page.waitForTimeout(500)
       const fp = `${tiles}/${char}-${k}-fp.png`
       await page.screenshot({ path: fp, clip: { x: 1280 / 2 - 427, y: 720 - 300, width: 427 * 2 - 160, height: 300 } })
@@ -101,7 +101,7 @@ for (const char of chars) {
       await page.evaluate(() => {
         const G = globalThis as any
         G.__wheelView.mode = "fp"
-        G.__afterhoursDebug.camera.layers.disable(4)
+        G.__ashwoodDebug.camera.layers.disable(4)
       })
       row.push(fp, dash)
     }

@@ -30,7 +30,7 @@ export async function open(browser: Browser, q: string, size: [number, number] =
   page.on("console", (m) => (m.type() === "error" || m.type() === "warning") && log.console.push(`${m.type()}: ${m.text()}`))
   await page.goto(`${AUDIT}?${q}`)
   await page.waitForFunction(() => {
-    const s = (globalThis as { __afterhours?: { ready: boolean; complete: boolean } }).__afterhours
+    const s = (globalThis as { __ashwood?: { ready: boolean; complete: boolean } }).__ashwood
     return !!s?.complete && s.ready
   }, null, { timeout: 300_000 })
   return { page, log }
@@ -40,5 +40,5 @@ export async function open(browser: Browser, q: string, size: [number, number] =
 export const inPage = <T, R = unknown>(page: Page, fn: (g: any, arg: T) => R, arg: T): Promise<R> =>
   page.evaluate(({ src, arg }) => {
     const g = globalThis as any
-    return new Function("g", "arg", `return (${src})(g, arg)`)({ p: g.__afterhoursPlayer, ctx: g.__afterhoursPlayer.ctx, doors: g.__afterhoursDoors, reg: g.__ahRegistry, interior: g.__interior, debug: g.__afterhoursDebug }, arg)
+    return new Function("g", "arg", `return (${src})(g, arg)`)({ p: g.__ashwoodPlayer, ctx: g.__ashwoodPlayer.ctx, doors: g.__ashwoodDoors, reg: g.__ahRegistry, interior: g.__interior, debug: g.__ashwoodDebug }, arg)
   }, { src: fn.toString(), arg }) as Promise<R>

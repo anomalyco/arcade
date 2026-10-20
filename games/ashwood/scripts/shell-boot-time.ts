@@ -1,5 +1,5 @@
 // Play-mode boot-to-ready: loads `/` (the game shell) N times in one headless browser and prints when the world was
-// ready (`__afterhours.completeAt`, ms from navigation) per run and the median. For A/B-ing the loading screen's cost.
+// ready (`__ashwood.completeAt`, ms from navigation) per run and the median. For A/B-ing the loading screen's cost.
 //
 //   bun scripts/shell-boot-time.ts [--runs 3] [--base http://localhost:5196/]
 import { chromium } from "playwright-core"
@@ -25,7 +25,7 @@ for (let i = 0; i < runs; i++) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } })
   const page = await ctx.newPage()
   await page.goto(base)
-  const t = await page.waitForFunction(() => (globalThis as { __afterhours?: { completeAt: number | null } }).__afterhours?.completeAt ?? null, null, { timeout: 180_000 }).then((h) => h.jsonValue() as Promise<number>)
+  const t = await page.waitForFunction(() => (globalThis as { __ashwood?: { completeAt: number | null } }).__ashwood?.completeAt ?? null, null, { timeout: 180_000 }).then((h) => h.jsonValue() as Promise<number>)
   times.push(t)
   console.log(`run ${i + 1}: ready at ${Math.round(t)} ms`)
   await ctx.close()

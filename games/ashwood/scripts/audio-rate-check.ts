@@ -49,13 +49,13 @@ for (const rate of [44100, 48000]) {
     await page.routeWebSocket(/.*/, () => {})
     await page.goto("http://localhost:5196/?view=corridor&only=terrain,interior")
     await page.waitForFunction(() => {
-      const s = (globalThis as { __afterhours?: { ready: boolean; complete: boolean } }).__afterhours
+      const s = (globalThis as { __ashwood?: { ready: boolean; complete: boolean } }).__ashwood
       return !!s?.complete && s.ready
     }, null, { timeout: 240_000 })
     await page.keyboard.press("KeyQ")
     await page.waitForTimeout(2500)
     const r = await page.evaluate(async () => {
-      const A = (globalThis as unknown as { __afterhoursAudio: { audioContext: AudioContext | null; sfx: { decoder(v: unknown): Promise<AudioBuffer | null> } } }).__afterhoursAudio
+      const A = (globalThis as unknown as { __ashwoodAudio: { audioContext: AudioContext | null; sfx: { decoder(v: unknown): Promise<AudioBuffer | null> } } }).__ashwoodAudio
       const ctx = A.audioContext
       if (!ctx) return { error: "no context" }
       const buf = await A.sfx.decoder({ url: "__rate-test/tone.ogg", duration: 1.5, from: "test" })
@@ -94,7 +94,7 @@ for (const rate of [44100, 48000]) {
     }
     // The master's peak while walking down the corridor (footsteps) for 6 s.
     const peak = await page.evaluate(async () => {
-      const A = (globalThis as unknown as { __afterhoursAudio: { audioContext: AudioContext; tap(): MediaStream } }).__afterhoursAudio
+      const A = (globalThis as unknown as { __ashwoodAudio: { audioContext: AudioContext; tap(): MediaStream } }).__ashwoodAudio
       const ctx = A.audioContext
       const an = ctx.createAnalyser()
       an.fftSize = 2048

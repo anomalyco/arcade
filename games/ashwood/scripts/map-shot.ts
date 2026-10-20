@@ -61,14 +61,14 @@ for (const name of which) {
   page.on("console", (m) => (m.type() === "error" || m.text().startsWith("map")) && errors.push(m.text()))
   const t0 = performance.now()
   await page.goto(`http://localhost:5196/?shot=1&view=${s.view}${s.flashlight ? "&flashlight=1" : ""}`)
-  await page.waitForFunction(() => ((globalThis as { __afterhours?: { frames: number } }).__afterhours?.frames ?? 0) > 20, null, { timeout: 180_000 })
+  await page.waitForFunction(() => ((globalThis as { __ashwood?: { frames: number } }).__ashwood?.frames ?? 0) > 20, null, { timeout: 180_000 })
   await page.evaluate(async ([at, studyOn, fovDeg]) => {
     const g = globalThis as Record<string, any>
     if (fovDeg) {
-      g.__afterhoursDebug.camera.fov = fovDeg
-      g.__afterhoursDebug.camera.updateProjectionMatrix()
+      g.__ashwoodDebug.camera.fov = fovDeg
+      g.__ashwoodDebug.camera.updateProjectionMatrix()
     }
-    const p = g.__afterhoursPlayer
+    const p = g.__ashwoodPlayer
     if (at) {
       p.pos.x = at[0]
       p.pos.y = at[1]
@@ -78,9 +78,9 @@ for (const name of which) {
       p.resetMotion()
       p.apply()
     }
-    if (!g.__afterhoursMap) {
+    if (!g.__ashwoodMap) {
       const m = await import(/* @vite-ignore */ `${location.origin}/src/game/map/index.ts`)
-      const d = g.__afterhoursDebug
+      const d = g.__ashwoodDebug
       const handle = m.createMap({ ctx: g.__interior.ctx, camera: d.camera, player: p, streaming: false })
       g.__mapInjected = true
       let last = performance.now()
@@ -96,38 +96,38 @@ for (const name of which) {
     const ob = await import(/* @vite-ignore */ `${location.origin}/src/game/objective.ts`)
     const obs = await import(/* @vite-ignore */ `${location.origin}/src/game/objectives.ts`)
     ob.setObjective(obs.OBJECTIVES.transmission)
-    g.__afterhoursMap.request()
-    if (studyOn) g.__afterhoursMap.study = true
+    g.__ashwoodMap.request()
+    if (studyOn) g.__ashwoodMap.study = true
   }, [s.at ?? null, study, fov] as const)
-  await page.waitForFunction(() => (globalThis as Record<string, any>).__afterhoursMap.ready(), null, { timeout: 120_000 })
-  const stats = await page.evaluate(() => (globalThis as Record<string, any>).__afterhoursMap.stats)
+  await page.waitForFunction(() => (globalThis as Record<string, any>).__ashwoodMap.ready(), null, { timeout: 120_000 })
+  const stats = await page.evaluate(() => (globalThis as Record<string, any>).__ashwoodMap.stats)
   if (sheets && name === which[0]) {
     for (const p of pages) {
-      const url: string = await page.evaluate((i) => (globalThis as Record<string, any>).__afterhoursMap.dump(i), p)
+      const url: string = await page.evaluate((i) => (globalThis as Record<string, any>).__ashwoodMap.dump(i), p)
       writeFileSync(`${out}/sheet-${p}.png`, Buffer.from(url.split(",")[1]!, "base64"))
     }
   }
   for (const p of pages) {
-    await page.evaluate((i) => (globalThis as Record<string, any>).__afterhoursMap.raise(i), p)
+    await page.evaluate((i) => (globalThis as Record<string, any>).__ashwoodMap.raise(i), p)
     await page.waitForTimeout(900)
     await page.screenshot({ path: `${out}/${name}${study ? "-study" : ""}${fov ? `-fov${fov}` : ""}-p${p}.png` })
   }
   if (flipShot) {
     // Mid-flip: from the first page forward.
-    await page.evaluate((i) => (globalThis as Record<string, any>).__afterhoursMap.raise(i), pages[0]!)
+    await page.evaluate((i) => (globalThis as Record<string, any>).__ashwoodMap.raise(i), pages[0]!)
     await page.waitForTimeout(500)
-    await page.evaluate(() => (globalThis as Record<string, any>).__afterhoursMap.flip(1))
+    await page.evaluate(() => (globalThis as Record<string, any>).__ashwoodMap.flip(1))
     await page.waitForTimeout(170)
     await page.screenshot({ path: `${out}/${name}-flip.png` })
   }
   // Frame cost with the clipboard up vs down (median of the last 60 frames each).
   const median = async () => page.evaluate(async () => {
     await new Promise((r) => setTimeout(r, 1500))
-    const f = [...(globalThis as Record<string, any>).__afterhours.frameMs.slice(-60)].sort((a: number, b: number) => a - b)
+    const f = [...(globalThis as Record<string, any>).__ashwood.frameMs.slice(-60)].sort((a: number, b: number) => a - b)
     return +f[f.length >> 1].toFixed(2)
   })
   const upMs = await median()
-  await page.evaluate(() => (globalThis as Record<string, any>).__afterhoursMap.lower())
+  await page.evaluate(() => (globalThis as Record<string, any>).__ashwoodMap.lower())
   const downMs = await median()
   console.log(JSON.stringify({ situation: name, frameMs: { up: upMs, down: downMs }, label: s.label, loadS: +((performance.now() - t0) / 1000).toFixed(1), sheetMs: stats.pages, errors: errors.slice(0, 8) }))
   await page.close()

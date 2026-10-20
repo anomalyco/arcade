@@ -97,7 +97,7 @@ function doorFromHand(t: number, after: number) {
 /** The seated body, when the body runtime has it (src/playerb/seat.ts). */
 type SeatBody = CharacterBody & { seated: boolean }
 function seatBody(): SeatBody | null {
-  const b = (globalThis as { __afterhoursBody?: { body?: SeatBody } }).__afterhoursBody?.body
+  const b = (globalThis as { __ashwoodBody?: { body?: SeatBody } }).__ashwoodBody?.body
   return b && typeof b.seat === "function" ? b : null
 }
 
@@ -561,7 +561,7 @@ export async function runIntro(ic: IntroContext): Promise<void> {
     }
   }
   // Automation only: seek and freeze the cutscene for stills (scripts/intro/shots.ts).
-  ;(globalThis as { __afterhoursIntro?: unknown }).__afterhoursIntro = {
+  ;(globalThis as { __ashwoodIntro?: unknown }).__ashwoodIntro = {
     get time() {
       return time
     },

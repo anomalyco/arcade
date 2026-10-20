@@ -5,7 +5,7 @@ Read-only pass over the play path on the live dev server (:5196). I drove it wit
 `qa-*.png` are the crops, and the other files are the full frames they were cut from. I did not edit any game files.
 
 How states were reached: play mode `/` (home → PLAY → title → intro played in full once and skipped partway once),
-then debug `/?view=lot|corridor` with direct `__afterhoursPlayer.pos/yaw/pitch` teleports and
+then debug `/?view=lot|corridor` with direct `__ashwoodPlayer.pos/yaw/pitch` teleports and
 `__ashwoodTransmitter.switchOn/transmit/reveal`. Coordinates are world metres. Eye positions are given as
 `x, feetY, z, yaw, pitch` (storey 3 floor y = 11.56). Other agents were editing files during the sweep, and the page
 hot-reloaded twice. A few items may already have moved since I looked.

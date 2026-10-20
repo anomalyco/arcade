@@ -37,19 +37,19 @@ try {
   page.on("pageerror", (e) => errors.push(e.message))
   page.on("console", (m) => m.type() === "error" && errors.push(m.text()))
   await page.goto(`http://localhost:5196/?intro${extra ? `&${extra}` : ""}`)
-  await page.waitForFunction(() => (globalThis as { __afterhoursIntro?: unknown; __afterhours?: { complete: boolean } }).__afterhoursIntro && (globalThis as { __afterhours?: { complete: boolean } }).__afterhours?.complete, undefined, { timeout: 240_000 })
-  const frames = () => page.evaluate(() => (globalThis as unknown as { __afterhours: { frames: number } }).__afterhours.frames)
+  await page.waitForFunction(() => (globalThis as { __ashwoodIntro?: unknown; __ashwood?: { complete: boolean } }).__ashwoodIntro && (globalThis as { __ashwood?: { complete: boolean } }).__ashwood?.complete, undefined, { timeout: 240_000 })
+  const frames = () => page.evaluate(() => (globalThis as unknown as { __ashwood: { frames: number } }).__ashwood.frames)
   for (const t of times) {
     await page.evaluate((t) => {
-      const i = (globalThis as unknown as { __afterhoursIntro: { seek(t: number): void; rate: number } }).__afterhoursIntro
+      const i = (globalThis as unknown as { __ashwoodIntro: { seek(t: number): void; rate: number } }).__ashwoodIntro
       i.rate = 1
       i.seek(t - 0.3)
     }, t)
     const f0 = await frames()
-    await page.waitForFunction((n) => (globalThis as unknown as { __afterhours: { frames: number } }).__afterhours.frames >= n, f0 + 12, { timeout: 60_000 })
-    await page.evaluate(() => ((globalThis as unknown as { __afterhoursIntro: { rate: number } }).__afterhoursIntro.rate = 0))
+    await page.waitForFunction((n) => (globalThis as unknown as { __ashwood: { frames: number } }).__ashwood.frames >= n, f0 + 12, { timeout: 60_000 })
+    await page.evaluate(() => ((globalThis as unknown as { __ashwoodIntro: { rate: number } }).__ashwoodIntro.rate = 0))
     const f1 = await frames()
-    await page.waitForFunction((n) => (globalThis as unknown as { __afterhours: { frames: number } }).__afterhours.frames >= n, f1 + settle, { timeout: 60_000 })
+    await page.waitForFunction((n) => (globalThis as unknown as { __ashwood: { frames: number } }).__ashwood.frames >= n, f1 + settle, { timeout: 60_000 })
     const file = `${outDir}/${tag}-${String(t).padStart(5, "0")}.png`
     await page.screenshot({ path: file })
     console.log(file)

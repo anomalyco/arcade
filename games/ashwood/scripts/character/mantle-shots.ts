@@ -37,10 +37,10 @@ page.on("console", (m) => m.type() === "error" && errors.push(m.text().slice(0, 
 await page.routeWebSocket(/.*/, () => {})
 try {
   await page.goto(`http://localhost:5196/?view=lobby`)
-  await page.waitForFunction(() => (globalThis as { __afterhours?: { complete: boolean } }).__afterhours?.complete, null, { timeout: 240_000 })
+  await page.waitForFunction(() => (globalThis as { __ashwood?: { complete: boolean } }).__ashwood?.complete, null, { timeout: 240_000 })
   await page.addStyleTag({ content: "#hud{display:none!important}" })
   const ev = <T>(src: string): Promise<T> =>
-    page.evaluate((src) => new Function("P", "B", src)((globalThis as Record<string, unknown>).__afterhoursPlayer, (globalThis as Record<string, unknown>).__afterhoursBody), src) as Promise<T>
+    page.evaluate((src) => new Function("P", "B", src)((globalThis as Record<string, unknown>).__ashwoodPlayer, (globalThis as Record<string, unknown>).__ashwoodBody), src) as Promise<T>
   const wait = (ms: number) => page.waitForTimeout(ms)
   // The controller's clock scale (the body reads mantle.t, so it follows).
   await ev(`const u = P.update.bind(P); P.__k = 1; P.update = (dt) => u(dt * P.__k)`)
@@ -87,7 +87,7 @@ try {
     for (const t of T) {
       const ok = await page
         .waitForFunction((t) => {
-          const m = (globalThis as unknown as { __afterhoursPlayer: { state: { mantle: { t: number } | null } } }).__afterhoursPlayer.state.mantle
+          const m = (globalThis as unknown as { __ashwoodPlayer: { state: { mantle: { t: number } | null } } }).__ashwoodPlayer.state.mantle
           return m && m.t >= t
         }, t, { timeout: 8000 })
         .then(() => true)

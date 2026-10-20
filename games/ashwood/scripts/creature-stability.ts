@@ -32,7 +32,7 @@ page.on("pageerror", (e) => errors.push(e.message))
 const S3 = 0.16 + 3 * 3.8
 const cx = -10
 await page.goto(`${base}?hunter=${cx},0,3&icam=${cx - dist},${S3 + 1.65},0,-90,2&only=terrain,interior`)
-await page.waitForFunction(() => (globalThis as any).__afterhours?.complete, null, { timeout: 180_000 }) // eslint-disable-line @typescript-eslint/no-explicit-any
+await page.waitForFunction(() => (globalThis as any).__ashwood?.complete, null, { timeout: 180_000 }) // eslint-disable-line @typescript-eslint/no-explicit-any
 await page.waitForTimeout(4000)
 // Put it in place, face the camera, freeze it (its body, its sway clock, the hunter's brain).
 await page.evaluate(

@@ -51,7 +51,7 @@ await page.goto(`http://localhost:5196/?view=${view}${extra ? `&${extra}` : ""}`
 /** Waits until world streaming has finished (every module shown, `complete`) and a few full frames have run. */
 const ready = () =>
   page.waitForFunction(() => {
-    const s = (globalThis as { __afterhours?: { ready: boolean; complete: boolean } }).__afterhours
+    const s = (globalThis as { __ashwood?: { ready: boolean; complete: boolean } }).__ashwood
     return !!s?.complete && s.ready
   }, null, { timeout: 240_000 })
 await ready()
@@ -68,7 +68,7 @@ type Info = { id: string; hx: number; hy: number; hz: number; nx: number; nz: nu
 const doorInfo = () =>
   page.evaluate(() => {
     type D = { id: string; hx: number; hy: number; hz: number; yaw0: number; xa: number; xb: number; spec: { double?: string } }
-    const doors = (globalThis as unknown as { __afterhoursDoors: { all(): D[] } }).__afterhoursDoors
+    const doors = (globalThis as unknown as { __ashwoodDoors: { all(): D[] } }).__ashwoodDoors
     const list = doors.all()
     const mid = (d: D) => {
       const m = (d.xa + d.xb) / 2
@@ -90,7 +90,7 @@ const doorInfo = () =>
 async function stand(d: Info, s: number, dist: number) {
   await page.evaluate(
     ({ d, s, dist }) => {
-      const p = (globalThis as unknown as { __afterhoursPlayer: { pos: { x: number; y: number; z: number }; yaw: number; pitch: number; vy: number; fly: boolean } }).__afterhoursPlayer
+      const p = (globalThis as unknown as { __ashwoodPlayer: { pos: { x: number; y: number; z: number }; yaw: number; pitch: number; vy: number; fly: boolean } }).__ashwoodPlayer
       p.fly = false
       p.pos.x = d.mx + d.nx * s * dist
       p.pos.z = d.mz + d.nz * s * dist
@@ -108,12 +108,12 @@ async function stand(d: Info, s: number, dist: number) {
 const state = (id: string) =>
   page.evaluate((id) => {
     const g = globalThis as unknown as {
-      __afterhoursDoors: { get(id: string): { amount: number; isOpen: boolean } | undefined; centreOf(id: string): { x: number; z: number } | null; focused: { id: string } | null }
-      __afterhoursPlayer: { pos: { x: number; y: number; z: number } }
+      __ashwoodDoors: { get(id: string): { amount: number; isOpen: boolean } | undefined; centreOf(id: string): { x: number; z: number } | null; focused: { id: string } | null }
+      __ashwoodPlayer: { pos: { x: number; y: number; z: number } }
     }
-    const d = g.__afterhoursDoors?.get(id)
+    const d = g.__ashwoodDoors?.get(id)
     if (!d) return null
-    return { amount: d.amount, isOpen: d.isOpen, moving: ((x: { plan: unknown; free: boolean; hold: number }) => !!x.plan || x.free || x.hold > 0)(d as unknown as { plan: unknown; free: boolean; hold: number }), centre: g.__afterhoursDoors.centreOf(id)!, focused: g.__afterhoursDoors.focused?.id ?? null, pos: { ...g.__afterhoursPlayer.pos } }
+    return { amount: d.amount, isOpen: d.isOpen, moving: ((x: { plan: unknown; free: boolean; hold: number }) => !!x.plan || x.free || x.hold > 0)(d as unknown as { plan: unknown; free: boolean; hold: number }), centre: g.__ashwoodDoors.centreOf(id)!, focused: g.__ashwoodDoors.focused?.id ?? null, pos: { ...g.__ashwoodPlayer.pos } }
   }, id).then((st) => {
     if (!st) throw new Reloaded(id)
     return st
@@ -137,7 +137,7 @@ async function settle(id: string, timeout = 9000) {
 
 /** Closes a door (and its partner) through the API and waits for it to latch. */
 async function ensureClosed(id: string) {
-  await page.evaluate((id) => (globalThis as unknown as { __afterhoursDoors: { get(id: string): { close(): void } | undefined } }).__afterhoursDoors.get(id)?.close(), id)
+  await page.evaluate((id) => (globalThis as unknown as { __ashwoodDoors: { get(id: string): { close(): void } | undefined } }).__ashwoodDoors.get(id)?.close(), id)
   await settle(id)
 }
 
@@ -145,7 +145,7 @@ async function ensureClosed(id: string) {
 const aim = (x: number, y: number, z: number) =>
   page.evaluate(
     ({ x, y, z }) => {
-      const p = (globalThis as unknown as { __afterhoursPlayer: { pos: { x: number; y: number; z: number }; yaw: number; pitch: number } }).__afterhoursPlayer
+      const p = (globalThis as unknown as { __ashwoodPlayer: { pos: { x: number; y: number; z: number }; yaw: number; pitch: number } }).__ashwoodPlayer
       const dx = x - p.pos.x
       const dz = z - p.pos.z
       p.yaw = Math.atan2(-dx, -dz)
@@ -184,7 +184,7 @@ async function throughAndBack(d: Info, s: number) {
   // Turn round 1.4 m past the opening; aim at the open leaf, or (wide doors) at the open doorway, and close it.
   await page.evaluate(
     ({ d, s }) => {
-      const p = (globalThis as unknown as { __afterhoursPlayer: { pos: { x: number; y: number; z: number } } }).__afterhoursPlayer
+      const p = (globalThis as unknown as { __ashwoodPlayer: { pos: { x: number; y: number; z: number } } }).__ashwoodPlayer
       p.pos.x = d.mx - d.nx * s * 1.4
       p.pos.z = d.mz - d.nz * s * 1.4
     },
@@ -207,13 +207,13 @@ async function throughAndBack(d: Info, s: number) {
       await page.evaluate(
         ({ id, partner }) => {
           type DD = { t: number; free: boolean; centre(o: object): { x: number; y: number; z: number } }
-          const g = globalThis as unknown as { __afterhoursDoors: { get(id: string): DD | undefined }; __afterhoursPlayer: { pos: object; camera: { matrixWorld: { elements: number[] } } } }
+          const g = globalThis as unknown as { __ashwoodDoors: { get(id: string): DD | undefined }; __ashwoodPlayer: { pos: object; camera: { matrixWorld: { elements: number[] } } } }
           const leaf = (i: string | undefined) => {
-            const x = i ? g.__afterhoursDoors.get(i) : undefined
+            const x = i ? g.__ashwoodDoors.get(i) : undefined
             return x && { id: i, t: +x.t.toFixed(3), free: x.free, centre: x.centre({}) }
           }
-          const e = g.__afterhoursPlayer.camera.matrixWorld.elements
-          return JSON.stringify({ pos: g.__afterhoursPlayer.pos, eye: [e[12], e[13], e[14]], look: [-e[8]!, -e[9]!, -e[10]!], leaves: [leaf(id), leaf(partner)] })
+          const e = g.__ashwoodPlayer.camera.matrixWorld.elements
+          return JSON.stringify({ pos: g.__ashwoodPlayer.pos, eye: [e[12], e[13], e[14]], look: [-e[8]!, -e[9]!, -e[10]!], leaves: [leaf(id), leaf(partner)] })
         },
         { id: d.id, partner: d.partner },
       ),
@@ -233,7 +233,7 @@ const setAjar = (id: string, t: number, dir: number) =>
   page.evaluate(
     ({ id, t, dir }) => {
       type D = { t: number; target: number; v: number; dir: number; plan: unknown; free: boolean; touched: boolean; active: boolean; pose(t: number): void; apply(): void }
-      const d = (globalThis as unknown as { __afterhoursDoors: { get(id: string): D } }).__afterhoursDoors.get(id)
+      const d = (globalThis as unknown as { __ashwoodDoors: { get(id: string): D } }).__ashwoodDoors.get(id)
       Object.assign(d, { t, target: t, v: 0, dir, plan: null, free: false, touched: false, active: false })
       d.pose(t)
       d.apply()
@@ -297,14 +297,14 @@ async function controlCheck(id: string) {
       async ({ id, s }) => {
         type C = { yaw0: number; isOpen: boolean; centre(o: object): { x: number; y: number; z: number } }
         const g = globalThis as unknown as {
-          __afterhoursDoors: { get(id: string): C; focused: { id: string } | null }
-          __afterhoursPlayer: { pos: { x: number; y: number; z: number }; yaw: number; pitch: number; resetMotion(): void }
+          __ashwoodDoors: { get(id: string): C; focused: { id: string } | null }
+          __ashwoodPlayer: { pos: { x: number; y: number; z: number }; yaw: number; pitch: number; resetMotion(): void }
         }
-        const d = g.__afterhoursDoors.get(id)
+        const d = g.__ashwoodDoors.get(id)
         const c = d.centre({})
         const nx = Math.sin(d.yaw0) * s
         const nz = Math.cos(d.yaw0) * s
-        const p = g.__afterhoursPlayer
+        const p = g.__ashwoodPlayer
         p.pos.x = c.x + nx * 0.7
         p.pos.z = c.z + nz * 0.7
         p.pos.y = c.y
@@ -314,14 +314,14 @@ async function controlCheck(id: string) {
         p.yaw = Math.atan2(nx, nz)
         p.pitch = -Math.atan2(eye - c.y, 0.7)
         await new Promise((r) => setTimeout(r, 200))
-        return { focused: g.__afterhoursDoors.focused?.id ?? null, open: d.isOpen }
+        return { focused: g.__ashwoodDoors.focused?.id ?? null, open: d.isOpen }
       },
       { id, s },
     )
     if (r.focused !== id) continue
     await page.keyboard.press("KeyE")
     await page.waitForTimeout(600)
-    const open = await page.evaluate((id) => (globalThis as unknown as { __afterhoursDoors: { get(id: string): { isOpen: boolean } } }).__afterhoursDoors.get(id).isOpen, id)
+    const open = await page.evaluate((id) => (globalThis as unknown as { __ashwoodDoors: { get(id: string): { isOpen: boolean } } }).__ashwoodDoors.get(id).isOpen, id)
     check(open !== r.open, `${id} (control): crosshair on it takes the focus and E operates it`)
     return
   }
@@ -332,20 +332,20 @@ if (!all) {
   // Throwaway door in a wall, built only in this page: hinge at the wall gap's west jamb, 1 m leaf along +x.
   const d = await page.evaluate(() => {
     const g = globalThis as unknown as {
-      __afterhoursDebug: { scene: object }
-      __afterhoursPlayer: { pos: { x: number; y: number; z: number }; ctx: { colliders: { min: number[]; max: number[] }[]; floors: unknown[] } }
-      __afterhoursDoors: { add(spec: unknown): unknown; all(): unknown[] }
+      __ashwoodDebug: { scene: object }
+      __ashwoodPlayer: { pos: { x: number; y: number; z: number }; ctx: { colliders: { min: number[]; max: number[] }[]; floors: unknown[] } }
+      __ashwoodDoors: { add(spec: unknown): unknown; all(): unknown[] }
     }
-    const Object3D = Object.getPrototypeOf(Object.getPrototypeOf(g.__afterhoursDebug.scene)).constructor as new () => object
-    const p = g.__afterhoursPlayer.pos
+    const Object3D = Object.getPrototypeOf(Object.getPrototypeOf(g.__ashwoodDebug.scene)).constructor as new () => object
+    const p = g.__ashwoodPlayer.pos
     const hx = Math.round(p.x) - 0.5
     const hz = Math.round(p.z) - 4
     const y = p.y
-    const c = g.__afterhoursPlayer.ctx.colliders
+    const c = g.__ashwoodPlayer.ctx.colliders
     c.push({ min: [hx - 4, y - 1, hz - 0.1], max: [hx, y + 3, hz + 0.1] }, { min: [hx + 1, y - 1, hz - 0.1], max: [hx + 5, y + 3, hz + 0.1] })
-    g.__afterhoursDoors.add({ id: "test", leaf: new Object3D(), hinge: [hx, y, hz], width: 1, height: 2.05, thickness: 0.045, openAngle: Math.PI / 2, sound: "steel" })
-    g.__afterhoursDoors.add({ id: "test-locked", leaf: new Object3D(), hinge: [hx + 8, y, hz], width: 1, height: 2.05, thickness: 0.045, openAngle: Math.PI / 2, locked: true })
-    g.__afterhoursDoors.add({ id: "test-panic", leaf: new Object3D(), hinge: [hx - 8, y, hz], width: 1, height: 2.05, thickness: 0.045, openAngle: Math.PI / 2, panic: true, sound: "steel" })
+    g.__ashwoodDoors.add({ id: "test", leaf: new Object3D(), hinge: [hx, y, hz], width: 1, height: 2.05, thickness: 0.045, openAngle: Math.PI / 2, sound: "steel" })
+    g.__ashwoodDoors.add({ id: "test-locked", leaf: new Object3D(), hinge: [hx + 8, y, hz], width: 1, height: 2.05, thickness: 0.045, openAngle: Math.PI / 2, locked: true })
+    g.__ashwoodDoors.add({ id: "test-panic", leaf: new Object3D(), hinge: [hx - 8, y, hz], width: 1, height: 2.05, thickness: 0.045, openAngle: Math.PI / 2, panic: true, sound: "steel" })
     return true
   })
   void d
@@ -363,11 +363,11 @@ if (!all) {
   await page.keyboard.press("KeyE")
   await settle("test")
   await page.evaluate((info) => {
-    const p = (globalThis as unknown as { __afterhoursPlayer: { pos: { x: number; z: number } } }).__afterhoursPlayer.pos
+    const p = (globalThis as unknown as { __ashwoodPlayer: { pos: { x: number; z: number } } }).__ashwoodPlayer.pos
     p.x = info.hx + 0.45
     p.z = info.mz - 0.1
   }, info)
-  await page.evaluate(() => (globalThis as unknown as { __afterhoursDoors: { get(id: string): { close(): void } } }).__afterhoursDoors.get("test")!.close())
+  await page.evaluate(() => (globalThis as unknown as { __ashwoodDoors: { get(id: string): { close(): void } } }).__ashwoodDoors.get("test")!.close())
   await page.waitForTimeout(3000)
   st = await state("test")
   check(st.amount > 0.15, `test: closing leaf stops against a player in the doorway (amount ${st.amount.toFixed(2)})`)
@@ -380,7 +380,7 @@ if (!all) {
   await stand(info, 1, 1.1)
   await page.keyboard.press("KeyE")
   await page.waitForTimeout(800)
-  await page.evaluate(() => (globalThis as unknown as { __afterhoursDoors: { get(id: string): { close(): void } } }).__afterhoursDoors.get("test")!.close())
+  await page.evaluate(() => (globalThis as unknown as { __ashwoodDoors: { get(id: string): { close(): void } } }).__ashwoodDoors.get("test")!.close())
   const samples: number[] = []
   for (let i = 0; i < 60 && (samples.length < 3 || (await state("test")).moving); i++) {
     samples.push((await state("test")).amount)
@@ -440,7 +440,7 @@ if (!all) {
 } else {
   if (at?.length === 3) {
     await page.evaluate((at) => {
-      const p = (globalThis as unknown as { __afterhoursPlayer: { pos: { x: number; y: number; z: number }; resetMotion(): void } }).__afterhoursPlayer
+      const p = (globalThis as unknown as { __ashwoodPlayer: { pos: { x: number; y: number; z: number }; resetMotion(): void } }).__ashwoodPlayer
       p.pos.x = at[0]!
       p.pos.y = at[1]!
       p.pos.z = at[2]!
@@ -448,7 +448,7 @@ if (!all) {
     }, at)
     for (let i = 0; i < 40 && only && !(await doorInfo()).some((d) => wanted(d.id)); i++) await page.waitForTimeout(250)
   }
-  const issues = await page.evaluate(() => (globalThis as unknown as { __afterhoursDoors: { audit(): { id: string; issue: string }[] } }).__afterhoursDoors.audit())
+  const issues = await page.evaluate(() => (globalThis as unknown as { __ashwoodDoors: { audit(): { id: string; issue: string }[] } }).__ashwoodDoors.audit())
   for (const i of issues) if (wanted(i.id)) check(false, `${i.id}: ${i.issue}`)
   const registered = await doorInfo()
   const infos = registered.filter((d) => wanted(d.id))
@@ -459,12 +459,12 @@ if (!all) {
     if (done.has(d.id)) continue
     done.add(d.id)
     if (d.partner) done.add(d.partner)
-    const small = await page.evaluate((id) => (globalThis as unknown as { __afterhoursDoors: { get(id: string): { height: number } } }).__afterhoursDoors.get(id)!.height < 1.2, d.id)
+    const small = await page.evaluate((id) => (globalThis as unknown as { __ashwoodDoors: { get(id: string): { height: number } } }).__ashwoodDoors.get(id)!.height < 1.2, d.id)
     if (small) {
       await controlCheck(d.id)
       continue
     }
-    const locked = await page.evaluate((id) => (globalThis as unknown as { __afterhoursDoors: { get(id: string): { locked: boolean } } }).__afterhoursDoors.get(id)!.locked, d.id)
+    const locked = await page.evaluate((id) => (globalThis as unknown as { __ashwoodDoors: { get(id: string): { locked: boolean } } }).__ashwoodDoors.get(id)!.locked, d.id)
     if (locked) {
       console.log(`skip ${d.id} (locked)`)
       continue

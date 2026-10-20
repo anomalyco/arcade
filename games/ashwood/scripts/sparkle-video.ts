@@ -56,12 +56,12 @@ const page = await browser.newPage({ viewport: { width: W, height: H }, deviceSc
 const errors: string[] = []
 page.on("pageerror", (e) => errors.push(e.message))
 await page.goto(`http://localhost:5196/?shot=1&view=lot`)
-await page.waitForFunction(() => (globalThis as { __afterhours?: { complete: boolean; frames: number } }).__afterhours?.complete && (globalThis as { __afterhours?: { frames: number } }).__afterhours!.frames > 30, undefined, { timeout: 240_000 })
+await page.waitForFunction(() => (globalThis as { __ashwood?: { complete: boolean; frames: number } }).__ashwood?.complete && (globalThis as { __ashwood?: { frames: number } }).__ashwood!.frames > 30, undefined, { timeout: 240_000 })
 
 // Drive the camera from a rAF loop on the page (wall-clock timed), parked at the start until `go` is set.
 await page.evaluate(
   ({ P, segs }) => {
-    const cam = (globalThis as unknown as { __afterhoursDebug: { camera: { position: { set(x: number, y: number, z: number): void }; rotation: { set(x: number, y: number, z: number, o: string): void } } } }).__afterhoursDebug.camera
+    const cam = (globalThis as unknown as { __ashwoodDebug: { camera: { position: { set(x: number, y: number, z: number): void }; rotation: { set(x: number, y: number, z: number, o: string): void } } } }).__ashwoodDebug.camera
     const state = { go: 0 }
     ;(globalThis as { __drive?: unknown }).__drive = state
     const at = (t: number) => {

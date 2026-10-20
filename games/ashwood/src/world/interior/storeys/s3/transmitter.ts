@@ -103,7 +103,7 @@ export type RadioRoom = {
 }
 
 type Body = { interact?: (k: string, t?: unknown) => void }
-const body = () => (globalThis as { __afterhoursBody?: { body?: Body } }).__afterhoursBody?.body
+const body = () => (globalThis as { __ashwoodBody?: { body?: Body } }).__ashwoodBody?.body
 
 export function transmitterRack(b: Builder): RadioRoom {
   const yaw = yawToward(-1, 0)

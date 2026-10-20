@@ -12,7 +12,7 @@ import { hunterControls } from "./game/hunter/settings"
 import "./style.css"
 
 // The game page: boot overlay, HUD, frame loop and automation status around the shared world boot (src/boot/world.ts).
-// The loading screen stays up until the whole world is built, compiled and settled; `__afterhours.frames` counts frames
+// The loading screen stays up until the whole world is built, compiled and settled; `__ashwood.frames` counts frames
 // from then on, so automation that waits for N frames sees the complete world.
 //
 // Two shells (src/game/shell/mode.ts): "play" (the game: home screen, title card, intro, explore, pause; no debug
@@ -28,7 +28,7 @@ type Status = {
   gpuMs: number | null
 }
 const status: Status = { ready: false, complete: false, completeAt: null, frames: 0, errors: [], frameMs: [], gpuMs: null }
-;(globalThis as { __afterhours?: Status }).__afterhours = status
+;(globalThis as { __ashwood?: Status }).__ashwood = status
 
 const mode = resolveMode()
 const debug = mode === "debug"

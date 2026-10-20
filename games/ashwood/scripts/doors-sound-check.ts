@@ -27,13 +27,13 @@ try {
   await page.routeWebSocket(/.*/, () => {})
   await page.goto("http://localhost:5196/?view=lot&only=terrain")
   await page.waitForFunction(() => {
-    const s = (globalThis as { __afterhours?: { ready: boolean; complete: boolean } }).__afterhours
+    const s = (globalThis as { __ashwood?: { ready: boolean; complete: boolean } }).__ashwood
     return !!s?.complete && s.ready
   }, null, { timeout: 240_000 })
-  const run = <T>(body: string) => page.evaluate(`(async () => { const p = globalThis.__afterhoursPlayer; const D = globalThis.__afterhoursDoors; ${body} })()`) as Promise<T>
+  const run = <T>(body: string) => page.evaluate(`(async () => { const p = globalThis.__ashwoodPlayer; const D = globalThis.__ashwoodDoors; ${body} })()`) as Promise<T>
   // Two doors in walls: "snd" (steel, no closer) and "snd-panic" (panic bar + closer), hinges at z = hz, leaves along +x.
   const g = await run<{ hx: number; hz: number; y: number }>(`
-    const Object3D = Object.getPrototypeOf(Object.getPrototypeOf(globalThis.__afterhoursDebug.scene)).constructor
+    const Object3D = Object.getPrototypeOf(Object.getPrototypeOf(globalThis.__ashwoodDebug.scene)).constructor
     const hx = Math.round(p.pos.x) - 0.5, hz = Math.round(p.pos.z) - 4, y = p.pos.y
     const c = p.ctx.colliders
     c.push({ min: [hx - 4, y - 1, hz - 0.1], max: [hx, y + 3, hz + 0.1] }, { min: [hx + 1, y - 1, hz - 0.1], max: [hx + 7, y + 3, hz + 0.1] }, { min: [hx + 8, y - 1, hz - 0.1], max: [hx + 12, y + 3, hz + 0.1] })

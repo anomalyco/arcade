@@ -508,7 +508,7 @@ export function createMap(host: MapHost, options: MapOptions = {}): MapHandle {
       return page
     },
   }
-  ;(globalThis as { __afterhoursMap?: unknown }).__afterhoursMap = {
+  ;(globalThis as { __ashwoodMap?: unknown }).__ashwoodMap = {
     ...handle,
     get page() {
       return page

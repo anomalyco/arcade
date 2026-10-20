@@ -215,7 +215,7 @@ export function startSearch(host: SearchHost, signal?: AbortSignal) {
     if (aimed.ready && !aimed.ready()) return
     holding = aimed
     held = 0
-    const body = (globalThis as { __afterhoursBody?: { body?: { interact?: (k: string, t?: unknown) => void } } }).__afterhoursBody?.body
+    const body = (globalThis as { __ashwoodBody?: { body?: { interact?: (k: string, t?: unknown) => void } } }).__ashwoodBody?.body
     body?.interact?.("button", { x: aimed.at.x, y: aimed.at.y, z: aimed.at.z })
   }
   const onUp = (e: KeyboardEvent) => {

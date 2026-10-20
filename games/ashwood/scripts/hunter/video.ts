@@ -154,7 +154,7 @@ const st = await hunterState(page)
 console.log(`gave up after ${gaveUp.toFixed(1)} s`, JSON.stringify(st))
 const cost = await inPage(page, () => {
   const c = (globalThis as unknown as { __hcost: number[] }).__hcost.slice().sort((a, b) => a - b)
-  const fm = (globalThis as unknown as { __afterhours: { frameMs: number[] } }).__afterhours.frameMs.slice().sort((a, b) => a - b)
+  const fm = (globalThis as unknown as { __ashwood: { frameMs: number[] } }).__ashwood.frameMs.slice().sort((a, b) => a - b)
   return { n: c.length, median: +c[c.length >> 1]!.toFixed(3), p95: +c[Math.floor(c.length * 0.95)]!.toFixed(3), max: +c[c.length - 1]!.toFixed(2), frameMedian: +fm[fm.length >> 1]!.toFixed(1) }
 })
 console.log("hunter cost ms/frame:", JSON.stringify(cost))

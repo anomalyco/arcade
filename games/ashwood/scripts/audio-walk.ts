@@ -32,11 +32,11 @@ await page.routeWebSocket(/.*/, () => {})
 // A lightning strike early (its thunder follows) and one horror event inside the recording, so both are heard (automation-only parameters).
 await page.goto("http://localhost:5196/?view=entrance&lightning=6&horror=24")
 await page.waitForFunction(() => {
-  const s = (globalThis as { __afterhours?: { ready: boolean; complete: boolean } }).__afterhours
+  const s = (globalThis as { __ashwood?: { ready: boolean; complete: boolean } }).__ashwood
   return !!s?.complete && s.ready
 }, null, { timeout: 300_000 })
 
-const evalP = <T>(body: string) => page.evaluate(`(async () => { const p = globalThis.__afterhoursPlayer; const A = globalThis.__afterhoursAudio; ${body} })()`) as Promise<T>
+const evalP = <T>(body: string) => page.evaluate(`(async () => { const p = globalThis.__ashwoodPlayer; const A = globalThis.__ashwoodAudio; ${body} })()`) as Promise<T>
 const pos = () => evalP<{ x: number; y: number; z: number }>("return { ...p.pos }")
 const place = (x: number, y: number, z: number, yaw: number) =>
   evalP(`p.pos.x = ${x}; p.pos.y = ${y}; p.pos.z = ${z}; p.yaw = ${yaw}; p.pitch = 0; p.resetMotion()`)
@@ -80,7 +80,7 @@ await evalP("p.yaw = 0")
 await hold(["KeyW"], (p) => p.z <= 17.4, 8000)
 // Out through the stair door (E opens it wider), then turn round and shut it behind you (the fire door's latch).
 mark("stair door: open, through, close")
-const door = () => evalP<string>("const D = globalThis.__afterhoursDoors; return JSON.stringify({ focus: D.focused?.id ?? null, s1: D.get('s1:STAIR')?.amount })")
+const door = () => evalP<string>("const D = globalThis.__ashwoodDoors; return JSON.stringify({ focus: D.focused?.id ?? null, s1: D.get('s1:STAIR')?.amount })")
 await evalP("p.pitch = -0.25")
 await page.waitForTimeout(300)
 mark(`facing the stair door ${await door()}`)
@@ -89,7 +89,7 @@ await page.waitForTimeout(2200)
 await hold(["KeyW"], (p) => p.z < 14.4, 4000)
 // Turn round and aim at the open leaf (hinged at x −40.44, swung into the hall).
 await evalP(`
-  const c = globalThis.__afterhoursDoors.centreOf("s1:STAIR")
+  const c = globalThis.__ashwoodDoors.centreOf("s1:STAIR")
   const dx = c.x - p.pos.x, dz = c.z - p.pos.z
   p.yaw = Math.atan2(-dx, -dz)
   p.pitch = -Math.atan2(p.pos.y + 1.65 - c.y, Math.hypot(dx, dz))
@@ -97,7 +97,7 @@ await evalP(`
 await page.waitForTimeout(400)
 mark(`turned to shut it ${await door()}`)
 // An ajar leaf (under half open) takes two presses: the first swings it open, the second shuts it.
-const ajar = await evalP<boolean>("return globalThis.__afterhoursDoors.get('s1:STAIR').amount < 0.5")
+const ajar = await evalP<boolean>("return globalThis.__ashwoodDoors.get('s1:STAIR').amount < 0.5")
 await page.keyboard.press("KeyE")
 if (ajar) {
   await page.waitForTimeout(2200)

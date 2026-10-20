@@ -35,7 +35,7 @@ const shot = (n: string) => page.screenshot({ path: `${out}/road-${n}.png` })
 let appearAt = 0
 try {
   await page.goto(`${base}?play&start=ending`)
-  await page.waitForFunction(() => (globalThis as Any).__afterhours?.complete, null, { timeout: 180_000 })
+  await page.waitForFunction(() => (globalThis as Any).__ashwood?.complete, null, { timeout: 180_000 })
   await page.waitForTimeout(1500)
   if ((await page.evaluate(() => (globalThis as Any).__static?.flow.phase)) === "menu") await page.click("text=Play")
   await page.waitForTimeout(3500)

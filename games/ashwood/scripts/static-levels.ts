@@ -27,9 +27,9 @@ await page.waitForTimeout(400)
 await page.keyboard.press("KeyA")
 // The whole mix: the master tapped into a MediaStream, measured in a second context.
 await page.evaluate(() => {
-  const g = globalThis as unknown as { __afterhoursAudio?: { tap(): MediaStream | null }; __mix?: () => number }
+  const g = globalThis as unknown as { __ashwoodAudio?: { tap(): MediaStream | null }; __mix?: () => number }
   const mix = () => {
-    const s = g.__afterhoursAudio?.tap()
+    const s = g.__ashwoodAudio?.tap()
     if (!s) return false
     const ctx = new AudioContext()
     const an = ctx.createAnalyser()
@@ -46,12 +46,12 @@ await page.evaluate(() => {
   }
   const t = setInterval(() => mix() && clearInterval(t), 200)
 })
-type G = { __afterhours?: { complete: boolean }; __static?: { flow: { phase: string }; tuner: { level(): number } }; __mix?: () => number }
+type G = { __ashwood?: { complete: boolean }; __static?: { flow: { phase: string }; tuner: { level(): number } }; __mix?: () => number }
 const sample = () =>
   page.evaluate(() => {
     const g = globalThis as unknown as G
     const el = document.querySelector<HTMLElement>("#shell")
-    const intro = (g as { __afterhoursIntro?: { sound?: { levels(): Record<string, number> | null } } }).__afterhoursIntro?.sound?.levels()
+    const intro = (g as { __ashwoodIntro?: { sound?: { levels(): Record<string, number> | null } } }).__ashwoodIntro?.sound?.levels()
     const parts = intro ? Object.entries(intro).map(([k, v]) => `${k} ${v < -119 ? "silent" : v.toFixed(1)}`).join(" · ") : ""
     return { world: el?.dataset.world, phase: g.__static?.flow.phase, tuner: g.__static?.tuner.level() ?? -Infinity, mix: g.__mix?.() ?? null, readout: (el?.querySelector(".shell-load span")?.textContent ?? "") + parts }
   })
@@ -64,7 +64,7 @@ const log = async (t0: number) => {
 const t0 = Date.now()
 for (;;) {
   await log(t0)
-  if (await page.evaluate(() => (globalThis as unknown as G).__afterhours?.complete)) break
+  if (await page.evaluate(() => (globalThis as unknown as G).__ashwood?.complete)) break
   await page.waitForTimeout(300)
 }
 for (let k = 0; k < 10; k++) {

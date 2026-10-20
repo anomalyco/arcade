@@ -16,7 +16,7 @@ import { hunterHandle, type HunterHandle } from "../hunter"
 // Started by the play shell just before explore; stopped with the run's signal.
 
 /** sessionStorage key the play shell checks once the world is warm: start a run without the home screen. */
-export const AUTOPLAY_KEY = "afterhours.autoplay"
+export const AUTOPLAY_KEY = "ashwood.autoplay"
 
 export type EncounterShell = {
   /** Unpauses and recaptures the mouse (the shell's resume, without its menu). */

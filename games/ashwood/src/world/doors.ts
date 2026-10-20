@@ -339,7 +339,7 @@ export class Doors {
 
   constructor(private quiet: boolean) {
     this.audio = quiet ? null : new DoorAudio()
-    ;(globalThis as { __afterhoursDoors?: Doors }).__afterhoursDoors = this
+    ;(globalThis as { __ashwoodDoors?: Doors }).__ashwoodDoors = this
   }
 
   /** Registers a door; see the migration note at the top of this file. */

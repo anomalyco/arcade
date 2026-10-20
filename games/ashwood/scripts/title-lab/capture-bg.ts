@@ -15,12 +15,12 @@ const chrome = readdirSync(cache)
 const browser = await chromium.launch({ executablePath: chrome, headless: true, args: ["--enable-unsafe-webgpu", "--mute-audio", "--use-angle=metal", "--ignore-gpu-blocklist"] })
 const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } })
 await page.goto("http://localhost:5196/")
-await page.waitForFunction(() => (globalThis as { __afterhours?: { complete: boolean } }).__afterhours?.complete, null, { timeout: 180_000 })
+await page.waitForFunction(() => (globalThis as { __ashwood?: { complete: boolean } }).__ashwood?.complete, null, { timeout: 180_000 })
 await page.waitForTimeout(1500)
 await page.evaluate(() => {
-  const g = globalThis as unknown as { __afterhoursBody?: { settings: Record<string, unknown> }; __static?: { flow: { phase: string } } }
+  const g = globalThis as unknown as { __ashwoodBody?: { settings: Record<string, unknown> }; __static?: { flow: { phase: string } } }
   // Full resolution, no dynamic scaling; freeze the drift where it is (the flow's camera only moves in "menu").
-  const s = g.__afterhoursBody!.settings
+  const s = g.__ashwoodBody!.settings
   s["post.autoRes"] = false
   s["post.renderScale"] = 1
   s["post.maxDpr"] = 1

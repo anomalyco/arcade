@@ -20,7 +20,7 @@ const chrome = readdirSync(cache).filter((n) => /^chromium_headless_shell-\d+$/.
 const browser = await chromium.launch({ executablePath: chrome, headless: true, args: ["--enable-unsafe-webgpu", "--mute-audio", "--use-angle=metal", "--ignore-gpu-blocklist"] })
 type Info = { eyes: { pos: number[]; state: string }[]; figure: { pos: number[]; state: string } | null; hat: number[] }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const I = "(globalThis as any).__afterhoursIntro"
+const I = "(globalThis as any).__ashwoodIntro"
 void I
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
@@ -30,28 +30,28 @@ try {
   page.on("framenavigated", (f) => f === page.mainFrame() && console.log("navigated", f.url()))
   page.on("console", (m) => /vite|hmr|reload/i.test(m.text()) && console.log("console:", m.text()))
   await page.goto(`http://localhost:5196/?intro${extra ? `&${extra}` : ""}`)
-  await page.waitForFunction(() => (globalThis as any).__afterhoursIntro && (globalThis as any).__afterhours?.complete, undefined, { timeout: 240000 })
-  await page.evaluate(() => (globalThis as any).__afterhoursIntro.seek(0))
+  await page.waitForFunction(() => (globalThis as any).__ashwoodIntro && (globalThis as any).__ashwood?.complete, undefined, { timeout: 240000 })
+  await page.evaluate(() => (globalThis as any).__ashwoodIntro.seek(0))
   const state = () =>
     page.evaluate(() => {
-      const i = (globalThis as any).__afterhoursIntro
-      const cam = (globalThis as any).__afterhoursDebug.camera.position
+      const i = (globalThis as any).__ashwoodIntro
+      const cam = (globalThis as any).__ashwoodDebug.camera.position
       return { t: i.time as number, cam: [cam.x, cam.y, cam.z], info: i.woods.info() as Info }
     })
   // Look at a point the way a passenger would: the head turned a little short of it (15° towards the car's nose), so it
   // sits off-centre in the side window rather than behind the A-pillar.
   const aim = (p: number[] | null, exact = false) =>
     page.evaluate(([p, exact]) => {
-      const i = (globalThis as any).__afterhoursIntro
+      const i = (globalThis as any).__ashwoodIntro
       if (!p) return i.aim(null)
       if (exact) return i.aim(p)
-      const cam = (globalThis as any).__afterhoursDebug.camera.position
+      const cam = (globalThis as any).__ashwoodDebug.camera.position
       const yaw = i.car.root.rotation.y
       const fx = -Math.sin(yaw), fz = -Math.cos(yaw)
       const d = Math.hypot(p[0] - cam.x, p[2] - cam.z)
       i.aim([p[0] + fx * d * 0.27, p[1], p[2] + fz * d * 0.27])
     }, [p, exact] as const)
-  const rate = (r: number) => page.evaluate((r) => ((globalThis as any).__afterhoursIntro.rate = r), r)
+  const rate = (r: number) => page.evaluate((r) => ((globalThis as any).__ashwoodIntro.rate = r), r)
   const shot = async (name: string) => {
     await page.waitForTimeout(250)
     const f = `${outDir}/eerie-${tag}-${name}.png`

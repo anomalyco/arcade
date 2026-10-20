@@ -44,14 +44,14 @@ try {
   page.on("pageerror", (e) => errors.push(e.message))
   page.on("console", (m) => m.type() === "error" && errors.push(m.text()))
   await page.goto(`http://localhost:5196/?intro`)
-  await page.waitForFunction(() => (globalThis as { __afterhoursIntro?: unknown }).__afterhoursIntro, undefined, { timeout: 240_000 })
+  await page.waitForFunction(() => (globalThis as { __ashwoodIntro?: unknown }).__ashwoodIntro, undefined, { timeout: 240_000 })
   await page.evaluate((from) => {
-    const i = (globalThis as unknown as { __afterhoursIntro: Intro }).__afterhoursIntro
+    const i = (globalThis as unknown as { __ashwoodIntro: Intro }).__ashwoodIntro
     i.rate = 0
     i.seek(from)
   }, from)
-  await page.waitForFunction(() => (globalThis as { __afterhours?: { frames: number } }).__afterhours!.frames > 30, undefined, { timeout: 120_000 })
-  total = await page.evaluate(() => (globalThis as unknown as { __afterhoursIntro: Intro }).__afterhoursIntro.total)
+  await page.waitForFunction(() => (globalThis as { __ashwood?: { frames: number } }).__ashwood!.frames > 30, undefined, { timeout: 120_000 })
+  total = await page.evaluate(() => (globalThis as unknown as { __ashwoodIntro: Intro }).__ashwoodIntro.total)
   const cdp = await page.context().newCDPSession(page)
   let start = 0
   cdp.on("Page.screencastFrame", async (f: { data: string; sessionId: number; metadata: { timestamp?: number } }) => {
@@ -66,7 +66,7 @@ try {
   await cdp.send("Page.startScreencast", { format: "jpeg", quality: 88, everyNthFrame: 1, maxWidth: W, maxHeight: H })
   await page.waitForTimeout(300)
   start = await page.evaluate(() => {
-    const g = globalThis as unknown as { __afterhoursIntro: Intro; __gaps: { at: number; ms: number }[] }
+    const g = globalThis as unknown as { __ashwoodIntro: Intro; __gaps: { at: number; ms: number }[] }
     g.__gaps = []
     let last = performance.now()
     const t0 = last
@@ -76,11 +76,11 @@ try {
       requestAnimationFrame(loop)
     }
     requestAnimationFrame(loop)
-    g.__afterhoursIntro.rate = 1
+    g.__ashwoodIntro.rate = 1
     return Date.now() / 1000
   })
   await page.waitForFunction((to) => {
-    const i = (globalThis as unknown as { __afterhoursIntro: Intro }).__afterhoursIntro
+    const i = (globalThis as unknown as { __ashwoodIntro: Intro }).__ashwoodIntro
     return i.time >= Math.min(to, i.total)
   }, to, { timeout: (total + 60) * 1000, polling: 250 })
   await page.waitForTimeout(1500)

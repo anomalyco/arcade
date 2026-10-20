@@ -1,6 +1,6 @@
 // Palm and finger skin (mesh vertices) to the steering-wheel rim tube surface, cm (scripts/character/wheel-closeup.ts).
 (() => {
-    const b = __afterhoursBody.body, r = b.seatRig
+    const b = __ashwoodBody.body, r = b.seatRig
     const w = r.opts.wheel, wh = w.object
     const V = b.root.position.constructor, Q = b.root.quaternion.constructor
     const hub = wh.getWorldPosition(new V())

@@ -13,12 +13,12 @@ type Cam = { name: string; view?: string; pos?: [number, number, number]; yaw?: 
 const g = globalThis as unknown as {
   __vclock: number | null
   __pixel: { ready: boolean; errors: string[]; shots: Record<string, string>; run?: (cams: Cam[], frames: number) => Promise<void> }
-  __afterhours?: unknown
+  __ashwood?: unknown
 }
 const params = new URLSearchParams(location.search)
 const canvas = document.querySelector<HTMLCanvasElement>("#view")!
 const P: typeof g.__pixel = (g.__pixel = { ready: false, errors: [], shots: {} })
-;(g as { __afterhours?: unknown }).__afterhours = { errors: P.errors, complete: false, frames: 0, frameMs: [] }
+;(g as { __ashwood?: unknown }).__ashwood = { errors: P.errors, complete: false, frames: 0, frameMs: [] }
 const world = await bootWorld(canvas, params, { view: (params.get("view") as ViewpointName) ?? "lot", errors: P.errors, input: false })
 const { ctx, renderer, camera, player } = world
 let time = 0

@@ -26,12 +26,12 @@ try {
   await page.routeWebSocket(/.*/, () => {})
   await page.goto("http://localhost:5196/?view=corridor&only=terrain,interior")
   await page.waitForFunction(() => {
-    const s = (globalThis as { __afterhours?: { ready: boolean; complete: boolean } }).__afterhours
+    const s = (globalThis as { __ashwood?: { ready: boolean; complete: boolean } }).__ashwood
     return !!s?.complete && s.ready
   }, null, { timeout: 240_000 })
   await page.waitForTimeout(12_000)
   const before = await page.evaluate(() => {
-    const A = (globalThis as unknown as { __afterhoursAudio: { sfx: { stats: { decoded: number } } } }).__afterhoursAudio
+    const A = (globalThis as unknown as { __ashwoodAudio: { sfx: { stats: { decoded: number } } } }).__ashwoodAudio
     return A.sfx.stats.decoded
   })
   await page.evaluate(() => {
@@ -52,8 +52,8 @@ try {
   await page.keyboard.press("KeyQ")
   await page.waitForTimeout(2000)
   const r = await page.evaluate(() => {
-    const g = globalThis as unknown as { __long: number[]; __gap: number; __afterhoursAudio: { sfx: { stats: { decoded: number } } } }
-    return { long: g.__long, gap: Math.round(g.__gap), decoded: g.__afterhoursAudio.sfx.stats.decoded }
+    const g = globalThis as unknown as { __long: number[]; __gap: number; __ashwoodAudio: { sfx: { stats: { decoded: number } } } }
+    return { long: g.__long, gap: Math.round(g.__gap), decoded: g.__ashwoodAudio.sfx.stats.decoded }
   })
   console.log(`decoded before the key: ${before}; after: ${r.decoded}`)
   console.log(`after the key: long tasks ${JSON.stringify(r.long)} ms, longest frame gap ${r.gap} ms`)
