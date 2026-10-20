@@ -15,6 +15,7 @@ import { fftRadix2 } from "../../../packages/kit/audio/offline"
 import { decode } from "../../../scripts/sfx/decode"
 import { CoopSim } from "../shared/coop-sim"
 import { dayCycle } from "../shared/day-cycle"
+import type { SecretsState } from "../shared/secrets/cellar"
 import { AUDIO_BUS_LEVELS, DEFAULT_AUDIO_SETTINGS } from "../src/audio/settings"
 import { footstepEvent, indoors, SoundOcclusion } from "../src/audio/space"
 import { scapeSound, SCAPE_LAYER_GROUP, SCAPE_LAYERS, SCAPE_SAMPLE_RATE } from "../src/audio/soundscape/catalog"
@@ -160,7 +161,9 @@ function render(stems: ReadonlySet<Stem>, t0: number, beds: Record<string, Float
     voices.push(voice)
     return voice
   }
-  const input: ScapeInput = { town, time: 0, dt: BLOCK / SR, hour: 0, absHour: 0, listener: { x: 0, y: 0 }, survivors: [], rain: 0, wetness: 0, storm: 0, glass: [], indoor: 0 }
+  const secrets = sim.getFeatureState<SecretsState>("secrets")
+  const machineCount = secrets?.run.picked.has("cellar") ? secrets.run.pulses : 0
+  const input: ScapeInput = { town, time: 0, dt: BLOCK / SR, hour: 0, absHour: 0, listener: { x: 0, y: 0 }, survivors: [], rain: 0, wetness: 0, storm: 0, glass: [], indoor: 0, machineCount }
   for (let b = 0; b * BLOCK < N; b++) {
     const t = (b * BLOCK) / SR
     const dt = BLOCK / SR
