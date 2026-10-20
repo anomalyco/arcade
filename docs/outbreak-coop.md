@@ -146,7 +146,10 @@ alive ──0 HP──▶ down ──bleed-out runs out──▶ dead ──squa
   next dawn, then wake at their spawn point beside the Ash House with full health and the standard kit. "The dead
   come back: Never" keeps them dead until the run ends.
   The room selects a `watching` seat before encoding snapshots and centers the dead player's interest bubble on
-  that seat. The camera consumes the same replicated choice, keeps it while that teammate stands, and switches
+  that seat. Only seats whose players are connected count (a dropped seat's survivor stands idle for the 60 s grace
+  window; after the Oct 20 playtest's "I have the bot the whole time" the dead no longer end up watching it), and
+  Space or a click while dead moves to the next standing teammate (`nextWatch`; the banner shows the Space cap when
+  there is more than one). The camera consumes the same replicated choice, keeps it while that teammate stands, and switches
   when they fall. A dead record adds one byte for this seat (zero means nobody).
 - **Run over** when every survivor is dead: a card with the survivor's name, cause ("Taken by a Brute on Night 3", from
   the nearest zombie when they went down), day, nights survived and kills (the last blow, `lastHitBy`), plus
@@ -158,7 +161,8 @@ alive ──0 HP──▶ down ──bleed-out runs out──▶ dead ──squa
   end the dawns and every seat's kills. Sent whole when it differs from the acked base snapshot, omitted otherwise
   (the base's carries over), so a quiet run costs nothing. `NetSession` writes it into its `CoopSim`'s death state,
   which drives the prompt, prediction (a downed client crawls), presentation and sound.
-- **Presentation** (`src/death/`, through the client registry's `frame` hooks): the down screen tightens and drains of
+- **Presentation** (`src/death/`, through the client registry's `frame` hooks): a line under the clock for every
+  standing survivor when a teammate goes down ("Bob is down · Get to them and hold E Revive") or dies; the down screen tightens and drains of
   colour as the bleed-out runs, with a heartbeat that quickens; "Down" markers over downed teammates with the hold-E
   key cap whose ring fills as you revive; downed and dead survivors lie face down in their seat's colours over a
   blood pool and smear; a death sting. Sounds are library samples re-pitched (`src/audio/death.ts`): there is no

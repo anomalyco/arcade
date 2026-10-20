@@ -25,6 +25,10 @@ export class DeathHud {
   private readonly marks: HTMLDivElement
   private readonly watch: HTMLDivElement
   private readonly over: HTMLDivElement
+  private readonly alert: HTMLDivElement
+  private alertHtml = ""
+  private alertUntil = 0
+  private readonly lastLife = new Map<number, string>()
   private readonly markEls = new Map<number, { el: HTMLDivElement; html: string }>()
   private downHtml = ""
   private watchHtml = ""
@@ -47,6 +51,7 @@ export class DeathHud {
     this.marks = div("obd-marks")
     this.watch = div("obd-watch")
     this.over = div("obd-over")
+    this.alert = div("obd-alert")
     this.over.addEventListener("click", (e) => {
       const b = (e.target as HTMLElement).closest<HTMLButtonElement>("button[data-act]")
       if (!b || !this.actions) return
@@ -102,11 +107,34 @@ export class DeathHud {
     shown.down = life === "down"
     shown.dead = life === "dead"
 
+    // A teammate just went down or died: say who, and what gets them up (playtest: "How do we bring him back?").
+    const now = performance.now()
+    for (const s of session.sim.slots) {
+      if (s.index === local.index) continue
+      const was = this.lastLife.get(s.index) ?? "alive"
+      const is = lifeIn(state, s.index)
+      this.lastLife.set(s.index, is)
+      if (was === is || over || life !== "alive") continue
+      if (is === "down") {
+        this.alertHtml = `<b>${esc(name(s.index))} is down</b><span class="obd-sub">Get to them and ${keyPromptHtml("KeyE", "Revive", { hold: true })}</span>`
+        this.alertUntil = now + 6000
+      } else if (is === "dead" && was === "down") {
+        const back = t?.respawnRule === RESPAWN_NEVER ? "" : " · back at dawn"
+        this.alertHtml = `<b>${esc(name(s.index))} died</b><span class="obd-sub">Their kit is on the body${back}</span>`
+        this.alertUntil = now + 5000
+      }
+    }
+    const alertOn = now < this.alertUntil && life === "alive" && !over
+    if (this.alert.innerHTML !== this.alertHtml) this.alert.innerHTML = this.alertHtml
+    this.alert.dataset.on = String(alertOn)
+
     // Watching a teammate until dawn.
     let watchHtml = ""
     if (life === "dead" && watching !== null && !over) {
       const back = t?.respawnRule === RESPAWN_NEVER ? "until the run ends" : "back at the safehouse at dawn"
-      watchHtml = `You died · watching <b>${esc(name(watching))}</b> · ${back}`
+      const others = session.sim.slots.filter((s) => s.index !== local.index && lifeIn(state, s.index) === "alive").length
+      const next = others > 1 ? ` · ${keyPromptHtml("Space", "Next teammate")}` : ""
+      watchHtml = `You died · watching <b>${esc(name(watching))}</b> · ${back}${next}`
     }
     if (watchHtml !== this.watchHtml) {
       this.watchHtml = watchHtml
