@@ -140,3 +140,19 @@ Dragging: a scrape loop while a `furn:*` store has `drag` and is moving; a thump
 when one is shoved over (`down` 0→1). Throws: a whoosh on release scaled by power; landing thud per item (baseball on grass/wood, brick, rock, can
 clatter/roll); a bonk on a head hit; glass for a window broken by a throw (the `glass:*` store already plays
 `glass.break` for bottles).
+
+## Clip
+
+`bun scripts/interactions-clip.ts` (in `games/outbreak`; run it through `hivemind run --kind browser --fetch
+captures/interactions-clip`) plays every staged scene with scripted input in headless, muted Chromium and writes JPEG
+frames plus a readout of what each scene left behind (`SCENES=board,pry` for a subset). Each scene starts the survivor
+on their feet at full health with empty hands and hangs Ash's front door back up if an earlier scene's dead tore it
+off. Hauling is not in it: it needs a second seat.
+
+## Considered and cut
+
+- Pushing abandoned cars, or using one as a moving wall: the vehicles feature owns cars, and it is a bigger job.
+- Curtains and blinds that block sight through a window: small, but the crowd's sight model has no hook for it yet.
+- Kicking a door into the dead: doors and their breaches belong to AR-97.
+- Throwing a chair or other furniture, and stacking several pieces against one opening: one braced piece per opening.
+- Bots that throw, drag or pry on purpose: bots throw a bottle as before and path round furniture, nothing more.
