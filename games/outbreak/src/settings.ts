@@ -20,6 +20,7 @@ import { DEFAULT_FIRE_SETTINGS, type OutbreakFireSettings } from "./fire/setting
 import { DEFAULT_AIR_SETTINGS, type OutbreakAirSettings } from "./air/settings"
 import { DEFAULT_IMPACT_SETTINGS, type OutbreakImpactSettings } from "./impact/settings"
 import { DEFAULT_WAY_OUT_TUNING, type WayOutTuning } from "../shared/way-out/tuning"
+import { DEFAULT_INTERACTIONS_TUNING, type InteractionsTuning } from "../shared/interactions/tuning"
 import { DEFAULT_SPECIALS_TUNING, type SpecialsTuning } from "../shared/specials/kinds"
 import type { WorldMode } from "../shared/world"
 import { DEFAULT_AUDIO_SETTINGS, type AudioSettings } from "./audio"
@@ -253,6 +254,7 @@ export type OutbreakSubsystemMap = {
   death: DeathTuning
   fire: OutbreakFireSettings
   wayOut: WayOutTuning
+  interactions: InteractionsTuning
   vegetation: OutbreakVegetationSettings
   air: OutbreakAirSettings
   impact: OutbreakImpactSettings
@@ -337,6 +339,7 @@ export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "death",
   "fire",
   "wayOut",
+  "interactions",
   "vegetation",
   "air",
   "impact",
@@ -383,6 +386,7 @@ export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
     death: { ...DEFAULT_DEATH_TUNING },
     fire: { ...DEFAULT_FIRE_SETTINGS },
     wayOut: { ...DEFAULT_WAY_OUT_TUNING },
+    interactions: { ...DEFAULT_INTERACTIONS_TUNING },
     vegetation: { ...DEFAULT_VEGETATION_SETTINGS },
     air: { ...DEFAULT_AIR_SETTINGS },
     impact: { ...DEFAULT_IMPACT_SETTINGS },

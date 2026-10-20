@@ -19,7 +19,7 @@ const CONTINUOUS: ReadonlySet<string> = new Set(["footstep", "sprint"])
 const KINDS: readonly NoiseKind[] = [
   "gunshot", "glass", "bash", "vault", "shove", "door", "window", "search", "barricade", "groan", "alarm", "radio",
   "lure", "generator", "flare", "fuse", "explosion", "firecracker", "flamethrower", "trap", "crash", "horn", "bark",
-  "shriek", "bloater", "cans", "reload", "engine", "footstep", "sprint",
+  "shriek", "bloater", "cans", "reload", "engine", "footstep", "sprint", "thud",
 ]
 const KIND_INDEX = new Map<string, number>(KINDS.map((k, i) => [k, i]))
 const KIND_STRING = 255

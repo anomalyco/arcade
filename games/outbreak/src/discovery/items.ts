@@ -3,6 +3,7 @@ import type { Renderer } from "@arcade/kit/gpu/renderer"
 import { MELEE_WEAPON_IDS } from "../../shared/combat"
 import { hex } from "../level"
 import { buildFireItemMeshes } from "../fire/items"
+import { buildThrowableMeshes, THROWABLE_FOOTPRINT } from "../interactions/items"
 import { buildMeleeWeaponMeshes } from "../survivor"
 
 /** Each item as a small prop, origin at its base centre, long axis along +x. Read by shape and colour, never a label. */
@@ -144,6 +145,7 @@ export function buildItemMeshes(): Record<string, Mesh> {
   const weapons = buildMeleeWeaponMeshes(0)
   for (const id of MELEE_WEAPON_IDS) out[id] = weapons[id]
   Object.assign(out, buildFireItemMeshes())
+  Object.assign(out, buildThrowableMeshes())
   out["bolt-cutters"] = boltCuttersMesh()
   return out
 }
@@ -153,7 +155,7 @@ export function registerItemModels(renderer: Pick<Renderer, "addModel">): ItemMo
   for (const [item, mesh] of Object.entries(buildItemMeshes())) ids.set(item, renderer.addModel(mesh))
   return {
     model: (item) => ids.get(item),
-    footprint: (item) => FOOTPRINT[item] ?? 0.62,
+    footprint: (item) => FOOTPRINT[item] ?? THROWABLE_FOOTPRINT[item] ?? 0.62,
   }
 }
 

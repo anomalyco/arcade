@@ -154,6 +154,12 @@
   escape card, in `shared/way-out/` (all state in the `wayout` ledger store, nothing on the wire) and
   `src/way-out/`. Lab: Backquote › Way Out (Off = endless survival), `arcade cmd wayout.*`, station
   `outbreak-way-out`. How it works: `../../docs/outbreak-way-out.md`. Tests: `tests/way-out.test.ts`.
+- World interactions (AR-96, `shared/interactions/`, `src/interactions/`, Lab: Backquote › Interactions, each "Today"
+  one setting away, station `outbreak-interactions`, `arcade cmd interactions.stage scene=…`): throwables (baseballs,
+  bricks, rocks, tin cans, bottles) found in yards and on floors, held Mouse0 to wind up with an arc preview, released
+  to throw; they bonk, stagger, break windows, jolt car alarms and are heard where they land. Ledger stores only
+  (`toss:*`, `drop:t:*`, `drop:v:yard:*`). How it works and the inventory of every interaction:
+  `../../docs/outbreak-interactions.md`. Tests: `tests/interactions-throwables.test.ts`.
 - Hearing, sound cues and peek (AR-67): the dead hear through building shells (`shared/hearing.ts`; shut houses keep
   footsteps in, open doors and windows carry; Lab › Hearing, "Today" = walls only), the HUD's sound cues draw the
   reach they hear (`src/sound-cues/`, Lab › Sound cues, `../../docs/outbreak-hud.md#sound-cues`), and peeking eases

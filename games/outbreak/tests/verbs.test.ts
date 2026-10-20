@@ -262,7 +262,9 @@ describe("bottles and car alarms", () => {
     const { tick, give, hold, noises, ledger } = room({ ann: { x: 44, y: 44, aim: 0 } })
     give("ann", "bottle", 2)
     hold("ann", "bottle")
+    // Thrown by the throwables feature (AR-96): heard where it lands, after its flight.
     tick({ ann: { fire: true } })
+    tick({}, ticks(1.5))
     const glass = noises("glass")
     expect(glass).toHaveLength(1)
     expect(glass[0]!.x).toBeGreaterThan(50)
@@ -302,6 +304,7 @@ describe("bottles and car alarms", () => {
     give("ann", "bottle")
     hold("ann", "bottle")
     tick({ ann: { fire: true } })
+    tick({}, ticks(1.5))
     expect(ledger.store(carStoreId(car.key))!.counts).toMatchObject({ alarm: 1 })
     expect(progression.verbs.alarmRinging(car, s.time)).toBe(true)
   })

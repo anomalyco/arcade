@@ -244,6 +244,11 @@ export class FieldVerbs {
     }
   }
 
+  /** Jolts a car (something thrown landed against it): an alarm car starts wailing if it never has. */
+  jolt(car: CarSite, time: number): void {
+    this.smashCar(car, time, false)
+  }
+
   /** Breaks a car's window (`smash`) or just jolts it; an alarm car starts wailing if it never has. */
   private smashCar(car: CarSite, time: number, smash: boolean): void {
     const id = carStoreId(car.key)
