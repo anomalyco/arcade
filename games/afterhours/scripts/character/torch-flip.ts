@@ -57,6 +57,7 @@ try {
     const cam = G.__afterhoursDebug.camera
     const V = cam.position.constructor
     const tw = (q: any) => 2 * Math.atan2(q.y, q.w)
+    const t0q = () => new Q()
     let last = 0
     const step = (now: number) => {
       requestAnimationFrame(step)
@@ -80,21 +81,24 @@ try {
         if (e > 3) M.beamBad++
       }
       // First-person barrel vs view, once the carry has fully blended in (held, not on a ladder or mantling).
-      if (body.torch.visible && body.torchHeld && !P.state.mantle && !P.state.onLadder && body.carryW > 0.99) {
-        const barrel = new V(0, 0, -1).transformDirection(body.torch.matrixWorld)
+      // (The viewmodel's flashlight: what the player sees.)
+      const vt = body.viewmodel.torch
+      if (body.viewmodel.root.visible && body.viewmodel.present > 0.99) {
+        const barrel = new V(0, 0, -1).transformDirection(vt.matrixWorld)
         M.barrelMax = Math.max(M.barrelMax, (barrel.angleTo(fwd) * 180) / Math.PI)
       }
-      const hb = body.bones?.LeftHand
-      if (!hb || !body.torch.visible) {
+      const hb = body.viewmodel.torch
+      if (!hb || !body.viewmodel.root.visible) {
         prev.ok = false
         return
       }
-      const h = hb.getWorldQuaternion(new Q())
-      const t = body.torch.getWorldQuaternion(new Q())
+      const h = cam.quaternion.clone().invert().multiply(hb.getWorldQuaternion(new Q()))
+      // In the camera's frame: what moves on screen (a camera cut is not a hand flip).
+      const t = cam.quaternion.clone().invert().multiply(body.viewmodel.torch.getWorldQuaternion(new Q()))
       const local = hb.quaternion
       const rq = body.root.quaternion.clone()
       const cq = body.bones.Spine2.getWorldQuaternion(new Q())
-      const fq = body.bones.LeftForeArm.getWorldQuaternion(new Q())
+      const fq = t0q()
       const twist = tw(local)
       if (prev.ok) {
         const dh = (2 * Math.acos(Math.min(1, Math.abs(h.dot(prev.hand)))) * 180) / Math.PI
@@ -241,7 +245,7 @@ const frames = Object.values(results).reduce((a, r) => a + r.frames, 0)
 const beamBad = Object.values(results).reduce((a, r) => a + r.beamBad, 0)
 const beamMax = Math.max(...Object.values(results).map((r) => r.beamMax))
 const barrelMax = Math.max(...Object.values(results).map((r) => r.barrelMax))
-console.log(`TOTAL flags ${total} over ${frames} frames; beam vs view: max ${beamMax.toFixed(1)}°, ${beamBad} frames over 3°; first-person torch barrel vs view: max ${barrelMax.toFixed(1)}° (${barrelMax < 12 ? "PASS" : "FAIL"} < 12°)`)
+console.log(`TOTAL flags ${total} over ${frames} frames; beam vs view: max ${beamMax.toFixed(1)}°, ${beamBad} frames over 3°; viewmodel barrel vs view: max ${barrelMax.toFixed(1)}° (${barrelMax < 12 ? "PASS" : "FAIL"} < 12°)`)
 if (files.length) {
   const n = Math.min(files.length, 8)
   const f = files.slice(0, n)

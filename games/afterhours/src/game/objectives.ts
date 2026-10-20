@@ -3,24 +3,32 @@ import type { Flow } from "./flow"
 import { BUILDING, UPPER } from "../world/layout"
 import { completeObjective, clearObjective, setObjective } from "./objective"
 import { roomById } from "../world/interior/registry"
-import { transmitter } from "../world/interior/storeys/s3/transmitter-state"
+import { onReveal, onTransmitted } from "../world/interior/storeys/s3/transmitter-state"
 
-// The run's objective chain (play mode): set when explore starts, advanced by simple zone checks on the camera.
-//   explore           → "Find the source of the transmission — check the map (M)"
-//   storey 3 corridor → "Find the radio room — 3-08"
-//   inside 3-08       → "Shut off the transmitter"     (the TX POWER switch on the rack, E)
-//   switch thrown     → (silence, then a crash outside) → "Get out."   ← checkpoint "3-08:transmitter-off";
-//                                                                         the end of the current content
+// The run's objective chain (play mode): set when explore starts, advanced by simple zone checks on the camera and the
+// 3-08 radio-room beat (world/interior/storeys/s3/transmitter.ts):
+//   explore           → "Find out why the radio went silent. Check the map (M)"
+//   storey 3 corridor → "Find the radio room: 3-08"
+//   inside 3-08       → "Report what you found"          ← checkpoint "3-08:entered"
+//                       (switch TX-1 on, then key the desk mic: the call to County)
+//   call over         → "Check the body at the desk"
+//   body moved        → the warning under it            ← checkpoint "3-08:transmitted"; story.revealed
+//                       (a beat of silence, the scream, the car, the glass: the Wendigo is in) → "Hide."
 
 export const OBJECTIVES = {
-  transmission: "Find the source of the transmission — check the map (M)",
+  transmission: "Find out why the radio went silent — check the map (M)",
   radio: "Find the radio room — 3-08",
-  transmitter: "Shut off the transmitter",
-  out: "Get out.",
+  report: "Report what you found",
+  body: "Check the body at the desk",
+  hide: "Hide.",
 } as const
+/** The objective line for each story stage (checkpoint restores show `CHAIN[stage]`). */
+export const CHAIN = [OBJECTIVES.transmission, OBJECTIVES.radio, OBJECTIVES.report, OBJECTIVES.body, OBJECTIVES.hide]
+/** "Hide." comes this long after the warning is seen (s): after the scream and the car. */
+const HIDE_AFTER = 7.5
 
-/** The same first objective, handwritten across the top of the clipboard's first sheet. */
-export const BRIEFING = ["Find the source of the transmission.", "floor plans on the next pages — start inside"]
+/** The briefing, handwritten across the top of the clipboard's first sheet (two lines: underlined, then smaller). */
+export const BRIEFING = ["Station radio silent 48 hrs.", "Last contact from radio room 3-08. Find out why."]
 
 const ROOM_3_08 = { x0: 0.8, x1: 11.6, z0: -21.65, z1: -1.75 }
 const SPINE = UPPER.corridor
@@ -34,8 +42,9 @@ export function onCheckpoint(fn: (id: string) => void) {
   checkpointListeners.add(fn)
   return () => checkpointListeners.delete(fn)
 }
-/** Where the story stands (read by checkpoints and encounters): 0 explore … 2 in 3-08 … 3 "Get out.". */
-export const story = { stage: 0, visited308: false }
+/** Where the story stands (read by checkpoints and encounters): the CHAIN index (0 explore … 2 in 3-08, 3 check the
+ *  body, 4 "Hide."), whether 3-08 has been entered, and whether the warning has been seen (the hunter is coming). */
+export const story = { stage: 0, visited308: false, revealed: false }
 
 function checkpoint(id: string) {
   checkpoints.push(id)
@@ -54,7 +63,8 @@ export function startObjectives(flow: Flow, camera: THREE.Camera, signal?: Abort
   }
   story.stage = from
   if (from >= 2) story.visited308 = true
-  setObjective([OBJECTIVES.transmission, OBJECTIVES.radio, OBJECTIVES.transmitter, OBJECTIVES.out][Math.min(3, from)]!)
+  if (from >= 4) story.revealed = true
+  setObjective(CHAIN[Math.min(CHAIN.length - 1, from)]!)
   if (from === 0) checkpoint("arrival")
   const off = flow.onUpdate(() => {
     const p = camera.position
@@ -63,33 +73,37 @@ export function startObjectives(flow: Flow, camera: THREE.Camera, signal?: Abort
     else if (stage === 1 && s === 3) {
       const r = roomById(3, "3-08")?.rect ?? ROOM_3_08
       if (p.x > r.x0 && p.x < r.x1 && p.z > r.z0 && p.z < r.z1) {
-        advance(OBJECTIVES.transmitter)
+        advance(OBJECTIVES.report)
         story.visited308 = true
         checkpoint("3-08:entered")
       }
     }
     story.stage = stage
   })
-  // The transmitter beat runs on the world's clock: the switch strikes the line through; the next one only comes
-  // after the silence and the crash outside.
-  const offTx = transmitter.on((phase) => {
-    if (phase === "off") {
-      if (stage < 2) stage = 2
-      story.visited308 = true
-      clearTimeout(next)
-      completeObjective()
-    } else if (phase === "aftermath") {
-      stage = 3
-      clearTimeout(next)
-      next = window.setTimeout(() => {
-        setObjective(OBJECTIVES.out)
-        checkpoint("3-08:transmitter-off")
-      }, 2600)
-    }
+  // The radio-room beat runs on the world's clock.
+  const offTx = onTransmitted(() => {
+    if (stage >= 3) return
+    stage = 3
+    story.stage = 3
+    story.visited308 = true
+    completeObjective()
+    clearTimeout(next)
+    next = window.setTimeout(() => setObjective(OBJECTIVES.body), 1700)
+  })
+  const offReveal = onReveal(() => {
+    if (stage >= 4) return
+    stage = 4
+    story.stage = 4
+    story.revealed = true
+    completeObjective()
+    clearTimeout(next)
+    checkpoint("3-08:transmitted")
+    next = window.setTimeout(() => setObjective(OBJECTIVES.hide), HIDE_AFTER * 1000)
   })
   const stop = () => {
     off()
     offTx()
+    offReveal()
     clearTimeout(next)
     clearObjective()
   }

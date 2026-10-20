@@ -36,8 +36,9 @@ north array (woods) ──trunk / field team──▶ 0 Receiving + Decon ──
                      1 Program Administration (field teams, contracts, records of what happened)
 ```
 
-**Signal comes in from the woods, samples come back.** On the night of 17/18 October 1984 the night field team (six
-staff) badged out to the array at 22:58 and never came back: **six staff unaccounted for**. Each floor sees a different part of that.
+**Signal comes in from the woods, samples come back.** On the night of 17/18 October 1984 the station's radio went
+silent. Of the six on the night duty roster, four are dead in the radio room (3-08) and two (Marsh and Delacroix,
+sent out to the array) are unaccounted for. Each floor sees a different part of that.
 
 | Department | Staff (day) | Where | At 3 a.m. |
 |---|---|---|---|
@@ -145,7 +146,7 @@ Doors ≈ 44; K/L: FL-1 ×2, TC, armory, annex = 5 → **≈ 89% openable**.
 Vignettes:
 - **Security office**: the guard's chair pushed back, a cigarette burnt to the filter in the ashtray, logbook last
   entry `01:40 — Dock cam: something at the tree line. Gone.` The dock monitor shows the dock man door open.
-- **Time clock**: six cards punched IN at 22:58, never out; their slots labelled "FIELD TEAM".
+- **Time clock**: six cards punched IN at 22:58, never out; their slots labelled "NIGHT DUTY".
 - **Auditorium**: projector fan still running on the slide nobody turned off.
 
 ### Storey 1 — Program Administration (y 3.95)
@@ -174,7 +175,7 @@ Doors ≈ 26 (open-plan has none); K/L: vault only → **≈ 96%**.
 
 Vignettes:
 - **1-07**: the Chief's coat still on his chair, briefcase open, phone off the hook on the blotter; a memo:
-  "Re: night field team — next of kin letters (6)".
+  "Re: night duty 10/17 — next of kin letters (6)".
 - **1-09**: on the in/out board every name is OUT except six on the FIELD line; a Selectric with a half-typed letter
   "…regret to inform you that…". One chair, of 24, is turned to face the windows.
 - **1-01**: one mobile shelving aisle cranked open, step stool, a box "PERSONNEL — FIELD TEAMS 1981–84" pulled and
@@ -242,15 +243,25 @@ Vignettes:
 - **3-06**: operations log `03:02 Array link up` · `03:04 — ???` in a shaking hand; the operator's chair pushed back,
   headset dangling.
 - **3-08**: chart paper on the floor in a heap; the last metre shows a regular, heartbeat-like trace.
-- **3-08 (STATIC, beat 1)**: the night of Wed/Thu 17/18 October 1984, after the six of the night field team went out to the
-  array at 22:58. Four night crew died in the listening room; none of them are field-team staff. Each wears an IOPS · NIGHT CREW badge:
-  - **D. Kessler**, radio operator: slumped at the console.
-  - **C. Whitlock**, signal technician: by the strip-chart bench. The voice on ch 4 said her name.
-  - **R. Hargrove**, systems analyst, up from 3-09: face down inside the door.
-  - **N. Bellamy**, programmer, up from 3-09: against the west wall.
-  Their receiver log (`log_3_08_night`) runs from 22:10 to 03:03 and ends with "It's coming from the woods." and
-  "DON'T TAKE THE HEADPHONES OFF". The bodies are `LISTENING_ROOM_BODIES` in `interior/storeys/s3/listening.ts`.
-- **3-01**: one pigeonhole stuffed with months of uncollected printouts: "HALVERSON, D. — FIELD".
+- **3-08, the radio room (the first beat)**: the station's radio went silent two days ago (the night of Wed/Thu
+  17/18 October 1984); the player is sent to find out why (clipboard: "last contact from radio room 3-08"). The night
+  duty roster on the wall lists six: four are dead in the room, two are unaccounted for. Each body wears an IOPS ·
+  NIGHT DUTY badge:
+  - **D. Kessler**, radio operator: slumped over the operator desk.
+  - **C. Whitlock**, signal technician: by the strip-chart bench.
+  - **R. Hargrove**, systems analyst: face down at the foot of the transmitter, his handprints on it.
+  - **N. Bellamy**, programmer: against the west wall.
+  - unaccounted for: **E. Marsh** and **J. Delacroix**, field technicians, sent out to array station NA-2 at 23:00;
+    they missed their 01:30 check-in.
+  The beat: TX-1 is off on arrival (Kessler switched it off at 03:00). The player switches it back on, keys the desk
+  mic and reports to County ("…four dead. Two unaccounted for…"; County: "…units dispatched… stay where you are…").
+  Then they move Kessler: under him, in marker on the blotter, "TRANSMITTING WAKES IT / IT HEARS THE SIGNAL / MARSH
+  AND DELACROIX WENT INTO THE WOODS — NOT SEEN SINCE / keep it OFF". A scream from the woods, the car destroyed, the
+  lobby glass: the Wendigo is in the building ("Hide."). The receiver log (`log_3_08_night`) runs 22:10–03:03 and
+  only says "02:16 It's coming from the woods." and "03:00 TX-1 off."; nothing in the room warns against
+  transmitting. Bodies: `LISTENING_ROOM_BODIES` in `interior/storeys/s3/listening.ts`; the beat:
+  `interior/storeys/s3/transmitter.ts`.
+- **3-01**: one pigeonhole stuffed with months of uncollected printouts: "DELACROIX, J. — FIELD".
 
 ### Storey 4 — Directorate / refurbishment (y 15.35)
 

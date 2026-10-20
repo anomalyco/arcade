@@ -27,12 +27,15 @@ export async function launch(query: string, size = { width: 1280, height: 720 })
     if (m.text().startsWith("hunter:")) console.log("  [page]", m.text())
   })
   await page.routeWebSocket(/.*/, () => {})
+  const t0 = Date.now()
   await page.goto(`http://localhost:5196/?${query}`)
   await page.waitForFunction(() => {
     const s = (globalThis as { __afterhours?: { ready: boolean; complete: boolean } }).__afterhours
     return !!s?.complete && s.ready && !!(globalThis as { __ashwoodHunter?: unknown }).__ashwoodHunter
   }, null, { timeout: 300_000 })
-  return { browser, context, page, errors }
+  /** Seconds from the page opening (the start of a recorded video) to the world being ready. */
+  const readyS = (Date.now() - t0) / 1000
+  return { browser, context, page, errors, readyS }
 }
 
 /** Runs `fn(api, arg)` in the page with api = { H (hunter handle bag), P (player), A (audio) }. */

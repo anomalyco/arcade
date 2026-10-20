@@ -4,6 +4,8 @@ import type { WorldContext } from "../world/context"
 import type { DoorHandle } from "../world/doors"
 import { heightAt } from "../world/height"
 import type { Player } from "../player"
+import { VIEW_LAYER } from "./viewmodel"
+import { renderState } from "../render/shared"
 import { BODY_LAYER, CHARACTERS, CharacterBody, HEAD_LAYER, saveCharacter, savedCharacter } from "./body"
 
 // The player character in the game: a CharacterBody (any roster character, Lab panel Player → Character) fed the
@@ -45,6 +47,30 @@ export function createGameBody(ctx: WorldContext, player: Player) {
   }
   const camera = ctx.camera
   camera.layers.enable(BODY_LAYER)
+  camera.layers.enable(VIEW_LAYER)
+  // The viewmodel is the view camera's alone: hidden through every other render the frame does first (mirrors),
+  // shown again for the main pass. The hooks are kept first and last in the list.
+  let vmWas = false
+  const vmHide = () => {
+    vmWas = body.viewmodel.root.visible
+    body.viewmodel.root.visible = false
+  }
+  const vmShow = () => {
+    body.viewmodel.root.visible = vmWas
+  }
+  const keepHooks = () => {
+    const list = renderState.beforeRender
+    if (list[0] !== vmHide) {
+      const i = list.indexOf(vmHide)
+      if (i >= 0) list.splice(i, 1)
+      list.unshift(vmHide)
+    }
+    if (list[list.length - 1] !== vmShow) {
+      const i = list.indexOf(vmShow)
+      if (i >= 0) list.splice(i, 1)
+      list.push(vmShow)
+    }
+  }
   const body = new CharacterBody({
     character: String(s["player.character"]),
     ground,
@@ -121,6 +147,7 @@ export function createGameBody(ctx: WorldContext, player: Player) {
       // The third-person debug camera shows the first-person placement (eyes at the controller's eye).
       body.eyeAnchor = true
       body.update(dt, player.state)
+      keepHooks()
       // Ladders: the camera at the body's eyes (the controller keeps it on the rung plane, in front of the face).
       const vw = body.view.weight
       if (vw > 1e-3) {
@@ -180,8 +207,13 @@ function thirdPerson(camera: THREE.PerspectiveCamera) {
     apply(want: boolean, player: Player, body: CharacterBody, dist: number, colliders: WorldContext["colliders"]) {
       if (want !== on) {
         on = want
-        if (on) camera.layers.enable(HEAD_LAYER)
-        else camera.layers.disable(HEAD_LAYER)
+        if (on) {
+          camera.layers.enable(HEAD_LAYER)
+          camera.layers.disable(VIEW_LAYER)
+        } else {
+          camera.layers.disable(HEAD_LAYER)
+          camera.layers.enable(VIEW_LAYER)
+        }
       }
       if (!on) return
       const st = player.state

@@ -1,7 +1,9 @@
 import { BUILDING } from "../world/layout"
 import { LOT_Y } from "../world/compound/lot"
 import { PARKED } from "../game/intro/route"
+import { savedCharacter } from "../playerb/body"
 import { hooks } from "./hooks"
+import { SFX, type SfxId } from "./sfx-manifest"
 
 // One-off story sounds that more than one system may want to trigger (the 3-08 transmitter beat, the hunter's
 // entrance). Each plays at most once per page, so whoever calls first owns it and a second call is a no-op.
@@ -49,4 +51,24 @@ export const storySounds = {
   get carDestroyed() {
     return carDestroyed
   },
+}
+
+/** Voice fallback per playable character (roster.json has no gender field; cast from the roster renders). */
+const VOICE_FALLBACK: Record<string, "m" | "f"> = { remy: "m", james: "m", louise: "f", megan: "f", kate: "f" }
+
+const shipped = (id: string): id is SfxId => id in SFX && SFX[id as SfxId].variants.length > 0
+
+/**
+ * The sfx id of a spoken line in the selected character's own voice. Lines are named `story-<line>-<character>`
+ * (e.g. `story-call-player-kate`); the character is the one the picker stored (`savedCharacter()`, localStorage
+ * "afterhours.character"). Falls back to `story-<line>-m` / `-f` for that character, then `story-<line>`; null when
+ * nothing is shipped for the line.
+ *
+ *   const id = playerVoice("call-player")
+ *   if (id) hooks.sfx?.play(id, { bus: "horror", pos, ref: 1.2 })
+ */
+export function playerVoice(line: string, character = savedCharacter()): SfxId | null {
+  const base = line.startsWith("story-") ? line : `story-${line}`
+  const tries = [`${base}-${character}`, `${base}-${VOICE_FALLBACK[character] ?? "m"}`, base]
+  return tries.find(shipped) ?? null
 }

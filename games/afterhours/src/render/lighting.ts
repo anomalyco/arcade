@@ -53,6 +53,8 @@ const Fn = TslFn as N
 const { diffuseContribution, specularColorBlended } = TSL as unknown as Record<string, N>
 
 const MAX_POOL = 6
+/** A layer nothing renders, so the flashlight's shadow camera keeps its own mask (see the flashlight update). */
+const FLASH_SPARE_LAYER = 5
 /** Emitter glow instances (buffers are allocated once at this size so late lamps never reallocate them). */
 const GLOW_CAPACITY = 1024
 /** Within this distance of the building shell, lamps on both sides of its walls stay on (doors, windows). */
@@ -461,7 +463,7 @@ export function createLighting(ctx: WorldContext, player: Player) {
       lastIntensity: lamp.intensity,
       animated: false,
       // Panels and tubes are already large emissive meshes: their sprite only adds a little glare.
-      glow: lamp.kind === "window" ? 0 : lamp.kind === "fluorescent" ? 0.3 : 1,
+      glow: lamp.kind === "window" ? 0 : lamp.kind === "fluorescent" ? 0.3 : lamp.kind === "exit" ? 0.12 : 1,
     }
     rigs.push(rig)
     if (rig.glow > 0 && glowRigs.length < GLOW_CAPACITY) glowRigs.push(rig)
@@ -936,6 +938,10 @@ export function createLighting(ctx: WorldContext, player: Player) {
       const lit = flashLevel > 0.01
       const wantShadow = flag(ctx, "flash.shadows")
       flash.shadow.autoUpdate = lit && wantShadow
+      // The beam starts at the hand: the torch, arm and first-person viewmodel must never shadow it. A mask of layer 0
+      // alone means "copy the view camera's layers" in three's ShadowNode (body, head and viewmodel layers included),
+      // so a spare layer nothing renders is set beside it. Set every frame, after the body's own shadow hook.
+      flash.shadow.camera.layers.mask = (1 << 0) | (1 << FLASH_SPARE_LAYER)
       flash.shadow.intensity = wantShadow ? 1 : 0
       const fsize = Number(ctx.settings["flash.shadowSize"])
       if (flash.shadow.mapSize.x !== fsize) {

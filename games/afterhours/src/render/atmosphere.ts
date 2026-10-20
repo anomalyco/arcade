@@ -25,6 +25,7 @@ import {
   normalWorld,
 } from "three/tsl"
 import type { WorldContext } from "../world/context"
+import { BUILDING } from "../world/layout"
 import { VOLUMES, distanceToBuilding as distToBuilding, inside, insideNode } from "./volumes"
 import { addControls, num } from "./shared"
 
@@ -49,6 +50,8 @@ export const fogUniforms = {
   interiorColor: uniform(new THREE.Color()),
   envInterior: uniform(0.06),
   interiorAmbient: uniform(new THREE.Color()),
+  /** Night glow coming in through the facade windows (sky, fog bank and the compound's sodium lamps). */
+  windowLight: uniform(new THREE.Color()),
   /** Lightning (render/lightning.ts): cloud/fog glow radiance, unit direction towards the strike, outdoor ambient. */
   flashGlow: uniform(new THREE.Color(0, 0, 0)),
   flashDir: uniform(new THREE.Vector3(0, 0.3, -1)),
@@ -60,6 +63,7 @@ export const fogUniforms = {
 }
 
 const envGround = uniform(0.12)
+const _sodium = new THREE.Color(0.06, 0.03, 0.01)
 
 /**
  * Lamp bounce: the nearest lit interior lamps (filled each frame by the lighting rig) as soft omni sources of
@@ -90,6 +94,31 @@ const lampBounce = (p: N, n: N) => {
     acc.addAssign(B.rgb.mul(facing).mul(win).mul(sameFloor).div(d.mul(d).add(2.5)))
   })
   return acc
+}
+
+/**
+ * Light through the windows: every room on the facade gets the night outside (fog glow, the lot's sodium lamps)
+ * through its glass, strongest by the window and falling off over a few metres into the room; surfaces facing the
+ * window catch more. Deep spaces (the central corridor, ~20 m from glass) get none. Keeps unlit rooms readable as
+ * dim teal spaces with a gradient instead of black voids.
+ */
+const MAIN = BUILDING.main
+const windowGlow = (p: N, n: N) => {
+  const dW = p.x.sub(MAIN.min[0])
+  const dE = float(MAIN.max[0]).sub(p.x)
+  const dN = p.z.sub(MAIN.min[1])
+  const dS = float(MAIN.max[1]).sub(p.z)
+  const dx = dW.min(dE)
+  const dz = dN.min(dS)
+  const depth = dx.min(dz).max(0)
+  // Outward direction of the nearest facade.
+  const towards = dx
+    .lessThan(dz)
+    .select(dW.lessThan(dE).select(vec3(-1, 0, 0), vec3(1, 0, 0)), dN.lessThan(dS).select(vec3(0, 0, -1), vec3(0, 0, 1)))
+  const facing = tslMax(dot(n, towards), 0).mul(0.65).add(0.35)
+  // Window band: sill ~0.9 m to head ~2.6 m above each floor; ceilings get the light that bounces off the sill.
+  const fall = exp(depth.div(3.2).negate())
+  return fogUniforms.windowLight.mul(fall).mul(facing)
 }
 
 /** CPU mirror of the fog for per-lamp transmittance. */
@@ -220,6 +249,7 @@ export function createAtmosphere(ctx: WorldContext) {
     { key: "env.intensity", label: "Fog skylight (ambient + reflections)", group: "Fog", unit: "×", min: 0, max: 3, step: 0.01, value: 1 },
     { key: "env.interior", label: "Skylight left indoors", group: "Fog", min: 0, max: 1, step: 0.01, value: 0.06 },
     { key: "env.interiorGI", label: "Interior bounce (ambient GI)", group: "Fog", min: 0, max: 0.2, step: 0.001, value: 0.035 },
+    { key: "env.windowLight", label: "Night light through windows", group: "Fog", unit: "×", min: 0, max: 20, step: 0.1, value: 4 },
     { key: "fog.interiorTone", label: "Interior haze brightness", group: "Fog", min: 0, max: 0.05, step: 0.0005, value: 0.004 },
     { key: "env.ground", label: "Ground bounce", group: "Fog", min: 0, max: 1, step: 0.01, value: 0.12 },
   ])
@@ -275,6 +305,7 @@ export function createAtmosphere(ctx: WorldContext) {
     const bounce = fogUniforms.interiorAmbient
       .mul(mix(float(1.15), float(0.8), up.mul(0.5).add(0.5)))
       .add(lampBounce(positionWorld, normalWorld))
+      .add(windowGlow(positionWorld, normalWorld))
     // Lightning adds a flat cool skylight outdoors (the whole cloud deck lit for a moment).
     const outdoorEnv = envNode.add(fogUniforms.flashAmbient)
     ;(ctx.scene as unknown as { environmentNode: N }).environmentNode = mix(outdoorEnv, envNode.mul(fogUniforms.envInterior).add(bounce), ins)
@@ -297,6 +328,8 @@ export function createAtmosphere(ctx: WorldContext) {
     envGround.value = num(ctx, "env.ground")
     fogUniforms.envInterior.value = num(ctx, "env.interior")
     fogUniforms.interiorAmbient.value.setRGB(0.78, 0.95, 0.7).multiplyScalar(num(ctx, "env.interiorGI"))
+    // Window glow: the fog bank's teal with a touch of sodium from the lot lamps.
+    fogUniforms.windowLight.value.copy(fogUniforms.color.value).lerp(_sodium, 0.25).multiplyScalar(num(ctx, "env.windowLight"))
     fogUniforms.interiorColor.value.setRGB(0.9, 0.95, 0.92).multiplyScalar(num(ctx, "fog.interiorTone"))
     ctx.scene.environmentIntensity = num(ctx, "env.intensity")
     bakeEnv()

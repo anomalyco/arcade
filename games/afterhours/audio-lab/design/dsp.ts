@@ -48,6 +48,60 @@ export function silence(s: number): Mono {
   return new Float32Array(sec(s))
 }
 
+/** Time-compress or stretch (pitch kept) with ffmpeg's atempo (WSOLA; cleaner on speech than `stretch`). */
+export async function tempo(x: Mono, factor: number): Promise<Mono> {
+  if (Math.abs(factor - 1) < 1e-3) return x
+  const p = Bun.spawn(["ffmpeg", "-v", "error", "-f", "f32le", "-ar", String(SR), "-ac", "1", "-i", "-", "-af", `atempo=${factor.toFixed(4)}`, "-f", "f32le", "-"], { stdin: "pipe", stdout: "pipe" })
+  p.stdin.write(new Uint8Array(x.buffer, x.byteOffset, x.byteLength))
+  await p.stdin.end()
+  const out = new Float32Array(await new Response(p.stdout).arrayBuffer())
+  await p.exited
+  return out
+}
+
+/** Shortens every pause longer than `maxGap` s (audio `db` under the loudest 20 ms) to `maxGap`, with short
+ *  crossfades: a dialogue edit that keeps breaths (they sit above the threshold) but drops dead air. */
+export function tightenPauses(x: Mono, maxGap = 0.25, db = 38): Mono {
+  const w = sec(0.02)
+  const rms: number[] = []
+  for (let i = 0; i + w <= x.length; i += w) {
+    let s = 0
+    for (let j = 0; j < w; j++) s += x[i + j]! ** 2
+    rms.push(Math.sqrt(s / w))
+  }
+  const th = Math.max(...rms) * 10 ** (-db / 20)
+  const keep: [number, number][] = []
+  let start = 0
+  let k = 0
+  while (k < rms.length) {
+    if (rms[k]! >= th) {
+      k++
+      continue
+    }
+    let e = k
+    while (e < rms.length && rms[e]! < th) e++
+    const gap = (e - k) * w
+    if (gap > sec(maxGap)) {
+      const half = Math.floor(sec(maxGap) / 2)
+      keep.push([start, k * w + half])
+      start = e * w - half
+    }
+    k = e
+  }
+  keep.push([start, x.length])
+  const xf = sec(0.01)
+  const out: number[] = []
+  for (const [a, b] of keep) {
+    const seg = x.subarray(a, b)
+    const base = out.length
+    for (let i = 0; i < seg.length; i++) {
+      if (i < xf && base > xf) out[base - xf + i] = out[base - xf + i]! * (1 - i / xf) + seg[i]! * (i / xf)
+      else out.push(seg[i]!)
+    }
+  }
+  return Float32Array.from(out)
+}
+
 /** Drops leading and trailing audio quieter than `db` under the peak. */
 export function trim(x: Mono, db = 45): Mono {
   let m = 0

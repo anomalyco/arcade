@@ -1,5 +1,6 @@
 import { type Builder, CEIL_Y, FLOOR_Y, LAYER, M, ceiling, doorOpening, paint, wall } from "./kit"
 import { type TrofferCell, emergencyPack, exitSign, sconce, troffers } from "./lights"
+import { NIGHT_EXTRA } from "./lighting-state"
 import { CORE_PLAN, FIRE_DOOR, SHELL, WINDOWS } from "./plan"
 import { type Finish, type POpening, partition } from "./partition"
 import { extinguisher, bulletin } from "./fittings"
@@ -85,7 +86,7 @@ export function spine(b: Builder, o: SpineOpts = {}): SpineHandle {
     wall(b, "z", -Z, Z, x0, x0 + 0.04, st.bands, west === "fire" ? [doorOpening(FIRE_DOOR.z, FIRE_DOOR.width)] : [], ext)
     if (west === "fire") {
       exitSign(b, x0 + 0.04, 0, 1, 0)
-      emergencyPack(b, x0 + 0.04, FLOOR_Y + 2.45, -1.0, 1, 0)
+      emergencyPack(b, x0 + 0.04, FLOOR_Y + 2.45, -1.0, 1, 0, NIGHT_EXTRA.emergency)
     }
   }
   if ((o.east ?? "wall") === "wall") {
@@ -94,14 +95,17 @@ export function spine(b: Builder, o: SpineOpts = {}): SpineHandle {
   }
   // Ceiling and lights.
   ceiling(b, x0, -Z, x1, Z, o.missing ?? st.missing, 300 + storey)
-  const n = o.nightCircuit ?? 2
+  const night = NIGHT_EXTRA.spine[storey]
+  const n = night && (o.nightCircuit ?? 2) === 0 ? night.circuit : night ? Math.min(o.nightCircuit ?? 2, night.circuit) || night.circuit : (o.nightCircuit ?? 2)
   const cells: TrofferCell[] = []
   const sc = o.sconces
   for (let x = Math.floor((x1 - 1.5) / 3) * 3; x >= x0 + 1.5; x -= 3) {
     const k = Math.round(x / 3)
     if (sc && x >= sc.from && x <= sc.to) continue
-    const fl = o.flicker?.find((f) => Math.abs(f.x - x) < 1)
+    let fl = o.flicker?.find((f) => Math.abs(f.x - x) < 1)
     const on = (n > 0 && k % n === 0) || !!o.lit?.some((lx) => Math.abs(lx - x) < 1) || !!fl
+    // Night pass: a share of the lit fittings are tubes on their way out (deterministic per fitting).
+    if (!fl && on && night && ((((k * 2654435761) >>> 0) % 1000) / 1000 < night.flicker)) fl = { x, amount: 0.7 }
     cells.push({ x, z: 0, on, flicker: fl?.amount })
   }
   const tr = troffers(b, cells, { louvre: st.louvre, intensity: o.intensity ?? 5, perLamp: 1 })

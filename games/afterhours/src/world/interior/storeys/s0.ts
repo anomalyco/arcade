@@ -37,8 +37,8 @@ export async function build(b: Builder, { pause }: StoreyContext): Promise<Store
   const svc = serviceStack(b)
   const north = [
     door(-52.2, "b", { id: "0-10", state: "open", room: "0-10", sign: { number: "0-10", label: "STAFF ENTRANCE" } }),
-    door(-46.0, "b", { id: "0-12", state: "closed", room: "0-12", sign: { number: "0-12", label: "MEN — CHANGE" } }),
-    door(-40.0, "b", { id: "0-13", state: "closed", room: "0-13", sign: { number: "0-13", label: "WOMEN — CHANGE" } }),
+    door(-46.0, "b", { id: "0-12", state: "closed", room: "0-12", sign: { number: "0-12", label: "MEN · CHANGE" } }),
+    door(-40.0, "b", { id: "0-13", state: "closed", room: "0-13", sign: { number: "0-13", label: "WOMEN · CHANGE" } }),
     door(-28.0, "b", { id: "0-16", state: "open", room: "0-16b", double: true, open: 1.45, sign: { number: "0-16", label: "RECEIVING" } }),
     door(-21.0, "b", { id: "0-17", state: "open", room: "0-17", open: 1.6, sign: { number: "0-17", label: "SAMPLE INTAKE" } }),
     door(-14.0, "b", { id: "0-18", state: "closed", room: "0-18", sign: { number: "0-18", label: "REPROGRAPHICS" } }),

@@ -995,6 +995,24 @@
   "source": "sketchfab:8e13a866ee184bed95bb5b59ddee62cd",
   "licence": "CC-BY-4.0"
  },
+ "mug": {
+  "tris": 4000,
+  "lod1": 1200,
+  "bytes": 42000,
+  "size": [
+   0.077,
+   0.095,
+   0.116
+  ],
+  "footprint": [
+   0.077,
+   0.116
+  ],
+  "meshes": 2,
+  "materials": 1,
+  "source": "sketchfab:19c8fe5702b544d0a1409d3dac1cf90e",
+  "licence": "CC-BY-4.0"
+ },
  "wet_floor_sign": {
   "tris": 228,
   "bytes": 189184,

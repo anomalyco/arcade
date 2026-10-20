@@ -345,6 +345,6 @@ export function initMirrors(ctx: WorldContext, extraHidden: () => THREE.Object3D
   })
 
   const api = { cpuMs: () => lastMs, count: () => mirrors.length, rt: shared.rt, mirrors, virtualCam, player, bounce }
-  if (ctx.params.has("perf")) (globalThis as { __afterhoursMirrors?: unknown }).__afterhoursMirrors = api
+  if (ctx.params.has("perf") || import.meta.env.DEV) (globalThis as { __afterhoursMirrors?: unknown }).__afterhoursMirrors = api
   return api
 }

@@ -49,7 +49,7 @@ How to place (`documentGeometry`/`documentMesh`, or the storeys' existing `docs.
 | `storeys/s3/furniture.ts:80` (`cardCatalogue` drawer labels) | blank | `label_catalogue_1..8` (cycle) | 0.04×0.016 | `size:[0.04,0.018]` |
 | `storeys/s3/furniture.ts:112` (`printoutStack` top sheet) | blank | `printout_greenbar` | 0.378×0.279 | flat on top, `size:[0.381,0.281]` |
 | `storeys/s3/equipment.ts:452` (`flatFile` rolled map) | blank cylinder | keep (rolled) | | |
-| `storeys/s3/north.ts:84` HALVERSON cubby label | done (time card) | — | | |
+| `storeys/s3/north.ts:84` DELACROIX cubby label | done (time card) | — | | |
 | `storeys/s3/mats.ts:113` `TEXT` terminal shader | procedural glyphs (unreadable by design, scrolling) | keep; for hero screens read closely, a static `printout_teletype`-style emissive doc is possible later | | |
 
 ## Storey 2 (s2)

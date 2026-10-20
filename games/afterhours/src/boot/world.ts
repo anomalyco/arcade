@@ -1,6 +1,6 @@
 import * as THREE from "three/webgpu"
 import type { WorldContext, WorldModule } from "../world/context"
-import { VIEWPOINTS, type ViewpointName } from "../world/layout"
+import { BUILDING, VIEWPOINTS, type ViewpointName } from "../world/layout"
 import { MATERIAL_CONTROLS, MATERIAL_SETTINGS, bindMaterialSettings, loadMaterials } from "../render/materials"
 import { createAtmosphere } from "../render/atmosphere"
 import { createLighting } from "../render/lighting"
@@ -180,6 +180,7 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
   let streaming = true
   let revealed = false
   const deferred: THREE.Object3D[] = []
+  const _wp = new THREE.Vector3()
   let background: Promise<void> = Promise.resolve()
   /** One frame: module updates, atmosphere, lighting and the post chain. Player input/movement is the caller's. */
   const render = (dt: number, time: number) =>
@@ -279,6 +280,25 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
     performance.mark(`boot:last-arrival:${Math.round(warmup.lastArrival)}`)
     advance(MODELS_WEIGHT)
     hooks.onShown?.("models", ++done, pending.length + 1)
+    // What the game hides at the reveal inside the facility (other storeys, rooms the culling hides from the lot)
+    // also compiles behind the cover (everything in the building footprint): left
+    // to the background warm-up it was still queued when a fast player reached the doors, and entering compiled ~40
+    // materials in one frame and stalled the GPU for ~1.8 s on their pipelines and textures.
+    deferred.push(...warmup.takeHidden())
+    const { min, max } = BUILDING.main
+    const near = deferred.filter((o) => {
+      o.getWorldPosition(_wp)
+      return _wp.x > min[0] - 10 && _wp.x < max[0] + 10 && _wp.z > min[1] - 10 && _wp.z < max[1] + 15
+    })
+    // `entryWarm=0` (automation/A-B only) leaves it all to the background warm-up, as before.
+    if (near.length && params.get("entryWarm") === "0") near.length = 0
+    if (near.length) {
+      const keep = new Set(near)
+      deferred.splice(0, deferred.length, ...deferred.filter((o) => !keep.has(o)))
+      warmup.uploadGeometry(near)
+      await warmup.warmObjects(near)
+    }
+    performance.mark(`boot:entry-warm:${near.length}`)
     warmup.setCovered(false)
     post.setBooting(false)
     streaming = false

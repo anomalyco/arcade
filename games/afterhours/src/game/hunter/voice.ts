@@ -288,62 +288,6 @@ export class Voice {
     sfx?.play("wen2-huge-scream", { bus: "horror", pos: p, ref: 25, rolloff: 0.7, gain: 0.9, lowpass: 1100, occlude: false, rate: 0.92, jitter: 0, lowBoost: 3 })
   }
 
-  /** A car being wrecked: a second crunch, metal folding. */
-  wreck(p: P) {
-    hooks.sfx?.play("hor-metal-bang", { bus: "horror", pos: p, ref: 25, rolloff: 0.6, gain: 1.0, rate: 0.75, lowBoost: 8, lowpass: 1800, occlude: false })
-    this.record("hor-metal-bang:wreck", p, 1, 0, 1)
-  }
-
-  /** A 1984 car alarm (the horn honking in a steady beat), muffled by the building; returns a stop function. */
-  carAlarm(p: P) {
-    const a = audio()
-    if (!a) return () => {}
-    const ac = a.ctx
-    const t = ac.currentTime + 0.02
-    const out = ac.createGain()
-    out.gain.value = 0
-    const lp = ac.createBiquadFilter()
-    lp.type = "lowpass"
-    lp.frequency.value = 900
-    const pn = ac.createPanner()
-    pn.panningModel = "equalpower"
-    pn.distanceModel = "inverse"
-    pn.refDistance = 25
-    pn.rolloffFactor = 0.6
-    pn.positionX.value = p.x
-    pn.positionY.value = p.y
-    pn.positionZ.value = p.z
-    const oscs = [415, 523].map((f) => {
-      const o = ac.createOscillator()
-      o.type = "sawtooth"
-      o.frequency.value = f
-      o.connect(lp)
-      o.start(t)
-      return o
-    })
-    lp.connect(out).connect(pn).connect(a.buses.horror)
-    // Honk 0.42 s on, 0.38 s off, for up to 30 s.
-    for (let k = 0; k < 38; k++) {
-      const at = t + k * 0.8
-      out.gain.setValueAtTime(0, at)
-      out.gain.linearRampToValueAtTime(0.16, at + 0.02)
-      out.gain.setValueAtTime(0.16, at + 0.4)
-      out.gain.linearRampToValueAtTime(0, at + 0.42)
-    }
-    this.record("car-alarm", p, 1, 0, 1)
-    let stopped = false
-    return () => {
-      if (stopped) return
-      stopped = true
-      const now = ac.currentTime
-      out.gain.cancelScheduledValues(now)
-      out.gain.setValueAtTime(out.gain.value, now)
-      out.gain.linearRampToValueAtTime(0, now + 0.03)
-      for (const o of oscs) o.stop(now + 0.1)
-      setTimeout(() => pn.disconnect(), 300)
-    }
-  }
-
   /** The lobby's glass breaking: a heavy impact, the shatter and glass raining down. */
   glass(p: P) {
     this.play("hor-metal-bang", p, { gain: 0.9, rate: 1.25, lowBoost: 6, lowpass: 3000, ref: 4, rolloff: 0.8 })

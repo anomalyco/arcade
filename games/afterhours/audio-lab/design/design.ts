@@ -25,7 +25,7 @@ const ROUND = "round 2"
 const hash = (s: string) => [...s].reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) >>> 0, 7)
 
 const m = await loadManifest()
-m.designedCategories = RECIPES.map((r) => ({ id: r.id, group: "monsters", subgroup: `${r.subgroup} (${ROUND})`, label: r.label, intent: r.intent, loop: false, designed: true as const }))
+m.designedCategories = (m.designedCategories ?? []).filter((c) => !RECIPES.some((r) => r.id === c.id)).concat(RECIPES.map((r) => ({ id: r.id, group: "monsters", subgroup: `${r.subgroup} (${ROUND})`, label: r.label, intent: r.intent, loop: false, designed: true as const })))
 
 for (const r of RECIPES) {
   if (only && !only.includes(r.id)) continue

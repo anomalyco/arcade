@@ -403,8 +403,8 @@ export function buildStrands(an: Anatomy): SdfModel {
       const t1 = (k + 1) / segs
       dir = norm(add(dir, [(r() - 0.5) * 0.35, -droop * (0.5 + t1), (r() - 0.5) * 0.35]))
       const q = madd(p, dir, length / segs)
-      const ra = Math.max(0.0028, r0 * (1 - t0 * 0.75))
-      const rb = Math.max(0.0026, r0 * (1 - t1 * 0.75))
+      const ra = Math.max(0.0055, r0 * (1 - t0 * 0.6))
+      const rb = Math.max(0.0052, r0 * (1 - t1 * 0.6))
       m.add(new RoundCone(p, q, ra, rb, { bone: b, tag: t0 < 0.15 ? Tag.Skin : Tag.Horn, k: k === 0 ? 0 : 0.002, dangle: t1 }))
       p = q
       if (k > 0 && r() < rootlets) {
@@ -415,7 +415,7 @@ export function buildStrands(an: Anatomy): SdfModel {
         for (let j = 0; j < n2; j++) {
           dd = norm(add(dd, [(r() - 0.5) * 0.5, -droop, (r() - 0.5) * 0.5]))
           const qq = madd(pp, dd, 0.03)
-          m.add(new RoundCone(pp, qq, Math.max(0.0026, rb * 0.7), 0.0026, { bone: b, tag: Tag.Horn, k: 0.0015, dangle: Math.min(1, t1 + 0.1 * (j + 1)) }))
+          m.add(new RoundCone(pp, qq, Math.max(0.005, rb * 0.75), 0.0048, { bone: b, tag: Tag.Horn, k: 0.0015, dangle: Math.min(1, t1 + 0.1 * (j + 1)) }))
           pp = qq
         }
       }
@@ -445,11 +445,11 @@ export function buildStrands(an: Anatomy): SdfModel {
     strand(base, [0, -1, 0], 0.1 + r() * 0.2, 0.006 + r() * 0.005, z < 0.66 ? "neck1" : z < 0.85 ? "neck2" : "neck3", 0.15, 0.1)
   }
   // Belly and keel: hanging strips.
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 24; i++) {
     const z = -0.42 + r() * 0.85
     const base = hit([(r() - 0.5) * 0.3, 0.6, z], [0, 1, 0])
     if (!base) continue
-    strand(base, [(r() - 0.5) * 0.3, -1, (r() - 0.5) * 0.3], 0.1 + r() * 0.35, 0.007 + r() * 0.007, z < -0.12 ? "belly" : "ribs", 0.15, 0.12)
+    strand(base, [(r() - 0.5) * 0.3, -1, (r() - 0.5) * 0.3], 0.1 + r() * 0.35, 0.009 + r() * 0.008, z < -0.12 ? "belly" : "ribs", 0.15, 0.12)
   }
   // Rump and tail: a long ragged tail of roots.
   for (let i = 0; i < 46; i++) {

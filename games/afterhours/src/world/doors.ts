@@ -162,6 +162,11 @@ class Door implements DoorHandle {
   /** Open fraction at the start of this frame (push velocity), and the frame of the last push contact. */
   t0 = 0
   contact = -9
+  /** Seconds (door-system clock) of the body's last contact, and of the last bump sound. */
+  contactAt = -1e9
+  bumpAt = -1e9
+  /** Seconds left before a leaf stopped against the player tries to move again (no per-frame re-tries). */
+  blocked = 0
   readonly panic: boolean
   readonly closer: boolean
   // Current pose (collider): yaw and offset from the hinge.
@@ -328,6 +333,7 @@ export class Doors {
   private prompt: DoorPrompt | null = null
   private focus: Door | null = null
   private frame = 0
+  private time = 0
   private lastDt = 1 / 60
   private tmp = { x: 0, y: 0, z: 0 }
 
@@ -463,8 +469,14 @@ export class Doors {
     const v = Math.max(-vmax, Math.min(vmax, (t - d.t0) / Math.max(1e-3, this.lastDt)))
     if (v > 0 ? v > d.v : v < d.v) d.v = v
     // A fast first contact (running into it) bangs.
-    if (this.frame - d.contact > 3 && d.v * d.profile.duration > 1.2) this.audio?.bump(d.spec.sound ?? "steel", this.pan(d), Math.min(1, (d.v * d.profile.duration) / 3))
+    // One bump per real impact: a fast first contact after the body has been off the leaf for a while, at most one
+    // every 1.5 s. A sustained push (or a leaf bobbing against the body) is silent apart from its creak.
+    if (this.time - d.contactAt > 0.6 && this.time - d.bumpAt > 1.5 && d.v * d.profile.duration > 1.2) {
+      d.bumpAt = this.time
+      this.audio?.bump(d.spec.sound ?? "steel", this.pan(d), Math.min(1, (d.v * d.profile.duration) / 3))
+    }
     d.contact = this.frame
+    d.contactAt = this.time
     d.apply()
     return Math.min(1, Math.hypot(nx - d.hx, nz - d.hz) / Math.max(0.1, d.xb - d.xa))
   }
@@ -627,6 +639,7 @@ export class Doors {
   /** Per frame (called by the player before it moves): animates doors and updates the prompt. */
   update(dt: number) {
     this.frame++
+    this.time += dt
     this.lastDt = dt
     const speed = Number(this.settings["doors.speed"] ?? 1)
     if (this.audio) {
@@ -642,7 +655,10 @@ export class Doors {
       const prof = d.profile
       // An agent's door (`drive`) is silent here: the agent plays its own sounds.
       const audio = d.driven ? null : this.audio
-      let left = dt
+      // A leaf stopped against the player waits a moment before trying again (no stutter of tiny moves and creaks).
+      if (d.blocked > 0) d.blocked = Math.max(0, d.blocked - dt)
+      const held = this.time - d.contactAt < 0.4
+      let left = d.blocked > 0 ? 0 : dt
       while (left > 1e-6) {
         const h = Math.min(SUB, left)
         left -= h
@@ -656,8 +672,13 @@ export class Doors {
           t = d.t + d.v * h
           if (t >= 1) {
             t = 1
-            bump = d.v * prof.duration
-            d.v = d.v > 0.05 ? -d.v * 0.28 : 0
+            // Against the open stop: a knock and a small bounce, but not while the body is still on the leaf (it would
+            // knock, bounce into the body, get pushed back and knock again).
+            if (held) d.v = 0
+            else {
+              bump = d.v * prof.duration
+              d.v = d.v > 0.05 ? -d.v * 0.28 : 0
+            }
           } else if (t <= LATCHED + 0.01 && d.v < 0) {
             t = Math.min(prev, LATCHED + 0.01)
             d.v = 0
@@ -670,15 +691,27 @@ export class Doors {
           d.pose(t)
           const after = d.penetration(p.x, p.z, feet, head, PLAYER_R)
           if (after > 0 && after > before) {
-            // The leaf would hit the player: it stops against them and resumes when they move.
+            // The leaf would hit the player: it stops against them and resumes when they move (after a short wait,
+            // not every frame). A closer gives up for now and tries again later.
             d.pose(prev)
             d.v = 0
             d.plan = null
+            d.blocked = 0.35
+            if (d.slow) {
+              d.slow = false
+              d.target = prev
+              d.touched = true
+              d.idle = 0
+            }
             break
           }
         } else d.pose(t)
-        if (latched && audio && d.height >= 1.2) audio.latch(sound, prof.kind, this.pan(d), Math.abs(d.v) * prof.duration, this.voiceOf(d))
-        if (bump > 0.6) audio?.bump(sound, this.pan(d), Math.min(1, bump / 3))
+        // The latch only on a real close (a leaf arriving with some speed), never on a creep into the frame.
+        if (latched && audio && d.height >= 1.2 && Math.abs(d.v) * prof.duration > 0.08) audio.latch(sound, prof.kind, this.pan(d), Math.abs(d.v) * prof.duration, this.voiceOf(d))
+        if (bump > 1 && this.time - d.bumpAt > 1.5) {
+          d.bumpAt = this.time
+          audio?.bump(sound, this.pan(d), Math.min(1, bump / 3))
+        }
         if (d.free && t === 0) {
           d.v = 0
           d.free = false
@@ -705,9 +738,12 @@ export class Doors {
         if (d.t < LATCHED) d.touched = false
         d.slow &&= d.t > 0
         if (d.closer && d.touched && d.t >= LATCHED) {
-          // The closer waits, then draws the leaf shut slowly (the player in the way just stops it).
+          // The closer waits, then draws the leaf shut slowly; it never starts while the body is on the leaf or
+          // standing in its sweep (it would only fight the push).
           d.idle += dt
-          if (d.idle > CLOSER_DELAY) {
+          const inSweep = !!p && Math.abs(p.y - d.hy) < 1.5 && Math.hypot(p.x - d.hx, p.z - d.hz) < d.xb - d.xa + PLAYER_R + 0.15
+          if (this.time - d.contactAt < 1.5 || inSweep) d.idle = Math.min(d.idle, CLOSER_DELAY - 1)
+          else if (d.idle > CLOSER_DELAY) {
             d.idle = 0
             d.touched = false
             d.driven = false
@@ -731,6 +767,11 @@ export class Doors {
       if (f) verb = f.locked || (f.spec.double && this.byId.get(f.spec.double)?.locked) ? "Locked" : f.isOpen ? "Close" : "Open"
       this.prompt.set(verb)
     }
+  }
+
+  /** Automation: the door sound events so far (DoorAudio.events). */
+  get soundEvents(): readonly { t: number; kind: string }[] {
+    return this.audio?.events ?? []
   }
 
   /** The door currently under the crosshair (for automation). */

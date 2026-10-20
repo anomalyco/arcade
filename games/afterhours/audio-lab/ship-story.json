@@ -1,4 +1,41 @@
 {
-  "note": "Provisional picks made by the audio owner, not by Aiden (he may repick in the audition page). story-car-alarm v1: the QA's best take (3/5: a whooping up-down siren with a pulsing horn; recorded dry and close, the game adds the distance and the building).",
-  "picks": [{ "category": "story-car-alarm", "variant": "v1" }]
+  "note": "Provisional picks made by the audio owner (Aiden repicks in the audition page). story-car-alarm v1 is Aiden's approved pick (picks-aiden-2026-10-19-story.json). Radio-room call, round 4 (the owner's final scripts, eleven_v3, dialogue-edited to ~12 s, radio-processed): story-call-player-remy v8 (Liam), -james v5 (Harry), -louise v7 (Lily), -megan v9 (Jessica), -kate v7 (Sarah); story-call-reply v5 (Bill, option 1b, heavy AM treatment). Fallbacks story-call-player-m v2 (Eric) and -f v2 (Sarah) still carry the older script. Earlier takes stay in the lab.",
+  "picks": [
+    {
+      "category": "story-car-alarm",
+      "variant": "v1"
+    },
+    {
+      "category": "story-call-player-m",
+      "variant": "v2"
+    },
+    {
+      "category": "story-call-player-f",
+      "variant": "v2"
+    },
+    {
+      "category": "story-call-reply",
+      "variant": "v5"
+    },
+    {
+      "category": "story-call-player-remy",
+      "variant": "v8"
+    },
+    {
+      "category": "story-call-player-james",
+      "variant": "v5"
+    },
+    {
+      "category": "story-call-player-louise",
+      "variant": "v7"
+    },
+    {
+      "category": "story-call-player-megan",
+      "variant": "v9"
+    },
+    {
+      "category": "story-call-player-kate",
+      "variant": "v7"
+    }
+  ]
 }

@@ -3,7 +3,7 @@ import { color as tslColor, dot, smoothstep, texture, uniform, uv, vec3 } from "
 import type { Box, Lamp, WorldContext } from "../../world/context"
 import { loadModel } from "../../render/models"
 import { renderState } from "../../render/shared"
-import { shadowLayer } from "../../world/compound/mats"
+import { flat, shadowLayer } from "../../world/compound/mats"
 import type { SeatOptions } from "../../playerb/seat"
 import PARTS from "./car-parts.json"
 
@@ -77,6 +77,8 @@ const RIG = {
 /** Steering-wheel rim: radius to the centre of the rim tube, and the tube's own radius (m; 0.163 outer). */
 const WHEEL_RADIUS = 0.147
 const WHEEL_TUBE = 0.016
+/** Triangles of the model's steering wheel whose centre is further than this from the column are its rim (m). */
+const RIM_CUT = 0.128
 
 type Lit = { lamp: Lamp; pos: number[]; dir: THREE.Vector3 | null; local: THREE.Vector3; localDir: THREE.Vector3 | null; base: number }
 
@@ -101,7 +103,7 @@ export class PlayerCar {
   /** Driver's seat anchors (children of the body / door groups, so they ride the suspension and swing with the door). */
   private anchors = { hip: new THREE.Object3D(), eye: new THREE.Object3D(), handle: new THREE.Object3D(), edge: new THREE.Object3D() }
   private ctx: WorldContext
-  private beam = { borrowed: false, saved: null as typeof renderState.torchLens, settings: {} as Record<string, unknown> }
+  private beam = { borrowed: false, saved: null as typeof renderState.torchLens, settings: {} as Record<string, unknown>, player: null as { flashlight: boolean } | null }
 
   constructor(ctx: WorldContext) {
     this.ctx = ctx
@@ -203,6 +205,7 @@ export class PlayerCar {
       this.steering.position.copy(c)
       this.steering.userData.axis = axis
       pivoted(this.steering, c)
+      this.roundRim(part, axis)
     } else if (name.startsWith("wheel_")) {
       const c = centre(name)
       const steer = new THREE.Group()
@@ -227,6 +230,52 @@ export class PlayerCar {
       const overlay = this.gauges(part)
       if (overlay) this.body.add(overlay)
     } else this.body.add(part)
+  }
+
+  /**
+   * The model's rim is a 12-sided tube: cut it out of the steering-wheel part (triangles whose centre lies past the
+   * spokes' ends) and put a smooth torus in its place, 64 segments round the wheel and 12 round the tube, on the
+   * wheel group's own axis and plane. Radius 0.147 to the tube centre and tube 0.016, as the seated body grips it.
+   */
+  private roundRim(part: THREE.Mesh, axis: THREE.Vector3) {
+    part.updateMatrix()
+    const m = part.matrix
+    const geo = part.geometry
+    const pos = geo.attributes.position!
+    const idx = geo.index!
+    const keep: number[] = []
+    const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3()
+    const ring = new THREE.Vector3()
+    let ringN = 0
+    const radial = (p: THREE.Vector3) => Math.sqrt(Math.max(0, p.lengthSq() - p.dot(axis) ** 2))
+    for (let t = 0; t < idx.count; t += 3) {
+      a.fromBufferAttribute(pos, idx.getX(t)).applyMatrix4(m)
+      b.fromBufferAttribute(pos, idx.getX(t + 1)).applyMatrix4(m)
+      c.fromBufferAttribute(pos, idx.getX(t + 2)).applyMatrix4(m)
+      const centroid = a.clone().add(b).add(c).divideScalar(3)
+      if (radial(centroid) > RIM_CUT) {
+        ring.add(centroid)
+        ringN++
+      } else keep.push(idx.getX(t), idx.getX(t + 1), idx.getX(t + 2))
+    }
+    if (!ringN) return
+    ring.divideScalar(ringN)
+    // Rim plane: the old ring's offset along the column (its in-plane centre is the axis by construction).
+    const along = ring.dot(axis)
+    this.steering.userData.rimOffset = along
+    const g = new THREE.BufferGeometry()
+    for (const [key, attr] of Object.entries(geo.attributes)) g.setAttribute(key, attr)
+    g.setIndex(keep)
+    g.boundingSphere = geo.boundingSphere
+    part.geometry = g
+    const torus = new THREE.TorusGeometry(WHEEL_RADIUS, WHEEL_TUBE, 12, 64)
+    const rim = new THREE.Mesh(torus, flat(0x16120f, 0.42))
+    rim.name = "car-steering-rim"
+    rim.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), axis)
+    rim.position.copy(axis).multiplyScalar(along)
+    rim.castShadow = true
+    rim.receiveShadow = true
+    this.steering.add(rim)
   }
 
   /** A clone of a lens material that glows with `glow` × the light's level. */
@@ -408,7 +457,12 @@ export class PlayerCar {
       if (lm.u.value instanceof THREE.Color) lm.u.value.copy(lm.color).multiplyScalar(v)
       else lm.u.value = v
     }
-    if (this.beam.borrowed) this.beamIntensity()
+    if (this.beam.borrowed) {
+      this.beamIntensity()
+      // The rig's own on/off (with its fade) follows the headlamps, so it is long dark by the hand-over: released
+      // while still "on", the torch's own intensity would flash for the frames its fade takes.
+      if (this.beam.player) this.beam.player.flashlight = this.lights.head > 0.01
+    }
   }
 
   /**
@@ -503,7 +557,8 @@ export class PlayerCar {
     this.beam.borrowed = true
     this.beamIntensity()
     this.beam.settings.__flashlight = player.flashlight
-    player.flashlight = true
+    this.beam.player = player
+    player.flashlight = this.lights.head > 0.01
   }
 
   releaseBeam(player: { flashlight: boolean }) {
@@ -512,6 +567,7 @@ export class PlayerCar {
     for (const [k, v] of Object.entries(this.beam.settings)) if (k !== "__flashlight") s[k] = v as never
     renderState.torchLens = this.beam.saved
     player.flashlight = this.beam.settings.__flashlight === true
+    this.beam.player = null
     this.beam.borrowed = false
   }
 

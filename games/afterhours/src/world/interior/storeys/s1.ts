@@ -291,7 +291,7 @@ export async function build(b: Builder, { pause }: StoreyContext): Promise<Store
   partition(b, { axis: "z", at: G[4], from: SHELL.z0, to: ZW - 0.06, finish: [OFFICE, OFFICE], openings: [{ kind: "door", at: -13.6, side: "b", door: { id: "1-04", state: "closed", room: "1-04", leaf: "veneer", sign: { number: "1-04" } } }] })
   partition(b, { axis: "z", at: G[6], from: SHELL.z0, to: ZW - 0.06, finish: [OFFICE, OFFICE] })
   partition(b, { axis: "z", at: G[7], from: SHELL.z0, to: -1.75, finish: [OFFICE, ROOM_BANDS] })
-  const reception = room(b, { id: "1-03", name: "Contracts — reception", rect: rect(G[5], G[7], ZW, -1.75), floor: M.carpet, lit: [[-20.8, -6.6]], troffers: { louvre: true } })
+  const reception = room(b, { id: "1-03", name: "Contracts reception", rect: rect(G[5], G[7], ZW, -1.75), floor: M.carpet, lit: [[-20.8, -6.6]], troffers: { louvre: true } })
   handles.push(reception)
   for (const [x, i] of [[-23.4, 0], [-18.2, 1]] as const) {
     const z = -7.6

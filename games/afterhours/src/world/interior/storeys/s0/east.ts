@@ -265,7 +265,7 @@ function readyRoom(b: Builder, docs: Docs): RoomHandle {
   P(b, "x", 8.925, 9.15, 17.0, [ROOM_BANDS, ROOM_BANDS], [], 0.15)
   // Armory cage at the east end (locked, signposted).
   const ax = 14.4
-  P(b, "z", ax, 1.75, 8.85, [[[0, 99, "chainlink"]], [[0, 99, "chainlink"]]], [door(3.2, "a", { id: "0-37A", state: "locked", room: "0-37a", leaf: M.darkSteel, glass: "none", sign: { number: "0-37A", label: "ARMORY — AUTHORIZED ONLY" } })], 0.03)
+  P(b, "z", ax, 1.75, 8.85, [[[0, 99, "chainlink"]], [[0, 99, "chainlink"]]], [door(3.2, "a", { id: "0-37A", state: "locked", room: "0-37a", leaf: M.darkSteel, glass: "none", sign: { number: "0-37A", label: "ARMORY · AUTHORIZED ONLY" } })], 0.03)
   for (let z = 1.9; z < 8.85; z += 1.2) if (Math.abs(z - 3.2) > 0.7) b.box(M.darkSteel, ax - 0.03, y, z - 0.02, ax + 0.03, CEIL_Y, z + 0.02)
   b.box(M.red, ax - 0.025, y + 1.75, 4.0, ax - 0.016, y + 1.95, 4.6, { cast: false })
   for (let k = 0; k < 6; k++) {

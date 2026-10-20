@@ -9,11 +9,12 @@ import { type NavGraph, type DoorInternals, storeyOf } from "./nav"
 // What the hunter can perceive, and where the player's noises come from.
 //
 // Noise sources (all go through `emitNoise`, so other systems can add their own):
-//  - footsteps (Player.onStep): crouch-walk 1.5 m, walk ~6 m, run ~14 m, scaled by the floor (carpet 0.6×, raised
+//  - footsteps (Player.onStep): crouch-walk 1.5 m, walk ~7 m, run ~18 m, scaled by the floor (carpet 0.6×, raised
 //    access floor 1.2×, steel 1.3×); landings 6–14 m; jumps 3 m;
 //  - doors: every leaf the player (or a closer) moves: the latch releasing 6–8 m, a door banged open at a run or
 //    slammed shut up to 18 m; doors the hunter drives itself are its own, not noises it hears;
-//  - the flashlight's click 2.5 m; the lift's clunks 10–22 m and its motor while it runs (heard up and down the shaft).
+//  - the flashlight's click 2.5 m; the lift's clunks 14–28 m and its motor (16 m) while it runs, heard up and down the
+//    shaft.
 // Hearing: a noise is heard when its effective distance (straight distance + 3.5 m per wall-height solid on the line +
 // 9 m per storey between, 3 m per storey for the lift shaft) is inside its radius × the Lab's Hearing. The position
 // heard is fuzzed by up to 3.5 m the fainter it was (snapped to the building), so it never pinpoints you.
@@ -47,7 +48,7 @@ export class PlayerNoises {
         if (e.kind === "land") return emitNoise(p, 6 + 8 * e.intensity, "land")
         const surface = surfaceAt(e.surface, p.x, p.y, p.z)
         const k = SURFACE_K[surface] ?? 1
-        const r = s.crouch > 0.5 ? 1.5 : Math.min(14, 2 + 2.65 * e.speed)
+        const r = s.crouch > 0.5 ? 1.5 : Math.min(18, 1.5 + 3.6 * e.speed)
         emitNoise(p, r * k, "step")
       }),
     )
@@ -60,7 +61,7 @@ export class PlayerNoises {
         unlock: () => inner.unlock(),
         clunk: (strength) => {
           inner.clunk(strength)
-          emitNoise(car, 10 + 12 * Math.min(1, strength), "lift")
+          emitNoise(car, 14 + 14 * Math.min(1, strength), "lift")
         },
         update: (phase, vel, light, carY) => {
           inner.update(phase, vel, light, carY)
@@ -69,7 +70,7 @@ export class PlayerNoises {
             this.liftT -= 1 / 60
             if (this.liftT <= 0) {
               this.liftT = 1.5
-              emitNoise(car, 12, "lift")
+              emitNoise(car, 16, "lift")
             }
           }
         },

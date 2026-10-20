@@ -2,7 +2,7 @@
 // player with real key presses along nav routes (an autopilot turns the view), and checks what the hunter does.
 //
 //   bun scripts/hunter/scenarios.ts                 # all
-//   bun scripts/hunter/scenarios.ts noise stairs    # some: noise sight escape door stairs below
+//   bun scripts/hunter/scenarios.ts noise stairs    # some: noise sight escape door stairs lift below
 //
 // Writes captures/hunter/scenario-<name>.png (top-down trace) and prints a PASS/FAIL line per check.
 import { mkdirSync, writeFileSync } from "node:fs"
@@ -133,9 +133,9 @@ if (run("sight")) {
 
 // ------------------------------------------------------------------------------------------------ escape
 if (run("escape")) {
-  console.log("\n# breaking line of sight and crouching escapes (storey 0: west spine → link → 0-36b, crouched in the dark)")
+  console.log("\n# breaking line of sight and crouching escapes (storey 0: spine → link → lobby → 0-38, crouched in the dark)")
   await inPage(page, ({ H }) => (H.handle.hunter.ctx.settings["hunter.searchTime"] = 25))
-  await place(page, -16, Y(0), 0, -Math.PI / 2)
+  await place(page, -12, Y(0), 0, -Math.PI / 2)
   await reset(-30, 0, 0, Math.PI / 2)
   const since = await hTime()
   await lights(page, true)
@@ -145,9 +145,10 @@ if (run("escape")) {
   await p
   check(t >= 0, `hunt began (${t.toFixed(2)} s)`)
   await lights(page, false)
-  // Round the corner into the link, then crouch into the badge room and keep still.
-  await pilot(0, 4.5, "run", 4)
-  await pilot(-4.5, 6.5, "crouch", 12)
+  // Round the corner into the link, on through the lobby into the security office, then crouch in its far corner.
+  await pilot(0, 11, "run", 6)
+  await pilot(10.5, 14, "run", 6)
+  await pilot(16.2, 20.6, "crouch", 14)
   await keys(["KeyC"], true)
   const lost = await until(`h.mode === "search"`, 15)
   check(lost >= 0, `lost: search after ${lost.toFixed(1)} s`)
@@ -161,7 +162,7 @@ if (run("escape")) {
 
 // ------------------------------------------------------------------------------------------------ door
 if (run("door")) {
-  console.log("\n# hiding behind a closed door loses it (storey 3: chased, into 3-04, door shut, crouched)")
+  console.log("\n# hiding behind a closed door loses it (storey 3: heard, then out of sight into a room, door shut, crouched)")
   await inPage(page, ({ H }) => (H.handle.hunter.ctx.settings["hunter.searchTime"] = 25))
   // The room: the storey-3 room with a door on the spine nearest x = -18.
   const room = await inPage(page, ({ H }) => {
@@ -177,24 +178,25 @@ if (run("door")) {
   else {
     console.log(`  room ${room.id}, door ${room.door} at ${room.dx.toFixed(1)},${room.dz.toFixed(1)}`)
     await inPage(page, ({ D }, id: string) => D.get(id).open(), room.door)
-    await place(page, room.dx + 6, Y(3), 0, -Math.PI / 2)
+    await place(page, room.dx + 3, Y(3), 0, Math.PI / 2)
     await sleep(2500)
-    await reset(room.dx + 22, 0, 3, -Math.PI / 2)
+    // It is down the corridor, looking away (south); a few running steps bring it.
+    await reset(room.dx - 14, 0, 3, 0)
     const since = await hTime()
-    await lights(page, true)
-    // Seen, then away west and into the room; the door shut behind; crouched in the far corner.
-    const t = await until(`h.mode === "hunt"`, 4)
-    check(t >= 0, `hunt began (${t.toFixed(2)} s)`)
-    await lights(page, false)
-    await pilot(room.dx, -0.6, "run", 6)
+    await pilot(room.dx + 0.3, -0.4, "run", 4)
+    const t = await until(`h.mode === "investigate"`, 4)
+    check(t >= 0, `heard the steps → investigate (${t.toFixed(2)} s)`)
     await pilot(room.dx, room.dz - 1.4, "walk", 4)
     await inPage(page, ({ D }, id: string) => D.get(id).close(), room.door)
     const corner = { x: room.rect.x0 + 0.9, z: room.rect.z0 + 0.9 }
-    await pilot(corner.x, corner.z, "crouch", 15)
+    await pilot(corner.x, corner.z, "crouch", 25)
     await keys(["KeyC"], true)
     const st0 = await hunterState(page)
     console.log(`  hidden at ${st0.player.x},${st0.player.z}; hunter ${st0.mode} at ${st0.x},${st0.z}`)
-    const gaveUp = await until(`h.mode === "roam" || h.catches > 0`, 60)
+    // It comes to the noise, checks round it, and moves on.
+    const came = await until(`Math.hypot(h.pos.x - (${room.dx}), h.pos.z) < 6`, 40)
+    check(came >= 0, `came to where it heard you (${came.toFixed(1)} s)`)
+    const gaveUp = await until(`(h.mode === "roam" && Math.hypot(h.pos.x - (${room.dx}), h.pos.z - (${room.dz})) > 12) || h.catches > 0`, 60)
     await keys(["KeyC"], false)
     const st = await hunterState(page)
     const opened = await inPage(page, ({ H }) => H.hunter.log.filter((l: { event: string }) => /opens|bashes/.test(l.event)).map((l: { event: string }) => l.event).slice(-4))
@@ -221,6 +223,17 @@ if (run("stairs")) {
   const down = await until(`h.s === 1 && Math.abs(h.pos.y - 3.95) < 0.2`, 60)
   check(down >= 0, `back down to storey 1 (${down.toFixed(1)} s)`)
   await trace("stairs", 2, since)
+}
+
+// ------------------------------------------------------------------------------------------------ lift
+if (run("lift")) {
+  console.log("\n# the lift is a noise (a clunk at the car, parked at the ground floor, draws it up the storey-1 hall)")
+  await place(page, 25, Y(4), 0, 0)
+  await reset(-40.2, 4, 1, Math.PI)
+  await inPage(page, ({ H }) => H.lift()?.clunk(1))
+  const t = await until(`h.mode === "investigate"`, 2)
+  const goal = await inPage(page, ({ H }) => H.hunter.goal)
+  check(t >= 0 && goal && goal.x < -35 && goal.z > 12, `lift clunk heard → investigate toward the lift lobby (goal ${goal ? `${goal.x.toFixed(1)},${goal.z.toFixed(1)}` : "-"})`)
 }
 
 // ------------------------------------------------------------------------------------------------ below

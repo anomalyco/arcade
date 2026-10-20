@@ -27,7 +27,8 @@ import {
   vec2,
   vec3,
 } from "three/tsl"
-import { KTX2Loader } from "three/addons/loaders/KTX2Loader.js"
+import type { KTX2Loader } from "three/addons/loaders/KTX2Loader.js"
+import { sharedKtx2 } from "./models"
 import type { LabControl, LabSettings } from "@arcade/kit/lab-panel"
 
 // MIGRATION NOTE (shader count, docs/boot-architecture.md). Every library material is now a member of a shared
@@ -321,7 +322,7 @@ export async function loadMaterials(renderer: THREE.WebGPURenderer) {
   biasSign = (rp.reversedDepthBuffer ?? rp.backend?.parameters?.reversedDepthBuffer) ? 1 : -1
   anisotropy = Math.min(16, renderer.getMaxAnisotropy?.() ?? 8)
   for (const t of textures.values()) t.anisotropy = anisotropy
-  ktx2 ??= new KTX2Loader().setTranscoderPath(`${BASE}basis/`).setWorkerLimit(Math.max(4, Math.min(8, navigator.hardwareConcurrency - 2))).detectSupport(renderer)
+  ktx2 ??= sharedKtx2(renderer)
   for (const [setName, spec] of Object.entries(SETS) as [SetName, (typeof SETS)[SetName]][]) {
     for (const kind of spec.kinds) {
       const t = map(setName, kind)

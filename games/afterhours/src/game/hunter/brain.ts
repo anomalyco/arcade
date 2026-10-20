@@ -70,11 +70,14 @@ export class Hunter {
   sightRange = 0
   cone = 0
   stance: "quad" | "biped" = "quad"
+  /** World y of the ceiling it is fitting its antlers under (debug). */
+  ceiling = Infinity
   readonly log: { t: number; event: string; mode: HunterMode; x: number; z: number; s: number }[] = []
   readonly trail: { t: number; x: number; z: number; s: number; mode: HunterMode }[] = []
   readonly nav: NavGraph
   readonly voice: Voice
-  readonly creature: Wendigo
+  /** The Wendigo's body, made by `prepare()` (it loads ~5 MB and compiles its shaders, so not before it's needed). */
+  creature: Wendigo | null = null
   catches = 0
   onCatch: (info: CatchInfo) => void = () => {}
 
@@ -98,6 +101,7 @@ export class Hunter {
   private queue: NoiseEvent[] = []
   private visited = new Map<string, number>()
   private ambushAt = -99
+  private glimpseAt = -99
   private interest = 0
   private lookTarget = new THREE.Vector3()
   private searchUntil = 0
@@ -117,21 +121,50 @@ export class Hunter {
     this.nav = nav
     this.rng = mulberry(seed)
     this.voice = new Voice(ctx)
-    this.creature = createWendigo({
-      ground: (x, z) => {
-        const g = this.nav.groundAt(x, z, this.pos.y + 0.6, this.pos.y - 1.2)
-        return Number.isNaN(g) ? this.pos.y : g
-      },
-      scale: num(ctx, "hunter.scale"),
-      seed: seed % 1000,
-    })
-    this.creature.root.visible = false
-    scene.add(this.creature.root)
+    this.scene = scene
+    this.seed = seed
     this.offNoise = onNoise((e) => this.queue.push(e))
     for (const l of ctx.lamps) {
       const m = /^interior:(\d)/.exec(l.zone ?? "")
       if (m) (this.lamps[Number(m[1])] ??= []).push(l)
     }
+  }
+
+  private scene: THREE.Scene
+  private seed: number
+  private compiled: Promise<void> | null = null
+
+  /**
+   * Makes the body and gets its pipelines compiled out of sight, so it never stalls a frame when it first comes into
+   * view. Resolves once it's ready to be seen (the entry sequence calls this at the switch, 14 s before it spawns).
+   */
+  prepare() {
+    if (this.compiled) return this.compiled
+    const w = createWendigo({
+      ground: (x, z) => {
+        const g = this.nav.groundAt(x, z, this.pos.y + 0.6, this.pos.y - 1.2)
+        return Number.isNaN(g) ? this.pos.y : g
+      },
+      scale: num(this.ctx, "hunter.scale"),
+      seed: this.seed % 1000,
+    })
+    this.creature = w
+    w.root.visible = false
+    this.scene.add(w.root)
+    const r = this.ctx.renderer as unknown as { compileAsync?: (o: THREE.Object3D, c: THREE.Camera, s: THREE.Scene) => Promise<void> }
+    this.compiled = w.ready
+      .then(async () => {
+        if (!r.compileAsync) return
+        const was = w.root.visible
+        w.root.visible = true
+        try {
+          await r.compileAsync(w.root, this.ctx.camera, this.scene)
+        } finally {
+          w.root.visible = was && this.mode !== "dormant"
+        }
+      })
+      .catch((e: unknown) => console.warn("hunter: creature", e))
+    return this.compiled
   }
 
   get ownDoorIds(): Set<string> {
@@ -157,7 +190,8 @@ export class Hunter {
     this.route = null
     this.tasks = []
     this.task = null
-    this.creature.root.position.copy(this.pos)
+    this.prepare()
+    this.creature?.root.position.copy(this.pos)
     this.time = Math.max(this.time, 0.001)
     this.note(`spawn ${s}`)
     if (opts.toward) this.investigate(opts.toward, 0.4, "spawn")
@@ -184,10 +218,22 @@ export class Hunter {
     this.mode = "roam"
   }
 
+  /** Dormant and out of sight again (nothing it knew is kept). */
+  sleep() {
+    this.setMode("dormant")
+    this.vel.set(0, 0, 0)
+    this.memory = null
+    this.awareness = 0
+    this.heat.length = 0
+    this.queue.length = 0
+    this.voice.restoreLights()
+    if (this.creature) this.creature.root.visible = false
+  }
+
   dispose() {
     this.offNoise()
     this.voice.restoreLights()
-    this.creature.root.removeFromParent()
+    this.creature?.root.removeFromParent()
   }
 
   private setMode(m: HunterMode) {
@@ -279,7 +325,10 @@ export class Hunter {
     const still = ps.speed < 0.3 ? 0.8 : 1
     const crouch = ps.crouch > 0.5 ? 0.6 : 1
     const flash = ps.flashlight ? 2.6 : 1
-    const range = Math.max(2.5, Math.min(40, (5 + 13 * light) * flash * crouch * still * num(this.ctx, "hunter.sight")))
+    // Once hunting it is locked on: it keeps you in sight further (at least 12 m) than it would spot you.
+    const locked = this.mode === "hunt" && this.time - this.seenAt < 1.5
+    const base = (5 + 13 * light) * flash * crouch * still * (locked ? 1.6 : 1)
+    const range = Math.max(locked ? 12 : 2.5, Math.min(40, base)) * num(this.ctx, "hunter.sight")
     const cone = this.mode === "hunt" ? 1.4 : 0.96
     this.sightRange = range
     this.cone = cone
@@ -311,7 +360,11 @@ export class Hunter {
       this.seenAt = this.time
       this.memory = { x: p.x, z: p.z, s: pS, y: p.y, t: this.time, seen: true, vx: this.player.vel.x, vz: this.player.vel.z }
       if (this.awareness >= 1 && this.mode !== "hunt") this.startHunt()
-      else if (this.mode !== "hunt" && this.awareness > 0.3 && (this.mode !== "investigate" || this.interest < 0.8)) this.investigate({ x: p.x, z: p.z, s: pS }, 0.8, "glimpse")
+      else if (this.mode !== "hunt" && this.awareness > 0.3 && this.time - this.glimpseAt > 1) {
+        // Something moved over there: turn and go to it (re-aimed at most once a second).
+        this.glimpseAt = this.time
+        this.investigate({ x: p.x, z: p.z, s: pS }, 0.8, "glimpse")
+      }
     } else this.awareness = Math.max(0, this.awareness - dt * (this.mode === "hunt" ? 0 : 0.12))
   }
 
@@ -323,9 +376,12 @@ export class Hunter {
     this.mode = "investigate"
     this.interest = Math.max(strength, was === "investigate" ? this.interest * 0.8 : 0)
     this.tasks = [{ ...p, look: 1.5 + this.rng() * 1.5, kind: "go" }]
-    // Then the nearest rooms round it.
-    const rooms = this.roomsNear(p, 11, 2)
-    for (const r of rooms) this.tasks.push({ x: r.px, z: r.pz, s: r.s, look: 1 + this.rng(), kind: "room", room: r.key })
+    // Then the nearest rooms round it (a shut door isn't always opened, unless the noise came from inside).
+    for (const r of this.roomsNear(p, 11, 3)) {
+      const inside = p.x >= r.rect.x0 && p.x <= r.rect.x1 && p.z >= r.rect.z0 && p.z <= r.rect.z1
+      if (!inside && this.shut(r) && this.rng() < 0.5) continue
+      if (this.tasks.length < 3) this.tasks.push({ x: r.px, z: r.pz, s: r.s, look: 1 + this.rng(), kind: "room", room: r.key })
+    }
     this.task = null
     this.route = null
     this.note(`investigate ${why} ${strength.toFixed(2)}`)
@@ -359,8 +415,7 @@ export class Hunter {
     if (ahead) this.tasks.push({ ...ahead, s: m.s, look: 1.2, kind: "go" })
     const rooms = this.roomsNear(c, 15, 6)
     for (const r of rooms) {
-      const shut = r.doors.length > 0 && r.doors.every((i) => this.nav.doors[i]!.h.amount < 0.05)
-      if (shut && this.rng() < 0.55) continue
+      if (this.shut(r) && this.rng() < 0.55) continue
       const spot = r.spots.length && this.rng() < 0.7 ? r.spots[Math.floor(this.rng() * r.spots.length)]! : ([r.px, r.pz] as [number, number])
       this.tasks.push({ x: spot[0], z: spot[1], s: r.s, look: 1 + this.rng() * 1.2, kind: "spot", room: r.key })
     }
@@ -416,6 +471,11 @@ export class Hunter {
       const k = this.nav.chokepoints[Math.floor(this.rng() * this.nav.chokepoints.length)]!
       this.tasks = [{ ...k, look: 3, kind: "go" }]
     }
+  }
+
+  /** Every door of the room shut. */
+  private shut(r: NavRoom) {
+    return r.doors.length > 0 && r.doors.every((i) => this.nav.doors[i]!.h.amount < 0.05)
   }
 
   private roomsNear(p: Goal, radius: number, n: number) {
@@ -653,7 +713,6 @@ export class Hunter {
   // --------------------------------------------------------------------------------------------- body and voice
 
   private body(dt: number) {
-    const w = this.creature
     const now = this.time
     const sp = Math.hypot(this.vel.x, this.vel.z)
     const inStair = this.pos.x >= CORE.stair.min[0] - 0.3 && this.pos.x <= CORE.stair.max[0] + 0.3 && this.pos.z >= CORE.stair.min[1] - 1 && this.pos.z <= CORE.stair.max[1]
@@ -679,15 +738,24 @@ export class Hunter {
       const a = this.heading + Math.sin(now * 0.9) * 1.3
       this.lookTarget.set(this.pos.x + Math.sin(a) * 4, this.eyeY() - 0.4, this.pos.z + Math.cos(a) * 4)
     }
-    const root = w.root
-    root.position.copy(this.pos)
-    root.quaternion.setFromAxisAngle(UP, this.heading)
-    const mode = this.mode === "caught" ? "lunge" : sp > 0.15 ? "stalk" : this.mode === "ambush" && !this.route ? "freeze" : "idle"
-    w.update(dt, { mode, stance: this.stance, target: this.lookTarget, velocity: this.vel })
-    // Shown on the player's storey (or both in the open stairwell).
-    const pS = storeyOf(ps.pos.y)
-    const pCore = ps.pos.x >= CORE.stair.min[0] - 0.5 && ps.pos.x <= CORE.stair.max[0] + 0.5 && ps.pos.z >= CORE.stair.min[1] - 1.5
-    root.visible = this.mode !== "dormant" && (pS === this.s || Math.abs(ps.pos.y - this.pos.y) < 2 || (pCore && inStair))
+    const w = this.creature
+    if (w?.animator) {
+      const root = w.root
+      root.position.copy(this.pos)
+      root.quaternion.setFromAxisAngle(UP, this.heading)
+      const mode = this.mode === "caught" ? "lunge" : sp > 0.15 ? "stalk" : this.mode === "ambush" && !this.route ? "freeze" : "idle"
+      // The ceiling over it: under the root and a metre ahead (where the antlers are), whichever is lower.
+      const fx = Math.sin(this.heading)
+      const fz = Math.cos(this.heading)
+      this.ceiling = Math.min(this.nav.ceilingAt(this.pos.x, this.pos.z, this.pos.y), this.nav.ceilingAt(this.pos.x + fx, this.pos.z + fz, this.pos.y))
+      // Rising from all fours the antlers climb faster than the stoop eases in: ask for 0.3 m more room while it rises.
+      const ceiling = this.ceiling - (this.stance === "biped" && now - this.stanceAt < 1.6 ? 0.3 : 0)
+      w.update(dt, { mode, stance: this.stance, target: this.lookTarget, velocity: this.vel, ceiling })
+      // Shown on the player's storey (or both in the open stairwell).
+      const pS = storeyOf(ps.pos.y)
+      const pCore = ps.pos.x >= CORE.stair.min[0] - 0.5 && ps.pos.x <= CORE.stair.max[0] + 0.5 && ps.pos.z >= CORE.stair.min[1] - 1.5
+      root.visible = this.mode !== "dormant" && (pS === this.s || Math.abs(ps.pos.y - this.pos.y) < 2 || (pCore && inStair))
+    }
 
     // Footfalls: heavier and quicker on all fours at speed; claws on hard floors.
     if (sp > 0.25 && now >= this.nextStep) {

@@ -24,7 +24,8 @@ import { limbPoints } from "./anatomy"
 export type WendigoMode = "idle" | "stalk" | "freeze" | "lunge" | "rear" | "stalk-upright" | "rise" | "drop"
 export type WendigoStance = "quad" | "biped"
 
-type Upd = { mode: WendigoMode; stance?: WendigoStance; target?: THREE.Vector3; velocity?: THREE.Vector3 }
+/** `ceiling`: world Y of the ceiling over it (indoors). It stoops / crouches so its antlers stay under it. */
+type Upd = { mode: WendigoMode; stance?: WendigoStance; target?: THREE.Vector3; velocity?: THREE.Vector3; ceiling?: number }
 
 const STALK_SPEED = 0.55
 /**
@@ -105,6 +106,13 @@ export class WendigoAnimator {
   private initialised = false
   /** 0..1: stoop under a low ceiling while upright (a 2.9 m room fits at 1). */
   stoop = 0
+  /** Stoop the ceiling asks for (0..1.4), eased; the pose uses max(stoop, ceilStoop). */
+  private ceilStoop = new Spring(0, 7)
+  private ceilWant = 0
+  /** Antler extremities in the head bone's frame (tips: what meets a ceiling first). */
+  private antlerPts: Float32Array | null = null
+  /** Highest antler point last frame, metres above the root (automation / tuning). */
+  antlerTop = 0
   /** How close the lunge brings the skull to its target (m). 3 stops short; a kill goes into the lens. */
   lungeStop = 3
   /** The material's sway clock (tendrils); frozen with the creature. */
@@ -289,16 +297,17 @@ export class WendigoAnimator {
     // Upright: the arms swing against the stride (slowly, lagging the legs).
     this.armTarget = ph(legs[2]!) - ph(legs[3]!)
     const arm = this.armSwing.step(this.bipedGait && mode === "stalk" ? this.armTarget : this.armTarget * 0.25, dt)
+    const St = Math.max(this.stoop, this.ceilStoop.step(this.ceilWant, dt, this.ceilWant > this.ceilStoop.x ? 12 : 3))
     const hips = this.bone("hips")
     const gY = (gF * (1 - up) + gH * (1 + up)) / 2
-    hips.position.y += gY / scale - low * 0.22 * (1 - up * 0.7) + up * (BIPED.hipLift - this.stoop * STOOP.hipDrop) - rear * 0.06 + breath * 0.006
+    hips.position.y += -(1 - up) * St * 0.12 + gY / scale - low * 0.22 * (1 - up * 0.7) + up * (BIPED.hipLift - St * STOOP.hipDrop) - rear * 0.06 + breath * 0.006
     hips.position.z += -up * 0.02 - rear * 0.05 + (mode === "lunge" && lungeT < 0.2 ? -0.08 * smooth01(lungeT / 0.2) : 0)
     hips.position.x += sway * 0.5
     // Standing pivots the whole body up about the hips: hunched when upright, nearly vertical when rearing.
-    this.rot("hips", -up * (BIPED.pitch - this.stoop * STOOP.lean) - rear * 0.25 - pitchG * (1 - up) - reach * 0.12, sway * 0.5 * (1 + up), sway * 2)
+    this.rot("hips", -up * (BIPED.pitch - St * STOOP.lean) - rear * 0.25 - pitchG * (1 - up) - reach * 0.12, sway * 0.5 * (1 + up), sway * 2)
     for (const [i, n] of ["spine1", "spine2", "spine3", "spine4"].entries()) {
       // Upright: the upper back curls forward into a hunch.
-      const hunch = up * (1 - rear) * (i < 2 ? -0.02 : BIPED.hunch + this.stoop * STOOP.hunch)
+      const hunch = up * (1 - rear) * (i < 2 ? -0.02 : BIPED.hunch + St * STOOP.hunch)
       this.rot(n, -rear * 0.07 + hunch + (i < 2 ? 1 : -1) * low * 0.06 + breath * 0.008, -sway * (i - 1.5) * 0.6, sway * 0.8)
     }
     // Ribs heave; belly sucks in on the in-breath.
@@ -333,7 +342,8 @@ export class WendigoAnimator {
     const ly = this.lookYaw.step(yaw, dt, mode === "lunge" ? 14 : 4)
     const lp = this.lookPitch.step(pitch, dt, mode === "lunge" ? 14 : 4)
     // Upright, the neck still juts forward and the skull hangs: it bends down to cancel most of the torso's pitch.
-    const neckLift = up * (BIPED.neck + this.stoop * STOOP.neck) + rear * 0.18 - low * 0.12
+    // On all fours the stoop drops the head and neck and sinks the forequarters.
+    const neckLift = up * (BIPED.neck + St * STOOP.neck) - (1 - up) * St * 0.3 + rear * 0.18 - low * 0.12
     const share = [0.25, 0.3, 0.25]
     for (const [i, n] of ["neck1", "neck2", "neck3"].entries()) {
       this.rot(n, -lp * share[i]! * 0.8 + neckLift + Math.sin(t * 0.4 + i) * 0.015, 0, Math.sin(t * 0.31) * 0.05 * (i + 1) * (mode === "idle" ? 1 : 0.4))
@@ -342,13 +352,14 @@ export class WendigoAnimator {
     _v.set(0, 1, 0)
     for (const [i, n] of ["neck1", "neck2", "neck3"].entries()) this.rotWorld(n, _v, ly * share[i]!)
     const tilt = mode === "idle" ? Math.sin(t * 0.37) * 0.22 : Math.sin(t * 0.5) * 0.06
-    this.rot("head", -lp * 0.2 + this.snap.pitch.x - rear * 0.1 - reach * 0.2 + up * (BIPED.head + this.stoop * STOOP.head), 0, tilt + this.snap.roll.x)
+    this.rot("head", -lp * 0.2 + this.snap.pitch.x - rear * 0.1 - reach * 0.2 + up * (BIPED.head + St * STOOP.head) + (1 - up) * St * 0.35, 0, tilt + this.snap.roll.x)
     this.rotWorld("head", _v.set(0, 1, 0), ly * 0.2 + this.snap.yaw.x)
     this.rot("jaw", jaw * 0.55, 0, Math.sin(t * 13) * 0.01 * jaw)
 
     // Follow-through: each body bone eases toward its pose; the neck lags the spine and the head (with its antlers)
     // lags the neck, so turns and mode changes cross-fade over ~0.3–0.6 s instead of snapping.
     this.followThrough(dt)
+    this.fitCeiling(u.ceiling, root)
     rig.root.updateMatrixWorld(true)
 
     // ------------------------------------------------------------ legs
@@ -458,6 +469,31 @@ export class WendigoAnimator {
     }
   }
 
+  /**
+   * Measures the antlers' highest point this frame and, under a ceiling, works out the stoop that keeps them ~6 cm
+   * below it (about 1 m of antler drop per unit of stoop), for next frame's pose (eased, quick to duck, slow to rise).
+   */
+  private fitCeiling(ceiling: number | undefined, root: THREE.Object3D) {
+    if (!this.antlerPts) this.antlerPts = antlerTips(this.rig)
+    const head = this.bone("head")
+    head.updateMatrixWorld(true)
+    const e = head.matrixWorld.elements
+    const pts = this.antlerPts
+    let top = -Infinity
+    for (let i = 0; i < pts.length; i += 3) {
+      const y = e[1]! * pts[i]! + e[5]! * pts[i + 1]! + e[9]! * pts[i + 2]! + e[13]!
+      if (y > top) top = y
+    }
+    this.antlerTop = top - root.position.y
+    if (ceiling === undefined) {
+      this.ceilWant = 0
+      return
+    }
+    const over = top - (ceiling - 0.06)
+    // Proportional step on the current stoop; hysteresis so it doesn't hunt at the limit.
+    if (over > 0 || over < -0.15) this.ceilWant = Math.min(1.4, Math.max(0, this.ceilStoop.x + over * 1.05 + (over > 0 ? 0.03 : 0.05)))
+  }
+
   /** Switch the stepper between four-legged and two-legged gaits. */
   private setGait(biped: boolean, root: THREE.Object3D) {
     const st = this.stepper
@@ -537,4 +573,36 @@ export class WendigoAnimator {
       this.fingerTwitch[i]! += (this.fingerTarget[i]! - this.fingerTwitch[i]!) * Math.min(1, dt * 5)
     }
   }
+}
+
+/** The 48 antler vertices farthest from the head joint, in the head bone's frame (bind pose has no bone rotation). */
+function antlerTips(rig: CreatureRig): Float32Array {
+  const d = rig.data
+  const part = d.parts.find((p) => p.name === "antlers")
+  const hi = rig.bones.findIndex((b) => b.name === "head")
+  const h = d.bones[hi]!.head
+  if (!part) return new Float32Array(0)
+  const seen = new Set<number>()
+  const cand: [number, number][] = []
+  for (let k = part.start; k < part.start + part.count; k++) {
+    const v = d.indices[k]!
+    if (seen.has(v)) continue
+    seen.add(v)
+    const x = d.positions[v * 3]! - h[0]
+    const y = d.positions[v * 3 + 1]! - h[1]
+    const z = d.positions[v * 3 + 2]! - h[2]
+    cand.push([v, x * x + y * y + z * z])
+  }
+  // Farthest points, plus the highest in the bind pose (the beam's upper curve).
+  cand.sort((a, b) => b[1] - a[1])
+  const pick = new Set(cand.slice(0, 40).map((c) => c[0]))
+  ;[...seen].sort((a, b) => d.positions[b * 3 + 1]! - d.positions[a * 3 + 1]!).slice(0, 24).forEach((v) => pick.add(v))
+  const out = new Float32Array(pick.size * 3)
+  let i = 0
+  for (const v of pick) {
+    out[i++] = d.positions[v * 3]! - h[0]
+    out[i++] = d.positions[v * 3 + 1]! - h[1]
+    out[i++] = d.positions[v * 3 + 2]! - h[2]
+  }
+  return out
 }

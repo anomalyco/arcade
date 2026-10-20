@@ -3,7 +3,9 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js"
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js"
 import ROSTER from "./roster.json"
 import { createTorch } from "./torch"
+import { Viewmodel, VIEW_LAYER } from "./viewmodel"
 import { SeatRig, type SeatHost, type SeatOptions } from "./seat"
+import { cylDist as cylDistX, measureHands, skinVsCyl, wrapFingers, type Cyl, type HandSkin } from "./grip"
 
 /**
  * Albedo scale for the body while it sits inside the car: the cabin's roof and pillars occlude the many unshadowed
@@ -190,8 +192,23 @@ const CARRY_DOWN = 0.03
 const CARRY_TILT = (12 * Math.PI) / 180
 /** First-person grip spot from the eye, in the view's frame (m): ahead, below, left. */
 const FP_GRIP = [0.4, 0.2, 0.16] as const
+/** Wrist limits for the carried flashlight (rad): flexion, deviation, twist kept in the hand; barrel-off tolerance. */
+const WRIST_FLEX = (35 * Math.PI) / 180
+const WRIST_DEV = (15 * Math.PI) / 180
+const WRIST_TWIST = (20 * Math.PI) / 180
+const FP_AIM_TOL = (10 * Math.PI) / 180
+const TORCH_DEV = 0
+/** The old full-body first-person arm solve (replaced by the viewmodel, viewmodel.ts). */
+const FP_ARM_SOLVE = false
+const TORCH_FLEX = 0
+/** How far the fist may roll about the barrel from its knuckles-up grip (rad). */
+const FP_ROLL_MAX = (70 * Math.PI) / 180
+const FP_ROLL_RATE = 3
+/** The flashlight barrel's radius at the grip (torch.ts knurl: 17.2 mm), and the palm's touch distance (m). */
+const BARREL_R = 0.0172
+const PALM_TOUCH = 0.0008
 /** Torch +Y (barrel axis → palm) in the view frame: right, up. */
-const FP_ROLL = [-0.85, 0.5]
+const FP_ROLL = [0.6, -0.8]
 const FINGERS = /^LeftHand(Thumb|Index|Middle|Ring|Pinky)/
 const REACH_ARM = /^Right(Shoulder|Arm|ForeArm|Hand)/
 /** E: the part of each clip that is the reach (clip seconds) and its playback rate. */
@@ -406,6 +423,13 @@ export class CharacterBody {
       if (m.isSkinnedMesh && !HEAD_MESHES.test(m.name)) split.push(m)
     })
     for (const m of split) splitHead(m, meta.head - 0.16)
+    // The left forearm and hand in their own meshes: hidden from the view camera while the viewmodel shows.
+    this.armParts = []
+    this.vmActive = false
+    for (const m of split) {
+      const a = splitArm(m)
+      if (a) this.armParts.push(a)
+    }
   }
 
   private init(model: THREE.Object3D, anims: THREE.AnimationClip[], meta: CharMeta) {
@@ -516,6 +540,7 @@ export class CharacterBody {
       this.carry2.push({ name, role, clip, offset, samplers: this.samplers(clip, CARRY_ARM), w: 0 })
     }
     if (this.carry2.length || (ti && tw)) this.placeTorch()
+    this.viewmodel.build({ model, carry: this.clips.get("carry-idle") ?? null, torchPos: this.torchPosBase.clone(), torchQuat: this.torchBase.clone(), ik: twoBoneIK })
     mixer.update(0)
   }
 
@@ -759,6 +784,18 @@ export class CharacterBody {
       const turn = new THREE.Quaternion().setFromUnitVectors(axis.clone(), want)
       const hq = hand.getWorldQuaternion(new THREE.Quaternion())
       this.carryFix.copy(hq).invert().multiply(turn).multiply(hq)
+      // The barrel turned in the fist about the palm normal (hand frame) so a straight wrist points it along the view
+      // (the fist holds it slightly across, as a real grip does): one fixed offset.
+      const kI = this.bones.LeftHandIndex1!.position
+      const kP = this.bones.LeftHandPinky1!.position
+      const kM = this.bones.LeftHandMiddle1!.position
+      const devAxis = new THREE.Vector3().crossVectors(kM.clone().normalize(), kI.clone().sub(kP).normalize()).normalize()
+      const flexAxis = kI.clone().sub(kP).normalize()
+      this.torchBase.copy(this.torch.quaternion)
+      this.torchPosBase.copy(this.torch.position)
+      this.devAxisHand.copy(devAxis)
+      this.flexAxisHand.copy(flexAxis)
+      this.applyTorchOffset()
       a.setEffectiveWeight(0)
       a.stop()
     })
@@ -916,6 +953,7 @@ export class CharacterBody {
     if (this.seatRig) {
       if (this.root.parent && new URLSearchParams(location.search).has("introRig")) this.seatRig.showMarkers(this.root.parent)
       this.seatRig.update(dt)
+      this.updateViewmodel(dt, s, false)
       this.view.weight = 0
       this.debug.state = "seated"
       return
@@ -1214,6 +1252,25 @@ export class CharacterBody {
     // The torch arm last: it is placed relative to the camera, after the body has been moved under it.
     this.root.updateMatrixWorld(true)
     this.applyTorch(dt, s, moving)
+    this.updateViewmodel(dt, s, this.carryW > 0.6 && this.torchHeld && !s.onLadder && !s.mantle && this.topT < 0)
+  }
+
+  /**
+   * The first-person flashlight hand (viewmodel.ts): shown while the torch is carried; meanwhile the body's own left
+   * forearm, hand and torch go to HEAD_LAYER (shadows and mirrors still see them, the view camera doesn't).
+   */
+  private updateViewmodel(dt: number, s: BodyState, show: boolean) {
+    const vm = this.viewmodel
+    if (this.root.parent && vm.root.parent !== this.root.parent) this.root.parent.add(vm.root)
+    const eye = s.eye ?? this.root.position.clone().setY(this.root.position.y + 1.6)
+    vm.update(dt, show, { eye, yaw: s.yaw, pitch: s.pitch, vel: s.vel, crouch: s.crouch, grounded: s.grounded, phase: this.phase, speed: this.smoothVel.length() })
+    const active = vm.root.visible
+    if (active !== this.vmActive) {
+      this.vmActive = active
+      const layer = active ? HEAD_LAYER : BODY_LAYER
+      for (const m of this.armParts) m.layers.set(layer)
+      this.torch.traverse((o) => o.layers.set(layer))
+    }
   }
 
   /**
@@ -1352,6 +1409,10 @@ export class CharacterBody {
   }
   private armPrev = new Map<string, THREE.Quaternion>()
   private lookRel = 0
+  /** The first-person flashlight hand. */
+  readonly viewmodel = new Viewmodel()
+  private armParts: THREE.Mesh[] = []
+  private vmActive = false
   /** The view's forward (world), from the controller's yaw/pitch. */
   private viewDir = new THREE.Vector3(0, 0, -1)
   private crouchS = 0
@@ -1499,9 +1560,37 @@ export class CharacterBody {
       }
     }
     for (const [bone, q] of acc) bone.quaternion.slerp(q.normalize(), w)
+    // The fist always closed round the barrel: the fingers from the carry-idle clip's grip at frame 0 (the walk and
+    // run takes loosen the fingers mid-swing, which reads as the flashlight slipping).
+    const grip0 = this.carry2.find((c) => c.role === "idle")
+    if (grip0) {
+      for (const smp of grip0.samplers) {
+        if (!FINGERS.test(smp.bone.name)) continue
+        _q.fromArray(smp.interp.evaluate(0) as unknown as number[])
+        smp.bone.quaternion.slerp(_q, w)
+      }
+    }
+    this.model!.updateMatrixWorld(true)
+    if (w > 0.5) this.closeGrip()
     B.LeftHand.quaternion.multiply(_q.identity().slerp(this.carryFix, w))
     this.model!.updateMatrixWorld(true)
 
+    if (!FP_ARM_SOLVE) {
+      // Third person (and shadows, mirrors): the clip's carry, the barrel turned towards the view by at most
+      // CARRY_AIM, 40 % at the forearm and the rest at the wrist. First person sees the viewmodel instead.
+      const barrel = new THREE.Vector3(0, 0, -1).transformDirection(this.torch.matrixWorld)
+      const ang = barrel.angleTo(this.viewDir)
+      const axis = new THREE.Vector3().crossVectors(barrel, this.viewDir)
+      if (ang > 1e-4 && axis.lengthSq() > 1e-12) {
+        axis.normalize()
+        const turn = Math.min(ang, CARRY_AIM) * w
+        this.rotWorld(B.LeftForeArm, axis, turn * 0.4)
+        B.LeftForeArm.updateWorldMatrix(false, true)
+        this.rotWorld(B.LeftHand, axis, turn * 0.6)
+        B.LeftHand.updateWorldMatrix(false, true)
+      }
+      return
+    }
     // First person: the fist placed at a fixed spot low-left in the view (only the forearm enters the frame) with the
     // barrel exactly along the view (tail nearest the eye, the head and lens leading away), knuckles up, thumb on
     // top; arm by two-bone IK from the clip's shoulder, elbow down and out. The body renders once for every pass, so
@@ -1520,24 +1609,81 @@ export class CharacterBody {
     const torchQ = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(Xt, Yt, Zt))
     const handQ = torchQ.multiply(this.torch.quaternion.clone().invert())
     const hs = B.LeftHand.getWorldScale(new THREE.Vector3()).x
-    const wrist = grip.clone().sub(this.torch.position.clone().multiplyScalar(hs).applyQuaternion(handQ))
-    const cur = B.LeftHand.getWorldPosition(new THREE.Vector3())
+    const target = grip.clone().sub(this.torch.position.clone().multiplyScalar(hs).applyQuaternion(handQ))
     const curQ = B.LeftHand.getWorldQuaternion(new THREE.Quaternion())
-    wrist.lerp(cur, 1 - w)
     handQ.slerpQuaternions(curQ, handQ.clone(), w)
-    const sh = B.LeftArm.getWorldPosition(new THREE.Vector3())
-    const pole = UP.clone().multiplyScalar(-1).addScaledVector(right, -0.6).addScaledVector(fw, -0.2)
-    void sh
-    twoBoneIK(B.LeftArm, B.LeftForeArm, B.LeftHand, wrist, pole)
-    // Half the hand's twist about the forearm taken by the forearm (no candy-wrapped wrist), then the hand exactly.
+    // The aim spread along the arm: first where the arm would put the fist with a straight wrist (the forearm along
+    // the hand's own neutral line: hand rotation = its bind rotation relative to the forearm), then towards the framing
+    // spot only as far as the wrist stays within WRIST_FLEX / WRIST_DEV; forearm twist takes the roll (half of it, then
+    // the rest the hand keeps within the twist clamp). Whatever is left the barrel may sit off the view (≤ ~10°).
     const fa = B.LeftForeArm
-    const local = fa.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(handQ)
-    if (local.w < 0) local.set(-local.x, -local.y, -local.z, -local.w)
-    const twa = THREE.MathUtils.clamp(wrapPi(2 * Math.atan2(local.y, local.w)), -TWIST_MAX, TWIST_MAX)
-    fa.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(_v5.set(0, 1, 0), twa * 0.5))
-    fa.updateWorldMatrix(false, true)
-    B.LeftHand.quaternion.copy(fa.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(handQ))
-    B.LeftArm.updateWorldMatrix(false, true)
+    const shoulder = B.LeftArm.getWorldPosition(new THREE.Vector3())
+    const lu = shoulder.distanceTo(fa.getWorldPosition(new THREE.Vector3()))
+    const lf = fa.getWorldPosition(new THREE.Vector3()).distanceTo(B.LeftHand.getWorldPosition(new THREE.Vector3()))
+    const bindH = this.bindQ.get(B.LeftHand) ?? new THREE.Quaternion()
+    const neutralFore = handQ.clone().multiply(bindH.clone().invert())
+    const fdir = new THREE.Vector3(0, 1, 0).applyQuaternion(neutralFore)
+    const toE = target.clone().addScaledVector(fdir, -lf).sub(shoulder)
+    const elbowS = shoulder.clone().addScaledVector(toE.normalize(), lu)
+    const straight = elbowS.clone().addScaledVector(fdir, lf)
+    // The elbow where a straight wrist wants it (behind the wrist along the forearm's neutral line), as far as the
+    // arm's lengths allow: the pole points from the shoulder–wrist line towards it.
+    void elbowS
+    const poleFor = (wr: THREE.Vector3) => wr.clone().addScaledVector(fdir, -lf).sub(shoulder.clone().add(wr).multiplyScalar(0.5))
+    // Wrist axes in the hand's own frame (from its knuckles, which are rigid in it): flexion about the knuckle line
+    // (index ↔ pinky), deviation about the palm normal.
+    const kI = B.LeftHandIndex1?.position ?? new THREE.Vector3(1, 0, 0)
+    const kP = B.LeftHandPinky1?.position ?? new THREE.Vector3(-1, 0, 0)
+    const kM = B.LeftHandMiddle1?.position ?? new THREE.Vector3(0, 1, 0)
+    const flexAxisL = kI.clone().sub(kP).normalize()
+    const devAxisL = new THREE.Vector3().crossVectors(kM.clone().normalize(), flexAxisL).normalize()
+    const straightGrip = straight.clone().add(this.torch.position.clone().multiplyScalar(hs).applyQuaternion(handQ))
+    const pose = (k: number) => {
+      const goal = straightGrip.clone().lerp(grip, k)
+      const wrist = straight.clone().lerp(target, k).lerp(B.LeftHand.getWorldPosition(new THREE.Vector3()), 1 - w)
+      let r = this.wristPose(wrist, poleFor(wrist), handQ, bindH, flexAxisL, devAxisL)
+      // The clamped wrist turns the fist off its ideal: move the wrist so the flashlight still sits at the goal.
+      for (let it = 0; it < 3; it++) {
+        const t = this.torch.getWorldPosition(new THREE.Vector3())
+        const e = goal.clone().sub(t)
+        if (e.length() < 0.004) break
+        wrist.add(e.multiplyScalar(w))
+        r = this.wristPose(wrist, poleFor(wrist), handQ, bindH, flexAxisL, devAxisL)
+      }
+      return r
+    }
+    // The furthest towards the framing spot that keeps the barrel within FP_AIM_TOL of the view.
+    // The fist stays at the framing spot; the hand's roll about the barrel is free (the knuckles may turn a little
+    // in or out): the roll that leaves the barrel closest to the view once the wrist is clamped wins (searched round
+    // last frame's, so it moves smoothly), then the arm towards a straighter pose only if still beyond FP_AIM_TOL.
+    const baseQ = handQ.clone()
+    const evalRoll = (r: number, k = 1) => {
+      handQ.copy(baseQ).premultiply(new THREE.Quaternion().setFromAxisAngle(fw, r))
+      return pose(k)
+    }
+    let bestR = this.fpRoll
+    let bestOff = Infinity
+    for (let d = -0.16; d <= 0.161; d += 0.04) {
+      const r = THREE.MathUtils.clamp(this.fpRoll + d, -FP_ROLL_MAX, FP_ROLL_MAX)
+      const o = evalRoll(r).off
+      if (o < bestOff - 0.002) {
+        bestOff = o
+        bestR = r
+      }
+    }
+    // Eased, and at most FP_ROLL_RATE: the roll never pops between two near-equal solutions.
+    const dr = (bestR - this.fpRoll) * damp(6, dt)
+    this.fpRoll += THREE.MathUtils.clamp(dr, -FP_ROLL_RATE * dt, FP_ROLL_RATE * dt)
+    let res = evalRoll(this.fpRoll)
+    let kUsed = 1
+    for (const k of [0.75, 0.5]) {
+      if (res.off < FP_AIM_TOL) break
+      res = evalRoll(this.fpRoll, (kUsed = k))
+    }
+    ;(this.debug as Record<string, unknown>).wristK = [kUsed, +((this.fpRoll * 180) / Math.PI).toFixed(0)]
+    this.foreTwist = this.foreTwistNext
+    const d = (r: number) => +((r * 180) / Math.PI).toFixed(1)
+    ;(this.debug as Record<string, unknown>).wrist = { flex: d(res.flex), dev: d(res.dev), twist: d(res.twist), barrelOff: d(res.off), wantFlex: d(res.flexRaw), wantDev: d(res.devRaw) }
     const barrel = new THREE.Vector3(0, 0, -1).transformDirection(this.torch.matrixWorld)
     const ang = barrel.angleTo(this.viewDir)
     ;(this.debug as Record<string, unknown>).carry = { aimErr: +((ang * 180) / Math.PI).toFixed(1) }
@@ -1678,6 +1824,49 @@ export class CharacterBody {
   }
 
   /**
+   * One flashlight-arm pose: two-bone IK of the left arm to `wrist`, then the forearm twist (60 % of the hand's roll,
+   * unwrapped against last frame) and the hand at `handQ` with the wrist clamped to WRIST_FLEX / WRIST_DEV and
+   * WRIST_TWIST. Returns the barrel's angle off the view and the wrist angles (rad).
+   */
+  private wristPose(wrist: THREE.Vector3, pole: THREE.Vector3, handQ: THREE.Quaternion, bindH: THREE.Quaternion, flexAxisL: THREE.Vector3, devAxisL: THREE.Vector3) {
+    const B = this.bones
+    const fa = B.LeftForeArm!
+    twoBoneIK(B.LeftArm!, fa, B.LeftHand!, wrist, pole)
+    // Forearm twist: half the hand's roll about the forearm.
+    const local = fa.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(handQ)
+    const rel0 = bindH.clone().invert().multiply(local)
+    if (rel0.w < 0) rel0.set(-rel0.x, -rel0.y, -rel0.z, -rel0.w)
+    // Unwrapped against last frame's (a roll near a half turn never flips the forearm from one side to the other).
+    const raw = 2 * Math.atan2(rel0.y, rel0.w)
+    const twa = THREE.MathUtils.clamp(this.foreTwist + wrapPi(raw - this.foreTwist), -TWIST_MAX, TWIST_MAX)
+    this.foreTwistNext = twa
+    fa.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(_v5.set(0, 1, 0), twa * 0.6))
+    fa.updateWorldMatrix(false, true)
+    // The wrist: the hand's rotation relative to its bind, split into twist (≤ WRIST_TWIST) and swing; the swing
+    // clamped to flexion ±WRIST_FLEX and deviation ±WRIST_DEV.
+    const rel = bindH.clone().invert().multiply(fa.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(handQ))
+    if (rel.w < 0) rel.set(-rel.x, -rel.y, -rel.z, -rel.w)
+    const tw = new THREE.Quaternion(0, rel.y, 0, rel.w).normalize()
+    const swing = rel.clone().multiply(tw.clone().invert())
+    const sa = 2 * Math.acos(THREE.MathUtils.clamp(swing.w, -1, 1))
+    const sv = new THREE.Vector3(swing.x, swing.y, swing.z)
+    if (sv.lengthSq() > 1e-12) sv.normalize().multiplyScalar(sa)
+    else sv.set(0, 0, 0)
+    const flex = sv.dot(flexAxisL)
+    const dev = sv.dot(devAxisL)
+    const flexC = THREE.MathUtils.clamp(flex, -WRIST_FLEX, WRIST_FLEX)
+    const devC = THREE.MathUtils.clamp(dev, -WRIST_DEV, WRIST_DEV)
+    const svC = flexAxisL.clone().multiplyScalar(flexC).addScaledVector(devAxisL, devC)
+    const twaH = THREE.MathUtils.clamp(wrapPi(2 * Math.atan2(tw.y, tw.w)), -WRIST_TWIST, WRIST_TWIST)
+    const swingC = svC.lengthSq() > 1e-12 ? new THREE.Quaternion().setFromAxisAngle(svC.clone().normalize(), svC.length()) : new THREE.Quaternion()
+    const relC = swingC.multiply(new THREE.Quaternion().setFromAxisAngle(_v5.set(0, 1, 0), twaH))
+    B.LeftHand.quaternion.copy(bindH).multiply(relC)
+    B.LeftArm.updateWorldMatrix(false, true)
+    const barrel = new THREE.Vector3(0, 0, -1).transformDirection(this.torch.matrixWorld)
+    return { off: barrel.angleTo(this.viewDir), flex: flexC, dev: devC, twist: twaH, flexRaw: flex, devRaw: dev }
+  }
+
+  /**
    * Flashlight carry: upper arm forward of hanging (rad) and out (× its length), forearm elevation below the aim (rad;
    * the barrel is held across the fist) and how far it points across the body.
    */
@@ -1686,6 +1875,79 @@ export class CharacterBody {
   private forearmLocal = new THREE.Vector3(0, 1, 0)
   /** Fixed hand rotation (hand-local) turning the clip's upright torch grip into a forward flashlight grip. */
   private carryFix = new THREE.Quaternion()
+  private foreTwist = 0
+  private handSkin: HandSkin | null = null
+  /** The barrel's stand-off from its fitted spot along the palm normal (m), servoed so the palm touches it. */
+  private palmOff = 0
+  /**
+   * The flashlight held in a closed fist, by contact (grip.ts): the barrel moved along the palm normal until the
+   * palm's skin touches it (no gap, nothing through the hand), then each finger curled onto it and the thumb kept
+   * off it. All hand-relative (the torch is a child of the hand), so done before the arm is aimed.
+   */
+  private closeGrip() {
+    const B = this.bones
+    if (!this.model || !B.LeftHand) return
+    if (!this.handSkin || this.handSkin.mesh.parent === null || !this.model.getObjectById(this.handSkin.mesh.id)) this.handSkin = measureHands(this.model)
+    const skin = this.handSkin
+    if (!skin) return
+    const hand = B.LeftHand
+    const hs = hand.getWorldScale(new THREE.Vector3()).x
+    const cyl = (): Cyl => {
+      this.torch.position.copy(this.torchPosBase).addScaledVector(this.palmLocal, this.palmOff / hs)
+      this.torch.updateMatrixWorld(true)
+      return { p: this.torch.getWorldPosition(new THREE.Vector3()), a: new THREE.Vector3(0, 0, -1).transformDirection(this.torch.matrixWorld), r: BARREL_R, lo: -0.07, hi: 0.105 }
+    }
+    for (let it = 0; it < 4; it++) {
+      const cc = cyl()
+      const m = skinVsCyl(skin, skin.palm.Left, cc)
+      if (!Number.isFinite(m.min)) break
+      // Also clear of the knuckles (the fingers' base joints): the barrel lies in the palm, the fingers close over it.
+      let e = PALM_TOUCH - m.min
+      for (const f of ["Index", "Middle", "Ring", "Pinky"]) {
+        const k = B[`LeftHand${f}1`]
+        if (!k) continue
+        const need = (skin.fingerR[`Left${f}`] ?? 0.01) * 1.3 + 0.001
+        e = Math.max(e, need - cylDistX(cc, k.getWorldPosition(new THREE.Vector3())))
+      }
+      if (Math.abs(e) < 0.0003) break
+      this.palmOff = THREE.MathUtils.clamp(this.palmOff + e, -0.04, 0.04)
+    }
+    const c = cyl()
+    wrapFingers(B, "Left", c, skin.fingerR)
+    this.model.updateMatrixWorld(true)
+    const palm = skinVsCyl(skin, skin.palm.Left, c)
+    const all = skinVsCyl(skin, skin.all.Left, c)
+    if ((globalThis as { __gripDbg?: boolean }).__gripDbg) {
+      const m = skin.mesh, bones = m.skeleton.bones, si = m.geometry.attributes.skinIndex!, sw = m.geometry.attributes.skinWeight!
+      const v = new THREE.Vector3()
+      const per: Record<string, number[]> = {}
+      for (const i of skin.all.Left) {
+        let best = 0, bw = 0
+        for (let k = 0; k < 4; k++) { const ww = sw.getComponent(i, k); if (ww > bw) { bw = ww; best = si.getComponent(i, k) } }
+        m.getVertexPosition(i, v).applyMatrix4(m.matrixWorld)
+        const t = v.clone().sub(c.p).dot(c.a)
+        const d = cylDistX(c, v)
+        const nm = bones[best]!.name
+        if (d < 0) (per[nm] ??= []).push(+(d * 1000).toFixed(0), +(t * 1000).toFixed(0))
+      }
+      ;(this.debug as Record<string, unknown>).gripInside = Object.fromEntries(Object.entries(per).map(([k, arr]) => [k, [arr.length / 2, Math.min(...arr.filter((_, j) => j % 2 === 0))]]))
+    }
+    ;(this.debug as Record<string, unknown>).grip = { palmGap: +(palm.min * 1000).toFixed(1), skinMin: +(all.min * 1000).toFixed(1), inside: all.inside, verts: skin.all.Left.length }
+  }
+  private torchBase = new THREE.Quaternion()
+  private torchPosBase = new THREE.Vector3()
+  private devAxisHand = new THREE.Vector3(0, 0, 1)
+  private flexAxisHand = new THREE.Vector3(1, 0, 0)
+  /** The barrel's fixed turn in the fist (rad): about the palm normal and about the knuckle line. */
+  torchOffset = { dev: TORCH_DEV, flex: TORCH_FLEX }
+  applyTorchOffset() {
+    const r = new THREE.Quaternion().setFromAxisAngle(this.devAxisHand, this.torchOffset.dev).multiply(new THREE.Quaternion().setFromAxisAngle(this.flexAxisHand, this.torchOffset.flex))
+    this.torch.quaternion.copy(r).multiply(this.torchBase)
+    // Turned about its own grip point (the barrel stays through the fist).
+    this.torch.position.copy(this.torchPosBase)
+  }
+  private fpRoll = 0
+  private foreTwistNext = 0
   private carry2: { name: string; role: string; clip: THREE.AnimationClip; offset: number; samplers: Sampler[]; w: number }[] = []
   private gripAxisLocal = new THREE.Vector3(0, 0, 1)
   private palmLocal = new THREE.Vector3(0, -1, 0)
@@ -1779,6 +2041,11 @@ export class CharacterBody {
 
   /** Lens position and beam direction (world), or false while the torch is put away. */
   torchLens(pos: THREE.Vector3, dir: THREE.Vector3) {
+    // First person: from the viewmodel's lens.
+    if (this.viewmodel.lens(pos)) {
+      dir.copy(this.viewDir)
+      return true
+    }
     if (!this.torch.visible || !this.torch.parent || !this.torchHeld) return false
     const lens = this.torch.userData.lens as THREE.Object3D
     lens.updateWorldMatrix(true, false)
@@ -1878,6 +2145,60 @@ export function twoBoneIK(a: THREE.Object3D, b: THREE.Object3D, c: THREE.Object3
   pb.addScaledVector(k, -pb.dot(k))
   const pp = pole.clone().addScaledVector(k, -pole.dot(k))
   if (pb.lengthSq() > 1e-8 && pp.lengthSq() > 1e-8) turnWorld(a, k, Math.atan2(k.dot(new THREE.Vector3().crossVectors(pb, pp)), pb.dot(pp)))
+}
+
+/** Moves the left forearm and hand triangles of a skinned mesh into their own mesh (same layer), sharing buffers. */
+function splitArm(mesh: THREE.SkinnedMesh) {
+  const geo = mesh.geometry
+  const index = geo.index
+  const si = geo.getAttribute("skinIndex")
+  const sw = geo.getAttribute("skinWeight")
+  if (!index || !si || !sw) return null
+  const arm = new Set(mesh.skeleton.bones.flatMap((b, i) => (/^Left(Arm|ForeArm|Hand)/.test(b.name) ? [i] : [])))
+  if (!arm.size) return null
+  const on = new Uint8Array(si.count)
+  for (let v = 0; v < si.count; v++) {
+    let w = 0
+    for (let k = 0; k < 4; k++) if (arm.has(si.getComponent(v, k))) w += sw.getComponent(v, k)
+    on[v] = w > 0.5 ? 1 : 0
+  }
+  const groups = geo.groups.length ? geo.groups : [{ start: 0, count: index.count, materialIndex: 0 }]
+  const body: number[] = []
+  const part: number[] = []
+  const bodyGroups: [number, number, number][] = []
+  const partGroups: [number, number, number][] = []
+  for (const g of groups) {
+    const b0 = body.length
+    const p0 = part.length
+    for (let i = g.start; i < g.start + g.count; i += 3) {
+      const a = index.getX(i), b = index.getX(i + 1), c = index.getX(i + 2)
+      ;(on[a]! + on[b]! + on[c]! >= 2 ? part : body).push(a, b, c)
+    }
+    bodyGroups.push([b0, body.length - b0, g.materialIndex ?? 0])
+    partGroups.push([p0, part.length - p0, g.materialIndex ?? 0])
+  }
+  if (!part.length) return null
+  const pg = new THREE.BufferGeometry()
+  for (const [n, a] of Object.entries(geo.attributes)) pg.setAttribute(n, a)
+  pg.setIndex(part)
+  geo.setIndex(body)
+  if (geo.groups.length) {
+    geo.clearGroups()
+    for (const [s0, c, m] of bodyGroups) if (c) geo.addGroup(s0, c, m)
+    for (const [s0, c, m] of partGroups) if (c) pg.addGroup(s0, c, m)
+  }
+  const pm = new THREE.SkinnedMesh(pg, mesh.material)
+  pm.name = `${mesh.name}-leftarm`
+  pm.bind(mesh.skeleton, mesh.bindMatrix)
+  pm.frustumCulled = false
+  pm.castShadow = mesh.castShadow
+  pm.receiveShadow = true
+  pm.layers.mask = mesh.layers.mask
+  pm.position.copy(mesh.position)
+  pm.quaternion.copy(mesh.quaternion)
+  pm.scale.copy(mesh.scale)
+  mesh.parent!.add(pm)
+  return pm
 }
 
 /**

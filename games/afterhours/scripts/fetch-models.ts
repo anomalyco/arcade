@@ -287,6 +287,13 @@ export const MODEL_SOURCES: Record<string, ModelSource> = {
     size: { axis: "y", m: 0.24 },
     note: "wall-mounted push-button hand dryer",
   },
+  mug: {
+    lod1: 1200,
+    maxTris: 4000,
+    src: objaverse("19c8fe5702b544d0a1409d3dac1cf90e", "000-018", "Plain Mug", "edwardlewis450"),
+    size: { axis: "y", m: 0.095 },
+    note: "plain white ceramic coffee mug (pivot: base centre; tip it with tilt.x = π/2, mouth then faces the yaw)",
+  },
   wet_floor_sign: { src: { site: "polyhaven", id: "WetFloorSign_01" }, note: "yellow wet-floor sign" },
   fluorescent_light: { src: { site: "polyhaven", id: "mounted_fluorescent_lights" }, keep: /_d$/, note: "surface-mount fluorescent tube fixture" },
   security_camera: { src: { site: "polyhaven", id: "security_camera_01" }, yaw: 180, note: "housed CCTV camera on bracket" },

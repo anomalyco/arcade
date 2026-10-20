@@ -83,8 +83,8 @@ export async function buildNorth(s: S3, pause: () => Promise<void>) {
   // ------------------------------------------------------------------ 3-01 data control / I/O counter
   s.rooms.push(room(b, { id: "3-01", name: "Data control", rect: rect(G[0], G[1], -21.65, -1.75), floor: "linoleum", lit: "none", anchors: [{ kind: "bin", x: -48.6, y: FLOOR_Y, z: -2.4 }] }))
   const label = pigeonholes(b, -48.04, -7.4, W, 16, 6, rnd, 61)
-  // Label for the stuffed cubby: a time card taped across its lip, "HALVERSON, D. — FIELD".
-  s.doc("timecard_halverson", [label[0] - 0.002, label[1] + 0.035, label[2]], [-1, 0, 0], { rotation: Math.PI / 2, scale: 0.8, pin: "tape" })
+  // Label for the stuffed cubby: a time card taped across its lip, "DELACROIX, J. — FIELD".
+  s.doc("timecard_delacroix", [label[0] - 0.002, label[1] + 0.035, label[2]], [-1, 0, 0], { rotation: Math.PI / 2, scale: 0.8, pin: "tape" })
   const t1 = workTable(b, -52.2, -2.55, 0, 2.2, 0.76)
   for (let k = 0; k < 5; k++) cardDeck(b, -53.0 + k * 0.32, t1, -2.6 + (rnd() - 0.5) * 0.2, (rnd() - 0.5) * 0.4, 0.03 + rnd() * 0.05)
   printoutStack(b, -51.5, t1, -2.5, 0.1, 0.09)
@@ -295,8 +295,8 @@ export async function buildNorth(s: S3, pause: () => Promise<void>) {
   scope(b, 7.65, od, -14.15, S + 0.12)
   screenLamp(s, [7.4, od + 0.15, -13.85], 0.6)
   placeModels(b, "telephone", [{ position: [9.9, od, -13.8], yaw: S - 0.4, collide: false, blob: 0 }])
-  s.doc("sticky_dish", [8.0, od, -13.7], [0, 1, 0], { rotation: 0.3 })
-  s.doc("printout_greenbar", [8.9, od, -13.95], [0, 1, 0], { rotation: 0.15 })
+  s.doc("sticky_dish", [7.32, od, -13.64], [0, 1, 0], { rotation: 0.3 })
+  s.doc("printout_greenbar", [9.0, od, -13.9], [0, 1, 0], { rotation: 0.15 })
   placeModels(b, "office_chair", [{ position: [OPERATOR_CHAIR.x, FLOOR_Y + OPERATOR_CHAIR.dy, OPERATOR_CHAIR.z], yaw: OPERATOR_CHAIR.yaw, inset: 0.15 }])
   // The one working light: a wide open shade, its spill reaching across the floor to where Hargrove fell.
   pendant(b, 8.3, -13.45, { drop: 1.05, shadow: true, intensity: 95, angle: 1.4, range: 11 })

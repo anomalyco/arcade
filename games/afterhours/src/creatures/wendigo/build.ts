@@ -20,11 +20,11 @@ export function generateWendigo(log: (s: string) => void = () => {}): CreatureDa
   return bakeCreature(
     an.skel.bones,
     [
-      { name: "body", model: an.model, h: 0.0042, budget: 70000, sigma: 0.016, paint: (p) => paintBody(p) },
+      { name: "body", model: an.model, h: 0.0042, budget: 62000, sigma: 0.016, paint: (p) => paintBody(p) },
       { name: "skull", model: skull, h: 0.0022, budget: 16000, rigidBone: head, paint: (p) => paintSkull(p), thin: 0 },
       { name: "jaw", model: jawModel, h: 0.0022, budget: 5000, rigidBone: jaw, paint: (p) => paintSkull(p), thin: 0 },
       { name: "antlers", model: antlers, h: 0.0028, budget: 24000, rigidBone: head, smooth: 2, thin: 0, paint: (p) => paintAntler(p) },
-      { name: "strands", model: strands, h: 0.0024, budget: 24000, smooth: 1, sigma: 0.03, thin: 0, paint: (p) => paintBody(p) },
+      { name: "strands", model: strands, h: 0.0028, budget: 40000, smooth: 1, sigma: 0.03, thin: 0, paint: (p) => paintBody(p) },
     ],
     log,
   )

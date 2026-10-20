@@ -144,6 +144,7 @@ html, body { margin: 0; height: 100%; background: #030605; overflow: hidden; }
   background: rgba(0, 0, 0, 0.6); text-shadow: 0 0 6px rgba(200, 230, 215, 0.4); pointer-events: none;
   animation: shell-pulse 2.2s ease-in-out infinite; transition: opacity 0.6s ease;
 }
+#shell[data-sound="ack"] .shell-prompt { animation: none; color: rgba(232, 162, 84, 0.9); }
 #shell[data-sound="on"] .shell-prompt, #shell:not([data-world="loading"]) .shell-prompt { opacity: 0; animation: none; }
 
 /* ---- Title card (src/game/shell/title.ts) ---- */
@@ -165,8 +166,8 @@ html, body { margin: 0; height: 100%; background: #030605; overflow: hidden; }
 .title-card-text p.typing i { border-left: 1px solid currentColor; animation: title-caret 1.05s steps(1) infinite; }
 @keyframes title-caret { 50% { opacity: 0; } }
 .title-card-skip {
-  position: absolute; right: 40px; bottom: 34px; font: 10px/1 "Static Type", monospace; letter-spacing: 0.3em;
-  text-transform: uppercase; color: rgba(228, 224, 210, 0.3); opacity: 0; transition: opacity 1.2s ease;
+  position: absolute; right: 40px; bottom: 34px; font: 12px/1 "Static Type", monospace; letter-spacing: 0.3em;
+  text-transform: uppercase; color: rgba(228, 224, 210, 0.5); opacity: 0; transition: opacity 1.2s ease;
 }
 .title-card-skip.on { opacity: 1; }
 
@@ -191,3 +192,29 @@ html, body { margin: 0; height: 100%; background: #030605; overflow: hidden; }
   opacity: 0; transition: opacity 0.9s ease, transform 0.9s ease;
 }
 .hints-toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+/* ---- Story subtitles (src/game/shell/subtitles.ts `showSubtitle`) and interaction prompts: a soft dark backing so
+   the typewriter line reads over any surface (a white shirt under a pendant, the fog). Sizes are !important because
+   older callers still set them inline. ---- */
+
+.story-subtitles {
+  position: fixed; left: 50%; bottom: 11%; transform: translate(-50%, 0); z-index: 6; max-width: 70vw;
+  padding: 7px 16px 8px; border-radius: 3px; text-align: center; pointer-events: none;
+  font: 19px/1.45 "Afterhours Type", "American Typewriter", "Courier New", monospace !important; letter-spacing: 0.04em;
+  color: rgba(236, 228, 208, 0.97);
+  background: rgba(4, 6, 5, 0.62); box-shadow: 0 0 22px 8px rgba(4, 6, 5, 0.42);
+  text-shadow: 0 0 3px rgba(0, 0, 0, 1), 0 1px 2px rgba(0, 0, 0, 1);
+  opacity: 0; transition: opacity 0.25s ease;
+}
+.story-subtitles.on { opacity: 1; }
+.story-subtitles .who { margin-right: 0.9em; font-size: 14px; letter-spacing: 0.18em; opacity: 0.6; }
+.story-subtitles .aside { font-style: italic; opacity: 0.7; }
+
+.door-prompt {
+  --akc-size: 18px;
+  padding: 5px 11px 6px; border-radius: 3px; white-space: nowrap;
+  font: 13px/1 "Afterhours Type", "American Typewriter", "Courier New", monospace !important;
+  letter-spacing: 0.16em; text-transform: uppercase; color: rgba(214, 204, 182, 0.9);
+  background: rgba(4, 6, 5, 0.55); box-shadow: 0 0 16px 6px rgba(4, 6, 5, 0.35);
+  text-shadow: 0 0 3px rgba(0, 0, 0, 1) !important;
+}

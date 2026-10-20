@@ -91,7 +91,12 @@ export const BLINK = (() => {
   const h = hash(c.x.add(c.y.mul(31)).add(c.z.mul(17)))
   const blink = step(0.45, fract(time.mul(h.mul(1.8).add(0.15)).add(h.mul(10))))
   const colour = mix(mix(vec3(1, 0.42, 0.08), vec3(0.35, 1, 0.4), step(0.6, h)), vec3(1, 0.12, 0.06), step(0.92, h))
-  m.emissiveNode = colour.mul(blink).mul(step(0.22, h)).mul(dot).mul(2.4)
+  // Per-lamp colour and blink are hashed per cell: once a lamp is under a pixel (seen across a room or through glass)
+  // that turned into rainbow confetti under TAA jitter. Fade to the panel's average glow instead (filtered on all axes).
+  const fine = aaFade(qa).mul(aaFade(q.y)).mul(aaFade(qa.mul(4))).mul(aaFade(q.y.mul(4)))
+  const lit = colour.mul(blink).mul(step(0.22, h)).mul(dot)
+  const average = vec3(0.62, 0.55, 0.2).mul(0.5 * 0.78 * 0.31)
+  m.emissiveNode = mix(average, lit, fine).mul(2.4)
   m.name = "s3_blink"
   return m
 })()

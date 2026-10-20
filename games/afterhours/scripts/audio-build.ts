@@ -36,12 +36,13 @@ const STEREO = new Set(["amb-rain-asphalt", "amb-rain-thunder", "amb-hvac", "amb
 const FILTER: Record<string, string> = { "amb-pine-wind": "highpass=f=320:poles=2,highpass=f=320:poles=2" }
 
 type Pick = { category: string; variant: string; notes?: string }
-type LabSound = { category: string; group: string; variant: string; loop: boolean; duration: number }
+type LabSound = { category: string; group: string; variant: string; loop: boolean; duration: number; file?: string }
 type Variant = { url: string; duration: number; hit?: number; loopStart?: number; loopEnd?: number; from: string }
 type Entry = { group: string; loop: boolean; stereo: boolean; variants: Variant[]; skipped?: string }
 
 const picks = PICKS.flatMap((f) => (JSON.parse(readFileSync(f, "utf8")) as { picks: Pick[] }).picks)
-const lab = JSON.parse(readFileSync(`${LAB}/sfx/manifest.json`, "utf8")) as { sounds: LabSound[] }
+// Takes archived off the audition page (manifest `archived`, files in sfx/_previous/) can still be shipped.
+const lab = JSON.parse(readFileSync(`${LAB}/sfx/manifest.json`, "utf8")) as { sounds: LabSound[]; archived?: LabSound[] }
 
 async function decode(file: string, channels: number, filter?: string): Promise<Float32Array[]> {
   const p = Bun.spawn(["ffmpeg", "-v", "error", "-i", file, ...(filter ? ["-af", filter] : []), "-f", "f32le", "-ac", String(channels), "-ar", String(RATE), "-"], { stdout: "pipe" })
@@ -186,7 +187,8 @@ const manifest: Record<string, Entry> = {}
 // Only the categories built here are cleared (other files under public/sfx, e.g. a creature preview's, are kept).
 for (const c of new Set(picks.map((p) => p.category))) rmSync(`${OUT}/${c}`, { recursive: true, force: true })
 for (const pick of picks) {
-  const meta = lab.sounds.find((s) => s.category === pick.category && s.variant === pick.variant)
+  const live = lab.sounds.find((s) => s.category === pick.category && s.variant === pick.variant)
+  const meta = live ?? lab.archived?.find((s) => s.category === pick.category && s.variant === pick.variant)
   if (!meta) throw new Error(`no lab sound ${pick.category}/${pick.variant}`)
   const stereo = STEREO.has(pick.category)
   const entry = (manifest[pick.category] ??= { group: meta.group, loop: meta.loop, stereo, variants: [] })
@@ -194,7 +196,7 @@ for (const pick of picks) {
     entry.skipped = SKIP[pick.category]
     continue
   }
-  const src = `${LAB}/sfx/${pick.category}/${pick.variant}.mp3`
+  const src = live ? `${LAB}/sfx/${pick.category}/${pick.variant}.mp3` : `${LAB}/${meta.file}`
   const dir = `${OUT}/${pick.category}`
   mkdirSync(dir, { recursive: true })
   const ch = await decode(src, stereo ? 2 : 1, FILTER[pick.category])

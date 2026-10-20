@@ -5,7 +5,7 @@ import { BUILDING } from "../world/layout"
 
 // Story checkpoints (play mode): a snapshot of where the player stood and how far the story got, taken whenever the
 // objective chain lands a checkpoint (src/game/objectives.ts: "arrival" right after the intro, "3-08:entered",
-// "3-08:transmitter-off"). The death screen restores the last one in place: the player's transform, the objective
+// "3-08:transmitted"). The death screen restores the last one in place: the player's transform, the objective
 // chain at its stage and the run's flags. The world itself isn't rewound (the transmitter only ever moves forward, and
 // the checkpoints follow it, so its state always matches the snapshot's).
 
@@ -34,7 +34,7 @@ export function snapshot(id: string, player: Player): Checkpoint {
     pitch: player.pitch,
     storey: Math.max(0, Math.round((p.y - BUILDING.floorY) / BUILDING.main.storeyHeight)),
     // A checkpoint that lands with an objective change records the stage it starts.
-    stage: id === "arrival" ? 0 : id === "3-08:entered" ? 2 : id === "3-08:transmitter-off" ? 3 : story.stage,
+    stage: id === "arrival" ? 0 : id === "3-08:entered" ? 2 : id === "3-08:transmitted" ? 4 : story.stage,
     visited308: story.visited308 || id !== "arrival",
     transmitter: transmitter.phase,
     at: performance.now(),

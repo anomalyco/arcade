@@ -86,7 +86,7 @@ export async function build(b: Builder, { pause }: StoreyContext): Promise<Store
     sconces: { from: HOARD_X + HOARD_T / 2, to: 11.6, every: 4.0 },
     north: [
       { kind: "door", at: -1.9, side: "b", door: { id: "4-16", state: "closed", room: "4-16", leaf: "veneer", sign: { number: "4-16", label: "FILES" } } },
-      { kind: "door", at: 3.2, side: "b", door: { id: "4-11", state: "keycard:signal", room: "4-11", sign: { number: "4-11", label: "RF HAZARD — AUTHORIZED" } } },
+      { kind: "door", at: 3.2, side: "b", door: { id: "4-11", state: "keycard:signal", room: "4-11", sign: { number: "4-11", label: "RF HAZARD · AUTHORIZED" } } },
     ],
     south: [
       { kind: "door", at: -1.9, side: "a", door: { id: "4-15", state: "closed", room: "4-15", leaf: "veneer", sign: { number: "4-15", label: "SECRETARY" } } },

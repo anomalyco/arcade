@@ -8,6 +8,10 @@
 //   4. flicker: a render sweep over every door and wall corner on every storey — the camera stands 1.5 m away at two
 //      angles, 12 stand-still frames (grain and lamp flicker off), pixels whose temporal range exceeds 24 near the
 //      target are counted; a view with ≥ FLICKER_PIXELS such pixels fails.
+//   5. floor flicker (torch): every room and every 6 m of each corridor, the camera at eye height looking along the floor
+//      at a grazing angle (~3.5 m ahead, both ways along the long axis) with the FLASHLIGHT ON; 12 still frames over a
+//      wide crop of the floor. Catches floors, decals and stand-ins z-fighting under the torch (the door/corner views
+//      look at walls in the lamps' light and miss them). `--no-torch` skips it.
 // Findings owned by other modules (facility shell, fire-escape doors...) are listed separately and don't fail the
 // gate unless --strict.
 //
@@ -16,6 +20,7 @@
 //   bun scripts/audit/hygiene.ts --dev          # against the dev server (:5196), no build
 //   bun scripts/audit/hygiene.ts --sweep 0      # static checks only; --sweep 40 caps the render views
 //   bun scripts/audit/hygiene.ts --storey 1     # only storey 1 (static checks and sweep)
+//   bun scripts/audit/hygiene.ts --kinds floor  # only the flashlight floor views
 //
 // Output: $AH_OUT/hygiene/report.json, report.txt and crops of failing views (flicker-*.png).
 import { chromium } from "playwright-core"
@@ -355,8 +360,8 @@ const statics: Finding[] = await page.evaluate((only) => {
 console.log(`static: ${statics.length} findings`)
 
 // ------------------------------------------------------------------------------------------------ render sweep
-type View = { kind: "door" | "corner"; id: string; owner: string; storey: number; cam: [number, number, number]; target: [number, number, number] }
-const views: View[] = await page.evaluate((only) => {
+type View = { kind: "door" | "corner" | "floor"; id: string; owner: string; storey: number; cam: [number, number, number]; target: [number, number, number] }
+const views: View[] = await page.evaluate(({ only, torch }) => {
   const g = globalThis as any
   const interior = g.__interior
   const solids: { min: number[]; max: number[]; id: number }[] = interior.solids
@@ -430,10 +435,39 @@ const views: View[] = await page.evaluate((only) => {
     const t = [x!, storeyY(st!) + 0.01 + 2.3, z!]
     for (const c of pick(t, diag, st!)) out.push({ kind: "corner", id: `corner@${x!.toFixed(2)},${z!.toFixed(2)}`, owner: "interior", storey: st, cam: c, target: t })
   }
+  // Floors under the torch: each room and the corridors (rooms' rects; long rooms every 6 m), both ways along the
+  // long axis, eye height, the target on the floor 3.5 m ahead.
+  if (torch) {
+    const seen = new Set<string>()
+    // The spine corridors aren't rooms in the registry: add each storey's spine (x −54.6..34.6, z ±1.6) as one.
+    const spines = [0, 1, 2, 3, 4].map((st) => ({ id: `spine-${st}`, storey: st, rect: { x0: -54.6, x1: 34.6, z0: -1.6, z1: 1.6 } }))
+    for (const r of [...spines, ...(interior.rooms as { id: string; storey: number; rect: { x0: number; x1: number; z0: number; z1: number } }[])]) {
+      if (only >= 0 && r.storey !== only) continue
+      const { x0, x1, z0, z1 } = r.rect
+      const alongX = x1 - x0 >= z1 - z0
+      const len = alongX ? x1 - x0 : z1 - z0
+      const mid = alongX ? (z0 + z1) / 2 : (x0 + x1) / 2
+      const fy = storeyY(r.storey) + 0.01
+      const eye = fy + 1.6
+      for (let u = (alongX ? x0 : z0) + 1.0; u <= (alongX ? x1 : z1) - 1.0 + 1e-6; u += Math.max(2, Math.min(6, len - 2))) {
+        for (const s of [1, -1]) {
+          const c = alongX ? [u, eye, mid] : [mid, eye, u]
+          const t = alongX ? [u + s * 3.5, fy, mid] : [mid, fy, u + s * 3.5]
+          if ((alongX ? t[0]! < x0 || t[0]! > x1 : t[2]! < z0 || t[2]! > z1) || blocked(c[0]!, c[1]!, c[2]!, 0.3) || !floorAt(c[0]!, c[2]!, fy) || !clear(c, [t[0]!, eye - 0.6, t[2]!])) continue
+          const key = `${r.storey}:${Math.round(c[0]! * 2)},${Math.round(c[2]! * 2)},${s},${alongX}`
+          if (seen.has(key)) continue
+          seen.add(key)
+          out.push({ kind: "floor", id: `${r.id} ${alongX ? "x" : "z"}${s > 0 ? "+" : "-"} @${u.toFixed(1)}`, owner: "interior", storey: r.storey, cam: c, target: t })
+        }
+      }
+    }
+  }
   return out
-}, onlyStorey)
-const sweep = views.slice(0, sweepCap)
-console.log(`sweep: ${views.length} views (${views.filter((v) => v.kind === "door").length} door, ${views.filter((v) => v.kind === "corner").length} corner)${sweep.length < views.length ? `, capped to ${sweep.length}` : ""}`)
+}, { only: onlyStorey, torch: !has("no-torch") })
+// `--kinds floor` (or door,corner) runs only those view kinds.
+const kinds = flag("kinds")?.split(",")
+const sweep = views.filter((v) => !kinds || kinds.includes(v.kind)).slice(0, sweepCap)
+console.log(`sweep: ${views.length} views (${views.filter((v) => v.kind === "door").length} door, ${views.filter((v) => v.kind === "corner").length} corner, ${views.filter((v) => v.kind === "floor").length} floor/torch)${sweep.length < views.length ? `, capped to ${sweep.length}` : ""}`)
 
 await page.evaluate(() => {
   const g = globalThis as any
@@ -446,12 +480,22 @@ await page.evaluate(() => {
   // Auto-resolution drops the render scale under headless load at random moments and TAAU then shows its jitter on
   // high-contrast detail: pin full scale so every view is measured the same way.
   s["post.autoRes"] = false
+  // The game's camera sees the body (3) and first-person viewmodel (6) layers too; with body=0 nothing is on them, but
+  // anything else carrying those layers (a mirror's reflect-only stand-ins once shared 6) must be in the sweep's view.
+  g.__afterhoursDebug.camera.layers.enable(3)
+  g.__afterhoursDebug.camera.layers.enable(6)
   // Dying lamps flicker by design (their own per-lamp amount): steady them so only geometry can shimmer.
   for (const l of g.__interior.ctx.lamps) if (l.flicker) l.flicker = 0
 })
 const flickers: Finding[] = []
 const t0 = performance.now()
+let torchOn = false
 for (const [vi, v] of sweep.entries()) {
+  // The floor views run with the flashlight on (the doors and corners with it off, as before).
+  if ((v.kind === "floor") !== torchOn) {
+    torchOn = !torchOn
+    await page.evaluate((on) => ((globalThis as any).__afterhoursPlayer.flashlight = on), torchOn)
+  }
   const r = await page.evaluate(
     async ({ v, crop }) => {
       const g = globalThis as any
@@ -471,7 +515,8 @@ for (const [vi, v] of sweep.entries()) {
       const frame = () => new Promise((res) => requestAnimationFrame(res))
       for (let k = 0; k < 24; k++) await frame()
       const canvas = document.querySelector("#view") as HTMLCanvasElement
-      const W = 128
+      // Floor views: a wide crop over the lit floor (the torch spot), the target in its middle.
+      const W = v.kind === "floor" ? 224 : 128
       const sx = Math.round(canvas.width / 2 - W / 2)
       const sy = Math.round(canvas.height / 2 - W / 2)
       const oc = new OffscreenCanvas(W, W)
@@ -529,6 +574,7 @@ for (const [vi, v] of sweep.entries()) {
     },
     { v, crop: FLICKER_PIXELS },
   )
+  if (process.env.HYG_DEBUG && v.kind === "floor") console.log(`  ${v.id} cam ${v.cam.map((q) => q.toFixed(1)).join(",")} over ${r.over}`)
   if (r.over >= FLICKER_PIXELS) {
     const name = `flicker-${flickers.length}-${v.kind}-s${v.storey}.png`
     if (r.png) writeFileSync(join(out, name), Buffer.from(r.png, "base64"))

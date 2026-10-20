@@ -132,7 +132,7 @@ function shrubGeometry() {
     p.setXYZ(i, x * n, (yy < 0 ? yy * 0.35 : yy) + 0.45, z * n)
   }
   g.deleteAttribute("normal")
-  const merged = g.toNonIndexed()
+  const merged = g.index ? g.toNonIndexed() : g
   merged.computeVertexNormals()
   return merged
 }

@@ -19,6 +19,7 @@ const page = await (await browser.newContext({ viewport: { width: 640, height: 4
 const errors: string[] = []
 page.on("pageerror", (e) => errors.push(e.message))
 page.on("console", (m) => m.type() === "error" && errors.push(m.text()))
+await page.routeWebSocket(/.*/, () => {})
 await page.goto(`http://localhost:5196/${pageUrl}`)
 await page.waitForFunction(() => (globalThis as { __bodyB?: { ready: boolean } }).__bodyB?.ready, null, { timeout: 90_000 })
 const out = await page.evaluate(`(async () => { const B = globalThis.__bodyB; return (${expr}) })()`)

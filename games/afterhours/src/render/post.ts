@@ -477,6 +477,39 @@ export function createPost(ctx: WorldContext) {
     return mix(prev, cur, a)
   })()
   const ssrAccum = rtt(accumulate, null, null, { resolutionScale: 0.5 } as never) as N
+
+  // The same accumulation for the lamps' (and the flashlight's) light in the fog. It is ray-marched at a quarter of
+  // the output with per-pixel, per-frame jittered samples; the final TAA could only average that noise where its own
+  // history survives, so wherever the image changes (the torch beam swaying with the hand, a turning head) the
+  // coarse sample pattern showed through as a blocky, crawling grain over everything the beam lit. Averaged here, at
+  // its own resolution, the noise is gone before the upsample.
+  const scatterHistory = new THREE.RenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: false })
+  const scatterHistoryTex = texture(scatterHistory.texture) as N
+  const scatterHistoryValid = uniform(0)
+  const scatterResponse = uniform(0.1)
+  const accumulateScatter = Fn(() => {
+    const u = uv()
+    const texel = vec2(1).div(halfSize)
+    const cur = scatterTex.sample(u).toVar()
+    const mn = cur.toVar()
+    const mx = cur.toVar()
+    for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]] as const) {
+      const c = scatterTex.sample(u.add(texel.mul(vec2(ox, oy))))
+      mn.assign(min(mn, c))
+      mx.assign(max(mx, c))
+    }
+    const offset = vel.sample(u).xy.mul(vec2(0.5, -0.5))
+    const hu = u.sub(offset)
+    const inside = hu.greaterThanEqual(vec2(0)).all().and(hu.lessThanEqual(vec2(1)).all())
+    // The box already spans the jitter noise (it is per-pixel), so the history may average it; padding lets the beam
+    // fade rather than snap as it sweeps.
+    const pad = mx.sub(mn).mul(0.25)
+    const prev = scatterHistoryTex.sample(hu).clamp(mn.sub(pad), mx.add(pad))
+    const motion = offset.mul(halfSize).length()
+    const a = inside.and(scatterHistoryValid.greaterThan(0.5)).select(mix(scatterResponse, float(1), motion.div(2).saturate()), float(1))
+    return mix(prev, cur, a)
+  })()
+  const scatterAccum = rtt(accumulateScatter, null, null, { resolutionScale: 0.5 } as never) as N
   const blitSource = texture(new THREE.Texture()) as N
   const blitMaterial = new THREE.NodeMaterial()
   blitMaterial.colorNode = blitSource.sample(uv())
@@ -568,7 +601,7 @@ export function createPost(ctx: WorldContext) {
     return acc.div(wsum)
   }
   const upsample = (u: N, dist: N, withSsr: boolean) => ({
-    scatter: bilateral(scatterTex, halfSize, u, dist),
+    scatter: bilateral(scatterAccum, halfSize, u, dist),
     ssr: withSsr ? bilateral(ssrAccum, ssrSize, u, dist) : vec3(0),
   })
   const compositeTex = rtt(vec4(0), null, null, { resolutionScale: 1 } as never) as N
@@ -598,6 +631,7 @@ export function createPost(ctx: WorldContext) {
     scenePass.setResolutionScale(internal)
     compositeTex.setResolutionScale(internal)
     scatterTex.setResolutionScale(internal * 0.5)
+    scatterAccum.setResolutionScale(internal * 0.5)
     ssrStreaked.setResolutionScale(internal * ssrScale)
     ssrAccum.setResolutionScale(internal * ssrScale)
     ssrNode.resolutionScale = internal * ssrScale
@@ -756,7 +790,7 @@ export function createPost(ctx: WorldContext) {
     })()
 
     const show: Record<string, N> = {
-      scatter: (vec4 as N)((sRGBTransferOETF as N)(scatterTex.sample(uv()).rgb.mul(exposure).mul(4).clamp()), 1),
+      scatter: (vec4 as N)((sRGBTransferOETF as N)(scatterAccum.sample(uv()).rgb.mul(exposure).mul(4).clamp()), 1),
       ssr: (vec4 as N)((sRGBTransferOETF as N)(ssrAccum.sample(uv()).rgb.mul(exposure).mul(4).clamp()), 1),
       ao: (vec4 as N)((vec3 as N)(aoTex.sample(uv()).r), 1),
       rough: (vec4 as N)(mrTex.sample(uv()).g, ssrWeight, mrTex.sample(uv()).r, 1),
@@ -976,6 +1010,7 @@ export function createPost(ctx: WorldContext) {
       // A cut restarts the temporal history (TAAU and reflections) instead of letting the old view bleed out slowly.
       if (taauRef.node) taauRef.node.reset.value = camJump ? 1 : 0
       if (camJump) ssrHistoryValid.value = 0
+      if (camJump) scatterHistoryValid.value = 0
       exposure.value = 2 ** (num(ctx, "post.exposure") + indoor * num(ctx, "post.interiorExposure"))
       const bl = bloomNodeRef.node
       // The glow keeps its size and cost in CSS pixels whatever the output pixel ratio (half of a 1.25× canvas).
@@ -1035,9 +1070,29 @@ export function createPost(ctx: WorldContext) {
           renderer.setRenderTarget(null)
         }
       } else ssrHistoryValid.value = 0
+
+      // Same for the fog light (history at the scatter buffer's full-scale size, resampled across auto-res steps).
+      const ssrc = scatterAccum.renderTarget as THREE.RenderTarget | undefined
+      if (ssrc && ssrc.width > 1) {
+        const full = Math.min(1, num(ctx, "post.renderScale") / scaleState.dpr) * 0.5
+        const hw = Math.max(1, Math.floor(resolution.value.x * full))
+        const hh = Math.max(1, Math.floor(resolution.value.y * full))
+        if (scatterHistory.width !== hw || scatterHistory.height !== hh) {
+          scatterHistory.setSize(hw, hh)
+          ;(renderer as unknown as { initRenderTarget(t: THREE.RenderTarget): void }).initRenderTarget(scatterHistory)
+          scatterHistoryValid.value = 0
+        } else scatterHistoryValid.value = 1
+        if (ssrc.width === hw && ssrc.height === hh) renderer.copyTextureToTexture(ssrc.texture, scatterHistory.texture)
+        else {
+          blitSource.value = ssrc.texture
+          renderer.setRenderTarget(scatterHistory)
+          blitQuad.render(renderer)
+          renderer.setRenderTarget(null)
+        }
+      }
     },
   }
   // Automation hook for GPU-time breakdowns: scripts render frames back-to-back with settings toggled.
-  if (ctx.params.has("perf")) (globalThis as { __afterhoursRender?: unknown }).__afterhoursRender = { renderer, scene, camera, settings: ctx.settings, render: api.render, state: renderState, scale: () => ({ autoScale, ...scaleState }), scattering: () => [...scattering].map((r) => r.lamp.position.join(",")).sort().join(" ") }
+  if (ctx.params.has("perf") || import.meta.env.DEV) (globalThis as { __afterhoursRender?: unknown }).__afterhoursRender = { renderer, scene, camera, settings: ctx.settings, render: api.render, state: renderState, scale: () => ({ autoScale, ...scaleState }), scattering: () => [...scattering].map((r) => r.lamp.position.join(",")).sort().join(" ") }
   return api
 }

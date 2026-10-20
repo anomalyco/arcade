@@ -24,6 +24,7 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 import type { Lamp, WorldContext } from "../context"
 import { BUILDING } from "../layout"
 import { material, materialFor, type MaterialName } from "../../render/materials"
+import { exitSignMaterial } from "../../render/signs"
 import {
   DOCUMENTS,
   type DocumentId,
@@ -401,7 +402,7 @@ export const M = {
   red: paint(0x7a1610, 0.45, 0.1),
   hazardRed: glow(0x2a0806, 0xff2a12, 1.4, "hazard_red"),
   hazardOff: paint(0x3a1410, 0.4, 0),
-  exitSign: glow(0x1a0404, 0xff1a0c, 2.2, "exit_sign"),
+  exitSign: exitSignMaterial() as THREE.Material,
   cabinet: paint(0x5d665e, 0.5, 0.35),
   epoxy: paint(0x161817, 0.3, 0),
   steel: paint(0x9a9c98, 0.32, 0.9),

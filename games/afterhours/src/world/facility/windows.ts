@@ -1,6 +1,7 @@
 import * as THREE from "three/webgpu"
 import { Fn, attribute, float, fract, mix, select, sin, smoothstep, step, time, uniform, uv, vec2, vec3, abs, max, exp, length } from "three/tsl"
 import { decalBias, materialFor } from "../../render/materials"
+import { windowRoom } from "../../render/windowroom"
 
 // Window glass and decals for the facility. Two custom graphs, each built once and shared (shader count is the boot
 // cost); plain glass goes through the shared `flat` surface class.
@@ -31,9 +32,8 @@ export function windowMaterial() {
   // Lit room.
   const blindsAmt = mix(fract(seed.mul(17.1)).mul(1.3).sub(0.35).max(0).min(0.85), fract(seed.mul(17.1)).mul(0.45).add(0.4), real)
   const covered = step(float(1).sub(blindsAmt), p.y)
-  const room = mix(float(0.35), float(1.0), smoothstep(0.0, 1.0, p.y)).mul(
-    mix(float(0.75), float(1.0), smoothstep(0.0, 0.5, float(0.5).sub(abs(p.x.sub(fract(seed.mul(7.3))))))),
-  )
+  // A room with depth behind the glass (render/windowroom.ts interior mapping) instead of a flat gradient.
+  const room = windowRoom(seed).mul(1.4)
   const slats = mix(float(0.55), float(0.85), step(0.5, fract(p.y.mul(26))))
   const blinds = mix(float(1), slats, covered)
   const inX = step(abs(p.x.sub(fract(seed.mul(13.7)))), mix(float(0.15), float(0.45), fract(seed.mul(3.1))))

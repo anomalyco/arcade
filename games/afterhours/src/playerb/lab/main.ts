@@ -2,6 +2,7 @@ import * as THREE from "three/webgpu"
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
 import { LabPanel, type LabControl, type LabSettings } from "@arcade/kit/lab-panel"
 import { isEditableEventTarget } from "@arcade/kit/client/controls"
+import { VIEW_LAYER } from "../viewmodel"
 import { BODY_LAYER, CHARACTERS, CharacterBody, HEAD_LAYER, clipSpeeds, saveCharacter, savedCharacter } from "../body"
 import { buildStage, groundAt, LADDER, RAMP, STAIRS } from "./stage"
 import { LabWalker } from "./walker"
@@ -59,6 +60,7 @@ cam.layers.enable(HEAD_LAYER)
 const fpInset = new THREE.PerspectiveCamera(68, 1.6, 0.15, 200)
 // The game's view camera: the body without its head (HEAD_LAYER).
 fpInset.layers.enable(BODY_LAYER)
+fpInset.layers.enable(VIEW_LAYER)
 const orbit = new OrbitControls(cam, canvas)
 orbit.target.set(0, 1, 0)
 orbit.enableDamping = true
@@ -290,8 +292,13 @@ renderer.setAnimationLoop(() => {
     k.pitchRate = ((keys.has("ArrowUp") ? 1 : 0) - (keys.has("ArrowDown") ? 1 : 0)) * 1.4
   }
   walker.update(dt)
-  if (camPreset === "fp") cam.layers.disable(HEAD_LAYER)
-  else cam.layers.enable(HEAD_LAYER)
+  if (camPreset === "fp") {
+    cam.layers.disable(HEAD_LAYER)
+    cam.layers.enable(VIEW_LAYER)
+  } else {
+    cam.layers.enable(HEAD_LAYER)
+    cam.layers.disable(VIEW_LAYER)
+  }
   body.eyeAnchor = camPreset === "fp"
   body.update(dt, walker)
 

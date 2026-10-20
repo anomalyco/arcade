@@ -18,10 +18,14 @@ import { WET_BANDS } from "./styles"
 // mirror camera rendering only that layer halves its cost; see the note on WASHROOM_LAYER).
 
 /**
- * Layer the washroom contents carry in addition to layer 0 (4 = player head, 5 = player/body.ts SPARE_LAYER). A mirror camera that renders `(1 << WASHROOM_LAYER) | (1 << HEAD_LAYER)` sees the room and
- * the player only.
+ * Layer the washroom contents carry in addition to layer 0 (3 body, 4 player head, 5 SPARE_LAYER, 6 the first-person
+ * viewmodel: playerb/viewmodel.ts VIEW_LAYER). A mirror camera that renders `(1 << WASHROOM_LAYER) | (1 << HEAD_LAYER)`
+ * sees the room and the player only. The reflect-only stand-ins (corridor floor, far wall, ceiling, door frame seen
+ * through the door) carry ONLY this layer, so it must be one the main camera never enables: when it was 6 the main
+ * camera (which enables the viewmodel layer) drew those stand-ins coplanar with the real corridor floor and they
+ * z-fought.
  */
-export const WASHROOM_LAYER = 6
+export const WASHROOM_LAYER = 7
 
 export type WashroomOpts = {
   id: string

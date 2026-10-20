@@ -104,6 +104,7 @@ export const MODELS = {
   towel_dispenser: { size: [0.3, 0.38, 0.101], tris: 228, kb: 97, licence: "CC-BY-4.0", note: "stainless C-fold paper towel dispenser (wall)" },
   waste_basket: { size: [0.352, 0.36, 0.352], tris: 11460, lod1: 1456, kb: 254, licence: "CC-BY-4.0", note: "mesh wire wastebasket (washrooms, offices)" },
   hand_dryer: { size: [0.278, 0.24, 0.212], tris: 2588, lod1: 1200, kb: 197, licence: "CC-BY-4.0", note: "wall-mounted push-button hand dryer" },
+  mug: { size: [0.077, 0.095, 0.116], tris: 4000, lod1: 1200, kb: 41, licence: "CC-BY-4.0", note: "plain white ceramic coffee mug (pivot: base centre; tip it with tilt.x = π/2, mouth then faces the yaw)" },
   wet_floor_sign: { size: [0.3, 0.63, 0.359], tris: 228, kb: 185, licence: "CC0-1.0", note: "yellow wet-floor sign" },
   fluorescent_light: { size: [0.911, 0.032, 0.042], tris: 3540, kb: 165, licence: "CC0-1.0", note: "surface-mount fluorescent tube fixture" },
   security_camera: { size: [0.17, 0.286, 0.554], tris: 13571, kb: 303, licence: "CC0-1.0", note: "housed CCTV camera on bracket" },
@@ -126,7 +127,11 @@ const templates = new Map<ModelName, Promise<THREE.Group>>()
 // library ships in public/textures/basis/). The transcoder target depends on the GPU's compressed formats:
 // `initModels(renderer)` reads them from the renderer; if a model is requested first, they are read from a WebGPU
 // adapter instead (the renderer requests every compression feature the adapter has, so the answer is the same).
-const ktx2 = new KTX2Loader().setTranscoderPath(`${import.meta.env.BASE_URL}textures/basis/`).setWorkerLimit(2)
+// One loader for the whole page (models and the material library, see `sharedKtx2`): three warns about, and pays for,
+// every extra active KTX2Loader (its own transcoder workers).
+const ktx2 = new KTX2Loader()
+  .setTranscoderPath(`${import.meta.env.BASE_URL}textures/basis/`)
+  .setWorkerLimit(Math.max(4, Math.min(8, (globalThis.navigator?.hardwareConcurrency ?? 6) - 2)))
 let ktx2Ready: Promise<void> | null = null
 
 /** Optional: call once with the renderer (after `renderer.init()`) so KTX2 transcoding targets exactly its formats. */
@@ -134,6 +139,12 @@ export function initModels(renderer: THREE.WebGPURenderer) {
   ktx2.detectSupport(renderer as unknown as Parameters<KTX2Loader["detectSupport"]>[0])
   ktx2Ready = Promise.resolve()
   loader.setKTX2Loader(ktx2)
+}
+
+/** The page's KTX2 loader (render/materials.ts uses it too), its formats read from `renderer` if not done yet. */
+export function sharedKtx2(renderer: THREE.WebGPURenderer) {
+  if (!ktx2Ready) initModels(renderer)
+  return ktx2
 }
 
 function ensureKtx2(): Promise<void> {

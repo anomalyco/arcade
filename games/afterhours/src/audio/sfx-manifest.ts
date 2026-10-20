@@ -6,8 +6,8 @@
 export type SfxVariant = { url: string; duration: number; hit?: number; loopStart?: number; loopEnd?: number; from: string }
 export type SfxEntry = { group: string; loop: boolean; stereo: boolean; variants: readonly SfxVariant[]; skipped?: string }
 
-export type SfxId = "foot-linoleum" | "foot-stairwell" | "foot-grating" | "foot-wet-asphalt" | "foot-gravel" | "foot-forest" | "door-fire-steel" | "door-office-wood" | "door-panic-bar" | "door-rollup-dock" | "gate-chainlink" | "gate-motorized" | "lift-motor" | "lift-cable" | "lift-ding" | "lift-stall" | "lift-scissor-gate" | "light-fluoro-hum" | "light-fluoro-flicker" | "light-sodium-buzz" | "light-switch" | "amb-forest-night" | "amb-rain-asphalt" | "amb-rain-thunder" | "amb-thunder" | "amb-hvac" | "amb-corridor-tone" | "amb-machine-room" | "amb-radio-static" | "int-flashlight" | "int-keys" | "int-mop-bucket" | "int-paper" | "int-phone-ring" | "int-phone-offhook" | "int-crt-whine" | "int-lab-glass" | "hor-metal-bang" | "hor-knock" | "hor-drone" | "hor-radio-whisper" | "hor-footsteps-other" | "hor-sub-rumble" | "ui-notify" | "amb-pine-wind" | "out-owl" | "out-twig" | "out-cone" | "out-creak" | "out-rustle" | "out-far-animal" | "wen-distant-moan" | "wen2-starving-groan" | "wen2-chatter" | "wen2-huge-scream" | "story-car-alarm"
-export const SFX_IDS: readonly SfxId[] = ["foot-linoleum","foot-stairwell","foot-grating","foot-wet-asphalt","foot-gravel","foot-forest","door-fire-steel","door-office-wood","door-panic-bar","door-rollup-dock","gate-chainlink","gate-motorized","lift-motor","lift-cable","lift-ding","lift-stall","lift-scissor-gate","light-fluoro-hum","light-fluoro-flicker","light-sodium-buzz","light-switch","amb-forest-night","amb-rain-asphalt","amb-rain-thunder","amb-thunder","amb-hvac","amb-corridor-tone","amb-machine-room","amb-radio-static","int-flashlight","int-keys","int-mop-bucket","int-paper","int-phone-ring","int-phone-offhook","int-crt-whine","int-lab-glass","hor-metal-bang","hor-knock","hor-drone","hor-radio-whisper","hor-footsteps-other","hor-sub-rumble","ui-notify","amb-pine-wind","out-owl","out-twig","out-cone","out-creak","out-rustle","out-far-animal","wen-distant-moan","wen2-starving-groan","wen2-chatter","wen2-huge-scream","story-car-alarm"]
+export type SfxId = "foot-linoleum" | "foot-stairwell" | "foot-grating" | "foot-wet-asphalt" | "foot-gravel" | "foot-forest" | "door-fire-steel" | "door-office-wood" | "door-panic-bar" | "door-rollup-dock" | "gate-chainlink" | "gate-motorized" | "lift-motor" | "lift-cable" | "lift-ding" | "lift-stall" | "lift-scissor-gate" | "light-fluoro-hum" | "light-fluoro-flicker" | "light-sodium-buzz" | "light-switch" | "amb-forest-night" | "amb-rain-asphalt" | "amb-rain-thunder" | "amb-thunder" | "amb-hvac" | "amb-corridor-tone" | "amb-machine-room" | "amb-radio-static" | "int-flashlight" | "int-keys" | "int-mop-bucket" | "int-paper" | "int-phone-ring" | "int-phone-offhook" | "int-crt-whine" | "int-lab-glass" | "hor-metal-bang" | "hor-knock" | "hor-drone" | "hor-radio-whisper" | "hor-footsteps-other" | "hor-sub-rumble" | "ui-notify" | "amb-pine-wind" | "out-owl" | "out-twig" | "out-cone" | "out-creak" | "out-rustle" | "out-far-animal" | "wen-distant-moan" | "wen2-starving-groan" | "wen2-chatter" | "wen2-huge-scream" | "story-car-alarm" | "story-call-player-m" | "story-call-player-f" | "story-call-reply" | "story-call-player-remy" | "story-call-player-james" | "story-call-player-louise" | "story-call-player-megan" | "story-call-player-kate"
+export const SFX_IDS: readonly SfxId[] = ["foot-linoleum","foot-stairwell","foot-grating","foot-wet-asphalt","foot-gravel","foot-forest","door-fire-steel","door-office-wood","door-panic-bar","door-rollup-dock","gate-chainlink","gate-motorized","lift-motor","lift-cable","lift-ding","lift-stall","lift-scissor-gate","light-fluoro-hum","light-fluoro-flicker","light-sodium-buzz","light-switch","amb-forest-night","amb-rain-asphalt","amb-rain-thunder","amb-thunder","amb-hvac","amb-corridor-tone","amb-machine-room","amb-radio-static","int-flashlight","int-keys","int-mop-bucket","int-paper","int-phone-ring","int-phone-offhook","int-crt-whine","int-lab-glass","hor-metal-bang","hor-knock","hor-drone","hor-radio-whisper","hor-footsteps-other","hor-sub-rumble","ui-notify","amb-pine-wind","out-owl","out-twig","out-cone","out-creak","out-rustle","out-far-animal","wen-distant-moan","wen2-starving-groan","wen2-chatter","wen2-huge-scream","story-car-alarm","story-call-player-m","story-call-player-f","story-call-reply","story-call-player-remy","story-call-player-james","story-call-player-louise","story-call-player-megan","story-call-player-kate"]
 
 export const SFX: Record<SfxId, SfxEntry> = {
   "foot-linoleum": {
@@ -1119,6 +1119,110 @@ export const SFX: Record<SfxId, SfxEntry> = {
         "duration": 5,
         "hit": 0.669,
         "from": "story-car-alarm/v1"
+      }
+    ]
+  },
+  "story-call-player-m": {
+    "group": "story",
+    "loop": false,
+    "stereo": false,
+    "variants": [
+      {
+        "url": "sfx/story-call-player-m/v2.ogg",
+        "duration": 11.191,
+        "hit": 3.323,
+        "from": "story-call-player-m/v2"
+      }
+    ]
+  },
+  "story-call-player-f": {
+    "group": "story",
+    "loop": false,
+    "stereo": false,
+    "variants": [
+      {
+        "url": "sfx/story-call-player-f/v2.ogg",
+        "duration": 9.93,
+        "hit": 5.109,
+        "from": "story-call-player-f/v2"
+      }
+    ]
+  },
+  "story-call-reply": {
+    "group": "story",
+    "loop": false,
+    "stereo": false,
+    "variants": [
+      {
+        "url": "sfx/story-call-reply/v5.ogg",
+        "duration": 10.536,
+        "hit": 5.048,
+        "from": "story-call-reply/v5"
+      }
+    ]
+  },
+  "story-call-player-remy": {
+    "group": "story",
+    "loop": false,
+    "stereo": false,
+    "variants": [
+      {
+        "url": "sfx/story-call-player-remy/v8.ogg",
+        "duration": 11.724,
+        "hit": 6.355,
+        "from": "story-call-player-remy/v8"
+      }
+    ]
+  },
+  "story-call-player-james": {
+    "group": "story",
+    "loop": false,
+    "stereo": false,
+    "variants": [
+      {
+        "url": "sfx/story-call-player-james/v5.ogg",
+        "duration": 12.339,
+        "hit": 5.848,
+        "from": "story-call-player-james/v5"
+      }
+    ]
+  },
+  "story-call-player-louise": {
+    "group": "story",
+    "loop": false,
+    "stereo": false,
+    "variants": [
+      {
+        "url": "sfx/story-call-player-louise/v7.ogg",
+        "duration": 12.019,
+        "hit": 3.907,
+        "from": "story-call-player-louise/v7"
+      }
+    ]
+  },
+  "story-call-player-megan": {
+    "group": "story",
+    "loop": false,
+    "stereo": false,
+    "variants": [
+      {
+        "url": "sfx/story-call-player-megan/v9.ogg",
+        "duration": 12.02,
+        "hit": 6.656,
+        "from": "story-call-player-megan/v9"
+      }
+    ]
+  },
+  "story-call-player-kate": {
+    "group": "story",
+    "loop": false,
+    "stereo": false,
+    "variants": [
+      {
+        "url": "sfx/story-call-player-kate/v7.ogg",
+        "duration": 11.721,
+        "hit": 6.576,
+        "from": "story-call-player-kate/v7"
       }
     ]
   }

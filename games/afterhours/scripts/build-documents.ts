@@ -62,7 +62,7 @@ for (const m of program.matchAll(/^\| (\d-\d\d[a-z]?)(?:\.\.(\d\d))? \| ([^|]+?)
   const label = m[3]!
     .replace(/\*\*|`/g, "")
     .replace(/\s*\([^)]*\)/g, "")
-    .replace(/:\s*/g, " — ")
+    .replace(/:\s*/g, " · ")
     .replace(/\s*\+.*$/, "")
     .trim()
     .toUpperCase()

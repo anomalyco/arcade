@@ -111,7 +111,7 @@ function header(o: Sheet, index: number) {
   o.text(index === 0 ? "IOPS · ASHWOOD OUTPOST" : `IOPS · ASHWOOD OUTPOST · ${PAGE_TITLES[index]}`, W - 12, 31, { font: FONT.title, pt: 9, weight: 500, align: "right", spacing: 0.3 })
   o.text(`SHEET ${index + 1} OF ${PAGE_COUNT} · REV. 6 · 6/84`, W - 12, 36, { pt: 7, weight: 600, align: "right" })
   // Minor print line at the foot.
-  o.text("ATMOSPHERIC PROPAGATION RESEARCH FACILITY · PROJECT AW-79-014 · REDUCED COPY — DO NOT SCALE", W - 12, Hs - 9, { pt: 6, weight: 500, align: "right" })
+  o.text("ATMOSPHERIC PROPAGATION RESEARCH FACILITY · PROJECT AW-79-014 · REDUCED COPY · DO NOT SCALE", W - 12, Hs - 9, { pt: 6, weight: 500, align: "right" })
 }
 
 function northArrow(o: Sheet, x: number, y: number, r = 6) {
@@ -559,33 +559,33 @@ function floorNotes(q: Sheet, storey: number, plan: StoreyPlan | undefined) {
     const off = at("0-30", -51, 6)
     const sec = at("0-38", 13, 15)
     notes.push(
-      { text: ["field team — 6 unaccounted"], at: [118, 30], to: [fl1[0] + 4, fl1[1] - 4], ring: [fl1[0], fl1[1], 7, 6] },
-      { text: ["your office — keys in the cabinet"], at: [16, Hs - 12], to: [off[0] + 1, off[1] + 5] },
+      { text: ["field team: 6 unaccounted"], at: [118, 30], to: [fl1[0] + 4, fl1[1] - 4], ring: [fl1[0], fl1[1], 7, 6] },
+      { text: ["your office, keys in the cabinet"], at: [16, Hs - 12], to: [off[0] + 1, off[1] + 5] },
       { text: ["guard desk empty?"], at: [150, Hs - 12], to: [sec[0], sec[1] + 6] },
     )
   } else if (storey === 1) {
     const chief = at("1-07", -18, -17)
     const board = at("1-09", 0, -12)
     notes.push(
-      { text: ["Chief's office — memo re: the 6?"], at: [82, 30], to: [chief[0], chief[1] - 5] },
-      { text: ["in/out board — 6 still out (field)"], at: [118, Hs - 12], to: [board[0] + 3, board[1] + 6] },
+      { text: ["Chief's office. Memo re: the 6?"], at: [82, 30], to: [chief[0], chief[1] - 5] },
+      { text: ["in/out board: 6 still out (field)"], at: [118, Hs - 12], to: [board[0] + 3, board[1] + 6] },
     )
   } else if (storey === 2) {
     const lab = at("2-27", 14, 12)
     const cont = at("2-10", 28, -12)
     notes.push(
-      { text: ["hot plate on in 2-27 — turn it OFF"], at: [96, Hs - 12], to: [lab[0], lab[1] + 6], ring: [lab[0], lab[1], 12, 7] },
-      { text: ["containment — keycard only"], at: [130, 30], to: [cont[0], cont[1] - 5] },
+      { text: ["hot plate on in 2-27. Turn it OFF"], at: [96, Hs - 12], to: [lab[0], lab[1] + 6], ring: [lab[0], lab[1], 12, 7] },
+      { text: ["containment: keycard only"], at: [130, 30], to: [cont[0], cont[1] - 5] },
     )
   } else if (storey === 3) {
     const lr = at("3-08", 6, -12)
-    notes.push({ text: ["RADIO TRAFFIC —", "LISTENING ROOM?"], at: [104, 21], to: [lr[0] + 1, lr[1] - 9], ring: [lr[0], lr[1], 12, 21], pt: 26, under: true })
+    notes.push({ text: ["RADIO TRAFFIC:", "LISTENING ROOM?"], at: [104, 21], to: [lr[0] + 1, lr[1] - 9], ring: [lr[0], lr[1], 12, 21], pt: 26, under: true })
     q.ring(lr[0], lr[1], 13.5, 22.5, INK.ballBlue, 0.45)
   } else if (storey === 4) {
     const dir = at("4-14", 28, 15)
     notes.push(
-      { text: ["WEST HALF — DO NOT ENTER"], at: [86, 30], pt: 20, color: INK.red },
-      { text: ["Director R.H. — still in there??"], at: [120, Hs - 12], to: [dir[0] - 1, dir[1] + 6], ring: [dir[0], dir[1], 14, 9] },
+      { text: ["WEST HALF: DO NOT ENTER"], at: [86, 30], pt: 20, color: INK.red },
+      { text: ["Director R.H. still in there??"], at: [120, Hs - 12], to: [dir[0] - 1, dir[1] + 6], ring: [dir[0], dir[1], 14, 9] },
     )
     q.scribble([[X(-54.4), Z(-2)], [X(-4.8), Z(-21.3)]], 0.5, INK.red, 0.25)
     q.scribble([[X(-54.4), Z(-21.3)], [X(-4.8), Z(-2)]], 0.5, INK.red, 0.25)
@@ -596,7 +596,7 @@ function floorNotes(q: Sheet, storey: number, plan: StoreyPlan | undefined) {
 function roofNotes(q: Sheet) {
   OY = 52
   writeNotes(q, [
-    { text: ["roof door — alarmed?"], at: [20, Hs - 12], to: [X(-39.7) + 1, Z(25.2) + 2] },
+    { text: ["roof door, alarmed?"], at: [20, Hs - 12], to: [X(-39.7) + 1, Z(25.2) + 2] },
     { text: ["dish feed → down W-1 to 4-11"], at: [104, 30], to: [X(6) + 2, Z(-4) - 4] },
   ])
 }
@@ -624,11 +624,11 @@ function siteNotes(q: Sheet, briefing: string[]) {
   const [ex, ey] = lr[lr.length - 1]!
   q.scribble([[ex - 1.4, ey - 1.4], [ex + 1.4, ey + 1.4]], 0.45, ink, 0.05)
   q.scribble([[ex - 1.4, ey + 1.4], [ex + 1.4, ey - 1.4]], 0.45, ink, 0.05)
-  q.hand("old logging rd — ends here", lr[1]![0] - 30, lr[1]![1] - 4, { pt: 13, color: ink, slant: 0.08 })
+  q.hand("old logging rd, ends here", lr[1]![0] - 30, lr[1]![1] - 4, { pt: 13, color: ink, slant: 0.08 })
   const [cx, cy] = VP(SITE_NOTES.clearing)
   q.ring(cx, cy, 4.5, 3.4, ink, 0.4)
   q.hand("clearing", cx - 7, cy + 8, { pt: 13, color: ink })
-  q.hand("forest marks rough — Brandt", vx0 + 3, vy0 + vh + 9, { pt: 13, color: ink })
+  q.hand("Brandt: forest marks rough", vx0 + 3, vy0 + vh + 9, { pt: 13, color: ink })
 }
 
 export type { Ctx }

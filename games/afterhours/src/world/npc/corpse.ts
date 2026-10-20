@@ -74,6 +74,9 @@ function loadModel(id: string) {
   return p
 }
 
+/** Close-cropped hair painted on the scalp where the model's hair cards are only a front fringe (blood.ts). */
+const SCALP: Partial<Record<CorpseCharacter, readonly [number, number, number]>> = { lewis: [0.022, 0.017, 0.013] }
+
 /** Preload a character (and the shared poses) without spawning. */
 export function preloadCorpse(character: CorpseCharacter) {
   return Promise.all([loadShared(), loadModel(character)]).then(() => undefined)
@@ -106,7 +109,8 @@ export async function spawnCorpse(character: CorpseCharacter, pose: CorpsePose, 
   root.rotation.y = anchor.yaw
   root.add(body)
   root.updateMatrixWorld(true)
-  if (opts.blood) applyCorpseBlood(root, opts.blood)
+  // Always converted: the copies also give the skin its dead pallor (blood.ts); wounds are optional.
+  applyCorpseBlood(root, { scalp: SCALP[character], ...(opts.blood ?? { wounds: [] }) })
   // The pose never changes, so bake it into plain meshes: a GPU-skinned corpse shimmers along every silhouette under
   // TAA (the stand-still flicker sweep flagged the 3-08 bodies; static copies measure clean), and skips skinning cost.
   // The skinned originals stay in the hierarchy, hidden, for callers that read the bones or raycast and measure the
@@ -119,7 +123,14 @@ export async function spawnCorpse(character: CorpseCharacter, pose: CorpsePose, 
   const rootInv = root.matrixWorld.clone().invert()
   for (const s of skinned) {
     toRoot.multiplyMatrices(rootInv, s.matrixWorld)
-    const mesh = new THREE.Mesh(bakePose(s, toRoot), s.material)
+    const hair = ([s.material].flat() as THREE.Material[]).some((m) => /hair/i.test(m.name))
+    // Characters whose short hair is painted on the scalp (SCALP) drop their hair cards: lewis's cards are a sparse
+    // fringe and tufts that read as a striped ring floating over the painted crop.
+    if (hair && SCALP[character]) {
+      s.visible = false
+      continue
+    }
+    const mesh = new THREE.Mesh(bakePose(s, toRoot, hair ? 0.0012 : 0), s.material)
     mesh.name = s.name
     mesh.castShadow = s.castShadow
     mesh.receiveShadow = s.receiveShadow
@@ -136,8 +147,21 @@ export async function spawnCorpse(character: CorpseCharacter, pose: CorpsePose, 
 }
 
 /** The skinned mesh's current pose as a static geometry in the frame `to` maps its local space into. */
-function bakePose(s: THREE.SkinnedMesh, to: THREE.Matrix4) {
+/** `inflate` pushes vertices out along their normals (metres): hair cards on short-cropped characters sit almost on
+ *  the scalp and z-fight into it once baked, leaving the head bald with a fringe poking out at the edges. */
+function bakePose(s: THREE.SkinnedMesh, to: THREE.Matrix4, inflate = 0) {
   const g = s.geometry.clone()
+  // The GLBs are quantised (KHR_mesh_quantization: normalised int16 positions/normals). Baked values are in the
+  // corpse root's frame (metres, often > 1 m: a seated head is ~1.1 m up), so writing them back into a normalised
+  // int16 attribute clamps everything past ±1 — the slumped bodies lost the top of the head and back in a jagged cut.
+  // Bake into float copies.
+  for (const name of ["position", "normal", "tangent"]) {
+    const a = g.getAttribute(name) as THREE.BufferAttribute | undefined
+    if (!a || a.array instanceof Float32Array) continue
+    const f = new Float32Array(a.count * a.itemSize)
+    for (let i = 0; i < a.count; i++) for (let k = 0; k < a.itemSize; k++) f[i * a.itemSize + k] = a.getComponent(i, k)
+    g.setAttribute(name, new THREE.BufferAttribute(f, a.itemSize))
+  }
   const P = g.attributes.position as THREE.BufferAttribute
   const N = g.attributes.normal as THREE.BufferAttribute | undefined
   const Tn = g.attributes.tangent as THREE.BufferAttribute | undefined
@@ -161,7 +185,10 @@ function bakePose(s: THREE.SkinnedMesh, to: THREE.Matrix4) {
     full.multiplyMatrices(to, s.bindMatrixInverse).multiply(blend).multiply(s.bindMatrix)
     P.setXYZ(i, ...v.fromBufferAttribute(P, i).applyMatrix4(full).toArray())
     if (N || Tn) nm.getNormalMatrix(full)
-    if (N) N.setXYZ(i, ...v.fromBufferAttribute(N, i).applyMatrix3(nm).normalize().toArray())
+    if (N) {
+      N.setXYZ(i, ...v.fromBufferAttribute(N, i).applyMatrix3(nm).normalize().toArray())
+      if (inflate) P.setXYZ(i, P.getX(i) + v.x * inflate, P.getY(i) + v.y * inflate, P.getZ(i) + v.z * inflate)
+    }
     if (Tn) {
       v.set(Tn.getX(i), Tn.getY(i), Tn.getZ(i)).transformDirection(full)
       Tn.setXYZ(i, v.x, v.y, v.z)

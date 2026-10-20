@@ -265,9 +265,12 @@ export function emergencyPack(b: Builder, x: number, y: number, z: number, nx: n
 /** Exit sign over a door: box on the wall at (x, z) with outward normal (nx, nz), lamp included. */
 export function exitSign(b: Builder, x: number, z: number, nx: number, nz: number, y = FLOOR_Y + DOOR_H + 0.38) {
   const m = T(x + nx * 0.05, y, z + nz * 0.05, Math.atan2(nx, nz))
-  b.boxM(M.frame, m, 0.58, 0.27, 0.1, 0, 0, 0)
-  b.quad(M.exitSign, m.clone().multiply(T(0, 0, 0.052)), 0.54, 0.21, { cast: false })
-  b.lamp({ kind: "exit", position: [x + nx * 0.2, y, z + nz * 0.2], color: [1, 0.08, 0.04], intensity: 1, range: 3, size: 0.35 })
+  // Pressed-steel housing (painted cream, a 1980s fitting) with a face-panel lip around the red diffuser.
+  b.boxM(M.beige, m, 0.6, 0.29, 0.1, 0, 0, 0)
+  b.boxM(M.darkSteel, m, 0.58, 0.012, 0.012, 0, 0.115, 0.051, { cast: false })
+  b.boxM(M.darkSteel, m, 0.58, 0.012, 0.012, 0, -0.115, 0.051, { cast: false })
+  b.quad(M.exitSign, m.clone().multiply(T(0, 0, 0.053)), 0.54, 0.21, { cast: false })
+  b.lamp({ kind: "exit", position: [x + nx * 0.2, y, z + nz * 0.2], color: [1, 0.08, 0.04], intensity: 0.6, range: 2, size: 0.18 })
 }
 
 /** Rotating-type warning beacon (halon, RF hazard, UV): coloured dome on a base, warning lamp (blinks via the rig). */

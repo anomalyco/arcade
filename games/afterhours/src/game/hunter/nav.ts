@@ -412,6 +412,21 @@ export class NavGraph {
   }
 
   /**
+   * World y of the ceiling over (x, z) for a body standing at height `y`: the suspended ceiling 2.94 m over the storey's
+   * floor (kit CEIL_Y − FLOOR_Y), except in the open stairwell (no ceiling), where it is the underside of the flight or
+   * landing above (the lowest walking surface over it, less the slab or soffit, 0.25 m).
+   */
+  ceilingAt(x: number, z: number, y: number) {
+    if (x >= ST.x0 - 0.05 && x <= ST.x1 + 0.05 && z >= ST.z0 && z <= ST.z1 + 0.05) {
+      const l = this.floorHash.get(bkey(Math.floor(x / BUCKET), Math.floor(z / BUCKET)))
+      let c = Infinity
+      if (l) for (const f of l) if (f.y > y + 1.2 && f.y < c && x >= f.min[0] && x <= f.max[0] && z >= f.min[1] && z <= f.max[1]) c = f.y
+      return Number.isFinite(c) ? c - 0.25 : y + 3.6
+    }
+    return storeyY(storeyOf(y + 0.3)) + 0.01 + 2.94
+  }
+
+  /**
    * Colliders the segment a → b passes through (boxes containing either end don't count), up to `max`. `tall`: only
    * wall-height solids (≥ 1.9 m), for counting walls between a noise and the listener.
    */

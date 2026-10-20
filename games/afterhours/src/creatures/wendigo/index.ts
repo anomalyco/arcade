@@ -29,7 +29,8 @@ export type WendigoOpts = {
 }
 
 /** `stance` picks all fours or upright for idle/stalk/freeze/lunge; omit to keep the current one (see animate.ts). */
-export type WendigoUpdate = { mode: WendigoMode; stance?: WendigoStance; target?: THREE.Vector3; velocity?: THREE.Vector3 }
+/** `ceiling`: world Y of the ceiling over it indoors; it stoops (upright) or crouches (all fours) to fit its antlers under. */
+export type WendigoUpdate = { mode: WendigoMode; stance?: WendigoStance; target?: THREE.Vector3; velocity?: THREE.Vector3; ceiling?: number }
 
 export type Wendigo = {
   root: THREE.Object3D
@@ -40,11 +41,14 @@ export type Wendigo = {
   /** Available once ready. */
   rig: CreatureRig | null
   animator: WendigoAnimator | null
+  /** 0..1 overall shade of the body (1 normal): darken it when it fills the lens. */
+  setShade(v: number): void
 }
 
 export function createWendigo(opts: WendigoOpts = {}): Wendigo {
   const root = new THREE.Group()
   root.name = "wendigo"
+  let shadeU: { value: number } | null = null
   const out: Wendigo = {
     root,
     rig: null,
@@ -53,6 +57,9 @@ export function createWendigo(opts: WendigoOpts = {}): Wendigo {
       out.animator?.update(dt, s)
     },
     ready: Promise.resolve(),
+    setShade(v) {
+      if (shadeU) shadeU.value = v
+    },
     get stance() {
       return out.animator?.stance ?? "quad"
     },
@@ -67,6 +74,7 @@ export function createWendigo(opts: WendigoOpts = {}): Wendigo {
     out.rig = rig
     out.animator = new WendigoAnimator(rig, root, opts.ground ?? (() => 0), opts.seed ?? 1)
     out.animator.sway = uniforms.sway
+    shadeU = uniforms.shade
   })()
   return out
 }

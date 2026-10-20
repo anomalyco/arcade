@@ -11,7 +11,9 @@ export const HOME = {
   osdStamp: "OCT 19 1984  01:52",
   loading: "acquiring signal",
   /** Under the loading static until the first key or click starts the sound. */
-  prompt: "press any key",
+  prompt: "press any key for sound",
+  /** The prompt's acknowledgement, briefly, once a key or click has started the sound. */
+  promptDone: "sound on",
   ready: "",
   failed: "No signal. This browser needs WebGPU.",
 }
@@ -38,9 +40,9 @@ export type TitleCard = {
 export const TITLE_CARD = {
   cards: [
     { lines: ["October 19, 1984", "Ashwood Outpost", "Interagency Office of Propagation Studies"], hold: 2.4 },
-    { lines: ["Six staff from the night field team", "are unaccounted for."], hold: 2.4 },
-    { lines: ["Last night, a receiver in town picked up", "a transmission on the station's frequency.", "Nobody at the station answers the phone."], hold: 2.8 },
-    { lines: ["It's probably nothing.", "You've been sent to take a look."], hold: 2.6 },
+    { lines: ["The station's radio has been silent for two days."], hold: 2.4 },
+    { lines: ["Nobody answers the phone."], hold: 2.2 },
+    { lines: ["You've been sent to find out why."], hold: 2.8 },
   ] satisfies TitleCard[],
   /** Typewriter speed, characters per second. */
   typeRate: 38,
@@ -64,9 +66,9 @@ export const HINT = {
   contextSeconds: 6,
   /** The one-time contextual hints, after their key cap. */
   context: {
-    flashlight: "— flashlight",
-    map: "— map",
-    crouch: "— crouch",
+    flashlight: "flashlight",
+    map: "map",
+    crouch: "crouch",
   },
 }
 

@@ -1,16 +1,23 @@
 import * as THREE from "three/webgpu"
 import { keyPromptHtml } from "@arcade/kit/client/key-cap"
 import { hooks } from "../../../../audio/hooks"
-import { duck } from "../../../../audio/context"
-import { playCarDestroyed } from "../../../../audio/story"
+import type { LoopVoice } from "../../../../audio/engine"
+import { SFX, type SfxId } from "../../../../audio/sfx-manifest"
+import { playCarDestroyed, playerVoice } from "../../../../audio/story"
+import { showSubtitle } from "../../../../game/shell/subtitles"
 import { type Builder, CEIL_Y, FLOOR_Y, M, T, paint, yawToward } from "../../api"
 import { type BloodSpot, HAND_SIZE, bloodMesh } from "../../blood"
 import { transmitter } from "./transmitter-state"
 
-// TX-1, the carrier transmitter on the east wall of 3-08: still on the air, on a loop, the signal the town picked up.
-// A tall rack with a lit ON AIR lamp, a swinging VU meter and the big TX POWER rotary switch. Aim at the switch and
-// press E: the hand reaches, a heavy clunk, the lamp dies, the needle drops and the static (listening.ts) stops dead;
-// a few seconds of silence, then one heavy crash outside ("aftermath": game/objectives.ts → "Get out.").
+// The 3-08 radio-room beat (story state: ./transmitter-state.ts). The station's radio went silent two days ago: TX-1,
+// the transmitter on the east wall, is OFF when the player arrives (lamp dark, needle at rest, no carrier). Three
+// interactions, each aim + E:
+//   1. TX POWER switch → heavy clunk, ~2 s warm-up hum, the ON AIR lamp lights, the needle rises.
+//   2. the desk mic → the player's report and County's crackled reply, as subtitles with static bursts (and the
+//      voice takes `story-call-player-m` / `story-call-reply` once they're in the manifest) → onTransmitted().
+//   3. the operator slumped over the desk → a push; he slides off the chair to the floor and the warning scrawled on
+//      the blotter under him shows (TRANSMITTING WAKES IT …) → onReveal(); a beat of silence, then the turn (the
+//      hunter's scream and glass, the car destroyed: src/audio/story.ts).
 
 /** Rack: front face on x = FRONT_X (facing −x, into the room), centred on z = TX_Z. World x/z, storey-3 frame y. */
 const TX_X = 11.21
@@ -22,15 +29,80 @@ const FRONT = -D / 2
 /** The switch (local, on the front): centre height, and its world position for aiming and the hand reach. */
 const SW_Y = 1.08
 const SW_U = 0.22
-/** Silence before the crash (s), and how long the building stays hushed. */
-const SILENCE = 3.6
+/** Warm-up after the switch is thrown (s). */
+const WARM_UP = 2.1
+/** The beat of silence after the reveal before the car goes (s); the hunter's scream lands inside it. */
+const TURN_CAR = 5.5
+/** Desk mic on the operator desk (world x/z, storey-3 frame y = desk top). */
+export const MIC = { x: 9.0, z: -14.02 }
+/** The receiver on the desk (County's voice comes out of it; listening.ts LISTENING_ROOM_RADIO). */
+const RX = { x: 9.4, y: FLOOR_Y + 0.85 + 3 * 3.8, z: -14.15 }
 
 const CAB = paint(0x3d4440, 0.55, 0.3)
 const DARK = paint(0x16181a, 0.5, 0.3)
+const CHROME = paint(0xb8bcbc, 0.25, 0.9)
 
-export type Transmitter = { update(t: number, level: number): void; readonly on: boolean; onCut(fn: () => void): void }
+/** The radio call (s from keying): the player's report (their character's voice, `playerVoice("call-player")`), static,
+ *  then County (`story-call-reply`). Subtitle lines are timed to the clips: each clip's lines share its length by
+ *  text length. Without a shipped clip the line plays as subtitles only, at a reading pace. */
+type CallLine = { who: string; text: string; at: number; dur: number; sfx?: SfxId; static?: number }
+/** Line 3 of the player's report as each character's take says it (the rest is the same for everyone). */
+const PLAYER_LINE3: Record<string, string> = {
+  james: "There's two more I can't find.",
+  louise: "There are two more I can't find anywhere.",
+  megan: "Two more, I don't know where they are.",
+}
+const playerLines = (sfx: SfxId | null) => [
+  "County, County, this is Ashwood Outpost, do you read?",
+  "I'm up at the station and they're... they're all dead. Four of them.",
+  PLAYER_LINE3[sfx?.replace(/^story-call-player-/, "") ?? ""] ?? "There's two more I can't find anywhere.",
+  "Please, I need somebody out here.",
+]
+const REPLY_LINES = ["Ashwood, County dispatch, copy.", "Units are on the way. I need you to stay right where you are. Do not move."]
+const clipLength = (id: SfxId | null) => (id ? (SFX[id]?.variants[0]?.duration ?? 0) : 0)
+/** Lines spread over a clip of length `len` from `at` (by characters), or at ~14 chars/s with no clip. */
+function spread(who: string, lines: string[], at: number, len: number, sfx: SfxId | null, staticOn?: number): CallLine[] {
+  const chars = lines.reduce((n, l) => n + l.length, 0)
+  const total = len > 0 ? len : chars / 14 + 0.4 * lines.length
+  let t = at
+  return lines.map((text, i) => {
+    const dur = (total * text.length) / chars
+    const l: CallLine = { who, text, at: t, dur: dur + 0.15, ...(i === 0 && sfx ? { sfx } : {}), ...(i === 0 && staticOn ? { static: staticOn } : {}) }
+    t += dur
+    return l
+  })
+}
+function buildCall(): { lines: CallLine[]; end: number; keyedUntil: number } {
+  const pv = playerVoice("call-player")
+  const pLen = clipLength(pv)
+  const rLen = clipLength("story-call-reply")
+  const pAt = 1.0
+  const player = spread("YOU", playerLines(pv), pAt, pLen, pv)
+  const pEnd = pAt + (pLen > 0 ? pLen : player.reduce((n, l) => n + l.dur, 0))
+  const rAt = pEnd + 1.3
+  const reply = spread("COUNTY", REPLY_LINES, rAt, rLen, rLen > 0 ? "story-call-reply" : null, 0.25)
+  const rEnd = rAt + (rLen > 0 ? rLen : reply.reduce((n, l) => n + l.dur, 0))
+  return {
+    lines: [{ who: "", text: "*click* keyed", at: 0, dur: 0.9, static: 0.35 }, ...player, { who: "", text: "*static*", at: pEnd + 0.1, dur: 1.1, static: 1.1 }, ...reply, { who: "", text: "*static*", at: rEnd, dur: 0.8, static: 0.5 }],
+    end: rEnd + 1.2,
+    keyedUntil: pEnd,
+  }
+}
 
-export function transmitterRack(b: Builder): Transmitter {
+export type RadioRoom = {
+  update(t: number, level: number): void
+  /** True while the carrier is on the air (the receiver's static follows it). */
+  readonly carrier: boolean
+  /** The operator slumped over the desk (corpse root) and his pose on the floor (hidden until he falls). */
+  setOperator(seated: THREE.Object3D, onFloor: THREE.Object3D | null, chest: THREE.Vector3): void
+  /** The blotter warning (hidden under him until he's moved). */
+  setWarning(o: THREE.Object3D): void
+}
+
+type Body = { interact?: (k: string, t?: unknown) => void }
+const body = () => (globalThis as { __afterhoursBody?: { body?: Body } }).__afterhoursBody?.body
+
+export function transmitterRack(b: Builder): RadioRoom {
   const yaw = yawToward(-1, 0)
   const m = T(TX_X, FLOOR_Y, TX_Z, yaw)
   b.rbox(CAB, m, W, H, D, 0.02, 0, H / 2, 0)
@@ -43,7 +115,7 @@ export function transmitterRack(b: Builder): Transmitter {
   b.cyl(M.steel, m.clone().multiply(T(SW_U, SW_Y, FRONT - 0.012, 0, Math.PI / 2)), 0.075, 0.075, 0.024, 28)
   b.cyl(DARK, m.clone().multiply(T(SW_U, SW_Y, FRONT - 0.03, 0, Math.PI / 2)), 0.028, 0.028, 0.02, 16)
 
-  // Faceplate legend (canvas, 1 px = 2 mm), with the unlit ON AIR lens and the meter face printed on it.
+  // Faceplate legend (canvas), with the unlit ON AIR lens and the meter face printed on it.
   const plate = faceplate()
   const toWorld = (u: number, v: number, w: number) => new THREE.Vector3(u, v, w).applyMatrix4(m)
   const place = (o: THREE.Object3D, u: number, v: number, w: number) => {
@@ -53,32 +125,35 @@ export function transmitterRack(b: Builder): Transmitter {
   }
   place(plate, 0, H / 2 + 0.02, FRONT - 0.0048)
   b.small.add(plate)
-
-  // ON AIR lamp: lit lens over the printed one (hidden when the carrier stops).
+  // ON AIR lamp: lit lens over the printed one (shown once the carrier is up).
   const onAir = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.13), lampMaterial())
   place(onAir, 0, ONAIR_V, FRONT - 0.0095)
   onAir.renderOrder = 2
+  onAir.visible = false
   b.small.add(onAir)
-  // VU meter: lit face and its needle (pivot below the scale).
-  const vu = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.16), meterMaterial())
+  // VU meter: face (dim until warm) and its needle (pivot below the scale).
+  const meterMat = meterMaterial()
+  const vu = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.16), meterMat)
   place(vu, -0.02, VU_V, FRONT - 0.0095)
   b.small.add(vu)
   const needle = new THREE.Mesh(new THREE.BoxGeometry(0.003, 0.12, 0.002).translate(0, 0.06, 0), new THREE.MeshBasicNodeMaterial({ color: 0x0a0a0a }))
   const pivot = new THREE.Group()
   place(pivot, -0.02, VU_V - 0.07, FRONT - 0.014)
   pivot.add(needle)
+  pivot.rotation.z = 0.8
   b.small.add(pivot)
-  // The handle: a long bakelite bar on a hub; ON is vertical, OFF a quarter-turn to the left.
+  // The handle: a long bakelite bar on a hub; ON is vertical, OFF a quarter-turn to the left. Starts OFF.
   const handle = new THREE.Group()
   const bar = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.2, 0.04).translate(0, 0.03, 0), handleMaterial())
   const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.05, 20).rotateX(Math.PI / 2), handleMaterial())
   handle.add(bar, hub)
   for (const c of handle.children) c.castShadow = true
   place(handle, SW_U, SW_Y, FRONT - 0.06)
+  handle.rotation.z = Math.PI / 2
   b.small.add(handle)
   b.collide(TX_X - D / 2, FLOOR_Y, TX_Z - W / 2, TX_X + D / 2, FLOOR_Y + H, TX_Z + W / 2)
 
-  // Blood: Hargrove's hand on the cabinet under the switch, smeared down as he fell.
+  // Blood: Hargrove's hands on the cabinet under the switch, smeared down as he fell.
   const n = toWorld(0, 0, -1).sub(toWorld(0, 0, 0)).normalize()
   const hp = toWorld(SW_U - 0.06, 0.62, FRONT - 0.0085)
   const hp2 = toWorld(SW_U + 0.05, 0.83, FRONT - 0.0085)
@@ -90,12 +165,21 @@ export function transmitterRack(b: Builder): Transmitter {
   blood.position.y = b.oy
   b.small.add(blood)
 
-  // ---- interaction
-  const sw = toWorld(SW_U, SW_Y, FRONT - 0.06)
-  const swWorld = new THREE.Vector3(sw.x, sw.y + b.oy, sw.z)
-  const cam = b.ctx.camera
-  const dir = new THREE.Vector3()
-  const to = new THREE.Vector3()
+  // Desk mic: a chrome stand mic with a push-to-talk bar on its base, on the operator desk by the receiver.
+  const deskY = FLOOR_Y + 0.79
+  const mm = T(MIC.x, deskY, MIC.z, yawToward(0, 1))
+  b.cyl(DARK, mm, 0.065, 0.075, 0.025, 20)
+  b.boxM(CHROME, mm, 0.05, 0.012, 0.03, 0, 0.03, -0.03)
+  b.cyl(CHROME, mm.clone().multiply(T(0, 0.12, 0)), 0.008, 0.008, 0.2, 10)
+  b.cyl(CHROME, mm.clone().multiply(T(0, 0.24, -0.01, 0, 1.2)), 0.024, 0.03, 0.08, 16)
+  b.cyl(DARK, mm.clone().multiply(T(0, 0.255, -0.045, 0, 1.2)), 0.022, 0.022, 0.006, 16)
+  const micWorld = new THREE.Vector3(MIC.x, deskY + 0.17 + b.oy, MIC.z)
+  const swWorld = (() => {
+    const p = toWorld(SW_U, SW_Y, FRONT - 0.06)
+    return new THREE.Vector3(p.x, p.y + b.oy, p.z)
+  })()
+
+  // ---- HUD: prompt and subtitles
   const shot = b.ctx.params.has("shot")
   const prompt = shot ? null : document.createElement("div")
   if (prompt) {
@@ -103,81 +187,209 @@ export function transmitterRack(b: Builder): Transmitter {
     prompt.style.cssText = "position:fixed;left:50%;top:58%;transform:translate(-50%,0);pointer-events:none;opacity:0"
     document.body.appendChild(prompt)
   }
-  let shown = false
-  let aimed = false
-  let on = true
-  let turn = 0
-  let cutAt = -1
-  let now = 0
-  let crashed = false
-  const cutListeners: (() => void)[] = []
 
-  const cut = () => {
-    if (!on) return
-    on = false
-    cutAt = now
-    onAir.visible = false
-    const body = (globalThis as { __afterhoursBody?: { body?: { interact?: (k: string, t?: unknown) => void } } }).__afterhoursBody?.body
-    body?.interact?.("button", { x: swWorld.x, y: swWorld.y, z: swWorld.z })
+  // ---- state
+  const cam = b.ctx.camera
+  const dir = new THREE.Vector3()
+  const to = new THREE.Vector3()
+  let now = 0
+  let switchedAt = -1
+  let callAt = -1
+  let call = buildCall()
+  let revealAt = -1
+  let carGone = false
+  let carrier = false
+  let hum: LoopVoice | null = null
+  const fired = new Set<number>()
+  let operator: { seated: THREE.Object3D; onFloor: THREE.Object3D | null; chest: THREE.Vector3; pivot: THREE.Group | null; t: number } | null = null
+  let warning: THREE.Object3D | null = null
+
+  const staticBurst = (len: number, gain = 0.9) => {
     const sfx = hooks.sfx
-    sfx?.play("light-switch", { bus: "doors", pos: { x: swWorld.x, y: swWorld.y, z: swWorld.z }, ref: 3, gain: 1.6, rate: 0.5, lowBoost: 9 })
-    sfx?.play("door-fire-steel", { bus: "doors", pos: { x: swWorld.x, y: swWorld.y, z: swWorld.z }, ref: 2, gain: 0.5, rate: 0.7, offset: 0.55, lowBoost: 6 })
-    // The building goes quiet: the ambience bus ducks to near silence with the carrier, holds ~20 s and comes back
-    // over 5 s (the audio's duck stage; the player's Ambience setting is never touched).
-    duck("ambience", 0.03, 1.2, 20, 5)
-    for (const f of cutListeners) f()
-    transmitter.set("off")
+    if (!sfx) return
+    const v = sfx.loop("amb-radio-static", { bus: "horror", positional: true, ref: 2, rolloff: 0.6 })
+    v.at(MIC.x, micWorld.y, MIC.z)
+    v.set(gain)
+    let t = 0
+    const tick = () => {
+      t += 0.05
+      v.update(0.05, now)
+      if (t < len) setTimeout(tick, 50)
+      else v.stop()
+    }
+    tick()
   }
-  transmitter.bind(cut)
+
+  const switchOn = () => {
+    if (transmitter.phase !== "off") return
+    switchedAt = now
+    body()?.interact?.("button", { x: swWorld.x, y: swWorld.y, z: swWorld.z })
+    const p = { x: swWorld.x, y: swWorld.y, z: swWorld.z }
+    hooks.sfx?.play("light-switch", { bus: "doors", pos: p, ref: 3, gain: 1.6, rate: 0.5, lowBoost: 9 })
+    hooks.sfx?.play("door-fire-steel", { bus: "doors", pos: p, ref: 2, gain: 0.5, rate: 0.7, offset: 0.55, lowBoost: 6 })
+    const sfx = hooks.sfx
+    if (sfx) {
+      // Valve warm-up: a transformer hum swelling under the cabinet, settling to a low idle once on the air.
+      hum = sfx.loop("light-fluoro-hum", { bus: "ambience", positional: true, ref: 1.5, rolloff: 1.2 })
+      const c = toWorld(0, 0.9, FRONT)
+      hum.at(c.x, c.y + b.oy, c.z)
+    }
+    transmitter.set("warming")
+  }
+  const transmit = () => {
+    if (transmitter.phase !== "on") return
+    callAt = now
+    call = buildCall()
+    fired.clear()
+    body()?.interact?.("button", { x: micWorld.x, y: micWorld.y - 0.14, z: micWorld.z + 0.02 })
+    hooks.sfx?.play("light-switch", { bus: "doors", pos: { x: micWorld.x, y: micWorld.y, z: micWorld.z }, ref: 1.5, gain: 0.8, rate: 1.4 })
+    transmitter.set("transmitting")
+  }
+  const reveal = () => {
+    if (transmitter.phase !== "transmitted" || !operator || operator.pivot) return
+    revealAt = now
+    body()?.interact?.("button", { x: operator.chest.x, y: operator.chest.y, z: operator.chest.z })
+    // Pivot on the floor at the chair's open side: he slides back off the desk, then tips off the seat.
+    const seat = operator.seated
+    const pv = new THREE.Group()
+    pv.position.set(seat.position.x + 0.42, seat.position.y, seat.position.z + 0.1)
+    seat.parent?.add(pv)
+    pv.attach(seat)
+    operator.pivot = pv
+    operator.t = 0
+  }
+  transmitter.bind("switchOn", switchOn)
+  transmitter.bind("transmit", transmit)
+  transmitter.bind("reveal", reveal)
+
+  type Target = { at: THREE.Vector3; label: string; act: () => void; r: number } | null
+  const targets = (): Target[] => [
+    transmitter.phase === "off" ? { at: swWorld, label: "TX power: switch on", act: switchOn, r: 0.09 } : null,
+    transmitter.phase === "off" || transmitter.phase === "warming"
+      ? { at: micWorld, label: transmitter.phase === "off" ? "Mic: dead, no carrier (TX-1 is off)" : "Mic: warming up…", act: noop, r: 0.12 }
+      : null,
+    transmitter.phase === "on" ? { at: micWorld, label: "Mic: key and report", act: transmit, r: 0.12 } : null,
+    transmitter.phase === "transmitted" && operator ? { at: operator.chest, label: "Move the body", act: reveal, r: 0.18 } : null,
+  ]
+  let aimed: Target = null
+  let shownLabel = ""
   addEventListener("keydown", (e: KeyboardEvent) => {
-    if (e.code !== "KeyE" || e.repeat || !aimed || !on) return
-    cut()
+    if (e.code !== "KeyE" || e.repeat || !aimed) return
+    aimed.act()
   })
 
-  return {
-    get on() {
-      return on
-    },
-    onCut(fn) {
-      cutListeners.push(fn)
-    },
-    update(t, level) {
-      now = t
-      // Needle: the carrier's level with a fast jitter while on; falls to the stop when cut.
-      // (rotation.z > 0 swings it to the left, the scale's −20 end, as seen from the room.)
-      const want = on ? 0.55 - level * 1.1 + Math.sin(t * 31) * 0.04 : 0.8
-      pivot.rotation.z += (want - pivot.rotation.z) * (on ? 0.35 : 0.12)
-      onAir.visible = on && Math.sin(t * 2.1) > -0.995
-      turn += ((on ? 0 : 1) - turn) * 0.35
-      handle.rotation.z = turn * (Math.PI / 2)
-      // Aim: within reach and roughly at the switch.
-      cam.getWorldDirection(dir)
-      to.copy(swWorld).sub(cam.position)
+  const update = (t: number, level: number) => {
+    const dt = Math.min(0.1, Math.max(0, t - now))
+    now = t
+    const ph = transmitter.phase
+    // Warm-up, then on the air.
+    if (ph === "warming") {
+      const k = Math.min(1, (t - switchedAt) / WARM_UP)
+      hum?.set(0.25 + 0.9 * k, 400 + 3000 * k)
+      if (k >= 1) {
+        carrier = true
+        transmitter.set("on")
+      }
+    } else if (carrier) hum?.set(0.3, 900)
+    hum?.update(dt, t)
+    const up = ph === "warming" ? Math.max(0, (t - switchedAt) / WARM_UP - 0.6) / 0.4 : carrier ? 1 : 0
+    onAir.visible = carrier || (ph === "warming" && up > 0 && Math.random() < up)
+    meterMat.color.setScalar(0.35 + 0.8 * Math.min(1, up))
+    const keyed = ph === "transmitting" && t - callAt < call.keyedUntil
+    const want = carrier ? 0.55 - (keyed ? 0.85 + level * 0.25 : 0.35 + level * 0.15) + Math.sin(t * 31) * 0.03 : 0.8
+    pivot.rotation.z += (want - pivot.rotation.z) * 0.15
+    const turn = ph === "off" ? 1 : 0
+    handle.rotation.z += (turn * (Math.PI / 2) - handle.rotation.z) * 0.35
+
+    // The call.
+    if (ph === "transmitting") {
+      const ct = t - callAt
+      call.lines.forEach((l, i) => {
+        if (ct < l.at || fired.has(i)) return
+        fired.add(i)
+        if (!shot) showSubtitle(l.who, l.text, l.dur)
+        if (l.static) staticBurst(l.static, l.who === "COUNTY" ? 0.7 : 0.9)
+        // The player's own voice is close (the mic is at their mouth); County comes out of the receiver.
+        if (l.sfx) hooks.sfx?.play(l.sfx, l.who === "YOU" ? { bus: "horror", pos: { x: cam.position.x, y: cam.position.y, z: cam.position.z }, ref: 1.2, occlude: false } : { bus: "horror", pos: RX, ref: 2, rolloff: 0.6 })
+      })
+      if (ct > call.end) transmitter.set("transmitted")
+    }
+
+    // The reveal: slide back (0–0.35 s), tip off the chair to the floor (to 1.0 s), then the pose on the floor.
+    if (operator?.pivot) {
+      const o = operator
+      o.t += dt
+      const pv = o.pivot!
+      const s = Math.min(1, o.t / 0.35)
+      const tip = Math.max(0, Math.min(1, (o.t - 0.3) / 0.7))
+      o.seated.position.z = (o.seated.userData.z0 ??= o.seated.position.z) + 0.22 * (s * s * (3 - 2 * s))
+      pv.rotation.z = -1.35 * tip * tip
+      // The warning shows only once his head and arms have slid clear of the pad.
+      if (warning && !warning.visible && o.t > 0.3) warning.visible = true
+      if (o.t > 1.0 && o.seated.visible) {
+        if (o.onFloor) {
+          o.seated.visible = false
+          o.onFloor.visible = true
+        }
+        hooks.sfx?.play("hor-knock", { bus: "horror", pos: { x: o.chest.x, y: o.chest.y - 0.7, z: o.chest.z }, ref: 2, gain: 1.1, rate: 0.55, lowBoost: 8 })
+        transmitter.set("revealed")
+      }
+    }
+    // The turn: a beat of silence, then the car (the hunter's scream and the lobby glass land around it).
+    if (revealAt >= 0 && !carGone && t - revealAt > TURN_CAR) {
+      carGone = true
+      playCarDestroyed()
+      transmitter.set("aftermath")
+    }
+
+    // Aim.
+    cam.getWorldDirection(dir)
+    aimed = null
+    let best = Infinity
+    for (const tg of targets()) {
+      if (!tg) continue
+      to.copy(tg.at).sub(cam.position)
       const dist = to.length()
       const along = to.dot(dir)
-      aimed = on && dist < 1.8 && along > 0.2 && to.addScaledVector(dir, -along).length() / Math.max(0.6, along) < 0.09
-      if (prompt && aimed !== shown) {
-        shown = aimed
-        if (aimed) {
-          const shared = [...document.querySelectorAll<HTMLElement>(".door-prompt")].find((el) => el !== prompt)
-          if (shared) {
-            prompt.style.cssText = shared.style.cssText
-            prompt.style.transform = "translate(-50%, 0)"
-          }
-          prompt.innerHTML = keyPromptHtml("KeyE", "TX power: switch off")
+      if (dist > 1.9 || along < 0.2) continue
+      const off = to.addScaledVector(dir, -along).length() / Math.max(0.6, along)
+      if (off < tg.r && off < best) {
+        best = off
+        aimed = tg
+      }
+    }
+    const label = aimed?.label ?? ""
+    if (prompt && label !== shownLabel) {
+      shownLabel = label
+      if (label) {
+        const shared = [...document.querySelectorAll<HTMLElement>(".door-prompt")].find((el) => el !== prompt)
+        if (shared) {
+          prompt.style.cssText = shared.style.cssText
+          prompt.style.transform = "translate(-50%, 0)"
         }
-        prompt.style.opacity = aimed ? "1" : "0"
+        prompt.innerHTML = aimed!.act === noop ? `<span class="akp-label">${label}</span>` : keyPromptHtml("KeyE", label)
       }
-      // Silence, then the crash outside.
-      if (!on && !crashed && t - cutAt > SILENCE) {
-        crashed = true
-        // The crunch, the car alarm cut dead, the second crunch (src/audio/story.ts; plays once, whoever calls first).
-        playCarDestroyed()
-        transmitter.set("aftermath")
-      }
+      prompt.style.opacity = label ? "1" : "0"
+    }
+  }
+
+  return {
+    update,
+    get carrier() {
+      return carrier
+    },
+    setOperator(seated, onFloor, chest) {
+      operator = { seated, onFloor, chest, pivot: null, t: 0 }
+      if (onFloor) onFloor.visible = false
+    },
+    setWarning(o) {
+      warning = o
+      o.visible = transmitter.reached("revealed")
     },
   }
 }
+const noop = () => {}
+
 
 // ------------------------------------------------------------------------------------------------ the faceplate
 
@@ -254,7 +466,7 @@ function faceplate() {
       g.fillStyle = "#1a1d1c"
       g.fillRect(0.1, h - 0.07 - k * 0.035, w - 0.2, 0.014)
     }
-    // Warning strip and the director's order, taped on.
+    // Hazard strip: high voltage, operators only (nothing about the carrier).
     g.fillStyle = "#d9b31f"
     g.fillRect(0.06, sy + 0.16, w - 0.12, 0.09)
     for (let x = 0.06; x < w - 0.06; x += 0.05) {
@@ -268,7 +480,7 @@ function faceplate() {
     }
     g.fillStyle = "#ece6d4"
     g.fillRect(0.12, sy + 0.175, w - 0.24, 0.06)
-    text("CARRIER MUST NOT BE INTERRUPTED — DIR. 10/84", w / 2, sy + 0.205, 0.026, "#1a1a1a", 900)
+    text("DANGER 2 kV. AUTHORIZED OPERATORS ONLY", w / 2, sy + 0.205, 0.026, "#1a1a1a", 900)
     // Small dials on the right of the switch.
     for (let k = 0; k < 3; k++) {
       const dx = w / 2 + 0.06 + k * 0.1

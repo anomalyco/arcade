@@ -62,6 +62,14 @@ export class DoorAudio {
   creakVolume = 1
 
   /** Call from a user-input handler; creates/resumes the shared context (src/audio/context.ts). */
+  /** Automation: every door sound event (time on the performance clock, s), newest last; capped at 500. */
+  readonly events: { t: number; kind: string }[] = []
+
+  private note(kind: string) {
+    this.events.push({ t: +(performance.now() / 1000).toFixed(2), kind })
+    if (this.events.length > 500) this.events.shift()
+  }
+
   unlock() {
     const shared = unlockAudio()
     if (!shared || this.ac) return
@@ -152,17 +160,20 @@ export class DoorAudio {
 
   /** A control (push button, switch) operated: one click. */
   control(d: DoorVoice) {
+    this.note("control")
     this.clip("light-switch", d, 0.8, Math.max(0, hitOf("light-switch") - 0.03))
   }
 
   /** A roll-up or sliding gate starting to move (either way): its motor and slats. */
   moveStart(d: DoorVoice) {
+    this.note("moveStart")
     if (d.kind === "rollup") this.clip("door-rollup-dock", d, 0.9)
     else if (d.sound === "gate") this.clip("gate-motorized", d, 0.9)
   }
 
   /** A door at rest starting to open: the latch (or a gate's chain) releasing. */
   release(sound: DoorSound, kind: MotionKind, pan: number, d?: DoorVoice) {
+    this.note("release")
     if (d?.panic && this.clip("door-panic-bar", d, 0.9)) return
     if (d && sound === "wood" && kind === "swing" && this.clip("door-office-wood", d, 0.85)) return
     if (d && kind === "gate" && this.clip("gate-chainlink", d, 0.8)) return
@@ -183,6 +194,7 @@ export class DoorAudio {
 
   /** Leaf meets the frame and the latch catches. */
   latch(sound: DoorSound, kind: MotionKind, pan: number, speed: number, d?: DoorVoice) {
+    this.note("latch")
     // Steel doors close on the fire door's latch clack (its loudest moment lined up with the leaf meeting the frame),
     // the chain-link gate on its own clank; wood, glass and the motorised doors keep the procedural latch.
     if (d && sound === "steel" && kind === "swing" && this.clip("door-fire-steel", d, 0.55 + 0.45 * Math.min(1, speed * 2), hitOf("door-fire-steel") - 0.06)) return
@@ -199,6 +211,7 @@ export class DoorAudio {
 
   /** A body (or the open stop) hitting the leaf: a hollow knock through the leaf's resonances, `k` 0..1. */
   bump(sound: DoorSound, pan: number, k: number) {
+    this.note("bump")
     const v = this.voice(pan)
     if (!v) return
     const s = VOICE[sound]
@@ -209,6 +222,7 @@ export class DoorAudio {
 
   /** Roll-up ratchet tooth. */
   tick(pan: number) {
+    this.note("tick")
     const v = this.voice(pan)
     if (!v) return
     this.burst(v, v.t, 0.02, 0.14, 1800, [1100, 2700])
@@ -221,6 +235,7 @@ export class DoorAudio {
 
   /** Locked: the handle tried a few times, the leaf knocking in its frame. */
   rattle(sound: DoorSound, pan: number) {
+    this.note("rattle")
     const v = this.voice(pan)
     if (!v) return
     const s = VOICE[sound]
@@ -242,6 +257,7 @@ export class DoorAudio {
     if (!l) {
       if (speed < 0.02) return
       l = this.makeLoop(sound, kind)
+      this.note("creak")
       this.loops.set(id, l)
     }
     l.idle = speed < 0.02 ? l.idle + dt : 0

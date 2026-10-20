@@ -55,6 +55,14 @@ export const NIGHT_ROOMS: readonly NightRoom[] = [
   { room: "4-01", storey: 4, rect: r(-54.65, -4.6, -21.65, -1.75), lit: "work", tint: WORK, sources: [{ x: -38.6, z: -3.5 }, { x: -18.9, z: -17.0 }] },
   { room: "4-10", storey: 4, rect: r(0.8, 11.6, 1.75, 21.65), lit: "desk", tint: LAMP, sources: [{ x: 4.6, z: 19.9 }] },
   { room: "4-11", storey: 4, rect: r(0.8, 11.6, -21.65, -1.75), lit: "beacon", tint: RED, sources: [{ x: 3.0, z: -19.6 }] },
+  // 3 a.m. additions (render lighting pass): a few rooms left on so storeys 2 and 4 read without the torch.
+  { room: "2-08", storey: 2, rect: r(-10.0, -4.6, -11.85, -1.75), lit: "desk", tint: LAMP, sources: [{ x: -7.3, z: -6.8, reach: 8 }] },
+  { room: "2-09e", storey: 2, rect: r(6.2, 11.6, -21.65, -12.0), lit: "full", tint: COOL, sources: [{ x: 8.9, z: -16.8 }] },
+  { room: "2-10b", storey: 2, rect: r(17.0, 22.4, -21.65, -12.0), lit: "full", tint: COOL, sources: [{ x: 19.7, z: -16.8 }] },
+  { room: "2-24", storey: 2, rect: r(-36.0, -26.2, 9.75, 21.65), lit: "desk", tint: LAMP, sources: [{ x: -31.0, z: 15.6, reach: 10 }] },
+  { room: "4-12", storey: 4, rect: r(11.6, 34.65, -21.65, -1.75), lit: "desk", tint: WARM, sources: [{ x: 25.0, z: -12.0, reach: 12 }] },
+  { room: "4-13", storey: 4, rect: r(11.6, 22.4, 12.15, 21.65), lit: "desk", tint: LAMP, sources: [{ x: 17.0, z: 16.8 }] },
+  { room: "4-16", storey: 4, rect: r(-4.6, 0.8, -21.65, -1.75), lit: "desk", tint: LAMP, sources: [{ x: -1.9, z: -12.0, reach: 8 }] },
   { room: "4-14", storey: 4, rect: r(22.55, 34.65, -1.6, 21.65), lit: "desk", tint: WARM, sources: [{ x: 28.5, z: 13.6, reach: 10 }, { x: 23.7, z: -1.1 }] },
 ]
 
@@ -120,4 +128,24 @@ export function checkNightState(lamps: readonly { kind: string; zone?: string; p
     for (const s of n.sources)
       if (!real.some((l) => l.zone === `interior:${n.storey}` && Math.hypot(l.position[0]! - s.x, l.position[2]! - s.z) < 1.5)) out.push(`${n.room}: no lamp at source (${s.x}, ${s.z})`)
   return out
+}
+
+/**
+ * Night lighting overrides (lighting only, no geometry): extra lit ceiling fittings per room (matching the NIGHT_ROOMS
+ * sources above, so lit windows and lit rooms agree), the corridor night circuit per storey (every Nth fitting on,
+ * some flickering), and emergency twin-heads at fire exits and stair landings switched on everywhere.
+ */
+export const NIGHT_EXTRA = {
+  rooms: {
+    "2-08": [[-7.3, -6.8]],
+    "2-09e": [[8.9, -16.8]],
+    "2-10b": [[19.7, -16.8]],
+    "2-24": [[-31.0, 15.6]],
+    "4-12": [[25.0, -12.0]],
+    "4-13": [[17.0, 16.8]],
+    "4-16": [[-1.9, -12.0]],
+  } as Record<string, [number, number][]>,
+  /** Corridor night circuit: every Nth fitting lit; `flicker` fractions of those stutter. */
+  spine: { 2: { circuit: 2, flicker: 0.25 }, 4: { circuit: 3, flicker: 0.34 } } as Record<number, { circuit: number; flicker: number }>,
+  emergency: true,
 }

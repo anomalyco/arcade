@@ -3,7 +3,7 @@
 Regenerate with `bun scripts/fetch-models.ts` (`--force` to rebuild). Every file is a single web-optimised .glb
 (meshopt + quantised geometry; at most two materials over one baked KTX2 atlas: base colour ETC1S, normal UASTC, ORM
 ETC1S; 2048 vehicles, 1024 ≥ 0.5 m, 512 small props), normalised to metres with the pivot at the
-footprint centre on the ground and the front facing -Z. Total 25.4 MB.
+footprint centre on the ground and the front facing -Z. Total 25.5 MB.
 
 No brands or real logos: vehicles are invented marques ("Fairheaven", "Negotiator", "Conquer", "Shvan", "LCT").
 
@@ -72,6 +72,7 @@ No brands or real logos: vehicles are invented marques ("Fairheaven", "Negotiato
 | `towel_dispenser.glb` | [Towel dispenser](https://sketchfab.com/3d-models/8c2e6ea787a04578bed2042f3cddd5ff) | tombolaso | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | 228 | 97 KB | stainless C-fold paper towel dispenser (wall) |
 | `waste_basket.glb` | [Paper Waste Bin](https://sketchfab.com/3d-models/44c5af91288b4721a388c542f34f39bd) | ellieharrodine | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | 11,460 | 254 KB | mesh wire wastebasket (washrooms, offices) |
 | `hand_dryer.glb` | [Shower Room - Assets](https://sketchfab.com/3d-models/8e13a866ee184bed95bb5b59ddee62cd) | EvanPetrov | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | 2,588 | 197 KB | wall-mounted push-button hand dryer |
+| `mug.glb` | [Plain Mug](https://sketchfab.com/3d-models/19c8fe5702b544d0a1409d3dac1cf90e) | edwardlewis450 | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | 4,000 | 41 KB | plain white ceramic coffee mug (pivot: base centre; tip it with tilt.x = π/2, mouth then faces the yaw) |
 | `wet_floor_sign.glb` | [WetFloorSign_01](https://polyhaven.com/a/WetFloorSign_01) | Poly Haven | CC0 1.0 | 228 | 185 KB | yellow wet-floor sign |
 | `fluorescent_light.glb` | [mounted_fluorescent_lights](https://polyhaven.com/a/mounted_fluorescent_lights) | Poly Haven | CC0 1.0 | 3,540 | 165 KB | surface-mount fluorescent tube fixture |
 | `security_camera.glb` | [security_camera_01](https://polyhaven.com/a/security_camera_01) | Poly Haven | CC0 1.0 | 13,571 | 303 KB | housed CCTV camera on bracket |
@@ -109,3 +110,4 @@ No brands or real logos: vehicles are invented marques ("Fairheaven", "Negotiato
 - "Towel dispenser" by tombolaso (https://sketchfab.com/3d-models/8c2e6ea787a04578bed2042f3cddd5ff), CC BY 4.0, modified (rescaled, re-centred, optimised).
 - "Paper Waste Bin" by ellieharrodine (https://sketchfab.com/3d-models/44c5af91288b4721a388c542f34f39bd), CC BY 4.0, modified (rescaled, re-centred, optimised).
 - "Shower Room - Assets" by EvanPetrov (https://sketchfab.com/3d-models/8e13a866ee184bed95bb5b59ddee62cd), CC BY 4.0, modified (rescaled, re-centred, optimised).
+- "Plain Mug" by edwardlewis450 (https://sketchfab.com/3d-models/19c8fe5702b544d0a1409d3dac1cf90e), CC BY 4.0, modified (rescaled, re-centred, optimised).

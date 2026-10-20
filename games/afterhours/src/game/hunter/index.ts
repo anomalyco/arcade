@@ -1,33 +1,37 @@
 import type { World } from "../../boot/world"
 import type { Flow } from "../flow"
-import { transmitter } from "../../world/interior/storeys/s3/transmitter-state"
+import { onReveal, transmitter } from "../../world/interior/storeys/s3/transmitter-state"
+import { playCarDestroyed } from "../../audio/story"
+import { PARKED } from "../intro/route"
+import { LOT_Y } from "../../world/compound/lot"
 import { Hunter, type CatchInfo } from "./brain"
 import { HunterDebug, type PlayerTrail } from "./debug"
 import { NavGraph, storeyOf } from "./nav"
 import { PlayerNoises } from "./senses"
 import { emitNoise, lastLoudNoise } from "./noise"
 import { hunterControls, num } from "./settings"
+import { hooks } from "../../audio/hooks"
 
-// The Wendigo hunter (owner's design, after the 3-08 transmitter shutoff). `installHunter(world)` builds the nav graph
-// over the finished building, the (dormant) creature and the player's noise sources; the hunter wakes when the
-// transmitter goes off:
-//   off +0 s      silence (the interior's transmitter beat ducks the building)
-//   off +3.0 s    a huge scream far outside, by the cars (distant, muffled through the shell)
-//   crash         the interior's metal crunch (transmitter.ts, phase "aftermath"; we fall back to our own at +6 s)
-//   crash +0.35   a car alarm starts honking; +2.2 a second crunch (the car being wrecked)
-//   crash +8      the alarm dies mid-honk; +9.5 the lobby glass breaks; +10.5 it is in the lobby, investigating
-//                 the last loud noise (the switch in 3-08, unless the player has been louder since)
+// The Wendigo hunter (owner's design, after the 3-08 radio beat). `installHunter(world)` builds the nav graph over the
+// finished building, the (dormant) creature and the player's noise sources. The 3-08 beat (transmitter-state.ts) is a
+// noise too: TX POWER's clunk, and the call to County (TRANSMITTING WAKES IT). The hunter wakes at "revealed" (the
+// operator pushed off the desk, the warning under him):
+//   reveal +0 s     silence (the body loads and its shaders compile now, out of sight)
+//   reveal +3.0 s   a huge scream far outside, by the cars (distant, muffled through the shell)
+//   car             the car destroyed: crunch, its alarm, cut dead by a second crunch (audio/story.ts
+//                   `playCarDestroyed`, the interior's "aftermath" at +5.5 s; we call it ourselves at +7 s if not)
+//   car +6.0 s      the lobby glass breaks; +7.0 it is in the lobby, investigating the last loud noise (the call
+//                   from 3-08, unless the player has been louder since)
 // From then on everything it does is the hunter's (brain.ts); the random horror layer is held off.
 // Debug: `?hunter` starts it in the lobby straight away (`?hunter=x,z,storey` elsewhere); `?hunterDebug` shows the
 // overlay (also Lab → Hunter). Automation: `globalThis.__ashwoodHunter`.
 
-/** Where the outside sounds come from: the cars in the lot by the entrance (transmitter.ts CRASH_AT). */
-const CAR = { x: 4, y: 1.2, z: 48 }
-const SCREAM_AT = { x: 9, y: 2.0, z: 62 }
+/** Where the scream outside comes from: the lot, by the player's car (audio/story.ts plays the car itself). */
+const SCREAM_AT = { x: PARKED.x + 3, y: LOT_Y + 1.8, z: PARKED.z + 6 }
 const LOBBY_GLASS = { x: 0, y: 1.3, z: 21.8 }
 const SPAWN = { x: 0, z: 19.2, s: 0 }
-/** 3-08's TX POWER switch (transmitter.ts), the default "last loud noise". */
-const SWITCH = { x: 10.9, z: -7.68, s: 3 }
+/** 3-08's transmitter and desk (transmitter.ts), the default "last loud noise". */
+const SWITCH = { x: 9.5, z: -7.9, s: 3 }
 
 export type HunterHandle = {
   readonly hunter: Hunter
@@ -35,10 +39,12 @@ export type HunterHandle = {
   update(dt: number): void
   /** Start now at (x, z, storey) (default the lobby, investigating the last loud noise). */
   start(x?: number, z?: number, s?: number): void
-  /** The entry sequence (as if the transmitter had just been switched off). */
+  /** The entry sequence (as if the warning in 3-08 had just been revealed). */
   enter(): void
   /** After a checkpoint load: the creature somewhere far from the player, memory wiped, a grace period. */
   restore(grace?: number): void
+  /** Out of the building again, dormant (a checkpoint from before the reveal); `enter()` brings it back. */
+  sleep(): void
   /** What happens when it catches the player (the creature agent's death and jump-scare path). */
   setCatchHandler(fn: (info: CatchInfo) => void): void
   dispose(): void
@@ -78,7 +84,6 @@ export function installHunter(world: World, o: { flow?: Flow; signal?: AbortSign
   // ------------------------------------------------------------------------------------------- the entry
   let entryT = -1
   let crashAt = -1
-  let stopAlarm: (() => void) | null = null
   const fired = new Set<string>()
   const once = (k: string, at: number, fn: () => void) => {
     if (entryT >= at && !fired.has(k)) {
@@ -105,6 +110,8 @@ export function installHunter(world: World, o: { flow?: Flow; signal?: AbortSign
   const enter = () => {
     if (entryT >= 0 || hunter.mode !== "dormant") return
     holdHorror()
+    // The body loads and compiles during the silence and the noises outside.
+    void hunter.prepare()
     entryT = 0
     crashAt = -1
     fired.clear()
@@ -114,28 +121,25 @@ export function installHunter(world: World, o: { flow?: Flow; signal?: AbortSign
     if (entryT < 0) return
     entryT += dt
     once("scream", 3.0, () => hunter.voice.farScream(SCREAM_AT))
-    if (crashAt < 0 && entryT > 6) {
+    if (crashAt < 0 && entryT > 7) {
       crashAt = entryT
-      hunter.voice.wreck(CAR)
+      playCarDestroyed()
     }
     if (crashAt < 0) return
     const c = crashAt
-    once("alarm", c + 0.35, () => (stopAlarm = hunter.voice.carAlarm(CAR)))
-    once("wreck", c + 2.2, () => hunter.voice.wreck(CAR))
-    once("alarm-off", c + 8, () => stopAlarm?.())
-    once("glass", c + 9.5, () => hunter.voice.glass(LOBBY_GLASS))
-    once("spawn", c + 10.5, () => {
+    once("glass", c + 6, () => hunter.voice.glass(LOBBY_GLASS))
+    once("spawn", c + 7, () => {
       spawnLobby()
       entryT = -1
     })
   }
+  // The radio beat's noises (it hears them before it is in the building: they are what it comes for).
   const offTx = transmitter.on((phase) => {
-    if (phase === "off") {
-      // The switch's heavy clunk is the last loud noise it will have heard.
-      emitNoise(player.state.pos, 30, "switch")
-      enter()
-    } else if (phase === "aftermath" && entryT >= 0 && crashAt < 0) crashAt = entryT
+    if (phase === "warming") emitNoise(player.state.pos, 20, "switch")
+    else if (phase === "transmitting") emitNoise(player.state.eye, 30, "voice")
+    else if (phase === "aftermath" && entryT >= 0 && crashAt < 0) crashAt = entryT
   })
+  const offReveal = onReveal(() => enter())
 
   // ------------------------------------------------------------------------------------------- frame
   let clock = 0
@@ -173,16 +177,19 @@ export function installHunter(world: World, o: { flow?: Flow; signal?: AbortSign
     restore(grace) {
       holdHorror()
       entryT = -1
-      stopAlarm?.()
       hunter.restore(grace)
+    },
+    sleep() {
+      entryT = -1
+      hunter.sleep()
     },
     setCatchHandler(fn) {
       catchHandler = fn
     },
     dispose() {
       offTx()
+      offReveal()
       offFlow?.()
-      stopAlarm?.()
       noises.dispose()
       hunter.dispose()
       debug.dispose()
@@ -198,6 +205,8 @@ export function installHunter(world: World, o: { flow?: Flow; signal?: AbortSign
     debug,
     playerTrail,
     noise: emitNoise,
+    /** The lift's audio hook as the hunter wrapped it (automation: a clunk is a noise at the car). */
+    lift: () => hooks.lift,
     trace: (s?: number, ppm?: number, since?: number) => debug.trace(s, ppm, since),
   }
   if (o.start !== undefined && o.start !== null) {

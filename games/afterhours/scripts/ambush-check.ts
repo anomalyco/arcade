@@ -25,6 +25,8 @@ const page = await ctx.newPage()
 const errors: string[] = []
 page.on("pageerror", (e) => errors.push(e.message))
 page.on("console", (m) => m.type() === "error" && errors.push(m.text()))
+const stubWarnings: string[] = []
+page.on("console", (m) => m.text().includes("death path not wired") && stubWarnings.push(m.text()))
 const failures: string[] = []
 const check = (ok: boolean, what: string) => {
   console.log(`${ok ? "ok  " : "FAIL"} ${what}`)
@@ -59,6 +61,28 @@ async function intoRun() {
   await page.waitForTimeout(1500)
 }
 
+async function hunterDeath(tag: string) {
+  await put(8, STOREY(3) + 0.02, 0)
+  await page.waitForTimeout(600)
+  // After a restore it has a grace period: let it run out before it's put on the player.
+  await page.waitForFunction(() => ((globalThis as Any).__ashwoodHunter?.hunter.grace ?? 0) <= 0, null, { timeout: 20_000 })
+  await G(page, "globalThis.__ashwoodHunter.handle.start(-3, 0, 3)")
+  await page.waitForFunction(() => (globalThis as Any).__ashwoodAmbush?.phase === "beat" || (globalThis as Any).__ashwoodAmbush?.phase === "lunge", null, { timeout: 60_000 })
+  const at = Date.now() - t0
+  check((await G(page, "globalThis.__ashwoodAmbush.cause")) === "hunter", `${tag}: caught by the hunter (+${(at / 1000).toFixed(1)} s)`)
+  await shot(`${tag}-beat`)
+  await page.waitForFunction(() => ["lunge", "dead"].includes((globalThis as Any).__ashwoodAmbush?.phase), null, { timeout: 5_000 })
+  await page.waitForTimeout(200)
+  await shot(`${tag}-lunge`)
+  await page.waitForFunction(() => (globalThis as Any).__ashwoodAmbush?.phase === "dead", null, { timeout: 5_000 })
+  await shot(`${tag}-contact`)
+  await page.waitForTimeout(2800)
+  await shot(`${tag}-death`)
+  const s = (await G(page, "({ paused: globalThis.__static.flow.paused, modal: document.body.dataset.modal, hunter: globalThis.__ashwoodHunter.hunter.mode, caught: !!document.querySelector('div[style*=\"CAUGHT\"]') || [...document.querySelectorAll('div')].some((d) => d.textContent === 'CAUGHT') })")) as Any
+  check(s.paused && s.modal === "death" && s.hunter === "dormant" && !s.caught, `${tag}: death screen, hunter dormant, no stub flash (${JSON.stringify(s)})`)
+  return at
+}
+
 async function rideAndDie(tag: string) {
   // Into the car at its current floor, then send it to storey 2.
   const st = (await G(page, "globalThis.__interior.lift.state()")) as Any
@@ -66,15 +90,19 @@ async function rideAndDie(tag: string) {
   await page.waitForTimeout(800)
   const dest = st.cur === 2 ? 1 : 2
   await G(page, `globalThis.__interior.lift.press("${dest}")`)
-  await page.waitForFunction(() => (globalThis as Any).__ashwoodAmbush?.phase === "waiting", null, { timeout: 60_000 })
+  await page.waitForFunction(() => (globalThis as Any).__ashwoodAmbush?.phase === "waiting", null, { timeout: 60_000 }).catch(async (e) => {
+    console.log("no ambush:", JSON.stringify(await G(page, "({ amb: globalThis.__ashwoodAmbush.phase, lift: globalThis.__interior.lift.state(), pos: { ...globalThis.__afterhoursPlayer.pos }, paused: globalThis.__static.flow.paused, hold: globalThis.__static.flow.hold, hunter: globalThis.__ashwoodHunter?.hunter.mode })")))
+    throw e
+  })
   const at = Date.now() - t0
   console.log(`ambush triggered at storey ${dest} (+${(at / 1000).toFixed(1)} s)`)
-  await page.waitForFunction(() => (globalThis as Any).__ashwoodAmbush?.phase === "beat", null, { timeout: 10_000 })
+  await page.waitForFunction(() => ["beat", "lunge", "dead"].includes((globalThis as Any).__ashwoodAmbush?.phase), null, { timeout: 10_000 })
   await shot(`${tag}-beat`)
-  await page.waitForFunction(() => (globalThis as Any).__ashwoodAmbush?.phase === "lunge", null, { timeout: 5_000 })
+  await page.waitForFunction(() => ["lunge", "dead"].includes((globalThis as Any).__ashwoodAmbush?.phase), null, { timeout: 5_000 })
   await page.waitForTimeout(280)
   await shot(`${tag}-lunge`)
   await page.waitForFunction(() => (globalThis as Any).__ashwoodAmbush?.phase === "dead", null, { timeout: 5_000 })
+  await shot(`${tag}-contact`)
   await page.waitForTimeout(150)
   await shot(`${tag}-flood`)
   await page.waitForTimeout(2600)
@@ -105,6 +133,7 @@ try {
   check(cp.id === "3-08:entered", `3-08 checkpoint (${cp.id}), Wendigo warmed in ${await G(page, "globalThis.__ashwoodAmbush.stats.warmMs")} ms`)
   await shot("308")
   const scareAt = await rideAndDie("first")
+  let hunterAt = 0
 
   // Restart from checkpoint: back in 3-08, playing.
   await page.click("text=Restart from checkpoint")
@@ -115,6 +144,23 @@ try {
   await shot("restart")
   await rideAndDie("second")
 
+  // Restart again (pre-reveal checkpoint): the hunter must be asleep.
+  await page.click("text=Restart from checkpoint")
+  await page.waitForTimeout(1200)
+  check((await G(page, "globalThis.__ashwoodHunter?.hunter.mode")) === "dormant", `pre-reveal restart: hunter dormant (${await G(page, "globalThis.__ashwoodHunter?.hunter.mode")})`)
+  // The reveal (as if the warning had been read): the checkpoint lands; then the hunter is put in the storey 3
+  // corridor 10 m from the player and hunts them down.
+  await G(page, `(() => { const t = globalThis.__ashwoodTransmitter; for (const p of ["warming", "on", "transmitting", "transmitted", "revealed"]) t.set(p) })()`)
+  await page.waitForFunction(() => JSON.parse(sessionStorage.getItem("afterhours.checkpoint") ?? "{}").id === "3-08:transmitted", null, { timeout: 20_000 })
+  check(true, "reveal checkpoint 3-08:transmitted")
+  hunterAt = await hunterDeath("hunter1")
+  await page.click("text=Restart from checkpoint")
+  await page.waitForTimeout(1500)
+  const hr = (await G(page, "(() => { const h = globalThis.__ashwoodHunter.hunter; const p = globalThis.__afterhoursPlayer.pos; return { mode: h.mode, grace: h.grace, dist: Math.hypot(h.pos.x - p.x, h.pos.z - p.z), s: h.s, paused: globalThis.__static.flow.paused, amb: globalThis.__ashwoodAmbush.phase } })()")) as Any
+  check(hr.mode !== "dormant" && hr.grace > 0 && hr.dist > 10 && !hr.paused && hr.amb === "armed", `post-reveal restart: hunter restored far away with grace (${JSON.stringify(hr)})`)
+  await shot("hunter-restart")
+  await hunterDeath("hunter2")
+
   // Start over: a fresh page straight into the intro.
   await page.click("text=Start over")
   await page.waitForFunction(() => (globalThis as Any).__afterhours?.complete, null, { timeout: 180_000 })
@@ -124,6 +170,7 @@ try {
   await shot("startover")
   check((await G(page, "sessionStorage.getItem('afterhours.checkpoint')")) === null, "start over cleared the checkpoint")
 
+  check(stubWarnings.length === 0, `no "death path not wired yet" warning (${stubWarnings.length})`)
   check(errors.length === 0, `no page errors (${errors.slice(0, 3).join(" | ")})`)
   const raw = await page.video()!.path()
   await ctx.close()
@@ -132,6 +179,9 @@ try {
   const ss = Math.max(0, scareAt / 1000 - 0.5)
   Bun.spawnSync(["ffmpeg", "-v", "error", "-y", "-ss", ss.toFixed(2), "-i", `${out}/ambush-raw.webm`, "-t", "9", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20", `${out}/ambush-scare.mp4`])
   console.log(`video: ${out}/ambush-scare.mp4 (from +${ss.toFixed(1)} s of ambush-raw.webm)`)
+  const hs = Math.max(0, hunterAt / 1000 - 1.5)
+  Bun.spawnSync(["ffmpeg", "-v", "error", "-y", "-ss", hs.toFixed(2), "-i", `${out}/ambush-raw.webm`, "-t", "7", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20", `${out}/hunter-scare.mp4`])
+  console.log(`video: ${out}/hunter-scare.mp4`)
 } catch (e) {
   console.log("FAIL", e)
   failures.push(String(e))

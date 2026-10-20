@@ -74,6 +74,13 @@ function setFlash(on: boolean) {
 if (params.get("biped")) Object.assign(BIPED, JSON.parse(params.get("biped")!))
 if (params.get("stoopk")) Object.assign(STOOP, JSON.parse(params.get("stoopk")!))
 const w = createWendigo()
+// `ceiling=<m>`: a ceiling slab at that height (the creature fits its antlers under it).
+const ceiling = params.has("ceiling") ? Number(params.get("ceiling")) : undefined
+if (ceiling !== undefined) {
+  const slab = new THREE.Mesh(new THREE.BoxGeometry(14, 0.06, 14), new THREE.MeshStandardNodeMaterial({ color: 0x8a8d88, roughness: 0.9, transparent: true, opacity: 0.55 }))
+  slab.position.set(0, ceiling + 0.03, 0)
+  scene.add(slab)
+}
 scene.add(w.root)
 await w.ready
 w.root.traverse((o) => (o.castShadow = true))
@@ -360,7 +367,7 @@ function step(dt: number) {
   if (mode === "gaits") target.set(60, 1.2, -2)
   else if (params.get("target") === "ahead") target.copy(w.root.position).add(new THREE.Vector3(0, 1, 30))
   else target.copy(camera.position)
-  w.update(dt, { mode: m, target, stance: isSeq() ? undefined : stanceParam })
+  w.update(dt, { mode: m, target, stance: isSeq() ? undefined : stanceParam, ceiling })
   jankSample(dt, m)
   status.mode = m
   status.stance = w.stance
@@ -368,6 +375,7 @@ function step(dt: number) {
   if (w.rig) {
     w.rig.byName.get("head")!.getWorldPosition(_hp)
     status.top = antlerTop()
+    ;(status as { fitTop?: number }).fitTop = w.animator?.antlerTop ?? 0
     status.meas = measure()
   }
   if (cam === "track") {

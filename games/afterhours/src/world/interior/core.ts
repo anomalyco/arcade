@@ -1,3 +1,4 @@
+import { NIGHT_EXTRA } from "./lighting-state"
 import { BUILDING, CORE, ROOF_Y } from "../layout"
 import { STYLES } from "./styles"
 import { doorway } from "./doorway"
@@ -110,7 +111,7 @@ function landing(b: Builder, i: number) {
   }
   // Bulkhead light over the door, emergency twin-head on the west wall.
   lightBulkhead(b, -42.4, y + 2.45, ST.z0 + 0.07, 0, true)
-  emergency(b, ST.x0, y + 2.3, 18.2, i === 4)
+  emergency(b, ST.x0, y + 2.3, 18.2, i === 4 || NIGHT_EXTRA.emergency)
 }
 
 /** Two flights and the mid landing from storey i up to storey i + 1. */

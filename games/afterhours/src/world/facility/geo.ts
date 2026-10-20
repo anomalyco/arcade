@@ -100,7 +100,7 @@ export class Batch {
   /** Any geometry, transformed into world space. UVs are scaled by `uvScale` (use it to bring unit UVs to metres). */
   add(mat: Mat, geo: THREE.BufferGeometry, matrix?: THREE.Matrix4, uvScale: number | [number, number] = 1, shadow = true) {
     // Always work on a copy: callers reuse one geometry for many placements (shrubs, hoops).
-    let g = geo.index ? geo.clone() : geo.clone().toNonIndexed()
+    let g = geo.clone()
     if (!g.index) {
       const n = g.attributes.position!.count
       const idx = new Array<number>(n)

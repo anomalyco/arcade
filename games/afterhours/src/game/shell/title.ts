@@ -54,7 +54,6 @@ export function createTitleCard(root: HTMLElement) {
       s.p.classList.remove("typing")
       if (i < lines.length - 1) await wait(TITLE_CARD.linePause, signal)
     }
-    spans.at(-1)?.p.classList.add("typing")
     await wait(hold, signal)
     text.style.transition = `opacity ${TITLE_CARD.fadeOut}s ease`
     text.style.opacity = "0"

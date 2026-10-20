@@ -63,6 +63,8 @@ export interface Manifest {
   qaCost?: number
   categories: { id: string; group: string; subgroup?: string; label: string; intent: string; loop: boolean; designed?: boolean }[]
   /** Designed categories (design/recipes.ts), kept here because they have no prompts.ts entry. */
+  /** Takes taken off the audition page; files moved to sfx/_previous/ (`file`), original path in `archivedFrom`. */
+  archived?: (ManifestSound & { archivedFrom: string; archivedAt: string })[]
   designedCategories?: { id: string; group: string; subgroup?: string; label: string; intent: string; loop: boolean; designed: true }[]
   sounds: ManifestSound[]
 }

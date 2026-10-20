@@ -30,6 +30,9 @@ export type BloodSpot = {
   age?: number
   /** Overall opacity (a fading footprint trail). */
   alpha?: number
+  /** Flat spots: the surface's world x/z bounds [x0, z0, x1, z1] (a desk top). Spatter drops falling past it are left
+   *  out, and pools / smears are moved and shrunk to stay on it: nothing hangs in the air past an edge. */
+  clip?: readonly [number, number, number, number]
 }
 
 /** Hand and foot shapes are authored in metres for these quad sizes. */
@@ -90,13 +93,19 @@ export function bloodMaterial(): THREE.Material {
       rim.assign(smoothstep(0.86, 0.97, r).mul(float(1).sub(smoothstep(0.97, 1.0, r))))
     })
       .ElseIf(kind.lessThan(1.5), () => {
-        // Smear / drag: a band along u, wide and wet at the −u end, streaky and thinning towards +u.
-        const w = float(0.62).sub(p.x.mul(0.18)).add(n(vec2(p.x.mul(1.4), 0.3)).mul(0.14))
-        const across = abs(p.y.sub(n(vec2(p.x.mul(0.9), 2.0)).mul(0.12))).div(w)
-        const streak = n(vec2(p.x.mul(0.7), p.y.mul(11.0)))
-        const ends = float(1).sub(smoothstep(0.82, 1.0, abs(p.x)))
-        mask.assign(float(1).sub(smoothstep(0.8, 1.0, across)).mul(ends).mul(smoothstep(-0.55, -0.05, streak.sub(p.x.mul(0.45)))))
-        thick.assign(float(1).sub(across).mul(0.45).add(streak.mul(0.18)).sub(p.x.mul(0.18)))
+        // Smear / drag: a wavering band along u, wide and wet at the −u end, thinning, breaking into patches and fading
+        // towards +u; a few drag lines inside (fabric, fingers), not a regular stripe pattern.
+        const centre = n(vec2(p.x.mul(1.7), 2.0)).mul(0.22).add(n(vec2(p.x.mul(5.0), 7.0)).mul(0.06))
+        const w = float(0.7).sub(p.x.mul(0.22)).add(n(vec2(p.x.mul(2.3), 0.3)).mul(0.25))
+        const across = abs(p.y.sub(centre)).div(max(w, 0.08))
+        const lines = n(vec2(p.x.mul(1.1), p.y.mul(5.0).add(centre.mul(4.0))))
+        const blotch = n(p.mul(vec2(3.2, 2.4)).add(9.1))
+        const ends = float(1).sub(smoothstep(0.75, 1.0, abs(p.x)))
+        // Breaks up and fades out along its length (more gaps towards +u).
+        const gaps = smoothstep(p.x.mul(0.35).sub(0.05), p.x.mul(0.35).add(0.35), blotch.add(0.25))
+        const edge = float(1).sub(smoothstep(0.7, 1.05, across.add(n(p.mul(14.0)).mul(0.25))))
+        mask.assign(edge.mul(ends).mul(gaps).mul(smoothstep(-0.7, -0.2, lines.sub(p.x.mul(0.2)))))
+        thick.assign(float(1).sub(across).mul(0.35).add(blotch.mul(0.15)).sub(p.x.mul(0.15)).add(0.25))
       })
       .ElseIf(kind.lessThan(2.5), () => {
         // One spatter drop (spatter spots are expanded into drops on the CPU): a round head at the bottom (−v) and a
@@ -110,7 +119,9 @@ export function bloodMaterial(): THREE.Material {
         const tail = abs(p.x).div(mix(float(0.62), float(0.04), along)).add(step(y, hy)).add(step(asp.sub(0.08), y))
         const d = min(head, tail)
         mask.assign(float(1).sub(smoothstep(0.85, 1.0, d)))
-        thick.assign(float(1).sub(head).mul(0.8))
+        // Drops vary: some thin and crimson, most a deeper red to maroon (the seed slot's aspect is a fine per-drop hash).
+        const r = fract(seed.mul(13.71).add(asp.mul(0.37)))
+        thick.assign(float(0.28).add(r.mul(0.5)).add(float(1).sub(head).mul(0.3)))
       })
       .ElseIf(kind.lessThan(3.5), () => {
         // Handprint (0.14 × 0.3 m, fingers up), slid down the surface: palm and finger tracks drag below it.
@@ -151,8 +162,10 @@ export function bloodMaterial(): THREE.Material {
         const slid = float(1).sub(smoothstep(-0.002, 0.002, foot(P.add(vec2(0.004, 0.016))))).mul(0.45)
         const load = float(1).sub(smoothstep(0.08, 0.2, y)).add(smoothstep(0.17, 0.27, y)).min(1).mul(0.5).add(0.3)
         const breakup = n(P.mul(110.0)).mul(0.35).add(n(P.mul(26.0)).mul(0.35)).add(load)
-        mask.assign(max(main, slid).mul(smoothstep(0.15, 0.45, breakup)))
-        thick.assign(float(0.18).add(main.mul(load).mul(0.15)))
+        // A transfer from a pool: partial, smudged at the edges, dark (thickness well into the deep-red range).
+        const smudge = smoothstep(0.1, 0.55, breakup.add(n(P.mul(260.0)).mul(0.15)))
+        mask.assign(max(main, slid).mul(smudge).mul(0.9))
+        thick.assign(float(0.45).add(main.mul(load).mul(0.25)))
       })
       .Else(() => {
         // Drip runs down a vertical face from a soaked top edge (v = 1 at the top).
@@ -180,10 +193,18 @@ export function bloodMaterial(): THREE.Material {
   const congeal = smoothstep(0.1, 0.5, mx_noise_float(vec3(uv().mul(11.0), bk.y))).mul(age.add(0.3).min(1))
   // Thin film: deep red (fresh) or dark maroon (dried); thicker: towards near-black.
   const film = mix(DRY, THIN, wet.mul(0.85))
-  m.colorNode = mix(film, DEEP, smoothstep(0.2, 0.75, thick)).mul(float(1).sub(congeal.mul(0.22)))
-  // Wet blood is a mirror-smooth film; congealed patches and old thin smears dull it.
+  // Old, dried blood (age > 0.6: the desk under the operator): thin film goes dark brown-maroon, thick areas toward
+  // maroon-black, and matte (roughness ~0.65), so it no longer mirrors the lamp. A thin glossy rim survives only while
+  // it is still fairly fresh (age < ~0.8). Blood at age ≤ 0.6 (the rest of the room) is unchanged.
+  const old = smoothstep(0.6, 0.8, age)
+  const oldTint = mix(color(0x3a0c08), color(0x120303), smoothstep(0.15, 0.7, thick))
+  m.colorNode = mix(mix(film, DEEP, smoothstep(0.2, 0.75, thick)), oldTint, old).mul(float(1).sub(congeal.mul(0.22)))
+  // Wet blood is a mirror-smooth film; congealed patches dull it.
   const gloss = smoothstep(0.02, 0.2, thick).mul(wet.mul(0.6).add(0.4))
-  m.roughnessNode = clamp(mix(float(0.55), float(0.04), gloss).add(congeal.mul(0.18)), 0.03, 1)
+  const freshRough = clamp(mix(float(0.55), float(0.04), gloss).add(congeal.mul(0.18)), 0.03, 1)
+  const rimGloss = s.z.mul(float(1).sub(smoothstep(0.72, 0.85, age)))
+  const oldRough = mix(float(0.62).add(congeal.mul(0.08)), float(0.25), rimGloss)
+  m.roughnessNode = mix(freshRough, oldRough, old)
   // The pool's lip: in its outer band the surface normal tilts outward (`s.z` = rim weight on pools).
   const N = attribute<"vec3">("normal", "vec3")
   const R = attribute<"vec3">("bt", "vec3")
@@ -204,7 +225,7 @@ export function bloodMaterial(): THREE.Material {
 
 /** One mesh (one draw) for a set of blood spots. Receives shadows, casts none. */
 export function bloodMesh(input: readonly BloodSpot[], name = "blood"): THREE.Mesh {
-  const spots = input.flatMap((s) => (s.kind === "spatter" || s.kind === "spray" || s.kind === "trail" ? spatter(s) : [s]))
+  const spots = input.flatMap((s) => (s.kind === "spatter" || s.kind === "spray" || s.kind === "trail" ? spatter(s) : [s])).flatMap((s) => clipSpot(s))
   const pos: number[] = []
   const nor: number[] = []
   const uvs: number[] = []
@@ -281,12 +302,13 @@ function spatter(s: BloodSpot): BloodSpot[] {
   const drop = (u: number, v: number, dir: THREE.Vector3, size: number, len: number) => {
     const at = new THREE.Vector3(...s.at).addScaledVector(right, u).addScaledVector(up, v)
     // A drop's seed slot carries its aspect (length / width) for the shader.
-    out.push({ kind: "drop", at: [at.x, at.y, at.z], normal: [n.x, n.y, n.z], up: [dir.x, dir.y, dir.z], size: [size, len], seed: len / size, age: s.age, alpha: s.alpha })
-    if (wall && size > 0.012 && rnd() < 0.6) {
-      // The run: from the drop's head down the wall, thinning out.
-      const run = 0.06 + rnd() * rnd() * 0.6 * (size / 0.02)
+    out.push({ kind: "drop", at: [at.x, at.y, at.z], normal: [n.x, n.y, n.z], up: [dir.x, dir.y, dir.z], size: [size, len], seed: len / size, age: s.age, alpha: s.alpha, clip: s.clip })
+    if (wall && size > 0.014 && rnd() < 0.35) {
+      // The run: from the drop's head down the wall, thinning out (few, and each wandering a little sideways).
+      const run = 0.05 + rnd() * rnd() * 0.35 * (size / 0.02)
       const r = at.clone().addScaledVector(down, run / 2 - size * 0.3)
-      out.push({ kind: "drop", at: [r.x, r.y, r.z], normal: [n.x, n.y, n.z], up: [down.x, down.y, down.z], size: [size * 0.55, run], seed: run / (size * 0.55), age: s.age, alpha: s.alpha })
+      const dw = down.clone().addScaledVector(right, (rnd() - 0.5) * 0.12).normalize()
+      out.push({ kind: "drop", at: [r.x, r.y, r.z], normal: [n.x, n.y, n.z], up: [dw.x, dw.y, dw.z], size: [size * 0.4, run], seed: run / (size * 0.4), age: s.age, alpha: (s.alpha ?? 1) * 0.8 })
     }
   }
   const dirOf = (du: number, dv: number) => right.clone().multiplyScalar(du).addScaledVector(up, dv).normalize()
@@ -300,12 +322,19 @@ function spatter(s: BloodSpot): BloodSpot[] {
       const u = Math.cos(a) * r * (w / (2 * R))
       const v = Math.sin(a) * r * (h / (2 * R))
       if (Math.abs(u) > w / 2 || Math.abs(v) > h / 2) continue
-      const size = (0.006 + rnd() * rnd() * 0.032) * (1.6 - t)
-      const len = size * (1.05 + t * (1 + rnd() * 3))
+      // Mostly small round drops; a few larger ones near the impact; only some with a tail (angle of impact).
+      const size = (0.003 + rnd() ** 3 * 0.03) * (1.5 - t)
+      const len = size * (rnd() < 0.35 ? 1.02 : 1.1 + t * rnd() * 2.2)
       drop(u, v, dirOf(Math.cos(a), Math.sin(a)), size, len)
+      // Satellites: a couple of tiny drops thrown off past a bigger one.
+      if (size > 0.012) for (let k = 0, m = Math.floor(rnd() * 3); k < m; k++) {
+        const d = size * (1.5 + rnd() * 3)
+        const ss = size * (0.12 + rnd() * 0.2)
+        drop(u + Math.cos(a) * d + (rnd() - 0.5) * size, v + Math.sin(a) * d + (rnd() - 0.5) * size, dirOf(Math.cos(a), Math.sin(a)), ss, ss * (1 + rnd()))
+      }
     }
-    // A few heavy blobs at the impact.
-    for (let i = 0; i < 4; i++) drop((rnd() - 0.5) * R * 0.3, (rnd() - 0.5) * R * 0.3, dirOf(rnd() - 0.5, rnd() - 0.5), 0.025 + rnd() * 0.02, 0.03 + rnd() * 0.03)
+    // A couple of heavier blobs at the impact, offset (not stacked into a bar).
+    for (let i = 0; i < 2; i++) drop((rnd() - 0.5) * R * 0.5, (rnd() - 0.5) * R * 0.5, dirOf(rnd() - 0.5, rnd() - 0.5), 0.016 + rnd() * 0.012, 0.02 + rnd() * 0.015)
     return out
   }
   if (s.kind === "trail") {
@@ -335,9 +364,26 @@ function spatter(s: BloodSpot): BloodSpot[] {
     const v = -0.9 * h + Math.cos(a) * r - h * 0.5
     if (Math.abs(u) > w / 2 || Math.abs(v) > h / 2) continue
     const big = Math.exp(-(band * band) / 0.02) * (1 - Math.abs(a) / 1.1)
-    const size = 0.006 + rnd() * rnd() * 0.026 + big * rnd() * 0.018
-    const len = size * (1.3 + rnd() * 2.4 + Math.abs(a) * 1.5)
+    const size = 0.003 + rnd() ** 3 * 0.024 + big * rnd() * 0.012
+    const len = size * (rnd() < 0.3 ? 1.05 : 1.2 + rnd() * 1.8 + Math.abs(a) * 1.2)
     drop(u, v, dirOf(Math.sin(a), Math.cos(a)), size, len)
   }
   return out
+}
+
+/** Keeps a flat spot on its `clip` rect: drops whose quad leaves it are dropped; larger shapes are moved and shrunk. */
+function clipSpot(s: BloodSpot): BloodSpot[] {
+  const c = s.clip
+  if (!c) return [s]
+  const [x0, z0, x1, z1] = c
+  // Quad footprint radius (a rotated quad reaches at most its half-diagonal).
+  const r = Math.hypot(Math.abs(s.size[0]), s.size[1]) / 2
+  const [x, , z] = s.at
+  if (s.kind === "drop") return x - r >= x0 && x + r <= x1 && z - r >= z0 && z + r <= z1 ? [s] : []
+  const room = Math.min((x1 - x0) / 2, (z1 - z0) / 2)
+  const k = r > room ? room / r : 1
+  const rr = r * k
+  const cx = Math.min(x1 - rr, Math.max(x0 + rr, x))
+  const cz = Math.min(z1 - rr, Math.max(z0 + rr, z))
+  return [{ ...s, at: [cx, s.at[1], cz], size: [s.size[0] * k, s.size[1] * k] }]
 }

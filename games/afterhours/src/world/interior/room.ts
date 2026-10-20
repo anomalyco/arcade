@@ -1,6 +1,7 @@
 import { MODELS } from "../../render/models"
 import { type Builder, type Mat, CEIL_Y, FLOOR_Y, M, T, ceiling, paint, wall } from "./kit"
 import { type TrofferCell, troffers, trofferGrid } from "./lights"
+import { NIGHT_EXTRA } from "./lighting-state"
 import { COLUMNS, type Face, type Rect, type RoomSpec, SHELL, WALL, type Window, ZONE, subtract, windowsOn } from "./plan"
 import { column } from "./partition"
 import { placeModels } from "./props"
@@ -66,9 +67,10 @@ export function room(b: Builder, o: RoomOpts): RoomHandle {
     const grid = trofferGrid(r, t.dx, t.dz).filter((c) => !ex.some((h) => c.x + 0.31 > h.x0 && c.x - 0.31 < h.x1 && c.z + 0.61 > h.z0 && c.z - 0.61 < h.z1))
     const lit = o.lit ?? "none"
     const litSet = new Set<number>()
+    const extra = NIGHT_EXTRA.rooms[o.id] ?? []
     if (lit === "all") grid.forEach((_, i) => litSet.add(i))
-    else if (lit !== "none")
-      for (const [px, pz] of lit) {
+    else
+      for (const [px, pz] of [...(lit === "none" ? [] : lit), ...extra]) {
         let best = -1
         let bd = Infinity
         grid.forEach((c, i) => {
