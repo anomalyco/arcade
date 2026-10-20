@@ -231,36 +231,29 @@ What moved:
 - **Night 1 is a little quieter.** Skilled aware zombies went 2.28 → 1.79 and chasers 0.98 → 0.67.
 - **Nights 2 and 3 have more searchers but the same number of chasers.** Aware zombies went 6.0 → 7.2 on Night 2 and
   6.7 → 7.8 on Night 3, while chasers held at 2.9 and 3.8 under the cap.
-- **Survival:** a fresh survivor's first night is about the same, and Skilled and Expert lose one or two more runs by
-  dawn 2–3.
+- **Survival:** a fresh survivor's first night is about the same. Skilled and Expert lost one or two more runs by dawn
+  2–3 in this batch, which ran the earlier follower rule described below.
 
-Rebased on overnight (throwables, the flashlight off the hotbar, co-op difficulty), the CI batch in
-`tests/difficulty-ramp.test.ts` (4 presets × 4 seeds × 3 nights) moved three checks, each changed deliberately:
+That batch ran an early version in which followers walked straight to the survivor and up to three turned at any hour.
+That version bypassed the director's pacing. In the co-op opening, 4-player Skilled squads went down at 116, 142 and
+319 s, where Today had none. Followers now walk to where the zombie that noticed was standing, not to the survivor, so
+they trail it rather than join the hunt. Only one follows by day; three follow at night. With that change, the
+co-op opening has no downs again (2, 4 and 6 survivors × 4 seeds).
+
+On the current overnight tree, the CI batch in `tests/difficulty-ramp.test.ts` (4 presets × 4 seeds × 3 nights)
+gives:
 
 | CI batch | Today | Alive |
 | --- | --: | --: |
-| Aware zombies, Night 2 / Night 3 (pooled) | 5.80 / 5.84 | 6.92 / 6.55 |
-| Night 3 / Night 2 aware ratio | 1.007 | 0.947 |
-| Chasers, Night 1 / 2 / 3 | 1.33 / 2.89 / 3.67 | 1.21 / 2.89 / 3.69 |
-| Novice damage per hour, Night 1 / Night 2 | 7.2 / 0 (1 run) | 3.1 / 31.5 |
-| Skilled damage per hour, Night 1 / Night 2 | 2.8 / 2.7 | 3.6 / 3.4 |
+| Alive at dawn 1 / 3: Skilled, Expert | 1 / 0.75, 1 / 0.5 | 1 / 0.75, 1 / 0.5 |
+| Aware zombies, Night 2 / Night 3 (pooled) | 5.74 / 6.22 | 6.89 / 6.89 |
+| Night 3 / Night 2 aware ratio | 1.083 | 1.000 |
+| Chasers, Night 1 / 2 / 3 | 1.37 / 2.86 / 3.76 | 1.28 / 2.82 / 3.76 |
+| Novice / Skilled damage per hour, Night 1 | 6.3 / 2.8 | 3.1 / 1.4 |
 
-- **`nightThreeOverTwo` lower edge: 1.0 → 0.9.** More of the dead hunt from Night 2, so the ratio flattens even though
-  Night 3 has more aware zombies than before. Living zombies and chasers still rise.
-- **Novice vs Skilled damage now compares each preset's worse night.** The old check compared Night 1 alone, but
-  Novices now take their beating on Night 2 instead.
-
-- **Skilled's dawn-3 floor: 0.25 → 0.** On these four seeds Skilled reads 0.25 on an M-series Mac but 0 on the CI
-  runner, because the layer reshuffles which seeds the bots survive. On 12 other seeds (201–267) the difference
-  disappears:
-
-  | Preset, alive at dawn 1 / 2 / 3 | Today | Alive |
-  | --- | --- | --- |
-  | Casual | 0.75 / 0.33 / 0.25 | 0.92 / 0.42 / 0.25 |
-  | Skilled | 1.00 / 0.67 / 0.50 | 0.92 / 0.58 / 0.50 |
-  | Expert | 0.92 / 0.75 / 0.50 | 1.00 / 0.83 / 0.67 |
-
-  So the four-seed result is a coin flip on the band's edge, not a harder game. Expert keeps its 0.25 floor.
+One band moved, deliberately: **`nightThreeOverTwo`'s lower edge went from 1.0 to 0.9.** More of the dead hunt from
+Night 2, so Night 3 has more aware zombies than before but the ratio flattens to the old edge. Living zombies and
+chasers still rise. Survival is unchanged.
 
 This is the intended effect: the dead keep looking after they lose you, so the later
 nights feel hunted rather than heavier. Lab › Zombie behaviour › "Search, remember,

@@ -381,7 +381,7 @@ export function stepBehaviourBefore(
         a.state = "investigate"
         a.stateTime = 0
         a.repathAt = 0
-        a.awareness = Math.max(a.awareness, 0.42)
+        a.awareness = Math.max(a.awareness, 0.3)
         a.targetX = m.fx
         a.targetY = m.fy
         a.targetKind = "noise"
@@ -686,6 +686,7 @@ export function stepBehaviourAfter(sim: OutbreakSim, st: BehaviourState): void {
   const time = sim.time
   const agents = sim.ai.agents
   const minds = st.minds
+  const darkness = dayCycle(sim.hour).darkness
 
   for (let i = 0; i < agents.length; i++) {
     const a = agents[i]!
@@ -713,10 +714,13 @@ export function stepBehaviourAfter(sim: OutbreakSim, st: BehaviourState): void {
     }
 
     // It just noticed you: the dead around it that see it go turn and follow, a beat later.
+    // They go to where it was, not to you: they trail it rather than joining the hunt, and only one turns by day, so
+    // the director's chasers still set the pressure.
     if (t.zbFollow > 0 && !engaged(prev) && (cur === "alert" || cur === "chase")) {
       const reach = 8 * Math.min(1.6, t.zbFollow)
+      const most = darkness > 0.55 ? 3 : 1
       let recruited = 0
-      for (let k = 0; k < agents.length && recruited < 3; k++) {
+      for (let k = 0; k < agents.length && recruited < most; k++) {
         const o = agents[k]!
         if (o === a || o.state !== "wander" || pinned(o)) continue
         const d = Math.hypot(o.x - a.x, o.y - a.y)
@@ -727,8 +731,8 @@ export function stepBehaviourAfter(sim: OutbreakSim, st: BehaviourState): void {
         if (op.sociability < 1 - 0.75 * Math.min(1.3, t.zbFollow)) continue
         if (!seesThrough(sim, o.x, o.y, a.x, a.y)) continue
         om.followAt = time + op.reaction * (isResting(om.act) ? 1.6 : 1)
-        om.fx = a.targetX
-        om.fy = a.targetY
+        om.fx = a.x
+        om.fy = a.y
         recruited++
       }
     }

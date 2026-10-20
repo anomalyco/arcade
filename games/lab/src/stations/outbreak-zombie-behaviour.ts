@@ -32,7 +32,7 @@ export default defineStation({
   title: "Outbreak zombie behaviour",
   summary:
     "Each zombie gets a personality from its seed (curious, persistent, sociable, hungry, torpid, fresh or long dead) that shapes how it hears, follows, searches and gives up, rests by day, herds at night, feeds, climbs, and walks. The overlay labels what each is doing. Tunables are in Backquote › Zombie behaviour; Today turns it all off.",
-  order: 132,
+  order: 138,
   prop: "panels",
   color: 0x7a9a5c,
   status: "live",
