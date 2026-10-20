@@ -115,12 +115,13 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
     match: (s) => s === "@arcade/kit/gpu/mesh",
   },
   {
-    area: "`gpu/{cull,targets,pass-graph}`",
-    description: "Frustum/shadow-sweep culling, contiguous draw merging, `ScenePass` slots, MSAA/HDR targets, and 5-level bloom",
+    area: "`gpu/{cull,targets,pass-graph,reactive}`",
+    description: "Frustum/shadow-sweep culling, contiguous draw merging, `ScenePass` slots, MSAA/HDR targets, 5-level bloom, and the TAA reactive-mask contract",
     match: (s) =>
       s === "@arcade/kit/gpu/cull" ||
       s === "@arcade/kit/gpu/targets" ||
-      s === "@arcade/kit/gpu/pass-graph",
+      s === "@arcade/kit/gpu/pass-graph" ||
+      s === "@arcade/kit/gpu/reactive",
   },
   {
     area: "`gpu/{renderer,shaders,level}` & `limits`",
