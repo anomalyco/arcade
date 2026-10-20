@@ -2,7 +2,7 @@
 // generation that reaches the goal, and a replay of the best walker next to the pre-trained one. Also saves a still
 // with the fitness chart. Run against a built dist, through HiveMind:
 //   hivemind run --kind browser --fetch -- bash -c "cd games/walkers && bun run build && bun scripts/capture.ts"
-// Writes to $LEASE_OUT (or captures/walkers). Needs ffmpeg.
+// Writes to $LEASE_OUT (or the repo's captures/walkers). Needs ffmpeg.
 
 import { mkdirSync } from "node:fs"
 import { join, resolve, sep } from "node:path"
@@ -10,7 +10,7 @@ import { parseArgs } from "node:util"
 import { chromium } from "playwright-core"
 
 const { values } = parseArgs({ options: { creature: { type: "string", default: "biped" }, task: { type: "string", default: "room" }, max: { type: "string", default: "170" }, speed: { type: "string", default: "2" } } })
-const out = resolve(process.env.LEASE_OUT ?? "captures/walkers")
+const out = resolve(process.env.LEASE_OUT ?? "../../captures/walkers")
 mkdirSync(out, { recursive: true })
 const prefix = "/arcade/walkers/"
 const root = resolve("dist/arcade/walkers")
@@ -36,7 +36,7 @@ page.on("pageerror", (e) => errors.push(e.message))
 const t0 = Date.now()
 const at = () => (Date.now() - t0) / 1000
 await page.goto(`http://127.0.0.1:${server.port}${prefix}?creature=${values.creature}&task=${values.task}&speed=${values.speed}&panel=0`, { waitUntil: "load" })
-await page.waitForSelector("#app[data-ready]")
+await page.waitForSelector("#app[data-ready]", { state: "attached" })
 const marks: Record<string, number> = { loaded: at() }
 const read = () =>
   page.evaluate((): Stats => {
