@@ -1,7 +1,9 @@
 /// <reference types="@webgpu/types" />
 /**
  * Before/after stills and the paired GPU cost of the kit's physical light model (`gpu/lights/physical.ts`) in the
- * Lab's Look and world section: preset "Night lamps" (Today) against "Night lamps, physical", from the Lab's default
+ * Lab's Look and world section: preset "Night lamps" (Today) against "Night lamps, physical" and "Spot shadow maps"
+ * (physical plus two spot shadow maps, `gpu/shadows/spot-shadows.ts`; maps re-render only on a slot change, so the
+ * timed frame is the steady-state sampling cost), from the Lab's default
  * three-quarter camera and from street level, at 3456×1894 (1728×947 at DPR 2). Variants alternate on one page with
  * the clock frozen, each timed by the renderer's timestamp queries (`Renderer.measure`), so drift cancels out.
  *
@@ -39,7 +41,9 @@ const scenes: Scene[] = [
   { name: "three-quarter" },
   { name: "street-level", camera: { yaw: 0.25, pitch: 0.12, dist: 8, focus: [1, 1.2, -2] } },
 ]
-const variants = { today: "night-lamps", physical: "night-physical" } as const
+const variants = { today: "night-lamps", physical: "night-physical", shadowed: "spot-shadows" } as const
+type Variant = keyof typeof variants
+const names = Object.keys(variants) as Variant[]
 
 try {
   const page = await browser.newPage({ viewport: { width: 1728, height: 947 }, deviceScaleFactor: 2 })
@@ -88,21 +92,25 @@ try {
       await page.waitForTimeout(150)
       await page.locator("canvas").first().screenshot({ path: resolve(out, `${scene.name}-${name}.png`) })
     }
-    const runs: Record<keyof typeof variants, number[]> = { today: [], physical: [] }
+    const runs: Record<Variant, number[]> = { today: [], physical: [], shadowed: [] }
     for (let r = 0; r <= rounds; r++) {
-      const order = (r % 2 ? ["physical", "today"] : ["today", "physical"]) as (keyof typeof variants)[]
+      const order = names.map((_, i) => names[(i + r) % names.length]!)
+      if (r % 2) order.reverse()
       for (const v of order) {
         await show(scene, variants[v])
         const ms = await time()
         if (r > 0 && ms !== null) runs[v].push(ms)
       }
     }
-    const deltas = runs.today.map((t, i) => (runs.physical[i] ?? t) - t)
+    const deltas = (v: Variant, base: Variant) => runs[base].map((t, i) => (runs[v][i] ?? t) - t)
     report[scene.name] = {
       todayMs: +median(runs.today).toFixed(3),
       physicalMs: +median(runs.physical).toFixed(3),
-      pairedDeltaMs: +median(deltas).toFixed(3),
-      deltaMadMs: +mad(deltas).toFixed(3),
+      shadowedMs: +median(runs.shadowed).toFixed(3),
+      physicalDeltaMs: +median(deltas("physical", "today")).toFixed(3),
+      physicalDeltaMadMs: +mad(deltas("physical", "today")).toFixed(3),
+      spotShadowDeltaMs: +median(deltas("shadowed", "physical")).toFixed(3),
+      spotShadowDeltaMadMs: +mad(deltas("shadowed", "physical")).toFixed(3),
     }
   }
   report.errors = errors

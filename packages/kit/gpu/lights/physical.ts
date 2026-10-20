@@ -1,4 +1,5 @@
 import type { LabControl } from "../../lab-panel"
+import { spotShadowWgsl } from "../shadows/spot-shadows"
 import type { SceneHooks } from "../shaders"
 
 /**
@@ -58,7 +59,7 @@ export function physicalLightControls(group = "Lighting", prefix = ""): LabContr
 }
 
 /** Packs the four live knobs for a game that binds them through `knobs` (e.g. its custom uniform). */
-export function packPhysicalLightKnobs(s: PhysicalLightSettings, out = new Float32Array(4), offset = 0): Float32Array {
+export function packPhysicalLightKnobs<T extends Float32Array>(s: PhysicalLightSettings, out: T = new Float32Array(4) as T, offset = 0): T {
   out[offset] = s.specularAA
   out[offset + 1] = s.sphereLights
   out[offset + 2] = s.envSpecular
@@ -81,6 +82,8 @@ export type PhysicalLightOptions = {
   env?: string
   /** WGSL `vec3f` expression for the normal whose screen derivatives drive specular AA (default the interpolated normal). */
   aaNormal?: string
+  /** Sample spot shadow maps (`gpu/shadows/spot-shadows.ts`, scene bindings 20–22) for the lights that hold one. */
+  spotShadows?: boolean
 }
 
 /** WGSL: BRDF, light shape and environment functions. Needs `common` (Frame, Light, PI) and `ambientAt` before use. */
@@ -185,7 +188,7 @@ export function physicalLightHooks(opts: PhysicalLightOptions = {}): SceneHooks 
   const knobs = opts.knobs ?? `vec4f(${num(s.specularAA)}, ${num(s.sphereLights)}, ${num(s.envSpecular)}, ${num(s.spill)})`
   const env = opts.env ?? "mix(ambientAt(dir), ambientAt(n), rough * rough)"
   return {
-    declarations: `${physicalLightWgsl}
+    declarations: `${physicalLightWgsl}${opts.spotShadows ? spotShadowWgsl : ""}
 fn pbrKnobs() -> vec4f { return ${knobs}; }
 fn pbrEnvRadiance(dir: vec3f, rough: f32, n: vec3f) -> vec3f { return ${env}; }
 /** Split-sum sky reflection along the GGX dominant direction (Lagarde), with specular occlusion. */
@@ -197,7 +200,7 @@ fn pbrEnvSpecular(n: vec3f, V: vec3f, rough: f32, f0: vec3f, ao: f32) -> vec3f {
   return pbrEnvRadiance(dir, rough, n) * pbrEnvBRDF(f0, rough, nv) * pbrSpecOcclusion(nv, ao, rough) * pbrKnobs().z;
 }`,
     fragmentStart: `pbrAAKernel = pbrSpecularAAKernel(${opts.aaNormal ?? "normalize(o.normal)"}, pbrKnobs().x);`,
-    lightAttenuation: `var att = power * pbrFalloff(d3, r, L.extra.z) * pbrCone(L, ldir, pbrKnobs().w);`,
+    lightAttenuation: `var att = power * pbrFalloff(d3, r, L.extra.z) * pbrCone(L, ldir, pbrKnobs().w);${opts.spotShadows ? "\n    if (att > 0.0005) { att *= spotShadowVis(i, world, n); }" : ""}`,
     diffuseTerm: "let diffuse = max(ndl, 0.0) / PI;",
     lightLeak: "0.0",
     wallDirectScale: "1.0",

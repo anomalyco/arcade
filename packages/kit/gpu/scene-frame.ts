@@ -28,6 +28,8 @@ export type SceneLight = {
   spot?: { axis: readonly [number, number, number]; cosOuter: number; cosInner: number }
   /** Skip shadows (cheap fill light). */
   unshadowed?: boolean
+  /** Stable id, for finding the light's frame index after packing (`SceneLights.indexOf`), e.g. its spot shadow map. */
+  id?: number
 }
 
 export type Caster = { x: number; y: number; r?: number; h?: number }
@@ -39,6 +41,7 @@ export class SceneLights {
   lightCount = 0
   shadowLightCount = 0
   occCount = 0
+  private readonly ids: (number | undefined)[] = []
   private boxes: { rect: Rect; h: number }[] = []
 
   /** Static occluders (walls, pillars) with heights. */
@@ -53,8 +56,10 @@ export class SceneLights {
     let nl = 0
     let no = 0
     const sorted = [...lights].sort((a, b) => Number(!!a.unshadowed) - Number(!!b.unshadowed))
+    this.ids.length = 0
     for (const l of sorted) {
       if (nl >= MAX_LIGHTS) break
+      this.ids.push(l.id)
       const off = no
       if (!l.unshadowed) {
         const reach = l.r + 0.5
@@ -83,6 +88,11 @@ export class SceneLights {
     this.lightCount = nl
     this.shadowLightCount = shadowed
     this.occCount = no
+  }
+
+  /** Frame index of the light packed with this `id`, or −1. */
+  indexOf(id: number): number {
+    return this.ids.indexOf(id)
   }
 }
 

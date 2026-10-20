@@ -3,6 +3,8 @@ import { applyFoliagePreset, cloneFoliageParams, type FoliageKind, type FoliageP
 import { lampFlicker } from "../../gpu/lights/flicker"
 import { packPhysicalLightKnobs, physicalLightHooks, type LightModel } from "../../gpu/lights/physical"
 import { Renderer, type FrameInput } from "../../gpu/renderer"
+import { SpotShadows, type SpotCandidate } from "../../gpu/shadows/spot-shadows"
+import { VERT_BYTES } from "../../gpu/mesh"
 import { SceneLights, newSceneFrame, packSceneFrame, type SceneLight } from "../../gpu/scene-frame"
 import { makeSceneShader, spriteShader } from "../../gpu/shaders"
 import { WEATHER_PRESET_IDS, WeatherSimulation, applyWeatherPreset, createWeatherSettings, resolveWeatherPresetId, type WeatherLight, type WeatherSettings } from "../../weather"
@@ -38,6 +40,8 @@ export type WorldState = {
   envSpecular: number
   sphereLights: number
   specularAA: number
+  /** Perspective shadow maps for the nearest spot lights under Physical (`gpu/shadows/spot-shadows.ts`); 0 is Today. */
+  spotShadows: number
   /** Shared lamp flicker and failure (`gpu/lights/flicker.ts`): streetlamp sodium, porch tube, lamp inside a bulb. */
   flicker: number
 }
@@ -64,6 +68,7 @@ export const WORLD_DEFAULTS: Readonly<WorldState> = {
   envSpecular: 1,
   sphereLights: 1,
   specularAA: 1,
+  spotShadows: 0,
   flicker: 0,
 }
 
@@ -129,7 +134,7 @@ export function createDebugWorld(context: LabContext): DebugWorld {
     const ctx = canvas.getContext("webgpu")!
     ctx.configure({ device, format, alphaMode: "opaque" })
     // Physical swaps only the scene shader; Today's baseline is the same shader without the hooks.
-    const physical = physicalLightHooks({ knobs: "PK.k" })
+    const physical = physicalLightHooks({ knobs: "PK.k", spotShadows: true })
     const r = model === "physical"
       ? new Renderer(device, ctx, format, {
           scene: makeSceneShader({ ...physical, declarations: `struct PhysicalKnobs { k: vec4f }\n@group(0) @binding(13) var<uniform> PK: PhysicalKnobs;\n${physical.declarations}`, lampGrid: false }, false),
@@ -140,10 +145,40 @@ export function createDebugWorld(context: LabContext): DebugWorld {
     return r
   }
 
+  let spots: SpotShadows | null = null
+  let casters: { buffer: GPUBuffer; count: number; stride: number } | null = null
+  const spotBound = new Set<Renderer>()
   const rebuild = () => {
     geometry = buildWorld({ ...state, vegetation })
     lights.setBoxes(geometry.boxes)
+    casters?.buffer.destroy()
+    casters = null
+    spots?.picker.invalidate()
     dirty = false
+  }
+
+  const shadowSpots = (r: Renderer, scene: readonly SceneLight[]) => {
+    if (!spots) spots = new SpotShadows(device, { count: state.spotShadows })
+    spots.settings.count = state.spotShadows
+    if (!casters) {
+      const data = geometry!.level.chunks[0]!.data
+      const buffer = device.createBuffer({ size: Math.max(64, data.byteLength), usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST, label: "world spot shadow casters" })
+      device.queue.writeBuffer(buffer, 0, data)
+      casters = { buffer, count: data.byteLength / VERT_BYTES, stride: VERT_BYTES }
+    }
+    const candidates: SpotCandidate[] = []
+    for (const l of scene) {
+      if (!l.spot || l.id === undefined) continue
+      candidates.push({ id: l.id, pos: [l.x, l.h, l.y], axis: l.spot.axis, cosOuter: l.spot.cosOuter, range: l.r, intensity: l.r * l.r })
+    }
+    const enc = device.createCommandEncoder({ label: "world spot shadows" })
+    const rebind = spots.update(enc, candidates, [stage.eye[0]!, stage.eye[1]!, stage.eye[2]!], 1 / 60, (id) => lights.indexOf(id), [casters])
+    device.queue.submit([enc.finish()])
+    if (rebind) spotBound.clear()
+    if (!spotBound.has(r)) {
+      r.setSpotShadows(spots.bindings())
+      spotBound.add(r)
+    }
   }
 
   const extraLights = (): SceneLight[] => {
@@ -222,6 +257,7 @@ export function createDebugWorld(context: LabContext): DebugWorld {
         r.setCustomUniforms(knobs)
       }
       lights.update(scene, geometry!.casters)
+      if (state.lightModel === "physical") shadowSpots(r, scene)
       packSceneFrame(frame, {
         viewProj: stage.viewProj,
         eye: [stage.eye[0]!, stage.eye[1]!, stage.eye[2]!],

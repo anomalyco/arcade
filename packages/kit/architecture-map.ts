@@ -144,6 +144,11 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
     match: (s) => s === "@arcade/kit/gpu/lights/physical" || s === "@arcade/kit/gpu/lights/flicker",
   },
   {
+    area: "`gpu/shadows/spot-shadows`",
+    description: "Perspective shadow maps for the few most important spot lights, re-rendered only when a slot changes",
+    match: (s) => s === "@arcade/kit/gpu/shadows/spot-shadows",
+  },
+  {
     area: "`gpu/{motion,motion-blur,sprite-motion}`",
     description: "Depth-aware 8-tap shutter gather and actor/sprite velocity history",
     match: (s) =>
