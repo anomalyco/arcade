@@ -672,7 +672,7 @@ export class OutbreakFrameRenderer {
       sightCone,
       sightAwareness,
     })
-    const { doorBatch, sashBatch, openWindows } = this.sceneLevel.updateOpeningBatches(town)
+    const { doorBatch, sashBatch, openWindows } = this.sceneLevel.updateOpeningBatches(town, view)
     const debugAlphaCount = this.zombieCrowd.renderDebugOverlay(
       Boolean(settings.ai.aiDebugOverlay),
       zombies,

@@ -16,6 +16,7 @@ import {
   type DetailSite,
 } from "../src/details/placement"
 import { DEFAULT_DETAIL_SETTINGS, detailControls, type OutbreakDetailSettings } from "../src/details/settings"
+import { groundKeepOut } from "../src/houses/grounds"
 import { createOutbreakSettings, getOutbreakSetting } from "../src/settings"
 
 const settings = (patch: Partial<OutbreakDetailSettings> = {}): OutbreakDetailSettings => ({ ...DEFAULT_DETAIL_SETTINGS, ...patch })
@@ -42,6 +43,28 @@ const indoor = (d: DetailSite) => INDOOR.has(d.model)
 const onWall = (d: DetailSite) => d.model === "markX" || d.model.startsWith("word") || d.model.startsWith("blood")
 
 describe("world details placement", () => {
+  test("outdoor pieces keep off styled homes' porches, front paths, driveways and yards", () => {
+    let outdoor = 0
+    let keeps = 0
+    for (const [x, y] of [[150, 150], [-50, -50], [250, 60], [60, 250], [-150, 150]] as const) {
+      const s = new LocalSession(7, 7, 0.22, { zombieCount: 0 }, "streaming")
+      s.view.player.x = x
+      s.view.player.y = y
+      s.rebuildCollision()
+      const town = s.view.town
+      const keep = town.buildings.filter((b) => b.style).flatMap((b) => groundKeepOut(b, town))
+      keeps += keep.length
+      // Luggage by a car can sit on the driveway the car is parked on.
+      for (const d of placeDetails(town, all).filter((d) => !indoor(d) && !onWall(d) && !d.model.startsWith("suitcase"))) {
+        outdoor++
+        const on = keep.find((r) => d.x > r[0] && d.x < r[2] && d.z > r[1] && d.z < r[3])
+        expect(on ? `${d.model} at ${d.x.toFixed(2)},${d.z.toFixed(2)} on ${on.join(",")}` : "").toBe("")
+      }
+    }
+    expect(keeps).toBeGreaterThan(30)
+    expect(outdoor).toBeGreaterThan(20)
+  })
+
   test("seeded from the town and dtSeed: the same town places the same details; a reroll moves them", () => {
     const [a, b] = [towns()[2]!, towns()[2]!]
     const first = placeDetails(a, all)

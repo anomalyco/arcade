@@ -57,3 +57,14 @@ export function windowStateKey(town: Town): number {
   for (let i = 0; i < town.windows.length; i++) if (town.windows[i]!.open) h = (Math.imul(h, 31) + i + 1) | 0
   return h
 }
+
+/**
+ * Changes whenever a door or window opens or closes. A co-op client opens its own doors ahead of the room (optimistic
+ * toggle) and the snapshot that confirms it changes nothing, so no topology revision follows: without this key the
+ * door it drew open kept stopping the flashlight and the sight cone.
+ */
+export function openingStateKey(town: Town): number {
+  let h = (Math.imul(windowStateKey(town), 31) + town.doors.length) | 0
+  for (let i = 0; i < town.doors.length; i++) if (town.doors[i]!.open) h = (Math.imul(h, 31) + i + 1) | 0
+  return h
+}

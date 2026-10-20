@@ -4,8 +4,7 @@ import type { Rect } from "@arcade/kit/sim/geom"
 import { Rng, seedOf } from "@arcade/kit/sim/rng"
 import type { HouseStyle, YardItem } from "../../shared/houses/style"
 import type { Building, Town } from "../../shared/map"
-import { supportHeight } from "../../shared/terrain"
-import { macroLocalCoord } from "../../shared/world"
+import { supportHeight, toStreet } from "../../shared/terrain"
 import { gardenShed } from "../architecture"
 import { porchRects } from "./exterior"
 
@@ -17,18 +16,6 @@ import { porchRects } from "./exterior"
 
 const hex = (v: number): Rgb => [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255]
 const shade = (c: Rgb, k: number): Rgb => [Math.min(1, c[0] * k), Math.min(1, c[1] * k), Math.min(1, c[2] * k)]
-
-/** Whether a point is in a street corridor (with its sidewalks). */
-export function inStreet(x: number, z: number): boolean {
-  const lx = macroLocalCoord(x), lz = macroLocalCoord(z)
-  return (lx > 37.8 && lx < 50.2) || (lz > 37.8 && lz < 50.2)
-}
-
-/** How far south from z the street begins (to 9 m), so paths and driveways run out to the sidewalk. */
-function toStreet(x: number, z: number): number {
-  for (let d = 0; d < 9; d += 0.25) if (inStreet(x, z + d)) return d
-  return 2
-}
 
 /** Ground quad with the floor material `aux` (2 paving, 3 gravel, 6 path). */
 function pad(m: Mesh, r: Rect, y: number, col: Rgb, aux: number): void {

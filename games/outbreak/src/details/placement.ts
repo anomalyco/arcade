@@ -4,6 +4,7 @@ import { carSites } from "../../shared/discovery/verbs"
 import { frontageEnd, inBuildingFootprint, propShape, SIZE, type Building, type Prop, type Town } from "../../shared/map"
 import { supportHeight } from "../../shared/terrain"
 import { carPose } from "../discovery/verbs"
+import { groundKeepOut } from "../houses/grounds"
 import type { OutbreakDetailSettings } from "./settings"
 
 /**
@@ -168,7 +169,18 @@ export function floorFree(b: Building, s: BuildingSolids, taken: Taken, x: numbe
   return clearOfTaken(taken, x, z, r)
 }
 
-/** Whether an outdoor piece of radius `r` fits at (x, z): off buildings, fences, doorways, front paths, driveways, cars and trees. */
+const keepOuts = new WeakMap<Building, readonly Rect[]>()
+/** A styled home's porches, front paths, driveway, outbuilding and yard things (`groundKeepOut`), cached per building. */
+function styledKeepOut(b: Building, town: Town): readonly Rect[] {
+  let k = keepOuts.get(b)
+  if (!k) keepOuts.set(b, (k = groundKeepOut(b, town)))
+  return k
+}
+
+/**
+ * Whether an outdoor piece of radius `r` fits at (x, z): off buildings, fences, doorways, front paths, driveways, cars
+ * and trees, and off a styled home's porch, paths, driveway and yard (bins and bikes stood on its porch decks).
+ */
 export function outdoorFree(town: Town, x: number, z: number, r: number, taken: Taken, opts: { road?: boolean } = {}): boolean {
   const wb = town.worldBounds ?? [0, 0, SIZE, SIZE]
   if (x < wb[0] + 1 || x > wb[2] - 1 || z < wb[1] + 1 || z > wb[3] - 1) return false
@@ -182,6 +194,7 @@ export function outdoorFree(town: Town, x: number, z: number, r: number, taken: 
       if (x > a + 4.4 - r && x < a + 7.1 + r && z > e - 0.2 && z < end) return false
       if (x > a - 3.05 - r && x < a - 0.3 + r && z > c && z < end) return false
     }
+    if (b.style) for (const k of styledKeepOut(b, town)) if (inRectPad(x, z, k, r)) return false
   }
   for (const w of town.barriers) if (distToRect(x, z, w.rect) < r + 0.12) return false
   for (const d of town.doors) if (distToRect(x, z, d.rect) < r + 1.1) return false

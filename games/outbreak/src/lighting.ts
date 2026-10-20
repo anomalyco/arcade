@@ -537,7 +537,8 @@ export function packOutbreakLightingUniforms(
   out[N + 20] = fg?.fogMemoryWarmth ?? 0.6
   out[N + 21] = practicalColor
   out[N + 22] = Math.cos(Math.min(Math.PI * 0.95, halfRad * beamSpillWidth * 1.7))
-  out[N + 23] = state.flashlightAirLimit ?? fl.flashlightRange
+  // An open view has no wall along the axis (`raycast` gives Infinity): an infinite limit makes the glow's fade NaN.
+  out[N + 23] = Math.min(state.flashlightAirLimit ?? Infinity, fl.flashlightRange)
   // u17: bounce height (a ground pool sits low, a wall hotspot at chest height)
   out[N + 24] = state.flashlightBounceHeight ?? state.playerH + 0.3
   out[N + 25] = 1 / Math.max(1e-3, halfRad)
