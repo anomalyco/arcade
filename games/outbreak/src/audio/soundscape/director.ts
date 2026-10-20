@@ -3,6 +3,8 @@ import { scapeSound, type ScapeLayer } from "./catalog"
 import { smoothNoise } from "./dsp"
 import { distToBuilding, hash01, housePlan, housePowered, type HousePlan } from "./houses"
 import { STREET_PUDDLES } from "../space"
+import { lampFlickerPhase, neonLevel, placeNightLights, sodiumLevel, type NightSite } from "../../night-lights/placement"
+import { DEFAULT_NIGHT_LIGHT_SETTINGS } from "../../night-lights/settings"
 
 /** What the soundscape reads each frame. All of it is shared in co-op (town, sim time, hour, weather, survivors). */
 export type ScapeInput = {
@@ -105,7 +107,7 @@ export class ScapeHours {
 type DistantEvent = { start: number; length: number; bearing: number; variant: number; dist: number; k: number }
 
 // Layers seeded on the shared sim clock in fixed windows: each window may hold one event.
-const SALT = { siren: 101, gunfire: 102, alarm: 103, owl: 104, creak: 105, pipe: 106, settle: 107, phone: 108, chimes: 109 } as const
+const SALT = { bird: 112, siren: 101, gunfire: 102, alarm: 103, owl: 104, creak: 105, pipe: 106, settle: 107, phone: 108, chimes: 109, radio: 110, door: 111 } as const
 
 const PENTATONIC = [1, 9 / 8, 5 / 4, 3 / 2, 5 / 3, 2] as const
 const MAX_SHOTS = 48
@@ -119,6 +121,8 @@ const NEAR_PUDDLE = 11
 export const SIREN_CHANCE = [0, 0.6, 0.28, 0.1] as const
 /** Other survivors' gunfire chance per 34 s window, by night: it thins out and stops after the fourth. */
 export const GUNFIRE_CHANCE = [0, 0.5, 0.36, 0.22, 0.1] as const
+/** Dispatch calling the abandoned cruisers, per 25 s window, by night: fewer calls, one last one, then nothing. */
+export const RADIO_CHANCE = [0, 0.32, 0.14, 0.04] as const
 /** A zombie bumping a car streets away, per 150 s window: batteries die as the nights go on. */
 export const ALARM_CHANCE = [0, 0.16, 0.12, 0.07, 0.04, 0.02] as const
 
@@ -151,6 +155,12 @@ export class ScapeDirector {
   private puddle: { x: number; y: number; d: number } = { x: 0, y: 0, d: Infinity }
   private tree: { x: number; y: number; d: number } = { x: 0, y: 0, d: Infinity }
   private church: { x: number; y: number; d: number } = { x: 0, y: 0, d: Infinity }
+  private nightSites: NightSite[] = []
+  private nightSitesFor: unknown = null
+  private cruiser: { x: number; y: number; d: number; k: number } = { x: 0, y: 0, d: Infinity, k: 0 }
+  private neon: { x: number; y: number; d: number; broken: boolean; phase: number } = { x: 0, y: 0, d: Infinity, broken: false, phase: 0 }
+  private beacon: { x: number; y: number; d: number; k: number } = { x: 0, y: 0, d: Infinity, k: 0 }
+  private lamp: { x: number; y: number; d: number; power: number; phase: number } = { x: 0, y: 0, d: Infinity, power: 0, phase: -1 }
   /** Music boxes already played, by house id → night. */
   private readonly musicPlayed = new Map<string, number>()
   /** The haunted phone's ringing: when it started, and when (if) someone walked up to it. */
@@ -194,6 +204,7 @@ export class ScapeDirector {
     this.haunting(input, levels, prev, prevHour, night)
     this.bell(input, levels, prevHour, night)
     this.outdoors(input, levels, prev, daylight, wind, gustRise)
+    this.electrics(input, levels, prev, night, dark)
     this.distance(input, levels, prev, night, dark)
     this.prevAbs = input.absHour
     this.flush(t)
@@ -302,6 +313,37 @@ export class ScapeDirector {
       const d = Math.hypot(x - this.lx, y - this.ly)
       if (d < this.car.d) setNear(this.car, (v[0] + v[2]) / 2, (v[1] + v[3]) / 2, d)
     }
+    // The town's electrics: police cruisers, neon signs and shop alarm beacons (the night lights' own placement), and
+    // the nearest lit street lamp (a shot-out lamp's power is 0 on the town).
+    if (this.nightSitesFor !== town.buildings) {
+      this.nightSitesFor = town.buildings
+      this.nightSites = placeNightLights(town, DEFAULT_NIGHT_LIGHT_SETTINGS)
+    }
+    this.cruiser.d = this.neon.d = this.beacon.d = this.lamp.d = Infinity
+    for (const site of this.nightSites) {
+      if (site.kind !== "cruiser" && site.kind !== "neon" && site.kind !== "beacon") continue
+      const d = Math.hypot(site.x - this.lx, site.z - this.ly)
+      if (site.kind === "cruiser" && d < this.cruiser.d) {
+        setNear(this.cruiser, site.x, site.z, d)
+        this.cruiser.k = Math.floor(site.x * 13 + site.z * 7)
+      } else if (site.kind === "neon" && d < this.neon.d) {
+        setNear(this.neon, site.x, site.z, d)
+        this.neon.broken = site.broken
+        this.neon.phase = site.phase
+      } else if (site.kind === "beacon" && d < this.beacon.d) {
+        setNear(this.beacon, site.x, site.z, d)
+        this.beacon.k = Math.floor(site.x * 13 + site.z * 7)
+      }
+    }
+    for (const l of town.lamps) {
+      if (l.kind !== "street" || l.power <= 0) continue
+      const d = Math.hypot(l.x - this.lx, l.y - this.ly)
+      if (d < this.lamp.d) {
+        setNear(this.lamp, l.x, l.y, d)
+        this.lamp.power = l.power
+        this.lamp.phase = lampFlickerPhase(town, DEFAULT_NIGHT_LIGHT_SETTINGS, l)
+      }
+    }
     const ox = Math.floor(this.lx / SIZE) * SIZE
     const oy = Math.floor(this.ly / SIZE) * SIZE
     for (let bx = -1; bx <= 1; bx++) {
@@ -371,6 +413,27 @@ export class ScapeDirector {
       }
     }
     if (L.wind > 0) this.windows(plan, input, L, prev, wind, gustRise)
+    if (plan.smoke && L.oddities > 0 && night <= 3) {
+      const k0 = Math.floor((prev - plan.smoke.phase) / plan.smoke.period)
+      const k1 = Math.floor((t - plan.smoke.phase) / plan.smoke.period)
+      // The battery sags: the chirp drops a little in pitch and level each night.
+      if (k1 > k0) this.shot("scape.smoke.chirp", plan.smoke.x, plan.smoke.y, L.oddities * (1.1 - 0.2 * night), 1.02 - 0.02 * night)
+    }
+    if (L.wind > 0 && wind > 0.3) {
+      // Open doors swing on their hinges when a gust comes through.
+      const p = Math.min(0.6, Math.max(0, (gustRise - 0.05) * 4))
+      if (p > 0) {
+        const [x0, y0, x1, y1] = plan.building.rect
+        for (let i = 0; i < input.town.doors.length; i++) {
+          const d = input.town.doors[i]!
+          if (!d.open) continue
+          const dx = (d.rect[0] + d.rect[2]) / 2
+          const dy = (d.rect[1] + d.rect[3]) / 2
+          if (dx < x0 - 0.5 || dx > x1 + 0.5 || dy < y0 - 0.5 || dy > y1 + 0.5) continue
+          this.windowed(plan.seed + i, SALT.door, 2.5, prev, t, p, (_k, r) => this.shot("scape.door.creak", dx, dy, L.wind * (0.5 + 0.5 * wind), 0.85 + r(1) * 0.3))
+        }
+      }
+    }
     if (plan.chimes && L.chimes > 0) {
       // A gust knocks the tubes together: the faster it rises, the more of them, each tube keeping its pitch.
       const p = Math.min(0.85, Math.max(0, (gustRise - 0.03) * 6) + Math.max(0, wind - 0.55) * 0.5)
@@ -491,6 +554,19 @@ export class ScapeDirector {
         }
       }
     }
+    // The dawn chorus: a bird or two in the trees at first light, a few more every night the town goes quieter.
+    const h = ((input.hour % 24) + 24) % 24
+    if (L.insects > 0 && h > 4.6 && h < 7.4 && rain < 0.25 && this.trees.length) {
+      const night = nightOf(input.absHour)
+      const p = Math.min(0.85, 0.12 + 0.13 * night) * Math.sin((Math.PI * (h - 4.6)) / 2.8)
+      this.windowed(input.town.seed, SALT.bird, 2.2, prev, t, p, (_k, r) => {
+        // Of two trees, the nearer: birds you can hear, not ones a block away.
+        const a = this.trees[Math.floor(r(1) * this.trees.length)]!
+        const b = this.trees[Math.floor(r(5) * this.trees.length)]!
+        const tr = Math.hypot(a.x - this.lx, a.y - this.ly) < Math.hypot(b.x - this.lx, b.y - this.ly) ? a : b
+        this.shot(`scape.bird.${Math.floor(r(2) * 3)}`, tr.x, tr.y, L.insects * (0.6 + 0.4 * r(3)), 0.92 + r(4) * 0.16)
+      })
+    }
     // Insects in the trees by day; the night is quiet.
     if (L.insects > 0 && daylight > 0.35 && rain < 0.2) {
       const level = L.insects * Math.min(1, (daylight - 0.35) / 0.4) * (1 - rain * 5)
@@ -501,6 +577,29 @@ export class ScapeDirector {
         this.hold(`insects:${k}`, "scape.insects", tr.x, tr.y, level, 0.9 + hash01(input.town.seed, 601, k) * 0.2)
         if (++n >= 2) break
       }
+    }
+  }
+
+  /** Lamps humming overhead, neon buzzing, dispatch calling empty police cars, a shop alarm bell running down. */
+  private electrics(input: ScapeInput, L: ScapeLevels, prev: number, night: number, dark: number): void {
+    if (L.electrics <= 0) return
+    const t = input.time
+    const lamps = Math.max(0, Math.min(1, (dark - 0.35) / 0.4))
+    if (this.lamp.d < 9 && lamps > 0) {
+      const level = this.lamp.phase >= 0 ? sodiumLevel(this.lamp.phase, t) : 1
+      this.hold("lamp:buzz", "scape.lamp.buzz", this.lamp.x, this.lamp.y, L.electrics * lamps * level * Math.min(1.3, this.lamp.power / 2), 0.98 + (this.lamp.phase >= 0 ? 0.04 * level : 0))
+    }
+    if (this.neon.d < 11 && dark > 0.3) {
+      this.hold("neon:buzz", "scape.neon.buzz", this.neon.x, this.neon.y, L.electrics * Math.min(1, (dark - 0.3) / 0.3) * neonLevel(this.neon.broken, this.neon.phase, t), 1)
+    }
+    if (this.beacon.d < 45 && night <= 2) {
+      // On its battery: loud on the first night, fainter and slower on the second, dead after.
+      const fade = night === 1 ? 1 : 0.45
+      this.hold(`bell:${this.beacon.k}`, "scape.alarm.bell", this.beacon.x, this.beacon.y, L.electrics * fade, night === 1 ? 1 : 0.9)
+    }
+    if (this.cruiser.d < 24) {
+      const c = this.cruiser
+      this.windowed(input.town.seed + c.k, SALT.radio, 25, prev, t, chance(RADIO_CHANCE, night), (_k, r) => this.shot("scape.radio.call", c.x, c.y, L.electrics * (0.7 + 0.3 * r(1)), 0.96 + r(2) * 0.08))
     }
   }
 

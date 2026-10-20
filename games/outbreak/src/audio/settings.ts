@@ -65,6 +65,7 @@ export const DEFAULT_AUDIO_SETTINGS = {
   audioScapeGutters: 1,
   audioScapeInsects: 1,
   audioScapeOwl: 1,
+  audioScapeElectrics: 1,
   audioScapeHooks: 1,
 }
 
@@ -114,6 +115,7 @@ export const SCAPE_LAYER_KEYS: Record<ScapeLayer, keyof AudioSettings> = {
   gutters: "audioScapeGutters",
   insects: "audioScapeInsects",
   owl: "audioScapeOwl",
+  electrics: "audioScapeElectrics",
   hooks: "audioScapeHooks",
 }
 
@@ -122,16 +124,17 @@ const SCAPE_LAYER_LABELS: Record<ScapeLayer, string> = {
   taps: "Dripping taps",
   fridge: "Fridges (die with the power)",
   creaks: "Creaks, settling, pipes",
-  wind: "Wind in windows, curtains",
-  oddities: "Music box, phones",
+  wind: "Wind in windows, curtains, doors",
+  oddities: "Music box, phones, smoke alarms",
   sirens: "Distant sirens (fade over nights)",
   gunfire: "Far-off gunfire (fades over nights)",
   carAlarm: "Car alarm streets away",
   chimes: "Wind chimes",
   rain: "Rain on cars, puddles, leaves",
   gutters: "Gutters dripping after rain",
-  insects: "Insects by day",
+  insects: "Insects by day, birds at dawn",
   owl: "Owl (later nights)",
+  electrics: "Lamps, neon, police radios, alarm bells",
   hooks: "Other features (life, zombies, secrets)",
 }
 

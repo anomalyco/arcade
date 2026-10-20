@@ -31,6 +31,8 @@ export type HousePlan = {
   readonly phone: (ScapePoint & { haunted: boolean }) | null
   readonly chimes: ScapePoint | null
   readonly gutters: readonly ScapePoint[]
+  /** A smoke alarm whose battery is going: one chirp every `period` seconds until it dies on the third night. */
+  readonly smoke: (ScapePoint & { period: number; phase: number }) | null
 }
 
 const PLAN_CACHE = new WeakMap<Building, HousePlan>()
@@ -145,7 +147,9 @@ export function housePlan(town: Town, b: Building): HousePlan {
   ]
   for (let k = 0; k < 4; k++) if (r(50, k) < 0.6) gutters.push({ x: corners[k]![0], y: corners[k]![1], key: key("gutter", k) })
 
-  const plan: HousePlan = { building: b, seed, residential, cx, cy, powerLoss, clocks, taps, fridge, pipe, musicBox, phone, chimes, gutters }
+  const smoke = residential && r(60) < 0.18 ? { ...inside(b, cx + (r(61) - 0.5) * 2, cy + (r(62) - 0.5) * 2), key: key("smoke"), period: 38 + r(63) * 30, phase: r(64) * 60 } : null
+
+  const plan: HousePlan = { building: b, seed, residential, cx, cy, powerLoss, clocks, taps, fridge, pipe, musicBox, phone, chimes, gutters, smoke }
   PLAN_CACHE.set(b, plan)
   return plan
 }

@@ -629,7 +629,7 @@ export function sirenWail(sr: number, seed = 16): Float32Array {
 /** A gunshot blocks away: a dull pop, then the town answering it back from walls and across yards. */
 export function gunshotFar(sr: number, seed = 17, kind: "pistol" | "shotgun" | "rifle" = "pistol"): Float32Array {
   const rand = mulberry32(seed)
-  const out = buffer(sr, 3.2)
+  const out = buffer(sr, 2.7)
   const cut = kind === "rifle" ? 3200 : kind === "shotgun" ? 900 : 1500
   const lp = new Biquad(sr, "lowpass", cut, 0.7)
   const burst = at(sr, kind === "shotgun" ? 0.012 : 0.006)
@@ -1030,7 +1030,7 @@ export function lastDance(sr: number, seed = 33): Float32Array {
 /** The church bell: a big bronze bell's hum, prime, tierce, quint and nominal, ringing for seconds. */
 export function churchBell(sr: number, seed = 34): Float32Array {
   const rand = mulberry32(seed)
-  const out = buffer(sr, 6)
+  const out = buffer(sr, 5)
   const f = 196
   strike(
     out,
@@ -1052,4 +1052,139 @@ export function churchBell(sr: number, seed = 34): Float32Array {
     3,
   )
   return normalize(edges(out, sr, 0.001, 0.4), sr, -16)
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Second pass: the town's electrics and the last calls
+// ---------------------------------------------------------------------------------------------------------------
+
+/**
+ * A police radio in an abandoned cruiser: the squelch opens, a dispatcher calls units that never answer (a voice too
+ * crushed to follow), the squelch tail. ~3.6 s.
+ */
+export function radioCall(sr: number, seed = 35): Float32Array {
+  const rand = mulberry32(seed)
+  const out = buffer(sr, 3.6)
+  const hissBp = new Biquad(sr, "bandpass", 2200, 0.8)
+  const open = at(sr, 0.12)
+  const close = out.length - at(sr, 0.45)
+  for (let i = 0; i < out.length; i++) {
+    const on = i < open ? 0 : i < open + at(sr, 0.08) || (i > close && i < close + at(sr, 0.16)) ? 1 : 0.18
+    out[i] = i >= open && i < close + at(sr, 0.16) ? hissBp.tick(white(rand)) * on * 0.5 : 0
+  }
+  babble(out, sr, at(sr, 0.3), 2.6, rand, 172)
+  // Crushed through a tiny speaker and a bad link.
+  for (let i = 0; i < out.length; i++) out[i] = Math.tanh(out[i]! * 3) * 0.5
+  filter(out, new Biquad(sr, "highpass", 420, 0.9))
+  filter(out, new Biquad(sr, "lowpass", 2900, 1.1))
+  return normalize(edges(out, sr, 0.002, 0.05), sr, -19)
+}
+
+/** A neon sign's transformer buzz with the tube's crackle, 3 s loop. Broken signs sputter (played in bursts). */
+export function neonBuzz(sr: number, seed = 36): Float32Array {
+  const rand = mulberry32(seed)
+  const seconds = 3
+  const xf = at(sr, 0.1)
+  const src = new Float32Array(at(sr, seconds) + xf)
+  const crackle = new Biquad(sr, "bandpass", 5200, 1.2)
+  for (let i = 0; i < src.length; i++) {
+    const t = i / sr
+    // Rectified mains: a buzzy 120 Hz with odd harmonics.
+    const ph = (120 * t) % 1
+    const buzz = (ph < 0.12 ? 1 : 0) - 0.12
+    src[i] = buzz * 0.6 + Math.sin(TAU * 120 * t) * 0.25 + Math.sin(TAU * 360 * t) * 0.12 + crackle.tick(rand() < 0.002 ? white(rand) * 4 : white(rand) * 0.05) * 0.3
+  }
+  filter(src, new Biquad(sr, "lowpass", 4500, 0.7))
+  return normalize(loopify(src, xf), sr, -22)
+}
+
+/** A sodium street lamp's ballast hum overhead, 2 s loop. */
+export function lampBuzz(sr: number, seed = 37): Float32Array {
+  const rand = mulberry32(seed)
+  const seconds = 2
+  const xf = at(sr, 0.1)
+  const src = new Float32Array(at(sr, seconds) + xf)
+  const whine = new Biquad(sr, "bandpass", 1450, 9)
+  for (let i = 0; i < src.length; i++) {
+    const t = i / sr
+    src[i] = Math.sin(TAU * 120 * t) * 0.5 + Math.sin(TAU * 240 * t) * 0.35 + Math.sin(TAU * 480 * t) * 0.12 + whine.tick(white(rand)) * 0.6
+  }
+  return normalize(loopify(src, xf), sr, -22)
+}
+
+/** A smoke alarm's low-battery chirp. */
+export function smokeChirp(sr: number): Float32Array {
+  const out = buffer(sr, 0.12)
+  for (let i = 0; i < at(sr, 0.055); i++) {
+    const env = Math.min(1, i / (0.002 * sr), (at(sr, 0.055) - i) / (0.004 * sr))
+    out[i] = (Math.sin((TAU * 3150 * i) / sr) + 0.3 * Math.sin((TAU * 6300 * i) / sr)) * env
+  }
+  return normalize(out, sr, -18)
+}
+
+/** An open door swinging on a dry hinge in the draught: a slow, rising squeal. */
+export function doorCreak(sr: number, seed = 38): Float32Array {
+  const rand = mulberry32(seed)
+  const len = 1.1
+  const out = buffer(sr, len + 0.1)
+  const bank = [new Mode(sr, 1180, 0.03, 1), new Mode(sr, 2390, 0.02, 0.6), new Mode(sr, 3610, 0.015, 0.3), new Mode(sr, 640, 0.05, 0.5)]
+  let ph = 0
+  for (let i = 0; i < out.length; i++) {
+    const u = i / (len * sr)
+    const env = u < 1 ? Math.sin(Math.PI * u) ** 1.2 : 0
+    ph += (180 + 260 * u + 40 * Math.sin(u * 23)) / sr
+    let x = 0
+    if (ph >= 1) {
+      ph -= 1
+      x = env * (0.7 + rand() * 0.3)
+    }
+    let y = 0
+    for (const m of bank) y += m.tick(x)
+    out[i] = y
+  }
+  return normalize(edges(out, sr, 0.004, 0.05), sr, -20)
+}
+
+/** A shop's burglar alarm bell ringing on its battery, 2 s loop: a hammer on a gong at 18 Hz. */
+export function alarmBell(sr: number, seed = 39): Float32Array {
+  const rand = mulberry32(seed)
+  const seconds = 2
+  const out = buffer(sr, seconds)
+  const bell = [new Mode(sr, 1870, 0.25, 1), new Mode(sr, 4480, 0.12, 0.5), new Mode(sr, 7010, 0.06, 0.25)]
+  const step = Math.round(sr / 18)
+  // Run two seconds first so the loop starts already ringing (no attack at the seam).
+  for (let pass = 0; pass < 2; pass++) {
+    for (let i = 0; i < out.length; i++) {
+      const x = i % step === 0 ? 0.5 + rand() * 0.15 : 0
+      let y = 0
+      for (const m of bell) y += m.tick(x)
+      if (pass === 1) out[i] = y
+    }
+  }
+  filter(out, new Biquad(sr, "lowpass", 5000, 0.7))
+  return normalize(out, sr, -20)
+}
+
+/** A songbird at first light: a phrase of whistled, swooping notes (three species by seed). */
+export function birdSong(sr: number, seed = 40): Float32Array {
+  const rand = mulberry32(seed)
+  const out = buffer(sr, 2.2)
+  const species = seed % 3
+  let t = 0.03
+  const notes = species === 0 ? 7 : species === 1 ? 4 : 10
+  for (let k = 0; k < notes && t < 1.95; k++) {
+    const len = species === 2 ? 0.05 + rand() * 0.03 : 0.1 + rand() * 0.16
+    const f0 = (species === 1 ? 2400 : 3200) + rand() * 1800
+    const f1 = f0 * (species === 0 ? 0.65 + rand() * 0.7 : species === 1 ? 1.25 : 0.85)
+    const s = at(sr, t)
+    let ph = 0
+    for (let i = 0; i < at(sr, len) && s + i < out.length; i++) {
+      const u = i / (len * sr)
+      const f = f0 + (f1 - f0) * u + (species === 1 ? 180 * Math.sin(TAU * 38 * (i / sr)) : 0)
+      ph += (TAU * f) / sr
+      out[s + i]! += Math.sin(ph) * Math.sin(Math.PI * u) ** 0.6 * (0.6 + 0.4 * rand())
+    }
+    t += len + (species === 2 ? 0.03 : 0.06 + rand() * 0.12)
+  }
+  return normalize(edges(out, sr, 0.002, 0.05), sr, -19)
 }

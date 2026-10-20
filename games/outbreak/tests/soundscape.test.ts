@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { makeTown, type Town } from "../shared/map"
 import { DEFAULT_AUDIO_SETTINGS } from "../src/audio/settings"
 import { SCAPE_LAYERS, SCAPE_SAMPLE_RATE, SCAPE_SOUNDS, scapeSound } from "../src/audio/soundscape/catalog"
-import { ALARM_CHANCE, GUNFIRE_CHANCE, nightOf, ScapeDirector, ScapeHours, SIREN_CHANCE, type ScapeInput, type ScapeLevels } from "../src/audio/soundscape/director"
+import { ALARM_CHANCE, GUNFIRE_CHANCE, nightOf, RADIO_CHANCE, ScapeDirector, ScapeHours, SIREN_CHANCE, type ScapeInput, type ScapeLevels } from "../src/audio/soundscape/director"
 import { drainAmbientCalls, holdAmbientSound, playAmbientSound } from "../src/audio/soundscape/hooks"
 import { housePlan, housePowered } from "../src/audio/soundscape/houses"
 import { scapeCue, scapeLevels } from "../src/audio/soundscape/soundscape"
@@ -58,8 +58,8 @@ describe("soundscape sounds (procedural, AR-86)", () => {
       expect(a.every((v, i) => v === b[i])).toBe(true)
       samples += a.length
     }
-    // Under 2.5 minutes of mono audio (≈14 MB at 24 kHz) if every sound were baked at once; each bakes on first use.
-    expect(samples / SCAPE_SAMPLE_RATE).toBeLessThan(150)
+    // Under 160 s of mono audio (≈15 MB at 24 kHz) if every sound were baked at once; each bakes on first use.
+    expect(samples / SCAPE_SAMPLE_RATE).toBeLessThan(160)
   })
 
   test("cues play on the Ambience bus below the game's own sounds", () => {
@@ -220,13 +220,36 @@ describe("soundscape director", () => {
     expect(strikes(71.9, 23.9, 24.1)).toBe(13)
   })
 
-  test("insects by day only, an owl only after the first night, gutters only after rain", () => {
+  test("smoke alarms chirp for three nights, then their batteries are dead; dispatch stops calling after it", () => {
+    const chirps = (absHour: number) => {
+      let n = 0
+      for (let seed = 1; seed < 40; seed++) {
+        const t = makeTown(seed)
+        const b = t.buildings.find((x) => housePlan(t, x).smoke)
+        if (!b) continue
+        const p = housePlan(t, b).smoke!
+        n += run(new ScapeDirector(), t, 100, 150, { listener: { x: p.x, y: p.y }, absHour, hour: absHour % 24 }, levels(), 0.5).shots.filter((s) => s.id === "scape.smoke.chirp").length
+      }
+      return n
+    }
+    expect(chirps(23)).toBeGreaterThan(0)
+    expect(chirps(100)).toBe(0)
+    expect(RADIO_CHANCE[1]!).toBeGreaterThan(RADIO_CHANCE[2]!)
+    expect(RADIO_CHANCE[2]!).toBeGreaterThan(RADIO_CHANCE[3]!)
+    expect(RADIO_CHANCE.length).toBe(4)
+  })
+
+  test("insects by day only, birds at dawn (more each night), an owl only after the first night, gutters only after rain", () => {
     const day = run(new ScapeDirector(), town, 100, 30, { hour: 13, absHour: 37 })
     const night = run(new ScapeDirector(), town, 100, 30, { hour: 23, absHour: 23 })
     if (day.holds.size) expect(night.holds.has("scape.insects")).toBe(false)
     const owls = (absHour: number) => run(new ScapeDirector(), town, 9000, 1200, { hour: 1, absHour }, levels(), 1).shots.filter((s) => s.id === "scape.owl").length
     expect(owls(25)).toBe(0)
     expect(owls(49)).toBeGreaterThan(0)
+    const birds = (absHour: number) => run(new ScapeDirector(), town, 100, 300, { hour: 6, absHour, listener: { x: 30, y: 44 } }, levels(), 0.5).shots.filter((s) => s.id.startsWith("scape.bird")).length
+    expect(birds(30)).toBeGreaterThan(0)
+    expect(birds(102)).toBeGreaterThan(birds(30))
+    expect(run(new ScapeDirector(), town, 100, 300, { hour: 23, absHour: 23, listener: { x: 30, y: 44 } }, levels(), 0.5).shots.filter((s) => s.id.startsWith("scape.bird")).length).toBe(0)
     const dry = run(new ScapeDirector(), town, 100, 60, { listener: { x: 21, y: 37 }, wetness: 0 }).shots.filter((s) => s.id === "scape.gutter.drip")
     const after = run(new ScapeDirector(), town, 100, 60, { listener: { x: 21, y: 37 }, wetness: 0.8, rain: 0 }).shots.filter((s) => s.id === "scape.gutter.drip")
     expect(dry.length).toBe(0)
