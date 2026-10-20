@@ -42,15 +42,15 @@ const scenes: { scene: string; label: string; frames: number; aim?: number }[] =
   { scene: "crush", label: "8 · Horde crush bursts the frame", frames: 220 },
   { scene: "boards", label: "9 · Last board hangs, then flies", frames: 200 },
   { scene: "burst", label: "10 · Boarded window bursts", frames: 200, aim: Math.atan2(35.4 - 33.3, 24.5 - 24.6) },
-  { scene: "brace", label: "11 · Bracing: holding it shut", frames: 200 },
+  { scene: "brace", label: "11 · Bracing: buys a few hits against three", frames: 200 },
 ]
 
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 })
   const errors: string[] = []
   page.on("pageerror", (e) => errors.push(e.message))
-  await page.goto(`http://127.0.0.1:${port}/?solo&seed=7&bench&quality=balanced`)
-  await page.waitForFunction(() => (window as any).__arcadeHarness?.ready, null, { timeout: 60_000 })
+  await page.goto(`http://127.0.0.1:${port}/?solo&seed=7&bench&quality=balanced`, { timeout: 240_000 })
+  await page.waitForFunction(() => (window as any).__arcadeHarness?.ready, null, { timeout: 240_000 })
   const ev = (src: string) => page.evaluate(new Function(`const h = window.__arcadeHarness; ${src}`) as () => unknown)
   await ev(`h.freeze(); h.setLab("timeScale", 0); h.setLab("zombieCount", 0); h.session().ai.agents.length = 0; h.setZoomRaw(13)`)
   await page.addStyleTag({
