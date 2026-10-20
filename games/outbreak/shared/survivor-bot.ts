@@ -2147,12 +2147,8 @@ export class SurvivorBot {
       world.progression.ledger.count(`${this.actorId}/belt`, "battery") > 0 &&
       (!threats[0] || threats[0].distance > 3.5)
     ) {
-      const selected = world.progression.selected(this.actorId)?.item
-      if (selected !== "flashlight") {
-        cmd.hotbarSlot = 0
-      } else {
-        cmd.reload = true
-      }
+      // The light rides on the shoulder: R takes the spare battery whatever is in hand.
+      cmd.reload = true
     }
 
     // Equip better weapon or healing item from pack when safe

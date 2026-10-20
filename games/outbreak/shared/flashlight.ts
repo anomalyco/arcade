@@ -57,6 +57,21 @@ export function createFlashlightState(initiallyOn = true): FlashlightState {
   }
 }
 
+/**
+ * Whether R puts a spare battery in the shoulder light rather than (only) reloading the pistol: always once the light
+ * is dead, and when it is low unless the pistol has a magazine to top up.
+ */
+export function batteryReload(
+  light: Pick<FlashlightState, "battery" | "batteryDepleted">,
+  spareBatteries: number,
+  pistol: { loaded: number; capacity: number; reserve: number },
+): boolean {
+  if (spareBatteries <= 0) return false
+  if (light.batteryDepleted) return true
+  const canReload = pistol.capacity > 0 && pistol.loaded < pistol.capacity && pistol.reserve > 0
+  return light.battery < 0.95 && !canReload
+}
+
 /** Interpolates beam RGB from cool xenon (0) to warm halogen tungsten (1). */
 export function flashlightColor(warmth: number): [number, number, number] {
   const w = Math.max(0, Math.min(1, warmth))

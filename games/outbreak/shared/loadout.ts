@@ -38,14 +38,14 @@ export const LOADOUTS: readonly LoadoutSpec[] = [
     id: "standard",
     label: "Standard Kit",
     role: "9mm & Planks",
-    summary: "Flashlight · 9mm pistol · +6 reserve rounds · 2 planks",
+    summary: "Shoulder flashlight (F) · fists · 9mm pistol · +6 reserve rounds · 2 planks",
     items: [],
   },
   {
     id: "medic",
     label: "Field Medic",
     role: "+1 Bandage",
-    summary: "Standard kit + Bandage in hand slot 3",
+    summary: "Standard kit + Bandage in hand slot 4",
     items: [{ item: "bandage", count: 1 }],
   },
   {
@@ -59,7 +59,7 @@ export const LOADOUTS: readonly LoadoutSpec[] = [
     id: "scavenger",
     label: "Night Runner",
     role: "+Bottle & Rag",
-    summary: "Standard kit + Glass Bottle in hand slot 3 & Rag on belt",
+    summary: "Standard kit + Glass Bottle in hand slot 5 & Rag on belt",
     items: [
       { item: "bottle", count: 1 },
       { item: "rag", count: 1 },

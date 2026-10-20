@@ -341,7 +341,7 @@ describe("CoopRoomCore", () => {
     run(core, [b], 3)
     expect(core.sim.slot(a.id)).toBeUndefined()
     const left = [...ledger.stores.keys()].find((k) => k.startsWith("drop:") && ledger.count(k, "pistol") > 0)!
-    expect(ledger.count(left, "flashlight")).toBe(1)
+    expect(ledger.count(left, "fists")).toBe(0)
     expect(b.ledger.count(left, "pistol")).toBe(1)
   })
 

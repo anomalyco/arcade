@@ -12,6 +12,11 @@ import type { NetSession } from "../net-session"
 import type { OutbreakSettings } from "../settings"
 import { applyVehicleStunt } from "../vehicle-lab"
 
+/** A hand slot's number picks it; pressing the number of the slot already in hand holsters to bare hands (slot 1). */
+export function holsterToggle(slot: number, selected: number): number {
+  return slot === selected && slot !== 0 ? 0 : slot
+}
+
 export interface OutbreakInputHost {
   readonly canvas: HTMLCanvasElement
   readonly session: () => LocalSession | NetSession
@@ -32,7 +37,6 @@ export class OutbreakInputController {
   readonly input: Input
   private pendingHotbarSlot: number | undefined
   private pendingHotbarDelta = 0
-  private pendingFlashlightToggle = false
   private pendingBarricade = false
   private pendingVerbs: Partial<Command> = {}
   // KeyG is tap-or-hold: the tap fires on release, the hold once it has lasted HOLD_DURATION.
@@ -60,10 +64,8 @@ export class OutbreakInputController {
       const digit = ["Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8", "Digit9"].indexOf(code)
       if (digit >= 0) {
         const meant = inventoryHud.digit(digit, session.view)
-        if (meant.hotbarSlot !== undefined) {
-          if (meant.hotbarSlot === 0 && session.view.inventory.selectedSlot === 0) this.pendingFlashlightToggle = true
-          this.pendingHotbarSlot = meant.hotbarSlot
-        } else if (meant.pick) this.pendingVerbs.pick = meant.pick
+        if (meant.hotbarSlot !== undefined) this.pendingHotbarSlot = holsterToggle(meant.hotbarSlot, session.view.inventory.selectedSlot)
+        else if (meant.pick) this.pendingVerbs.pick = meant.pick
       }
       if (code === "KeyB") {
         this.pendingBarricade = true
@@ -112,7 +114,6 @@ export class OutbreakInputController {
     this.pendingVerbs = {}
     this.pendingHotbarSlot = undefined
     this.pendingHotbarDelta = 0
-    this.pendingFlashlightToggle = false
     this.pendingBarricade = false
   }
 
@@ -135,11 +136,7 @@ export class OutbreakInputController {
       wallNow,
       this.liveMove(),
       () => this.input.takeEnter(),
-      () => {
-        const f = this.input.takeSecondary() || this.pendingFlashlightToggle
-        this.pendingFlashlightToggle = false
-        return f
-      },
+      () => this.input.takeSecondary(),
       () => this.input.takeJump(),
       () => this.input.interactHeld,
     )

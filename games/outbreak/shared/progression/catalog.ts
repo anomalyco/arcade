@@ -4,7 +4,7 @@ import { MELEE_WEAPON_IDS, MELEE_WEAPONS } from "../combat"
 /**
  * What Outbreak's ledger holds: the items, the survivor's stores and the recipes.
  *
- * Each survivor has a 5-slot hotbar (hand tools, weapons, consumables), a belt of counted supplies (ammo, planks,
+ * Each survivor has a 5-slot hotbar (bare hands, then weapons, tools and consumables), a belt of counted supplies (ammo, planks,
  * scrap, chem, batteries, keys) that reloads, barricades and crafting draw on, and a 4-slot pack (parts, spare tools).
  */
 
@@ -12,7 +12,9 @@ export const HOTBAR_SIZE = 5
 export const PACK_SIZE = 4
 
 export const ITEMS: readonly ItemDef[] = [
-  { id: "flashlight", label: "Flashlight", shortLabel: "LIGHT", tag: "light", slot: 0 },
+  // Bare hands hold slot 1: selecting them holsters whatever was in hand, and the button shoves. The flashlight is
+  // not an item: it is always on the shoulder, toggled with F whatever is held.
+  { id: "fists", label: "Fists", shortLabel: "FISTS", tag: "hand", slot: 0, bound: true },
   { id: "pistol", label: "9mm Pistol", shortLabel: "9MM", tag: "gun", slot: 1, charge: { max: 8, initial: 6, ammo: "ammo" } },
   ...MELEE_WEAPON_IDS.map((id): ItemDef => {
     const w = MELEE_WEAPONS[id]
@@ -90,7 +92,7 @@ export const MATERIALS = ["plank", "scrap", "chem", "battery"] as const
 
 export const ACTOR_STORES: readonly ActorStoreTemplate[] = [
   { suffix: "belt", mode: "counters", accepts: ["ammo", "resource", "key"], depositable: true },
-  { suffix: "hotbar", mode: "slots", size: HOTBAR_SIZE, accepts: ["light", "gun", "tool"], preferSlots: true },
+  { suffix: "hotbar", mode: "slots", size: HOTBAR_SIZE, accepts: ["hand", "gun", "tool"], preferSlots: true },
   { suffix: "pack", mode: "slots", size: PACK_SIZE, accepts: ["part", "tool", "gun"], depositable: true },
 ]
 

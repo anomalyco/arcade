@@ -10,6 +10,7 @@ import {
 import { HOTBAR_SIZE } from "../shared/inventory"
 import { sightRects } from "../shared/map"
 import { LocalSession } from "../shared/session"
+import { holsterToggle } from "../src/input/controller"
 import { DEFAULT_STAMINA_TUNING } from "../shared/stamina"
 
 describe("flashlight battery, flicker, cutout, and awareness", () => {
@@ -27,14 +28,14 @@ describe("flashlight battery, flicker, cutout, and awareness", () => {
     const afterDrain = p.battery
     expect(afterDrain).toBeCloseTo(1 - DEFAULT_FLASHLIGHT_TUNING.flashlightDrain * 2, 4)
     expect(p.flashlightOutput).toBe(1)
-    expect(session.view.inventory.slots[0]?.charge).toBeCloseTo(afterDrain, 4)
+    // The light is on the shoulder, not in a hand slot.
+    expect(session.view.inventory.slots.some((s) => s?.kind === "flashlight")).toBe(false)
 
     // Press F (flashlight: true) to turn off
     session.update(TICK_DT, { mx: 0, my: 0, aim: 0, interact: false, flashlight: true }, 0)
     expect(p.flashlightOn).toBe(false)
     expect(p.flashlightOutput).toBe(0)
     expect(p.lightSignature).toBe(0)
-    expect(session.view.inventory.slots[0]?.active).toBe(false)
 
     // Advance 0.6 s (< 1.2 s flashlightDelay): battery does not recharge yet
     const offBattery = p.battery
@@ -151,7 +152,7 @@ describe("inventory 1-5 hotbar", () => {
 
     expect(view().slots).toHaveLength(HOTBAR_SIZE)
     expect(view().selectedSlot).toBe(1)
-    expect(view().slots[0]?.kind).toBe("flashlight")
+    expect(view().slots[0]?.kind).toBe("fists")
     expect(view().slots[1]?.kind).toBe("pistol")
 
     session.update(TICK_DT, { mx: 0, my: 0, aim: 0, interact: false, hotbarSlot: 2 }, 0)
@@ -160,5 +161,19 @@ describe("inventory 1-5 hotbar", () => {
     expect(view().selectedSlot).toBe(0)
     session.update(TICK_DT, { mx: 0, my: 0, aim: 0, interact: false, hotbarDelta: -1 }, 0)
     expect(view().selectedSlot).toBe(4)
+  })
+
+  test("pressing the number of the slot in hand holsters to bare hands; F works whatever is held", () => {
+    expect(holsterToggle(1, 1)).toBe(0)
+    expect(holsterToggle(2, 1)).toBe(2)
+    expect(holsterToggle(0, 0)).toBe(0)
+    const session = new LocalSession(7)
+    const p = session.view.player
+    for (const hotbarSlot of [0, 1, 3]) {
+      session.update(TICK_DT, { mx: 0, my: 0, aim: 0, interact: false, hotbarSlot }, 0)
+      const was = p.flashlightOn
+      session.update(TICK_DT, { mx: 0, my: 0, aim: 0, interact: false, flashlight: true }, 0)
+      expect(p.flashlightOn).toBe(!was)
+    }
   })
 })

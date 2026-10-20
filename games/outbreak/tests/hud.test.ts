@@ -182,7 +182,7 @@ describe("actor feedback from simulation state", () => {
     expect(texts()).toContain("Noise 32 m")
 
     step({ hotbarSlot: 2 })
-    expect(texts()).toContain("Slot 3 empty")
+    expect(texts()).toContain("Fists")
     step({ hotbarSlot: 1 })
     expect(texts()).toContain("9mm Pistol")
 
@@ -210,6 +210,13 @@ describe("actor feedback from simulation state", () => {
     expect(lootCallout("Found +6 9mm ammo")).toBeNull()
     expect(lootCallout("Searched nightstand: empty")?.text).toBe("Nothing here")
     expect(lootCallout("Out of 9mm ammo! Search houses (E) or shove (V)")).toEqual({ text: "Out of ammo", kind: "warning", key: "ammo" })
+    // With the shove key known, an empty gun points at V.
+    expect(lootCallout("Out of 9mm ammo! Search houses (E) or shove (V)", "V")).toEqual({
+      text: "Out of ammo, V to shove",
+      kind: "warning",
+      key: "ammo",
+      keyCap: { code: "KeyV", label: "V" },
+    })
     expect(lootCallout("Blocked by barricade (2/3 planks)")?.text).toBe("Boarded up 2/3")
     expect(lootCallout("Already fully barricaded (3/3 planks)")?.text).toBe("Fully boarded")
   })
