@@ -32,7 +32,7 @@ export async function copyInviteLink(room: string): Promise<boolean> {
 export type NameTag = { index: number; variant?: number; name: string; x: number; y: number; visible: boolean }
 
 /**
- * Co-op menu and name tags. Offline it offers a "Co-op · Loadout" button that opens the start/loadout screen.
+ * Co-op menu and name tags. Offline it offers the solo pause and replay menu.
  * In a room it lists the survivors with their chosen look colours and offers the invite link and lobby controls.
  */
 export class CoopHud {
@@ -71,8 +71,8 @@ export class CoopHud {
       const host = document.createElement("button")
       host.type = "button"
       host.dataset.openLobby = "true"
-      host.textContent = "Co-op · Loadout"
-      host.title = "Choose your survivor, starting kit, or host a 1–6 survivor co-op room"
+      host.textContent = "Pause"
+      host.title = "Pause, replay a seed, or open the lobby"
       host.addEventListener("click", () => {
         if (this.onOpenLobby) {
           this.onOpenLobby()
