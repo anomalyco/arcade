@@ -68,6 +68,16 @@ export function createCreatureMaterial(pal: CreaturePalette = WENDIGO_PALETTE, o
   const detail = uniform(1)
   /** 0..1 overall shade (1 = normal): scripted moments darken it at very close range so it never blows out. */
   const shade = uniform(1)
+  /**
+   * Close-up cut (death scenes): with `cutOn`, everything but the face is discarded inside the view cone toward the
+   * skull (`cutDir`, view space; `cutCos` its half-angle) when nearer than `cutDist`, and everything nearer than
+   * `nearCut` to the eye. So antlers, arms and body never fill or clip the lens in front of the face.
+   */
+  const cutOn = uniform(0)
+  const cutDir = uniform(new THREE.Vector3(0, 0, -1))
+  const cutCos = uniform(0.97)
+  const cutDist = uniform(0)
+  const nearCut = uniform(0)
   /** Sway clock (seconds); the animator advances it, and stops it on freeze. */
   const sway = uniform(0)
   const swayAmp = uniform(1)
@@ -151,6 +161,14 @@ export function createCreatureMaterial(pal: CreaturePalette = WENDIGO_PALETTE, o
   const cav = smoothstep(0.5, 0.18, curv).mul(mix(float(1), float(0.35), boneM))
   col = col.mul(mix(float(0.15), float(1), ao.pow(1.5))).mul(mix(float(1), float(0.3), cav))
   mat.colorNode = col.mul(shade)
+  {
+    const face = attribute("face", "float") as N
+    const pv = positionView as N
+    const dist = length(pv)
+    const inCone = pv.normalize().dot(cutDir).greaterThan(cutCos).and(dist.lessThan(cutDist))
+    const keep = face.greaterThan(0.5).or(inCone.not()).and(dist.greaterThan(nearCut))
+    mat.maskNode = cutOn.lessThan(0.5).or(keep)
+  }
 
   // ---------------------------------------------------------------- sway: tendrils drift and swing (after skinning)
   {
@@ -186,5 +204,5 @@ export function createCreatureMaterial(pal: CreaturePalette = WENDIGO_PALETTE, o
   mat.thicknessAttenuationNode = float(0.35)
   mat.thicknessPowerNode = float(3)
   mat.thicknessScaleNode = float(3)
-  return { material: mat, uniforms: { detail, shade, sway, swayAmp, cSkin, cRaw, cDark, cBone, cHorn, cHornL } }
+  return { material: mat, uniforms: { detail, cutOn, cutDir, cutCos, cutDist, nearCut, shade, sway, swayAmp, cSkin, cRaw, cDark, cBone, cHorn, cHornL } }
 }

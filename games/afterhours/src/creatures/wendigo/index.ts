@@ -43,6 +43,8 @@ export type Wendigo = {
   animator: WendigoAnimator | null
   /** 0..1 overall shade of the body (1 normal): darken it when it fills the lens. */
   setShade(v: number): void
+  /** The close-up cut's uniforms (see kit/material.ts), set by death scenes. */
+  cut: { cutOn: { value: number }; cutDir: { value: THREE.Vector3 }; cutCos: { value: number }; cutDist: { value: number }; nearCut: { value: number } } | null
 }
 
 export function createWendigo(opts: WendigoOpts = {}): Wendigo {
@@ -57,6 +59,7 @@ export function createWendigo(opts: WendigoOpts = {}): Wendigo {
       out.animator?.update(dt, s)
     },
     ready: Promise.resolve(),
+    cut: null,
     setShade(v) {
       if (shadeU) shadeU.value = v
     },
@@ -75,6 +78,7 @@ export function createWendigo(opts: WendigoOpts = {}): Wendigo {
     out.animator = new WendigoAnimator(rig, root, opts.ground ?? (() => 0), opts.seed ?? 1)
     out.animator.sway = uniforms.sway
     shadeU = uniforms.shade
+    out.cut = { cutOn: uniforms.cutOn, cutDir: uniforms.cutDir, cutCos: uniforms.cutCos, cutDist: uniforms.cutDist, nearCut: uniforms.nearCut }
   })()
   return out
 }

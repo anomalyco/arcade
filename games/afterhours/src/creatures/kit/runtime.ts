@@ -41,6 +41,10 @@ export function buildCreature(data: CreatureData, material: THREE.Material | THR
   g.setAttribute("attrA", new THREE.BufferAttribute(data.attrA, 4, true))
   g.setAttribute("attrB", new THREE.BufferAttribute(data.attrB, 4, true))
   g.setAttribute("fiber", new THREE.BufferAttribute(data.fiber, 4, true))
+  // 1 on the face (the skull and jaw parts): close-up kills keep it while cutting what's between it and the eye.
+  const face = new Float32Array(data.positions.length / 3)
+  for (const p of data.parts) if (p.name === "skull" || p.name === "jaw") for (let k = p.start; k < p.start + p.count; k++) face[data.indices[k]!] = 1
+  g.setAttribute("face", new THREE.BufferAttribute(face, 1))
   g.setIndex(new THREE.BufferAttribute(data.indices, 1))
   if (Array.isArray(material)) for (const p of data.parts) g.addGroup(p.start, p.count, p.material ?? 0)
   g.computeBoundingSphere()

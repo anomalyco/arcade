@@ -64,7 +64,8 @@ for (let run = 0; run < runs; run++) {
           d.at = performance.now()
         }
         const w = d.pts[d.i]
-        if (!w) d.arrived = true
+        // Out of waypoints short of the target (a bad snap, a shove): route again.
+        if (!w) d.pts = []
         else {
           const dx = w.x - P.pos.x
           const dz = w.z - P.pos.z
@@ -123,7 +124,8 @@ for (let run = 0; run < runs; run++) {
     while (Date.now() < end) {
       if (!(await tick())) return false
       if (process.env.TRACE && Math.random() < 0.03) console.log("   ", JSON.stringify(await inPage(page, ({ P }) => { const d = (globalThis as unknown as { __drive: { pts: unknown[]; i: number } }).__drive; return { p: [+P.pos.x.toFixed(1), +P.pos.y.toFixed(1), +P.pos.z.toFixed(1)], v: +P.state.speed.toFixed(2), wp: `${d.i}/${d.pts.length}`, next: d.pts[d.i] } })), [...keys].join("+"))
-      if ((await state()).arrived) {
+      const st = await state()
+      if (Math.hypot(st.px - x, st.pz - z) < 1.6 && Math.abs(Math.round((st.py - 0.15) / 3.8) - s) === 0) {
         arrived = true
         break
       }

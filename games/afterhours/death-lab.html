@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>ASHWOOD · Death Lab</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; height: 100%; background: #000; overflow: hidden; font: 12px/1.4 system-ui, sans-serif; color: #dde; }
+      canvas { display: block; width: 100vw; height: 100vh; }
+      #ui { position: fixed; left: 10px; bottom: 10px; z-index: 50; display: flex; flex-direction: column; gap: 6px; background: rgba(14, 16, 18, 0.8); border: 1px solid #2a2f35; border-radius: 8px; padding: 10px; }
+      .row { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+      button { font: inherit; color: #dde; background: #22272d; border: 1px solid #363c44; border-radius: 5px; padding: 4px 9px; cursor: pointer; }
+      button.on { background: #c9813a; border-color: #c9813a; color: #111; }
+      label { opacity: 0.6; text-transform: uppercase; letter-spacing: 0.06em; font-size: 10px; min-width: 60px; }
+      #info { opacity: 0.8; font-family: ui-monospace, monospace; font-size: 11px; white-space: pre; }
+      body.clean #ui { display: none; }
+    </style>
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <div id="hud"></div>
+    <div id="ui">
+      <div class="row"><label>Variant</label><span id="variants"></span></div>
+      <div class="row"><label>Place</label><span id="places"></span></div>
+      <div class="row"><button id="play">▶ Play (Space)</button><button id="pick">Use in game</button></div>
+      <div id="info">loading…</div>
+    </div>
+    <script type="module" src="/src/death-lab/main.ts"></script>
+  </body>
+</html>

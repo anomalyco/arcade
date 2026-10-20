@@ -5,6 +5,8 @@ import { CHAIN, story } from "../objectives"
 import { setObjective } from "../objective"
 import { startLiftAmbush } from "./lift-ambush"
 import { bindRoadAmbush } from "./road-ambush"
+import { clearDeath, deathVariant, playDeath, prepareDeathLights } from "../death/variants"
+import * as THREE from "three/webgpu"
 import { hunterHandle, type HunterHandle } from "../hunter"
 
 // Scripted monster encounters for a run (play mode), and what happens when one kills you: the death screen, restart
@@ -24,6 +26,7 @@ export function startEncounters(g: GameContext, shell: EncounterShell) {
   const death = createDeathScreen()
   bindRoadAmbush(g)
   const offTrack = trackCheckpoints(g.player)
+  const lights = prepareDeathLights(g.scene)
   const canvas = g.world.renderer.domElement
 
   // One death at a time: whichever of the lift ambush and the hunter starts first has the kill.
@@ -56,10 +59,26 @@ export function startEncounters(g: GameContext, shell: EncounterShell) {
       if (dying) return
       dying = true
       const body = h.hunter.creature
-      const at = body?.root.position ?? h.hunter.pos
-      // Its body goes dormant; the kill cam's (warmed) body takes its place, same spot, heading and stance.
+      const at = (body?.root.position ?? h.hunter.pos).clone()
+      // Its body goes dormant; the death scene's (warmed) body takes its place, from where it came.
       h.sleep()
-      if (!ambush.killFrom({ x: at.x, y: at.y, z: at.z }, h.hunter.heading, h.hunter.stance)) {
+      const w = ambush.creature()
+      if (w) {
+        g.flow.hold = true
+        g.player.release()
+        ambush.hud(true)
+        ambush.setGround(at.y)
+        void playDeath(deathVariant(), {
+          camera: g.camera,
+          wendigo: w,
+          ground: at.y,
+          from: new THREE.Vector3(at.x, at.y, at.z),
+          tick: (fn) => g.flow.onUpdate(fn),
+          scream: () => ambush.scream(),
+          flood: () => death.flood(),
+          lights,
+        }).then(() => ambushHooksKill())
+      } else {
         // Not warmed yet (shouldn't happen after 3-08): straight to the red.
         death.flood()
         setTimeout(() => ambushHooksKill(), 400)
@@ -80,6 +99,7 @@ export function startEncounters(g: GameContext, shell: EncounterShell) {
     dying = false
     delete document.body.dataset.modal
     death.hide()
+    clearDeath(ambush.creature(), lights)
     ambush.reset()
     restorePlayer(g.player, cp)
     story.stage = cp.stage

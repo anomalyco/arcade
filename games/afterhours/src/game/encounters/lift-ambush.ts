@@ -423,6 +423,12 @@ export function startLiftAmbush(g: GameContext, hooks: AmbushHooks) {
     },
     /** Automation: hold the pounce at this fraction (0..1) for a still; null runs it. */
     freezeAt: null as number | null,
+    /** The warmed creature (null until 3-08), for the death scenes. */
+    creature: () => wendigo,
+    scream: () => playScream(),
+    /** Ground the creature stands on (its ground callback reads this). */
+    setGround: (y: number) => void (ground = y),
+    hud: (on: boolean) => hud(on),
     /** Automation: is the creature drawn right now. */
     get visible() {
       return !!wendigo?.root.visible
