@@ -189,7 +189,7 @@ describe("world details placement", () => {
     for (const m of meshes) expect(m.v.length).toBeGreaterThan(0)
     const keys = new Set(detailControls.map((c) => c.key))
     for (const k of Object.keys(DEFAULT_DETAIL_SETTINGS)) expect(keys.has(k)).toBe(true)
-    for (const c of detailControls) expect(c.group.startsWith("Details")).toBe(true)
+    for (const c of detailControls) expect(c.group?.startsWith("Details")).toBe(true)
     expect(getOutbreakSetting(createOutbreakSettings(), "dtMarks")).toBe(DEFAULT_DETAIL_SETTINGS.dtMarks)
   })
 })
