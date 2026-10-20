@@ -15,6 +15,7 @@ import { MAX_NAME, ROOM_CODE } from "../../shared/net-protocol"
 import { copyInviteLink, inviteLink, playerName, savePlayerName } from "../coop-hud"
 import type { NetSession } from "../net-session"
 import { SURVIVORS, survivorSpec, type SurvivorLookSpec } from "./survivors"
+import { lobbyWaitingOn } from "./waiting"
 
 export type LobbyMode = "closed" | "start" | "coop"
 
@@ -514,7 +515,7 @@ export class OutbreakLobby {
       const kit = loadoutSpec(p.loadout)
       const isYou = p.id === net?.id
       const isHost = Boolean(p.host || p.id === net?.hostId)
-      const statusLabel = !p.connected ? "DROPPED" : p.ready ? "READY" : "PREPARING"
+      const statusLabel = !p.connected ? "DROPPED" : p.ready ? "READY" : "NOT READY"
       const statusClass = !p.connected ? "is-dropped" : p.ready ? "is-ready" : "is-wait"
       return `<div class="ob-lobby-seat${isYou ? " is-you" : ""}" data-seat="${seatIdx}" style="--surv-accent:${look.css}">
         <span class="ob-lobby-seat-dot" style="background:${look.css}"></span>
@@ -534,9 +535,11 @@ export class OutbreakLobby {
     const readyCount = roster.filter((p) => p.connected && p.ready).length
     const isHost = Boolean(net?.isHost)
     const canStart = this.canStartCoop()
+    // Playtest (Oct 20): "I'm stuck waiting... Oh, you gotta click Ready." Say who the room is waiting on.
+    const waitingOn = lobbyWaitingOn(roster, net?.id)
     const statusBanner = net?.status
       ? `<span class="ob-lobby-banner is-warn">${esc(net.status)}</span>`
-      : `<span class="ob-lobby-banner">Night paused at 17:30 · ${readyCount}/${Math.max(1, connectedCount)} ready</span>`
+      : `<span class="ob-lobby-banner">Night paused at 17:30 · ${readyCount}/${Math.max(1, connectedCount)} ready${waitingOn.text ? ` · ${esc(waitingOn.text)}` : ""}</span>`
 
     this.root.innerHTML = `<div class="ob-lobby-dialog hud-panel is-coop" role="dialog" aria-modal="true" aria-labelledby="ob-lobby-title">
       <header class="ob-lobby-header">
@@ -592,8 +595,8 @@ export class OutbreakLobby {
           ${keyCapHtml("Escape")}
         </button>
         <div class="ob-lobby-primary-actions">
-          <button type="button" class="ob-lobby-btn${net?.ready ? " is-ready" : ""}" data-act="ready" aria-pressed="${Boolean(net?.ready)}">
-            <span>${net?.ready ? "Ready ✓" : "Ready Up"}</span>
+          <button type="button" class="ob-lobby-btn${net?.ready ? " is-ready" : " is-primary is-call"}" data-act="ready" aria-pressed="${Boolean(net?.ready)}">
+            <span>${net?.ready ? "Ready ✓" : "Click to Ready Up"}</span>
             ${keyCapHtml("KeyR")}
           </button>
           ${
@@ -602,8 +605,8 @@ export class OutbreakLobby {
                   <span>Start Night</span>
                   ${keyCapHtml("Enter")}
                 </button>`
-              : `<button type="button" class="ob-lobby-btn is-primary" data-act="start" ${canStart ? "" : "disabled"}>
-                  <span>${canStart ? "Start Night" : "Waiting for Host…"}</span>
+              : `<button type="button" class="ob-lobby-btn${net?.ready ? " is-primary" : ""}" data-act="start" ${canStart ? "" : "disabled"}>
+                  <span>${canStart ? "Start Night" : waitingOn.button}</span>
                 </button>`
           }
         </div>
@@ -1058,6 +1061,9 @@ function installLobbyStyles(): void {
 .ob-lobby-btn.is-accent:hover:not(:disabled) {
   background: rgba(111, 180, 232, 0.25);
 }
+.ob-lobby-btn.is-call { animation: ob-lobby-call 1.6s ease-in-out infinite }
+@keyframes ob-lobby-call { 50% { box-shadow: 0 0 0 4px rgba(224, 164, 72, 0.28) } }
+@media (prefers-reduced-motion: reduce) { .ob-lobby-btn.is-call { animation: none } }
 .ob-lobby-btn.is-ready {
   background: rgba(114, 182, 108, 0.22);
   border-color: rgba(114, 182, 108, 0.55);
@@ -1071,3 +1077,4 @@ function installLobbyStyles(): void {
 `
   document.head.appendChild(style)
 }
+

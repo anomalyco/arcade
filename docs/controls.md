@@ -102,7 +102,7 @@ installs itself on first use.
 | Scoreboard / Roster | `Tab` | `Tab` (`KeyT` pins in Blackout) | `Tab` | `Tab` | Hold `Tab` (or tap to pin in Carrier; `KeyT` toggles in Blackout) |
 | Chat | `Enter` / `T` | `Enter`, `NumpadEnter`, `KeyT` (Carrier: `KeyT` all, `KeyY` crew) | `Enter` | `Enter` | Room chat in Getaway and Carrier |
 | Map | `M` | `KeyG` in Carrier, `KeyN` in Outbreak (`KeyM` is mute in both) | `G` / `N` | `I` / `B` | Hold for the full map, tap to pin (Carrier); tap to open and close (Outbreak, [outbreak-map.md](outbreak-map.md)) |
-| Mute Audio | `M` | `KeyM` | `M` | `M` | Global audio mute in Getaway, Blackout, Carrier, Outbreak; Lab mute in Edit mode |
+| Mute Audio | `M` | `KeyM` | `M` | `M` | Global audio mute in Getaway, Blackout, Carrier, Outbreak (Outbreak also has a speaker button top right with volume sliders); Lab mute in Edit mode |
 | Pause / Release / Close | `Esc` | `Escape` | `Esc` | `Esc` | Releases Pointer Lock, closes menus/chat/Lab, exits Lab Play mode |
 | Lab / Debug Overlay | `` ` `` / `~` | `Backquote` (`F2` alias in Carrier) | `` ` `` | `` ` `` | Opens `LabPanel` / `DebugMenu` and releases held gameplay keys |
 
