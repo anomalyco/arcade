@@ -124,9 +124,10 @@ export class FlameFx {
     const r = this.random
     this.flame(p, frame, x, y, z, vx + (r() - 0.5) * 0.25, 1.6 + r() * 1.2, vz + (r() - 0.5) * 0.25, {
       life: 0.16 + r() * 0.12,
-      size: size * (0.7 + 0.4 * r()),
-      grow: size * 0.6,
-      heat: 1.55 + 0.25 * r(),
+      size: size * (0.6 + 0.35 * r()),
+      grow: size * 0.5,
+      // Yellow-hot, not white: white puffs read as blown-out dots at gameplay zoom.
+      heat: 1.12 + 0.12 * r(),
       rise: 5,
       drag: 2.5,
     })
@@ -421,7 +422,8 @@ export class FlameFx {
             life: 0.55 + r() * 0.3,
             size: 0.2 + r() * 0.14,
             grow: 0.45 + 0.25 * r(),
-            heat: 0.9 + r() * 0.25,
+            // A crown fire is wood and leaves, cooler than the jet: orange billows, the yellow left to the tongues.
+            heat: 0.78 + r() * 0.17,
             rise: 3.6,
           })
         }
