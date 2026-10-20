@@ -132,6 +132,29 @@ describe("Death in the sim", () => {
     expect(deathOf(sim).runOver).toBe(false)
   })
 
+  test("a new survivor in a reused seat leaves a distinct body without overwriting the old kit", () => {
+    const { sim, slots } = squad(2)
+    const old = slots[1]!
+    forceLife(sim, old, "dead", T)
+    const state = deathOf(sim)
+    const firstId = fallenStoreId(state.bodies[0]!)
+    const firstStore = sim.progression.ledger.store(firstId)!
+    const firstKit = structuredClone(firstStore.slots)
+    sim.removeSurvivor(old.id)
+    step(sim, 1)
+    expect(state.records[old.index]).toBeUndefined()
+
+    const newcomer = sim.addSurvivor("newcomer", old.index)
+    newcomer.survivor.x += 4
+    forceLife(sim, newcomer, "dead", T)
+    const secondId = fallenStoreId(state.bodies[1]!)
+    expect(secondId).not.toBe(firstId)
+    expect(sim.progression.ledger.store(firstId)).toBe(firstStore)
+    expect(sim.progression.ledger.store(firstId)!.slots).toEqual(firstKit)
+    expect(sim.progression.ledger.count(secondId, "pistol")).toBe(1)
+    expect(state.records[newcomer.index]!.deaths).toBe(1)
+  })
+
   test("a teammate takes what the dead carried from their body", () => {
     const { sim, slots } = squad(2)
     const [a, b] = slots as [SurvivorSlot, SurvivorSlot]
