@@ -4,8 +4,9 @@ import { CREATURE_IDS, CREATURES, type CreatureId } from "../shared/creatures"
 import { DEFAULT_REWARD, Episode, type RewardSettings } from "../shared/episode"
 import { DEFAULT_ES } from "../shared/es"
 import { TASK_IDS, TASKS, type TaskId } from "../shared/tasks"
-import { parsePolicy, Trainer, WorkerPool, type GenerationStats, type SavedPolicy } from "../shared/trainer"
+import { parsePolicy, type SavedPolicy, type TrainerOptions } from "../shared/trainer"
 import { Chart } from "./chart"
+import { RemoteTrainer } from "./remote-trainer"
 import { generationShow, policyRunner, Show, type Runner } from "./show"
 import { View } from "./view"
 
@@ -49,12 +50,8 @@ const view = new View(canvas)
 const chart = new Chart(document.getElementById("chart") as HTMLCanvasElement)
 const stats = document.getElementById("stats")!
 const toast = document.getElementById("toast")!
-const pool = new WorkerPool(() => new Worker(new URL("../shared/eval-worker.ts", import.meta.url), { type: "module" }), S.workers)
-
-let trainer = newTrainer()
+const trainer = new RemoteTrainer(trainerOptions(), S.workers)
 let running = false
-let looping = false
-let runId = 0
 let mode: "train" | "replay" = "train"
 let show: Show | null = null
 let replayPolicy: SavedPolicy | null = null
@@ -63,21 +60,17 @@ let trainedMs = 0
 let lastGenAt = 0
 let genRate = 0
 let replayCheck = ""
-let showWaiter: (() => void) | null = null
 
-function newTrainer(init?: SavedPolicy): Trainer {
-  return new Trainer(
-    {
-      creature: creature(),
-      task: task(),
-      hidden: init?.hidden ?? S.hidden,
-      seed: S.seed,
-      es: { pairs: S.pairs, sigma: S.sigma, lr: S.lr, weightDecay: DEFAULT_ES.weightDecay },
-      reward: reward(),
-      init: init ? Float64Array.from(init.params) : undefined,
-    },
-    pool.evaluate,
-  )
+function trainerOptions(init?: SavedPolicy): TrainerOptions {
+  return {
+    creature: creature(),
+    task: task(),
+    hidden: init?.hidden ?? S.hidden,
+    seed: S.seed,
+    es: { pairs: S.pairs, sigma: S.sigma, lr: S.lr, weightDecay: DEFAULT_ES.weightDecay },
+    reward: reward(),
+    init: init ? Float64Array.from(init.params) : undefined,
+  }
 }
 
 function flash(text: string): void {
@@ -87,56 +80,35 @@ function flash(text: string): void {
   ;(flash as { t?: number }).t = window.setTimeout(() => delete toast.dataset.on, 2200)
 }
 
-async function loop(): Promise<void> {
-  if (looping) return
-  looping = true
-  try {
-    while (running) {
-      const id = runId
-      const t0 = performance.now()
-      const s = await trainer.generation()
-      if (id !== runId) continue
-      trainedMs += performance.now() - t0
-      const now = performance.now()
-      if (lastGenAt) genRate = genRate ? genRate * 0.8 + 0.2 * (1000 / (now - lastGenAt)) : 1000 / (now - lastGenAt)
-      lastGenAt = now
-      onGeneration(s)
-      if (S.watchEvery && mode === "train") await new Promise<void>((resolve) => (showWaiter = resolve))
-      // Let the page breathe between generations.
-      await new Promise((r) => setTimeout(r, 0))
-    }
-  } catch (error) {
-    running = false
-    flash(`Training stopped: ${error instanceof Error ? error.message : String(error)}`)
-  } finally {
-    looping = false
-    lastGenAt = 0
-    syncButtons()
+trainer.onGeneration = () => {
+  const now = performance.now()
+  if (lastGenAt) {
+    const dt = now - lastGenAt
+    trainedMs += Math.min(dt, 2000)
+    genRate = genRate ? genRate * 0.9 + 0.1 * (1000 / dt) : 1000 / dt
   }
+  lastGenAt = now
 }
-
-function onGeneration(_: GenerationStats): void {
-  if (!show && mode === "train") show = nextShow()
+trainer.onError = (message) => {
+  running = false
+  flash(`Training stopped: ${message}`)
+  syncButtons()
 }
 
 function setRunning(on: boolean): void {
   running = on
-  if (on) {
-    if (mode === "replay") enterTrain()
-    void loop()
-  }
+  if (on && mode === "replay") enterTrain()
+  trainer.run(on)
+  lastGenAt = 0
   syncButtons()
 }
 
 function reset(init?: SavedPolicy): void {
-  runId++
-  trainer = newTrainer(init)
+  trainer.reset(trainerOptions(init))
   trainedMs = 0
   genRate = 0
   lastGenAt = 0
   shownGen = -1
-  showWaiter?.()
-  showWaiter = null
   if (mode === "train") show = nextShow()
   syncButtons()
 }
@@ -290,14 +262,11 @@ function changed(key: string): void {
     replayPolicy = null
     reset()
   } else if (key === "pairs" || key === "sigma" || key === "lr") {
-    trainer.es.settings = { pairs: S.pairs, sigma: S.sigma, lr: S.lr, weightDecay: DEFAULT_ES.weightDecay }
-  } else if (key === "workers") pool.resize(S.workers)
-  else if (["seconds", "upright", "effort", "fall", "finish", "phase"].includes(key)) trainer.reward = reward()
+    trainer.setEs({ pairs: S.pairs, sigma: S.sigma, lr: S.lr, weightDecay: DEFAULT_ES.weightDecay })
+  } else if (key === "workers") trainer.setWorkers(S.workers)
+  else if (["seconds", "upright", "effort", "fall", "finish", "phase"].includes(key)) trainer.setReward(reward())
   else if (key === "compare" || key === "ghosts") show = nextShow()
-  else if (key === "watchEvery" && !S.watchEvery) {
-    showWaiter?.()
-    showWaiter = null
-  }
+  else if (key === "watchEvery") trainer.hold(S.watchEvery)
   syncButtons()
 }
 
@@ -373,9 +342,9 @@ function renderStats(): void {
     if (replayCheck) parts.push(replayCheck)
   } else {
     parts.push(`<b>Gen ${h.length}</b>${running ? "" : " · paused"}`)
-    if (last) parts.push(`best ${best!.fitness.toFixed(2)} (${best!.distance.toFixed(1)} m)`, `mean policy ${last.centerDistance.toFixed(1)} m`, `${last.finished}/${trainer.es.population} reached the goal`)
+    if (last) parts.push(`best ${best!.fitness.toFixed(2)} (${best!.distance.toFixed(1)} m)`, `mean policy ${last.centerDistance.toFixed(1)} m`, `${last.finished}/${trainer.population} reached the goal`)
     parts.push(`${fmtSteps(trainer.totalSteps)} sim steps · ${fmtTime(trainedMs)}${running && genRate ? ` · ${genRate.toFixed(1)} gen/s` : ""}`)
-    parts.push(`${trainer.es.population} policies × ${trainer.paramSize} weights · ${pool.size} workers`)
+    parts.push(`${trainer.population} policies × ${trainer.paramSize} weights · ${trainer.workers} workers`)
   }
   stats.innerHTML = parts.map((p) => `<span>${p}</span>`).join("")
 }
@@ -397,18 +366,19 @@ function frame(now: number): void {
         if (r && r.expected !== null) replayCheck = Math.abs(r.ep.fitness - r.expected) < 1e-9 ? "replay matches its training score exactly ✓" : `replay scored ${r.ep.fitness.toFixed(3)} (trained ${r.expected.toFixed(3)})`
       }
       const hold = show.kind === "replay" ? 1.4 : 0.7
+      if (mode === "train") trainer.requestLast()
       const fresh = mode === "train" && trainer.last && trainer.last.gen !== shownGen
-      if (show.idle > hold && (mode === "replay" || fresh || !S.watchEvery)) {
-        if (mode === "train" && S.watchEvery) {
-          showWaiter?.()
-          showWaiter = null
-        }
+      if (show.idle > hold && (mode === "replay" || fresh || (!S.watchEvery && show.idle > 3))) {
         show = nextShow()
+        if (mode === "train" && S.watchEvery) trainer.go()
       }
     }
     const lead = show?.lead
     if (lead) view.follow(lead.ep.torso.x, dt)
-  } else if (mode === "train" && trainer.last) show = nextShow()
+  } else if (mode === "train") {
+    trainer.requestLast()
+    if (trainer.last) show = nextShow()
+  }
   view.draw(task(), show)
   chart.draw(trainer.history, S.compare ? pretrainedFor(creature(), task())?.fitness ?? null : null)
   renderStats()

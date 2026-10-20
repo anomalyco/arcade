@@ -18,6 +18,8 @@ export const inlineEvaluator: Evaluator = async (job, params, rows) => evaluateB
 export class WorkerPool {
   private workers: Worker[] = []
   private nextId = 1
+  private busy = false
+  private wanted = -1
 
   constructor(private spawn: () => Worker, size: number) {
     this.resize(size)
@@ -27,7 +29,12 @@ export class WorkerPool {
     return this.workers.length
   }
 
+  /** Takes effect once the batch in flight (if any) is done, so no chunk is lost to a terminated worker. */
   resize(size: number): void {
+    if (this.busy) {
+      this.wanted = size
+      return
+    }
     while (this.workers.length > size) this.workers.pop()!.terminate()
     while (this.workers.length < size) this.workers.push(this.spawn())
   }
@@ -43,10 +50,22 @@ export class WorkerPool {
     const out: EvalResponse = { id: 0, fitness: new Float64Array(rows), distance: new Float64Array(rows), steps: new Float64Array(rows), outcome: new Uint8Array(rows) }
     let next = 0
     let pending = 0
-    return new Promise((resolve, reject) => {
+    this.busy = true
+    const settle = () => {
+      this.busy = false
+      if (this.wanted >= 0) {
+        const n = this.wanted
+        this.wanted = -1
+        this.resize(n)
+      }
+    }
+    return new Promise<EvalResponse>((resolve, reject) => {
       const feed = (w: Worker) => {
         if (next >= rows) {
-          if (pending === 0) resolve(out)
+          if (pending === 0) {
+            settle()
+            resolve(out)
+          }
           return
         }
         const start = next
@@ -64,7 +83,10 @@ export class WorkerPool {
           pending--
           feed(w)
         }
-        w.onerror = (e) => reject(e instanceof ErrorEvent ? new Error(e.message) : new Error("worker failed"))
+        w.onerror = (e) => {
+          settle()
+          reject(e instanceof ErrorEvent ? new Error(e.message) : new Error("worker failed"))
+        }
         const slice = params.slice(start * n, (start + count) * n)
         const req: EvalRequest = { ...job, id, params: slice, count }
         w.postMessage(req, [slice.buffer])
@@ -129,7 +151,7 @@ export class Trainer {
   readonly history: GenerationStats[] = []
   best: SavedPolicy | null = null
   /** The latest generation's parameters and results, for playback. */
-  last: { params: Float64Array; rows: number; results: EvalResponse; gen: number; reward: RewardSettings } | null = null
+  last: { params: Float64Array; rows: number; results: EvalResponse; gen: number; reward: RewardSettings; task: TaskId } | null = null
   totalSteps = 0
 
   constructor(options: TrainerOptions, private evaluator: Evaluator) {
@@ -186,7 +208,7 @@ export class Trainer {
     }
     this.es.tell(results.fitness)
     this.totalSteps += steps
-    this.last = { params, rows, results, gen, reward }
+    this.last = { params, rows, results, gen, reward, task: this.task }
     let bestPerturbed = -Infinity
     for (let i = 1; i < rows; i++) bestPerturbed = Math.max(bestPerturbed, results.fitness[i]!)
     const stats: GenerationStats = {

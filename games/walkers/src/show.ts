@@ -4,7 +4,9 @@
 
 import { Episode, policyShape, type RewardSettings } from "../shared/episode"
 import { Policy } from "../shared/policy"
-import type { SavedPolicy, Trainer } from "../shared/trainer"
+import type { CreatureId } from "../shared/creatures"
+import type { LastGeneration } from "../shared/train-worker"
+import type { SavedPolicy } from "../shared/trainer"
 
 export type Role = "best" | "ghost" | "pretrained" | "saved"
 
@@ -52,7 +54,7 @@ export function policyRunner(saved: SavedPolicy, role: Role, label: string, fall
 }
 
 /** The latest generation: its best individual solid plus up to `ghosts` others (the top half first, then a spread). */
-export function generationShow(trainer: Trainer, ghosts: number, extra: Runner[]): Show | null {
+export function generationShow(trainer: { last: LastGeneration | null; creature: CreatureId; hidden: number }, ghosts: number, extra: Runner[]): Show | null {
   const last = trainer.last
   if (!last) return null
   const { params, rows, results, gen } = last
@@ -61,7 +63,7 @@ export function generationShow(trainer: Trainer, ghosts: number, extra: Runner[]
   const shape = policyShape(trainer.creature, trainer.hidden)
   const pick = order.slice(0, 1 + Math.min(ghosts, rows - 1))
   const runners: Runner[] = pick.map((i, rank) => ({
-    ep: new Episode(trainer.creature, trainer.task, new Policy(shape, params.slice(i * n, (i + 1) * n)), last.reward),
+    ep: new Episode(trainer.creature, last.task, new Policy(shape, params.slice(i * n, (i + 1) * n)), last.reward),
     role: rank === 0 ? "best" : "ghost",
     label: rank === 0 ? `best of gen ${gen}` : "",
     expected: results.fitness[i]!,
