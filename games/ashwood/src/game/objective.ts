@@ -1,81 +1,101 @@
 import { installHudType } from "../world/doors/hud"
 import { hooks } from "../audio/hooks"
 
-// The current objective: one typewriter line at the top of the screen, in warm amber on a soft dark backing, so it
-// stands apart from the off-white prompts (centre) and subtitles (bottom). A NEW objective types in under a brighter
-// glow with a quiet tick, holds at full brightness for ~8 s, then settles to a dimmer persistent line that still reads.
-// `pulseObjective()` (the map calls it when raised) brings it back up for a moment; `completeObjective()` strikes it
-// through and fades it out.
+// The current objective, as picked in the HUD lab: a NEW objective types in as a centred title (no box), holds a few
+// seconds and fades; it then lives in the top-left corner as a quiet small-caps line under a dim "OBJECTIVE" label.
+// `pulseObjective()` (the map calls it when raised) brightens the corner line for a moment; `completeObjective()`
+// strikes the corner line through and fades it, and the next objective arrives centred again.
 //
-//   setObjective("Find the radio room — 3-08")
+//   setObjective("Find the radio room: 3-08")
 //   completeObjective()
 
-/** Full brightness (new / pulsed), the brief entrance flare, and the persistent line. */
-const INK = { full: "rgba(240, 196, 112, 1)", flare: "rgba(255, 226, 160, 1)", rest: "rgba(226, 184, 108, 0.78)" }
-const GLOW = { full: "0 0 3px rgba(0,0,0,1), 0 1px 2px rgba(0,0,0,1), 0 0 14px rgba(240,170,70,0.35)", flare: "0 0 3px rgba(0,0,0,1), 0 0 18px rgba(255,200,110,0.75)", rest: "0 0 3px rgba(0,0,0,1), 0 1px 2px rgba(0,0,0,1)" }
-const BACK = { full: "rgba(4, 6, 5, 0.6)", rest: "rgba(4, 6, 5, 0.42)" }
-const HOLD_MS = 8000
-const PULSE_MS = 3000
-/** Per-character type-in interval (ms), capped so long lines still arrive in ~1 s. */
-const TYPE_MS = 28
+const TYPE = '"Ashwood Type", "American Typewriter", "Courier New", monospace'
+/** The centred arrival (hud-lab "Transient title"). */
+const TITLE = { color: "rgba(232, 224, 204, 0.92)", shadow: "0 0 10px rgba(0, 0, 0, 0.95), 0 0 2px #000" }
+/** The corner line (hud-lab "Small caps"): full when new or pulsed, dimmer at rest. */
+const CORNER = { full: "rgba(214, 204, 182, 0.86)", rest: "rgba(214, 204, 182, 0.62)", shadow: "0 0 6px rgba(0, 0, 0, 0.95), 0 0 2px #000" }
+/** Per-character type-in interval (ms), capped so long lines still arrive in ~1.4 s. */
+const TYPE_MS = 45
+/** Seconds the centred title holds once typed, and its fade. */
+const HOLD_S = 3.5
+const FADE_S = 1.8
+/** Seconds the corner line stays bright after settling or a pulse. */
+const BRIGHT_S = 3
+/** Seconds a struck-through line stays before it fades. */
+const STRIKE_S = 1.6
 
-let el: HTMLDivElement | null = null
-let tag: HTMLSpanElement | null = null
-let label: HTMLSpanElement | null = null
+let title: HTMLDivElement | null = null
+let corner: HTMLDivElement | null = null
+let line: HTMLSpanElement | null = null
 let current: string | null = null
-let dimTimer = 0
-let clearTimer = 0
-let typeTimer = 0
+const timers = new Set<number>()
+const later = (s: number, f: () => void) => {
+  const id = window.setTimeout(() => {
+    timers.delete(id)
+    f()
+  }, s * 1000)
+  timers.add(id)
+}
+const cancel = () => {
+  for (const id of timers) clearTimeout(id)
+  timers.clear()
+}
 
 function ensure() {
-  if (el || typeof document === "undefined") return el
+  if (title || typeof document === "undefined") return title
   installHudType()
-  el = document.createElement("div")
-  el.className = "objective"
-  Object.assign(el.style, {
+  // Both carry the `objective` class: the encounters' scare/ending styles hide `.objective`.
+  title = document.createElement("div")
+  title.className = "objective objective-title"
+  Object.assign(title.style, {
     position: "fixed",
     left: "50%",
-    top: "20px",
+    top: "34%",
     transform: "translate(-50%, 0)",
     pointerEvents: "none",
     opacity: "0",
-    transition: "opacity 0.6s ease, color 1.4s ease, text-shadow 1.4s ease, background-color 1.4s ease, box-shadow 1.4s ease",
-    font: '21px/1.35 "Ashwood Type", "American Typewriter", "Courier New", monospace',
-    letterSpacing: "0.12em",
-    textTransform: "uppercase",
-    color: INK.full,
-    textShadow: GLOW.full,
-    background: BACK.full,
-    boxShadow: "0 0 22px 8px rgba(4, 6, 5, 0.4)",
-    padding: "6px 18px 7px",
-    borderRadius: "3px",
+    transition: `opacity ${FADE_S}s ease`,
+    font: `26px/1.3 ${TYPE}`,
+    letterSpacing: "0.08em",
+    color: TITLE.color,
+    textShadow: TITLE.shadow,
     whiteSpace: "nowrap",
-    maxWidth: "92vw",
     zIndex: "6",
   } satisfies Partial<CSSStyleDeclaration>)
-  tag = document.createElement("span")
-  Object.assign(tag.style, { fontSize: "13px", letterSpacing: "0.22em", marginRight: "0.9em", opacity: "0.7", verticalAlign: "2px" })
+  corner = document.createElement("div")
+  corner.className = "objective objective-corner"
+  Object.assign(corner.style, {
+    position: "fixed",
+    left: "46px",
+    top: "40px",
+    pointerEvents: "none",
+    opacity: "0",
+    transition: "opacity 1.2s ease, color 1.4s ease",
+    font: `15px/1.5 ${TYPE}`,
+    letterSpacing: "0.14em",
+    fontVariant: "small-caps",
+    color: CORNER.rest,
+    textShadow: CORNER.shadow,
+    whiteSpace: "nowrap",
+    maxWidth: "70vw",
+    zIndex: "6",
+  } satisfies Partial<CSSStyleDeclaration>)
+  const tag = document.createElement("small")
+  Object.assign(tag.style, { display: "block", fontSize: "10px", letterSpacing: "0.3em", textTransform: "uppercase", opacity: "0.5" })
   tag.textContent = "Objective"
-  label = document.createElement("span")
-  el.append(tag, label)
-  document.body.appendChild(el)
-  return el
+  line = document.createElement("span")
+  line.style.transition = "text-decoration-color 0.4s ease"
+  corner.append(tag, line)
+  document.body.append(title, corner)
+  return title
 }
 
-function look(state: keyof typeof GLOW) {
-  if (!el) return
-  el.style.color = INK[state]
-  el.style.textShadow = GLOW[state]
-  el.style.background = state === "rest" ? BACK.rest : BACK.full
-  el.style.boxShadow = state === "rest" ? "0 0 16px 6px rgba(4, 6, 5, 0.28)" : "0 0 22px 8px rgba(4, 6, 5, 0.4)"
-}
-
-function brighten(ms: number) {
-  if (!el || current === null) return
-  clearTimeout(dimTimer)
-  el.style.opacity = "1"
-  look("full")
-  dimTimer = window.setTimeout(() => current !== null && look("rest"), ms)
+function brighten(seconds: number) {
+  if (!corner || current === null) return
+  corner.style.opacity = "1"
+  corner.style.color = CORNER.full
+  const text = current
+  later(seconds, () => current === text && corner && (corner.style.color = CORNER.rest))
 }
 
 /** A quiet typewriter/paper tick for a new objective (silent until the game audio exists). */
@@ -83,67 +103,72 @@ function tick() {
   hooks.sfx?.play("ui-notify", { bus: "ui", gain: 0.45 })
 }
 
-/** Shows a new objective: types in under a brief flare with a tick, holds ~8 s, then dims to a persistent line. */
-export function setObjective(text: string) {
-  if (!ensure() || !el || !label) return
-  clearTimeout(clearTimer)
-  clearTimeout(typeTimer)
-  const show = () => {
-    current = text
-    label!.style.textDecoration = "none"
-    label!.textContent = ""
-    el!.style.opacity = "1"
-    look("flare")
-    clearTimeout(dimTimer)
-    tick()
-    const step = Math.min(TYPE_MS, 1000 / Math.max(1, text.length))
-    let n = 0
-    const type = () => {
-      if (current !== text) return
-      n = Math.min(text.length, n + 1)
-      // The untyped rest is laid out but invisible, so the line types in place instead of re-centring.
-      const rest = document.createElement("span")
-      rest.style.visibility = "hidden"
-      rest.textContent = text.slice(n)
-      label!.textContent = text.slice(0, n)
-      label!.appendChild(rest)
-      if (n < text.length) typeTimer = window.setTimeout(type, step)
-      else typeTimer = window.setTimeout(() => current === text && brighten(HOLD_MS), 450)
-    }
-    type()
+/** Types `text` into the centred title in place (the untyped rest is laid out but hidden, so it doesn't re-centre). */
+function typeTitle(text: string, done: () => void) {
+  const step = Math.min(TYPE_MS, 1400 / Math.max(1, text.length)) / 1000
+  let n = 0
+  const rest = document.createElement("span")
+  rest.style.visibility = "hidden"
+  const type = () => {
+    if (current !== text || !title) return
+    n = Math.min(text.length, n + 1)
+    title.textContent = text.slice(0, n)
+    rest.textContent = text.slice(n)
+    title.append(rest)
+    if (n < text.length) later(step, type)
+    else done()
   }
-  // Replacing a visible objective: let the old one go first.
-  if (current !== null && el.style.opacity !== "0") {
-    el.style.opacity = "0"
-    clearTimer = window.setTimeout(show, 700)
-  } else show()
+  type()
 }
 
-/** Strikes the current objective through and fades it out. */
+/** Shows a new objective: centred, typed in, held, faded; then the quiet corner line. */
+export function setObjective(text: string) {
+  if (!ensure() || !title || !corner || !line) return
+  cancel()
+  current = text
+  // The corner gives way while the new one arrives.
+  corner.style.opacity = "0"
+  title.style.transition = "none"
+  title.style.opacity = "1"
+  void title.offsetWidth
+  title.style.transition = `opacity ${FADE_S}s ease`
+  tick()
+  typeTitle(text, () =>
+    later(HOLD_S, () => {
+      if (current !== text || !title || !line) return
+      title.style.opacity = "0"
+      line.style.textDecoration = "none"
+      line.textContent = text
+      later(FADE_S * 0.6, () => current === text && brighten(BRIGHT_S))
+    }),
+  )
+}
+
+/** Strikes the corner line through and fades it out. */
 export function completeObjective() {
-  if (!el || !label || current === null) return
-  clearTimeout(dimTimer)
-  clearTimeout(clearTimer)
-  clearTimeout(typeTimer)
-  label.textContent = current
-  look("full")
-  label.style.textDecoration = "line-through"
+  if (!corner || !line || current === null) return
+  cancel()
+  if (title) title.style.opacity = "0"
+  line.textContent = current
+  line.style.textDecoration = "line-through"
+  corner.style.opacity = "1"
+  corner.style.color = CORNER.full
   current = null
-  clearTimer = window.setTimeout(() => el && (el.style.opacity = "0"), 1600)
+  later(STRIKE_S, () => corner && (corner.style.opacity = "0"))
 }
 
-/** Brings the current objective back up briefly (raising the map). */
+/** Brings the corner line up briefly (raising the map). */
 export function pulseObjective() {
-  brighten(PULSE_MS)
+  if (title && Number(title.style.opacity) > 0) return
+  brighten(BRIGHT_S)
 }
 
-/** Removes the line at once (quitting to the title). */
+/** Removes everything at once (quitting to the title). */
 export function clearObjective() {
-  clearTimeout(dimTimer)
-  clearTimeout(clearTimer)
-  clearTimeout(typeTimer)
+  cancel()
   current = null
-  if (el) el.style.opacity = "0"
+  if (title) title.style.opacity = "0"
+  if (corner) corner.style.opacity = "0"
 }
 
 export const objectiveText = () => current
