@@ -19,8 +19,8 @@ export const outbreakDeathSharedFeature = registerOutbreakSharedFeature<DeathSta
   },
   stepSurvivorMovement: (ctx) => stepDeathMovement(ctx, deathTuning(ctx.resolved.features)),
   stepSurvivorActions: (ctx) => stepReviver(ctx, deathTuning(ctx.resolved.features)),
-  modifySurvivorDamage: (_sim, slot, damage, state) => {
-    feedOnDowned(state, slot, damage)
+  modifySurvivorDamage: (_sim, slot, damage, state, source) => {
+    if (source === "crowd") feedOnDowned(state, slot, damage)
     return damage
   },
   transformAISurvivor: (_sim, slot, view, state) =>

@@ -123,8 +123,8 @@ export interface OutbreakSharedFeature<
     survivorView: Survivor & { id: string },
     state: TState,
   ): Survivor & { id: string }
-  /** Scales or filters incoming crowd damage on a survivor slot (e.g. vehicle seat armor). */
-  modifySurvivorDamage?(sim: OutbreakSim, slot: SurvivorSlot, damage: number, state: TState): number
+  /** Scales or filters damage on a survivor slot (e.g. vehicle seat armor, escape immunity); see `survivorDamage`. */
+  modifySurvivorDamage?(sim: OutbreakSim, slot: SurvivorSlot, damage: number, state: TState, source: SurvivorDamageSource): number
   /** Customizes `refreshPrompt` for a survivor slot; returning `true` skips default door/window/container prompt selection. */
   refreshPrompt?(sim: OutbreakSim, slot: SurvivorSlot, state: TState): boolean
   /** Optional binary snapshot section codec for `shared/net-protocol.ts`. */
@@ -283,6 +283,17 @@ export class OutbreakSharedFeatureRegistry {
 }
 
 export const outbreakSharedFeatures = new OutbreakSharedFeatureRegistry()
+
+/** Where survivor damage came from: `crowd` is zombie attacks (they feed on the downed), `environment` is gas, fire, blasts. */
+export type SurvivorDamageSource = "crowd" | "environment"
+
+/** The damage `slot` actually takes after every feature's `modifySurvivorDamage`. Every survivor damage source goes through here. */
+export function survivorDamage(sim: OutbreakSim, slot: SurvivorSlot, damage: number, source: SurvivorDamageSource): number {
+  for (const feature of outbreakSharedFeatures.list()) {
+    if (feature.modifySurvivorDamage) damage = feature.modifySurvivorDamage(sim, slot, damage, sim.featureStates.get(feature.id), source)
+  }
+  return damage
+}
 
 export function registerOutbreakSharedFeature<
   TState = unknown,

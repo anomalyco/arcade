@@ -14,7 +14,7 @@ import {
 import type { Town } from "../../shared/map"
 import { beamWeatherAir } from "../flashlight-beam"
 import { lightningAt, strikeFlash, strikesBetween, type LightningStrike } from "../../shared/weather/lightning"
-import { DEFAULT_WEATHER_TUNING, sampleWeather, type WeatherSample } from "../../shared/weather/schedule"
+import { DEFAULT_WEATHER_TUNING, sampleWeather, sampleWeatherCached, type WeatherSample } from "../../shared/weather/schedule"
 import { cycleWeatherSettings } from "./cycle"
 import { toSharedWeatherSettings, type OutbreakWeatherSettings } from "./settings"
 
@@ -75,7 +75,7 @@ export class OutbreakWeatherController {
   private forced: LightningStrike | null = null
   private clock = 0
   private lastSimTime = Number.NaN
-  private sampleAt = Number.NaN
+  private readonly sampleKey: number[] = []
   private readonly resultScratch: { state: WeatherFrameState; prepareInput: WeatherPrepareInput | null; lightCount: number; spriteCount: number } = {
     state: null as unknown as WeatherFrameState,
     prepareInput: null,
@@ -87,7 +87,7 @@ export class OutbreakWeatherController {
     this.sim.reset(seed)
     this.forced = null
     this.lastSimTime = Number.NaN
-    this.sampleAt = Number.NaN
+    this.sampleKey.length = 0
     this.marks.length = 0
     this.strikes.length = 0
   }
@@ -138,11 +138,7 @@ export class OutbreakWeatherController {
 
   /** The cycle's weather for this frame (cheap; the wetness window is walked at most once a sim second). */
   sampleCycle(seed: number, simTime: number, hour: number, settings: Readonly<OutbreakWeatherSettings>): WeatherSample {
-    if (Math.floor(simTime) !== this.sampleAt || settings.weatherOverride >= 0 || !(settings.weatherCycle >= 1)) {
-      this.sampleAt = Math.floor(simTime)
-      sampleWeather(seed, simTime, hour, settings, this.sample)
-    }
-    return this.sample
+    return sampleWeatherCached(seed, simTime, hour, settings, this.sampleKey, this.sample)
   }
 
   stepAndPrepare(input: {
@@ -316,13 +312,15 @@ export class OutbreakWeatherController {
   /** A near strike lands on the street lamp or tree nearest where it fell, within 14 m, else on open ground. */
   private markStrike(k: LightningStrike, town: Town, px: number, py: number, support?: (x: number, z: number) => number): void {
     if (k.dist > NEAR_STRIKE || this.marks.some((m) => m.seed === k.id)) return
-    let x = px + Math.cos(k.bearing) * k.dist
-    let z = py + Math.sin(k.bearing) * k.dist
+    const fellX = px + Math.cos(k.bearing) * k.dist
+    const fellZ = py + Math.sin(k.bearing) * k.dist
+    let x = fellX
+    let z = fellZ
     let top = 5.5
     let best = 14 * 14
     for (const l of town.lamps) {
       if (l.kind !== "street") continue
-      const d = (l.x - x) ** 2 + (l.y - z) ** 2
+      const d = (l.x - fellX) ** 2 + (l.y - fellZ) ** 2
       if (d < best) {
         best = d
         x = l.x
@@ -332,7 +330,7 @@ export class OutbreakWeatherController {
     }
     for (const p of town.props) {
       if (p.kind !== "tree") continue
-      const d = (p.x - x) ** 2 + (p.y - z) ** 2
+      const d = (p.x - fellX) ** 2 + (p.y - fellZ) ** 2
       if (d < best) {
         best = d
         x = p.x

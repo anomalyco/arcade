@@ -16,7 +16,7 @@ import {
   type OutbreakCombatSnapshot,
 } from "./combat"
 import { advanceHour } from "./day-cycle"
-import { outbreakSharedFeatures } from "./feature-registry"
+import { outbreakSharedFeatures, survivorDamage } from "./feature-registry"
 import "./features"
 import { openingClockActive } from "./pacing"
 import { createFlashlightState, DEFAULT_FLASHLIGHT_TUNING, stepFlashlight, toggleFlashlight } from "./flashlight"
@@ -618,11 +618,7 @@ export class CoopSim implements OutbreakSim {
     this.slots.forEach((slot, i) => {
       let damage = aiStep.damage[i]!
       if (damage > 0) {
-        for (const feature of outbreakSharedFeatures.list()) {
-          if (feature.modifySurvivorDamage) {
-            damage = feature.modifySurvivorDamage(this, slot, damage, this.featureStates.get(feature.id))
-          }
-        }
+        damage = survivorDamage(this, slot, damage, "crowd")
         slot.survivor.health = Math.max(0, slot.survivor.health - damage)
         if (aiStep.ankleGrabbed[i] && !slot.survivor.vehicleId) {
           slot.survivor.stamina = Math.max(0, slot.survivor.stamina - 0.14)

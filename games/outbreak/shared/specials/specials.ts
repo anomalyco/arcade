@@ -2,6 +2,7 @@ import { inRect, type Rect } from "@arcade/kit/sim/geom"
 import { samplePointLightLevel, STARTING_SAFEHOUSE_RECT, zombieTraitsFromSeed, type AIAgent } from "../ai"
 import type { ZombieHit, ZombieHitOutcome } from "../combat"
 import { dayCycle } from "../day-cycle"
+import { survivorDamage } from "../feature-registry"
 import { flashlightAwarenessAt, type FlashlightTuning } from "../flashlight"
 import { inBuildingFootprint, sightRects } from "../map"
 import type { OutbreakSim } from "../sim-types"
@@ -398,7 +399,10 @@ function stepGas(sim: OutbreakSim, st: SpecialsState, t: SpecialsTuning, dt: num
     for (const s of sim.slots) {
       const p = s.survivor
       if (p.vehicleId || !inCloud(c, p.x, p.y)) continue
-      p.health = Math.max(0, p.health - t.gasDamage * dt)
+      const damage = survivorDamage(sim, s, t.gasDamage * dt, "environment")
+      // Shielded entirely (the escaped): no choking either.
+      if (damage <= 0 && t.gasDamage > 0) continue
+      p.health = Math.max(0, p.health - damage)
       p.stamina = Math.max(0, p.stamina - t.gasStamina * dt)
       p.regenCooldown = Math.max(p.regenCooldown, 0.5)
     }
