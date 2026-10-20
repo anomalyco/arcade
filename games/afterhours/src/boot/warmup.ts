@@ -1,4 +1,5 @@
 import * as THREE from "three/webgpu"
+import { touch } from "./schedule"
 
 // Background pipeline warm-up for objects that are about to join the scene.
 //
@@ -30,6 +31,12 @@ export type Warmup = {
   warm(root: THREE.Object3D, options?: { progressive?: boolean; onReveal?: () => void; visibleOnly?: boolean }): Promise<THREE.Object3D[]>
   /** Compiles these objects (e.g. what `warm({ visibleOnly })` left for later), nearest first; visibility untouched. */
   warmObjects(objects: THREE.Object3D[]): Promise<void>
+  /**
+   * Compiles these objects for another pass that renders the scene: `target` only needs the same attachment layout as
+   * that pass's (render contexts are keyed by format, not instance), `mrt` its MRT (null for a plain colour pass) and
+   * `depth` its nesting depth (0 = called at the top level). Waits for other warm-ups to finish first.
+   */
+  warmIn(objects: THREE.Object3D[], pass: { target: THREE.RenderTarget; mrt: unknown; depth: number; layers?: number }): Promise<void>
   /** Runs one frame of the render loop with the renderer's normal top-level state. */
   frame(fn: () => void): void
   /** Warm up objects added under `root` from now on before they are drawn (with `root` itself while it waits). */
@@ -75,6 +82,7 @@ export function createWarmup(renderer: THREE.WebGPURenderer, scene: THREE.Scene,
       mrt = renderer.getMRT()
       // Render contexts are keyed by nesting depth too; the scene pass renders inside the post quad's render.
       depth = r._callDepth + 1
+      performance.mark(`warmup:capture:depth${depth}`)
       ready = true
       delete r.render
     }
@@ -177,6 +185,7 @@ export function createWarmup(renderer: THREE.WebGPURenderer, scene: THREE.Scene,
     // Builders' follow-up work (the interior bakes furniture after build) is CPU that would otherwise run during play:
     // every arrival, hidden or not, holds the loading screen until they stop.
     lastArrival = performance.now()
+    touch()
     let shown = true
     for (let a: THREE.Object3D | null = obj; a && shown; a = a.parent) shown = a.visible
     if (!shown) {
@@ -315,6 +324,23 @@ export function createWarmup(renderer: THREE.WebGPURenderer, scene: THREE.Scene,
         if (g.index) attrs.update(g.index, 2)
       }
     },
+    async warmIn(objects, pass) {
+      if (!ready || !objects.length) return
+      while (active > 0) await new Promise((r) => setTimeout(r, 20))
+      const saved = { target, mrt, depth, layers: camera.layers.mask }
+      target = pass.target
+      mrt = pass.mrt
+      depth = pass.depth
+      if (pass.layers !== undefined) camera.layers.mask = pass.layers
+      try {
+        await this.warmObjects(objects)
+      } finally {
+        target = saved.target
+        mrt = saved.mrt
+        depth = saved.depth
+        camera.layers.mask = saved.layers
+      }
+    },
     takeHidden() {
       return hiddenLate.splice(0)
     },
@@ -374,6 +400,7 @@ export function createWarmup(renderer: THREE.WebGPURenderer, scene: THREE.Scene,
           for (let list = chains.shift(); list; list = chains.shift())
             for (const o of list) {
               await compileOne(o)
+              touch()
               onCompiled(o)
             }
         }),

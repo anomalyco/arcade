@@ -1,6 +1,7 @@
 import * as THREE from "three/webgpu"
 import type { Wendigo } from "../../creatures/wendigo"
 import { aimBone, twoBoneIK } from "../../creatures/kit/ik"
+import { encounterLights } from "../encounters/lights"
 
 // Death jump scares (the Wendigo catching the player), three to compare (death-lab.html):
 //   A  lunge and hold  it rushes in (~0.35 s), stops hard ~0.5 m from the face, holds with the jaw opening wide and a
@@ -18,15 +19,20 @@ import { aimBone, twoBoneIK } from "../../creatures/kit/ik"
 //   await playDeath("A", { camera, wendigo, ground, from, tick, scream, flood, lights })   // then the death screen
 //   clearDeath(wendigo, lights)                                                             // restart
 
-export type DeathName = "A" | "B" | "C"
-export const DEATHS: Record<DeathName, string> = { A: "Lunge and hold", B: "Grab and pull", C: "Slam down" }
+export type DeathName = "charge" | "spin" | "A" | "B" | "C"
+/** The current set: the whole creature is seen for most of each. */
+export const DEATHS_NEW = { charge: "Charge", spin: "Grab and turn" } as const
+/** The first set (face-only close-ups), kept for comparison. */
+export const DEATHS_OLD = { A: "Lunge and hold", B: "Grab and pull", C: "Slam down" } as const
+export const DEATHS: Record<DeathName, string> = { ...DEATHS_NEW, ...DEATHS_OLD }
+const NAMES = Object.keys(DEATHS) as DeathName[]
 /** The hunter's catch uses this until the owner picks (death-lab.html "Use in game" stores the pick, dev only). */
-export const DEATH_DEFAULT: DeathName = "A"
+export const DEATH_DEFAULT: DeathName = "charge"
 const PICK_KEY = "afterhours.deathVariant"
 export function deathVariant(): DeathName {
   try {
     const v = localStorage.getItem(PICK_KEY)
-    if (v === "A" || v === "B" || v === "C") return v
+    if (v && (NAMES as string[]).includes(v)) return v as DeathName
   } catch {}
   return DEATH_DEFAULT
 }
@@ -41,17 +47,19 @@ export const MIN_FACE = 0.38
 /** Everything nearer than this to the eye is cut (m). */
 const NEAR_CUT = 0.3
 
-export type DeathLights = { face: THREE.PointLight }
-/** Adds the death scenes' light to the scene, dark (lights added later recompile every lit material: a stall). */
+export type DeathLights = { face: THREE.PointLight; body: THREE.SpotLight }
+/**
+ * Adds the death scenes' lights to the scene, dark (lights added later recompile every lit material: a stall): a cold
+ * point light on the face at the climax, and a wide cold spot from beside the eye that catches the torso and limbs.
+ */
 export function prepareDeathLights(scene: THREE.Scene): DeathLights {
-  const face = new THREE.PointLight(0xc6d4de, 0, 3.2, 2)
-  face.castShadow = false
-  face.position.set(0, -90, 0)
-  scene.add(face)
-  return { face }
+  // The boot-created lights (src/game/encounters/lights.ts): never added at runtime.
+  const l = encounterLights(scene)
+  return { face: l.face, body: l.body }
 }
 
-export type DeathMeasure = { t: number; nearest: number; fill: number; cx: number; cy: number; phase: string }
+/** `body`: fraction of the creature's key points (feet, hands, hips, head, crown) inside the frame. */
+export type DeathMeasure = { t: number; nearest: number; fill: number; cx: number; cy: number; phase: string; body: number }
 
 export type DeathCtx = {
   camera: THREE.PerspectiveCamera
@@ -64,8 +72,16 @@ export type DeathCtx = {
   /** Per-frame hook before the frame renders (the game: flow.onUpdate). Returns an unsubscribe. */
   tick: (fn: (dt: number) => void) => () => void
   scream: () => void
+  /** Teeth chattering / a bite snap (wen2-chatter), optional. */
+  chatter?: () => void
   flood: () => void
   lights: DeathLights
+  /** Ceiling over the floor (world y), so it stoops under it upright. */
+  ceiling?: number
+  /** Free distance from a point along a horizontal direction (walls), so a scene fits the room. */
+  free?: (from: THREE.Vector3, dir: THREE.Vector3) => number
+  /** The canvas (motion blur on fast forced turns). */
+  canvas?: HTMLElement
   /** Automation / the lab: measurements each frame. */
   onMeasure?: (m: DeathMeasure) => void
 }
@@ -184,20 +200,15 @@ class Scene {
     // Face the eye (yaw only) before posing.
     _v.subVectors(this.eye, w.root.position)
     w.root.rotation.set(0, Math.atan2(_v.x, _v.z), 0)
-    w.update(dt, { mode: o.mode, stance: o.stance, target: this.eye, velocity: ZERO })
+    w.update(dt, { mode: o.mode, stance: o.stance, target: this.eye, velocity: ZERO, ceiling: this.c.ceiling })
     if (o.bend) rig.byName.get("hips")!.quaternion.premultiply(_q.setFromAxisAngle(_v2.set(1, 0, 0), o.bend))
     rig.byName.get("jaw")!.quaternion.multiply(_q.setFromEuler(_e.set(o.jaw, 0, 0)))
     w.root.updateMatrixWorld(true)
     const hb = rig.byName.get("head")!
     const hi = rig.bones.indexOf(hb)
     // Face toward the eye, snout tilted down so the long face shows.
-    hb.getWorldPosition(_v)
-    const to = _v2.subVectors(this.eye, _v).normalize()
-    const side = new THREE.Vector3().crossVectors(to, UP).normalize()
-    const down = new THREE.Vector3().crossVectors(side, to).negate()
-    const dir = to.clone().multiplyScalar(Math.cos(o.tilt)).addScaledVector(down, Math.sin(o.tilt))
-    if (o.twitch) dir.addScaledVector(side, o.twitch[0]).addScaledVector(UP, o.twitch[1]).normalize()
-    aimBone(rig, hi, dir)
+    void hi
+    this.faceOut(1, o.twitch, o.tilt)
     // Skull centre to the target.
     this.skullCentre(this.centre)
     const dx = o.target.x - this.centre.x
@@ -218,6 +229,48 @@ class Scene {
     }
     this.skullCentre(this.centre)
   }
+  /**
+   * The face always points out at the eye: the neck chain swings toward the eye (extended forward, `k` of the way),
+   * then the skull's snout aims at the eye, tilted `tilt` rad (negative: snout up), and is clamped so it never points
+   * steeply down (into its own chest).
+   */
+  faceOut(k = 1, twitch?: [number, number], tilt = -0.12) {
+    const rig = this.w.rig!
+    const bi = (n: string) => rig.bones.indexOf(rig.byName.get(n)!)
+    for (const [n, wgt] of [
+      ["neck1", 0.35],
+      ["neck2", 0.55],
+      ["neck3", 0.75],
+    ] as const) {
+      const b = rig.byName.get(n)!
+      b.getWorldPosition(_v)
+      _v2.subVectors(this.eye, _v)
+      // Keep the neck reaching forward and a little up, not drooping.
+      _v2.y = Math.max(_v2.y, -0.25 * Math.hypot(_v2.x, _v2.z))
+      aimBone(rig, bi(n), _v2.normalize(), wgt * k)
+    }
+    const hb = rig.byName.get("head")!
+    hb.getWorldPosition(_v)
+    const to = _v2.subVectors(this.eye, _v).normalize()
+    const side = new THREE.Vector3().crossVectors(to, UP).normalize()
+    const down = new THREE.Vector3().crossVectors(side, to).negate()
+    const dir = to.clone().multiplyScalar(Math.cos(tilt)).addScaledVector(down, Math.sin(tilt))
+    if (twitch) dir.addScaledVector(side, twitch[0]).addScaledVector(UP, twitch[1])
+    dir.normalize()
+    // Clamp: at most 20° below horizontal.
+    const h = Math.hypot(dir.x, dir.z)
+    const minY = -Math.tan(0.35) * h
+    if (dir.y < minY) dir.y = minY
+    aimBone(rig, rig.bones.indexOf(hb), dir.normalize(), k)
+  }
+
+  /** Opens the jaw `a` rad beyond the animator's. */
+  openJaw(a: number) {
+    const j = this.w.rig!.byName.get("jaw")!
+    j.quaternion.multiply(_q.setFromEuler(_e.set(a, 0, 0)))
+    j.updateMatrixWorld(true)
+  }
+
   skullCentre(out: THREE.Vector3) {
     return out.copy(this.face.centre).applyMatrix4(this.headMatrix())
   }
@@ -247,16 +300,27 @@ class Scene {
     scan(this.face.jaw, rig.byName.get("jaw")!)
     return best
   }
-  /** Face light, the close-up cut and a measurement. */
-  finish(t: number, light: number, phase: string) {
-    const { face } = this.c.lights
+  /** Face and body light, the close-up cut (`cutOn`: the final moment only) and a measurement. */
+  finish(t: number, light: number, phase: string, cutOn = true, bodyLight = 0) {
+    const { face, body } = this.c.lights
+    if (cutOn || phase === "strike") this.nearest = this.faceNearest()
+    this.skullCentre(this.centre)
     _v.subVectors(this.centre, this.eye)
-    face.position.copy(this.eye).addScaledVector(_v, 0.45)
-    face.position.y += 0.28
+    // In front of the mouth, from above the eye line: the teeth catch it, the throat stays in shadow behind them.
+    face.position.copy(this.eye).addScaledVector(_v, 0.6)
+    face.position.y += 0.16
     face.intensity = 7 * light
+    // Body light: from just above and right of the eye, onto the hips (wide enough for the whole creature).
+    this.cam.getWorldDirection(_v2)
+    body.position.copy(this.eye).addScaledVector(_v2, -0.2)
+    body.position.y += 0.45
+    this.w.rig!.byName.get("hips")!.getWorldPosition(body.target.position)
+    body.target.updateMatrixWorld()
+    body.intensity = 30 * bodyLight
     // Cut: the cone from the eye toward the skull, closer than the face's nearest point.
     const cut = this.w.cut
-    if (cut) {
+    if (cut && !cutOn) cut.cutOn.value = 0
+    if (cut && cutOn) {
       this.cam.updateMatrixWorld(true)
       const view = _v2.copy(this.centre).applyMatrix4(this.cam.matrixWorldInverse)
       const dist = view.length()
@@ -286,7 +350,19 @@ class Scene {
       proj(this.face.skull, rig.byName.get("head")!)
       proj(this.face.jaw, rig.byName.get("jaw")!)
       const c = _v.copy(this.centre).project(this.cam)
-      this.c.onMeasure({ t, nearest: +this.nearest.toFixed(3), fill: +(Math.max(0, Math.min(1, y1) - Math.max(-1, y0)) / 2).toFixed(2), cx: +c.x.toFixed(2), cy: +c.y.toFixed(2), phase })
+      // Whole-creature check: key points inside the frame.
+      let inn = 0
+      const keys = ["metaL", "metaR", "handL", "handR", "hips", "head"]
+      for (const k of keys) {
+        rig.byName.get(k)!.getWorldPosition(_v).project(this.cam)
+        if (_v.z < 1 && Math.abs(_v.x) <= 1 && Math.abs(_v.y) <= 1) inn++
+      }
+      // The crown (antlers ~0.9 m above the head joint).
+      rig.byName.get("head")!.getWorldPosition(_v)
+      _v.y += 0.9
+      _v.project(this.cam)
+      if (_v.z < 1 && Math.abs(_v.x) <= 1 && Math.abs(_v.y) <= 1) inn++
+      this.c.onMeasure({ t, body: +(inn / 7).toFixed(2), nearest: +this.nearest.toFixed(3), fill: +(Math.max(0, Math.min(1, y1) - Math.max(-1, y0)) / 2).toFixed(2), cx: +c.x.toFixed(2), cy: +c.y.toFixed(2), phase })
       void x0
       void x1
     }
@@ -302,7 +378,7 @@ export function playDeath(name: DeathName, ctx: DeathCtx): Promise<void> {
   a.lungeStop = 0.1
   w.setShade(1)
   w.root.visible = true
-  const script = name === "A" ? lungeHold(s) : name === "B" ? grabPull(s) : slamDown(s)
+  const script = { A: lungeHold, B: grabPull, C: slamDown, charge, spin }[name](s)
   return new Promise((done) => {
     let t = 0
     const off = ctx.tick((dt) => {
@@ -319,7 +395,7 @@ export function playDeath(name: DeathName, ctx: DeathCtx): Promise<void> {
 
 /** After a restart: hides the creature and clears the close-up state. */
 export function clearDeath(w: Wendigo | null, lights: DeathLights | null) {
-  if (lights) lights.face.intensity = 0
+  if (lights) lights.face.intensity = lights.body.intensity = 0
   if (!w) return
   w.root.visible = false
   w.setShade(1)
@@ -507,5 +583,254 @@ function slamDown(s: Scene) {
     if (t > 0.5) s.aimAtFace(0.15)
     s.finish(t, smooth(0.35, 0.6, t), phase)
     return t > 1.6
+  }
+}
+
+// ================================================================================================= whole-creature set
+// Every one of these keeps the camera back so the whole Wendigo (feet to antlers) reads for most of the scene; the
+// close-up cut and the minimum face distance only come in for the final strike (`strike`).
+
+/** Faces the eye (yaw), steps the animator with an externally driven velocity, stoops under the ceiling. */
+function drive(s: Scene, dt: number, mode: "idle" | "lunge" | "rear" | "stalk" | "freeze", stance: "quad" | "biped", vel: THREE.Vector3, face = 0, jaw = 0) {
+  const w = s.w
+  _v.subVectors(s.eye, w.root.position)
+  w.root.rotation.set(0, Math.atan2(_v.x, _v.z), 0)
+  w.update(dt, { mode, stance, target: s.eye, velocity: vel, ceiling: s.c.ceiling })
+  w.root.updateMatrixWorld(true)
+  if (jaw) s.openJaw(jaw)
+  if (face > 0) s.faceOut(face)
+  s.skullCentre(s.centre)
+}
+
+/** Eases the view toward a point between the hips and the head (keeps the whole body in frame). */
+function frameBody(s: Scene, k: number, up = 0.45) {
+  const rig = s.w.rig!
+  rig.byName.get("hips")!.getWorldPosition(_v)
+  rig.byName.get("head")!.getWorldPosition(_v2)
+  _v.lerp(_v2, up)
+  const saved = s.centre.clone()
+  s.centre.copy(_v)
+  s.aimAtFace(k)
+  s.centre.copy(saved)
+}
+
+/**
+ * Teeth: the jaw gapes and chatters (fast, uneven snaps), `amp` rad wide; calls `chatter` on each snap shut (rate
+ * limited so the sound isn't a buzz).
+ */
+function chatterer(s: Scene) {
+  let phase = 0
+  let lastSnap = -1
+  let wasClosed = false
+  return (t: number, dt: number, amp: number, rate = 9) => {
+    phase += dt * rate * (0.85 + 0.3 * Math.sin(t * 3.1))
+    const o = Math.abs(Math.sin(phase * Math.PI))
+    const open = amp * (0.35 + 0.65 * o ** 0.6)
+    const closed = o < 0.2
+    if (closed && !wasClosed && t - lastSnap > 0.22) {
+      lastSnap = t
+      s.c.chatter?.()
+    }
+    wasClosed = closed
+    return open
+  }
+}
+
+/** Room ahead of a point along a direction (default: open). */
+const room = (s: Scene, from: THREE.Vector3, dir: THREE.Vector3, max: number) => Math.min(max, s.c.free ? s.c.free(from, dir) : max)
+
+/**
+ * The final strike shared by all three: from wherever the skull is, it snaps to ~0.62 m in front of the eye in
+ * `dur` s, face first, jaws wide (the cut-away and minimum distance on), then the flood; resolves `RED_S` later.
+ */
+const RED_S = 0.32
+function striker(s: Scene, stance: () => "quad" | "biped") {
+  const from = new THREE.Vector3()
+  const to = new THREE.Vector3()
+  const tgt = new THREE.Vector3()
+  let t0 = -1
+  let flooded = false
+  let snapped = false
+  return (t: number, dt: number, dur = 0.3): boolean => {
+    if (t0 < 0) {
+      t0 = t
+      from.copy(s.centre)
+    }
+    const k = Math.min(1, (t - t0) / dur)
+    s.viewDir(to).multiplyScalar(0.66).add(s.eye)
+    to.y += 0.02
+    tgt.lerpVectors(from, to, 1 - (1 - k) ** 2.5)
+    const g = s.c.ground
+    // Gaping wide as it comes, then a bite snap shut at the lens on the last frames before the red.
+    const bite = smooth(0.82, 1, k)
+    if (bite > 0 && !snapped) {
+      snapped = true
+      s.c.chatter?.()
+    }
+    const jaw = 1.15 * (1 - bite) + 0.05
+    s.pose(dt, { mode: "lunge", stance: stance(), target: tgt, tilt: -0.15, jaw, yMin: g - 0.8, yMax: g + 0.9 })
+    s.aimAtFace(0.3)
+    s.shake = 0.6 + 2 * k
+    if (k >= 1 && !flooded) {
+      flooded = true
+      s.c.flood()
+      s.shake = 3
+    }
+    s.finish(t, 1, "strike", true, 1)
+    return flooded && t - t0 - dur > RED_S
+  }
+}
+
+// ------------------------------------------------------------------------------------------------- 1: charge
+
+/**
+ * It comes down the corridor at you: the whole creature from ~12 m on all fours, fast, the camera held still; at
+ * ~3.6 m it rears up (scream), filling the frame head to legs, then the strike.
+ */
+function charge(s: Scene) {
+  const c = s.c
+  // Come from the open side: toward where it actually was if there's room that way, else the view, else the
+  // longest clear direction (a catch facing a wall would otherwise place it inside the next room).
+  {
+    const cands: THREE.Vector3[] = []
+    if (c.from) cands.push(new THREE.Vector3(c.from.x - s.eye0.x, 0, c.from.z - s.eye0.z).normalize())
+    cands.push(s.fwd)
+    for (let k = 0; k < 8; k++) cands.push(new THREE.Vector3(Math.sin((k * Math.PI) / 4), 0, Math.cos((k * Math.PI) / 4)))
+    let best = cands[0]!
+    let bestFree = -1
+    for (const d of cands) {
+      const f = room(s, s.eye0, d, 12)
+      if (f >= 6) {
+        best = d
+        break
+      }
+      if (f > bestFree) {
+        bestFree = f
+        best = d
+      }
+    }
+    s.yaw0 = s.yaw = Math.atan2(-best.x, -best.z)
+  }
+  const fwd = s.fwd
+  const D0 = Math.max(5, room(s, s.eye0, fwd, 9.5) - 1)
+  s.w.animator!.snapStance("quad")
+  s.w.root.position.copy(s.eye0).addScaledVector(fwd, D0)
+  s.w.root.position.y = c.ground
+  s.pitch = s.pitch0 = 0.02
+  const vel = new THREE.Vector3()
+  let speed = 0
+  let rearAt = -1
+  let screamed = false
+  const strike = striker(s, () => "biped")
+  const chat = chatterer(s)
+  // Settle a pose before it's seen.
+  for (let i = 0; i < 30; i++) drive(s, 1 / 30, "stalk", "quad", vel.set(0, 0, 0))
+  return (t: number, dt: number) => {
+    const d = Math.hypot(s.w.root.position.x - s.eye.x, s.w.root.position.z - s.eye.z)
+    if (rearAt < 0) {
+      // A beat of it standing there, then it goes: hard acceleration to ~7.5 m/s.
+      speed = t < 0.2 ? 0 : Math.min(7.5, speed + dt * 14)
+      vel.copy(fwd).multiplyScalar(-speed)
+      s.w.root.position.addScaledVector(vel, dt)
+      // Head up and out at you as it comes, teeth chattering from ~7 m.
+      const near = 1 - Math.min(1, Math.max(0, (d - 2.5) / 5))
+      drive(s, dt, t < 0.2 ? "idle" : "lunge", "quad", vel, 0.5 + 0.5 * near, near > 0 ? chat(t, dt, 0.35 + 0.6 * near) : 0)
+      s.shake = 0.15 + 0.5 * Math.min(1, speed / 7.5) * (1 - Math.min(1, d / 10))
+      frameBody(s, 0.06, 0.3)
+      if (d < 3.7) rearAt = t
+      s.finish(t, 0, "charge", false, 1.4)
+      return false
+    }
+    const r = t - rearAt
+    if (r < 0.5) {
+      // Rears up, braking hard, to ~1.9 m: arms spread, the whole height of it over you.
+      if (!screamed) {
+        screamed = true
+        c.scream()
+      }
+      speed = Math.max(0, speed - dt * 16)
+      if (d < 1.9) speed = 0
+      vel.copy(fwd).multiplyScalar(-speed)
+      s.w.root.position.addScaledVector(vel, dt)
+      drive(s, dt, "rear", "biped", vel, 1, chat(t, dt, 1.0, 11))
+      frameBody(s, 0.12, 0.55)
+      s.shake = 0.9
+      s.finish(t, Math.min(1, r / 0.3), "rear", false, 1)
+      return false
+    }
+    return strike(t, dt, 0.28)
+  }
+}
+
+// ------------------------------------------------------------------------------------------------- 2: grab and turn
+
+/**
+ * A clawed hand clamps your shoulder from behind; the view is wrenched round 180° (motion blur) and shoved back, to
+ * the whole creature standing over you, stooped under the ceiling. A held beat, then it lowers its skull to you.
+ */
+function spin(s: Scene) {
+  const c = s.c
+  const fwd = s.fwd
+  const right = s.right
+  const rig = s.w.rig!
+  const bi = (n: string) => rig.bones.indexOf(rig.byName.get(n)!)
+  const back = fwd.clone().negate()
+  const behind = Math.max(1.2, Math.min(1.5, room(s, s.eye0, back, 1.5) - 0.3))
+  s.w.animator!.snapStance("biped")
+  s.w.root.position.copy(s.eye0).addScaledVector(back, behind)
+  s.w.root.position.y = c.ground
+  // It is shoved back along the original forward (away from the creature, which is behind).
+  const shove = Math.max(0.6, Math.min(1.5, room(s, s.eye0, fwd, 2) - 0.5))
+  const vel = new THREE.Vector3()
+  for (let i = 0; i < 40; i++) drive(s, 1 / 30, "idle", "biped", vel)
+  const grip = new THREE.Vector3()
+  const pole = new THREE.Vector3()
+  // The arm on the player's right side.
+  const arm = (() => {
+    const pL = rig.byName.get("uarmL")!.getWorldPosition(new THREE.Vector3())
+    const pR = rig.byName.get("uarmR")!.getWorldPosition(new THREE.Vector3())
+    return pL.dot(right) > pR.dot(right) ? "L" : "R"
+  })()
+  const yaw0 = s.yaw0
+  let screamed = false
+  const strike = striker(s, () => "biped")
+  const chat = chatterer(s)
+  return (t: number, dt: number) => {
+    // 0–0.3 s: the hand comes over the shoulder and clamps. 0.3–0.72: wrenched round and shoved back. 0.72–1.5: it
+    // stands over you. 1.5: it lowers its skull (scream) and strikes.
+    const kg = smooth(0, 0.3, t)
+    const ks = smooth(0.32, 0.72, t)
+    s.eye.copy(s.eye0).addScaledVector(fwd, shove * ks)
+    s.eye.y -= 0.18 * ks
+    if (t < 1.5) {
+      s.yaw = yaw0 + Math.PI * ks
+      s.pitch = s.pitch0 - 0.12 * kg * (1 - ks) + 0.1 * ks
+      s.roll = Math.sin(Math.PI * ks) * 0.25
+      // Motion blur through the turn.
+      if (c.canvas) {
+        const spd = t > 0.32 && t < 0.72 ? Math.sin(Math.PI * ((t - 0.32) / 0.4)) : 0
+        c.canvas.style.filter = spd > 0.02 ? `blur(${(spd * 7).toFixed(1)}px)` : ""
+      }
+      drive(s, dt, t < 0.75 ? "idle" : "rear", "biped", vel, smooth(0.6, 0.9, t), t > 0.8 ? chat(t, dt, 0.4 + 0.6 * smooth(0.8, 1.5, t), 7) : 0)
+      if (t < 0.6) {
+        // Its hand on the shoulder (the eye's right, a touch forward and down), claws round it.
+        grip.copy(s.eye).addScaledVector(right, 0.32 * (1 - ks) + 0.0).addScaledVector(fwd, 0.08 - 0.25 * (1 - kg)).add(_v.set(0, -0.24, 0))
+        grip.addScaledVector(back, 0.5 * (1 - kg))
+        pole.copy(right).add(_v.set(0, -0.8, 0))
+        twoBoneIK(rig, bi(`uarm${arm}`), bi(`farm${arm}`), grip, pole)
+        aimBone(rig, bi(`hand${arm}`), _v.copy(fwd).add(_v2.set(0, -0.8, 0)).normalize())
+        rig.root.updateMatrixWorld(true)
+      }
+      if (t > 0.72) frameBody(s, 0.08, 0.55)
+      s.shake = t > 0.28 && t < 0.4 ? 2.5 : t < 0.72 ? 1 : 0.3
+      s.finish(t, t > 0.72 ? 0.8 : 0, t < 0.32 ? "grab" : t < 0.72 ? "turn" : "loom", false, t > 0.5 ? 1 : 0.4)
+      return false
+    }
+    if (c.canvas) c.canvas.style.filter = ""
+    if (!screamed) {
+      screamed = true
+      c.scream()
+    }
+    return strike(t, dt, 0.36)
   }
 }

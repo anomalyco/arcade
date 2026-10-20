@@ -26,6 +26,8 @@ export type LampRuntime = {
   vis: number
   /** Where the lamp's light may land (interior/exterior, storey heights). */
   mask: { mode: 0 | 1 | 2; y0: number; y1: number }
+  /** Scratch for the post chain's fog-light ranking (set and read within one frame). */
+  scatterScore: number
 }
 
 /** Distance (m) at which `flash.reach` sets the adapted floor of the flashlight beam's centre (lighting.ts). */

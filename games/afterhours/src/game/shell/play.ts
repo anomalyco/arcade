@@ -93,7 +93,7 @@ export function createPlayShell(canvas: HTMLCanvasElement, hud: HTMLElement) {
     },
   })
   const title = createTitleCard(document.body)
-  title.el.addEventListener("click", () => title.skip())
+  title.el.addEventListener("click", (e) => title.skip(e))
   const locked = () => document.pointerLockElement === canvas
   /**
    * Input reaches the controller in active play, and in the intro (its cutscene stands in for `player.update` and reads
@@ -126,7 +126,7 @@ export function createPlayShell(canvas: HTMLCanvasElement, hud: HTMLElement) {
         return
       }
       if (flow.phase === "title") {
-        if ((e.code === "Space" || e.code === "Enter" || e.code === "Escape") && !e.repeat) title.skip()
+        if ((e.code === "Space" || e.code === "Enter" || e.code === "Escape") && !e.repeat) title.skip(e)
         e.preventDefault()
         e.stopImmediatePropagation()
         return
@@ -154,6 +154,8 @@ export function createPlayShell(canvas: HTMLCanvasElement, hud: HTMLElement) {
   })
 
   function play() {
+    // One press starts one run: a second click while it starts (or queued behind a busy frame) is ignored.
+    if (flow.phase !== "menu") return
     if (!worldReady || !world) {
       pendingPlay = true
       menu.setWaiting(true)
@@ -206,6 +208,13 @@ export function createPlayShell(canvas: HTMLCanvasElement, hud: HTMLElement) {
     r.signal.addEventListener("abort", () => skip?.abort())
     flow.set("title")
     await title.play(skip.signal)
+    if (r.signal.aborted) return
+    // The intro's car normally finished loading under the menu; if not, say so on the black instead of a dead screen.
+    const prep = prepareIntro(w).catch(() => {})
+    const slow = setTimeout(() => title.waiting(true), 250)
+    await prep
+    clearTimeout(slow)
+    title.waiting(false)
     if (r.signal.aborted) return
     flow.set("intro")
     w.ctx.settings["body.show"] = true

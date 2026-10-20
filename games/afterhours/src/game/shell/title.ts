@@ -25,6 +25,8 @@ export function createTitleCard(root: HTMLElement) {
   const text = el.firstElementChild as HTMLDivElement
   const skipHint = el.lastElementChild as HTMLDivElement
   skipHint.textContent = TITLE_CARD.skip
+  /** Clicks and keys before this (performance.now) are the press that started the card, not a skip. */
+  let skippableAt = 0
   /** Aborts the step under way: the typing (completes the text), then the dwell and dim (continues). */
   let step: AbortController | null = null
 
@@ -49,11 +51,18 @@ export function createTitleCard(root: HTMLElement) {
   return {
     el,
     /** First call completes the typing; the next continues into the intro. */
-    skip() {
+    skip(e?: Event) {
+      if ((e?.timeStamp ?? performance.now()) < skippableAt) return
       step?.abort()
+    },
+    /** After the prelude: a quiet "Loading…" where the skip hint was, while the intro still loads. */
+    waiting(on: boolean) {
+      skipHint.textContent = on ? TITLE_CARD.loading : TITLE_CARD.skip
+      skipHint.classList.toggle("on", on)
     },
     /** Types the prelude, holds, dims; resolves at the end, after a second skip, or when `signal` aborts (quit). */
     async play(signal: AbortSignal) {
+      skippableAt = performance.now() + TITLE_CARD.skipGuard * 1000
       el.classList.remove("out")
       el.classList.add("on")
       skipHint.classList.remove("on")

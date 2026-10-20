@@ -40,13 +40,21 @@ let impulses: { room: AudioBuffer; out: AudioBuffer; noise: AudioBuffer } | null
  * (creating an AudioContext costs ~90 ms of main thread; it makes no sound until `unlockAudio` resumes it on input).
  */
 export function prepareAudio() {
-  if (!impulses) makeImpulses()
   createContext()
 }
 
-function makeImpulses() {
+/** The live context, running or not (decoding works in a suspended one); null before `prepareAudio`/unlock. */
+export function audioContext(): AudioContext | null {
+  return shared?.ctx ?? null
+}
+
+/**
+ * The reverb impulses and the noise buffer, generated at the context's own rate: a ConvolverNode only takes a buffer at
+ * the context's rate (a 48 kHz impulse on a 44.1 kHz device throws and takes the whole mix down with it), and a buffer
+ * at another rate plays through a cheap linear resampler.
+ */
+function makeImpulses(rate: number) {
   if (typeof AudioBuffer === "undefined") return
-  const rate = 48000
   const noise = new AudioBuffer({ numberOfChannels: 1, length: rate * 2, sampleRate: rate })
   const d = noise.getChannelData(0)
   for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1
@@ -84,7 +92,7 @@ function createContext() {
     master.connect(limiter).connect(ctx.destination)
     const world = ctx.createGain()
     world.connect(master)
-    if (!impulses) makeImpulses()
+    if (!impulses || impulses.noise.sampleRate !== ctx.sampleRate) makeImpulses(ctx.sampleRate)
     const { noise, room: roomIr, out: outIr } = impulses!
     const room = ctx.createConvolver()
     room.buffer = roomIr

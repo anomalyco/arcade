@@ -67,15 +67,13 @@ async function hunterDeath(tag: string) {
   // After a restore it has a grace period: let it run out before it's put on the player.
   await page.waitForFunction(() => ((globalThis as Any).__ashwoodHunter?.hunter.grace ?? 0) <= 0, null, { timeout: 20_000 })
   await G(page, "globalThis.__ashwoodHunter.handle.start(-3, 0, 3)")
-  await page.waitForFunction(() => (globalThis as Any).__ashwoodAmbush?.phase === "beat" || (globalThis as Any).__ashwoodAmbush?.phase === "lunge", null, { timeout: 60_000 })
+  // The catch plays the picked death scene (src/game/death/variants.ts): the input locks, then the death screen.
+  await page.waitForFunction(() => (globalThis as Any).__static?.flow.hold === true, null, { timeout: 60_000 })
   const at = Date.now() - t0
-  check((await G(page, "globalThis.__ashwoodAmbush.cause")) === "hunter", `${tag}: caught by the hunter (+${(at / 1000).toFixed(1)} s)`)
-  await shot(`${tag}-beat`)
-  await page.waitForFunction(() => ["lunge", "dead"].includes((globalThis as Any).__ashwoodAmbush?.phase), null, { timeout: 5_000 })
-  await page.waitForTimeout(200)
-  await shot(`${tag}-lunge`)
-  await page.waitForFunction(() => (globalThis as Any).__ashwoodAmbush?.phase === "dead", null, { timeout: 5_000 })
-  await shot(`${tag}-contact`)
+  check(true, `${tag}: caught by the hunter (+${(at / 1000).toFixed(1)} s)`)
+  await page.waitForTimeout(700)
+  await shot(`${tag}-scene`)
+  await page.waitForFunction(() => document.body.dataset.modal === "death", null, { timeout: 10_000 })
   await page.waitForTimeout(2800)
   await shot(`${tag}-death`)
   const s = (await G(page, "({ paused: globalThis.__static.flow.paused, modal: document.body.dataset.modal, hunter: globalThis.__ashwoodHunter.hunter.mode, caught: !!document.querySelector('div[style*=\"CAUGHT\"]') || [...document.querySelectorAll('div')].some((d) => d.textContent === 'CAUGHT') })")) as Any

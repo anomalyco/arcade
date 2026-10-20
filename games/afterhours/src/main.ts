@@ -41,13 +41,20 @@ const hud = document.querySelector<HTMLDivElement>("#hud")!
 // The play shell mounts its home screen before the boot overlay goes, so the page never flashes empty.
 const shell = debug ? null : createPlayShell(canvas, hud)
 const loader = createLoader(shot || !debug)
+let deviceLost = false
 
 const world = await bootWorld(canvas, params, {
   errors: status.errors,
-  onStep: shell ? (label, f) => shell.progress(label, f * 0.15) : loader.step,
-  ...(shell ? { view: "lot" as const } : {}),
+  onStep: (label, f) => !deviceLost && (shell ? shell.progress(label, f * 0.15) : loader.step(label, f)),
+  onDeviceLost: (message) => {
+    deviceLost = true
+    if (shell) shell.fail(message)
+    else loader.fail(message)
+  },
+  ...(shell ? { view: "lot" as const, warmIntro: true } : {}),
 }).catch((e: unknown) => {
   shell?.fail("")
+  loader.fail(`Couldn't start: ${e instanceof Error ? e.message : e}`)
   throw e
 })
 const { renderer, camera, player } = world
@@ -120,6 +127,8 @@ renderer.setAnimationLoop((now: number) => {
 })
 
 const reveal = () => {
+  // A lost GPU device keeps its error message up instead of revealing a dead canvas.
+  if (deviceLost) return
   loader.done()
   shell?.ready()
   status.complete = true
@@ -148,19 +157,24 @@ if (debug && !shot) {
     if (ch) setTimeout(() => void chapters.jumpToChapter(ch, player, heightAt), 2500)
   }
 }
-await world.stream({
-  onProgress: (stage, f) => (shell ? shell.progress(stage, 0.15 + 0.85 * f) : loader.progress(stage, f)),
-  // Created once every module has added its controls (debug only).
-  onBuilt: () => {
-    if (debug) new LabPanel(world.ctx.settings, world.ctx.controls, params, () => player.release(), { open: false, presets: false })
-  },
-})
+// A failure inside the warm-up is logged and the world is revealed with what it has, never left on the loading screen.
+await world
+  .stream({
+    onProgress: (stage, f) => !deviceLost && (shell ? shell.progress(stage, 0.15 + 0.85 * f) : loader.progress(stage, f)),
+    // Created once every module has added its controls (debug only).
+    onBuilt: () => {
+      if (debug) new LabPanel(world.ctx.settings, world.ctx.controls, params, () => player.release(), { open: false, presets: false })
+    },
+  })
+  .catch((e: unknown) => status.errors.push(`world warm-up: ${e instanceof Error ? (e.stack ?? e.message) : e}`))
 // `?intro` (debug): the opening cutscene straight after boot (src/game/intro), its car warmed behind the loader.
 // Debug: the hunter (src/game/hunter), dormant until the 3-08 transmitter is switched off; `?hunter` starts it now.
 if (debug && !shot) hunter = (await import("./game/hunter")).installHunter(world, { start: params.get("hunter"), debug: params.has("hunterDebug") })
 const intro = params.has("intro") ? await import("./game/intro") : null
 if (intro) await intro.prepareIntro(world)
-if (shell) shell.progress("settling", 1)
-else loader.progress("settling", 1)
+if (!deviceLost) {
+  if (shell) shell.progress("settling", 1)
+  else loader.progress("settling", 1)
+}
 settle = SETTLE_FRAMES
 if (intro) void intro.runIntro({ world, startAt: Number(params.get("introAt") ?? 0) })

@@ -173,6 +173,9 @@ export function bakeCreature(bones: BoneDef[], parts: PartSpec[], log: (s: strin
       const horn = (tagW[Tag.Horn]! + tagW[Tag.Tooth]! * 0.25) / ts
       A.push(u8(ao), u8(curv), u8(bone), u8(horn))
       const paint = part.paint ? part.paint([x, y, z], n) : [0, 0, 0]
+      // Teeth stay ivory: only a little of the mouth's blood on them.
+      const toothW = tagW[Tag.Tooth]! / ts
+      paint[1] = paint[1]! * (1 - 0.8 * toothW)
       Bt.push(u8(paint[0]!), u8(paint[1]!), u8(part.dangle ? part.dangle([x, y, z]) : dgW > 0 ? dg / dgW : 0), u8(thin))
     }
     // Smooth weights over the mesh (2 passes) so joints bend softly.

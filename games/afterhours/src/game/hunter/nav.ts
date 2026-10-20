@@ -593,19 +593,36 @@ export class NavGraph {
       }
       if (++expanded > 60000) break
       const gc = gs[c]!
-      this.neighbours(g, c, (n, cost) => {
-        if (closed[n] === gen) return
+      // The 8 neighbours inline (no closure per expanded cell); diagonals only past two open orthogonals.
+      const wk = g.walk
+      const ci = c % NX
+      const L = ci > 0 && wk[c - 1] === 1
+      const Rt = ci < NX - 1 && wk[c + 1] === 1
+      const U = c >= NX && wk[c - NX] === 1
+      const D = c < N - NX && wk[c + NX] === 1
+      for (let k = 0; k < 8; k++) {
+        let n: number
+        let cost = 1
+        if (k === 0) n = L ? c - 1 : -1
+        else if (k === 1) n = Rt ? c + 1 : -1
+        else if (k === 2) n = U ? c - NX : -1
+        else if (k === 3) n = D ? c + NX : -1
+        else {
+          cost = Math.SQRT2
+          n = k === 4 ? (L && U ? c - NX - 1 : -1) : k === 5 ? (Rt && U ? c - NX + 1 : -1) : k === 6 ? (L && D ? c + NX - 1 : -1) : Rt && D ? c + NX + 1 : -1
+          if (n >= 0 && wk[n] !== 1) n = -1
+        }
+        if (n < 0 || closed[n] === gen) continue
         // Keep off walls and furniture: cells right next to them cost more.
         const cl = g.clear[n]!
-        const w = cost * (cl <= 1 ? 1.6 : cl === 2 ? 1.15 : 1)
-        const ng = gc + w
+        const ng = gc + cost * (cl <= 1 ? 1.6 : cl === 2 ? 1.15 : 1)
         if (seen[n] !== gen || ng < gs[n]!) {
           seen[n] = gen
           gs[n] = ng
           par[n] = c
           push(n, ng + h(n))
         }
-      })
+      }
     }
     if (!found) return null
     const cells: number[] = []
@@ -683,26 +700,26 @@ export class NavGraph {
   }
 }
 
-/** Segment (origin o, delta d, t ∈ (0.02, 0.98)) vs box. */
+/** Segment (origin o, delta d, t ∈ (0.02, 0.98)) vs box. No allocation (it runs per collider per ray). */
+const SLAB = { t0: 0, t1: 1 }
 function segBox(ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, b: Box) {
-  let t0 = 0
-  let t1 = 1
-  const o = [ox, oy, oz]
-  const d = [dx, dy, dz]
-  for (let i = 0; i < 3; i++) {
-    const di = d[i]!
-    const lo = b.min[i]!
-    const hi = b.max[i]!
-    if (Math.abs(di) < 1e-9) {
-      if (o[i]! < lo || o[i]! > hi) return false
-      continue
-    }
-    let a = (lo - o[i]!) / di
-    let c = (hi - o[i]!) / di
-    if (a > c) [a, c] = [c, a]
-    t0 = Math.max(t0, a)
-    t1 = Math.min(t1, c)
-    if (t0 > t1) return false
+  const r = SLAB
+  r.t0 = 0
+  r.t1 = 1
+  if (!slabAxis(ox, dx, b.min[0], b.max[0], r) || !slabAxis(oy, dy, b.min[1], b.max[1], r) || !slabAxis(oz, dz, b.min[2], b.max[2], r)) return false
+  return r.t0 > 0.02 && r.t1 < 0.98
+}
+
+function slabAxis(o: number, d: number, lo: number, hi: number, r: { t0: number; t1: number }) {
+  if (Math.abs(d) < 1e-9) return o >= lo && o <= hi
+  let a = (lo - o) / d
+  let c = (hi - o) / d
+  if (a > c) {
+    const t = a
+    a = c
+    c = t
   }
-  return t0 > 0.02 && t1 < 0.98
+  if (a > r.t0) r.t0 = a
+  if (c < r.t1) r.t1 = c
+  return r.t0 <= r.t1
 }

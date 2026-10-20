@@ -23,22 +23,28 @@ const TYPES: Record<string, string> = {
   ".ktx2": "image/ktx2",
   ".glb": "model/gltf-binary",
   ".bin": "application/octet-stream",
+  ".mp3": "audio/mpeg",
+  ".ogg": "audio/ogg",
+  ".webp": "image/webp",
+  ".svg": "image/svg+xml",
+  ".woff2": "font/woff2",
 }
 
 /** Serves `dir` with COOP/COEP so the page is cross-origin isolated (5 µs performance.now, SharedArrayBuffer). */
-export function serve(dir: string, port: number) {
+export function serve(dir: string, port: number, opts: { prefix?: string; isolate?: boolean } = {}) {
+  const isolate = opts.isolate ?? true
   return Bun.serve({
     port,
     fetch(req) {
       let p = decodeURIComponent(new URL(req.url).pathname)
+      if (opts.prefix && p.startsWith(opts.prefix)) p = p.slice(opts.prefix.length - 1)
       if (p.endsWith("/")) p += "index.html"
       const f = join(dir, p)
       if (!existsSync(f) || statSync(f).isDirectory()) return new Response("404", { status: 404 })
       return new Response(Bun.file(f), {
         headers: {
           "content-type": TYPES[extname(f)] ?? "application/octet-stream",
-          "cross-origin-opener-policy": "same-origin",
-          "cross-origin-embedder-policy": "require-corp",
+          ...(isolate ? { "cross-origin-opener-policy": "same-origin", "cross-origin-embedder-policy": "require-corp" } : {}),
           "cache-control": "no-store",
         },
       })
@@ -65,6 +71,7 @@ export async function launch(): Promise<Browser> {
       "--enable-features=Vulkan",
       "--enable-webgpu-developer-features",
       "--js-flags=--expose-gc",
+      "--enable-precise-memory-info",
     ],
   })
 }
@@ -76,4 +83,24 @@ export const median = (xs: number[]) => {
 export const pct = (xs: number[], p: number) => {
   const v = xs.filter(Number.isFinite).sort((a, b) => a - b)
   return v.length ? v[Math.min(v.length - 1, Math.floor(v.length * p))]! : NaN
+}
+
+/** Maps bundle positions (chunk file name, 0-based line/column) back to `src/…:line` via the build's source maps. */
+export async function sourceResolver(buildDir: string) {
+  const { SourceMapConsumer } = (await import("source-map-js")) as unknown as { SourceMapConsumer: new (m: unknown) => { originalPositionFor(p: { line: number; column: number }): { source: string | null; line: number | null; name: string | null } } }
+  const cache = new Map<string, InstanceType<typeof SourceMapConsumer> | null>()
+  return (file: string, line: number, column: number) => {
+    if (!file.endsWith(".js")) return null
+    let c = cache.get(file)
+    if (c === undefined) {
+      const f = join(buildDir, "assets", `${file}.map`)
+      c = existsSync(f) ? new SourceMapConsumer(JSON.parse(require("node:fs").readFileSync(f, "utf8"))) : null
+      cache.set(file, c)
+    }
+    if (!c) return null
+    const p = c.originalPositionFor({ line: line + 1, column: Math.max(0, column) })
+    if (!p.source) return null
+    const src = p.source.replace(/^.*?(src\/|node_modules\/)/, (_m, a) => (a === "src/" ? "src/" : "")).replace(/^\.\.\//g, "")
+    return `${src}:${p.line}`
+  }
 }

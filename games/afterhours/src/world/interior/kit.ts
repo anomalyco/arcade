@@ -25,6 +25,7 @@ import type { Lamp, WorldContext } from "../context"
 import { BUILDING } from "../layout"
 import { material, materialFor, type MaterialName } from "../../render/materials"
 import { exitSignMaterial } from "../../render/signs"
+import { releaseAfterUpload } from "../../render/release"
 import {
   DOCUMENTS,
   type DocumentId,
@@ -1827,6 +1828,7 @@ export class Builder {
       mesh.receiveShadow = true
       mesh.matrixAutoUpdate = false
       this.group.add(mesh)
+      releaseAfterUpload(this.ctx, g)
     }
     this.parts.clear()
     parent.add(this.group)
@@ -2190,7 +2192,9 @@ export function door(b: Builder, x: number, z: number, o: DoorOpts): string[] {
     leaf.name = ids[i]!
     for (const m of tpl) {
       const c = (m as THREE.Mesh).clone()
-      c.matrixAutoUpdate = true
+      // Fixed in the leaf's frame (the door system turns the leaf group, which carries its children's world matrices).
+      c.matrixAutoUpdate = false
+      c.updateMatrix()
       leaf.add(c)
     }
     leaf.rotation.y = o.rot + (mirror ? Math.PI : 0)

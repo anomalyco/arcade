@@ -123,6 +123,11 @@ export class GameAudio {
     this.sfx.play("int-paper", { bus: "doors", gain: 0.7 })
   }
 
+  /** Automation: the live context (null before unlock). */
+  get audioContext(): AudioContext | null {
+    return audio()?.ctx ?? null
+  }
+
   /** Automation: a MediaStream of the final mix (for recording a walk). */
   tap(): MediaStream | null {
     const a = audio()

@@ -63,7 +63,8 @@ export function createBanshee(opts: BansheeOpts = {}): Banshee {
   }
   const url = opts.url ?? `${import.meta.env.BASE_URL}models/monsters/banshee.bin`
   out.ready = (async () => {
-    const data = await loadCreatureData(url, async () => (await import("./build")).generateBanshee())
+    const data = await loadCreatureData(url)
+    if (!data) return
     const mats = [createCreatureMaterial(SKIN, { sss: 2 }), createCreatureMaterial(HAIR, { fibreFreq: 170 }), createCreatureMaterial(SHROUD, { fibreFreq: 90, sss: 4 })]
     // Cloth is a single shell: render both sides.
     mats[2]!.material.side = THREE.DoubleSide

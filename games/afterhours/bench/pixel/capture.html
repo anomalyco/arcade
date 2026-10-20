@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>pixel capture</title>
+    <style>html, body { margin: 0; height: 100%; background: #000; overflow: hidden; } #view { width: 100%; height: 100%; display: block; }</style>
+    <script>
+      // Virtual clock for deterministic stills: real time until capture.ts sets __vclock.
+      globalThis.__vclock = null
+      const pn = performance.now.bind(performance)
+      performance.now = () => (globalThis.__vclock !== null ? globalThis.__vclock : pn())
+      const dn = Date.now
+      Date.now = () => (globalThis.__vclock !== null ? 1.7e12 + globalThis.__vclock : dn())
+    </script>
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <div id="hud"></div>
+    <div id="boot"><div class="boot-bar"><i></i></div><div class="boot-label"></div></div>
+    <script type="module" src="./capture.ts"></script>
+  </body>
+</html>

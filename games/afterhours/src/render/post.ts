@@ -821,6 +821,8 @@ export function createPost(ctx: WorldContext) {
   let indoor = 0
   const lastCamPos = new THREE.Vector3()
 
+  const byScatterScore = (a: LampRuntime, b: LampRuntime) =>
+    b.scatterScore - a.scatterScore || a.lamp.position[0] - b.lamp.position[0] || a.lamp.position[2] - b.lamp.position[2]
   const pushLight = (
     i: number,
     pos: THREE.Vector3,
@@ -967,9 +969,9 @@ export function createPost(ctx: WorldContext) {
       }
       // Ranked by nominal output (not the flicker level, which reshuffled the budget every frame and popped other lamps'
       // fog in and out), with a bonus for lamps already in the set so near-ties don't swap back and forth.
-      const score = (r: LampRuntime) =>
-        ((r.lamp.intensity * r.vis * r.sigma * r.transmittance) / Math.max(r.distance - r.lamp.range, 1)) * (scattering.has(r) ? 1.5 : 1)
-      candidates.sort((a, b) => score(b) - score(a) || a.lamp.position[0] - b.lamp.position[0] || a.lamp.position[2] - b.lamp.position[2])
+      for (const r of candidates)
+        r.scatterScore = ((r.lamp.intensity * r.vis * r.sigma * r.transmittance) / Math.max(r.distance - r.lamp.range, 1)) * (scattering.has(r) ? 1.5 : 1)
+      candidates.sort(byScatterScore)
       const strength = num(ctx, "scatter.strength")
       const budget = Math.min(MAX_SCATTER, Math.round(num(ctx, indoor > 0.5 ? "scatter.lightsIndoor" : "scatter.lights")))
       let count = 0

@@ -9,10 +9,11 @@ import { Player } from "../player"
 import { Doors } from "../world/doors"
 import { createGameBody } from "../playerb/game"
 import { renderState } from "../render/shared"
-import { nextFrame, yieldToMain } from "./schedule"
+import { STALL_MS, nextFrame, stalledFor, touch, untilStalled, yieldToMain } from "./schedule"
 import { createWarmup } from "./warmup"
+import { createEncounterLights } from "../game/encounters/lights"
 import { distanceTo } from "./priority"
-import { modelLoadsPending } from "./loads"
+import { modelLoadsInFlight, modelLoadsPending } from "./loads"
 import { MODELS as MODEL_LIBRARY, initModels, preloadModels, type ModelName } from "../render/models"
 
 // The world boot, shared by the game (src/main.ts) and the Look Lab. `bootWorld` builds only terrain plus the render rig
@@ -44,6 +45,31 @@ const BUILD_ORDER = ["interior", "facility", "forest", "roads", "compound", "log
 /** Relative boot cost per module (build + compile, measured), for the loading bar. */
 const STAGE_WEIGHT: Record<string, number> = { forest: 0.6, roads: 0.5, compound: 0.4, facility: 1.5, interior: 3, loggingRoad: 0.05, motorPool: 0.15 }
 const BODY_WEIGHT = 0.3
+/** One object per pipeline key: material × vertex layout × instancing/skinning × shadow flags. */
+function onePerPipeline(objects: THREE.Object3D[]) {
+  const variant = new Map<string, THREE.Object3D>()
+  for (const o of objects) {
+    const m = (o as THREE.Mesh).material
+    const g = (o as THREE.Mesh).geometry as THREE.BufferGeometry | undefined
+    const key = [
+      Array.isArray(m) ? m.map((x) => x.uuid).join() : m?.uuid,
+      g ? Object.keys(g.attributes).sort().join() + (g.index ? "i" : "") + Object.keys(g.morphAttributes).length : "",
+      (o as THREE.InstancedMesh).isInstancedMesh ? `inst${o.id}` : "",
+      (o as THREE.SkinnedMesh).isSkinnedMesh ? "skin" : "",
+      o.castShadow ? "cs" : "",
+      o.receiveShadow ? "rs" : "",
+    ].join("|")
+    if (!variant.has(key)) variant.set(key, o)
+  }
+  return [...variant.values()]
+}
+const _sphere = new THREE.Sphere()
+/** Same attachment layout as render/mirrors.ts's shared reflection target (render contexts are keyed by layout). */
+const _mirrorTarget = new THREE.RenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: true })
+/** Metres from a mirror within which objects are warmed for the reflection pass. */
+const MIRROR_REACH = 14
+/** Materials whose in-play builds cost hundreds of ms each (route-perf audit): always warmed behind the cover. */
+const HEAVY_MATERIALS = /^(interior_fluorescent_panel|mirror_glass)$/
 const MODELS_WEIGHT = 1
 
 export type BootOptions = {
@@ -55,6 +81,13 @@ export type BootOptions = {
   errors?: string[]
   /** Progress before the first frame (0..1). */
   onStep?: (label: string, fraction: number) => void
+  /**
+   * Warm what the Play button shows first behind the loading screen too: the intro car and the roadside figure
+   * (src/game/intro). The play shell sets it; it would otherwise load and compile them after the reveal.
+   */
+  warmIntro?: boolean
+  /** The GPU device was lost (driver reset, out of GPU memory): nothing more will draw, so say so instead of hanging. */
+  onDeviceLost?: (message: string) => void
 }
 
 export type StreamHooks = {
@@ -85,8 +118,18 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
   // Reversed-Z: float depth precision where it matters (far facades); `reversedDepth=0` is for A/B automation only.
   const renderer = new THREE.WebGPURenderer({ canvas, antialias: false, trackTimestamp: params.has("perf"), reversedDepthBuffer: params.get("reversedDepth") !== "0" } as ConstructorParameters<typeof THREE.WebGPURenderer>[0])
   performance.mark("gpu:init:start")
-  await renderer.init()
+  // Bounded: an adapter request that never answers is reported, not waited on forever.
+  await Promise.race([
+    renderer.init(),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("WebGPU did not start within 30 s")), 30_000)),
+  ])
   performance.mark("gpu:init:end")
+  const lost = (renderer as unknown as { onDeviceLost: (info: { api: string; message: string; reason?: string }) => void }).onDeviceLost
+  ;(renderer as unknown as { onDeviceLost: (info: { api: string; message: string; reason?: string }) => void }).onDeviceLost = function (info) {
+    lost.call(this, info)
+    fail(`GPU device lost: ${info.reason ?? ""} ${info.message}`.trim())
+    options.onDeviceLost?.(`The graphics device was lost${info.reason ? ` (${info.reason})` : ""}. Reload the page to try again.`)
+  }
   if (!(renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend) fail("WebGPU unavailable: running on the WebGL fallback")
   // Every prop/vehicle GLB starts downloading and transcoding now, overlapping the terrain build and shader compiles,
   // instead of when each builder first asks (the interior's furniture otherwise arrives seconds into the boot).
@@ -139,7 +182,15 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
       if (m instanceof Error || !m || typeof (m as WorldBuilder).build !== "function") throw m
       const root = FIRST_FRAME.has(name) ? scene : new THREE.Group()
       root.name ||= name
-      const mod = await (m as WorldBuilder).build({ ...ctx, scene: root as THREE.Scene })
+      let buildError: unknown = null
+      const mod = await untilStalled(
+        Promise.resolve((m as WorldBuilder).build({ ...ctx, scene: root as THREE.Scene })),
+        undefined,
+        () => fail(`${name}: build made no progress for ${STALL_MS / 1000} s; continuing without waiting for it`),
+        STALL_MS,
+        (e) => (buildError = e ?? new Error("build failed")),
+      )
+      if (buildError) throw buildError
       if (mod?.update) updates.push(mod.update)
       if (root !== scene) staged = { name, root, update: mod?.update }
     } catch (e) {
@@ -167,7 +218,9 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
   const lighting = createLighting(ctx, player)
   const post = createPost(ctx)
   // `bootSlice` (ms, automation/A-B only): compile time allowed per frame while streaming.
+  createEncounterLights(scene) // encounter/death lights, dark, before the warm-up (adding lights later rebuilds lit materials)
   const warmup = createWarmup(renderer, scene, camera, Number(params.get("bootSlice") ?? 8))
+  ;(globalThis as { __afterhoursDebug?: Record<string, unknown> }).__afterhoursDebug!.warmup = warmup
   // Dynamic resolution would read capped/hitchy streaming frames as slow ones; paused until the world is in.
   post.setBooting(true)
   const view = options.view ?? ((params.get("view") ?? "road") as ViewpointName)
@@ -176,7 +229,7 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
   performance.mark("rig:end")
 
   step("textures", 0.85)
-  await materials
+  await untilStalled(materials, undefined, () => fail(`textures: no progress for ${STALL_MS / 1000} s; continuing`))
   step("compiling", 0.95)
 
   let streaming = true
@@ -185,12 +238,38 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
   const _wp = new THREE.Vector3()
   let background: Promise<void> = Promise.resolve()
   /** One frame: module updates, atmosphere, lighting and the post chain. Player input/movement is the caller's. */
+  let shadowWarm: (() => void) | null = null
   const render = (dt: number, time: number) =>
     warmup.frame(() => {
       for (const u of updates) u(dt, time, camera)
       atmosphere.update(dt, time)
       lighting.update(dt, time)
-      post.render()
+      const done = shadowWarm
+      if (!done) return post.render()
+      shadowWarm = null
+      const culled: THREE.Object3D[] = []
+      type Caster = THREE.Light & { shadow?: THREE.LightShadow }
+      const lights: Caster[] = []
+      scene.traverseVisible((o) => {
+        if (o.castShadow && o.frustumCulled && (o as THREE.Mesh).isMesh) {
+          o.frustumCulled = false
+          culled.push(o)
+        }
+        const l = o as Caster
+        if (l.isLight && l.castShadow && l.shadow) {
+          l.shadow.needsUpdate = true
+          lights.push(l)
+        }
+      })
+      try {
+        post.render()
+      } finally {
+        for (const o of culled) o.frustumCulled = true
+        // Redraw the maps with normal culling next frame (same content; keeps the usual path the last one run).
+        for (const l of lights) l.shadow!.needsUpdate = true
+        performance.mark(`boot:shadow-casters:${culled.length}:lights:${lights.length}`)
+        done()
+      }
     })
 
   /**
@@ -216,6 +295,7 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
     let progressed = 0
     let stage = ""
     const advance = (w: number, next?: string) => {
+      touch()
       progressed += w
       if (next) stage = next
       hooks.onProgress?.(stage, Math.min(1, progressed / total))
@@ -242,8 +322,7 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
       performance.mark(`queue:${s.name}:${Math.round(distanceTo(s.root, eye))}m`)
       performance.mark(`mod:${s.name}:compile:start`)
       warming.push(
-        warmup
-          .warm(s.root, { visibleOnly: true })
+        untilStalled(warmup.warm(s.root, { visibleOnly: true }), [] as THREE.Object3D[], () => fail(`${s.name} warm-up: no progress for ${STALL_MS / 1000} s; showing it anyway`))
           .then((later) => void deferred.push(...later))
           .catch((e) => fail(`${s.name} warm-up: ${e instanceof Error ? e.message : e}`))
           .then(() => {
@@ -258,11 +337,12 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
     }
     advance(0, "compiling shaders")
     await Promise.all(warming)
+    const stall = (what: string) => () => fail(`${what}: no progress for ${STALL_MS / 1000} s; continuing`)
     hooks.onBuilt?.()
     // The player character (model + animation library) and its torch.
     advance(0, "character")
-    await gameBody.body.ready.catch(() => {})
-    await warmup.warm(gameBody.body.root).catch(() => {})
+    await untilStalled(gameBody.body.ready, undefined, stall("player character"), STALL_MS, (e) => fail(`player character: ${e}`))
+    await untilStalled(warmup.warm(gameBody.body.root), [], stall("player character warm-up"))
     performance.mark("body:warm")
     advance(BODY_WEIGHT, "props and furniture")
     // Models still downloading, and builders' own follow-up work (the interior bakes its furniture after build),
@@ -271,7 +351,12 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
     const QUIET_MS = 250
     let modelsIn = false
     for (;;) {
-      await warmup.idle()
+      await untilStalled(warmup.idle(), undefined, () => {})
+      // Bounded: a GLB that stalls mid-download (or whose textures never transcode) is logged and left behind.
+      if (stalledFor() > STALL_MS) {
+        fail(`models: no progress for ${STALL_MS / 1000} s with ${modelLoadsPending()} still loading (${modelLoadsInFlight().slice(0, 4).join(", ")}); continuing`)
+        break
+      }
       if (!modelsIn && modelLoadsPending() === 0) {
         modelsIn = true
         performance.mark("boot:models-in")
@@ -295,29 +380,78 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
     })
     // `entryWarm=0` (automation/A-B only) leaves it all to the background warm-up, as before.
     if (near.length && params.get("entryWarm") === "0") near.length = 0
-    // One per pipeline key: material × vertex layout × instancing/skinning × shadow flags.
-    const variant = new Map<string, THREE.Object3D>()
-    for (const o of near) {
-      const m = (o as THREE.Mesh).material
-      const g = (o as THREE.Mesh).geometry as THREE.BufferGeometry | undefined
-      const key = [
-        Array.isArray(m) ? m.map((x) => x.uuid).join() : m?.uuid,
-        g ? Object.keys(g.attributes).sort().join() + (g.index ? "i" : "") + Object.keys(g.morphAttributes).length : "",
-        (o as THREE.InstancedMesh).isInstancedMesh ? "inst" : "",
-        (o as THREE.SkinnedMesh).isSkinnedMesh ? "skin" : "",
-        o.castShadow ? "cs" : "",
-        o.receiveShadow ? "rs" : "",
-      ].join("|")
-      if (!variant.has(key)) variant.set(key, o)
-    }
-    near.splice(0, near.length, ...variant.values())
+    near.splice(0, near.length, ...onePerPipeline(near))
     if (near.length) {
       const keep = new Set(near)
       deferred.splice(0, deferred.length, ...deferred.filter((o) => !keep.has(o)))
       warmup.uploadGeometry(near)
-      await warmup.warmObjects(near)
+      await untilStalled(warmup.warmObjects(near), undefined, stall("entry warm-up"))
     }
     performance.mark(`boot:entry-warm:${near.length}`)
+    // Materials measured as the costliest to build in play frames (hundreds of ms each, and the fluorescent panels and
+    // mirrors come as many small instanced meshes, one build each): every object using them, not one per pipeline.
+    const heavy = deferred.filter((o) => {
+      const m = (o as THREE.Mesh).material
+      return (Array.isArray(m) ? m : [m]).some((x) => x && HEAVY_MATERIALS.test(x.name))
+    })
+    if (heavy.length) {
+      const keep = new Set(heavy)
+      deferred.splice(0, deferred.length, ...deferred.filter((o) => !keep.has(o)))
+      warmup.uploadGeometry(heavy)
+      await untilStalled(warmup.warmObjects(heavy), undefined, stall("heavy materials"))
+    }
+    performance.mark(`boot:heavy-warm:${heavy.length}`)
+    // Planar mirrors (render/mirrors.ts) re-render the scene into their own half-float target with no MRT, from the top
+    // level: everything they can reflect built its shader for that pass in a play frame (the washroom fluorescent panels
+    // ~70 ms each). Warm what lies within reach of each mirror for that pass: one object per pipeline (static meshes; the
+    // player's skinned body is left to its first reflection).
+    const mirrors: THREE.Object3D[] = []
+    scene.traverse((o) => {
+      const m = (o as THREE.Mesh).material as THREE.Material | undefined
+      if ((o as THREE.Mesh).isMesh && m && !Array.isArray(m) && m.name === "mirror_glass") mirrors.push(o)
+    })
+    if (mirrors.length) {
+      const at = mirrors.map((m) => m.getWorldPosition(new THREE.Vector3()))
+      const reflectable: THREE.Object3D[] = []
+      scene.traverse((o) => {
+        const d = o as THREE.Mesh
+        // Meshes only, and not materials with their own MRT outputs (the lamp glows, hidden from reflections): in a
+        // single-target pass those compile to an empty fragment output.
+        if (!d.isMesh || (d as unknown as THREE.SkinnedMesh).isSkinnedMesh || !d.material || mirrors.includes(o)) return
+        const mats = Array.isArray(d.material) ? d.material : [d.material]
+        if (mats.some((m) => (m as { mrtNode?: unknown }).mrtNode)) return
+        if (!d.frustumCulled) return reflectable.push(o)
+        const g = d.geometry
+        if (!g.boundingSphere) g.computeBoundingSphere()
+        _sphere.copy(g.boundingSphere!).applyMatrix4(o.matrixWorld)
+        if (at.some((p) => _sphere.distanceToPoint(p) < MIRROR_REACH)) reflectable.push(o)
+      })
+      const one = onePerPipeline(reflectable)
+      await untilStalled(
+        warmup.warmIn(one, { target: _mirrorTarget, mrt: null, depth: 0, layers: camera.layers.mask | (1 << 4) }),
+        undefined,
+        stall("mirror warm-up"),
+      )
+      performance.mark(`boot:mirror-warm:${one.length}`)
+    }
+    // What Play shows first (the intro car, its lenses and the roadside figure) warms here, not after the reveal.
+    if (options.warmIntro) {
+      advance(0, "intro")
+      await untilStalled(
+        import("../game/intro").then((m) => m.prepareIntro(api as unknown as Parameters<typeof m.prepareIntro>[0])),
+        undefined,
+        stall("intro car"),
+        STALL_MS,
+        (e) => fail(`intro car: ${e}`),
+      )
+      performance.mark("boot:intro-warm")
+    }
+    // Shadow-map variants: the warm-up compiles the main pass only, and every caster first drawn into a lamp's shadow
+    // map built its shadow shader in a play frame. One frame behind the cover renders every shadow map with all casters
+    // (frustum culling off), so their shadow pipelines exist before the reveal. The maps come out the same.
+    advance(0, "shadows")
+    await untilStalled(new Promise<void>((resolve) => (shadowWarm = resolve)), undefined, stall("shadow warm-up"))
+    performance.mark("boot:shadow-warm")
     warmup.setCovered(false)
     post.setBooting(false)
     streaming = false
@@ -328,19 +462,21 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
     performance.mark(`boot:deferred:${deferred.length}`)
     warmup.uploadGeometry(deferred)
     performance.mark("boot:geometry-uploaded")
-    background = (async () => {
-      await warmup.warmObjects(deferred)
+    // `background` resolves when this first pass is done; hidden objects builders add later (furniture bakes) keep
+    // warming in a separate loop as they arrive.
+    background = untilStalled(warmup.warmObjects(deferred), undefined, () => fail("background warm-up stalled")).then(() => {
       performance.mark("boot:background")
-      // Hidden objects builders add later (furniture bakes) keep warming in the background as they arrive.
-      for (;;) {
-        await new Promise((r) => setTimeout(r, 1000))
-        const more = warmup.takeHidden()
-        if (more.length) await warmup.warmObjects(more)
-      }
-    })()
+      void (async () => {
+        for (;;) {
+          await new Promise((r) => setTimeout(r, 1000))
+          const more = warmup.takeHidden()
+          if (more.length) await warmup.warmObjects(more).catch(() => {})
+        }
+      })()
+    })
   }
 
-  return {
+  const api = {
     ctx,
     renderer,
     scene,
@@ -369,4 +505,5 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
     render,
     stream,
   }
+  return api
 }

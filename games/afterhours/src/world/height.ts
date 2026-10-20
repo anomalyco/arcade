@@ -224,7 +224,7 @@ export function hillMask(road: number, compound: number) {
 
 /** Signed distance (metres) to the fenced compound plus the gate apron; negative inside. */
 export function compoundDistance(x: number, z: number) {
-  return Math.min(boxSdf(x, z, FENCE.min[0], FENCE.min[1], FENCE.max[0], FENCE.max[1]), boxSdf(x, z, ...GATE_APRON))
+  return Math.min(boxSdf(x, z, FENCE.min[0], FENCE.min[1], FENCE.max[0], FENCE.max[1]), boxSdf(x, z, GATE_APRON[0], GATE_APRON[1], GATE_APRON[2], GATE_APRON[3]))
 }
 
 function boxSdf(x: number, z: number, x0: number, z0: number, x1: number, z1: number) {

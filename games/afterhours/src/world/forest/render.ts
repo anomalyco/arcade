@@ -233,8 +233,9 @@ export class InstLayer {
   ) {
     this.a = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 4), 4)
     this.b = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 4), 4)
-    this.a.setUsage(THREE.DynamicDrawUsage)
-    this.b.setUsage(THREE.DynamicDrawUsage)
+    // Static usage on purpose: three's WebGPU renderer re-uploads every DynamicDrawUsage attribute in full on every
+    // draw that uses it (each frame, each pass), which was ~5 MB of writeBuffer per frame for the forest alone.
+    // `commit` bumps the version (with the live range) whenever the lists are rebuilt, which is all that's needed.
     for (const part of parts) {
       const g = new THREE.InstancedBufferGeometry()
       for (const [k, v] of Object.entries(part.geometry.attributes)) g.setAttribute(k, v)
@@ -247,6 +248,7 @@ export class InstLayer {
       mesh.name = part.name
       if (part.band) mesh.userData.forestBand = part.band
       mesh.frustumCulled = false
+      mesh.matrixAutoUpdate = false
       mesh.castShadow = part.castShadow ?? false
       mesh.receiveShadow = true
       // Before the ground, so its costly shader is depth-rejected wherever trees and plants cover it.

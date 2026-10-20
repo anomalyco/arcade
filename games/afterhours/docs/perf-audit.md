@@ -27,6 +27,110 @@ ratios and counts are stable. Every number below comes from a script in `games/a
   at 1× the game is GPU-bound, and merging/instancing fixes get most of the CPU win for a fraction of the effort.
   Not worth it now.
 
+## Play-time stutter and memory pass (2026-10-20)
+
+The rule for this pass: cut CPU, GPU and memory use without changing a pixel. Before and after are two frozen
+production builds (unminified, with source maps) of the **same snapshot** of the tree. The after build is that
+snapshot plus only this pass's files (`bench/pixel/mine.txt`) and uses the base build's static assets, so nobody
+else's in-flight work leaks into the comparison.
+
+Routes ran in the real play shell (`?play`, `&start=<chapter>`), one browser at a time, 1280×720, `--mute-audio`.
+Each route boots at 1× and is measured for 120 s at **4× CPU throttling** (`bench/route-perf.ts`). The walks drive
+the real controller with synthetic keys: W/Shift held, yaw steered to waypoints, E when stuck.
+
+### What was wrong
+
+1. **≈100 MB/s of buffer uploads, every frame, while standing still.** three r186's WebGPU renderer re-uploads
+   *every* `DynamicDrawUsage` attribute in full on every draw that uses it (`Attributes.update`: `usage ===
+   DynamicDrawUsage` → `updateAttribute`), on every pass, regardless of `needsUpdate`. After the first upload the
+   update ranges are cleared, so it's the whole capacity. The forest's shared instance buffers (`iA`/`iB`, 73
+   attributes, impostors 735 KB each) were Dynamic: ~4.6 MB of `writeBuffer` per frame, ~480 MB/s at 1×. That was
+   10% of main-thread time (`writeBuffer` self time) plus the copies in the GPU process. The lamp glow attributes
+   had the same problem.
+2. **~1 GB of ArrayBuffers held by JS** (`Runtime.getHeapUsage().backingStorageSize` ≈ 1000 MB, while the V8 heap
+   itself is ~80 MB). 711 MB of that is geometry kept on the CPU after upload, 633 MB of it the interior kit's
+   merged, non-indexed meshes (storey 3's painted surfaces alone are 1.5 M vertices × 5 attributes = 78 MB). A
+   heap snapshot (opening the inspector's memory tools) has to walk all of it, which plausibly explains the tester's
+   crash.
+3. Per-frame garbage in our own code: the fog transmittance slab test (`atmosphere.ts boxSpan`, 5.8 MB/s at 1×) and
+   the glow occlusion slab test (`lighting.ts segmentBlocked`, 5.1 MB/s) allocated two arrays per box per lamp. The
+   lamp flicker noise allocated a closure per call. The shadow pool allocated a `Set` and a sliced array, the fog
+   lamp ranking a comparator closure. `compoundDistance` spread an array into arguments for every terrain sample.
+   The body rebuilt `URLSearchParams` every frame while seated.
+4. ~300 clustered point lights, 57 forest meshes and every door-leaf mesh composed their local matrix every frame
+   (`matrixAutoUpdate`), though their transforms only change when a lamp moves or a door turns (the leaf group).
+
+### Fixes (all pixel-identical, see the proof below)
+
+| file | change |
+|---|---|
+| `world/forest/render.ts` | Instance attributes use the default static usage. `commit()` already bumps the version with the live range when the lists are rebuilt. Meshes are `matrixAutoUpdate = false`. |
+| `render/lighting.ts` | Glow attributes are static and re-uploaded only when a value actually changed (centres and directions almost never do), live range only. Point lights are `matrixAutoUpdate = false`, with `updateMatrix()` only when the lamp moves. Allocation-free slab test in `segmentBlocked`; a Smi grid key (no boxed double per probe); reused `Set`/array/comparators in the shadow pool; flicker noise without a per-call closure. |
+| `render/release.ts` (new), `world/interior/kit.ts` | `releaseAfterUpload`: once the renderer has created a merged kit mesh's GPU buffers, its attribute arrays are swapped for an empty one (`count` stays, bounds were computed at flush, nothing raycasts these meshes). This only happens in the game (no query string) or with `?releaseGeometry`; debug automation (hygiene, overlap, walks) keeps the vertex data. Door-leaf child meshes are `matrixAutoUpdate = false` (the door turns the leaf group). |
+| `render/atmosphere.ts` | Allocation-free slab test in `boxSpan` (same arithmetic, same order). |
+| `render/post.ts`, `render/shared.ts` | Fog-light ranking: scores computed once per lamp per frame into `scatterScore`, one hoisted comparator (same values, same order). |
+| `world/height.ts` | `compoundDistance` passes the apron box by index instead of a spread. |
+| `playerb/body.ts` | `introRig` read once, not per seated frame. |
+
+### Before → after, per route (4× CPU, 120 s)
+
+| route | frame median | p95 | p99 | frames > 50 ms | long tasks (count / total) | GC minor + major per min | GC ms | heap after GC, start → end | ArrayBuffers | draws (median / p95) | uploads |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| intro drive | 42.9 → **41.7** | 75.7 → 73.8 | 84.3 → 82.9 | 883 → 826 | 819 / 59.4 s → 843 / 57.8 s | 366 → 326 | 1297 → 1096 | 68.5 → 76.7 / 66.9 → 76.6 MB | 967 → **638 MB** | 403 / 678 → 403 / 677 | 88.5 → **4.5 MB/s** |
+| lot → lobby | 42.3 → **40.8** | 65.1 → **58.7** | 75.5 → 74.9 | 756 → 587 | 716 / 45.4 s → **393 / 28.3 s** | 74 → 72 | 587 → 616 | 73.6 → 79.5 / 73.4 → 79.2 MB | 977 → **648 MB** | 393 / 621 → 377 / 619 | 99.6 → **1.7 MB/s** |
+| storey 3 + 3-08 | 42.1 → **31.8** | 67.0 → **50.2** | 83.3 → **58.1** | 847 → **220** | 790 / 49.6 s → **86 / 7.8 s** | 72 → 78 | 459 → 424 | 80.2 → 87.7 / 81.6 → 87.5 MB | 1003 → **674 MB** | 453 / 792 → 394 / 796 | 98.2 → **1.6 MB/s** |
+| after the reveal (hunter on) | 82.0 → **50.0** | 91.9 → **58.7** | 108.2 → **60.3** | 1453 → 1146 | 1454 / 117.9 s → **980 / 53.3 s** | 115 → 265 (per frame: same; 60% more frames) | 644 → 816 | 81.0 → 85.4 / 81.1 → 85.3 MB | 1010 → **681 MB** | 907 / 953 → 909 / 953 | 54.8 → **0.4 MB/s** |
+| truck escape | 32.7 → **25.1** | 68.2 → **35.0** | 159.5 → 133.7 | 308 → **109** | 275 / 31.8 s → **106 / 16.6 s** | 336 → 346 | 1500 → 1236 | 76.6 → 80.3 / 76.7 → 81.2 MB | 994 → **665 MB** | 114 / 284 → 114 / 281 | 102.9 → **2.6 MB/s** |
+
+How to read the table:
+
+- The intro barely moved: in the car, the CPU goes to what the intro draws and to in-frame shader builds (below),
+  not to the forest buffers.
+- GC counts are per minute. Several routes now render 40–60% more frames, so a flat per-minute count means less
+  garbage per frame.
+- What still allocates is mostly three's per-draw bookkeeping. Bindings build a cache-key string per textured
+  binding per object per frame, and reference nodes update per object: about 30–60 MB/s at 4×. Only fewer draws
+  reduce that.
+- Retained heap growth over 2 min is +4 to +10 MB in both builds: caches filling as new objects are first drawn,
+  unchanged by this pass.
+
+### Pixel proof (`bench/pixel/`)
+
+- **What it renders.** `capture.html`/`capture.ts` boots the real world and waits for streaming and the first
+  background warm-up pass. It then takes over every clock: `performance.now`/`Date.now` are virtual, three's
+  `NodeFrame` time and frame ids advance exactly 1/60 per drawn frame, `Math.random` is seeded, and frames are
+  padded so the post chain's 64-frame noise/dither phase is the same for every camera. TAA (jitter and history),
+  grain, lightning and rain are off. Lamp flicker and wind are either frozen or live (`--q &live`); both follow the
+  fixed clocks.
+- **What it captures.** 13 cameras, 128 frames each: lot, gate, road, entrance, lobby, corridor, dock, forest, the
+  storey-3 spine both ways, 3-08 and its booth, and the truck shed.
+- **Run to run, same build:** 10 of 13 frames byte-identical; the other three differ in at most 1,354 bytes, max
+  Δ 1 (GPU nondeterminism).
+- **Base vs after, frozen:** 10 of 13 byte-identical; 3-08 booth 2,014 bytes, forest 324, lot 16, all max Δ 1.
+  This is the same pattern and magnitude as the run-to-run noise.
+- **Base vs after, live flicker and wind:** 10 of 13 byte-identical; 3-08 booth 46 bytes, lot 17, forest 5, all max
+  Δ 1. Run to run, the same build differs by up to 3,704 bytes, max Δ 1.
+- No pixel differs by more than 1 LSB anywhere, so nothing had to be reverted.
+
+### Routed (not edited: other owners' areas)
+
+- **Boot (`src/boot/warmup.ts`, `world.ts`): shader builds still happen inside play frames.** Per 2 min at 4×:
+  - 334–1058 synchronous node builds, 2.3–7.0 s of main thread;
+  - worst offenders: `interior_fluorescent_panel` (12 builds, 722 ms), `mirror_glass` (381 ms), the intro car's
+    lens materials (365 ms each), `glass`, and the `ShadowMaterial` variant of almost every caster (the warm-up
+    skips shadow pipelines);
+  - these are the multi-second frames: worst frame 4.4–6.8 s on lot and intro.
+- **`world.background` never resolves**: it's an infinite loop by design. Anything awaiting it hangs; the
+  capture page waits for the `boot:background` mark instead.
+- **Creatures (`src/creatures/kit/runtime.ts:26`):** on the escape route the road-ambush wendigo fell back to
+  generating itself in the browser, a 10.5 s frame at 4× (`wendigo.bin` was being rewritten in the tree). Worth a
+  guard so a bad or missing bake can't block a frame for seconds in play.
+- **Hunter:** the reveal route draws 907 calls (vs 394 on storey 3 without the hunter). The difference comes with
+  the active hunter: its shadow passes and the lamps it walks under re-render shadow maps. No per-frame
+  allocation in `src/game/hunter/**` showed up in the profiles above the noise.
+- **Draw count (interior doors, storey statics, washrooms):** unchanged by this pass; see "Regression since first
+  audit". It's the biggest remaining CPU and GC lever.
+
 ## Regression since first audit (2026-10-17)
 
 Measured on frozen builds of HEAD `8e630c5b` plus the working tree at the time. Tools: `bench/draw-census.ts` (every
@@ -443,6 +547,9 @@ bunx vite build --outDir $TMP/build-dev --minify false --logLevel warn  # readab
 |---|---|
 | `bun bench/frame-profile.ts --dir $TMP/build --view road,corridor [--ablate] [--cpu 4] [--dpr 1,2] [--profile f.cpuprofile]` | steady frame: scene stats, CPU per stage, draws/passes, GPU throughput, scene vs post, ablation |
 | `bun bench/boot-trace.ts --dir $TMP/build-dev [--cpu 4] [--no-replay] [--emulate attr]` | boot buckets, WebGPU call counts, node builds by owner, pipeline replay (driver compile cost) |
+| `bun bench/route-perf.ts --dir $TMP/ash [--routes intro,lot,s3,reveal,escape] [--seconds 120] [--cpu 4] [--alloc] [--profile]` | play-route frame percentiles, long tasks, GC (trace), heap and ArrayBuffers, draws, per-attribute uploads with owners, in-frame shader builds; `--alloc` sampled allocations and `--profile` CPU, both source-mapped to `src/…:line` |
+| `bench/pixel/snap.sh`, `bench/pixel/after.sh`, `bun bench/pixel/run.ts capture|compare` | snapshot builds (base, base + this pass's files) and the deterministic pixel-identity proof |
+| `bun bench/probe.ts --q "?play&start=3-08" --script bench/probes/<x>.js` | ad-hoc in-page probes (cache keys, memory held by geometry, matrix updates) |
 | `bun bench/draw-census.ts --dir $TMP/build [--views lot,gate,road,entrance,s0,s1,s2,s3,s4,mirror] [--out f.json]` | per-frame draws/triangles by pass, module, sub-group, material; flags (interior from outside, non-adjacent storeys, duplicates, zero-triangle and tiny draws, documents, mirrors); scene inventory; lamp census per zone |
 | `bun bench/dump-shaders.ts --dir $TMP/build-dev` | every WGSL program to `$TMP/shaders`, why there are so many, instanced meshes per module |
 | `bun bench/wasm/build.ts` | Rust → `terrain.wasm` / `terrain-simd.wasm` (needs `rustup target add wasm32-unknown-unknown`) |

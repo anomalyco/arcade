@@ -1,12 +1,12 @@
 import type * as THREE from "three/webgpu"
 import type { Box } from "../world/context"
-import { audio, type Bus, type SharedAudio } from "./context"
+import { audio, audioContext, type Bus, type SharedAudio } from "./context"
 import { SFX, type SfxId, type SfxVariant } from "./sfx-manifest"
 
 // Sample playback for the shipped sounds (src/audio/sfx-manifest.ts, public/sfx/**).
 //  - Loading is lazy and never blocks boot or the first key press: one-shots are fetched and decoded in idle time a few
-//    seconds after boot, one file per idle slice (`prepare`), with an OfflineAudioContext, so no running context (and
-//    no user input) is needed; the decoded buffers play in the real context once it is unlocked. Loops are fetched and
+//    seconds after boot, one file per idle slice (`prepare`), into the live context while it is still suspended (no
+//    user input needed), so they are at the device's rate; they play once it is unlocked. Loops are fetched and
 //    decoded only when first needed. A one-shot asked for before it is decoded is skipped (and its load started).
 //  - `play` fires a one-shot: no-repeat variant choice, pitch and gain jitter, optional position (an equal-power
 //    panner with inverse-distance rolloff) and occlusion: each wall between the listener and the source (counted on
@@ -78,12 +78,18 @@ export class Sfx {
   private offline: OfflineAudioContext | null = null
   private queued = false
 
-  /** Decoding works without a running context: an offline one at the files' rate (buffers play in any context). */
+  /**
+   * Decodes into the live context (suspended is fine: it is created behind the boot overlay, before any decode), so
+   * every buffer is at the device's own rate: decodeAudioData resamples once, properly, instead of the buffer source's
+   * linear interpolation resampling 48 kHz buffers to a 44.1 kHz device on every play (dull, aliased highs). Only if no
+   * context exists yet does it fall back to an offline one at the files' 48 kHz.
+   */
   private decode(v: SfxVariant): Promise<AudioBuffer | null> {
     let p = this.decoding.get(v.url)
     if (!p) {
-      this.offline ??= new OfflineAudioContext(1, 1, 48000)
-      const off = this.offline
+      const live = audioContext()
+      if (!live) this.offline ??= new OfflineAudioContext(1, 1, 48000)
+      const off: BaseAudioContext = live ?? this.offline!
       p = this.fetchBytes(v.url)
         .then((b) => (b ? off.decodeAudioData(b) : null))
         .then((buf) => {

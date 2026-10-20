@@ -134,7 +134,8 @@ function staffEntrance(b: Builder, docs: Docs): RoomHandle[] {
   corkBoard(b, docs, -52.6, -13.015, 0, 1, 1.1, 0.8, ["notice_north_array", "notice_nightshift", "flyer_bowling", "memo_coffee"], 11, FLOOR_Y + 1.85)
   docs.wall("map_evac_0", -54.61, FLOOR_Y + 1.5, -12.0, 1, 0, { pin: "tack" })
   wastebasket(b, -48.25, -2.3)
-  placeModels(b, "wet_floor_sign", [{ position: [-53.5, y, -9.9], yaw: 0.6, inset: 0.05 }])
+  // (Clear of the exit door's swing and the walk to it.)
+  placeModels(b, "wet_floor_sign", [{ position: [-48.2, y, -11.0], yaw: 0.6, inset: 0.05 }])
   // Rubber entrance mat inside the door.
   b.box(RUBBER_MAT, -54.3, FLOOR_Y, -11.0, -52.8, FLOOR_Y + LAYER * 2, -9.0, { cast: false })
 

@@ -26,6 +26,8 @@ export const MENU = {
   resume: "Resume",
   paused: "Paused",
   waiting: "Tuning in…",
+  /** Play, the instant it is pressed (before the title card has faded up). */
+  starting: "Loading…",
 }
 
 /** The prelude: one screen, typed out once in full and left up (picked in prelude-lab, panel B). */
@@ -54,6 +56,10 @@ export const TITLE_CARD = {
   dimTime: 3,
   dimTo: 0.16,
   skip: "Space to skip",
+  /** Shown on the black after the prelude while the intro is still loading. */
+  loading: "Loading…",
+  /** Seconds after Play during which clicks and keys don't skip the prelude (an impatient second click on Play). */
+  skipGuard: 0.8,
 }
 
 export const HINT = {

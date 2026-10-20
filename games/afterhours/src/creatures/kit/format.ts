@@ -22,6 +22,8 @@ export type CreatureData = {
   fiber: Uint8Array
   /** Index ranges of the baked parts; `material` picks the runtime material (default 0). */
   parts: { name: string; start: number; count: number; material?: number }[]
+  /** Bake version (the generator's `BAKE_VERSION`); 0 for files baked before versions existed. */
+  version?: number
 }
 
 const ARRAYS = ["positions", "normals", "indices", "skinIndex", "skinWeight", "attrA", "attrB", "fiber"] as const
@@ -39,7 +41,7 @@ const CTORS: Record<ArrayKey, Float32ArrayConstructor | Uint32ArrayConstructor |
 
 export function encodeCreature(d: CreatureData): Uint8Array {
   const lengths = Object.fromEntries(ARRAYS.map((k) => [k, d[k].length]))
-  let json = new TextEncoder().encode(JSON.stringify({ bones: d.bones, parts: d.parts, lengths }))
+  let json = new TextEncoder().encode(JSON.stringify({ bones: d.bones, parts: d.parts, lengths, version: d.version ?? 0 }))
   const pad = (n: number) => (n + 3) & ~3
   let total = 8 + pad(json.length)
   for (const k of ARRAYS) total += pad(d[k].byteLength)
@@ -60,7 +62,7 @@ export function decodeCreature(buf: ArrayBuffer): CreatureData {
   const u8 = new Uint8Array(buf)
   if (u8[0] !== 67 || u8[1] !== 82 || u8[2] !== 84 || u8[3] !== 50) throw new Error("not a creature file")
   const jl = new DataView(buf).getUint32(4, true)
-  const head = JSON.parse(new TextDecoder().decode(u8.subarray(8, 8 + jl))) as { bones: BoneDef[]; parts: CreatureData["parts"]; lengths: Record<ArrayKey, number> }
+  const head = JSON.parse(new TextDecoder().decode(u8.subarray(8, 8 + jl))) as { bones: BoneDef[]; parts: CreatureData["parts"]; lengths: Record<ArrayKey, number>; version?: number }
   const pad = (n: number) => (n + 3) & ~3
   let o = 8 + pad(jl)
   const arrays = {} as Record<ArrayKey, Float32Array | Uint32Array | Uint16Array | Uint8Array>
@@ -70,5 +72,11 @@ export function decodeCreature(buf: ArrayBuffer): CreatureData {
     arrays[k] = new C(buf, o, n)
     o += pad(n * C.BYTES_PER_ELEMENT)
   }
-  return { bones: head.bones, parts: head.parts, ...(arrays as Pick<CreatureData, ArrayKey>) }
+  const out = { bones: head.bones, parts: head.parts, version: head.version ?? 0, ...(arrays as Pick<CreatureData, ArrayKey>) }
+  // Sanity: consistent per-vertex arrays and in-range indices (a truncated or mid-write file fails here, not on the GPU).
+  const nv = out.positions.length / 3
+  if (out.normals.length !== nv * 3 || out.skinIndex.length !== nv * 4 || out.attrA.length !== nv * 4 || out.indices.length % 3) throw new Error("creature file inconsistent")
+  for (let i = 0; i < out.indices.length; i += 997) if (out.indices[i]! >= nv) throw new Error("creature file: index out of range")
+  return out
 }
+

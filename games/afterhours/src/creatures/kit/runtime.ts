@@ -19,20 +19,73 @@ export type CreatureRig = {
   data: CreatureData
 }
 
-export async function loadCreatureData(url: string, fallback?: () => Promise<CreatureData>): Promise<CreatureData> {
-  try {
-    const res = await fetch(url)
-    if (!res.ok) throw new Error(`${res.status}`)
-    return decodeCreature(await res.arrayBuffer())
-  } catch (e) {
-    if (!fallback) throw e
-    console.warn(`creature: ${url} missing (${e}); generating in the browser`)
-    return fallback()
-  }
+const cache = new Map<string, Promise<CreatureData | null>>()
+
+/**
+ * The baked creature at `url`, fetched and parsed once per page (every spawn shares it). If the file is missing,
+ * fails to parse, or is older than `version`, it is logged and `generate` (if given) runs in a Web Worker, never on
+ * the main thread: a stale-but-valid bake is used meanwhile only when there is no worker result. Resolves null when
+ * there is nothing usable (callers skip the creature).
+ */
+export function loadCreatureData(url: string, o: { version?: number; generate?: () => Worker } = {}): Promise<CreatureData | null> {
+  let p = cache.get(url)
+  if (p) return p
+  p = (async () => {
+    let data: CreatureData | null = null
+    let why = ""
+    try {
+      const res = await fetch(url)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      data = decodeCreature(await res.arrayBuffer())
+      if (o.version !== undefined && (data.version ?? 0) < o.version) why = `stale bake (version ${data.version ?? 0} < ${o.version})`
+    } catch (e) {
+      why = `unusable bake (${e instanceof Error ? e.message : e})`
+    }
+    if (!why) return data
+    console.warn(`creature: ${url}: ${why}`)
+    if (!o.generate) return data
+    try {
+      const generated = await inWorker(o.generate())
+      console.info(`creature: ${url} generated in a worker`)
+      return generated
+    } catch (e) {
+      console.warn(`creature: worker generation failed (${e instanceof Error ? e.message : e})${data ? "; using the stale bake" : "; skipping the creature"}`)
+      return data
+    }
+  })()
+  cache.set(url, p)
+  return p
 }
+
+function inWorker(w: Worker): Promise<CreatureData> {
+  return new Promise((resolve, reject) => {
+    w.onmessage = (e: MessageEvent<{ ok: boolean; bytes?: ArrayBuffer; error?: string }>) => {
+      w.terminate()
+      if (e.data.ok && e.data.bytes) resolve(decodeCreature(e.data.bytes))
+      else reject(new Error(e.data.error ?? "worker failed"))
+    }
+    w.onerror = (e) => {
+      w.terminate()
+      reject(new Error(e.message))
+    }
+    w.postMessage("go")
+  })
+}
+
+const geoCache = new WeakMap<CreatureData, THREE.BufferGeometry>()
 
 /** `material` may be an array, indexed by each baked part's `material` slot. */
 export function buildCreature(data: CreatureData, material: THREE.Material | THREE.Material[]): CreatureRig {
+  // One geometry per baked creature, shared by every instance (skinning is per mesh, the vertex data isn't).
+  let g = geoCache.get(data)
+  if (!g) {
+    g = buildGeometry(data, Array.isArray(material))
+    geoCache.set(data, g)
+  }
+  return buildRig(data, g, material)
+}
+
+function buildGeometry(data: CreatureData, groups: boolean) {
   const g = new THREE.BufferGeometry()
   g.setAttribute("position", new THREE.BufferAttribute(data.positions, 3))
   g.setAttribute("normal", new THREE.BufferAttribute(data.normals, 3))
@@ -46,9 +99,13 @@ export function buildCreature(data: CreatureData, material: THREE.Material | THR
   for (const p of data.parts) if (p.name === "skull" || p.name === "jaw") for (let k = p.start; k < p.start + p.count; k++) face[data.indices[k]!] = 1
   g.setAttribute("face", new THREE.BufferAttribute(face, 1))
   g.setIndex(new THREE.BufferAttribute(data.indices, 1))
-  if (Array.isArray(material)) for (const p of data.parts) g.addGroup(p.start, p.count, p.material ?? 0)
+  if (groups) for (const p of data.parts) g.addGroup(p.start, p.count, p.material ?? 0)
   g.computeBoundingSphere()
   g.computeBoundingBox()
+  return g
+}
+
+function buildRig(data: CreatureData, g: THREE.BufferGeometry, material: THREE.Material | THREE.Material[]): CreatureRig {
 
   const bones: THREE.Bone[] = []
   const rest: THREE.Vector3[] = []

@@ -2,12 +2,14 @@ import * as THREE from "three/webgpu"
 import type { GameContext } from "../flow"
 import type { World } from "../../boot/world"
 import { createWendigo, type Wendigo } from "../../creatures/wendigo"
-import { audio } from "../../audio/context"
+import { audio, audioContext } from "../../audio/context"
 import { hooks as audioHooks } from "../../audio/hooks"
 import { heightAt } from "../../world/height"
 import { northTrackSamples } from "../../world/layout"
 import { installHudType } from "../../world/doors/hud"
 import { aimBone } from "../../creatures/kit/ik"
+import { createEncounterLights, encounterLights, parkEncounterLight } from "./lights"
+export { createEncounterLights }
 
 // The ending (fixed for now: the player always dies). The escape truck (the intro agent's) gets out the north gate
 // onto the logging road; ~20–25 s in it calls `runRoadAmbush(ctx, vehicle)`. A quiet stretch, then the Wendigo is in
@@ -66,15 +68,13 @@ export function prepareRoadAmbush(world: World) {
   if (prepared) return prepared
   prepared = (async () => {
     // Its two lights join the scene now, dark: adding a light later recompiles every lit material (a long stall).
-    const fill = new THREE.PointLight(0xb8c4cc, 0, 3, 2)
-    const beam = new THREE.SpotLight(0xfff0d6, 0, 30, 0.16, 0.5, 1.4)
-    fill.position.set(0, -80, -60)
-    beam.position.set(0, -80, -60)
-    world.scene.add(fill, beam, beam.target)
+    // Boot-created (lights.ts): never added at runtime.
+    const { fill, beam } = encounterLights(world.scene)
     const w = createWendigo({ ground: (x, z) => heightAt(x, z) })
     w.root.visible = false
     world.scene.add(w.root)
     await w.ready
+    if (!w.rig) console.warn("road ambush: no creature; the ending cuts straight to the card")
     w.root.traverse((o) => {
       o.castShadow = true
       o.frustumCulled = false
@@ -91,7 +91,7 @@ export function prepareRoadAmbush(world: World) {
     let scream: AudioBuffer | null = null
     try {
       const bytes = await (await fetch(new URL(SCREAM_URL, document.baseURI).href)).arrayBuffer()
-      scream = await (audio()?.ctx ?? new OfflineAudioContext(2, 1, 48000)).decodeAudioData(bytes)
+      scream = await (audioContext() ?? new OfflineAudioContext(2, 1, 48000)).decodeAudioData(bytes)
     } catch (e) {
       console.warn("road ambush: scream not loaded", e)
     }
@@ -123,6 +123,20 @@ export function startEndingDrive(lead = 5) {
 export async function runRoadAmbush(g: GameContext, v: RoadVehicle) {
   const { camera, flow } = g
   const { w, scream, fill, beam } = await prepareRoadAmbush(g.world)
+  if (!w.rig) {
+    // No creature: lock, cut to black and the end card (the ending still ends).
+    g.flow.hold = true
+    g.player.release()
+    v.takeControl?.()
+    const black = document.createElement("div")
+    black.style.cssText = "position:fixed;inset:0;background:#000;z-index:40"
+    document.body.appendChild(black)
+    g.flow.setPaused(true)
+    document.body.dataset.modal = "ending"
+    if (document.pointerLockElement) document.exitPointerLock()
+    await endCard()
+    return
+  }
   const stats = { appearAt: 0, impactAt: 0, cutAt: 0, frameMs: [] as number[] }
   const api = { phase: "rush" as "rush" | "glass" | "cut" | "card", stats }
   ;(globalThis as { __ashwoodRoad?: typeof api }).__ashwoodRoad = api
@@ -263,8 +277,9 @@ export async function runRoadAmbush(g: GameContext, v: RoadVehicle) {
   black.style.cssText = "position:fixed;inset:0;background:#000;z-index:40"
   document.body.appendChild(black)
   crack.remove()
-  fill.intensity = 0
-  beam.intensity = 0
+  parkEncounterLight(fill)
+  parkEncounterLight(beam)
+  beam.target.position.set(0, -201, 0)
   flow.setPaused(true)
   document.body.dataset.modal = "ending"
   if (document.pointerLockElement) document.exitPointerLock()
@@ -480,14 +495,14 @@ async function standInDrive(g: GameContext, lead: number) {
   let s = ambushS - lead * speed
   const root = new THREE.Group()
   root.name = "truck-stand-in"
-  const lights: THREE.SpotLight[] = []
-  for (const x of [-0.75, 0.75]) {
-    const l = new THREE.SpotLight(0xfff1d6, 60, 60, 0.42, 0.55, 1.6)
-    l.position.set(x, 1.0, 2.2)
-    l.target.position.set(x * 2, 0, 30)
-    root.add(l, l.target)
-    lights.push(l)
-  }
+  // Headlights: the boot-created pair, placed from the truck's transform each frame (never added at runtime).
+  const lights = [...encounterLights(scene).heads]
+  const HEADS = [-0.75, 0.75].map((x) => ({ at: new THREE.Vector3(x, 1.0, 2.2), to: new THREE.Vector3(x * 2, 0, 30) }))
+  for (const l of lights) l.intensity = 60
+  const placeHeads = () => HEADS.forEach((h, i) => {
+    lights[i]!.position.copy(h.at).applyMatrix4(root.matrixWorld)
+    lights[i]!.target.position.copy(h.to).applyMatrix4(root.matrixWorld)
+  })
   scene.add(root)
   flow.hold = true
   g.player.release()
@@ -511,6 +526,7 @@ async function standInDrive(g: GameContext, lead: number) {
     root.position.set(p.x, y, p.z)
     root.rotation.set(0, Math.atan2(p.dx, p.dz), 0)
     root.updateMatrixWorld(true)
+    placeHeads()
     // The eye in the cab, a little bounce from the dirt road.
     camera.position.set(p.x, y + 1.95 + Math.sin(s * 2.1) * 0.012 + Math.sin(s * 5.3) * 0.006, p.z).addScaledVector(new THREE.Vector3(Math.sin(root.rotation.y), 0, Math.cos(root.rotation.y)), 0.3)
     camera.rotation.set(-0.05, root.rotation.y + Math.PI, Math.sin(s * 1.7) * 0.004, "YXZ")

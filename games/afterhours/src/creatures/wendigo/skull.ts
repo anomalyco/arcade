@@ -16,7 +16,7 @@ export const SK = 1.55
 /** Lateral squeeze: a long, narrow face. */
 const SKX = 0.8
 export const toWorld = (p: V3): V3 => [HEAD_POS[0] + p[0] * SK * SKX, HEAD_POS[1] + (p[1] * c - p[2] * s) * SK, HEAD_POS[2] + (p[1] * s + p[2] * c) * SK]
-const dirW = (d: V3): V3 => [d[0], d[1] * c - d[2] * s, d[1] * s + d[2] * c]
+export const dirW = (d: V3): V3 => [d[0], d[1] * c - d[2] * s, d[1] * s + d[2] * c]
 
 export function buildSkull(head: number, jaw: number, seed = 7) {
   const an = new Anatomy(seed)
@@ -83,12 +83,14 @@ export function buildSkull(head: number, jaw: number, seed = 7) {
 
   // Upper teeth: jagged, uneven, a few broken.
   for (const sd of [1, -1]) {
-    for (let z = 0.16; z < 0.43; z += 0.017 + r() * 0.006) {
-      const f = (z - 0.16) / 0.27
-      const root: V3 = [sd * (0.04 - f * 0.018), -0.03 - f * 0.012, z]
-      const len = 0.018 + r() * 0.03 + (f > 0.6 ? 0.015 : 0)
-      const tip = add(root, [sd * (r() - 0.6) * 0.01, -len, (r() - 0.3) * 0.012])
-      cap(root, tip, 0.0065, 0.0018, 0.004, Op.Add, Tag.Tooth)
+    // Long, crowded, needle-like; a pair of fangs a third of the way along.
+    for (let z = 0.14; z < 0.45; z += 0.012 + r() * 0.004) {
+      const f = (z - 0.14) / 0.31
+      const root: V3 = [sd * (0.042 - f * 0.02), -0.028 - f * 0.012, z]
+      const fang = Math.abs(f - 0.3) < 0.04
+      const len = (fang ? 0.058 : 0.032 + r() * 0.035) + f * f * 0.022
+      const tip = add(root, [sd * (r() - 0.6) * 0.012, -len, (r() - 0.1) * 0.02])
+      cap(root, tip, fang ? 0.011 : 0.0078, 0.0015, 0.004, Op.Add, Tag.Tooth)
     }
   }
   // Pedicles.
@@ -111,11 +113,11 @@ export function buildSkull(head: number, jaw: number, seed = 7) {
     jcap([sd * 0.062, -0.005, 0.09], [sd * 0.056, -0.085, 0.085], 0.012, 0.014)
     jcap([sd * 0.056, -0.088, 0.085], [sd * 0.018, -0.085, 0.42], 0.011, 0.008)
     jcap([sd * 0.056, -0.06, 0.1], [sd * 0.02, -0.062, 0.42], 0.009, 0.007)
-    for (let z = 0.2; z < 0.42; z += 0.018 + r() * 0.006) {
-      const f = (z - 0.2) / 0.22
+    for (let z = 0.16; z < 0.43; z += 0.012 + r() * 0.004) {
+      const f = (z - 0.16) / 0.27
       const root: V3 = [sd * (0.048 - f * 0.028), -0.058, z]
-      const len = 0.014 + r() * 0.025
-      jcap(root, add(root, [sd * (r() - 0.5) * 0.008, len, (r() - 0.2) * 0.012]), 0.0055, 0.0016, 0.004, Tag.Tooth)
+      const len = (Math.abs(f - 0.35) < 0.05 ? 0.06 : 0.026 + r() * 0.032) + f * f * 0.022
+      jcap(root, add(root, [sd * (r() - 0.5) * 0.01, len, (r() - 0.2) * 0.016]), 0.0072, 0.0015, 0.004, Tag.Tooth)
     }
   }
   jm.add(new Ellipsoid(W([0, -0.075, 0.43]), [0.025 * SK, 0.018 * SK, 0.022 * SK], undefined, { ...jb, k: 0.015 }))
@@ -138,3 +140,30 @@ export function paintSkull(p: V3): [number, number, number] {
   return [dirt, blood, mouth * 0.6]
 }
 
+
+/**
+ * The inside of the mouth, as two parts painted near-black and wet (blood channel): on the head, the palate, the
+ * upper gums and a gullet that fills the skull's hollow behind the split and runs back toward the neck; on the jaw,
+ * the lower gums and the tongue. So the open jaw reads as a dark cavity with teeth rows, not grey neck behind it.
+ */
+export function buildMouth(head: number, jaw: number) {
+  const W = toWorld
+  const upper = new SdfModel()
+  const lower = new SdfModel()
+  const ell = (m: SdfModel, bone: number, c: V3, rr: V3, k = 0.01) => m.add(new Ellipsoid(W(c), [rr[0] * SK * 0.8, rr[1] * SK, rr[2] * SK], [dirW([1, 0, 0]), dirW([0, 1, 0]), dirW([0, 0, 1])], { bone, k: k * SK, tag: Tag.Skin }))
+  const cap = (m: SdfModel, bone: number, a: V3, b: V3, ra: number, rb: number, k = 0.008) => m.add(new RoundCone(W(a), W(b), ra * SK, rb * SK, { bone, k: k * SK, tag: Tag.Skin }))
+  // Palate and gullet.
+  // Palate: a thin roof just above the tooth rows; the gullet deep behind it (inside the cranium, under the split).
+  ell(upper, head, [0, -0.018, 0.3], [0.026, 0.008, 0.13])
+  cap(upper, head, [0, -0.03, 0.16], [0, -0.04, 0.0], 0.022, 0.026, 0.015)
+  // Upper gums along the tooth rows.
+  for (const sd of [1, -1]) cap(upper, head, [sd * 0.043, -0.03, 0.13], [sd * 0.021, -0.043, 0.45], 0.008, 0.006)
+  // Lower gums and the tongue.
+  for (const sd of [1, -1]) cap(lower, jaw, [sd * 0.049, -0.06, 0.15], [sd * 0.019, -0.06, 0.43], 0.0075, 0.006)
+  ell(lower, jaw, [0, -0.068, 0.27], [0.02, 0.007, 0.1])
+  upper.margin = lower.margin = 0.003
+  return { upper, lower }
+}
+
+/** Near-black, wet, red-black at the gums. */
+export const paintMouth = (): [number, number, number] => [1, 1, 0]

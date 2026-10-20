@@ -9,7 +9,7 @@ import {
   cameraViewMatrix,
   exp,
   float,
-  instancedDynamicBufferAttribute,
+  instancedBufferAttribute,
   length,
   max,
   mrt,
@@ -133,12 +133,12 @@ const _tint = new THREE.Color()
 function noise1(t: number, seed: number) {
   const i = Math.floor(t)
   const f = t - i
-  const h = (n: number) => {
-    const x = Math.sin((n + seed * 157.31) * 12.9898) * 43758.5453
-    return (x - Math.floor(x)) * 2 - 1
-  }
   const u = f * f * (3 - 2 * f)
-  return h(i) * (1 - u) + h(i + 1) * u
+  return noiseHash(i, seed) * (1 - u) + noiseHash(i + 1, seed) * u
+}
+function noiseHash(n: number, seed: number) {
+  const x = Math.sin((n + seed * 157.31) * 12.9898) * 43758.5453
+  return (x - Math.floor(x)) * 2 - 1
 }
 
 /**
@@ -438,9 +438,12 @@ export function createLighting(ctx: WorldContext, player: Player) {
     const mask: LightMask = { mode: 0, y0: -1e5, y1: 1e5 }
     point.userData.mask = mask
     point.visible = false
+    // Its matrix is rebuilt only when the lamp moves (update() below), not composed every frame for ~300 lights.
+    point.matrixAutoUpdate = false
     scene.add(point)
     const rig: Rig = {
       lamp,
+      scatterScore: 0,
       pos: new THREE.Vector3(),
       dir: lamp.direction ? new THREE.Vector3(...lamp.direction).normalize() : null,
       radiance: new THREE.Color(),
@@ -553,10 +556,11 @@ export function createLighting(ctx: WorldContext, player: Player) {
   const centerAttr = new THREE.InstancedBufferAttribute(new Float32Array(n * 4), 4)
   const colorAttr = new THREE.InstancedBufferAttribute(new Float32Array(n * 4), 4)
   const dirAttr = new THREE.InstancedBufferAttribute(new Float32Array(n * 4), 4)
-  for (const a of [centerAttr, colorAttr, dirAttr]) a.setUsage(THREE.DynamicDrawUsage)
-  const center = instancedDynamicBufferAttribute(centerAttr as never) as N
-  const gcol = instancedDynamicBufferAttribute(colorAttr as never) as N
-  const gdir = instancedDynamicBufferAttribute(dirAttr as never) as N
+  // Static usage: three re-uploads dynamic-usage attributes in full on every draw; the update loop below marks an
+  // attribute (and its live range) only when one of its values changed.
+  const center = instancedBufferAttribute(centerAttr as never) as N
+  const gcol = instancedBufferAttribute(colorAttr as never) as N
+  const gdir = instancedBufferAttribute(dirAttr as never) as N
 
   const pixelAngle = uniform(0.001)
   const glowMat = new THREE.SpriteNodeMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })
@@ -625,7 +629,8 @@ export function createLighting(ctx: WorldContext, player: Player) {
   const CELL = 6
   let gridCount = -1
   const grid = new Map<number, number[]>()
-  const key = (cx: number, cz: number) => cx * 73856093 + cz * 19349663
+  // Small-integer key (fits a Smi, so Map lookups don't box a double per probe); cells are unique within ±16k × 6 m.
+  const key = (cx: number, cz: number) => ((cx & 0x7fff) << 15) | (cz & 0x7fff)
   const buildGrid = () => {
     grid.clear()
     const boxes = ctx.colliders
@@ -649,6 +654,22 @@ export function createLighting(ctx: WorldContext, player: Player) {
   }
   const stamp = new Uint32Array(1 << 16)
   let stampId = 0
+  // Running [t0, t1] of segmentBlocked's slab test (it runs for several lamps × boxes per frame: no per-box arrays).
+  let segT0 = 0
+  let segT1 = 0
+  const segSlab = (o: number, d: number, mn: number, mx: number) => {
+    if (Math.abs(d) < 1e-9) return !(o < mn || o > mx)
+    let ta = (mn - o) / d
+    let tb = (mx - o) / d
+    if (ta > tb) {
+      const t = ta
+      ta = tb
+      tb = t
+    }
+    segT0 = Math.max(segT0, ta)
+    segT1 = Math.min(segT1, tb)
+    return segT0 <= segT1
+  }
   const segmentBlocked = (a: THREE.Vector3, b: THREE.Vector3) => {
     if (gridCount !== ctx.colliders.length) buildGrid()
     const dx = b.x - a.x
@@ -668,31 +689,9 @@ export function createLighting(ctx: WorldContext, player: Player) {
         stamp[i & 0xffff] = stampId
         const box = ctx.colliders[i]!
         // Slab test on the segment, shrunk a little at the emitter end so a lamp's own housing doesn't hide it.
-        let t0 = 0
-        let t1 = 0.97
-        const o = [a.x, a.y, a.z]
-        const d = [dx, dy, dz]
-        let hit = true
-        for (let k = 0; k < 3; k++) {
-          const dk = d[k]!
-          if (Math.abs(dk) < 1e-9) {
-            if (o[k]! < box.min[k]! || o[k]! > box.max[k]!) {
-              hit = false
-              break
-            }
-            continue
-          }
-          let ta = (box.min[k]! - o[k]!) / dk
-          let tb = (box.max[k]! - o[k]!) / dk
-          if (ta > tb) [ta, tb] = [tb, ta]
-          t0 = Math.max(t0, ta)
-          t1 = Math.min(t1, tb)
-          if (t0 > t1) {
-            hit = false
-            break
-          }
-        }
-        if (hit) return true
+        segT0 = 0
+        segT1 = 0.97
+        if (segSlab(a.x, dx, box.min[0], box.max[0]) && segSlab(a.y, dy, box.min[1], box.max[1]) && segSlab(a.z, dz, box.min[2], box.max[2])) return true
       }
     }
     return false
@@ -709,12 +708,35 @@ export function createLighting(ctx: WorldContext, player: Player) {
   let lastSpill = [NaN, NaN]
   const fwd = new THREE.Vector3()
   const order: Rig[] = []
+  // Per-frame scratch of the shadow-pool pick (reused: no Set/array per frame).
+  const held = new Set<Rig>()
+  const wanted: Rig[] = []
+  const shadowScore = (r: Rig) =>
+    ((r.lamp.intensity / Math.max(r.distance - r.lamp.range * 0.3, 1) ** 2) * (held.has(r) ? SHADOW_HYSTERESIS : 1)) || 0
+  const byShadowScore = (a: Rig, b: Rig) => shadowScore(b) - shadowScore(a) || a.point.id - b.point.id
   let frame = 0
   const lastCam = new THREE.Vector3()
   let jumpedLast = false
   let wasStreaming = false
   let shadowColliders = -1
   const doorAmounts: number[] = []
+
+  /** Glow attribute rows written last frame (a count change re-uploads everything). */
+  let glowUploaded = -1
+  /** Writes `v` into a Float32Array slot; true when the stored value changed. */
+  const put = (a: Float32Array, i: number, v: number) => {
+    const before = a[i]
+    a[i] = v
+    return a[i] !== before
+  }
+  const markRange = (a: THREE.BufferAttribute, count: number) => {
+    const r = a.updateRanges
+    if (r.length !== 1 || r[0]!.start !== 0 || r[0]!.count !== count) {
+      a.clearUpdateRanges()
+      a.addUpdateRange(0, count)
+    }
+    a.needsUpdate = true
+  }
 
   const rig = {
     update(dt: number, time: number) {
@@ -789,7 +811,10 @@ export function createLighting(ctx: WorldContext, player: Player) {
         r.distance = r.pos.distanceTo(tmpCam)
         r.sigma = fogSigma(r.pos)
         r.transmittance = Math.exp(-opticalDepth(tmpCam, r.pos))
-        r.point.position.copy(r.pos)
+        if (!r.point.position.equals(r.pos)) {
+          r.point.position.copy(r.pos)
+          r.point.updateMatrix()
+        }
         r.point.color.copy(r.color)
         r.point.distance = l.range
         r.want = !cull || lampNeeded(r)
@@ -842,12 +867,11 @@ export function createLighting(ctx: WorldContext, player: Player) {
       }
       // Priority from the lamp's nominal output (not its flicker, which would reshuffle slots every frame) and
       // distance, with a bonus for holding a slot already so near-ties don't swap back and forth.
-      const held = new Set<Rig>()
+      held.clear()
       for (const s of slots) if (s.rig && s.rig.shadowWeight > 0) held.add(s.rig)
-      const score = (r: Rig) =>
-        ((r.lamp.intensity / Math.max(r.distance - r.lamp.range * 0.3, 1) ** 2) * (held.has(r) ? SHADOW_HYSTERESIS : 1)) || 0
-      order.sort((a, b) => score(b) - score(a) || a.point.id - b.point.id)
-      const wanted = order.slice(0, slots.length)
+      order.sort(byShadowScore)
+      wanted.length = 0
+      for (let i = 0; i < Math.min(slots.length, order.length); i++) wanted.push(order[i]!)
       const step = jump ? 1 : dt / FADE_S
       for (const s of slots) {
         const keep = s.rig && wanted.includes(s.rig)
@@ -990,32 +1014,36 @@ export function createLighting(ctx: WorldContext, player: Player) {
       const c = centerAttr.array as Float32Array
       const col = colorAttr.array as Float32Array
       const d = dirAttr.array as Float32Array
+      // Each attribute is re-uploaded only when one of its values changed (centres and directions rarely do; colours
+      // follow flicker and fades), and only the live range.
+      let dc = glowRigs.length !== glowUploaded
+      let dl = dc
+      let dd = dc
+      glowUploaded = glowRigs.length
       for (let i = 0; i < glowRigs.length; i++) {
         const r = glowRigs[i]!
         // Halo quad sized from the emitter but capped: a 1.2 m panel must not get a 5 m sprite.
         const size = Math.min(Math.max(r.lamp.size ?? 0.2, 0.05), 0.45)
-        c[i * 4] = r.pos.x
-        c[i * 4 + 1] = r.pos.y - (r.dir ? 0.1 : 0)
-        c[i * 4 + 2] = r.pos.z
-        c[i * 4 + 3] = size * gz
+        const o = i * 4
+        dc = put(c, o, r.pos.x) || dc
+        dc = put(c, o + 1, r.pos.y - (r.dir ? 0.1 : 0)) || dc
+        dc = put(c, o + 2, r.pos.z) || dc
+        dc = put(c, o + 3, size * gz) || dc
         // Emitter luminance ~ intensity / visible area, kept in a range bloom turns into a soft halo.
         const lum =
           (gs * r.glow * r.glowVis * r.level * r.transmittance * Math.sqrt(r.lamp.intensity * r.scale)) / (Math.max(size, 0.15) * 6)
-        col[i * 4] = r.color.r * lum
-        col[i * 4 + 1] = r.color.g * lum
-        col[i * 4 + 2] = r.color.b * lum
-        d[i * 4] = r.dir?.x ?? 0
-        d[i * 4 + 1] = r.dir?.y ?? 0
-        d[i * 4 + 2] = r.dir?.z ?? 0
-        d[i * 4 + 3] = r.dir ? 1 : 0
+        dl = put(col, o, r.color.r * lum) || dl
+        dl = put(col, o + 1, r.color.g * lum) || dl
+        dl = put(col, o + 2, r.color.b * lum) || dl
+        dd = put(d, o, r.dir?.x ?? 0) || dd
+        dd = put(d, o + 1, r.dir?.y ?? 0) || dd
+        dd = put(d, o + 2, r.dir?.z ?? 0) || dd
+        dd = put(d, o + 3, r.dir ? 1 : 0) || dd
       }
-      for (const a of [centerAttr, colorAttr, dirAttr]) {
-        a.clearUpdateRanges()
-        a.addUpdateRange(0, Math.max(1, glowRigs.length) * 4)
-      }
-      centerAttr.needsUpdate = true
-      colorAttr.needsUpdate = true
-      dirAttr.needsUpdate = true
+      const n4 = Math.max(1, glowRigs.length) * 4
+      if (dc) markRange(centerAttr, n4)
+      if (dl) markRange(colorAttr, n4)
+      if (dd) markRange(dirAttr, n4)
     },
   }
   renderState.lightingUpdate = rig.update

@@ -1,5 +1,10 @@
 {
   "extends": "../tsconfig.json",
-  "include": ["."],
-  "exclude": ["wasm/target"]
+  "include": [
+    "."
+  ],
+  "exclude": [
+    "wasm/target",
+    "pixel/capture.ts"
+  ]
 }

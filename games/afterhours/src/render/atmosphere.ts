@@ -124,24 +124,28 @@ const windowGlow = (p: N, n: N) => {
 /** CPU mirror of the fog for per-lamp transmittance. */
 const fogCpu = { density: 0.014, falloff: 1 / 28, base: 0, interior: 0.004 }
 
-function boxSpan(ax: number, ay: number, az: number, dx: number, dy: number, dz: number, b: (typeof BOXES)[number]) {
-  let t0 = 0
-  let t1 = 1
-  const o = [ax, ay, az]
-  const d = [dx, dy, dz]
-  for (let i = 0; i < 3; i++) {
-    const di = d[i]!
-    if (Math.abs(di) < 1e-6) {
-      if (o[i]! < b.min[i]! || o[i]! > b.max[i]!) return 0
-      continue
-    }
-    let ta = (b.min[i]! - o[i]!) / di
-    let tb = (b.max[i]! - o[i]!) / di
-    if (ta > tb) [ta, tb] = [tb, ta]
-    t0 = Math.max(t0, ta)
-    t1 = Math.min(t1, tb)
+// Slab-test scratch: [t0, t1] of the running interval (runs per lamp per frame, so no per-call arrays).
+const span = [0, 1]
+/** Clips `span` by one axis slab; false when the segment misses it (parallel and outside). */
+function slab(o: number, d: number, mn: number, mx: number) {
+  if (Math.abs(d) < 1e-6) return !(o < mn || o > mx)
+  let ta = (mn - o) / d
+  let tb = (mx - o) / d
+  if (ta > tb) {
+    const t = ta
+    ta = tb
+    tb = t
   }
-  return Math.max(0, t1 - t0)
+  span[0] = Math.max(span[0]!, ta)
+  span[1] = Math.min(span[1]!, tb)
+  return true
+}
+
+function boxSpan(ax: number, ay: number, az: number, dx: number, dy: number, dz: number, b: (typeof BOXES)[number]) {
+  span[0] = 0
+  span[1] = 1
+  if (!slab(ax, dx, b.min[0]!, b.max[0]!) || !slab(ay, dy, b.min[1]!, b.max[1]!) || !slab(az, dz, b.min[2]!, b.max[2]!)) return 0
+  return Math.max(0, span[1]! - span[0]!)
 }
 
 /** Optical depth (dimensionless) of the fog between two world points. */

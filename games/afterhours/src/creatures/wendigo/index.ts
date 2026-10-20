@@ -1,6 +1,8 @@
 import * as THREE from "three/webgpu"
 import { createCreatureMaterial } from "../kit/material"
 import { buildCreature, loadCreatureData, type CreatureRig } from "../kit/runtime"
+/** Must match build.ts BAKE_VERSION (kept here so the game doesn't import the generator). */
+const WENDIGO_BAKE_VERSION = 4
 import { WendigoAnimator, type WendigoMode, type WendigoStance } from "./animate"
 
 // The Wendigo, built from scratch: SDF anatomy baked to public/models/monsters/wendigo.bin (see build.ts), one skinned
@@ -69,7 +71,12 @@ export function createWendigo(opts: WendigoOpts = {}): Wendigo {
   }
   const url = opts.url ?? `${import.meta.env.BASE_URL}models/monsters/wendigo.bin`
   out.ready = (async () => {
-    const data = await loadCreatureData(url, async () => (await import("./build")).generateWendigo())
+    const data = await loadCreatureData(url, {
+      version: WENDIGO_BAKE_VERSION,
+      generate: () => new Worker(new URL("./generate.worker.ts", import.meta.url), { type: "module" }),
+    })
+    // Nothing usable: no creature (callers check `rig`); never generated on the main thread.
+    if (!data) return
     const { material, uniforms } = createCreatureMaterial()
     const rig = buildCreature(data, material)
     rig.root.scale.setScalar(opts.scale ?? 1)

@@ -89,6 +89,15 @@ export function createMenu(root: HTMLElement, settings: ShellSettings, hooks: Me
   const playButton = button(MENU.play, () => {
     hooks.play()
   }, "shell-play")
+  // The press shows at once (pointerdown, before the click and before the title card fades up), so Play never looks dead.
+  const starting = (on: boolean) => {
+    playButton.classList.toggle("starting", on)
+    playButton.textContent = on ? MENU.starting : MENU.play
+    // A press that never became a click (dragged off the button): back to Play.
+    if (on) setTimeout(() => screen === "home" && !playButton.classList.contains("waiting") && starting(false), 2000)
+  }
+  playButton.addEventListener("pointerdown", (e) => e.button === 0 && starting(true))
+  playButton.addEventListener("keydown", (e) => (e.code === "Enter" || e.code === "Space") && starting(true))
   function renderNav() {
     nav.replaceChildren()
     if (screen === "home") {
@@ -279,6 +288,7 @@ export function createMenu(root: HTMLElement, settings: ShellSettings, hooks: Me
         return
       }
       if (el.dataset.world === "ready") noise.start()
+      starting(false)
       renderNav()
       open("main")
     },

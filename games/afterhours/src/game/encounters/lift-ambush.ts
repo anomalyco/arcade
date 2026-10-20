@@ -5,8 +5,9 @@ import { liftEvents } from "../../world/interior/lift-events"
 import { CORE } from "../../world/layout"
 import { FLOOR_Y, STOREY_H } from "../../world/interior/api"
 import { createWendigo, type Wendigo } from "../../creatures/wendigo"
-import { audio } from "../../audio/context"
+import { audio, audioContext } from "../../audio/context"
 import { aimBone } from "../../creatures/kit/ik"
+import { encounterLights, parkEncounterLight } from "./lights"
 
 // The lift ambush (the first Wendigo beat). Once the player has been in the radio room (3-08), riding the lift is
 // fatal, but nothing says so: the ride and the doors opening are perfectly normal and the lobby looks empty. The
@@ -54,6 +55,7 @@ export function startLiftAmbush(g: GameContext, hooks: AmbushHooks) {
   let wendigo: Wendigo | null = null
   let loading: Promise<void> | null = null
   let scream: AudioBuffer | null = null
+  let chatterBuf: AudioBuffer | null = null
   let phase: AmbushPhase = "idle"
   let storey = 0
   let t = 0
@@ -80,6 +82,8 @@ export function startLiftAmbush(g: GameContext, hooks: AmbushHooks) {
       w.root.visible = false
       scene.add(w.root)
       await w.ready
+      // No usable bake: the ambush never arms (logged by the loader).
+      if (!w.rig) return
       w.root.traverse((o) => {
         o.castShadow = true
         o.frustumCulled = false
@@ -99,8 +103,9 @@ export function startLiftAmbush(g: GameContext, hooks: AmbushHooks) {
       // The scream: decoded now (an offline context if the game's isn't running yet; buffers play in any context).
       try {
         const bytes = await (await fetch(new URL(SCREAM_URL, document.baseURI).href)).arrayBuffer()
-        const ctx = audio()?.ctx ?? new OfflineAudioContext(2, 1, 48000)
+        const ctx = audioContext() ?? new OfflineAudioContext(2, 1, 48000)
         scream = await ctx.decodeAudioData(bytes)
+        chatterBuf = await ctx.decodeAudioData(await (await fetch(new URL("sfx/monsters/wen2-chatter.mp3", document.baseURI).href)).arrayBuffer())
       } catch (e) {
         console.warn("ambush: scream not loaded", e)
       }
@@ -123,10 +128,12 @@ export function startLiftAmbush(g: GameContext, hooks: AmbushHooks) {
 
   let stance: "quad" | "biped" = "biped"
   /** Kill light: a low, cold fill from the eye so the body reads in an unlit corridor (lift lobbies are lit). */
-  const killLight = new THREE.PointLight(0xc8d4dc, 0, 6, 2)
-  killLight.castShadow = false
-  camera.add(killLight)
-  killLight.position.set(0, 0.25, -0.3)
+  // Shared and boot-created (lights.ts); placed just above the eye every frame it's lit.
+  const killLight = encounterLights(scene).kill
+  const killOffset = new THREE.Vector3(0, 0.25, -0.3)
+  const placeKill = () => {
+    if (killLight.intensity > 0) killLight.position.copy(killOffset).applyMatrix4(camera.matrixWorld)
+  }
   let beat = BEAT
   /** What killed the player this time ("lift" or "hunter"), for automation. */
   let cause = ""
@@ -238,6 +245,7 @@ export function startLiftAmbush(g: GameContext, hooks: AmbushHooks) {
   }
 
   const offUpdate = flow.onUpdate((dt) => {
+    placeKill()
     // Load and warm as soon as the radio room has been visited (in idle time while the player is in there).
     if (phase === "idle" && story.visited308) void preload()
     if (!wendigo || phase === "idle" || phase === "loading" || phase === "armed" || phase === "dead") return
@@ -409,7 +417,7 @@ export function startLiftAmbush(g: GameContext, hooks: AmbushHooks) {
     if (wendigo) {
       wendigo.root.visible = false
       wendigo.setShade(1)
-      killLight.intensity = 0
+      parkEncounterLight(killLight)
       killLight.distance = 6
       wendigo.animator!.stoop = 0
       wendigo.animator!.lungeStop = 3
@@ -426,6 +434,16 @@ export function startLiftAmbush(g: GameContext, hooks: AmbushHooks) {
     /** The warmed creature (null until 3-08), for the death scenes. */
     creature: () => wendigo,
     scream: () => playScream(),
+    chatter: () => {
+      const a = audio()
+      if (!a || !chatterBuf) return
+      const src = a.ctx.createBufferSource()
+      src.buffer = chatterBuf
+      const gain = a.ctx.createGain()
+      gain.gain.value = 1.1
+      src.connect(gain).connect(a.buses.horror)
+      src.start(0, Math.random() * Math.max(0, chatterBuf.duration - 0.4), 0.35)
+    },
     /** Ground the creature stands on (its ground callback reads this). */
     setGround: (y: number) => void (ground = y),
     hud: (on: boolean) => hud(on),
@@ -451,7 +469,7 @@ export function startLiftAmbush(g: GameContext, hooks: AmbushHooks) {
   const stop = () => {
     hud(false)
     style.remove()
-    killLight.removeFromParent()
+    parkEncounterLight(killLight)
     offArrive()
     offUpdate()
     flow.hold = false

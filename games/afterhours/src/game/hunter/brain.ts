@@ -145,6 +145,14 @@ export class Hunter {
   private trailAt = 0
   private stuckT = 0
   private lastPos = new THREE.Vector3()
+  /** The creature's per-frame update, reused (no allocation per frame). */
+  private upd: { mode: "idle" | "stalk" | "freeze" | "lunge"; stance: "quad" | "biped"; target: THREE.Vector3; velocity: THREE.Vector3; ceiling: number } = {
+    mode: "idle",
+    stance: "quad",
+    target: this.lookTarget,
+    velocity: this.vel,
+    ceiling: Infinity,
+  }
 
   constructor(
     readonly ctx: WorldContext,
@@ -423,7 +431,8 @@ export class Hunter {
     let visible = false
     let dist = Infinity
     const chestY = p.y + ps.eyeHeight * 0.62
-    for (const ty of [ps.eye.y, chestY]) {
+    for (let ti = 0; ti < 2; ti++) {
+      const ty = ti === 0 ? ps.eye.y : chestY
       const dx = p.x - ex
       const dz = p.z - ez
       const d = Math.hypot(dx, ty - ey, dz)
@@ -443,11 +452,14 @@ export class Hunter {
     if (visible) {
       this.hadTrailAt = this.time
       const close = dist < 4
-      this.awareness = close ? 1 : Math.min(1, this.awareness + dt * (0.8 + 3 * Math.max(0, 1 - dist / range)))
+      // Awareness builds with how close and how plain you are: slower out of a hunt, and slower again on someone crouched
+      // or keeping still (a careful player gets a moment to slip away; someone running in plain view doesn't).
+      const plain = this.mode === "hunt" ? 1 : ps.crouch > 0.5 || ps.speed < 0.3 ? 0.3 : 0.6
+      this.awareness = close ? 1 : Math.min(1, this.awareness + dt * (0.8 + 3 * Math.max(0, 1 - dist / range)) * plain)
       this.seenAt = this.time
       this.memory = { x: p.x, z: p.z, s: pS, y: p.y, t: this.time, seen: true, vx: this.player.vel.x, vz: this.player.vel.z }
       if (this.awareness >= 1 && this.mode !== "hunt") this.startHunt()
-      else if (this.mode !== "hunt" && this.awareness > 0.3 && this.time - this.glimpseAt > 1) {
+      else if (this.mode !== "hunt" && this.awareness > 0.45 && this.time - this.glimpseAt > 1) {
         // Something moved over there: turn and go to it (re-aimed at most once a second).
         this.glimpseAt = this.time
         this.investigate({ x: p.x, z: p.z, s: pS }, 0.8, "glimpse")
@@ -532,7 +544,7 @@ export class Hunter {
     const pending = this.pendingTrail()
     // Now and then an ambush at the core stair on the player's likely way: between the storey it last had evidence of
     // them on (what it saw or heard, or 3-08's storey, where it came for them) and the next step of the key trail.
-    if (pending.length && this.time - this.ambushAt > 80 && this.rng() < 0.14) {
+    if (pending.length && this.time - this.ambushAt > 150 && this.rng() < 0.06) {
       const from = this.memory?.s ?? recent[recent.length - 1]?.s ?? 3
       const to = pending[0]!.s
       const lo = Math.min(from, to)
@@ -575,7 +587,7 @@ export class Hunter {
       // The key trail's places it hasn't seen the player finish are patrolled: rooms near them weigh more.
       let trail = 0
       for (const t of pending) trail += Math.exp(-(Math.hypot(t.x - r.px, t.z - r.pz) + Math.abs(t.s - r.s) * 12) / 9)
-      const score = Math.min(1, since / 240) + 1.5 * Math.min(1.5, heat) + 1.3 * Math.min(1.2, trail) + this.rng() * 0.5 - d / 90
+      const score = Math.min(1, since / 240) + 1.5 * Math.min(1.5, heat) + 0.6 * Math.min(1.2, trail) + this.rng() * 0.5 - d / 90
       if (score > bs) {
         bs = score
         best = r
@@ -593,12 +605,12 @@ export class Hunter {
       const since = this.time - (this.visited.get(key) ?? -999)
       if (since < 40) continue
       const d = Math.hypot(t.x - this.pos.x, t.z - this.pos.z) + Math.abs(t.s - this.s) * 14
-      const score = Math.min(1, since / 240) + 1.4 + this.rng() * 0.5 - d / 90
+      const score = Math.min(1, since / 240) + 0.6 + this.rng() * 0.5 - d / 90
       if (score > bs) {
         bs = score
         const p = this.nav.snap(t.s, t.x, t.z, 4)
         if (p) {
-          this.tasks = [{ ...p, s: t.s, look: 3 + this.rng() * 4, kind: "room", room: key }]
+          this.tasks = [{ ...p, s: t.s, look: 2 + this.rng() * 2, kind: "room", room: key }]
           best = null
         }
       }
@@ -927,7 +939,11 @@ export class Hunter {
       this.ceiling = Math.min(this.nav.ceilingAt(this.pos.x, this.pos.z, this.pos.y), this.nav.ceilingAt(this.pos.x + fx, this.pos.z + fz, this.pos.y))
       // Rising from all fours the antlers climb faster than the stoop eases in: ask for 0.3 m more room while it rises.
       const ceiling = this.ceiling - (this.stance === "biped" && now - this.stanceAt < 1.6 ? 0.3 : 0)
-      w.update(dt, { mode, stance: this.stance, target: this.lookTarget, velocity: this.vel, ceiling })
+      const u = this.upd
+      u.mode = mode
+      u.stance = this.stance
+      u.ceiling = ceiling
+      w.update(dt, u)
       // Shown on the player's storey (or both in the open stairwell).
       const pS = storeyOf(ps.pos.y)
       const pCore = ps.pos.x >= CORE.stair.min[0] - 0.5 && ps.pos.x <= CORE.stair.max[0] + 0.5 && ps.pos.z >= CORE.stair.min[1] - 1.5
@@ -970,7 +986,8 @@ export class Hunter {
   private presence(now: number, sp: number) {
     if (now < this.nextPresence || this.mode === "dormant" || this.mode === "caught") return
     const m = this.mode
-    this.nextPresence = now + (m === "hunt" ? 3 + this.rng() * 3 : m === "ambush" ? 9 + this.rng() * 6 : 3.5 + this.rng() * 5)
+    // Waiting in ambush it is still, but not silent: a breath or a snort every few seconds gives it away to a listener.
+    this.nextPresence = now + (m === "hunt" ? 3 + this.rng() * 3 : m === "ambush" ? 4 + this.rng() * 3 : 3.5 + this.rng() * 5)
     const g = this.nav.grids[this.s]
     const c = this.nav.cellAt(this.pos.x, this.pos.z)
     const clear = g && c >= 0 ? g.clear[c]! : 4
@@ -979,7 +996,11 @@ export class Hunter {
     const fx = Math.sin(this.heading)
     const fz = Math.cos(this.heading)
     const opts: { k: string; w: number; fire: () => void }[] = []
-    if (m === "ambush") opts.push({ k: "duct", w: 1, fire: () => this.voice.duct(head, true) })
+    if (m === "ambush") {
+      opts.push({ k: "duct", w: 1, fire: () => this.voice.duct(head, true) })
+      opts.push({ k: "snort", w: 0.8, fire: () => this.voice.snort(head) })
+      opts.push({ k: "breath", w: 1, fire: () => this.voice.breath(head, false) })
+    }
     else {
       opts.push({ k: "vocal", w: m === "hunt" ? 1.6 : 1.3, fire: () => this.voice.vocal(head, m === "hunt" || m === "search" ? (this.rng() < 0.7 ? "chatter" : "groan") : (["groan", "moan", "chatter"] as const)[Math.floor(this.rng() * 3)]!, m === "hunt" ? 1 : 0.8) })
       opts.push({ k: "snort", w: 0.8, fire: () => this.voice.snort(head) })

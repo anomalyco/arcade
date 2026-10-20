@@ -7,6 +7,7 @@ import { startLiftAmbush } from "./lift-ambush"
 import { bindRoadAmbush } from "./road-ambush"
 import { clearDeath, deathVariant, playDeath, prepareDeathLights } from "../death/variants"
 import * as THREE from "three/webgpu"
+import type { Box } from "../../world/context"
 import { hunterHandle, type HunterHandle } from "../hunter"
 
 // Scripted monster encounters for a run (play mode), and what happens when one kills you: the death screen, restart
@@ -75,8 +76,12 @@ export function startEncounters(g: GameContext, shell: EncounterShell) {
           from: new THREE.Vector3(at.x, at.y, at.z),
           tick: (fn) => g.flow.onUpdate(fn),
           scream: () => ambush.scream(),
+          chatter: () => ambush.chatter(),
           flood: () => death.flood(),
           lights,
+          ceiling: at.y + 2.94,
+          canvas: g.world.renderer.domElement,
+          free: (from, dir) => freeAlong(g.ctx.colliders, from, dir),
         }).then(() => ambushHooksKill())
       } else {
         // Not warmed yet (shouldn't happen after 3-08): straight to the red.
@@ -133,4 +138,31 @@ export function startEncounters(g: GameContext, shell: EncounterShell) {
     death.hide()
   })
   return api
+}
+
+/** Free horizontal distance from a point along a direction against the colliders at body height (death scenes). */
+function freeAlong(colliders: readonly Box[], from: THREE.Vector3, dir: THREE.Vector3) {
+  let best = 40
+  for (const b of colliders) {
+    if (b.max[1] < from.y - 1.3 || b.min[1] > from.y - 0.2) continue
+    let t0 = 0
+    let t1 = best
+    let hit = true
+    for (const [o, d, lo, hi] of [
+      [from.x, dir.x, b.min[0], b.max[0]],
+      [from.z, dir.z, b.min[2], b.max[2]],
+    ] as const) {
+      if (Math.abs(d) < 1e-9) {
+        if (o < lo || o > hi) hit = false
+        continue
+      }
+      let a = (lo - o) / d
+      let c = (hi - o) / d
+      if (a > c) [a, c] = [c, a]
+      t0 = Math.max(t0, a)
+      t1 = Math.min(t1, c)
+    }
+    if (hit && t0 <= t1 && t0 > 0.05) best = Math.min(best, t0)
+  }
+  return best
 }

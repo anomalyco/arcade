@@ -153,6 +153,13 @@ export function createCreatureMaterial(pal: CreaturePalette = WENDIGO_PALETTE, o
   let hornC: N = mix(cHorn, cHornL, cords.mul(0.6).add(smoothstep(0.5, 0.85, curv).mul(0.3)).add(mid.mul(0.25)).clamp(0, 1))
   hornC = hornC.mul(fissure.mul(fam).oneMinus().mul(0.75).add(0.25))
   let col: N = mix(mix(skin, boneC, boneM), hornC, hornM)
+  // Teeth: tagged bone 1 + horn 0.25 by the bake. Ivory to yellowed, darker toward the root.
+  const toothM = boneM.mul(smoothstep(0.1, 0.2, hornM)).mul(smoothstep(0.42, 0.32, hornM)).toVar()
+  const ivory = (mix as N)(vec3(0.62, 0.56, 0.42), vec3(0.78, 0.74, 0.62), smoothstep(-0.2, 0.5, mid))
+  col = (mix as N)(col, ivory, toothM)
+  // Inner mouth (painted dirt 1 + blood 1): near-black red, wet but not lacquered.
+  // (Also the skull's own heavily bloodied inner surfaces behind the split: the cavity reads black, not red.)
+  const mouthM: N = smoothstep(0.9, 1, blood).mul(smoothstep(0.9, 1, dirt)).max(smoothstep(0.55, 0.85, blood).mul(boneM.oneMinus().max(smoothstep(0.5, 0.2, curv)))).toVar()
   const grime = smoothstep(0.2, 0.9, dirt.add(mid.mul(0.4)))
   col = mix(col, vec3(0.05, 0.04, 0.03), grime.mul(0.75))
   const bl = smoothstep(0.35, 0.8, blood.add(mid.mul(0.3)))
@@ -160,7 +167,7 @@ export function createCreatureMaterial(pal: CreaturePalette = WENDIGO_PALETTE, o
   // Cavities darken even under direct light (aoNode only touches ambient).
   const cav = smoothstep(0.5, 0.18, curv).mul(mix(float(1), float(0.35), boneM))
   col = col.mul(mix(float(0.15), float(1), ao.pow(1.5))).mul(mix(float(1), float(0.3), cav))
-  mat.colorNode = col.mul(shade)
+  mat.colorNode = (mix as N)(col, vec3(0.008, 0.0045, 0.004), mouthM).mul(shade)
   {
     const face = attribute("face", "float") as N
     const pv = positionView as N
@@ -191,12 +198,12 @@ export function createCreatureMaterial(pal: CreaturePalette = WENDIGO_PALETTE, o
   // ---------------------------------------------------------------- surface response
   const strand = smoothstep(0.1, 0.35, dangle)
   const wetness: N = cav.mul(0.6).mul(strand.oneMinus()).add(bl.mul(0.4)).clamp(0, 1).mul(hornM.oneMinus())
-  mat.roughnessNode = mix(mix(mix(mix(float(0.66), float(0.62), boneM), float(0.8), hornM), float(0.4), wetness.mul(0.45)).sub(cords.mul(0.06).mul(fam).mul(hornM.oneMinus())), float(0.85), strand)
+  mat.roughnessNode = mix(mix(mix(mix(mix(mix(float(0.66), float(0.62), boneM), float(0.8), hornM), float(0.4), wetness.mul(0.45)).sub(cords.mul(0.06).mul(fam).mul(hornM.oneMinus())), float(0.85), strand), float(0.16), toothM), float(0.7), mouthM)
   mat.metalnessNode = float(0)
-  mat.clearcoatNode = wetness.mul(0.15).mul(boneM.oneMinus()).mul(hornM.oneMinus())
+  mat.clearcoatNode = wetness.mul(0.15).mul(mouthM.oneMinus()).mul(boneM.oneMinus()).mul(hornM.oneMinus()).add(toothM.mul(0.7))
   mat.clearcoatRoughnessNode = float(0.25)
   mat.aoNode = ao
-  mat.specularIntensityNode = ((mix(float(0.5), float(0.3), dirt).mul(mix(float(1), float(0.5), hornM))).mul(shade)).mul(strand.mul(-0.6).add(1))
+  mat.specularIntensityNode = (((mix(float(0.5), float(0.3), dirt).mul(mix(float(1), float(0.5), hornM))).mul(shade)).mul(strand.mul(-0.6).add(1))).mul(mouthM.mul(-0.85).add(1))
   // Back-lit translucency through thin parts: a faint, dull flesh tint only (never a glow).
   mat.thicknessColorNode = vec3(0.06, 0.025, 0.02).mul(opts.sss ?? 1).mul(thin).mul(boneM.oneMinus()).mul(hornM.oneMinus()).mul(bl.oneMinus())
   mat.thicknessDistortionNode = float(0.25)

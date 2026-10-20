@@ -87,6 +87,7 @@ html, body { margin: 0; height: 100%; background: #030605; overflow: hidden; }
 #shell button:focus::before { content: "▸"; position: absolute; left: -1.5em; letter-spacing: 0; }
 #shell button:disabled { opacity: 0.3; cursor: default; }
 #shell button.waiting { animation: shell-pulse 1.6s ease-in-out infinite; }
+#shell button.starting { opacity: 0.45; cursor: progress; text-shadow: none; }
 @keyframes shell-pulse { 50% { opacity: 0.45; } }
 
 .shell-panel h2 {
@@ -195,6 +196,8 @@ html, body { margin: 0; height: 100%; background: #030605; overflow: hidden; }
   opacity: 0; transition: opacity 0.9s ease, transform 0.9s ease;
 }
 .hints-toast.on { opacity: 1; transform: translate(-50%, 0); }
+/* In the truck's cab (src/game/escape sets body[data-driving]) no on-foot hint toast (the "M map" one included). */
+body[data-driving] .hints-toast { display: none; }
 
 /* ---- Story subtitles (src/game/shell/subtitles.ts `showSubtitle`) and interaction prompts: a soft dark backing so
    the typewriter line reads over any surface (a white shirt under a pendant, the fog). Sizes are !important because

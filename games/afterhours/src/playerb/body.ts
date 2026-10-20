@@ -7,6 +7,9 @@ import { Viewmodel, VIEW_LAYER } from "./viewmodel"
 import { SeatRig, type SeatHost, type SeatOptions } from "./seat"
 import { cylDist as cylDistX, measureHands, skinVsCyl, wrapFingers, type Cyl, type HandSkin } from "./grip"
 
+/** Automation: draw the seat rig's markers (read once, not per frame). */
+const INTRO_RIG = typeof location !== "undefined" && new URLSearchParams(location.search).has("introRig")
+
 /**
  * Albedo scale for the body while it sits inside the car: the cabin's roof and pillars occlude the many unshadowed
  * clustered lamps (only a couple of lamps have shadow maps), which otherwise light the driver's hands and arms as if
@@ -955,7 +958,7 @@ export class CharacterBody {
     if (Math.abs(shadeWant - cabinShade.value) < 1e-3) cabinShade.value = shadeWant
     if (cabinShade.value !== before) applyCabinShade()
     if (this.seatRig) {
-      if (this.root.parent && new URLSearchParams(location.search).has("introRig")) this.seatRig.showMarkers(this.root.parent)
+      if (this.root.parent && INTRO_RIG) this.seatRig.showMarkers(this.root.parent)
       this.seatRig.update(dt)
       this.updateViewmodel(dt, s, false)
       this.view.weight = 0
