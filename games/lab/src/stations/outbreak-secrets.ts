@@ -30,7 +30,7 @@ export default defineStation({
   title: "Outbreak: Secrets",
   summary:
     "Subtle details, strange sightings and one hidden chain, picked per run from the town's seed and the same for every co-op client. Nothing is explained. Tunables are in Backquote › Secrets (Today is off): per-secret toggles, a rarity scale and a force picker.",
-  order: 131,
+  order: 133,
   prop: "panels",
   color: 0x8fb38a,
   status: "live",
