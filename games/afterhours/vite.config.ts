@@ -1,8 +1,10 @@
 import { defineConfig } from "vite"
 
-export default defineConfig({
-  base: "./",
-  build: { target: "esnext", outDir: "dist/arcade/afterhours", emptyOutDir: true, chunkSizeWarningLimit: 2000, rollupOptions: { input: ["index.html", "look.html", "body.html", "bodyb.html"] } },
+// The production build is the game alone, served by the Worker (wrangler.jsonc) at anoma.ly/arcade/ashwood/; the lab
+// pages (look, body, title-lab, …) are dev-server only. The dev server keeps serving everything at `/`.
+export default defineConfig(({ command }) => ({
+  base: command === "build" ? "/arcade/ashwood/" : "./",
+  build: { target: "esnext", outDir: "dist/arcade/ashwood", emptyOutDir: true, chunkSizeWarningLimit: 2000, rollupOptions: { input: ["index.html"] } },
   server: {
     fs: { allow: ["../.."] },
     allowedHosts: true,
@@ -15,4 +17,4 @@ export default defineConfig({
     entries: ["index.html", "src/**/*.ts"],
     include: ["three/webgpu", "three/tsl"],
   },
-})
+}))
