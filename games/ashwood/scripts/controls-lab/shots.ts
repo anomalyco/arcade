@@ -19,14 +19,14 @@ const errors: string[] = []
 page.on("pageerror", (e) => errors.push(e.message))
 type Lab = { start(): void; recall(): void; use(id: string): void; setContext(id: string): void }
 const COMBOS: { name: string; s: Record<string, unknown>; act?: (l: Lab) => void }[] = [
-  { name: "under-corridor", s: { bg: "corridor", variant: "under", style: "outline" } },
-  { name: "row-lot", s: { bg: "lot", variant: "row", style: "typewriter" } },
-  { name: "stack-room", s: { bg: "room", variant: "stack", style: "outline" } },
-  { name: "index-room", s: { bg: "room", variant: "index", style: "outline" } },
+  { name: "under-corridor", s: { bg: "corridor", variant: "under", style: "match" } },
+  { name: "row-lot", s: { bg: "lot", variant: "row", style: "match" } },
+  { name: "stack-room", s: { bg: "room", variant: "stack", style: "match" } },
+  { name: "index-room", s: { bg: "room", variant: "index", style: "match" } },
 ]
 await page.goto("http://localhost:5196/controls-lab.html")
 for (const c of COMBOS) {
-  await page.evaluate((s) => localStorage.setItem("controlsLab.v1", JSON.stringify({ grid: false, ...s })), c.s)
+  await page.evaluate((s) => localStorage.setItem("controlsLab.v2", JSON.stringify({ grid: false, ...s })), c.s)
   await page.reload()
   await page.evaluate(() => document.fonts.ready)
   await page.waitForTimeout(1200)
@@ -34,7 +34,7 @@ for (const c of COMBOS) {
   await page.waitForTimeout(1600)
   await page.locator(".cl-frame").first().screenshot({ path: `${out}/controls-lab-${c.name}.png` })
 }
-await page.evaluate(() => localStorage.setItem("controlsLab.v1", JSON.stringify({ bg: "corridor", grid: true, style: "outline" })))
+await page.evaluate(() => localStorage.setItem("controlsLab.v2", JSON.stringify({ bg: "corridor", grid: true })))
 // Tall enough that all twelve variants (four rows of three) fit in one capture.
 await page.setViewportSize({ width: 1600, height: 1060 })
 await page.reload()

@@ -23,8 +23,9 @@ type State = {
   fadeSeconds: number
   grid: boolean
 }
-const KEY = "controlsLab.v1"
-const DEFAULTS: State = { bg: "corridor", variant: "strip", style: "outline", size: 1, opacity: 0.8, dx: 0, dy: 0, fade: "always", fadeSeconds: 10, grid: false }
+/** v2: "match objective" became the default style (and opacity 1, since the ink carries the objective's own alpha). */
+const KEY = "controlsLab.v2"
+const DEFAULTS: State = { bg: "corridor", variant: "strip", style: "match", size: 1, opacity: 1, dx: 0, dy: 0, fade: "always", fadeSeconds: 10, grid: false }
 const state: State = (() => {
   try {
     return { ...DEFAULTS, ...(JSON.parse(localStorage.getItem(KEY) ?? "{}") as Partial<State>) }
@@ -55,7 +56,7 @@ app.innerHTML = `
     <div class="cl-field">Frame <select id="bg">${opt(Object.entries(BGS).map(([k, [n]]) => [k, n]))}</select></div>
     <div class="cl-field">Variant <select id="variant">${opt(VARIANTS.map((v) => [v.id, v.name]))}</select></div>
     <p class="cl-note" id="note"></p>
-    <div class="cl-field">Key caps <select id="style">${opt([["outline", "Outlined"], ["filled", "Filled"], ["typewriter", "Typewriter key"], ["bracket", "Plain [E] text"]])}</select></div>
+    <div class="cl-field">Key caps <select id="style">${opt([["match", "Match objective (default)"], ["outline", "Outlined"], ["filled", "Filled"], ["typewriter", "Typewriter key"], ["bracket", "Plain [E] text"]])}</select></div>
     <div class="cl-field">Size <input id="size" type="range" min="0.7" max="1.6" step="0.05"><output id="size-o"></output></div>
     <div class="cl-field">Opacity <input id="opacity" type="range" min="0.2" max="1" step="0.05"><output id="opacity-o"></output></div>
     <div class="cl-field">Offset X <input id="dx" type="range" min="-200" max="200" step="2"><output id="dx-o"></output></div>

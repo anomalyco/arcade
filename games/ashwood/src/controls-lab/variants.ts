@@ -1,7 +1,7 @@
 // Controls Lab: the controls, the key-cap styles and the 10 display variants. Each variant returns markup for the
 // 1600×900 stage; `View` says what's been used, recalled or is contextually relevant. 1984 paper/typewriter look.
 
-export type CapStyle = "outline" | "filled" | "typewriter" | "bracket"
+export type CapStyle = "match" | "outline" | "filled" | "typewriter" | "bracket"
 export type Fade = "always" | "seconds" | "firstUse"
 
 export type Control = { id: string; keys: string[]; word: string; context: string }
