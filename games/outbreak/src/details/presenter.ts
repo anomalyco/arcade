@@ -17,6 +17,7 @@ import { DistantLife, tvLevel, type LifeSound } from "./life"
 import { buildDetailMeshes, TV_LAMP_SLOT } from "./models"
 import { DETAIL_MODELS, placeBuildingDetails, placeCarDetails, placeCrowFlocks, type CruiserSite, type DetailSite } from "./placement"
 import type { OutbreakDetailSettings } from "./settings"
+import { LifeTouches, type TouchFrame } from "./touches"
 
 /** Most instances of one detail model drawn in a frame (tape has many short segments). */
 export const DETAIL_MODEL_CAP = 96
@@ -56,6 +57,9 @@ export class DetailsPresenter {
   readonly shown = { planned: 0, drawn: 0, turnedOver: 0, buildings: 0, tvs: 0, tvLights: 0, crows: { ground: 0, flying: 0, gone: 0 }, barks: 0 }
   readonly crows = new CrowFlocks()
   readonly life = new DistantLife()
+  /** Details · Life: moths, flies, eyes under the trees, breath (`touches.ts`). */
+  readonly touches = new LifeTouches()
+  private readonly lifeOut = { alpha: 0, add: 0 }
   private crowKey = ""
   private readonly crowPoses: CrowPose[] = []
   private tvs: Tv[] = []
@@ -242,6 +246,15 @@ export class DetailsPresenter {
 
   private time = 0
 
+  /**
+   * Details · Life sprites into the renderer's alpha and additive buffers (after everything else that writes them);
+   * returns the new counts in a reused object.
+   */
+  writeLife(f: TouchFrame, s: OutbreakDetailSettings, alpha: Float32Array, alphaCount: number, add: Float32Array, addCount: number): { readonly alpha: number; readonly add: number } {
+    this.touches.write(f, s, s.worldDetails ? this.sites : [], alpha, alphaCount, add, addCount, this.lifeOut)
+    return this.lifeOut
+  }
+
   /** Distant dogs at night (`life.ts`); `play` is the game's audio. */
   stepLife(time: number, s: OutbreakDetailSettings, night: number, listener: { x: number; y: number }, play: (e: LifeSound) => void): void {
     this.life.step(time, s, night, listener, play)
@@ -249,6 +262,7 @@ export class DetailsPresenter {
   }
 
   reset(): void {
+    this.touches.reset()
     this.crows.reset()
     this.crowKey = ""
     this.life.reset()

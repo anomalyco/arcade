@@ -67,7 +67,12 @@
   bodies that scatter from survivors and gunshots (`crows.ts`, wing flaps from the library), televisions left on that
   flicker on their room (`TV_LAMP_SLOT`, clipped like table lamps), dogs barking far off at night (`life.ts`). Placement is a pure function of
   the town and `dtSeed` per building and car (`placement.ts`), meshes are box-built (`models.ts`), drawn instanced
-  from `scene/frame-renderer.ts`. Tests: `tests/details.test.ts`, `tests/details-life.test.ts`.
+  from `scene/frame-renderer.ts`. Life touches (Backquote › Details · Life, `touches.ts`; "Life touches" off is
+  Today): moths circling lit fixtures (`swarms.ts`, glow from the frame's `lampPower`), flies over bodies and bins seen
+  only in light, eyes under yard trees that catch the torch and bolt plus one rare pair from night 2 that does not
+  (`eyeshine.ts`), breath in the cold beam (`breath.ts`). All are renderer alpha/additive sprites (in the TAA reactive
+  mask) lit on the CPU by `BeamProbe` (`light-probe.ts`) from the frame's torch slots. Tests: `tests/details.test.ts`,
+  `tests/details-life.test.ts`, `tests/details-touches.test.ts`.
 - Houses (AR-79, `shared/houses/` generator, `src/houses/` meshes, Lab: Backquote › World · Variety, station
   `outbreak-houses`): streamed homes outside the origin block get a form (bungalow, colonial, ranch, duplex, shotgun,
   farmhouse, trailer, apartment, corner store), a condition (kept, derelict, burnt, under construction), their own

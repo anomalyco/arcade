@@ -19,6 +19,7 @@ import type { CoopView } from "../coop-view"
 import { applyOutbreakDayNight } from "../day-night"
 import { BloodStains, setCurrentBloodStains } from "../blood/stains"
 import { DetailsPresenter, setCurrentDetails } from "../details/presenter"
+import { townNight, type TouchFrame } from "../details/touches"
 import { ClosetView } from "../discovery/closet"
 import { lowBatteryBeam, type BeamLook } from "../discovery/flashlight"
 import { PageGlance } from "../discovery/glance"
@@ -120,6 +121,8 @@ export class OutbreakFrameRenderer {
   /** The eased peek blend (camera lean, sight, roof cut): `src/peek-view.ts`. */
   private readonly peekView = new PeekView()
   lastDayNightHour = -1
+  /** Reused input for the Details · Life touches (`details/touches.ts`). */
+  private lifeFrame!: TouchFrame
   private readonly footfall: (x: number, y: number, speed: number) => void
 
   constructor(private readonly host: OutbreakFrameRendererHost) {
@@ -164,6 +167,23 @@ export class OutbreakFrameRenderer {
     setCurrentFx(this.fx)
     this.details = new DetailsPresenter(this.renderer)
     setCurrentDetails(this.details)
+    this.lifeFrame = {
+      dt: 0,
+      time: 0,
+      town: session().view.town,
+      darkness: 0,
+      sun: 1,
+      night: 1,
+      view: [0, 0, 0, 0],
+      lights: this.frameLighting.lights,
+      beamFrom: 1,
+      beamTo: 1,
+      lampPower: this.frameLighting.lampPower,
+      survivors: [],
+      noises: [],
+      vision: { visible: () => false },
+      ledger: session().sim.progression.ledger,
+    }
     this.details.crows.onScatter = (x, z, birds) => {
       audio.play({ id: "creature.crow.caw", x, y: z, delay: 0.02, gain: 0.75, source: "crow" })
       for (let i = 0; i < Math.min(3, birds); i++) audio.play({ id: "wings.flap", x, y: z, delay: i * 0.07, gain: 0.75, rate: 1.08 + i * 0.06, source: "crow" })
@@ -717,6 +737,23 @@ export class OutbreakFrameRenderer {
       : { alphaCount: fogSoundAlphaCount, batches: [] as readonly Batch[] }
     const { render } = this
     render.alphaCount = this.fire.smoke(fireFrame, this.alphaSprites, motionOut.alphaCount)
+    const lf = this.lifeFrame
+    lf.dt = vdt
+    lf.time = time
+    lf.town = town
+    lf.darkness = day.darkness
+    lf.sun = day.sun
+    lf.night = townNight(session.sim)
+    lf.view = tightView
+    lf.beamTo = beamState.count
+    lf.lampPower = this.frameLighting.lampPower
+    lf.survivors = session.sim.slots
+    lf.noises = noises
+    lf.vision = vision
+    lf.ledger = session.sim.progression.ledger
+    const life = this.details.writeLife(lf, settings.details, this.alphaSprites, render.alphaCount, this.addSprites, addCount)
+    render.alphaCount = life.alpha
+    addCount = life.add
     render.addCount = addCount
     render.splatter =
       settings.combat.bloodStyle === 0

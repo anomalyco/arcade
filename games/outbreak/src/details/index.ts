@@ -8,5 +8,8 @@ export const outbreakDetailsFeature = registerOutbreakClientFeature({
   order: 47,
   settingsGroup: { subsystem: "details", defaults: DEFAULT_DETAIL_SETTINGS },
   labControls: () => detailControls,
-  harnessState: () => ({ details: currentDetails()?.shown ?? null }),
+  harnessState: () => {
+    const d = currentDetails()
+    return { details: d ? { ...d.shown, life: { ...d.touches.shown } } : null }
+  },
 })
