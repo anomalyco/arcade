@@ -4,7 +4,8 @@ import { onReveal, transmitter } from "../../world/interior/storeys/s3/transmitt
 import { playCarDestroyed } from "../../audio/story"
 import { PARKED } from "../intro/route"
 import { LOT_Y } from "../../world/compound/lot"
-import { DEFAULT_TRAIL, Hunter, type CatchInfo, type TrailStep } from "./brain"
+import { DEFAULT_TRAIL, Hunter, TRAIL_PLACES, type CatchInfo, type TrailStep } from "./brain"
+import { STAGE, trailStage } from "../objectives"
 import { HunterDebug, type PlayerTrail } from "./debug"
 import { NavGraph, storeyOf } from "./nav"
 import { PlayerNoises } from "./senses"
@@ -49,9 +50,9 @@ export type HunterHandle = {
    */
   lostPlayerFor(): number
   /**
-   * The key trail it patrols while roaming: the steps the player still has to do (e.g. Hargrove's locker, the key
-   * cabinet in 0-30, the dock), in order. Defaults to `DEFAULT_TRAIL` (brain.ts). Rooms near pending steps and the core
-   * stair between them are patrolled more, and it sometimes waits at the stair on the way to the next one.
+   * The key trail it patrols while roaming, overriding the one it derives from the story (`trailStage()`: the sign-out
+   * by 3-08, the 0-30 key cabinet, Security's key box in 0-38, back to 0-30, the motor-pool shed). Rooms near pending
+   * steps and the core stair between them are patrolled more, and it sometimes waits at the stair on the way.
    */
   setTrail(steps: TrailStep[]): void
   /** A trail step is done (the locker searched, the keys taken): it stops patrolling there. */
@@ -66,7 +67,7 @@ export type HunterHandle = {
 let current: HunterHandle | null = null
 /** The live hunter, if one is installed (checkpoints, the death flow). */
 export const hunterHandle = () => current
-export { DEFAULT_TRAIL, type TrailStep }
+export { DEFAULT_TRAIL, TRAIL_PLACES, type TrailStep }
 
 export function installHunter(world: World, o: { flow?: Flow; signal?: AbortSignal; start?: string | null; debug?: boolean } = {}): HunterHandle {
   current?.dispose()
@@ -76,6 +77,16 @@ export function installHunter(world: World, o: { flow?: Flow; signal?: AbortSign
   const seed = Number(ctx.params.get("hunterSeed") ?? NaN)
   const hunter = new Hunter(ctx, player, world.scene, nav, Number.isFinite(seed) ? seed : undefined)
   const noises = new PlayerNoises(ctx, player, hunter.ownDoorIds)
+  // The key trail it patrols: what the player still has to do, from the story's progress (objectives.ts).
+  hunter.trailSource = () => {
+    const st = trailStage()
+    const T = TRAIL_PLACES
+    if (st >= STAGE.escape) return [T.shed]
+    if (st >= STAGE.office) return [{ ...T.cabinet, id: "office" }, T.shed]
+    if (st >= STAGE.security) return [T.security, { ...T.cabinet, id: "office" }, T.shed]
+    if (st >= STAGE.cabinet) return [T.cabinet, T.security, T.shed]
+    return [T.signout, T.cabinet, T.security, T.shed]
+  }
   const playerTrail: PlayerTrail = []
   const debug = new HunterDebug(hunter, nav, playerTrail)
   if (o.debug) ctx.settings["hunter.debug"] = 1
@@ -205,6 +216,7 @@ export function installHunter(world: World, o: { flow?: Flow; signal?: AbortSign
       hunter.keyTrail = steps.map((t) => ({ ...t }))
     },
     completeTrail(id) {
+      hunter.keyTrail ??= hunter.pendingTrail().map((t) => ({ ...t }))
       for (const t of hunter.keyTrail) if (t.id === id) t.done = true
     },
     setCatchHandler(fn) {

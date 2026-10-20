@@ -144,7 +144,6 @@ html, body { margin: 0; height: 100%; background: #030605; overflow: hidden; }
   background: rgba(0, 0, 0, 0.6); text-shadow: 0 0 6px rgba(200, 230, 215, 0.4); pointer-events: none;
   animation: shell-pulse 2.2s ease-in-out infinite; transition: opacity 0.6s ease;
 }
-#shell[data-sound="ack"] .shell-prompt { animation: none; color: rgba(232, 162, 84, 0.9); }
 #shell[data-sound="on"] .shell-prompt, #shell:not([data-world="loading"]) .shell-prompt { opacity: 0; animation: none; }
 
 /* ---- Title card (src/game/shell/title.ts) ---- */

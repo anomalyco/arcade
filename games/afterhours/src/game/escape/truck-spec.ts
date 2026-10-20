@@ -24,9 +24,12 @@ export const TRUCK: VehicleSpec = {
   ],
   dash: [-0.3, 1.03, -0.8],
   // Door card inner face x ≈ -0.545, its top (the window sill) y ≈ 1.05 (truck-parts.json `nodes`).
-  rig: { hip: [-0.3, 0.715, -0.06], handle: [-0.53, 0.93, -0.62], edge: [-0.53, 1.0, -0.05] },
+  rig: { hip: [-0.3, 0.745, -0.06], handle: [-0.53, 0.93, -0.62], edge: [-0.53, 1.0, -0.05] },
   // 0.151 outer.
   rim: { radius: 0.135, tube: 0.016, cut: 0.115 },
   steerRatio: 17,
   beam: [0, 0.74, -2.35],
+  // The two sun visors under the roof's front edge and their hinge rod (at eye level from the seat).
+  cabCut: { min: [-0.72, 1.35, -0.86], max: [0.72, 1.62, -0.42] },
+  glassOpacity: 0.3,
 }

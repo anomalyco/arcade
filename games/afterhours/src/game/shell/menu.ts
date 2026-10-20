@@ -311,13 +311,9 @@ export function createMenu(root: HTMLElement, settings: ShellSettings, hooks: Me
       }
       setTimeout(() => tuner.stop(), 900)
     },
-    /** Sound has started: the prompt says so for a moment, then goes. */
+    /** Sound has started: the "press any key" prompt goes. */
     soundOn() {
-      if (el.dataset.sound) return
-      el.dataset.sound = "ack"
-      const p = el.querySelector<HTMLElement>(".shell-prompt")
-      if (p) p.textContent = HOME.promptDone
-      setTimeout(() => (el.dataset.sound = "on"), 900)
+      el.dataset.sound = "on"
     },
     fail(message: string) {
       el.dataset.world = "failed"

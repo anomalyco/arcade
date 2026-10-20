@@ -58,6 +58,10 @@ export type VehicleSpec = {
   steerRatio: number
   /** Where the shadowed beam starts (model space, between the headlamps). */
   beam: V3
+  /** Body triangles removed for a clearer view from the driver's seat (sun visors): centroids inside this box. */
+  cabCut?: { min: V3; max: V3 }
+  /** Window glass opacity × this (the model's tinted glass reads as a grey veil from inside at night). */
+  glassOpacity?: number
 }
 
 /** The intro's 1980 government-fleet sedan (car_sedan_b, "Negotiator '80"). */
@@ -265,7 +269,16 @@ export class PlayerCar {
       // markings (the atlas colour as the mask), additive over the lit surface.
       const overlay = this.gauges(part)
       if (overlay) this.body.add(overlay)
-    } else this.body.add(part)
+    } else {
+      const mat = part.material as THREE.Material
+      if (mat.transparent && this.spec.glassOpacity !== undefined) {
+        const m = mat.clone()
+        m.opacity = mat.opacity * this.spec.glassOpacity
+        m.name = `${mat.name}-clear`
+        part.material = m
+      } else if (!mat.transparent && name === "body" && this.spec.cabCut) this.cut(part, this.spec.cabCut)
+      this.body.add(part)
+    }
   }
 
   /**
@@ -312,6 +325,27 @@ export class PlayerCar {
     rim.castShadow = true
     rim.receiveShadow = true
     this.steering.add(rim)
+  }
+
+  /** Drops the triangles of `part` whose centroid (model space) lies inside `box`. */
+  private cut(part: THREE.Mesh, box: { min: V3; max: V3 }) {
+    part.updateMatrix()
+    const m = part.matrix
+    const pos = part.geometry.attributes.position!
+    const idx = part.geometry.index!
+    const keep: number[] = []
+    const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3()
+    for (let t = 0; t < idx.count; t += 3) {
+      a.fromBufferAttribute(pos, idx.getX(t)).applyMatrix4(m)
+      b.fromBufferAttribute(pos, idx.getX(t + 1)).applyMatrix4(m)
+      c.fromBufferAttribute(pos, idx.getX(t + 2)).applyMatrix4(m)
+      a.add(b).add(c).divideScalar(3)
+      const inside = a.x > box.min[0] && a.x < box.max[0] && a.y > box.min[1] && a.y < box.max[1] && a.z > box.min[2] && a.z < box.max[2]
+      if (!inside) keep.push(idx.getX(t), idx.getX(t + 1), idx.getX(t + 2))
+    }
+    const g = part.geometry.clone()
+    g.setIndex(keep)
+    part.geometry = g
   }
 
   /** A clone of a lens material that glows with `glow` × the light's level. */

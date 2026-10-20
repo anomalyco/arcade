@@ -3,6 +3,7 @@ import type { DoorHandle } from "../../world/doors"
 import { BUILDING, CORE, storeyY } from "../../world/layout"
 import { ST } from "../../world/interior/core"
 import { interiorRooms } from "../../world/interior/registry"
+import { heightAt } from "../../world/height"
 import type { Rect } from "../../world/interior/plan"
 
 // The hunter's navigation over the real building, derived (never hand-placed) from what the world registered:
@@ -19,9 +20,11 @@ import type { Rect } from "../../world/interior/plan"
 // (hashed in 2 m buckets) and the door leaves at their current pose.
 
 export const CELL = 0.25
-const X0 = -54.65
+/** The grid: the main block and the core tower, plus (ground floor only) a strip west of the building and the dock
+ *  court north of it, out to the motor-pool shed (the escape: src/game/escape/places.ts `SHED`). */
+const X0 = -60
 const X1 = 34.65
-const Z0 = -21.65
+const Z0 = -46
 const Z1 = 25.0
 export const NX = Math.ceil((X1 - X0) / CELL)
 export const NZ = Math.ceil((Z1 - Z0) / CELL)
@@ -213,6 +216,22 @@ export class NavGraph {
       if (f.max[0] < X0 || f.min[0] > X1 || f.max[1] < Z0 || f.min[1] > Z1) continue
       this.fill(walk, f.min[0], f.min[1], f.max[0], f.max[1], 1)
     }
+    // Ground floor, outdoors: the court and the strip west of the building, walkable where the terrain is level with
+    // the floor (the dock platform, 1.1 m up, and anything else off that level stays out).
+    if (s === 0) {
+      const M = BUILDING.main
+      for (let k = 0; k < NZ; k++) {
+        const z = cellZ(k)
+        for (let i = 0; i < NX; i++) {
+          const x = cellX(i)
+          if (x > M.min[0] && x < M.max[0] && z > M.min[1] && z < M.max[1]) continue
+          const c = k * NX + i
+          if (walk[c]) continue
+          const h = heightAt(x, z)
+          if (h > y - 0.55 && h < y + 0.4) walk[c] = 1
+        }
+      }
+    }
     this.fill(walk, CORE.lift.min[0], CORE.lift.min[1], CORE.lift.max[0], CORE.lift.max[1], 0)
     for (const b of this.boxes) {
       if (b.max[1] <= y + KNEE || b.min[1] >= y + HEAD) continue
@@ -399,7 +418,7 @@ export class NavGraph {
     return this.snapRaw(s, x, z, maxR)
   }
 
-  /** Highest floor at (x, z) between `minY` and `maxY`, or NaN. */
+  /** Highest floor at (x, z) between `minY` and `maxY` (outside the main block, the terrain counts too), or NaN. */
   groundAt(x: number, z: number, maxY: number, minY = -Infinity) {
     const l = this.floorHash.get(bkey(Math.floor(x / BUCKET), Math.floor(z / BUCKET)))
     let g = NaN
@@ -408,6 +427,11 @@ export class NavGraph {
         if (x < f.min[0] || x > f.max[0] || z < f.min[1] || z > f.max[1] || f.y > maxY || f.y < minY) continue
         if (!(f.y <= g)) g = f.y
       }
+    const M = BUILDING.main
+    if (!(x > M.min[0] && x < M.max[0] && z > M.min[1] && z < M.max[1])) {
+      const h = heightAt(x, z)
+      if (h <= maxY && h >= minY && !(h <= g)) g = h
+    }
     return g
   }
 

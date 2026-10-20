@@ -1,8 +1,10 @@
 // A scripted run of the post-reveal key trail against the hunter, headless, to measure how often it catches you.
-//   Hide in 3-08 (crouched in its dark far corner) until `lostPlayerFor()` passes 20 s (the Hide → keys switch), then
-//   the trail: Hargrove's locker (DEFAULT_TRAIL "locker", the 0-12 change room; a 4 s metal-locker search: noises of
-//   8 m) → the key cabinet in 0-30 ("keys": a 3 s search, 4 m noises) → the dock ("dock": the engine and the dock door,
-//   a 90 m "engine" noise) → 12 s for the truck to get out. Caught at any point: a failed run.
+//   Hide (out of 3-08, which it comes for: into 3-07 next door, door shut, crouched in the dark far corner) until
+//   `lostPlayerFor()` passes 20 s, then the trail (game/objectives.ts): the vehicle sign-out by 3-08 → the locked key
+//   cabinet in 0-30 (a metal rattle, 8 m) → the cabinet key from Security's key box in 0-38 (8 m) → back to 0-30 for the
+//   Truck 2 keys (8 m) → out by the west staff door, across the dock court to the motor-pool shed: the engine (60 m)
+//   and the roll-up (32 m, every 2 s), 10 s to get away. The hunter's trail is kept in step (`setTrail`). Caught at any
+//   point: a failed run.
 // Policies (what a player can know: the creature's sound, i.e. its distance with 6 m per storey between):
 //   careful   walks, torch off; crouch-walks when it's within 18 m; within 10 m on the same storey (or hunting) it
 //             stops, crouched, until it is 14 m off again (at most 30 s);
@@ -31,7 +33,8 @@ for (let run = 0; run < runs; run++) {
     H.handle.start()
     h.catches = 0
   })
-  await place(page, 2.1, Y(3), -20.6, 0)
+  // The player is by the desk in 3-08 at the reveal (the chapter's spot).
+  await place(page, 8.45, Y(3), -12.45, 0)
   const keys = new Set<string>()
   const setKeys = async (want: string[]) => {
     const add = want.filter((k) => !keys.has(k))
@@ -141,8 +144,19 @@ for (let run = 0; run < runs; run++) {
     return true
   }
   try {
-    // Hide: crouched in 3-08's far corner until it has lost the trail for 20 s (or 4 min).
-    events.push(`${el()}s hide in 3-08`)
+    // Hide: out of 3-08 (it is coming for the transmission) into 3-07 next door, its door shut behind, crouched in
+    // its dark far corner, until it has lost the trail for 20 s (or 4 min).
+    const room = await inPage(page, ({ H }) => {
+      const r = H.nav.rooms.find((x: { id: string; s: number }) => x.id === "3-07" && x.s === 3)
+      const d = r && H.nav.doors[r.doors[0]]
+      return r && d ? { door: d.id, dx: d.cx, dz: d.cz, x0: r.rect.x0, z0: r.rect.z0 } : null
+    })
+    if (!room) throw new Error("no room 3-07")
+    events.push(`${el()}s to 3-07 to hide`)
+    await travel(room.dx, room.dz - 1.3, 3, 40)
+    await inPage(page, ({ D }, id: string) => D.get(id)?.close(), room.door)
+    await travel(room.x0 + 0.9, room.z0 + 0.9, 3, 40)
+    events.push(`${el()}s hiding in 3-07, door shut`)
     await setKeys(["KeyC"])
     for (let i = 0; i < 960; i++) {
       const st = await state()
@@ -152,18 +166,48 @@ for (let run = 0; run < runs; run++) {
     }
     events.push(`${el()}s it lost the trail >20 s: go (it is on storey ${(await state()).hs}, ${(await state()).mode})`)
     if (policy === "careless") await setKeys([])
-    if (!(await travel(-45.1, -8.5, 0, 150))) throw new Error("caught on the way to the locker")
-    events.push(`${el()}s at the locker`)
-    if (!(await wait(4, true, () => noise(8, "search")))) throw new Error("caught searching the locker")
-    await inPage(page, ({ H }) => H.handle.completeTrail("locker"))
-    if (!(await travel(-51.2, 6.2, 0, 90))) throw new Error("caught on the way to 0-30")
-    events.push(`${el()}s at the key cabinet`)
-    if (!(await wait(3, true, () => noise(4, "search")))) throw new Error("caught at the key cabinet")
-    await inPage(page, ({ H }) => H.handle.completeTrail("keys"))
-    if (!(await travel(-31, -15, 0, 90))) throw new Error("caught on the way to the dock")
-    events.push(`${el()}s at the dock: engine and dock door`)
-    await noise(90, "engine")
-    if (!(await wait(12, false))) throw new Error("caught at the truck")
+    const T = { signout: [3.95, -2.4, 3], cabinet: [-47.3, 3.3, 0], security: [16.2, 14.5, 0], shed: [-48.4, -33.6, 0] } as const
+    const remaining = async (ids: string[]) =>
+      inPage(page, ({ H }, ids: string[]) => {
+        const all: Record<string, { id: string; x: number; z: number; s: number }> = {
+          signout: { id: "signout", x: 3.95, z: -2.4, s: 3 },
+          cabinet: { id: "cabinet", x: -47.3, z: 3.3, s: 0 },
+          security: { id: "security", x: 16.2, z: 14.5, s: 0 },
+          office: { id: "office", x: -47.3, z: 3.3, s: 0 },
+          shed: { id: "shed", x: -49.75, z: -33.5, s: 0 },
+        }
+        H.handle.setTrail(ids.map((i) => all[i]!))
+      }, ids)
+    await remaining(["signout", "cabinet", "security", "office", "shed"])
+    // The vehicle sign-out by 3-08 (read: no noise).
+    if (!(await travel(T.signout[0], T.signout[1], T.signout[2], 60))) throw new Error("caught on the way to the sign-out")
+    if (!(await wait(2, false))) throw new Error("caught reading the sign-out")
+    await remaining(["cabinet", "security", "office", "shed"])
+    events.push(`${el()}s read the sign-out`)
+    // The locked cabinet in 0-30 (tried: a metal rattle), its tag.
+    if (!(await travel(T.cabinet[0], T.cabinet[1], T.cabinet[2], 150))) throw new Error("caught on the way to 0-30")
+    if (!(await wait(2, true, () => noise(8, "knock")))) throw new Error("caught at the locked cabinet")
+    await remaining(["security", "office", "shed"])
+    events.push(`${el()}s cabinet locked: tag says Security 0-38`)
+    // The cabinet key from Security's key box, 0-38.
+    if (!(await travel(T.security[0], T.security[1], T.security[2], 120))) throw new Error("caught on the way to 0-38")
+    if (!(await wait(3, true, () => noise(8, "knock")))) throw new Error("caught at the key box")
+    await remaining(["office", "shed"])
+    events.push(`${el()}s cabinet key from the key box`)
+    // Back to 0-30: the Truck 2 keys.
+    if (!(await travel(T.cabinet[0], T.cabinet[1], T.cabinet[2], 120))) throw new Error("caught on the way back to 0-30")
+    if (!(await wait(3, true, () => noise(8, "knock")))) throw new Error("caught at the key cabinet")
+    await remaining(["shed"])
+    events.push(`${el()}s Truck 2 keys`)
+    // Out by the west door, across the court to the shed; the engine (60) and the roll-up (32, every 2 s for 6 s).
+    if (!(await travel(T.shed[0], T.shed[1], T.shed[2], 120))) throw new Error("caught on the way to the shed")
+    events.push(`${el()}s in Truck 2: engine and roll-up`)
+    await noise(60, "other")
+    let roll = 0
+    if (!(await wait(10, false, async () => {
+      roll += 0.25
+      if (roll % 2 < 0.25 && roll <= 6.5) await noise(32, "door")
+    }))) throw new Error("caught at the truck")
     events.push(`${el()}s away in Truck 2`)
   } catch (e) {
     caught = true

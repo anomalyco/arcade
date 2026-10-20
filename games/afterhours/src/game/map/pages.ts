@@ -19,6 +19,7 @@ import {
   northTrackSamples,
   type Vec2,
 } from "../../world/layout"
+import { SHED } from "../escape/places"
 import { WINDOWS, type Face } from "../../world/interior/plan"
 import type { PlanData, PlanDoor, PlanRoom, StoreyPlan } from "./data"
 import { FONT, INK, PAPER, Sheet, canvas, grain, reproduce, type Ctx } from "./paper"
@@ -54,7 +55,7 @@ export type PageJob = {
   width: number
   briefing: string[]
   /** Handwritten marks the notes the player has read put on the floor plans (src/game/inventory MAP_MARKS). */
-  marks?: { storey: number; room: string; text: string[] }[]
+  marks?: { storey: number; room?: string; at?: readonly [number, number]; site?: boolean; text: string[] }[]
   /** The inventory sheet (page INVENTORY_PAGE): items carried and notes read. */
   inventory?: { items: { name: string; desc: string; key?: boolean }[]; notes: { title: string; text: string[] }[] }
 }
@@ -106,7 +107,10 @@ export async function drawPage(job: PageJob): Promise<ImageBitmap> {
   const q = new Sheet(g, mm, W, Hs, seed + 7)
   reproduce(g, orig, { ink: site ? INK.blueline : INK.toner, skew: q.rr(-0.007, 0.007), dx: q.rr(-5, 5), dy: q.rr(-4, 4), seed: seed + 3, copy: !site, density: site ? 1.2 : 0.8 })
   g.setTransform(mm, 0, 0, mm, 0, 0)
-  if (site) siteNotes(q, job.briefing)
+  if (site) {
+    siteNotes(q, job.briefing)
+    siteMarks(q, job.marks ?? [])
+  }
   else if (roof) roofNotes(q)
   else {
     floorNotes(q, job.index - 1, job.plan.storeys[job.index - 1])
@@ -302,6 +306,9 @@ function drawFloor(o: Sheet, storey: number, plan: StoreyPlan, facts: SiteFacts)
     const dk = BUILDING.dock
     o.rect(X(dk.x - dk.width / 2), Z(MAIN.min[1] - 4.5), dk.width * S, 4.5 * S, 0.4)
     o.text("DOCK", X(dk.x), Z(MAIN.min[1] - 2.2) + 1.4, { pt: 10, weight: 800, align: "center" })
+    // Vehicle shed in the dock court (src/game/escape/places.ts).
+    o.rect(X(SHED.x0), Z(SHED.z0), (SHED.x1 - SHED.x0) * S, (SHED.z1 - SHED.z0) * S, 0.4)
+    o.text("VEH. SHED", X((SHED.x0 + SHED.x1) / 2), Z((SHED.z0 + SHED.z1) / 2) + 1.4, { pt: 8, weight: 800, align: "center" })
     // Annex continues east off the sheet.
     const ax = MAIN.max[0]
     o.fill(X(ax), Z(BUILDING.annex.max[1]) - 0.5, 1.2 * S, 1)
@@ -492,6 +499,8 @@ function drawSite(o: Sheet, job: PageJob) {
   const dk = BUILDING.dock
   o.rect(SX(dk.x - dk.width / 2), SZ(M.min[1] - 4.5), dk.width * SC, 4.5 * SC, 0.4, INK.toner, PAPER)
   o.text("DOCK", SX(dk.x), SZ(M.min[1] - 6) - 0.5, { pt: 9, weight: 800, align: "center" })
+  o.rect(SX(SHED.x0), SZ(SHED.z0), (SHED.x1 - SHED.x0) * SC, (SHED.z1 - SHED.z0) * SC, 0.4, INK.toner, PAPER)
+  o.text("SHED", SX((SHED.x0 + SHED.x1) / 2), SZ(SHED.z0) - 1.2, { pt: 7, weight: 800, align: "center" })
   o.circle(SX(BUILDING.dish.x), SZ(BUILDING.dish.z), (BUILDING.dish.diameter / 2) * SC, 0.25, INK.toner, PAPER, [1.4, 0.9])
   o.fill(SX(-24) - 16, SZ(-1) - 4.6, 32, 6.4, PAPER)
   o.text("MAIN BLOCK", SX(-24), SZ(-1), { pt: 12, weight: 800, align: "center" })
@@ -651,13 +660,25 @@ export type { Ctx }
 
 // ------------------------------------------------------------------------------------------------ the key trail
 
+/** The player's marks that belong on the site plan too (red pen, a ring and a word by it). */
+function siteMarks(q: Sheet, marks: NonNullable<PageJob["marks"]>) {
+  const notes: Note[] = []
+  for (const m of marks) {
+    if (!m.site || !m.at) continue
+    const x = SX(m.at[0])
+    const y = SZ(m.at[1])
+    notes.push({ text: m.text, at: [Math.max(10, x - 30), y - 7], ring: [x, y, 5, 4], pt: 18, color: INK.red })
+  }
+  if (notes.length) writeNotes(q, notes)
+}
+
 /** The player's own marks from the notes they've read: red pen, a ring round the room and a short line by it. */
 function markNotes(q: Sheet, storey: number, plan: StoreyPlan | undefined, marks: NonNullable<PageJob["marks"]>) {
   OY = storey === 0 ? 60 : 52
   const notes: Note[] = []
   for (const m of marks) {
     if (m.storey !== storey) continue
-    const [x, y] = roomAt(plan, m.room, 0, 0)
+    const [x, y] = m.at ? [X(m.at[0]), Z(m.at[1])] : roomAt(plan, m.room ?? "", 0, 0)
     // Text above the room where there's room, else below it.
     const up = y > 90
     notes.push({ text: m.text, at: [Math.max(14, Math.min(W - 70, x - 18)), up ? y - 20 : y + 16], ring: [x, y, 10, 7], pt: 20, color: INK.red })

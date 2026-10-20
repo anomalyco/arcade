@@ -71,11 +71,14 @@ export const NOTES: Record<NoteId, Note> = {
 }
 
 /** Handwritten marks the read notes put on the floor plans (storey, room id, text). */
-export type MapMark = { storey: number; room: string; text: string[] }
+/** A handwritten mark: on a room of a storey plan, or at a world point (`at`: [x, z], outside the building), and also
+ *  on the site plan when `site`. */
+export type MapMark = { storey: number; room?: string; at?: readonly [number, number]; site?: boolean; text: string[] }
 export const MAP_MARKS: Partial<Record<NoteId | ItemId, MapMark[]>> = {
   signout: [{ storey: 0, room: "0-30", text: ["TRUCK 2 keys", "in the cabinet"] }],
   "cabinet-tag": [{ storey: 0, room: "0-38", text: ["cabinet key", "at Security"] }],
-  "truck-keys": [{ storey: 0, room: "0-16", text: ["TRUCK 2", "dock"] }],
+  // The vehicle shed in the dock court (src/game/escape/places.ts SHED).
+  "truck-keys": [{ storey: 0, at: [-49.75, -35.2], site: true, text: ["TRUCK 2"] }],
 }
 
 const items: ItemId[] = []

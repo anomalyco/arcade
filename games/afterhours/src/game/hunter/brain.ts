@@ -34,17 +34,23 @@ type Task = Goal & { look: number; kind: "go" | "room" | "door" | "spot"; room?:
 export type CatchInfo = { x: number; y: number; z: number; mode: HunterMode }
 
 /**
- * A step of the player's way out that it patrols until it's done (the key trail: Hargrove's locker, the key cabinet in
- * 0-30, the loading dock). The interior agent sets the real ones (`HunterHandle.setTrail`) and marks each done
- * (`completeTrail`); these defaults follow the building program (lockers in the 0-12 change room, facilities 0-30,
- * receiving 0-16 by the dock).
+ * A place on the player's way out that it patrols until the player is past it. The key trail (game/objectives.ts):
+ * the vehicle sign-out by 3-08 → the locked key cabinet in 0-30 → the cabinet key in Security's key box, 0-38 → back to
+ * the 0-30 cabinet → Truck 2 in the motor-pool shed in the dock court. index.ts derives the pending ones from the
+ * story's `trailStage()`; `HunterHandle.setTrail` overrides that.
  */
 export type TrailStep = { id: string; x: number; z: number; s: number; done?: boolean }
-export const DEFAULT_TRAIL: TrailStep[] = [
-  { id: "locker", x: -45.1, z: -8.5, s: 0 },
-  { id: "keys", x: -51.2, z: 6.2, s: 0 },
-  { id: "dock", x: -31.0, z: -15.0, s: 0 },
-]
+export const TRAIL_PLACES = {
+  /** The VEHICLE SIGN-OUT clipboard on the spine wall by 3-08's door (storeys/s3/listening.ts SIGNOUT). */
+  signout: { id: "signout", x: 3.95, z: -2.4, s: 3 },
+  /** Facilities' key cabinet on the west wall of 0-30 (storeys/s0/south.ts). */
+  cabinet: { id: "cabinet", x: -47.3, z: 3.3, s: 0 },
+  /** Security's key box on the east wall of 0-38 (storeys/s0/east.ts). */
+  security: { id: "security", x: 16.2, z: 14.5, s: 0 },
+  /** Truck 2 in the motor-pool shed (escape/places.ts SHED, TRUCK_PARK). */
+  shed: { id: "shed", x: -49.75, z: -33.5, s: 0 },
+} as const
+export const DEFAULT_TRAIL: TrailStep[] = [TRAIL_PLACES.signout, TRAIL_PLACES.cabinet, TRAIL_PLACES.security, { ...TRAIL_PLACES.cabinet, id: "office" }, TRAIL_PLACES.shed]
 
 const UP = new THREE.Vector3(0, 1, 0)
 
@@ -93,8 +99,13 @@ export class Hunter {
   creature: Wendigo | null = null
   catches = 0
   onCatch: (info: CatchInfo) => void = () => {}
-  /** The key trail it patrols (pending steps only). */
-  keyTrail: TrailStep[] = DEFAULT_TRAIL.map((t) => ({ ...t }))
+  /** The key trail it patrols (set explicitly), or null to ask `trailSource` (the story's progress) each time. */
+  keyTrail: TrailStep[] | null = null
+  trailSource: () => TrailStep[] = () => DEFAULT_TRAIL
+  /** The trail places the player hasn't got past yet. */
+  pendingTrail() {
+    return (this.keyTrail ?? this.trailSource()).filter((t) => !t.done)
+  }
   /** When it last had a trail on the player (saw them, heard them, or was hunting them), and when it spawned. */
   private hadTrailAt = 0
   private nextPresence = 0
@@ -311,9 +322,10 @@ export class Hunter {
   }
 
   private react(p: Goal, e: NoiseEvent, strength: number) {
-    if (strength > 0.15 || e.kind === "sprint" || e.kind === "engine") this.hadTrailAt = this.time
-    // The truck's engine or the dock door: it knows exactly where that is, and comes straight there at a rush.
-    if (e.kind === "engine") return this.rushTo(p, e.y, "hears the engine")
+    if (strength > 0.15 || e.kind === "sprint" || e.kind === "engine" || e.radius >= 30) this.hadTrailAt = this.time
+    // The truck's engine, the shed's roll-up, anything that loud (30 m and up): it knows exactly where that is, and
+    // comes straight there at a rush.
+    if (e.kind === "engine" || (e.radius >= 30 && e.kind !== "switch" && e.kind !== "voice")) return this.rushTo(p, e.y, `rushes to a ${e.kind} noise`)
     if (e.kind === "sprint") return this.sprintHeard(p, e.y)
     if (this.mode === "hunt") {
       // Out of sight, a noise tells it where you went (that's fair: it heard you).
@@ -517,7 +529,7 @@ export class Hunter {
 
   private roam() {
     const recent = this.heat.filter((h) => this.time - h.t < 120)
-    const pending = this.keyTrail.filter((t) => !t.done)
+    const pending = this.pendingTrail()
     // Now and then an ambush at the core stair on the player's likely way: between the storey it last had evidence of
     // them on (what it saw or heard, or 3-08's storey, where it came for them) and the next step of the key trail.
     if (pending.length && this.time - this.ambushAt > 80 && this.rng() < 0.14) {
@@ -569,8 +581,14 @@ export class Hunter {
         best = r
       }
     }
-    // The trail's places themselves (and the stair between them) are patrol stops too.
-    for (const t of pending) {
+    // The trail's places themselves, and the core stair's landings between their storeys, are patrol stops too.
+    const stops: TrailStep[] = [...pending]
+    const ss = pending.map((t) => t.s)
+    if (ss.length && Math.min(...ss) !== Math.max(...ss))
+      this.nav.chokepoints.forEach((k, i) => {
+        if (i % 2 === 0 && k.s >= Math.min(...ss) && k.s <= Math.max(...ss)) stops.push({ id: `stair-${k.s}`, x: k.x, z: k.z, s: k.s })
+      })
+    for (const t of stops) {
       const key = `trail:${t.id}`
       const since = this.time - (this.visited.get(key) ?? -999)
       if (since < 40) continue

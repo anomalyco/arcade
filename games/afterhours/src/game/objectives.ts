@@ -20,7 +20,7 @@ import { hasItem, hasNote, onInventory } from "./inventory"
 //     the vehicle sign-out by 3-08      → "Facilities office, 0-30"                     ← checkpoint "trail:signout"
 //     the locked cabinet's tag           → "Get the cabinet key from Security (0-38)"  ← checkpoint "trail:tag"
 //     the FAC. CAB. key from the key box → "Facilities office, 0-30"                   ← checkpoint "trail:cabinet-key"
-//     the Truck 2 keys from the cabinet  → "Escape. The truck is in the loading dock." ← checkpoint "trail:keys"
+//     the Truck 2 keys from the cabinet  → "Escape. The truck is in the vehicle shed by the dock." ← checkpoint "trail:keys"
 //   (Hargrove's body, his note and locker 14 are flavour: never objectives.)
 //   (`onObjective` listeners hear each new stage; the escape drive picks up from the last one.)
 
@@ -34,7 +34,7 @@ export const OBJECTIVES = {
   cabinet: "Facilities office, 0-30",
   security: "Get the cabinet key from Security (0-38)",
   office: "Facilities office, 0-30",
-  escape: "Escape. The truck is in the loading dock.",
+  escape: "Escape. The truck is in the vehicle shed by the dock.",
 } as const
 /** The objective line for each story stage (checkpoint restores show `CHAIN[stage]`). */
 export const CHAIN = [OBJECTIVES.transmission, OBJECTIVES.radio, OBJECTIVES.report, OBJECTIVES.body, OBJECTIVES.hide, OBJECTIVES.keys, OBJECTIVES.cabinet, OBJECTIVES.security, OBJECTIVES.office, OBJECTIVES.escape]

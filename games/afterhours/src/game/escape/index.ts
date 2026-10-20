@@ -134,7 +134,7 @@ function createEscape(host: EscapeHost) {
 
   // ---- prompt (styled like the door system's)
   const prompt = document.createElement("div")
-  prompt.className = "door-prompt akc-minimal"
+  prompt.className = "door-prompt escape-prompt akc-minimal"
   prompt.style.cssText = "position:fixed;left:50%;top:58%;transform:translate(-50%,0);pointer-events:none;opacity:0"
   document.body.appendChild(prompt)
   let shown = ""
@@ -151,6 +151,10 @@ function createEscape(host: EscapeHost) {
     }
     prompt.style.opacity = html ? "1" : "0"
   }
+  // In the cab: no on-foot controls strip and no door prompts (E there drives the truck, not the doors).
+  const style = document.createElement("style")
+  style.textContent = `body[data-driving] .hints-strip, body[data-driving] .hints-toast, body[data-driving] .door-prompt:not(.escape-prompt) { opacity: 0 !important; visibility: hidden !important; }`
+  document.head.appendChild(style)
   const blink = document.createElement("div")
   blink.style.cssText = "position:fixed;inset:0;z-index:6;background:#000;pointer-events:none;opacity:0;transition:opacity 0.18s ease"
   document.body.appendChild(blink)
@@ -259,6 +263,7 @@ function createEscape(host: EscapeHost) {
       flow.hold = true
       player.release()
       drive.active = true
+      document.body.dataset.driving = "1"
       const body = seatBody()
       body?.seat(t.seatOptions())
       lookYaw = lookPitch = 0
@@ -272,6 +277,7 @@ function createEscape(host: EscapeHost) {
     fadeThrough(() => {
       state = "outside"
       drive.active = false
+      delete document.body.dataset.driving
       drive.held.clear()
       seatBody()?.unseat()
       t.root.updateMatrixWorld(true)
@@ -480,10 +486,14 @@ function createEscape(host: EscapeHost) {
       lookPitch -= lookPitch * k
     }
     if (!body?.seatEye(tmp)) truck.seatWorld("driver", tmp)
+    // Sat up a little and leaning towards the glass: the road over the hood, the roof line high in the frame.
+    tmp.addScaledVector(tmp2.set(-Math.sin(pose.yaw), 0, -Math.cos(pose.yaw)), 0.07)
+    tmp.y += 0.03
     camera.position.copy(tmp)
     eyeObj.position.copy(tmp)
     eyeObj.updateMatrixWorld()
-    e.set(lookPitch - 0.04, lookYaw, 0, "YXZ")
+    // Eyes a little down the road (the cab roof and visors otherwise take the top third).
+    e.set(lookPitch - 0.03, lookYaw, 0, "YXZ")
     q.copy(truck.root.quaternion)
     camera.quaternion.setFromEuler(e).premultiply(truck.body.getWorldQuaternion(new THREE.Quaternion()).slerp(q, 0.5))
     camera.updateMatrixWorld()
@@ -553,6 +563,8 @@ function createEscape(host: EscapeHost) {
     offPress()
     prompt.remove()
     blink.remove()
+    style.remove()
+    delete document.body.dataset.driving
     drive.active = false
     if (truck) truck.releaseBeam(player)
     sound?.stop()
@@ -581,6 +593,7 @@ function createEscape(host: EscapeHost) {
       flow.hold = true
       player.release()
       drive.active = true
+      document.body.dataset.driving = "1"
       seatBody()?.seat(t.seatOptions())
       sound ??= new IntroAudio(hooks.sfx)
       sound.radioLevel = 0.55

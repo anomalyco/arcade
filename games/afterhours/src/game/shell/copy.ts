@@ -11,9 +11,7 @@ export const HOME = {
   osdStamp: "OCT 19 1984  01:52",
   loading: "acquiring signal",
   /** Under the loading static until the first key or click starts the sound. */
-  prompt: "press any key for sound",
-  /** The prompt's acknowledgement, briefly, once a key or click has started the sound. */
-  promptDone: "sound on",
+  prompt: "press any key",
   ready: "",
   failed: "No signal. This browser needs WebGPU.",
 }

@@ -483,7 +483,7 @@ export function createMap(host: MapHost, options: MapOptions = {}): MapHandle {
   // The inventory sheet and the plans with the player's marks redraw when what they carry or have read changes (the
   // plan data is kept; only these sheets are queued again).
   onInventory(() => {
-    const pages = [INVENTORY_PAGE, ...mapMarks().map((m) => pageOfStorey(m.storey))]
+    const pages = [INVENTORY_PAGE, ...mapMarks().flatMap((m) => (m.site ? [0, pageOfStorey(m.storey)] : [pageOfStorey(m.storey)]))]
     for (const p of new Set(pages)) {
       pending.add(p)
       if (!queue.includes(p)) queue.push(p)
