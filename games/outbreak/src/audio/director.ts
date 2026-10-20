@@ -2,6 +2,7 @@ import { mulberry32 } from "@arcade/kit/sim/rng"
 import type { AIState } from "../../shared/ai"
 import { MELEE_WEAPONS, type CombatMeleeEvent, type CombatShotEvent } from "../../shared/combat"
 import type { Town } from "../../shared/map"
+import type { SecretsState } from "../../shared/secrets/cellar"
 import { DeathSounds, type DeathSoundWorld } from "./death"
 import { impactDelay, meleeImpact, shotImpacts } from "./impacts"
 import { InventorySounds, type SoundHold, type SoundProgression } from "./inventory"
@@ -31,6 +32,8 @@ export type SoundWorld = {
   /** Game hours since the run started (the offline sim's own; 0 on co-op clients) and the hour it started at. */
   elapsedHours?: number
   startHour?: number
+  /** The run's secrets (`shared/secrets`): the soundscape strikes their sounds and the 3 AM message's number. */
+  secrets?: SecretsState
 }
 
 export const DIRECTOR_TUNING = {

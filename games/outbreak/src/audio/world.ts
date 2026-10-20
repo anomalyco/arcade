@@ -1,5 +1,6 @@
 import type { CoopSim } from "../../shared/coop-sim"
 import type { DeathState } from "../../shared/death/rules"
+import type { SecretsState } from "../../shared/secrets/cellar"
 import type { DeathSoundWorld } from "./death"
 import type { SoundWorld } from "./director"
 
@@ -18,6 +19,7 @@ export function soundWorld(sim: CoopSim): SoundWorld {
     death: deathSoundWorld(sim),
     elapsedHours: sim.elapsedHours,
     startHour: sim.ai.config.startHour,
+    secrets: sim.getFeatureState<SecretsState>("secrets"),
   }
 }
 

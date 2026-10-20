@@ -48,8 +48,14 @@
   from night 2, a church bell striking the hours for the blocks around it (thirteen at midnight on night 3). Seeded on
   town seed and sim time; presentation only (nothing reaches zombie hearing). Other features ask for sounds through
   `soundscape/hooks.ts` (`playAmbientSound`, `holdAmbientSound`, `registerAmbientSound`); ready for them: `scape.tv`,
-  `scape.life.rustle|scurry|hooves`, `scape.habit.knock|pans|bedsprings|fence|dance`.
-  Listening reel and loudness: `bun scripts/soundscape-reel.ts` (offline, never plays). Tests: `tests/soundscape.test.ts`.
+  `scape.life.rustle|scurry|hooves`, `scape.habit.knock|pans|bedsprings|fence|dance`, `scape.secret.*`. Two features
+  are heard from the audio side, reading their pure placements: life (`soundscape/life.ts`: the dawn sprinkler, washing
+  snapping on gusts, door-open chimes that sag with the dome light's battery, animals bolting) and the secrets
+  (`soundscape/secrets.ts`: stopped clocks ticking each second at their stuck mark, the radio man's set hissing and
+  beeping once per lit pulse, the padlock's dial clicks and the unlock and hatch from the ledger, and the 3 AM message
+  repeating his number via `ScapeInput.machineCount`). Don't also call the hooks for those.
+  Listening reel and loudness: `bun scripts/soundscape-reel.ts` (offline, never plays). Tests: `tests/soundscape.test.ts`,
+  `tests/soundscape-secrets.test.ts`.
 - The survivor (`src/survivor.ts`) and zombies (`src/zombies.ts`) use the shared rig's IK, arms and profiles but keep their own stride clocks and terrain support. Motion rules and known gaps: `../../docs/animation.md`. All shared docs: `../../docs/README.md`.
 - Rugs and Resident Evil interior themes live in `src/interiors/` (plan, mesh emitters, WGSL, `RugPool`); the rug
   generator and its Worker are in `@arcade/kit/textures`. Lab: Backquote › Rugs & interiors, the Lab's Rugs section and the

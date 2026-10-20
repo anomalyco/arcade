@@ -138,7 +138,19 @@ arcade cmd secrets.stage secret=cellar      # calendar, clock, photo, chalk, cha
 
 ## Sound (for the audio pass)
 
-Nothing here plays a sound yet; the audio director has no registration hook for features. Wanted, quietest first:
-the stopped second hand's tick, a chair creak for the rocking chair, a soft click as the lit window goes out, the
-padlock's dial clicks and the clunk as it opens, the hatch's hinge, and for the radio man's set a voice-less beep on
-each pulse. The phone stays silent on purpose.
+All synthesized (`games/outbreak/src/audio/soundscape/`, AR-86). Heard from shared state by
+`soundscape/secrets.ts`, on the same clock the presenter draws with:
+- each stopped clock's second hand ticking once a second at the mark it never passes (`scape.secret.twitch`)
+- the radio man's set hissing between stations, with one voiceless beep for each lit pulse (`scape.secret.static`,
+  `scape.secret.pip`)
+- the padlock clicking a notch per turn, then the clunk and the hatch's hinge as it opens (ledger `turns` and `open`,
+  so every co-op client hears it)
+- the soundscape's own 3 AM answering machine (a separate phone that rings) repeating the set's number in flat
+  syllables when the cellar is in the run
+
+Ready, but they depend on the presenter's own state, so they should be struck from `src/secrets/presenter.ts`:
+- `scape.secret.rocking`, a creak at each end of the rock (when `cos(t * 1.9)` changes sign; the return stroke at
+  gain 0.6 and rate 0.88)
+- `scape.secret.click`, as the lit window goes out
+
+The phone stays silent on purpose.

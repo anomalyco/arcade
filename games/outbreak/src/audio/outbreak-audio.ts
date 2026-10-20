@@ -5,6 +5,7 @@ import { SoundDirector, type SoundEvent, type SoundWorld } from "./director"
 import type { SoundHold } from "./inventory"
 import { AUDIO_BUS_LEVELS, DEFAULT_AUDIO_SETTINGS, SURFACE_STEP_SETTING_KEYS, type AudioSettings } from "./settings"
 import { footstepEvent, indoors, SoundOcclusion, SURFACE_STEP_PROFILES, surfaceAt } from "./space"
+import { SecretSounds } from "./soundscape/secrets"
 import { Soundscape } from "./soundscape/soundscape"
 import { ZombieFootsteps } from "./zombie-steps"
 
@@ -46,6 +47,7 @@ export class OutbreakAudio {
   readonly zombieSteps = new ZombieFootsteps()
   /** Clocks, taps, sirens and the rest of the ambient life of the town (`soundscape/`, AR-86). */
   readonly soundscape: Soundscape
+  private readonly secretSounds = new SecretSounds()
   private holds = new Map<string, { voice: VoiceHandle; hold: SoundHold }>()
   private horde: VoiceHandle | null = null
   private hordeLevel = 0
@@ -166,6 +168,7 @@ export class OutbreakAudio {
     this.director.reset()
     this.zombieSteps.reset()
     this.soundscape.reset()
+    this.secretSounds.reset()
   }
 
   update(frame: AudioFrame): void {
@@ -238,6 +241,7 @@ export class OutbreakAudio {
     storm: 0,
     glass: this.glassSpots as readonly { x: number; y: number }[],
     indoor: 0,
+    machineCount: 0,
   }
 
   /** Runs the soundscape on the same listener, clock and indoor easing as the beds. */
@@ -264,6 +268,9 @@ export class OutbreakAudio {
     f.storm = frame.weather?.storm ?? 0
     f.glass = this.glassSpots
     f.indoor = this.indoor
+    const secrets = w.secrets
+    f.machineCount = secrets?.run.picked.has("cellar") ? secrets.run.pulses : 0
+    this.secretSounds.update(w, frame.listener)
     this.soundscape.update(f, this.settings, live)
   }
 

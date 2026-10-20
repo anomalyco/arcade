@@ -3,7 +3,7 @@ import { makeTown, type Town } from "../shared/map"
 import { DEFAULT_AUDIO_SETTINGS } from "../src/audio/settings"
 import { SCAPE_LAYERS, SCAPE_SAMPLE_RATE, SCAPE_SOUNDS, scapeSound } from "../src/audio/soundscape/catalog"
 import { ALARM_CHANCE, GUNFIRE_CHANCE, nightOf, RADIO_CHANCE, ScapeDirector, ScapeHours, SIREN_CHANCE, type ScapeInput, type ScapeLevels } from "../src/audio/soundscape/director"
-import { drainAmbientCalls, holdAmbientSound, playAmbientSound } from "../src/audio/soundscape/hooks"
+import { clearAmbientCalls, drainAmbientCalls, holdAmbientSound, playAmbientSound } from "../src/audio/soundscape/hooks"
 import { housePlan, housePowered } from "../src/audio/soundscape/houses"
 import { LifeSounds } from "../src/audio/soundscape/life"
 import { scapeCue, scapeLevels } from "../src/audio/soundscape/soundscape"
@@ -283,6 +283,7 @@ describe("soundscape director", () => {
 
 describe("ambient hooks for other features", () => {
   test("calls reach the soundscape once; holds last while refreshed", () => {
+    clearAmbientCalls()
     playAmbientSound("scape.phone.ring", 3, 4, { gain: 0.5 })
     holdAmbientSound("tv:1", "scape.fridge.hum", 1, 2)
     const shots: string[] = []
