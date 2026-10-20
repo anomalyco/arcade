@@ -120,6 +120,19 @@ export function stageSecret(host: ProgressionLabHost, session: LocalSession | Ne
     return { scene, x, y }
   }
   const NORTH = -Math.PI / 2
+  // Homes back onto each other a few metres apart: stand at the first offset round a subject that is not indoors.
+  const homes = new Map<string, Town["buildings"]>()
+  const outdoors = (x: number, y: number) => {
+    const c = worldToChunk(x, y)
+    const k = `${c.cx},${c.cy}`
+    let bs = homes.get(k)
+    if (!bs) homes.set(k, (bs = mode === "classic" ? view.town.buildings : chunkTown(sim.town, c.cx, c.cy, mode).buildings))
+    return !bs.some((b) => x > b.rect[0] - 0.6 && x < b.rect[2] + 0.6 && y > b.rect[1] - 0.6 && y < b.rect[3] + 0.6)
+  }
+  const around = (sx: number, sy: number, offsets: readonly (readonly [number, number])[], hour: number) => {
+    const [dx, dy] = offsets.find(([ox, oy]) => outdoors(sx + ox, sy + oy)) ?? offsets[0]!
+    return pose(sx + dx, sy + dy, Math.atan2(-dy, -dx), hour)
+  }
   switch (scene) {
     case "tallMan": {
       // South of a lit street lamp near the start, so he stands at its pool's edge on screen.
@@ -128,7 +141,7 @@ export function stageSecret(host: ProgressionLabHost, session: LocalSession | Ne
       const lamp = view.town.lamps
         .filter((l) => l.kind === "street" && l.power > 0)
         .sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y))[0]
-      return lamp ? pose(lamp.x, lamp.y + 13, NORTH, 22) : pose(44, 70, NORTH, 22)
+      return lamp ? around(lamp.x, lamp.y, [[0, 13], [9, 9], [-9, 9], [13, 0], [-13, 0], [0, -13]], 22) : pose(44, 70, NORTH, 22)
     }
     case "procession":
       hooks.force.apparition = "procession"
@@ -164,10 +177,11 @@ export function stageSecret(host: ProgressionLabHost, session: LocalSession | Ne
       return pose(site.x, site.y + 2.4, NORTH, 13)
     case "litWindow":
       p.flashlightOn = false
-      return pose(site.x + 2, site.y + 11, NORTH - 0.15, 22)
+      return around(site.x, site.y, [[2, 11], [9, 5], [-9, 5], [1.5, 9.5]], 22)
     case "rockingChair":
+      // Far enough that it still rocks (it stops within 6 m).
       p.flashlightOn = false
-      return pose(site.x + 1, site.y + 8, NORTH, 22)
+      return around(site.x, site.y, [[1, 8], [7.5, 2], [-7.5, 2], [5, 5], [-5, 5]], 22)
     case "footprints":
       p.flashlightOn = false
       return pose(site.x + 1.5, site.y + 2.5, NORTH, 14)

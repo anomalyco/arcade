@@ -1,5 +1,6 @@
 import type { Rect } from "@arcade/kit/sim/geom"
 import type { Building, Town } from "../map"
+import { houseVarietyKey } from "../houses/variety"
 import { generateWorldChunk, type WorldMode } from "../world"
 import { SECRETS, secretHash, secretRoll, type SecretId, type SecretSeeds } from "./catalog"
 
@@ -37,7 +38,7 @@ const cache = new Map<string, ReadonlyMap<SecretId, SecretHost>>()
  */
 export function secretHosts(seeds: SecretSeeds, mode: WorldMode, picked: ReadonlySet<SecretId>): ReadonlyMap<SecretId, SecretHost> {
   const ids = SECRETS.filter((s) => "oneHouse" in s && s.oneHouse && picked.has(s.id)).map((s) => s.id)
-  const key = `${seeds.seed}:${seeds.houseSeed}:${mode}:${ids.join(",")}`
+  const key = `${seeds.seed}:${seeds.houseSeed}:${mode}:${houseVarietyKey()}:${ids.join(",")}`
   const hit = cache.get(key)
   if (hit) return hit
   const out = new Map<SecretId, SecretHost>()
