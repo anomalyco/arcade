@@ -314,6 +314,11 @@ export function decalBias<M extends THREE.Material>(m: M, strength = 1): M {
   return m
 }
 
+/** Every texture the material library owns (scanned sets and the noise), e.g. to upload them all at once. */
+export function materialTextures(): THREE.Texture[] {
+  return [...textures.values(), ...(noiseTex ? [noiseTex] : [])]
+}
+
 /**
  * Called once after the renderer exists. Starts every texture download (transcoded off the main thread) and resolves
  * when all are on their textures; materials can be built before that, their maps fill in when ready.

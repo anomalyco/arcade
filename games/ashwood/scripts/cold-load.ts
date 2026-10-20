@@ -7,6 +7,7 @@
 //   bun scripts/cold-load.ts --mbps 10 --tag live-10
 //   bun scripts/cold-load.ts --url http://localhost:5198/arcade/ashwood/ --tag local   # e.g. a `vite preview` of dist
 //   bun scripts/cold-load.ts --block models/npc/       # abort every request whose URL contains this (hang hunting)
+//   bun scripts/cold-load.ts --session k=v,k2=v2         # sessionStorage entries before the page loads (A/B knobs)
 //   bun scripts/cold-load.ts --stall characters/anims.glb # a request that never completes
 //   bun scripts/cold-load.ts --lose-device-at 6000     # crash the GPU process mid-boot (device-lost handling)
 //
@@ -27,6 +28,7 @@ const mbps = Number(flag("mbps") ?? 50)
 const cpu = Number(flag("cpu") ?? 4)
 const tag = flag("tag") ?? `live-${mbps}`
 const block = flag("block")
+const session = flag("session")
 const loseAt = flag("lose-device-at")
 const stallUrl = flag("stall")
 const timeoutS = Number(flag("timeout") ?? 300)
@@ -90,6 +92,12 @@ cdp.on("Network.loadingFailed", (e: { requestId: string; errorText: string; time
   r.end = e.timestamp - t0
 })
 
+if (session) await page.addInitScript((kv: string) => {
+  for (const pair of kv.split(",")) {
+    const [k, v] = pair.split("=")
+    sessionStorage.setItem(k!, v ?? "")
+  }
+}, session)
 await page.addInitScript(() => {
   const g = globalThis as unknown as { __cold: { long: { start: number; dur: number }[] } }
   g.__cold = { long: [] }

@@ -1,7 +1,7 @@
 import * as THREE from "three/webgpu"
 import type { WorldContext, WorldModule } from "../world/context"
 import { BUILDING, VIEWPOINTS, type ViewpointName } from "../world/layout"
-import { MATERIAL_CONTROLS, MATERIAL_SETTINGS, bindMaterialSettings, loadMaterials } from "../render/materials"
+import { MATERIAL_CONTROLS, MATERIAL_SETTINGS, bindMaterialSettings, loadMaterials, materialTextures } from "../render/materials"
 import { createAtmosphere } from "../render/atmosphere"
 import { createLighting } from "../render/lighting"
 import { createPost } from "../render/post"
@@ -14,6 +14,7 @@ import { createWarmup } from "./warmup"
 import { createEncounterLights } from "../game/encounters/lights"
 import { distanceTo } from "./priority"
 import { modelLoadsInFlight, modelLoadsPending } from "./loads"
+import { prefetch } from "./prefetch"
 import { MODELS as MODEL_LIBRARY, initModels, preloadModels, type ModelName } from "../render/models"
 
 // The world boot, shared by the game (src/main.ts) and the Look Lab. `bootWorld` builds only terrain plus the render rig
@@ -135,6 +136,8 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
   // instead of when each builder first asks (the interior's furniture otherwise arrives seconds into the boot).
   initModels(renderer)
   preloadModels(Object.keys(MODEL_LIBRARY) as ModelName[])
+  // The documents atlas is only requested when the interior builds; start it now with everything else.
+  prefetch(["base", "normal", "orm"].map((k) => `${import.meta.env.BASE_URL}models/documents/${k}.ktx2`))
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
   renderer.setSize(canvas.clientWidth || innerWidth, canvas.clientHeight || innerHeight, false)
   renderer.toneMapping = THREE.AgXToneMapping
@@ -164,7 +167,7 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
   Object.assign(ctx.settings, MATERIAL_SETTINGS)
   bindMaterialSettings(ctx.settings)
   ctx.controls.push(...MATERIAL_CONTROLS)
-  // Textures download and transcode while terrain builds; only the first frame waits for them.
+  // Textures download and transcode in a worker from now on, alongside everything else; only the reveal waits for them.
   performance.mark("materials:start")
   const materials = loadMaterials(renderer)
     .catch((e) => fail(`materials: ${e}`))
@@ -228,8 +231,14 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
   if (params.get("flashlight") === "1") player.flashlight = true
   performance.mark("rig:end")
 
-  step("textures", 0.85)
-  await untilStalled(materials, undefined, () => fail(`textures: no progress for ${STALL_MS / 1000} s; continuing`))
+  // Textures keep downloading and transcoding while the modules build and compile (shaders don't need their pixels);
+  // only the reveal waits for them (in `stream`). Frames drawn before they're in stay behind the loading screen, and
+  // `texturesReady` tells the caller when frames are worth showing (the tuner's picture).
+  let texturesReady = false
+  const texturesIn = untilStalled(materials, undefined, () => fail(`textures: no progress for ${STALL_MS / 1000} s; continuing`)).then(() => {
+    texturesReady = true
+    performance.mark("boot:textures-in")
+  })
   step("compiling", 0.95)
 
   let streaming = true
@@ -446,6 +455,12 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
       )
       performance.mark("boot:intro-warm")
     }
+    // Every scanned texture is in (they download in parallel with everything above); upload them all now so no frame
+    // after the reveal does it.
+    advance(0, "textures")
+    await texturesIn
+    for (const t of materialTextures()) renderer.initTexture(t)
+    performance.mark("boot:textures-uploaded")
     // Shadow-map variants: the warm-up compiles the main pass only, and every caster first drawn into a lamp's shadow
     // map built its shadow shader in a play frame. One frame behind the cover renders every shadow map with all casters
     // (frustum culling off), so their shadow pipelines exist before the reveal. The maps come out the same.
@@ -491,6 +506,10 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
     modules: wanted,
     get streaming() {
       return streaming
+    },
+    /** The scanned textures are loaded: frames from now on look like the game (before, surfaces are untextured). */
+    get texturesReady() {
+      return texturesReady
     },
     /** Resolves when what was hidden at the reveal has been warmed in the background too. */
     get background() {

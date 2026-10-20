@@ -94,7 +94,8 @@ const tick = () => {
   }
   const t0 = performance.now()
   world.render(dt, time)
-  shell?.afterRender(renderer.domElement)
+  // Until the textures are in, frames are untextured: keep them out of the loading screen's picture.
+  if (world.texturesReady) shell?.afterRender(renderer.domElement)
   rendered++
   if (rendered <= 3) {
     const n = rendered
