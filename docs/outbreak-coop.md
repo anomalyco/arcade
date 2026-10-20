@@ -94,6 +94,11 @@ change the offline session.
     Both sections compare against the acked base, omit unchanged state, and send an empty list to clear it.
     One nearby cloud costs 20 payload bytes with a one-byte id; a `body:near` lifecycle record costs 14 with a
     one-byte rise time. Counts, ids and strings make larger payloads variable; quiet deltas cost zero section bytes.
+  - Zombie behaviour (`shared/behaviour/net.ts`, bit 4096) carries what each zombie in the bubble is doing as
+    id (u16) + activity code (u8) pairs; deltas carry only changed codes (0 clears) and are omitted when nothing
+    changed. Everything else (personality, memory, search plans) is derived from the seed or stays on the host; the
+    client writes the codes into its minds so poses and the overlay match. A bot-played two-night town averages
+    0.23 B per 20 Hz delta (0.04 kbit/s), 13 B at most; a full snapshot of every zombie in town was 43 B at most.
   - `personal`: binary-packed `ack`, `f32` position/aim/stamina/battery/flashlight/noise, discrete flags/ammo/planks,
     and an optional bitmask for active timers, peek/hold/vault/channel state, filtered ledger deltas and notices.
 

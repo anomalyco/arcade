@@ -266,6 +266,11 @@ export class OutbreakAISubsystem {
   readonly weatherSense = { hearing: 1, sight: 1 }
   /** How bashes wear doors and barricades this tick, set by `shared/breach/` each tick (null: as before). */
   bashRules: PortalBashRules | null = null
+  /**
+   * The behaviour layer's per-zombie speed and senses multipliers for this tick (`shared/behaviour/`), set before the
+   * crowd steps; unset, the crowd steps as it always has.
+   */
+  readonly behaviour: { speed?: (a: AIAgent) => number; senses?: (a: AIAgent) => number } = {}
   private sightBlockers: Rect[] = []
   private solids: Rect[] = []
   private portals: NavPortal[] = []
@@ -679,6 +684,8 @@ export class OutbreakAISubsystem {
       targets,
       flow: this.flow,
       hearNoise: this.hearNoiseFor(),
+      agentSpeed: this.behaviour.speed,
+      agentSenses: this.behaviour.senses,
     })
 
     this.pacing.stepAfterCrowd(

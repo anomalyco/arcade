@@ -142,6 +142,17 @@
   soundscape's hooks): each habit's cue once a cycle (the knock's hand is timed to `scape.habit.knock`), the waltz at
   the dancing couple, joggers' earbuds leaking a tinny loop. A porch body with its car in the drive carries the keys (`shared/bodies/bodies.ts`).
   Tests: `tests/characters.test.ts`.
+- Zombie behaviour (AR-91, `shared/behaviour/`, `src/behaviour/`): each zombie's personality comes from its seed
+  (`personality.ts`) and shapes what it does on top of the crowd's state machine (`mind.ts`): stop and listen, follow
+  the one that noticed, remember and search (peering in at the house you went into, then giving up slowly), rest by
+  day, herd and gather under lamps at night, feed on bodies, climb fences and car bonnets, flinch from the beam,
+  freeze in lightning, pause. It drives the crowd through the `agentSpeed`/`agentSenses` hooks in
+  `@arcade/kit/sim/ai` (`ai.behaviour` in `shared/ai.ts`) and only activity codes go on the wire (bit 4096). Other
+  features read `zombieActivity(sim, id)` / `zombieAttention(sim, id)` ("noticed", "searching", "lost interest", …).
+  Presentation: `src/behaviour/pose.ts` bends the shamble per personality (100STYLE zombie cadence, arms out) and per
+  activity; the overlay labels each zombie. Lab: Backquote › Zombie behaviour ("Today" = off), `arcade cmd
+  behaviour.stage scene=…`, station `outbreak-zombie-behaviour`. Trace: `bun scripts/behaviour-trace.ts`. Tests:
+  `tests/behaviour.test.ts`, `tests/coop-behaviour-parity.test.ts`.
 - Driving FX (skid marks, tyre smoke/dust, screech) come from per-wheel slip in `src/vehicles.ts` via `@arcade/kit/vehicle/slip`
   and `@arcade/kit/fx/skids`; Lab › Driving FX and the `outbreak-vehicles` station's drift/burnout variants. Proof:
   `bun scripts/prove-driving-fx.ts` (via `hivemind run --kind browser --fetch captures/driving-fx`).
