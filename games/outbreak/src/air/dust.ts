@@ -299,13 +299,14 @@ export class DustPass implements ScenePass {
   private readonly device: GPUDevice
   private readonly styleBuf: GPUBuffer
   private readonly styleGroup: GPUBindGroup
-  private readonly style = new Float32Array(8)
+  private readonly style = new Float32Array(24)
+  private readonly pick: { i: number; d2: number }[] = []
   private instances = 0
 
   constructor(ctx: PassContext) {
     const d = ctx.device
     this.device = d
-    this.styleBuf = d.createBuffer({ label: "outbreak beam dust", size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
+    this.styleBuf = d.createBuffer({ label: "outbreak beam dust", size: 96, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
     const styleLayout = d.createBindGroupLayout({
       entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } }],
     })
@@ -335,15 +336,17 @@ export class DustPass implements ScenePass {
 
   /**
    * This frame's work: `lightCount` lights in the buffer (slot 0 is the eye), at `tier`, with Today's dust `on`; the
-   * Beam dust settings (`air`) switch to soft motes and decide on their own amount.
+   * Beam dust settings (`air`) switch to soft or backlit motes and decide on their own amount. Backlit motes go under
+   * the lamps and fires nearest `(px, pz)` in `lights` (12-float or wider slots, `stride` floats each).
    */
-  frame(lightCount: number, tier: QualityTier, on: boolean, air?: OutbreakAirSettings) {
-    const soft = Boolean(air && air.beamDustStyle === 1)
-    const lamps = Math.min(Math.max(0, lightCount - 1), DUST_LAMPS_BY_TIER[tier])
-    const active = soft ? air!.beamDustAmount > 0 && air!.beamDustBrightness > 0 : on
-    this.instances = active ? FLASH_MOTES + lamps * LAMP_MOTES : 0
+  frame(lightCount: number, tier: QualityTier, on: boolean, air?: OutbreakAirSettings, lights?: Float32Array, stride = 16, px = 0, pz = 0) {
+    const style = air ? Math.round(air.beamDustStyle) : 0
+    const soft = style === 1
+    const lit = style === 2
+    let lamps = Math.min(Math.max(0, lightCount - 1), DUST_LAMPS_BY_TIER[tier])
     const u = this.style
-    u[0] = soft ? 1 : 0
+    u.fill(0)
+    u[0] = style
     if (soft) {
       u[1] = air!.beamDustAmount
       u[2] = air!.beamDustSize
@@ -352,7 +355,34 @@ export class DustPass implements ScenePass {
       u[5] = air!.beamDustDepthFade
       u[6] = air!.beamDustLamps
       u[7] = air!.beamDustMinPx
+    } else if (lit) {
+      u[1] = air!.beamMoteDensity
+      u[2] = air!.beamMoteSize
+      u[3] = air!.beamMoteBrightness
+      u[4] = air!.beamMoteDrift
+      u[5] = air!.beamMoteDepth
+      u[6] = air!.beamMoteLamps
+      u[7] = air!.beamMoteMinPx
+      u[8] = air!.beamMoteTwinkle
+      u[9] = air!.beamMoteSizeVar
+      // The nearest lit lamps and fires (no flashlight, no dark slots), up to the tier's budget.
+      const pick = this.pick
+      pick.length = 0
+      if (lights && air!.beamMoteLamps >= 0.5) {
+        for (let i = 1; i < lightCount; i++) {
+          const k = i * stride
+          if (lights[k + 7]! <= 0.01 || lights[k + 11]! > 1.5) continue
+          const d2 = (lights[k]! - px) ** 2 + (lights[k + 2]! - pz) ** 2
+          if (d2 < 22 * 22) pick.push({ i, d2 })
+        }
+        pick.sort((a, b) => a.d2 - b.d2)
+      }
+      lamps = Math.min(pick.length, DUST_LAMPS_BY_TIER[tier], 12)
+      u[10] = lamps
+      for (let n = 0; n < lamps; n++) u[12 + n] = pick[n]!.i
     }
+    const active = soft ? air!.beamDustAmount > 0 && air!.beamDustBrightness > 0 : lit ? air!.beamMoteDensity > 0 && air!.beamMoteBrightness > 0 : on
+    this.instances = active ? FLASH_MOTES + lamps * LAMP_MOTES : 0
     if (this.instances) this.device.queue.writeBuffer(this.styleBuf, 0, u)
   }
 

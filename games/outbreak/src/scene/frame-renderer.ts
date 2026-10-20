@@ -1,6 +1,6 @@
 import type { Camera } from "@arcade/kit/client/camera"
 import { Renderer, SPRITE_FLOATS, type Batch, type FrameInput } from "@arcade/kit/gpu/renderer"
-import { MAX_LIGHTS } from "@arcade/kit/limits"
+import { LIGHT_FLOATS, MAX_LIGHTS } from "@arcade/kit/limits"
 import { humanProfiles } from "@arcade/kit/human-profile"
 import { createLookSettings, type LookCompareMode } from "@arcade/kit/look"
 import type { AdaptiveQualityController } from "@arcade/kit/quality"
@@ -832,7 +832,7 @@ export class OutbreakFrameRenderer {
     rBatches.push(doorBatch)
     if (openWindows) rBatches.push(sashBatch)
     render.lightCount = count
-    this.dust.frame(count, qProfile.tier, settings.look.dustAmount > 0, settings.air)
+    this.dust.frame(count, qProfile.tier, settings.look.dustAmount > 0, settings.air, this.frameLighting.lights, LIGHT_FLOATS, camX, camY)
     render.shadowLightCount = shadowLightCount
     render.occluderCount = frameLightOccluders
     render.volume = volume

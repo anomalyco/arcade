@@ -108,11 +108,12 @@ export class FirePresenter {
     this.trapOpen = renderer.addModel(bearTrapMesh(false))
     this.trapShut = renderer.addModel(bearTrapMesh(true))
     this.rig = renderer.addModel(rigMesh())
-    setTreeBurnSource((id) => this.treeBurns.get(id) ?? 0)
-    setFoliageBurnSpots((push) => {
-      const sp = this.spots
-      for (let i = 0; i < sp.length; i += 4) push(sp[i]!, sp[i + 1]!, sp[i + 2]!, sp[i + 3]!)
-    })
+  }
+
+  private readonly burnOf = (id: number) => this.treeBurns.get(id) ?? 0
+  private readonly pushSpots = (push: (x: number, z: number, r: number, burn: number) => void) => {
+    const sp = this.spots
+    for (let i = 0; i < sp.length; i += 4) push(sp[i]!, sp[i + 1]!, sp[i + 2]!, sp[i + 3]!)
   }
 
   private put(model: number, x: number, y: number, z: number, yaw: number, scale = 1, alpha = 1, pitch = 0, roll = 0): void {
@@ -227,9 +228,12 @@ export class FirePresenter {
       if (!st?.at || !st.counts.t) continue
       this.treeBurns.set(treeIdAt(st.at.x, st.at.y), treeBurn(st, time, look.treeBurnSeconds))
     }
+    // Vegetation only walks its trees while one has caught.
+    setTreeBurnSource(this.treeBurns.size ? this.burnOf : null)
     const spots = this.spots
     spots.length = 0
     const ch = look.foliageChar
+    setFoliageBurnSpots(ch > 0 ? this.pushSpots : null)
     if (ch <= 0) return
     for (let k = 0; k < FIRE_RING; k++) {
       const st = ledger.store(ringId("fire", k))

@@ -9,7 +9,7 @@ import {
   vegetationGust,
   vegetationSignature,
 } from "../src/vegetation/settings"
-import { packVegetationTrees, setTreeBurnSource, treeBurnState, treeIdAt, VEG_TREE_UNIFORM_FLOATS } from "../src/vegetation/trees"
+import { packVegetationTrees, setFoliageBurnSpots, setTreeBurnSource, treeBurnState, treeIdAt, VEG_TREE_UNIFORM_FLOATS } from "../src/vegetation/trees"
 import { makeTown } from "../shared/map"
 
 describe("Outbreak vegetation settings", () => {
@@ -98,6 +98,26 @@ describe("Outbreak tree looks and the burn hook", () => {
     expect(out.slice(4).every((v) => v === 0)).toBe(true)
     packVegetationTrees({ ...s, vegBurnTest: 1 }, town, tree.x, tree.y, out, 0)
     expect([out[3], out[7]]).toEqual([1, 1])
+  })
+
+  test("shrub and hedge burn spots follow the trees, nearest first, marked by a negative radius", () => {
+    const town = makeTown(7, 7, 0, 1)
+    const out = new Float32Array(VEG_TREE_UNIFORM_FLOATS)
+    const s = { ...DEFAULT_VEGETATION_SETTINGS }
+    setFoliageBurnSpots((push) => {
+      push(30, 30, 1.5, 0.6)
+      push(10, 10, 1, 0.3)
+      push(11, 10, 1, 0)
+    })
+    try {
+      packVegetationTrees(s, town, 10, 10, out, 0)
+      expect(out[3]).toBe(2)
+      expect(Array.from(out.slice(4, 12))).toEqual([10, 10, -1, Math.fround(0.3), 30, 30, -1.5, Math.fround(0.6)])
+    } finally {
+      setFoliageBurnSpots(null)
+    }
+    packVegetationTrees(s, town, 10, 10, out, 0)
+    expect(out[3]).toBe(0)
   })
 
   test("tree ids are stable per position", () => {

@@ -41,7 +41,10 @@ export type OutbreakAirSettings = {
   smokeMaxSources: number
   /** How far from the survivor a source still smokes, in metres. */
   smokeRange: number
-  /** Dust in the flashlight beam: 0 Today (fine glinting motes, Look › Air), 1 soft drifting motes (these knobs). */
+  /**
+   * Dust in the light: 0 Today (fine glinting motes, Look › Air), 1 AR-68's soft drifting motes (the `beamDust…`
+   * knobs), 2 backlit motes (the `beamMote…` knobs).
+   */
   beamDustStyle: number
   /** Soft motes: share of air cells holding a mote. */
   beamDustAmount: number
@@ -57,6 +60,24 @@ export type OutbreakAirSettings = {
   beamDustDepthFade: number
   /** Soft motes: under lamps and sconces too (1 on). */
   beamDustLamps: number
+  /** Backlit motes: share of air cells (0.42 m) holding a mote. */
+  beamMoteDensity: number
+  /** Backlit motes: radius in millimetres (drawn at least `beamMoteMinPx` wide, dimmer instead of smaller). */
+  beamMoteSize: number
+  /** Backlit motes: how much sizes vary mote to mote (0 all alike). */
+  beamMoteSizeVar: number
+  /** Backlit motes: smallest drawn radius in pixels (soft points, TAA-steady). */
+  beamMoteMinPx: number
+  /** Backlit motes: × how brightly they catch the light. */
+  beamMoteBrightness: number
+  /** Backlit motes: × how fast the air carries them. */
+  beamMoteDrift: number
+  /** Backlit motes: how much each one brightens as it slowly turns to the light (0 steady). */
+  beamMoteTwinkle: number
+  /** Backlit motes: softer and dimmer as they rise toward the camera (0 none .. 1 full). */
+  beamMoteDepth: number
+  /** Backlit motes: in lamp pools and fire light too, not only the flashlight (1 on). */
+  beamMoteLamps: number
 }
 
 export const DEFAULT_AIR_SETTINGS: OutbreakAirSettings = {
@@ -78,7 +99,7 @@ export const DEFAULT_AIR_SETTINGS: OutbreakAirSettings = {
   smokeDayThin: 0.55,
   smokeMaxSources: 14,
   smokeRange: 30,
-  beamDustStyle: 1,
+  beamDustStyle: 2,
   beamDustAmount: 0.05,
   beamDustSize: 2.5,
   beamDustMinPx: 2.2,
@@ -86,6 +107,15 @@ export const DEFAULT_AIR_SETTINGS: OutbreakAirSettings = {
   beamDustDrift: 0.45,
   beamDustDepthFade: 0.8,
   beamDustLamps: 1,
+  beamMoteDensity: 0.03,
+  beamMoteSize: 5,
+  beamMoteSizeVar: 0.6,
+  beamMoteMinPx: 1.5,
+  beamMoteBrightness: 1.6,
+  beamMoteDrift: 0.6,
+  beamMoteTwinkle: 0.7,
+  beamMoteDepth: 0.7,
+  beamMoteLamps: 1,
 }
 
 const SMOKE = "World smoke"
@@ -110,12 +140,31 @@ export const airControls: readonly LabControl[] = [
   { key: "smokeDayThin", label: "Thinner by day", group: SMOKE, min: 0, max: 1, step: 0.05, unit: "" },
   { key: "smokeMaxSources", label: "Most smoking sources", group: SMOKE, min: 0, max: 32, step: 1, unit: "" },
   { key: "smokeRange", label: "Smoke range", group: SMOKE, min: 8, max: 60, step: 1, unit: "m" },
-  { key: "beamDustStyle", label: "Beam dust", group: DUST, type: "select", options: [{ value: 0, label: "Today (fine motes, Look › Air)" }, { value: 1, label: "Soft drifting motes" }] },
-  { key: "beamDustAmount", label: "Motes", group: DUST, min: 0, max: 0.4, step: 0.005, unit: "" },
-  { key: "beamDustSize", label: "Mote radius", group: DUST, min: 0.5, max: 8, step: 0.1, unit: "cm" },
-  { key: "beamDustMinPx", label: "Smallest mote", group: DUST, min: 1, max: 6, step: 0.1, unit: "px" },
-  { key: "beamDustBrightness", label: "Mote brightness", group: DUST, min: 0, max: 4, step: 0.05, unit: "×" },
-  { key: "beamDustDrift", label: "Drift speed", group: DUST, min: 0, max: 2, step: 0.05, unit: "×" },
-  { key: "beamDustDepthFade", label: "Depth fade", group: DUST, min: 0, max: 1, step: 0.05, unit: "" },
-  { key: "beamDustLamps", label: "Motes under lamps", group: DUST, min: 0, max: 1, step: 1, unit: "" },
+  {
+    key: "beamDustStyle",
+    label: "Beam dust",
+    group: DUST,
+    type: "select",
+    options: [
+      { value: 0, label: "Today (fine motes, Look › Air)" },
+      { value: 1, label: "Soft drifting motes (AR-68)" },
+      { value: 2, label: "Backlit motes" },
+    ],
+  },
+  { key: "beamMoteDensity", label: "Backlit: density", group: DUST, min: 0, max: 0.2, step: 0.0025, unit: "" },
+  { key: "beamMoteSize", label: "Backlit: size", group: DUST, min: 1, max: 20, step: 0.5, unit: "mm" },
+  { key: "beamMoteSizeVar", label: "Backlit: size variation", group: DUST, min: 0, max: 1, step: 0.05, unit: "" },
+  { key: "beamMoteMinPx", label: "Backlit: smallest", group: DUST, min: 1, max: 4, step: 0.1, unit: "px" },
+  { key: "beamMoteBrightness", label: "Backlit: brightness", group: DUST, min: 0, max: 6, step: 0.05, unit: "×" },
+  { key: "beamMoteDrift", label: "Backlit: drift", group: DUST, min: 0, max: 2, step: 0.05, unit: "×" },
+  { key: "beamMoteTwinkle", label: "Backlit: slow twinkle", group: DUST, min: 0, max: 1, step: 0.05, unit: "" },
+  { key: "beamMoteDepth", label: "Backlit: depth softness", group: DUST, min: 0, max: 1, step: 0.05, unit: "" },
+  { key: "beamMoteLamps", label: "Backlit: in lamp and fire light", group: DUST, min: 0, max: 1, step: 1, unit: "" },
+  { key: "beamDustAmount", label: "Soft: motes", group: DUST, min: 0, max: 0.4, step: 0.005, unit: "" },
+  { key: "beamDustSize", label: "Soft: mote radius", group: DUST, min: 0.5, max: 8, step: 0.1, unit: "cm" },
+  { key: "beamDustMinPx", label: "Soft: smallest mote", group: DUST, min: 1, max: 6, step: 0.1, unit: "px" },
+  { key: "beamDustBrightness", label: "Soft: mote brightness", group: DUST, min: 0, max: 4, step: 0.05, unit: "×" },
+  { key: "beamDustDrift", label: "Soft: drift speed", group: DUST, min: 0, max: 2, step: 0.05, unit: "×" },
+  { key: "beamDustDepthFade", label: "Soft: depth fade", group: DUST, min: 0, max: 1, step: 0.05, unit: "" },
+  { key: "beamDustLamps", label: "Soft: motes under lamps", group: DUST, min: 0, max: 1, step: 1, unit: "" },
 ]

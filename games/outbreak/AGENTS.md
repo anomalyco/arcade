@@ -128,7 +128,8 @@
   `@arcade/kit/gpu/foliage-looks`, dispatched by `plant()`; "Blighted trees" (default 25%) gives a seeded share of C
   trees Deadwood's limbs with withered clumps or none. A and C sink to near-black grey outside light in
   `outbreakTreeSurface` (`src/vegetation/trees.ts`), take their colour in the torch beam, and bake long moon shadows. Burning trees are a shader hook for the fire feature: `setTreeBurnSource((treeIdAt(x, z)) =>
-  0..1)`. Stills, night clips and paired GPU per look: `bun scripts/tree-looks-stills.ts --clip --gpu`.
+  0..1)`, plus `setFoliageBurnSpots` for burning and scorched ground that chars shrubs (negative-radius entries in the
+  same eight `vegBurn` slots, after the trees). Fence hedges are lit boxes, not foliage, and don't char. Stills, night clips and paired GPU per look: `bun scripts/tree-looks-stills.ts --clip --gpu`.
 - The look (survivor style, grade, lamps and sky as trims on the day cycle, curated presets) lives in `src/look/`;
   Lab: Backquote › Look · Presets/Hero/Grade/Lights and the `outbreak-look` lab. The look's contract is
   `../../docs/outbreak-art-direction.md`; beauty stills, flicker and paired GPU: `bun scripts/look-beauty.ts`. Stills: `bun scripts/look-stills.ts`
@@ -190,12 +191,18 @@
   packed after the night lights in `extraLights`, rigs and charring, drawn from `scene/frame-renderer.ts`). The look
   (AR-68) is the kit explosion fire: `src/fire/kit-fx.ts` emits kit `fireball`/`smoke`/`spark` particles for the stream,
   burning figures, ground fire and crackers, dynamite is `spawnExplosion` with the kit "barrel" preset, molotovs the
-  "pop", and scorch is kit decals. Lab › Fire & explosives look › Fire style 0 is Today's analytic sprites. Lab:
+  "pop", and scorch is kit decals. Second pass: hot inner tongues and a warm `glow` halo (kit kind 9) per source, an
+  uneven flicker, Karis-weighted first bloom downsample (`bloomKaris`) so embers don't flash bloom tiles; fire light is
+  capsules (`LIGHT_CAPSULE`, kit `lightSum`) along the jet, a body, a fire or a tree. Trees catch (`tree:<k>` ring:
+  ground fire at the trunk, the stream, burning dead, blasts), burn `treeBurnSeconds`, drop small fires, may jump to a
+  neighbour, and stand bare and charred for good. Lab › Fire & explosives look › Fire style 0 is Today's analytic
+  sprites, Fire light shape 0 Today's points. Lab:
   Backquote › Fire & explosives, `arcade cmd fire.stage scene=…`, station `outbreak-fire`. Items, loot and recipes:
   `../../docs/outbreak-progression.md#fire--explosives-ar-62`. Tests: `tests/fire.test.ts`.
 - The air (AR-68, `src/air/`): world smoke from manholes, storm drains, smouldering cars, wrecks and chimneys
-  (`air/smoke.ts`, placement a pure function of the town and `smokeSeed`, nearest 14 sources within 30 m) and soft
-  beam dust (`air/dust.ts` style 1). Smoke and the kit fire share one kit particle pool in `scene/fx-particles.ts`,
+  (`air/smoke.ts`, placement a pure function of the town and `smokeSeed`, nearest 14 sources within 30 m) and dust in
+  the light (`air/dust.ts`: style 2 backlit motes on a curl-noise current, only in the beam and the nearest lamps and
+  fires the CPU picks; style 1 AR-68's soft motes). Smoke and the kit fire share one kit particle pool in `scene/fx-particles.ts`,
   drawn by the kit renderer's `fxParticles` path and lit only by the beam (a plan-cone spot) and the strongest lamps
   and fire lights, so smoke is dark until a light finds it. Lab › World smoke / Beam dust (0 is Today), `arcade cmd
   air.stage scene=steam|car`, station `outbreak-fire` › Smoke & dust. Tests: `tests/air.test.ts`.
