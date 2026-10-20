@@ -5,6 +5,8 @@ export type BreachWire = {
   integrity: number
   flags: number
   kind: number
+  /** How the door itself gave, kept after boards across the gap give. */
+  doorKind: number
   pushers: number
   braced: number
   /** -1, 0 unknown, +1. */

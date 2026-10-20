@@ -139,6 +139,8 @@ export type PortalWear = {
   broken: boolean
   /** How it last gave (`KIND_*`) and when (-1 never). */
   kind: number
+  /** How the door itself gave (`KIND_HINGES`, `KIND_SPLIT`, `KIND_CRUSH`), kept when boards across the gap give later. */
+  doorKind: number
   breachAt: number
   /** A panel punched through (arms reach in while the dead push). */
   holed: boolean
@@ -187,6 +189,7 @@ export function freshWear(): PortalWear {
     giving: GIVING_DOOR,
     broken: false,
     kind: KIND_NONE,
+    doorKind: KIND_NONE,
     breachAt: -1,
     holed: false,
     debris: null,
@@ -500,6 +503,7 @@ function breach(
   } else {
     if (!at.door) return false
     kind = chooseDoorBreach(id, w, t)
+    w.doorKind = kind
     at.door.open = true
     at.door.locked = false
     at.door.keyed = false

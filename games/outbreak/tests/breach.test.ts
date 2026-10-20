@@ -233,3 +233,90 @@ describe("readable door breaches (AR-97)", () => {
     expect(a.byteLength).toBeGreaterThan(0)
   })
 })
+
+describe("staged door scenes (outbreak-breach station)", () => {
+  test("each breach scene gives the way it is labelled, and wear stages hold", async () => {
+    const { LocalSession } = await import("../shared/session")
+    const { stageBreach, applyStageHold } = await import("../src/breach/stage")
+    const expectKind: Record<string, number> = { giving: KIND_HINGES, "split-door": KIND_SPLIT, crush: KIND_CRUSH, boards: KIND_BOARDS, burst: KIND_BURST }
+    for (const scene of ["holed", "giving", "split-door", "crush", "boards", "burst", "brace"] as const) {
+      const session = new LocalSession(7, 7, 0.22, { zombieCount: 0, openingCalm: 0 })
+      const host = {
+        progressionHost: {
+          view: () => session.view,
+          pose: (x: number, y: number, aim: number) => Object.assign(session.view.player, { x, y, aim, vx: 0, vy: 0 }),
+          setHour: (h: number) => (session.view.hour = h),
+          hud: null as never,
+          offline: () => true,
+        },
+        session: () => session,
+      }
+      const staged = stageBreach(host, scene)
+      const aim = session.view.player.aim
+      let braced = 0
+      for (let i = 0; i < 60 * 8; i++) {
+        session.update(TICK_DT, { mx: 0, my: 0, aim, interact: false }, 0)
+        applyStageHold(session.sim)
+        braced = Math.max(braced, session.sim.getFeatureState<BreachState>("breach")!.portals[staged.portal]?.braced ?? 0)
+      }
+      const w = session.sim.getFeatureState<BreachState>("breach")!.portals[staged.portal]
+      if (scene === "holed") {
+        expect(w?.holed).toBe(true)
+        expect(w?.broken).toBe(false)
+        continue
+      }
+      if (scene === "brace") {
+        expect(braced).toBe(1)
+        continue
+      }
+      const first = session.sim.getFeatureState<BreachState>("breach")!.events.find((e) => e.portalId === staged.portal)
+      expect(`${scene}:${first?.kind}`).toBe(`${scene}:${expectKind[scene]}`)
+    }
+  }, 30_000)
+})
+
+describe("breach presenter (AR-97)", () => {
+  test("draws the damaged door itself, throws pieces on a breach, and lights the gaps", async () => {
+    const { LocalSession } = await import("../shared/session")
+    const { stageBreach, applyStageHold } = await import("../src/breach/stage")
+    const { BreachPresenter } = await import("../src/breach/presenter")
+    const { DEFAULT_BREACH_SETTINGS } = await import("../src/breach/settings")
+    let models = 0
+    const presenter = new BreachPresenter({ addModel: () => models++ })
+    const session = new LocalSession(7, 7, 0.22, { zombieCount: 0, openingCalm: 0 })
+    const host = {
+      progressionHost: {
+        view: () => session.view,
+        pose: (x: number, y: number, aim: number) => Object.assign(session.view.player, { x, y, aim, vx: 0, vy: 0 }),
+        setHour: (h: number) => (session.view.hour = h),
+        hud: null as never,
+        offline: () => true,
+      },
+      session: () => session,
+    }
+    const seen = { drawn: false, maxDebris: 0, maxLights: 0, slabDrawn: false, stages: new Set<string>() }
+    for (const scene of ["split", "crush"] as const) {
+      presenter.reset()
+      stageBreach(host, scene)
+      for (let i = 0; i < 60 * 5; i++) {
+        session.update(TICK_DT, { mx: 0, my: 0, aim: Math.PI / 2, interact: false }, 0)
+        applyStageHold(session.sim)
+        presenter.update({ session, settings: DEFAULT_BREACH_SETTINGS, cam: null, dt: TICK_DT })
+        const lights = new Float32Array(64 * 16)
+        seen.maxLights = Math.max(seen.maxLights, presenter.writeLights(lights, 0, 64))
+        const batches = presenter.batches()
+        seen.drawn ||= presenter.drawsDoor(session.view.town.doors.find((d) => d.id === DOOR)!)
+        seen.maxDebris = Math.max(seen.maxDebris, presenter.stats.debris)
+        if (scene === "crush" && session.sim.getFeatureState<BreachState>("breach")!.portals[DOOR]?.broken) seen.slabDrawn ||= batches.some((b) => b.model === 0 && b.count > 0)
+        seen.stages.add(presenter.stats.stages[DOOR] ?? "")
+      }
+    }
+    expect(models).toBe(14)
+    expect(seen.drawn).toBe(true)
+    expect(seen.maxDebris).toBeGreaterThan(10)
+    expect(seen.maxLights).toBeGreaterThan(0)
+    expect(seen.slabDrawn).toBe(true)
+    expect([...seen.stages]).toContain("broken")
+    expect(presenter.stats.breaches).toContain("crush")
+  }, 30_000)
+})

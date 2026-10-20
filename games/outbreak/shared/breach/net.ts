@@ -40,6 +40,7 @@ export function wearToWire(portal: number, integrity: number, w: PortalWear): Br
     integrity: hp,
     flags,
     kind: w.kind & 7,
+    doorKind: w.doorKind & 7,
     pushers,
     braced,
     outside: w.outside > 0 ? 1 : w.outside < 0 ? -1 : 0,
@@ -76,7 +77,7 @@ export const breachNetSection: OutbreakNetSectionCodec<BreachState, BreachSnapsh
   encode: (w, s) => {
     w.uvar(s.portals.length)
     for (const p of s.portals) {
-      w.uvar(p.portal).u8(p.integrity).u8(p.flags).u8(p.kind | (p.pushers << 3) | (p.braced << 6)).u8(p.outside + 1)
+      w.uvar(p.portal).u8(p.integrity).u8(p.flags).u8(p.kind | (p.pushers << 3) | (p.braced << 6)).u8((p.outside + 1) | (p.doorKind << 2))
       if (p.flags & F_GIVING) w.f32(p.givingAt)
       if (p.flags & F_BREACHED) w.f32(p.breachAt)
       if (p.flags & F_DEBRIS) w.i32(Math.round(p.debrisX * 100)).i32(Math.round(p.debrisY * 100))
@@ -89,12 +90,14 @@ export const breachNetSection: OutbreakNetSectionCodec<BreachState, BreachSnapsh
       const integrity = r.u8()
       const flags = r.u8()
       const packed = r.u8()
-      const outside = r.u8() - 1
+      const side = r.u8()
+      const outside = (side & 3) - 1
+      const doorKind = (side >> 2) & 7
       const givingAt = flags & F_GIVING ? r.f32() : -1
       const breachAt = flags & F_BREACHED ? r.f32() : -1
       const debrisX = flags & F_DEBRIS ? r.i32() / 100 : 0
       const debrisY = flags & F_DEBRIS ? r.i32() / 100 : 0
-      portals.push({ portal, integrity, flags, kind: packed & 7, pushers: (packed >> 3) & 7, braced: packed >> 6, outside, givingAt, breachAt, debrisX, debrisY })
+      portals.push({ portal, integrity, flags, kind: packed & 7, doorKind, pushers: (packed >> 3) & 7, braced: packed >> 6, outside, givingAt, breachAt, debrisX, debrisY })
     }
     return portals.length ? { portals } : undefined
   },
@@ -126,6 +129,7 @@ export function applyBreachSnapshot(
     w.holed = Boolean(p.flags & F_HOLED)
     w.wedged = Boolean(p.flags & F_WEDGED)
     w.kind = p.kind
+    w.doorKind = p.doorKind
     w.breachAt = p.flags & F_BREACHED ? p.breachAt : -1
     w.debris = p.flags & F_DEBRIS ? { x: p.debrisX, y: p.debrisY } : null
     const st = portalStates.get(id)
