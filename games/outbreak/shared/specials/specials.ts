@@ -5,6 +5,8 @@ import { dayCycle } from "../day-cycle"
 import { flashlightAwarenessAt, type FlashlightTuning } from "../flashlight"
 import { inBuildingFootprint, sightRects } from "../map"
 import type { OutbreakSim } from "../sim-types"
+import type { GasCloud } from "./net-types"
+export type { GasCloud } from "./net-types"
 import {
   DEFAULT_SPECIALS_TUNING,
   encodeSpecialSeed,
@@ -51,8 +53,6 @@ export type SpecialRuntime = {
   /** Bloater: its gas has been released. */
   burst: boolean
 }
-
-export type GasCloud = { id: number; x: number; y: number; born: number; until: number; radius: number }
 
 export type SpecialsState = {
   /** Seed each zombie id was rolled with. */

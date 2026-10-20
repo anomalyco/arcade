@@ -5,6 +5,8 @@ import type { AIState } from "./ai"
 import type { CombatMeleeEvent, CombatShotEvent, MeleeWeaponId } from "./combat"
 import type { DeathSnapshot } from "./death/rules"
 import type { NoisesSnapshot } from "./noises/types"
+import type { SpecialsSnapshot } from "./specials/net-types"
+import type { BodiesSnapshot } from "./bodies/net-types"
 import type { LoadoutId, SurvivorVariant } from "./loadout"
 import type { Survivor } from "./sim-types"
 import type { Notice } from "./types"
@@ -159,6 +161,10 @@ export type SharedSnapshot = {
   death?: DeathSnapshot
   /** Noises the dead heard since the base snapshot, near the recipient (`shared/noises`). */
   noises?: NoisesSnapshot
+  /** Active Bloater gas hazards (`shared/specials`). */
+  specials?: SpecialsSnapshot
+  /** Searchable corpses that started rising (`shared/bodies`). */
+  bodies?: BodiesSnapshot
 }
 
 /** The private part: what to reconcile against, the ledger stores this player can see that changed, and notices. */

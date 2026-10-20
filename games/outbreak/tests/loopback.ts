@@ -8,6 +8,8 @@ import type { CoopRoomCore, Conn } from "../server/room-core"
  */
 export class Loopback {
   tick = 0
+  /** Test checkpoints may explicitly send a snapshot to connected peers without advancing the world clock. */
+  readonly connections: Conn[] = []
   private queue: { at: number; run: () => void }[] = []
 
   private lastAt = new Map<object, number>()
@@ -93,6 +95,7 @@ export class Loopback {
           },
         }
         net.core.open(this.conn)
+        net.connections.push(this.conn)
         net.later(() => {
           this.readyState = 1
           this.onopen?.()

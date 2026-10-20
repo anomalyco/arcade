@@ -1,41 +1,25 @@
 import { SPRITE_FLOATS } from "@arcade/kit/gpu/renderer"
-import { SPECIAL_BLOATER, specialKindOf } from "../../shared/specials/kinds"
+import type { GasCloud } from "../../shared/specials/net-types"
 
-/** A burst Bloater's cloud as this peer saw it: where, when, how big and for how long. */
+/** A burst Bloater's authoritative cloud: where, when, how big and for how long. */
 export type GasPuff = { id: number; x: number; y: number; born: number; radius: number; life: number }
 
 /**
- * The Bloater's gas, presentation only: a cloud appears where a Bloater dies (seen as a state change, like the sound
- * director's, so co-op peers draw it from snapshots), drawn as a sickly ground stain and slow drifting puffs. The sim
+ * The Bloater's gas, drawn from the room's persistent clouds as a sickly ground stain and slow drifting puffs. The sim
  * owns the damage (`shared/specials/specials.ts`).
  */
 export class GasClouds {
   readonly clouds: GasPuff[] = []
-  private readonly states = new Map<number, string>()
-  private started = false
 
   reset(): void {
     this.clouds.length = 0
-    this.states.clear()
-    this.started = false
   }
 
-  observe(zombies: readonly { id: number; seed: number; x: number; y: number; state: string }[], time: number, radius: number, life: number): void {
-    const seen = new Set<number>()
-    for (const z of zombies) {
-      if (specialKindOf(z.seed) !== SPECIAL_BLOATER) continue
-      seen.add(z.id)
-      const prev = this.states.get(z.id)
-      this.states.set(z.id, z.state)
-      if (this.started && prev !== undefined && prev !== "dead" && z.state === "dead") {
-        this.clouds.push({ id: z.id, x: z.x, y: z.y, born: time, radius, life })
-      }
-    }
-    for (const id of this.states.keys()) if (!seen.has(id)) this.states.delete(id)
-    this.started = true
-    for (let i = this.clouds.length - 1; i >= 0; i--) {
-      const c = this.clouds[i]!
-      if (time - c.born > c.life || time < c.born) this.clouds.splice(i, 1)
+  /** Both offline and co-op draw the hazard itself, even if nobody saw the Bloater die. */
+  sync(clouds: readonly GasCloud[], time: number): void {
+    this.clouds.length = 0
+    for (const c of clouds) {
+      if (c.until > time) this.clouds.push({ id: c.id, x: c.x, y: c.y, born: c.born, radius: c.radius, life: c.until - c.born })
     }
   }
 

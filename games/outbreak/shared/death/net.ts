@@ -23,6 +23,7 @@ export function deathSnapshotOf(state: DeathState, slots: readonly { index: numb
       bleed: rec.state === "down" ? Math.round(clamp(rec.bleed, 0, 6553.5) * 10) / 10 : 0,
       revive: rec.state === "down" ? Math.round(clamp(rec.revive, 0, 1) * 255) / 255 : 0,
       reviver: rec.state === "down" ? clamp(rec.reviver, -1, 254) : -1,
+      ...(rec.state === "dead" && rec.watching !== undefined ? { watching: rec.watching } : {}),
     })
   }
   const bodies: FallenBody[] = state.bodies.map((b) => ({ index: b.index, n: b.n, x: cm(b.x) / 100, y: cm(b.y) / 100, yaw: unpackAngle(packAngle(b.yaw)) }))
@@ -44,7 +45,7 @@ export function writeDeath(w: ByteWriter, d: DeathSnapshot): void {
       w.u16(Math.round(s.bleed * 10))
       w.u8(Math.round(s.revive * 255))
       w.u8(s.reviver + 1)
-    }
+    } else w.u8((s.watching ?? -1) + 1)
   }
   w.u8(d.bodies.length)
   for (const b of d.bodies) {
@@ -70,7 +71,8 @@ export function readDeath(r: ByteReader): DeathSnapshot {
     const bleed = dead ? 0 : r.u16() / 10
     const revive = dead ? 0 : r.u8() / 255
     const reviver = dead ? -1 : r.u8() - 1
-    survivors.push({ index, state: dead ? "dead" : "down", cause: bits >> 2, night, dark: Boolean(bits & 2), bleed, revive, reviver })
+    const watching = dead ? r.u8() - 1 : -1
+    survivors.push({ index, state: dead ? "dead" : "down", cause: bits >> 2, night, dark: Boolean(bits & 2), bleed, revive, reviver, ...(watching >= 0 ? { watching } : {}) })
   }
   const bodies: FallenBody[] = []
   for (let n = r.u8(), i = 0; i < n; i++) {
@@ -123,6 +125,8 @@ export function applyDeathSnapshot(state: DeathState, d: DeathSnapshot | undefin
     const rec: LifeRecord = prev ?? { index: s.index, state: "alive", since: time, bleed: 0, revive: 0, reviver: -1, reviveAt: 0, cause: 0, night: 0, dark: false, kills: 0, deaths: 0 }
     if (rec.state !== s.state) rec.since = time
     Object.assign(rec, { state: s.state, cause: s.cause, night: s.night, dark: s.dark, bleed: s.bleed, revive: s.revive, reviver: s.reviver })
+    if (s.watching !== undefined) rec.watching = s.watching
+    else delete rec.watching
     state.records[s.index] = rec
   }
   for (const rec of Object.values(state.records)) {
@@ -131,6 +135,7 @@ export function applyDeathSnapshot(state: DeathState, d: DeathSnapshot | undefin
     rec.since = time
     rec.bleed = rec.revive = 0
     rec.reviver = -1
+    delete rec.watching
   }
   state.bodies = (d?.bodies ?? []).map((b) => ({ ...b }))
   for (const b of state.bodies) {

@@ -1485,6 +1485,13 @@ Candidates from the code audits; measure and playtest before moving any into the
 
 ## Multiplayer
 
+- **Replicate persistent hazards and the spectator's target.** Outbreak clients inferred Bloater gas from observed
+  deaths, so late joiners missed damaging clouds. `shared/specials/net.ts` now sends active, interest-filtered hazards:
+  one small-id cloud costs 20 payload bytes and unchanged deltas cost zero. Body rise counters need their own section
+  because slot-store inventory serialization omits counters. Four-client room tests also caught the spectator camera
+  following a distant teammate while snapshots covered the corpse; one replicated seat now selects both camera and
+  interest. Proof: `games/outbreak/tests/coop-{specials,death}-parity.test.ts` and `coop-feature-bandwidth.test.ts`;
+  [outbreak-coop.md](outbreak-coop.md) records coverage and remaining limits.
 - **Pair snapshot benchmarks on the same source.** `scripts/bench-multiplayer.ts --paired` alternates shared and
   per-recipient preparation order, runs one warmup plus nine measured pairs of 1,000 ticks, and checks serialized
   byte counts and SHA-256 outside the timed interval. Both games produced identical output across all 20 runs.

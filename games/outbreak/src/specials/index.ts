@@ -1,6 +1,5 @@
 import type { LabControl } from "@arcade/kit/lab-panel"
 import type { LabCommand } from "@arcade/kit/lab/commands"
-import { LocalSession } from "../../shared/session"
 import type { OutbreakSim } from "../../shared/sim-types"
 import { DEFAULT_SPECIALS_TUNING, SPECIAL_KIND_IDS, SPECIAL_RULES, specialKindFromId, specialsControls } from "../../shared/specials/kinds"
 import { spawnSpecial, specialCounts, specialsOf } from "../../shared/specials/specials"
@@ -36,6 +35,12 @@ function summary(sim: OutbreakSim) {
 export const outbreakSpecialsFeature = registerOutbreakClientFeature({
   id: "specials",
   order: 17,
+  netSession: {
+    onApplyWorld: (net, shared) => {
+      specialsOf(net.sim).clouds = (shared.specials?.clouds ?? []).map((c) => ({ ...c }))
+      return false
+    },
+  },
   settingsGroup: { subsystem: "specials", defaults: DEFAULT_SPECIALS_TUNING },
   labControls: (host): LabControl[] => [
     ...(specialsControls as readonly LabControl[]),
@@ -80,11 +85,9 @@ export const outbreakSpecialsFeature = registerOutbreakClientFeature({
   harnessState: (host) => ({ specials: { ...summary(host.session().sim), gasDrawn: gas.clouds.length } }),
   feel: {
     reset: () => gas.reset(),
-    processFrame: ({ session, settings, addSprites, addCount }) => {
-      const { town, time, zombies } = session.view
-      // Co-op peers draw the room's cloud size; Lab tuning only reaches the offline sim.
-      const tune = session instanceof LocalSession ? settings.specials : DEFAULT_SPECIALS_TUNING
-      gas.observe(zombies, time, tune.gasRadius, tune.gasTime)
+    processFrame: ({ session, addSprites, addCount }) => {
+      const { town, time } = session.view
+      gas.sync(specialsOf(session.sim).clouds, time)
       return gas.draw(addSprites, addCount, time, (x, y) => supportHeight(town, x, y))
     },
   },
