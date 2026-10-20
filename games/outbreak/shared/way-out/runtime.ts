@@ -85,7 +85,8 @@ function tell(sim: OutbreakSim, text: string): void {
 export function clueSites(sim: OutbreakSim, state: WayOutState, plan: WayOutPlan): ClueSite[] {
   const town = sim.town
   const t = state.tuning
-  const key = `${plan.key}:${t.noteShare}:${town.buildings.length}:${town.props.length}:${town.buildings[0]?.id ?? ""}:${town.buildings.at(-1)?.id ?? ""}`
+  // Chunk sync invalidates the geometry; counts and endpoint IDs cannot identify its contents.
+  const key = `${plan.key}:${t.noteShare}`
   if (key !== state.sitesKey) {
     state.sitesKey = key
     state.sites = [...noteSites(town, seedOf(sim), t.noteShare), ...policeSites(town), ...roadSites(plan)]
