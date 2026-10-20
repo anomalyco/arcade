@@ -17,11 +17,11 @@ const variants: StationVariant[] = fights.flatMap((f) => [
   {
     id: f.id,
     group: f.label,
-    label: `${f.label} · Physical`,
+    label: "Physical",
     note: `${f.note} Directional hit reactions, ragdoll deaths from the pose they died in, bodies pushed by blasts and cars, weapon-weighted hit-stop.`,
     setup: stage(f.id, 1),
   },
-  { id: `${f.id}-today`, group: f.label, label: `${f.label} · Today`, note: `${f.note} Today's canned stagger and collapse.`, setup: stage(f.id, 0) },
+  { id: `${f.id}-today`, group: f.label, label: "Today", note: `${f.note} Today's canned stagger and collapse.`, setup: stage(f.id, 0) },
 ])
 
 export default defineStation({
@@ -29,7 +29,7 @@ export default defineStation({
   title: "Outbreak combat oomph",
   summary:
     "The same fights played Today and Physical. Physical gives the living directional hit reactions on springs (the trunk rocks away from the blow and overshoots, off-centre hits twist the shoulders, the head whips, the knees buckle) and drops the dead as Verlet ragdolls started from the exact pose they died in, pushed by the blow that killed them: a pistol round crumples, a fire axe folds, dynamite and cars throw. Bodies already down are blown along by blasts and tumble from under wheels, and hit-stop and shake scale with the weapon. All presentation, seeded from replicated events. Lab › Feel (Impact: Today / Physical) and Physics.",
-  order: 124,
+  order: 131,
   prop: "panels",
   color: 0xc4473a,
   status: "live",
