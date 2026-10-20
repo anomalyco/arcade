@@ -179,7 +179,18 @@ try {
     if (m.type() === "error") errors.push(m.text())
   })
   await page.goto(`http://127.0.0.1:${port}/?seed=7&bench`)
-  await page.waitForFunction(() => (window as any).__arcadeHarness?.ready, null, { timeout: 300_000 })
+  // A cold Vite cache re-optimises dependencies and reloads the page once: wait until it is ready and stays put.
+  let navigated = false
+  page.on("framenavigated", (f) => {
+    if (f === page.mainFrame()) navigated = true
+  })
+  for (let tries = 0; ; tries++) {
+    navigated = false
+    await page.waitForFunction(() => (window as any).__arcadeHarness?.ready, null, { timeout: 300_000 })
+    await page.waitForTimeout(2000)
+    if (!navigated) break
+    assert.ok(tries < 3, "the page kept reloading")
+  }
   const adapter = await page.evaluate(() => (window as any).__arcadeHarness.adapterInfo)
   log("harness ready")
 
