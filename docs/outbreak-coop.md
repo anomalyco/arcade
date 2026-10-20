@@ -88,6 +88,9 @@ change the offline session.
     and expiry times, and cm radius. Clients draw these hazards even when they missed the Bloater's death.
   - Body lifecycle (`shared/bodies/net.ts`, bit 2048) carries nearby `body:` store ids with `rise` and `risen`.
     Slot-store inventory deltas omit counters, so the client restores these after applying its personal ledger delta.
+  - Door breaches (`shared/breach/net.ts`, bit 8192) carry every damaged door and window: index, integrity, flags
+    (broken, giving, holed, wedged, slab, grabbing, breached), breach kind, pushers, bracers and side, plus the warning
+    and breach times and the fallen slab's position when set. About 5 bytes an opening; late joiners see the same wear.
     Both sections compare against the acked base, omit unchanged state, and send an empty list to clear it.
     One nearby cloud costs 20 payload bytes with a one-byte id; a `body:near` lifecycle record costs 14 with a
     one-byte rise time. Counts, ids and strings make larger payloads variable; quiet deltas cost zero section bytes.

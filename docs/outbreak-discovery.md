@@ -31,6 +31,38 @@ that held (which end is fixed per board). On the wire the plank count byte carri
 (`packPlanks`); full snapshots send it with the portals and every bash entry carries it, so boards bow on every
 client the moment they are hit. The AI's portal state already snapshots and restores; nothing new joins `SimState`.
 
+### Door breaches (AR-97)
+
+Kit: "When the zombies are breaking down a door, there's no way to tell if they're gonna break through." Doors used to
+pop open at 0 hp, reset to 100 and could be shut again. `shared/breach/` (Lab: Backquote › Doors & barricades,
+"Today" one setting away, station `outbreak-breach`) makes the wear readable and the break worth watching.
+
+- **Wear you can read** (`src/breach/presenter.ts`, presentation seeded on the door id): every bash jolts the leaf and
+  puffs dust and splinters and pushes it ajar against the latch; the handle and lock rattle. Stages (`doorStage`):
+  cracked below 80 hp, split below 55, failing below 30 (hinges and lock plate bent, the slab sagging), then giving
+  and broken. Light from the dead's side shows through the widening gaps, with their feet's shadows under the door. Sound comes
+  through the soundscape hooks and scales with the crowd pushing (groans, scratching, thuds, the creak of the frame).
+  Pushers are counted in the shared sim and sent with the wear, so the shove, the bow and the crowd noise hint how many
+  are out there. At 30 hp 60% of doors (`punchesThrough(id)`; the ash front door always) split a panel: arms reach
+  through and grab (7 hp/s within 0.85 m).
+- **Bracing**: a survivor standing at the door within 0.8 m on the inside cuts each bash to ×0.45 (two can brace),
+  paying 0.05 stamina per hit; the leaf strains against them.
+- **Warning beat**: at 0 hp the door gives for 1.1 s (creak, bulge, the lock snapping) before it breaks, long enough to
+  step back or brace one last time.
+- **Breaches**: off its hinges and slammed flat into the room (the default), split down the middle (a heavy hit or a
+  seeded 35%), a horde crush that bursts the frame (four or more pushing), boards torn off a barricade, and windows
+  bursting glass and boards (a window stays shattered). The first zombie through a torn-out door is knocked down with
+  it; the rest spill in staggered 0.2 + 0.35·i s, so a breach reads as a flood, not a teleport.
+- **Afterwards**: a torn-out door is `broken`: integrity 0, open while unboarded, no open/close prompt, but it can be
+  barricaded. Its slab lies inside (1.15 m from the frame, 1.9 m after a crush) as a "Wedge door in frame"
+  interaction that props it back as a 150 hp plank.
+- **Hooks**: `registerBraceSource` (furniture shoved against a door counts as a brace), `recentBreaches(sim)` (who
+  broke where, for chokepoint and director logic), `portalWear(sim, id)`. The AI reads all of it through one
+  `bashRules` hook in `shared/ai.ts` (`PortalBashRules`; null is Today).
+- Wire: bit 8192 (`../../docs/outbreak-coop.md`), so late joiners see the same cracked doors and fallen slabs.
+  Tests: `tests/breach.test.ts`; clip: `bun scripts/breach-clip.ts` (via `hivemind run --kind browser --fetch
+  captures/breach-clip`).
+
 ### Proof
 
 - `tests/discovery.test.ts`: board looks by wear, the wire byte, co-op wear after a bash and on a full snapshot,
