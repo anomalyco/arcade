@@ -201,6 +201,12 @@ snapshot, about 18 bytes each, and nothing when the room was quiet. The client f
 bus under the same ids and seat ids, prunes it by ttl, and sets the crowd's threat from the replicated hour as the room
 does, so cue rings match the room's. `tests/coop-noises.test.ts` checks it through the real room code.
 
+## Training room
+
+The training room (AR-89, [outbreak-onboarding.md](outbreak-onboarding.md)) is solo only: it is an offline
+`LocalSession` the client makes from the lobby's Play Solo or Training Room, so a co-op room never sees it, and its
+shared feature (`onboarding`) is inert unless that session staged it. Nothing of it is on the wire.
+
 ## Known gaps
 
 - Co-op accepts only the default town seed (7). New town remains solo-only, and this seed's Way Out route has no

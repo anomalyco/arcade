@@ -1,0 +1,29 @@
+/* The training room (AR-89): one wordless hint at a time, the skip chip and the cut to the run. */
+.ob-hint { position: fixed; left: 0; top: 0; z-index: 11; pointer-events: none; transition: opacity .25s ease; --akc-size: 22px }
+.ob-hint[hidden] { display: none }
+.ob-hint-chip {
+  position: absolute; left: 0; bottom: 10px; translate: -50% 0; display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 8px; border-radius: 10px; background: var(--hud-surface, rgb(13 12 11 / .82)); color: var(--hud-warm, #f1c46a);
+  box-shadow: inset 0 0 0 1px rgb(241 196 106 / .4), 0 2px 10px rgb(0 0 0 / .35); white-space: nowrap;
+  animation: ob-breathe 2.4s ease-in-out infinite
+}
+.ob-hint-chip::after {
+  content: ""; position: absolute; left: 50%; bottom: -5px; width: 8px; height: 8px; margin-left: -4px; rotate: 45deg;
+  background: inherit; box-shadow: inset -1px -1px 0 0 rgb(241 196 106 / .4)
+}
+.ob-hint-chip .agl { display: block; flex: none }
+.ob-wasd { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; --akc-size: 18px }
+.ob-wasd > span { display: inline-flex; gap: 2px }
+@keyframes ob-breathe { 50% { box-shadow: inset 0 0 0 1px rgb(241 196 106 / .65), 0 0 0 5px rgb(241 196 106 / .12), 0 2px 10px rgb(0 0 0 / .35) } }
+
+.ob-skip {
+  position: fixed; top: 16px; right: 16px; z-index: 12; display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px 6px 6px;
+  color: var(--hud-ink-2, #b6ae9f); font: 500 12px/16px var(--hud-font, system-ui); pointer-events: none; --akc-size: 18px
+}
+.ob-skip[hidden] { display: none }
+
+.ob-fade { position: fixed; inset: 0; z-index: 40; background: #050505; display: grid; place-items: center; pointer-events: none; opacity: 0 }
+.ob-fade[hidden] { display: none }
+.ob-fade span { color: #b6ae9f; font: 500 28px/1 var(--hud-font, system-ui); font-variant-numeric: tabular-nums; letter-spacing: .04em }
+
+@media (prefers-reduced-motion: reduce) { .ob-hint-chip { animation: none } }

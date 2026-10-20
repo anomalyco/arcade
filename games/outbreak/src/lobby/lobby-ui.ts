@@ -13,6 +13,7 @@ import {
 import { MAX_SURVIVORS } from "../../shared/coop-sim"
 import { MAX_NAME, ROOM_CODE } from "../../shared/net-protocol"
 import { copyInviteLink, inviteLink, playerName, savePlayerName } from "../coop-hud"
+import { requestTraining } from "../onboarding/state"
 import type { NetSession } from "../net-session"
 import { SURVIVORS, survivorSpec, type SurvivorLookSpec } from "./survivors"
 import { lobbyWaitingOn } from "./waiting"
@@ -275,6 +276,9 @@ export class OutbreakLobby {
       } else if (e.code === "KeyH") {
         e.preventDefault()
         this.triggerHost()
+      } else if (e.code === "KeyT") {
+        e.preventDefault()
+        this.triggerSolo(true)
       } else if (e.code === "Escape") {
         e.preventDefault()
         this.triggerSolo()
@@ -315,6 +319,8 @@ export class OutbreakLobby {
     const act = el.dataset.act
     if (act === "solo") {
       this.triggerSolo()
+    } else if (act === "training") {
+      this.triggerSolo(true)
     } else if (act === "host") {
       this.triggerHost()
     } else if (act === "join") {
@@ -331,9 +337,11 @@ export class OutbreakLobby {
     }
   }
 
-  private triggerSolo(): void {
+  /** Starts solo; the first time in a browser (or with `training`, always) it begins in the training room (AR-89). */
+  private triggerSolo(training = false): void {
     this.syncNameFromDom()
     saveChoices(this.variant, this.loadout)
+    requestTraining(training)
     this.close()
     this.callbacks.onStartSolo(this.variant, this.loadout, this.name)
   }
@@ -484,6 +492,10 @@ export class OutbreakLobby {
             <button type="button" class="ob-lobby-btn is-accent" data-act="host">
               <span>Host Co-op</span>
               ${keyCapHtml("KeyH")}
+            </button>
+            <button type="button" class="ob-lobby-btn" data-act="training">
+              <span>Training Room</span>
+              ${keyCapHtml("KeyT")}
             </button>
           </div>
           <div class="ob-lobby-join-bar">

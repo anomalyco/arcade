@@ -78,8 +78,7 @@ async function main() {
   const seed = Number(params.get("seed") ?? 7) >>> 0
   // `?room=<code>` joins a co-op room; otherwise the offline LocalSession, exactly as before.
   const coop = CoopView.fromUrl(renderer, params, outbreakClientFeatures)
-  const makeSession = (s: number) =>
-    coop.net ??
+  const soloSession = (s: number) =>
     coop.applySoloLoadout(
       new LocalSession(
         s,
@@ -90,6 +89,9 @@ async function main() {
         resolveWorldMode(settings.world.worldMode),
       ),
     )
+  // A feature may make the offline session instead (the training room, AR-89); co-op rooms never ask.
+  const makeSession = (s: number) =>
+    coop.net ?? outbreakClientFeatures.startSession({ seed: s, settings, make: soloSession, restart: () => reset() }) ?? soloSession(s)
   let session: LocalSession | NetSession = makeSession(seed)
   coop.companions = () => {
     const s = session
