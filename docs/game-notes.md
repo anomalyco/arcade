@@ -1872,6 +1872,19 @@ Candidates from the code audits; measure and playtest before moving any into the
   Feel and Lab › Camera (`src/feel-tuning.ts`). Kit picked the defaults from clips (D-35, D-36): camera distance 38 (was
   46) and a movement lead of 0.3 s of travel, with no aim lead. The follow eases the lead at 3.5/s, so the view runs
   ahead while moving and is centred once you stop. Vehicles, horde watch and peeks skip the foot lead.
+- **Give bodies physics from the frame they were drawn on, and derive every blow from replicated events.**
+  Outbreak's AR-90 audit (`~/code/home/artifacts/agent-reports/outbreak-oomph.md`) found every kill ended in one of
+  four canned 0.24 s collapses at the sim spot whatever the weapon, direction or force; cars and dynamite never moved a
+  body; stagger poses were picked per zombie by seed, not by hit direction; and hit-stop was the same for a knife and a
+  fire axe. `src/impact/` now drops the dead as `@arcade/kit/avatar/bone-ragdoll` Verlet ragdolls bound to the exact
+  pose drawn on the frame of death (no pop: bind error < 1e-4 m), rocks the living with
+  `@arcade/kit/avatar/hit-reaction` springs, pushes bodies already down with blasts and cars, and scales melee
+  hit-stop and kick by `√(damage × knockback)` against the crowbar (knife 0.6, fire axe 1.37). Blows are pure functions
+  of the shot, swing, vehicle-hit and blast events every client already has (`causes.ts`), so co-op needs no wire
+  fields and two clients drop the same body identically (`tests/impact.test.ts`); the sim state is byte-identical with
+  it on or off. CPU on Studio (Bun, median of 7 × 60 frames): 12 awake ragdolls
+  0.10 ms per frame, 16 awake 0.18 ms, 40 live hit reactions 0.05 ms; a settled body is a cached 180-float copy. Start a ragdoll only from a pose drawn last frame where the zombie now is: a death off-screen
+  keeps the canned collapse rather than flinging a stale pose.
 - **Hit-stop is presentation only.** Freeze or slow what is drawn (`HitStop.step(dt)` in `@arcade/kit/client/camera`),
   never the simulation clock, so prediction and the server stay in step.
 - **Scale shake with trauma squared, and keep feel primitives composable.** `Camera.add(trauma, dir?, kick?)` in

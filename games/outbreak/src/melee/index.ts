@@ -10,6 +10,8 @@ import {
 import { supportHeight } from "../../shared/terrain"
 import { registerOutbreakClientFeature } from "../feature-registry"
 import { hitStopSeconds } from "../feel-tuning"
+import { weaponWeight } from "../impact/causes"
+import { impactOn } from "../impact/settings"
 import { stageMeleeScene, type MeleeStageSwing } from "./stage"
 
 export const outbreakMeleeFeature = registerOutbreakClientFeature({
@@ -122,14 +124,16 @@ export const outbreakMeleeFeature = registerOutbreakClientFeature({
             const anyKill = swing.hits.some((h) => h.killed)
             const anySever = swing.hits.some((h) => Boolean(h.detachBone))
             const anyHead = swing.hits.some((h) => h.headshot)
-            const heavyScale = swing.heavy ? 1.45 + 0.25 * swing.charge : swing.combo === 3 ? 1.25 : 1.0
+            // Lab › Feel › Impact: a knife lands light and quick, a fire axe heavy and long.
+            const weight = impactOn(settings.impact) ? 1 + (weaponWeight(swing.weapon) - 1) * settings.impact.impactWeaponWeight : 1
+            const heavyScale = (swing.heavy ? 1.45 + 0.25 * swing.charge : swing.combo === 3 ? 1.25 : 1.0) * weight
             if (hitCount > 0 || swing.hitDoorId) {
               const k = heavyScale * (1 + Math.min(2, Math.max(0, hitCount - 1)) * 0.28) * (anySever ? 1.22 : 1.0)
               cam.add((anyKill ? 0.36 : 0.24) * k, swing.aim, (anyKill ? 2.6 : 1.7) * k)
               cam.punch(-0.24 * k, (swing.combo === 2 ? -1 : 1) * 0.011 * k)
               const c = settings.combat
               const stopMs = swing.heavy ? c.hitStopMeleeHeavy : anyKill || anyHead ? c.hitStopMeleeStrong : c.hitStopMeleeLight
-              const stopDur = hitStopSeconds(stopMs) * (anySever ? 1.15 : 1.0)
+              const stopDur = hitStopSeconds(stopMs) * (anySever ? 1.15 : 1.0) * weight
               tracker.hitStop.trigger(stopDur, 0.06, !cam.isReducedMotion())
               if (!cam.isReducedMotion()) {
                 tracker.motionBurst.add(

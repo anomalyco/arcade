@@ -16,8 +16,11 @@ export const VEHICLE_SCENES = [
 
 export type VehicleScene = (typeof VEHICLE_SCENES)[number]
 
-/** A scripted drive the staged scene plays once through the normal command path, then hands back to the player. */
-type StuntStep = { until: number; mx: number; my: number; sprint?: boolean }
+/**
+ * A scripted drive (or fight) a staged scene plays once through the normal command path, then hands back to the player.
+ * `aim` holds the aim, `fire` presses fire on the step's first frame, `fireHeld` holds it for the whole step.
+ */
+export type StuntStep = { until: number; mx: number; my: number; sprint?: boolean; aim?: number; fire?: boolean; fireHeld?: boolean }
 const STUNTS: Partial<Record<VehicleScene, StuntStep[]>> = {
   // Full throttle, then a handbrake turn that swings the tail round so the headlights end up on the marks.
   "drift-night": [
@@ -34,10 +37,15 @@ const STUNTS: Partial<Record<VehicleScene, StuntStep[]>> = {
     { until: 4.2, mx: 0, my: 1 },
   ],
 }
-let stunt: { steps: StuntStep[]; t: number } | null = null
+let stunt: { steps: readonly StuntStep[]; t: number; last: StuntStep | null } | null = null
+
+/** Plays a scripted command sequence from the next frame (the Lab's staged fights use it too). */
+export function playStunt(steps: readonly StuntStep[] | null): void {
+  stunt = steps ? { steps, t: 0, last: null } : null
+}
 
 /** Overrides the drive axes while a staged stunt plays; returns the command unchanged otherwise. */
-export function applyVehicleStunt<C extends { mx: number; my: number; sprint?: boolean }>(dt: number, cmd: C): C {
+export function applyVehicleStunt<C extends { mx: number; my: number; sprint?: boolean; aim?: number; fire?: boolean; fireHeld?: boolean }>(dt: number, cmd: C): C {
   if (!stunt) return cmd
   const step = stunt.steps.find((s) => stunt!.t < s.until)
   stunt.t += dt
@@ -45,7 +53,15 @@ export function applyVehicleStunt<C extends { mx: number; my: number; sprint?: b
     stunt = null
     return cmd
   }
-  return { ...cmd, mx: step.mx, my: step.my, sprint: step.sprint ?? false }
+  const first = stunt.last !== step
+  stunt.last = step
+  const out = { ...cmd, mx: step.mx, my: step.my, sprint: step.sprint ?? false }
+  if (step.aim !== undefined) out.aim = step.aim
+  if (step.fire !== undefined || step.fireHeld !== undefined) {
+    out.fire = Boolean(step.fire && first)
+    out.fireHeld = Boolean(step.fireHeld)
+  }
+  return out
 }
 
 export type VehicleLabHost = {
@@ -68,8 +84,7 @@ export function stageVehicleScene(host: VehicleLabHost, scene: VehicleScene): vo
   const view = host.view()
   const slot = sim.slot(view.actorId)
   if (slot) sim.vehicles.leaveSeat(slot.id, slot.survivor)
-  const script = STUNTS[scene]
-  stunt = script ? { steps: script, t: 0 } : null
+  playStunt(STUNTS[scene] ?? null)
 
   // Clear nearby zombies around the staged spot first
   const clearNear = (cx: number, cy: number, r = 18) => {

@@ -12,6 +12,7 @@ import { createServer } from "vite"
  *   bun scripts/feel-clips.ts lead             camera lead options: today, move (0.3 s), aim (0.3 s + 1.5 m)
  *   bun scripts/feel-clips.ts strike           zombie strike lunge off / on, close up, half speed
  *   bun scripts/feel-clips.ts impact           bullet impact flash off / on at night, half speed
+ *   bun scripts/feel-clips.ts oomph            the staged fights (melee, pistol, blast, car), Today then Physical
  *
  * Frames land in captures/feel-clips/<scene>-<variant>/NNNN.jpg.
  */
@@ -119,6 +120,20 @@ try {
     ]
     await record("before", "Before · a miss is sound only (½ speed)", setup(0), beats, 1)
     await record("after", "After · impact flash (½ speed)", setup(1), beats, 1)
+  } else if (scene === "oomph") {
+    // The same staged fights (`impact.stage`) and scripted inputs, Today then Physical (AR-90).
+    const fights = [
+      ["melee", "Fire axe", 204, 16],
+      ["pistol", "Pistol", 240, 20],
+      ["blast", "Dynamite", 420, 26],
+      ["car", "Run-over", 216, 26],
+    ] as const
+    for (const [id, label, frames, zoom] of fights) {
+      for (const [style, name] of [[0, "today"], [1, "physical"]] as const) {
+        const setup = `h.setLab("impactStyle", ${style}); h.clearBlood?.(); h.stageImpact("${id}"); h.setZoomRaw(${zoom})`
+        await record(`${id}-${name}`, `${label} · ${style ? "Physical" : "Today"}`, setup, [{ frames }], 1)
+      }
+    }
   }
   assert.deepEqual(errors, [])
 } finally {
