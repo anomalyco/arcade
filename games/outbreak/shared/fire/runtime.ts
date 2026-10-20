@@ -2,6 +2,7 @@ import type { AIAgent } from "@arcade/kit/sim/ai"
 import { clearLine, distToRect, raycast, type Rect } from "@arcade/kit/sim/geom"
 import type { Ledger, StoreState } from "@arcade/kit/sim/ledger"
 import { dayCycle } from "../day-cycle"
+import { survivorDamage } from "../feature-registry"
 import { DEFAULT_FLARE_TUNING, FLARE_STRIKE_NOISE, type FlareTuning } from "../flares/flares"
 import { pullToward } from "../flares/runtime"
 import { sightRects, type Door, type Town } from "../map"
@@ -100,11 +101,15 @@ function kill(a: AIAgent, by: string): void {
   a.lastHitBy = by
 }
 
-function hurtSurvivor(slot: SurvivorSlot, damage: number): void {
+/** Fire and blasts hurt through `survivorDamage` as environment damage: the escaped are spared and the dead don't feed. */
+function hurtSurvivor(sim: OutbreakSim, slot: SurvivorSlot, damage: number): boolean {
   const p = slot.survivor
-  if (damage <= 0 || p.vehicleId) return
+  if (damage <= 0 || p.vehicleId) return false
+  damage = survivorDamage(sim, slot, damage, "environment")
+  if (damage <= 0) return false
   p.health = Math.max(0, p.health - damage)
   p.regenCooldown = Math.max(p.regenCooldown ?? 0, 0.6)
+  return true
 }
 
 /** Where a throw from `slot` lands: along the aim, short of the first wall. */
@@ -231,7 +236,7 @@ function stepGroundFire(sim: OutbreakSim, state: FireState, t: FireTuning, dt: n
     }
     for (const s of sim.slots) {
       const p = s.survivor
-      if (Math.hypot(p.x - x, p.y - y) <= r * 0.85) hurtSurvivor(s, t.groundFireDps * dt)
+      if (Math.hypot(p.x - x, p.y - y) <= r * 0.85) hurtSurvivor(sim, s, t.groundFireDps * dt)
     }
     // Lab only: fire creeping across the ground beside itself, still bounded by the ring.
     if (blockers && rand(state) < t.fireSpread * dt) {
@@ -339,7 +344,7 @@ export function stepFlamethrower(sim: OutbreakSim, slot: SurvivorSlot, command: 
   for (const other of sim.slots) {
     if (other === slot) continue
     const o = other.survivor
-    if (inStream(p, o.x, o.y, reach, t.flameCone, 0.25) && clearLine(p.x, p.y, o.x, o.y, blockers)) hurtSurvivor(other, t.flameFriendlyDps * dt)
+    if (inStream(p, o.x, o.y, reach, t.flameCone, 0.25) && clearLine(p.x, p.y, o.x, o.y, blockers)) hurtSurvivor(sim, other, t.flameFriendlyDps * dt)
   }
   const dx = Math.cos(p.aim)
   const dy = Math.sin(p.aim)
@@ -422,7 +427,8 @@ export function explode(sim: OutbreakSim, x: number, y: number, by: string, t: F
     const p = s.survivor
     const d = Math.hypot(p.x - x, p.y - y)
     if (d > R || !clearLine(x, y, p.x, p.y, blockers)) continue
-    hurtSurvivor(s, t.dynDamage * 0.3 * (1 - d / R))
+    // Shielded entirely (the escaped): not winded either.
+    if (!hurtSurvivor(sim, s, t.dynDamage * 0.3 * (1 - d / R))) continue
     p.stamina = Math.max(0, p.stamina - 0.4 * (1 - d / R))
   }
   let topology = false
