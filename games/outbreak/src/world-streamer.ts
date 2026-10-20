@@ -2,6 +2,7 @@ import { emitBuildingRugs, emitInteriorDecor, emitWallCapMoulding } from "./inte
 import { interiorSettings, interiorSignature, planInterior } from "./interiors/plan"
 import { emitCraftWindow } from "./interiors/windows"
 import { propDressingState, propLevelSignature } from "./props/state"
+import { emptyRooms, isPlantMaterial, Overhangs, overhangCutBox, placeOutdoorTemplate, roomsIn, stemClearance, triangleFate, type Rooms } from "./vegetation/indoors"
 import { vegetationBuild, vegetationSignature } from "./vegetation/settings"
 import type { LevelChunk, LevelData } from "@arcade/kit/gpu/level"
 import { emitGrassClump, emitGrassTuft, foliageSettings, scatterGrassClumps } from "@arcade/kit/gpu/foliage"
@@ -456,12 +457,12 @@ function emitStreamedLot(b: Building, id: number, chunk: WorldChunk, town: Town,
         Math.abs(px - (x0 + x1) / 2) < CHUNK &&
         Math.abs(pz - (z0 + z1) / 2) < CHUNK &&
         !street(px, pz) &&
-        clear(b.rect, px, pz, 0.25) &&
+        clear(b.rect, px, pz, Math.max(0.25, stemClearance(h))) &&
         keepOut.every((r) => clear(r, px, pz, h > 2.1 ? 1.2 : 0.3)) &&
         others.every((o) => clear(o.rect, px, pz, h > 2.1 ? 1.2 : 0.25)) &&
         !trees.some((t) => Math.hypot(t.x - px, t.y - pz) < (h > 2.1 ? 3.2 : 1.4))
       const plantAt = (_m: Mesh, px: number, pz: number, h: number, radius: number, seed: number, ground: number) => {
-        yardPlacementsScratch.push({ x: px, y: ground, z: pz, tpl: yardPlantTemplate(h, radius, seed) })
+        yardPlacementsScratch.push({ x: px, y: ground, z: pz, h, tpl: yardPlantTemplate(h, radius, seed) })
       }
       // Derelict and burnt lots skip the trimmed foundation beds and get overgrowth instead.
       if (b.style.condition === "kept" || b.style.condition === "construction") housePlanting(mainScratch, b, id, town, { doorX: door?.rect[0], windows, seed: lotSeed, keep, plant: plantAt, bed: (px, pz) => keepOut.every((r) => clear(r, px, pz, 0.3)) && !inBuildingFootprint(b, px, pz) })
@@ -479,11 +480,11 @@ function emitStreamedLot(b: Building, id: number, chunk: WorldChunk, town: Town,
         Math.abs(px - (x0 + x1) / 2) < CHUNK &&
         Math.abs(pz - (z0 + z1) / 2) < CHUNK &&
         !street(px, pz) &&
-        clear(b.rect, px, pz, 0.25) &&
+        clear(b.rect, px, pz, Math.max(0.25, stemClearance(h))) &&
         others.every((o) => clear(o.rect, px, pz, h > 2.1 ? 1.2 : 0.25)) &&
         !trees.some((t) => Math.hypot(t.x - px, t.y - pz) < (h > 2.1 ? 3.2 : 1.4)),
       plant: (_m, px, pz, h, radius, seed, ground) => {
-        yardPlacementsScratch.push({ x: px, y: ground, z: pz, tpl: yardPlantTemplate(h, radius, seed) })
+        yardPlacementsScratch.push({ x: px, y: ground, z: pz, h, tpl: yardPlantTemplate(h, radius, seed) })
       },
     })
   }
@@ -611,7 +612,13 @@ const bandScratchPool: Mesh[] = []
 const bandMap = new Map<number, Mesh>()
 const grassPlacementsScratch: { x: number; y: number; z: number; tplIdx: number }[] = []
 /** Yard bushes and trees placed by `housePlanting` as cached templates (see `yardPlantTemplate`). */
-const yardPlacementsScratch: { x: number; y: number; z: number; tpl: PackedPropTemplate }[] = []
+const yardPlacementsScratch: { x: number; y: number; z: number; h: number; tpl: PackedPropTemplate }[] = []
+/** Footprint rects a placed yard plant or tree leans into, and the crowns leaning over a roof, per house. */
+const plantRooms: Rooms = emptyRooms()
+const overhangs = new Overhangs()
+const overhangMeshes: Mesh[] = []
+/** Where the last compiled chunk's yard plants stand (stem and height), for tests. */
+export const lastChunkYardPlants = (): readonly { x: number; z: number; h: number }[] => yardPlacementsScratch
 
 type TileSet = {
   floorTile: Uint8Array<ArrayBuffer>
@@ -1408,9 +1415,38 @@ export function compileSingleWorldChunk(
   while (roofScratchPool.length < chunk.buildings.length) roofScratchPool.push(new Mesh())
   for (let i = 0; i < chunk.buildings.length; i++) roofScratchPool[i]!.v.length = 0
 
+  // Grass, yard plants and trees are trimmed off any building they lean into, this chunk's or a neighbour's
+  // (`vegetation/indoors.ts`); what leans over a roof is drawn in that house's overhang chunk. `near` only grows, so
+  // the owners in `overhangs` and `overhangMeshes` stay valid.
+  const near: Building[] = [...chunk.buildings]
+  let withNeighbours = false
+  overhangs.clear()
+  for (const m of overhangMeshes) m.v.length = 0
+  const roomsNear = (box: Rect): Rooms => {
+    if (!withNeighbours && (box[0] < x0 || box[1] < z0 || box[2] > x1 || box[3] > z1)) {
+      withNeighbours = true
+      near.push(...neighbourhood(chunk, chunkTown, mode).buildings)
+    }
+    plantRooms.rects.length = plantRooms.owners.length = 0
+    return roomsIn(near, box, plantRooms)
+  }
+  const overhangMesh = (owner: number) => {
+    while (overhangMeshes.length <= owner) overhangMeshes.push(new Mesh())
+    return overhangMeshes[owner]!
+  }
+
   if (mainScratch.count) {
     const mv = mainScratch.v
+    const mainRooms = roomsIn(chunk.buildings, [-Infinity, -Infinity, Infinity, Infinity])
     for (let i = 0; i < mv.length; i += 33) {
+      if (isPlantMaterial(Math.round(mv[i + 9]!), mv[i + 10]!) && isPlantMaterial(Math.round(mv[i + 20]!), mv[i + 21]!) && isPlantMaterial(Math.round(mv[i + 31]!), mv[i + 32]!)) {
+        const over = triangleFate(mainRooms, mv, i, i + 11, i + 22)
+        if (over >= 0) {
+          const dst = overhangMesh(over).v
+          for (let k = i; k < i + 33; k++) dst.push(mv[k]!)
+          continue
+        }
+      }
       let minY = Infinity
       let maxY = -Infinity
       let hasRoof = false
@@ -1470,42 +1506,33 @@ export function compileSingleWorldChunk(
       packAndStampInto(opaqueScratch.v, combinedBuf)
     }
     let vertCursor = baseOpaqueVerts
+    const rooms = (px: number, pz: number, tpl: PackedPropTemplate) => roomsNear([px + tpl.minX, pz + tpl.minZ, px + tpl.maxX, pz + tpl.maxZ])
     for (let i = 0; i < grassPlacementsScratch.length; i++) {
       const gp = grassPlacementsScratch[i]!
       const tpl = grassClusterTemplates[gp.tplIdx]!
-      combinedU8.set(tpl.u8, vertCursor * VERT_BYTES)
-      const endVert = vertCursor + tpl.vertCount
-      const gx = gp.x, gy = gp.y, gz = gp.z
-      for (let v = vertCursor; v < endVert; v++) {
-        const fOff = v * 6
-        combinedF32[fOff] = combinedF32[fOff]! + gx
-        combinedF32[fOff + 1] = combinedF32[fOff + 1]! + gy
-        combinedF32[fOff + 2] = combinedF32[fOff + 2]! + gz
-      }
-      vertCursor = endVert
+      vertCursor += placeOutdoorTemplate(tpl.u8, tpl.vertCount, combinedU8, combinedF32, vertCursor, gp.x, gp.y, gp.z, rooms(gp.x, gp.z, tpl), overhangs)
     }
-    for (let i = 0; i < yardPlacementsScratch.length; i++) {
-      const { x: px, y: py, z: pz, tpl } = yardPlacementsScratch[i]!
+    const placePlant = (px: number, py: number, pz: number, tpl: PackedPropTemplate) => {
       if (px + tpl.minX < bx0) bx0 = px + tpl.minX
       if (px + tpl.maxX > bx1) bx1 = px + tpl.maxX
       if (pz + tpl.minZ < bz0) bz0 = pz + tpl.minZ
       if (pz + tpl.maxZ > bz1) bz1 = pz + tpl.maxZ
-      combinedU8.set(tpl.u8, vertCursor * VERT_BYTES)
-      const endVert = vertCursor + tpl.vertCount
-      for (let v = vertCursor; v < endVert; v++) {
-        const fOff = v * 6
-        combinedF32[fOff] = combinedF32[fOff]! + px
-        combinedF32[fOff + 1] = combinedF32[fOff + 1]! + py
-        combinedF32[fOff + 2] = combinedF32[fOff + 2]! + pz
-      }
-      vertCursor = endVert
+      vertCursor += placeOutdoorTemplate(tpl.u8, tpl.vertCount, combinedU8, combinedF32, vertCursor, px, py, pz, rooms(px, pz, tpl), overhangs)
+    }
+    for (let i = 0; i < yardPlacementsScratch.length; i++) {
+      const { x: px, y: py, z: pz, tpl } = yardPlacementsScratch[i]!
+      placePlant(px, py, pz, tpl)
     }
     for (let i = 0; i < chunk.props.length; i++) {
       const p = chunk.props[i]!
       const tpl = getPropTemplate(p)
       const px = p.x
       const pz = p.y
-      const py = p.kind === "tree" ? supportHeight(chunkTown, px, pz) : 0
+      if (p.kind === "tree") {
+        placePlant(px, supportHeight(chunkTown, px, pz), pz, tpl)
+        continue
+      }
+      const py = 0
       if (px + tpl.minX < bx0) bx0 = px + tpl.minX
       if (px + tpl.maxX > bx1) bx1 = px + tpl.maxX
       if (pz + tpl.minZ < bz0) bz0 = pz + tpl.minZ
@@ -1522,7 +1549,7 @@ export function compileSingleWorldChunk(
     }
     staticOpaqueChunks.push({
       data: combinedBuf,
-      byteLength: neededBytes,
+      byteLength: vertCursor * VERT_BYTES,
       box: [bx0, bz0, bx1, bz1] as const,
     })
   }
@@ -1550,6 +1577,28 @@ export function compileSingleWorldChunk(
         staticOpaqueChunks.push({ ...c, cutBox: [c.box[0], 0, c.box[1], c.box[2], 2.85, c.box[3]] })
       }
     }
+  }
+
+  // Crowns leaning over a roof: one chunk per house, skipped while the camera is inside it, as its roof is.
+  const overhangOwners = new Set(overhangs.owners())
+  for (let i = 0; i < overhangMeshes.length; i++) if (overhangMeshes[i]!.count) overhangOwners.add(i)
+  for (const owner of overhangOwners) {
+    const mesh = overhangMeshes[owner]?.count ? new Uint8Array(stampOutbreakVertexTone(overhangMeshes[owner]!.pack())) : new Uint8Array(0)
+    const packed = overhangs.owners().includes(owner) ? overhangs.take(owner) : new Uint8Array(0)
+    const data = new Uint8Array(mesh.length + packed.length)
+    data.set(mesh)
+    data.set(packed, mesh.length)
+    const f32 = new Float32Array(data.buffer)
+    let ox0 = Infinity, oz0 = Infinity, ox1 = -Infinity, oz1 = -Infinity, top = 0
+    for (let v = 0; v < data.length / VERT_BYTES; v++) {
+      const vx = f32[v * 6]!, vy = f32[v * 6 + 1]!, vz = f32[v * 6 + 2]!
+      if (vx < ox0) ox0 = vx
+      if (vx > ox1) ox1 = vx
+      if (vz < oz0) oz0 = vz
+      if (vz > oz1) oz1 = vz
+      if (vy > top) top = vy
+    }
+    staticOpaqueChunks.push({ data: data.buffer, box: [ox0, oz0, ox1, oz1] as const, cutBox: overhangCutBox(near[owner]!, top + 0.5), customCutaway: "outside" })
   }
 
   // Pre-pack roof chunks once per building so window transitions never re-pack roof meshes

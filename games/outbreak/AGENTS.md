@@ -122,7 +122,11 @@
   gives trees species, bare trees and swaying limbs, shrubs stray shoots, and drives every canopy, limb, shrub and blade
   from one gust field (`applyFoliageWindField` in `@arcade/kit/gpu/foliage`, sim time + position only); Today restores
   the old meshes and wobble. Build options reach `plant()` through `vegetationBuild` (synced each frame by
-  `world/scene-level.ts`, sent to the world Worker, part of every level/chunk cache key). Stills, wind clips and paired
+  `world/scene-level.ts`, sent to the world Worker, part of every level/chunk cache key). Yard plants stay out of houses
+  (`vegetation/indoors.ts`): stems keep 0.5 m (trees) or 0.2 m (shrubs) off walls and porches, leaves and limbs below
+  the wall tops inside a footprint are trimmed off, and a crown leaning over a roof goes in that house's own "outside"
+  chunk, skipped while you are inside like the roof (the level's solid pass never runs the cutaway's discards); test:
+  `tests/trees-indoors.test.ts`. Stills, wind clips and paired
   GPU: `bun scripts/vegetation-stills.ts --clip --gpu` (via `hivemind run --kind browser`). Tree look (D-41/D-42, AR-74,
   Lively only; C is the default, Today one setting away): A Deadwood, B Fluffy, C Darkwood from
   `@arcade/kit/gpu/foliage-looks`, dispatched by `plant()`; "Blighted trees" (default 25%) gives a seeded share of C

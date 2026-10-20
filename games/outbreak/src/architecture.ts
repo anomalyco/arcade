@@ -2,13 +2,14 @@ import { MAT, Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
 import { buildTreeLook } from "@arcade/kit/gpu/foliage-looks"
 import { buildFoliageTree, emitGrassTuft, emitHydrangeaPanicles, foliageSettings, HYDRANGEA_DRIED } from "@arcade/kit/gpu/foliage"
 import { Rng } from "@arcade/kit/sim/rng"
-import { inBuildingFootprint, type Building, type Town } from "../shared/map"
+import { buildingFootprint, inBuildingFootprint, type Building, type Town } from "../shared/map"
 import { supportHeight } from "../shared/terrain"
 import { baseRun, tallCabinet, upperRun, WALNUT_KITCHEN } from "./interiors/cabinetry"
 import type { Frame } from "./interiors/frame"
 import { emitBuildingRugs, emitInteriorDecor, emitWallCapMoulding } from "./interiors/mesh"
 import { interiorSettings, planInterior } from "./interiors/plan"
 import { boardPlank, emitFaceWindow } from "./interiors/windows"
+import { appendOutdoorTriangles, clearOfRects, roomsIn, stemClearance } from "./vegetation/indoors"
 import { vegetationBuild } from "./vegetation/settings"
 
 const rgb = (v:number):Rgb => [(v>>16&255)/255,(v>>8&255)/255,(v&255)/255]
@@ -131,6 +132,20 @@ export function plant(m:Mesh,x:number,z:number,h:number,radius:number,seed:numbe
 /** Ground footprints of every plant() since the level build cleared it; the floor map bakes their contact shade. */
 export const plantFootprints:{x:number;z:number;radius:number;tree:boolean;ground:number}[]=[]
 
+const outdoorScratch=new Mesh()
+/**
+ * A yard plant: plant(), minus every leaf and limb that would stand inside one of `buildings` below its wall tops. What
+ * leans over a roof stays; the level build draws it with that house's roof (`vegetation/indoors.ts`).
+ */
+export function plantOutdoors(m:Mesh,x:number,z:number,h:number,radius:number,seed:number,ground:number,buildings:readonly Building[]) {
+  const v=outdoorScratch.v
+  v.length=0
+  plant(outdoorScratch,x,z,h,radius,seed,ground)
+  let x0=x,z0=z,x1=x,z1=z
+  for(let i=0;i<v.length;i+=11){const vx=v[i]!,vz=v[i+2]!;if(vx<x0)x0=vx;if(vx>x1)x1=vx;if(vz<z0)z0=vz;if(vz>z1)z1=vz}
+  appendOutdoorTriangles(v,m.v,roomsIn(buildings,[x0,z0,x1,z1]))
+}
+
 export type HouseFrontageOptions = {
   /** Decorative parked sedan in the driveway (the origin lots; streamed lots get a real vehicle instead). */
   sedan?: boolean
@@ -142,7 +157,7 @@ export type HouseFrontageOptions = {
 }
 
 export type HousePlantingOptions = {
-  /** Plants a bush or tree; default plant(). Streamed chunks place cached templates instead. */
+  /** Plants a bush or tree; default plantOutdoors() against the town's buildings. Streamed chunks place cached templates instead. */
   plant?: (m: Mesh, x: number, z: number, h: number, radius: number, seed: number, ground: number) => void
   /** Whether a framing plant (driveway hedge, yard and woodland trees) may stand here; default everywhere. */
   keep?: (x: number, z: number, h: number, radius: number) => boolean
@@ -320,8 +335,10 @@ const FOUNDATION_BUSHES: readonly (readonly ["x" | "door" | "r", number, number,
 export function housePlanting(m:Mesh,b:Building,id:number,town:Town,opts:HousePlantingOptions={}) {
   const [x,z,r,e]=b.rect
   const doorX=opts.doorX ?? x+5, cx=doorX+.7
-  const put=opts.plant ?? plant
+  const put=opts.plant ?? ((pm:Mesh,px:number,pz:number,ph:number,pr:number,ps:number,pg:number)=>plantOutdoors(pm,px,pz,ph,pr,ps,pg,town.buildings))
   const keep=opts.keep ?? (() => true)
+  const walls=buildingFootprint(b)
+  const clearOfHouse=(px:number,pz:number,ph:number)=>clearOfRects(walls,px,pz,stemClearance(ph))
   const rng=new Rng(opts.seed ?? town.houseSeed+id*71)
   const kept:[number,number,number][]=[]
   let hydrangea=false
@@ -333,6 +350,7 @@ export function housePlanting(m:Mesh,b:Building,id:number,town:Town,opts:HousePl
     if(opts.bed&&!opts.bed(px,pz))continue
     const underSill=opts.windows?.some(([w0,w1])=>px>w0-.1&&px<w1+.1)
     const ph=underSill?Math.min(h0,.78):h0
+    if(!clearOfHouse(px,pz,ph))continue
     kept.push([px,pz,pr])
     if(anchor==="r"&&dx===-1.08)hydrangea=true
     const gy=supportHeight(town,px,pz)
@@ -358,7 +376,11 @@ export function housePlanting(m:Mesh,b:Building,id:number,town:Town,opts:HousePl
     })
   }
   // Dried autumn hydrangea heads on the front-right corner bush (fresh white ones sparkled as specks under a window lamp)
-  if(hydrangea)emitHydrangeaPanicles(m,r-1.08,supportHeight(town,r-1.08,e+.62),e+.62,1.16,.84,(opts.seed ?? town.houseSeed)+31,16,0,HYDRANGEA_DRIED)
+  if(hydrangea){
+    outdoorScratch.v.length=0
+    emitHydrangeaPanicles(outdoorScratch,r-1.08,supportHeight(town,r-1.08,e+.62),e+.62,1.16,.84,(opts.seed ?? town.houseSeed)+31,16,0,HYDRANGEA_DRIED)
+    appendOutdoorTriangles(outdoorScratch.v,m.v,roomsIn([b],b.rect))
+  }
   // Framing woodland & street trees + irregular driveway fence hedge matching target-sodium70s-street & target-sodium70s-open.
   for(const [px,pz,ph,pr] of [
     // Overgrown border hedge along the left driveway picket fence + overarching left woodland canopies
@@ -384,7 +406,7 @@ export function housePlanting(m:Mesh,b:Building,id:number,town:Town,opts:HousePl
       [r+2.80,e+14.80,1.46,.96],
     ] as const : []),
   ]){
-    if(keep(px!,pz!,ph!,pr!))put(m,px!,pz!,ph!,pr!,town.houseSeed+Math.floor(pz!*43+px!*17),supportHeight(town,px!,pz!))
+    if(keep(px!,pz!,ph!,pr!)&&clearOfHouse(px!,pz!,ph!))put(m,px!,pz!,ph!,pr!,town.houseSeed+Math.floor(pz!*43+px!*17),supportHeight(town,px!,pz!))
   }
 }
 

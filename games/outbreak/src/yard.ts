@@ -1,7 +1,8 @@
-import { MAT, type Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
+import { MAT, Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
 import { emitGrassClump, emitGrassTuft, foliageSettings, scatterGrassClumps } from "@arcade/kit/gpu/foliage"
+import { distToRect } from "@arcade/kit/sim/geom"
 import { Rng } from "@arcade/kit/sim/rng"
-import { frontageEnd, type Building, type Prop, type Town } from "../shared/map"
+import { buildingFootprint, frontageEnd, type Building, type Prop, type Town } from "../shared/map"
 import { supportHeight } from "../shared/terrain"
 
 /**
@@ -12,6 +13,7 @@ type At = (x: number, z: number) => Mesh
 type Avoid = (x: number, z: number) => boolean
 
 const hex = (v: number): Rgb => [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255]
+const droppedTufts = new Mesh()
 
 /**
  * Dense front-lawn and side-yard grass clumps either side of the walkway and beside the driveway and east wall.
@@ -146,7 +148,10 @@ export function emitStreetVerge(at: At, town: Town, rng: Rng, v0: number, v1: nu
       const x = v + (rng.next() - 0.5) * 0.30
       const z = zBase + (rng.next() - 0.5) * 0.14
       const y = inCurbStrip ? 0.10 : supportHeight(town, x, z)
-      const m = at(x, z)
+      // A shop front on the verge row: the tuft is drawn and dropped, so the tufts after it keep their places.
+      const onWall = town.buildings.some((b) => distToRect(x, z, b.rect) < 0.3 && buildingFootprint(b).some((r) => distToRect(x, z, r) < 0.3))
+      const m = onWall ? droppedTufts : at(x, z)
+      droppedTufts.v.length = 0
       const h = (inCurbStrip ? 0.16 + rng.next() * 0.12 : 0.13 + rng.next() * 0.11) * (foliageSettings.bladeHeight / 0.20)
       const rootCol = hex(rng.pick([0x1c1e12, 0x181a10, 0x222214]))
       const tipCol = hex(rng.pick([0x3e3c24, 0x484226, 0x343820]))

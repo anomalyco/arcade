@@ -357,7 +357,7 @@ describe("Procedural world generation & chunk streaming", () => {
       // 1. Verify roof chunk exists for the building and contains both shingles and high rooftop geometry (e.g. chimney)
       expect(compiled.roofChunks?.length).toBe(wChunk.buildings.length)
       // Verify no roof or high chimney vertices (> 2.81m inside building footprint) leaked into staticOpaqueChunks.
-      // Yard tree canopies and boughs may overhang the roof, as at the origin lots; plants are never cut with it.
+      // Yard tree canopies and boughs that overhang the roof are drawn in the house's own overhang chunk.
       const staticBuf = compiled.staticOpaqueChunks[0]!.data
       const staticBytes = compiled.staticOpaqueChunks[0]!.byteLength ?? staticBuf.byteLength
       const staticF32 = new Float32Array(staticBuf, 0, staticBytes / 4)
@@ -392,8 +392,15 @@ describe("Procedural world generation & chunk streaming", () => {
 
       let ownRoofHiddenCount = 0
       let neighbourRoofCount = 0
+      // A crown leaning over a roof has a chunk of its own, hidden with that house (trees-indoors.test.ts).
+      const plantsOnly = (c: { data: ArrayBuffer; byteLength?: number }) => {
+        const u16 = new Uint16Array(c.data, 0, (c.byteLength ?? c.data.byteLength) / 2)
+        for (let v = 0; v < u16.length / 12; v++) if (u16[v * 12 + 10] !== 0x4d80 && u16[v * 12 + 10] !== 0x4e00) return false
+        return true
+      }
       for (const rc of roofLevelChunks) {
         const hiddenInside = isRoofChunkHidden(rc, insideX, insideY, false)
+        if (plantsOnly(rc)) continue
         const isTargetBuildingRoof =
           Math.abs(rc.cutBox![0]! - (targetBld.rect[0] - 0.1)) < 1e-3 &&
           Math.abs(rc.cutBox![2]! - (targetBld.rect[1] - 0.1)) < 1e-3
