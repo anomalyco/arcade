@@ -177,3 +177,11 @@
   and window prompts (B boards the prompt's target), a glyph stamp after a door, window, barricade or container
   changes, and facing weighs more in picking the target. How and why: `../../docs/outbreak-hud.md#prompt-clarity-ar-89`,
   key rules in `../../docs/controls.md`. Tests: `tests/prompt-clarity.test.ts`.
+- Combat oomph and body physics (AR-90, `src/impact/`, Lab: Backquote › Feel "Impact" Today / Physical and › Physics,
+  station `outbreak-impact`, `arcade cmd impact.stage scene=melee|pistol|blast|car`): directional hit reactions on the
+  living (`@arcade/kit/avatar/hit-reaction`) and ragdoll deaths started from the exact pose drawn on the frame of death
+  (`@arcade/kit/avatar/bone-ragdoll`), pushed by the killing blow; blasts and cars push bodies already down; hit-stop
+  and shake scale by weapon weight (`weaponWeight`, knife 0.6 → fire axe 1.37). `ImpactBodies` plugs into
+  `ZombieCrowdRenderer.physics`; blows are a pure function of the replicated shot, swing, vehicle-hit and blast events
+  (`causes.ts`), so nothing is on the wire and the sim never reads it. Tests: `tests/impact.test.ts`; deterministic
+  clips: `bun scripts/feel-clips.ts oomph` (via `hivemind run --kind browser`).

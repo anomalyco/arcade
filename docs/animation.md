@@ -30,6 +30,7 @@ means the walk and run reference clips that `common.ts` downloads on first use.
 | `packages/kit/shamble-crouch.ts` | `buildShambleReferenceCycle`, `buildCrouchRunReferenceCycle`, `extractAsymmetricBvhCycle`, `shambleHandsFK`, `shambleTorsoModulation`, zombie variants (`limper`, `dragger`, `reacher`, `lunger`) |
 | `packages/kit/rig.ts` | `RIG` link lengths (`thigh`, `shin`, `ankle`, `foot`, `toe`, `heel`), `ik`, frames and springs |
 | `packages/kit/avatar/anim.ts` | `animate`/`build`: pelvis pitch, torso and head, weapon frame, action clips (Blackout and Brawl; Blackout's `src/game/anim.ts` re-exports it) |
+| `packages/kit/avatar/hit-reaction.ts`, `bone-ragdoll.ts` | Directional hit-reaction springs and the 15-bone Verlet ragdoll for any figure posed as `boneIds` frames (Outbreak zombies via `src/impact/`) |
 | `games/outbreak/src/survivor.ts`, `zombies.ts` | Terrain adapters with their own stride clocks and split boot/toe meshes |
 
 The leg is `RIG.thigh + RIG.shin = 0.42 + 0.41 = 0.83 m`, and the foot splits at the ball (MTP joint) into `RIG.foot = 0.125 m` (ankle to ball) and `RIG.toe = 0.065 m` (ball to toe tip, `0.19 m` total forward reach, `RIG.heel = 0.06 m`). Hip height is about 0.86 m.
@@ -447,6 +448,26 @@ bob, with 1:1 root displacement and `dAim` feed-forward into `gunPos` and `weapo
   Elbows end up `0.40 → 0.67 m` in front of the zombie (`tests/feel.test.ts`). The age advances with the hit-stopped
   draw `dt`, so the lunge freezes with the hit. Lab › Feel › Zombie strike lunge scales it (0 = off). It plays after the
   hit lands; a real wind-up would need the AI to delay damage (a difficulty change, not presentation).
+- **Directional hit reactions (`packages/kit/avatar/hit-reaction.ts`, AR-90)**: the canned stagger picked one of three
+  poses per zombie by seed, so a shot from behind rocked it the same way as one from the front, with a linear 0.35 s
+  fade. `HitReactions` turns each blow (plan direction, rad/s strength, off-centre amount, head share, buckle) into
+  seven underdamped springs layered on the procedural pose: trunk pitch and roll away from the blow (2.3 Hz, ζ 0.42, so
+  it rocks back ~23% past rest before recovering), a shoulder twist when it lands off-centre, a head whip (3.6 Hz,
+  ζ 0.34) and a knee buckle that drops the pelvis (2.1 Hz, ζ 0.62). Limits 0.62 rad trunk, 0.75 rad head, 0.2 m drop.
+  Outbreak feeds it from replicated shots, swings, shoves, car hits and blasts (`src/impact/causes.ts`: a pistol round
+  4.2 rad/s, a crowbar 6.2, a charged fire axe ~9) and keeps 35% of the canned pose for each zombie's own flavour
+  (Lab › Physics › Canned stagger kept). With no reaction live the springs add exactly zero: the `reference-clips.ts`
+  zombie cycles are byte-identical before and after.
+- **Ragdoll deaths from the rig (`packages/kit/avatar/bone-ragdoll.ts`, AR-90)**: a Verlet ragdoll over the 15
+  semantic bone frames (16 points: hips, shoulders, neck, crown, knees, ankles, balls, elbows, hands; a rigid
+  hip-shoulder block, a neck that flops within 0.86–1.08 of its rest span, limbs at the `RIG` lengths, minimum spans
+  that stop knees, elbows and feet folding flat). It binds each bone to its driver frame on the exact pose drawn on the
+  frame of death, so the first ragdoll frame reproduces it (bind error < 1e-4 m), takes velocities from the previous
+  frame (capped 7 m/s) plus the killing blow, and writes the same frames back for the figure's own renderer. Fixed
+  1/120 s substeps (8 max per call), 6 passes, gravity 15 m/s², ground friction 0.955 kept per substep, sleeps after
+  0.45 s still (7 s cap); a pistol kill settles in ~1.8 s, 0.46 m along the shot; a heavy axe 1.4 s, 1 m; a car at
+  speed throws 3 m and tumbles. Seeded, no `Math.random`. Outbreak only starts one from a pose drawn last frame where
+  the zombie now is; a death it never saw standing keeps the canned collapse.
 
 ## Determinism and performance
 

@@ -49,6 +49,26 @@ export type DetachedDebrisPiece = {
   life: number
 }
 
+/**
+ * Body physics a client feature lays over the procedural zombie (`src/impact/`): directional hit reactions on the
+ * living and ragdolls for the dead. Presentation only. Bones are this renderer's 15-frame layout.
+ */
+export interface ZombieBodyPhysics {
+  /** × the canned stagger pose (1 = today's). */
+  readonly cannedStagger: number
+  /** Once per draw, before any zombie: advances reactions by the drawn (hit-stopped) `dt`. */
+  begin(dt: number): void
+  /** The hit reaction to layer on a living zombie facing `yaw` this frame, or null when it is at rest. */
+  react(agentId: number, yaw: number): ZombieHitPose | null
+  /**
+   * Poses a dead zombie from its ragdoll into `bones` at `off` (which still holds the pose from two frames ago;
+   * `prevBones` holds the last frame's). False leaves it to the canned collapse.
+   */
+  corpse(agent: AIAgent, bones: Float32Array, prevBones: Float32Array, off: number, dt: number, support: (x: number, z: number) => number): boolean
+}
+
+export type ZombieHitPose = { pitch: number; roll: number; twist: number; headPitch: number; headRoll: number; headYaw: number; drop: number }
+
 const PART_COUNT = 9
 const ARCH_COUNT = ZOMBIE_ARCHETYPES.length
 const ARCH_PART_COUNT = 3
@@ -410,6 +430,8 @@ export class ZombieCrowdRenderer {
   private readonly strikes = new Map<number, number>()
   /** Lab › Feel › Zombie strike lunge (0 = off). */
   strikeScale = 1
+  /** Hit reactions and ragdolls (`src/impact/`), or null for today's canned stagger and collapse. */
+  physics: ZombieBodyPhysics | null = null
   private overlayCanvas: HTMLCanvasElement | null = null
   private overlayCtx: CanvasRenderingContext2D | null = null
   /** Special zombies' helmets, shields, bellies and jaws (`src/specials/figure.ts`). */
@@ -898,6 +920,7 @@ export class ZombieCrowdRenderer {
     time = 0,
   ): Batch[] {
     dt = Math.max(0.0001, Math.min(0.1, dt))
+    this.physics?.begin(dt)
     for (const [id, age] of this.strikes) {
       if (age + dt >= STRIKE_TIME) this.strikes.delete(id)
       else this.strikes.set(id, age + dt)
@@ -1060,6 +1083,17 @@ export class ZombieCrowdRenderer {
       const torsoOff = bOff + 12
       const headOff = bOff + 24
 
+      if (a.state === "dead" && this.physics?.corpse(a, bBuf, this.prevBones, bOff, dt, support)) {
+        this.seenAt[s] = -1e9
+        this.collapse[s] = 1
+        // Scale a special's body about the ground under where its ragdoll lies, not where it died.
+        this.agentOx = bBuf[pelvisOff]!
+        this.agentOz = bBuf[pelvisOff + 2]!
+        this.agentOy = look ? support(this.agentOx, this.agentOz) : 0
+        for (let b = 0; b < BONE_COUNT; b++) this.emitBone(bOff, b, BONE_INDEX_TO_PART[b]!, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
+        if (kind) this.emitSpecial(kind, bOff, hidden, tintR, a.hitFlash, alpha)
+        continue
+      }
       if (a.state === "dead" || a.state === "knockdown") {
         if (a.state === "dead") this.seenAt[s] = -1e9
         const isDead = a.state === "dead"
@@ -1607,7 +1641,8 @@ export class ZombieCrowdRenderer {
       const shambleMod = shambleTorsoModulation(curPhase, shambleGait, profile, actorSeed)
       const limpDip = a.limping ? 0.068 * Math.max(0, Math.sin(curPhase * Math.PI * 2)) : 0
       const limpRoll = a.limping ? (dragFoot === 0 ? -1 : 1) * 0.16 * Math.sin(curPhase * Math.PI * 2) : 0
-      const staggerU = a.state === "stagger" ? clamp(a.timer / 0.35, 0, 1) : 0
+      const hr = this.physics?.react(a.id, syaw) ?? null
+      const staggerU = a.state === "stagger" ? clamp(a.timer / 0.35, 0, 1) * (this.physics?.cannedStagger ?? 1) : 0
       const hitReaction = a.hitReaction ?? (((a.seed >>> 4) % 3) as 0 | 1 | 2)
       const staggerDrop =
         staggerU > 0 ? (hitReaction === 2 ? 0.16 : hitReaction === 1 ? 0.04 : 0.025) * staggerU : 0
@@ -1655,7 +1690,7 @@ export class ZombieCrowdRenderer {
       const strikeU = strikeAge === undefined ? 0 : strikeEnvelope(strikeAge) * Math.max(0, this.strikeScale)
       const lungeX = Math.cos(a.aim) * 0.12 * strikeU
       const lungeZ = Math.sin(a.aim) * 0.12 * strikeU
-      writeYawFrame(bBuf, pelvisOff, a.x + lungeX, height - 0.03 * strikeU, a.y + lungeZ, syaw + twx)
+      writeYawFrame(bBuf, pelvisOff, a.x + lungeX, height - 0.03 * strikeU - (hr ? hr.drop : 0), a.y + lungeZ, syaw + twx + (hr ? hr.twist * 0.3 : 0))
       rollInPlace(bBuf, pelvisOff, shambleMod.pelvisRollAdd + limpRoll)
       pitchInPlace(bBuf, pelvisOff, -0.06 * moving - 0.35 * shambleMod.torsoPitchAdd)
       const lean = lxx * Math.cos(a.aim) + lyx * Math.sin(a.aim)
@@ -1700,19 +1735,19 @@ export class ZombieCrowdRenderer {
       const torsoPx = bBuf[pelvisOff]! + bBuf[pelvisOff + 6]! * RIG.waist
       const torsoPy = bBuf[pelvisOff + 1]! + bBuf[pelvisOff + 7]! * RIG.waist
       const torsoPz = bBuf[pelvisOff + 2]! + bBuf[pelvisOff + 8]! * RIG.waist
-      writeYawFrame(bBuf, torsoOff, torsoPx, torsoPy, torsoPz, cx + staggerYaw)
+      writeYawFrame(bBuf, torsoOff, torsoPx, torsoPy, torsoPz, cx + staggerYaw + (hr ? hr.twist : 0))
       const hunch = kind ? specialHunch(kind, speed, a.state) : 0
-      pitchInPlace(bBuf, torsoOff, -0.04 - lean - shambleMod.torsoPitchAdd - bashPulse - staggerRecoil - 0.42 * strikeU - hunch)
+      pitchInPlace(bBuf, torsoOff, -0.04 - lean - shambleMod.torsoPitchAdd - bashPulse - staggerRecoil - 0.42 * strikeU - hunch + (hr ? hr.pitch : 0))
       pitchInPlace(bBuf, torsoOff, -clamp(torsoLean, -0.15, 0.35))
       rollInPlace(bBuf, torsoOff, clamp(torsoRoll, -0.2, 0.2))
-      rollInPlace(bBuf, torsoOff, shambleMod.torsoRollAdd + staggerCant + limpRoll * 0.75)
+      rollInPlace(bBuf, torsoOff, shambleMod.torsoRollAdd + staggerCant + limpRoll * 0.75 + (hr ? hr.roll : 0))
 
       const headPx = torsoPx + bBuf[torsoOff + 3]! * 0.02 + bBuf[torsoOff + 6]! * RIG.neckY
       const headPy = torsoPy + bBuf[torsoOff + 4]! * 0.02 + bBuf[torsoOff + 7]! * RIG.neckY
       const headPz = torsoPz + bBuf[torsoOff + 5]! * 0.02 + bBuf[torsoOff + 8]! * RIG.neckY
-      writeYawFrame(bBuf, headOff, headPx, headPy, headPz, hxAng + staggerYaw * 0.8)
-      pitchInPlace(bBuf, headOff, -0.12 * torsoLean - shambleMod.headPitchAdd - staggerRecoil * 0.6 + (kind ? specialHeadLift(kind, hunch, a.state) : 0))
-      rollInPlace(bBuf, headOff, headTilt + shambleMod.headRollAdd + staggerCant * 0.5)
+      writeYawFrame(bBuf, headOff, headPx, headPy, headPz, hxAng + staggerYaw * 0.8 + (hr ? hr.twist + hr.headYaw : 0))
+      pitchInPlace(bBuf, headOff, -0.12 * torsoLean - shambleMod.headPitchAdd - staggerRecoil * 0.6 + (kind ? specialHeadLift(kind, hunch, a.state) : 0) + (hr ? hr.pitch + hr.headPitch : 0))
+      rollInPlace(bBuf, headOff, headTilt + shambleMod.headRollAdd + staggerCant * 0.5 + (hr ? hr.roll + hr.headRoll : 0))
 
       this.emitBone(bOff, 0, 0, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
       this.emitBone(bOff, 1, 1, hidden, tintR, tintG, tintB, a.hitFlash, alpha)

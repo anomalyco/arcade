@@ -216,7 +216,7 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
   },
   {
     area: "`avatar/*`",
-    description: "Top-down human avatar adapter: soldier, wizard, zombie and skeleton meshes, weapon clips, ragdolls",
+    description: "Top-down human avatar adapter: soldier, wizard, zombie and skeleton meshes, weapon clips, ragdolls (soldier and any 15-bone figure), hit-reaction springs",
     match: (s) => s.startsWith("@arcade/kit/avatar/"),
   },
   {

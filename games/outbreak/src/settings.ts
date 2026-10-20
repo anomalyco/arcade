@@ -18,6 +18,7 @@ import { DEFAULT_NIGHT_RAMP_TUNING, type NightRampTuning } from "../shared/night
 import { DEFAULT_DEATH_TUNING, type DeathTuning } from "../shared/death/rules"
 import { DEFAULT_FIRE_SETTINGS, type OutbreakFireSettings } from "./fire/settings"
 import { DEFAULT_AIR_SETTINGS, type OutbreakAirSettings } from "./air/settings"
+import { DEFAULT_IMPACT_SETTINGS, type OutbreakImpactSettings } from "./impact/settings"
 import { DEFAULT_WAY_OUT_TUNING, type WayOutTuning } from "../shared/way-out/tuning"
 import { DEFAULT_SPECIALS_TUNING, type SpecialsTuning } from "../shared/specials/kinds"
 import type { WorldMode } from "../shared/world"
@@ -254,6 +255,7 @@ export type OutbreakSubsystemMap = {
   wayOut: WayOutTuning
   vegetation: OutbreakVegetationSettings
   air: OutbreakAirSettings
+  impact: OutbreakImpactSettings
 }
 
 export type OutbreakSubsystemKey = keyof OutbreakSubsystemMap
@@ -337,6 +339,7 @@ export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "wayOut",
   "vegetation",
   "air",
+  "impact",
 ] as const
 
 export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
@@ -382,6 +385,7 @@ export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
     wayOut: { ...DEFAULT_WAY_OUT_TUNING },
     vegetation: { ...DEFAULT_VEGETATION_SETTINGS },
     air: { ...DEFAULT_AIR_SETTINGS },
+    impact: { ...DEFAULT_IMPACT_SETTINGS },
   }
 }
 
