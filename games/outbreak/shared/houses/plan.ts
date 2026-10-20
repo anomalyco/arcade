@@ -231,8 +231,8 @@ function recipe(type: RoomType, household: Household, rng: Rng, condition: House
       return [
         { kind: "bed", side: "n", essential: true },
         { kind: "nightstand" },
+        { kind: "closet", side: ["n", "w", "e"] },
         { kind: household === "student" ? "desk" : "dresser", side: ["n", "s"] },
-        { kind: "closet", side: "n" },
         ...(household === "student" ? [{ kind: "chair" } as Item] : []),
         ...hoard.slice(0, 1),
       ]
@@ -255,7 +255,7 @@ function recipe(type: RoomType, household: Household, rng: Rng, condition: House
     case "lobby":
       return [{ kind: "stairs", side: ["e", "w"] }]
     case "unit":
-      return [{ kind: "bed", side: "n", essential: true }, { kind: "counter", side: ["e", "w"] }, { kind: "fridge", side: ["n", "e", "w"] }, { kind: "table" }, { kind: "chair" }]
+      return [{ kind: "bed", side: "n", essential: true }, { kind: "closet", side: ["n", "w", "e"] }, { kind: "counter", side: ["e", "w"] }, { kind: "fridge", side: ["n", "e", "w"] }, { kind: "table" }, { kind: "chair" }]
   }
 }
 
@@ -348,6 +348,8 @@ function furnish(rooms: LRoom[], inners: Rect[], zones: Rect[], windowRects: Rec
           const cx = along ? a : fixed, cz = along ? fixed : a
           const r = rectAt(it.kind, cx, cz)
           if (!free(r, inner)) continue
+          // A closet is left from its south side: keep a step clear in front of it.
+          if (it.kind === "closet" && !free([r[0], r[3], r[2], r[3] + 0.7], inner)) continue
           // Tall pieces keep off the windows.
           if (h > 0.95 && TALL.has(it.kind) && windowRects.some((wr) => overlaps(wr, r, 0.35))) continue
           put(it.kind, cx, cz, ri, it)
@@ -362,10 +364,11 @@ function furnish(rooms: LRoom[], inners: Rect[], zones: Rect[], windowRects: Rec
 // --- reachability ----------------------------------------------------------------------------------------------------
 
 const CELL = 0.2
-const AGENT = 0.3
+// A little wider than a survivor (0.3 m), so a gap the plan keeps is never a squeeze on another grid.
+const AGENT = 0.36
 
 /** Rooms and containers a survivor can reach from outside through the open doors. */
-function reachable(bounds: Rect, solids: readonly Rect[], starts: readonly [number, number][]): (x: number, z: number) => boolean {
+function reachable(bounds: Rect, solids: readonly Rect[], starts: readonly [number, number][]): Flood {
   const x0 = bounds[0] - 1.2, z0 = bounds[1] - 1.2
   const nx = Math.ceil((bounds[2] - bounds[0] + 2.4) / CELL), nz = Math.ceil((bounds[3] - bounds[1] + 2.4) / CELL)
   const blocked = new Uint8Array(nx * nz)
@@ -397,17 +400,22 @@ function reachable(bounds: Rect, solids: readonly Rect[], starts: readonly [numb
       queue.push(n)
     }
   }
-  return (x, z) => {
+  const ok = (x: number, z: number) => {
     const i = Math.floor((x - x0) / CELL), k = Math.floor((z - z0) / CELL)
     return i >= 0 && k >= 0 && i < nx && k < nz && seen[i + k * nx] === 1
   }
+  ok.free = (x: number, z: number) => {
+    const i = Math.floor((x - x0) / CELL), k = Math.floor((z - z0) / CELL)
+    return i >= 0 && k >= 0 && i < nx && k < nz && blocked[i + k * nx] === 0
+  }
+  return ok
 }
 
 /**
  * The zombies' view: the same 0.5 m tile rasterisation as `buildChunkNavTile` (`shared/world.ts`), aligned to the
  * chunk, with doors carved through and flooded from outside the front doors.
  */
-function navReachable(chunk: Rect, solids: readonly Rect[], doors: readonly Rect[], starts: readonly [number, number][]): (x: number, z: number) => boolean {
+function navReachable(chunk: Rect, solids: readonly Rect[], doors: readonly Rect[], starts: readonly [number, number][]): Flood {
   const cell = 0.5, pad = 0.3, ox = chunk[0], oy = chunk[1]
   const tile = new Uint8Array(64 * 64)
   for (const r of solids) {
@@ -439,10 +447,34 @@ function navReachable(chunk: Rect, solids: readonly Rect[], doors: readonly Rect
       queue.push(n)
     }
   }
-  return (x, z) => {
+  const ok = (x: number, z: number) => {
     const i = Math.floor((x - ox) / cell), k = Math.floor((z - oy) / cell)
     return i >= 0 && k >= 0 && i < 64 && k < 64 && seen[i + k * 64] === 1
   }
+  ok.free = (x: number, z: number) => {
+    const i = Math.floor((x - ox) / cell), k = Math.floor((z - oy) / cell)
+    return i >= 0 && k >= 0 && i < 64 && k < 64 && tile[i + k * 64] === 0
+  }
+  return ok
+}
+
+/** A flood fill: whether a point was reached, and whether it is open floor at all. */
+type Flood = ((x: number, z: number) => boolean) & { free: (x: number, z: number) => boolean }
+
+/**
+ * The middle of the open floor inside `r` the flood never reached, when it adds up to more than `limit` m² (furniture
+ * walled off a pocket of the room), sampled every `step` m.
+ */
+function pocket(f: Flood, r: Rect, step: number, limit: number): [number, number] | null {
+  let n = 0, sx = 0, sz = 0
+  for (let z = r[1] + step / 2; z < r[3]; z += step) for (let x = r[0] + step / 2; x < r[2]; x += step) {
+    if (f.free(x, z) && !f(x, z)) {
+      n++
+      sx += x
+      sz += z
+    }
+  }
+  return n * step * step > limit ? [sx / n, sz / n] : null
 }
 
 /** Whether any reachable cell lies within `pad` of `r`. */
@@ -520,7 +552,7 @@ export function planHouse(input: HousePlanInput): HousePlan | null {
       openings.push({ edge: null, axis: "x", at: s.at, a0: dx, a1: dx + 1.4, kind: "door" })
     } else if (arch) {
       // Archways keep to the street side of the wall.
-      const g1 = r2(s.a1 - 0.3 - rng.next() * Math.max(0, s.a1 - s.a0 - 1.9)), g0 = r2(g1 - 1.3)
+      const g1 = r2(s.a1 - 0.3 - rng.next() * Math.max(0, s.a1 - s.a0 - 2.2)), g0 = r2(Math.max(s.a0 + 0.3, g1 - 1.6))
       gap = [g0, g1]
       openings.push({ edge: null, axis: "z", at: s.at, a0: g0, a1: g1, kind: "arch" })
     }
@@ -642,29 +674,37 @@ export function planHouse(input: HousePlanInput): HousePlan | null {
   for (const o of openings) {
     if (o.kind === "window") continue
     // Doors swing; archways only need the way through kept clear.
-    const depth = o.kind === "door" ? 1.05 : 0.7
-    zones.push(o.axis === "x" ? [o.a0 - 0.15, o.at - depth, o.a1 + 0.15, o.at + depth] : [o.at - depth, o.a0 - 0.15, o.at + depth, o.a1 + 0.15])
+    // The dead walk a 0.5 m grid padded 0.3 m off every solid: keep a clear tile either side of the way through.
+    const depth = o.kind === "door" ? 1.05 : 0.95
+    const side = o.kind === "door" ? 0.3 : 0.4
+    zones.push(o.axis === "x" ? [o.a0 - side, o.at - depth, o.a1 + side, o.at + depth] : [o.at - depth, o.a0 - side, o.at + depth, o.a1 + side])
   }
   const winRects = openings.filter((o) => o.kind === "window").map((o): Rect => (o.axis === "x" ? [o.a0, o.at - 0.3, o.a1, o.at + 0.3] : [o.at - 0.3, o.a0, o.at + 0.3, o.a1]))
   let placed = furnish(rooms, inners, zones, winRects, dressing.household, condition, rng)
 
-  // Reachability from outside every front and back door: drop whatever cuts a room or a container off.
-  const outsideStarts: [number, number][] = doors.filter((dr) => dr.id.includes("-front") || dr.id.endsWith("-back")).map((dr) => {
+  // Reachability: drop whatever cuts a room, a pocket of one, or a container off.
+  // From the front doors only: every room must be reachable through the house, not just round the back.
+  const outsideStarts: [number, number][] = doors.filter((dr) => dr.id.includes("-front")).map((dr) => {
     const cx = (dr.rect[0] + dr.rect[2]) / 2
-    return dr.id.endsWith("-back") ? [cx, dr.rect[1] - 0.6] : [cx, dr.rect[3] + 0.6]
+    return [cx, dr.rect[3] + 0.6]
   })
+  // Back doors count as shut for this, so the flood cannot walk round the outside and in at the back.
+  const backs = doors.filter((dr) => dr.id.endsWith("-back")).map((dr) => dr.rect)
   for (let guard = 0; guard < 40; guard++) {
-    const solids = [...barriers.map((b) => b.rect), ...placed.map((p) => p.rect)]
+    const solids = [...barriers.map((b) => b.rect), ...backs, ...placed.map((p) => p.rect)]
     const ok = reachable(rect, solids, outsideStarts)
-    const nav = navReachable(chunk, solids, doors.map((dr) => dr.rect), outsideStarts)
+    const nav = navReachable(chunk, solids, doors.filter((dr) => !dr.id.endsWith("-back")).map((dr) => dr.rect), outsideStarts)
     const roomBad = rooms.findIndex((_, i) => {
       const inn = inners[i]!
       return !touches(ok, [inn[0] + 0.45, inn[1] + 0.45, inn[2] - 0.45, inn[3] - 0.45], 0) || !touches(nav, inn, 0)
     })
     const propBad = placed.findIndex((p) => !touches(ok, p.rect, 0.75))
-    if (roomBad < 0 && propBad < 0) break
-    // Drop the piece nearest the trouble (the cut-off room, or the unreachable piece itself), loose furniture first.
-    const target = roomBad >= 0 ? rects[roomBad]! : placed[propBad]!.rect
+    // No pocket of a room walled off by furniture, for survivors or the dead.
+    let hole: [number, number] | null = null
+    for (let i = 0; i < rooms.length && !hole; i++) hole = pocket(ok, inners[i]!, CELL, 0.5) ?? pocket(nav, inners[i]!, 0.5, 0.6)
+    if (roomBad < 0 && propBad < 0 && !hole) break
+    // Drop the piece nearest the trouble (the cut-off room, the pocket, or the unreachable piece itself), loose furniture first.
+    const target: Rect = roomBad >= 0 ? rects[roomBad]! : propBad >= 0 ? placed[propBad]!.rect : [hole![0], hole![1], hole![0], hole![1]]
     let k = -1, best = Infinity
     for (let i = 0; i < placed.length; i++) {
       const p = placed[i]!

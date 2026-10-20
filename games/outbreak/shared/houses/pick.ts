@@ -56,7 +56,8 @@ const BRICKS = [0x7a4a3a, 0x6e4636, 0x845444, 0x6a4a3e]
 const STUCCO = [0xb3aa94, 0xa89c84, 0x9ea294, 0xa89a8a]
 const METAL = [0x9aa09a, 0xa8a48e, 0x8e9a9e, 0xa09484]
 const TRIMS = [0xc8c4b8, 0xc8c4b8, 0x3b3f3a, 0x5a3f2e, 0x8a8a80, 0x2e3a40]
-const ROOFS = [0x4e4b46, 0x3e3a36, 0x5a4636, 0x4a5048, 0x5c3a30, 0x444a52, 0x56524a]
+/** Asphalt greys from light to near black, red-brown, moss green, slate blue, galvanised tin. */
+const ROOFS = [0x4e4b46, 0x6e6a60, 0x2e2c2a, 0x6a3e30, 0x3a4a3e, 0x3e4a5a, 0x7e807a, 0x56524a]
 
 const ROOF_BY_FORM: Record<HouseForm, readonly (readonly [RoofShape, number])[]> = {
   bungalow: [["gable", 3], ["hip", 2], ["cross", 2]],

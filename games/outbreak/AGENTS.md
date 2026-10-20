@@ -57,6 +57,13 @@
   flicker on their room (`TV_LAMP_SLOT`, clipped like table lamps), dogs barking far off at night (`life.ts`). Placement is a pure function of
   the town and `dtSeed` per building and car (`placement.ts`), meshes are box-built (`models.ts`), drawn instanced
   from `scene/frame-renderer.ts`. Tests: `tests/details.test.ts`, `tests/details-life.test.ts`.
+- Houses (AR-79, `shared/houses/` generator, `src/houses/` meshes, Lab: Backquote › World · Variety, station
+  `outbreak-houses`): streamed homes outside the origin block get a form (bungalow, colonial, ranch, duplex, shotgun,
+  farmhouse, trailer, apartment, corner store), a condition (kept, derelict, burnt, under construction), their own
+  plan, roof, siding, porch, garage, fence, yard and household, stored on `Building.style` and drawn by the chunk
+  streamer. "Today" is one setting away and bit-identical; co-op always uses the defaults (`NetSession` resets them).
+  How it works: `../../docs/outbreak-world.md#styled-homes-ar-79`. Plans on the CPU: `bun scripts/house-variety-dump.ts`;
+  stills: `bun scripts/house-variety-sheet.ts` (via `hivemind run --kind browser`). Tests: `tests/house-variety.test.ts`.
 - Vegetation (AR-66, `src/vegetation/`, Lab: Backquote › Vegetation, station `outbreak-vegetation`): Lively (default)
   gives trees species, bare trees and swaying limbs, shrubs stray shoots, and drives every canopy, limb, shrub and blade
   from one gust field (`applyFoliageWindField` in `@arcade/kit/gpu/foliage`, sim time + position only); Today restores

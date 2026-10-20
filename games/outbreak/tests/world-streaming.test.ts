@@ -3,6 +3,7 @@ import { CoopRoomCore } from "../server/room-core"
 import { BUILD } from "../shared/build.gen"
 import { TICK_DT } from "../shared/clock"
 import { DEFAULT_COOP_ROOM } from "../shared/coop-config"
+import { resetHouseVariety, setHouseVariety } from "../shared/houses/variety"
 import { makeTown, SIZE } from "../shared/map"
 import { LocalSession } from "../shared/session"
 import { supportHeight, terrainVertex } from "../shared/terrain"
@@ -519,6 +520,8 @@ describe("Streamed lots match the origin build", () => {
 
   test("a streamed bungalow lot gets the origin's porch, foundation shrubs and yard plants, the same every time", () => {
     ensurePropTemplates()
+    // Today's L-plan bungalows (styled homes have their own test in house-variety.test.ts).
+    setHouseVariety({ enabled: false })
     let cx = 3
     let wc = generateWorldChunk(7, 7, cx, 2, "streaming")
     while (wc.buildings[0]?.kind !== "house") wc = generateWorldChunk(7, 7, ++cx, 2, "streaming")
@@ -540,6 +543,7 @@ describe("Streamed lots match the origin build", () => {
     recycleCompiledChunk(a)
     const again = compileSingleWorldChunk(wc, 7, 7, 0.22, 1)
     expect(new Uint8Array(again.staticOpaqueChunks[0]!.data, 0, again.staticOpaqueChunks[0]!.byteLength!)).toEqual(first)
+    resetHouseVariety()
   })
 
   test("foundation shrubs keep a narrow façade's door clear and stay under its window sills", () => {

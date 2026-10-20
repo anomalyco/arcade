@@ -84,6 +84,43 @@ Each macro-block and lot is assigned a **District** and **Building / POI Archety
 5. **Woodland & Park (`woodland`):**
    - **Ranger Cabin / Park Shelter (`cabin`):** Timber shelter surrounded by dense broadleaf canopy clusters, picnic tables, gravel paths, and abandoned vehicles.
 
+#### Styled homes (AR-79)
+Kit, after playing: "All the houses look too similar." Every streamed home lot outside the origin block (archetypes
+`house`, `ranch`, `cottage`, `cabin`) is now laid out by `planHouse` (`shared/houses/plan.ts`) from its own rng stream
+(`chunkHouseSeed ^ 0x51ed27a3`), so the rest of the chunk (trees, cars, the dead) draws the same numbers as before.
+Ash and Elm and the 3 × 3 origin block are untouched.
+
+- **Form** (`pick.ts`, weights in Lab › World · Variety): bungalow, two-storey colonial, L-shaped ranch with a garage
+  wing forward, duplex (twin front doors), shotgun (rooms in a line), farmhouse with a wrap porch, trailer, small
+  apartment block (lobby, stairs, units), corner store with a flat above. Cabins keep to the rural forms. Size and
+  setback vary inside the lot (30 sampled homes: 30 distinct layouts, 29 footprint sizes, 22 wall colours; Today: 16
+  layouts, 4 sizes, one roof, siding and porch).
+- **Condition:** kept, derelict (sagging roof, missing shingles and boards, ivy, overgrowth, more boarded windows,
+  ransacked or hoarded), burnt out (soot, roof down to rafters, upper floor fallen in, windows gaping, little loot) or
+  under construction (sheathing, bare studs, trusses and tarp, scaffold, hardware on the shelves).
+- **Dressing** stored on `Building.style` (`style.ts`): roof shape and colour (gable, cross gable, hip, gambrel, flat,
+  shed), siding (clapboard, shingle, brick, stucco, ribbed metal) and paint, trim, wear, porch (stoop, hood, gable,
+  shed, wrap, deck, awning), chimney, garage (attached, detached, carport), fence (picket, chain-link, hedge, rail),
+  window pattern and shutters, household, rooms and yard things (shed, swing, garden, pool, junk car, woodpile,
+  clothesline, tyres, trampoline).
+- **Rooms:** living, kitchen, dining, bedroom, nursery, study, bath, laundry, hall (stairs), garage, shop, store,
+  lobby, unit, furnished by type and household (family, elderly, hoarder, student, ransacked, barricaded hideout); new
+  gameplay props `desk` (searchable), `crib`, `washer`, `stairs`, `tub`. Garage shelves roll the `garage` loot table,
+  hideouts carry extra ammo, burnt and ransacked homes are bare. Every room and container is checked reachable from a
+  front door (survivor flood and the 0.5 m nav tiles); furniture that cuts a room off is dropped.
+- **Gameplay shapes only:** doors, windows (some `boarded`: not openable, drawn with planks), walls, `hidden` barriers
+  (outbuildings, styled fences, sheds, pools, junk cars, woodpiles collide but are drawn by their owner), props, lamps.
+  Styled homes have `kind: "hardware"` so legacy L-plan code never applies to them.
+- **Client:** `src/houses/exterior.ts` (shell, roofs, porches, conditions) and `grounds.ts` (paths, driveway,
+  outbuilding, fences, yard things), called by the chunk streamer. Floors by room type; rugs and the interior theme
+  follow the rooms and household (`interiors/plan.ts`); footsteps read tile, concrete or wood per room.
+- **Co-op:** the variety config is part of the world like the seed: chunk caches key on `houseVarietyKey()`, the
+  chunk worker receives it, and `NetSession` resets it to `DEFAULT_HOUSE_VARIETY` so every client streams the room's
+  houses. "Today" (`houseVariety` 0) is bit-identical to the old generator (`tests/house-variety.test.ts`).
+- **Tools:** `bun scripts/house-variety-dump.ts --count 30 --ascii` prints plans on the CPU;
+  `bun scripts/house-variety-sheet.ts` (via `hivemind run --kind browser`) captures twelve homes by day and a street
+  at night; Lab station `outbreak-houses`.
+
 ### 2.3 Incremental Client Streaming & Zero-Hitch Baking
 - **Sliding `3 × 3` Chunk Render Window ($96 \times 96\text{ m}$):**
   - The client tracks the local survivor's chunk `(playerCx, playerCy)` with a $4\text{ m}$ hysteresis band so oscillating on a chunk border never thrash-shifts the window.

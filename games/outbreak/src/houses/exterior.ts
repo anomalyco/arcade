@@ -23,6 +23,8 @@ const mix = (a: Rgb, b: Rgb, t: number): Rgb => [a[0] + (b[0] - a[0]) * t, a[1] 
 /** Ground-floor wall top, and the eave line of a two-storey home. */
 export const WALL_TOP = 2.8
 export const UPPER_TOP = 5.5
+/** Where geometry over the walls starts: the streamer routes a triangle to the roof chunk only when all of it is above 2.801 m. */
+const OVER = WALL_TOP + 0.006
 const SOOT = hex(0x141210)
 const CHAR = hex(0x1e1b18)
 const DARK_GAP = hex(0x17140f)
@@ -258,13 +260,14 @@ function pitched(m: Mesh, o: RoofOpts, rng: Rng): { ridge: number; pr: [number, 
   const walls: [number, boolean][] = [[o.u0, o.endU0], [o.u1, o.endU1]]
   for (const [u, on] of walls) {
     if (!on) continue
-    const pts: V3[] = [F(u, o.H, o.v0)]
+    const base = o.H + 0.006
+    const pts: V3[] = [F(u, base, o.v0)]
     const yA = profileAt(pr, o.v0)
-    if (yA > o.H + 0.01) pts.push(F(u, yA, o.v0))
+    if (yA > base + 0.01) pts.push(F(u, yA, o.v0))
     for (const [v, y] of pr) if (v > o.v0 + 1e-3 && v < o.v1 - 1e-3) pts.push(F(u, y, v))
     const yB = profileAt(pr, o.v1)
-    if (yB > o.H + 0.01) pts.push(F(u, yB, o.v1))
-    pts.push(F(u, o.H, o.v1))
+    if (yB > base + 0.01) pts.push(F(u, yB, o.v1))
+    pts.push(F(u, base, o.v1))
     const out = u === o.u0 ? -1 : 1
     const hint = dir(F, out, 0)
     if (o.slices && o.slices(0) === "frame") continue
@@ -273,13 +276,13 @@ function pitched(m: Mesh, o: RoofOpts, rng: Rng): { ridge: number; pr: [number, 
     for (let i = 0; i < pr.length - 1; i++) {
       const [va, ya] = pr[i]!, [vb, yb] = pr[i + 1]!
       const uu = u + out * (OH * 0.8 - 0.02)
-      poly(m, [F(uu, ya - 0.16, va), F(uu, ya + 0.02, va), F(uu, yb + 0.02, vb), F(uu, yb - 0.16, vb)], o.trim, MAT.lit, o.aux, hint)
+      poly(m, [F(uu, ya - 0.16, va), F(uu, ya + 0.02, va), F(uu, yb + 0.02, vb), F(uu, yb - 0.16, vb)], o.trim, MAT.roof, o.aux, hint)
     }
   }
   // Fascia along both eaves and a ridge cap.
   const [vf, yf] = pr[0]!, [vl, yl] = pr[pr.length - 1]!
   for (const [v, y, sgn] of [[vf, yf, -1], [vl, yl, 1]] as const) {
-    poly(m, [F(uA, y - 0.18, v), F(uB, y - 0.18, v), F(uB, y + 0.01, v), F(uA, y + 0.01, v)], o.trim, MAT.lit, o.aux, dir(F, 0, sgn))
+    poly(m, [F(uA, y - 0.18, v), F(uB, y - 0.18, v), F(uB, y + 0.01, v), F(uA, y + 0.01, v)], o.trim, MAT.roof, o.aux, dir(F, 0, sgn))
   }
   if (o.shape !== "shed" && (!o.slices || o.slices(0) !== "frame")) {
     const vm = (o.v0 + o.v1) / 2
@@ -314,7 +317,7 @@ function hip(m: Mesh, r: Rect, H: number, pitch: number, roof: Rgb, trim: Rgb, a
   }
   for (const [a, b] of [[[x0, z1], [x1, z1]], [[x1, z0], [x0, z0]], [[x0, z0], [x0, z1]], [[x1, z1], [x1, z0]]] as const) {
     const n: V3 = a[1] === b[1] ? [0, 0, a[1] === z1 ? 1 : -1] : [a[0] === x1 ? 1 : -1, 0, 0]
-    poly(m, [[a[0], yE - 0.18, a[1]], [b[0], yE - 0.18, b[1]], [b[0], yE + 0.01, b[1]], [a[0], yE + 0.01, a[1]]], trim, MAT.lit, aux, n)
+    poly(m, [[a[0], yE - 0.18, a[1]], [b[0], yE - 0.18, b[1]], [b[0], yE + 0.01, b[1]], [a[0], yE + 0.01, a[1]]], trim, MAT.roof, aux, n)
   }
   return ridge
 }
@@ -405,11 +408,14 @@ export type StyledHouseOutput = {
 export function emitStyledHouse(m: Mesh, low: Mesh, b: Building, id: number, town: Town): StyledHouseOutput {
   const s = b.style!
   const rng = new Rng((seedOf(b.id) ^ Math.imul(town.houseSeed + 1, 0x9e3779b1)) >>> 0)
-  const wall = hex(b.color), trim = hex(s.trim), roof = hex(s.roofColor)
+  const burnt = s.condition === "burnt", derelict = s.condition === "derelict", frame = s.condition === "construction"
+  const wall = hex(b.color), roof = hex(s.roofColor)
+  const trim = burnt ? mix(hex(s.trim), SOOT, 0.75) : hex(s.trim)
+  // Lit (non-wall) material reads brighter than the wall shader's eave-shaded faces: upper floors and gables match it.
+  const upper = shade(wall, 0.72)
   const rects = s.rooms.map((r) => r.rect)
   const edges = boundaryEdges(rects)
   const pieces = facadePieces(b, town, edges)
-  const burnt = s.condition === "burnt", derelict = s.condition === "derelict", frame = s.condition === "construction"
   const plants: StyledHouseOutput["plants"] = []
 
   // Ground-floor siding, around the window bays.
@@ -437,7 +443,7 @@ export function emitStyledHouse(m: Mesh, low: Mesh, b: Building, id: number, tow
         }
       } else if (s.siding !== "stucco") {
         faceBox(m, f, ua, ub, 0.37, WALL_TOP - 0.02, 0, 0.045, trim, MAT.wall, 20)
-        if (topOfWalls > WALL_TOP) faceBox(m, f, ua, ub, WALL_TOP, topOfWalls, 0, 0.045, trim, MAT.lit, id)
+        if (topOfWalls > WALL_TOP) faceBox(m, f, ua, ub, OVER, topOfWalls, 0, 0.045, trim, MAT.lit, id)
       }
     }
   }
@@ -523,9 +529,9 @@ export function emitStyledHouse(m: Mesh, low: Mesh, b: Building, id: number, tow
       const f: Face = { axis: e.axis, at: e.at, side: e.side }
       if (frame) {
         // Bare studs, plates and the floor deck's edge.
-        for (let u = e.a0 + 0.05; u < e.a1; u += 0.4) faceBox(m, f, u, u + 0.05, WALL_TOP, H - 0.1, -OUTER_WALL + 0.06, -0.06, PLY, MAT.lit, id)
+        for (let u = e.a0 + 0.05; u < e.a1; u += 0.4) faceBox(m, f, u, u + 0.05, OVER, H - 0.1, -OUTER_WALL + 0.06, -0.06, PLY, MAT.lit, id)
         faceBox(m, f, e.a0, e.a1, H - 0.1, H, -OUTER_WALL + 0.04, -0.04, PLY, MAT.lit, id)
-        faceBox(m, f, e.a0, e.a1, WALL_TOP, WALL_TOP + 0.24, -OUTER_WALL, 0.02, shade(PLY, 0.85), MAT.lit, id)
+        faceBox(m, f, e.a0, e.a1, OVER, WALL_TOP + 0.24, -OUTER_WALL, 0.02, shade(PLY, 0.85), MAT.lit, id)
         continue
       }
       // Jagged where a burnt upper floor fell in.
@@ -533,11 +539,11 @@ export function emitStyledHouse(m: Mesh, low: Mesh, b: Building, id: number, tow
       for (let k = 0; k < segs; k++) {
         const u0 = e.a0 + ((e.a1 - e.a0) * k) / segs, u1 = e.a0 + ((e.a1 - e.a0) * (k + 1)) / segs
         const top = burnt ? WALL_TOP + 0.3 + upperRng.next() * (H - WALL_TOP - 0.3) : H
-        faceBox(m, f, u0, u1, WALL_TOP, top, -OUTER_WALL, 0, burnt ? mix(wall, SOOT, 0.55) : wall, MAT.lit, id)
+        faceBox(m, f, u0, u1, OVER, top, -OUTER_WALL, 0, burnt ? mix(upper, SOOT, 0.55) : upper, MAT.lit, id)
         if (!burnt && s.siding !== "brick" && s.siding !== "stucco") {
-          for (let y = WALL_TOP + 0.18; y < top - 0.05; y += s.siding === "shingle" ? 0.28 : 0.2) faceQuad(m, f, u0, u1, y, Math.min(top, y + (s.siding === "shingle" ? 0.28 : 0.2)), 0.03, 0.006, shade(wall, 0.96 + upperRng.next() * 0.06), MAT.lit, id)
+          for (let y = WALL_TOP + 0.18; y < top - 0.05; y += s.siding === "shingle" ? 0.28 : 0.2) faceQuad(m, f, u0, u1, y, Math.min(top, y + (s.siding === "shingle" ? 0.28 : 0.2)), 0.03, 0.006, shade(upper, 0.96 + upperRng.next() * 0.06), MAT.lit, id)
         } else if (!burnt && s.siding === "brick") {
-          for (let y = WALL_TOP + 0.3; y < top - 0.05; y += 0.3) faceQuad(m, f, u0, u1, y, y + 0.014, 0.006, 0.006, shade(mix(wall, hex(0x8a8478), 0.55), 1), MAT.lit, id)
+          for (let y = WALL_TOP + 0.3; y < top - 0.05; y += 0.3) faceQuad(m, f, u0, u1, y, y + 0.014, 0.006, 0.006, shade(mix(upper, hex(0x8a8478), 0.4), 1), MAT.lit, id)
         }
       }
       // Belt course between the floors.
@@ -610,7 +616,7 @@ export function emitStyledHouse(m: Mesh, low: Mesh, b: Building, id: number, tow
       shape,
       pitch,
       roof,
-      wall: burnt ? mix(wall, SOOT, 0.5) : wall,
+      wall: burnt ? mix(upper, SOOT, 0.5) : upper,
       trim,
       aux: id,
       endU0: !mass.wing,
