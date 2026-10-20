@@ -1283,6 +1283,19 @@ export class StreamingWorld {
     }
   }
 
+  /**
+   * Whether `(x, y)` is open ground on the active chunks' nav tiles, or null while there are none (the first town's
+   * nine chunks use the whole-town grid instead).
+   */
+  walkable(x: number, y: number): boolean | null {
+    if (this.navTiles.size === 0) return null
+    const tile = this.navTiles.get(chunkKey(Math.floor(x / CHUNK), Math.floor(y / CHUNK)))
+    if (!tile) return false
+    const gx = Math.floor(x / 0.5)
+    const gy = Math.floor(y / 0.5)
+    return tile[((gy & 63) << 6) | (gx & 63)] !== CELL_BLOCKED
+  }
+
   getSurvivorWindowCenter(id: string, x: number, y: number): ChunkCoord {
     return this.centers.get(id) ?? selectActiveWindowCenter(x, y)
   }
@@ -1403,7 +1416,17 @@ export class StreamingWorld {
         this.applyDeltaToChunk(ch, portalStates)
         this.activeChunks.set(k, ch)
         loaded.push(ch)
+      }
+    }
 
+    // The town and the nav tiles take in the new chunks before their dead are placed, so `canSpawn` can check the
+    // ground they stand on (`walkable`): before, every resident of a new chunk was tested against tiles not yet built,
+    // found blocked and dropped, so the dead stopped appearing once you left the first town.
+    this.syncTownFromActiveChunks(town, containers, portalStates)
+
+    for (const ch of loaded) {
+      const { cx, cy, key: k } = ch
+      {
         // Materialize or restore zombies for this newly loaded chunk (outside the classic (0..2,0..2) initial spawn)
         const isClassicOriginChunk = this.mode !== "procedural" && cx >= 0 && cx < 3 && cy >= 0 && cy < 3
         const delta = this.deltas.get(k)
@@ -1427,7 +1450,6 @@ export class StreamingWorld {
       }
     }
 
-    this.syncTownFromActiveChunks(town, containers, portalStates)
     this.windowRevision++
     return { changed: true, loaded, unloaded }
   }

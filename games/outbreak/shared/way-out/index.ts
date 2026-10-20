@@ -1,7 +1,7 @@
 import { pushOut } from "@arcade/kit/sim/geom"
 import { registerOutbreakSharedFeature } from "../feature-registry"
 import type { OutbreakSim } from "../sim-types"
-import { blockCarRects, gateHandler, hotwireHandler, keepDeadOut, pushOutOfBlocks, stepRoadblocks, stepWayOutHolds, tellPumpsDry, wayOutRefuel } from "./car"
+import { blockCarRects, gateHandler, hotwireHandler, keepDeadOut, pushOutOfBlocks, stepRoadblocks, stepWayOutHolds, syncParkedCars, tellPumpsDry, wayOutRefuel, wayOutSpawn } from "./car"
 import { landmarkRects } from "./landmark"
 import { clueHandler, createWayOutState, planOf, runWon, signalHandler, stepWayOut, type WayOutState } from "./runtime"
 import { DEFAULT_WAY_OUT_TUNING, wayOutTuning, type WayOutTuning } from "./tuning"
@@ -16,7 +16,7 @@ export const outbreakWayOutSharedFeature = registerOutbreakSharedFeature<WayOutS
   order: 45,
   tuning: { namespace: "wayOut", defaults: DEFAULT_WAY_OUT_TUNING },
   createState: (sim) => createWayOutState(sim),
-  registerInteractions: (sim, registry) => {
+  registerInteractions: (sim, registry, state) => {
     const of = () => sim.getFeatureState<WayOutState>("wayOut")
     registry.register(clueHandler(sim, of))
     registry.register(signalHandler(sim, of))
@@ -24,6 +24,9 @@ export const outbreakWayOutSharedFeature = registerOutbreakSharedFeature<WayOutS
     registry.register(gateHandler(sim, of))
     // The car project: gas cans only, the pumps dry (Chem as before when it is off).
     sim.vehicles.refuelRule = () => wayOutRefuel(of()?.tuning ?? DEFAULT_WAY_OUT_TUNING)
+    // ...and no parked car is ready to drive. The cars already made before this rule was installed follow it now.
+    sim.vehicles.spawnRule = (spawn) => wayOutSpawn(of()?.tuning ?? DEFAULT_WAY_OUT_TUNING, spawn)
+    syncParkedCars(sim, state)
   },
   // The destination's hull, booth, hangar or wall and the standing roadblocks stop cars (appended after the vehicles
   // feature's rebuild).
@@ -56,6 +59,7 @@ export const outbreakWayOutSharedFeature = registerOutbreakSharedFeature<WayOutS
   stepSurvivorActions: (ctx) => stepWayOutHolds(ctx, wayOutTuning(ctx.resolved.features)),
   stepWorld: ({ sim, resolved, state }) => {
     state.tuning = wayOutTuning(resolved.features)
+    syncParkedCars(sim, state)
     tellPumpsDry(sim, state)
     return { topologyChanged: stepRoadblocks(sim, state) }
   },

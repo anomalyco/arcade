@@ -41,6 +41,8 @@ export type WayOutState = {
   blastSeen: number
   /** When each car's driver was last told the pumps are dry. */
   pumpsToldAt: Record<number, number>
+  /** Whether parked cars were last spawned under the car project (null: not yet; `syncParkedCars`). */
+  carProject: boolean | null
 }
 
 /** Arriving this near the destination confirms it (m). */
@@ -52,7 +54,7 @@ const SIGNAL_REACH = 1.8
 const isDark = (hour: number) => dayCycle(hour).darkness >= 0.5
 
 export function createWayOutState(sim: OutbreakSim): WayOutState {
-  return { tuning: DEFAULT_WAY_OUT_TUNING, wasDark: isDark(sim.hour), siege: [], sitesKey: "", sites: [], blastSeen: 0, pumpsToldAt: {} }
+  return { tuning: DEFAULT_WAY_OUT_TUNING, wasDark: isDark(sim.hour), siege: [], sitesKey: "", sites: [], blastSeen: 0, pumpsToldAt: {}, carProject: null }
 }
 
 export const planOf = (sim: Pick<OutbreakSim, "town">, t: WayOutTuning): WayOutPlan => wayOutPlan(sim.town.seed, sim.town.houseSeed, t)

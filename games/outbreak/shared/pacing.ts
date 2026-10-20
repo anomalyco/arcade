@@ -281,6 +281,13 @@ export type SpawnRuleOptions = {
 }
 
 /**
+ * Where the director may send or place the dead: the loaded world (the active chunks while streaming), not the first
+ * town's 96 m square. Clamped to that square, every backstage spawn point and every nudge beyond it landed on the far
+ * edge of the first town, so once you left it nothing spawned near you and the near dead were sent back towards it.
+ */
+export const worldBoundsOf = (town: Pick<Town, "worldBounds">): Rect => town.worldBounds ?? [0, 0, SIZE, SIZE]
+
+/**
  * Validates that a candidate spawn coordinate `(x, y)` obeys all Outbreak opening & backstage spawn rules:
  * 1. Walkable on `GridNav` and outside closed buildings (unless `allowInterior` is set).
  * 2. Outside `safeRadius` around all survivors and outside the starting safehouse (`ash`).
@@ -292,7 +299,7 @@ export function canSpawnZombieAt(
   x: number,
   y: number,
   town: Town,
-  nav: GridNav,
+  nav: Pick<GridNav, "walkable">,
   survivors: readonly PacingSurvivorView[],
   sightBlockers: readonly Rect[],
   options: SpawnRuleOptions,
@@ -785,6 +792,7 @@ export class OutbreakPacingDirector {
     manualSpawnOnly: boolean,
     rngSeedMix = 0,
   ): void {
+    const wb = worldBoundsOf(town)
     const pCount = Math.max(1, survivors.length)
     for (let i = 0; i < survivors.length; i++) {
       const s = survivors[i]!
@@ -880,8 +888,8 @@ export class OutbreakPacingDirector {
           const primary = survivors[0]!
           const outAng = Math.atan2(a.y - primary.y, a.x - primary.x) + ((a.id % 2 === 0 ? 1 : -1) * 0.35)
           const dest = nav.nearest({
-            x: clamp(a.x + Math.cos(outAng) * 7.5, 4, SIZE - 4),
-            y: clamp(a.y + Math.sin(outAng) * 7.5, 4, SIZE - 4),
+            x: clamp(a.x + Math.cos(outAng) * 7.5, wb[0] + 4, wb[2] - 4),
+            y: clamp(a.y + Math.sin(outAng) * 7.5, wb[1] + 4, wb[3] - 4),
           })
           a.wanderX = dest.x
           a.wanderY = dest.y
@@ -916,8 +924,8 @@ export class OutbreakPacingDirector {
         const approachAng = Math.atan2(a.y - lead.y, a.x - lead.x) + ((staged % 2 === 0 ? 1 : -1) * 0.28)
         const stageDist = 7.5 + staged * 2.2
         const goal = nav.nearest({
-          x: clamp(lead.x + Math.cos(approachAng) * stageDist, 4, SIZE - 4),
-          y: clamp(lead.y + Math.sin(approachAng) * stageDist, 4, SIZE - 4),
+          x: clamp(lead.x + Math.cos(approachAng) * stageDist, wb[0] + 4, wb[2] - 4),
+          y: clamp(lead.y + Math.sin(approachAng) * stageDist, wb[1] + 4, wb[3] - 4),
         })
         a.state = "investigate"
         a.awareness = Math.max(a.awareness, 0.45)
@@ -944,8 +952,8 @@ export class OutbreakPacingDirector {
         for (let i = 0; i < nearest.length; i++) {
           const a = nearest[i]!
           const goal = nav.nearest({
-            x: clamp(lead.x + (i === 0 ? 5.5 : -5.5), 4, SIZE - 4),
-            y: clamp(lead.y + 4.5, 4, SIZE - 4),
+            x: clamp(lead.x + (i === 0 ? 5.5 : -5.5), wb[0] + 4, wb[2] - 4),
+            y: clamp(lead.y + 4.5, wb[1] + 4, wb[3] - 4),
           })
           a.state = "investigate"
           a.awareness = 0.48
@@ -1020,8 +1028,8 @@ export class OutbreakPacingDirector {
               Math.atan2(targetSurvivor.y - a.y, targetSurvivor.x - a.x) + ((i % 2 === 0 ? 1 : -1) * 0.32)
             const stepDist = isHordeCondition ? Math.min(18, d - 10) : Math.min(13, d - 15)
             const dest = nav.nearest({
-              x: clamp(a.x + Math.cos(ang) * stepDist, 4, SIZE - 4),
-              y: clamp(a.y + Math.sin(ang) * stepDist, 4, SIZE - 4),
+              x: clamp(a.x + Math.cos(ang) * stepDist, wb[0] + 4, wb[2] - 4),
+              y: clamp(a.y + Math.sin(ang) * stepDist, wb[1] + 4, wb[3] - 4),
             })
             if (isHordeCondition && nudged < 2) {
               a.state = "investigate"
@@ -1055,14 +1063,17 @@ export class OutbreakPacingDirector {
     rng: Rng,
     safeRadius: number,
   ): { x: number; y: number; aim: number } | null {
+    const wb = worldBoundsOf(town)
     const primary = survivors[0]!
     // First try curated outer anchors that are currently backstage
     const startIdx = rng.int(PACED_OPENING_ANCHORS.length)
     for (let k = 0; k < PACED_OPENING_ANCHORS.length; k++) {
       const [ax, ay] = PACED_OPENING_ANCHORS[(startIdx + k) % PACED_OPENING_ANCHORS.length]!
+      // The first town's anchors, while it is loaded.
+      if (ax < wb[0] + 4 || ax > wb[2] - 4 || ay < wb[1] + 4 || ay > wb[3] - 4) continue
       const cand = nav.nearest({
-        x: clamp(ax + rng.range(-2.2, 2.2), 4, SIZE - 4),
-        y: clamp(ay + rng.range(-2.2, 2.2), 4, SIZE - 4),
+        x: clamp(ax + rng.range(-2.2, 2.2), wb[0] + 4, wb[2] - 4),
+        y: clamp(ay + rng.range(-2.2, 2.2), wb[1] + 4, wb[3] - 4),
       })
       if (
         canSpawnZombieAt(cand.x, cand.y, town, nav, survivors, sightBlockers, {
@@ -1088,8 +1099,8 @@ export class OutbreakPacingDirector {
       const worldAngle = anchor.aim + relAngle
       const dist = rng.range(Math.max(22, safeRadius + 3), 54)
       const cand = nav.nearest({
-        x: clamp(anchor.x + Math.cos(worldAngle) * dist, 5, SIZE - 5),
-        y: clamp(anchor.y + Math.sin(worldAngle) * dist, 5, SIZE - 5),
+        x: clamp(anchor.x + Math.cos(worldAngle) * dist, wb[0] + 5, wb[2] - 5),
+        y: clamp(anchor.y + Math.sin(worldAngle) * dist, wb[1] + 5, wb[3] - 5),
       })
       if (
         canSpawnZombieAt(cand.x, cand.y, town, nav, survivors, sightBlockers, {
@@ -1122,6 +1133,7 @@ export class OutbreakPacingDirector {
     config: KitAIConfig & PacingTuning,
     time: number,
     manualSpawnOnly: boolean,
+    wb: Rect = [0, 0, SIZE, SIZE],
   ): void {
     if (survivors.length === 0) return
 
@@ -1187,8 +1199,8 @@ export class OutbreakPacingDirector {
         const outAng = Math.atan2(a.y - s.y, a.x - s.x) + ((a.id % 2 === 0 ? 1 : -1) * 0.42)
         const holdDist = Math.max(15, Math.min(24, minDist + 4))
         const holdPos = nav.nearest({
-          x: clamp(s.x + Math.cos(outAng) * holdDist, 4, SIZE - 4),
-          y: clamp(s.y + Math.sin(outAng) * holdDist, 4, SIZE - 4),
+          x: clamp(s.x + Math.cos(outAng) * holdDist, wb[0] + 4, wb[2] - 4),
+          y: clamp(s.y + Math.sin(outAng) * holdDist, wb[1] + 4, wb[3] - 4),
         })
         a.state = minDist > 16 ? "investigate" : "search"
         a.awareness = Math.min(a.awareness, 0.48)
@@ -1230,8 +1242,8 @@ export class OutbreakPacingDirector {
           if (a.state === "chase" || a.state === "alert" || a.state === "bash") continue
           const awayAng = Math.atan2(a.y - surv.y, a.x - surv.x) + ((a.id % 2 === 0 ? 1 : -1) * 0.35)
           const dest = nav.nearest({
-            x: clamp(surv.x + Math.cos(awayAng) * 21, 4, SIZE - 4),
-            y: clamp(surv.y + Math.sin(awayAng) * 21, 4, SIZE - 4),
+            x: clamp(surv.x + Math.cos(awayAng) * 21, wb[0] + 4, wb[2] - 4),
+            y: clamp(surv.y + Math.sin(awayAng) * 21, wb[1] + 4, wb[3] - 4),
           })
           a.state = "wander"
           a.awareness = Math.min(a.awareness, 0.2)
