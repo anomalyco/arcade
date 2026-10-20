@@ -1363,7 +1363,7 @@ export class StreamingWorld {
     spawnAgent: (id: number, seed: number, x: number, y: number, aim: number) => AIAgent,
     radiusChunks = 1,
     canSpawn?: (x: number, y: number) => boolean,
-    /** Whether the director wants more of the dead alive: a revisited chunk's saved dead come back only while it does. */
+    /** Whether the director wants more of the dead alive: a revisited chunk's saved living dead come back only while it does (bodies always do). */
     hasRoom?: () => boolean,
   ): { changed: boolean; loaded: WorldChunk[]; unloaded: string[] } {
     if (this.mode === "classic") {
@@ -1468,7 +1468,7 @@ export class StreamingWorld {
         if (delta?.visited) {
           for (const sz of Object.values(delta.zombies)) {
             if (agents.some((a) => a.id === sz.id)) continue
-            if (hasRoom && !hasRoom()) continue
+            if (sz.state !== "dead" && hasRoom && !hasRoom()) continue
             const agent = spawnAgent(sz.id, sz.seed, sz.x, sz.y, sz.aim)
             agent.state = sz.state
             agent.hp = sz.hp
