@@ -47,6 +47,12 @@ export const LOOT_TABLES: Readonly<Record<string, Partial<Record<Prop["kind"], r
       { item: "chem", chance: 0.35 },
       { item: "ammo", chance: 0.25, min: 2, max: 4 },
     ],
+    desk: [
+      { item: "battery", chance: 0.4 },
+      { item: "key", chance: 0.2 },
+      { item: "noisemaker", chance: 0.25 },
+      { item: "ammo", chance: 0.3, min: 2, max: 4 },
+    ],
   },
   hardware: {
     shelf: [
@@ -305,6 +311,8 @@ export type LootSite = {
   searched?: boolean
   ammo?: number
   planks?: number
+  /** Loot table to roll instead of the building's archetype (a house's garage shelves roll `garage`). */
+  table?: string
 }
 
 export type BenchSite = {

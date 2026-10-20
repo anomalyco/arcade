@@ -181,7 +181,7 @@ export class OutbreakProgression implements ProgressionHost {
         if ((c.ammo ?? 0) > 0) initial.push({ item: "ammo", count: c.ammo! })
         if ((c.planks ?? 0) > 0) initial.push({ item: "plank", count: c.planks! })
         const bld = c.buildingId ? this.town.buildings.find((b) => b.id === c.buildingId) : buildingAt(this.town, c.x, c.y)
-        const tableKey = bld?.archetype ?? bld?.kind ?? "house"
+        const tableKey = c.table ?? bld?.archetype ?? bld?.kind ?? "house"
         const table = LOOT_TABLES[tableKey] ?? LOOT_TABLES[bld?.kind ?? "house"] ?? LOOT_TABLES.house!
         const cRng = new Rng((this.town.seed ^ Math.imul(c.propIndex + 31, 0x9e3779b9)) >>> 0)
         for (const roll of table[c.kind] ?? []) {

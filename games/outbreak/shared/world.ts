@@ -4,6 +4,8 @@ import { hash3, Rng } from "@arcade/kit/sim/rng"
 import { lootSites, type LootSite } from "./progression/loot"
 import { DEFAULT_PROGRESSION_TUNING } from "./progression/tuning"
 import { closetSpot } from "./discovery/closet-spot"
+import { houseGroundRects, planHouse, type LootHint } from "./houses/plan"
+import { houseVariety, houseVarietyKey, type HouseVariety } from "./houses/variety"
 import type { SavedVehicleState } from "./vehicles/types"
 import {
   CHUNK,
@@ -205,9 +207,11 @@ export function hashWorldChunk(c: Omit<WorldChunk, "hash">): number {
     mix(b.rect[2])
     mix(b.rect[3])
     mix(b.color)
+    if (b.style) mixStr(JSON.stringify(b.style))
   }
   for (const bar of c.barriers) {
     mixStr(bar.kind)
+    if (bar.hidden) mixStr("hidden")
     mix(bar.rect[0])
     mix(bar.rect[1])
     mix(bar.rect[2])
@@ -224,6 +228,8 @@ export function hashWorldChunk(c: Omit<WorldChunk, "hash">): number {
   }
   for (const w of c.windows) {
     mixStr(w.id)
+    if (w.boarded) mixStr("boarded")
+    if (w.open) mixStr("open")
     mix(w.rect[0])
     mix(w.rect[1])
     mix(w.rect[2])
@@ -241,6 +247,7 @@ export function hashWorldChunk(c: Omit<WorldChunk, "hash">): number {
   }
   for (const ct of c.containers) {
     mixStr(ct.id)
+    if (ct.table) mixStr(ct.table)
     mix(ct.ammo ?? 0)
     mix(ct.planks ?? 0)
   }
@@ -416,6 +423,7 @@ export function generateWorldChunk(
   cx: number,
   cy: number,
   mode: WorldMode = "streaming",
+  variety: HouseVariety = houseVariety,
 ): WorldChunk {
   if (mode !== "procedural" && cx >= 0 && cx < 3 && cy >= 0 && cy < 3) {
     return cloneClassicChunk(seed, houseSeed, cx, cy)
@@ -447,6 +455,7 @@ export function generateWorldChunk(
   const closets: { x: number; y: number }[] = []
   const lamps: Lamp[] = []
   const vehicles: Rect[] = []
+  let styledLoot: Map<Prop, LootHint> | null = null
 
   // Road corridors in this chunk:
   // If lx === 1, North-South road runs along local X = [6..18] (carriageway [8..16], sidewalks [6..8] & [16..18]).
@@ -507,6 +516,21 @@ export function generateWorldChunk(
     }
 
     const bRect: Rect = [bx0, bz0, bx0 + bw, bz0 + bd]
+    // AR-79: homes take a seeded house style (form, rooms, roof, yard) on their own random stream.
+    const styled =
+      variety.enabled && (archetype === "house" || archetype === "ranch" || archetype === "cottage" || archetype === "cabin")
+        ? planHouse({ prefix, archetype, district, lot: bRect, chunk: [x0, z0, x1, z1], inRoad: inRoadBand, rng: new Rng((chunkHouseSeed ^ 0x51ed27a3) >>> 0), variety })
+        : null
+    if (styled) {
+      buildings.push({ ...styled.building, chunkKey: cKey })
+      barriers.push(...styled.barriers)
+      doors.push(...styled.doors)
+      windows.push(...styled.windows)
+      props.push(...styled.props)
+      closets.push(...styled.closets)
+      lamps.push(...styled.lamps)
+      styledLoot = styled.loot
+    } else {
     const bId = `${prefix}-${archetype}`
     const color = hRng.pick(ARCHETYPE_PALETTES[archetype])
     const structuralKind: Building["kind"] =
@@ -671,6 +695,7 @@ export function generateWorldChunk(
         wall([x - 1.2, fy, Math.min(x1 - 2.0, r + 1.2), fy + 0.12], "fence", 0x756b51)
       }
     }
+    }
   }
 
   // 3. Parked or abandoned vehicles on roads / driveways (staying clear of main driving lane center)
@@ -695,6 +720,8 @@ export function generateWorldChunk(
     if (inRoadBand(tx, tz, 1.8)) continue
     if (buildings.some((b) => distToRect(tx, tz, b.rect) < 3.6)) continue
     if (vehicles.some((v) => distToRect(tx, tz, v) < 2.2)) continue
+    if (buildings.some((b) => houseGroundRects(b).some((r) => distToRect(tx, tz, r) < 1.8))) continue
+    if (barriers.some((w) => w.hidden && distToRect(tx, tz, w.rect) < 1.2)) continue
     props.push({ x: Number(tx.toFixed(2)), y: Number(tz.toFixed(2)), kind: "tree", variant: Number(rng.next().toFixed(4)) })
   }
 
@@ -702,13 +729,14 @@ export function generateWorldChunk(
   for (const c of closets) props.push({ ...c, kind: "closet", variant: 0.5 })
 
   // 5. Build deterministic loot containers for this chunk with chunk-prefixed IDs
-  const searchableKinds = new Set<Prop["kind"]>(["dresser", "shelf", "nightstand", "counter", "fridge"])
+  const searchableKinds = new Set<Prop["kind"]>(["dresser", "shelf", "nightstand", "counter", "fridge", "desk"])
   const labelMap: Partial<Record<Prop["kind"], string>> = {
     dresser: "dresser drawers",
     shelf: "supply shelf",
     nightstand: "nightstand",
     counter: "kitchen cabinet",
     fridge: "refrigerator",
+    desk: "desk drawers",
   }
   const lootRng = new Rng((chunkSeed ^ 0x5c3e19a7) >>> 0)
   const containers: LootContainer[] = []
@@ -735,6 +763,9 @@ export function generateWorldChunk(
       ammo = roll < 0.65 ? 3 + lootRng.int(5) : 0
       planks = roll > 0.55 ? 1 + lootRng.int(2) : 0
     }
+    const hint = styledLoot?.get(p)
+    if (hint?.bare) ammo = planks = 0
+    if (hint?.ammoBonus) ammo += hint.ammoBonus
     containers.push({
       id: `${prefix}-loot-${i}`,
       propIndex: i,
@@ -747,6 +778,7 @@ export function generateWorldChunk(
       searched: false,
       ammo,
       planks,
+      ...(hint?.table ? { table: hint.table } : {}),
     })
   }
 
@@ -760,6 +792,7 @@ export function generateWorldChunk(
     const zy = z0 + 4 + zRng.next() * (CHUNK - 8)
     if (buildings.some((b) => zx >= b.rect[0] - 0.6 && zx <= b.rect[2] + 0.6 && zy >= b.rect[1] - 0.6 && zy <= b.rect[3] + 0.6)) continue
     if (vehicles.some((v) => distToRect(zx, zy, v) < 0.8)) continue
+    if (barriers.some((w) => w.hidden && distToRect(zx, zy, w.rect) < 0.7)) continue
     const id = baseId + zombieSpawns.length
     zombieSpawns.push({
       id,
@@ -1010,7 +1043,7 @@ export class StreamingWorld {
   }
 
   getOrGenerateChunk(cx: number, cy: number): WorldChunk {
-    const cacheKey = `${this.seed}:${this.houseSeed}:${this.mode}:${cx},${cy}`
+    const cacheKey = `${this.seed}:${this.houseSeed}:${this.mode}:${houseVarietyKey()}:${cx},${cy}`
     let base = this.chunkCache.get(cacheKey)
     if (base) {
       this.chunkCache.delete(cacheKey)
@@ -1032,7 +1065,7 @@ export class StreamingWorld {
   }
 
   private getBaseChunk(cx: number, cy: number): WorldChunk {
-    const cacheKey = `${this.seed}:${this.houseSeed}:${this.mode}:${cx},${cy}`
+    const cacheKey = `${this.seed}:${this.houseSeed}:${this.mode}:${houseVarietyKey()}:${cx},${cy}`
     let base = this.chunkCache.get(cacheKey)
     if (!base) {
       base = generateWorldChunk(this.seed, this.houseSeed, cx, cy, this.mode)
