@@ -123,7 +123,10 @@ export function killSurvivor(sim: OutbreakSim, state: DeathState, slot: Survivor
   rec.reviver = -1
   rec.deaths++
   Object.assign(p, { health: 0, flashlightOn: false, noise: 0, vx: 0, vy: 0 })
-  const body: FallenBody = { index: slot.index, n: rec.deaths, x: round2(p.x), y: round2(p.y), yaw: round2(p.aim) }
+  // A departed survivor's bodies outlive their record, and a new survivor can reuse the seat.
+  let n = rec.deaths
+  for (const b of state.bodies) if (b.index === slot.index) n = Math.max(n, b.n + 1)
+  const body: FallenBody = { index: slot.index, n, x: round2(p.x), y: round2(p.y), yaw: round2(p.aim) }
   const stacks = strip(sim, slot)
   const ledger = sim.progression.ledger
   if (stacks.length) {

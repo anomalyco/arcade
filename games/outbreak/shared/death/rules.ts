@@ -104,7 +104,7 @@ export type LifeRecord = {
   night: number
   dark: boolean
   kills: number
-  /** Times this survivor has died (names their bodies). */
+  /** Times this survivor has died. Body IDs also account for earlier occupants of the seat. */
   deaths: number
 }
 
