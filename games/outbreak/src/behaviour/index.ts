@@ -132,7 +132,7 @@ export const outbreakBehaviourFeature = registerOutbreakClientFeature({
         watching = null
         return null
       }
-      return { x: watching.x, y: watching.y, aim: -Math.PI / 2, health: p.health, maxHealth: p.maxHealth }
+      return { x: watching.x, y: watching.y, aim: -Math.PI / 2, health: p.health, maxHealth: p.maxHealth, allAround: true }
     },
     overlay: ({ session, settings, cam, w, h }) => {
       if (!settings.behaviour.zbOverlay) return overlay.hide()

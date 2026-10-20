@@ -40,6 +40,8 @@ export interface OutbreakSceneLevelFrameInput {
   readonly visionPeek?: PeekInfo | null
   readonly view: readonly [number, number, number, number]
   readonly watch: { x: number; y: number } | null
+  /** A feature viewpoint sight comes from instead of the survivor; `allAround` sees every way, like horde watch. */
+  readonly eye?: { x: number; y: number; allAround?: boolean } | null
   readonly localVehicle: OutbreakVehicle | undefined
   readonly drivingHeadlights: boolean
   readonly effectiveVisionAim: number
@@ -184,7 +186,11 @@ export class OutbreakSceneLevel {
     if (syncVegetationBuild(settings.vegetation)) this.rebuildLevel()
     const session = this.host.session()
     const { player: p, town, time, peek } = session.view
-    const { drawn, activePeek, view, watch, localVehicle, drivingHeadlights, effectiveVisionAim, lowBeam } = input
+    const { drawn, activePeek, view, localVehicle, drivingHeadlights, effectiveVisionAim, lowBeam } = input
+    const eye = input.eye ?? null
+    const watch = input.watch ?? (eye?.allAround ? eye : null)
+    const sightX = watch ? watch.x : eye ? eye.x : p.x
+    const sightY = watch ? watch.y : eye ? eye.y : p.y
     const mode = resolveWorldMode(settings.world.worldMode)
     session.sim.worldStream.mode = mode
     let windowMoved = false
@@ -275,13 +281,13 @@ export class OutbreakSceneLevel {
       (drivingHeadlights ? settings.vehicle.headlightPower * 0.85 : settings.flashlight.flashlightIntensity) > 0.01
     // Horde watch (Lab): the view travels with the horde, so it is what the camera shows that gets seen.
     const visChanged = this.vision.update(
-      watch ? watch.x : p.x,
-      watch ? watch.y : p.y,
+      sightX,
+      sightY,
       effectiveVisionAim,
       this.blockers,
       watch ? { ...effectiveVisionSettings, cone: 360, range: Math.max(effectiveVisionSettings.range, 40) } : actorVisionSettings,
       watch ? null : input.visionPeek !== undefined ? input.visionPeek : peek,
-      flashVisionActive && !watch
+      flashVisionActive && !watch && !eye
         ? {
             active: true,
             range: drivingHeadlights ? settings.vehicle.headlightRange : lowBeam.range,

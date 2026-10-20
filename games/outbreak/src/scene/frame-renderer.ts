@@ -408,6 +408,7 @@ export class OutbreakFrameRenderer {
       visionPeek: smoothPeek ? (activePeek ? sightAsPeek(activePeek, peekSight) : null) : peek,
       view,
       watch,
+      eye,
       localVehicle,
       drivingHeadlights,
       effectiveVisionAim,

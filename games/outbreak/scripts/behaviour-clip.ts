@@ -112,7 +112,7 @@ try {
   console.log(`behaviour-clip: ${shot} frames`)
   console.log(JSON.stringify(summary, null, 1))
   assert.deepEqual(errors, [])
-  const ff = spawnSync("ffmpeg", ["-y", "-loglevel", "error", "-framerate", "20", "-i", resolve(frames, "%04d.jpg"), "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "24", "-preset", "medium", resolve(out, "behaviour.mp4")], { stdio: "inherit" })
+  const ff = spawnSync("ffmpeg", ["-y", "-loglevel", "error", "-framerate", "20", "-i", resolve(frames, "%04d.jpg"), "-vf", "scale=960:-2", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "28", "-preset", "medium", resolve(out, "behaviour.mp4")], { stdio: "inherit" })
   console.log(ff.status === 0 ? `encoded ${resolve(out, "behaviour.mp4")}` : "ffmpeg not available; frames only")
 } finally {
   await browser.close()
