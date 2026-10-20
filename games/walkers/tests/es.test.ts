@@ -3,6 +3,8 @@ import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { evaluate, policyShape } from "../shared/episode"
 import { Es } from "../shared/es"
+import { DEFAULT_REWARD } from "../shared/episode"
+import { envFor } from "../shared/tasks"
 import { inlineEvaluator, parsePolicy, Trainer } from "../shared/trainer"
 
 describe("evolution strategies", () => {
@@ -22,17 +24,17 @@ describe("evolution strategies", () => {
 
   test("is deterministic for a seed", async () => {
     const run = async () => {
-      const t = new Trainer({ creature: "worm", task: "room", hidden: 8, seed: 5, es: { pairs: 4, sigma: 0.05, lr: 0.03, weightDecay: 0.005 } }, inlineEvaluator)
+      const t = new Trainer({ creature: "worm", env: envFor("room"), hidden: 8, seed: 5, es: { pairs: 4, sigma: 0.05, lr: 0.03, weightDecay: 0.005 } }, inlineEvaluator)
       for (let g = 0; g < 3; g++) await t.generation()
       return Array.from(t.es.theta).join(",")
     }
     expect(await run()).toBe(await run())
   })
 
-  test("a worm learns to move forward within a few generations", async () => {
-    const t = new Trainer({ creature: "worm", task: "room", hidden: 8, seed: 2, es: { pairs: 12, sigma: 0.06, lr: 0.03, weightDecay: 0.005 }, reward: { seconds: 5, progress: 1, upright: 0, effort: 0.04, fall: 1.5, finish: 0.5, phase: 0.9 } }, inlineEvaluator)
+  test("a quadruped learns to move forward within a few generations", async () => {
+    const t = new Trainer({ creature: "quadruped", env: envFor("room"), hidden: 8, seed: 1, es: { pairs: 12, sigma: 0.06, lr: 0.03, weightDecay: 0.005 }, reward: { ...DEFAULT_REWARD, seconds: 4 } }, inlineEvaluator)
     const first = await t.generation()
-    for (let g = 0; g < 24; g++) await t.generation()
+    for (let g = 0; g < 20; g++) await t.generation()
     const last = t.history[t.history.length - 1]!
     expect(t.best!.fitness).toBeGreaterThan(first.best + 0.5)
     expect(last.mean).toBeGreaterThan(first.mean)
@@ -43,7 +45,8 @@ describe("policies", () => {
   test("parsePolicy rejects malformed files", () => {
     expect(parsePolicy(null)).toBeNull()
     expect(parsePolicy({ format: "walkers-policy", version: 1, creature: "biped", task: "room", hidden: 16, params: [1, 2] })).toBeNull()
-    expect(parsePolicy({ format: "walkers-policy", version: 1, creature: "dragon", task: "room", hidden: 16, params: [] })).toBeNull()
+    expect(parsePolicy({ format: "walkers-policy", version: 2, sim: 1, creature: "biped", env: envFor("room"), hidden: 16, params: [] })).toBeNull()
+    expect(parsePolicy({ format: "walkers-policy", version: 2, sim: 2, creature: "biped", env: { task: "moon" }, hidden: 16, params: [] })).toBeNull()
   })
 
   test("shipped pre-trained policies replay to exactly their recorded score", () => {
@@ -53,8 +56,8 @@ describe("policies", () => {
     for (const f of files) {
       const p = parsePolicy(JSON.parse(readFileSync(join(dir, f), "utf8")))
       expect(p).not.toBeNull()
-      expect(f).toBe(`${p!.creature}-${p!.task}.json`)
-      const r = evaluate(p!.creature, p!.task, policyShape(p!.creature, p!.hidden), Float64Array.from(p!.params), p!.reward)
+      expect(f).toBe(`${p!.creature}-${p!.env.task}.json`)
+      const r = evaluate(p!.creature, p!.env, policyShape(p!.creature, p!.hidden), Float64Array.from(p!.params), p!.reward)
       expect(r.fitness).toBe(p!.fitness)
     }
   })

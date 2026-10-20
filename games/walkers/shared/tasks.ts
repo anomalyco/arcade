@@ -1,80 +1,52 @@
-// Tasks: a room with a start line at x = 0 and a goal on the far side, plus what stands in between.
+// Tasks and the environment settings that pick a level. A saved policy keeps its Env so its replay rebuilds the room.
 
-import { mulberry32 } from "@arcade/kit/sim/rng"
+import { courseLevel, heistLevel, roomLevel, roughLevel, stepsLevel, wallLevel, type Level } from "./level"
 
-export type TaskId = "room" | "wall" | "steps" | "rough"
+export type TaskId = "room" | "wall" | "steps" | "rough" | "course" | "heist"
 
-export type TaskDef = {
-  id: TaskId
-  label: string
-  blurb: string
-  /** Goal line (m from the start). */
-  goal: number
-  /** Ground polyline, x non-decreasing; the room's back and front walls are the ends. */
-  points: [number, number][]
+export type Env = {
+  task: TaskId
+  /** Obstacle-course seed. */
+  seed: number
+  /** Heist curriculum stage (0 = no lasers … 4 = full heist). */
+  stage: number
+  /** Heist laser speed multiplier. */
+  laserSpeed: number
+  /** Heist: extra pulsing beams on the way out (0 in training; a knob for trying a policy on a harder vault). */
+  extra: number
 }
 
-const ROOM_LEFT = -3
-const GOAL = 16
-const ROOM_RIGHT = GOAL + 4
-const WALL_H = 3
-
-function room(middle: [number, number][] = []): [number, number][] {
-  return [
-    [ROOM_LEFT - 0.5, WALL_H],
-    [ROOM_LEFT, WALL_H],
-    [ROOM_LEFT, 0],
-    ...middle,
-    [ROOM_RIGHT, 0],
-    [ROOM_RIGHT, WALL_H],
-    [ROOM_RIGHT + 0.5, WALL_H],
-  ]
-}
-
-function block(x: number, w: number, h: number): [number, number][] {
-  return [[x, 0], [x, h], [x + w, h], [x + w, 0]]
-}
-
-function wall(): [number, number][] {
-  return [...block(3, 0.3, 0.14), ...block(7, 0.3, 0.22), ...block(11.5, 0.3, 0.3)]
-}
-
-function steps(): [number, number][] {
-  const out: [number, number][] = []
-  let h = 0
-  for (let i = 0; i < 8; i++) {
-    const x = 2.5 + i * 0.9
-    out.push([x, h])
-    h += 0.07
-    out.push([x, h])
-  }
-  out.push([2.5 + 8 * 0.9 + 1.2, h])
-  for (let i = 0; i < 8; i++) {
-    const x = 2.5 + 8 * 0.9 + 1.2 + i * 0.9
-    out.push([x, h])
-    h -= 0.07
-    out.push([x, h])
-  }
-  return out
-}
-
-function rough(): [number, number][] {
-  const rand = mulberry32(7)
-  const out: [number, number][] = [[1.5, 0]]
-  let h = 0
-  for (let x = 2; x < GOAL + 1.5; x += 0.5) {
-    h = Math.max(0, Math.min(0.35, h + (rand() - 0.5) * 0.16))
-    out.push([x, Math.round(h * 1000) / 1000])
-  }
-  out.push([GOAL + 2, 0])
-  return out
-}
+export type TaskDef = { id: TaskId; label: string; blurb: string }
 
 export const TASKS: Record<TaskId, TaskDef> = {
-  room: { id: "room", label: "Cross the room", blurb: "Flat floor, get to the far side.", goal: GOAL, points: room() },
-  wall: { id: "wall", label: "Low walls", blurb: "Three walls, 14, 22 and 30 cm tall.", goal: GOAL, points: room(wall()) },
-  steps: { id: "steps", label: "Steps", blurb: "Up eight 7 cm steps and back down.", goal: GOAL, points: room(steps()) },
-  rough: { id: "rough", label: "Rough ground", blurb: "Bumpy floor, up to 35 cm high.", goal: GOAL, points: room(rough()) },
+  room: { id: "room", label: "Cross the room", blurb: "Flat floor, get to the far side." },
+  wall: { id: "wall", label: "Low walls", blurb: "Three walls, 14, 22 and 30 cm tall." },
+  steps: { id: "steps", label: "Steps", blurb: "Up eight 7 cm steps and back down." },
+  rough: { id: "rough", label: "Rough ground", blurb: "Bumpy floor, up to 35 cm high." },
+  course: { id: "course", label: "Obstacle course", blurb: "Seeded run of steps, ramps, gaps, hurdles, low ceilings, crates, seesaws and moving platforms." },
+  heist: { id: "heist", label: "Heist", blurb: "Through the vent, past the lasers, grab the gem, out the door." },
 }
 export const TASK_IDS = Object.keys(TASKS) as TaskId[]
-export const ROOM = { left: ROOM_LEFT, right: ROOM_RIGHT, height: WALL_H }
+
+export const envFor = (task: TaskId, over: Partial<Env> = {}): Env => ({ task, seed: 1, stage: 0, laserSpeed: 1, extra: 0, ...over })
+export const envKey = (e: Env): string => `${e.task}:${e.task === "course" ? e.seed : 0}:${e.task === "heist" ? `${e.stage}:${e.laserSpeed}:${e.extra}` : ""}`
+
+const cache = new Map<string, Level>()
+export function levelFor(e: Env): Level {
+  const key = envKey(e)
+  let lv = cache.get(key)
+  if (!lv) {
+    lv =
+      e.task === "room" ? roomLevel()
+      : e.task === "wall" ? wallLevel()
+      : e.task === "steps" ? stepsLevel()
+      : e.task === "rough" ? roughLevel()
+      : e.task === "course" ? courseLevel(e.seed)
+      : heistLevel({ stage: e.stage, laserSpeed: e.laserSpeed, extra: e.extra })
+    cache.set(key, lv)
+  }
+  return lv
+}
+
+/** The biped is too tall for the course's low ceilings and the heist vent. */
+export const fits = (creature: string, task: TaskId): boolean => !(creature === "biped" && (task === "heist" || task === "course"))

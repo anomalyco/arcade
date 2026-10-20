@@ -2,13 +2,14 @@
 // ships these as the pre-trained walkers).
 //   bun scripts/train.ts --creature biped --task room --gens 300 --workers 4 [--out src/pretrained/biped-room.json]
 //   [--hidden 16] [--pairs 32] [--sigma 0.06] [--lr 0.03] [--seed 1] [--minutes 20] [--init <policy.json>]
+//   [--course-seed 1] [--stage 0] [--no-curriculum] [--laser-speed 1] [--until-stage 4]
 
 import { parseArgs } from "node:util"
 import { cpus } from "node:os"
 import { CREATURE_IDS, type CreatureId } from "../shared/creatures"
 import { DEFAULT_REWARD } from "../shared/episode"
 import { DEFAULT_ES } from "../shared/es"
-import { TASK_IDS, type TaskId } from "../shared/tasks"
+import { envFor, TASK_IDS, type TaskId } from "../shared/tasks"
 import { parsePolicy, Trainer, WorkerPool } from "../shared/trainer"
 
 const { values } = parseArgs({
@@ -26,6 +27,11 @@ const { values } = parseArgs({
     every: { type: "string", default: "10" },
     init: { type: "string" },
     out: { type: "string" },
+    "course-seed": { type: "string", default: "1" },
+    stage: { type: "string", default: "0" },
+    "until-stage": { type: "string" },
+    "no-curriculum": { type: "boolean", default: false },
+    "laser-speed": { type: "string", default: "1" },
   },
 })
 
@@ -43,7 +49,8 @@ const pool = new WorkerPool(() => new Worker(new URL("../shared/eval-worker.ts",
 const trainer = new Trainer(
   {
     creature,
-    task,
+    env: envFor(task, { seed: Number(values["course-seed"]), stage: Number(values.stage), laserSpeed: Number(values["laser-speed"]) }),
+    curriculum: !values["no-curriculum"],
     hidden: init?.hidden ?? Number(values.hidden),
     seed: Number(values.seed),
     es: { ...DEFAULT_ES, pairs: Number(values.pairs), sigma: Number(values.sigma), lr: Number(values.lr) },
@@ -58,11 +65,16 @@ const t0 = performance.now()
 const every = Number(values.every)
 for (let g = 0; g < gens && performance.now() < deadline; g++) {
   const s = await trainer.generation()
+  if (values["until-stage"] && s.stage >= Number(values["until-stage"]) && s.finished >= Math.ceil(trainer.es.population * 0.5)) {
+    console.log(`gen ${s.gen}: half the population escapes at stage ${s.stage}`)
+    break
+  }
   if (s.gen % every === 0 || g === gens - 1) {
+    if (values.out) await Bun.write(values.out, JSON.stringify({ ...trainer.best!, trainedSeconds: Math.round((performance.now() - t0) / 1000) }) + "\n")
     const secs = (performance.now() - t0) / 1000
     console.log(
       `gen ${String(s.gen).padStart(4)}  best ${s.best.toFixed(2).padStart(6)}  mean ${s.mean.toFixed(2).padStart(6)}  mean-policy ${s.center.toFixed(2).padStart(6)} (${s.centerDistance.toFixed(1)} m)` +
-        `  best-ever ${s.bestEver.toFixed(2)}  finished ${s.finished}/${trainer.es.population}  steps ${(s.totalSteps / 1e6).toFixed(2)}M  ${secs.toFixed(0)} s`,
+        `  best-ever ${s.bestEver.toFixed(2)}  finished ${s.finished}/${trainer.es.population}${task === "heist" ? `  stage ${s.stage} gems ${s.gems} clean ${s.clean} alarms ${s.alarms}` : ""}  steps ${(s.totalSteps / 1e6).toFixed(2)}M  ${secs.toFixed(0)} s`,
     )
   }
 }

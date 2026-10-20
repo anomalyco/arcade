@@ -6,6 +6,7 @@ import { Episode, policyShape, type RewardSettings } from "../shared/episode"
 import { Policy } from "../shared/policy"
 import type { CreatureId } from "../shared/creatures"
 import type { LastGeneration } from "../shared/train-worker"
+import { envKey, type Env } from "../shared/tasks"
 import type { SavedPolicy } from "../shared/trainer"
 
 export type Role = "best" | "ghost" | "pretrained" | "saved"
@@ -45,9 +46,10 @@ export class Show {
     return p !== undefined && r.ep.time - p.t > 2
   }
 
-  /** Steps every unfinished runner by `steps` control steps. */
-  advance(steps: number): void {
+  /** Steps every unfinished runner by `steps` control steps, stopping early (and returning true) once `stop` says so. */
+  advance(steps: number, stop?: () => boolean): boolean {
     for (let s = 0; s < steps; s++) {
+      if (stop?.()) return true
       let any = false
       for (const r of this.runners) {
         if (r.ep.done) continue
@@ -59,14 +61,16 @@ export class Show {
       }
       if (!any) break
     }
+    return false
   }
 }
 
-export function policyRunner(saved: SavedPolicy, role: Role, label: string, fallback: RewardSettings): Runner {
+/** A saved policy's run; in another env (say a pre-trained thief in a lower curriculum stage) there is no score to match. */
+export function policyRunner(saved: SavedPolicy, role: Role, label: string, fallback: RewardSettings, env: Env = saved.env): Runner {
   const reward = saved.reward ?? fallback
   const shape = policyShape(saved.creature, saved.hidden)
-  const ep = new Episode(saved.creature, saved.task, new Policy(shape, Float64Array.from(saved.params)), reward)
-  return { ep, role, label, expected: saved.fitness }
+  const ep = new Episode(saved.creature, env, new Policy(shape, Float64Array.from(saved.params)), reward)
+  return { ep, role, label, expected: envKey(env) === envKey(saved.env) ? saved.fitness : null }
 }
 
 /** The latest generation: its best individual solid plus up to `ghosts` others (the top half first, then a spread). */
@@ -79,7 +83,7 @@ export function generationShow(trainer: { last: LastGeneration | null; creature:
   const shape = policyShape(trainer.creature, trainer.hidden)
   const pick = order.slice(0, 1 + Math.min(ghosts, rows - 1))
   const runners: Runner[] = pick.map((i, rank) => ({
-    ep: new Episode(trainer.creature, last.task, new Policy(shape, params.slice(i * n, (i + 1) * n)), last.reward),
+    ep: new Episode(trainer.creature, last.env, new Policy(shape, params.slice(i * n, (i + 1) * n)), last.reward),
     role: rank === 0 ? "best" : "ghost",
     label: rank === 0 ? `best of gen ${gen}` : "",
     expected: results.fitness[i]!,

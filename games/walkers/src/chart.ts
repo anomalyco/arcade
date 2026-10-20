@@ -82,6 +82,19 @@ export class Chart {
       history.forEach((s, i) => (i ? ctx.lineTo(X(i), Y(pick(s))) : ctx.moveTo(X(i), Y(pick(s)))))
       ctx.stroke()
     }
+    // Heist curriculum: a line where each new stage starts.
+    ctx.font = "10px ui-monospace, Menlo, monospace"
+    ctx.textAlign = "left"
+    for (let i = 1; i < history.length; i++) {
+      if (history[i]!.stage === history[i - 1]!.stage) continue
+      ctx.strokeStyle = "rgba(255,70,80,0.55)"
+      ctx.beginPath()
+      ctx.moveTo(Math.round(X(i)) + 0.5, padT)
+      ctx.lineTo(Math.round(X(i)) + 0.5, padT + h)
+      ctx.stroke()
+      ctx.fillStyle = "rgba(255,120,130,0.9)"
+      ctx.fillText(`S${history[i]!.stage}`, X(i) + 3, padT + 10)
+    }
     line((s) => s.mean, "rgba(143,193,255,0.8)", 1.25)
     line((s) => s.center, "rgba(232,238,244,0.55)", 1)
     line((s) => s.best, "#ff7a59", 1.75)

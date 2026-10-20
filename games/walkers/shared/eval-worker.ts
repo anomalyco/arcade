@@ -5,5 +5,5 @@ import { evaluateBatch, type EvalRequest } from "./evaluate-batch"
 const scope = self as unknown as { onmessage: ((e: MessageEvent<EvalRequest>) => void) | null; postMessage(msg: unknown, transfer: Transferable[]): void }
 scope.onmessage = (e) => {
   const res = evaluateBatch(e.data)
-  scope.postMessage(res, [res.fitness.buffer, res.distance.buffer, res.steps.buffer, res.outcome.buffer])
+  scope.postMessage(res, [res.fitness.buffer, res.distance.buffer, res.steps.buffer, res.outcome.buffer, res.gem.buffer, res.alarms.buffer])
 }

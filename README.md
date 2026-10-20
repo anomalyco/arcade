@@ -19,9 +19,9 @@ with their own powers, shoveable props and stock rounds (`games/brawl`, Worker `
 indexing.
 
 Unlisted: [Walkers](https://anoma.ly/arcade/walkers/) — 2D physics creatures (a biped, a quadruped, an inchworm) that
-learn to cross a room, climb walls and steps, or cross rough ground with evolution strategies, trained live in the
-browser on Web Workers, with pre-trained walkers from the headless Bun trainer to compare against (`games/walkers`,
-Worker `arcade-walkers`). No landing link or indexing.
+learn to cross a room, climb walls and steps, cross rough ground, run a seeded obstacle course, or (the quadruped) pull
+off a laser heist with evolution strategies, trained live in the browser on Web Workers, with pre-trained walkers
+from the headless Bun trainer to compare against (`games/walkers`, Worker `arcade-walkers`). No landing link or indexing.
 
 Unlisted: [Archers](https://anoma.ly/arcade/archers/) — side-view arena archery in a noir silhouette look: arrows that
 stick and must be picked up, dodge-catches, stomps, one-hit kills, chests with special arrows, couch play for up to four

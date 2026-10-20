@@ -4,6 +4,7 @@
 
 import type { RewardSettings } from "./episode"
 import type { EsSettings } from "./es"
+import type { Env } from "./tasks"
 import { Trainer, WorkerPool, type GenerationStats, type SavedPolicy, type TrainerOptions } from "./trainer"
 
 export type ToTrainer =
@@ -11,6 +12,8 @@ export type ToTrainer =
   | { type: "run"; on: boolean }
   | { type: "es"; es: EsSettings }
   | { type: "reward"; reward: RewardSettings }
+  /** Change the level settings (heist stage, laser speed) and whether the curriculum moves on by itself. */
+  | { type: "env"; env: Env; curriculum: boolean }
   | { type: "workers"; n: number }
   /** Send the latest population (for the view). */
   | { type: "last" }
@@ -22,7 +25,8 @@ export type LastGeneration = NonNullable<Trainer["last"]>
 
 export type FromTrainer =
   | { type: "ready"; population: number; paramSize: number }
-  | { type: "gen"; stats: GenerationStats; best: SavedPolicy | null; population: number }
+  /** stage: the curriculum stage the next generation runs at. */
+  | { type: "gen"; stats: GenerationStats; best: SavedPolicy | null; population: number; stage: number }
   | { type: "last"; last: LastGeneration }
   | { type: "error"; message: string }
 
@@ -45,7 +49,7 @@ async function loop(): Promise<void> {
       const bestBefore = t.best
       const stats = await t.generation()
       if (at !== epoch) continue
-      scope.postMessage({ type: "gen", stats, best: t.best !== bestBefore ? t.best : null, population: t.es.population })
+      scope.postMessage({ type: "gen", stats, best: t.best !== bestBefore ? t.best : null, population: t.es.population, stage: t.env.stage })
       if (hold) {
         sendLast()
         await new Promise<void>((resolve) => (release = resolve))
@@ -81,6 +85,10 @@ scope.onmessage = (e) => {
     if (running) void loop()
   } else if (m.type === "es" && trainer) trainer.es.settings = m.es
   else if (m.type === "reward" && trainer) trainer.reward = m.reward
+  else if (m.type === "env" && trainer) {
+    trainer.env = { ...m.env }
+    trainer.curriculum = m.curriculum
+  }
   else if (m.type === "workers") pool.resize(m.n)
   else if (m.type === "last") sendLast()
   else if (m.type === "hold") {

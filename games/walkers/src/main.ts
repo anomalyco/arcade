@@ -3,7 +3,8 @@ import { LabPanel, type LabControl, type LabValue } from "@arcade/kit/lab-panel"
 import { CREATURE_IDS, CREATURES, type CreatureId } from "../shared/creatures"
 import { DEFAULT_REWARD, Episode, type RewardSettings } from "../shared/episode"
 import { DEFAULT_ES } from "../shared/es"
-import { TASK_IDS, TASKS, type TaskId } from "../shared/tasks"
+import { HEIST_MAX_STAGE, HEIST_STAGES } from "../shared/level"
+import { envFor, envKey, fits, levelFor, TASK_IDS, TASKS, type Env, type TaskId } from "../shared/tasks"
 import { parsePolicy, type SavedPolicy, type TrainerOptions } from "../shared/trainer"
 import { Chart } from "./chart"
 import { RemoteTrainer } from "./remote-trainer"
@@ -12,7 +13,7 @@ import { View } from "./view"
 
 const PRETRAINED = import.meta.glob<unknown>("./pretrained/*.json", { eager: true, import: "default" })
 const pretrainedFor = (creature: CreatureId, task: TaskId): SavedPolicy | null => parsePolicy(PRETRAINED[`./pretrained/${creature}-${task}.json`])
-const storageKey = (creature: CreatureId, task: TaskId) => `walkers.policy.${creature}.${task}`
+const storageKey = (creature: CreatureId, task: TaskId) => `walkers.policy.v2.${creature}.${task}`
 
 const params = new URLSearchParams(location.search)
 const cores = navigator.hardwareConcurrency || 4
@@ -20,8 +21,8 @@ const pick = <T extends string>(value: string | null, options: readonly T[], fal
 const num = (key: string, fallback: number) => (params.has(key) && Number.isFinite(Number(params.get(key))) ? Number(params.get(key)) : fallback)
 
 const S = {
-  creature: pick(params.get("creature"), CREATURE_IDS, "biped") as string,
-  task: pick(params.get("task"), TASK_IDS, "room") as string,
+  creature: pick(params.get("creature"), CREATURE_IDS, "quadruped") as string,
+  task: pick(params.get("task"), TASK_IDS, "heist") as string,
   speed: num("speed", 2),
   ghosts: num("ghosts", 24),
   watchEvery: false,
@@ -33,7 +34,19 @@ const S = {
   workers: num("workers", Math.max(1, Math.min(8, cores - 2))),
   // Seed 7: the biped finds its run in ~750 generations (seed 6 gets stuck standing still; ES is that seed-sensitive).
   seed: num("seed", 7),
+  courseSeed: num("course", 1),
+  stage: num("stage", 0),
+  curriculum: params.get("curriculum") !== "0",
+  laserSpeed: num("lasers", 1),
+  extra: 0,
+  slowmo: true,
   seconds: DEFAULT_REWARD.seconds,
+  heistSeconds: DEFAULT_REWARD.heistSeconds,
+  gem: DEFAULT_REWARD.gem,
+  escape: DEFAULT_REWARD.escape,
+  alarm: DEFAULT_REWARD.alarm,
+  exposure: DEFAULT_REWARD.exposure,
+  maxAlarms: DEFAULT_REWARD.maxAlarms,
   upright: DEFAULT_REWARD.upright,
   effort: DEFAULT_REWARD.effort,
   fall: DEFAULT_REWARD.fall,
@@ -41,9 +54,13 @@ const S = {
   phase: DEFAULT_REWARD.phase,
 }
 
+if (!fits(S.creature as CreatureId, S.task as TaskId)) S.creature = "quadruped"
 const creature = () => S.creature as CreatureId
 const task = () => S.task as TaskId
-const reward = (): RewardSettings => ({ seconds: S.seconds, progress: 1, upright: S.upright, effort: S.effort, fall: S.fall, finish: S.finish, phase: S.phase })
+const env = (): Env => envFor(task(), { seed: S.courseSeed, stage: S.stage, laserSpeed: S.laserSpeed, extra: S.extra })
+const reward = (): RewardSettings => ({
+  seconds: S.seconds, heistSeconds: S.heistSeconds, progress: 1, upright: S.upright, effort: S.effort, fall: S.fall, finish: S.finish, phase: S.phase, gem: S.gem, escape: S.escape, alarm: S.alarm, exposure: S.exposure, maxAlarms: S.maxAlarms,
+})
 
 const canvas = document.getElementById("view") as HTMLCanvasElement
 const view = new View(canvas)
@@ -60,11 +77,17 @@ let trainedMs = 0
 let lastGenAt = 0
 let genRate = 0
 let replayCheck = ""
+/** Near-miss slow motion in replays: until when (ms) and how many near misses so far. */
+let slowUntil = 0
+let nearMisses = 0
+let nearLabel = ""
+let alarms = 0
 
 function trainerOptions(init?: SavedPolicy): TrainerOptions {
   return {
     creature: creature(),
-    task: task(),
+    env: init?.env.task === task() ? { ...env(), stage: init.env.stage } : env(),
+    curriculum: S.curriculum,
     hidden: init?.hidden ?? S.hidden,
     seed: S.seed,
     es: { pairs: S.pairs, sigma: S.sigma, lr: S.lr, weightDecay: DEFAULT_ES.weightDecay },
@@ -80,7 +103,7 @@ function flash(text: string): void {
   ;(flash as { t?: number }).t = window.setTimeout(() => delete toast.dataset.on, 2200)
 }
 
-trainer.onGeneration = () => {
+trainer.onGeneration = (s) => {
   const now = performance.now()
   if (lastGenAt) {
     const dt = now - lastGenAt
@@ -88,6 +111,12 @@ trainer.onGeneration = () => {
     genRate = genRate ? genRate * 0.9 + 0.1 * (1000 / dt) : 1000 / dt
   }
   lastGenAt = now
+  alarms += s.alarms
+  if (task() === "heist" && s.stage !== trainer.env.stage) {
+    S.stage = trainer.env.stage
+    panel.sync()
+    flash(`Curriculum: clean escapes two generations running, on to stage ${S.stage}: ${HEIST_STAGES[S.stage]}.`)
+  }
 }
 trainer.onError = (message) => {
   running = false
@@ -109,6 +138,7 @@ function reset(init?: SavedPolicy): void {
   genRate = 0
   lastGenAt = 0
   shownGen = -1
+  alarms = 0
   if (mode === "train") show = nextShow()
   syncButtons()
 }
@@ -116,7 +146,8 @@ function reset(init?: SavedPolicy): void {
 function pretrainedRunner(): Runner | null {
   if (!S.compare) return null
   const p = pretrainedFor(creature(), task())
-  return p ? policyRunner(p, "pretrained", "pre-trained", reward()) : null
+  // The pre-trained one runs whatever level is on (a lower heist stage, another course seed), so it stays comparable.
+  return p ? policyRunner(p, "pretrained", task() === "heist" ? "pro thief" : "pre-trained", reward(), task() === "heist" || task() === "course" ? { ...env(), stage: mode === "train" ? trainer.env.stage : S.stage } : p.env) : null
 }
 
 function nextShow(): Show | null {
@@ -136,13 +167,13 @@ function nextShow(): Show | null {
     return g
   }
   // Before the first generation: the creature standing still, so there's something to look at.
-  const ep = new Episode(creature(), task(), null, reward())
+  const ep = new Episode(creature(), trainer.env, null, reward())
   return new Show("generation", [...extra, { ep, role: "best", label: "generation 0 is training", expected: null }], -1)
 }
 
 function replayLabel(p: SavedPolicy): string {
-  if (p === pretrainedFor(p.creature, p.task)) return "pre-trained"
-  return `best · gen ${p.generation}`
+  if (p === pretrainedFor(p.creature, p.env.task)) return p.env.task === "heist" ? "pro thief" : "pre-trained"
+  return `best · gen ${p.generation}${p.env.task === "heist" ? ` · stage ${p.env.stage}` : ""}`
 }
 
 function enterReplay(policy: SavedPolicy | null): void {
@@ -150,12 +181,16 @@ function enterReplay(policy: SavedPolicy | null): void {
     flash("Nothing to replay yet: train for a few generations first.")
     return
   }
-  if (policy.creature !== creature() || policy.task !== task()) {
+  if (policy.creature !== creature() || policy.env.task !== task()) {
     S.creature = policy.creature
-    S.task = policy.task
+    S.task = policy.env.task
+    S.courseSeed = policy.env.seed
     panel.sync()
     reset()
   }
+  if (policy.env.task === "heist") S.stage = policy.env.stage
+  nearMisses = 0
+  slowUntil = 0
   running = false
   mode = "replay"
   replayPolicy = policy
@@ -167,6 +202,10 @@ function enterReplay(policy: SavedPolicy | null): void {
 function enterTrain(): void {
   mode = "train"
   replayPolicy = null
+  if (task() === "heist" && S.stage !== trainer.env.stage) {
+    S.stage = trainer.env.stage
+    panel.sync()
+  }
   show = nextShow()
   syncButtons()
 }
@@ -174,8 +213,8 @@ function enterTrain(): void {
 function saveBest(): void {
   const best = trainer.best
   if (!best) return flash("Nothing to save yet.")
-  localStorage.setItem(storageKey(best.creature, best.task), JSON.stringify(best))
-  flash(`Saved ${CREATURES[best.creature].label} on ${TASKS[best.task].label}: fitness ${best.fitness.toFixed(2)}.`)
+  localStorage.setItem(storageKey(best.creature, best.env.task), JSON.stringify(best))
+  flash(`Saved ${CREATURES[best.creature].label} on ${TASKS[best.env.task].label}: fitness ${best.fitness.toFixed(2)}.`)
 }
 
 function loadSaved(): void {
@@ -191,7 +230,7 @@ function download(): void {
   const url = URL.createObjectURL(new Blob([JSON.stringify(best, null, 1)], { type: "application/json" }))
   const a = document.createElement("a")
   a.href = url
-  a.download = `${best.creature}-${best.task}-gen${best.generation}.json`
+  a.download = `${best.creature}-${best.env.task}-gen${best.generation}.json`
   a.click()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
@@ -238,11 +277,24 @@ const controls: LabControl[] = [
   { key: "seed", label: "Seed (resets)", group: "Evolution", min: 1, max: 999, step: 1 },
   { key: "workers", label: "Workers", group: "Evolution", min: 1, max: Math.max(2, cores), step: 1 },
   { key: "seconds", label: "Episode length", group: "Reward", min: 4, max: 30, step: 1, unit: "s" },
-  { key: "upright", label: "Upright bonus", group: "Reward", min: 0, max: 1, step: 0.01, unit: "/s" },
+  { key: "upright", label: "Upright bonus (× progress)", group: "Reward", min: 0, max: 1, step: 0.01 },
   { key: "effort", label: "Effort penalty", group: "Reward", min: 0, max: 0.5, step: 0.01, unit: "/s" },
   { key: "fall", label: "Fall penalty", group: "Reward", min: 0, max: 5, step: 0.1 },
   { key: "finish", label: "Finish bonus", group: "Reward", min: 0, max: 2, step: 0.05, unit: "/s left" },
   { key: "phase", label: "Clock period", group: "Reward", min: 0.3, max: 2, step: 0.05, unit: "s" },
+  { key: "stage", label: "Hazards (curriculum stage)", group: "Heist", min: 0, max: HEIST_MAX_STAGE, step: 1 },
+  { key: "curriculum", label: "Curriculum moves on by itself", group: "Heist", type: "toggle" },
+  { key: "laserSpeed", label: "Laser speed", group: "Heist", min: 0.5, max: 2, step: 0.05, unit: "×" },
+  { key: "extra", label: "Extra pulsing lasers", group: "Heist", min: 0, max: 4, step: 1 },
+  { key: "slowmo", label: "Slow motion on near misses", group: "Heist", type: "toggle" },
+  { key: "heistSeconds", label: "Heist time limit", group: "Heist", min: 10, max: 60, step: 1, unit: "s" },
+  { key: "gem", label: "Gem bonus", group: "Heist", min: 0, max: 10, step: 0.5 },
+  { key: "escape", label: "Escape bonus", group: "Heist", min: 0, max: 10, step: 0.5 },
+  { key: "alarm", label: "Alarm penalty", group: "Heist", min: 0, max: 10, step: 0.25, unit: "/alarm" },
+  { key: "exposure", label: "In-beam penalty", group: "Heist", min: 0, max: 20, step: 0.5, unit: "/body·s" },
+  { key: "maxAlarms", label: "Alarms until caught (0 never)", group: "Heist", min: 0, max: 5, step: 1 },
+  { key: "courseSeed", label: "Course seed", group: "Course", min: 1, max: 999, step: 1 },
+  { key: "newCourse", label: "New random course", group: "Course", type: "action", run: () => { S.courseSeed = 1 + Math.floor(Math.random() * 999); panel.sync(); changed("courseSeed") } },
 ]
 
 const panel = new LabPanel(S as unknown as Record<string, LabValue>, controls, params, () => {}, {
@@ -257,14 +309,25 @@ const panel = new LabPanel(S as unknown as Record<string, LabValue>, controls, p
 panel.header.textContent = "Evolution strategies · Backquote hides"
 
 function changed(key: string): void {
-  if (key === "creature" || key === "task" || key === "hidden" || key === "seed") {
+  if (key === "task" && !fits(creature(), task())) S.creature = "quadruped"
+  if (key === "creature" && !fits(creature(), task())) S.task = "room"
+  if (key === "creature" || key === "task") panel.sync()
+  if (key === "creature" || key === "task" || key === "hidden" || key === "seed" || (key === "courseSeed" && task() === "course")) {
     if (mode === "replay") mode = "train"
     replayPolicy = null
     reset()
   } else if (key === "pairs" || key === "sigma" || key === "lr") {
     trainer.setEs({ pairs: S.pairs, sigma: S.sigma, lr: S.lr, weightDecay: DEFAULT_ES.weightDecay })
   } else if (key === "workers") trainer.setWorkers(S.workers)
-  else if (["seconds", "upright", "effort", "fall", "finish", "phase"].includes(key)) trainer.setReward(reward())
+  else if (["seconds", "heistSeconds", "upright", "effort", "fall", "finish", "phase", "gem", "escape", "alarm", "exposure", "maxAlarms"].includes(key)) trainer.setReward(reward())
+  else if (["stage", "curriculum", "laserSpeed", "extra"].includes(key) && task() === "heist") {
+    trainer.setEnv(env(), S.curriculum)
+    if (mode === "replay" && replayPolicy) {
+      // Try the policy on the vault as it is now set up.
+      replayPolicy = { ...replayPolicy, env: env() }
+      show = nextShow()
+    }
+  }
   else if (key === "compare" || key === "ghosts") show = nextShow()
   else if (key === "watchEvery") trainer.hold(S.watchEvery)
   syncButtons()
@@ -311,7 +374,11 @@ function syncButtons(): void {
   train.innerHTML = `${on ? "Pause" : mode === "replay" ? "Back to training" : trainer.history.length ? "Resume training" : "Train"} ${keyCapHtml("Space")}`
   train.dataset.on = on ? "1" : ""
   buttons.querySelector<HTMLButtonElement>('[data-act="pretrained"]')!.disabled = !pretrainedFor(creature(), task())
-  for (const b of creatures.querySelectorAll<HTMLButtonElement>("button")) b.dataset.on = b.dataset.creature === S.creature ? "1" : ""
+  buttons.querySelector<HTMLButtonElement>('[data-act="pretrained"]')!.innerHTML = `${task() === "heist" ? "Watch the best heist" : "Pre-trained"} ${keyCapHtml("KeyP")}`
+  for (const b of creatures.querySelectorAll<HTMLButtonElement>("button")) {
+    b.dataset.on = b.dataset.creature === S.creature ? "1" : ""
+    b.disabled = !fits(b.dataset.creature as CreatureId, task())
+  }
   for (const b of tasks.querySelectorAll<HTMLButtonElement>("button")) b.dataset.on = b.dataset.task === S.task ? "1" : ""
 }
 
@@ -337,9 +404,18 @@ function renderStats(): void {
   const last = h[h.length - 1]
   const best = trainer.best
   const parts: string[] = []
+  const heist = task() === "heist"
   if (mode === "replay" && replayPolicy) {
-    parts.push(`<b>Replay</b> ${replayLabel(replayPolicy)} · fitness ${replayPolicy.fitness.toFixed(2)} · ${replayPolicy.distance.toFixed(1)} m · found after ${fmtSteps(replayPolicy.steps)} sim steps${replayPolicy.trainedSeconds ? ` · headless run took ${replayPolicy.trainedSeconds} s` : ""}`)
+    const lead = show?.lead?.ep
+    parts.push(`<b>Replay</b> ${replayLabel(replayPolicy)} · fitness ${replayPolicy.fitness.toFixed(2)} · ${heist ? (replayPolicy.outcome === "finished" ? `escaped in ${replayPolicy.time?.toFixed(1)} s` : replayPolicy.outcome ?? "") : `${replayPolicy.distance.toFixed(1)} m`} · found after ${fmtSteps(replayPolicy.steps)} sim steps${replayPolicy.trainedSeconds ? ` · headless run took ${fmtTime(replayPolicy.trainedSeconds * 1000)}` : ""}`)
+    if (heist && lead) parts.push(`${HEIST_STAGES[lead.env.stage]} · gem ${lead.carrying ? "◆ in its mouth" : "on the pedestal"} · ${lead.outcome === "caught" ? "<b>CAUGHT</b>" : lead.alarms ? `<b>${lead.alarms} alarm${lead.alarms > 1 ? "s" : ""}</b>` : "no alarms"} · ${nearMisses} near miss${nearMisses === 1 ? "" : "es"}`)
     if (replayCheck) parts.push(replayCheck)
+  } else if (heist) {
+    const st = trainer.env.stage
+    parts.push(`<b>Gen ${h.length}</b>${running ? "" : " · paused"}`, `<b>Stage ${st}/${HEIST_MAX_STAGE}</b> ${HEIST_STAGES[st]}${S.curriculum && st < HEIST_MAX_STAGE ? " (next stage after two clean escapes in a row)" : ""}`)
+    if (last) parts.push(`gem grabbed ${last.gems}/${trainer.population}`, `escaped ${last.finished} (${last.clean} clean)`, `caught ${last.caught}`, `alarms ${last.alarms} (total ${alarms})`, best?.outcome === "finished" ? `best escape ${best.time!.toFixed(1)} s at stage ${best.env.stage}${best.alarms ? ` with ${best.alarms} alarm${best.alarms > 1 ? "s" : ""}` : ", clean"}` : "no escape yet")
+    parts.push(`${fmtSteps(trainer.totalSteps)} sim steps · ${fmtTime(trainedMs)}${running && genRate ? ` · ${genRate.toFixed(1)} gen/s` : ""}`)
+    parts.push(`${trainer.population} policies × ${trainer.paramSize} weights · ${trainer.workers} workers`)
   } else {
     parts.push(`<b>Gen ${h.length}</b>${running ? "" : " · paused"}`)
     if (last) parts.push(`best ${best!.fitness.toFixed(2)} (${best!.distance.toFixed(1)} m)`, `mean policy ${last.centerDistance.toFixed(1)} m`, `${last.finished}/${trainer.population} reached the goal`)
@@ -355,13 +431,25 @@ function frame(now: number): void {
   const dt = Math.min(0.1, (now - lastFrame) / 1000)
   lastFrame = now
   if (show) {
-    acc += dt * 60 * S.speed
+    // Replays drop to a fifth of the speed for a moment whenever the thief comes within 6 cm of a live beam.
+    const slow = show.kind === "replay" && now < slowUntil
+    acc += dt * 60 * S.speed * (slow ? 0.2 : 1)
     const steps = Math.floor(acc)
     acc -= steps
-    show.advance(steps)
+    const lead = show.lead
+    const near = () => !slow && show!.kind === "replay" && S.slowmo && !!lead && !lead.ep.done && lead.ep.clearance < 0.06
+    if (show.advance(steps, near)) {
+      nearMisses++
+      slowUntil = now + 1000
+      acc = 0
+      // Touching for under 50 ms doesn't trip a beam (the sensors are debounced), so say so rather than "near miss".
+      nearLabel = lead!.ep.clearance < 0 ? "GRAZED IT" : "NEAR MISS"
+    }
+    if (slow && lead && lead.ep.clearance < 0) nearLabel = "GRAZED IT"
+    view.banner = show.kind === "replay" && now < slowUntil ? nearLabel : ""
     if (show.done) {
       show.idle += dt
-      if (show.kind === "replay" && !replayCheck) {
+      if (show.kind === "replay" && !replayCheck && show.lead) {
         const r = show.runners.find((x) => x.role !== "pretrained") ?? show.runners[0]
         if (r && r.expected !== null) replayCheck = Math.abs(r.ep.fitness - r.expected) < 1e-9 ? "replay matches its training score exactly ✓" : `replay scored ${r.ep.fitness.toFixed(3)} (trained ${r.expected.toFixed(3)})`
       }
@@ -378,14 +466,15 @@ function frame(now: number): void {
       trainer.requestLast()
       if (trainer.last) show = nextShow()
     }
-    const lead = show?.lead
-    if (lead) view.follow(lead.ep.torso.x, dt)
+    const followed = show?.lead
+    if (followed) view.follow(followed.ep.torso.x, dt, followed.ep.level)
   } else if (mode === "train") {
     trainer.requestLast()
     if (trainer.last) show = nextShow()
   }
-  view.draw(task(), show)
-  chart.draw(trainer.history, S.compare ? pretrainedFor(creature(), task())?.fitness ?? null : null)
+  view.draw(show?.lead?.ep.level ?? levelFor(trainer.env), show)
+  const pre = S.compare ? pretrainedFor(creature(), task()) : null
+  chart.draw(trainer.history, pre && envKey(pre.env) === envKey(trainer.env) ? pre.fitness : null)
   renderStats()
   requestAnimationFrame(frame)
 }
