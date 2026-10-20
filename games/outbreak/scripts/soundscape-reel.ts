@@ -107,7 +107,7 @@ function at(t: number): { x: number; y: number; speed: number } {
 const START_HOUR = 3 - 30 / 3600 - 6 / 120
 const hourAt = (t: number) => START_HOUR + t / 120
 const absAt = (t: number) => 24 * (NIGHT - 1) + 24 + hourAt(t)
-const rainAt = (t: number) => Math.max(0, 0.42 * (1 - t / 80))
+const rainAt = (t: number) => (t < 60 ? 0.42 : Math.max(0, 0.42 * (1 - (t - 60) / 18)))
 const wetAt = (t: number) => Math.min(0.75, 0.55 + t / 400)
 
 // --- Samples -------------------------------------------------------------------------------------------------------

@@ -825,3 +825,231 @@ export function owl(sr: number, seed = 24): Float32Array {
   filter(out, new Biquad(sr, "lowpass", 1500, 0.7))
   return normalize(edges(out, sr, 0.005, 0.1), sr, -19)
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Sounds other features ask for (life, the dead's habits, the church)
+// ---------------------------------------------------------------------------------------------------------------
+
+/** A television left on in an empty room: a programme's voices and music too muffled to follow, 6 s loop. */
+export function tvLeftOn(sr: number, seed = 25): Float32Array {
+  const rand = mulberry32(seed)
+  const seconds = 6
+  const xf = at(sr, 0.4)
+  const src = new Float32Array(at(sr, seconds) + xf)
+  babble(src, sr, 0, 2.6, rand, 150)
+  babble(src, sr, at(sr, 3.0), 3.7, rand, 105)
+  // A jingle between the voices: a few soft organ chords.
+  const chords = [
+    [57, 60, 64],
+    [55, 59, 62],
+    [53, 57, 60],
+  ]
+  for (let c = 0; c < chords.length; c++) {
+    const s = at(sr, 2.55 + c * 0.16)
+    for (const m of chords[c]!) {
+      const f = midiHz(m + 12)
+      for (let k = 0; k < at(sr, 0.5) && s + k < src.length; k++) src[s + k]! += Math.sin((TAU * f * k) / sr) * 0.08 * Math.exp(-k / (0.25 * sr))
+    }
+  }
+  const hiss = new Biquad(sr, "highpass", 4000, 0.7)
+  for (let i = 0; i < src.length; i++) src[i]! += hiss.tick(white(rand)) * 0.01
+  // A small cabinet speaker behind a wall.
+  filter(src, new Biquad(sr, "highpass", 260, 0.7))
+  filter(src, new Biquad(sr, "lowpass", 2600, 0.8))
+  return normalize(loopify(src, xf), sr, -22)
+}
+
+/** Something small bolting through a shrub (a cat, a raccoon): a sharp rustle of leaves and twigs. */
+export function rustle(sr: number, seed = 26): Float32Array {
+  const rand = mulberry32(seed)
+  const out = buffer(sr, 0.75)
+  const leaf = new Biquad(sr, "bandpass", 3600, 0.9)
+  for (let i = 0; i < out.length; i++) {
+    const t = i / sr
+    const env = Math.min(1, t / 0.02) * Math.exp(-t / 0.22)
+    const grain = rand() < 0.04 ? 1 : 0.15
+    out[i] = leaf.tick(white(rand)) * env * grain
+  }
+  for (let k = 0; k < 4; k++) strike(out, sr, at(sr, 0.02 + rand() * 0.35), [[1400 + rand() * 1500, 0.012, 1], [3900, 0.008, 0.5]], 0.25, rand, 0.5)
+  return normalize(edges(out, sr, 0.002, 0.05), sr, -19)
+}
+
+/** A fox scurrying off: a quick patter of paws over leaves. */
+export function scurry(sr: number, seed = 27): Float32Array {
+  const rand = mulberry32(seed)
+  const out = buffer(sr, 0.7)
+  const paw = new Biquad(sr, "bandpass", 2300, 1.4)
+  let t = 0.01
+  let k = 0
+  while (t < 0.6) {
+    const s = at(sr, t)
+    const a = (1 - t / 0.7) * (0.6 + rand() * 0.4)
+    for (let i = 0; i < at(sr, 0.018) && s + i < out.length; i++) out[s + i]! += paw.tick(white(rand)) * a * Math.exp(-i / (0.004 * sr))
+    t += k++ % 2 === 0 ? 0.035 : 0.075 + rand() * 0.02
+  }
+  return normalize(edges(out, sr, 0.001, 0.05), sr, -20)
+}
+
+/** A deer crashing away through the yards: hooves on turf and brush breaking. */
+export function hooves(sr: number, seed = 28): Float32Array {
+  const rand = mulberry32(seed)
+  const out = buffer(sr, 1.6)
+  let t = 0.02
+  for (let k = 0; k < 7; k++) {
+    strike(out, sr, at(sr, t), [[150 + rand() * 40, 0.06, 1], [420, 0.03, 0.6], [1100, 0.015, 0.3]], 0.9 * (1 - k / 9), rand, 2.5)
+    if (k % 2 === 0) strike(out, sr, at(sr, t + 0.06), [[170 + rand() * 30, 0.05, 1], [460, 0.03, 0.5]], 0.6 * (1 - k / 9), rand, 2)
+    t += 0.17 + rand() * 0.05
+  }
+  const brush = new Biquad(sr, "bandpass", 2800, 0.8)
+  for (let i = 0; i < at(sr, 0.9); i++) out[i]! += brush.tick(white(rand)) * 0.35 * Math.exp(-i / (0.3 * sr)) * (rand() < 0.08 ? 1 : 0.2)
+  return normalize(edges(out, sr, 0.002, 0.1), sr, -18)
+}
+
+/** The dead at a door: three slow, heavy blows with the flat of a hand on a panelled door. */
+export function knock(sr: number, seed = 29): Float32Array {
+  const rand = mulberry32(seed)
+  const out = buffer(sr, 2.2)
+  const times = [0.02, 0.62 + rand() * 0.1, 1.38 + rand() * 0.2]
+  for (let k = 0; k < times.length; k++) {
+    strike(
+      out,
+      sr,
+      at(sr, times[k]!),
+      [
+        [96, 0.12, 1],
+        [212, 0.09, 0.8],
+        [455, 0.05, 0.55],
+        [980, 0.025, 0.25],
+      ],
+      k === 1 ? 0.75 : 1,
+      rand,
+      6,
+    )
+  }
+  filter(out, new Biquad(sr, "highpass", 70, 0.7))
+  return normalize(edges(out, sr, 0.002, 0.1), sr, -18)
+}
+
+/** The dead at a stove: a pan knocked against the hob and something tinny falling over. */
+export function pans(sr: number, seed = 30): Float32Array {
+  const rand = mulberry32(seed)
+  const out = buffer(sr, 1.8)
+  strike(out, sr, at(sr, 0.02), [[620, 0.5, 1], [1490, 0.3, 0.7], [2710, 0.18, 0.5], [4130, 0.1, 0.3]], 0.7, rand, 1)
+  let t = 0.55 + rand() * 0.2
+  for (let k = 0; k < 4; k++) {
+    strike(out, sr, at(sr, t), [[1850 + rand() * 900, 0.12, 1], [4300 + rand() * 900, 0.06, 0.5]], 0.35 * (1 - k / 5), rand, 0.6)
+    t += 0.09 + rand() * 0.08
+  }
+  return normalize(edges(out, sr, 0.001, 0.15), sr, -19)
+}
+
+/** The dead in a bed: old box springs creaking under a slow weight shift. */
+export function bedsprings(sr: number, seed = 31): Float32Array {
+  const rand = mulberry32(seed)
+  const out = buffer(sr, 1.6)
+  for (const [t0, len] of [
+    [0.05, 0.42],
+    [0.75, 0.5],
+  ] as const) {
+    const s = at(sr, t0)
+    const bank = [new Mode(sr, 880 + rand() * 120, 0.06, 1), new Mode(sr, 1930, 0.04, 0.6), new Mode(sr, 3150, 0.03, 0.3)]
+    let ph = 0
+    for (let k = 0; k < at(sr, len + 0.1) && s + k < out.length; k++) {
+      const u = k / (len * sr)
+      const env = u < 1 ? Math.sin(Math.PI * u) : 0
+      ph += (140 + 90 * Math.sin(Math.PI * u)) / sr
+      let x = 0
+      if (ph >= 1) {
+        ph -= 1
+        x = env * (0.6 + rand() * 0.4)
+      }
+      let y = 0
+      for (const m of bank) y += m.tick(x)
+      out[s + k]! += y
+    }
+  }
+  return normalize(edges(out, sr, 0.002, 0.08), sr, -20)
+}
+
+/** The dead leaning on a chain-link fence: the mesh jangling against its posts. */
+export function fenceRattle(sr: number, seed = 32): Float32Array {
+  const rand = mulberry32(seed)
+  const out = buffer(sr, 1.3)
+  for (let k = 0; k < 26; k++) {
+    const t = rand() * rand() * 0.9
+    strike(out, sr, at(sr, t), [[2100 + rand() * 2600, 0.04, 1], [5200 + rand() * 1500, 0.02, 0.4]], 0.25 * (1 - t), rand, 0.4)
+  }
+  strike(out, sr, 0, [[310, 0.15, 1], [740, 0.08, 0.5]], 0.5, rand, 3)
+  return normalize(edges(out, sr, 0.001, 0.1), sr, -19)
+}
+
+// An original slow waltz for the dead's last dance, on a gramophone horn (MIDI note, beats).
+const LAST_DANCE: readonly (readonly [number, number])[] = [
+  [67, 2], [71, 1], [74, 2], [72, 1], [71, 2], [69, 1], [67, 3],
+  [66, 2], [69, 1], [72, 2], [71, 1], [69, 2], [66, 1], [67, 3],
+]
+
+/** A wind-up gramophone outside the church playing a slow waltz, worn and wobbling, crackling: an 11.2 s loop. */
+export function lastDance(sr: number, seed = 33): Float32Array {
+  const rand = mulberry32(seed)
+  const beat = 0.4
+  const seconds = LAST_DANCE.reduce((a, [, b]) => a + b, 0) * beat
+  const xf = at(sr, 0.3)
+  const src = new Float32Array(at(sr, seconds) + xf)
+  let t = 0
+  let bar = 0
+  for (const [note, len] of LAST_DANCE) {
+    const s = at(sr, t)
+    const n = at(sr, len * beat + 0.3)
+    let ph = 0
+    for (let k = 0; k < n && s + k < src.length; k++) {
+      const tt = k / sr
+      // Tape-like wow: the record is warped.
+      const f = midiHz(note) * (1 + 0.012 * Math.sin(TAU * 0.55 * (t + tt)))
+      ph += (TAU * f) / sr
+      const env = Math.min(1, tt / 0.03) * Math.exp(-tt / (len * beat * 0.9))
+      src[s + k]! += (Math.sin(ph) + 0.45 * Math.sin(2 * ph) + 0.2 * Math.sin(3 * ph)) * env * 0.5
+    }
+    // Oom-pah-pah underneath.
+    for (let b = 0; b < len; b++) {
+      const bs = at(sr, t + b * beat)
+      const root = midiHz((bar % 2 === 0 ? 43 : 38) + (b === 0 ? 0 : 12))
+      for (let k = 0; k < at(sr, 0.25) && bs + k < src.length; k++) src[bs + k]! += Math.sin((TAU * root * k) / sr) * Math.exp(-k / (0.08 * sr)) * (b === 0 ? 0.4 : 0.18)
+    }
+    t += len * beat
+    bar++
+  }
+  // The horn: midrange only. Then the crackle and hiss of an old shellac record.
+  filter(src, new Biquad(sr, "highpass", 380, 0.8))
+  filter(src, new Biquad(sr, "lowpass", 2800, 1.2))
+  const crackle = new Biquad(sr, "highpass", 1800, 0.7)
+  for (let i = 0; i < src.length; i++) src[i]! += crackle.tick(rand() < 0.0012 ? white(rand) * 5 : white(rand) * 0.02) * 0.4
+  return normalize(loopify(src, xf), sr, -21)
+}
+
+/** The church bell: a big bronze bell's hum, prime, tierce, quint and nominal, ringing for seconds. */
+export function churchBell(sr: number, seed = 34): Float32Array {
+  const rand = mulberry32(seed)
+  const out = buffer(sr, 6)
+  const f = 196
+  strike(
+    out,
+    sr,
+    0,
+    [
+      [f * 0.5, 5.5, 0.6],
+      [f, 4.2, 0.8],
+      [f * 1.003, 4.0, 0.4],
+      [f * 1.19, 3.2, 0.5],
+      [f * 1.5, 2.6, 0.3],
+      [f * 2.0, 2.2, 0.55],
+      [f * 2.52, 1.4, 0.25],
+      [f * 3.01, 0.9, 0.18],
+      [f * 4.2, 0.5, 0.1],
+    ],
+    1,
+    rand,
+    3,
+  )
+  return normalize(edges(out, sr, 0.001, 0.4), sr, -16)
+}
