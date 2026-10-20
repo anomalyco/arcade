@@ -89,7 +89,7 @@ describe("inventory baseline", () => {
     expect(ledger.store(nightstand.id)!.revealed).toBe(true)
   })
 
-  test("take one with a digit, take all with E, and 'Inventory full' when the belt cannot hold it", () => {
+  test("take one with a digit, take all with E, and say what is full when the belt cannot hold it", () => {
     const { ledger, step, fill, besideContainer, notices, give } = setup()
     const dresser = besideContainer("dresser")
     give("ammo", 12)
@@ -100,7 +100,77 @@ describe("inventory baseline", () => {
     step({ interact: true })
     expect(ledger.count("player/belt", "ammo")).toBe(24)
     expect(ledger.count(dresser.id, "ammo")).toBe(3)
-    expect(notices()).toEqual(["+6 9mm", "Inventory full"])
+    expect(notices()).toEqual(["+6 9mm", "Can't carry more 9mm (24 max)"])
+  })
+
+  test("full hands: the notice names what to drop, and a digit swaps the item in hand for the one wanted", () => {
+    const { session, ledger, step, fill, besideContainer, notices, give, progression } = setup()
+    for (const item of ["crowbar", "medkit", "noisemaker", "pipe", "bat", "knife", "axe"]) give(item)
+    const dresser = besideContainer("dresser")
+    fill(dresser, [{ item: "machete", count: 1, charge: 20 } as never], true)
+    step({ hotbarSlot: 2 })
+    notices()
+    step({ interact: true })
+    expect(ledger.count("player", "machete")).toBe(0)
+    expect(notices()).toEqual(["No room for Machete: hands and pack full. G drops your Crowbar"])
+    expect(progression.canSwap("player", "machete")).toBe(true)
+    step({ pick: { mode: "take", index: 0 } })
+    expect(ledger.count("player", "machete")).toBe(1)
+    expect(ledger.count("player", "crowbar")).toBe(0)
+    expect(session.view.inventory.slots[session.view.inventory.selectedSlot]?.kind).toBe("machete")
+    expect(notices()).toEqual(["Swapped your Crowbar for Machete"])
+    const crowbarDrop = [...ledger.stores.values()].find((st) => st.id.startsWith("drop:") && st.slots.some((x) => x?.item === "crowbar"))
+    expect(crowbarDrop).toBeDefined()
+    // Bare hands have nothing to swap.
+    step({ hotbarSlot: 0 })
+    expect(progression.canSwap("player", "bat")).toBe(false)
+  })
+
+  test("one pistol each: a second stays where it is and says so", () => {
+    const { ledger, step, fill, besideContainer, notices } = setup()
+    const dresser = besideContainer("dresser")
+    fill(dresser, [{ item: "pistol", count: 1, charge: 8 } as never], true)
+    notices()
+    step({ interact: true })
+    expect(ledger.count("player", "pistol")).toBe(1)
+    expect(ledger.count(dresser.id, "pistol")).toBe(1)
+    expect(notices()).toEqual(["You already carry a 9mm Pistol"])
+  })
+
+  test("G beside a teammate hands them what is held; hold G hands the bundle; a full teammate gets it at their feet", () => {
+    const { session, ledger, step, give, notices, stand } = setup()
+    const mate = session.sim.addSurvivor("mate", 1)
+    stand(40, 50, 0)
+    Object.assign(mate.survivor, { x: 41, y: 50 })
+    give("crowbar")
+    step({ hotbarSlot: 2 })
+    notices()
+    step({ drop: true })
+    expect(ledger.count("player", "crowbar")).toBe(0)
+    expect(ledger.count("mate", "crowbar")).toBe(1)
+    expect(notices()).toEqual(["Gave Crowbar to Survivor 2"])
+    expect(mate.notices.splice(0).map((n) => n.text)).toEqual(["Survivor 1 gave you Crowbar"])
+    step({ bundle: true })
+    expect(ledger.count("mate/belt", "ammo")).toBe(12)
+    // Out of reach: G drops on the floor as before.
+    mate.survivor.x = 46
+    give("bat")
+    step({ hotbarSlot: 2 })
+    step({ drop: true })
+    expect(ledger.count("mate", "bat")).toBe(0)
+    expect(notices().at(-1)).toBe("Dropped Baseball Bat")
+    // A teammate with full hands: it lands at their feet, nothing lost.
+    mate.survivor.x = 41
+    for (const item of ["medkit", "noisemaker", "pipe", "knife", "axe", "hammer"]) ledger.apply({ kind: "grant", actor: "mate", item })
+    give("machete")
+    step({ hotbarSlot: 2 })
+    notices()
+    step({ drop: true })
+    expect(ledger.count("player", "machete")).toBe(0)
+    expect(ledger.count("mate", "machete")).toBe(0)
+    const atFeet = [...ledger.stores.values()].find((st) => st.id.startsWith("drop:") && st.slots.some((x) => x?.item === "machete"))!
+    expect(Math.hypot(atFeet.at!.x - 41, atFeet.at!.y - 50)).toBeLessThan(0.01)
+    expect(notices()).toEqual(["Survivor 2 has no room: Machete left at their feet"])
   })
 
   test("walking away or sprinting cancels a search", () => {

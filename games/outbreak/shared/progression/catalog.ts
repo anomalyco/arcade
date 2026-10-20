@@ -15,7 +15,7 @@ export const ITEMS: readonly ItemDef[] = [
   // Bare hands hold slot 1: selecting them holsters whatever was in hand, and the button shoves. The flashlight is
   // not an item: it is always on the shoulder, toggled with F whatever is held.
   { id: "fists", label: "Fists", shortLabel: "FISTS", tag: "hand", slot: 0, bound: true },
-  { id: "pistol", label: "9mm Pistol", shortLabel: "9MM", tag: "gun", slot: 1, charge: { max: 8, initial: 6, ammo: "ammo" } },
+  { id: "pistol", label: "9mm Pistol", shortLabel: "9MM", tag: "gun", slot: 1, unique: true, charge: { max: 8, initial: 6, ammo: "ammo" } },
   ...MELEE_WEAPON_IDS.map((id): ItemDef => {
     const w = MELEE_WEAPONS[id]
     return {

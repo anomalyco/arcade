@@ -162,11 +162,24 @@ describe("Death in the sim", () => {
     place(sim, b, 28.5, 42, 0)
     forceLife(sim, b, "dead", T)
     step(sim, 1)
+    // An E still held to revive them never strips the body: it settles first.
+    expect(a.prompt?.kind).not.toBe("fallen")
+    step(sim, seconds(1.6))
     expect(a.prompt?.kind).toBe("fallen")
+    expect(a.prompt?.label).toBe("Survivor 2's kit")
+    const body = fallenStoreId(deathOf(sim).bodies[0]!)
+    // Their bare hands stay theirs; their pistol is unique, so it stays on the body for whoever has none.
+    expect(sim.progression.contents(body).some((s) => s.item === "fists")).toBe(false)
     const ammo = sim.progression.ledger.count(a.id, "ammo")
+    // A tap takes nothing (playtest: E at a body to "bring him back" took everything by surprise).
     step(sim, 2, (s, i) => (s === a ? { ...idle(0), interact: i === 0 } : idle()))
+    expect(sim.progression.ledger.count(a.id, "ammo")).toBe(ammo)
+    // Holding E takes the kit.
+    step(sim, seconds(0.6), (s, i) => (s === a ? { ...idle(0), interact: i === 0, interactHeld: true } : idle()))
+    step(sim, 1)
     expect(sim.progression.ledger.count(a.id, "ammo")).toBe(ammo + 6)
-    expect(sim.progression.contents(fallenStoreId(deathOf(sim).bodies[0]!))).toHaveLength(0)
+    expect(sim.progression.ledger.count(a.id, "pistol")).toBe(1)
+    expect(sim.progression.contents(body).map((s) => s.item)).toEqual(["pistol"])
   })
 
   test("the dead watch a standing teammate and wake at the safehouse with a kit at the squad's next dawn", () => {

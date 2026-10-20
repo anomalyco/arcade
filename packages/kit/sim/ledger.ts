@@ -46,6 +46,8 @@ export type ItemDef = {
   discovers?: readonly ItemId[]
   /** Part of the actor (bare hands): never dropped, deposited or left behind by `removeActor`. */
   bound?: boolean
+  /** An actor carries at most one (a second pistol stays where it was instead of muddling the ammo count). */
+  unique?: boolean
 }
 
 export type Stack = { item: ItemId; count: number; charge?: number }
@@ -953,6 +955,7 @@ export class Ledger {
   private fitInStore(st: StoreState, item: ItemId, count: number): number {
     const def = this.items.get(item)
     if (!def || count <= 0 || !this.accepts(st, def)) return 0
+    if (def.unique && st.owner !== undefined && this.count(st.owner, item) > 0) return 0
     if (st.mode === "counters") return Math.max(0, Math.min(count, this.capFor(st, item) - (st.counts[item] ?? 0)))
     const maxStack = def.stack ?? 1
     const itemSlots = def.slots ?? 1

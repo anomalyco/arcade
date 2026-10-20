@@ -44,6 +44,8 @@ type RemoteState = { adapter: RemoteAdapter; feedback: ActorFeedback; seen: bool
  * time and ammo summary. In log mode the callouts stay silent and `main.ts` writes the old status line.
  */
 export class OutbreakHud {
+  /** The teammate G would hand things to right now, by name (set each frame by the frame UI). */
+  giveTo: string | undefined
   readonly core: CharacterHud
   private readonly feedback: ActorFeedback
   private readonly anchors = new Map<string, () => Feet | null>()
@@ -168,6 +170,8 @@ export class OutbreakHud {
         lowBattery,
         reloadKey: keyLabel("KeyR"),
         meleeKey: keyLabel("KeyV"),
+        giveTo: this.giveTo,
+        dropKey: keyLabel("KeyG"),
         notices: view.notices.splice(0),
       })
     }

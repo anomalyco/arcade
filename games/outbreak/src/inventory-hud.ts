@@ -294,7 +294,8 @@ export class InventoryHud {
     const parts: string[] = []
     const board = clarityOn(this.clarity, "promptBoardKey") ? boardPrompt(view, prompt) : null
     const blocked = blockedByBoards(prompt, board)
-    const tap = this.actionHtml(prompt, prompt.primary)
+    // A hold-only target (a fallen teammate's kit) shows its action once, on the ring.
+    const tap = prompt.primary.hold && prompt.secondary ? "" : this.actionHtml(prompt, prompt.primary)
     if (blocked) {
       // E is refused on a boarded door ("Blocked by barricade"): say it is boarded instead of offering Open.
     } else if (prompt.secondary && !(board && board.planks > 0)) {
@@ -357,13 +358,17 @@ export class InventoryHud {
     el.hidden = false
   }
 
-  /** One stack in a strip: its digit, name and count. Only "pack" (a rare part) and "full" get a tag. */
+  /**
+   * One stack in a strip: its digit, name and count. Only "pack" (a rare part), "full" and "swap" (no room, but its
+   * digit trades it for what is in hand) get a tag.
+   */
   private itemHtml(view: SessionView, s: Stack, i: number, stash: boolean): string {
     const progression = view.progression
     const dest = destination(progression, s.item)
     const installed = stash && dest === "pack"
     const room = progression.ledger.room(view.actorId, s.item, 1) > 0
-    const tag = installed ? "installed" : !room ? "full" : dest === "pack" ? "pack" : ""
+    const swap = !room && !installed && progression.canSwap(view.actorId, s.item)
+    const tag = installed ? "installed" : swap ? "swap" : !room ? "full" : dest === "pack" ? "pack" : ""
     return `<span class="item" data-dest="${dest}" data-full="${!room && !installed}" data-rare="${dest === "pack"}">${keyCapHtml(`Digit${i + 1}`)}<span>${esc(progression.stackLabel(s))}</span>${tag ? `<small>${tag}</small>` : ""}</span>`
   }
 

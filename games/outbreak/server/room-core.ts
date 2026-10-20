@@ -89,7 +89,13 @@ export class CoopRoomCore {
   ) {
     this.sim = new CoopSim(options.seed, options.houseSeed, options.terrain, { zombieCount: options.zombieCount })
     this.seats = new Seats(MAX_SURVIVORS, GRACE_MS, clock)
+    this.nameSeats()
     this.phase = options.initialPhase ?? (build === "bench" ? "running" : "lobby")
+  }
+
+  /** Notices that name a teammate ("Ann gave you a Machete") use the seat's player name. */
+  private nameSeats(): void {
+    this.sim.progression.names = (index) => this.seats.all.find((s) => s.index === index)?.name ?? `Survivor ${index + 1}`
   }
 
   /** Seat id of the current room host (lowest-index connected seat, or first held seat). */
@@ -385,6 +391,7 @@ export class CoopRoomCore {
   restart(): void {
     const o = this.options
     this.sim = new CoopSim(o.seed, o.houseSeed, o.terrain, { zombieCount: o.zombieCount })
+    this.nameSeats()
     for (const seat of this.seats.all) {
       const slot = this.sim.addSurvivor(seat.id, seat.index)
       if (seat.data.loadout !== DEFAULT_LOADOUT) this.sim.progression.setLoadout(slot, seat.data.loadout)

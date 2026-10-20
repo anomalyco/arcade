@@ -51,6 +51,9 @@ export type FeedbackContext = {
   reloadKey?: string
   /** QWERTY label of the shove key (V), for "Out of ammo, V to shove". */
   meleeKey?: string
+  /** A teammate in reach of G with something to give, by name; and G's QWERTY label. */
+  giveTo?: string
+  dropKey?: string
   /** The simulation's feedback since the last frame (pickups, search results, "Inventory full", recipes). */
   notices?: readonly Notice[]
 }
@@ -71,6 +74,7 @@ type PortalState = { id: string; kind: "door" | "window"; open: boolean; locked:
 export class ActorFeedback {
   private prev: FeedbackActor | null = null
   private prevSlot = -1
+  private giveTo: string | undefined
   private portal: PortalState | null = null
   private lastNoiseId = -1
   private prevPursuing = 0
@@ -136,6 +140,11 @@ export class ActorFeedback {
       emit(n.text, n.kind, { key: resolves ? "channel" : (n.key ?? `${n.kind}:${n.text}`) })
     })
 
+    // Rounds picked up with an empty magazine: the gun still reads 0 until R, so say so (playtest: "Says I have zero bullets").
+    if (a.equippedItem === "pistol" && a.magAmmo === 0 && p.magAmmo === 0 && p.reserveAmmo === 0 && a.reserveAmmo > 0) {
+      const keyCap = ctx.reloadKey ? { code: "KeyR", label: ctx.reloadKey } : undefined
+      emit(ctx.reloadKey ? `Empty, ${ctx.reloadKey} to reload` : "Empty", "warning", { key: "ammo", keyCap })
+    }
     if (a.equippedItem === "pistol" && p.magAmmo > 0 && a.magAmmo === 0) {
       if (a.reserveAmmo > 0) {
         const keyCap = ctx.reloadKey ? { code: "KeyR", label: ctx.reloadKey } : undefined
@@ -148,6 +157,12 @@ export class ActorFeedback {
     }
 
     if (a.shoveAnim > p.shoveAnim + 1e-4) emit("Shove", "info")
+
+    // Walking up to a teammate with something in hand says G gives it to them (Kit: "I should add trading").
+    if (ctx.giveTo && ctx.giveTo !== this.giveTo && ctx.dropKey) {
+      emit(`${ctx.dropKey} to give ${ctx.giveTo}`, "info", { key: "give", keyCap: { code: "KeyG", label: ctx.dropKey } })
+    }
+    this.giveTo = ctx.giveTo
 
     if (a.flashlightOn !== p.flashlightOn) emit(a.flashlightOn ? "Flashlight on" : "Flashlight off", "info", { key: "flashlight" })
     if (a.batteryDepleted && !p.batteryDepleted) emit("Battery dead", "warning", { key: "flashlight" })

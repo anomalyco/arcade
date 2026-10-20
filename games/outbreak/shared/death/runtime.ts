@@ -31,6 +31,8 @@ const REVIVE_GRACE = 0.25
 /** A zombie this close when a survivor goes down took them (m). */
 const CAUSE_REACH = 2.6
 const FALLEN_REACH = 1.45
+/** Seconds after a death before the body can be looted (s). */
+const FALLEN_SETTLE = 1.5
 
 export function createDeathState(hour: number): DeathState {
   const dark = isDark(hour)
@@ -333,14 +335,20 @@ export function fallenHandler(sim: OutbreakSim, of: () => DeathState | undefined
         if (Math.hypot(actor.x - b.x, actor.y - b.y) > FALLEN_REACH) continue
         const id = fallenStoreId(b)
         if (!sim.progression.contents(id).length) continue
-        const primary = { id: "take" as const, label: "Take all" }
-        out.push({ kind: "fallen", id, label: "Body", rect: [b.x - 0.45, b.y - 0.45, b.x + 0.45, b.y + 0.45], worldX: b.x, worldY: b.y, primary, actions: [primary] })
+        // Not in the first moments after a teammate dies, so an E held to revive them never strips their body.
+        const rec = state.records[b.index]
+        if (rec?.state === "dead" && b.n === rec.deaths && sim.time - rec.since < FALLEN_SETTLE) continue
+        // Taking their whole kit is a hold (playtest: E at a body to "bring him back" took everything by surprise);
+        // the strip's digits take one thing at a time.
+        const take = { id: "take" as const, label: "Take all", hold: true }
+        out.push({ kind: "fallen", id, label: `${sim.progression.names(b.index)}'s kit`, rect: [b.x - 0.45, b.y - 0.45, b.x + 0.45, b.y + 0.45], worldX: b.x, worldY: b.y, primary: take, secondary: take, deferPrimary: true, actions: [take] })
       }
       return out
     },
     execute: (_town, actor, targetId, action) => {
       const slot = sim.progression.slotOf(actor)
-      if (!slot || action !== "take") return { handled: false }
+      // Only a completed hold takes everything; the tap does nothing.
+      if (!slot || action !== "take" || !actor.holdTriggered) return { handled: false }
       return { handled: sim.progression.take(slot, targetId), kind: "fallen", targetId, action }
     },
   }
