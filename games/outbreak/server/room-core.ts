@@ -29,6 +29,7 @@ import {
   type SharedSnapshot,
 } from "../shared/net-protocol"
 import type { DeathState } from "../shared/death/rules"
+import { spectateTarget } from "../shared/death/spectate"
 import { wayOutWon } from "../shared/way-out/state"
 import type { Command } from "../shared/session"
 
@@ -434,6 +435,14 @@ export class CoopRoomCore {
    */
   snapshot(to?: Conn[]): void {
     if (!to) this.snapIndex++
+    const death = this.sim.getFeatureState<DeathState>("death")
+    if (death) for (const slot of this.sim.slots) {
+      const rec = death.records[slot.index]
+      if (!rec) continue
+      const watching = spectateTarget(death, this.sim.slots, slot.index, rec.watching ?? null)
+      if (watching === null) delete rec.watching
+      else rec.watching = watching
+    }
     const sharedCache = new Map<string, { bytes: Uint8Array; snap: SharedSnapshot }>()
     const nextBubbleSnaps = new Map<string, SharedSnapshot>()
     for (const [conn, s] of this.conns) {
@@ -445,7 +454,9 @@ export class CoopRoomCore {
       data.lastSnapTick = this.tick
 
       const slot = data.slot
-      const viewerCenter = this.sim.worldStream.getSurvivorWindowCenter(slot.id, slot.survivor.x, slot.survivor.y)
+      const watching = death?.records[slot.index]?.watching
+      const viewer = this.sim.slots.find((s) => s.index === watching) ?? slot
+      const viewerCenter = this.sim.worldStream.getSurvivorWindowCenter(viewer.id, viewer.survivor.x, viewer.survivor.y)
       const bubbleKey = `${viewerCenter.cx},${viewerCenter.cy}`
       const baseSnap = data.ackSnapTick > 0 ? data.history.get(data.ackSnapTick) : undefined
       const baseTick = baseSnap ? baseSnap.tick : 0

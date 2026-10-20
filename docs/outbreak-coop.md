@@ -75,13 +75,22 @@ change the offline session.
     (`±127 cm`) position deltas, 8-bit aim and optional state/HP/FX sub-flags (with non-urgent mid/far/idle zombies
     throttled to 10 Hz / 5 Hz), door/window bitfields + sparse non-zero barricade planks (omitted completely when
     `revision` is unchanged since `baseTick`), and new shots/bashes/pings/lures since `baseTick`.
-  - Special zombies (`shared/specials/`) add no field: a special's kind rides in its zombie seed (low nibble plus a
+  - Special zombie kinds (`shared/specials/`) add no field: a special's kind rides in its zombie seed (low nibble plus a
     12-bit check, `encodeSpecialSeed`), and a special's seed is never the id's default, so the full zombie record
     already carries it. Deltas never resend a seed, so every zombie is rolled before the snapshot that first carries
     it: in the feature's `stepWorld` (chunk and horde spawns) and its `stepWorldLate` (director spawns during the
     crowd step). `tests/specials.test.ts` checks every zombie in every snapshot against the room.
+    HP is an unsigned varint in full and delta records: a Brute's 320 HP takes two bytes instead of being clipped
+    to 255; ordinary HP up to 127 still takes one byte when present.
   - Death (`shared/death/`) adds a section (bit 256): see [Death](#death).
   - Noises (`shared/noises/`) add a section (bit 512): see [Sound](#sound).
+  - Bloater gas (`shared/specials/net.ts`, bit 1024) carries active clouds near the viewer: id, cm position, birth
+    and expiry times, and cm radius. Clients draw these hazards even when they missed the Bloater's death.
+  - Body lifecycle (`shared/bodies/net.ts`, bit 2048) carries nearby `body:` store ids with `rise` and `risen`.
+    Slot-store inventory deltas omit counters, so the client restores these after applying its personal ledger delta.
+    Both sections compare against the acked base, omit unchanged state, and send an empty list to clear it.
+    One nearby cloud costs 20 payload bytes with a one-byte id; a `body:near` lifecycle record costs 14 with a
+    one-byte rise time. Counts, ids and strings make larger payloads variable; quiet deltas cost zero section bytes.
   - `personal`: binary-packed `ack`, `f32` position/aim/stamina/battery/flashlight/noise, discrete flags/ammo/planks,
     and an optional bitmask for active timers, peek/hold/vault/channel state, filtered ledger deltas and notices.
 
@@ -134,6 +143,9 @@ alive ──0 HP──▶ down ──bleed-out runs out──▶ dead ──squa
   co-op they watch a standing teammate (camera, sight shroud and listener follow that teammate) until the squad's
   next dawn, then wake at their spawn point beside the Ash House with full health and the standard kit. "The dead
   come back: Never" keeps them dead until the run ends.
+  The room selects a `watching` seat before encoding snapshots and centers the dead player's interest bubble on
+  that seat. The camera consumes the same replicated choice, keeps it while that teammate stands, and switches
+  when they fall. A dead record adds one byte for this seat (zero means nobody).
 - **Run over** when every survivor is dead: a card with the survivor's name, cause ("Taken by a Brute on Night 3", from
   the nearest zombie when they went down), day, nights survived and kills (the last blow, `lastHitBy`), plus
   Restart, New town (solo) and Lobby. A room's Restart (`{t:"restart"}`, accepted only once the run is over) builds a
@@ -177,6 +189,12 @@ does, so cue rings match the room's. `tests/coop-noises.test.ts` checks it throu
 
 ## Known gaps
 
+- Co-op accepts only the default town seed (7). New town remains solo-only, and this seed's Way Out route has no
+  chained gates; bolt-cutter gate activation has domain tests but no supported-room scenario.
+- Weather timing and lightning ids are shared, but near strikes choose positions relative to each viewer. Two
+  separated players can see the same strike hit different trees or lamps.
+- Crow sites and incoming shot noises agree. Flight state is client-local: a late joiner after the noise expires
+  has no record of the scatter. Local survivor proximity can also produce different flight histories.
 - Doors, loot, barricades and shots take a round trip (no client-side muzzle flash prediction yet); server hitscan
   evaluates against zombie positions rewound to the shooter's `viewTick` (`@arcade/kit/net/rewind`, clamped to 250 ms).
 - Remote survivors show body, flashlight, name tag, and the character HUD (callouts and health, reload and exhaustion
@@ -192,6 +210,22 @@ does, so cue rings match the room's. `tests/coop-noises.test.ts` checks it throu
 
 ## Proof
 
+- `games/outbreak/tests/coop-feature-room.ts` runs `CoopRoomCore` and two real `NetSession`s over `Loopback`.
+  Tests drive both the host and teammate, then add a late joiner. Fixed scenario positions, inventory grants and
+  hidden body rolls set up the cases; actions and binary reconciliation use production code.
+- The `coop-*-parity`, `coop-ledger-features`, `coop-reset-ramp` and `coop-feature-bandwidth` tests cover gas and
+  all six special kinds' seed/HP/state, body searches/reanimation, all seven fire items, radios, dogs, lamps,
+  Recipe Board, Way Out, vehicle repair/fuel and roadblock collision, death/revive/dawn and spectator switches,
+  seeded scenery, crow noise inputs, private peek/shared hearing shells, weather, late ammo and room Restart.
+  Gas tests also compare CPU-generated sprite data. Other presentation checks assert the state consumed by drawing;
+  they do not prove GPU output or audible playback. Special-specific combat rules also have domain tests in
+  `specials.test.ts`; the room matrix checks their replicated kind, health and response to a shot.
+- `coop-design-gaps.test.ts` records unsupported town seeds, viewer-relative near lightning, and missing crow
+  flight history. Passing these tests documents the limits; it does not establish parity for those features.
+- Restart tests dirty feature state, request a real room restart from either seat, and construct fresh clients with
+  the existing tokens. They check world/ledger/life/peek/vehicle reset; browser reload and GPU/audio resource teardown
+  are outside this CPU suite. Air, vegetation, reflections, look, props and anti-aliasing remain local rendering
+  features; this suite makes no pixel-parity claim for them.
 - `games/outbreak/tests/coop.test.ts`: 2–4 survivors, zombies split targets, shared doors and loot, private ammo,
   binary encode/decode round-trips, 1 km per-recipient interest filtering, and delta compression against ack under 5%
   packet loss.

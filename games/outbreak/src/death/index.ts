@@ -141,7 +141,7 @@ export const outbreakDeathFeature = registerOutbreakClientFeature({
         watching = null
         return null
       }
-      watching = spectateTarget(state, session.sim.slots, local.index, watching)
+      watching = state?.records[local.index]?.watching ?? spectateTarget(state, session.sim.slots, local.index, watching)
       const target = watching === null ? undefined : session.sim.slots.find((s) => s.index === watching)
       if (!target) return null
       const p = coop.net && target === local ? coop.pose(target.survivor) : target.survivor

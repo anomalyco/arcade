@@ -20,6 +20,7 @@ import type { NetSession } from "../net-session"
 import type { OutbreakSettings } from "../settings"
 import { WayOutHud } from "./hud"
 import { WayOutProps } from "./props"
+import { wayOutNetHooks } from "./net"
 import { CAR_PARTS, giveAll, resetWayOut, stageWayOut, teleportTo, WAY_OUT_SCENES, type WayOutScene } from "./stage"
 
 const G = "Way Out"
@@ -89,6 +90,7 @@ function frameReset(ctx: OutbreakClientFrameContext): void {
 export const outbreakWayOutFeature = registerOutbreakClientFeature({
   id: "wayOut",
   order: 45,
+  netSession: wayOutNetHooks,
   settingsGroup: { subsystem: "wayOut", defaults: DEFAULT_WAY_OUT_TUNING },
   labControls: (host): LabControl[] => {
     const run = (label: string, fn: () => unknown): LabControl => ({

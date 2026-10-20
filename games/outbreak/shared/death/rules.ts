@@ -106,6 +106,8 @@ export type LifeRecord = {
   kills: number
   /** Times this survivor has died. Body IDs also account for earlier occupants of the seat. */
   deaths: number
+  /** Room-selected spectator seat; replicated so the camera and interest bubble cannot choose different teammates. */
+  watching?: number
 }
 
 /** A dead survivor's body: where it lies and the ledger store holding what they carried (`fallenStoreId`). */
@@ -137,7 +139,7 @@ export type DeathState = {
 
 /** The death section of a co-op snapshot, quantised exactly as decoded. */
 export type DeathSnapshot = {
-  survivors: { index: number; state: "down" | "dead"; cause: number; night: number; dark: boolean; bleed: number; revive: number; reviver: number }[]
+  survivors: { index: number; state: "down" | "dead"; cause: number; night: number; dark: boolean; bleed: number; revive: number; reviver: number; watching?: number }[]
   bodies: FallenBody[]
   over: { dawns: number; kills: { index: number; kills: number }[] } | null
 }

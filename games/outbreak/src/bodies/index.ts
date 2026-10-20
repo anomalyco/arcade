@@ -49,6 +49,24 @@ export function stageBody(host: DiscoveryHost, session: StageSession, scene: Bod
 export const outbreakBodiesFeature = registerOutbreakClientFeature({
   id: "bodies",
   order: 29,
+  netSession: {
+    // After personal ledger deltas: replacing a slot store clears its non-inventory counters.
+    onReconcileLocal: (net, _personal, shared) => {
+      const rising = new Map(shared.bodies?.rising.map((b) => [b.id, b]) ?? [])
+      for (const store of net.sim.progression.ledger.stores.values()) {
+        if (!store.id.startsWith("body:")) continue
+        const b = rising.get(store.id)
+        if (b) {
+          store.counts.rise = b.rise
+          if (b.risen) store.counts.risen = 1
+          else delete store.counts.risen
+        } else {
+          delete store.counts.rise
+          delete store.counts.risen
+        }
+      }
+    },
+  },
   labControls: (host) => [
     ...(bodiesControls as readonly LabControl[]),
     ...BODY_SCENES.map((scene) => ({

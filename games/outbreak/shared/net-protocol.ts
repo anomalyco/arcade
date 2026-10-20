@@ -446,7 +446,7 @@ function quantizeZombie(a: AIAgent, townSeed: number): ZombieState {
   const x = cm(a.x) / 100
   const y = cm(a.y) / 100
   const aim = unpackAngle8(packAngle8(a.aim))
-  const hp = Math.round(clamp(a.hp, 0, 255))
+  const hp = Math.round(clamp(a.hp, 0, 65535))
   const hitFlash = Math.round(clamp(a.hitFlash, 0, 1) * 255) / 255
   const stateTime = a.state === "bash" ? Math.min(255, Math.round(a.stateTime * 20)) / 20 : 0
   const tCap = timerCapFor(a.state)
@@ -478,7 +478,7 @@ function writeFullZombie(w: ByteWriter, z: ZombieState, townSeed: number): void 
   const defSeed = defaultZombieSeed(z.id, townSeed)
   const seedMode = z.seed === defSeed ? 0 : z.seed === (townSeed >>> 0) ? 1 : 2
   const stateIdx = Math.max(0, STATES.indexOf(z.state))
-  const hpByte = Math.round(clamp(z.hp, 0, 255))
+  const hp = Math.round(clamp(z.hp, 0, 65535))
   const hfByte = Math.round(clamp(z.hitFlash, 0, 1) * 255)
   const clByte = Math.round(clamp(z.clamber, 0, 1) * 255)
   const stByte = Math.min(255, Math.round(z.stateTime * 20))
@@ -486,13 +486,13 @@ function writeFullZombie(w: ByteWriter, z: ZombieState, townSeed: number): void 
   const tmByte = Math.round(clamp(z.timer / tCap, 0, 1) * 255)
   const limbByte = (z.limbMask ?? 0) & 0xff
   const hasOpt =
-    hpByte !== 100 || hfByte > 0 || clByte > 0 || stByte > 0 || tmByte > 0 || seedMode === 2 || limbByte > 0
+    hp !== 100 || hfByte > 0 || clByte > 0 || stByte > 0 || tmByte > 0 || seedMode === 2 || limbByte > 0
   w.u16(z.id)
   w.u8((stateIdx & 7) | (seedMode << 3) | (hasOpt ? 32 : 0) | (stateIdx & 8 ? 64 : 0))
   w.i32(cm(z.x)).i32(cm(z.y)).u8(packAngle8(z.aim))
   if (hasOpt) {
     const opt =
-      (hpByte !== 100 ? 1 : 0) |
+      (hp !== 100 ? 1 : 0) |
       (hfByte > 0 ? 2 : 0) |
       (clByte > 0 ? 4 : 0) |
       (stByte > 0 ? 8 : 0) |
@@ -500,7 +500,7 @@ function writeFullZombie(w: ByteWriter, z: ZombieState, townSeed: number): void 
       (seedMode === 2 ? 32 : 0) |
       (limbByte > 0 ? 64 : 0)
     w.u8(opt)
-    if (opt & 1) w.u8(hpByte)
+    if (opt & 1) w.uvar(hp)
     if (opt & 2) w.u8(hfByte)
     if (opt & 4) w.u8(clByte)
     if (opt & 8) w.u8(stByte)
@@ -530,7 +530,7 @@ function readFullZombie(r: ByteReader, townSeed: number, out?: ZombieState): Zom
   let seed = seedMode === 0 ? defaultZombieSeed(id, townSeed) : (townSeed >>> 0)
   if (hasOpt) {
     const opt = r.u8()
-    if (opt & 1) hp = r.u8()
+    if (opt & 1) hp = r.uvar()
     if (opt & 2) hitFlash = r.u8() / 255
     if (opt & 4) clamber = r.u8() / 255
     if (opt & 8) stateTime = r.u8() / 20
@@ -1010,7 +1010,7 @@ export function encodeShared(
       else if (posMode === 3) w.ivar(dx).ivar(dy)
       if (aimChanged) w.u8(packAngle8(cur.aim))
       if (stateChanged) w.u8(Math.max(0, STATES.indexOf(cur.state)))
-      if (hpChanged) w.u8(cur.hp)
+      if (hpChanged) w.uvar(cur.hp)
       if (fxChanged) {
         const fxFlags =
           (cur.hitFlash !== prev.hitFlash ? 1 : 0) |
@@ -1219,7 +1219,7 @@ export function decodeShared(
       const y = (cm(prev.y) + dy) / 100
       const aim = hdr & 4 ? unpackAngle8(r.u8()) : prev.aim
       const state = hdr & 8 ? (STATES[r.u8()] ?? prev.state) : prev.state
-      const hp = hdr & 16 ? r.u8() : prev.hp
+      const hp = hdr & 16 ? r.uvar() : prev.hp
       let hitFlash = prev.hitFlash
       let clamber = prev.clamber
       let stateTime = prev.stateTime
@@ -1759,7 +1759,7 @@ export function inspectSnapshotBreakdown(
       }
       if (hdr & 4) r.u8()
       if (hdr & 8) r.u8()
-      if (hdr & 16) r.u8()
+      if (hdr & 16) r.uvar()
       if (hdr & 32) {
         const fx = r.u8()
         if (fx & 1) r.u8()
