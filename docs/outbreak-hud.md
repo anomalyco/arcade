@@ -292,7 +292,7 @@ the dock's pack chip, one setting away. Research and the reasoning behind the th
 | Style | Where it lives | While open |
 | --- | --- | --- |
 | Today | the 4-slot pack grows out of the dock | nothing changes |
-| A · Ground Pack | the backpack opens on the floor in front of you (a CSS `matrix3d` onto the floor quad, `quadMatrix` in `src/inventory/bag.ts`): hands as loops on the flap, four pockets, belt pouches, what you face laid out on a cloth beside it, teammates in reach as chips at the edge | you kneel (crouch), the camera leans in (Lab: 0.75), the bag's own warm lamp lights the floor; walking picks the bag up |
+| A · Ground Pack | the backpack opens on the floor in front of you (a CSS `matrix3d` onto the floor quad, `quadMatrix` in `src/inventory/bag.ts`): hands as loops on the flap, four pockets, belt pouches, what you face laid out on a cloth beside it, teammates in reach as chips at the edge | you kneel (crouch), the camera leans in (Lab: 0.75) and the mat spans about half the view, the bag's own warm lamp lights the floor; walking picks the bag up |
 | B · Attaché Case | a leather case above the dock: quick slots 1–5 on the lid, the pack on grid paper at each item's shape (`footprint` in `icons.ts`, auto-packed), belt loops, what you face as a crate beside it | the world keeps going; you can walk |
 | C · Survivor Sheet | a sheet on the right: hands, pack and belt on the left, what you face, the floor and teammates on the right | the world keeps going; you can walk |
 

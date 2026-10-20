@@ -83,7 +83,7 @@ async function scene(page: Page, style: string) {
   await sim(
     page,
     `const a = view.actorId
-     for (const id of [a + "/hotbar", a + "/pack"]) { const st = ledger.store(id); for (let i = 0; i < st.slots.length; i++) if (st.slots[i] && st.slots[i].item !== "flashlight" && st.slots[i].item !== "pistol") st.slots[i] = null; st.rev = ++ledger.rev }
+     for (const id of [a + "/hotbar", a + "/pack"]) { const st = ledger.store(id); for (let i = 0; i < st.slots.length; i++) if (st.slots[i] && !["fists", "flashlight", "pistol"].includes(st.slots[i].item)) st.slots[i] = null; st.rev = ++ledger.rev }
      for (const item of ["ammo", "plank", "scrap", "battery"]) { const n = ledger.count(a + "/belt", item); if (n) ledger.apply({ kind: "drain", store: a + "/belt", item, count: n }) }
      for (const d of [...ledger.stores.keys()].filter((k) => k.startsWith("drop:"))) ledger.deleteStore(d)
      for (const [item, count] of [["knife", 1], ["medkit", 2], ["toolbox", 1], ["ammo", 14], ["plank", 3], ["scrap", 4], ["battery", 1], ["noisemaker", 1]]) ledger.apply({ kind: "grant", actor: a, item, count })
@@ -147,7 +147,11 @@ async function styleStill(page: Page, style: string, caption: string) {
 async function drag(page: Page, from: string, to: string | { x: number; y: number }, frames: (n: number) => Promise<void>) {
   const a = await centerOf(page, from)
   const b = typeof to === "string" ? await centerOf(page, to) : to
-  assert(a && b, `drag ${from} → ${JSON.stringify(to)}`)
+  if (!a || !b) {
+    await page.screenshot({ path: resolve(out, "clip-failed.png") })
+    const inv = await page.evaluate(() => ({ inv: (window as any).__arcadeHarness.state().inventory, prompt: (window as any).__arcadeHarness.session().view.prompt?.kind }))
+    throw new Error(`drag ${from} → ${JSON.stringify(to)}: ${JSON.stringify(inv)}`)
+  }
   await page.mouse.move(a.x, a.y)
   await frames(4)
   await page.mouse.down()
@@ -177,6 +181,8 @@ async function groundClip(page: Page) {
   log("clip: recording")
   await frames(10)
   await page.keyboard.press("Tab")
+  await frames(2)
+  if (!(await page.evaluate(() => (window as any).__arcadeHarness.state().inventory.open))) await page.keyboard.press("Tab")
   await frames(26)
   await drag(page, `#inv .inv-cell[data-item="machete"]`, `#inv .inv-flap .inv-cell[data-ref="hotbar:2"]`, frames)
   await drag(page, `#inv .inv-strap .inv-cell[data-item="ammo"]`, `#inv .inv-mate`, frames)

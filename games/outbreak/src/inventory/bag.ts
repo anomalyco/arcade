@@ -212,7 +212,13 @@ export class InventoryBag implements InventoryPresenter {
   private placeMat(f: BagFrame, s: InventorySettings): void {
     const p = f.view.player
     if (!this.anchor) {
-      const w = s.invMatWidth
+      // Sized on screen, not in metres: the mat spans `invMatScreen` of the view once the camera has leaned in.
+      const g = supportHeight(f.view.town, p.x, p.y)
+      const l = f.cam.project(p.x - 0.5, g, p.y, f.w, f.h)
+      const r = f.cam.project(p.x + 0.5, g, p.y, f.w, f.h)
+      const perMetre = Math.max(1, Math.hypot(r.x - l.x, r.y - l.y))
+      const settled = Math.max(1e-3, (this.pushed ? this.zoomBase : f.cam.dist) * (1 - s.invPushIn))
+      const w = Math.max(1.4, Math.min(6, (s.invMatScreen * f.w) / (perMetre * (f.cam.dist / settled))))
       const h = (w * MAT_H) / MAT_W
       // The bag lies in front of the kneeling survivor, toward the camera (plan +y is down the screen).
       this.anchor = { x: p.x, y: p.y + 0.3 + h / 2, w, h, ground: supportHeight(f.view.town, p.x, p.y) + 0.03 }
