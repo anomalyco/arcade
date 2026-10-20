@@ -12,7 +12,7 @@ import { playStunt, stageVehicleScene, type StuntStep, type VehicleLabHost } fro
  *
  * - `melee`: dusk, a fire axe; a charged heavy swing cleaves two of three charging, a light swing rocks the third.
  * - `pistol`: dusk, three in a line down the street; five shots stagger, kill, then drop the ones behind.
- * - `blast`: night, dynamite thrown into a knot of eight (Fire › `dynamite-lit`), then a second stick onto the bodies.
+ * - `blast`: dusk, dynamite thrown into a knot of eight (Fire › `dynamite-lit`), then a second stick onto the bodies.
  * - `car`: dusk, a pickup floored into four charging zombies, then braking.
  */
 export const IMPACT_SCENES = ["melee", "pistol", "blast", "car"] as const
@@ -95,6 +95,8 @@ export function stageImpact(host: ImpactStageHost, scene: ImpactScene): { scene:
     case "blast": {
       ai.agents.length = 0
       stageFire(dh, session, "dynamite-lit")
+      // Fire stages this at night for the glow; dusk keeps the bodies readable.
+      dh.setHour(18.6)
       // The first stick blows at ~2.6 s; the second lands on the bodies.
       steps.push({ until: 3.6, mx: 0, my: 0, aim: 0, fireHeld: false }, { until: 3.65, mx: 0, my: 0, aim: 0, fire: true }, { until: 7, mx: 0, my: 0, aim: 0, fireHeld: false })
       break
