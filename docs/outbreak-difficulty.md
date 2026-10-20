@@ -234,8 +234,24 @@ What moved:
 - **Survival:** a fresh survivor's first night is about the same, and Skilled and Expert lose one or two more runs by
   dawn 2–3.
 
-`tests/difficulty-ramp.test.ts` still passes and no band changed. This is the intended effect: the dead keep looking
-after they lose you, so the later nights feel hunted rather than heavier. Lab › Zombie behaviour › "Search, remember,
+Rebased on overnight (throwables, the flashlight off the hotbar, co-op difficulty), the CI batch in
+`tests/difficulty-ramp.test.ts` (4 presets × 4 seeds × 3 nights) moved two checks. Both changed deliberately:
+
+| CI batch | Today | Alive |
+| --- | --: | --: |
+| Aware zombies, Night 2 / Night 3 (pooled) | 5.80 / 5.84 | 6.92 / 6.55 |
+| Night 3 / Night 2 aware ratio | 1.007 | 0.947 |
+| Chasers, Night 1 / 2 / 3 | 1.33 / 2.89 / 3.67 | 1.21 / 2.89 / 3.69 |
+| Novice damage per hour, Night 1 / Night 2 | 7.2 / 0 (1 run) | 3.1 / 31.5 |
+| Skilled damage per hour, Night 1 / Night 2 | 2.8 / 2.7 | 3.6 / 3.4 |
+
+- **`nightThreeOverTwo` lower edge: 1.0 → 0.9.** More of the dead hunt from Night 2, so the ratio flattens even though
+  Night 3 has more aware zombies than before. Living zombies and chasers still rise.
+- **Novice vs Skilled damage now compares each preset's worse night.** The old check compared Night 1 alone, but
+  Novices now take their beating on Night 2 instead.
+
+The survival bands did not move. This is the intended effect: the dead keep looking after they lose you, so the later
+nights feel hunted rather than heavier. Lab › Zombie behaviour › "Search, remember,
 give up slowly" and "Follow the one that noticed" are the levers if Night 3 needs to be easier. "Zombie behaviour:
 Today" turns the whole layer off.
 

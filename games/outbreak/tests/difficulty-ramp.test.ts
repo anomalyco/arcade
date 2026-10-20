@@ -53,8 +53,11 @@ const PRESSURE_BANDS = {
    * Aware zombies, Night 3 over Night 2: rising, without a cliff. AR-71 weather: rain masks noise, and two of the four
    * seeds rain or storm through Night 3 at this clock, so fewer of the dead turn: 1.17 with the weather off, 1.08 on.
    * The lower bound moved from 1.1 to 1.0 for that; living zombies and chasers still rise (the next two bands).
+   * AR-91 zombie behaviour (followers, memory and search) puts more of the dead on the hunt from Night 2: aware
+   * zombies 5.8 → 6.9 on Night 2 and 5.8 → 6.6 on Night 3, so the ratio flattens to 0.95 while both nights are harder
+   * than before. The lower bound moved from 1.0 to 0.9; "Zombie behaviour: Today" gives 1.01.
    */
-  nightThreeOverTwo: [1.0, 2], // 1.08 (weather on; 1.17 off) [1.03]
+  nightThreeOverTwo: [0.9, 2], // 0.95 (behaviour on; 1.01 Today) [1.03]
   /** Active chasers at night. */
   nightTwoChasers: [1.5, 4], // 2.89 [2.37]
   nightThreeChasers: [3, 5.5], // 3.94 [2.56]
@@ -105,7 +108,11 @@ describe("difficulty ramp (survivor bots, fixed seeds)", () => {
     const nights = (p: BotSkillPresetId) => summary.byPreset[p]!.medianNights
     expect(nights("Novice")).toBeLessThan(nights("Skilled"))
     expect(nights("Novice")).toBeLessThan(nights("Expert"))
-    expect(phase("Novice", NIGHT1).damagePerHour).toBeGreaterThan(phase("Skilled", NIGHT1).damagePerHour)
+    // Novices are hurt harder at night. AR-91 zombie behaviour makes Night 1 a little quieter and Night 2 the hunt
+    // (Novice 3.1 / 31.5 damage per hour on Nights 1 / 2, Skilled 3.6 / 3.4), so this compares each preset's worse
+    // night, not Night 1 alone (Today: 7.2 vs 2.8 on Night 1).
+    const worstNight = (p: BotSkillPresetId) => Math.max(phase(p, NIGHT1).damagePerHour, phase(p, NIGHT2).entered ? phase(p, NIGHT2).damagePerHour : 0)
+    expect(worstNight("Novice")).toBeGreaterThan(worstNight("Skilled"))
   })
 
   test("Night 1 holds, then every night rises without a cliff (D-40)", () => {
