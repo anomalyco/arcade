@@ -1,7 +1,7 @@
 // One ElevenLabs music generation for the trailer score (dark ambient, ~26 s), with the credit cost measured from the
 // subscription's character count before and after. The key is read by name from ~/development/.env, never printed.
 //
-//   bun scripts/trailer/music.ts [--out captures/trailer/audio/score.mp3]
+//   bun scripts/trailer/music.ts [--v2] [--out captures/trailer/audio/score.mp3]
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
 
@@ -35,10 +35,20 @@ const plan = {
     { section_name: "Rise", positive_local_styles: ["rising string cluster crescendo", "accelerating sub pulses", "metallic scrapes", "unbearable tension", "loud swell ending abruptly"], negative_local_styles: ["resolution", "fade out"], duration_ms: 7000, lines: [] },
   ],
 }
+// v2 (`--v2`): darker and sparser, no hits; a slow rise that stops dead (the scream plays over black after it).
+const planV2 = {
+  positive_global_styles: ["dark ambient", "horror film score", "very sparse", "minimal", "deep sub-bass drone", "cold", "ominous", "instrumental", "lots of silence", "great production quality"],
+  negative_global_styles: [...NEG, "drums", "percussion hits", "impacts", "braams", "melody", "piano melody"],
+  sections: [
+    { section_name: "Night", positive_local_styles: ["near silence", "faint deep sub drone", "distant airy texture", "barely audible"], negative_local_styles: ["percussion", "strings"], duration_ms: 8000, lines: [] },
+    { section_name: "Inside", positive_local_styles: ["low drone thickens slightly", "occasional faint metallic resonance", "cold dissonant sustained tone", "still very sparse"], negative_local_styles: ["percussion", "pulse"], duration_ms: 8000, lines: [] },
+    { section_name: "Dread", positive_local_styles: ["slow dissonant string cluster rising very gradually", "growing low drone", "tension", "cuts off abruptly at the end"], negative_local_styles: ["hits", "drums", "resolution", "fade out"], duration_ms: 7000, lines: [] },
+  ],
+}
 const r = await fetch("https://api.elevenlabs.io/v1/music?output_format=mp3_44100_192", {
   method: "POST",
   headers: { ...H, "Content-Type": "application/json" },
-  body: JSON.stringify({ composition_plan: plan, model_id: "music_v1" }),
+  body: JSON.stringify({ composition_plan: args.includes("--v2") ? planV2 : plan, model_id: "music_v1" }),
 })
 if (!r.ok) {
   console.error("music failed", r.status, (await r.text()).slice(0, 400))
