@@ -219,6 +219,9 @@ describe("fixed-tick clock policy", () => {
     const survivor60 = new Survivor(fakeRenderer)
     const survivorSubstepped = new Survivor(fakeRenderer)
     const support = (x: number, z: number) => supportHeight(session.view.town, x, z)
+    // Both start from the same placed pose; the shared-rig legs step by distance from where they were placed.
+    survivor60.draw(session.view.player, TICK_DT, session.view.time, support)
+    survivorSubstepped.draw(session.view.player, TICK_DT, session.view.time, support)
 
     for (let group = 0; group < 20; group++) {
       // Advance 3 ticks (50 ms)
