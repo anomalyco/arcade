@@ -191,3 +191,11 @@
   `ZombieCrowdRenderer.physics`; blows are a pure function of the replicated shot, swing, vehicle-hit and blast events
   (`causes.ts`), so nothing is on the wire and the sim never reads it. Tests: `tests/impact.test.ts`; deterministic
   clips: `bun scripts/feel-clips.ts oomph` (via `hivemind run --kind browser`).
+- Door breaches (AR-97, `shared/breach/` rules + wire bit 8192, `src/breach/` presentation, Lab: Backquote › Doors &
+  barricades, "Today" one setting away, station `outbreak-breach`, `arcade cmd breach.stage scene=…`): readable wear
+  (cracks by stage, hinges and lock, bowing, light through gaps, crowd-scaled noise, punched panels with grabbing
+  arms), bracing, a 1.1 s warning beat, breach kinds (hinges, split, crush, boards, window burst) with a staggered
+  spill, and broken doors that can only be barricaded or wedged back with their fallen slab. Hooks for other features:
+  `registerBraceSource`, `recentBreaches`, `portalWear`; the AI reads it through `bashRules` in `shared/ai.ts`. The
+  damaged leaf is drawn by `src/world/door-leaf.ts` (`setDoorLeafOverride`). How it works:
+  `../../docs/outbreak-discovery.md#door-breaches-ar-97`. Tests: `tests/breach.test.ts`; clip: `bun scripts/breach-clip.ts`.

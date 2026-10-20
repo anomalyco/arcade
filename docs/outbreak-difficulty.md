@@ -169,6 +169,15 @@ fire once with a bottle, which throws at full strength at once, as their old fix
 up or throw the new items on purpose (they may pick one up as "dropped supplies"). The banded test
 (`tests/difficulty-ramp.test.ts`) passed unchanged; no band moved.
 
+## Door breaches (AR-97)
+
+Readable breaches (`shared/breach/`) add a 1.1 s warning beat before a door gives, bracing, and a broken door that
+cannot be shut again (only barricaded), with a staggered spill. The CI batch (measured on `overnight` 0eb51905, before AR-92/AR-96; the banded test still
+passes on top of them) stayed inside every band: Novice alive at
+dawn 1 0 → 0.5 (dawn 3 0, median nights 1.25), Casual dawn 1 1 → 0.75 (median 1.44), Skilled 1 / 0.25 (median 2.80),
+Expert 1 / 0.75 (median 3.01); Night 1 / 2 / 3 chasers 1.02 / 2.89 / 3.94 → 3.73; Night 3 / Night 2 aware 1.06. No band
+changed. Lab › Doors & barricades › "Today" restores the old pop-open doors.
+
 ## Weather (AR-71)
 
 Rain masks noise (zombies hear 30% less at full rain) and costs them 12% of their sight range, so on a wet night fewer

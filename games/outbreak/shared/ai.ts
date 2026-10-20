@@ -16,6 +16,7 @@ import {
   type NoiseEvent,
   type NoiseKind,
   type PerceptionTarget,
+  type PortalBashEvent,
   type ZombieDeathVariant,
   type ZombieHitReaction,
 } from "@arcade/kit/sim/ai"
@@ -167,6 +168,14 @@ export type PortalState = {
   lastBashTime: number
 }
 
+/**
+ * Replaces how the crowd's bashes wear doors and barricades (`shared/breach/`: warning beat, torn-out doors, bracing).
+ * Returns whether doors, planks or openings changed (topology). Unset, bashes apply as they always have.
+ */
+export interface PortalBashRules {
+  apply(town: Town, portalStates: Map<string, PortalState>, bashes: readonly PortalBashEvent[], time: number, agents: readonly AIAgent[]): boolean
+}
+
 /** Computes illumination (0..1.4) at world position (x, y) from time of day and active town lamps. */
 export function samplePointLightLevel(town: Town, hour: number, x: number, y: number, lightingScale = 1): number {
   const day = dayCycle(hour)
@@ -255,6 +264,8 @@ export class OutbreakAISubsystem {
   readonly hearing = new HearingMap()
   /** The weather's pull on the crowd's senses this tick (`shared/weather/`): rain masks noise and shortens sight. */
   readonly weatherSense = { hearing: 1, sight: 1 }
+  /** How bashes wear doors and barricades this tick, set by `shared/breach/` each tick (null: as before). */
+  bashRules: PortalBashRules | null = null
   private sightBlockers: Rect[] = []
   private solids: Rect[] = []
   private portals: NavPortal[] = []
@@ -681,7 +692,8 @@ export class OutbreakAISubsystem {
     )
 
     let topologyChanged = false
-    for (const bash of res.bashes) {
+    if (this.bashRules) topologyChanged = this.bashRules.apply(town, this.portalStates, res.bashes, time, this.agents)
+    else for (const bash of res.bashes) {
       const st = this.portalStates.get(bash.portalId)
       if (!st) continue
       st.lastBashTime = time

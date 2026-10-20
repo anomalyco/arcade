@@ -19,6 +19,7 @@ import { DEFAULT_DEATH_TUNING, type DeathTuning } from "../shared/death/rules"
 import { DEFAULT_FIRE_SETTINGS, type OutbreakFireSettings } from "./fire/settings"
 import { DEFAULT_AIR_SETTINGS, type OutbreakAirSettings } from "./air/settings"
 import { DEFAULT_IMPACT_SETTINGS, type OutbreakImpactSettings } from "./impact/settings"
+import { DEFAULT_BREACH_SETTINGS, type OutbreakBreachSettings } from "./breach/settings"
 import { DEFAULT_WAY_OUT_TUNING, type WayOutTuning } from "../shared/way-out/tuning"
 import { DEFAULT_INTERACTIONS_TUNING, type InteractionsTuning } from "../shared/interactions/tuning"
 import { DEFAULT_SPECIALS_TUNING, type SpecialsTuning } from "../shared/specials/kinds"
@@ -258,6 +259,7 @@ export type OutbreakSubsystemMap = {
   vegetation: OutbreakVegetationSettings
   air: OutbreakAirSettings
   impact: OutbreakImpactSettings
+  breach: OutbreakBreachSettings
 }
 
 export type OutbreakSubsystemKey = keyof OutbreakSubsystemMap
@@ -343,6 +345,7 @@ export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "vegetation",
   "air",
   "impact",
+  "breach",
 ] as const
 
 export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
@@ -390,6 +393,7 @@ export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
     vegetation: { ...DEFAULT_VEGETATION_SETTINGS },
     air: { ...DEFAULT_AIR_SETTINGS },
     impact: { ...DEFAULT_IMPACT_SETTINGS },
+    breach: { ...DEFAULT_BREACH_SETTINGS },
   }
 }
 

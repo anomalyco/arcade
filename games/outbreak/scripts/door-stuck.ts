@@ -17,6 +17,7 @@ import { spawnSpecial } from "../shared/specials/specials"
 import { SPECIAL_BRUTE, SPECIAL_RUNNER } from "../shared/specials/kinds"
 import { boxOf, distToBox } from "../shared/vehicles"
 import type { AIAgent } from "../shared/ai"
+import { portalWear } from "../shared/breach/rules"
 
 export type DoorScenario = {
   seed: number
@@ -53,6 +54,8 @@ const REACH = 1.1
 const QUIET_DOGS = { ...DEFAULT_STAMINA_TUNING, dogSense: 0 } as SessionTuning
 const WINDOW = 2
 const MIN_PROGRESS = 0.1
+/** Seconds after a door gives during which the dead still queueing behind the spill are not counted as stuck. */
+const SPILL_GRACE = 2.5
 const BODY = 0.28
 
 function sideSign(side: "north" | "south"): number {
@@ -185,7 +188,11 @@ export function runDoorScenario(
       const moved = Math.hypot(z.x - old.x, z.y - old.y)
       old.x = z.x
       old.y = z.y
-      const busy = z.state === "bash" || z.state === "stagger" || z.state === "knockdown" || z.state === "dead"
+      // Waiting out a door's warning beat or the staggered spill after it gives (AR-97) is queueing, not wedging.
+      const wear = portalWear(session.sim, door.id)
+      const now = (t + 1) * TICK_DT
+      const queued = Boolean(wear && (wear.givingAt >= 0 || (wear.breachAt >= 0 && now - wear.breachAt < SPILL_GRACE)))
+      const busy = queued || z.state === "bash" || z.state === "stagger" || z.state === "knockdown" || z.state === "dead"
       if (t >= histLen && !busy && moved < MIN_PROGRESS) {
         stuck[k]! += TICK_DT
         run[k]! += TICK_DT
