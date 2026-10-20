@@ -75,3 +75,15 @@
 .obd-actions button.obd-primary { background: var(--hud-warm); color: #171512 }
 .obd-actions button[hidden] { display: none }
 .obd-note { color: var(--hud-ink-3); font-size: var(--hud-sm) }
+
+/* A teammate went down or died: one line under the clock for a few seconds. */
+.obd-alert {
+  position: fixed; left: 50%; top: 56px; transform: translateX(-50%); z-index: 10; pointer-events: none;
+  display: flex; flex-direction: column; align-items: center; gap: var(--hud-2); padding: var(--hud-3) var(--hud-5);
+  background: var(--hud-surface); border-radius: var(--hud-r-panel); box-shadow: inset 0 0 0 1px var(--hud-line), var(--hud-shadow);
+  color: var(--hud-ink); font: 500 var(--hud-sm)/var(--hud-sm-lh) var(--hud-font); white-space: nowrap;
+  opacity: 0; transition: opacity var(--m-snappy-ms, .25s) var(--m-snappy, ease)
+}
+.obd-alert[data-on="true"] { opacity: 1 }
+.obd-alert b { color: var(--hud-danger); font-weight: 700 }
+.obd-alert .obd-sub { display: inline-flex; align-items: center; gap: var(--hud-2); color: var(--hud-ink-2); --akc-size: 16px }

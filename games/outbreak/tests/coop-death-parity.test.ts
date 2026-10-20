@@ -99,3 +99,38 @@ test("spectator target switches on a fall, stays on that teammate after revival,
     for (const c of r.clients) expect(c.sim.getFeatureState<DeathState>("death")!.records[r.a.index]!.watching).toBeUndefined()
   } finally { r.close() }
 })
+
+// Playtest (Oct 20): "you can't see the other person's screen" / "I have the bot, damn it, the whole time" — a dropped
+// seat's survivor stands idle for up to a minute, and the dead used to end up watching it.
+test("the dead cycle teammates with Space or a click, and never watch a seat whose player has gone", () => {
+  const r = featureRoom()
+  try {
+    const third = r.join()
+    r.tick(12)
+    r.place(r.b, 40, 46)
+    r.place(third, 44, 46)
+    forceLife(r.core.sim, r.core.sim.slot(r.a.id)!, "dead", T)
+    r.tick(12)
+    r.flush()
+    const watching = () => r.a.sim.getFeatureState<DeathState>("death")!.records[r.a.index]!.watching
+    expect(watching()).toBe(r.b.index)
+    r.act(r.a, { jump: true })
+    r.tick(12)
+    r.flush()
+    expect(watching()).toBe(third.index)
+    r.act(r.a, { fire: true })
+    r.tick(12)
+    r.flush()
+    expect(watching()).toBe(r.b.index)
+    // b's player drops: their survivor stays in the room for the grace window, but nobody watches it.
+    r.b.close()
+    r.tick(12)
+    r.flush()
+    expect(r.core.sim.slot(r.b.id)).toBeDefined()
+    expect(watching()).toBe(third.index)
+    r.act(r.a, { jump: true })
+    r.tick(12)
+    r.flush()
+    expect(watching()).toBe(third.index)
+  } finally { r.close() }
+})

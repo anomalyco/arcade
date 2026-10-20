@@ -29,7 +29,7 @@ import {
   type SharedSnapshot,
 } from "../shared/net-protocol"
 import type { DeathState } from "../shared/death/rules"
-import { spectateTarget } from "../shared/death/spectate"
+import { nextWatch, spectateTarget } from "../shared/death/spectate"
 import { wayOutWon } from "../shared/way-out/state"
 import type { Command } from "../shared/session"
 
@@ -408,6 +408,21 @@ export class CoopRoomCore {
     return this.conns.size > 0 || this.seats.all.length > 0
   }
 
+  /** Survivors whose players are connected, or everyone if nobody is (so the dead still watch someone). */
+  private presentSlots(): SurvivorSlot[] {
+    const present = this.sim.slots.filter((s) => this.seats.byId(s.id)?.connected)
+    return present.length ? present : this.sim.slots
+  }
+
+  /** Space or a click while dead: watch the next standing teammate who is connected. */
+  private watchNext(slot: SurvivorSlot): void {
+    const death = this.sim.getFeatureState<DeathState>("death")
+    const rec = death?.records[slot.index]
+    if (!rec || rec.state !== "dead") return
+    const next = nextWatch(death, this.presentSlots(), slot.index, rec.watching ?? null)
+    if (next !== null) rec.watching = next
+  }
+
   /** One 60 Hz tick. The world pauses while nobody is connected or while the room is in the pre-game lobby. */
   step(): void {
     if (this.expireSeats()) this.checkAutoStart(true)
@@ -423,6 +438,7 @@ export class CoopRoomCore {
       }
       const viewTime = seat.data.viewTick > 0 ? seat.data.viewTick * TICK_DT : undefined
       for (const command of inputs) {
+        if (command.jump || command.fire) this.watchNext(slot)
         const lastShot = sim.combat.shots.at(-1)?.id ?? 0
         sim.stepSurvivor(slot, command, TICK_DT, COOP_TUNING, false, viewTime)
         for (const shot of sim.combat.shots) if (shot.id > lastShot) this.shooters.set(shot.id, slot.index)
@@ -443,10 +459,13 @@ export class CoopRoomCore {
   snapshot(to?: Conn[]): void {
     if (!to) this.snapIndex++
     const death = this.sim.getFeatureState<DeathState>("death")
+    // The dead watch someone who is actually playing: a dropped seat's survivor stands idle for up to a minute
+    // (playtest: "I have the bot, damn it, the whole time").
+    const present = this.presentSlots()
     if (death) for (const slot of this.sim.slots) {
       const rec = death.records[slot.index]
       if (!rec) continue
-      const watching = spectateTarget(death, this.sim.slots, slot.index, rec.watching ?? null)
+      const watching = spectateTarget(death, present, slot.index, rec.watching ?? null)
       if (watching === null) delete rec.watching
       else rec.watching = watching
     }

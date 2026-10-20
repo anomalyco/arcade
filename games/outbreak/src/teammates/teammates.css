@@ -1,0 +1,26 @@
+/* Teammate markers (markers.ts), in the Noir HUD tokens: a seat-coloured chevron at the screen edge, or a faint ring
+   where an unseen teammate stands. Never in the way: no pointer events, small type, dark backing for night. */
+.otm-marks { position: fixed; inset: 0; z-index: 7; pointer-events: none; overflow: hidden }
+.otm-mark {
+  position: absolute; left: 0; top: 0; --otm-colour: #d6a35c;
+  transition: opacity var(--m-default-ms, .3s) var(--m-default, ease)
+}
+.otm-chev, .otm-label { position: absolute; left: 0; top: 0 }
+.otm-mark[data-mode="edge"] .otm-chev {
+  width: 0; height: 0; margin: -6px 0 0 -4px; border-style: solid; border-width: 6px 0 6px 10px;
+  border-color: transparent transparent transparent var(--otm-colour); transform: rotate(var(--otm-angle)); transform-origin: 4px 6px;
+  filter: drop-shadow(0 0 2px rgb(0 0 0 / .9))
+}
+.otm-mark[data-mode="ring"] .otm-chev {
+  width: 18px; height: 8px; margin: 26px 0 0 -9px; border-radius: 50%; box-shadow: 0 0 0 1.5px var(--otm-colour), 0 0 6px rgb(0 0 0 / .8)
+}
+.otm-label {
+  transform: translate(-50%, 12px); padding: 1px var(--hud-2, 4px); border-radius: var(--hud-r-chip, 6px); white-space: nowrap;
+  background: rgb(13 12 11 / .62); color: var(--otm-colour); font: 600 11px/14px var(--hud-font, system-ui); font-variant-numeric: tabular-nums;
+  letter-spacing: .02em
+}
+.otm-mark[data-mode="ring"] .otm-label { transform: translate(-50%, -18px) }
+.otm-mark[data-down="true"] .otm-label { color: var(--hud-danger, #e5674b) }
+.otm-mark[data-down="true"] .otm-chev { --otm-colour: var(--hud-danger, #e5674b); animation: otm-pulse 1s ease-in-out infinite }
+@keyframes otm-pulse { 50% { opacity: .45 } }
+@media (prefers-reduced-motion: reduce) { .otm-mark[data-down="true"] .otm-chev { animation: none } }

@@ -54,6 +54,16 @@ the dark the world can't be relied on to light a diegetic meter, so labels carry
   callouts default to Important only (progress, warnings, damage).
 - Reduced motion turns off drift, slides and the exhausted flash.
 
+## Teammate markers
+
+After the Oct 20 co-op playtest ("Where'd you guys go?"; Kit: "You can easily lose each other"), `src/teammates/`
+marks teammates you can't see (Lab › HUD › Teammates; "Today" is name tags in sight only): a chevron in their seat
+colour pinned to the screen edge on the line towards them, with name and distance, when they are off screen; a faint
+ring with their name at their feet when they are on screen but out of sight (fog, walls). In plain view only the name
+tag shows. A downed teammate's mark is red and pulses; on screen within 28 m the death HUD's revive marker takes over.
+Distances are from the screen centre, so they still read while watching a teammate after death. The rules are pure
+(`edge.ts`: `edgeMark`, `markMode`, `tests/teammate-markers.test.ts`).
+
 ## HUD styles
 
 Lab › HUD › HUD style switches between five directions, the same options as the team board's AR-24 decision
