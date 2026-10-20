@@ -147,6 +147,7 @@
   (`src/zombies.ts`, from `characterFrame`). Sounds (`src/characters/sounds.ts`, through the
   soundscape's hooks): each habit's cue once a cycle (the knock's hand is timed to `scape.habit.knock`), the waltz at
   the dancing couple, joggers' earbuds leaking a tinny loop. A porch body with its car in the drive carries the keys (`shared/bodies/bodies.ts`).
+  Contact sheet of every calling and habit: `bun scripts/characters-sheet.ts` (via `hivemind run --kind browser`).
   Tests: `tests/characters.test.ts`.
 - Zombie behaviour (AR-91, `shared/behaviour/`, `src/behaviour/`): each zombie's personality comes from its seed
   (`personality.ts`) and shapes what it does on top of the crowd's state machine (`mind.ts`): stop and listen, follow

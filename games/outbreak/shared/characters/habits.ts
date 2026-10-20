@@ -123,6 +123,11 @@ function eligible(a: AIAgent): boolean {
 /** Runs after the crowd steps: holds habit zombies on their spot, lets go of those that noticed, fills free sites. */
 export function stepHabits(sim: OutbreakSim, st: CharactersState): void {
   const on = habitsOn(st.tuning)
+  // Before checking live habits, so one started on a fresh list (Lab staging after a reset) still finds its site.
+  if (on && st.dirty) {
+    st.sites = habitSites(sim.town)
+    st.dirty = false
+  }
   const byId = new Map<number, AIAgent>()
   for (const a of sim.ai.agents) byId.set(a.id, a)
   const siteByKey = new Map(st.sites.map((s) => [s.key, s]))
@@ -152,10 +157,6 @@ export function stepHabits(sim: OutbreakSim, st: CharactersState): void {
   if (!on) {
     for (const a of sim.ai.agents) st.seen[a.id] = a.seed
     return
-  }
-  if (st.dirty) {
-    st.sites = habitSites(sim.town)
-    st.dirty = false
   }
   const free = st.sites.filter((s) => !st.used[s.key] && siteActive(s, st.tuning.chHabitShare))
   for (const a of sim.ai.agents) {

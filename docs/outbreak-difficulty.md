@@ -158,7 +158,8 @@ while driving the town's road for 15 game hours. The bot batch plays in town, so
 
 Habit loops (`shared/characters/habits.ts`) pin a fresh, unaware wanderer to a site (a front door, a stove, a bed, a
 fence, the church) at least 16 m from every survivor and never closer than it already was. While it is lost in the
-habit it stands still and senses at 0.55× (`chHabitSenses`); when it notices someone it is fully alert at once but
+habit it stands still and sees, hears and feels at 0.55× (`chHabitSenses`; a torch beam on it still wakes it, as it
+would any zombie); when it notices someone it is fully alert at once but
 takes a 1 s beat to let go (`chHabitLetGo`) before it moves. Callings, wear and the rest are presentation only.
 
 3 presets × 72 seeds × 5 nights, `--workers=2`, habits on against `--set=habits=0` on the same base (pre-rebase on
