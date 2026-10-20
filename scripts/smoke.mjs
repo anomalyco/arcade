@@ -23,12 +23,16 @@ const server = Bun.serve({
   },
 })
 let browser
+// The workflow step allows 60 s. On SwiftShader the GPU process compiles every render pipeline on one thread before it
+// presents a frame (Outbreak, Oct 20: 22–36 s, ~1 s per scene-shader pipeline), and the page's main thread can block
+// behind it, so readiness and the first frames share one budget rather than a separate 20 s readiness limit.
+const READY_MS = 40_000
 const deadline = setTimeout(() => {
-  console.error(`${game}: smoke exceeded 45 seconds`)
+  console.error(`${game}: smoke exceeded 55 seconds`)
   process.exit(1)
-}, 45_000)
-// CI (Linux) has no GPU and uses SwiftShader. On macOS the real Metal adapter renders ~80x faster (Outbreak's smoke
-// drops from ~11 s to ~2 s) and must actually start: there the "needs WebGPU" fallback counts as a failure.
+}, 55_000)
+// CI (Linux) has no GPU and uses SwiftShader. On macOS the real Metal adapter renders ~80x faster and must actually
+// start: there the "needs WebGPU" fallback counts as a failure.
 // SMOKE_GPU=swiftshader reproduces CI on a Mac.
 const metal = (process.env.SMOKE_GPU ?? (process.platform === "darwin" ? "metal" : "swiftshader")) === "metal"
 try {
@@ -87,14 +91,14 @@ try {
     const failure = document.querySelector(sel[0])?.textContent
     if (failure && /needs WebGPU|No WebGPU adapter is available|WebGPU could not start/.test(failure)) return failure
     return document.querySelector(sel[1]) ? "lobby ready" : false
-  }, game, { timeout: 20_000, polling: 100 }).catch(async error => {
+  }, game, { timeout: READY_MS, polling: 100 }).catch(async error => {
     const status = await page.evaluate(() => document.querySelector("#status, .notice")?.textContent ?? "").catch(() => "")
-    console.error(`${game}: not ready after 20 s; status ${JSON.stringify(status)}; boot ${await bootTimeline().catch(() => "?")}; browser errors ${JSON.stringify(errors)}`)
+    console.error(`${game}: not ready after ${READY_MS / 1000} s; status ${JSON.stringify(status)}; boot ${await bootTimeline().catch(() => "?")}; browser errors ${JSON.stringify(errors)}`)
     throw error
   })
   console.log(`${game}: boot ${await bootTimeline()}`)
-  // Let initialization promises and the first presentation frames report errors. On SwiftShader these two frames,
-  // where the GPU process compiles every pipeline, are most of the smoke's time.
+  // Let initialization promises and the first presentation frames report errors. On SwiftShader the wait for these
+  // two frames is most of the smoke's time.
   const frames = await page.evaluate(() => new Promise(resolve => {
     const at = []
     const frame = () => (at.push(Math.round(performance.now())), at.length < 2 ? requestAnimationFrame(frame) : resolve(at))
