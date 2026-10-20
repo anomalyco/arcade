@@ -4,6 +4,7 @@
  */
 import "./bodies/index"
 import "./breach/index"
+import "./characters/index"
 import "./death/index"
 import "./discovery/index"
 import "./fire/index"

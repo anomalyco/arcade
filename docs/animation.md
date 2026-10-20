@@ -392,6 +392,12 @@ Every profile shares the strafe values `sideStepTurn 0.3`, `strafeHipTurn 0.95`,
   variants (`limper`, `dragger`, `reacher`, `lunger`) and left/right crippled sides (`resolveDragFoot`) so a 100-zombie
   horde never moves in lockstep (100-zombie `bench-outbreak`: street p95 `18.6 ms`, interior p95 `19.6 ms`, realtime
   ratio `0.996` / `0.999`, CPU prep `1.0 ms` / `0.6 ms`).
+- **Habits and reactions are standing overlays, not gait (AR-88, `src/zombies.ts`).** A zombie still on a habit site
+  (knocking, stirring, over a bed, in a fence, slow-dancing) keeps the standing shamble and adds torso/head pitch and
+  roll offsets plus hand goals given from the shoulder in the torso frame (forward, up, out), blended over the
+  `shambleHandsFK` hands before the arm IK; heads turn and tilt toward a recent noise (a 0.12 s lag, fading over 2.5 s)
+  and the near hand comes up for a 0.85 s torch flinch. Moving zombies are untouched: `reference-clips.ts` before and
+  after gives the same Outbreak zombie numbers (vs 100STYLE Zombie 31.34°, Drag 23.32°, UAL Zombie 25.08°).
 
 ## Weapons
 

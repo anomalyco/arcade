@@ -1,4 +1,6 @@
-import { distToRect, type Rect } from "@arcade/kit/sim/geom"
+import { distToRect, inRect, type Rect } from "@arcade/kit/sim/geom"
+import { isResidential } from "../characters/sites"
+import { STARTING_SAFEHOUSE_RECT } from "../pacing"
 import type { Stack } from "@arcade/kit/sim/ledger"
 import { Rng } from "@arcade/kit/sim/rng"
 import { carSites } from "../discovery/verbs"
@@ -59,6 +61,8 @@ export type BodySite = {
   vignette: boolean
   /** Its fixed roll in [0, 1): it rises when this is under the rise chance. */
   riseRoll: number
+  /** Someone on their own porch with their car still in the drive carries its keys (AR-88). */
+  ownCar?: { x: number; y: number }
 }
 
 export const bodyStoreId = (key: string) => `body:${key}`
@@ -80,6 +84,8 @@ const roll = (town: Pick<Town, "seed">, key: string) => hash01(`${town.seed}:bod
 const PORCH_CHANCE = 0.16
 const CAR_CHANCE = 0.12
 const CLEAR = 0.45
+/** How far from a front door a parked car still counts as the house's own (m). */
+const OWN_CAR_RANGE = 11
 
 /** Whether a body fits at `(x, y)`: outside every building, clear of walls, fences, doors, furniture and wrecks. */
 function clearSpot(town: Town, x: number, y: number): boolean {
@@ -124,6 +130,13 @@ export function bodySites(town: Town): BodySite[] {
       const y = cy + out1.y * o + out1.x * s
       if (!clearSpot(town, x, y)) continue
       add(`porch:${b.id}`, x, y, false)
+      // Not the start house: its sedan is the squad's to fix, not a gift on the doorstep.
+      const own = isResidential(b) && !inRect(cx, cy, STARTING_SAFEHOUSE_RECT, 1)
+      const car = !own ? undefined : carSites(town)
+        .map((c) => ({ c, d: Math.hypot(c.x - cx, c.y - cy) }))
+        .filter((o) => o.d < OWN_CAR_RANGE)
+        .sort((a, b) => a.d - b.d)[0]
+      if (car) out[out.length - 1]!.ownCar = { x: round(car.c.x), y: round(car.c.y) }
       break
     }
   }
@@ -151,8 +164,20 @@ const BODY_LOOT: readonly { item: string; chance: number; min?: number; max?: nu
   { item: "noisemaker", chance: 0.1 },
 ]
 
-/** A body's contents, fixed per body from the town seed. Never empty: there is always something on them. */
-export function bodyLoot(town: Pick<Town, "seed">, key: string, lootRate: number): Stack[] {
+/**
+ * A body's contents, fixed per body from the town seed. Never empty: there is always something on them. Someone lying on
+ * their own porch with their car in the drive always has its keys (`ownCar`).
+ */
+export function bodyLoot(town: Pick<Town, "seed">, key: string, lootRate: number, ownCar = false): Stack[] {
+  const out = rolledLoot(town, key, lootRate)
+  if (ownCar && !out.some((s) => s.item === "key")) {
+    if (out.length >= BODY_SLOTS) out.pop()
+    out.unshift({ item: "key", count: 1 })
+  }
+  return out
+}
+
+function rolledLoot(town: Pick<Town, "seed">, key: string, lootRate: number): Stack[] {
   const rng = new Rng(Math.floor(roll(town, `loot:${key}`) * 0xffffffff) || 1)
   const out: Stack[] = []
   for (const r of BODY_LOOT) {

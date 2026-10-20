@@ -29,9 +29,15 @@ import { hex } from "./level"
 import {
   townsfolkZombieMeshes,
   ZOMBIE_ARCHETYPES,
-  zombieArchetypeIndex,
+  ZOMBIE_BOOT,
+  ZOMBIE_SLIPPERS,
+  zombieCallingArchetype,
   zombiePalette,
 } from "./look/refined-figure"
+import { callingIndexOf, walksEmptyLeash, zombieHash } from "../shared/characters/callings"
+import type { HabitKind } from "../shared/characters/sites"
+import { CharacterAccessories } from "./characters/accessories"
+import type { ZombieCharacterFrame } from "./characters/frame"
 import { specialKindOf, SPECIAL_LURKER, type SpecialKind } from "../shared/specials/kinds"
 import { applySpecialPalette, SpecialAccessories, specialCrouch, specialHeadLift, specialHunch, specialLook } from "./specials/figure"
 import { zombieProfile, type ZombieTuning } from "./zombie-profile"
@@ -78,6 +84,117 @@ export const MAX_INSTANCES_PER_PART = 4096
 const BONE_COUNT = 15
 const BONE_STRIDE = BONE_COUNT * 12
 const INITIAL_AGENT_CAPACITY = 512
+const CALLING_ROBE = callingIndexOf("robe")
+const CALLING_JOGGER = callingIndexOf("jogger")
+const CALLING_BRIDE = callingIndexOf("bride")
+const linearHex = (h: number): [number, number, number] => hex(h).map((c) => c ** 2.2) as [number, number, number]
+const BOOT_TINT = linearHex(ZOMBIE_BOOT)
+
+/**
+ * A habit's pose this frame (AR-88), added on top of the standing shamble: torso and head offsets (rad; negative
+ * pitch leans forward and looks down, as everywhere in this file) and where each hand goes, from the shoulder in the
+ * torso's frame (forward, up, out), with a blend weight. Written by `habitPose`, read by the upright pass.
+ */
+type HabitPose = {
+  torsoPitch: number
+  torsoRoll: number
+  headPitch: number
+  headRoll: number
+  headYaw: number
+  hand: [Float64Array, Float64Array]
+  handW: [number, number]
+}
+
+const KNOCK_PERIOD = 2.6
+/** Three slow blows, timed to the soundscape's `scape.habit.knock` (struck once a cycle, at 0). */
+const KNOCK_TIMES = [0.02, 0.64, 1.41] as const
+const BED_PERIOD = (Math.PI * 2) / 0.9
+const FENCE_PERIOD = 3.4
+/** Waltz time: a sway each way per bar of the gramophone's 3/4 at 0.4 s a beat. */
+const DANCE_PERIOD = 2.4
+
+/** When in its cycle each habit makes the sound someone could hear (period, phase, both s); the wedding is a held loop. */
+const HABIT_CUES: Partial<Record<HabitKind, readonly [number, number]>> = {
+  knock: [KNOCK_PERIOD, 0],
+  stove: [7.3, 2.1],
+  // At the sway's peak, as the weight goes over onto the mattress.
+  bed: [BED_PERIOD, BED_PERIOD / 4],
+  // At the hardest pull on the wire.
+  fence: [FENCE_PERIOD, FENCE_PERIOD / 4],
+}
+
+function crossed(p0: number, p1: number, at: number): boolean {
+  return (p0 < at && p1 >= at) || (p1 < p0 && (at > p0 || at <= p1))
+}
+
+/** How far into a knock (0..1, 1 at the contact) the hand is at time `t` into the cycle. */
+function knockEnvelope(t: number): number {
+  let best = 0
+  for (const k of KNOCK_TIMES) {
+    const d = t - k
+    if (d > -0.16 && d < 0.1) best = Math.max(best, d < 0 ? 1 - (-d / 0.16) ** 2 : 1 - d / 0.1)
+  }
+  return Math.max(0, best)
+}
+
+/** The clock a habit runs on: the wedding pair share the world's, everyone else is offset by their id. */
+function habitTime(kind: HabitKind, time: number, id: number): number {
+  return kind === "bride" || kind === "groom" ? time : time + (id % 7) * 0.37
+}
+
+/** Fills `out` with habit `kind`'s pose at time `t` (s) for a zombie whose dominant hand is `hand` (0 left, 1 right). */
+function habitPose(kind: HabitKind, t: number, hand: 0 | 1, out: HabitPose): void {
+  out.torsoPitch = out.torsoRoll = out.headPitch = out.headRoll = out.headYaw = 0
+  out.handW[0] = out.handW[1] = 0
+  const set = (i: 0 | 1, f: number, u: number, l: number, w: number) => {
+    const h = out.hand[i]
+    h[0] = f
+    h[1] = u
+    h[2] = l
+    out.handW[i] = w
+  }
+  const other = (1 - hand) as 0 | 1
+  if (kind === "knock") {
+    // Three knocks, a rest, again: knuckles to the door at head height, forehead dropping toward the wood.
+    const k = knockEnvelope(t % KNOCK_PERIOD)
+    set(hand, 0.46 + 0.12 * k, 0.12 + 0.02 * k, 0.02, 1)
+    set(other, 0.18, -0.42, 0.06, 0.55)
+    out.torsoPitch = -0.1 - 0.03 * k
+    out.headPitch = -0.28
+    out.headRoll = 0.08
+  } else if (kind === "fence") {
+    // Both hands through the wire, rattling it; every few seconds a hard pull back.
+    const tug = Math.max(0, Math.sin((t * Math.PI * 2) / FENCE_PERIOD)) ** 6
+    const rattle = Math.sin(t * 43) * 0.018
+    set(0, 0.54 - 0.12 * tug + rattle, -0.06, 0.08, 1)
+    set(1, 0.54 - 0.12 * tug - rattle, -0.04, 0.08, 1)
+    out.torsoPitch = -0.16 + 0.24 * tug
+    out.headPitch = -0.08 + 0.12 * tug
+  } else if (kind === "stove") {
+    // Stirring a pan that is not there, slowly, looking down into it.
+    const a = t * 1.7
+    set(hand, 0.36 + 0.06 * Math.cos(a), -0.2, 0.06 * Math.sin(a), 1)
+    set(other, 0.3, -0.26, -0.02, 0.8)
+    out.torsoPitch = -0.18
+    out.headPitch = -0.42
+  } else if (kind === "bed") {
+    // Standing over the bed, hands hanging, head bowed, swaying.
+    set(0, 0.14, -0.5, 0.02, 0.85)
+    set(1, 0.14, -0.5, 0.02, 0.85)
+    out.torsoPitch = -0.3
+    out.headPitch = -0.55
+    out.torsoRoll = 0.06 * Math.sin((t * Math.PI * 2) / BED_PERIOD)
+    out.headRoll = 0.1 * Math.sin((t * Math.PI * 2) / BED_PERIOD - 0.5)
+  } else {
+    // Bride and groom: slow-dancing, hands out to each other, swaying the same way in the world (mirrored in each).
+    const sway = Math.sin((t * Math.PI * 2) / DANCE_PERIOD) * (kind === "bride" ? 1 : -1)
+    set(0, 0.3, -0.08, -0.06, 0.9)
+    set(1, 0.3, -0.08, -0.06, 0.9)
+    out.torsoRoll = 0.07 * sway
+    out.headRoll = 0.12 * sway
+    out.headPitch = -0.1
+  }
+}
 
 const BONE_TO_PART: Record<BoneId, number> = {
   pelvis: 0,
@@ -436,6 +553,20 @@ export class ZombieCrowdRenderer {
   private overlayCtx: CanvasRenderingContext2D | null = null
   /** Special zombies' helmets, shields, bellies and jaws (`src/specials/figure.ts`). */
   private readonly accessories: SpecialAccessories
+  /** Characters this frame (AR-88: callings, wear, habits, leads, heads turning, flinches); `null` is Today. */
+  characters: ZombieCharacterFrame | null = null
+  private readonly charAccessories: CharacterAccessories
+  /** Each foot's tint (left, right) for the shared white foot meshes: shoe leather, a slipper or a bare foot. */
+  private readonly footTint = new Float32Array([...BOOT_TINT, ...BOOT_TINT])
+  private readonly habit: HabitPose = {
+    torsoPitch: 0,
+    torsoRoll: 0,
+    headPitch: 0,
+    headRoll: 0,
+    headYaw: 0,
+    hand: [new Float64Array(3), new Float64Array(3)],
+    handW: [0, 0],
+  }
   /** The zombie being drawn: its whole-body scale about the ground point under it. */
   private agentScale = 1
   private agentOx = 0
@@ -485,12 +616,24 @@ export class ZombieCrowdRenderer {
   private seenX = new Float32Array(INITIAL_AGENT_CAPACITY)
   private seenY = new Float32Array(INITIAL_AGENT_CAPACITY)
   private seenBones = new Float32Array(INITIAL_AGENT_CAPACITY * BONE_STRIDE)
+  /** AR-88 body language and habits: flinch age (s, <0 none), torch contact last frame, flinch cooldown end, knock clock. */
+  private flinchAge = new Float32Array(INITIAL_AGENT_CAPACITY).fill(-1)
+  private inBeam = new Uint8Array(INITIAL_AGENT_CAPACITY)
+  private flinchReady = new Float32Array(INITIAL_AGENT_CAPACITY)
+  /** Sim time of the last draw, for habit beats between frames. */
+  private lastTime = Number.NaN
+  /** Where each empty lead's collar is (plan x, y) and its springy velocity. */
+  private collarX = new Float32Array(INITIAL_AGENT_CAPACITY)
+  private collarY = new Float32Array(INITIAL_AGENT_CAPACITY)
+  private collarVx = new Float32Array(INITIAL_AGENT_CAPACITY)
+  private collarVy = new Float32Array(INITIAL_AGENT_CAPACITY)
 
   constructor(renderer: Pick<Renderer, "addModel">, maxAgents = INITIAL_AGENT_CAPACITY) {
     if (maxAgents > this.capacity) this.growCapacity(maxAgents)
     this.addModel = renderer.addModel.bind(renderer)
     this.models = buildZombiePartMeshes().map((m) => renderer.addModel(m))
     this.accessories = new SpecialAccessories(renderer)
+    this.charAccessories = new CharacterAccessories(renderer)
     this.partData = Array.from({ length: PART_COUNT }, () => new Float32Array(MAX_INSTANCES_PER_PART * INST_FLOATS))
     this.poolBatches = Array.from({ length: PART_COUNT }, (_, i) => ({
       model: this.models[i]!,
@@ -559,6 +702,17 @@ export class ZombieCrowdRenderer {
     this.seenX = growF32(this.seenX)
     this.seenY = growF32(this.seenY)
     this.seenBones = growF32(this.seenBones, BONE_STRIDE)
+    const nextFlinch = new Float32Array(nextCap).fill(-1)
+    nextFlinch.set(this.flinchAge)
+    this.flinchAge = nextFlinch
+    const nextBeam = new Uint8Array(nextCap)
+    nextBeam.set(this.inBeam)
+    this.inBeam = nextBeam
+    this.flinchReady = growF32(this.flinchReady)
+    this.collarX = growF32(this.collarX)
+    this.collarY = growF32(this.collarY)
+    this.collarVx = growF32(this.collarVx)
+    this.collarVy = growF32(this.collarVy)
     this.capacity = nextCap
   }
 
@@ -703,6 +857,13 @@ export class ZombieCrowdRenderer {
       this.collapse[s] = 0
       this.collapseDir[s] = (agent.id % 2 === 0 ? 1 : -1) * 0.35
       this.seenAt[s] = -1e9
+      this.flinchAge[s] = -1
+      this.inBeam[s] = 0
+      this.flinchReady[s] = 0
+      this.collarX[s] = agent.x + Math.cos(agent.aim) * 1.3
+      this.collarY[s] = agent.y + Math.sin(agent.aim) * 1.3
+      this.collarVx[s] = 0
+      this.collarVy[s] = 0
       let mask = 0
       for (let i = 0; i < agent.detachedLimbs.length; i++) {
         mask |= BONE_SUBTREE_MASK[agent.detachedLimbs[i] as BoneId] ?? 0
@@ -837,9 +998,11 @@ export class ZombieCrowdRenderer {
     data[offset + 1] = this.agentOy + (b[fOff + 1]! - this.agentOy) * sc
     data[offset + 2] = this.agentOz + (b[fOff + 2]! - this.agentOz) * sc
     data[offset + 3] = yaw
-    data[offset + 4] = tintR * this.partTint[partIndex * 3]!
-    data[offset + 5] = tintG * this.partTint[partIndex * 3 + 1]!
-    data[offset + 6] = tintB * this.partTint[partIndex * 3 + 2]!
+    const tint = this.refinedActive && partIndex >= 7 ? this.footTint : this.partTint
+    const tOff = this.refinedActive && partIndex >= 7 ? ((boneIdx - 11) & 1) * 3 : partIndex * 3
+    data[offset + 4] = tintR * tint[tOff]!
+    data[offset + 5] = tintG * tint[tOff + 1]!
+    data[offset + 6] = tintB * tint[tOff + 2]!
     data[offset + 7] = sc
     data[offset + 8] = p
     data[offset + 9] = r
@@ -943,6 +1106,8 @@ export class ZombieCrowdRenderer {
     this.partCounts.fill(0)
     this.ghostPartCounts.fill(0)
     this.accessories.begin()
+    this.charAccessories.begin()
+    const chars = this.characters
     this.agentScale = 1
     if (refined) {
       this.archPartCounts.fill(0)
@@ -1000,9 +1165,10 @@ export class ZombieCrowdRenderer {
         data[offset + 1] = d.p[1]
         data[offset + 2] = d.p[2]
         data[offset + 3] = d.yaw
-        data[offset + 4] = 0.85
-        data[offset + 5] = 0.75
-        data[offset + 6] = 0.75
+        const bootDebris = refined && d.partIndex >= 7
+        data[offset + 4] = bootDebris ? BOOT_TINT[0] * 0.85 : 0.85
+        data[offset + 5] = bootDebris ? BOOT_TINT[1] * 0.75 : 0.75
+        data[offset + 6] = bootDebris ? BOOT_TINT[2] * 0.75 : 0.75
         data[offset + 7] = 1
         data[offset + 8] = d.pitchAngle
         data[offset + 9] = d.rollAngle
@@ -1022,10 +1188,26 @@ export class ZombieCrowdRenderer {
     this.currBones = prevTmp
     const bBuf = this.currBones
 
+    const prevTime = this.lastTime
+    this.lastTime = time
+    const beats = chars?.habits && Number.isFinite(prevTime) && time > prevTime && time - prevTime < 0.5
+
     for (let idx = 0; idx < agents.length; idx++) {
       const a = agents[idx]!
+      if (beats && a.state === "wander" && Math.abs(a.vx) + Math.abs(a.vy) < 0.05) {
+        // A habit is heard whether or not anyone can see who is at it.
+        if (a.x > vx0 - 12 && a.x < vx1 + 12 && a.y > vy0 - 12 && a.y < vy1 + 12) {
+          const site = chars!.habits!.at(a.x, a.y)
+          const cue = site && HABIT_CUES[site.kind]
+          if (site && cue) {
+            const p0 = habitTime(site.kind, prevTime, a.id) % cue[0]
+            const p1 = habitTime(site.kind, time, a.id) % cue[0]
+            if (crossed(p0, p1, cue[1])) chars!.onBeat({ id: a.id, kind: site.kind, x: site.x, y: site.y })
+          } else if (site && chars!.dancing.length < 4) chars!.dancing.push({ id: a.id, x: site.x, y: site.y })
+        }
+      }
       if (a.x < vx0 - 3 || a.x > vx1 + 3 || a.y < vy0 - 3 || a.y > vy1 + 3) continue
-      if (refined) this.currentArch = zombieArchetypeIndex(a.seed, a.id)
+      if (refined) this.currentArch = zombieCallingArchetype(a.seed, a.id, chars?.callings ?? false)
 
       const visWeight = typeof vision.actorVisible === "function" ? vision.actorVisible(a.x, a.y) : vision.visible(a.x, a.y) ? 1 : 0
       const isVisible = visWeight > 0.02
@@ -1054,7 +1236,21 @@ export class ZombieCrowdRenderer {
       }
 
       const s = this.ensureSlot(a, support)
-      if (refined) zombiePalette(a.seed, this.partTint, a.id, undead)
+      if (refined) {
+        zombiePalette(a.seed, this.partTint, a.id, undead, this.currentArch, chars?.wear ?? false)
+        this.footTint.set(BOOT_TINT, 0)
+        this.footTint.set(BOOT_TINT, 3)
+        if (this.currentArch === CALLING_ROBE) {
+          // One slipper, one bare foot.
+          const h = zombieHash(a.seed ^ 0x51199e, a.id)
+          const slipper = linearHex(ZOMBIE_SLIPPERS[h % ZOMBIE_SLIPPERS.length]!)
+          const left = (h >>> 8) & 1
+          for (let c = 0; c < 3; c++) {
+            this.footTint[left * 3 + c] = slipper[c]!
+            this.footTint[(1 - left) * 3 + c] = this.partTint[2 * 3 + c]!
+          }
+        }
+      }
       const kind = specialKindOf(a.seed)
       const look = specialLook(kind)
       if (look && refined) applySpecialPalette(kind, this.partTint)
@@ -1495,6 +1691,77 @@ export class ZombieCrowdRenderer {
 
       const speed = Math.hypot(vx, vy)
       const moving = Math.min(1, speed / 3.0)
+
+      // AR-88 characters: a habit at the spot it stands on, a head turned to a noise, a flinch from the torch, an empty
+      // lead. All presentation, derived from the seed, position and state every client already has.
+      const hb = this.habit
+      let habitKind: HabitKind | null = null
+      let habitW = 0
+      let noiseYaw = 0
+      let noiseRoll = 0
+      let flinchW = 0
+      let leash = false
+      const sideHand = ((a.seed >>> 5) & 1) as 0 | 1
+      if (chars && !kind) {
+        const site = chars.habits && a.state === "wander" && speed < 0.25 ? chars.habits.at(a.x, a.y) : null
+        if (site) {
+          habitKind = site.kind
+          habitW = 1
+          habitPose(site.kind, habitTime(site.kind, time, a.id), sideHand, hb)
+        }
+        if (chars.noiseTurn && (a.state === "wander" || a.state === "investigate" || a.state === "search")) {
+          let bestAge = 2.5
+          let bestAng = 0
+          for (let n = 0; n < chars.noises.length; n++) {
+            const ev = chars.noises[n]!
+            if (ev.kind === "groan" || ev.sourceId.startsWith("zombie")) continue
+            const age = time - ev.time
+            if (age < 0 || age >= bestAge) continue
+            const dx = ev.x - a.x
+            const dy = ev.y - a.y
+            const reach = Math.min(14, ev.radius * 1.2)
+            if (dx * dx + dy * dy > reach * reach) continue
+            bestAge = age
+            bestAng = Math.atan2(dy, dx)
+          }
+          if (bestAge < 2.5) {
+            // A beat late, then the head comes round and tilts, and slowly settles back.
+            const w = smooth((bestAge - 0.12) / 0.25) * (1 - bestAge / 2.5)
+            const diff = angleDiff(bestAng, a.aim)
+            noiseYaw = clamp(diff, -1.15, 1.15) * w
+            noiseRoll = (diff >= 0 ? 0.24 : -0.24) * w
+            habitW *= 1 - 0.75 * w
+          }
+        }
+        if (chars.flinch && isVisible && a.state !== "bash") {
+          let lit = false
+          for (const b of chars.beams) {
+            if (!b.on) continue
+            const dx = a.x - b.x
+            const dy = a.y - b.y
+            const d2 = dx * dx + dy * dy
+            if (d2 > 81 || d2 < 0.25) continue
+            const toZ = Math.atan2(dy, dx)
+            if (Math.abs(angleDiff(toZ, b.aim)) > 0.3) continue
+            if (Math.abs(angleDiff(toZ + Math.PI, a.aim)) > 1.2) continue
+            lit = true
+            break
+          }
+          if (lit && !this.inBeam[s] && time >= this.flinchReady[s]!) {
+            this.flinchAge[s] = 0
+            this.flinchReady[s] = time + 7
+          }
+          this.inBeam[s] = lit ? 1 : 0
+        }
+        const fa = this.flinchAge[s]!
+        if (fa >= 0) {
+          const age = fa + dt
+          this.flinchAge[s] = age > 0.85 ? -1 : age
+          flinchW = age < 0.12 ? smooth(age / 0.12) : 1 - smooth((age - 0.3) / 0.55)
+        }
+        leash = chars.leash && !habitKind && a.state === "wander" && walksEmptyLeash(a.seed, a.id)
+        if (this.currentArch === CALLING_JOGGER && refined && isVisible && chars.earbuds.length < 8) chars.earbuds.push({ id: a.id, x: a.x, y: a.y })
+      }
       let travel = speed > 0.25 ? Math.atan2(vy, vx) : a.aim
       if (Math.abs(angleDiff(travel, a.aim)) > 2.05) travel += Math.PI
       const want = a.aim + clamp(angleDiff(travel, a.aim), -1.05, 1.05)
@@ -1697,7 +1964,8 @@ export class ZombieCrowdRenderer {
 
       // Inline angleSpring for chest and head
       const chestGoal = a.aim - twx * 0.55 + shambleMod.torsoYawAdd
-      const headGoal = a.aim + shambleMod.headYawAdd
+      const flinchSide = sideHand ? 1 : -1
+      const headGoal = a.aim + shambleMod.headYawAdd + noiseYaw + habitW * hb.headYaw - flinchSide * 0.55 * flinchW
       const wChest = chestHz * Math.PI * 2
       const kChest = wChest * wChest
       const cChest = 2 * wChest * 0.85
@@ -1737,17 +2005,17 @@ export class ZombieCrowdRenderer {
       const torsoPz = bBuf[pelvisOff + 2]! + bBuf[pelvisOff + 8]! * RIG.waist
       writeYawFrame(bBuf, torsoOff, torsoPx, torsoPy, torsoPz, cx + staggerYaw + (hr ? hr.twist : 0))
       const hunch = kind ? specialHunch(kind, speed, a.state) : 0
-      pitchInPlace(bBuf, torsoOff, -0.04 - lean - shambleMod.torsoPitchAdd - bashPulse - staggerRecoil - 0.42 * strikeU - hunch + (hr ? hr.pitch : 0))
+      pitchInPlace(bBuf, torsoOff, -0.04 - lean - shambleMod.torsoPitchAdd - bashPulse - staggerRecoil - 0.42 * strikeU - hunch + (hr ? hr.pitch : 0) + habitW * hb.torsoPitch + 0.06 * flinchW)
       pitchInPlace(bBuf, torsoOff, -clamp(torsoLean, -0.15, 0.35))
       rollInPlace(bBuf, torsoOff, clamp(torsoRoll, -0.2, 0.2))
-      rollInPlace(bBuf, torsoOff, shambleMod.torsoRollAdd + staggerCant + limpRoll * 0.75 + (hr ? hr.roll : 0))
+      rollInPlace(bBuf, torsoOff, shambleMod.torsoRollAdd + staggerCant + limpRoll * 0.75 + (hr ? hr.roll : 0) + habitW * hb.torsoRoll)
 
       const headPx = torsoPx + bBuf[torsoOff + 3]! * 0.02 + bBuf[torsoOff + 6]! * RIG.neckY
       const headPy = torsoPy + bBuf[torsoOff + 4]! * 0.02 + bBuf[torsoOff + 7]! * RIG.neckY
       const headPz = torsoPz + bBuf[torsoOff + 5]! * 0.02 + bBuf[torsoOff + 8]! * RIG.neckY
       writeYawFrame(bBuf, headOff, headPx, headPy, headPz, hxAng + staggerYaw * 0.8 + (hr ? hr.twist + hr.headYaw : 0))
-      pitchInPlace(bBuf, headOff, -0.12 * torsoLean - shambleMod.headPitchAdd - staggerRecoil * 0.6 + (kind ? specialHeadLift(kind, hunch, a.state) : 0) + (hr ? hr.pitch + hr.headPitch : 0))
-      rollInPlace(bBuf, headOff, headTilt + shambleMod.headRollAdd + staggerCant * 0.5 + (hr ? hr.roll + hr.headRoll : 0))
+      pitchInPlace(bBuf, headOff, -0.12 * torsoLean - shambleMod.headPitchAdd - staggerRecoil * 0.6 + (kind ? specialHeadLift(kind, hunch, a.state) : 0) + (hr ? hr.pitch + hr.headPitch : 0) + habitW * hb.headPitch - 0.32 * flinchW)
+      rollInPlace(bBuf, headOff, headTilt + shambleMod.headRollAdd + staggerCant * 0.5 + (hr ? hr.roll + hr.headRoll : 0) + habitW * hb.headRoll + noiseRoll)
 
       this.emitBone(bOff, 0, 0, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
       this.emitBone(bOff, 1, 1, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
@@ -1780,6 +2048,29 @@ export class ZombieCrowdRenderer {
           hand[2] += txAxisZ * 0.36 * k + tyAxisZ * 0.14 * k
         }
       }
+      if (habitW > 0 || flinchW > 0 || leash) {
+        for (let i = 0; i < 2; i++) {
+          const side = i === 0 ? -1 : 1
+          const hand = i === 0 ? hL : hR
+          const shX = torsoPx + tyAxisX * RIG.shoulderY + tzAxisX * (side * RIG.shoulderW)
+          const shY = torsoPy + tyAxisY * RIG.shoulderY + tzAxisY * (side * RIG.shoulderW)
+          const shZ = torsoPz + tyAxisZ * RIG.shoulderY + tzAxisZ * (side * RIG.shoulderW)
+          const reachTo = (f: number, u: number, l: number, w: number) => {
+            if (w <= 0) return
+            hand[0] += (shX + txAxisX * f + tyAxisX * u + tzAxisX * side * l - hand[0]) * w
+            hand[1] += (shY + txAxisY * f + tyAxisY * u + tzAxisY * side * l - hand[1]) * w
+            hand[2] += (shZ + txAxisZ * f + tyAxisZ * u + tzAxisZ * side * l - hand[2]) * w
+          }
+          const goal = hb.hand[i]!
+          reachTo(goal[0]!, goal[1]!, goal[2]!, habitW * hb.handW[i]!)
+          if (leash && i === sideHand) reachTo(0.3, -0.36, 0.03, 1)
+          // The near hand comes up between the face and the light.
+          if (i === sideHand) reachTo(0.26, 0.34, -0.12, flinchW)
+        }
+      }
+      let leadX = 0
+      let leadY = 0
+      let leadZ = 0
 
       for (let i = 0; i < 2; i++) {
         const side = i === 0 ? -1 : 1
@@ -1803,6 +2094,39 @@ export class ZombieCrowdRenderer {
         solveIkToScratch(shX, shY, shZ, target[0], target[1], target[2], RIG.upper, RIG.fore, poleX, poleY, poleZ)
         writeLimbFrame(bBuf, bOff + (3 + i) * 12, shX, shY, shZ, ikScratch[0]!, ikScratch[1]!, ikScratch[2]!, txAxisX, txAxisY, txAxisZ, tyAxisX, tyAxisY, tyAxisZ)
         writeLimbFrame(bBuf, bOff + (5 + i) * 12, ikScratch[0]!, ikScratch[1]!, ikScratch[2]!, ikScratch[3]!, ikScratch[4]!, ikScratch[5]!, txAxisX, txAxisY, txAxisZ, tyAxisX, tyAxisY, tyAxisZ)
+        if (leash && i === sideHand) {
+          // The hand's end of the lead: just past the wrist along the forearm.
+          const ex = ikScratch[3]! - ikScratch[0]!
+          const ey = ikScratch[4]! - ikScratch[1]!
+          const ez = ikScratch[5]! - ikScratch[2]!
+          const el = Math.max(1e-4, Math.hypot(ex, ey, ez))
+          leadX = ikScratch[3]! + (ex / el) * 0.06
+          leadY = ikScratch[4]! + (ey / el) * 0.06
+          leadZ = ikScratch[5]! + (ez / el) * 0.06
+        }
+      }
+      if (leash && (hidden & BONE_SUBTREE_MASK[sideHand ? "right.foreArm" : "left.foreArm"]) === 0) {
+        // Nothing on the end: the collar trots ahead at a small dog's neck height, nosing side to side.
+        const dir = speed > 0.2 ? Math.atan2(vy, vx) : a.aim
+        const sniff = Math.sin(time * 0.8 + a.id * 1.3)
+        const tx = a.x + Math.cos(dir) * 1.35 - Math.sin(dir) * 0.32 * sniff
+        const ty = a.y + Math.sin(dir) * 1.35 + Math.cos(dir) * 0.32 * sniff
+        const k = 22
+        const c = 2 * Math.sqrt(k) * 0.75
+        this.collarVx[s] = this.collarVx[s]! + ((tx - this.collarX[s]!) * k - this.collarVx[s]! * c) * dt
+        this.collarVy[s] = this.collarVy[s]! + ((ty - this.collarY[s]!) * k - this.collarVy[s]! * c) * dt
+        this.collarX[s] = this.collarX[s]! + this.collarVx[s]! * dt
+        this.collarY[s] = this.collarY[s]! + this.collarVy[s]! * dt
+        const cx = this.collarX[s]!
+        const cz = this.collarY[s]!
+        const trot = speed > 0.2 ? 0.02 * Math.abs(Math.sin(time * 8.5 + a.id)) : 0.006 * Math.sin(time * 2 + a.id)
+        const cy = support(cx, cz) + 0.33 + trot
+        const chord = Math.hypot(cx - leadX, cz - leadZ)
+        this.charAccessories.lead(leadX, leadY, leadZ, cx, cy, cz, Math.max(0.02, 1.25 - chord) * 0.35, dir, tintR, alpha)
+      } else if (chars && !leash) {
+        this.collarX[s] = a.x + Math.cos(a.aim) * 1.3
+        this.collarY[s] = a.y + Math.sin(a.aim) * 1.3
+        this.collarVx[s] = this.collarVy[s] = 0
       }
 
       // Solve legs in-place
@@ -1915,6 +2239,7 @@ export class ZombieCrowdRenderer {
     this.agentScale = 1
     this.batches.length = 0
     this.batches.push(...this.accessories.collect())
+    this.batches.push(...this.charAccessories.collect())
     if (refined) {
       for (let i = 0; i < ARCH_BUCKET_COUNT; i++) {
         const count = this.archPartCounts[i]!

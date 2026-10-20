@@ -23,6 +23,7 @@ import { DEFAULT_BREACH_SETTINGS, type OutbreakBreachSettings } from "./breach/s
 import { DEFAULT_WAY_OUT_TUNING, type WayOutTuning } from "../shared/way-out/tuning"
 import { DEFAULT_INTERACTIONS_TUNING, type InteractionsTuning } from "../shared/interactions/tuning"
 import { DEFAULT_SPECIALS_TUNING, type SpecialsTuning } from "../shared/specials/kinds"
+import { DEFAULT_CHARACTER_SETTINGS, type OutbreakCharacterSettings } from "./characters/settings"
 import type { WorldMode } from "../shared/world"
 import { DEFAULT_AUDIO_SETTINGS, type AudioSettings } from "./audio"
 import { DAY_NIGHT_CURVES, DEFAULT_DAY_NIGHT_CURVES, type DayNightCurveSettings } from "./day-night"
@@ -262,6 +263,7 @@ export type OutbreakSubsystemMap = {
   impact: OutbreakImpactSettings
   breach: OutbreakBreachSettings
   secrets: OutbreakSecretsSettings
+  characters: OutbreakCharacterSettings
 }
 
 export type OutbreakSubsystemKey = keyof OutbreakSubsystemMap
@@ -349,6 +351,7 @@ export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "impact",
   "breach",
   "secrets",
+  "characters",
 ] as const
 
 export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
@@ -398,6 +401,7 @@ export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
     impact: { ...DEFAULT_IMPACT_SETTINGS },
     breach: { ...DEFAULT_BREACH_SETTINGS },
     secrets: { ...DEFAULT_SECRETS_SETTINGS },
+    characters: { ...DEFAULT_CHARACTER_SETTINGS },
   }
 }
 
