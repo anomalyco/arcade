@@ -67,6 +67,9 @@ for (const seat of [0, 1]) {
     try {
       const actor = r.clients[seat]!
       const v = r.core.sim.vehicles.spawnVehicle("sedan", 44, 70, Math.PI / 2, { fuel: 0, hasKeys: false, hasBattery: false })
+      // A duffel (9×4) so the toolbox, car battery and gas can all fit the case.
+      r.core.sim.progression.ledger.apply({ kind: "grant", actor: actor.id, item: "duffel", count: 1 })
+      r.core.sim.progression.syncCase(actor.id)
       for (const item of ["toolbox", "car-battery", "fuel"]) r.core.sim.progression.ledger.apply({ kind: "grant", actor: actor.id, item, count: 1 })
       r.place(actor, 41.8, 70)
       r.act(actor, { interactHeld: true }, Math.ceil((T.hotwireTime + 0.5) * 60))
