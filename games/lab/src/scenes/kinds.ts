@@ -143,6 +143,7 @@ export const LAB_KINDS: readonly LabKind[] = [
   { id: "outbreak-characters", label: "Who they were", subject: "Outbreak's dead as the people they were: callings, wear, habit loops they keep until they notice you, and small body language", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
   { id: "zombie-behaviour", label: "Zombie behaviour", subject: "How Outbreak's dead hear, follow, search and give up, rest by day, herd at night, feed and climb, each with its own walk", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
   { id: "way-out", label: "The Way Out", subject: "Outbreak's hidden way out of town: the clues, the destination at night, the final stand and the escape", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
+  { id: "onboarding", label: "Onboarding", subject: "Outbreak's training room and the clearer E prompts: one wordless beat at a time from the bed to the street", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
   { id: "ship", label: "Ship", subject: "A Carrier ship and sea at a time of day", host: { kind: "page", url: "/arcade/carrier/" }, panels: page },
   { id: "brawler", label: "Brawler", subject: "Brawl's characters, their abilities and the props they throw around", host: { kind: "page", url: "/arcade/brawl/playground.html" }, panels: page, play: "Play" },
   { id: "archer", label: "Archer", subject: "Archers' arenas, movement tuning and power-ups", host: { kind: "page", url: "/arcade/archers/playground.html" }, panels: page, play: "Play" },
@@ -178,6 +179,7 @@ const PAGE_STATIONS: Record<string, string> = {
   "outbreak-breach": "breach",
   "outbreak-secrets": "outbreak-secrets",
   "outbreak-zombie-behaviour": "zombie-behaviour",
+  "outbreak-onboarding": "onboarding",
   brawl: "brawler",
   archers: "archer",
 }
