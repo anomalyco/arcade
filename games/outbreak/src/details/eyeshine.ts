@@ -38,7 +38,7 @@ const onRoad = (x: number, z: number) => {
   return (lx > 37.5 && lx < 50.5) || (lz > 37.5 && lz < 50.5)
 }
 
-/** Dens at the foot of yard trees well away from walls and roads; at most one watcher per town, at the loneliest tree. */
+/** Dens at the crown's edge of yard trees well away from walls and roads; at most one watcher, at the loneliest tree. */
 export function placeDens(town: Town, s: Pick<OutbreakDetailSettings, "lifeTouches" | "lfEyeshine" | "lfWatcher" | "dtSeed">): AnimalDen[] {
   const out: AnimalDen[] = []
   if (!s.lifeTouches) return out
@@ -60,15 +60,17 @@ export function placeDens(town: Town, s: Pick<OutbreakDetailSettings, "lifeTouch
     if (r.next() >= Math.min(0.9, 0.2 * s.lfEyeshine)) continue
     const pick = r.next()
     const kind: AnimalKind = pick < 0.38 ? "raccoon" : pick < 0.62 ? "fox" : pick < 0.86 ? "deer" : "cat"
-    const a = r.next() * Math.PI * 2
-    const d = 0.7 + r.next() * 0.6
+    // At the edge of the crown on its south side: the camera looks north and down, so anything under the crown or
+    // north of the trunk is hidden by the leaves.
+    const a = Math.PI / 4 + r.next() * (Math.PI / 2)
+    const d = 2.1 + r.next() * 0.8
     out.push({ key, kind, x: p.x + Math.cos(a) * d, z: p.y + Math.sin(a) * d, seed: Math.floor(r.next() * 4294967296) >>> 0 })
   }
   if (s.lfWatcher && lonely && lonely.d > 8) {
     const r = detailRng(town, s.dtSeed, `watcher:${lonely.key}`)
     if (r.next() < 0.5) {
-      const a = r.next() * Math.PI * 2
-      out.push({ key: `watcher:${lonely.key}`, kind: "watcher", x: lonely.x + Math.cos(a) * 0.45, z: lonely.z + Math.sin(a) * 0.45, seed: Math.floor(r.next() * 4294967296) >>> 0 })
+      const a = Math.PI / 3 + r.next() * (Math.PI / 3)
+      out.push({ key: `watcher:${lonely.key}`, kind: "watcher", x: lonely.x + Math.cos(a) * 2.2, z: lonely.z + Math.sin(a) * 2.2, seed: Math.floor(r.next() * 4294967296) >>> 0 })
     }
   }
   return out

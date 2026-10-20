@@ -22,18 +22,19 @@ export const CORD_Y = 1.82
 
 const WIDTH: Partial<Record<DetailModel, number>> = { sheet: 0.92, shirt: 0.56, towel: 0.46 }
 
-/** Washing lines in the back or side yards of a share (`lfLaundry`) of homes, clear of everything outdoors. */
+/** Washing lines in the side or back yards of a share (`lfLaundry`) of homes, clear of everything outdoors. */
 export function placeLaundry(town: Town, b: Building, s: Pick<OutbreakDetailSettings, "lifeTouches" | "lfLaundry" | "dtSeed">): LaundryLine | null {
   if (!s.lifeTouches || s.lfLaundry <= 0 || !isHome(b)) return null
   const r = detailRng(town, s.dtSeed, `laundry:${b.id}`)
   if (r.next() >= s.lfLaundry) return null
   const [x0, z0, x1, z1] = b.rect
   for (let t = 0; t < 10; t++) {
-    const side = t % 3
-    // Behind the house along it, or down one side.
+    const side = (t + 1) % 3
+    // Down one side of the house, or well behind it: the camera looks north over the roof, which hides the near
+    // back yard.
     const yaw = side === 0 ? 0 : Math.PI / 2
     const x = side === 0 ? (x0 + x1) / 2 + (r.next() - 0.5) * Math.max(0, x1 - x0 - 4) : side === 1 ? x1 + 2.2 + r.next() * 1.6 : x0 - 2.2 - r.next() * 1.6
-    const z = side === 0 ? z0 - 2.4 - r.next() * 1.8 : (z0 + z1) / 2 + (r.next() - 0.5) * Math.max(0, z1 - z0 - 4)
+    const z = side === 0 ? z0 - 4.6 - r.next() * 1.4 : (z0 + z1) / 2 + (r.next() - 0.5) * Math.max(0, z1 - z0 - 4)
     const c = Math.cos(yaw)
     const sn = Math.sin(yaw)
     const ends = [-LINE_HALF, 0, LINE_HALF]

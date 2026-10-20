@@ -53,6 +53,26 @@ export class BeamProbe {
     }
     return Math.min(1.2, sum)
   }
+
+  /** 0..1: the glow round a torch's lens within `radius` m (any direction), which lights breath just above it. */
+  near(x: number, z: number, radius: number): number {
+    let best = 0
+    const L = this.lights
+    for (let i = this.from; i < this.to; i++) {
+      const k = i * LIGHT_FLOATS
+      if (L[k + 7]! <= 0.001) continue
+      const d = Math.hypot(x - L[k]!, z - L[k + 2]!)
+      if (d >= radius) continue
+      const v = (1 - d / radius) ** 2 * Math.min(1, L[k + 7]!)
+      if (v > best) {
+        best = v
+        this.colour[0] = L[k + 4]!
+        this.colour[1] = L[k + 5]!
+        this.colour[2] = L[k + 6]!
+      }
+    }
+    return best
+  }
 }
 
 export function smoothstep(a: number, b: number, v: number): number {
