@@ -116,16 +116,20 @@ export function stageSecret(host: ProgressionLabHost, session: LocalSession | Ne
   const p = view.player
   const pose = (x: number, y: number, aim: number, hour: number) => {
     host.setHour(hour)
-    if (hour > 6 && hour < 18) p.flashlightOn = false
     host.pose(x, y, aim)
     return { scene, x, y }
   }
   const NORTH = -Math.PI / 2
   switch (scene) {
-    case "tallMan":
+    case "tallMan": {
+      // South of a lit street lamp near the start, so he stands at its pool's edge on screen.
       hooks.force.apparition = "tallMan"
       p.flashlightOn = false
-      return pose(44, 70, NORTH, 22)
+      const lamp = view.town.lamps
+        .filter((l) => l.kind === "street" && l.power > 0)
+        .sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y))[0]
+      return lamp ? pose(lamp.x, lamp.y + 13, NORTH, 22) : pose(44, 70, NORTH, 22)
+    }
     case "procession":
       hooks.force.apparition = "procession"
       p.flashlightOn = false
@@ -156,14 +160,16 @@ export function stageSecret(host: ProgressionLabHost, session: LocalSession | Ne
   switch (scene) {
     case "chalk":
     case "chalk-late":
+      p.flashlightOn = false
       return pose(site.x, site.y + 2.4, NORTH, 13)
     case "litWindow":
       p.flashlightOn = false
-      return pose(site.x + 2, site.y + 9, NORTH - 0.15, 22)
+      return pose(site.x + 2, site.y + 11, NORTH - 0.15, 22)
     case "rockingChair":
       p.flashlightOn = false
-      return pose(site.x + 1, site.y + 4, NORTH, 22)
+      return pose(site.x + 1, site.y + 8, NORTH, 22)
     case "footprints":
+      p.flashlightOn = false
       return pose(site.x + 1.5, site.y + 2.5, NORTH, 14)
     case "audience":
       return pose(site.x, site.y + 1.6, NORTH, 13)

@@ -198,7 +198,7 @@ export class SecretsPresenter {
     this.shown.windowLit = false
     if (pane) {
       const d = Math.hypot(pane.x - me.x, pane.y - me.y)
-      if (d < 14 && this.windowOut < view.time - 90) {
+      if (d < 9 && this.windowOut < view.time - 90) {
         if (wasLit) ev.noticed.push("litWindow")
         this.windowOut = view.time
       } else if (d < 30 && this.windowOut > -Infinity) this.windowOut = Math.max(this.windowOut, view.time - 89)
@@ -317,7 +317,7 @@ export class SecretsPresenter {
     this.shown.procession = 0
     const p = this.procession
     if (!p || p.done) return
-    const figures = this.processionFigures(me, f.screen, view.time - p.start)
+    const figures = this.processionFigures(me, f.screen, view.time - p.start, forced)
     let near = false
     let seenAny = false
     for (const fig of figures) {
@@ -331,10 +331,10 @@ export class SecretsPresenter {
   }
 
   /** Nine of them in a column up the nearest north–south road, walking north, coming in from below the screen. */
-  private processionFigures(me: { x: number; y: number }, screen: SecretFrame["screen"], t: number): { x: number; y: number }[] {
+  private processionFigures(me: { x: number; y: number }, screen: SecretFrame["screen"], t: number, forced = false): { x: number; y: number }[] {
     const roadX = Math.round((me.x - 44) / 96) * 96 + 44
     const x = Math.abs(roadX - me.x) < 12 ? roadX + (me.x < roadX ? 3.5 : -3.5) : roadX
-    const head = this.processionHead ??= Math.min(me.y + 22, screen[3] + 2)
+    const head = this.processionHead ??= forced ? me.y - 4 : Math.min(me.y + 22, screen[3] + 2)
     const out: { x: number; y: number }[] = []
     for (let i = 0; i < 9; i++) out.push({ x: x + (i % 2 ? 0.5 : -0.5), y: head - t * 0.85 + i * 2.3 })
     return out
