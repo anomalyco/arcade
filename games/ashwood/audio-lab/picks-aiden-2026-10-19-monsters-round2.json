@@ -1,0 +1,14 @@
+{
+  "exportedAt": "2026-10-19T17:45:41.347Z",
+  "note": "User export (74 picks). All non-monster picks and the monster round-1 picks are unchanged from picks-aiden-2026-10-19-monsters.json; this file records the round-2 additions the user approved.",
+  "picks": [
+    { "category": "ban2-scream-tear", "group": "monsters", "variant": "v1", "file": "games/ashwood/audio-lab/sfx/ban2-scream-tear/v1.mp3", "fav": true, "status": "approved" },
+    { "category": "ban2-scream-tear", "group": "monsters", "variant": "v3", "file": "games/ashwood/audio-lab/sfx/ban2-scream-tear/v3.mp3", "fav": true, "status": "approved" },
+    { "category": "skin2-breath-pant", "group": "monsters", "variant": "v3", "file": "games/ashwood/audio-lab/sfx/skin2-breath-pant/v3.mp3", "fav": true, "status": "approved" },
+    { "category": "skin2-woman-fox", "group": "monsters", "variant": "v1", "file": "games/ashwood/audio-lab/sfx/skin2-woman-fox/v1.mp3", "fav": true, "status": "approved" },
+    { "category": "skin2-howl-sob", "group": "monsters", "variant": "v3", "file": "games/ashwood/audio-lab/sfx/skin2-howl-sob/v3.mp3", "fav": true, "status": "approved" },
+    { "category": "wen2-starving-groan", "group": "monsters", "variant": "v1", "file": "games/ashwood/audio-lab/sfx/wen2-starving-groan/v1.mp3", "fav": true, "status": "approved" },
+    { "category": "wen2-chatter", "group": "monsters", "variant": "v3", "file": "games/ashwood/audio-lab/sfx/wen2-chatter/v3.mp3", "fav": true, "status": "approved" },
+    { "category": "wen2-huge-scream", "group": "monsters", "variant": "v1", "file": "games/ashwood/audio-lab/sfx/wen2-huge-scream/v1.mp3", "fav": true, "status": "approved" }
+  ]
+}

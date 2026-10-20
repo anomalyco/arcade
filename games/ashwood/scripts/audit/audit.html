@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>ASHWOOD</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; height: 100%; background: #030605; overflow: hidden; }
+      #boot { position: fixed; inset: 0; z-index: 5; pointer-events: none; display: flex; flex-direction: column;
+        align-items: center; justify-content: center; gap: 18px;
+        font: 11px/1 ui-monospace, Menlo, monospace; letter-spacing: 0.32em; color: rgba(190, 214, 204, 0.5);
+        transition: opacity 0.8s ease; }
+      #boot::before { content: ""; position: absolute; inset: 0; z-index: -1; transition: opacity 0.9s ease;
+        background: radial-gradient(ellipse at 50% 60%, #0b1614 0%, #030605 70%); }
+      #boot .boot-title { font-size: 13px; letter-spacing: 0.6em; color: rgba(214, 228, 220, 0.62); text-indent: 0.6em; }
+      #boot .boot-bar { width: 180px; height: 1px; background: rgba(190, 214, 204, 0.12); overflow: hidden; }
+      #boot .boot-bar i { display: block; height: 100%; background: rgba(232, 162, 84, 0.75); transform: scaleX(0.02);
+        transform-origin: left; transition: transform 0.25s ease; }
+      #boot .boot-label { min-height: 1em; text-transform: lowercase; letter-spacing: 0.2em; }
+      #boot.live::before { opacity: 0; }
+      #boot.live { justify-content: flex-end; align-items: flex-start; padding: 0 0 18px 18px; gap: 8px; }
+      #boot.live .boot-title { display: none; }
+      #boot.live .boot-bar { width: 120px; }
+      #boot.done { opacity: 0; }
+      #boot.failed .boot-label { color: rgba(240, 150, 120, 0.8); }
+    </style>
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <div id="hud"></div>
+    <div id="boot"><div class="boot-title">ASHWOOD</div><div class="boot-bar"><i></i></div><div class="boot-label">loading</div></div>
+    <script type="module" src="./entry.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,226 @@
+html, body { margin: 0; height: 100%; background: #030605; overflow: hidden; }
+#view { display: block; width: 100vw; height: 100vh; }
+#hud { position: fixed; left: 0; right: 0; bottom: 14px; display: flex; justify-content: center; pointer-events: none; }
+/* The help bar: the interaction prompts' quiet typewriter line (src/world/doors/hud.ts registers the face). */
+#hud .hint { font: 10.5px/1.4 "Ashwood Type", "American Typewriter", "Courier New", monospace; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(206, 196, 174, 0.42); text-shadow: 0 0 4px rgba(0, 0, 0, 0.8); padding: 4px 10px; transition: opacity 0.6s ease; }
+
+/* ---- Play shell: home screen and pause menu (src/game/shell/menu.ts) ---- */
+
+#shell {
+  --ink: rgba(226, 230, 220, 0.9);
+  --dim: rgba(214, 220, 208, 0.5);
+  --sodium: #e8a254;
+  --type: "Static Type", "American Typewriter", "Courier New", monospace;
+  position: fixed; inset: 0; z-index: 20; color: var(--ink); background: #040605;
+  font: 12px/1.5 var(--type); user-select: none;
+  transition: background-color 2.4s ease, opacity 0.5s ease, visibility 0s;
+}
+#shell[data-world="ready"] { background: transparent; }
+#shell[data-screen="none"] { opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 0.5s ease, visibility 0s 0.5s; }
+#shell[data-screen="pause"] { background: rgba(3, 6, 5, 0.66); }
+
+/* The loading screen: a TV tuning in (src/game/shell/tuner.ts), opaque until the lock, then it fades off the live world. */
+.shell-tuner { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 1; transition: opacity 0.7s ease; }
+#shell[data-world="ready"] .shell-tuner { opacity: 0; }
+.shell-static {
+  position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0;
+  mix-blend-mode: screen; transition: opacity 2.4s ease; filter: brightness(var(--flicker, 1));
+}
+#shell[data-world="ready"] .shell-static { opacity: 0.05; }
+#shell[data-screen="pause"] .shell-static { opacity: 0.05; }
+.shell-veil {
+  position: absolute; inset: 0; pointer-events: none;
+  background:
+    repeating-linear-gradient(to bottom, rgba(0, 0, 0, 0.22) 0 1px, transparent 1px 3px),
+    radial-gradient(ellipse 75% 70% at 50% 45%, transparent 35%, rgba(1, 3, 2, 0.78) 100%),
+    linear-gradient(to bottom, rgba(2, 5, 4, 0.35), transparent 30%, transparent 55%, rgba(2, 5, 4, 0.7));
+}
+
+.shell-osd {
+  position: absolute; font: 600 17px/1 ui-monospace, Menlo, monospace; letter-spacing: 0.12em;
+  color: rgba(236, 240, 232, 0.5); text-shadow: 0 0 6px rgba(200, 230, 215, 0.35), 1px 0 rgba(255, 80, 80, 0.25), -1px 0 rgba(80, 200, 255, 0.25);
+}
+.shell-osd-tl { top: 34px; left: 40px; }
+.shell-osd-bl { bottom: 34px; left: 40px; font-size: 14px; }
+#shell:not([data-screen="home"]) .shell-osd { display: none; }
+
+.shell-main {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+  padding-top: 24vh; box-sizing: border-box;
+}
+/* The title: Rubik Glitch (public/fonts/RubikGlitch-title.woff2, registered by menu.ts) with only a faint glow, so
+   nothing fights the face's own glitch cuts. */
+.shell-title {
+  position: relative; margin: 0; font: 400 clamp(56px, 9.5vw, 150px)/1 "Ashwood Title", "Helvetica Neue", system-ui, sans-serif;
+  letter-spacing: 0.24em; padding-left: 0.24em; color: rgba(234, 238, 230, 0.92); font-synthesis: none;
+  text-shadow: 0 0 22px rgba(234, 238, 230, 0.18), 0 0 70px rgba(234, 238, 230, 0.07);
+}
+.shell-sub {
+  margin-top: 22px; font-size: 11px; letter-spacing: 0.5em; padding-left: 0.5em; text-transform: uppercase; color: var(--dim);
+}
+.shell-heading {
+  display: none; font: 200 44px/1 "Helvetica Neue", system-ui, sans-serif; letter-spacing: 0.5em; padding-left: 0.5em;
+  text-transform: uppercase; color: rgba(234, 238, 230, 0.82);
+}
+#shell[data-screen="pause"] .shell-title, #shell[data-screen="pause"] .shell-sub { display: none; }
+#shell[data-screen="pause"] .shell-heading { display: block; }
+
+.shell-nav, .shell-panel { margin-top: 8vh; display: none; flex-direction: column; align-items: center; }
+#shell[data-panel="main"] .shell-nav,
+#shell[data-panel="character"] .shell-panel[data-panel="character"],
+#shell[data-panel="settings"] .shell-panel[data-panel="settings"],
+#shell[data-panel="credits"] .shell-panel[data-panel="credits"] { display: flex; }
+/* Sub-panels: the title steps back so the panel has the room. */
+.shell-main { transition: padding-top 0.5s ease; }
+.shell-title { transition: font-size 0.5s ease; }
+#shell:not([data-panel="main"]) .shell-main { padding-top: 11vh; }
+#shell:not([data-panel="main"]) .shell-title { font-size: clamp(36px, 4.6vw, 66px); }
+#shell:not([data-panel="main"]) .shell-sub { display: none; }
+#shell:not([data-panel="main"]) .shell-nav, #shell .shell-panel { margin-top: 6vh; }
+
+#shell button {
+  position: relative; background: none; border: 0; padding: 7px 4px; margin: 0; cursor: pointer;
+  font: 13px/1.2 var(--type); letter-spacing: 0.34em; text-transform: uppercase; color: rgba(222, 226, 214, 0.6);
+  outline: none; transition: color 0.25s ease, text-shadow 0.25s ease;
+}
+#shell button:hover, #shell button:focus-visible, #shell button:focus { color: var(--sodium); text-shadow: 0 0 12px rgba(232, 162, 84, 0.45); }
+#shell button:focus::before { content: "▸"; position: absolute; left: -1.5em; letter-spacing: 0; }
+#shell button:disabled { opacity: 0.3; cursor: default; }
+#shell button.waiting { animation: shell-pulse 1.6s ease-in-out infinite; }
+#shell button.starting { opacity: 0.45; cursor: progress; text-shadow: none; }
+@keyframes shell-pulse { 50% { opacity: 0.45; } }
+
+.shell-panel h2 {
+  margin: 0 0 22px; font: 11px/1 var(--type); letter-spacing: 0.5em; padding-left: 0.5em; text-transform: uppercase; color: var(--dim);
+}
+.shell-panel .shell-back { margin-top: 22px; color: var(--dim); }
+.shell-list { display: flex; flex-direction: column; align-items: center; }
+.shell-list button.picked, .shell-choice button.picked { color: var(--ink); }
+.shell-list button.picked::after { content: "·"; position: absolute; right: -1em; color: var(--sodium); }
+
+.shell-row {
+  display: grid; grid-template-columns: 190px 200px 56px; align-items: center; gap: 18px; padding: 5px 0;
+  font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--dim);
+}
+.shell-row output { text-align: right; color: var(--ink); letter-spacing: 0.08em; }
+.shell-row:focus-within > span { color: var(--ink); }
+.shell-choice { display: flex; gap: 14px; grid-column: span 2; }
+.shell-choice button { padding: 3px 2px !important; font-size: 11px !important; color: rgba(214, 220, 208, 0.36) !important; border-bottom: 1px solid transparent !important; }
+#shell .shell-choice button.picked { color: var(--ink) !important; border-bottom-color: rgba(232, 162, 84, 0.7) !important; }
+#shell .shell-choice button:focus, #shell .shell-choice button:hover { color: var(--sodium) !important; }
+#shell .shell-choice button::before { content: none !important; }
+.shell-row input[type="range"] { appearance: none; width: 100%; height: 14px; background: none; margin: 0; cursor: pointer; outline: none; }
+.shell-row input[type="range"]::-webkit-slider-runnable-track { height: 1px; background: rgba(214, 220, 208, 0.28); }
+.shell-row input[type="range"]::-webkit-slider-thumb { appearance: none; width: 7px; height: 13px; margin-top: -6px; background: rgba(226, 230, 220, 0.85); border-radius: 1px; }
+.shell-row input[type="range"]:focus::-webkit-slider-thumb { background: var(--sodium); box-shadow: 0 0 10px rgba(232, 162, 84, 0.6); }
+
+.shell-credits {
+  width: min(620px, 82vw); max-height: calc(100vh - 11vh - 6vh - 290px); overflow-y: auto; padding-right: 10px; user-select: text;
+  font-size: 11px; line-height: 1.6; letter-spacing: 0.04em; color: var(--dim); text-align: center;
+  scrollbar-width: thin; scrollbar-color: rgba(214, 220, 208, 0.25) transparent;
+}
+.shell-credits p { margin: 0 0 10px; }
+.shell-credits h3 { margin: 18px 0 8px; font: inherit; letter-spacing: 0.3em; text-transform: uppercase; color: var(--ink); }
+.shell-models { list-style: none; margin: 0 0 12px; padding: 0; }
+.shell-models a { color: rgba(226, 230, 220, 0.78); text-decoration: none; }
+.shell-models a:hover { color: var(--sodium); }
+.shell-models span { opacity: 0.6; }
+
+.shell-load {
+  position: absolute; left: 50%; bottom: 38px; transform: translateX(-50%); display: flex; flex-direction: column;
+  align-items: center; gap: 10px; font: 10px/1 ui-monospace, Menlo, monospace; letter-spacing: 0.24em; color: var(--dim);
+  text-transform: lowercase; transition: opacity 1.2s ease;
+}
+.shell-load span { padding: 3px 8px; background: rgba(0, 0, 0, 0.55); text-shadow: 0 0 4px rgba(0, 0, 0, 0.9); }
+#shell:not([data-world="loading"]):not([data-world="failed"]) .shell-load, #shell[data-screen="pause"] .shell-load { opacity: 0; transition-duration: 0.3s; }
+#shell[data-world="failed"] .shell-load { color: rgba(240, 150, 120, 0.8); }
+
+/* Until the picture locks: no title, menu or OSD, just the snow, the readout and a quiet prompt for sound. */
+#shell[data-world="loading"] .shell-main, #shell[data-world="locking"] .shell-main { opacity: 0; visibility: hidden; }
+#shell[data-world="ready"] .shell-main { opacity: 1; visibility: visible; transition: opacity 1.8s ease 0.25s; }
+#shell[data-world="loading"] .shell-osd { display: none; }
+.shell-prompt {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 6px 14px;
+  font: 13px/1 ui-monospace, Menlo, monospace; letter-spacing: 0.4em; text-transform: uppercase; color: rgba(236, 240, 232, 0.8);
+  background: rgba(0, 0, 0, 0.6); text-shadow: 0 0 6px rgba(200, 230, 215, 0.4); pointer-events: none;
+  animation: shell-pulse 2.2s ease-in-out infinite; transition: opacity 0.6s ease;
+}
+#shell[data-sound="on"] .shell-prompt, #shell:not([data-world="loading"]) .shell-prompt { opacity: 0; animation: none; }
+
+/* ---- Title card (src/game/shell/title.ts) ---- */
+
+.title-card {
+  position: fixed; inset: 0; z-index: 25; background: #000; opacity: 0; visibility: hidden; pointer-events: none;
+  display: flex; align-items: center; justify-content: center; transition: opacity 0.8s ease, visibility 0s 0.8s;
+}
+.title-card.on { opacity: 1; visibility: visible; pointer-events: auto; cursor: none; transition: opacity 0.8s ease; }
+.title-card.on.out { opacity: 0; transition: opacity var(--fade, 1.6s) ease; pointer-events: none; }
+.title-card-text {
+  max-width: 760px; padding: 0 40px; text-align: center;
+  font: 16px/1.9 "Static Type", "American Typewriter", "Courier New", monospace; letter-spacing: 0.06em;
+  color: rgba(228, 224, 210, 0.86); text-shadow: 0 0 8px rgba(255, 245, 225, 0.12);
+}
+.title-card-text p { margin: 0; min-height: 1.9em; white-space: pre; }
+.title-card-text p.blank { min-height: 1.1em; }
+.title-card-text .rest { visibility: hidden; }
+/* The block cursor: zero width so it never shifts the line; blinks only while idle (the lead, line ends, the end). */
+.title-card-text i { display: inline-block; position: relative; width: 0; height: 1em; vertical-align: -0.12em; visibility: hidden; }
+.title-card-text p.at i { visibility: visible; }
+.title-card-text i::after { content: ""; position: absolute; left: 1px; top: 0.05em; bottom: -0.05em; width: 0.55em; background: currentColor; opacity: 0.75; }
+.title-card-text.idle i::after { animation: title-caret 1.05s steps(1) infinite; }
+@keyframes title-caret { 50% { opacity: 0; } }
+.title-card-skip {
+  position: absolute; right: 40px; bottom: 34px; font: 12px/1 "Static Type", monospace; letter-spacing: 0.3em;
+  text-transform: uppercase; color: rgba(228, 224, 210, 0.5); opacity: 0; transition: opacity 1.2s ease;
+}
+.title-card-skip.on { opacity: 1; }
+
+/* ---- Play-mode control hints (src/game/shell/hints.ts) ---- */
+
+.hints {
+  position: fixed; inset: 0; z-index: 4; pointer-events: none; opacity: 0; transition: opacity 0.4s ease;
+  font: 10.5px/1.4 "Ashwood Type", "American Typewriter", "Courier New", monospace; letter-spacing: 0.14em;
+  text-transform: uppercase; color: rgba(206, 196, 174, 0.5); text-shadow: 0 0 4px rgba(0, 0, 0, 0.85);
+}
+.hints.on { opacity: 1; }
+.hints-strip {
+  position: absolute; left: 22px; bottom: 20px; max-width: min(560px, 60vw); display: flex; flex-wrap: wrap; gap: 6px 16px;
+  opacity: 0; transform: translateY(4px); transition: opacity 1.6s ease, transform 1.6s ease;
+}
+.hints-strip.on { opacity: 1; transform: none; transition-duration: 0.5s; }
+.hints-strip.dim { opacity: 0.32; transform: none; transition-duration: 4s; }
+.hints-item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.hints-toast {
+  position: absolute; left: 50%; bottom: 72px; transform: translate(-50%, 4px); display: inline-flex; align-items: center; gap: 8px;
+  font-size: 12px; letter-spacing: 0.16em; color: rgba(214, 204, 182, 0.82); white-space: nowrap;
+  opacity: 0; transition: opacity 0.9s ease, transform 0.9s ease;
+}
+.hints-toast.on { opacity: 1; transform: translate(-50%, 0); }
+/* In the truck's cab (src/game/escape sets body[data-driving]) no on-foot hint toast (the "M map" one included). */
+body[data-driving] .hints-toast { display: none; }
+
+/* ---- Story subtitles (src/game/shell/subtitles.ts `showSubtitle`) and interaction prompts: a soft dark backing so
+   the typewriter line reads over any surface (a white shirt under a pendant, the fog). Sizes are !important because
+   older callers still set them inline. ---- */
+
+.story-subtitles {
+  position: fixed; left: 50%; bottom: 11%; transform: translate(-50%, 0); z-index: 6; max-width: 70vw;
+  padding: 7px 16px 8px; border-radius: 3px; text-align: center; pointer-events: none;
+  font: 19px/1.45 "Ashwood Type", "American Typewriter", "Courier New", monospace !important; letter-spacing: 0.04em;
+  color: rgba(236, 228, 208, 0.97);
+  background: rgba(4, 6, 5, 0.62); box-shadow: 0 0 22px 8px rgba(4, 6, 5, 0.42);
+  text-shadow: 0 0 3px rgba(0, 0, 0, 1), 0 1px 2px rgba(0, 0, 0, 1);
+  opacity: 0; transition: opacity 0.25s ease;
+}
+.story-subtitles.on { opacity: 1; }
+.story-subtitles .who { margin-right: 0.9em; font-size: 14px; letter-spacing: 0.18em; opacity: 0.6; }
+.story-subtitles .aside { font-style: italic; opacity: 0.7; }
+
+.door-prompt {
+  --akc-size: 18px;
+  padding: 5px 11px 6px; border-radius: 3px; white-space: nowrap;
+  font: 13px/1 "Ashwood Type", "American Typewriter", "Courier New", monospace !important;
+  letter-spacing: 0.16em; text-transform: uppercase; color: rgba(214, 204, 182, 0.9);
+  background: rgba(4, 6, 5, 0.55); box-shadow: 0 0 16px 6px rgba(4, 6, 5, 0.35);
+  text-shadow: 0 0 3px rgba(0, 0, 0, 1) !important;
+}
