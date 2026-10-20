@@ -160,6 +160,12 @@
   to throw; they bonk, stagger, break windows, jolt car alarms and are heard where they land. Ledger stores only
   (`toss:*`, `drop:t:*`, `drop:v:yard:*`). How it works and the inventory of every interaction:
   `../../docs/outbreak-interactions.md`. Tests: `tests/interactions-throwables.test.ts`.
+- Secrets (AR-85): subtle, strange and hidden touches picked per run from `town.seed`/`houseSeed` (`shared/secrets/`:
+  `select.ts` picks and the run's code, `hosts.ts` the one-house hosts, `places.ts` where each piece stands; the
+  cellar lock is the shared `secret:cellar` ledger store, nothing on the wire) and drawn by `src/secrets/` (pieces,
+  apparitions, glances, the card tally and per-browser memory). Spoilers and the solution: `../../docs/outbreak-secrets.md`;
+  keep it in sync. Lab › Secrets (Today = off, per-secret toggles, rarity, force), `arcade cmd secrets.stage
+  secret=<scene>`, station `outbreak-secrets`. Tests: `tests/secrets.test.ts`, `tests/coop-secrets.test.ts`.
 - Hearing, sound cues and peek (AR-67): the dead hear through building shells (`shared/hearing.ts`; shut houses keep
   footsteps in, open doors and windows carry; Lab › Hearing, "Today" = walls only), the HUD's sound cues draw the
   reach they hear (`src/sound-cues/`, Lab › Sound cues, `../../docs/outbreak-hud.md#sound-cues`), and peeking eases

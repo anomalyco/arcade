@@ -47,6 +47,7 @@ import { DEFAULT_ANTI_ALIASING_SETTINGS, type AntiAliasingSettings } from "./ant
 import { DEFAULT_LOOK_TRIMS, type OutbreakLookTrims } from "./look/world"
 import { DEFAULT_NIGHT_LIGHT_SETTINGS, type OutbreakNightLightSettings } from "./night-lights/settings"
 import { DEFAULT_DETAIL_SETTINGS, type OutbreakDetailSettings } from "./details/settings"
+import { DEFAULT_SECRETS_SETTINGS, type OutbreakSecretsSettings } from "./secrets/settings"
 import { DEFAULT_PROP_SETTINGS, type OutbreakPropSettings } from "./props/settings"
 import { DEFAULT_HOUSE_VARIETY_SETTINGS, syncHouseVariety, type HouseVarietySettings } from "./houses/settings"
 import { DEFAULT_VEGETATION_SETTINGS, type OutbreakVegetationSettings } from "./vegetation/settings"
@@ -260,6 +261,7 @@ export type OutbreakSubsystemMap = {
   air: OutbreakAirSettings
   impact: OutbreakImpactSettings
   breach: OutbreakBreachSettings
+  secrets: OutbreakSecretsSettings
 }
 
 export type OutbreakSubsystemKey = keyof OutbreakSubsystemMap
@@ -346,6 +348,7 @@ export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "air",
   "impact",
   "breach",
+  "secrets",
 ] as const
 
 export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
@@ -394,6 +397,7 @@ export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
     air: { ...DEFAULT_AIR_SETTINGS },
     impact: { ...DEFAULT_IMPACT_SETTINGS },
     breach: { ...DEFAULT_BREACH_SETTINGS },
+    secrets: { ...DEFAULT_SECRETS_SETTINGS },
   }
 }
 

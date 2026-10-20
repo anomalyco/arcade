@@ -74,9 +74,10 @@ circled on every calendar, and **the number** the radio man's set repeats.
 **The radio man's cellar** (`cellar`, 45% of runs). One home, a short walk from the start, has a radio mast in its
 side yard. Inside:
 
-- **His set**, on a table against the wall, its dial glowing green. Its needle and dial light pulse in groups, the
-  same count every time, with a long pause between: the number the voice repeats.
-- **His notebook page** on the same table. Look at it: a drawing of a three-dial padlock, with a clock face over
+- **His set**, on his table (a desk, bench or counter will do; in a house with none, on the floor by the hatch), its
+  dial glowing green. Its needle and dial light pulse in groups, the same count every time, with a long pause
+  between: the number the voice repeats.
+- **His notebook page** beside it. Look at it: a drawing of a three-dial padlock, with a clock face over
   the first dial, a calendar square over the second and a radio over the third. No words.
 - **His own clock and calendar**, stopped and circled like everyone else's, so the chain never depends on finding
   another house.
