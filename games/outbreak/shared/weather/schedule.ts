@@ -222,6 +222,24 @@ export function sampleWeather(seed: number, time: number, hour: number, t: Weath
   return target
 }
 
+const TUNING_KEYS = Object.keys(DEFAULT_WEATHER_TUNING) as (keyof WeatherTuning)[]
+
+/**
+ * `sampleWeather` into `out` at most once a sim second (wetness walks a window of past rain), and again at once when the
+ * seed, the hour (to a tenth) or any tuning value changes. `key` holds what `out` was sampled for between calls.
+ */
+export function sampleWeatherCached(seed: number, time: number, hour: number, t: WeatherTuning, key: number[], out: WeatherSample): WeatherSample {
+  const second = Math.floor(time)
+  const tenth = Math.floor(hour * 10)
+  let same = key.length === TUNING_KEYS.length + 3 && key[0] === seed && key[1] === second && key[2] === tenth
+  for (let i = 0; same && i < TUNING_KEYS.length; i++) same = key[i + 3] === t[TUNING_KEYS[i]!]
+  if (same) return out
+  key.length = 0
+  key.push(seed, second, tenth)
+  for (const k of TUNING_KEYS) key.push(t[k])
+  return sampleWeather(seed, time, hour, t, out)
+}
+
 /** Resolves the weather tuning from the features' resolved tuning (`resolved.features.weather`). */
 export function weatherTuning(features: Readonly<Record<string, Record<string, unknown>>> | undefined): WeatherTuning {
   return (features?.weather as WeatherTuning | undefined) ?? DEFAULT_WEATHER_TUNING
