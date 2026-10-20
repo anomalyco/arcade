@@ -22,10 +22,15 @@ try {
   const rec = new Recorder(page, cdp, `${ROOT}/probe-${tag}`)
   await rec.start()
   for (const s of poses) {
-    const [x, y, z, yaw, pitch, flash] = s.split(",").map(Number) as number[]
+    const parts = s.split(",")
+    const ground = parts[1]!.startsWith("g")
+    const [x, y, z, yaw, pitch, flash] = parts.map((v) => Number(v.replace(/^g/, ""))) as number[]
     await run(page, (a: number[]) => {
       const P = (globalThis as Any).__ashwoodPlayer
       const T = (globalThis as Any).__trailer
+      const S = (globalThis as Any).__ashwoodRender?.settings
+      if (S) S["body.show"] = false
+      if (a[6]) a[1] = a[1]! + P.groundAt(a[0], a[2], 999)
       P.fly = true
       if (a[5] !== undefined && !Number.isNaN(a[5])) P.flashlight = !!a[5]
       T.hooks = [
@@ -38,7 +43,7 @@ try {
           P.vel.x = P.vel.y = P.vel.z = 0
         },
       ]
-    }, [x!, y!, z!, yaw!, pitch!, flash!])
+    }, [x!, y!, z!, yaw!, pitch!, flash!, ground ? 1 : 0])
     await rec.advance(settle)
     await rec.record(1)
     console.log(s, "->", rec.n - 1)

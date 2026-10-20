@@ -6,8 +6,8 @@
 export type SfxVariant = { url: string; duration: number; hit?: number; loopStart?: number; loopEnd?: number; from: string }
 export type SfxEntry = { group: string; loop: boolean; stereo: boolean; variants: readonly SfxVariant[]; skipped?: string }
 
-export type SfxId = "foot-linoleum" | "foot-stairwell" | "foot-grating" | "foot-wet-asphalt" | "foot-gravel" | "foot-forest" | "door-fire-steel" | "door-office-wood" | "door-panic-bar" | "door-rollup-dock" | "gate-chainlink" | "gate-motorized" | "lift-motor" | "lift-cable" | "lift-ding" | "lift-stall" | "lift-scissor-gate" | "light-fluoro-hum" | "light-fluoro-flicker" | "light-sodium-buzz" | "light-switch" | "amb-forest-night" | "amb-rain-asphalt" | "amb-rain-thunder" | "amb-thunder" | "amb-hvac" | "amb-corridor-tone" | "amb-machine-room" | "amb-radio-static" | "int-flashlight" | "int-keys" | "int-mop-bucket" | "int-paper" | "int-phone-ring" | "int-phone-offhook" | "int-crt-whine" | "int-lab-glass" | "hor-metal-bang" | "hor-knock" | "hor-drone" | "hor-radio-whisper" | "hor-footsteps-other" | "hor-sub-rumble" | "ui-notify" | "amb-pine-wind" | "out-owl" | "out-twig" | "out-cone" | "out-creak" | "out-rustle" | "out-far-animal" | "wen-distant-moan" | "wen2-starving-groan" | "wen2-chatter" | "wen2-huge-scream" | "story-car-alarm" | "story-call-player-m" | "story-call-player-f" | "story-call-reply" | "story-call-player-remy" | "story-call-player-james" | "story-call-player-louise" | "story-call-player-megan" | "story-call-player-kate"
-export const SFX_IDS: readonly SfxId[] = ["foot-linoleum","foot-stairwell","foot-grating","foot-wet-asphalt","foot-gravel","foot-forest","door-fire-steel","door-office-wood","door-panic-bar","door-rollup-dock","gate-chainlink","gate-motorized","lift-motor","lift-cable","lift-ding","lift-stall","lift-scissor-gate","light-fluoro-hum","light-fluoro-flicker","light-sodium-buzz","light-switch","amb-forest-night","amb-rain-asphalt","amb-rain-thunder","amb-thunder","amb-hvac","amb-corridor-tone","amb-machine-room","amb-radio-static","int-flashlight","int-keys","int-mop-bucket","int-paper","int-phone-ring","int-phone-offhook","int-crt-whine","int-lab-glass","hor-metal-bang","hor-knock","hor-drone","hor-radio-whisper","hor-footsteps-other","hor-sub-rumble","ui-notify","amb-pine-wind","out-owl","out-twig","out-cone","out-creak","out-rustle","out-far-animal","wen-distant-moan","wen2-starving-groan","wen2-chatter","wen2-huge-scream","story-car-alarm","story-call-player-m","story-call-player-f","story-call-reply","story-call-player-remy","story-call-player-james","story-call-player-louise","story-call-player-megan","story-call-player-kate"]
+export type SfxId = "foot-linoleum" | "foot-stairwell" | "foot-grating" | "foot-wet-asphalt" | "foot-gravel" | "foot-forest" | "door-fire-steel" | "door-office-wood" | "door-panic-bar" | "door-rollup-dock" | "gate-chainlink" | "gate-motorized" | "lift-motor" | "lift-cable" | "lift-ding" | "lift-stall" | "lift-scissor-gate" | "light-fluoro-hum" | "light-fluoro-flicker" | "light-sodium-buzz" | "light-switch" | "amb-forest-night" | "amb-rain-asphalt" | "amb-rain-thunder" | "amb-thunder" | "amb-hvac" | "amb-corridor-tone" | "amb-machine-room" | "amb-radio-static" | "int-flashlight" | "int-keys" | "int-mop-bucket" | "int-paper" | "int-phone-ring" | "int-phone-offhook" | "int-crt-whine" | "int-lab-glass" | "hor-metal-bang" | "hor-knock" | "hor-drone" | "hor-radio-whisper" | "hor-footsteps-other" | "hor-sub-rumble" | "ui-notify" | "amb-pine-wind" | "out-owl" | "out-twig" | "out-cone" | "out-creak" | "out-rustle" | "out-far-animal" | "wen-distant-moan" | "wen2-starving-groan" | "wen2-chatter" | "wen2-huge-scream" | "ban2-scream-tear" | "skin2-woman-fox" | "skin-animal-human" | "skin-cry-growl" | "ban-keen-wail" | "skin2-howl-sob" | "ban-scream-far" | "skin2-breath-pant" | "story-car-alarm" | "story-call-player-m" | "story-call-player-f" | "story-call-reply" | "story-call-player-remy" | "story-call-player-james" | "story-call-player-louise" | "story-call-player-megan" | "story-call-player-kate"
+export const SFX_IDS: readonly SfxId[] = ["foot-linoleum","foot-stairwell","foot-grating","foot-wet-asphalt","foot-gravel","foot-forest","door-fire-steel","door-office-wood","door-panic-bar","door-rollup-dock","gate-chainlink","gate-motorized","lift-motor","lift-cable","lift-ding","lift-stall","lift-scissor-gate","light-fluoro-hum","light-fluoro-flicker","light-sodium-buzz","light-switch","amb-forest-night","amb-rain-asphalt","amb-rain-thunder","amb-thunder","amb-hvac","amb-corridor-tone","amb-machine-room","amb-radio-static","int-flashlight","int-keys","int-mop-bucket","int-paper","int-phone-ring","int-phone-offhook","int-crt-whine","int-lab-glass","hor-metal-bang","hor-knock","hor-drone","hor-radio-whisper","hor-footsteps-other","hor-sub-rumble","ui-notify","amb-pine-wind","out-owl","out-twig","out-cone","out-creak","out-rustle","out-far-animal","wen-distant-moan","wen2-starving-groan","wen2-chatter","wen2-huge-scream","ban2-scream-tear","skin2-woman-fox","skin-animal-human","skin-cry-growl","ban-keen-wail","skin2-howl-sob","ban-scream-far","skin2-breath-pant","story-car-alarm","story-call-player-m","story-call-player-f","story-call-reply","story-call-player-remy","story-call-player-james","story-call-player-louise","story-call-player-megan","story-call-player-kate"]
 
 export const SFX: Record<SfxId, SfxEntry> = {
   "foot-linoleum": {
@@ -1106,6 +1106,134 @@ export const SFX: Record<SfxId, SfxEntry> = {
         "duration": 8.206,
         "hit": 0.627,
         "from": "wen2-huge-scream/v1"
+      }
+    ]
+  },
+  "ban2-scream-tear": {
+    "group": "monsters",
+    "loop": false,
+    "stereo": false,
+    "variants": [
+      {
+        "url": "sfx/ban2-scream-tear/v1.ogg",
+        "duration": 3.663,
+        "hit": 0.547,
+        "from": "ban2-scream-tear/v1"
+      },
+      {
+        "url": "sfx/ban2-scream-tear/v3.ogg",
+        "duration": 5.079,
+        "hit": 0.603,
+        "from": "ban2-scream-tear/v3"
+      }
+    ]
+  },
+  "skin2-woman-fox": {
+    "group": "monsters",
+    "loop": false,
+    "stereo": false,
+    "variants": [
+      {
+        "url": "sfx/skin2-woman-fox/v1.ogg",
+        "duration": 4.092,
+        "hit": 1.091,
+        "from": "skin2-woman-fox/v1"
+      }
+    ]
+  },
+  "skin-animal-human": {
+    "group": "monsters",
+    "loop": false,
+    "stereo": false,
+    "variants": [
+      {
+        "url": "sfx/skin-animal-human/v2.ogg",
+        "duration": 3,
+        "hit": 1.819,
+        "from": "skin-animal-human/v2"
+      }
+    ]
+  },
+  "skin-cry-growl": {
+    "group": "monsters",
+    "loop": false,
+    "stereo": false,
+    "variants": [
+      {
+        "url": "sfx/skin-cry-growl/v2.ogg",
+        "duration": 4,
+        "hit": 2.224,
+        "from": "skin-cry-growl/v2"
+      }
+    ]
+  },
+  "ban-keen-wail": {
+    "group": "monsters",
+    "loop": false,
+    "stereo": false,
+    "variants": [
+      {
+        "url": "sfx/ban-keen-wail/v1.ogg",
+        "duration": 6,
+        "hit": 1.456,
+        "from": "ban-keen-wail/v1"
+      },
+      {
+        "url": "sfx/ban-keen-wail/v2.ogg",
+        "duration": 6,
+        "hit": 1.515,
+        "from": "ban-keen-wail/v2"
+      },
+      {
+        "url": "sfx/ban-keen-wail/v3.ogg",
+        "duration": 5,
+        "hit": 1.16,
+        "from": "ban-keen-wail/v3"
+      }
+    ]
+  },
+  "skin2-howl-sob": {
+    "group": "monsters",
+    "loop": false,
+    "stereo": false,
+    "variants": [
+      {
+        "url": "sfx/skin2-howl-sob/v3.ogg",
+        "duration": 5.316,
+        "hit": 2.648,
+        "from": "skin2-howl-sob/v3"
+      }
+    ]
+  },
+  "ban-scream-far": {
+    "group": "monsters",
+    "loop": false,
+    "stereo": false,
+    "variants": [
+      {
+        "url": "sfx/ban-scream-far/v2.ogg",
+        "duration": 4,
+        "hit": 0.232,
+        "from": "ban-scream-far/v2"
+      },
+      {
+        "url": "sfx/ban-scream-far/v3.ogg",
+        "duration": 4.48,
+        "hit": 0.515,
+        "from": "ban-scream-far/v3"
+      }
+    ]
+  },
+  "skin2-breath-pant": {
+    "group": "monsters",
+    "loop": false,
+    "stereo": false,
+    "variants": [
+      {
+        "url": "sfx/skin2-breath-pant/v3.ogg",
+        "duration": 4.684,
+        "hit": 1.445,
+        "from": "skin2-breath-pant/v3"
       }
     ]
   },

@@ -9,6 +9,7 @@ import { northTrackSamples } from "../../world/layout"
 import { installHudType } from "../../world/doors/hud"
 import { aimBone } from "../../creatures/kit/ik"
 import { createEncounterLights, encounterLights, parkEncounterLight } from "./lights"
+import { playMonsterScream, preloadMonsterSounds } from "../hunter/voice"
 export { createEncounterLights }
 
 // The ending (fixed for now: the player always dies). The escape truck (the intro agent's) gets out the north gate
@@ -42,7 +43,6 @@ export type RoadVehicle = {
   eye?: THREE.Object3D
 }
 
-const SCREAM_URL = "sfx/monsters/wen2-huge-scream.mp3"
 /** Where it stands in the road ahead of the eye (m). */
 const AHEAD = 17
 /** Appear → skull at the glass (s): no time to react. */
@@ -60,7 +60,7 @@ export const END_CARD = {
   hold: 2.6,
 }
 
-type Prepared = { w: Wendigo; scream: AudioBuffer | null; fill: THREE.PointLight; beam: THREE.SpotLight }
+type Prepared = { w: Wendigo; fill: THREE.PointLight; beam: THREE.SpotLight }
 let prepared: Promise<Prepared> | null = null
 
 /** Loads, compiles and draws the creature once out of sight, and decodes the scream. Call when the drive starts. */
@@ -88,14 +88,9 @@ export function prepareRoadAmbush(world: World) {
     w.root.visible = true
     for (let i = 0; i < 3; i++) await new Promise((r) => requestAnimationFrame(r))
     w.root.visible = false
-    let scream: AudioBuffer | null = null
-    try {
-      const bytes = await (await fetch(new URL(SCREAM_URL, document.baseURI).href)).arrayBuffer()
-      scream = await (audioContext() ?? new OfflineAudioContext(2, 1, 48000)).decodeAudioData(bytes)
-    } catch (e) {
-      console.warn("road ambush: scream not loaded", e)
-    }
-    return { w, scream, fill, beam }
+    // The scream: the creature's shared pool (src/game/hunter/voice.ts), decoding now.
+    preloadMonsterSounds()
+    return { w, fill, beam }
   })()
   return prepared
 }
@@ -122,7 +117,7 @@ export function startEndingDrive(lead = 5) {
 
 export async function runRoadAmbush(g: GameContext, v: RoadVehicle) {
   const { camera, flow } = g
-  const { w, scream, fill, beam } = await prepareRoadAmbush(g.world)
+  const { w, fill, beam } = await prepareRoadAmbush(g.world)
   if (!w.rig) {
     // No creature: lock, cut to black and the end card (the ending still ends).
     g.flow.hold = true
@@ -187,15 +182,9 @@ export async function runRoadAmbush(g: GameContext, v: RoadVehicle) {
   let t = 0
   let impacted = false
 
+  /** A scream from the creature's shared pool (src/game/hunter/voice.ts), in the player's head. */
   const playScream = () => {
-    const a = audio()
-    if (!a || !scream) return
-    const src = a.ctx.createBufferSource()
-    src.buffer = scream
-    const gain = a.ctx.createGain()
-    gain.gain.value = 1.7
-    src.connect(gain).connect(a.buses.horror)
-    src.start()
+    playMonsterScream(undefined, { gain: 1.7 })
   }
 
   await new Promise<void>((done) => {

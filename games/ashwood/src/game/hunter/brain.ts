@@ -676,11 +676,9 @@ export class Hunter {
       case "search":
         if (now > this.searchUntil) {
           this.note("gives up")
-          // Losing the trail: now and then a scream that carries through the building, else a moan.
-          if (this.time - this.lastScream > 60 && this.rng() < 0.5) {
-            this.lastScream = this.time
-            this.voice.vocal(this.headPos(), "scream", 0.75)
-          } else this.voice.vocal(this.headPos(), "moan", 0.9)
+          // Losing the trail: a distant call that carries through the building (the distant pool: moans, the keening
+          // wail, the howling sob, a far scream).
+          this.voice.vocal(this.headPos(), "moan", 1.1)
           this.nextVocal = now + 20
           this.setMode("roam")
           return

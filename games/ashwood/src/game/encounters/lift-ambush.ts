@@ -8,6 +8,7 @@ import { createWendigo, type Wendigo } from "../../creatures/wendigo"
 import { audio, audioContext } from "../../audio/context"
 import { aimBone } from "../../creatures/kit/ik"
 import { encounterLights, parkEncounterLight } from "./lights"
+import { playMonsterScream, preloadMonsterSounds } from "../hunter/voice"
 
 // The lift ambush (the first Wendigo beat). Once the player has been in the radio room (3-08), riding the lift is
 // fatal, but nothing says so: the ride and the doors opening are perfectly normal and the lobby looks empty. The
@@ -21,8 +22,6 @@ import { encounterLights, parkEncounterLight } from "./lights"
 // The creature, its shaders and the scream are loaded and warmed when the player first enters 3-08, so the scare
 // never hitches. Automation: `__ashwoodAmbush` (state, `arm()`, `trigger(storey)`).
 
-/** Scream file, shipped as-is (approved take: audio-lab/sfx/wen2-huge-scream/v1.mp3). */
-const SCREAM_URL = "sfx/monsters/wen2-huge-scream.mp3"
 /** Seconds between the doors opening enough to see it and the lunge. */
 const BEAT = 0.6
 /** Where it stands: centred on the lift doors, ~1.9 m out into the lobby (skull hangs ~0.5 m further forward). */
@@ -54,7 +53,6 @@ export function startLiftAmbush(g: GameContext, hooks: AmbushHooks) {
   const { scene, camera, flow, world } = g
   let wendigo: Wendigo | null = null
   let loading: Promise<void> | null = null
-  let scream: AudioBuffer | null = null
   let chatterBuf: AudioBuffer | null = null
   let phase: AmbushPhase = "idle"
   let storey = 0
@@ -100,11 +98,11 @@ export function startLiftAmbush(g: GameContext, hooks: AmbushHooks) {
       for (let i = 0; i < 3; i++) await new Promise((r) => requestAnimationFrame(r))
       w.root.visible = false
       wendigo = w
-      // The scream: decoded now (an offline context if the game's isn't running yet; buffers play in any context).
+      // The scream: the creature's shared pool (src/game/hunter/voice.ts), decoded now; the chatter decoded here
+      // (an offline context if the game's isn't running yet; buffers play in any context).
+      preloadMonsterSounds()
       try {
-        const bytes = await (await fetch(new URL(SCREAM_URL, document.baseURI).href)).arrayBuffer()
         const ctx = audioContext() ?? new OfflineAudioContext(2, 1, 48000)
-        scream = await ctx.decodeAudioData(bytes)
         chatterBuf = await ctx.decodeAudioData(await (await fetch(new URL("sfx/monsters/wen2-chatter.mp3", document.baseURI).href)).arrayBuffer())
       } catch (e) {
         console.warn("ambush: scream not loaded", e)
@@ -115,15 +113,9 @@ export function startLiftAmbush(g: GameContext, hooks: AmbushHooks) {
     return loading
   }
 
+  /** A scream from the creature's shared pool, in the player's head (no repeat of the last two; pitch and level vary). */
   const playScream = () => {
-    const a = audio()
-    if (!a || !scream) return
-    const src = a.ctx.createBufferSource()
-    src.buffer = scream
-    const gain = a.ctx.createGain()
-    gain.gain.value = 1.6
-    src.connect(gain).connect(a.buses.horror)
-    src.start()
+    playMonsterScream(undefined, { gain: 1.6 })
   }
 
   let stance: "quad" | "biped" = "biped"

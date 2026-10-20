@@ -12,6 +12,7 @@ import { PlayerNoises } from "./senses"
 import { emitNoise, lastLoudNoise } from "./noise"
 import { hunterControls, num } from "./settings"
 import { hooks } from "../../audio/hooks"
+import { preloadMonsterSounds } from "./voice"
 
 // The Wendigo hunter (owner's design, after the 3-08 radio beat). `installHunter(world)` builds the nav graph over the
 // finished building, the (dormant) creature and the player's noise sources. The 3-08 beat (transmitter-state.ts) is a
@@ -92,7 +93,8 @@ export function installHunter(world: World, o: { flow?: Flow; signal?: AbortSign
   if (o.debug) ctx.settings["hunter.debug"] = 1
   console.info(`hunter: nav ${nav.buildMs.toFixed(0)} ms, ${nav.doors.length} doors, ${nav.rooms.length} rooms`)
   // Its sounds and the entry's are decoded now (one-shots not yet decoded are skipped, and the long ones decode last).
-  for (const id of ["wen2-huge-scream", "wen2-starving-groan", "wen2-chatter", "wen-distant-moan", "hor-metal-bang", "story-car-alarm", "int-lab-glass", "int-mop-bucket", "door-fire-steel", "door-office-wood", "door-panic-bar", "light-fluoro-flicker", "foot-linoleum", "foot-stairwell", "foot-grating"] as const)
+  preloadMonsterSounds()
+  for (const id of ["hor-metal-bang", "story-car-alarm", "int-lab-glass", "int-mop-bucket", "door-fire-steel", "door-office-wood", "door-panic-bar", "light-fluoro-flicker", "foot-linoleum", "foot-stairwell", "foot-grating"] as const)
     void hooks.sfx?.load(id)
 
   // Catching the player: until the death path lands, a stub (event + a red flash in debug).

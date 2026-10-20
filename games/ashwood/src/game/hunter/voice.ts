@@ -2,6 +2,7 @@ import type { WorldContext, Lamp } from "../../world/context"
 import { audio } from "../../audio/context"
 import { hooks } from "../../audio/hooks"
 import type { PlayOptions } from "../../audio/engine"
+import type { Bus } from "../../audio/context"
 import type { SfxId } from "../../audio/sfx-manifest"
 import { surfaceAt, type Surface } from "../../audio/surfaces"
 import { storeyOf } from "./nav"
@@ -25,7 +26,8 @@ const grilleY = (s: number) => storeyY(s) + 2.9
 //  - footsteps: the player's surface recordings (linoleum, the concrete stairwell, grating) pitched down ~25%, with a
 //    low-shelf boost and a duller top, plus claws ticking on hard floors (procedural) when on all fours;
 //  - breath: a ragged procedural inhale/exhale near the head (close range only); groans, chatter and the huge scream
-//    from the approved monster takes (wen-distant-moan, wen2-starving-groan, wen2-chatter, wen2-huge-scream);
+//    from the approved monster takes in pools (SCREAM_POOL, DISTANT_POOL below; the starving groan, chatter and the
+//    recorded panting close by);
 //  - doors it opens, bashes or slams (the door recordings at the leaf); things it knocks over (metal, glass, a mop
 //    bucket); light tubes stuttering as it passes (the fluorescent flicker take at the fixture).
 // The building reacts too: lamps of its storey within ~7 m stutter (their real light), restored once it has gone.
@@ -47,6 +49,97 @@ const STEP: Partial<Record<Surface, { id: SfxId; rate: number; gain: number; low
 const FLOOR = 0.002
 
 export type VoiceLog = { t: number; id: string; x: number; y: number; z: number; gain: number; walls: number; heard: number }
+
+// ------------------------------------------------------------------------------------------- the monster's pools
+// The approved monster takes (audio-lab/ship-hunter.json; no voices: skin-call-far isn't shipped), in pools so the
+// same one doesn't come round every time. Each pick avoids the last two of its pool (and another variant of the last)
+// and prefers takes already decoded;
+// every play varies pitch ±6% and level ±10%. `variant` is the index in the shipped manifest (picks order).
+
+type Take = { id: SfxId; variant?: number; gain?: number; lowpass?: number }
+
+/** The kill and attack scream (the hunter spotting you, the lift and road ambushes, every death). */
+export const SCREAM_POOL: readonly Take[] = [
+  { id: "wen2-huge-scream" },
+  { id: "ban2-scream-tear", variant: 0 },
+  { id: "ban2-scream-tear", variant: 1 },
+  { id: "skin2-woman-fox" },
+  { id: "skin-animal-human" },
+  { id: "skin-cry-growl" },
+]
+/** Distant calls: losing a trail, now and then roaming (the keening wail always heavily muffled and quieter). */
+export const DISTANT_POOL: readonly Take[] = [
+  { id: "wen-distant-moan", variant: 0 },
+  { id: "wen-distant-moan", variant: 1 },
+  { id: "ban-keen-wail", variant: 0, gain: 0.6, lowpass: 1100 },
+  { id: "ban-keen-wail", variant: 1, gain: 0.6, lowpass: 1100 },
+  { id: "ban-keen-wail", variant: 2, gain: 0.6, lowpass: 1100 },
+  { id: "skin2-howl-sob" },
+  { id: "ban-scream-far", variant: 0 },
+  { id: "ban-scream-far", variant: 1 },
+]
+const recent = new Map<readonly Take[], number[]>()
+
+/** A take from `pool`: not one of the last two (nor the last one's sound), a decoded one when there is one. */
+export function pickTake(pool: readonly Take[]): Take {
+  const last = recent.get(pool) ?? []
+  const prevId = last.length ? pool[last[last.length - 1]!]!.id : null
+  // Not one of the last two takes, nor the same sound as the last (another variant of it).
+  const fresh = pool.map((_, i) => i).filter((i) => !last.includes(i) && pool[i]!.id !== prevId)
+  const ready = fresh.filter((i) => hooks.sfx?.ready(pool[i]!.id))
+  const from = ready.length ? ready : fresh.length ? fresh : pool.map((_, i) => i)
+  const i = from[Math.floor(Math.random() * from.length)]!
+  recent.set(pool, [...last, i].slice(-2))
+  return pool[i]!
+}
+
+/** Pitch ±6%, level ±10%: every play of a monster take is a little different. */
+const vary = () => ({ rate: 0.94 + Math.random() * 0.12, gain: 0.9 + Math.random() * 0.2 })
+const MONSTER = /^(wen|ban|skin)/
+
+export type MonsterSoundOpts = { gain?: number; bus?: Bus; ref?: number; rolloff?: number; lowpass?: number; occlude?: boolean; lowBoost?: number }
+
+/**
+ * The creature's scream from the shared pool, at `pos` (positional, occluded) or, without one, in the listener's head
+ * (a kill, an ambush on top of you). Horror bus. Returns the take played (null when audio is off or nothing decoded).
+ */
+export function playMonsterScream(pos?: { x: number; y: number; z: number }, o: MonsterSoundOpts = {}) {
+  return playTake(SCREAM_POOL, pos, o)
+}
+
+/** A distant call from the shared pool (see DISTANT_POOL). */
+export function playDistantCall(pos?: { x: number; y: number; z: number }, o: MonsterSoundOpts = {}) {
+  return playTake(DISTANT_POOL, pos, o)
+}
+
+function playTake(pool: readonly Take[], pos: { x: number; y: number; z: number } | undefined, o: MonsterSoundOpts) {
+  const sfx = hooks.sfx
+  if (!sfx) return null
+  const t = pickTake(pool)
+  const v = vary()
+  const lowpass = Math.min(o.lowpass ?? 20000, t.lowpass ?? 20000)
+  const src = sfx.play(t.id, {
+    bus: o.bus ?? "horror",
+    variant: t.variant,
+    gain: (o.gain ?? 1) * (t.gain ?? 1) * v.gain,
+    rate: v.rate,
+    jitter: 0,
+    pos: pos ? { x: pos.x, y: pos.y, z: pos.z } : undefined,
+    ref: o.ref,
+    rolloff: o.rolloff,
+    occlude: o.occlude,
+    lowBoost: o.lowBoost,
+    lowpass: lowpass < 19000 ? lowpass : undefined,
+  })
+  return src ? { id: t.id, variant: t.variant ?? 0, src } : null
+}
+
+/** Starts decoding every monster take now (long ones decode last in idle time otherwise, and a skipped one is silent). */
+export function preloadMonsterSounds() {
+  const ids = new Set<SfxId>([...SCREAM_POOL, ...DISTANT_POOL].map((t) => t.id))
+  for (const id of ["wen2-starving-groan", "wen2-chatter", "skin2-breath-pant"] as const) ids.add(id)
+  for (const id of ids) void hooks.sfx?.load(id)
+}
 
 /** Rotating choices: never the same as the last one. */
 function rotate<T>(items: readonly T[], last: { i: number }) {
@@ -115,6 +208,11 @@ export class Voice {
     const { g, w, extra } = this.level(p, o.gain ?? 1, ref, roll)
     this.record(id, p, o.gain ?? 1, w, g)
     if (!sfx || g < FLOOR) return null
+    // Monster takes vary on every play (pitch ±6%, level ±10%).
+    if (MONSTER.test(id)) {
+      const v = vary()
+      o = { ...o, rate: (o.rate ?? 1) * v.rate, gain: (o.gain ?? 1) * v.gain, jitter: 0 }
+    }
     // The engine occludes by its own wall count; the slabs it missed are applied here (level and low-pass).
     const gain = (o.gain ?? 1) * 0.55 ** extra
     const lowpass = extra > 0 ? Math.min(o.lowpass ?? 20000, 18000 * 0.3 ** (w)) : o.lowpass
@@ -231,6 +329,11 @@ export class Voice {
 
   /** Ragged breath near the head: an inhale then a long wet exhale (`fast` while hunting). */
   breath(p: P, fast: boolean) {
+    // Now and then the recorded panting instead of the procedural breath (close range only, like the breath).
+    if (Math.random() < 0.3) {
+      this.play("skin2-breath-pant", p, { gain: fast ? 0.55 : 0.4, ref: 1.2, rolloff: 1.5, offset: Math.random() * 1.5 })
+      return
+    }
     const dur = fast ? 0.9 : 2.2
     this.proc("breath", p, fast ? 0.32 : 0.2, 1.2, 1.6, (ac, out, t) => {
       for (const [at, len, f, peak] of [
@@ -270,9 +373,16 @@ export class Voice {
   vocal(p: P, kind: "groan" | "moan" | "chatter" | "scream", gain = 1) {
     // Pitch wanders (0.86–1.08) so no two sound alike; the long groan starts at one of several points in the take.
     const rate = 0.86 + Math.random() * 0.22
-    if (kind === "scream") return this.play("wen2-huge-scream", p, { gain: 1.3 * gain, ref: 6, rolloff: 0.8, rate: 0.92 + Math.random() * 0.12, jitter: 0, lowBoost: 4 })
+    if (kind === "scream") {
+      const t = pickTake(SCREAM_POOL)
+      return this.play(t.id, p, { variant: t.variant, gain: 1.3 * gain * (t.gain ?? 1), ref: 6, rolloff: 0.8, lowBoost: 4 })
+    }
     if (kind === "chatter") return this.play("wen2-chatter", p, { gain: 0.9 * gain, ref: 2.5, rolloff: 1.0, rate, jitter: 0.02 })
-    if (kind === "moan") return this.play("wen-distant-moan", p, { gain: 0.9 * gain, ref: 4, rolloff: 0.85, rate, jitter: 0.02 })
+    if (kind === "moan") {
+      // Distant calls carry: a long reference distance, light rolloff.
+      const t = pickTake(DISTANT_POOL)
+      return this.play(t.id, p, { variant: t.variant, gain: 0.9 * gain * (t.gain ?? 1), lowpass: t.lowpass, ref: 5, rolloff: 0.8 })
+    }
     return this.play("wen2-starving-groan", p, { gain: 0.8 * gain, ref: 3, rolloff: 0.95, rate, jitter: 0.02, offset: rotate([0, 2.5, 5, 7.2], this.lastGroanOffset) })
   }
 
@@ -508,9 +618,8 @@ export class Voice {
    * wreck read as one place outside, not one far off and one close by.
    */
   farScream(p: P) {
-    const sfx = hooks.sfx
-    this.record("wen2-huge-scream:far", p, 1, 0, 1)
-    sfx?.play("wen2-huge-scream", { bus: "horror", pos: p, ref: 30, rolloff: 0.5, gain: 1.0, lowpass: 1500, occlude: false, rate: 0.92, jitter: 0, lowBoost: 3 })
+    const t = playMonsterScream(p, { ref: 30, rolloff: 0.5, gain: 1.0, lowpass: 1500, occlude: false, lowBoost: 3 })
+    this.record(`${t?.id ?? "scream"}:far`, p, 1, 0, 1)
   }
 
   /** The lobby's glass breaking: a heavy impact, the shatter and glass raining down. */

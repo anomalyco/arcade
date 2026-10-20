@@ -1,10 +1,22 @@
 {
-  "note": "Monster takes shipped for the Wendigo hunter (src/game/hunter), from Aiden's approved monster picks 2026-10-19 (picks-aiden-2026-10-19-monsters.json and -round2.json).",
+  "note": "Monster takes shipped for the creature (src/game/hunter, the encounters and the death kills), from Aiden's approved monster picks 2026-10-19 (picks-aiden-2026-10-19-monsters.json and -round2.json). Kill/attack scream pool, distant calls, close presence. skin-call-far is approved but not shipped: no voices.",
   "picks": [
     { "category": "wen-distant-moan", "variant": "v2" },
     { "category": "wen-distant-moan", "variant": "v3" },
     { "category": "wen2-starving-groan", "variant": "v1" },
     { "category": "wen2-chatter", "variant": "v3" },
-    { "category": "wen2-huge-scream", "variant": "v1" }
+    { "category": "wen2-huge-scream", "variant": "v1" },
+    { "category": "ban2-scream-tear", "variant": "v1" },
+    { "category": "ban2-scream-tear", "variant": "v3" },
+    { "category": "skin2-woman-fox", "variant": "v1" },
+    { "category": "skin-animal-human", "variant": "v2" },
+    { "category": "skin-cry-growl", "variant": "v2" },
+    { "category": "ban-keen-wail", "variant": "v1" },
+    { "category": "ban-keen-wail", "variant": "v2" },
+    { "category": "ban-keen-wail", "variant": "v3" },
+    { "category": "skin2-howl-sob", "variant": "v3" },
+    { "category": "ban-scream-far", "variant": "v2" },
+    { "category": "ban-scream-far", "variant": "v3" },
+    { "category": "skin2-breath-pant", "variant": "v3" }
   ]
 }
