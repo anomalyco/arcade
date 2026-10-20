@@ -87,6 +87,14 @@ export class OutbreakInputController {
     this.input.onWheel = (delta) => {
       if (delta !== 0) this.pendingHotbarDelta += Math.sign(delta)
     }
+    window.addEventListener("blur", () => this.release())
+    window.addEventListener("outbreak-menu-open", () => this.release())
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) this.release()
+    })
+    window.addEventListener("keyup", (e) => {
+      if (e.code === "MetaLeft" || e.code === "MetaRight") this.release()
+    })
   }
 
   liveMove(): { mx: number; my: number; sprint: boolean } {
@@ -95,6 +103,12 @@ export class OutbreakInputController {
 
   release(): void {
     this.input.release()
+    this.holds.clear()
+    this.pendingVerbs = {}
+    this.pendingHotbarSlot = undefined
+    this.pendingHotbarDelta = 0
+    this.pendingFlashlightToggle = false
+    this.pendingBarricade = false
   }
 
   private pollHolds(now: number): void {
