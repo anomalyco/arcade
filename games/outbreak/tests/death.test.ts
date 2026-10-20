@@ -124,7 +124,7 @@ describe("Death in the sim", () => {
     step(sim, seconds(T.soloBleedOut + 1))
     expect(lifeOf(sim, b.index)).toBe("down")
     const before = deathOf(sim).records[b.index]!.bleed
-    outbreakDeathSharedFeature.modifySurvivorDamage!(sim, b, 50, deathOf(sim))
+    outbreakDeathSharedFeature.modifySurvivorDamage!(sim, b, 50, deathOf(sim), "crowd")
     step(sim, 1)
     expect(before - deathOf(sim).records[b.index]!.bleed).toBeCloseTo(TICK_DT + 50 * T.feedBleed, 3)
     step(sim, seconds(T.bleedOut))
