@@ -146,7 +146,8 @@ export function stageBehaviour(sim: OutbreakSim, scene: BehaviourScene): { scene
       const bodies = sim.getFeatureState<BodiesState>("bodies")?.sites ?? []
       const body = [...bodies].sort((a, b) => Math.hypot(a.x - s0.x, a.y - s0.y) - Math.hypot(b.x - s0.x, b.y - s0.y))[0]
       if (!body) return { scene, zombies: [], note: "no body nearby" }
-      pose(sim, body.x - 9, body.y, 0, true)
+      // Off to one side in the dark, out of their sight, so the body has their attention.
+      pose(sim, body.x, body.y - 13, Math.PI / 2, false)
       clearAround(sim, body.x, body.y, 40)
       for (let k = 0; k < 3; k++) add(place(sim, body.x + 3 + k, body.y + (k - 1) * 2, Math.PI, seedWith((q) => q.hunger > 0.95 && q.torpor < 0.3, 800 + k * 1000)))
       note = "Three hungry dead find a body and crouch over it; a third is shouldered off. Disturb them and they rise."
