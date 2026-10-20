@@ -154,7 +154,7 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
     ladders: [],
     lamps: [],
     doors: new Doors(params.has("shot")),
-    settings: { "player.walk": 1.6, "player.sensitivity": 1 },
+    settings: { "player.walk": 2.1, "player.sensitivity": 1 },
     controls: [
       { key: "player.walk", label: "Walk speed", group: "Player", unit: "m/s", min: 0.8, max: 4, step: 0.1 },
       { key: "player.sensitivity", label: "Mouse sensitivity", group: "Player", min: 0.2, max: 3, step: 0.05 },

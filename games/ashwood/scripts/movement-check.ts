@@ -155,7 +155,8 @@ for (const run of [false, true]) {
   // At a run the climb itself is ~5 cm of height per 60 Hz frame (a steady ramp), so there the check is on jerk: the
   // frame-to-frame change of that rate. A tread snap would show as ~9 cm; the eased climb onset at the foot of a flight
   // (0 → 2.8 m/s vertical in ~0.2 s) is ~1.2 cm.
-  const ok = (s: ReturnType<typeof smoothness>) => (run ? s.jerk <= 0.015 : s.eye60 <= 0.02 && s.jerk <= 0.005)
+  // (The walk's per-frame limit is the steady climb at 2.1 m/s × 0.75 on stairs, ~1.7 cm, plus margin.)
+  const ok = (s: ReturnType<typeof smoothness>) => (run ? s.jerk <= 0.015 : s.eye60 <= 0.026 && s.jerk <= 0.005)
   const fmt = (s: ReturnType<typeof smoothness>) =>
     `max ${(s.eye60 * 100).toFixed(2)} cm per 60 Hz frame, jerk ${(s.jerk * 100).toFixed(2)} cm, ${(s.eyeRaw * 100).toFixed(2)} cm raw at ${s.fps.toFixed(0)} fps; body snaps ${(s.body * 100).toFixed(1)} cm`
   check(ok(su), `${tag} up: eye smooth (${fmt(su)})`)
@@ -325,7 +326,7 @@ async function speedOf(keys: string[], warm = 700, window = 600) {
 const speeds = { walk: await speedOf(["KeyW"]), run: await speedOf(["KeyW", "ShiftLeft"], 1300, 450), crouch: await speedOf(["KeyW", "KeyC"]), back: await speedOf(["KeyS"]), side: await speedOf(["KeyD"]) }
 const near = (v: number, want: number) => Math.abs(v - want) < 0.12
 check(
-  near(speeds.walk, 1.6) && near(speeds.run, 4.5) && near(speeds.crouch, 1.3) && near(speeds.back, 1.6 * 0.68) && near(speeds.side, 1.6 * 0.68),
+  near(speeds.walk, 2.1) && near(speeds.run, 4.5) && near(speeds.crouch, 1.3) && near(speeds.back, 2.1 * 0.68) && near(speeds.side, 2.1 * 0.68),
   `speeds: walk ${speeds.walk.toFixed(2)}, run ${speeds.run.toFixed(2)}, crouch ${speeds.crouch.toFixed(2)}, back ${speeds.back.toFixed(2)}, side ${speeds.side.toFixed(2)} m/s`,
 )
 

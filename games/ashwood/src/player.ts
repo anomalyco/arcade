@@ -15,13 +15,16 @@ const CROWN = 0.1
 /** Body top when fully crouched (head bent forward): crawl spaces are modelled at 1.15 m and up. Under anything lower
  *  than the crouched eye, the eye ducks to stay 8 cm under it. */
 const TOP_CROUCH = 1.15
-/** Movement speeds (m/s), measured from the body's animation clips (src/playerb) so the cadence matches: walk is the
- *  Lab's Walk speed (1.6); Shift runs (4.5, the default Run style) or jogs (2.4); crouch-walk; backwards and sideways
- *  go 0.68×. Speeding up into a run eases in over about 0.7 s. */
+/** Movement speeds (m/s) at the default Walk speed (WALK_REF, the Lab's "Walk speed"; the others scale with it): a
+ *  brisk walk (the body stretches its walk clip to it, src/playerb); Shift runs (4.5, the default Run style) or jogs
+ *  (3.0); crouch-walk; backwards and sideways go 0.68×. Speeding up into a run eases in over about half a second. */
 const RUN = 4.5
-const JOG = 2.4
+const JOG = 3.0
 const CROUCH_SPEED = 1.3
-const WALK_REF = 1.6
+const WALK_REF = 2.1
+/** Least acceleration while speeding up into a run (m/s²): the ease-in's tail, and getting back up to speed after a
+ *  bump, a door or a flight of stairs, takes a fraction of a second instead of the exponential's long crawl. */
+const RUN_ACCEL = 3.5
 const OFF_AXIS = 0.68
 /** Tallest step the body walks up (and the highest collider it steps over) / drop it follows down without falling. */
 const STEP_UP = 0.45
@@ -84,6 +87,8 @@ export type PlayerState = {
   stepPhase: number
   /** Horizontal speed (m/s). */
   speed: number
+  /** The walk speed setting (m/s): the body stretches its walk clip up to it before blending into the jog. */
+  walkSpeed: number
   readonly flashlight: boolean
   readonly fly: boolean
 }
@@ -113,7 +118,7 @@ export class Player {
   private inputOn = true
   private moveOn = true
   /** Automation only: when an array, every update pushes a sample (time, dt, feet, eye). */
-  trace: { t: number; dt: number; x: number; z: number; y: number; eye: number; offset: number; base: number; crouch: number; grounded: boolean }[] | null = null
+  trace: { t: number; dt: number; x: number; z: number; y: number; eye: number; offset: number; base: number; crouch: number; grounded: boolean; speed: number; running: boolean; shift: boolean; stairs: number; input: boolean; blocked: boolean }[] | null = null
   private keys = new Set<string>()
   private stepListeners: ((e: StepEvent) => void)[] = []
   private grounded = true
@@ -141,6 +146,14 @@ export class Player {
   private bobAmp = 0
   private roll = 0
   private stairs = 0
+  /** Seconds left in which another discrete step counts as a flight of stairs (see `stairs`). */
+  private lastStep = 0
+  /** Height the smoothed ground has climbed or fallen steeply in a row (m; see `stairs`). */
+  private climb = 0
+  /** This frame's horizontal move was stopped on an axis by a collider (automation: `trace`). */
+  private blocked = false
+  /** `state.running`, with hysteresis (on above 1.25× the walk, off below 1.1×). */
+  private runningNow = false
   private time = 0
   private foot = 0
   private floor: Floor | null = null
@@ -196,6 +209,7 @@ export class Player {
       mantle: null,
       stepPhase: 0,
       speed: 0,
+      walkSpeed: WALK_REF,
       get flashlight() {
         return self.flashlight
       },
@@ -621,15 +635,20 @@ export class Player {
     const stairK = this.stairs > 0 ? 0.75 : 1
     const wish = (fwd || side ? 1 : 0) * base * dirK * stairK
     // Into a run the body takes a moment to get going (a short ramp, not a snap); walking and stopping stay crisp.
-    const speeding = wish > walk * 1.3 && wish > Math.hypot(this.vel.x, this.vel.z) + 0.05
+    const v0 = Math.hypot(this.vel.x, this.vel.z)
+    const speeding = wish > walk * 1.3 && wish > v0 + 0.05
     const rate = this.grounded ? (fwd || side ? (speeding ? 3.2 : 9) : 11) : 1.2
-    const a = 1 - Math.exp(-rate * dt)
+    let a = 1 - Math.exp(-rate * dt)
+    if (speeding && this.grounded) a = Math.min(1, Math.max(a, (RUN_ACCEL * dt) / Math.hypot(wx * wish - this.vel.x, wz * wish - this.vel.z)))
     this.vel.x += (wx * wish - this.vel.x) * a
     this.vel.z += (wz * wish - this.vel.z) * a
     const x0 = this.pos.x
     const z0 = this.pos.z
-    if (!this.move(this.vel.x * dt, 0)) this.vel.x *= 0.3
-    if (!this.move(0, this.vel.z * dt)) this.vel.z *= 0.3
+    const hitX = !this.move(this.vel.x * dt, 0)
+    if (hitX) this.vel.x *= 0.3
+    const hitZ = !this.move(0, this.vel.z * dt)
+    if (hitZ) this.vel.z *= 0.3
+    this.blocked = hitX || hitZ
     const moved = Math.hypot(this.pos.x - x0, this.pos.z - z0)
 
     // Space at a ledge climbs onto it (mantle) instead of jumping: towards where the player is walking, else where
@@ -661,8 +680,13 @@ export class Player {
       const g = this.groundAt(this.pos.x, this.pos.z, this.pos.y + STEP_UP)
       const d = g - this.pos.y
       if (d >= -STEP_DOWN) {
-        // A discrete step (stairs, a kerb) slows the walk a little; the eye follows the filtered ground, not this snap.
-        if (Math.abs(d) > 0.03 + 0.9 * moved) this.stairs = 0.4
+        // Discrete steps in a row (a flight) slow the walk a little; a single one (a kerb, a threshold, a seam in the
+        // ground) doesn't. The eye follows the filtered ground, not this snap.
+        this.lastStep = Math.max(0, this.lastStep - dt)
+        if (Math.abs(d) > 0.03 + 0.9 * moved) {
+          if (this.lastStep > 0) this.stairs = 0.4
+          this.lastStep = 0.4
+        }
         this.pos.y = g
         this.vel.y = 0
       } else {
@@ -701,8 +725,12 @@ export class Player {
     if (this.fly) this.eyeOffset = this.eyeOffsetV = 0
     else if (this.grounded && this.wasGrounded && !ladder) {
       if (Math.abs(db) > 0.03 + 0.9 * stride) this.eyeOffset -= db
-      // Stairs (the smoothed ground climbs or falls steeply underfoot): walk a little slower, from the first tread.
-      else if (stride > 1e-3 && Math.abs(db) > 0.3 * stride) this.stairs = 0.4
+      // Stairs (the smoothed ground climbs or falls steeply underfoot for 10 cm or more, so within the first tread):
+      // walk a little slower. A lip, a kerb or a slab edge (a few cm) doesn't count.
+      if (stride > 1e-3 && Math.abs(db) > 0.3 * stride && Math.abs(db) <= 0.03 + 0.9 * stride) {
+        this.climb += Math.abs(db)
+        if (this.climb > 0.1) this.stairs = 0.4
+      } else this.climb = 0
     } else this.eyeOffset -= db - (this.pos.y - this.lastY - this.snap)
     this.base = base
     this.lastY = this.pos.y
@@ -715,7 +743,10 @@ export class Player {
       this.eyeOffset = Math.max(-0.7, Math.min(0.7, this.eyeOffset))
     }
     const speed = Math.hypot(this.vel.x, this.vel.z)
-    const running = speed > Number(this.ctx.settings["player.walk"] ?? WALK_REF) * 1.25
+    // Hysteresis: a run that dips for a moment (a kerb, a door, a turn) stays a run for the footsteps, the stride and
+    // the body.
+    const walkSpeed = Number(this.ctx.settings["player.walk"] ?? WALK_REF)
+    const running = (this.runningNow = speed > walkSpeed * (this.runningNow ? 1.1 : 1.25))
     // Gait: one cycle = two footfalls.
     if (stride > 0 && (this.grounded || ladder)) {
       const len = ladder ? 0.6 : running ? STRIDE_RUN : STRIDE_WALK
@@ -742,8 +773,9 @@ export class Player {
     s.stepPhase = this.phase
     s.mantle = this.mantle
     s.speed = speed
+    s.walkSpeed = walkSpeed
     this.apply()
-    if (this.trace) this.trace.push({ t: this.time, dt, x: this.pos.x, z: this.pos.z, y: this.pos.y, eye: this.camera.position.y, offset: this.eyeOffset, base: this.base, crouch: this.crouch, grounded: this.grounded })
+    if (this.trace) this.trace.push({ t: this.time, dt, x: this.pos.x, z: this.pos.z, y: this.pos.y, eye: this.camera.position.y, offset: this.eyeOffset, base: this.base, crouch: this.crouch, grounded: this.grounded, speed, running, shift: this.keys.has("ShiftLeft") || this.keys.has("ShiftRight"), stairs: this.stairs, input: this.inputOn, blocked: this.blocked })
   }
 
   private emit(kind: StepEvent["kind"], speed: number, intensity: number) {
@@ -838,7 +870,7 @@ export class Player {
    */
   private filteredGround() {
     // Wider at a run, so the climb eases in over the same time at the foot of a flight (a straight ramp is unchanged).
-    const H = 0.3 + 0.2 * Math.max(0, Math.min(1, (Math.hypot(this.vel.x, this.vel.z) - WALK_REF) / 2.5))
+    const H = 0.3 + 0.2 * Math.max(0, Math.min(1, (Math.hypot(this.vel.x, this.vel.z) - 1.6) / 2.5))
     const { x, z } = this.pos
     // Heights are judged against the previous eye base (continuous), not the snapping feet: a tread entering or
     // leaving the window when the body steps would otherwise kink the ramp for a frame.

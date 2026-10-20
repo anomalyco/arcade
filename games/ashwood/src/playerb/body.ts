@@ -55,6 +55,9 @@ export type BodyState = {
   readonly grounded: boolean
   readonly onLadder: boolean
   readonly flashlight: boolean
+  /** The controller's walk speed (m/s), if faster than the walk clip: the walk gait stretches up to it before blending
+   *  into the jog, so a brisk walk still reads as a walk. */
+  readonly walkSpeed?: number
   /** The camera (first person); E aims the hand at the crosshair from here. */
   readonly eye?: { x: number; y: number; z: number }
   /**
@@ -1021,9 +1024,10 @@ export class CharacterBody {
     const wJ = dirW(jog)
     const fwdness = Math.max(0, Math.cos(ang))
     const wR = new Map<Loop, number>(run.loops.length ? [[run.loops[0]!, 1]] : [])
-    const sW = gaitSpeed(walk, wW)
-    const sJ = gaitSpeed(jog, wJ)
-    const sR = run.loops.length ? run.loops[0]!.speed : sJ
+    const stretch = Math.max(1, (s.walkSpeed ?? 0) / (walk.loops[0]?.speed || 1))
+    const sW = gaitSpeed(walk, wW) * stretch
+    const sJ = Math.max(gaitSpeed(jog, wJ), sW * 1.2)
+    const sR = Math.max(run.loops.length ? run.loops[0]!.speed : sJ, sJ + 0.5)
     let gw = { walk: 1, jog: 0, run: 0 }
     if (speed > sW) {
       if (speed < sJ) {
