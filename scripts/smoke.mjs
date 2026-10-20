@@ -93,8 +93,14 @@ try {
     throw error
   })
   console.log(`${game}: boot ${await bootTimeline()}`)
-  // Let initialization promises and the first presentation frames report errors.
-  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  // Let initialization promises and the first presentation frames report errors. On SwiftShader these two frames,
+  // where the GPU process compiles every pipeline, are most of the smoke's time.
+  const frames = await page.evaluate(() => new Promise(resolve => {
+    const at = []
+    const frame = () => (at.push(Math.round(performance.now())), at.length < 2 ? requestAnimationFrame(frame) : resolve(at))
+    requestAnimationFrame(frame)
+  }))
+  console.log(`${game}: presented frames at ${frames.join(", ")} ms`)
   assert.deepEqual(errors, [], `${game}: browser errors`)
   const outcome = await ready.jsonValue()
   if (metal) assert.match(outcome, /ready/, `${game}: WebGPU did not start on Metal (${outcome})`)
