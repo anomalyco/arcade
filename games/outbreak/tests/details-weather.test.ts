@@ -83,6 +83,22 @@ describe("wet and muddy boot prints", () => {
     expect(Math.hypot(buf[0]! - buf[2 * SPRITE_FLOATS]!, buf[2]! - buf[2 * SPRITE_FLOATS + 2]!)).toBeGreaterThan(STRIDE * 0.7)
   })
 
+  test("after rain, with puddles all over, mud off the lawn still prints on the wet road (water alone does not)", () => {
+    const t = town()
+    let yardX = 20
+    while (groundKind(t, yardX, 150) !== "yard") yardX += 0.5
+    const puddly = { wetness: 0.85, puddles: 0.8, puddleAt: () => 1 }
+    const p = new BootPrints()
+    walk(p, t, yardX, yardX + 3, 150, 0, puddly)
+    const road = { x: 20, y: 44 + 96 }
+    p.step(10, t, puddly, slot(road.x, road.y))
+    walk(p, t, road.x, road.x + 8, road.y, 10, puddly)
+    expect(p.count).toBeGreaterThan(2)
+    const dry = new BootPrints()
+    walk(dry, t, road.x, road.x + 8, road.y, 0, puddly)
+    expect(dry.count).toBe(0)
+  })
+
   test("mud from a soaked lawn dries pale but stays; nothing prints on the lawn itself, in a car, or across a jump", () => {
     const t = town()
     const yard = { x: 20, y: 150 }

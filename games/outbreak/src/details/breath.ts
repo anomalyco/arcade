@@ -86,13 +86,14 @@ export class Breath {
   }
 
   /** Alpha sprites for the live puffs, lit and tinted by the torches (`probe`); returns the new count. */
-  write(probe: { at(x: number, y: number, z: number): number; readonly colour: readonly number[] }, sprites: Float32Array, n: number, strength: number): number {
+  write(probe: { at(x: number, y: number, z: number): number; near(x: number, z: number, radius: number): number; readonly colour: readonly number[] }, sprites: Float32Array, n: number, strength: number): number {
     this.alive = 0
     for (const p of this.puffs) {
       if (!p.live) continue
       this.alive++
       const u = p.age / BREATH_LIFE
-      const lit = Math.min(1, probe.at(p.x, p.y, p.z))
+      // In the beam, or just over the lens, where its spill catches the breath before it drifts into the cone.
+      const lit = Math.min(1, Math.max(probe.at(p.x, p.y, p.z), 0.7 * probe.near(p.x, p.z, 1.1)))
       if (lit <= 0.03) continue
       // Quick to form, slow to thin out.
       const a = Math.min(1, u * 8) * (1 - u) ** 1.6 * 0.15 * lit * strength

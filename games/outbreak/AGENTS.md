@@ -72,11 +72,13 @@
   flicker on their room (`TV_LAMP_SLOT`, clipped like table lamps), dogs barking far off at night (`life.ts`). Placement is a pure function of
   the town and `dtSeed` per building and car (`placement.ts`), meshes are box-built (`models.ts`), drawn instanced
   from `scene/frame-renderer.ts`. Life touches (Backquote › Details · Life, `touches.ts`; "Life touches" off is
-  Today): moths circling lit fixtures (`swarms.ts`, glow from the frame's `lampPower`), flies over bodies and bins seen
-  only in light, eyes under yard trees that catch the torch and bolt plus one rare pair from night 2 that does not
-  (`eyeshine.ts`), breath in the cold beam (`breath.ts`). All are renderer alpha/additive sprites (in the TAA reactive
+  Today): moths circling lit fixtures (`swarms.ts`, glow from the frame's `lampPower`; at a porch they flutter at the
+  canopy edge, since the bulb on the wall is under the roof and out of the camera's sight), flies over bodies and bins seen
+  only in light, eyes at the edge of yard trees (south of the crown, where the camera sees) that catch the torch and bolt plus one rare pair from night 2 that does not
+  (`eyeshine.ts`), breath in the cold over the torch (`breath.ts`, lit by the lens's spill, `BeamProbe.near`). All are renderer alpha/additive sprites (in the TAA reactive
   mask) lit on the CPU by `BeamProbe` (`light-probe.ts`) from the frame's torch slots. Leftover life (`leftovers.ts`,
-  `sprinkler.ts`): washing on lines in the yards swinging with the gust field, parked cars (still where they spawned,
+  `sprinkler.ts`): washing on lines in the side yards (or well behind the house: the roof hides the near back yard)
+  swinging with the gust field, parked cars (still where they spawned,
   empty) left with a door open and a dome light that dies over nights 2–4, a front-lawn sprinkler on a 06:36–07:18
   timer losing pressure daily, brass from every shot that stays where it fell (seeded from the shot), and televisions
   and lit windows that go dark house by house when that house loses power, the hour its fridge stops humming in the
@@ -84,7 +86,10 @@
   ("Town runs down night by night"; the night is `townNight`: the Way Out's shared count, else the night ramp's).
   Weather traces: rings from eave and tree drips that keep falling after the rain and fade as the ground dries
   (`drips.ts`, from the weather's wetness and rain), and wet prints behind anyone walking out of a puddle or wet
-  grass that dry in 45 s outdoors, the dead's shuffling with one foot dragged into a smear (`prints.ts`). Tests: `tests/details.test.ts`,
+  grass that dry in 45 s outdoors (on wet ground only mud shows, and puddles rinse it off), the dead's shuffling with
+  one foot dragged into a smear (`prints.ts`). Stills of each touch by day and night, a contact sheet, a rain-night clip
+  and paired GPU: `bun scripts/life-stills.ts --out <dir>` (via `hivemind run --kind browser`); Lab station
+  `outbreak-details` › Life and the "Porch moths" / "After the rain" shots. Tests: `tests/details.test.ts`,
   `tests/details-life.test.ts`, `tests/details-touches.test.ts`, `tests/details-leftovers.test.ts`,
   `tests/details-weather.test.ts`.
 - Houses (AR-79, `shared/houses/` generator, `src/houses/` meshes, Lab: Backquote › World · Variety, station

@@ -31,10 +31,11 @@ export function mothLamps(lamps: readonly Lamp[], townSeed: number, density: num
     const base = l.kind === "street" ? 4 + r01(seed, 1) * 3 : l.kind === "porch" ? 3 + r01(seed, 1) * 2.5 : 1 + r01(seed, 1) * 2.2
     const n = Math.min(MOTHS_PER_LAMP, Math.max(0, Math.round(base * density)))
     // The bulbs the level and the streamer build (absolute heights, like the lights): the street head out on its arm,
-    // the porch bulb under the canopy, a lit window's pane.
+    // a lit window's pane, and for a porch the light at the front of the canopy (the bulb itself sits on the wall under
+    // the roof, out of the camera's sight), where the moths come out into the light it throws.
     const tint = l.kind === "street" ? ([1, 0.62, 0.3] as const) : ([1, 0.74, 0.46] as const)
     if (l.kind === "street") out.push({ lamp: i, x: l.x + 0.55, y: 3.42, z: l.y, n, seed, tint })
-    else if (l.kind === "porch") out.push({ lamp: i, x: l.x, y: 2.16, z: l.y - 0.22, n, seed, tint })
+    else if (l.kind === "porch") out.push({ lamp: i, x: l.x, y: 2.0, z: l.y + 1.9, n, seed, tint })
     else out.push({ lamp: i, x: l.x, y: 1.5, z: l.y + 0.24, n, seed, tint })
   }
   return out
@@ -66,9 +67,9 @@ export function writeMoths(lamps: readonly MothLamp[], lampPower: Float32Array, 
       const near = 1 / (1 + (rad / 0.35) ** 2)
       // Wings catch the light as they turn: a smooth swell, never a frame-to-frame strobe.
       const wing = 0.72 + 0.28 * Math.sin(time * (5 + b * 4) + c * 20)
-      const k = lit * near * wing * gain * 0.55
+      const k = lit * near * wing * gain * 0.75
       // rgb carries the brightness and alpha stays low, so the sprite barely touches the colour mask in hdr.a.
-      n = putSprite(sprites, n, x, y, z, 0.055, (m.tint[0] * k) / 0.25, (m.tint[1] * k) / 0.25, (m.tint[2] * k) / 0.25, 0.25)
+      n = putSprite(sprites, n, x, y, z, 0.07, (m.tint[0] * k) / 0.25, (m.tint[1] * k) / 0.25, (m.tint[2] * k) / 0.25, 0.25)
     }
   }
   return n

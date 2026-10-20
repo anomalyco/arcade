@@ -107,12 +107,17 @@ export class BootPrints {
     // Dry out and nothing on the feet: nothing to print, and no need to look at the ground.
     if (w.water === 0 && w.mud === 0 && weather.puddles <= 0.001 && weather.wetness <= 0.45) return
     const kind = groundKind(town, x, y)
-    if (weather.puddleAt(x, y, kind) > 0.35) w.water = 1
+    if (weather.puddleAt(x, y, kind) > 0.35) {
+      w.water = 1
+      // Standing water rinses some of the mud off.
+      w.mud *= 0.85
+    }
     if (kind === "yard" && weather.wetness > 0.45) w.mud = 1
-    const mud = w.mud > w.water
-    const carry = Math.max(w.water, w.mud)
-    // On wet ground a water print does not show, and on the lawn nothing does.
-    const shows = kind !== "yard" && carry > 0.12 && (mud || kind === "floor" || weather.wetness < 0.3)
+    // On wet ground a water print does not show (only mud does), and on the lawn nothing does.
+    const wetGround = kind !== "floor" && weather.wetness >= 0.3
+    const mud = w.mud > 0.12 && (wetGround || w.mud >= w.water)
+    const carry = mud ? w.mud : w.water
+    const shows = kind !== "yard" && carry > 0.12 && (mud || !wetGround)
     if (shows) {
       const px = x - dz * w.side * 0.1
       const pz = y + dx * w.side * 0.1

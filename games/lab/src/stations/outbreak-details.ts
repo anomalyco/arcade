@@ -16,6 +16,10 @@ const variants: StationVariant[] = [
   { id: "details-off", group: "Details", label: "Off (before)", note: "The town as it was: furniture, RE dressing, clutter and blood, none of the details.", setup: [set("worldDetails", false)] },
   { id: "house-night", group: "Shot", label: "Start house, night", note: "Ash turned over at 21:00 by flashlight: chairs on their backs by the table, a dumped drawer, smashed plates by the counter, mail behind the door.", setup: shot(21, 34, set("dtTurnedOver", 1), pose(27.7, 31.2, -0.3, { openDoor: true, flashlight: true })) },
   { id: "street-day", group: "Shot", label: "Ash's front, day", note: "Mailbox and bins at the sidewalk, a bike and a suitcase on the lawn, a search mark on the front wall, 14:00.", setup: shot(14, 38, pose(29, 39.5, -Math.PI / 2)) },
+  { id: "life-on", group: "Life", label: "Life touches", note: "Moths at lit porches, flies over bodies and bins, eyes under yard trees that bolt from the torch, breath in the cold, washing on lines, cars left open with dying dome lights, a dawn sprinkler, brass that stays, drips and wet prints after rain, and houses losing power one by one.", setup: [set("lifeTouches", true)] },
+  { id: "life-today", group: "Life", label: "Today", note: "None of the life touches.", setup: [set("lifeTouches", false)] },
+  { id: "porch-moths", group: "Shot", label: "Porch moths, night", note: "Moths in the light at the front of Ash's porch at 22:00, lit by the bulb alone.", setup: shot(22, 24, pose(27.7, 39.4, -Math.PI / 2)) },
+  { id: "after-rain", group: "Shot", label: "After the rain, night", note: "The ground soaked at 22:00: eaves dripping into the puddles under the porch light; walk off the lawn to leave mud on the road.", setup: shot(22, 28, set("weatherWetnessOverride", 0.85), pose(29, 41, -Math.PI / 2, { flashlight: true })) },
   { id: "police-night", group: "Shot", label: "Police car, night", note: "Every car a police car, so the tape on its cones shows in the beam, 22:00.", setup: shot(22, 36, set("nlCruisers", 1), pose(50.5, 44.5, 0.1, { flashlight: true })) },
 ]
 
