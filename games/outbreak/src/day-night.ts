@@ -130,7 +130,9 @@ export const OUTBREAK_NIGHT_LIGHTING: Readonly<DayNightLightingCurve> = {
   porchPower: OUTBREAK_LOOK_LIGHTING_PRESETS.noir.porchPower ?? 0.36,
   windowPower: OUTBREAK_LOOK_LIGHTING_PRESETS.noir.windowPower ?? 0.38,
   roomPower: OUTBREAK_LOOK_LIGHTING_PRESETS.noir.roomPower ?? 0.56,
-  streetPower: OUTBREAK_LOOK_LIGHTING_PRESETS.noir.streetPower ?? 0.12,
+  // Street lamps hold dusk's power through the night. Noir's 0.12 dimmed them 8× as night fell (power 0.03, a tenth
+  // of a porch light) and dropped below the sodium ground pool's 0.2 gate, so lit lamps left the ground dark.
+  streetPower: 0.96,
   lightFalloff: OUTBREAK_LOOK_LIGHTING_PRESETS.noir.lightFalloff ?? 1.38,
   flashlightHaze: OUTBREAK_LOOK_LIGHTING_PRESETS.noir.flashlightHaze ?? 1.38,
   wetSpecular: OUTBREAK_LOOK_LIGHTING_PRESETS.noir.wetSpecular ?? 0.85,

@@ -3,7 +3,7 @@ import { LOOK_PRESETS, blendLookSettings, blendLookSettings3, packLookUniforms }
 import { OutbreakAISubsystem } from "../shared/ai"
 import { dayCycle } from "../shared/day-cycle"
 import { makeTown } from "../shared/map"
-import { OUTBREAK_LOOK_LIGHTING_PRESETS } from "../src/lighting"
+import { DEFAULT_OUTBREAK_LIGHTING, OUTBREAK_LOOK_LIGHTING_PRESETS, resolveLampLight } from "../src/lighting"
 import {
   OUTBREAK_DAY_LOOK,
   OUTBREAK_DUSK_LOOK,
@@ -136,6 +136,23 @@ describe("Outbreak Day -> Dusk -> Noir Night look & threat cycle", () => {
     expect(aiDay.threat).toBe(0)
     expect(aiNight.threat).toBe(1)
     expect(zNight.awareness).toBeGreaterThan(zDay.awareness)
+  })
+})
+
+describe("Street lamps at night", () => {
+  test("lit street lamps light the ground at night: no dimmer than at dusk, at least porch-like, above the sodium pool gate", () => {
+    const town = makeTown(7)
+    const street = town.lamps.find((l) => l.kind === "street")!
+    const porch = town.lamps.find((l) => l.kind === "porch")!
+    const at = (hour: number, lamp: typeof street) => {
+      const ev = evaluateOutbreakDayNight(hour)
+      return resolveLampLight(lamp, town.buildings, ev.lamps, { ...DEFAULT_OUTBREAK_LIGHTING, ...ev.lighting }, false)
+    }
+    const night = evaluateOutbreakDayNight(22.5)
+    // `applySceneLightBounceAndHaze` only draws the sodium ground pool above streetPower × lampsOn 0.2.
+    expect(night.lighting.streetPower * night.lamps).toBeGreaterThan(0.2)
+    expect(at(22.5, street).power).toBeGreaterThanOrEqual(at(18.5, street).power * 0.95)
+    expect(at(22.5, street).power).toBeGreaterThan(at(22.5, porch).power * 0.6)
   })
 })
 

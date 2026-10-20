@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { FOLIAGE_BUILD_LIVELY, FOLIAGE_LIMB_AUX, buildFoliageTree, cloneFoliageParams } from "./foliage"
-import { buildTreeLook, TREE_LOOK_OPTIONS, TREE_LOOK_SHADE } from "./foliage-looks"
+import { buildTreeLook, TREE_DEAD_BLIGHT, TREE_LOOK_OPTIONS, TREE_LOOK_SHADE, treeBlight } from "./foliage-looks"
 import { MAT, Mesh } from "./mesh"
 
 const params = cloneFoliageParams()
@@ -56,6 +56,33 @@ describe("tree looks (D-41)", () => {
     expect(bare(3, 0)).toBe(0)
     expect(bare(2, 0.5)).toBeGreaterThan(0.2)
     expect(bare(3, 0.5)).toBeGreaterThan(0.2)
+  })
+
+  test("blight: a seeded share of C trees; dead ones carry no leaves, sparse ones fewer; healthy ones unchanged", () => {
+    const many = Array.from({ length: 400 }, (_, i) => (i * 7919 + 13) >>> 0)
+    const share = many.filter((s) => treeBlight(s, 0.25) > 0).length / many.length
+    expect(share).toBeGreaterThan(0.18)
+    expect(share).toBeLessThan(0.32)
+    for (const s of many) expect(treeBlight(s, 0.25) > 0).toBe(treeBlight(s, 0.25) > 0 && treeBlight(s, 0.5) > 0)
+    const opts = (blight: number) => ({ ...FOLIAGE_BUILD_LIVELY, deadTrees: 0, blight })
+    let dead = 0
+    let sparse = 0
+    for (const s of seeds.concat(many.slice(0, 60))) {
+      const b = treeBlight(s, 0.5)
+      const healthy = parts(build(3, s, 5, opts(0)))
+      const blighted = parts(build(3, s, 5, opts(0.5)))
+      expect(blighted.bad).toBe(0)
+      if (b === 0) expect(build(3, s, 5, opts(0.5))).toEqual(build(3, s, 5, opts(0)))
+      else if (b >= TREE_DEAD_BLIGHT) {
+        expect(blighted.leaves).toBe(0)
+        dead++
+      } else {
+        expect(blighted.leaves).toBeLessThan(healthy.leaves)
+        sparse++
+      }
+    }
+    expect(dead).toBeGreaterThan(0)
+    expect(sparse).toBeGreaterThan(0)
   })
 
   test("cost stays near the lively tree: under 1.6x its vertices on average, hero and outer", () => {

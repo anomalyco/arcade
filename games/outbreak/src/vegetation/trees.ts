@@ -130,6 +130,13 @@ export const vegetationTreeFieldsWgsl = /* wgsl */ `
 export const vegetationTreeWgsl = /* wgsl */ `
 /** How much of this fragment the fog of war treats as seen because the torch lights it through the crown (A, C). */
 var<private> outbreakTreeSeen: f32;
+/**
+ * The colour-from-light mask the torch lends a crown it lights through (A, C), scaled by "Tree colour in light". The
+ * scene's colour rule reads it beside \`litMask\`, so the leaves keep their pigment instead of going moon grey.
+ */
+fn outbreakTreeColourLit() -> f32 {
+  return outbreakTreeSeen * clamp(0.6 * OL.vegTrees.z, 0.0, 0.9);
+}
 /** Tree canopy (foliage 0 < aux < 2.5) or a swaying limb (timber aux >= 7.5). Shrubs and grass are not trees. */
 fn outbreakIsTreePart(mat: f32, aux: f32) -> bool {
   return (mat > 21.5 && mat < 22.5 && aux > 0.0 && aux < 2.5) || (mat > 23.5 && mat < 24.5 && aux > 7.5);
@@ -191,7 +198,7 @@ fn outbreakTreeSurface(col: vec3f, litMask: f32, sunVal: f32, world: vec3f, mat:
     var rich = select(c, max(mix(vec3f(lum), c, 1.0 + 0.4 * clamp(OL.vegTrees.z, 0.0, 1.5)), vec3f(0.0)), leaf);
     // Torchlight through the crown: the camera sees tops the torch below can't reach, so the beam's plan cone lends
     // the leaves their own colour, lit by the beam.
-    rich += select(vec3f(0.0), outbreakAlbedo * OL.u5.rgb * vec3f(1.0, 1.15, 0.7) * beam * 0.45 * shade, leaf);
+    rich += select(vec3f(0.0), outbreakAlbedo * OL.u5.rgb * vec3f(1.0, 1.15, 0.7) * beam * 0.45 * shade * clamp(OL.vegTrees.z, 0.0, 1.5), leaf);
     c = mix(unlit, rich, max(smoothstep(0.04, 0.55, litMask), beam * select(0.5, 1.0, leaf)));
   }
   if (OL.vegTrees.w > 0.5) {

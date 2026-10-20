@@ -45,9 +45,11 @@ export type OutbreakVegetationSettings = {
   vegVariety: number
   /**
    * Tree look (D-41, Lively only; `@arcade/kit/gpu/foliage-looks`): 0 Today (Lively, #273), 1 A Diablo Deadwood,
-   * 2 B Tiny Glade Fluffy, 3 C Darkwood × Diablo. Rebuilds the level.
+   * 2 B Tiny Glade Fluffy, 3 C Darkwood × Diablo (default, D-42). Rebuilds the level.
    */
   vegTreeLook: number
+  /** Share of C trees blighted by seed: Deadwood limbs, sparse withered clumps or none. Rebuilds the level. */
+  vegTreeBlight: number
   /** How far A and C trees sink to near-black, grey outside light (× the look's own amount). */
   vegTreeShade: number
   /** Extra saturation A and C trees keep where light lands. */
@@ -71,9 +73,10 @@ export const DEFAULT_VEGETATION_SETTINGS: OutbreakVegetationSettings = {
   vegCanopyOpen: 2.4,
   vegDeadTrees: FOLIAGE_BUILD_LIVELY.deadTrees,
   vegVariety: FOLIAGE_BUILD_LIVELY.variety,
-  vegTreeLook: 0,
+  vegTreeLook: 3,
+  vegTreeBlight: 0.25,
   vegTreeShade: 1,
-  vegTreeRichness: 1,
+  vegTreeRichness: 1.25,
   vegBurnTest: 0,
 }
 
@@ -82,6 +85,7 @@ const GROUP = "Vegetation"
 export const vegetationControls: readonly LabControl[] = [
   { key: "vegLook", label: "Vegetation", group: GROUP, type: "select", options: [{ value: 0, label: "Today" }, { value: 1, label: "Lively (species, gusts)" }] },
   { key: "vegTreeLook", label: "Tree look", group: GROUP, type: "select", options: TREE_LOOK_OPTIONS },
+  { key: "vegTreeBlight", label: "Blighted trees (C)", group: GROUP, min: 0, max: 1, step: 0.05, unit: "" },
   { key: "vegTreeShade", label: "Tree shade outside light (A, C)", group: GROUP, min: 0, max: 1.5, step: 0.05, unit: "×" },
   { key: "vegTreeRichness", label: "Tree colour in light (A, C)", group: GROUP, min: 0, max: 1.5, step: 0.05, unit: "" },
   { key: "vegQuality", label: "Tree detail", group: GROUP, type: "select", options: [{ value: 0, label: "Low" }, { value: 1, label: "Medium" }, { value: 2, label: "High" }] },
@@ -101,7 +105,11 @@ export const vegetationControls: readonly LabControl[] = [
 ]
 
 /** Build options the level and streamed chunks read through `plant()`; synced from settings before every rebuild. */
-export const vegetationBuild: FoliageBuildOptions = { ...FOLIAGE_BUILD_LIVELY }
+export const vegetationBuild: FoliageBuildOptions = {
+  ...FOLIAGE_BUILD_LIVELY,
+  treeLook: DEFAULT_VEGETATION_SETTINGS.vegTreeLook,
+  blight: DEFAULT_VEGETATION_SETTINGS.vegTreeBlight,
+}
 
 /**
  * Copies the settings' build options into `vegetationBuild`; true when the meshes need rebuilding. Allocation-free
@@ -114,17 +122,19 @@ export function syncVegetationBuild(s: Readonly<OutbreakVegetationSettings>): bo
   const deadTrees = lively ? s.vegDeadTrees : FOLIAGE_BUILD_TODAY.deadTrees
   const variety = lively ? s.vegVariety : FOLIAGE_BUILD_TODAY.variety
   const treeLook = lively ? Math.round(s.vegTreeLook) : 0
-  if (b.lively === lively && b.quality === quality && b.deadTrees === deadTrees && b.variety === variety && b.treeLook === treeLook) return false
+  const blight = treeLook === 3 ? s.vegTreeBlight : 0
+  if (b.lively === lively && b.quality === quality && b.deadTrees === deadTrees && b.variety === variety && b.treeLook === treeLook && b.blight === blight) return false
   b.lively = lively
   b.quality = quality
   b.deadTrees = deadTrees
   b.variety = variety
   b.treeLook = treeLook
+  b.blight = blight
   return true
 }
 
 function signatureOf(o: Readonly<FoliageBuildOptions>): string {
-  return o.lively ? `L${o.quality}/${o.deadTrees}/${o.variety}${o.treeLook ? `/t${o.treeLook}` : ""}` : "T"
+  return o.lively ? `L${o.quality}/${o.deadTrees}/${o.variety}${o.treeLook ? `/t${o.treeLook}` : ""}${o.blight ? `/b${o.blight}` : ""}` : "T"
 }
 
 /** Part of every level and chunk cache key, so a change of look rebuilds rather than reusing old meshes. */

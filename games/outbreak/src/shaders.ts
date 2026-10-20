@@ -440,16 +440,19 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
       let eDeep = flashIrr * flashDeepScale + outbreakPracticalIrr * OL.u16.y * 1.42 + outbreakBounceIrr * max(OL.colour.z, 0.95) * lightRule;
       litMask = max(litMask, smoothstep(0.04, 0.88, 1.0 - fastExpNeg(eDeep / max(OL.u13.w * 0.80, 0.01))));
     }
-    let effectiveLitMask = mix(max(litMask, sunLit), max(litMask, sunLit * 0.85), lightRule);
     outbreakLitMask = max(litMask * lightRule, sunLit);
+    var treeColourLit = 0.0;
     if (OL.vegTrees.y > 0.001 || OL.vegTrees.w > 0.5) {
       col = outbreakTreeSurface(col, litMask * lightRule, sunVal, o.world, mat, o.aux);
-      // Crowns the torch lights through keep their colour in the fog of war's colour rule.
+      // Crowns the torch lights through keep their colour in the fog of war's and the scene's colour rules.
       if (OL.vegTrees.y > 0.001 && mat == 22 && outbreakIsTreePart(22.0, o.aux)) {
         outbreakTreeSeen = smoothstep(0.05, 0.6, outbreakTreeBeam(o.world));
         outbreakLitMask = max(outbreakLitMask, outbreakTreeSeen);
+        treeColourLit = outbreakTreeColourLit() * lightRule;
       }
     }
+    let colourLitMask = max(litMask, treeColourLit);
+    let effectiveLitMask = mix(max(colourLitMask, sunLit), max(colourLitMask, sunLit * 0.85), lightRule);
     outbreakSeen = 1.0;
     outbreakKnown = 1.0;
     var zombieRimMask = 0.0;
@@ -560,7 +563,7 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
       let beamWarmCol = mix(vec3f(1.01, 0.98, 0.93), vec3f(1.22, 0.95, 0.62), clamp(OL.beamLook.x, 0.0, 1.0));
       col *= mix(vec3f(1.0), mix(vec3f(1.22, 0.95, 0.62), beamWarmCol, flashShare), nightPool * select(0.68, 0.22, mat == 12));
       let heroExempt = select(0.0, clamp(0.34 - 0.14 * (unlitDesat - 1.0), 0.10, 0.65) * outbreakSeen, isHeroAny);
-      let unlitNight = clamp((1.0 - max(litMask, duskGlow * 0.75)) * lightRule * (1.0 - heroExempt), 0.0, 1.0);
+      let unlitNight = clamp((1.0 - max(colourLitMask, duskGlow * 0.75)) * lightRule * (1.0 - heroExempt), 0.0, 1.0);
       let sLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
       let moonCol = mix(vec3f(0.66, 0.90, 1.34), vec3f(0.93, 0.96, 1.03), clamp(unlitDesat, 0.0, 1.0));
       col = mix(col, mix(col, vec3f(sLum) * moonCol, clamp(0.92 * unlitDesat, 0.0, 0.98)), unlitNight);

@@ -1181,9 +1181,11 @@ export type FoliageBuildOptions = {
    * caller dispatches; `buildFoliageTree` itself always builds look 0.
    */
   treeLook: number
+  /** Share of Darkwood (look 3) trees that take Deadwood's blight, from sparse withered clumps to dead and leafless, 0..1. */
+  blight: number
 }
-export const FOLIAGE_BUILD_TODAY: Readonly<FoliageBuildOptions> = { lively: false, quality: 1, deadTrees: 0, variety: 0, treeLook: 0 }
-export const FOLIAGE_BUILD_LIVELY: Readonly<FoliageBuildOptions> = { lively: true, quality: 1, deadTrees: 0.14, variety: 0.7, treeLook: 0 }
+export const FOLIAGE_BUILD_TODAY: Readonly<FoliageBuildOptions> = { lively: false, quality: 1, deadTrees: 0, variety: 0, treeLook: 0, blight: 0 }
+export const FOLIAGE_BUILD_LIVELY: Readonly<FoliageBuildOptions> = { lively: true, quality: 1, deadTrees: 0.14, variety: 0.7, treeLook: 0, blight: 0 }
 
 /** The species a lively tree takes from its seed (null keeps the tree look), and whether it stands bare. */
 export function foliageTreeSpecies(seed: number, opts: Readonly<FoliageBuildOptions>): { species: TreePresetId | null; dead: boolean } {

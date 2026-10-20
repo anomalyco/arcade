@@ -1465,8 +1465,9 @@ fn applySceneLightBounceAndHaze(world: vec3f, n: vec3f, surfCol: vec3f, inRoom: 
     }
     if (groundMask <= 0.001) { return col; }
     let texAlbedo = surfCol * 1.48 + outbreakAlbedo * 0.21;
-    // 1. High-pressure sodium streetlamp (2100K) albedo-multiplying ground pool + wet asphalt sheen
-    let sScale = OL.u1.w * lampsOn;
+    // 1. High-pressure sodium streetlamp (2100K) albedo-multiplying ground pool + wet asphalt sheen. It sits at a fixed
+    // spot by every house rather than under a real lamp, so Darkwood leaves the ground to the real street lamps.
+    let sScale = OL.u1.w * lampsOn * (1.0 - darkwood);
     if (sScale > 0.20) {
       let sPos = select(vec2f(b.z + 4.2, b.w + 6.9), vec2f(b.z + 2.0, b.y + 1.0), isInView);
       let dvS = (world.xz - sPos) * select(vec2f(0.85, 0.90), vec2f(1.10, 0.44), isInView);

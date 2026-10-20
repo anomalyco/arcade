@@ -62,10 +62,11 @@
   from one gust field (`applyFoliageWindField` in `@arcade/kit/gpu/foliage`, sim time + position only); Today restores
   the old meshes and wobble. Build options reach `plant()` through `vegetationBuild` (synced each frame by
   `world/scene-level.ts`, sent to the world Worker, part of every level/chunk cache key). Stills, wind clips and paired
-  GPU: `bun scripts/vegetation-stills.ts --clip --gpu` (via `hivemind run --kind browser`). Tree look (D-41, AR-74,
-  Lively only; Today stays default): A Deadwood, B Fluffy, C Darkwood from `@arcade/kit/gpu/foliage-looks`, dispatched
-  by `plant()`; A and C sink to near-black grey outside light in `outbreakTreeSurface` (`src/vegetation/trees.ts`) and
-  bake long moon shadows. Burning trees are a shader hook for the fire feature: `setTreeBurnSource((treeIdAt(x, z)) =>
+  GPU: `bun scripts/vegetation-stills.ts --clip --gpu` (via `hivemind run --kind browser`). Tree look (D-41/D-42, AR-74,
+  Lively only; C is the default, Today one setting away): A Deadwood, B Fluffy, C Darkwood from
+  `@arcade/kit/gpu/foliage-looks`, dispatched by `plant()`; "Blighted trees" (default 25%) gives a seeded share of C
+  trees Deadwood's limbs with withered clumps or none. A and C sink to near-black grey outside light in
+  `outbreakTreeSurface` (`src/vegetation/trees.ts`), take their colour in the torch beam, and bake long moon shadows. Burning trees are a shader hook for the fire feature: `setTreeBurnSource((treeIdAt(x, z)) =>
   0..1)`. Stills, night clips and paired GPU per look: `bun scripts/tree-looks-stills.ts --clip --gpu`.
 - The look (survivor style, grade, lamps and sky as trims on the day cycle, curated presets) lives in `src/look/`;
   Lab: Backquote › Look · Presets/Hero/Grade/Lights and the `outbreak-look` lab. The look's contract is
