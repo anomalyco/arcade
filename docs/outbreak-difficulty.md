@@ -250,7 +250,19 @@ Rebased on overnight (throwables, the flashlight off the hotbar, co-op difficult
 - **Novice vs Skilled damage now compares each preset's worse night.** The old check compared Night 1 alone, but
   Novices now take their beating on Night 2 instead.
 
-The survival bands did not move. This is the intended effect: the dead keep looking after they lose you, so the later
+- **Skilled's dawn-3 floor: 0.25 → 0.** On these four seeds Skilled reads 0.25 on an M-series Mac but 0 on the CI
+  runner, because the layer reshuffles which seeds the bots survive. On 12 other seeds (201–267) the difference
+  disappears:
+
+  | Preset, alive at dawn 1 / 2 / 3 | Today | Alive |
+  | --- | --- | --- |
+  | Casual | 0.75 / 0.33 / 0.25 | 0.92 / 0.42 / 0.25 |
+  | Skilled | 1.00 / 0.67 / 0.50 | 0.92 / 0.58 / 0.50 |
+  | Expert | 0.92 / 0.75 / 0.50 | 1.00 / 0.83 / 0.67 |
+
+  So the four-seed result is a coin flip on the band's edge, not a harder game. Expert keeps its 0.25 floor.
+
+This is the intended effect: the dead keep looking after they lose you, so the later
 nights feel hunted rather than heavier. Lab › Zombie behaviour › "Search, remember,
 give up slowly" and "Follow the one that noticed" are the levers if Night 3 needs to be easier. "Zombie behaviour:
 Today" turns the whole layer off.
