@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import { TICK_DT } from "../shared/clock"
 import { CoopSim, type SurvivorSlot } from "../shared/coop-sim"
-import { BURN_RING, burning, burnZombie, crackerAt, DEFAULT_FIRE_TUNING, FIRE_RING, fireLit, ringId, SCORCH_RING, type FireTuning } from "../shared/fire/fire"
-import { inStream } from "../shared/fire/runtime"
+import { BURN_RING, burning, burnZombie, crackerAt, DEFAULT_FIRE_TUNING, FIRE_RING, fireLit, ringId, SCORCH_RING, treeBurn, treeFlames, type FireTuning } from "../shared/fire/fire"
+import { inStream, placeFire } from "../shared/fire/runtime"
+import { fireLights } from "../src/fire/fx"
+import { DEFAULT_FIRE_SETTINGS } from "../src/fire/settings"
 import { CoopRoomCore, type Conn } from "../server/room-core"
 import { DEFAULT_COOP_ROOM } from "../shared/coop-config"
 import { decodeServerText, decodeSnapshot, packCommand } from "../shared/net-protocol"
@@ -369,6 +371,76 @@ describe("co-op", () => {
       if (!/^(fire|burn|scorch|flamer):/.test(st.id)) continue
       expect(seen.store(st.id)?.counts).toEqual(st.counts)
       expect(seen.store(st.id)?.at).toEqual(st.at)
+    }
+  })
+})
+
+describe("trees", () => {
+  const firstTree = (sim: CoopSim) => sim.town.props.find((p) => p.kind === "tree")!
+  test("fire on the ground at a trunk sets the tree alight; it burns, then stands bare and never catches again", () => {
+    const { sim, tick, stores } = room({ ann: { x: 30, y: 46, aim: 0 } }, { treeBurnSeconds: 4, treeSpread: 0 })
+    const tree = firstTree(sim)
+    placeFire(sim, tree.x + 0.8, tree.y, 0.6, 1, 0)
+    tick({}, 2)
+    const st = stores("tree").find((s) => s.counts.t)!
+    expect(st.at).toEqual({ x: Number(tree.x.toFixed(2)), y: Number(tree.y.toFixed(2)) })
+    expect(treeFlames(st, sim.time + 2, 4)).toBeGreaterThan(0.9)
+    expect(treeBurn(st, sim.time + 2, 4)).toBeLessThan(0.95)
+    const caught = st.counts.t
+    tick({}, ticks(8))
+    expect(treeFlames(st, sim.time, 4)).toBe(0)
+    expect(treeBurn(st, sim.time, 4)).toBe(1)
+    placeFire(sim, tree.x + 0.8, tree.y, 0.6, 1, 0)
+    tick({}, 2)
+    expect(stores("tree").filter((s) => s.counts.t)).toHaveLength(1)
+    expect(st.counts.t).toBe(caught)
+  })
+
+  test("trees never catch with Trees catch fire off", () => {
+    const { sim, tick, stores } = room({ ann: { x: 30, y: 46, aim: 0 } }, { treeCatch: 0 })
+    const tree = firstTree(sim)
+    placeFire(sim, tree.x + 0.5, tree.y, 0.8, 2, 0)
+    tick({}, ticks(1))
+    expect(stores("tree").filter((s) => s.counts.t)).toHaveLength(0)
+  })
+
+  test("the flamethrower's stream lights a tree it plays on", () => {
+    const probe = room({ ann: { x: 0, y: 0, aim: 0 } })
+    const tree = firstTree(probe.sim)
+    const { sim, tick, hold, slot, stores } = room({ ann: { x: tree.x - 3, y: tree.y, aim: 0 } })
+    hold(slot("ann"), "flamethrower")
+    tick({ ann: { fire: true, fireHeld: true } }, ticks(0.3))
+    expect(stores("tree").some((s) => s.counts.t && Math.abs(s.at!.x - tree.x) < 0.3)).toBe(true)
+    expect(sim.time).toBeGreaterThan(0)
+  })
+})
+
+describe("fire light", () => {
+  type Light = { x: number; h: number; z: number; r: number; half: [number, number, number] }
+  function lightsOf(fireLightShape: number, fireStyle = 1): Light[] {
+    const { sim, tick } = room({ ann: { x: 30, y: 46, aim: 0 } }, { treeSpread: 0 })
+    const tree = sim.town.props.find((p) => p.kind === "tree")!
+    Object.assign(sim.slots[0]!.survivor, { x: tree.x - 5, y: tree.y })
+    placeFire(sim, tree.x + 0.8, tree.y, 0.6, 1, 0)
+    tick({}, ticks(3))
+    const view = { time: sim.time, player: sim.slots[0]!.survivor, progression: sim.progression, zombies: [], town: sim.town } as never
+    const out: Light[] = []
+    const look = { ...DEFAULT_FIRE_SETTINGS, fireLightShape, fireStyle, treeBurnSeconds: DEFAULT_FIRE_TUNING.treeBurnSeconds }
+    fireLights({ view, survivors: [], support: () => 0, look }, (x, h, z, r, _c, _p, hx = 0, hy = 0, hz = 0) => out.push({ x, h, z, r, half: [hx, hy, hz] }))
+    return out
+  }
+
+  test("a burning tree lights the street as a tall capsule up its trunk", () => {
+    const lights = lightsOf(1)
+    const tall = lights.find((l) => l.half[1] > 1)
+    expect(tall).toBeDefined()
+    expect(tall!.h - tall!.half[1]).toBeGreaterThan(0.3)
+  })
+
+  test("Today's light shape (and Today's fire) keep every fire light a point", () => {
+    for (const lights of [lightsOf(0), lightsOf(1, 0)]) {
+      expect(lights.length).toBeGreaterThan(0)
+      expect(lights.every((l) => l.half.every((v) => v === 0))).toBe(true)
     }
   })
 })

@@ -17,6 +17,11 @@ export type PostFinishOptions = {
   highlightTint?: readonly [number, number, number]
   customDeclarations?: string
   customPostHook?: string
+  /**
+   * Karis-weighted first bloom downsample (Jimenez 2014): each 4-tap group is weighted by 1 / (1 + luma), so a lone
+   * very hot pixel (an ember, a spark) can't flash a whole bloom tile on and off; broad bright areas bloom as before.
+   */
+  bloomKaris?: boolean
 }
 
 export type LookVariantMode = "noir" | "painterly" | "generic"

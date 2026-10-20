@@ -11,6 +11,8 @@ import { createServer } from "vite"
  *   bun scripts/fire-smoke-proof.ts --mode stills   Today vs kit fire stills per scene, plus paired GPU (stills/, gpu.json)
  *   bun scripts/fire-smoke-proof.ts --mode clip     one labelled clip as JPEG frames (clip/NNNN.jpg, 30 fps)
  *   bun scripts/fire-smoke-proof.ts --mode all      both, on one page
+ *   bun scripts/fire-smoke-proof.ts --mode second   the second pass: a burning tree lighting the street and backlit dust
+ *                                                   in the beam (second/: clip frames, before/after stills, gpu.json)
  *
  * Output goes to captures/fire-smoke/. "Today" is `fireStyle` 0, `worldSmoke` 0 and `beamDustStyle` 0.
  */
@@ -44,7 +46,7 @@ const browser = await chromium.launch({
 })
 
 type Beat = { frames: number; cmd?: Record<string, unknown>; first?: Record<string, unknown> }
-type Scene = { name: string; label: string; setup: string; beats: Beat[]; still: number }
+type Scene = { name: string; label: string; setup: string; beats: Beat[]; still: number; every?: number; torch?: boolean; zoom?: number }
 
 /** Each scene: harness setup, then 60 Hz beats; `still` is the frame its still is taken at. */
 const SCENES: Scene[] = [
@@ -94,6 +96,30 @@ const SCENES: Scene[] = [
   },
 ]
 
+/** The second pass (AR-62/AR-68): a tree catching from a molotov's fire at its trunk, then the beam panning on a street. */
+const SECOND: Scene[] = [
+  {
+    name: "tree",
+    label: "A burning tree lights the street (2× speed)",
+    // A 10 s burn so the reel reaches the bare, charred tree.
+    setup: `h.setLab("treeBurnSeconds", 10); h.stageFire("tree"); h.session().ai.agents.length = 0; window.__aimFix = h.state().player.aim; window.__airSrc = null`,
+    beats: [{ frames: 780 }],
+    still: 300,
+    every: 4,
+    zoom: 25,
+    // Torch off, so what lights the street is the fire.
+    torch: false,
+  },
+  {
+    name: "dust",
+    label: "Dust in the beam",
+    setup: `h.stageFire("flamethrower"); h.session().ai.agents.length = 0; window.__aimFix = h.state().player.aim; window.__airSrc = null`,
+    beats: [{ frames: 300 }],
+    still: 150,
+    every: 2,
+  },
+]
+
 const evalIn = (page: Page, src: string) => page.evaluate(new Function(`const h = window.__arcadeHarness; ${src}`) as () => unknown)
 
 async function openPage(): Promise<Page> {
@@ -138,18 +164,20 @@ async function play(page: Page, s: Scene, onFrame: (i: number) => Promise<void>)
   for (const beat of s.beats) {
     for (let j = 0; j < beat.frames; j++, i++) {
       const cmd: Record<string, unknown> = { ...(beat.cmd ?? {}), ...(j === 0 ? (beat.first ?? {}) : {}) }
-      const sway = s.name === "steam" ? 0.18 * Math.sin(i / 60) : null
-      await page.evaluate(async ({ cmd, sway }) => {
+      const sway = s.name === "steam" ? 0.18 * Math.sin(i / 60) : s.name === "dust" ? 0.35 * Math.sin(i / 70) : s.name === "tree" ? 0 : null
+      const torch = s.torch ?? true
+      await page.evaluate(async ({ cmd, sway, torch }) => {
         const h = (window as any).__arcadeHarness
         const src = (window as any).__airSrc
+        const fix = (window as any).__aimFix
         if (sway !== null && src) {
           const p = h.state().player
           cmd.aim = Math.atan2(src.z - p.y, src.x - p.x) + sway
-        }
+        } else if (sway !== null && typeof fix === "number") cmd.aim = fix + sway
         // Keep the survivor up with the beam on through the whole reel.
-        Object.assign(h.state().player, { health: h.state().player.maxHealth ?? 100, battery: 1, batteryDepleted: false, flashlightOn: true })
+        Object.assign(h.state().player, { health: h.state().player.maxHealth ?? 100, battery: 1, batteryDepleted: false, flashlightOn: torch })
         await h.step(1 / 60, cmd)
-      }, { cmd, sway })
+      }, { cmd, sway, torch })
       await onFrame(i)
     }
   }
@@ -216,6 +244,57 @@ try {
       })
     }
     console.log(`fire-smoke clip: ${shot} frames`, JSON.stringify(await evalIn(page, `return h.state().fx`)))
+  }
+  if (mode === "second") {
+    const dir = resolve(out, "second")
+    rmSync(dir, { recursive: true, force: true })
+    mkdirSync(resolve(dir, "clip"), { recursive: true })
+    const gpu: Record<string, unknown> = {}
+    // One pass per scene, on the new look: clip frames throughout, and at the still frame a before/after pair (the
+    // tree's light as Today's points vs capsules; the dust as AR-68's soft motes, what's live, vs backlit motes) with
+    // paired GPU, the label hidden.
+    const pairs: Record<string, [Record<string, number>, Record<string, number>]> = {
+      tree: [{ fireLightShape: 0 }, { fireLightShape: 1 }],
+      dust: [{ beamDustStyle: 1 }, { beamDustStyle: 2 }],
+    }
+    const after = { fireStyle: 1, worldSmoke: 1, beamDustStyle: 2, fireLightShape: 1 }
+    const label = (text: string | null) =>
+      page.evaluate((text) => {
+        document.querySelector("#clip-label")?.remove()
+        if (text) document.body.append(Object.assign(document.createElement("div"), { id: "clip-label", textContent: text }))
+      }, text)
+    let frame = 0
+    for (const s of SECOND) {
+      const [b4, af] = pairs[s.name]!
+      await setKnobs(page, after)
+      await evalIn(page, `h.setZoomRaw(${s.zoom ?? zoom})`)
+      await label(s.label)
+      await play(page, s, async (i) => {
+        if (i === s.still) {
+          await label(null)
+          const shot = async (knobs: Record<string, number>, tag: string) => {
+            await setKnobs(page, knobs)
+            await page.evaluate(async () => (window as any).__arcadeHarness.step(0, {}))
+            await page.screenshot({ path: resolve(dir, `${s.name}-${tag}.jpg`), type: "jpeg", quality: 92 })
+            const ms: number[] = []
+            for (let r = 0; r < 4; r++) ms.push(await frameMs(page))
+            return med(ms)
+          }
+          // Warm both pipelines first so neither side pays a first-use compile.
+          await shot(b4, "before")
+          await shot(af, "after")
+          const a = await shot(b4, "before")
+          const b = await shot(af, "after")
+          gpu[s.name] = { beforeMs: +a.toFixed(3), afterMs: +b.toFixed(3), deltaMs: +(b - a).toFixed(3), fx: await evalIn(page, `return h.state().fx`) }
+          console.log(s.name, JSON.stringify(gpu[s.name]))
+          await setKnobs(page, after)
+          await label(s.label)
+        }
+        if (i % (s.every ?? 2) === 0) await page.screenshot({ path: resolve(dir, "clip", `${String(frame++).padStart(4, "0")}.jpg`), type: "jpeg", quality: 88, timeout: 120_000 })
+      })
+    }
+    writeFileSync(resolve(dir, "gpu.json"), JSON.stringify(gpu, null, 2))
+    console.log(`second-pass clip: ${frame} frames`)
   }
   assert.deepEqual((page as any).errors, [])
 } finally {

@@ -1,4 +1,4 @@
-import { MAX_LIGHTS, MAX_OCCLUDERS, POLAR_RAYS } from "../limits"
+import { LIGHT_CAPSULE, MAX_LIGHTS, MAX_OCCLUDERS, POLAR_RAYS } from "../limits"
 import type { PostFinishOptions } from "./look-shaders"
 import { motionGather, motionOutput } from "./motion"
 import { wgslSnippet } from "./wgsl"
@@ -431,16 +431,30 @@ fn lightSum(world: vec3f, n: vec3f, V: vec3f, shin: f32, wrap: f32) -> Lit {
   for (var i = firstLight; i < count; i++) {`}
     // Most pixels are outside the small monitor pools. Reject using just the position/radius cache line.
     let pos = lights[i].pos;
-    let lp = pos.xz;
-    let r = pos.w;
-    let dv = world.xz - lp;
-    let dPlan2 = dot(dv, dv);
+    var lp = pos.xz;
+    var r = pos.w;
+    var dv = world.xz - lp;
+    var dPlan2 = dot(dv, dv);
     if (dPlan2 >= r * r) { continue; }
     let L = lights[i];
+    var hl = L.pos.y;
+    // Capsule light (cone.w ${LIGHT_CAPSULE}): lit from the nearest point of the segment pos ± cone.xyz, so a burning
+    // figure or a jet of flame lights like a line, not a point. Its pos.w is the reach from the centre (radius plus the
+    // segment's plan half-length), so the reject above and the lamp grid stay conservative.
+    if (L.cone.w < -1.5 && L.cone.w > -2.0) {
+      let a = L.pos.xyz - L.cone.xyz;
+      let ab = L.cone.xyz * 2.0;
+      let q = a + ab * clamp(dot(world - a, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
+      r = max(r - length(L.cone.xz), 0.05);
+      lp = q.xz;
+      hl = q.y;
+      dv = world.xz - lp;
+      dPlan2 = dot(dv, dv);
+      if (dPlan2 >= r * r) { continue; }
+    }
     let power = L.color.w;
     ${hooks.lightMask ?? ""}
     if (power <= 0.001) { continue; }
-    let hl = L.pos.y;
     let dy = hl - world.y;
     let d3 = max(sqrt(dPlan2 + dy * dy), 0.05);
     let ldir = vec3f(-dv.x, dy, -dv.y) / d3;
@@ -966,7 +980,20 @@ fn clean(c: vec4f) -> vec4f {
   let l = clean(textureSample(src, samp, uv + t * vec2f(-1.0, 1.0))).rgb;
   let m = clean(textureSample(src, samp, uv + t * vec2f(1.0, 1.0))).rgb;
   var col = e * 0.125 + (a + c + g + i) * 0.03125 + (b + d + f + h) * 0.0625 + (j + k + l + m) * 0.125;
-  if (P.z > 0.5) {
+  if (P.z > 0.5) {${finish?.bloomKaris ? `
+    // Karis average: weight each 4-tap group by 1 / (1 + luma) so lone hot pixels don't flicker the bloom.
+    let g0 = (j + k + l + m) * 0.25;
+    let g1 = (a + b + d + e) * 0.25;
+    let g2 = (b + c + e + f) * 0.25;
+    let g3 = (d + e + g + h) * 0.25;
+    let g4 = (e + f + h + i) * 0.25;
+    let lw = vec3f(0.2126, 0.7152, 0.0722);
+    let w0 = 0.5 / (1.0 + dot(g0, lw));
+    let w1 = 0.125 / (1.0 + dot(g1, lw));
+    let w2 = 0.125 / (1.0 + dot(g2, lw));
+    let w3 = 0.125 / (1.0 + dot(g3, lw));
+    let w4 = 0.125 / (1.0 + dot(g4, lw));
+    col = (g0 * w0 + g1 * w1 + g2 * w2 + g3 * w3 + g4 * w4) / (w0 + w1 + w2 + w3 + w4);` : ""}
     let br = max(col.r, max(col.g, col.b));
     let knee = 0.5;
     let th = 0.9;

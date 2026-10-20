@@ -38,6 +38,9 @@ Kind `smoke` (8) is a lit, noise-shaped billow (the fireball's shape without its
 only by `ambient` and the frame's lights, so at night it stays dark until a light reaches it. A `fireball`'s emissive
 is scaled by its `r`, which is 1 in every explosion preset; lower it for a duller ember glow.
 
+Kind `glow` (9) is an unlit, purely additive soft halo (colour × alpha, destination alpha untouched): the warm air
+round a flame. It fades in and out like smoke and never occludes; keep alpha low (a few per cent) and overlap a few.
+
 The kit `Renderer` draws a game's own pool with `FrameInput.fxParticles`; `FrameInput.fxLighting` (`ambient`, `lights`,
 `lightCount`, `spotCones`, `keepColour`) overrides the lights it is drawn with. Outbreak uses both
 (`games/outbreak/src/scene/fx-particles.ts`).

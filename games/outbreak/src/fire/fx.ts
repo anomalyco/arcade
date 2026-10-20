@@ -18,6 +18,9 @@ import {
   fireLit,
   lifeAge,
   ringId,
+  TREE_RING,
+  treeFlames,
+  treeHeight,
 } from "../../shared/fire/fire"
 import { reachFrom } from "../../shared/fire/runtime"
 import type { SessionView } from "../../shared/session"
@@ -469,40 +472,76 @@ export function fireAlphaSprites(frame: FireFrame, sprites: Float32Array, start:
 }
 
 /** Fire's light: the stream, burning figures, fires on the ground, fuses, blasts and pops. Returns how many it pushed. */
-export function fireLights(frame: FireFrame, push: (x: number, h: number, z: number, r: number, c: readonly [number, number, number], power: number) => void): number {
+/**
+ * Kit fire's flicker (Lab › Flicker): a slow breath, a 2–6 Hz waver and a faint quick shiver, uneven so it never reads
+ * as a pulse. 1 on average; `amount` 0 holds it steady.
+ */
+export function fireFlicker(time: number, seed: number, amount: number): number {
+  const w = 0.07 * Math.sin(time * 1.7 + seed * 2.3) + 0.11 * Math.sin(time * 4.9 + seed) + 0.07 * Math.sin(time * 8.3 + seed * 1.9) + 0.04 * Math.sin(time * 15.7 + seed * 0.7)
+  return Math.max(0.2, 1 + w * amount)
+}
+
+/** A fire light: a point at `(x, h, z)`, or with `(hx, hy, hz)` a capsule from `p − half` to `p + half`. */
+export type FireLightPush = (x: number, h: number, z: number, r: number, c: readonly [number, number, number], power: number, hx?: number, hy?: number, hz?: number) => void
+
+/**
+ * Fire's light, pushed one by one: the stream, burning figures, ground fire, burning trees, fuses and blasts, and
+ * firecracker pops. With Fire light shape › Capsules (and the kit fire) the stream, figures, fires and trees are
+ * capsules along the flame; Today's points otherwise.
+ */
+export function fireLights(frame: FireFrame, push: FireLightPush): number {
   const { view, look, support } = frame
   const time = view.time
   const P = look.fireLight
   const R = look.fireLightRadius
   if (P <= 0) return 0
+  const kit = look.fireStyle === 1
+  const capsules = kit && look.fireLightShape >= 0.5
+  const fl = (seed: number) => (kit ? fireFlicker(time, seed, look.fireFlicker) : flicker(time, seed))
   const warm = [1, 0.5, 0.17] as const
   let n = 0
-  const add = (x: number, h: number, z: number, r: number, c: readonly [number, number, number], power: number) => {
+  const add: FireLightPush = (x, h, z, r, c, power, hx = 0, hy = 0, hz = 0) => {
     if (power <= 0.01) return
-    push(x, h, z, r, c, power)
+    if (capsules) push(x, h, z, r, c, power, hx, hy, hz)
+    else push(x, h, z, r, c, power)
     n++
   }
   for (const { s, reach, since } of sprayers(frame)) {
     const g = support(s.x, s.y)
     const len = reach * (0.25 + 0.75 * smooth(0, 0.18, time - since))
-    const k = flicker(time, s.id.length)
+    const k = fl(s.id.length)
     const dx = Math.cos(s.aim)
     const dy = Math.sin(s.aim)
-    add(s.x + dx * len * 0.35, g + 1.1, s.y + dy * len * 0.35, R * 0.85, [1, 0.62, 0.3], 0.6 * P * k)
-    add(s.x + dx * len * 0.85, g + 0.8, s.y + dy * len * 0.85, R, warm, 0.75 * P * flicker(time, s.id.length + 5))
+    if (capsules) {
+      // One capsule down the jet, from just past the nozzle to where it comes down.
+      add(s.x + dx * len * 0.55, g + 0.95, s.y + dy * len * 0.55, R, [1, 0.56, 0.22], 1.15 * P * k, dx * len * 0.42, 0, dy * len * 0.42)
+    } else {
+      add(s.x + dx * len * 0.35, g + 1.1, s.y + dy * len * 0.35, R * 0.85, [1, 0.62, 0.3], 0.6 * P * k)
+      add(s.x + dx * len * 0.85, g + 0.8, s.y + dy * len * 0.85, R, warm, 0.75 * P * fl(s.id.length + 5))
+    }
   }
   const agents = agentMap(view)
   for (const st of ring(view, "burn", BURN_RING)) {
     if (!burning(st, time)) continue
     const z = agents.get(burnZombie(st))
     if (!z || !near(view, z.x, z.y)) continue
-    add(z.x, support(z.x, z.y) + 1.25, z.y, R * 0.75, warm, 0.45 * P * burnLevel(st, time) * flicker(time, z.id))
+    const g = support(z.x, z.y)
+    // Up the body, knee to crown.
+    add(z.x, g + (capsules ? 1.0 : 1.25), z.y, R * 0.75, warm, 0.45 * P * burnLevel(st, time) * fl(z.id), 0, 0.55, 0)
   }
   for (const st of ring(view, "fire", FIRE_RING)) {
     if (!fireLit(st, time) || !near(view, st.at!.x, st.at!.y)) continue
     const r = (st.counts.r ?? 0) / 100
     const lvl = 1 - smooth(0.65, 1, lifeAge(st, time))
-    add(st.at!.x, support(st.at!.x, st.at!.y) + 0.5 + r * 0.2, st.at!.y, R * (0.45 + 0.25 * r), warm, (0.15 + 0.2 * r) * P * lvl * flicker(time, Math.round(st.at!.x * 10)))
+    add(st.at!.x, support(st.at!.x, st.at!.y) + 0.5 + r * 0.2, st.at!.y, R * (0.45 + 0.25 * r), warm, (0.15 + 0.2 * r) * P * lvl * fl(Math.round(st.at!.x * 10)), 0, 0.3 + r * 0.1, 0)
+  }
+  for (const st of ring(view, "tree", TREE_RING)) {
+    if (!st.at || !near(view, st.at.x, st.at.y)) continue
+    const lvl = treeFlames(st, time, look.treeBurnSeconds)
+    if (lvl <= 0.01) continue
+    // A burning crown lights the street like a bonfire on a pole: a tall capsule from the trunk up into the crown.
+    const h = treeHeight((st.counts.r ?? 250) / 100)
+    add(st.at.x, support(st.at.x, st.at.y) + h * 0.55, st.at.y, R * 2, [1, 0.52, 0.2], 2.2 * P * lvl * fl(Math.round(st.at.x * 7 + st.at.y)), 0, h * 0.36, 0)
   }
   for (const st of ring(view, "dyn", DYN_RING)) {
     if (!st.counts.t || !st.at) continue

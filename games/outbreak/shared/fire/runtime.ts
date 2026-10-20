@@ -5,7 +5,7 @@ import { dayCycle } from "../day-cycle"
 import { survivorDamage } from "../feature-registry"
 import { DEFAULT_FLARE_TUNING, FLARE_STRIKE_NOISE, type FlareTuning } from "../flares/flares"
 import { pullToward } from "../flares/runtime"
-import { sightRects, type Door, type Town } from "../map"
+import { sightRects, type Door, type Prop, type Town } from "../map"
 import type { Command, OutbreakSim, SurvivorSlot } from "../sim-types"
 import {
   BURN_RING,
@@ -25,6 +25,10 @@ import {
   ringId,
   SCORCH_RING,
   TRAP_RING,
+  TREE_RING,
+  treeAge,
+  treeCrownRadius,
+  treeFlames,
   type FireTuning,
 } from "./fire"
 
@@ -238,12 +242,111 @@ function stepGroundFire(sim: OutbreakSim, state: FireState, t: FireTuning, dt: n
       const p = s.survivor
       if (Math.hypot(p.x - x, p.y - y) <= r * 0.85) hurtSurvivor(sim, s, t.groundFireDps * dt)
     }
+    igniteTreesNear(sim, x, y, r + 0.9, by, t)
     // Lab only: fire creeping across the ground beside itself, still bounded by the ring.
     if (blockers && rand(state) < t.fireSpread * dt) {
       const ang = rand(state) * Math.PI * 2
       const nx = x + Math.cos(ang) * r * 1.6
       const ny = y + Math.sin(ang) * r * 1.6
       if (clearLine(x, y, nx, ny, blockers)) placeFire(sim, nx, ny, Math.max(0.5, r * 0.9), t.groundFireSeconds * 1.4, 2, by)
+    }
+  }
+}
+
+// ── Trees ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+type TreeList = { x: Float32Array; y: Float32Array; r: Float32Array }
+/** Keyed by the props array (streaming swaps `town.props` on the same Town). */
+const treeLists = new WeakMap<Prop[], TreeList>()
+
+function townTrees(town: Town): TreeList {
+  let list = treeLists.get(town.props)
+  if (list) return list
+  const trees = town.props.filter((p) => p.kind === "tree")
+  list = { x: new Float32Array(trees.length), y: new Float32Array(trees.length), r: new Float32Array(trees.length) }
+  trees.forEach((p, i) => {
+    list!.x[i] = p.x
+    list!.y[i] = p.y
+    list!.r[i] = treeCrownRadius(p.variant)
+  })
+  treeLists.set(town.props, list)
+  return list
+}
+
+/** The tree store for the tree at `(x, y)`, if it ever caught. */
+function treeStore(sim: OutbreakSim, x: number, y: number): StoreState | undefined {
+  const ledger = sim.progression.ledger
+  for (let k = 0; k < TREE_RING; k++) {
+    const st = ledger.store(ringId("tree", k))
+    if (st?.counts.t && st.at && Math.abs(st.at.x - x) < 0.3 && Math.abs(st.at.y - y) < 0.3) return st
+  }
+  return undefined
+}
+
+/**
+ * Sets tree `i` alight; a tree burns once (one burning or already bare is left alone). Its store is reused only once
+ * the ring is full and its fire has long gone out, so a burnt tree stays bare.
+ */
+function igniteTree(sim: OutbreakSim, trees: TreeList, i: number, by: string, t: FireTuning): boolean {
+  if (t.treeCatch <= 0) return false
+  const x = trees.x[i]!
+  const y = trees.y[i]!
+  if (treeStore(sim, x, y)) return false
+  const ledger = sim.progression.ledger
+  const st = ringSlot(ledger, "tree", TREE_RING, (s) => !s.counts.t, (s) => treeAge(s, sim.time) > t.treeBurnSeconds + 30)
+  if (!st) return false
+  setRing(ledger, st, { x, y }, { t: Math.max(1, ds(sim.time)), r: cm(trees.r[i]!) }, by)
+  return true
+}
+
+/** Trees whose trunk is within `pad` of `(x, y)` (plus `r`), set alight. */
+function igniteTreesNear(sim: OutbreakSim, x: number, y: number, r: number, by: string, t: FireTuning): void {
+  if (t.treeCatch <= 0) return
+  const trees = townTrees(sim.town)
+  for (let i = 0; i < trees.x.length; i++) {
+    const dx = trees.x[i]! - x
+    const dy = trees.y[i]! - y
+    if (Math.abs(dx) > r || Math.abs(dy) > r || dx * dx + dy * dy > r * r) continue
+    igniteTree(sim, trees, i, by, t)
+  }
+}
+
+/**
+ * Once a tick: burning trees drop burning leaves and twigs (small fires under the crown that light the dead walking
+ * through) and now and then set a neighbour whose crown they touch alight; burning dead brushing a trunk set it alight.
+ */
+function stepTrees(sim: OutbreakSim, state: FireState, t: FireTuning, dt: number): void {
+  if (t.treeCatch <= 0) return
+  const ledger = sim.progression.ledger
+  const trees = townTrees(sim.town)
+  for (let k = 0; k < BURN_RING; k++) {
+    const st = ledger.store(ringId("burn", k))
+    if (!st?.counts.z || st.counts.dead || ds(sim.time) >= (st.counts.until ?? 0)) continue
+    const a = agentById(sim, burnZombie(st))
+    if (a && rand(state) < 0.6 * dt) igniteTreesNear(sim, a.x, a.y, 0.9, st.owner ?? "fire", t)
+  }
+  for (let k = 0; k < TREE_RING; k++) {
+    const st = ledger.store(ringId("tree", k))
+    if (!st?.at) continue
+    const lvl = treeFlames(st, sim.time, t.treeBurnSeconds)
+    if (lvl < 0.3) continue
+    const r = (st.counts.r ?? 250) / 100
+    const by = st.owner ?? "fire"
+    if (rand(state) < 0.3 * lvl * dt) {
+      const ang = rand(state) * Math.PI * 2
+      const d = Math.sqrt(rand(state)) * r * 0.65
+      placeFire(sim, st.at.x + Math.cos(ang) * d, st.at.y + Math.sin(ang) * d, 0.5 + 0.3 * rand(state), 2.5, 2, by)
+    }
+    if (t.treeSpread > 0 && rand(state) < t.treeSpread * lvl * dt) {
+      let best = -1
+      let bestD = Infinity
+      for (let i = 0; i < trees.x.length; i++) {
+        const d = Math.hypot(trees.x[i]! - st.at.x, trees.y[i]! - st.at.y)
+        if (d < 0.3 || d > (r + trees.r[i]!) * 0.8 || d >= bestD || treeStore(sim, trees.x[i]!, trees.y[i]!)) continue
+        best = i
+        bestD = d
+      }
+      if (best >= 0) igniteTree(sim, trees, best, by, t)
     }
   }
 }
@@ -345,6 +448,15 @@ export function stepFlamethrower(sim: OutbreakSim, slot: SurvivorSlot, command: 
     if (other === slot) continue
     const o = other.survivor
     if (inStream(p, o.x, o.y, reach, t.flameCone, 0.25) && clearLine(p.x, p.y, o.x, o.y, blockers)) hurtSurvivor(sim, other, t.flameFriendlyDps * dt)
+  }
+  if (t.treeCatch > 0) {
+    const trees = townTrees(sim.town)
+    for (let i = 0; i < trees.x.length; i++) {
+      const tx = trees.x[i]!
+      const ty = trees.y[i]!
+      if (Math.abs(tx - p.x) > reach + 1 || Math.abs(ty - p.y) > reach + 1) continue
+      if (inStream(p, tx, ty, reach + 0.4, t.flameCone, 0.5) && clearLine(p.x, p.y, tx, ty, blockers)) igniteTree(sim, trees, i, slot.id, t)
+    }
   }
   const dx = Math.cos(p.aim)
   const dy = Math.sin(p.aim)
@@ -461,6 +573,7 @@ export function explode(sim: OutbreakSim, x: number, y: number, by: string, t: F
       }
     }
   }
+  igniteTreesNear(sim, x, y, R * 0.6, by, t)
   placeScorch(sim, x, y, R * 0.42, true)
   for (let i = 0; i < 3; i++) {
     const ang = hash01(Math.round(x * 100), i) * Math.PI * 2
@@ -694,5 +807,6 @@ export function stepFireLate(sim: OutbreakSim, state: FireState, dt: number): vo
   const t = state.tuning
   stepBurning(sim, state, t, dt)
   stepGroundFire(sim, state, t, dt)
+  stepTrees(sim, state, t, dt)
   stepTraps(sim, t)
 }

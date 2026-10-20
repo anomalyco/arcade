@@ -34,6 +34,8 @@ export const outbreakPostFinish: PostFinishOptions = {
   huePreserve: 0.52,
   customDeclarations: outbreakUnseenPostWgsl,
   customPostHook: outbreakUnseenPostHookWgsl,
+  // Embers and sparks are tiny and very hot: keep them from flashing bloom tiles on and off.
+  bloomKaris: true,
 }
 
 export const outbreakSceneHooks: SceneHooks = {
@@ -105,7 +107,7 @@ export const outbreakSceneHooks: SceneHooks = {
     let fw = applyFoliageWindField(o.world, o.normal, v.matAux.y, v.matAux.x, F.cam.w, F.cam.xyz, OL.veg, OL.vegGust, OL.vegActors);
     o.world = fw[0];
     o.normal = fw[1];
-    if (OL.vegTrees.w > 0.5 && v.matAux.y > 0.0 && v.matAux.y < 2.5) { o.world = outbreakTreeBurnVertex(o.world, v.matAux.x); }
+    if (OL.vegTrees.w > 0.5 && v.matAux.y > 0.0 && v.matAux.y < 4.5) { o.world = outbreakTreeBurnVertex(o.world, v.matAux.x, v.matAux.y); }
   }`,
   declarations: /* wgsl */ `
 @group(0) @binding(9) var exploredTex: texture_2d<f32>;

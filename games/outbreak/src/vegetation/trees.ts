@@ -1,4 +1,5 @@
 import { TREE_LOOK_SHADE } from "@arcade/kit/gpu/foliage-looks"
+import { treeCrownRadius } from "../../shared/fire/fire"
 import type { Town } from "../../shared/map"
 import type { OutbreakVegetationSettings } from "./settings"
 
@@ -33,6 +34,23 @@ export function setTreeBurnSource(source: TreeBurnSource | null): void {
   burnSource = source
 }
 
+/**
+ * Burning or burnt ground that chars the shrubs and hedges standing in it (fire on the ground, scorch marks): each
+ * spot is `push(x, z, radius, burn)`. The fire feature sets the source; vegetation draws the nearest few.
+ */
+export type FoliageBurnSpots = (push: (x: number, z: number, r: number, burn: number) => void) => void
+
+let spotSource: FoliageBurnSpots | null = null
+
+/** Installs (or clears with null) the burn spots for shrubs and hedges. */
+export function setFoliageBurnSpots(source: FoliageBurnSpots | null): void {
+  spotSource = source
+}
+
+/** Most of the burn slots shrub and hedge spots may take (burning trees come first). */
+const SPOT_SLOTS = 5
+const spots: { x: number; z: number; r: number; b: number; d2: number }[] = []
+
 /** The burn state the renderer draws for `treeId` (0..1). */
 export function treeBurnState(treeId: number): number {
   const b = burnSource ? burnSource(treeId) : 0
@@ -51,7 +69,7 @@ function townTrees(town: Town): TreeList {
   trees.forEach((t, i) => {
     list!.x[i] = t.x
     list!.z[i] = t.y
-    list!.r[i] = 2.45 + t.variant * 0.75
+    list!.r[i] = treeCrownRadius(t.variant)
     list!.id[i] = treeIdAt(t.x, t.y)
   })
   treeLists.set(town.props, list)
@@ -97,8 +115,26 @@ export function packVegetationTrees(s: Readonly<OutbreakVegetationSettings>, tow
       out[o + 3] = picked.b[k]!
     }
   }
-  out[offset + 3] = picked.n
-  out.fill(0, offset + 4 + picked.n * 4, offset + VEG_TREE_UNIFORM_FLOATS)
+  // Shrub and hedge spots after the trees, nearest first, marked by a negative radius.
+  let n = picked.n
+  if (spotSource && n < TREE_BURN_SLOTS) {
+    spots.length = 0
+    spotSource((x, z, r, b) => {
+      const d2 = (x - px) ** 2 + (z - pz) ** 2
+      if (b > 0.002 && r > 0.05 && d2 < 40 * 40) spots.push({ x, z, r, b: Math.min(1, b), d2 })
+    })
+    spots.sort((a, b) => a.d2 - b.d2)
+    for (let k = 0; k < spots.length && n < TREE_BURN_SLOTS && k < SPOT_SLOTS; k++, n++) {
+      const sp = spots[k]!
+      const o = offset + 4 + n * 4
+      out[o] = sp.x
+      out[o + 1] = sp.z
+      out[o + 2] = -sp.r
+      out[o + 3] = sp.b
+    }
+  }
+  out[offset + 3] = n
+  out.fill(0, offset + 4 + n * 4, offset + VEG_TREE_UNIFORM_FLOATS)
 }
 
 /** Keeps the most strongly burning trees (one entry per tree; the strongest state wins). */
@@ -125,7 +161,7 @@ function pick(i: number, b: number): void {
 /** Uniform fields appended to `OutbreakLightingUniforms` after `vegGust`. */
 export const vegetationTreeFieldsWgsl = /* wgsl */ `
   vegTrees: vec4f, // tree look (0 lively, 1 Deadwood, 2 Fluffy, 3 Darkwood), shade outside light, colour in light, burning trees
-  vegBurn: array<vec4f, ${TREE_BURN_SLOTS}>, // burning trees: x, z, crown radius, burn (0..1)`
+  vegBurn: array<vec4f, ${TREE_BURN_SLOTS}>, // burning trees: x, z, crown radius (negative: a shrub and hedge spot), burn (0..1)`
 
 /** WGSL helpers; declare after `OL`. */
 export const vegetationTreeWgsl = /* wgsl */ `
@@ -142,25 +178,39 @@ fn outbreakTreeColourLit() -> f32 {
 fn outbreakIsTreePart(mat: f32, aux: f32) -> bool {
   return (mat > 21.5 && mat < 22.5 && aux > 0.0 && aux < 2.5) || (mat > 23.5 && mat < 24.5 && aux > 7.5);
 }
+/** Shrub and hedge foliage (FOLIAGE_BUSH_AUX 3 plus flex). */
+fn outbreakIsBushPart(mat: f32, aux: f32) -> bool {
+  return mat > 21.5 && mat < 22.5 && aux >= 2.5 && aux < 4.5;
+}
 
-/** The strongest burning tree reaching \`p\`: its x, z and radius, and the burn there (0 when none). */
-fn outbreakTreeBurnAt(p: vec3f) -> vec4f {
+/**
+ * The strongest burn reaching \`p\`: its x, z and radius, and the burn there (0 when none). Trees take only burning
+ * trees; shrubs and hedges (\`bush\`) also take the ground spots and the ground under a burning crown.
+ */
+fn outbreakTreeBurnAt(p: vec3f, bush: bool) -> vec4f {
   var best = vec4f(0.0);
   let count = i32(OL.vegTrees.w);
   for (var i = 0; i < ${TREE_BURN_SLOTS}; i++) {
     if (i >= count) { break; }
     let t = OL.vegBurn[i];
-    let k = t.w * (1.0 - smoothstep(t.z * 0.8, t.z * 1.15, length(p.xz - t.xy)));
-    if (k > best.w) { best = vec4f(t.xyz, k); }
+    if (t.z < 0.0 && !bush) { continue; }
+    let r = select(t.z, select(t.z * 0.6, -t.z, t.z < 0.0), bush);
+    let k = t.w * (1.0 - smoothstep(r * 0.8, r * 1.15, length(p.xz - t.xy)));
+    if (k > best.w) { best = vec4f(t.xy, r, k); }
   }
   return best;
 }
 
-/** Burnt-away leaves fold into the trunk below ground (zero-area triangles, no discard), from burn 0.55 to 0.95. */
-fn outbreakTreeBurnVertex(p: vec3f, mat: f32) -> vec3f {
+/**
+ * Burnt-away leaves fold away (zero-area triangles, no discard) from burn 0.55 to 0.95: a tree's into its trunk below
+ * ground, a shrub's down into the ground where it stood.
+ */
+fn outbreakTreeBurnVertex(p: vec3f, mat: f32, aux: f32) -> vec3f {
   if (OL.vegTrees.w < 0.5 || mat > 22.5) { return p; }
-  let b = outbreakTreeBurnAt(p);
+  let bush = aux >= 2.5;
+  let b = outbreakTreeBurnAt(p, bush);
   let k = smoothstep(0.55, 0.95, b.w);
+  if (bush) { return p - vec3f(0.0, 1.8 * k, 0.0); }
   return mix(p, vec3f(b.x, -1.5, b.y), k);
 }
 
@@ -185,6 +235,8 @@ fn outbreakTreeBeam(world: vec3f) -> f32 {
  * and enrich their colour. Burn: char toward black, embers glowing while it burns.
  */
 fn outbreakTreeSurface(col: vec3f, litMask: f32, sunVal: f32, world: vec3f, mat: i32, aux: f32) -> vec3f {
+  let bush = outbreakIsBushPart(f32(mat), aux);
+  if (bush) { return outbreakBurnChar(col, world, mat, true); }
   if (!outbreakIsTreePart(f32(mat), aux)) { return col; }
   var c = col;
   let shade = clamp(OL.vegTrees.y, 0.0, 1.5);
@@ -202,15 +254,21 @@ fn outbreakTreeSurface(col: vec3f, litMask: f32, sunVal: f32, world: vec3f, mat:
     rich += select(vec3f(0.0), outbreakAlbedo * OL.u5.rgb * vec3f(1.0, 1.15, 0.7) * beam * 0.45 * shade * clamp(OL.vegTrees.z, 0.0, 1.5), leaf);
     c = mix(unlit, rich, max(smoothstep(0.04, 0.55, litMask), beam * select(0.5, 1.0, leaf)));
   }
-  if (OL.vegTrees.w > 0.5) {
-    let b = outbreakTreeBurnAt(world).w;
-    if (b > 0.001) {
-      c = mix(c, vec3f(lum * 0.1 + 0.004), smoothstep(0.08, 0.6, b));
-      let ember = smoothstep(0.12, 0.35, b) * (1.0 - smoothstep(0.65, 0.95, b));
-      let flick = 0.6 + 0.4 * sin(F.cam.w * 6.5 + dot(world, vec3f(3.1, 1.7, 2.3)));
-      c += vec3f(1.4, 0.42, 0.08) * ember * flick * select(0.3, 0.16, mat == 24);
-    }
-  }
+  return outbreakBurnChar(c, world, mat, false);
+}
+
+/** Burn: char toward black, embers glowing in the leaves and bark while it burns. */
+fn outbreakBurnChar(col: vec3f, world: vec3f, mat: i32, bush: bool) -> vec3f {
+  if (OL.vegTrees.w < 0.5) { return col; }
+  let b = outbreakTreeBurnAt(world, bush).w;
+  if (b <= 0.001) { return col; }
+  let lum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
+  var c = mix(col, vec3f(lum * 0.1 + 0.004), smoothstep(0.08, 0.6, b));
+  let ember = smoothstep(0.12, 0.35, b) * (1.0 - smoothstep(0.65, 0.95, b));
+  // Embers breathe slowly and unevenly (no per-frame flicker, so TAA keeps them).
+  let ph = dot(world, vec3f(3.1, 1.7, 2.3));
+  let flick = 0.55 + 0.3 * sin(F.cam.w * 2.3 + ph) + 0.15 * sin(F.cam.w * 5.1 + ph * 1.7);
+  c += vec3f(1.4, 0.42, 0.08) * ember * flick * select(0.3, 0.16, mat == 24);
   return c;
 }
 `
