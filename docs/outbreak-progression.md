@@ -10,7 +10,7 @@ Workbench, on the Inventory First baseline); the design write-up is the D-11 rou
 
 | Store | Holds | Notes |
 | --- | --- | --- |
-| Hotbar (5 slots) | Flashlight, pistol, melee weapon, medical, throwable | Items go to their usual slot when it is free (`preferSlots`). `Mouse0` uses the held item; holding a melee weapon swings on `Mouse0` (tap for a 2–3 hit combo, hold for a charged heavy cleave; `V` always shoves). |
+| Hotbar (5 slots) | Fists (slot 1, bound: never dropped or looted), pistol (one each, `unique`), melee weapon, medical, throwable | The flashlight is on the shoulder, not a slot (`F`). Items go to their usual slot when it is free (`preferSlots`). Fists or an empty slot shove on `Mouse0`; `Mouse0` uses the held item; holding a melee weapon swings on `Mouse0` (tap for a 2–3 hit combo, hold for a charged heavy cleave; `V` always shoves). |
 | Belt (counters) | 9mm (24), planks (6), scrap (10), chem (6), batteries (3), keys (4) | Never in the hotbar. Reload, barricade, crafting, keys and battery swaps draw from it. |
 | Pack (4 slots) | Parts (toolbox, car battery takes 2), spare tools | `Tab` shows it; a digit swaps that pack slot into the selected hand slot. |
 
@@ -42,9 +42,15 @@ never those fields (tests and scripts use `harness.stock(loaded, belt)` and `har
   keyed (a key opens it quietly, a crowbar pries it loudly).
 - `E` searches quietly (1.2 s, 3.5 m), `Shift+E` smashes (0.35 s, 14 m). A searched container stays open for
   everyone: the strip above it lists what is inside, `E` takes all that fits and digits take one. What does not fit
-  stays, with an "Inventory full" notice.
-- `G` drops the held item, hold `G` leaves 6 ammo and 2 planks, as `drop:<n>` stores anyone can pick up. A seat that
-  expires leaves its whole kit on the floor.
+  stays, and the notice says what is in the way and the key that clears it ("No room for Machete: hands and pack
+  full. G drops your Crowbar", "Can't carry more 9mm (24 max)", "You already carry a 9mm Pistol"). A hand item with no
+  room is tagged "swap" in the strip: its digit (or `E` on a single item on the floor) drops what is in hand there and
+  takes it.
+- `G` drops the held item, hold `G` leaves 6 ammo and 2 planks, as `drop:<n>` stores anyone can pick up. Beside a
+  standing teammate (1.8 m, in front or touching) either one goes to them instead (`shared/progression/give.ts`): it is
+  dropped at their feet and they take it in the same tick, so a full teammate finds it lying there; both get a named
+  notice ("Gave Crowbar to Bob", "Ann gave you Crowbar"), and walking up with something in hand says "G to give Bob".
+  A seat that expires leaves its whole kit on the floor.
 - `Q` pings the target (or a zombie in the aim cone) for 6 s; noisemakers call the dead for 8 s where they land.
 
 ## Safehouse workbench

@@ -139,7 +139,9 @@ alive ──0 HP──▶ down ──bleed-out runs out──▶ dead ──squa
 - **Revive**: a standing teammate within 1.6 m holds E ("Revive" prompt, the `downed` interaction). Progress fills
   over 4 s and resets if they let go for a quarter second or step away.
 - **Dead**: the body stays where they fell (`FallenBody`, ledger store `fallen:<seat>:<n>` holding their hotbar, belt
-  and pack; a teammate takes it all with E), their light goes out and the crowd can no longer see or hear them. In
+  and pack; a teammate takes one thing with a digit from the strip or everything by holding E, never with a tap, and not
+  in the first 1.5 s, so an E held to revive them can't strip them; bare hands stay with the survivor, and a second
+  pistol stays on the body because each survivor carries one), their light goes out and the crowd can no longer see or hear them. In
   co-op they watch a standing teammate (camera, sight shroud and listener follow that teammate) until the squad's
   next dawn, then wake at their spawn point beside the Ash House with full health and the standard kit. "The dead
   come back: Never" keeps them dead until the run ends.

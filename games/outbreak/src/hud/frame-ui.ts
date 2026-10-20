@@ -16,6 +16,7 @@ import { type NetSession, SURVIVOR_COLOURS } from "../net-session"
 import type { OutbreakSettings } from "../settings"
 import type { OutbreakVehicleRenderer } from "../vehicles"
 import { OutbreakHud } from "./index"
+import { giveTarget } from "../../shared/progression/give"
 
 function safeLocalStorage(): Storage | null {
   try {
@@ -164,6 +165,7 @@ export class OutbreakFrameUi {
       botsLab,
     } = ctx
     const { player: p, town } = session.view
+    this.hud.giveTo = giveToName(session, coop)
     this.hud.update(
       dt,
       session.view,
@@ -220,4 +222,16 @@ export class OutbreakFrameUi {
       botsLab.renderOverlay(session, cam, (x, z) => supportHeight(town, x, z), w, h)
     }
   }
+}
+
+/** The teammate G would hand the held item (or the ammo bundle) to, by name, or nothing. */
+function giveToName(session: LocalSession | NetSession, coop: CoopView): string | undefined {
+  const me = "local" in session ? session.local : session.slot
+  const held = session.view.inventory.slots[session.view.inventory.selectedSlot]
+  const ledger = session.view.progression.ledger
+  const bundle = ledger.count(`${session.view.actorId}/belt`, "ammo") + ledger.count(`${session.view.actorId}/belt`, "plank") > 0
+  if ((!held || held.kind === "fists") && !bundle) return undefined
+  const mate = giveTarget(me, session.sim.slots)
+  if (!mate) return undefined
+  return coop.net ? coop.net.nameOf(mate.index) : `Survivor ${mate.index + 1}`
 }

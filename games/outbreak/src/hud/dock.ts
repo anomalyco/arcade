@@ -135,7 +135,7 @@ export class Dock {
     const hotbar = ledger.store(`${actorId}/hotbar`)
     const pack = ledger.store(`${actorId}/pack`)
     const pendKey = view.pendingItems?.size ? [...view.pendingItems].join(",") : ""
-    const key = `${belt?.rev}|${hotbar?.rev}|${pack?.rev}|${p.flashlightOn}|${p.batteryDepleted}|${Math.ceil(p.battery * 10)}|${p.magAmmo}|${p.meleeDurability}|${pendKey}|${keyLabel("KeyF")}|${keyLabel("Tab")}`
+    const key = `${belt?.rev}|${hotbar?.rev}|${pack?.rev}|${p.flashlightOn}|${p.batteryDepleted}|${Math.ceil(p.battery * 10)}|${p.magAmmo}|${p.reserveAmmo > 0}|${p.meleeDurability}|${pendKey}|${keyLabel("KeyF")}|${keyLabel("Tab")}`
     const animate = !this.first
     if (key !== this.lastKey) {
       this.wake(now)
@@ -259,6 +259,8 @@ export class Dock {
       // A charged fire item counts its charge: the flamethrower's fuel (%), the flare gun's shots.
       const count = s?.item === "pistol" ? p.magAmmo : s && GLYPH_SLOTS.has(s.item) && s.charge !== undefined ? Math.ceil(s.charge) : s && s.count > 1 ? s.count : null
       slot.el.dataset.count = String(count !== null)
+      // An empty magazine with rounds on the belt: the slot says R, so 0 never reads as "no bullets".
+      slot.el.dataset.reload = String(s?.item === "pistol" && p.magAmmo === 0 && p.reserveAmmo > 0)
       if (count !== null) slot.roll.set(count, animate && slot.count !== null)
       if (animate && count !== null && slot.count !== null && count > slot.count) this.pulse(slot.el)
       slot.count = count

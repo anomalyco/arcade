@@ -321,9 +321,11 @@ describe("CoopRoomCore", () => {
     const ledger = core.sim.progression.ledger
     const ann = core.sim.slot(a.id)!
     const bob = core.sim.slot(b.id)!
+    // Out of give reach, so the bundle goes on the floor for Bob to pick up.
     Object.assign(ann.survivor, { x: 44, y: 44 })
-    Object.assign(bob.survivor, { x: 44.6, y: 44 })
+    Object.assign(bob.survivor, { x: 46.2, y: 44 })
     run(core, [a, b], 1, (c) => (c === a ? { ...idle(0), bundle: true } : idle()))
+    Object.assign(bob.survivor, { x: 44.6, y: 44 })
     run(core, [a, b], 3)
     const drop = [...ledger.stores.keys()].find((k) => k.startsWith("drop:") && !k.startsWith("drop:v:"))!
     expect(ledger.count(drop, "ammo")).toBe(6)
@@ -343,6 +345,26 @@ describe("CoopRoomCore", () => {
     const left = [...ledger.stores.keys()].find((k) => k.startsWith("drop:") && ledger.count(k, "pistol") > 0)!
     expect(ledger.count(left, "fists")).toBe(0)
     expect(b.ledger.count(left, "pistol")).toBe(1)
+  })
+
+  test("G beside a teammate gives across the room, named on both screens", () => {
+    let now = 0
+    const core = new CoopRoomCore("test", options, () => now, "test")
+    const a = client(core, "Ann")
+    const b = client(core, "Bob")
+    run(core, [a, b], 3)
+    const ledger = core.sim.progression.ledger
+    Object.assign(core.sim.slot(a.id)!.survivor, { x: 44, y: 44 })
+    Object.assign(core.sim.slot(b.id)!.survivor, { x: 45, y: 44 })
+    expect(ledger.apply({ kind: "grant", actor: a.id, item: "crowbar" }).ok).toBe(true)
+    run(core, [a, b], 1, (c) => (c === a ? { ...idle(0), hotbarSlot: 2 } : idle()))
+    run(core, [a, b], 1, (c) => (c === a ? { ...idle(0), drop: true } : idle()))
+    run(core, [a, b], 3)
+    expect(ledger.count(b.id, "crowbar")).toBe(1)
+    expect(b.ledger.count(`${b.id}/hotbar`, "crowbar")).toBe(1)
+    expect(a.ledger.count(`${a.id}/hotbar`, "crowbar")).toBe(0)
+    expect(b.notices).toContain("Ann gave you Crowbar")
+    expect(a.notices).toContain("Gave Crowbar to Bob")
   })
 
   test("reconnecting with the private token keeps the survivor; the public id does not", () => {

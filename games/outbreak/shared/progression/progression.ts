@@ -20,6 +20,7 @@ import { DEFAULT_LOADOUT, loadoutSpec, type LoadoutId } from "../loadout"
 import { sightRects, type Door, type Town } from "../map"
 import { ACTOR_STORES, CATALOG, ITEMS, RECIPES, type Recipe } from "./catalog"
 import { benchSites, buildingAt, CONTAINER_SLOTS, LOOT_TABLES, lootSites, rareLootRng, rollExtraLoot, rollRareLoot, type BenchSite, type LootSite } from "./loot"
+import { defaultSeatName, giveTarget, type SeatNames } from "./give"
 import { CHANNEL_SLACK, pickProgressionTuning, progressionRules, type ProgressionTuning } from "./tuning"
 import type {
   HeldUse,
@@ -319,7 +320,7 @@ export class OutbreakProgression implements ProgressionHost {
   storeFor(target: { kind: string; id: string } | undefined): string | null {
     if (!target) return null
     // `body`: a dead survivor searched like a container (`shared/bodies`).
-    if (target.kind === "container" || target.kind === "drop" || target.kind === "body") return target.id
+    if (target.kind === "container" || target.kind === "drop" || target.kind === "body" || target.kind === "fallen") return target.id
     if (target.kind === "bench" || target.kind === "stash") return target.id.replace(/#.*$/, "")
     return null
   }
@@ -443,7 +444,9 @@ export class OutbreakProgression implements ProgressionHost {
       execute: (_town, actor, targetId, action) => {
         const slot = this.actorOf.get(actor)
         if (!slot || action !== "take") return { handled: false }
-        return { handled: this.take(slot, targetId), kind: "drop", targetId, action }
+        // A single item on the floor swaps for what is in hand when there is no room for it.
+        const one = this.contents(targetId).length === 1
+        return { handled: one ? this.take(slot, targetId, 0, true) : this.take(slot, targetId), kind: "drop", targetId, action }
       },
     }
   }
@@ -557,8 +560,10 @@ export class OutbreakProgression implements ProgressionHost {
         else if (item === "noisemaker") this.throwLure(slot, world)
       } else if (use === "set") this.verbs.setTripwire(slot, world)
     }
-    if (cmd.drop) this.dropHeld(slot)
-    if (cmd.bundle) this.dropBundle(slot)
+    // G near a standing teammate hands it to them; otherwise it goes on the floor.
+    const mate = cmd.drop || cmd.bundle ? giveTarget(slot, world.slots) : null
+    if (cmd.drop) this.dropHeld(slot, mate)
+    if (cmd.bundle) this.dropBundle(slot, mate)
     if (cmd.ping) this.ping(slot, world, target)
     return { noise, noiseKind }
   }
@@ -592,24 +597,68 @@ export class OutbreakProgression implements ProgressionHost {
     }
   }
 
-  take(slot: ProgressionSlot, storeId: string, index?: number): boolean {
+  /**
+   * Takes everything from a store, or the `index`th stack in pick order. With `swap`, a hand item that has no room is
+   * swapped for what is in hand: the held item goes on the floor here and the new one comes up (playtest: "my
+   * inventory is full"). A full take always says what is in the way and how to clear it.
+   */
+  take(slot: ProgressionSlot, storeId: string, index?: number, swap = false): boolean {
     let tx: Tx = { kind: "take", actor: slot.id, from: storeId }
+    const wanted = index !== undefined ? this.contents(storeId)[index] : undefined
     if (index !== undefined) {
       const st = this.ledger.store(storeId)
-      const stack = this.contents(storeId)[index]
-      if (!st || !stack) return false
-      if (st.mode === "slots") tx = { ...tx, slot: st.slots.indexOf(stack) }
-      else tx = { ...tx, item: stack.item }
+      if (!st || !wanted) return false
+      if (st.mode === "slots") tx = { ...tx, slot: st.slots.indexOf(wanted) }
+      else tx = { ...tx, item: wanted.item }
     }
     const before = this.carried(slot.id)
-    const res = this.ledger.apply(tx, this.envFor(slot, undefined))
+    let res = this.ledger.apply(tx, this.envFor(slot, undefined))
+    let swapped: string | null = null
+    if (!res.ok && res.reason === "full" && swap && wanted && this.canSwap(slot.id, wanted.item)) {
+      const held = this.selected(slot.id)!
+      const dropped = this.ledger.apply({ kind: "drop", actor: slot.id, at: this.dropPoint(slot.survivor) })
+      res = this.ledger.apply(tx, this.envFor(slot, undefined))
+      if (res.ok) {
+        swapped = this.ledger.label(held.item)
+        const hotbar = this.hotbar(slot.id)!
+        const at = hotbar.slots.findIndex((s) => s?.item === wanted.item)
+        if (at >= 0) this.ledger.apply({ kind: "select", actor: slot.id, slot: at })
+      } else if (dropped.dropId) this.ledger.apply({ kind: "take", actor: slot.id, from: dropped.dropId })
+    }
     if (res.ok) {
       const gained = this.diffCarried(before, this.carried(slot.id))
-      if (gained) this.notify(slot, gained, "result", `take:${storeId}`)
+      if (gained) this.notify(slot, swapped ? `Swapped your ${swapped} for ${gained}` : gained, "result", `take:${storeId}`)
       this.project(slot)
     }
-    this.feedback(slot, res.events)
+    const full = (res.ok && (res.left ?? 0) > 0) || (!res.ok && res.reason === "full")
+    this.feedback(slot, full ? res.events.filter((e) => !(e.kind === "rejected" && e.reason === "full")) : res.events)
+    if (full) {
+      const left = res.ok ? this.contents(storeId)[0] : (wanted ?? this.contents(storeId).find((s) => this.ledger.room(slot.id, s.item, 1) <= 0))
+      this.notify(slot, this.noRoom(slot.id, left?.item, res.ok), "warning", "full")
+    }
     return res.ok
+  }
+
+  /** A hand item that has no room can be swapped for what is in hand (anything but bare hands). */
+  canSwap(actor: string, item: ItemId): boolean {
+    const def = this.ledger.items.get(item)
+    const held = this.selected(actor)
+    if (!def || (def.tag !== "gun" && def.tag !== "tool") || !held || this.ledger.isBound(held.item)) return false
+    return !def.unique || held.item === item || this.ledger.count(actor, item) === 0
+  }
+
+  /** What is in the way of a take, and the key that clears it. */
+  private noRoom(actor: string, item: ItemId | undefined, partial: boolean): string {
+    const def = item ? this.ledger.items.get(item) : undefined
+    const what = def ? this.ledger.label(def.id) : "That"
+    const lead = partial ? `No room for ${what.toLowerCase()}` : `No room for ${what}`
+    if (def?.unique && this.ledger.count(actor, def.id) > 0) return `You already carry a ${what}`
+    if (def && (def.tag === "ammo" || def.tag === "resource" || def.tag === "key")) {
+      return `Can't carry more ${this.ledger.label(def.id, true)}${def.maxCount ? ` (${def.maxCount} max)` : ""}`
+    }
+    const held = this.selected(actor)
+    if (held && !this.ledger.isBound(held.item)) return `${lead}: hands and pack full. G drops your ${this.ledger.label(held.item)}`
+    return `${lead}: hands and pack full. Pick a slot and G drops it`
   }
 
   private deposit(slot: ProgressionSlot, benchId: string): boolean {
@@ -642,7 +691,7 @@ export class OutbreakProgression implements ProgressionHost {
         this.notify(slot, "That part is installed in the bench", "info")
         return
       }
-      this.take(slot, store, pick.index)
+      this.take(slot, store, pick.index, true)
       return
     }
     if (pick.mode === "pack") {
@@ -758,18 +807,48 @@ export class OutbreakProgression implements ProgressionHost {
     this.notify(slot, "Fresh battery", "result", "flashlight")
   }
 
-  private dropHeld(slot: ProgressionSlot): void {
+  private dropHeld(slot: ProgressionSlot, mate: ProgressionSlot | null = null): void {
     const p = slot.survivor
     const held = this.selected(slot.id)
     if (!held || this.ledger.isBound(held.item)) {
       this.notify(slot, "Nothing in hand", "info", "drop")
       return
     }
-    const res = this.ledger.apply({ kind: "drop", actor: slot.id, at: this.dropPoint(p) })
-    if (res.ok) this.notify(slot, `Dropped ${this.ledger.label(held.item)}`, "info", "drop")
+    const res = this.ledger.apply({ kind: "drop", actor: slot.id, at: mate ? this.feetOf(mate.survivor) : this.dropPoint(p) })
+    if (!res.ok) return
+    if (mate && res.dropId) this.handOver(slot, mate, res.dropId)
+    else this.notify(slot, `Dropped ${this.ledger.label(held.item)}`, "info", "drop")
   }
 
-  private dropBundle(slot: ProgressionSlot): void {
+  /** Seat names for notices that name a teammate; the co-op room sets real names. */
+  names: SeatNames = defaultSeatName
+
+  private feetOf(p: ProgressionActor): { x: number; y: number } {
+    return { x: Number(p.x.toFixed(3)), y: Number(p.y.toFixed(3)) }
+  }
+
+  /** The teammate picks up what was just dropped at their feet; what doesn't fit stays there for them. */
+  private handOver(from: ProgressionSlot, to: ProgressionSlot, dropId: string): void {
+    const what = this.describe(this.contents(dropId))
+    const before = this.carried(to.id)
+    const res = this.ledger.apply({ kind: "take", actor: to.id, from: dropId })
+    const got = this.diffCarried(before, this.carried(to.id))
+    this.project(to)
+    const left = this.ledger.store(dropId) ? this.describe(this.contents(dropId)) : ""
+    const giver = this.names(from.index)
+    const taker = this.names(to.index)
+    if (got) {
+      this.notify(from, `Gave ${got} to ${taker}`, "result", "give")
+      this.notify(to, `${giver} gave you ${got}`, "result", "give")
+    }
+    if (left) {
+      this.notify(from, `${taker} has no room: ${left} left at their feet`, "warning", "give")
+      this.notify(to, `${giver} left ${left} at your feet: no room`, "warning", "give")
+    }
+    if (!res.ok && !got && !left) this.notify(from, `Couldn't give ${what}`, "info", "give")
+  }
+
+  private dropBundle(slot: ProgressionSlot, mate: ProgressionSlot | null = null): void {
     const items: Record<ItemId, number> = {}
     for (const [item, n] of Object.entries(BUNDLE)) {
       const have = this.ledger.count(`${slot.id}/belt`, item)
@@ -779,8 +858,10 @@ export class OutbreakProgression implements ProgressionHost {
       this.notify(slot, "No ammo or planks to share", "info", "drop")
       return
     }
-    const res = this.ledger.apply({ kind: "drop", actor: slot.id, items, at: this.dropPoint(slot.survivor) })
-    if (res.ok) this.notify(slot, `Left ${this.describe(Object.entries(items).map(([item, count]) => ({ item, count })))}`, "result", "drop")
+    const res = this.ledger.apply({ kind: "drop", actor: slot.id, items, at: mate ? this.feetOf(mate.survivor) : this.dropPoint(slot.survivor) })
+    if (!res.ok) return
+    if (mate && res.dropId) this.handOver(slot, mate, res.dropId)
+    else this.notify(slot, `Left ${this.describe(Object.entries(items).map(([item, count]) => ({ item, count })))}`, "result", "drop")
   }
 
   private dropPoint(p: ProgressionActor): { x: number; y: number } {
