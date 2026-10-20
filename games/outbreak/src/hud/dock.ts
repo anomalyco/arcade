@@ -10,14 +10,18 @@ import { keyLabel } from "@arcade/kit/client/controls"
 import { FIRE_ITEMS } from "../../shared/fire/fire"
 import { BELT_ITEMS, HOTBAR_SIZE } from "../../shared/progression"
 import type { SessionView } from "../../shared/session"
-import { PORTRAITS } from "../portraits"
+import { ITEM_SHAPES } from "../../shared/progression/shapes"
+import { DOCK_THUMB, fitThumb, thumbHtml } from "../portraits/thumb"
 import { flip, hudMotion, RollingNumber, snapToPixels, type HudMotion } from "./motion"
 
 /** Hotbar items that count their charge (fire & explosives, AR-62). */
 const GLYPH_SLOTS: ReadonlySet<string> = new Set(FIRE_ITEMS)
 
-/** The item's painted portrait (AR-94), small beside its label. */
-const portrait = (item: string) => (PORTRAITS[item] ? `<img class="slot-art" src="${PORTRAITS[item]}" alt="" draggable="false" decoding="async">` : "")
+/** The item's painted portrait (AR-94) as a fitted thumbnail beside its label: long ones lie on the diagonal. */
+const portrait = (item: string) => {
+  const art = thumbHtml(item, fitThumb(ITEM_SHAPES[item] ?? { w: 1, h: 1 }, DOCK_THUMB, DOCK_THUMB.pad), (n) => `${n}px`, "slot-thumb")
+  return art ? `<span class="slot-art">${art}</span>` : ""
+}
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 

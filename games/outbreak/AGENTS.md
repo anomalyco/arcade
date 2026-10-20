@@ -278,7 +278,8 @@
   through `src/inventory/hooks.ts`. Item portraits: `bun scripts/item-portraits.ts` (a new item needs a line there and a
   shape). How it works: `../../docs/outbreak-hud.md#the-attaché-case-ar-94-d-46`. Proof: `bun
   scripts/attache-case-proof.ts` (via `hivemind run --kind browser`). Tests: `tests/inventory-ops.test.ts`,
-  `tests/inventory-styles.test.ts`, `packages/kit/sim/ledger-grid.test.ts`.
+  `tests/inventory-styles.test.ts`, `tests/inventory-art.test.ts` (every portrait fits its shape and every slot),
+  `tests/inventory-motion.test.ts` (open/close traced per frame), `packages/kit/sim/ledger-grid.test.ts`.
 - Lobby practice and the training room (AR-89, `shared/onboarding/`, `src/onboarding/`, Lab: Backquote › Onboarding,
   station `outbreak-onboarding`): while the lobby is open (solo or a room filling) you play in Ash at dawn in your own
   local session with the kit you picked (swapped live), wordless hints, a chained target that comes back; the lobby
