@@ -29,14 +29,11 @@ export function mothLamps(lamps: readonly Lamp[], townSeed: number, density: num
     const base = l.kind === "street" ? 4 + r01(seed, 1) * 3 : l.kind === "porch" ? 3 + r01(seed, 1) * 2.5 : 1 + r01(seed, 1) * 2.2
     const n = Math.min(MOTHS_PER_LAMP, Math.round(base * density))
     if (n <= 0) continue
-    // The fixtures `level.ts` builds (absolute heights, like the lights): the street head out on its arm, the porch's
-    // two coach lanterns beside the door (the moths split between them), a lit window's pane.
+    // The bulbs the level and the streamer build (absolute heights, like the lights): the street head out on its arm,
+    // the porch bulb under the canopy, a lit window's pane.
     const tint = l.kind === "street" ? ([1, 0.62, 0.3] as const) : ([1, 0.74, 0.46] as const)
-    if (l.kind === "porch") {
-      const left = Math.ceil(n / 2)
-      out.push({ lamp: i, x: l.x - 0.94, y: 1.78, z: l.y - 0.39, n: left, seed, tint })
-      if (n - left > 0) out.push({ lamp: i, x: l.x + 0.94, y: 1.78, z: l.y - 0.39, n: n - left, seed: (seed ^ 0x5bd1e995) >>> 0, tint })
-    } else if (l.kind === "street") out.push({ lamp: i, x: l.x + 0.55, y: 3.42, z: l.y, n, seed, tint })
+    if (l.kind === "street") out.push({ lamp: i, x: l.x + 0.55, y: 3.42, z: l.y, n, seed, tint })
+    else if (l.kind === "porch") out.push({ lamp: i, x: l.x, y: 2.16, z: l.y - 0.22, n, seed, tint })
     else out.push({ lamp: i, x: l.x, y: 1.5, z: l.y + 0.24, n, seed, tint })
   }
   return out
