@@ -35,7 +35,8 @@ export const outbreakPromptClarityFeature = registerOutbreakClientFeature({
       highlight.update(lastTarget, box, holdProgress(p), ctx.dt)
       const events = watch.step(view, ctx.session)
       if (clarityOn(s, "promptStamp")) for (const ev of events) stamps.add(ev)
-      stamps.draw(view, ctx.cam, ctx.w, ctx.h, ctx.dt)
+      const promptEl = stamps.count ? document.getElementById("prompt") : null
+      stamps.draw(view, ctx.cam, ctx.w, ctx.h, ctx.dt, promptEl && !promptEl.hidden ? promptEl.getBoundingClientRect() : null)
     },
   },
   harnessState: () => ({ promptClarity: { outlined: lastTarget || null, stamps: stamps?.count ?? 0 } }),
