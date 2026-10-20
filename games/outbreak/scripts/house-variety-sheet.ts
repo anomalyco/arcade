@@ -34,7 +34,7 @@ assert(chrome, "Install Chromium first")
 
 // Seed 7 chunks holding one of each kind of home (see scripts/house-variety-dump.ts).
 const CHUNKS: [number, number][] = [[7, 3], [6, 3], [-2, -3], [4, -3], [-3, -2], [5, -1], [9, 4], [-1, 2], [3, 4], [5, -2], [-1, -1], [0, 6]]
-// Homes are framed from their back yard facing the street: the camera looks north, so the house fills the frame.
+// Homes are framed from their front path facing them (north): the sight cone lights the half of the frame they fill.
 type Shot = { name: string; x: number; y: number; aim?: number; hour: number; zoom: number; flashlight?: boolean; today?: boolean; style?: string }
 const shots: Shot[] = []
 for (const [cx, cy] of CHUNKS) {
@@ -44,11 +44,11 @@ for (const [cx, cy] of CHUNKS) {
   const s = b.style
   const d = ch.doors.find(q => q.id === `${b.id}-front`)
   const x = d ? (d.rect[0] + d.rect[2]) / 2 : (b.rect[0] + b.rect[2]) / 2
-  shots.push({ name: `${String(shots.length + 1).padStart(2, "0")}-${s.form}-${s.condition}`, x, y: b.rect[1] - 1.2, hour: 13, zoom: 34, style: `${s.form} ${s.condition}: ${s.roof} roof, ${s.siding}, ${s.porch} porch, ${s.storeys} storey, ${s.household}, yard ${s.yard.map(y => y.kind).join("+") || "bare"}` })
+  shots.push({ name: `${String(shots.length + 1).padStart(2, "0")}-${s.form}-${s.condition}`, x, y: b.rect[3] + 3, aim: -Math.PI / 2, hour: 13, zoom: 50, style: `${s.form} ${s.condition}: ${s.roof} roof, ${s.siding}, ${s.porch} porch, ${s.storeys} storey, ${s.household}, yard ${s.yard.map(y => y.kind).join("+") || "bare"}` })
 }
-shots.push({ name: "street-day", x: 150, y: -8, aim: -Math.PI / 2, hour: 13, zoom: 56 })
-shots.push({ name: "street-night", x: 150, y: -8, aim: -Math.PI / 2, hour: 22, zoom: 46, flashlight: true })
-shots.push({ name: "street-day-today", x: 150, y: -8, aim: -Math.PI / 2, hour: 13, zoom: 56, today: true })
+shots.push({ name: "street-day", x: 145, y: -12.5, aim: -Math.PI / 2, hour: 13, zoom: 62 })
+shots.push({ name: "street-night", x: 145, y: -12.5, aim: -Math.PI / 2, hour: 22, zoom: 50, flashlight: true })
+shots.push({ name: "street-day-today", x: 145, y: -12.5, aim: -Math.PI / 2, hour: 13, zoom: 62, today: true })
 
 const HUD = "#status, #hotbar, #stamina, #battery, #prompt, .callouts, .callout, .hud, #hud"
 const report: Record<string, unknown> = { viewport: [vw, vh], shots: {} as Record<string, unknown> }
