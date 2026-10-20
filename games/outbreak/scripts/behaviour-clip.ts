@@ -8,7 +8,7 @@ import { createServer } from "vite"
 /**
  * Zombie behaviour montage (AR-91): each staged behaviour (`behaviour.stage`) in the real game, then the same night
  * street with Zombie behaviour: Today and then Alive. Headless Metal Chromium (`--mute-audio`, no window), stepped
- * at 60 Hz with `harness.step`, captured as JPEG frames and encoded with ffmpeg when it is on the PATH.
+ * at 60 Hz with `harness.step`, captured every third frame (20 fps) as JPEG and encoded with ffmpeg when it is on the PATH.
  *
  *   bun scripts/behaviour-clip.ts      captures/behaviour-clip/{frames/NNNN.jpg,behaviour.mp4}
  */
@@ -34,30 +34,32 @@ const browser = await chromium.launch({
 })
 
 type Beat = { frames: number; js?: string }
-type Scene = { label: string; scene: string; zoom: number; beats: Beat[]; setup?: string; overlay?: number; mode?: number }
+/** `torch`: aim the torch this way after staging (night scenes are pitch dark without it); null leaves it as staged. */
+type Scene = { label: string; scene: string; zoom: number; beats: Beat[]; setup?: string; overlay?: number; mode?: number; torch?: number | null }
 
 const noise = (dx: number, radius: number, kind: string) =>
   `const s = h.session(); const p = s.view.player; s.ai.emitNoise(p.x + ${dx}, p.y, ${radius}, "${kind}", s.sim.time, "player")`
 
 const scenes: Scene[] = [
-  { label: "Stop and listen: a door slams behind them", scene: "listen", zoom: 19, beats: [{ frames: 50 }, { frames: 250, js: noise(1, 16, "door") }] },
-  { label: "Follow the one that noticed", scene: "follow", zoom: 19, beats: [{ frames: 300 }] },
-  { label: "It saw you go in: search, look in at the windows, give up", scene: "search", zoom: 22, beats: [{ frames: 720 }] },
+  { label: "Stop and listen: a door slams behind them", scene: "listen", zoom: 19, torch: 0, beats: [{ frames: 50 }, { frames: 250, js: noise(1, 16, "door") }] },
+  { label: "Follow the one that noticed", scene: "follow", zoom: 19, torch: 0, beats: [{ frames: 300 }] },
+  { label: "It saw you go in: search, look in at the windows, give up", scene: "search", zoom: 22, torch: Math.PI / 2, beats: [{ frames: 600 }] },
   { label: "Still by day; a shot wakes them", scene: "rest", zoom: 22, beats: [{ frames: 150 }, { frames: 210, js: noise(0, 30, "gunshot") }] },
-  { label: "A night herd behind its leader", scene: "herd", zoom: 24, beats: [{ frames: 330 }] },
+  { label: "A night herd behind its leader", scene: "herd", zoom: 32, torch: 0, beats: [{ frames: 330 }] },
   { label: "Feeding on a body", scene: "feed", zoom: 18, beats: [{ frames: 330 }] },
   { label: "Climbing the fence after you", scene: "climb", zoom: 17, beats: [{ frames: 270 }] },
-  { label: "Drawn to the lamp", scene: "light", zoom: 22, beats: [{ frames: 420 }] },
+  { label: "Drawn to the lamp", scene: "light", zoom: 34, beats: [{ frames: 420 }] },
   { label: "Flinching from the beam", scene: "flinch", zoom: 14, beats: [{ frames: 180 }] },
   {
     label: "Lightning freezes them",
     scene: "lightning",
-    zoom: 22,
+    zoom: 28,
+    torch: 0,
     setup: `h.setLab("weather.weatherOverride", 3); h.setLab("weather.weatherLightningPerMinute", 20)`,
     beats: [{ frames: 360 }],
   },
-  { label: "Night street — Zombie behaviour: Today", scene: "crowd", zoom: 24, overlay: 0, mode: 0, beats: [{ frames: 420 }] },
-  { label: "Same street — Zombie behaviour: Alive", scene: "crowd", zoom: 24, overlay: 0, mode: 1, beats: [{ frames: 420 }] },
+  { label: "Night street — Zombie behaviour: Today", scene: "crowd", zoom: 34, overlay: 0, mode: 0, torch: 0, beats: [{ frames: 420 }] },
+  { label: "Same street — Zombie behaviour: Alive", scene: "crowd", zoom: 34, overlay: 0, mode: 1, torch: 0, beats: [{ frames: 420 }] },
 ]
 
 try {
@@ -68,6 +70,8 @@ try {
   await page.waitForFunction(() => (window as any).__arcadeHarness?.ready, null, { timeout: 60_000 })
   const ev = (src: string) => page.evaluate(new Function(`const h = window.__arcadeHarness; ${src}`) as () => unknown)
   await ev(`h.freeze(); h.setLab("timeScale", 0); h.setLab("zombieCount", 0); h.session().ai.agents.length = 0`)
+  // Presentation only: a brighter moon so the dead read at night in a small video (the same for Today and Alive).
+  for (const [k, v] of [["moonFill", 1.8], ["moonlight", 1.8], ["exposure", 1.3]] as const) await ev(`try { h.setLab("${k}", ${v}) } catch {}`)
   await page.addStyleTag({
     content: `#clip-label{position:fixed;left:16px;top:12px;z-index:99;font:600 20px -apple-system,sans-serif;color:#fff;text-shadow:0 1px 3px #000;pointer-events:none}`,
   })
@@ -77,7 +81,7 @@ try {
   const summary: Record<string, unknown> = {}
   for (const sc of scenes) {
     await ev(
-      `h.setLab("behaviour.zbMode", ${sc.mode ?? 1}); h.setLab("behaviour.zbOverlay", ${sc.overlay ?? 1}); h.setLab("weather.weatherOverride", 0); ${sc.setup ?? ""}; h.session().ai.agents.length = 0; h.stageBehaviour("${sc.scene}"); h.setZoomRaw(${sc.zoom})`,
+      `h.setLab("behaviour.zbMode", ${sc.mode ?? 1}); h.setLab("behaviour.zbOverlay", ${sc.overlay ?? 1}); h.setLab("weather.weatherOverride", 0); ${sc.setup ?? ""}; h.session().ai.agents.length = 0; h.stageBehaviour("${sc.scene}"); h.setZoomRaw(${sc.zoom}); ${sc.torch == null ? "" : `Object.assign(h.session().view.player, { aim: ${sc.torch}, flashlightOn: true, flashlightOutput: 1 })`}`,
     )
     await page.evaluate((label) => {
       document.querySelector("#clip-label")?.remove()
@@ -93,7 +97,10 @@ try {
           p.health = p.maxHealth
           await h.step(1 / 60, { aim: p.aim })
         })
-        if (frame++ % 2 === 0) await page.screenshot({ path: resolve(frames, `${String(shot++).padStart(4, "0")}.jpg`), type: "jpeg", quality: 86, timeout: 120_000 })
+        if (frame++ % 3 === 0) {
+          const path = resolve(frames, `${String(shot++).padStart(4, "0")}.jpg`)
+          await page.screenshot({ path, type: "jpeg", quality: 86, timeout: 300_000 }).catch(() => page.screenshot({ path, type: "jpeg", quality: 86, timeout: 300_000 }))
+        }
       }
     }
     summary[sc.label] = await ev(`return h.state().behaviour`)
@@ -101,7 +108,7 @@ try {
   console.log(`behaviour-clip: ${shot} frames`)
   console.log(JSON.stringify(summary, null, 1))
   assert.deepEqual(errors, [])
-  const ff = spawnSync("ffmpeg", ["-y", "-loglevel", "error", "-framerate", "30", "-i", resolve(frames, "%04d.jpg"), "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "24", "-preset", "medium", resolve(out, "behaviour.mp4")], { stdio: "inherit" })
+  const ff = spawnSync("ffmpeg", ["-y", "-loglevel", "error", "-framerate", "20", "-i", resolve(frames, "%04d.jpg"), "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "24", "-preset", "medium", resolve(out, "behaviour.mp4")], { stdio: "inherit" })
   console.log(ff.status === 0 ? `encoded ${resolve(out, "behaviour.mp4")}` : "ffmpeg not available; frames only")
 } finally {
   await browser.close()

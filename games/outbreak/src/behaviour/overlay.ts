@@ -72,7 +72,7 @@ export class BehaviourOverlay {
       ctx.fillStyle = "rgba(10, 14, 16, 0.78)"
       ctx.fillRect(p.x - tw / 2, p.y - 10, tw, 14)
       ctx.fillStyle = COLOUR[attention]
-      ctx.fillRect(p.x - tw / 2, p.y + 3, tw * Math.max(0.04, a.awareness), 1.5)
+      ctx.fillRect(p.x - tw / 2, p.y + 4, tw * Math.max(0.04, a.awareness), 2)
       ctx.fillText(text, p.x, p.y + 1)
       drawn++
     }
