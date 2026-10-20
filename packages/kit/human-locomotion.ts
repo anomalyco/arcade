@@ -39,6 +39,7 @@ export function newMotion(x: number, y: number, aim: number) {
     enabled: false, run: 0, stride: 1, stepDebt: 0, next: 0, moving: false, start: 0, strafeSign: 0,
     stepCount: 0, clock: 0, footDrag: 0, dragFoot: 1 as 0 | 1,
     strafePhi: 0, strafeCross: 0, sideStep: 0, backness: 0, strafeLateral: 0,
+    steady: 0, rawDir: 0, reverseT: 0,
     centreX: { x, v: 0 }, centreY: { x: y, v: 0 },
     pelvis: { x: aim, v: 0 }, chest: { x: aim, v: 0 }, head: { x: aim, v: 0 }, weapon: { x: aim, v: 0 },
     bob: spring(), sway: spring(), drop: spring(), twist: spring(), posture: spring(), crouch: spring(), bank: spring(),
@@ -55,6 +56,19 @@ export function newMotion(x: number, y: number, aim: number) {
     redirectFrom: [0, 0] as [number, number],
     targets: [[x, 0, y], [x, 0, y]] as [V3, V3],
     toes: [[x, 0, y], [x, 0, y]] as [V3, V3],
+  }
+}
+
+/** A fresh standing `Locomotion` state for adapters that keep their own avatar (Outbreak's survivor). */
+export function newLocomotion(x = 0, y = 0, aim = 0, seed = 0): Locomotion {
+  const foot = (side: number): Foot => {
+    const p: V3 = [x + Math.cos(aim + side * 1.2) * 0.15, 0, y + Math.sin(aim + side * 1.2) * 0.15]
+    return { p, yaw: aim, pitch: 0, planted: true, lift: [...p], liftYaw: aim }
+  }
+  return {
+    x, y, vx: 0, vy: 0, aim, svx: 0, svy: 0, acx: 0, acy: 0, legYaw: aim, gait: 0, duty: 0.54, phase: 0,
+    back: false, turning: false, unarmed: true, seed, feet: [foot(-1), foot(1)], motion: newMotion(x, y, aim),
+    leanX: spring(), leanY: spring(), dip: spring(), hitX: spring(), hitY: spring(),
   }
 }
 
@@ -82,9 +96,14 @@ export function backpedalling(rel: number, back: boolean): boolean {
   return Math.abs(rel) > (back ? BACK_EXIT : BACK_ENTER)
 }
 
-/** How far the hips may turn toward travel: nearly square for a slow side-step, most of the spine's twist at speed. */
-export function strafeHipLimit(speed: number, animation: HumanProfile = humanProfiles.soldier): number {
-  return clamp((animation.sideStepTurn ?? 0.3) + ((animation.strafeHipTurn ?? 0.95) - (animation.sideStepTurn ?? 0.3)) * smooth((speed - 0.7) / 1.3), 0, 1.05)
+/**
+ * How far the hips may turn toward travel: square for a side-step (100STYLE's side-step walk and run keep the pelvis
+ * within 5° of the chest up to 1.1 m/s), about half the twist at a run so hips and chest share it. `commit` (0..1,
+ * from `strafeSettle`) holds the hips square until travel has held its direction for a moment.
+ */
+export function strafeHipLimit(speed: number, animation: HumanProfile = humanProfiles.soldier, commit = 1): number {
+  const side = animation.sideStepTurn ?? 0.2
+  return clamp(side + ((animation.strafeHipTurn ?? 0.95) - side) * smooth((speed - 1.2) / 1.6) * clamp(commit, 0, 1), 0, 1.05)
 }
 
 /**
@@ -121,10 +140,12 @@ export function strafeStance(speed: number, legYaw: number, travel: number, anim
  * follower closes to `strafeGap` from the lead instead of passing it; crossovers keep each foot 9 cm off its side
  * of the travel line, so the trailing leg passes in front of the other without the boots touching.
  */
-export function strafeFootOffset(st: StrafeStance, legYaw: number, i: number, stride: number, animation: HumanProfile = humanProfiles.soldier, base = 0.145): [number, number] {
+export function strafeFootOffset(st: StrafeStance, legYaw: number, i: number, stride: number, animation: HumanProfile = humanProfiles.soldier, base = 0.145, maxOpen = 0.28): [number, number] {
   const side = i === 0 ? -1 : 1
   const side_ = sideways(st.phi)
-  const open = Math.max(base, ((animation.strafeGap ?? 0.2) + stride * 0.5 * Math.abs(Math.sin(st.phi))) / 2)
+  // 100STYLE side-steps open to ~52 cm between the ankles; never wider than that, even when a run-length stride
+  // briefly goes sideways (the hips not yet turned after a reversal).
+  const open = Math.max(base, Math.min(maxOpen, ((animation.strafeGap ?? 0.2) + stride * 0.5 * Math.abs(Math.sin(st.phi))) / 2))
   const wide = base + (open - base) * smooth(side_ / 0.3)
   const tl = legYaw + st.phi
   const a = (1 - st.cross) * wide, b = st.cross * (base + (0.1 - base) * smooth(side_ / 0.3))
@@ -197,7 +218,12 @@ function computeTarget(a: Avatar, i: number, remaining: number, animation: Human
   // offsets (strafeFootOffset): an asymmetric reach starved the follower and forced catch steps.
   const reachVar = m.stepReach?.[i] ?? 1
   const latVar = m.stepLat?.[i] ?? 0
-  return separate(a, i, home(a, i, (remaining + halfStance + lag) * reachVar, pvx, pvy, latVar, animation), animation)
+  const t = separate(a, i, home(a, i, (remaining + halfStance + lag) * reachVar, pvx, pvy, latVar, animation), animation)
+  // Never aim a landing beyond a leg's reach of where the body will be (the legs flipping between backpedal and
+  // forward mid-swing can throw the stride target far past the hip).
+  const fx = a.x + pvx * remaining, fz = a.y + pvy * remaining, dx = t[0] - fx, dz = t[2] - fz, d = Math.hypot(dx, dz)
+  const reach = 0.46 + 0.06 * Math.max(0, pspeed - 3.4)
+  return d > reach ? [fx + dx * reach / d, t[1], fz + dz * reach / d] : t
 }
 
 function reset(a: Avatar): void {
@@ -207,7 +233,7 @@ function reset(a: Avatar): void {
   for (const s of [m.pelvis, m.chest, m.head, m.weapon]) { s.x = a.aim; s.v = 0 }
   for (const s of [m.bob, m.sway, m.drop, m.twist, m.posture, m.crouch, m.bank, m.secondary, m.yawOffset, ...m.arms, ...m.hands]) { s.x = 0; s.v = 0 }
   m.stepDebt = 0; m.start = 0; m.moving = false; m.next = 0; m.strafeSign = 0; m.stepCount = 0; m.clock = 0
-  m.strafePhi = 0; m.strafeCross = 0; m.sideStep = 0; m.backness = 0; m.strafeLateral = 0
+  m.strafePhi = 0; m.strafeCross = 0; m.sideStep = 0; m.backness = 0; m.strafeLateral = 0; m.steady = 0; m.reverseT = 0
   for (let i = 0; i < 2; i++) {
     const f = a.feet[i]!
     f.p = home(a, i, 0); f.lift = [...f.p]; f.yaw = a.legYaw; f.pitch = 0; f.planted = true
@@ -265,12 +291,23 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
   }
   m.moving = moving
   m.start = Math.max(0, m.start - dt)
+  // Strafe commitment: how long raw travel has held its direction. A snap turn keeps only the share of it that the
+  // new direction agrees with, so quick A/D taps step side to side with square hips and the hips open once it settles.
+  if (travelling) {
+    const rawDir = Math.atan2(a.vy, a.vx)
+    const snap = Math.abs(angleDiff(rawDir, m.rawDir ?? rawDir))
+    m.steady = snap > 0.3 ? (m.steady ?? 0) * Math.max(0, 1 - snap / Math.PI) : (m.steady ?? 0) + dt
+    m.rawDir = rawDir
+  } else m.steady = 0
+  const settle = clamp(animation.strafeSettle ?? 0, 0, 2)
+  const commit = settle > 0 ? smooth((m.steady ?? 0) / settle) : 1
+  m.reverseT = travelling && a.vx * a.svx + a.vy * a.svy < 0 ? 0.3 : Math.max(0, (m.reverseT ?? 0) - dt)
   const transK = stiffness(clamp(animation.transitionHz ?? 6, 2, 14))
   const prevLegYaw = a.legYaw
   // Angular limits are ownership constraints, not springs that can remain outside the limit.
   if (moving) {
     const rel = angleDiff(travelDir, a.aim)
-    const limit = strafeHipLimit(speed, animation)
+    const limit = strafeHipLimit(speed, animation, commit)
     const wasBack = a.back
     a.back = backpedalling(rel, a.back)
     if (a.back !== wasBack) {
@@ -286,7 +323,7 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
     a.back = false
     stepSpring(m.yawOffset, transK, 1, dt, 0)
     const error = angleDiff(a.aim, a.legYaw)
-    if (Math.abs(error) > 1.05) a.turning = true
+    if (Math.abs(error) > clamp(animation.turnStep ?? 1.05, 0.3, 1.05)) a.turning = true
     if (a.turning) {
       a.legYaw += error * (1 - Math.exp(-dt * 10))
       if (Math.abs(error) < 0.08) a.turning = false
@@ -330,7 +367,7 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
     const reversing = travelling && rawDot < 0 && (a.feet[1 - i]!.planted || prevU > m.swings[1 - i]!)
     // If the character reverses while this foot is in late swing, redirect it to the new direction
     // and extend its remaining swing once so it never plants behind the reversal.
-    if (reversing && prevU >= 0.60 && prevU < 0.95 && !m.redirectFrom?.[i]) {
+    if (reversing && prevU >= 0.45 && prevU < 0.95 && !m.redirectFrom?.[i]) {
       if (m.redirectFrom) m.redirectFrom[i] = prevU
       f.liftYaw = f.yaw
       u = 0.25
@@ -338,9 +375,11 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
       // Restart the swing from where the foot is, not from a lift point that would jump it 25% toward the target.
       const e0 = smoother(u)
       f.lift = [(f.p[0] - target[0] * e0) / (1 - e0), 0, (f.p[2] - target[2] * e0) / (1 - e0)]
-    } else if (u < (stopping ? 0.96 : 0.75)) {
-      const desired = computeTarget(a, i, (1 - u) * m.durations[i]!, animation, curGait, speed, moving)
+    } else if (u < (stopping ? 0.96 : (m.reverseT ?? 0) > 0 ? 0.9 : 0.75) || (u < 0.94 && landsOutOfReach(a, m.targets[i]!, (1 - u) * m.durations[i]!))) {
+      let desired = computeTarget(a, i, (1 - u) * m.durations[i]!, animation, curGait, speed, moving)
       const prevT = m.targets[i]!
+      // A late correction eases toward the new landing so the boot never darts.
+      if (u >= 0.75 && !stopping) desired = [prevT[0] + (desired[0] - prevT[0]) * 0.35, 0, prevT[2] + (desired[2] - prevT[2]) * 0.35]
       // Fold any mid-swing target shift into f.lift so f.p(u) is C0-continuous (no retroactive eHoriz * dTarget snap)
       // while still landing at the exact updated target at u = 1.
       const drag = i === 1 ? clamp(animation.footDrag, 0, 0.95) : 0
@@ -361,9 +400,11 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
     const liftScale = clamp(animation.stepLift ?? 1, 0.5, 1.8) * (m.stepLiftVar?.[i] ?? 1)
     // Quadratic liftoff (u=0) and cubic feather-soft touchdown (u=1) so contact foot velocity is ~0.
     const liftBell = 1.72 * Math.sin(Math.PI * u) ** 2 * (1 - u)
-    f.p = [f.lift[0] + (target[0] - f.lift[0]) * eHoriz,
+    const [bowX, bowZ] = swingBow(a, i, target, animation)
+    const bow = Math.sin(Math.PI * u)
+    f.p = [f.lift[0] + (target[0] - f.lift[0]) * eHoriz + bowX * bow,
       (0.085 + 0.125 * curGait.run) * liftScale * (i === 1 ? 1 - drag : 1) * liftBell,
-      f.lift[2] + (target[2] - f.lift[2]) * eHoriz]
+      f.lift[2] + (target[2] - f.lift[2]) * eHoriz + bowZ * bow]
     const side = i === 0 ? -1 : 1
     const opening = strafeFootOpen(st, i)
     const toeVar = m.stepToeYaw?.[i] ?? 0
@@ -403,10 +444,19 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
       const alt = 1 - preferred
       if (metrics[alt]!.rootBehind > metrics[preferred]!.rootBehind + 0.08) preferred = alt
     }
+    // With both boots down, a foot about to run out of reach of its hip steps first, whatever the phase says.
+    if (speed > 0.3 && a.feet[0].planted && a.feet[1].planted) {
+      const reach = [hipReach(a, 0, 0.05), hipReach(a, 1, 0.05)]
+      const far = reach[0]! > reach[1]! ? 0 : 1
+      if (reach[far]! > 0.94) preferred = far
+    }
     const i = a.feet[preferred]!.planted ? preferred : 1 - preferred
     const other = 1 - i
     const fwdWalk = (1 - curGait.run) * (1 - st.sideStep) * (1 - st.backness)
-    const overstretched = travelling && ((rawDot < 0 && metrics[i]!.rootBehind > 0.34) || metrics[i]!.rootDist > 0.52 || (a.feet[other]!.planted && metrics[i]!.rootBehind > 0.345 + 0.095 * fwdWalk + 0.155 * curGait.run))
+    // Out of hip reach also counts. In flight (the other foot swinging) only a sideways reach past a straight leg does,
+    // so a sharp cut at a sprint lifts the stretched boot without shortening ordinary running strides.
+    const reachOut = speed > 0.3 && (a.feet[other]!.planted ? hipReach(a, i, 0.05) > 0.94 : hipReach(a, i, 0.05, true) > 1.04)
+    const overstretched = reachOut || (travelling && ((rawDot < 0 && metrics[i]!.rootBehind > 0.34) || metrics[i]!.rootDist > 0.52 || (a.feet[other]!.planted && metrics[i]!.rootBehind > 0.345 + 0.095 * fwdWalk + 0.155 * curGait.run)))
     const flightRelease = 0.32 + 0.16 * st.sideStep
     const supported = a.feet[other]!.planted || (curGait.run > 0.35 && m.swings[other]! > flightRelease) || (overstretched && m.swings[other]! > 0.18)
     const minStance = moving ? Math.max(0.05, stanceDur * 0.55) : 0.04
@@ -414,6 +464,9 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
     const settleReady = !travelling && !moving && metrics[i]!.err > 0.24 && m.contacts[i]! >= 0.05
     if (a.feet[i]!.planted && supported && (phaseReady || (overstretched && m.contacts[i]! >= 0.04) || settleReady)) {
       const f = a.feet[i]!
+      // The boot pivoted on its locked ball while planted; lift off from the ankle point that pivot left it at.
+      const ball = m.toes[i]!
+      f.p = [ball[0] - Math.cos(f.yaw) * RIG.foot, f.p[1], ball[2] - Math.sin(f.yaw) * RIG.foot]
       f.planted = false; f.lift = [f.p[0], 0, f.p[2]]; f.liftYaw = f.yaw
       m.swings[i] = 0; m.stances[i] = 0
       if (m.redirectFrom) m.redirectFrom[i] = 0
@@ -510,6 +563,57 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
   stepSpring(a.leanY, stiffness(2.5), 1, dt, lean(a.svy, a.acy))
   stepSpring(a.dip, k, 0.8, dt, -Math.min(0.035, Math.hypot(a.acx, a.acy) * 0.002))
   return landed
+}
+
+/**
+ * True when a landing at `target`, `remaining` seconds from now, would be farther from the body than a leg reaches
+ * comfortably (a start, a snap turn or a reversal after the target froze), so the late swing must still bend toward it.
+ */
+function landsOutOfReach(a: Avatar, target: V3, remaining: number): boolean {
+  const fx = a.x + a.vx * remaining, fz = a.y + a.vy * remaining
+  return Math.hypot(target[0] - fx, target[2] - fz) > 0.46
+}
+
+/**
+ * Sideways bow for swing `i` when its straight path from lift-off to landing would pass within the boot gap of the
+ * planted foot (a side-step closing in, a step round on the spot): the path curves out on the foot's own side.
+ */
+function swingBow(a: Avatar, i: number, target: V3, animation: HumanProfile): [number, number] {
+  const f = a.feet[i]!, o = a.feet[1 - i]!
+  if (!o.planted) return [0, 0]
+  const dx = target[0] - f.lift[0], dz = target[2] - f.lift[2], l2 = dx * dx + dz * dz
+  if (l2 < 1e-4) return [0, 0]
+  const s = clamp(((o.p[0] - f.lift[0]) * dx + (o.p[2] - f.lift[2]) * dz) / l2, 0, 1)
+  const cx = f.lift[0] + dx * s - o.p[0], cz = f.lift[2] + dz * s - o.p[2]
+  const d = Math.hypot(cx, cz), need = (animation.strafeGap ?? 0.2) * 0.9 - d
+  if (need <= 0) return [0, 0]
+  const side = i === 0 ? -1 : 1
+  const l = Math.sqrt(l2)
+  // Away from the other foot, perpendicular to the path; straight through it, toward the foot's own side of the legs.
+  let nx = cx, nz = cz
+  if (d < 1e-3) { nx = -Math.sin(a.legYaw) * side; nz = Math.cos(a.legYaw) * side }
+  const along = (nx * dx + nz * dz) / l2
+  nx -= dx * along; nz -= dz * along
+  const nl = Math.hypot(nx, nz) || 1
+  return [nx / nl * need * Math.min(1, l / 0.15), nz / nl * need * Math.min(1, l / 0.15)]
+}
+
+/**
+ * How far planted foot `i` is from its hip, `ahead` seconds from now, as a share of the leg's horizontal reach at the
+ * current pelvis height (1 = the knee is straight). With `across`, a boot behind the hip counts only its sideways
+ * offset (a running stride trails far behind by design). Side-steps, cuts and reversals run out of reach long
+ * before the root-distance limits do.
+ */
+function hipReach(a: Avatar, i: number, ahead: number, across = false): number {
+  const pel = pelvisPoint(a), s = i === 0 ? -1 : 1, f = a.feet[i]!
+  const hx = pel[0] - Math.sin(a.legYaw) * s * RIG.hipW + a.svx * ahead
+  const hz = pel[2] + Math.cos(a.legYaw) * s * RIG.hipW + a.svy * ahead
+  const h = Math.max(0.3, pel[1] - RIG.ankle), leg = RIG.thigh + RIG.shin
+  // A trailing boot rolls onto its ball (heel rise), which buys about a foot length of reach behind.
+  const sp = Math.hypot(a.svx, a.svy), tx = sp > 0.1 ? a.svx / sp : 0, tz = sp > 0.1 ? a.svy / sp : 0
+  const dx = f.p[0] - hx, dz = f.p[2] - hz, along = dx * tx + dz * tz, side = Math.hypot(dx - along * tx, dz - along * tz)
+  const reach = Math.hypot(side, along > 0 ? along : across ? 0 : Math.min(0, along + RIG.foot))
+  return reach / Math.sqrt(Math.max(1e-4, leg * leg - h * h))
 }
 
 function lockToe(a: Avatar, i: number): void {

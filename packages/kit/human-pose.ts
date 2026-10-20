@@ -183,7 +183,8 @@ export function poseLegs(a: Locomotion, pelvis: Frame): Required<Pick<HumanBody,
       const heelKickUp = (0.022 * (1 - run) * smooth((u - 0.22) / 0.35) + 0.22 * run * crouchSwingScale) * liftVar * athletic * kickBell * dragKeep
       const heelTuckBack = (0.015 * (1 - run) + (0.24 + 0.035 * uprightRun) * run * (1 - 0.35 * crouchT)) * athletic * tuckBell * dragKeep + lateWalkTuck - earlyPushFwd
       const fwdX = Math.cos(f.yaw), fwdZ = Math.sin(f.yaw)
-      const walkEarlyDamp = 1 - 0.62 * (1 - run) * (1 - smooth((u - 0.15) / 0.32))
+      // Walking swings rise late (mocap); a step on the spot (gait 0) lifts at once so the boot never scuffs the floor.
+      const walkEarlyDamp = 1 - 0.62 * (1 - run) * a.gait * (1 - smooth((u - 0.15) / 0.32))
       const swingLiftY = f.p[1] * (1 - 0.32 * crouchT) * walkEarlyDamp
       const ankle: V3 = [
         f.p[0] + liftAnkX * liftOffBlend - fwdX * heelTuckBack,
@@ -198,7 +199,8 @@ export function poseLegs(a: Locomotion, pelvis: Frame): Required<Pick<HumanBody,
       const swingPole = kneePole(pelvis, f.yaw, side, 0.28 - 0.65 * backKick, 1 - 0.68 * run * kickBell * dragKeep)
       const [knee0, ank0] = ik(hip, ankle, RIG.thigh, RIG.shin, swingPole)
       const sh0 = limb(knee0, ank0, swingPole, pelvis.x)
-      const relaxed = smooth(u / 0.12) * (1 - smooth((u - 0.74) / 0.20))
+      // A step on the spot (gait 0) lifts the boot nearly flat rather than letting it hang from the shin.
+      const relaxed = smooth(u / 0.12) * (1 - smooth((u - 0.74) / 0.20)) * (0.3 + 0.7 * a.gait)
       const tdBlend = smoother((u - 0.72) / 0.28)
       const heelStrike0 = a.back ? 0 : (0.26 - 0.04 * m.run) * (1 - 0.55 * crouchT) * a.gait * dragKeep
       const tdPitch = heelStrike0 * tdBlend
@@ -207,6 +209,11 @@ export function poseLegs(a: Locomotion, pelvis: Frame): Required<Pick<HumanBody,
       const shinFwd0 = sh0.y[0] * fwdX + sh0.y[2] * fwdZ
       const shinPitch0 = -Math.atan2(shinFwd0, sh0.y[1])
       let footPitch = basePitch + (shinPitch0 + swingAnkleRel - basePitch) * relaxed
+      // The ankle was placed for the toe-off pitch; re-anchor it for the pitch the boot actually takes, so the ball stays
+      // where it pushed off while it is still on the floor instead of sliding back as the foot relaxes.
+      const pinOff = at(pitch(yawFrame([0, 0, 0], f.yaw), footPitch), RIG.foot, -RIG.ankle, 0)
+      ankle[0] += (ballOff[0] - pinOff[0]) * liftOffBlend
+      ankle[2] += (ballOff[2] - pinOff[2]) * liftOffBlend
       // Toe joint relative pitch: keeps toe dorsiflexed against the floor during early push-off, then dorsiflexes in mid-swing for floor clearance.
       const liftOffToe = Math.max(0, -footPitch) * (1 - smooth(u / 0.34))
       const pushOffCurl = -0.12 * Math.sin(Math.PI * clamp((u - 0.18) / 0.26, 0, 1)) * a.gait * dragKeep
@@ -222,7 +229,11 @@ export function poseLegs(a: Locomotion, pelvis: Frame): Required<Pick<HumanBody,
       const testFoot = pitch(yawFrame(ankle, f.yaw), footPitch)
       const testBall = at(testFoot, RIG.foot, -RIG.ankle, 0)
       const testToe = pitch(yawFrame(testBall, f.yaw), footPitch + toeRelPitch)
-      const low = Math.min(at(testFoot, -0.08 * (1 - tdBlend), -RIG.ankle, 0)[1], testBall[1], at(testToe, RIG.toe, 0, 0)[1])
+      // Backward, sideways and on-the-spot swings land toe-first; their ball and toe keep 3 cm of air until the last
+      // fifth of swing so the boot does not scuff the floor while it is still travelling. Forward swings land on the heel.
+      const toeFirst = Math.max(m.backness ?? (a.back ? 1 : 0), m.sideStep ?? 0, 1 - a.gait)
+      const clear = (0.03 * toeFirst + 0.015 * (1 - toeFirst) * smooth((u - 0.5) / 0.15)) * dragKeep * smooth(u / 0.12) * (1 - smoother((u - 0.8) / 0.2))
+      const low = Math.min(at(testFoot, -0.08 * (1 - tdBlend), -RIG.ankle, 0)[1], testBall[1] - clear, at(testToe, RIG.toe, 0, 0)[1] - clear)
       if (low < 0) ankle[1] -= low
       const [knee, ank] = ik(hip, ankle, RIG.thigh, RIG.shin, swingPole)
       const shFinal = limb(knee, ank, swingPole, pelvis.x)

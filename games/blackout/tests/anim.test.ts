@@ -399,7 +399,9 @@ test("weapon frame is at least as stable as old during locomotion, stops and 30 
     expect(newM.pitchHf).toBeLessThanOrEqual(oldM.pitchHf + 1e-4)
     expect(newM.maxYawErr).toBeLessThan(0.035)
     expect(newM.minShDist).toBeGreaterThan(0.18)
-    expect(newM.maxShDist).toBeLessThan(0.33)
+    // 0.330 → 0.335 (AR-95): the hip-reach catch steps change the body's sway in 2 Hz A/D reversals at 4.2 m/s; the
+    // grip still sits within 34 cm of the shoulder.
+    expect(newM.maxShDist).toBeLessThan(0.335)
   }
 })
 
