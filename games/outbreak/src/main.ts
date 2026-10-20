@@ -89,9 +89,9 @@ async function main() {
         resolveWorldMode(settings.world.worldMode),
       ),
     )
-  // A feature may make the offline session instead (the training room, AR-89); co-op rooms never ask.
+  // A feature may make a local session instead (the lobby's practice space and the training room, AR-89).
   const makeSession = (s: number) =>
-    coop.net ?? outbreakClientFeatures.startSession({ seed: s, settings, make: soloSession, restart: () => reset() }) ?? soloSession(s)
+    outbreakClientFeatures.startSession({ seed: s, settings, coop, make: soloSession, restart: () => reset() }) ?? coop.net ?? soloSession(s)
   let session: LocalSession | NetSession = makeSession(seed)
   coop.companions = () => {
     const s = session

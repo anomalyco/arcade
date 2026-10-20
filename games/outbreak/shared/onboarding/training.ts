@@ -35,24 +35,36 @@ export type TrainingState = {
   active: boolean
   /** The chained zombie's id, -1 once none. */
   chained: number
+  /** The lobby's practice space: the survivor keeps the kit they picked and the chained one comes back. */
+  practice: boolean
+  /** Sim time the chained one rises again after it is put down (practice only), or -1. */
+  respawnAt: number
 }
 
-export const createTrainingState = (): TrainingState => ({ active: false, chained: -1 })
+export const createTrainingState = (): TrainingState => ({ active: false, chained: -1, practice: false, respawnAt: -1 })
+
+/** Seconds the chained one stays down in the practice space before another takes its place. */
+export const PRACTICE_RESPAWN_SECONDS = 3
 
 /**
  * Turns a fresh offline sim into the training room: dawn held, no crowd, the survivor beside the bed with no planks of
- * their own, the dresser stocked, and one zombie on a chain in the front yard.
+ * their own, the dresser stocked, and one zombie on a chain in the front yard. `practice` (the lobby's practice space)
+ * keeps the survivor's starting kit, so they try the loadout they picked.
  */
-export function stageTraining(sim: OutbreakSim, state: TrainingState): void {
+export function stageTraining(sim: OutbreakSim, state: TrainingState, practice = false): void {
   state.active = true
+  state.practice = practice
+  state.respawnAt = -1
   sim.hour = TRAINING_HOUR
   Object.assign(sim.ai.config, { zombieCount: 0, directorPacing: 0 })
   // Nobody else on the street yet.
   sim.ai.agents.length = 0
   const ledger = sim.progression.ledger
   for (const slot of sim.slots) {
-    for (const st of ledger.stores.values()) {
-      if (st.id.startsWith(`${slot.id}/`)) ledger.apply({ kind: "drain", store: st.id, item: "plank", count: 99 })
+    if (!practice) {
+      for (const st of ledger.stores.values()) {
+        if (st.id.startsWith(`${slot.id}/`)) ledger.apply({ kind: "drain", store: st.id, item: "plank", count: 99 })
+      }
     }
     Object.assign(slot.survivor, { x: TRAINING_START.x, y: TRAINING_START.y, aim: TRAINING_START.aim, vx: 0, vy: 0 })
     slot.survivor.flashlightOn = false
@@ -83,6 +95,16 @@ export function stepChain(sim: OutbreakSim, state: TrainingState): void {
   for (let i = agents.length - 1; i >= 0; i--) if (agents[i]!.id !== state.chained) agents.splice(i, 1)
   if (state.chained < 0) return
   const z = agents.find((a) => a.id === state.chained)
+  if (state.practice && (!z || z.state === "dead")) {
+    // A safe target that keeps coming back while the lobby fills.
+    if (state.respawnAt < 0) state.respawnAt = sim.time + PRACTICE_RESPAWN_SECONDS
+    else if (sim.time >= state.respawnAt) {
+      if (z) agents.splice(agents.indexOf(z), 1)
+      state.chained = sim.ai.spawnZombie(sim.town, TRAINING_CHAIN.x, TRAINING_CHAIN.y + 0.4, "wander", -Math.PI / 2).id
+      state.respawnAt = -1
+    }
+    return
+  }
   if (!z) return
   const dx = z.x - TRAINING_CHAIN.x
   const dy = z.y - TRAINING_CHAIN.y

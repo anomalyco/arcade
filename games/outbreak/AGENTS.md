@@ -268,7 +268,9 @@
   shape). How it works: `../../docs/outbreak-hud.md#the-attaché-case-ar-94-d-46`. Proof: `bun
   scripts/attache-case-proof.ts` (via `hivemind run --kind browser`). Tests: `tests/inventory-ops.test.ts`,
   `tests/inventory-styles.test.ts`, `packages/kit/sim/ledger-grid.test.ts`.
-- Training room (AR-89, `shared/onboarding/`, `src/onboarding/`, Lab: Backquote › Onboarding, station
-  `outbreak-onboarding`): the first solo start wakes you in Ash at dawn with one wordless hint at a time, hold Esc to
-  skip, the street cuts to the run with your boards up. Its own throwaway sim; the shared feature is inert unless
-  staged, so runs, bots and co-op never see it. `../../docs/outbreak-onboarding.md`. Tests: `tests/training-room.test.ts`.
+- Lobby practice and the training room (AR-89, `shared/onboarding/`, `src/onboarding/`, Lab: Backquote › Onboarding,
+  station `outbreak-onboarding`): while the lobby is open (solo or a room filling) you play in Ash at dawn in your own
+  local session with the kit you picked (swapped live), wordless hints, a chained target that comes back; the lobby
+  docks left and keeps only Enter. `CoopView.net` reads null meanwhile, so nothing reaches the room. The guided
+  training room before a solo run is one setting away (Off by default). The shared feature is inert unless staged.
+  `../../docs/outbreak-onboarding.md`. Tests: `tests/training-room.test.ts`; proof: `bun scripts/lobby-practice-proof.ts`.
