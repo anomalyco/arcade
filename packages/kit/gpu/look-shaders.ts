@@ -22,6 +22,11 @@ export type PostFinishOptions = {
    * very hot pixel (an ember, a spark) can't flash a whole bloom tile on and off; broad bright areas bloom as before.
    */
   bloomKaris?: boolean
+  /**
+   * Bloom only light sources (Ashwood): at the first bloom level lit surfaces feed the bloom only up to `cap` (exposed,
+   * display-linear luminance) and emitters above `hot` bloom fully, replacing the soft-knee threshold.
+   */
+  bloomGate?: { cap: number; hot: number }
 }
 
 export type LookVariantMode = "noir" | "painterly" | "generic"
