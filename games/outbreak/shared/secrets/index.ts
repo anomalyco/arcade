@@ -10,7 +10,7 @@ import { cellarHandler, createSecretsState, stepSecrets, syncSecrets, type Secre
 export const outbreakSecretsSharedFeature = registerOutbreakSharedFeature<SecretsState, undefined, SecretsTuning>({
   id: "secrets",
   // After progression (20), which keeps the ledger.
-  order: 31,
+  order: 32,
   tuning: { namespace: "secrets", defaults: DEFAULT_SECRETS_TUNING },
   createState: (sim) => createSecretsState(sim),
   cloneState: (state) => ({ ...state }),
