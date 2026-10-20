@@ -23,12 +23,18 @@ const server = Bun.serve({
   },
 })
 let browser
-const deadline = setTimeout(() => {
-  console.error(`${game}: smoke exceeded 45 seconds`)
+let bootTimeline = async () => "not loaded"
+// The workflow step allows 60 s. On SwiftShader the GPU process compiles every render pipeline on one thread before it
+// presents a frame (Outbreak, Oct 20: 22–36 s, ~1 s per scene-shader pipeline), and the page's main thread can block
+// behind it, so readiness and the first frames share one budget rather than a separate 20 s readiness limit.
+const READY_MS = 40_000
+const deadline = setTimeout(async () => {
+  const boot = await Promise.race([bootTimeline().catch(() => "?"), Bun.sleep(1_000).then(() => "page unresponsive")])
+  console.error(`${game}: smoke exceeded 55 seconds; boot ${boot}`)
   process.exit(1)
-}, 45_000)
-// CI (Linux) has no GPU and uses SwiftShader. On macOS the real Metal adapter renders ~80x faster (Outbreak's smoke
-// drops from ~11 s to ~2 s) and must actually start: there the "needs WebGPU" fallback counts as a failure.
+}, 55_000)
+// CI (Linux) has no GPU and uses SwiftShader. On macOS the real Metal adapter renders ~80x faster and must actually
+// start: there the "needs WebGPU" fallback counts as a failure.
 // SMOKE_GPU=swiftshader reproduces CI on a Mac.
 const metal = (process.env.SMOKE_GPU ?? (process.platform === "darwin" ? "metal" : "swiftshader")) === "metal"
 try {
@@ -45,6 +51,14 @@ try {
         ],
   })
   const page = await browser.newPage({ viewport: { width: 640, height: 360 } })
+  // Milliseconds since navigation: DOMContentLoaded, load, the game's own `performance.mark("<game>:…")` phases, now.
+  bootTimeline = () => page.evaluate(game => {
+    const nav = performance.getEntriesByType("navigation")[0]
+    const phases = [["dom", nav?.domContentLoadedEventEnd], ["load", nav?.loadEventEnd]]
+    for (const m of performance.getEntriesByType("mark")) if (m.name.startsWith(`${game}:`)) phases.push([m.name.slice(game.length + 1), m.startTime])
+    phases.push(["now", performance.now()])
+    return phases.map(([name, ms]) => `${name} ${Math.round(ms ?? 0)}`).join(" · ")
+  }, game)
   const errors = []
   page.on("pageerror", error => errors.push(error.message))
   page.on("console", message => { if (message.type() === "error") errors.push(message.text()) })
@@ -54,7 +68,8 @@ try {
   const response = await page.goto(`http://127.0.0.1:${server.port}${prefix}${game === "lab" ? "?bench" : ""}`, { waitUntil: "load", timeout: 15_000 })
   assert.equal(response.status(), 200)
   // Require JS-created UI, not the static HTML shell. A missing GPU is an explicit
-  // supported outcome for these WebGPU-only games, never a blanket error waiver.
+  // supported outcome for these WebGPU-only games, never a blanket error waiver. Interval polling, not the default
+  // requestAnimationFrame: rAF polls stall while a software GPU is busy compiling or drawing.
   const ready = await page.waitForFunction(game => {
     if (game === "lab") {
       const notice = document.querySelector("[data-lab-notice]")?.textContent
@@ -78,13 +93,20 @@ try {
     const failure = document.querySelector(sel[0])?.textContent
     if (failure && /needs WebGPU|No WebGPU adapter is available|WebGPU could not start/.test(failure)) return failure
     return document.querySelector(sel[1]) ? "lobby ready" : false
-  }, game, { timeout: 20_000 }).catch(async error => {
+  }, game, { timeout: READY_MS, polling: 100 }).catch(async error => {
     const status = await page.evaluate(() => document.querySelector("#status, .notice")?.textContent ?? "").catch(() => "")
-    console.error(`${game}: not ready after 20 s; status ${JSON.stringify(status)}; browser errors ${JSON.stringify(errors)}`)
+    console.error(`${game}: not ready after ${READY_MS / 1000} s; status ${JSON.stringify(status)}; boot ${await bootTimeline().catch(() => "?")}; browser errors ${JSON.stringify(errors)}`)
     throw error
   })
-  // Let initialization promises and the first presentation frames report errors.
-  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  console.log(`${game}: boot ${await bootTimeline()}`)
+  // Let initialization promises and the first presentation frames report errors. On SwiftShader the wait for these
+  // two frames is most of the smoke's time.
+  const frames = await page.evaluate(() => new Promise(resolve => {
+    const at = []
+    const frame = () => (at.push(Math.round(performance.now())), at.length < 2 ? requestAnimationFrame(frame) : resolve(at))
+    requestAnimationFrame(frame)
+  }))
+  console.log(`${game}: presented frames at ${frames.join(", ")} ms`)
   assert.deepEqual(errors, [], `${game}: browser errors`)
   const outcome = await ready.jsonValue()
   if (metal) assert.match(outcome, /ready/, `${game}: WebGPU did not start on Metal (${outcome})`)
