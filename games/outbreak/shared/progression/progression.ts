@@ -831,7 +831,7 @@ export class OutbreakProgression implements ProgressionHost {
   }
 
   /** The teammate picks up what was just dropped at their feet; what doesn't fit stays there for them. */
-  private handOver(from: ProgressionSlot, to: ProgressionSlot, dropId: string): void {
+  handOver(from: ProgressionSlot, to: ProgressionSlot, dropId: string): void {
     const what = this.describe(this.contents(dropId))
     const before = this.carried(to.id)
     const res = this.ledger.apply({ kind: "take", actor: to.id, from: dropId })

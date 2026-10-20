@@ -282,6 +282,32 @@ still offered Open, then refused with "Blocked by barricade". Code: `src/prompt-
 Markers (drops, pings, noisemakers) are keyed by what they mark, enter with a short rise and leave with the exit
 softening instead of being reused by index.
 
+## Inventory styles (AR-94)
+
+After the co-op playtest ("How do I open my inventory?", "Inventory's full", "I have a machete now? Where did I get
+that from?", Kit: "I need to be able to drop stuff or trade"), Lab › Inventory › Style picks what Tab opens. Today is
+the dock's pack chip, one setting away. Research and the reasoning behind the three directions:
+`~/code/home/artifacts/agent-reports/outbreak-inventory.md`.
+
+| Style | Where it lives | While open |
+| --- | --- | --- |
+| Today | the 4-slot pack grows out of the dock | nothing changes |
+| A · Ground Pack | the backpack opens on the floor in front of you (a CSS `matrix3d` onto the floor quad, `quadMatrix` in `src/inventory/bag.ts`): hands as loops on the flap, four pockets, belt pouches, what you face laid out on a cloth beside it, teammates in reach as chips at the edge | you kneel (crouch), the camera leans in (Lab: 0.75) and the mat spans about half the view, the bag's own warm lamp lights the floor; walking picks the bag up |
+| B · Attaché Case | a leather case above the dock: quick slots 1–5 on the lid, the pack on grid paper at each item's shape (`footprint` in `icons.ts`, auto-packed), belt loops, what you face as a crate beside it | the world keeps going; you can walk |
+| C · Survivor Sheet | a sheet on the right: hands, pack and belt on the left, what you face, the floor and teammates on the right | the world keeps going; you can walk |
+
+One grammar in every style: drag onto a slot to move or swap, onto what you face to put it in, off the bag (or onto
+Floor) to drop, onto a teammate to hand it over; click quick-moves (out of what you face, into it when open, else
+between hands and pack); Shift+drag moves half a stack; hover + 1–5 puts the item in that hand; hover + G drops one,
+Shift+G the stack. While any bag is open the survivor keeps facing what it was opened at and doesn't fire, so the
+cursor belongs to the bag. Items that arrived since you last looked glow until hovered. The cursor's item is named with its
+rounds, battery or wear.
+
+Every style sends the same `inv` command (`shared/inventory-ops/`), so teammates can each use their own style and the
+room stays authoritative: a give is a drop at the teammate's feet that they take at once, so what doesn't fit stays on
+the floor beside them. The capacity model is still Today's (5 hands, a 4-slot pack, belt caps); each direction's own
+capacity (pockets, cells, weight) is part of building the pick.
+
 ## Seated HUD
 
 Driving has no status panel (`src/hud/vehicle-hud.ts`). A small dashboard gauge sits left of the key hints: the

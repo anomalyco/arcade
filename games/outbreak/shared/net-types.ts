@@ -76,7 +76,7 @@ export type ServerMsg =
   | { t: "pong"; c: number }
 
 /** [mx, my, aim, flags, hotbarSlot (−1 none), hotbarDelta, interactAction code, pick code (mode·8 + index + 1)] */
-export type CommandTuple = [number, number, number, number, number?, number?, number?, number?]
+export type CommandTuple = [number, number, number, number, number?, number?, number?, number?, number?]
 
 export type RemoteSurvivor = {
   index: number

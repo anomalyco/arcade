@@ -47,6 +47,7 @@ import type { OutbreakVehicleRenderer } from "./vehicles"
 import type { OutbreakWeatherController } from "./weather/controller"
 import type { InteriorPresenter } from "./interiors"
 import type { WorldClientStreamer } from "./world-streamer"
+import { inventoryPresenter } from "./inventory/hooks"
 
 /** The feature harness hooks (the client feature registry, passed in by `main.ts`). */
 export interface OutbreakHarnessFeatures {
@@ -452,7 +453,9 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
         await Promise.resolve()
         await device.queue.onSubmittedWorkDone()
       }
-      const rawCmd: Command = { mx: 0, my: 0, aim: session.view.player.aim, interact: false, ...command }
+      // The open bag (AR-94) adds its queued move and kneeling, as the live input does.
+      const base: Command = { mx: 0, my: 0, aim: session.view.player.aim, interact: false, ...command }
+      const rawCmd = inventoryPresenter()?.shape(base, true) ?? base
       const effCmd = applyVehicleStunt(
         dt,
         session instanceof LocalSession && !command ? botsLab.stepBeforeSessionUpdate(dt, session, rawCmd) : rawCmd,
