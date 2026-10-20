@@ -166,7 +166,8 @@ export class FirePresenter {
       if (!rigged.has(s.id) || !inView(s.x, s.y)) continue
       this.put(this.rig, s.x, support(s.x, s.y), s.y, s.aim)
     }
-    for (const p of this.pools.values()) if (p.count) this.out.push({ model: p.model, data: p.data, count: p.count })
+    // Dynamite in flight goes into the TAA reactive mask.
+    for (const p of this.pools.values()) if (p.count) this.out.push({ model: p.model, data: p.data, count: p.count, reactive: p.model === this.dynamite })
     return this.out
   }
 

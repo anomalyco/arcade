@@ -20,7 +20,7 @@ import type { Splatter } from "@arcade/kit/fx/splatter"
 import { SplatterRenderer, type SplatterLightingInput } from "@arcade/kit/fx/splatter-renderer"
 import type { SkidMarks } from "@arcade/kit/fx/skids"
 import { SkidRenderer } from "@arcade/kit/fx/skid-renderer"
-import { WeatherRenderer, type WeatherPrepareInput } from "../weather"
+import { WeatherRenderer, type WeatherCamera, type WeatherPrepareInput } from "../weather"
 import {
   LOOK_UNIFORM_FLOATS,
   createLookSettings,
@@ -68,6 +68,7 @@ import {
   type TemporalSettings,
   type TemporalState,
 } from "./temporal"
+import { REACTIVE_COVERAGE_WGSL, REACTIVE_TARGET } from "./reactive"
 
 export type { PassContext, PassSlot, ScenePass }
 export type { AntiAliasingMode, TemporalSettings, TemporalState } from "./temporal"
@@ -80,6 +81,24 @@ const DEPTH: GPUTextureFormat = DEPTH_CFG.format
 export { LIGHT_FLOATS }
 export const INST_FLOATS = 12
 export const SPRITE_FLOATS = 12
+const MESH_LAYOUT: GPUVertexBufferLayout = {
+  arrayStride: VERT_BYTES,
+  attributes: [
+    { shaderLocation: 0, offset: 0, format: "float32x3" },
+    { shaderLocation: 1, offset: 12, format: "snorm8x4" },
+    { shaderLocation: 2, offset: 16, format: "unorm8x4" },
+    { shaderLocation: 3, offset: 20, format: "float16x2" },
+  ],
+}
+const INST_LAYOUT: GPUVertexBufferLayout = {
+  arrayStride: INST_FLOATS * 4,
+  stepMode: "instance",
+  attributes: [
+    { shaderLocation: 5, offset: 0, format: "float32x4" },
+    { shaderLocation: 6, offset: 16, format: "float32x4" },
+    { shaderLocation: 7, offset: 32, format: "float32x4" },
+  ],
+}
 /** Size of the game's custom uniform block at binding 13. */
 export const CUSTOM_UNIFORM_BYTES = 2048
 const MAX_SPRITES = 8192
@@ -145,7 +164,11 @@ struct VO { @builtin(position) pos: vec4f, @location(0) uv: vec2f }
 }
 `
 
-export type Batch = { model: number; data: Float32Array<ArrayBuffer>; count: number; alpha?: boolean; motionKeys?: (MotionKey | undefined)[] }
+/**
+ * `reactive` marks instances that move on their own (flying debris, thrown items): under temporal AA they are redrawn
+ * into the reactive mask (`@arcade/kit/gpu/reactive`) so the resolve doesn't trail them. Leave it off for actors.
+ */
+export type Batch = { model: number; data: Float32Array<ArrayBuffer>; count: number; alpha?: boolean; reactive?: boolean; motionKeys?: (MotionKey | undefined)[] }
 
 export type FrameInput = {
   splatter?:Splatter
@@ -222,6 +245,7 @@ export class Renderer {
   private skidRenderer?: SkidRenderer
   private particleRenderer?:ParticleRenderer
   private weatherRenderer?:WeatherRenderer
+  private readonly weatherCamera: WeatherCamera = { viewProj: [], width: 1, height: 1 }
   private readonly splatterEye=new Float32Array(3)
   readonly smokeRenderer: VolumeRenderer
   private readonly smokeMatrix = new Float32Array(16)
@@ -336,11 +360,13 @@ export class Renderer {
   private bloomSource: GPUTexture | null = null
   private spriteModule!: GPUShaderModule
   private reactivePipe: GPURenderPipeline | null = null
+  private reactiveInstPipe: GPURenderPipeline | null = null
+  private sceneModule!: GPUShaderModule
   private readonly unjittered = new Float32Array(22)
   /** Size the scene renders at: the output size, or smaller under temporal upscaling. */
   internalWidth = 0
   internalHeight = 0
-  private readonly drawRanges: { model: number; first: number; count: number; alpha: boolean }[] = []
+  private readonly drawRanges: { model: number; first: number; count: number; alpha: boolean; reactive: boolean }[] = []
 
   constructor(
     private device: GPUDevice,
@@ -573,24 +599,6 @@ export class Renderer {
       }
     }
 
-    const meshLayout: GPUVertexBufferLayout = {
-      arrayStride: VERT_BYTES,
-      attributes: [
-        { shaderLocation: 0, offset: 0, format: "float32x3" },
-        { shaderLocation: 1, offset: 12, format: "snorm8x4" },
-        { shaderLocation: 2, offset: 16, format: "unorm8x4" },
-        { shaderLocation: 3, offset: 20, format: "float16x2" },
-      ],
-    }
-    const instLayout: GPUVertexBufferLayout = {
-      arrayStride: INST_FLOATS * 4,
-      stepMode: "instance",
-      attributes: [
-        { shaderLocation: 5, offset: 0, format: "float32x4" },
-        { shaderLocation: 6, offset: 16, format: "float32x4" },
-        { shaderLocation: 7, offset: 32, format: "float32x4" },
-      ],
-    }
     const spriteLayout: GPUVertexBufferLayout = {
       arrayStride: SPRITE_FLOATS * 4,
       stepMode: "instance",
@@ -606,6 +614,7 @@ export class Renderer {
     const scene = this.module(shaders?.scene ?? sceneShader(), "scene")
     const sprite = this.module(shaders?.sprite ?? spriteShader(), "sprite")
     this.spriteModule = sprite
+    this.sceneModule = scene
     const pipe = (module: GPUShaderModule, vs: string, buffers: GPUVertexBufferLayout[], blend?: GPUBlendState, depthWrite = true, cullMode: GPUCullMode = "back", fs = "fs", motion = false, alphaToCoverage = false) =>
       d.createRenderPipeline({
         layout,
@@ -615,11 +624,11 @@ export class Renderer {
         depthStencil: { format: DEPTH, depthWriteEnabled: depthWrite, depthCompare: "less-equal" },
         multisample: { count: SAMPLES, alphaToCoverageEnabled: alphaToCoverage && !blend && !motion },
       })
-    this.pipes.level = pipe(scene, "vsStatic", [meshLayout], undefined, true, "none", "fsSolid")
-    this.pipes.levelCut = pipe(scene, "vsStatic", [meshLayout], undefined, true, "none", "fs")
-    this.pipes.glass = pipe(scene, "vsStatic", [meshLayout], premul, false, "none", shaders ? "fsSolid" : "fs")
-    this.pipes.inst = pipe(scene, "vsInst", [meshLayout, instLayout], undefined, true, "none", shaders ? "fsSolid" : "fs")
-    this.pipes.instAlpha = pipe(scene, "vsInst", [meshLayout, instLayout], premul, false, "none", "fs")
+    this.pipes.level = pipe(scene, "vsStatic", [MESH_LAYOUT], undefined, true, "none", "fsSolid")
+    this.pipes.levelCut = pipe(scene, "vsStatic", [MESH_LAYOUT], undefined, true, "none", "fs")
+    this.pipes.glass = pipe(scene, "vsStatic", [MESH_LAYOUT], premul, false, "none", shaders ? "fsSolid" : "fs")
+    this.pipes.inst = pipe(scene, "vsInst", [MESH_LAYOUT, INST_LAYOUT], undefined, true, "none", shaders ? "fsSolid" : "fs")
+    this.pipes.instAlpha = pipe(scene, "vsInst", [MESH_LAYOUT, INST_LAYOUT], premul, false, "none", "fs")
     if (shaders) {
       this.baselinePipes.level = this.pipes.level
       this.baselinePipes.levelCut = this.pipes.levelCut
@@ -629,11 +638,11 @@ export class Renderer {
     } else {
       // Keep the all-off shader's arithmetic identical, including compiler rounding.
       const baselineScene = this.module(sceneShader(false), "scene baseline")
-      this.baselinePipes.level = pipe(baselineScene, "vsStatic", [meshLayout], undefined, true, "none", "fsSolid")
-      this.baselinePipes.levelCut = pipe(baselineScene, "vsStatic", [meshLayout], undefined, true, "none", "fs")
-      this.baselinePipes.glass = pipe(baselineScene, "vsStatic", [meshLayout], premul, false, "none", "fs")
-      this.baselinePipes.inst = pipe(baselineScene, "vsInst", [meshLayout, instLayout], undefined, true, "none", "fs")
-      this.baselinePipes.instAlpha = pipe(baselineScene, "vsInst", [meshLayout, instLayout], premul, false, "none", "fs")
+      this.baselinePipes.level = pipe(baselineScene, "vsStatic", [MESH_LAYOUT], undefined, true, "none", "fsSolid")
+      this.baselinePipes.levelCut = pipe(baselineScene, "vsStatic", [MESH_LAYOUT], undefined, true, "none", "fs")
+      this.baselinePipes.glass = pipe(baselineScene, "vsStatic", [MESH_LAYOUT], premul, false, "none", "fs")
+      this.baselinePipes.inst = pipe(baselineScene, "vsInst", [MESH_LAYOUT, INST_LAYOUT], undefined, true, "none", "fs")
+      this.baselinePipes.instAlpha = pipe(baselineScene, "vsInst", [MESH_LAYOUT, INST_LAYOUT], premul, false, "none", "fs")
     }
     this.pipes.spriteAlpha = pipe(sprite, "vs", [spriteLayout], premul, false, "none")
     this.pipes.spriteAdd = pipe(sprite, "vs", [spriteLayout], additive, false, "none")
@@ -1045,15 +1054,28 @@ export class Renderer {
         { shaderLocation: 2, offset: 32, format: "float32x4" },
       ],
     }
-    const add: GPUBlendState = { color: { srcFactor: "one", dstFactor: "one" }, alpha: { srcFactor: "one", dstFactor: "one" } }
     this.reactivePipe = this.device.createRenderPipeline({
         label: "temporal reactive sprites",
         layout,
         vertex: { module: this.spriteModule, entryPoint: "vs", buffers: [spriteLayout] },
-        fragment: { module: this.spriteModule, entryPoint: "fs", targets: [{ format: "rgba8unorm", blend: add }] },
+        fragment: { module: this.spriteModule, entryPoint: "fs", targets: [REACTIVE_TARGET] },
         primitive: { topology: "triangle-list", cullMode: "none" },
       })
     return this.reactivePipe
+  }
+
+  /** `reactive` batches re-drawn through the scene's instanced vertex stage, at full coverage, into the reactive mask. */
+  private ensureReactiveInstPipe(): GPURenderPipeline {
+    if (this.reactiveInstPipe) return this.reactiveInstPipe
+    const d = this.device
+    this.reactiveInstPipe = d.createRenderPipeline({
+      label: "temporal reactive batches",
+      layout: d.createPipelineLayout({ bindGroupLayouts: [this.sceneLayout] }),
+      vertex: { module: this.sceneModule, entryPoint: "vsInst", buffers: [MESH_LAYOUT, INST_LAYOUT] },
+      fragment: { module: d.createShaderModule({ label: "reactive coverage", code: REACTIVE_COVERAGE_WGSL }), entryPoint: "fs", targets: [REACTIVE_TARGET] },
+      primitive: { topology: "triangle-list", cullMode: "none" },
+    })
+    return this.reactiveInstPipe
   }
 
   setVisibility(data: Uint8Array<ArrayBuffer>, w: number, h: number): void {
@@ -1328,22 +1350,22 @@ export class Renderer {
     const s = this.temporalSettings
     const motion = !this.shaders && !!(f.frame[45]! & 1024)
     const taa = s && this.temporal && !motion ? this.temporal : null
-    if (!taa || !s) return this.encodeFrame(f, targetView, null, false)
+    if (!taa || !s) return this.encodeFrame(f, targetView, null)
     const fr = f.frame
     this.unjittered.set(fr.subarray(0, 22))
-    const reactive = f.alphaCount + f.addCount > 0
-    const [jx, jy] = taa.begin(fr, s, reactive)
+    // The reactive mask is cleared and drawn every temporal frame, so the resolve always reads it.
+    const [jx, jy] = taa.begin(fr, s, true)
     jitterViewProj(fr, jx, jy, this.internalWidth, this.internalHeight)
     fr[20] = this.internalWidth
     fr[21] = this.internalHeight
     try {
-      this.encodeFrame(f, targetView, taa, reactive)
+      this.encodeFrame(f, targetView, taa)
     } finally {
       fr.set(this.unjittered, 0)
     }
   }
 
-  private encodeFrame(f: FrameInput, targetView: GPUTextureView | undefined, taa: TemporalResolve | null, reactive: boolean): void {
+  private encodeFrame(f: FrameInput, targetView: GPUTextureView | undefined, taa: TemporalResolve | null): void {
     const d = this.device
     const motion = !this.shaders && !!(f.frame[45]! & 1024)
     if (taa) this.syncBloomSource(taa.output, taa.outputView)
@@ -1416,7 +1438,14 @@ export class Renderer {
     }
     if (f.weather) {
       this.weatherRenderer ??= new WeatherRenderer(d, HDR, DEPTH, SAMPLES)
-      this.weatherRenderer.prepare(f.weather)
+      // Under temporal AA rain takes the frame's jittered camera and internal size, like every pass in the scene.
+      if (taa) {
+        const c = this.weatherCamera
+        c.viewProj = f.frame
+        c.width = this.internalWidth
+        c.height = this.internalHeight
+      }
+      this.weatherRenderer.prepare(f.weather, taa ? this.weatherCamera : undefined)
     }
     if (motion) this.prepareMotion()
     const lookVariant: LookVariantMode = useLookPipes
@@ -1542,8 +1571,9 @@ export class Renderer {
         existing.first = off
         existing.count = b.count
         existing.alpha = !!b.alpha
+        existing.reactive = !!b.reactive
       } else {
-        ranges.push({ model: b.model, first: off, count: b.count, alpha: !!b.alpha })
+        ranges.push({ model: b.model, first: off, count: b.count, alpha: !!b.alpha, reactive: !!b.reactive })
       }
       rangeCount++
       if (motion) for (let i = 0; i < b.count; i++) this.history.write(this.previousData, (off + i) * INST_FLOATS, b.data, i * INST_FLOATS, b.motionKeys?.[i])
@@ -1669,20 +1699,45 @@ export class Renderer {
     }
     pass.end()
 
-    if (taa && reactive) {
+    if (taa) {
+      // Everything that moves on its own redraws into the reactive mask: sprites, tyre smoke, reactive batches,
+      // splatter drops, kit particles, rain and the alpha plugins (`@arcade/kit/gpu/reactive`).
       const rp = enc.beginRenderPass({
         label: "temporal reactive",
         colorAttachments: [{ view: taa.reactiveView, loadOp: "clear", storeOp: "store", clearValue: [0, 0, 0, 0] }],
       })
-      rp.setPipeline(this.ensureReactivePipe())
       rp.setBindGroup(0, this.sceneGroup)
-      if (alphaCount) {
-        rp.setVertexBuffer(0, this.sprites, 0)
-        rp.draw(6, alphaCount)
+      if (alphaCount || addCount) {
+        rp.setPipeline(this.ensureReactivePipe())
+        if (alphaCount) {
+          rp.setVertexBuffer(0, this.sprites, 0)
+          rp.draw(6, alphaCount)
+        }
+        if (addCount) {
+          rp.setVertexBuffer(0, this.sprites, addOffset)
+          rp.draw(6, addCount)
+        }
       }
-      if (addCount) {
-        rp.setVertexBuffer(0, this.sprites, addOffset)
-        rp.draw(6, addCount)
+      this.vehicleSmoke.drawReactive(rp)
+      let instPipe = false
+      for (let rIdx = 0; rIdx < rangeCount; rIdx++) {
+        const r = ranges[rIdx]!
+        if (!r.reactive) continue
+        if (!instPipe) {
+          rp.setPipeline(this.ensureReactiveInstPipe())
+          rp.setVertexBuffer(1, this.inst.buf)
+          instPipe = true
+        }
+        const m = this.models[r.model]!
+        rp.setVertexBuffer(0, m.buf)
+        rp.draw(m.count, r.count, 0, r.first)
+      }
+      if (f.splatter) this.splatterRenderer!.drawReactive(rp)
+      if (f.fxParticles && f.fxParticles.count > 0) this.particleRenderer!.drawReactive(rp)
+      if (f.weather) this.weatherRenderer!.drawReactive(rp)
+      if (this.passes.count("alpha")) {
+        rp.setBindGroup(0, this.sceneGroup)
+        this.passes.drawReactiveSlot("alpha", rp)
       }
       rp.end()
     }

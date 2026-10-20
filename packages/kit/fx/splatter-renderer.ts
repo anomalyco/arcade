@@ -1,3 +1,4 @@
+import { reactivePipelineDescriptor } from "../gpu/reactive"
 import { Splatter, SPLATTER_DECALS, SPLATTER_PARTICLES, SPLATTER_RECEIVERS, PARTICLE_STRIDE, DECAL_STRIDE } from "./splatter"
 
 export type SplatterLightingInput = {
@@ -272,7 +273,10 @@ export class SplatterRenderer {
   private motionPipeline?: GPURenderPipeline
   private readonly descriptor: GPURenderPipelineDescriptor
   private useLegacyPipe = false
+  private reactivePipe?: GPURenderPipeline
   count = 0
+  /** Instances before the flying drops (the decals, which only grow in place). */
+  private decalCount = 0
 
   constructor(private readonly device: GPUDevice) {
     this.uniform = device.createBuffer({ size: this.frame.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
@@ -440,6 +444,7 @@ export class SplatterRenderer {
         p[o + 23] = age
       }
     }
+    this.decalCount = this.count
     const drops = s.particles
     for (let i = 0; i < SPLATTER_PARTICLES; i++) {
       const k = i * PARTICLE_STRIDE
@@ -471,5 +476,15 @@ export class SplatterRenderer {
     pass.setPipeline(motion ? this.motionPipeline! : this.useLegacyPipe ? this.legacyPipeline! : this.pipeline)
     pass.setBindGroup(0, this.group)
     pass.draw(6, this.count)
+  }
+
+  /** Redraws the drops in flight into the temporal reactive mask (`@arcade/kit/gpu/reactive`); decals stay out. */
+  drawReactive(pass: GPURenderPassEncoder) {
+    const drops = this.count - this.decalCount
+    if (drops <= 0) return
+    this.reactivePipe ??= this.device.createRenderPipeline(reactivePipelineDescriptor(this.descriptor))
+    pass.setPipeline(this.reactivePipe)
+    pass.setBindGroup(0, this.group)
+    pass.draw(6, drops, 0, this.decalCount)
   }
 }

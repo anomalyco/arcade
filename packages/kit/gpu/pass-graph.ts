@@ -79,6 +79,12 @@ export interface ScenePass {
   draw(pass: GPURenderPassEncoder): void
   /** Optional: encode work (compute, offscreen passes) before the main HDR pass begins. */
   prepare?(enc: GPUCommandEncoder): void
+  /**
+   * Optional, for passes that draw what moves on its own (particles, motes, rain): under temporal AA, redraw it into the
+   * reactive mask with group 0 (Frame) bound. Build the pipeline with `reactivePipelineDescriptor` from
+   * `@arcade/kit/gpu/reactive` (rgba8 target, one sample, no depth).
+   */
+  drawReactive?(pass: GPURenderPassEncoder): void
 }
 
 /**
@@ -121,6 +127,12 @@ export class PassList {
     for (let i = 0; i < list.length; i++) {
       list[i]!.draw(pass)
     }
+  }
+
+  /** Calls `drawReactive` on every pass in `slot` that has one. */
+  drawReactiveSlot(slot: PassSlot, pass: GPURenderPassEncoder): void {
+    const list = this.slots[slot]
+    for (let i = 0; i < list.length; i++) list[i]!.drawReactive?.(pass)
   }
 
   count(slot?: PassSlot): number {

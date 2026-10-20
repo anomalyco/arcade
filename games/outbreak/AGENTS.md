@@ -236,7 +236,9 @@
   `tests/weather-cycle.test.ts`, `tests/weather.test.ts`.
 - Anti-aliasing (AR-72, `src/anti-aliasing/`, Lab › Anti-aliasing; values in the view settings): MSAA (today, default),
   TAA, or TAA + upscale from a render scale, on the shared temporal resolve (`@arcade/kit/gpu/temporal`; rules for scene
-  passes under it in `../../docs/rendering-techniques.md`). Paired GPU, frame time, walking flicker, ghosting crops,
+  passes under it in `../../docs/rendering-techniques.md`; what moves on its own draws into the reactive mask: flying
+  breach debris, throws and dynamite are `reactive` batches, beam dust a `drawReactive` pass; Restart, New town and
+  regenerate drop the history in `scene/frame-renderer.ts`). Paired GPU, frame time, walking flicker, ghosting crops,
   stills and a side-by-side clip in one run: `bun scripts/taa-proof.ts --out <dir>` (via `hivemind run --kind browser`).
 - Prompt clarity (AR-89, `src/prompt-clarity/`, Lab: Backquote › Controls, "Today" one setting away): verbs beside
   glyphs for each action's first three uses, corner brackets on what E acts on, B (board up) and board pips in door

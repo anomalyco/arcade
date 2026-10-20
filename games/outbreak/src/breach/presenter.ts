@@ -160,6 +160,7 @@ export class BreachPresenter {
   private readonly data: Float32Array<ArrayBuffer>[] = []
   private readonly counts: number[] = []
   private readonly batchList: Batch[] = []
+  private readonly firstDebris: number
   private readonly lightData = new Float32Array(8 * LIGHT_FLOATS)
   private lightCount = 0
   private time = 0
@@ -178,12 +179,11 @@ export class BreachPresenter {
       [holeMesh(), MAX_DOORS],
       [armMesh(), MAX_DOORS * 2],
       [footShadowMesh(), MAX_DOORS * 4],
-      [splinterMesh(), MAX_DEBRIS],
-      [chunkMesh(), MAX_DEBRIS],
-      [jambMesh(), MAX_DEBRIS],
-      [plankMesh(), MAX_DEBRIS],
-      [glassMesh(), MAX_DEBRIS],
     ]
+    // The pieces that fly (and then lie), drawn into the TAA reactive mask.
+    const debris: Mesh[] = [splinterMesh(), chunkMesh(), jambMesh(), plankMesh(), glassMesh()]
+    this.firstDebris = meshes.length
+    for (const mesh of debris) meshes.push([mesh, MAX_DEBRIS])
     for (const [mesh, cap] of meshes) {
       this.models.push(renderer.addModel(mesh))
       this.data.push(new Float32Array(cap * INST_FLOATS))
@@ -694,7 +694,7 @@ export class BreachPresenter {
   batches(): readonly Batch[] {
     this.batchList.length = 0
     for (let m = 0; m < this.models.length; m++) {
-      if (this.counts[m]! > 0) this.batchList.push({ model: this.models[m]!, data: this.data[m]!, count: this.counts[m]! })
+      if (this.counts[m]! > 0) this.batchList.push({ model: this.models[m]!, data: this.data[m]!, count: this.counts[m]!, reactive: m >= this.firstDebris })
     }
     return this.batchList
   }

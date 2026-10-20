@@ -1,4 +1,5 @@
 import { wgslStruct } from "../gpu/wgsl"
+import { reactivePipelineDescriptor } from "../gpu/reactive"
 import { PARTICLE_CAPACITY, Particles } from "./particles"
 
 /**
@@ -282,6 +283,8 @@ export class ParticleRenderer {
   private motionPipeline?: GPURenderPipeline
   private readonly keepPipelines: (GPURenderPipeline | undefined)[] = []
   private readonly makePipe: (heat: boolean, motion: boolean, keepColour?: boolean) => GPURenderPipeline
+  private readonly describe: (heat: boolean, motion: boolean, keepColour?: boolean) => GPURenderPipelineDescriptor
+  private reactivePipe?: GPURenderPipeline
   private count = 0
   constructor(
     private readonly device: GPUDevice,
@@ -321,8 +324,7 @@ export class ParticleRenderer {
     })
     const bindGroupLayouts = opts.extraBindGroupLayouts ? [...opts.extraBindGroupLayouts, layout] : [layout]
     const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts })
-    this.makePipe = (heat: boolean, motion: boolean, keepColour = false) =>
-      device.createRenderPipeline({
+    this.describe = (heat: boolean, motion: boolean, keepColour = false) => ({
         layout: pipelineLayout,
         vertex: {
           module,
@@ -358,6 +360,7 @@ export class ParticleRenderer {
         depthStencil: { format: depthFormat, depthWriteEnabled: false, depthCompare },
         multisample: { count: sampleCount },
       })
+    this.makePipe = (heat, motion, keepColour) => device.createRenderPipeline(this.describe(heat, motion, keepColour))
     this.pipeline = this.makePipe(false, false)
     this.heat = this.makePipe(true, false)
   }
@@ -433,6 +436,15 @@ export class ParticleRenderer {
     if (motion && !this.motionPipeline) this.motionPipeline = this.makePipe(false, true)
     const keep = keepColour ? (this.keepPipelines[motion ? 1 : 0] ??= this.makePipe(false, motion, true)) : null
     pass.setPipeline(this.uniforms[DEBUG_OFFSET] === 2 ? this.heat : keep ?? (motion ? this.motionPipeline! : this.pipeline))
+    pass.setBindGroup(this.bindGroupIndex, this.group)
+    pass.setVertexBuffer(0, this.instances)
+    pass.draw(36, this.count)
+  }
+  /** Redraws this frame's particles into the temporal reactive mask (`@arcade/kit/gpu/reactive`). */
+  drawReactive(pass: GPURenderPassEncoder) {
+    if (!this.count) return
+    this.reactivePipe ??= this.device.createRenderPipeline(reactivePipelineDescriptor(this.describe(false, false)))
+    pass.setPipeline(this.reactivePipe)
     pass.setBindGroup(this.bindGroupIndex, this.group)
     pass.setVertexBuffer(0, this.instances)
     pass.draw(36, this.count)

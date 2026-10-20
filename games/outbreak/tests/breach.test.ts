@@ -296,7 +296,7 @@ describe("breach presenter (AR-97)", () => {
       },
       session: () => session,
     }
-    const seen = { drawn: false, maxDebris: 0, maxLights: 0, slabDrawn: false, stages: new Set<string>() }
+    const seen = { drawn: false, maxDebris: 0, maxLights: 0, slabDrawn: false, stages: new Set<string>(), reactiveDebris: false, reactiveDoor: false }
     for (const scene of ["split", "crush"] as const) {
       presenter.reset()
       stageBreach(host, scene)
@@ -311,6 +311,9 @@ describe("breach presenter (AR-97)", () => {
         seen.maxDebris = Math.max(seen.maxDebris, presenter.stats.debris)
         if (scene === "crush" && session.sim.getFeatureState<BreachState>("breach")!.portals[DOOR]?.broken) seen.slabDrawn ||= batches.some((b) => b.model === 0 && b.count > 0)
         seen.stages.add(presenter.stats.stages[DOOR] ?? "")
+        // Splinters, chunks, jambs, planks and glass (models 9+) fly: TAA's reactive mask; the door itself does not.
+        seen.reactiveDebris ||= batches.some((b) => b.model >= 9 && b.reactive)
+        seen.reactiveDoor ||= batches.some((b) => b.model < 9 && b.reactive)
       }
     }
     expect(models).toBe(14)
@@ -318,6 +321,8 @@ describe("breach presenter (AR-97)", () => {
     expect(seen.maxDebris).toBeGreaterThan(10)
     expect(seen.maxLights).toBeGreaterThan(0)
     expect(seen.slabDrawn).toBe(true)
+    expect(seen.reactiveDebris).toBe(true)
+    expect(seen.reactiveDoor).toBe(false)
     expect([...seen.stages]).toContain("broken")
     expect(presenter.stats.breaches).toContain("crush")
   }, 30_000)

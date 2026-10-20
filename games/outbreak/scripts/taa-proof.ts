@@ -6,7 +6,8 @@
  * - gpu: paired GPU time (timestamp queries, `renderer.measure`) and frame time (wall time of a harness step: sim,
  *   draw, GPU done) at 1728×947 CSS × 2 (3456×1894), the three modes rotated each round on the same pose.
  * - flicker: the look's walking flicker metric (`look-beauty.ts --mode flicker`) per mode.
- * - ghost: a fast zombie crossing, a flashlight swing and a burning scene, each mode against MSAA frame for frame;
+ * - ghost: a fast zombie crossing, a flashlight swing, rain and a burning scene (kit fire, smoke and sparks), each
+ *   mode against MSAA frame for frame;
  *   reports the worst 32-px tile difference while moving over the same in a converged still, plus crop sheets.
  * - stills: converged 3456×1894 stills per mode and a 1:1 crop sheet.
  * - clip: a muted 60 fps side-by-side (MSAA | TAA | TAA + upscale) of a night walk with the flashlight swinging,
@@ -39,7 +40,7 @@ const MODES = [
 ] as const
 type Mode = (typeof MODES)[number]
 
-type Scene = { name: string; hour: number; zoom: number; x: number; y: number; aim: number; flashlight: boolean; horde?: boolean }
+type Scene = { name: string; hour: number; zoom: number; x: number; y: number; aim: number; flashlight: boolean; horde?: boolean; rain?: boolean }
 const NORTH = -Math.PI / 2
 const ZOOM = 38
 const SCENES: Scene[] = [
@@ -105,6 +106,7 @@ async function setup(page: Page, s: Scene, knobs: Record<string, unknown>) {
     h.setLab("hour", s.hour)
     h.setZoomRaw(s.zoom)
     h.setLab("propsOn", true)
+    h.setLab("weather.weatherOverride", s.rain ? 2 : -1)
     h.lookPreset("today")
     for (const [key, v] of Object.entries(k)) {
       try {
@@ -332,6 +334,14 @@ const SEQS: Seq[] = [
     frames: 30,
     prepare: ``,
     frame: `aim = s.aim - 1.2 + i * 0.08`,
+  },
+  {
+    name: "rain",
+    label: "Rain through a slow flashlight sweep",
+    scene: { ...scene("street-night-21h"), rain: true },
+    frames: 40,
+    prepare: ``,
+    frame: `aim = s.aim - 0.6 + i * 0.03`,
   },
   {
     name: "fire",
