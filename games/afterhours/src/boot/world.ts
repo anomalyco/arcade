@@ -280,10 +280,11 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
     performance.mark(`boot:last-arrival:${Math.round(warmup.lastArrival)}`)
     advance(MODELS_WEIGHT)
     hooks.onShown?.("models", ++done, pending.length + 1)
-    // What the game hides at the reveal inside the facility (other storeys, rooms the culling hides from the lot)
-    // also compiles behind the cover (everything in the building footprint): left
-    // to the background warm-up it was still queued when a fast player reached the doors, and entering compiled ~40
-    // materials in one frame and stalled the GPU for ~1.8 s on their pipelines and textures.
+    // The facility's pipelines compile behind the cover too, though the game hides most of the interior at the reveal
+    // (other storeys, rooms culled from outside): left to the background warm-up (one material at a time, sliced
+    // around frames, ~30 s for its ~1300 objects) they were still queued when a player ran to the doors, and entering
+    // built ~40 materials in one frame and stalled ~1.8 s on their pipelines and textures. One object per pipeline is
+    // enough (~210, ~1.8 s behind the cover); the rest hit those pipelines and finish in the background in under a second.
     deferred.push(...warmup.takeHidden())
     const { min, max } = BUILDING.main
     const near = deferred.filter((o) => {
@@ -292,6 +293,22 @@ export async function bootWorld(canvas: HTMLCanvasElement, params: URLSearchPara
     })
     // `entryWarm=0` (automation/A-B only) leaves it all to the background warm-up, as before.
     if (near.length && params.get("entryWarm") === "0") near.length = 0
+    // One per pipeline key: material × vertex layout × instancing/skinning × shadow flags.
+    const variant = new Map<string, THREE.Object3D>()
+    for (const o of near) {
+      const m = (o as THREE.Mesh).material
+      const g = (o as THREE.Mesh).geometry as THREE.BufferGeometry | undefined
+      const key = [
+        Array.isArray(m) ? m.map((x) => x.uuid).join() : m?.uuid,
+        g ? Object.keys(g.attributes).sort().join() + (g.index ? "i" : "") + Object.keys(g.morphAttributes).length : "",
+        (o as THREE.InstancedMesh).isInstancedMesh ? "inst" : "",
+        (o as THREE.SkinnedMesh).isSkinnedMesh ? "skin" : "",
+        o.castShadow ? "cs" : "",
+        o.receiveShadow ? "rs" : "",
+      ].join("|")
+      if (!variant.has(key)) variant.set(key, o)
+    }
+    near.splice(0, near.length, ...variant.values())
     if (near.length) {
       const keep = new Set(near)
       deferred.splice(0, deferred.length, ...deferred.filter((o) => !keep.has(o)))

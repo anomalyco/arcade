@@ -29,6 +29,7 @@ const LEVELS = STOREYS // storeys served: 0..STOREYS-1
 const carFloorY = (s: number) => FLOOR_Y + s * STOREY_H
 
 const shaftBands: Band[] = [[0, 99, M.concrete]]
+const PANEL_LENS = glow(0x6b6658, 0xffe6c0, 0.6, "lift_panel_lens")
 
 /** Brushed, scratched stainless: fine vertical grain, random scratches, smudged lower panels. */
 function scratchedSteel() {
@@ -164,7 +165,8 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
   // Panel lamp: a small steel hood over the plate with a glowing strip under it; the legend itself is backlit (no
   // extra scene light: a new light would recompile every lit material).
   car.box(M.darkSteel, panelX - PANEL_W / 2, PANEL_Y + PANEL_H / 2 + 0.01, z0 - 0.005, panelX + PANEL_W / 2, PANEL_Y + PANEL_H / 2 + 0.03, z0 + 0.07)
-  car.box(M.bulbWarm, panelX - PANEL_W / 2 + 0.03, PANEL_Y + PANEL_H / 2 + 0.002, z0 + 0.03, panelX + PANEL_W / 2 - 0.03, PANEL_Y + PANEL_H / 2 + 0.01, z0 + 0.06, { cast: false })
+  // (A small frosted lens under the hood, not a bright strip: from inside the car it read as an orange bar.)
+  car.box(PANEL_LENS, panelX - 0.05, PANEL_Y + PANEL_H / 2 + 0.006, z0 + 0.035, panelX + 0.05, PANEL_Y + PANEL_H / 2 + 0.01, z0 + 0.055, { cast: false })
   carRootLegend = panelLegend(panelX, z0 + 0.0205)
   // Position indicator over the door: a dark plate with large numerals G 1 2 3 4 and the direction arrows; the
   // current stop's numeral (and the arrow while travelling) light amber (separate meshes, below).
@@ -816,7 +818,8 @@ function stopsList() {
   el.className = "lift-stops akc-minimal"
   Object.assign(el.style, {
     position: "fixed",
-    right: "3.2vw",
+    // Left edge: the car's panel is right of the door, so the list never covers it.
+    left: "3.2vw",
     top: "50%",
     transform: "translateY(-50%)",
     pointerEvents: "none",

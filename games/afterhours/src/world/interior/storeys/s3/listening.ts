@@ -11,6 +11,7 @@ import { type DocumentId, documentMesh } from "../../../../render/documents"
 import { type CorpseCharacter, type CorpsePose, corpseInfo, spawnCorpse } from "../../../npc/corpse"
 import type { S3 } from "./common"
 import { headphones, sub } from "./equipment"
+import { glassCrack } from "./glass-crack"
 import { type RadioRoom, transmitterRack } from "./transmitter"
 
 // The listening room 3-08, two days after the station's radio went silent. TX-1 (./transmitter.ts) is off and the
@@ -168,7 +169,6 @@ const DIAL = glow(0x1a1206, 0xffb050, 1.4, "s3_receiver_dial")
 const METER = glow(0x101410, 0xd8e8c0, 1.1, "s3_receiver_meter")
 const CHASSIS = paint(0x50544e, 0.5, 0.35)
 const KNOB = paint(0x18191a, 0.4, 0.2)
-const CRACK = paint(0xdfe6e2, 0.15, 0.1)
 
 /** Builds the scene; returns the per-frame update (radio sound, meter needle). */
 export function stageListeningRoom(s: S3): (t: number) => void {
@@ -177,7 +177,7 @@ export function stageListeningRoom(s: S3): (t: number) => void {
   const rnd = s.rnd
   // ---- the receiver, still on (front faces the operator, +z)
   const R = T(9.4, od, -14.15, yawToward(0, 1))
-  b.rbox(CHASSIS, R, 0.5, 0.21, 0.34, 0.012, 0, 0.105, 0)
+  b.rbox(CHASSIS, R, 0.5, 0.21, 0.34, 0.003, 0, 0.105, 0)
   b.boxM(M.darkSteel, R, 0.48, 0.17, 0.006, 0, 0.11, -0.171)
   b.boxM(DIAL, R, 0.24, 0.05, 0.004, -0.07, 0.15, -0.176, { cast: false })
   b.boxM(METER, R, 0.08, 0.055, 0.004, 0.15, 0.15, -0.176, { cast: false })
@@ -218,24 +218,13 @@ export function stageListeningRoom(s: S3): (t: number) => void {
   // The last metre of chart, torn off and dropped on the heap; more greenbar kicked across the floor.
   s.doc("chart_heartbeat", [2.4, FLOOR_Y + 0.03, -16.9], [0, 1, 0], { rotation: 1.35, curl: 0.35 })
   s.doc("printout_greenbar", [3.6, FLOOR_Y, -15.6], [0, 1, 0], { rotation: 0.4, curl: 0.4 })
-  // The booth window: a star crack from an impact low on the left pane (lines on both faces).
-  const cz = -14.925
-  const cx = 7.6
-  const cy = FLOOR_Y + 1.22
-  for (let k = 0; k < 11; k++) {
-    const a = (k / 11) * Math.PI * 2 + rnd() * 0.4
-    const len = 0.15 + rnd() * 0.45
-    for (const side of [-1, 1])
-      b.boxM(CRACK, T(cx + Math.cos(a) * len * 0.5, cy + Math.sin(a) * len * 0.5, cz + side * 0.012, 0, 0, a), len, 0.0016, 0.0012, 0, 0, 0, { cast: false })
+  // The booth window: an impact crack low on the left pane, on both faces of the glass (./glass-crack.ts).
+  for (const side of [-1, 1]) {
+    const crack = glassCrack(0.9, 31)
+    crack.position.set(7.6, FLOOR_Y + 1.22 + b.oy, -14.925 + side * 0.0065)
+    if (side < 0) crack.rotation.y = Math.PI
+    b.small.add(crack)
   }
-  for (let k = 0; k < 2; k++)
-    for (const side of [-1, 1]) {
-      const r = 0.05 + k * 0.08
-      for (let j = 0; j < 8; j++) {
-        const a = (j / 8) * Math.PI * 2 + k
-        b.boxM(CRACK, T(cx + Math.cos(a) * r, cy + Math.sin(a) * r, cz + side * 0.012, 0, 0, a + Math.PI / 2), r * 0.8, 0.0014, 0.0012, 0, 0, 0, { cast: false })
-      }
-    }
 
   // ---- debug markers for the body anchors (`?bodies`)
   if (b.ctx.params.has("bodies")) {

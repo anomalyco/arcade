@@ -56,6 +56,7 @@ import {
 } from "./equipment"
 import { ashtray, cardDeck, consoleDesk, lateralFile, mug, printoutStack, workTable, acousticPanel } from "./furniture"
 import { PLOT } from "./mats"
+import { radioUnit } from "./radio-gear"
 import { OPERATOR_CHAIR, OPERATOR_DESK_H, stageListeningRoom } from "./listening"
 
 // North side of storey 3 (z < −1.75): data control, keypunch, UPS, the glazed machine room with its secure zone (tape
@@ -291,8 +292,9 @@ export async function buildNorth(s: S3, pause: () => Promise<void>) {
   for (const z of [-10.0, -9.3]) recorderConsole(b, 11.18, z, W)
   // Operator desk facing the booth window under the single pendant.
   const od = workTable(b, 8.3, -13.95, 0, 3.0, 0.86, undefined, OPERATOR_DESK_H)
-  scope(b, 7.2, od, -14.2, S)
-  scope(b, 7.65, od, -14.15, S + 0.12)
+  // Two rack receivers stacked on the desk's left end (a monitor receiver on a spectrum display unit).
+  radioUnit(b, T(7.35, od, -14.12, S + 0.06), { maker: "WATKINS-JOHNSON", model: "WJ-8718 HF RECEIVER", w: 0.48, h: 0.13, d: 0.36, meters: ["SIGNAL", "LINE"], knobs: ["BFO", "BANDWIDTH", "RF GAIN", "AF GAIN"] })
+  radioUnit(b, T(7.35, od + 0.13, -14.14, S + 0.06), { maker: "IOPS / PHS", model: "SPECTRUM DISPLAY SD-2", w: 0.48, h: 0.15, d: 0.34, meters: ["LEVEL dB"], knobs: ["SPAN", "CENTER", "SWEEP", "INTENSITY"], panel: "#a9aaa2" })
   screenLamp(s, [7.4, od + 0.15, -13.85], 0.6)
   placeModels(b, "telephone", [{ position: [9.9, od, -13.8], yaw: S - 0.4, collide: false, blob: 0 }])
   s.doc("sticky_dish", [7.32, od, -13.64], [0, 1, 0], { rotation: 0.3 })

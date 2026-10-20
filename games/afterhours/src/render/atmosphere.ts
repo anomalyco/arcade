@@ -249,7 +249,7 @@ export function createAtmosphere(ctx: WorldContext) {
     { key: "env.intensity", label: "Fog skylight (ambient + reflections)", group: "Fog", unit: "×", min: 0, max: 3, step: 0.01, value: 1 },
     { key: "env.interior", label: "Skylight left indoors", group: "Fog", min: 0, max: 1, step: 0.01, value: 0.06 },
     { key: "env.interiorGI", label: "Interior bounce (ambient GI)", group: "Fog", min: 0, max: 0.2, step: 0.001, value: 0.035 },
-    { key: "env.windowLight", label: "Night light through windows", group: "Fog", unit: "×", min: 0, max: 20, step: 0.1, value: 4 },
+    { key: "env.windowLight", label: "Night light through windows", group: "Fog", unit: "×", min: 0, max: 20, step: 0.1, value: 6 },
     { key: "fog.interiorTone", label: "Interior haze brightness", group: "Fog", min: 0, max: 0.05, step: 0.0005, value: 0.004 },
     { key: "env.ground", label: "Ground bounce", group: "Fog", min: 0, max: 1, step: 0.01, value: 0.12 },
   ])
