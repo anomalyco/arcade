@@ -1,6 +1,7 @@
 import { makeSceneShader, type SceneHooks } from "./shaders"
 import { compileShaderModuleWithLog, type PassContext, type ScenePass } from "./pass-graph"
 import { packVerts } from "./mesh"
+import type { SpotShadowCaster } from "./shadows/spot-shadows"
 
 /** Append UVs without changing the established compact vertex ABI. */
 export function packTexturedVerts(vertices: ArrayLike<number>, uv: ArrayLike<number>): ArrayBuffer {
@@ -132,6 +133,10 @@ export class TexturedMeshPass implements ScenePass {
         pass.setBindGroup(1, draw.group); pass.setVertexBuffer(0, draw.buffer); pass.draw(draw.count)
       }
     }
+  }
+  /** Opaque imported casters only; cutout foliage needs a matching alpha-aware depth shader. */
+  shadowCasters(): SpotShadowCaster[] {
+    return this.draws.filter(d=>!d.blend && !d.masked).map(d=>({buffer:d.buffer,count:d.count,stride:32}))
   }
   dispose() { for (const draw of this.draws) { draw.buffer.destroy(); draw.uniform.destroy() }; this.draws = [] }
 }

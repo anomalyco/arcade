@@ -1,5 +1,5 @@
 import { plugin } from "bun"
-import { mkdir, readFile } from "node:fs/promises"
+import { mkdir, readFile, readdir, unlink } from "node:fs/promises"
 import { resolve } from "node:path"
 import * as THREE from "three"
 import { packVerts, MAT } from "@arcade/kit/gpu/mesh"
@@ -189,4 +189,6 @@ for(const [kind,s] of Object.entries(streams)) {
 const paint=await Bun.build({entrypoints:[resolve(source,"src/world/forest/paint.ts")],target:"browser",minify:true})
 await Bun.write(`${out}/paint.js`,await paint.outputs[0]!.text())
 await Bun.write(`${out}/scene.json`,JSON.stringify({version:1,files,treeCount,lamps:ctx.lamps,colliders:ctx.colliders,sources},null,2))
+const used=new Set(Object.values(files).flat())
+for(const file of await readdir(out)) if(/^(solid|ground|foliage|fence|glass|undergrowth|impostors)-\d+\.bin\.gz$/.test(file) && !used.has(file)) await unlink(resolve(out,file))
 console.log("Baked",out,treeCount,"trees")
