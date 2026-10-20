@@ -49,6 +49,7 @@ import { DEFAULT_NIGHT_LIGHT_SETTINGS, type OutbreakNightLightSettings } from ".
 import { DEFAULT_DETAIL_SETTINGS, type OutbreakDetailSettings } from "./details/settings"
 import { DEFAULT_SECRETS_SETTINGS, type OutbreakSecretsSettings } from "./secrets/settings"
 import { DEFAULT_PROP_SETTINGS, type OutbreakPropSettings } from "./props/settings"
+import { DEFAULT_INVENTORY_SETTINGS, type InventorySettings } from "./inventory/settings"
 import { DEFAULT_HOUSE_VARIETY_SETTINGS, syncHouseVariety, type HouseVarietySettings } from "./houses/settings"
 import { DEFAULT_VEGETATION_SETTINGS, type OutbreakVegetationSettings } from "./vegetation/settings"
 import { survivorAimTuning, type SurvivorAimTuning } from "./survivor"
@@ -248,6 +249,7 @@ export type OutbreakSubsystemMap = {
   hordes: OutbreakHordeSettings
   look: OutbreakLookTrims
   props: OutbreakPropSettings
+  inventory: InventorySettings
   blood: OutbreakBloodSettings
   nightLights: OutbreakNightLightSettings
   details: OutbreakDetailSettings
@@ -300,6 +302,7 @@ export type OutbreakSettings = OutbreakSubsystemMap &
   OutbreakHordeSettings &
   OutbreakLookTrims &
   OutbreakPropSettings &
+  InventorySettings &
   OutbreakBloodSettings &
   OutbreakNightLightSettings &
   OutbreakDetailSettings &
@@ -335,6 +338,7 @@ export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "hordes",
   "look",
   "props",
+  "inventory",
   "blood",
   "nightLights",
   "details",
@@ -384,6 +388,7 @@ export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
     hordes: { ...DEFAULT_OUTBREAK_HORDES },
     look: { ...DEFAULT_LOOK_TRIMS },
     props: { ...DEFAULT_PROP_SETTINGS },
+    inventory: { ...DEFAULT_INVENTORY_SETTINGS },
     blood: { ...DEFAULT_BLOOD_SETTINGS },
     nightLights: { ...DEFAULT_NIGHT_LIGHT_SETTINGS },
     details: { ...DEFAULT_DETAIL_SETTINGS },

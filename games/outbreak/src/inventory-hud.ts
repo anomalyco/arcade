@@ -11,6 +11,7 @@ import { DEFAULT_CRAFTING_SETTINGS, type CraftingSettings } from "./crafting/set
 import { DEFAULT_DISCOVERY_SETTINGS, type DiscoverySettings } from "./discovery/settings"
 import { DEFAULT_DOCK_SETTINGS, Dock, type DockSettings } from "./hud/dock"
 import { hudMotion, snapToPixels } from "./hud/motion"
+import { inventoryPresenter } from "./inventory/hooks"
 import { PromptView } from "./hud/prompt"
 import { FINISHER_GLYPH, promptGlyph, promptGlyphHtml } from "./hud/prompt-glyphs"
 import { blockedByBoards, BOARD_UP, boardPrompt, MAX_PLANKS } from "./prompt-clarity/board"
@@ -171,6 +172,11 @@ export class InventoryHud {
 
   /** What a digit (0-based) does now: take from the open strip, swap a pack slot in, or select a hotbar slot. */
   digit(index: number, view: SessionView): Partial<Command> {
+    const bag = inventoryPresenter()
+    if (bag?.open && !this.craftOpen) {
+      const meant = bag.digit(index, view)
+      if (meant) return meant
+    }
     if (this.craftOpen) {
       if (index >= view.progression.craftable().length) return {}
       // A craft that cannot be made here leaves the panel open beside its notice.
@@ -184,14 +190,22 @@ export class InventoryHud {
   }
 
   togglePack(): void {
-    this.packOpen = !this.packOpen
     this.craftOpen = false
+    // Lab › Inventory › Style: any style but Today opens its own bag instead of the pack chip (AR-94).
+    const bag = inventoryPresenter()
+    if (bag?.owns()) {
+      this.packOpen = false
+      bag.toggle()
+      return
+    }
+    this.packOpen = !this.packOpen
   }
 
   toggleCraft(): void {
     this.craftOpen = !this.craftOpen
     this.craftAtBench = false
     this.packOpen = false
+    inventoryPresenter()?.close()
   }
 
   /** E at a workbench: opens its recipe board (the same panel, drawing on the bench's stock too). */
@@ -199,12 +213,14 @@ export class InventoryHud {
     this.craftOpen = true
     this.craftAtBench = true
     this.packOpen = false
+    inventoryPresenter()?.close()
   }
 
   close(): boolean {
+    const bag = inventoryPresenter()?.close() ?? false
     const was = this.packOpen || this.craftOpen
     this.packOpen = this.craftOpen = false
-    return was
+    return was || bag
   }
 
   /** Call every drawn frame after the camera update. */

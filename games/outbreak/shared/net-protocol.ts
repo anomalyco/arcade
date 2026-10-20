@@ -38,6 +38,7 @@ import type { MeleeSwingPhase } from "@arcade/kit/human-melee"
 import { createSurvivor, type CoopSim } from "./coop-sim"
 import { outbreakSharedFeatures } from "./feature-registry"
 import type { InteractActionId, VaultState } from "./interact"
+import { packInventoryOp, unpackInventoryOp } from "./inventory-ops/wire"
 import { isLoadoutId, isSurvivorVariant } from "./loadout"
 import type { ChannelView, Notice, PickMode } from "./types"
 import type { Command, Survivor } from "./sim-types"
@@ -107,12 +108,17 @@ export function encodeClientIn(
     const aim = packAngle(t[2] ?? 0)
     const flags = (t[3] ?? 0) & FLAG_MAX
     const hasExtra =
-      t.length > 4 && ((t[4] !== undefined && t[4] !== -1) || Boolean(t[5]) || Boolean(t[6]) || Boolean(t[7]))
+      t.length > 4 &&
+      ((t[4] !== undefined && t[4] !== -1) || Boolean(t[5]) || Boolean(t[6]) || Boolean(t[7]) || Boolean(t[8]))
     const next = !hasExtra && i + 1 < count ? c[i + 1] : undefined
     const nextHasExtra =
       next &&
       next.length > 4 &&
-      ((next[4] !== undefined && next[4] !== -1) || Boolean(next[5]) || Boolean(next[6]) || Boolean(next[7]))
+      ((next[4] !== undefined && next[4] !== -1) ||
+        Boolean(next[5]) ||
+        Boolean(next[6]) ||
+        Boolean(next[7]) ||
+        Boolean(next[8]))
     const repeatNext =
       Boolean(
         next &&
@@ -127,7 +133,9 @@ export function encodeClientIn(
       w.u8(((t[4] ?? -1) + 1) & 0xff)
       w.u8(((t[5] ?? 0) + 128) & 0xff)
       w.u8((t[6] ?? 0) & 0xff)
-      w.u8((t[7] ?? 0) & 0xff)
+      // The pick byte's top bit says an inventory move follows (picks stay under 0x80).
+      w.u8(((t[7] ?? 0) & 0x7f) | (t[8] ? 0x80 : 0))
+      if (t[8]) w.uvar(t[8] >>> 0)
     }
     if (repeatNext) i++
   }
@@ -174,8 +182,11 @@ function decodeBinaryIn(bytes: Uint8Array): ClientMsg | null {
         const slot = r.u8() - 1
         const delta = r.u8() - 128
         const action = r.u8()
-        const pick = r.u8()
-        if (pick) tuple = [mx, my, aim, flags, slot, delta, action, pick]
+        const pickByte = r.u8()
+        const pick = pickByte & 0x7f
+        const inv = pickByte & 0x80 ? r.uvar() : 0
+        if (inv) tuple = [mx, my, aim, flags, slot, delta, action, pick, inv]
+        else if (pick) tuple = [mx, my, aim, flags, slot, delta, action, pick]
         else tuple = [mx, my, aim, flags, slot, delta, action]
       } else {
         tuple = [mx, my, aim, flags]
@@ -321,8 +332,10 @@ export function packCommand(c: Command): CommandTuple {
   const t: CommandTuple = [q3(c.mx), q3(c.my), unpackAngle(packAngle(c.aim)), flags]
   const action = (c.interactAction ? Math.max(0, ACTIONS.indexOf(c.interactAction)) : 0) | (c.crouch ? CROUCH_BIT : 0)
   const pick = c.pick ? PICKS.indexOf(c.pick.mode) * 8 + c.pick.index + 1 : 0
-  if (c.hotbarSlot !== undefined || c.hotbarDelta || action || pick) t.push(c.hotbarSlot ?? -1, c.hotbarDelta ?? 0, action)
-  if (pick) t.push(pick)
+  const inv = c.inv ? packInventoryOp(c.inv) : 0
+  if (c.hotbarSlot !== undefined || c.hotbarDelta || action || pick || inv) t.push(c.hotbarSlot ?? -1, c.hotbarDelta ?? 0, action)
+  if (pick || inv) t.push(pick)
+  if (inv) t.push(inv)
   return t
 }
 
@@ -345,6 +358,8 @@ export function unpackCommand(t: unknown): Command {
   if (actionByte & CROUCH_BIT) c.crouch = true
   const pick = num(a[7], 0, PICKS.length * 8) | 0
   if (pick > 0) c.pick = { mode: PICKS[Math.floor((pick - 1) / 8)]!, index: (pick - 1) % 8 }
+  const inv = unpackInventoryOp(a[8])
+  if (inv) c.inv = inv
   return c
 }
 
@@ -359,6 +374,7 @@ export const commandOps: InputOps<Command> = {
     if (earlier.hotbarSlot !== undefined && later.hotbarSlot === undefined) out.hotbarSlot = earlier.hotbarSlot
     if (earlier.hotbarDelta) out.hotbarDelta = (later.hotbarDelta ?? 0) + earlier.hotbarDelta
     if (earlier.pick && !later.pick) out.pick = earlier.pick
+    if (earlier.inv && !later.inv) out.inv = earlier.inv
     return out
   },
   standIn(last) {
@@ -379,7 +395,8 @@ export const commandOps: InputOps<Command> = {
       c.hotbarSlot !== undefined ||
       Boolean(c.hotbarDelta) ||
       Boolean(c.interactAction) ||
-      Boolean(c.pick)
+      Boolean(c.pick) ||
+      Boolean(c.inv)
     )
   },
 }

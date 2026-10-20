@@ -4,6 +4,7 @@ import type { AIConfig, OutbreakAISubsystem } from "./ai"
 import type { MeleeTuning, OutbreakCombatSubsystem, SurvivorCombatState } from "./combat"
 import type { FlashlightState, FlashlightTuning } from "./flashlight"
 import type { InteractActionId, InteractActorState, InteractionRegistry, InteractTarget, PeekInfo } from "./interact"
+import type { InventoryOp } from "./inventory-ops/types"
 import type { Town } from "./map"
 import type { OutbreakProgression } from "./progression/progression"
 import type { WorldContext } from "./progression/types"
@@ -82,6 +83,8 @@ export type Command = {
   horn?: boolean
   /** A digit while a strip is open (container, stash, the recipe panel or pack). */
   pick?: { mode: PickMode; index: number }
+  /** An inventory move from the open bag (`shared/inventory-ops`, AR-94). */
+  inv?: InventoryOp
 }
 
 export type Survivor = {

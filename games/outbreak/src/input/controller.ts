@@ -6,6 +6,7 @@ import { LocalSession, type Command } from "../../shared/session"
 import type { BotsLabController } from "../bots-lab"
 import { CRAFT_KEY } from "../crafting/settings"
 import type { InventoryHud } from "../inventory-hud"
+import { inventoryPresenter } from "../inventory/hooks"
 import { BOARD_UP } from "../prompt-clarity/board"
 import { MAP_KEY, type OutbreakMap } from "../map/map"
 import type { NetSession } from "../net-session"
@@ -89,6 +90,8 @@ export class OutbreakInputController {
       if (code === MAP_KEY) map.toggle()
       else if (code === "Escape") map.close()
       else map.key(code)
+      // The open bag (AR-94) takes G for what the cursor is over, before G's drop-held and bundle.
+      if (inventoryPresenter()?.key(code, session.view)) return
       if (code === "KeyG") this.holds.set(code, { at: performance.now(), fired: false })
     }
     this.input.onWheel = (delta) => {
@@ -184,9 +187,10 @@ export class OutbreakInputController {
         ...(idx === 0 && hotbarSlot !== undefined ? { hotbarSlot } : {}),
         ...(idx === 0 && hotbarDelta !== 0 ? { hotbarDelta } : {}),
       }
+      const shaped = inventoryPresenter()?.shape(rawCommand, idx === 0) ?? rawCommand
       const effectiveCommand = applyVehicleStunt(
         step.dt,
-        session instanceof LocalSession ? botsLab.stepBeforeSessionUpdate(step.dt, session, rawCommand) : rawCommand,
+        session instanceof LocalSession ? botsLab.stepBeforeSessionUpdate(step.dt, session, shaped) : shaped,
       )
       session.update(step.dt, effectiveCommand, settings.dayCycle.timeScale, settings)
       stepped += step.dt
