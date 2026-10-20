@@ -31,6 +31,8 @@ import {
   angleSpring,
   backpedalling,
   gaitAt,
+  locomotion,
+  newLocomotion,
   stepHash,
   stiffness,
   strafeFootOffset,
@@ -39,9 +41,10 @@ import {
   strafeLegGoal,
   strafeSeparate,
   strafeStance,
+  type Locomotion,
 } from "@arcade/kit/human-locomotion"
 import { humanProfiles, profileHands, profileTorso, type HumanProfile } from "@arcade/kit/human-profile"
-import { kneePole, poseArms, poseUnarmedArms, unarmedHands, type BonePose } from "@arcade/kit/human-pose"
+import { kneePole, poseArms, poseLegs, poseUnarmedArms, unarmedHands, type BonePose } from "@arcade/kit/human-pose"
 import { meleeTorsoModulation, poseMeleeArms } from "@arcade/kit/human-melee"
 import { shambleHandsFK, shambleTorsoModulation } from "@arcade/kit/shamble-crouch"
 import { angleDiff } from "@arcade/kit/sim/geom"
@@ -80,6 +83,8 @@ export const survivorAimTuning = {
   aimHoldTime: 2.5,
   aimRecoil: 1.0,
   aimTwistLimit: 1.05,
+  /** 0 = Today (the survivor's own stride clock), 1 = the shared rig's contact solver (`locomotion`), as Blackout. */
+  legs: 1,
   sideStepTurn: humanProfiles.soldier.sideStepTurn,
   strafeHipTurn: humanProfiles.soldier.strafeHipTurn,
   crossoverSpeed: humanProfiles.soldier.crossoverSpeed,
@@ -93,6 +98,7 @@ export const survivorAimControls: LabControl[] = [
   { key: "aimHoldTime", label: "Hold time", group: "Survivor aim", min: 0.5, max: 5.0, step: 0.1, unit: "s" },
   { key: "aimRecoil", label: "Recoil", group: "Survivor aim", min: 0, max: 2.5, step: 0.05, unit: "×" },
   { key: "aimTwistLimit", label: "Twist limit · rad", group: "Survivor aim", min: 0.45, max: 1.55, step: 0.05, unit: "rad" },
+  { key: "legs", label: "Legs", group: "Survivor strafe", options: [{ label: "Today", value: 0 }, { label: "Shared rig", value: 1 }] },
   { key: "sideStepTurn", label: "Side-step hip turn · rad", group: "Survivor strafe", min: 0, max: 0.8, step: 0.05, unit: "rad" },
   { key: "strafeHipTurn", label: "Strafe hip turn · rad", group: "Survivor strafe", min: 0.3, max: 1.05, step: 0.05, unit: "rad" },
   { key: "crossoverSpeed", label: "Crossover speed · m/s", group: "Survivor strafe", min: 1.2, max: 5, step: 0.1, unit: "m/s" },
@@ -354,6 +360,8 @@ export class Survivor {
     stepLift: 1,
     stepToe: 0,
   }))
+  /** The shared rig's contact state (Lab › Survivor strafe › Legs = Shared rig); plan positions on a flat floor. */
+  private loco: Locomotion = newLocomotion()
   private stepCount = 0
   private phase = 0
   private yaw = 0
@@ -531,6 +539,88 @@ export class Survivor {
     this.mag = null
     this.meleeWeaponFrame = null
     this.meleeTip = null
+    this.loco = newLocomotion()
+  }
+
+  /**
+   * One fixed step of the shared contact solver (`locomotion`, as Blackout's soldiers): stride clock, overstretch
+   * release, reversal redirects, stop catches and turn-on-the-spot steps. It works on a flat floor; terrain is added
+   * under each foot when posing (`sharedFootGround`). Returns the feet's spread along the legs for the arm swing.
+   */
+  private stepSharedLegs(
+    h: number, sx: number, sy: number, svx: number, svy: number, rawVx: number, rawVy: number, aim: number,
+    teleport: boolean, profile: HumanProfile, support: (x: number, z: number) => number, moving: number, runBlend: number,
+  ): number {
+    const L = this.loco
+    const distance = Math.hypot(sx - L.x, sy - L.y)
+    if (teleport) {
+      L.legYaw = aim
+      L.acx = L.acy = 0
+    } else {
+      const ka = 1 - Math.exp(-h * 10)
+      L.acx += ((svx - L.svx) / h - L.acx) * ka
+      L.acy += ((svy - L.svy) / h - L.acy) * ka
+    }
+    L.x = sx; L.y = sy; L.vx = rawVx; L.vy = rawVy; L.aim = aim; L.svx = svx; L.svy = svy
+    L.gait += ((Math.hypot(svx, svy) > 0.35 ? 1 : 0) - L.gait) * Math.min(1, h * 6)
+    L.seed = this.seed
+    const was = [L.feet[0].planted, L.feet[1].planted]
+    locomotion(L, h, distance, teleport, profile)
+    const speed = Math.hypot(svx, svy)
+    for (let i = 0; i < 2; i++) {
+      const f = L.feet[i]!
+      if (!was[i] && f.planted) this.onFootfall?.(f.p[0], f.p[2], speed)
+    }
+    this.phase = L.phase
+    this.yaw = L.legYaw
+    this.backness = L.motion.backness
+    this.pelvisYaw.x = L.motion.pelvis.x
+    this.pelvisYaw.v = L.motion.pelvis.v
+    this.twist.x = L.motion.twist.x
+    this.twist.v = L.motion.twist.v
+    // Lower the hips when a planted foot on lower or higher ground would otherwise be out of reach.
+    const supportY = support(sx, sy) * 0.65 + (support(L.feet[0].p[0], L.feet[0].p[2]) + support(L.feet[1].p[0], L.feet[1].p[2])) * 0.175
+    const bobPhase = this.phase * Math.PI * 4 + (1 - runBlend) * 0.45
+    const baseHeight = supportY + HIP - 0.012 * moving - (0.021 + 0.008 * runBlend) * moving * Math.sin(bobPhase)
+    let desiredDrop = 0
+    for (let i = 0; i < 2; i++) {
+      const f = L.feet[i]!
+      if (!f.planted) continue
+      const distance = Math.min(0.72, Math.max(0, Math.hypot(f.p[0] - sx, f.p[2] - sy) - 0.10 * moving * (1 - 0.4 * runBlend)))
+      const reachY = Math.sqrt(Math.max(0, 0.825 ** 2 - distance ** 2)) + RIG.ankle + this.sharedFootGround(i, support)
+      desiredDrop = Math.max(desiredDrop, Math.max(0, Math.min(0.18, baseHeight - reachY)))
+    }
+    stepSpring(this.reachDrop, 140, 0.85, h, desiredDrop)
+    const c = Math.cos(L.legYaw), s = Math.sin(L.legYaw)
+    return (L.feet[1].p[0] - L.feet[0].p[0]) * c + (L.feet[1].p[2] - L.feet[0].p[2]) * s
+  }
+
+  /** Ground height under shared-rig foot `i`: where it stands, or eased from lift-off to landing ground in a swing. */
+  private sharedFootGround(i: number, support: (x: number, z: number) => number): number {
+    const L = this.loco, f = L.feet[i]!
+    if (f.planted) return support(f.p[0], f.p[2])
+    const target = L.motion.targets[i]!, u = L.motion.swings[i]!
+    const g0 = support(f.lift[0], f.lift[2]), g1 = support(target[0], target[2])
+    // A bump between lift-off and landing (a kerb, a porch edge) lifts the swing over it.
+    const bump = Math.max(0, support((f.lift[0] + target[0]) / 2, (f.lift[2] + target[2]) / 2) - Math.max(g0, g1))
+    return g0 + (g1 - g0) * smoother(u) + bump * 1.72 * Math.sin(Math.PI * u) ** 2 * (1 - u) * 2.3
+  }
+
+  /** Shared-rig legs (`poseLegs`) posed on a flat floor under each foot, then raised onto that foot's ground. */
+  private poseSharedLegs(pelvis: Frame, support: (x: number, z: number) => number): { th: Frame[]; sh: Frame[]; ft: Frame[]; toe: Frame[] } {
+    const g = [this.sharedFootGround(0, support), this.sharedFootGround(1, support)]
+    const out = { th: [] as Frame[], sh: [] as Frame[], ft: [] as Frame[], toe: [] as Frame[] }
+    let posed: ReturnType<typeof poseLegs> | null = null
+    let posedAt = NaN
+    for (let i = 0; i < 2; i++) {
+      if (posedAt !== g[i]) {
+        posed = poseLegs(this.loco, { ...pelvis, p: [pelvis.p[0], pelvis.p[1] - g[i]!, pelvis.p[2]] })
+        posedAt = g[i]!
+      }
+      const up = (f: Frame): Frame => ({ ...f, p: [f.p[0], f.p[1] + g[i]!, f.p[2]] })
+      out.th.push(up(posed!.th[i]!)); out.sh.push(up(posed!.sh[i]!)); out.ft.push(up(posed!.ft[i]!)); out.toe.push(up(posed!.toe[i]!))
+    }
+    return out
   }
 
   draw(
@@ -651,6 +741,7 @@ export class Survivor {
       this.holdRemaining = 0
     }
 
+    const legacyLegs = Math.round(tune.legs ?? 1) === 0
     const steps = teleport ? 1 : Math.max(1, Math.ceil(dt / (1 / 60) - 1e-4))
     const h = dt / steps
     const dAimStep = totalDAim / steps
@@ -679,6 +770,10 @@ export class Survivor {
       this.svx = vx
       this.svy = vy
 
+      let footFwd: number
+      if (!legacyLegs) {
+        footFwd = this.stepSharedLegs(h, sx, sy, vx, vy, p.vx, p.vy, p.aim - totalDAim + dAimStep * step, teleport && step === 1, activeProfile, support, moving, runBlend)
+      } else {
       const effTwistLimit = isPistol ? twistLimit : 1.05
       const rel = angleDiff(travelDir, p.aim)
       const hipLimit = Math.min(strafeHipLimit(speed, activeProfile), effTwistLimit)
@@ -803,8 +898,9 @@ export class Survivor {
       stepSpring(this.reachDrop, 140, 0.85, h, desiredDrop)
       const fdx = this.feet[1]!.p[0] - this.feet[0]!.p[0]
       const fdz = this.feet[1]!.p[2] - this.feet[0]!.p[2]
-      const footFwd = fdx * c + fdz * s
+      footFwd = fdx * c + fdz * s
       stepSpring(this.twist, 160, 0.85, h, clamp(footFwd * 0.32, -0.17, 0.17) * (profile?.twistScale ?? 1.2))
+      }
       const gait = smooth((speed - 0.15) / 0.35)
       const footNorm = clamp(footFwd / Math.max(0.35, curGait.stride * 0.44), -1, 1)
       const armLead = 0.22 + 1.06 * runBlend
@@ -855,8 +951,9 @@ export class Survivor {
     stepSpring(this.stealth, 260, 1, dt, p.crouching ? 1 : 0)
     const stealthT = clamp(this.stealth.x, 0, 1)
     const crouchDrop = crouchT * 0.055 + stealthT * STEALTH_DROP
+    const gaitFeet = legacyLegs ? this.feet : this.loco.feet
     const footSupport =
-      (support(this.feet[0]!.p[0], this.feet[0]!.p[2]) + support(this.feet[1]!.p[0], this.feet[1]!.p[2])) * 0.5
+      (support(gaitFeet[0]!.p[0], gaitFeet[0]!.p[2]) + support(gaitFeet[1]!.p[0], gaitFeet[1]!.p[2])) * 0.5
     const curSupportY = support(p.x, p.y) * 0.65 + footSupport * 0.35
     const bobPhase = this.phase * Math.PI * 4 + (1 - runBlend) * 0.45
     const bobOffset = (0.021 + 0.008 * runBlend) * gait * Math.sin(bobPhase)
@@ -1201,6 +1298,7 @@ export class Survivor {
     draw(0, pelvis)
     draw(1, torso)
     draw(2, head)
+    const sharedLegs = legacyLegs ? null : this.poseSharedLegs(pelvis, support)
     for (let i = 0; i < 2; i++) {
       const side = i ? 1 : -1
       const foot = this.feet[i]!
@@ -1235,7 +1333,12 @@ export class Survivor {
       let shin: Frame
       let boot: Frame
       let toeFrame: Frame
-      if (i === 1 && stompRaw > 0) {
+      if (sharedLegs && !(i === 1 && stompRaw > 0)) {
+        thigh = sharedLegs.th[i]!
+        shin = sharedLegs.sh[i]!
+        boot = sharedLegs.ft[i]!
+        toeFrame = sharedLegs.toe[i]!
+      } else if (i === 1 && stompRaw > 0) {
         const ac = Math.cos(p.aim)
         const as = Math.sin(p.aim)
         const stompFwd = 0.24 * stompWindup + 0.38 * (1 - stompWindup)

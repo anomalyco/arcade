@@ -7,6 +7,7 @@ import { at, dot, HIP, type Frame, type V3 } from "@arcade/kit/rig"
 import { animate, newAvatar } from "../../src/game/anim"
 import { Survivor as OutbreakSurvivor } from "../../../outbreak/src/survivor"
 import { fixturesDir, loadMocap, parseArgs } from "./common"
+import { load100Style, parse100Style } from "./open-mocap"
 import { buildCrossoverRunReference, buildSideStepReference } from "./strafe-reference"
 
 // Strafe audit: feet, pelvis, torso, knees and arms while travel and aim disagree.
@@ -351,6 +352,69 @@ async function mocapSamples(clip: "walkLeft" | "walkRight" | "walkBack" | "walk"
   return { dt: bvh.dt, samples: out }
 }
 
+/**
+ * 100STYLE Neutral side-step (SW walk, SR run) and backward (BW, BR) takes (CC BY 4.0): the steadiest stretch whose
+ * travel stays within 30° of `target` (chest frame, + = to the right), scaled to metres (hip height = HIP).
+ * The subject keeps facing the capture area's front, so the chest is the aim, as in a game strafe.
+ */
+async function styleSamples(take: string, target: number, minSeconds = 1.6) {
+  const clip = parse100Style(await load100Style(take))
+  const F = clip.frames
+  const minY = Math.min(...F.map(f => Math.min(f.Foot_L![1], f.Foot_R![1], f.Toes_L![1], f.Toes_R![1])))
+  const sc = HIP / (mean(F.map(f => f.Hips![1])) - minY)
+  const m = F.map(f => Object.fromEntries(Object.entries(f).map(([k, v]) => [k, [v[0] * sc, (v[1] - minY) * sc, v[2] * sc] as V3])) as Record<string, V3>)
+  const yawBar = (l: V3, r: V3) => Math.atan2(-(r[0] - l[0]), r[2] - l[2])
+  const half = Math.round(0.25 / clip.dt)
+  const ok: boolean[] = m.map((_, k) => {
+    if (k < half || k >= m.length - half) return false
+    const a = m[k - half]!.Hips!, b = m[k + half]!.Hips!
+    const v = Math.hypot(b[0] - a[0], b[2] - a[2]) / (2 * half * clip.dt)
+    const rel = wrap(Math.atan2(b[2] - a[2], b[0] - a[0]) - yawBar(m[k]!.UpperArm_L!, m[k]!.UpperArm_R!))
+    return v > 0.35 && Math.abs(wrap(rel - target)) < 30 * RAD
+  })
+  let best = { s: 0, e: 0, v: 0 }
+  for (let k = 0; k < ok.length;) {
+    if (!ok[k]) { k++; continue }
+    let e = k
+    while (e < ok.length && ok[e]) e++
+    if ((e - k) * clip.dt >= minSeconds) {
+      const v = Math.hypot(m[e - 1]!.Hips![0] - m[k]!.Hips![0], m[e - 1]!.Hips![2] - m[k]!.Hips![2]) / ((e - 1 - k) * clip.dt)
+      if (v > best.v) best = { s: k, e, v }
+    }
+    k = e
+  }
+  if (best.e === 0) throw new Error(`${take}: no steady stretch toward ${target * DEG}°`)
+  return { dt: clip.dt, speed: r2(best.v), samples: framesToSamples(m.slice(best.s, best.e), clip.dt) }
+}
+
+/** Metre-scale, floor-at-zero mocap frames (retargetBvhFrame's joint names) to strafe samples, aim = chest. */
+function framesToSamples(frames: Record<string, V3>[], frameDt: number): Sample[] {
+  const meanY = mean(frames.map(p => p.Hips![1]))
+  const yawBar = (l: V3, r: V3) => Math.atan2(-(r[0] - l[0]), r[2] - l[2])
+  const out: Sample[] = []
+  const footY = (p: Record<string, V3>, s: "L" | "R") => Math.min(p[`Foot_${s}`]![1], p[`Toes_${s}`]![1])
+  const floor = { L: Math.min(...frames.map(p => footY(p, "L"))), R: Math.min(...frames.map(p => footY(p, "R"))) }
+  for (let k = 1; k < frames.length - 1; k++) {
+    const p = frames[k]!, prev = frames[k - 1]!, next = frames[k + 1]!
+    const local = retargetBvhFrame(p, meanY, 0)
+    const pelvisYaw = yawBar(p.UpperLeg_L!, p.UpperLeg_R!)
+    const chestYaw = yawBar(p.UpperArm_L!, p.UpperArm_R!)
+    const scale = HIP / Math.max(0.4, meanY)
+    const off: V3 = [p.Hips![0] * scale, 0, p.Hips![2] * scale]
+    const joints = {} as RigJointMap
+    for (const id of POSE_JOINTS) joints[id] = [local[id][0] + off[0], local[id][1], local[id][2] + off[2]]
+    const vx = (next.Hips![0] - prev.Hips![0]) / (2 * frameDt), vz = (next.Hips![2] - prev.Hips![2]) / (2 * frameDt)
+    const footSpeed = (s: "L" | "R") => Math.hypot(next[`Toes_${s}`]![0] - prev[`Toes_${s}`]![0], next[`Toes_${s}`]![2] - prev[`Toes_${s}`]![2]) / (2 * frameDt)
+    const toeYaw = (s: "L" | "R") => Math.atan2(p[`Toes_${s}`]![2] - p[`Foot_${s}`]![2], p[`Toes_${s}`]![0] - p[`Foot_${s}`]![0])
+    out.push({
+      t: k * frameDt, aim: chestYaw, travel: Math.atan2(vz, vx), speed: Math.hypot(vx, vz), joints,
+      planted: [footY(p, "L") - floor.L < 0.04 && footSpeed("L") < 0.35, footY(p, "R") - floor.R < 0.04 && footSpeed("R") < 0.35],
+      pelvisYaw, torsoYaw: chestYaw, footYaw: [toeYaw("L"), toeYaw("R")],
+    })
+  }
+  return out
+}
+
 function mocapCycle(samples: Sample[], frameDt: number, count = 16): CycleFrames | null {
   const tds: number[] = []
   for (let k = 1; k < samples.length; k++) if (samples[k]!.planted[0] && !samples[k - 1]!.planted[0]) tds.push(k)
@@ -410,6 +474,18 @@ for (const [name, clip, note] of [
 ] as const) {
   const m = await mocapSamples(clip, "chest")
   mocap[name] = { metrics: strafeMetrics(m.samples), cycle: mocapCycle(m.samples, m.dt), note }
+}
+
+for (const [name, take, target, note] of [
+  ["100style side-walk R", "Neutral_SW", 90, "100STYLE side-step walk to the right"],
+  ["100style side-walk L", "Neutral_SW", -90, "100STYLE side-step walk to the left"],
+  ["100style side-run R", "Neutral_SR", 90, "100STYLE side-step run to the right"],
+  ["100style side-run L", "Neutral_SR", -90, "100STYLE side-step run to the left"],
+  ["100style back-walk", "Neutral_BW", 180, "100STYLE backward walk"],
+  ["100style back-run", "Neutral_BR", 180, "100STYLE backward run"],
+] as const) {
+  const m = await styleSamples(take, target * RAD)
+  mocap[name] = { metrics: strafeMetrics(m.samples), cycle: mocapCycle(m.samples, m.dt), note: `${note} (${m.speed} m/s)` }
 }
 
 const authored = {

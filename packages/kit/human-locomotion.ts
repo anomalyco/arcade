@@ -58,6 +58,19 @@ export function newMotion(x: number, y: number, aim: number) {
   }
 }
 
+/** A fresh standing `Locomotion` state for adapters that keep their own avatar (Outbreak's survivor). */
+export function newLocomotion(x = 0, y = 0, aim = 0, seed = 0): Locomotion {
+  const foot = (side: number): Foot => {
+    const p: V3 = [x + Math.cos(aim + side * 1.2) * 0.15, 0, y + Math.sin(aim + side * 1.2) * 0.15]
+    return { p, yaw: aim, pitch: 0, planted: true, lift: [...p], liftYaw: aim }
+  }
+  return {
+    x, y, vx: 0, vy: 0, aim, svx: 0, svy: 0, acx: 0, acy: 0, legYaw: aim, gait: 0, duty: 0.54, phase: 0,
+    back: false, turning: false, unarmed: true, seed, feet: [foot(-1), foot(1)], motion: newMotion(x, y, aim),
+    leanX: spring(), leanY: spring(), dip: spring(), hitX: spring(), hitY: spring(),
+  }
+}
+
 /** Smooth Froude transition, using leg length rather than overall character height. `back` (0..1 or a flag) shortens
  * backpedal strides; `sideStep` (0..1, from `strafeStance`) shortens side-steps so the stance never opens past reach. */
 export function gaitAt(speed: number, back: boolean | number = false, sideStep = 0, animation: HumanProfile = humanProfiles.soldier) {

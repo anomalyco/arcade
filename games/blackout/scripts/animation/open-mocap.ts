@@ -128,6 +128,10 @@ export const STYLE_SHA: Record<string, string> = {
   Crouched_FW: "e4242640c94810a6c5f1df0d0d0bb78c8ffaed4bb79a7569ba3391e57a34ac8a",
   DragLeftLeg_FW: "33a6b97e05e162cb3013ff9bfd626a5163795d413c68bfee8cd58bb3ee9d4610",
   Swat_FW: "82f4d6ae94a07aafd7da538bbed8761f85518564e5ed311fad1ed81ff511f3f9",
+  Neutral_SW: "07225ded6df11c4eb97a7b42e6121a9e985ae7e8d0f56f9ca971429f9c507ad9",
+  Neutral_SR: "804046d4d29109515fa3f6268f85873bab1dc3d08b87dabbe644eddbf00aec71",
+  Neutral_BW: "cfa225ff3a29a38d11ecd1b72fa0d917ca6c3dc3b24b3d09a4cb5c28ee9dc5b9",
+  Neutral_BR: "5661951058a5ec50e02a6708a5f9d3ccd09ff768051584cac9611aee8402ea13",
 }
 
 /** One 100STYLE take (e.g. "Zombie_FW": FW forward walk, FR forward run, ID idle), cached under fixtures. */
