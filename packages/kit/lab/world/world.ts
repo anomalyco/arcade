@@ -152,6 +152,7 @@ export function createDebugWorld(context: LabContext): DebugWorld {
   let spots: SpotShadows | null = null
   let casters: { buffer: GPUBuffer; count: number; stride: number } | null = null
   const spotBound = new Set<Renderer>()
+  let lastSpotUpdate = 0
   const rebuild = () => {
     geometry = buildWorld({ ...state, vegetation })
     lights.setBoxes(geometry.boxes)
@@ -160,6 +161,10 @@ export function createDebugWorld(context: LabContext): DebugWorld {
     spots?.picker.invalidate()
     dirty = false
   }
+
+  const spotTelemetry = () => (spots && state.lightModel === "physical" && state.spotShadows > 0
+    ? JSON.stringify({ slots: spots.picker.slots.map((s) => s.id), rendered: spots.rendered })
+    : "0")
 
   const shadowSpots = (r: Renderer, scene: readonly SceneLight[]) => {
     if (!spots) spots = new SpotShadows(device, { count: state.spotShadows })
@@ -178,7 +183,10 @@ export function createDebugWorld(context: LabContext): DebugWorld {
       else if (l.beam) candidates.push({ id: l.id, pos, axis: l.beam.axis, cosOuter: Math.cos(Math.min(beamReach(l.beam.halfAngle, BEAM_PROFILES[state.beamProfile]), 1.45)), range: l.r, intensity: l.r * l.r })
     }
     const enc = device.createCommandEncoder({ label: "world spot shadows" })
-    const rebind = spots.update(enc, candidates, [stage.eye[0]!, stage.eye[1]!, stage.eye[2]!], 1 / 60, (id) => lights.indexOf(id), [casters])
+    const now = performance.now()
+    const dt = Math.min(Math.max((now - lastSpotUpdate) / 1000, 0), 0.25)
+    lastSpotUpdate = now
+    const rebind = spots.update(enc, candidates, [stage.eye[0]!, stage.eye[1]!, stage.eye[2]!], dt, (id) => lights.indexOf(id), [casters])
     device.queue.submit([enc.finish()])
     if (rebind) spotBound.clear()
     if (!spotBound.has(r)) {
@@ -326,7 +334,7 @@ export function createDebugWorld(context: LabContext): DebugWorld {
     },
     telemetry() {
       const clock = worldClock(state.hour)
-      return `World · ${LOOK_PRESETS[look.preset]?.label ?? look.preset} · ${weather.preset} · ${clock.hour.toFixed(1)} h {"lights":${lights.lightCount},"vertices":${geometry?.vertices ?? 0},"particles":${context.particles.count ?? 0}}`
+      return `World · ${LOOK_PRESETS[look.preset]?.label ?? look.preset} · ${weather.preset} · ${clock.hour.toFixed(1)} h {"lights":${lights.lightCount},"vertices":${geometry?.vertices ?? 0},"particles":${context.particles.count ?? 0},"spotShadows":${spotTelemetry()}}`
     },
   }
   return world

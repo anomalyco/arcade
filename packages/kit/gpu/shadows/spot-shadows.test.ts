@@ -57,6 +57,16 @@ describe("spot shadow picker", () => {
     expect(p.update([lamp(1, 0.5, 6)], [0.1, 1.7, 0], 1 / 60)[0]!.dirty).toBe(false)
   })
 
+  test("turning the pool on with the camera still snaps the maps in (a settings change is not motion)", () => {
+    const p = new SpotShadowPicker(0)
+    p.update([lamp(1, 0, 6)], [0, 1.7, 0], 1 / 60)
+    p.resize(2)
+    expect(p.update([lamp(1, 0, 6)], [0, 1.7, 0], 1 / 60)[0]).toMatchObject({ id: 1, weight: 1, dirty: true })
+    // A lamp that comes into range later still fades in.
+    const slots = p.update([lamp(1, 0, 6), lamp(2, 3, 6)], [0, 1.7, 0], 1 / 60)
+    expect(slots[1]).toMatchObject({ id: 2, weight: 0 })
+  })
+
   test("zero slots is Today: nothing is assigned", () => {
     const p = new SpotShadowPicker(0)
     expect(p.update([lamp(1, 0, 6)], [0, 1.7, 0], 1 / 60)).toEqual([])

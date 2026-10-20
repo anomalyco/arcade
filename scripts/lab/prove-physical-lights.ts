@@ -55,7 +55,8 @@ try {
   })
   const errors: string[] = []
   page.on("pageerror", (e) => errors.push(e.message))
-  page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()) })
+  // Chrome reports uncaptured WebGPU validation errors as console warnings.
+  page.on("console", (m) => { if (m.type() === "error" || (m.type() === "warning" && /WebGPU|GPU/.test(m.text()))) errors.push(m.text()) })
   await page.goto(`http://127.0.0.1:${port}/arcade/lab/?section=world&bench`)
   await page.waitForFunction(() => Boolean((window as any).lab && (window as any).fx?.stage))
   const adapter = await page.evaluate(() => (window as any).fx.adapter)
@@ -86,11 +87,14 @@ try {
   })
 
   const report: Record<string, unknown> = { recordedAt: new Date().toISOString(), adapter, size: [3456, 1894], rounds }
+  const telemetry: Record<string, string | null> = {}
+  report.telemetry = telemetry
   for (const scene of scenes) {
     for (const [name, preset] of Object.entries(variants)) {
       await show(scene, preset)
       await page.waitForTimeout(150)
       await page.locator("canvas").first().screenshot({ path: resolve(out, `${scene.name}-${name}.png`) })
+      telemetry[`${scene.name}-${name}`] = await page.evaluate(() => (window as any).lab.context.world?.telemetry() ?? null)
     }
     const runs: Record<Variant, number[]> = { today: [], physical: [], shadowed: [] }
     for (let r = 0; r <= rounds; r++) {
