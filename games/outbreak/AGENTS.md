@@ -210,3 +210,9 @@
   `registerBraceSource`, `recentBreaches`, `portalWear`; the AI reads it through `bashRules` in `shared/ai.ts`. The
   damaged leaf is drawn by `src/world/door-leaf.ts` (`setDoorLeafOverride`). How it works:
   `../../docs/outbreak-discovery.md#door-breaches-ar-97`. Tests: `tests/breach.test.ts`; clip: `bun scripts/breach-clip.ts`.
+- Inventory (AR-94): `shared/inventory-ops/` is the `inv` command (move, drop, give between hands, pack, belt, what you
+  face, the floor and a teammate; ledger transactions only) and `src/inventory/` draws what Tab opens per Lab ›
+  Inventory › Style (Today, A Ground Pack, B Attaché Case, C Survivor Sheet), reaching the central input and HUD only
+  through `src/inventory/hooks.ts`. How it works: `../../docs/outbreak-hud.md#inventory-styles-ar-94`. Stills and the
+  Ground Pack clip: `bun scripts/inventory-styles-proof.ts --clip` (via `hivemind run --kind browser`). Tests:
+  `tests/inventory-ops.test.ts`, `tests/inventory-styles.test.ts`.

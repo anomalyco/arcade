@@ -52,18 +52,28 @@ async function sim(page: Page, fn: string) {
   }, fn)
 }
 
-/** Night in Ash: the bedroom dresser searched and stocked, the survivor carrying a mixed kit, a teammate beside them. */
+let ready = false
+
+/**
+ * Night in Ash: the bedroom dresser searched and stocked, the survivor carrying a mixed kit, a teammate beside them.
+ * The world is built once (a reset is the slow part on a busy worker); each style restocks the same scene.
+ */
 async function scene(page: Page, style: string) {
-  await page.evaluate(async (style) => {
-    const h = (window as any).__arcadeHarness
-    h.freeze(true)
-    h.reset(7)
-    h.setLab("timeScale", 0)
-    h.setLab("zombieCount", 0)
-    h.setLab("hour", 21.5)
-    h.setLab("inventoryStyle", style)
-    for (let i = 0; i < 4; i++) await h.step()
-  }, style)
+  await page.evaluate(
+    async ({ style, first }) => {
+      const h = (window as any).__arcadeHarness
+      if (first) {
+        h.freeze(true)
+        h.reset(7)
+        h.setLab("timeScale", 0)
+        h.setLab("zombieCount", 0)
+        h.setLab("hour", 21.5)
+      }
+      h.setLab("inventoryStyle", style)
+      for (let i = 0; i < 4; i++) await h.step()
+    },
+    { style, first: !ready },
+  )
   const dresser = await sim(
     page,
     `const c = view.containers.find((x) => x.kind === "dresser" && x.buildingId === "ash") ?? view.containers.find((x) => x.buildingId === "ash")
@@ -73,6 +83,9 @@ async function scene(page: Page, style: string) {
   await sim(
     page,
     `const a = view.actorId
+     for (const id of [a + "/hotbar", a + "/pack"]) { const st = ledger.store(id); for (let i = 0; i < st.slots.length; i++) if (st.slots[i] && st.slots[i].item !== "flashlight" && st.slots[i].item !== "pistol") st.slots[i] = null; st.rev = ++ledger.rev }
+     for (const item of ["ammo", "plank", "scrap", "battery"]) { const n = ledger.count(a + "/belt", item); if (n) ledger.apply({ kind: "drain", store: a + "/belt", item, count: n }) }
+     for (const d of [...ledger.stores.keys()].filter((k) => k.startsWith("drop:"))) ledger.deleteStore(d)
      for (const [item, count] of [["knife", 1], ["medkit", 2], ["toolbox", 1], ["ammo", 14], ["plank", 3], ["scrap", 4], ["battery", 1], ["noisemaker", 1]]) ledger.apply({ kind: "grant", actor: a, item, count })
      session.sim.progression.project(session.slot)`,
   )
@@ -84,9 +97,12 @@ async function scene(page: Page, style: string) {
   await sim(
     page,
     `const s = session.sim; const me = session.slot.survivor
-     const mate = s.addSurvivor("mate-1", 1); Object.assign(mate.survivor, { x: me.x + 1.3, y: me.y - 0.2, aim: Math.PI, flashlightOn: true }); s.rebuildSolids()
+     const mate = s.slots.find((x) => x.id === "mate-1") ?? s.addSurvivor("mate-1", 1)
+     Object.assign(mate.survivor, { x: me.x + 1.3, y: me.y - 0.2, aim: Math.PI, flashlightOn: true }); s.rebuildSolids()
+     const n = ledger.count("mate-1/belt", "ammo"); if (n) ledger.apply({ kind: "drain", store: "mate-1/belt", item: "ammo", count: n })
      me.flashlightOn = true`,
   )
+  ready = true
   await step(page, 10)
 }
 
@@ -108,8 +124,13 @@ async function still(page: Page, name: string, caption: string) {
   console.log(`${name}: ${caption}`)
 }
 
+const t0 = performance.now()
+const log = (msg: string) => console.log(`[${((performance.now() - t0) / 1000).toFixed(1)}s] ${msg}`)
+
 async function styleStill(page: Page, style: string, caption: string) {
+  log(`${style}: staging`)
   await scene(page, style)
+  log(`${style}: open`)
   await page.keyboard.press("Tab")
   await step(page, 50)
   const machete = await centerOf(page, `#inv .inv-cell[data-item="machete"]`)
@@ -151,7 +172,9 @@ async function groundClip(page: Page) {
       await page.screenshot({ path: resolve(dir, `f${String(frame++).padStart(4, "0")}.png`) })
     }
   }
+  log("clip: staging")
   await scene(page, "ground")
+  log("clip: recording")
   await frames(10)
   await page.keyboard.press("Tab")
   await frames(26)
@@ -193,7 +216,8 @@ try {
     if (m.type() === "error") errors.push(m.text())
   })
   await page.goto(`http://127.0.0.1:${port}/?seed=7&bench`)
-  await page.waitForFunction(() => (window as any).__arcadeHarness?.ready, null, { timeout: 120_000 })
+  await page.waitForFunction(() => (window as any).__arcadeHarness?.ready, null, { timeout: 300_000 })
+  log("harness ready")
   const adapter = await page.evaluate(() => (window as any).__arcadeHarness.adapterInfo)
 
   const styles: [string, string][] = [
