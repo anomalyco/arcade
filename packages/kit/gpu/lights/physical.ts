@@ -1,5 +1,6 @@
 import type { LabControl } from "../../lab-panel"
 import { spotShadowWgsl } from "../shadows/spot-shadows"
+import { DARKWOOD_BEAM, beamWgsl } from "./beam"
 import type { SceneHooks } from "../shaders"
 
 /**
@@ -84,6 +85,11 @@ export type PhysicalLightOptions = {
   aaNormal?: string
   /** Sample spot shadow maps (`gpu/shadows/spot-shadows.ts`, scene bindings 20–22) for the lights that hold one. */
   spotShadows?: boolean
+  /**
+   * WGSL \`vec4f\` expressions for the shared torch profile of \`SceneLight.beam\` lights (\`packBeamProfile\`'s two
+   * halves, e.g. a custom uniform). Default: Outbreak's Darkwood beam baked as constants.
+   */
+  beam?: { a: string; b: string }
 }
 
 /** WGSL: BRDF, light shape and environment functions. Needs `common` (Frame, Light, PI) and `ambientAt` before use. */
@@ -148,11 +154,13 @@ fn pbrFalloff(d: f32, r: f32, s: f32) -> f32 {
 }
 
 /**
- * A light's 3D spot cone (Light.cone.w >= 2.5): axis xz in cone.xy with y pointing down, cos outer in cone.z, cos inner
- * in cone.w − 3. Returns 1 for other lights (the kit's plan cones and game-shaped cones keep their own code).
+ * A light's 3D spot cone (Light.cone.w in [2.5, 4.5)): axis xz in cone.xy with y pointing down, cos outer in cone.z,
+ * cos inner in cone.w − 3; or a torch beam (cone.w >= 4.5: axis x, z, y in cone.xyz, half-angle cone.w − 5) shaped by the shared beam profile
+ * (\`lights/beam.ts\`). Returns 1 for other lights (the kit's plan cones and game-shaped cones keep their own code).
  */
 fn pbrCone(L: Light, ldir: vec3f, spill: f32) -> f32 {
   if (L.cone.w < 2.5) { return 1.0; }
+  if (L.cone.w >= 4.5) { return kitBeamProfile(kitBeamAngle(dot(-ldir, L.cone.xzy)) / (L.cone.w - 5.0), pbrBeamA(), pbrBeamB()); }
   let axis = vec3f(L.cone.x, -sqrt(max(1.0 - dot(L.cone.xy, L.cone.xy), 0.0)), L.cone.y);
   let c = smoothstep(L.cone.z, L.cone.w - 3.0, dot(-ldir, axis));
   return mix(spill, 1.0, c);
@@ -187,9 +195,13 @@ export function physicalLightHooks(opts: PhysicalLightOptions = {}): SceneHooks 
   const s = createPhysicalLightSettings(opts.settings)
   const knobs = opts.knobs ?? `vec4f(${num(s.specularAA)}, ${num(s.sphereLights)}, ${num(s.envSpecular)}, ${num(s.spill)})`
   const env = opts.env ?? "mix(ambientAt(dir), ambientAt(n), rough * rough)"
+  const d = DARKWOOD_BEAM
+  const beam = opts.beam ?? { a: `vec4f(${[d.inner, d.core, d.coreWidth, d.spill].map(num).join(", ")})`, b: `vec4f(${num(d.spillWidth)}, ${num(d.rings)}, 0.0, 0.0)` }
   return {
-    declarations: `${physicalLightWgsl}${opts.spotShadows ? spotShadowWgsl : ""}
+    declarations: `${physicalLightWgsl}${beamWgsl}${opts.spotShadows ? spotShadowWgsl : ""}
 fn pbrKnobs() -> vec4f { return ${knobs}; }
+fn pbrBeamA() -> vec4f { return ${beam.a}; }
+fn pbrBeamB() -> vec4f { return ${beam.b}; }
 fn pbrEnvRadiance(dir: vec3f, rough: f32, n: vec3f) -> vec3f { return ${env}; }
 /** Split-sum sky reflection along the GGX dominant direction (Lagarde), with specular occlusion. */
 fn pbrEnvSpecular(n: vec3f, V: vec3f, rough: f32, f0: vec3f, ao: f32) -> vec3f {

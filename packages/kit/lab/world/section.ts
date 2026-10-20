@@ -83,6 +83,7 @@ export function createWorldSection(context: LabContext, world: DebugWorld): LabS
     { key: "envSpecular", label: "Sky reflections", group: "Clock & light", subsection: "Physical", type: "range", min: 0, max: 2, step: 0.05, unit: "×" },
     { key: "sphereLights", label: "Fixture size in highlights", group: "Clock & light", subsection: "Physical", type: "range", min: 0, max: 3, step: 0.05, unit: "×" },
     { key: "specularAA", label: "Specular anti-aliasing", group: "Clock & light", subsection: "Physical", type: "range", min: 0, max: 2, step: 0.05, unit: "×" },
+    { key: "beamProfile", label: "Flashlight beam", group: "Clock & light", subsection: "Physical", type: "select", options: [{ value: "darkwood", label: "Darkwood (Outbreak)" }, { value: "hotCore", label: "Hot core" }] },
     { key: "spotShadows", label: "Spot shadow maps", group: "Clock & light", subsection: "Physical", type: "range", min: 0, max: MAX_SPOT_SHADOWS, step: 1 },
     { key: "flicker", label: "Lamp flicker and failure", group: "Clock & light", type: "range", min: 0, max: 2, step: 0.05, unit: "×" },
     { key: "playing", label: "Animate", group: "Clock & light" },

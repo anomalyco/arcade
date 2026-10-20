@@ -361,11 +361,12 @@ const STEADY: FlickerSample = { level: 1, warmth: 1 }
  * straight under the fixture, so Today and Physical read at the same overall level and differ in shape: inverse-square
  * pools, 3D cones, GGX highlights. Plan cones become 3D spots aimed slightly down.
  */
-export function physicalWorldLight(l: SceneLight, spot?: SceneLight["spot"]): SceneLight {
+export function physicalWorldLight(l: SceneLight, spot?: SceneLight["spot"], beam?: SceneLight["beam"]): SceneLight {
   const dn = Math.max(l.h, 1.25)
   const { cone, ...rest } = l
   const out: SceneLight = { ...rest, power: l.power * Math.PI * dn * dn * (0.1 + 2.6 / (1 + dn * dn * 0.3)) }
-  if (spot) out.spot = spot
+  if (beam) out.beam = beam
+  else if (spot) out.spot = spot
   else if (cone) {
     const a = Math.acos(cone[2])
     out.spot = { axis: [cone[0], -0.12, cone[1]], cosOuter: cone[2], cosInner: Math.cos(a * 0.6) }
@@ -401,13 +402,18 @@ export function worldLights(clock: WorldClock, opts: { lampPower: number; headli
   }
   if (opts.physical) {
     // The streetlamp's head throws a downward cone (Aiden's sodium: 1.1 rad, penumbra 0.55) and the porch fitting a
-    // wide shaded one, so neither lights the wall above it; the key and the lamp inside stay points.
+    // wide shaded one, so neither lights the wall above it; the key and the lamp inside stay points. The flashlight is
+    // a torch beam (Outbreak's profile, `gpu/lights/beam.ts`) tipped 0.3 rad down.
     const street = k > 0.01 ? 1 : -1
     const porch = k > 0.01 && opts.porch ? 3 : -1
     for (let i = 0; i < lights.length; i++) {
       const spot = i === street ? { axis: [0, -1, 0] as const, cosOuter: Math.cos(1.1), cosInner: Math.cos(1.1 * 0.45) }
         : i === porch ? { axis: [0, -1, 0] as const, cosOuter: Math.cos(1.3), cosInner: Math.cos(0.7) } : undefined
-      lights[i] = physicalWorldLight(lights[i]!, spot)
+      const l = lights[i]!
+      const beam = l.id === WORLD_LIGHT_ID.flashlight && l.cone
+        ? { axis: [l.cone[0] * Math.cos(0.3), -Math.sin(0.3), l.cone[1] * Math.cos(0.3)] as const, halfAngle: Math.acos(l.cone[2]) }
+        : undefined
+      lights[i] = physicalWorldLight(l, spot, beam)
     }
   }
   const [ox, oz] = WORLD_ORIGIN

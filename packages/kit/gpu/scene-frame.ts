@@ -1,6 +1,7 @@
 import type { Rect } from "../sim/geom"
 import { LIGHT_FLOATS, MAX_LIGHTS, MAX_OCCLUDERS, OCC_FLOATS } from "../limits"
 import type { FloorMap } from "./level"
+import { beamCone } from "./lights/beam"
 import { physicalCone } from "./lights/physical"
 import { FRAME_FLOATS } from "./shaders"
 
@@ -26,6 +27,11 @@ export type SceneLight = {
    * Takes the cone slot instead of `cone`; only physical-light hooks shade it.
    */
   spot?: { axis: readonly [number, number, number]; cosOuter: number; cosInner: number }
+  /**
+   * Physical torch (`lights/beam.ts`): axis (any direction) and the half-angle the shared beam profile scales
+   * to. Takes the cone slot; only physical-light hooks shade it.
+   */
+  beam?: { axis: readonly [number, number, number]; halfAngle: number }
   /** Skip shadows (cheap fill light). */
   unshadowed?: boolean
   /** Stable id, for finding the light's frame index after packing (`SceneLights.indexOf`), e.g. its spot shadow map. */
@@ -79,7 +85,7 @@ export class SceneLights {
         }
       }
       const cnt = l.unshadowed ? 0 : no - off
-      const cone = l.spot ? physicalCone(l.spot.axis, l.spot.cosOuter, l.spot.cosInner) : [l.cone?.[0] ?? 0, l.cone?.[1] ?? 0, l.cone?.[2] ?? 0, l.cone ? 1 : 0]
+      const cone = l.beam ? beamCone(l.beam.axis, l.beam.halfAngle) : l.spot ? physicalCone(l.spot.axis, l.spot.cosOuter, l.spot.cosInner) : [l.cone?.[0] ?? 0, l.cone?.[1] ?? 0, l.cone?.[2] ?? 0, l.cone ? 1 : 0]
       L.set([l.x, l.h, l.y, l.r, l.color[0], l.color[1], l.color[2], l.power, ...cone, off, cnt, l.size ?? 0.3, -1], nl * LIGHT_FLOATS)
       nl++
     }
