@@ -11,6 +11,8 @@ import { clearLine, distToRect, type Rect } from "@arcade/kit/sim/geom"
 import { TICK_DT } from "../shared/clock"
 import { solidRects, type Door } from "../shared/map"
 import { LocalSession } from "../shared/session"
+import type { SessionTuning } from "../shared/sim-types"
+import { DEFAULT_STAMINA_TUNING } from "../shared/stamina"
 import { spawnSpecial } from "../shared/specials/specials"
 import { SPECIAL_BRUTE, SPECIAL_RUNNER } from "../shared/specials/kinds"
 import { boxOf, distToBox } from "../shared/vehicles"
@@ -47,6 +49,8 @@ export type DoorScenarioResult = {
 }
 
 const REACH = 1.1
+/** Chained dogs stay quiet: a bark pulls the dead off the survivor, and this measures only how they get through doors. */
+const QUIET_DOGS = { ...DEFAULT_STAMINA_TUNING, dogSense: 0 } as SessionTuning
 const WINDOW = 2
 const MIN_PROGRESS = 0.1
 const BODY = 0.28
@@ -163,7 +167,7 @@ export function runDoorScenario(
       }
     }
     Object.assign(p, { x: home.x, y: home.y, vx: 0, vy: 0, health: 100 })
-    session.update(TICK_DT, { mx: 0, my: 0, aim: 0, interact: false }, 0)
+    session.update(TICK_DT, { mx: 0, my: 0, aim: 0, interact: false }, 0, QUIET_DOGS)
     if (doorOpenedAt < 0 && door.open) doorOpenedAt = (t + 1) * TICK_DT
     trace?.((t + 1) * TICK_DT, zs, session, door)
     const slot = t % histLen

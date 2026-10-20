@@ -555,6 +555,7 @@ export class CoopSim implements OutbreakSim {
           forbidBehind: this.ai.config.directorPacing > 0,
           behindDist: 16,
         }),
+      () => !paced || living() < wanted,
     )
     if (res.changed) {
       for (const feature of outbreakSharedFeatures.list()) {

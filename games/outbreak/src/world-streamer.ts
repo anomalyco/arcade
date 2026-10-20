@@ -21,6 +21,8 @@ import {
   type Prop,
   type Town,
 } from "../shared/map"
+import { BARE_ROOMS, TILED_ROOMS, type HouseStyle, type RoomType } from "../shared/houses/style"
+import { houseVariety, houseVarietyKey } from "../shared/houses/variety"
 import { supportHeight, terrainVertex } from "../shared/terrain"
 import {
   generateWorldChunk,
@@ -32,6 +34,8 @@ import {
 } from "../shared/world"
 import { archSettings, house, houseFrontage, housePlanting, plant, plantFootprints, type HouseDecayState } from "./architecture"
 import { emitGravelDriveway, emitLawnPatches, emitPathTufts, emitStreetVerge, emitTreeCollar } from "./yard"
+import { emitStyledHouse } from "./houses/exterior"
+import { emitStyledGrounds, emitStyledLawn, groundKeepOut } from "./houses/grounds"
 import { buildLevel, type OriginChunk } from "./level"
 import { bakedRoomLamp, DEFAULT_OUTBREAK_LIGHTING, resolveLampLight, stampOutbreakVertexTone } from "./lighting"
 import { addLampPool, wallGrid } from "./lightbake"
@@ -162,10 +166,12 @@ export function emitPoiArchitecture(m: Mesh, b: Building, id: number, town: Town
   // Exterior brick foundation plinth around walls
   for (const barrier of town.barriers) {
     const [a, c, d, f] = barrier.rect
-    if (a < x - 0.05 || d > r + 0.05 || c < z - 0.05 || f > e + 0.05 || barrier.kind === "fence") continue
+    if (a < x - 0.05 || d > r + 0.05 || c < z - 0.05 || f > e + 0.05 || barrier.kind === "fence" || barrier.hidden) continue
     m.box(a - 0.032, 0.025, c - 0.032, d + 0.032, 0.33, f + 0.032, hex(0x523027), MAT.brick)
     m.box(a - 0.036, 0.33, c - 0.036, d + 0.036, 0.37, f + 0.036, hex(0x6e685d), MAT.lit)
   }
+  // Styled homes (AR-79) draw their own shell: `houses/exterior.ts`.
+  if (b.style) return
 
   if (arch === "house" || arch === "ranch" || arch === "cottage" || arch === "cabin" || arch === "church") {
     // Pitched shingle gable roof (all tagged MAT.roof, aux = id so it cuts away cleanly when inside)
@@ -389,7 +395,7 @@ function neighbourhood(chunk: WorldChunk, town: Town, mode: WorldMode): { buildi
     for (let dx = -1; dx <= 1; dx++) {
       if (!dx && !dy) continue
       const cx = chunk.cx + dx, cy = chunk.cy + dy
-      const key = `${town.seed}:${town.houseSeed}:${cx}:${cy}:${mode}`
+      const key = `${town.seed}:${town.houseSeed}:${cx}:${cy}:${mode}:${houseVarietyKey()}`
       let n = neighbourChunks.get(key)
       if (n) neighbourChunks.delete(key)
       else {
@@ -411,7 +417,16 @@ function neighbourhood(chunk: WorldChunk, town: Town, mode: WorldMode): { buildi
  * lot gets lawn patches, walkway and driveway tufts and gravel. Seeded per lot. Plants become template placements;
  * the rest goes to `mainScratch` (porch roof is cut with the building) or `opaqueScratch`.
  */
-function emitStreamedLot(b: Building, id: number, chunk: WorldChunk, town: Town, mode: WorldMode, x0: number, z0: number, x1: number, z1: number): void {
+/** A styled home's floor colour and `floor` kind per room: themed boards, tiled wet rooms, bare concrete garages. */
+function styledFloor(s: HouseStyle, type: RoomType): [number, number] {
+  if (s.condition === "burnt") return [0x2a2622, 2]
+  if (s.condition === "construction") return [0x8a7656, 2]
+  if (BARE_ROOMS.has(type)) return [0x6c6a64, 1]
+  if (TILED_ROOMS.has(type)) return [[0x8a8f86, 0x9a9384, 0x7c8488, 0x8e8478][(s.trim + s.roofColor) % 4]!, 1]
+  return [[0x5d442c, 0x4f3a26, 0x6a4e32, 0x5a4a3a][(s.roofColor >> 3) % 4]!, 2]
+}
+
+function emitStreamedLot(b: Building, id: number, chunk: WorldChunk, town: Town, mode: WorldMode, x0: number, z0: number, x1: number, z1: number, overgrowth: readonly [number, number, number, number, number][] = []): void {
   const be = b.rect[3]
   const lotSeed = (Math.imul(town.houseSeed + 0x9e37, 0x85ebca6b) ^ Math.imul(chunk.cx, 0x27d4eb2f) ^ Math.imul(chunk.cy, 0x165667b1)) >>> 0
   const street = (x: number, z: number) => {
@@ -434,6 +449,28 @@ function emitStreamedLot(b: Building, id: number, chunk: WorldChunk, town: Town,
     trees.push(...near.trees)
     for (const o of chunk.buildings) if (o !== b) others.push(o)
     const clear = (r: Rect, px: number, pz: number, m: number) => px < r[0] - m || px > r[2] + m || pz < r[1] - m || pz > r[3] + m
+    if (b.style) {
+      // Styled homes: the same planting rules kept off their porches, paths, outbuildings and yard things.
+      const keepOut = groundKeepOut(b, town)
+      const keep = (px: number, pz: number, h: number) =>
+        Math.abs(px - (x0 + x1) / 2) < CHUNK &&
+        Math.abs(pz - (z0 + z1) / 2) < CHUNK &&
+        !street(px, pz) &&
+        clear(b.rect, px, pz, 0.25) &&
+        keepOut.every((r) => clear(r, px, pz, h > 2.1 ? 1.2 : 0.3)) &&
+        others.every((o) => clear(o.rect, px, pz, h > 2.1 ? 1.2 : 0.25)) &&
+        !trees.some((t) => Math.hypot(t.x - px, t.y - pz) < (h > 2.1 ? 3.2 : 1.4))
+      const plantAt = (_m: Mesh, px: number, pz: number, h: number, radius: number, seed: number, ground: number) => {
+        yardPlacementsScratch.push({ x: px, y: ground, z: pz, tpl: yardPlantTemplate(h, radius, seed) })
+      }
+      // Derelict and burnt lots skip the trimmed foundation beds and get overgrowth instead.
+      if (b.style.condition === "kept" || b.style.condition === "construction") housePlanting(mainScratch, b, id, town, { doorX: door?.rect[0], windows, seed: lotSeed, keep, plant: plantAt, bed: (px, pz) => keepOut.every((r) => clear(r, px, pz, 0.3)) && !inBuildingFootprint(b, px, pz) })
+      for (const [px, pz, h, radius, seed] of overgrowth) if (keep(px, pz, h)) plantAt(mainScratch, px, pz, h, radius, seed, supportHeight(town, px, pz))
+      const avoid = (x: number, z: number) => street(x, z) || x < x0 || x > x1 || z < z0 || z > z1 || keepOut.some((r) => !clear(r, x, z, 0.1)) || !clear(b.rect, x, z, 0.3)
+      emitStyledLawn(() => opaqueScratch, b, town, lotSeed, avoid)
+      if (b.style.condition !== "kept") emitGravelDriveway(opaqueScratch, b, lotSeed + 177)
+      return
+    }
     housePlanting(mainScratch, b, id, town, {
       doorX: door?.rect[0],
       windows,
@@ -1012,6 +1049,20 @@ export function compileSingleWorldChunk(
     const b = chunk.buildings[id]!
     const [bx, bz, br, bend] = b.rect
     const fp = footprints[id]!
+    if (b.style) {
+      for (const room of b.style.rooms) {
+        const [fx0, fz0, fx1, fz1] = room.rect
+        const [color, kind] = styledFloor(b.style, room.type)
+        floor(opaqueScratch, fx0, fz0, fx1, fz1, 0.13, color, kind)
+      }
+      emitPoiArchitecture(mainScratch, b, id, chunkTown)
+      const out = emitStyledHouse(mainScratch, opaqueScratch, b, id, chunkTown)
+      emitStyledGrounds(opaqueScratch, b, chunkTown)
+      emitBuildingRugs(mainScratch, b, chunkTown)
+      emitInteriorDecor(mainScratch, b, chunkTown, undefined, sconces)
+      emitStreamedLot(b, id, chunk, chunkTown, mode, x0, z0, x1, z1, out.plants)
+      continue
+    }
     for (let fIdx = 0; fIdx < fp.length; fIdx++) {
       const [fx0, fz0, fx1, fz1] = fp[fIdx]!
       floor(opaqueScratch, fx0, fz0, fx1, fz1, 0.13, b.kind === "house" ? 0x5d442c : 0x89968b, b.kind === "house" ? 2 : 1)
@@ -1064,6 +1115,7 @@ export function compileSingleWorldChunk(
 
   for (let i = 0; i < chunk.barriers.length; i++) {
     const b = chunk.barriers[i]!
+    if (b.hidden) continue
     const [x, z, r, end] = b.rect
     const color = hex(b.color)
     if (b.kind === "wall") {
@@ -1510,10 +1562,23 @@ export function compileSingleWorldChunk(
     const southPad = isOriginHouse ? 1.7 : 0.1
     // "outside" chunks are skipped while the survivor stands inside this box, so it hugs the walls (no porch margin).
     const bounds = [b.rect[0] - 0.1, 0, b.rect[1] - 0.1, b.rect[2] + 0.1, 7.5, b.rect[3] + southPad] as const
+    let box: readonly [number, number, number, number] = [b.rect[0] - 0.5, b.rect[1] - 0.5, b.rect[2] + 0.5, b.rect[3] + (b.kind === "house" ? 1.7 : southPad)]
+    if (b.style) {
+      // Styled homes' porches, wraps and awnings reach out past the walls: cull on what was drawn.
+      let bx0 = box[0], bz0 = box[1], bx1 = box[2], bz1 = box[3]
+      for (let i = 0; i < rm.v.length; i += 11) {
+        const vx = rm.v[i]!, vz = rm.v[i + 2]!
+        if (vx < bx0) bx0 = vx
+        if (vx > bx1) bx1 = vx
+        if (vz < bz0) bz0 = vz
+        if (vz > bz1) bz1 = vz
+      }
+      box = [bx0, bz0, bx1, bz1]
+    }
     roofChunks.push({
       data: stampOutbreakVertexTone(rm.pack()),
       // L-plan bungalows carry the porch canopy (to e + 1.3) in their roof chunk.
-      box: [b.rect[0] - 0.5, b.rect[1] - 0.5, b.rect[2] + 0.5, b.rect[3] + (b.kind === "house" ? 1.7 : southPad)] as const,
+      box,
       cutBox: bounds,
       buildingIndex: localId,
       lastGlobalId: localId,
@@ -1791,6 +1856,7 @@ export class WorldClientStreamer {
           interior: { ...interiorSettings },
           props: { ...propDressingState },
           veg: { ...vegetationBuild },
+          variety: { ...houseVariety, weights: { ...houseVariety.weights } },
         })
         break
       }
@@ -1840,7 +1906,7 @@ export class WorldClientStreamer {
     cx: number,
     cy: number,
   ): string {
-    return `${seed}:${houseSeed}:${terrain}:${foliageDensity}:${mode}:${archSettings.houseDecay}:${archSettings.clutterDensity}:${archSettings.weathering}:${archSettings.clutterSeed}:${interiorSignature()}:${propLevelSignature()}:${vegetationSignature()}:${cx},${cy}`
+    return `${seed}:${houseSeed}:${terrain}:${foliageDensity}:${mode}:${archSettings.houseDecay}:${archSettings.clutterDensity}:${archSettings.weathering}:${archSettings.clutterSeed}:${interiorSignature()}:${propLevelSignature()}:${vegetationSignature()}:${houseVarietyKey()}:${cx},${cy}`
   }
 
   getOrCompileChunk(

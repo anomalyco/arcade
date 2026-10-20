@@ -1,13 +1,15 @@
 import { Rng } from "@arcade/kit/sim/rng"
 import { distToRect, type Rect } from "@arcade/kit/sim/geom"
 import { closetSpot } from "./discovery/closet-spot"
+import type { HouseStyle } from "./houses/style"
 
 export const CHUNK = 32
 export const SIZE = CHUNK * 3
-export type Barrier = { rect: Rect; kind: "wall" | "window" | "fence"; color: number }
+/** `hidden` barriers collide like their kind but are drawn by their owner (outbuildings, yard props, styled fences), not the generic barrier mesher. */
+export type Barrier = { rect: Rect; kind: "wall" | "window" | "fence"; color: number; hidden?: boolean }
 /** `keyed` doors start locked and open only with a key or a crowbar. */
 export type Door = { id: string; rect: Rect; open: boolean; locked?: boolean; keyed?: boolean }
-export type WindowOpening = { id: string; buildingId: string; buildingIndex: number; rect: Rect; open: boolean; openable: boolean }
+export type WindowOpening = { id: string; buildingId: string; buildingIndex: number; rect: Rect; open: boolean; openable: boolean; /** Boarded over from the start (not openable; drawn with boards). */ boarded?: boolean }
 export type Building = {
   id: string
   kind: "house" | "hardware" | "pharmacy"
@@ -17,8 +19,10 @@ export type Building = {
   color: number
   footprint?: readonly Rect[]
   chunkKey?: string
+  /** Seeded house style (form, rooms, roof, siding, porch, yard; `shared/houses/`). Absent on Today's homes and shops. */
+  style?: HouseStyle
 }
-export type Prop = { x: number; y: number; kind: "bed" | "sofa" | "table" | "shelf" | "tree" | "coffee" | "counter" | "fridge" | "dresser" | "chair" | "nightstand" | "stove" | "workbench" | "stash" | "closet"; variant: number }
+export type Prop = { x: number; y: number; kind: "bed" | "sofa" | "table" | "shelf" | "tree" | "coffee" | "counter" | "fridge" | "dresser" | "chair" | "nightstand" | "stove" | "workbench" | "stash" | "closet" | "desk" | "crib" | "washer" | "stairs" | "tub"; variant: number }
 export type Lamp = { x: number; y: number; h: number; radius: number; power: number; kind: "street" | "porch" | "room" | "window" }
 export type Town = {
   seed: number
@@ -85,7 +89,17 @@ const PROP_SHAPES = {
   workbench: [0.7, 1.6, 0.95],
   stash: [0.6, 0.9, 1.25],
   closet: [1.2, 0.6, 2.0],
+  desk: [1.3, 0.65, 0.78],
+  crib: [1.3, 0.72, 1.0],
+  washer: [0.7, 0.7, 0.92],
+  stairs: [1.0, 2.4, 1.6],
+  tub: [1.7, 0.78, 0.6],
 } as const
+
+/** Width (x), depth (z) and height of a furniture kind's collider. */
+export function propSize(kind: Exclude<Prop["kind"], "tree">): readonly [number, number, number] {
+  return PROP_SHAPES[kind]
+}
 
 const propShapeCache = new WeakMap<Prop, { rect: Rect; height: number }>()
 

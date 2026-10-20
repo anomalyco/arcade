@@ -1,5 +1,8 @@
 import { seedOf } from "@arcade/kit/sim/rng"
 import { rugSpecFor, type RugRoomKind, type RugSpec } from "@arcade/kit/textures/rug"
+import type { Rect } from "@arcade/kit/sim/geom"
+import { roomInner } from "../../shared/houses/geometry"
+import type { RoomType } from "../../shared/houses/style"
 import { CHUNK, type Building } from "../../shared/map"
 
 /**
@@ -89,6 +92,28 @@ function pickTheme(arch: string, seed: number): InteriorTheme {
   return table[table.length - 1]![0]
 }
 
+const STYLED_RUG_ROOMS: Partial<Record<RoomType, RugRoomKind>> = { living: "living", bedroom: "bedroom", nursery: "bedroom", hall: "hall", dining: "dining", study: "study", unit: "bedroom", lobby: "lobby" }
+
+/** Styled homes' theme by household (AR-79): the old and the hoarders keep heavy Mansion rooms, students plaster. */
+function styledTheme(b: Building, seed: number): InteriorTheme | null {
+  const s = b.style
+  if (!s) return null
+  if (s.condition === "burnt" || s.condition === "construction") return "plain"
+  const r = ((seed >>> 8) & 0xffff) / 0x10000
+  switch (s.household) {
+    case "elderly":
+      return r < 0.6 ? "mansion" : "village"
+    case "hoarder":
+      return r < 0.5 ? "baker" : "mansion"
+    case "student":
+      return "plain"
+    case "family":
+      return r < 0.45 ? "baker" : r < 0.75 ? "plain" : "village"
+    default:
+      return null
+  }
+}
+
 export function isResidential(b: Building): boolean {
   const a = b.archetype ?? b.kind
   return a === "house" || a === "ranch" || a === "cottage" || a === "cabin"
@@ -113,7 +138,7 @@ export function planInterior(b: Building, houseSeed: number): InteriorPlan {
   if (hit) return hit
   const seed = buildingSeed(b, houseSeed)
   const arch = b.archetype ?? b.kind
-  const theme = interiorSettings.theme >= 0 ? INTERIOR_THEMES[interiorSettings.theme] ?? "plain" : pickTheme(arch, seed)
+  const theme = interiorSettings.theme >= 0 ? INTERIOR_THEMES[interiorSettings.theme] ?? "plain" : styledTheme(b, seed) ?? pickTheme(arch, seed)
   const variant = ((seed >>> 4) & 0xfff) / 0x1000
   const rugs: RugPlacement[] = []
   const age = theme === "baker" ? 0.95 : theme === "mansion" ? 0.65 : theme === "village" ? 0.7 : 0.45
@@ -129,7 +154,24 @@ export function planInterior(b: Building, houseSeed: number): InteriorPlan {
   }
   const L = houseLayout(b)
   const { x, y, r, e, doorX, split } = L
-  if (isResidential(b)) {
+  const style = b.style
+  if (style) {
+    // Styled homes (AR-79): a rug in the middle of the rooms that take one, biggest first; none in shells and frames.
+    if (style.condition !== "burnt" && style.condition !== "construction") {
+      const rects = style.rooms.map((rm) => rm.rect)
+      const rooms = style.rooms
+        .map((rm, i) => ({ kind: STYLED_RUG_ROOMS[rm.type], inner: roomInner(rm.rect, rects), i }))
+        .filter((rm): rm is { kind: RugRoomKind; inner: Rect; i: number } => rm.kind !== undefined)
+        .sort((p, q) => (q.inner[2] - q.inner[0]) * (q.inner[3] - q.inner[1]) - (p.inner[2] - p.inner[0]) * (p.inner[3] - p.inner[1]) || p.i - q.i)
+      for (const { kind, inner } of rooms) {
+        const w = inner[2] - inner[0], d = inner[3] - inner[1]
+        const k = kind === "hall" ? 0.4 : 0.55
+        const rw = Math.min(w * k, kind === "hall" ? 1.0 : 3.2), rd = Math.min(d * (kind === "hall" ? 0.7 : k), 3.6)
+        const cx = (inner[0] + inner[2]) / 2, cz = (inner[1] + inner[3]) / 2
+        add([cx - rw / 2, cz - rd / 2, cx + rw / 2, cz + rd / 2], kind)
+      }
+    }
+  } else if (isResidential(b)) {
     if (L.lPlan) {
       // L-plan (classic Ash/Elm and procedural bungalows): living, bedroom, entry hall and kitchen.
       add([x + 1.55, e - 4.35, x + 4.42, e - 0.85], "living")
