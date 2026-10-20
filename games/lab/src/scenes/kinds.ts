@@ -132,6 +132,7 @@ export const LAB_KINDS: readonly LabKind[] = [
   { id: "blood-lights", label: "Blood & night lights", subject: "Outbreak's blood that stays in the world and its coloured night practicals", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
   { id: "details", label: "World details", subject: "Outbreak's lived-in, then-abandoned rooms and streets, and the crows, televisions and dogs that keep it alive", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
   { id: "outbreak-vegetation", label: "Trees & wind", subject: "Outbreak's trees, hedges, shrubs and grass and the gusts that move them", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
+  { id: "outbreak-houses", label: "Houses", subject: "Outbreak's seeded house styles: forms, conditions, roofs, porches, yards and households", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
   { id: "hordes", label: "Hordes", subject: "Outbreak's roaming hordes and the flow fields they follow", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
   { id: "outbreak-fire", label: "Fire & explosives", subject: "Outbreak's flamethrower, dynamite, firecrackers, molotovs, flare gun and bear traps, and the fire they light", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
   { id: "outbreak-weather", label: "Weather", subject: "Outbreak's seeded weather: rain in the light, the wet road and its puddles, lightning and thunder", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
@@ -164,6 +165,7 @@ const PAGE_STATIONS: Record<string, string> = {
   "outbreak-blood-lights": "blood-lights",
   "outbreak-details": "details",
   "outbreak-vegetation": "outbreak-vegetation",
+  "outbreak-houses": "outbreak-houses",
   brawl: "brawler",
   archers: "archer",
 }
