@@ -235,7 +235,7 @@ What moved:
   dawn 2–3.
 
 Rebased on overnight (throwables, the flashlight off the hotbar, co-op difficulty), the CI batch in
-`tests/difficulty-ramp.test.ts` (4 presets × 4 seeds × 3 nights) moved two checks. Both changed deliberately:
+`tests/difficulty-ramp.test.ts` (4 presets × 4 seeds × 3 nights) moved three checks, each changed deliberately:
 
 | CI batch | Today | Alive |
 | --- | --: | --: |
