@@ -28,8 +28,21 @@ export class Show {
     return this.runners.find((r) => r.role === "best" || r.role === "saved") ?? this.runners[0]
   }
 
+  /**
+   * A replay ends when every runner has. A generation ends once its own runners have all finished, fallen or stalled
+   * (no 5 cm of progress for 2 s: early generations kneel for the whole episode), so the next one comes up quickly. The
+   * gold pre-trained runner never holds a generation up.
+   */
   get done(): boolean {
-    return this.runners.every((r) => r.ep.done)
+    if (this.kind === "replay") return this.runners.every((r) => r.ep.done)
+    return this.runners.every((r) => r.role === "pretrained" || r.ep.done || this.stalled(r))
+  }
+
+  private progress = new Map<Runner, { x: number; t: number }>()
+
+  private stalled(r: Runner): boolean {
+    const p = this.progress.get(r)
+    return p !== undefined && r.ep.time - p.t > 2
   }
 
   /** Steps every unfinished runner by `steps` control steps. */
@@ -40,6 +53,9 @@ export class Show {
         if (r.ep.done) continue
         r.ep.step()
         any = true
+        const p = this.progress.get(r)
+        if (!p) this.progress.set(r, { x: r.ep.distance, t: r.ep.time })
+        else if (r.ep.distance > p.x + 0.05) { p.x = r.ep.distance; p.t = r.ep.time }
       }
       if (!any) break
     }
