@@ -27,7 +27,10 @@ export const outbreakWayOutSharedFeature = registerOutbreakSharedFeature<WayOutS
   },
   // The destination's hull, booth, hangar or wall and the standing roadblocks stop cars (appended after the vehicles
   // feature's rebuild).
-  onChunkSync: (sim, state) => addCarSolids(sim, state.tuning),
+  onChunkSync: (sim, state) => {
+    state.sitesKey = ""
+    addCarSolids(sim, state.tuning)
+  },
   onTopologyChanged: (sim, state) => addCarSolids(sim, state.tuning),
   pushOutSurvivor: (sim, survivor, radius, state) => {
     if (!state.tuning.wayOut) return
