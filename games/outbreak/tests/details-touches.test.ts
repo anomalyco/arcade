@@ -51,7 +51,7 @@ describe("moths and flies", () => {
     expect(a).toEqual(mothLamps(t.lamps, t.seed, 1))
     expect(a.length).toBeGreaterThan(0)
     for (const m of a) expect(t.lamps[m.lamp]!.kind).not.toBe("room")
-    expect(mothLamps(t.lamps, t.seed, 0)).toEqual([])
+    expect(mothLamps(t.lamps, t.seed, 0).every((m) => m.n === 0)).toBe(true)
   })
 
   test("they only fly while their lamp is lit, close round the fixture, and glow without darkening the colour mask", () => {
@@ -223,6 +223,9 @@ describe("life touches", () => {
       time: 5,
       town,
       hour: 22,
+      wetness: 0,
+      rain: 0,
+      puddles: 0,
       darkness: 1,
       sun: 0,
       night: 2,

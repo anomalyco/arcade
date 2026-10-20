@@ -12,7 +12,8 @@ import type { LabControl } from "@arcade/kit/lab-panel"
  * Life touches (Details · Life, `touches.ts`) are the smaller layer on top: moths at lit lamps, flies over bodies and
  * bins, eyes under the trees that catch the torch and bolt, breath in the cold; and leftover life (`leftovers.ts`,
  * `sprinkler.ts`): washing on the line, cars left with a door open, a sprinkler on its timer, brass where it fell, and
- * a town that runs down night by night. The glowing and moving ones are seen only where a real light reaches them;
+ * a town that runs down night by night; and traces of the weather (`drips.ts`, `prints.ts`): eaves and trees dripping
+ * after rain, and wet or muddy boot prints. The glowing and moving ones are seen only where a real light reaches them;
  * where things are is seeded from the town and replicated state, so co-op clients agree.
  */
 export type OutbreakDetailSettings = {
@@ -68,8 +69,12 @@ export type OutbreakDetailSettings = {
   lfSprinkler: boolean
   /** Brass from every shot stays where it fell. */
   lfCasings: boolean
-  /** The town runs down night by night: dome lights and televisions die, the sprinkler loses pressure. */
+  /** The town runs down night by night: dome lights, televisions and lit windows die, the sprinkler loses pressure. */
   lfDecay: boolean
+  /** Eaves and trees dripping after rain, ringing the puddles below (0 none, 1 default, 2 more). */
+  lfDrips: number
+  /** Wet and muddy boot prints tracked onto hard ground and floors after puddles and soaked lawns. */
+  lfPrints: boolean
 }
 
 export const DEFAULT_DETAIL_SETTINGS: OutbreakDetailSettings = {
@@ -100,6 +105,8 @@ export const DEFAULT_DETAIL_SETTINGS: OutbreakDetailSettings = {
   lfSprinkler: true,
   lfCasings: true,
   lfDecay: true,
+  lfDrips: 1,
+  lfPrints: true,
 }
 
 const GROUP = "Details"
@@ -133,4 +140,6 @@ export const detailControls: LabControl[] = [
   { key: "lfSprinkler", label: "Sprinkler at first light", group: LIFE, type: "toggle" },
   { key: "lfCasings", label: "Brass stays where it fell", group: LIFE, type: "toggle" },
   { key: "lfDecay", label: "Town runs down night by night", group: LIFE, type: "toggle" },
+  { key: "lfDrips", label: "Drips after rain", group: LIFE, min: 0, max: 2, step: 0.05, unit: "×" },
+  { key: "lfPrints", label: "Wet and muddy boot prints", group: LIFE, type: "toggle" },
 ]

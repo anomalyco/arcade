@@ -18,17 +18,18 @@ export const FLIES_PER_SITE = 9
 const fract = (v: number) => v - Math.floor(v)
 const r01 = (seed: number, i: number) => fract(Math.sin(seed * 0.000123 + i * 12.9898 + seed * 78.233) * 43758.5453)
 
-/** Where on a lamp the moths gather (just under the fixture the light comes from) and how many, by kind. */
+/**
+ * Where on each outdoor lamp the moths gather (just under the bulb the light comes from) and how many, by kind. Every
+ * street, porch and window lamp is listed, with no moths at density 0, since the drips read the lit fixtures too.
+ */
 export function mothLamps(lamps: readonly Lamp[], townSeed: number, density: number): MothLamp[] {
   const out: MothLamp[] = []
-  if (density <= 0) return out
   for (let i = 0; i < lamps.length; i++) {
     const l = lamps[i]!
     if (l.kind === "room") continue
     const seed = (Math.imul(townSeed | 0, 0x9e3779b1) ^ Math.imul(Math.round(l.x * 10), 0x85ebca6b) ^ Math.imul(Math.round(l.y * 10), 0xc2b2ae35)) >>> 0
     const base = l.kind === "street" ? 4 + r01(seed, 1) * 3 : l.kind === "porch" ? 3 + r01(seed, 1) * 2.5 : 1 + r01(seed, 1) * 2.2
-    const n = Math.min(MOTHS_PER_LAMP, Math.round(base * density))
-    if (n <= 0) continue
+    const n = Math.min(MOTHS_PER_LAMP, Math.max(0, Math.round(base * density)))
     // The bulbs the level and the streamer build (absolute heights, like the lights): the street head out on its arm,
     // the porch bulb under the canopy, a lit window's pane.
     const tint = l.kind === "street" ? ([1, 0.62, 0.3] as const) : ([1, 0.74, 0.46] as const)

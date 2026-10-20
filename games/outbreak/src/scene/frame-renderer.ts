@@ -19,6 +19,7 @@ import type { CoopView } from "../coop-view"
 import { applyOutbreakDayNight } from "../day-night"
 import { BloodStains, setCurrentBloodStains } from "../blood/stains"
 import { DetailsPresenter, setCurrentDetails } from "../details/presenter"
+import { windowPowerLeft } from "../details/leftovers"
 import { townNight, type TouchFrame } from "../details/touches"
 import { ClosetView } from "../discovery/closet"
 import { lowBatteryBeam, type BeamLook } from "../discovery/flashlight"
@@ -40,6 +41,7 @@ import type { OutbreakFrameUi } from "../hud/frame-ui"
 import { InteriorPresenter, SCONCE_LAMP_SLOT } from "../interiors"
 import { hex } from "../level"
 import { TABLE_LAMP_SLOT } from "../lightbake"
+import { setWindowPowerLeft } from "../look/lit-windows"
 import { trimLook } from "../look/world"
 import { SURVIVOR_COLOURS, type NetSession } from "../net-session"
 import { NightLightsPresenter, setCurrentNightLights } from "../night-lights/presenter"
@@ -172,6 +174,9 @@ export class OutbreakFrameRenderer {
       time: 0,
       town: session().view.town,
       hour: 12,
+      wetness: 0,
+      rain: 0,
+      puddles: 0,
       darkness: 0,
       sun: 1,
       night: 1,
@@ -411,6 +416,9 @@ export class OutbreakFrameRenderer {
       coop.otherPositions(),
     )
     const day = dayCycle(hour)
+    const night = townNight(session.sim)
+    const det = settings.details
+    setWindowPowerLeft(det.worldDetails && det.lifeTouches && det.lfDecay ? windowPowerLeft(night) : 1)
     const unseenEval = evaluateUnseenFrame(settings.unseen, day.darkness, eye ? eye.health : p.health, eye ? eye.maxHealth : p.maxHealth, settings.look)
     // Pose the bodies first: the flashlight rides the survivor's pistol or hand.
     const lift = vaultLift(p)
@@ -718,7 +726,6 @@ export class OutbreakFrameRenderer {
     })
     const bloodBatches = this.blood.collect(town, tightView, settings.blood)
     const clutterBatches = this.exteriorClutter.collectBatches(town, tightView, settings.ground)
-    const night = townNight(session.sim)
     const detailBatches = this.details.collect(town, tightView, settings.details, settings.nightLights, {
       dt: vdt,
       time,
@@ -748,6 +755,9 @@ export class OutbreakFrameRenderer {
     lf.time = time
     lf.town = town
     lf.hour = hour
+    lf.wetness = weatherNow.surface.wetness
+    lf.rain = weatherNow.sample.rain
+    lf.puddles = weatherNow.surface.puddles
     lf.darkness = day.darkness
     lf.sun = day.sun
     lf.night = night

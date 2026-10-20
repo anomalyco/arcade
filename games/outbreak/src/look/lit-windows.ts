@@ -12,6 +12,16 @@ function roll(id: string): number {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296
 }
 
+let powerLeft = 1
+
+/**
+ * Share of the lit houses whose lamp still burns (Details · Life › "Town runs down night by night" lowers it each
+ * night); the houses with the lowest rolls stay lit longest, so the lights go out house by house. 1 keeps them all.
+ */
+export function setWindowPowerLeft(share: number): void {
+  powerLeft = Math.max(0, Math.min(1, share))
+}
+
 /**
  * Whether a building still has a lamp on behind its windows at night. The town is abandoned, so most houses are
  * dark; `share` of them (by a stable roll on the id) had a lamp left on when their people fled. Presentation only.
@@ -20,7 +30,7 @@ export function windowsLit(building: Pick<Building, "id">, share: number): boole
   if (!building.id) return false
   if (share >= 1) return true
   if (share <= 0) return false
-  return roll(building.id) < share
+  return roll(building.id) < share * powerLeft
 }
 
 /** The building a front-window lamp sits outside of (window lamps hang just past the front wall), if any. */

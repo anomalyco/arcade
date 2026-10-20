@@ -75,9 +75,13 @@
   `sprinkler.ts`): washing on lines in the yards swinging with the gust field, parked cars (still where they spawned,
   empty) left with a door open and a dome light that dies over nights 2–4, a front-lawn sprinkler on a 06:36–07:18
   timer losing pressure daily, brass from every shot that stays where it fell (seeded from the shot), and televisions
-  that go dark one by one ("Town runs down night by night"; the night is `townNight`: the Way Out's shared count, else
-  the night ramp's). Tests: `tests/details.test.ts`, `tests/details-life.test.ts`, `tests/details-touches.test.ts`,
-  `tests/details-leftovers.test.ts`.
+  that go dark one by one, lit windows going out house by house (`setWindowPowerLeft` in `look/lit-windows.ts`)
+  ("Town runs down night by night"; the night is `townNight`: the Way Out's shared count, else the night ramp's).
+  Weather traces: rings from eave and tree drips that keep falling after the rain and fade as the ground dries
+  (`drips.ts`, from the weather's wetness and rain), and boot prints that stay wet behind anyone walking out of a
+  puddle or wet grass and dry in 45 s outdoors (`prints.ts`). Tests: `tests/details.test.ts`,
+  `tests/details-life.test.ts`, `tests/details-touches.test.ts`, `tests/details-leftovers.test.ts`,
+  `tests/details-weather.test.ts`.
 - Houses (AR-79, `shared/houses/` generator, `src/houses/` meshes, Lab: Backquote › World · Variety, station
   `outbreak-houses`): streamed homes outside the origin block get a form (bungalow, colonial, ranch, duplex, shotgun,
   farmhouse, trailer, apartment, corner store), a condition (kept, derelict, burnt, under construction), their own
