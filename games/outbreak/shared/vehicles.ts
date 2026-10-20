@@ -1247,9 +1247,9 @@ export class OutbreakVehicleSubsystem {
       }
     }
     if (!v.hasKeys && l.count(slot.id, "key") > 0) {
-      const beltId = `${slot.id}/belt`
-      if (l.count(beltId, "key") > 0) {
-        l.apply({ kind: "drain", store: beltId, item: "key", count: 1 })
+      const packId = `${slot.id}/pack`
+      if (l.count(packId, "key") > 0) {
+        l.apply({ kind: "drain", store: packId, item: "key", count: 1 })
         v.hasKeys = true
         v.modified = true
         progression.notify(slot, "Unlocked ignition with key", "result", "vehicle")
@@ -1257,10 +1257,10 @@ export class OutbreakVehicleSubsystem {
       }
     }
     const r = this.refuelRule()
-    const beltId = `${slot.id}/belt`
+    const packId = `${slot.id}/pack`
     let poured = 0
-    while (canPour(v, r) && l.count(slot.id, r.item) >= r.count && l.count(beltId, r.item) >= r.count) {
-      l.apply({ kind: "drain", store: beltId, item: r.item, count: r.count })
+    while (canPour(v, r) && l.count(slot.id, r.item) >= r.count && l.count(packId, r.item) >= r.count) {
+      l.apply({ kind: "drain", store: packId, item: r.item, count: r.count })
       v.fuel = r.topUp ? Math.min(v.maxFuel, v.fuel + r.fill) : Math.min(v.maxFuel, r.fill)
       v.modified = true
       poured++

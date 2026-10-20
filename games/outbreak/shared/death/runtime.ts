@@ -93,11 +93,12 @@ export function downSurvivor(sim: OutbreakSim, state: DeathState, slot: Survivor
   rec.dark = isDark(sim.hour)
 }
 
-/** Takes everything a survivor carried out of their hotbar, belt and pack. */
+/** Takes everything a survivor carried out of their hands and case. The bag they wear stays on them. */
 function strip(sim: OutbreakSim, slot: SurvivorSlot): Stack[] {
   const ledger = sim.progression.ledger
   const out: Stack[] = []
   for (const tpl of ledger.actorTemplates) {
+    if (tpl.suffix === "worn") continue
     const st = ledger.store(`${slot.id}/${tpl.suffix}`)
     if (!st) continue
     if (st.mode === "slots") {

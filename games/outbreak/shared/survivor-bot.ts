@@ -1383,20 +1383,22 @@ export class SurvivorBot {
     const pack = world.progression.ledger.store(`${this.actorId}/pack`)
     const hotbar = world.progression.hotbar(this.actorId)
     if (!pack || !hotbar) return null
-    for (let i = 0; i < pack.slots.length; i++) {
-      const s = pack.slots[i]
+    // Pack picks name the nth piece of gear in the case (`progression.packPicks`).
+    const picks = world.progression.packPicks(this.actorId)
+    for (let n = 0; n < picks.length; n++) {
+      const s = pack.slots[picks[n]!]
       if (!s) continue
       if (MELEE_WEAPON_IDS.has(s.item)) {
         const curSlot2 = hotbar.slots[2]
         if (!curSlot2 || (curSlot2.item === "crowbar" && s.item !== "crowbar")) {
-          return { packIndex: i, targetHotbarSlot: 2 }
+          return { packIndex: n, targetHotbarSlot: 2 }
         }
       }
       if ((s.item === "medkit" || s.item === "bandage") && !hotbar.slots[3]) {
-        return { packIndex: i, targetHotbarSlot: 3 }
+        return { packIndex: n, targetHotbarSlot: 3 }
       }
       if ((s.item === "bottle" || s.item === "cans") && !hotbar.slots[4]) {
-        return { packIndex: i, targetHotbarSlot: 4 }
+        return { packIndex: n, targetHotbarSlot: 4 }
       }
     }
     return null
@@ -1419,7 +1421,7 @@ export class SurvivorBot {
       if (r.part && (!benchId || ledger.count(benchId, r.part) <= 0)) continue
       const cost = ledger.rules.get(`craft:${r.id}`)?.consume ?? r.craft
       const hasMats = Object.entries(cost).every(
-        ([mat, count]) => ledger.count(`${this.actorId}/belt`, mat) + (benchId ? ledger.count(benchId, mat) : 0) >= count,
+        ([mat, count]) => ledger.count(this.actorId, mat) + (benchId ? ledger.count(benchId, mat) : 0) >= count,
       )
       if (!hasMats) continue
       if (r.id === "bandage" && (!healItem || p.health < 85)) {
@@ -1431,7 +1433,7 @@ export class SurvivorBot {
       if (r.id === "lure" && !lureItem) {
         return { craftIndex: i, label: r.label }
       }
-      if (r.id === "battery" && p.battery < 0.45 && ledger.count(`${this.actorId}/belt`, "battery") === 0) {
+      if (r.id === "battery" && p.battery < 0.45 && ledger.count(this.actorId, "battery") === 0) {
         return { craftIndex: i, label: r.label }
       }
     }
@@ -1456,7 +1458,7 @@ export class SurvivorBot {
 
   private findPackItem(world: BotWorldView, item: string): number {
     const pack = world.progression.ledger.store(`${this.actorId}/pack`)
-    return pack ? pack.slots.findIndex((s) => s?.item === item) : -1
+    return pack ? world.progression.packPicks(this.actorId).findIndex((i) => pack.slots[i]?.item === item) : -1
   }
 
   /** A point `inset` metres inside `building` from the middle of a doorway or window in its wall. */
@@ -1717,7 +1719,7 @@ export class SurvivorBot {
     }
 
     const hasKeyOrCrowbar =
-      world.progression.ledger.count(`${this.actorId}/belt`, "key") > 0 ||
+      world.progression.ledger.count(this.actorId, "key") > 0 ||
       world.progression.ledger.count(`${this.actorId}/hotbar`, "crowbar") > 0 ||
       world.progression.ledger.count(`${this.actorId}/pack`, "crowbar") > 0
 
@@ -1812,7 +1814,7 @@ export class SurvivorBot {
     const totalAmmo = pistol.loaded + pistol.reserve
     const meleeWeapon = this.hasMeleeWeaponInHotbar(world)
     const healItem = this.hasHealingItemInHotbar(world)
-    const planks = world.progression.ledger.count(`${this.actorId}/belt`, "plank")
+    const planks = world.progression.ledger.count(this.actorId, "plank")
 
     const candidates: BotUtilityScore[] = []
     const noise = () => (this.rng.next() - 0.5) * 2 * this.skill.decisionNoise * 18
@@ -2150,7 +2152,7 @@ export class SurvivorBot {
     }
     if (
       (p.batteryDepleted || p.battery < 0.15) &&
-      world.progression.ledger.count(`${this.actorId}/belt`, "battery") > 0 &&
+      world.progression.ledger.count(this.actorId, "battery") > 0 &&
       (!threats[0] || threats[0].distance > 3.5)
     ) {
       // The light rides on the shoulder: R takes the spare battery whatever is in hand.

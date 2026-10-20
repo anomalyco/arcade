@@ -21,7 +21,7 @@ function agree(r: ReturnType<typeof featureRoom>, who: (typeof r.clients)[number
   const kinds = (v: ReturnType<typeof inventoryView>) => v.slots.map((s) => s?.kind ?? null)
   expect(kinds(who.view.inventory)).toEqual(kinds(inventoryView(r.core.sim.progression, who.id)))
   expect(who.view.inventory.selectedSlot).toBe(inventoryView(r.core.sim.progression, who.id).selectedSlot)
-  expect(who.sim.progression.ledger.count(`${who.id}/belt`, "ammo")).toBe(r.core.sim.progression.ledger.count(`${who.id}/belt`, "ammo"))
+  expect(who.sim.progression.ledger.count(`${who.id}/pack`, "ammo")).toBe(r.core.sim.progression.ledger.count(`${who.id}/pack`, "ammo"))
 }
 
 describe("co-op inventory truth", () => {
@@ -50,7 +50,7 @@ describe("co-op inventory truth", () => {
     tick(12)
     agree(room, a)
     agree(room, b)
-    expect(core.sim.progression.ledger.count(`${b.id}/belt`, "ammo")).toBe(12)
+    expect(core.sim.progression.ledger.count(`${b.id}/pack`, "ammo")).toBe(12)
   })
 
   test("a fallen teammate's kit only moves on a completed hold, and the second pistol stays on the body", () => {

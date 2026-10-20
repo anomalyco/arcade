@@ -1,5 +1,6 @@
 /**
- * The bottom dock: the belt of supplies, the five hand slots and the pack. It never disappears. It dims after a few
+ * The bottom dock: the supplies you carry, the five hand slots and the case (Today's look over the Attaché Case's
+ * rules, AR-94: supplies count what is in the case, the chip counts its cells and its sheet lists the gear in it). It never disappears. It dims after a few
  * idle seconds and brightens when something in it changes, while the pack or field craft is open, and while the
  * cursor is over it. Every element is keyed and updated in place, so counts roll, new supplies slide in beside the
  * others, and the pack grows out of its chip as one shape (knobs' morph.ts) instead of swapping in.
@@ -7,13 +8,16 @@
 import { keyCapHtml } from "@arcade/kit/client/key-cap"
 import { keyLabel } from "@arcade/kit/client/controls"
 import { FIRE_ITEMS } from "../../shared/fire/fire"
-import { BELT_ITEMS, HOTBAR_SIZE, PACK_SIZE } from "../../shared/progression"
+import { BELT_ITEMS, HOTBAR_SIZE } from "../../shared/progression"
 import type { SessionView } from "../../shared/session"
-import { itemIcon } from "../discovery/icons"
+import { PORTRAITS } from "../portraits"
 import { flip, hudMotion, RollingNumber, snapToPixels, type HudMotion } from "./motion"
 
-/** Hotbar items drawn with their pencil glyph beside the label (fire & explosives, AR-62). */
+/** Hotbar items that count their charge (fire & explosives, AR-62). */
 const GLYPH_SLOTS: ReadonlySet<string> = new Set(FIRE_ITEMS)
+
+/** The item's painted portrait (AR-94), small beside its label. */
+const portrait = (item: string) => (PORTRAITS[item] ? `<img class="slot-art" src="${PORTRAITS[item]}" alt="" draggable="false" decoding="async">` : "")
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 
@@ -48,6 +52,7 @@ export class Dock {
   private readonly light: HTMLElement
   private readonly grid: HTMLElement
   private packCap: HTMLElement
+  private packSize: HTMLElement
   private open = false
   private awakeUntil = -Infinity
   private hover = false
@@ -84,11 +89,12 @@ export class Dock {
       this.slots.push({ el, item: el.querySelector(".slot-item")!, roll, key: "", count: null })
     }
     els.pack.innerHTML = `<span class="pack-cap"></span>`
-    els.pack.append(this.packCount.el, Object.assign(document.createElement("small"), { textContent: `/${PACK_SIZE}` }))
+    this.packSize = Object.assign(document.createElement("small"), { textContent: "" })
+    els.pack.append(this.packCount.el, this.packSize)
     this.packCap = els.pack.querySelector(".pack-cap")!
     els.sheet.innerHTML = `<div class="sheet-grid"></div>`
     this.grid = els.sheet.firstElementChild as HTMLElement
-    for (let i = 0; i < PACK_SIZE; i++) {
+    for (let i = 0; i < HOTBAR_SIZE; i++) {
       const el = document.createElement("div")
       el.className = "cell"
       el.dataset.empty = "true"
@@ -131,11 +137,11 @@ export class Dock {
   sync(view: SessionView, packOpen: boolean, craftOpen: boolean, now = performance.now() / 1000): void {
     const { progression, actorId, player: p } = view
     const ledger = progression.ledger
-    const belt = ledger.store(`${actorId}/belt`)
+    const belt = ledger.store(`${actorId}/pack`)
     const hotbar = ledger.store(`${actorId}/hotbar`)
     const pack = ledger.store(`${actorId}/pack`)
     const pendKey = view.pendingItems?.size ? [...view.pendingItems].join(",") : ""
-    const key = `${belt?.rev}|${hotbar?.rev}|${pack?.rev}|${p.flashlightOn}|${p.batteryDepleted}|${Math.ceil(p.battery * 10)}|${p.magAmmo}|${p.reserveAmmo > 0}|${p.meleeDurability}|${pendKey}|${keyLabel("KeyF")}|${keyLabel("Tab")}`
+    const key = `${hotbar?.rev}|${pack?.rev}|${p.flashlightOn}|${p.batteryDepleted}|${Math.ceil(p.battery * 10)}|${p.magAmmo}|${p.reserveAmmo > 0}|${p.meleeDurability}|${pendKey}|${keyLabel("KeyF")}|${keyLabel("Tab")}`
     const animate = !this.first
     if (key !== this.lastKey) {
       this.wake(now)
@@ -179,7 +185,8 @@ export class Dock {
   private syncBelt(view: SessionView, belt: NonNullable<ReturnType<SessionView["progression"]["ledger"]["store"]>>, animate: boolean): void {
     const { progression } = view
     const ledger = progression.ledger
-    const shown = BELT_ITEMS.filter((item) => item === "ammo" || item === "plank" || (belt.counts[item] ?? 0) > 0 || progression.seen(item))
+    const actor = view.actorId
+    const shown = BELT_ITEMS.filter((item) => item === "ammo" || item === "plank" || ledger.count(belt.id, item) > 0 || progression.seen(item))
     const before = flip(this.els.belt.querySelectorAll<HTMLElement>(":scope > .chip, :scope > #pack"), this.motion)
     const added: HTMLElement[] = []
     for (const item of shown) {
@@ -196,11 +203,10 @@ export class Dock {
         this.chips.set(item, chip)
         if (animate) added.push(el)
       }
-      const n = belt.counts[item] ?? 0
-      const cap = ledger.capFor(belt, item)
+      const n = ledger.count(belt.id, item)
       chip.roll.set(n, animate)
-      chip.cap.textContent = `/${cap}`
-      const full = n >= cap
+      chip.cap.textContent = ""
+      const full = ledger.room(actor, item, 1) <= 0
       if (full !== chip.full) {
         chip.full = full
         chip.el.dataset.full = String(full)
@@ -247,7 +253,7 @@ export class Dock {
       const def = s ? ledger.items.get(s.item) : undefined
       const label = s ? (def?.shortLabel ?? s.item) : ""
       const extra = ""
-      const glyph = s && GLYPH_SLOTS.has(s.item) ? itemIcon(s.item, 14) : ""
+      const glyph = s ? portrait(s.item) : ""
       const itemKey = `${s?.item ?? ""}|${extra}`
       if (itemKey !== slot.key) {
         const had = slot.key !== ""
@@ -269,25 +275,18 @@ export class Dock {
 
   private syncPack(view: SessionView, pack: NonNullable<ReturnType<SessionView["progression"]["ledger"]["store"]>>, animate: boolean): void {
     const ledger = view.progression.ledger
-    const used = ledger.usedSlots(pack)
+    const used = ledger.occupancy(pack).filter((i) => i >= 0).length
     this.packCount.set(used, animate)
+    this.packSize.textContent = `/${pack.size}`
     this.packCap.innerHTML = keyCapHtml("Tab")
     this.els.pack.dataset.used = String(used)
-    let skip = 0
-    pack.slots.forEach((s, i) => {
-      const cell = this.cells[i]
-      if (!cell) return
-      if (skip > 0) {
-        skip--
-        cell.el.dataset.covered = "true"
-        return
-      }
+    // The gear in the case, in pick order (digits 1-5 bring it to hand); supplies show as chips instead.
+    const gear = view.progression.packPicks(view.actorId).map((i) => pack.slots[i]!)
+    this.cells.forEach((cell, i) => {
+      const s = gear[i] ?? null
       cell.el.dataset.covered = "false"
-      const span = s ? (ledger.items.get(s.item)?.slots ?? 1) : 1
-      skip = span - 1
-      const key = s ? `${s.item}|${span}` : ""
+      const key = s ? s.item : ""
       cell.el.dataset.empty = String(!s)
-      cell.el.style.gridColumn = span > 1 ? `span ${span}` : ""
       if (key !== cell.key) {
         cell.key = key
         cell.el.lastElementChild!.textContent = s ? ledger.label(s.item, true) : ""

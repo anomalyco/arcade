@@ -400,7 +400,7 @@ export class SoundDirector {
       }
       // Pickups by item class come from the ledger (`InventorySounds`); survivors whose stores this peer cannot see
       // (other seats on a co-op client) fall back to their replicated ammo and planks.
-      if (!world.progression?.ledger.stores.has(`${id}/belt`)) {
+      if (!world.progression?.ledger.stores.has(`${id}/pack`)) {
         if (a.reserveAmmo > p.reserveAmmo) emit({ id: "pickup.ammo", ...at })
         else if (a.planks > p.planks) emit({ id: "pickup.plank", ...at })
       }

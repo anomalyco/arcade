@@ -11,8 +11,8 @@ Workbench, on the Inventory First baseline); the design write-up is the D-11 rou
 | Store | Holds | Notes |
 | --- | --- | --- |
 | Hotbar (5 slots) | Fists (slot 1, bound: never dropped or looted), pistol (one each, `unique`), melee weapon, medical, throwable | The flashlight is on the shoulder, not a slot (`F`). Items go to their usual slot when it is free (`preferSlots`). Fists or an empty slot shove on `Mouse0`; `Mouse0` uses the held item; holding a melee weapon swings on `Mouse0` (tap for a 2–3 hit combo, hold for a charged heavy cleave; `V` always shoves). |
-| Belt (counters) | 9mm (24), planks (6), scrap (10), chem (6), batteries (3), keys (4) | Never in the hotbar. Reload, barricade, crafting, keys and battery swaps draw from it. |
-| Pack (4 slots) | Parts (toolbox, car battery takes 2), spare tools | `Tab` shows it; a digit swaps that pack slot into the selected hand slot. |
+| Case (`pack`, a grid store) | Everything else: supplies (9mm boxes of 15, plank bundles of 3, scrap 5, chem 2, batteries 2, keys 4, a gas can each), spare tools and weapons, parts | The Attaché Case (AR-94, D-46): every item lies at its shape (`shared/progression/shapes.ts`, e.g. pistol 2×2, machete 4×1, gas can 2×3) and turns a quarter to fit. What fits is what you carry: there are no per-item caps. Reload, barricade, crafting, keys and fuel draw from it. `Tab` opens it ([outbreak-hud.md](outbreak-hud.md#the-attaché-case-ar-94-d-46)). |
+| Worn (counters) | The bag and its pouches | The case is the biggest bag worn (school backpack 6×3 to start, the Breacher's attaché case 7×3, a hiking pack 7×4, a duffel 9×4), a row more per pouch (two at most, made at a workbench). It only grows; the bag stays on you when you fall. |
 
 ### Melee weapons (`games/outbreak/shared/combat.ts`)
 
@@ -32,7 +32,17 @@ Every melee weapon is a ledger item (`slot: "hand"`, `preferSlots: [2]`) whose `
 
 The survivor's old fields (`magAmmo`, `reserveAmmo`, `planks`, `channel`) are a projection written by
 `OutbreakProgression.project` each tick, for the HUD, the wire and combat animation. Change items through the ledger,
-never those fields (tests and scripts use `harness.stock(loaded, belt)` and `harness.give(item)`).
+never those fields (tests and scripts use `harness.stock(loaded, supplies)` and `harness.give(item)`).
+
+Grid stores are a kit ledger feature (`StoreSpec.grid`, `ItemDef.grid`, the `place` transaction, `growGrid`,
+`occupancy`, `findPlace`): a stack fits only where its cells are free, routing puts it at the first free place (as it
+lies, then turned), and a swap puts the outgoing item where the incoming one lay when it fits. Tests:
+`packages/kit/sim/ledger-grid.test.ts`.
+
+**Finding bigger bags.** Every town has one hiking pack in a house dresser and one duffel on a police, garage, warehouse or
+hardware shelf (`placeBags` in `loot.ts`, from the seed), plus small chances elsewhere (`BAG_LOOT`, cabins most often),
+on a random stream of their own so every container keeps the rest of its contents. Taking one wears it; the case
+unfolds its new cells the next time you look.
 
 ## Containers, drops and pings
 
@@ -42,8 +52,8 @@ never those fields (tests and scripts use `harness.stock(loaded, belt)` and `har
   keyed (a key opens it quietly, a crowbar pries it loudly).
 - `E` searches quietly (1.2 s, 3.5 m), `Shift+E` smashes (0.35 s, 14 m). A searched container stays open for
   everyone: the strip above it lists what is inside, `E` takes all that fits and digits take one. What does not fit
-  stays, and the notice says what is in the way and the key that clears it ("No room for Machete: hands and pack
-  full. G drops your Crowbar", "Can't carry more 9mm (24 max)", "You already carry a 9mm Pistol"). A hand item with no
+  stays, and the notice says what is in the way and the key that clears it ("No room for Machete: hands and case
+  full. G drops your Crowbar", "No room in your case for 9mm. Tab to make room", "You already carry a 9mm Pistol"). A hand item with no
   room is tagged "swap" in the strip: its digit (or `E` on a single item on the floor) drops what is in hand there and
   takes it.
 - `G` drops the held item, hold `G` leaves 6 ammo and 2 planks, as `drop:<n>` stores anyone can pick up. Beside a
@@ -62,15 +72,15 @@ store, `bench:<house>`.
 - **Install.** Carrying the hardware toolbox, `E` at the bench installs it; the car battery wires up a generator
   (light 0.8, and an 18 m hum every 3 s at night). Each part fills in recipes on the board (below).
 - **Recipes.** Otherwise `E` at the bench opens its recipe board (the same panel as `C`, drawing on the bench's stock).
-- **Stash.** `E` stores the held item (not the flashlight or pistol); digits take items back; hold `E` deposits belt
-  materials. Installed parts stay.
+- **Stash.** `E` stores the held item (not the flashlight or pistol); digits take items back; hold `E` deposits the
+  case's materials. Installed parts stay.
 
 ## How crafting works
 
 D-39 (Recipe Board) and D-38 (Panel And Tips): every recipe has a place on the workbench from the start, and there is
 no guessing. Rules: `shared/discovery/recipes.ts` and `recipe-board.ts`; the HUD: `src/crafting/`.
 
-1. **Pick up materials.** Planks, scrap, chem and batteries go on the belt. The first time the squad picks one up
+1. **Pick up materials.** Planks, scrap, chem and batteries go in the case. The first time the squad picks one up
    (`seen:<material>` in `team/known`), every recipe it feeds whose materials have now all been seen **fills in**: the
    squad learns it and its pencil sketch goes up on the corkboard with a brass pin. Nothing is announced in words
    (D-19); a tip above the dock says it is on the workbench.

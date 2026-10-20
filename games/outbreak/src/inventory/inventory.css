@@ -1,220 +1,154 @@
-/* The bag Tab opens (AR-94): A Ground Pack, B Attaché Case, C Survivor Sheet. Noir palette from hud/tokens.css: warm
-   neutrals in the dark, the lamp's amber only on what is lit, selected or new. */
+/* The Attaché Case Tab opens (AR-94, D-46). Noir palette from hud/tokens.css: a dark leather case, warm felt-green
+   grid paper, painted item portraits lit from the upper left with a soft shadow to the lower right. The lamp's amber
+   only marks what is selected, new or about to land. */
 #inv {
   position: fixed; inset: 0; z-index: 30; pointer-events: none;
-  --inv-ink: #e9dfc8; --inv-ink-dim: #8f8573; --inv-cut: #1a1510; --inv-warm: var(--hud-warm, #f1c46a);
-  --inv-cell: 40px;
+  --inv-ink: #ece2cb; --inv-ink-dim: #8f8573; --inv-warm: var(--hud-warm, #f1c46a);
+  --inv-cell: 56px; --inv-crate-cell: 45px;
+  --inv-leather: #1c1714; --inv-felt: #26302a; --inv-line: rgb(214 230 205 / .09);
   font: 500 var(--hud-sm, 11px)/var(--hud-sm-lh, 14px) var(--hud-font, system-ui);
   color: var(--hud-ink, #ede7d9); font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased;
 }
 #inv[hidden] { display: none }
-#inv .inv-stage { position: absolute; left: 0; top: 0; pointer-events: none }
-#inv .inv-stage * { box-sizing: border-box }
+#inv * { box-sizing: border-box }
 #inv [data-ref] { pointer-events: auto }
-#inv .inv-floor { position: absolute; inset: 0; pointer-events: none }
-#inv[data-style="ground"] .inv-floor, #inv[data-dragging] .inv-floor { pointer-events: auto }
-#inv[data-dragging] .inv-floor[data-drop] { background: radial-gradient(circle at 50% 50%, transparent 40%, rgb(0 0 0 / .18)) }
+#inv .inv-floor { position: absolute; inset: 0; background: radial-gradient(ellipse 70% 70% at 50% 46%, rgb(6 5 4 / .35), rgb(6 5 4 / .62)) }
+#inv[data-dragging] .inv-floor[data-drop] { background: radial-gradient(ellipse 70% 70% at 50% 46%, rgb(6 5 4 / .25), rgb(40 18 8 / .55)) }
+#inv .inv-stage { position: absolute; left: 50%; top: 46%; translate: -50% -50%; pointer-events: none }
 
-/* ── Items ─────────────────────────────────────────────────────────────────────────────────────────────────────── */
-#inv .inv-cell {
-  position: relative; display: grid; place-items: center; min-width: 0; min-height: 0; cursor: grab;
-  color: var(--inv-ink); transition: translate .16s, opacity .16s, filter .16s;
+/* ── The case ──────────────────────────────────────────────────────────────────────────────────────────────────── */
+#inv .inv-case-wrap { display: flex; align-items: flex-start; gap: calc(var(--inv-cell) * .6) }
+#inv .inv-case {
+  position: relative; padding: 12px 14px 10px; border-radius: 14px;
+  background:
+    radial-gradient(120% 90% at 20% 0%, rgb(255 236 200 / .06), transparent 60%),
+    linear-gradient(180deg, #241d18, var(--inv-leather));
+  box-shadow: 0 0 0 1px rgb(255 240 210 / .07), inset 0 1px 0 rgb(255 240 210 / .08), 0 24px 60px rgb(0 0 0 / .65), 0 4px 10px rgb(0 0 0 / .5);
 }
-#inv .inv-cell[data-empty] { cursor: default }
-#inv .inv-icon { width: 82%; height: 82%; overflow: visible; filter: drop-shadow(0 2px 1.5px rgb(0 0 0 / .65)) }
-#inv .inv-icon .cut { fill: var(--inv-cut) }
-#inv .inv-cell[data-hover] { translate: 0 -2px; color: #fff6e2 }
-#inv .inv-cell[data-hover] .inv-icon { filter: drop-shadow(0 5px 3px rgb(0 0 0 / .6)) }
-#inv .inv-cell[data-selected] { color: var(--inv-warm) }
-#inv .inv-cell[data-pending], #inv .inv-cell[data-lifted] { opacity: .35 }
-#inv .inv-cell[data-blocked] { color: var(--inv-ink-dim) }
-#inv .inv-cell[data-fresh]::after {
+#inv .inv-case::before {
+  /* The brass latches. */
+  content: ""; position: absolute; top: -5px; left: 18%; right: 18%; height: 8px; pointer-events: none;
+  background: radial-gradient(circle at 6px 4px, #b08a4a 3px, #6d5328 4px, transparent 5px) 0 0 / 50% 100% repeat-x;
+  opacity: .8;
+}
+#inv .inv-head { display: flex; align-items: baseline; gap: 10px; margin: 8px 2px 6px; color: var(--inv-ink-dim); letter-spacing: .02em }
+#inv .inv-head .inv-bag { color: var(--inv-ink); font-weight: 650 }
+#inv .inv-head small { color: var(--inv-ink-dim); font-weight: 500 }
+#inv .inv-head .inv-used { margin-left: auto }
+#inv .inv-grew { color: var(--inv-warm); font-weight: 700; animation: inv-grew 1.6s ease-out both }
+@keyframes inv-grew { 0% { opacity: 0; translate: 0 4px } 15% { opacity: 1; translate: 0 0 } 80% { opacity: 1 } 100% { opacity: .0 } }
+
+/* Quick slots on the lid: the five hands, keyed 1-5. */
+#inv .inv-lid { display: flex; gap: 6px }
+#inv .inv-quick {
+  position: relative; display: grid; place-items: center; width: calc(var(--inv-cell) * 1.7); height: calc(var(--inv-cell) * 1.05);
+  border-radius: 8px; background: rgb(255 244 226 / .04); box-shadow: inset 0 0 0 1px rgb(255 244 226 / .08); cursor: grab;
+  transition: box-shadow .14s, background .14s;
+}
+#inv .inv-quick[data-empty] { cursor: default }
+#inv .inv-quick[data-selected] { background: rgb(241 196 106 / .08); box-shadow: inset 0 0 0 1.5px rgb(241 196 106 / .7) }
+#inv .inv-quick .inv-art-fit {
+  width: 86%; height: 82%; object-fit: contain; filter: drop-shadow(2px 3px 2px rgb(0 0 0 / .6)); pointer-events: none;
+}
+#inv .inv-quick[data-tag="hand"] { cursor: default }
+
+/* Grid paper: felt with a faint grid; each cell is its own tile so new ones can unfold. */
+#inv .inv-paper {
+  position: relative; display: grid; grid-template-columns: repeat(var(--cols), var(--inv-cell)); grid-auto-rows: var(--inv-cell);
+  width: calc(var(--cols) * var(--inv-cell)); height: calc(var(--rows) * var(--inv-cell));
+  border-radius: 6px; background: radial-gradient(110% 120% at 25% 10%, #2f3a32, var(--inv-felt) 65%, #1d2520);
+  box-shadow: inset 0 2px 8px rgb(0 0 0 / .55), inset 0 0 0 1px rgb(0 0 0 / .4);
+  transition: width .32s cubic-bezier(.2,.8,.3,1), height .32s cubic-bezier(.2,.8,.3,1);
+}
+#inv .inv-g { box-shadow: inset -1px -1px 0 var(--inv-line); pointer-events: none }
+#inv .inv-g[data-new] { animation: inv-unfold .5s cubic-bezier(.2,.9,.3,1.25) both; animation-delay: var(--d, 0ms) }
+@keyframes inv-unfold {
+  0% { opacity: 0; scale: .4; background: rgb(241 196 106 / .45) }
+  60% { opacity: 1; background: rgb(241 196 106 / .18) }
+  100% { opacity: 1; scale: 1; background: transparent }
+}
+
+/* Items lie on the paper at their place and shape. */
+#inv .inv-item {
+  position: absolute; left: calc(var(--x) * var(--inv-cell)); top: calc(var(--y) * var(--inv-cell));
+  width: calc(var(--w) * var(--inv-cell)); height: calc(var(--h) * var(--inv-cell)); cursor: grab;
+  border-radius: 6px; transition: opacity .16s, background .14s;
+}
+#inv .inv-item[data-hover] { background: rgb(255 244 226 / .06); box-shadow: inset 0 0 0 1px rgb(255 244 226 / .14) }
+#inv .inv-item[data-pending], #inv .inv-item[data-lifted], #inv .inv-quick[data-pending], #inv .inv-quick[data-lifted] { opacity: .3 }
+#inv .inv-item[data-blocked] { filter: saturate(.4) brightness(.7) }
+#inv .inv-art-box {
+  position: absolute; inset: 0; pointer-events: none;
+  /* One light for the whole set: key from the upper left, so the shadow falls lower right however an item is turned. */
+  filter: drop-shadow(2px 4px 3px rgb(0 0 0 / .55)) drop-shadow(0 1px 0 rgb(0 0 0 / .4));
+}
+#inv .inv-art-box > img {
+  position: absolute; left: 50%; top: 50%; width: calc(var(--fw) * var(--inv-cell)); height: calc(var(--fh) * var(--inv-cell));
+  translate: -50% -50%; object-fit: contain;
+}
+#inv .inv-art-box[data-turned="true"] > img { rotate: 90deg }
+#inv .inv-noart { position: absolute; inset: 0; display: grid; place-items: center; color: var(--inv-ink-dim); font-size: var(--hud-xs, 10px) }
+#inv .inv-item[data-hover] .inv-art-box { filter: drop-shadow(3px 7px 5px rgb(0 0 0 / .55)) drop-shadow(0 1px 0 rgb(0 0 0 / .4)) brightness(1.08) }
+#inv [data-fresh]::after {
   content: ""; position: absolute; inset: 2px; border-radius: 6px; pointer-events: none;
   box-shadow: 0 0 0 1.5px var(--inv-warm), 0 0 14px rgb(241 196 106 / .45);
   animation: inv-fresh 1.6s ease-in-out infinite;
 }
 @keyframes inv-fresh { 50% { opacity: .35 } }
-#inv [data-drop]:not(.inv-floor) { outline: 1.5px dashed var(--inv-warm); outline-offset: -3px; border-radius: 8px }
+
 #inv .inv-count {
-  position: absolute; right: 3px; bottom: 1px; font-weight: 650; font-size: var(--hud-sm, 11px); color: var(--inv-ink);
-  text-shadow: 0 1px 2px #000, 0 0 4px #000;
+  position: absolute; right: 4px; bottom: 2px; font-weight: 700; font-size: var(--hud-md, 12px); color: var(--inv-ink);
+  text-shadow: 0 1px 2px #000, 0 0 4px #000; pointer-events: none;
 }
 #inv .inv-rounds {
-  position: absolute; right: 3px; top: 2px; font-weight: 700; font-size: var(--hud-md, 12px); color: var(--inv-warm);
-  text-shadow: 0 1px 2px #000, 0 0 4px #000;
+  position: absolute; right: 4px; top: 3px; font-weight: 700; font-size: var(--hud-md, 12px); color: var(--inv-warm);
+  text-shadow: 0 1px 2px #000, 0 0 4px #000; pointer-events: none;
 }
 #inv .inv-rounds small { font-size: var(--hud-xs, 10px); color: var(--inv-ink-dim); font-weight: 600 }
 #inv .inv-rounds[data-empty="true"] { color: var(--hud-danger, #e5674b) }
-#inv .inv-bar { position: absolute; left: 12%; right: 12%; bottom: 3px; height: 3px; border-radius: 2px; background: rgb(255 244 226 / .18) }
+#inv .inv-bar { position: absolute; left: 10%; right: 10%; bottom: 4px; height: 3px; border-radius: 2px; background: rgb(255 244 226 / .18); pointer-events: none }
 #inv .inv-bar i { display: block; height: 100%; width: calc(var(--f) * 100%); border-radius: inherit; background: var(--inv-ink) }
 #inv .inv-bar[data-low="true"] i { background: var(--hud-caution, #e8a34c) }
-#inv .inv-key { position: absolute; left: 2px; top: 2px; font-size: 9px; --akc-size: 14px; opacity: .75; pointer-events: none }
-#inv .inv-ghost {
-  position: fixed; left: 0; top: 0; width: 64px; height: 44px; margin: -22px 0 0 -32px; pointer-events: none;
-  color: #fff6e2; filter: drop-shadow(0 10px 8px rgb(0 0 0 / .6)); rotate: -6deg;
+#inv .inv-key { position: absolute; left: 3px; top: 3px; --akc-size: 15px; font-size: 9px; opacity: .8; pointer-events: none }
+
+/* Where a carried item would land: the cells it would take, green-ish when free, amber onto a stack, red when not. */
+#inv .inv-fit {
+  position: absolute; left: calc(var(--x) * var(--inv-cell)); top: calc(var(--y) * var(--inv-cell));
+  width: calc(var(--w) * var(--inv-cell)); height: calc(var(--h) * var(--inv-cell)); border-radius: 6px; pointer-events: none;
+  transition: left .07s, top .07s, width .1s, height .1s;
 }
-#inv .inv-ghost .inv-icon { width: 100%; height: 100% }
+#inv .inv-fit[data-state="fit"] { background: rgb(190 225 170 / .14); box-shadow: inset 0 0 0 1.5px rgb(200 235 180 / .6) }
+#inv .inv-fit[data-state="merge"] { background: rgb(241 196 106 / .14); box-shadow: inset 0 0 0 1.5px var(--inv-warm) }
+#inv .inv-fit[data-state="blocked"] { background: rgb(229 103 75 / .14); box-shadow: inset 0 0 0 1.5px rgb(229 103 75 / .7) }
+#inv [data-drop] { outline: 1.5px dashed var(--inv-warm); outline-offset: -3px; border-radius: 8px }
+#inv .inv-floor[data-drop] { outline: none }
+
+#inv .inv-ghost { position: fixed; left: 0; top: 0; pointer-events: none; transform-origin: 50% 50% }
+#inv .inv-ghost .inv-art-box { filter: none }
+
+#inv .inv-hints { display: flex; gap: 14px; margin: 9px 2px 0; color: var(--inv-ink-dim); --akc-size: 16px }
+#inv .inv-hint { display: inline-flex; align-items: center; gap: 5px }
+
+/* ── Beside it: what you face as an open crate, and teammates to hand things to ───────────────────────────────── */
+#inv .inv-side { display: flex; flex-direction: column; gap: 14px; margin-top: calc(var(--inv-cell) * 1.05 + 12px) }
+#inv .inv-crate {
+  --inv-cell: var(--inv-crate-cell); padding: 4px 10px 10px; border-radius: 10px;
+  background: linear-gradient(180deg, #3a2c1e, #2a2017); box-shadow: 0 0 0 1px rgb(255 220 170 / .08), 0 14px 34px rgb(0 0 0 / .55);
+}
+#inv .inv-crate .inv-head { color: var(--inv-ink) }
+#inv .inv-crate-paper { background: linear-gradient(180deg, #2a2119, #221a13); --inv-line: rgb(255 230 190 / .06) }
+#inv .inv-none { position: absolute; inset: 0; display: grid; place-items: center; color: var(--inv-ink-dim) }
+#inv .inv-mates { display: flex; flex-direction: column; align-items: flex-start; gap: 6px }
+#inv .inv-mate { display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px 4px 4px; border-radius: 20px; background: rgb(13 12 11 / .7); cursor: copy }
+#inv .inv-mate b {
+  display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; font-size: 13px; color: #14110d;
+  background: var(--c); box-shadow: 0 0 0 2px rgb(0 0 0 / .5);
+}
+#inv .inv-mate[data-drop] { outline: none; box-shadow: 0 0 0 1.5px var(--inv-warm), 0 0 18px var(--c) }
+
 #inv .inv-caption {
-  position: absolute; left: 50%; bottom: 120px; translate: -50% 0; padding: 4px 10px; border-radius: var(--hud-r-chip, 6px);
+  position: absolute; left: 50%; bottom: 112px; translate: -50% 0; padding: 4px 10px; border-radius: var(--hud-r-chip, 6px);
   background: var(--hud-surface, rgb(13 12 11 / .82)); box-shadow: inset 0 0 0 1px var(--hud-line, rgb(255 244 226 / .1));
   opacity: 0; transition: opacity .2s; white-space: nowrap;
 }
 #inv .inv-caption[data-on="true"] { opacity: 1 }
-#inv .inv-mate {
-  display: inline-flex; align-items: center; gap: 6px; cursor: copy;
-}
-#inv .inv-mate b {
-  display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; font-size: 13px; color: #14110d;
-  background: var(--c); box-shadow: 0 0 0 2px rgb(0 0 0 / .5), 0 4px 10px rgb(0 0 0 / .5);
-}
-#inv .inv-mate[data-drop] { outline: none }
-#inv .inv-mate[data-drop] b { box-shadow: 0 0 0 2px var(--inv-warm), 0 0 18px var(--c) }
-
-/* ── A · Ground Pack: a bag open on the floor, lit by its own lamp ─────────────────────────────────────────────── */
-#inv[data-style="ground"] .inv-stage { width: 820px; height: 470px; transform-origin: 0 0 }
-#inv[data-style="ground"] .inv-caption { bottom: 64px }
-#inv .inv-mat { position: absolute; inset: 0 }
-#inv .inv-light {
-  position: absolute; inset: -60px; border-radius: 50%; pointer-events: none;
-  background: radial-gradient(ellipse 52% 50% at 40% 48%, rgb(255 196 120 / .16), rgb(255 170 90 / .05) 55%, transparent 72%);
-}
-#inv .inv-flap, #inv .inv-bag, #inv .inv-strap, #inv .inv-cloth { position: absolute }
-#inv .inv-flap {
-  left: 40px; top: 10px; width: 480px; height: 92px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; padding: 6px 14px;
-  border-radius: 26px 26px 8px 8px;
-  background: linear-gradient(180deg, #4a3d2b, #3a2f21 70%, #2e2519);
-  box-shadow: inset 0 0 0 2px rgb(0 0 0 / .35), inset 0 2px 0 rgb(255 230 190 / .08), 0 10px 20px rgb(0 0 0 / .55);
-}
-#inv .inv-flap .inv-cell {
-  border-radius: 10px; background: linear-gradient(180deg, rgb(0 0 0 / .28), rgb(0 0 0 / .12));
-  box-shadow: inset 0 0 0 1.5px rgb(255 230 190 / .07), inset 0 -3px 0 rgb(0 0 0 / .25);
-}
-#inv .inv-flap .inv-cell[data-selected] { box-shadow: inset 0 0 0 2px var(--inv-warm), 0 0 16px rgb(241 196 106 / .25) }
-#inv .inv-bag {
-  left: 40px; top: 112px; width: 480px; height: 252px; padding: 34px 18px 16px; display: grid;
-  grid-template-columns: 1.25fr 1fr; grid-template-rows: 1fr 1fr; gap: 10px;
-  border-radius: 34px 34px 22px 22px;
-  background:
-    repeating-linear-gradient(90deg, rgb(255 255 255 / .018) 0 2px, transparent 2px 6px),
-    radial-gradient(ellipse at 50% 0%, #5a4732, #3b2f20 60%, #2a2116);
-  box-shadow: inset 0 0 0 2px rgb(0 0 0 / .4), inset 0 3px 0 rgb(255 230 190 / .07), 0 16px 30px rgb(0 0 0 / .6);
-}
-#inv .inv-bag-mouth {
-  position: absolute; left: 22px; right: 22px; top: 10px; height: 18px; border-radius: 50%;
-  background: radial-gradient(ellipse at 50% 70%, #0d0a07, #1d160f 70%, transparent 72%);
-}
-#inv .inv-pocket {
-  border-radius: 14px; padding: 8px;
-  background: linear-gradient(180deg, #221a12, #2c2218);
-  box-shadow: inset 0 0 0 1.5px rgb(0 0 0 / .45), inset 0 0 0 4px rgb(255 220 170 / .03), inset 0 8px 14px rgb(0 0 0 / .45);
-  outline: 1px dashed rgb(255 220 170 / .14); outline-offset: -6px;
-}
-#inv .inv-pocket .inv-icon { width: calc(min(1, var(--w) / 3) * 92%); height: auto; max-height: 86% }
-#inv .inv-strap {
-  left: 30px; top: 376px; width: 500px; height: 78px; display: flex; align-items: center; gap: 8px; padding: 8px 18px;
-  border-radius: 16px; background: linear-gradient(180deg, #3b3225, #2b241a);
-  box-shadow: inset 0 0 0 2px rgb(0 0 0 / .4), 0 8px 16px rgb(0 0 0 / .5);
-}
-#inv .inv-pouch {
-  width: 62px; height: 60px; border-radius: 10px 10px 16px 16px;
-  background: linear-gradient(180deg, #4b3f2e, #362c1f); box-shadow: inset 0 0 0 1.5px rgb(0 0 0 / .4), inset 0 4px 0 rgb(255 230 190 / .06);
-}
-#inv .inv-cloth {
-  left: 548px; top: 22px; width: 250px; height: 426px; padding: 18px; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 10px;
-  border-radius: 6px 14px 10px 18px; rotate: 1.2deg;
-  background:
-    repeating-linear-gradient(0deg, rgb(255 255 255 / .02) 0 1px, transparent 1px 5px),
-    repeating-linear-gradient(90deg, rgb(255 255 255 / .02) 0 1px, transparent 1px 5px),
-    linear-gradient(160deg, #50483a, #3c352a 60%, #2f2a21);
-  box-shadow: inset 0 0 0 1.5px rgb(0 0 0 / .35), 0 12px 24px rgb(0 0 0 / .55);
-}
-#inv .inv-cloth .inv-cell { width: calc(var(--w) * 52px); height: calc(var(--h) * 52px); max-width: 214px }
-#inv .inv-cloth .inv-cell[data-blocked="full"] { opacity: .55 }
-#inv .inv-mates { position: absolute; inset: 0; pointer-events: none }
-#inv[data-style="ground"] .inv-mate {
-  position: absolute; left: calc(41% + cos(var(--a)) * 70%); top: calc(50% + sin(var(--a)) * 64%); translate: -50% -50%; pointer-events: auto;
-}
-#inv[data-style="ground"] .inv-mate b { width: 56px; height: 56px; font-size: 24px }
-
-/* ── B · Attaché Case: a leather case on grid paper, quick slots across the lid ────────────────────────────────── */
-#inv[data-style="case"] .inv-stage { left: 50%; top: auto; bottom: 92px; translate: -50% 0 }
-#inv[data-style="case"] .inv-caption { bottom: auto; top: 18px }
-#inv .inv-case-wrap { display: flex; align-items: flex-end; gap: 14px; pointer-events: none }
-#inv .inv-case {
-  pointer-events: auto; padding: 10px 12px 12px; border-radius: 12px;
-  background: linear-gradient(180deg, #3d2c1f, #271b12);
-  box-shadow: inset 0 0 0 2px #120c08, inset 0 0 0 4px rgb(200 160 110 / .14), 0 18px 40px rgb(0 0 0 / .65);
-}
-#inv .inv-lid { display: grid; grid-template-columns: repeat(5, calc(var(--inv-cell) * 1.5)); gap: 6px; margin-bottom: 10px }
-#inv .inv-lid .inv-cell {
-  height: calc(var(--inv-cell) * 1.25); border-radius: 6px;
-  background: linear-gradient(180deg, #1a130d, #241a12); box-shadow: inset 0 0 0 1px rgb(200 160 110 / .22);
-}
-#inv .inv-lid .inv-cell[data-selected] { box-shadow: inset 0 0 0 2px var(--inv-warm) }
-#inv .inv-paper {
-  padding: 6px; border-radius: 6px; background: #1b2026;
-  box-shadow: inset 0 0 0 1px #0b0d10, inset 0 6px 14px rgb(0 0 0 / .5);
-}
-#inv .inv-grid {
-  display: grid; grid-template-columns: repeat(var(--cols), var(--inv-cell)); grid-template-rows: repeat(var(--rows), var(--inv-cell));
-  background-image:
-    linear-gradient(rgb(160 190 220 / .12) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(160 190 220 / .12) 1px, transparent 1px);
-  background-size: var(--inv-cell) var(--inv-cell);
-  box-shadow: 0 0 0 1px rgb(160 190 220 / .14);
-}
-#inv .inv-place { display: grid; padding: 2px }
-#inv .inv-place .inv-cell { border-radius: 4px; background: rgb(160 190 220 / .07); box-shadow: inset 0 0 0 1px rgb(160 190 220 / .18) }
-#inv .inv-place .inv-icon { width: 90%; height: 90% }
-#inv .inv-room-row { display: flex; gap: 4px; margin-top: 6px; justify-content: flex-end }
-#inv .inv-room { width: calc(var(--inv-cell) * .5); height: calc(var(--inv-cell) * .5); border-radius: 3px; box-shadow: inset 0 0 0 1px rgb(160 190 220 / .35) }
-#inv .inv-loops { display: flex; gap: 4px; margin-top: 10px }
-#inv .inv-loop { width: calc(var(--inv-cell) * 1.25); height: var(--inv-cell); border-radius: 6px; background: rgb(0 0 0 / .3); box-shadow: inset 0 0 0 1px rgb(200 160 110 / .18) }
-#inv .inv-crate {
-  pointer-events: auto; padding: 10px; border-radius: 6px;
-  background: repeating-linear-gradient(180deg, #4a3a27 0 22px, #3d2f1f 22px 24px);
-  box-shadow: inset 0 0 0 2px #1a120a, 0 18px 40px rgb(0 0 0 / .6);
-}
-#inv .inv-crate-lid { height: 8px; margin: -4px -4px 8px; border-radius: 3px; background: #2a1e13 }
-#inv .inv-crate .inv-grid { background-color: rgb(0 0 0 / .35) }
-#inv[data-style="case"] .inv-mates, #inv[data-style="sheet"] .inv-mates { position: static; display: flex; flex-direction: column; gap: 8px; pointer-events: none }
-#inv[data-style="case"] .inv-mate { pointer-events: auto; padding: 4px 10px 4px 4px; border-radius: 20px; background: var(--hud-surface) }
-
-/* ── C · Survivor Sheet: you on the left, nearby on the right ─────────────────────────────────────────────────── */
-#inv[data-style="sheet"] .inv-stage { left: auto; right: 16px; top: 50%; translate: 0 -50% }
-#inv[data-style="sheet"] .inv-caption { left: auto; right: 16px; translate: none; bottom: 16px }
-#inv .inv-sheet {
-  display: grid; grid-template-columns: auto 220px; gap: 1px; pointer-events: auto;
-  border-radius: var(--hud-r-panel, 10px); overflow: hidden;
-  background: var(--hud-line, rgb(255 244 226 / .1)); box-shadow: var(--hud-shadow);
-}
-#inv .inv-col { background: var(--hud-surface, rgb(13 12 11 / .82)); padding: 8px 10px; display: flex; flex-direction: column; gap: 10px }
-#inv .inv-sheet section { display: flex; flex-direction: column; gap: 4px; border-radius: 6px }
-#inv .inv-sheet h3 {
-  margin: 0; display: flex; align-items: center; gap: 8px; font: 600 var(--hud-xs, 10px)/var(--hud-xs-lh, 12px) var(--hud-font);
-  letter-spacing: .08em; text-transform: uppercase; color: var(--hud-ink-3, #847d71);
-}
-#inv .inv-hands { display: grid; grid-template-columns: repeat(5, var(--inv-cell)); gap: 4px }
-#inv .inv-hands .inv-cell, #inv .inv-row .inv-cell, #inv .inv-belt .inv-cell {
-  width: var(--inv-cell); height: var(--inv-cell); border-radius: var(--hud-r-cell, 4px); background: var(--hud-chip, rgb(22 21 19 / .78));
-  box-shadow: inset 0 0 0 1px var(--hud-line, rgb(255 244 226 / .1));
-}
-#inv .inv-hands .inv-cell[data-selected] { box-shadow: inset 0 0 0 1.5px var(--inv-warm) }
-#inv .inv-row { display: flex; align-items: center; gap: 8px; border-radius: var(--hud-r-cell, 4px); pointer-events: auto; cursor: grab }
-#inv .inv-row:hover { background: rgb(255 244 226 / .05) }
-#inv .inv-row-label { color: var(--hud-ink-2, #b6ae9f); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px }
-#inv .inv-belt { display: flex; flex-wrap: wrap; gap: 4px; max-width: calc(var(--inv-cell) * 5 + 16px) }
-#inv .inv-weight { width: 60px; height: 4px; border-radius: 2px; background: rgb(255 244 226 / .14) }
-#inv .inv-weight i { display: block; height: 100%; width: calc(var(--f) * 100%); border-radius: inherit; background: var(--hud-ink-2) }
-#inv .inv-floor-row { min-height: 44px; justify-content: center; border: 1px dashed var(--hud-line-2, rgb(255 244 226 / .24)) }
-#inv .inv-floor-row h3 { justify-content: center }
-#inv[data-style="sheet"] .inv-mate { pointer-events: auto; padding: 3px; border-radius: 18px }
-#inv .inv-none { margin: 0; color: var(--hud-ink-3, #847d71) }
-
-@media (prefers-reduced-motion: reduce) {
-  #inv .inv-cell, #inv .inv-caption { transition: none }
-  #inv .inv-cell[data-fresh]::after { animation: none }
-}
-
-/* The world prompt over what you face says nothing the open bag doesn't. */
-body:has(#inv:not([hidden])) #prompt { opacity: 0 }

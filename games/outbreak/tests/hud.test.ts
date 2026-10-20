@@ -110,8 +110,8 @@ describe("actor feedback from simulation state", () => {
       const { ledger } = session.sim.progression
       ledger.apply({ kind: "setCharge", actor: "player", item: "pistol", charge: loaded })
       for (const [item, n] of Object.entries(belt)) {
-        const have = ledger.count("player/belt", item)
-        if (have) ledger.apply({ kind: "drain", store: "player/belt", item, count: have })
+        const have = ledger.count("player/pack", item)
+        if (have) ledger.apply({ kind: "drain", store: "player/pack", item, count: have })
         if (n) ledger.apply({ kind: "grant", actor: "player", item, count: n })
       }
       session.sim.progression.project(session.slot)

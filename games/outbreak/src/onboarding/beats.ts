@@ -13,7 +13,7 @@ import {
 } from "../../shared/onboarding/training"
 
 /** The training room's beats in the order the house lays them out: bedroom, hall door, kitchen window, front yard. */
-export const BEATS = ["move", "light", "search", "take", "craft", "door-open", "door-close", "crouch", "board", "sprint", "front-door", "melee"] as const
+export const BEATS = ["move", "light", "search", "take", "case", "craft", "door-open", "door-close", "crouch", "board", "sprint", "front-door", "melee"] as const
 export type BeatId = (typeof BEATS)[number]
 
 /**
@@ -96,6 +96,11 @@ export class TrainingGuide {
     return null
   }
 
+  /** Tab opened the case (AR-94): the client says so, since the sim never sees it. */
+  noteCase(): void {
+    this.done.add("case")
+  }
+
   private chainedAlive(sim: CoopSim): boolean {
     const state = sim.getFeatureState<TrainingState>("onboarding")
     const z = state ? sim.ai.agents.find((a) => a.id === state.chained) : undefined
@@ -119,6 +124,8 @@ export class TrainingGuide {
         return { beat, keys: [{ code: "KeyE" }], glyph: "search", at: atDresser, target: TRAINING_DRESSER }
       case "take":
         return { beat, keys: [{ code: "KeyE" }], glyph: "take-all", at: atDresser, target: TRAINING_DRESSER }
+      case "case":
+        return { beat, keys: [{ code: "Tab" }], at: "self" }
       case "craft": {
         const bench = ledger.store(TRAINING_BENCH)?.at
         return { beat, keys: [{ code: "KeyE" }], glyph: "tinker", at: bench ? { x: bench.x, y: bench.y, z: 1.3 } : "self", targetKind: "bench" }

@@ -284,6 +284,9 @@ describe("loot and recipes", () => {
   test("the molotov fills in from a bottle and chem; the flamethrower waits on a pressure tank at the bench and uses it up", () => {
     const { sim, ledger, slot } = room({ ann: { x: 30, y: 46, aim: 0 } })
     const progression = sim.progression
+    // A duffel, so a gas can and a pressure tank (2×3 each) fit the case together.
+    ledger.apply({ kind: "grant", actor: "ann", item: "duffel", count: 1 })
+    progression.syncCase("ann")
     ledger.apply({ kind: "grant", actor: "ann", item: "bottle", count: 1 })
     ledger.apply({ kind: "grant", actor: "ann", item: "chem", count: 1 })
     progression.board.fillIn()

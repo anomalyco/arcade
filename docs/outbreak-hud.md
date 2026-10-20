@@ -183,7 +183,7 @@ Reduced motion (the system setting or Lab › HUD motion › Reduced motion) dro
 
 ## Bottom dock
 
-The belt of supplies, the shoulder light, the five hand slots and the pack chip sit in one dock at the bottom centre (`src/hud/dock.ts`,
+The supplies you carry, the shoulder light, the five hand slots and the case chip sit in one dock at the bottom centre (`src/hud/dock.ts`,
 `dock.css`). It never hides, in any style. Kit found it odd that Tab made the pack disappear, because Diegetic hid
 the whole bar unless a slot had just changed. The dock now settles to 50 % opacity after 3 s without a change and
 brightens on any change to the belt, hands or pack, while the pack or the recipe panel is open, and while the cursor is
@@ -282,31 +282,46 @@ still offered Open, then refused with "Blocked by barricade". Code: `src/prompt-
 Markers (drops, pings, noisemakers) are keyed by what they mark, enter with a short rise and leave with the exit
 softening instead of being reused by index.
 
-## Inventory styles (AR-94)
+## The Attaché Case (AR-94, D-46)
 
-After the co-op playtest ("How do I open my inventory?", "Inventory's full", "I have a machete now? Where did I get
-that from?", Kit: "I need to be able to drop stuff or trade"), Lab › Inventory › Style picks what Tab opens. Today is
-the dock's pack chip, one setting away. Research and the reasoning behind the three directions:
-`~/code/home/artifacts/agent-reports/outbreak-inventory.md`.
+After the co-op playtest ("How do I open my inventory?", "Inventory's full", Kit: "I need to be able to drop stuff or
+trade") three directions were prototyped behind Lab › Inventory › Style (research:
+`~/code/home/artifacts/agent-reports/outbreak-inventory.md`). Kit picked the Attaché Case on D-46 and asked for "more
+Diablo 2 style, actual graphics... or Resident Evil style. [Items] can take up more room too. Because you can maybe
+get upgrades." The Ground Pack and Survivor Sheet prototypes were removed; Today (the dock and its Tab sheet) stays one
+setting away and reads the same case.
 
-| Style | Where it lives | While open |
-| --- | --- | --- |
-| Today | the 4-slot pack grows out of the dock | nothing changes |
-| A · Ground Pack | the backpack opens on the floor in front of you (a CSS `matrix3d` onto the floor quad, `quadMatrix` in `src/inventory/bag.ts`): hands as loops on the flap, four pockets, belt pouches, what you face laid out on a cloth beside it, teammates in reach as chips at the edge | you kneel (crouch), the camera leans in (Lab: 0.75) and the mat spans about half the view, the bag's own warm lamp lights the floor; walking picks the bag up |
-| B · Attaché Case | a leather case above the dock: quick slots 1–5 on the lid, the pack on grid paper at each item's shape (`footprint` in `icons.ts`, auto-packed), belt loops, what you face as a crate beside it | the world keeps going; you can walk |
-| C · Survivor Sheet | a sheet on the right: hands, pack and belt on the left, what you face, the floor and teammates on the right | the world keeps going; you can walk |
+**What Tab opens** (`src/inventory/`): a leather case with the five hands as quick slots on the lid (keys 1–5), the
+case on felt grid paper with every item at its shape (`shared/progression/shapes.ts`), the bag's name and cells used,
+what you face as an open crate beside it, and teammates in reach as chips. The world keeps going: you can walk, you
+keep facing what you opened it at and you don't fire.
 
-One grammar in every style: drag onto a slot to move or swap, onto what you face to put it in, off the bag (or onto
-Floor) to drop, onto a teammate to hand it over; click quick-moves (out of what you face, into it when open, else
-between hands and pack); Shift+drag moves half a stack; hover + 1–5 puts the item in that hand; hover + G drops one,
-Shift+G the stack. While any bag is open the survivor keeps facing what it was opened at and doesn't fire, so the
-cursor belongs to the bag. Items that arrived since you last looked glow until hovered. The cursor's item is named with its
-rounds, battery or wear.
+**Moving things.** Drag lifts an item (it scales up with a deeper shadow); over the case its cells show where it would
+land (pale green free, amber onto a stack of the same supply, red blocked); `R` or a right click turns it a quarter
+about where it is held; letting go eases it down onto its cells and the real item settles in when the room answers (a
+refused drop flies home and the outline shakes). `R` over an item turns it where it lies when it fits turned. Drag onto a
+hand slot to swap (what was there goes into the case), onto the crate to put it in, onto a teammate to hand it over, off
+the case to drop it. Click quick-moves (out of what you face, into it when open, else between hands and case);
+Shift+drag moves half a stack; hover + 1–5 puts the item in that hand; hover + G drops one, Shift+G the stack. A bag
+dragged anywhere onto the case is worn, and the new cells unfold from the old edge outward with the new size shown in
+the header. Items that arrived since you last looked glow until hovered.
 
-Every style sends the same `inv` command (`shared/inventory-ops/`), so teammates can each use their own style and the
-room stays authoritative: a give is a drop at the teammate's feet that they take at once, so what doesn't fit stays on
-the floor beside them. The capacity model is still Today's (5 hands, a 4-slot pack, belt caps); each direction's own
-capacity (pockets, cells, weight) is part of building the pick.
+**Art.** Every item has a painted portrait at its shape (`src/portraits/<id>.webp`, 128 px a cell), lit from the upper
+left, with a CSS drop shadow to the lower right that stays put however the item is turned. They are generated by
+`scripts/item-portraits.ts`: one locked style prompt plus a line per item, gpt-image-1.5 with a transparent background,
+trimmed and fitted to the footprint with sharp. The raw paintings are cached in `.scratch/item-portraits/` (not
+committed); `--process` re-crops without requests, `--only id --force` repaints one, and a new item fails the script
+until it has a line and a shape. The dock's hand slots use the same portraits. Rendering the in-game meshes was not
+used: the item meshes are low-poly boxes and would not read as "actual graphics" at 56 px.
+
+**Capacity.** What fits is what you carry (supplies stack per cell: rounds 15, planks 3, scrap 5); see
+[outbreak-progression.md](outbreak-progression.md#what-a-survivor-carries) for the bags and pouches.
+
+Every move is one `inv` command (`shared/inventory-ops/`) built from ledger transactions (`place`, `swap`, `take`,
+`deposit`, `drop`), so the room stays authoritative and teammates can each use their own style. A give is a drop at
+the teammate's feet that they take at once (AR-93's hand-over), so what doesn't fit stays beside them. Proof:
+`bun scripts/attache-case-proof.ts` (via `hivemind run --kind browser`) writes a still and a clip of packing, turning
+and a hiking pack growing the case.
 
 ## Seated HUD
 

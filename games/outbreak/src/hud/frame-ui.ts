@@ -229,7 +229,7 @@ function giveToName(session: LocalSession | NetSession, coop: CoopView): string 
   const me = "local" in session ? session.local : session.slot
   const held = session.view.inventory.slots[session.view.inventory.selectedSlot]
   const ledger = session.view.progression.ledger
-  const bundle = ledger.count(`${session.view.actorId}/belt`, "ammo") + ledger.count(`${session.view.actorId}/belt`, "plank") > 0
+  const bundle = ledger.count(session.view.actorId, "ammo") + ledger.count(session.view.actorId, "plank") > 0
   if ((!held || held.kind === "fists") && !bundle) return undefined
   const mate = giveTarget(me, session.sim.slots)
   if (!mate) return undefined

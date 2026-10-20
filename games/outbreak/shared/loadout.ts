@@ -27,6 +27,8 @@ export type LoadoutSpec = {
   readonly role: string
   readonly summary: string
   readonly items: readonly LoadoutItemGrant[]
+  /** A bag worn instead of the school backpack (`progression/shapes.ts`): it sets the case's size. */
+  readonly bag?: "attache"
 }
 
 /**
@@ -52,8 +54,9 @@ export const LOADOUTS: readonly LoadoutSpec[] = [
     id: "breacher",
     label: "Breacher",
     role: "+Lead Pipe",
-    summary: "Standard kit + Lead Pipe (16 durability) in hand slot 3",
+    summary: "Standard kit + Lead Pipe (16 durability) in hand slot 3, and an attaché case (7×3) for a bag",
     items: [{ item: "pipe", count: 1, charge: 16 }],
+    bag: "attache",
   },
   {
     id: "scavenger",

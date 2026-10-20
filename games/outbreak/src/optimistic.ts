@@ -74,6 +74,7 @@ function cloneStore(st: StoreState | undefined): StoreState | null {
     ...(st.at ? { at: { ...st.at } } : {}),
     slots: st.slots.map((s) => (s ? { ...s } : null)),
     counts: { ...st.counts },
+    ...(st.grid && st.places ? { grid: { ...st.grid }, places: st.places.map((p) => (p ? { ...p } : null)) } : {}),
     rev: st.rev,
   }
 }
@@ -398,7 +399,7 @@ export function stepOutbreakOptimisticTick(
       if (storeId) {
         const ledger = progression.ledger
         const targetBefore = cloneStore(ledger.store(storeId))
-        const beltBefore = cloneStore(ledger.store(`${slot.id}/belt`))
+        const wornBefore = cloneStore(ledger.store(`${slot.id}/worn`))
         const hotbarBefore = cloneStore(ledger.store(`${slot.id}/hotbar`))
         const packBefore = cloneStore(ledger.store(`${slot.id}/pack`))
         const totalsBefore = actorTotals(sim, slot.id)
@@ -419,12 +420,12 @@ export function stepOutbreakOptimisticTick(
           }
           if (Object.keys(gained).length > 0) {
             const targetAfter = cloneStore(ledger.store(storeId))
-            const beltAfter = cloneStore(ledger.store(`${slot.id}/belt`))
+            const wornAfter = cloneStore(ledger.store(`${slot.id}/worn`))
             const hotbarAfter = cloneStore(ledger.store(`${slot.id}/hotbar`))
             const packAfter = cloneStore(ledger.store(`${slot.id}/pack`))
             const restoreBaseline = () => {
               restoreStore(sim, targetBefore, storeId)
-              restoreStore(sim, beltBefore, `${slot.id}/belt`)
+              restoreStore(sim, wornBefore, `${slot.id}/worn`)
               restoreStore(sim, hotbarBefore, `${slot.id}/hotbar`)
               restoreStore(sim, packBefore, `${slot.id}/pack`)
             }
@@ -435,7 +436,7 @@ export function stepOutbreakOptimisticTick(
               payload: { storeId, gained, expectedTotals, restoreBaseline },
               reapply: () => {
                 restoreStore(sim, targetAfter, storeId)
-                restoreStore(sim, beltAfter, `${slot.id}/belt`)
+                restoreStore(sim, wornAfter, `${slot.id}/worn`)
                 restoreStore(sim, hotbarAfter, `${slot.id}/hotbar`)
                 restoreStore(sim, packAfter, `${slot.id}/pack`)
                 progression.project(slot)

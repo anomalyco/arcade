@@ -1,29 +1,44 @@
-import type { ItemDef, Stack } from "@arcade/kit/sim/ledger"
-import type { InvAt, InventoryOp, InvRef } from "../../shared/inventory-ops/types"
+import type { ItemDef, Ledger, Stack, StoreState } from "@arcade/kit/sim/ledger"
 import { GIVE_RANGE } from "../../shared/inventory-ops/ops"
-import { BELT_ITEMS, HOTBAR_SIZE, PACK_SIZE } from "../../shared/progression/catalog"
+import type { InvAt, InventoryOp, InvRef } from "../../shared/inventory-ops/types"
+import { HOTBAR_SIZE } from "../../shared/progression/catalog"
 import type { SessionView } from "../../shared/session"
 
-/** One place in the bag: a hand slot, a pack slot, a belt pouch or a stack in what you face. */
+/** One thing in the case, a hand slot, or a stack in what you face. */
 export type InvCell = {
   ref: InvRef
   stack: Stack | null
   def?: ItemDef
   label: string
-  /** Rounds in the gun, durability left, flashlight battery: shown on the item. */
-  charge?: { value: number; max: number; kind: "rounds" | "wear" | "battery" | "fuel" }
+  /** Rounds in the gun, durability left, fuel: shown on the item. */
+  charge?: { value: number; max: number; kind: "rounds" | "wear" | "fuel" }
   /** The hand slot that is selected. */
   selected?: boolean
   /** Can't come out (a part installed in the stash), or no room for it on you. */
   blocked?: "installed" | "full"
 }
 
+/** A stack lying in the case: its top-left cell and its cells across and down as it lies (turned when `r`). */
+export type CaseItem = InvCell & { x: number; y: number; w: number; h: number; r: boolean }
+
+export type InvCase = {
+  cols: number
+  rows: number
+  items: CaseItem[]
+  /** Which item (index in `items`) fills each cell, row-major; -1 free. */
+  occ: number[]
+  /** Cells taken. */
+  used: number
+  /** The bag the case is, and the pouches sewn on (a row each). */
+  bag: string
+  pouches: number
+}
+
 export type InvMate = { index: number; name: string; colour: string; distance: number; dx: number; dy: number }
 
 export type InvModel = {
   hands: InvCell[]
-  pack: InvCell[]
-  belt: InvCell[]
+  case: InvCase
   /** What you face, when it is open: a container, a drop on the floor, a fallen body or the house stash. */
   target: { kind: string; title: string; cells: InvCell[] } | null
   /** Teammates close enough to hand something to. */
@@ -34,22 +49,44 @@ export type InvModel = {
 
 const TARGET_TITLES: Record<string, string> = { container: "Search", drop: "On the floor", body: "Their things", stash: "Stash" }
 
-function chargeOf(def: ItemDef | undefined, stack: Stack, view: SessionView): InvCell["charge"] {
-  if (!def) return undefined
-  if (stack.item === "flashlight") return { value: Math.round(view.player.battery * 100), max: 100, kind: "battery" }
-  if (!def.charge) return undefined
+/** Cells across and down an item takes in the case (long side across), turned or not. */
+export function shapeOf(ledger: Pick<Ledger, "footprint">, item: string, turned = false): { w: number; h: number } {
+  return ledger.footprint(item, turned)
+}
+
+function chargeOf(def: ItemDef | undefined, stack: Stack): InvCell["charge"] {
+  if (!def?.charge) return undefined
   const kind = def.charge.ammo ? "rounds" : stack.item === "flamethrower" ? "fuel" : "wear"
   return { value: stack.charge ?? def.charge.initial ?? def.charge.max, max: def.charge.max, kind }
 }
 
 function cell(view: SessionView, at: InvAt, slot: number, stack: Stack | null): InvCell {
   const def = stack ? view.progression.ledger.items.get(stack.item) : undefined
-  return { ref: { at, slot }, stack, def, label: stack ? view.progression.stackLabel(stack) : "", charge: stack ? chargeOf(def, stack, view) : undefined }
+  return { ref: { at, slot }, stack, def, label: stack ? view.progression.stackLabel(stack) : "", charge: stack ? chargeOf(def, stack) : undefined }
+}
+
+/** The case as drawn: every placed stack in slot order and the cells they fill. */
+export function caseOf(view: SessionView, pack: StoreState | undefined): InvCase {
+  const ledger = view.progression.ledger
+  const cols = pack?.grid?.cols ?? 0
+  const rows = pack?.grid?.rows ?? 0
+  const items: CaseItem[] = []
+  const occ = new Array<number>(cols * rows).fill(-1)
+  pack?.slots.forEach((s, i) => {
+    const p = pack.places?.[i]
+    if (!s || !p) return
+    const fp = ledger.footprint(s.item, p.r === 1)
+    const n = items.length
+    items.push({ ...cell(view, "pack", i, s), x: p.x, y: p.y, w: fp.w, h: fp.h, r: p.r === 1 })
+    for (let y = p.y; y < p.y + fp.h; y++) for (let x = p.x; x < p.x + fp.w; x++) if (x < cols && y < rows) occ[y * cols + x] = n
+  })
+  const bag = view.progression.bagOf(view.actorId)
+  return { cols, rows, items, occ, used: occ.filter((i) => i >= 0).length, bag: bag.bag.label, pouches: bag.pouches }
 }
 
 type MateSource = { sim?: { slots: readonly { id: string; index: number; survivor: { x: number; y: number; health: number } }[] } }
 
-/** Builds the bag from the session view; `names` gives a seat's name, `colours` its colour. */
+/** Builds the case from the session view; `names` gives a seat's name, `colours` its colour. */
 export function inventoryModel(
   view: SessionView,
   session: MateSource,
@@ -60,13 +97,8 @@ export function inventoryModel(
   const ledger = pr.ledger
   const hotbar = ledger.store(`${actorId}/hotbar`)
   const pack = ledger.store(`${actorId}/pack`)
-  const belt = ledger.store(`${actorId}/belt`)
+  const worn = ledger.store(`${actorId}/worn`)
   const hands = Array.from({ length: HOTBAR_SIZE }, (_, i) => ({ ...cell(view, "hotbar", i, hotbar?.slots[i] ?? null), selected: (hotbar?.selected ?? 0) === i }))
-  const packCells = Array.from({ length: PACK_SIZE }, (_, i) => cell(view, "pack", i, pack?.slots[i] ?? null))
-  const beltCells = BELT_ITEMS.map((item, i) => {
-    const count = belt?.counts[item] ?? 0
-    return count > 0 ? cell(view, "belt", i, { item, count }) : null
-  }).filter((c): c is InvCell => c !== null)
 
   let target: InvModel["target"] = null
   const prompt = view.prompt
@@ -100,55 +132,80 @@ export function inventoryModel(
     hotbar?.rev,
     hotbar?.selected,
     pack?.rev,
-    belt?.rev,
+    worn?.rev,
     st?.rev ?? "",
     storeId ?? "",
     target?.cells.map((c) => c.blocked ?? "").join(",") ?? "",
     mates.map((m) => m.index).join(","),
-    Math.round(me.battery * 20),
     me.magAmmo,
   ].join("|")
-  return { hands, pack: packCells, belt: beltCells, target, mates, key }
+  return { hands, case: caseOf(view, pack), target, mates, key }
 }
 
 /** The cell a ref points at in the model, if any. */
 export function cellAt(model: InvModel, ref: InvRef): InvCell | undefined {
   if (ref.at === "hotbar") return model.hands[ref.slot]
-  if (ref.at === "pack") return model.pack[ref.slot]
-  if (ref.at === "belt") return model.belt.find((c) => c.ref.slot === ref.slot)
+  if (ref.at === "pack") return model.case.items.find((c) => c.ref.slot === ref.slot)
   if (ref.at === "target") return model.target?.cells[ref.slot]
   return undefined
 }
 
-const own = (at: InvAt) => at === "hotbar" || at === "pack" || at === "belt"
+/**
+ * Whether `from` (as it lies, or turned) could land with its top-left on (`x`, `y`) of the case: "fit" on free
+ * cells, "merge" onto a stack of the same supply with room, otherwise "blocked". A whole stack moved within the case
+ * does not block itself.
+ */
+export function fitAt(model: InvModel, ledger: Pick<Ledger, "footprint">, from: InvRef, x: number, y: number, turned: boolean, count = 0): "fit" | "merge" | "blocked" {
+  const src = cellAt(model, from)
+  const c = model.case
+  if (!src?.stack || src.def?.bound || src.def?.tag === "bag") return "blocked"
+  const whole = !count || count >= src.stack.count
+  const self = from.at === "pack" && whole ? model.case.items.findIndex((it) => it.ref.slot === from.slot) : -1
+  const under = x >= 0 && y >= 0 && x < c.cols && y < c.rows ? c.occ[y * c.cols + x]! : -1
+  if (under >= 0 && under !== self) {
+    const top = c.items[under]!
+    const max = src.def?.stack ?? 1
+    if (top.stack?.item === src.stack.item && max > 1 && top.stack.count < max && !(from.at === "pack" && top.ref.slot === from.slot)) return "merge"
+  }
+  const fp = ledger.footprint(src.stack.item, turned)
+  if (x < 0 || y < 0 || x + fp.w > c.cols || y + fp.h > c.rows) return "blocked"
+  for (let yy = y; yy < y + fp.h; yy++) for (let xx = x; xx < x + fp.w; xx++) {
+    const o = c.occ[yy * c.cols + xx]!
+    if (o >= 0 && o !== self) return "blocked"
+  }
+  return "fit"
+}
+
+const own = (at: InvAt) => at === "hotbar" || at === "pack"
 
 /**
- * The move for dragging `from` onto `to` (a slot, a whole area as slot -1, the floor or a teammate), or null when the
- * drop means nothing. Areas resolve to a free slot here so the room gets an exact slot.
+ * The move for dragging `from` onto `to` (a hand slot, a cell of the case, a whole area as slot -1, the floor or a
+ * teammate), or null when the drop means nothing.
  */
 export function moveFor(model: InvModel, from: InvRef, to: InvRef, count = 0): InventoryOp | null {
   const src = cellAt(model, from)
   if (!src?.stack || src.def?.bound) return null
   if (from.at === to.at && (from.slot === to.slot || to.slot < 0)) return null
-  if (from.at === "belt" && (to.at === "hotbar" || to.at === "pack")) return null
   if (from.at === "target") {
     if (to.at === "target" || to.at === "ground" || to.at === "mate") return null
-    if (to.at === "belt" || to.slot < 0) return { from, to: { at: "me", slot: 0 }, count }
+    if (src.def?.tag === "bag" || to.at === "pack" || to.slot < 0 || to.at === "me") return { from, to: { at: "me", slot: 0 }, count }
     return { from, to, count }
   }
   if (!own(from.at)) return null
+  if (to.at === "case") return { from, to, count }
   if (to.at === "target") return model.target ? { from, to: { at: "target", slot: 0 }, count } : null
   if (to.at === "ground" || to.at === "mate") return { from, to, count }
-  if (to.at === "hotbar" || to.at === "pack") {
-    const slot = to.slot >= 0 ? to.slot : (to.at === "pack" ? model.pack : model.hands).findIndex((c) => !c.stack)
-    return slot >= 0 ? { from, to: { at: to.at, slot }, count } : null
+  if (to.at === "hotbar") {
+    const slot = to.slot >= 0 ? to.slot : model.hands.findIndex((c) => !c.stack)
+    return slot >= 0 ? { from, to: { at: "hotbar", slot }, count } : null
   }
+  if (to.at === "pack" && from.at === "hotbar") return { from, to: { at: "pack", slot: 0 }, count }
   return null
 }
 
 /**
  * The quick move (click or Shift+click): out of what you face into you; into what you face when it is open; otherwise
- * between your hands and your pack.
+ * between your hands and the case.
  */
 export function quickMoveFor(model: InvModel, from: InvRef): InventoryOp | null {
   const src = cellAt(model, from)
@@ -156,17 +213,22 @@ export function quickMoveFor(model: InvModel, from: InvRef): InventoryOp | null 
   if (from.at === "target") return src.blocked ? null : { from, to: { at: "me", slot: 0 } }
   if (model.target) return moveFor(model, from, { at: "target", slot: -1 })
   if (from.at === "hotbar") return moveFor(model, from, { at: "pack", slot: -1 })
-  if (from.at === "pack") return moveFor(model, from, { at: "hotbar", slot: -1 })
+  if (from.at === "pack") {
+    const tag = src.def?.tag
+    return tag === "gun" || tag === "tool" ? moveFor(model, from, { at: "hotbar", slot: -1 }) : null
+  }
   return null
 }
 
-/** Parses a `data-ref` attribute ("pack:2", "mate:3", "ground:0", "target:-1"). */
+const AT: readonly InvAt[] = ["hotbar", "pack", "case", "target", "ground", "mate", "me"]
+
+/** Parses a `data-ref` attribute ("pack:2", "mate:3", "ground:0", "target:-1", "case:7"). */
 export function parseRef(raw: string | undefined | null): InvRef | null {
   if (!raw) return null
   const [at, slot] = raw.split(":")
   const n = Number(slot)
   if (!at || !Number.isFinite(n)) return null
-  if (!["hotbar", "pack", "belt", "target", "ground", "mate", "me"].includes(at)) return null
+  if (!(AT as readonly string[]).includes(at)) return null
   return { at: at as InvAt, slot: n }
 }
 

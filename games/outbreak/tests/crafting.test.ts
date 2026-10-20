@@ -31,6 +31,7 @@ describe("crafting rows", () => {
       ["battery", false, -1],
       ["tripwire", false, -1],
       ["molotov", false, -1],
+      ["pouch", false, -1],
       ["flamethrower", false, -1],
     ])
     expect(rows[0]).toMatchObject({ ok: true, cost: [{ item: "chem", need: 1, have: 1 }] })
@@ -112,7 +113,7 @@ describe("crafting coach", () => {
     now = look(true)
     expect(coachTips(before, now)).toEqual([{ kind: "learned", recipe: "spiked-board", bench: true }])
     before = now
-    progression.ledger.apply({ kind: "drain", store: "player/belt", item: "chem", count: 1 })
+    progression.ledger.apply({ kind: "drain", store: "player/pack", item: "chem", count: 1 })
     now = look()
     expect(coachTips(before, now)).toEqual([])
     before = now

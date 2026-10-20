@@ -470,7 +470,9 @@ describe("The Way Out: the car and the roadblocks", () => {
     step(sim, Math.ceil((T.hotwireTime + 0.5) / TICK_DT), tune, 1, holdE)
     expect(v.hasKeys).toBe(true)
     expect(view(sim)?.last).toBe(EVENT_HOTWIRED)
-    // Chem does nothing for an empty tank now; two gas cans pour in when you get in.
+    // Chem does nothing for an empty tank now; two gas cans pour in when you get in (2×3 each: a duffel carries them).
+    give(sim, a, "duffel")
+    sim.progression.syncCase(a.id)
     give(sim, a, "chem", 4)
     give(sim, a, "fuel", 2)
     expect(sim.vehicles.enter(a, v, sim.progression, sim.ai, sim.time)).toBe(true)
