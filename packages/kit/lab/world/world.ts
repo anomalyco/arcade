@@ -1,6 +1,7 @@
 import { LOOK_PRESETS, LOOK_PRESET_IDS, applyLookPreset, createLookSettings, resolveLookPresetId, type LookSettings } from "../../gpu/look"
 import { applyFoliagePreset, cloneFoliageParams, type FoliageKind, type FoliageParams } from "../../gpu/foliage"
 import { lampFlicker } from "../../gpu/lights/flicker"
+import { BEAM_PROFILES, beamReach, packBeamProfile, type BeamProfileId } from "../../gpu/lights/beam"
 import { packPhysicalLightKnobs, physicalLightHooks, type LightModel } from "../../gpu/lights/physical"
 import { Renderer, type FrameInput } from "../../gpu/renderer"
 import { SpotShadows, type SpotCandidate } from "../../gpu/shadows/spot-shadows"
@@ -42,6 +43,8 @@ export type WorldState = {
   specularAA: number
   /** Perspective shadow maps for the nearest spot lights under Physical (`gpu/shadows/spot-shadows.ts`); 0 is Today. */
   spotShadows: number
+  /** The flashlight's torch profile under Physical (`gpu/lights/beam.ts`). */
+  beamProfile: BeamProfileId
   /** Shared lamp flicker and failure (`gpu/lights/flicker.ts`): streetlamp sodium, porch tube, lamp inside a bulb. */
   flicker: number
 }
@@ -69,6 +72,7 @@ export const WORLD_DEFAULTS: Readonly<WorldState> = {
   sphereLights: 1,
   specularAA: 1,
   spotShadows: 0,
+  beamProfile: "darkwood",
   flicker: 0,
 }
 
@@ -122,7 +126,7 @@ export function createDebugWorld(context: LabContext): DebugWorld {
   const focusXZ: [number, number] = [WORLD_FOCUS[0], WORLD_FOCUS[2]]
   const emptySprites = new Float32Array(0) as Float32Array<ArrayBuffer>
 
-  const knobs = new Float32Array(4) as Float32Array<ArrayBuffer>
+  const knobs = new Float32Array(12) as Float32Array<ArrayBuffer>
   const ensureRenderer = () => {
     const model = state.lightModel
     const have = renderers[model]
@@ -134,10 +138,10 @@ export function createDebugWorld(context: LabContext): DebugWorld {
     const ctx = canvas.getContext("webgpu")!
     ctx.configure({ device, format, alphaMode: "opaque" })
     // Physical swaps only the scene shader; Today's baseline is the same shader without the hooks.
-    const physical = physicalLightHooks({ knobs: "PK.k", spotShadows: true })
+    const physical = physicalLightHooks({ knobs: "PK.k", spotShadows: true, beam: { a: "PK.beamA", b: "PK.beamB" } })
     const r = model === "physical"
       ? new Renderer(device, ctx, format, {
-          scene: makeSceneShader({ ...physical, declarations: `struct PhysicalKnobs { k: vec4f }\n@group(0) @binding(13) var<uniform> PK: PhysicalKnobs;\n${physical.declarations}`, lampGrid: false }, false),
+          scene: makeSceneShader({ ...physical, declarations: `struct PhysicalKnobs { k: vec4f, beamA: vec4f, beamB: vec4f }\n@group(0) @binding(13) var<uniform> PK: PhysicalKnobs;\n${physical.declarations}`, lampGrid: false }, false),
           sprite: spriteShader(),
         })
       : new Renderer(device, ctx, format)
@@ -168,8 +172,10 @@ export function createDebugWorld(context: LabContext): DebugWorld {
     }
     const candidates: SpotCandidate[] = []
     for (const l of scene) {
-      if (!l.spot || l.id === undefined) continue
-      candidates.push({ id: l.id, pos: [l.x, l.h, l.y], axis: l.spot.axis, cosOuter: l.spot.cosOuter, range: l.r, intensity: l.r * l.r })
+      if (l.id === undefined) continue
+      const pos = [l.x, l.h, l.y] as const
+      if (l.spot) candidates.push({ id: l.id, pos, axis: l.spot.axis, cosOuter: l.spot.cosOuter, range: l.r, intensity: l.r * l.r })
+      else if (l.beam) candidates.push({ id: l.id, pos, axis: l.beam.axis, cosOuter: Math.cos(Math.min(beamReach(l.beam.halfAngle, BEAM_PROFILES[state.beamProfile]), 1.45)), range: l.r, intensity: l.r * l.r })
     }
     const enc = device.createCommandEncoder({ label: "world spot shadows" })
     const rebind = spots.update(enc, candidates, [stage.eye[0]!, stage.eye[1]!, stage.eye[2]!], 1 / 60, (id) => lights.indexOf(id), [casters])
@@ -254,6 +260,7 @@ export function createDebugWorld(context: LabContext): DebugWorld {
       ]
       if (state.lightModel === "physical") {
         packPhysicalLightKnobs({ model: "physical", specularAA: state.specularAA, sphereLights: state.sphereLights, envSpecular: state.envSpecular, spill: 0 }, knobs)
+        packBeamProfile(BEAM_PROFILES[state.beamProfile] ?? BEAM_PROFILES.darkwood, knobs, 4)
         r.setCustomUniforms(knobs)
       }
       lights.update(scene, geometry!.casters)

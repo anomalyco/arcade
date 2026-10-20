@@ -100,6 +100,7 @@ describe("WGSL validates with naga", () => {
     "kit scene, physical": makeSceneShader({ ...physicalLightHooks(), lampGrid: true }, true),
     "kit scene, physical, motion": makeSceneShader({ ...physicalLightHooks({ settings: { spill: 0.05 } }), lampGrid: true }, true, true),
     "lot-like, composed": makeSceneShader(withPhysicalLights(lotLike, { knobs: "N.light", env: "mix(vec3f(0.01, 0.04, 0.04), ambientAt(n), rough * rough)" })),
+    "lot-like, beam uniform and spot shadows": makeSceneShader(withPhysicalLights(lotLike, { knobs: "N.light", beam: { a: "N.fog", b: "N.look" }, spotShadows: true })),
   }
   for (const [name, code] of Object.entries(sources)) {
     test(name, () => {

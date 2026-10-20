@@ -3,7 +3,8 @@
  * machine's WebGPU (Deno's wgpu on Metal) draws the Lab's base debug world (`packages/kit/lab/world/scene.ts`) at a
  * clock hour under Today and under Physical, from the Lab camera, and checks for WebGPU validation errors and that both
  * images are lit (no black or blown frame). Then Physical again with two spot shadow maps (`gpu/shadows/spot-shadows.ts`),
- * which may only darken. LIGHT_PROOF_IMAGE=<dir> writes today.ppm, physical.ppm and shadowed.ppm.
+ * which may only darken. LIGHT_PROOF_FLASHLIGHT=1 adds the survivor's flashlight (a torch beam under Physical).
+ * LIGHT_PROOF_IMAGE=<dir> writes today.ppm, physical.ppm and shadowed.ppm.
  *
  *   LIGHT_PROOF_IMAGE=/tmp/x deno run -A --sloppy-imports scripts/light-gpu-proof.ts [hour] [street floor] [yaw pitch dist fx fy fz]
  */
@@ -22,6 +23,7 @@ const W = 960
 const H = 600
 const hour = Number(deno?.args[0] ?? 0)
 const street = Number(deno?.args[1] ?? WORLD_DEFAULTS.street)
+const flashlight = deno?.env.get("LIGHT_PROOF_FLASHLIGHT") === "1"
 
 const adapter = await navigator.gpu.requestAdapter()
 if (!adapter) throw new Error("no WebGPU adapter")
@@ -79,14 +81,14 @@ async function draw(model: "today" | "physical", shadowed = false) {
   const lights = new SceneLights()
   lights.setBoxes(geometry.boxes)
   const clock = worldClock(hour)
-  lights.update(worldLights(clock, { lampPower: 1, headlights: false, flashlight: false, porch: true, physical: model === "physical" }), geometry.casters)
+  lights.update(worldLights(clock, { lampPower: 1, headlights: false, flashlight, porch: true, physical: model === "physical" }), geometry.casters)
   if (shadowed && !spots) {
     spots = new SpotShadows(device, { count: 2 })
     const data = geometry.level.chunks[0]!.data
     const buffer = device.createBuffer({ size: data.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST })
     device.queue.writeBuffer(buffer, 0, data)
     const candidates: SpotCandidate[] = []
-    for (const l of worldLights(clock, { lampPower: 1, headlights: false, flashlight: false, porch: true, physical: true })) {
+    for (const l of worldLights(clock, { lampPower: 1, headlights: false, flashlight, porch: true, physical: true })) {
       if (l.spot && l.id !== undefined) candidates.push({ id: l.id, pos: [l.x, l.h, l.y], axis: l.spot.axis, cosOuter: l.spot.cosOuter, range: l.r, intensity: l.r * l.r })
     }
     const enc = device.createCommandEncoder()
