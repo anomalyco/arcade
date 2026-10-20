@@ -99,13 +99,15 @@ function sampleOutbreakCycle(name: string, mode: "walk" | "run", speed: number, 
   let prevPlantedL = true
   const touchdownsL: number[] = []
   const jointHistory: RigJointMap[] = []
+  // The shared-rig legs (Lab › Survivor strafe › Legs) keep their contacts in `loco`; Today's and older checkouts' in `feet`.
+  const st = s as unknown as { feet: { planted: boolean }[]; loco?: { feet: { planted: boolean }[] }; aimTuning?: { legs?: number } }
+  const fts = st.loco && st.aimTuning?.legs !== 0 ? st.loco.feet : st.feet
 
   for (let n = 0; n < totalFrames; n++) {
     const t = n * dt
     x += speed * dt
     s.draw({ x, y, vx: speed, vy: 0, aim: 0 }, dt, t, () => 0)
     const joints = extractBonePoseJoints(s.bones)
-    const fts = (s as unknown as { feet: { planted: boolean }[] }).feet
     const plantedL = fts[0]!.planted
     if (n >= warmupFrames && !prevPlantedL && plantedL) {
       touchdownsL.push(n)

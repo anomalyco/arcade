@@ -353,6 +353,62 @@ Measured on main with the toe joints (before) and this pass (after):
 
 Planted slip stays at 0 and survivor-aim muzzle error at 0° in every case.
 
+### WASD legs (Outbreak survivor, AR-95)
+
+Kit after the co-op playtest: "better animation for those damn legs, especially strafing". Outbreak moves at an
+instant 8-way 3.4 m/s (sprint 5.6, crouch 1.7) with the aim free, so the legs see snap reversals, flicks and slow
+mouse turns that the steady sweeps above never do. Measure them with
+`games/blackout/scripts/animation/survivor-legs.ts` (23 scripted WASD + mouse segments through the real `Survivor`,
+or `--actor soldier|blackout-survivor` through Blackout's adapter; `--baseline <checkout>` adds a `before` pass,
+`--video` a game-camera side-by-side). It reports per segment ground skate (ball travel while within 1.5 cm of the
+floor), leg overstretch (shin end to boot gap), shin and boot intersections, knee pop, hip and chest twist, cadence
+and step direction, with the time of the worst overstretch and closest shins.
+
+**One contact solver.** The Outbreak survivor now runs `locomotion` + `poseLegs` like Blackout (Lab › Survivor
+strafe › Legs: Shared rig, or Today for the old stride clock). Terrain is added per foot after posing on a flat
+floor. Its own clock skated 58 to 64 cm per contact in a crouch, and an A/D reversal pulled a leg 98 cm off its boot.
+
+**Rules learned:**
+
+- **Side-steps keep the hips square, runs turn them.** 100STYLE side-walks (0.57 m/s) keep the pelvis within 5° of
+  the chest and never cross, opening to about 52 cm. `sideStepTurn` is 0.2 rad (was 0.3) and the hip limit ramps over
+  1.2 to 2.8 m/s; at 3.4 m/s the hips still turn 55° (`strafeHipTurn` 0.95). At 0.12 rad (and at
+  `strafeHipTurn` 0.75) a run reversal scissors the feet across each other in the leg frame: shins touched in 11% of
+  reversal frames. `strafeSettle` (seconds of steady travel before the hips commit) exists but defaults to 0: holding
+  the hips square through quick A/D taps cost shin hits and saved almost no hip motion.
+- **Cap the side-step opening** at 28 cm per foot and redirect a reversing swing from `u ≥ 0.45`; keep tracking the
+  target to `u < 0.9` while reversing and ease late corrections when a landing would be out of reach.
+- **Step the foot that is out of reach of its hip.** `hipReach` compares the planted boot with its hip at the current
+  pelvis height (heel rise buys a foot length behind). With both feet down the farther foot steps first whatever the
+  phase says; in flight only a sideways reach past a straight leg counts, so ordinary sprint strides keep their length.
+- **Never aim a landing beyond reach** (0.46 m from where the body will be, plus 6 cm per m/s over 3.4), which caught
+  the backpedal-to-forward flip in an aim sweep throwing the stride target 77 cm past the hip.
+- **Pin the ball at toe-off.** The swing ankle was placed for the toe-off pitch but the boot relaxed to another, so the
+  ball slid back about 11 cm along the floor; the ankle is now re-anchored to the pitch the boot takes.
+- **Toe-first swings clear the floor.** Backward, sideways and on-the-spot swings keep the ball and toe 3 cm up until
+  the last fifth of swing (forward swings 1.5 cm late in swing only); before, a back-diagonal toe dragged 22 cm.
+- **Pivot on the ball, keep the ankle on it.** A planted boot that turns with the hips now moves its ankle point
+  around the locked ball, so lift-off starts where the boot is (a standing flick jumped the boot 13 to 21 cm).
+  On-the-spot steps lift the boot nearly flat (`relaxed` × 0.3 at gait 0) and rise at once.
+- **`turnStep`** (0.8 rad, was a hard-coded 1.05) is the aim twist that makes a standing body step round.
+
+Outbreak survivor, pistol raised, whole sequence (Today → shared rig):
+
+| Metric | Today | Now |
+| --- | --- | --- |
+| Ground skate, worst contact | 64.4 cm | 5.7 cm |
+| Leg overstretch, worst frame | 98.2 cm | 13.7 cm |
+| Shins within 12 cm | 2.0% of frames | 1.2% |
+| Knee pop, worst | 2439 °/s | 1556 °/s |
+| Turn 360 / flick 180 skate | 47.5 / 21.8 cm | 0.4 / 2.3 cm |
+| Crouch forward / strafe skate | 58 / 64 cm | 0 / 0 cm |
+| R↔L reversals overstretch | 98.2 cm | 10.1 cm |
+
+Blackout soldier on the same sequence: skate 21.7 → 8.5 cm, overstretch 17.2 → 11.5 cm, shins within 12 cm 1.2% →
+1.0%, knee pop 1806 → 1257 °/s. Pose-diff walk leg RMSE 8.2° → 10.0° (survivor, the toe-off ball pin costs about 2°
+of knee), run 13.1° → 12.8°; Outbreak walk 11.0° → 11.4° and run 13.2° → 13.3° now through the shared rig. Step
+variation and L/R symmetry unchanged. strafe.ts at 1.4 m/s sideways: hips 49° → 30° from aim, cadence 215 → 257.
+
 ## Profiles
 
 Presets live in `humanProfiles`. Spread one to tune an actor; never mutate the preset.
@@ -368,8 +424,9 @@ Presets live in `humanProfiles`. Spread one to tune an actor; never mutate the p
 swing, slows cadence (`157 -> 118 steps/min` at `0.95 m/s`, matching tired/injured mocap at `100-110 steps/min`),
 and adds a limp to the pelvis. Tests bound both and keep the toe locks exact (`0.000 mm` slip).
 
-Every profile shares the strafe values `sideStepTurn 0.3`, `strafeHipTurn 0.95`, `crossoverSpeed 2.6` and
-`strafeGap 0.2` (Lab → Animation; Outbreak's aimed survivor has the same keys in its Survivor strafe group).
+Every profile shares the strafe values `sideStepTurn 0.2`, `strafeHipTurn 0.95`, `crossoverSpeed 2.6`,
+`strafeGap 0.2`, `strafeSettle 0` and `turnStep 0.8` (Lab → Animation; Outbreak's aimed survivor has the strafe keys
+in its Survivor strafe group).
 
 ### Zombie shamble
 
@@ -512,7 +569,9 @@ clip's own ground speed: 100STYLE mocap (CC BY 4.0; Neutral, Zombie, DragLeftLeg
 Quaternius UAL keyframed game clips (CC0; Walk, Jog, Sprint, Crouch walk, Zombie walk). `--bake` writes 32-sample
 cycles to `games/blackout/src/dev/reference-clips.json` for the Characters page's **Reference** Lab group, which
 walks a grey ghost of the chosen clip beside the selected actor (phase from the actor's travelled distance, off by
-default). Never add Mixamo or Bandai Namco data there: Mixamo forbids redistribution and any ML use, and Bandai
+default). The strafe clips (100STYLE Neutral side-step walk and run, backward walk; `facing: "aim"`) are cut at two
+lead-foot peaks along their own travel line and kept in the hips' frame, so their ghost faces the actor's aim; the
+Characters station pairs them with the slow side-step, the run strafe and the strafe sweep. Never add Mixamo or Bandai Namco data there: Mixamo forbids redistribution and any ML use, and Bandai
 Namco's set is non-commercial, so those stay runtime-fetched measurement references only.
 
 What the first pass (2026-10-19, `8404f9ab`) showed, angle RMSE at matched speed:
@@ -537,14 +596,19 @@ What the first pass (2026-10-19, `8404f9ab`) showed, angle RMSE at matched speed
   with zero shin-to-ankle separation. Reaching `112.5 steps/min` (`0.75 m` steps at `1.4 m/s`, vs. mocap's `1.30 m/s`)
   would require either a deeper double-support pelvis dip (`< 0.79 m`) or 3-DOF pelvic list/obliquity that lowers the
   trailing hip joint independently of the stance hip.
-- **Outbreak's survivor and zombies share `gaitAt` for cadence and duty (`127` / `239` steps/min)** and lock swing
-  targets at `u >= 0.75`, but still step their own terrain-support contact loop (`Survivor.draw`, `src/zombies.ts`)
-  rather than calling `locomotion` directly.
+- **Outbreak's zombies still step their own terrain-support contact loop** (`src/zombies.ts`); the survivor runs
+  `locomotion` (Lab › Survivor strafe › Legs › Today keeps the old loop).
+- **WASD leg gaps (survivor-legs.ts).** Shins still pass within a few cm for a frame or two when the hips swing
+  through a transition (circle strafe into a sprint, a 90° cut at a sprint, quick reversals in Blackout); the worst
+  overstretch left is 10 to 15 cm for a frame or two in those cuts, while the other boot is in the air and cannot take
+  the weight. Side-steps at 1.4 m/s take 257 steps/min and keep the hips 30° off aim (100STYLE: about 5° at 0.57
+  m/s). Knee pop peaks near 1500 °/s on diagonal switches, where the pelvis itself turns fast.
 - **Strafe gaps.** Hips stay fairly square (20° to 24° from aim) in the 120° to 135° back-diagonal band, where the
   crossover fades into the backpedal; side-steps at 1.4 m/s take 215 steps/min (forward walk 127), because a step
   that cannot cross is short; Outbreak's aimed run at 90° turns its planted boots 17° from the pelvis (mocap 10° to
   13°). The Bandai Namco set has no true side-step or run-strafe clip (its walk-left/right are forward walks with the
-  hips toward travel), so the side-step and crossover references are authored.
+  hips toward travel) and the free Quaternius UAL packs have no strafes; 100STYLE Neutral SW/SR/BW/BR (sha-pinned in
+  `open-mocap.ts`) give slow side-walk, side-run and backward references, and the crossover reference is authored.
 - **Procedural melee upper-body posing (`packages/kit/human-melee.ts`, `melee-poses.ts`).** Outbreak's 9 melee weapons
   map onto three upper-body classes (`one-blunt`, `one-blade`, `two-heavy`) that layer pelvis/chest yaw coil-and-whip
   plus two-bone IK arm arcs over the standing or moving lower body without slipping planted feet (`0.0 m` toe slip at

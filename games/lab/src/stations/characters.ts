@@ -26,6 +26,13 @@ const references = [
   ["ref-survivor-jog", "Survivor run vs Quaternius jog", "survivor", "action.run", "ual-jog", "Quaternius UAL1 keyframed jog (CC0): 23° lean vs our 9–15°."],
 ] as const
 
+// Strafe loops with a 100STYLE strafe ghost beside them (faces the aim, steps sideways or back).
+const strafeReferences = [
+  ["ref-side-step", "Side-step vs 100STYLE side-walk", "survivor", "circle", 0.8, "style-side-walk", "100STYLE Neutral side-step walk (CC BY 4.0, 0.65 m/s): hips within 5° of the chest, feet never cross, opening to about 52 cm."],
+  ["ref-strafe-run", "Run strafe vs 100STYLE side-run", "survivor", "circle", 3.4, "style-side-run", "100STYLE Neutral side-step run (CC BY 4.0, 1.5 m/s, 176 steps/min) beside the 3.4 m/s game strafe, which turns the hips 55° and crosses over."],
+  ["ref-backpedal", "Strafe sweep vs 100STYLE backward walk", "survivor", "sweep", 1.4, "style-back-walk", "100STYLE Neutral backward walk (CC BY 4.0, 0.68 m/s): toe-first landings, shorter steps."],
+] as const
+
 export default defineStation({
   id: "characters",
   title: "Characters & animation",
@@ -58,6 +65,14 @@ export default defineStation({
       url: `/arcade/blackout/characters.html#${actor}`,
       setup: [{ command: action }, { command: "character.reference", args: { clip } }],
     })),
+    ...strafeReferences.map(([id, label, actor, mode, speed, clip, note]): StationVariant => ({
+      id,
+      group: "Reference",
+      label,
+      note,
+      url: `/arcade/blackout/characters.html#${actor}`,
+      setup: [{ command: "action.strafe", args: { mode, speed } }, { command: "character.reference", args: { clip } }],
+    })),
     ...strafes.map(([id, label, actor, mode, speed, note]): StationVariant => ({
       id,
       group: "Strafe",
@@ -77,8 +92,9 @@ export default defineStation({
     { label: "Run strafe 90° cadence (forward 239 steps/min)", value: "369 → 239 steps/min", source: "games/blackout/scripts/animation/strafe.ts" },
     { label: "Knee vs boot direction, worst strafe angle at a run (mocap 4–7°)", value: "23° → 8°", source: "games/blackout/scripts/animation/strafe.ts" },
     { label: "Outbreak aimed strafe sweep peak hip yaw rate (walk)", value: "1116 → 169 °/s", source: "games/blackout/scripts/animation/strafe.ts" },
+    { label: "Outbreak WASD legs: worst ground skate / leg overstretch (AR-95)", value: "64.4 → 5.7 cm / 98.2 → 13.7 cm", source: "games/blackout/scripts/animation/survivor-legs.ts" },
   ],
   paths: ["packages/kit/human-locomotion.ts", "packages/kit/human-pose.ts", "packages/kit/rig.ts", "games/outbreak/src/survivor.ts", "games/outbreak/src/zombies.ts", "docs/animation.md"],
-  branches: ["strafe", "toe-joints", "survivor-aim", "zombie-shamble", "run-realism", "locomotion-pass", "walk-audit"],
+  branches: ["strafe", "outbreak-strafe-legs", "toe-joints", "survivor-aim", "zombie-shamble", "run-realism", "locomotion-pass", "walk-audit"],
   links: [{ label: "Characters page", href: "/arcade/blackout/characters.html" }],
 })

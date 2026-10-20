@@ -82,6 +82,7 @@ bun games/blackout/scripts/animation/render-sheets.ts --tag before [--out dir]
 bun games/blackout/scripts/animation/render-video.ts [--out dir]
 bun games/blackout/scripts/animation/strafe.ts --tag before [--out dir] [--no-render]
 bun games/blackout/scripts/animation/render-strafe-video.ts --tag before|after [--outbreak-root dir] | --stitch
+bun games/blackout/scripts/animation/survivor-legs.ts --tag after [--actor outbreak|soldier|blackout-survivor] [--baseline <checkout>] [--legs 0|1] [--profile key=v,...] [--video] [--no-render]
 ```
 
 - `gait-metrics.ts`: the step-3 metrics for nine actor/speed cases plus mocap reference curves, saved
@@ -97,12 +98,16 @@ bun games/blackout/scripts/animation/render-strafe-video.ts --tag before|after [
 - `render-video.ts`: a 4 s side-view clip, 2 s walking then 2 s running, encoded with ffmpeg. Use it
   only to show Kit, not to judge timing (see Pitfalls).
 - `strafe.ts`: travel-vs-aim sweep (0° to 180°, slow/walk/jog/run) for survivor, soldier and Outbreak's
-  aimed survivor, aim sweeps and circle strafes, against the mocap walk-left/right/back clips and the authored
+  aimed survivor, aim sweeps and circle strafes, against the mocap walk-left/right/back clips, 100STYLE side/back walks and runs, and the authored
   side-step and crossover references in `strafe-reference.ts`; saved as `strafe-<tag>.json`.
   `strafe-render.py` (Pillow) draws top and front `line-rig-*` sheets (before | reference | after),
   `angles-*` and `sweep-*` plots.
 - `render-strafe-video.ts`: muted top-down Outbreak clip circle-strafing a target while aiming at it;
   capture each checkout's frames, then `--stitch` before | after.
+- `survivor-legs.ts`: 23 WASD + mouse segments (flicks, slow turns, starts/stops, strafes, backpedal, diagonals,
+  A/D reversals, circle strafe, sprint, crouch, aim sweep) through the real Outbreak `Survivor` or Blackout's
+  adapter; per-segment skate, overstretch, shin/boot hits, knee pop, hip/chest twist, cadence, with the time of the
+  worst frame. `survivor-legs-render.py` draws game-camera strips and, with `--video`, a side-by-side mp4. About 3 s.
 - `reference-clips.ts`: our walk, run, sneak and zombie shamble against openly licensed clips (100STYLE mocap,
   CC BY 4.0; Quaternius UAL, CC0) at each clip's speed; `reference-clips-render.py` draws `*-side`, `*-front`,
   `*-angles` and `summary` PNGs. `--bake` refreshes the Characters page's Reference ghost data. `open-mocap.ts`

@@ -8,7 +8,8 @@ import { jointsToBody, POSE_JOINTS, type RigJointMap } from "@arcade/kit/pose-di
 import type { V3 } from "@arcade/kit/rig"
 import baked from "./reference-clips.json"
 
-type BakedClip = { id: string; label: string; licence: string; source: string; speed: number; cycleSec: number; frames: number[][] }
+// `facing: "aim"`: a strafe clip (side-step or backward walk) baked in the hips' frame, so the ghost faces the aim.
+type BakedClip = { id: string; label: string; licence: string; source: string; speed: number; cycleSec: number; facing?: "aim"; frames: number[][] }
 const clips = (baked as { clips: BakedClip[] }).clips
 
 export const REFERENCE_CLIP_IDS = ["off", ...clips.map(c => c.id)]
@@ -53,7 +54,7 @@ export class ReferenceGhost {
     const stride = Math.max(0.05, clip.speed * clip.cycleSec)
     const byTime = this.settings.referenceRate === "time" || clip.speed < 0.2 || dist / Math.max(dt, 1e-4) < 0.15
     this.phase = (this.phase + (byTime ? dt / clip.cycleSec : dist / stride)) % 1
-    const target = dist > 1e-4 ? Math.atan2(dy, dx) : aim
+    const target = clip.facing === "aim" || dist <= 1e-4 ? aim : Math.atan2(dy, dx)
     let d = target - this.heading
     d = Math.atan2(Math.sin(d), Math.cos(d))
     this.heading += d * Math.min(1, dt * 8)

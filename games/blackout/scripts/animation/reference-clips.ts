@@ -18,6 +18,7 @@ import {
   POSE_JOINTS,
   RIG_SEGMENTS,
   type CycleComparison,
+  retargetBvhFrame,
   type CycleData,
   type RigJointMap,
 } from "@arcade/kit/pose-diff"
@@ -119,7 +120,8 @@ function outbreakZombie(name: string, speed: number, alive = false): CycleData {
 }
 
 // ------------------------------------------------------------------------------------------------ references
-type RefSpec = { id: string; label: string; licence: "CC BY 4.0" | "CC0"; mode: "walk" | "run"; cycle: CycleData; source: string }
+// `facing: "aim"` marks strafe clips (travel sideways or backward from the hips): the ghost faces the actor's aim.
+type RefSpec = { id: string; label: string; licence: "CC BY 4.0" | "CC0"; mode: "walk" | "run"; cycle: CycleData; source: string; facing?: "aim" }
 
 async function styleRef(id: string, label: string, take: string, mode: "walk" | "run", target: number): Promise<RefSpec> {
   const clip = parse100Style(await load100Style(take))
@@ -127,6 +129,32 @@ async function styleRef(id: string, label: string, take: string, mode: "walk" | 
   const norm = normaliseClip(clip, win.start, win.end)
   const cycle = extractAsymmetricBvhCycle(norm, id, mode, 0, norm.frames.length)
   return { id, label, licence: "CC BY 4.0", mode, cycle, source: `100STYLE ${take} frames ${win.start}–${win.end} (${win.speed} m/s window)` }
+}
+
+/**
+ * A 100STYLE strafe take (side-step or backward) cut at two left-foot peaks along its own travel line, kept in the
+ * hips' frame so the ghost faces the aim while it steps sideways or back.
+ */
+async function styleStrafeRef(id: string, label: string, take: string, mode: "walk" | "run", target: number): Promise<RefSpec> {
+  const clip = parse100Style(await load100Style(take))
+  const win = findSteadyWindow(clip, target)
+  const norm = normaliseClip(clip, win.start, win.end)
+  const f = norm.frames, last = f.length - 1
+  const tx = f[last]!.Hips![0] - f[0]!.Hips![0], tz = f[last]!.Hips![2] - f[0]!.Hips![2], tl = Math.hypot(tx, tz) || 1
+  const lead = f.map(p => ((p.Foot_L![0] - p.Hips![0]) * tx + (p.Foot_L![2] - p.Hips![2]) * tz) / tl)
+  const minGap = mode === "walk" ? 20 : 12
+  const peaks: number[] = []
+  for (let i = 2; i < lead.length - 2; i++) {
+    if ([-2, -1, 1, 2].every(d => lead[i]! >= lead[i + d]!) && (!peaks.length || i - peaks.at(-1)! >= minGap)) peaks.push(i)
+  }
+  const c0 = peaks[0] ?? 0, c1 = peaks[1] ?? last
+  const cut = f.slice(c0, c1)
+  const minFootY = Math.min(...cut.map(p => Math.min(p.Foot_L![1], p.Foot_R![1], p.Toes_L![1], p.Toes_R![1])))
+  const meanPelvisY = cut.reduce((a, p) => a + p.Hips![1], 0) / cut.length
+  const dur = cut.length * norm.dt
+  const speed = r2(Math.hypot(f[c1]!.Hips![0] - f[c0]!.Hips![0], f[c1]!.Hips![2] - f[c0]!.Hips![2]) / Math.max(0.1, dur))
+  const cycle = buildCycleFromJointFrames(id, mode, speed, dur, cut.map(p => retargetBvhFrame(p, meanPelvisY, minFootY)), 0)
+  return { id, label, licence: "CC BY 4.0", mode, cycle, source: `100STYLE ${take} frames ${win.start + c0}–${win.start + c1} (${speed} m/s)`, facing: "aim" }
 }
 
 async function ualRef(id: string, label: string, pack: "ual1" | "ual2", clipName: string, mode: "walk" | "run"): Promise<RefSpec> {
@@ -149,6 +177,9 @@ for (const r of await Promise.all([
   styleRef("style-drag-left", "100STYLE Drag left leg", "DragLeftLeg_FW", "walk", 0.95),
   styleRef("style-crouched", "100STYLE Crouched walk", "Crouched_FW", "walk", 1.0),
   styleRef("style-swat", "100STYLE Swat walk", "Swat_FW", "walk", 1.4),
+  styleStrafeRef("style-side-walk", "100STYLE side-step walk", "Neutral_SW", "walk", 0.6),
+  styleStrafeRef("style-side-run", "100STYLE side-step run", "Neutral_SR", "run", 1.1),
+  styleStrafeRef("style-back-walk", "100STYLE backward walk", "Neutral_BW", "walk", 0.65),
   ualRef("ual-walk", "Quaternius Walk", "ual1", "Walk_Loop", "walk"),
   ualRef("ual-jog", "Quaternius Jog", "ual1", "Jog_Fwd_Loop", "run"),
   ualRef("ual-sprint", "Quaternius Sprint", "ual1", "Sprint_Loop", "run"),
@@ -253,7 +284,7 @@ if (flags.has("bake")) {
         return [j[0] - p[0], j[1], j[2] - p[2]].map(v => Math.round(v * 1000) / 1000)
       })
     })
-    return { id: r.id, label: r.label, licence: r.licence, source: r.source, speed: r.cycle.speed, cycleSec: r.cycle.cycleDurationSec, frames }
+    return { id: r.id, label: r.label, licence: r.licence, source: r.source, speed: r.cycle.speed, cycleSec: r.cycle.cycleDurationSec, ...(r.facing ? { facing: r.facing } : {}), frames }
   })
   const path = join(repoRoot, "games/blackout/src/dev/reference-clips.json")
   writeFileSync(path, JSON.stringify({ joints: POSE_JOINTS, credits: OPEN_MOCAP_CREDITS, clips: baked }))

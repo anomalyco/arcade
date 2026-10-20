@@ -69,7 +69,7 @@
   `InventorySounds.weapons` call it; nothing reaches zombie hearing. Reel and loudness: `bun scripts/weapon-reel.ts`;
   per-sound stats: `bun scripts/weapon-sounds-stats.ts` (offline, never play). Credits: `src/audio/weapons/CREDITS.md`.
   Tests: `tests/weapon-sounds.test.ts`.
-- The survivor (`src/survivor.ts`) and zombies (`src/zombies.ts`) use the shared rig's IK, arms and profiles but keep their own stride clocks and terrain support. Motion rules and known gaps: `../../docs/animation.md`. All shared docs: `../../docs/README.md`.
+- The survivor (`src/survivor.ts`) steps on the shared rig's contact solver (`locomotion` + `poseLegs`, terrain added per foot; Lab › Survivor strafe › Legs › Today is its old stride clock) and zombies (`src/zombies.ts`) use the shared rig's IK, arms and profiles with their own stride clock and terrain support. WASD leg metrics: `games/blackout/scripts/animation/survivor-legs.ts`. Motion rules and known gaps: `../../docs/animation.md`. All shared docs: `../../docs/README.md`.
 - Rugs and Resident Evil interior themes live in `src/interiors/` (plan, mesh emitters, WGSL, `RugPool`); the rug
   generator and its Worker are in `@arcade/kit/textures`. Lab: Backquote › Rugs & interiors, the Lab's Rugs section and the
   `rugs-interiors` station. Proof: `bun scripts/interiors-proof.ts --phase after` (via `hivemind run --kind browser`).

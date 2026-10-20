@@ -72,8 +72,13 @@ type AnimModule = {
 /** Blackout's adapter (`animate` on the shared `locomotion` contact solver) behind the same `bones` interface. */
 async function blackoutActor(root: string, unarmed: boolean): Promise<SurvivorLike & { feet: { planted: boolean }[] }> {
   const anim = await import(join(root, "packages/kit/avatar/anim.ts")) as AnimModule
-  const a = anim.newAvatar("legs", 0, 0, 0, "rifle")
+  const a = anim.newAvatar("legs", 0, 0, 0, "rifle") as ReturnType<AnimModule["newAvatar"]> & { profile?: object }
   a.unarmed = unarmed
+  // `--profile key=value,...` overrides soldier profile keys for experiments.
+  if (values.profile) {
+    const { humanProfiles } = await import(join(root, "packages/kit/human-profile.ts")) as { humanProfiles: Record<string, object> }
+    a.profile = { ...humanProfiles.soldier, ...Object.fromEntries(values.profile.split(",").map(kv => kv.split("=")).map(([k, v]) => [k, Number(v)])) }
+  }
   const actor = {
     bones: {} as Record<string, Frame | undefined>,
     feet: a.feet,
@@ -216,9 +221,11 @@ function metrics(fr: Frame60[]) {
     skateMeanCm: r1(mean(skates) * 100),
     skateMaxCm: r1(maxOf(skates) * 100),
     overstretchMaxCm: r1(maxOf(sep) * 100),
+    overstretchAtS: fr.length ? r1(fr[Math.floor(sep.indexOf(maxOf(sep)) / 2)]!.t) : 0,
     shinHitPct: r1(100 * shinHit / fr.length),
     footHitPct: r1(100 * footHit / fr.length),
     minShinGapCm: r1(Math.min(...shinGap) * 100),
+    minShinGapAtS: fr.length ? r1(fr[shinGap.indexOf(Math.min(...shinGap))]!.t) : 0,
     minThighShinCm: r1(Math.min(...thighShin) * 100),
     minFootGapCm: r1(Math.min(...footGap) * 100),
     kneePopDps: r1(maxOf(kneeRate)),

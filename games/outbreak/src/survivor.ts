@@ -37,7 +37,6 @@ import {
   stiffness,
   strafeFootOffset,
   strafeFootOpen,
-  strafeHipLimit,
   strafeLegGoal,
   strafeSeparate,
   strafeStance,
@@ -89,6 +88,8 @@ export const survivorAimTuning = {
   strafeHipTurn: humanProfiles.soldier.strafeHipTurn,
   crossoverSpeed: humanProfiles.soldier.crossoverSpeed,
   strafeGap: humanProfiles.soldier.strafeGap,
+  strafeSettle: humanProfiles.soldier.strafeSettle,
+  turnStep: humanProfiles.soldier.turnStep,
   ...DEFAULT_HERO_LOOK,
 }
 export type SurvivorAimTuning = typeof survivorAimTuning
@@ -103,6 +104,8 @@ export const survivorAimControls: LabControl[] = [
   { key: "strafeHipTurn", label: "Strafe hip turn · rad", group: "Survivor strafe", min: 0.3, max: 1.05, step: 0.05, unit: "rad" },
   { key: "crossoverSpeed", label: "Crossover speed · m/s", group: "Survivor strafe", min: 1.2, max: 5, step: 0.1, unit: "m/s" },
   { key: "strafeGap", label: "Side-step boot gap · m", group: "Survivor strafe", min: 0.12, max: 0.32, step: 0.01, unit: "m" },
+  { key: "strafeSettle", label: "Strafe settle · s", group: "Survivor strafe", min: 0, max: 0.8, step: 0.05, unit: "s" },
+  { key: "turnStep", label: "Turn-in-place step · rad", group: "Survivor strafe", min: 0.4, max: 1.05, step: 0.05, unit: "rad" },
 ]
 
 export type SurvivorDrawPose = Pick<Pose, "x" | "y" | "vx" | "vy" | "aim"> &
@@ -283,6 +286,8 @@ function keyedReload<T extends readonly [number, ...unknown[]]>(keys: readonly T
  * configurable post-shot aim hold, and keyframed magazine-to-grip reload.
  */
 const OFFLINE_PALETTE = { torso: 0x8c6b42, legs: 0x41474b }
+/** Lab › Survivor strafe › Legs = Today: the survivor's own stride clock with the strafe values it shipped with. */
+const TODAY_STRAFE: HumanProfile = { ...humanProfiles.soldier, sideStepTurn: 0.3, strafeHipTurn: 0.95, crossoverSpeed: 2.6, strafeGap: 0.2, strafeSettle: 0, turnStep: 1.05 }
 
 export class Survivor {
   /** Optional presentation override; does not change the Session's player or movement. */
@@ -697,6 +702,8 @@ export class Survivor {
     this.strafeProfile.strafeHipTurn = tune.strafeHipTurn
     this.strafeProfile.crossoverSpeed = tune.crossoverSpeed
     this.strafeProfile.strafeGap = tune.strafeGap
+    this.strafeProfile.strafeSettle = tune.strafeSettle
+    this.strafeProfile.turnStep = tune.turnStep
 
     if (fired) {
       const sc = ++this.shotCount
@@ -756,7 +763,7 @@ export class Survivor {
       const vy = this.svy + (p.vy - this.svy) * k
       const speed = Math.hypot(vx, vy)
       moving = Math.min(1, speed / 3.4)
-      const activeProfile = profile ?? this.strafeProfile
+      const activeProfile = profile ?? (legacyLegs ? TODAY_STRAFE : this.strafeProfile)
       // Direction-aware stepping shared with Blackout: hips turn partly toward travel, side-steps never cross and
       // run-speed strafes cross over cleanly (strafeStance), with a continuous forward/backpedal flip.
       const travelDir = speed > 0.35 ? Math.atan2(vy, vx) : p.aim
@@ -776,7 +783,8 @@ export class Survivor {
       } else {
       const effTwistLimit = isPistol ? twistLimit : 1.05
       const rel = angleDiff(travelDir, p.aim)
-      const hipLimit = Math.min(strafeHipLimit(speed, activeProfile), effTwistLimit)
+      // Today's hip limit (before the shared rig's square side-steps): 0.3 rad slow, 0.95 rad from 2 m/s.
+      const hipLimit = Math.min(clamp(0.3 + 0.65 * smooth((speed - 0.7) / 1.3), 0, 1.05), effTwistLimit)
       if (speed > 0.35) {
         const wasBack = this.back
         this.back = backpedalling(rel, this.back)
@@ -793,7 +801,7 @@ export class Survivor {
       const c = Math.cos(this.yaw)
       const s = Math.sin(this.yaw)
       const rest = (i: number): V3 => {
-        const [ox, oz] = strafeFootOffset(stance, this.yaw, i, curGait.stride, activeProfile)
+        const [ox, oz] = strafeFootOffset(stance, this.yaw, i, curGait.stride, activeProfile, 0.145, Infinity)
         const x = sx + ox
         const z = sy + oz
         return [x, support(x, z), z]

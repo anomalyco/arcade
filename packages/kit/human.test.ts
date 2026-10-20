@@ -632,3 +632,70 @@ test("stance knees track over the boots when strafing feet turn from the hips", 
     expect(err / Math.max(1, n)).toBeLessThan(0.2)
   }
 })
+
+/** Drives `locomotion` + `poseLegs` from per-frame velocity and aim; `svx` eases toward the raw velocity as adapters do. */
+function drive(frames: number, input: (n: number) => { vx: number; vy: number; aim: number }, profile = humanProfiles.soldier) {
+  const a = actor(), dt = 1 / 60
+  a.vx = a.svx = 0; a.vy = a.svy = 0
+  const out: { feet: { p: V3; planted: boolean }[]; legs: ReturnType<typeof poseLegs>; hips: V3[] }[] = []
+  for (let n = 0; n < frames; n++) {
+    const { vx, vy, aim } = input(n)
+    a.aim = aim; a.vx = vx; a.vy = vy
+    a.svx += (vx - a.svx) * Math.min(1, dt * 12); a.svy += (vy - a.svy) * Math.min(1, dt * 12)
+    a.x += vx * dt; a.y += vy * dt
+    locomotion(a, dt, Math.hypot(vx, vy) * dt, n === 0, profile)
+    const pelvis = yawFrame(pelvisPoint(a), a.motion.pelvis.x + a.motion.twist.x)
+    const legs = poseLegs(a, pelvis)
+    out.push({ feet: a.feet.map(f => ({ p: [...f.p] as V3, planted: f.planted })), legs, hips: [at(pelvis, 0, 0, -RIG.hipW), at(pelvis, 0, 0, RIG.hipW)] })
+  }
+  return out
+}
+const shinEndGap = (legs: ReturnType<typeof poseLegs>, i: number) => len(sub3(at(legs.sh[i]!, 0, -RIG.shin, 0), legs.ft[i]!.p))
+const sub3 = (p: V3, q: V3): V3 => [p[0] - q[0], p[1] - q[1], p[2] - q[2]]
+
+test("A/D reversals at a run never pull a leg past its reach", () => {
+  // The shin missed the boot by 75 cm before the side-step opening cap, the earlier redirect window and the hip-reach
+  // catch step; 13 cm is left for one frame of the quickest flip.
+  const out = drive(60 * 4, n => {
+    const dir = Math.floor(n / 36) % 2 ? Math.PI / 2 : -Math.PI / 2
+    return { vx: 3.4 * Math.cos(dir), vy: 3.4 * Math.sin(dir), aim: 0 }
+  })
+  for (const s of out.slice(60)) for (const i of [0, 1]) expect(shinEndGap(s.legs, i)).toBeLessThan(0.15)
+})
+
+test("standing turns pivot planted boots on the ball and lift without scuffing", () => {
+  // Flick 180° and a slow 360°: before, a grounded ball jumped up to 21 cm in one frame (22-48 cm per contact).
+  for (const aim of [(n: number) => (n > 30 ? Math.PI : 0), (n: number) => Math.min(Math.max(n - 30, 0) / 210, 1) * Math.PI * 2]) {
+    const out = drive(60 * 5, n => ({ vx: 0, vy: 0, aim: aim(n) }))
+    for (let k = 1; k < out.length; k++) for (const i of [0, 1]) {
+      const b0 = out[k - 1]!.legs.toe[i]!.p, b1 = out[k]!.legs.toe[i]!.p
+      if (b0[1] < 0.015 && b1[1] < 0.015) expect(Math.hypot(b1[0] - b0[0], b1[2] - b0[2])).toBeLessThan(0.05)
+    }
+  }
+})
+
+test("turn-in-place steps wait for the aim to twist past turnStep", () => {
+  const steps = (twist: number) => {
+    const out = drive(60 * 2, n => ({ vx: 0, vy: 0, aim: n > 30 ? twist : 0 }), { ...humanProfiles.soldier, turnStep: 0.8 })
+    return out.slice(31).filter((s, k) => s.feet.some((f, i) => !f.planted && out[31 + k - 1]!.feet[i]!.planted)).length
+  }
+  expect(steps(0.6)).toBe(0)
+  expect(steps(1.0)).toBeGreaterThan(0)
+})
+
+test("the ball stays where it pushed off and backward swings clear the floor", () => {
+  for (const [speed, rel] of [[1.4, 0], [3.4, 0], [3.4, Math.PI], [3.4, Math.PI * 0.75], [1.4, Math.PI / 2]] as const) {
+    const out = drive(60 * 4, () => ({ vx: speed * Math.cos(rel), vy: speed * Math.sin(rel), aim: 0 }))
+    let worst = 0
+    for (const i of [0, 1]) {
+      let run = 0
+      for (let k = 61; k < out.length; k++) {
+        const b0 = out[k - 1]!.legs.toe[i]!.p, b1 = out[k]!.legs.toe[i]!.p
+        if (b0[1] < 0.015 && b1[1] < 0.015) run += Math.hypot(b1[0] - b0[0], b1[2] - b0[2])
+        else if (b1[1] >= 0.015) { worst = Math.max(worst, run); run = 0 }
+      }
+    }
+    // Before: 6-10 cm forward (the ball slid back at toe-off) and up to 22 cm on back diagonals (toe scuffing in swing).
+    expect(worst).toBeLessThan(0.03)
+  }
+})

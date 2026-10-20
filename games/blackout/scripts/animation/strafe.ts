@@ -55,7 +55,9 @@ function makeActor(kind: ActorKind): Actor {
   if (kind === "outbreak-aim") {
     const s = new OutbreakSurvivor({ addModel: () => 0 })
     s.profile = { ...humanProfiles.soldier, stepVariation: 0 }
-    const feet = (s as unknown as { feet: { planted: boolean }[] }).feet
+    // The shared-rig legs (Lab › Survivor strafe › Legs) keep their contacts in `loco`; Today's in `feet`.
+    const st = s as unknown as { feet: { planted: boolean }[]; loco?: { feet: { planted: boolean }[] }; aimTuning: { legs?: number } }
+    const feet = st.loco && st.aimTuning.legs !== 0 ? st.loco.feet : st.feet
     return {
       name: kind,
       step(t, x, y, vx, vy, aim) {
