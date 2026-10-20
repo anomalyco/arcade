@@ -1,7 +1,7 @@
 import { distToRect, type Rect } from "@arcade/kit/sim/geom"
 import { propShape, type Building, type Prop, type Town } from "../map"
 import { secretHash, type SecretId, type SecretSeeds } from "./catalog"
-import { hostedIn, isSecretHome, type SecretHost } from "./hosts"
+import { hostedIn, isSecretHome, southWindows, type SecretHost } from "./hosts"
 import type { SecretRun } from "./select"
 
 /**
@@ -272,9 +272,7 @@ export function secretSitesIn(town: Town, b: Building, run: SecretRun, hosts: Re
   }
 
   if (here.has("litWindow")) {
-    const south = town.windows
-      .filter((w) => w.buildingId === b.id && Math.abs(w.rect[3] - b.rect[3]) < 0.05)
-      .sort((a, c) => a.rect[0] - c.rect[0])
+    const south = southWindows(town, b)
     const w = south[Math.floor(roll(seeds, `window:${b.id}`) * south.length)]
     if (w) {
       const x = (w.rect[0] + w.rect[2]) / 2
@@ -301,26 +299,26 @@ export function secretSitesIn(town: Town, b: Building, run: SecretRun, hosts: Re
 
   if (here.has("nod")) {
     const fs = faces(s, b)
-    for (const f of fs.sort((a, c) => a.y - c.y || a.x0 - c.x0)) {
-      const x = f.x0 + (f.x1 - f.x0) * (0.25 + roll(seeds, `nod:${b.id}`) * 0.5)
-      const y = f.y + 0.32
-      if (!floorFree(s, b, x, y, 0.28, 0.6)) continue
-      push("nod", "nod", x, y, 0, (roll(seeds, `nod-yaw:${b.id}`) - 0.5) * 0.25, 0, rectAround(x, y + 0.8, 1, 1))
-      break
-    }
+    // Pushed against a seen wall, somewhere along it, else anywhere clear on the floor.
+    const t0 = roll(seeds, `nod:${b.id}`)
+    const along = fs.sort((a, c) => a.y - c.y || a.x0 - c.x0).flatMap((f) => [0, 0.2, 0.4, 0.6, 0.8].map((k) => ({ x: f.x0 + (f.x1 - f.x0) * ((t0 + k) % 1), y: f.y + 0.4 })))
+    const at = along.find((q) => floorFree(s, b, q.x, q.y, 0.28, 0.6)) ?? hatchSpot(town, b, seeds, s)
+    if (at) push("nod", "nod", at.x, at.y, 0, (roll(seeds, `nod-yaw:${b.id}`) - 0.5) * 0.25, 0, rectAround(at.x, at.y + 0.8, 1, 1))
   }
   return out
 }
 
-/** Chalk on the driveway of a bungalow, else the front path's side. Null if a parked car is on it. */
+/** Chalk beside the front path, else on a bungalow's driveway. Null if a parked car is on it. */
 function chalkSpot(town: Town, b: Building): { x: number; y: number; yaw: number } | null {
   const [a, , , e] = b.rect
   const front = town.doors.find((d) => d.id === `${b.id}-front`)
-  const options = b.kind === "house" ? [{ x: a - 1.7, y: e + 2.3 }, { x: a - 1.7, y: e + 4.6 }] : []
+  // Beside the front path first: a parked car can stand on a driveway.
+  const options: { x: number; y: number }[] = []
   if (front) {
     const cx = (front.rect[0] + front.rect[2]) / 2
     options.push({ x: cx + 2.6, y: e + 2.2 }, { x: cx - 2.6, y: e + 2.2 })
   }
+  if (b.kind === "house") options.push({ x: a - 1.7, y: e + 2.3 }, { x: a - 1.7, y: e + 4.6 })
   for (const o of options) {
     if ((town.vehicles ?? []).some((v) => distToRect(o.x, o.y, v) < 1.2)) continue
     if (town.buildings.some((q) => distToRect(o.x, o.y, q.rect) < 0.9)) continue

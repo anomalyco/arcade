@@ -7,6 +7,7 @@ import { CELLAR_STASH, CELLAR_STORE, cellarLock, workLock, type SecretsState } f
 import { secretHosts } from "../shared/secrets/hosts"
 import { secretSitesIn } from "../shared/secrets/places"
 import { pulseLit, secretRun, PULSE_GAP, PULSE_ON } from "../shared/secrets/select"
+import { generateWorldChunk } from "../shared/world"
 import { SecretMemory, tallyHtml } from "../src/secrets/tally"
 
 const seeds = (n: number, from = 1) => Array.from({ length: n }, (_, i) => ({ seed: from + i * 7919, houseSeed: from + i * 7919 }))
@@ -69,6 +70,24 @@ describe("secrets: where they are", () => {
       const homes = new Set([...a.values()].filter((h) => h.id !== "footprints").map((h) => h.buildingId))
       expect(homes.size).toBe([...a.values()].filter((h) => h.id !== "footprints").length)
     }
+  })
+
+  test("every one-house secret stands in its house on every seed, whichever is forced", () => {
+    const PIECE = { nod: "nod", audience: "chair", litWindow: "window", footprints: "footprint", phone: "phone", rockingChair: "rocker", cellar: "hatch" } as const
+    const missing: string[] = []
+    for (const [id, piece] of Object.entries(PIECE)) {
+      const force = SECRETS.findIndex((x) => x.id === id)
+      for (const s of seeds(40)) {
+        const run = secretRun(s, { ...T, secretForce: force })
+        const hosts = secretHosts(s, "streaming", run.picked)
+        const h = hosts.get(id as keyof typeof PIECE)!
+        const c = generateWorldChunk(s.seed, s.houseSeed, h.cx, h.cy, "streaming")
+        const town: Town = { seed: s.seed, houseSeed: s.houseSeed, terrain: 0.22, foliageDensity: 1, chunks: [c.bounds], buildings: c.buildings, barriers: c.barriers, doors: c.doors, windows: c.windows, props: c.props, lamps: c.lamps, vehicles: c.vehicles }
+        const b = town.buildings.find((x) => x.id === h.buildingId)!
+        if (!secretSitesIn(town, b, run, hosts).some((x) => x.piece === piece && x.secret === id)) missing.push(`${id}@${s.seed}:${b.id}`)
+      }
+    }
+    expect(missing).toEqual([])
   })
 
   test("pieces in a house do not depend on the order the town lists its walls, doors and furniture", () => {

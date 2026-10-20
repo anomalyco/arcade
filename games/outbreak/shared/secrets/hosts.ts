@@ -1,11 +1,23 @@
 import type { Rect } from "@arcade/kit/sim/geom"
-import type { Building } from "../map"
+import type { Building, Town } from "../map"
 import { generateWorldChunk, type WorldMode } from "../world"
 import { SECRETS, secretHash, secretRoll, type SecretId, type SecretSeeds } from "./catalog"
 
 /** The homes secrets live in. */
 export const HOME_ARCHETYPES: readonly string[] = ["house", "ranch", "cottage", "cabin"]
 export const isSecretHome = (b: Pick<Building, "kind" | "archetype">) => HOME_ARCHETYPES.includes(b.archetype ?? b.kind)
+
+/** A building's windows on its south face (the side the camera sees), west to east. */
+export function southWindows(town: Pick<Town, "windows">, b: Building): Town["windows"] {
+  const mid = (b.rect[1] + b.rect[3]) / 2
+  return town.windows.filter((w) => w.buildingId === b.id && w.rect[2] - w.rect[0] > w.rect[3] - w.rect[1] && w.rect[1] > mid).sort((a, c) => a.rect[0] - c.rect[0])
+}
+
+/** Can building `b` hold secret `id`? Every host needs a front door; the lit window needs a window the camera sees. */
+function fits(id: SecretId, chunk: Pick<Town, "doors" | "windows">, b: Building): boolean {
+  if (!chunk.doors.some((d) => d.id === `${b.id}-front`)) return false
+  return id !== "litWindow" || southWindows(chunk, b).length > 0
+}
 
 /** The house a one-house secret picked for a run. */
 export type SecretHost = { readonly id: SecretId; readonly buildingId: string; readonly rect: Rect; readonly cx: number; readonly cy: number }
@@ -30,15 +42,17 @@ export function secretHosts(seeds: SecretSeeds, mode: WorldMode, picked: Readonl
   if (hit) return hit
   const out = new Map<SecretId, SecretHost>()
   const taken = new Set<string>()
-  const chunks = new Map<string, Building[]>()
-  const homesIn = (cx: number, cy: number) => {
+  const chunks = new Map<string, { homes: Building[]; chunk: Pick<Town, "doors" | "windows"> }>()
+  const homesIn = (id: SecretId, cx: number, cy: number) => {
     const k = `${cx},${cy}`
-    let homes = chunks.get(k)
-    if (!homes) {
-      homes = generateWorldChunk(seeds.seed, seeds.houseSeed, cx, cy, mode).buildings.filter(isSecretHome)
-      chunks.set(k, homes)
+    let hit = chunks.get(k)
+    if (!hit) {
+      const c = generateWorldChunk(seeds.seed, seeds.houseSeed, cx, cy, mode)
+      hit = { homes: c.buildings.filter(isSecretHome), chunk: c }
+      chunks.set(k, hit)
     }
-    return homes
+    const { chunk } = hit
+    return hit.homes.filter((b) => fits(id, chunk, b))
   }
   const classic = mode === "classic"
   const lo = classic ? 0 : RING.min
@@ -56,7 +70,7 @@ export function secretHosts(seeds: SecretSeeds, mode: WorldMode, picked: Readonl
       const sweep = (t - TRIES + offset) % (span * span)
       const cx = lo + (t < TRIES ? Math.floor(secretRoll(seeds, `host:${id}:${t}:x`) * span) : sweep % span)
       const cy = lo + (t < TRIES ? Math.floor(secretRoll(seeds, `host:${id}:${t}:y`) * span) : Math.floor(sweep / span))
-      const homes = homesIn(cx, cy)
+      const homes = homesIn(id, cx, cy)
         .filter((b) => !taken.has(b.id) && !SPARED.has(b.id))
         .sort((a, b) => secretHash(`${seeds.seed}:${id}:${a.id}`) - secretHash(`${seeds.seed}:${id}:${b.id}`))
       const b = homes[0]

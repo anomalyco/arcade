@@ -53,6 +53,8 @@ const LABEL: Record<(typeof SECRET_SCENES)[number], string> = {
 }
 // Night scenes are lit only by lamps and windows; the still keeps the play look there.
 const NIGHT = new Set(["tallMan", "litWindow", "rockingChair", "phone", "procession", "visitor"])
+// Close on the indoor pieces; wider for what stands in a yard or down a street.
+const ZOOM: Partial<Record<string, number>> = { chalk: 32, "chalk-late": 32, rockingChair: 32, footprints: 30, audience: 28, tallMan: 44, litWindow: 44, procession: 46, visitor: 30, tally: 30 }
 const HUD = "#status, #hotbar, #stamina, #battery, #prompt, .callouts, .callout, #hud"
 const report: Record<string, unknown> = { viewport: [vw, vh], shots: {} as Record<string, unknown> }
 const browser = await chromium.launch({ executablePath: chrome, headless: true, args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio"] })
@@ -69,26 +71,32 @@ try {
     await page.evaluate(() => localStorage.removeItem("arcade.outbreak.secrets"))
     if (scene !== "tally") await page.evaluate(sel => { for (const el of document.querySelectorAll<HTMLElement>(sel)) el.style.visibility = "hidden" }, HUD)
     const s = await page.evaluate(async a => {
-      const h = (window as any).__arcadeHarness
-      h.setLab("timeScale", 0)
-      if (!a.night) {
-        h.setLab("cone", 180)
-        h.setLab("range", 30)
+      try {
+        const h = (window as any).__arcadeHarness
+        h.freeze(true)
+        h.setLab("timeScale", 0)
+        if (!a.night) {
+          h.setLab("cone", 180)
+          h.setLab("range", 30)
+        }
+          h.setLab("zoom", a.zoom)
+        const at = h.stageSecret(a.scene)
+        const t0 = performance.now()
+        for (let i = 0; performance.now() - t0 < 12000; i++) {
+          if (a.scene !== "tally") h.session().ai.agents.length = 0
+          await h.step()
+          if (i > 90 && h.state().world.pendingBakes === 0) break
+          await new Promise(r => setTimeout(r, 10))
+        }
+        const st = h.state()
+        return { at, picked: st.secrets?.picked, shown: st.secrets?.shown, glance: st.secrets?.glance, tally: st.secrets?.tally }
+      } catch (e) {
+        return { error: String(e) }
       }
-      h.setLab("zoom", a.scene === "litWindow" || a.scene === "procession" || a.scene === "tallMan" ? 46 : 64)
-      const at = h.stageSecret(a.scene)
-      const t0 = performance.now()
-      for (let i = 0; performance.now() - t0 < 12000; i++) {
-        if (a.scene !== "tally") h.session().ai.agents.length = 0
-        await h.step()
-        if (i > 90 && h.state().world.pendingBakes === 0) break
-        await new Promise(r => setTimeout(r, 10))
-      }
-      const st = h.state()
-      return { at, picked: st.secrets?.picked, shown: st.secrets?.shown, glance: st.secrets?.glance, tally: st.secrets?.tally }
-    }, { scene, night: NIGHT.has(scene) })
+    }, { scene, night: NIGHT.has(scene), zoom: ZOOM[scene] ?? 24 })
     const file = resolve(out, `${String(shots.length + 1).padStart(2, "0")}-${scene}.png`)
-    await page.screenshot({ path: file })
+    await page.waitForTimeout(80)
+    await page.screenshot({ path: file, timeout: 90_000 })
     shots.push(file)
     ;(report.shots as Record<string, unknown>)[scene] = s
     console.log(scene, JSON.stringify(s))

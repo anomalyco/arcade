@@ -55,7 +55,7 @@ circled on every calendar, and **the number** the radio man's set repeats.
 | **The circled day** (`calendar`) | A calendar on a kitchen or living-room wall in 55% of homes (fixed per house) | Walk up and look: a month page with the same day circled in red in every house in town, the days before it crossed off, and only two or three crossed off after. Nobody crossed off a day after that week | The day is the cellar's second number |
 | **The stopped clocks** (`clock`) | A wall clock in 40% of homes | Every clock in town shows the same time. The second hand twitches and never gets past the same mark | The hour is the cellar's first number |
 | **The scratched faces** (`photo`) | A framed family photo on a wall in 35% of homes | In about four in ten of them one face is scratched out with frantic white strokes, never the same family member twice in a row | |
-| **The chalk drawings** (`chalk`) | Children's chalk on the driveway of 22% of homes | A house, a sun and stick figures in pastel chalk. From the second night on, every drawing in town has a thin figure much taller than the house standing beside it, and the sun is coloured in black | |
+| **The chalk drawings** (`chalk`) | Children's chalk by the front path (or on the driveway) of 22% of homes | A house, a sun and stick figures in pastel chalk. From the second night on, every drawing in town has a thin figure much taller than the house standing beside it, and the sun is coloured in black | |
 | **A moving company** (`nod`, 25% of runs) | One moving box in one house, among the others | A stencilled company name on the side: **anomaly**. The game's makers; a stranger reads a removals firm | |
 
 ### Strange (rare; uncanny, never a jump scare)
