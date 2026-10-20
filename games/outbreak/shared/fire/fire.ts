@@ -30,6 +30,7 @@ import type { StoreState } from "@arcade/kit/sim/ledger"
  * | `dyn:<k>` | `t`, `boom`, `fx`, `fy` (cm from `at`), `done` | dynamite thrown at `t` from `at + f`, blowing at `boom` |
  * | `crack:<k>` | `t`, `until`, `ex`, `ey` (cm from `at`) | firecrackers popping from `at` towards `at + e` |
  * | `trap:<k>` | `t`, `z` (id + 1), `snap`, `until` | a bear trap set at `t`; holding zombie `z` from `snap` to `until` |
+ * | `tree:<k>` | `t`, `r` (crown cm) | the tree at `at` caught at `t`: it burns for `treeBurnSeconds`, then stands bare and charred |
  */
 
 export type FireTuning = {
@@ -95,6 +96,12 @@ export type FireTuning = {
   trapDamage: number
   /** Seconds a bear trap holds what it caught. */
   trapHold: number
+  /** Whether trees catch from fire on the ground, the stream, burning dead and blasts (0: trees never burn). */
+  treeCatch: number
+  /** Seconds a tree burns before it stands bare and charred. */
+  treeBurnSeconds: number
+  /** Chance per second that a burning tree sets a neighbour whose crown it touches alight. */
+  treeSpread: number
 }
 
 export const DEFAULT_FIRE_TUNING: FireTuning = {
@@ -129,6 +136,9 @@ export const DEFAULT_FIRE_TUNING: FireTuning = {
   flareGunRange: 26,
   trapDamage: 45,
   trapHold: 8,
+  treeCatch: 1,
+  treeBurnSeconds: 24,
+  treeSpread: 0.08,
 }
 
 const G = "Fire & explosives"
@@ -166,6 +176,9 @@ export const fireControls = [
   { key: "flareGunRange", label: "Flare gun range", group: G, min: 5, max: 50, step: 1, unit: "m" },
   { key: "trapDamage", label: "Bear trap damage", group: G, min: 0, max: 200, step: 5, unit: "HP" },
   { key: "trapHold", label: "Bear trap holds for", group: G, min: 1, max: 30, step: 0.5, unit: "s" },
+  { key: "treeCatch", label: "Trees catch fire", group: G, min: 0, max: 1, step: 1, unit: "" },
+  { key: "treeBurnSeconds", label: "A tree burns for", group: G, min: 4, max: 90, step: 1, unit: "s" },
+  { key: "treeSpread", label: "Fire jumps tree to tree", group: G, min: 0, max: 1, step: 0.01, unit: "/s" },
 ] as const satisfies readonly { key: keyof FireTuning; label: string; group: string; min: number; max: number; step: number; unit: string }[]
 
 /** Ring sizes: the most of each that can exist at once (oldest reused first). */
@@ -175,6 +188,36 @@ export const SCORCH_RING = 48
 export const DYN_RING = 6
 export const CRACK_RING = 4
 export const TRAP_RING = 8
+export const TREE_RING = 12
+
+/** A tree's crown radius from its variant (the vegetation pass draws the same crown). */
+export const treeCrownRadius = (variant: number) => 2.45 + variant * 0.75
+/** A tree's height from its crown radius (the level's `plant` grows 4.6 m plus 1.8 m × variant). */
+export const treeHeight = (crown: number) => 4.6 + (crown - 2.45) * 2.4
+
+/** Seconds since tree store `st` caught (negative when it never has). */
+export const treeAge = (st: StoreState, time: number) => (st.counts.t ? time - st.counts.t / 10 : -1)
+
+/**
+ * How burnt a tree looks (0..1, the vegetation burn hook): from 0.1 as it catches, through charring bark and glowing
+ * embers, to 0.95 as the last leaves go at `burnSeconds`, then 1, bare and black, for good.
+ */
+export function treeBurn(st: StoreState, time: number, burnSeconds: number): number {
+  const age = treeAge(st, time)
+  if (age < 0) return 0
+  const b = Math.max(1, burnSeconds)
+  return age < b ? 0.1 + 0.85 * Math.pow(age / b, 0.8) : Math.min(1, 0.95 + (0.05 * (age - b)) / 3)
+}
+
+/** How hard a tree is burning (0..1): catching over two seconds, dying down over the last fifth of `burnSeconds`. */
+export function treeFlames(st: StoreState, time: number, burnSeconds: number): number {
+  const age = treeAge(st, time)
+  const b = Math.max(1, burnSeconds)
+  if (age < 0 || age >= b) return 0
+  const up = Math.min(1, age / 2)
+  const down = Math.min(1, (b - age) / (b * 0.2))
+  return up * up * (3 - 2 * up) * down
+}
 
 /** Items whose primary button this feature runs. */
 export const FIRE_ITEMS = ["flamethrower", "dynamite", "firecrackers", "molotov", "flare-gun", "bear-trap"] as const

@@ -18,8 +18,11 @@ import {
   lifeAge,
   ringId,
   SCORCH_RING,
+  TREE_RING,
+  treeFlames,
+  treeHeight,
 } from "../../shared/fire/fire"
-import { nozzle, sprayers, type FireFrame } from "./fx"
+import { fireFlicker, nozzle, sprayers, type FireFrame } from "./fx"
 
 /**
  * Outbreak's fire on the kit explosion's look (`@arcade/kit/fx`): every flame is a `fireball` billow (blackbody core
@@ -55,6 +58,8 @@ export class FlameFx {
   /** One-shot events already fired (blasts, molotov bursts, cracker pops), by key, with when they were seen. */
   private readonly fired = new Map<string, number>()
   private frameNo = 0
+  /** The current source's flicker (× flame brightness), set before its flames are emitted. */
+  private flick = 1
   private seed = 0x2f6b4c1d
   private readonly random = () => {
     this.seed = (Math.imul(this.seed, 1664525) + 1013904223) >>> 0
@@ -100,7 +105,7 @@ export class FlameFx {
     s.gravity = -(o.rise ?? 3)
     s.drag = o.drag ?? 3
     s.bounce = 0
-    s.r = 0.5 * look.flameBrightness
+    s.r = 0.5 * look.flameBrightness * this.flick
     s.g = s.b = 1
     s.alpha = 0.86
     s.temperature = o.heat * look.flameHeat
@@ -109,6 +114,47 @@ export class FlameFx {
     s.trail = 0
     s.pop = 0
     this.spawn(p, x, y, z, vx, vy, vz)
+  }
+
+  /**
+   * A hot inner tongue under the billows (Lab › Hot inner tongues): small, white-hot, short-lived and quick to rise, so a
+   * fire reads in layers, a bright licking core inside the rolling orange.
+   */
+  private tongue(p: Particles, frame: FireFrame, x: number, y: number, z: number, vx: number, vz: number, size: number): void {
+    const r = this.random
+    this.flame(p, frame, x, y, z, vx + (r() - 0.5) * 0.25, 1.6 + r() * 1.2, vz + (r() - 0.5) * 0.25, {
+      life: 0.16 + r() * 0.12,
+      size: size * (0.7 + 0.4 * r()),
+      grow: size * 0.6,
+      heat: 1.55 + 0.25 * r(),
+      rise: 5,
+      drag: 2.5,
+    })
+  }
+
+  /** The warm air round a flame: an unlit additive halo, `size` metres across at full, `power` its brightness. */
+  private glow(p: Particles, frame: FireFrame, x: number, y: number, z: number, size: number, power: number): void {
+    const a = power * frame.look.fireGlow * this.flick
+    if (a <= 0.002) return
+    const s = this.s
+    const r = this.random
+    s.kind = "glow"
+    s.life = 0.55 + r() * 0.25
+    s.size = size * (0.85 + 0.25 * r())
+    s.growth = size * 0.15
+    s.gravity = -0.3
+    s.drag = 2
+    s.bounce = 0
+    s.r = 1
+    s.g = 0.42 + 0.08 * r()
+    s.b = 0.12
+    s.alpha = Math.min(1, a)
+    s.temperature = 0
+    s.turbulence = 0
+    s.ease = 1
+    s.trail = 0
+    s.pop = 0
+    this.spawn(p, x + (r() - 0.5) * size * 0.15, y + (r() - 0.5) * size * 0.1, z + (r() - 0.5) * size * 0.15, 0, 0.1, 0)
   }
 
   /** A slow ember spiralling up off a fire. */
@@ -181,6 +227,7 @@ export class FlameFx {
    */
   emit(p: Particles, frame: FireFrame, dt: number): void {
     this.frameNo++
+    this.flick = 1
     this.shown.births = this.shown.blasts = this.shown.stamps = 0
     const { view, look, support } = frame
     const time = view.time
@@ -207,6 +254,7 @@ export class FlameFx {
       const dz = Math.sin(s.aim)
       const len = reach * (0.3 + 0.7 * smooth(0, 0.16, time - since))
       const key = `stream:${s.id}`
+      this.flick = fireFlicker(time, s.id.length * 3.1, look.fireFlicker)
       const n = this.births(key, 64 * dens, dt)
       for (let i = 0; i < n; i++) {
         const life = 0.42 + r() * 0.2
@@ -236,6 +284,10 @@ export class FlameFx {
       const ez = n0.z + dz * len * 0.85
       const eg = support(ex, ez)
       for (let i = this.births(`${key}:ember`, 16 * embers, dt); i > 0; i--) this.ember(p, ex + (r() - 0.5) * len * 0.4, eg + 0.6 + r() * 0.6, ez + (r() - 0.5) * len * 0.4, dx * 1.5, dz * 1.5, 1.1)
+      for (let i = this.births(`${key}:glow`, 14, dt); i > 0; i--) {
+        const u = 0.35 + r() * 0.6
+        this.glow(p, frame, n0.x + dx * len * u, eg + 0.8, n0.z + dz * len * u, 1.6 + len * 0.25, 0.03)
+      }
       for (let i = this.births(`${key}:smoke`, 9, dt); i > 0; i--) {
         const u = 0.5 + r() * 0.5
         this.soot(p, frame, n0.x + dx * len * u, eg + 1.3 + r() * 0.5, n0.z + dz * len * u, { size: 0.55, life: 2.8, alpha: 0.55, vx: dx * 0.8, vz: dz * 0.8, rise: 0.7 })
@@ -259,6 +311,7 @@ export class FlameFx {
         const bones = frame.bones?.(id)
         const vx = z.vx * 0.8
         const vz = z.vy * 0.8
+        this.flick = fireFlicker(time, id * 1.37, look.fireFlicker)
         for (let i = this.births(key, 38 * dens * lvl, dt); i > 0; i--) {
           const name = BURN_BONES[Math.floor(r() * BURN_BONES.length)]!
           const b = bones?.[name]
@@ -273,6 +326,12 @@ export class FlameFx {
             rise: 3.2,
           })
         }
+        for (let i = this.births(`${key}:core`, 22 * look.flameCore * lvl, dt); i > 0; i--) {
+          const b = bones?.[BURN_BONES[Math.floor(r() * 6)]!]
+          this.tongue(p, frame, (b ? b.p[0] : z.x) + (r() - 0.5) * 0.12, (b ? b.p[1] : g + 0.9) - 0.05, (b ? b.p[2] : z.y) + (r() - 0.5) * 0.12, vx, vz, 0.07)
+        }
+        const torso = bones?.torso
+        for (let i = this.births(`${key}:glow`, 8 * lvl, dt); i > 0; i--) this.glow(p, frame, torso ? torso.p[0] : z.x, torso ? torso.p[1] : g + 1.1, torso ? torso.p[2] : z.y, 1.7, 0.028)
         const head = bones?.head
         const hy = head ? head.p[1] : g + 1.6
         for (let i = this.births(`${key}:smoke`, 5 * lvl, dt); i > 0; i--) this.soot(p, frame, z.x, hy + 0.3, z.y, { size: 0.4, life: 2.4, alpha: 0.5, vx, vz })
@@ -304,6 +363,7 @@ export class FlameFx {
         spawnExplosion(p, null, x, g, y, burst, r)
         this.shown.blasts++
       }
+      this.flick = fireFlicker(time, k * 2.71 + x, look.fireFlicker)
       const rate = (9 + rad * rad * 26) * dens * lvl
       for (let i = this.births(key, rate, dt); i > 0; i--) {
         const rr = Math.sqrt(r()) * rad * 0.85
@@ -319,13 +379,68 @@ export class FlameFx {
           rise: 3.6,
         })
       }
+      for (let i = this.births(`${key}:core`, (5 + rad * 10) * look.flameCore * lvl, dt); i > 0; i--) {
+        const rr = Math.sqrt(r()) * rad * 0.6
+        const a = r() * Math.PI * 2
+        const fx = x + Math.cos(a) * rr
+        const fz = y + Math.sin(a) * rr
+        this.tongue(p, frame, fx, support(fx, fz) + 0.04, fz, 0, 0, 0.06 + 0.02 * Math.sqrt(rad))
+      }
+      for (let i = this.births(`${key}:glow`, 6 * lvl, dt); i > 0; i--) this.glow(p, frame, x, g + 0.45 + rad * 0.15, y, 1.1 + rad * 1.1, 0.022 * (0.6 + 0.4 * rad))
       for (let i = this.births(`${key}:smoke`, (1 + rad * 2.5) * lvl, dt); i > 0; i--) {
         this.soot(p, frame, x + (r() - 0.5) * rad, g + 0.9 + rad * 0.3, y + (r() - 0.5) * rad, { size: 0.35 + rad * 0.25, life: 2.6 + rad, alpha: 0.45 })
       }
       if (rad > 0.9) for (let i = this.births(`${key}:ember`, 2.5 * rad * embers * lvl, dt); i > 0; i--) this.ember(p, x + (r() - 0.5) * rad, g + 0.4, y + (r() - 0.5) * rad, 0, 0)
     })
 
+    // ── Burning trees: the crown alight, flames licking up the trunk, embers and a heavy smoke; a thin smoulder after ──
+    const tf = look.treeFlames
+    if (tf > 0) {
+      ring("tree", TREE_RING, (st, k) => {
+        if (!st.at || !st.counts.t || !near(st.at.x, st.at.y)) return
+        const { x, y } = st.at
+        const cr = (st.counts.r ?? 250) / 100
+        const h = treeHeight(cr)
+        const g = support(x, y)
+        const key = `tree:${k}:${st.counts.t}`
+        const lvl = treeFlames(st, time, look.treeBurnSeconds) * tf
+        if (lvl <= 0.01) {
+          const after = time - (st.counts.t ?? 0) / 10 - look.treeBurnSeconds
+          if (after > 0 && after < 30) for (let i = this.births(`${key}:smoulder`, 1.4 * (1 - after / 30) * tf, dt); i > 0; i--) this.soot(p, frame, x + (r() - 0.5) * 0.6, g + h * (0.4 + 0.4 * r()), y + (r() - 0.5) * 0.6, { size: 0.45, life: 4, alpha: 0.35, rise: 0.5 })
+          return
+        }
+        this.flick = fireFlicker(time, k * 5.3 + x, look.fireFlicker)
+        // The crown, as it burns away from the outside in (the leaves fold away on the vegetation side).
+        const burnt = Math.min(1, ((time - (st.counts.t ?? 0) / 10) / Math.max(1, look.treeBurnSeconds)) * 1.2)
+        const spread = cr * (0.78 - 0.35 * burnt)
+        for (let i = this.births(key, 70 * dens * lvl, dt); i > 0; i--) {
+          const a = r() * Math.PI * 2
+          const d = Math.sqrt(r()) * spread
+          const fy = g + h * (0.42 + 0.5 * r())
+          this.flame(p, frame, x + Math.cos(a) * d, fy, y + Math.sin(a) * d, (r() - 0.5) * 0.4, 0.9 + r() * 0.9, (r() - 0.5) * 0.4, {
+            life: 0.55 + r() * 0.3,
+            size: 0.2 + r() * 0.14,
+            grow: 0.45 + 0.25 * r(),
+            heat: 0.9 + r() * 0.25,
+            rise: 3.6,
+          })
+        }
+        for (let i = this.births(`${key}:trunk`, 12 * dens * lvl, dt); i > 0; i--) {
+          this.flame(p, frame, x + (r() - 0.5) * 0.35, g + 0.2 + r() * h * 0.4, y + (r() - 0.5) * 0.35, 0, 1.2 + r() * 0.8, 0, { life: 0.4 + r() * 0.2, size: 0.12 + r() * 0.06, grow: 0.25, heat: 1, rise: 3.4 })
+        }
+        for (let i = this.births(`${key}:core`, 24 * look.flameCore * lvl, dt); i > 0; i--) {
+          const a = r() * Math.PI * 2
+          const d = Math.sqrt(r()) * spread * 0.7
+          this.tongue(p, frame, x + Math.cos(a) * d, g + h * (0.45 + 0.4 * r()), y + Math.sin(a) * d, 0, 0, 0.12)
+        }
+        for (let i = this.births(`${key}:ember`, 14 * embers * lvl, dt); i > 0; i--) this.ember(p, x + (r() - 0.5) * spread, g + h * (0.6 + 0.4 * r()), y + (r() - 0.5) * spread, 0, 0, 1.1)
+        for (let i = this.births(`${key}:smoke`, 6 * lvl, dt); i > 0; i--) this.soot(p, frame, x + (r() - 0.5) * cr * 0.8, g + h + 0.3, y + (r() - 0.5) * cr * 0.8, { size: 0.95, life: 4.5, alpha: 0.5, rise: 0.9, shade: 0.09 })
+        for (let i = this.births(`${key}:glow`, 10 * lvl, dt); i > 0; i--) this.glow(p, frame, x, g + h * 0.62, y, cr * 1.9, 0.045)
+      })
+    }
+
     // ── Dynamite: the fuse spitting, then the kit blast ──
+    this.flick = 1
     ring("dyn", DYN_RING, (st, k) => {
       if (!st.counts.t || !st.at) return
       const age = blastAge(st, time)

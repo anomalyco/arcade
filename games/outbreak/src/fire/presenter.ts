@@ -1,8 +1,9 @@
 import { MAT, Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
 import { INST_FLOATS, type Batch, type Renderer } from "@arcade/kit/gpu/renderer"
-import { LIGHT_FLOATS } from "@arcade/kit/limits"
-import { blastAge, DYN_RING, dynamiteAt, fireHash, ringId, SCORCH_RING, TRAP_RING } from "../../shared/fire/fire"
+import { LIGHT_CAPSULE, LIGHT_FLOATS } from "@arcade/kit/limits"
+import { blastAge, DYN_RING, dynamiteAt, FIRE_RING, fireHash, fireLit, ringId, SCORCH_RING, TRAP_RING, TREE_RING, treeBurn } from "../../shared/fire/fire"
 import { hex } from "../level"
+import { setFoliageBurnSpots, setTreeBurnSource, treeIdAt } from "../vegetation/trees"
 import { fireAlphaSprites, fireLights, sprayers, type FireFrame } from "./fx"
 import { bearTrapMesh, buildFireItemMeshes } from "./items"
 
@@ -94,6 +95,9 @@ export class FirePresenter {
   private readonly out: Batch[] = []
   private readonly cand: { d2: number; o: number }[] = []
   private readonly candData = new Float32Array(MAX_CAND * LIGHT_FLOATS)
+  private readonly treeBurns = new Map<number, number>()
+  /** Shrub and hedge burn spots, flat: x, z, radius, burn. */
+  private readonly spots: number[] = []
   /** Proof readout of the last frame. */
   readonly shown = { scorch: 0, lights: 0, sprayers: 0, dynamite: 0, traps: 0 }
 
@@ -104,6 +108,11 @@ export class FirePresenter {
     this.trapOpen = renderer.addModel(bearTrapMesh(false))
     this.trapShut = renderer.addModel(bearTrapMesh(true))
     this.rig = renderer.addModel(rigMesh())
+    setTreeBurnSource((id) => this.treeBurns.get(id) ?? 0)
+    setFoliageBurnSpots((push) => {
+      const sp = this.spots
+      for (let i = 0; i < sp.length; i += 4) push(sp[i]!, sp[i + 1]!, sp[i + 2]!, sp[i + 3]!)
+    })
   }
 
   private put(model: number, x: number, y: number, z: number, yaw: number, scale = 1, alpha = 1, pitch = 0, roll = 0): void {
@@ -176,32 +185,64 @@ export class FirePresenter {
     return fireAlphaSprites(frame, sprites, count)
   }
 
-  /** Gathers this frame's fire lights (call before `writeLights`). */
+  /** Gathers this frame's fire lights (call before `writeLights`), and the burning trees and charred ground vegetation draws. */
   gatherLights(frame: FireFrame, camX: number, camY: number): void {
+    this.gatherBurns(frame)
     this.cand.length = 0
     const d = this.candData
-    fireLights(frame, (x, h, z, r, c, power) => {
+    fireLights(frame, (x, h, z, r, c, power, hx = 0, hy = 0, hz = 0) => {
       if (this.cand.length >= MAX_CAND) return
       const o = this.cand.length * LIGHT_FLOATS
+      const capsule = hx !== 0 || hy !== 0 || hz !== 0
       d[o] = x
       d[o + 1] = h
       d[o + 2] = z
-      d[o + 3] = r
+      // A capsule's reach is from its centre: the radius plus its plan half-length (the lamp grid and reject use it).
+      d[o + 3] = r + (capsule ? Math.hypot(hx, hz) : 0)
       d[o + 4] = c[0]
       d[o + 5] = c[1]
       d[o + 6] = c[2]
       d[o + 7] = power
-      d[o + 8] = 0
-      d[o + 9] = 0
-      d[o + 10] = 0
-      // A point light kept out of rooms in the interior view, like the road flares and porch lights.
-      d[o + 11] = -1
+      d[o + 8] = hx
+      d[o + 9] = hy
+      d[o + 10] = hz
+      // Points and capsules alike are kept out of rooms in the interior view, like the road flares and porch lights.
+      d[o + 11] = capsule ? LIGHT_CAPSULE : -1
       d[o + 12] = 0
       d[o + 13] = 0
       d[o + 14] = 0.12
       d[o + 15] = -1
       this.cand.push({ d2: (x - camX) ** 2 + (z - camY) ** 2, o })
     })
+  }
+
+  /** Burn state per burning or burnt tree, and the burning and scorched ground that chars shrubs and hedges. */
+  private gatherBurns(frame: FireFrame): void {
+    const { view, look } = frame
+    const time = view.time
+    const ledger = view.progression.ledger
+    this.treeBurns.clear()
+    for (let k = 0; k < TREE_RING; k++) {
+      const st = ledger.store(ringId("tree", k))
+      if (!st?.at || !st.counts.t) continue
+      this.treeBurns.set(treeIdAt(st.at.x, st.at.y), treeBurn(st, time, look.treeBurnSeconds))
+    }
+    const spots = this.spots
+    spots.length = 0
+    const ch = look.foliageChar
+    if (ch <= 0) return
+    for (let k = 0; k < FIRE_RING; k++) {
+      const st = ledger.store(ringId("fire", k))
+      if (!st?.at || !fireLit(st, time)) continue
+      spots.push(st.at.x, st.at.y, ((st.counts.r ?? 0) / 100) * 1.1, 0.32 * ch)
+    }
+    for (let k = 0; k < SCORCH_RING; k++) {
+      const st = ledger.store(ringId("scorch", k))
+      if (!st?.at || !st.counts.r) continue
+      const age = time - (st.counts.t ?? 0) / 10
+      // Black and half gone where fire passed (a crater strips them), coming on over a few seconds.
+      spots.push(st.at.x, st.at.y, ((st.counts.r ?? 0) / 100) * (st.counts.crater ? 1.5 : 1.2), Math.min(0.78, 0.3 + Math.max(0, age) * 0.12) * ch)
+    }
   }
 
   /** Packs the nearest fire lights into `lights` from `count`, at most `fireMaxLights`; returns the new count. */

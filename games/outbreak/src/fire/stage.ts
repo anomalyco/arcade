@@ -1,5 +1,5 @@
 import type { OutbreakAISubsystem } from "../../shared/ai"
-import { FIRE_ITEMS, ringId, BURN_RING, CRACK_RING, DYN_RING, FIRE_RING, SCORCH_RING, TRAP_RING } from "../../shared/fire/fire"
+import { FIRE_ITEMS, ringId, BURN_RING, CRACK_RING, DYN_RING, FIRE_RING, SCORCH_RING, TRAP_RING, TREE_RING } from "../../shared/fire/fire"
 import { DEFAULT_FLARE_TUNING } from "../../shared/flares/flares"
 import {
   fireFlareGun,
@@ -26,6 +26,8 @@ import type { DiscoveryHost } from "../discovery/stage"
  * - `molotov`: a molotov thrown into the dead.
  * - `flare-gun`: a flare fired up the road past the dead.
  * - `bear-trap`: a trap set just ahead with one of the dead walking into it.
+ * - `tree`: night, the survivor six metres from the nearest tree, a molotov's fire at its trunk catching it, three of
+ *   the dead about it.
  */
 export const FIRE_SCENES = [
   "armory",
@@ -37,6 +39,7 @@ export const FIRE_SCENES = [
   "molotov",
   "flare-gun",
   "bear-trap",
+  "tree",
 ] as const
 export type FireScene = (typeof FIRE_SCENES)[number]
 
@@ -60,7 +63,7 @@ function select(view: SessionView, item: string): void {
 /** Puts out every fire, fuse, trap and scorch mark (ring stores stay, emptied). */
 function clearFire(view: SessionView): void {
   const ledger = view.progression.ledger
-  for (const [prefix, size] of [["fire", FIRE_RING], ["burn", BURN_RING], ["scorch", SCORCH_RING], ["dyn", DYN_RING], ["crack", CRACK_RING], ["trap", TRAP_RING]] as const) {
+  for (const [prefix, size] of [["fire", FIRE_RING], ["burn", BURN_RING], ["scorch", SCORCH_RING], ["dyn", DYN_RING], ["crack", CRACK_RING], ["trap", TRAP_RING], ["tree", TREE_RING]] as const) {
     for (let k = 0; k < size; k++) {
       const st = ledger.store(ringId(prefix, k))
       if (!st) continue
@@ -81,6 +84,7 @@ export function stageFire(host: DiscoveryHost, session: FireStageSession, scene:
   const street = ash.rect[3] + 7
   const x = (ash.rect[0] + ash.rect[2]) / 2
   host.setHour(scene === "armory" ? 19.5 : 22)
+  if (scene === "tree") return stageTree(host, session, x, street)
   host.pose(x, street, 0)
   const me = sim.slots[0]!
   const state = sim.getFeatureState<FireState>("fire")
@@ -145,4 +149,30 @@ export function stageFire(host: DiscoveryHost, session: FireStageSession, scene:
     }
   }
   return { x, y: street }
+}
+
+/** The `tree` scene: the tree nearest the road south of Ash's house, alight at its trunk, the survivor watching. */
+function stageTree(host: DiscoveryHost, session: FireStageSession, x: number, street: number): { x: number; y: number } {
+  const view = host.view()
+  let tree = view.town.props.find((p) => p.kind === "tree")
+  let best = Infinity
+  for (const p of view.town.props) {
+    if (p.kind !== "tree") continue
+    const d = Math.hypot(p.x - x, p.y - street)
+    if (d < best) {
+      best = d
+      tree = p
+    }
+  }
+  if (!tree) {
+    host.pose(x, street, 0)
+    return { x, y: street }
+  }
+  const px = tree.x - 6
+  const py = tree.y + 1.5
+  host.pose(px, py, Math.atan2(tree.y - py, tree.x - px))
+  const me = session.sim.slots[0]!
+  placeFire(session.sim, tree.x + 0.7, tree.y, 0.8, 3, 1, me.id)
+  for (let i = 0; i < 3; i++) session.ai.spawnZombie(view.town, tree.x + 2.5 + i * 1.2, tree.y - 1.5 + i * 1.4, "wander")
+  return { x: px, y: py }
 }

@@ -140,6 +140,8 @@ ${blackbodyFireWgsl}
     }else{light=vec3f(2.2);}
   } else if(kind==4.0){
     light=vec3f(2.2);
+  } else if(kind==9.0){
+    light=vec3f(1.0);
   }
   if(F.debug==3.0){light=vec3f(dot(light,vec3f(0.333)));}
   var o:Out;
@@ -192,6 +194,16 @@ ${blackbodyFireWgsl}
     if(F.debug==1.0){return vec4f(vec3f(alpha,alpha*0.4,1.0-alpha)*alpha,alpha);}
     if(F.debug==3.0){return vec4f(extLight*puffUp*alpha,alpha);}
     return vec4f(rgb*alpha,alpha);
+  }
+  if(o.kind==9.0){
+    // Glow: the warm air round a flame. Unlit and purely additive (alpha 0), a soft core with a long tail.
+    let r2=dot(o.uv,o.uv);
+    if(r2>=0.98){discard;}
+    let a=o.color.a*(exp(-r2*3.2)*0.7+exp(-r2*10.0)*0.3)*(1.0-smoothstep(0.6,0.98,r2));
+    if(a<0.0004){discard;}
+    if(F.debug==2.0){return vec4f(0.12,0.025,0.008,0.06);}
+    if(F.debug==1.0){return vec4f(vec3f(a,a*0.4,1.0-a)*a,a);}
+    return vec4f(o.color.rgb*a,0.0);
   }
   if(o.kind==8.0){
     // Lit smoke: the fireball's warped billow lobes without its heat, softer edged and slower, thinning as it ages.

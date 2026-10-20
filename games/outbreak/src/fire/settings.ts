@@ -36,6 +36,21 @@ export type FireLook = {
   blastShake: number
   /** Kit fire: × the dynamite fireball's size (on top of the blast radius). */
   blastSize: number
+  /**
+   * Shape of fire's light: 0 Today (points), 1 capsules (a jet, a burning figure or tree lights the street along its
+   * length, through the lamp grid like any lamp).
+   */
+  fireLightShape: number
+  /** How much fire light and flame brightness flicker (0 steady). */
+  fireFlicker: number
+  /** Kit fire: the warm glow in the air round flames, as a multiple of the default (0 none). */
+  fireGlow: number
+  /** Kit fire: the white-hot inner tongues under the billows (0 billows only, as on the first pass). */
+  flameCore: number
+  /** Kit fire: flames, embers and smoke in a burning tree's crown, as a multiple of the default (0 none). */
+  treeFlames: number
+  /** Hedges, shrubs and grass under fire and scorch char and go bare (0 off). */
+  foliageChar: number
 }
 
 export const DEFAULT_FIRE_LOOK: FireLook = {
@@ -54,6 +69,12 @@ export const DEFAULT_FIRE_LOOK: FireLook = {
   blastFlash: 1,
   blastShake: 1,
   blastSize: 1,
+  fireLightShape: 1,
+  fireFlicker: 1,
+  fireGlow: 1,
+  flameCore: 1,
+  treeFlames: 1,
+  foliageChar: 1,
 }
 
 /** The Lab's Fire & explosives settings: the rules and the look in one group. */
@@ -88,6 +109,21 @@ export const fireLookControls: readonly LabControl[] = [
   { key: "blastFlash", label: "Blast flash", group: G, min: 0, max: 2, step: 0.05, unit: "×" },
   { key: "blastShake", label: "Blast shake", group: G, min: 0, max: 2, step: 0.05, unit: "×" },
   { key: "blastSize", label: "Blast fireball size (kit)", group: G, min: 0.4, max: 2, step: 0.05, unit: "×" },
+  {
+    key: "fireLightShape",
+    label: "Fire light shape",
+    group: G,
+    type: "select",
+    options: [
+      { value: 0, label: "Today (points)" },
+      { value: 1, label: "Capsules (light along the flame)" },
+    ],
+  },
+  { key: "fireFlicker", label: "Flicker", group: G, min: 0, max: 2, step: 0.05, unit: "×" },
+  { key: "fireGlow", label: "Warm glow in the air (kit)", group: G, min: 0, max: 3, step: 0.05, unit: "×" },
+  { key: "flameCore", label: "Hot inner tongues (kit)", group: G, min: 0, max: 2, step: 0.05, unit: "×" },
+  { key: "treeFlames", label: "Burning tree flames (kit)", group: G, min: 0, max: 2, step: 0.05, unit: "×" },
+  { key: "foliageChar", label: "Hedges char under fire", group: G, min: 0, max: 1, step: 0.05, unit: "" },
 ]
 
 export const allFireControls: readonly LabControl[] = [...(fireControls as readonly LabControl[]), ...fireLookControls]

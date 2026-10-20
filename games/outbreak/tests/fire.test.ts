@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { TICK_DT } from "../shared/clock"
 import { CoopSim, type SurvivorSlot } from "../shared/coop-sim"
-import { BURN_RING, burning, burnZombie, crackerAt, DEFAULT_FIRE_TUNING, FIRE_RING, fireLit, ringId, SCORCH_RING, type FireTuning } from "../shared/fire/fire"
-import { inStream } from "../shared/fire/runtime"
+import { BURN_RING, burning, burnZombie, crackerAt, DEFAULT_FIRE_TUNING, FIRE_RING, fireLit, ringId, SCORCH_RING, treeBurn, treeFlames, type FireTuning } from "../shared/fire/fire"
+import { inStream, placeFire } from "../shared/fire/runtime"
 import { CoopRoomCore, type Conn } from "../server/room-core"
 import { DEFAULT_COOP_ROOM } from "../shared/coop-config"
 import { decodeServerText, decodeSnapshot, packCommand } from "../shared/net-protocol"
@@ -370,5 +370,45 @@ describe("co-op", () => {
       expect(seen.store(st.id)?.counts).toEqual(st.counts)
       expect(seen.store(st.id)?.at).toEqual(st.at)
     }
+  })
+})
+
+describe("trees", () => {
+  const firstTree = (sim: CoopSim) => sim.town.props.find((p) => p.kind === "tree")!
+  test("fire on the ground at a trunk sets the tree alight; it burns, then stands bare and never catches again", () => {
+    const { sim, tick, stores } = room({ ann: { x: 30, y: 46, aim: 0 } }, { treeBurnSeconds: 4, treeSpread: 0 })
+    const tree = firstTree(sim)
+    placeFire(sim, tree.x + 0.8, tree.y, 0.6, 1, 0)
+    tick({}, 2)
+    const st = stores("tree").find((s) => s.counts.t)!
+    expect(st.at).toEqual({ x: Number(tree.x.toFixed(2)), y: Number(tree.y.toFixed(2)) })
+    expect(treeFlames(st, sim.time + 2, 4)).toBeGreaterThan(0.9)
+    expect(treeBurn(st, sim.time + 2, 4)).toBeLessThan(0.95)
+    const caught = st.counts.t
+    tick({}, ticks(8))
+    expect(treeFlames(st, sim.time, 4)).toBe(0)
+    expect(treeBurn(st, sim.time, 4)).toBe(1)
+    placeFire(sim, tree.x + 0.8, tree.y, 0.6, 1, 0)
+    tick({}, 2)
+    expect(stores("tree").filter((s) => s.counts.t)).toHaveLength(1)
+    expect(st.counts.t).toBe(caught)
+  })
+
+  test("trees never catch with Trees catch fire off", () => {
+    const { sim, tick, stores } = room({ ann: { x: 30, y: 46, aim: 0 } }, { treeCatch: 0 })
+    const tree = firstTree(sim)
+    placeFire(sim, tree.x + 0.5, tree.y, 0.8, 2, 0)
+    tick({}, ticks(1))
+    expect(stores("tree").filter((s) => s.counts.t)).toHaveLength(0)
+  })
+
+  test("the flamethrower's stream lights a tree it plays on", () => {
+    const probe = room({ ann: { x: 0, y: 0, aim: 0 } })
+    const tree = firstTree(probe.sim)
+    const { sim, tick, hold, slot, stores } = room({ ann: { x: tree.x - 3, y: tree.y, aim: 0 } })
+    hold(slot("ann"), "flamethrower")
+    tick({ ann: { fire: true, fireHeld: true } }, ticks(0.3))
+    expect(stores("tree").some((s) => s.counts.t && Math.abs(s.at!.x - tree.x) < 0.3)).toBe(true)
+    expect(sim.time).toBeGreaterThan(0)
   })
 })

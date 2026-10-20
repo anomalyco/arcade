@@ -23,10 +23,14 @@ export const DUST_LAMPS_BY_TIER: Readonly<Record<QualityTier, number>> = { high:
  * the light's polar row (so motes never glint behind a wall or under a table) and hides it outside the survivor's
  * sight. Additive into the HDR target, depth-tested against the scene, destination alpha (the colour mask) kept.
  *
- * Two styles (Lab › Beam dust): Today's fine motes that glint as they turn (amount, size and brightness from Look ›
- * Air), and soft motes: sparser, larger soft discs drawn at least `beamDustMinPx` wide (dimmer rather than smaller,
- * so they never glitter), steady in brightness, drifting slowly, and faded near the lens, near the ground and as they
- * rise toward the camera (`BD`, group 1).
+ * Three styles (Lab › Beam dust): Today's fine motes that glint as they turn (amount, size and brightness from Look ›
+ * Air); AR-68's soft motes, larger soft discs drawn at least `beamDustMinPx` wide; and backlit motes (Kit: "only in
+ * light and more minimal and beautiful… really subtle and nice"): few, tiny soft round points of gently varied size,
+ * drifting lazily on a slow curl-noise air current, lit only by the light at their position (brightest in the beam's
+ * core, nothing outside any light) with a little forward scatter, softer and dimmer as they rise toward the camera, and
+ * turning slowly so each catches the light now and then (no per-frame flicker, at least ~1.5 px wide, so TAA keeps
+ * them steady). Backlit motes show in the flashlight's cone and under the nearest lamps and fires the CPU picks
+ * (`BD.lights`), capsule fire lights included. Styles 1 and 2 read `BD` (group 1).
  */
 export const dustShader = /* wgsl */ `
 ${common}
@@ -37,13 +41,19 @@ ${outbreakLightingStructWgsl}
 ${beamShapeWgsl}
 ${lensVisibilityWgsl}
 
-/** Beam dust style (a: soft on, amount, radius cm, brightness; b: drift, depth fade, lamps, smallest px). */
-struct BeamDust { a: vec4f, b: vec4f }
+/**
+ * Beam dust style. a: style (0 Today, 1 soft, 2 backlit), amount, radius (soft cm, backlit mm), brightness; b: drift,
+ * depth fade, lamps, smallest px; c (backlit): twinkle, size variation, lamp count, unused; lights (backlit): the light
+ * slots of the lamps and fires that get motes.
+ */
+struct BeamDust { a: vec4f, b: vec4f, c: vec4f, lights: array<vec4f, 3> }
 @group(1) @binding(0) var<uniform> BD: BeamDust;
-fn softDust() -> bool { return BD.a.x > 0.5; }
-fn dustAmount() -> f32 { return select(OL.dust.x, BD.a.y, softDust()); }
-fn dustBright() -> f32 { return select(OL.dust.y, BD.a.w, softDust()); }
-fn dustLamps() -> f32 { return select(OL.dust.w, BD.b.z, softDust()); }
+fn softDust() -> bool { return BD.a.x > 0.5 && BD.a.x < 1.5; }
+fn backlit() -> bool { return BD.a.x > 1.5; }
+fn styled() -> bool { return BD.a.x > 0.5; }
+fn dustAmount() -> f32 { return select(OL.dust.x, BD.a.y, styled()); }
+fn dustBright() -> f32 { return select(OL.dust.y, BD.a.w, styled()); }
+fn dustLamps() -> f32 { return select(OL.dust.w, BD.b.z, styled()); }
 
 const FLASH_MOTES: u32 = ${FLASH_MOTES}u;
 const LAMP_MOTES: u32 = ${LAMP_MOTES}u;
@@ -71,11 +81,35 @@ fn cellOf(k: u32, lo: vec3f, hi: vec3f, c: f32) -> vec4f {
   return vec4f(g0 + vec3f(f32(k % n.x), f32((k / n.x) % n.y), f32(k / (n.x * n.y))), 1.0);
 }
 
+/**
+ * A slow, divergence-free air current at \`p\`: the curl of a smooth trigonometric potential that itself drifts, so
+ * neighbouring motes swirl together the way dust rides real air.
+ */
+fn curlDrift(p: vec3f, t: f32) -> vec3f {
+  let q = p * 0.55;
+  // A = (sin(1.3 q.y + .21t) + sin(.8 q.z - .17t), sin(.9 q.z + .19t) + sin(1.2 q.x + .23t), sin(1.1 q.x - .15t) + sin(.7 q.y + .2t)).
+  let dAx_dy = 1.3 * cos(q.y * 1.3 + t * 0.21);
+  let dAx_dz = 0.8 * cos(q.z * 0.8 - t * 0.17);
+  let dAy_dz = 0.9 * cos(q.z * 0.9 + t * 0.19);
+  let dAy_dx = 1.2 * cos(q.x * 1.2 + t * 0.23);
+  let dAz_dx = 1.1 * cos(q.x * 1.1 - t * 0.15);
+  let dAz_dy = 0.7 * cos(q.y * 0.7 + t * 0.2);
+  return vec3f(dAz_dy - dAy_dz, dAx_dz - dAz_dx, dAy_dx - dAx_dy);
+}
+
 /** The cell's mote this frame (xyz) and its seed (w); w < 0 when the cell is empty at this amount. */
 fn moteAt(cell: vec3f, c: f32) -> vec4f {
   let h = hash3(cell);
   let g = hash3(cell + vec3f(17.31, 5.17, 11.71));
   if (g.x > dustAmount()) { return vec4f(0.0, 0.0, 0.0, -1.0); }
+  if (backlit()) {
+    // Lazy drift: carried on the curl current about its home, with a slow sway of its own; it stays near its cell, so
+    // nothing pops as the light sweeps.
+    let t = F.cam.w * BD.b.x;
+    let home = (cell + vec3f(0.5) + (h - vec3f(0.5)) * 0.6) * c;
+    let sway = vec3f(sin(t * (0.21 + 0.1 * g.z) + h.y * 6.283), sin(t * (0.13 + 0.08 * g.y) + h.z * 6.283) * 0.5, cos(t * (0.17 + 0.1 * g.x) + h.x * 6.283));
+    return vec4f(home + (curlDrift(home, t * 0.35) * 0.16 + sway * 0.12) * c * 1.6, g.y);
+  }
   let t = F.cam.w * select(1.0, BD.b.x, softDust());
   let w = vec3f(0.11, 0.07, 0.09) + g * 0.16;
   let orbit = vec3f(sin(t * w.x + h.y * 6.283), sin(t * w.y + h.z * 6.283) * 0.6, cos(t * w.z + h.x * 6.283));
@@ -107,7 +141,8 @@ const CORNERS = array<vec2f, 6>(vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0,
     var hi = max(lens, tip + e);
     lo.y = max(lo.y, OL.u19.z + 0.03);
     hi.y = min(hi.y, lens.y + 0.4);
-    let c = 0.32;
+    // Backlit motes sit in a coarser lattice: fewer, and the same cells still fill the whole beam.
+    let c = select(0.32, 0.42, backlit());
     let cell = cellOf(ii, lo, hi, c);
     if (cell.w < 0.0) { return o; }
     let m = moteAt(cell.xyz, c);
@@ -125,15 +160,26 @@ const CORNERS = array<vec2f, 6>(vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0,
   } else {
     if (dustLamps() < 0.5) { return o; }
     let j = ii - FLASH_MOTES;
-    let li = j / LAMP_MOTES + 1u;
+    var li = j / LAMP_MOTES + 1u;
+    if (backlit()) {
+      // The lamps and fires the CPU picked, nearest first.
+      let n = j / LAMP_MOTES;
+      if (f32(n) >= BD.c.z) { return o; }
+      li = u32(round(BD.lights[n / 4u][n % 4u]));
+    }
     if (li >= u32(F.screen.z)) { return o; }
     let L = lights[li];
     if (L.color.w <= 0.01 || L.cone.w > 1.5) { return o; }
-    let r = L.pos.w;
+    var r = L.pos.w;
+    var lc = L.pos.xyz;
+    // A capsule (a burning figure or tree, a jet of flame): its box spans the segment, lit from the nearest point.
+    let capsule = L.cone.w < -1.5 && L.cone.w > -2.0;
+    let seg = select(vec3f(0.0), L.cone.xyz, capsule);
+    if (capsule) { r = max(r - length(seg.xz), 0.05); }
     let hl = L.pos.y;
-    let half = min(r * 0.42, 2.4);
-    let lo = vec3f(L.pos.x - half, max(0.08, hl - 3.2), L.pos.z - half);
-    let hi = vec3f(L.pos.x + half, min(hl + 0.25, select(2.72, 9.0, hl > 3.2)), L.pos.z + half);
+    let half = vec2f(min(r * 0.42, 2.4)) + abs(seg.xz);
+    let lo = vec3f(L.pos.x - half.x, max(0.08, hl - abs(seg.y) - 3.2), L.pos.z - half.y);
+    let hi = vec3f(L.pos.x + half.x, min(hl + abs(seg.y) + 0.25, select(2.72, 9.0, hl > 3.2 || capsule)), L.pos.z + half.y);
     let size = max(hi - lo, vec3f(0.01));
     let fit = pow(size.x * size.y * size.z / f32(LAMP_MOTES), 1.0 / 3.0);
     let c = 0.3 * pow(1.25, ceil(max(0.0, log(fit / 0.3) / log(1.25))));
@@ -143,7 +189,11 @@ const CORNERS = array<vec2f, 6>(vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0,
     if (m.w < 0.0) { return o; }
     p = m.xyz;
     seed = m.w;
-    let dv = p.xz - L.pos.xz;
+    if (capsule) {
+      let a = L.pos.xyz - seg;
+      lc = a + 2.0 * seg * clamp(dot(p - a, seg) / max(2.0 * dot(seg, seg), 1e-6), 0.0, 1.0);
+    }
+    let dv = p.xz - lc.xz;
     let dPlan2 = dot(dv, dv);
     if (dPlan2 >= r * r) { return o; }
     // The same cuts the surfaces get: sconces stop at their wall, windows light outwards, lamps stay under the ceiling.
@@ -156,7 +206,7 @@ const CORNERS = array<vec2f, 6>(vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0,
     } else if (hl < 3.2 && p.y > 2.75) {
       return o;
     }
-    let dy = hl - p.y;
+    let dy = lc.y - p.y;
     let dn = max(sqrt(dPlan2 + dy * dy), 0.45);
     var win = 1.0 - dPlan2 / (r * r);
     win *= win;
@@ -167,7 +217,7 @@ const CORNERS = array<vec2f, 6>(vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0,
     }
     if (att < 0.004) { return o; }
     o.col = L.color.rgb * (att * 1.6);
-    o.lens = L.pos.xyz;
+    o.lens = lc;
     o.slot = select(0u, li + 1u, L.extra.y > 0.5);
   }
   // A slow glint as each flake turns, and the size kept above a pixel (dimmer instead of smaller).
@@ -192,6 +242,25 @@ const CORNERS = array<vec2f, 6>(vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0,
     let lowFade = smoothstep(0.08, 0.55, p.y - OL.u19.z);
     o.col *= mix(1.0, nearLens * lowFade * (1.0 - 0.45 * rise), fade);
   }
+  if (backlit()) {
+    // A slow turn: most of the time a faint point, and every few seconds a mote turns its face to the light (seconds,
+    // not frames, so TAA keeps it). Size varies gently per mote; nearer the camera it softens and dims.
+    let tw = clamp(BD.c.x, 0.0, 1.0);
+    let turn = pow(0.5 + 0.5 * sin(F.cam.w * (0.35 + 0.55 * fract(seed * 3.7)) + seed * 40.0), 3.0);
+    glint = mix(1.0, 0.45 + 1.1 * turn, tw);
+    let fade = clamp(BD.b.y, 0.0, 1.0);
+    let rise = clamp((p.y - 0.9) / 1.4, 0.0, 1.0);
+    let v = fract(seed * 7.13);
+    worldR = BD.a.z * 0.001 * max(0.25, 1.0 + BD.c.y * (v * v * 1.6 - 0.45)) * (1.0 + 1.4 * fade * rise);
+    minPx = max(1.0, BD.b.w);
+    energy = 0.8;
+    // Forward scatter: a mote between the eye and its light glows a little more (backlit dust in a sunbeam).
+    let cosT = dot(normalize(F.cam.xyz - p), normalize(p - o.lens + vec3f(0.0, 1e-4, 0.0)));
+    let hg = 0.7975 / pow(1.2025 - 0.9 * cosT, 1.5) / 0.605;
+    let nearLens = smoothstep(0.35, 1.5, length(p - o.lens));
+    let lowFade = smoothstep(0.08, 0.55, p.y - OL.u19.z);
+    o.col *= (0.55 + 0.45 * hg) * nearLens * lowFade * (1.0 - 0.5 * fade * rise);
+  }
   let rpx = max(worldR * ppm, minPx);
   let shrink = worldR * ppm / rpx;
   o.col *= glint * dustBright() * pow(shrink, energy);
@@ -206,7 +275,9 @@ const CORNERS = array<vec2f, 6>(vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0,
 @fragment fn fs(o: VO) -> @location(0) vec4f {
   // Today: a gaussian dot. Soft: a soft-edged disc with a gentle core, like an out-of-focus mote.
   let qr = length(o.q);
-  let a = select(exp(-dot(o.q, o.q) * 1.6), (1.0 - smoothstep(0.45, 1.12, qr)) * (0.7 + 0.3 * exp(-qr * qr * 2.0)), softDust());
+  var a = select(exp(-dot(o.q, o.q) * 1.6), (1.0 - smoothstep(0.45, 1.12, qr)) * (0.7 + 0.3 * exp(-qr * qr * 2.0)), softDust());
+  // Backlit: a soft round point, a gaussian with a faint wider skirt and no edge.
+  if (backlit()) { a = exp(-qr * qr * 2.4) * 0.85 + exp(-qr * qr * 0.9) * 0.15; }
   if (a < 0.004) { return vec4f(0.0); }
   var vis = 1.0;
   if (o.slot > 0u) { vis = lensVis((o.slot - 1u) * RAYS, o.world - o.lens, o.lens.y); }
