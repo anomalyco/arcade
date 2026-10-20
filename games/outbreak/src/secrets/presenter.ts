@@ -32,6 +32,8 @@ export type SecretFrame = {
   night: number
   dt: number
   vanish: number
+  /** Plan-space bounds of the ground the screen shows. */
+  screen: readonly [number, number, number, number]
   /** Lab stages: force the late chalk and an apparition now. */
   force: { lateChalk: boolean; apparition: "tallMan" | "procession" | "visitor" | null; ring: boolean }
 }
@@ -266,29 +268,38 @@ export class SecretsPresenter {
       const w = Math.floor(t / 75)
       if (forced || (w !== this.tallTried && secretRoll(run, `tall:${w}`) < 0.55)) {
         this.tallTried = w
-        this.tall = this.tallSpot(view.town, me, run, w, forced)
+        this.tall = this.tallSpot(view.town, me, f.screen, f.vanish, run, w, forced)
       }
     }
     this.shown.tallMan = Boolean(this.tall)
   }
 
-  /** At the edge of a lamp's pool ahead, between you and the lamp, so he stands dark against its light. */
-  private tallSpot(town: Town, me: { x: number; y: number; aim: number }, run: SecretRun, w: number, forced: boolean): Apparition | null {
-    const lamps = town.lamps
+  /**
+   * At the edge of a lamp's pool ahead, between you and the lamp, so he stands dark against its light: on screen, past
+   * where he vanishes.
+   */
+  private tallSpot(town: Town, me: { x: number; y: number; aim: number }, screen: SecretFrame["screen"], vanish: number, run: SecretRun, w: number, forced: boolean): Apparition | null {
+    const [sx0, sy0, sx1, sy1] = screen
+    const onScreen = (x: number, y: number) => x > sx0 + 2 && x < sx1 - 2 && y > sy0 + 2 && y < sy1 - 2
+    const spots = town.lamps
       .filter((l) => (l.kind === "street" || l.kind === "porch") && l.power > 0)
-      .map((l) => ({ l, d: Math.hypot(l.x - me.x, l.y - me.y) }))
-      .filter(({ l, d }) => d > 22 && d < 40 && angleDiff(me.aim, angleTo(me, l.x, l.y)) < 0.9)
+      .map((l) => {
+        const d = Math.hypot(l.x - me.x, l.y - me.y)
+        const k = 2.2 / Math.max(1, d)
+        return { l, d, x: l.x + (me.x - l.x) * k, y: l.y + (me.y - l.y) * k }
+      })
+      .filter((c) => Math.hypot(c.x - me.x, c.y - me.y) > vanish + 1 && c.d < 40 && angleDiff(me.aim, angleTo(me, c.l.x, c.l.y)) < 0.9 && onScreen(c.x, c.y))
       .sort((a, b) => a.l.x - b.l.x || a.l.y - b.l.y)
-    const pick = lamps[Math.floor(secretRoll(run, `tall-lamp:${w}`) * lamps.length)]
+    const pick = spots[Math.floor(secretRoll(run, `tall-lamp:${w}`) * spots.length)]
     let x: number
     let y: number
     if (pick) {
-      const k = 2.2 / Math.max(1, pick.d)
-      x = pick.l.x + (me.x - pick.l.x) * k
-      y = pick.l.y + (me.y - pick.l.y) * k
+      x = pick.x
+      y = pick.y
     } else if (forced) {
-      x = me.x + Math.cos(me.aim) * 26
-      y = me.y + Math.sin(me.aim) * 26
+      const reach = Math.max(vanish + 1, Math.min(Math.abs(Math.cos(me.aim)) > 0.5 ? (sx1 - sx0) / 2 : (sy1 - sy0) / 2, 26) - 3)
+      x = me.x + Math.cos(me.aim) * reach
+      y = me.y + Math.sin(me.aim) * reach
     } else return null
     if (buildingAt(town, x, y) || town.barriers.some((b) => distToRect(x, y, b.rect) < 0.4)) return null
     return { x, y, yaw: faceYaw(x, y, me.x, me.y), since: this.time, seen: 0 }
@@ -306,11 +317,11 @@ export class SecretsPresenter {
     this.shown.procession = 0
     const p = this.procession
     if (!p || p.done) return
-    const figures = this.processionFigures(me, view.time - p.start)
+    const figures = this.processionFigures(me, f.screen, view.time - p.start)
     let near = false
     let seenAny = false
     for (const fig of figures) {
-      if (Math.hypot(fig.x - me.x, fig.y - me.y) < 12 || lit(fig.x, fig.y)) near = true
+      if (Math.hypot(fig.x - me.x, fig.y - me.y) < 6 || lit(fig.x, fig.y)) near = true
       if (!seenAny && sees(fig.x, fig.y)) seenAny = true
     }
     if (seenAny) p.seen += f.dt
@@ -319,11 +330,11 @@ export class SecretsPresenter {
     else this.shown.procession = figures.length
   }
 
-  /** Nine of them in a column up the nearest north–south road, walking north. */
-  private processionFigures(me: { x: number; y: number }, t: number): { x: number; y: number }[] {
+  /** Nine of them in a column up the nearest north–south road, walking north, coming in from below the screen. */
+  private processionFigures(me: { x: number; y: number }, screen: SecretFrame["screen"], t: number): { x: number; y: number }[] {
     const roadX = Math.round((me.x - 44) / 96) * 96 + 44
     const x = Math.abs(roadX - me.x) < 12 ? roadX + (me.x < roadX ? 3.5 : -3.5) : roadX
-    const head = this.processionHead ??= me.y + 22
+    const head = this.processionHead ??= Math.min(me.y + 22, screen[3] + 2)
     const out: { x: number; y: number }[] = []
     for (let i = 0; i < 9; i++) out.push({ x: x + (i % 2 ? 0.5 : -0.5), y: head - t * 0.85 + i * 2.3 })
     return out
@@ -482,7 +493,7 @@ export class SecretsPresenter {
       put("tall", M.tallManMesh, v.x, g(v.x, v.y), v.y, v.yaw)
     }
     if (this.procession && !this.procession.done) {
-      const figs = this.processionFigures(me, t - this.procession.start)
+      const figs = this.processionFigures(me, f.screen, t - this.procession.start)
       figs.forEach((p, i) => put("tall", M.tallManMesh, p.x, g(p.x, p.y) + Math.abs(Math.sin(t * 1.7 + i)) * 0.03, p.y, Math.PI + Math.sin(t * 0.8 + i) * 0.03))
     }
     for (const [model, b] of this.buffers) if (b.count) this.out.push({ model, data: b.data, count: b.count })

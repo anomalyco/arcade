@@ -76,6 +76,7 @@ function frameOf(ctx: OutbreakClientFrameContext): SecretFrame {
     night: Math.max(nights.count, death?.night ?? 0),
     dt: ctx.dt,
     vanish: s.secretVanish,
+    screen: ctx.cam.groundRect(0),
     force,
   }
 }

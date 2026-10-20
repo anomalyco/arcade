@@ -116,6 +116,7 @@ export function stageSecret(host: ProgressionLabHost, session: LocalSession | Ne
   const p = view.player
   const pose = (x: number, y: number, aim: number, hour: number) => {
     host.setHour(hour)
+    if (hour > 6 && hour < 18) p.flashlightOn = false
     host.pose(x, y, aim)
     return { scene, x, y }
   }
@@ -157,9 +158,11 @@ export function stageSecret(host: ProgressionLabHost, session: LocalSession | Ne
     case "chalk-late":
       return pose(site.x, site.y + 2.4, NORTH, 13)
     case "litWindow":
-      return pose(site.x + 3, site.y + 20, NORTH - 0.15, 22)
+      p.flashlightOn = false
+      return pose(site.x + 2, site.y + 9, NORTH - 0.15, 22)
     case "rockingChair":
-      return pose(site.x + 1, site.y + 9, NORTH, 22)
+      p.flashlightOn = false
+      return pose(site.x + 1, site.y + 4, NORTH, 22)
     case "footprints":
       return pose(site.x + 1.5, site.y + 2.5, NORTH, 14)
     case "audience":
@@ -180,6 +183,7 @@ export function stageSecret(host: ProgressionLabHost, session: LocalSession | Ne
       return pose(site.x + 0.3, site.y + 1.3, NORTH, 13)
     }
     default:
-      return pose(site.x, site.y + 1.0, NORTH, 13)
+      // Inside the strip in front of a wall piece where looking at it holds it up close.
+      return pose(site.x, site.y + 0.7, NORTH, 13)
   }
 }

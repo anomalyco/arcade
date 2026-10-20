@@ -55,7 +55,7 @@ const LABEL: Record<(typeof SECRET_SCENES)[number], string> = {
 const NIGHT = new Set(["tallMan", "litWindow", "rockingChair", "phone", "procession", "visitor"])
 // Close on the indoor pieces; wider for what stands in a yard or down a street.
 const ZOOM: Partial<Record<string, number>> = { chalk: 32, "chalk-late": 32, rockingChair: 32, footprints: 30, audience: 28, tallMan: 44, litWindow: 44, procession: 46, visitor: 30, tally: 30 }
-const HUD = "#status, #hotbar, #stamina, #battery, #prompt, .callouts, .callout, #hud"
+const HUD = "#status, #hotbar, #stamina, #battery, #prompt, .callouts, .callout, #hud, #sound-cues"
 const report: Record<string, unknown> = { viewport: [vw, vh], shots: {} as Record<string, unknown> }
 const browser = await chromium.launch({ executablePath: chrome, headless: true, args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio"] })
 const shots: string[] = []

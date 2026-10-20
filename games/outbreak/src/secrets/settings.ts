@@ -15,7 +15,7 @@ export type OutbreakSecretsSettings = SecretsTuning & {
 export const DEFAULT_SECRETS_SETTINGS: OutbreakSecretsSettings = {
   ...DEFAULT_SECRETS_TUNING,
   secretGlance: 2.6,
-  secretVanish: 15,
+  secretVanish: 9,
 }
 
 export const secretsLookControls: LabControl[] = [
