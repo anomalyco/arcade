@@ -52,6 +52,8 @@ export class CoopView {
   /** Notifies `main.ts` when switching between Solo and Co-op or changing the Solo starting kit. */
   onSessionChange?: () => void
   private avatars = new Map<number, { variant: number; avatar: Survivor }>()
+  /** Renderer models outlive active peers; reuse the four variants at each of the four seats. */
+  private avatarCache = new Map<string, Survivor>()
   /** Remote survivors' foot contacts, for positional footsteps. */
   onFootfall?: (x: number, y: number, speed: number) => void
   /**
@@ -285,8 +287,15 @@ export class CoopView {
       const variant = this.net ? this.net.variantOfSeat(slot.index) : clampSurvivorVariant(slot.index)
       let entry = this.avatars.get(slot.index)
       if (!entry || entry.variant !== variant) {
-        const avatar = new Survivor(this.renderer, SURVIVOR_COLOURS[variant % SURVIVOR_COLOURS.length]!, variant)
-        avatar.onFootfall = (x, y, speed) => this.onFootfall?.(x, y, speed)
+        const key = `${slot.index}:${variant}`
+        let avatar = this.avatarCache.get(key)
+        if (avatar) {
+          avatar.reset()
+        } else {
+          avatar = new Survivor(this.renderer, SURVIVOR_COLOURS[variant % SURVIVOR_COLOURS.length]!, variant)
+          avatar.onFootfall = (x, y, speed) => this.onFootfall?.(x, y, speed)
+          this.avatarCache.set(key, avatar)
+        }
         entry = { variant, avatar }
         this.avatars.set(slot.index, entry)
       }
