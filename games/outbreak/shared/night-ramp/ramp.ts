@@ -1,14 +1,16 @@
 import type { Stack } from "@arcade/kit/sim/ledger"
 import type { DirectorEscalation } from "../pacing"
 import { mix32, type SpecialsTuning } from "../specials/kinds"
+import { DEFAULT_COOP_SCALING, type CoopScalingTuning } from "./coop"
 
 /**
  * Night ramp (D-40 pick 3, Gentle Start, Rising): Night 1 holds the director to fewer chasers so a new player usually
  * sees dawn, then every later night raises the population and chaser caps a step, up to a ceiling, instead of the
  * director's own ramp levelling off by Night 2. Later nights also make special zombies likelier, and from a set
  * night some of the dead you put down carry a few rounds. `nightRampMode: 0` is the game as it was before (Today).
+ * The same namespace carries how the director scales with the squad (`./coop.ts`, Lab › Co-op scaling).
  */
-export type NightRampTuning = {
+export type NightRampTuning = CoopScalingTuning & {
   /** 1: Gentle Start, Rising. 0: Today (the director's own ramp only). */
   nightRampMode: number
   /** Solo chaser ceiling during Night 1 (0 = no hold). */
@@ -39,6 +41,7 @@ export type NightRampTuning = {
 }
 
 export const DEFAULT_NIGHT_RAMP_TUNING: NightRampTuning = {
+  ...DEFAULT_COOP_SCALING,
   nightRampMode: 1,
   nightOneChasers: 2,
   nightOnePopulation: 0.65,

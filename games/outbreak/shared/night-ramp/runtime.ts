@@ -1,5 +1,6 @@
 import { dayCycle } from "../day-cycle"
 import type { OutbreakSim } from "../sim-types"
+import { coopCurve } from "./coop"
 import { cacheRoll, lateAmmoActive, lateAmmoCount, lateAmmoDrop, lateAmmoDropId, nightEscalation, type NightRampTuning } from "./ramp"
 
 /** Night count, and the dead already looked at for rounds. Plain JSON. */
@@ -17,6 +18,7 @@ export function stepNightRamp(sim: OutbreakSim, state: NightRampState, t: NightR
   if (!dark && state.wasDark && lateAmmoActive(t, state.night)) leaveDawnCaches(sim, state.night, t)
   state.wasDark = dark
   sim.ai.pacing.escalation = nightEscalation(t, { night: state.night, dark }, sim.ai.config)
+  sim.ai.pacing.coop = coopCurve(t)
 }
 
 /** After the crowd steps: the dead that fell this tick may leave a few rounds where they lie. */
