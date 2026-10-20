@@ -1,6 +1,6 @@
 ---
-deploys: off
-allowed_base: overnight
+deploys: on
+allowed_base: main
 retired_branches:
   - release-4
   - release-5
@@ -17,7 +17,6 @@ Live operational state for agents working in `anomalyco/arcade`. Read this file 
 
 ## Deploy & Branch Policy
 
-- **Now (Oct 20, Kit):** deploys are paused while Kit plays live; the server must not restart. PRs target `overnight` and merge there when green; never merge to `main` and never run `bun run deploy`. Fast-forward the preview worktree to `origin/overnight` instead of `origin/main`. The coordinator merges `overnight` into `main` in the morning.
 
 - **`deploys: on`** — PRs target `main` (`allowed_base: main`) and merge when green (`gh pr merge --squash --delete-branch`). Pushing or merging to `main` triggers Cloudflare Workers deploy workflows automatically; do not run `bun run deploy` manually unless Kit explicitly asks.
 - **When `deploys: off`** — The coordinator sets `deploys: off` and updates `allowed_base` (for example, to an active integration branch). While `deploys: off`, never merge to `main` and never run `bun run deploy`.
