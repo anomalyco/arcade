@@ -83,8 +83,14 @@ export class WeatherAudio {
     }
   }
 
-  silence(): void {
+  /** Restart / New town: no old rain bed or eased level belongs to the new weather. */
+  reset(): void {
+    for (const bed of BEDS) {
+      this.beds[bed]?.stop()
+      this.levels[bed] = 0
+    }
     this.beds = {}
+    this.thunder = 0
   }
 
   telemetry() {

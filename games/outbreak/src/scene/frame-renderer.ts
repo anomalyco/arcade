@@ -256,6 +256,7 @@ export class OutbreakFrameRenderer {
     this.fx.reset()
     frameUi.reset()
     this.weatherController.reset(nextSeed)
+    this.weatherAudio.reset()
     this.sceneLevel.resetForSession()
     this.frameLighting.resetForSession()
     cam.snap(session().view.player.x, session().view.player.y)
