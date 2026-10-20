@@ -1,7 +1,9 @@
 import type { LabControl } from "@arcade/kit/lab-panel"
 import type { LabCommand } from "@arcade/kit/lab/commands"
+import { LIGHT_FLOATS } from "@arcade/kit/limits"
 import { ACT_NONE, ACTIVITY_NAMES, attentionOf } from "../../shared/behaviour/activities"
 import { applyReplicatedActivities, behaviourOf } from "../../shared/behaviour/mind"
+import { dayCycle } from "../../shared/day-cycle"
 import { behaviourControls, DEFAULT_BEHAVIOUR_TUNING } from "../../shared/behaviour/tuning"
 import type { OutbreakSim } from "../../shared/sim-types"
 import { supportHeight } from "../../shared/terrain"
@@ -133,6 +135,25 @@ export const outbreakBehaviourFeature = registerOutbreakClientFeature({
         return null
       }
       return { x: watching.x, y: watching.y, aim: -Math.PI / 2, health: p.health, maxHealth: p.maxHealth, allAround: true }
+    },
+    // A watched night scene has no torch on it: a wide, faint moon pool over the scene so the dead read.
+    lights: ({ session }, lights, count, max) => {
+      const dark = watching ? dayCycle(session.view.hour).darkness : 0
+      if (!watching || dark < 0.05 || count >= max) return count
+      const o = count * LIGHT_FLOATS
+      lights.fill(0, o, o + LIGHT_FLOATS)
+      lights[o] = watching.x
+      lights[o + 1] = supportHeight(session.sim.town, watching.x, watching.y) + 9
+      lights[o + 2] = watching.y
+      lights[o + 3] = 26
+      lights[o + 4] = 0.62
+      lights[o + 5] = 0.72
+      lights[o + 6] = 0.95
+      lights[o + 7] = 1.4 * dark
+      lights[o + 11] = -1
+      lights[o + 14] = 0.12
+      lights[o + 15] = -1
+      return count + 1
     },
     overlay: ({ session, settings, cam, w, h }) => {
       if (!settings.behaviour.zbOverlay) return overlay.hide()
