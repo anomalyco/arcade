@@ -7,7 +7,7 @@ import {
   packFoliageGust,
   packFoliageUniforms,
 } from "@arcade/kit/gpu/foliage"
-import { LampGrid, type FrameInput, type Renderer } from "@arcade/kit/gpu/renderer"
+import { LampGrid, type FrameInput, type Renderer, type VolumeInput } from "@arcade/kit/gpu/renderer"
 import { FRAME_FLOATS } from "@arcade/kit/gpu/shaders"
 import { LIGHT_FLOATS, MAX_LIGHTS, MAX_MAP_LIGHTS } from "@arcade/kit/limits"
 import type { QualityProfile } from "@arcade/kit/quality"
@@ -561,7 +561,7 @@ export class OutbreakFrameLighting {
     readonly interiors: InteriorPresenter
     readonly renderer: Renderer
     readonly lightCount: number
-  }): FrameInput["volume"] {
+  }): VolumeInput | null {
     const {
       dt,
       p,
