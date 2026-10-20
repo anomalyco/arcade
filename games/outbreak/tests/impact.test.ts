@@ -3,6 +3,8 @@ import { Camera, HitStop } from "@arcade/kit/client/camera"
 import { TICK_DT } from "../shared/clock"
 import type { CombatMeleeEvent } from "../shared/combat"
 import { sightRects } from "../shared/map"
+import { DEFAULT_FIRE_TUNING } from "../shared/fire/fire"
+import { throwDynamite } from "../shared/fire/runtime"
 import { LocalSession } from "../shared/session"
 import { supportHeight } from "../shared/terrain"
 import { Vision } from "../shared/vision"
@@ -186,6 +188,27 @@ describe("ragdoll deaths", () => {
       return JSON.stringify(session.view.zombies.map((z) => [z.id, z.x.toFixed(5), z.y.toFixed(5), z.hp, z.state]))
     }
     expect(hash(1)).toBe(hash(0))
+  })
+
+  test("a dynamite blast through the bodies leaves the simulation the same", () => {
+    const hash = (style: number) => {
+      const { settings, session } = fight(style)
+      const town = session.view.town
+      for (let i = 0; i < 8; i++) session.ai.spawnZombie(town, 48 + (i % 4) * 1.3, 43 + Math.floor(i / 4) * 1.8, "wander")
+      const slot = session.sim.slots[0]!
+      session.sim.progression.ledger.apply({ kind: "grant", actor: slot.id, item: "dynamite", count: 1 })
+      expect(throwDynamite(session.sim, slot, { ...DEFAULT_FIRE_TUNING, dynThrow: 9 })).toBe(true)
+      const c = client(session, settings)
+      for (let i = 0; i < 240; i++) {
+        session.update(TICK_DT, idle, 0, settings)
+        c.frame()
+      }
+      const zs = session.view.zombies.map((z) => [z.id, z.x.toFixed(5), z.y.toFixed(5), z.hp, z.state])
+      return JSON.stringify([zs, session.view.player.health])
+    }
+    const physical = hash(1)
+    expect(physical).toContain("dead")
+    expect(physical).toBe(hash(0))
   })
 
   test("caps how many fall at once and sleeps the oldest", () => {
