@@ -2,12 +2,13 @@ import { MAT, Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
 import type { LevelChunk, LevelData } from "@arcade/kit/gpu/level"
 import { CHUNK, SIZE, BUILDING_RECTS, buildingFootprint, frontageEnd, inBuildingFootprint, propShape, type Town, type Prop } from "../shared/map"
 import { terrainVertex, supportHeight } from "../shared/terrain"
-import { house, plant, plantFootprints, archSettings } from "./architecture"
+import { house, plantOutdoors, plantFootprints, archSettings } from "./architecture"
 import { emitWallCapMoulding } from "./interiors/mesh"
 import { interiorSettings, interiorSignature, planInterior } from "./interiors/plan"
 import { emitCraftWindow } from "./interiors/windows"
 import { propFloorFootprints, propLamps } from "./props/furnish"
 import { propLevelSignature, replacedByLibrary } from "./props/state"
+import { isPlantMaterial, overhangCutBox, roomsIn, triangleFate } from "./vegetation/indoors"
 import { vegetationSignature } from "./vegetation/settings"
 import { bakeOutbreakBounce, bakeOutbreakMoonMask, stampOutbreakVertexTone } from "./lighting"
 import { emitGravelDriveway, emitLawnPatches, emitPathTufts, emitStreetVerge, emitTreeCollar } from "./yard"
@@ -21,7 +22,7 @@ const floor = (m: Mesh, x: number, z: number, r: number, b: number, h: number, c
 function furniture(m: Mesh, p: Prop, town: Town): void {
   const { x, y: z, kind } = p
   if (kind === "tree") {
-    plant(m,x,z,4.6+p.variant*1.8,2.05+p.variant*.75,Math.floor(p.variant*1e6),supportHeight(town,x,z))
+    plantOutdoors(m,x,z,4.6+p.variant*1.8,2.05+p.variant*.75,Math.floor(p.variant*1e6),supportHeight(town,x,z),town.buildings)
     return
   }
   const wood = hex(0x64462a), legs = hex(0x322920)
@@ -182,6 +183,7 @@ function compileLevel(town: Town): OriginLevel {
   const meshes = town.chunks.map(() => new Mesh()), glasses = town.chunks.map(() => new Mesh()), props: Mesh[]=[]
   const at = (x: number, z: number, glass = false) => (glass ? glasses : meshes)[Math.min(2, Math.max(0, Math.floor(z / CHUNK))) * 3 + Math.min(2, Math.max(0, Math.floor(x / CHUNK)))]!
   const footprints = town.buildings.map(buildingFootprint)
+  const houseRooms = roomsIn(town.buildings, [-Infinity, -Infinity, Infinity, Infinity])
   for (let z=0;z<SIZE;z++) for(let x=0;x<SIZE;x++) {
     if((x>=40&&x<48)||(z>=40&&z<48)||footprints.some(fp=>fp.some(f=>x>=f[0]&&x+1<=f[2]&&z>=f[1]&&z+1<=f[3])))continue
     const m=at(x,z), a=[x,terrainVertex(town,x,z),z], b=[x+1,terrainVertex(town,x+1,z),z], c=[x+1,terrainVertex(town,x+1,z+1),z+1], d=[x,terrainVertex(town,x,z+1),z+1]
@@ -438,7 +440,16 @@ function compileLevel(town: Town): OriginLevel {
     const screen = new Mesh()
     const customByBuilding = BUILDING_RECTS.map(() => new Mesh())
     const interiorCapByBuilding = BUILDING_RECTS.map(() => new Mesh())
+    const overhangByBuilding = BUILDING_RECTS.map(() => new Mesh())
     for (let i = 0; i < source.v.length; i += 33) {
+      const sv = source.v
+      if (isPlantMaterial(Math.round(sv[i + 9]!), sv[i + 10]!) && isPlantMaterial(Math.round(sv[i + 20]!), sv[i + 21]!) && isPlantMaterial(Math.round(sv[i + 31]!), sv[i + 32]!)) {
+        const over = triangleFate(houseRooms, sv, i, i + 11, i + 22)
+        if (over >= 0) {
+          for (let k = i; k < i + 33; k++) overhangByBuilding[over]!.v.push(sv[k]!)
+          continue
+        }
+      }
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity
       let hasRoof = false, hasScreen = false, hasFoliage = false
       for (const j of [0, 11, 22]) {
@@ -508,6 +519,7 @@ function compileLevel(town: Town): OriginLevel {
       return [
         ...pack(interiorCapByBuilding[id]!, bounds, "outside").map(tag("cap", id)),
         ...pack(customByBuilding[id]!, bounds, true).map(tag("custom", id)),
+        ...pack(overhangByBuilding[id]!, overhangCutBox(town.buildings[id]!, 12), "outside").map(tag("cap", id)),
       ]
     })
     return [...pack(opaque).map(tag("opaque")), ...screenChunks(), ...customChunks]
@@ -562,13 +574,16 @@ function compileLevel(town: Town): OriginLevel {
   for (const rect of furnitureContacts) stampRect(rect, 5, .85, 1.3)
   for (const f of propFloorFootprints(town)) stampRect(f.rect, 5, .85, 1.3)
   // Contact shade under house trees and shrubs, stamped locally (crown shade for trees, a tight dark pool for bushes).
+  // Yard plants shade only the ground outdoors, not a room floor their crown leans over.
   for (const f of plantFootprints) {
     if (f.ground > 0.3) continue
     const reach = f.tree ? f.radius * 1.1 : f.radius * 1.5
     const fall = f.tree ? f.radius * f.radius * 0.55 : f.radius * f.radius * 0.8
     const x0 = Math.max(0, Math.floor((f.x - reach) / scale)), x1 = Math.min(resolution - 1, Math.ceil((f.x + reach) / scale))
     const z0 = Math.max(0, Math.floor((f.z - reach) / scale)), z1 = Math.min(resolution - 1, Math.ceil((f.z + reach) / scale))
+    const rooms = town.buildings.filter((b) => b.rect[0] < f.x + reach && b.rect[2] > f.x - reach && b.rect[1] < f.z + reach && b.rect[3] > f.z - reach)
     for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) {
+      if (rooms.some((b) => inBuildingFootprint(b, (x + .5) * scale, (z + .5) * scale))) continue
       const d2 = ((x + .5) * scale - f.x) ** 2 + ((z + .5) * scale - f.z) ** 2
       const c = Math.max(Math.exp(-d2 / fall) * (f.tree ? 0.42 : 0.6), f.tree ? Math.exp(-d2 / 1.2) * 0.6 : 0)
       const i = (z * resolution + x) * 2

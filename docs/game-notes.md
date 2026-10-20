@@ -975,6 +975,14 @@ proven animation techniques to animation.md, not here.
   (5 pairs, vs Lively): A +0.53 / +0.39 ms (street night / yard day, MAD ≤ 0.06), B −0.02 / −0.04 (noise), C +0.50 /
   +0.47 (MAD ≤ 0.05); A and C's cost is the per-fragment tree shade and beam terms. Stills, clips, GPU:
   `bun scripts/tree-looks-stills.ts --clip --gpu`.
+- **Trees stay out of houses** (`games/outbreak/src/vegetation/indoors.ts`, `tests/trees-indoors.test.ts`; Kit: "Why
+  are there trees inside the house?"). Outbreak's level pass is `fsSolid` with no cutaway discards, so any crown left in
+  the opaque chunks hung over cut-away rooms: Ash's east street tree (trunk 0.52 m off the kitchen wall) had 749
+  canopy vertices over the kitchen, and Darkwood crowns droop to 1.8 m up to 1.8× their radius from the trunk, so lower
+  boughs and corner shrubs also stood inside rooms. Now leaves and limbs below the wall tops inside a footprint are
+  dropped, and a crown over a roof goes in a per-house chunk with `customCutaway: "outside"` and the walls' cutBox, so
+  it vanishes with the roof when you step in and overhangs as before outside. Stems keep 0.5 m (trees) / 0.2 m (shrubs)
+  off walls and porches. Streamed chunk compile 2.60 → 2.9–3.1 ms (264 chunks, Studio).
 - **Street lamps at night** (`games/outbreak/src/day-night.ts`, `lighting.ts`). The night lighting curve took Noir's
   `streetPower` 0.12 (Oct 14), so street lamps faded 8× as night fell to power 0.03, a tenth of a porch light, and fell
   under the 0.2 gate of the shader's per-house sodium ground pool. Night now keeps dusk's 0.96 (power 0.27). That

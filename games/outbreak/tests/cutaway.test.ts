@@ -53,5 +53,5 @@ test("every roof or high interior triangle is routed to its building's custom cu
   expect(opaque).toBeGreaterThan(0)
   expect(screen).toBeGreaterThan(0)
   expect(cut).toBeGreaterThan(0)
-  expect(opaque + screen + cut + level.glass.reduce((n, c) => n + c.data.byteLength / 24, 0)).toBe(424398) // Lively vegetation with C Darkwood trees and 25 % blight (D-42): 402,606 with Lively trees, 350,922 on Today
+  expect(opaque + screen + cut + level.glass.reduce((n, c) => n + c.data.byteLength / 24, 0)).toBe(420318) // Lively vegetation with C Darkwood trees and 25 % blight (D-42), yard plants trimmed off the houses: 424,398 before trimming, 402,606 with Lively trees, 350,922 on Today
 })
