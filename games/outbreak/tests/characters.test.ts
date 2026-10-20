@@ -117,6 +117,18 @@ describe("habit loops", () => {
     return { sim, st, site }
   }
 
+  test("a habit started before the sim has listed its sites (Lab staging after a reset) survives the next step", () => {
+    const sim = world()
+    const st = charactersOf(sim)
+    expect(st.dirty).toBe(true)
+    const site = habitSites(sim.town).find((s) => s.kind === "knock" && sim.ai.nav.walkable({ x: s.x, y: s.y }))!
+    placeFar(sim, site.x + 20, site.y + 15)
+    const z = sim.ai.spawnZombie(sim.town, site.x, site.y, "wander")
+    startHabit(sim, st, z, site)
+    step(sim, 0.5)
+    expect(st.live[z.id]?.key).toBe(site.key)
+  })
+
   test("a new, unaware zombie out of everyone's reach takes a free site, becomes who the place implies, and keeps still", () => {
     const { sim, st, site } = habitWorld()
     // Survivor 25 m off; one zombie appears 8 m from the site.

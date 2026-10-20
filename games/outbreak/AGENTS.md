@@ -141,6 +141,7 @@
   (`src/zombies.ts`, from `characterFrame`). Sounds (`src/characters/sounds.ts`, through the
   soundscape's hooks): each habit's cue once a cycle (the knock's hand is timed to `scape.habit.knock`), the waltz at
   the dancing couple, joggers' earbuds leaking a tinny loop. A porch body with its car in the drive carries the keys (`shared/bodies/bodies.ts`).
+  Contact sheet of every calling and habit: `bun scripts/characters-sheet.ts` (via `hivemind run --kind browser`).
   Tests: `tests/characters.test.ts`.
 - Driving FX (skid marks, tyre smoke/dust, screech) come from per-wheel slip in `src/vehicles.ts` via `@arcade/kit/vehicle/slip`
   and `@arcade/kit/fx/skids`; Lab › Driving FX and the `outbreak-vehicles` station's drift/burnout variants. Proof:

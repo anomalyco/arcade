@@ -1,7 +1,7 @@
 import type { AIAgent } from "../../shared/ai"
 import { CALLING_IDS, seedForCalling, walksEmptyLeash, type CallingId } from "../../shared/characters/callings"
 import { startHabit, type CharactersState } from "../../shared/characters/habits"
-import { habitSites, HABIT_KINDS, type HabitKind } from "../../shared/characters/sites"
+import { habitSites, HABIT_KINDS, type HabitKind, type HabitSite } from "../../shared/characters/sites"
 import type { OutbreakSim } from "../../shared/sim-types"
 import { worldToChunk } from "../../shared/world"
 
@@ -9,9 +9,9 @@ import { worldToChunk } from "../../shared/world"
  * Lab staging for characters (AR-88), offline only: a line-up of every calling, one of each habit at the nearest site
  * of its kind, and an empty lead out for a walk. Staged zombies are deaf and blind so they keep still for the camera.
  *
- * - `callings`: all thirteen callings in a row ahead of the survivor, facing it.
- * - `knock` / `stove` / `bed` / `fence` / `wedding`: the nearest site of that kind in the active town, the survivor
- *   standing off it.
+ * - `callings`: all thirteen callings in one row ahead of the survivor, facing it.
+ * - `knock` / `stove` / `bed` / `fence` / `wedding`: the nearest site of that kind in the active town that faces away
+ *   from the camera (else the nearest), the survivor standing off it.
  * - `leash`: someone walking an empty lead just ahead.
  */
 export const CHARACTER_SCENES = ["callings", "knock", "stove", "bed", "fence", "wedding", "leash"] as const
@@ -54,8 +54,17 @@ export function stageCalling(sim: OutbreakSim, calling: CallingId, x: number, y:
   return a
 }
 
-/** Stages `scene`; returns where the survivor stands, or an error. */
-export function stageCharacters(host: CharacterStageHost, session: StageSession, scene: CharacterScene): { x: number; y: number; ids: number[] } | { error: string } {
+export type CharacterStaged = { x: number; y: number; ids: number[]; focus: { x: number; y: number } }
+
+/** The middle of what was staged, for framing a camera on it. */
+function focusOf(sim: OutbreakSim, ids: readonly number[], x: number, y: number): { x: number; y: number } {
+  const staged = sim.ai.agents.filter((a) => ids.includes(a.id))
+  if (!staged.length) return { x, y }
+  return { x: staged.reduce((s, a) => s + a.x, 0) / staged.length, y: staged.reduce((s, a) => s + a.y, 0) / staged.length }
+}
+
+/** Stages `scene`; returns where the survivor stands and the middle of what was staged, or an error. */
+export function stageCharacters(host: CharacterStageHost, session: StageSession, scene: CharacterScene): CharacterStaged | { error: string } {
   const sim = session.sim
   const p = session.view.player
   if (scene === "callings") {
@@ -64,14 +73,13 @@ export function stageCharacters(host: CharacterStageHost, session: StageSession,
     const fx = Math.cos(p.aim)
     const fy = Math.sin(p.aim)
     for (let i = 0; i < CALLING_IDS.length; i++) {
-      const row = Math.floor(i / 7)
-      const col = (i % 7) - 3
-      const x = p.x + fx * (3.2 + row * 1.6) - fy * col * 0.95
-      const y = p.y + fy * (3.2 + row * 1.6) + fx * col * 0.95
+      const col = i - (CALLING_IDS.length - 1) / 2
+      const x = p.x + fx * 3.2 - fy * col * 0.85
+      const y = p.y + fy * 3.2 + fx * col * 0.85
       const a = stageCalling(sim, CALLING_IDS[i]!, x, y, p.aim + Math.PI)
       if (a) ids.push(a.id)
     }
-    return { x: p.x, y: p.y, ids }
+    return { x: p.x, y: p.y, ids, focus: focusOf(sim, ids, p.x, p.y) }
   }
   if (scene === "leash") {
     clearNear(sim, p.x, p.y)
@@ -81,7 +89,7 @@ export function stageCharacters(host: CharacterStageHost, session: StageSession,
     if (!a) return { error: "no free Lab zombie id" }
     for (let k = 0; k < 4000 && !walksEmptyLeash(a.seed, a.id); k++) a.seed = seedForCalling((a.seed * 31 + k) >>> 0, a.id, CALLING_IDS.indexOf("robe"))
     a.perceptionScale = 0
-    return { x: p.x, y: p.y, ids: [a.id] }
+    return { x: p.x, y: p.y, ids: [a.id], focus: { x, y } }
   }
   const kinds: HabitKind[] = scene === "wedding" ? ["bride", "groom"] : [scene]
   if (scene === "wedding" && !habitSites(sim.town).some((s) => s.kind === "bride")) {
@@ -92,9 +100,12 @@ export function stageCharacters(host: CharacterStageHost, session: StageSession,
     sim.syncWorldChunks()
   }
   const sites = habitSites(sim.town)
+  // The camera looks north, so a habit facing south (a stove on a south wall, a south front door) is behind its own
+  // wall: prefer the nearest one facing away from the camera, then the nearest at all.
+  const away = (s: HabitSite) => (scene === "wedding" || Math.sin(s.aim) < -0.5 ? 0 : 1)
   const first = sites
     .filter((s) => s.kind === kinds[0] && sim.ai.nav.walkable({ x: s.x, y: s.y }))
-    .sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y))[0]
+    .sort((a, b) => away(a) - away(b) || Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y))[0]
   if (!first) return { error: `no ${scene} site in the active town` }
   const st = sim.getFeatureState<CharactersState>("characters")
   if (!st) return { error: "characters feature not registered" }
@@ -109,6 +120,15 @@ export function stageCharacters(host: CharacterStageHost, session: StageSession,
     a.perceptionScale = 0
     ids.push(a.id)
   }
+  if (scene === "wedding") {
+    // Beside the couple inside the churchyard (its fence runs just down the path), else down the path from them.
+    const f = focusOf(sim, ids, first.x, first.y)
+    for (const [dx, dy] of [[1.9, 0.3], [-1.9, 0.3], [0, 2.4], [0, 3.4]] as const) {
+      if (!sim.ai.nav.walkable({ x: f.x + dx, y: f.y + dy })) continue
+      host.pose(f.x + dx, f.y + dy, Math.atan2(-dy, -dx))
+      return { x: f.x + dx, y: f.y + dy, ids, focus: f }
+    }
+  }
   // Behind the zombie, in the room, for those indoors; off to one side outdoors.
   const indoor = first.kind === "knock" || first.kind === "stove" || first.kind === "bed"
   const ang = indoor ? first.aim + Math.PI + 0.5 : first.aim + Math.PI / 2
@@ -120,7 +140,7 @@ export function stageCharacters(host: CharacterStageHost, session: StageSession,
     sy = first.y - Math.sin(first.aim) * 1.8
   }
   host.pose(sx, sy, Math.atan2(first.y - sy, first.x - sx))
-  return { x: sx, y: sy, ids }
+  return { x: sx, y: sy, ids, focus: focusOf(sim, ids, first.x, first.y) }
 }
 
 /** A point in front of the nearest church, from the streaming world's chunks (generated on demand, deterministic). */
@@ -135,8 +155,10 @@ function nearestChurch(sim: OutbreakSim, x: number, y: number): { x: number; y: 
         const door = chunk.doors.find((d) => d.id === `${b.id}-front`)
         const cx = door ? (door.rect[0] + door.rect[2]) / 2 : (b.rect[0] + b.rect[2]) / 2
         const cy = door ? (door.rect[1] + door.rect[3]) / 2 : b.rect[3] + 1
-        const d = Math.hypot(cx - x, cy - y)
-        if (!best || d < best.d) best = { x: cx, y: cy + (cy > (b.rect[1] + b.rect[3]) / 2 ? 5 : -5), d }
+        const south = cy > (b.rect[1] + b.rect[3]) / 2
+        // A church whose door faces north has the couple behind it from the camera: count it as much further away.
+        const d = Math.hypot(cx - x, cy - y) + (south ? 0 : 400)
+        if (!best || d < best.d) best = { x: cx, y: cy + (south ? 5 : -5), d }
       }
     }
   return best
