@@ -77,6 +77,8 @@ function glyphFor(kind: string, action: InteractAction): ActionGlyph | null {
       return "feed"
     case "revive":
       return "revive"
+    case "barricade":
+      return "board-up"
     case "enter":
       return VEHICLE[label] ?? null
     default:
@@ -126,6 +128,9 @@ export const PROMPT_ACTIONS: readonly { kind: string; action: InteractAction }[]
   { kind: "window", action: a("toggle", "Close", { hold: true }) },
   { kind: "window", action: a("climb", "Climb") },
   { kind: "fence", action: a("climb", "Vault") },
+  // Boarding up is its own key (B), drawn in the door and window prompts by the prompt-clarity feature.
+  { kind: "door", action: a("barricade", "Board up") },
+  { kind: "window", action: a("barricade", "Board up") },
   { kind: "container", action: a("search", "Search") },
   { kind: "container", action: a("smash", "Smash", { modifier: "shift" }) },
   { kind: "container", action: a("take", "Take all") },

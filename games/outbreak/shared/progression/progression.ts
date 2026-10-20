@@ -545,7 +545,7 @@ export class OutbreakProgression implements ProgressionHost {
     }
     if (cmd.pick) this.pick(slot, cmd.pick, world, target)
     if (cmd.reload && this.selected(slot.id)?.item === "flashlight") this.swapBattery(slot)
-    if (cmd.barricade) loud(this.startBarricade(slot, world), "barricade")
+    if (cmd.barricade) loud(this.startBarricade(slot, world, target), "barricade")
     if (cmd.fire) {
       const use = this.heldUse(slot.id)
       if (use === "heal") this.startHeal(slot)
@@ -662,13 +662,13 @@ export class OutbreakProgression implements ProgressionHost {
     }
   }
 
-  private startBarricade(slot: ProgressionSlot, world: WorldContext): number {
+  private startBarricade(slot: ProgressionSlot, world: WorldContext, target?: { kind: string; id: string }): number {
     const p = slot.survivor
     if (this.selected(slot.id)?.item === "crowbar") {
       const repaired = this.verbs.startRepair(slot, world)
       if (repaired !== null) return repaired
     }
-    const best = this.barricadeTarget(p, world)
+    const best = this.barricadeTarget(p, world, target)
     if (!best) return 0
     if (world.ai.getBarricadePlanks(best.id) >= 3) {
       this.notify(slot, "Fully boarded", "info", "barricade")
@@ -685,7 +685,15 @@ export class OutbreakProgression implements ProgressionHost {
     return this.knowledge.practised(slot, "barricade", res.noise)
   }
 
-  private barricadeTarget(p: ProgressionActor, world: WorldContext): { id: string; x: number; y: number } | null {
+  /**
+   * The opening B boards: the door or window the prompt points at (what the player sees highlighted), else the nearest
+   * one in reach that is not yet fully boarded, else the nearest one.
+   */
+  private barricadeTarget(p: ProgressionActor, world: WorldContext, target?: { kind: string; id: string }): { id: string; x: number; y: number } | null {
+    if (target && (target.kind === "door" || target.kind === "window")) {
+      const o = target.kind === "door" ? world.town.doors.find((d) => d.id === target.id) : world.town.windows.find((w) => w.id === target.id)
+      if (o && distToRect(p.x, p.y, o.rect) <= INTERACT_RANGE) return { id: o.id, x: (o.rect[0] + o.rect[2]) / 2, y: (o.rect[1] + o.rect[3]) / 2 }
+    }
     let best: { id: string; x: number; y: number } | null = null
     let bestDist = INTERACT_RANGE
     for (const o of [...world.town.doors, ...world.town.windows]) {

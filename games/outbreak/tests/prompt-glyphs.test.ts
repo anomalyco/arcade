@@ -65,8 +65,8 @@ describe("prompt glyphs (D-25)", () => {
 
   test("every action id the interact union declares either has prompts or is a channel with none", () => {
     const withPrompts = new Set(PROMPT_ACTIONS.map(({ action }) => action.id))
-    // Boarding up runs as a timed channel from the hotbar, never as a world prompt.
-    expect(unionIds().filter((id) => !withPrompts.has(id as never))).toEqual(["barricade"])
+    // Boarding up (B) is drawn in door and window prompts since AR-89.
+    expect(unionIds().filter((id) => !withPrompts.has(id as never))).toEqual([])
   })
 
   test("words stay only where the glyph is ambiguous", () => {

@@ -7,6 +7,11 @@ export const VAULT_DURATION = 0.30
 export const VAULT_STAMINA_COST = 0.18
 export const FENCE_VAULT_NOISE = 10.0
 export const HOLD_DURATION = 0.38
+/**
+ * How much facing a target counts against being near it when several are in reach: at 1, looking (the cursor) picks
+ * between targets up to half a metre apart in distance. It was 0.45 before AR-89, so the nearest almost always won.
+ */
+export const INTERACT_FACING_WEIGHT = 1
 export const PEEK_CONE = 165
 export const PEEK_AWARENESS = 4.2
 /** A door's peephole: a fish-eye, narrower than a window and with less to it. */
@@ -171,7 +176,7 @@ function candidateScore(actor: InteractActorState, rect: Rect): { dist: number; 
   const [nx, ny] = nearestPointOnRect(actor.x, actor.y, rect)
   const toAngle = Math.atan2(ny - actor.y, nx - actor.x)
   const facing = Math.cos(angleDiff(actor.aim, toAngle))
-  const score = (INTERACT_RANGE - dist) * 2.0 + facing * 0.45
+  const score = (INTERACT_RANGE - dist) * 2.0 + facing * INTERACT_FACING_WEIGHT
   return { dist, facing, score }
 }
 

@@ -13,6 +13,9 @@ import { DEFAULT_DOCK_SETTINGS, Dock, type DockSettings } from "./hud/dock"
 import { hudMotion, snapToPixels } from "./hud/motion"
 import { PromptView } from "./hud/prompt"
 import { FINISHER_GLYPH, promptGlyph, promptGlyphHtml } from "./hud/prompt-glyphs"
+import { blockedByBoards, BOARD_UP, boardPrompt, MAX_PLANKS } from "./prompt-clarity/board"
+import { clarityOn, DEFAULT_PROMPT_CLARITY_SETTINGS, teachUses, type PromptClaritySettings } from "./prompt-clarity/settings"
+import { actionKey, teachingWord } from "./prompt-clarity/teach"
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 const MARKER_RANGE = 30
@@ -76,6 +79,7 @@ export class InventoryHud {
   ) {
     this.craft = new CraftUi(els.craft, crafting)
     this.glyphs = "promptIcons" in dockSettings ? (dockSettings as PromptGlyphSettings) : DEFAULT_PROMPT_GLYPH_SETTINGS
+    this.clarity = "promptClarity" in dockSettings ? (dockSettings as unknown as PromptClaritySettings) : DEFAULT_PROMPT_CLARITY_SETTINGS
     const { belt, hotbar, pack } = els
     const dock = belt?.closest<HTMLElement>("#dock")
     const hud = dock?.closest<HTMLElement>("#hud")
@@ -86,6 +90,11 @@ export class InventoryHud {
 
   /** Read live, so Lab changes apply on the next frame. */
   private readonly glyphs: PromptGlyphSettings
+
+  /** Prompt clarity (Lab › Controls, AR-89): verbs while new, B on doors and windows. Read live. */
+  private readonly clarity: PromptClaritySettings
+  /** The hold already counted as a use, so a held E is counted once. */
+  private holdNoted = false
 
   /** The floating world prompt. */
   readonly prompt: PromptView | null = null
@@ -99,11 +108,29 @@ export class InventoryHud {
   /** How often this browser has acted on each kind of prompt; words drop off once an action is familiar. */
   private readonly familiar = loadFamiliar()
 
-  /** Records that the player pressed the interact key on `target`, so its words can fade next time. */
-  noteUse(target: InteractTarget | undefined): void {
+  /**
+   * Records that the player pressed the interact key on `target` (with Shift, its alternative), so its words can fade:
+   * the kind of prompt (Today's rule) and the action itself (AR-89's verbs).
+   */
+  noteUse(target: InteractTarget | undefined, shift = false): void {
     if (!target) return
-    const key = target.kind
-    this.familiar[key] = (this.familiar[key] ?? 0) + 1
+    const action = shift && target.alt ? target.alt : target.primary
+    this.bump(target.kind)
+    this.bump(actionKey(target.kind, action))
+  }
+
+  /** Records one use of `action` on a target of `kind` (a completed hold, B at an opening). */
+  noteAction(kind: string, action: Pick<InteractAction, "id" | "label">): void {
+    this.bump(actionKey(kind, action))
+  }
+
+  /** How often this browser has done `action` on a target of `kind`. */
+  uses(kind: string, action: Pick<InteractAction, "id" | "label">): number {
+    return this.familiar[actionKey(kind, action)] ?? 0
+  }
+
+  private bump(key: string, by = 1): void {
+    this.familiar[key] = Math.max(0, (this.familiar[key] ?? 0) + by)
     try {
       localStorage.setItem(FAMILIAR_KEY, JSON.stringify(this.familiar))
     } catch {}
@@ -200,6 +227,12 @@ export class InventoryHud {
     if (finishingNow && !this.wasFinishing) this.finisherCount++
     this.wasFinishing = finishingNow
     const target = view.prompt
+    // A completed hold counts as a use of the hold's action, not the tap's (counted on the press).
+    if (p.holdTriggered && !this.holdNoted && target?.secondary && p.holdTargetId === target.id) {
+      this.holdNoted = true
+      this.bump(actionKey(target.kind, target.primary), -1)
+      this.noteAction(target.kind, target.secondary)
+    } else if (!p.holdTriggered) this.holdNoted = false
 
     if (!target) {
       const finTarget = !p.vault && !p.vehicleId && this.finisherCount < 2 ? findFinisherTarget(p, view.zombies) : null
@@ -228,9 +261,14 @@ export class InventoryHud {
       prompt.update(null)
       return
     }
+    const html = this.promptHtml(view, target)
+    if (!html) {
+      prompt.update(null)
+      return
+    }
     prompt.update({
       target: `${target.kind}:${target.id}`,
-      html: this.promptHtml(view, target),
+      html,
       x: proj.x,
       y: proj.y,
       place: isPeeking || below ? "below" : "above",
@@ -245,27 +283,38 @@ export class InventoryHud {
    */
   private actionHtml(target: InteractTarget, action: InteractAction): string {
     const g = this.glyphs.promptIcons ? promptGlyph(target.kind, action) : { glyph: null, word: action.label, label: action.label }
-    const word = g.word ? this.word(target, g.word) : ""
+    const teaching = g.glyph ? teachingWord(target.kind, action, this.uses(target.kind, action), teachUses(this.clarity)) : null
+    const word = teaching ?? (g.word ? this.word(target, g.word) : "")
     const glyph = g.glyph ? promptGlyphHtml(g.glyph, g.label, this.glyphs.promptIconSize) : ""
     return `${glyph}${word ? `<span class="akp-word">${esc(word)}</span>` : ""}`
   }
 
   /** The key row: E and its action, the hold action on the same ringed cap, and Shift+E when there is one. */
-  private lineHtml(prompt: InteractTarget): string {
+  private lineHtml(view: SessionView, prompt: InteractTarget): string {
     const parts: string[] = []
+    const board = clarityOn(this.clarity, "promptBoardKey") ? boardPrompt(view, prompt) : null
+    const blocked = blockedByBoards(prompt, board)
     const tap = this.actionHtml(prompt, prompt.primary)
-    if (prompt.secondary) {
+    if (blocked) {
+      // E is refused on a boarded door ("Blocked by barricade"): say it is boarded instead of offering Open.
+    } else if (prompt.secondary && !(board && board.planks > 0)) {
       const held = this.actionHtml(prompt, prompt.secondary)
       const cap = keyCapHtml("KeyE", { hold: true })
       parts.push(`<span class="akp akp-dual">${cap}${tap ? `<span class="akp-label">${tap}</span>` : ""}${held ? `<span class="akp-hold"><i aria-hidden="true"></i>${held}</span>` : ""}</span>`)
     } else parts.push(this.cap("KeyE", prompt, prompt.primary))
     if (prompt.alt) parts.push(`<span class="akp">${keyCapHtml("ShiftLeft")}${this.cap("KeyE", prompt, prompt.alt)}</span>`)
+    if (board) {
+      const pips = board.planks > 0 ? `<span class="pips" aria-label="${board.planks} of ${MAX_PLANKS} boards">${Array.from({ length: MAX_PLANKS }, (_, i) => `<i data-on="${i < board.planks}"></i>`).join("")}</span>` : ""
+      if (board.canBoard) parts.push(`${this.cap("KeyB", prompt, BOARD_UP)}${pips}`)
+      else if (pips) parts.push(`<span class="akp-boarded">${this.glyphs.promptIcons ? promptGlyphHtml("board-up", "Boarded", this.glyphs.promptIconSize) : ""}${pips}</span>`)
+    }
+    if (!parts.length) return ""
     return `<div class="prompt-line">${parts.join('<span class="sep" aria-hidden="true"></span>')}</div>`
   }
 
   private promptHtml(view: SessionView, prompt: InteractTarget): string {
     const progression = view.progression
-    const line = this.lineHtml(prompt)
+    const line = this.lineHtml(view, prompt)
     const store = this.stripStore(view, prompt)
     if (!store) return line
     const stacks = progression.contents(store)
