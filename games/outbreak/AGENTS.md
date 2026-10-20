@@ -43,8 +43,10 @@
   until someone walks up and the machine answers. Outside: rain on cars, puddles and leaves, gutters after rain,
   porch chimes on gusts, insects by day. Distance: sirens and other survivors' gunfire that thin out each night and
   stop (the last sirens wind down mid-wail, the fourth night's shots are three and then one), a far car alarm, an owl
-  from night 2. Seeded on town seed and sim time; presentation only (nothing reaches zombie hearing). Other features
-  ask for sounds through `soundscape/hooks.ts` (`playAmbientSound`, `holdAmbientSound`, `registerAmbientSound`).
+  from night 2, a church bell striking the hours for the blocks around it (thirteen at midnight on night 3). Seeded on
+  town seed and sim time; presentation only (nothing reaches zombie hearing). Other features ask for sounds through
+  `soundscape/hooks.ts` (`playAmbientSound`, `holdAmbientSound`, `registerAmbientSound`); ready for them: `scape.tv`,
+  `scape.life.rustle|scurry|hooves`, `scape.habit.knock|pans|bedsprings|fence|dance`.
   Listening reel and loudness: `bun scripts/soundscape-reel.ts` (offline, never plays). Tests: `tests/soundscape.test.ts`.
 - The survivor (`src/survivor.ts`) and zombies (`src/zombies.ts`) use the shared rig's IK, arms and profiles but keep their own stride clocks and terrain support. Motion rules and known gaps: `../../docs/animation.md`. All shared docs: `../../docs/README.md`.
 - Rugs and Resident Evil interior themes live in `src/interiors/` (plan, mesh emitters, WGSL, `RugPool`); the rug

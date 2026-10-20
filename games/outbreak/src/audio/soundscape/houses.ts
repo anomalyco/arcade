@@ -98,9 +98,12 @@ export function housePlan(town: Town, b: Building): HousePlan {
 
   const taps: ScapeTap[] = []
   const wet = find("counter", "stove")
-  const nTaps = r(20) < (residential ? 0.8 : 0.3) ? 1 : 0
-  for (let k = 0; k < nTaps + (residential && r(21) < 0.25 ? 1 : 0); k++) {
-    const a = wet[k % Math.max(1, wet.length)] ?? { x: x1 - 2, y: y1 - 2 }
+  // The kitchen tap, and in a quarter of houses the bath too (a tub where the house has one).
+  const tub = find("tub")[0]
+  const spots = [wet[0] ?? { x: x1 - 2, y: y1 - 2 }, tub ?? wet[1] ?? wet[0] ?? { x: x0 + 2, y: y0 + 2 }]
+  const nTaps = (r(20) < (residential ? 0.8 : 0.3) ? 1 : 0) + (residential && r(21) < 0.25 ? 1 : 0)
+  for (let k = 0; k < nTaps; k++) {
+    const a = spots[k]!
     const p = inside(b, a.x + (r(22, k) - 0.5) * 0.6, a.y + (r(23, k) - 0.5) * 0.6)
     taps.push({ ...p, key: key("tap", k), period: 1.3 + r(24, k) * 3.6, phase: r(25, k) * 4, double: r(26, k) < 0.2 })
   }

@@ -150,6 +150,7 @@ export class ScapeDirector {
   private car: { x: number; y: number; d: number } = { x: 0, y: 0, d: Infinity }
   private puddle: { x: number; y: number; d: number } = { x: 0, y: 0, d: Infinity }
   private tree: { x: number; y: number; d: number } = { x: 0, y: 0, d: Infinity }
+  private church: { x: number; y: number; d: number } = { x: 0, y: 0, d: Infinity }
   /** Music boxes already played, by house id → night. */
   private readonly musicPlayed = new Map<string, number>()
   /** The haunted phone's ringing: when it started, and when (if) someone walked up to it. */
@@ -191,6 +192,7 @@ export class ScapeDirector {
     this.refreshNear(input)
     for (const plan of this.near) this.house(plan, input, levels, prev, prevHour, night, dark, wind, gustRise)
     this.haunting(input, levels, prev, prevHour, night)
+    this.bell(input, levels, prevHour, night)
     this.outdoors(input, levels, prev, daylight, wind, gustRise)
     this.distance(input, levels, prev, night, dark)
     this.prevAbs = input.absHour
@@ -279,8 +281,11 @@ export class ScapeDirector {
     this.nearAt = input.time
     this.near.length = 0
     const town = input.town
+    this.church.d = Infinity
     for (const b of town.buildings) {
-      if (distToBuilding(b, this.lx, this.ly) < HOUSE_RADIUS) this.near.push(housePlan(town, b))
+      const d = distToBuilding(b, this.lx, this.ly)
+      if (d < HOUSE_RADIUS) this.near.push(housePlan(town, b))
+      if ((b.archetype ?? b.kind) === "church" && d < this.church.d) setNear(this.church, (b.rect[0] + b.rect[2]) / 2, (b.rect[1] + b.rect[3]) / 2, d)
     }
     // Nearest tree, car and puddle for rain on things and insects.
     this.tree.d = this.car.d = this.puddle.d = Infinity
@@ -413,6 +418,18 @@ export class ScapeDirector {
     }
   }
 
+  /**
+   * The church bell strikes the hours for the blocks around it. At midnight on the third night it strikes thirteen.
+   */
+  private bell(input: ScapeInput, L: ScapeLevels, prevHour: number, night: number): void {
+    if (L.clocks <= 0 || this.church.d > 140) return
+    const struck = hourOnBoundary(prevHour, input.hour)
+    if (struck < 0) return
+    const n = struck === 0 && night === 3 ? 13 : struck % 12 === 0 ? 12 : struck % 12
+    for (let k = 0; k < n; k++) this.shot("scape.church.bell", this.church.x, this.church.y, L.clocks, 1, 0.3 + k * 2.7)
+    if (n === 13) this.counts.thirteen = (this.counts.thirteen ?? 0) + 1
+  }
+
   /** The haunted phone: at three in the morning it rings in an empty house until somebody walks up to it. */
   private haunting(input: ScapeInput, L: ScapeLevels, prev: number, prevHour: number, night: number): void {
     const t = input.time
@@ -454,7 +471,7 @@ export class ScapeDirector {
     const t = input.time
     const rain = input.rain
     if (L.rain > 0 && rain > 0.03) {
-      const level = L.rain * Math.min(1, rain * 1.4)
+      const level = L.rain * Math.min(1, rain * 2.2)
       if (this.car.d < NEAR_CAR) this.hold("rain:car", "scape.rain.metal", this.car.x, this.car.y, level, 1)
       if (this.puddle.d < NEAR_PUDDLE) this.hold("rain:puddle", "scape.rain.puddle", this.puddle.x, this.puddle.y, level, 1)
       if (this.tree.d < NEAR_TREE) this.hold("rain:leaves", "scape.rain.leaves", this.tree.x, this.tree.y, level * (0.8 + 0.3 * wind), 1)

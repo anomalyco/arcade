@@ -58,8 +58,8 @@ describe("soundscape sounds (procedural, AR-86)", () => {
       expect(a.every((v, i) => v === b[i])).toBe(true)
       samples += a.length
     }
-    // Under two minutes of mono audio if every sound were baked at once (each bakes only on first use).
-    expect(samples / SCAPE_SAMPLE_RATE).toBeLessThan(120)
+    // Under 2.5 minutes of mono audio (≈14 MB at 24 kHz) if every sound were baked at once; each bakes on first use.
+    expect(samples / SCAPE_SAMPLE_RATE).toBeLessThan(150)
   })
 
   test("cues play on the Ambience bus below the game's own sounds", () => {
@@ -196,6 +196,28 @@ describe("soundscape director", () => {
       return
     }
     throw new Error("no music box in 300 towns")
+  })
+
+  test("the church bell strikes the hour, and thirteen at midnight on the third night", () => {
+    const t = { ...town, buildings: [...town.buildings, { id: "church-x", kind: "house" as const, archetype: "church", rect: [60, 80, 72, 96] as const as unknown as [number, number, number, number], color: 0 }] }
+    const strikes = (absHour: number, from: number, to: number) => {
+      const d = new ScapeDirector()
+      let n = 0
+      let time = 100
+      for (let h = from; h < to; h += 0.01, time += 0.25) {
+        d.step(input(t, { time, hour: h % 24, absHour: absHour + (h - from), listener: { x: 50, y: 80 } }), levels())
+        for (let i = 0; i < d.shotCount; i++) if (d.shots[i]!.id === "scape.church.bell") n++
+      }
+      // Deferred strikes keep coming after the hour; flush them.
+      for (let k = 0; k < 200; k++, time += 0.25) {
+        d.step(input(t, { time, hour: to % 24, absHour: absHour + (to - from), listener: { x: 50, y: 80 } }), levels())
+        for (let i = 0; i < d.shotCount; i++) if (d.shots[i]!.id === "scape.church.bell") n++
+      }
+      return n
+    }
+    expect(strikes(21.9, 21.9, 22.1)).toBe(10)
+    expect(strikes(23.9, 23.9, 24.1)).toBe(12)
+    expect(strikes(71.9, 23.9, 24.1)).toBe(13)
   })
 
   test("insects by day only, an owl only after the first night, gutters only after rain", () => {
