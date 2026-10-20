@@ -100,6 +100,8 @@ export interface OutbreakHarnessHost {
   readonly interiors: InteriorPresenter
   readonly rebuildLevel: () => void
   readonly forceLevel: (level?: "origin" | "streamed") => void
+  /** Automation only: keep the current light casters and sight blockers (reproduces stale casters in proofs). */
+  readonly holdCasters: (hold: boolean) => void
 }
 
 export function createOutbreakHarness(host: OutbreakHarnessHost) {
@@ -188,6 +190,7 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
     levelDraw: () => ({ chunks: renderer.levelChunkCount, drawn: renderer.drawnChunks, draws: renderer.drawnChunkDraws }),
     /** Pin the origin build or the streamed window regardless of the camera (undefined: automatic), to compare them at one pose. */
     forceLevel: (level?: "origin" | "streamed") => host.forceLevel(level),
+    holdCasters: (hold: boolean) => host.holdCasters(hold),
     quality: () => qualityController.state(devicePixelRatio),
     setQuality: (mode: QualityMode) => {
       const resolved = resolveQualityMode(mode)

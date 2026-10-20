@@ -384,6 +384,9 @@ async function main() {
     forceLevel: (level?: "origin" | "streamed") => {
       sceneLevel.forcedLevel = level
     },
+    holdCasters: (hold) => {
+      sceneLevel.holdCasters = hold
+    },
   })
   Object.assign(window, { __arcadeHarness: harness })
   pacer.scheduleFrame()

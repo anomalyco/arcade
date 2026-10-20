@@ -76,6 +76,11 @@ export class OutbreakSceneLevel {
   vertices = 0
   /** Automation only: pin the origin build or the streamed window regardless of the camera (switch comparisons). */
   forcedLevel: "origin" | "streamed" | undefined
+  /**
+   * Automation only: keep the light casters and sight blockers as they are, whatever opens or closes. Reproduces the
+   * stale state a co-op client's own doors left before AR-100, for before/after stills.
+   */
+  holdCasters = false
   blockers: readonly (readonly [number, number, number, number])[]
   revision = -1
   lightOccluders = 0
@@ -238,7 +243,7 @@ export class OutbreakSceneLevel {
       }
     }
     const openingKey = openingStateKey(town)
-    if (this.revision !== session.view.revision || openingKey !== this.lightOpeningKey) {
+    if (!this.holdCasters && (this.revision !== session.view.revision || openingKey !== this.lightOpeningKey)) {
       this.revision = session.view.revision
       this.lightOpeningKey = openingKey
       this.blockers = sightRects(town)
