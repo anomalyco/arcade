@@ -5,6 +5,7 @@ import { CoopRoomCore } from "../server/room-core"
 import { BUILD } from "../shared/build.gen"
 import { TICK_DT } from "../shared/clock"
 import { DEFAULT_COOP_ROOM } from "../shared/coop-config"
+import { CoopSim } from "../shared/coop-sim"
 import { sharedEdges } from "../shared/houses/geometry"
 import { makeTown, sightRects, type Town } from "../shared/map"
 import type { Command } from "../shared/session"
@@ -230,5 +231,40 @@ describe("light and sight through doorways", () => {
     expect(through()).toBe(0)
     expect(lightReaches(level.occluders, level.lightOccluders, cx, door.rect[3] + 1.4, cx, door.rect[1] - 1.5)).toBe(1)
     expect(level.vision.visible(cx, door.rect[1] - 1.5)).toBe(true)
+  })
+
+  test("every door and open window in view is drawn, however many the co-op town holds", () => {
+    const sim = new CoopSim(7, 7, 0.22, { zombieCount: 0 })
+    const spots = [[48, 48], [-60, 48], [160, 48], [48, -70], [-80, -80], [48, 170]] as const
+    spots.forEach(([x, y], i) => {
+      const slot = sim.slots[i] ?? sim.addSurvivor(`s${i}`, i)
+      slot.survivor.x = x
+      slot.survivor.y = y
+    })
+    sim.syncWorldChunks()
+    const town = sim.town
+    for (const w of town.windows) w.open = true
+    expect(town.doors.length).toBeGreaterThan(64)
+    const stub = { addModel: () => 0 }
+    const level = new OutbreakSceneLevel({
+      renderer: stub as never,
+      combatFx: {} as never,
+      settings: createOutbreakSettings(),
+      cam: {} as never,
+      session: () => ({ view: { town } }) as never,
+    })
+    // The last survivor's window comes last in the town's chunk order.
+    const view = [28, 150, 68, 190] as const
+    const { doorBatch, sashBatch } = level.updateOpeningBatches(town, view)
+    const drawn = (b: typeof doorBatch, x: number, z: number) => {
+      for (let i = 0; i < b.count; i++) if (Math.abs(b.data[i * 12]! - x) < 1e-4 && Math.abs(b.data[i * 12 + 2]! - z) < 1e-4) return true
+      return false
+    }
+    const inView = (r: readonly number[]) => r[0]! < view[2] && r[2]! > view[0] && r[1]! < view[3] && r[3]! > view[1]
+    const doors = town.doors.filter((d) => inView(d.rect))
+    const windows = town.windows.filter((w) => inView(w.rect))
+    expect(doors.length).toBeGreaterThan(0)
+    for (const d of doors) expect(drawn(doorBatch, d.rect[0], (d.rect[1] + d.rect[3]) / 2)).toBe(true)
+    for (const w of windows) expect(drawn(sashBatch, (w.rect[0] + w.rect[2]) / 2, (w.rect[1] + w.rect[3]) / 2)).toBe(true)
   })
 })

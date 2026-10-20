@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { distToRect, type Rect } from "@arcade/kit/sim/geom"
-import { propShape, type Building } from "../shared/map"
+import { makeTown, propShape, type Building } from "../shared/map"
+import { groundHeight, styledFlats, supportHeight } from "../shared/terrain"
 import { roomInner } from "../shared/houses/geometry"
 import { HOUSE_CONDITIONS, HOUSE_FORMS } from "../shared/houses/style"
 import { DEFAULT_HOUSE_VARIETY, houseVarietyKey, resetHouseVariety, setHouseVariety } from "../shared/houses/variety"
@@ -165,5 +166,25 @@ describe("house variety (AR-79)", () => {
     expect(garage.length).toBeGreaterThan(0)
     const burnt = homes.filter(({ b }) => b.style!.condition === "burnt")
     for (const { chunk, b } of burnt) for (const c of chunk.containers) if (c.buildingId === b.id) expect(c.ammo).toBe(0)
+  })
+
+  test("front paths and driveways lie on level ground, so their pads never sink into the lawn", () => {
+    let samples = 0
+    for (const { chunk, b } of homes) {
+      const town = { ...makeTown(7), buildings: chunk.buildings, barriers: chunk.barriers, doors: chunk.doors, activeChunkKeys: [chunk.key] }
+      const flats = styledFlats(town, b)
+      expect(flats.length).toBeGreaterThanOrEqual(2)
+      for (const f of flats) {
+        for (let z = f[1]; z <= f[3]; z += 0.5) {
+          for (let x = f[0]; x <= f[2]; x += 0.5) {
+            samples++
+            // The pads sit at 3–3.5 cm; walking on them stands on them.
+            expect(groundHeight(town, x, z)).toBeLessThan(0.025)
+            if (!b.style!.rooms.some((r) => x >= r.rect[0] && x <= r.rect[2] && z >= r.rect[1] && z <= r.rect[3])) expect(supportHeight(town, x, z)).toBeGreaterThanOrEqual(0.014)
+          }
+        }
+      }
+    }
+    expect(samples).toBeGreaterThan(5000)
   })
 })

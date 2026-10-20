@@ -71,6 +71,10 @@ describe("Outbreak lighting module & Lab controls", () => {
     const snapped = packOutbreakLightingUniforms({ ...base, frameDt: 0 }, flashlightColor(0.92))
     expect(snapped[N + 18]).toBe(1)
     expect(snapped[N + 19]).toBe(1)
+    // Aimed at open ground the axis meets no wall (raycast's Infinity): every uniform stays finite.
+    const open = packOutbreakLightingUniforms({ ...base, frameDt: 1 / 60, flashlightAirLimit: Infinity }, flashlightColor(0.92))
+    expect(open[N + 23]).toBe(19)
+    expect([...open].every(Number.isFinite)).toBe(true)
   })
 
   test("selective practicals keep NW bedside lamp shadow-casting while tightening porch, window, and accent lamps", () => {

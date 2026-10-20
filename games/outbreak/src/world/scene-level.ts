@@ -87,15 +87,13 @@ export class OutbreakSceneLevel {
   private lightOpeningKey = 0
   // Walls, closed doors and closed windows: what stops light (sight passes windows, light only open ones).
   lightWalls: readonly (readonly [number, number, number, number])[]
-  private readonly doorData = new Float32Array(64 * 12)
   readonly doorBatch: Batch
-  private readonly sashData = new Float32Array(64 * 12)
   readonly sashBatch: Batch
 
   constructor(private readonly host: OutbreakSceneLevelHost) {
     const { renderer, session } = host
-    this.doorBatch = { model: renderer.addModel(createDoorMesh()), data: this.doorData, count: 0 }
-    this.sashBatch = { model: renderer.addModel(createSashMesh()), data: this.sashData, count: 0 }
+    this.doorBatch = { model: renderer.addModel(createDoorMesh()), data: new Float32Array(64 * 12), count: 0 }
+    this.sashBatch = { model: renderer.addModel(createSashMesh()), data: new Float32Array(64 * 12), count: 0 }
     this.blockers = sightRects(session().view.town)
     this.lightWalls = this.blockers
     this.visionSettings = host.settings.vision
@@ -344,49 +342,63 @@ export class OutbreakSceneLevel {
     return this.currentIsStreamWindow ? this.worldStreamer.windowSconces : this.originSconces
   }
 
-  updateOpeningBatches(town: Town): { doorBatch: Batch; sashBatch: Batch; openWindows: number } {
+  /**
+   * Instances the doors and open-window sashes inside `view` (a ground rect, 3 m margin). Co-op towns span every
+   * survivor's window, so they can hold far more doors than one view: a fixed first-64 left later chunks' doors
+   * undrawn while still shut, light-blocking and solid.
+   */
+  updateOpeningBatches(town: Town, view?: readonly [number, number, number, number]): { doorBatch: Batch; sashBatch: Batch; openWindows: number } {
+    const inView = (r: readonly [number, number, number, number]) =>
+      !view || (r[2] > view[0] - 3 && r[0] < view[2] + 3 && r[3] > view[1] - 3 && r[1] < view[3] + 3)
+    const doorData = this.grow(this.doorBatch, town.doors.length)
+    const sashData = this.grow(this.sashBatch, town.windows.length)
     let doorCount = 0
     const drawnElsewhere = doorLeafOverride()
-    for (let i = 0; i < town.doors.length && doorCount < 64; i++) {
+    for (let i = 0; i < town.doors.length; i++) {
       const door = town.doors[i]!
-      if (drawnElsewhere?.(door)) continue
+      if (drawnElsewhere?.(door) || !inView(door.rect)) continue
       const o = doorCount++ * 12
-      this.doorData[o] = door.rect[0]
-      this.doorData[o + 1] = 0
-      this.doorData[o + 2] = (door.rect[1] + door.rect[3]) / 2
-      this.doorData[o + 3] = (door as { angle?: number }).angle ?? (door.open ? -Math.PI / 2 : 0)
-      this.doorData[o + 4] = 1
-      this.doorData[o + 5] = 1
-      this.doorData[o + 6] = 1
-      this.doorData[o + 7] = 1
-      this.doorData[o + 8] = 0
-      this.doorData[o + 9] = 0
-      this.doorData[o + 10] = 1
-      this.doorData[o + 11] = 0
+      doorData[o] = door.rect[0]
+      doorData[o + 1] = 0
+      doorData[o + 2] = (door.rect[1] + door.rect[3]) / 2
+      doorData[o + 3] = (door as { angle?: number }).angle ?? (door.open ? -Math.PI / 2 : 0)
+      doorData[o + 4] = 1
+      doorData[o + 5] = 1
+      doorData[o + 6] = 1
+      doorData[o + 7] = 1
+      doorData[o + 8] = 0
+      doorData[o + 9] = 0
+      doorData[o + 10] = 1
+      doorData[o + 11] = 0
     }
     this.doorBatch.count = doorCount
     let openWindows = 0
     for (let i = 0; i < town.windows.length; i++) {
       const win = town.windows[i]!
-      if (!win.open || openWindows >= 64) continue
+      if (!win.open || !inView(win.rect)) continue
       const [wx0, wy0, wx1, wy1] = win.rect
       const horizontal = wx1 - wx0 > wy1 - wy0
       const yaw = horizontal ? 0 : Math.PI / 2
       const o = openWindows++ * 12
-      this.sashData[o] = (wx0 + wx1) / 2
-      this.sashData[o + 1] = 0.38
-      this.sashData[o + 2] = (wy0 + wy1) / 2
-      this.sashData[o + 3] = yaw
-      this.sashData[o + 4] = 1
-      this.sashData[o + 5] = 1
-      this.sashData[o + 6] = 1
-      this.sashData[o + 7] = 1
-      this.sashData[o + 8] = 0
-      this.sashData[o + 9] = 0
-      this.sashData[o + 10] = 1
-      this.sashData[o + 11] = 0
+      sashData[o] = (wx0 + wx1) / 2
+      sashData[o + 1] = 0.38
+      sashData[o + 2] = (wy0 + wy1) / 2
+      sashData[o + 3] = yaw
+      sashData[o + 4] = 1
+      sashData[o + 5] = 1
+      sashData[o + 6] = 1
+      sashData[o + 7] = 1
+      sashData[o + 8] = 0
+      sashData[o + 9] = 0
+      sashData[o + 10] = 1
+      sashData[o + 11] = 0
     }
     this.sashBatch.count = openWindows
     return { doorBatch: this.doorBatch, sashBatch: this.sashBatch, openWindows }
+  }
+
+  private grow(batch: Batch, n: number): Float32Array {
+    if (batch.data.length < n * 12) batch.data = new Float32Array(Math.max(n, batch.data.length / 6) * 12)
+    return batch.data
   }
 }
