@@ -5,7 +5,7 @@ import { resolve } from "node:path"
 
 // Kit-approved headless, muted fidelity iterations against the saved Ashwood title frame.
 // Run via HiveMind browser admission. No reference-game server is needed.
-const out = resolve("captures/lot/current")
+const out = resolve(process.env.LOT_CAPTURE_DIR ?? "captures/lot/current")
 await mkdir(out, { recursive: true })
 const local = process.argv.includes("--local") ? Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
   const pathname = decodeURIComponent(new URL(request.url).pathname)
@@ -26,8 +26,9 @@ const errors: string[] = []
 const report: Record<string, unknown> = { viewport: [1920, 1080], captured: new Date().toISOString(), errors }
 try {
   const page = await context.newPage()
-  page.on("pageerror", e=>errors.push(e.message))
-  page.on("console", m=>{ if(m.type()==="error") errors.push(m.text()) })
+  page.on("pageerror", e=>errors.push(e.stack ?? e.message))
+  page.on("console", m=>{ if(m.type()==="error") errors.push(`${m.text()} (${m.location().url})`) })
+  page.on("response", r=>{ if(r.status()>=400) errors.push(`HTTP ${r.status()}: ${r.url()}`) })
   const url = local ? new URL("/arcade/lot/",local.url).href : process.env.LOT_URL ?? "https://studio.taila8e7c7.ts.net:5251/arcade/lot/"
   report.url=url
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 })
@@ -35,7 +36,7 @@ try {
     const w=window as unknown as {lot?: {ready:boolean;frames:number}}
     return w.lot?.ready && w.lot.frames>48
   },undefined,{timeout:150_000})
-  await page.addStyleTag({content:"#hud,#credits,[data-lab-panel]{display:none!important}"})
+  const hidden=await page.addStyleTag({content:"#hud,#credits,[data-lab-panel]{display:none!important}"})
   report.camera=await page.evaluate(()=>{
     const w=window as unknown as {lot:{camera:{eye:number[];yaw:number;pitch:number;fov:number;near:number};settings:unknown}}
     const c=w.lot.camera
@@ -47,7 +48,9 @@ try {
     await w.lot.renderer.passContext.device.queue.onSubmittedWorkDone()
     await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()))
   })
-  await page.screenshot({path:resolve(out,"kit.png"),timeout:60_000})
+  if(!process.argv.includes("--input-only")) await page.screenshot({path:resolve(out,"kit.png"),timeout:60_000})
+  // Restore the real UI before exercising input: hidden controls cannot take focus.
+  await hidden.evaluate(element=>element.parentNode?.removeChild(element))
   await page.evaluate(()=>{ (window as unknown as {lot:{paused:boolean}}).lot.paused=false })
   if(errors.length) throw new Error(errors.join("\n"))
   if(process.argv.includes("--input")) {
@@ -89,7 +92,8 @@ try {
     report.input={start,moved,panel,blocked}
     report.inputStage="passed"
   }
-  console.log("Captured",out)
+  if(errors.length) throw new Error(errors.join("\n"))
+  console.log("Verified",out)
 } catch(error) {
   report.failure=String(error)
   const page=context.pages()[0]

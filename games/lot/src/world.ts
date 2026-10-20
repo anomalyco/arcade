@@ -6,7 +6,7 @@ const t = 8
 export const START = { x: -2.5 + 2.2 * Math.sin(t * 0.021), z: 154 + 5 * Math.sin(t * 0.013 + 1),
   height: 1.9 + 0.15 * Math.sin(t * 0.031), yaw: -0.05 + 0.05 * Math.sin(t * 0.017 + 0.5), pitch: 0.035 + 0.008 * Math.sin(t * 0.027) }
 export const CAR = { x: -8.2, z: 137.8, yaw: -Math.PI / 2 - 0.04 }
-export type SourceLamp = { kind: string; position: [number,number,number]; direction?: [number,number,number]; color: [number,number,number]; intensity: number; range: number; angle?: number; penumbra?: number; shadow?: boolean }
+export type SourceLamp = { kind: string; position: [number,number,number]; direction?: [number,number,number]; color: [number,number,number]; intensity: number; range: number; angle?: number; penumbra?: number; shadow?: boolean; size?: number }
 export type SourceScene = { version: number; files: Record<"solid"|"ground"|"foliage"|"fence"|"glass"|"undergrowth"|"impostors", string[]>; lamps: SourceLamp[]; colliders: { min: number[]; max: number[] }[]; treeCount: number }
 export const walls: Rect[] = []
 

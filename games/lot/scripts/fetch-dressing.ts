@@ -13,7 +13,7 @@ for(const [id,keep] of [["metal_trash_can",/_rust/],["utility_box_01",null]] as 
   const files=await response.json()
   const asset=files.gltf["1k"].gltf as {url:string;include:Record<string,{url:string}>}
   const json=await (await fetch(asset.url)).json()
-  const resources:Record<string,Uint8Array>={}
+  const resources:Record<string,Uint8Array<ArrayBuffer>>={}
   for(const [name,file] of Object.entries(asset.include)) {
     const r=await fetch(file.url)
     if(!r.ok) throw new Error(`${file.url}: ${r.status}`)

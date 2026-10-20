@@ -47,8 +47,23 @@ for row in range(6):
     for col in range(8):
         ys, xs = slice(row*h//6, (row+1)*h//6), slice(col*w//8, (col+1)*w//8)
         grid.append({"row": row, "column": col, **measure(ar[ys, xs], br[ys, xs])})
+# Fixed reference-space regions, chosen before iteration 3 for Kit's Scrawl notes.
+regions = {
+    "upper_sky": (400, 0, 1600, 280),
+    "forest_left": (270, 370, 610, 640),
+    "forest_right": (1400, 350, 1900, 650),
+    "wagon": (590, 575, 820, 655),
+    "booth_glass": (1170, 550, 1290, 610),
+    "lamp_pool": (950, 605, 1410, 660),
+    "wet_streaks": (1070, 650, 1280, 850),
+    "foreground_road": (850, 700, 1600, 1050),
+    "ground_dressing": (1280, 610, 1450, 670),
+}
+regional = {name: {"bounds": box, **measure(ar[box[1]:box[3], box[0]:box[2]],
+             br[box[1]:box[3], box[0]:box[2]])} for name, box in regions.items()}
 report = {"reference": reference, "capture": capture, "original_capture_size": original_size,
-          "resized": original_size != a.size, "global": measure(ar, br), "grid_8x6": grid}
+          "resized": original_size != a.size, "global": measure(ar, br), "grid_8x6": grid,
+          "regions": regional}
 out.with_suffix(".json").write_text(json.dumps(report, indent=2))
 diff = Image.fromarray(np.uint8(np.clip(abs(ar-br)*4*255, 0, 255)))
 sheet = Image.new("RGB", (w*2, h+42), "#12181a")

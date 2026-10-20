@@ -111,9 +111,11 @@ async function main() {
     custom.set([settings.density, settings.falloff, settings.sky, settings.lamp, settings.wetness, settings.haze, 0, 0, ...camera.direction, Number(camera.flashlight)])
     renderer.setCustomUniforms(custom)
     Object.assign(fog.settings,{density:settings.density,falloff:settings.falloff,brightness:0.034*settings.sky,strength:settings.haze})
-    const fogLamps:FogLamp[]=practicals.flatMap((l,id)=>l.kind==="sodium"?[{id,x:l.position[0],y:l.position[1],z:l.position[2],range:l.range,color:l.color,intensity:l.intensity*settings.lamp/Math.PI,
-      axis:l.direction,size:0.45,...fogCone(l.angle ?? 1.1,1-(l.penumbra ?? 0.55)),
-    }]:[])
+    // Scattering consumes emitter radiance, not the surface BRDF's radiance / π.
+    // Include the booth bulb: its reflection is the second, nearer wet streak.
+    const fogLamps:FogLamp[]=practicals.map((l,id)=>({id,x:l.position[0],y:l.position[1],z:l.position[2],range:l.range,color:l.color,intensity:l.intensity*settings.lamp,
+      axis:l.direction,size:(l.size ?? 0.2)*0.5,...(l.angle ? fogCone(l.angle,1-(l.penumbra ?? 0.55)) : {}),
+    }))
     packSceneFrame(frameData, { viewProj: vp, eye: camera.eye, time: 0, width, height, lightCount: lights.lightCount,
       ambient: [0,0,0,0], mapSize: [1400, 1400], ao: 0 })
     renderer.render({ frame: frameData, lights: lights.lights, lightCount: lights.lightCount, shadowLightCount: lights.shadowLightCount,
