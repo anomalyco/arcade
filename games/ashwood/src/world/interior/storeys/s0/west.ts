@@ -436,6 +436,7 @@ function receiving(b: Builder, docs: Docs): RoomHandle[] {
   const rA = roomOpen(b, { id: "0-16", name: "Receiving & stores", rect: rect(-37.0, -20.8, -21.65, -9.75), lit: "none", floor: "concrete_floor_dry", ceiling: { none: true }, troffers: false }, ["north"])
   const rB = room(b, { id: "0-16b", name: "Receiving (south)", rect: rect(-37.0, -25.65, -9.75, -1.75), lit: "none", floor: "concrete_floor_dry" })
   lining(b, "north", -37.0, -20.8, [
+    { a0: -35.5, a1: -32.3, bottom: 1.09, top: 99 },
     { a0: -29.7, a1: -26.5, bottom: 1.09, top: 99 },
     { a0: -24.8, a1: -23.7, bottom: 1.09, top: 3.2 },
   ])

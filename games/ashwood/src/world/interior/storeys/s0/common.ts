@@ -90,11 +90,13 @@ export class Docs {
  */
 export function roomOpen(b: Builder, o: RoomOpts, faces: ("north" | "south" | "west" | "east")[]): RoomHandle {
   const r = o.rect
+  // (Inset past room()'s 0.3 m lining tolerance from the lining plane, so room() leaves the open face to the caller:
+  // at 0.32 a north/south room still got a full, unholed lining over its dock and door openings.)
   const inner: Rect = {
-    x0: faces.includes("west") ? r.x0 + 0.32 : r.x0,
-    x1: faces.includes("east") ? r.x1 - 0.32 : r.x1,
-    z0: faces.includes("north") ? r.z0 + 0.32 : r.z0,
-    z1: faces.includes("south") ? r.z1 - 0.32 : r.z1,
+    x0: faces.includes("west") ? r.x0 + 0.35 : r.x0,
+    x1: faces.includes("east") ? r.x1 - 0.35 : r.x1,
+    z0: faces.includes("north") ? r.z0 + 0.35 : r.z0,
+    z1: faces.includes("south") ? r.z1 - 0.35 : r.z1,
   }
   const h = room(b, { ...o, rect: inner })
   const fl = o.floor ?? "linoleum"
