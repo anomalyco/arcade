@@ -26,7 +26,11 @@ export type ScapeInput = {
   glass: readonly { readonly x: number; readonly y: number }[]
   /** 0 street, 1 indoors, eased (from `OutbreakAudio`). */
   indoor: number
+  /** The radio man's number (1–9) when the run has his cellar (AR-85): the 3 AM message repeats it. 0 or absent: none. */
+  machineCount?: number
 }
+
+const MACHINE_COUNT = Array.from({ length: 10 }, (_, n) => (n ? `scape.phone.machine.${n}` : "scape.phone.machine"))
 
 /** Linear level per layer (0 = off) after the Lab's master, group levels and toggles. */
 export type ScapeLevels = Record<ScapeLayer, number>
@@ -523,7 +527,8 @@ export class ScapeDirector {
       }
     }
     if (r.machineAt > 0 && prev < r.machineAt && t >= r.machineAt) {
-      this.shot("scape.phone.machine", phone.x, phone.y, L.oddities, 1)
+      const n = input.machineCount ?? 0
+      this.shot(MACHINE_COUNT[n >= 1 && n <= 9 ? Math.round(n) : 0]!, phone.x, phone.y, L.oddities, 1)
       this.counts.haunted = (this.counts.haunted ?? 0) + 1
     }
     if (r.machineAt > 0 && t > r.machineAt + 10) this.ringing = null

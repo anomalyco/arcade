@@ -5,7 +5,11 @@ import { SCAPE_LAYERS, SCAPE_SAMPLE_RATE, SCAPE_SOUNDS, scapeSound } from "../sr
 import { ALARM_CHANCE, GUNFIRE_CHANCE, nightOf, RADIO_CHANCE, ScapeDirector, ScapeHours, SIREN_CHANCE, type ScapeInput, type ScapeLevels } from "../src/audio/soundscape/director"
 import { drainAmbientCalls, holdAmbientSound, playAmbientSound } from "../src/audio/soundscape/hooks"
 import { housePlan, housePowered } from "../src/audio/soundscape/houses"
+import { LifeSounds } from "../src/audio/soundscape/life"
 import { scapeCue, scapeLevels } from "../src/audio/soundscape/soundscape"
+import { placeLaundry } from "../src/details/leftovers"
+import { DEFAULT_DETAIL_SETTINGS } from "../src/details/settings"
+import { placeSprinklers } from "../src/details/sprinkler"
 
 const levels = (over: Partial<typeof DEFAULT_AUDIO_SETTINGS> = {}) => scapeLevels({ ...DEFAULT_AUDIO_SETTINGS, ...over }, {} as ScapeLevels)
 
@@ -56,10 +60,10 @@ describe("soundscape sounds (procedural, AR-86)", () => {
       const b = def.bake(SCAPE_SAMPLE_RATE)
       expect(a.length).toBe(b.length)
       expect(a.every((v, i) => v === b[i])).toBe(true)
-      samples += a.length
+      if (!def.perRun || def.id.endsWith(".1")) samples += a.length
     }
-    // Under 160 s of mono audio (≈15 MB at 24 kHz) if every sound were baked at once; each bakes on first use.
-    expect(samples / SCAPE_SAMPLE_RATE).toBeLessThan(160)
+    // Under 190 s of mono audio (≈18 MB at 24 kHz) if every sound were baked at once (one 3 AM message per run); each bakes on first use.
+    expect(samples / SCAPE_SAMPLE_RATE).toBeLessThan(190)
   })
 
   test("cues play on the Ambience bus below the game's own sounds", () => {
@@ -169,6 +173,17 @@ describe("soundscape director", () => {
     // Nothing rings after somebody reached it.
     const reached = 60
     expect(rings.every((e) => Number(e.split(":")[0]) <= reached)).toBe(true)
+    // With the radio man's cellar in the run, the message repeats his number instead.
+    const d2 = new ScapeDirector()
+    const counted: string[] = []
+    t = 7000
+    hour = 2.98
+    for (let k = 0; k < 120; k++, t += 0.25, hour += 0.25 / 120) {
+      const me = k < 60 ? far : { x: phone.x + 1, y: phone.y + 1 }
+      d2.step(input(town, { time: t, hour, absHour: 24 + hour, listener: me, survivors: [me], machineCount: 4 }), levels())
+      for (let i = 0; i < d2.shotCount; i++) if (d2.shots[i]!.id.startsWith("scape.phone.machine")) counted.push(d2.shots[i]!.id)
+    }
+    expect(counted).toEqual(["scape.phone.machine.4"])
   })
 
   test("music boxes play once a night, when somebody first steps inside", () => {
@@ -285,5 +300,83 @@ describe("ambient hooks for other features", () => {
     drainAmbientCalls(() => {}, (h) => holds.push(h.key))
     drainAmbientCalls(() => {}, (h) => holds.push(h.key))
     expect(holds).toEqual([])
+  })
+})
+
+describe("life sounds (AR-87 touches through the soundscape hooks)", () => {
+  const s = { ...DEFAULT_DETAIL_SETTINGS, lfLaundry: 1, lfSprinkler: true }
+  const town = makeTown(7)
+
+  test("the dawn sprinkler ticks while its timer runs, quieter as the pressure falls, and not on night 5", () => {
+    // Town 1 has a sprinkler in one of its yards.
+    const yard = makeTown(1)
+    const k = placeSprinklers(yard, s)[0]
+    expect(k).toBeDefined()
+    const heard = (night: number, hour: number) => {
+      const life = new LifeSounds()
+      drainAmbientCalls(() => {}, () => {})
+      life.update({ time: 10, town: yard, hour, night }, s, 0, [], { x: k!.x + 3, y: k!.z })
+      let gain = 0
+      drainAmbientCalls(() => {}, (h) => {
+        if (h.id === "scape.sprinkler") gain = Math.max(gain, h.gain)
+      })
+      return gain
+    }
+    expect(heard(1, 6.9)).toBeGreaterThan(0.9)
+    expect(heard(3, 6.9)).toBeLessThan(heard(1, 6.9))
+    expect(heard(3, 6.9)).toBeGreaterThan(0)
+    expect(heard(5, 6.9)).toBe(0)
+    expect(heard(1, 8)).toBe(0)
+  })
+
+  test("washing snaps on gusts, now and then, and only near the line", () => {
+    const life = new LifeSounds()
+    drainAmbientCalls(() => {}, () => {})
+    const line = town.buildings.map((b) => placeLaundry(town, b, s)).find(Boolean)!
+    let near = 0
+    let far = 0
+    for (let t = 0; t < 120; t += 1 / 30) {
+      life.update({ time: t, town, hour: 15, night: 1 }, s, 0.3, [], { x: line.x + 2, y: line.z })
+      drainAmbientCalls((c) => c.id === "scape.washing.flap" && near++, () => {})
+    }
+    for (let t = 0; t < 60; t += 1 / 30) {
+      life.update({ time: t, town, hour: 15, night: 1 }, { ...s, lfLaundry: 0 }, 0.3, [], { x: line.x + 2, y: line.z })
+      drainAmbientCalls((c) => c.id === "scape.washing.flap" && far++, () => {})
+    }
+    // A snap every few seconds, never more often than the gap allows.
+    expect(near).toBeGreaterThan(8)
+    expect(near).toBeLessThan(120 / 1.4)
+    expect(far).toBe(0)
+  })
+
+  test("a car left open chimes until its battery is flat, sagging in pitch; shut or driven off, it stops", () => {
+    const car = { id: 4, kind: "sedan", x: 10, y: 10, h: 0, spawnX: 10, spawnY: 10, wreck: false, seats: [""], spec: { length: 4.4, width: 1.8 } }
+    const chime = (night: number, over: Partial<typeof car> = {}) => {
+      const life = new LifeSounds()
+      drainAmbientCalls(() => {}, () => {})
+      let rate = 0
+      for (let t = 0; t < 20; t += 0.5) {
+        life.update({ time: t, town, hour: 22, night }, { ...s, lfOpenDoors: 1 }, 0, [{ ...car, ...over }], { x: 12, y: 10 })
+        drainAmbientCalls(() => {}, (h) => {
+          if (h.id === "scape.car.chime") rate = h.rate
+        })
+      }
+      return rate
+    }
+    expect(chime(1)).toBe(1)
+    expect(chime(2)).toBeLessThan(1)
+    expect(chime(2)).toBeGreaterThan(0)
+    expect(chime(4)).toBe(0)
+    expect(chime(1, { seats: ["p1"] })).toBe(0)
+    expect(chime(1, { x: 14 })).toBe(0)
+  })
+
+  test("animals bolting from their dens are heard; the watcher is not", () => {
+    const life = new LifeSounds()
+    drainAmbientCalls(() => {}, () => {})
+    for (const kind of ["raccoon", "cat", "fox", "deer", "watcher"] as const) life.bolt(1, 2, kind)
+    const ids: string[] = []
+    drainAmbientCalls((c) => ids.push(c.id), () => {})
+    expect(ids).toEqual(["scape.life.rustle", "scape.life.rustle", "scape.life.scurry", "scape.life.hooves"])
   })
 })

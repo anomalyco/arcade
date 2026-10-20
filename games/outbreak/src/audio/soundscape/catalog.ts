@@ -59,6 +59,8 @@ export type ScapeSoundDef = {
   wet?: number
   /** Simultaneous voices of this cue. */
   maxVoices?: number
+  /** One of a set of which a run only ever uses one (the 3 AM message per cellar number). */
+  perRun?: boolean
 }
 
 /**
@@ -113,6 +115,28 @@ export const SCAPE_SOUNDS: readonly ScapeSoundDef[] = [
   { id: "scape.habit.pans", label: "The dead at a stove", layer: "hooks", bake: (sr) => dsp.pans(sr), gain: 0.24, range: { ref: 1, max: 20 }, wet: 0.25, maxVoices: 2 },
   { id: "scape.habit.bedsprings", label: "The dead in a bed", layer: "hooks", bake: (sr) => dsp.bedsprings(sr), gain: 0.2, range: { ref: 1, max: 14 }, wet: 0.2, maxVoices: 2 },
   { id: "scape.habit.fence", label: "The dead rattling a fence", layer: "hooks", bake: (sr) => dsp.fenceRattle(sr), gain: 0.26, range: { ref: 1, max: 24 }, wet: 0.2, maxVoices: 2 },
+  { id: "scape.sprinkler", label: "A lawn sprinkler at dawn", layer: "hooks", bake: (sr) => dsp.sprinkler(sr), loop: true, gain: 0.2, range: { ref: 1.5, max: 22 }, wet: 0.15 },
+  { id: "scape.car.chime", label: "A car's door-open chime", layer: "hooks", bake: (sr) => dsp.doorChime(sr), loop: true, gain: 0.1, range: { ref: 1, max: 14 }, wet: 0.15 },
+  { id: "scape.washing.flap", label: "Washing snapping on the line", layer: "hooks", bake: (sr) => dsp.washingFlap(sr), gain: 0.22, range: { ref: 1, max: 16 }, wet: 0.15, maxVoices: 2 },
+  { id: "scape.secret.twitch", label: "A stopped clock's twitching hand", layer: "hooks", bake: (sr) => dsp.clockTwitch(sr), gain: 0.26, range: { ref: 0.5, max: 7 }, wet: 0.1, maxVoices: 3 },
+  { id: "scape.secret.static", label: "A set between stations", layer: "hooks", bake: (sr) => dsp.radioStatic(sr), loop: true, gain: 0.12, range: { ref: 0.8, max: 12 }, wet: 0.15 },
+  { id: "scape.secret.pip", label: "The station that is not there", layer: "hooks", bake: (sr) => dsp.radioPip(sr), gain: 0.18, range: { ref: 0.8, max: 12 }, wet: 0.15, maxVoices: 2 },
+  { id: "scape.secret.rocking", label: "A rocking chair on a porch", layer: "hooks", bake: (sr) => dsp.rockingChair(sr), gain: 0.22, range: { ref: 1, max: 18 }, wet: 0.25, maxVoices: 2 },
+  { id: "scape.secret.dial", label: "A padlock's dial turned a notch", layer: "hooks", bake: (sr) => dsp.padlockDial(sr), gain: 0.3, range: { ref: 0.6, max: 10 }, wet: 0.1, maxVoices: 3 },
+  { id: "scape.secret.unlock", label: "A padlock giving", layer: "hooks", bake: (sr) => dsp.padlockOpen(sr), gain: 0.4, range: { ref: 0.8, max: 16 }, wet: 0.2, maxVoices: 1 },
+  { id: "scape.secret.hatch", label: "A floor hatch's hinges", layer: "hooks", bake: (sr) => dsp.hatchHinge(sr), gain: 0.34, range: { ref: 1, max: 16 }, wet: 0.25, maxVoices: 1 },
+  { id: "scape.secret.click", label: "A lamp switched off in another room", layer: "hooks", bake: (sr) => dsp.lampClick(sr), gain: 0.22, range: { ref: 1, max: 22 }, wet: 0.2, maxVoices: 1 },
+  ...Array.from({ length: 9 }, (_, i): ScapeSoundDef => ({
+    id: `scape.phone.machine.${i + 1}`,
+    label: `Answering machine (${i + 1})`,
+    layer: "oddities",
+    bake: (sr) => dsp.answeringMachineCount(sr, i + 1),
+    gain: 0.28,
+    range: { ref: 0.8, max: 14 },
+    wet: 0.25,
+    maxVoices: 1,
+    perRun: true,
+  })),
   { id: "scape.habit.dance", label: "A gramophone waltz outside the church", layer: "hooks", bake: (sr) => dsp.lastDance(sr), loop: true, gain: 0.18, range: { ref: 1.5, max: 26 }, wet: 0.35 },
 ]
 

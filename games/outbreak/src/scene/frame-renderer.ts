@@ -12,6 +12,7 @@ import { supportHeight } from "../../shared/terrain"
 import { DustPass } from "../air/dust"
 import { OutbreakAmbientMotion } from "../ambient-motion"
 import { OutbreakAudio, pursuers, soundWorld } from "../audio"
+import { LifeSounds } from "../audio/soundscape/life"
 import type { BotsLabController } from "../bots-lab"
 import { ExteriorClutterRenderer } from "../clutter"
 import { OutbreakCombatFX } from "../combat-fx"
@@ -105,6 +106,7 @@ export class OutbreakFrameRenderer {
   readonly nightLights: NightLightsPresenter
   readonly fire: FirePresenter
   readonly details: DetailsPresenter
+  private readonly lifeSounds = new LifeSounds()
   readonly ambientMotion: OutbreakAmbientMotion
   readonly weatherController = new OutbreakWeatherController()
   private readonly weatherAudio = new WeatherAudio()
@@ -169,6 +171,7 @@ export class OutbreakFrameRenderer {
     this.details = new DetailsPresenter(this.renderer)
     setCurrentDetails(this.details)
     setWindowPower(this.details.powered)
+    this.details.touches.onBolt = this.lifeSounds.bolt
     this.lifeFrame = {
       dt: 0,
       time: 0,
@@ -273,6 +276,7 @@ export class OutbreakFrameRenderer {
     this.combatFx.reset()
     this.blood.reset()
     this.details.reset()
+    this.lifeSounds.reset()
     this.ambientMotion.reset()
     this.vehicleRenderer.reset()
     this.fx.reset()
@@ -845,6 +849,7 @@ export class OutbreakFrameRenderer {
     render.postExtra = unseenEval.postExtra
     this.renderer.render(render)
     this.details.stepLife(time, settings.details, day.lamps, drawn, (e) => audio.play(e))
+    this.lifeSounds.update(lf, settings.details, weatherNow.sample.storm, session.view.vehicles, look)
     audio.update({
       dt,
       world: soundWorld(session.sim),
