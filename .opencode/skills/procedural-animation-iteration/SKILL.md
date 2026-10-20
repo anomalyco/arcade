@@ -103,6 +103,11 @@ bun games/blackout/scripts/animation/render-strafe-video.ts --tag before|after [
   `angles-*` and `sweep-*` plots.
 - `render-strafe-video.ts`: muted top-down Outbreak clip circle-strafing a target while aiming at it;
   capture each checkout's frames, then `--stitch` before | after.
+- `reference-clips.ts`: our walk, run, sneak and zombie shamble against openly licensed clips (100STYLE mocap,
+  CC BY 4.0; Quaternius UAL, CC0) at each clip's speed; `reference-clips-render.py` draws `*-side`, `*-front`,
+  `*-angles` and `summary` PNGs. `--bake` refreshes the Characters page's Reference ghost data. `open-mocap.ts`
+  fetches and converts those sources (100STYLE via parallel range reads of its zip, ~12 s per take, cached in
+  `fixtures/mocap/100style/`). `render-reference-ghost.ts` films the ghost beside an actor (browser job).
 - `common.ts`: argument parsing, paths, and the mocap loader. The walk and run BVH clips download
   into `fixtures/mocap/` on first use and are hash-checked; pass `--bvh-dir` to use local copies.
 - `@arcade/kit/pose-diff` (`packages/kit/pose-diff.ts`): `extractBodyJoints`, `extractBonePoseJoints`,
