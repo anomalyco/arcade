@@ -56,10 +56,10 @@ describe("soundscape sounds (procedural, AR-86)", () => {
       const b = def.bake(SCAPE_SAMPLE_RATE)
       expect(a.length).toBe(b.length)
       expect(a.every((v, i) => v === b[i])).toBe(true)
-      samples += a.length
+      if (!def.perRun || def.id.endsWith(".1")) samples += a.length
     }
-    // Under 160 s of mono audio (≈15 MB at 24 kHz) if every sound were baked at once; each bakes on first use.
-    expect(samples / SCAPE_SAMPLE_RATE).toBeLessThan(160)
+    // Under 190 s of mono audio (≈18 MB at 24 kHz) if every sound were baked at once (one 3 AM message per run); each bakes on first use.
+    expect(samples / SCAPE_SAMPLE_RATE).toBeLessThan(190)
   })
 
   test("cues play on the Ambience bus below the game's own sounds", () => {

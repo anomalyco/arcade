@@ -1188,3 +1188,160 @@ export function birdSong(sr: number, seed = 40): Float32Array {
   }
   return normalize(edges(out, sr, 0.002, 0.05), sr, -19)
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Third pass: the life layer's leftovers and the secrets
+// ---------------------------------------------------------------------------------------------------------------
+
+/** An impact sprinkler at dawn: the arm's tch-tch-tch stepping round, then the fast ratchet back, 6 s loop. */
+export function sprinkler(sr: number, seed = 41): Float32Array {
+  const rand = mulberry32(seed)
+  const seconds = 6
+  const out = buffer(sr, seconds)
+  const spray = new Biquad(sr, "bandpass", 3800, 0.8)
+  const hiss = new Biquad(sr, "highpass", 2500, 0.7)
+  for (let i = 0; i < out.length; i++) out[i] = hiss.tick(white(rand)) * 0.05
+  // 4.4 s of steps at ~5 Hz, then the return: 1.2 s of fast ratchet.
+  for (let t = 0.05; t < 4.4; t += 0.19 + rand() * 0.02) {
+    const s = at(sr, t)
+    for (let k = 0; k < at(sr, 0.06) && s + k < out.length; k++) out[s + k]! += spray.tick(white(rand)) * Math.exp(-k / (0.015 * sr)) * 0.9
+    strike(out, sr, s, [[2600, 0.01, 1], [5200, 0.006, 0.4]], 0.15, rand, 0.3)
+  }
+  for (let t = 4.5; t < 5.8; t += 0.045) strike(out, sr, at(sr, t), [[3100 + rand() * 300, 0.008, 1]], 0.12, rand, 0.3)
+  return normalize(out, sr, -21)
+}
+
+/** A car's door-open chime on a dying battery: a soft electronic ding, 1.6 s loop. */
+export function doorChime(sr: number): Float32Array {
+  const out = buffer(sr, 1.6)
+  for (let k = 0; k < at(sr, 0.5); k++) {
+    const t = k / sr
+    out[k] = (Math.sin(TAU * 1480 * t) + 0.25 * Math.sin(TAU * 2960 * t)) * Math.exp(-t / 0.12) * Math.min(1, t / 0.002)
+  }
+  filter(out, new Biquad(sr, "lowpass", 3500, 0.7))
+  return normalize(out, sr, -20)
+}
+
+/** A sheet on a washing line snapping in a gust. */
+export function washingFlap(sr: number, seed = 42): Float32Array {
+  const rand = mulberry32(seed)
+  const out = buffer(sr, 0.9)
+  const bp = new Biquad(sr, "bandpass", 700, 0.7)
+  for (let k = 0; k < 3; k++) {
+    const s = at(sr, 0.03 + k * (0.18 + rand() * 0.12))
+    const a = 1 - k * 0.3
+    for (let i = 0; i < at(sr, 0.12) && s + i < out.length; i++) out[s + i]! += bp.tick(white(rand)) * a * Math.exp(-i / (0.02 * sr)) * (i < at(sr, 0.004) ? 3 : 1)
+  }
+  return normalize(edges(out, sr, 0.001, 0.05), sr, -20)
+}
+
+/** The stopped clocks' second hand: it twitches against the same mark and never gets past it, 1.3 s loop. */
+export function clockTwitch(sr: number, seed = 43): Float32Array {
+  const rand = mulberry32(seed)
+  const out = buffer(sr, 1.3)
+  const hi: [number, number, number][] = [
+    [3400, 0.012, 1],
+    [5600, 0.008, 0.6],
+  ]
+  strike(out, sr, at(sr, 0.01), hi, 0.35, rand, 0.4)
+  strike(out, sr, at(sr, 0.055), hi, 0.12, rand, 0.3)
+  return normalize(out, sr, -22)
+}
+
+/** A shortwave set between stations: hiss, a heterodyne whistle drifting, the odd crackle, 5 s loop. */
+export function radioStatic(sr: number, seed = 44): Float32Array {
+  const rand = mulberry32(seed)
+  const seconds = 5
+  const xf = at(sr, 0.3)
+  const src = new Float32Array(at(sr, seconds) + xf)
+  const band = new Biquad(sr, "bandpass", 1500, 0.6)
+  let ph = 0
+  for (let i = 0; i < src.length; i++) {
+    const t = i / sr
+    const fade = 0.7 + 0.3 * Math.sin((TAU * t) / seconds)
+    ph += (TAU * (620 + 90 * Math.sin((TAU * t) / seconds))) / sr
+    src[i] = band.tick(white(rand)) * fade + Math.sin(ph) * 0.06 + (rand() < 0.0008 ? white(rand) * 0.8 : 0)
+  }
+  filter(src, new Biquad(sr, "lowpass", 3000, 0.8))
+  return normalize(loopify(src, xf), sr, -22)
+}
+
+/** One pip from the station that is not there. */
+export function radioPip(sr: number): Float32Array {
+  const out = buffer(sr, 0.16)
+  for (let k = 0; k < at(sr, 0.12); k++) {
+    const env = Math.min(1, k / (0.004 * sr), (at(sr, 0.12) - k) / (0.01 * sr))
+    out[k] = Math.sin((TAU * 880 * k) / sr) * env
+  }
+  return normalize(out, sr, -18)
+}
+
+/** A rocking chair on porch boards: a creak forward and a softer one back, 2.4 s loop. */
+export function rockingChair(sr: number, seed = 45): Float32Array {
+  const rand = mulberry32(seed)
+  const out = buffer(sr, 2.4)
+  const one = (t0: number, len: number, base: number, amp: number) => {
+    const bank = [new Mode(sr, 520, 0.04, 1), new Mode(sr, 1110, 0.03, 0.6), new Mode(sr, 1960, 0.02, 0.3)]
+    let ph = 0
+    const s = at(sr, t0)
+    for (let k = 0; k < at(sr, len + 0.08) && s + k < out.length; k++) {
+      const u = k / (len * sr)
+      const env = u < 1 ? Math.sin(Math.PI * u) : 0
+      ph += (base * (0.8 + 0.4 * u)) / sr
+      let x = 0
+      if (ph >= 1) {
+        ph -= 1
+        x = env * amp * (0.7 + rand() * 0.3)
+      }
+      let y = 0
+      for (const m of bank) y += m.tick(x)
+      out[s + k]! += y
+    }
+  }
+  one(0.05, 0.45, 110, 1)
+  one(1.25, 0.38, 90, 0.55)
+  return normalize(out, sr, -20)
+}
+
+/**
+ * The 3 AM call's message when the run has a cellar: the same flat voice, but it only repeats a group of `n`
+ * identical syllables with a pause between, over and over. The radio man's number, to anyone who counts.
+ */
+export function answeringMachineCount(sr: number, n: number, seed = 46): Float32Array {
+  const rand = mulberry32(seed)
+  const out = buffer(sr, 7.6)
+  strike(out, sr, at(sr, 0.02), [[2100, 0.015, 1], [3900, 0.01, 0.5]], 0.5, rand, 0.4)
+  const motor = new Biquad(sr, "bandpass", 420, 3)
+  for (let i = at(sr, 0.05); i < out.length - at(sr, 0.3); i++) out[i]! += motor.tick(white(rand)) * 0.05
+  const b0 = at(sr, 0.7)
+  for (let k = 0; k < at(sr, 0.45); k++) {
+    const env = Math.min(1, k / (0.004 * sr), (at(sr, 0.45) - k) / (0.004 * sr))
+    out[b0 + k]! += Math.sin((TAU * 1000 * k) / sr) * 0.5 * env
+  }
+  // Flat syllables: one vowel, one pitch.
+  const f = [new Biquad(sr, "bandpass", 530, 6), new Biquad(sr, "bandpass", 1840, 8), new Biquad(sr, "bandpass", 2480, 10)]
+  let t = 1.5
+  const count = Math.max(1, Math.min(9, Math.round(n)))
+  while (t < 7.0) {
+    for (let k = 0; k < count && t < 7.1; k++) {
+      const s = at(sr, t)
+      const len = at(sr, 0.16)
+      let ph = 0
+      for (let i = 0; i < len && s + i < out.length; i++) {
+        ph += 112 / sr
+        if (ph >= 1) ph -= 1
+        const g = (ph < 0.4 ? Math.sin((Math.PI * ph) / 0.4) : 0) - 0.25
+        const env = Math.sin((Math.PI * i) / len) ** 0.8
+        out[s + i]! += (f[0]!.tick(g) + f[1]!.tick(g) * 0.6 + f[2]!.tick(g) * 0.25) * env
+      }
+      t += 0.27
+    }
+    t += 0.9
+  }
+  strike(out, sr, out.length - at(sr, 0.25), [[1900, 0.015, 1], [3600, 0.01, 0.5]], 0.45, rand, 0.4)
+  const hiss = new Biquad(sr, "highpass", 3000, 0.7)
+  for (let i = at(sr, 0.05); i < out.length - at(sr, 0.3); i++) out[i]! += hiss.tick(white(rand)) * 0.012
+  filter(out, new Biquad(sr, "highpass", 340, 0.7))
+  filter(out, new Biquad(sr, "lowpass", 3200, 0.8))
+  return normalize(edges(out, sr, 0.002, 0.05), sr, -21)
+}
