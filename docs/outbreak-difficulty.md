@@ -54,6 +54,18 @@ When a deliberate difficulty change moves a curve out of its band:
 3. Never widen a band to get an unrelated change through. A band failing on a change that was not about difficulty
    is the test working.
 
+## Out of town (2026-10-19)
+
+Kit drove out of town and "zombies just stopped appearing". Out of the first town's 96 m square nothing spawned at
+all: the director clamped every backstage spawn point (and every nudge, scout and hold) to that square, and a newly
+loaded chunk's own dead were checked against nav tiles that were not built yet, so all of them were dropped. Now the
+director works inside the active chunks' bounds (`worldBoundsOf`), the town and nav tiles take a new chunk in before
+its dead are placed, and those residents come in only up to the director's wanted population, so the night ramp's
+Night 1 0.65× and its later rises hold wherever you are (residents left out return when their chunk next loads).
+`bun scripts/population-trace.ts --hours=30` logs the living dead against the wanted population each half hour while a
+survivor walks and then drives out; `tests/population-streaming.test.ts` holds them within half of it to 4 over it
+while driving the town's road for 15 game hours. The bot batch plays in town, so no difficulty band moved.
+
 ## Zombies through doors (AR-65)
 
 Zombies used to wedge on door jambs (`docs/game-notes.md`, Crowds). With the doorway funnel they come through, and the

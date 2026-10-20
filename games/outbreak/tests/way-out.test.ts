@@ -403,6 +403,58 @@ describe("The Way Out: the car and the roadblocks", () => {
     expect(hasRect(sim.vehicleSolids, gate.car)).toBe(false)
   })
 
+  // Kit: "I was able to start the car right away." The sedan by the start used to spawn with its keys and 80% fuel.
+  test("the car project: no parked car starts right away, the one by the start included, near or far", () => {
+    const sim = quiet()
+    const a = sim.addSurvivor("a", 0)
+    const notReady = () => {
+      expect(sim.vehicles.list.length).toBeGreaterThan(0)
+      for (const v of sim.vehicles.list) {
+        if (v.modified) continue
+        expect([v.id, v.hasBattery && v.hasKeys]).toEqual([v.id, false])
+        expect([v.id, v.fuel]).toEqual([v.id, 0])
+      }
+    }
+    expect(sim.vehicles.list.length).toBeGreaterThanOrEqual(4)
+    notReady()
+    const tune = tuning()
+    const starter = sim.vehicles.byId(1)!
+    expect(Math.hypot(starter.x - a.survivor.x, starter.y - a.survivor.y)).toBeLessThan(6)
+    expect(starter.hasKeys).toBe(false)
+    step(sim, 2, tune)
+    expect(sim.vehicles.enter(a, starter, sim.progression, sim.ai, sim.time)).toBe(true)
+    const throttle = (s: SurvivorSlot): Command => ({ ...idle(s.survivor.aim), my: -1 })
+    const [x0, y0] = [starter.x, starter.y]
+    step(sim, 60, tune, 1, throttle)
+    expect(starter.engineOn).toBe(false)
+    expect(Math.hypot(starter.x - x0, starter.y - y0)).toBeLessThan(0.1)
+    // A key from a house and a gas can: now it goes.
+    give(sim, a, "key")
+    give(sim, a, "fuel")
+    step(sim, 30, tune, 1, throttle)
+    expect(starter.engineOn).toBe(true)
+    expect(Math.hypot(starter.x - x0, starter.y - y0)).toBeGreaterThan(0.5)
+    // Cars streamed in far from town are no different.
+    sim.vehicles.leaveSeat(a.id, a.survivor)
+    a.survivor.vehicleId = null
+    place(sim, a, 7 * 96 + 44, 3 * 96 + 20)
+    step(sim, 5, tune)
+    expect(sim.vehicles.list.filter((v) => !v.modified).length).toBeGreaterThan(0)
+    notReady()
+  })
+
+  test("with the car project off the start sedan is ready as before, and untouched cars follow the switch", () => {
+    const sim = quiet()
+    sim.addSurvivor("a", 0)
+    step(sim, 1, tuning({ carProject: 0 }))
+    const starter = sim.vehicles.byId(1)!
+    expect([starter.hasBattery, starter.hasKeys, starter.fuel]).toEqual([true, true, 80])
+    step(sim, 1, tuning())
+    expect([starter.hasKeys, starter.fuel]).toEqual([false, 0])
+    step(sim, 1, tuning({ wayOut: 0 }))
+    expect([starter.hasKeys, starter.fuel]).toEqual([true, 80])
+  })
+
   test("a toolbox hotwires a car with no keys; gas cans fill a tank, the pumps are dry, Chem no longer does", () => {
     const sim = quiet()
     const a = sim.addSurvivor("a", 0)

@@ -82,6 +82,9 @@ the radio, the flyer, the torn map with its arrow and cross, the sign, the order
   and free pumps, as before). The car project answers: a gas can (`fuel`, belt) per pour, `canFill` (40%) each, into
   any tank with room for a whole can, all you carry, when you get in or press the throttle; the pumps are dry (a driver
   stopped at a gas station is told so). Gas cans are the flamethrower's fuel too.
+- **No car is ready.** Every parked car spawns with a dry tank and without its keys (or, if it already lacks one,
+  without its battery), the sedan by the start included, through the vehicles' `spawnRule`; cars nobody has touched
+  follow the rule when it is switched. Off, they spawn as before (the start sedan ready with 80%).
 - **Keys.** A key from a house dresser or a car battery from the hardware store work as before. With a toolbox in
   your pack and no key, a car with no keys offers Hotwire (hold E, 6 s, heard 14 m off). Progress is in the store, so
   a teammate sees it; let go and it lapses.

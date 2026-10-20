@@ -246,7 +246,7 @@ try {
     netPassenger.sync(TICK_DT)
   }
   const srvCar = room.sim.vehicles.byId(1)!
-  Object.assign(srvCar, { x: 26, y: 44, h: 0 })
+  Object.assign(srvCar, { x: 26, y: 44, h: 0, hasKeys: true, hasBattery: true, fuel: 80 })
   const slotD = room.sim.slot(netDriver.id)!
   const slotP = room.sim.slot(netPassenger.id)!
   Object.assign(slotD.survivor, { x: 26, y: 42.7 })

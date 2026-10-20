@@ -1,16 +1,22 @@
-import { describe, expect, test } from "bun:test"
+import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { CoopRoomCore } from "../server/room-core"
 import { BUILD } from "../shared/build.gen"
 import { TICK_DT } from "../shared/clock"
 import { DEFAULT_COOP_ROOM } from "../shared/coop-config"
+import { outbreakSharedFeatures } from "../shared/feature-registry"
 import { LocalSession } from "../shared/session"
 import { generateChunkVehicleSpawns } from "../shared/vehicles"
+import { outbreakWayOutSharedFeature } from "../shared/way-out/index"
 import { chunkKey, generateWorldChunk } from "../shared/world"
 import { outbreakClientFeatures as features } from "../src/features"
 import { NetSession } from "../src/net-session"
 import { Loopback } from "./loopback"
 
+// The vehicles subsystem's own rules, as with Way Out off (its car project gates every parked car: tests/way-out.test.ts).
 describe("Outbreak vehicles", () => {
+  beforeAll(() => outbreakSharedFeatures.unregister("wayOut"))
+  afterAll(() => outbreakSharedFeatures.register(outbreakWayOutSharedFeature))
+
   test("world generator places a ready-to-start vehicle near spawn and varied vehicles across districts", () => {
     const session = new LocalSession(7, 7, 0.22, { zombieCount: 0 }, "streaming")
     const vehicles = session.view.vehicles

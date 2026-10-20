@@ -4,7 +4,7 @@ import type { DeathState } from "../death/rules"
 import type { OutbreakSimStepSurvivorContext } from "../feature-registry"
 import type { InteractAction, InteractionHandler, RawInteractCandidate } from "../interact"
 import type { OutbreakSim, Survivor, SurvivorSlot } from "../sim-types"
-import { aabbOf, boxOf, CHEM_REFUEL, distToBox, speedOf, VEH_ENTER_SPEED, VEH_REACH, type OutbreakVehicle, type VehicleRefuelRule } from "../vehicles"
+import { aabbOf, boxOf, CHEM_REFUEL, distToBox, speedOf, VEH_ENTER_SPEED, VEH_REACH, type OutbreakVehicle, type VehicleRefuelRule, type VehicleSpawnSpec } from "../vehicles"
 import { EVENT_BLOWN, EVENT_CUT, EVENT_HOTWIRED } from "./clues"
 import { landmarkRects } from "./landmark"
 import { roadblocksOf, ROADBLOCK_WORDS, type Roadblock } from "./roadblocks"
@@ -36,6 +36,23 @@ export const carProjectOn = (t: WayOutTuning) => Boolean(t.wayOut && t.carProjec
 export function wayOutRefuel(t: WayOutTuning): VehicleRefuelRule {
   if (!carProjectOn(t)) return CHEM_REFUEL
   return { item: "fuel", count: 1, fill: Math.max(1, t.canFill), topUp: true, pumps: false, name: "Gas Can" }
+}
+
+/**
+ * How parked cars spawn while the car project is on: none is ready to drive. A car keeps a missing battery, and any
+ * other loses its keys (a key from a house, or hotwire it with a toolbox), and every tank is dry (gas cans only).
+ */
+export function wayOutSpawn(t: WayOutTuning, spawn: VehicleSpawnSpec): VehicleSpawnSpec {
+  if (!carProjectOn(t)) return spawn
+  return { ...spawn, fuel: 0, hasKeys: spawn.hasBattery ? false : spawn.hasKeys }
+}
+
+/** Parked cars nobody has touched follow the car project when it is switched (and once when the sim is made). */
+export function syncParkedCars(sim: OutbreakSim, state: WayOutState): void {
+  const on = carProjectOn(state.tuning)
+  if (state.carProject === on) return
+  state.carProject = on
+  sim.vehicles.respawnParked(sim.worldStream)
 }
 
 /** The roadblocks still standing (none while the way out is off). */

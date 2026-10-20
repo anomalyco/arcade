@@ -575,7 +575,8 @@ export function chunkVehicleIdBase(cx: number, cy: number): number {
 /**
  * Deterministically generates parked vehicle spawns for chunk `(cx, cy)`.
  * In the origin 3×3 block (`0..2, 0..2`), places:
- * - Vehicle 1 (`sedan` at `22.8, 41.2`, chunk `0,1`): right near spawn `(27.7, 41)` — ready to start!
+ * - Vehicle 1 (`sedan` at `22.8, 41.2`, chunk `0,1`): right near spawn `(27.7, 41)` — ready to start (with The Way
+ *   Out's car project on, `spawnRule` takes its keys and drains its tank like every other car's).
  * - Vehicle 2 (`pickup` at `50.6, 30.5`, chunk `1,0`): Hardware Store lot — needs a Car Battery.
  * - Vehicle 3 (`cruiser` at `62.0, 51.2`, chunk `1,1`): Pharmacy street curb — needs Keys.
  * - Vehicle 4 (`van` at `34.5, 51.2`, chunk `0,2`): Elm House street curb — needs Fuel.
@@ -1000,6 +1001,8 @@ export class OutbreakVehicleSubsystem {
   private actorOf = new WeakMap<object, VehicleRiderSlot>()
   /** How tanks are filled; a feature may change it (The Way Out's car project). */
   refuelRule: () => VehicleRefuelRule = () => CHEM_REFUEL
+  /** How a parked car spawns; a feature may change it (The Way Out's car project: no keys or battery, a dry tank). */
+  spawnRule: (spawn: VehicleSpawnSpec) => VehicleSpawnSpec = (spawn) => spawn
 
   constructor(worldStream: StreamingWorld, town: Town, tuning?: Partial<VehicleTuning>) {
     if (tuning) Object.assign(this.tuning, tuning)
@@ -1121,11 +1124,29 @@ export class OutbreakVehicleSubsystem {
       for (const sp of spawns) {
         if (activeIds.has(sp.id)) continue
         if (delta?.removedVehicles?.[sp.id]) continue
-        this.list.push(createVehicleFromSpawn(sp))
+        this.list.push(createVehicleFromSpawn(this.spawnRule(sp)))
         activeIds.add(sp.id)
       }
     }
     this.list.sort((a, b) => a.id - b.id)
+  }
+
+  /** Re-reads `spawnRule` for every parked car nobody has touched (after the rule changed, or was installed). */
+  respawnParked(worldStream: StreamingWorld): void {
+    const native = new Map<number, VehicleSpawnSpec>()
+    for (const chunk of worldStream.activeChunks.values()) {
+      const spawns = generateChunkVehicleSpawns(worldStream.seed, worldStream.houseSeed, chunk.cx, chunk.cy, worldStream.mode, chunk.buildings, chunk.vehicles)
+      for (const sp of spawns) native.set(sp.id, sp)
+    }
+    for (const v of this.list) {
+      if (v.seats.some(Boolean) || isVehicleModifiedFromSpawn(v)) continue
+      const sp = native.get(v.id)
+      if (!sp) continue
+      const ruled = this.spawnRule(sp)
+      v.fuel = ruled.fuel
+      v.hasBattery = ruled.hasBattery
+      v.hasKeys = ruled.hasKeys
+    }
   }
 
   /** Spawns a fresh vehicle at `(x, y, h)` (used by Lab actions and station staging). */

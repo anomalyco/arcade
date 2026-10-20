@@ -47,6 +47,7 @@ import {
   spawnPacedTownZombies,
   STARTING_SAFEHOUSE_RECT,
   STARTING_SAFEHOUSE_YARD_RECT,
+  worldBoundsOf,
   type FirstEncounterStage,
   type PacingSurvivorView,
   type PacingTelemetry,
@@ -95,6 +96,7 @@ export {
   spawnPacedTownZombies,
   STARTING_SAFEHOUSE_RECT,
   STARTING_SAFEHOUSE_YARD_RECT,
+  worldBoundsOf,
   zombieTraitsFromSeed,
   type AIAgent,
   type AIState,
@@ -675,6 +677,7 @@ export class OutbreakAISubsystem {
       this.config,
       time,
       this.manualSpawnOnly,
+      worldBoundsOf(town),
     )
 
     let topologyChanged = false

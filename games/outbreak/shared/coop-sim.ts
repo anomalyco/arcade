@@ -529,8 +529,16 @@ export class CoopSim implements OutbreakSim {
     }
     if (!this.worldStream.wouldWindowsChange(survivors)) return false
     this.progression.ensureContainerStores()
-    const blockers = this.sights
     const safeRadius = this.ai.config.directorPacing > 0 ? Math.max(12, this.ai.config.safeRadius * 0.75) : 6.0
+    // A new chunk's dead are placed after the town takes it in: its walls hide them and its ground holds them, read
+    // from the world's fresh nav tiles (the crowd's nav is rebuilt below).
+    let blockers: Rect[] | null = null
+    const ground = { walkable: (p: { x: number; y: number }) => this.worldStream.walkable(p.x, p.y) ?? this.ai.nav.walkable(p) }
+    // ...and no more of them than the director wants alive, so the night ramp and the day's lull hold out of town too
+    // (a chunk's dead left out come back when it next loads).
+    const paced = this.ai.config.directorPacing > 0 && this.ai.config.zombieCount > 0
+    const wanted = this.ai.pacing.telemetry.desiredPopulation
+    const living = () => this.ai.agents.reduce((n, a) => (a.state !== "dead" && a.hordeId === undefined ? n + 1 : n), 0)
     const res = this.worldStream.updateActiveWindows(
       survivors,
       this.town,
@@ -540,7 +548,8 @@ export class CoopSim implements OutbreakSim {
       (id, seed, x, y, aim) => createAIAgent(id, seed, x, y, aim),
       1,
       (x, y) =>
-        canSpawnZombieAt(x, y, this.town, this.ai.nav, survivors, blockers, {
+        (!paced || living() < wanted) &&
+        canSpawnZombieAt(x, y, this.town, ground, survivors, (blockers ??= sightRects(this.town)), {
           safeRadius,
           forbidInView: this.ai.config.directorPacing > 0,
           forbidBehind: this.ai.config.directorPacing > 0,
