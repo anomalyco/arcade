@@ -1,4 +1,5 @@
-import { TODAY_COOP, type CoopCurve } from "../pacing"
+import { coopPopulationScale, TODAY_COOP, type CoopCurve } from "../pacing"
+import type { SpecialsTuning } from "../specials/kinds"
 
 /**
  * Co-op scaling (AR-92): how the director grows with the squad. Today's scaling was linear (population +0.35× and
@@ -21,8 +22,10 @@ export type CoopScalingTuning = {
   coopNoiseShare: number
   /** Chasers each extra survivor adds to the Night 1 hold, before the curve. */
   coopNightOneChasers: number
-  /** No new zombie comes into the world nearer than this to any survivor, m. */
+  /** In a squad, no new zombie comes into the world nearer than this to any survivor, m (solo keeps its own 16 m). */
   coopSpawnClearance: number
+  /** Special-zombie chance is divided by the co-op population scale to this power (1: specials don't grow with the squad; 0: Today). */
+  coopSpecialShare: number
 }
 
 export const DEFAULT_COOP_SCALING: CoopScalingTuning = {
@@ -33,6 +36,7 @@ export const DEFAULT_COOP_SCALING: CoopScalingTuning = {
   coopNoiseShare: 0.75,
   coopNightOneChasers: 0.4,
   coopSpawnClearance: 22,
+  coopSpecialShare: 1,
 }
 
 export const coopScalingControls = [
@@ -52,6 +56,7 @@ export const coopScalingControls = [
   { key: "nightRamp.coopNoiseShare", field: "coopNoiseShare", label: "Squad noise share", group: "Co-op scaling", min: 0, max: 1, step: 0.05, unit: "" },
   { key: "nightRamp.coopNightOneChasers", field: "coopNightOneChasers", label: "Night 1 chasers per extra survivor", group: "Co-op scaling", min: 0, max: 2, step: 0.1, unit: "" },
   { key: "nightRamp.coopSpawnClearance", field: "coopSpawnClearance", label: "New zombies at least", group: "Co-op scaling", min: 0, max: 40, step: 1, unit: "m" },
+  { key: "nightRamp.coopSpecialShare", field: "coopSpecialShare", label: "Specials kept to the solo count", group: "Co-op scaling", min: 0, max: 1, step: 0.05, unit: "" },
 ] as const
 
 /** The director's co-op curve for these settings. */
@@ -66,4 +71,14 @@ export function coopCurve(t: CoopScalingTuning): CoopCurve {
     openingChasersPerSurvivor: t.coopNightOneChasers,
     spawnClearance: t.coopSpawnClearance,
   }
+}
+
+/**
+ * The Specials group's tuning with the special-zombie chance thinned for the squad: a bigger crowd already rolls more
+ * zombies, so without this six survivors met 3–4× the solo specials on Night 1 and the first one a minute sooner.
+ */
+export function withCoopSpecials(specials: SpecialsTuning, t: CoopScalingTuning, players: number): SpecialsTuning {
+  if (t.coopScaleMode <= 0 || players <= 1 || t.coopSpecialShare <= 0) return specials
+  const thin = Math.pow(coopPopulationScale(players, coopCurve(t)), t.coopSpecialShare)
+  return { ...specials, specialRate: specials.specialRate / thin }
 }

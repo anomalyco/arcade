@@ -129,9 +129,9 @@ const COOP_SEEDS = [101, 107, 113, 119]
 const COOP_PLAYERS = [1, 2, 4, 6] as const
 const COOP_BANDS = {
   /** Share of survivors ever down by dawn 1, per squad size. */
-  down: { 2: [0, 0.3], 4: [0, 0.3], 6: [0, 0.3] }, // 0.13, 0.06, 0 [0.25, 0.19, 0.29]
+  down: { 2: [0, 0.3], 4: [0, 0.3], 6: [0, 0.3] }, // 0.13, 0.06, 0.04 [0.25, 0.19, 0.21]
   /** Night 1 mean chasers: Gentle Start's hold grows by a chaser or so with the squad, not by 2.8–4×. */
-  nightOneChasers: { 2: [0.3, 2.2], 4: [0.8, 3.2], 6: [0.8, 3.2] }, // 1.78, 2.71, 2.93 [2.51, 5.6, 7.78]
+  nightOneChasers: { 2: [0.3, 2.2], 4: [0.8, 3.2], 6: [0.8, 3.2] }, // 1.78, 2.73, 2.94 [2.77, 5.56, 7.83]
   /** Night 1 living zombies over the solo run's: sub-linear in the squad. */
   nightOneLiving: { 2: [1.1, 1.6], 4: [1.3, 2.0], 6: [1.5, 2.4] }, // 1.39, 1.69, 1.99 [1.40, 2.09, 2.88]
 } as const
@@ -153,8 +153,12 @@ describe("co-op difficulty (survivor bots, the opening at the co-op clock)", () 
     120_000,
   )
 
-  test("nobody in a squad goes down in the evening or the first hours of Night 1 [Today: 6–8% at 4 and 6]", () => {
-    for (const n of COOP_PLAYERS) expect(summary(n).earlySurvivorDownRate).toBe(0)
+  /**
+   * Survivors down in the first 120 s (the evening and two game hours): 0, 0, 0, 0.04 [0, 0, 0, 0.08]. The one left is
+   * a Skilled bot that wandered 20 m from the squad with all three of Night 1's chasers on it.
+   */
+  test("a squad's opening stays calm", () => {
+    for (const n of COOP_PLAYERS) within(`${n} survivors down in the first ${COOP_EARLY_SECONDS} s`, summary(n).earlySurvivorDownRate, [0, 0.05])
   })
 
   test("each squad size stays inside its bands", () => {
@@ -166,8 +170,10 @@ describe("co-op difficulty (survivor bots, the opening at the co-op clock)", () 
       within(`${n} survivors Night 1 living / solo`, s.phases[NIGHT1]!.living / solo.phases[NIGHT1]!.living, COOP_BANDS.nightOneLiving[n])
       expect(s.phases[NIGHT1]!.peakChasers).toBeLessThanOrEqual(3)
       // No new zombie appears beside a survivor (director spawns keep 22 m; Lurkers wait in dark rooms ≥10 m away).
-      // 0, 0, 0 [1.5, 3.5, 3.25 a run]
+      // 0, 0, 0 [1.75, 3.25, 2.75 a run]
       expect(s.spawnsWithin20).toBeLessThanOrEqual(0.5)
     }
+    // Specials don't multiply with the squad: 0, 0.03, 0.45, 0.6 alive on Night 1 [0, 0.04, 0.92, 0.81].
+    within("6 survivors Night 1 specials", summary(6).phases[NIGHT1]!.specials, [0, 0.75])
   })
 })

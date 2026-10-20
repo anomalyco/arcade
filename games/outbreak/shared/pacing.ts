@@ -129,8 +129,7 @@ export const NO_ESCALATION: DirectorEscalation = { populationScale: 1, populatio
  * tick like `escalation` and never snapshotted. `mode: 0` is Today: population +0.35× and chasers +0.6× per extra
  * survivor, every survivor's noise counted in full. Mode 1 grows each by `perSurvivor × (survivors − 1)^exponent`,
  * divides the squad's noise heat by `survivors^noiseExponent`, holds Night 1's co-op chasers near the solo hold, and
- * keeps new zombies at least `spawnClearance` m from every survivor. One survivor plays the same either way, apart
- * from the spawn clearance.
+ * keeps a squad's new zombies at least `spawnClearance` m from every survivor. One survivor plays the same either way.
  */
 export type CoopCurve = {
   mode: number
@@ -212,8 +211,9 @@ export function coopNoiseShare(playerCount: number, curve: CoopCurve = TODAY_COO
   return curve.mode > 0 ? Math.pow(Math.max(1, playerCount), curve.noiseExponent) : 1
 }
 
-/** Nearest a new zombie may come into the world to any survivor, before the director's own safe radius. */
-export const coopSpawnClearance = (curve: CoopCurve = TODAY_COOP): number => (curve.mode > 0 ? curve.spawnClearance : 0)
+/** Nearest a new zombie may come into the world to any survivor of a squad, before the director's own safe radius. */
+export const coopSpawnClearance = (curve: CoopCurve, playerCount: number): number =>
+  curve.mode > 0 && playerCount > 1 ? curve.spawnClearance : 0
 
 /**
  * Computes the initial zombie count at t = 0 from `zombieCount`, `initialDensity`, and `playerCount`.
@@ -899,7 +899,7 @@ export class OutbreakPacingDirector {
       const targetInit = initialSpawnCount(config.zombieCount, config.initialDensity, pCount, config.directorPacing, this.coop)
       if (livingCount < targetInit) {
         const rng = new Rng((town.seed ^ Math.imul(pCount + 73, 0x9e3779b9)) >>> 0)
-        const clearance = Math.max(config.safeRadius, coopSpawnClearance(this.coop))
+        const clearance = Math.max(config.safeRadius, coopSpawnClearance(this.coop, pCount))
         while (livingCount < targetInit) {
           const pt = this.findBackstageSpawnPoint(town, nav, agents, survivors, sightBlockers, rng, clearance)
           if (!pt) break
@@ -1028,7 +1028,7 @@ export class OutbreakPacingDirector {
       this.reinforceCooldown = Math.max(3.5, (11.5 - 6.0 * this.telemetry.ramp) / this.telemetry.coopScale)
       const batch = Math.min(2, this.telemetry.desiredPopulation - livingCount)
       const rng = new Rng((town.seed ^ Math.imul(tick + 101, 0x85ebca6b) ^ (rngSeedMix >>> 0)) >>> 0)
-      const dynamicSafeRadius = Math.max(16, coopSpawnClearance(this.coop), config.safeRadius * (1 - 0.25 * this.telemetry.ramp))
+      const dynamicSafeRadius = Math.max(16, coopSpawnClearance(this.coop, pCount), config.safeRadius * (1 - 0.25 * this.telemetry.ramp))
 
       for (let b = 0; b < batch; b++) {
         const pt = this.findBackstageSpawnPoint(

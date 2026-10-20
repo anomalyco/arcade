@@ -263,7 +263,8 @@ describe("Outbreak first-night opening pacing & spawn rules", () => {
     expect(coopChaserScale(6, curve)).toBeLessThan(2.6)
     // Six survivors' gunfire heats the director like fewer than four shooters, not six.
     expect(coopNoiseShare(6, curve)).toBeGreaterThan(3)
-    expect(coopSpawnClearance(curve)).toBeGreaterThanOrEqual(20)
-    expect(coopSpawnClearance(today)).toBe(0)
+    expect(coopSpawnClearance(curve, 4)).toBeGreaterThanOrEqual(20)
+    expect(coopSpawnClearance(curve, 1)).toBe(0)
+    expect(coopSpawnClearance(today, 4)).toBe(0)
   })
 })
