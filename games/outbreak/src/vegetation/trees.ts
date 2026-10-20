@@ -40,10 +40,11 @@ export function treeBurnState(treeId: number): number {
 }
 
 type TreeList = { x: Float32Array; z: Float32Array; r: Float32Array; id: Uint32Array }
-const treeLists = new WeakMap<Town, TreeList>()
+/** Keyed by the props array: streaming replaces `town.props` on the same Town, so the Town alone is not a key. */
+const treeLists = new WeakMap<Town["props"], TreeList>()
 
 function townTrees(town: Town): TreeList {
-  let list = treeLists.get(town)
+  let list = treeLists.get(town.props)
   if (list) return list
   const trees = town.props.filter((p) => p.kind === "tree")
   list = { x: new Float32Array(trees.length), z: new Float32Array(trees.length), r: new Float32Array(trees.length), id: new Uint32Array(trees.length) }
@@ -53,7 +54,7 @@ function townTrees(town: Town): TreeList {
     list!.r[i] = 2.45 + t.variant * 0.75
     list!.id[i] = treeIdAt(t.x, t.y)
   })
-  treeLists.set(town, list)
+  treeLists.set(town.props, list)
   return list
 }
 
