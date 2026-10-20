@@ -66,6 +66,8 @@ docs folder. Start with `AGENTS.md` at the root; it says which of these to read 
   banded test in `bun run check`, full batch with charts) and how to update its bands. Read before tuning difficulty.
 - [outbreak-discovery.md](outbreak-discovery.md): D-19 "Discovered, Not Told": state read from the world instead of
   labels (beam, boards, open containers), and how the squad learns recipes. Read before adding HUD text or recipes.
+- [outbreak-strategy.md](outbreak-strategy.md): co-op strategy (AR-99, D-45): what makes survival co-op strategic
+  in other games and six ranked systems for Outbreak. Read before adding team mechanics, specials or roles.
 - [outbreak-secrets.md](outbreak-secrets.md): the town's unstated backstory and its secrets in three tiers (subtle,
   strange, hidden), with the cellar chain's solution. Spoilers. Read before adding lore, easter eggs or world details.
 - [outbreak-hud.md](outbreak-hud.md): Outbreak's character HUD, what other games put on the character, and the defaults.
