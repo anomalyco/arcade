@@ -23,12 +23,14 @@ const server = Bun.serve({
   },
 })
 let browser
+let bootTimeline = async () => "not loaded"
 // The workflow step allows 60 s. On SwiftShader the GPU process compiles every render pipeline on one thread before it
 // presents a frame (Outbreak, Oct 20: 22–36 s, ~1 s per scene-shader pipeline), and the page's main thread can block
 // behind it, so readiness and the first frames share one budget rather than a separate 20 s readiness limit.
 const READY_MS = 40_000
-const deadline = setTimeout(() => {
-  console.error(`${game}: smoke exceeded 55 seconds`)
+const deadline = setTimeout(async () => {
+  const boot = await Promise.race([bootTimeline().catch(() => "?"), Bun.sleep(1_000).then(() => "page unresponsive")])
+  console.error(`${game}: smoke exceeded 55 seconds; boot ${boot}`)
   process.exit(1)
 }, 55_000)
 // CI (Linux) has no GPU and uses SwiftShader. On macOS the real Metal adapter renders ~80x faster and must actually
@@ -50,7 +52,7 @@ try {
   })
   const page = await browser.newPage({ viewport: { width: 640, height: 360 } })
   // Milliseconds since navigation: DOMContentLoaded, load, the game's own `performance.mark("<game>:…")` phases, now.
-  const bootTimeline = () => page.evaluate(game => {
+  bootTimeline = () => page.evaluate(game => {
     const nav = performance.getEntriesByType("navigation")[0]
     const phases = [["dom", nav?.domContentLoadedEventEnd], ["load", nav?.loadEventEnd]]
     for (const m of performance.getEntriesByType("mark")) if (m.name.startsWith(`${game}:`)) phases.push([m.name.slice(game.length + 1), m.startTime])
