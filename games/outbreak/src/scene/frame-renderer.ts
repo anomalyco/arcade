@@ -48,6 +48,7 @@ import { NightLightsPresenter, setCurrentNightLights } from "../night-lights/pre
 import { PropDressing } from "../props/dressing"
 import type { OutbreakSettings } from "../settings"
 import { shaders } from "../shaders"
+import { applyLampFog } from "../air/lamp-fog"
 import { Survivor } from "../survivor"
 import { evaluateUnseenFrame } from "../unseen"
 import type { OutbreakVehicleAudio } from "../vehicle-audio"
@@ -835,7 +836,7 @@ export class OutbreakFrameRenderer {
     this.dust.frame(count, qProfile.tier, settings.look.dustAmount > 0, settings.air, this.frameLighting.lights, LIGHT_FLOATS, camX, camY)
     render.shadowLightCount = shadowLightCount
     render.occluderCount = frameLightOccluders
-    render.volume = volume
+    applyLampFog(render, volume)
     render.lampCount = SCONCE_LAMP_SLOT + 1
     render.view = view
     render.grade[0] = time

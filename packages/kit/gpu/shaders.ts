@@ -867,6 +867,13 @@ struct SOut {
   o.uv = c;
   o.color = s.color;
   o.misc = s.misc;
+  if (kind == 9) {
+    // Lamp glow: hold the hot core at >= 1.3 render px (energy kept), or a sub-pixel core sparkles under TAA jitter.
+    let dist = length(F.cam.xyz - s.posSize.xyz);
+    let p11 = length(vec3f(F.viewProj[0][1], F.viewProj[1][1], F.viewProj[2][1]));
+    let pixel = 2.0 * dist / max(F.screen.y * p11, 1e-4);
+    o.misc.w = max(1.0, pixel * 1.3 / max(size * 0.0525, 1e-5));
+  }
   o.world = world;
   ${motion ? `o.previous = M.previous * vec4f(world + previousCenter.xyz - s.posSize.xyz, 1.0);
   // Sweep only tracked transient emission. A gather alone cannot extend a thin flash/tracer silhouette.
@@ -889,6 +896,13 @@ struct SOut {
   if (kind >= 32) {
     let color = vehicleSpriteColor(o.uv, o.color, vec4f(o.misc.x - 32.0, o.misc.yzw), o.world.y);
     return ${motion ? "motionOutput(color, o.pos, o.previous, o.world)" : "color"};
+  }
+  if (kind == 9) {
+    // Lamp glow: hot core, glare and a short skirt only; the wide halo is the fog's in-scatter (fog-scatter.ts).
+    let widen = o.misc.w;
+    let core = exp(-r * r * 360.0 / (widen * widen)) / (widen * widen);
+    let glow = (core + exp(-r * r * 40.0) * 0.12 + exp(-r * 9.0) * 0.04) * smoothstep(1.0, 0.8, r);
+    ${motion ? "return motionOutput(vec4f(o.color.rgb * glow * o.color.a, 0.0), o.pos, o.previous, o.world);" : "return vec4f(o.color.rgb * glow * o.color.a, 0.0);"}
   }
   var a = 0.0;
   var rgb = o.color.rgb;
@@ -994,12 +1008,15 @@ fn clean(c: vec4f) -> vec4f {
     let w3 = 0.125 / (1.0 + dot(g3, lw));
     let w4 = 0.125 / (1.0 + dot(g4, lw));
     col = (g0 * w0 + g1 * w1 + g2 * w2 + g3 * w3 + g4 * w4) / (w0 + w1 + w2 + w3 + w4);` : ""}
-    let br = max(col.r, max(col.g, col.b));
+    ${finish?.bloomGate ? `// Only emitters bloom: lit surfaces feed it up to a cap (exposed units), emitter cores above the hot level fully.
+    let exposed = max(dot(col, vec3f(0.2126, 0.7152, 0.0722)) * ${looks ? "grade.frame.w" : "G.w"}, 1e-5);
+    let hot = ${finish.bloomGate.hot.toFixed(4)};
+    col *= mix(min(1.0, ${finish.bloomGate.cap.toFixed(4)} / exposed), 1.0, smoothstep(hot, hot * 2.0, exposed));` : `let br = max(col.r, max(col.g, col.b));
     let knee = 0.5;
     let th = 0.9;
     var soft = clamp(br - th + knee, 0.0, 2.0 * knee);
     soft = soft * soft / (4.0 * knee + 1e-4);
-    col *= max(soft, br - th) / max(br, 1e-4);
+    col *= max(soft, br - th) / max(br, 1e-4);`}
   }
   return vec4f(col, 1.0);
 }

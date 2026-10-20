@@ -10,6 +10,7 @@ import {
 } from "@arcade/kit/gpu/shaders"
 import { FOLIAGE_LIMB_AUX, foliageWindDeclarationsWgsl } from "@arcade/kit/gpu/foliage"
 import { flashlightVolumeShader } from "./flashlight-beam"
+import { lampFogVolume } from "./air/lamp-fog"
 import { outbreakFogOfWarDeclarationsWgsl, visibilityFieldShader } from "./fog-of-war"
 import { groundSurfaceHookWgsl, outbreakSurfaceMaterialDeclarationsWgsl, outbreakSurfaceMaterialWgsl } from "./ground"
 import { outbreakLightingDeclarationsWgsl } from "./lighting"
@@ -649,7 +650,8 @@ export const shaders = {
   lookSceneVariant: (variant: LookVariantMode) => makeLookSceneShader(outbreakSceneHooks, variant),
   lookPostVariant: (variant: LookVariantMode) => makeLookPostShader(outbreakPostFinish, variant),
   visField: visibilityFieldShader,
-  volume: flashlightVolumeShader,
+  // Slot 1: the kit's lamp fog, a Lab option that stays off (Today) by default.
+  volume: [flashlightVolumeShader, lampFogVolume],
   // Tyre smoke and dust take the sky ambient, so at night they stay dim until headlights or the flashlight hit them.
   tyreSmoke: { base: "(F.ambient.rgb * 2.6 + vec3f(0.035))", dust: "((F.ambient.rgb * 2.6 + vec3f(0.035)) * vec3f(1.0, 0.84, 0.64))" },
 }

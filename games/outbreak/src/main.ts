@@ -33,6 +33,7 @@ import {
   resolveWorldMode,
 } from "./settings"
 import { shaders } from "./shaders"
+import { LAMP_FOG_DEFAULTS, lampFog, lampFogControls } from "./air/lamp-fog"
 import "./style.css"
 import { OutbreakVehicleAudio } from "./vehicle-audio"
 import { type VehicleLabHost } from "./vehicle-lab"
@@ -264,6 +265,7 @@ async function main() {
 
   const keyLabels = keyLabelSetting("HUD")
   lab.addControls(keyLabels.settings, [keyLabels.control], keyLabels.defaults)
+  lab.addControls(lampFog.settings as unknown as Record<string, string | number | boolean>, lampFogControls(), { ...LAMP_FOG_DEFAULTS })
   lab.addControls(
     vehicleRenderer.drivingFx.settings as unknown as Record<string, string | number | boolean>,
     drivingFxControls().map((c) => ({ ...c, folded: true })),

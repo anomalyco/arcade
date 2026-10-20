@@ -70,6 +70,8 @@ import {
   type TemporalState,
 } from "./temporal"
 import { REACTIVE_COVERAGE_WGSL, REACTIVE_TARGET } from "./reactive"
+import { VolumeSlot, type VolumeInput, type VolumeLightShader, type VolumeView } from "./volume-pass"
+import { FOG_LAMP_FLOATS, FOG_UNIFORM_FLOATS, MAX_FOG_LAMPS, type FogFrame } from "./fog-scatter"
 
 export type { PassContext, PassSlot, ScenePass }
 export type { AntiAliasingMode, TemporalSettings, TemporalState } from "./temporal"
@@ -142,28 +144,14 @@ function intersectsCutaway(box: readonly number[] | undefined, f: Float32Array, 
 export type VisibilityFieldShader = { code: string; size: number; dispatch: number }
 
 /**
- * Optional game volumetric-light pass. `code` provides `@vertex fn vs` (fullscreen triangle) and `@fragment fn fs`
- * bound to the frame (0), lights (1), polar map (2) and custom uniforms (13). It renders at 1/`FrameInput.volume`
- * resolution into rgba16float: rgb is in-scattered radiance, a how much it should restore selective colour. The
- * renderer adds rgb into the resolved HDR target and multiplies its alpha by 1 - a before smoke and bloom.
+ * Optional game volumetric-light passes (`shaders.volume`, one shader or several). Each `code` provides
+ * `@vertex fn vs` (fullscreen triangle) and `@fragment fn fs` bound to the frame (0), lights (1), polar map (2) and
+ * custom uniforms (13); with `depth` also the scene depth (3), the unjittered `VolumeFrame` (4), `FogParams` (18) and
+ * the fog lamps (19). It renders at 1/`FrameInput.volume` resolution into rgba16float: rgb is in-scattered radiance,
+ * a how much it should restore selective colour. The renderer adds rgb into the HDR target and multiplies its alpha by
+ * 1 - a (`@arcade/kit/gpu/volume-pass`).
  */
-export type VolumeLightShader = { code: string }
-
-const volumeCompositeShader = /* wgsl */ `
-@group(0) @binding(0) var volumeTex: texture_2d<f32>;
-@group(0) @binding(1) var volumeSamp: sampler;
-struct VO { @builtin(position) pos: vec4f, @location(0) uv: vec2f }
-@vertex fn vs(@builtin(vertex_index) i: u32) -> VO {
-  let p = vec2f(f32((i << 1u) & 2u), f32(i & 2u));
-  var o: VO;
-  o.pos = vec4f(p * 2.0 - 1.0, 0.0, 1.0);
-  o.uv = vec2f(p.x, 1.0 - p.y);
-  return o;
-}
-@fragment fn fs(o: VO) -> @location(0) vec4f {
-  return textureSampleLevel(volumeTex, volumeSamp, o.uv, 0.0);
-}
-`
+export type { VolumeInput, VolumeLightShader }
 
 /**
  * `reactive` marks instances that move on their own (flying debris, thrown items): under temporal AA they are redrawn
@@ -215,7 +203,9 @@ export type FrameInput = {
    * Volumetric-light pass (renderer `shaders.volume`): resolution divisor and optional screen rect [x0, y0, x1, y1]
    * in 0..1 (top-left origin) that bounds the light, so both passes skip the rest of the screen. Omit or null to skip.
    */
-  volume?: { downscale: number; rect?: readonly [number, number, number, number] } | null
+  volume?: VolumeInput | readonly (VolumeInput | null | undefined)[] | null
+  /** Fog uniforms and scatter lamps (`FogScatter.update`), read by `fogSceneWgsl` and `fogScatterVolume`. */
+  fog?: FogFrame | null
   /** time, desaturate, flash, exposure */
   grade: [number, number, number, number]
   /** Optional shared screen-space shutter + impulse motion blur (`@arcade/kit/gpu/motion-blur`). */
@@ -271,15 +261,15 @@ export class Renderer {
   private fieldTex: GPUTexture
   private lampGridTex: GPUTexture
   private field: { pipe: GPUComputePipeline; group: GPUBindGroup; state: GPUBuffer; dispatch: number } | null = null
-  private volume: {
-    pipe: GPURenderPipeline
-    group: GPUBindGroup
-    composite: GPURenderPipeline
-    compositeLayout: GPUBindGroupLayout
-    tex: GPUTexture | null
-    compositeGroup: GPUBindGroup | null
-    downscale: number
-  } | null = null
+  private volumes: VolumeSlot[] = []
+  private fogBuf: GPUBuffer
+  private fogLampBuf: GPUBuffer
+  private readonly volumeInv = new Float32Array(16)
+  private readonly volumeVP = new Float32Array(16)
+  private readonly volumePrevVP = new Float32Array(16)
+  private readonly volumeEye: [number, number, number] = [0, 0, 0]
+  private volumeFrame = 0
+  private volumeReady = false
   private bounceTex: GPUTexture
   private floorSampler: GPUSampler
   private materialTex: GPUTexture
@@ -383,7 +373,7 @@ export class Renderer {
       lookSceneVariant?: (variant: LookVariantMode) => string
       lookPostVariant?: (variant: LookVariantMode) => string
       visField?: VisibilityFieldShader
-      volume?: VolumeLightShader
+      volume?: VolumeLightShader | readonly VolumeLightShader[]
       /** Unlit tyre smoke and dust colour (WGSL vec3f over the scene Frame), e.g. from `F.ambient` under Noir. */
       tyreSmoke?: { base?: string; dust?: string }
     },
@@ -430,6 +420,8 @@ export class Renderer {
       sampler: d.createSampler({ compare: "less" }),
       uniform: d.createBuffer({ size: SPOT_SHADOW_UNIFORM_FLOATS * 4, usage: U.UNIFORM }),
     }
+    this.fogBuf = d.createBuffer({ label: "fog params", size: FOG_UNIFORM_FLOATS * 4, usage: U.UNIFORM | U.COPY_DST })
+    this.fogLampBuf = d.createBuffer({ label: "fog lamps", size: MAX_FOG_LAMPS * FOG_LAMP_FLOATS * 4, usage: U.STORAGE | U.COPY_DST })
     this.inst = new GrowableInstanceBuffer(d, 4096, INST_FLOATS)
     this.sprites = d.createBuffer({ size: MAX_SPRITES * SPRITE_FLOATS * 4, usage: U.VERTEX | U.COPY_DST })
     this.sampler = d.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" })
@@ -475,6 +467,7 @@ export class Renderer {
         { binding: SPOT_SHADOW_BINDINGS.map, visibility: S.FRAGMENT, texture: { sampleType: "depth", viewDimension: "2d-array" } },
         { binding: SPOT_SHADOW_BINDINGS.sampler, visibility: S.FRAGMENT, sampler: { type: "comparison" } },
         { binding: SPOT_SHADOW_BINDINGS.uniform, visibility: S.FRAGMENT, buffer: { type: "uniform" } },
+        { binding: 18, visibility: S.VERTEX | S.FRAGMENT, buffer: { type: "uniform" } },
       ],
     })
     this.sceneLayout = sceneLayout
@@ -523,58 +516,12 @@ export class Renderer {
       layout: d.createPipelineLayout({ bindGroupLayouts: [computeLayout] }),
       compute: { module: this.module(polarShader, "polar"), entryPoint: "main" },
     })
-    if (shaders?.volume) {
-      const layout = d.createBindGroupLayout({
-        entries: [
-          { binding: 0, visibility: S.FRAGMENT, buffer: { type: "uniform" } },
-          { binding: 1, visibility: S.FRAGMENT, buffer: { type: "read-only-storage" } },
-          { binding: 2, visibility: S.FRAGMENT, buffer: { type: "read-only-storage" } },
-          { binding: 13, visibility: S.FRAGMENT, buffer: { type: "uniform" } },
-        ],
-      })
-      const compositeLayout = d.createBindGroupLayout({
-        entries: [
-          { binding: 0, visibility: S.FRAGMENT, texture: {} },
-          { binding: 1, visibility: S.FRAGMENT, sampler: {} },
-        ],
-      })
-      const mod = this.module(shaders.volume.code, "volume light")
-      const compositeMod = this.module(volumeCompositeShader, "volume composite")
-      this.volume = {
-        pipe: d.createRenderPipeline({
-          layout: d.createPipelineLayout({ bindGroupLayouts: [layout] }),
-          vertex: { module: mod, entryPoint: "vs" },
-          fragment: { module: mod, entryPoint: "fs", targets: [{ format: HDR }] },
-          primitive: { topology: "triangle-list" },
-        }),
-        group: d.createBindGroup({
-          layout,
-          entries: [
-            { binding: 0, resource: { buffer: this.frameBuf } },
-            { binding: 1, resource: { buffer: this.lightBuf } },
-            { binding: 2, resource: { buffer: this.polarBuf } },
-            { binding: 13, resource: { buffer: this.customBuf } },
-          ],
-        }),
-        composite: d.createRenderPipeline({
-          layout: d.createPipelineLayout({ bindGroupLayouts: [compositeLayout] }),
-          vertex: { module: compositeMod, entryPoint: "vs" },
-          fragment: {
-            module: compositeMod,
-            entryPoint: "fs",
-            targets: [{
-              format: HDR,
-              blend: { color: { srcFactor: "one", dstFactor: "one" }, alpha: { srcFactor: "zero", dstFactor: "one-minus-src-alpha" } },
-            }],
-          },
-          primitive: { topology: "triangle-list" },
-        }),
-        compositeLayout,
-        tex: null,
-        compositeGroup: null,
-        downscale: 0,
-      }
-    }
+    const volumeShaders = shaders?.volume ? (Array.isArray(shaders.volume) ? shaders.volume : [shaders.volume as VolumeLightShader]) : []
+    this.volumes = volumeShaders.map((v, i) => new VolumeSlot(d, v, {
+      frame: this.frameBuf, lights: this.lightBuf, polar: this.polarBuf, custom: this.customBuf,
+      fog: this.fogBuf, fogLamps: this.fogLampBuf, sampler: this.sampler, format: HDR,
+      compile: (code, label) => this.module(code, label),
+    }, i))
     if (shaders?.visField) {
       const vf = shaders.visField
       const fieldLayout = d.createBindGroupLayout({
@@ -729,6 +676,7 @@ export class Renderer {
         { binding: SPOT_SHADOW_BINDINGS.map, resource: this.spotShadow.view },
         { binding: SPOT_SHADOW_BINDINGS.sampler, resource: this.spotShadow.sampler },
         { binding: SPOT_SHADOW_BINDINGS.uniform, resource: { buffer: this.spotShadow.uniform } },
+        { binding: 18, resource: { buffer: this.fogBuf } },
       ],
     })
   }
@@ -745,50 +693,70 @@ export class Renderer {
     this.makeSceneGroup()
   }
 
+  /** Each volume slot's input this frame: a single `FrameInput.volume` object feeds slot 0. */
+  private volumeInput(f: FrameInput, i: number): VolumeInput | null {
+    const v = f.volume
+    if (!v) return null
+    if (Array.isArray(v)) return (v as readonly (VolumeInput | null | undefined)[])[i] ?? null
+    return i === 0 ? (v as VolumeInput) : null
+  }
+
+  /** True when a slot that reads depth runs this frame, so the scene pass keeps its depth. */
+  private volumeNeedsDepth(f: FrameInput): boolean {
+    for (let i = 0; i < this.volumes.length; i++) if (this.volumes[i]!.usesDepth && this.volumeInput(f, i)) return true
+    return false
+  }
+
   /**
-   * Marches the volumetric light at the internal size and adds it into `target` (`tw` × `th`): the resolved scene,
-   * or the temporal output so the beam never enters the history.
+   * Marches the volume slots at the internal size and adds them into `target` (`tw` × `th`): the resolved scene, or
+   * the temporal output so the light never enters the TAA history. `vp` is this frame's unjittered viewProj.
    */
-  private drawVolume(
-    enc: GPUCommandEncoder,
-    downscale: number,
-    rect: readonly [number, number, number, number] | undefined,
-    target: GPUTextureView,
-    tw: number,
-    th: number,
-  ): void {
-    const v = this.volume!
-    const w = Math.max(1, Math.ceil(this.targets.width / downscale))
-    const h = Math.max(1, Math.ceil(this.targets.height / downscale))
-    if (!v.tex || v.tex.width !== w || v.tex.height !== h) {
-      v.tex?.destroy()
-      v.tex = this.device.createTexture({ size: [w, h], format: HDR, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING })
-      v.compositeGroup = this.device.createBindGroup({
-        layout: v.compositeLayout,
-        entries: [{ binding: 0, resource: v.tex.createView() }, { binding: 1, resource: this.sampler }],
-      })
+  private drawVolumes(enc: GPUCommandEncoder, f: FrameInput, vp: Float32Array, eye: readonly [number, number, number], target: GPUTextureView, tw: number, th: number): void {
+    let view: VolumeView | null = null
+    for (let i = 0; i < this.volumes.length; i++) {
+      const slot = this.volumes[i]!
+      const input = this.volumeInput(f, i)
+      if (!input) {
+        slot.resetHistory()
+        continue
+      }
+      if (slot.usesDepth && !view) {
+        this.volumeVP.set(vp.subarray(0, 16))
+        mat4.inverse(this.volumeVP, this.volumeInv)
+        const jump = Math.hypot(eye[0] - this.volumeEye[0], eye[1] - this.volumeEye[1], eye[2] - this.volumeEye[2])
+        const continuous = this.volumeReady && jump < 1.5
+        if (!continuous) this.volumePrevVP.set(this.volumeVP)
+        view = {
+          invViewProj: this.volumeInv,
+          viewProj: this.volumeVP,
+          prevViewProj: this.volumePrevVP,
+          eye,
+          frame: this.volumeFrame,
+          continuous,
+          depthView: this.targets.depthView,
+          depthWidth: this.targets.width,
+          depthHeight: this.targets.height,
+          depthClear: DEPTH_CFG.clearValue,
+        }
+      }
+      slot.draw(enc, input, this.targets.width, this.targets.height, view, target, tw, th)
     }
-    const r = rect ?? [0, 0, 1, 1]
-    const scissor = (pass: GPURenderPassEncoder, sw: number, sh: number) => {
-      const x0 = Math.max(0, Math.floor(r[0] * sw))
-      const y0 = Math.max(0, Math.floor(r[1] * sh))
-      const x1 = Math.min(sw, Math.ceil(r[2] * sw))
-      const y1 = Math.min(sh, Math.ceil(r[3] * sh))
-      pass.setScissorRect(x0, y0, Math.max(0, x1 - x0), Math.max(0, y1 - y0))
+    if (view) {
+      // This frame's camera becomes next frame's reprojection source once every slot has read it.
+      this.volumePrevVP.set(this.volumeVP)
+      this.volumeEye[0] = eye[0]
+      this.volumeEye[1] = eye[1]
+      this.volumeEye[2] = eye[2]
+      this.volumeFrame++
+      this.volumeReady = true
+    } else {
+      this.volumeReady = false
     }
-    if (r[2] <= r[0] || r[3] <= r[1]) return
-    const march = enc.beginRenderPass({ colorAttachments: [{ view: v.tex.createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 0 } }] })
-    scissor(march, w, h)
-    march.setPipeline(v.pipe)
-    march.setBindGroup(0, v.group)
-    march.draw(3)
-    march.end()
-    const add = enc.beginRenderPass({ colorAttachments: [{ view: target, loadOp: "load", storeOp: "store" }] })
-    scissor(add, tw, th)
-    add.setPipeline(v.composite)
-    add.setBindGroup(0, v.compositeGroup!)
-    add.draw(3)
-    add.end()
+  }
+
+  private resetVolumeHistory(): void {
+    this.volumeReady = false
+    for (const v of this.volumes) v.resetHistory()
   }
 
   /** Forgets everything the visibility field remembers (new level or session). */
@@ -826,6 +794,7 @@ export class Renderer {
   setLevel(level: LevelData): void {
     this.previousFrame = null
     this.temporal?.reset()
+    this.resetVolumeHistory()
     const STREAM_SLOT_COUNT = 25
     const isStreamedSlots =
       level.chunks.length > 0 &&
@@ -1040,6 +1009,7 @@ export class Renderer {
   /** Drops the temporal history (camera cut or teleport the eye-jump check would miss). */
   resetTemporalHistory(): void {
     this.temporal?.reset()
+    this.resetVolumeHistory()
   }
 
   /** Temporal resolve telemetry, or null when it is off. */
@@ -1527,6 +1497,10 @@ export class Renderer {
     if (useLampGrid) f.frame[35] = prevFocusW
     if (f.lightCount) d.queue.writeBuffer(this.lightBuf, 0, f.lights.buffer, f.lights.byteOffset, f.lightCount * LIGHT_FLOATS * 4)
     if (f.occluderCount) d.queue.writeBuffer(this.occBuf, 0, f.occluders.buffer, f.occluders.byteOffset, Math.min(f.occluderCount, MAX_OCCLUDERS) * OCC_FLOATS * 4)
+    if (f.fog) {
+      d.queue.writeBuffer(this.fogBuf, 0, f.fog.uniforms)
+      if (f.fog.lampCount) d.queue.writeBuffer(this.fogLampBuf, 0, f.fog.lamps.buffer, f.fog.lamps.byteOffset, Math.min(f.fog.lampCount, MAX_FOG_LAMPS) * FOG_LAMP_FLOATS * 4)
+    }
     if (f.lampCount) d.queue.writeBuffer(this.lampBuf, 0, f.lampPower.buffer, f.lampPower.byteOffset, Math.min(f.lampCount, MAX_MAP_LIGHTS) * 4)
     this.gradeData.set(f.grade)
     if (useLookPipes && effectiveLook) {
@@ -1645,7 +1619,7 @@ export class Renderer {
     const hasSmoke = !!(f.smoke && f.smokeEnabled && f.smoke.count)
     const pass = enc.beginRenderPass(
       this.targets.configureMainPass({
-        storeDepth: hasSmoke || runSharedBlur || !!taa,
+        storeDepth: hasSmoke || runSharedBlur || !!taa || this.volumeNeedsDepth(f),
         timestampWrites: this.timing && !f.shadowLightCount ? this.timer!.start : undefined,
         extraColorAttachment: motion ? this.velocityAttachment : null,
       }),
@@ -1776,7 +1750,7 @@ export class Renderer {
       this.smokeRenderer.render(enc, this.targets.hdrView, f.smoke)
     }
 
-    if (this.volume && f.volume && !taa) this.drawVolume(enc, f.volume.downscale, f.volume.rect, this.targets.hdrView, this.targets.width, this.targets.height)
+    if (this.volumes.length && !taa) this.drawVolumes(enc, f, f.frame, [f.frame[16]!, f.frame[17]!, f.frame[18]!], this.targets.hdrView, this.targets.width, this.targets.height)
 
     let activeDown0: GPUBindGroup | undefined
     let activeComposite = this.bloomPyramid.compositeGroup
@@ -1837,7 +1811,7 @@ export class Renderer {
     if (taa) {
       // Blur (when on) runs on the internal image first; the beam is added after the resolve, never into the history.
       taa.encode(enc, runSharedBlur ? this.sharedBlur!.output : this.targets.hdrView, this.targets.depthView, this.temporalSettings!.sharpen > 0.001)
-      if (this.volume && f.volume) this.drawVolume(enc, f.volume.downscale, f.volume.rect, taa.outputView, this.width, this.height)
+      if (this.volumes.length) this.drawVolumes(enc, f, this.unjittered, [f.frame[16]!, f.frame[17]!, f.frame[18]!], taa.outputView, this.width, this.height)
     }
     this.bloomPyramid.encode(enc, this.pipes.down!, this.pipes.up!, activeDown0, this.bloomLevels)
     const output = this.timing ? this.measureView : (targetView ?? this.context.getCurrentTexture().createView())
