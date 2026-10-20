@@ -36,6 +36,8 @@ const SMOOTHING = 0.4
 export type RewardSettings = {
   /** Human realism strength, 0 = loose, 1 = enforced. Optional for v2 saved policies. */
   realism?: number
+  /** Stage-zero human survival shaping; set to zero when fine-tuning a learned balance skill. */
+  balance?: number
   /** Episode length (s); the heist gets heistSeconds. */
   seconds: number
   heistSeconds: number
@@ -362,7 +364,7 @@ export class Episode {
     this.fitness += reward.progress * gained * (1 + reward.upright * upright) - reward.effort * effort * CONTROL_DT
     // Human lesson zero also trains balance. Without survival shaping ES preferred an immediate collapse
     // to a longer, costly fall; later lessons remove this incentive to stand in front of a beam.
-    if (this.human && this.env.task === "heist" && this.env.stage === 0) this.fitness += .5 * CONTROL_DT
+    if (this.human && this.env.task === "heist" && this.env.stage === 0) this.fitness += (reward.balance ?? .5) * CONTROL_DT
     this.credited = credited
     if (this.realism) {
       const strength = reward.realism ?? 1
@@ -388,7 +390,8 @@ export class Episode {
     let seen = 0
     for (let i = 0; i < this.cones.length; i++) {
       const cn = this.cones[i]!
-      const a = inCone(cn, t.x, t.y), b = inCone(cn, this.mouth.x, this.mouth.y)
+      const head = this.human ? world.bodies[2]! : this.mouth
+      const a = inCone(cn, t.x, t.y), b = inCone(cn, head.x, head.y)
       if (a || b) {
         seen |= 1 << i
         exposed += (a ? 1 : 0) + (b ? 1 : 0)

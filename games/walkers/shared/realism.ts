@@ -3,7 +3,7 @@ import { wrapAngle } from "./fmath"
 import type { Level } from "./level"
 import { jointSpeed, type World } from "./physics"
 
-export type GaitMetrics = { cadence: number; strideLength: number; dutyFactor: number; costOfTransport: number | null; slip: number; steps: number; illegalContactSeconds: number; penalty: number }
+export type GaitMetrics = { cadence: number | null; strideLength: number | null; dutyFactor: number; costOfTransport: number | null; slip: number; steps: number; illegalContactSeconds: number; penalty: number }
 /** Measured from loaded contacts, not the controller's desired phase. Work is absolute mechanical joint work,
  * not a metabolic estimate. A standing/failed run has undefined transport cost. */
 export class HumanRealism {
@@ -123,8 +123,8 @@ export class HumanRealism {
   }
 
   metrics(distance: number): GaitMetrics {
-    return { cadence: this.steps > 1 ? (this.steps - 1) * 60 / (this.lastStep - this.firstStep) : 0,
-      strideLength: this.strides ? this.stride / this.strides : 0, dutyFactor: this.samples ? this.stance / (2 * this.samples) : 0,
+    return { cadence: this.steps > 1 ? (this.steps - 1) * 60 / (this.lastStep - this.firstStep) : null,
+      strideLength: this.strides ? this.stride / this.strides : null, dutyFactor: this.samples ? this.stance / (2 * this.samples) : 0,
       costOfTransport: distance > .5 ? this.work / (75 * 9.81 * distance) : null,
       slip: this.contactSamples ? this.slip / this.contactSamples : 0, steps: this.steps, illegalContactSeconds: this.illegalContactSeconds, penalty: this.penalty }
   }

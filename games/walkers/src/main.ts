@@ -53,6 +53,7 @@ const S = {
   finish: DEFAULT_REWARD.finish,
   phase: DEFAULT_REWARD.phase,
   realism: 1,
+  balance: .5,
 }
 
 if (!fits(S.creature as CreatureId, S.task as TaskId)) S.creature = "quadruped"
@@ -61,6 +62,7 @@ const task = () => S.task as TaskId
 const env = (): Env => envFor(task(), { seed: S.courseSeed, stage: S.stage, laserSpeed: S.laserSpeed, extra: S.extra, human: creature() === "human" })
 const reward = (): RewardSettings => ({
   realism: S.realism,
+  balance: S.balance,
   seconds: S.seconds, heistSeconds: S.heistSeconds, progress: 1, upright: S.upright, effort: S.effort, fall: S.fall, finish: S.finish, phase: S.phase, gem: S.gem, escape: S.escape, alarm: S.alarm, exposure: S.exposure, maxAlarms: S.maxAlarms,
 })
 
@@ -258,7 +260,8 @@ function importFile(): void {
 
 const options = <T extends string>(ids: readonly T[], label: (id: T) => string) => ids.map((value) => ({ value, label: label(value) }))
 const controls: LabControl[] = [
-  { key: "realism", label: "Realism", group: "Human", min: 0, max: 1, step: 1, options: [{ value: 0, label: "Loose" }, { value: 1, label: "Human" }] },
+  { key: "realism", label: "Realism", group: "Human", type: "select", options: [{ value: 0, label: "Loose" }, { value: 1, label: "Human" }] },
+  { key: "balance", label: "Balance lesson reward", group: "Human", min: 0, max: 1, step: .1, unit: "/s" },
   { key: "creature", label: "Creature", group: "Run", type: "select", options: options(CREATURE_IDS, (id) => CREATURES[id].label) },
   { key: "task", label: "Task", group: "Run", type: "select", options: options(TASK_IDS, (id) => TASKS[id].label) },
   { key: "train", label: "Train / pause", group: "Run", type: "action", run: () => setRunning(!running) },
@@ -291,7 +294,7 @@ const controls: LabControl[] = [
   { key: "laserSpeed", label: "Laser speed", group: "Heist", min: 0.5, max: 2, step: 0.05, unit: "×" },
   { key: "extra", label: "Extra pulsing lasers", group: "Heist", min: 0, max: 4, step: 1 },
   { key: "slowmo", label: "Slow motion on near misses", group: "Heist", type: "toggle" },
-  { key: "heistSeconds", label: "Heist time limit", group: "Heist", min: 10, max: 60, step: 1, unit: "s" },
+  { key: "heistSeconds", label: "Heist time limit", group: "Heist", min: 4, max: 60, step: 1, unit: "s" },
   { key: "gem", label: "Gem bonus", group: "Heist", min: 0, max: 10, step: 0.5 },
   { key: "escape", label: "Escape bonus", group: "Heist", min: 0, max: 10, step: 0.5 },
   { key: "alarm", label: "Alarm penalty", group: "Heist", min: 0, max: 10, step: 0.25, unit: "/alarm" },
@@ -323,7 +326,7 @@ function changed(key: string): void {
   } else if (key === "pairs" || key === "sigma" || key === "lr") {
     trainer.setEs({ pairs: S.pairs, sigma: S.sigma, lr: S.lr, weightDecay: DEFAULT_ES.weightDecay })
   } else if (key === "workers") trainer.setWorkers(S.workers)
-  else if (["seconds", "heistSeconds", "upright", "effort", "fall", "finish", "phase", "gem", "escape", "alarm", "exposure", "maxAlarms", "realism"].includes(key)) {
+  else if (["seconds", "heistSeconds", "upright", "effort", "fall", "finish", "phase", "gem", "escape", "alarm", "exposure", "maxAlarms", "realism", "balance"].includes(key)) {
     trainer.setReward(reward())
     if (mode === "replay") show = nextShow()
   }
@@ -433,7 +436,7 @@ function renderStats(): void {
   if (lead?.realism) {
     const g = lead.realism.metrics(lead.distance)
     parts.push(`Human · ${S.realism ? "realism on" : "loose rules"} · learned targets + balance reflex`)
-    parts.push(`${g.cadence.toFixed(0)} steps/min · stride ${g.strideLength.toFixed(2)} m · stance ${(g.dutyFactor * 100).toFixed(0)}% · mechanical CoT ${g.costOfTransport?.toFixed(2) ?? "—"}`)
+    parts.push(`${g.cadence?.toFixed(0) ?? "—"} steps/min · stride ${g.strideLength?.toFixed(2) ?? "—"} m · stance ${(g.dutyFactor * 100).toFixed(0)}% · mechanical CoT ${g.costOfTransport?.toFixed(2) ?? "—"}`)
     parts.push(`slip ${g.slip.toFixed(2)} m/s · realism −${g.penalty.toFixed(2)}${lead.realism.reason ? ` · <b>${lead.realism.reason}</b>` : ""}${last ? ` · non-foot contact ${last.unrealistic ?? 0}/${trainer.population}` : ""}`)
   }
   stats.innerHTML = parts.map((p) => `<span>${p}</span>`).join("")

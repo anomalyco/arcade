@@ -12,6 +12,7 @@ import { initParams, paramCount } from "./policy"
 import { HEIST_MAX_STAGE } from "./level"
 import { SIM_VERSION } from "./physics"
 import { TASK_IDS, type Env, type TaskId } from "./tasks"
+import type { GaitMetrics } from "./realism"
 
 export type BatchJob = Omit<EvalRequest, "id" | "params" | "count">
 export type Evaluator = (job: BatchJob, params: Float64Array, rows: number) => Promise<EvalResponse>
@@ -151,6 +152,8 @@ export type SavedPolicy = {
   reward?: RewardSettings
   /** Wall-clock seconds the headless trainer took (pretrained files). */
   trainedSeconds?: number
+  gait?: GaitMetrics
+  training?: { attempts: number; seconds: number; summary: string }
 }
 
 export type TrainerOptions = {
@@ -317,6 +320,7 @@ export function parsePolicy(value: unknown): SavedPolicy | null {
     const r = v.reward as Record<string, unknown> | null
     if (!r || typeof r !== "object" || !Object.keys(DEFAULT_REWARD).every((k) => typeof r[k] === "number" && Number.isFinite(r[k]))) return null
     if (r.realism !== undefined && (typeof r.realism !== "number" || !Number.isFinite(r.realism) || r.realism < 0 || r.realism > 1)) return null
+    if (r.balance !== undefined && (typeof r.balance !== "number" || !Number.isFinite(r.balance) || r.balance < 0 || r.balance > 1)) return null
   }
   return v as SavedPolicy
 }
