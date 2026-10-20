@@ -1,6 +1,7 @@
 import { distToRect, pushOut, type Rect } from "@arcade/kit/sim/geom"
 import type { StoreState } from "@arcade/kit/sim/ledger"
 import type { PortalHolds } from "../ai"
+import { portalWear } from "../breach/rules"
 import type { InteractAction, InteractionHandler, RawInteractCandidate } from "../interact"
 import { solidRects } from "../map"
 import type { OutbreakSim, Survivor, SurvivorSlot } from "../sim-types"
@@ -130,9 +131,9 @@ export function setDown(sim: OutbreakSim, state: DragState, slot: Actor, st: Sto
   st.counts.hp = Math.round(FURNITURE[kind].hp * Math.max(0.1, t.braceStrength))
   st.counts.t = ds(sim.time)
   state.braced[st.id] = portal.id
-  // Shoved against a door, it slams it shut.
+  // Shoved against a door, it slams it shut; a door the dead tore off (`shared/breach`) stays gone, the piece filling the gap.
   const door = portal.kind === "door" ? sim.town.doors.find((d) => d.id === portal.id) : undefined
-  if (door) door.open = false
+  if (door && !portalWear(sim, door.id)?.broken) door.open = false
   touch(sim, st)
   // Step back off it if the piece landed on the survivor.
   pushOut(p, 0.3, [furnRect(st.at.x, st.at.y, kind, pose.yaw)])

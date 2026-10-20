@@ -111,6 +111,26 @@ describe("loose furniture", () => {
     expect(st.at!.y).toBeLessThan(door.rect[1] - 0.6)
   })
 
+  test("with readable breaches on, the dead's bashes land on a braced piece and topple it", () => {
+    const { sim, tick, place, slot } = room(["ann"])
+    const door = sim.town.doors.find((d) => d.id === "ash-front")!
+    const cx = (door.rect[0] + door.rect[2]) / 2
+    const st = putPiece(sim, "chair", cx, door.rect[1] - 1.2)
+    const ann = slot("ann")
+    place(ann, cx, door.rect[1] - 2, Math.PI / 2)
+    tick({ ann: { interact: true, aim: Math.PI / 2 } })
+    tick({ ann: { interact: true, aim: Math.PI / 2 } })
+    expect(st.counts.br).toBe(1)
+    const rules = sim.ai.bashRules!
+    expect(rules).toBeTruthy()
+    const bash = (damage: number) => rules.apply(sim.town, sim.ai.portalStates, [{ agentId: 1, portalId: door.id, portalKind: "door", x: cx, y: door.rect[3] + 0.5, damage }], sim.time, [])
+    bash(20)
+    expect(st.counts.br).toBe(1)
+    expect(sim.ai.portalStates.get(door.id)!.integrity).toBe(100)
+    expect(bash(500)).toBe(true)
+    expect(st.counts.down).toBe(1)
+  })
+
   test("bots see every piece no one drags as an obstacle; closets keep their floor clear", () => {
     const { sim, tick, pieces, slot } = room(["ann"])
     const view = () => createBotWorldView(sim).obstacles ?? []

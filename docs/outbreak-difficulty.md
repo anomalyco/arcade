@@ -193,9 +193,9 @@ up or throw the new items on purpose (they may pick one up as "dropped supplies"
 (`tests/difficulty-ramp.test.ts`) passed unchanged; no band moved.
 
 Loose furniture (up to two pieces a house) moves bots' paths. Before bots knew about it (`survivorObstacles`) they
-walked into chairs and Night 3 chasers fell from 3.67 to 1.6 in one placement; with bots pathing round the pieces the
-batch is back beside its baseline (Night 3 / Night 2 aware 1.007 → 1.05, Night 3 chasers 3.67 → 3.71, Skilled alive
-at dawn 3 0.5 → 0.25, on its lower edge again). No band moved.
+walked into chairs, and in one placement Night 3 chasers fell from 3.67 to 1.6. With bots pathing round the pieces
+the batch sits beside its baseline; on `overnight` with AR-97's breaches: Night 3 / Night 2 aware 1.07, Night 3
+chasers 3.81, Skilled alive at dawn 3 0.75, Expert 0.5. No band moved.
 
 ## Door breaches (AR-97)
 

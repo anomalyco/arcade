@@ -1,6 +1,6 @@
 import type { AIAgent, PortalBashEvent } from "@arcade/kit/sim/ai"
 import { distToRect, type Rect } from "@arcade/kit/sim/geom"
-import type { PortalBashRules, PortalState } from "../ai"
+import type { PortalBashRules, PortalHolds, PortalState } from "../ai"
 import { survivorDamage } from "../feature-registry"
 import type { Door, Town, WindowOpening } from "../map"
 import type { OutbreakSim } from "../sim-types"
@@ -290,6 +290,7 @@ export function applyBashes(
   time: number,
   agents: readonly AIAgent[],
   slots: OutbreakSim["slots"],
+  holds?: PortalHolds | null,
 ): boolean {
   let topology = false
   for (const bash of bashes) {
@@ -323,6 +324,12 @@ export function applyBashes(
         st.barricadePlanks = next
         topology = true
       }
+      continue
+    }
+    if (holds?.held(bash.portalId)) {
+      // Planks gone, furniture braced behind them (`shared/interactions`) takes the blows until it is shoved aside.
+      holds.absorb(bash.portalId, bash.damage, time)
+      if (!holds.held(bash.portalId)) topology = true
       continue
     }
     if (bash.portalKind !== "door") continue
@@ -385,7 +392,7 @@ function rulesFor(sim: OutbreakSim, state: BreachState, t: BreachTuning): Portal
   let r = rulesByState.get(state)
   if (!r) {
     const box = { t, sim, rules: null as unknown as PortalBashRules }
-    box.rules = { apply: (town, portalStates, bashes, time, agents) => applyBashes(state, box.t, town, portalStates, bashes, time, agents, box.sim.slots) }
+    box.rules = { apply: (town, portalStates, bashes, time, agents) => applyBashes(state, box.t, town, portalStates, bashes, time, agents, box.sim.slots, box.sim.ai.portalHolds) }
     rulesByState.set(state, box)
     r = box
   }
