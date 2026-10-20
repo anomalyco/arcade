@@ -7,7 +7,7 @@
 import { parseArgs } from "node:util"
 import { cpus } from "node:os"
 import { CREATURE_IDS, type CreatureId } from "../shared/creatures"
-import { DEFAULT_REWARD } from "../shared/episode"
+import { DEFAULT_REWARD, evaluate, policyShape } from "../shared/episode"
 import { DEFAULT_ES } from "../shared/es"
 import { envFor, TASK_IDS, type TaskId } from "../shared/tasks"
 import { parsePolicy, Trainer, WorkerPool } from "../shared/trainer"
@@ -32,6 +32,9 @@ const { values } = parseArgs({
     "until-stage": { type: "string" },
     "no-curriculum": { type: "boolean", default: false },
     "laser-speed": { type: "string", default: "1" },
+    "heist-seconds": { type: "string", default: "30" },
+    balance: { type: "string", default: "0.5" },
+    fall: { type: "string", default: String(DEFAULT_REWARD.fall) },
   },
 })
 
@@ -54,7 +57,7 @@ const trainer = new Trainer(
     hidden: init?.hidden ?? Number(values.hidden),
     seed: Number(values.seed),
     es: { ...DEFAULT_ES, pairs: Number(values.pairs), sigma: Number(values.sigma), lr: Number(values.lr) },
-    reward: DEFAULT_REWARD,
+    reward: { ...DEFAULT_REWARD, heistSeconds: Number(values["heist-seconds"]), balance: Number(values.balance), fall: Number(values.fall) },
     init: init ? Float64Array.from(init.params) : undefined,
   },
   pool.evaluate,
@@ -65,6 +68,11 @@ const t0 = performance.now()
 const every = Number(values.every)
 for (let g = 0; g < gens && performance.now() < deadline; g++) {
   const s = await trainer.generation()
+  if (values.out && trainer.env.stage > s.stage) {
+    const checkpoint = values.out.replace(/\.json$/, `-stage${s.stage}.json`)
+    await Bun.write(checkpoint, JSON.stringify({ ...trainer.best!, trainedSeconds: Math.round((performance.now() - t0) / 1000) }) + "\n")
+    console.log(`curriculum checkpoint ${checkpoint}`)
+  }
   if (values["until-stage"] && s.stage >= Number(values["until-stage"]) && s.finished >= Math.ceil(trainer.es.population * 0.5)) {
     console.log(`gen ${s.gen}: half the population escapes at stage ${s.stage}`)
     break
@@ -80,8 +88,9 @@ for (let g = 0; g < gens && performance.now() < deadline; g++) {
 }
 pool.terminate()
 const best = trainer.best!
-console.log(`best: fitness ${best.fitness.toFixed(3)}, ${best.distance.toFixed(2)} m, gen ${best.generation}, after ${(best.steps / 1e6).toFixed(2)}M steps, ${((performance.now() - t0) / 1000).toFixed(0)} s`)
+console.log(`best: fitness ${best.fitness.toFixed(3)}, ${best.distance.toFixed(2)} m, gen ${best.generation}, after ${(trainer.totalSteps / 1e6).toFixed(2)}M total steps / ${trainer.history.length} generations, ${((performance.now() - t0) / 1000).toFixed(0)} s`)
 if (values.out) {
-  await Bun.write(values.out, JSON.stringify({ ...best, trainedSeconds: Math.round((performance.now() - t0) / 1000) }) + "\n")
+  const gait = creature === "human" ? evaluate(creature, best.env, policyShape(creature, best.hidden), Float64Array.from(best.params), best.reward).gait : undefined
+  await Bun.write(values.out, JSON.stringify({ ...best, gait, trainedSeconds: Math.round((performance.now() - t0) / 1000) }) + "\n")
   console.log(`wrote ${values.out}`)
 }

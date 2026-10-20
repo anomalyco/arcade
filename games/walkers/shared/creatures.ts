@@ -6,6 +6,8 @@
 // compliant, rate-limited movements rather than torque spikes. Passive joints ("spring") pull back to the creation
 // pose with a small torque (ankles, tail).
 
+import { human } from "./human"
+
 export type BodyDef = {
   name: string
   x: number
@@ -18,7 +20,7 @@ export type BodyDef = {
   /** Drawn behind the rest (the far legs). */
   far?: boolean
   /** Drawing role, for colour. */
-  part?: "torso" | "head" | "tail" | "leg" | "paw"
+  part?: "torso" | "head" | "tail" | "leg" | "paw" | "arm"
 }
 
 export type JointDef = {
@@ -55,7 +57,7 @@ export type CreatureDef = {
   fallTilt: number
 }
 
-export type CreatureId = "biped" | "quadruped" | "worm"
+export type CreatureId = "human" | "biped" | "quadruped" | "worm"
 
 const UP = Math.PI / 2
 const DOWN = -Math.PI / 2
@@ -171,7 +173,7 @@ function worm(): CreatureDef {
   }
 }
 
-export const CREATURES: Record<CreatureId, CreatureDef> = { biped: biped(), quadruped: quadruped(), worm: worm() }
+export const CREATURES: Record<CreatureId, CreatureDef> = { human: human(), biped: biped(), quadruped: quadruped(), worm: worm() }
 export const CREATURE_IDS = Object.keys(CREATURES) as CreatureId[]
 
 /** Indices of the joints the policy drives. */

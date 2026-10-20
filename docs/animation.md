@@ -1,5 +1,19 @@
 # Animation
 
+## Walkers physical human (Oct 20, learning incomplete)
+
+`games/walkers/shared/human.ts` is a separate sagittal rigid-body learning prototype, not the shared 3D animation
+rig below. Winter mass fractions, human joint ranges, bounded PD muscles and loaded-contact realism rules constrain
+it. An authored leg-cycle prior failed (800 generations); direct PD learning without survival shaping then learned
+to collapse early. Neutral initialization, a bounded balance reflex and a stage-zero survival reward learned to
+stand for30 seconds. Three six-worker Pro runs took24m16s actual training.
+
+The shipped balance policy: .056m drift, .9994 stance duty, .000773m/s contact slip, zero footfalls or illegal
+contacts. Cadence, stride and mechanical cost of transport are **undefined**, not a successful gait. Walking and the
+heist are not learned. `games/walkers/scripts/human-metrics.ts` measures loaded contacts and absolute joint work;
+it does not infer success from the controller clock or claim mocap agreement. A walking fine-tune removes survival
+shaping and uses an8s horizon; two attempts could not get Pro capacity. Preserve this limitation when presenting it.
+
 What we have learned about procedural human animation in arcade, written as rules with the numbers behind them
 and the reason each rule exists. Every humanoid in Blackout and Outbreak runs on the shared rig in `packages/kit/`,
 and a new game should start from the same rules.

@@ -22,6 +22,8 @@ export type LaserDef =
 export type CameraDef = { x: number; y: number; angle: number; amp: number; period: number; phase: number; half: number; range: number }
 
 export type Level = {
+  /** Human contact exceptions: only lowered hands/knees in these obstacle zones. */
+  crawlZones?: { x0: number; x1: number; height: number }[]
   floor: Pt[]
   blocks: Pt[][]
   props: PropDef[]
@@ -198,5 +200,25 @@ export function heistLevel(h: HeistSettings): Level {
     for (const gx of [8.7, 8.95, 9.2]) lv.lasers.push({ kind: "beam", x1: gx, y1: 0, x2: gx, y2: 1.5, grid: true })
     lv.lasers.push({ kind: "beam", x1: 8.55, y1: 1.4, x2: 9.35, y2: 0.02, grid: true })
   }
+  return lv
+}
+
+/** Same vault mechanics, scaled for a standing human. Stage zero is a short hand-grab lesson. */
+export function humanHeistLevel(h: HeistSettings): Level {
+  const lv = heistLevel(h)
+  lv.blocks = [rect(LEFT, H - .05, lv.right, H + .3)]
+  lv.gem = { x: h.stage === 0 ? 3.8 : 10, y: 1.0 }
+  if (h.stage === 0) lv.goal = 5
+  lv.crawlZones = []
+  if (h.stage >= 1) {
+    lv.lasers[1] = { kind: "beam", x1: 3.9, y1: 1.25, x2: 4.9, y2: 1.25 }
+    lv.crawlZones.push({ x0: 3.1, x1: 5.6, height: 1.15 })
+  }
+  if (h.stage >= 2) {
+    lv.blocks.push(rect(11, .78, 12, 1.02))
+    lv.crawlZones.push({ x0: 10.2, x1: 12.8, height: .7 })
+  }
+  // Timed barriers must reach above the human's head; no walking over a shoulder-height vertical beam.
+  for (const beam of lv.lasers) if (beam.kind === "beam" && beam.x1 === beam.x2) beam.y2 = 2.2
   return lv
 }

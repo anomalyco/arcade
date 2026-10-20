@@ -1,6 +1,6 @@
 # walkers
 
-- Unlisted prototype: 2D physics creatures (biped, quadruped, inchworm) that learn to cross a room, get over low
+- Unlisted prototype: 2D physics creatures (human, biped, quadruped, inchworm) that learn to cross a room, get over low
   walls, climb steps, cross rough ground, run a seeded obstacle course, or (the quadruped) pull off a heist: in through
   a vent, past lasers and a camera, grab the gem, out the exit. The page opens on the heist. Training runs live in the browser with OpenAI-style evolution strategies
   on Web Workers; the page also ships pre-trained policies from the headless Bun trainer to compare against.
@@ -68,3 +68,37 @@
   `?stage=`, `?curriculum=0`, `?lasers=` (laser speed), `?autostart=0`, `?compare=0`, `?panel=0`. `window.walkers` exposes settings, the trainer and history.
 - `bun run check` (tsc, server tsc, tests, build); CI also smoke-loads the bundle. Pushing to `main` deploys
   https://anoma.ly/arcade/walkers/.
+
+## Human thief
+
+- Human is the default; quadruped remains selectable with its original vault and exact v2 policies.
+- `shared/human.ts`: sagittal 1.75 m / 75 kg, Winter mass fractions (head .081, trunk .497 split into chest .32 +
+  pelvis .177, upper arms .028 each, combined forearm+hand .022, thighs .10, shins .0465, feet .0145).
+  Segment lengths/COMs are rounded approximations; combined forearm/hand is one link. Thirteen capsule bodies,
+  eleven muscles plus passive neck. Heel and toe are the two foot-capsule endpoints, not independent toe bones.
+- Optional human-only force–velocity motor envelope: shortening reduces available torque to 20% at the speed
+  limit, eccentric resistance allows 130%. This is a muscle-like approximation, not a calibrated Hill muscle model.
+  Smoothed PD targets are learned, with phase sin/cos and a learned pace input, plus authored ankle/hip balance
+  feedback and counter-swing target offsets. No body teleportation, root forces, contact locks or baked animation.
+  An initial sinusoidal leg-cycle prior failed; it is not used. Stage zero rewards survival (+.5/s) to bootstrap
+  balance; later stages remove it so standing in front of a beam is not rewarded.
+- `shared/realism.ts`: loaded heel/toe contacts are normal support. Hand tips/knees may support only with the chest
+  lowered in a marked beam/vent zone. Head/chest/pelvis contact is a fall. Illegal support, sliding, excessive lean,
+  same-side hops, flight outside a low beam, extreme stride/cadence and mechanical work cost fitness. The Realism
+  knob switches to loose scoring; anatomical/muscle limits and head/torso ground falls remain. HUD shows penalties
+  and measured gait; chart red ticks mark generations with illegal-contact runs.
+- Human vault starts with a 5 m walk-and-hand-grab lesson, then introduces low/high beams, a crawl vent and timed
+  beam, sweeper/camera, and plate/grid. Gem grabs use the hand tip (16 cm reach), not head proximity. The gem follows
+  that hand; it is a collectible, not an independently simulated rigid body/load.
+- `scripts/human-metrics.ts <policy.json> [report.json]` measures debounced landings (cadence, same-foot stride),
+  stance duty, loaded-contact tangential slip and absolute mechanical work / (mass × gravity × net distance).
+  CoT is undefined below .5 m forward travel; it is not metabolic cost. These measure actual physics, not phase.
+- Train only on Pro through HiveMind, 4–6 workers; record failed runs as well as successful ones. Do not call a
+  stage-zero policy a completed heist. Curriculum saves each passed stage before moving up.
+- One muted headless replay capture: `scripts/capture.ts --replay-only --creature human` against the built game;
+  it checks that browser fitness matches the saved headless score. Upload to AR-104 only, never Slack.
+- **Training result (Oct20): incomplete.** Three Pro runs, six workers, **24m16s** actual training. The shipped
+  human policy balances for30s with .056m drift, no illegal contacts, .9994 duty and .000773m/s slip. It has taken
+  no steps; cadence, stride length and CoT are undefined. It has not learned walking, duck/crawl/vault, timed waiting,
+  plate pressing, hand pickup or escape. UI says **Balance only**. Two attempts to start the8s walking fine-tune
+  were capacity-gated for30min each. The trained quadruped remains the completed heist option.

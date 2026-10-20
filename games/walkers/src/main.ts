@@ -21,7 +21,7 @@ const pick = <T extends string>(value: string | null, options: readonly T[], fal
 const num = (key: string, fallback: number) => (params.has(key) && Number.isFinite(Number(params.get(key))) ? Number(params.get(key)) : fallback)
 
 const S = {
-  creature: pick(params.get("creature"), CREATURE_IDS, "quadruped") as string,
+  creature: pick(params.get("creature"), CREATURE_IDS, "human") as string,
   task: pick(params.get("task"), TASK_IDS, "heist") as string,
   speed: num("speed", 2),
   ghosts: num("ghosts", 24),
@@ -52,13 +52,17 @@ const S = {
   fall: DEFAULT_REWARD.fall,
   finish: DEFAULT_REWARD.finish,
   phase: DEFAULT_REWARD.phase,
+  realism: 1,
+  balance: .5,
 }
 
 if (!fits(S.creature as CreatureId, S.task as TaskId)) S.creature = "quadruped"
 const creature = () => S.creature as CreatureId
 const task = () => S.task as TaskId
-const env = (): Env => envFor(task(), { seed: S.courseSeed, stage: S.stage, laserSpeed: S.laserSpeed, extra: S.extra })
+const env = (): Env => envFor(task(), { seed: S.courseSeed, stage: S.stage, laserSpeed: S.laserSpeed, extra: S.extra, human: creature() === "human" })
 const reward = (): RewardSettings => ({
+  realism: S.realism,
+  balance: S.balance,
   seconds: S.seconds, heistSeconds: S.heistSeconds, progress: 1, upright: S.upright, effort: S.effort, fall: S.fall, finish: S.finish, phase: S.phase, gem: S.gem, escape: S.escape, alarm: S.alarm, exposure: S.exposure, maxAlarms: S.maxAlarms,
 })
 
@@ -147,7 +151,7 @@ function pretrainedRunner(): Runner | null {
   if (!S.compare) return null
   const p = pretrainedFor(creature(), task())
   // The pre-trained one runs whatever level is on (a lower heist stage, another course seed), so it stays comparable.
-  return p ? policyRunner(p, "pretrained", task() === "heist" ? "pro thief" : "pre-trained", reward(), task() === "heist" || task() === "course" ? { ...env(), stage: mode === "train" ? trainer.env.stage : S.stage } : p.env) : null
+  return p ? policyRunner(p, "pretrained", creature() === "human" ? (p.gait?.steps === 0 ? "trained balance" : "best human") : task() === "heist" ? "pro thief" : "pre-trained", reward(), task() === "heist" || task() === "course" ? { ...env(), stage: mode === "train" ? trainer.env.stage : S.stage } : p.env) : null
 }
 
 function nextShow(): Show | null {
@@ -172,6 +176,7 @@ function nextShow(): Show | null {
 }
 
 function replayLabel(p: SavedPolicy): string {
+  if (p.creature === "human") return p.gait?.steps === 0 ? "human · balance lesson" : `best human · stage ${p.env.stage}`
   if (p === pretrainedFor(p.creature, p.env.task)) return p.env.task === "heist" ? "pro thief" : "pre-trained"
   return `best · gen ${p.generation}${p.env.task === "heist" ? ` · stage ${p.env.stage}` : ""}`
 }
@@ -255,6 +260,8 @@ function importFile(): void {
 
 const options = <T extends string>(ids: readonly T[], label: (id: T) => string) => ids.map((value) => ({ value, label: label(value) }))
 const controls: LabControl[] = [
+  { key: "realism", label: "Realism", group: "Human", type: "select", options: [{ value: 0, label: "Loose" }, { value: 1, label: "Human" }] },
+  { key: "balance", label: "Balance lesson reward", group: "Human", min: 0, max: 1, step: .1, unit: "/s" },
   { key: "creature", label: "Creature", group: "Run", type: "select", options: options(CREATURE_IDS, (id) => CREATURES[id].label) },
   { key: "task", label: "Task", group: "Run", type: "select", options: options(TASK_IDS, (id) => TASKS[id].label) },
   { key: "train", label: "Train / pause", group: "Run", type: "action", run: () => setRunning(!running) },
@@ -287,7 +294,7 @@ const controls: LabControl[] = [
   { key: "laserSpeed", label: "Laser speed", group: "Heist", min: 0.5, max: 2, step: 0.05, unit: "×" },
   { key: "extra", label: "Extra pulsing lasers", group: "Heist", min: 0, max: 4, step: 1 },
   { key: "slowmo", label: "Slow motion on near misses", group: "Heist", type: "toggle" },
-  { key: "heistSeconds", label: "Heist time limit", group: "Heist", min: 10, max: 60, step: 1, unit: "s" },
+  { key: "heistSeconds", label: "Heist time limit", group: "Heist", min: 4, max: 60, step: 1, unit: "s" },
   { key: "gem", label: "Gem bonus", group: "Heist", min: 0, max: 10, step: 0.5 },
   { key: "escape", label: "Escape bonus", group: "Heist", min: 0, max: 10, step: 0.5 },
   { key: "alarm", label: "Alarm penalty", group: "Heist", min: 0, max: 10, step: 0.25, unit: "/alarm" },
@@ -319,7 +326,10 @@ function changed(key: string): void {
   } else if (key === "pairs" || key === "sigma" || key === "lr") {
     trainer.setEs({ pairs: S.pairs, sigma: S.sigma, lr: S.lr, weightDecay: DEFAULT_ES.weightDecay })
   } else if (key === "workers") trainer.setWorkers(S.workers)
-  else if (["seconds", "heistSeconds", "upright", "effort", "fall", "finish", "phase", "gem", "escape", "alarm", "exposure", "maxAlarms"].includes(key)) trainer.setReward(reward())
+  else if (["seconds", "heistSeconds", "upright", "effort", "fall", "finish", "phase", "gem", "escape", "alarm", "exposure", "maxAlarms", "realism", "balance"].includes(key)) {
+    trainer.setReward(reward())
+    if (mode === "replay") show = nextShow()
+  }
   else if (["stage", "curriculum", "laserSpeed", "extra"].includes(key) && task() === "heist") {
     trainer.setEnv(env(), S.curriculum)
     if (mode === "replay" && replayPolicy) {
@@ -408,8 +418,10 @@ function renderStats(): void {
   if (mode === "replay" && replayPolicy) {
     const lead = show?.lead?.ep
     parts.push(`<b>Replay</b> ${replayLabel(replayPolicy)} · fitness ${replayPolicy.fitness.toFixed(2)} · ${heist ? (replayPolicy.outcome === "finished" ? `escaped in ${replayPolicy.time?.toFixed(1)} s` : replayPolicy.outcome ?? "") : `${replayPolicy.distance.toFixed(1)} m`} · found after ${fmtSteps(replayPolicy.steps)} sim steps${replayPolicy.trainedSeconds ? ` · headless run took ${fmtTime(replayPolicy.trainedSeconds * 1000)}` : ""}`)
-    if (heist && lead) parts.push(`${HEIST_STAGES[lead.env.stage]} · gem ${lead.carrying ? "◆ in its mouth" : "on the pedestal"} · ${lead.outcome === "caught" ? "<b>CAUGHT</b>" : lead.alarms ? `<b>${lead.alarms} alarm${lead.alarms > 1 ? "s" : ""}</b>` : "no alarms"} · ${nearMisses} near miss${nearMisses === 1 ? "" : "es"}`)
+    if (heist && lead) parts.push(`${HEIST_STAGES[lead.env.stage]} · gem ${lead.carrying ? (lead.human ? "◆ in hand" : "◆ in its mouth") : "on the pedestal"} · ${lead.outcome === "caught" ? "<b>CAUGHT</b>" : lead.alarms ? `<b>${lead.alarms} alarm${lead.alarms > 1 ? "s" : ""}</b>` : "no alarms"} · ${nearMisses} near miss${nearMisses === 1 ? "" : "es"}`)
     if (replayCheck) parts.push(replayCheck)
+    if (replayPolicy.creature === "human" && replayPolicy.gait?.steps === 0) parts.push("<b>Balance only · walking and heist skills not learned yet</b>")
+    if (replayPolicy.training) parts.push(`${replayPolicy.training.attempts} training runs · ${fmtTime(replayPolicy.training.seconds * 1000)} total`)
   } else if (heist) {
     const st = trainer.env.stage
     parts.push(`<b>Gen ${h.length}</b>${running ? "" : " · paused"}`, `<b>Stage ${st}/${HEIST_MAX_STAGE}</b> ${HEIST_STAGES[st]}${S.curriculum && st < HEIST_MAX_STAGE ? " (next stage after two clean escapes in a row)" : ""}`)
@@ -421,6 +433,13 @@ function renderStats(): void {
     if (last) parts.push(`best ${best!.fitness.toFixed(2)} (${best!.distance.toFixed(1)} m)`, `mean policy ${last.centerDistance.toFixed(1)} m`, `${last.finished}/${trainer.population} reached the goal`)
     parts.push(`${fmtSteps(trainer.totalSteps)} sim steps · ${fmtTime(trainedMs)}${running && genRate ? ` · ${genRate.toFixed(1)} gen/s` : ""}`)
     parts.push(`${trainer.population} policies × ${trainer.paramSize} weights · ${trainer.workers} workers`)
+  }
+  const lead = show?.lead?.ep
+  if (lead?.realism) {
+    const g = lead.realism.metrics(lead.distance)
+    parts.push(`Human · ${S.realism ? "realism on" : "loose rules"} · learned targets + balance reflex`)
+    parts.push(`${g.cadence?.toFixed(0) ?? "—"} steps/min · stride ${g.strideLength?.toFixed(2) ?? "—"} m · stance ${(g.dutyFactor * 100).toFixed(0)}% · mechanical CoT ${g.costOfTransport?.toFixed(2) ?? "—"}`)
+    parts.push(`slip ${g.slip.toFixed(2)} m/s · realism −${g.penalty.toFixed(2)}${lead.realism.reason ? ` · <b>${lead.realism.reason}</b>` : ""}${last ? ` · non-foot contact ${last.unrealistic ?? 0}/${trainer.population}` : ""}`)
   }
   stats.innerHTML = parts.map((p) => `<span>${p}</span>`).join("")
 }

@@ -67,10 +67,11 @@ export class Show {
 
 /** A saved policy's run; in another env (say a pre-trained thief in a lower curriculum stage) there is no score to match. */
 export function policyRunner(saved: SavedPolicy, role: Role, label: string, fallback: RewardSettings, env: Env = saved.env): Runner {
-  const reward = saved.reward ?? fallback
+  const base = saved.reward ?? fallback
+  const reward = saved.creature === "human" ? { ...base, realism: fallback.realism ?? base.realism ?? 1 } : base
   const shape = policyShape(saved.creature, saved.hidden)
   const ep = new Episode(saved.creature, env, new Policy(shape, Float64Array.from(saved.params)), reward)
-  return { ep, role, label, expected: envKey(env) === envKey(saved.env) ? saved.fitness : null }
+  return { ep, role, label, expected: envKey(env) === envKey(saved.env) && (reward.realism ?? 1) === (base.realism ?? 1) ? saved.fitness : null }
 }
 
 /** The latest generation: its best individual solid plus up to `ghosts` others (the top half first, then a spread). */

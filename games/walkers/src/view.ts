@@ -466,10 +466,10 @@ export class View {
       }
       // An eye, so you can tell which end is the head.
       if (def.id !== "biped") {
-        const m = bodies[def.mouth]!
+        const m = bodies[def.id === "human" ? 2 : def.mouth]!
         ctx.fillStyle = "#10141a"
         ctx.beginPath()
-        ctx.arc(X(m.x + m.c * m.hl * 0.6 - m.s * m.r * 0.35), Y(m.y + m.s * m.hl * 0.6 + m.c * m.r * 0.35), Math.max(1.5, s * 0.014), 0, Math.PI * 2)
+        ctx.arc(X(m.x + (def.id === "human" ? m.s * .07 : m.c * m.hl * .6 - m.s * m.r * .35)), Y(m.y + m.s * m.hl * .6 + m.c * m.r * .35), Math.max(1.5, s * 0.014), 0, Math.PI * 2)
         ctx.fill()
       }
     }
