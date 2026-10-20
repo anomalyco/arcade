@@ -207,9 +207,11 @@
 - World interactions (AR-96, `shared/interactions/`, `src/interactions/`, Lab: Backquote › Interactions, each "Today"
   one setting away, station `outbreak-interactions`, `arcade cmd interactions.stage scene=…`): throwables (baseballs,
   bricks, rocks, tin cans, bottles) found in yards and on floors, held Mouse0 to wind up with an arc preview, released
-  to throw; they bonk, stagger, break windows, jolt car alarms and are heard where they land. Ledger stores only
-  (`toss:*`, `drop:t:*`, `drop:v:yard:*`). How it works and the inventory of every interaction:
-  `../../docs/outbreak-interactions.md`. Tests: `tests/interactions-throwables.test.ts`.
+  to throw; they bonk, stagger, break windows, jolt car alarms and are heard where they land. Loose furniture dragged
+  with E and braced against doors and windows (the crowd's `ai.portalHolds` hook), downed teammates hauled (tap E),
+  and a `movementScale` feature hook for the slow walk. Ledger stores only (`toss:*`, `drop:t:*`, `drop:v:yard:*`,
+  `furn:*`, `haul:*`). How it works and the inventory of every interaction:
+  `../../docs/outbreak-interactions.md`. Tests: `tests/interactions-throwables.test.ts`, `tests/interactions-drag.test.ts`.
 - Secrets (AR-85): subtle, strange and hidden touches picked per run from `town.seed`/`houseSeed` (`shared/secrets/`:
   `select.ts` picks and the run's code, `hosts.ts` the one-house hosts, `places.ts` where each piece stands; the
   cellar lock is the shared `secret:cellar` ledger store, nothing on the wire) and drawn by `src/secrets/` (pieces,

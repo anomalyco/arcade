@@ -140,6 +140,8 @@ alive ──0 HP──▶ down ──bleed-out runs out──▶ dead ──squa
    for 4 s ────────┘  └ back up with 30 HP
 ```
 
+- **Dragged to safety** (AR-96, `docs/outbreak-interactions.md`): a teammate's tap E at a downed survivor hauls them
+  behind at 0.55 pace (`haul:<seat>` ledger store, so every seat sees it); hold E still revives.
 - **Down** (at 0 HP, checked after the crowd's attacks each tick): out of any car or closet, whatever they were doing
   cancelled. They can only crawl (0.45 m/s); no shots, swings, reloads, items or doors, and no prompt of their own.
   The dead keep feeding: each point of damage takes 0.12 s off the bleed-out instead of health. Bleed-out is 30 s

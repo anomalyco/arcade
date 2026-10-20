@@ -5,6 +5,7 @@ import { dayCycle } from "../day-cycle"
 import type { OutbreakSimStepSurvivorContext } from "../feature-registry"
 import { createFlashlightState } from "../flashlight"
 import { createInteractActorState, type InteractionHandler, type RawInteractCandidate } from "../interact"
+import { haulingWho, toggleHaul } from "../interactions/drag"
 import { DEFAULT_LOADOUT } from "../loadout"
 import type { OutbreakSim, Survivor, SurvivorSlot } from "../sim-types"
 import { SPAWN_POINTS } from "../spawn-points"
@@ -297,7 +298,12 @@ export function feedOnDowned(state: DeathState, slot: SurvivorSlot, damage: numb
   if (state.records[slot.index]?.state === "down") state.feeding[slot.index] = (state.feeding[slot.index] ?? 0) + damage
 }
 
-/** E at a downed teammate: hold to revive (`stepReviver` fills it; the tap does nothing on its own). */
+/** Whether hauling a downed teammate is on (Lab › Interactions › Drag a downed teammate). */
+function haulOn(sim: OutbreakSim): boolean {
+  return (sim.getFeatureState<{ tuning?: { haul?: number } }>("interactions")?.tuning?.haul ?? 0) > 0
+}
+
+/** E at a downed teammate: hold to revive (`stepReviver` fills it); a tap drags them (AR-96). */
 export function downedHandler(sim: OutbreakSim, of: () => DeathState | undefined): InteractionHandler {
   return {
     kind: "downed",
@@ -308,16 +314,27 @@ export function downedHandler(sim: OutbreakSim, of: () => DeathState | undefined
       const me = sim.progression.slotOf(actor)
       if (!me || (state.records[me.index]?.state ?? "alive") !== "alive") return []
       const out: RawInteractCandidate[] = []
+      const hauling = haulOn(sim)
       for (const s of sim.slots) {
         if (s.index === me.index || state.records[s.index]?.state !== "down") continue
         const p = s.survivor
         if (Math.hypot(p.x - actor.x, p.y - actor.y) > t.reviveRange) continue
-        const primary = { id: "revive" as const, label: "Revive", hold: true }
-        out.push({ kind: "downed", id: `downed:${s.index}`, label: "Down", rect: [p.x - 0.4, p.y - 0.4, p.x + 0.4, p.y + 0.4], worldX: p.x, worldY: p.y, primary, actions: [primary], priority: 4 })
+        const revive = { id: "revive" as const, label: "Revive", hold: true }
+        // AR-96: tap E drags them out of harm's way (`shared/interactions/drag.ts`); hold E still revives.
+        const haul = hauling ? { id: "drag" as const, label: haulingWho(sim, me) === s.index ? "Let go" : "Drag" } : null
+        const primary = haul ?? revive
+        out.push({ kind: "downed", id: `downed:${s.index}`, label: "Down", rect: [p.x - 0.4, p.y - 0.4, p.x + 0.4, p.y + 0.4], worldX: p.x, worldY: p.y, primary, actions: haul ? [haul, revive] : [revive], priority: 4 })
       }
       return out
     },
-    execute: (_town, _actor, targetId, action) => ({ handled: action === "revive", kind: "downed", targetId, action }),
+    execute: (_town, actor, targetId, action) => {
+      if (action === "drag") {
+        const me = sim.progression.slotOf(actor)
+        const index = Number(targetId.slice(7))
+        return { handled: Boolean(me && haulOn(sim) && toggleHaul(sim, me, index)), kind: "downed", targetId, action }
+      }
+      return { handled: action === "revive", kind: "downed", targetId, action }
+    },
   }
 }
 

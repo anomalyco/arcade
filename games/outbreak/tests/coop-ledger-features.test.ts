@@ -104,4 +104,29 @@ for (const seat of [0, 1]) {
       r.ledgerParity([body.id, `drop:body:${body.key}`])
     } finally { r.close() }
   })
+
+  test(`seat ${seat}: dragged and braced furniture reaches both peers and late join (AR-96)`, () => {
+    const r = featureRoom()
+    try {
+      const actor = r.clients[seat]!
+      const door = r.core.sim.town.doors.find((d) => d.id === "ash-front")!
+      const cx = (door.rect[0] + door.rect[2]) / 2
+      const st = [...r.core.sim.progression.ledger.stores.values()].find((s) => s.id.startsWith("furn:ash:"))!
+      st.at = { x: cx, y: door.rect[1] - 1.5 }
+      st.counts = { k: 2, yaw: 0 }
+      st.rev = ++r.core.sim.progression.ledger.rev
+      r.place(actor, cx, door.rect[1] - 2.3, Math.PI / 2)
+      r.act(actor, { interact: true, aim: Math.PI / 2 })
+      r.tick(6)
+      expect(st.counts.drag).toBe(1)
+      r.act(actor, { my: 1, aim: Math.PI / 2 }, 30)
+      r.act(actor, { interact: true, aim: Math.PI / 2 })
+      r.tick(12)
+      expect(st.counts.br).toBe(1)
+      r.ledgerParity(["furn:ash:"])
+      r.join()
+      r.tick(12)
+      r.ledgerParity(["furn:ash:"])
+    } finally { r.close() }
+  })
 }

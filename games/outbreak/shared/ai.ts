@@ -161,6 +161,17 @@ export function crowdHearingReach(config: Pick<AIConfig, "hearingScale" | "night
   return config.hearingScale * Math.sqrt(crowdNightFactor(threat, config.nightMultiplier))
 }
 
+/**
+ * Holds on a door or window that a feature owns on top of its planks (AR-96: furniture braced against it). A held
+ * portal counts as barricaded for navigation, hearing and bashing; the dead bash the planks off first, then the hold.
+ */
+export interface PortalHolds {
+  /** Whether something holds `portalId` shut now. */
+  held(portalId: string): boolean
+  /** Takes `damage` from a bash on `portalId`; returns what is left over (0 while it holds). */
+  absorb(portalId: string, damage: number, time: number): number
+}
+
 export type PortalState = {
   integrity: number
   barricadePlanks: number
@@ -278,6 +289,8 @@ export class OutbreakAISubsystem {
   private lastBarriersRef: unknown = null
   private lastDoorsRef: unknown = null
   private lastPropsRef: unknown = null
+  /** Feature-owned holds on portals (braced furniture, `shared/interactions/`); null when none. */
+  portalHolds: PortalHolds | null = null
 
   constructor(town: Town, initialPlayerX = 27.7, initialPlayerY = 41, config: Partial<AIConfig> = {}) {
     Object.assign(this.config, config)
@@ -330,6 +343,12 @@ export class OutbreakAISubsystem {
     }
   }
 
+  /** A portal's planks as the crowd sees them: a held portal counts as one plank even with none nailed. */
+  private effectivePlanks(id: string): number {
+    const planks = this.portalStates.get(id)?.barricadePlanks ?? 0
+    return planks > 0 ? planks : this.portalHolds?.held(id) ? 1 : 0
+  }
+
   private computeTopologyDigest(town: Town, chunkTiles?: ReadonlyMap<string, Uint8Array>): number {
     let h = 2166136261 >>> 0
     h = Math.imul(h ^ town.barriers.length, 16777619) >>> 0
@@ -339,13 +358,13 @@ export class OutbreakAISubsystem {
     for (let i = 0; i < town.doors.length; i++) {
       const d = town.doors[i]!
       const st = this.portalStates.get(d.id)
-      const mask = (d.open ? 1 : 0) | (d.locked ? 2 : 0) | ((st?.barricadePlanks ?? 0) << 2) | ((st?.integrity ?? 100) << 5)
+      const mask = (d.open ? 1 : 0) | (d.locked ? 2 : 0) | ((st?.barricadePlanks ?? 0) << 2) | ((st?.integrity ?? 100) << 5) | (this.portalHolds?.held(d.id) ? 1 << 13 : 0)
       h = Math.imul(h ^ mask, 16777619) >>> 0
     }
     for (let i = 0; i < town.windows.length; i++) {
       const w = town.windows[i]!
       const st = this.portalStates.get(w.id)
-      const mask = (w.open ? 1 : 0) | (w.openable ? 2 : 0) | ((st?.barricadePlanks ?? 0) << 2) | ((st?.integrity ?? 100) << 5)
+      const mask = (w.open ? 1 : 0) | (w.openable ? 2 : 0) | ((st?.barricadePlanks ?? 0) << 2) | ((st?.integrity ?? 100) << 5) | (this.portalHolds?.held(w.id) ? 1 << 13 : 0)
       h = Math.imul(h ^ mask, 16777619) >>> 0
     }
     return h >>> 0
@@ -370,15 +389,15 @@ export class OutbreakAISubsystem {
 
     this.walls = town.barriers.filter((b) => b.kind === "wall").map((b) => b.rect)
     this.closedDoors = town.doors
-      .filter((d) => !d.open || (this.portalStates.get(d.id)?.barricadePlanks ?? 0) > 0)
+      .filter((d) => !d.open || this.effectivePlanks(d.id) > 0)
       .map((d) => d.rect)
     this.sightBlockers = sightRects(town)
-    this.hearing.rebuild(town, this.walls, this.closedDoors, (id) => this.portalStates.get(id)?.barricadePlanks ?? 0)
+    this.hearing.rebuild(town, this.walls, this.closedDoors, (id) => this.effectivePlanks(id))
 
     const baseSolids = solidRects(town)
     const extraBarricadeSolids: Rect[] = []
     for (const d of town.doors) {
-      if (d.open && (this.portalStates.get(d.id)?.barricadePlanks ?? 0) > 0) {
+      if (d.open && this.effectivePlanks(d.id) > 0) {
         extraBarricadeSolids.push(d.rect)
       }
     }
@@ -393,7 +412,7 @@ export class OutbreakAISubsystem {
           rect: d.rect,
           open: d.open,
           locked: d.locked,
-          barricadePlanks: st?.barricadePlanks ?? 0,
+          barricadePlanks: this.effectivePlanks(d.id),
           integrity: st?.integrity ?? 100,
         }
       }),
@@ -405,7 +424,7 @@ export class OutbreakAISubsystem {
           rect: w.rect,
           open: w.open,
           openable: w.openable,
-          barricadePlanks: st?.barricadePlanks ?? 0,
+          barricadePlanks: this.effectivePlanks(w.id),
           integrity: st?.integrity ?? 100,
         }
       }),
@@ -712,6 +731,10 @@ export class OutbreakAISubsystem {
           st.barricadePlanks = nextPlanks
           topologyChanged = true
         }
+      } else if (this.portalHolds?.held(bash.portalId)) {
+        // Planks gone, the furniture braced behind them takes the blows until it is shoved aside.
+        this.portalHolds.absorb(bash.portalId, bash.damage, time)
+        if (!this.portalHolds.held(bash.portalId)) topologyChanged = true
       } else if (bash.portalKind === "door") {
         const door = town.doors.find((d) => d.id === bash.portalId)
         if (door && !door.open) {

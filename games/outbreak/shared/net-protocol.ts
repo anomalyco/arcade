@@ -319,6 +319,8 @@ const ACTIONS: readonly (InteractActionId | undefined)[] = [
   "hide",
   "disarm",
   "arm",
+  "drag",
+  "set-down",
 ]
 /** The action byte's top bit: crouching (every flag bit is taken). */
 const CROUCH_BIT = 0x80

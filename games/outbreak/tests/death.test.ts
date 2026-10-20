@@ -84,7 +84,9 @@ describe("Death in the sim", () => {
     step(sim, 1)
     expect(lifeOf(sim, b.index)).toBe("down")
     expect(a.prompt?.kind).toBe("downed")
-    expect(a.prompt?.primary.id).toBe("revive")
+    // AR-96: a tap drags them; holding E revives.
+    expect(a.prompt?.primary.id).toBe("drag")
+    expect(a.prompt?.actions.some((x) => x.id === "revive" && x.hold)).toBe(true)
     const hold = (s: SurvivorSlot, i: number): Command => (s === a ? { ...idle(0), interact: i === 0, interactHeld: true } : idle(0))
     step(sim, seconds(T.reviveTime / 2), hold)
     const half = deathOf(sim).records[b.index]!.revive

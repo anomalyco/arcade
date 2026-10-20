@@ -103,6 +103,8 @@ export interface OutbreakSharedFeature<
    * Returning `true` signals that the feature handled the survivor's movement and action step for this tick.
    */
   stepSurvivorMovement?(ctx: OutbreakSimStepSurvivorContext<TState>): boolean
+  /** Share of walking speed a survivor keeps (e.g. dragging furniture, hauling a teammate); 1 leaves it alone. */
+  movementScale?(sim: OutbreakSim, slot: SurvivorSlot, state: TState): number
   /** Pushes a walking/vaulting survivor out of feature-owned dynamic colliders (e.g. vehicles). */
   pushOutSurvivor?(sim: OutbreakSim, survivor: Survivor, radius: number, state: TState): void
   /** Runs authoritative survivor actions during `OutbreakSim.applyActions`. */
@@ -293,6 +295,15 @@ export function survivorDamage(sim: OutbreakSim, slot: SurvivorSlot, damage: num
     if (feature.modifySurvivorDamage) damage = feature.modifySurvivorDamage(sim, slot, damage, sim.featureStates.get(feature.id), source)
   }
   return damage
+}
+
+/** Every feature's `movementScale` for `slot`, multiplied (1 when none slows them). */
+export function survivorMovementScale(sim: OutbreakSim, slot: SurvivorSlot): number {
+  let scale = 1
+  for (const feature of outbreakSharedFeatures.list()) {
+    if (feature.movementScale) scale *= feature.movementScale(sim, slot, sim.featureStates.get(feature.id))
+  }
+  return scale
 }
 
 export function registerOutbreakSharedFeature<

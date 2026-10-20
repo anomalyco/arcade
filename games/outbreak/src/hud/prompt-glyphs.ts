@@ -79,6 +79,10 @@ function glyphFor(kind: string, action: InteractAction): ActionGlyph | null {
       return "revive"
     case "barricade":
       return "board-up"
+    case "drag":
+      return "drag"
+    case "set-down":
+      return label === "Brace" ? "brace" : "set-down"
     case "enter":
       return VEHICLE[label] ?? null
     default:
@@ -153,6 +157,13 @@ export const PROMPT_ACTIONS: readonly { kind: string; action: InteractAction }[]
   { kind: "body", action: a("take", "Take all") },
   { kind: "dog", action: a("feed", "Feed") },
   { kind: "downed", action: a("revive", "Revive", { hold: true }) },
+  // World interactions (AR-96): drag a downed teammate, loose furniture dragged and braced, boards pried off.
+  { kind: "downed", action: a("drag", "Drag") },
+  { kind: "downed", action: a("drag", "Let go") },
+  { kind: "furniture", action: a("drag", "Drag") },
+  { kind: "furniture", action: a("drag", "Pull away") },
+  { kind: "furniture", action: a("set-down", "Set down") },
+  { kind: "furniture", action: a("set-down", "Brace") },
   { kind: "padlock", action: a("board", "Turn") },
   { kind: "padlock", action: a("install", "Next dial", { hold: true }) },
   { kind: "padlock", action: a("take", "Take all") },
