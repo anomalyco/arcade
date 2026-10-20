@@ -10,7 +10,7 @@ import type { Town } from "../shared/map"
 import type { LocalSession } from "../shared/session"
 import { supportHeight } from "../shared/terrain"
 import type { Vision } from "../shared/vision"
-import { CoopHud, coopBasePath, inviteLink, playerName, type NameTag } from "./coop-hud"
+import { CoopHud, coopBasePath, copyInviteLink, inviteLink, playerName, type NameTag } from "./coop-hud"
 import type { HudRemote } from "./hud"
 import { OutbreakLobby, shouldShowStartScreen } from "./lobby/lobby-ui"
 import { NetSession, remoteLift, SURVIVOR_COLOURS, type NetSessionFeatures } from "./net-session"
@@ -88,8 +88,9 @@ export class CoopView {
               this.soloName = name
               const code = randomRoomCode(undefined, Math.random, 5)
               const link = inviteLink(code)
-              void navigator.clipboard?.writeText(link)
-              sessionStorage.setItem("outbreak.coop.copied", code)
+              void copyInviteLink(code).then((copied) => {
+                if (copied && this.room === code) this.hud.flash("Invite link copied. Send it to up to three friends.")
+              })
               history.replaceState(null, "", link)
               this.connectRoom(code, name, variant, loadout, true)
             },

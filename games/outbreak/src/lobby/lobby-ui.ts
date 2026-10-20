@@ -12,7 +12,7 @@ import {
 } from "../../shared/loadout"
 import { MAX_SURVIVORS } from "../../shared/coop-sim"
 import { MAX_NAME, ROOM_CODE } from "../../shared/net-protocol"
-import { inviteLink, playerName, savePlayerName } from "../coop-hud"
+import { copyInviteLink, inviteLink, playerName, savePlayerName } from "../coop-hud"
 import type { NetSession } from "../net-session"
 import { SURVIVORS, survivorSpec, type SurvivorLookSpec } from "./survivors"
 
@@ -363,9 +363,8 @@ export class OutbreakLobby {
     if (input && input.value.trim()) this.commitName(input.value)
   }
 
-  private copyInvite(room: string): void {
-    void navigator.clipboard?.writeText(inviteLink(room))
-    this.copiedUntil = performance.now() + 1600
+  private async copyInvite(room: string): Promise<void> {
+    this.copiedUntil = (await copyInviteLink(room)) ? performance.now() + 1600 : 0
     this.render(true)
     setTimeout(() => this.render(true), 1650)
   }
