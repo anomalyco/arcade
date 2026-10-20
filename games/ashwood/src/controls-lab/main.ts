@@ -51,7 +51,7 @@ const app = document.querySelector<HTMLDivElement>("#app")!
 app.innerHTML = `
   <aside class="cl-side">
     <h1>Controls Lab</h1>
-    <p class="cl-help">How the controls show on screen. H / Tab = recall, Esc = pause screen (variant 10).</p>
+    <p class="cl-help">How the controls show on screen. Only C, F and M are taught. H / Tab = recall, Esc = pause screen (variant 9).</p>
     <div class="cl-field">Frame <select id="bg">${opt(Object.entries(BGS).map(([k, [n]]) => [k, n]))}</select></div>
     <div class="cl-field">Variant <select id="variant">${opt(VARIANTS.map((v) => [v.id, v.name]))}</select></div>
     <p class="cl-note" id="note"></p>
@@ -66,11 +66,10 @@ app.innerHTML = `
     <div class="cl-btns">
       <button id="start">Run starts (replay)</button>
       <button id="recall">Recall (H / Tab / Esc)</button>
-      ${["crouch", "torch", "map", "jump", "use", "search"].map((id) => `<button data-use="${id}">Use ${CONTROLS.find((c) => c.id === id)!.word}</button>`).join("")}
+      ${["crouch", "torch", "map"].map((id) => `<button data-use="${id}">Use ${CONTROLS.find((c) => c.id === id)!.word}</button>`).join("")}
       <button data-ctx="torch">Context: dark</button>
       <button data-ctx="crouch">Context: low space</button>
-      <button data-ctx="jump">Context: ledge</button>
-      <button data-ctx="search">Context: searchable</button>
+      <button data-ctx="map">Context: first objective</button>
       <button id="objective">Objective arrives</button>
       <button id="reset">Reset use</button>
     </div>

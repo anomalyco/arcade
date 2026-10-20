@@ -19,12 +19,10 @@ const errors: string[] = []
 page.on("pageerror", (e) => errors.push(e.message))
 type Lab = { start(): void; recall(): void; use(id: string): void; setContext(id: string): void }
 const COMBOS: { name: string; s: Record<string, unknown>; act?: (l: Lab) => void }[] = [
-  { name: "clusters-outline", s: { bg: "corridor", variant: "clusters", style: "outline" } },
-  { name: "index-room", s: { bg: "room", variant: "index", style: "outline" }, act: (l) => l.use("crouch") },
-  { name: "card-typewriter", s: { bg: "lot", variant: "card", style: "typewriter" } },
-  { name: "essential-recall-filled", s: { bg: "corridor", variant: "essential", style: "filled" }, act: (l) => l.recall() },
-  { name: "glyphs-bracket", s: { bg: "lot", variant: "glyphs", style: "bracket", size: 1.2 } },
-  { name: "context-dark", s: { bg: "lot", variant: "context", style: "outline" }, act: (l) => l.setContext("torch") },
+  { name: "under-corridor", s: { bg: "corridor", variant: "under", style: "outline" } },
+  { name: "row-lot", s: { bg: "lot", variant: "row", style: "typewriter" } },
+  { name: "stack-room", s: { bg: "room", variant: "stack", style: "outline" } },
+  { name: "index-room", s: { bg: "room", variant: "index", style: "outline" } },
 ]
 await page.goto("http://localhost:5196/controls-lab.html")
 for (const c of COMBOS) {
@@ -37,6 +35,8 @@ for (const c of COMBOS) {
   await page.locator(".cl-frame").first().screenshot({ path: `${out}/controls-lab-${c.name}.png` })
 }
 await page.evaluate(() => localStorage.setItem("controlsLab.v1", JSON.stringify({ bg: "corridor", grid: true, style: "outline" })))
+// Tall enough that all twelve variants (four rows of three) fit in one capture.
+await page.setViewportSize({ width: 1600, height: 1060 })
 await page.reload()
 await page.evaluate(() => document.fonts.ready)
 await page.waitForTimeout(2500)
