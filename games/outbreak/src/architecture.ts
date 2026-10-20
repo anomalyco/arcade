@@ -32,7 +32,7 @@ export function resolveHouseDecay(town: Town, id: number): HouseDecayState {
 }
 
 /** Weathered clapboard garden shed with hipped shingle roof, slightly ajar door & leaning boards in the NW side yard. */
-function gardenShed(m:Mesh,x0:number,z0:number,x1:number,z1:number,ground:number) {
+export function gardenShed(m:Mesh,x0:number,z0:number,x1:number,z1:number,ground:number) {
   const y=ground, wallCol=rgb(0x464f5a), trimCol=rgb(0x636b75), roofCol=rgb(0x28313f), ridgeCol=rgb(0x364254)
   const mx=(x0+x1)/2, mz=(z0+z1)/2, eave=y+1.52, peak=y+2.10
   m.box(x0,y+.02,z0,x1,eave,z1,wallCol,MAT.timber)
@@ -154,6 +154,8 @@ export type HousePlantingOptions = {
   seed?: number
   /** The corner trees across the street from origin house 0. */
   streetTrees?: boolean
+  /** Whether a foundation bush or front-margin tuft may stand here (styled homes keep them off porches); default everywhere. */
+  bed?: (x: number, z: number) => boolean
 }
 
 /**
@@ -328,6 +330,7 @@ export function housePlanting(m:Mesh,b:Building,id:number,town:Town,opts:HousePl
     const seed=Math.floor(rng.next()*1e6)
     if(anchor!=="door"&&Math.abs(px-cx)<1.5)continue
     if(px<x-.5||px>r+.5||kept.some(([qx,qz,qr])=>Math.hypot(px-qx,pz-qz)<(pr+qr)*.45))continue
+    if(opts.bed&&!opts.bed(px,pz))continue
     const underSill=opts.windows?.some(([w0,w1])=>px>w0-.1&&px<w1+.1)
     const ph=underSill?Math.min(h0,.78):h0
     kept.push([px,pz,pr])
@@ -340,6 +343,7 @@ export function housePlanting(m:Mesh,b:Building,id:number,town:Town,opts:HousePl
   for(let wx=x-.1;wx<=r+.1;wx+=.58+rng.next()*.42){
     if(wx>doorX-.85&&wx<doorX+2.15)continue
     const wz=e+.72+rng.next()*.68
+    if(opts.bed&&!opts.bed(wx,wz))continue
     const gy=supportHeight(town,wx,wz)
     emitGrassTuft(m,wx,gy,wz,{
       bladeCount:3,
