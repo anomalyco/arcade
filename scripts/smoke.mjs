@@ -45,6 +45,14 @@ try {
         ],
   })
   const page = await browser.newPage({ viewport: { width: 640, height: 360 } })
+  // Milliseconds since navigation: DOMContentLoaded, load, the game's own `performance.mark("<game>:…")` phases, now.
+  const bootTimeline = () => page.evaluate(game => {
+    const nav = performance.getEntriesByType("navigation")[0]
+    const phases = [["dom", nav?.domContentLoadedEventEnd], ["load", nav?.loadEventEnd]]
+    for (const m of performance.getEntriesByType("mark")) if (m.name.startsWith(`${game}:`)) phases.push([m.name.slice(game.length + 1), m.startTime])
+    phases.push(["now", performance.now()])
+    return phases.map(([name, ms]) => `${name} ${Math.round(ms ?? 0)}`).join(" · ")
+  }, game)
   const errors = []
   page.on("pageerror", error => errors.push(error.message))
   page.on("console", message => { if (message.type() === "error") errors.push(message.text()) })
@@ -54,7 +62,8 @@ try {
   const response = await page.goto(`http://127.0.0.1:${server.port}${prefix}${game === "lab" ? "?bench" : ""}`, { waitUntil: "load", timeout: 15_000 })
   assert.equal(response.status(), 200)
   // Require JS-created UI, not the static HTML shell. A missing GPU is an explicit
-  // supported outcome for these WebGPU-only games, never a blanket error waiver.
+  // supported outcome for these WebGPU-only games, never a blanket error waiver. Interval polling, not the default
+  // requestAnimationFrame: rAF polls stall while a software GPU is busy compiling or drawing.
   const ready = await page.waitForFunction(game => {
     if (game === "lab") {
       const notice = document.querySelector("[data-lab-notice]")?.textContent
@@ -78,11 +87,12 @@ try {
     const failure = document.querySelector(sel[0])?.textContent
     if (failure && /needs WebGPU|No WebGPU adapter is available|WebGPU could not start/.test(failure)) return failure
     return document.querySelector(sel[1]) ? "lobby ready" : false
-  }, game, { timeout: 20_000 }).catch(async error => {
+  }, game, { timeout: 20_000, polling: 100 }).catch(async error => {
     const status = await page.evaluate(() => document.querySelector("#status, .notice")?.textContent ?? "").catch(() => "")
-    console.error(`${game}: not ready after 20 s; status ${JSON.stringify(status)}; browser errors ${JSON.stringify(errors)}`)
+    console.error(`${game}: not ready after 20 s; status ${JSON.stringify(status)}; boot ${await bootTimeline().catch(() => "?")}; browser errors ${JSON.stringify(errors)}`)
     throw error
   })
+  console.log(`${game}: boot ${await bootTimeline()}`)
   // Let initialization promises and the first presentation frames report errors.
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
   assert.deepEqual(errors, [], `${game}: browser errors`)

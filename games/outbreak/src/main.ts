@@ -66,6 +66,7 @@ async function main() {
     return
   }
   const device = await adapter.requestDevice()
+  performance.mark("outbreak:device")
   device.addEventListener("uncapturederror", (e) => console.error(e.error.message))
   void device.lost.then((info) => {
     status.textContent = `GPU lost: ${info.message}. Reload to reconnect.`
@@ -322,8 +323,10 @@ async function main() {
   }
   coop.onSessionChange = () => reset()
   reset()
+  performance.mark("outbreak:level")
   frameUi.installKeyLayoutListener(() => session, cam)
   await renderer.texturesReady
+  performance.mark("outbreak:textures")
   frameRenderer.syncTextures()
   function draw(dt: number) {
     pacer.recordFrameStart(performance.now())
@@ -331,6 +334,7 @@ async function main() {
     pacer.updateMeter(performance.now())
   }
   pacer.drawInitialFrame()
+  performance.mark("outbreak:first-frame")
   const harness = createOutbreakHarness({
     features: outbreakClientFeatures,
     adapter,
