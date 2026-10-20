@@ -1,0 +1,23 @@
+/* Prompt clarity (AR-89): the target outline, the stamps that rise off a changed target, and the board pips in the
+   world prompt. Colours are the HUD tokens (tokens.css). */
+.ob-target-outline { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 9; pointer-events: none; opacity: 0; overflow: visible }
+.ob-target-outline path { fill: none; stroke-linecap: round; stroke-linejoin: round }
+.ob-target-outline .casing { stroke: rgb(13 12 11 / .7); stroke-width: 4.5px }
+.ob-target-outline .ink { stroke: var(--hud-ink, #ede7d9); stroke-width: 2px; transition: stroke var(--m-default-ms, .3s) var(--m-default, ease) }
+.ob-target-outline[data-holding="true"] .ink { stroke: var(--hud-warm, #f1c46a) }
+
+.ob-stamps { position: fixed; inset: 0; z-index: 10; pointer-events: none }
+.ob-stamp {
+  position: absolute; left: 0; top: 0; display: inline-flex; align-items: center; gap: 4px; padding: 4px 6px;
+  border-radius: var(--hud-r-chip, 6px); background: var(--hud-chip, rgb(13 12 11 / .82)); color: var(--hud-warm, #f1c46a);
+  box-shadow: inset 0 0 0 1px rgb(241 196 106 / .35); transform-origin: 50% 100%
+}
+.ob-stamp .agl { display: block }
+
+/* Boards up on an opening: three pips, lit for each board. Shared by the stamp and the prompt. */
+.pips { display: inline-flex; gap: 2px; align-items: center }
+.pips i { width: 4px; height: 10px; border-radius: 1px; box-shadow: inset 0 0 0 1px currentColor; opacity: .55 }
+.pips i[data-on="true"] { background: currentColor; opacity: 1 }
+#prompt .akp-boarded { display: inline-flex; align-items: center; gap: var(--hud-2); color: var(--hud-ink-2) }
+
+@media (prefers-reduced-motion: reduce) { .ob-target-outline .ink { transition: none } }

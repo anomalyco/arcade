@@ -13,6 +13,7 @@ import {
   VITALS_STYLE,
 } from "./placement"
 import { STYLE_DIEGETIC, STYLES } from "./styles"
+import { DEFAULT_PROMPT_CLARITY_SETTINGS } from "../prompt-clarity/settings"
 import { DEFAULT_SOUND_CUE_SETTINGS } from "../sound-cues/settings"
 
 export const HUD_MODE_CALLOUTS = 0
@@ -76,6 +77,7 @@ export const DEFAULT_HUD_SETTINGS = {
   /** Drops HUD travel and keeps short fades, as with the system's reduced-motion setting. */
   hudReducedMotion: false,
   ...DEFAULT_SOUND_CUE_SETTINGS,
+  ...DEFAULT_PROMPT_CLARITY_SETTINGS,
 }
 
 export type HudSettings = typeof DEFAULT_HUD_SETTINGS

@@ -227,6 +227,30 @@ glyph alone could mean sit). Discovery's word fading still applies to those word
   station's "Prompt icons" variant (`hud.state` "icons") shows the whole set at 16, 20 and 24 px with the prompts
   that use each glyph and any word kept beside it, drawn by the same code as the prompt.
 
+### Prompt clarity (AR-89)
+
+Aiden, after a run: "I think the E stuff could be more clear, everything is E. I can't tell if I'm
+opening/closing/boarding." The audit found four causes: Bold Glyph prompts carried no words from the first sight, so a
+new player had to guess what `door-open` against `door-close` or `eye ◦ window-open` meant; nothing in the world said
+which of two nearby targets the prompt meant (the nearest almost always won, facing barely counted); boarding up was
+on B with no prompt at all and boarded the nearest opening, not necessarily the one on screen; and E on a boarded door
+still offered Open, then refused with "Blocked by barricade". Code: `src/prompt-clarity/` (client feature
+`promptClarity`), drawn into the prompt by `InventoryHud`; Lab: Backquote › Controls; "Today" is one setting away
+(Prompt clarity › Today).
+
+- **Verbs while new**: each action shows its verb beside its glyph until this browser has done that action three
+  times (`promptTeachUses`, counted per kind and glyph in `arcade.outbreak.familiar` under `a:<kind>:<glyph>`), so
+  Open and Close on a door are learned separately and the glyphs stay once the words go. A completed hold counts as
+  the hold's action. Discovery's old per-kind fade still governs the few words kept for good (Locked, Ride, Recipes).
+- **Outline**: corner brackets around the target's box (its plan rect raised through a height band per kind:
+  doors 0–2.1 m, windows 0.85–2 m, drops 0–0.3 m) ease between targets, start a little wide, and close in and turn
+  warm as a hold fills, so the hold reads as "this, harder" (`highlight.ts`).
+- **B in the prompt**: `[B] board-up` with pips for boards already up whenever B would act; a boarded door drops its
+  E caps for the board glyph and pips; a boarded window keeps Peek (`board.ts`).
+- **Stamp after**: when a door, window, barricade or container within 9 m changes, its new state's glyph rises off it
+  for 0.9 s in a chip (boards with pips), on top of the door, window and hammer sounds the audio director already
+  plays (`stamps.ts`).
+
 Markers (drops, pings, noisemakers) are keyed by what they mark, enter with a short rise and leave with the exit
 softening instead of being reused by index.
 

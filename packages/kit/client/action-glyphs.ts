@@ -50,6 +50,7 @@ export type ActionGlyph =
   | "light-off"
   | "feed"
   | "revive"
+  | "board-up"
 
 /** A fill (default) or, with `w`, a round-capped stroke of that width in grid units. */
 type Shape = { d: string; w?: number; evenodd?: boolean }
@@ -121,6 +122,11 @@ const GLYPHS: Record<Exclude<ActionGlyph, "no-battery" | "no-keys" | "empty-tank
     { d: "M12 13L16.5 17.5H14V19H10V17.5H7.5Z" },
   ],
   "window-close": [{ d: rect(3, 3, 18, 18) + rect(5, 5, 6, 6) + rect(13, 5, 6, 6) + rect(5, 13, 6, 6) + rect(13, 13, 6, 6), evenodd: true }],
+  "board-up": [
+    windowFrame,
+    { d: poly([[1.5, 5.5], [22.5, 8], [22.5, 11.5], [1.5, 9]]) + circle(4, 7.6, 0.85) + circle(20, 9.9, 0.85), evenodd: true },
+    { d: poly([[1.5, 15], [22.5, 13.2], [22.5, 16.7], [1.5, 18.5]]) + circle(4, 16.6, 0.85) + circle(20, 14.9, 0.85), evenodd: true },
+  ],
   climb: [{ d: rect(9, 3, 12, 18) + rect(11, 5, 8, 14), evenodd: true }, { d: rect(2, 10.5, 11, 3) }, { d: "M12 6.5L18 12L12 17.5Z" }],
   vault: [
     { d: rect(4, 13, 2.5, 9) + rect(10.75, 13, 2.5, 9) + rect(17.5, 13, 2.5, 9) },

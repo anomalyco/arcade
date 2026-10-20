@@ -6,6 +6,7 @@ import { LocalSession, type Command } from "../../shared/session"
 import type { BotsLabController } from "../bots-lab"
 import { CRAFT_KEY } from "../crafting/settings"
 import type { InventoryHud } from "../inventory-hud"
+import { BOARD_UP } from "../prompt-clarity/board"
 import { MAP_KEY, type OutbreakMap } from "../map/map"
 import type { NetSession } from "../net-session"
 import type { OutbreakSettings } from "../settings"
@@ -64,10 +65,14 @@ export class OutbreakInputController {
           this.pendingHotbarSlot = meant.hotbarSlot
         } else if (meant.pick) this.pendingVerbs.pick = meant.pick
       }
-      if (code === "KeyB") this.pendingBarricade = true
+      if (code === "KeyB") {
+        this.pendingBarricade = true
+        const prompt = session.view.prompt
+        if (prompt && (prompt.kind === "door" || prompt.kind === "window")) inventoryHud.noteAction(prompt.kind, BOARD_UP)
+      }
       if (code === "KeyE") {
         const prompt = session.view.prompt
-        inventoryHud.noteUse(prompt)
+        inventoryHud.noteUse(prompt, this.input.held("ShiftLeft") || this.input.held("ShiftRight"))
         // The workbench's E opens its recipe board (the sim has nothing to do for it).
         if (prompt?.kind === "bench" && prompt.primary.id === "board") {
           if (inventoryHud.craftOpen) inventoryHud.close()

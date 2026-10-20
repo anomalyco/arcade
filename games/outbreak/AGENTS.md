@@ -165,3 +165,8 @@
   TAA, or TAA + upscale from a render scale, on the shared temporal resolve (`@arcade/kit/gpu/temporal`; rules for scene
   passes under it in `../../docs/rendering-techniques.md`). Paired GPU, frame time, walking flicker, ghosting crops,
   stills and a side-by-side clip in one run: `bun scripts/taa-proof.ts --out <dir>` (via `hivemind run --kind browser`).
+- Prompt clarity (AR-89, `src/prompt-clarity/`, Lab: Backquote › Controls, "Today" one setting away): verbs beside
+  glyphs for each action's first three uses, corner brackets on what E acts on, B (board up) and board pips in door
+  and window prompts (B boards the prompt's target), a glyph stamp after a door, window, barricade or container
+  changes, and facing weighs more in picking the target. How and why: `../../docs/outbreak-hud.md#prompt-clarity-ar-89`,
+  key rules in `../../docs/controls.md`. Tests: `tests/prompt-clarity.test.ts`.

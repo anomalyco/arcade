@@ -17,7 +17,7 @@ Code: `shared/discovery/` (simulation, deterministic) and `src/discovery/` (pres
 | Barricades flat at any health | Boards bow inward and split at half health and hang from one nail near the end; damage comes off the last board nailed | `shared/discovery/barricade.ts`, `src/discovery/barricades.ts` |
 | Container strip `[1] 9mm ×6 …` | A searched container stays open (dresser drawer pulled out, cabinet and fridge doors swung wide, shelf top) with what is left inside as small props; the prompt is a bare key cap | `src/discovery/props.ts`, `src/discovery/items.ts` |
 | Drop and noisemaker labels | Drops lie on the floor as props; a thrown noisemaker rattles where it landed | `src/discovery/props.ts` |
-| Prompt verbs forever | A kind of prompt (door, window, container…) loses its words after three uses in this browser, leaving the key cap | `InventoryHud.noteUse`, `localStorage["arcade.outbreak.familiar"]` |
+| Prompt verbs forever | A kind of prompt (door, window, container…) loses its words after three uses in this browser, leaving the key cap. Since AR-89 the count is per action and the glyph always stays: every action shows its verb beside its glyph for its first three uses, so the words teach the glyphs instead of vanishing by kind (Aiden could not tell opening from closing from boarding); see `docs/outbreak-hud.md#prompt-clarity-ar-89` | `InventoryHud.noteUse`, `localStorage["arcade.outbreak.familiar"]` |
 
 The battery and flashlight callouts are dropped by the Diegetic HUD style's `worldState` flag; other HUD styles keep
 them. Pings keep their labels: they are how teammates talk.

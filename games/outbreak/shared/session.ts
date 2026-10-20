@@ -44,6 +44,8 @@ export type SessionView = {
   prompt: InteractTarget | undefined
   peek: PeekInfo | null
   pendingItems?: ReadonlySet<string>
+  /** Planks nailed across a door or window (0–3), for prompts that say what B will do. */
+  barricadePlanks?: (portalId: string) => number
 }
 
 /** Transport boundary: M4 can implement the same update/view contract with snapshots. */
@@ -107,6 +109,7 @@ export function slotView(sim: CoopSim, slot: () => SurvivorSlot): SessionView {
     get peek() {
       return slot().peek
     },
+    barricadePlanks: (portalId) => sim.ai.getBarricadePlanks(portalId),
   }
 }
 
