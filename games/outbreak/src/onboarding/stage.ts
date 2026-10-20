@@ -10,7 +10,7 @@ export const BEAT_SPOTS: Readonly<Record<BeatId, readonly [number, number, numbe
   take: [29.3, 25.95, -Math.PI / 2],
   craft: [30.2, 27.4, -Math.PI / 4],
   "door-open": [27.0, 27.6, Math.PI / 2],
-  "door-close": [27.7, 31.2, -Math.PI / 2],
+  "door-close": [27.7, 30.35, -Math.PI / 2],
   crouch: [33.6, 30.8, 0],
   board: [35.9, 30.2, 0],
   sprint: [33, 33.4, Math.PI],

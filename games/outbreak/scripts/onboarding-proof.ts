@@ -197,7 +197,7 @@ try {
   await wait(0.4, { aim: Math.PI / 2 })
   await press({ interact: true, aim: Math.PI / 2 })
   await wait(0.5, { aim: Math.PI / 2 })
-  await walk(27.7, 31.0)
+  await walk(27.7, 30.4)
   await wait(0.3, { aim: -Math.PI / 2 })
   await press({ interact: true, aim: -Math.PI / 2 })
   await wait(0.6, { aim: -Math.PI / 2 })

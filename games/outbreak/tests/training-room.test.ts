@@ -127,7 +127,7 @@ describe("training room", () => {
     at(27.7, 28.8, Math.PI / 2)
     step({ interact: true, aim: Math.PI / 2 })
     expect(guide.done.has("door-open")).toBe(true)
-    at(27.7, 31.0, -Math.PI / 2)
+    at(27.7, 30.35, -Math.PI / 2)
     step({ interact: true, aim: -Math.PI / 2 })
     expect(guide.done.has("door-close")).toBe(true)
     // Crouch over the glass and board the window the dead came through.
