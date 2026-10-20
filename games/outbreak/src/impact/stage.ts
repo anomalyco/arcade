@@ -1,5 +1,7 @@
 import type { OutbreakAISubsystem } from "../../shared/ai"
 import { MELEE_WEAPONS } from "../../shared/combat"
+import { DEFAULT_DEATH_TUNING } from "../../shared/death/rules"
+import { forceLife } from "../../shared/death/runtime"
 import type { OutbreakSim } from "../../shared/sim-types"
 import type { DiscoveryHost } from "../discovery/stage"
 import { stageFire } from "../fire/stage"
@@ -52,6 +54,12 @@ export function stageImpact(host: ImpactStageHost, scene: ImpactScene): { scene:
       slot.survivor.exhausted = false
       sim.progression.project(slot)
     }
+  }
+  // Every fight starts on its feet at full health, whatever the last one did to the survivor.
+  const me = sim.slot(view.actorId)
+  if (me) {
+    forceLife(sim, me, "alive", DEFAULT_DEATH_TUNING)
+    me.survivor.health = me.survivor.maxHealth
   }
   const steps: StuntStep[] = []
   switch (scene) {
