@@ -214,3 +214,42 @@ Bullet (`shotImpacts`) and melee (`meleeImpact`) world impacts resolve hit geome
 - **Mix buses**: `audioWeapons`, `audioZombies`, `audioImpacts`, `audioMovement`, `audioAmbience`, `audioUi` (`0..100%`).
 - **Footsteps by surface**: `audioSelfStep` plus per-surface loudness sliders (`audioStepConcrete`, `audioStepGrass`, `audioStepWood`, `audioStepTile`, `audioStepCarpet`, `audioStepGravel`, `audioStepDirt`, `audioStepPuddle`, `audioStepMetal`, `audioStepGlass`, `audioStepBlood`, `0..200%`).
 - **Spatial & engine**: `audioOcclusion` (`0..1`), `audioFalloff` (`0.8..2.5×`), `audioReverb` (`0..1`), and `audioVoiceCap` (`8..48 voices`, default `32`).
+
+### 4.5 Weapon Sounds (AR-102): Layers, Spaces, Distance & Loudness
+
+Kit, after co-op: "Yeah, need better sounds per weapon." `games/outbreak/src/audio/weapons/` synthesizes every
+weapon sound (no assets, `CREDITS.md`), bakes each sound's round-robin takes in a Worker on first use and plays them
+as runtime cues with pitch/level jitter. Every take is baked to a momentary-max LUFS target, transients rounded by a
+soft knee (at most 6 dB) so a crack reaches its target under -1 dBFS.
+
+- **Reports in layers.** The pistol's report is the action (striker, slide back and home), the crack (N-wave and
+  gas hiss), the body's punch (noise round 600 Hz) and the low thump (105 → 46 Hz). The tail is a separate sound
+  chosen by `weaponSpace(town, x, y)`: `room` (dense reflections, boomy room mode), `alley` (walls either side under
+  12 m apart: flutter slapback), `street` (houses within 24 m: the houses across the road answer at 70–120 ms) or
+  `open` (low rolling decay, one far echo). The far version (the soundscape's far gunshot) crossfades in past the
+  Lab's near → far handover (18 m), so a teammate's shot two streets away is a pop and the town answering.
+- **Handling.** Draw sounds per weapon class, the pistol's four reload parts on `reload.ts`'s pose timing (same
+  transient leads as the library's) and the empty magazine landing on the floor below, dry-fire, brass landing ~1 m to
+  the shooter's right on that floor (hard, wood, soft, metal, wet, gravel), the flare gun broken open and reloaded.
+- **Melee.** A swing per weapon from its weight and shape (a knife's thin flick, a pipe's hollow note, a spiked board's
+  flutter, the fire axe's long push of air); a hit is flesh (light or heavy) + the weapon's layer (slice, chop, clank,
+  knock, spikes) + bone on head hits and heavy kills; metal tools add the library's ringing `melee.hit.metal` on heavy,
+  head and finishing hits, the bell Kit's teammates loved. Later targets of a cleave get flesh and weapon only.
+  Misses strike the surface (`wpn.bash.*`) with the weapon's own ring; a battered door gets the ring over its bash.
+- **Impacts** by surface: wood, plaster, brick/concrete (one take in three ricochets), car metal, glass, earth, flesh.
+
+In-game loudness (`bun scripts/weapon-reel.ts`, listener at the weapon, default mix, before the reel's +6 dB lift):
+
+| Scene | Outdoors I / M max / peak | Indoors I / M max / peak |
+| --- | --- | --- |
+| Pistol (Today) | -26.4 / -22.8 / -8.1 | -26.8 / -23.2 / -8.9 |
+| Pistol (layered) | -24.3 / -21.6 / -8.7 | -22.8 / -20.2 / -5.9 |
+| Pistol between houses | -25.3 / -21.1 / -7.7 | |
+| Teammate's pistol at 8, 20, 40 m | -37.2 / -30.9 / -19.3 | |
+| Flare gun | -28.9 / -23.3 / -9.4 | -28.9 / -23.7 / -9.1 |
+| Melee (knife … fire axe) | -28.2 … -25.3 / -24.1 … -21.3 / ≤ -2.3 | -27.7 … -24.9 / -23.4 … -21.1 / ≤ -3.9 |
+| Thrown things (7 m / 2.6 m away) | -36.0 / -30.0 / -13.0 | -34.8 / -26.9 / -13.3 |
+| Fire & explosives (blast 7 m / 2.6 m) | -29.2 / -19.9 / -6.9 | -30.2 / -20.5 / -8.9 |
+
+The whole 189 s reel: -27.3 LUFS integrated, -20.0 momentary max, -2.3 dBFS peak, 0.3 ms over the runtime's -3 dBFS
+limiter knee. Beds and soundscape are unchanged (AR-86: beds -40.7, soundscape -50.7 integrated).

@@ -56,6 +56,19 @@
   repeating his number via `ScapeInput.machineCount`). Don't also call the hooks for those.
   Listening reel and loudness: `bun scripts/soundscape-reel.ts` (offline, never plays). Tests: `tests/soundscape.test.ts`,
   `tests/soundscape-secrets.test.ts`.
+- Weapon sounds (AR-102, `src/audio/weapons/`, Lab: Backquote › Sound › Weapons, "Today (shared pistol, 3 melee
+  hits)" one setting away, a toggle per weapon): procedural and zero-asset like the soundscape, baked per sound in a
+  Worker on first use (`bank.ts`; each event carries Today's sound as `fallback` until then), round-robin takes plus
+  pitch/level jitter, every take baked to a LUFS target (`level.ts`). A report is its near layers (action, crack,
+  punch, thump), the tail of where it rang (`weaponSpace`: room, alley slapback, street, open) and its far version,
+  crossfaded by the listener's distance so teammates sound right down the street. Also: draw sounds, the pistol's
+  staged reload with the magazine clattering down, dry-fire, brass by floor, a swing per melee weapon, hits as flesh
+  + the weapon's own layer + bone (metal tools keep the library's ringing `melee.hit.metal` as the heavy/head-hit
+  bell), wall and door misses, bullet impacts by surface, the flare gun's break-open reload, flamethrower, molotov,
+  dynamite (near, tail, far), firecrackers, bear traps and thrown things (AR-96). `SoundDirector.weapons` and
+  `InventorySounds.weapons` call it; nothing reaches zombie hearing. Reel and loudness: `bun scripts/weapon-reel.ts`;
+  per-sound stats: `bun scripts/weapon-sounds-stats.ts` (offline, never play). Credits: `src/audio/weapons/CREDITS.md`.
+  Tests: `tests/weapon-sounds.test.ts`.
 - The survivor (`src/survivor.ts`) and zombies (`src/zombies.ts`) use the shared rig's IK, arms and profiles but keep their own stride clocks and terrain support. Motion rules and known gaps: `../../docs/animation.md`. All shared docs: `../../docs/README.md`.
 - Rugs and Resident Evil interior themes live in `src/interiors/` (plan, mesh emitters, WGSL, `RugPool`); the rug
   generator and its Worker are in `@arcade/kit/textures`. Lab: Backquote › Rugs & interiors, the Lab's Rugs section and the

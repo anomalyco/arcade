@@ -10,6 +10,7 @@ import { RELOAD_STARTS, reloadElapsed } from "./reload"
 import { SpecialSounds } from "./specials"
 import { WayOutSounds } from "../way-out/sounds"
 import type { SoundActor, SoundEvent } from "./types"
+import { WeaponSounds } from "./weapons/weapons"
 
 export type { SoundActor, SoundEvent } from "./types"
 
@@ -60,7 +61,7 @@ const LOUD: ReadonlySet<AIState> = new Set(["alert", "chase", "crawler"])
 const STRUCK: ReadonlySet<AIState> = new Set(["stagger", "knockdown", "dead"])
 const center = (r: readonly number[]) => ({ x: (r[0]! + r[2]!) / 2, y: (r[1]! + r[3]!) / 2 })
 
-type ActorMemory = SoundActor & { lootKey: number; reloadStart: number; reloadElapsed: number }
+type ActorMemory = SoundActor & { lootKey: number; reloadStart: number; reloadElapsed: number; held: string }
 
 /**
  * Turns world-state changes into sounds. It only reads state (like the HUD's `ActorFeedback`), so the simulation and
@@ -90,6 +91,8 @@ export class SoundDirector {
   readonly death = new DeathSounds()
   /** The Way Out (AR-64): clues, hotwiring, cutting, roadblocks, the signal and the escape. */
   readonly wayOut = new WayOutSounds()
+  /** Layered weapon sounds (AR-102); Today until `OutbreakAudio` applies the Lab's Weapons settings. */
+  readonly weapons = new WeaponSounds()
   private nextGroan = 0
   private lastAlert = -Infinity
   private rng: () => number
@@ -97,6 +100,7 @@ export class SoundDirector {
 
   constructor(private readonly seed = 11) {
     this.rng = mulberry32(seed)
+    this.inventory.weapons = this.weapons
   }
 
   /** Forgets everything, as a fresh director: a new run starts its clock and ids at 0, so no cooldown may carry over. */
@@ -124,6 +128,7 @@ export class SoundDirector {
     this.specials.reset()
     this.death.reset()
     this.wayOut.reset()
+    this.weapons.reset()
   }
 
   /** Sounds held for as long as something lasts, as of the last `observe`: crafts, noisemakers, generators. */
@@ -136,6 +141,8 @@ export class SoundDirector {
     const emit = this.started ? (e: SoundEvent) => out.push(e) : () => {}
     const t = world.time
     const near = (x: number, y: number) => Math.hypot(x - listener.x, y - listener.y) <= this.tuning.hearing
+    const wpn = this.weapons
+    wpn.frame(world.town, listener)
 
     // Shots: the report at the muzzle, a casing a beat later, and the hit, or the kill, at the target; a miss strikes
     // whatever stopped it (and rings off any pane, board, fence or car it went through), as the round arrives.
@@ -143,27 +150,29 @@ export class SoundDirector {
       if (this.shots.has(shot.id)) continue
       this.shots.add(shot.id)
       if (!shot.confirmedLocal) {
-        emit({ id: "gun.pistol.shot", x: shot.fromX, y: shot.fromY, source: "shot" })
-        emit({ id: "gun.casing", x: shot.fromX, y: shot.fromY, delay: 0.38 + this.rng() * 0.12, source: "shot" })
+        if (wpn.uses("pistol")) wpn.shot(shot, emit, true)
+        else {
+          emit({ id: "gun.pistol.shot", x: shot.fromX, y: shot.fromY, source: "shot" })
+          emit({ id: "gun.casing", x: shot.fromX, y: shot.fromY, delay: 0.38 + this.rng() * 0.12, source: "shot" })
+        }
       }
       if (shot.hitZombieId !== null) {
-        emit({ id: "zombie.hit", x: shot.toX, y: shot.toY, delay: 0.02, source: "shot" })
+        if (wpn.impacts) wpn.fleshHit(shot.toX, shot.toY, emit)
+        else emit({ id: "zombie.hit", x: shot.toX, y: shot.toY, delay: 0.02, source: "shot" })
         if (shot.killed && !this.deaths.has(shot.hitZombieId)) {
           this.deaths.add(shot.hitZombieId)
           emit({ id: "zombie.death", x: shot.toX, y: shot.toY, delay: 0.1, source: "shot" })
         }
       } else if (this.started && !shot.confirmedLocal && !shot.tentativeHit) {
         for (const hit of shotImpacts(world.town, shot, (id) => world.portals.get(id)?.barricadePlanks ?? 0)) {
-          emit({
+          const today = {
             id: `impact.bullet.${hit.surface}`,
-            x: hit.x,
-            y: hit.y,
-            delay: impactDelay(hit.t),
             gain: hit.through ? 0.8 : 1,
             ...(hit.rate !== undefined ? { rate: hit.rate } : {}),
             ...(hit.cutoffHz !== undefined ? { cutoffHz: hit.cutoffHz } : {}),
-            source: "shot",
-          })
+          }
+          if (wpn.impacts) wpn.bulletImpact(hit.material, hit.x, hit.y, emit, { delay: impactDelay(hit.t), gain: today.gain, fallback: today })
+          else emit({ ...today, x: hit.x, y: hit.y, delay: impactDelay(hit.t), source: "shot" })
         }
       }
     }
@@ -184,11 +193,13 @@ export class SoundDirector {
               ? 0.75
               : 0
         const hitRate = wear > 0.08 ? Number((1 - wear * 0.22).toFixed(3)) : undefined
+        const layered = wpn.uses(m.weapon)
         if (!this.meleeSwings.has(m.id)) {
           this.meleeSwings.add(m.id)
           if (!m.confirmedLocal) {
             const isHeavy = m.heavy || w.weaponClass === "two-heavy"
-            emit({
+            if (layered) wpn.swing(m, wear, emit, isHeavy ? "melee.swing.heavy" : "melee.swing.light")
+            else emit({
               id: isHeavy ? "melee.swing.heavy" : "melee.swing.light",
               x: m.x,
               y: m.y,
@@ -201,7 +212,8 @@ export class SoundDirector {
           const hitKey = `${m.id}:${h.zombieId}`
           if (this.meleeHits.has(hitKey)) continue
           this.meleeHits.add(hitKey)
-          emit({
+          if (layered) wpn.meleeHit(m, h, h === m.hits[0], hitRate, emit)
+          else emit({
             id: `melee.hit.${w.material}`,
             x: h.x,
             y: h.y,
@@ -238,7 +250,10 @@ export class SoundDirector {
         }
         if (m.hits.length === 0 && !m.hitDoorId && !m.confirmedLocal && !this.meleeSurfaceHits.has(m.id)) {
           const surfHit = meleeImpact(world.town, m, (id) => world.portals.get(id)?.barricadePlanks ?? 0)
-          if (surfHit) {
+          if (surfHit && layered) {
+            this.meleeSurfaceHits.add(m.id)
+            wpn.meleeSurface(m, surfHit, emit)
+          } else if (surfHit) {
             this.meleeSurfaceHits.add(m.id)
             emit({
               id: surfHit.id,
@@ -250,6 +265,15 @@ export class SoundDirector {
               ...(surfHit.cutoffHz !== undefined ? { cutoffHz: surfHit.cutoffHz } : {}),
               source: m.attackerId,
             })
+          }
+        }
+        // A weapon battering a door: the door's bash comes from its portal; this is the weapon's own ring on it.
+        if (layered && m.hitDoorId && !m.confirmedLocal && !this.meleeSurfaceHits.has(m.id)) {
+          this.meleeSurfaceHits.add(m.id)
+          const door = world.town.doors.find((d) => d.id === m.hitDoorId)
+          if (door) {
+            const c = center(door.rect)
+            wpn.tool(m, c.x, c.y, emit)
           }
         }
         if (m.weaponBroke && !this.meleeBreaks.has(m.id)) {
@@ -346,19 +370,33 @@ export class SoundDirector {
         if (!p || p.reloadRemaining <= 0) reloadStart = t
         elapsed = reloadElapsed(a.reloadRemaining, p?.reloadRemaining ?? 0, reloadStart, t)
       }
-      this.actors.set(id, { ...a, channel: a.channel ? { ...a.channel } : null, lootKey: a.lootMessageUntil, reloadStart, reloadElapsed: elapsed })
+      const hotbar = world.progression?.ledger.stores.get(`${id}/hotbar`)
+      const held = (hotbar?.mode === "slots" ? hotbar.slots[hotbar.selected]?.item : undefined) ?? a.equippedItem
+      this.actors.set(id, { ...a, channel: a.channel ? { ...a.channel } : null, lootKey: a.lootMessageUntil, reloadStart, reloadElapsed: elapsed, held })
       if (!p) continue
       const at = { x: a.x, y: a.y, source: id }
-      if (a.reloadRemaining > 0 && p.reloadRemaining <= 0 && a.magAmmo === 0 && a.equippedItem === "pistol") emit({ id: "gun.dry-fire", ...at })
+      const layeredPistol = wpn.uses("pistol")
+      if (held !== p.held) wpn.draw(held, a.x, a.y, emit, id)
+      if (a.reloadRemaining > 0 && p.reloadRemaining <= 0 && a.magAmmo === 0 && a.equippedItem === "pistol") {
+        if (layeredPistol) wpn.dryFire(a.x, a.y, emit, id)
+        else emit({ id: "gun.dry-fire", ...at })
+      }
       if (elapsed >= 0) {
         const ahead = elapsed + RELOAD_LOOKAHEAD
         for (const part of RELOAD_STARTS) {
-          if (part.start <= ahead && part.start > p.reloadElapsed + RELOAD_LOOKAHEAD) emit({ id: part.id, ...at, delay: Math.max(0, part.start - elapsed) })
+          if (part.start <= ahead && part.start > p.reloadElapsed + RELOAD_LOOKAHEAD) {
+            const delay = Math.max(0, part.start - elapsed)
+            if (layeredPistol) wpn.reloadPart(part.id, a.x, a.y, delay, emit, id)
+            else emit({ id: part.id, ...at, delay })
+          }
         }
       }
       if (a.lootMessageUntil !== p.lootKey && a.lootMessage) {
-        if (a.lootMessage.startsWith("Out of 9mm")) emit({ id: "gun.dry-fire", ...at })
-        else if (a.lootMessage.startsWith("Blocked by barricade")) emit({ id: "door.locked", ...at })
+        if (a.lootMessage.startsWith("Out of 9mm")) {
+          if (layeredPistol) wpn.dryFire(a.x, a.y, emit, id)
+          else emit({ id: "gun.dry-fire", ...at })
+        }
+        if (a.lootMessage.startsWith("Blocked by barricade")) emit({ id: "door.locked", ...at })
       }
       // Pickups by item class come from the ledger (`InventorySounds`); survivors whose stores this peer cannot see
       // (other seats on a co-op client) fall back to their replicated ammo and planks.
@@ -392,6 +430,7 @@ export class SoundDirector {
     }
     for (const id of this.actors.keys()) if (!present.has(id)) this.actors.delete(id)
     this.inventory.observe(world.progression, world.hour ?? 12, world.survivors, out, world.time)
+    if (world.progression) wpn.observeTosses(world.progression.ledger.stores, t, emit)
     this.death.observe(world.death, t, listener, emit)
     this.wayOut.observe(world.progression?.ledger, listener, emit, this.inventory.holds)
 

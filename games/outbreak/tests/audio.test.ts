@@ -9,6 +9,7 @@ import { SoundDirector, type SoundEvent, type SoundWorld, type SoundZombie } fro
 import { meleeImpact, shotImpacts } from "../src/audio/impacts"
 import { PICKUP_SOUND } from "../src/audio/inventory"
 import { RELOAD_EVENTS, RELOAD_STARTS } from "../src/audio/reload"
+import { weaponSound } from "../src/audio/weapons/catalog"
 import { ZombieFootsteps } from "../src/audio/zombie-steps"
 import { audioControls, DEFAULT_AUDIO_SETTINGS, SURFACE_STEP_SETTING_KEYS } from "../src/audio/settings"
 import { FOOT_SURFACES, footstepEvent, SoundOcclusion, stepMovementMode, surfaceAt, zombieStepEvent } from "../src/audio/space"
@@ -607,7 +608,10 @@ describe("fire & explosives sounds (AR-62)", () => {
         const body = text.slice(text.indexOf("private fireSound"))
         const used = [...body.matchAll(/id: "([a-z.-]+)"/g)].map((m) => m[1]!)
         expect(used.length).toBeGreaterThan(6)
-        for (const id of used) expect(SFX_BY_ID.get(id)?.usedBy, id).toContain("outbreak")
+        for (const id of used) {
+          if (id.startsWith("wpn.")) expect(weaponSound(id), id).toBeDefined()
+          else expect(SFX_BY_ID.get(id)?.usedBy, id).toContain("outbreak")
+        }
       })
   })
 

@@ -5,9 +5,13 @@ import { DEFAULT_DOG_TUNING } from "../../shared/dogs/dogs"
 import { blastAge, CRACK_BEAT, crackerAt, crackerPops, dynamiteAt, fireLit } from "../../shared/fire/fire"
 import { RECIPES } from "../../shared/progression"
 import type { SoundActor, SoundEvent } from "./types"
+import type { WeaponSounds } from "./weapons/weapons"
 
-/** A sound held for as long as something lasts (a craft, a noisemaker, the generator), at a plan position. */
-export type SoundHold = { key: string; id: string; x: number; y: number }
+/**
+ * A sound held for as long as something lasts (a craft, a noisemaker, the generator), at a plan position. A layered
+ * weapon loop (`wpn.*`) names Today's loop as its `fallback` while it bakes.
+ */
+export type SoundHold = { key: string; id: string; x: number; y: number; fallback?: string }
 
 /** What the inventory sounds read: the ledger (the room's, or a co-op client's mirror), pings, lures and benches. */
 export type SoundProgression = {
@@ -105,6 +109,8 @@ export class InventorySounds {
   private fire = new Map<string, { a: number; b: number; c: number }>()
   private started = false
   readonly holds: SoundHold[] = []
+  /** Layered weapon sounds (AR-102) for the flare gun and the fire & explosives items, when the Lab has them on. */
+  weapons: WeaponSounds | null = null
 
   reset(): void {
     this.actors.clear()
@@ -253,7 +259,12 @@ export class InventorySounds {
     } else if (sid.startsWith("flare:")) {
       if (!prev) emit({ id: "flare.ignite", x: at.x, y: at.y, source: "flare" })
       // A flare gun's shot: a hollow signal-pistol pop where it was fired from.
-      if (!prev && c.gun && time - (c.t ?? 0) / 10 < 0.5) emit({ id: "gun.pistol.shot", x: at.x + (c.fx ?? 0) / 100, y: at.y + (c.fy ?? 0) / 100, source: "flare-gun", gain: 0.62, rate: 0.82, cutoffHz: 2600 })
+      if (!prev && c.gun && time - (c.t ?? 0) / 10 < 0.5) {
+        const gx = at.x + (c.fx ?? 0) / 100
+        const gy = at.y + (c.fy ?? 0) / 100
+        if (this.weapons?.uses("flare-gun")) this.weapons.flareGun(gx, gy, emit)
+        else emit({ id: "gun.pistol.shot", x: gx, y: gy, source: "flare-gun", gain: 0.62, rate: 0.82, cutoffHz: 2600 })
+      }
       this.world.set(sid, { a: 1, b: 0, c: 0 })
       if (time * 10 < (c.until ?? 0)) this.holds.push({ key: `flare:${sid}`, id: "flare.loop", x: at.x, y: at.y })
     } else if (sid.startsWith("dog:")) {
@@ -280,12 +291,16 @@ export class InventorySounds {
     const prev = this.fire.get(sid)
     // A ring store is made the first time its slot is used, so a store not heard before counts if it is recent.
     const fresh = Boolean(c.t) && (prev ? prev.a !== c.t : time - (c.t ?? 0) / 10 < 0.5)
+    const w = this.weapons
     if (sid.startsWith("flamer:")) {
       const seat = sid.slice(7)
       const s = survivors.find((x) => x.id === seat)?.survivor
       const on = c.on ?? 0
-      if (s && on && !prev?.b) emit({ id: "flare.ignite", x: s.x, y: s.y, source: "flamethrower", gain: 1.3, rate: 0.78 })
-      if (s && on) this.holds.push({ key: sid, id: "flare.loop", x: s.x, y: s.y })
+      const layered = w?.uses("flamethrower")
+      const ignite = { id: "flare.ignite", gain: 1.3, rate: 0.78 }
+      if (s && on && !prev?.b) emit(layered ? { id: "wpn.flamer.ignite", x: s.x, y: s.y, source: "flamethrower", fallback: ignite } : { ...ignite, x: s.x, y: s.y, source: "flamethrower" })
+      if (s && !on && prev?.b && layered) emit({ id: "wpn.flamer.stop", x: s.x, y: s.y, source: "flamethrower" })
+      if (s && on) this.holds.push(layered ? { key: sid, id: "wpn.flamer.loop", x: s.x, y: s.y, fallback: "flare.loop" } : { key: sid, id: "flare.loop", x: s.x, y: s.y })
       this.fire.set(sid, { a: c.t ?? 0, b: on, c: 0 })
       return
     }
@@ -293,41 +308,57 @@ export class InventorySounds {
     if (sid.startsWith("burn:")) {
       if (fresh) emit({ id: "cooking.sizzle", x: at.x, y: at.y, source: "burn", gain: 0.9, rate: 0.8 })
     } else if (sid.startsWith("fire:")) {
-      if (fresh && c.src === 1) {
+      const layered = w?.uses("molotov")
+      if (fresh && c.src === 1 && layered) emit({ id: "wpn.molotov.smash", x: at.x, y: at.y, source: "molotov", fallback: { id: "glass.break" } })
+      else if (fresh && c.src === 1) {
         emit({ id: "glass.break", x: at.x, y: at.y, source: "molotov" })
         emit({ id: "flare.ignite", x: at.x, y: at.y, source: "molotov", gain: 1.4, rate: 0.7, delay: 0.05 })
       }
-      if (c.src === 1 && fireLit(st, time)) this.holds.push({ key: sid, id: "flare.loop", x: at.x, y: at.y })
+      if (c.src === 1 && fireLit(st, time)) this.holds.push(layered ? { key: sid, id: "wpn.fire.loop", x: at.x, y: at.y, fallback: "flare.loop" } : { key: sid, id: "flare.loop", x: at.x, y: at.y })
     } else if (sid.startsWith("dyn:")) {
       const age = blastAge(st, time)
       const p = c.t && age < 0 ? dynamiteAt(st, time) : null
-      if (fresh && p) emit({ id: "flare.ignite", x: p.x, y: p.y, source: "fuse", gain: 0.8, rate: 1.25 })
-      if (p) this.holds.push({ key: sid, id: "flare.loop", x: p.x, y: p.y })
+      const layered = w?.uses("dynamite")
+      const strike = { id: "flare.ignite", gain: 0.8, rate: 1.25 }
+      if (fresh && p) emit(layered ? { id: "wpn.fuse.strike", x: p.x, y: p.y, source: "fuse", fallback: strike } : { ...strike, x: p.x, y: p.y, source: "fuse" })
+      if (p) this.holds.push(layered ? { key: sid, id: "wpn.fuse.loop", x: p.x, y: p.y, fallback: "flare.loop" } : { key: sid, id: "flare.loop", x: p.x, y: p.y })
       const blown = c.t && age >= 0 ? 1 : 0
       if (blown && (!prev?.b || fresh) && age < 0.5) {
-        emit({ id: "bomb.explode", x: at.x, y: at.y, source: "dynamite", gain: 1.5, rate: 0.82 })
-        emit({ id: "barricade.break", x: at.x, y: at.y, source: "dynamite", gain: 1.2, delay: 0.08 })
+        if (layered) w!.report("blast", at.x, at.y, emit, { source: "dynamite", fallback: { id: "bomb.explode", gain: 1.5, rate: 0.82 } })
+        else {
+          emit({ id: "bomb.explode", x: at.x, y: at.y, source: "dynamite", gain: 1.5, rate: 0.82 })
+          emit({ id: "barricade.break", x: at.x, y: at.y, source: "dynamite", gain: 1.2, delay: 0.08 })
+        }
       }
       this.fire.set(sid, { a: c.t ?? 0, b: blown, c: 0 })
       return
     } else if (sid.startsWith("crack:")) {
       let beat = prev?.c ?? 0
-      if (fresh) emit({ id: "flare.ignite", x: at.x, y: at.y, source: "firecrackers", gain: 0.7, rate: 1.4 })
+      const layered = w?.uses("firecrackers")
+      const strike = { id: "flare.ignite", gain: 0.7, rate: 1.4 }
+      if (fresh) emit(layered ? { id: "wpn.fuse.strike", x: at.x, y: at.y, source: "firecrackers", fallback: strike } : { ...strike, x: at.x, y: at.y, source: "firecrackers" })
       if (fireLit(st, time)) {
         const now = Math.floor((time - (c.t ?? 0) / 10) / CRACK_BEAT)
         if (!fresh && now > beat && crackerPops(c.t ?? 0, now)) {
           const p = crackerAt(st, time)
-          emit({ id: "gun.pistol.shot", x: p.x, y: p.y, source: "firecrackers", gain: 0.35, rate: 1.32 + 0.08 * ((now * 7) % 3), cutoffHz: 6500 })
+          const pop = { id: "gun.pistol.shot", gain: 0.35, rate: 1.32 + 0.08 * ((now * 7) % 3), cutoffHz: 6500 }
+          if (layered) w!.report("cracker", p.x, p.y, emit, { source: "firecrackers", fallback: pop })
+          else emit({ ...pop, x: p.x, y: p.y, source: "firecrackers" })
         }
         beat = now
       } else beat = 0
       this.fire.set(sid, { a: c.t ?? 0, b: 0, c: beat })
       return
     } else if (sid.startsWith("trap:")) {
-      if (fresh) emit({ id: "gun.pistol.mag-in", x: at.x, y: at.y, source: "bear-trap", gain: 0.85, rate: 0.92 })
+      const layered = w?.uses("bear-trap")
+      const set = { id: "gun.pistol.mag-in", gain: 0.85, rate: 0.92 }
+      if (fresh) emit(layered ? { id: "wpn.trap.set", x: at.x, y: at.y, source: "bear-trap", fallback: set } : { ...set, x: at.x, y: at.y, source: "bear-trap" })
       if (c.snap && !prev?.b && time - c.snap / 10 < 0.5) {
-        emit({ id: "melee.hit.metal", x: at.x, y: at.y, source: "bear-trap", gain: 1.05, rate: 0.94 })
-        emit({ id: "gun.pistol.slide", x: at.x, y: at.y, source: "bear-trap", gain: 0.72, rate: 0.9, delay: 0.02 })
+        if (layered) emit({ id: "wpn.trap.snap", x: at.x, y: at.y, source: "bear-trap", fallback: { id: "melee.hit.metal", gain: 1.05, rate: 0.94 } })
+        else {
+          emit({ id: "melee.hit.metal", x: at.x, y: at.y, source: "bear-trap", gain: 1.05, rate: 0.94 })
+          emit({ id: "gun.pistol.slide", x: at.x, y: at.y, source: "bear-trap", gain: 0.72, rate: 0.9, delay: 0.02 })
+        }
       }
       this.fire.set(sid, { a: c.t ?? 0, b: c.snap ?? 0, c: 0 })
       return

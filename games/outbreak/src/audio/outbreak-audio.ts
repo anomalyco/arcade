@@ -7,6 +7,7 @@ import { AUDIO_BUS_LEVELS, DEFAULT_AUDIO_SETTINGS, SURFACE_STEP_SETTING_KEYS, ty
 import { footstepEvent, indoors, SoundOcclusion, SURFACE_STEP_PROFILES, surfaceAt } from "./space"
 import { SecretSounds } from "./soundscape/secrets"
 import { Soundscape } from "./soundscape/soundscape"
+import { WeaponBank, weaponMix } from "./weapons/bank"
 import { ZombieFootsteps } from "./zombie-steps"
 
 export type AudioFrame = {
@@ -47,6 +48,8 @@ export class OutbreakAudio {
   readonly zombieSteps = new ZombieFootsteps()
   /** Clocks, taps, sirens and the rest of the ambient life of the town (`soundscape/`, AR-86). */
   readonly soundscape: Soundscape
+  /** Layered weapon sounds, baked on first use (`weapons/`, AR-102). */
+  readonly weapons: WeaponBank
   private readonly secretSounds = new SecretSounds()
   private holds = new Map<string, { voice: VoiceHandle; hold: SoundHold }>()
   private horde: VoiceHandle | null = null
@@ -98,6 +101,7 @@ export class OutbreakAudio {
     this.savedVolume = saveVolumeSettings(null, "outbreak", settings)
     this.runtime.muted = Boolean(settings.audioMuted)
     this.soundscape = new Soundscape(this.runtime, (e) => this.play(e))
+    this.weapons = new WeaponBank(this.runtime)
   }
 
   /** Starts audio on the first pointer or key press (autoplay rules), binds `M`, and pauses with the tab. */
@@ -110,6 +114,7 @@ export class OutbreakAudio {
       void this.runtime.unlock().then(() => {
         this.apply()
         this.soundscape.prewarm()
+        if (this.settings.audioWeaponSet > 0) this.weapons.prewarm()
       })
     }
     for (const type of ["pointerdown", "keydown", "touchend"]) target.addEventListener(type, unlock, { capture: true, signal })
@@ -193,6 +198,8 @@ export class OutbreakAudio {
     this.indoor += (target - this.indoor) * Math.min(1, frame.dt * 4)
     this.runtime.setSpace(this.indoor)
     // The director runs muted too, so unmuting never replays stale changes.
+    weaponMix(this.settings, this.director.weapons.mix)
+    this.director.weapons.extra = this.glassSpots.length > 0 ? { glass: this.glassSpots } : undefined
     const events = this.director.observe(world, listener)
     if (frame.packOpen !== undefined && frame.packOpen !== this.packOpen) {
       this.packOpen = frame.packOpen
@@ -276,9 +283,18 @@ export class OutbreakAudio {
 
   /** Plays one library sound at a plan position with the entry's range. */
   play(event: SoundEvent): VoiceHandle | null {
-    const entry = sfxEntry(event.id)
     const today = this.settings.audioMode === 0
     const rolloff = today ? 1.25 : (this.settings.audioFalloff ?? 1.55)
+    if (event.id.startsWith("wpn.")) {
+      const voice = this.weapons.play(event, this.settings, rolloff)
+      if (voice) {
+        this.counts.played++
+        this.playedById[event.id] = (this.playedById[event.id] ?? 0) + 1
+        return voice
+      }
+      return event.fallback ? this.play({ x: event.x, y: event.y, source: event.source, ...(event.delay ? { delay: event.delay } : {}), ...event.fallback }) : null
+    }
+    const entry = sfxEntry(event.id)
     const refScale = today ? 1.0 : 0.78
     const voice = this.runtime.playCue(event.id, {
       time: this.runtime.now + (event.delay ?? 0),
@@ -309,10 +325,13 @@ export class OutbreakAudio {
    */
   private held(holds: readonly SoundHold[], live: boolean): void {
     const wanted = new Set<string>()
-    for (const hold of holds) {
-      wanted.add(hold.key)
+    for (const wish of holds) {
+      wanted.add(wish.key)
       if (!live) continue
-      const entry = sfxEntry(hold.id)
+      // A layered weapon loop plays Today's until it is baked.
+      const layered = wish.id.startsWith("wpn.") ? this.weapons.held(wish.id, this.settings) : null
+      const hold = layered || !wish.fallback ? wish : { ...wish, id: wish.fallback }
+      const entry = layered ?? sfxEntry(hold.id)
       const pose = { x: hold.x, z: hold.y, refDistance: entry.range.ref, maxDistance: entry.range.max, rolloff: 1.4 }
       const have = this.holds.get(hold.key)
       if (have?.voice.active && have.hold.id === hold.id) {
@@ -321,7 +340,11 @@ export class OutbreakAudio {
         continue
       }
       have?.voice.stop(0.15)
-      const voice = this.runtime.playCue(hold.id, { position: pose, ownerKey: hold.key })
+      if (!layered && hold.id.startsWith("wpn.")) {
+        this.holds.delete(hold.key)
+        continue
+      }
+      const voice = this.runtime.playCue(hold.id, { position: pose, ownerKey: hold.key, ...(layered ? { gain: layered.level } : {}) })
       if (voice) this.holds.set(hold.key, { voice, hold })
       else this.holds.delete(hold.key)
     }
@@ -446,6 +469,7 @@ export class OutbreakAudio {
       zombieFeet: { ...this.zombieSteps.counts },
       playedById: { ...this.playedById },
       soundscape: this.soundscape.telemetry(),
+      weapons: this.weapons.telemetry(),
       ...this.counts,
       meanUpdateMs: this.counts.updates ? this.counts.updateMs / this.counts.updates : 0,
     }
@@ -454,6 +478,7 @@ export class OutbreakAudio {
   dispose(): void {
     this.armed?.abort()
     this.soundscape.dispose()
+    this.weapons.dispose()
     this.runtime.dispose()
   }
 }
