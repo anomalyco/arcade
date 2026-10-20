@@ -193,7 +193,7 @@ export function createMenu(root: HTMLElement, settings: ShellSettings, hooks: Me
       slider("Mouse sensitivity", settings.sensitivity, SENSITIVITY_RANGE[0], SENSITIVITY_RANGE[1], 0.05, (v) => `${v.toFixed(2)}×`, (v) => (settings.sensitivity = v)),
       choice("Invert Y", [{ value: false, label: "Off" }, { value: true, label: "On" }], () => settings.invertY, (v) => (settings.invertY = v)),
       slider("Field of view", settings.fov, FOV_RANGE[0], FOV_RANGE[1], 1, (v) => `${v}°`, (v) => (settings.fov = v)),
-      choice<ControlsMode>("Show controls", [{ value: "always", label: "Always" }, { value: "auto", label: "Fade after a while" }, { value: "off", label: "Off" }], () => settings.controls, (v) => (settings.controls = v)),
+      choice<ControlsMode>("Show controls", [{ value: "always", label: "Always" }, { value: "off", label: "Off" }], () => settings.controls, (v) => (settings.controls = v)),
       choice<Quality>("Graphics", [{ value: "low", label: "Low" }, { value: "medium", label: "Medium" }, { value: "high", label: "High" }], () => settings.quality, (v) => (settings.quality = v)),
       button(MENU.back, () => open("main"), "shell-back"),
     )

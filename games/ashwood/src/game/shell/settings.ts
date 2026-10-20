@@ -22,11 +22,11 @@ export type ShellSettings = {
   /** Vertical field of view, degrees. */
   fov: number
   quality: Quality
-  /** The controls strip: always, the first minutes of each run, or only on H. */
+  /** The controls strip ([C] crouch, [F] flashlight, [M] map): always shown, or off (one-time hints instead). */
   controls: ControlsMode
 }
 
-export const DEFAULTS: ShellSettings = { master: 0.8, sfx: 1, menuStatic: 0.25, ambience: 1, sensitivity: 1, invertY: false, fov: 68, quality: "high", controls: "auto" }
+export const DEFAULTS: ShellSettings = { master: 0.8, sfx: 1, menuStatic: 0.25, ambience: 1, sensitivity: 1, invertY: false, fov: 68, quality: "high", controls: "always" }
 export const FOV_RANGE = [55, 90] as const
 export const SENSITIVITY_RANGE = [0.2, 3] as const
 
@@ -37,7 +37,8 @@ export function loadSettings(): ShellSettings {
     const saved = JSON.parse(localStorage.getItem(KEY) ?? "{}") as Partial<ShellSettings>
     const s = { ...DEFAULTS, ...saved }
     if (!["low", "medium", "high"].includes(s.quality)) s.quality = DEFAULTS.quality
-    if (!["always", "auto", "off"].includes(s.controls)) s.controls = DEFAULTS.controls
+    // "auto" (fade after a while) is gone: old saves become "always".
+    if (!["always", "off"].includes(s.controls)) s.controls = DEFAULTS.controls
     return s
   } catch {
     return { ...DEFAULTS }

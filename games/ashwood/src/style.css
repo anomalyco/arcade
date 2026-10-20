@@ -175,25 +175,22 @@ html, body { margin: 0; height: 100%; background: #030605; overflow: hidden; }
 }
 .title-card-skip.on { opacity: 1; }
 
-/* ---- Play-mode control hints (src/game/shell/hints.ts) ---- */
+/* ---- Play-mode controls (src/game/shell/hints.ts): the controls-lab pick, "strip" + "bracket", set like the
+   objective's corner line (src/game/objective.ts): HUD typewriter, small caps, 0.14em, its resting off-white. ---- */
 
 .hints {
   position: fixed; inset: 0; z-index: 4; pointer-events: none; opacity: 0; transition: opacity 0.4s ease;
-  font: 10.5px/1.4 "Ashwood Type", "American Typewriter", "Courier New", monospace; letter-spacing: 0.14em;
-  text-transform: uppercase; color: rgba(206, 196, 174, 0.5); text-shadow: 0 0 4px rgba(0, 0, 0, 0.85);
+  font: 15px/1.5 "Ashwood Type", "American Typewriter", "Courier New", monospace; letter-spacing: 0.14em;
+  font-variant: small-caps; color: rgba(214, 204, 182, 0.62); text-shadow: 0 0 6px rgba(0, 0, 0, 0.95), 0 0 2px #000;
 }
 .hints.on { opacity: 1; }
-.hints-strip {
-  position: absolute; left: 22px; bottom: 20px; max-width: min(560px, 60vw); display: flex; flex-wrap: wrap; gap: 6px 16px;
-  opacity: 0; transform: translateY(4px); transition: opacity 1.6s ease, transform 1.6s ease;
-}
-.hints-strip.on { opacity: 1; transform: none; transition-duration: 0.5s; }
-.hints-strip.dim { opacity: 0.32; transform: none; transition-duration: 4s; }
-.hints-item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.hints-strip { position: absolute; left: 26px; bottom: 22px; display: flex; gap: 20px; opacity: 0; transition: opacity 0.6s ease; }
+.hints-strip.on { opacity: 1; }
+.hints-item { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+.hints-key { font-size: 13px; letter-spacing: 0; }
 .hints-toast {
-  position: absolute; left: 50%; bottom: 72px; transform: translate(-50%, 4px); display: inline-flex; align-items: center; gap: 8px;
-  font-size: 12px; letter-spacing: 0.16em; color: rgba(214, 204, 182, 0.82); white-space: nowrap;
-  opacity: 0; transition: opacity 0.9s ease, transform 0.9s ease;
+  position: absolute; left: 50%; bottom: 72px; transform: translate(-50%, 4px); display: inline-flex; align-items: center; gap: 7px;
+  white-space: nowrap; opacity: 0; transition: opacity 0.9s ease, transform 0.9s ease;
 }
 .hints-toast.on { opacity: 1; transform: translate(-50%, 0); }
 /* In the truck's cab (src/game/escape sets body[data-driving]) no on-foot hint toast (the "M map" one included). */

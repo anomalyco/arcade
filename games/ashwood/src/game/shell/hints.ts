@@ -1,19 +1,18 @@
-import { keyCapHtml } from "@arcade/kit/client/key-cap"
-import { moveClusterLabel, onKeyLayoutChange } from "@arcade/kit/client/controls"
+import { keyLabel, onKeyLayoutChange } from "@arcade/kit/client/controls"
 import type { Player } from "../../player"
 import type { WorldContext } from "../../world/context"
 import { objectiveText } from "../objective"
 import { HINT } from "./copy"
 
-// Play-mode control hints: a quiet strip of minimal key caps at the bottom-left (full at the start of each run, faded to
-// a low-opacity line after a few minutes, or always full / hidden per Settings; H brings it back up, or puts it back),
-// and one-time contextual hints
-// at the bottom centre: F the first time the view gets dark, M with the first objective, C near the first low space.
-// Seen hints are remembered in localStorage. The shell calls `update` every frame and `afterRender` after the world
-// draws (the darkness check reads a 4×4 copy of the frame once a second until the F hint has been shown).
+// Play-mode controls (picked in the controls lab): a quiet strip at the bottom-left with only the three keys worth
+// teaching, `[C] crouch  [F] flashlight  [M] map`, in plain bracket text set like the objective's corner line (the HUD
+// typewriter, small caps, its warm off-white). Always shown in explore (Settings → Show controls: Always / Off).
+// With the strip off, the same three still get one-time contextual hints at the bottom centre, in the same style:
+// F the first time the view gets dark, M with the first objective, C near the first low space (remembered in
+// localStorage). The shell calls `update` every frame and `afterRender` after the world draws (the darkness check
+// reads a 4×4 copy of the frame once a second until the F hint has been shown).
 
-export type ControlsMode = "always" | "auto" | "off"
-type StripState = "on" | "dim" | "off"
+export type ControlsMode = "always" | "off"
 type ContextHint = "flashlight" | "map" | "crouch"
 
 const SEEN_KEY = "ashwood.hints.seen"
@@ -28,24 +27,16 @@ const REACH = 1.2
 
 export function createHints(ctx: WorldContext, player: Player) {
   const root = document.createElement("div")
-  root.className = "hints akc-minimal"
+  root.className = "hints"
   root.innerHTML = `<div class="hints-strip"></div><div class="hints-toast"></div>`
   document.body.append(root)
   const strip = root.firstElementChild as HTMLDivElement
   const toast = root.lastElementChild as HTMLDivElement
-  const cap = (code: string, label?: string) => keyCapHtml(code, { minimal: true, ...(label ? { label } : {}) })
-  const item = (keys: string, what: string) => `<span class="hints-item">${keys}<span>${what}</span></span>`
+  /** Plain bracket text with the QWERTY name of the physical key (docs/controls.md). */
+  const key = (code: string) => `<span class="hints-key">[${keyLabel(code)}]</span>`
+  const item = (code: string, what: string) => `<span class="hints-item">${key(code)}<span>${what}</span></span>`
   const renderStrip = () => {
-    strip.innerHTML = [
-      item(cap("KeyW", moveClusterLabel()), "move"),
-      item(cap("ShiftLeft"), "run"),
-      item(cap("KeyC"), "crouch"),
-      item(cap("Space"), "jump"),
-      item(cap("KeyE"), "interact"),
-      item(cap("KeyF"), "flashlight"),
-      item(cap("KeyM"), "map"),
-      item(cap("Escape"), "pause"),
-    ].join("")
+    strip.innerHTML = [item("KeyC", "crouch"), item("KeyF", "flashlight"), item("KeyM", "map")].join("")
   }
   renderStrip()
   onKeyLayoutChange(renderStrip)
@@ -63,14 +54,10 @@ export function createHints(ctx: WorldContext, player: Player) {
     } catch {}
   }
 
-  let mode: ControlsMode = "auto"
+  let mode: ControlsMode = "always"
   let active = false
-  /** Seconds of play this run (the strip's countdown in "auto"). */
+  /** Seconds of play this run (paces the low-space and darkness checks). */
   let played = 0
-  /** H: null follows the mode; otherwise overrides it until the next run. */
-  let manual: StripState | null = null
-  let shown: StripState = "off"
-  const byMode = (): StripState => (mode === "always" ? "on" : mode === "off" ? "off" : played < HINT.stripSeconds ? "on" : "dim")
   let toastUntil = 0
   let toastQueue: ContextHint[] = []
   let darkFor = 0
@@ -79,9 +66,9 @@ export function createHints(ctx: WorldContext, player: Player) {
   let lastLuma = -1
 
   const TOASTS: Record<ContextHint, () => string> = {
-    flashlight: () => `${cap("KeyF")}<span>${HINT.context.flashlight}</span>`,
-    map: () => `${cap("KeyM")}<span>${HINT.context.map}</span>`,
-    crouch: () => `${cap("KeyC")}<span>${HINT.context.crouch}</span>`,
+    flashlight: () => `${key("KeyF")}<span>${HINT.context.flashlight}</span>`,
+    map: () => `${key("KeyM")}<span>${HINT.context.map}</span>`,
+    crouch: () => `${key("KeyC")}<span>${HINT.context.crouch}</span>`,
   }
   function offer(id: ContextHint) {
     if (seen.has(id) || toastQueue.includes(id)) return
@@ -113,24 +100,13 @@ export function createHints(ctx: WorldContext, player: Player) {
     setMode(m: ControlsMode) {
       mode = m
     },
-    /** A run reached explore (`true`) or left it (`false`): the strip's countdown restarts each run. */
+    /** A run reached explore (`true`) or left it (`false`). */
     setActive(on: boolean) {
-      if (on && !active) {
-        played = 0
-        manual = null
-      }
+      if (on && !active) played = 0
       active = on
       if (!on) toastQueue = []
     },
-    /** Automation: adds seconds of play (to see the faded strip without waiting). */
-    advance(seconds: number) {
-      played += seconds
-    },
-    /** H: show or hide the strip. */
-    toggle() {
-      manual = shown === "on" ? (byMode() === "on" ? "off" : null) : "on"
-    },
-    /** `visible`: explore and unpaused (the strip and toasts hide behind the menus). */
+    /** `visible`: explore and unpaused (hidden behind the menus, in the intro and other cutscenes). */
     update(dt: number, visible: boolean) {
       if (!active) {
         root.classList.remove("on")
@@ -139,9 +115,9 @@ export function createHints(ctx: WorldContext, player: Player) {
       root.classList.toggle("on", visible)
       if (!visible) return
       played += dt
-      shown = manual ?? byMode()
-      strip.classList.toggle("on", shown === "on")
-      strip.classList.toggle("dim", shown === "dim")
+      strip.classList.toggle("on", mode === "always")
+      // The strip already teaches the three keys; the one-time hints are for players who turned it off.
+      if (mode === "always") return
 
       if (!seen.has("map") && objectiveText()) offer("map")
       if (!seen.has("crouch") && played - lowAt > 0.25) {

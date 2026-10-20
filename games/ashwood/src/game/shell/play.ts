@@ -132,7 +132,6 @@ export function createPlayShell(canvas: HTMLCanvasElement, hud: HTMLElement) {
         return
       }
       // The intro owns its keys (hold Space/Esc to skip); Esc pauses only in explore (or the pointer-lock loss does).
-      if (flow.phase === "explore" && !flow.paused && e.code === "KeyH" && !e.repeat) hints?.toggle()
       if (flow.phase === "explore" && e.code === "Escape" && !e.repeat) {
         if (map?.raised) map.lower()
         else pause()

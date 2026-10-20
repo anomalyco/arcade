@@ -64,8 +64,6 @@ export const TITLE_CARD = {
 
 export const HINT = {
   look: "Click to look",
-  /** Seconds of play the controls strip stays full each run before it fades to a low-opacity line ("First minutes"). */
-  stripSeconds: 180,
   /** Seconds a one-time contextual hint stays up. */
   contextSeconds: 6,
   /** The one-time contextual hints, after their key cap. */
