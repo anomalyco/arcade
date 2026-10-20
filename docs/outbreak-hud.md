@@ -64,6 +64,17 @@ tag shows. A downed teammate's mark is red and pulses; on screen within 28 m the
 Distances are from the screen centre, so they still read while watching a teammate after death. The rules are pure
 (`edge.ts`: `edgeMark`, `markMode`, `tests/teammate-markers.test.ts`).
 
+## Volume button and lobby Ready
+
+Also from the Oct 20 playtest ("I need to have a volume button too"): `src/volume/` puts a speaker button in the top
+right corner. It opens Master, Effects, Ambience and Zombies sliders and Mute, the same `settings.audio` values as
+Lab › Volume, which `OutbreakAudio` applies and saves per browser. Raising a slider unmutes; `M` still mutes from
+anywhere; Esc or a click outside closes it (`tests/volume-menu.test.ts`).
+
+The lobby says who it is waiting on ("waiting for you: press Ready", "waiting for B") and the Ready button pulses
+"Click to Ready Up" until you press it, because players sat waiting without knowing they had to click it
+(`src/lobby/waiting.ts`, `tests/lobby-waiting.test.ts`). Players who join a running game are ready on arrival.
+
 ## HUD styles
 
 Lab › HUD › HUD style switches between five directions, the same options as the team board's AR-24 decision
