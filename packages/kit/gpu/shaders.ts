@@ -139,6 +139,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
  * 11 light haze (aux = map light id).
  */
 export type SceneHooks = {
+  /** Optional float32 UV stream at location 4 (the compact untextured layout stays unchanged). */
+  uv?: boolean
   declarations?: string
   vertex?: string
   surface?: string
@@ -193,6 +195,7 @@ struct VIn {
   @location(1) normal: vec4f,
   @location(2) color: vec4f,
   @location(3) matAux: vec2f,
+  ${hooks.uv ? "@location(4) uv: vec2f," : ""}
 }
 
 struct Inst {
@@ -210,11 +213,13 @@ struct VOut {
   ${hooks.vertex ? "@location(4) aux: f32," : "@location(4) @interpolate(flat) aux: f32,"}
   @location(5) @interpolate(flat) extra: vec4f,
   ${motion ? "@location(6) previous: vec4f," : ""}
+  ${hooks.uv ? "@location(7) uv: vec2f," : ""}
 }
 
 @vertex fn vsStatic(v: VIn) -> VOut {
   var o: VOut;
   o.world = v.pos;
+  ${hooks.uv ? "o.uv = v.uv;" : ""}
   o.normal = v.normal.xyz;
   if (${hooks.material ? "v.matAux.x > 12.5 && v.matAux.x < 13.5" : "v.matAux.x > 12.5"}) {
     // Dust mote: drift slowly around its anchor, then expand the quad toward the camera.
@@ -264,6 +269,7 @@ fn instNormal(n: vec3f, inst: Inst) -> vec3f {
 @vertex fn vsInst(v: VIn, inst: Inst${motion ? ", @location(8) oldPos: vec4f, @location(9) oldTint: vec4f, @location(10) oldExtra: vec4f" : ""}) -> VOut {
   var o: VOut;
   o.world = instWorld(v.pos, inst);
+  ${hooks.uv ? "o.uv = v.uv;" : ""}
   o.pos = F.viewProj * vec4f(o.world, 1.0);
   o.normal = instNormal(v.normal.xyz, inst);
   let accent = v.matAux.x > 7.5 && v.matAux.x < 8.5;

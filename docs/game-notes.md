@@ -14,6 +14,8 @@ proven animation techniques to animation.md, not here.
 
 ## Proving a change
 
+- **Static textured imports on the kit renderer (Lot, AR-103).** `gpu/gltf.ts` expands glTF node transforms and UVs into an opt-in 32-byte vertex stream; `gpu/textured-mesh.ts` binds per-material textures on the existing scene pass. Existing 24-byte procedural vertices stay unchanged. A 1400×900 Metal still shows the licensed wagon and scanned asphalt under polar-shadow lighting, shared height fog and temporal resolve. Naga validated procedural, textured and masked shaders; asset tests verify the wagon's 5.05 m length, grounded pivot and UV/normal presence. GPU cost is unmeasured. The first browser run stopped at a pointer-lock-state wait, so interactive input and the matched Ashwood comparison are not yet browser-proven.
+
 - **Keep spell proof on the real input path.** Blackout's `scripts/prove-wizards-spells.ts` reads scrolls with F and
   draws through Chromium mouse events. Its manual sandbox clock advances both simulation and animation between
   captures; advancing simulation alone left the rig's planted feet behind. The inspected Metal proof captured a

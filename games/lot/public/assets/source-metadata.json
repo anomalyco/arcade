@@ -1,0 +1,239 @@
+{
+  "wagon": {
+    "uri": "https://api.sketchfab.com/v3/models/aa0becb6e854422596cac6b21bf79787",
+    "uid": "aa0becb6e854422596cac6b21bf79787",
+    "name": "'80s Generic USA Station wagon - Low poly model",
+    "staffpickedAt": null,
+    "viewCount": 13240,
+    "likeCount": 436,
+    "animationCount": 0,
+    "viewerUrl": "https://sketchfab.com/3d-models/aa0becb6e854422596cac6b21bf79787",
+    "embedUrl": "https://sketchfab.com/models/aa0becb6e854422596cac6b21bf79787/embed",
+    "commentCount": 18,
+    "isDownloadable": true,
+    "publishedAt": "2021-11-22T13:50:54.313632",
+    "tags": [
+      {
+        "name": "ford",
+        "slug": "ford",
+        "uri": "https://api.sketchfab.com/v3/tags/ford"
+      },
+      {
+        "name": "sedan",
+        "slug": "sedan",
+        "uri": "https://api.sketchfab.com/v3/tags/sedan"
+      },
+      {
+        "name": "transport",
+        "slug": "transport",
+        "uri": "https://api.sketchfab.com/v3/tags/transport"
+      },
+      {
+        "name": "generic",
+        "slug": "generic",
+        "uri": "https://api.sketchfab.com/v3/tags/generic"
+      },
+      {
+        "name": "pontiac",
+        "slug": "pontiac",
+        "uri": "https://api.sketchfab.com/v3/tags/pontiac"
+      },
+      {
+        "name": "amc",
+        "slug": "amc",
+        "uri": "https://api.sketchfab.com/v3/tags/amc"
+      },
+      {
+        "name": "low-poly-model",
+        "slug": "low-poly-model",
+        "uri": "https://api.sketchfab.com/v3/tags/low-poly-model"
+      },
+      {
+        "name": "automotivedesign",
+        "slug": "automotivedesign",
+        "uri": "https://api.sketchfab.com/v3/tags/automotivedesign"
+      },
+      {
+        "name": "chrysler",
+        "slug": "chrysler",
+        "uri": "https://api.sketchfab.com/v3/tags/chrysler"
+      },
+      {
+        "name": "station-wagon",
+        "slug": "station-wagon",
+        "uri": "https://api.sketchfab.com/v3/tags/station-wagon"
+      },
+      {
+        "name": "genericvehicle",
+        "slug": "genericvehicle",
+        "uri": "https://api.sketchfab.com/v3/tags/genericvehicle"
+      },
+      {
+        "name": "low-poly",
+        "slug": "low-poly",
+        "uri": "https://api.sketchfab.com/v3/tags/low-poly"
+      },
+      {
+        "name": "vehicle",
+        "slug": "vehicle",
+        "uri": "https://api.sketchfab.com/v3/tags/vehicle"
+      },
+      {
+        "name": "lowpoly",
+        "slug": "lowpoly",
+        "uri": "https://api.sketchfab.com/v3/tags/lowpoly"
+      },
+      {
+        "name": "car",
+        "slug": "car",
+        "uri": "https://api.sketchfab.com/v3/tags/car"
+      },
+      {
+        "name": "midsize",
+        "slug": "midsize",
+        "uri": "https://api.sketchfab.com/v3/tags/midsize"
+      },
+      {
+        "name": "foxbody",
+        "slug": "foxbody",
+        "uri": "https://api.sketchfab.com/v3/tags/foxbody"
+      }
+    ],
+    "categories": [
+      {
+        "name": "cars-vehicles"
+      }
+    ],
+    "thumbnails": {
+      "images": [
+        {
+          "uid": "a53ac8245fc7494999a46966d26514dd",
+          "size": 223919,
+          "width": 1920,
+          "url": "https://media.sketchfab.com/models/aa0becb6e854422596cac6b21bf79787/thumbnails/e5e07a9a4c4f4ff98b371bf14a865e2d/68d023aa1a2e4a49a9f8136daadd1a81.jpeg",
+          "height": 1080
+        },
+        {
+          "uid": "405c99a234bf4327bc5f89a3a6d92253",
+          "size": 39582,
+          "width": 1024,
+          "url": "https://media.sketchfab.com/models/aa0becb6e854422596cac6b21bf79787/thumbnails/e5e07a9a4c4f4ff98b371bf14a865e2d/18545297add644ffa2255ed8253f60a3.jpeg",
+          "height": 576
+        },
+        {
+          "uid": "87bcc65b434d43549db355525ccc73e0",
+          "size": 20329,
+          "width": 720,
+          "url": "https://media.sketchfab.com/models/aa0becb6e854422596cac6b21bf79787/thumbnails/e5e07a9a4c4f4ff98b371bf14a865e2d/e798ae8e784d4d2b8ba82d4e13fd223d.jpeg",
+          "height": 405
+        },
+        {
+          "uid": "2c6d60b8eaa0438889c8cebbcf071977",
+          "size": 3712,
+          "width": 256,
+          "url": "https://media.sketchfab.com/models/aa0becb6e854422596cac6b21bf79787/thumbnails/e5e07a9a4c4f4ff98b371bf14a865e2d/68025096a61e4f8e95f4023364ce44d4.jpeg",
+          "height": 144
+        },
+        {
+          "uid": "27c537ebe5fc44348d22e28c25e16939",
+          "size": 962,
+          "width": 64,
+          "url": "https://media.sketchfab.com/models/aa0becb6e854422596cac6b21bf79787/thumbnails/e5e07a9a4c4f4ff98b371bf14a865e2d/e7d76894c0504a36b3e94c3813237c0e.jpeg",
+          "height": 36
+        }
+      ]
+    },
+    "user": {
+      "uid": "2c3909fbc3334051bb4f873a0586395a",
+      "username": "DanielZhabotinsky",
+      "displayName": "Daniel Zhabotinsky",
+      "profileUrl": "https://sketchfab.com/DanielZhabotinsky",
+      "account": "basic",
+      "avatar": {
+        "uri": "https://api.sketchfab.com/v3/avatars/51af6a870cce449eb75b0345feebaebb",
+        "images": [
+          {
+            "size": 5719,
+            "width": 90,
+            "url": "https://media.sketchfab.com/avatars/51af6a870cce449eb75b0345feebaebb/2ef0f894055b4bb69123b2a27fa2d379.jpeg",
+            "height": 90
+          },
+          {
+            "size": 6496,
+            "width": 100,
+            "url": "https://media.sketchfab.com/avatars/51af6a870cce449eb75b0345feebaebb/ab11eedf96374486acb544f71a23b165.jpeg",
+            "height": 100
+          },
+          {
+            "size": 1359,
+            "width": 32,
+            "url": "https://media.sketchfab.com/avatars/51af6a870cce449eb75b0345feebaebb/35f6f9b6c9a14a548ce472582d8a9bb5.jpeg",
+            "height": 32
+          },
+          {
+            "size": 2584,
+            "width": 48,
+            "url": "https://media.sketchfab.com/avatars/51af6a870cce449eb75b0345feebaebb/a8072a51447c4d41ab177b357111b420.jpeg",
+            "height": 48
+          }
+        ]
+      },
+      "uri": "https://api.sketchfab.com/v3/users/2c3909fbc3334051bb4f873a0586395a"
+    },
+    "description": "Low poly model of an American mid-size station wagon from the early 80s. I decided that there were too few 80s station wagons with a characteristic sharp front profile, reminiscent of a Pontiac Sunbird, Lebaron or ford's ltd of the 80s. And finaly i made one. Use the model however you see fit, and have a nice day.",
+    "faceCount": 23583,
+    "createdAt": "2021-11-08T04:57:55.707442",
+    "vertexCount": 14339,
+    "isAgeRestricted": false,
+    "archives": {
+      "glb": {
+        "textureCount": 15,
+        "size": 21994732,
+        "type": "glb",
+        "textureMaxResolution": 4096,
+        "faceCount": 23581,
+        "vertexCount": 21121
+      },
+      "gltf": {
+        "textureCount": 15,
+        "size": 21070138,
+        "type": "gltf",
+        "textureMaxResolution": 4096,
+        "faceCount": 23581,
+        "vertexCount": 21121
+      },
+      "source": {
+        "textureCount": null,
+        "size": 22305540,
+        "type": "source",
+        "textureMaxResolution": null,
+        "faceCount": null,
+        "vertexCount": null
+      },
+      "usdz": {
+        "textureCount": null,
+        "size": 3942867,
+        "type": "usdz",
+        "textureMaxResolution": null,
+        "faceCount": null,
+        "vertexCount": null
+      }
+    },
+    "license": "by"
+  },
+  "sourceSha256": "09205542726ddd90f0c0dc48cf946757339e4792bdc28e0bcafd87793b9261f1",
+  "scale": 1.0079659020928158,
+  "rotatedBounds": {
+    "lo": [
+      -0.9269565343856812,
+      -1.405903697013855,
+      -2.6265180110931396
+    ],
+    "hi": [
+      0.9284723401069641,
+      -0.001533971051685512,
+      2.3835721015930176
+    ]
+  },
+  "asphalt": "https://polyhaven.com/a/worn_asphalt"
+}

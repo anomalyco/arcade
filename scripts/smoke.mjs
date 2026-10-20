@@ -4,7 +4,7 @@ import { basename, resolve, sep } from "node:path"
 import { chromium } from "playwright-core"
 
 const game = basename(process.cwd())
-assert(["blackout", "getaway", "outbreak", "carrier", "lab", "brawl", "archers", "walkers"].includes(game), `Unknown game: ${game}`)
+assert(["blackout", "getaway", "outbreak", "carrier", "lab", "brawl", "archers", "walkers", "lot"].includes(game), `Unknown game: ${game}`)
 const prefix = `/arcade/${game}/`
 const root = resolve(`dist/arcade/${game}`)
 assert(await Bun.file(resolve(root, "index.html")).exists(), "Build the game before running smoke")
@@ -71,6 +71,11 @@ try {
   // supported outcome for these WebGPU-only games, never a blanket error waiver. Interval polling, not the default
   // requestAnimationFrame: rAF polls stall while a software GPU is busy compiling or drawing.
   const ready = await page.waitForFunction(game => {
+    if (game === "lot") {
+      const status = document.querySelector("#hud")?.textContent
+      if (status && /needs WebGPU|No WebGPU adapter is available|WebGPU could not start/.test(status)) return status
+      return window.lot?.ready && window.lot.frames >= 2 ? "lot ready" : false
+    }
     if (game === "lab") {
       const notice = document.querySelector("[data-lab-notice]")?.textContent
       if (notice && /needs WebGPU/.test(notice)) return notice
