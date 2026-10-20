@@ -20,9 +20,9 @@ export function inviteLink(
   return `${origin}${path}?room=${encodeURIComponent(room)}`
 }
 
-async function copy(text: string): Promise<boolean> {
+export async function copyInviteLink(room: string): Promise<boolean> {
   try {
-    await navigator.clipboard.writeText(text)
+    await navigator.clipboard.writeText(inviteLink(room))
     return true
   } catch {
     return false
@@ -80,8 +80,6 @@ export class CoopHud {
         }
         const code = randomRoomCode(undefined, Math.random, 5)
         const link = inviteLink(code)
-        void copy(link)
-        sessionStorage.setItem("outbreak.coop.copied", code)
         location.assign(link)
       })
       this.root.append(host)
@@ -94,7 +92,7 @@ export class CoopHud {
     const button = this.root.querySelector<HTMLButtonElement>("[data-copy]")!
     button.addEventListener("click", async () => {
       button.blur()
-      button.textContent = (await copy(inviteLink(room))) ? "Link copied" : inviteLink(room)
+      button.textContent = (await copyInviteLink(room)) ? "Link copied" : inviteLink(room)
       setTimeout(() => (button.textContent = "Copy invite link"), 2400)
     })
     const leave = this.root.querySelector<HTMLAnchorElement>("[data-leave]")!
@@ -103,10 +101,6 @@ export class CoopHud {
       e.preventDefault()
       this.onLeaveRoom()
     })
-    if (sessionStorage.getItem("outbreak.coop.copied") === room) {
-      sessionStorage.removeItem("outbreak.coop.copied")
-      this.flash("Invite link copied. Send it to up to three friends.")
-    }
   }
 
   private flashUntil = 0
