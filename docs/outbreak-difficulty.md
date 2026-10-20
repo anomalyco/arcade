@@ -209,6 +209,36 @@ the Night 3 / Night 2 aware ratio dropped from 1.17 to 1.08 and nothing else mov
 little easier to sneak through rather than adding a difficulty step. Survival and chaser bands are unchanged. Lab ›
 Weather › "Rain masks noise" and "Rain shortens zombie sight" tune it; "Today (always clear)" restores the old ratio.
 
+## Zombie behaviour (AR-91)
+
+The behaviour layer (`games/outbreak/shared/behaviour/`) does not add zombies or chasers. It changes what the existing
+dead do. By day they rest and their senses dull. At night they listen, follow the one that noticed, remember where you
+went and search there. Some climb fences and car bonnets. The director's chaser cap still governs the hunt.
+
+5 presets × 8 seeds × 3 nights on overnight `a0326599`: the defaults against `--set=zbMode=0` (Today). These are 40
+runs each, so one run is 12.5 points: treat it as indicative. Each cell is the fraction alive at dawn 1 / 2 / 3.
+
+| Preset | Today | Alive | Today median nights | Alive median nights |
+| --- | --- | --- | --: | --: |
+| Novice | 38 / 13 / 0 | 50 / 25 / 0 | 0.81 | 0.82 |
+| Casual | 63 / 25 / 13 | 50 / 13 / 13 | 1.39 | 0.95 |
+| Skilled | 88 / 63 / 50 | 88 / 50 / 38 | 2.75 | 2.45 |
+| Expert | 100 / 100 / 75 | 100 / 75 / 50 | 3.01 | 2.97 |
+| Perfect | 100 / 88 / 63 | 100 / 75 / 63 | 3.01 | 3.00 |
+
+What moved:
+
+- **Night 1 is a little quieter.** Skilled aware zombies went 2.28 → 1.79 and chasers 0.98 → 0.67.
+- **Nights 2 and 3 have more searchers but the same number of chasers.** Aware zombies went 6.0 → 7.2 on Night 2 and
+  6.7 → 7.8 on Night 3, while chasers held at 2.9 and 3.8 under the cap.
+- **Survival:** a fresh survivor's first night is about the same, and Skilled and Expert lose one or two more runs by
+  dawn 2–3.
+
+`tests/difficulty-ramp.test.ts` still passes and no band changed. This is the intended effect: the dead keep looking
+after they lose you, so the later nights feel hunted rather than heavier. Lab › Zombie behaviour › "Search, remember,
+give up slowly" and "Follow the one that noticed" are the levers if Night 3 needs to be easier. "Zombie behaviour:
+Today" turns the whole layer off.
+
 ## The night ramp (D-40, Gentle Start, Rising)
 
 `games/outbreak/shared/night-ramp/` raises the challenge every night instead of letting the director's own ramp level
