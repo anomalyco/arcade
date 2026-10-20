@@ -1,5 +1,6 @@
 import { BUSH_PRESETS, BUSH_PRESET_IDS, FOLIAGE_PARAM_SPECS, GRASS_PRESETS, GRASS_PRESET_IDS, TREE_PRESETS, TREE_PRESET_IDS, type FoliageKind } from "../../gpu/foliage"
 import { LOOK_PRESETS, LOOK_PRESET_IDS, createLookControls } from "../../gpu/look"
+import { MAX_SPOT_SHADOWS } from "../../gpu/shadows/spot-shadows"
 import type { LabControl, LabSettings } from "../../lab-panel"
 import { WEATHER_PRESETS, WEATHER_PRESET_IDS, createWeatherControls } from "../../weather"
 import type { LabContext, LabSection } from "../types"
@@ -78,6 +79,12 @@ export function createWorldSection(context: LabContext, world: DebugWorld): LabS
     { key: "porch", label: "Porch lamp", group: "Clock & light" },
     { key: "headlights", label: "Car headlights", group: "Clock & light" },
     { key: "flashlight", label: "Flashlight", group: "Clock & light" },
+    { key: "lightModel", label: "Light model", group: "Clock & light", type: "select", options: [{ value: "today", label: "Today" }, { value: "physical", label: "Physical (GGX + sky)" }] },
+    { key: "envSpecular", label: "Sky reflections", group: "Clock & light", subsection: "Physical", type: "range", min: 0, max: 2, step: 0.05, unit: "×" },
+    { key: "sphereLights", label: "Fixture size in highlights", group: "Clock & light", subsection: "Physical", type: "range", min: 0, max: 3, step: 0.05, unit: "×" },
+    { key: "specularAA", label: "Specular anti-aliasing", group: "Clock & light", subsection: "Physical", type: "range", min: 0, max: 2, step: 0.05, unit: "×" },
+    { key: "spotShadows", label: "Spot shadow maps", group: "Clock & light", subsection: "Physical", type: "range", min: 0, max: MAX_SPOT_SHADOWS, step: 1 },
+    { key: "flicker", label: "Lamp flicker and failure", group: "Clock & light", type: "range", min: 0, max: 2, step: 0.05, unit: "×" },
     { key: "playing", label: "Animate", group: "Clock & light" },
 
     {
@@ -202,7 +209,7 @@ export function createWorldSection(context: LabContext, world: DebugWorld): LabS
     exportPreset,
     importPreset,
     enter() {
-      stage.customRender = (w, h, view) => world.render(w, h, view)
+      stage.customRender = (w, h, view, _output, _debug, measure) => world.render(w, h, view, measure)
       world.frame()
     },
     leave() {

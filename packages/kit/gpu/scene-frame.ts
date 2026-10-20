@@ -1,6 +1,7 @@
 import type { Rect } from "../sim/geom"
 import { LIGHT_FLOATS, MAX_LIGHTS, MAX_OCCLUDERS, OCC_FLOATS } from "../limits"
 import type { FloorMap } from "./level"
+import { physicalCone } from "./lights/physical"
 import { FRAME_FLOATS } from "./shaders"
 
 /**
@@ -20,8 +21,15 @@ export type SceneLight = {
   size?: number
   /** Spot cone: plan direction and cos half-angle. */
   cone?: readonly [number, number, number]
+  /**
+   * Physical 3D spot (`lights/physical.ts`): axis pointing down or level, cos of the outer and inner half-angles.
+   * Takes the cone slot instead of `cone`; only physical-light hooks shade it.
+   */
+  spot?: { axis: readonly [number, number, number]; cosOuter: number; cosInner: number }
   /** Skip shadows (cheap fill light). */
   unshadowed?: boolean
+  /** Stable id, for finding the light's frame index after packing (`SceneLights.indexOf`), e.g. its spot shadow map. */
+  id?: number
 }
 
 export type Caster = { x: number; y: number; r?: number; h?: number }
@@ -33,6 +41,7 @@ export class SceneLights {
   lightCount = 0
   shadowLightCount = 0
   occCount = 0
+  private readonly ids: (number | undefined)[] = []
   private boxes: { rect: Rect; h: number }[] = []
 
   /** Static occluders (walls, pillars) with heights. */
@@ -47,8 +56,10 @@ export class SceneLights {
     let nl = 0
     let no = 0
     const sorted = [...lights].sort((a, b) => Number(!!a.unshadowed) - Number(!!b.unshadowed))
+    this.ids.length = 0
     for (const l of sorted) {
       if (nl >= MAX_LIGHTS) break
+      this.ids.push(l.id)
       const off = no
       if (!l.unshadowed) {
         const reach = l.r + 0.5
@@ -68,7 +79,8 @@ export class SceneLights {
         }
       }
       const cnt = l.unshadowed ? 0 : no - off
-      L.set([l.x, l.h, l.y, l.r, l.color[0], l.color[1], l.color[2], l.power, l.cone?.[0] ?? 0, l.cone?.[1] ?? 0, l.cone?.[2] ?? 0, l.cone ? 1 : 0, off, cnt, l.size ?? 0.3, -1], nl * LIGHT_FLOATS)
+      const cone = l.spot ? physicalCone(l.spot.axis, l.spot.cosOuter, l.spot.cosInner) : [l.cone?.[0] ?? 0, l.cone?.[1] ?? 0, l.cone?.[2] ?? 0, l.cone ? 1 : 0]
+      L.set([l.x, l.h, l.y, l.r, l.color[0], l.color[1], l.color[2], l.power, ...cone, off, cnt, l.size ?? 0.3, -1], nl * LIGHT_FLOATS)
       nl++
     }
     let shadowed = 0
@@ -76,6 +88,11 @@ export class SceneLights {
     this.lightCount = nl
     this.shadowLightCount = shadowed
     this.occCount = no
+  }
+
+  /** Frame index of the light packed with this `id`, or −1. */
+  indexOf(id: number): number {
+    return this.ids.indexOf(id)
   }
 }
 

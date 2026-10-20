@@ -1,6 +1,7 @@
 import { buildFoliageBush, buildFoliageTree, emitGrassClump, scatterGrassClumps, type FoliageParams } from "../../gpu/foliage"
 import type { LevelData } from "../../gpu/level"
 import { MAT, Mesh, hex, type Rgb } from "../../gpu/mesh"
+import { coldSodiumTint, type FlickerSample } from "../../gpu/lights/flicker"
 import type { SceneLight } from "../../gpu/scene-frame"
 import { flatLighting } from "../../gpu/scene-frame"
 import type { Rect } from "../../sim/geom"
@@ -351,27 +352,63 @@ export function worldClock(hour: number): WorldClock {
   }
 }
 
+export type WorldFlicker = Record<"street" | "porch" | "interior", FlickerSample>
+
+const STEADY: FlickerSample = { level: 1, warmth: 1 }
+
+/**
+ * Converts a light tuned for the kit's top-down falloff into a physical one (`gpu/lights/physical.ts`) that matches it
+ * straight under the fixture, so Today and Physical read at the same overall level and differ in shape: inverse-square
+ * pools, 3D cones, GGX highlights. Plan cones become 3D spots aimed slightly down.
+ */
+export function physicalWorldLight(l: SceneLight, spot?: SceneLight["spot"]): SceneLight {
+  const dn = Math.max(l.h, 1.25)
+  const { cone, ...rest } = l
+  const out: SceneLight = { ...rest, power: l.power * Math.PI * dn * dn * (0.1 + 2.6 / (1 + dn * dn * 0.3)) }
+  if (spot) out.spot = spot
+  else if (cone) {
+    const a = Math.acos(cone[2])
+    out.spot = { axis: [cone[0], -0.12, cone[1]], cosOuter: cone[2], cosInner: Math.cos(a * 0.6) }
+  }
+  return out
+}
+
+/** Stable `SceneLight.id`s for the world's lights (spot shadow slots follow them). */
+export const WORLD_LIGHT_ID = { street: 1, interior: 2, porch: 3, headlights: 4, flashlight: 6 } as const
+
 /** The world's practical lights at a clock: porch, streetlamp, the lamp inside, headlights when on. */
-export function worldLights(clock: WorldClock, opts: { lampPower: number; headlights: boolean; flashlight: boolean; porch: boolean }): SceneLight[] {
+export function worldLights(clock: WorldClock, opts: { lampPower: number; headlights: boolean; flashlight: boolean; porch: boolean; flicker?: WorldFlicker; physical?: boolean }): SceneLight[] {
   const k = clock.lamps * opts.lampPower
+  const f = opts.flicker ?? { street: STEADY, porch: STEADY, interior: STEADY }
   const [lx, lz] = STREETLAMP_AT
   const [ix, iz] = INTERIOR_LIGHT
   const lights: SceneLight[] = [
     { x: clock.key.x, y: clock.key.y, h: clock.key.h, r: 46, color: clock.key.color, power: clock.key.power, size: 1.4 },
   ]
   if (k > 0.01) {
-    lights.push({ x: lx, y: lz + 1.55, h: 4.0, r: 10, color: [1, 0.66, 0.32], power: 1.1 * k, size: 0.35 })
-    lights.push({ x: ix, y: iz, h: 1.5, r: 7, color: [1, 0.72, 0.42], power: 0.9 * k, size: 0.3 })
-    if (opts.porch) lights.push({ x: DOOR.x1 + 0.3, y: HOUSE.z1 + 0.3, h: 2.0, r: 5, color: [1, 0.78, 0.5], power: 0.7 * k, size: 0.2 })
+    lights.push({ x: lx, y: lz + 1.55, h: 4.0, r: 10, color: coldSodiumTint([1, 0.66, 0.32], f.street.warmth), power: 1.1 * k * f.street.level, size: 0.35, id: WORLD_LIGHT_ID.street })
+    lights.push({ x: ix, y: iz, h: 1.5, r: 7, color: [1, 0.72, 0.42], power: 0.9 * k * f.interior.level, size: 0.3, id: WORLD_LIGHT_ID.interior })
+    if (opts.porch) lights.push({ x: DOOR.x1 + 0.3, y: HOUSE.z1 + 0.3, h: 2.0, r: 5, color: [1, 0.78, 0.5], power: 0.7 * k * f.porch.level, size: 0.2, id: WORLD_LIGHT_ID.porch })
   }
   if (opts.headlights) {
-    for (const dz of [0.3, 1.5]) {
-      lights.push({ x: CAR_BOX.x1 + 0.1, y: CAR_BOX.z0 + dz, h: 0.7, r: 12, color: [1, 0.95, 0.85], power: 1.2, size: 0.15, cone: [1, 0, Math.cos(0.42)] })
+    for (const [n, dz] of [0.3, 1.5].entries()) {
+      lights.push({ id: WORLD_LIGHT_ID.headlights + n, x: CAR_BOX.x1 + 0.1, y: CAR_BOX.z0 + dz, h: 0.7, r: 12, color: [1, 0.95, 0.85], power: 1.2, size: 0.15, cone: [1, 0, Math.cos(0.42)] })
     }
   }
   if (opts.flashlight) {
     const [cx, cz] = CHARACTER_AT
-    lights.push({ x: cx + 0.2, y: cz + 0.3, h: 1.3, r: 9, color: [0.98, 0.95, 0.88], power: 1.4, size: 0.1, cone: [0.35, 0.94, Math.cos(0.36)] })
+    lights.push({ id: WORLD_LIGHT_ID.flashlight, x: cx + 0.2, y: cz + 0.3, h: 1.3, r: 9, color: [0.98, 0.95, 0.88], power: 1.4, size: 0.1, cone: [0.35, 0.94, Math.cos(0.36)] })
+  }
+  if (opts.physical) {
+    // The streetlamp's head throws a downward cone (Aiden's sodium: 1.1 rad, penumbra 0.55) and the porch fitting a
+    // wide shaded one, so neither lights the wall above it; the key and the lamp inside stay points.
+    const street = k > 0.01 ? 1 : -1
+    const porch = k > 0.01 && opts.porch ? 3 : -1
+    for (let i = 0; i < lights.length; i++) {
+      const spot = i === street ? { axis: [0, -1, 0] as const, cosOuter: Math.cos(1.1), cosInner: Math.cos(1.1 * 0.45) }
+        : i === porch ? { axis: [0, -1, 0] as const, cosOuter: Math.cos(1.3), cosInner: Math.cos(0.7) } : undefined
+      lights[i] = physicalWorldLight(lights[i]!, spot)
+    }
   }
   const [ox, oz] = WORLD_ORIGIN
   for (const l of lights.slice(1)) { l.x -= ox; l.y -= oz }

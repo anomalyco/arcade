@@ -7,6 +7,7 @@ import type { SmokeVolumes } from "@arcade/kit/fx/volume"
 import type { Particles } from "@arcade/kit/fx/particles"
 import { ParticleRenderer } from "@arcade/kit/fx/particle-renderer"
 import { FrameTimer } from "@arcade/kit/fx/frame-timer"
+import { SPOT_SHADOW_BINDINGS, SPOT_SHADOW_UNIFORM_FLOATS } from "./shadows/spot-shadows"
 import { installFramePacer } from "../gpu-perf"
 import {
   MotionBlur,
@@ -262,6 +263,7 @@ export class Renderer {
   private lampBuf: GPUBuffer
   private gradeBuf: GPUBuffer
   private customBuf: GPUBuffer
+  private spotShadow: { view: GPUTextureView; sampler: GPUSampler; uniform: GPUBuffer }
   private sceneLayout: GPUBindGroupLayout
   private floorTex: GPUTexture
   private moonTex: GPUTexture
@@ -423,6 +425,11 @@ export class Renderer {
     d.queue.writeBuffer(this.surfaceTexBuf, 0, this.surfaceTexData)
     this.gradeBuf = d.createBuffer({ size: this.gradeData.byteLength, usage: U.UNIFORM | U.COPY_DST })
     this.customBuf = d.createBuffer({ size: CUSTOM_UNIFORM_BYTES, usage: U.UNIFORM | U.COPY_DST })
+    this.spotShadow = {
+      view: d.createTexture({ size: [1, 1, 1], format: "depth32float", usage: GPUTextureUsage.TEXTURE_BINDING }).createView({ dimension: "2d-array" }),
+      sampler: d.createSampler({ compare: "less" }),
+      uniform: d.createBuffer({ size: SPOT_SHADOW_UNIFORM_FLOATS * 4, usage: U.UNIFORM }),
+    }
     this.inst = new GrowableInstanceBuffer(d, 4096, INST_FLOATS)
     this.sprites = d.createBuffer({ size: MAX_SPRITES * SPRITE_FLOATS * 4, usage: U.VERTEX | U.COPY_DST })
     this.sampler = d.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" })
@@ -465,6 +472,9 @@ export class Renderer {
         { binding: 15, visibility: S.FRAGMENT, texture: { viewDimension: "2d-array" } },
         { binding: 16, visibility: S.FRAGMENT, sampler: {} },
         { binding: 17, visibility: S.FRAGMENT, texture: { sampleType: "uint" } },
+        { binding: SPOT_SHADOW_BINDINGS.map, visibility: S.FRAGMENT, texture: { sampleType: "depth", viewDimension: "2d-array" } },
+        { binding: SPOT_SHADOW_BINDINGS.sampler, visibility: S.FRAGMENT, sampler: { type: "comparison" } },
+        { binding: SPOT_SHADOW_BINDINGS.uniform, visibility: S.FRAGMENT, buffer: { type: "uniform" } },
       ],
     })
     this.sceneLayout = sceneLayout
@@ -479,7 +489,7 @@ export class Renderer {
       samples: SAMPLES,
     }
     this.vehicleSmoke = new SmokeRenderer(d, sceneLayout, common,
-      "if (li.cone.w > 0.5) { a *= smoothstep(li.cone.z, min(1.0, li.cone.z + 0.08), dot(normalize(-d.xz), li.cone.xy)); }", "depth24plus",
+      "if (li.cone.w > 0.5 && li.cone.w < 2.5) { a *= smoothstep(li.cone.z, min(1.0, li.cone.z + 0.08), dot(normalize(-d.xz), li.cone.xy)); }", "depth24plus",
       shaders?.tyreSmoke?.base, shaders?.tyreSmoke?.dust)
     this.postLayout = d.createBindGroupLayout({
       entries: [
@@ -716,8 +726,17 @@ export class Renderer {
         { binding: 15, resource: this.detailView },
         { binding: 16, resource: this.detailSampler },
         { binding: 17, resource: this.lampGridTex.createView() },
+        { binding: SPOT_SHADOW_BINDINGS.map, resource: this.spotShadow.view },
+        { binding: SPOT_SHADOW_BINDINGS.sampler, resource: this.spotShadow.sampler },
+        { binding: SPOT_SHADOW_BINDINGS.uniform, resource: { buffer: this.spotShadow.uniform } },
       ],
     })
+  }
+
+  /** Binds spot shadow maps (`@arcade/kit/gpu/shadows/spot-shadows` `SpotShadows.bindings()`) at scene bindings 20–22. */
+  setSpotShadows(b: { view: GPUTextureView; sampler: GPUSampler; uniform: GPUBuffer }): void {
+    this.spotShadow = b
+    this.makeSceneGroup()
   }
 
   /** Binds a game's texture array at `@binding(15)` (sampled with the anisotropic clamp sampler at 16). */
