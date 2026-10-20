@@ -4,7 +4,7 @@
 import type { CreatureId } from "../shared/creatures"
 import type { RewardSettings } from "../shared/episode"
 import type { EsSettings } from "../shared/es"
-import type { TaskId } from "../shared/tasks"
+import type { Env } from "../shared/tasks"
 import type { FromTrainer, LastGeneration, ToTrainer } from "../shared/train-worker"
 import type { GenerationStats, SavedPolicy, TrainerOptions } from "../shared/trainer"
 
@@ -20,7 +20,8 @@ export class RemoteTrainer {
   paramSize = 0
   workers: number
   creature: CreatureId
-  task: TaskId
+  /** Level settings; the heist stage follows the worker's curriculum. */
+  env: Env
   hidden: number
   onGeneration: (s: GenerationStats) => void = () => {}
   onError: (message: string) => void = () => {}
@@ -29,7 +30,7 @@ export class RemoteTrainer {
 
   constructor(options: TrainerOptions, workers: number) {
     this.creature = options.creature
-    this.task = options.task
+    this.env = { ...options.env }
     this.hidden = options.hidden
     this.workers = workers
     this.worker.onmessage = (e: MessageEvent<FromTrainer & { epoch?: number }>) => this.receive(e.data)
@@ -50,6 +51,7 @@ export class RemoteTrainer {
       this.latestGen = m.stats.gen
       this.totalSteps = m.stats.totalSteps
       this.population = m.population
+      this.env = { ...this.env, stage: m.stage }
       if (m.best) this.best = m.best
       this.onGeneration(m.stats)
     } else if (m.type === "last") {
@@ -62,7 +64,7 @@ export class RemoteTrainer {
   reset(options: TrainerOptions): void {
     this.epoch++
     this.creature = options.creature
-    this.task = options.task
+    this.env = { ...options.env }
     this.hidden = options.hidden
     this.history = []
     this.best = null
@@ -83,6 +85,11 @@ export class RemoteTrainer {
 
   setReward(reward: RewardSettings): void {
     this.send({ type: "reward", reward })
+  }
+
+  setEnv(env: Env, curriculum: boolean): void {
+    this.env = { ...env }
+    this.send({ type: "env", env, curriculum })
   }
 
   setWorkers(n: number): void {

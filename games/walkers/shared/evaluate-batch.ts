@@ -2,12 +2,12 @@
 
 import type { CreatureId } from "./creatures"
 import { evaluate, policyShape, type RewardSettings } from "./episode"
-import type { TaskId } from "./tasks"
+import type { Env } from "./tasks"
 
 export type EvalRequest = {
   id: number
   creature: CreatureId
-  task: TaskId
+  env: Env
   hidden: number
   reward: RewardSettings
   /** count rows of params, back to back. */
@@ -21,9 +21,15 @@ export type EvalResponse = {
   distance: Float64Array
   /** Control steps each episode ran. */
   steps: Float64Array
-  /** 1 fell, 2 finished, 0 ran out of time. */
+  /** 0 ran out of time, 1 fell, 2 finished (escaped, in the heist), 3 caught by the alarm. */
   outcome: Uint8Array
+  /** 1 when the episode ended holding the gem. */
+  gem: Uint8Array
+  /** Heist alarms set off. */
+  alarms: Uint8Array
 }
+
+export const OUTCOME_CODE = { running: 0, timeout: 0, fell: 1, finished: 2, caught: 3 } as const
 
 export function evaluateBatch(req: EvalRequest): EvalResponse {
   const shape = policyShape(req.creature, req.hidden)
@@ -32,12 +38,16 @@ export function evaluateBatch(req: EvalRequest): EvalResponse {
   const distance = new Float64Array(req.count)
   const steps = new Float64Array(req.count)
   const outcome = new Uint8Array(req.count)
+  const gem = new Uint8Array(req.count)
+  const alarms = new Uint8Array(req.count)
   for (let i = 0; i < req.count; i++) {
-    const r = evaluate(req.creature, req.task, shape, req.params.subarray(i * n, (i + 1) * n), req.reward)
+    const r = evaluate(req.creature, req.env, shape, req.params.subarray(i * n, (i + 1) * n), req.reward)
     fitness[i] = r.fitness
     distance[i] = r.distance
     steps[i] = Math.round(r.time * 60)
-    outcome[i] = r.fell ? 1 : r.finished ? 2 : 0
+    outcome[i] = OUTCOME_CODE[r.outcome]
+    gem[i] = r.gem ? 1 : 0
+    alarms[i] = r.alarms
   }
-  return { id: req.id, fitness, distance, steps, outcome }
+  return { id: req.id, fitness, distance, steps, outcome, gem, alarms }
 }
