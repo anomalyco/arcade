@@ -72,7 +72,7 @@ export class CoopHud {
       host.type = "button"
       host.dataset.openLobby = "true"
       host.textContent = "Co-op · Loadout"
-      host.title = "Choose your survivor, starting kit, or host a 1–4 survivor co-op room"
+      host.title = "Choose your survivor, starting kit, or host a 1–6 survivor co-op room"
       host.addEventListener("click", () => {
         if (this.onOpenLobby) {
           this.onOpenLobby()

@@ -361,16 +361,16 @@ describe("CoopRoomCore", () => {
     expect(core.sim.slots.length).toBe(2)
   })
 
-  test("stale builds are asked to reload and a fifth survivor is turned away", () => {
+  test("stale builds are asked to reload and a seventh survivor is turned away", () => {
     const core = new CoopRoomCore("test", options, Date.now, "test")
     const stale: ServerMsg[] = []
     const conn: Conn = { send: (d) => typeof d === "string" && stale.push(decodeServerText(d)!), close() {} }
     core.open(conn)
     core.message(conn, JSON.stringify({ t: "hello", name: "Old", build: "old" }))
     expect(stale[0]?.t).toBe("reload")
-    for (let i = 0; i < 4; i++) client(core, `P${i}`)
-    const fifth = client(core, "Late")
-    expect(fifth.msgs[0]?.t).toBe("error")
+    for (let i = 0; i < 6; i++) client(core, `P${i}`)
+    const seventh = client(core, "Late")
+    expect(seventh.msgs[0]?.t).toBe("error")
   })
 })
 

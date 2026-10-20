@@ -80,7 +80,7 @@ and collision, exploration persistence, awareness occlusion and clock/daylight m
 
 ## Follow-ups
 
-M2 adds zombies and noise. M3 adds survival inventory and barricades. Co-op rooms (2–4 survivors) are live; persistence
+M2 adds zombies and noise. M3 adds survival inventory and barricades. Co-op rooms (2–6 survivors) are live; persistence
 is not: a room resets once everyone has been gone for a minute. M5 adds audio, fire and vehicles.
 Furniture and trees are visual props in M1. Sun/moon direction shades surfaces, but does not cast a directional
 shadow map. Practical lights use polar shadows. The look study reports measured queue-completed frame spans;

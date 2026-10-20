@@ -3,7 +3,7 @@
 - Unlisted prototype: deployed at `/arcade/outbreak/`, accessible by link without login. Keep `noindex`, no landing panel, and no sitemap entry until promoted.
 - Simulation lives in `shared/` (deterministic, no DOM or Worker APIs), presentation in `src/`. `shared/coop-sim.ts` is the one
   world simulation: offline `LocalSession` runs it with one survivor, the co-op room (`server/room-core.ts`, Durable Object
-  `OutbreakRoom`) with up to four. Read `../../docs/outbreak-coop.md` before touching the sim, the wire protocol or
+  `OutbreakRoom`) with up to six. Read `../../docs/outbreak-coop.md` before touching the sim, the wire protocol or
   `src/net-session.ts`.
 - New features go in a folder and register; never edit `coop-sim.ts` or `src/main.ts` for a feature. A shared feature
   lives in `shared/<feature>/`: domain modules plus an `index.ts` that only calls `registerOutbreakSharedFeature`
