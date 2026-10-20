@@ -8,6 +8,10 @@ import type { LabControl } from "@arcade/kit/lab-panel"
  * round the police cars, and spray-painted search marks and warnings on front walls. Life: crows that scatter, a
  * television flickering in a dark living room, dogs barking far off at night. Presentation only; placement is seeded
  * from the town, so co-op clients match (the crows' flight and the barks are each client's own).
+ *
+ * Life touches (Details · Life, `touches.ts`) are the smaller layer on top: moths at lit lamps, flies over bodies and
+ * bins, eyes under the trees that catch the torch and bolt, breath in the cold. Each is seen only where a real light
+ * reaches it, and where it is is seeded from the town; when it moves is each client's own.
  */
 export type OutbreakDetailSettings = {
   /** Every world detail on or off. */
@@ -42,6 +46,18 @@ export type OutbreakDetailSettings = {
   dtDistantDogs: boolean
   /** Reroll which buildings get what (separate from the town seed). */
   dtSeed: number
+  /** Life touches (Details · Life): small things that move, live and leave traces. Off is Today. */
+  lifeTouches: boolean
+  /** Moths circling the lit porch lights, street lamps and lit windows (0 none, 1 default, 2 thick). */
+  lfMoths: number
+  /** Flies over bodies and bins, only seen in light (0 none, 1 default, 2 thick). */
+  lfFlies: number
+  /** Animals under the trees whose eyes catch the torch, then bolt (0 none, 1 default, 2 more). */
+  lfEyeshine: number
+  /** Once in a while, from the second night, a pair of eyes in the trees that does not run. */
+  lfWatcher: boolean
+  /** Survivors' breath in the cold night air, seen where a light catches it (0 none, 1 default, 2 heavy). */
+  lfBreath: number
 }
 
 export const DEFAULT_DETAIL_SETTINGS: OutbreakDetailSettings = {
@@ -61,9 +77,16 @@ export const DEFAULT_DETAIL_SETTINGS: OutbreakDetailSettings = {
   dtTvPower: 1,
   dtDistantDogs: true,
   dtSeed: 0,
+  lifeTouches: true,
+  lfMoths: 1,
+  lfFlies: 1,
+  lfEyeshine: 1,
+  lfWatcher: true,
+  lfBreath: 1,
 }
 
 const GROUP = "Details"
+const LIFE = "Details · Life"
 
 export const detailControls: LabControl[] = [
   { key: "worldDetails", label: "World details", group: GROUP, type: "toggle" },
@@ -82,4 +105,10 @@ export const detailControls: LabControl[] = [
   { key: "dtTvPower", label: "Television flicker brightness", group: GROUP, min: 0, max: 3, step: 0.05, unit: "×" },
   { key: "dtDistantDogs", label: "Distant dogs at night", group: GROUP, type: "toggle" },
   { key: "dtSeed", label: "Reroll", group: GROUP, min: 0, max: 99, step: 1, unit: "" },
+  { key: "lifeTouches", label: "Life touches (off: Today)", group: LIFE, type: "toggle" },
+  { key: "lfMoths", label: "Moths at lit lamps", group: LIFE, min: 0, max: 2, step: 0.05, unit: "×" },
+  { key: "lfFlies", label: "Flies over bodies and bins", group: LIFE, min: 0, max: 2, step: 0.05, unit: "×" },
+  { key: "lfEyeshine", label: "Eyes under the trees", group: LIFE, min: 0, max: 2, step: 0.05, unit: "×" },
+  { key: "lfWatcher", label: "Eyes that don't run (rare)", group: LIFE, type: "toggle" },
+  { key: "lfBreath", label: "Breath in the cold", group: LIFE, min: 0, max: 2, step: 0.05, unit: "×" },
 ]

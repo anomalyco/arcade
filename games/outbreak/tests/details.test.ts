@@ -183,13 +183,13 @@ describe("world details placement", () => {
     expect(placeCarDetails(town, settings({ dtPoliceTape: false, dtStreetJunk: 0 }), [{ key: "cruiser:12.2,46.3", x: 0, z: 0, yaw: 0 }])).toEqual([])
   })
 
-  test("every model has a mesh and every setting is a Lab control in the Details group", () => {
+  test("every model has a mesh and every setting is a Lab control in the Details groups", () => {
     const meshes = buildDetailMeshes()
     expect(meshes.length).toBe(DETAIL_MODELS.length)
     for (const m of meshes) expect(m.v.length).toBeGreaterThan(0)
     const keys = new Set(detailControls.map((c) => c.key))
     for (const k of Object.keys(DEFAULT_DETAIL_SETTINGS)) expect(keys.has(k)).toBe(true)
-    for (const c of detailControls) expect(c.group).toBe("Details")
+    for (const c of detailControls) expect(c.group.startsWith("Details")).toBe(true)
     expect(getOutbreakSetting(createOutbreakSettings(), "dtMarks")).toBe(DEFAULT_DETAIL_SETTINGS.dtMarks)
   })
 })
