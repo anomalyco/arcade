@@ -173,6 +173,17 @@ describe("soundscape director", () => {
     // Nothing rings after somebody reached it.
     const reached = 60
     expect(rings.every((e) => Number(e.split(":")[0]) <= reached)).toBe(true)
+    // With the radio man's cellar in the run, the message repeats his number instead.
+    const d2 = new ScapeDirector()
+    const counted: string[] = []
+    t = 7000
+    hour = 2.98
+    for (let k = 0; k < 120; k++, t += 0.25, hour += 0.25 / 120) {
+      const me = k < 60 ? far : { x: phone.x + 1, y: phone.y + 1 }
+      d2.step(input(town, { time: t, hour, absHour: 24 + hour, listener: me, survivors: [me], machineCount: 4 }), levels())
+      for (let i = 0; i < d2.shotCount; i++) if (d2.shots[i]!.id.startsWith("scape.phone.machine")) counted.push(d2.shots[i]!.id)
+    }
+    expect(counted).toEqual(["scape.phone.machine.4"])
   })
 
   test("music boxes play once a night, when somebody first steps inside", () => {
