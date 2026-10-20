@@ -12,7 +12,8 @@ import { emitLeafMound, emitTaperedLimb, type FoliageBuildOptions } from "./foli
  * - 2 Fluffy (Tiny Glade / Bruno Simon): rounded crowns built from clusters of small outward-facing leaf cards whose
  *   shading normals point out from the crown centre, over a dark inner core, so the crown lights like one soft volume.
  * - 3 Darkwood: Deadwood's structure carrying Fluffy's card clusters in rich greens and autumn ochres; the game's shader
- *   keeps the colour only where light lands (`TREE_LOOK_SHADE`).
+ *   keeps the colour only where light lands (`TREE_LOOK_SHADE`). A seeded share is blighted (`opts.blight`): Deadwood's
+ *   limbs with sparse withered clumps, or dead with none.
  *
  * Leaf cards are real geometry (a six-point leaf, 4 triangles, 0.25–0.45 m), never sub-pixel at the game camera, so
  * they hold still under MSAA or TAA instead of glittering; flutter and normal rocking fade with distance in the wind.
@@ -336,36 +337,58 @@ function buildFluffy(m: Mesh, x: number, z: number, h: number, radius: number, s
   }
 }
 
+/** Blight at or above this leaves a Darkwood tree dead: Deadwood limbs and no leaf cards at all. */
+export const TREE_DEAD_BLIGHT = 0.7
+
+/**
+ * How blighted a Darkwood tree is: 0 healthy, else 0.25..1 (from sparse withered clumps to dead at `TREE_DEAD_BLIGHT`).
+ * From its own hash of the seed, so changing the share never reshuffles the healthy trees' shapes.
+ */
+export function treeBlight(seed: number, share: number): number {
+  const rng = lookRng(seed, 0xb1197)
+  if (rng.next() >= share) return 0
+  return 0.25 + 0.75 * rng.next()
+}
+
 function buildDarkwood(m: Mesh, x: number, z: number, h: number, radius: number, seed: number, ground: number, opts: Readonly<FoliageBuildOptions>): void {
   const rng = lookRng(seed, 0xda4c)
   const hero = isHero(x, z)
   const quality = Math.round(Math.min(2, Math.max(0, opts.quality)))
-  const bark = scale([0.19, 0.16, 0.12], 0.9 + rng.next() * 0.2)
-  const bare = rng.next() < opts.deadTrees
-  const s: Skeleton = { ...deadwoodSkeleton(bark, quality, hero), gnarl: 0.42, rise: 0.08, twigs: bare ? 3 : quality === 0 ? 0 : 1, stubs: 0.12, depth: 2 }
-  const trunkR = (0.2 + rng.next() * 0.06) * Math.max(0.8, Math.min(1.25, h / 5.2))
+  const blight = treeBlight(seed, opts.blight)
+  const bark = scale(blight > 0 ? [0.16, 0.14, 0.12] : [0.19, 0.16, 0.12], (0.9 + rng.next() * 0.2) * (1 - 0.18 * blight))
+  const bare = rng.next() < opts.deadTrees || blight >= TREE_DEAD_BLIGHT
+  // Blighted trees take Deadwood's treatment: more twist, drooping limbs, broken stubs, a heavier trunk.
+  const s: Skeleton = blight > 0
+    ? { ...deadwoodSkeleton(bark, quality, hero), depth: 2, twigs: bare ? 3 : 2 }
+    : { ...deadwoodSkeleton(bark, quality, hero), gnarl: 0.42, rise: 0.08, twigs: bare ? 3 : quality === 0 ? 0 : 1, stubs: 0.12, depth: 2 }
+  const trunkR = (0.2 + rng.next() * 0.06) * Math.max(0.8, Math.min(1.25, h / 5.2)) * (1 + 0.12 * blight)
   const tips = skeleton(m, rng, s, x, z, h, radius, ground, trunkR)
   if (bare) return
   const autumnShare = 0.25 + 0.35 * opts.variety
   const base = leafColour(rng, DARKWOOD_GREENS, DARKWOOD_AUTUMN, autumnShare)
   const crown: V3 = [x, ground + h * 0.62, z]
-  const cards = Math.round((hero ? 24 : 15) * [0.7, 1, 1.3][quality]!)
+  const cards = Math.round((hero ? 24 : 15) * [0.7, 1, 1.3][quality]! * (1 - 0.5 * blight))
   const size = 0.34 * Math.max(0.8, Math.min(1.2, radius / 2.4))
+  // Blight thins the crown to a few clumps and withers them toward Deadwood's dark olive and brown.
+  const keep = 1 - blight * 1.1
   let leafy = 0
   for (const t of tips) {
     // Clumps sit on the limb ends, with gaps between them so the gnarled limbs show through the crown.
     const inner = t.level < s.depth
     if (leafy > 0 && rng.next() < (inner ? 0.55 : 0.3)) continue
+    if (blight > 0 && rng.next() > keep) continue
     leafy++
-    const rc = radius * (0.34 + rng.next() * 0.1) * (inner ? 0.8 : 1)
-    const tint = scale(mix(base, leafColour(rng, DARKWOOD_GREENS, DARKWOOD_AUTUMN, autumnShare), 0.25), 0.9 + rng.next() * 0.2)
+    const rc = radius * (0.34 + rng.next() * 0.1) * (inner ? 0.8 : 1) * (1 - 0.35 * blight)
+    let tint = scale(mix(base, leafColour(rng, DARKWOOD_GREENS, DARKWOOD_AUTUMN, autumnShare), 0.25), 0.9 + rng.next() * 0.2)
+    if (blight > 0) tint = mix(tint, leafColour(rng, DEADWOOD_LEAVES, DEADWOOD_LEAVES, 0), Math.min(1, 0.35 + blight))
     cardCluster(m, rng, add(t.p, t.dir, rc * 0.3), rc, rc * 0.72, crown, cards, size, palette(tint), flexAt(t.p[1], ground, h), 0.68, 0.85)
   }
 }
 
 /**
  * Builds one tree in `look` (1 Deadwood, 2 Fluffy, 3 Darkwood); look 0 is `buildFoliageTree`'s lively crown, which the
- * caller builds itself. Deterministic per seed. Bare trees follow `opts.deadTrees` (Deadwood is at least a third bare).
+ * caller builds itself. Deterministic per seed. Bare trees follow `opts.deadTrees` (Deadwood is at least a third bare);
+ * `opts.blight` of Darkwood trees take Deadwood's treatment (`treeBlight`).
  */
 export function buildTreeLook(m: Mesh, look: number, x: number, z: number, h: number, radius: number, seed: number, ground: number, opts: Readonly<FoliageBuildOptions>): void {
   if (look === 1) buildDeadwood(m, x, z, h, radius, seed, ground, opts)

@@ -342,7 +342,7 @@ const YARD_SEED_BUCKETS = 4
 const yardTemplates = new Map<string, PackedPropTemplate>()
 function yardPlantTemplate(h: number, radius: number, seed: number): PackedPropTemplate {
   const bucket = (seed >>> 0) % YARD_SEED_BUCKETS
-  const key = `${h}:${radius}:${bucket}`
+  const key = `${h}:${radius}:${bucket}:${vegetationSignature()}`
   let tpl = yardTemplates.get(key)
   if (tpl) return tpl
   const m = new Mesh()

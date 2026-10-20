@@ -52,26 +52,31 @@ describe("Outbreak vegetation settings", () => {
 })
 
 describe("Outbreak tree looks and the burn hook", () => {
-  test("Today (Lively) is the default tree look; picking A–C rebuilds and needs Lively", () => {
+  test("C (Darkwood, D-42) with blight is the default tree look; Today is one setting away", () => {
     const s = { ...DEFAULT_VEGETATION_SETTINGS }
-    expect(s.vegTreeLook).toBe(0)
-    syncVegetationBuild(s)
-    const today = vegetationSignature()
-    expect(vegetationBuild.treeLook).toBe(0)
-    expect(syncVegetationBuild({ ...s, vegTreeLook: 3 })).toBe(true)
+    expect(s.vegTreeLook).toBe(3)
+    expect(s.vegTreeBlight).toBeCloseTo(0.25, 6)
     expect(vegetationBuild.treeLook).toBe(3)
-    expect(vegetationSignature()).not.toBe(today)
-    expect(syncVegetationBuild({ ...s, vegTreeLook: 3, vegLook: 0 })).toBe(true)
+    syncVegetationBuild(s)
+    const c = vegetationSignature()
+    expect([vegetationBuild.treeLook, vegetationBuild.blight]).toEqual([3, 0.25])
+    expect(syncVegetationBuild({ ...s, vegTreeLook: 0 })).toBe(true)
+    expect([vegetationBuild.treeLook, vegetationBuild.blight]).toEqual([0, 0])
+    expect(vegetationSignature()).not.toBe(c)
+    expect(syncVegetationBuild(s)).toBe(true)
+    expect(syncVegetationBuild({ ...s, vegTreeBlight: 0.5 })).toBe(true)
+    expect(vegetationSignature()).not.toBe(c)
+    expect(syncVegetationBuild({ ...s, vegLook: 0 })).toBe(true)
     expect(vegetationBuild.treeLook).toBe(0)
     syncVegetationBuild(s)
-    expect(vegetationSignature()).toBe(today)
+    expect(vegetationSignature()).toBe(c)
   })
 
   test("tree uniforms: look, shade only for A and C, burning trees from the source", () => {
     const town = makeTown(7, 7, 0, 1)
     const tree = town.props.find((p) => p.kind === "tree")!
     const out = new Float32Array(VEG_TREE_UNIFORM_FLOATS)
-    const s = { ...DEFAULT_VEGETATION_SETTINGS }
+    const s = { ...DEFAULT_VEGETATION_SETTINGS, vegTreeLook: 0 }
     packVegetationTrees(s, town, tree.x, tree.y, out, 0)
     expect([out[0], out[1], out[3]]).toEqual([0, 0, 0])
     packVegetationTrees({ ...s, vegTreeLook: 2 }, town, tree.x, tree.y, out, 0)

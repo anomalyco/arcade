@@ -955,7 +955,7 @@ proven animation techniques to animation.md, not here.
   Stills and clips: `bun scripts/vegetation-stills.ts --clip --gpu` (via `hivemind run --kind browser`).
 
 - **Tree looks A–C for D-41 (AR-74)** (`packages/kit/gpu/foliage-looks.ts`; `games/outbreak/src/vegetation/trees.ts`;
-  Lab › Vegetation › Tree look, station `outbreak-vegetation`; Today stays default). A Deadwood: limbs as two curved
+  Lab › Vegetation › Tree look, station `outbreak-vegetation`; C is the default since D-42, Today one setting away). A Deadwood: limbs as two curved
   segments with a lateral kink between them (tangent-continuous, so they twist instead of zig-zagging), kink growing
   with limb level (trunks 0.2×), broken stubs, near-black bark, sparse dark clumps or bare. B Fluffy: overlapping
   clusters of 0.3 m six-point leaf cards on ellipsoid shells over dark inner mounds, with shading normals pushed 88%
@@ -965,11 +965,21 @@ proven animation techniques to animation.md, not here.
   38 m camera sees, and trees cut sight wedges, so crowns in the beam rendered as flat shroud-grey slabs; a plan-cone
   "torch through the crown" term (`outbreakTreeBeam`) that also marks the crown as seen for the fog of war fixes it;
   (2) seeding `Rng` with nearby seeds gives correlated first draws (seed 300000 → 0.997, 0.001), so looks hash the seed
-  first (`lookRng`); (3) Outbreak's street lamps are nearly dead (power ~0.03, radius ~4.5 m), so lamps don't light
-  trees. Tree vertices for the 36 origin trees: Lively 96.5k, A 78k, B 95k, C 130k. Paired GPU at 3456×1894 on Pro
+  first (`lookRng`); (3) Outbreak's street lamps were nearly dead at night (power ~0.03, radius ~4.5 m; fixed below).
+  (4) The beam's lent colour went moon-grey: the scene's colour rule desaturates whatever `litMask` misses, and the
+  through-crown term wasn't in it (C crowns in the beam measured saturation 0.06 against 0.34 on the lit lawn). The
+  crown's beam mask now joins the colour rule (`outbreakTreeColourLit`, scaled by "Tree colour in light", default 1.25).
+  Blight (D-42): `treeBlight(seed, share)` from its own hash, so the share never reshuffles healthy trees; blighted C
+  trees take Deadwood's skeleton, darker bark and fewer, withered clumps, and at blight ≥ 0.7 no leaf cards (Lab
+  "Blighted trees", default 25%). Tree vertices for the 36 origin trees: Lively 96.5k, A 78k, B 95k, C 130k. Paired GPU at 3456×1894 on Pro
   (5 pairs, vs Lively): A +0.53 / +0.39 ms (street night / yard day, MAD ≤ 0.06), B −0.02 / −0.04 (noise), C +0.50 /
   +0.47 (MAD ≤ 0.05); A and C's cost is the per-fragment tree shade and beam terms. Stills, clips, GPU:
   `bun scripts/tree-looks-stills.ts --clip --gpu`.
+- **Street lamps at night** (`games/outbreak/src/day-night.ts`, `lighting.ts`). The night lighting curve took Noir's
+  `streetPower` 0.12 (Oct 14), so street lamps faded 8× as night fell to power 0.03, a tenth of a porch light, and fell
+  under the 0.2 gate of the shader's per-house sodium ground pool. Night now keeps dusk's 0.96 (power 0.27). That
+  sodium pool sits at a fixed spot by every house, not under a real lamp, so Darkwood (`OL.sight.y`) turns it off and
+  the real street lamps light the ground. `tests/day-night.test.ts` keeps night lamps at least dusk's power.
 
 - **Blackout's C look pass** (`games/blackout/src/render/shaders.ts`, `lighting.ts`, and the Lab's Look group).
   A darker teal shadow grade, reduced colour fringing and grain, warm-white tubes, amber desk lights, tan wall faces,
