@@ -3,12 +3,14 @@ import { defineStation } from "./define"
 
 const page = "/arcade/outbreak/?seed=7&peaceful=1"
 const set = (key: string, value: number | boolean | string): StationCommand => ({ command: "scene.set-param", args: { key, value } })
+const WATCH = new Set(["rest", "herd", "feed", "light", "lightning", "crowd"])
+// The scenes the dead play out alone hide the survivor indoors and watch from the scene; moving takes the camera back.
 const stage = (scene: string, zoom = 30, ...extra: StationCommand[]): StationCommand[] => [
   set("behaviour.zbMode", 1),
   set("behaviour.zbOverlay", 1),
   set("timeScale", 1),
   set("zoom", zoom),
-  { command: "behaviour.stage", args: { scene } },
+  { command: "behaviour.stage", args: { scene, watch: WATCH.has(scene) } },
   ...extra,
 ]
 

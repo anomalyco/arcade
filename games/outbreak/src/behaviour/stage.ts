@@ -8,6 +8,7 @@ import {
 import { behaviourOf, freshMind } from "../../shared/behaviour/mind"
 import { zombiePersonality, type ZombiePersonality } from "../../shared/behaviour/personality"
 import type { BodiesState } from "../../shared/bodies/runtime"
+import { inBuildingFootprint } from "../../shared/map"
 import type { OutbreakSim } from "../../shared/sim-types"
 
 /**
@@ -60,10 +61,40 @@ function pose(sim: OutbreakSim, x: number, y: number, aim: number, torch: boolea
   return p
 }
 
-/** Stages `scene` around the first survivor; returns what it placed. */
-export function stageBehaviour(sim: OutbreakSim, scene: BehaviourScene): { scene: string; zombies: number[]; note: string } {
+/** Scenes the dead play out on their own: with `watch`, the survivor hides indoors and the camera watches them. */
+export const WATCHABLE_SCENES: readonly BehaviourScene[] = ["rest", "herd", "feed", "light", "lightning", "crowd"]
+
+export type StagedBehaviour = { scene: string; zombies: number[]; note: string; centre?: { x: number; y: number }; watch?: boolean }
+
+/** Out of sight inside the nearest house 12–40 m from (x, y), torch off, so the dead there do as they would alone. */
+function hideSurvivor(sim: OutbreakSim, x: number, y: number): boolean {
+  const s = sim.slots[0]!.survivor
+  const centreOf = (b: (typeof sim.town.buildings)[number]) => ({ x: (b.rect[0] + b.rect[2]) / 2, y: (b.rect[1] + b.rect[3]) / 2 })
+  const house = sim.town.buildings
+    .map((b) => ({ b, c: centreOf(b) }))
+    .filter(({ c }) => {
+      const d = Math.hypot(c.x - x, c.y - y)
+      return d > 12 && d < 40
+    })
+    .sort((a, b) => Math.hypot(a.c.x - x, a.c.y - y) - Math.hypot(b.c.x - x, b.c.y - y))[0]
+  if (!house) return false
+  const p = free(sim, house.c.x, house.c.y)
+  Object.assign(s, { x: p.x, y: p.y, vx: 0, vy: 0, flashlightOn: false })
+  return true
+}
+
+/** Stages `scene` around the first survivor; returns what it placed and where it happens. */
+export function stageBehaviour(sim: OutbreakSim, scene: BehaviourScene, opts: { watch?: boolean } = {}): StagedBehaviour {
   const s0 = sim.slots[0]!.survivor
   let note = ""
+  let centre: { x: number; y: number } | undefined
+  // Out on the street first: a scene staged from indoors (after "search", or a hidden watcher) would happen in a room.
+  const indoors = sim.town.buildings.find((b) => inBuildingFootprint(b, s0.x, s0.y))
+  if (indoors) {
+    const q = free(sim, (indoors.rect[0] + indoors.rect[2]) / 2, indoors.rect[3] + 5)
+    s0.x = q.x
+    s0.y = q.y
+  }
   const ids: number[] = []
   const add = (a: AIAgent) => ids.push(a.id)
   const st = behaviourOf(sim)
@@ -128,6 +159,7 @@ export function stageBehaviour(sim: OutbreakSim, scene: BehaviourScene): { scene
           m.until = sim.time + 1e6
         }
       }
+      centre = p
       note = "Noon: the dead sit, slump and stand still. Walk close, or fire a shot, and they get up."
       break
     }
@@ -138,6 +170,7 @@ export function stageBehaviour(sim: OutbreakSim, scene: BehaviourScene): { scene
       const lead = place(sim, p.x + 14, p.y, Math.PI, seedWith((q) => q.leader, 600))
       add(lead)
       for (let k = 0; k < 7; k++) add(place(sim, p.x + 15 + (k % 3) * 1.4, p.y - 2 + Math.floor(k / 3) * 1.6, Math.PI, seedWith((q) => q.sociability > 0.8 && !q.leader, 700 + k * 1000)))
+      centre = { x: lead.x - 4, y: lead.y }
       note = "Night: a loose herd drifts down the street after its leader."
       break
     }
@@ -150,6 +183,7 @@ export function stageBehaviour(sim: OutbreakSim, scene: BehaviourScene): { scene
       pose(sim, body.x, body.y - 13, Math.PI / 2, false)
       clearAround(sim, body.x, body.y, 40)
       for (let k = 0; k < 3; k++) add(place(sim, body.x + 3 + k, body.y + (k - 1) * 2, Math.PI, seedWith((q) => q.hunger > 0.95 && q.torpor < 0.3, 800 + k * 1000)))
+      centre = { x: body.x + 1.5, y: body.y }
       note = "Three hungry dead find a body and crouch over it; a third is shouldered off. Disturb them and they rise."
       break
     }
@@ -187,6 +221,7 @@ export function stageBehaviour(sim: OutbreakSim, scene: BehaviourScene): { scene
         a.timer = 0.05
         add(a)
       }
+      centre = { x: lamp.x, y: lamp.y }
       note = "Night, torch off: curious dead drift in to stand under the lamp and look up at it."
       break
     }
@@ -203,6 +238,7 @@ export function stageBehaviour(sim: OutbreakSim, scene: BehaviourScene): { scene
       const p = pose(sim, s0.x, s0.y, 0, true)
       clearAround(sim, p.x, p.y, 40)
       for (let k = 0; k < 6; k++) add(place(sim, p.x + Math.cos(k) * (7 + k), p.y + Math.sin(k) * (7 + k), k, seedWith(() => true, 1200 + k * 1000)))
+      centre = p
       note = "Storm (set Weather to storm and raise strikes per minute): each flash freezes the dead out in the open, looking up."
       break
     }
@@ -215,11 +251,13 @@ export function stageBehaviour(sim: OutbreakSim, scene: BehaviourScene): { scene
         const r = 8 + (k % 6) * 3.2
         add(place(sim, p.x + Math.cos(ang) * r, p.y + Math.sin(ang) * r, ang + 1.5, (0x9e3779b1 * (k + 1)) >>> 0))
       }
+      centre = p
       note = "A night street of 24 different dead: listen, follow, herd, pause, flinch, search all at once. Compare with Zombie behaviour: Today."
       break
     }
   }
+  const watch = Boolean(opts.watch && centre && WATCHABLE_SCENES.includes(scene) && hideSurvivor(sim, centre.x, centre.y))
   sim.syncWorldChunks()
-  return { scene, zombies: ids, note }
+  return { scene, zombies: ids, note, centre, watch }
 }
 
