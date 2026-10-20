@@ -240,20 +240,24 @@ That version bypassed the director's pacing. In the co-op opening, 4-player Skil
 they trail it rather than join the hunt. Only one follows by day; three follow at night. With that change, the
 co-op opening has no downs again (2, 4 and 6 survivors × 4 seeds).
 
-On the current overnight tree, the CI batch in `tests/difficulty-ramp.test.ts` (4 presets × 4 seeds × 3 nights)
-gives:
+Followers were the first problem. A second came after AR-88 (who they were) merged: Novice bots took less than half
+of Today's Night 1 damage (2.1 vs 5.1 per hour). A noisy survivor kept the wanderers around them stopping to listen,
+which shielded them. Now a zombie listens at most once every five seconds, and when it turns to investigate the pause
+lasts 0.3–0.7 s. On the current overnight tree, the CI batch in `tests/difficulty-ramp.test.ts` (4 presets × 4 seeds
+× 3 nights) gives:
 
 | CI batch | Today | Alive |
 | --- | --: | --: |
-| Alive at dawn 1 / 3: Skilled, Expert | 1 / 0.75, 1 / 0.5 | 1 / 0.75, 1 / 0.5 |
-| Aware zombies, Night 2 / Night 3 (pooled) | 5.74 / 6.22 | 6.89 / 6.89 |
-| Night 3 / Night 2 aware ratio | 1.083 | 1.000 |
-| Chasers, Night 1 / 2 / 3 | 1.37 / 2.86 / 3.76 | 1.28 / 2.82 / 3.76 |
-| Novice / Skilled damage per hour, Night 1 | 6.3 / 2.8 | 3.1 / 1.4 |
+| Alive at dawn 1 / 3: Novice, Skilled, Expert | 0.75 / 0.25, 1 / 0.75, 0.75 / 0.25 | 0.5 / 0, 1 / 0.5, 0.75 / 0.5 |
+| Aware zombies, Night 2 / Night 3 (pooled) | 5.78 / 6.36 | 7.17 / 7.58 |
+| Night 3 / Night 2 aware ratio | 1.10 | 1.06 |
+| Chasers, Night 1 / 2 / 3 | 1.13 / 2.89 / 3.72 | 1.13 / 2.92 / 3.84 |
+| Novice / Skilled damage per hour, Night 1 | 5.1 / 2.3 | 4.5 / 2.9 |
 
 One band moved, deliberately: **`nightThreeOverTwo`'s lower edge went from 1.0 to 0.9.** More of the dead hunt from
-Night 2, so Night 3 has more aware zombies than before but the ratio flattens to the old edge. Living zombies and
-chasers still rise. Survival is unchanged.
+Night 2, so the ratio flattens even though Night 3 has more aware zombies than before. It read 0.95–1.00 on earlier
+trees, right on the old edge. Living zombies and chasers still rise, and survival moves by a run either way within
+the bands.
 
 This is the intended effect: the dead keep looking after they lose you, so the later
 nights feel hunted rather than heavier. Lab › Zombie behaviour › "Search, remember,

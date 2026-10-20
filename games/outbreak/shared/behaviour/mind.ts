@@ -770,11 +770,13 @@ export function stepBehaviourAfter(sim: OutbreakSim, st: BehaviourState): void {
       m.heard = id
       // Still wandering (a faint sound), or just turned to investigate it: a beat to turn and listen before it goes.
       const starting = cur === "investigate" && (prev === "wander" || prev === "search")
-      if ((cur === "wander" || starting) && (m.act === ACT_NONE || m.act === ACT_PAUSE || m.act === ACT_HERD || m.act === ACT_LIGHT)) {
+      // Once every few seconds at most, so a noisy survivor is not shielded by a crowd that keeps stopping to listen.
+      if ((cur === "wander" || starting) && time >= m.cool && (m.act === ACT_NONE || m.act === ACT_PAUSE || m.act === ACT_HERD || m.act === ACT_LIGHT)) {
         const ev = sim.ai.noiseBus.events.find((e) => e.id === id)
         if (ev && h01(a.seed, id, 141) < Math.min(1, (0.35 + 0.6 * p.curiosity) * t.zbListen)) {
-          const hold = starting ? 0.45 + 0.6 * p.curiosity : 0.8 + 1.4 * p.curiosity
+          const hold = starting ? 0.3 + 0.4 * p.curiosity : 0.8 + 1.4 * p.curiosity
           start(st, m, ACT_LISTEN, time + hold * Math.min(1.5, t.zbListen), ev.x, ev.y)
+          m.cool = time + hold + 5
         }
       }
     }
