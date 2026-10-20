@@ -10,7 +10,7 @@ import { TexturedMeshPass, type TexturedPrimitive } from "@arcade/kit/gpu/textur
 import { TEMPORAL_DEFAULTS } from "@arcade/kit/gpu/temporal"
 import { LabPanel } from "@arcade/kit/lab-panel"
 import { controls, defaults } from "./settings"
-import { hooks, fenceHooks } from "./shaders"
+import { hooks, texturedHooks, glassHooks, fenceHooks } from "./shaders"
 import { buildWorld, CAR, START, walls } from "./world"
 import { foliageTexture, solidTexture } from "./foliage"
 import { post } from "./post"
@@ -40,15 +40,21 @@ async function main() {
   }))
   const normal=solidTexture(gpu.device,[128,128,255,255]), orm=solidTexture(gpu.device,[255,255,0,255])
   const leaves=await foliageTexture(gpu.device,import.meta.env.BASE_URL+"ashwood/paint.js")
+  const undergrowth=await foliageTexture(gpu.device,import.meta.env.BASE_URL+"ashwood/paint.js","undergrowthAtlas")
+  const impostors=await foliageTexture(gpu.device,import.meta.env.BASE_URL+"ashwood/paint.js","impostors")
   const meshes = new TexturedMeshPass(renderer.passContext, [...world.ground.map((vertices):TexturedPrimitive=>({
     vertices, base: textures[0]!, normal: textures[1]!, orm: textures[2]!,
     color: [1, 1, 1, 1], roughness: 1, metalness: 0, normalScale: 0.45, blend: false, aoStrength: 1,
-  })), ...car.primitives, ...world.foliage.map((vertices):TexturedPrimitive=>({vertices,base:leaves,normal,orm,color:[1,1,1,1],roughness:1,metalness:0,normalScale:0,blend:false,alphaCutoff:0.5}))], hooks)
+  })), ...car.primitives, ...world.foliage.map((vertices):TexturedPrimitive=>({vertices,base:leaves,normal,orm,color:[1,1,1,1],roughness:1,metalness:0,normalScale:0,blend:false,alphaCutoff:0.5})), ...world.undergrowth.map((vertices):TexturedPrimitive=>({vertices,base:undergrowth,normal,orm,color:[1,1,1,1],roughness:1,metalness:0,normalScale:0,blend:false,alphaCutoff:0.5}))], texturedHooks)
   renderer.addPass("opaque", meshes)
+  renderer.addPass("opaque",new TexturedMeshPass(renderer.passContext,world.impostors.map((vertices):TexturedPrimitive=>({vertices,base:impostors,normal,orm,color:[1,1,1,1],roughness:1,metalness:0,normalScale:0,blend:false,alphaCutoff:0.5})),texturedHooks))
   const white=solidTexture(gpu.device,[255,255,255,255])
   renderer.addPass("opaque",new TexturedMeshPass(renderer.passContext,world.fence.map((vertices):TexturedPrimitive=>({
     vertices,base:white,normal,orm,color:[1,1,1,1],roughness:0.6,metalness:0.85,normalScale:0,blend:false,
   })),fenceHooks))
+  renderer.addPass("alpha",new TexturedMeshPass(renderer.passContext,world.glass.map((vertices):TexturedPrimitive=>({
+    vertices,base:white,normal,orm,color:[1,1,1,0.35],roughness:0.06,metalness:0,normalScale:0,blend:true,
+  })),glassHooks))
 
   const camera = new FirstPerson(canvas, () => panel.visible)
   camera.body.x = START.x; camera.body.y = START.z; camera.yaw = START.yaw; camera.pitch = START.pitch
@@ -71,7 +77,9 @@ async function main() {
     if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; renderer.resize(width, height) }
     const dt = Math.min(0.05, (now - last) / 1000); last = now
     const vp = camera.update(dt, width / height, walls)
-    lights.update(world.scene.lamps.filter(l=>l.kind==="sodium" || l.kind==="incandescent").map(l=>({x:l.position[0],y:l.position[2],h:l.position[1],r:l.range,color:l.color,power:l.intensity*settings.lamp,size:0.45})), [])
+    lights.update(world.scene.lamps.filter(l=>l.kind==="sodium" || l.kind==="incandescent").map(l=>({x:l.position[0],y:l.position[2],h:l.position[1],r:l.range,color:l.color,power:l.intensity*settings.lamp/5,size:0.45,
+      ...(l.angle ? { spot: { axis: [0,-1,0] as const, cosOuter: Math.cos(l.angle), cosInner: Math.cos(l.angle*(1-(l.penumbra ?? 0.55))) } } : {}),
+    })), [])
     custom.set([settings.density, settings.falloff, settings.sky, settings.lamp, settings.wetness, settings.haze, 0, 0, ...camera.direction, Number(camera.flashlight)])
     renderer.setCustomUniforms(custom)
     packSceneFrame(frameData, { viewProj: vp, eye: camera.eye, time: 0, width, height, lightCount: lights.lightCount,

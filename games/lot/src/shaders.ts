@@ -1,8 +1,15 @@
 import { nightAtmosphere } from "@arcade/kit/gpu/night-atmosphere"
 import type { SceneHooks } from "@arcade/kit/gpu/shaders"
+import { withPhysicalLights } from "@arcade/kit/gpu/lights/physical"
 
-export const hooks: SceneHooks = {
+const nightHooks: SceneHooks = {
   lampGrid: false,
+  vertex: `if(v.matAux.x==30.0) {
+    let toCam=normalize(F.cam.xz-v.pos.xz);
+    let side=vec2f(toCam.y,-toCam.x);
+    o.world+=vec3f(side.x*v.normal.x*v.normal.z*0.5,v.normal.y,side.y*v.normal.x*v.normal.z*0.5)*v.matAux.y;
+    o.normal=normalize(vec3f(toCam.x,0.55,toCam.y));
+  }`,
   declarations: /* wgsl */ `
     struct Night { fog: vec4f, look: vec4f, torch: vec4f }
     @group(0) @binding(13) var<uniform> N: Night;
@@ -39,17 +46,10 @@ export const hooks: SceneHooks = {
     }
   `,
   bounce: "vec3f(0.0)", directional: "vec3f(0.0)", lightLeak: "0.0", wallDirectScale: "1.0",
-  lightAttenuation: /* wgsl */ `
-    let cutoff=pow(max(0.0,1.0-pow(d3/r,4.0)),2.0);
-    let cone=select(1.0,smoothstep(cos(1.1),cos(1.1*0.45),dy/d3),hl>4.0);
-    // Physical source candela already carries the intensity; cancel kit's legacy ×5 light gain.
-    var att=power*cutoff*cone/(GAIN*3.14159265*max(d3*d3,0.01));
-  `,
-  ambient: "fogColor()*mix(0.12,0.6,max(n.y,0.0))",
-  combineLighting: "col=albedo*(amb+direct+torchLight(o.world,n))",
+  ambient: "fogColor()*mix(0.12,0.55,smoothstep(-1.0,1.0,n.y))",
   material: /* wgsl */ `
-    gloss=vec2f(0.0);
-    if(mat==20) { albedo*=mix(1.0,0.52,N.look.x); }
+    pbrRough=0.8;
+    if(mat==20) { albedo*=mix(1.0,0.52,N.look.x); pbrRough=mix(0.8,0.36,N.look.x); }
   `,
   surface: /* wgsl */ `
     let ray=normalize(o.world-F.cam.xyz);
@@ -64,9 +64,17 @@ export const hooks: SceneHooks = {
       if(l.pos.y<4.0 || l.color.w<1.0) { continue; }
       let sigma=N.fog.x*exp(-l.pos.y*N.fog.y);
       let trans=1.0-heightFog(F.cam.xyz,l.pos.xyz,N.fog.x,N.fog.y);
-      col+=l.color.rgb*l.color.w*sigma*trans*N.look.y*downlightScatter(F.cam.xyz,o.world,l.pos.xyz,l.pos.w,vec4f(cos(1.1),cos(1.1*0.45),0.03,4.5),0.225,0.6);
+       col+=l.color.rgb*l.color.w*GAIN*sigma*trans*N.look.y*downlightScatter(F.cam.xyz,o.world,l.pos.xyz,l.pos.w,vec4f(cos(1.1),cos(1.1*0.45),0.03,4.5),0.225,0.6);
     }
   `,
+}
+
+export const hooks = withPhysicalLights(nightHooks, { env: "sky(dir)", settings: { spill: 0 } })
+hooks.combineLighting += "; col += albedo * torchLight(o.world,n)"
+export const texturedHooks: SceneHooks = { ...hooks, material: `${hooks.material}\nif(mat!=20) { pbrRough=rough; } pbrMetal=metal;` }
+export const glassHooks: SceneHooks = { ...hooks,
+  material: `${hooks.material}\npbrRough=0.06; alpha=0.35;`,
+  combineLighting: `${hooks.combineLighting}; col += vec3f(1.0,0.36,0.08)*0.7`,
 }
 
 /** Ashwood's 50 mm diamond grid with subpixel coverage preserved by screen-space dithering. */

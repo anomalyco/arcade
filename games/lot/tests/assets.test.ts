@@ -24,7 +24,7 @@ test("baked exterior ships complete, finite, triangle-aligned geometry within ho
   const scene: SourceScene = await Bun.file(new URL("scene.json", base)).json()
   expect(scene.version).toBe(1)
   expect(scene.treeCount).toBeGreaterThan(100)
-  for (const kind of ["solid", "ground", "foliage", "fence"] as const) {
+  for (const kind of ["solid", "ground", "foliage", "fence", "glass", "undergrowth", "impostors"] as const) {
     expect(scene.files[kind].length).toBeGreaterThan(0)
     for (const name of scene.files[kind]) {
       const file = Bun.file(new URL(name, base))
