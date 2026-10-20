@@ -192,6 +192,11 @@ fire once with a bottle, which throws at full strength at once, as their old fix
 up or throw the new items on purpose (they may pick one up as "dropped supplies"). The banded test
 (`tests/difficulty-ramp.test.ts`) passed unchanged; no band moved.
 
+Loose furniture (up to two pieces a house) moves bots' paths. Before bots knew about it (`survivorObstacles`) they
+walked into chairs and Night 3 chasers fell from 3.67 to 1.6 in one placement; with bots pathing round the pieces the
+batch is back beside its baseline (Night 3 / Night 2 aware 1.007 → 1.05, Night 3 chasers 3.67 → 3.71, Skilled alive
+at dawn 3 0.5 → 0.25, on its lower edge again). No band moved.
+
 ## Door breaches (AR-97)
 
 Readable breaches (`shared/breach/`) add a 1.1 s warning beat before a door gives, bracing, and a broken door that

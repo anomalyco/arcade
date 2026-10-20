@@ -1,7 +1,7 @@
 import type { DeathState } from "../death/rules"
 import { registerOutbreakSharedFeature } from "../feature-registry"
 import type { OutbreakSim } from "../sim-types"
-import { createDragState, dragSpeed, furnitureHandler, holdsFor, pushOutOfFurniture, seedFurniture, stepDragged, stepHauls, type DragState } from "./drag"
+import { createDragState, dragSpeed, furnitureHandler, holdsFor, pushOutOfFurniture, restingFurniture, seedFurniture, stepDragged, stepHauls, type DragState } from "./drag"
 import { createTossState, seedThrowables, stepTosses, stepWindup, type TossState } from "./tosses"
 import { DEFAULT_INTERACTIONS_TUNING, interactionsTuning, type InteractionsTuning } from "./tuning"
 
@@ -26,6 +26,7 @@ export const outbreakInteractionsSharedFeature = registerOutbreakSharedFeature<I
   },
   movementScale: (sim, slot, state) => dragSpeed(sim, state.drag, slot, state.tuning),
   pushOutSurvivor: (sim, survivor, radius, state) => pushOutOfFurniture(sim, state.drag, survivor, radius),
+  survivorObstacles: (sim, state) => restingFurniture(sim, state.drag),
   stepSurvivorMovement: ({ sim, slot, command, predict, state }) => {
     stepWindup(sim, slot, command, predict, state.toss, state.tuning)
     return false

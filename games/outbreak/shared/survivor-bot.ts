@@ -6,6 +6,7 @@ import { PISTOL_MAG_SIZE, PISTOL_RANGE, SHOVE_RANGE } from "./combat"
 import type { CoopSim, SurvivorSlot } from "./coop-sim"
 import { dayCycle } from "./day-cycle"
 import { carStoreId, hideStoreId, tripLine, tripStoreId } from "./discovery/verbs"
+import { survivorObstacles } from "./feature-registry"
 import { DEFAULT_FLASHLIGHT_TUNING, flashlightAwarenessAt } from "./flashlight"
 import { INTERACT_RANGE, type InteractTarget } from "./interact"
 import { inBuildingFootprint, propShape, sightRects, SIZE, solidRects, type Building, type Town } from "./map"
@@ -384,6 +385,8 @@ export type BotWorldView = {
   readonly getBarricadePlanks: (portalId: string) => number
   /** Hit points left in a portal's boards (100 per plank when whole); damage shows as splintered boards. */
   readonly getBarricadeHp: (portalId: string) => number
+  /** Things features put on the floor that the bot paths round (loose furniture), beside the town's own solids. */
+  readonly obstacles?: readonly Rect[]
 }
 
 export function createBotWorldView(sim: CoopSim): BotWorldView {
@@ -398,6 +401,7 @@ export function createBotWorldView(sim: CoopSim): BotWorldView {
     progression: sim.progression,
     getBarricadePlanks: (id: string) => sim.ai.getBarricadePlanks(id),
     getBarricadeHp: (id: string) => sim.ai.portalStates.get(id)?.barricadeHp ?? 0,
+    obstacles: survivorObstacles(sim),
   }
 }
 
@@ -723,7 +727,7 @@ export class SurvivorBot {
     this.stepCounter++
 
     if (fullPerceptUpdate || !this.initializedMemory) {
-      this.rebuildLocalNavIfNeeded(world.town, world.getBarricadePlanks)
+      this.rebuildLocalNavIfNeeded(world.town, world.getBarricadePlanks, world.obstacles ?? [])
     }
     if (!this.initializedMemory) {
       this.seedPriorMapKnowledge(world)
@@ -1276,8 +1280,10 @@ export class SurvivorBot {
     this.perceivedThreats = out
   }
 
-  private rebuildLocalNavIfNeeded(town: Town, getBarricadePlanks: (id: string) => number): void {
-    let key = `${town.barriers.length}:${town.props.length}:`
+  private rebuildLocalNavIfNeeded(town: Town, getBarricadePlanks: (id: string) => number, obstacles: readonly Rect[]): void {
+    let obstacleKey = ""
+    for (const r of obstacles) obstacleKey += `${Math.round(r[0] * 10)},${Math.round(r[1] * 10)},${Math.round(r[2] * 10)},${Math.round(r[3] * 10)};`
+    let key = `${town.barriers.length}:${town.props.length}:${obstacleKey}:`
     for (let i = 0; i < town.doors.length; i++) {
       const d = town.doors[i]!
       key += `${d.open ? 1 : 0}${d.locked ? 1 : 0}${getBarricadePlanks(d.id)},`
@@ -1290,13 +1296,13 @@ export class SurvivorBot {
     this.lastTopologyKey = key
 
     this.cachedSightBlockers = sightRects(town)
-    this.cachedSolidBlockers = solidRects(town)
+    this.cachedSolidBlockers = [...solidRects(town), ...obstacles]
     this.cachedWalls = town.barriers.filter((b) => b.kind === "wall").map((b) => b.rect)
     this.cachedClosedDoors = town.doors
       .filter((d) => !d.open || getBarricadePlanks(d.id) > 0)
       .map((d) => d.rect)
 
-    const geomKey = `${town.barriers.length}:${town.props.length}:${town.doors.length}`
+    const geomKey = `${town.barriers.length}:${town.props.length}:${town.doors.length}:${obstacleKey}`
     if (geomKey === this.navGeometryKey) return
     const wasEmpty = this.navGeometryKey === ""
     this.navGeometryKey = geomKey
@@ -1314,7 +1320,7 @@ export class SurvivorBot {
     const savedWinOpen = town.windows.map((w) => w.open)
     for (const d of town.doors) d.open = false
     for (const w of town.windows) w.open = false
-    const solids = solidRects(town)
+    const solids = [...solidRects(town), ...obstacles]
     for (let i = 0; i < town.doors.length; i++) town.doors[i]!.open = savedDoorOpen[i]!
     for (let i = 0; i < town.windows.length; i++) town.windows[i]!.open = savedWinOpen[i]!
 

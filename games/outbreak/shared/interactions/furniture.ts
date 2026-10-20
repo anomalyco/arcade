@@ -124,19 +124,29 @@ export type FurnitureSite = { id: string; buildingId: string; kind: FurnitureKin
 export function furnitureSites(town: Town, b: Building, count: number, solids: readonly Rect[]): FurnitureSite[] {
   if (b.kind !== "house" || count <= 0) return []
   const out: FurnitureSite[] = []
+  const near = (r: Rect) => r[2] > b.rect[0] - 1 && r[0] < b.rect[2] + 1 && r[3] > b.rect[1] - 1 && r[1] < b.rect[3] + 1
   const props = town.props.filter((p) => p.kind !== "tree" && p.x > b.rect[0] && p.x < b.rect[2] && p.y > b.rect[1] && p.y < b.rect[3])
-  const blocks: Rect[] = [...props.flatMap((p) => (propShape(p) ? [propShape(p)!.rect] : []))]
-  const openings = [...town.doors.map((d) => d.rect), ...town.windows.map((w) => w.rect)].filter((r) => r[2] > b.rect[0] - 1 && r[0] < b.rect[2] + 1 && r[3] > b.rect[1] - 1 && r[1] < b.rect[3] + 1)
+  // A closet's doors face south: keep the floor in front of it clear to step in and out.
+  const blocks: Rect[] = props.flatMap((p) => {
+    const s = propShape(p)
+    if (!s) return []
+    return p.kind === "closet" ? [s.rect, [s.rect[0], s.rect[3], s.rect[2], s.rect[3] + 2] as Rect] : [s.rect]
+  })
+  const walls = solids.filter(near)
+  const openings = [...town.doors.map((d) => d.rect), ...town.windows.map((w) => w.rect)].filter(near)
   const wants: FurnitureKind[] = ([hash01(b.id, 41) < 0.55 ? "chair" : "dresser", hash01(b.id, 42) < 0.5 ? "mattress" : "table"] as FurnitureKind[]).slice(0, Math.min(2, Math.round(count)))
   for (const [i, kind] of wants.entries()) {
+    const clear = (x: number, y: number, yaw: number) => {
+      const r = furnRect(x, y, kind, yaw)
+      const pad = (o: Rect, m: number) => r[0] < o[2] + m && r[2] > o[0] - m && r[1] < o[3] + m && r[3] > o[1] - m
+      if (walls.some((o) => pad(o, 0.3)) || blocks.some((o) => pad(o, 0.3)) || openings.some((o) => pad(o, 1.1))) return false
+      return !out.some((o) => pad(furnRect(o.x, o.y, o.kind, o.yaw), 0.5))
+    }
     for (let k = 0; k < 24; k++) {
       const yaw = hash01(b.id, 60 + i * 31 + k) < 0.5 ? 0 : Math.PI / 2
       const x = b.rect[0] + 0.9 + hash01(b.id, 100 + i * 37 + k) * (b.rect[2] - b.rect[0] - 1.8)
       const y = b.rect[1] + 0.9 + hash01(b.id, 200 + i * 41 + k) * (b.rect[3] - b.rect[1] - 1.8)
-      const r = furnRect(x, y, kind, yaw)
-      const pad = (o: Rect, m: number) => r[0] < o[2] + m && r[2] > o[0] - m && r[1] < o[3] + m && r[3] > o[1] - m
-      if (solids.some((o) => pad(o, 0.3)) || blocks.some((o) => pad(o, 0.3)) || openings.some((o) => pad(o, 1.1))) continue
-      if (out.some((o) => pad(furnRect(o.x, o.y, o.kind, o.yaw), 0.5))) continue
+      if (!clear(x, y, yaw)) continue
       out.push({ id: furnStoreId(b.id, i), buildingId: b.id, kind, x: Number(x.toFixed(2)), y: Number(y.toFixed(2)), yaw })
       break
     }

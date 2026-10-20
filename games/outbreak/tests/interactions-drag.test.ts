@@ -8,6 +8,7 @@ import { DEFAULT_INTERACTIONS_TUNING, type InteractionsTuning } from "../shared/
 import { DEFAULT_DEATH_TUNING } from "../shared/death/rules"
 import { solidRects } from "../shared/map"
 import type { Command } from "../shared/session"
+import { createBotWorldView } from "../shared/survivor-bot"
 
 const idle = (aim = 0): Command => ({ mx: 0, my: 0, aim, interact: false })
 const ticks = (seconds: number) => Math.ceil(seconds / TICK_DT)
@@ -108,6 +109,23 @@ describe("loose furniture", () => {
     expect(holds.held(door.id)).toBe(false)
     expect(st.counts.down).toBe(1)
     expect(st.at!.y).toBeLessThan(door.rect[1] - 0.6)
+  })
+
+  test("bots see every piece no one drags as an obstacle; closets keep their floor clear", () => {
+    const { sim, tick, pieces, slot } = room(["ann"])
+    const view = () => createBotWorldView(sim).obstacles ?? []
+    expect(view().length).toBe(pieces().length)
+    const st = putPiece(sim, "chair", 27, 29)
+    const ann = slot("ann")
+    Object.assign(ann.survivor, { x: 27, y: 30, aim: -Math.PI / 2 })
+    tick()
+    tick({ ann: { interact: true, aim: -Math.PI / 2 } })
+    expect(st.counts.drag).toBe(1)
+    expect(view().length).toBe(pieces().length - 1)
+    for (const c of sim.town.props.filter((p) => p.kind === "closet")) {
+      const front: [number, number, number, number] = [c.x - 0.6, c.y + 0.3, c.x + 0.6, c.y + 2]
+      for (const r of view()) expect(r[0] < front[2] && r[2] > front[0] && r[1] < front[3] && r[3] > front[1]).toBe(false)
+    }
   })
 
   test("Today (furniture off): no loose pieces are put out", () => {

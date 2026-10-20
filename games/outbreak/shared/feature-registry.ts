@@ -1,5 +1,6 @@
 import type { ByteReader, ByteWriter } from "@arcade/kit/net/bytes"
 import type { InterestConfig } from "@arcade/kit/net/interest"
+import type { Rect } from "@arcade/kit/sim/geom"
 import type { InteractionRegistry } from "./interact"
 import type { ClientMsg, ServerMsg, SharedSnapshot } from "./net-types"
 import type { Command, OutbreakSim, ResolvedSessionTuning, Survivor, SurvivorSlot } from "./sim-types"
@@ -107,6 +108,8 @@ export interface OutbreakSharedFeature<
   movementScale?(sim: OutbreakSim, slot: SurvivorSlot, state: TState): number
   /** Pushes a walking/vaulting survivor out of feature-owned dynamic colliders (e.g. vehicles). */
   pushOutSurvivor?(sim: OutbreakSim, survivor: Survivor, radius: number, state: TState): void
+  /** Feature-owned things that rarely move and that survivor bots should path round (e.g. loose furniture). */
+  survivorObstacles?(sim: OutbreakSim, state: TState): readonly Rect[]
   /** Runs authoritative survivor actions during `OutbreakSim.applyActions`. */
   stepSurvivorActions?(
     ctx: OutbreakSimStepSurvivorContext<TState>,
@@ -304,6 +307,15 @@ export function survivorMovementScale(sim: OutbreakSim, slot: SurvivorSlot): num
     if (feature.movementScale) scale *= feature.movementScale(sim, slot, sim.featureStates.get(feature.id))
   }
   return scale
+}
+
+/** Every feature's `survivorObstacles`, for survivor bots' local nav. */
+export function survivorObstacles(sim: OutbreakSim): Rect[] {
+  const out: Rect[] = []
+  for (const feature of outbreakSharedFeatures.list()) {
+    if (feature.survivorObstacles) out.push(...feature.survivorObstacles(sim, sim.featureStates.get(feature.id)))
+  }
+  return out
 }
 
 export function registerOutbreakSharedFeature<

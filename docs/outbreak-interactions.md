@@ -69,7 +69,8 @@ parity for baseballs and bottles in `tests/coop-ledger-features.test.ts`.
 ## Drag and brace
 
 Loose furniture: a chair or a dresser, and a mattress or a table, in most houses (up to two per house), on open floor
-clear of the house's own furniture, walls and doorways (`furniture.ts`, `furnitureSites`, seeded once per house as
+clear of the house's own furniture, walls and doorways, and 2 m clear in front of a closet so you can still get in
+(`furniture.ts`, `furnitureSites`, seeded once per house as
 `furn:<building>:<i>` ledger stores). The house's baked furniture stays put; these pieces are extra and drawn by the
 interactions presenter (box-built, with a lying-down twin for when the dead have shoved one over).
 
@@ -88,6 +89,10 @@ interactions presenter (box-built, with a lying-down twin for when the dead have
 window count as one plank for navigation, hearing, open-door solids and bash targeting, and is part of the topology
 digest; `absorb(id, damage)` takes bash damage once the planks are gone. The interactions feature installs it each
 tick (`holdsFor`), keyed by braced store → portal id.
+
+**Bots path round it.** `survivorObstacles` on shared features (`feature-registry.ts`): the interactions feature
+lists every piece no one is dragging, and survivor bots add them to their local nav grid and steering blockers
+(`BotWorldView.obstacles`), rebuilt when a piece is set down. Without it bots walked into chairs and stopped.
 
 **Speed hook.** `movementScale` on shared features (`survivorMovementScale` in `feature-registry.ts`), applied to
 walking speed in `stepSurvivor` and so predicted the same way on a co-op client.

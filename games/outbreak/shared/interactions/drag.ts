@@ -1,4 +1,4 @@
-import { distToRect, pushOut } from "@arcade/kit/sim/geom"
+import { distToRect, pushOut, type Rect } from "@arcade/kit/sim/geom"
 import type { StoreState } from "@arcade/kit/sim/ledger"
 import type { PortalHolds } from "../ai"
 import type { InteractAction, InteractionHandler, RawInteractCandidate } from "../interact"
@@ -194,6 +194,15 @@ export function pushOutOfFurniture(sim: OutbreakSim, state: DragState, p: Surviv
     }
     pushOut(p, radius, [furnRect(at.x, at.y, furnKind(st), furnYaw(st), Boolean(st.counts.down))])
   }
+}
+
+/** Every piece no one is dragging, for survivor bots to path round. */
+export function restingFurniture(sim: OutbreakSim, state: DragState): Rect[] {
+  const out: Rect[] = []
+  for (const st of pieces(sim, state)) {
+    if (!st.counts.drag) out.push(furnRect(st.at!.x, st.at!.y, furnKind(st), furnYaw(st), Boolean(st.counts.down)))
+  }
+  return out
 }
 
 /** Share of walking speed `slot` keeps: dragging a piece, hauling a teammate, or carrying a car battery. */
