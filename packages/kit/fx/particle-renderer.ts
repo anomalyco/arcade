@@ -396,7 +396,8 @@ export class ParticleRenderer {
           const k = i * stride
           if (input.lights[k + 7]! <= minPower) continue
           for (let j = 0; j < 8; j++) u[LIGHTS_OFFSET + written * 8 + j] = input.lights[k + j]!
-          if (cones) for (let j = 0; j < 4; j++) u[CONES_OFFSET + written * 4 + j] = input.lights[k + 8 + j]!
+          // Physical 3D spots (cone.w >= 2.5, `gpu/lights/physical.ts`) light particles as points.
+          if (cones && input.lights[k + 11]! < 2.5) for (let j = 0; j < 4; j++) u[CONES_OFFSET + written * 4 + j] = input.lights[k + 8 + j]!
           written++
         }
       } else {

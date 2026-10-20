@@ -1,10 +1,13 @@
 import { LOOK_PRESETS, LOOK_PRESET_IDS, applyLookPreset, createLookSettings, resolveLookPresetId, type LookSettings } from "../../gpu/look"
 import { applyFoliagePreset, cloneFoliageParams, type FoliageKind, type FoliageParams } from "../../gpu/foliage"
-import { Renderer } from "../../gpu/renderer"
+import { lampFlicker } from "../../gpu/lights/flicker"
+import { packPhysicalLightKnobs, physicalLightHooks, type LightModel } from "../../gpu/lights/physical"
+import { Renderer, type FrameInput } from "../../gpu/renderer"
 import { SceneLights, newSceneFrame, packSceneFrame, type SceneLight } from "../../gpu/scene-frame"
+import { makeSceneShader, spriteShader } from "../../gpu/shaders"
 import { WEATHER_PRESET_IDS, WeatherSimulation, applyWeatherPreset, createWeatherSettings, resolveWeatherPresetId, type WeatherLight, type WeatherSettings } from "../../weather"
 import type { LabContext } from "../types"
-import { CAR_PAINTS, FLOOR, LAMP, LAMP_COUNT, WALL_PAINTS, WORLD_CAMERA, WORLD_FOCUS, buildWorld, worldClock, worldLights, type CarPaint, type WallPaint, type WorldGeometry } from "./scene"
+import { CAR_PAINTS, FLOOR, LAMP, LAMP_COUNT, WALL_PAINTS, WORLD_CAMERA, WORLD_FOCUS, buildWorld, worldClock, worldLights, type CarPaint, type WallPaint, type WorldFlicker, type WorldGeometry } from "./scene"
 
 /**
  * The Lab's base debug world, drawn by the kit `Renderer` (the one Brawl and Blackout ship) with the kit look,
@@ -30,6 +33,13 @@ export type WorldState = {
   bush: boolean
   grass: boolean
   seed: number
+  /** Today (the kit's top-down light model) or physical lights and surfaces (`gpu/lights/physical.ts`). */
+  lightModel: LightModel
+  envSpecular: number
+  sphereLights: number
+  specularAA: number
+  /** Shared lamp flicker and failure (`gpu/lights/flicker.ts`): streetlamp sodium, porch tube, lamp inside a bulb. */
+  flicker: number
 }
 
 export const WORLD_DEFAULTS: Readonly<WorldState> = {
@@ -50,6 +60,11 @@ export const WORLD_DEFAULTS: Readonly<WorldState> = {
   bush: true,
   grass: true,
   seed: 7,
+  lightModel: "today",
+  envSpecular: 1,
+  sphereLights: 1,
+  specularAA: 1,
+  flicker: 0,
 }
 
 /** World keys whose change rebuilds the mesh (everything else is per frame). */
@@ -72,8 +87,11 @@ export type DebugWorld = {
   /** Points the Lab camera at the set, or at a spot in it (an effect's origin). */
   frame(at?: { x: number; z: number; dist?: number }): void
   update(dt: number): void
-  /** `Stage.customRender`: draws the world (and the Lab's particles and smoke) into the Stage output. */
-  render(width: number, height: number, outputView: GPUTextureView): number | null
+  /**
+   * `Stage.customRender`: draws the world (and the Lab's particles and smoke) into the Stage output. With `measure`,
+   * also times one isolated frame with the renderer's timestamp queries and returns its GPU ms.
+   */
+  render(width: number, height: number, outputView: GPUTextureView, measure?: boolean): Promise<number | null> | null
   telemetry(): string
 }
 
@@ -87,7 +105,8 @@ export function createDebugWorld(context: LabContext): DebugWorld {
   applyFoliagePreset("bush", "hedge", vegetation)
   applyFoliagePreset("grass", "lawn", vegetation)
 
-  let renderer: Renderer | null = null
+  const renderers: Partial<Record<LightModel, Renderer>> = {}
+  const drawn = new Map<Renderer, WorldGeometry>()
   let geometry: WorldGeometry | null = null
   let dirty = true
   let time = 0
@@ -98,22 +117,31 @@ export function createDebugWorld(context: LabContext): DebugWorld {
   const focusXZ: [number, number] = [WORLD_FOCUS[0], WORLD_FOCUS[2]]
   const emptySprites = new Float32Array(0) as Float32Array<ArrayBuffer>
 
+  const knobs = new Float32Array(4) as Float32Array<ArrayBuffer>
   const ensureRenderer = () => {
-    if (renderer) return renderer
+    const model = state.lightModel
+    const have = renderers[model]
+    if (have) return have
     const format = navigator.gpu.getPreferredCanvasFormat()
     const canvas = document.createElement("canvas")
     canvas.width = 16
     canvas.height = 16
     const ctx = canvas.getContext("webgpu")!
     ctx.configure({ device, format, alphaMode: "opaque" })
-    renderer = new Renderer(device, ctx, format)
-    return renderer
+    // Physical swaps only the scene shader; Today's baseline is the same shader without the hooks.
+    const physical = physicalLightHooks({ knobs: "PK.k" })
+    const r = model === "physical"
+      ? new Renderer(device, ctx, format, {
+          scene: makeSceneShader({ ...physical, declarations: `struct PhysicalKnobs { k: vec4f }\n@group(0) @binding(13) var<uniform> PK: PhysicalKnobs;\n${physical.declarations}`, lampGrid: false }, false),
+          sprite: spriteShader(),
+        })
+      : new Renderer(device, ctx, format)
+    renderers[model] = r
+    return r
   }
 
   const rebuild = () => {
-    const r = ensureRenderer()
     geometry = buildWorld({ ...state, vegetation })
-    r.setLevel(geometry.level)
     lights.setBoxes(geometry.boxes)
     dirty = false
   }
@@ -175,15 +203,24 @@ export function createDebugWorld(context: LabContext): DebugWorld {
       if (state.timeScale > 0) state.hour = (state.hour + (dt * state.timeScale) / 3600) % 24
       sim.step(dt, weather, [stage.eye[0]!, stage.eye[1]!, stage.eye[2]!], focusXZ)
     },
-    render(width, height, outputView) {
+    render(width, height, outputView, measure) {
       const r = ensureRenderer()
       if (dirty || !geometry) rebuild()
+      if (drawn.get(r) !== geometry) {
+        r.setLevel(geometry!.level)
+        drawn.set(r, geometry!)
+      }
       r.resize(width, height)
       const clock = worldClock(state.hour)
+      const flick = worldFlicker(state.flicker, time)
       const scene = [
-        ...worldLights(clock, { lampPower: state.lampPower, headlights: state.headlights, flashlight: state.flashlight, porch: state.porch }),
+        ...worldLights(clock, { lampPower: state.lampPower, headlights: state.headlights, flashlight: state.flashlight, porch: state.porch, flicker: flick, physical: state.lightModel === "physical" }),
         ...extraLights(),
       ]
+      if (state.lightModel === "physical") {
+        packPhysicalLightKnobs({ model: "physical", specularAA: state.specularAA, sphereLights: state.sphereLights, envSpecular: state.envSpecular, spill: 0 }, knobs)
+        r.setCustomUniforms(knobs)
+      }
       lights.update(scene, geometry!.casters)
       packSceneFrame(frame, {
         viewProj: stage.viewProj,
@@ -196,55 +233,53 @@ export function createDebugWorld(context: LabContext): DebugWorld {
         mapSize: [40, 40],
         ao: 0.45,
       })
-      const lamps = clock.lamps * state.lampPower
-      lampPower[LAMP.porch] = state.porch ? lamps : 0
-      lampPower[LAMP.street] = lamps
-      lampPower[LAMP.interior] = lamps
+      const lampsOn = clock.lamps * state.lampPower
+      lampPower[LAMP.porch] = state.porch ? lampsOn * flick.porch.level : 0
+      lampPower[LAMP.street] = lampsOn * flick.street.level
+      lampPower[LAMP.interior] = lampsOn * flick.interior.level
       lampPower[LAMP.headlights] = state.headlights ? 1 : 0
       sim.step(0, weather, [stage.eye[0]!, stage.eye[1]!, stage.eye[2]!], focusXZ)
       const raining = weather.preset !== "clear" || sim.state.flash > 0.001
       const weatherLights: WeatherLight[] = scene.slice(1, 7).map(l => ({ x: l.x, y: l.h, z: l.y, radius: l.r, r: l.color[0], g: l.color[1], b: l.color[2], power: l.power * 1.3, ...(l.cone ? { dx: l.cone[0], dz: l.cone[1], cosHalf: l.cone[2], isCone: true } : {}) }))
-      r.drawTo(
-        {
-          frame,
-          lights: lights.lights as Float32Array<ArrayBuffer>,
-          lightCount: lights.lightCount,
-          shadowLightCount: lights.shadowLightCount,
-          occluders: lights.occ as Float32Array<ArrayBuffer>,
-          occluderCount: lights.occCount,
-          lampPower: lampPower as Float32Array<ArrayBuffer>,
-          lampCount: LAMP_COUNT,
-          view: [-40, -40, 40, 40],
-          batches: [],
-          alphaSprites: emptySprites,
-          alphaCount: 0,
-          addSprites: emptySprites,
-          addCount: 0,
-          fxParticles: context.particles,
-          smoke: context.volume,
-          smokeEnabled: true,
-          weather: raining
-            ? {
-                settings: weather,
-                state: sim.state,
-                viewProj: stage.viewProj,
-                eye: stage.eye,
-                focusXZ,
-                viewportWidth: width,
-                viewportHeight: height,
-                fovYRad: 0.65,
-                groundY: 0,
-                ambientLum: 0.05 + clock.day * 0.6,
-                lights: weatherLights,
-                cameraDist: stage.camDist,
-              }
-            : null,
-          grade: [time, 0, sim.state.flash * 0.4, clock.exposure],
-          look: look.preset === "current" ? null : look,
-        },
-        outputView,
-      )
-      return null
+      const input: FrameInput = {
+        frame,
+        lights: lights.lights as Float32Array<ArrayBuffer>,
+        lightCount: lights.lightCount,
+        shadowLightCount: lights.shadowLightCount,
+        occluders: lights.occ as Float32Array<ArrayBuffer>,
+        occluderCount: lights.occCount,
+        lampPower: lampPower as Float32Array<ArrayBuffer>,
+        lampCount: LAMP_COUNT,
+        view: [-40, -40, 40, 40],
+        batches: [],
+        alphaSprites: emptySprites,
+        alphaCount: 0,
+        addSprites: emptySprites,
+        addCount: 0,
+        fxParticles: context.particles,
+        smoke: context.volume,
+        smokeEnabled: true,
+        weather: raining
+          ? {
+              settings: weather,
+              state: sim.state,
+              viewProj: stage.viewProj,
+              eye: stage.eye,
+              focusXZ,
+              viewportWidth: width,
+              viewportHeight: height,
+              fovYRad: 0.65,
+              groundY: 0,
+              ambientLum: 0.05 + clock.day * 0.6,
+              lights: weatherLights,
+              cameraDist: stage.camDist,
+            }
+          : null,
+        grade: [time, 0, sim.state.flash * 0.4, clock.exposure],
+        look: look.preset === "current" ? null : look,
+      }
+      r.drawTo(input, outputView)
+      return measure ? r.measure(input) : null
     },
     telemetry() {
       const clock = worldClock(state.hour)
@@ -252,6 +287,15 @@ export function createDebugWorld(context: LabContext): DebugWorld {
     },
   }
   return world
+}
+
+/** The world's three practical lamps under the shared flicker: a dying sodium streetlamp, a porch tube, a bulb inside. */
+export function worldFlicker(amount: number, time: number): WorldFlicker {
+  return {
+    street: lampFlicker("sodium", 11, time, amount),
+    porch: lampFlicker("fluorescent", 12, time, amount),
+    interior: lampFlicker("incandescent", 13, time, amount),
+  }
 }
 
 export const WALL_PAINT_OPTIONS = Object.entries(WALL_PAINTS).map(([value, p]) => ({ value, label: p.label }))

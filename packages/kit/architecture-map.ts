@@ -139,6 +139,11 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
     match: (s) => s === "@arcade/kit/gpu/boot" || s === "@arcade/kit/gpu/scene-frame" || s === "@arcade/kit/gpu/frame-parts",
   },
   {
+    area: "`gpu/lights/{physical,flicker}`",
+    description: "Opt-in physical lights and surfaces (GGX, 3D spot cones, sky reflections, specular AA) and stateless lamp flicker and failure",
+    match: (s) => s === "@arcade/kit/gpu/lights/physical" || s === "@arcade/kit/gpu/lights/flicker",
+  },
+  {
     area: "`gpu/{motion,motion-blur,sprite-motion}`",
     description: "Depth-aware 8-tap shutter gather and actor/sprite velocity history",
     match: (s) =>

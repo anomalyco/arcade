@@ -78,6 +78,11 @@ export function createWorldSection(context: LabContext, world: DebugWorld): LabS
     { key: "porch", label: "Porch lamp", group: "Clock & light" },
     { key: "headlights", label: "Car headlights", group: "Clock & light" },
     { key: "flashlight", label: "Flashlight", group: "Clock & light" },
+    { key: "lightModel", label: "Light model", group: "Clock & light", type: "select", options: [{ value: "today", label: "Today" }, { value: "physical", label: "Physical (GGX + sky)" }] },
+    { key: "envSpecular", label: "Sky reflections", group: "Clock & light", subsection: "Physical", type: "range", min: 0, max: 2, step: 0.05, unit: "×" },
+    { key: "sphereLights", label: "Fixture size in highlights", group: "Clock & light", subsection: "Physical", type: "range", min: 0, max: 3, step: 0.05, unit: "×" },
+    { key: "specularAA", label: "Specular anti-aliasing", group: "Clock & light", subsection: "Physical", type: "range", min: 0, max: 2, step: 0.05, unit: "×" },
+    { key: "flicker", label: "Lamp flicker and failure", group: "Clock & light", type: "range", min: 0, max: 2, step: 0.05, unit: "×" },
     { key: "playing", label: "Animate", group: "Clock & light" },
 
     {
@@ -202,7 +207,7 @@ export function createWorldSection(context: LabContext, world: DebugWorld): LabS
     exportPreset,
     importPreset,
     enter() {
-      stage.customRender = (w, h, view) => world.render(w, h, view)
+      stage.customRender = (w, h, view, _output, _debug, measure) => world.render(w, h, view, measure)
       world.frame()
     },
     leave() {

@@ -1,6 +1,7 @@
 import type { Rect } from "../sim/geom"
 import { LIGHT_FLOATS, MAX_LIGHTS, MAX_OCCLUDERS, OCC_FLOATS } from "../limits"
 import type { FloorMap } from "./level"
+import { physicalCone } from "./lights/physical"
 import { FRAME_FLOATS } from "./shaders"
 
 /**
@@ -20,6 +21,11 @@ export type SceneLight = {
   size?: number
   /** Spot cone: plan direction and cos half-angle. */
   cone?: readonly [number, number, number]
+  /**
+   * Physical 3D spot (`lights/physical.ts`): axis pointing down or level, cos of the outer and inner half-angles.
+   * Takes the cone slot instead of `cone`; only physical-light hooks shade it.
+   */
+  spot?: { axis: readonly [number, number, number]; cosOuter: number; cosInner: number }
   /** Skip shadows (cheap fill light). */
   unshadowed?: boolean
 }
@@ -68,7 +74,8 @@ export class SceneLights {
         }
       }
       const cnt = l.unshadowed ? 0 : no - off
-      L.set([l.x, l.h, l.y, l.r, l.color[0], l.color[1], l.color[2], l.power, l.cone?.[0] ?? 0, l.cone?.[1] ?? 0, l.cone?.[2] ?? 0, l.cone ? 1 : 0, off, cnt, l.size ?? 0.3, -1], nl * LIGHT_FLOATS)
+      const cone = l.spot ? physicalCone(l.spot.axis, l.spot.cosOuter, l.spot.cosInner) : [l.cone?.[0] ?? 0, l.cone?.[1] ?? 0, l.cone?.[2] ?? 0, l.cone ? 1 : 0]
+      L.set([l.x, l.h, l.y, l.r, l.color[0], l.color[1], l.color[2], l.power, ...cone, off, cnt, l.size ?? 0.3, -1], nl * LIGHT_FLOATS)
       nl++
     }
     let shadowed = 0

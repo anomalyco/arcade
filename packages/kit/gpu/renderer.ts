@@ -479,7 +479,7 @@ export class Renderer {
       samples: SAMPLES,
     }
     this.vehicleSmoke = new SmokeRenderer(d, sceneLayout, common,
-      "if (li.cone.w > 0.5) { a *= smoothstep(li.cone.z, min(1.0, li.cone.z + 0.08), dot(normalize(-d.xz), li.cone.xy)); }", "depth24plus",
+      "if (li.cone.w > 0.5 && li.cone.w < 2.5) { a *= smoothstep(li.cone.z, min(1.0, li.cone.z + 0.08), dot(normalize(-d.xz), li.cone.xy)); }", "depth24plus",
       shaders?.tyreSmoke?.base, shaders?.tyreSmoke?.dust)
     this.postLayout = d.createBindGroupLayout({
       entries: [

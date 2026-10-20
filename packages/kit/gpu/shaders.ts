@@ -161,6 +161,13 @@ export type SceneHooks = {
   shadowTaps?: 5 | 9
   lightAttenuation?: string
   lightAccumulate?: string
+  /**
+   * Replaces the per-light glossy highlight in `lightSum` (Blinn–Phong plus the floor mirror streak). In scope: `L`,
+   * `ldir`, `n`, `V`, `shin`, `att`, `vis`, `d3`, `out`. `lights/physical.ts` puts GGX here.
+   */
+  specularTerm?: string
+  /** Replaces the specular term added after `combineLighting` (default `lit.spec * GAIN * gloss.y * …`). */
+  specularCombine?: string
   wallDirectScale?: string
   mapUv?: string
   diffuseTerm?: string
@@ -463,7 +470,7 @@ fn lightSum(world: vec3f, n: vec3f, V: vec3f, shin: f32, wrap: f32) -> Lit {
     }
     out.diff += L.color.rgb * att * (diffuse * vis + ${hooks.lightLeak ?? "0.035"});
     ${hooks.lightAccumulate ?? ""}
-    ${hooks.postLightMaterial ? "" : `if (shin > 0.0) {
+    ${hooks.postLightMaterial ? "" : hooks.specularTerm ?? `if (shin > 0.0) {
       let h = normalize(ldir + V);
       let s = pow(max(dot(n, h), 0.0), shin) * (shin + 2.0) * 0.004;
       out.spec += L.color.rgb * att * s * vis;
@@ -747,7 +754,7 @@ fn shadeScene(o: VOut) -> vec4f {
     // Moonlight through the windows, on the floor and low surfaces.
     ${looks ? "var" : "let"} moon = ${hooks.directional ?? "vec3f(0.62, 0.78, 1.25) * fd.g * F.ambient.w * low * max(n.y, 0.2)"};
     ${looks ? "if (look(2u)) { moon *= 0.68; }" : ""}
-    ${hooks.combineLighting ?? "col = albedo * (amb + direct + moon)"} + lit.spec * GAIN * gloss.y * mix(vec3f(1.0), albedo * 3.0, 0.25);
+    ${hooks.combineLighting ?? "col = albedo * (amb + direct + moon)"} + ${hooks.specularCombine ?? "lit.spec * GAIN * gloss.y * mix(vec3f(1.0), albedo * 3.0, 0.25)"};
     ${hooks.diagnostics ? `let contribution = i32(${hooks.diagnostics});
     if (contribution == 1) { return vec4f(albedo, 1.0); }
     if (contribution == 2) { return vec4f(albedo * direct, 1.0); }
