@@ -12,6 +12,7 @@ const catalog = (): LedgerCatalog => ({
     { id: "seen:wood", label: "Wood", tag: "knowledge" },
     { id: "learned:club", label: "Club", tag: "knowledge" },
     { id: "club", label: "Club", tag: "tool" },
+    { id: "hands", label: "Hands", tag: "tool", slot: 0, bound: true },
   ],
   actorStores: [
     { suffix: "belt", mode: "counters", accepts: ["ammo", "resource"], depositable: true },
@@ -54,6 +55,20 @@ function invariants(ledger: Ledger): void {
 }
 
 describe("Ledger", () => {
+  test("bound items stay with the actor: no drop, deposit or leaving them behind", () => {
+    const ledger = new Ledger(catalog())
+    ledger.addActor("a")
+    expect(ledger.apply({ kind: "grant", actor: "a", item: "hands" }).ok).toBe(true)
+    expect(ledger.apply({ kind: "grant", actor: "a", item: "gun" }).ok).toBe(true)
+    ledger.apply({ kind: "select", actor: "a", slot: 0 })
+    expect(ledger.activeItem("a")?.item).toBe("hands")
+    expect(ledger.apply({ kind: "drop", actor: "a", at: { x: 0, y: 0 } }).reason).toBe("empty")
+    expect(ledger.apply({ kind: "drop", actor: "a", at: { x: 0, y: 0 }, items: { hands: 1 } }).reason).toBe("missing_item")
+    expect(ledger.apply({ kind: "deposit", actor: "a", to: "bench", from: { store: "a/hotbar", slot: 0 } }).reason).toBe("empty")
+    const left = ledger.removeActor("a", { x: 1, y: 1 })!
+    expect(ledger.store(left)!.slots.map((s) => s?.item)).toEqual(["gun"])
+  })
+
   test("reveal gates take; take routes by tag, keeps the rest when full, and discovers once", () => {
     const ledger = new Ledger(catalog())
     ledger.addActor("a")

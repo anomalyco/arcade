@@ -98,8 +98,9 @@ function strip(sim: OutbreakSim, slot: SurvivorSlot): Stack[] {
     const st = ledger.store(`${slot.id}/${tpl.suffix}`)
     if (!st) continue
     if (st.mode === "slots") {
-      for (const s of st.slots) if (s) out.push({ ...s })
-      st.slots = st.slots.map(() => null)
+      // Bare hands stay with the survivor; everything else stays with the body.
+      for (const s of st.slots) if (s && !ledger.isBound(s.item)) out.push({ ...s })
+      st.slots = st.slots.map((s) => (s && ledger.isBound(s.item) ? s : null))
     } else {
       for (const [item, count] of Object.entries(st.counts)) if (count > 0) out.push({ item, count })
       st.counts = {}

@@ -49,6 +49,8 @@ export type FeedbackContext = {
   lowBattery?: number
   /** Label for the reload key (physical `KeyR`), QWERTY "R" by default; the callout draws it as a key cap. */
   reloadKey?: string
+  /** QWERTY label of the shove key (V), for "Out of ammo, V to shove". */
+  meleeKey?: string
   /** The simulation's feedback since the last frame (pickups, search results, "Inventory full", recipes). */
   notices?: readonly Notice[]
 }
@@ -123,10 +125,10 @@ export class ActorFeedback {
     const notices = ctx.notices ?? []
     if (p.channel && !a.channel && !loot && !notices.length) emit("Stopped", "info", { key: "channel" })
     if (loot) {
-      const callout = lootCallout(loot)
+      const callout = lootCallout(loot, ctx.meleeKey)
       // Item pops replace a successful search, so its ring fades out at once.
       if (!callout && p.channel) emit(p.channel.label.replace(/…$/, ""), "progress", { key: "channel", progress: 1, duration: 0 })
-      if (callout) emit(callout.text, callout.kind, { key: p.channel ? "channel" : (callout.key ?? `loot:${callout.text}`) })
+      if (callout) emit(callout.text, callout.kind, { key: p.channel ? "channel" : (callout.key ?? `loot:${callout.text}`), ...(callout.keyCap ? { keyCap: callout.keyCap } : {}) })
     }
     // A finished action's first notice takes over its progress ring; the rest stack as usual.
     notices.forEach((n, i) => {
@@ -139,7 +141,10 @@ export class ActorFeedback {
         const keyCap = ctx.reloadKey ? { code: "KeyR", label: ctx.reloadKey } : undefined
         emit(ctx.reloadKey ? `Empty, ${ctx.reloadKey} to reload` : "Empty", "warning", { key: "ammo", keyCap })
       }
-      else emit("Out of ammo", "warning", { key: "ammo" })
+      else {
+        const out = lootCallout("Out of 9mm", ctx.meleeKey)!
+        emit(out.text, out.kind, { key: "ammo", ...(out.keyCap ? { keyCap: out.keyCap } : {}) })
+      }
     }
 
     if (a.shoveAnim > p.shoveAnim + 1e-4) emit("Shove", "info")
@@ -168,7 +173,7 @@ export class ActorFeedback {
     const slot = ctx.inventory?.selectedSlot ?? -1
     if (ctx.inventory && slot !== this.prevSlot && this.prevSlot >= 0) {
       const item = ctx.inventory.slots[slot]
-      emit(item ? item.label : `Slot ${slot + 1} empty`, "info", { key: "slot" })
+      emit(item ? item.label : "Fists", "info", { key: "slot" })
     }
     this.prevSlot = slot
 
@@ -207,11 +212,19 @@ export class ActorFeedback {
 }
 
 /** Maps the simulation's loot/status sentences to short callouts. "Found …" is skipped: item pops come from diffs. */
-export function lootCallout(message: string): { text: string; kind: CalloutKind; key?: string } | null {
+export function lootCallout(
+  message: string,
+  meleeKey?: string,
+): { text: string; kind: CalloutKind; key?: string; keyCap?: { code: string; label: string } } | null {
   let m: RegExpMatchArray | null
   if (message.startsWith("Found ")) return null
   if (/^Searched .*: empty$/.test(message)) return { text: "Nothing here", kind: "info" }
-  if (message.startsWith("Out of 9mm")) return { text: "Out of ammo", kind: "warning", key: "ammo" }
+  // Everyone can always shove: an empty gun points at V instead of a dead end.
+  if (message.startsWith("Out of 9mm")) {
+    return meleeKey
+      ? { text: `Out of ammo, ${meleeKey} to shove`, kind: "warning", key: "ammo", keyCap: { code: "KeyV", label: meleeKey } }
+      : { text: "Out of ammo", kind: "warning", key: "ammo" }
+  }
   if (message.endsWith(" broke!")) return null
   if (message.includes(" durability low")) return null
   if (message.startsWith("Need wooden planks")) return { text: "No planks", kind: "warning" }

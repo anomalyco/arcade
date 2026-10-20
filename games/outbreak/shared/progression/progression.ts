@@ -215,7 +215,7 @@ export class OutbreakProgression implements ProgressionHost {
     this.actorOf.set(slot.survivor, slot)
     if (this.ledger.store(`${slot.id}/hotbar`)) return
     this.ledger.addActor(slot.id)
-    this.ledger.apply({ kind: "grant", actor: slot.id, item: "flashlight" })
+    this.ledger.apply({ kind: "grant", actor: slot.id, item: "fists" })
     this.ledger.apply({ kind: "grant", actor: slot.id, item: "pistol" })
     this.ledger.apply({ kind: "grant", actor: slot.id, item: "ammo", count: 6 })
     this.ledger.apply({ kind: "grant", actor: slot.id, item: "plank", count: 2 })
@@ -262,12 +262,12 @@ export class OutbreakProgression implements ProgressionHost {
     if (item === "cans") return "set"
     // The flamethrower, dynamite, firecrackers, molotovs, the flare gun and bear traps are used by `shared/fire`.
     if (item && FEATURE_ITEMS.has(item)) return "use"
-    // Food is for a chained dog (`shared/dogs`); with it in hand the button shoves, as empty hands do.
-    if (item === "food") return "shove"
-    return this.ledger.count(`${id}/hotbar`, "pistol") > 0 ? "fire" : "shove"
+    if (item === "pistol") return "fire"
+    // Bare hands, an empty slot and food (for a chained dog, `shared/dogs`) shove: everyone always has a melee.
+    return "shove"
   }
 
-  /** Returns the currently selected melee weapon id, or null when holding pistol/flashlight/consumable/hands. */
+  /** Returns the currently selected melee weapon id, or null when holding pistol/consumable/hands. */
   heldMeleeWeapon(id: string): MeleeWeaponId | null {
     const item = this.selected(id)?.item
     return isMeleeWeapon(item) ? item : null
@@ -478,11 +478,11 @@ export class OutbreakProgression implements ProgressionHost {
         if (action !== "store") return { handled: false }
         const hotbar = this.hotbar(slot.id)!
         const held = hotbar.slots[hotbar.selected]
-        if (!held) {
+        if (!held || this.ledger.isBound(held.item)) {
           this.notify(slot, "Nothing in hand", "info")
           return { handled: false }
         }
-        if (held.item === "flashlight" || held.item === "pistol") {
+        if (held.item === "pistol") {
           this.notify(slot, `Keep the ${this.ledger.label(held.item).toLowerCase()}`, "info")
           return { handled: false }
         }
@@ -544,7 +544,8 @@ export class OutbreakProgression implements ProgressionHost {
       }
     }
     if (cmd.pick) this.pick(slot, cmd.pick, world, target)
-    if (cmd.reload && this.selected(slot.id)?.item === "flashlight") this.swapBattery(slot)
+    // The caller decides when R means a fresh battery (`batteryReload`) rather than a magazine.
+    if (cmd.reload) this.swapBattery(slot)
     if (cmd.barricade) loud(this.startBarricade(slot, world, target), "barricade")
     if (cmd.fire) {
       const use = this.heldUse(slot.id)
@@ -559,7 +560,6 @@ export class OutbreakProgression implements ProgressionHost {
     if (cmd.drop) this.dropHeld(slot)
     if (cmd.bundle) this.dropBundle(slot)
     if (cmd.ping) this.ping(slot, world, target)
-    if (p.flashlightOn === false && p.batteryDepleted && cmd.reload) this.swapBattery(slot)
     return { noise, noiseKind }
   }
 
@@ -647,9 +647,19 @@ export class OutbreakProgression implements ProgressionHost {
     }
     if (pick.mode === "pack") {
       const hotbar = this.hotbar(slot.id)!
-      const res = this.ledger.apply({ kind: "swap", actor: slot.id, a: { store: `${slot.id}/pack`, slot: pick.index }, b: { store: hotbar.id, slot: hotbar.selected } })
+      // Bare hands stay put: with them selected, the pack item goes to a free hand slot instead.
+      const held = hotbar.slots[hotbar.selected]
+      const into = held && this.ledger.isBound(held.item) ? hotbar.slots.findIndex((s) => s === null) : hotbar.selected
+      if (into < 0) {
+        this.notify(slot, "Hands full", "info", "pack")
+        return
+      }
+      const res = this.ledger.apply({ kind: "swap", actor: slot.id, a: { store: `${slot.id}/pack`, slot: pick.index }, b: { store: hotbar.id, slot: into } })
       if (!res.ok) this.notify(slot, res.reason === "full" ? "That goes in the pack, not your hands" : "Empty pack slot", "info", "pack")
-      else this.project(slot)
+      else {
+        if (into !== hotbar.selected) this.ledger.apply({ kind: "select", actor: slot.id, slot: into })
+        this.project(slot)
+      }
       return
     }
     if (pick.mode === "craft") {
@@ -751,7 +761,7 @@ export class OutbreakProgression implements ProgressionHost {
   private dropHeld(slot: ProgressionSlot): void {
     const p = slot.survivor
     const held = this.selected(slot.id)
-    if (!held) {
+    if (!held || this.ledger.isBound(held.item)) {
       this.notify(slot, "Nothing in hand", "info", "drop")
       return
     }
@@ -879,13 +889,7 @@ export class OutbreakProgression implements ProgressionHost {
     p.meleeWeapon = wpn
     p.meleeDurability = wpn ? (sel!.charge ?? MELEE_WEAPONS[wpn].durability) : 0
     p.meleeMaxDurability = wpn ? MELEE_WEAPONS[wpn].durability : 0
-    p.equippedItem = wpn
-      ? wpn
-      : this.heldUse(slot.id) === "fire" && sel?.item !== "flashlight"
-        ? "pistol"
-        : sel?.item === "flashlight" && pistol.capacity
-          ? "pistol"
-          : "hands"
+    p.equippedItem = wpn ? wpn : sel?.item === "pistol" ? "pistol" : "hands"
     const ch = this.ledger.channel(slot.id)
     if (!ch) p.channel = null
     else {

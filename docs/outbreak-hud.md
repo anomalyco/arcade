@@ -162,7 +162,7 @@ Reduced motion (the system setting or Lab › HUD motion › Reduced motion) dro
 
 ## Bottom dock
 
-The belt of supplies, the five hand slots and the pack chip sit in one dock at the bottom centre (`src/hud/dock.ts`,
+The belt of supplies, the shoulder light, the five hand slots and the pack chip sit in one dock at the bottom centre (`src/hud/dock.ts`,
 `dock.css`). It never hides, in any style. Kit found it odd that Tab made the pack disappear, because Diegetic hid
 the whole bar unless a slot had just changed. The dock now settles to 50 % opacity after 3 s without a change and
 brightens on any change to the belt, hands or pack, while the pack or the recipe panel is open, and while the cursor is
@@ -189,6 +189,13 @@ each surface sits on a whole device-pixel row at DPR 1, 1.5 and 2.
 
 The `outbreak-hud` Lab station has variants for each HUD state as well as each style: Dock idle, Dock after a pickup,
 Pack open, Recipe panel and Driving, each staged by the `hud.state` command.
+
+Hand slot 1 is bare hands (Fists): selecting it puts the gun away and the primary button shoves, so everyone always
+has a melee, and pressing the number of the slot already in hand holsters to it. The flashlight is not a slot (Kit,
+after the Oct 20 co-op playtest: "There's no point in switching between the knife and the flashlight"): it rides on
+the shoulder, toggled with F whatever is held, and the dock shows it as an F cap with a battery cell ahead of the hand
+slots, warm while lit and outlined red when dead. R takes a spare battery when the light is dead, or low with no
+magazine to top up. An empty gun's callout reads "Out of ammo, V to shove" with the V key cap.
 
 ## World prompt
 

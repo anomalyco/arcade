@@ -19,7 +19,7 @@ import { advanceHour } from "./day-cycle"
 import { outbreakSharedFeatures, survivorDamage } from "./feature-registry"
 import "./features"
 import { openingClockActive } from "./pacing"
-import { createFlashlightState, DEFAULT_FLASHLIGHT_TUNING, stepFlashlight, toggleFlashlight } from "./flashlight"
+import { batteryReload, createFlashlightState, DEFAULT_FLASHLIGHT_TUNING, stepFlashlight, toggleFlashlight } from "./flashlight"
 import {
   createDoorHandler,
   createInteractActorState,
@@ -422,13 +422,11 @@ export class CoopSim implements OutbreakSim {
 
     const ammo = progression.pistol(slot.id)
     const use = progression.heldUse(slot.id)
-    const held = progression.selected(slot.id)?.item
     const blockers = this.sights
     if (command.reload) {
-      // R swaps a spare battery into the flashlight when it is in hand and low; otherwise it reloads the pistol.
-      const battery = held === "flashlight" && (p.battery < 0.95 || p.batteryDepleted) && progression.ledger.count(slot.id, "battery") > 0
-      if (battery) verbs.reload = true
-      else if (this.combat.startReload(p, this.ai, this.time, ammo, slot.id)) progression.ledger.cancel(slot.id)
+      // R reloads the pistol; a dead (or low, with nothing to reload) shoulder light takes a spare battery instead.
+      if (batteryReload(p, progression.ledger.count(slot.id, "battery"), ammo)) verbs.reload = true
+      if ((!verbs.reload || p.batteryDepleted) && this.combat.startReload(p, this.ai, this.time, ammo, slot.id)) progression.ledger.cancel(slot.id)
     }
     const tryFinisher = () => {
       const runFinisher = () => {

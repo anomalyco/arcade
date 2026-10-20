@@ -38,7 +38,7 @@ function setup() {
 describe("inventory baseline", () => {
   test("hand tools fill their own hotbar slots, supplies go on the belt, overflow goes in the pack", () => {
     const { session, ledger, give } = setup()
-    expect(session.view.inventory.slots.map((s) => s?.kind ?? null)).toEqual(["flashlight", "pistol", null, null, null])
+    expect(session.view.inventory.slots.map((s) => s?.kind ?? null)).toEqual(["fists", "pistol", null, null, null])
     expect(ledger.count("player/belt", "ammo")).toBe(6)
     expect(ledger.count("player/belt", "plank")).toBe(2)
     give("crowbar")
@@ -46,7 +46,7 @@ describe("inventory baseline", () => {
     give("noisemaker")
     give("scrap", 3)
     give("key")
-    expect(session.view.inventory.slots.map((s) => s?.kind ?? null)).toEqual(["flashlight", "pistol", "crowbar", "medkit", "noisemaker"])
+    expect(session.view.inventory.slots.map((s) => s?.kind ?? null)).toEqual(["fists", "pistol", "crowbar", "medkit", "noisemaker"])
     expect(session.view.inventory.slots[3]?.count).toBe(2)
     expect(ledger.count("player/belt", "scrap")).toBe(3)
     expect(ledger.count("player/belt", "key")).toBe(1)
@@ -212,14 +212,60 @@ describe("inventory baseline", () => {
     expect(progression.pings).toHaveLength(0)
   })
 
-  test("R with the flashlight in hand swaps in a spare battery", () => {
-    const { p, ledger, step, give } = setup()
+  test("R swaps a spare battery into the shoulder light whatever is in hand once the pistol has nothing to reload", () => {
+    const { p, ledger, step, give, progression } = setup()
     give("battery")
+    progression.pistol("player").fill()
     p.battery = 0.2
-    step({ hotbarSlot: 0 })
+    // A full magazine in hand: nothing to reload, so R freshens the light.
     step({ reload: true })
     expect(p.battery).toBeGreaterThan(0.99)
     expect(ledger.count("player", "battery")).toBe(0)
+  })
+
+  test("R reloads a part-empty pistol before a low light, but a dead light always takes the battery", () => {
+    const { p, ledger, step, give, progression } = setup()
+    give("battery")
+    progression.pistol("player").fill()
+    ledger.apply({ kind: "useCharge", actor: "player", item: "pistol" })
+    p.battery = 0.5
+    step({ reload: true })
+    expect(p.reloadRemaining).toBeGreaterThan(0)
+    expect(ledger.count("player", "battery")).toBe(1)
+    step({}, 120)
+    p.battery = 0
+    p.batteryDepleted = true
+    p.flashlightOn = false
+    step({ reload: true })
+    expect(p.batteryDepleted).toBe(false)
+    expect(ledger.count("player", "battery")).toBe(0)
+  })
+
+  test("bare hands: slot 1 holsters, the button shoves, and they never drop, store or go to a body", () => {
+    const { session, p, ledger, step, give } = setup()
+    expect(p.equippedItem).toBe("pistol")
+    step({ hotbarSlot: 0 })
+    expect(p.equippedItem).toBe("hands")
+    expect(session.sim.progression.heldUse("player")).toBe("shove")
+    const shoveBefore = p.shoveAnim
+    step({ fire: true })
+    expect(p.shoveAnim).toBeGreaterThan(shoveBefore)
+    expect(p.magAmmo).toBe(6)
+    const drops = () => [...ledger.stores.keys()].filter((k) => k.startsWith("drop:"))
+    const before = drops().length
+    step({ drop: true })
+    expect(ledger.store("player/hotbar")!.slots[0]?.item).toBe("fists")
+    expect(drops().length).toBe(before)
+    const left = ledger.removeActor("player", { x: p.x, y: p.y })!
+    expect(ledger.store(left)!.slots.some((s) => s?.item === "fists")).toBe(false)
+    void give
+  })
+
+  test("an empty hand slot is bare hands, not the pistol", () => {
+    const { p, step, progression } = setup()
+    step({ hotbarSlot: 3 })
+    expect(p.equippedItem).toBe("hands")
+    expect(progression.heldUse("player")).toBe("shove")
   })
 
   test("barricading draws planks from the belt", () => {

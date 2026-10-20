@@ -44,6 +44,8 @@ export class Dock {
   private readonly slots: Slot[] = []
   private readonly cells: Cell[] = []
   private readonly packCount = new RollingNumber(1, "roll pack-used")
+  /** The shoulder light: not a hand slot, always toggled with F. */
+  private readonly light: HTMLElement
   private readonly grid: HTMLElement
   private packCap: HTMLElement
   private open = false
@@ -66,6 +68,11 @@ export class Dock {
     private readonly motion: HudMotion = hudMotion,
   ) {
     els.hotbar.replaceChildren()
+    this.light = document.createElement("div")
+    this.light.className = "light"
+    this.light.title = "Flashlight"
+    this.light.innerHTML = `<span class="light-cap"></span><span class="light-cell"><i></i></span>`
+    els.hotbar.appendChild(this.light)
     for (let i = 0; i < HOTBAR_SIZE; i++) {
       const el = document.createElement("div")
       el.className = "slot"
@@ -128,12 +135,13 @@ export class Dock {
     const hotbar = ledger.store(`${actorId}/hotbar`)
     const pack = ledger.store(`${actorId}/pack`)
     const pendKey = view.pendingItems?.size ? [...view.pendingItems].join(",") : ""
-    const key = `${belt?.rev}|${hotbar?.rev}|${pack?.rev}|${p.flashlightOn}|${p.magAmmo}|${p.meleeDurability}|${pendKey}|${keyLabel("KeyF")}|${keyLabel("Tab")}`
+    const key = `${belt?.rev}|${hotbar?.rev}|${pack?.rev}|${p.flashlightOn}|${p.batteryDepleted}|${Math.ceil(p.battery * 10)}|${p.magAmmo}|${p.meleeDurability}|${pendKey}|${keyLabel("KeyF")}|${keyLabel("Tab")}`
     const animate = !this.first
     if (key !== this.lastKey) {
       this.wake(now)
       this.lastKey = key
       if (belt) this.syncBelt(view, belt, animate)
+      this.syncLight(view)
       if (hotbar) this.syncHotbar(view, hotbar, animate)
       if (pack) this.syncPack(view, pack, animate)
       this.snapKey = ""
@@ -216,6 +224,16 @@ export class Dock {
     for (const el of added) this.motion.enter(el, "calm", { y: 4 })
   }
 
+  private syncLight(view: SessionView): void {
+    const p = view.player
+    this.light.dataset.on = String(p.flashlightOn && !p.batteryDepleted)
+    this.light.dataset.dead = String(p.batteryDepleted)
+    const cap = keyCapHtml("KeyF", { className: "slot-cap" })
+    const capEl = this.light.firstElementChild as HTMLElement
+    if (capEl.innerHTML !== cap) capEl.innerHTML = cap
+    ;(this.light.querySelector(".light-cell i") as HTMLElement).style.width = `${Math.round(Math.max(0, Math.min(1, p.battery)) * 100)}%`
+  }
+
   private syncHotbar(view: SessionView, hotbar: NonNullable<ReturnType<SessionView["progression"]["ledger"]["store"]>>, animate: boolean): void {
     const { progression, player: p } = view
     const ledger = progression.ledger
@@ -223,14 +241,12 @@ export class Dock {
       const s = hotbar.slots[i]
       const slot = this.slots[i]!
       const sel = i === hotbar.selected
-      const on = s?.item === "flashlight" && p.flashlightOn
       slot.el.dataset.selected = String(sel)
-      slot.el.dataset.on = String(Boolean(on))
       slot.el.dataset.empty = String(!s)
       slot.el.dataset.pending = String(Boolean(s && view.pendingItems?.has(s.item)))
       const def = s ? ledger.items.get(s.item) : undefined
       const label = s ? (def?.shortLabel ?? s.item) : ""
-      const extra = s?.item === "flashlight" ? keyCapHtml("KeyF", { className: "slot-cap" }) : ""
+      const extra = ""
       const glyph = s && GLYPH_SLOTS.has(s.item) ? itemIcon(s.item, 14) : ""
       const itemKey = `${s?.item ?? ""}|${extra}`
       if (itemKey !== slot.key) {

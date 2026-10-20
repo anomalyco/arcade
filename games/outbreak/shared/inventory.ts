@@ -19,11 +19,11 @@ export type InventoryState = {
   selectedSlot: number
 }
 
-/** The actor's hotbar from the ledger, with the flashlight's switch and battery from the survivor. */
+/** The actor's hotbar from the ledger. The shoulder light is not a slot: it is the survivor's `flashlightOn`/`battery`. */
 export function inventoryView(
   progression: OutbreakProgression,
   actor: string,
-  survivor: { flashlightOn: boolean; battery: number },
+  _survivor?: { flashlightOn: boolean; battery: number },
 ): InventoryState {
   const hotbar = progression.hotbar(actor)
   const slots: (InventoryItem | null)[] = Array.from({ length: HOTBAR_SIZE }, (_, i) => {
@@ -31,10 +31,7 @@ export function inventoryView(
     if (!s) return null
     const def = progression.ledger.items.get(s.item)
     const item: InventoryItem = { id: s.item, kind: s.item, label: def?.label ?? s.item, shortLabel: def?.shortLabel ?? s.item }
-    if (s.item === "flashlight") {
-      item.charge = survivor.battery
-      item.active = survivor.flashlightOn
-    } else if (s.charge !== undefined) item.charge = s.charge
+    if (s.charge !== undefined) item.charge = s.charge
     if ((def?.stack ?? 1) > 1) item.count = s.count
     return item
   })

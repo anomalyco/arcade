@@ -16,6 +16,7 @@ import {
   type MeleeWeaponId,
 } from "../shared/combat"
 import type { CoopSim, SurvivorSlot } from "../shared/coop-sim"
+import { batteryReload } from "../shared/flashlight"
 import { selectInteractTarget } from "../shared/interact"
 import { sightRects } from "../shared/map"
 import type { PersonalSnapshot, SharedSnapshot } from "../shared/net-protocol"
@@ -445,9 +446,9 @@ export function stepOutbreakOptimisticTick(
     }
   }
 
-  const held = progression.selected(slot.id)?.item
   const use = progression.heldUse(slot.id)
-  if (command.reload && held !== "flashlight") {
+  const battery = batteryReload(p, progression.ledger.count(slot.id, "battery"), { loaded: p.magAmmo, capacity: p.magCapacity, reserve: p.reserveAmmo })
+  if (command.reload && (!battery || p.batteryDepleted)) {
     if (p.reloadRemaining <= 0 && !p.vault && p.magAmmo < PISTOL_MAG_SIZE && p.reserveAmmo > 0) {
       p.reloadRemaining = PISTOL_RELOAD_TIME
       if (firstPass) {

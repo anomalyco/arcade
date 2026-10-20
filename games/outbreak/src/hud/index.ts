@@ -167,6 +167,7 @@ export class OutbreakHud {
         pursuing,
         lowBattery,
         reloadKey: keyLabel("KeyR"),
+        meleeKey: keyLabel("KeyV"),
         notices: view.notices.splice(0),
       })
     }

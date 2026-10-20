@@ -44,6 +44,8 @@ export type ItemDef = {
   activeOnly?: boolean
   /** Tokens added to the catalog's discover store the first time anyone acquires this item. */
   discovers?: readonly ItemId[]
+  /** Part of the actor (bare hands): never dropped, deposited or left behind by `removeActor`. */
+  bound?: boolean
 }
 
 export type Stack = { item: ItemId; count: number; charge?: number }
@@ -283,7 +285,7 @@ export class Ledger {
     for (const tpl of this.actorTemplates) {
       const st = this.stores.get(`${actor}/${tpl.suffix}`)
       if (!st) continue
-      carried.push(...this.stacksOf(st))
+      carried.push(...this.stacksOf(st).filter((s) => !this.isBound(s.item)))
       this.deleteStore(st.id)
     }
     if (!dropAt || !carried.length) return null
@@ -491,7 +493,7 @@ export class Ledger {
         if (tx.from) {
           const st = this.stores.get(tx.from.store)
           const s = st?.owner === tx.actor ? st.slots[tx.from.slot] : undefined
-          if (!s) return { ok: false, reason: "empty", store: tx.from.store }
+          if (!s || this.isBound(s.item)) return { ok: false, reason: "empty", store: tx.from.store }
           if (this.fitInStore(to, s.item, 1) < 1) return { ok: false, reason: "full", item: s.item, store: tx.to }
           return { ok: true, duration: 0, noise: 0, label: "Store" }
         }
@@ -504,13 +506,14 @@ export class Ledger {
           for (const [item, count] of Object.entries(tx.items)) {
             if (count <= 0) continue
             any = true
-            if (this.count(tx.actor, item) < count) return { ok: false, reason: "missing_item", item }
+            if (this.isBound(item) || this.count(tx.actor, item) < count) return { ok: false, reason: "missing_item", item }
           }
           return any ? { ok: true, duration: 0, noise: 0, label: "Drop" } : { ok: false, reason: "empty" }
         }
         const st = this.stores.get(tx.store ?? `${tx.actor}/hotbar`)
         if (!st || st.owner !== tx.actor) return { ok: false, reason: "unknown_store", store: tx.store }
-        if (!st.slots[tx.slot ?? st.selected]) return { ok: false, reason: "empty", store: st.id }
+        const held = st.slots[tx.slot ?? st.selected]
+        if (!held || this.isBound(held.item)) return { ok: false, reason: "empty", store: st.id }
         return { ok: true, duration: 0, noise: 0, label: "Drop" }
       }
       case "swap": {
@@ -918,6 +921,11 @@ export class Ledger {
 
   private isEmpty(st: StoreState): boolean {
     return st.mode === "counters" ? Object.keys(st.counts).length === 0 : st.slots.every((s) => s === null)
+  }
+
+  /** Bare hands and the like: they stay with the actor (`ItemDef.bound`). */
+  isBound(item: ItemId): boolean {
+    return Boolean(this.items.get(item)?.bound)
   }
 
   private stacksOf(st: StoreState): Stack[] {

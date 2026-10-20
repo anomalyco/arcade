@@ -38,12 +38,21 @@
 #hotbar .slot[data-empty="true"] { background: transparent; box-shadow: inset 0 0 0 1px var(--hud-line) }
 #hotbar .slot[data-selected="true"] { background: var(--hud-raised); box-shadow: inset 0 0 0 1px var(--hud-line-2), 0 1px 0 rgb(0 0 0 / .4); color: var(--hud-ink) }
 #hotbar .slot[data-selected="true"] .slot-key { color: var(--hud-ink-2) }
-#hotbar .slot[data-on="true"] .slot-item { color: var(--hud-warm) }
 #hotbar .slot-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0 }
 #hotbar .slot-item .glyph { flex: none; margin-right: -2px; opacity: .85 }
 #hotbar .slot .slot-cap { margin-left: var(--hud-1) }
 #hotbar .slot .slot-cap .akc-cap { font-size: 9px; transition: box-shadow var(--m-default-ms, .3s) var(--m-default, ease) }
-#hotbar .slot[data-on="true"] .slot-cap .akc-cap { box-shadow: 0 0.14em 0 var(--akc-edge), 0 0 0 1px rgb(0 0 0 / .6), 0 0 8px rgb(241 196 106 / .55) }
+/* The shoulder light, ahead of the hand slots: F and a battery cell, warm while the beam is on. */
+#hotbar .light {
+  display: inline-flex; align-items: center; gap: var(--hud-2); height: 22px; padding: 0 var(--hud-2);
+  border-radius: var(--hud-r-chip); box-shadow: inset 0 0 0 1px var(--hud-line); --akc-size: 14px; margin-right: var(--hud-2)
+}
+#hotbar .light .slot-cap .akc-cap { font-size: 9px; transition: box-shadow var(--m-default-ms, .3s) var(--m-default, ease) }
+#hotbar .light[data-on="true"] .slot-cap .akc-cap { box-shadow: 0 0.14em 0 var(--akc-edge), 0 0 0 1px rgb(0 0 0 / .6), 0 0 8px rgb(241 196 106 / .55) }
+#hotbar .light-cell { position: relative; width: 16px; height: 7px; border-radius: 2px; box-shadow: inset 0 0 0 1px var(--hud-line-2); overflow: hidden }
+#hotbar .light-cell i { position: absolute; inset: 1px auto 1px 1px; max-width: calc(100% - 2px); background: var(--hud-ink-3) }
+#hotbar .light[data-on="true"] .light-cell i { background: var(--hud-warm) }
+#hotbar .light[data-dead="true"] .light-cell { box-shadow: inset 0 0 0 1px var(--hud-danger, #e5674b) }
 
 /* The pack sheet: one shape that grows from the pack chip. Its grid is laid out at full size from the bottom-right
    corner, so the growing shape reveals it from the chip outward. */
