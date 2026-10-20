@@ -137,6 +137,7 @@ export const LAB_KINDS: readonly LabKind[] = [
   { id: "outbreak-fire", label: "Fire & explosives", subject: "Outbreak's flamethrower, dynamite, firecrackers, molotovs, flare gun and bear traps, and the fire they light", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
   { id: "outbreak-weather", label: "Weather", subject: "Outbreak's seeded weather: rain in the light, the wet road and its puddles, lightning and thunder", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
   { id: "impact", label: "Combat oomph", subject: "Outbreak's hits and deaths: hit reactions, ragdolls, bodies pushed by blasts and cars, weapon-weighted hit-stop", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
+  { id: "interactions", label: "World interactions", subject: "Outbreak's ways to act on the world: throwables with an arc, loose furniture dragged and braced against doors, hauling a downed teammate", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
   { id: "way-out", label: "The Way Out", subject: "Outbreak's hidden way out of town: the clues, the destination at night, the final stand and the escape", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
   { id: "ship", label: "Ship", subject: "A Carrier ship and sea at a time of day", host: { kind: "page", url: "/arcade/carrier/" }, panels: page },
   { id: "brawler", label: "Brawler", subject: "Brawl's characters, their abilities and the props they throw around", host: { kind: "page", url: "/arcade/brawl/playground.html" }, panels: page, play: "Play" },
@@ -168,6 +169,7 @@ const PAGE_STATIONS: Record<string, string> = {
   "outbreak-vegetation": "outbreak-vegetation",
   "outbreak-houses": "outbreak-houses",
   "outbreak-impact": "impact",
+  "outbreak-interactions": "interactions",
   brawl: "brawler",
   archers: "archer",
 }

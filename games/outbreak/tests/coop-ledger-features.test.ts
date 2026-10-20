@@ -15,6 +15,9 @@ for (const seat of [0, 1]) {
     ["flare-gun", ["flare:", "burn:"]],
     ["flare", ["flare:"]],
     ["bear-trap", ["trap:"]],
+    // Throwables (AR-96): wound up on the button, thrown on release; the drop lies where it stops.
+    ["baseball", ["toss:", "drop:t:"]],
+    ["bottle", ["toss:", "glass:"]],
   ] as const) test(`seat ${seat}: ${item} reaches both peers and late join`, () => {
     const r = featureRoom()
     try {
@@ -24,6 +27,7 @@ for (const seat of [0, 1]) {
       const z = r.core.sim.ai.spawnZombie(r.core.sim.town, item === "bear-trap" ? 30.6 : 33, 46, "wander")
       z.speedScale = 0
       r.act(actor, { fire: true, fireHeld: true })
+      if (item === "baseball" || item === "bottle") r.act(actor, { fireHeld: true }, 20)
       r.act(actor, { fireHeld: item === "flamethrower" }, 30)
       r.ledgerParity(prefixes)
       if (item === "flamethrower" || item === "flare-gun") expect([...r.core.sim.progression.ledger.stores.keys()].some((id) => id.startsWith("burn:"))).toBe(true)

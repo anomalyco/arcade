@@ -62,6 +62,9 @@ docs folder. Start with `AGENTS.md` at the root; it says which of these to read 
 - [outbreak-way-out.md](outbreak-way-out.md): The Way Out (AR-64), Outbreak's win condition: a hidden seeded
   destination found through clues, a signal, a stand until dawn and the escape card. Read before changing
   `shared/way-out/` or how a run ends.
+- [outbreak-interactions.md](outbreak-interactions.md): world interactions (AR-96): throwables (baseballs, bricks,
+  rocks, cans, bottles with a wound-up arc), what interactions already existed, and how each is taught. Read before
+  adding a way to act on the world.
 - [outbreak-difficulty.md](outbreak-difficulty.md): the difficulty-ramp playtest (survivor bots, per-hour probe,
   banded test in `bun run check`, full batch with charts) and how to update its bands. Read before tuning difficulty.
 - [outbreak-discovery.md](outbreak-discovery.md): D-19 "Discovered, Not Told": state read from the world instead of

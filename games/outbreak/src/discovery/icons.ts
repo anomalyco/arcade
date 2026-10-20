@@ -22,6 +22,11 @@ const PATHS: Record<string, string> = {
   "bear-trap": '<path d="M4 15a8 8 0 0 1 16 0"/><path d="M4 15l2-3 2 2.5 2-3 2 2.5 2-3 2 2.5 2-3 2 4"/><path d="M3 15h18M12 15v5M9 20h6"/>',
   fuel: '<path d="M5 9l3.5-4H17a2 2 0 0 1 2 2v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1z"/><path d="M8.5 5V3H12"/><path d="M8.5 11.5l7 5.5M15.5 11.5l-7 5.5"/>',
   "pressure-tank": '<rect x="7" y="6" width="10" height="15" rx="5"/><path d="M10 6V3.5h4V6"/><circle cx="12" cy="12" r="2.2"/><path d="M12 12l1.2-1.2"/>',
+  // Throwables (AR-96): also their hotbar glyphs.
+  baseball: '<circle cx="12" cy="12" r="8"/><path d="M6.5 6.5c2.5 2.5 2.5 8.5 0 11M17.5 6.5c-2.5 2.5-2.5 8.5 0 11"/><path d="M7.6 9l1.4-.4M8 12h1.5M7.6 15l1.4.4M16.4 9l-1.4-.4M16 12h-1.5M16.4 15l-1.4.4"/>',
+  brick: '<path d="M3 10l6-3h12l-6 3z"/><path d="M3 10v7h12v-7M15 17l6-3V7"/><path d="M7 12.5h4"/>',
+  rock: '<path d="M4 17l2-6 4-4 5 1 4 4 1 5-3 2H6z"/><path d="M10 7l1 4 4 1M11 11l-3 3"/>',
+  "tin-can": '<ellipse cx="12" cy="5.5" rx="5" ry="2"/><path d="M7 5.5v13c0 1.1 2.2 2 5 2s5-.9 5-2v-13"/><path d="M7 9.5c1.5 1 8.5 1 10 0M7 15c1.5 1 8.5 1 10 0"/>',
   "bolt-cutters": '<path d="M9 3l1.6 8M15 3l-1.6 8"/><circle cx="12" cy="12" r="1.3"/><path d="M10.8 13L6 21M13.2 13L18 21"/><path d="M5 19.5l2 1.5M19 19.5l-2 1.5"/>',
 }
 

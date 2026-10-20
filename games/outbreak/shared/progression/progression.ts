@@ -57,7 +57,7 @@ const BENCH_LIGHT_FLASHLIGHT = 0.2
 const BENCH_LIGHT_LAMP = 0.2
 const GENERATOR_LIGHT = 0.8
 /** Items whose primary button a feature handles in its own survivor action (`shared/fire`). */
-const FEATURE_ITEMS: ReadonlySet<ItemId> = new Set(["flamethrower", "dynamite", "firecrackers", "molotov", "flare-gun", "bear-trap"])
+const FEATURE_ITEMS: ReadonlySet<ItemId> = new Set(["flamethrower", "dynamite", "firecrackers", "molotov", "flare-gun", "bear-trap", "baseball", "brick", "rock", "tin-can"])
 
 export class OutbreakProgression implements ProgressionHost {
   readonly ledger: Ledger
@@ -77,6 +77,8 @@ export class OutbreakProgression implements ProgressionHost {
   readonly knowledge = new FoundKnowledge(this, this.board)
   /** Closets, tripwires, cars, bottles, glass, repairs and vignettes (`shared/discovery/field-verbs.ts`). */
   readonly verbs = new FieldVerbs(this, this.board, this.knowledge)
+  /** Bottles are wound up and thrown by `shared/throwables` (its tuning sets this; off is Today's fixed-range throw). */
+  tossBottles = true
 
   snapshot(): OutbreakProgressionSnapshot {
     return {
@@ -259,6 +261,7 @@ export class OutbreakProgression implements ProgressionHost {
     const item = this.selected(id)?.item
     if (isMeleeWeapon(item)) return "melee"
     if (item === "medkit" || item === "bandage") return "heal"
+    if (item === "bottle" && this.tossBottles) return "use"
     if (item === "noisemaker" || item === "bottle" || item === "flare") return "throw"
     if (item === "cans") return "set"
     // The flamethrower, dynamite, firecrackers, molotovs, the flare gun and bear traps are used by `shared/fire`.

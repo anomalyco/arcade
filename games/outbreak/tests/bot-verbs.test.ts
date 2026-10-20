@@ -133,7 +133,8 @@ describe("Survivor bots use the D-19 slice 4 verbs", () => {
     s.sim.progression.ledger.on((ev) => {
       if (ev.kind === "ran" && ev.rule === "throw:bottle") thrown = true
     })
-    run(s, 6, () => thrown)
+    // It breaks where it lands, after its flight (AR-96).
+    run(s, 6, () => thrown && s.sim.ai.noiseBus.events.some((e) => e.kind === "glass"))
     expect(thrown).toBe(true)
     expect(s.sim.ai.noiseBus.events.some((e) => e.kind === "glass")).toBe(true)
 

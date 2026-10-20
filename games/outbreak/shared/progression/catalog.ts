@@ -55,6 +55,11 @@ export const ITEMS: readonly ItemDef[] = [
   { id: "molotov", label: "Molotov", shortLabel: "MOLOTOV", tag: "tool", slot: 4, stack: 2 },
   { id: "flare-gun", label: "Flare Gun", shortLabel: "FLARE GUN", tag: "tool", slot: 4, charge: { max: 3, initial: 3 } },
   { id: "bear-trap", label: "Bear Trap", shortLabel: "TRAP", tag: "tool", slot: 4, stack: 2 },
+  // Throwables (`shared/throwables/`): wound up on the button, thrown on release.
+  { id: "baseball", label: "Baseball", shortLabel: "BALL", tag: "tool", slot: 4, stack: 3 },
+  { id: "brick", label: "Brick", shortLabel: "BRICK", tag: "tool", slot: 4, stack: 2 },
+  { id: "rock", label: "Rock", shortLabel: "ROCK", tag: "tool", slot: 4, stack: 3 },
+  { id: "tin-can", label: "Tin Can", shortLabel: "CAN", tag: "tool", slot: 4, stack: 3 },
 
   { id: "ammo", label: "9mm Ammo", shortLabel: "9mm", tag: "ammo", maxCount: 24 },
   { id: "plank", label: "Wood Plank", shortLabel: "Planks", tag: "resource", maxCount: 6, discovers: ["seen:plank"] },

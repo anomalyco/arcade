@@ -162,6 +162,13 @@ CI batch (4 presets × 4 seeds × 3 nights) moved inside its bands: Skilled aliv
 band changed. Skilled dawn 3 now sits on its lower edge: if a later change drops it below, check whether doors (or
 anything else) made houses safer or deadlier before touching the band.
 
+## Throwables (AR-96)
+
+Throwables are lying in 70% of houses (`drop:v:yard:*` ground drops) and bottles fly the new way. Bots still press
+fire once with a bottle, which throws at full strength at once, as their old fixed-range throw did; they do not pick
+up or throw the new items on purpose (they may pick one up as "dropped supplies"). The banded test
+(`tests/difficulty-ramp.test.ts`) passed unchanged; no band moved.
+
 ## Weather (AR-71)
 
 Rain masks noise (zombies hear 30% less at full rain) and costs them 12% of their sight range, so on a wet night fewer
