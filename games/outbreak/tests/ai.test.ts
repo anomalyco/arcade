@@ -15,8 +15,8 @@ function stock(session: LocalSession, loaded: number, belt: Record<string, numbe
   const id = session.slot.id
   ledger.apply({ kind: "setCharge", actor: id, item: "pistol", charge: loaded })
   for (const [item, n] of Object.entries(belt)) {
-    const have = ledger.count(`${id}/belt`, item)
-    if (have > 0) ledger.apply({ kind: "drain", store: `${id}/belt`, item, count: have })
+    const have = ledger.count(`${id}/pack`, item)
+    if (have > 0) ledger.apply({ kind: "drain", store: `${id}/pack`, item, count: have })
     if (n > 0) ledger.apply({ kind: "grant", actor: id, item, count: n })
   }
   session.sim.progression.project(session.slot)
@@ -96,7 +96,7 @@ describe("Outbreak AI & survival combat integration", () => {
     expect(p.magAmmo).toBe(1)
     expect(session.view.inventory.slots[1]?.kind).toBe("pistol")
     expect(session.view.inventory.slots.some((s) => s?.kind === "ammo")).toBe(false)
-    expect(session.sim.progression.ledger.count(`${session.slot.id}/belt`, "ammo")).toBe(6)
+    expect(session.sim.progression.ledger.count(`${session.slot.id}/pack`, "ammo")).toBe(6)
     expect(target.hp).toBeLessThan(100)
     expect(target.state).toBe("stagger")
     expect(session.view.noises.some((n) => n.kind === "gunshot" && n.radius >= 30)).toBe(true)

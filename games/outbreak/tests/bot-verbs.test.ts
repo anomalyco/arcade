@@ -35,8 +35,8 @@ function grant(sim: CoopSim, item: string, count = 1) {
 
 /** No planks, so the bot does not spend the scene boarding windows. */
 function drainPlanks(sim: CoopSim) {
-  const planks = sim.progression.ledger.count("player/belt", "plank")
-  if (planks) sim.progression.ledger.apply({ kind: "drain", store: "player/belt", item: "plank", count: planks })
+  const planks = sim.progression.ledger.count("player/pack", "plank")
+  if (planks) sim.progression.ledger.apply({ kind: "drain", store: "player/pack", item: "plank", count: planks })
 }
 
 describe("Survivor bots use the D-19 slice 4 verbs", () => {

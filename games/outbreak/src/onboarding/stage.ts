@@ -8,6 +8,7 @@ export const BEAT_SPOTS: Readonly<Record<BeatId, readonly [number, number, numbe
   light: [28.4, 27.2, -0.4],
   search: [29.4, 27.6, -Math.PI / 2],
   take: [29.3, 25.95, -Math.PI / 2],
+  case: [29.3, 25.95, -Math.PI / 2],
   craft: [30.2, 27.4, -Math.PI / 4],
   "door-open": [27.0, 27.6, Math.PI / 2],
   "door-close": [27.7, 30.35, -Math.PI / 2],

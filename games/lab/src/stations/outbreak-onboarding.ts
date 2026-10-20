@@ -12,6 +12,7 @@ const beats: [string, string, string][] = [
   ["light", "Flashlight", "F and the bulb glyph until the light is on."],
   ["search", "Search the dresser", "E and the search glyph over the dresser; in reach, the prompt and outline take over."],
   ["take", "Take what's in it", "Two planks and two chemicals: picking the chemicals up fills the bandage in on the recipe board."],
+  ["case", "Open the case", "Tab over you until the Attaché Case is open: what you just took lies in it at its shape."],
   ["craft", "Recipe board", "E at the workbench opens the board; a digit makes the bandage."],
   ["door-open", "Open the hall door", "E and the door-open glyph over the bedroom door."],
   ["door-close", "Shut it behind you", "Once through, E and the door-close glyph."],

@@ -38,15 +38,17 @@ export const outbreakProgressionFeature = registerOutbreakClientFeature({
     },
   ],
   harnessMethods: (host) => ({
-    /** Sets loaded rounds and, optionally, belt counts (`{ ammo: 4, plank: 3 }`) through the progression ledger. */
+    /** Sets loaded rounds and, optionally, supply counts (`{ ammo: 4, plank: 3 }`) through the progression ledger. */
     stock(loaded?: number, belt: Record<string, number> = {}) {
       const session = host.session()
       const { progression, actorId } = session.view
       const ledger = progression.ledger
       if (loaded !== undefined) ledger.apply({ kind: "setCharge", actor: actorId, item: "pistol", charge: loaded })
       for (const [item, n] of Object.entries(belt)) {
-        const have = ledger.count(`${actorId}/belt`, item)
-        if (have) ledger.apply({ kind: "drain", store: `${actorId}/belt`, item, count: have })
+        for (const store of [`${actorId}/hotbar`, `${actorId}/pack`]) {
+          const have = ledger.count(store, item)
+          if (have) ledger.apply({ kind: "drain", store, item, count: have })
+        }
         if (n) ledger.apply({ kind: "grant", actor: actorId, item, count: n })
       }
       const slot = session.sim.slot(actorId)

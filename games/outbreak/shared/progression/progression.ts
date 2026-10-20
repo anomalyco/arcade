@@ -19,8 +19,9 @@ import { INTERACT_RANGE, type InteractAction, type InteractActorState, type Inte
 import { DEFAULT_LOADOUT, loadoutSpec, type LoadoutId } from "../loadout"
 import { sightRects, type Door, type Town } from "../map"
 import { ACTOR_STORES, CATALOG, ITEMS, RECIPES, type Recipe } from "./catalog"
-import { benchSites, buildingAt, CONTAINER_SLOTS, LOOT_TABLES, lootSites, rareLootRng, rollExtraLoot, rollRareLoot, type BenchSite, type LootSite } from "./loot"
+import { bagLootRng, benchSites, buildingAt, CONTAINER_SLOTS, LOOT_TABLES, lootSites, rareLootRng, rollBagLoot, rollExtraLoot, rollRareLoot, type BenchSite, type LootSite } from "./loot"
 import { defaultSeatName, giveTarget, type SeatNames } from "./give"
+import { caseSize, MAX_POUCHES, POUCH, STARTING_BAG, type BagDef } from "./shapes"
 import { CHANNEL_SLACK, pickProgressionTuning, progressionRules, type ProgressionTuning } from "./tuning"
 import type {
   HeldUse,
@@ -199,6 +200,7 @@ export class OutbreakProgression implements ProgressionHost {
         }
         rollExtraLoot(initial, tableKey, c.kind, cRng, this.tuning.lootRate)
         rollRareLoot(initial, tableKey, c.kind, rareLootRng(this.town.seed, c.propIndex), this.tuning.lootRate)
+        rollBagLoot(initial, tableKey, c.kind, bagLootRng(this.town.seed, c.propIndex), this.tuning.lootRate)
         st = this.ledger.createStore({
           id: c.id,
           mode: "slots",
@@ -221,6 +223,7 @@ export class OutbreakProgression implements ProgressionHost {
     if (this.ledger.store(`${slot.id}/hotbar`)) return
     this.ledger.addActor(slot.id)
     this.ledger.apply({ kind: "grant", actor: slot.id, item: "fists" })
+    this.ledger.apply({ kind: "grant", actor: slot.id, item: STARTING_BAG })
     this.ledger.apply({ kind: "grant", actor: slot.id, item: "pistol" })
     this.ledger.apply({ kind: "grant", actor: slot.id, item: "ammo", count: 6 })
     this.ledger.apply({ kind: "grant", actor: slot.id, item: "plank", count: 2 })
@@ -233,6 +236,8 @@ export class OutbreakProgression implements ProgressionHost {
     this.ledger.removeActor(slot.id)
     this.addActor(slot)
     const spec = loadoutSpec(loadout)
+    if (spec.bag) this.ledger.apply({ kind: "grant", actor: slot.id, item: spec.bag })
+    this.syncCase(slot.id)
     for (const grant of spec.items) {
       this.ledger.apply({ kind: "grant", actor: slot.id, item: grant.item, count: grant.count })
       if (grant.charge !== undefined) {
@@ -456,6 +461,21 @@ export class OutbreakProgression implements ProgressionHost {
     }
   }
 
+  /**
+   * The gear in the case that can come to hand (guns, tools, parts; not supplies), as pack slot indices in slot order:
+   * Today's Tab sheet lists these and digit n picks the nth.
+   */
+  packPicks(actor: string): number[] {
+    const st = this.ledger.store(`${actor}/pack`)
+    if (!st) return []
+    const out: number[] = []
+    st.slots.forEach((s, i) => {
+      const tag = s ? this.ledger.items.get(s.item)?.tag : undefined
+      if (tag === "gun" || tag === "tool" || tag === "part") out.push(i)
+    })
+    return out
+  }
+
   /** Bench parts (toolbox, car battery) the survivor carries. */
   partsOn(actor: string): ItemId[] {
     return this.contents(`${actor}/pack`)
@@ -668,12 +688,11 @@ export class OutbreakProgression implements ProgressionHost {
     const what = def ? this.ledger.label(def.id) : "That"
     const lead = partial ? `No room for ${what.toLowerCase()}` : `No room for ${what}`
     if (def?.unique && this.ledger.count(actor, def.id) > 0) return `You already carry a ${what}`
-    if (def && (def.tag === "ammo" || def.tag === "resource" || def.tag === "key")) {
-      return `Can't carry more ${this.ledger.label(def.id, true)}${def.maxCount ? ` (${def.maxCount} max)` : ""}`
-    }
+    if (def?.tag === "bag") return `You already wear a ${what}`
+    if (def && (def.tag === "ammo" || def.tag === "resource" || def.tag === "key")) return `No room in your case for ${this.ledger.label(def.id, true)}. Tab to make room`
     const held = this.selected(actor)
-    if (held && !this.ledger.isBound(held.item)) return `${lead}: hands and pack full. G drops your ${this.ledger.label(held.item)}`
-    return `${lead}: hands and pack full. Pick a slot and G drops it`
+    if (held && !this.ledger.isBound(held.item)) return `${lead}: hands and case full. G drops your ${this.ledger.label(held.item)}`
+    return `${lead}: hands and case full. Tab to make room`
   }
 
   private deposit(slot: ProgressionSlot, benchId: string): boolean {
@@ -710,6 +729,8 @@ export class OutbreakProgression implements ProgressionHost {
       return
     }
     if (pick.mode === "pack") {
+      const from = this.packPicks(slot.id)[pick.index]
+      if (from === undefined) return
       const hotbar = this.hotbar(slot.id)!
       // Bare hands stay put: with them selected, the pack item goes to a free hand slot instead.
       const held = hotbar.slots[hotbar.selected]
@@ -718,7 +739,7 @@ export class OutbreakProgression implements ProgressionHost {
         this.notify(slot, "Hands full", "info", "pack")
         return
       }
-      const res = this.ledger.apply({ kind: "swap", actor: slot.id, a: { store: `${slot.id}/pack`, slot: pick.index }, b: { store: hotbar.id, slot: into } })
+      const res = this.ledger.apply({ kind: "swap", actor: slot.id, a: { store: `${slot.id}/pack`, slot: from }, b: { store: hotbar.id, slot: into } })
       if (!res.ok) this.notify(slot, res.reason === "full" ? "That goes in the pack, not your hands" : "Empty pack slot", "info", "pack")
       else {
         if (into !== hotbar.selected) this.ledger.apply({ kind: "select", actor: slot.id, slot: into })
@@ -878,7 +899,7 @@ export class OutbreakProgression implements ProgressionHost {
   private dropBundle(slot: ProgressionSlot, mate: ProgressionSlot | null = null): void {
     const items: Record<ItemId, number> = {}
     for (const [item, n] of Object.entries(BUNDLE)) {
-      const have = this.ledger.count(`${slot.id}/belt`, item)
+      const have = this.ledger.count(slot.id, item)
       if (have > 0) items[item] = Math.min(n, have)
     }
     if (!Object.keys(items).length) {
@@ -984,14 +1005,34 @@ export class OutbreakProgression implements ProgressionHost {
     return { topologyChanged }
   }
 
+  /**
+   * The case grows to the biggest bag the survivor wears, a row per pouch (`shapes.ts`). Deterministic from the
+   * replicated `worn` store, so the room and a predicting client grow it alike; it never shrinks.
+   */
+  syncCase(actor: string): boolean {
+    const pack = this.ledger.store(`${actor}/pack`)
+    const worn = this.ledger.store(`${actor}/worn`)
+    if (!pack?.grid || !worn) return false
+    const size = caseSize((item) => worn.counts[item] ?? 0)
+    return this.ledger.growGrid(pack.id, size)
+  }
+
+  /** The bag the survivor wears and the pouches on it. */
+  bagOf(actor: string): { bag: BagDef; pouches: number; cols: number; rows: number } {
+    const worn = this.ledger.store(`${actor}/worn`)
+    const size = caseSize((item) => worn?.counts[item] ?? 0)
+    return { bag: size.bag, pouches: Math.min(MAX_POUCHES, worn?.counts[POUCH] ?? 0), cols: size.cols, rows: size.rows }
+  }
+
   /** Writes the ledger's view onto the survivor's legacy fields (HUD, wire, combat animation). */
   project(slot: ProgressionSlot): void {
+    this.syncCase(slot.id)
     const p = slot.survivor
     const pistol = this.pistol(slot.id)
     p.magAmmo = pistol.loaded
     p.magCapacity = pistol.capacity || 8
     p.reserveAmmo = pistol.reserve
-    p.planks = this.ledger.count(`${slot.id}/belt`, "plank")
+    p.planks = this.ledger.count(slot.id, "plank")
     const sel = this.selected(slot.id)
     const wpn = sel && isMeleeWeapon(sel.item) ? sel.item : null
     p.meleeWeapon = wpn

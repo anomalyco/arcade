@@ -3,7 +3,7 @@ import { keyCapHtml } from "@arcade/kit/client/key-cap"
 import type { Stack } from "@arcade/kit/sim/ledger"
 import { findFinisherTarget } from "../shared/combat"
 import { holdProgress, type InteractAction, type InteractTarget } from "../shared/interact"
-import { HOTBAR_SIZE, PACK_SIZE, type OutbreakProgression } from "../shared/progression"
+import { HOTBAR_SIZE, type OutbreakProgression } from "../shared/progression"
 import type { Command, SessionView } from "../shared/session"
 import { supportHeight } from "../shared/terrain"
 import { CraftUi } from "./crafting/ui"
@@ -183,7 +183,7 @@ export class InventoryHud {
       if (this.craft.affordable(view, index)) this.craftOpen = false
       return { pick: { mode: "craft", index } }
     }
-    if (this.packOpen && index < PACK_SIZE) return { pick: { mode: "pack", index } }
+    if (this.packOpen && index < HOTBAR_SIZE) return { pick: { mode: "pack", index } }
     const store = this.stripStore(view, view.prompt)
     if (store && index < view.progression.contents(store).length) return { pick: { mode: "take", index } }
     return index < HOTBAR_SIZE ? { hotbarSlot: index } : {}

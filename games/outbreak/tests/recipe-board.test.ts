@@ -58,8 +58,8 @@ describe("the recipe board in play", () => {
     expect(progression.board.corkboard()).toEqual({ learned: ["bandage"], ideas: [] })
     give("scrap")
     step()
-    // Scrap and chem are both in: reinforcing waits on the toolbox and batteries on the generator.
-    expect(progression.board.corkboard()).toEqual({ learned: ["bandage", "spiked-board"], ideas: ["reinforced", "battery"] })
+    // Scrap and chem are both in (a pouch too): reinforcing waits on the toolbox and batteries on the generator.
+    expect(progression.board.corkboard()).toEqual({ learned: ["bandage", "spiked-board", "pouch"], ideas: ["reinforced", "battery"] })
     expect(readPin(ledger.store(pinStoreId("spiked-board")), "spiked-board")).toMatchObject({ seat: null, source: "sketch" })
     expect(notices().filter((t) => /learn|recipe/i.test(t))).toEqual([])
   })

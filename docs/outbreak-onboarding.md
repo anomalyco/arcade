@@ -18,6 +18,7 @@ so the hint only leads you there.
 | Flashlight | F, bulb | the light is on |
 | Search | E, search, over the dresser | the dresser is searched |
 | Take | E, take-all | its planks or chemicals are carried (the chemicals fill in the bandage on the recipe board) |
+| Case | Tab, over you | the Attaché Case is opened (AR-94; the client tells the guide with `noteCase()`, since the sim never sees it). With Lab › Inventory › Style on Today it is passed at once |
 | Recipe board | E, gear, over the workbench | a bandage is made (a digit in the panel) |
 | Hall door | E, door-open | the bedroom door is open |
 | Shut it | E, door-close, once through | it is shut behind you |

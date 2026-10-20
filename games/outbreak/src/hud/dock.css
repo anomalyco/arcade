@@ -42,6 +42,7 @@
 #hotbar .slot[data-selected="true"] .slot-key { color: var(--hud-ink-2) }
 #hotbar .slot-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0 }
 #hotbar .slot-item .glyph { flex: none; margin-right: -2px; opacity: .85 }
+#hotbar .slot-item .slot-art { flex: none; height: 20px; width: auto; max-width: 36px; object-fit: contain; filter: drop-shadow(1px 2px 1px rgb(0 0 0 / .6)) }
 #hotbar .slot .slot-cap { margin-left: var(--hud-1) }
 #hotbar .slot .slot-cap .akc-cap { font-size: 9px; transition: box-shadow var(--m-default-ms, .3s) var(--m-default, ease) }
 /* The shoulder light, ahead of the hand slots: F and a battery cell, warm while the beam is on. */

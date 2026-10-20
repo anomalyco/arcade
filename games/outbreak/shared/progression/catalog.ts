@@ -1,17 +1,18 @@
 import type { ActorStoreTemplate, ItemDef, ItemId } from "@arcade/kit/sim/ledger"
 import { MELEE_WEAPON_IDS, MELEE_WEAPONS } from "../combat"
+import { BAGS, ITEM_SHAPES, MAX_POUCHES, POUCH, SUPPLY_STACKS } from "./shapes"
 
 /**
  * What Outbreak's ledger holds: the items, the survivor's stores and the recipes.
  *
- * Each survivor has a 5-slot hotbar (bare hands, then weapons, tools and consumables), a belt of counted supplies (ammo, planks,
- * scrap, chem, batteries, keys) that reloads, barricades and crafting draw on, and a 4-slot pack (parts, spare tools).
+ * Each survivor has a 5-slot hotbar (bare hands, then weapons, tools and consumables) and the case (AR-94, D-46): one
+ * grid, RE4-style, holding everything else (supplies that reloads, barricades and crafting draw on, spare tools and
+ * parts), each item at its shape (`shapes.ts`). The case is the bag you wear (`worn`), a row bigger for each pouch.
  */
 
 export const HOTBAR_SIZE = 5
-export const PACK_SIZE = 4
 
-export const ITEMS: readonly ItemDef[] = [
+const BASE_ITEMS: readonly ItemDef[] = [
   // Bare hands hold slot 1: selecting them holsters whatever was in hand, and the button shoves. The flashlight is
   // not an item: it is always on the shoulder, toggled with F whatever is held.
   { id: "fists", label: "Fists", shortLabel: "FISTS", tag: "hand", slot: 0, bound: true },
@@ -89,16 +90,31 @@ export const ITEMS: readonly ItemDef[] = [
   { id: "learned:tripwire", label: "Can Tripwire", tag: "knowledge" },
   { id: "learned:molotov", label: "Molotov", tag: "knowledge" },
   { id: "learned:flamethrower", label: "Flamethrower", tag: "knowledge" },
+  { id: "learned:pouch", label: "Pouch", tag: "knowledge" },
+
+  // Bags you wear (`worn`): the biggest sets the case's size; each pouch adds a row.
+  ...BAGS.map((b): ItemDef => ({ id: b.id, label: b.label, shortLabel: b.label, tag: "bag" })),
+  { id: POUCH, label: "Pouch", shortLabel: "Pouch", tag: "bag" },
 ]
+
+/** Every item, with its shape in the case and (for supplies) how many share a stack there. */
+export const ITEMS: readonly ItemDef[] = BASE_ITEMS.map((d) => {
+  const grid = ITEM_SHAPES[d.id]
+  const stack = SUPPLY_STACKS[d.id]
+  return { ...d, ...(grid ? { grid } : {}), ...(stack ? { stack } : {}) }
+})
 
 /** Belt order, as shown in the HUD. */
 export const BELT_ITEMS = ["ammo", "plank", "scrap", "chem", "battery", "fuel", "key"] as const
 export const MATERIALS = ["plank", "scrap", "chem", "battery"] as const
 
+/** The case a survivor starts with: a school backpack (`shapes.ts` BAGS). */
+export const START_CASE = { cols: BAGS[0]!.cols, rows: BAGS[0]!.rows }
+
 export const ACTOR_STORES: readonly ActorStoreTemplate[] = [
-  { suffix: "belt", mode: "counters", accepts: ["ammo", "resource", "key"], depositable: true },
   { suffix: "hotbar", mode: "slots", size: HOTBAR_SIZE, accepts: ["hand", "gun", "tool"], preferSlots: true },
-  { suffix: "pack", mode: "slots", size: PACK_SIZE, accepts: ["part", "tool", "gun"], depositable: true },
+  { suffix: "pack", mode: "slots", grid: START_CASE, accepts: ["part", "tool", "gun", "ammo", "resource", "key"], depositable: true },
+  { suffix: "worn", mode: "counters", accepts: ["bag"], caps: { ...Object.fromEntries(BAGS.map((b) => [b.id, 1])), [POUCH]: MAX_POUCHES } },
 ]
 
 export type Recipe = {
@@ -129,6 +145,15 @@ export const RECIPES: readonly Recipe[] = [
   { id: "battery", label: "Flashlight Battery", produces: "battery", note: "A full charge for the flashlight, charged off the generator", sketch: ["scrap", "chem"], part: "car-battery", bench: true, craft: { scrap: 1, chem: 1 } },
   { id: "tripwire", label: "Can Tripwire", produces: "cans", note: "Strung across a doorway, it rattles when something walks through. Learned by disarming one", craft: { scrap: 2 } },
   { id: "molotov", label: "Molotov", produces: "molotov", note: "A bottle with a burning rag: it bursts into a pool of fire where it lands", sketch: ["bottle", "chem"], craft: { bottle: 1, chem: 1 } },
+  {
+    id: "pouch",
+    label: "Pouch",
+    produces: POUCH,
+    note: "Sewn onto your bag at a workbench: one more row in the case (two at most)",
+    sketch: ["chem", "scrap"],
+    bench: true,
+    craft: { chem: 2, scrap: 2 },
+  },
   {
     id: "flamethrower",
     label: "Flamethrower",

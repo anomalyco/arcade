@@ -1,45 +1,57 @@
 import { keyCapHtml } from "@arcade/kit/client/key-cap"
-import { footprint, itemIconSvg } from "./icons"
-import { refAttr, type InvCell, type InvMate, type InvModel } from "./model"
+import { refAttr, type CaseItem, type InvCell, type InvMate, type InvModel } from "./model"
+import { PORTRAITS } from "../portraits"
 
 /**
- * The three bag layouts (AR-94) as markup from one model. Every slot is a `[data-ref]` the bag's pointer handling reads,
- * so dragging, Shift+click, hover + digit and G work the same in each; only where things sit and how they look differ.
+ * The Attaché Case (AR-94, D-46) as markup from one model: quick slots on the lid, the case on grid paper with every
+ * item at its shape, what you face as a crate beside it, teammates in reach. Every item and area is a `[data-ref]` the
+ * bag's pointer handling reads. Items are painted portraits (`src/portraits/`, `scripts/item-portraits.ts`; a test
+ * keeps every item covered), with the item's name only for one that has none yet.
  */
 
 export type RenderState = {
-  /** Cells that changed since the bag was last open: they glow until hovered. */
+  /** Things that arrived since the case was last open: they glow until hovered. */
   fresh: ReadonlySet<string>
-  /** Cells waiting for the room to answer a move. */
+  /** Things waiting for the room to answer a move. */
   pending: ReadonlySet<string>
-  cell: number
+  /** The case's size before a bigger bag or a pouch grew it: the new cells unfold in. */
+  grown: { cols: number; rows: number } | null
 }
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
+
+/** The item's painted portrait at its shape (`w`×`h` cells as it lies), turned a quarter when `turned`. */
+export function artHtml(item: string, w: number, h: number, turned = false): string {
+  const url = PORTRAITS[item]
+  const style = `--fw:${w};--fh:${h}`
+  if (!url) return `<span class="inv-art-box" style="${style}"><span class="inv-noart">${esc(item)}</span></span>`
+  return `<span class="inv-art-box" style="${style}" data-turned="${turned}"><img class="inv-art" src="${url}" alt="" draggable="false" decoding="async"></span>`
+}
+
+/** The portrait contained in a box of any shape (quick slots, the dock). */
+export function artFitHtml(item: string): string {
+  const url = PORTRAITS[item]
+  if (!url) return `<span class="inv-noart">${esc(item)}</span>`
+  return `<img class="inv-art-fit" src="${url}" alt="" draggable="false" decoding="async">`
+}
 
 function chargeHtml(c: InvCell): string {
   const ch = c.charge
   if (!ch) return ""
   const f = Math.max(0, Math.min(1, ch.value / Math.max(1, ch.max)))
-  // Rounds read as a number on the gun itself (Dead Space): "6/8". Wear, battery and fuel read as a bar.
+  // Rounds read as a number on the gun itself: "6/8". Wear and fuel read as a bar.
   if (ch.kind === "rounds") return `<span class="inv-rounds" data-empty="${ch.value === 0}">${ch.value}<small>/${ch.max}</small></span>`
   return `<span class="inv-bar" data-low="${f < 0.3}"><i style="--f:${f.toFixed(3)}"></i></span>`
 }
 
 function countHtml(c: InvCell): string {
   const n = c.stack?.count ?? 0
-  return n > 1 || c.ref.at === "belt" ? `<span class="inv-count">${n}</span>` : ""
+  return n > 1 ? `<span class="inv-count">${n}</span>` : ""
 }
 
-/** One slot. `fit` sizes the icon to the slot ("cell") or to the item's footprint ("shape"). */
-export function cellHtml(c: InvCell, st: RenderState, opts: { keyCap?: string; fit?: "cell" | "shape"; rotate?: boolean; extraClass?: string } = {}): string {
+function attrs(c: InvCell, st: RenderState, extra: string[] = []): string {
   const ref = refAttr(c.ref)
-  const fp = c.stack ? footprint(c.stack.item) : { w: 1, h: 1 }
-  const rot = Boolean(opts.rotate)
-  const w = rot ? fp.h : fp.w
-  const h = rot ? fp.w : fp.h
-  const attrs = [
-    `class="inv-cell${opts.extraClass ? ` ${opts.extraClass}` : ""}"`,
+  return [
     `data-ref="${ref}"`,
     `data-at="${c.ref.at}"`,
     c.stack ? `data-item="${c.stack.item}" data-tag="${c.def?.tag ?? ""}"` : `data-empty="true"`,
@@ -47,46 +59,39 @@ export function cellHtml(c: InvCell, st: RenderState, opts: { keyCap?: string; f
     c.blocked ? `data-blocked="${c.blocked}"` : "",
     st.fresh.has(ref) ? `data-fresh="true"` : "",
     st.pending.has(ref) ? `data-pending="true"` : "",
-    `style="--w:${w};--h:${h}"`,
     c.stack ? `aria-label="${esc(c.label)}"` : "",
+    ...extra,
   ]
-  const icon = c.stack ? itemIconSvg(c.stack.item, { rotate: rot }) : ""
-  const cap = opts.keyCap ? `<span class="inv-key">${keyCapHtml(opts.keyCap)}</span>` : ""
-  return `<div ${attrs.filter(Boolean).join(" ")}>${icon}${countHtml(c)}${chargeHtml(c)}${cap}</div>`
+    .filter(Boolean)
+    .join(" ")
 }
 
-function matesHtml(mates: readonly InvMate[], where: "edge" | "list"): string {
-  if (!mates.length) return ""
-  return mates
-    .map((m) => {
-      const angle = Math.atan2(m.dy, m.dx)
-      const initial = esc((m.name.trim()[0] ?? "?").toUpperCase())
-      const style = `--c:${m.colour};--a:${angle.toFixed(3)}rad`
-      if (where === "list") return `<div class="inv-mate" data-ref="mate:${m.index}" style="${style}"><b>${initial}</b><span>${esc(m.name)}</span></div>`
-      return `<div class="inv-mate" data-ref="mate:${m.index}" style="${style}" title="${esc(m.name)}"><b>${initial}</b></div>`
-    })
-    .join("")
+/** A quick slot on the lid: the portrait fitted into it, its key cap, its count or charge. */
+function quickHtml(c: InvCell, index: number, st: RenderState): string {
+  const art = c.stack ? artFitHtml(c.stack.item) : ""
+  return `<div class="inv-quick" ${attrs(c, st)}>${art}${countHtml(c)}${chargeHtml(c)}<span class="inv-key">${keyCapHtml(`Digit${index + 1}`)}</span></div>`
 }
 
-/** A: the backpack open on the floor. Hands are loops on the flap, the pack's four pockets, the belt's pouches. */
-export function groundHtml(m: InvModel, st: RenderState): string {
-  const hands = m.hands.map((c, i) => cellHtml(c, st, { keyCap: `Digit${i + 1}`, fit: "cell" })).join("")
-  const pockets = m.pack.map((c) => cellHtml(c, st, { fit: "shape", extraClass: "inv-pocket" })).join("")
-  const belt = m.belt.map((c) => cellHtml(c, st, { fit: "cell", extraClass: "inv-pouch" })).join("")
-  const found = m.target
-    ? `<div class="inv-cloth" data-ref="target:-1" data-kind="${m.target.kind}">${m.target.cells.map((c) => cellHtml(c, st, { fit: "shape" })).join("") || `<span class="inv-none"></span>`}</div>`
-    : ""
-  return `<div class="inv-mat" data-has-target="${Boolean(m.target)}">
-    <div class="inv-light"></div>
-    <div class="inv-flap" data-ref="hotbar:-1">${hands}</div>
-    <div class="inv-bag" data-ref="pack:-1"><div class="inv-bag-mouth"></div>${pockets}</div>
-    <div class="inv-strap">${belt}</div>
-    ${found}
-    <div class="inv-mates">${matesHtml(m.mates, "edge")}</div>
-  </div>`
+/** An item lying on a grid at (`x`, `y`), `w`×`h` cells as it lies. */
+function placedHtml(c: InvCell, st: RenderState, x: number, y: number, w: number, h: number, turned: boolean): string {
+  const item = c.stack!.item
+  const style = `--x:${x};--y:${y};--w:${w};--h:${h}`
+  return `<div class="inv-item" ${attrs(c, st, [`style="${style}"`, turned ? `data-turned="true"` : ""])}>${artHtml(item, turned ? h : w, turned ? w : h, turned)}${countHtml(c)}${chargeHtml(c)}</div>`
 }
 
-/** Shelf-packs footprints into a grid `cols` wide, long side across, turning anything too long to fit down. */
+function gridCellsHtml(cols: number, rows: number, grown: RenderState["grown"]): string {
+  let out = ""
+  for (let y = 0; y < rows; y++)
+    for (let x = 0; x < cols; x++) {
+      const fresh = grown && (x >= grown.cols || y >= grown.rows)
+      // New cells unfold from the old edge outward.
+      const d = fresh ? Math.max(x - grown!.cols + 1, y - grown!.rows + 1, 0) * 45 + (x + y) * 12 : 0
+      out += `<i class="inv-g" data-cell="${y * cols + x}"${fresh ? ` data-new="true" style="--d:${d}ms"` : ""}></i>`
+    }
+  return out
+}
+
+/** Lays footprints into a grid `cols` wide, biggest first, top-left first (the crate: what you face, for show). */
 export function packShapes(items: readonly { id: string; w: number; h: number }[], cols: number): { id: string; x: number; y: number; w: number; h: number; rot: boolean }[] {
   const out: { id: string; x: number; y: number; w: number; h: number; rot: boolean }[] = []
   const filled: boolean[][] = []
@@ -115,69 +120,58 @@ export function packShapes(items: readonly { id: string; w: number; h: number }[
   return out
 }
 
-const CASE_COLS = 8
-const CRATE_COLS = 5
+export const CRATE_COLS = 5
 
-function gridHtml(cells: readonly InvCell[], st: RenderState, cols: number, minRows: number, area: string, ghosts = 0): string {
+function crateHtml(m: InvModel, st: RenderState, shape: (item: string) => { w: number; h: number }): string {
+  const t = m.target
+  if (!t) return ""
+  const cells = t.cells.filter((c) => c.stack)
   const shapes = packShapes(
-    cells.filter((c) => c.stack).map((c) => ({ id: refAttr(c.ref), ...footprint(c.stack!.item) })),
-    cols,
+    cells.map((c) => ({ id: refAttr(c.ref), ...shape(c.stack!.item) })),
+    CRATE_COLS,
   )
-  const rows = Math.max(minRows, ...shapes.map((s) => s.y + s.h))
+  const rows = Math.max(2, ...shapes.map((s) => s.y + s.h))
   const byRef = new Map(cells.map((c) => [refAttr(c.ref), c]))
-  const items = shapes
-    .map((s) => {
-      const c = byRef.get(s.id)!
-      return `<div class="inv-place" style="grid-column:${s.x + 1} / span ${s.w};grid-row:${s.y + 1} / span ${s.h}">${cellHtml(c, st, { fit: "shape", rotate: s.rot })}</div>`
-    })
-    .join("")
-  const room = Array.from({ length: ghosts }, () => `<div class="inv-room" aria-hidden="true"></div>`).join("")
-  return `<div class="inv-grid" data-ref="${area}" style="--cols:${cols};--rows:${rows}">${items}</div>${ghosts ? `<div class="inv-room-row">${room}</div>` : ""}`
-}
-
-/** B: the attaché case. Quick slots across the lid, the pack laid out on grid paper, the found crate beside it. */
-export function caseHtml(m: InvModel, st: RenderState): string {
-  const quick = m.hands.map((c, i) => cellHtml(c, st, { keyCap: `Digit${i + 1}`, fit: "cell" })).join("")
-  const free = m.pack.filter((c) => !c.stack).length
-  const belt = m.belt.map((c) => cellHtml(c, st, { fit: "cell", extraClass: "inv-loop" })).join("")
-  const crate = m.target
-    ? `<div class="inv-crate" data-kind="${m.target.kind}"><div class="inv-crate-lid"></div>${gridHtml(m.target.cells, st, CRATE_COLS, 3, "target:-1")}</div>`
-    : ""
-  return `<div class="inv-case-wrap">
-    <div class="inv-case">
-      <div class="inv-lid" data-ref="hotbar:-1">${quick}</div>
-      <div class="inv-paper">${gridHtml(m.pack, st, CASE_COLS, 3, "pack:-1", free)}</div>
-      <div class="inv-loops">${belt}</div>
-    </div>
-    ${crate}
-    <div class="inv-mates">${matesHtml(m.mates, "list")}</div>
+  const items = shapes.map((s) => placedHtml(byRef.get(s.id)!, st, s.x, s.y, s.w, s.h, s.rot)).join("")
+  return `<div class="inv-crate" data-ref="target:-1" data-kind="${t.kind}">
+    <div class="inv-head"><span>${esc(t.title)}</span></div>
+    <div class="inv-paper inv-crate-paper" style="--cols:${CRATE_COLS};--rows:${rows}">${gridCellsHtml(CRATE_COLS, rows, null)}${items || `<span class="inv-none">Empty</span>`}</div>
   </div>`
 }
 
-function rowHtml(c: InvCell, st: RenderState, keyCap?: string): string {
-  return `<div class="inv-row" data-row-ref="${refAttr(c.ref)}">${cellHtml(c, st, { keyCap, fit: "cell" })}<span class="inv-row-label">${c.stack ? esc(c.label) : ""}</span></div>`
+function matesHtml(mates: readonly InvMate[]): string {
+  if (!mates.length) return ""
+  const chips = mates
+    .map((m) => {
+      const initial = esc((m.name.trim()[0] ?? "?").toUpperCase())
+      return `<div class="inv-mate" data-ref="mate:${m.index}" style="--c:${m.colour}"><b>${initial}</b><span>${esc(m.name)}</span></div>`
+    })
+    .join("")
+  return `<div class="inv-mates">${chips}</div>`
 }
 
-/** C: the survivor sheet. You on the left (hands, pack, belt), what is nearby on the right (what you face, the floor, teammates). */
-export function sheetHtml(m: InvModel, st: RenderState): string {
-  const hands = m.hands.map((c, i) => cellHtml(c, st, { keyCap: `Digit${i + 1}`, fit: "cell" })).join("")
-  const pack = m.pack.map((c) => rowHtml(c, st)).join("")
-  const belt = m.belt.map((c) => cellHtml(c, st, { fit: "cell" })).join("")
-  const used = m.pack.filter((c) => c.stack).length
-  const target = m.target
-    ? `<section data-ref="target:-1"><h3>${esc(m.target.title)}</h3>${m.target.cells.map((c) => rowHtml(c, st)).join("") || `<p class="inv-none">Empty</p>`}</section>`
-    : ""
-  const mates = m.mates.length ? `<section><h3>Hand to</h3>${matesHtml(m.mates, "list")}</section>` : ""
-  return `<div class="inv-sheet">
-    <div class="inv-col inv-you">
-      <section data-ref="hotbar:-1"><h3>Hands</h3><div class="inv-hands">${hands}</div></section>
-      <section data-ref="pack:-1"><h3>Pack <span class="inv-weight"><i style="--f:${(used / Math.max(1, m.pack.length)).toFixed(3)}"></i></span></h3>${pack}</section>
-      ${belt ? `<section><h3>Belt</h3><div class="inv-belt">${belt}</div></section>` : ""}
+/** The whole case: the lid's quick slots, the case on grid paper, the crate and teammates beside it, the key hints. */
+export function caseHtml(m: InvModel, st: RenderState, shape: (item: string) => { w: number; h: number }): string {
+  const c = m.case
+  const quick = m.hands.map((h, i) => quickHtml(h, i, st)).join("")
+  const items = c.items.map((it: CaseItem) => placedHtml(it, st, it.x, it.y, it.w, it.h, it.r)).join("")
+  const pouches = c.pouches ? ` <small>+${c.pouches} pouch${c.pouches > 1 ? "es" : ""}</small>` : ""
+  const grownNote = st.grown ? `<span class="inv-grew">${c.cols}×${c.rows}</span>` : ""
+  const hints = [
+    `${keyCapHtml("KeyR")}<span>Turn</span>`,
+    `${keyCapHtml("KeyG")}<span>Drop</span>`,
+    `${keyCapHtml("ShiftLeft")}<span>Half</span>`,
+    `${keyCapHtml("Tab")}<span>Close</span>`,
+  ]
+    .map((h) => `<span class="inv-hint">${h}</span>`)
+    .join("")
+  return `<div class="inv-case-wrap">
+    <div class="inv-case" style="--cols:${c.cols};--rows:${c.rows}">
+      <div class="inv-lid" data-ref="hotbar:-1">${quick}</div>
+      <div class="inv-head"><span class="inv-bag">${esc(c.bag)}${pouches}</span>${grownNote}<span class="inv-used">${c.used}<small>/${c.cols * c.rows}</small></span></div>
+      <div class="inv-paper inv-case-paper" data-ref="case:-1" style="--cols:${c.cols};--rows:${c.rows}"${st.grown ? ` data-grown="true"` : ""}>${gridCellsHtml(c.cols, c.rows, st.grown)}${items}</div>
+      <div class="inv-hints">${hints}</div>
     </div>
-    <div class="inv-col inv-near">
-      ${target}
-      <section class="inv-floor-row" data-ref="ground:0"><h3>Floor</h3></section>
-      ${mates}
-    </div>
+    <div class="inv-side">${crateHtml(m, st, shape)}${matesHtml(m.mates)}</div>
   </div>`
 }

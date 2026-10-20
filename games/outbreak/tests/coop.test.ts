@@ -163,8 +163,8 @@ describe("CoopRoomCore", () => {
     expect(last(b).personal.survivor.reserveAmmo).toBe(6 + 8)
     expect(last(a).personal.survivor.reserveAmmo).toBe(6)
     // Each client sees its own belt and nobody else's.
-    expect(b.ledger.count(`${b.id}/belt`, "ammo")).toBe(14)
-    expect(a.ledger.store(`${b.id}/belt`)).toBeUndefined()
+    expect(b.ledger.count(`${b.id}/pack`, "ammo")).toBe(14)
+    expect(a.ledger.store(`${b.id}/pack`)).toBeUndefined()
     expect(b.notices).toContain("+8 9mm")
 
     // Ann fires: only her magazine empties by one; both see the shot, attributed to her seat.
@@ -336,7 +336,7 @@ describe("CoopRoomCore", () => {
     run(core, [a, b], 3)
     expect(ledger.store(drop)).toBeUndefined()
     expect(b.ledger.store(drop)).toBeUndefined()
-    expect(ledger.count(`${b.id}/belt`, "ammo")).toBe(12)
+    expect(ledger.count(`${b.id}/pack`, "ammo")).toBe(12)
 
     core.close(a.conn)
     now += 61_000

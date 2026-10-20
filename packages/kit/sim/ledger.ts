@@ -33,6 +33,8 @@ export type ItemDef = {
   stack?: number
   /** Slots taken in a slotted store (default 1; 2 for a heavy item). */
   slots?: number
+  /** Cells taken in a grid store, long side across (default 1×1). A placed stack can be turned a quarter. */
+  grid?: { w: number; h: number }
   /** Default cap in a counter store when the store sets none. */
   maxCount?: number
   /** Preferred slot index in stores with `preferSlots`, used when that slot is free. */
@@ -52,6 +54,12 @@ export type ItemDef = {
 
 export type Stack = { item: ItemId; count: number; charge?: number }
 
+/** A grid store's size in cells. */
+export type GridSize = { cols: number; rows: number }
+
+/** Where a stack sits in a grid store: its top-left cell, and `r` when turned a quarter (its footprint's w and h swap). */
+export type Place = { x: number; y: number; r?: 1 }
+
 export type StoreMode = "slots" | "counters"
 export type StoreScope = "personal" | "shared"
 
@@ -62,6 +70,11 @@ export type StoreSpec = {
   owner?: ActorId
   /** Slot capacity for `"slots"` stores. */
   size?: number
+  /**
+   * A `"slots"` store laid out as cells (an attaché case): every stack takes its item's `grid` footprint at a place,
+   * fits only where its cells are free, and the store's size is `cols × rows` (one stack per cell at most).
+   */
+  grid?: GridSize
   /** Item tags this store takes when items are routed into it (empty: anything). */
   accepts?: readonly string[]
   /** Per-item caps for `"counters"` stores. */
@@ -130,6 +143,9 @@ export type StoreState = {
   at?: { x: number; y: number }
   selected: number
   slots: (Stack | null)[]
+  /** Grid stores: the cells, and each slot's place (meaningful only while its slot holds a stack). */
+  grid?: GridSize
+  places?: (Place | null)[]
   counts: Record<ItemId, number>
   rev: number
 }
@@ -160,13 +176,18 @@ export type Tx =
   | { kind: "reveal"; actor: ActorId; store: StoreId; duration?: number; noise?: number; label?: string }
   | { kind: "take"; actor: ActorId; from: StoreId; slot?: number; item?: ItemId; count?: number }
   /** Moves supplies from the actor's depositable stores into a station, or one of the stack in `from` (e.g. the held item). */
-  | { kind: "deposit"; actor: ActorId; to: StoreId; items?: Readonly<Record<ItemId, number>>; from?: { store: StoreId; slot: number } }
+  | { kind: "deposit"; actor: ActorId; to: StoreId; items?: Readonly<Record<ItemId, number>>; from?: { store: StoreId; slot: number }; count?: number }
   /** Drops `items` from anywhere on the actor, or one of the stack in `store` (default hotbar) `slot` (default selected). */
-  | { kind: "drop"; actor: ActorId; at: { x: number; y: number }; items?: Readonly<Record<ItemId, number>>; store?: StoreId; slot?: number }
+  | { kind: "drop"; actor: ActorId; at: { x: number; y: number }; items?: Readonly<Record<ItemId, number>>; store?: StoreId; slot?: number; count?: number }
   /** Swaps two slots between two of the actor's slotted stores (e.g. a pack item into the hand). */
   | { kind: "swap"; actor: ActorId; a: { store: StoreId; slot: number }; b: { store: StoreId; slot: number } }
   /** `ref` is passed through to the `ran` event for the game's own effect; `label` names the channel. */
   | { kind: "run"; actor: ActorId; rule: RuleId; station?: StoreId; ref?: string; label?: string }
+  /**
+   * Puts a stack (or `count` of it) at a place in one of the actor's grid stores: moved or turned within it, or brought
+   * in from their own stores or a revealed shared one. Onto a stack of the same item it tops that stack up instead.
+   */
+  | { kind: "place"; actor: ActorId; from: { store: StoreId; slot: number }; to: StoreId; x: number; y: number; r?: boolean; count?: number }
   | { kind: "grant"; actor: ActorId; item: ItemId; count?: number; store?: StoreId }
   | { kind: "drain"; store: StoreId; item: ItemId; count?: number; actor?: ActorId }
 
@@ -297,11 +318,12 @@ export class Ledger {
   }
 
   createStore(spec: StoreSpec): StoreState {
-    const size = spec.size ?? (Array.isArray(spec.initial) ? spec.initial.length : 0)
+    const grid = spec.mode === "slots" && spec.grid ? { cols: Math.max(1, spec.grid.cols | 0), rows: Math.max(1, spec.grid.rows | 0) } : undefined
+    const size = grid ? grid.cols * grid.rows : (spec.size ?? (Array.isArray(spec.initial) ? spec.initial.length : 0))
     const slots: (Stack | null)[] =
       spec.mode === "slots"
         ? Array.from({ length: size }, (_, i) => {
-            const init = Array.isArray(spec.initial) ? (spec.initial as (Stack | null)[])[i] : null
+            const init = !grid && Array.isArray(spec.initial) ? (spec.initial as (Stack | null)[])[i] : null
             return init && init.count > 0 ? this.normalizeStack(init) : null
           })
         : []
@@ -323,11 +345,84 @@ export class Ledger {
       selected: 0,
       slots,
       counts,
+      ...(grid ? { grid, places: slots.map(() => null) } : {}),
       rev: ++this.rev,
     }
     this.stores.set(st.id, st)
     this.removedStores.delete(st.id)
+    if (grid && Array.isArray(spec.initial)) for (const s of spec.initial as (Stack | null)[]) if (s && s.count > 0) this.addToStore(st, s, undefined, () => {})
     return st
+  }
+
+  /**
+   * Grows a grid store to `grid` (never smaller: nothing placed is moved or lost). Every stack keeps its place; the new
+   * cells are free. Returns whether the size changed.
+   */
+  growGrid(id: StoreId, grid: GridSize): boolean {
+    const st = this.stores.get(id)
+    if (!st?.grid || !st.places) return false
+    const cols = Math.max(st.grid.cols, grid.cols | 0)
+    const rows = Math.max(st.grid.rows, grid.rows | 0)
+    if (cols === st.grid.cols && rows === st.grid.rows) return false
+    st.grid = { cols, rows }
+    const size = cols * rows
+    while (st.slots.length < size) st.slots.push(null)
+    while (st.places.length < size) st.places.push(null)
+    st.size = size
+    st.rev = ++this.rev
+    return true
+  }
+
+  /** A stack's cells across and down, turned or not. */
+  footprint(item: ItemId, turned = false): { w: number; h: number } {
+    const g = this.items.get(item)?.grid
+    const w = Math.max(1, g?.w ?? 1)
+    const h = Math.max(1, g?.h ?? 1)
+    return turned ? { w: h, h: w } : { w, h }
+  }
+
+  /** Which slot fills each cell of a grid store (-1 free), row-major; `skip` leaves one slot out. */
+  occupancy(st: StoreState, skip = -1): number[] {
+    const g = st.grid
+    if (!g || !st.places) return []
+    const occ = new Array<number>(g.cols * g.rows).fill(-1)
+    st.slots.forEach((s, i) => {
+      const p = st.places![i]
+      if (!s || !p || i === skip) return
+      const fp = this.footprint(s.item, p.r === 1)
+      for (let y = p.y; y < p.y + fp.h; y++) for (let x = p.x; x < p.x + fp.w; x++) if (x < g.cols && y < g.rows) occ[y * g.cols + x] = i
+    })
+    return occ
+  }
+
+  /** Whether a `w`×`h` footprint is inside the grid and on free cells at (`x`, `y`). */
+  private freeAt(occ: readonly number[], g: GridSize, x: number, y: number, w: number, h: number): boolean {
+    if (x < 0 || y < 0 || x + w > g.cols || y + h > g.rows) return false
+    for (let yy = y; yy < y + h; yy++) for (let xx = x; xx < x + w; xx++) if (occ[yy * g.cols + xx] !== -1) return false
+    return true
+  }
+
+  /** The first free place for `item`, top-left first, as it lies and then turned (`prefer` is tried before both). */
+  findPlace(st: StoreState, item: ItemId, occ: readonly number[] = this.occupancy(st), prefer?: Place | null): Place | null {
+    const g = st.grid
+    if (!g) return null
+    if (prefer) {
+      for (const turned of prefer.r === 1 ? [true, false] : [false, true]) {
+        const fp = this.footprint(item, turned)
+        if (this.freeAt(occ, g, prefer.x, prefer.y, fp.w, fp.h)) return { x: prefer.x, y: prefer.y, ...(turned ? { r: 1 as const } : {}) }
+      }
+    }
+    for (const turned of [false, true]) {
+      const fp = this.footprint(item, turned)
+      if (turned && fp.w === fp.h) break
+      for (let y = 0; y + fp.h <= g.rows; y++) for (let x = 0; x + fp.w <= g.cols; x++) if (this.freeAt(occ, g, x, y, fp.w, fp.h)) return { x, y, ...(turned ? { r: 1 as const } : {}) }
+    }
+    return null
+  }
+
+  private markPlace(occ: number[], g: GridSize, p: Place, item: ItemId, slot: number): void {
+    const fp = this.footprint(item, p.r === 1)
+    for (let y = p.y; y < p.y + fp.h; y++) for (let x = p.x; x < p.x + fp.w; x++) occ[y * g.cols + x] = slot
   }
 
   deleteStore(id: StoreId): void {
@@ -528,10 +623,15 @@ export class Ledger {
         const sb = b.slots[tx.b.slot]
         if (sa === undefined || sb === undefined) return { ok: false, reason: "unknown_store" }
         if (!sa && !sb) return { ok: false, reason: "empty" }
+        if (a === b && a.grid) return { ok: true, duration: 0, noise: 0, label: "Swap" }
         if (!this.canPlace(b, tx.b.slot, sa, sb) || !this.canPlace(a, tx.a.slot, sb, sa)) {
           return { ok: false, reason: "full", item: (sa ?? sb)!.item }
         }
         return { ok: true, duration: 0, noise: 0, label: "Swap" }
+      }
+      case "place": {
+        const plan = this.planPlace(tx)
+        return plan.ok ? { ok: true, duration: 0, noise: 0, label: "Place" } : plan
       }
       case "run":
         return this.validateRule(tx, env)
@@ -706,9 +806,11 @@ export class Ledger {
         const to = this.stores.get(tx.to)!
         if (tx.from) {
           const st = this.stores.get(tx.from.store)!
-          const s = st.slots[tx.from.slot]!
-          this.removeFromStore(st, s.item, 1, tx.actor, record, s.charge)
-          this.addToStore(to, { ...s, count: 1 }, tx.actor, record)
+          const s = { ...st.slots[tx.from.slot]! }
+          const want = tx.count && tx.count > 0 ? Math.min(tx.count, s.count) : 1
+          const n = this.fitInStore(to, s.item, want)
+          this.removeFromSlot(st, tx.from.slot, n, tx.actor, record)
+          this.addToStore(to, { ...s, count: n }, tx.actor, record)
           return done({ store: to.id, item: s.item })
         }
         for (const [item, count] of Object.entries(this.depositPlan(tx.actor, to, tx.items))) {
@@ -725,7 +827,7 @@ export class Ledger {
           const st = this.stores.get(tx.store ?? `${tx.actor}/hotbar`)!
           const idx = tx.slot ?? st.selected
           const stack = st.slots[idx]!
-          const count = (this.items.get(stack.item)?.stack ?? 1) > 1 ? 1 : stack.count
+          const count = tx.count && tx.count > 0 ? Math.min(tx.count, stack.count) : (this.items.get(stack.item)?.stack ?? 1) > 1 ? 1 : stack.count
           stack.count -= count
           if (stack.count <= 0) st.slots[idx] = null
           st.rev = ++this.rev
@@ -741,13 +843,51 @@ export class Ledger {
         const a = this.stores.get(tx.a.store)!
         const b = this.stores.get(tx.b.store)!
         const sa = a.slots[tx.a.slot] ?? null
-        a.slots[tx.a.slot] = b.slots[tx.b.slot] ?? null
+        const sb = b.slots[tx.b.slot] ?? null
+        if (a === b && a.places) {
+          const pa = a.places[tx.a.slot] ?? null
+          a.places[tx.a.slot] = a.places[tx.b.slot] ?? null
+          a.places[tx.b.slot] = pa
+        } else {
+          const pa = a.places && sb ? this.swapPlace(a, tx.a.slot, sb, sa) : null
+          const pb = b.places && sa ? this.swapPlace(b, tx.b.slot, sa, sb) : null
+          if (a.places) a.places[tx.a.slot] = pa
+          if (b.places) b.places[tx.b.slot] = pb
+        }
+        a.slots[tx.a.slot] = sb
         b.slots[tx.b.slot] = sa
         a.rev = ++this.rev
         b.rev = ++this.rev
         const sel = this.stores.get(`${tx.actor}/hotbar`)
         record({ kind: "selected", actor: tx.actor, store: `${tx.actor}/hotbar`, slot: sel?.selected ?? 0, item: sel?.slots[sel.selected]?.item ?? null })
         return done()
+      }
+      case "place": {
+        const plan = this.planPlace(tx) as { merge?: number; place?: Place; moved: number }
+        const from = this.stores.get(tx.from.store)!
+        const to = this.stores.get(tx.to)!
+        const s = from.slots[tx.from.slot]!
+        const moved = plan.moved
+        if (plan.place && from === to && moved === s.count) {
+          to.places![tx.from.slot] = plan.place
+          to.rev = ++this.rev
+          return done({ store: to.id, item: s.item })
+        }
+        const carried = { ...s, count: moved }
+        this.removeFromSlot(from, tx.from.slot, moved, tx.actor, record)
+        if (plan.merge !== undefined) to.slots[plan.merge]!.count += moved
+        else {
+          const idx = to.slots.indexOf(null)
+          to.slots[idx] = this.normalizeStack(carried)
+          to.places![idx] = plan.place!
+        }
+        to.rev = ++this.rev
+        record({ kind: "changed", actor: tx.actor, store: to.id, item: s.item, delta: moved, count: this.countInStore(to, s.item) })
+        if (from.owner !== tx.actor) {
+          this.discover(tx.actor, s.item, record)
+          if (from.id.startsWith("drop:") && this.isEmpty(from)) this.deleteStore(from.id)
+        }
+        return done({ store: to.id, item: s.item })
       }
       case "run": {
         const rule = this.rules.get(tx.rule)!
@@ -894,6 +1034,7 @@ export class Ledger {
       caps: { ...st.caps },
       at: st.at ? { ...st.at } : undefined,
       ...(st.mode === "slots" ? { slots: slots.map((s) => (s ? { ...s } : null)) } : { counts: { ...counts } }),
+      ...(st.grid && st.places ? { grid: { ...st.grid }, places: st.places.map((p, i) => (p && slots[i] ? { ...p } : null)) } : {}),
     }
   }
 
@@ -905,6 +1046,7 @@ export class Ledger {
       at: s.at ? { ...s.at } : undefined,
       slots: s.slots ? s.slots.map((x) => (x ? { ...x } : null)) : [],
       counts: s.counts ? { ...s.counts } : {},
+      ...(s.grid ? { grid: { ...s.grid }, places: (s.places ?? []).map((p) => (p ? { ...p } : null)) } : {}),
     }
   }
 
@@ -961,6 +1103,18 @@ export class Ledger {
     const itemSlots = def.slots ?? 1
     let capacity = 0
     if (maxStack > 1) for (const s of st.slots) if (s?.item === item && s.count < maxStack) capacity += maxStack - s.count
+    if (st.grid) {
+      const occ = this.occupancy(st)
+      let empty = st.slots.filter((s) => s === null).length
+      while (capacity < count && empty > 0) {
+        const p = this.findPlace(st, item, occ)
+        if (!p) break
+        this.markPlace(occ, st.grid, p, item, st.slots.length)
+        capacity += maxStack
+        empty--
+      }
+      return Math.min(count, capacity)
+    }
     let freeUnits = st.size - this.usedSlots(st)
     let empty = st.slots.filter((s) => s === null).length
     while (freeUnits >= itemSlots && empty > 0 && capacity < count) {
@@ -985,8 +1139,15 @@ export class Ledger {
     if (!incoming) return true
     const def = this.items.get(incoming.item)
     if (!def || !this.accepts(st, def)) return false
+    if (st.grid) return slot < st.size && this.swapPlace(st, slot, incoming, outgoing) !== null
     const freed = outgoing ? (this.items.get(outgoing.item)?.slots ?? 1) : 0
     return this.usedSlots(st) - freed + (def.slots ?? 1) <= st.size && slot < st.size
+  }
+
+  /** Where `incoming` goes in a grid store when it takes `slot`'s place: where the outgoing stack lay, else anywhere. */
+  private swapPlace(st: StoreState, slot: number, incoming: Stack, outgoing: Stack | null): Place | null {
+    const prefer = outgoing ? (st.places?.[slot] ?? null) : null
+    return this.findPlace(st, incoming.item, this.occupancy(st, slot), prefer)
   }
 
   private addToStore(st: StoreState, stack: Stack, actor: ActorId | undefined, record: Record_): number {
@@ -1009,12 +1170,20 @@ export class Ledger {
         rem -= take
       }
     }
+    const occ = st.grid ? this.occupancy(st) : null
     while (rem > 0) {
       const preferred = st.preferSlots && def.slot !== undefined && def.slot < st.size && st.slots[def.slot] === null ? def.slot : -1
       const idx = preferred >= 0 ? preferred : st.slots.findIndex((s) => s === null)
       if (idx < 0) break
+      let place: Place | null = null
+      if (occ && st.grid) {
+        place = this.findPlace(st, stack.item, occ)
+        if (!place) break
+        this.markPlace(occ, st.grid, place, stack.item, idx)
+      }
       const take = Math.min(rem, maxStack)
       st.slots[idx] = this.normalizeStack({ ...stack, count: take })
+      if (st.places) st.places[idx] = place
       rem -= take
     }
     st.rev = ++this.rev
@@ -1045,6 +1214,49 @@ export class Ledger {
       this.adjustCounter(known, token, 1, actor, record)
       record({ kind: "unlocked", actor, store: known.id, item: token, label: this.label(token), source: "discover" })
     }
+  }
+
+  /** Removes `count` from one slot (emptying it when nothing is left). */
+  private removeFromSlot(st: StoreState, slot: number, count: number, actor: ActorId | undefined, record: Record_): number {
+    const s = st.slots[slot]
+    if (!s || count <= 0) return 0
+    const n = Math.min(count, s.count)
+    s.count -= n
+    if (s.count <= 0) st.slots[slot] = null
+    st.rev = ++this.rev
+    record({ kind: "changed", actor, store: st.id, item: s.item, delta: -n, count: this.countInStore(st, s.item) })
+    return n
+  }
+
+  /** What a `place` would do: top up a stack at the place, or set the stack (or part of it) down on free cells. */
+  private planPlace(tx: Extract<Tx, { kind: "place" }>): TxCheck & { merge?: number; place?: Place; moved?: number } {
+    const from = this.stores.get(tx.from.store)
+    const to = this.stores.get(tx.to)
+    if (!from || !to || from.mode !== "slots" || !to.grid || to.owner !== tx.actor) return { ok: false, reason: "unknown_store" }
+    if (from.owner !== tx.actor && (from.scope !== "shared" || !from.revealed || from.at === undefined)) return { ok: false, reason: "unknown_store", store: from.id }
+    const s = from.slots[tx.from.slot]
+    if (!s || this.isBound(s.item)) return { ok: false, reason: "empty", store: from.id }
+    const def = this.items.get(s.item)
+    if (!def || !this.accepts(to, def)) return { ok: false, reason: "full", item: s.item, store: to.id }
+    if (def.unique && from.owner !== tx.actor && this.count(tx.actor, s.item) > 0) return { ok: false, reason: "full", item: s.item, store: to.id }
+    const moving = tx.count && tx.count > 0 ? Math.min(tx.count, s.count) : s.count
+    const x = tx.x | 0
+    const y = tx.y | 0
+    const g = to.grid
+    const self = from === to ? tx.from.slot : -1
+    const occ = this.occupancy(to, moving === s.count ? self : -1)
+    const under = x >= 0 && y >= 0 && x < g.cols && y < g.rows ? occ[y * g.cols + x]! : -1
+    const max = def.stack ?? 1
+    const top = under >= 0 ? to.slots[under] : null
+    if (top && under !== tx.from.slot && top.item === s.item && max > 1) {
+      const room = max - top.count
+      if (room <= 0) return { ok: false, reason: "full", item: s.item, store: to.id }
+      return { ok: true, duration: 0, noise: 0, label: "Place", merge: under, moved: Math.min(room, moving) }
+    }
+    const fp = this.footprint(s.item, Boolean(tx.r))
+    if (!this.freeAt(occ, g, x, y, fp.w, fp.h)) return { ok: false, reason: "full", item: s.item, store: to.id }
+    if (!(moving === s.count && from === to) && !to.slots.includes(null)) return { ok: false, reason: "full", item: s.item, store: to.id }
+    return { ok: true, duration: 0, noise: 0, label: "Place", place: { x, y, ...(tx.r ? { r: 1 as const } : {}) }, moved: moving }
   }
 
   /** Removes up to `count`, newest slots first; `charge` prefers the stack holding that charge. */

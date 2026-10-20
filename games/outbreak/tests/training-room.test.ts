@@ -116,6 +116,9 @@ describe("training room", () => {
     step({ aim: -Math.PI / 2 }, 30)
     expect(ledger.count(id, "plank")).toBe(2)
     expect(guide.done.has("take")).toBe(true)
+    // Tab: the case opens (the client tells the guide; the sim never sees it).
+    expect(guide.current()).toBe("case")
+    guide.noteCase()
     // The recipe board filled in the bandage from the chemicals: make one at the bench.
     at(30.2, 27.4, -Math.PI / 4)
     expect(session.view.prompt?.kind).toBe("bench")

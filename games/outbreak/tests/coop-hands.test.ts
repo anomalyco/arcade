@@ -45,7 +45,7 @@ describe("co-op hands", () => {
     const p = core.sim.progression
     const server = core.sim.slot(b.id)!.survivor
     p.ledger.apply({ kind: "setCharge", actor: b.id, item: "pistol", charge: 0 })
-    p.ledger.apply({ kind: "drain", store: `${b.id}/belt`, item: "ammo", count: p.ledger.count(`${b.id}/belt`, "ammo") })
+    p.ledger.apply({ kind: "drain", store: `${b.id}/pack`, item: "ammo", count: p.ledger.count(`${b.id}/pack`, "ammo") })
     p.project(core.sim.slot(b.id)!)
     tick(6)
     act(b, { fire: true })

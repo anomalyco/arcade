@@ -56,7 +56,7 @@ docs folder. Start with `AGENTS.md` at the root; it says which of these to read 
   what it measured. Read before changing `shared/coop-sim.ts`, the room or `@arcade/kit/net`.
 - [outbreak-world.md](outbreak-world.md): how Outbreak's procedural world generation, chunk streaming, districts,
   POIs, incremental bakes and chunk deltas work.
-- [outbreak-progression.md](outbreak-progression.md): Outbreak's inventory (hotbar, belt, pack, containers, drops)
+- [outbreak-progression.md](outbreak-progression.md): Outbreak's inventory (hotbar, the case and bags, containers, drops)
   and the safehouse workbench, built on the `@arcade/kit/sim/ledger` store-and-rule engine. Read before changing
   items, loot, crafting or `shared/progression.ts`.
 - [outbreak-way-out.md](outbreak-way-out.md): The Way Out (AR-64), Outbreak's win condition: a hidden seeded

@@ -287,6 +287,50 @@ export function rollRareLoot(contents: Stack[], tableKey: string, kind: Prop["ki
 }
 
 /**
+ * Bigger bags (AR-94, the Attaché Case): a hiking pack in bedrooms, garages and cabins, a duffel at the police station
+ * and on warehouse and garage shelves, on rolls of their own after everything else (their own random stream, so every
+ * container keeps the contents it always had). `placeBags` makes sure every town has one of each.
+ */
+export const BAG_LOOT: Readonly<Record<string, Partial<Record<Prop["kind"], readonly Roll[]>>>> = {
+  house: { dresser: [{ item: "hiking-pack", chance: 0.04 }] },
+  garage: { shelf: [{ item: "hiking-pack", chance: 0.06 }, { item: "duffel", chance: 0.04 }] },
+  hardware: { shelf: [{ item: "hiking-pack", chance: 0.05 }] },
+  police: { dresser: [{ item: "duffel", chance: 0.12 }], shelf: [{ item: "duffel", chance: 0.06 }] },
+  warehouse: { shelf: [{ item: "duffel", chance: 0.05 }] },
+  cabin: { dresser: [{ item: "hiking-pack", chance: 0.2 }] },
+}
+
+/** The random stream for a streamed container's bag roll. */
+export const bagLootRng = (seed: number, propIndex: number) => new Rng((seed ^ Math.imul(propIndex + 613, 0x2c1b3c6d) ^ 0x4ba65e11) >>> 0)
+
+/** Adds the bag rolls for a container of `kind` in a `tableKey` building to `contents`, from `rng`. */
+export function rollBagLoot(contents: Stack[], tableKey: string, kind: Prop["kind"], rng: Rng, lootRate: number): void {
+  for (const roll of BAG_LOOT[tableKey]?.[kind] ?? []) {
+    const hit = rng.next() < roll.chance * lootRate
+    if (hit && contents.length < CONTAINER_SLOTS && !contents.some((s) => s.item === roll.item)) contents.push({ item: roll.item, count: 1 })
+  }
+}
+
+/** Where a town's sure bags go: a hiking pack in a house dresser, a duffel on a police, garage or warehouse shelf. */
+const SURE_BAGS: readonly { item: ItemId; tables: readonly string[]; kinds: readonly Prop["kind"][] }[] = [
+  { item: "hiking-pack", tables: ["house", "cabin"], kinds: ["dresser", "nightstand"] },
+  { item: "duffel", tables: ["police", "garage", "warehouse", "hardware"], kinds: ["shelf", "dresser", "counter"] },
+]
+
+/** Makes sure the town holds at least one of each bigger bag, in a container picked from the seed. */
+function placeBags(town: Town, sites: readonly LootSite[], stores: readonly StoreSpec[], tableOf: readonly string[]): void {
+  const rng = new Rng((town.seed ^ 0x6a5d39e1) >>> 0)
+  for (const sure of SURE_BAGS) {
+    if (stores.some((st) => (st.initial as Stack[]).some((s) => s.item === sure.item))) continue
+    const pool = sites.map((_, i) => i).filter((i) => sure.tables.includes(tableOf[i]!) && sure.kinds.includes(sites[i]!.kind))
+    if (!pool.length) continue
+    const slots = stores[pool[rng.int(pool.length)]!]!.initial as Stack[]
+    if (slots.length >= CONTAINER_SLOTS) slots.pop()
+    slots.push({ item: sure.item, count: 1 })
+  }
+}
+
+/**
  * The hardware store's keyed back room: always a pressure tank beside the toolbox and the car battery, and in most
  * towns (from the seed) a flamethrower someone left with it.
  */
@@ -334,8 +378,10 @@ export function lootSites(town: Town, tuning: ProgressionTuning): { sites: LootS
   const bottleRng = new Rng((town.seed ^ 0x6b0771e5) >>> 0)
   const extraRng = new Rng((town.seed ^ 0x2f1a9c53) >>> 0)
   const rareRng = new Rng((town.seed ^ 0x7e3b1d29) >>> 0)
+  const bagRng = new Rng((town.seed ^ 0x1d872b41) >>> 0)
   const sites: LootSite[] = []
   const stores: StoreSpec[] = []
+  const tables: string[] = []
   const backRoomShelves = new Map<string, number[]>()
   town.props.forEach((p, i) => {
     if (!CONTAINER_KINDS.has(p.kind)) return
@@ -357,6 +403,8 @@ export function lootSites(town: Town, tuning: ProgressionTuning): { sites: LootS
     if (bottleRng.next() < bottles * tuning.lootRate && contents.length < CONTAINER_SLOTS) contents.push({ item: "bottle", count: 1 + bottleRng.int(2) })
     rollExtraLoot(contents, tableKey, p.kind, extraRng, tuning.lootRate)
     rollRareLoot(contents, tableKey, p.kind, rareRng, tuning.lootRate)
+    rollBagLoot(contents, tableKey, p.kind, bagRng, tuning.lootRate)
+    tables.push(tableKey)
     const id = `loot:${i}`
     sites.push({ id, propIndex: i, kind: p.kind, label: CONTAINER_LABELS[p.kind] ?? p.kind, rect: shape.rect, x: p.x, y: p.y, buildingId: building?.id ?? null })
     stores.push({ id, mode: "slots", scope: "shared", size: CONTAINER_SLOTS, revealed: false, at: { x: p.x, y: p.y }, initial: contents })
@@ -382,6 +430,7 @@ export function lootSites(town: Town, tuning: ProgressionTuning): { sites: LootS
       slots.unshift({ item, count: 1 })
     }
   }
+  placeBags(town, sites, stores, tables)
   return { sites, stores }
 }
 

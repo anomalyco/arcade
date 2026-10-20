@@ -56,10 +56,15 @@ export const PICKUP_SOUND: Readonly<Record<string, `pickup.${PickupClass | "ammo
   fuel: "pickup.part",
   "pressure-tank": "pickup.part",
   "bolt-cutters": "pickup.part",
+  "school-bag": "pickup.part",
+  attache: "pickup.part",
+  "hiking-pack": "pickup.part",
+  duffel: "pickup.part",
+  pouch: "pickup.item",
 }
 
 /** Which crafting sound each recipe makes. */
-export const CRAFT_KIND: Readonly<Record<string, CraftKind>> = { bandage: "medical", lure: "tinker", "spiked-board": "wood", battery: "tinker", tripwire: "tinker", molotov: "tinker", flamethrower: "tinker" }
+export const CRAFT_KIND: Readonly<Record<string, CraftKind>> = { bandage: "medical", lure: "tinker", "spiked-board": "wood", battery: "tinker", tripwire: "tinker", molotov: "tinker", pouch: "tinker", flamethrower: "tinker" }
 
 /** Channel kinds with a held sound, and what plays when one finishes rather than being cancelled. */
 function channelSound(kind: string, label: string): { loop: string; done: string | null } | null {

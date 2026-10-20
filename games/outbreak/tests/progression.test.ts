@@ -27,20 +27,24 @@ function setup() {
     stacks.forEach((s, i) => (st.slots[i] = { ...s }))
     st.revealed = revealed
   }
+  /** Takes every free cell of `actor`'s case with scrap. */
+  const fillCase = (actor = "player") => {
+    while (ledger.room(actor, "scrap", 1) > 0) ledger.apply({ kind: "grant", actor, item: "scrap", count: 1 })
+  }
   const besideContainer = (kind: string) => {
     const c = session.view.containers.find((x) => x.kind === kind && x.buildingId === "ash")!
     stand(c.x, c.y + 0.75, -Math.PI / 2)
     return c
   }
-  return { session, progression, ledger, p, step, give, notices, stand, fill, besideContainer }
+  return { session, progression, ledger, p, step, give, notices, stand, fill, besideContainer, fillCase }
 }
 
 describe("inventory baseline", () => {
-  test("hand tools fill their own hotbar slots, supplies go on the belt, overflow goes in the pack", () => {
+  test("hand tools fill their own hotbar slots, supplies go in the case, overflow goes in the case", () => {
     const { session, ledger, give } = setup()
     expect(session.view.inventory.slots.map((s) => s?.kind ?? null)).toEqual(["fists", "pistol", null, null, null])
-    expect(ledger.count("player/belt", "ammo")).toBe(6)
-    expect(ledger.count("player/belt", "plank")).toBe(2)
+    expect(ledger.count("player/pack", "ammo")).toBe(6)
+    expect(ledger.count("player/pack", "plank")).toBe(2)
     give("crowbar")
     give("medkit", 2)
     give("noisemaker")
@@ -48,24 +52,26 @@ describe("inventory baseline", () => {
     give("key")
     expect(session.view.inventory.slots.map((s) => s?.kind ?? null)).toEqual(["fists", "pistol", "crowbar", "medkit", "noisemaker"])
     expect(session.view.inventory.slots[3]?.count).toBe(2)
-    expect(ledger.count("player/belt", "scrap")).toBe(3)
-    expect(ledger.count("player/belt", "key")).toBe(1)
-    // A second melee tool has no free hand slot and goes in the pack; parts always do.
+    expect(ledger.count("player/pack", "scrap")).toBe(3)
+    expect(ledger.count("player/pack", "key")).toBe(1)
+    // A second melee tool has no free hand slot and goes in the case; parts always do.
     give("spiked-board")
-    give("toolbox")
-    expect(ledger.store("player/pack")!.slots.map((s) => s?.item ?? null)).toEqual(["spiked-board", "toolbox", null, null])
-    // Belt caps hold.
-    expect(ledger.apply({ kind: "grant", actor: "player", item: "plank", count: 5 }).ok).toBe(false)
+    expect(ledger.count("player/pack", "spiked-board")).toBe(1)
+    // What fits is what you carry: seven cells are free, but not three across and two down for a toolbox, either way.
+    expect(ledger.store("player/pack")!.grid).toEqual({ cols: 6, rows: 3 })
+    expect(ledger.room("player", "scrap", 99)).toBe(2 + 7 * 5)
+    expect(ledger.apply({ kind: "grant", actor: "player", item: "toolbox" }).reason).toBe("full")
   })
 
   test("Tab pack: a digit swaps a pack slot into the selected hand slot", () => {
     const { session, ledger, give, step } = setup()
     for (const item of ["crowbar", "medkit", "noisemaker", "spiked-board"]) give(item)
-    expect(ledger.store("player/pack")!.slots[0]?.item).toBe("spiked-board")
+    expect(ledger.count("player/pack", "spiked-board")).toBe(1)
     step({ hotbarSlot: 2 })
+    // Digit 1 is the first piece of gear in the case (supplies are not picked).
     step({ pick: { mode: "pack", index: 0 } })
     expect(session.view.inventory.slots[2]?.kind).toBe("spiked-board")
-    expect(ledger.store("player/pack")!.slots[0]?.item).toBe("crowbar")
+    expect(ledger.count("player/pack", "crowbar")).toBe(1)
   })
 
   test("quiet search and loud smash differ in time and noise; the contents stay visible until taken", () => {
@@ -89,30 +95,33 @@ describe("inventory baseline", () => {
     expect(ledger.store(nightstand.id)!.revealed).toBe(true)
   })
 
-  test("take one with a digit, take all with E, and say what is full when the belt cannot hold it", () => {
-    const { ledger, step, fill, besideContainer, notices, give } = setup()
+  test("take one with a digit, take all with E, and say what is full when the case cannot hold it", () => {
+    const { ledger, step, fill, besideContainer, notices, give, fillCase } = setup()
     const dresser = besideContainer("dresser")
     give("ammo", 12)
-    fill(dresser, [{ item: "medkit", count: 1 }, { item: "ammo", count: 9 }], true)
+    fillCase()
+    fill(dresser, [{ item: "medkit", count: 1 }, { item: "ammo", count: 20 }], true)
     step({ pick: { mode: "take", index: 0 } })
     expect(ledger.count("player", "medkit")).toBe(1)
     notices()
     step({ interact: true })
-    expect(ledger.count("player/belt", "ammo")).toBe(24)
-    expect(ledger.count(dresser.id, "ammo")).toBe(3)
-    expect(notices()).toEqual(["+6 9mm", "Can't carry more 9mm (24 max)"])
+    // Two boxes (15 and 3) with no free cell: the second box tops up to 15 and the rest stays.
+    expect(ledger.count("player/pack", "ammo")).toBe(30)
+    expect(ledger.count(dresser.id, "ammo")).toBe(8)
+    expect(notices()).toEqual(["+12 9mm", "No room in your case for 9mm. Tab to make room"])
   })
 
   test("full hands: the notice names what to drop, and a digit swaps the item in hand for the one wanted", () => {
-    const { session, ledger, step, fill, besideContainer, notices, give, progression } = setup()
-    for (const item of ["crowbar", "medkit", "noisemaker", "pipe", "bat", "knife", "axe"]) give(item)
+    const { session, ledger, step, fill, besideContainer, notices, give, progression, fillCase } = setup()
+    for (const item of ["crowbar", "medkit", "noisemaker"]) give(item)
+    fillCase()
     const dresser = besideContainer("dresser")
     fill(dresser, [{ item: "machete", count: 1, charge: 20 } as never], true)
     step({ hotbarSlot: 2 })
     notices()
     step({ interact: true })
     expect(ledger.count("player", "machete")).toBe(0)
-    expect(notices()).toEqual(["No room for Machete: hands and pack full. G drops your Crowbar"])
+    expect(notices()).toEqual(["No room for Machete: hands and case full. G drops your Crowbar"])
     expect(progression.canSwap("player", "machete")).toBe(true)
     step({ pick: { mode: "take", index: 0 } })
     expect(ledger.count("player", "machete")).toBe(1)
@@ -138,7 +147,7 @@ describe("inventory baseline", () => {
   })
 
   test("G beside a teammate hands them what is held; hold G hands the bundle; a full teammate gets it at their feet", () => {
-    const { session, ledger, step, give, notices, stand } = setup()
+    const { session, ledger, step, give, notices, stand, fillCase } = setup()
     const mate = session.sim.addSurvivor("mate", 1)
     stand(40, 50, 0)
     Object.assign(mate.survivor, { x: 41, y: 50 })
@@ -151,7 +160,7 @@ describe("inventory baseline", () => {
     expect(notices()).toEqual(["Gave Crowbar to Survivor 2"])
     expect(mate.notices.splice(0).map((n) => n.text)).toEqual(["Survivor 1 gave you Crowbar"])
     step({ bundle: true })
-    expect(ledger.count("mate/belt", "ammo")).toBe(12)
+    expect(ledger.count("mate", "ammo")).toBe(12)
     // Out of reach: G drops on the floor as before.
     mate.survivor.x = 46
     give("bat")
@@ -161,7 +170,8 @@ describe("inventory baseline", () => {
     expect(notices().at(-1)).toBe("Dropped Baseball Bat")
     // A teammate with full hands: it lands at their feet, nothing lost.
     mate.survivor.x = 41
-    for (const item of ["medkit", "noisemaker", "pipe", "knife", "axe", "hammer"]) ledger.apply({ kind: "grant", actor: "mate", item })
+    for (const item of ["medkit", "noisemaker", "pipe"]) ledger.apply({ kind: "grant", actor: "mate", item })
+    fillCase("mate")
     give("machete")
     step({ hotbarSlot: 2 })
     notices()
@@ -266,8 +276,8 @@ describe("inventory baseline", () => {
     const drop = [...ledger.stores.values()].find((s) => s.id.startsWith("drop:") && !s.id.startsWith("drop:v:"))!
     expect(drop.slots[0]).toEqual({ item: "medkit", count: 1 })
     step({ bundle: true })
-    expect(ledger.count("player/belt", "ammo")).toBe(0)
-    expect(ledger.count("player/belt", "plank")).toBe(0)
+    expect(ledger.count("player", "ammo")).toBe(0)
+    expect(ledger.count("player", "plank")).toBe(0)
     expect(session.view.prompt?.kind).toBe("drop")
   })
 
@@ -338,13 +348,13 @@ describe("inventory baseline", () => {
     expect(progression.heldUse("player")).toBe("shove")
   })
 
-  test("barricading draws planks from the belt", () => {
+  test("barricading draws planks from the case", () => {
     const { session, ledger, step, stand } = setup()
     stand(27.7, 36.2, -Math.PI / 2)
     step({ barricade: true })
     step({}, Math.ceil(T.barricadeTime / TICK_DT) + 1)
     expect(session.ai.getBarricadePlanks("ash-front")).toBe(1)
-    expect(ledger.count("player/belt", "plank")).toBe(1)
+    expect(ledger.count("player/pack", "plank")).toBe(1)
   })
 })
 
@@ -389,7 +399,7 @@ describe("safehouse workbench", () => {
     expect(session.view.prompt?.primary.id).toBe("install")
     step({ interact: true })
     expect(ledger.count("bench:ash", "toolbox")).toBe(1)
-    expect(ledger.count("player/belt", "scrap")).toBe(4)
+    expect(ledger.count("player/pack", "scrap")).toBe(4)
     expect(progression.tier("bench:ash")).toBe(2)
     expect(notices()).toEqual([])
     expect(mate.notices).toEqual([])
@@ -501,8 +511,9 @@ describe("loot from building archetypes", () => {
       expect(part.at.y).toBeLessThan(hardware.rect[1] + 5.5)
     }
     const empty = lootSites(town, { ...T, lootRate: 0 })
-    // With no loot, only the back room's fixed things are left: the bench parts and the fire one (a pressure tank, maybe a flamethrower).
-    const fixed = new Set(["toolbox", "car-battery", "pressure-tank", "flamethrower"])
+    // With no loot, only the fixed things are left: the bench parts, the fire one (a pressure tank, maybe a
+    // flamethrower) and the town's sure hiking pack and duffel (AR-94).
+    const fixed = new Set(["toolbox", "car-battery", "pressure-tank", "flamethrower", "hiking-pack", "duffel"])
     expect(empty.stores.every((s) => (s.initial as unknown[]).every((x) => fixed.has((x as { item: string }).item)))).toBe(true)
   })
 })

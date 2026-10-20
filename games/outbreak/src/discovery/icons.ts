@@ -17,6 +17,7 @@ const PATHS: Record<string, string> = {
   flamethrower: '<rect x="2.5" y="10" width="4.5" height="9" rx="2"/><path d="M4.75 10V8"/><path d="M7 14.5h2.5l1.5-2h6v2.5h-6"/><path d="M17.5 12c1.6-.4 2.6-1.8 2.2-3.7 1.4 1 2 2.6 1.2 4.3-.6 1.3-2 1.8-3.4 1.6"/>',
   dynamite: '<rect x="5" y="10" width="4" height="10" rx="1"/><rect x="10" y="10" width="4" height="10" rx="1"/><rect x="15" y="10" width="4" height="10" rx="1"/><path d="M4.5 14h15"/><path d="M12 10c0-3 2-4.5 4-5.5"/><path d="M17.5 2.5l.6 1.4M20 3.6l-1.3.8"/>',
   firecrackers: '<path d="M3 21C8 18 9 12 13 11s5-5 8-8"/><path d="M4.5 16.5l3 3M8.5 11.5l3 3.2M13.5 7.8l2.8 3.2"/><path d="M5.8 15.2l3 3M10 10.5l2.8 3M15 6.5l2.6 3"/>',
+  pouch: '<path d="M6 9h12v10.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 6 19.5z"/><path d="M6 9l1.5-3h9L18 9"/><path d="M6 9.5h12l-2 4H8z"/><path d="M12 13.5v1.5"/>',
   molotov: '<path d="M10 9V5.5h4V9l2 3v8H8v-8z"/><path d="M8 14.5h8"/><path d="M12 5.5c-1.2-1.4-.3-3 1-3.5-.3 1.2.8 1.8.4 3"/>',
   "flare-gun": '<path d="M3 7h13.5v5H10l-1.5 7H4.5L6 12H3z"/><path d="M16.5 8.5h3.5M16.5 10.5h3.5"/><path d="M8.5 12l1 2.5h2"/>',
   "bear-trap": '<path d="M4 15a8 8 0 0 1 16 0"/><path d="M4 15l2-3 2 2.5 2-3 2 2.5 2-3 2 2.5 2-3 2 4"/><path d="M3 15h18M12 15v5M9 20h6"/>',

@@ -2,6 +2,7 @@ import type { LabControl } from "@arcade/kit/lab-panel"
 import { leftTheHouse } from "../../shared/onboarding/training"
 import type { LocalSession } from "../../shared/session"
 import { registerOutbreakClientFeature } from "../feature-registry"
+import { inventoryPresenter } from "../inventory/hooks"
 import { BEATS, TrainingGuide, type BeatId } from "./beats"
 import { Fade, HintView, SkipChip } from "./hints"
 import { boardsUp, carryBoards, isTrainingSession, stageTrainingSession } from "./session"
@@ -125,6 +126,9 @@ export const outbreakOnboardingFeature = registerOutbreakClientFeature({
       }
       const view = ctx.session.view
       t.age += ctx.dt
+      // The case (AR-94) is taught by opening it; Today's dock sheet has nothing new to teach.
+      const bag = inventoryPresenter()
+      if (!bag?.owns() || bag.open) t.guide.noteCase()
       const beat = t.guide.step(t.session.sim, view.actorId, ctx.dt)
       let hint = t.age > 1.2 && !t.finishing ? t.guide.hint(t.session.sim, view.actorId, beat) : null
       // In reach, the world prompt already says it: the hint only leads you there.
