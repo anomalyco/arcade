@@ -137,7 +137,7 @@ function nextShow(): Show | null {
   }
   // Before the first generation: the creature standing still, so there's something to look at.
   const ep = new Episode(creature(), task(), null, reward())
-  return new Show("generation", [...extra, { ep, role: "best", label: "waiting for generation 0", expected: null }], -1)
+  return new Show("generation", [...extra, { ep, role: "best", label: "generation 0 is training", expected: null }], -1)
 }
 
 function replayLabel(p: SavedPolicy): string {
@@ -372,6 +372,11 @@ function frame(now: number): void {
         show = nextShow()
         if (mode === "train" && S.watchEvery) trainer.go()
       }
+    }
+    // The standing placeholder gives way as soon as there is a population to show.
+    if (show && show.gen < 0 && mode === "train") {
+      trainer.requestLast()
+      if (trainer.last) show = nextShow()
     }
     const lead = show?.lead
     if (lead) view.follow(lead.ep.torso.x, dt)
