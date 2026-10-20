@@ -541,7 +541,7 @@ export function fireLights(frame: FireFrame, push: FireLightPush): number {
     if (lvl <= 0.01) continue
     // A burning crown lights the street like a bonfire on a pole: a tall capsule from the trunk up into the crown.
     const h = treeHeight((st.counts.r ?? 250) / 100)
-    add(st.at.x, support(st.at.x, st.at.y) + h * 0.55, st.at.y, R * 1.7, [1, 0.52, 0.2], 1.6 * P * lvl * fl(Math.round(st.at.x * 7 + st.at.y)), 0, h * 0.36, 0)
+    add(st.at.x, support(st.at.x, st.at.y) + h * 0.55, st.at.y, R * 2, [1, 0.52, 0.2], 2.2 * P * lvl * fl(Math.round(st.at.x * 7 + st.at.y)), 0, h * 0.36, 0)
   }
   for (const st of ring(view, "dyn", DYN_RING)) {
     if (!st.counts.t || !st.at) continue

@@ -26,7 +26,7 @@ import type { DiscoveryHost } from "../discovery/stage"
  * - `molotov`: a molotov thrown into the dead.
  * - `flare-gun`: a flare fired up the road past the dead.
  * - `bear-trap`: a trap set just ahead with one of the dead walking into it.
- * - `tree`: night, the survivor six metres from the nearest tree, a molotov's fire at its trunk catching it, three of
+ * - `tree`: night, the survivor four metres from the nearest tree, a molotov's fire at its trunk catching it, three of
  *   the dead about it.
  */
 export const FIRE_SCENES = [
@@ -168,8 +168,9 @@ function stageTree(host: DiscoveryHost, session: FireStageSession, x: number, st
     host.pose(x, street, 0)
     return { x, y: street }
   }
-  const px = tree.x - 6
-  const py = tree.y + 1.5
+  // West of the tree and a little north of it, so the crown (drawn up the screen by its height) sits mid-frame.
+  const px = tree.x - 3.5
+  const py = tree.y - 2.2
   host.pose(px, py, Math.atan2(tree.y - py, tree.x - px))
   const me = session.sim.slots[0]!
   placeFire(session.sim, tree.x + 0.7, tree.y, 0.8, 3, 1, me.id)

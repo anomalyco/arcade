@@ -46,7 +46,7 @@ const browser = await chromium.launch({
 })
 
 type Beat = { frames: number; cmd?: Record<string, unknown>; first?: Record<string, unknown> }
-type Scene = { name: string; label: string; setup: string; beats: Beat[]; still: number; every?: number }
+type Scene = { name: string; label: string; setup: string; beats: Beat[]; still: number; every?: number; torch?: boolean }
 
 /** Each scene: harness setup, then 60 Hz beats; `still` is the frame its still is taken at. */
 const SCENES: Scene[] = [
@@ -106,6 +106,8 @@ const SECOND: Scene[] = [
     beats: [{ frames: 960 }],
     still: 300,
     every: 3,
+    // Torch off, so what lights the street is the fire.
+    torch: false,
   },
   {
     name: "dust",
@@ -162,7 +164,8 @@ async function play(page: Page, s: Scene, onFrame: (i: number) => Promise<void>)
     for (let j = 0; j < beat.frames; j++, i++) {
       const cmd: Record<string, unknown> = { ...(beat.cmd ?? {}), ...(j === 0 ? (beat.first ?? {}) : {}) }
       const sway = s.name === "steam" ? 0.18 * Math.sin(i / 60) : s.name === "dust" ? 0.35 * Math.sin(i / 70) : s.name === "tree" ? 0 : null
-      await page.evaluate(async ({ cmd, sway }) => {
+      const torch = s.torch ?? true
+      await page.evaluate(async ({ cmd, sway, torch }) => {
         const h = (window as any).__arcadeHarness
         const src = (window as any).__airSrc
         const fix = (window as any).__aimFix
@@ -171,9 +174,9 @@ async function play(page: Page, s: Scene, onFrame: (i: number) => Promise<void>)
           cmd.aim = Math.atan2(src.z - p.y, src.x - p.x) + sway
         } else if (sway !== null && typeof fix === "number") cmd.aim = fix + sway
         // Keep the survivor up with the beam on through the whole reel.
-        Object.assign(h.state().player, { health: h.state().player.maxHealth ?? 100, battery: 1, batteryDepleted: false, flashlightOn: true })
+        Object.assign(h.state().player, { health: h.state().player.maxHealth ?? 100, battery: 1, batteryDepleted: false, flashlightOn: torch })
         await h.step(1 / 60, cmd)
-      }, { cmd, sway })
+      }, { cmd, sway, torch })
       await onFrame(i)
     }
   }
@@ -265,9 +268,12 @@ try {
           await page.evaluate(async () => (window as any).__arcadeHarness.step(0, {}))
           await page.screenshot({ path: resolve(dir, `${s.name}-${tag}.jpg`), type: "jpeg", quality: 92 })
           const ms: number[] = []
-          for (let r = 0; r < 3; r++) ms.push(await frameMs(page))
+          for (let r = 0; r < 5; r++) ms.push(await frameMs(page))
           return med(ms)
         }
+        // Warm up both pipelines first so neither side pays a first-use compile.
+        await shot(b4, "before")
+        await shot(af, "after")
         const a = await shot(b4, "before")
         const b = await shot(af, "after")
         gpu[s.name] = { beforeMs: +a.toFixed(3), afterMs: +b.toFixed(3), deltaMs: +(b - a).toFixed(3), fx: await evalIn(page, `return h.state().fx`) }
