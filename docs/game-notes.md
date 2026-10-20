@@ -1267,6 +1267,27 @@ kit renderer's `fxParticles` path; Today is one Lab setting away (Fire style, Wo
   within noise; 300–460 live particles of 2,048, none dropped. On a loaded worker the pairs swing by ±3 ms, so compare
   only runs taken back to back.
 
+### Outbreak fire second pass: capsule fire light, burning trees, backlit dust (AR-62/AR-68, 2026-10-20)
+
+- **Capsule lights** (`LIGHT_CAPSULE`, `cone.w` −1.75 in `packages/kit/limits.ts`): `lightSum` lights from the nearest
+  point of the segment `pos ± cone.xyz`; `pos.w` is the reach from the centre (radius plus plan half-length), so the
+  plan reject and the lamp grid need no change. A burning tree as one tall capsule lights the yard and walk evenly
+  where a point at crown height left a hot pool under the trunk. It sits in the porch-light range, so hosts that keep
+  porch lights out of rooms treat capsules the same.
+- **Trees burn as a shared rule** (`tree:<k>` ring) and draw through the existing vegetation burn hook; shrubs char from
+  negative-radius entries in the same eight `vegBurn` slots. The fold-away briefly shows stretched leaf cards
+  mid-transition; fence hedges are lit boxes and don't char.
+- **White flame puffs:** hot inner tongues at blackbody heat ≥1.5 and crown billows at ~1 read as white dots at
+  gameplay zoom; tongues at 1.12–1.24 and crown billows at 0.78–0.95 stay yellow and orange.
+- **Karis-weighted first bloom downsample** (`bloomKaris`): weight each 4-tap group by 1/(1+luma) so lone embers can't
+  flash bloom tiles; broad bright areas bloom the same.
+- **Backlit dust** (`air/dust.ts` style 2): 0.42 m lattice at 5 %, 6 mm gaussian points drawn ≥1.7 px, curl-noise drift
+  about each home cell, HG forward scatter, a seconds-long turn twinkle. At 3 % and 5 mm only ~10 motes showed in a
+  whole beam; 5 % and brightness 2.6 gives ~20, subtle against the lit floor.
+- Measured (`fire-smoke-proof.ts --mode second`, headless Metal 1280×720): dust backlit vs AR-68 soft +0.12 ms;
+  tree capsules vs points +0.66 ms on `mini` and +4.9 ms on a busy Studio, so not yet trustworthy: re-pair on a quiet
+  worker before relying on it.
+
 ## Researched, not yet adopted
 
 ### Blackout snapshot rate (2026-10-16)
