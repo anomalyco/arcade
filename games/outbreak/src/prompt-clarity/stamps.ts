@@ -61,6 +61,19 @@ export class StateWatch {
 }
 
 const STAMP_SECONDS = 0.9
+const STAMP_GAP = 6
+/** Screen-space rectangle in CSS pixels. */
+export type Box = { left: number; top: number; right: number; bottom: number }
+
+/**
+ * Which way a stamp anchored at (x, y) drifts so it stays clear of the prompt: down when the prompt hangs over the
+ * anchor (rising would run into it), up otherwise.
+ */
+export function stampDrifts(x: number, y: number, prompt: Box | null): "up" | "down" {
+  if (!prompt) return "up"
+  const over = x > prompt.left - 24 && x < prompt.right + 24
+  return over && (prompt.top + prompt.bottom) / 2 < y + STAMP_GAP ? "down" : "up"
+}
 
 /** The stamps on screen: a glyph chip that rises off the target and fades, with boards shown as pips. */
 export class StampLayer {
@@ -85,7 +98,8 @@ export class StampLayer {
     this.live.push({ el, ev, age: 0 })
   }
 
-  draw(view: SessionView, cam: Camera, w: number, h: number, dt: number): void {
+  /** `avoid` is the prompt's screen box: a stamp under it drifts away from it instead of rising into it. */
+  draw(view: SessionView, cam: Camera, w: number, h: number, dt: number, avoid: Box | null = null): void {
     const ratio = typeof devicePixelRatio === "number" ? devicePixelRatio : 1
     this.live = this.live.filter((s) => {
       s.age += dt
@@ -101,9 +115,11 @@ export class StampLayer {
       const u = s.age / STAMP_SECONDS
       const rise = 26 * (1 - (1 - u) ** 3)
       const pop = u < 0.15 ? 0.8 + (u / 0.15) * 0.25 : 1.05 - Math.min(0.05, (u - 0.15) * 0.2)
+      const down = stampDrifts(p.x, p.y, avoid) === "down"
       const x = Math.round(p.x * ratio) / ratio
-      const y = Math.round((p.y - rise) * ratio) / ratio
-      s.el.style.transform = `translate(${x}px, ${y}px) translate(-50%, -100%) scale(${pop.toFixed(3)})`
+      const y = Math.round((down ? Math.max(p.y, avoid!.bottom + STAMP_GAP) + rise : p.y - rise) * ratio) / ratio
+      s.el.style.transformOrigin = down ? "50% 0" : ""
+      s.el.style.transform = `translate(${x}px, ${y}px) translate(-50%, ${down ? "0" : "-100%"}) scale(${pop.toFixed(3)})`
       s.el.style.opacity = String(u < 0.6 ? 1 : 1 - (u - 0.6) / 0.4)
       return true
     })

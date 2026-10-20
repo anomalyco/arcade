@@ -6,7 +6,7 @@ import { PROMPT_ACTIONS, promptGlyph } from "../src/hud/prompt-glyphs"
 import { blockedByBoards, BOARD_UP, boardPrompt } from "../src/prompt-clarity/board"
 import { bracketPath } from "../src/prompt-clarity/highlight"
 import { clarityOn, PROMPT_CLARITY_TODAY, promptClarityControls, teachUses } from "../src/prompt-clarity/settings"
-import { StateWatch } from "../src/prompt-clarity/stamps"
+import { StateWatch, stampDrifts } from "../src/prompt-clarity/stamps"
 import { actionKey, teachingWord } from "../src/prompt-clarity/teach"
 
 const TICK = 1 / 60
@@ -114,6 +114,14 @@ describe("stamps and outline", () => {
     expect(events.map((e) => [e.key, e.glyph])).toEqual([["ash-front", "door-open"]])
     expect(watch.step(session.view, session)).toEqual([])
     expect(watch.step(session.view, {})).toEqual([])
+  })
+
+  test("a stamp drifts away from the prompt: down when it hangs over the target, up otherwise", () => {
+    const prompt = { left: 300, top: 260, right: 700, bottom: 300 }
+    expect(stampDrifts(560, 310, prompt)).toBe("down")
+    expect(stampDrifts(560, 250, prompt)).toBe("up")
+    expect(stampDrifts(900, 310, prompt)).toBe("up")
+    expect(stampDrifts(560, 310, null)).toBe("up")
   })
 
   test("brackets sit outside the box", () => {
