@@ -10,11 +10,11 @@ export const DEFAULT_INVENTORY_SETTINGS = {
   /** Ground Pack: you kneel while the bag is open, and walking picks it up again. */
   invKneel: true,
   /** Ground Pack: how far the camera leans in while the bag is open (0 stays put). */
-  invPushIn: 0.55,
+  invPushIn: 0.75,
   /** Ground Pack: the bag's own lamp, so the mat reads in the dark (0 off). */
   invLamp: 0.8,
   /** Ground Pack: mat size on the floor, metres across. */
-  invMatWidth: 2.6,
+  invMatWidth: 3.4,
   /** Attaché Case and Survivor Sheet: cell size in CSS pixels. */
   invCell: 40,
   /** Every style: what you pick up flies into the slot it lands in. */
@@ -38,9 +38,9 @@ export function inventoryControls(): LabControl[] {
       ],
     },
     { key: "invKneel", label: "Ground Pack: kneel while open", group },
-    { key: "invPushIn", label: "Ground Pack: camera leans in", group, min: 0, max: 0.75, step: 0.05, unit: "×" },
+    { key: "invPushIn", label: "Ground Pack: camera leans in", group, min: 0, max: 0.85, step: 0.05, unit: "×" },
     { key: "invLamp", label: "Ground Pack: bag lamp", group, min: 0, max: 2, step: 0.05, unit: "×" },
-    { key: "invMatWidth", label: "Ground Pack: mat width", group, min: 1.6, max: 4, step: 0.1, unit: "m" },
+    { key: "invMatWidth", label: "Ground Pack: mat width", group, min: 1.6, max: 5, step: 0.1, unit: "m" },
     { key: "invCell", label: "Case and Sheet: cell size", group, min: 28, max: 56, step: 2, unit: "px" },
     { key: "invPickupTrail", label: "Pickups fly to their slot", group },
   ]

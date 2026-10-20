@@ -60,6 +60,8 @@ export class InventoryBag implements InventoryPresenter {
   private pushed = false
   private zoomBase = 0
   private shift = false
+  /** Where the survivor faced when the bag opened: the cursor is on the bag now, so it no longer aims. */
+  private aimAtOpen: number | null = null
   /** Moves sent, for the harness. */
   sent = 0
 
@@ -79,6 +81,7 @@ export class InventoryBag implements InventoryPresenter {
     this.open = true
     this.anchor = null
     this.moveHeldAtOpen = true
+    this.aimAtOpen = null
   }
 
   close(): boolean {
@@ -117,6 +120,11 @@ export class InventoryBag implements InventoryPresenter {
 
   shape(command: Command, first: boolean): Command {
     let out = command
+    if (this.open) {
+      // Keep facing what you opened the bag at, so the container you face stays the one beside your bag.
+      this.aimAtOpen ??= command.aim
+      out = { ...out, aim: this.aimAtOpen, fire: false, fireHeld: false }
+    }
     if (this.open && this.style === "ground" && this.settings().invKneel) {
       const moving = Math.hypot(command.mx, command.my) > 0.25
       if (!moving) this.moveHeldAtOpen = false

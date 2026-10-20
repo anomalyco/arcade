@@ -215,3 +215,6 @@
   #inv .inv-cell, #inv .inv-caption { transition: none }
   #inv .inv-cell[data-fresh]::after { animation: none }
 }
+
+/* The world prompt over what you face says nothing the open bag doesn't. */
+body:has(#inv:not([hidden])) #prompt { opacity: 0 }
