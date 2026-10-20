@@ -11,6 +11,8 @@ export type SoundEvent = {
   cutoffHz?: number
   priority?: number
   source: string
+  /** Today's library sound, played instead while a layered `wpn.*` sound is still baking (`weapons/`). */
+  fallback?: { id: string; gain?: number; rate?: number; cutoffHz?: number }
 }
 
 /** The survivor fields the director diffs: `FeedbackActor` (the HUD's action feedback contract) plus position. */

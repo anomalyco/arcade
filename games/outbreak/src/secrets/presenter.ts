@@ -11,6 +11,7 @@ import type { SecretHost } from "../../shared/secrets/hosts"
 import { secretSitesIn, type SecretSite } from "../../shared/secrets/places"
 import { pulseLit, type SecretRun } from "../../shared/secrets/select"
 import type { SessionView } from "../../shared/session"
+import { playAmbientSound } from "../audio/soundscape/hooks"
 import { supportHeight } from "../../shared/terrain"
 import { crossedAfter, type GlanceKind } from "./drawings"
 import * as M from "./models"
@@ -71,6 +72,7 @@ export class SecretsPresenter {
   private procession: { start: number; done: boolean; seen: number } | null = null
   private visitor: { used: boolean; showing: Apparition | null } = { used: false, showing: null }
   private rockerStill = false
+  private rockSwing = true
   private windowOut = -Infinity
   private phone = { inside: 0, ringing: false, answered: -Infinity }
   private dwell = new Map<string, number>()
@@ -203,6 +205,7 @@ export class SecretsPresenter {
         this.windowOut = view.time
       } else if (d < 30 && this.windowOut > -Infinity) this.windowOut = Math.max(this.windowOut, view.time - 89)
       this.shown.windowLit = dark && this.windowOut < view.time - 90
+      if (wasLit && !this.shown.windowLit) playAmbientSound("scape.secret.click", pane.x, pane.y)
     }
 
     // The rocking chair rocks on its own until you come near or your torch finds it.
@@ -216,6 +219,9 @@ export class SecretsPresenter {
         this.rockerStill = true
       }
       this.shown.rocking = dark && !this.rockerStill
+      const swing = Math.cos(view.time * 1.9) >= 0
+      if (this.shown.rocking && swing !== this.rockSwing) playAmbientSound("scape.secret.rocking", rocker.x, rocker.y, swing ? undefined : { gain: 0.6, rate: 0.88 })
+      this.rockSwing = swing
     }
 
     // The phone rings, silently, for someone alone in that house at night; it stops as they reach it.

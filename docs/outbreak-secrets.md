@@ -148,7 +148,7 @@ All synthesized (`games/outbreak/src/audio/soundscape/`, AR-86). Heard from shar
 - the soundscape's own 3 AM answering machine (a separate phone that rings) repeating the set's number in flat
   syllables when the cellar is in the run
 
-Ready, but they depend on the presenter's own state, so they should be struck from `src/secrets/presenter.ts`:
+Struck from `src/secrets/presenter.ts`, since they follow the presenter's own state (through `playAmbientSound`):
 - `scape.secret.rocking`, a creak at each end of the rock (when `cos(t * 1.9)` changes sign; the return stroke at
   gain 0.6 and rate 0.88)
 - `scape.secret.click`, as the lit window goes out

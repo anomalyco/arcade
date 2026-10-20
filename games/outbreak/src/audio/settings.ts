@@ -2,6 +2,7 @@ import { DEFAULT_VOLUME_SETTINGS, volumeControls, type MixCategory } from "@arca
 import type { LabControl } from "@arcade/kit/lab-panel"
 import type { ScapeLayer } from "./soundscape/catalog"
 import type { FootSurface } from "./space"
+import type { WeaponGroup, WeaponKey } from "./weapons/catalog"
 
 /**
  * Outbreak's sound settings. The player's volumes (Master, Effects, Ambience, Zombie voices; `@arcade/kit/audio`
@@ -67,6 +68,40 @@ export const DEFAULT_AUDIO_SETTINGS = {
   audioScapeOwl: 1,
   audioScapeElectrics: 1,
   audioScapeHooks: 1,
+  /** Weapon sounds (AR-102): 1 layered per weapon, 0 Today (one shared pistol shot, three melee hits, borrowed fire sounds). */
+  audioWeaponSet: 1,
+  /** Distance (m) where a report hands over from its near layers to its far version. */
+  audioWpnNear: 18,
+  /** Levels (%) per part of the weapon sounds. */
+  audioWpnReport: 100,
+  audioWpnTail: 100,
+  audioWpnFar: 100,
+  audioWpnHandling: 100,
+  audioWpnBrass: 100,
+  audioWpnMelee: 100,
+  audioWpnImpacts: 100,
+  audioWpnFire: 100,
+  /** Round-robin pitch and level jitter (% of each sound's own). */
+  audioWpnVariation: 100,
+  /** Bullet impacts by surface (wood, plaster, brick, car, glass, earth, flesh). */
+  audioWpnSurfaces: 1,
+  audioWpnPistol: 1,
+  audioWpnFlareGun: 1,
+  audioWpnFlamethrower: 1,
+  audioWpnMolotov: 1,
+  audioWpnDynamite: 1,
+  audioWpnFirecrackers: 1,
+  audioWpnBearTrap: 1,
+  audioWpnThrowables: 1,
+  audioWpnKnife: 1,
+  audioWpnHammer: 1,
+  audioWpnPipe: 1,
+  audioWpnCrowbar: 1,
+  audioWpnMachete: 1,
+  audioWpnBat: 1,
+  audioWpnSpikedBoard: 1,
+  audioWpnAxe: 1,
+  audioWpnFireAxe: 1,
 }
 
 export type AudioSettings = typeof DEFAULT_AUDIO_SETTINGS
@@ -118,6 +153,72 @@ export const SCAPE_LAYER_KEYS: Record<ScapeLayer, keyof AudioSettings> = {
   electrics: "audioScapeElectrics",
   hooks: "audioScapeHooks",
 }
+
+/** Which toggle turns each weapon's layered sounds on (Backquote › Sound › Weapons). */
+export const WEAPON_TOGGLE_KEYS: Record<WeaponKey, keyof AudioSettings> = {
+  pistol: "audioWpnPistol",
+  "flare-gun": "audioWpnFlareGun",
+  flamethrower: "audioWpnFlamethrower",
+  molotov: "audioWpnMolotov",
+  dynamite: "audioWpnDynamite",
+  firecrackers: "audioWpnFirecrackers",
+  "bear-trap": "audioWpnBearTrap",
+  throwables: "audioWpnThrowables",
+  knife: "audioWpnKnife",
+  hammer: "audioWpnHammer",
+  pipe: "audioWpnPipe",
+  crowbar: "audioWpnCrowbar",
+  machete: "audioWpnMachete",
+  bat: "audioWpnBat",
+  "spiked-board": "audioWpnSpikedBoard",
+  axe: "audioWpnAxe",
+  "fire-axe": "audioWpnFireAxe",
+}
+
+/** Which level scales each part of the weapon sounds. */
+export const WEAPON_GROUP_KEYS: Record<WeaponGroup, keyof AudioSettings> = {
+  report: "audioWpnReport",
+  tail: "audioWpnTail",
+  far: "audioWpnFar",
+  handling: "audioWpnHandling",
+  brass: "audioWpnBrass",
+  melee: "audioWpnMelee",
+  impacts: "audioWpnImpacts",
+  fire: "audioWpnFire",
+}
+
+const WEAPON_LABELS: Record<WeaponKey, string> = {
+  pistol: "Pistol",
+  "flare-gun": "Flare gun",
+  flamethrower: "Flamethrower",
+  molotov: "Molotov",
+  dynamite: "Dynamite",
+  firecrackers: "Firecrackers",
+  "bear-trap": "Bear trap",
+  throwables: "Thrown things (bricks, cans…)",
+  knife: "Knife",
+  hammer: "Hammer",
+  pipe: "Lead pipe",
+  crowbar: "Crowbar",
+  machete: "Machete",
+  bat: "Baseball bat",
+  "spiked-board": "Spiked board",
+  axe: "Wood axe",
+  "fire-axe": "Fire axe",
+}
+
+const WEAPON_GROUP_LABELS: Record<WeaponGroup, string> = {
+  report: "Reports (action, crack, punch, thump)",
+  tail: "Room / street / slapback tails",
+  far: "Far-off versions",
+  handling: "Draw, reload, dry-fire",
+  brass: "Brass on the floor",
+  melee: "Melee swings & hits",
+  impacts: "Bullet impacts",
+  fire: "Fire, explosives & throws",
+}
+
+const weaponLevel = (key: keyof AudioSettings, label: string): LabControl => ({ key, label, group: "Sound", subsection: "Weapons", min: 0, max: 200, step: 5, unit: "%" })
 
 const SCAPE_LAYER_LABELS: Record<ScapeLayer, string> = {
   clocks: "Clocks (ticking, striking the hour)",
@@ -216,5 +317,22 @@ export const audioControls: LabControl[] = [
   { key: "audioScapeVoices", label: "Soundscape loops", group: "Sound", subsection: "Ambience", min: 0, max: 12, step: 1, unit: "voices" },
   ...(Object.keys(SCAPE_LAYER_KEYS) as ScapeLayer[]).map(
     (layer): LabControl => ({ key: SCAPE_LAYER_KEYS[layer], label: SCAPE_LAYER_LABELS[layer], group: "Sound", subsection: "Ambience", type: "toggle" }),
+  ),
+  {
+    key: "audioWeaponSet",
+    label: "Weapon sounds",
+    group: "Sound",
+    subsection: "Weapons",
+    options: [
+      { label: "Today (shared pistol, 3 melee hits)", value: 0 },
+      { label: "Layered per weapon", value: 1 },
+    ],
+  },
+  { key: "audioWpnNear", label: "Near → far handover", group: "Sound", subsection: "Weapons", min: 6, max: 40, step: 1, unit: "m" },
+  ...(Object.keys(WEAPON_GROUP_KEYS) as WeaponGroup[]).map((g) => weaponLevel(WEAPON_GROUP_KEYS[g], WEAPON_GROUP_LABELS[g])),
+  weaponLevel("audioWpnVariation", "Variation (pitch & level jitter)"),
+  { key: "audioWpnSurfaces", label: "Bullet impacts by surface", group: "Sound", subsection: "Weapons", type: "toggle" },
+  ...(Object.keys(WEAPON_TOGGLE_KEYS) as WeaponKey[]).map(
+    (w): LabControl => ({ key: WEAPON_TOGGLE_KEYS[w], label: WEAPON_LABELS[w], group: "Sound", subsection: "Weapons", type: "toggle" }),
   ),
 ]
