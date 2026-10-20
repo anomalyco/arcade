@@ -63,8 +63,46 @@ release reads as `undefined` in the room; the wind-up treats both as released.
 **Today.** Lab › Interactions › Throwables › Today (off): no throwables in the world and the bottle is the old instant
 fixed-range throw (`progression.tossBottles`).
 
-Tests: `games/outbreak/tests/interactions-throwables.test.ts`, the bottle cases in `tests/verbs.test.ts`, and seat
+Tests: `games/outbreak/tests/interactions-throwables.test.ts`, `tests/interactions-drag.test.ts`, the bottle cases in `tests/verbs.test.ts`, and seat
 parity for baseballs and bottles in `tests/coop-ledger-features.test.ts`.
+
+## Drag and brace
+
+Loose furniture: a chair or a dresser, and a mattress or a table, in most houses (up to two per house), on open floor
+clear of the house's own furniture, walls and doorways, and 2 m clear in front of a closet so you can still get in
+(`furniture.ts`, `furnitureSites`, seeded once per house as
+`furn:<building>:<i>` ledger stores). The house's baked furniture stays put; these pieces are extra and drawn by the
+interactions presenter (box-built, with a lying-down twin for when the dead have shoved one over).
+
+- **E at a piece: Drag.** It goes square in front of you along your aim. You slow to the piece's share of walking
+  pace (chair 0.85, mattress 0.75, table 0.7, dresser 0.55; Lab › Dragging speed) and cannot sprint. Other survivors
+  bump into pieces; the one you drag does not block you. The piece is let go if you go down, die or get in a car.
+- **E again: Set down,** where it is, or **Brace** when it is within 1.4 m of a door or window it can hold (a chair
+  only wedges doors; tables, dressers and mattresses do either). Braced, it stands flush against the opening on your
+  side, square to it, a door slams shut, and the crowd counts the opening as barricaded until the piece is gone:
+  chair 70, mattress 110, table 150, dresser 240 hit points (Lab › Brace strength).
+- **The dead bash** the planks off first, then the furniture (`PortalHolds.absorb`); at 0 it is shoved 0.7 m into the
+  room and falls over, with a bang the dead hear. E on it again (Pull away / Drag) stands it up and takes hold.
+- **Carrying a car battery** slows you to 0.85 of walking pace (Lab › Carrying a car battery; 1 is Today).
+
+**The crowd's hook.** `OutbreakAISubsystem.portalHolds` (`shared/ai.ts`, `PortalHolds`): `held(id)` makes a door or
+window count as one plank for navigation, hearing, open-door solids and bash targeting, and is part of the topology
+digest; `absorb(id, damage)` takes bash damage once the planks are gone. The interactions feature installs it each
+tick (`holdsFor`), keyed by braced store → portal id.
+
+**Bots path round it.** `survivorObstacles` on shared features (`feature-registry.ts`): the interactions feature
+lists every piece no one is dragging, and survivor bots add them to their local nav grid and steering blockers
+(`BotWorldView.obstacles`), rebuilt when a piece is set down. Without it bots walked into chairs and stopped.
+
+**Speed hook.** `movementScale` on shared features (`survivorMovementScale` in `feature-registry.ts`), applied to
+walking speed in `stepSurvivor` and so predicted the same way on a co-op client.
+
+## Hauling a downed teammate
+
+A downed teammate's prompt is now `E Drag ◦Revive`: tap E takes them under the arms (`haul:<seat>` store) and they
+trail 0.8 m behind you while you walk at 0.55 pace (Lab › Hauling speed); tap again (Let go) to put them down; hold E
+still revives. The haul ends when either of you is gone, you go down or into a car, or they are back up or dead.
+`toggleHaul` is called from the death feature's prompt (`shared/death/runtime.ts`).
 
 ## Teaching
 
@@ -72,8 +110,12 @@ The world prompt and training room belong to the onboarding pass (`docs/outbreak
 feature adds one in-world reminder line low over the survivor (`src/interactions/hint.ts`): with a throwable in hand,
 the Mouse0 hold cap and "Throw · hold for distance", the ring filling as the throw winds up.
 
+Furniture and hauling use the world prompt (E with the `drag`, `set-down` and `brace` glyphs added to
+`@arcade/kit/client/action-glyphs`), so they teach themselves where the prompt does.
+
 ## Sounds wanted (audio owns `src/audio`)
 
-Throws: a whoosh on release scaled by power; landing thud per item (baseball on grass/wood, brick, rock, can
+Dragging: a scrape loop while a `furn:*` store has `drag` and is moving; a thump when one braces (`br` 0→1); a crash
+when one is shoved over (`down` 0→1). Throws: a whoosh on release scaled by power; landing thud per item (baseball on grass/wood, brick, rock, can
 clatter/roll); a bonk on a head hit; glass for a window broken by a throw (the `glass:*` store already plays
 `glass.break` for bottles).

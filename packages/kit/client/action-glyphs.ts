@@ -51,6 +51,9 @@ export type ActionGlyph =
   | "feed"
   | "revive"
   | "board-up"
+  | "drag"
+  | "set-down"
+  | "brace"
 
 /** A fill (default) or, with `w`, a round-capped stroke of that width in grid units. */
 type Shape = { d: string; w?: number; evenodd?: boolean }
@@ -160,6 +163,12 @@ const GLYPHS: Record<Exclude<ActionGlyph, "no-battery" | "no-keys" | "empty-tank
   ],
   string: [{ d: "M2 7H22", w: 1.8 }, { d: rrect(3, 9, 4.5, 7, 0.8) + rrect(9.75, 9, 4.5, 7, 0.8) + rrect(16.5, 9, 4.5, 7, 0.8) }, { d: rect(4.75, 7, 1, 2) + rect(11.5, 7, 1, 2) + rect(18.25, 7, 1, 2) }],
   store: [box, { d: "M12 10.5L7 5.5H10V1.5H14V5.5H17Z" }],
+  // A crate pulled along by a hand: drag furniture or a downed teammate (Outbreak AR-96).
+  drag: [{ d: rect(2, 9, 10, 11) + rect(5, 12, 4, 2), evenodd: true }, { d: "M12.5 13.5H21", w: 2.4 }, { d: "M14 21.5H22", w: 1.6 }, { d: "M6 21.5H9", w: 1.6 }],
+  // The crate set down, an arrow to the floor.
+  "set-down": [{ d: rect(5, 11, 14, 9) + rect(9.5, 14, 5, 2), evenodd: true }, { d: "M12 9.5L7.5 5H10.5V1.5H13.5V5H16.5Z" }, { d: rect(2, 21, 20, 1.6) }],
+  // A crate shoved up against a door.
+  brace: [doorFrame, { d: "M8 4H18V20H8Z" + rect(11, 11, 1.6, 2), evenodd: true }, { d: rect(1, 12, 8.5, 9) + rect(3, 15, 4.5, 2), evenodd: true }],
   deposit: [box, { d: rrect(4, 7.5, 7, 3, 1) + rrect(13, 7.5, 7, 3, 1) + rrect(8.5, 3, 7, 3, 1) }],
   drive: [{ d: circle(12, 12, 10) + circle(12, 12, 7), evenodd: true }, { d: circle(12, 12, 2.6) + rect(5, 10.75, 4.5, 2.5) + rect(14.5, 10.75, 4.5, 2.5) + rect(10.75, 14.5, 2.5, 4.5) }],
   ride: [

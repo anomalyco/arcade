@@ -16,7 +16,7 @@ import {
   type OutbreakCombatSnapshot,
 } from "./combat"
 import { advanceHour } from "./day-cycle"
-import { outbreakSharedFeatures, survivorDamage } from "./feature-registry"
+import { outbreakSharedFeatures, survivorDamage, survivorMovementScale } from "./feature-registry"
 import "./features"
 import { coopSpawnClearance, openingClockActive } from "./pacing"
 import { batteryReload, createFlashlightState, DEFAULT_FLASHLIGHT_TUNING, stepFlashlight, toggleFlashlight } from "./flashlight"
@@ -337,7 +337,9 @@ export class CoopSim implements OutbreakSim {
       const length = Math.max(1, rawLen)
       const t = this.progression.tuning
       const crouch = p.crouching ? { speed: t.crouchSpeed, noise: t.crouchNoise } : undefined
-      const speed = stepStamina(p, moving, Boolean(command.sprint), dt, resolved.stamina, crouch)
+      // Dragging furniture or hauling a teammate slows a survivor and stops them sprinting (`movementScale`).
+      const scale = survivorMovementScale(this, slot)
+      const speed = stepStamina(p, moving, Boolean(command.sprint) && scale >= 1, dt, resolved.stamina, crouch) * scale
       const steps = Math.max(1, Math.ceil(dt * 60))
       for (let i = 0; i < steps; i++) {
         p.x += ((command.mx / length) * speed * dt) / steps

@@ -5,9 +5,13 @@ import { arcHeight, isThrowable, isTossStore, THROWABLE_ITEMS, throwPower, tossA
 import { planFor } from "../../shared/interactions/tosses"
 import { supportHeight } from "../../shared/terrain"
 import { buildItemMeshes } from "../discovery/items"
-import { buildAimMeshes } from "./items"
+import { dragPose } from "../../shared/interactions/drag"
+import { furnKind, furnYaw, isFurnStore } from "../../shared/interactions/furniture"
+import { buildAimMeshes, buildFurnitureMeshes } from "./items"
 
-const MAX_TOSSES = 16
+const MAX_PER_MODEL = 64
+/** Loose furniture is drawn within this many metres of the local survivor. */
+const FURNITURE_RANGE = 36
 const DOTS = 14
 /** The arc's beads, warm white; the landing ring turns red when the throw will hit one of the dead. */
 const BEAD = [1.6, 1.45, 1.1] as const
@@ -23,6 +27,7 @@ export type AimPreview = { plan: TossPlan; power: number; x: number; y: number }
  */
 export class InteractionsPresenter {
   private readonly items = new Map<string, number>()
+  private readonly furniture = new Map<string, number>()
   private readonly dot: number
   private readonly ring: number
   private readonly data = new Map<number, Float32Array<ArrayBuffer>>()
@@ -31,7 +36,7 @@ export class InteractionsPresenter {
   private readonly rings = new Float32Array(2 * INST_FLOATS)
   private readonly out: Batch[] = []
   /** Proof readout: throws drawn in the air and the preview last frame. */
-  readonly shown = { flying: 0, aiming: false, power: 0, hit: false }
+  readonly shown = { flying: 0, aiming: false, power: 0, hit: false, furniture: 0, braced: 0 }
 
   constructor(renderer: Pick<Renderer, "addModel">) {
     const meshes = buildItemMeshes()
@@ -39,6 +44,7 @@ export class InteractionsPresenter {
       const mesh = meshes[item]
       if (mesh) this.items.set(item, renderer.addModel(mesh))
     }
+    for (const [key, mesh] of Object.entries(buildFurnitureMeshes())) this.furniture.set(key, renderer.addModel(mesh))
     const aim = buildAimMeshes()
     this.dot = renderer.addModel(aim.dot)
     this.ring = renderer.addModel(aim.ring)
@@ -46,9 +52,9 @@ export class InteractionsPresenter {
 
   private push(model: number, values: readonly number[]): void {
     let buf = this.data.get(model)
-    if (!buf) this.data.set(model, (buf = new Float32Array(MAX_TOSSES * INST_FLOATS)))
+    if (!buf) this.data.set(model, (buf = new Float32Array(MAX_PER_MODEL * INST_FLOATS)))
     const n = this.counts.get(model) ?? 0
-    if (n >= MAX_TOSSES) return
+    if (n >= MAX_PER_MODEL) return
     buf.set(values, n * INST_FLOATS)
     this.counts.set(model, n + 1)
   }
@@ -69,7 +75,24 @@ export class InteractionsPresenter {
     this.counts.clear()
     const town = sim.town
     let flying = 0
+    let furniture = 0
+    let braced = 0
+    const me = slot?.survivor
     for (const st of sim.progression.ledger.stores.values()) {
+      if (isFurnStore(st.id) && st.at) {
+        const kind = furnKind(st)
+        const down = Boolean(st.counts.down)
+        // The piece the local survivor drags sits where their predicted body puts it, not where the room last said.
+        const pose = st.counts.drag && slot && st.owner === slot.id && me ? dragPose(me, kind) : { x: st.at.x, y: st.at.y, yaw: furnYaw(st) }
+        if (me && (Math.abs(pose.x - me.x) > FURNITURE_RANGE || Math.abs(pose.y - me.y) > FURNITURE_RANGE)) continue
+        const model = this.furniture.get(down ? `${kind}:down` : kind)
+        if (model === undefined) continue
+        const lift = st.counts.drag ? 0.03 : 0
+        this.push(model, [pose.x, supportHeight(town, pose.x, pose.y) + lift, pose.y, -pose.yaw, 1, 1, 1, 1, 0, 0, 1, 0])
+        furniture++
+        if (st.counts.br) braced++
+        continue
+      }
       if (!isTossStore(st.id) || (st.counts.done ?? 0) >= 2) continue
       const at = tossAt(st, time)
       if (!at || at.phase >= 2) continue
@@ -80,6 +103,8 @@ export class InteractionsPresenter {
       flying++
     }
     this.shown.flying = flying
+    this.shown.furniture = furniture
+    this.shown.braced = braced
     const aim = this.preview(sim, slot)
     this.shown.aiming = Boolean(aim)
     this.shown.power = aim?.power ?? 0

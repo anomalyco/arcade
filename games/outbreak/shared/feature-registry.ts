@@ -1,5 +1,6 @@
 import type { ByteReader, ByteWriter } from "@arcade/kit/net/bytes"
 import type { InterestConfig } from "@arcade/kit/net/interest"
+import type { Rect } from "@arcade/kit/sim/geom"
 import type { InteractionRegistry } from "./interact"
 import type { ClientMsg, ServerMsg, SharedSnapshot } from "./net-types"
 import type { Command, OutbreakSim, ResolvedSessionTuning, Survivor, SurvivorSlot } from "./sim-types"
@@ -103,8 +104,12 @@ export interface OutbreakSharedFeature<
    * Returning `true` signals that the feature handled the survivor's movement and action step for this tick.
    */
   stepSurvivorMovement?(ctx: OutbreakSimStepSurvivorContext<TState>): boolean
+  /** Share of walking speed a survivor keeps (e.g. dragging furniture, hauling a teammate); 1 leaves it alone. */
+  movementScale?(sim: OutbreakSim, slot: SurvivorSlot, state: TState): number
   /** Pushes a walking/vaulting survivor out of feature-owned dynamic colliders (e.g. vehicles). */
   pushOutSurvivor?(sim: OutbreakSim, survivor: Survivor, radius: number, state: TState): void
+  /** Feature-owned things that rarely move and that survivor bots should path round (e.g. loose furniture). */
+  survivorObstacles?(sim: OutbreakSim, state: TState): readonly Rect[]
   /** Runs authoritative survivor actions during `OutbreakSim.applyActions`. */
   stepSurvivorActions?(
     ctx: OutbreakSimStepSurvivorContext<TState>,
@@ -293,6 +298,24 @@ export function survivorDamage(sim: OutbreakSim, slot: SurvivorSlot, damage: num
     if (feature.modifySurvivorDamage) damage = feature.modifySurvivorDamage(sim, slot, damage, sim.featureStates.get(feature.id), source)
   }
   return damage
+}
+
+/** Every feature's `movementScale` for `slot`, multiplied (1 when none slows them). */
+export function survivorMovementScale(sim: OutbreakSim, slot: SurvivorSlot): number {
+  let scale = 1
+  for (const feature of outbreakSharedFeatures.list()) {
+    if (feature.movementScale) scale *= feature.movementScale(sim, slot, sim.featureStates.get(feature.id))
+  }
+  return scale
+}
+
+/** Every feature's `survivorObstacles`, for survivor bots' local nav. */
+export function survivorObstacles(sim: OutbreakSim): Rect[] {
+  const out: Rect[] = []
+  for (const feature of outbreakSharedFeatures.list()) {
+    if (feature.survivorObstacles) out.push(...feature.survivorObstacles(sim, sim.featureStates.get(feature.id)))
+  }
+  return out
 }
 
 export function registerOutbreakSharedFeature<
