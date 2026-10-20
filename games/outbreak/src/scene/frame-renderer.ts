@@ -106,6 +106,7 @@ export class OutbreakFrameRenderer {
   readonly ambientMotion: OutbreakAmbientMotion
   readonly weatherController = new OutbreakWeatherController()
   private readonly weatherAudio = new WeatherAudio()
+  private readonly scapeWeatherNow = { rain: 0, wetness: 0, storm: 0 }
   readonly vehicleRenderer: OutbreakVehicleRenderer
   readonly frameLighting = new OutbreakFrameLighting()
   readonly fx = new OutbreakFxParticles()
@@ -194,6 +195,15 @@ export class OutbreakFrameRenderer {
       grade: [0, 0, 0, 1],
       lampGrid: this.frameLighting.lampGrid,
     }
+  }
+
+  /** The weather the soundscape hears (rain on cars and leaves, gutters after it), without a per-frame object. */
+  private scapeWeather(w: OutbreakWeatherController): { rain: number; wetness: number; storm: number } {
+    const o = this.scapeWeatherNow
+    o.rain = w.shared.intensity
+    o.wetness = w.surface.wetness
+    o.storm = w.sample.storm
+    return o
   }
 
   updateProfile(): void {
@@ -788,6 +798,7 @@ export class OutbreakFrameRenderer {
       revision: session.view.revision,
       pursuing: pursuers(zombies, look.x, look.y),
       packOpen: frameUi.inventoryHud.packOpen,
+      weather: this.scapeWeather(weatherNow),
     })
     this.weatherAudio.update(audio, dt, look, weatherNow, settings.weather)
     weatherNow.endFrame()

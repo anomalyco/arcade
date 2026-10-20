@@ -1921,6 +1921,17 @@ Candidates from the code audits; measure and playtest before moving any into the
 
 ## Audio
 
+- **A procedural soundscape that ships no files (AR-86).** Outbreak's `src/audio/soundscape/` synthesizes 28 ambient
+  sounds in plain TypeScript (`dsp.ts`: two-pole modes scaled by `sin(w)` so high partials are not buried, bubbles,
+  formant babble, swept biquads, crossfaded loops), bakes each at 24 kHz on first use in a Worker (≤ 24 ms per sound
+  in Bun, 0 ms on the frame) and registers it as a runtime cue with `SampleBank.setDecoded`. 0 bytes of assets,
+  ~106 s of audio if every sound were baked. A pure `ScapeDirector` seeds every event on `town.seed` and sim time in
+  fixed windows (co-op clients hear the same sirens at the same moment), costs ~2 µs a frame, and drives both the
+  game and an offline reel (`games/outbreak/scripts/soundscape-reel.ts`) that mixes it with the beds, footsteps, the
+  runtime's spatialiser, occlusion and both reverb impulses into a WAV with loudness per stem. Measuring spectra first
+  caught distant gunshots with 99% of their energy under 250 Hz (silent on laptop speakers) and a raw resonator bank
+  whose low modes drowned every tick.
+
 - **Check state changes before finding sound geometry (AR-76).** Outbreak's `src/audio/director.ts` skips door centres
   and portal geometry searches when their remembered state is unchanged. Missing geometry still leaves history
   untouched, preserving sounds when a streamed portal returns. `scripts/cpu-review-bench.ts --baseline=<base-game-dir>`

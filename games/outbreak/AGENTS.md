@@ -35,6 +35,17 @@
   gait-scaled footsteps and impacts; Lab: Backquote › Sound (`Today` vs `Sound pass`, bus levels, per-surface footstep
   sliders, occlusion, falloff, reverb, voice cap). Never play sound audibly in proofs: `bun scripts/prove-audio.ts`
   (via `hivemind run --kind browser`) uses `--mute-audio`.
+- The soundscape (AR-86, `src/audio/soundscape/`, Lab: Backquote › Sound › Ambience, "Today (beds only)" turns it off):
+  procedural, zero-asset ambient layer. Interiors per house (`houses.ts`): clocks (some stopped, one limps, mantel
+  clocks strike the hour), dripping taps, fridges that hum until the house's power fails (`housePowered`, pure, for
+  anyone who wants TVs to agree), creaks, settling, pipe knocks, wind and curtains at open or broken windows, a music
+  box that plays once a night when someone steps in, phones, and one haunted phone per few houses that rings at 3 AM
+  until someone walks up and the machine answers. Outside: rain on cars, puddles and leaves, gutters after rain,
+  porch chimes on gusts, insects by day. Distance: sirens and other survivors' gunfire that thin out each night and
+  stop (the last sirens wind down mid-wail, the fourth night's shots are three and then one), a far car alarm, an owl
+  from night 2. Seeded on town seed and sim time; presentation only (nothing reaches zombie hearing). Other features
+  ask for sounds through `soundscape/hooks.ts` (`playAmbientSound`, `holdAmbientSound`, `registerAmbientSound`).
+  Listening reel and loudness: `bun scripts/soundscape-reel.ts` (offline, never plays). Tests: `tests/soundscape.test.ts`.
 - The survivor (`src/survivor.ts`) and zombies (`src/zombies.ts`) use the shared rig's IK, arms and profiles but keep their own stride clocks and terrain support. Motion rules and known gaps: `../../docs/animation.md`. All shared docs: `../../docs/README.md`.
 - Rugs and Resident Evil interior themes live in `src/interiors/` (plan, mesh emitters, WGSL, `RugPool`); the rug
   generator and its Worker are in `@arcade/kit/textures`. Lab: Backquote › Rugs & interiors, the Lab's Rugs section and the

@@ -5,6 +5,7 @@ import { SoundDirector, type SoundEvent, type SoundWorld } from "./director"
 import type { SoundHold } from "./inventory"
 import { AUDIO_BUS_LEVELS, DEFAULT_AUDIO_SETTINGS, SURFACE_STEP_SETTING_KEYS, type AudioSettings } from "./settings"
 import { footstepEvent, indoors, SoundOcclusion, SURFACE_STEP_PROFILES, surfaceAt } from "./space"
+import { Soundscape } from "./soundscape/soundscape"
 import { ZombieFootsteps } from "./zombie-steps"
 
 export type AudioFrame = {
@@ -19,6 +20,8 @@ export type AudioFrame = {
   pursuing: number
   /** The local pack panel (`Tab`), for its zipper. */
   packOpen?: boolean
+  /** The weather cycle's rainfall, ground wetness and storm (0..1), for rain on things and dripping gutters. */
+  weather?: { rain: number; wetness: number; storm: number }
 }
 
 const STORAGE_KEY = "outbreak.audio.v1"
@@ -41,6 +44,8 @@ export class OutbreakAudio {
   readonly director = new SoundDirector()
   readonly occlusion = new SoundOcclusion()
   readonly zombieSteps = new ZombieFootsteps()
+  /** Clocks, taps, sirens and the rest of the ambient life of the town (`soundscape/`, AR-86). */
+  readonly soundscape: Soundscape
   private holds = new Map<string, { voice: VoiceHandle; hold: SoundHold }>()
   private horde: VoiceHandle | null = null
   private hordeLevel = 0
@@ -90,6 +95,7 @@ export class OutbreakAudio {
     // Only a change the player makes is saved, so defaults stay defaults.
     this.savedVolume = saveVolumeSettings(null, "outbreak", settings)
     this.runtime.muted = Boolean(settings.audioMuted)
+    this.soundscape = new Soundscape(this.runtime, (e) => this.play(e))
   }
 
   /** Starts audio on the first pointer or key press (autoplay rules), binds `M`, and pauses with the tab. */
@@ -99,7 +105,10 @@ export class OutbreakAudio {
     const unlock = () => {
       if (this.unlocked) return
       this.unlocked = true
-      void this.runtime.unlock().then(() => this.apply())
+      void this.runtime.unlock().then(() => {
+        this.apply()
+        this.soundscape.prewarm()
+      })
     }
     for (const type of ["pointerdown", "keydown", "touchend"]) target.addEventListener(type, unlock, { capture: true, signal })
     target.addEventListener("keydown", (e) => {
@@ -156,6 +165,7 @@ export class OutbreakAudio {
   resetForSession(): void {
     this.director.reset()
     this.zombieSteps.reset()
+    this.soundscape.reset()
   }
 
   update(frame: AudioFrame): void {
@@ -205,11 +215,56 @@ export class OutbreakAudio {
     }
     this.held(this.director.holds, live)
     this.ambience(frame)
+    this.scapeFrame(frame, live)
     if (live) this.counts.maxVoicesSeen = Math.max(this.counts.maxVoicesSeen, this.runtime.activeVoiceCount)
     this.counts.updates++
     const ms = performance.now() - t0
     this.counts.updateMs += ms
     this.counts.maxUpdateMs = Math.max(this.counts.maxUpdateMs, ms)
+  }
+
+  private readonly scapeSurvivors: { x: number; y: number }[] = []
+  private readonly scapeFrameData = {
+    town: null as unknown as Town,
+    time: 0,
+    dt: 0,
+    hour: 12,
+    elapsedHours: 0,
+    startHour: 17.5,
+    listener: { x: 0, y: 0 },
+    survivors: this.scapeSurvivors as readonly { x: number; y: number }[],
+    rain: 0,
+    wetness: 0,
+    storm: 0,
+    glass: this.glassSpots as readonly { x: number; y: number }[],
+    indoor: 0,
+  }
+
+  /** Runs the soundscape on the same listener, clock and indoor easing as the beds. */
+  private scapeFrame(frame: AudioFrame, live: boolean): void {
+    const w = frame.world
+    const f = this.scapeFrameData
+    const n = w.survivors.length
+    for (let i = 0; i < n; i++) {
+      const s = w.survivors[i]!.survivor
+      const slot = this.scapeSurvivors[i] ?? (this.scapeSurvivors[i] = { x: 0, y: 0 })
+      slot.x = s.x
+      slot.y = s.y
+    }
+    this.scapeSurvivors.length = n
+    f.town = w.town
+    f.time = w.time
+    f.dt = frame.dt
+    f.hour = frame.hour
+    f.elapsedHours = w.elapsedHours ?? 0
+    f.startHour = w.startHour ?? 17.5
+    f.listener = frame.listener
+    f.rain = frame.weather?.rain ?? 0
+    f.wetness = frame.weather?.wetness ?? 0
+    f.storm = frame.weather?.storm ?? 0
+    f.glass = this.glassSpots
+    f.indoor = this.indoor
+    this.soundscape.update(f, this.settings, live)
   }
 
   /** Plays one library sound at a plan position with the entry's range. */
@@ -361,6 +416,7 @@ export class OutbreakAudio {
     this.beds = {}
     this.holds.clear()
     this.horde = null
+    this.soundscape.stopAll(0.03)
     this.runtime.stopAllVoices(0.03)
   }
 
@@ -382,6 +438,7 @@ export class OutbreakAudio {
       holds: [...this.holds.keys()],
       zombieFeet: { ...this.zombieSteps.counts },
       playedById: { ...this.playedById },
+      soundscape: this.soundscape.telemetry(),
       ...this.counts,
       meanUpdateMs: this.counts.updates ? this.counts.updateMs / this.counts.updates : 0,
     }
@@ -389,6 +446,7 @@ export class OutbreakAudio {
 
   dispose(): void {
     this.armed?.abort()
+    this.soundscape.dispose()
     this.runtime.dispose()
   }
 }

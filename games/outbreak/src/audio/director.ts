@@ -28,6 +28,9 @@ export type SoundWorld = {
   hour?: number
   /** Down and dead survivors and the run's end (`shared/death`). */
   death?: DeathSoundWorld
+  /** Game hours since the run started (the offline sim's own; 0 on co-op clients) and the hour it started at. */
+  elapsedHours?: number
+  startHour?: number
 }
 
 export const DIRECTOR_TUNING = {

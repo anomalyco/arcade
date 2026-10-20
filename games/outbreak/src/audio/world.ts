@@ -16,6 +16,8 @@ export function soundWorld(sim: CoopSim): SoundWorld {
     progression: sim.progression,
     hour: sim.hour,
     death: deathSoundWorld(sim),
+    elapsedHours: sim.elapsedHours,
+    startHour: sim.ai.config.startHour,
   }
 }
 
