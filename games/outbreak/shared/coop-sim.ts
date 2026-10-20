@@ -400,7 +400,8 @@ export class CoopSim implements OutbreakSim {
         this.ai.getBarricadePlanks(target.id) > 0 &&
         (command.interactAction ?? (command.sprint && target.alt ? target.alt.id : target.primary.id)) !== "peek"
       if (isBarricadedPortal) {
-        p.lootMessage = `Blocked by barricade (${this.ai.getBarricadePlanks(target.id)}/3 planks)`
+        const planks = this.ai.getBarricadePlanks(target.id)
+        p.lootMessage = target.secondary?.id === "pry" ? `Boarded ${planks}/3 · hold E to pry one off` : `Blocked by barricade (${planks}/3 planks)`
         p.lootMessageUntil = this.time + 2.0
       } else {
         // Shift+E takes a target's alternative (smash a container open instead of searching it).

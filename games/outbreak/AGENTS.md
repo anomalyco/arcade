@@ -209,9 +209,11 @@
   bricks, rocks, tin cans, bottles) found in yards and on floors, held Mouse0 to wind up with an arc preview, released
   to throw; they bonk, stagger, break windows, jolt car alarms and are heard where they land. Loose furniture dragged
   with E and braced against doors and windows (the crowd's `ai.portalHolds` hook), downed teammates hauled (tap E),
-  and a `movementScale` feature hook for the slow walk. Ledger stores only (`toss:*`, `drop:t:*`, `drop:v:yard:*`,
-  `furn:*`, `haul:*`). How it works and the inventory of every interaction:
-  `../../docs/outbreak-interactions.md`. Tests: `tests/interactions-throwables.test.ts`, `tests/interactions-drag.test.ts`.
+  and a `movementScale` feature hook for the slow walk (`survivorObstacles` lets bots path round the pieces). One B
+  boards an opening up all the way; Hold E pries a board off (`boards.ts`, ledger rule `unboard`). Ledger stores only
+  (`toss:*`, `drop:t:*`, `drop:v:yard:*`, `furn:*`, `haul:*`). How it works and the inventory of every interaction:
+  `../../docs/outbreak-interactions.md`. Tests: `tests/interactions-throwables.test.ts`, `tests/interactions-drag.test.ts`,
+  `tests/interactions-boards.test.ts`.
 - Secrets (AR-85): subtle, strange and hidden touches picked per run from `town.seed`/`houseSeed` (`shared/secrets/`:
   `select.ts` picks and the run's code, `hosts.ts` the one-house hosts, `places.ts` where each piece stands; the
   cellar lock is the shared `secret:cellar` ledger store, nothing on the wire) and drawn by `src/secrets/` (pieces,

@@ -104,11 +104,32 @@ trail 0.8 m behind you while you walk at 0.55 pace (Lab › Hauling speed); tap 
 still revives. The haul ends when either of you is gone, you go down or into a car, or they are back up or dead.
 `toggleHaul` is called from the death feature's prompt (`shared/death/runtime.ts`).
 
+## Boarding
+
+Boarding up was already there (B nails one plank, up to three, at the door or window the prompt points at). Kit asked
+for it again, so two rough edges are gone:
+
+- **One B boards it up.** After a board goes up, the next starts on the same opening by itself, at its own noise,
+  until there are three, the belt is out of planks or you walk off or sprint (which cancels a channel as before).
+  With a crowbar in hand B still re-nails a damaged barricade and does not chain. `progression.chainBoards`, set from
+  Lab › Interactions › Boarding › "One B boards it up" (Today: one board per press).
+- **Hold E pries a board off** a boarded door or window, from either side: a 1.6 s channel (Lab › Verbs › Pry a board
+  off, its noise 9 m), and the plank goes back in your belt. Before, a boarded door only said "Blocked by barricade"
+  and you were shut in your own safehouse until the dead broke it. The tap is still refused, and its message now says
+  "Boarded 2/3 · hold E to pry one off". A boarded window's tap (Peek) waits for the release, so the hold reaches the
+  pry without peeking first. `shared/interactions/boards.ts` wraps the door and window handlers (`PRY_OFF`, the
+  `pry` action with the crowbar glyph), and the ledger rule `unboard` does the work; `OutbreakAISubsystem.
+  removeBarricadePlank` takes the plank and its share of the barricade's hit points. Lab › "Hold E pries a board off"
+  (Today: boards stay).
+
 ## Teaching
 
 The world prompt and training room belong to the onboarding pass (`docs/outbreak-onboarding.md`). The interactions
 feature adds one in-world reminder line low over the survivor (`src/interactions/hint.ts`): with a throwable in hand,
 the Mouse0 hold cap and "Throw · hold for distance", the ring filling as the throw winds up.
+
+Boarding teaches itself in the door and window prompt: B Board up while there is room and a plank, and the Hold E
+ring with the crowbar glyph (Pry off a board) once there is a board up.
 
 Furniture and hauling use the world prompt (E with the `drag`, `set-down` and `brace` glyphs added to
 `@arcade/kit/client/action-glyphs`), so they teach themselves where the prompt does.
@@ -119,3 +140,19 @@ Dragging: a scrape loop while a `furn:*` store has `drag` and is moving; a thump
 when one is shoved over (`down` 0→1). Throws: a whoosh on release scaled by power; landing thud per item (baseball on grass/wood, brick, rock, can
 clatter/roll); a bonk on a head hit; glass for a window broken by a throw (the `glass:*` store already plays
 `glass.break` for bottles).
+
+## Clip
+
+`bun scripts/interactions-clip.ts` (in `games/outbreak`; run it through `hivemind run --kind browser --fetch
+captures/interactions-clip`) plays every staged scene with scripted input in headless, muted Chromium and writes JPEG
+frames plus a readout of what each scene left behind (`SCENES=board,pry` for a subset). Each scene starts the survivor
+on their feet at full health with empty hands and hangs Ash's front door back up if an earlier scene's dead tore it
+off. Hauling is not in it: it needs a second seat.
+
+## Considered and cut
+
+- Pushing abandoned cars, or using one as a moving wall: the vehicles feature owns cars, and it is a bigger job.
+- Curtains and blinds that block sight through a window: small, but the crowd's sight model has no hook for it yet.
+- Kicking a door into the dead: doors and their breaches belong to AR-97.
+- Throwing a chair or other furniture, and stacking several pieces against one opening: one braced piece per opening.
+- Bots that throw, drag or pry on purpose: bots throw a bottle as before and path round furniture, nothing more.

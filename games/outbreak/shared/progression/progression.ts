@@ -79,6 +79,8 @@ export class OutbreakProgression implements ProgressionHost {
   readonly verbs = new FieldVerbs(this, this.board, this.knowledge)
   /** Bottles are wound up and thrown by `shared/throwables` (its tuning sets this; off is Today's fixed-range throw). */
   tossBottles = true
+  /** One B keeps nailing boards until the opening is full, the planks run out or you walk off (`shared/interactions`). */
+  chainBoards = true
 
   snapshot(): OutbreakProgressionSnapshot {
     return {
@@ -531,6 +533,16 @@ export class OutbreakProgression implements ProgressionHost {
     return { handled: res.ok, noise: res.noise }
   }
 
+  /** Starts prying one board off a door or window (hold E at it, `shared/interactions`). Returns the noise made. */
+  startUnboard(actor: InteractActorState, portal: { id: string; rect: readonly number[] }): { handled: boolean; noise?: number } {
+    const slot = this.actorOf.get(actor)
+    if (!slot) return { handled: false }
+    const at = { x: (portal.rect[0]! + portal.rect[2]!) / 2, y: (portal.rect[1]! + portal.rect[3]!) / 2 }
+    const res = this.ledger.start({ kind: "run", actor: slot.id, rule: "unboard", ref: portal.id, label: "Prying a board off" }, this.envFor(slot), at)
+    this.feedback(slot, res.events)
+    return { handled: res.ok, noise: res.noise }
+  }
+
   // ── Actions ───────────────────────────────────────────────────────────────────────────────────────────────
 
   select(slot: ProgressionSlot, index?: number, delta?: number): void {
@@ -745,6 +757,18 @@ export class OutbreakProgression implements ProgressionHost {
     if (!res.ok) return 0
     // Practice: hands that have nailed a few boards do it faster and quieter. Nothing on screen says so.
     return this.knowledge.practised(slot, "barricade", res.noise)
+  }
+
+  /** After a board goes up, the next one starts on the same opening (`chainBoards`), at its noise. */
+  private chainBoard(slot: ProgressionSlot, portalId: string, world: WorldContext): void {
+    if (!this.chainBoards || world.ai.getBarricadePlanks(portalId) >= 3 || this.ledger.count(slot.id, "plank") <= 0) return
+    if (this.selected(slot.id)?.item === "crowbar") return
+    const door = world.town.doors.find((d) => d.id === portalId)
+    const o = door ?? world.town.windows.find((w) => w.id === portalId)
+    if (!o || distToRect(slot.survivor.x, slot.survivor.y, o.rect) > INTERACT_RANGE) return
+    const kind = door ? "door" : "window"
+    const noise = this.startBarricade(slot, world, { kind, id: portalId })
+    if (noise > 0) world.ai.emitNoise(slot.survivor.x, slot.survivor.y, noise, "barricade", world.time, slot.id)
   }
 
   /**
@@ -992,6 +1016,7 @@ export class OutbreakProgression implements ProgressionHost {
         if (tx.kind !== "run") return null
         if (!world) return null
         if (tx.rule.startsWith("barricade") && tx.ref && world.ai.getBarricadePlanks(tx.ref) >= 3) return "fully boarded"
+        if (tx.rule === "unboard" && tx.ref && world.ai.getBarricadePlanks(tx.ref) <= 0) return "not boarded"
         if (tx.rule.startsWith("heal:") && slot.survivor.health >= slot.survivor.maxHealth) return "not hurt"
         if (tx.rule === "pry") {
           const door = world.town.doors.find((d) => d.id === tx.ref)
@@ -1021,6 +1046,15 @@ export class OutbreakProgression implements ProgressionHost {
       world.ai.rebuildTopology(world.town)
       this.notify(slot, `Boarded ${world.ai.getBarricadePlanks(ev.ref)}/3`, "result", "barricade")
       this.knowledge.worked(slot, "barricade", world)
+      this.chainBoard(slot, ev.ref, world)
+      return true
+    }
+    if (ev.rule === "unboard" && ev.ref) {
+      if (!world.ai.removeBarricadePlank(ev.ref)) return false
+      this.ledger.apply({ kind: "grant", actor: slot.id, item: "plank" })
+      world.ai.rebuildTopology(world.town)
+      const left = world.ai.getBarricadePlanks(ev.ref)
+      this.notify(slot, left > 0 ? `Boards ${left}/3` : "Boards off", "result", "barricade")
       return true
     }
     if (ev.rule.startsWith("heal:")) {
