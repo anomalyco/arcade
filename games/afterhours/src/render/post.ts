@@ -160,11 +160,14 @@ export function createPost(ctx: WorldContext) {
     { key: "post.ssrWet", label: "Dielectric reflectance", group: "Reflections", min: 0, max: 1, step: 0.01, value: 0.5 },
     { key: "post.ssrRough", label: "Roughness cut-off", group: "Reflections", min: 0.1, max: 1, step: 0.01, value: 0.85 },
     { key: "post.ssrStreak", label: "Vertical streaking", group: "Reflections", unit: "×", min: 0, max: 4, step: 0.05, value: 2.2 },
+    { key: "post.ssrMaxLum", label: "Reflected highlight cap", group: "Reflections", min: 0.05, max: 10, step: 0.05, value: 10 },
+    { key: "post.ssrThickness", label: "Hit thickness", group: "Reflections", unit: "m", min: 0.005, max: 0.5, step: 0.005, value: 0.1 },
     { key: "post.ssrDistance", label: "Max distance", group: "Reflections", unit: "m", min: 2, max: 80, step: 1, value: 30 },
     { key: "post.glint", label: "Lamp glints on wet ground", group: "Reflections", unit: "×", min: 0, max: 4, step: 0.05, value: 2 },
     { key: "post.ssrQuality", label: "Ray steps indoors", group: "Reflections", min: 0.1, max: 1, step: 0.05, value: 0.6 },
     { key: "post.ssrQualityOutdoor", label: "Ray steps outdoors", group: "Reflections", min: 0.1, max: 1, step: 0.05, value: 0.2 },
-    { key: "post.ssrScale", label: "Resolution indoors", group: "Reflections", unit: "× 3D res", min: 0.25, max: 1, step: 0.05, value: 0.5 },
+    { key: "post.ssrScale", label: "Resolution indoors", group: "Reflections", unit: "× 3D res", min: 0.25, max: 1, step: 0.05, value: 0.85 },
+    { key: "post.ssrStreakIndoor", label: "Streaking indoors", group: "Reflections", unit: "×", min: 0, max: 4, step: 0.05, value: 0.2 },
     { key: "post.ssrScaleOutdoor", label: "Resolution outdoors", group: "Reflections", unit: "× 3D res", min: 0.25, max: 1, step: 0.05, value: 0.25 },
     { key: "post.aoScale", label: "Resolution", group: "Ambient occlusion", unit: "× 3D res", min: 0.25, max: 1, step: 0.05, value: 0.5 },
     { key: "post.aoScaleOutdoor", label: "Resolution outdoors", group: "Ambient occlusion", unit: "× 3D res", min: 0.25, max: 1, step: 0.05, value: 0.35 },
@@ -990,8 +993,12 @@ export function createPost(ctx: WorldContext) {
       rainGain.value = num(ctx, "rain.brightness")
       glintStrength.value = num(ctx, "post.glint")
       ssrStrength.value = num(ctx, "post.ssrStrength")
-      ssrStreak.value = num(ctx, "post.ssrStreak")
+      // Indoors the floors are waxed lino and tile, not wet asphalt: much less smear, so small emitters (rack LEDs,
+      // CRTs) reflect as small, placed glints instead of soft floating blobs.
+      ssrStreak.value = num(ctx, indoor > 0.5 ? "post.ssrStreakIndoor" : "post.ssrStreak")
       ssrNode.maxDistance.value = num(ctx, "post.ssrDistance")
+      ssrNode.thickness.value = num(ctx, "post.ssrThickness")
+      ssrNode.maxLuminance.value = num(ctx, "post.ssrMaxLum")
       // SSR spends `quality` steps per reflection texel, so fewer texels (lower 3D or reflection resolution) meant
       // coarser steps that missed thin hits and dimmed the reflections at each auto-res step. Keep the step density per
       // CSS pixel that the settings give at the Retina defaults (0.9 samples per CSS px, 0.5 / 0.25 reflection scale).

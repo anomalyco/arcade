@@ -77,6 +77,26 @@ if ((params.get("mode") ?? "grid") === "grid") {
   const span = Math.max(rows * pitch, (cols * pitch) / camera.aspect)
   camera.position.set(0, 0, (span * 1.02) / (2 * Math.tan((camera.fov * Math.PI) / 360)) + 0.5)
   camera.lookAt(0, 0, 0)
+} else if (params.get("mode") === "door") {
+  // Three 0.9 × 2.1 m leaves (UV metres, V up from the floor) at different positions, under a flashlight-like spot and
+  // a dim overhead: checks repeat between identical leaves and the wear layout.
+  const name = (params.get("mat") ?? "door_steel") as MaterialName
+  scene.background = new THREE.Color(0x0a0d0c)
+  scene.environmentIntensity = Number(params.get("env") ?? 0.25)
+  for (const [i, x] of [-1.15, 0, 1.15].entries()) {
+    const leaf = new THREE.Mesh(metres(new THREE.PlaneGeometry(0.9, 2.1), 0.9, 2.1), material(name))
+    leaf.position.set(x, 1.05, -0.02 * i)
+    scene.add(leaf)
+  }
+  const torch = new THREE.SpotLight(0xfff1dc, Number(params.get("torch") ?? 18), 12, 0.5, 0.6, 2)
+  torch.position.set(0.25, 1.5, 2.6)
+  torch.target.position.set(0, 1.1, 0)
+  scene.add(torch, torch.target)
+  const tube = new THREE.PointLight(0xdcf2c8, 6, 8, 2)
+  tube.position.set(0, 2.8, 1.2)
+  scene.add(tube)
+  camera.position.set(0, 1.25, 3.1)
+  camera.lookAt(0, 1.05, 0)
 } else {
   const name = (params.get("mat") ?? "asphalt") as MaterialName
   scene.background = new THREE.Color(0x0b1715)

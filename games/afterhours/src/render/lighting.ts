@@ -699,6 +699,9 @@ export function createLighting(ctx: WorldContext, player: Player) {
   const occPoint = new THREE.Vector3()
 
   const tmpCam = new THREE.Vector3()
+  const camQ = new THREE.Quaternion()
+  const lastCamPos = new THREE.Vector3()
+  let stillFor = 0
   const bounceOrder: Rig[] = []
   let lastSpill = [NaN, NaN]
   const fwd = new THREE.Vector3()
@@ -911,13 +914,22 @@ export function createLighting(ctx: WorldContext, player: Player) {
       const inHand = renderState.torchLens?.(lensPos, lensDir) === true && lensDir.lengthSq() > 0.5
       const forward = inHand ? lensDir : fwd.set(0, -0.04, -1).applyQuaternion(camera.quaternion).normalize()
       const target = inHand ? lensPos : fwd2.set(0.22, -0.28, -0.1).applyQuaternion(camera.quaternion).add(tmpCam)
-      const lag = num(ctx, "flash.lag")
+      // While the view is still, the hand's idle breathing must not swim the beam pool across the floor (a still
+      // camera stays still): heavy smoothing plus a small dead-band then; when the view turns or moves, the beam
+      // follows with the normal short lag.
+      camQ.angleTo(camera.quaternion) > 2e-4 || lastCamPos.distanceToSquared(tmpCam) > 1e-6 ? (stillFor = 0) : (stillFor += dt)
+      camQ.copy(camera.quaternion)
+      lastCamPos.copy(tmpCam)
+      const still = Math.min(1, stillFor / 0.25)
+      const lag = num(ctx, "flash.lag") * (1 + 6 * still)
       const k = lag > 0 ? 1 - Math.exp(-dt / lag) : 1
       const snap = frame < 3 || jump
       flashDir.lerp(forward, snap ? 1 : k).normalize()
       // The emitter follows the hand closely (it is part of the body) but not its per-frame tremor.
-      const handPos = flashPos.lerp(target, snap ? 1 : 1 - Math.exp(-dt / 0.04))
-      if (frame < 3 || appliedDir.angleTo(flashDir) > 4e-4 || appliedPos.distanceToSquared(handPos) > 1e-6) {
+      const handPos = flashPos.lerp(target, snap ? 1 : 1 - Math.exp(-dt / (0.04 + 0.4 * still)))
+      const deadAng = 4e-4 + 0.03 * still
+      const deadPos = 1e-6 + 9e-4 * still
+      if (frame < 3 || appliedDir.angleTo(flashDir) > deadAng || appliedPos.distanceToSquared(handPos) > deadPos) {
         appliedDir.copy(flashDir)
         appliedPos.copy(handPos)
       }

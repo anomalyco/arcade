@@ -21,6 +21,10 @@ import { measureHands, skinVsCyl, wrapFingers, unpenetrate, type Cyl } from "./g
 // changes.
 
 export const VIEW_LAYER = 6
+/** Owner decision: no first-person hand, only the flashlight's head in the corner (true: the old hand viewmodel). */
+const VIEW_HAND = false
+/** The flashlight head's framing (view frame, m before VIEW_SCALE): lens position, barrel toe-in and rise, roll. */
+const HEAD = { lens: [-0.175, -0.135, -0.33] as [number, number, number], toeIn: 0.12, up: 0.1, roll: 0.4 }
 const VIEW_SCALE = 0.75
 
 /** Where the flashlight sits relative to the eye (m, real scale): ahead, below, to the left; and its tilt (rad). */
@@ -90,6 +94,25 @@ export class Viewmodel {
   /** Builds the arm for a character (call on load and on a character switch). */
   build(src: ViewmodelSource) {
     for (const c of [...this.inner.children]) if (c !== this.torch) this.inner.remove(c)
+    if (!VIEW_HAND) {
+      // Only the flashlight's head pokes in from the lower-left corner, the barrel running out of frame behind it, so
+      // nothing that holds it is ever seen. Placed in the view frame (-Z forward); the root's scale shrinks it about
+      // the eye, the perspective unchanged.
+      const dir = new THREE.Vector3(HEAD.toeIn, HEAD.up, -1).normalize()
+      const lens = new THREE.Vector3(...HEAD.lens)
+      // Matrix4.lookAt points +Z from target to eye: the torch's -Z (lens) along `dir`.
+      const m = new THREE.Matrix4().lookAt(new THREE.Vector3(), dir, new THREE.Vector3(0, 1, 0))
+      this.torch.quaternion.setFromRotationMatrix(m).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), HEAD.roll))
+      // The torch's lens is 0.155 m ahead (-Z) of its origin.
+      this.torch.position.copy(lens).addScaledVector(dir, -0.155)
+      this.torch.scale.setScalar(1)
+      this.inner.position.set(0, 0, 0)
+      this.inner.rotation.set(0, 0, 0)
+      this.inner.add(this.torch)
+      this.present = 0
+      this.last.yaw = Number.NaN
+      return
+    }
     const model = cloneSkinned(src.model) as THREE.Object3D
     model.traverse((o) => {
       if (o.name === "torch") o.removeFromParent()
@@ -344,7 +367,7 @@ export class Viewmodel {
     const down = smooth(0.45, 1.35, -s.pitch)
     const crouch = smooth(0.2, 0.8, s.crouch)
     const hide = 1 - smooth(0, 1, this.present)
-    this.motion.position.set(bobX - 0.01 * crouch, bobY - 0.06 * down - 0.012 * crouch - 0.3 * hide + this.kick.y, 0.04 * down)
+    this.motion.position.set(bobX - 0.01 * crouch, bobY - (VIEW_HAND ? 0.06 : 0.015) * down - 0.012 * crouch - 0.3 * hide + this.kick.y, (VIEW_HAND ? 0.04 : 0) * down)
     this.motion.rotation.set(this.sway.y + 0.06 * down + 0.4 * hide, this.sway.x, bobX * 1.5, "YXZ")
     // At the eye, along the view.
     this.root.position.set(s.eye.x, s.eye.y, s.eye.z)

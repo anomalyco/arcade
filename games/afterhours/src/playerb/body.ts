@@ -426,9 +426,13 @@ export class CharacterBody {
     // The left forearm and hand in their own meshes: hidden from the view camera while the viewmodel shows.
     this.armParts = []
     this.vmActive = false
+    this.armsHidden = false
     for (const m of split) {
-      const a = splitArm(m)
+      const a = splitArm(m, /^Left(Arm|ForeArm|Hand)/)
       if (a) this.armParts.push(a)
+      // The right forearm and hand too: in first person no hand is ever seen (owner decision), even looking down.
+      const r = splitArm(m, /^Right(ForeArm|Hand)/)
+      if (r) this.armParts.push(r)
     }
   }
 
@@ -1264,13 +1268,17 @@ export class CharacterBody {
     if (this.root.parent && vm.root.parent !== this.root.parent) this.root.parent.add(vm.root)
     const eye = s.eye ?? this.root.position.clone().setY(this.root.position.y + 1.6)
     vm.update(dt, show, { eye, yaw: s.yaw, pitch: s.pitch, vel: s.vel, crouch: s.crouch, grounded: s.grounded, phase: this.phase, speed: this.smoothVel.length() })
+    // In first person no hand or forearm is ever seen (owner decision; the flashlight's head alone pokes in) except
+    // on the steering wheel: both forearms and hands go to HEAD_LAYER (shadows, mirrors and the debug third-person
+    // camera still see them), and so does the body's own torch while the viewmodel shows.
     const active = vm.root.visible
-    if (active !== this.vmActive) {
+    const hideArms = !this.seatRig
+    if (active !== this.vmActive || hideArms !== this.armsHidden) {
       this.vmActive = active
-      const layer = active ? HEAD_LAYER : BODY_LAYER
-      for (const m of this.armParts) m.layers.set(layer)
-      this.torch.traverse((o) => o.layers.set(layer))
-    }
+      this.armsHidden = hideArms
+      for (const m of this.armParts) m.layers.set(hideArms ? HEAD_LAYER : BODY_LAYER)
+      this.torch.traverse((o) => o.layers.set(active ? HEAD_LAYER : BODY_LAYER))
+  }
   }
 
   /**
@@ -1413,6 +1421,7 @@ export class CharacterBody {
   readonly viewmodel = new Viewmodel()
   private armParts: THREE.Mesh[] = []
   private vmActive = false
+  private armsHidden = false
   /** The view's forward (world), from the controller's yaw/pitch. */
   private viewDir = new THREE.Vector3(0, 0, -1)
   private crouchS = 0
@@ -2148,13 +2157,13 @@ export function twoBoneIK(a: THREE.Object3D, b: THREE.Object3D, c: THREE.Object3
 }
 
 /** Moves the left forearm and hand triangles of a skinned mesh into their own mesh (same layer), sharing buffers. */
-function splitArm(mesh: THREE.SkinnedMesh) {
+function splitArm(mesh: THREE.SkinnedMesh, bonesRe: RegExp) {
   const geo = mesh.geometry
   const index = geo.index
   const si = geo.getAttribute("skinIndex")
   const sw = geo.getAttribute("skinWeight")
   if (!index || !si || !sw) return null
-  const arm = new Set(mesh.skeleton.bones.flatMap((b, i) => (/^Left(Arm|ForeArm|Hand)/.test(b.name) ? [i] : [])))
+  const arm = new Set(mesh.skeleton.bones.flatMap((b, i) => (bonesRe.test(b.name) ? [i] : [])))
   if (!arm.size) return null
   const on = new Uint8Array(si.count)
   for (let v = 0; v < si.count; v++) {
@@ -2188,7 +2197,7 @@ function splitArm(mesh: THREE.SkinnedMesh) {
     for (const [s0, c, m] of partGroups) if (c) pg.addGroup(s0, c, m)
   }
   const pm = new THREE.SkinnedMesh(pg, mesh.material)
-  pm.name = `${mesh.name}-leftarm`
+  pm.name = `${mesh.name}-arm`
   pm.bind(mesh.skeleton, mesh.bindMatrix)
   pm.frustumCulled = false
   pm.castShadow = mesh.castShadow
