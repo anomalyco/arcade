@@ -1,7 +1,7 @@
 /**
- * A first-person night lot for the kit fog proofs (`scripts/fog-gpu-proof.ts` off-browser, `fog-browser-proof.ts` in
- * Chromium): wet ground, a road of sodium lamps on poles, a building and a car as silhouettes, the fog sky, and
- * Ashwood's numbers (fog 0.01 /m, height 20 m, teal at 0.034, sodium cones 1.1 rad / 0.45, exposure −2.2 EV). "Today"
+ * A first-person night lot for the kit fog proof (`scripts/fog-gpu-proof.ts`): wet ground, a road of sodium lamps on
+ * poles, a building and a car as silhouettes, the fog sky, and Ashwood's numbers (fog 0.01 /m, falloff 0.05 /m, teal
+ * at 0.034, sodium cones 1.1 rad / 0.45, exposure −2.2 EV). "Today"
  * is the same scene with the fog's scattering off, so the A/B isolates the port.
  */
 import { mat4 } from "wgpu-matrix"

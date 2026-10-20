@@ -11,8 +11,9 @@
  */
 import { FOG_SCENE_ALPHA, buildFogScene } from "./fog-scene/scene"
 
-const W = 480
-const H = 270
+const deno = (globalThis as { Deno?: { env: { get(k: string): string | undefined }; writeFileSync(p: string, d: Uint8Array): void } }).Deno
+// FOG_PROOF_SIZE=1280x720 renders a larger still; the checks hold at any size.
+const [W, H] = (deno?.env.get("FOG_PROOF_SIZE") ?? "480x270").split("x").map(Number) as [number, number]
 const adapter = await navigator.gpu.requestAdapter()
 if (!adapter) throw new Error("no WebGPU adapter")
 const device = await adapter.requestDevice()
@@ -116,18 +117,20 @@ const results = {
 }
 console.log(JSON.stringify(results, null, 1))
 // FOG_PROOF_IMAGE=dir writes today.ppm, fog.ppm and raw.ppm (exposure −2.2 EV, Reinhard, sRGB) for a look.
-const deno = (globalThis as { Deno?: { env: { get(k: string): string | undefined }; writeFileSync(p: string, d: Uint8Array): void } }).Deno
 const imageDir = deno?.env.get("FOG_PROOF_IMAGE")
 if (deno && imageDir) {
   for (const [name, img] of [["today", today], ["fog", lit], ["raw", rawB]] as const) {
-    const bytes = new Uint8Array(W * H * 3)
+    const header = new TextEncoder().encode(`P6\n${W} ${H}\n255\n`)
+    const file = new Uint8Array(header.length + W * H * 3)
+    file.set(header)
+    const bytes = file.subarray(header.length)
     for (let i = 0; i < W * H; i++)
       for (let c = 0; c < 3; c++) {
         const v = img[i * 4 + c]! * 2 ** -2.2 * 4
         const t = v / (1 + v)
         bytes[i * 3 + c] = Math.round(255 * Math.min(1, t <= 0.0031308 ? t * 12.92 : 1.055 * t ** (1 / 2.4) - 0.055))
       }
-    deno.writeFileSync(`${imageDir}/${name}.ppm`, new Uint8Array([...new TextEncoder().encode(`P6\n${W} ${H}\n255\n`), ...bytes]))
+    deno.writeFileSync(`${imageDir}/${name}.ppm`, file)
   }
 }
 const failures = [

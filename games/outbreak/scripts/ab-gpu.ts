@@ -15,11 +15,16 @@ const A: Record<string, number | string> = JSON.parse(process.env.AB_A ?? "{}")
 const B: Record<string, number | string> = JSON.parse(process.env.AB_B ?? "{}")
 const rounds = Number(process.env.AB_ROUNDS ?? 12)
 // Optional diagnostic hack applied to variant B after setup (e.g. "h.render.shadowLightCount = 0"); never shipped.
+// Lamp fog on: `const m = globalThis.__abLampFog, v = h.render.volume; m.lampFog.settings.mode = "scatter";
+// m.applyLampFog(h.render, Array.isArray(v) ? v[0] : v)` (and "today" in AB_HACK_A).
 const hackB = process.env.AB_HACK_B ?? ""
 // Optional hack applied to variant A after setup, e.g. to undo a persistent B hack.
 const hackA = process.env.AB_HACK_A ?? ""
 // Optional survivor aim in radians for every scene (default north, -PI/2).
 const aim = Number(process.env.AB_AIM ?? -Math.PI / 2)
+// AB_GPU=swiftshader times CI's software adapter; AB_VIEWPORT="1280x720" shrinks the 3456×1894 backbuffer.
+const gpu = process.env.AB_GPU ?? "metal"
+const viewport = (process.env.AB_VIEWPORT ?? "3456x1894").split("x").map(Number) as [number, number]
 const server = await createServer({
   root,
   logLevel: "error",
@@ -29,7 +34,8 @@ const server = await createServer({
     enforce: "pre",
     transform(code, id) {
       if (id !== resolve(root, "src/main.ts")) return
-      return code.replace("Object.assign(harness, { map })", "Object.assign(harness, { map, renderer, render })")
+      // Lab-panel-only settings (e.g. lamp fog) are not harness `setLab` keys; hacks reach them via this global.
+      return `import * as __abLampFog from "./air/lamp-fog"\n;(globalThis as any).__abLampFog = __abLampFog\n${code}`
     },
   }],
 })
@@ -39,9 +45,9 @@ const cache = `${process.env.HOME}/Library/Caches/ms-playwright`
 const executablePath = readdirSync(cache).filter(n => /^chromium_headless_shell-\d+$/.test(n)).sort().reverse()
   .map(n => `${cache}/${n}/chrome-headless-shell-mac-arm64/chrome-headless-shell`).find(existsSync)
 assert(executablePath)
-const browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio"] })
+const browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-webgpu", `--use-angle=${gpu}`, ...(gpu === "swiftshader" ? ["--enable-unsafe-swiftshader"] : []), "--ignore-gpu-blocklist", "--mute-audio"] })
 try {
-  const page = await browser.newPage({ viewport: { width: 1728, height: 947 }, deviceScaleFactor: 2 })
+  const page = await browser.newPage({ viewport: { width: Math.round(viewport[0] / 2), height: Math.round(viewport[1] / 2) }, deviceScaleFactor: 2 })
   await page.addInitScript(() => {
     const request = GPUAdapter.prototype.requestDevice
     GPUAdapter.prototype.requestDevice = function (desc: GPUDeviceDescriptor = {}) {
@@ -51,8 +57,9 @@ try {
   const errors: string[] = []
   page.on("pageerror", e => errors.push(e.message))
   page.on("console", m => { if (m.type() === "error") errors.push(m.text()) })
-  await page.goto(`http://127.0.0.1:${port}/?seed=7&bench`)
-  await page.waitForFunction(() => (window as any).__arcadeHarness?.ready)
+  // A cold Vite transform of the whole game takes over 30 s on a loaded worker.
+  await page.goto(`http://127.0.0.1:${port}/?seed=7&bench`, { timeout: 240_000 })
+  await page.waitForFunction(() => (window as any).__arcadeHarness?.ready, undefined, { timeout: 240_000 })
   const scenes: { name: string; x: number; y: number; zoom: number; hour: number; horde?: number }[] = JSON.parse(process.env.AB_SCENES ?? "null") ?? [
     { name: "street", x: 30, y: 41, zoom: 46, hour: 18 },
     { name: "interior", x: 27.7, y: 31, zoom: 34, hour: 19 },
