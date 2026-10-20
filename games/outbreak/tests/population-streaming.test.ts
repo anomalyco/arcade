@@ -44,8 +44,11 @@ describe("Outbreak population while driving across town", () => {
     const out = samples.filter((s) => s.h >= 1.5)
     const outOfTown = out.filter((s) => s.x > 140)
     expect(outOfTown.length).toBeGreaterThan(20)
-    for (const s of out) {
-      expect({ ...s, ok: s.living >= Math.max(2, Math.floor(s.want * 0.5)) && s.living <= s.want + 4 }).toEqual({ ...s, ok: true })
+    // A chunk unloading behind the car can take the dead left in it before the director refills backstage, so one
+    // quarter-hour sample may dip below the band; two in a row is the "stopped appearing" bug.
+    const low = (s: (typeof out)[number]) => s.living < Math.max(2, Math.floor(s.want * 0.5))
+    for (const [i, s] of out.entries()) {
+      expect({ ...s, ok: s.living <= s.want + 4 && !(low(s) && (i === out.length - 1 || low(out[i + 1]!))) }).toEqual({ ...s, ok: true })
     }
     // Most of the time some of them are within 60 m.
     expect(outOfTown.filter((s) => s.near > 0).length).toBeGreaterThan(outOfTown.length * 0.75)
