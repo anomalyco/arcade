@@ -12,7 +12,7 @@ import { BeamProbe } from "./light-probe"
 import type { DetailSite } from "./placement"
 import type { OutbreakDetailSettings } from "./settings"
 import { dripLevel, placeDrips, writeDrips, type DripPoint } from "./drips"
-import { BootPrints, groundKind } from "./prints"
+import { BootPrints, type DeadWalker, type PrintWeather } from "./prints"
 import { placeSprinklers, sprinklerReach, writeSprinklers, type Sprinkler } from "./sprinkler"
 import { FLIES_PER_SITE, mothLamps, writeFlies, writeMoths, type FlySite, type MothLamp } from "./swarms"
 
@@ -42,6 +42,8 @@ export type TouchFrame = {
   lampPower: Float32Array
   survivors: readonly { id: string; survivor: { x: number; y: number; aim: number; vehicleId?: number | null } }[]
   noises: readonly { x: number; y: number; radius: number; kind: string }[]
+  /** The dead (replicated positions), for their wet prints. */
+  zombies: readonly DeadWalker[]
   /** The weather now: ground wetness, rainfall and standing water (0..1 each). */
   wetness: number
   rain: number
@@ -73,7 +75,8 @@ export class LifeTouches {
   private dripKey = ""
   private drips: DripPoint[] = []
   readonly prints = new BootPrints()
-  private readonly printWeather = { wetness: 0, puddleAt: (x: number, z: number): number => puddleMaskAt(x, z, this.printWeather.puddles, groundKind(this.frame!.town, x, z) === "hard"), puddles: 0 }
+  readonly deadPrints = new BootPrints(96, true)
+  private readonly printWeather: PrintWeather = { wetness: 0, puddles: 0, puddleAt: (x, z, kind) => puddleMaskAt(x, z, this.printWeather.puddles, kind === "hard") }
   private readonly breathers: BreathSurvivor[] = []
   private readonly beamFrom = { x: 0, z: 0 }
   private frame: TouchFrame | null = null
@@ -93,6 +96,7 @@ export class LifeTouches {
     this.sprinklerKey = ""
     this.dripKey = ""
     this.prints.reset()
+    this.deadPrints.reset()
     this.lastNight = 0
   }
 
@@ -206,14 +210,20 @@ export class LifeTouches {
       out.alpha = writeDrips(this.drips, dripLevel(f.wetness, f.rain), f.time, this.groundLight, f.view, alpha, out.alpha, 48)
       this.shown.drips = out.alpha - before
     }
+    this.printWeather.wetness = f.wetness
+    this.printWeather.puddles = f.puddles
     if (s.lfPrints) {
-      this.printWeather.wetness = f.wetness
-      this.printWeather.puddles = f.puddles
       this.prints.step(f.time, f.town, this.printWeather, f.survivors)
       const before = out.alpha
       out.alpha = this.prints.write(f.time, f.view, alpha, out.alpha)
       this.shown.prints = out.alpha - before
     } else if (this.prints.count) this.prints.reset()
+    if (s.lfDeadPrints) {
+      this.deadPrints.stepDead(f.time, f.town, this.printWeather, f.zombies, f.view)
+      const before = out.alpha
+      out.alpha = this.deadPrints.write(f.time, f.view, alpha, out.alpha)
+      this.shown.prints += out.alpha - before
+    } else if (this.deadPrints.count) this.deadPrints.reset()
     const eyeFrame = this.eyeFrame
     eyeFrame.dt = f.dt
     eyeFrame.time = f.time

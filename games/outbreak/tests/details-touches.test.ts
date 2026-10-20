@@ -236,6 +236,7 @@ describe("life touches", () => {
       lampPower,
       survivors: s.sim.slots,
       noises: [],
+      zombies: [],
       vision: { visible: () => true },
       ledger: s.sim.progression.ledger,
     }

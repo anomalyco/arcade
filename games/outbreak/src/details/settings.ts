@@ -75,6 +75,8 @@ export type OutbreakDetailSettings = {
   lfDrips: number
   /** Wet and muddy boot prints tracked onto hard ground and floors after puddles and soaked lawns. */
   lfPrints: boolean
+  /** The dead leave wet prints too, shuffling and dragging a foot. */
+  lfDeadPrints: boolean
 }
 
 export const DEFAULT_DETAIL_SETTINGS: OutbreakDetailSettings = {
@@ -107,6 +109,7 @@ export const DEFAULT_DETAIL_SETTINGS: OutbreakDetailSettings = {
   lfDecay: true,
   lfDrips: 1,
   lfPrints: true,
+  lfDeadPrints: true,
 }
 
 const GROUP = "Details"
@@ -142,4 +145,5 @@ export const detailControls: LabControl[] = [
   { key: "lfDecay", label: "Town runs down night by night", group: LIFE, type: "toggle" },
   { key: "lfDrips", label: "Drips after rain", group: LIFE, min: 0, max: 2, step: 0.05, unit: "×" },
   { key: "lfPrints", label: "Wet and muddy boot prints", group: LIFE, type: "toggle" },
+  { key: "lfDeadPrints", label: "Prints of the dead", group: LIFE, type: "toggle" },
 ]

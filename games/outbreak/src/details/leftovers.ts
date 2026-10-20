@@ -145,14 +145,6 @@ export function domeLevel(night: number, time: number, phase: number, decay: boo
   return n === 2 ? 0.55 * (v < 0.18 ? v / 0.18 : 1) : 0.22 * (v > 0.72 ? (v - 0.72) / 0.28 : 0)
 }
 
-/**
- * Share of the lit houses still lit on `night` when the town runs down (`look/lit-windows.ts` keeps the lowest rolls,
- * so the lights go out house by house): all of them the first night, about a third by the fifth.
- */
-export function windowPowerLeft(night: number): number {
-  return [1, 0.8, 0.62, 0.48][Math.max(1, night) - 1] ?? 0.36
-}
-
 /** Most casings kept per town (oldest go first). */
 export const CASINGS_MAX = 256
 

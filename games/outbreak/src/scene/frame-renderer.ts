@@ -19,7 +19,6 @@ import type { CoopView } from "../coop-view"
 import { applyOutbreakDayNight } from "../day-night"
 import { BloodStains, setCurrentBloodStains } from "../blood/stains"
 import { DetailsPresenter, setCurrentDetails } from "../details/presenter"
-import { windowPowerLeft } from "../details/leftovers"
 import { townNight, type TouchFrame } from "../details/touches"
 import { ClosetView } from "../discovery/closet"
 import { lowBatteryBeam, type BeamLook } from "../discovery/flashlight"
@@ -41,7 +40,7 @@ import type { OutbreakFrameUi } from "../hud/frame-ui"
 import { InteriorPresenter, SCONCE_LAMP_SLOT } from "../interiors"
 import { hex } from "../level"
 import { TABLE_LAMP_SLOT } from "../lightbake"
-import { setWindowPowerLeft } from "../look/lit-windows"
+import { setWindowPower } from "../look/lit-windows"
 import { trimLook } from "../look/world"
 import { SURVIVOR_COLOURS, type NetSession } from "../net-session"
 import { NightLightsPresenter, setCurrentNightLights } from "../night-lights/presenter"
@@ -169,6 +168,7 @@ export class OutbreakFrameRenderer {
     setCurrentFx(this.fx)
     this.details = new DetailsPresenter(this.renderer)
     setCurrentDetails(this.details)
+    setWindowPower(this.details.powered)
     this.lifeFrame = {
       dt: 0,
       time: 0,
@@ -187,6 +187,7 @@ export class OutbreakFrameRenderer {
       lampPower: this.frameLighting.lampPower,
       survivors: [],
       noises: [],
+      zombies: [],
       vision: { visible: () => false },
       ledger: session().sim.progression.ledger,
     }
@@ -417,8 +418,6 @@ export class OutbreakFrameRenderer {
     )
     const day = dayCycle(hour)
     const night = townNight(session.sim)
-    const det = settings.details
-    setWindowPowerLeft(det.worldDetails && det.lifeTouches && det.lfDecay ? windowPowerLeft(night) : 1)
     const unseenEval = evaluateUnseenFrame(settings.unseen, day.darkness, eye ? eye.health : p.health, eye ? eye.maxHealth : p.maxHealth, settings.look)
     // Pose the bodies first: the flashlight rides the survivor's pistol or hand.
     const lift = vaultLift(p)
@@ -732,6 +731,7 @@ export class OutbreakFrameRenderer {
       threats: session.sim.slots.map((s) => s.survivor),
       noises,
       night,
+      absHour: session.sim.elapsedHours > 0 ? session.sim.ai.config.startHour + session.sim.elapsedHours : 24 * (night - 1) + hour,
       storm: weatherNow.sample.storm,
       vehicles: session.view.vehicles,
       shots: session.view.shots,
@@ -766,6 +766,7 @@ export class OutbreakFrameRenderer {
     lf.lampPower = this.frameLighting.lampPower
     lf.survivors = session.sim.slots
     lf.noises = noises
+    lf.zombies = zombies
     lf.vision = vision
     lf.ledger = session.sim.progression.ledger
     const life = this.details.writeLife(lf, settings.details, this.alphaSprites, render.alphaCount, this.addSprites, addCount)

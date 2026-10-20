@@ -11,16 +11,18 @@ import { putSprite } from "./light-probe"
 
 /** Most prints kept (oldest go first). */
 export const PRINTS_MAX = 160
-/** Stride (m) between prints, as the blood prints use. */
+/** Stride (m) between prints, as the blood prints use, and the dead's shorter shuffle. */
 export const STRIDE = 0.68
+export const SHUFFLE = 0.5
 /** Seconds a water print takes to dry outdoors and indoors. */
 export const DRY_OUT = 45
 export const DRY_IN = 120
 
 export type GroundKind = "floor" | "hard" | "yard"
-export type PrintWeather = { wetness: number; puddleAt: (x: number, z: number) => number }
+/** Ground wetness and the standing-water level (0..1), and the puddle mask at a point on ground of `kind`. */
+export type PrintWeather = { wetness: number; puddles: number; puddleAt: (x: number, z: number, kind: GroundKind) => number }
 
-type Print = { x: number; y: number; z: number; yaw: number; side: number; strength: number; mud: boolean; born: number; dry: number }
+type Print = { x: number; y: number; z: number; yaw: number; side: number; strength: number; mud: boolean; drag: boolean; born: number; dry: number }
 type Walker = { x: number; y: number; water: number; mud: number; side: number; seen: boolean }
 
 const fold = (v: number) => ((v % SIZE) + SIZE) % SIZE
@@ -33,12 +35,20 @@ export function groundKind(town: Town, x: number, z: number): GroundKind {
   return (lx > 37.6 && lx < 50.4) || (lz > 37.6 && lz < 50.4) ? "hard" : "yard"
 }
 
+export type DeadWalker = { readonly id: number; readonly x: number; readonly y: number; readonly state: string }
+
 export class BootPrints {
   private readonly ring: Print[] = []
   private head = 0
-  private readonly walkers = new Map<string, Walker>()
+  private readonly walkers = new Map<string | number, Walker>()
   /** Readout: prints made so far. */
   made = 0
+
+  /**
+   * `dead`: prints of the dead instead, who shuffle (a shorter stride) and drag one foot, so a trail out of a puddle
+   * reads as theirs.
+   */
+  constructor(private readonly max = PRINTS_MAX, private readonly dead = false) {}
 
   get count(): number {
     return this.ring.length
@@ -54,57 +64,75 @@ export class BootPrints {
     for (const w of this.walkers.values()) w.seen = false
     for (const slot of survivors) {
       const v = slot.survivor
-      let w = this.walkers.get(slot.id)
-      if (!w) {
-        w = { x: v.x, y: v.y, water: 0, mud: 0, side: 1, seen: true }
-        this.walkers.set(slot.id, w)
-      }
-      w.seen = true
-      if (v.vehicleId != null) {
-        w.x = v.x
-        w.y = v.y
-        continue
-      }
-      const d = Math.hypot(v.x - w.x, v.y - w.y)
-      // Teleported, respawned or driven: start again from here.
-      if (d > 3) {
-        w.x = v.x
-        w.y = v.y
-        continue
-      }
-      if (d < STRIDE) continue
-      const dx = (v.x - w.x) / d
-      const dz = (v.y - w.y) / d
-      w.x = v.x
-      w.y = v.y
-      const kind = groundKind(town, v.x, v.y)
-      if (weather.puddleAt(v.x, v.y) > 0.35) w.water = 1
-      if (kind === "yard" && weather.wetness > 0.45) w.mud = 1
-      w.side = -w.side
-      const mud = w.mud > w.water
-      const carry = Math.max(w.water, w.mud)
-      // On wet ground a water print does not show, and on the lawn nothing does.
-      const shows = kind !== "yard" && carry > 0.12 && (mud || kind === "floor" || weather.wetness < 0.3)
-      if (shows) {
-        const px = v.x - dz * w.side * 0.1
-        const pz = v.y + dx * w.side * 0.1
-        this.add({ x: px, y: supportHeight(town, px, pz) + (kind === "floor" ? 0.022 : 0.01), z: pz, yaw: Math.atan2(dz, dx), side: w.side, strength: carry, mud, born: time, dry: kind === "floor" ? DRY_IN : DRY_OUT })
-      }
-      // Each step leaves a little less on the boots.
-      w.water *= 0.8
-      w.mud *= 0.84
-      if (w.water < 0.05) w.water = 0
-      if (w.mud < 0.05) w.mud = 0
+      this.walk(slot.id, v.x, v.y, v.vehicleId != null, time, town, weather)
     }
-    if (this.walkers.size > 8) for (const [id, w] of this.walkers) if (!w.seen) this.walkers.delete(id)
+    this.prune(8)
+  }
+
+  /** The dead walking within `view` (grown by a few metres) print the same way, with their own gait. */
+  stepDead(time: number, town: Town, weather: PrintWeather, zombies: readonly DeadWalker[], view: readonly [number, number, number, number]): void {
+    for (const w of this.walkers.values()) w.seen = false
+    const [x0, z0, x1, z1] = view
+    for (const z of zombies) {
+      if (z.state === "dead" || z.x < x0 - 6 || z.x > x1 + 6 || z.y < z0 - 6 || z.y > z1 + 6) continue
+      this.walk(z.id, z.x, z.y, false, time, town, weather)
+    }
+    this.prune(48)
+  }
+
+  private prune(keep: number): void {
+    if (this.walkers.size > keep) for (const [id, w] of this.walkers) if (!w.seen) this.walkers.delete(id)
+  }
+
+  private walk(id: string | number, x: number, y: number, riding: boolean, time: number, town: Town, weather: PrintWeather): void {
+    let w = this.walkers.get(id)
+    if (!w) {
+      w = { x, y, water: 0, mud: 0, side: 1, seen: true }
+      this.walkers.set(id, w)
+    }
+    w.seen = true
+    const d = Math.hypot(x - w.x, y - w.y)
+    // Driven, teleported or respawned: start again from here.
+    if (riding || d > 3) {
+      w.x = x
+      w.y = y
+      return
+    }
+    if (d < (this.dead ? SHUFFLE : STRIDE)) return
+    const dx = (x - w.x) / d
+    const dz = (y - w.y) / d
+    w.x = x
+    w.y = y
+    w.side = -w.side
+    // Dry out and nothing on the feet: nothing to print, and no need to look at the ground.
+    if (w.water === 0 && w.mud === 0 && weather.puddles <= 0.001 && weather.wetness <= 0.45) return
+    const kind = groundKind(town, x, y)
+    if (weather.puddleAt(x, y, kind) > 0.35) w.water = 1
+    if (kind === "yard" && weather.wetness > 0.45) w.mud = 1
+    const mud = w.mud > w.water
+    const carry = Math.max(w.water, w.mud)
+    // On wet ground a water print does not show, and on the lawn nothing does.
+    const shows = kind !== "yard" && carry > 0.12 && (mud || kind === "floor" || weather.wetness < 0.3)
+    if (shows) {
+      const px = x - dz * w.side * 0.1
+      const pz = y + dx * w.side * 0.1
+      // The dead drag the same foot every time (which one is theirs, from the id).
+      const drag = this.dead && w.side === ((typeof id === "number" ? id : 0) & 1 ? 1 : -1)
+      this.add({ x: px, y: supportHeight(town, px, pz) + (kind === "floor" ? 0.022 : 0.01), z: pz, yaw: Math.atan2(dz, dx), side: w.side, strength: carry, mud, drag, born: time, dry: kind === "floor" ? DRY_IN : DRY_OUT })
+    }
+    // Each step leaves a little less on the feet.
+    w.water *= 0.8
+    w.mud *= 0.84
+    if (w.water < 0.05) w.water = 0
+    if (w.mud < 0.05) w.mud = 0
   }
 
   private add(p: Print): void {
     this.made++
-    if (this.ring.length < PRINTS_MAX) this.ring.push(p)
+    if (this.ring.length < this.max) this.ring.push(p)
     else {
       this.ring[this.head] = p
-      this.head = (this.head + 1) % PRINTS_MAX
+      this.head = (this.head + 1) % this.max
     }
   }
 
@@ -123,6 +151,11 @@ export class BootPrints {
       const b = p.mud ? 0.022 : 0.0
       const c = Math.cos(p.yaw)
       const s = Math.sin(p.yaw)
+      if (p.drag) {
+        // A smear from the toe back along the step instead of a print.
+        n = putSprite(sprites, n, p.x - c * 0.12, p.y, p.z - s * 0.12, 0.2, r, g, b, a * 0.7, 4, p.yaw, 0.22)
+        continue
+      }
       n = putSprite(sprites, n, p.x + c * 0.04, p.y, p.z + s * 0.04, 0.1, r, g, b, a, 4, p.yaw, 0.5)
       n = putSprite(sprites, n, p.x - c * 0.1, p.y, p.z - s * 0.1, 0.045, r, g, b, a, 4, p.yaw, 1)
     }
