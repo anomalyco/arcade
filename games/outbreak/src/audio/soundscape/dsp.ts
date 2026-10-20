@@ -1235,17 +1235,17 @@ export function washingFlap(sr: number, seed = 42): Float32Array {
   return normalize(edges(out, sr, 0.001, 0.05), sr, -20)
 }
 
-/** The stopped clocks' second hand: it twitches against the same mark and never gets past it, 1.3 s loop. */
+/** A stopped clock's second hand trying for the next mark and falling back: a tick and a fainter tock, one shot. */
 export function clockTwitch(sr: number, seed = 43): Float32Array {
   const rand = mulberry32(seed)
-  const out = buffer(sr, 1.3)
+  const out = buffer(sr, 0.14)
   const hi: [number, number, number][] = [
     [3400, 0.012, 1],
     [5600, 0.008, 0.6],
   ]
-  strike(out, sr, at(sr, 0.01), hi, 0.35, rand, 0.4)
-  strike(out, sr, at(sr, 0.055), hi, 0.12, rand, 0.3)
-  return normalize(out, sr, -22)
+  strike(out, sr, at(sr, 0.004), hi, 0.35, rand, 0.4)
+  strike(out, sr, at(sr, 0.05), hi, 0.12, rand, 0.3)
+  return normalize(edges(out, sr, 0.001, 0.02), sr, -22)
 }
 
 /** A shortwave set between stations: hiss, a heterodyne whistle drifting, the odd crackle, 5 s loop. */
@@ -1266,41 +1266,99 @@ export function radioStatic(sr: number, seed = 44): Float32Array {
   return normalize(loopify(src, xf), sr, -22)
 }
 
-/** One pip from the station that is not there. */
+/**
+ * One pulse of the station that is not there, as long as the set's dial stays lit (0.38 s): a pure tone that wavers a
+ * little, as if from very far, with no voice in it.
+ */
 export function radioPip(sr: number): Float32Array {
-  const out = buffer(sr, 0.16)
-  for (let k = 0; k < at(sr, 0.12); k++) {
-    const env = Math.min(1, k / (0.004 * sr), (at(sr, 0.12) - k) / (0.01 * sr))
-    out[k] = Math.sin((TAU * 880 * k) / sr) * env
+  const len = at(sr, 0.36)
+  const out = buffer(sr, 0.4)
+  let ph = 0
+  for (let k = 0; k < len; k++) {
+    const t = k / sr
+    const env = Math.min(1, k / (0.012 * sr), (len - k) / (0.03 * sr))
+    ph += (TAU * (880 + 3 * Math.sin(TAU * 5.5 * t))) / sr
+    out[k] = Math.sin(ph) * env * (0.85 + 0.15 * Math.sin(TAU * 7 * t))
   }
+  filter(out, new Biquad(sr, "bandpass", 900, 1.2))
   return normalize(out, sr, -18)
 }
 
-/** A rocking chair on porch boards: a creak forward and a softer one back, 2.4 s loop. */
+/** One creak of a rocking chair on porch boards (play it at each end of the rock, softer and lower on the way back). */
 export function rockingChair(sr: number, seed = 45): Float32Array {
   const rand = mulberry32(seed)
-  const out = buffer(sr, 2.4)
-  const one = (t0: number, len: number, base: number, amp: number) => {
-    const bank = [new Mode(sr, 520, 0.04, 1), new Mode(sr, 1110, 0.03, 0.6), new Mode(sr, 1960, 0.02, 0.3)]
-    let ph = 0
-    const s = at(sr, t0)
-    for (let k = 0; k < at(sr, len + 0.08) && s + k < out.length; k++) {
-      const u = k / (len * sr)
-      const env = u < 1 ? Math.sin(Math.PI * u) : 0
-      ph += (base * (0.8 + 0.4 * u)) / sr
-      let x = 0
-      if (ph >= 1) {
-        ph -= 1
-        x = env * amp * (0.7 + rand() * 0.3)
-      }
-      let y = 0
-      for (const m of bank) y += m.tick(x)
-      out[s + k]! += y
+  const len = 0.45
+  const out = buffer(sr, len + 0.1)
+  const bank = [new Mode(sr, 520, 0.04, 1), new Mode(sr, 1110, 0.03, 0.6), new Mode(sr, 1960, 0.02, 0.3)]
+  let ph = 0
+  for (let k = 0; k < out.length; k++) {
+    const u = k / (len * sr)
+    const env = u < 1 ? Math.sin(Math.PI * u) : 0
+    ph += (110 * (0.8 + 0.4 * u)) / sr
+    let x = 0
+    if (ph >= 1) {
+      ph -= 1
+      x = env * (0.7 + rand() * 0.3)
     }
+    let y = 0
+    for (const m of bank) y += m.tick(x)
+    out[k] = y
   }
-  one(0.05, 0.45, 110, 1)
-  one(1.25, 0.38, 90, 0.55)
-  return normalize(out, sr, -20)
+  return normalize(edges(out, sr, 0.002, 0.03), sr, -20)
+}
+
+/** A padlock's dial turned one notch: a small detent click in brass. */
+export function padlockDial(sr: number, seed = 47): Float32Array {
+  const rand = mulberry32(seed)
+  const out = buffer(sr, 0.09)
+  strike(out, sr, 0, [[4200, 0.008, 1], [6900, 0.005, 0.5], [2300, 0.012, 0.35]], 0.4, rand, 0.3)
+  strike(out, sr, at(sr, 0.011), [[3100, 0.006, 1], [5200, 0.004, 0.4]], 0.15, rand, 0.3)
+  return normalize(edges(out, sr, 0.0005, 0.02), sr, -20)
+}
+
+/** The padlock giving: the shackle springs and drops against the hasp, and the iron answers. */
+export function padlockOpen(sr: number, seed = 48): Float32Array {
+  const rand = mulberry32(seed)
+  const out = buffer(sr, 0.9)
+  strike(out, sr, 0, [[2600, 0.02, 1], [4100, 0.012, 0.5]], 0.5, rand, 0.4)
+  strike(out, sr, at(sr, 0.06), [[380, 0.12, 1], [910, 0.08, 0.7], [1730, 0.05, 0.5], [2950, 0.03, 0.3]], 0.6, rand, 1.5)
+  strike(out, sr, at(sr, 0.21), [[960, 0.04, 1], [1810, 0.03, 0.6]], 0.2, rand, 0.6)
+  strike(out, sr, at(sr, 0.3), [[1010, 0.03, 1], [1900, 0.02, 0.5]], 0.08, rand, 0.5)
+  return normalize(edges(out, sr, 0.0005, 0.08), sr, -18)
+}
+
+/** A floor hatch's hinges, slow and low, the lid laid back on the boards at the end. */
+export function hatchHinge(sr: number, seed = 49): Float32Array {
+  const rand = mulberry32(seed)
+  const len = 1.5
+  const out = buffer(sr, len + 0.4)
+  const bank = [new Mode(sr, 760, 0.04, 1), new Mode(sr, 1530, 0.025, 0.5), new Mode(sr, 410, 0.06, 0.6)]
+  let ph = 0
+  for (let i = 0; i < at(sr, len); i++) {
+    const u = i / (len * sr)
+    const env = Math.sin(Math.PI * u) ** 1.4
+    ph += (70 + 120 * u + 25 * Math.sin(u * 17)) / sr
+    let x = 0
+    if (ph >= 1) {
+      ph -= 1
+      x = env * (0.6 + rand() * 0.4)
+    }
+    let y = 0
+    for (const m of bank) y += m.tick(x)
+    out[i] = y
+  }
+  strike(out, sr, at(sr, len + 0.02), [[140, 0.09, 1], [320, 0.06, 0.6], [710, 0.03, 0.3]], 0.5, rand, 3)
+  filter(out, new Biquad(sr, "lowpass", 3600, 0.7))
+  return normalize(edges(out, sr, 0.004, 0.1), sr, -20)
+}
+
+/** A lamp switched off in another room: the snap of a pull-chain switch. */
+export function lampClick(sr: number, seed = 50): Float32Array {
+  const rand = mulberry32(seed)
+  const out = buffer(sr, 0.12)
+  strike(out, sr, 0, [[2900, 0.006, 1], [5100, 0.004, 0.6], [1400, 0.01, 0.3]], 0.45, rand, 0.4)
+  strike(out, sr, at(sr, 0.022), [[1800, 0.01, 1], [3600, 0.006, 0.4]], 0.12, rand, 0.4)
+  return normalize(edges(out, sr, 0.0005, 0.03), sr, -20)
 }
 
 /**
