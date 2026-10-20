@@ -124,6 +124,37 @@ export type DirectorEscalation = {
 
 export const NO_ESCALATION: DirectorEscalation = { populationScale: 1, populationBonus: 0, chaserBonus: 0, chaserCap: 0 }
 
+/**
+ * How the director scales with the number of survivors (Lab › Co-op scaling, `shared/night-ramp/coop.ts`), set each
+ * tick like `escalation` and never snapshotted. `mode: 0` is Today: population +0.35× and chasers +0.6× per extra
+ * survivor, every survivor's noise counted in full. Mode 1 grows each by `perSurvivor × (survivors − 1)^exponent`,
+ * divides the squad's noise heat by `survivors^noiseExponent`, holds Night 1's co-op chasers near the solo hold, and
+ * keeps a squad's new zombies at least `spawnClearance` m from every survivor. One survivor plays the same either way.
+ */
+export type CoopCurve = {
+  mode: number
+  populationPerSurvivor: number
+  chasersPerSurvivor: number
+  exponent: number
+  noiseExponent: number
+  /** Chasers each extra survivor adds to the night ramp's Night 1 hold (`DirectorEscalation.chaserCap`). */
+  openingChasersPerSurvivor: number
+  spawnClearance: number
+}
+
+export const TODAY_COOP: CoopCurve = {
+  mode: 0,
+  populationPerSurvivor: 0.35,
+  chasersPerSurvivor: 0.6,
+  exponent: 1,
+  noiseExponent: 0,
+  openingChasersPerSurvivor: 0,
+  spawnClearance: 0,
+}
+
+const coopGrowth = (playerCount: number, perSurvivor: number, exponent: number) =>
+  1 + perSurvivor * Math.pow(Math.max(1, playerCount) - 1, exponent)
+
 export type PacingTelemetry = {
   ramp: number
   timeProgress: number
@@ -163,15 +194,26 @@ export const STARTING_SAFEHOUSE_RECT: Rect = [
 ]
 export const STARTING_SAFEHOUSE_YARD_RECT: Rect = [18, 20, 39, 37.5]
 
-/** Co-op population multiplier: 1.0x for 1 player, 1.35x for 2, 1.70x for 3, 2.05x for 4. */
-export function coopPopulationScale(playerCount: number): number {
+/** Co-op population multiplier. Today: 1.0x for 1 player, 1.35x for 2, 1.70x for 3, 2.05x for 4. */
+export function coopPopulationScale(playerCount: number, curve: CoopCurve = TODAY_COOP): number {
+  if (curve.mode > 0) return coopGrowth(playerCount, curve.populationPerSurvivor, curve.exponent)
   return 1 + (Math.max(1, playerCount) - 1) * 0.35
 }
 
-/** Co-op active-chaser cap multiplier: 1.0x for 1 player, up to 2.8x for 4 players. */
-export function coopChaserScale(playerCount: number): number {
+/** Co-op active-chaser cap multiplier. Today: 1.0x for 1 player, up to 2.8x for 4 players. */
+export function coopChaserScale(playerCount: number, curve: CoopCurve = TODAY_COOP): number {
+  if (curve.mode > 0) return coopGrowth(playerCount, curve.chasersPerSurvivor, curve.exponent)
   return 1 + (Math.max(1, playerCount) - 1) * 0.6
 }
+
+/** What the squad's loud noises count for in the director's heat: each is divided by this. Today: 1. */
+export function coopNoiseShare(playerCount: number, curve: CoopCurve = TODAY_COOP): number {
+  return curve.mode > 0 ? Math.pow(Math.max(1, playerCount), curve.noiseExponent) : 1
+}
+
+/** Nearest a new zombie may come into the world to any survivor of a squad, before the director's own safe radius. */
+export const coopSpawnClearance = (curve: CoopCurve, playerCount: number): number =>
+  curve.mode > 0 && playerCount > 1 ? curve.spawnClearance : 0
 
 /**
  * Computes the initial zombie count at t = 0 from `zombieCount`, `initialDensity`, and `playerCount`.
@@ -182,16 +224,17 @@ export function initialSpawnCount(
   initialDensity: number,
   playerCount = 1,
   directorPacing = 1,
+  curve: CoopCurve = TODAY_COOP,
 ): number {
   const base = Math.max(0, Math.round(zombieCount))
   if (base <= 0) return 0
   if (directorPacing <= 0 || initialDensity >= 0.999) {
-    return Math.min(100, Math.round(base * coopPopulationScale(playerCount)))
+    return Math.min(100, Math.round(base * coopPopulationScale(playerCount, curve)))
   }
   const density = clamp(initialDensity, 0, 1)
   if (density <= 0) return 0
   if (base < 8) return base
-  const initScale = 1 + (Math.max(1, playerCount) - 1) * 0.25
+  const initScale = curve.mode > 0 ? 1 + (coopPopulationScale(playerCount, curve) - 1) * 0.7 : 1 + (Math.max(1, playerCount) - 1) * 0.25
   return Math.max(1, Math.min(100, Math.round(base * density * initScale)))
 }
 
@@ -608,6 +651,7 @@ export class OutbreakPacingDirector {
   inViewSpawns = 0
   behindSpawns = 0
   escalation: DirectorEscalation = NO_ESCALATION
+  coop: CoopCurve = TODAY_COOP
   telemetry: PacingTelemetry = {
     ramp: 0,
     timeProgress: 0,
@@ -695,8 +739,9 @@ export class OutbreakPacingDirector {
   ): PacingTelemetry {
     const threat = openingThreat(dayCycle(hour).threat, time, config)
     const pCount = Math.max(1, playerCount)
-    const coopScale = coopPopulationScale(pCount)
-    const chaserScale = coopChaserScale(pCount)
+    const coop = this.coop
+    const coopScale = coopPopulationScale(pCount, coop)
+    const chaserScale = coopChaserScale(pCount, coop)
 
     if (config.directorPacing <= 0) {
       const fullPop = Math.min(100, Math.round(config.zombieCount * coopScale))
@@ -729,7 +774,7 @@ export class OutbreakPacingDirector {
     const ramp = clamp(baseRamp + noiseBoost * 0.55, 0, 1)
 
     const esc = this.escalation
-    const initPop = initialSpawnCount(config.zombieCount, config.initialDensity, pCount, config.directorPacing)
+    const initPop = initialSpawnCount(config.zombieCount, config.initialDensity, pCount, config.directorPacing, coop)
     const soloPop = Math.max(0, config.zombieCount * esc.populationScale + esc.populationBonus)
     const fullPop = config.zombieCount <= 0 ? 0 : Math.min(100, Math.max(initPop, Math.round(soloPop * coopScale)))
     const desiredPopulation = config.zombieCount <= 0 ? 0 : Math.round(lerp(initPop, fullPop, ramp))
@@ -745,7 +790,12 @@ export class OutbreakPacingDirector {
       soloCap = Math.min(baseMaxActive, Math.max(1, Math.round(rampCap)))
     }
     if (esc.chaserCap > 0) soloCap = Math.min(soloCap, Math.max(1, Math.round(esc.chaserCap)))
-    const effectiveMaxActive = Math.max(1, Math.round(soloCap * chaserScale))
+    let effectiveMaxActive = Math.max(1, Math.round(soloCap * chaserScale))
+    if (coop.mode > 0 && esc.chaserCap > 0 && pCount > 1) {
+      // Gentle Start in co-op: Night 1's hold grows a little with the squad instead of by the full chaser scale.
+      const hold = esc.chaserCap + coop.openingChasersPerSurvivor * Math.pow(pCount - 1, coop.exponent)
+      effectiveMaxActive = Math.min(effectiveMaxActive, Math.max(1, Math.round(hold)))
+    }
 
     return {
       ...this.telemetry,
@@ -818,7 +868,7 @@ export class OutbreakPacingDirector {
     }
 
     // Accumulate loud player/world noises into director heat (quiet footsteps, doors, and quiet searches do not spike heat)
-    const sens = Math.max(0, config.noiseSensitivity)
+    const sens = Math.max(0, config.noiseSensitivity) / coopNoiseShare(pCount, this.coop)
     for (let i = 0; i < noiseBus.events.length; i++) {
       const ev = noiseBus.events[i]!
       if (ev.id <= this.lastNoiseId) continue
@@ -846,11 +896,12 @@ export class OutbreakPacingDirector {
 
     // If additional co-op survivors joined before the first tick, top up the opening sparse population to the co-op initial count
     if (tick <= 2 && time < 0.1 && pCount > 1 && config.zombieCount >= 8 && config.initialDensity > 0 && config.initialDensity < 0.99) {
-      const targetInit = initialSpawnCount(config.zombieCount, config.initialDensity, pCount, config.directorPacing)
+      const targetInit = initialSpawnCount(config.zombieCount, config.initialDensity, pCount, config.directorPacing, this.coop)
       if (livingCount < targetInit) {
         const rng = new Rng((town.seed ^ Math.imul(pCount + 73, 0x9e3779b9)) >>> 0)
+        const clearance = Math.max(config.safeRadius, coopSpawnClearance(this.coop, pCount))
         while (livingCount < targetInit) {
-          const pt = this.findBackstageSpawnPoint(town, nav, agents, survivors, sightBlockers, rng, config.safeRadius)
+          const pt = this.findBackstageSpawnPoint(town, nav, agents, survivors, sightBlockers, rng, clearance)
           if (!pt) break
           const id = allocAgentId()
           const agent = createAIAgent(id, town.seed + id * 13, pt.x, pt.y, pt.aim)
@@ -908,7 +959,7 @@ export class OutbreakPacingDirector {
       this.firstEncounterStage = "staged"
       const lead = survivors[0]!
       const scoutGoalCount = clamp(
-        Math.round((this.noiseHeat >= 0.5 ? 2.4 : 1.7) * (1 + (pCount - 1) * 0.35)),
+        Math.round((this.noiseHeat >= 0.5 ? 2.4 : 1.7) * coopPopulationScale(pCount, this.coop)),
         1,
         Math.min(3 * pCount, Math.max(1, this.telemetry.effectiveMaxActive)),
       )
@@ -977,7 +1028,7 @@ export class OutbreakPacingDirector {
       this.reinforceCooldown = Math.max(3.5, (11.5 - 6.0 * this.telemetry.ramp) / this.telemetry.coopScale)
       const batch = Math.min(2, this.telemetry.desiredPopulation - livingCount)
       const rng = new Rng((town.seed ^ Math.imul(tick + 101, 0x85ebca6b) ^ (rngSeedMix >>> 0)) >>> 0)
-      const dynamicSafeRadius = Math.max(16, config.safeRadius * (1 - 0.25 * this.telemetry.ramp))
+      const dynamicSafeRadius = Math.max(16, coopSpawnClearance(this.coop, pCount), config.safeRadius * (1 - 0.25 * this.telemetry.ramp))
 
       for (let b = 0; b < batch; b++) {
         const pt = this.findBackstageSpawnPoint(

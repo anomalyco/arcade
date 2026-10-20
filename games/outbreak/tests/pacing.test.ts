@@ -16,7 +16,8 @@ import {
 import { TICK_DT } from "../shared/clock"
 import { CoopSim, SPAWN_POINTS } from "../shared/coop-sim"
 import { dayCycle } from "../shared/day-cycle"
-import { NIGHTFALL_HOUR, openingClockActive, openingThreat } from "../shared/pacing"
+import { coopCurve, DEFAULT_COOP_SCALING } from "../shared/night-ramp/coop"
+import { coopNoiseShare, coopSpawnClearance, NIGHTFALL_HOUR, openingClockActive, openingThreat, TODAY_COOP } from "../shared/pacing"
 import { sightRects } from "../shared/map"
 import { LocalSession } from "../shared/session"
 import { createOutbreakSettings, setOutbreakSetting } from "../src/settings"
@@ -237,8 +238,33 @@ describe("Outbreak first-night opening pacing & spawn rules", () => {
     coopSim.stepWorld(TICK_DT, 120)
 
     expect(coopSim.ai.pacing.telemetry.desiredPopulation).toBeGreaterThan(soloSim.ai.pacing.telemetry.desiredPopulation)
-    expect(coopSim.ai.pacing.telemetry.effectiveMaxActive).toBeGreaterThan(
-      soloSim.ai.pacing.telemetry.effectiveMaxActive * 2,
-    )
+    // Still Night 1 for the night ramp: Gentle Start holds six survivors to a chaser more than the solo hold (AR-92).
+    const soloCap = soloSim.ai.pacing.telemetry.effectiveMaxActive
+    expect(coopSim.ai.pacing.telemetry.effectiveMaxActive).toBeGreaterThan(soloCap)
+    expect(coopSim.ai.pacing.telemetry.effectiveMaxActive).toBeLessThanOrEqual(soloCap + 2)
+  })
+
+  test("co-op scaling is sub-linear by default, Today is linear, and one survivor plays the same either way (AR-92)", () => {
+    const curve = coopCurve(DEFAULT_COOP_SCALING)
+    const today = coopCurve({ ...DEFAULT_COOP_SCALING, coopScaleMode: 0 })
+    expect(today).toEqual(TODAY_COOP)
+    for (const c of [curve, today]) {
+      expect(coopPopulationScale(1, c)).toBe(1)
+      expect(coopChaserScale(1, c)).toBe(1)
+      expect(coopNoiseShare(1, c)).toBe(1)
+    }
+    expect(coopPopulationScale(4, today)).toBeCloseTo(2.05, 4)
+    expect(coopChaserScale(6, today)).toBeCloseTo(4, 4)
+    // Each extra survivor adds less than the one before.
+    const pop = [1, 2, 3, 4, 5, 6].map((n) => coopPopulationScale(n, curve))
+    for (let i = 2; i < pop.length; i++) expect(pop[i]! - pop[i - 1]!).toBeLessThan(pop[i - 1]! - pop[i - 2]! + 1e-9)
+    expect(pop[3]!).toBeLessThan(coopPopulationScale(4, today))
+    expect(pop[5]!).toBeLessThan(2.1)
+    expect(coopChaserScale(6, curve)).toBeLessThan(2.6)
+    // Six survivors' gunfire heats the director like fewer than four shooters, not six.
+    expect(coopNoiseShare(6, curve)).toBeGreaterThan(3)
+    expect(coopSpawnClearance(curve, 4)).toBeGreaterThanOrEqual(20)
+    expect(coopSpawnClearance(curve, 1)).toBe(0)
+    expect(coopSpawnClearance(today, 4)).toBe(0)
   })
 })

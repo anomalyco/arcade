@@ -159,6 +159,10 @@ export type VehicleTuning = {
   cameraSpeedZoom: number
   vehicleSuspension: number
   vehicleSmoke: number
+  /** 1: the dead must break a car's windows before they can hurt anyone inside (AR-92). 0: Today, they claw riders through the doors. */
+  carShelter: number
+  /** Share of a car's health the dead must batter off before its windows give and riders can be hurt. */
+  windowsGiveAt: number
 }
 
 export const DEFAULT_VEHICLE_TUNING: VehicleTuning = {
@@ -176,6 +180,13 @@ export const DEFAULT_VEHICLE_TUNING: VehicleTuning = {
   cameraSpeedZoom: 11,
   vehicleSuspension: 1,
   vehicleSmoke: 1,
+  carShelter: 1,
+  windowsGiveAt: 0.5,
+}
+
+/** Whether a car still shuts the dead out: not a wreck, and not yet battered past `windowsGiveAt` of its health. */
+export function carShelters(v: Pick<OutbreakVehicle, "hp" | "maxHp" | "wreck">, t: Pick<VehicleTuning, "carShelter" | "windowsGiveAt">): boolean {
+  return t.carShelter > 0 && !v.wreck && v.hp > v.maxHp * (1 - t.windowsGiveAt)
 }
 
 export const vehicleControls = [
@@ -209,6 +220,16 @@ export const vehicleControls = [
       { label: "Off", value: 0 },
     ],
   },
+  {
+    key: "carShelter",
+    label: "Car shelter",
+    group: "Vehicle",
+    options: [
+      { label: "Today (claw through doors)", value: 0 },
+      { label: "Windows first", value: 1 },
+    ],
+  },
+  { key: "windowsGiveAt", label: "Windows give after", group: "Vehicle", min: 0.05, max: 1, step: 0.05, unit: "× health" },
 ] as const
 
 export type Drive = { throttle: number; steer: number; handbrake: boolean }
@@ -1785,7 +1806,7 @@ export class OutbreakVehicleSubsystem {
                   nearestRider = rSlot
                 }
               }
-              if (nearestRider && nearestDist < 1.65) {
+              if (nearestRider && nearestDist < 1.65 && !carShelters(v, this.tuning)) {
                 const seatArmor = v.spec.seats[nearestRider.survivor.seatIndex ?? 0]?.armor ?? 0.4
                 const riderDmg = bangDmg * seatArmor * (v.hp < v.maxHp * 0.4 ? 0.65 : 0.25)
                 nearestRider.survivor.health = Math.max(0, nearestRider.survivor.health - riderDmg)

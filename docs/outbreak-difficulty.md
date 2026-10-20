@@ -54,6 +54,94 @@ When a deliberate difficulty change moves a curve out of its band:
 3. Never widen a band to get an unrelated change through. A band failing on a change that was not about difficulty
    is the test working.
 
+## Co-op (AR-92, 2026-10-20)
+
+Kit and four teammates died "almost immediately" and over and over on the live build: "Oh, there's a lot of zombies.
+Oh, it scales." "We're not getting past this initial phase." "Dude, they killed me while I was in the van?"
+
+`shared/coop-ramp.ts` is a co-op probe over the same bot runner (now 1–6 survivors): it plays the evening and Night 1
+at the co-op clock (`COOP_TIME_SCALE` 120, so the evening is 0–60 s and Night 1 60–420 s; the solo ramp test runs at
+240) and records per survivor the first down, downs, death, damage (and damage while seated in a car) and ammo spent,
+and per phase the living dead, aware, chasers, specials, the director's wanted population, chaser cap and noise heat,
+plus first chase, first special, first dog bark, car alarms and how near new zombies came into the world.
+
+```sh
+cd games/outbreak
+bun scripts/coop-difficulty.ts                                    # 1/2/4/6 × Skilled, Novice × 6 seeds (~45 s, 2 workers)
+bun scripts/coop-difficulty.ts --seeds=12 --players=4,6 --json=out.json
+bun scripts/coop-difficulty.ts --set=coopScaleMode=0,carShelter=0 # Today
+```
+
+Bots never revive, so "down" (a survivor ever at 0 HP) is the number to read.
+
+### Why four players were overwhelmed
+
+1. **Linear scaling, and Gentle Start applied before it.** Population ×(1 + 0.35(n−1)) (2.05× at 4, 2.75× at 6) and
+   the chaser cap ×(1 + 0.6(n−1)) (2.8×, 4×). The night ramp's Night 1 hold of 2 chasers was multiplied by that, so a
+   squad of 4 had 6 chasers on it and a squad of 6 had 8 for the whole first night.
+2. **The squad's noise was summed.** Every gunshot adds about 1.08 to the director's noise heat (ceiling 3, decay
+   0.022/s), so a squad pinned it at 3 within ~35 s. That skips the opening holds (1 chaser before 36 s and 2 before
+   85 s, both only while heat is low), adds up to +0.47 to the ramp (wanted population 5 → 21 in the first minute at 6)
+   and turns every wave into a horde wave (heat ≥ 0.85). Heat at 6 survivors in the first 120 s: gunshots 56, dog barks
+   24, sprinting 11, car alarms 5.
+3. **New zombies close by.** The director spawned as near as 16 m from a survivor (12.75 m for a new chunk's dead);
+   about 3 a run came in within 20 m at 4 and 6.
+4. **Specials multiplied with the crowd.** Each new zombie rolls for a special, so 4–6 survivors met 3–4× the solo
+   specials on Night 1 and the first a minute sooner (67 s against 141 s).
+5. **Cars were no shelter.** The crowd's normal claws (23 a hit × seat armour 0.3–0.45) reached a seated rider through
+   the doors from the first second, on top of the window chip damage: four of the dead round a sedan put its driver
+   down in ~10 s with damage from 0.5 s. That is the van kill.
+
+Real death (#263) made all of this final, and a teammate without melee (fixed by AR-93, #313) made it worse.
+
+### What changed
+
+Lab › **Co-op scaling** (in the night ramp's tuning namespace, `shared/night-ramp/coop.ts`; the director reads it
+from `PacingDirector.coop`, `shared/pacing.ts`). **Co-op scaling: Today (linear)** restores the old director exactly
+(checked: the probe reproduces the before table byte for byte). One survivor plays the same either way.
+
+| Setting | Default | Does |
+| --- | --: | --- |
+| `coopPopulationPerSurvivor` / `coopChasersPerSurvivor` / `coopCurve` | 0.3 / 0.45 / 0.7 | Population and chaser cap grow by `per × (n−1)^curve`: population 1.3, 1.65, 1.93× at 2, 4, 6 (was 1.35, 2.05, 2.75); chasers 1.45, 1.97, 2.39× (was 1.6, 2.8, 4) |
+| `coopNoiseShare` | 0.75 | Director heat from loud noise is divided by n^0.75 (2.8 at 4, 3.8 at 6): a squad heats it like fewer shooters, not n of them. The dead still hear every shot |
+| `coopNightOneChasers` | 0.4 | Gentle Start in co-op: Night 1's hold (2) gains `0.4 × (n−1)^curve`, so 2, 3, 3 chasers at 2, 4, 6 |
+| `coopSpawnClearance` | 22 m | A squad's new zombies (director trickle, the opening top-up and a new chunk's dead) never come into the world nearer than this to any survivor |
+| `coopSpecialShare` | 1 | Special chance ÷ population scale^share: specials don't multiply with the squad |
+
+Vehicles (Lab › Vehicle): **Car shelter: Windows first** (`carShelter`, `windowsGiveAt` 0.5, `shared/vehicles.ts`
+`carShelters`). Until the dead batter a car to half its health, they can't hurt anyone inside: their claws only dent
+the car (30% of the hit) and the window chip damage waits. One zombie can't break in; four take ~5 s on a sedan
+(longer on the van: 850 health against 500) before riders take damage at seat armour as before, ~13.5 s to a down
+against ~10.7 s, with no damage at all for the first ~5 s instead of from 0.5 s. Drive off.
+**Car shelter: Today** restores the claws through the doors. `tests/car-shelter.test.ts`.
+
+### Before and after (12 seeds, evening and Night 1)
+
+| Preset | Survivors | Down before → after | Down in first 120 s (survivors) | First down s | Night 1 living | Night 1 chasers (peak) | Night 1 specials | New zombies < 20 m a run |
+| --- | --: | --- | --- | --- | --- | --- | --- | --- |
+| Skilled | 1 | 17% → 17% | 0 → 0 | 168 → 168 | 9.4 → 9.4 | 1.4 (2) → same | 0.19 → 0.19 | 0.6 → 0.6 |
+| Skilled | 2 | 8% → 25% | 0 → 0 | 370 → 297 | 13.2 → 13.1 | 2.8 (3) → 1.8 (2) | 0.48 → 0.25 | 1.7 → 0.1 |
+| Skilled | 4 | 33% → 6% | 2% → 0 | 173 → 291 | 19.7 → 15.9 | 5.7 (6) → 2.8 (3) | 0.83 → 0.47 | 3.5 → 0 |
+| Skilled | 6 | 53% → 8% | 10% → 1% | 102 → 200 | 27.1 → 18.8 | 7.6 (8) → 2.9 (3) | 1.01 → 0.52 | 3.2 → 0 |
+| Novice | 1 | 67% → 67% | 0 → 0 | 164 → 164 | 8.9 → 8.9 | 0.5 (2) → same | 0.17 → 0.17 | 0.3 → 0.3 |
+| Novice | 2 | 79% → 46% | 13% → 8% | 138 → 192 | 12.6 → 13.1 | 1.1 (3) → 0.9 (2) | 0.38 → 0.26 | 1.0 → 0.1 |
+| Novice | 4 | 100% → 73% | 31% → 4% | 102 → 199 | 17.7 → 15.8 | 4.0 (6) → 2.1 (3) | 0.62 → 0.33 | 1.5 → 0 |
+| Novice | 6 | 100% → 53% | 39% → 1% | 90 → 173 | 24.5 → 18.8 | 5.2 (8) → 2.3 (3) | 1.20 → 0.39 | 2.5 → 0 |
+
+Every squad of Novices was wiped by dawn before (4 and 6: 100%); now 33% and 8%. A squad is now no deadlier per
+survivor than playing alone, before revives (which bots never do). Skilled 2 moved within noise (2–3 of 24 survivors).
+Noise heat still reaches its ceiling for every squad and for solo bots, who shoot a lot; with it divided by the squad,
+Night 1's caps hold instead.
+
+`tests/difficulty-ramp.test.ts` › co-op holds Skilled squads of 2, 4 and 6 (4 seeds) to: at most 5% of survivors down in
+the first 120 s, at most 30% by dawn 1, Night 1 chasers within the co-op hold (peak ≤ 3), Night 1 living 1.1–1.6,
+1.3–2.0 and 1.5–2.4× the solo run's, no new zombie within 20 m and Night 1 specials at 6 below 0.75. Today fails the
+chaser, population, spawn and specials bands. The solo bands did not move (solo is unchanged).
+
+Still open: chasers are capped for the whole squad but the cap picks the highest-priority pursuers, so a survivor who
+strays far from the others can draw all of Night 1's chasers (the one early down left at 6). Bots don't drive, so the
+car numbers come from the staged test, not the batch.
+
 ## Out of town (2026-10-19)
 
 Kit drove out of town and "zombies just stopped appearing". Out of the first town's 96 m square nothing spawned at

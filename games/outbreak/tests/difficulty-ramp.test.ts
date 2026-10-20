@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { availableParallelism } from "node:os"
-import { runRampBatch } from "../scripts/difficulty-ramp-pool"
+import { runCoopBatch, runRampBatch } from "../scripts/difficulty-ramp-pool"
+import { COOP_TIME_SCALE } from "../shared/coop-config"
+import { COOP_EARLY_SECONDS, COOP_OPENING_SECONDS, summarizeCoop, type CoopRun, type CoopSummary } from "../shared/coop-ramp"
 import { runRampProbe, secondsToDawn, summarizeRamp, type RampPhaseStats, type RampRun } from "../shared/difficulty-ramp"
 import type { BotSkillPresetId } from "../shared/survivor-bot"
 
@@ -116,5 +118,62 @@ describe("difficulty ramp (survivor bots, fixed seeds)", () => {
     within("Night 3 / Night 2 aware zombies", pooled(NIGHT3, "aware") / pooled(NIGHT2, "aware"), PRESSURE_BANDS.nightThreeOverTwo)
     within("Night 2 chasers", pooled(NIGHT2, "chasers"), PRESSURE_BANDS.nightTwoChasers)
     within("Night 3 chasers", pooled(NIGHT3, "chasers"), PRESSURE_BANDS.nightThreeChasers)
+  })
+})
+
+/**
+ * Co-op (AR-92): Skilled bots, 1/2/4/6 survivors, the evening and Night 1 at the co-op clock. Values with the
+ * sub-linear co-op curve in comments; Today's (linear) in brackets. Bots never revive, so a down is a loss here.
+ */
+const COOP_SEEDS = [101, 107, 113, 119]
+const COOP_PLAYERS = [1, 2, 4, 6] as const
+const COOP_BANDS = {
+  /** Share of survivors ever down by dawn 1, per squad size. */
+  down: { 2: [0, 0.3], 4: [0, 0.3], 6: [0, 0.3] }, // 0.13, 0.06, 0.04 [0.25, 0.19, 0.21]
+  /** Night 1 mean chasers: Gentle Start's hold grows by a chaser or so with the squad, not by 2.8–4×. */
+  nightOneChasers: { 2: [0.3, 2.2], 4: [0.8, 3.2], 6: [0.8, 3.2] }, // 1.78, 2.73, 2.94 [2.77, 5.56, 7.83]
+  /** Night 1 living zombies over the solo run's: sub-linear in the squad. */
+  nightOneLiving: { 2: [1.1, 1.6], 4: [1.3, 2.0], 6: [1.5, 2.4] }, // 1.39, 1.69, 1.99 [1.40, 2.09, 2.88]
+} as const
+
+describe("co-op difficulty (survivor bots, the opening at the co-op clock)", () => {
+  let runs: CoopRun[] = []
+  const summary = (players: number): CoopSummary => summarizeCoop(runs.filter((r) => r.players === players), COOP_EARLY_SECONDS)
+
+  test(
+    "plays the co-op batch",
+    async () => {
+      const jobs = COOP_PLAYERS.flatMap((playerCount) =>
+        COOP_SEEDS.map((seed) => ({ seed, preset: "Skilled" as const, playerCount, maxDurationSeconds: COOP_OPENING_SECONDS, timeScale: COOP_TIME_SCALE, tickDt: 1 / 15 })),
+      )
+      const workers = Number(process.env.OUTBREAK_RAMP_WORKERS ?? 4)
+      runs = await runCoopBatch(jobs, Math.max(1, Math.min(4, workers, availableParallelism())))
+      expect(runs).toHaveLength(jobs.length)
+    },
+    120_000,
+  )
+
+  /**
+   * Survivors down in the first 120 s (the evening and two game hours): 0, 0, 0, 0.04 [0, 0, 0, 0.08]. The one left is
+   * a Skilled bot that wandered 20 m from the squad with all three of Night 1's chasers on it.
+   */
+  test("a squad's opening stays calm", () => {
+    for (const n of COOP_PLAYERS) within(`${n} survivors down in the first ${COOP_EARLY_SECONDS} s`, summary(n).earlySurvivorDownRate, [0, 0.05])
+  })
+
+  test("each squad size stays inside its bands", () => {
+    const solo = summary(1)
+    for (const n of [2, 4, 6] as const) {
+      const s = summary(n)
+      within(`${n} survivors down by dawn 1`, s.downRate, COOP_BANDS.down[n])
+      within(`${n} survivors Night 1 chasers`, s.phases[NIGHT1]!.chasers, COOP_BANDS.nightOneChasers[n])
+      within(`${n} survivors Night 1 living / solo`, s.phases[NIGHT1]!.living / solo.phases[NIGHT1]!.living, COOP_BANDS.nightOneLiving[n])
+      expect(s.phases[NIGHT1]!.peakChasers).toBeLessThanOrEqual(3)
+      // No new zombie appears beside a survivor (director spawns keep 22 m; Lurkers wait in dark rooms ≥10 m away).
+      // 0, 0, 0 [1.75, 3.25, 2.75 a run]
+      expect(s.spawnsWithin20).toBeLessThanOrEqual(0.5)
+    }
+    // Specials don't multiply with the squad: 0, 0.03, 0.45, 0.6 alive on Night 1 [0, 0.04, 0.92, 0.81].
+    within("6 survivors Night 1 specials", summary(6).phases[NIGHT1]!.specials, [0, 0.75])
   })
 })

@@ -14,6 +14,7 @@ import type { VehicleState } from "../net-types"
 import { stepStamina } from "../stamina"
 import {
   boxOf,
+  carShelters,
   DEFAULT_VEHICLE_TUNING,
   pushOutBox,
   VEHICLE_KINDS,
@@ -239,9 +240,14 @@ export const outbreakVehiclesSharedFeature = registerOutbreakSharedFeature<
     }
     return view
   },
-  modifySurvivorDamage: (sim, slot, damage) => {
+  modifySurvivorDamage: (sim, slot, damage, _state, source) => {
     const v = sim.vehicles.vehicleOf(slot.survivor)
     if (!v) return damage
+    // Shut in a car, the dead can only pound on it (here and in `stepWorld`'s bangs) until its windows give.
+    if (source === "crowd" && carShelters(v, sim.vehicles.tuning)) {
+      sim.vehicles.damageVehicle(v, damage * 0.3, sim.slots)
+      return 0
+    }
     const armor = v.spec.seats[slot.survivor.seatIndex ?? 0]?.armor ?? 0.4
     return damage * armor
   },

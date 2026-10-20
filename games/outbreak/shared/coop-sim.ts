@@ -18,7 +18,7 @@ import {
 import { advanceHour } from "./day-cycle"
 import { outbreakSharedFeatures, survivorDamage } from "./feature-registry"
 import "./features"
-import { openingClockActive } from "./pacing"
+import { coopSpawnClearance, openingClockActive } from "./pacing"
 import { batteryReload, createFlashlightState, DEFAULT_FLASHLIGHT_TUNING, stepFlashlight, toggleFlashlight } from "./flashlight"
 import {
   createDoorHandler,
@@ -527,7 +527,7 @@ export class CoopSim implements OutbreakSim {
     }
     if (!this.worldStream.wouldWindowsChange(survivors)) return false
     this.progression.ensureContainerStores()
-    const safeRadius = this.ai.config.directorPacing > 0 ? Math.max(12, this.ai.config.safeRadius * 0.75) : 6.0
+    const safeRadius = this.ai.config.directorPacing > 0 ? Math.max(12, this.ai.config.safeRadius * 0.75, coopSpawnClearance(this.ai.pacing.coop, this.slots.length)) : 6.0
     // A new chunk's dead are placed after the town takes it in: its walls hide them and its ground holds them, read
     // from the world's fresh nav tiles (the crowd's nav is rebuilt below).
     let blockers: Rect[] | null = null

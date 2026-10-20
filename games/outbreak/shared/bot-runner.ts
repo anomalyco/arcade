@@ -1,7 +1,7 @@
 import type { AIConfig } from "./ai"
 import { TICK_DT } from "./clock"
 import { isMeleeWeapon } from "./combat"
-import { cloneSimState, CoopSim, forkSimState, hashSimState, type SimState, type SurvivorSlot } from "./coop-sim"
+import { cloneSimState, CoopSim, forkSimState, hashSimState, MAX_SURVIVORS, type SimState, type SurvivorSlot } from "./coop-sim"
 import { dayCycle } from "./day-cycle"
 import { carStoreId, crossing, portals, tripLine, tripStoreId } from "./discovery/verbs"
 import { DEFAULT_PACING_TUNING } from "./pacing"
@@ -376,13 +376,13 @@ export function computeNightsSurvived(
 }
 
 /**
- * Runs one deterministic headless Outbreak game with 1–4 `SurvivorBot`s and collects rich gameplay telemetry.
+ * Runs one deterministic headless Outbreak game with 1–6 `SurvivorBot`s and collects rich gameplay telemetry.
  */
 export function runHeadlessBotGame(config: BotRunConfig): BotRunResult {
   const seed = config.seed >>> 0
   const houseSeed = (config.houseSeed ?? seed) >>> 0
   const terrain = config.terrain ?? 0.22
-  const playerCount = Math.max(1, Math.min(4, Math.round(config.playerCount ?? 1)))
+  const playerCount = Math.max(1, Math.min(MAX_SURVIVORS, Math.round(config.playerCount ?? 1)))
   const timeScale = config.timeScale ?? 240
   const maxDurationSeconds = config.maxDurationSeconds ?? 1260
   const worldMode: WorldMode = config.worldMode ?? "classic"
