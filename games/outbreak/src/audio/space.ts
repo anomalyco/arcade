@@ -53,7 +53,7 @@ export const STORM_DRAINS: readonly (readonly [number, number, number, number])[
 ]
 
 /** Wet street potholes with standing puddle water per 96 m macro-block (`src/ground.ts`): [x, z, scale]. */
-const STREET_PUDDLES: readonly (readonly [number, number, number])[] = [
+export const STREET_PUDDLES: readonly (readonly [number, number, number])[] = [
   [25.60, 42.15, 0.95],
   [32.45, 45.20, 1.05],
   [27.40, 46.45, 0.88],

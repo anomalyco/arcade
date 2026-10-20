@@ -1,0 +1,244 @@
+import { describe, expect, test } from "bun:test"
+import { makeTown, type Town } from "../shared/map"
+import { DEFAULT_AUDIO_SETTINGS } from "../src/audio/settings"
+import { SCAPE_LAYERS, SCAPE_SAMPLE_RATE, SCAPE_SOUNDS, scapeSound } from "../src/audio/soundscape/catalog"
+import { ALARM_CHANCE, GUNFIRE_CHANCE, nightOf, ScapeDirector, ScapeHours, SIREN_CHANCE, type ScapeInput, type ScapeLevels } from "../src/audio/soundscape/director"
+import { drainAmbientCalls, holdAmbientSound, playAmbientSound } from "../src/audio/soundscape/hooks"
+import { housePlan, housePowered } from "../src/audio/soundscape/houses"
+import { scapeCue, scapeLevels } from "../src/audio/soundscape/soundscape"
+
+const levels = (over: Partial<typeof DEFAULT_AUDIO_SETTINGS> = {}) => scapeLevels({ ...DEFAULT_AUDIO_SETTINGS, ...over }, {} as ScapeLevels)
+
+function input(town: Town, over: Partial<ScapeInput> = {}): ScapeInput {
+  const listener = over.listener ?? { x: 30, y: 30 }
+  return { town, time: 0, dt: 0.25, hour: 23, absHour: 23, listener, survivors: [listener], rain: 0, wetness: 0, storm: 0, glass: [], indoor: 0, ...over }
+}
+
+/** Steps a director over `seconds` (coarse steps are fine: every layer finds its events in (prev, now]). */
+function run(d: ScapeDirector, town: Town, from: number, seconds: number, over: Partial<ScapeInput> = {}, L = levels(), dt = 0.25) {
+  const shots: { t: number; id: string; x: number; y: number; far: boolean }[] = []
+  const holds = new Set<string>()
+  for (let t = from; t < from + seconds; t += dt) {
+    d.step(input(town, { ...over, time: t, dt }), L)
+    for (let i = 0; i < d.shotCount; i++) shots.push({ t, id: d.shots[i]!.id, x: d.shots[i]!.x, y: d.shots[i]!.y, far: d.shots[i]!.far })
+    for (let i = 0; i < d.holdCount; i++) holds.add(d.holds[i]!.id)
+  }
+  return { shots, holds }
+}
+
+describe("soundscape sounds (procedural, AR-86)", () => {
+  test("every sound bakes finite, audible, unclipped PCM; loops are seamless at the wrap", () => {
+    for (const def of SCAPE_SOUNDS) {
+      const pcm = def.bake(SCAPE_SAMPLE_RATE)
+      let peak = 0
+      let energy = 0
+      for (const v of pcm) {
+        expect(Number.isFinite(v)).toBe(true)
+        peak = Math.max(peak, Math.abs(v))
+        energy += v * v
+      }
+      expect(peak).toBeGreaterThan(0.05)
+      expect(peak).toBeLessThanOrEqual(0.9)
+      expect(energy).toBeGreaterThan(0)
+      if (def.loop) {
+        // No step at the seam: the jump from last to first sample is no bigger than the sound's own movement.
+        let maxStep = 0
+        for (let i = 1; i < pcm.length; i++) maxStep = Math.max(maxStep, Math.abs(pcm[i]! - pcm[i - 1]!))
+        expect(Math.abs(pcm[0]! - pcm[pcm.length - 1]!)).toBeLessThanOrEqual(maxStep * 1.01)
+      }
+    }
+  })
+
+  test("baking is deterministic and the whole catalogue stays small", () => {
+    let samples = 0
+    for (const def of SCAPE_SOUNDS) {
+      const a = def.bake(SCAPE_SAMPLE_RATE)
+      const b = def.bake(SCAPE_SAMPLE_RATE)
+      expect(a.length).toBe(b.length)
+      expect(a.every((v, i) => v === b[i])).toBe(true)
+      samples += a.length
+    }
+    // Under two minutes of mono audio if every sound were baked at once (each bakes only on first use).
+    expect(samples / SCAPE_SAMPLE_RATE).toBeLessThan(120)
+  })
+
+  test("cues play on the Ambience bus below the game's own sounds", () => {
+    for (const def of SCAPE_SOUNDS) {
+      const cue = scapeCue(def)
+      expect(cue.category).toBe("ambience")
+      expect(cue.priority!).toBeLessThan(50)
+      expect(scapeSound(def.id)).toBe(def)
+    }
+  })
+})
+
+describe("soundscape director", () => {
+  const town = makeTown(7)
+
+  test("Today (audioScape 0) and every toggle off make no sound at all", () => {
+    for (const L of [levels({ audioScape: 0 }), levels({ audioScapeLevel: 0 })]) {
+      for (const layer of SCAPE_LAYERS) expect(L[layer]).toBe(0)
+      const d = new ScapeDirector()
+      const { shots, holds } = run(d, town, 1000, 300, { listener: { x: 29, y: 30 } }, L)
+      expect(shots.length).toBe(0)
+      expect(holds.size).toBe(0)
+    }
+  })
+
+  test("is a pure function of the shared clock: two clients hear the same events, wherever they stand nearby", () => {
+    const a = run(new ScapeDirector(), town, 4000, 400, { listener: { x: 29, y: 30 } })
+    const b = run(new ScapeDirector(), town, 4000, 400, { listener: { x: 31, y: 33 } })
+    const distant = (s: typeof a.shots) => s.filter((e) => e.far).map((e) => `${e.t}:${e.id}`)
+    expect(distant(a.shots).length).toBeGreaterThan(0)
+    expect(distant(a.shots)).toEqual(distant(b.shots))
+    const again = run(new ScapeDirector(), town, 4000, 400, { listener: { x: 29, y: 30 } })
+    expect(again.shots).toEqual(a.shots)
+  })
+
+  test("sirens and other survivors' gunfire thin out night by night, then stop", () => {
+    const perNight = (night: number) => {
+      const d = new ScapeDirector()
+      const absHour = 24 * (night - 1) + 23
+      expect(nightOf(absHour)).toBe(night)
+      let sirens = 0
+      let shots = 0
+      for (let t = 0; t < 6000; t += 0.5) {
+        d.step(input(town, { time: 20000 * night + t, dt: 0.5, absHour, hour: 23 }), levels())
+        for (let i = 0; i < d.holdCount; i++) if (d.holds[i]!.id === "scape.siren") sirens++
+        for (let i = 0; i < d.shotCount; i++) if (d.shots[i]!.id.startsWith("scape.gunshot")) shots++
+      }
+      return { sirens, shots }
+    }
+    const n = [1, 2, 3, 4, 5].map(perNight)
+    expect(n[0]!.sirens).toBeGreaterThan(n[1]!.sirens)
+    expect(n[1]!.sirens).toBeGreaterThan(n[2]!.sirens)
+    expect(n[2]!.sirens).toBeGreaterThan(0)
+    expect(n[3]!.sirens).toBe(0)
+    expect(n[0]!.shots).toBeGreaterThan(n[2]!.shots)
+    expect(n[3]!.shots).toBeGreaterThan(0)
+    expect(n[4]!.shots).toBe(0)
+    expect(SIREN_CHANCE.length).toBe(4)
+    expect(GUNFIRE_CHANCE.length).toBe(5)
+    expect(ALARM_CHANCE[1]!).toBeGreaterThan(ALARM_CHANCE[4]!)
+  })
+
+  test("a house's clocks tick inside it, and the fridge hums until the power fails, with a last shudder", () => {
+    const ash = town.buildings.find((b) => b.id === "ash")!
+    const plan = housePlan(town, ash)
+    const inside = { x: 30, y: 30 }
+    const d = new ScapeDirector()
+    const { holds } = run(d, town, 100, 2, { listener: inside, absHour: 20 })
+    if (plan.clocks.length) expect([...holds].some((id) => id.startsWith("scape.clock"))).toBe(true)
+    // A house that loses power: hum before, the shudder at the moment, silence after.
+    const fridgeHouse = { ...plan, powerLoss: 30 }
+    expect(housePowered(fridgeHouse, 29.9)).toBe(true)
+    expect(housePowered(fridgeHouse, 30.1)).toBe(false)
+    if (plan.fridge && Number.isFinite(plan.powerLoss) && plan.powerLoss > 0) {
+      const e = new ScapeDirector()
+      let off = 0
+      let humAfter = 0
+      for (let k = 0; k < 400; k++) {
+        const abs = plan.powerLoss - 0.1 + k * 0.001
+        e.step(input(town, { time: 500 + k * 0.1, dt: 0.1, absHour: abs, listener: inside }), levels())
+        for (let i = 0; i < e.shotCount; i++) if (e.shots[i]!.id === "scape.fridge.off") off++
+        if (abs > plan.powerLoss + 0.01) for (let i = 0; i < e.holdCount; i++) if (e.holds[i]!.id === "scape.fridge.hum") humAfter++
+      }
+      expect(off).toBe(1)
+      expect(humAfter).toBe(0)
+    }
+  })
+
+  test("the haunted phone rings at three, stops when somebody walks up, and the machine answers", () => {
+    // Elm, seed 7, has the haunted phone.
+    const elm = town.buildings.find((b) => b.id === "elm")!
+    const phone = housePlan(town, elm).phone!
+    expect(phone.haunted).toBe(true)
+    const d = new ScapeDirector()
+    const far = { x: 28.5, y: 57 }
+    const log: string[] = []
+    let t = 7000
+    let hour = 2.98
+    for (let k = 0; k < 120; k++, t += 0.25, hour += 0.25 / 120) {
+      const me = k < 60 ? far : { x: phone.x + 1, y: phone.y + 1 }
+      d.step(input(town, { time: t, hour, absHour: 24 + hour, listener: me, survivors: [me] }), levels())
+      for (let i = 0; i < d.shotCount; i++) if (d.shots[i]!.id.startsWith("scape.phone")) log.push(`${k}:${d.shots[i]!.id}`)
+    }
+    const rings = log.filter((e) => e.endsWith("ring"))
+    expect(rings.length).toBeGreaterThanOrEqual(2)
+    expect(log.filter((e) => e.endsWith("machine")).length).toBe(1)
+    // Nothing rings after somebody reached it.
+    const reached = 60
+    expect(rings.every((e) => Number(e.split(":")[0]) <= reached)).toBe(true)
+  })
+
+  test("music boxes play once a night, when somebody first steps inside", () => {
+    for (let seed = 1; seed < 300; seed++) {
+      const t = makeTown(seed)
+      const b = t.buildings.find((x) => housePlan(t, x).musicBox)
+      if (!b) continue
+      const [x0, y0, x1, y1] = b.rect
+      const inside = { x: (x0 + x1) / 2, y: (y0 + y1) / 2 }
+      const outside = { x: x0 - 6, y: y0 - 6 }
+      const d = new ScapeDirector()
+      const count = (who: { x: number; y: number }, from: number, absHour: number) => {
+        let n = 0
+        for (let k = 0; k < 40; k++) {
+          d.step(input(t, { time: from + k * 0.25, absHour, hour: 23, listener: who, survivors: [who] }), levels())
+          for (let i = 0; i < d.shotCount; i++) if (d.shots[i]!.id === "scape.musicbox") n++
+        }
+        return n
+      }
+      expect(count(outside, 100, 23)).toBe(0)
+      expect(count(inside, 200, 23)).toBe(1)
+      expect(count(outside, 300, 23)).toBe(0)
+      expect(count(inside, 400, 23)).toBe(0)
+      expect(count(inside, 500, 47)).toBe(1)
+      return
+    }
+    throw new Error("no music box in 300 towns")
+  })
+
+  test("insects by day only, an owl only after the first night, gutters only after rain", () => {
+    const day = run(new ScapeDirector(), town, 100, 30, { hour: 13, absHour: 37 })
+    const night = run(new ScapeDirector(), town, 100, 30, { hour: 23, absHour: 23 })
+    if (day.holds.size) expect(night.holds.has("scape.insects")).toBe(false)
+    const owls = (absHour: number) => run(new ScapeDirector(), town, 9000, 1200, { hour: 1, absHour }, levels(), 1).shots.filter((s) => s.id === "scape.owl").length
+    expect(owls(25)).toBe(0)
+    expect(owls(49)).toBeGreaterThan(0)
+    const dry = run(new ScapeDirector(), town, 100, 60, { listener: { x: 21, y: 37 }, wetness: 0 }).shots.filter((s) => s.id === "scape.gutter.drip")
+    const after = run(new ScapeDirector(), town, 100, 60, { listener: { x: 21, y: 37 }, wetness: 0.8, rain: 0 }).shots.filter((s) => s.id === "scape.gutter.drip")
+    expect(dry.length).toBe(0)
+    expect(after.length).toBeGreaterThan(0)
+  })
+
+  test("the clock that keeps the night: game hours count on a co-op client that only sees the hour", () => {
+    const h = new ScapeHours()
+    let abs = 0
+    for (let hour = 17.5, k = 0; k < 2000; k++, hour = (hour + 0.02) % 24) abs = h.update(hour, 0, 17.5)
+    expect(abs).toBeCloseTo(17.5 + 0.02 * 1999, 1)
+    expect(nightOf(abs)).toBe(2)
+    expect(new ScapeHours().update(5, 30, 17.5)).toBe(47.5)
+  })
+})
+
+describe("ambient hooks for other features", () => {
+  test("calls reach the soundscape once; holds last while refreshed", () => {
+    playAmbientSound("scape.phone.ring", 3, 4, { gain: 0.5 })
+    holdAmbientSound("tv:1", "scape.fridge.hum", 1, 2)
+    const shots: string[] = []
+    const holds: string[] = []
+    drainAmbientCalls((c) => shots.push(`${c.id}@${c.x},${c.y}x${c.gain}`), (h) => holds.push(h.key))
+    expect(shots).toEqual(["scape.phone.ring@3,4x0.5"])
+    expect(holds).toEqual(["tv:1"])
+    shots.length = holds.length = 0
+    // Not refreshed this frame: still held (the caller may run after the soundscape)…
+    drainAmbientCalls((c) => shots.push(c.id), (h) => holds.push(h.key))
+    expect(shots).toEqual([])
+    expect(holds).toEqual(["tv:1"])
+    holds.length = 0
+    // …but gone once it has missed two frames.
+    drainAmbientCalls(() => {}, (h) => holds.push(h.key))
+    drainAmbientCalls(() => {}, (h) => holds.push(h.key))
+    expect(holds).toEqual([])
+  })
+})
