@@ -73,8 +73,8 @@
   the town and `dtSeed` per building and car (`placement.ts`), meshes are box-built (`models.ts`), drawn instanced
   from `scene/frame-renderer.ts`. Life touches (Backquote › Details · Life, `touches.ts`; "Life touches" off is
   Today): moths circling lit fixtures (`swarms.ts`, glow from the frame's `lampPower`; at a porch they flutter at the
-  front of the canopy, since the bulb on the wall is under the roof and out of the camera's sight), flies over bodies and bins seen
-  only in light, eyes under yard trees that catch the torch and bolt plus one rare pair from night 2 that does not
+  canopy edge, since the bulb on the wall is under the roof and out of the camera's sight), flies over bodies and bins seen
+  only in light, eyes at the edge of yard trees (south of the crown, where the camera sees) that catch the torch and bolt plus one rare pair from night 2 that does not
   (`eyeshine.ts`), breath in the cold over the torch (`breath.ts`, lit by the lens's spill, `BeamProbe.near`). All are renderer alpha/additive sprites (in the TAA reactive
   mask) lit on the CPU by `BeamProbe` (`light-probe.ts`) from the frame's torch slots. Leftover life (`leftovers.ts`,
   `sprinkler.ts`): washing on lines in the side yards (or well behind the house: the roof hides the near back yard)
