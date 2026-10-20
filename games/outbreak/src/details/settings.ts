@@ -10,8 +10,10 @@ import type { LabControl } from "@arcade/kit/lab-panel"
  * from the town, so co-op clients match (the crows' flight and the barks are each client's own).
  *
  * Life touches (Details · Life, `touches.ts`) are the smaller layer on top: moths at lit lamps, flies over bodies and
- * bins, eyes under the trees that catch the torch and bolt, breath in the cold. Each is seen only where a real light
- * reaches it, and where it is is seeded from the town; when it moves is each client's own.
+ * bins, eyes under the trees that catch the torch and bolt, breath in the cold; and leftover life (`leftovers.ts`,
+ * `sprinkler.ts`): washing on the line, cars left with a door open, a sprinkler on its timer, brass where it fell, and
+ * a town that runs down night by night. The glowing and moving ones are seen only where a real light reaches them;
+ * where things are is seeded from the town and replicated state, so co-op clients agree.
  */
 export type OutbreakDetailSettings = {
   /** Every world detail on or off. */
@@ -58,6 +60,16 @@ export type OutbreakDetailSettings = {
   lfWatcher: boolean
   /** Survivors' breath in the cold night air, seen where a light catches it (0 none, 1 default, 2 heavy). */
   lfBreath: number
+  /** Share of homes with washing on a line in the yard, moving in the wind. */
+  lfLaundry: number
+  /** Share of parked cars left with a door open and the dome light on. */
+  lfOpenDoors: number
+  /** A lawn sprinkler on a timer that still comes on at first light. */
+  lfSprinkler: boolean
+  /** Brass from every shot stays where it fell. */
+  lfCasings: boolean
+  /** The town runs down night by night: dome lights and televisions die, the sprinkler loses pressure. */
+  lfDecay: boolean
 }
 
 export const DEFAULT_DETAIL_SETTINGS: OutbreakDetailSettings = {
@@ -83,6 +95,11 @@ export const DEFAULT_DETAIL_SETTINGS: OutbreakDetailSettings = {
   lfEyeshine: 1,
   lfWatcher: true,
   lfBreath: 1,
+  lfLaundry: 0.2,
+  lfOpenDoors: 0.15,
+  lfSprinkler: true,
+  lfCasings: true,
+  lfDecay: true,
 }
 
 const GROUP = "Details"
@@ -111,4 +128,9 @@ export const detailControls: LabControl[] = [
   { key: "lfEyeshine", label: "Eyes under the trees", group: LIFE, min: 0, max: 2, step: 0.05, unit: "×" },
   { key: "lfWatcher", label: "Eyes that don't run (rare)", group: LIFE, type: "toggle" },
   { key: "lfBreath", label: "Breath in the cold", group: LIFE, min: 0, max: 2, step: 0.05, unit: "×" },
+  { key: "lfLaundry", label: "Washing on the line", group: LIFE, min: 0, max: 1, step: 0.05, unit: "" },
+  { key: "lfOpenDoors", label: "Cars left with a door open", group: LIFE, min: 0, max: 1, step: 0.05, unit: "" },
+  { key: "lfSprinkler", label: "Sprinkler at first light", group: LIFE, type: "toggle" },
+  { key: "lfCasings", label: "Brass stays where it fell", group: LIFE, type: "toggle" },
+  { key: "lfDecay", label: "Town runs down night by night", group: LIFE, type: "toggle" },
 ]

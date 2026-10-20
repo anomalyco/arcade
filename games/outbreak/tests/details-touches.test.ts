@@ -222,6 +222,7 @@ describe("life touches", () => {
       dt: 1 / 60,
       time: 5,
       town,
+      hour: 22,
       darkness: 1,
       sun: 0,
       night: 2,

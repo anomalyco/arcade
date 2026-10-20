@@ -54,6 +54,16 @@ export const DETAIL_MODELS = [
   "crowSit",
   "crowUp",
   "crowDown",
+  "tvOff",
+  "linePosts",
+  "sheet",
+  "shirt",
+  "towel",
+  "carDoorSedan",
+  "carDoorCruiser",
+  "carDoorPickup",
+  "carDoorVan",
+  "casing",
 ] as const
 export type DetailModel = (typeof DETAIL_MODELS)[number]
 

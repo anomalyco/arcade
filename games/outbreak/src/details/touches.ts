@@ -10,6 +10,7 @@ import { AnimalEyes, placeDens, type AnimalKind } from "./eyeshine"
 import { BeamProbe } from "./light-probe"
 import type { DetailSite } from "./placement"
 import type { OutbreakDetailSettings } from "./settings"
+import { placeSprinklers, sprinklerReach, writeSprinklers, type Sprinkler } from "./sprinkler"
 import { FLIES_PER_SITE, mothLamps, writeFlies, writeMoths, type FlySite, type MothLamp } from "./swarms"
 
 /** Which night it is: the Way Out's shared count when it runs (it reaches co-op clients), else the night ramp's, else 1. */
@@ -24,7 +25,8 @@ export type TouchFrame = {
   dt: number
   time: number
   town: Town
-  /** Day cycle: darkness 0..1 and sunlight 0..1. */
+  /** Clock hour, and the day cycle's darkness 0..1 and sunlight 0..1. */
+  hour: number
   darkness: number
   sun: number
   night: number
@@ -59,11 +61,13 @@ export class LifeTouches {
   private flyKey = ""
   private flies: FlySite[] = []
   private lastNight = 0
+  private sprinklerKey = ""
+  private sprinklers: Sprinkler[] = []
   private readonly breathers: BreathSurvivor[] = []
   private readonly beamFrom = { x: 0, z: 0 }
   private frame: TouchFrame | null = null
   /** Readout for the harness. */
-  readonly shown = { moths: 0, flies: 0, eyes: 0, dens: 0, bolts: 0, breath: 0 }
+  readonly shown = { moths: 0, flies: 0, eyes: 0, dens: 0, bolts: 0, breath: 0, sprinklers: 0, spray: 0 }
   /** Called when an animal bolts (for the audio layer: rustle, scurry, hooves). */
   set onBolt(fn: ((x: number, z: number, kind: AnimalKind) => void) | null) {
     this.eyes.onBolt = fn
@@ -75,6 +79,7 @@ export class LifeTouches {
     this.mothKey = ""
     this.denKey = ""
     this.flyKey = ""
+    this.sprinklerKey = ""
     this.lastNight = 0
   }
 
@@ -89,6 +94,12 @@ export class LifeTouches {
     if (dk !== this.denKey) {
       this.denKey = dk
       this.eyes.setDens(dk, placeDens(town, s))
+    }
+    const sk = `${town.seed}:${o[0]},${o[1]}:${town.buildings.length}:${s.lfSprinkler}:${s.dtSeed}`
+    if (sk !== this.sprinklerKey) {
+      this.sprinklerKey = sk
+      this.sprinklers = placeSprinklers(town, s)
+      this.shown.sprinklers = this.sprinklers.length
     }
     const fk = `${town.seed}:${o[0]},${o[1]}:${town.buildings.length}:${sites.length}:${s.lfFlies}`
     if (fk !== this.flyKey) {
@@ -119,13 +130,18 @@ export class LifeTouches {
     return Math.max(f.sun * 0.9, this.probe.at(site.x, site.y + 0.4, site.z) * 1.3)
   }
 
+  private readonly sprinklerLight = (x: number, z: number): number => {
+    const f = this.frame!
+    return Math.max(Math.min(1, f.sun * 2.2), this.probe.at(x, 0.5, z))
+  }
+
   private readonly beamAt = (x: number, y: number, z: number): number => this.probe.at(x, y, z)
 
   /** Steps and draws every touch; returns the new alpha and additive sprite counts in `out`. */
   write(f: TouchFrame, s: OutbreakDetailSettings, sites: readonly DetailSite[], alpha: Float32Array, alphaCount: number, add: Float32Array, addCount: number, out: { alpha: number; add: number }): void {
     out.alpha = alphaCount
     out.add = addCount
-    this.shown.moths = this.shown.flies = this.shown.eyes = this.shown.breath = 0
+    this.shown.moths = this.shown.flies = this.shown.eyes = this.shown.breath = this.shown.spray = 0
     if (!s.worldDetails || !s.lifeTouches) {
       if (this.mothKey) this.reset()
       return
@@ -148,6 +164,12 @@ export class LifeTouches {
       const before = out.alpha
       out.alpha = writeFlies(this.flies, this.flyLight, f.time, f.view, alpha, out.alpha)
       this.shown.flies = out.alpha - before
+    }
+    if (s.lfSprinkler) {
+      const before = out.alpha
+      // The dawn after night n: the reach that morning.
+      out.alpha = writeSprinklers(this.sprinklers, f.time, f.hour, sprinklerReach(f.night, s.lfDecay), this.sprinklerLight, f.view, alpha, out.alpha)
+      this.shown.spray = out.alpha - before
     }
     const eyeFrame = this.eyeFrame
     eyeFrame.dt = f.dt
