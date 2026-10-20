@@ -14,6 +14,11 @@ import { measureHands, skinVsCyl, wrapFingers, unpenetrate, type Cyl } from "./g
 // eye (VIEW_SCALE) so it sits nearer than the player's collision radius and never clips into walls; the perspective
 // is identical, so it looks full size. The full body keeps its clip-based carry for shadows, mirrors and third person
 // (its left forearm, hand and torch are hidden from the view camera while the viewmodel shows).
+//
+// It receives no shadow maps. Scaled towards the eye, it sits behind the flashlight's lens and off the body's real
+// arm, so a shadow lookup there means nothing: lamp and flashlight maps came back as a fine screen-space speckle of
+// dots and stripes on the skin and barrel. Most lamps have no shadow map anyway (clustered), so the lighting barely
+// changes.
 
 export const VIEW_LAYER = 6
 const VIEW_SCALE = 0.75
@@ -78,7 +83,7 @@ export class Viewmodel {
     this.torch.traverse((o) => {
       o.layers.set(VIEW_LAYER)
       const m = o as THREE.Mesh
-      if (m.isMesh) m.castShadow = false
+      if (m.isMesh) m.castShadow = m.receiveShadow = false
     })
   }
 
@@ -280,7 +285,7 @@ export class Viewmodel {
       m.material = mats[0]!
       m.layers.set(VIEW_LAYER)
       m.castShadow = false
-      m.receiveShadow = true
+      m.receiveShadow = false
       m.frustumCulled = false
     })
     for (const d of drop) d.removeFromParent()

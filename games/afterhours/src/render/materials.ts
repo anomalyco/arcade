@@ -9,6 +9,7 @@ import {
   dFdx,
   dFdy,
   hash,
+  modelPosition,
   interleavedGradientNoise,
   log2,
   max,
@@ -823,17 +824,43 @@ function scan(o: ScanOpts) {
 
 // ---- paint: painted steel with chips and scratches (fixed scan) ---------------------------------------------------
 // p0 paint rgb, chipping
+//
+// No visible repeat: the scan is sampled through a domain warp (one low-frequency noise fetch, ~4 m period) on a
+// rotated, per-object-offset UV, so neither the 1.2 m scan tile nor the noise tile lines up between doors or along
+// a door. Chips are the scan's own scratch/flake mask, thresholded by a wear field: almost none on open panel, larger
+// and denser where hands, feet and trolleys hit (bottom kick zone, handle height) and in warped patches, with a
+// faint dulling gradient toward those zones. Same texture fetches as before (scan albedo + surface + one noise).
+// Wear zones assume UVs in metres with V up from the floor (storey heights repeat every 3.8 m).
 defineClass("paint", {
   graph: (p) => {
-    const s = sample("metal_painted")
-    // The scan is yellow paint; keep only its luminance variation, recolour, and let scratches show steel.
-    const scratch = smoothstep(0.55, 0.85, s.metal)
-    const chip = smoothstep(float(1).sub(p[0].w.mul(0.3)), 1, wnoise(uv(), 0.7).a)
-    const bare = scratch.max(chip)
-    const lum = luma(s.color).div(0.45)
-    const color = mix(p[0].xyz.mul(mix(float(0.85), float(1.08), lum)), vec3(0.32, 0.31, 0.3), bare)
-    const rough = mix(float(0.42).add(s.rough.mul(0.45)), float(0.5), bare)
-    return { color, rough: clamp(rough, 0.02, 1), metal: bare, normal: s.normal, normalScale: float(0.8), ao: s.ao }
+    const base = uv()
+    // Per-object offset so identical leaves don't share one chip layout (merged geometry already has world UVs).
+    const seed = vec2(hash(modelPosition.x.mul(13.1).add(modelPosition.z.mul(7.7))), hash(modelPosition.z.mul(11.3).add(modelPosition.y.mul(5.1)))).mul(37)
+    const A = texture(noise(), base.add(seed).div(4.3))
+    const ang = 0.37
+    const ca = Math.cos(ang)
+    const sa = Math.sin(ang)
+    const w = base.add(seed).add(A.rg.sub(0.5).mul(0.09))
+    const q = vec2(w.x.mul(ca).sub(w.y.mul(sa)), w.x.mul(sa).add(w.y.mul(ca)))
+    const s0 = sample("metal_painted", q)
+    // Turn the rotated scan normal back into the surface frame.
+    const sn = s0.normal.mul(2).sub(1)
+    const normal = vec3(sn.x.mul(ca).add(sn.y.mul(sa)), sn.y.mul(ca).sub(sn.x.mul(sa)), sn.z).mul(0.5).add(0.5)
+    // Wear field: zones by height above the floor and the leaf edge at u = 0, plus a warped low-frequency patchiness.
+    const h = fract(base.y.div(3.8)).mul(3.8)
+    const kick = float(1).sub(smoothstep(0.1, 0.5, h))
+    const handle = smoothstep(0.75, 0.95, h).mul(float(1).sub(smoothstep(1.15, 1.4, h)))
+    const patchy = smoothstep(0.4, 0.95, A.b)
+    const wear = clamp(kick.mul(0.8).add(handle.mul(0.55)).add(patchy.mul(0.45)), 0, 1).mul(p[0].w.div(0.3))
+    // Chip threshold on the scan's flake mask: ~nothing at wear 0, larger merged chips as wear rises.
+    const chipEdge = mix(float(0.985), float(0.6), clamp(wear, 0, 1))
+    const bare = aaStep(chipEdge, s0.metal, 0.02)
+    const lum = luma(s0.color).div(0.45)
+    const grime = wear.mul(0.12).mul(A.a.mul(0.5).add(0.5))
+    const paint = p[0].xyz.mul(mix(float(0.88), float(1.06), lum)).mul(float(1).sub(grime))
+    const color = mix(paint, vec3(0.32, 0.31, 0.3), bare)
+    const rough = mix(float(0.42).add(s0.rough.mul(0.45)).add(grime.mul(0.8)), float(0.5), bare)
+    return { color, rough: clamp(rough, 0.02, 1), metal: bare, normal, normalScale: float(0.8), ao: s0.ao }
   },
 })
 
