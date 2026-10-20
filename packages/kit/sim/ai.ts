@@ -1240,6 +1240,12 @@ export type AIWorldContext = {
    * can muffle noise inside shut buildings, say). Gets the listener's perception scale and the crowd's config.
    */
   hearNoise?: (ev: NoiseEvent, lx: number, ly: number, perceptionScale: number, config: AIConfig) => AttenuatedNoise
+  /**
+   * A game's behaviour layer: this tick's multiplier on one agent's walking speed (0 holds it where it stands, still
+   * able to attack) and on its senses (sight and hearing reach). Absent, every agent steps exactly as before.
+   */
+  agentSpeed?: (a: AIAgent) => number
+  agentSenses?: (a: AIAgent) => number
 }
 
 /** Above this many living agents the crowd paths by shared flow fields (when `flowFields` is 1, the default). */
@@ -1645,11 +1651,12 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
     const senseDt = dt * (scheduledTick ? (isEngaged ? 2 : 4) : 1)
 
     if (shouldSense && targets.length > 0) {
+      const senseMul = ctx.agentSenses ? ctx.agentSenses(a) : 1
       const effectivePerceptionAgent = {
         x: a.x,
         y: a.y,
         aim: a.aim,
-        perceptionScale: a.perceptionScale * Math.sqrt(nightFactor),
+        perceptionScale: a.perceptionScale * Math.sqrt(nightFactor) * senseMul,
       }
       let target = targets[0]!
       let sight = evaluateSight(effectivePerceptionAgent, target, sightBlockers, config)
@@ -1689,7 +1696,7 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
         if (ev.sourceId === selfSource) continue
         // Groans from other zombies only pull wanderers/searchers, not already-chasing zombies
         if (ev.kind === "groan" && (a.state === "chase" || a.state === "alert" || a.state === "bash")) continue
-        const hearScale = a.perceptionScale * Math.sqrt(nightFactor)
+        const hearScale = a.perceptionScale * Math.sqrt(nightFactor) * senseMul
         const att = ctx.hearNoise
           ? ctx.hearNoise(ev, a.x, a.y, hearScale, config)
           : attenuateNoise(ev.x, ev.y, ev.radius, ev.loudness, a.x, a.y, walls, closedDoors, config, hearScale)
@@ -2045,6 +2052,7 @@ export function stepAICrowd(agents: AIAgent[], ctx: AIWorldContext): AIStepResul
       const limpHitch = 0.52 + 0.22 * Math.sin(limpPhase * Math.PI)
       desiredSpeed *= limpHitch
     }
+    if (ctx.agentSpeed) desiredSpeed *= ctx.agentSpeed(a)
 
     // Apply local Boids flocking (non-clumping personal space separation + loose street pack cohesion)
     const isWander = a.state === "wander"

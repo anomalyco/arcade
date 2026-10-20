@@ -398,6 +398,18 @@ Every profile shares the strafe values `sideStepTurn 0.3`, `strafeHipTurn 0.95`,
   `shambleHandsFK` hands before the arm IK; heads turn and tilt toward a recent noise (a 0.12 s lag, fading over 2.5 s)
   and the near hand comes up for a 0.85 s torch flinch. Moving zombies are untouched: `reference-clips.ts` before and
   after gives the same Outbreak zombie numbers (vs 100STYLE Zombie 31.34°, Drag 23.32°, UAL Zombie 25.08°).
+- **Per-zombie gait from the seed (`games/outbreak/src/behaviour/pose.ts`, AR-91).** Zombie behaviour's
+  `BehaviourPoser` bends each zombie's shamble by its personality (`shared/behaviour/personality.ts`): cadence
+  72–102 steps/min through a longer stride at the same speed, hunch around the 100STYLE zombie's ~9° trunk (the long
+  dead hunch further, the fresh stand up), sideways lean, a seeded limp side, arms held out level, and feet that barely
+  clear the ground on shufflers. Three things mattered against 100STYLE Zombie_FW at 0.79 m/s, measured with an average
+  personality (`outbreakZombieAlive` in `reference-clips.ts`): the stride's foot-placement lead cap (`0.38 s`) had to
+  scale with the stride, or the trailing foot ended 0.45 m behind the hips and the pelvis dipped 15 cm (knee 81°);
+  hands had to aim outside the shoulders (`shoulderW + 0.05`), not inside; and the hunch had to be centred, because
+  the shamble already pitches the trunk 17°. Result: overall **31.3° → 22.4°** (arm 41.5° → 24.0°, forearm pitch
+  37.7° → ~13°, leg 17.8° → 20.2°), cadence **114 → 87** vs 86 steps/min, trunk 17° → 11.7° vs 9.2°, lift 10.7 → 8.6 vs
+  7.3 cm. The arms-out pose moves further from the Quaternius clip (25.1° → 35.3°), whose arms hang. "Zombie behaviour:
+  Today" or Walk from personality 0 draws the old shamble unchanged.
 
 ## Weapons
 

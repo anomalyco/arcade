@@ -5,6 +5,7 @@
  */
 import "./air/index"
 import "./anti-aliasing/index"
+import "./behaviour/index"
 import "./blood/index"
 import "./bodies/index"
 import "./breach/index"

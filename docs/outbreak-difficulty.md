@@ -209,6 +209,61 @@ the Night 3 / Night 2 aware ratio dropped from 1.17 to 1.08 and nothing else mov
 little easier to sneak through rather than adding a difficulty step. Survival and chaser bands are unchanged. Lab ›
 Weather › "Rain masks noise" and "Rain shortens zombie sight" tune it; "Today (always clear)" restores the old ratio.
 
+## Zombie behaviour (AR-91)
+
+The behaviour layer (`games/outbreak/shared/behaviour/`) does not add zombies or chasers. It changes what the existing
+dead do. By day they rest and their senses dull. At night they listen, follow the one that noticed, remember where you
+went and search there. Some climb fences and car bonnets. The director's chaser cap still governs the hunt.
+
+5 presets × 8 seeds × 3 nights on overnight `a0326599`: the defaults against `--set=zbMode=0` (Today). These are 40
+runs each, so one run is 12.5 points: treat it as indicative. Each cell is the fraction alive at dawn 1 / 2 / 3.
+
+| Preset | Today | Alive | Today median nights | Alive median nights |
+| --- | --- | --- | --: | --: |
+| Novice | 38 / 13 / 0 | 50 / 25 / 0 | 0.81 | 0.82 |
+| Casual | 63 / 25 / 13 | 50 / 13 / 13 | 1.39 | 0.95 |
+| Skilled | 88 / 63 / 50 | 88 / 50 / 38 | 2.75 | 2.45 |
+| Expert | 100 / 100 / 75 | 100 / 75 / 50 | 3.01 | 2.97 |
+| Perfect | 100 / 88 / 63 | 100 / 75 / 63 | 3.01 | 3.00 |
+
+What moved:
+
+- **Night 1 is a little quieter.** Skilled aware zombies went 2.28 → 1.79 and chasers 0.98 → 0.67.
+- **Nights 2 and 3 have more searchers but the same number of chasers.** Aware zombies went 6.0 → 7.2 on Night 2 and
+  6.7 → 7.8 on Night 3, while chasers held at 2.9 and 3.8 under the cap.
+- **Survival:** a fresh survivor's first night is about the same. Skilled and Expert lost one or two more runs by dawn
+  2–3 in this batch, which ran the earlier follower rule described below.
+
+That batch ran an early version in which followers walked straight to the survivor and up to three turned at any hour.
+That version bypassed the director's pacing. In the co-op opening, 4-player Skilled squads went down at 116, 142 and
+319 s, where Today had none. Followers now walk to where the zombie that noticed was standing, not to the survivor, so
+they trail it rather than join the hunt. Only one follows by day; three follow at night. With that change, the
+co-op opening has no downs again (2, 4 and 6 survivors × 4 seeds).
+
+Followers were the first problem. A second came after AR-88 (who they were) merged: Novice bots took less than half
+of Today's Night 1 damage (2.1 vs 5.1 per hour). A noisy survivor kept the wanderers around them stopping to listen,
+which shielded them. Now a zombie listens at most once every five seconds, and when it turns to investigate the pause
+lasts 0.3–0.7 s. On the current overnight tree, the CI batch in `tests/difficulty-ramp.test.ts` (4 presets × 4 seeds
+× 3 nights) gives:
+
+| CI batch | Today | Alive |
+| --- | --: | --: |
+| Alive at dawn 1 / 3: Novice, Skilled, Expert | 0.75 / 0.25, 1 / 0.75, 0.75 / 0.25 | 0.5 / 0, 1 / 0.5, 0.75 / 0.5 |
+| Aware zombies, Night 2 / Night 3 (pooled) | 5.78 / 6.36 | 7.17 / 7.58 |
+| Night 3 / Night 2 aware ratio | 1.10 | 1.06 |
+| Chasers, Night 1 / 2 / 3 | 1.13 / 2.89 / 3.72 | 1.13 / 2.92 / 3.84 |
+| Novice / Skilled damage per hour, Night 1 | 5.1 / 2.3 | 4.5 / 2.9 |
+
+One band moved, deliberately: **`nightThreeOverTwo`'s lower edge went from 1.0 to 0.9.** More of the dead hunt from
+Night 2, so the ratio flattens even though Night 3 has more aware zombies than before. It read 0.95–1.00 on earlier
+trees, right on the old edge. Living zombies and chasers still rise, and survival moves by a run either way within
+the bands.
+
+This is the intended effect: the dead keep looking after they lose you, so the later
+nights feel hunted rather than heavier. Lab › Zombie behaviour › "Search, remember,
+give up slowly" and "Follow the one that noticed" are the levers if Night 3 needs to be easier. "Zombie behaviour:
+Today" turns the whole layer off.
+
 ## The night ramp (D-40, Gentle Start, Rising)
 
 `games/outbreak/shared/night-ramp/` raises the challenge every night instead of letting the director's own ramp level

@@ -24,6 +24,7 @@ import { DEFAULT_WAY_OUT_TUNING, type WayOutTuning } from "../shared/way-out/tun
 import { DEFAULT_INTERACTIONS_TUNING, type InteractionsTuning } from "../shared/interactions/tuning"
 import { DEFAULT_SPECIALS_TUNING, type SpecialsTuning } from "../shared/specials/kinds"
 import { DEFAULT_CHARACTER_SETTINGS, type OutbreakCharacterSettings } from "./characters/settings"
+import { DEFAULT_BEHAVIOUR_TUNING, type BehaviourTuning } from "../shared/behaviour/tuning"
 import type { WorldMode } from "../shared/world"
 import { DEFAULT_AUDIO_SETTINGS, type AudioSettings } from "./audio"
 import { DAY_NIGHT_CURVES, DEFAULT_DAY_NIGHT_CURVES, type DayNightCurveSettings } from "./day-night"
@@ -256,6 +257,7 @@ export type OutbreakSubsystemMap = {
   details: OutbreakDetailSettings
   specials: SpecialsTuning
   nightRamp: NightRampTuning
+  behaviour: BehaviourTuning
   death: DeathTuning
   fire: OutbreakFireSettings
   wayOut: WayOutTuning
@@ -346,6 +348,7 @@ export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "details",
   "specials",
   "nightRamp",
+  "behaviour",
   "death",
   "fire",
   "wayOut",
@@ -397,6 +400,7 @@ export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
     details: { ...DEFAULT_DETAIL_SETTINGS },
     specials: { ...DEFAULT_SPECIALS_TUNING },
     nightRamp: { ...DEFAULT_NIGHT_RAMP_TUNING },
+    behaviour: { ...DEFAULT_BEHAVIOUR_TUNING },
     death: { ...DEFAULT_DEATH_TUNING },
     fire: { ...DEFAULT_FIRE_SETTINGS },
     wayOut: { ...DEFAULT_WAY_OUT_TUNING },

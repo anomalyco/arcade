@@ -26,6 +26,8 @@ import { RIG } from "@arcade/kit/rig"
 import { createAIAgent } from "@arcade/kit/sim/ai"
 import { Survivor as OutbreakSurvivor } from "../../../outbreak/src/survivor"
 import { ZombieCrowdRenderer } from "../../../outbreak/src/zombies"
+import { BehaviourPoser } from "../../../outbreak/src/behaviour/pose"
+import { zombiePersonality } from "../../../outbreak/shared/behaviour/personality"
 import { zombieTuning } from "../../../outbreak/src/zombie-profile"
 import { parseArgs, repoRoot } from "./common"
 import {
@@ -91,8 +93,17 @@ function outbreakSurvivor(name: string, mode: "walk" | "run", speed: number, cro
   return cycleFrom(name, mode, speed, joints, planted)
 }
 
-function outbreakZombie(name: string, speed: number): CycleData {
+// An average personality for the behaviour gait (AR-91): the 100STYLE zombie's ~86 steps/min, arms well out.
+const averageZombie = Object.assign(zombiePersonality(0), {
+  cadence: 86, stride: 1, armsOut: 0.8, hunch: 0.22, lean: 0, limpSide: 0, headLoll: 0.3, shuffle: 0.5, curiosity: 0,
+} as const)
+
+function outbreakZombie(name: string, speed: number, alive = false): CycleData {
   const zr = new ZombieCrowdRenderer({ addModel: () => 0 })
+  if (alive) {
+    zr.behaviour = new BehaviourPoser()
+    zr.behaviour.personalityOverride = averageZombie
+  }
   const ag = createAIAgent(1, 7, 0, 0, 0)
   Object.assign(ag, { lurch: 0.85, asymmetry: 0.85, drag: 0.9, reach: 0.8, state: "wander", vx: speed, vy: 0, aim: 0 })
   const joints: RigJointMap[] = [], planted: boolean[] = []
@@ -154,6 +165,7 @@ const actors: Record<string, Ours> = {
   outbreakWalk: v => outbreakSurvivor("outbreak-walk", "walk", v),
   outbreakSneak: v => outbreakSurvivor("outbreak-sneak", "walk", v, true),
   outbreakZombie: v => outbreakZombie("outbreak-zombie", v),
+  outbreakZombieAlive: v => outbreakZombie("outbreak-zombie-alive", v, true),
   blackoutZombie: v => blackout("blackout-zombie", "walk", v, humanProfiles.zombie, false),
 }
 
@@ -169,6 +181,8 @@ const pairs: [string, keyof typeof actors, string][] = [
   ["outbreakZombieVsStyleZombie", "outbreakZombie", "style-zombie-walk"],
   ["outbreakZombieVsStyleDrag", "outbreakZombie", "style-drag-left"],
   ["outbreakZombieVsUalZombie", "outbreakZombie", "ual-zombie-walk"],
+  ["outbreakZombieAliveVsStyleZombie", "outbreakZombieAlive", "style-zombie-walk"],
+  ["outbreakZombieAliveVsUalZombie", "outbreakZombieAlive", "ual-zombie-walk"],
   ["blackoutZombieVsStyleZombie", "blackoutZombie", "style-zombie-walk"],
 ]
 const ours: Record<string, CycleData> = {}

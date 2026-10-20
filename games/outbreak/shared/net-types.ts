@@ -8,6 +8,7 @@ import type { NoisesSnapshot } from "./noises/types"
 import type { SpecialsSnapshot } from "./specials/net-types"
 import type { BodiesSnapshot } from "./bodies/net-types"
 import type { BreachSnapshot } from "./breach/net-types"
+import type { BehaviourSnapshot } from "./behaviour/net-types"
 import type { LoadoutId, SurvivorVariant } from "./loadout"
 import type { Survivor } from "./sim-types"
 import type { Notice } from "./types"
@@ -168,6 +169,8 @@ export type SharedSnapshot = {
   bodies?: BodiesSnapshot
   /** Damaged doors and windows: wear, warning beats, breaches, fallen slabs (`shared/breach`). */
   breach?: BreachSnapshot
+  /** What the zombies near the recipient are doing beyond their AI state (`shared/behaviour`). */
+  behaviour?: BehaviourSnapshot
 }
 
 /** The private part: what to reconcile against, the ledger stores this player can see that changed, and notices. */

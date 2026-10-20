@@ -53,8 +53,11 @@ const PRESSURE_BANDS = {
    * Aware zombies, Night 3 over Night 2: rising, without a cliff. AR-71 weather: rain masks noise, and two of the four
    * seeds rain or storm through Night 3 at this clock, so fewer of the dead turn: 1.17 with the weather off, 1.08 on.
    * The lower bound moved from 1.1 to 1.0 for that; living zombies and chasers still rise (the next two bands).
+   * AR-91 zombie behaviour (followers, memory and search) puts more of the dead on the hunt from Night 2 (aware
+   * 5.8 → 7.2), so the ratio flattens: 1.06 here, 0.95–1.00 on earlier trees, 1.10 Today. The lower bound moved from
+   * 1.0 to 0.9 so that flattening is not read as a cliff; living zombies and chasers still rise.
    */
-  nightThreeOverTwo: [1.0, 2], // 1.08 (weather on; 1.17 off) [1.03]
+  nightThreeOverTwo: [0.9, 2], // 1.06 (behaviour on; 1.10 Today) [1.03]
   /** Active chasers at night. */
   nightTwoChasers: [1.5, 4], // 2.89 [2.37]
   nightThreeChasers: [3, 5.5], // 3.94 [2.56]

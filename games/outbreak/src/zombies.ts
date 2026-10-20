@@ -40,6 +40,7 @@ import { CharacterAccessories } from "./characters/accessories"
 import type { ZombieCharacterFrame } from "./characters/frame"
 import { specialKindOf, SPECIAL_LURKER, type SpecialKind } from "../shared/specials/kinds"
 import { applySpecialPalette, SpecialAccessories, specialCrouch, specialHeadLift, specialHunch, specialLook } from "./specials/figure"
+import type { BehaviourPoser, ZombieBehaviourPose } from "./behaviour/pose"
 import { zombieProfile, type ZombieTuning } from "./zombie-profile"
 import { STRIKE_TIME, strikeEnvelope } from "./zombie-strikes"
 
@@ -460,6 +461,46 @@ export function agentZombieProfile(agent: AIAgent, baseTuning: ZombieTuning, out
   return profile
 }
 
+/**
+ * Moves the shamble's hand targets toward the behaviour pose: held out in front at shoulder height (the 100STYLE
+ * zombie's arms), down to the ground ahead (feeding, climbing, sitting), or up before the face (flinch, peering in).
+ */
+function blendBehaviourHands(bp: ZombieBehaviourPose, tf: Frame, hL: V3, hR: V3, gx: number, gy: number, gz: number, aim: number, phase: number): void {
+  const fx = Math.cos(aim)
+  const fz = Math.sin(aim)
+  for (let i = 0; i < 2; i++) {
+    const hand = i === 0 ? hL : hR
+    const side = i === 0 ? -1 : 1
+    const sway = Math.sin(phase * 1.7 + i * 2.1) * 0.03
+    if (bp.handsOut > 0.001) {
+      const k = bp.handsOut * (i === 0 ? 1 : 0.88)
+      const tx = tf.p[0] + tf.x[0] * 0.56 + tf.y[0] * (RIG.shoulderY - 0.02 + sway) + tf.z[0] * side * (RIG.shoulderW + 0.05)
+      const ty = tf.p[1] + tf.x[1] * 0.56 + tf.y[1] * (RIG.shoulderY - 0.02 + sway) + tf.z[1] * side * (RIG.shoulderW + 0.05)
+      const tz = tf.p[2] + tf.x[2] * 0.56 + tf.y[2] * (RIG.shoulderY - 0.02 + sway) + tf.z[2] * side * (RIG.shoulderW + 0.05)
+      hand[0] += (tx - hand[0]) * k
+      hand[1] += (ty - hand[1]) * k
+      hand[2] += (tz - hand[2]) * k
+    }
+    if (bp.handsGround > 0.001) {
+      const k = Math.min(1, bp.handsGround)
+      const tx = gx + fx * (0.42 + sway) - fz * side * 0.16
+      const tz = gz + fz * (0.42 + sway) + fx * side * 0.16
+      hand[0] += (tx - hand[0]) * k
+      hand[1] += (gy + 0.07 + Math.max(0, sway) * 2 - hand[1]) * k
+      hand[2] += (tz - hand[2]) * k
+    }
+    if (bp.handsFace > 0.001) {
+      const k = Math.min(1, bp.handsFace)
+      const tx = tf.p[0] + tf.x[0] * 0.24 + tf.y[0] * (RIG.shoulderY + 0.14) + tf.z[0] * side * 0.07
+      const ty = tf.p[1] + tf.x[1] * 0.24 + tf.y[1] * (RIG.shoulderY + 0.14) + tf.z[1] * side * 0.07
+      const tz = tf.p[2] + tf.x[2] * 0.24 + tf.y[2] * (RIG.shoulderY + 0.14) + tf.z[2] * side * 0.07
+      hand[0] += (tx - hand[0]) * k
+      hand[1] += (ty - hand[1]) * k
+      hand[2] += (tz - hand[2]) * k
+    }
+  }
+}
+
 /** Builds the 8 instanced zombie body-part meshes (pelvis, torso, head, upperArm, foreArm, thigh, shin, foot). */
 export function buildZombiePartMeshes(): Mesh[] {
   const box = (w: number, y0: number, h: number, d: number, col: Rgb, bevel = 0) => {
@@ -549,6 +590,8 @@ export class ZombieCrowdRenderer {
   strikeScale = 1
   /** Hit reactions and ragdolls (`src/impact/`), or null for today's canned stagger and collapse. */
   physics: ZombieBodyPhysics | null = null
+  /** Personality gait and activity poses (`src/behaviour/pose.ts`); null draws today's shamble. */
+  behaviour: BehaviourPoser | null = null
   private overlayCanvas: HTMLCanvasElement | null = null
   private overlayCtx: CanvasRenderingContext2D | null = null
   /** Special zombies' helmets, shields, bellies and jaws (`src/specials/figure.ts`). */
@@ -1633,7 +1676,7 @@ export class ZombieCrowdRenderer {
         this.collapse[s] = Math.max(0, this.collapse[s]! - dt * 4.5)
       }
 
-      const clamberLift = a.clamberWindowId
+      let clamberLift = a.clamberWindowId
         ? Math.sin(clamp(a.clamberElapsed / Math.max(0.1, a.clamberDuration), 0, 1) * Math.PI) * 0.56
         : 0
 
@@ -1657,7 +1700,9 @@ export class ZombieCrowdRenderer {
       }
 
       const profile = agentZombieProfile(a, zombieTune, this.scratchProfile)
-      const strideScale = profile.strideScale
+      const bp = this.behaviour ? this.behaviour.pose(a, dt, time) : null
+      if (bp) clamberLift *= bp.liftMul
+      const strideScale = profile.strideScale * (bp ? bp.strideMul : 1)
       const torsoLean = profile.torsoLean
       const chestHz = profile.chestHz
       const headHz = profile.headHz
@@ -1772,10 +1817,11 @@ export class ZombieCrowdRenderer {
 
       const f0 = s * 2
       const f1 = f0 + 1
-      const rest0X = a.x + sinY * 0.13
-      const rest0Z = a.y - cosY * 0.13
-      const rest1X = a.x - sinY * 0.13
-      const rest1Z = a.y + cosY * 0.13
+      const feetFwd = bp ? bp.feetForward : 0
+      const rest0X = a.x + sinY * 0.13 + cosY * feetFwd
+      const rest0Z = a.y - cosY * 0.13 + sinY * feetFwd
+      const rest1X = a.x - sinY * 0.13 + cosY * feetFwd
+      const rest1Z = a.y + cosY * 0.13 + sinY * feetFwd
 
       if (teleport) {
         const y0 = support(rest0X, rest0Z) + clamberLift
@@ -1842,7 +1888,8 @@ export class ZombieCrowdRenderer {
             this.footLiftZ[fi] = this.footPz[fi]!
             this.footPrevU[fi] = 0
           }
-          const lead = Math.min(0.38, (1 - fPhase) / rate + (duty / rate) * 0.48) * (isDrag ? 1 - 0.18 * dragAmt : 1.06)
+          // A longer behaviour stride lands further ahead, so the stance stays centred under the hips.
+          const lead = Math.min(0.38 * (bp ? bp.strideMul : 1), (1 - fPhase) / rate + (duty / rate) * 0.48) * (isDrag ? 1 - 0.18 * dragAmt : 1.06)
           let tx = (i ? rest1X : rest0X) + vx * lead
           let tz = (i ? rest1Z : rest0Z) + vy * lead
           const side = i ? 1 : -1
@@ -1876,7 +1923,7 @@ export class ZombieCrowdRenderer {
           const lx = this.footLiftX[fi]!
           const ly = this.footLiftY[fi]!
           const lz = this.footLiftZ[fi]!
-          const clearance = isDrag ? Math.max(0.08, (1 - dragAmt) * 0.85) : 1.08
+          const clearance = (isDrag ? Math.max(0.08, (1 - dragAmt) * 0.85) : 1.08) * (bp ? bp.footLift : 1)
           const liftBell = 1.72 * Math.sin(Math.PI * u) ** 2 * (1 - u)
           const px = lx + (tgtX - lx) * eHoriz
           const pz = lz + (tgtZ - lz) * eHoriz
@@ -1906,8 +1953,10 @@ export class ZombieCrowdRenderer {
       const supportY = (support(a.x, a.y) + clamberLift) * 0.65 + footSupport * 0.35
       const shambleGait = smooth((speed - 0.12) / 0.35)
       const shambleMod = shambleTorsoModulation(curPhase, shambleGait, profile, actorSeed)
-      const limpDip = a.limping ? 0.068 * Math.max(0, Math.sin(curPhase * Math.PI * 2)) : 0
-      const limpRoll = a.limping ? (dragFoot === 0 ? -1 : 1) * 0.16 * Math.sin(curPhase * Math.PI * 2) : 0
+      const limpAmt = a.limping ? 1 : bp ? bp.limp * shambleGait : 0
+      const limpSign = a.limping || !bp ? (dragFoot === 0 ? -1 : 1) : bp.limpSide
+      const limpDip = limpAmt > 0 ? 0.068 * limpAmt * Math.max(0, Math.sin(curPhase * Math.PI * 2)) : 0
+      const limpRoll = limpAmt > 0 ? limpSign * 0.16 * limpAmt * Math.sin(curPhase * Math.PI * 2) : 0
       const hr = this.physics?.react(a.id, syaw) ?? null
       const staggerU = a.state === "stagger" ? clamp(a.timer / 0.35, 0, 1) * (this.physics?.cannedStagger ?? 1) : 0
       const hitReaction = a.hitReaction ?? (((a.seed >>> 4) % 3) as 0 | 1 | 2)
@@ -1920,7 +1969,8 @@ export class ZombieCrowdRenderer {
         shambleMod.pelvisBobAdd -
         0.016 * shambleGait * Math.sin(curPhase * Math.PI * 4 - 0.35) -
         limpDip -
-        staggerDrop
+        staggerDrop -
+        (bp ? bp.pelvisDrop : 0)
       const d0 = Math.min(0.72, Math.hypot(this.footPx[f0]! - a.x, this.footPz[f0]! - a.y))
       const reach0 = Math.sqrt(Math.max(0, 0.822 * 0.822 - d0 * d0)) + RIG.ankle + this.footPy[f0]!
       const d1 = Math.min(0.72, Math.hypot(this.footPx[f1]! - a.x, this.footPz[f1]! - a.y))
@@ -1959,13 +2009,13 @@ export class ZombieCrowdRenderer {
       const lungeZ = Math.sin(a.aim) * 0.12 * strikeU
       writeYawFrame(bBuf, pelvisOff, a.x + lungeX, height - 0.03 * strikeU - (hr ? hr.drop : 0), a.y + lungeZ, syaw + twx + (hr ? hr.twist * 0.3 : 0))
       rollInPlace(bBuf, pelvisOff, shambleMod.pelvisRollAdd + limpRoll)
-      pitchInPlace(bBuf, pelvisOff, -0.06 * moving - 0.35 * shambleMod.torsoPitchAdd)
+      pitchInPlace(bBuf, pelvisOff, -0.06 * moving - 0.35 * shambleMod.torsoPitchAdd - (bp ? bp.pelvisPitch : 0))
       const lean = lxx * Math.cos(a.aim) + lyx * Math.sin(a.aim)
 
       // Inline angleSpring for chest and head
       const chestGoal = a.aim - twx * 0.55 + shambleMod.torsoYawAdd
       const flinchSide = sideHand ? 1 : -1
-      const headGoal = a.aim + shambleMod.headYawAdd + noiseYaw + habitW * hb.headYaw - flinchSide * 0.55 * flinchW
+      const headGoal = a.aim + shambleMod.headYawAdd + noiseYaw + habitW * hb.headYaw - flinchSide * 0.55 * flinchW + (bp ? bp.headYaw : 0)
       const wChest = chestHz * Math.PI * 2
       const kChest = wChest * wChest
       const cChest = 2 * wChest * 0.85
@@ -2005,17 +2055,17 @@ export class ZombieCrowdRenderer {
       const torsoPz = bBuf[pelvisOff + 2]! + bBuf[pelvisOff + 8]! * RIG.waist
       writeYawFrame(bBuf, torsoOff, torsoPx, torsoPy, torsoPz, cx + staggerYaw + (hr ? hr.twist : 0))
       const hunch = kind ? specialHunch(kind, speed, a.state) : 0
-      pitchInPlace(bBuf, torsoOff, -0.04 - lean - shambleMod.torsoPitchAdd - bashPulse - staggerRecoil - 0.42 * strikeU - hunch + (hr ? hr.pitch : 0) + habitW * hb.torsoPitch + 0.06 * flinchW)
+      pitchInPlace(bBuf, torsoOff, -0.04 - lean - shambleMod.torsoPitchAdd - bashPulse - staggerRecoil - 0.42 * strikeU - hunch + (hr ? hr.pitch : 0) + habitW * hb.torsoPitch + 0.06 * flinchW - (bp ? bp.torsoPitch : 0))
       pitchInPlace(bBuf, torsoOff, -clamp(torsoLean, -0.15, 0.35))
       rollInPlace(bBuf, torsoOff, clamp(torsoRoll, -0.2, 0.2))
-      rollInPlace(bBuf, torsoOff, shambleMod.torsoRollAdd + staggerCant + limpRoll * 0.75 + (hr ? hr.roll : 0) + habitW * hb.torsoRoll)
+      rollInPlace(bBuf, torsoOff, shambleMod.torsoRollAdd + staggerCant + limpRoll * 0.75 + (hr ? hr.roll : 0) + habitW * hb.torsoRoll + (bp ? bp.torsoRoll : 0))
 
       const headPx = torsoPx + bBuf[torsoOff + 3]! * 0.02 + bBuf[torsoOff + 6]! * RIG.neckY
       const headPy = torsoPy + bBuf[torsoOff + 4]! * 0.02 + bBuf[torsoOff + 7]! * RIG.neckY
       const headPz = torsoPz + bBuf[torsoOff + 5]! * 0.02 + bBuf[torsoOff + 8]! * RIG.neckY
       writeYawFrame(bBuf, headOff, headPx, headPy, headPz, hxAng + staggerYaw * 0.8 + (hr ? hr.twist + hr.headYaw : 0))
-      pitchInPlace(bBuf, headOff, -0.12 * torsoLean - shambleMod.headPitchAdd - staggerRecoil * 0.6 + (kind ? specialHeadLift(kind, hunch, a.state) : 0) + (hr ? hr.pitch + hr.headPitch : 0) + habitW * hb.headPitch - 0.32 * flinchW)
-      rollInPlace(bBuf, headOff, headTilt + shambleMod.headRollAdd + staggerCant * 0.5 + (hr ? hr.roll + hr.headRoll : 0) + habitW * hb.headRoll + noiseRoll)
+      pitchInPlace(bBuf, headOff, -0.12 * torsoLean - shambleMod.headPitchAdd - staggerRecoil * 0.6 + (kind ? specialHeadLift(kind, hunch, a.state) : 0) + (hr ? hr.pitch + hr.headPitch : 0) + habitW * hb.headPitch - 0.32 * flinchW + (bp ? bp.headPitch : 0))
+      rollInPlace(bBuf, headOff, headTilt + shambleMod.headRollAdd + staggerCant * 0.5 + (hr ? hr.roll + hr.headRoll : 0) + habitW * hb.headRoll + noiseRoll + (bp ? bp.headRoll : 0))
 
       this.emitBone(bOff, 0, 0, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
       this.emitBone(bOff, 1, 1, hidden, tintR, tintG, tintB, a.hitFlash, alpha)
@@ -2047,6 +2097,9 @@ export class ZombieCrowdRenderer {
           hand[1] += txAxisY * 0.36 * k + tyAxisY * 0.14 * k
           hand[2] += txAxisZ * 0.36 * k + tyAxisZ * 0.14 * k
         }
+      }
+      if (bp && (bp.handsOut > 0.001 || bp.handsGround > 0.001 || bp.handsFace > 0.001)) {
+        blendBehaviourHands(bp, tf, hL, hR, a.x, support(a.x, a.y), a.y, a.aim, time + a.id)
       }
       if (habitW > 0 || flinchW > 0 || leash) {
         for (let i = 0; i < 2; i++) {

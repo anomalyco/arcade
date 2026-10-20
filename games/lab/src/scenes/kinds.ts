@@ -141,6 +141,7 @@ export const LAB_KINDS: readonly LabKind[] = [
   { id: "breach", label: "Door breaches", subject: "Outbreak's doors and barricades as the dead break them: wear you can read, the warning beat, and how they give", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
   { id: "outbreak-secrets", label: "Secrets", subject: "Outbreak's subtle details, strange sightings and one hidden chain, staged one at a time", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
   { id: "outbreak-characters", label: "Who they were", subject: "Outbreak's dead as the people they were: callings, wear, habit loops they keep until they notice you, and small body language", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
+  { id: "zombie-behaviour", label: "Zombie behaviour", subject: "How Outbreak's dead hear, follow, search and give up, rest by day, herd at night, feed and climb, each with its own walk", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
   { id: "way-out", label: "The Way Out", subject: "Outbreak's hidden way out of town: the clues, the destination at night, the final stand and the escape", host: { kind: "page", url: "/arcade/outbreak/" }, panels: page, play: "Play" },
   { id: "ship", label: "Ship", subject: "A Carrier ship and sea at a time of day", host: { kind: "page", url: "/arcade/carrier/" }, panels: page },
   { id: "brawler", label: "Brawler", subject: "Brawl's characters, their abilities and the props they throw around", host: { kind: "page", url: "/arcade/brawl/playground.html" }, panels: page, play: "Play" },
@@ -176,6 +177,7 @@ const PAGE_STATIONS: Record<string, string> = {
   "outbreak-interactions": "interactions",
   "outbreak-breach": "breach",
   "outbreak-secrets": "outbreak-secrets",
+  "outbreak-zombie-behaviour": "zombie-behaviour",
   brawl: "brawler",
   archers: "archer",
 }
