@@ -1,10 +1,13 @@
 import { withPhysicalLights } from "@arcade/kit/gpu/lights/physical"
 import { fogSceneWgsl, fogScatterVolume } from "@arcade/kit/gpu/fog-scatter"
 import { postShader, type SceneHooks } from "@arcade/kit/gpu/shaders"
+import { contactShadowVolume } from "@arcade/kit/gpu/contact-shadows"
 
-const uniform = `struct Office { look: vec4f, lamps: vec4f, phone: vec4f, cord: vec4f }
+const uniform = `struct Office { look: vec4f, lamps: vec4f, phone: vec4f, cord: vec4f, contactA: vec4f, contactB: vec4f }
 @group(0) @binding(13) var<uniform> O: Office;`
+const ambient = "vec3f(0.32,0.68,1.0)*O.look.x*(0.55+0.45*max(n.y,0.0))"
 export const fogVolume = fogScatterVolume({ declarations: uniform })
+export const contactVolume = contactShadowVolume({ declarations: uniform, knobs: ["O.contactA", "O.contactB"], ambient })
 const base: SceneHooks = {
   lampGrid: false,
   vertex: `if(v.matAux.y<0.0){let t=clamp((-v.matAux.y-1.0)/100.0,0.0,1.0);o.world+=O.cord.xyz*t*t;}`,
@@ -30,7 +33,7 @@ fn blindCookie(p: vec3f, lamp: vec3f) -> f32 {
 }
 `,
   bounce: "vec3f(0.0)", directional: "vec3f(0.0)", lightLeak: "0.0", wallDirectScale: "1.0",
-  ambient: "vec3f(0.32,0.68,1.0)*O.look.x*(0.55+0.45*max(n.y,0.0))",
+  ambient,
   material: /* wgsl */ `
     pbrRough=0.65;
     let p=o.world;

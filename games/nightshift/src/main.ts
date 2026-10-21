@@ -7,12 +7,13 @@ import { FrameParts } from "@arcade/kit/gpu/frame-parts"
 import { flatLighting, newSceneFrame, packSceneFrame, SceneLights, type SceneLight } from "@arcade/kit/gpu/scene-frame"
 import { SpotShadows } from "@arcade/kit/gpu/shadows/spot-shadows"
 import { FogScatter, type FogLamp } from "@arcade/kit/gpu/fog-scatter"
+import { contactShadowControls, contactShadowInput, createContactShadowSettings, packContactShadowKnobs } from "@arcade/kit/gpu/contact-shadows"
 import { lampFlicker, hash01 } from "@arcade/kit/gpu/lights/flicker"
 import { makeSceneShader, spriteShader } from "@arcade/kit/gpu/shaders"
 import { TEMPORAL_DEFAULTS } from "@arcade/kit/gpu/temporal"
 import { LabPanel } from "@arcade/kit/lab-panel"
 import { controls, defaults } from "./settings"
-import { hooks, post, fogVolume } from "./shaders"
+import { hooks, post, fogVolume, contactVolume } from "./shaders"
 import { buildWorld, handset, PHONE, START, CLOSE, CRADLE, CORD_END, walls } from "./world"
 import { newCall, interact, stepCall, subtitle, ringEnvelope } from "../shared/call"
 import { OfficeAudio } from "./audio"
@@ -22,7 +23,9 @@ async function main() {
   const gpu=await openGpu(canvas,"NIGHT SHIFT")
   if(typeof gpu==="string") throw new Error(gpu)
   const {device}=gpu,settings=defaults(),world=buildWorld(),audio=new OfficeAudio(),call=newCall()
-  const renderer=new Renderer(device,gpu.context,gpu.format,{scene:makeSceneShader(hooks),sprite:spriteShader(),post,volume:[fogVolume]})
+  const smoke=new URLSearchParams(location.search).has("smoke")
+  const contact=createContactShadowSettings({mode:"screen",length:0.35,thickness:0.06})
+  const renderer=new Renderer(device,gpu.context,gpu.format,{scene:makeSceneShader(hooks),sprite:spriteShader(),post,volume:smoke?[fogVolume]:[contactVolume,fogVolume]})
   renderer.setTemporal({...TEMPORAL_DEFAULTS,mode:"taa",sharpen:0.15})
   renderer.setLevel({chunks:[{data:world.data,box:[-7,-10,7,10]}],glass:[],...flatLighting(0,0,[0,0,0])})
   const receiver=renderer.addModel(handset()),parts=new FrameParts()
@@ -31,12 +34,13 @@ async function main() {
   const setCamera=(view:"wide"|"phone")=>{const p=view==="wide"?START:CLOSE;camera.body.x=p.x;camera.body.y=p.z;camera.yaw=p.yaw;camera.pitch=p.pitch;camera.release()}
   setCamera("wide")
   const panel=new LabPanel(settings,controls(),new URLSearchParams(location.search),()=>camera.release(),{open:false,pill:false,groupActions:false})
+  panel.addControls(contact,contactShadowControls("Shadows"))
   const fog=new FogScatter();Object.assign(fog.settings,{falloff:0.05,brightness:0.003,strength:0.4})
   const lights=new SceneLights(),spots=new SpotShadows(device,{count:4,size:1024})
   renderer.setSpotShadows(spots.bindings())
   const buffer=device.createBuffer({size:world.data.byteLength,usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST});device.queue.writeBuffer(buffer,0,world.data)
   const casters=[{buffer,count:world.vertices,stride:24}]
-  const frame=newSceneFrame(),custom=new Float32Array(16)
+  const frame=newSceneFrame(),custom=new Float32Array(24)
   let time=0,frames=0,paused=false,last=performance.now(),fixedTime:number|null=null
   let handYaw=0,lastLookYaw=0
   const distance=()=>Math.hypot(camera.body.x-PHONE.x,camera.body.y-PHONE.z)
@@ -52,7 +56,6 @@ async function main() {
   canvas.addEventListener("click",()=>void audio.unlock())
   window.addEventListener("keydown",e=>{if(e.repeat||e.metaKey||e.ctrlKey||e.altKey||isEditableEventTarget(e.target)||panel.visible||document.pointerLockElement!==canvas)return;if(e.code==="KeyE")action();if(e.code==="KeyM")audio.muted=!audio.muted})
   window.addEventListener("pagehide",()=>audio.dispose())
-  const smoke=new URLSearchParams(location.search).has("smoke")
   function render(now:number) {
     const dt=Math.min(0.05,(now-last)/1000);last=now
     if(paused){requestAnimationFrame(render);return}
@@ -84,7 +87,8 @@ async function main() {
     const p=CRADLE.map((v,i)=>v+(end[i]-v)*t),yaw=handYaw*t,roll=-1.25*t
     parts.push(receiver,p[0],p[1],p[2],yaw,[1,1,1],0,roll,0)
     const cord=[p[0]-0.169*Math.cos(roll)*Math.sin(yaw),p[1]-0.169*Math.sin(roll),p[2]+0.169*Math.cos(roll)*Math.cos(yaw)]
-    custom.set([settings.ambient,settings.fog,settings.dust,time,flicker,led,0,0,t,0,0,0,...cord.map((v,i)=>v-CORD_END[i]),0]);renderer.setCustomUniforms(custom)
+    custom.set([settings.ambient,settings.fog,settings.dust,time,flicker,led,0,0,t,0,0,0,...cord.map((v,i)=>v-CORD_END[i]),0])
+    packContactShadowKnobs(contact,custom,16);renderer.setCustomUniforms(custom)
     for(let i=0;i<150;i++) {
       const x=-1.5+hash01(i,1)*3,y=0.3+hash01(i,2)*2.3,z=-6.2+hash01(i,3)*12
       const drift=Math.sin(time*0.12+i)*0.05
@@ -95,7 +99,7 @@ async function main() {
     Object.assign(fog.settings,{density:settings.fog})
     const fogLamps:FogLamp[]=lampDefs.filter(l=>l.id===3||l.id===4).map(l=>({id:l.id!,x:l.x,y:l.h,z:l.y,range:l.r,color:l.color,intensity:l.power,axis:l.spot!.axis,size:l.size}))
     packSceneFrame(frame,{viewProj:vp,eye:camera.eye,time,width,height,lightCount:lights.lightCount,ambient:[0,0,0,0],mapSize:[20,20],ao:0})
-    renderer.render({frame,lights:lights.lights,lightCount:lights.lightCount,shadowLightCount:lights.shadowLightCount,occluders:lights.occ,occluderCount:lights.occCount,lampPower:lights.power,lampCount:0,view:[-7,-10,7,10],batches:parts.batches(),alphaSprites:parts.alpha,alphaCount:parts.nAlpha,addSprites:parts.add,addCount:parts.nAdd,grade:[0,0,0,settings.exposure],fog:fog.update({eye:camera.eye,viewProj:vp,lamps:fogLamps}),volume:[fog.volumeInput()]})
+    renderer.render({frame,lights:lights.lights,lightCount:lights.lightCount,shadowLightCount:lights.shadowLightCount,occluders:lights.occ,occluderCount:lights.occCount,lampPower:lights.power,lampCount:0,view:[-7,-10,7,10],batches:parts.batches(),alphaSprites:parts.alpha,alphaCount:parts.nAlpha,addSprites:parts.add,addCount:parts.nAdd,grade:[0,0,0,settings.exposure],fog:fog.update({eye:camera.eye,viewProj:vp,lamps:fogLamps}),volume:smoke?[fog.volumeInput()]:[contactShadowInput(contact),fog.volumeInput()]})
     const dx=PHONE.x-camera.eye[0],dz=PHONE.z-camera.eye[2]
     audio.update(time,distance(),(dx*Math.cos(camera.yaw)-dz*Math.sin(camera.yaw))/Math.max(distance(),0.1),call,settings.volume,document.pointerLockElement===canvas&&!document.hidden,flicker)
     prompt.innerHTML=call.phase==="ringing"&&canAnswer()?keyPromptHtml("KeyE","Answer"):call.phase==="call"?keyPromptHtml("KeyE","Hang up"):""

@@ -6,3 +6,4 @@ An original Arcade scene based on Kit's approved October 20, 2026 generated Nigh
 - Materials: original analytic woven fabric, carpet pile, laminate, acoustic tile, plastic wear and CRT phosphor/scanline recipes. No third-party texture images.
 - Audio: original synthesized mechanical telephone bell, fluorescent ballast and band-limited voice-like placeholder. The placeholder is not recorded speech or a cloned voice.
 - Rendering: shared `@arcade/kit` WebGPU renderer, physical lights, spotlight shadows, stateless flicker, fog scattering and first-person controller. See shared engine credits for upstream technique attribution.
+- Contact shadows: the shared kit's depth-march implementation of Bend Studio's technique, following three.js r181 `SSSNode` (MIT). Source and attribution are in `packages/kit/gpu/contact-shadows.ts`.
