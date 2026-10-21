@@ -1,10 +1,10 @@
 import { imageTexture, loadGltf } from "@arcade/kit/gpu/gltf"
+import { bakeScatter } from "@arcade/kit/gpu/scatter-mesh"
 import type { TexturedPrimitive } from "@arcade/kit/gpu/textured-mesh"
 import { solidTexture } from "../foliage"
 import { meshBytes } from "../mesh-bytes"
 import type { InteriorScene } from "./types"
 import { receptionProps } from "./props"
-import { placeVertices } from "./place"
 
 const finishes: Record<string, string> = {
   tile_green: "tile", tile_green_dark: "tile", terrazzo: "terrazzo", linoleum: "vinyl",
@@ -38,18 +38,19 @@ export async function loadInterior(device: GPUDevice) {
     return { vertices, base: baseMap, normal: normalMap, orm, color: [1,1,1,r.alpha], roughness: r.roughness,
       metalness: r.metalness, normalScale: documents ? 0.6 : 0, aoStrength: 1, blend: r.alpha < 1 }
   }))
-  const models = new Map<string, Awaited<ReturnType<typeof loadGltf>>>()
-  for (const group of scene.placements) {
-    if (!cc0.has(group.name)) continue
-    // The walkable slice ends beyond the corridor's north wall.
-    for (const p of group.props.filter(p => p.position[2] >= -3.2 && p.position[2] <= 22)) {
-      if (!models.has(group.name)) models.set(group.name, await loadGltf(device, base + group.name + ".glb"))
-      primitives.push(...models.get(group.name)!.primitives.map(primitive=>({...primitive,vertices:placeVertices(primitive.vertices,p)})))
-    }
+  for (const name of cc0) {
+    const placements = scene.placements.filter(g=>g.name===name).flatMap(g=>g.props)
+      .filter(p=>p.position[2]>=-3.2 && p.position[2]<=22)
+      // Ashwood uses right-handed Three yaw; kit scatter's plan yaw has the opposite sign.
+      .map(p=>({x:p.position[0],y:p.position[1],z:p.position[2],yaw:-(p.yaw??0),scale:p.scale??1}))
+    if(!placements.length)continue
+    const model=await loadGltf(device,base+name+".glb")
+    primitives.push(...model.primitives.map(p=>({...p,vertices:bakeScatter(p.vertices,placements)})))
   }
   primitives.push({ vertices: receptionProps(), base: white, normal, orm: white, color: [1,1,1,1], roughness: 0.48, metalness: 0.15, normalScale: 0, blend: false })
   const colliders = scene.colliders.filter(b => b.max[1]! > 0.5 && b.min[1]! < 1.5 && b.max[2]! >= -3.2 && b.min[2]! <= 22)
-  return { scene, primitives, colliders, lamps: scene.lamps.filter(l => l.position[2] >= -3.2 && l.position[2] <= 22 && l.intensity > 0).map(l => ({ ...l,
+  // Upward projector/display beams belong to adjacent rooms whose emitting models are not imported.
+  return { scene, primitives, colliders, lamps: scene.lamps.filter(l => l.position[2] >= -3.2 && l.position[2] <= 22 && l.intensity > 0 && (l.direction?.[1] ?? -1) <= 0).map(l => ({ ...l,
     position: [l.position[0], l.angle ? Math.min(l.position[1], 3.02) : l.position[1], l.position[2]] as [number,number,number],
     shadow: !!l.angle,
   })) }
