@@ -1322,6 +1322,13 @@ kit renderer's `fxParticles` path; Today is one Lab setting away (Fire style, Wo
   tree capsules vs points +0.66 ms on `mini` and +4.9 ms on a busy Studio, so not yet trustworthy: re-pair on a quiet
   worker before relying on it.
 
+### Lot forest masses and ground dressing (AR-111, 2026-10-20)
+
+- Kit on the Lot vs Ashwood: "his trees are thicker and kind of connect, make a better silhouette" and "he has some stuff on the ground and we don't". Both traced to the first conversion dropping Ashwood's card shading: its `flex` attribute (limb and stem depth) darkens crowns toward the trunk by `0.45 + 0.55·inner`, and its normals blend 45 % of each card's face normal into the crown normal. Without them crowns lit flat and gappy, and the undergrowth clumps by the booth read as pale squares under the fog skylight. Restored in `cardShadingHooks` (`packages/kit/gpu/forest.ts`); the bake keeps `flex` in vertex aux.
+- `ForestPass` replaced the static tree bake (every tree frozen at its title-camera LOD): Ashwood's own variant models drawn instanced, nearest-first lists rebuilt per 2 m, per-frame-shifted complementary Bayer cross-fades (Tidewater, MIT), and far thinning to fewer, larger crowns (50 % gone by 320 m, survivors ×1.41·1.15). Shipped geometry 33 → 7.7 MiB, solid triangles 1.33 M → 0.44 M; whole-frame GPU at the title camera within noise of main (two paired runs on Studio Metal 1920×1080: main 4.51/4.44 ms, new 4.44/4.17 ms median, n=48 each).
+- Ground dressing is `sim/debris` rules (Tidewater-style feature anchors + padded SDF keep-outs) with Ashwood's plant templates, procedural leaves/pebbles/paper and a CC0 can. Lane capsules matter: the gate apron's edge crosses the road, and without them weeds grew in the lamp pool.
+- Stills: `~/code/home/artifacts/lot-2026-10-20/forest-crops.jpg`, `forest-aiden-before-after.jpg`, `forest-far-masses.jpg`.
+
 ## Researched, not yet adopted
 
 ### Blackout snapshot rate (2026-10-16)
