@@ -1662,7 +1662,7 @@ export class Renderer {
     }
     // The frame timer starts at the first pass: the polar pass, else the bounce, else the main pass.
     let timerStarted = !!f.shadowLightCount
-    if (!this.planBounce && this.planBounceShader && f.planBounce && f.planBounce.strength > 0) {
+    if (!this.planBounce && this.planBounceShader && f.planBounce && f.planBounce.strength > 0 && f.lightCount > 0) {
       this.planBounce = new PlanBounce(d, { frame: this.frameBuf, lights: this.lightBuf, polar: this.polarBuf, compile: (code, label) => this.module(code, label) }, this.planBounceShader)
     }
     if (this.planBounce) {

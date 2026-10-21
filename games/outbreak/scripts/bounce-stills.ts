@@ -39,7 +39,7 @@ type Scene = { name: string; title: string; hour: number; zoom: number; x: numbe
 const extra: Knobs = JSON.parse(arg("extra", "{}")!)
 const VARIANTS: { name: string; label: string; knobs: Knobs }[] = (JSON.parse(arg("variants", "null")!) ?? [
   { name: "today", label: "Today", knobs: { bouncedLight: 0 } },
-  { name: "bounce-3", label: "Bounced light ×3 (default when on)", knobs: { bouncedLight: 1, bounceStrength: 3 } },
+  { name: "bounce-3", label: "Bounced light ×3 (default)", knobs: { bouncedLight: 1, bounceStrength: 3 } },
   { name: "bounce-5", label: "Bounced light ×5", knobs: { bouncedLight: 1, bounceStrength: 5 } },
 ]).map((v: { name: string; label: string; knobs: Knobs }) => ({ ...v, knobs: { ...extra, ...v.knobs } }))
 // Ash (seed 7): the entry hall and living room from props-stills; the crossroads lamps from reflections-stills.

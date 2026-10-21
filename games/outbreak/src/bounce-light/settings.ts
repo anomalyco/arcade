@@ -4,7 +4,7 @@ import type { LabControl } from "@arcade/kit/lab-panel"
 /**
  * Bounced light (AR-115): one bounce of coloured light in plan space, so fire, muzzle flashes, the flashlight pool,
  * lamps and lit windows spill their colour onto nearby floors and walls, softly held by walls
- * (`@arcade/kit/gpu/gi/plan-bounce`). `bouncedLight` 0 is Today.
+ * (`@arcade/kit/gpu/gi/plan-bounce`). On at ×3 by default (D-47); `bouncedLight` 0 is Today.
  */
 export type OutbreakBounceSettings = {
   /** 0 Today (no bounced light), 1 Bounced light. */
@@ -24,7 +24,7 @@ export type OutbreakBounceSettings = {
 }
 
 export const DEFAULT_BOUNCE_SETTINGS: OutbreakBounceSettings = {
-  bouncedLight: 0,
+  bouncedLight: 1,
   bounceStrength: 3,
   bounceRange: 5,
   bounceTexel: 0.5,
