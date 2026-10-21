@@ -55,3 +55,18 @@ Weed, grass, salal, fern and twig clumps are Ashwood's own undergrowth templates
 - Interior-mapped windows: `kitRoomBoxUV` and `kitPaneHash` in `@arcade/kit/gpu/materials/glass` are WGSL ports of `imRoomBoxUV` and `imHash` from **three-fenestra** by Edgar Perez, MIT licence (https://github.com/codedgar/three-fenestra). Its room images are not used: the room atlas is painted by our own ray tracer (`scripts/textures/paint-rooms.ts`).
 - Screen-space contact shadows (`@arcade/kit/gpu/contact-shadows`) follow Bend Studio's technique as implemented by three.js r181 `SSSNode`, MIT licence (https://github.com/mrdoob/three.js); the WGSL is written for the kit's volume pass.
 - The glass grime and condensation layer takes the idea of Martijn Steinrucken's *Heartfelt* (fogged glass with drips cut through it); no code is reused.
+
+## Atmosphere techniques, MIT
+
+The drifting fog bank, fog-depth blur and lit cloud deck (`packages/kit/gpu/fog-scatter.ts`, `fog-blur.ts`) are WGSL
+written for the kit after these MIT-licensed examples; no source files are included:
+
+- three.js `webgpu_postprocessing_fog` (ray–slab fog layer, two counter-drifting warped noise octaves with a threshold
+  and height falloff) and `webgpu_custom_fog_scattering` (blurred scene mixed in by the fog factor). © 2010–2026
+  three.js authors, MIT: https://github.com/mrdoob/three.js/blob/dev/LICENSE
+- Tidewater `src/post/AirHaze.js` (a low analytic haze layer over the height fog), © 2026 DRG Software Solutions LLC,
+  MIT: https://github.com/dgreenheck/tidewater
+- Neon Zenith street-light map (one top-down glow texture lighting the cloud underside and fog), © Bill Chan, MIT:
+  https://github.com/billpwchan/neon-zenith
+- web-ocean footprint-filtered cloud octaves and analytic edge width, © 2026 Maksymilian Dendura, MIT:
+  https://github.com/Noniv/web-ocean

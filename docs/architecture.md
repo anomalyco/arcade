@@ -71,7 +71,7 @@ The table below shows which shared modules each game and the Lab import. `script
 | `gpu/mesh` | 24-byte packed vertex builder (`Mesh`, `packVerts`) | — | Yes | Yes | Yes | Yes | — | Yes | Yes |
 | `gpu/{cull,targets,pass-graph,reactive}` | Frustum/shadow-sweep culling, contiguous draw merging, `ScenePass` slots, MSAA/HDR targets, 5-level bloom, and the TAA reactive-mask contract | Yes | Yes | Yes | Yes | Yes | — | Yes | Yes |
 | `gpu/{renderer,shaders,level}` & `limits` | Polar shadows, cutaway chunks, 4x MSAA HDR, and 5-level bloom | — | Yes | Yes | — | Yes | — | Yes | Yes |
-| `gpu/{fog-scatter,volume-pass}` | Analytic height fog, fog-sky skylight, equiangular lamp scattering and wet streaks; volume slots with depth, history and depth-aware upsample | — | Yes | Yes | — | Yes | — | Yes | — |
+| `gpu/{fog-scatter,volume-pass,fog-blur}` | Analytic height fog, fog-sky skylight, equiangular lamp scattering and wet streaks, drifting fog bank, lit cloud deck and fog-depth blur; volume slots with depth, history, transmittance and depth-aware upsample | — | Yes | Yes | — | Yes | — | Yes | — |
 | `gpu/{boot,scene-frame}` | WebGPU canvas boot, and frame inputs for small arenas: placed lights, box occluders, flat floor lighting | — | Yes | — | — | Yes | — | Yes | Yes |
 | `gpu/lights/{physical,beam,flicker}` | Opt-in physical lights and surfaces (GGX, 3D spot cones, torch beam profile, sky reflections, specular AA) and stateless lamp flicker and failure | — | — | — | — | Yes | — | — | — |
 | `gpu/shadows/spot-shadows` | Perspective shadow maps for the few most important spot lights, re-rendered only when a slot changes | — | — | — | — | Yes | — | — | — |

@@ -35,6 +35,7 @@ const RENDERER_TRANSITIVE_SPECS = [
   "@arcade/kit/gpu/lamp-grid",
   "@arcade/kit/gpu/volume-pass",
   "@arcade/kit/gpu/fog-scatter",
+  "@arcade/kit/gpu/fog-blur",
   "@arcade/kit/gpu-perf",
   "@arcade/kit/textures",
   "@arcade/kit/textures/loader",
@@ -136,9 +137,9 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
       s === "@arcade/kit/limits",
   },
   {
-    area: "`gpu/{fog-scatter,volume-pass}`",
-    description: "Analytic height fog, fog-sky skylight, equiangular lamp scattering and wet streaks; volume slots with depth, history and depth-aware upsample",
-    match: (s) => s === "@arcade/kit/gpu/fog-scatter" || s === "@arcade/kit/gpu/volume-pass",
+    area: "`gpu/{fog-scatter,volume-pass,fog-blur}`",
+    description: "Analytic height fog, fog-sky skylight, equiangular lamp scattering and wet streaks, drifting fog bank, lit cloud deck and fog-depth blur; volume slots with depth, history, transmittance and depth-aware upsample",
+    match: (s) => s === "@arcade/kit/gpu/fog-scatter" || s === "@arcade/kit/gpu/volume-pass" || s === "@arcade/kit/gpu/fog-blur",
   },
   {
     area: "`gpu/{boot,scene-frame}`",

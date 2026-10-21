@@ -6,7 +6,7 @@ import { loadGltf, imageTexture } from "@arcade/kit/gpu/gltf"
 import { Renderer, type FrameInput } from "@arcade/kit/gpu/renderer"
 import { flatLighting, newSceneFrame, packSceneFrame, SceneLights, type SceneLight } from "@arcade/kit/gpu/scene-frame"
 import { SpotShadows, spotShadowControls } from "@arcade/kit/gpu/shadows/spot-shadows"
-import { FogScatter, fogControls, fogCone, type FogLamp } from "@arcade/kit/gpu/fog-scatter"
+import { FogScatter, atmosphereControls, createFogSettings, fogControls, fogCone, type FogLamp } from "@arcade/kit/gpu/fog-scatter"
 import { Ssr, ssrControls } from "@arcade/kit/gpu/reflections/ssr"
 import { WET_DEFAULTS, packWet, wetControls } from "@arcade/kit/gpu/reflections/wet"
 import { makeSceneShader, spriteShader } from "@arcade/kit/gpu/shaders"
@@ -18,7 +18,7 @@ import { createGlassSettings, createRoomSettings, glassControls, packGlassKnobs,
 import { loadRoomAtlas } from "@arcade/kit/gpu/materials/rooms"
 import { contactShadowControls, contactShadowInput, createContactShadowSettings, packContactShadowKnobs } from "@arcade/kit/gpu/contact-shadows"
 import type { ScenePass } from "@arcade/kit/gpu/pass-graph"
-import { controls, defaults } from "./settings"
+import { ATMOSPHERE, controls, defaults } from "./settings"
 import { hooks, texturedHooks, glassHooks, fenceHooks, fogVolume, reflectionVolume, thinGlassHooksLot, windowHooks, contactVolume, NIGHT_FLOATS } from "./shaders"
 import { buildWorld, CAR, START, walls } from "./world"
 import { canvasTexture, foliageTexture, solidTexture } from "./foliage"
@@ -34,11 +34,15 @@ async function main() {
   const gpu = await openGpu(canvas, "LOT")
   if (typeof gpu === "string") throw new Error(gpu)
   const device=gpu.device
-  const smoke = new URLSearchParams(location.search).has("smoke")
+  const query = new URLSearchParams(location.search)
+  const smoke = query.has("smoke")
+  // Automation only: freezes the bank and cloud drift at a time in seconds.
+  const fixedTime = query.has("time") ? Number(query.get("time")) : null
   const shader = makeSceneShader(hooks)
   // Software-GPU smoke keeps Today and compiles nothing it does not draw.
-  const renderer = new Renderer(gpu.device, gpu.context, gpu.format, { scene: shader, sprite: spriteShader(), post, volume: smoke ? [reflectionVolume, fogVolume] : [contactVolume, reflectionVolume, fogVolume] })
-  const fog=new FogScatter(), ssr=new Ssr(), wet={...WET_DEFAULTS}
+  const renderer = new Renderer(gpu.device, gpu.context, gpu.format, { scene: shader, sprite: spriteShader(), post, volume: smoke ? [reflectionVolume, fogVolume(false)] : [contactVolume, reflectionVolume, fogVolume(true)] })
+  // The CI smoke keeps the atmosphere at Today: its software GPU cost is noted in docs/rendering-techniques.md.
+  const fog=new FogScatter(createFogSettings(smoke ? {} : ATMOSPHERE)), ssr=new Ssr(), wet={...WET_DEFAULTS}
   const settings = defaults()
   renderer.setTemporal({ ...TEMPORAL_DEFAULTS, mode: "taa", sharpen: 0.12 })
   const t0=performance.now()
@@ -147,6 +151,7 @@ async function main() {
   panel.addControls(glass,glassControls("Glass"))
   panel.addControls(rooms,roomControls("Glass"))
   panel.addControls(contact,contactShadowControls("Shadows"))
+  panel.addControls(fog.settings,atmosphereControls("Atmosphere","atmo."))
   // LabPanel owns Backquote, including when the canvas is pointer-locked.
   const lights = new SceneLights()
   lights.setBoxes([{ rect: [-55,-22,35,22], h: 19.6 }])
@@ -218,7 +223,7 @@ async function main() {
     lastFrame={ frame: frameData, lights: lights.lights, lightCount: lights.lightCount, shadowLightCount: lights.shadowLightCount,
       occluders: lights.occ, occluderCount: lights.occCount, lampPower: lights.power, lampCount: 0,
       view: [-700, -700, 700, 700], batches: [], alphaSprites: empty, alphaCount: 0, addSprites: empty, addCount: 0, grade: [0, 0, 0, settings.exposure],
-      fog:fog.update({eye:camera.eye,viewProj:vp,lamps:fogLamps}),volume:volumes() }
+      fog:fog.update({eye:camera.eye,viewProj:vp,lamps:fogLamps,time:fixedTime ?? now/1000}),volume:volumes(),fogBlur:fog.blurInput() }
     renderer.render(lastFrame)
     frames++
     if(smoke) void device.queue.onSubmittedWorkDone().then(()=>performance.mark("lot:frame-complete"))
@@ -238,7 +243,8 @@ async function main() {
     ssr.settings.mode=mode; paused=false
     return out
   }
-  Object.assign(window, { lot: { camera, settings, ssr, wet, measure, measureFrames, glass, rooms, contact, forest:forestSettings, forestStats:()=>forest.stats(), timings:{worldMs,readyMs}, dressing:dressingSettings, get dressingCount() { return dressingCount }, fog, renderer, comparison, get frames() { return frames }, get paused() { return paused }, set paused(value:boolean) { paused=value }, ready: true } })
+  // measureFrame(): GPU ms of the last frame's input (timestamp-query), for scripts/atmosphere.ts.
+  Object.assign(window, { lot: { camera, settings, ssr, wet, measure, measureFrames, measureFrame: () => lastFrame ? renderer.measure(lastFrame) : null, get input() { return lastFrame }, glass, rooms, contact, forest:forestSettings, forestStats:()=>forest.stats(), timings:{worldMs,readyMs}, dressing:dressingSettings, get dressingCount() { return dressingCount }, fog, renderer, comparison, get frames() { return frames }, get paused() { return paused }, set paused(value:boolean) { paused=value }, ready: true } })
   requestAnimationFrame(render)
 }
 void main().catch(error => { console.error(error); document.getElementById("hud")!.textContent = String(error) })

@@ -6,7 +6,8 @@
  * A shader with `depth` also reads the stored scene depth and the unjittered `VolumeFrame` (binding 4); with `history`
  * it accumulates in its own half-resolution history (reprojected by depth through the previous unjittered
  * viewProj, clamped to the current 3×3 range padded by 25 %, reset on a cut) and comes back through a 4-tap
- * depth-aware upsample instead of the bilinear one, so poles and fences keep a clean edge.
+ * depth-aware upsample instead of the bilinear one, so poles and fences keep a clean edge. With `transmittance` its
+ * alpha is the share of the scene that shows through (`scene · a + rgb`), so a fog bank can hide what is behind it.
  *
  * A shader with `color` also reads this frame's scene colour before the resolve (`sceneColor`, binding 20, internal
  * size, alpha carries the reflective-surface roughness of `@arcade/kit/gpu/reflections/surface`); one with `filter`
@@ -35,6 +36,11 @@ export type VolumeLightShader = {
   lowDepth?: boolean
   /** How the slot lands in the scene: added (in-scatter, the default) or multiplied (rgb is a 0..1 visibility). */
   composite?: "add" | "multiply"
+  /**
+   * Alpha is the transmittance of the medium in front of the scene: the slot composites `scene · a + rgb` and leaves
+   * HDR alpha alone (fog banks, cloud decks). Without it rgb is added and HDR alpha is multiplied by 1 − a.
+   */
+  transmittance?: boolean
 }
 
 /** Floats in a slot's own uniform (`VolumeInput.params`, binding 21: `array<vec4f, 8>`). */
@@ -276,6 +282,7 @@ const U = () => GPUBufferUsage
 const T = () => GPUTextureUsage
 const additiveKeepAlpha: GPUBlendState = { color: { srcFactor: "one", dstFactor: "one" }, alpha: { srcFactor: "zero", dstFactor: "one-minus-src-alpha" } }
 const multiplyKeepAlpha: GPUBlendState = { color: { srcFactor: "zero", dstFactor: "src" }, alpha: { srcFactor: "zero", dstFactor: "one" } }
+const transmit: GPUBlendState = { color: { srcFactor: "one", dstFactor: "src-alpha" }, alpha: { srcFactor: "zero", dstFactor: "one" } }
 
 export class VolumeSlot {
   readonly usesDepth: boolean
@@ -291,6 +298,7 @@ export class VolumeSlot {
   private readonly lowDepthLayout: GPUBindGroupLayout | null = null
   private lowDepthGroup: GPUBindGroup | null = null
   private lowDepthTex: GPUTexture | null = null
+  private readonly clearAlpha: number
   private readonly march: GPURenderPipeline
   private readonly marchLayout: GPUBindGroupLayout
   private readonly compositePipe: GPURenderPipeline
@@ -314,6 +322,8 @@ export class VolumeSlot {
     this.usesDepth = !!shader.depth || !!shader.history || !!shader.color || !!shader.filter || !!shader.lowDepth
     this.usesHistory = !!shader.history
     this.usesColor = !!shader.color
+    // A transmittance slot's empty texels keep the scene (a = 1).
+    this.clearAlpha = shader.transmittance ? 1 : 0
     const entries: GPUBindGroupLayoutEntry[] = [
       { binding: 0, visibility: S.FRAGMENT, buffer: { type: "uniform" } },
       { binding: 1, visibility: S.FRAGMENT, buffer: { type: "read-only-storage" } },
@@ -414,7 +424,7 @@ export class VolumeSlot {
       label: `volume ${index} composite`,
       layout: d.createPipelineLayout({ bindGroupLayouts: [this.compositeLayout] }),
       vertex: { module: comp, entryPoint: "vs" },
-      fragment: { module: comp, entryPoint: "fs", targets: [{ format: shared.format, blend: shader.composite === "multiply" ? multiplyKeepAlpha : additiveKeepAlpha }] },
+      fragment: { module: comp, entryPoint: "fs", targets: [{ format: shared.format, blend: shader.transmittance ? transmit : shader.composite === "multiply" ? multiplyKeepAlpha : additiveKeepAlpha }] },
       primitive: { topology: "triangle-list" },
     })
   }
@@ -569,7 +579,7 @@ export class VolumeSlot {
       lp.draw(3)
       lp.end()
     }
-    const march = enc.beginRenderPass({ colorAttachments: [{ view: this.tex!.createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 0 } }] })
+    const march = enc.beginRenderPass({ colorAttachments: [{ view: this.tex!.createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: this.clearAlpha } }] })
     scissor(march, w, h)
     march.setPipeline(this.march)
     march.setBindGroup(0, this.marchGroup!)
@@ -587,7 +597,7 @@ export class VolumeSlot {
     if (this.usesHistory) {
       const read = this.histIndex
       const write = 1 - read
-      const acc = enc.beginRenderPass({ colorAttachments: [{ view: this.hist[write]!.createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 0 } }] })
+      const acc = enc.beginRenderPass({ colorAttachments: [{ view: this.hist[write]!.createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: this.clearAlpha } }] })
       acc.setPipeline(this.accumulatePipe!)
       acc.setBindGroup(0, this.accumulateGroups[read]!)
       acc.draw(3)
