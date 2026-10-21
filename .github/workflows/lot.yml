@@ -29,7 +29,7 @@ jobs:
       - name: Install smoke browser
         run: bunx --no-install playwright-core install chromium --only-shell
       - name: Smoke production bundle
-        timeout-minutes: 1
+        timeout-minutes: 3
         run: bun ../../scripts/smoke.mjs
       - name: Deploy
         if: github.event_name != 'pull_request'

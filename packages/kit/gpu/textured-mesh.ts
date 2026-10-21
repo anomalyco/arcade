@@ -54,7 +54,8 @@ export function texturedSceneShader(hooks: SceneHooks, masked = false): string {
        @group(1) @binding(5) var aoMap: texture_2d<f32>;
        struct Material { color: vec4f, surface: vec4f, flags: vec4f }
       @group(1) @binding(4) var<uniform> Mtl: Material;
-      var<private> texBase: vec4f;
+       var<private> texBase: vec4f;
+       var<private> texNormalVariance: f32;
        var<private> texOrm: vec3f;
        var<private> texAo: f32;
        var<private> texNormal: vec3f;`,
@@ -62,7 +63,9 @@ export function texturedSceneShader(hooks: SceneHooks, masked = false): string {
       texBase = textureSample(baseMap, texSampler, o.uv) * Mtl.color;
        texOrm = textureSample(ormMap, texSampler, o.uv).rgb;
        texAo = textureSample(aoMap, texSampler, o.uv).r;
-      let tn = textureSample(normalMap, texSampler, o.uv).xyz * 2.0 - 1.0;
+       let tn = textureSample(normalMap, texSampler, o.uv).xyz * 2.0 - 1.0;
+       let normalLength = clamp(length(tn), 0.001, 1.0);
+       texNormalVariance = min((1.0 - normalLength) / normalLength, 1.0) * Mtl.surface.z * Mtl.surface.z;
       let dp1 = dpdx(o.world); let dp2 = dpdy(o.world);
       let du1 = dpdx(o.uv); let du2 = dpdy(o.uv);
       let N = normalize(o.normal);
@@ -77,7 +80,7 @@ export function texturedSceneShader(hooks: SceneHooks, masked = false): string {
       albedo = texBase.rgb * o.color;
        alpha = select(1.0, texBase.a, Mtl.flags.y > 0.5);
       n = texNormal;
-      let rough = max(0.08, texOrm.g * Mtl.surface.x);
+       let rough = pow(min(pow(max(0.08, texOrm.g * Mtl.surface.x), 4.0) + texNormalVariance, 1.0), 0.25);
       let metal = texOrm.b * Mtl.surface.y;
        gloss = vec2f(min(240.0, 2.0 / pow(rough, 4.0)), mix(0.08, 0.8, metal) * (1.0 - rough * 0.65));
        ${hooks.material ?? ""}`,

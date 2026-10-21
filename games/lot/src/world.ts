@@ -1,5 +1,6 @@
 import { MAT, Mesh, packVerts } from "@arcade/kit/gpu/mesh"
 import type { Rect } from "@arcade/kit/sim/geom"
+import { meshBytes } from "./mesh-bytes"
 
 // Ashwood shell/play.ts drift, frozen at t=8 s. Its screenshot did not persist the exact capture clock.
 const t = 8
@@ -17,7 +18,7 @@ export async function buildWorld() {
   if(scene.version!==1) throw new Error("Unsupported exterior mesh version")
   const load=async (kind:keyof SourceScene["files"])=>Promise.all(scene.files[kind].map(async file=>{
     const response=await get(file)
-    return new Response(response.body!.pipeThrough(new DecompressionStream("gzip"))).arrayBuffer()
+    return meshBytes(response)
   }))
    const [solid,ground,foliage,fence,glass,undergrowth,impostors]=await Promise.all([load("solid"),load("ground"),load("foliage"),load("fence"),load("glass"),load("undergrowth"),load("impostors")])
   walls.push(...scene.colliders.filter(b=>b.max[1]>0.5 && b.min[1]<1.5).map(b=>[b.min[0]!,b.min[2]!,b.max[0]!,b.max[2]!] as Rect))

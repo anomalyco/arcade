@@ -4,12 +4,13 @@ import { MeshoptDecoder } from "meshoptimizer"
 import { mat4, vec3 } from "wgpu-matrix"
 import { MAT, Mesh } from "./mesh"
 import { packTexturedVerts, type TexturedPrimitive } from "./textured-mesh"
+import { normalMipChain } from "./normal-mips"
 
 export type DecodedImage = { width: number; height: number; data: Uint8Array<ArrayBuffer> }
 export type KtxDecoder = (bytes: Uint8Array) => Promise<DecodedImage>
 
 /** Upload a complete mip chain, including the final 1×1 level. Source images are glTF's unflipped top-left UVs. */
-export async function imageTexture(device: GPUDevice, bytes: Uint8Array, srgb: boolean, mime = "image/png", ktx?: KtxDecoder): Promise<GPUTexture> {
+export async function imageTexture(device: GPUDevice, bytes: Uint8Array, srgb: boolean, mime = "image/png", ktx?: KtxDecoder, normalMap = false): Promise<GPUTexture> {
   const canvas = document.createElement("canvas")
   const ctx = canvas.getContext("2d")!
   if (mime === "image/ktx2") {
@@ -25,10 +26,17 @@ export async function imageTexture(device: GPUDevice, bytes: Uint8Array, srgb: b
   const texture = device.createTexture({ size: [canvas.width, canvas.height], mipLevelCount: levels,
     format: srgb ? "rgba8unorm-srgb" : "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT })
   let width = canvas.width, height = canvas.height
+  if(normalMap) {
+    for(const [mipLevel,mip] of normalMipChain(width,height,ctx.getImageData(0,0,width,height).data).entries())
+      device.queue.writeTexture({texture,mipLevel},mip.data,{bytesPerRow:mip.width*4},[mip.width,mip.height])
+    return texture
+  }
+  let source=canvas
   for (let mipLevel = 0; mipLevel < levels; mipLevel++) {
     const mip = document.createElement("canvas"); mip.width = width; mip.height = height
-    mip.getContext("2d")!.drawImage(canvas, 0, 0, width, height)
+    mip.getContext("2d")!.drawImage(source, 0, 0, width, height)
     device.queue.copyExternalImageToTexture({ source: mip }, { texture, mipLevel }, [width, height])
+    source=mip
     width = Math.max(1, width >> 1); height = Math.max(1, height >> 1)
   }
   return texture
@@ -53,12 +61,12 @@ export async function loadGltf(device: GPUDevice, url: string, transform = mat4.
   const white = solid([255, 255, 255, 255], true)
   const normal = solid([128, 128, 255, 255], false)
   const orm = solid([255, 255, 255, 255], false)
-  const tex = (t: Texture | null, srgb: boolean, fallback: GPUTexture) => {
+  const tex = (t: Texture | null, srgb: boolean, fallback: GPUTexture, normalMap=false) => {
     if (!t) return Promise.resolve(fallback)
-    const key = `${doc.getRoot().listTextures().indexOf(t)}:${srgb}`
+    const key = `${doc.getRoot().listTextures().indexOf(t)}:${srgb}:${normalMap}`
     let promise = cache.get(key)
     if (!promise) {
-      promise = imageTexture(device, t.getImage()!, srgb, t.getMimeType(), ktx).then(t => { textures.push(t); return t })
+      promise = imageTexture(device, t.getImage()!, srgb, t.getMimeType(), ktx, normalMap).then(t => { textures.push(t); return t })
       cache.set(key, promise)
     }
     return promise
@@ -87,7 +95,7 @@ export async function loadGltf(device: GPUDevice, url: string, transform = mat4.
         }
         const vertices = packTexturedVerts(mesh.v, uvs)
         const m = primitive.getMaterial()
-        jobs.push(Promise.all([tex(m?.getBaseColorTexture() ?? null, true, white), tex(m?.getNormalTexture() ?? null, false, normal), tex(m?.getMetallicRoughnessTexture() ?? null, false, orm), tex(m?.getOcclusionTexture() ?? null, false, orm)]).then(([base, normal, orm, ao]) => ({
+        jobs.push(Promise.all([tex(m?.getBaseColorTexture() ?? null, true, white), tex(m?.getNormalTexture() ?? null, false, normal, true), tex(m?.getMetallicRoughnessTexture() ?? null, false, orm), tex(m?.getOcclusionTexture() ?? null, false, orm)]).then(([base, normal, orm, ao]) => ({
           vertices, base, normal, orm, ao, aoStrength: m?.getOcclusionTexture() ? m.getOcclusionStrength() : 0,
           alphaCutoff: m?.getAlphaMode() === "MASK" ? m.getAlphaCutoff() : 0,
           color: m?.getBaseColorFactor() ?? [1, 1, 1, 1], roughness: m?.getRoughnessFactor() ?? 1,

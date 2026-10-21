@@ -5,8 +5,9 @@ import { fogSceneWgsl, fogScatterVolume } from "@arcade/kit/gpu/fog-scatter"
 const nightUniform = `struct Night { fog: vec4f, look: vec4f, torch: vec4f }
 @group(0) @binding(13) var<uniform> N: Night;`
 export const fogVolume = fogScatterVolume({ declarations: nightUniform,
-  wet: "select(0.0,N.look.x,p.y < 0.06 && p.y > -0.05 && (abs(p.x)<6.0 || (p.x > -13.0 && p.x < 13.0 && p.z > 120.0 && p.z < 145.0)))",
+  wet: "N.look.x * (1.0-smoothstep(0.03,0.10,abs(p.y))) * (1.0-smoothstep(-max(0.2,footprint),max(0.2,footprint),min(abs(p.x)-6.0,max(abs(p.x)-13.0,abs(p.z-132.5)-12.5))))",
   roughness: "0.55", normal: "vec3f(0.0,1.0,0.0)",
+  reflectionSamples:4, reflectionCap:"N.look.z",
 })
 
 const nightHooks: SceneHooks = {
@@ -34,8 +35,11 @@ const nightHooks: SceneHooks = {
   `,
 }
 
-export const hooks = withPhysicalLights(nightHooks, { env: "mix(fogEnv(dir),fogAmbient(n),rough*rough)", settings: { spill: 0 }, spotShadows: true })
-export const texturedHooks: SceneHooks = { ...hooks, material: `${hooks.material}\nif(mat!=20) { pbrRough=rough; } pbrMetal=metal;` }
+const physical = { env: "mix(fogEnv(dir),fogAmbient(n),rough*rough)", knobs:"vec4f(N.look.w,1.0,1.0,0.02)", spotShadows:true }
+export const hooks = withPhysicalLights(nightHooks, physical)
+export const texturedHooks: SceneHooks = withPhysicalLights({ ...nightHooks,
+  material: `${nightHooks.material}\nif(mat!=20) { pbrRough=rough; } else { pbrRough=pow(min(pow(pbrRough,4.0)+texNormalVariance*N.look.w,1.0),0.25); } pbrMetal=metal;`,
+}, {...physical,aaNormal:"texNormal"})
 export const glassHooks: SceneHooks = { ...hooks,
   material: `${hooks.material}\npbrRough=0.06; alpha=0.35;`,
   combineLighting: `${hooks.combineLighting}; col += vec3f(1.0,0.36,0.08)*0.7`,

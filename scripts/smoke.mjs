@@ -24,15 +24,17 @@ const server = Bun.serve({
 })
 let browser
 let bootTimeline = async () => "not loaded"
-// The workflow step allows 60 s. On SwiftShader the GPU process compiles every render pipeline on one thread before it
+// Most workflow steps allow 60 s; Lot allows 180 s for its dense imported exterior and software-GPU queue drain.
+// On SwiftShader the GPU process compiles every render pipeline on one thread before it
 // presents a frame (Outbreak, Oct 20: 22–36 s, ~1 s per scene-shader pipeline), and the page's main thread can block
 // behind it, so readiness and the first frames share one budget rather than a separate 20 s readiness limit.
-const READY_MS = 40_000
+const READY_MS = game === "lot" ? 100_000 : 40_000
+const DEADLINE_MS = game === "lot" ? 165_000 : 55_000
 const deadline = setTimeout(async () => {
   const boot = await Promise.race([bootTimeline().catch(() => "?"), Bun.sleep(1_000).then(() => "page unresponsive")])
-  console.error(`${game}: smoke exceeded 55 seconds; boot ${boot}`)
+  console.error(`${game}: smoke exceeded ${DEADLINE_MS / 1000} seconds; boot ${boot}`)
   process.exit(1)
-}, 55_000)
+}, DEADLINE_MS)
 // CI (Linux) has no GPU and uses SwiftShader. On macOS the real Metal adapter renders ~80x faster and must actually
 // start: there the "needs WebGPU" fallback counts as a failure.
 // SMOKE_GPU=swiftshader reproduces CI on a Mac.
@@ -65,7 +67,7 @@ try {
   page.on("requestfailed", request => errors.push(`${request.url()}: ${request.failure()?.errorText}`))
   page.on("response", response => { if (response.status() >= 400) errors.push(`${response.status()} ${response.url()}`) })
   // The Lab's bench mode exposes window.lab after its first frame and keeps audio locked.
-  const response = await page.goto(`http://127.0.0.1:${server.port}${prefix}${game === "lab" ? "?bench" : ""}`, { waitUntil: "load", timeout: 15_000 })
+  const response = await page.goto(`http://127.0.0.1:${server.port}${prefix}${game === "lab" ? "?bench" : game === "lot" ? "?smoke" : ""}`, { waitUntil: "load", timeout: 15_000 })
   assert.equal(response.status(), 200)
   // Require JS-created UI, not the static HTML shell. A missing GPU is an explicit
   // supported outcome for these WebGPU-only games, never a blanket error waiver. Interval polling, not the default
@@ -74,7 +76,11 @@ try {
     if (game === "lot") {
       const status = document.querySelector("#hud")?.textContent
       if (status && /needs WebGPU|No WebGPU adapter is available|WebGPU could not start/.test(status)) return status
-      return window.lot?.ready && window.lot.frames >= 2 ? "lot ready" : false
+      if (!window.lot?.ready || window.lot.frames < 2) return false
+      // Stop submitting the dense scene once it has rendered. On SwiftShader, further frames queue behind the two
+      // required frames and can keep Chromium's GPU process busy past the smoke's shutdown deadline.
+      window.lot.paused = true
+      return "lot ready"
     }
     if (game === "lab") {
       const notice = document.querySelector("[data-lab-notice]")?.textContent
@@ -112,6 +118,10 @@ try {
     requestAnimationFrame(frame)
   }))
   console.log(`${game}: presented frames at ${frames.join(", ")} ms`)
+  if (game === "lot") {
+    console.log(`lot: draining ${await page.evaluate(() => window.lot?.frames)} submitted frames`)
+    await page.evaluate(() => window.lot?.renderer.passContext.device.queue.onSubmittedWorkDone())
+  }
   assert.deepEqual(errors, [], `${game}: browser errors`)
   const outcome = await ready.jsonValue()
   if (metal) assert.match(outcome, /ready/, `${game}: WebGPU did not start on Metal (${outcome})`)
