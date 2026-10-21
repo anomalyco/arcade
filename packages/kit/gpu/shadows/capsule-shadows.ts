@@ -23,10 +23,10 @@ import { LIGHT_FLOATS, MAX_LIGHTS } from "../../limits"
  * shadow only exists where that light actually lands. A character never shadows itself, only other bodies do
  * (`capsulePrepare(..., onCharacter)`): boxy meshes poke out of their capsules, so self terms would be acne.
  *
- * Scene binding (group 0): 23 the packed storage buffer (`Renderer.setCapsuleShadows`). WGSL: `capsuleShadowWgsl`.
+ * Scene binding (group 0): 25 the packed storage buffer (`Renderer.setCapsuleShadows`). WGSL: `capsuleShadowWgsl`.
  */
 
-export const CAPSULE_SHADOW_BINDING = 23
+export const CAPSULE_SHADOW_BINDING = 25
 /** Characters per frame; the cells store their index in a byte. */
 export const MAX_SHADOW_CHARACTERS = 160
 /** Capsules per frame (a standing human is 14). */

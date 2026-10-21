@@ -720,7 +720,7 @@ export class Renderer {
     this.makeSceneGroup()
   }
 
-  /** Binds soft capsule shadows (`@arcade/kit/gpu/shadows/capsule-shadows` `CapsuleShadows.buffer`) at scene binding 23. */
+  /** Binds soft capsule shadows (`@arcade/kit/gpu/shadows/capsule-shadows` `CapsuleShadows.buffer`) at scene binding 25. */
   setCapsuleShadows(buffer: GPUBuffer): void {
     this.capsuleShadowBuf = buffer
     this.makeSceneGroup()
