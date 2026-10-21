@@ -1,14 +1,18 @@
 import type { SceneHooks } from "@arcade/kit/gpu/shaders"
 import { withPhysicalLights } from "@arcade/kit/gpu/lights/physical"
 import { fogSceneWgsl, fogScatterVolume } from "@arcade/kit/gpu/fog-scatter"
+import { reflectiveSurfaceReturn } from "@arcade/kit/gpu/reflections/surface"
+import { ssrVolume } from "@arcade/kit/gpu/reflections/ssr"
+import { WET_ASPHALT, wetMaterialWgsl, wetSurfaceWgsl } from "@arcade/kit/gpu/reflections/wet"
 
-const nightUniform = `struct Night { fog: vec4f, look: vec4f, torch: vec4f, forest: vec4f }
+const nightUniform = `struct Night { fog: vec4f, look: vec4f, torch: vec4f, forest: vec4f, wet: vec4f }
 @group(0) @binding(13) var<uniform> N: Night;`
-export const fogVolume = fogScatterVolume({ declarations: nightUniform,
-  wet: "N.look.x * (1.0-smoothstep(0.03,0.10,abs(p.y))) * (1.0-smoothstep(-max(0.2,footprint),max(0.2,footprint),min(abs(p.x)-6.0,max(abs(p.x)-13.0,abs(p.z-132.5)-12.5))))",
-  roughness: "0.55", normal: "vec3f(0.0,1.0,0.0)",
+// Wet reflections follow the materials: every physical surface tags its roughness in the HDR alpha, and the asphalt's
+// wet/puddle term (kit reflections/wet) sets that roughness, so puddles mirror and the film between them smears.
+export const fogVolume = fogScatterVolume({ declarations: nightUniform, surface: true, wetSettings: "N.wet", wetMaterial: WET_ASPHALT,
   reflectionSamples:4, reflectionCap:"N.look.z",
 })
+export const reflectionVolume = ssrVolume({ wetMaterial: WET_ASPHALT })
 
 const nightHooks: SceneHooks = {
   lampGrid: false,
@@ -18,13 +22,13 @@ const nightHooks: SceneHooks = {
     o.world+=vec3f(side.x*v.normal.x*v.normal.z*0.5,v.normal.y,side.y*v.normal.x*v.normal.z*0.5)*v.matAux.y;
     o.normal=normalize(vec3f(toCam.x,0.55,toCam.y));
   }`,
-  declarations: nightUniform + fogSceneWgsl,
+  declarations: nightUniform + fogSceneWgsl + wetSurfaceWgsl + "\nvar<private> wetFootprint: f32 = 0.0;",
   bounce: "vec3f(0.0)", directional: "vec3f(0.0)", lightLeak: "0.0", wallDirectScale: "1.0",
   ambient: "fogAmbient(n)",
   material: /* wgsl */ `
     pbrRough=0.8;
-    if(mat==20) { albedo*=mix(1.0,0.52,N.look.x); pbrRough=mix(0.8,0.36,N.look.x); }
   `,
+  fragmentReturn: reflectiveSurfaceReturn(),
   surface: /* wgsl */ `
     let ray=normalize(o.world-F.cam.xyz);
     if(mat==3 && o.aux<0.0) {
@@ -38,7 +42,19 @@ const nightHooks: SceneHooks = {
 const physical = { env: "mix(fogEnv(dir),fogAmbient(n),rough*rough)", knobs:"vec4f(N.look.w,1.0,1.0,0.02)", spotShadows:true }
 export const hooks = withPhysicalLights(nightHooks, physical)
 export const texturedHooks: SceneHooks = withPhysicalLights({ ...nightHooks,
-  material: `${nightHooks.material}\nif(mat!=20) { pbrRough=rough; } else { pbrRough=pow(min(pow(pbrRough,4.0)+texNormalVariance*N.look.w,1.0),0.25); } pbrMetal=metal;`,
+  fragmentStart: "wetFootprint=max(length(dpdx(o.world)),length(dpdy(o.world)));",
+  material: `${nightHooks.material}
+    if(mat!=20) { pbrRough=rough; } else {
+      let geo=normalize(o.normal);
+      let wet=wetSurface(o.world,geo.y,rough,texAo,wetFootprint,N.wet,${wetMaterialWgsl(WET_ASPHALT)});
+      albedo*=wet.albedo;
+      n=normalize(mix(n,geo,wet.flat));
+      // Like Ashwood's specularAA, puddles keep the asphalt's lost mip variance (×2, capped at 0.05): far puddles go
+      // satin instead of mirroring the horizon as a sharp sky patch.
+      let aaVar=texNormalVariance*N.look.w;
+      pbrRough=pow(min(pow(wet.roughness,4.0)+mix(aaVar,min(aaVar*2.0,0.05),wet.flat),1.0),0.25);
+    }
+    pbrMetal=metal;`,
 }, {...physical,aaNormal:"texNormal"})
 export const glassHooks: SceneHooks = { ...hooks,
   material: `${hooks.material}\npbrRough=0.06; alpha=0.35;`,

@@ -737,6 +737,7 @@ export class Renderer {
           depthWidth: this.targets.width,
           depthHeight: this.targets.height,
           depthClear: DEPTH_CFG.clearValue,
+          colorView: this.targets.hdrView,
         }
       }
       slot.draw(enc, input, this.targets.width, this.targets.height, view, target, tw, th)

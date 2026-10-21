@@ -156,6 +156,11 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
     match: (s) => s === "@arcade/kit/gpu/shadows/spot-shadows",
   },
   {
+    area: "`gpu/reflections/{ssr,surface,wet}`",
+    description: "Screen-space reflections volume slot (Ashwood's march, streak blur and history), HDR-alpha roughness tag, and the shared wet/puddle surface term",
+    match: (s) => s.startsWith("@arcade/kit/gpu/reflections/"),
+  },
+  {
     area: "`gpu/{motion,motion-blur,sprite-motion}`",
     description: "Depth-aware 8-tap shutter gather and actor/sprite velocity history",
     match: (s) =>
