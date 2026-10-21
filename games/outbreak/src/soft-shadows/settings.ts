@@ -5,12 +5,11 @@ import type { LabControl } from "@arcade/kit/lab-panel"
  * Soft character shadows (AR-113, Lab: Backquote › Look · Character shadows): survivors, zombies, the downed and the
  * dead cast analytic capsule shadows from their rig bones (`@arcade/kit/gpu/shadows/capsule-shadows`): a contact
  * shadow under them and a soft shadow away from each strong light nearby (lamps, torches, fire) and from the sun or
- * moon. `softShadowMode` 0 is
- * Today: the streetlamp blob and boot AO under the survivor and the two nearest zombies, and hard round casters in the
- * flashlight.
+ * moon. Soft is the default (Kit's pick, D-48); `softShadowMode` 0 is Today: the streetlamp blob and boot AO under the
+ * survivor and the two nearest zombies, and hard round casters in the flashlight.
  */
 export type OutbreakSoftShadowSettings = {
-  /** 0 Today, 1 soft capsule shadows. */
+  /** 0 Today, 1 soft capsule shadows (default). */
   softShadowMode: number
   /** × contact shadow under and around bodies. */
   softShadowContact: number
@@ -35,7 +34,7 @@ export type OutbreakSoftShadowSettings = {
 const K = CAPSULE_SHADOW_DEFAULTS
 
 export const DEFAULT_SOFT_SHADOW_SETTINGS: OutbreakSoftShadowSettings = {
-  softShadowMode: 0,
+  softShadowMode: 1,
   softShadowContact: K.contact,
   softShadowStrength: K.shadow,
   softShadowLightSize: K.lightSize,

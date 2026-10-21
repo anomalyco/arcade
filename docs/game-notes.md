@@ -902,8 +902,8 @@ proven animation techniques to animation.md, not here.
   street lamp-head ΔE2000 fell 9.57 → 1.16, lamp air 3.37 → 1.52, actor ground 3.06 → 2.40, global 6.36 → 6.24. Same-frame
   paired GPU cost (`scripts/ab-gpu.ts`, 20 rounds, 3456×1894) is +0.011 ms street / −0.014 ms interior (MADs 0.23/0.11),
   inside noise. Moving the ground pool under the lens worsened the matched road pool (1.81 → 3.53) and was dropped.
-- **Soft character shadows from the rig's bones: analytic capsules per light, not a shadow map.** Outbreak's Lab option
-  (AR-113, Look · Character shadows, Today default) feeds every drawn survivor, zombie, downed and dead body to
+- **Soft character shadows from the rig's bones: analytic capsules per light, not a shadow map.** Outbreak's default since
+  D-48 (AR-113, Look · Character shadows, Today one setting away) feeds every drawn survivor, zombie, downed and dead body to
   `@arcade/kit/gpu/shadows/capsule-shadows`: 14 bone capsules per rig, the 4 strongest frame lights per body and a plan
   grid, so only fragments near a body pay. Each fragment gets a contact term in AO and a contact-hardening soft
   visibility per light (`h/t` vs size/distance) through `SceneHooks.lightVisibility`, so the shadow exists only where
