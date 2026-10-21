@@ -91,8 +91,8 @@ export function texturedSceneShader(hooks: SceneHooks, masked = false): string {
 /** Imported meshes share the kit's lights, polar shadows, scene hooks, HDR target and temporal resolve. */
 export class TexturedMeshPass implements ScenePass {
   private draws: { buffer: GPUBuffer; uniform: GPUBuffer; group: GPUBindGroup; count: number; blend: boolean; masked: boolean }[] = []
-  private opaque: GPURenderPipeline
-  private alpha: GPURenderPipeline
+  private opaque: GPURenderPipeline | null
+  private alpha: GPURenderPipeline | null
   private mask: GPURenderPipeline | null
   constructor(ctx: PassContext, primitives: TexturedPrimitive[], hooks: SceneHooks) {
     const d = ctx.device
@@ -113,7 +113,9 @@ export class TexturedMeshPass implements ScenePass {
       depthStencil: { format: ctx.depth, depthWriteEnabled: !blend, depthCompare: ctx.depthCompare ?? "less-equal" },
       multisample: { count: ctx.samples },
     })
-    this.opaque = pipeline(false); this.alpha = pipeline(true)
+    // Each imported pass has a fixed draw list. Avoid compiling unused variants (especially costly on SwiftShader).
+    this.opaque = primitives.some(p => !p.blend && (p.alphaCutoff ?? 0) <= 0) ? pipeline(false) : null
+    this.alpha = primitives.some(p => p.blend && (p.alphaCutoff ?? 0) <= 0) ? pipeline(true) : null
     this.mask = primitives.some(p => (p.alphaCutoff ?? 0) > 0) ? pipeline(false, true) : null
     const sampler = d.createSampler({ magFilter: "linear", minFilter: "linear", mipmapFilter: "linear", addressModeU: "repeat", addressModeV: "repeat", maxAnisotropy: 8 })
     for (const p of primitives) {
@@ -132,7 +134,7 @@ export class TexturedMeshPass implements ScenePass {
   draw(pass: GPURenderPassEncoder) {
     for (const blend of [false, true]) {
       for (const draw of this.draws) if (draw.blend === blend) {
-        pass.setPipeline(draw.masked ? this.mask! : blend ? this.alpha : this.opaque)
+        pass.setPipeline(draw.masked ? this.mask! : blend ? this.alpha! : this.opaque!)
         pass.setBindGroup(1, draw.group); pass.setVertexBuffer(0, draw.buffer); pass.draw(draw.count)
       }
     }

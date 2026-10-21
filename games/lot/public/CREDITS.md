@@ -11,33 +11,37 @@ The Objaverse snapshot names it **'80s Generic USA Station wagon – Low poly mo
 - Licence metadata: https://huggingface.co/datasets/allenai/objaverse/resolve/main/metadata/000-124.json.gz
 - Changes: rotated −90° about Y, scaled to 5.05 m long, centred on its footprint and grounded. Original textures retained. Runtime placement and lighting changed. No endorsement implied.
 
-## Worn asphalt — CC0 1.0
+## Exterior surface scans — CC0 1.0
 
-**Worn Asphalt**, Poly Haven. Original 1k diffuse, OpenGL normal, and AO/roughness/metalness maps.
+The road and lot use Ashwood's separate **Asphalt 02** and **Worn Asphalt** scans. Gravel, forest floor, grass, dirt, concrete, pole wood and metal scans come from the same CC0 Poly Haven and ambientCG library used by Ashwood.
 
 - Original: https://polyhaven.com/a/worn_asphalt
 - Licence: https://polyhaven.com/license
 - Public-domain dedication: https://creativecommons.org/publicdomain/zero/1.0/
 - Downloads are resolved from https://api.polyhaven.com/files/worn_asphalt
-- Runtime modifications: repeated at 6 m, darkened when wet, normal strength reduced, procedural puddles and sky/lamp reflections.
+- Full asset-by-asset credits: [surface credits](ashwood/surfaces/CREDITS.md).
+- Source KTX2 hashes, metre tiling, tint, roughness remapping and normal strength: [surface recipes](ashwood/surfaces/sources.json).
+- Changes: decoded to PNG offline; source albedo and packed surface channels split into base colour, OpenGL normal and AO/roughness/metalness maps. The road darkens when wet and uses the kit's physical lighting and reflected airlight.
 
 ## Procedural work and reference
 
 The exterior geometry is converted from Aiden's Ashwood procedural builders: building shell, dish, guard booth and furniture, barriers, lamps, roads, utility poles, wires, fence, facility grounds, seeded conifers, undergrowth and deadwood. Trees are exported as Ashwood's own per-variant models (two detail levels of branch cards) plus one instance per seeded tree, drawn by the kit's instanced forest; distant trees use the original impostor painter with camera-facing quads. Card shading (inner-crown darkening, face normals) and species colours follow Ashwood's forest material. `ashwood/scene.json` records source hashes for the conversion.
-Ashwood's home drift supplies the camera. The shared kit fog and physical-light ports supply the height fog, sky, lamp scattering, reflected airlight and specular lighting.
+Ashwood's home drift supplies the camera. The shared kit fog, physical-light and reflection ports supply the height fog, sky, lamp scattering, reflected airlight, specular lighting and SSR. The exterior conversion includes scanned building materials, source terrain heights, roadside lamps, furniture, roof and dock geometry.
 The entrance, lobby and storey-0 corridor use separately baked native geometry, authored finish maps and CC0 props: [interior credits](interior/CREDITS.md).
 No Mixamo assets or Three.js runtime are included.
 
 Regenerate downloads with `bun run fetch-assets` in `games/lot`. The script refuses a wagon licence other than the verified CC BY grant. Original licence metadata and source SHA-256 are retained in `assets/source-metadata.json`.
 
-## Booth dressing, CC0 1.0
+## Authored model props, CC0 1.0
 
-Poly Haven **Metal Trash Can** and **Utility Box 01**, downloaded from their original 1k glTF sources. The rusted trash-can variant is selected; both pivots are centred and grounded, with original textures and metre scale retained.
+The CC0 props in Ashwood's compound, facility and road builders use their original placements and metre-normalized geometry. Their KTX2 atlases are decoded to PNG and only LOD0 is retained. This includes the roadside utility cabinet, trash cans, tyres, bags, hydrant and exterior fixtures. Each imported model has its own source hash and credit in `ashwood/models/`.
 
 - https://polyhaven.com/a/metal_trash_can
 - https://polyhaven.com/a/utility_box_01
 - Licence: https://polyhaven.com/license
-- Regenerate with `bun scripts/fetch-dressing.ts`; download URLs and output hashes are in `assets/dressing-metadata.json`.
+- [Imported model credits](ashwood/models/CREDITS.md) and [source hashes](ashwood/models/sources.json).
+- Regenerate with `bun scripts/import-ashwood.ts <afterhours-project>`, then `bun scripts/import-props.ts <afterhours-project>`. Surface scans use `bun scripts/import-surfaces.ts <afterhours-project>`.
+- Additional CC BY and CC BY-SA source props are recorded as excluded in `ashwood/scene.json`; they require approval before reuse. The wagon above was separately approved.
 
 ## Forest LOD and ground-dressing techniques, MIT
 

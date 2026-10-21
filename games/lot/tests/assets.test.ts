@@ -22,9 +22,9 @@ test("UV extension preserves the compact ABI, full UV range and vertex alignment
 test("baked exterior ships complete, finite, triangle-aligned geometry within hosting limits", async () => {
   const base = new URL("../public/ashwood/", import.meta.url)
   const scene: SourceScene = await Bun.file(new URL("scene.json", base)).json()
-  expect(scene.version).toBe(1)
+  expect(scene.version).toBe(2)
   expect(scene.treeCount).toBeGreaterThan(100)
-  for (const kind of ["solid", "ground", "fence", "glass", "undergrowth"] as const) {
+  for (const kind of ["solid", "surface-asphalt", "surface-gravel", "surface-forest_floor", "surface-concrete_wall", "fence", "glass", "stain", "undergrowth"]) {
     expect(scene.files[kind].length).toBeGreaterThan(0)
     for (const name of scene.files[kind]) {
       const file = Bun.file(new URL(name, base))
@@ -75,6 +75,40 @@ test("forest templates and instances match their manifest", async () => {
   expect(lo).toBeGreaterThanOrEqual(0)
   expect(hi).toBeLessThanOrEqual(1)
   expect(hi - lo).toBeGreaterThan(0.3)
+})
+
+test("source layout includes the roadside cabinet and access-road lamp with licensed texture sets", async () => {
+  const base = new URL("../public/ashwood/", import.meta.url)
+  const scene = await Bun.file(new URL("scene.json", base)).json()
+  expect(scene.lamps.some((l:any)=>l.kind==="sodium" && l.position[2]>200 && l.position[2]<215)).toBe(true)
+  expect(scene.props.some((p:any)=>p.name==="utility_box_b" && p.position[2]>130 && p.included)).toBe(true)
+  for(const p of scene.props) if(p.included && p.name!=="car_wagon") {
+    expect(p.license).toBe("CC0-1.0")
+    expect(await Bun.file(new URL(`models/${p.name}.glb`,base)).exists()).toBe(true)
+  }
+  for(const [name,files] of Object.entries(scene.files) as [string,string[]][]) if(name.startsWith("surface-") && files.length) {
+    for(const map of ["base","normal","orm"]) expect(await Bun.file(new URL(`surfaces/${name.slice(8)}-${map}.png`,base)).exists()).toBe(true)
+  }
+})
+
+test("stairwell glow and opaque backing remain separated at distant depth24 precision", async () => {
+  const base = new URL("../public/ashwood/", import.meta.url)
+  const scene: SourceScene = await Bun.file(new URL("scene.json", base)).json()
+  let backing=-Infinity, glow=Infinity
+  for(const file of scene.files.solid) {
+    const bytes=Bun.gunzipSync(await Bun.file(new URL(file,base)).bytes())
+    const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength)
+    for(let o=0;o<bytes.length;o+=24) {
+      const x=view.getFloat32(o,true),z=view.getFloat32(o+8,true)
+      if(x< -42.3 || x> -40.5 || z<24.8 || z>25.03) continue
+      if(bytes[o+16]===5 && bytes[o+17]===8 && bytes[o+18]===7) backing=Math.max(backing,z)
+      if(view.getFloat16(o+20,true)===MAT.glow) glow=Math.min(glow,z)
+    }
+  }
+  expect(Number.isFinite(backing) && Number.isFinite(glow)).toBe(true)
+  expect(glow-backing).toBeGreaterThan(0.07)
+  const depth=(distance:number)=>Math.round((1200/(1200-0.15)-1200*0.15/((1200-0.15)*distance))*0xffffff)
+  for(const cameraZ of [145,158.465,200]) expect(depth(cameraZ-backing)-depth(cameraZ-glow)).toBeGreaterThan(3)
 })
 
 test("shipped wagon is licensed, grounded, metre-scaled and has normals/UVs", async () => {

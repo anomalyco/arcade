@@ -42,6 +42,7 @@ const nightHooks: SceneHooks = {
   ambient: "fogAmbient(n)*mix(1.0,0.12,lotIndoor(o.world))",
   material: /* wgsl */ `
     pbrRough=0.8;
+    if(mat==40) { pbrRough=fract(o.aux*0.5)*2.0; pbrMetal=floor(o.aux*0.5)/15.0; }
   `,
   fragmentReturn: reflectiveSurfaceReturn(),
   surface: /* wgsl */ `
@@ -108,6 +109,20 @@ export const thinGlassHooksLot = thinGlassHooks(hooks, { knobs: glassKnobs,
 export const windowHooks = { ...interiorWindowHooks(hooks, { knobs: glassKnobs, layout: ROOM_ATLAS, mullions: { cols: 3, width: 0.07, transom: 0.47, transomAbove: 3.9 } }), depthBias: "N.forest.z * 2.0" }
 /** Screen-space contact shadows toward the strongest lamps; the fog sky shares the light at each pixel. */
 export const contactVolume = contactShadowVolume({ declarations: fogParamsWgsl + nightUniform, knobs: ["N.contactA", "N.contactB"], ambient: "fogAmbient(n)" })
+
+/** Source facade rain streaks, alpha-blended without writing depth. */
+export const stainHooks: SceneHooks = { ...hooks,
+  declarations: `${hooks.declarations}\nvar<private> stainFootprint: f32;`,
+  fragmentStart: `${hooks.fragmentStart ?? ""}\nstainFootprint=max(fwidth(o.uv.x),0.00001);`,
+  material: `${hooks.material}
+    let u=o.uv.x;
+    let fine=1.0-smoothstep(0.015,0.08,stainFootprint);
+    let streak=0.6+(sin(u*23.1+sin(u*5.3)*2.0)*0.25+sin(u*61.7+sin(u*13.1))*0.18)*fine;
+    let reach=mix(0.55,1.0,fract(sin(floor(u*4.0)*17.3)*9134.7));
+    let fade=1.0-smoothstep(0.0,reach,o.uv.y);
+    alpha=clamp(streak*fade*fade*o.aux,0.0,0.9);
+    pbrRough=1.0; pbrMetal=0.0;`,
+}
 
 /** Ashwood's 50 mm diamond grid with subpixel coverage preserved by screen-space dithering. */
 export const fenceHooks: SceneHooks = { ...hooks, fragmentStart: /* wgsl */ `

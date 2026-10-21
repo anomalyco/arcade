@@ -1,0 +1,310 @@
+{
+  "asphalt": {
+    "set": "asphalt",
+    "size": 3.5,
+    "tint": 0.5,
+    "sat": 0.5,
+    "rough": [
+      0.25,
+      0.7
+    ],
+    "normal": 1.2,
+    "license": "CC0-1.0",
+    "sourceHashes": [
+      "a3dacfad2f5bfc82b1e5357c5e8019e92158148eddfc916b7eccc837ba0063ca",
+      "616c2076fc1878d209e534aca6f22bf2a4039690b6bf3284535827c616bc94fc"
+    ]
+  },
+  "asphalt_lot": {
+    "set": "asphalt_lot",
+    "size": 2.6,
+    "tint": 0.78,
+    "sat": 0.3,
+    "rough": [
+      0.25,
+      0.68
+    ],
+    "normal": 1.1,
+    "license": "CC0-1.0",
+    "sourceHashes": [
+      "2ff9ae078b3406a4958aa13d6ea3cb73044100469d9faebc7e133a3306775227",
+      "0ef5250a58f1d7cc489b3f4c2a24ea97eeed27a42beb8e1866755941c2b7504e"
+    ]
+  },
+  "gravel": {
+    "set": "gravel",
+    "size": 1.5,
+    "tint": 0.55,
+    "sat": 0.6,
+    "rough": [
+      1,
+      0
+    ],
+    "normal": 1.3,
+    "license": "CC0-1.0",
+    "sourceHashes": [
+      "89f440560ec35298313fd9b88ccf6bc7cf82e4c0b9c4ce22a51cdff67fa8169a",
+      "c310896e5f5f104f20d2c95a9a4ac29ae3b47447034d2d51b1f5be2fc47fb02a"
+    ]
+  },
+  "concrete_floor": {
+    "set": "concrete_floor",
+    "size": 3,
+    "tint": 0.9,
+    "sat": 0.4,
+    "rough": [
+      0.3,
+      0.62
+    ],
+    "normal": 1,
+    "license": "CC0-1.0",
+    "sourceHashes": [
+      "26716a308e1544837a3f0a78b2de78223abe9c3a476f851552e1d672622e41ad",
+      "3c0f315337c4853d0fce5a362536f0bcc02dc50ecda1468d1739b84ab1103fe9"
+    ]
+  },
+  "concrete_floor_dry": {
+    "set": "concrete_floor",
+    "size": 3,
+    "tint": 0.9,
+    "sat": 0.4,
+    "rough": [
+      0.35,
+      0.45
+    ],
+    "normal": 1,
+    "license": "CC0-1.0",
+    "sourceHashes": [
+      "26716a308e1544837a3f0a78b2de78223abe9c3a476f851552e1d672622e41ad",
+      "3c0f315337c4853d0fce5a362536f0bcc02dc50ecda1468d1739b84ab1103fe9"
+    ]
+  },
+  "concrete_wall": {
+    "set": "concrete_wall",
+    "size": 1.8,
+    "tint": [
+      0.8,
+      0.83,
+      0.82
+    ],
+    "sat": 0.3,
+    "rough": [
+      0.2,
+      0.76
+    ],
+    "normal": 1.4,
+    "license": "CC0-1.0",
+    "sourceHashes": [
+      "ceec68b628656ec799d41dca114b5676770c1c3ecbf2d50819d110bb946f3528",
+      "f6fbe4d00d6af2afae941418f45e8d9c18b306066e7563e65ca4692517ccdf71"
+    ]
+  },
+  "concrete_dark": {
+    "set": "concrete_dark",
+    "size": 2,
+    "tint": 0.62,
+    "sat": 0.35,
+    "rough": [
+      1,
+      0
+    ],
+    "normal": 1.2,
+    "license": "CC0-1.0",
+    "sourceHashes": [
+      "2f8e21ddabb0f37f8cd86c003f7c95fe32287d446f84b38ca6bf2d840c4d65b0",
+      "4f3a0c4d911e705cf0829f8fb2d549f7ee04d40949d4fd0d066d29300867043c"
+    ]
+  },
+  "concrete_block": {
+    "set": "concrete_dark",
+    "size": 2,
+    "tint": [
+      0.78,
+      0.72,
+      0.6
+    ],
+    "sat": 0.3,
+    "rough": [
+      0.5,
+      0.45
+    ],
+    "normal": 1.1,
+    "license": "CC0-1.0",
+    "sourceHashes": [
+      "2f8e21ddabb0f37f8cd86c003f7c95fe32287d446f84b38ca6bf2d840c4d65b0",
+      "4f3a0c4d911e705cf0829f8fb2d549f7ee04d40949d4fd0d066d29300867043c"
+    ]
+  },
+  "wood_pole": {
+    "set": "wood_pole",
+    "size": 1,
+    "tint": [
+      0.42,
+      0.33,
+      0.26
+    ],
+    "sat": 0.6,
+    "rough": [
+      0.25,
+      0.7
+    ],
+    "normal": 1.6,
+    "license": "CC0-1.0",
+    "sourceHashes": [
+      "9fbbc61845dcf539f2f7d0f0cd1e7ad999f4e7151d2d0a84fc69042bbc9b31b5",
+      "e79891316b6893e78b067f07cfcbc3160bd7b0b5ad90019a9c9adf6a5c6de2d2"
+    ]
+  },
+  "bark": {
+    "set": "bark",
+    "size": 1.2,
+    "tint": [
+      0.5,
+      0.44,
+      0.4
+    ],
+    "sat": 0.8,
+    "rough": [
+      0.3,
+      0.68
+    ],
+    "normal": 1.6,
+    "license": "CC0-1.0",
+    "sourceHashes": [
+      "94e28ad5716ddee890d53281ed4d3795646a96fc4e1dcea8b9ff056c82512dd5",
+      "feaa896feadcdbda1e52f5af014b08b1972129017cdd110f970eeea1c6b5c8f6"
+    ]
+  },
+  "metal_galvanized": {
+    "set": "metal_galvanized",
+    "size": 1,
+    "tint": 1.05,
+    "sat": 0.15,
+    "rough": [
+      0.6,
+      0.12
+    ],
+    "normal": 0.6,
+    "metal": 1,
+    "license": "CC0-1.0",
+    "sourceHashes": [
+      "645081f6bc63e2a03b564b4cb6740d0f890c3be3400e89fa87f845f7991a15bd",
+      "4059936d5c41ffe65867e5cd16b57c44334220a3beee39ce608ecb5ba5cff019"
+    ]
+  },
+  "metal_dark": {
+    "set": "metal_dark",
+    "size": 1,
+    "tint": 0.7,
+    "sat": 1,
+    "rough": [
+      0.8,
+      0.25
+    ],
+    "normal": 1,
+    "license": "CC0-1.0",
+    "sourceHashes": [
+      "25c9dddd7fc9d6487261402cc1d03523613c6f7c4d0fde65980d712aef51b373",
+      "c0f58c849e77119bf2027d7cba9bb6ccfe2fa73317602495d6f538b912242c4c"
+    ]
+  },
+  "metal_painted": {
+    "set": "metal_painted",
+    "size": 1.2,
+    "tint": [
+      0.107,
+      0.119,
+      0.107
+    ],
+    "sat": 0,
+    "rough": [
+      0.45,
+      0.42
+    ],
+    "normal": 0.8,
+    "license": "CC0-1.0",
+    "sourceHashes": [
+      "5d3b1bfa8cfc33291751a797a696a4f253aec28120b7aaed7032356f50582477",
+      "a185f96b4a64ae5efd0bb76cd28cb9bcc9ab0672351270e4d026419cf666b08d"
+    ]
+  },
+  "door_steel": {
+    "set": "metal_painted",
+    "size": 1.2,
+    "tint": [
+      0.047,
+      0.102,
+      0.07
+    ],
+    "sat": 0,
+    "rough": [
+      0.45,
+      0.42
+    ],
+    "normal": 0.8,
+    "license": "CC0-1.0",
+    "sourceHashes": [
+      "5d3b1bfa8cfc33291751a797a696a4f253aec28120b7aaed7032356f50582477",
+      "a185f96b4a64ae5efd0bb76cd28cb9bcc9ab0672351270e4d026419cf666b08d"
+    ]
+  },
+  "forest_floor": {
+    "set": "forest_floor",
+    "size": 1.75,
+    "tint": [
+      0.42,
+      0.4,
+      0.38
+    ],
+    "sat": 0.8,
+    "rough": [
+      0.88,
+      0
+    ],
+    "normal": 1.2,
+    "damp": 0.6,
+    "license": "CC0-1.0",
+    "sourceHashes": [
+      "3e631ab04af4b83b70b272685ee38cfa1cc542fd148bbc5d4b87baa095ebb780",
+      "51c9cd681d481d51eeecb5fcd5019ce557d883c39adf94a94279469c7b8a6331"
+    ]
+  },
+  "grass": {
+    "set": "grass",
+    "size": 2,
+    "tint": [
+      0.34,
+      0.33,
+      0.24
+    ],
+    "sat": 0.75,
+    "rough": [
+      0.925,
+      0
+    ],
+    "normal": 1.1,
+    "damp": 0.5,
+    "license": "CC0-1.0",
+    "sourceHashes": [
+      "75732b4457ea0017c2b78020f25e75400a592794ef881bece04ead4602010b92",
+      "892e7b28f5cf43a6aa000949e6a90bc07945f7a5316db61b0a04f7462d874ed7"
+    ]
+  },
+  "dirt": {
+    "set": "dirt",
+    "size": 1.4,
+    "tint": 0.62,
+    "sat": 0.7,
+    "rough": [
+      0.73,
+      0
+    ],
+    "normal": 1.2,
+    "damp": 0.9,
+    "license": "CC0-1.0",
+    "sourceHashes": [
+      "f86016e006764abb9a5ce51521a90a958c534cf11e52619a70fc2e265c2316d8",
+      "cac03137ced967e0b4586f6f9683fe20be5851acc4b4e2a8490163d118e612d9"
+    ]
+  }
+}

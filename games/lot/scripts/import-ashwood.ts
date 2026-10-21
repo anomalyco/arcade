@@ -5,6 +5,7 @@ import * as THREE from "three"
 import { packVerts, MAT } from "@arcade/kit/gpu/mesh"
 import { packTexturedVerts } from "@arcade/kit/gpu/textured-mesh"
 import { windowAux, type RoomKind } from "@arcade/kit/gpu/materials/rooms"
+import { recipes } from "./surface-recipes"
 
 // Offline conversion of Aiden's actual builders, not a second runtime renderer.
 // Usage: bun scripts/import-ashwood.ts /path/to/afterhours
@@ -16,13 +17,25 @@ const sources: Record<string, string> = {}
 const materials = resolve(import.meta.dir, "ashwood-materials.ts")
 const forest = resolve(import.meta.dir, "ashwood-forest.ts")
 const threeRoot = resolve(import.meta.resolve("three").replace("file://", ""), "../..")
+const modelSource=await readFile(resolve(source,"src/render/models.ts"),"utf8")
+const modelBlock=modelSource.match(/export const MODELS = (\{[\s\S]*?\n\}) as const/)?.[1]
+if(!modelBlock) throw new Error("Missing source model metadata")
+const modelInfo=Function(`return (${modelBlock})`)() as Record<string,{size:number[];licence:string}>
+const modelStub=`export const MODELS=${JSON.stringify(modelInfo)}; export const yawToward=(x,z)=>Math.atan2(-x,-z);
+export const modelCollider=(name,p,inset=0)=>{const [w,h,d]=MODELS[name].size;const c=Math.abs(Math.cos(p.yaw??0)),s=Math.abs(Math.sin(p.yaw??0));const x=(w*c+d*s)/2-inset,z=(w*s+d*c)/2-inset;return {min:[p.position[0]-x,p.position[1],p.position[2]-z],max:[p.position[0]+x,p.position[1]+h,p.position[2]+z]}};
+export const loadModel=()=>{throw new Error('Models are exported separately')};`
 plugin({ name: "ashwood-offline", setup(b) {
   b.onResolve({ filter: /^three(?:\/.*)?$/ }, args => ({ path: resolve(threeRoot,
     args.path === "three" ? "build/three.module.js" : args.path === "three/webgpu" ? "build/three.webgpu.js" : args.path === "three/tsl" ? "build/three.tsl.js" : args.path.replace("three/addons/", "examples/jsm/")) }))
   b.onLoad({ filter: /afterhours\/src\/.*\.ts$/ }, async args => {
-    const text = await readFile(args.path, "utf8")
+    let text = await readFile(args.path, "utf8")
     sources[args.path.slice(source.length + 1)] = new Bun.CryptoHasher("sha256").update(text).digest("hex")
     if (args.path.endsWith("/render/materials.ts")) return { contents: `export * from ${JSON.stringify(materials)}`, loader: "ts" }
+    if (args.path.endsWith("/render/models.ts")) return { contents: modelStub, loader: "ts" }
+    if (args.path.endsWith("/compound/models.ts")) text=text.replace("function items()", "export function items()")
+    // Canvas lettering on the distant north-gate sign is not part of the static mesh adapter.
+    if (args.path.endsWith("/compound/north.ts")) text=text.replace("if (signMat) return signMat", 'return material("metal_painted")')
+    if (args.path.endsWith("/facility/props.ts")) text=text.replace("contactShadows(root, blobs)", "return [...lists].flatMap(([name,items])=>items.map(item=>({name,...item})))")
     if (args.path.endsWith("/world/forest/render.ts")) return { contents: `export * from ${JSON.stringify(forest)}`, loader: "ts" }
     if (args.path.endsWith("/render/shared.ts")) return { contents: "export const renderState={lamps:[]}; export function addControls(){}; export function num(){return 1}", loader: "ts" }
     // Bun resolves dependencies of a source checkout outside this workspace before
@@ -36,9 +49,9 @@ const mod = (path: string): Promise<any> => import(resolve(source, "src", path))
 const root = new THREE.Group()
 const ctx: any = { scene: root, settings: {}, lamps: [], colliders: [], floors: [], ladders: [], renderer: { reversedDepthBuffer: false, getDrawingBufferSize: (v: THREE.Vector2) => v.set(1920,1080) },
   doors: { add(p: any) { if (p.leaf) { p.leaf.position.set(...p.hinge); p.leaf.rotation.y += (p.startOpen ?? 0) * p.openAngle }; return { isOpen: false, amount: 0, open() {}, close() {} } } } }
-for (const [path, fn] of [["compound/booth.ts", "buildBooth"], ["compound/fence.ts", "buildFence"], ["compound/gate.ts", "buildGate"], ["compound/lot.ts", "buildLot"], ["compound/props.ts", "buildProps"], ["facility/shell.ts", "buildShell"]]) {
+for (const [path, fn] of [["compound/booth.ts", "buildBooth"], ["compound/fence.ts", "buildFence"], ["compound/gate.ts", "buildGate"], ["compound/north.ts", "buildNorth"], ["compound/lot.ts", "buildLot"], ["compound/props.ts", "buildProps"], ["facility/shell.ts", "buildShell"]]) {
   console.log("Bake", path)
-  ;(await mod("world/" + path))[fn!](ctx, root)
+  ;(await mod("world/" + path))[fn!](ctx, root,0.03)
 }
 const geo = await mod("world/facility/geo.ts")
 const dishBatch = new geo.Batch()
@@ -52,6 +65,9 @@ dish.update(0,{tilt:facilityDefaults["facility.dishTilt"],yaw:facilityDefaults["
 dishBatch.flush(root)
 const grounds = new geo.Batch()
 ;(await mod("world/facility/grounds.ts")).buildGrounds(ctx, grounds, root)
+;(await mod("world/facility/roof.ts")).buildRoof(ctx, grounds)
+;(await mod("world/facility/dock.ts")).buildDock(ctx, grounds, root)
+;(await mod("world/facility/annex.ts")).buildAnnex(ctx, grounds)
 grounds.flush(root)
 await geo.flushWorld()
 const layout = await mod("world/layout.ts")
@@ -62,8 +78,24 @@ const junction = surface.junctionFor(access, county)
 surface.buildSurface(root, access, county, junction)
 const parts = new road.Parts()
 const wires = new (await mod("world/roads/wires.ts")).Wires()
-;(await mod("world/roads/power.ts")).buildPower(ctx, parts, wires, access, junction)
+const power=(await mod("world/roads/power.ts")).buildPower(ctx, parts, wires, access, junction)
+;(await mod("world/roads/lights.ts")).buildLights(ctx,parts,wires,access,county,junction,power.corner,power.countyPoles)
+;(await mod("world/roads/furniture.ts")).buildFurniture(ctx,parts,access,county,junction,power.accessPoles)
 parts.build(root, "power", { castShadow: true }); wires.build(root, ctx.renderer)
+const height=await mod("world/height.ts")
+const last=power.accessPoles.at(-1)
+const propItems=[...(await mod("world/compound/models.ts")).items(),...(await mod("world/facility/props.ts")).buildProps({...ctx,colliders:[]},root),
+  {name:"utility_box_b",position:[last.x+0.75,height.heightAt(last.x+0.75,last.z),last.z+0.2],yaw:Math.PI/2,inset:0}]
+const props=propItems.map((p:any)=>{
+  const pivot=new THREE.Group(); p.tilt?.(pivot); pivot.updateMatrix()
+  return {name:p.name,position:p.position,yaw:p.yaw ?? 0,tilt:pivot.matrix.toArray(),license:modelInfo[p.name]!.licence,
+    included:p.name==="car_wagon" || modelInfo[p.name]!.licence==="CC0-1.0"}
+})
+for(const p of propItems) if(modelInfo[p.name]!.licence==="CC0-1.0" && p.inset!==undefined) {
+  const [w,h,d]=modelInfo[p.name]!.size, c=Math.abs(Math.cos(p.yaw??0)),s=Math.abs(Math.sin(p.yaw??0))
+  const x=(w!*c+d!*s)/2-p.inset,z=(w!*s+d!*c)/2-p.inset
+  ctx.colliders.push({min:[p.position[0]-x,p.position[1],p.position[2]-z],max:[p.position[0]+x,p.position[1]+h!,p.position[2]+z]})
+}
 
 // Main-block windows are backed by actual room state in Ashwood. Bake those very same bays/tints.
 const state = await mod("world/interior/lighting-state.ts")
@@ -99,7 +131,7 @@ for (let storey=0; storey<5; storey++) for (const face of ["north","south","west
   windowPanes.push({ obj: pane, kind: "office", brightness: 0, tint: new THREE.Color(1,1,1) })
 }
 
-const streams: Record<string, { v: number[]; uv: number[] }> = Object.fromEntries(["solid","ground","foliage","fence","glass","undergrowth","windows"].map(k=>[k,{v:[],uv:[]}]))
+const streams: Record<string, { v: number[]; uv: number[] }> = Object.fromEntries(["solid","ground","foliage","fence","glass","stain","undergrowth","windows",...Object.keys(recipes).map(n=>`surface-${n}`)].map(k=>[k,{v:[],uv:[]}]))
 function emit(g: THREE.BufferGeometry, matrix: THREE.Matrix4, m: THREE.MeshStandardMaterial, kind: string, tint=1, first=0, count=g.index?.count ?? g.getAttribute("position").count) {
   if (!g.getAttribute("normal")) g.computeVertexNormals()
   const p=g.getAttribute("position"), n=g.getAttribute("normal"), uv=g.getAttribute("uv"), vc=g.getAttribute("color"), pane=g.getAttribute("paneA"), flex=g.getAttribute("flex")
@@ -107,11 +139,22 @@ function emit(g: THREE.BufferGeometry, matrix: THREE.Matrix4, m: THREE.MeshStand
   for(let i=first;i<first+count;i++) {
     const k=g.index?.getX(i) ?? i
     v.fromBufferAttribute(p,k).applyMatrix4(matrix); normal.fromBufferAttribute(n,k).applyMatrix3(nm).normalize()
+    // Source stair glow is only 5 mm ahead of transparent glass. Making that glass an
+    // opaque backing at 130 m quantizes both depths together in depth24plus. Move the
+    // backing into the reveal, not the glow out over the mullions (or disable TAA).
+    if(m.name==="window-backing" && v.z>24.9) v.z-=0.08
     const glow=kind!=="glass" && m.emissiveIntensity > 0 && m.emissive && (m.emissive.r+m.emissive.g+m.emissive.b)>0
-    let c=(glow?m.emissive:m.color ?? new THREE.Color(0.1,0.1,0.1)).clone(), aux=glow?m.emissiveIntensity:0, mat=glow?MAT.glow:kind==="ground"?MAT.ground:MAT.lit
+    const recipe=recipes[m.userData.library]
+    let c=(glow?m.emissive:m.color ?? new THREE.Color(0.1,0.1,0.1)).clone(), aux=glow?m.emissiveIntensity:0, mat:number=glow?MAT.glow:m.userData.library?.startsWith("asphalt")?MAT.ground:MAT.lit
     if(pane) { c.setRGB(pane.getX(k),pane.getY(k),pane.getZ(k)); aux=0.6; mat=MAT.glow }
     // Ashwood's card material shades limb and stem bases by this depth (forest/render.ts `vInner`); kit reads it from aux.
     if(flex && mat===MAT.lit && (kind==="foliage" || kind==="undergrowth")) aux=Math.min(1,Math.max(0,flex.getX(k)/1.6))
+    if(kind==="stain") {
+      const decal=g.getAttribute("decal")
+      c.setRGB(decal.getX(k),decal.getY(k),decal.getZ(k)); aux=decal.getW(k); mat=MAT.lit
+      v.addScaledVector(normal,0.02)
+    }
+    if(kind==="solid" && mat===MAT.lit && !pane) {mat=40;aux=Math.round(m.metalness*15)*2+m.roughness}
     if(vc) c.multiply(new THREE.Color(vc.getX(k),vc.getY(k),vc.getZ(k)))
     c.multiplyScalar(tint)
     if(mat===MAT.glow) {
@@ -122,7 +165,7 @@ function emit(g: THREE.BufferGeometry, matrix: THREE.Matrix4, m: THREE.MeshStand
     c.convertLinearToSRGB()
     target.v.push(v.x,v.y,v.z,normal.x,normal.y,normal.z,c.r,c.g,c.b,mat,aux)
     // Ashwood's DataTexture atlas already uses top-left UVs (flipY=false).
-    target.uv.push(uv?.getX(k) ?? 0,uv?.getY(k) ?? 0)
+    target.uv.push((uv?.getX(k) ?? 0)/(recipe?.size ?? 1),(uv?.getY(k) ?? 0)/(recipe?.size ?? 1))
   }
 }
 function emitObject(object: THREE.Object3D) {
@@ -133,15 +176,15 @@ function emitObject(object: THREE.Object3D) {
   const groups=Array.isArray(o.material)?o.geometry.groups:[{start:0,count:o.geometry.index?.count ?? o.geometry.getAttribute("position").count,materialIndex:0}]
   for(const group of groups) {
   let m=materialList[group.materialIndex ?? 0] as THREE.MeshStandardMaterial
-  if(m.name.includes("decal") || m.name.includes("contact_shadow")) return
+   if(m.name.includes("contact_shadow")) return
   // The walkable prototype omits indoor rooms. Back their plain panes with darkness
   // rather than letting the distant sky show through both sides of the empty shell.
   if(m.name==="facility_glass_clear") {
     m=new THREE.MeshStandardMaterial({color:0x050807})
     m.name="window-backing"
   }
-  const kind=m.name==="chainlink"?"fence":m.name.startsWith("asphalt")?"ground":m.transparent && m.opacity===0.35?"glass":m.name==="undergrowth"?"undergrowth":"solid"
-  if(m.transparent && !m.emissiveIntensity && kind!=="fence" && kind!=="glass" && m.name!=="overhead_wire" && !o.geometry.getAttribute("paneA")) return
+   const kind=o.geometry.getAttribute("decal")?"stain":m.name==="chainlink"?"fence":recipes[m.userData.library]?`surface-${m.userData.library}`:m.transparent && m.opacity===0.35?"glass":m.name==="undergrowth"?"undergrowth":"solid"
+  if(m.transparent && !m.emissiveIntensity && kind!=="fence" && kind!=="glass" && kind!=="stain" && m.name!=="overhead_wire" && !o.geometry.getAttribute("paneA")) return
   if((o as THREE.InstancedMesh).isInstancedMesh) {
     const mesh=o as THREE.InstancedMesh, matrix=new THREE.Matrix4(), tint=new THREE.Color()
     for(let i=0;i<mesh.count;i++) {
@@ -165,6 +208,23 @@ for (const p of windowPanes) {
     streams.windows!.v.push(v.x,v.y,v.z,n.x,n.y,n.z,c.r,c.g,c.b,MAT.lit,windowAux(p.kind,p.brightness*peak))
     streams.windows!.uv.push(uv.getX(i),uv.getY(i))
   }
+}
+// Source terrain heights and verge weights. A fixed high-detail exterior patch has
+// no recenter seam; the outer mesh meets its border exactly rather than overlapping.
+const terrainMat=(await import("./ashwood-materials")).material("forest_floor")
+for(const [x0,z0,x1,z1,step] of [[-130,-140,130,300,1],[-700,-700,700,-140,10],[-700,300,700,700,10],[-700,-140,-130,300,10],[130,-140,700,300,10]]) {
+  const nx=Math.round((x1!-x0!)/step!),nz=Math.round((z1!-z0!)/step!),positions:number[]=[],uvs:number[]=[],colors:number[]=[],indices:number[]=[]
+  for(let j=0;j<=nz;j++) for(let i=0;i<=nx;i++) {
+    const x=x0!+i*step!,z=z0!+j*step!,roadDistance=height.roadEdgeDistance(x,z),comp=height.compoundDistance(x,z)
+    const n=height.microAt(x*0.37+11,z*0.37-7)*6
+    const dirt=Math.max(1-height.smoothstep(height.SHOULDER-0.3,height.SHOULDER+0.9+n*0.3,roadDistance),height.ditchAt(roadDistance,comp)/-height.DITCH.depth*0.45)
+    const grass=Math.max(height.smoothstep(height.SHOULDER-0.2,height.SHOULDER+1.2,roadDistance)*(1-height.smoothstep(5.5+n,9.5+n*1.5,roadDistance)),1-height.smoothstep(1+n*0.5,7+n,comp))
+    positions.push(x,height.heightAt(x,z),z); uvs.push(x,-z)
+    for(let k=0;k<3;k++) colors.push((1+([1.35,1.3,0.78][k]!*1.15-1)*grass)*(1-dirt)+[1.25,1.05,0.85][k]!*1.05*dirt)
+    if(i<nx && j<nz) {const a=j*(nx+1)+i,b=a+1,c=a+nx+1,d=c+1;indices.push(a,c,b,b,c,d)}
+  }
+  const g=new THREE.BufferGeometry().setAttribute("position",new THREE.Float32BufferAttribute(positions,3)).setAttribute("uv",new THREE.Float32BufferAttribute(uvs,2)).setAttribute("color",new THREE.Float32BufferAttribute(colors,3)).setIndex(indices)
+  emit(g,new THREE.Matrix4(),terrainMat,"surface-forest_floor")
 }
 console.log("Authored scene triangles",Object.fromEntries(Object.entries(streams).map(([k,s])=>[k,s.v.length/33])))
 
@@ -224,7 +284,6 @@ let cursor=0
 for(const bytes of templateBytes) { forestModelBytes.set(bytes,cursor); cursor+=bytes.byteLength }
 await Bun.write(`${out}/forest-models.bin.gz`,Bun.gzipSync(forestModelBytes))
 // Ground height around the gate (1 m grid) and the access road centreline, for runtime dressing placement.
-const height=await mod("world/height.ts")
 const GROUND={x0:-40,z0:100,step:1,nx:81,nz:81}
 const heights:number[]=[]
 for(let j=0;j<GROUND.nz;j++) for(let i=0;i<GROUND.nx;i++) heights.push(Math.round(height.heightAt(GROUND.x0+i*GROUND.step,GROUND.z0+j*GROUND.step)*1000)/1000)
@@ -233,7 +292,7 @@ const { ACCESS_ROAD, FENCE, BOOTH }=layout
 const ground={...GROUND,heights,accessRoad,roadHalfWidth:ACCESS_ROAD.width/2,shoulder:ACCESS_ROAD.shoulder,fence:FENCE,booth:BOOTH}
 const files: Record<string,string[]> = {}
 for(const [kind,s] of Object.entries(streams)) {
-  if(!s.v.length) throw new Error(`Missing ${kind} geometry`)
+   if(!s.v.length) { files[kind]=[]; continue }
   const badVertex=s.v.findIndex(n=>!Number.isFinite(n)), badUv=s.uv.findIndex(n=>!Number.isFinite(n))
   if(badVertex>=0 || badUv>=0) throw new Error(`Non-finite ${kind} geometry: vertex component ${badVertex}, UV component ${badUv}`)
   // Triangle-aligned chunks fit both the hosting asset limit and baseline WebGPU buffer limits.
@@ -251,7 +310,7 @@ for(const [kind,s] of Object.entries(streams)) {
 }
 const paint=await Bun.build({entrypoints:[resolve(source,"src/world/forest/paint.ts")],target:"browser",minify:true})
 await Bun.write(`${out}/paint.js`,await paint.outputs[0]!.text())
-await Bun.write(`${out}/scene.json`,JSON.stringify({version:1,files,treeCount,forest:{models:forestModels,trees:treeCount,impostorGrid:[8,2],plants},ground,lamps:ctx.lamps,colliders:ctx.colliders,sources},null,2))
+await Bun.write(`${out}/scene.json`,JSON.stringify({version:2,files,treeCount,forest:{models:forestModels,trees:treeCount,impostorGrid:[8,2],plants},ground,lamps:ctx.lamps,colliders:ctx.colliders,props,surfaces:recipes,sources},null,2))
 const used=new Set(Object.values(files).flat())
-for(const file of await readdir(out)) if(/^(solid|ground|foliage|fence|glass|undergrowth|impostors|windows)-\d+\.bin\.gz$/.test(file) && !used.has(file)) await unlink(resolve(out,file))
+for(const file of await readdir(out)) if(/^(solid|ground|foliage|fence|glass|stain|undergrowth|impostors|windows|surface-[a-z_]+)-\d+\.bin\.gz$/.test(file) && !used.has(file)) await unlink(resolve(out,file))
 console.log("Baked",out,treeCount,"trees")
