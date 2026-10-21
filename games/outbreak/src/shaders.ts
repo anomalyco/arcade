@@ -269,7 +269,11 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
     let tungsten = mix(vec3f(0.24, 0.115, 0.034), vec3f(0.30, 0.17, 0.065), (1.0 - v) * 0.7);
     let litGlass = tungsten * fall * mix(0.42, 1.0, curtain);
     var outsideGlass = mix(darkGlass, litGlass, windowLit);
-    if (OL.rooms.x > 0.5 && outsideView) { outsideGlass = outbreakWindowRoom(o.world, n, darkGlass, windowLit, curtain); }
+    if (OL.rooms.x > 0.5 && outsideView && windowLit > 0.001) {
+      // Rooms behind the glass (window-rooms/): a lit pane shows its room instead of the glow box behind 22 % glass.
+      outsideGlass = outbreakWindowRoom(o.world, n, darkGlass, windowLit, curtain);
+      alpha = mix(alpha, 1.0, windowLit);
+    }
     col = select(vec3f(0.012, 0.022, 0.045), outsideGlass, outsideView);
   } else if (mat == 21) {
     // Weathered slate-taupe shingles: eave lift, course steps and a ridge rim; peat-amber at dusk, heavy overcast by day.

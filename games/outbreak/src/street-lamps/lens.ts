@@ -1,7 +1,7 @@
 import { streetCone } from "@arcade/kit/gpu/lights/physical"
 import { streetProfile, type Vec3 } from "@arcade/kit/gpu/lights/street"
 import type { Lamp } from "../../shared/map"
-import { STREET_LAMP_POSTS, streetLampHead, type ResolvedLamp } from "../lighting"
+import { STREET_LAMP_POOLS, STREET_LAMP_POSTS, streetLampHead, streetPostLensArm, type ResolvedLamp } from "../lighting"
 import type { OutbreakStreetLampSettings } from "./settings"
 
 /** Where the roads run in the repeating block (`ground.ts`, `audio/space.ts`): carriageway 40..48, sidewalks to 38 and 50. */
@@ -23,11 +23,11 @@ export function streetArm(x: number, z: number): [number, number] {
   return [ax / l, az / l]
 }
 
-/** The visible cobra-head post a remapped origin lamp stands for (`resolveLampLight`'s two hand-placed pools), or null. */
-function originPost(lamp: Lamp): (typeof STREET_LAMP_POSTS)[number] | null {
-  if (lamp.x === 52 && lamp.y === 39) return STREET_LAMP_POSTS[0]
-  if (lamp.x === 50 && lamp.y === 8) return STREET_LAMP_POSTS[1]
-  return null
+/** The visible cobra-head post a remapped origin lamp stands for (`resolveLampLight`'s two hand-placed pools), or -1. */
+function originPost(lamp: Lamp): number {
+  if (lamp.x === 52 && lamp.y === 39) return 0
+  if (lamp.x === 50 && lamp.y === 8) return 1
+  return -1
 }
 
 /** Ground flux of Today's street lamp (`shaders.ts` lightAttenuation): power-free, over its plan disc of radius r. */
@@ -94,12 +94,13 @@ export function applyStreetLens(lamp: Lamp, res: ResolvedLamp, s: OutbreakStreet
   let hx = res.lx
   let hy = lamp.h
   let hz = res.ly
-  if (post) {
-    const head = streetLampHead(post)
-    hx = head[0]
+  if (post >= 0) {
+    // The window origin moves the posts by whole blocks, like the remapped pool.
+    const head = streetLampHead(STREET_LAMP_POSTS[post]!)
+    hx = head[0] + (res.lx - STREET_LAMP_POOLS[post]![0])
     hy = head[1] - 0.06
-    hz = head[2]
-    arm = [Math.cos(post.yaw), Math.sin(post.yaw)]
+    hz = head[2] + (res.ly - STREET_LAMP_POOLS[post]![1])
+    arm = streetPostLensArm(post)
   } else arm = streetArm(lamp.x, lamp.y)
   const mh = Math.max(1, hy - groundY)
   const r = s.slReach * mh

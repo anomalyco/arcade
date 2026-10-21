@@ -85,7 +85,8 @@ fn outbreakWindowRoom(p: vec3f, n: vec3f, darkGlass: vec3f, lit: f32, curtain: f
   let wallWash = select(OL.rooms2.y, 1.0, face == 2);
   let tungsten = vec3f(1.0, 0.56, 0.22);
   let pool = lampOn * (0.9 * facing + 0.1) / (0.35 + dl2 * 0.55) * wallWash;
-  var room = albedo * (tungsten * pool * 1.15 + vec3f(0.012, 0.010, 0.008)) * OL.rooms.z;
+  // Scaled so a lit room's floor pool reads as bright as Today's glow box behind the pane.
+  var room = albedo * (tungsten * pool * 4.0 + vec3f(0.02, 0.016, 0.012)) * OL.rooms.z;
   // Half-drawn curtains, backlit by the room, over part of the pane.
   let drape = smoothstep(0.35, 0.75, curtain) * OL.rooms2.x;
   let fabric = vec3f(0.20, 0.10, 0.035) * (0.25 + 0.75 * lampOn) * OL.rooms.z;

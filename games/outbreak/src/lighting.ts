@@ -29,11 +29,31 @@ export function streetLampHead(post: (typeof STREET_LAMP_POSTS)[number]): [numbe
   return [post.x + Math.cos(post.yaw) * 1.44, 6.18, post.z + Math.sin(post.yaw) * 1.44]
 }
 
-/** Plan arm (pole → head) of the post whose lens is nearest `head` (the frame's nearest street head). */
+/** Where Today's light for each post lands (`resolveLampLight`'s remapped origin lamps), same order as the posts. */
+export const STREET_LAMP_POOLS = [
+  [40.6, 42.4],
+  [39.2, 24.6],
+] as const
+
+/**
+ * Lens arm of a post for the lens street lamps: towards the pool Today lights when it lies well off the head (the
+ * designed pool is offset along the road), else the post's own yaw.
+ */
+export function streetPostLensArm(i: number): [number, number] {
+  const post = STREET_LAMP_POSTS[i]!
+  const head = streetLampHead(post)
+  const pool = STREET_LAMP_POOLS[i]!
+  const dx = pool[0] - head[0]
+  const dz = pool[1] - head[2]
+  const d = Math.hypot(dx, dz)
+  return d > 2 ? [dx / d, dz / d] : [Math.cos(post.yaw), Math.sin(post.yaw)]
+}
+
+/** Lens arm of the post whose lens is nearest `head` (the frame's nearest street head). */
 export function streetPostArm(head: readonly number[] | undefined): [number, number] {
-  let best: (typeof STREET_LAMP_POSTS)[number] = STREET_LAMP_POSTS[0]
+  let best = 0
   let bestD = Infinity
-  for (const post of STREET_LAMP_POSTS) {
+  STREET_LAMP_POSTS.forEach((post, i) => {
     const h = streetLampHead(post)
     // The window origin moves the posts by whole blocks; compare within the block.
     const dx = ((((head?.[0] ?? 0) - h[0]) % SIZE) + SIZE * 1.5) % SIZE - SIZE * 0.5
@@ -41,10 +61,10 @@ export function streetPostArm(head: readonly number[] | undefined): [number, num
     const d = dx * dx + dz * dz
     if (d < bestD) {
       bestD = d
-      best = post
+      best = i
     }
-  }
-  return [Math.cos(best.yaw), Math.sin(best.yaw)]
+  })
+  return streetPostLensArm(best)
 }
 
 export type OutbreakLightingSettings = {

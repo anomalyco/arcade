@@ -81,5 +81,5 @@ export function applyLampFog(render: FrameInput, frame: LampFogFrame): VolumeInp
   const input = fog.volumeInput()
   if (!input) return null
   mistParams.set([frame.mist.mistYards, frame.mist.mistGutters, frame.mist.mistRoads, mist ? 1 : 0])
-  return { ...input, params: mistParams }
+  return { ...input, downscale: mist ? Math.max(input.downscale, frame.mist.mistDownscale) : input.downscale, params: mistParams }
 }

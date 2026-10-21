@@ -475,9 +475,10 @@ export class OutbreakFrameLighting {
       input.lampTrim?.(lamp, resolved)
       this.lampPower[i] = resolved.fixtureBrightness
       if (resolved.power <= 0.001) continue
+      // Culled by where Today's pool is, so the lens lamps keep Today's set of lamps.
+      const dCam = Math.hypot(resolved.lx - camX, resolved.ly - camY)
       if (lensLamps && lamp.kind === "street") applyStreetLens(lamp, resolved, settings.streetLamps, settings.lighting.lightFalloff)
       const { lx, lh, ly, r, rEff, color, power, cone, softness, castShadows } = resolved
-      const dCam = Math.hypot(lx - camX, ly - camY)
       if (dCam > (lamp.kind === "street" ? 15.5 : 16.5)) continue
       if (inInteriorView && (!castShadows || lamp.kind === "street")) continue
       if (lx + rEff < vx0 || lx - rEff > vx1 || ly + rEff < vy0 || ly - rEff > vy1 || !inLightFrustum(lx, ly, rEff)) continue

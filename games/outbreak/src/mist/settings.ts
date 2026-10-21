@@ -40,6 +40,8 @@ export type OutbreakMistSettings = {
   mistBeams: number
   /** March steps through the layer. */
   mistSteps: number
+  /** The fog slot's resolution while the mist is on: 1/n of the screen per axis (the mist is soft, so 3 hides it). */
+  mistDownscale: number
 }
 
 export const DEFAULT_MIST_SETTINGS: OutbreakMistSettings = {
@@ -58,6 +60,7 @@ export const DEFAULT_MIST_SETTINGS: OutbreakMistSettings = {
   mistLamps: 1.6,
   mistBeams: 6,
   mistSteps: 6,
+  mistDownscale: 3,
 }
 
 const G = "Look · Low mist"
@@ -86,7 +89,8 @@ export const mistControls: readonly LabControl[] = [
   { key: "mistDay", label: "Sky light by day", group: G, subsection: "Light", min: 0, max: 0.3, step: 0.005, unit: "" },
   { key: "mistLamps", label: "Lamp glow in the mist", group: G, subsection: "Light", min: 0, max: 5, step: 0.05, unit: "×" },
   { key: "mistBeams", label: "Beams in the mist", group: G, subsection: "Light", min: 0, max: 20, step: 0.25, unit: "×" },
-  { key: "mistSteps", label: "Steps", group: G, subsection: "Light", min: 2, max: 12, step: 1 },
+  { key: "mistSteps", label: "Steps", group: G, subsection: "Cost", min: 2, max: 12, step: 1 },
+  { key: "mistDownscale", label: "Resolution", group: G, subsection: "Cost", type: "select", options: [{ value: 2, label: "Half" }, { value: 3, label: "Third" }, { value: 4, label: "Quarter" }] },
 ]
 
 export const mistOn = (s: Pick<OutbreakMistSettings, "mistStyle"> | undefined): boolean => (s?.mistStyle ?? 0) > 0.5

@@ -160,6 +160,13 @@
   with no lights (daylight), skips every pass. Stills, sheet and a hall-sweep clip: `bun scripts/bounce-stills.ts --out <dir> --clip`; paired GPU:
   `AB_B='{"bouncedLight":1}' bun scripts/ab-gpu.ts` (both via `hivemind run --kind browser`). Tests:
   `tests/bounce-light.test.ts`, `packages/kit/gpu/gi/plan-bounce.test.ts`.
+- Lot ports (AR-124, Lab: Backquote › Look · Street lamps / Low mist / Contact shadows / Lit rooms, each "Today" one
+  setting away, all off by default): lens street lamps (`src/street-lamps/`, cone.w ≥ 7 in the light slots; the scene,
+  bounce, contact-shadow, dust and reflection readers all know it), low mist in yards and gutters on the kit fog bank
+  (`src/mist/`, shared volume slot 2 with the lamp fog, set up in `air/lamp-fog.ts`), screen-space contact shadows
+  (`src/contact-shadows/`, volume slot 0) and rooms behind lit windows (`src/window-rooms/`, the glass in `shaders.ts`).
+  Stills: `bun scripts/look-ports-stills.ts --out <dir>`; paired GPU: `AB_B='{"mistStyle":1}' bun scripts/ab-gpu.ts`
+  (both via `hivemind run --kind browser`). Tests: `tests/look-ports.test.ts`.
 - Special zombies (Runner, Brute, Screamer, Bloater, Riot cop, Lurker) live in `shared/specials/` (kinds, rarity and
   stats in `kinds.ts`, behaviours in `specials.ts`) and `src/specials/` (silhouettes and accessories drawn by
   `src/zombies.ts`, gas cloud, Lab). The kind is encoded in the zombie's seed, so clients read it with
