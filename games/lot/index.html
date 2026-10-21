@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E" />
+    <title>Lot — Arcade</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #0d1016; color: #e8eef4; font-family: monospace; overflow: hidden; }
+      #view { width: 100vw; height: 100vh; display: block; }
+      #hud { position: fixed; bottom: 22px; left: 24px; pointer-events: none; font-size: 12px; display: flex; gap: 18px; align-items: center; opacity: 0.65; }
+      #credits { position: fixed; bottom: 24px; right: 24px; color: #c6c9ca; font-size: 11px; opacity: .65; }
+    </style>
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <div id="hud"></div>
+    <a id="credits" href="./CREDITS.md" target="_blank">Credits</a>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

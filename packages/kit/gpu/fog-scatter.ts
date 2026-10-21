@@ -543,12 +543,16 @@ export const fogSceneWgsl = fogParamsWgsl + fogConeWgsl
 export type FogScatterHooks = {
   /** Extra WGSL declarations (e.g. the game's custom uniform struct at binding 13). */
   declarations?: string
-  /** WGSL f32 expression of `p: vec3f, n: vec3f`: how wet the surface is (0..1). Default dry. */
+  /** WGSL f32 expression of `p: vec3f, n: vec3f, footprint: f32`: wetness (0..1). Footprint is metres/pixel. Default dry. */
   wet?: string
   /** WGSL f32 expression of `p, n`: surface roughness for the wet reflection (default 0.5). */
   roughness?: string
   /** WGSL vec3f expression of `p`: the surface normal; default rebuilt from depth. */
   normal?: string
+  /** Deterministic quadrature over the reflection lobe (1 keeps the stochastic path). */
+  reflectionSamples?: number
+  /** Maximum HDR channel per reflected-airlight sample, before Fresnel and wetness. */
+  reflectionCap?: string
 }
 
 /**
@@ -556,6 +560,7 @@ export type FogScatterHooks = {
  * scatter lamps (19), the scene depth (3) and the unjittered `VolumeFrame` (4); writes rgb in-scatter, alpha 0.
  */
 export function fogScatterVolume(hooks: FogScatterHooks = {}): VolumeLightShader {
+  const reflectionSamples = Math.max(1, Math.min(8, Math.round(hooks.reflectionSamples ?? 1)))
   return {
     depth: true,
     history: true,
@@ -567,7 +572,7 @@ ${fogConeWgsl}
 struct FogLamp { a: vec4f, b: vec4f, c: vec4f, d: vec4f, e: vec4f }
 @group(0) @binding(${FOG_LAMP_BINDING}) var<storage, read> fogLamps: array<FogLamp>;
 ${hooks.declarations ?? ""}
-fn fogWet(p: vec3f, n: vec3f) -> f32 { return ${hooks.wet ?? "0.0"}; }
+fn fogWet(p: vec3f, n: vec3f, footprint: f32) -> f32 { return ${hooks.wet ?? "0.0"}; }
 fn fogRoughness(p: vec3f, n: vec3f) -> f32 { return ${hooks.roughness ?? "0.5"}; }
 ${hooks.normal ? `fn fogNormal(p: vec3f) -> vec3f { return ${hooks.normal}; }` : ""}
 
@@ -624,6 +629,7 @@ fn airlight(ro: vec3f, rd: vec3f, dist: f32, n: u32, jitter: f32) -> vec3f {
   let d = volumeDepth(o.uv);
   let sky = volumeIsSky(d);
   let w0 = volumeUnproject(o.uv, d);
+  let footprint = max(length(dpdx(w0)),length(dpdy(w0)));
   let rd = normalize(w0 - eye);
   let dist = select(length(w0 - eye), ${FOG_SKY_DISTANCE.toFixed(1)}, sky);
   let px = floor(o.pos.xy);
@@ -640,7 +646,7 @@ fn airlight(ro: vec3f, rd: vec3f, dist: f32, n: u32, jitter: f32) -> vec3f {
     var nW = normalize(cross(wy - world, wx - world));`}
     if (dot(nW, rd) > 0.0) { nW = -nW; }
     let rough = clamp(fogRoughness(world, nW), 0.0, 1.0);
-    let wet = clamp(fogWet(world, nW), 0.0, 1.0) * smoothstep(0.55, 0.85, nW.y);
+    let wet = clamp(fogWet(world, nW, footprint), 0.0, 1.0) * smoothstep(0.55, 0.85, nW.y);
     if (wet > 0.002) {
       // Rough wet ground smears the reflection vertically: tilt the mirror normal by a per-pixel random amount
       // along the view's vertical plane (the history and TAA integrate it into long streaks).
@@ -653,7 +659,20 @@ fn airlight(ro: vec3f, rd: vec3f, dist: f32, n: u32, jitter: f32) -> vec3f {
       let cosV = clamp(-dot(rd, nW), 0.0, 1.0);
       let fres = 0.04 + 0.96 * pow(1.0 - cosV, 5.0);
       let T = fogTransmittance(eye, world);
-      let refl = airlight(world + nW * 0.02, rr, 250.0, max(2u, samples / 2u), jitter);
+      ${reflectionSamples > 1 ? `
+      // A moving view rejects volume history. Integrate several fixed lobe strata in the current frame rather than
+      // exposing one random bright ray; no reactive-mask bypass can stabilize an undersampled reflection.
+      var refl = vec3f(0.0);
+      // Keep the loop bound uniform-driven: software Vulkan compilers can otherwise inline/unroll the entire
+      // nested airlight integrator once per lobe tap. The ray budget also bounds quadrature at low quality.
+      let taps=min(${reflectionSamples}u,samples);
+      for(var tap=0u;tap<taps;tap++) {
+        let u=(f32(tap)+0.5)/f32(taps);
+        let rn=normalize(nW+fwd*(u-0.5)*rough*rough*FOG.reflect.w);
+        let sample=airlight(world+nW*0.02,normalize(reflect(rd,rn)),250.0,max(2u,samples/4u),0.5);
+        refl+=sample*min(1.0,(${hooks.reflectionCap ?? "4.0"})/max(max(sample.r,max(sample.g,sample.b)),1e-5));
+      }
+      refl/=f32(taps);` : `let refl = airlight(world + nW * 0.02, rr, 250.0, max(2u, samples / 2u), jitter);`}
       acc += refl * fres * wet * T * FOG.reflect.y;
       // Emitter glints: a lobe around the un-jittered mirror direction per lamp, tight across and long along the
       // view's vertical plane, both widening with roughness; only seen from inside the lamp's cone.

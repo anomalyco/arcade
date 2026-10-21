@@ -1,0 +1,34 @@
+{
+  "metal_trash_can": {
+    "license": "CC0-1.0",
+    "source": "https://polyhaven.com/a/metal_trash_can",
+    "download": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/metal_trash_can/metal_trash_can_1k.gltf",
+    "sha256": "39c8c366e170c2351e43dc97bde0c004455bce6a6b5d07513193b1b828e3ad6e",
+    "lo": [
+      -0.9526877403259277,
+      0.00006173570000100881,
+      -0.27429285645484924
+    ],
+    "hi": [
+      -0.17942188680171967,
+      0.9062191247940063,
+      0.27472034096717834
+    ]
+  },
+  "utility_box_01": {
+    "license": "CC0-1.0",
+    "source": "https://polyhaven.com/a/utility_box_01",
+    "download": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/utility_box_01/utility_box_01_1k.gltf",
+    "sha256": "c4bbac7f561485bd85316c1f523e5a2c8b2e6c61e6b399c85b592f44b1b7f097",
+    "lo": [
+      -0.2600001096725464,
+      0,
+      -0.20999999344348907
+    ],
+    "hi": [
+      0.2600001096725464,
+      1.1203334331512451,
+      0.22200000286102295
+    ]
+  }
+}

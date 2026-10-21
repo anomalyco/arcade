@@ -1,0 +1,39 @@
+name: lot
+
+on:
+  push:
+    branches: [main]
+    paths: ["games/lot/**", "packages/**", "scripts/**", "package.json", "bun.lock", "bunfig.toml", ".github/workflows/lot.yml"]
+  pull_request:
+    paths: ["games/lot/**", "packages/**", "scripts/**", "package.json", "bun.lock", "bunfig.toml", ".github/workflows/lot.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: games/lot
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
+      - run: bun install --frozen-lockfile
+        working-directory: .
+      - run: bun run check
+      - name: Install smoke browser
+        run: bunx --no-install playwright-core install chromium --only-shell
+      - name: Smoke production bundle
+        timeout-minutes: 3
+        run: bun ../../scripts/smoke.mjs
+      - name: Deploy
+        if: github.event_name != 'pull_request'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: bunx --no-install wrangler deploy

@@ -12,6 +12,8 @@ Browser games by Anomaly, served at https://anoma.ly/arcade/.
 
 ## Prototypes
 
+Unlisted: **Lot** — walkable night parking-lot study using the kit's WebGPU renderer, an attributed wagon and scanned asphalt (`games/lot`, Worker `arcade-lot`, route `/arcade/lot/`; deployment pending). Mouse look, WASD, F flashlight, Backquote Night settings. [Asset credits](games/lot/public/CREDITS.md).
+
 Unlisted: [Outbreak](https://anoma.ly/arcade/outbreak/) — neighbourhood exploration and local survival-game foundation (`games/outbreak`, Worker `arcade-outbreak`). No landing link, indexing, sitemap entry or login.
 
 Unlisted: [Brawl](https://anoma.ly/arcade/brawl/) — top-down party brawler with a character select, six parody heroes

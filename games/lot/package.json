@@ -1,0 +1,28 @@
+{
+  "name": "@arcade/lot",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "bun test",
+    "check": "tsc --noEmit && bun test && vite build",
+    "fetch-assets": "bun scripts/fetch-assets.ts"
+  },
+  "dependencies": {
+    "@arcade/kit": "workspace:*",
+    "wgpu-matrix": "^3.4.2"
+  },
+  "devDependencies": {
+    "three": "^0.186.0",
+    "@types/three": "^0.183.0",
+    "@gltf-transform/core": "^4.3.0",
+    "@gltf-transform/extensions": "^4.3.0",
+    "@webgpu/types": "^0.1.74",
+    "@types/bun": "^1.4.2",
+    "playwright-core": "^1.64.0",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.4",
+    "wrangler": "^4.149.0"
+  }
+}

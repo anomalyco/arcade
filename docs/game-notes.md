@@ -14,6 +14,19 @@ proven animation techniques to animation.md, not here.
 
 ## Proving a change
 
+- **Minified normals and wet reflections (Lot, AR-103).** `gpu/normal-mips.ts` filters decoded unit normals without
+  renormalizing lower mips; `gpu/textured-mesh.ts` converts lost vector length into roughness variance. Physical
+  specular AA must read the mapped normal, not just the flat asphalt mesh normal. Lot's reflected airlight runs after
+  scene TAA with its own volume history; its opt-in deterministic lobe samples, HDR sample cap and footprint-filtered
+  wet boundary avoid relying on a scene reactive mask that cannot reach that pass. Seven Naga variants and the real
+  production input capture pass. Iteration 6 static RGB MAE is 2.279/255 versus 2.229 for iteration 5; this is not a
+  claim of measured temporal improvement. The local matched-camera page exposes the remaining differences directly.
+  Keep the reflection-loop bound uniform-driven: on macOS SwiftShader, a literal four-tap bound left the GPU process
+  compiling beyond the 165 s smoke deadline with its raster workers idle. The uniform-driven bound passed the same
+  two-frame GPU-drain check at four default taps and full 1024 shadow maps; no quality reduction was needed.
+
+- **Static textured imports and saved-frame fidelity (Lot, AR-103).** `gpu/gltf.ts` expands glTF node transforms and UVs into an opt-in 32-byte vertex stream; `gpu/textured-mesh.ts` binds per-material textures on the existing scene pass and exposes opaque buffers to spot shadows. Existing 24-byte procedural vertices stay unchanged. Lot converts Ashwood's exterior builders offline, retains original tree atlases and distant impostors, and uses shared physical lights, fog-sky illumination and reflected airlight. At 1920×1080, iteration 3 reduced display-RGB MAE against the saved Ashwood title frame from 3.994 to 2.252/255, with mean-luminance error 0.000909 and hue error 0.922°. Evidence includes an 8×6 grid, fixed-region metrics and full captures in `~/code/home/artifacts/lot-2026-10-20/`. Four focused tests cover the vertex ABI, complete finite baked geometry, the licensed wagon's 5.05 m normalization and controller ownership/collision. Seven Naga variants pass. Full Chromium headless accepts Pointer Lock where headless-shell rejected it; capture scripts must restore hidden controls before checking panel focus. GPU cost is unmeasured.
+
 - **Keep spell proof on the real input path.** Blackout's `scripts/prove-wizards-spells.ts` reads scrolls with F and
   draws through Chromium mouse events. Its manual sandbox clock advances both simulation and animation between
   captures; advancing simulation alone left the rig's planted feet behind. The inspected Metal proof captured a

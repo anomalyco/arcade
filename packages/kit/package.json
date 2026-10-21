@@ -15,6 +15,9 @@
     "check": "bun run typecheck && bun run test"
   },
   "dependencies": {
+    "@gltf-transform/core": "^4.3.0",
+    "@gltf-transform/extensions": "^4.3.0",
+    "meshoptimizer": "^1.0.1",
     "@arcade/knobs": "workspace:*",
     "@fontsource/barlow-condensed": "^5.3.0"
   },
