@@ -1,0 +1,17 @@
+{
+  "name": "@arcade/nightshift",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "bun test",
+    "check": "tsc --noEmit && bun scripts/check-cycles.ts && bun test && vite build",
+    "check:shaders": "bun scripts/check-shaders.ts"
+  },
+  "dependencies": { "@arcade/kit": "workspace:*", "wgpu-matrix": "^3.4.2" },
+  "devDependencies": {
+    "@webgpu/types": "^0.1.74", "@types/bun": "^1.4.2", "playwright-core": "^1.64.0",
+    "typescript": "^5.9.3", "vite": "^8.3.4", "wrangler": "^4.149.0"
+  }
+}

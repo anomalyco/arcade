@@ -4,7 +4,7 @@ import { basename, resolve, sep } from "node:path"
 import { chromium } from "playwright-core"
 
 const game = basename(process.cwd())
-assert(["blackout", "getaway", "outbreak", "carrier", "lab", "brawl", "archers", "walkers", "lot"].includes(game), `Unknown game: ${game}`)
+assert(["blackout", "getaway", "outbreak", "carrier", "lab", "brawl", "archers", "walkers", "lot", "nightshift"].includes(game), `Unknown game: ${game}`)
 const prefix = `/arcade/${game}/`
 const root = resolve(`dist/arcade/${game}`)
 assert(await Bun.file(resolve(root, "index.html")).exists(), "Build the game before running smoke")
@@ -67,12 +67,17 @@ try {
   page.on("requestfailed", request => errors.push(`${request.url()}: ${request.failure()?.errorText}`))
   page.on("response", response => { if (response.status() >= 400) errors.push(`${response.status()} ${response.url()}`) })
   // The Lab's bench mode exposes window.lab after its first frame and keeps audio locked.
-  const response = await page.goto(`http://127.0.0.1:${server.port}${prefix}${game === "lab" ? "?bench" : game === "lot" ? "?smoke" : ""}`, { waitUntil: "load", timeout: 15_000 })
+  const response = await page.goto(`http://127.0.0.1:${server.port}${prefix}${game === "lab" ? "?bench" : game === "lot" || game === "nightshift" ? "?smoke" : ""}`, { waitUntil: "load", timeout: 15_000 })
   assert.equal(response.status(), 200)
   // Require JS-created UI, not the static HTML shell. A missing GPU is an explicit
   // supported outcome for these WebGPU-only games, never a blanket error waiver. Interval polling, not the default
   // requestAnimationFrame: rAF polls stall while a software GPU is busy compiling or drawing.
   const ready = await page.waitForFunction(game => {
+    if (game === "nightshift") {
+      const status = document.querySelector("#hud")?.textContent
+      if (status && /needs WebGPU|No WebGPU adapter is available|WebGPU could not start/.test(status)) return status
+      return window.nightshift?.ready && window.nightshift.frames >= 2 ? "nightshift ready" : false
+    }
     if (game === "lot") {
       const status = document.querySelector("#hud")?.textContent
       if (status && /needs WebGPU|No WebGPU adapter is available|WebGPU could not start/.test(status)) return status
@@ -121,6 +126,9 @@ try {
   if (game === "lot") {
     console.log(`lot: draining ${await page.evaluate(() => window.lot?.frames)} submitted frames`)
     await page.evaluate(() => window.lot?.renderer.passContext.device.queue.onSubmittedWorkDone())
+  }
+  if (game === "nightshift") {
+    await page.evaluate(() => window.nightshift?.renderer.passContext.device.queue.onSubmittedWorkDone())
   }
   assert.deepEqual(errors, [], `${game}: browser errors`)
   const outcome = await ready.jsonValue()
