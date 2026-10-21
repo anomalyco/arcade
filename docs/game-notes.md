@@ -901,6 +901,17 @@ proven animation techniques to animation.md, not here.
     a Lab option (Backquote › Lamp fog) behind the default Today look. It reads in first person, where the view ray
     runs along the cones.
 
+- **Fog bank, fog-depth blur and lit cloud deck over the lamp fog (AR-109, 2026-10-20, Lot).** The fog volume slot
+  can now hide what is behind it: `VolumeLightShader.transmittance` composites `scene · a + rgb` (HDR alpha kept), so a
+  noise-modulated low bank marched in 6 jittered half-res steps reads as fog descending between the trunks, and the
+  slot's history averages the jitter. A fog-weighted blur after the volume (premultiplied by each tap's own fog
+  amount, so near trunks don't bleed into the fogged sky) turns far trees, the dish and the building into soft masses.
+  A cloud deck lit from below by a 32² CPU-baked lamp-glow map makes the top of frame shadier with a sodium patch over
+  the facility. Lessons: the bloom pyramid can't double as the scene blur once `bloomGate` gates it; a 4-tap first
+  level costs ~0.35 ms less than 13 taps at 1440p with no visible difference after the quarter level; transparent
+  panes that write no depth (the booth) get the bank drawn over them. Cost about **+1.4 ms** together at 2560×1440 on
+  a shared mini; CI smoke compiles Today (`fogScatterVolume({ atmosphere: false })`).
+
 ## Art direction
 
 ### Outbreak look: one lab, knobs as trims on the day cycle (2026-10-15)
