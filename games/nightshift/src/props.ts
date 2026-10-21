@@ -6,13 +6,12 @@ import { propHooks } from "./shaders"
 import { CRADLE, RECEIVER_PAD, PHONE_INDICATOR } from "./world"
 
 export const PROP_DEFINITIONS=[
-  {kind:"crt",file:"period/crt",at:[-.74,.795,-5.65],size:[.52,.50,.57],yaw:0,generated:true},
-  {kind:"mouse",file:"computer",at:[-.74,.795,-5.62],size:[.94,.56,.58],yaw:0,generated:false},
-  {kind:"pen-cup",file:"pen-cup",at:[1.02,.795,-5.35],size:[.15,.25,.14],yaw:.3,generated:false},
-  {kind:"mug",file:"period/mug",at:[.62,.795,-5.48],size:[.09,.115,.125],yaw:-.7,generated:true},
-  {kind:"chair",file:"period/chair",at:[1.04,0,-4.55],size:[.62,1.02,.65],yaw:-.3,generated:true},
-  {kind:"phone",file:"period/phone-base",at:[.12,.79,-5.4],size:[.40,.13,.38],yaw:0,generated:true},
-  {kind:"rolodex",file:"period/rolodex",at:[1.34,.795,-5.55],size:[.23,.19,.23],yaw:-.15,generated:true},
+  {kind:"crt",file:"authored/crt",at:[-.74,.795,-5.65],size:[.52,.50,.57],yaw:0},
+  {kind:"pen-cup",file:"pen-cup",at:[1.02,.795,-5.35],size:[.15,.25,.14],yaw:.3},
+  {kind:"mug",file:"period/mug",at:[.62,.795,-5.48],size:[.10,.14,.145],yaw:-.7},
+  {kind:"chair",file:"period/chair",at:[.65,0,-4.55],size:[.62,1.02,.65],yaw:-.3},
+  {kind:"phone",file:"authored/phone-base",at:[.12,.79,-5.4],size:[.40,.13,.38],yaw:0},
+  {kind:"rolodex",file:"authored/rolodex",at:[1.34,.795,-5.55],size:[.23,.19,.23],yaw:-.15},
 ]
 
 /** Fit the two ear pads to the actual base, rather than a guessed world height. */
@@ -61,7 +60,7 @@ function screenCoordinates(p:TexturedPrimitive) {
   const xs:number[]=[],ys:number[]=[]
   for(let i=0;i<v.length;i+=8){xs.push(v[i]);ys.push(v[i+1])}
   const left=Math.min(...xs),bottom=Math.min(...ys),width=Math.max(...xs)-left,height=Math.max(...ys)-bottom
-  // The generated mesh already supplies curvature; preserve its topology.
+  // The authored glass already supplies curvature; preserve its topology.
   for(let i=0;i<v.length;i+=8){v[i+6]=(v[i]-left)/width;v[i+7]=(v[i+1]-bottom)/height}
   p.roughness=.17
 }
@@ -72,17 +71,15 @@ export async function officeProps(renderer:Renderer) {
   const indicator=[PHONE_INDICATOR[0],0,PHONE_INDICATOR[1]]
   const assets=await Promise.all(PROP_DEFINITIONS.map(async def=>{
     const asset=await loadGltf(renderer.passContext.device,`${import.meta.env.BASE_URL}props/${def.file}.glb`)
-    // Generated phone base contains no receiver; the scene owns that moving part.
+    // The phone base contains no receiver; the scene owns that moving part.
     const lo=[Infinity,Infinity,Infinity],hi=[-Infinity,-Infinity,-Infinity]
     for(const p of asset.primitives){const f=new Float32Array(p.vertices);for(let i=0;i<f.length;i+=8)for(let k=0;k<3;k++){lo[k]=Math.min(lo[k],f[i+k]);hi[k]=Math.max(hi[k],f[i+k])}}
-    if(def.kind==="mouse")asset.primitives=asset.primitives.filter((_,i)=>i===1)
     for(const p of asset.primitives) {
       const f=new Float32Array(p.vertices),n=new Int8Array(p.vertices),half=new Uint16Array(p.vertices)
       const scale=def.size.map((v,k)=>v/(hi[k]-lo[k])),c=Math.cos(def.yaw),s=Math.sin(def.yaw)
       const screen=def.kind==="crt"&&p.color[0]<.1&&p.color[1]>.5&&p.color[2]>.7
-      if(!def.generated){p.metalness=0;p.roughness=.65}
+      if(def.kind==="pen-cup"){p.metalness=0;p.roughness=.65}
       if(def.kind==="chair")p.color=[1.7,1.7,1.55,1]
-      if(def.kind==="phone")p.color=[1.5,1.4,1.15,1]
       for(let i=0;i<f.length;i+=8) {
         const x=(f[i]-(lo[0]+hi[0])/2)*scale[0],z=(f[i+2]-(lo[2]+hi[2])/2)*scale[2]
         f[i]=def.at[0]+c*x+s*z;f[i+1]=def.at[1]+(f[i+1]-lo[1])*scale[1];f[i+2]=def.at[2]-s*x+c*z

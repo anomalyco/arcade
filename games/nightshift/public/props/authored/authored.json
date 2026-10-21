@@ -1,0 +1,27 @@
+{
+  "blender": "5.2.2 LTS",
+  "source": "Original authored hard-surface rebuild against approved Night Shift concepts; replaces torn TRELLIS candidates",
+  "assets": [
+    {
+      "file": "crt.glb",
+      "bytes": 923788,
+      "sha256": "6cb3498229b882847ae90b3351d291894ee3c157fb5a91e5e07d0886cb48058d",
+      "authoredObjects": 69,
+      "exportObjects": 1
+    },
+    {
+      "file": "phone-base.glb",
+      "bytes": 890896,
+      "sha256": "372ac875eb458cd2f962796fdca627ac90cff38bc3f91db39a8fb26c414466c5",
+      "authoredObjects": 77,
+      "exportObjects": 1
+    },
+    {
+      "file": "rolodex.glb",
+      "bytes": 225428,
+      "sha256": "5cccaf5f27f9d2ce49f099ed4a6edf658af8a6f74955699c5096f345fd0af176",
+      "authoredObjects": 65,
+      "exportObjects": 1
+    }
+  ]
+}
