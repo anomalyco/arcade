@@ -1,7 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
-import { homedir, tmpdir } from "node:os"
-import { join } from "node:path"
+import { validateWgsl } from "../test-naga"
 import { fogScatterVolume } from "../fog-scatter"
 import { makeSceneShader } from "../shaders"
 import { VOLUME_PARAM_FLOATS } from "../volume-pass"
@@ -98,9 +96,6 @@ describe("Ssr settings", () => {
 })
 
 describe("WGSL validates with naga", () => {
-  const naga = [process.env.NAGA, Bun.which("naga"), join(homedir(), ".cargo/bin/naga"), join(homedir(), ".cache/naga-cli/bin/naga")].find(
-    (p): p is string => !!p && existsSync(p),
-  )
   const ssr = ssrVolume()
   const sources: Record<string, string> = {
     "ssr march": ssr.code,
@@ -115,21 +110,7 @@ describe("WGSL validates with naga", () => {
   }
   for (const [name, code] of Object.entries(sources)) {
     test(name, () => {
-      if (!naga) {
-        console.log("naga not found, skipping WGSL validation (cargo install naga-cli)")
-        return
-      }
-      const dir = mkdtempSync(join(tmpdir(), "ssr-wgsl-"))
-      try {
-        const file = join(dir, "shader.wgsl")
-        writeFileSync(file, code)
-        const run = Bun.spawnSync([naga, file])
-        const out = run.stderr.toString() + run.stdout.toString()
-        if (run.exitCode !== 0) console.log(out)
-        expect(run.exitCode).toBe(0)
-      } finally {
-        rmSync(dir, { recursive: true, force: true })
-      }
+      validateWgsl(code)
     })
   }
 })
