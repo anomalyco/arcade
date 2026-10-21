@@ -90,25 +90,23 @@ try {
         const timing: Record<string, unknown> = {}
         for (const [feature, on] of [["glass", { ...TODAY, glass: "thin" }], ["rooms", { ...TODAY, rooms: "rooms" }], ["contact", { ...TODAY, contact: "screen" }], ["all", ALL]] as const) {
           const a: number[] = [], b: number[] = []
-          // The loop is paused while measuring so only isolated frames hit the GPU; a low percentile per round keeps
-          // other processes' GPU work (shared workers) out of the estimate.
+          // The loop is paused while measuring; each timed frame follows warm-up frames (Lot measure). Shared workers'
+          // GPU work and clock drops only ever add time, so the estimate is the low tail of all samples, not a median.
           const sample = () => page.evaluate(async () => {
             const lot = (window as unknown as { lot: Lot }).lot
             lot.paused = true
-            const s = (await lot.measureFrames(16))!.samples
+            const s = (await lot.measureFrames(12))!.samples
             lot.paused = false
-            return s[Math.floor(s.length * 0.2)]!
+            return s
           })
-          for (let r = 0; r < 8; r++) {
+          for (let r = 0; r < 6; r++) {
             await setModes(page, TODAY); await frames(page, 8)
-            a.push(await sample())
+            a.push(...await sample())
             await setModes(page, on as Modes); await frames(page, 8)
-            b.push(await sample())
+            b.push(...await sample())
           }
-          const med = (x: number[]) => [...x].sort((p, q) => p - q)[Math.floor(x.length / 2)]!
-          const deltas = a.map((v, i) => b[i]! - v)
-          const md = med(deltas)
-          timing[feature] = { today: med(a), on: med(b), delta: md, mad: med(deltas.map(d => Math.abs(d - md))), rounds: { today: a, on: b } }
+          const q = (x: number[], p: number) => [...x].sort((m, n) => m - n)[Math.floor((x.length - 1) * p)]!
+          timing[feature] = { today: { min: q(a, 0), p10: q(a, 0.1), p50: q(a, 0.5) }, on: { min: q(b, 0), p10: q(b, 0.1), p50: q(b, 0.5) }, deltaMin: q(b, 0) - q(a, 0), deltaP10: q(b, 0.1) - q(a, 0.1), rounds: { today: a, on: b } }
         }
         entry.timing = timing
         console.log(name, JSON.stringify(timing, (k, v) => (k === "rounds" ? undefined : typeof v === "number" ? +v.toFixed(3) : v)))
