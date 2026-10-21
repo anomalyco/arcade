@@ -83,7 +83,6 @@ async function main() {
   renderer.addPass("opaque", meshes)
   const insideMeshes = new TexturedMeshPass(renderer.passContext,interior.primitives.filter(p=>!p.blend),texturedHooks)
   renderer.addPass("opaque",insideMeshes)
-  renderer.addPass("alpha",new TexturedMeshPass(renderer.passContext,interior.primitives.filter(p=>p.blend),texturedHooks))
   const white=solidTexture(gpu.device,[255,255,255,255])
   const forestSettings=forestDefaults()
   const forest=new ForestPass(renderer.passContext,world.forest.models,world.forest.trees,{ hooks:texturedHooks, impostorGrid:world.forest.impostorGrid,
@@ -145,9 +144,13 @@ async function main() {
   const windows=lazy(()=>new TexturedMeshPass(renderer.passContext,world.windows.map((vertices):TexturedPrimitive=>({vertices,base:atlas!,normal,orm,color:[1,1,1,1],roughness:1,metalness:0,normalScale:0,blend:false})),windowHooks))
   renderer.addPass("opaque",{draw:p=>{ if(rooms.mode==="rooms" && atlas) windows.draw(p) }})
 
-  renderer.addPass("alpha",new TexturedMeshPass(renderer.passContext,world.storefront.map((vertices):TexturedPrimitive=>({
+  const entrancePrimitives=world.storefront.map((vertices):TexturedPrimitive=>({
     vertices,base:white,normal,orm,color:[1,1,1,0.12],roughness:0.04,metalness:0,normalScale:0,blend:true,
-  })),texturedHooks))
+  })).concat(interior.primitives.filter(p=>p.blend && p.roughness<0.1))
+  const entranceToday=new TexturedMeshPass(renderer.passContext,entrancePrimitives,texturedHooks)
+  const entranceGlass=lazy(()=>new TexturedMeshPass(renderer.passContext,entrancePrimitives,thinGlassHooksLot))
+  renderer.addPass("alpha",{draw:p=>(glass.mode==="thin"?entranceGlass:entranceToday).draw(p)})
+  renderer.addPass("alpha",new TexturedMeshPass(renderer.passContext,interior.primitives.filter(p=>p.blend && p.roughness>=0.1),texturedHooks))
   const camera = new FirstPerson(canvas, () => panel.visible)
   camera.body.x = START.x; camera.body.y = START.z; camera.yaw = START.yaw; camera.pitch = START.pitch
   camera.height=START.height; camera.near=0.15; camera.far=1200
@@ -191,7 +194,11 @@ async function main() {
   let last = performance.now(), frames = 0, paused = false, lastFrame: FrameInput | null = null
   const readyMs=performance.now()-t0
   // Slot order: contact shadows darken the lit scene before reflections and fog add to it.
-  const volumes = () => smoke ? [ssr.volumeInput({wet}),fog.volumeInput()] : [contactShadowInput(contact),ssr.volumeInput({wet}),fog.volumeInput()]
+  const volumes = () => {
+    const inside=camera.body.x>-55 && camera.body.x<35 && camera.body.y>-3.2 && camera.body.y<22
+    const reflections=ssr.volumeInput({indoor:inside,wet:inside?{...wet,wetness:0,puddles:0,ripple:0}:wet})
+    return smoke ? [reflections,fog.volumeInput()] : [contactShadowInput(contact),reflections,fog.volumeInput()]
+  }
   /** GPU ms of n frames of the last frame's input (Renderer.measure), each after `warm` untimed frames so the GPU is at clock. */
   const measureFrames = async (n = 24, warm = 3) => {
     if(!lastFrame) return null

@@ -1,3 +1,5 @@
+import { paneUvs } from "./pane-uvs"
+
 /** Migrate the exterior export's dark entrance backing to real glass. Other facade bays stay backed.
  * Only the exact backing colour within the authored storefront is eligible; frames and door hardware stay opaque.
  * Newer exterior exports can supply transparent panes directly, in which case this is a no-op.
@@ -18,5 +20,5 @@ export function splitStorefront(data: ArrayBuffer) {
       ng += 32
     }
   }
-  return { solid: solid.buffer.slice(0, ns), glass: glass.buffer.slice(0, ng) }
+  return { solid: solid.buffer.slice(0, ns), glass: paneUvs(glass.buffer.slice(0, ng)) }
 }

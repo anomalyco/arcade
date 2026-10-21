@@ -27,6 +27,13 @@ test("entrance backing becomes glass without changing exterior triangle count", 
     const original = bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength)
     const split = splitStorefront(original)
     expect(split.solid.byteLength/24+split.glass.byteLength/32).toBe(bytes.byteLength/24)
+    // Thin glass reconstructs its tangent frame from UV derivatives; zero-area UVs produce NaNs.
+    const pane=new DataView(split.glass)
+    for(let i=0;i<split.glass.byteLength;i+=96) {
+      const u=[0,32,64].map(k=>pane.getFloat32(i+k+24,true))
+      const v=[0,32,64].map(k=>pane.getFloat32(i+k+28,true))
+      expect(Math.abs((u[1]!-u[0]!)*(v[2]!-v[0]!)-(u[2]!-u[0]!)*(v[1]!-v[0]!))).toBeGreaterThan(0.000001)
+    }
     glass+=split.glass.byteLength/96
   }
   expect(glass).toBeGreaterThan(0)

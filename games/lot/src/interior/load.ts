@@ -5,6 +5,7 @@ import { solidTexture } from "../foliage"
 import { meshBytes } from "../mesh-bytes"
 import type { InteriorScene } from "./types"
 import { receptionProps } from "./props"
+import { paneUvs } from "./pane-uvs"
 
 const finishes: Record<string, string> = {
   tile_green: "tile", tile_green_dark: "tile", terrazzo: "terrazzo", linoleum: "vinyl",
@@ -35,6 +36,7 @@ export async function loadInterior(device: GPUDevice) {
       documents ? texture("documents-normal", false, true) : normal,
       documents ? texture("documents-orm", false) : finish && !["exit"].includes(finish) ? texture(finish + "-orm", false) : white,
     ])
+    if(r.name==="interior_glass" || r.name==="interior_glazing") paneUvs(vertices)
     return { vertices, base: baseMap, normal: normalMap, orm, color: [1,1,1,r.alpha], roughness: r.roughness,
       metalness: r.metalness, normalScale: documents ? 0.6 : 0, aoStrength: 1, blend: r.alpha < 1 }
   }))
