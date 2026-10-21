@@ -58,69 +58,8 @@ export function wetControls(group = "Wet ground", prefix = ""): LabControl[] {
   ]
 }
 
-// ---------------------------------------------------------------- CPU mirror (tests)
-
-const u32 = (x: number) => x >>> 0
-/** PCG-style integer hash of a lattice point and a seed, to 0..1 (the WGSL `wetHash`). */
-export function wetHash(x: number, y: number, seed: number): number {
-  let h = u32(Math.imul(u32(x | 0), 0x8da6b343) ^ Math.imul(u32(y | 0), 0xd8163841) ^ Math.imul(u32(seed), 0xcb1ab31f))
-  h = u32(Math.imul(h ^ (h >>> 16), 0x7feb352d))
-  h = u32(Math.imul(h ^ (h >>> 15), 0x846ca68b))
-  h = u32(h ^ (h >>> 16))
-  return h / 4294967296
-}
-
-const fade = (t: number) => t * t * (3 - 2 * t)
-function valueNoise(x: number, y: number, seed: number): number {
-  const ix = Math.floor(x), iy = Math.floor(y)
-  const fx = fade(x - ix), fy = fade(y - iy)
-  const a = wetHash(ix, iy, seed), b = wetHash(ix + 1, iy, seed), c = wetHash(ix, iy + 1, seed), d = wetHash(ix + 1, iy + 1, seed)
-  return a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy
-}
-
-/** Spread of the raw 3-octave value-noise fbm around 0.5, fitted once (`wet.test.ts` checks the result is uniform). */
+/** Spread of the raw 3-octave value-noise fbm around 0.5, fitted once. */
 export const WET_NOISE_SIGMA = 0.14
-
-/** Histogram-equalised fbm: roughly uniform on 0..1, so thresholds are coverage fractions (the WGSL `wetNoise`). */
-export function wetNoise(x: number, y: number, seed: number): number {
-  const raw = (valueNoise(x, y, seed) * 0.5714 + valueNoise(x * 2.03 + 17.1, y * 2.03 + 5.3, seed + 1) * 0.2857 + valueNoise(x * 4.07 + 3.7, y * 4.07 + 29.9, seed + 2) * 0.1429)
-  return 0.5 + 0.5 * erf((raw - 0.5) / (WET_NOISE_SIGMA * Math.SQRT2))
-}
-
-/** Abramowitz–Stegun 7.1.26-style tanh fit of erf (the WGSL uses the same). */
-export function erf(x: number): number {
-  return Math.tanh(1.1283791671 * x * (1 + 0.0886226925 * x * x))
-}
-
-export type WetResult = { albedo: number; roughness: number; flat: number; puddle: number; film: number }
-
-const smooth = (e0: number, e1: number, x: number) => {
-  const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)))
-  return t * t * (3 - 2 * t)
-}
-
-/** CPU mirror of `wetSurface`. */
-export function wetSurface(x: number, z: number, ny: number, rough: number, ao: number, footprint: number, s: WetSettings, m: WetMaterial): WetResult {
-  const w = s.wetness
-  const qx = x / s.puddleScale, qz = z / s.puddleScale
-  const up = smooth(0.82, 0.97, ny)
-  const h = wetNoise(qx / 41, qz / 41, 41) * 0.62 + wetNoise(qx / 13, qz / 13, 13) * 0.38 + (1 - ao) * 0.35
-  const line = 1.12 - s.puddles * m.puddles * 0.82
-  const aa = Math.max(0.035, footprint * 0.16 / s.puddleScale)
-  const puddle = smooth(line, line + aa, h) * up * smooth(0.15, 0.6, w)
-  const edge = smooth(line - 0.09, line, h) * up
-  const dry = wetNoise(qx / 9, qz / 9, 9)
-  const film = Math.max(w * (0.8 + 0.2 * dry), edge * w)
-  const filmRough = m.film + 0.1 * dry
-  const albedo = (1 - m.porosity * film) * (1 - 0.45 * puddle)
-  const sheen = smooth(0.35, 0.85, wetNoise(x / 6, z / 6, 6)) * film
-  let r = rough + (Math.min(rough, filmRough) - rough) * film
-  r = r * (1 - 0.25 * sheen)
-  r = r + (0.035 - r) * puddle
-  const far = smooth(0.004, 0.03, footprint)
-  const flatFilm = film * (0.3 + 0.5 * far)
-  return { albedo, roughness: r, flat: 1 - (1 - flatFilm) * (1 - puddle), puddle, film }
-}
 
 // ---------------------------------------------------------------- WGSL
 
