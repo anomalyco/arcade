@@ -46,10 +46,15 @@ export type RoomSettings = {
   brightness: number
   /** Share of windows with venetian blinds part-way down, 0..1. */
   blinds: number
+  /**
+   * Mullion edges: "today" smoothsteps over one pixel, which keeps a sub-pixel bar at full strength over its centre
+   * pixel (far bars flash as they cross pixel centres); "box" covers each pixel by the exact share of the bar in it.
+   */
+  mullions: "today" | "box"
 }
 
 export const GLASS_DEFAULTS: Readonly<GlassSettings> = { mode: "today", ior: 1.52, reflection: 1, grime: 0.3, condensation: 0.35, scatter: 0.4 }
-export const ROOM_DEFAULTS: Readonly<RoomSettings> = { mode: "today", depth: 3.2, brightness: 1, blinds: 0.45 }
+export const ROOM_DEFAULTS: Readonly<RoomSettings> = { mode: "today", depth: 3.2, brightness: 1, blinds: 0.45, mullions: "today" }
 
 export const createGlassSettings = (overrides: Partial<GlassSettings> = {}): GlassSettings => ({ ...GLASS_DEFAULTS, ...overrides })
 export const createRoomSettings = (overrides: Partial<RoomSettings> = {}): RoomSettings => ({ ...ROOM_DEFAULTS, ...overrides })
@@ -80,6 +85,7 @@ export function roomControls(group = "Glass", prefix = "rooms."): LabControl[] {
     range("depth", "Room depth", 0.5, 8, 0.1, "m"),
     range("brightness", "Room light", 0, 3, 0.05, "×"),
     range("blinds", "Blinds", 0, 1, 0.01),
+    { ...key("mullions"), label: "Mullion edges", group, subsection: "Windows", type: "select", options: [{ value: "today", label: "Today (smoothstep)" }, { value: "box", label: "Box filtered" }] },
   ]
 }
 
@@ -94,9 +100,9 @@ export const schlick = (f0: number, cosT: number) => f0 + (1 - f0) * (1 - Math.m
 /** Reflectance of a thin non-absorbing slab, both interfaces and their inter-reflections: R + T²R / (1 − R²) = 2R / (1 + R). */
 export const slabReflectance = (r: number) => (2 * r) / (1 + r)
 
-/** Packs the live knobs: glass (f0, reflection, grime, condensation), (scatter, -, -, -), rooms (depth m, brightness, blinds, -). */
+/** Packs the live knobs: glass (f0, reflection, grime, condensation), (scatter, -, -, -), rooms (depth m, brightness, blinds, box-filtered mullions). */
 export function packGlassKnobs<T extends Float32Array>(glass: GlassSettings, rooms: RoomSettings, out: T = new Float32Array(GLASS_KNOB_FLOATS) as T, offset = 0): T {
-  out.set([glassF0(glass.ior), glass.reflection, glass.grime, glass.condensation, glass.scatter, 0, 0, 0, rooms.depth, rooms.brightness, rooms.blinds, 0], offset)
+  out.set([glassF0(glass.ior), glass.reflection, glass.grime, glass.condensation, glass.scatter, 0, 0, 0, rooms.depth, rooms.brightness, rooms.blinds, rooms.mullions === "box" ? 1 : 0], offset)
   return out
 }
 
@@ -271,9 +277,16 @@ fn kitMullions(cols: f32, width: f32, transom: f32, transomAbove: f32) -> f32 {
   dx = min(dx, min(m.x, kitPane.size.x - m.x) + hw - 0.012);
   var dy = min(m.y, kitPane.size.y - m.y) + hw - 0.012;
   if (transom > 0.0 && kitPane.centre.y > transomAbove) { dy = min(dy, abs(m.y - transom)); }
-  let vx = 1.0 - smoothstep(hw - fw.x * 0.5, hw + fw.x * 0.5, dx);
-  let hy = 1.0 - smoothstep(hw - fw.y * 0.5, hw + fw.y * 0.5, dy);
+  // Box (Windows › Mullion edges): the share of the pixel's footprint the bar covers. Today's smoothstep kept a
+  // sub-pixel bar at full strength over its centre pixel, so far bars flashed between ~1 and ~0 crossing pixel centres.
+  let box = kitKnobsC().w > 0.5;
+  let vx = select(1.0 - smoothstep(hw - fw.x * 0.5, hw + fw.x * 0.5, dx), kitBarCoverage(dx, hw, fw.x), box);
+  let hy = select(1.0 - smoothstep(hw - fw.y * 0.5, hw + fw.y * 0.5, dy), kitBarCoverage(dy, hw, fw.y), box);
   return max(vx, hy);
+}
+/** Share of a footprint fw centred at distance d from a bar's axis that lies within the bar's half-width hw. */
+fn kitBarCoverage(d: f32, hw: f32, fw: f32) -> f32 {
+  return clamp((min(d + fw * 0.5, hw) - max(d - fw * 0.5, -hw)) / fw, 0.0, 1.0);
 }
 
 /** Venetian blinds part-way down from the head: x = transmission through the slats, y = slat coverage (lit by the room). */

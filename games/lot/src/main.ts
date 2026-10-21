@@ -137,7 +137,7 @@ async function main() {
     vertices,base:white,normal,orm,color:[1,1,1,1],roughness:0.6,metalness:0.85,normalScale:0,blend:false,
   })),fenceHooks))
   // Each new look is its own pass, built the first time it is switched on, so Today draws exactly what it drew before.
-  const glass=createGlassSettings({mode:smoke?"today":"thin"}), rooms=createRoomSettings({mode:smoke?"today":"rooms"}), contact=createContactShadowSettings({mode:smoke?"today":"screen"})
+  const glass=createGlassSettings({mode:smoke?"today":"thin"}), rooms=createRoomSettings({mode:smoke?"today":"rooms",mullions:"box"}), contact=createContactShadowSettings({mode:smoke?"today":"screen",historyMoving:0.25})
   const lazy=(make:()=>ScenePass)=>{ let pass:ScenePass|null=null; return { draw:(p:GPURenderPassEncoder)=>(pass??=make()).draw(p) } }
   const glassPrimitives=world.glass.map((vertices):TexturedPrimitive=>({vertices,base:white,normal,orm,color:[1,1,1,0.35],roughness:0.06,metalness:0,normalScale:0,blend:true}))
   const todayGlass=new TexturedMeshPass(renderer.passContext,glassPrimitives,glassHooks)

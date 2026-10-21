@@ -65,6 +65,9 @@ describe("settings", () => {
     expect(out[4]).toBeCloseTo(0.04, 6)
     expect(out[6]).toBeCloseTo(0.25, 6)
     expect(out[4 + 8]).toBe(4)
+    // Mullion edges: Today (smoothstep) packs 0, box filtering 1.
+    expect(out[4 + 11]).toBe(0)
+    expect(packGlassKnobs(glass, createRoomSettings({ mullions: "box" }))[11]).toBe(1)
   })
 
   test("window aux keeps kind and brightness apart", () => {

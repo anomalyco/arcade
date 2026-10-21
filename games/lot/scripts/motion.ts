@@ -28,8 +28,12 @@ mkdirSync(out, { recursive: true })
 const viewport = (process.env.MOTION_VIEWPORT ?? "1920x1080").split("x").map(Number) as [number, number]
 
 type Pose = { x: number; z: number; yaw: number; pitch: number }
-/** A box of half-size r px (at 1080 p) around a world point, or with `mirror` around its reflection in the ground (y 0). */
-type Roi = { name: string; p: [number, number, number]; r: number; mirror?: boolean }
+/**
+ * A box of half-size r px (at 1080 p) around a world point, or with `mirror` around its reflection in the ground (y 0).
+ * `anchored` also scores the box with every pixel moved by the point's own screen motion instead of its depth: how a
+ * halo or glow around that point should move (its depth is the sky behind it), reported as `<name>@`.
+ */
+type Roi = { name: string; p: [number, number, number]; r: number; mirror?: boolean; anchored?: boolean }
 type Path = { frames: number; pose: (t: number) => Pose; rois?: Roi[] }
 const WALK = 2.1
 /** Seconds → pose. Yaw 0 looks along −z, toward the facility. */
@@ -40,10 +44,10 @@ export const PATHS: Record<string, Path> = {
   gate: { frames: 180, pose: (t) => ({ x: -3 + 0.3 * t, z: 152 - WALK * t, yaw: 0.25 + 0.04 * Math.sin(t * 2), pitch: 0.03 }), rois: [{ name: "stairwell", p: [-41.4, 9, 25], r: 60 }, { name: "bays", p: [-30, 6, 22], r: 90 }] },
   "gate-turn": { frames: 150, pose: (t) => ({ x: -3, z: 150, yaw: 0.05 + 0.18 * t, pitch: 0.03 }), rois: [{ name: "stairwell", p: [-41.4, 9, 25], r: 60 }, { name: "bays", p: [-30, 6, 22], r: 90 }] },
   // Under the booth's sodium head (x 4.6, z 129.6): its pool and the wagon pass underfoot.
-  lamp: { frames: 150, pose: (t) => ({ x: 1, z: 138 - WALK * t, yaw: 0.05, pitch: -0.02 }), rois: [{ name: "boothHead", p: [4.5, 6.4, 129.6], r: 60 }] },
+  lamp: { frames: 150, pose: (t) => ({ x: 1, z: 138 - WALK * t, yaw: 0.05, pitch: -0.02 }), rois: [{ name: "boothHead", p: [4.5, 6.4, 129.6], r: 60, anchored: true }, { name: "pool", p: [3, 0, 126], r: 160 }, { name: "booth", p: [9, 1.4, 127.5], r: 160 }] },
   // Kit's first Scrawl at 0:12–0:16: past the mid-lot head (x −6.3, z 100) toward the facility, the far head's wet streak
   // (x 19.8, z 57.8) and the road glitter between.
-  kit: { frames: 150, pose: (t) => ({ x: -5 + 0.2 * t, z: 102 - WALK * t, yaw: -0.1 + 0.03 * Math.sin(t * 1.7), pitch: -0.02 }), rois: [{ name: "head58", p: [19.8, 9.2, 57.8], r: 50 }, { name: "mirror58", p: [19.8, 9.2, 57.8], r: 60, mirror: true }, { name: "horizon", p: [12, 0, 62], r: 120 }] },
+  kit: { frames: 150, pose: (t) => ({ x: -5 + 0.2 * t, z: 102 - WALK * t, yaw: -0.1 + 0.03 * Math.sin(t * 1.7), pitch: -0.02 }), rois: [{ name: "head58", p: [19.8, 9.2, 57.8], r: 50 }, { name: "mirror58", p: [19.8, 9.2, 57.8], r: 60, mirror: true }, { name: "horizon", p: [12, 0, 62], r: 120 }, { name: "kerbL", p: [-12, 0.15, 60], r: 140 }, { name: "farPool", p: [13, 0.1, 40], r: 90 }, { name: "windows", p: [5, 7, 22], r: 110 }] },
   // The lamp path's first pose, held: the renderer's own noise floor with the camera still.
   still: { frames: 90, pose: () => ({ x: 1, z: 138, yaw: 0.05, pitch: -0.02 }), rois: [{ name: "boothHead", p: [4.5, 6.4, 129.6], r: 60 }] },
   // Across the lot facing the facility, between the two far heads.
@@ -83,8 +87,28 @@ const VARIANTS: Record<string, string> = {
   "fog-move-0.3": "lot.fog.settings.historyMoving = 0.3",
   "move-0.3": "lot.ssr.settings.historyMoving = 0.3; lot.fog.settings.historyMoving = 0.3",
   // Today: main before AR-118 (no glow decal offset, volume histories dropped in motion, spot shadows by time only).
-  today: "lot.ssr.settings.historyMoving = 1; lot.fog.settings.historyMoving = 1; lot.settings.decalDepth = 0",
+  today: "lot.ssr.settings.historyMoving = 1; lot.fog.settings.historyMoving = 1; lot.settings.decalDepth = 0; lot.contact.historyMoving = 1; lot.rooms.mullions = 'today'",
+  // Main before this round (#371): contact history dropped in motion, smoothstep mullions.
+  main: "lot.contact.historyMoving = 1; lot.rooms.mullions = 'today'",
   "move-today": "lot.ssr.settings.historyMoving = 1; lot.fog.settings.historyMoving = 1",
+  "contact-move": "lot.contact.historyMoving = 0.25",
+  "contact-move-fog8": "lot.contact.historyMoving = 0.25; lot.fog.settings.samples = 8",
+  "contact-move-fogfull": "lot.contact.historyMoving = 0.25; lot.fog.settings.halfRes = false",
+  "contact-move-fogmove": "lot.contact.historyMoving = 0.25; lot.fog.settings.historyMoving = 0.3",
+  "cm-wet-off": "lot.contact.historyMoving = 0.25; lot.settings.wetness = 0",
+  "cm-sharpen-0": "lot.contact.historyMoving = 0.25; lot.renderer.setTemporal({ ...lot.renderer.getTemporal(), sharpen: 0 })",
+  "cm-bloom-0": "lot.contact.historyMoving = 0.25; lot.renderer.setBloomLevels(1)",
+  "cm-blur-off": "lot.contact.historyMoving = 0.25; lot.fog.settings.blur = 'today'",
+  "cm-ssr-off": "lot.contact.historyMoving = 0.25; lot.ssr.settings.mode = 'today'",
+  "cm-taa-off": "lot.contact.historyMoving = 0.25; lot.renderer.setTemporal({ ...lot.renderer.getTemporal(), mode: 'msaa' })",
+  "cm-specaa-2": "lot.contact.historyMoving = 0.25; lot.settings.specularAA = 2",
+  "rooms-only": "lot.glass.mode = 'today'",
+  "puddles-0": "lot.wet.puddles = 0",
+  "ripple-0": "lot.wet.ripple = 0",
+  "bloom-0": "lot.renderer.setBloomLevels(1)",
+  "glass-today": "lot.glass.mode = 'today'",
+  "lamp-0": "lot.settings.lamp = 0",
+  "haze-0": "lot.settings.haze = 0",
   "specaa-2": "lot.settings.specularAA = 2",
   "sharpen-0": "lot.renderer.setTemporal({ ...lot.renderer.getTemporal(), sharpen: 0 })",
   "taa-hist-0.95": "lot.renderer.setTemporal({ ...lot.renderer.getTemporal(), history: 0.95 })",
@@ -206,6 +230,7 @@ try {
         const D = [new Float32Array(N), new Float32Array(N)]
         const VP: Float32Array[] = [new Float32Array(16), new Float32Array(16)]
         const heat = new Float32Array(N)
+        const popMap = new Uint16Array(N)
         const BS = 32, bw = Math.ceil(W / BS), bh = Math.ceil(H / BS)
         const block = new Float64Array(bw * bh), blockN = new Uint32Array(bw * bh)
         const frames: any[] = []
@@ -256,6 +281,24 @@ try {
             const cw = c[3]! * x + c[7]! * y + c[11]! * z + c[15]!
             return { ...r, r: r.r * H / 1080, sx: ((c[0]! * x + c[4]! * y + c[8]! * z + c[12]!) / cw * 0.5 + 0.5) * W, sy: (0.5 - (c[1]! * x + c[5]! * y + c[9]! * z + c[13]!) / cw * 0.5) * H, ok: cw > 0, sum: 0, n: 0, pops: 0 }
           })
+          const anchored: Record<string, [number, number]> = {}
+          for (const r of roiC) {
+            if (!r.anchored || !r.ok) continue
+            const x = r.p[0]!, y = r.p[1]!, z = r.p[2]!, pw = pv[3]! * x + pv[7]! * y + pv[11]! * z + pv[15]!
+            if (pw <= 0) continue
+            const dx = r.sx - (((pv[0]! * x + pv[4]! * y + pv[8]! * z + pv[12]!) / pw) * 0.5 + 0.5) * W
+            const dy = r.sy - ((0.5 - ((pv[1]! * x + pv[5]! * y + pv[9]! * z + pv[13]!) / pw) * 0.5)) * H
+            let sum = 0, n = 0, pp = 0
+            for (let py = Math.max(1, Math.floor(r.sy - r.r)); py < Math.min(H - 2, r.sy + r.r); py++) for (let px = Math.max(1, Math.floor(r.sx - r.r)); px < Math.min(W - 2, r.sx + r.r); px++) {
+              const qx = px - dx, qy = py - dy
+              if (qx < 0 || qy < 0 || qx >= W - 1 || qy >= H - 1) continue
+              const fx = Math.floor(qx), fy = Math.floor(qy), a = fy * W + fx
+              const lo = Math.min(prev[a]!, prev[a + 1]!, prev[a + W]!, prev[a + W + 1]!), hi = Math.max(prev[a]!, prev[a + 1]!, prev[a + W]!, prev[a + W + 1]!)
+              const v = cur[py * W + px]!, diff = v > hi ? v - hi : v < lo ? lo - v : 0
+              sum += diff; n++; if (diff >= 12) pp++
+            }
+            anchored[r.name + "@"] = [n ? sum / n : 0, pp]
+          }
           const grid = new Float64Array(9), pops = new Uint32Array(9), cnt = new Uint32Array(9)
           block.fill(0); blockN.fill(0)
           let valid = 0
@@ -292,7 +335,7 @@ try {
               const diff = v > hi ? v - hi : v < lo ? lo - v : 0
               const gi = gy * 3 + Math.min(2, Math.floor((x * 3) / W))
               grid[gi]! += diff; cnt[gi]!++; heat[i]! += diff; valid++
-              if (diff >= 12) pops[gi]!++
+              if (diff >= 12) { pops[gi]!++; popMap[i]!++ }
               const bi = Math.floor(x / BS) + Math.floor(y / BS) * bw
               block[bi]! += v > hi ? v - hi : v < lo ? v - lo : 0; blockN[bi]!++
               for (let ri = 0; ri < roiOn.length; ri++) { const r = roiOn[ri]!; if (Math.abs(x - r.sx) < r.r && Math.abs(y - r.sy) < r.r) { r.sum += diff; r.n++; if (diff >= 12) r.pops++ } }
@@ -306,7 +349,7 @@ try {
             flashMax = Math.max(flashMax, m)
           }
           frames.push({ grid: Array.from(grid, (v, i) => (cnt[i] ? v / cnt[i]! : 0)), fire: Array.from(pops), flash, flashMax, valid: valid / N,
-            roi: Object.fromEntries(roiC.map((r) => [r.name, [r.n ? r.sum / r.n : 0, r.pops]])) })
+            roi: { ...Object.fromEntries(roiC.map((r) => [r.name, [r.n ? r.sum / r.n : 0, r.pops]])), ...anchored } })
         }
         depthBuf?.destroy()
         readBuf.destroy()
@@ -319,10 +362,18 @@ try {
           img.data[i * 4] = 255 * Math.min(1, v * 2); img.data[i * 4 + 1] = 255 * Math.max(0, v * 2 - 1); img.data[i * 4 + 2] = 40 * (1 - v); img.data[i * 4 + 3] = 255
         }
         g.putImageData(img, 0, 0)
+        // Pop map: frames each pixel popped (white = every 10th frame or more).
+        const pimg = g.createImageData(W, H)
+        const pn = Math.max(1, poses.length / 10)
+        for (let i = 0; i < N; i++) { const v = Math.min(255, (popMap[i]! / pn) * 255); pimg.data[i * 4] = v; pimg.data[i * 4 + 1] = v; pimg.data[i * 4 + 2] = v; pimg.data[i * 4 + 3] = 255 }
+        const pc = new OffscreenCanvas(W, H); pc.getContext("2d")!.putImageData(pimg, 0, 0)
+        const pb = new Uint8Array(await (await pc.convertToBlob({ type: "image/png" })).arrayBuffer())
+        let ps = ""
+        for (let i = 0; i < pb.length; i += 0x8000) ps += String.fromCharCode(...pb.subarray(i, i + 0x8000))
         const hb = new Uint8Array(await (await c2.convertToBlob({ type: "image/png" })).arrayBuffer())
         let hs = ""
         for (let i = 0; i < hb.length; i += 0x8000) hs += String.fromCharCode(...hb.subarray(i, i + 0x8000))
-        return { frames, jpegs, heat: btoa(hs), size: [W, H] }
+        return { frames, jpegs, heat: btoa(hs), pops: btoa(ps), size: [W, H] }
       }, { code, poses, warm, rec, size: viewport, rois: p.rois ?? [] })
       if (errors.length) throw new Error(errors.join("\n"))
       const fr = result.frames as { grid: number[]; fire: number[]; flash: number; flashMax: number; valid: number; roi: Record<string, [number, number]> }[]
@@ -337,11 +388,12 @@ try {
         flashBlocks: mean((x) => x.flash),
         flashMax: Math.max(...fr.map((x) => x.flashMax)),
         valid: mean((x) => x.valid),
-        roi: Object.fromEntries(Object.keys(fr[0]?.roi ?? {}).map((n) => [n, { flicker: +mean((x) => x.roi[n]![0]).toFixed(3), pops: +mean((x) => x.roi[n]![1]).toFixed(2), popFrames: fr.filter((x) => x.roi[n]![1] > 0).length }])),
+        roi: Object.fromEntries(Object.keys(fr.find((x) => Object.keys(x.roi).length)?.roi ?? {}).map((n) => [n, { flicker: +mean((x) => x.roi[n]?.[0] ?? 0).toFixed(3), pops: +mean((x) => x.roi[n]?.[1] ?? 0).toFixed(2), popFrames: fr.filter((x) => (x.roi[n]?.[1] ?? 0) > 0).length }])),
         perFrame: fr.map((x) => [+(x.grid.reduce((a, b) => a + b, 0) / 9).toFixed(3), x.fire.reduce((a, b) => a + b, 0), x.flash, +x.flashMax.toFixed(2)]),
       }
       report.runs[`${path}/${variant}`] = summary
       writeFileSync(resolve(out, `${path}-${variant}-heat.png`), Buffer.from(result.heat, "base64"))
+      writeFileSync(resolve(out, `${path}-${variant}-pops.png`), Buffer.from(result.pops, "base64"))
       if (rec) {
         const dir = resolve(out, "frames", `${path}-${variant}`)
         mkdirSync(dir, { recursive: true })
