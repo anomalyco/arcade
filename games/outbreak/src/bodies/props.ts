@@ -4,6 +4,7 @@ import { bodySites, type BodySite } from "../../shared/bodies/bodies"
 import type { SessionView } from "../../shared/session"
 import { BODY_LOOK, bodyMesh } from "../discovery/vignettes"
 import { hex } from "../level"
+import { noteLyingBody } from "../soft-shadows/lying-bodies"
 
 const MAX = 48
 const RANGE = 30
@@ -67,6 +68,7 @@ export class BodyProps {
         shown.rising.push(b.id)
       } else (st?.revealed ? shown.searched : shown.lying).push(b.id)
       this.put(this.models.body[b.pose % POSES]!, b.x, y, b.y, b.yaw, 0, roll)
+      noteLyingBody(b.x, y, b.y, b.yaw)
     }
     for (const [model, v] of this.pool) if (v.count) this.out.push({ model, data: v.data, count: v.count })
     return this.out

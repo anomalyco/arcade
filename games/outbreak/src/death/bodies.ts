@@ -10,6 +10,7 @@ import { BODY_LOOK, bodyMesh } from "../discovery/vignettes"
 import { hex } from "../level"
 import type { NetSession } from "../net-session"
 import { SURVIVOR_COLOURS } from "../seat-colours"
+import { noteLyingBody } from "../soft-shadows/lying-bodies"
 import type { LocalSession } from "../../shared/session"
 import { localSlot } from "./spectate"
 
@@ -69,6 +70,7 @@ export class FallenBodies {
         stains?.survivorPool(town, blood, b.x, b.y, (b.index + 1) * 7919 + b.n * 104729)
       }
       this.put(this.model(variantOf(session, coop, b.index), 1 + (b.n % 2)), b.x, supportHeight(town, b.x, b.y) + 0.008, b.y, b.yaw, 0)
+      noteLyingBody(b.x, supportHeight(town, b.x, b.y), b.y, b.yaw)
     }
     for (const slot of session.sim.slots) {
       const rec = state.records[slot.index]
@@ -90,6 +92,7 @@ export class FallenBodies {
       const roll = Math.sin(time * (moving ? 9 : 2.4)) * (moving ? 0.07 : 0.025)
       const lift = 0.008 + Math.max(0, Math.sin(time * 2.4)) * 0.012
       this.put(this.model(variantOf(session, coop, slot.index), 0), p.x, supportHeight(town, p.x, p.y) + lift, p.y, p.aim, roll)
+      noteLyingBody(p.x, supportHeight(town, p.x, p.y), p.y, p.aim)
     }
     for (const [model, v] of this.pool) if (v.count) this.out.push({ model, data: v.data, count: v.count })
     return this.out

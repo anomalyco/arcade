@@ -36,6 +36,8 @@ import { GroundWearRenderer } from "../ground"
 import { renderFlowOverlay } from "../hordes/flow-overlay"
 import { PeekView, sightAsPeek } from "../peek-view"
 import { SOUND_CUES_TODAY } from "../sound-cues/settings"
+import { SoftShadowPresenter } from "../soft-shadows/presenter"
+import { softShadowsOn } from "../soft-shadows/settings"
 import { hordeWatchPoint } from "../hordes/stage"
 import type { OutbreakFrameUi } from "../hud/frame-ui"
 import { InteriorPresenter, SCONCE_LAMP_SLOT } from "../interiors"
@@ -108,6 +110,7 @@ export class OutbreakFrameRenderer {
   readonly nightLights: NightLightsPresenter
   readonly fire: FirePresenter
   readonly details: DetailsPresenter
+  private readonly softShadows: SoftShadowPresenter
   private readonly lifeSounds = new LifeSounds()
   readonly ambientMotion: OutbreakAmbientMotion
   readonly weatherController = new OutbreakWeatherController()
@@ -145,6 +148,7 @@ export class OutbreakFrameRenderer {
       const slot = s.sim.slot(id)
       return Boolean(slot && outbreakClientFeatures.hidesSurvivor(s.sim, slot))
     }
+    this.softShadows = new SoftShadowPresenter(this.renderer)
     this.avatar = new Survivor(this.renderer)
     this.avatar.onFootfall = this.footfall
     this.zombieCrowd = new ZombieCrowdRenderer(this.renderer)
@@ -426,6 +430,7 @@ export class OutbreakFrameRenderer {
       p.flashlightOutput,
       zombies,
       coop.otherPositions(),
+      softShadowsOn(settings.softShadows),
     )
     const day = dayCycle(hour)
     const night = townNight(session.sim)
@@ -833,6 +838,16 @@ export class OutbreakFrameRenderer {
     rBatches.push(doorBatch)
     if (openWindows) rBatches.push(sashBatch)
     render.lightCount = count
+    this.softShadows.frame({
+      settings: settings.softShadows,
+      rect: cam.groundRect(2.8),
+      lights: this.frameLighting.lights,
+      lightCount: count,
+      sun: day.direction,
+      survivor: this.closetView.hidden || hideLocal || localVehicle ? null : this.avatar.bones,
+      others: (visit) => coop.forEachDrawnRig(vision, visit),
+      zombies: (visit) => this.zombieCrowd.forEachDrawnBody(visit),
+    })
     this.dust.frame(count, qProfile.tier, settings.look.dustAmount > 0, settings.air, this.frameLighting.lights, LIGHT_FLOATS, camX, camY)
     render.shadowLightCount = shadowLightCount
     render.occluderCount = frameLightOccluders

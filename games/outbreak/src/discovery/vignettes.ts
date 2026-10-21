@@ -3,6 +3,7 @@ import { INST_FLOATS, type Batch, type Renderer } from "@arcade/kit/gpu/renderer
 import { parseVignetteId, vignetteScene, type VignetteScene } from "../../shared/discovery/vignettes"
 import type { SessionView } from "../../shared/session"
 import { hex } from "../level"
+import { noteLyingBody } from "../soft-shadows/lying-bodies"
 
 const MAX = 96
 const RANGE = 32
@@ -116,6 +117,7 @@ export class VignetteProps {
         const ground = support(b.x, b.y)
         this.put(this.models.blood, b.x, ground + 0.002, b.y, b.yaw + 0.3, 1, 0)
         this.put(this.models[b.who][b.pose % POSES]!, b.x, ground + 0.008, b.y, b.yaw, 1, 0)
+        noteLyingBody(b.x, ground, b.y, b.yaw)
         shown.bodies++
       }
       for (const c of scene.casings) this.put(this.models.casing, c.x, support(c.x, c.y) + 0.004, c.y, c.x * 7.3, 1, 0)

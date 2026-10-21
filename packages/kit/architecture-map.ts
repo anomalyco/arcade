@@ -162,6 +162,11 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
     match: (s) => s === "@arcade/kit/gpu/gi/plan-bounce",
   },
   {
+    area: "`gpu/shadows/capsule-shadows`",
+    description: "Analytic soft character shadows from rig bone capsules: contact occlusion and a contact-hardening shadow per light and the sun, grid-culled",
+    match: (s) => s === "@arcade/kit/gpu/shadows/capsule-shadows",
+  },
+  {
     area: "`gpu/reflections/{ssr,surface,wet}`",
     description: "Screen-space reflections volume slot (Ashwood's march, streak blur and history), HDR-alpha roughness tag, and the shared wet/puddle surface term",
     match: (s) => s.startsWith("@arcade/kit/gpu/reflections/"),

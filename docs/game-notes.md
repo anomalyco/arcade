@@ -865,6 +865,15 @@ proven animation techniques to animation.md, not here.
   street lamp-head ΔE2000 fell 9.57 → 1.16, lamp air 3.37 → 1.52, actor ground 3.06 → 2.40, global 6.36 → 6.24. Same-frame
   paired GPU cost (`scripts/ab-gpu.ts`, 20 rounds, 3456×1894) is +0.011 ms street / −0.014 ms interior (MADs 0.23/0.11),
   inside noise. Moving the ground pool under the lens worsened the matched road pool (1.81 → 3.53) and was dropped.
+- **Soft character shadows from the rig's bones: analytic capsules per light, not a shadow map.** Outbreak's Lab option
+  (AR-113, Look · Character shadows, Today default) feeds every drawn survivor, zombie, downed and dead body to
+  `@arcade/kit/gpu/shadows/capsule-shadows`: 14 bone capsules per rig, the 4 strongest frame lights per body and a plan
+  grid, so only fragments near a body pay. Each fragment gets a contact term in AO and a contact-hardening soft
+  visibility per light (`h/t` vs size/distance) through `SceneHooks.lightVisibility`, so the shadow exists only where
+  that light lands. Lessons: a body must skip itself entirely (boxy meshes poke out of their capsules, and per-capsule
+  skipping left acne), and the flashlight's volumetric shaft still needs the hard polar casters (kind 2 "shaft only"),
+  or bodies stop cutting the beam. Paired GPU at 3456×1894 Metal: +0.18 ms horde (60), +0.22 ms street lamp, +0.23 ms
+  day (MADs ≤ 0.13); CPU 0.1–0.5 ms. SwiftShader is ~5.6 s a frame either way (noise 2.2 s), so CI smoke stays on Today. Stills: `games/outbreak/scripts/soft-shadows-stills.ts`.
 - **Curves for falloffs: a default that is the formula, a table only once reshaped.** Outbreak's flashlight range
   window (`(1 − x⁴)²`, surface pool and volumetric beam alike), practical lamps' pool edge (`(1 − x²)²`) and the unseen
   effect's strength by depth (0.38 → 1) are Lab curves (`games/outbreak/src/light-ramps.ts`). Each default is its

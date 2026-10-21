@@ -25,6 +25,7 @@ import { DEFAULT_WAY_OUT_TUNING, type WayOutTuning } from "../shared/way-out/tun
 import { DEFAULT_INTERACTIONS_TUNING, type InteractionsTuning } from "../shared/interactions/tuning"
 import { DEFAULT_SPECIALS_TUNING, type SpecialsTuning } from "../shared/specials/kinds"
 import { DEFAULT_CHARACTER_SETTINGS, type OutbreakCharacterSettings } from "./characters/settings"
+import { DEFAULT_SOFT_SHADOW_SETTINGS, type OutbreakSoftShadowSettings } from "./soft-shadows/settings"
 import { DEFAULT_BEHAVIOUR_TUNING, type BehaviourTuning } from "../shared/behaviour/tuning"
 import type { WorldMode } from "../shared/world"
 import { DEFAULT_AUDIO_SETTINGS, type AudioSettings } from "./audio"
@@ -270,6 +271,7 @@ export type OutbreakSubsystemMap = {
   secrets: OutbreakSecretsSettings
   characters: OutbreakCharacterSettings
   bounce: OutbreakBounceSettings
+  softShadows: OutbreakSoftShadowSettings
 }
 
 export type OutbreakSubsystemKey = keyof OutbreakSubsystemMap
@@ -362,6 +364,7 @@ export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "secrets",
   "characters",
   "bounce",
+  "softShadows",
 ] as const
 
 export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
@@ -415,6 +418,7 @@ export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
     secrets: { ...DEFAULT_SECRETS_SETTINGS },
     characters: { ...DEFAULT_CHARACTER_SETTINGS },
     bounce: { ...DEFAULT_BOUNCE_SETTINGS },
+    softShadows: { ...DEFAULT_SOFT_SHADOW_SETTINGS },
   }
 }
 

@@ -8,6 +8,7 @@ import type { Particles } from "@arcade/kit/fx/particles"
 import { ParticleRenderer } from "@arcade/kit/fx/particle-renderer"
 import { FrameTimer } from "@arcade/kit/fx/frame-timer"
 import { SPOT_SHADOW_BINDINGS, SPOT_SHADOW_UNIFORM_FLOATS } from "./shadows/spot-shadows"
+import { CAPSULE_SHADOW_BINDING, CapsuleShadows } from "./shadows/capsule-shadows"
 import { installFramePacer } from "../gpu-perf"
 import {
   MotionBlur,
@@ -263,6 +264,7 @@ export class Renderer {
   private gradeBuf: GPUBuffer
   private customBuf: GPUBuffer
   private spotShadow: { view: GPUTextureView; sampler: GPUSampler; uniform: GPUBuffer }
+  private capsuleShadowBuf: GPUBuffer
   private sceneLayout: GPUBindGroupLayout
   private floorTex: GPUTexture
   private moonTex: GPUTexture
@@ -439,6 +441,7 @@ export class Renderer {
       sampler: d.createSampler({ compare: "less" }),
       uniform: d.createBuffer({ size: SPOT_SHADOW_UNIFORM_FLOATS * 4, usage: U.UNIFORM }),
     }
+    this.capsuleShadowBuf = d.createBuffer({ label: "capsule shadows (off)", size: 64, usage: U.STORAGE })
     this.fogBuf = d.createBuffer({ label: "fog params", size: FOG_UNIFORM_FLOATS * 4, usage: U.UNIFORM | U.COPY_DST })
     this.fogLampBuf = d.createBuffer({ label: "fog lamps", size: FOG_LAMP_BUFFER_FLOATS * 4, usage: U.STORAGE | U.COPY_DST })
     this.inst = new GrowableInstanceBuffer(d, 4096, INST_FLOATS)
@@ -486,6 +489,7 @@ export class Renderer {
         { binding: SPOT_SHADOW_BINDINGS.map, visibility: S.FRAGMENT, texture: { sampleType: "depth", viewDimension: "2d-array" } },
         { binding: SPOT_SHADOW_BINDINGS.sampler, visibility: S.FRAGMENT, sampler: { type: "comparison" } },
         { binding: SPOT_SHADOW_BINDINGS.uniform, visibility: S.FRAGMENT, buffer: { type: "uniform" } },
+        { binding: CAPSULE_SHADOW_BINDING, visibility: S.FRAGMENT, buffer: { type: "read-only-storage" } },
         { binding: 18, visibility: S.VERTEX | S.FRAGMENT, buffer: { type: "uniform" } },
         { binding: PLAN_BOUNCE_BINDINGS.texture, visibility: S.FRAGMENT, texture: {} },
         { binding: PLAN_BOUNCE_BINDINGS.uniform, visibility: S.FRAGMENT, buffer: { type: "uniform" } },
@@ -702,6 +706,7 @@ export class Renderer {
         { binding: SPOT_SHADOW_BINDINGS.map, resource: this.spotShadow.view },
         { binding: SPOT_SHADOW_BINDINGS.sampler, resource: this.spotShadow.sampler },
         { binding: SPOT_SHADOW_BINDINGS.uniform, resource: { buffer: this.spotShadow.uniform } },
+        { binding: CAPSULE_SHADOW_BINDING, resource: { buffer: this.capsuleShadowBuf } },
         { binding: 18, resource: { buffer: this.fogBuf } },
         { binding: PLAN_BOUNCE_BINDINGS.texture, resource: this.planBounce?.view ?? this.planBounceFallback.view },
         { binding: PLAN_BOUNCE_BINDINGS.uniform, resource: { buffer: this.planBounce?.uniform ?? this.planBounceFallback.uniform } },
@@ -713,6 +718,23 @@ export class Renderer {
   setSpotShadows(b: { view: GPUTextureView; sampler: GPUSampler; uniform: GPUBuffer }): void {
     this.spotShadow = b
     this.makeSceneGroup()
+  }
+
+  /** Binds soft capsule shadows (`@arcade/kit/gpu/shadows/capsule-shadows` `CapsuleShadows.buffer`) at scene binding 25. */
+  setCapsuleShadows(buffer: GPUBuffer): void {
+    this.capsuleShadowBuf = buffer
+    this.makeSceneGroup()
+  }
+
+  private capsules: CapsuleShadows | null = null
+
+  /** The scene's soft capsule shadows, made and bound on first use (fill it each frame with `begin`/add/`upload`). */
+  capsuleShadows(): CapsuleShadows {
+    if (!this.capsules) {
+      this.capsules = new CapsuleShadows(this.device)
+      this.setCapsuleShadows(this.capsules.buffer)
+    }
+    return this.capsules
   }
 
   /** Binds a game's texture array at `@binding(15)` (sampled with the anisotropic clamp sampler at 16). */

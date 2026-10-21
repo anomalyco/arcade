@@ -311,6 +311,8 @@ export class OutbreakSceneLevel {
     flashlightOutput: number,
     zombies: readonly { x: number; y: number; state: string }[],
     otherPositions: Iterable<readonly [number, number]>,
+    /** Soft capsule shadows draw these bodies on surfaces: cast them for the beam's shaft only (round caster kind 2). */
+    shaftOnly = false,
   ): number {
     let frameLightOccluders = this.lightOccluders
     if (flashlightOutput > 0.001) {
@@ -318,7 +320,7 @@ export class OutbreakSceneLevel {
       const casters = (x: number, y: number) => {
         if (frameLightOccluders >= MAX_OCCLUDERS - 4 || frameLightOccluders - this.lightOccluders >= 16) return
         if (Math.hypot(x - px, y - py) > range) return
-        this.occluders.set([x, y, 0.27, 0, 1.72, 1, 0, 0], frameLightOccluders++ * OCC_FLOATS)
+        this.occluders.set([x, y, 0.27, 0, 1.72, shaftOnly ? 2 : 1, 0, 0], frameLightOccluders++ * OCC_FLOATS)
       }
       for (const z of zombies) if (z.state !== "dead") casters(z.x, z.y)
       for (const o of otherPositions) casters(o[0], o[1])
