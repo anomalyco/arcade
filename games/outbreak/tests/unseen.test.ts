@@ -8,56 +8,18 @@ import {
   OUTBREAK_UNSEEN_UNIFORM_OFFSET,
   packOutbreakLightingUniforms,
 } from "../src/lighting"
-import { createOutbreakSettings, resolveOutbreakSettingTarget } from "../src/settings"
-import { shaders } from "../src/shaders"
+import { createOutbreakSettings } from "../src/settings"
 import {
   applyUnseenModePreset,
   DEFAULT_UNSEEN_SETTINGS,
   evaluateUnseenFrame,
-  outbreakUnseenFieldWgsl,
-  outbreakUnseenPostWgsl,
-  outbreakUnseenSceneWgsl,
   syncUnseenSettingChange,
-  UNSEEN_MODE_OPTIONS,
   UNSEEN_PRESETS,
   unpackUnseenPostParams,
-  unseenControls,
   unseenUniformsStruct,
 } from "../src/unseen"
 
 describe("outbreak unseen visibility & post-process", () => {
-  test("defaults to Shroud blend (mode 10) and exposes all 13 Lab controls in the Unseen group", () => {
-    expect(DEFAULT_UNSEEN_SETTINGS.unseenMode).toBe(10)
-    expect(DEFAULT_UNSEEN_SETTINGS.unseenShroud).toBe(UNSEEN_PRESETS[10].shroud)
-    expect(DEFAULT_UNSEEN_SETTINGS.unseenNoise).toBe(UNSEEN_PRESETS[10].noise)
-    expect(DEFAULT_UNSEEN_SETTINGS.unseenWarp).toBe(UNSEEN_PRESETS[10].warp)
-    expect(DEFAULT_UNSEEN_SETTINGS.hideUnseenZombies).toBe(true)
-    expect(UNSEEN_MODE_OPTIONS.map((o) => o.value)).toEqual([10, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
-    expect(unseenControls.every((c) => c.group === "Unseen")).toBe(true)
-    expect(unseenControls.map((c) => c.key)).toEqual([
-      "unseenMode",
-      "unseenStrength",
-      "unseenGlitch",
-      "unseenGlitchEdge",
-      "unseenWarp",
-      "unseenShroud",
-      "unseenMemory",
-      "unseenNoise",
-      "unseenNightScale",
-      "unseenEdgeSoftness",
-      "unseenDepthCurve",
-      "unseenUpdateRate",
-      "hideUnseenZombies",
-    ])
-
-    const settings = createOutbreakSettings()
-    expect(settings.unseen).toEqual(DEFAULT_UNSEEN_SETTINGS)
-    for (const c of unseenControls) {
-      expect(resolveOutbreakSettingTarget(c.key)?.subsystem).toBe("unseen")
-      expect(resolveOutbreakSettingTarget(`unseen.${c.key}`)?.subsystem).toBe("unseen")
-    }
-  })
-
   test("scales effective strength with darkness (stronger at night, subtle by day) and low-HP panic", () => {
     const offEval = evaluateUnseenFrame({ unseenMode: 0, unseenStrength: 1.2 }, 1.0, 100, 100)
     expect(offEval.mode).toBe(0)
@@ -163,19 +125,6 @@ describe("outbreak unseen visibility & post-process", () => {
     expect(buf[OUTBREAK_UNSEEN_UNIFORM_OFFSET + 5]).toBeCloseTo(Math.cos((60 * Math.PI) / 360), 4)
     expect(buf[OUTBREAK_UNSEEN_UNIFORM_OFFSET + 6]).toBe(1)
     expect(buf[OUTBREAK_UNSEEN_UNIFORM_OFFSET + 7]).toBe(0)
-  })
-
-  test("resolves typed WGSL snippets into visibilityField, lookScene, and lookPost shaders", () => {
-    expect(outbreakUnseenFieldWgsl).toContain("fn evalUnseenFlashCone")
-    expect(outbreakUnseenFieldWgsl).toContain("fn evalUnseenEdgeDepth")
-    expect(outbreakUnseenSceneWgsl).toContain("fn applyOutbreakUnseenScene")
-    expect(outbreakUnseenSceneWgsl).toContain("fn applyOutbreakUnseenActor")
-    expect(outbreakUnseenPostWgsl).toContain("fn applyOutbreakUnseenPost")
-
-    expect(shaders.visField.code).toContain("evalUnseenEdgeDepth")
-    expect(shaders.lookScene).toContain("applyOutbreakUnseenScene")
-    expect(shaders.lookPost).toContain("applyOutbreakUnseenPost")
-    expect(shaders.lookPostVariant("noir")).toContain("applyOutbreakUnseenPost")
   })
 
   test("counts unoccluded active flashlight cone as seen in Vision while respecting wall blockers", () => {

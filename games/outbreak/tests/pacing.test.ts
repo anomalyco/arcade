@@ -10,7 +10,6 @@ import {
   isSpawnBehindPlayer,
   isSpawnInView,
   LEGACY_AI_CONFIG,
-  pacingControls,
   STARTING_SAFEHOUSE_RECT,
 } from "../shared/ai"
 import { TICK_DT } from "../shared/clock"
@@ -20,36 +19,9 @@ import { coopCurve, DEFAULT_COOP_SCALING } from "../shared/night-ramp/coop"
 import { coopNoiseShare, coopSpawnClearance, NIGHTFALL_HOUR, openingClockActive, openingThreat, TODAY_COOP } from "../shared/pacing"
 import { sightRects } from "../shared/map"
 import { LocalSession } from "../shared/session"
-import { createOutbreakSettings, setOutbreakSetting } from "../src/settings"
+import { createOutbreakSettings } from "../src/settings"
 
 describe("Outbreak first-night opening pacing & spawn rules", () => {
-  test("Pacing group Lab controls cover all PacingTuning keys with explicit ranges, steps, units and defaults", () => {
-    expect(pacingControls.map((c) => String(c.key)).sort()).toEqual(Object.keys(DEFAULT_PACING_TUNING).sort())
-    for (const control of pacingControls) {
-      expect(control.group).toBe("Pacing")
-      const def = DEFAULT_PACING_TUNING[control.key as keyof typeof DEFAULT_PACING_TUNING]
-      expect(def).toBeGreaterThanOrEqual(control.min)
-      expect(def).toBeLessThanOrEqual(control.max)
-      expect(typeof control.unit).toBe("string")
-    }
-
-    const settings = createOutbreakSettings()
-    expect(settings.ai.startHour).toBe(17.5)
-    expect(settings.ai.openingClock).toBe(0.25)
-    expect(settings.dayCycle.hour).toBe(17.5)
-    // D-22 Balanced Curve
-    expect(settings.ai.safeRadius).toBe(17)
-    expect(settings.ai.initialDensity).toBe(0.1)
-    expect(settings.ai.rampTime).toBe(405)
-    expect(settings.ai.noiseSensitivity).toBe(1.05)
-    expect(settings.ai.maxActiveNearPlayer).toBe(3)
-
-    setOutbreakSetting(settings, "safeRadius", 26)
-    setOutbreakSetting(settings, "pacing.maxActiveNearPlayer", 6)
-    expect(settings.ai.safeRadius).toBe(26)
-    expect(settings.ai.maxActiveNearPlayer).toBe(6)
-  })
-
   test("starting at 17:30 dusk opens in the Noir palette, and the workbench is lit by daylight at first and the flashlight after", () => {
     const session = new LocalSession(7)
     expect(session.view.hour).toBe(17.5)

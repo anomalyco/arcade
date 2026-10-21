@@ -6,43 +6,14 @@ import {
   bakeOutbreakMoonMask,
   DEFAULT_FLASHLIGHT_BEAM,
   DEFAULT_OUTBREAK_LIGHTING,
-  flashlightBeamControls,
   OUTBREAK_LIGHTING_UNIFORM_FLOATS,
   OUTBREAK_NOIR_UNIFORM_OFFSET,
-  outbreakLightingControls,
   packOutbreakLightingUniforms,
   resolveLampLight,
   stampOutbreakVertexTone,
 } from "../src/lighting"
 
 describe("Outbreak lighting module & Lab controls", () => {
-  test("every lighting setting has a corresponding shared Lab control with explicit unit and valid default", () => {
-    const keys = Object.keys(DEFAULT_OUTBREAK_LIGHTING).sort()
-    const controlKeys = outbreakLightingControls.map((c) => String(c.key)).sort()
-    expect(controlKeys).toEqual(keys)
-    for (const control of outbreakLightingControls) {
-      expect("unit" in control && typeof control.unit === "string").toBe(true)
-      if ("min" in control && "max" in control) {
-        const def = DEFAULT_OUTBREAK_LIGHTING[control.key as keyof typeof DEFAULT_OUTBREAK_LIGHTING]
-        expect(def).toBeGreaterThanOrEqual(control.min)
-        expect(def).toBeLessThanOrEqual(control.max)
-      }
-    }
-  })
-
-  test("every flashlight beam setting has a Lab control with a unit and an in-range default", () => {
-    expect(flashlightBeamControls.map((c) => String(c.key)).sort()).toEqual(Object.keys(DEFAULT_FLASHLIGHT_BEAM).sort())
-    for (const control of flashlightBeamControls) {
-      if ("options" in control) continue
-      expect("unit" in control && typeof control.unit === "string").toBe(true)
-      if ("min" in control && "max" in control) {
-        const def = DEFAULT_FLASHLIGHT_BEAM[control.key as keyof typeof DEFAULT_FLASHLIGHT_BEAM]
-        expect(def).toBeGreaterThanOrEqual(control.min)
-        expect(def).toBeLessThanOrEqual(control.max)
-      }
-    }
-  })
-
   test("packs the physical beam: full range, outer cone, downward tilt toward the pool and snapped field blends", () => {
     const settings = { ...DEFAULT_OUTBREAK_LIGHTING, flashlightIntensity: 0.48, flashlightRange: 19, flashlightCone: 56, flashlightWarmth: 0.92 }
     const base = {

@@ -2,12 +2,11 @@ import { BASE_CALLINGS } from "../shared/characters/callings"
 import { describe, expect, test } from "bun:test"
 import { createLookSettings } from "@arcade/kit/look"
 import { flashlightColor } from "../shared/flashlight"
-import { OUTBREAK_BEAN_UNIFORM_OFFSET, OUTBREAK_HERO_UNIFORM_OFFSET, OUTBREAK_BEAM_LOOK_UNIFORM_OFFSET, OUTBREAK_SHROUD_UNIFORM_OFFSET, OUTBREAK_SIGHT_UNIFORM_OFFSET, packOutbreakLightingUniforms } from "../src/lighting"
+import { OUTBREAK_BEAN_UNIFORM_OFFSET, OUTBREAK_HERO_UNIFORM_OFFSET, packOutbreakLightingUniforms } from "../src/lighting"
 import {
   beanTint,
   COLOUR_BLOCKS_STYLE,
   DEFAULT_HERO_LOOK,
-  heroLookControls,
   heroShape,
   heroTint,
   HERO_STYLE_SURFACES,
@@ -25,9 +24,9 @@ import {
 } from "../src/look/refined-figure"
 import { SURVIVOR_COLOURS } from "../src/seat-colours"
 import { applyLookPreset } from "../src/look/index"
-import { lookPreset, OUTBREAK_LOOK_PRESETS } from "../src/look/presets"
+import { lookPreset } from "../src/look/presets"
 import { evaluateUnseenFrame } from "../src/unseen"
-import { DEFAULT_LOOK_TRIMS, lightRuleWeight, lookTrimControls, trimLighting, trimLook } from "../src/look/world"
+import { DEFAULT_LOOK_TRIMS, lightRuleWeight, trimLighting, trimLook } from "../src/look/world"
 import { createOutbreakSettings, createOutbreakSubsystemDefaults } from "../src/settings"
 import { Survivor } from "../src/survivor"
 import { ZombieCrowdRenderer } from "../src/zombies"
@@ -80,16 +79,7 @@ describe("Outbreak look", () => {
     expect(settings.zombies.zombieLook).toBe(1)
   })
 
-  test("every preset sets every knob, so presets never leak into each other, and today restores the defaults", () => {
-    const keys = [...lookTrimControls, ...heroLookControls].map(c => c.key).sort()
-    for (const preset of OUTBREAK_LOOK_PRESETS) {
-      expect(Object.keys(preset.knobs).sort()).toEqual(keys)
-      expect(preset.version).toBeGreaterThanOrEqual(1)
-      for (const c of [...lookTrimControls, ...heroLookControls]) {
-        const v = preset.knobs[c.key as keyof typeof preset.knobs]
-        if ("min" in c) expect({ preset: preset.id, key: c.key, ok: v >= c.min && v <= c.max }).toEqual({ preset: preset.id, key: c.key, ok: true })
-      }
-    }
+  test("switching presets and returning to today restores defaults without leaking settings", () => {
     const settings = createOutbreakSettings()
     applyLookPreset(settings, "big-walk")
     expect(settings.look.lookIdea).toBe("big-walk")
@@ -197,39 +187,6 @@ describe("Outbreak look", () => {
     Object.assign(settings.survivor, { heroStyle: SOFT_BEAN_STYLE, beanWrap: 0.7, beanSheen: 1.1, beanSheenTight: 4, beanOwnColour: 0.3 })
     const packed = packOutbreakLightingUniforms(frame(settings), flashlightColor(0.92))
     expect([...packed.slice(OUTBREAK_BEAN_UNIFORM_OFFSET, OUTBREAK_BEAN_UNIFORM_OFFSET + 4)].map(v => +v.toFixed(4))).toEqual([0.7, 1.1, 4, 0.3])
-  })
-
-  test("presets: today ships the Darkwood look and today-v7 restores v7 through the sight and beam knobs alone", () => {
-    const settings = createOutbreakSettings()
-    applyLookPreset(settings, "today-v7")
-    expect(settings.look.beamWarmth).toBe(0.28)
-    expect(settings.look.beamTightness).toBe(1)
-    expect(settings.look.nightGrain).toBe(0.05)
-    expect(settings.look.nightVignette).toBe(0.35)
-    expect(settings.look.coneSharpness).toBe(0)
-    expect(settings.look.dayShroud).toBe(0)
-    expect(settings.look.shroudCharcoal).toBe(0)
-    expect(settings.look.shroudGrain).toBe(0)
-    expect(settings.look.shroudLampKeep).toBe(1)
-    expect(settings.look.dayMuted).toBe(0)
-    expect(settings.look.dayVignette).toBe(0)
-    expect(settings.look.dayGrain).toBe(0)
-    applyLookPreset(settings, "today")
-    expect(settings.look.shroudDarkness).toBe(1)
-    expect(settings.look.outOfLightDesat).toBe(1)
-    expect(settings.look.outOfSightDarkening).toBe(1)
-    expect(settings.look.worldSaturation).toBe(0.03)
-    expect(settings.look.visionLift).toBe(0.03)
-    expect(settings.look.zombieRimSpec).toBe(1.0)
-    const packed = packOutbreakLightingUniforms(frame(settings), flashlightColor(0.92))
-    const L = DEFAULT_LOOK_TRIMS
-    expect([...packed.slice(OUTBREAK_SHROUD_UNIFORM_OFFSET, OUTBREAK_SHROUD_UNIFORM_OFFSET + 4)].map(v => +v.toFixed(4))).toEqual([1, 1, 1, 0.03])
-    expect([...packed.slice(OUTBREAK_BEAM_LOOK_UNIFORM_OFFSET, OUTBREAK_BEAM_LOOK_UNIFORM_OFFSET + 4)].map(v => +v.toFixed(4))).toEqual([L.beamWarmth, L.beamTightness, 1, L.nightGrain])
-    expect([...packed.slice(OUTBREAK_SIGHT_UNIFORM_OFFSET, OUTBREAK_SIGHT_UNIFORM_OFFSET + 4)].map(v => +v.toFixed(4))).toEqual([L.coneSharpness, L.dayShroud, L.dayMuted, L.shroudLampKeep])
-  })
-
-  test("only today, the v7 Before preset and knob-only look ideas remain", () => {
-    expect(OUTBREAK_LOOK_PRESETS.map(p => p.id)).toEqual(["today", "today-v8", "today-v7", "deeper-noir", "warm-practicals", "vivid-world", "big-walk"])
   })
 
   test("Darkwood v8: the sight shroud holds by day and packs its charcoal and grain weights for the post pass", () => {

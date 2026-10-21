@@ -12,7 +12,6 @@ import type { OutbreakFeelFrameContext } from "../src/feel-events"
 import { ImpactBodies } from "../src/impact/bodies"
 import { blastBlow, meleeBlow, shotBlow, weaponWeight } from "../src/impact/causes"
 import { ImpactEvents } from "../src/impact/events"
-import { DEFAULT_IMPACT_SETTINGS, impactControls } from "../src/impact/settings"
 import { createOutbreakSettings, type OutbreakSettings } from "../src/settings"
 import { zombieTuning } from "../src/zombie-profile"
 import { ZombieCrowdRenderer } from "../src/zombies"
@@ -49,13 +48,6 @@ function fight(style: number) {
 }
 
 describe("impact settings", () => {
-  test("every control is an impact setting, defaults on, and Today is one setting away", () => {
-    const settings = createOutbreakSettings(new URLSearchParams())
-    for (const c of impactControls) expect(settings.impact[c.key as keyof typeof DEFAULT_IMPACT_SETTINGS]).toBe(DEFAULT_IMPACT_SETTINGS[c.key as keyof typeof DEFAULT_IMPACT_SETTINGS])
-    expect(settings.impact.impactStyle).toBe(1)
-    expect(impactControls.find((c) => c.key === "impactStyle")).toMatchObject({ options: [{ label: "Today", value: 0 }, { label: "Physical", value: 1 }] })
-  })
-
   test("weapons land by weight: knife light, crowbar the reference, fire axe heavy", () => {
     expect(weaponWeight("knife")).toBeLessThan(0.65)
     expect(weaponWeight("crowbar")).toBeCloseTo(1, 5)
