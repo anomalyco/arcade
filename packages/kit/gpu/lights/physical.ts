@@ -1,5 +1,5 @@
 import type { LabControl } from "../../lab-panel"
-import { spotShadowWgsl } from "../shadows/spot-shadows"
+import { spotShadowAreaWgsl, spotShadowWgsl } from "../shadows/spot-shadows"
 import { DARKWOOD_BEAM, beamWgsl } from "./beam"
 import { streetLampWgsl } from "./street"
 import type { SceneHooks } from "../shaders"
@@ -220,7 +220,7 @@ export function physicalLightHooks(opts: PhysicalLightOptions = {}): SceneHooks 
   const street = opts.street
   const beam = opts.beam ?? { a: `vec4f(${[d.inner, d.core, d.coreWidth, d.spill].map(num).join(", ")})`, b: `vec4f(${num(d.spillWidth)}, ${num(d.rings)}, 0.0, 0.0)` }
   return {
-    declarations: `${street ? streetLampWgsl : ""}${physicalLightWgsl}${beamWgsl}${opts.spotShadows ? spotShadowWgsl : ""}
+    declarations: `${street ? streetLampWgsl : ""}${physicalLightWgsl}${beamWgsl}${opts.spotShadows ? spotShadowWgsl + (street ? spotShadowAreaWgsl : "") : ""}
 fn pbrKnobs() -> vec4f { return ${knobs}; }
 ${street ? `fn pbrStreetA() -> vec4f { return ${street.a}; }
 fn pbrStreetB() -> vec4f { return ${street.b}; }
