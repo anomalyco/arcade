@@ -2,7 +2,7 @@ import { mat4 } from "wgpu-matrix"
 import { FirstPerson } from "@arcade/kit/client/first-person"
 import { keyPromptHtml } from "@arcade/kit/client/key-cap"
 import { openGpu } from "@arcade/kit/gpu/boot"
-import { loadGltf, imageTexture } from "@arcade/kit/gpu/gltf"
+import { loadGltf } from "@arcade/kit/gpu/gltf"
 import { Renderer, type FrameInput } from "@arcade/kit/gpu/renderer"
 import { flatLighting, newSceneFrame, packSceneFrame, SceneLights, type SceneLight } from "@arcade/kit/gpu/scene-frame"
 import { SpotShadows, spotShadowControls } from "@arcade/kit/gpu/shadows/spot-shadows"
@@ -19,7 +19,7 @@ import { loadRoomAtlas } from "@arcade/kit/gpu/materials/rooms"
 import { contactShadowControls, contactShadowInput, createContactShadowSettings, packContactShadowKnobs } from "@arcade/kit/gpu/contact-shadows"
 import type { ScenePass } from "@arcade/kit/gpu/pass-graph"
 import { ATMOSPHERE, SSR_MOTION, controls, defaults } from "./settings"
-import { hooks, texturedHooks, glassHooks, fenceHooks, fogVolume, reflectionVolume, thinGlassHooksLot, windowHooks, contactVolume, NIGHT_FLOATS } from "./shaders"
+import { hooks, texturedHooks, glassHooks, fenceHooks, stainHooks, fogVolume, reflectionVolume, thinGlassHooksLot, windowHooks, contactVolume, NIGHT_FLOATS } from "./shaders"
 import { buildWorld, CAR, START, walls } from "./world"
 import { canvasTexture, foliageTexture, solidTexture } from "./foliage"
 import { post } from "./post"
@@ -31,6 +31,7 @@ import { interiorDefaults, interiorControls } from "./interior/settings"
 import { lobbyTroffer, trofferFog } from "./interior/fixtures"
 import { createStreetLampSettings, packStreetLamp, streetLampControls } from "@arcade/kit/gpu/lights/street"
 import { fluxGain, lensChunk, streetLamps } from "./lamps"
+import { sourceSurfaces } from "./surfaces"
 
 async function main() {
   const canvas = document.querySelector<HTMLCanvasElement>("#view")!
@@ -64,27 +65,12 @@ async function main() {
   const transform = mat4.translation([CAR.x, 0.04, CAR.z])
   mat4.rotateY(transform, CAR.yaw, transform)
   const car = await loadGltf(gpu.device, base + "wagon.glb", transform)
-  const dressing=await Promise.all([
-    {file:"metal_trash_can",pos:[11.25,0.12,128.4],yaw:-Math.PI/2},
-    {file:"utility_box_01",pos:[10.1,0.12,125.65],yaw:0},
-  ].map(async p=>{
-    const transform=mat4.translation(p.pos)
-    mat4.rotateY(transform,p.yaw,transform)
-    return loadGltf(gpu.device,base+p.file+".glb",transform)
-  }))
-  const textures = await Promise.all(["asphalt.jpg", "asphalt-normal.jpg", "asphalt-orm.jpg"].map(async (file, i) => {
-    const r = await fetch(base + file)
-    if (!r.ok) throw new Error(`${file}: ${r.status}`)
-    return imageTexture(gpu.device, new Uint8Array(await r.arrayBuffer()), i === 0, "image/jpeg", undefined, i === 1)
-  }))
+  const surfaces=await sourceSurfaces(device,world)
   const normal=solidTexture(gpu.device,[128,128,255,255]), orm=solidTexture(gpu.device,[255,255,0,255])
   const leaves=await foliageTexture(gpu.device,import.meta.env.BASE_URL+"ashwood/paint.js")
   const undergrowth=await foliageTexture(gpu.device,import.meta.env.BASE_URL+"ashwood/paint.js","undergrowthAtlas")
   const impostors=await foliageTexture(gpu.device,import.meta.env.BASE_URL+"ashwood/paint.js","impostors")
-  const meshes = new TexturedMeshPass(renderer.passContext, [...world.ground.map((vertices):TexturedPrimitive=>({
-    vertices, base: textures[0]!, normal: textures[1]!, orm: textures[2]!,
-    color: [1, 1, 1, 1], roughness: 1, metalness: 0, normalScale: 1.1, blend: false, aoStrength: 1,
-  })), ...car.primitives, ...dressing.flatMap(d=>d.primitives)], texturedHooks)
+  const meshes = new TexturedMeshPass(renderer.passContext, [...surfaces,...car.primitives], texturedHooks)
   renderer.addPass("opaque", meshes)
   const insideMeshes = new TexturedMeshPass(renderer.passContext,interior.primitives.filter(p=>!p.blend),texturedHooks)
   renderer.addPass("opaque",insideMeshes)
@@ -148,6 +134,9 @@ async function main() {
   void roomAtlas?.then(t=>{atlas=t})
   const windows=lazy(()=>new TexturedMeshPass(renderer.passContext,world.windows.map((vertices):TexturedPrimitive=>({vertices,base:atlas!,normal,orm,color:[1,1,1,1],roughness:1,metalness:0,normalScale:0,blend:false})),windowHooks))
   renderer.addPass("opaque",{draw:p=>{ if(rooms.mode==="rooms" && atlas) windows.draw(p) }})
+  renderer.addPass("alpha",new TexturedMeshPass(renderer.passContext,world.stain.map((vertices):TexturedPrimitive=>({
+    vertices,base:white,normal,orm,color:[1,1,1,1],roughness:1,metalness:0,normalScale:0,blend:true,
+  })),stainHooks))
 
   const entrancePrimitives=world.storefront.map((vertices):TexturedPrimitive=>({
     vertices,base:white,normal,orm,color:[1,1,1,0.12],roughness:0.04,metalness:0,normalScale:0,blend:true,
@@ -175,7 +164,7 @@ async function main() {
   // LabPanel owns Backquote, including when the canvas is pointer-locked.
   const lights = new SceneLights()
   lights.setBoxes([...world.scene.colliders,...interior.colliders].filter(b=>b.max[1]!>0.5 && b.min[1]!<1.5).map(b=>({rect:[b.min[0]!,b.min[2]!,b.max[0]!,b.max[2]!] as const,h:b.max[1]!})))
-  const spots=new SpotShadows(gpu.device,{count:2})
+  const spots=new SpotShadows(gpu.device,{count:3})
   panel.addControls(spots.settings,spotShadowControls())
   renderer.setSpotShadows(spots.bindings())
   const casters=world.solid.map(data=>{
@@ -184,7 +173,10 @@ async function main() {
     return {buffer,count:data.byteLength/24,stride:24}
   }).concat(meshes.shadowCasters(),insideMeshes.shadowCasters())
   // Source lighting offsets a head 12 cm along its axis, out of the luminaire's own shadow caster.
-  const practicals=[...world.scene.lamps.filter(l=>l.kind==="sodium" || l.kind==="incandescent"),...interior.lamps].map(l=>({ ...l, street:streets.get(l), gain:streets.has(l) ? ()=>fluxGain(l,street) : ()=>1,
+  const practicals=[...world.scene.lamps.filter(l=>l.kind!=="beacon"),...interior.lamps].map(l=>({ ...l, street:streets.get(l), gain:streets.has(l) ? ()=>fluxGain(l,street) : ()=>1,
+    // A downward ceiling fixture keeps the warm booth spill, while its walls and
+    // plinth now stop it from shining straight through the hut onto the road.
+    ...(l.kind==="incandescent" ? {direction:[0,-1,0] as [number,number,number],angle:1.3,penumbra:0.15,shadow:true} : {}),
     position:l.position.map((v,i)=>v+(l.direction?.[i] ?? 0)*0.12) as [number,number,number],
   }))
   const shadowLamps=practicals.flatMap((l,id)=>l.shadow && l.angle ? [{id,pos:l.position,axis:l.direction ?? [0,-1,0] as const,range:l.range,intensity:l.intensity,cosOuter:Math.cos(l.angle)}] : [])

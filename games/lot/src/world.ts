@@ -14,14 +14,15 @@ export type SourceLamp = { kind: string; position: [number,number,number]; direc
 type Range = [offset: number, bytes: number]
 export type SourceForest = { models: { kind: string; sapling: boolean; impostor: { w: number; h: number }; colour: [number,number,number]; lods: { trunk: Range; foliage: Range }[] }[]; trees: number; impostorGrid: [number, number]; plants: Record<PlantName, { range: Range }> }
 export type PlantName = "fern" | "grass" | "salal" | "twigs"
-export type SourceScene = { version: number; files: Record<"solid"|"ground"|"fence"|"glass"|"undergrowth"|"windows", string[]>; forest: SourceForest; ground: Ground; lamps: SourceLamp[]; colliders: { min: number[]; max: number[] }[]; treeCount: number }
+export type SourceScene = { version: number; files: Record<string, string[]>; forest: SourceForest; ground: Ground; lamps: SourceLamp[]; colliders: { min: number[]; max: number[] }[]; treeCount: number;
+  surfaces: Record<string,{normal:number}>; props: {name:string;included:boolean;license:string}[] }
 export const walls: Rect[] = []
 
 export async function buildWorld() {
   const base=import.meta.env.BASE_URL+"ashwood/"
   const get=async (file:string) => { const r=await fetch(base+file); if(!r.ok) throw new Error(`${file}: ${r.status}`); return r }
   const scene: SourceScene=await (await get("scene.json")).json()
-  if(scene.version!==1) throw new Error("Unsupported exterior mesh version")
+  if(scene.version!==2) throw new Error("Unsupported exterior mesh version")
   const load=async (kind:keyof SourceScene["files"])=>Promise.all(scene.files[kind].map(async file=>{
     const response=await get(file)
     return meshBytes(response)
@@ -29,14 +30,15 @@ export async function buildWorld() {
   const [opaque,ground,fence,glass,undergrowth,windows,forestBytes,treeBytes]=await Promise.all([load("solid"),load("ground"),load("fence"),load("glass"),load("undergrowth"),load("windows"),
     get("forest-models.bin.gz").then(meshBytes),get("forest-trees.bin.gz").then(meshBytes)])
   const split=opaque.map(splitStorefront), solid=split.map(p=>p.solid), storefront=split.map(p=>p.glass).filter(p=>p.byteLength)
+  const surfaces=await Promise.all(Object.entries(scene.surfaces).filter(([name])=>scene.files[`surface-${name}`]?.length).map(async ([name,r])=>({name,normalScale:r.normal,vertices:await load(`surface-${name}`)})))
+  const stain=await load("stain")
   walls.push(...scene.colliders.filter(b=>b.max[1]>0.5 && b.min[1]<1.5).map(b=>[b.min[0]!,b.min[2]!,b.max[0]!,b.max[2]!] as Rect))
   // Stop at the back of the imported slice. Facade and interior partitions define the rest.
   walls.push([-55,-22,35,-3.2],[-10.9,136.6,-5.5,139])
   const extra=new Mesh(), sky=new Mesh()
-  extra.box(-700,-0.3,-700,700,-0.02,700,[0.12,0.15,0.12])
   sky.box(-699,-30,-699,699,300,699,[1,1,1],MAT.glow,-1,undefined,true)
   for(let i=0;i<sky.v.length;i+=33) for(const k of [2,1,0]) extra.v.push(...sky.v.slice(i+k*11,i+(k+1)*11))
-  return { scene,solid,ground,fence,glass,storefront,undergrowth,windows,forest:forest(scene.forest,forestBytes,treeBytes),extra:packVerts(extra.v) }
+  return { scene,solid,ground,fence,glass,storefront,stain,surfaces,undergrowth,windows,forest:forest(scene.forest,forestBytes,treeBytes),extra:packVerts(extra.v) }
 }
 
 /** Per-variant templates and one instance per tree, for the kit's instanced forest. */

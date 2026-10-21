@@ -1,9 +1,10 @@
 // Build-time adapter only. The authored Three geometry is baked to kit vertices; no Three code ships.
 import * as THREE from "three"
+import { recipes } from "./surface-recipes"
 
 type Recipe = { color?: THREE.ColorRepresentation; color2?: number; roughness?: number; metalness?: number; emissive?: THREE.Color; intensity?: number; transparent?: number; name?: string }
 class ExportMaterial extends THREE.MeshStandardMaterial {
-  surfaceParams = new Float32Array(16)
+  surfaceParams = new Float32Array(24)
   override copy(source: THREE.Material): this {
     super.copy(source)
     this.surfaceParams.set((source as ExportMaterial).surfaceParams ?? new Float32Array(16))
@@ -14,6 +15,7 @@ export function materialFor(kind: string, p: Recipe = {}) {
   const m = new ExportMaterial({ color: p.color ?? 0x555956, roughness: p.roughness ?? 0.8, metalness: p.metalness ?? 0,
     emissive: p.emissive ?? 0, emissiveIntensity: p.intensity ?? 0, transparent: p.transparent !== undefined, opacity: p.transparent ?? 1 })
   m.name = p.name ?? kind
+  m.userData.library = kind
   m.surfaceParams.set([m.color.r,m.color.g,m.color.b,m.roughness,m.emissive.r*m.emissiveIntensity,m.emissive.g*m.emissiveIntensity,m.emissive.b*m.emissiveIntensity])
   return m
 }
@@ -27,7 +29,7 @@ export function material(name: string) {
   if (m) return m
   m = materialFor(name, { color: colors[name] ?? 0x555956 })
   // The sampled asphalt supplies its own colour; Ashwood multiplies it by a linear 0.5 tint.
-  if(name.startsWith("asphalt")) m.color.setRGB(0.5,0.5,0.5)
+  if(recipes[name]) m.color.setRGB(1,1,1)
   if (name === "emissive_sodium") { m.emissive.setRGB(1, 0.5, 0.14); m.emissiveIntensity = 9 }
   cache.set(name, m)
   return m
