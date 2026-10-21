@@ -535,11 +535,13 @@ export class PlanBounce {
   }
 
   /**
-   * Runs the three stages for this frame, or turns the scene's bounce off when `input` is null or has no strength.
+   * Runs the three stages for this frame, or turns the scene's bounce off when `input` is null or has no strength, or
+   * the frame has no lights.
    * Returns whether it encoded a pass; `timestampWrites` lets the renderer's frame timer start here.
    */
   encode(enc: GPUCommandEncoder, input: PlanBounceInput | null | undefined, occluders: Float32Array, occluderCount: number, lightCount: number, shadowLightCount: number, timestampWrites?: GPUComputePassTimestampWrites): boolean {
-    if (!input || !(input.strength > 0)) {
+    // No lights, nothing to bounce (daylight): skip the passes like off.
+    if (!input || !(input.strength > 0) || lightCount <= 0) {
       if (this.active) {
         this.data.fill(0)
         this.device.queue.writeBuffer(this.uniform, 0, this.data)

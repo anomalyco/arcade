@@ -6,11 +6,11 @@ import { outbreakPlanBounceShader } from "../src/bounce-light/wgsl"
 import { createOutbreakSettings } from "../src/settings"
 
 describe("bounced light settings", () => {
-  test("Today is the default and sends nothing to the renderer", () => {
-    expect(DEFAULT_BOUNCE_SETTINGS.bouncedLight).toBe(0)
-    expect(createOutbreakSettings().bounce.bouncedLight).toBe(0)
-    expect(bounceInput(DEFAULT_BOUNCE_SETTINGS, 3, 4)).toBeNull()
-    expect(bounceInput({ ...DEFAULT_BOUNCE_SETTINGS, bouncedLight: 1, bounceStrength: 0 }, 3, 4)).toBeNull()
+  test("Bounced light ×3 is the default (D-47); Today sends nothing to the renderer", () => {
+    expect(createOutbreakSettings().bounce).toMatchObject({ bouncedLight: 1, bounceStrength: 3 })
+    expect(bounceInput(DEFAULT_BOUNCE_SETTINGS, 3, 4)).toMatchObject({ strength: 3 })
+    expect(bounceInput({ ...DEFAULT_BOUNCE_SETTINGS, bouncedLight: 0 }, 3, 4)).toBeNull()
+    expect(bounceInput({ ...DEFAULT_BOUNCE_SETTINGS, bounceStrength: 0 }, 3, 4)).toBeNull()
   })
 
   test("on, it carries strength, range, resolution and the colour weight", () => {

@@ -2,9 +2,9 @@ import { registerOutbreakClientFeature } from "../feature-registry"
 import { bounceControls, bounceInput, DEFAULT_BOUNCE_SETTINGS } from "./settings"
 
 /**
- * Bounced light (AR-115, Lab › Bounced light; "Today (off)" one setting away): the kit's plan-space bounce
- * (`@arcade/kit/gpu/gi/plan-bounce`) runs on a 64 m grid around the camera's ground focus; the scene adds it through
- * the `bounce` hook (`wgsl.ts`, `shaders.ts`).
+ * Bounced light (AR-115, D-47: on at ×3 by default; Lab › Bounced light, "Today (off)" one setting away): the kit's
+ * plan-space bounce (`@arcade/kit/gpu/gi/plan-bounce`) runs on a 64 m grid around the camera's ground focus; the scene
+ * adds it through the `bounce` hook (`wgsl.ts`, `shaders.ts`).
  */
 export const outbreakBounceLightFeature = registerOutbreakClientFeature({
   id: "bounce-light",

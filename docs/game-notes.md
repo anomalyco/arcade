@@ -980,7 +980,7 @@ proven animation techniques to animation.md, not here.
     beside the burning dead). The crossroads lamps are too dim at 22:00 for their bounce to show, which is the shroud
     rule working.
   - It costs nothing measurable on Metal: paired `ab-gpu.ts` on `pro` at 3456×1894 gives Δ −0.02 to +0.04 ms at 0.5 m
-    and 0.25 m texels, inside the noise. It stays a Lab option behind Today until Kit picks (D-47).
+    and 0.25 m texels, inside the noise. Kit picked ×3 (D-47), so it is on by default; Today is one Lab setting away.
 
 ## Art direction
 
