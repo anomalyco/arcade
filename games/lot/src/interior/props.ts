@@ -31,5 +31,14 @@ export function receptionProps() {
       m.box(8.395,y+0.09,z-0.08,8.425,y+0.11,z+0.08,dark)
     }
   }
+  // Cork notices on the north lobby wall, beside the source's link-door maps and night-shift sheet.
+  // Each layer has thickness and clearance; paper catches the fixture bounce without emissive lettering.
+  m.box(-5.3,1.25,9.025,-3.75,2.12,9.065,[0.23,0.17,0.1])
+  m.box(-5.25,1.3,9.065,-3.8,2.07,9.075,[0.4,0.29,0.16])
+  for(const [x,y,w,h] of [[-5.15,1.45,0.28,0.39],[-4.78,1.58,0.3,0.38],[-4.36,1.4,0.39,0.28]] as const) {
+    m.box(x,y,9.08,x+w,y+h,9.085,cream)
+    m.box(x+w*0.45,y+h-0.03,9.085,x+w*0.55,y+h-0.015,9.09,[0.35,0.15,0.07])
+    for(let row=0;row<4;row++) m.box(x+0.03,y+0.06+row*0.045,9.086,x+w-0.03,y+0.066+row*0.045,9.09,[0.32,0.33,0.28])
+  }
   return packTexturedVerts(m.v, new Float32Array(m.v.length / 11 * 2))
 }

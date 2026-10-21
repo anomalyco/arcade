@@ -46,6 +46,25 @@ try {
       }
       await page.screenshot({path:resolve(out,`interior-${view}-${kind}.png`),timeout:60_000})
       report.views.push({view,kind,pose,actual:await page.evaluate(kind=>{const w=window as any;return kind==="lot"?{eye:w.lot.camera.eye,yaw:w.lot.camera.yaw,pitch:w.lot.camera.pitch,fov:w.lot.camera.fov}:w.applied},kind)})
+      if(kind==="lot" && view==="lobby" && process.argv.includes("--measure")) {
+        const timings=await page.evaluate(async()=>{
+          const w=(window as any).lot, original=w.ssr.settings.maxStepsIndoor;
+          const result:Record<string,number[]>={steps64:[],steps512:[]};
+          try {
+            for(let round=0;round<8;round++) for(const steps of round%2?[512,64]:[64,512]) {
+              w.ssr.settings.maxStepsIndoor=steps;
+              const volume=[...w.input.volume];
+              volume[1]=w.ssr.volumeInput({indoor:true,wet:{...w.wet,wetness:0,puddles:0,ripple:0}});
+              const input={...w.input,volume};
+              w.renderer.render(input);
+              const ms=await w.renderer.measure(input);
+              if(round>=2)result[`steps${steps}`]!.push(ms);
+            }
+          } finally { w.ssr.settings.maxStepsIndoor=original }
+          return result;
+        });
+        report.views.push({view,kind,gpuMs:timings});
+      }
       if(kind==="lot" && view==="entrance" && process.argv.includes("--walk")) {
         await page.evaluate(()=>{const w=window as any,c=w.lot.camera;c.release();c.body.x=0;c.body.y=30;c.yaw=0;c.pitch=0;w.lot.paused=false})
         await page.locator("#view").click()

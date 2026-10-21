@@ -242,6 +242,7 @@ async function main() {
     packGlassKnobs(glass,rooms,custom,24)
     packContactShadowKnobs(contact,custom,36)
     packStreetLamp(street,custom,44)
+    custom.set([indoor.wear,indoor.sheen,indoor.wax,indoor.glow],56)
     forest.update(camera.eye, forestSettings)
     refreshDressing()
     custom.set([indoor.fixtures,indoor.mode==="today"?0:indoor.bounce,indoor.mode==="today"?1:indoor.air,0],16)

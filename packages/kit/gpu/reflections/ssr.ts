@@ -48,6 +48,8 @@ export type SsrSettings = {
   /** Ray steps per reflection texel, outdoors / indoors. */
   steps: number
   stepsIndoor: number
+  /** Long indoor rays need enough samples to hit chair backs and narrow counter edges. */
+  maxStepsIndoor: number
   /** Reflection resolution as a share of the internal size, outdoors / indoors. */
   scale: number
   scaleIndoor: number
@@ -74,6 +76,7 @@ export const SSR_DEFAULTS: SsrSettings = {
   maxDistance: 30,
   steps: 0.2,
   stepsIndoor: 0.6,
+  maxStepsIndoor: 512,
   scale: 0.25,
   scaleIndoor: 0.85,
   skyReplace: 1,
@@ -84,7 +87,7 @@ export const SSR_DEFAULTS: SsrSettings = {
 
 export const createSsrSettings = (overrides: Partial<SsrSettings> = {}): SsrSettings => ({ ...SSR_DEFAULTS, ...overrides })
 
-/** Most ray steps a reflection texel may take (bounds the march on long rays). */
+/** Outdoor cap; the higher-resolution indoor tier has its own bounded budget. */
 export const SSR_MAX_STEPS = 64
 
 /** Typed Lab rows; "Reflections" first so Today is one setting away. */
@@ -108,6 +111,7 @@ export function ssrControls(group = "Reflections", prefix = ""): LabControl[] {
     range("steps", "Ray steps outdoors", 0.05, 1, 0.05, "/texel", "Quality"),
     range("scale", "Resolution outdoors", 0.25, 1, 0.05, "× 3D res", "Quality"),
     range("stepsIndoor", "Ray steps indoors", 0.05, 1, 0.05, "/texel", "Quality"),
+    range("maxStepsIndoor", "Indoor step limit", 64, 1024, 32, "steps", "Quality"),
     range("scaleIndoor", "Resolution indoors", 0.25, 1, 0.05, "× 3D res", "Quality"),
     range("streakIndoor", "Streaking indoors", 0, 4, 0.05, "×", "Quality"),
     range("history", "History weight (new frame)", 0.02, 1, 0.01, undefined, "Quality"),
@@ -136,7 +140,7 @@ export class Ssr {
     const p = this.params
     p.set([s.strength, s.dielectric, s.cutoff, indoor ? s.streakIndoor : s.streak], 0)
     p.set([s.maxLuminance, s.thickness, s.maxDistance, indoor ? s.stepsIndoor : s.steps], 4)
-    p.set([s.edgeFade, s.skyReplace, SSR_MAX_STEPS, s.view === "weight" ? 1 : s.view === "hits" ? 2 : 0], 8)
+    p.set([s.edgeFade, s.skyReplace, indoor ? Math.max(64, Math.min(1024, Math.round(s.maxStepsIndoor))) : SSR_MAX_STEPS, s.view === "weight" ? 1 : s.view === "hits" ? 2 : 0], 8)
     p.set(packWet(opts.wet ?? WET_DEFAULTS), 12)
     return { downscale: 1 / scale, history: s.history, params: p }
   }

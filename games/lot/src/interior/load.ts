@@ -8,8 +8,8 @@ import { receptionProps } from "./props"
 import { paneUvs } from "./pane-uvs"
 
 const finishes: Record<string, string> = {
-  tile_green: "tile", tile_green_dark: "tile", terrazzo: "terrazzo", linoleum: "vinyl",
-  painted_wall: "plaster", ceiling_tile: "ceiling", rubber: "vinyl",
+  tile_green: "tile", tile_green_dark: "tile", terrazzo: "terrazzo-scan", linoleum: "vinyl",
+  painted_wall: "plaster-scan", ceiling_tile: "ceiling-scan", rubber: "vinyl",
   interior_documents: "documents-base", interior_exit_sign: "exit",
 }
 const cc0 = new Set(["office_desk", "desk_lamp", "security_camera", "wet_floor_sign", "stack_chair"])
@@ -30,15 +30,15 @@ export async function loadInterior(device: GPUDevice) {
     return maps.get(name)!
   }
   const primitives = await Promise.all(scene.records.map(async (r): Promise<TexturedPrimitive> => {
-    const finish = finishes[r.name], documents = r.name === "interior_documents"
+    const finish = finishes[r.name], documents = r.name === "interior_documents", scan = finish?.endsWith("-scan")
     const [vertices, baseMap, normalMap, orm] = await Promise.all([
       get(r.file).then(meshBytes), finish ? texture(finish, true) : white,
-      documents ? texture("documents-normal", false, true) : normal,
+      documents ? texture("documents-normal", false, true) : scan ? texture(finish + "-normal", false, true) : normal,
       documents ? texture("documents-orm", false) : finish && !["exit"].includes(finish) ? texture(finish + "-orm", false) : white,
     ])
     if(r.name==="interior_glass" || r.name==="interior_glazing") paneUvs(vertices)
     return { vertices, base: baseMap, normal: normalMap, orm, color: [1,1,1,r.alpha], roughness: r.roughness,
-      metalness: r.metalness, normalScale: documents ? 0.6 : 0, aoStrength: 1, blend: r.alpha < 1 }
+      metalness: r.metalness, normalScale: documents ? 0.6 : scan ? (r.name==="terrazzo" ? 0.12 : 0.6) : 0, aoStrength: 1, blend: r.alpha < 1 }
   }))
   for (const name of cc0) {
     const placements = scene.placements.filter(g=>g.name===name).flatMap(g=>g.props)

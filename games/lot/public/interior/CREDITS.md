@@ -4,8 +4,9 @@ Architecture, fixtures, seating, plants and document placement are baked from Ai
 `scene.json` records the SHA-256 of each source read by the read-only importer. Three.js is an offline tool;
 the game draws native kit vertex buffers and static PNG-textured glTF props.
 
-The grayscale tile, terrazzo, vinyl, plaster and ceiling finish maps are authored procedurally by
-`scripts/interior-assets.ts` (seed 71). The EXIT lettering is rasterized with the system Arial Bold font;
+The ceiling, terrazzo and plaster scans are CC0: [FINISH-CREDITS.md](FINISH-CREDITS.md). Tile and vinyl maps
+are authored procedurally by `scripts/interior-assets.ts` (seed 71); water stains, wall dirt and wax wear are authored
+world-space patterns. The EXIT lettering is rasterized with the system Arial Bold font;
 no font files ship. Reception CRT, telephone, office chair and filing drawers are authored kit geometry.
 
 Imported CC0 props: [PROP-CREDITS.md](PROP-CREDITS.md). Ashwood's authored document atlas and rendered-font

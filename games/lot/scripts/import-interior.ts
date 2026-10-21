@@ -29,7 +29,11 @@ plugin({name:"interior-offline",setup(b){
       }
       return`)
     // The source's TSL glow is represented explicitly in the exported material record.
-    if(args.path.endsWith("/world/interior/kit.ts")) text=text.replace('return { material: m, level: u }','m.emissive.setRGB(...tint); m.emissiveIntensity=level*1.6; return { material: m, level: u }')
+    if(args.path.endsWith("/world/interior/kit.ts")) text=text
+      .replace('return { material: m, level: u }','m.emissive.setRGB(...tint); m.emissiveIntensity=level*1.6; return { material: m, level: u }')
+      .replace('laminateTop: paint(0x34302a, 0.35, 0)', 'laminateTop: materialFor("flat",{color:0x34302a,roughness:0.16,name:"interior_laminate_top"})')
+    // Seeded missing/sagging panels use the source builder; the source checkout stays untouched.
+    if(args.path.endsWith("/storeys/s0/lobby.ts")) text=text.replace('ceiling(b, x0, z0, x1, z1)', 'ceiling(b, x0, z0, x1, z1, 0.018, 71)')
     text=text.replaceAll("import.meta.env.BASE_URL",'"/"')
     text=text.replace(/(["'])three(?:\/([^"']+))?\1/g,(_m,_q,s)=>JSON.stringify(resolve(threeRoot,!s?"build/three.module.js":s==="webgpu"?"build/three.webgpu.js":s==="tsl"?"build/three.tsl.js":s.replace("addons/","examples/jsm/"))))
     return {contents:text,loader:"ts"}
@@ -44,6 +48,8 @@ const ctx:any={scene:root,params:new URLSearchParams("shot=1"),settings:{},lamps
 const {Builder}=await mod("world/interior/kit.ts")
 const b=new Builder(ctx,"storey-0",0)
 await (await mod("world/interior/storeys/s0.ts")).build(b,{storey:0,pause:async()=>{}})
+// Dark plenum visible through the few missing lobby panels; no hole into the exterior sky.
+b.box("rubber",-9,3.34,9,9,3.36,21.8,{cast:false,skip:"XxYZz"})
 b.flush(root)
 root.updateMatrixWorld(true)
 for(const leaf of doors){const box=new THREE.Box3().setFromObject(leaf);ctx.colliders.push({min:box.min.toArray(),max:box.max.toArray()})}
@@ -73,10 +79,14 @@ root.traverse(object=>{
         const c=(glow?m.emissive:m.color??new THREE.Color(1,1,1)).clone()
         if(col)c.multiply(new THREE.Color(col.getX(k),col.getY(k),col.getZ(k)))
         c.convertLinearToSRGB()
-        batch.v.push(p.x,p.y,p.z,n.x,n.y,n.z,c.r,c.g,c.b,glow?MAT.glow:MAT.lit,glow?m.emissiveIntensity:0)
+        const finish=({terrazzo:101,linoleum:102,painted_wall:103,tile_green:104,tile_green_dark:104,ceiling_tile:105,interior_laminate_top:106} as Record<string,number>)[m.name]??0
+        batch.v.push(p.x,p.y,p.z,n.x,n.y,n.z,c.r,c.g,c.b,glow?MAT.glow:MAT.lit,glow?m.emissiveIntensity:finish)
         // Builder UVs are metres. Our tile atlas has four cells; terrazzo has one slab.
-        const uvScale=m.name.startsWith("tile_green") ? 0.25/0.152 : m.name==="terrazzo" ? 1/0.6 : m.name==="linoleum" ? 1/0.305 : 1
-        batch.uv.push((uv?.getX(k)??0)*uvScale,(uv?.getY(k)??0)*uvScale)
+        const uvScale=m.name.startsWith("tile_green") ? 0.25/0.152 : m.name==="terrazzo" ? 1/0.32 : m.name==="ceiling_tile" ? 1/3.66 : m.name==="linoleum" ? 1/0.305 : 1
+        // The scan contains six square panels. Match those to the physical 0.6 × 1.2 m grid, including its origin,
+        // rather than drawing a second 0.61 m grid diagonally across the actual T-bars.
+        if(m.name==="ceiling_tile" && Math.abs(n.y)>0.9) batch.uv.push((p.x-0.3)/3.6,(p.z-0.6)/7.2)
+        else batch.uv.push((uv?.getX(k)??0)*uvScale,(uv?.getY(k)??0)*uvScale)
       }
     }
   }

@@ -39,12 +39,12 @@
       "roughness": 0.949999988079071,
       "metalness": 0,
       "alpha": 1,
-      "triangles": 204
+      "triangles": 604
     },
     {
       "file": "mesh-5.bin.gz",
       "name": "linoleum",
-      "roughness": 0.18,
+      "roughness": 0.14,
       "metalness": 0,
       "alpha": 1,
       "triangles": 58
@@ -52,10 +52,10 @@
     {
       "file": "mesh-6.bin.gz",
       "name": "ceiling_tile",
-      "roughness": 0.92,
+      "roughness": 1,
       "metalness": 0,
       "alpha": 1,
-      "triangles": 186
+      "triangles": 3164
     },
     {
       "file": "mesh-7.bin.gz",
@@ -68,7 +68,7 @@
     {
       "file": "mesh-8.bin.gz",
       "name": "terrazzo",
-      "roughness": 0.08,
+      "roughness": 1,
       "metalness": 0,
       "alpha": 1,
       "triangles": 22
@@ -135,7 +135,7 @@
       "roughness": 0.3499999940395355,
       "metalness": 0,
       "alpha": 1,
-      "triangles": 3256
+      "triangles": 322
     },
     {
       "file": "mesh-17.bin.gz",
@@ -156,7 +156,7 @@
     {
       "file": "mesh-19.bin.gz",
       "name": "painted_wall",
-      "roughness": 0.87,
+      "roughness": 1,
       "metalness": 0,
       "alpha": 1,
       "triangles": 2670
@@ -431,7 +431,7 @@
       "roughness": 0.8,
       "metalness": 0,
       "alpha": 1,
-      "triangles": 276
+      "triangles": 278
     },
     {
       "file": "mesh-54.bin.gz",
@@ -467,6 +467,14 @@
     },
     {
       "file": "mesh-58.bin.gz",
+      "name": "interior_laminate_top",
+      "roughness": 0.16,
+      "metalness": 0,
+      "alpha": 1,
+      "triangles": 2934
+    },
+    {
+      "file": "mesh-59.bin.gz",
       "name": "interior_exit_sign",
       "roughness": 0.8,
       "metalness": 0,
@@ -474,7 +482,7 @@
       "triangles": 2
     },
     {
-      "file": "mesh-59.bin.gz",
+      "file": "mesh-60.bin.gz",
       "name": "plastic_orange",
       "roughness": 0.4,
       "metalness": 0,
@@ -482,7 +490,7 @@
       "triangles": 5088
     },
     {
-      "file": "mesh-60.bin.gz",
+      "file": "mesh-61.bin.gz",
       "name": "interior_epoxy_block",
       "roughness": 0.32,
       "metalness": 0,
@@ -490,7 +498,7 @@
       "triangles": 42
     },
     {
-      "file": "mesh-61.bin.gz",
+      "file": "mesh-62.bin.gz",
       "name": "interior_amber_glow",
       "roughness": 0.5,
       "metalness": 0,
@@ -498,7 +506,7 @@
       "triangles": 60
     },
     {
-      "file": "mesh-62.bin.gz",
+      "file": "mesh-63.bin.gz",
       "name": "interior_blind_open",
       "roughness": 0.6,
       "metalness": 0,
@@ -506,7 +514,7 @@
       "triangles": 8
     },
     {
-      "file": "mesh-63.bin.gz",
+      "file": "mesh-64.bin.gz",
       "name": "interior_slide",
       "roughness": 0.9,
       "metalness": 0,
@@ -514,7 +522,7 @@
       "triangles": 2
     },
     {
-      "file": "mesh-64.bin.gz",
+      "file": "mesh-65.bin.gz",
       "name": "chainlink",
       "roughness": 0.8,
       "metalness": 0,
@@ -522,7 +530,7 @@
       "triangles": 88
     },
     {
-      "file": "mesh-65.bin.gz",
+      "file": "mesh-66.bin.gz",
       "name": "interior_led_green",
       "roughness": 0.5,
       "metalness": 0,
@@ -530,7 +538,7 @@
       "triangles": 84
     },
     {
-      "file": "mesh-66.bin.gz",
+      "file": "mesh-67.bin.gz",
       "name": "interior_tv_static",
       "roughness": 0.3,
       "metalness": 0,
@@ -538,7 +546,7 @@
       "triangles": 2
     },
     {
-      "file": "mesh-67.bin.gz",
+      "file": "mesh-68.bin.gz",
       "name": "interior_pilot",
       "roughness": 0.5,
       "metalness": 0,
@@ -546,7 +554,7 @@
       "triangles": 12
     },
     {
-      "file": "mesh-68.bin.gz",
+      "file": "mesh-69.bin.gz",
       "name": "interior_cctv",
       "roughness": 0.25,
       "metalness": 0,
@@ -9899,33 +9907,33 @@
     "src/world/interior/kit.ts": "f987d2bf4284cac3f064823a324eda2a2da6c895329a6d0a404bc99a63fe68db",
     "src/world/layout.ts": "ca764b43cf2c3040b39705ecd02c996480114abd8050df31eb4f7bde3affbdf4",
     "src/render/signs.ts": "491a34e39a53f2854aadaf2403170edbda9ac886b93e62db0ec6358f3e066fb4",
-    "src/render/materials.ts": "b8d2c14ddbff81e5638b98a78f45e76f125bad4a53398073a966a7af337b1ef0",
     "src/render/documents.ts": "93f38da0e42209f819b69f1f43f181512da752195ee057c05f8fb1bed57eb539",
+    "src/render/materials.ts": "b8d2c14ddbff81e5638b98a78f45e76f125bad4a53398073a966a7af337b1ef0",
     "src/world/interior/storeys/s0.ts": "e6cf788f7ddcd173105068ca9fe459228a05e230a4a30a744c144f826a7db2b9",
     "src/world/interior/api.ts": "17ff4e0b5de15b743e051d1b4184478380a868241fce4cd950452092201c8648",
     "src/render/models.ts": "8a9cd95625fffd2fca5961824341faf86ea46fd516bb8b2ce9474441ce68b9d2",
     "src/world/interior/storeys/s0/common.ts": "32b999a19a73740aba7e8dd8245983e01c86ef6e504e3db3f86b162e17dde972",
     "src/world/interior/storeys/s0/south.ts": "5c94b25954127b582a2ccee9328e0e9c7925d0aeeb3460c6e0745abcf2b5b5f9",
     "src/world/interior/storeys/s0/east.ts": "0085dbf73ed5522e30e2f655071040656938e105750d26d2681ccc5713a4216d",
-    "src/world/interior/storeys/s0/lobby.ts": "d79ecfeb33f38b42abef64f212c4d479f473168beabaee5e4211277e8ff36812",
     "src/world/interior/storeys/s0/west.ts": "921d2a409d89f89353e2d616ffa5882d37f8467a73948a099e8f164e0b93195f",
+    "src/world/interior/storeys/s0/lobby.ts": "d79ecfeb33f38b42abef64f212c4d479f473168beabaee5e4211277e8ff36812",
     "src/world/interior/plan.ts": "fd26fa6521422fb36aed52475cb017b58e3dd60588e33b97edfe58469d17d78d",
-    "src/world/interior/spine.ts": "f005c29e1f61c4f33c16ad9e570439c36b27b751af886487eb10a48f3b1e0e0c",
-    "src/world/interior/partition.ts": "c8576d445f813079ecbefce905ecd386c57c32d3ee03e5bd19b27b0eb4e3b2e7",
-    "src/world/interior/fixtures.ts": "17928204bb2e2992ec931d04c8ca7fda02c008fb0038aa8dbde38b26ba6e2492",
-    "src/world/interior/washroom.ts": "c15b20fa86927f510f7b48bbb385fbc3203b9596735a87176d3bb0db219e89e5",
-    "src/world/interior/room.ts": "bb90535612fda1c15945346ccde695c5341c7cbfcf56701b2809b728367fbff2",
-    "src/world/interior/styles.ts": "38ddce974efc104960331bbb389468d00cb7cfdc77af8f626ba20adfdeff2536",
-    "src/world/interior/registry.ts": "828712ad29fadf56ca510417e243252a6a0a249582a6175f73e42f1669d0e5ff",
-    "src/world/interior/props.ts": "537582c18ff52468687305088e4b02846d586dab67e40c215da7521bd6d5bf22",
-    "src/world/interior/doorway.ts": "6ccecdf98a5318d853727033aa4a8bb0daddd8461e60af79d81b9ce31aa55a7b",
-    "src/world/interior/lighting-state.ts": "c23451aaaacdffd7082fa11da7c8d5317765dc47e0082e767e3d63252ac38eb8",
     "src/world/interior/fittings.ts": "c57d9b501a8d2a56591aa77065791bcb294d6183d027bab163760b7d10d7fe97",
-    "src/world/interior/liftgate.ts": "d74fc49f66a985dfc82b0b5291d0b138357940c3071db587a17982aabbb4bce3",
-    "src/world/interior/services.ts": "2b3ee4966177c0cb3c3d8a56419f5e484c9e0b3ba592fb06ba23b5b7e2826877",
-    "src/world/interior/lights.ts": "ecf4e498d708541a339e92b670319992fd9081a87c2ba53e7b11bfaef1607e24",
+    "src/world/interior/partition.ts": "c8576d445f813079ecbefce905ecd386c57c32d3ee03e5bd19b27b0eb4e3b2e7",
+    "src/world/interior/props.ts": "537582c18ff52468687305088e4b02846d586dab67e40c215da7521bd6d5bf22",
+    "src/world/interior/registry.ts": "828712ad29fadf56ca510417e243252a6a0a249582a6175f73e42f1669d0e5ff",
+    "src/world/interior/styles.ts": "38ddce974efc104960331bbb389468d00cb7cfdc77af8f626ba20adfdeff2536",
+    "src/world/interior/spine.ts": "f005c29e1f61c4f33c16ad9e570439c36b27b751af886487eb10a48f3b1e0e0c",
     "src/world/interior/finishes.ts": "81115181ef56beb89457dae88cc478a875a633f5730d7d730d56ec461fc11e7a",
-    "src/render/mirrors.ts": "7c5e570cc417cd09e16cea41fdd885852eec191c20aa37d61ff3166edd183590",
-    "src/render/shared.ts": "901b3219d4a8b79d56ceb86d43dbdd666e271c95ad3e0e9adc8143ba9b4461a5"
+    "src/world/interior/room.ts": "bb90535612fda1c15945346ccde695c5341c7cbfcf56701b2809b728367fbff2",
+    "src/world/interior/services.ts": "2b3ee4966177c0cb3c3d8a56419f5e484c9e0b3ba592fb06ba23b5b7e2826877",
+    "src/world/interior/lighting-state.ts": "c23451aaaacdffd7082fa11da7c8d5317765dc47e0082e767e3d63252ac38eb8",
+    "src/world/interior/lights.ts": "ecf4e498d708541a339e92b670319992fd9081a87c2ba53e7b11bfaef1607e24",
+    "src/world/interior/doorway.ts": "6ccecdf98a5318d853727033aa4a8bb0daddd8461e60af79d81b9ce31aa55a7b",
+    "src/world/interior/washroom.ts": "c15b20fa86927f510f7b48bbb385fbc3203b9596735a87176d3bb0db219e89e5",
+    "src/world/interior/fixtures.ts": "17928204bb2e2992ec931d04c8ca7fda02c008fb0038aa8dbde38b26ba6e2492",
+    "src/world/interior/liftgate.ts": "d74fc49f66a985dfc82b0b5291d0b138357940c3071db587a17982aabbb4bce3",
+    "src/render/shared.ts": "901b3219d4a8b79d56ceb86d43dbdd666e271c95ad3e0e9adc8143ba9b4461a5",
+    "src/render/mirrors.ts": "7c5e570cc417cd09e16cea41fdd885852eec191c20aa37d61ff3166edd183590"
   }
 }
