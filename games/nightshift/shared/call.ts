@@ -14,9 +14,13 @@ export function stepCall(call: Call, dt: number, duration: number) {
 export function subtitle(call: Call) {
   if(call.phase!=="call") return ""
   if(call.elapsed<1) return "[line connects]"
-  if(call.elapsed<4.3) return "“You're still there. Good.”"
-  if(call.elapsed<8) return "“Leave the file on your desk. We'll call again.”"
-  return "[the line goes quiet]"
+  if(call.elapsed<4.1) return "“…You're still here. Good.”"
+  if(call.elapsed<6.5) return "“It's Jay.”"
+  if(call.elapsed<7) return ""
+  if(call.elapsed<10.7) return "“Come up to my office. I need to see you.”"
+  if(call.elapsed<11.6) return ""
+  if(call.elapsed<14) return "“…Don't take the lift.”"
+  return "[click. dial tone]"
 }
 export function ringEnvelope(time: number) {
   const t = ((time % 5.4)+5.4)%5.4

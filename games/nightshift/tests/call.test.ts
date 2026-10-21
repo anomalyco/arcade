@@ -5,7 +5,7 @@ test("call cannot be answered remotely; pickup and hangup preserve one handset",
   interact(c,true);let last=0
   for(let i=0;i<40;i++){stepCall(c,1/60,0.65);expect(c.lift).toBeGreaterThanOrEqual(last);last=c.lift}
   expect(c.phase).toBe("call");expect(c.lift).toBe(1)
-  stepCall(c,2,0.65);expect(subtitle(c)).toContain("still there")
+  stepCall(c,2,0.65);expect(subtitle(c)).toContain("still here")
   interact(c,false)
   for(let i=0;i<40;i++){stepCall(c,1/60,0.65);expect(c.lift).toBeLessThanOrEqual(last);last=c.lift}
   expect(c.phase).toBe("ended");expect(c.lift).toBe(0)

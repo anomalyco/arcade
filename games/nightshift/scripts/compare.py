@@ -11,9 +11,13 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw
 
-targets, captures, dest = map(Path, sys.argv[1:])
+targets, captures, dest = map(Path, sys.argv[1:4])
+paintover = "--paintover" in sys.argv
+views = ["wide", "phone", "far-cubicle", "window"] if paintover else ["wide", "phone"]
+if paintover and (captures / "call/hangup.png").exists():
+    views.append("hangup")
 dest.parent.mkdir(parents=True, exist_ok=True)
-sheet = Image.new("RGB", (2000, 1225), "#101615")
+sheet = Image.new("RGB", (2000, len(views)*602+21), "#101615")
 draw = ImageDraw.Draw(sheet)
 reports = {}
 
@@ -37,9 +41,12 @@ def measure(a, b):
             "hue_error_degrees": min(dh, 360-dh)}
 
 
-for index, view in enumerate(["wide", "phone"]):
-    a = Image.open(targets / f"01-night-shift-{view}.png").convert("RGB")
-    b = Image.open(captures / f"{view}.png").convert("RGB")
+for index, view in enumerate(views):
+    a = Image.open(targets / (f"{view}.png" if paintover else f"01-night-shift-{view}.png")).convert("RGB")
+    source = "wide.png" if view in ["far-cubicle", "window"] else "call/hangup.png" if view == "hangup" else f"{view}.png"
+    b = Image.open(captures / source).convert("RGB")
+    if view == "far-cubicle": b = b.crop((690,430,1350,1030))
+    if view == "window": b = b.crop((0,300,780,850))
     original = b.size
     b = b.resize(a.size, Image.Resampling.LANCZOS)
     ar, br = [np.asarray(im).astype(float) / 255 for im in (a, b)]
@@ -54,12 +61,12 @@ for index, view in enumerate(["wide", "phone"]):
     diff = Image.fromarray(np.uint8(np.clip(abs(ar-br)*4*255, 0, 255)))
     diff.save(str(dest)+f"-{view}-diff.jpg", quality=92)
     y = index * 602
-    draw.text((16, y+12), f"Approved concept / {view}", fill="white")
+    draw.text((16, y+12), f"{'Generated paint-over target' if paintover else 'Approved concept'} / {view}", fill="white")
     draw.text((1016, y+12), f"{dest.name} / {view} / RGB MAE {reports[view]['global']['rgb_mae_255']:.2f}/255", fill="white")
     sheet.paste(a.resize((1000, 562), Image.Resampling.LANCZOS), (0, y+34))
     sheet.paste(b.resize((1000, 562), Image.Resampling.LANCZOS), (1000, y+34))
 
-draw.text((16, 1210), "Concept vs reconstruction: different geometry and framing. Pixel errors are descriptive, not a similarity score.", fill="#aaaaaa")
+draw.text((16, len(views)*602+6), "Reference vs reconstruction: generated geometry can differ. Pixel errors are descriptive, not a similarity score.", fill="#aaaaaa")
 sheet.save(dest.with_suffix(".jpg"), quality=94)
 dest.with_suffix(".json").write_text(json.dumps(reports, indent=2))
-print(json.dumps({view: report["global"] for view, report in reports.items()}, indent=2))
+print(json.dumps({view: {k: report["global"][k] for k in ["rgb_mae_255", "luminance_error", "hue_error_degrees"]} for view, report in reports.items()}, indent=2))

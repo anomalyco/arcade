@@ -14,9 +14,10 @@ import { TEMPORAL_DEFAULTS } from "@arcade/kit/gpu/temporal"
 import { LabPanel } from "@arcade/kit/lab-panel"
 import { controls, defaults } from "./settings"
 import { hooks, post, fogVolume, contactVolume } from "./shaders"
-import { buildWorld, handset, PHONE, START, CLOSE, CRADLE, CORD_END, walls } from "./world"
+import { buildWorld, handset, PHONE, START, CLOSE, CORD_END, RECEIVER_PAD, OFFICE, walls } from "./world"
 import { newCall, interact, stepCall, subtitle, ringEnvelope } from "../shared/call"
 import { OfficeAudio } from "./audio"
+import { officeProps } from "./props"
 
 async function main() {
   const canvas=document.querySelector<HTMLCanvasElement>("#view")!,hud=document.getElementById("hud")!,prompt=document.getElementById("prompt")!,sub=document.getElementById("subtitle")!
@@ -39,10 +40,11 @@ async function main() {
   const lights=new SceneLights(),spots=new SpotShadows(device,{count:4,size:1024})
   renderer.setSpotShadows(spots.bindings())
   const buffer=device.createBuffer({size:world.data.byteLength,usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST});device.queue.writeBuffer(buffer,0,world.data)
-  const casters=[{buffer,count:world.vertices,stride:24}]
-  const frame=newSceneFrame(),custom=new Float32Array(24)
+  const props=await officeProps(renderer)
+  const casters=[{buffer,count:world.vertices,stride:24},...props.casters]
+  const frame=newSceneFrame(),custom=new Float32Array(28)
   let time=0,frames=0,paused=false,last=performance.now(),fixedTime:number|null=null
-  let handYaw=0,lastLookYaw=0
+  let handYaw=0,lastLookYaw=0,officeReached=false
   const distance=()=>Math.hypot(camera.body.x-PHONE.x,camera.body.y-PHONE.z)
   const canAnswer=()=>distance()<1.35 && camera.direction[0]*(PHONE.x-camera.eye[0])+camera.direction[2]*(PHONE.z-camera.eye[2])>0.15
   const action=()=>{
@@ -67,12 +69,13 @@ async function main() {
     stepCall(call,dt,settings.pickup)
     const flicker=lampFlicker("fluorescent",87,time,settings.flicker).level, led=call.phase==="ringing"?0.18+0.82*ringEnvelope(time):call.phase==="ended"?0.015:0.7
     const lampDefs:SceneLight[]=[
-      {id:1,x:-5.55,y:4.9,h:2.65,r:13,color:[1,0.38,0.085],power:settings.sodium,size:0.09,spot:{axis:[0.88,-0.43,-0.2],cosOuter:0.45,cosInner:0.75}},
-      {id:2,x:1.5,y:-6.1,h:2.7,r:6,color:[1,0.43,0.12],power:settings.sodium*0.1,size:0.06,spot:{axis:[-0.62,-0.65,0.43],cosOuter:0.3,cosInner:0.7}},
-      {id:3,x:0,y:0,h:2.80,r:7,color:[0.71,0.84,0.72],power:settings.fluorescent*flicker,size:0.35,spot:{axis:[0,-1,0],cosOuter:0.15,cosInner:0.5}},
+      {id:1,x:-3.55,y:2.9,h:2.4,r:11,color:[1,0.43,0.14],power:settings.sodium,size:0.28,spot:{axis:[0.9,-0.5,-0.08],cosOuter:0.45,cosInner:0.75}},
+      {id:2,x:-3.55,y:-.75,h:2.45,r:10,color:[1,0.43,0.14],power:settings.sodium*0.40,size:0.32,spot:{axis:[0.6,-0.25,-0.72],cosOuter:0.3,cosInner:0.7}},
+      {id:3,x:0,y:0,h:2.80,r:7,color:[0.78,0.89,0.87],power:settings.fluorescent*flicker,size:0.35,spot:{axis:[0,-1,0],cosOuter:0.15,cosInner:0.5}},
       {id:4,x:-0.74,y:-5.48,h:1.14,r:2.7,color:[0.16,1,0.48],power:settings.crt,size:0.19,spot:{axis:[0,-0.35,0.937],cosOuter:0.05,cosInner:0.5}},
       {id:5,x:PHONE.x+0.127*1.3,y:PHONE.z+0.085*1.3,h:PHONE.y+0.1,r:0.18,color:[1,0.025,0.004],power:0.0005*led,size:0.012,unshadowed:true},
       {id:6,x:-3.6,y:-4,h:2.8,r:4,color:[0.6,0.77,0.68],power:settings.fluorescent*0.12*flicker,size:0.25,unshadowed:true},
+      {id:8,x:3.74,y:-8.1,h:1.13,r:4.2,color:[1,.58,.22],power:settings.officeLamp,size:.12,spot:{axis:[0,-.8,.6],cosOuter:.05,cosInner:.4}},
     ]
     if(camera.flashlight)lampDefs.push({id:7,x:camera.eye[0],y:camera.eye[2],h:camera.eye[1],r:12,color:[0.85,0.92,1],power:0.9,size:0.08,unshadowed:true,beam:{axis:camera.direction,halfAngle:0.27}})
     lights.update(lampDefs,[])
@@ -84,11 +87,12 @@ async function main() {
     const t=call.lift,rx=Math.cos(camera.yaw),rz=-Math.sin(camera.yaw),fx=-Math.sin(camera.yaw),fz=-Math.cos(camera.yaw)
     const end=[camera.eye[0]-rx*0.32+fx*0.08,camera.eye[1]-0.08,camera.eye[2]-rz*0.32+fz*0.08]
     handYaw+=camera.yaw-lastLookYaw;lastLookYaw=camera.yaw
-    const p=CRADLE.map((v,i)=>v+(end[i]-v)*t),yaw=handYaw*t,roll=-1.25*t
+    const p=props.cradle.position.map((v,i)=>v+(end[i]-v)*t),yaw=handYaw*t,roll=props.cradle.roll*(1-t)-1.25*t
     parts.push(receiver,p[0],p[1],p[2],yaw,[1,1,1],0,roll,0)
-    const cord=[p[0]-0.169*Math.cos(roll)*Math.sin(yaw),p[1]-0.169*Math.sin(roll),p[2]+0.169*Math.cos(roll)*Math.cos(yaw)]
-    custom.set([settings.ambient,settings.fog,settings.dust,time,flicker,led,0,0,t,0,0,0,...cord.map((v,i)=>v-CORD_END[i]),0])
-    packContactShadowKnobs(contact,custom,16);renderer.setCustomUniforms(custom)
+    const cord=[p[0]-RECEIVER_PAD*Math.cos(roll)*Math.sin(yaw),p[1]-RECEIVER_PAD*Math.sin(roll),p[2]+RECEIVER_PAD*Math.cos(roll)*Math.cos(yaw)]
+    custom.set([settings.ambient,settings.fog,settings.dust,time,flicker,led,settings.window,settings.officeLamp,t,0,0,0,...cord.map((v,i)=>v-CORD_END[i]),0])
+    packContactShadowKnobs(contact,custom,16)
+    custom.set([settings.penumbra,settings.bounce,0,0],24);renderer.setCustomUniforms(custom)
     for(let i=0;i<150;i++) {
       const x=-1.5+hash01(i,1)*3,y=0.3+hash01(i,2)*2.3,z=-6.2+hash01(i,3)*12
       const drift=Math.sin(time*0.12+i)*0.05
@@ -103,11 +107,15 @@ async function main() {
     const dx=PHONE.x-camera.eye[0],dz=PHONE.z-camera.eye[2]
     audio.update(time,distance(),(dx*Math.cos(camera.yaw)-dz*Math.sin(camera.yaw))/Math.max(distance(),0.1),call,settings.volume,document.pointerLockElement===canvas&&!document.hidden,flicker)
     prompt.innerHTML=call.phase==="ringing"&&canAnswer()?keyPromptHtml("KeyE","Answer"):call.phase==="call"?keyPromptHtml("KeyE","Hang up"):""
+    if(call.phase==="ended") {
+      officeReached ||= Math.hypot(camera.body.x-OFFICE.x,camera.body.y-OFFICE.z)<.65
+      prompt.textContent=officeReached?"Jay’s office · to be continued":"Find Jay’s corner office at the far right of the floor."
+    }
     sub.textContent=subtitle(call)
     frames++;if(smoke&&frames>=2)paused=true
     requestAnimationFrame(render)
   }
-  Object.assign(window,{nightshift:{camera,settings,renderer,call,action,setCamera,get frames(){return frames},get paused(){return paused},set paused(v:boolean){paused=v},set time(v:number){fixedTime=v},ready:true}})
+  Object.assign(window,{nightshift:{camera,settings,renderer,call,action,setCamera,cradle:props.cradle,get frames(){return frames},get paused(){return paused},set paused(v:boolean){paused=v},set time(v:number){fixedTime=v},ready:true}})
   requestAnimationFrame(render)
 }
 void main().catch(e=>{console.error(e);document.getElementById("hud")!.textContent=String(e)})
