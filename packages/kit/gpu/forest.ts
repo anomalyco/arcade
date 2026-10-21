@@ -95,23 +95,6 @@ export function forestBands(s: Pick<ForestSettings, "lod0" | "lod1" | "fade" | "
   return { fade, near: lod0 - fade, mid: lod1 - fade, far: s.far }
 }
 
-/** Mirrors the WGSL: which far crowns survive at a distance, and how much the survivors grow about their base. */
-export function forestThin(distance: number, seed: number, s: Pick<ForestSettings, "thinStart" | "thinEnd" | "thinFraction" | "crown">) {
-  const t = smoothstep(s.thinStart, Math.max(s.thinStart + 1e-3, s.thinEnd), distance)
-  const f = Math.min(0.95, Math.max(0, s.thinFraction))
-  return { keep: fract(seed * 91.7) >= t * f, grow: 1 + t * (s.crown / Math.sqrt(1 - f) - 1) }
-}
-
-/** Visible share (0..1) of an incoming level `fi` and outgoing level `fo` at `distance`, as the shader computes them. */
-export function forestFade(distance: number, lo: number, hi: number, fade: number) {
-  const F = Math.max(fade, 1e-3)
-  return { fadeIn: clamp01((distance - lo) / F), fadeOut: clamp01((distance - hi) / F) }
-}
-
-const smoothstep = (a: number, b: number, x: number) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t) }
-const clamp01 = (x: number) => Math.min(1, Math.max(0, x))
-const fract = (x: number) => x - Math.floor(x)
-
 const INSTANCE_FLOATS = 8
 const GRID_CELL = 16
 const MAX_VARIANTS = 16

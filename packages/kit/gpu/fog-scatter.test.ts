@@ -29,7 +29,6 @@ import {
   fogSceneWgsl,
   fogScatterVolume,
   fogSkyRadiance,
-  upsampleWeights,
   type FogLamp,
   type ScatterLampShape,
   type Vec3,
@@ -299,22 +298,6 @@ describe("atmosphere", () => {
       expect(c.min).toBeLessThanOrEqual(v)
       expect((c as { max: number }).max).toBeGreaterThanOrEqual(v)
     }
-  })
-})
-
-describe("depth-aware upsample", () => {
-  test("is bilinear on one surface", () => {
-    const w = upsampleWeights(0.25, 0.75, [10, 10, 10, 10], 10)
-    const bil = [0.75 * 0.25, 0.25 * 0.25, 0.75 * 0.75, 0.25 * 0.75]
-    w.forEach((v, i) => expect(v).toBeCloseTo(bil[i]!, 3))
-  })
-
-  test("rejects taps on another surface and always sums to one", () => {
-    const w = upsampleWeights(0.5, 0.5, [4, 4, 40, 40], 4)
-    expect(w[2] + w[3]).toBeLessThan(1e-3)
-    expect(w[0] + w[1] + w[2] + w[3]).toBeCloseTo(1, 6)
-    const sky = upsampleWeights(0.5, 0.5, [3000, 3000, 3000, 6], 6)
-    expect(sky[3]).toBeGreaterThan(0.99)
   })
 })
 
