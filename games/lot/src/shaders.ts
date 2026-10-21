@@ -112,10 +112,11 @@ export const contactVolume = contactShadowVolume({ declarations: fogParamsWgsl +
 
 /** Source facade rain streaks, alpha-blended without writing depth. */
 export const stainHooks: SceneHooks = { ...hooks,
+  declarations: `${hooks.declarations}\nvar<private> stainFootprint: f32;`,
+  fragmentStart: `${hooks.fragmentStart ?? ""}\nstainFootprint=max(fwidth(o.uv.x),0.00001);`,
   material: `${hooks.material}
     let u=o.uv.x;
-    let footprint=max(fwidth(u),0.00001);
-    let fine=1.0-smoothstep(0.015,0.08,footprint);
+    let fine=1.0-smoothstep(0.015,0.08,stainFootprint);
     let streak=0.6+(sin(u*23.1+sin(u*5.3)*2.0)*0.25+sin(u*61.7+sin(u*13.1))*0.18)*fine;
     let reach=mix(0.55,1.0,fract(sin(floor(u*4.0)*17.3)*9134.7));
     let fade=1.0-smoothstep(0.0,reach,o.uv.y);
