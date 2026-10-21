@@ -28,7 +28,7 @@ fn officeDetail(p: vec3f, frequency: f32) -> f32 {
 fn blindCookie(p: vec3f, lamp: vec3f) -> f32 {
   // Project to the actual aperture, including its sill and head. The old gobo
   // omitted these bounds and painted stripes onto surfaces above the window.
-  let axis=select(vec3f(0.9,-0.5,-0.08),vec3f(0.6,-0.25,-0.72),lamp.z<0.0);
+  let axis=select(vec3f(0.9,-0.5,-0.5),vec3f(0.6,-0.22,-0.72),lamp.z<0.0);
   let distance=max(0.0,p.x-(${BLINDS.x}));
   let q=p-axis*distance/axis.x;
   let centre=select(4.0,0.0,lamp.z<0.0);
