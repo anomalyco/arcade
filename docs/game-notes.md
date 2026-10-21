@@ -14,6 +14,8 @@ proven animation techniques to animation.md, not here.
 
 ## Proving a change
 
+- **Half-resolution contact-shadow stripes (Night Shift).** Reconstruct depth at the sampled texel's centre and use integer ±1 neighbours for normals (`gpu/contact-shadows.ts`, `volumeWorldAtTexel`). Floating UV neighbour offsets at half-resolution centres can round into the wrong full-resolution texel. A matched 48-frame turn reduced affected-panel luminance-difference RMS from .011944 to .001563 (−86.9%) with shadows enabled; removing material detail or spotlight/blind shadows did not help. Proof: Night Shift `scripts/turn-proof.ts`, `WALK-NOTES.md`, gallery `nightshift-2026-10-20/iteration-17/turn/`.
+
 - **Minified normals and wet reflections (Lot, AR-103).** `gpu/normal-mips.ts` filters decoded unit normals without
   renormalizing lower mips; `gpu/textured-mesh.ts` converts lost vector length into roughness variance. Physical
   specular AA must read the mapped normal, not just the flat asphalt mesh normal. Lot's reflected airlight runs after
