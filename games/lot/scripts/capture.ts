@@ -2,17 +2,13 @@ import { chromium } from "playwright-core"
 import { mkdir, readdir } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
+import { serveDist } from "./serve-dist"
 
 // Kit-approved headless, muted fidelity iterations against the saved Ashwood title frame.
 // Run via HiveMind browser admission. No reference-game server is needed.
 const out = resolve(process.env.LOT_CAPTURE_DIR ?? "captures/lot/current")
 await mkdir(out, { recursive: true })
-const local = process.argv.includes("--local") ? Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
-  const pathname = decodeURIComponent(new URL(request.url).pathname)
-  if (pathname.includes("..")) return new Response("Bad path", { status: 400 })
-  const file = Bun.file(`${import.meta.dir}/../dist${pathname}${pathname.endsWith("/") ? "index.html" : ""}`)
-  return await file.exists() ? new Response(file) : new Response("Not found", { status: 404 })
-} }) : null
+const local = process.argv.includes("--local") ? serveDist(resolve(import.meta.dir, "../dist")) : null
 const cache = `${process.env.HOME}/Library/Caches/ms-playwright`
 const input = process.argv.includes("--input")
 // The shell build rejected Pointer Lock with WrongDocumentError on Mini. Try full

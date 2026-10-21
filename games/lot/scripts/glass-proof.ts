@@ -2,6 +2,7 @@ import { chromium, type Page } from "playwright-core"
 import { mkdir, readdir } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
+import { serveDist } from "./serve-dist"
 
 // Glass, lit-window rooms and contact shadows: Today vs new stills at fixed poses, Ashwood at the same poses, and the
 // paired in-page GPU cost of each feature (Renderer.measure, alternating A/B rounds). Headless and muted; run through
@@ -27,12 +28,7 @@ const TODAY: Modes = { glass: "today", rooms: "today", contact: "today" }
 const ALL: Modes = { glass: "thin", rooms: "rooms", contact: "screen" }
 
 const dist = resolve(import.meta.dir, "../dist")
-const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
-  const pathname = decodeURIComponent(new URL(request.url).pathname)
-  if (pathname.includes("..")) return new Response("Bad path", { status: 400 })
-  const file = Bun.file(`${dist}${pathname}${pathname.endsWith("/") ? "index.html" : ""}`)
-  return (await file.exists()) ? new Response(file) : new Response("Not found", { status: 404 })
-} })
+const server = serveDist(dist)
 const cache = `${process.env.HOME}/Library/Caches/ms-playwright`
 const executablePath = (await readdir(cache)).filter(n => /^chromium_headless_shell-/.test(n)).sort().reverse()
   .map(n => `${cache}/${n}/chrome-headless-shell-mac-arm64/chrome-headless-shell`).find(existsSync)

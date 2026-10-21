@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { chromium } from "playwright-core"
 import { build } from "vite"
+import { serveDist } from "./serve-dist"
 
 /**
  * Temporal stability of the lot in motion: scripted camera paths (walk, strafe, turn) rendered frame by frame on a
@@ -121,12 +122,7 @@ for (const v of variantNames) assert(v in VARIANTS || v.startsWith("eval:"), `un
 
 const dist = process.env.MOTION_BASE ? resolve(process.env.MOTION_BASE) : `${root}/dist`
 if (!process.env.MOTION_BASE) await build({ root, logLevel: "error" })
-const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
-  const pathname = decodeURIComponent(new URL(request.url).pathname)
-  if (pathname.includes("..")) return new Response("Bad path", { status: 400 })
-  const file = Bun.file(`${dist}${pathname}${pathname.endsWith("/") ? "index.html" : ""}`)
-  return await file.exists() ? new Response(file) : new Response("Not found", { status: 404 })
-} })
+const server = serveDist(dist)
 const cache = `${process.env.HOME}/Library/Caches/ms-playwright`
 const executablePath = readdirSync(cache).filter((n) => /^chromium_headless_shell-\d+$/.test(n)).sort().reverse()
   .map((n) => `${cache}/${n}/chrome-headless-shell-mac-arm64/chrome-headless-shell`).find(existsSync)
