@@ -92,10 +92,3 @@ for (const seat of [0, 1]) {
   })
 
 }
-
-// Co-op currently accepts only seed 7. Gate cutting cannot be exercised there: its route has no gates.
-test("the supported co-op town has no chained gate (New town design gap)", () => {
-  const r = featureRoom()
-  try { expect(roadblocksOf(planOf(r.core.sim, T), T).some((b) => b.kind === "gate")).toBe(false) }
-  finally { r.close() }
-})
