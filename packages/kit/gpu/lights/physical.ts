@@ -1,7 +1,7 @@
 import type { LabControl } from "../../lab-panel"
-import { spotShadowWgsl } from "../shadows/spot-shadows"
+import { spotShadowAreaWgsl, spotShadowWgsl } from "../shadows/spot-shadows"
 import { DARKWOOD_BEAM, beamWgsl } from "./beam"
-import { STREET_LAMP_DEFAULTS, packStreetLamp, streetLampWgsl } from "./street"
+import { streetLampWgsl } from "./street"
 import type { SceneHooks } from "../shaders"
 
 /**
@@ -93,7 +93,8 @@ export type PhysicalLightOptions = {
   beam?: { a: string; b: string }
   /**
    * WGSL \`vec4f\` expressions of the shared street lamp profile (\`packStreetLamp\`'s two halves) for
-   * \`SceneLight.street\` lights (lens emitter + roadway photometry, \`lights/street.ts\`). Default: its defaults.
+   * \`SceneLight.street\` lights (lens emitter + roadway photometry, \`lights/street.ts\`). Only shaders given this
+   * compile the street path (profile, lens highlights, PCSS); without it street lights shine unshaped.
    */
   street?: { a: string; b: string }
 }
@@ -179,7 +180,7 @@ fn pbrLightFalloff(L: Light, d: f32, r: f32) -> f32 {
  */
 fn pbrCone(L: Light, ldir: vec3f, spill: f32) -> f32 {
   if (L.cone.w < 2.5) { return 1.0; }
-  if (L.cone.w >= 6.5) { return streetProfile(-ldir, L.cone.xy, pbrStreetA(), pbrStreetB().y); }
+  if (L.cone.w >= 6.5) { return pbrStreetCone(ldir, L.cone.xy); }
   if (L.cone.w >= 4.5) { return kitBeamProfile(kitBeamAngle(dot(-ldir, L.cone.xzy)) / (L.cone.w - 5.0), pbrBeamA(), pbrBeamB()); }
   let axis = vec3f(L.cone.x, -sqrt(max(1.0 - dot(L.cone.xy, L.cone.xy), 0.0)), L.cone.y);
   let c = smoothstep(L.cone.z, L.cone.w - 3.0, dot(-ldir, axis));
@@ -216,14 +217,14 @@ export function physicalLightHooks(opts: PhysicalLightOptions = {}): SceneHooks 
   const knobs = opts.knobs ?? `vec4f(${num(s.specularAA)}, ${num(s.sphereLights)}, ${num(s.envSpecular)}, ${num(s.spill)})`
   const env = opts.env ?? "mix(ambientAt(dir), ambientAt(n), rough * rough)"
   const d = DARKWOOD_BEAM
-  const st = packStreetLamp({ ...STREET_LAMP_DEFAULTS })
-  const street = opts.street ?? { a: `vec4f(${[...st.subarray(0, 4)].map(num).join(", ")})`, b: `vec4f(${[...st.subarray(4, 8)].map(num).join(", ")})` }
+  const street = opts.street
   const beam = opts.beam ?? { a: `vec4f(${[d.inner, d.core, d.coreWidth, d.spill].map(num).join(", ")})`, b: `vec4f(${num(d.spillWidth)}, ${num(d.rings)}, 0.0, 0.0)` }
   return {
-    declarations: `${streetLampWgsl}${physicalLightWgsl}${beamWgsl}${opts.spotShadows ? spotShadowWgsl : ""}
+    declarations: `${street ? streetLampWgsl : ""}${physicalLightWgsl}${beamWgsl}${opts.spotShadows ? spotShadowWgsl + (street ? spotShadowAreaWgsl : "") : ""}
 fn pbrKnobs() -> vec4f { return ${knobs}; }
-fn pbrStreetA() -> vec4f { return ${street.a}; }
+${street ? `fn pbrStreetA() -> vec4f { return ${street.a}; }
 fn pbrStreetB() -> vec4f { return ${street.b}; }
+fn pbrStreetCone(ldir: vec3f, arm: vec2f) -> f32 { return streetProfile(-ldir, arm, pbrStreetA(), pbrStreetB().y); }` : "fn pbrStreetCone(ldir: vec3f, arm: vec2f) -> f32 { return 1.0; }"}
 fn pbrBeamA() -> vec4f { return ${beam.a}; }
 fn pbrBeamB() -> vec4f { return ${beam.b}; }
 fn pbrEnvRadiance(dir: vec3f, rough: f32, n: vec3f) -> vec3f { return ${env}; }
@@ -237,11 +238,12 @@ fn pbrEnvSpecular(n: vec3f, V: vec3f, rough: f32, f0: vec3f, ao: f32) -> vec3f {
 }`,
     fragmentStart: `pbrAAKernel = pbrSpecularAAKernel(${opts.aaNormal ?? "normalize(o.normal)"}, pbrKnobs().x);`,
     lightAttenuation: `var att = power * pbrLightFalloff(L, d3, r) * pbrCone(L, ldir, pbrKnobs().w);${opts.spotShadows ? `
-    if (att > 0.0005) {
+    if (att > 0.0005) {${street ? `
       // A street lamp's lens softens its shadows with distance from the caster (contact hardening).
       let lensR = select(0.0, sqrt(L.cone.z * (L.cone.w - 7.0)) * pbrStreetB().w, L.cone.w >= 6.5);
       if (lensR > 0.01) { att *= spotShadowVisArea(i, world, n, lensR, fract(sin(dot(world, vec3f(12.9898, 78.233, 37.719))) * 43758.5453 + F.cam.w * 0.618034)); }
-      else { att *= spotShadowVis(i, world, n); }
+      else { att *= spotShadowVis(i, world, n); }` : `
+      att *= spotShadowVis(i, world, n);`}
     }` : ""}`,
     diffuseTerm: "let diffuse = max(ndl, 0.0) / PI;",
     lightLeak: "0.0",
@@ -249,14 +251,14 @@ fn pbrEnvSpecular(n: vec3f, V: vec3f, rough: f32, f0: vec3f, ao: f32) -> vec3f {
     specularTerm: `if (att * vis > 0.0) {
       var sl = ldir;
       var sd = d3;
-      var sr = L.extra.z;
+      var sr = L.extra.z;${street ? `
       if (L.cone.w >= 6.5) {
         // Representative point (Karis): the lens point nearest the mirror ray, widened by the lens half-width.
         let lp = streetLensPoint(vec3f(L.pos.x, hl, L.pos.z), L.cone.xy, L.cone.z, L.cone.w - 7.0, world, reflect(-V, n));
         sd = max(length(lp - world), 0.05);
         sl = (lp - world) / sd;
         sr = L.cone.w - 7.0;
-      }
+      }` : ""}
       let sp = pbrSpecular(n, V, sl, shin, sd, sr * pbrKnobs().y);
       out.spec += L.color.rgb * att * vis * sp.x;
       pbrSpecF += L.color.rgb * att * vis * sp.y;

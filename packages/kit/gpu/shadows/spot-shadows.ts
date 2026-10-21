@@ -226,7 +226,10 @@ fn spotShadowVis(light: u32, world: vec3f, n: vec3f) -> f32 {
   }
   return 1.0;
 }
+`
 
+/** WGSL after \`spotShadowWgsl\`: \`spotShadowVisArea\`, for scenes with lens emitters (\`lights/street.ts\`). */
+export const spotShadowAreaWgsl = /* wgsl */ `
 /**
  * Contact-hardening visibility from an emitter of radius \`lens\` (m), PCSS-style: the mean blocker depth over the
  * lens's footprint gives the penumbra w = lens · (d − d_blocker) / d_blocker; eight comparisons on a Vogel disc of
