@@ -75,7 +75,7 @@ root.traverse(object=>{
         c.convertLinearToSRGB()
         batch.v.push(p.x,p.y,p.z,n.x,n.y,n.z,c.r,c.g,c.b,glow?MAT.glow:MAT.lit,glow?m.emissiveIntensity:0)
         // Builder UVs are metres. Our tile atlas has four cells; terrazzo has one slab.
-        const uvScale=m.name.startsWith("tile_green") ? 0.25/0.152 : m.name==="terrazzo" ? 1/0.6 : 1
+        const uvScale=m.name.startsWith("tile_green") ? 0.25/0.152 : m.name==="terrazzo" ? 1/0.6 : m.name==="linoleum" ? 1/0.305 : 1
         batch.uv.push((uv?.getX(k)??0)*uvScale,(uv?.getY(k)??0)*uvScale)
       }
     }

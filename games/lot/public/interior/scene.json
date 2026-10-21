@@ -68,7 +68,7 @@
     {
       "file": "mesh-8.bin.gz",
       "name": "terrazzo",
-      "roughness": 0.15,
+      "roughness": 0.08,
       "metalness": 0,
       "alpha": 1,
       "triangles": 22
