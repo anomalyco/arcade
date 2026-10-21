@@ -7,7 +7,7 @@ import hashlib
 import json
 import sys
 from pathlib import Path
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 
 def main():
@@ -52,15 +52,15 @@ def main():
         hi = Vector([max(p[k] for p in points) for k in range(3)])
         centre = Vector(((hi.x+lo.x)/2, (hi.y+lo.y)/2, lo.z))
         scale = 1.8 / max(hi-lo)
-        # Apply only to vertices in this disposable review scene.
+        # Normalize the disposable scene with object transforms, avoiding slow
+        # per-vertex RNA writes on dense imports. Source geometry stays intact.
+        worlds = {obj: obj.matrix_world.copy() for obj in meshes}
         for obj in meshes:
-            world = obj.matrix_world.copy()
-            for vertex in obj.data.vertices:
-                vertex.co = (world @ vertex.co - centre) * scale
             obj.parent = None
-            obj.matrix_world.identity()
+            obj.matrix_world = Matrix.Translation(-centre * scale) @ Matrix.Scale(scale, 4) @ worlds[obj]
+            obj.data.calc_loop_triangles()
         record = {"id": path.stem, "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "bytes": path.stat().st_size,
-                  "bounds": [list(lo), list(hi)], "triangles": sum(len(p.vertices)-2 for obj in meshes for p in obj.data.polygons),
+                  "bounds": [list(lo), list(hi)], "triangles": sum(len(obj.data.loop_triangles) for obj in meshes),
                   "materials": [m.name for obj in meshes for m in obj.data.materials]}
         target = Vector((0, 0, (hi.z-lo.z)*scale*.5))
         for name, location in [("front", (0, -4, 1.4)), ("three-quarter", (3, -4, 2.5)), ("back", (-3, 4, 2.5))]:

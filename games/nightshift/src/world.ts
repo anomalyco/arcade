@@ -263,7 +263,7 @@ export function buildWorld() {
   desk(m,0,-5.55,3.25)
   keyboard(m,-.74,.795,-5.15)
   phone(m);binders(m,0.65,0.795,-5.82,9)
-  walls.push([.73,-4.85,1.35,-4.25])
+  walls.push([.34,-4.85,.96,-4.25])
    // Flat, broken dried stain rather than a raised torus.
    for(let i=0;i<60;i++) {
      if(i%13===0||i%17===0)continue

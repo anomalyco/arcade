@@ -70,7 +70,7 @@ async function main() {
     const flicker=lampFlicker("fluorescent",87,time,settings.flicker).level, led=call.phase==="ringing"?0.18+0.82*ringEnvelope(time):call.phase==="ended"?0.015:0.7
     const lampDefs:SceneLight[]=[
       {id:1,x:-3.55,y:2.9,h:2.4,r:11,color:[1,0.43,0.14],power:settings.sodium,size:0.28,spot:{axis:[0.9,-0.5,-0.5],cosOuter:0.45,cosInner:0.75}},
-      {id:2,x:-3.55,y:-.75,h:2.45,r:10,color:[1,0.43,0.14],power:settings.sodium*0.80,size:0.32,spot:{axis:[0.6,-0.25,-0.72],cosOuter:0.88,cosInner:0.97}},
+      {id:2,x:-3.55,y:-.75,h:2.45,r:10,color:[1,0.43,0.14],power:settings.sodium*settings.deskSodium,size:0.32,spot:{axis:[0.6,-0.25,-0.72],cosOuter:0.88,cosInner:0.97}},
       {id:3,x:0,y:0,h:2.80,r:7,color:[0.78,0.89,0.87],power:settings.fluorescent*flicker,size:0.35,spot:{axis:[0,-1,0],cosOuter:0.15,cosInner:0.5}},
       {id:4,x:-0.74,y:-5.48,h:1.14,r:2.7,color:[0.16,1,0.48],power:settings.crt,size:0.19,spot:{axis:[0,-0.35,0.937],cosOuter:0.05,cosInner:0.5}},
       {id:5,x:props.indicator[0],y:props.indicator[2],h:props.indicator[1]+.004,r:0.18,color:[1,0.025,0.004],power:0.0005*led,size:0.008,unshadowed:true},
