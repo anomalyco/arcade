@@ -342,6 +342,16 @@ export class CoopView {
     return out
   }
 
+  /** The rig of each remote survivor drawn by the last `bodies` (on foot, in sight), for soft shadows. */
+  forEachDrawnRig(vision: Vision, visit: (bones: Survivor["bones"]) => void): void {
+    for (const slot of this.others) {
+      const p = slot.survivor
+      if (p.vehicleId || this.hidden(slot.id) || actorVisibility(vision, p.x, p.y) <= 0.05) continue
+      const avatar = this.avatars.get(slot.index)?.avatar
+      if (avatar) visit(avatar.bones)
+    }
+  }
+
   /** Menu, roster and name tags; call after the camera is updated. */
   overlay(cam: Camera, w: number, h: number, town: Town, vision: Vision, localPlayer?: { x: number; y: number }): void {
     this.hud.update()

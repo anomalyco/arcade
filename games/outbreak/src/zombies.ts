@@ -996,6 +996,35 @@ export class ZombieCrowdRenderer {
     this.partCounts[partIndex] = count + 1
   }
 
+  /** Bodies drawn this frame for soft shadows: bone offset, hidden mask, scale and the origin it scales about (6 each). */
+  private shadowBodies = new Float32Array(INITIAL_AGENT_CAPACITY * 6)
+  private shadowCount = 0
+
+  private noteShadowBody(bOff: number, hidden: number): void {
+    if ((this.shadowCount + 1) * 6 > this.shadowBodies.length) {
+      const grown = new Float32Array(this.shadowBodies.length * 2)
+      grown.set(this.shadowBodies)
+      this.shadowBodies = grown
+    }
+    const o = this.shadowCount++ * 6
+    const b = this.shadowBodies
+    b[o] = bOff
+    b[o + 1] = hidden
+    b[o + 2] = this.agentScale
+    b[o + 3] = this.agentOx
+    b[o + 4] = this.agentOy
+    b[o + 5] = this.agentOz
+  }
+
+  /** Every body drawn by the last `draw` (living, knocked down and dead), as rig bone frames for soft shadows. */
+  forEachDrawnBody(visit: (bones: Float32Array, off: number, hidden: number, scale: number, origin: readonly [number, number, number]) => void): void {
+    const b = this.shadowBodies
+    for (let i = 0; i < this.shadowCount; i++) {
+      const o = i * 6
+      visit(this.currBones, b[o]!, b[o + 1]!, b[o + 2]!, [b[o + 3]!, b[o + 4]!, b[o + 5]!])
+    }
+  }
+
   private emitBone(
     bOff: number,
     boneIdx: number,
@@ -1007,6 +1036,7 @@ export class ZombieCrowdRenderer {
     flash: number,
     alpha: number,
   ): void {
+    if (boneIdx === 0) this.noteShadowBody(bOff, hiddenMask)
     if ((hiddenMask & (1 << boneIdx)) !== 0) return
     const count = this.partCounts[partIndex]!
     if (count >= MAX_INSTANCES_PER_PART) return
@@ -1146,6 +1176,7 @@ export class ZombieCrowdRenderer {
     const models = refined ? (undead ? this.refinedModels! : this.v1RefinedModels!) : this.models
     for (let i = 0; i < PART_COUNT; i++) this.poolBatches[i]!.model = this.ghostPoolBatches[i]!.model = models[i]!
     if (!refined) this.partTint.fill(1)
+    this.shadowCount = 0
     this.partCounts.fill(0)
     this.ghostPartCounts.fill(0)
     this.accessories.begin()

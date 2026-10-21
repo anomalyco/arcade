@@ -90,6 +90,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   var full = L.pos.w + 0.5;
   var a = vec3f(FAR, FAR, 0.0);
   var b = vec3f(FAR, FAR, 0.0);
+  // Nearest "volume-only" round caster (m.y 2): surfaces ignore it (soft capsule shadows draw that body), volumes read it.
+  var soft = FAR;
   let first = u32(L.extra.x);
   let n = min(u32(L.extra.y), ${MAX_OCCLUDERS}u - first);
   for (var i = 0u; i < n; i++) {
@@ -112,6 +114,10 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
         hit = t1 > 0.0 && t0 < full;
       }
       h = min(h, hl - 0.25);
+      if (m.y > 1.5) {
+        if (hit) { soft = min(soft, t0); }
+        continue;
+      }
     } else {
       hit = slab(o.x, dir.x, r.x, r.z, &t0, &t1) && slab(o.y, dir.y, r.y, r.w, &t0, &t1) && t0 < full;
       t1 = max(t1, t0);
@@ -129,7 +135,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     }
   }
   polarOut[idx * 2u] = vec4f(full, a);
-  polarOut[idx * 2u + 1u] = vec4f(b, 0.0);
+  polarOut[idx * 2u + 1u] = vec4f(b, soft);
 }
 `
 
@@ -170,6 +176,13 @@ export type SceneHooks = {
   shadowTaps?: 5 | 9
   lightAttenuation?: string
   lightAccumulate?: string
+  /**
+   * Runs after a light's polar shadow and before it is accumulated; multiply extra visibility into `vis` (soft capsule
+   * shadows: `vis *= capsuleLightVis(i);`). In scope: `i`, `L`, `lp`, `hl`, `dv`, `dPlan2`, `d3`, `att`, `vis`.
+   */
+  lightVisibility?: string
+  /** Extra ambient occlusion (0..1, 1 = none) multiplied into the baked floor AO, so it is full on ambient and half on direct light. */
+  occlusion?: string
   /**
    * Replaces the per-light glossy highlight in `lightSum` (Blinn–Phong plus the floor mirror streak). In scope: `L`,
    * `ldir`, `n`, `V`, `shin`, `att`, `vis`, `d3`, `out`. `lights/physical.ts` puts GGX here.
@@ -496,6 +509,7 @@ fn lightSum(world: vec3f, n: vec3f, V: vec3f, shin: f32, wrap: f32) -> Lit {
       }
       vis = shadowAt(i, lp, hl, L.extra.z, sp, world.y);
     }
+    ${hooks.lightVisibility ?? ""}
     out.diff += L.color.rgb * att * (diffuse * vis + ${hooks.lightLeak ?? "0.035"});
     ${hooks.lightAccumulate ?? ""}
     ${hooks.postLightMaterial ? "" : hooks.specularTerm ?? `if (shin > 0.0) {
@@ -765,7 +779,7 @@ fn shadeScene(o: VOut) -> vec4f {
     amb += ${hooks.bounce ?? "bounceAt(o.world.xz + n.xz * 0.3) * 0.32"};
     // Occlusion from the baked map, strongest at floor level, plus a vertical gradient down walls and furniture.
     let low = 1.0 - smoothstep(0.0, 0.9, o.world.y);
-    let ao = mix(1.0, 1.0 - fd.r * 0.85, low);
+    let ao = mix(1.0, 1.0 - fd.r * 0.85, low)${hooks.occlusion ? ` * (${hooks.occlusion})` : ""};
     // Multi-bounce AO: coloured surfaces return some occluded ambient light instead of turning black.
     let a = 2.0404 * albedo - vec3f(0.3324);
     let b = -4.7951 * albedo + vec3f(0.6417);

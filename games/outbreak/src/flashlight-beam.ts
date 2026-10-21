@@ -47,9 +47,10 @@ fn lowShadow(t0: f32, t1: f32, h: f32, d: f32, y: f32, hl: f32) -> f32 {
 fn rayVis(base: u32, ray: u32, d: f32, y: f32, hl: f32) -> f32 {
   let p0 = polar[(base + ray) * 2u];
   var v = 1.0 - smoothstep(p0.x - 0.03, p0.x + 0.06, d);
-  if (v <= 0.0 || d <= p0.y - 0.04) { return v; }
   let p1 = polar[(base + ray) * 2u + 1u];
-  return v * lowShadow(p0.y, p0.z, p0.w, d, y, hl) * lowShadow(p1.x, p1.y, p1.z, d, y, hl);
+  if (v <= 0.0 || d <= min(p0.y, p1.w) - 0.04) { return v; }
+  // p1.w: the nearest body cast only for the shaft while soft capsule shadows draw it on surfaces (0.27 m, 1.72 m).
+  return v * lowShadow(p0.y, p0.z, p0.w, d, y, hl) * lowShadow(p1.x, p1.y, p1.z, d, y, hl) * lowShadow(p1.w, p1.w + 0.54, min(1.72, hl - 0.25), d, y, hl);
 }
 
 /** Visibility of a 3D point from the lens, interpolated between the two nearest polar rays. */

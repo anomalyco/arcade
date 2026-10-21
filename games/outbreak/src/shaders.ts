@@ -9,6 +9,7 @@ import {
   type SceneHooks,
 } from "@arcade/kit/gpu/shaders"
 import { FOLIAGE_LIMB_AUX, foliageWindDeclarationsWgsl } from "@arcade/kit/gpu/foliage"
+import { capsuleShadowWgsl } from "@arcade/kit/gpu/shadows/capsule-shadows"
 import { flashlightVolumeShader } from "./flashlight-beam"
 import { lampFogVolume } from "./air/lamp-fog"
 import { outbreakFogOfWarDeclarationsWgsl, visibilityFieldShader } from "./fog-of-war"
@@ -78,6 +79,9 @@ export const outbreakSceneHooks: SceneHooks = {
       if (att <= 0.0035) { continue; }
     }`,
   lightAccumulate: "if (L.cone.w > 1.5) { outbreakFlashIrr = att * diffuse * vis; }",
+  // Soft character shadows (AR-113, soft-shadows/): each light's capsule visibility and the contact shadow as AO.
+  lightVisibility: "vis *= capsuleLightVis(i);",
+  occlusion: "capsuleOcclusion",
   // Soft Bean (outbreakWrap = its wrap + 1) takes its own light wrap; everything else keeps the shared one.
   diffuseTerm: "let wrapK = select(wrap, outbreakWrap - 1.0, outbreakWrap > 0.5); let diffuse = max((ndl + wrapK) / (1.0 + wrapK), 0.0);",
   wallDirectScale: "mix(0.18, 0.34, smoothstep(0.0, 1.5, o.world.y))",
@@ -93,7 +97,7 @@ export const outbreakSceneHooks: SceneHooks = {
       let along = dot(dv, abs(L.cone.yx));
       if (world.y > 2.75 || dot(dv, L.cone.xy) < -L.extra.x || along < L.extra.y + 1.0 || along > -1.25 - L.cone.z) { continue; }
     } else if ((L.cone.w < -0.5 && (world.y > 2.75 || (outbreakInRoom && OL.u5.w < 0.5))) || (L.cone.w > 0.5 && dot(dv, L.cone.xy) <= 0.0)) { continue; }`,
-  material: "let inRoom = interior(o.world.xz + select(vec2f(0.0), n.xz * 0.28, mat == 4)); outbreakInRoom = inRoom;",
+  material: "let inRoom = interior(o.world.xz + select(vec2f(0.0), n.xz * 0.28, mat == 4)); outbreakInRoom = inRoom; capsulePrepare(o.world, n, mat == 12 || mat == 14);",
   postLightMaterial: `${outbreakSurfaceMaterialWgsl}
     ${interiorMaterialWgsl(outbreakInteriorRefs, true)}
     let isPropTone = mat == 0 || mat == 10 || mat == 24;
@@ -117,6 +121,7 @@ export const outbreakSceneHooks: SceneHooks = {
 ${foliageWindDeclarationsWgsl}
 ${outbreakLightingDeclarationsWgsl}
 ${outbreakBounceSceneWgsl}
+${capsuleShadowWgsl}
 ${outbreakSurfaceMaterialDeclarationsWgsl}
 ${outbreakPuddleDeclarationsWgsl}
 /** Active building slot i (0..7) has the L-plan bungalow footprint (u17.w bits 0..7). */
@@ -203,7 +208,7 @@ ${outbreakFogOfWarDeclarationsWgsl}
 ${interiorDeclarationsWgsl(outbreakInteriorRefs)}
 ${outbreakHeroWgsl}
 ${reflectionDeclarationsWgsl}`,
-  directional: "mix(mix(vec3f(0.42, 0.50, 0.62), vec3f(1.48, 0.84, 0.38), smoothstep(0.42, 0.22, F.monitorBounds.y) * (1.0 - smoothstep(0.25, 0.75, F.monitorBounds.w))), vec3f(1.38, 1.14, 0.82), F.monitorBounds.w) * select(select(fd.g * 0.42, 0.03, abs(n.y) < 0.5), 1.0, !inRoom || o.world.y > 2.8) * evalCanopyCookie(o.world, inRoom) * F.ambient.w * select(max(0.0, dot(n, F.monitorBounds.xyz)), max(0.0, (dot(n, F.monitorBounds.xyz) + 0.52) / 1.52), mat == 22)",
+  directional: "mix(mix(vec3f(0.42, 0.50, 0.62), vec3f(1.48, 0.84, 0.38), smoothstep(0.42, 0.22, F.monitorBounds.y) * (1.0 - smoothstep(0.25, 0.75, F.monitorBounds.w))), vec3f(1.38, 1.14, 0.82), F.monitorBounds.w) * select(select(fd.g * 0.42, 0.03, abs(n.y) < 0.5), 1.0, !inRoom || o.world.y > 2.8) * evalCanopyCookie(o.world, inRoom) * capsuleSun * F.ambient.w * select(max(0.0, dot(n, F.monitorBounds.xyz)), max(0.0, (dot(n, F.monitorBounds.xyz) + 0.52) / 1.52), mat == 22)",
   cutaway: `
       if (OL.u17.z > 0.001 && OL.u17.z < 0.999 && bayer4x4(o.pos) > OL.u17.z) { discard; }
       if ((i32(round(o.mat)) == 21 || o.world.y > 2.801) && roofCut(o.world, i32(round(o.aux)), o.pos)) { discard; }
@@ -410,7 +415,7 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
     }
     col = mix(col, applySceneLightBounceAndHaze(o.world, n, col, inRoom, mat), nightLamps);
     ${reflectionSurfaceWgsl}
-    ${includeLampAirAndActorShadow ? "if (mat != 12 && mat != " + MAT_MIRROR + ") { col *= evalActorGroundShadow(o.world, n, inRoom); }" : ""}
+    ${includeLampAirAndActorShadow ? "if (mat != 12 && mat != " + MAT_MIRROR + " && !capsuleShadowsOn()) { col *= evalActorGroundShadow(o.world, n, inRoom); }" : ""}
     // Darken cutaway wall-top molding (y = 2.73..2.83) so interior walls have a crisp dark charcoal cap
     if (o.world.y > 2.72 && o.world.y < 2.83 && n.y > 0.72) {
       col *= 0.08;
