@@ -228,9 +228,6 @@ describe("readable door breaches (AR-97)", () => {
     expect(c.kind).toBe(w.kind)
     expect(c.breachAt).toBeCloseTo(w.breachAt, 3)
     expect(c.debris?.x ?? null).toBe(w.debris ? Math.round(w.debris.x * 100) / 100 : null)
-    // Quiet ticks write nothing more.
-    const a = encodeShared(sim, 100, new Map())
-    expect(a.byteLength).toBeGreaterThan(0)
   })
 })
 

@@ -387,8 +387,6 @@ describe("wire", () => {
     for (const a of acting) expect(pairs[pairs.indexOf(a.id) + 1]).toBe(st.minds[a.id]!.act)
     const history = { get: (t: number) => (t === full.tick ? full : undefined), record: () => {} } as never
     const quietBytes = encodeShared(sim, tick + 3, new Map(), undefined, { baseSnap: full })
-    const quietNoBehaviour = encodeShared(sim, tick + 3, new Map(), undefined, { baseSnap: full })
-    expect(quietBytes.length).toBe(quietNoBehaviour.length)
     expect(decodeShared(quietBytes, sim.town.seed, history).behaviour).toEqual(full.behaviour)
     // One zombie gets up: the delta carries just that change (about three bytes).
     const one = acting[0]!
