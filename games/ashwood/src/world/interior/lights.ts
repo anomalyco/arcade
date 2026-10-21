@@ -5,6 +5,7 @@ import type { Lamp } from "../context"
 import { renderState } from "../../render/shared"
 import { type Builder, CEIL_Y, DOOR_H, FLOOR_Y, M, PANEL_ON, PANEL_WARM, T, TUBE, flicker, fluorescentPanel, glow, louvre, paint, solidsOf, troffer } from "./kit"
 import { placeModels } from "./props"
+import { power } from "../power"
 
 // Light fixtures: each builds its visible fixture AND (when on) registers its real lamp, so no emissive "on" surface
 // exists without a light near it (building program rule). Intensities are calibrated to the current exposure:
@@ -257,9 +258,10 @@ export function emergencyPack(b: Builder, x: number, y: number, z: number, nx: n
   for (const s of [-1, 1]) {
     const h = m.clone().multiply(T(s * 0.12, 0.12, 0.03, 0, -0.5))
     b.cyl(M.beige, h, 0.035, 0.045, 0.07, 12)
-    b.cyl(on ? M.bulbWarm : M.diffuserOff, h.clone().multiply(T(0, 0.036, 0)), 0.03, 0.03, 0.005, 12, { cast: false })
+    b.cyl(on ? M.emergencyBulb : M.diffuserOff, h.clone().multiply(T(0, 0.036, 0)), 0.03, 0.03, 0.005, 12, { cast: false })
   }
-  if (on) b.lamp({ kind: "incandescent", position: [x + nx * 0.25, y + 0.1, z + nz * 0.25], direction: [nx * 0.6, -0.8, nz * 0.6], color: [1, 0.8, 0.55], intensity: 2.5, range: 6, angle: 0.8, penumbra: 0.6, size: 0.06 })
+  // Battery-fed: stays on when the mains are out (world/power.ts).
+  if (on) power.exempt(b.lamp({ kind: "incandescent", position: [x + nx * 0.25, y + 0.1, z + nz * 0.25], direction: [nx * 0.6, -0.8, nz * 0.6], color: [1, 0.8, 0.55], intensity: 2.5, range: 6, angle: 0.8, penumbra: 0.6, size: 0.06 }))
 }
 
 /** Exit sign over a door: box on the wall at (x, z) with outward normal (nx, nz), lamp included. */

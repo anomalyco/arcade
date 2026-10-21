@@ -255,7 +255,7 @@ export function stageListeningRoom(s: S3): (t: number) => void {
   const plainPad = documentMesh([{ id: "blotter_plain", position: [BLOTTER.x, DESK_Y, BLOTTER.z], normal: [0, 1, 0], rotation: -0.03, offset: 0.0055, curl: 0, pin: "none" }])
   plainPad.name = "doc:blotter_plain"
   b.small.add(plainPad)
-  const warn = documentMesh([{ id: "note_dont_turn_on", position: [NOTE.x, DESK_Y, NOTE.z], normal: [0, 1, 0], rotation: 0.18, offset: 0.0085, curl: 0.04, pin: "none" }])
+  const warn = documentMesh([{ id: "note_dont_turn_on", position: [NOTE.x, DESK_Y, NOTE.z], normal: [0, 1, 0], rotation: 0.18, offset: 0.0125, curl: 0.04, pin: "none" }])
   warn.name = "doc:note_dont_turn_on"
   const by = DESK_Y - b.oy
   const noteBlood = bloodMesh(

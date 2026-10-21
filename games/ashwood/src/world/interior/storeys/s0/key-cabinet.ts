@@ -188,22 +188,22 @@ export function keyCabinetOn(b: Builder, wallX: number, y: number, z: number, o:
   const slot = new THREE.Mesh(new THREE.BoxGeometry(0.0025, 0.012, 0.002), new THREE.MeshStandardNodeMaterial({ color: 0x111111 }))
   slot.position.set(W - 0.035, 0, -0.0165)
   const label = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.04), plate(["KEYS"], 0.12, 0.04, "#1d1f1e", "#e8e2cf"))
-  label.position.set(W / 2, H / 2 - 0.06, -0.0065)
+  label.position.set(W / 2, H / 2 - 0.06, -0.01)
   label.rotation.y = Math.PI
   door.add(lock, slot, label)
   if (o.card) {
     const card = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 0.035), plate(o.card, 0.1, 0.035, "#d9d2bd", "#1a1a1a"))
-    card.position.set(W / 2, H / 2 - 0.105, -0.0065)
+    card.position.set(W / 2, H / 2 - 0.105, -0.01)
     card.rotation.y = Math.PI
     door.add(card)
   }
   if (o.tag) {
     // A manila tag on a string from the lock: large enough to read at arm's length.
     const tag = new THREE.Mesh(new THREE.PlaneGeometry(0.17, 0.08), plate(o.tag, 0.17, 0.08, "#c4b48a", "#1a1a1a", 2000))
-    tag.position.set(W - 0.11, -0.075, -0.0075)
+    tag.position.set(W - 0.11, -0.075, -0.0115)
     tag.rotation.set(0, Math.PI, 0.06)
     const str = new THREE.Mesh(new THREE.BoxGeometry(0.0015, 0.04, 0.0015), new THREE.MeshStandardNodeMaterial({ color: 0xd8d0b8 }))
-    str.position.set(W - 0.045, -0.02, -0.009)
+    str.position.set(W - 0.045, -0.02, -0.013)
     str.rotation.z = -0.6
     door.add(tag, str)
   }

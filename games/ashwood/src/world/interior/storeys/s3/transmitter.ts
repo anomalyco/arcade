@@ -12,7 +12,8 @@ import { transmitter } from "./transmitter-state"
 // The 3-08 radio-room beat (story state: ./transmitter-state.ts). The station's radio went silent two days ago: TX-1,
 // the transmitter on the east wall, is OFF when the player arrives (lamp dark, needle at rest, no carrier). Three
 // interactions, each aim + E:
-//   1. TX POWER switch → heavy clunk, ~2 s warm-up hum, the ON AIR lamp lights, the needle rises.
+//   1. MAIN POWER switch → the station's mains come back (world/power.ts; the building is dark until now): a heavy
+//      breaker clunk, the tubes striking room by room, ~2 s warm-up hum, the ON AIR lamp lights, the needle rises.
 //   2. the desk mic → the player's report and County's crackled reply, as subtitles with static bursts (and the
 //      voice takes `story-call-player-m` / `story-call-reply` once they're in the manifest) → onTransmitted().
 //   3. the operator slumped over the desk → a push; he slides off the chair to the floor and the warning scrawled on
@@ -237,6 +238,11 @@ export function transmitterRack(b: Builder): RadioRoom {
       const c = toWorld(0, 0.9, FRONT)
       hum.at(c.x, c.y + b.oy, c.z)
     }
+    // The breaker: the station's mains back on (world/power.ts, via src/game/power.ts on this phase). Tubes tick and
+    // pop as they strike around the room over the next second and a half.
+    for (const [dx, dz, d] of [[-3.5, 2.0, 0.35], [-6.0, -4.0, 0.7], [-2.0, -7.5, 1.05], [-8.0, 4.5, 1.35]] as const)
+      setTimeout(() => hooks.sfx?.play("light-fluoro-flicker", { bus: "ambience", pos: { x: TX_X + dx, y: b.oy + FLOOR_Y + 3, z: TX_Z + dz }, ref: 2, rolloff: 1.2, gain: 0.7 }), d * 1000)
+    hooks.sfx?.play("hor-sub-rumble", { bus: "ambience", gain: 0.35, rate: 1.4 })
     transmitter.set("warming")
     preloadLines([playerVoice("call-player"), "story-call-reply"])
   }
@@ -269,9 +275,9 @@ export function transmitterRack(b: Builder): RadioRoom {
 
   type Target = { at: THREE.Vector3; label: string; act: () => void; r: number } | null
   const targets = (): Target[] => [
-    transmitter.phase === "off" ? { at: swWorld, label: "TX power: switch on", act: switchOn, r: 0.25 } : null,
+    transmitter.phase === "off" ? { at: swWorld, label: "Main power: switch on", act: switchOn, r: 0.25 } : null,
     transmitter.phase === "off" || transmitter.phase === "warming"
-      ? { at: micWorld, label: transmitter.phase === "off" ? "Mic: dead, no carrier (TX-1 is off)" : "Mic: warming up…", act: noop, r: 0.2 }
+      ? { at: micWorld, label: transmitter.phase === "off" ? "Mic: dead. No power" : "Mic: warming up…", act: noop, r: 0.2 }
       : null,
     transmitter.phase === "on" ? { at: micWorld, label: "Mic: key and report", act: transmit, r: 0.2 } : null,
     transmitter.phase === "transmitted" && operator ? { at: operator.chest, label: "Move the body", act: reveal, r: 0.4 } : null,
@@ -471,7 +477,7 @@ function faceplate() {
     // TX POWER.
     const sx = w / 2 - SW_U
     const sy = y(SW_Y)
-    text("TX POWER", sx, sy - 0.17, 0.05, "#f2ead6", 900)
+    text("MAIN POWER", sx, sy - 0.17, 0.05, "#f2ead6", 900)
     text("ON", sx, sy - 0.115, 0.034, "#f2ead6", 800)
     text("OFF", sx - 0.13, sy, 0.034, "#f2ead6", 800)
     g.strokeStyle = "#f2ead6"

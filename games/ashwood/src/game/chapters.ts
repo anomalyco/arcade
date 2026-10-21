@@ -6,7 +6,7 @@ import { SHED, TRUCK_PARK } from "./escape/places"
 import type { ItemId, NoteId } from "./inventory"
 import { keyCabinet, securityKeyBox } from "../world/interior/search-spots"
 import { type Checkpoint, restorePlayer, setLastCheckpoint } from "./checkpoint"
-import { CHAIN, story } from "./objectives"
+import { objectiveText, story } from "./objectives"
 import { setObjective } from "./objective"
 
 // Dev chapter select: jump straight to a point in the story without the intro or the climb. Each chapter is a
@@ -40,11 +40,11 @@ const Y3 = Y0 + 3 * BUILDING.main.storeyHeight
 export const CHAPTERS: readonly Chapter[] = [
   { id: "arrival", label: "Arrival (by the car)", stage: 0, phase: "off", visited308: false, at: [PARKED.x + 1.8, 0, PARKED.z - 1.0], yaw: 0 },
   { id: "lobby", label: "Lobby", stage: 0, phase: "off", visited308: false, at: [0, Y0, 17.5], yaw: 0 },
-  { id: "3-08", label: "3-08 entered (transmitter off)", stage: 2, phase: "off", visited308: true, at: [3.4, Y3, -3.6], yaw: 2.6, pitch: -0.05 },
-  { id: "tx-on", label: "Transmitter on (use the mic)", stage: 2, phase: "on", visited308: true, at: [9.0, Y3, -12.85], yaw: 0, pitch: -0.45 },
+  { id: "3-08", label: "3-08 entered (power out)", stage: 2, phase: "off", visited308: true, at: [3.4, Y3, -3.6], yaw: 2.6, pitch: -0.05 },
+  { id: "tx-on", label: "Power on (use the mic)", stage: 2, phase: "on", visited308: true, at: [9.0, Y3, -12.85], yaw: 0, pitch: -0.45 },
   { id: "after-call", label: "After the call (push the body)", stage: 3, phase: "transmitted", visited308: true, at: [8.45, Y3, -12.45], yaw: 0.05, pitch: -0.5 },
   { id: "after-reveal", label: "After the reveal (Hide, hunter on)", stage: 4, phase: "revealed", visited308: true, at: [8.45, Y3, -12.45], yaw: 0.05, pitch: -0.5 },
-  { id: "ambush", label: "Lift ambush armed (storey 3 lift lobby)", stage: 2, phase: "off", visited308: true, at: [-37.9, Y3, 17.2], yaw: Math.PI },
+  { id: "ambush", label: "Lift ambush armed (storey 3 lift lobby, power on)", stage: 2, phase: "on", visited308: true, at: [-37.9, Y3, 17.2], yaw: Math.PI },
   { id: "hide", label: "Hidden: find the truck keys (3-08)", stage: 5, phase: "aftermath", visited308: true, at: [7.6, Y3, -12.6], yaw: 0.1, pitch: -0.4 },
   { id: "keys-trail", label: "Cabinet tag read (go to Security 0-38)", stage: 7, phase: "aftermath", visited308: true, at: [-49.4, Y0, 3.4], yaw: -1.57, notes: ["signout", "cabinet-tag"] },
   { id: "cabinet-key", label: "Cabinet key in hand (Security 0-38)", stage: 8, phase: "aftermath", visited308: true, at: [15.6, Y0, 14.5], yaw: -1.57, items: ["cabinet-key"], notes: ["signout", "cabinet-tag"] },
@@ -100,7 +100,7 @@ export async function jumpToChapter(c: Chapter, player: Player, groundY: (x: num
     restorePlayer(player, cp)
     story.stage = cp.stage
     story.revealed = cp.stage >= 4
-    setObjective(CHAIN[Math.min(CHAIN.length - 1, cp.stage)]!)
+    setObjective(objectiveText(cp.stage))
     const h = hunterHandle()
     if (h) cp.stage >= 4 ? h.restore() : h.sleep()
   }

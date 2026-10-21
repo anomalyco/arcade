@@ -1,7 +1,7 @@
 import type { GameContext } from "../flow"
 import { createDeathScreen } from "../death"
 import { clearCheckpoints, lastCheckpoint, restorePlayer, trackCheckpoints } from "../checkpoint"
-import { CHAIN, story } from "../objectives"
+import { objectiveText, story } from "../objectives"
 import { setObjective } from "../objective"
 import { startLiftAmbush } from "./lift-ambush"
 import { bindRoadAmbush } from "./road-ambush"
@@ -109,7 +109,7 @@ export function startEncounters(g: GameContext, shell: EncounterShell) {
     restorePlayer(g.player, cp)
     story.stage = cp.stage
     story.revealed = cp.stage >= 4
-    setObjective(CHAIN[Math.min(CHAIN.length - 1, cp.stage)]!)
+    setObjective(objectiveText(cp.stage))
     g.flow.hold = false
     // The hunter: before the reveal it isn't in the building yet; after it, it comes back far away, memory wiped,
     // with a grace period.

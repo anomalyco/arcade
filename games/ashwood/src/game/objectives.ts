@@ -5,13 +5,15 @@ import { completeObjective, clearObjective, setObjective } from "./objective"
 import { roomById } from "../world/interior/registry"
 import { onReveal, onTransmitted } from "../world/interior/storeys/s3/transmitter-state"
 import { hasItem, hasNote, onInventory } from "./inventory"
+import { power } from "../world/power"
 
 // The run's objective chain (play mode): set when explore starts, advanced by simple zone checks on the camera and the
 // 3-08 radio-room beat (world/interior/storeys/s3/transmitter.ts):
 //   explore           → "Find out why the radio went silent. Check the map (M)"
 //   storey 3 corridor → "Find the radio room: 3-08"
-//   inside 3-08       → "Report what you found"          ← checkpoint "3-08:entered"
-//                       (switch TX-1 on, then key the desk mic: the call to County)
+//   inside 3-08       → "Restore the power. The switch is on the transmitter"  ← checkpoint "3-08:entered"
+//                       (the station is dark until MAIN POWER on TX-1 is thrown: src/game/power.ts)
+//   power back        → "Use the radio. Report what you found" (same stage; key the desk mic: the call to County)
 //   call over         → "Check the body at the desk"
 //   body moved        → the warning under it            ← checkpoint "3-08:transmitted"; story.revealed
 //                       (a beat of silence, the scream, the car, the glass: the Wendigo is in) → "Hide."
@@ -27,7 +29,8 @@ import { hasItem, hasNote, onInventory } from "./inventory"
 export const OBJECTIVES = {
   transmission: "Find out why the radio went silent. Check the map (M)",
   radio: "Find the radio room: 3-08",
-  report: "Report what you found",
+  power: "Restore the power. The switch is on the transmitter",
+  report: "Use the radio. Report what you found",
   body: "Check the body at the desk",
   hide: "Hide.",
   keys: "Find the truck keys",
@@ -38,6 +41,11 @@ export const OBJECTIVES = {
 } as const
 /** The objective line for each story stage (checkpoint restores show `CHAIN[stage]`). */
 export const CHAIN = [OBJECTIVES.transmission, OBJECTIVES.radio, OBJECTIVES.report, OBJECTIVES.body, OBJECTIVES.hide, OBJECTIVES.keys, OBJECTIVES.cabinet, OBJECTIVES.security, OBJECTIVES.office, OBJECTIVES.escape]
+/** The objective line for a stage now (stage 2 reads "restore the power" until the mains are back). */
+export function objectiveText(stage: number) {
+  const s = Math.max(0, Math.min(CHAIN.length - 1, stage))
+  return s === 2 && !power.on ? OBJECTIVES.power : CHAIN[s]!
+}
 /** Stage numbers past "Hide." (CHAIN indices). */
 export const STAGE = { hide: 4, keys: 5, cabinet: 6, security: 7, office: 8, escape: 9 } as const
 /** Hiding: over once the hunter has lost the player for HIDE_LOST s (after at least HIDE_MIN s), or at HIDE_MAX s. */
@@ -96,7 +104,7 @@ export function startObjectives(flow: Flow, camera: THREE.Camera, signal?: Abort
     story.stage = stage
     completeObjective()
     clearTimeout(next)
-    const text = CHAIN[stage]!
+    const text = objectiveText(stage)
     next = window.setTimeout(() => {
       setObjective(text)
       for (const l of objectiveListeners) l(stage, text)
@@ -105,7 +113,7 @@ export function startObjectives(flow: Flow, camera: THREE.Camera, signal?: Abort
   story.stage = from
   if (from >= 2) story.visited308 = true
   if (from >= 4) story.revealed = true
-  setObjective(CHAIN[Math.min(CHAIN.length - 1, from)]!)
+  setObjective(objectiveText(from))
   if (from === 0) checkpoint("arrival")
   // Hiding: the hunter's mode (globalThis.__ashwoodHunter), else the timer alone.
   let hideT = 0
@@ -144,6 +152,13 @@ export function startObjectives(flow: Flow, camera: THREE.Camera, signal?: Abort
     else if (t === STAGE.escape) checkpoint("trail:keys")
   }
   const offInv = onInventory(trail)
+  // The power back on in 3-08: the same stage, now the radio.
+  const offPower = power.onChange((on) => {
+    if (!on || story.stage !== 2) return
+    completeObjective()
+    clearTimeout(next)
+    next = window.setTimeout(() => setObjective(objectiveText(2)), 2200)
+  })
   // The radio-room beat runs on the world's clock.
   const offTx = onTransmitted(() => {
     if (story.stage >= 3) return
@@ -163,6 +178,7 @@ export function startObjectives(flow: Flow, camera: THREE.Camera, signal?: Abort
     offInv()
     offTx()
     offReveal()
+    offPower()
     clearTimeout(next)
     clearObjective()
   }

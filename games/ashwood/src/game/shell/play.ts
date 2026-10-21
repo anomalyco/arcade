@@ -13,6 +13,7 @@ import { createHints } from "./hints"
 import { AUTOPLAY_KEY, startEncounters } from "../encounters"
 // Static: its input listeners must register before the shell's input gate (src/game/escape/input.ts).
 import { startEscape } from "../escape"
+import { powerForRun } from "../power"
 
 // Play mode: the home screen over a slow drift past the foggy station while the world loads behind it, then
 // Play → title card → intro (src/game/intro) → explore, with an Esc pause menu. Owns input gating: the controller's
@@ -50,6 +51,8 @@ export function createPlayShell(canvas: HTMLCanvasElement, hud: HTMLElement) {
   let pendingChapter: string | null = new URLSearchParams(location.search).get("start")
   let objectivesFrom = 0
   flow.onPhase((to) => {
+    // The station arrives with the power out (src/game/power.ts).
+    if (to === "intro") powerForRun()
     if (to === "explore" && world) {
       map ??= createMap(world, { active: () => flow.playerActive })
       startObjectives(flow, world.camera, run?.signal, objectivesFrom)

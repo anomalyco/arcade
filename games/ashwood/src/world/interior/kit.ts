@@ -164,6 +164,7 @@ import {
  *   interior/blood.ts: bloodMesh() / bloodMaterial() (procedural pools, smears, spatter, hand/footprints, drips; one
  *   shader) · s3 workTable(…, height) · pendant({ angle, range }) · attachToLeaf() (door-leaf signs and notes;
  *   addDocuments puts sheets on a leaf face onto the leaf automatically).
+ *   Mains (world/power.ts): M.emergencyBulb (battery twin-heads, never switched); emergencyPack() lamps are battery.
  *
  * DEPTH HYGIENE (automatic, at flush; gate: `bun run audit:hygiene`)
  *   - Wall joints close on the registered wall solids (T: sink, L: X walls own the corner, collinear: butt); an end
@@ -419,6 +420,8 @@ export const M = {
     name: "interior_glass",
   }),
   bulbWarm: glow(0x332211, 0xffb060, 6, "bulb_warm"),
+  /** Battery emergency twin-head lamps (never switched by the mains, world/power.ts). */
+  emergencyBulb: glow(0x332211, 0xffb060, 6, "emergency_bulb"),
   bulbCool: glow(0x223030, 0xd8eeff, 5, "bulb_cool"),
   lampShade: paint(0xb8b4a4, 0.4, 0.6),
   yellow: paint(0x8f7212, 0.5, 0),

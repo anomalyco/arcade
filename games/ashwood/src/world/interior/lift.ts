@@ -9,6 +9,7 @@ import { ROOM_BANDS } from "./styles"
 import { STYLES } from "./styles"
 import { liftAudio } from "../../audio/hooks"
 import { liftEvents } from "./lift-events"
+import { power } from "../power"
 import { keyCapHtml, keyPromptHtml } from "@arcade/kit/client/key-cap"
 
 // A working lift in the core: walk in, aim at a button on the car panel (G, 1–4, door open / close, alarm) and press E
@@ -282,6 +283,8 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
     zone: "interior:0",
   }
   ctx.lamps.push(lamp)
+  // The car light follows the mains itself (world/power.ts): the lift is dead while the power is out.
+  power.exempt(lamp)
   const lampPos = lamp.position as unknown as number[]
   const ZONES = Array.from({ length: LEVELS }, (_, i) => `interior:${i}`)
 
@@ -342,6 +345,7 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
   const promptText = prompt?.lastElementChild as HTMLSpanElement | undefined
   /** Prompt rows through the shared key caps (`@arcade/kit/client/key-cap`). */
   const promptHtml = (want: string) => {
+    if (want === "dead") return keyPromptHtml("KeyE", "Lift: no power")
     if (want === "call") return keyPromptHtml("KeyE", "Call lift")
     return keyPromptHtml("KeyE", BUTTONS[Number(want.slice(4))]!.prompt)
   }
@@ -354,6 +358,8 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
   let alarmT = 0
   let openHeld = 0
   const request = (s: number) => {
+    // No power: the buttons click and nothing happens.
+    if (!power.on) return
     if (phase !== "idle") {
       if (s !== target && !queue.includes(s)) queue.push(s)
       return
@@ -458,7 +464,11 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
           if (phase === "idle") doorWant = 0
           openHeld = 0
         } else if (bt?.kind === "alarm") alarmT = 2.5
-        else if (!inCar && atCall >= 0) request(atCall)
+        else if (!inCar && atCall >= 0) {
+          // A dead button: a dull click, no light.
+          if (!power.on) audio?.clunk(0.12)
+          request(atCall)
+        }
         if (bt) pushedT = 0.25
         pushed = aimed
       }
@@ -478,9 +488,11 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
         const want =
           aimed >= 0
             ? `aim:${aimed}`
-            : !inCar && atCall >= 0 && (atCall !== cur || doorWant === 0)
-              ? "call"
-              : ""
+            : !inCar && atCall >= 0 && !power.on
+              ? "dead"
+              : !inCar && atCall >= 0 && (atCall !== cur || doorWant === 0)
+                ? "call"
+                : ""
         if (want !== promptShown) {
           promptShown = want
           if (want) {
@@ -565,6 +577,11 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
           phase = "idle"
           idleT = 0
         }
+      } else if (phase === "idle" && !power.on) {
+        // Power out: the doors stand shut (a lift parked when the mains failed); nothing answers.
+        if (doorT !== 0) doorsDirty = true
+        doorT = 0
+        queue.length = 0
       } else if (phase === "idle") {
         // Idle: doors follow the open / close buttons; the next queued call departs once they're shut or held.
         idleT += dt
@@ -590,6 +607,7 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
       }
 
       // Light, lamps, indicator, call button.
+      light *= power.level
       carLevel.value = light
       lamp.intensity = 3 * light
       lampPos[1] = carY + h - 0.2
@@ -610,7 +628,7 @@ export function buildLift(ctx: WorldContext, parent: THREE.Object3D) {
         else if (bt.kind === "open") m.visible = openHeld > 0 || (pushed === i && pushedT > 0)
         else if (bt.kind === "close") m.visible = pushed === i && pushedT > 0
       })
-      litCall.visible = phase !== "idle"
+      litCall.visible = phase !== "idle" && power.on
       litCall.position.set(CALL.x, carFloorY(target) + CALL.y + 0.04, CALL.z - 0.027)
 
       for (let k = 0; k < LEVELS; k++) {

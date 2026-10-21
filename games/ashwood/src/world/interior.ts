@@ -13,6 +13,7 @@ import { STOREY_MODULES } from "./interior/storeys/index"
 import { buildWindowProxies } from "./interior/windowproxy"
 import { checkNightState } from "./interior/lighting-state"
 import * as kitDemo from "./interior/storeys/kitdemo"
+import { power } from "./power"
 
 export { interiorRooms, interiorDoors } from "./interior/registry"
 
@@ -98,6 +99,10 @@ export async function build(ctx: WorldContext): Promise<WorldModule> {
   // The 3 a.m. lighting state is the one truth for lamps and windows: report drift (a listed source with no lamp).
   for (const m of checkNightState(ctx.lamps)) console.warn(`interior lighting state: ${m}`)
 
+  // The mains (world/power.ts): every interior lamp and emissive, switched without rebuilding a shader.
+  power.registerLamps(ctx.lamps.filter((l) => l.zone?.startsWith("interior")))
+  power.registerMaterials(ctx.scene)
+  if (ctx.params.get("power") === "off") power.set(false, { instant: true })
   const { min, max } = BUILDING.main
   // Automation only: `icam=x,y,z,yawDeg,pitchDeg` pins the camera for captures of rooms with no named viewpoint.
   const icam = ctx.params.get("icam")?.split(",").map(Number)
@@ -112,6 +117,7 @@ export async function build(ctx: WorldContext): Promise<WorldModule> {
         camera.position.set(icam[0]!, icam[1]!, icam[2]!)
         camera.rotation.set((icam[4]! * Math.PI) / 180, (icam[3]! * Math.PI) / 180, 0, "YXZ")
       }
+      power.update()
       for (const u of updates) u(time)
       lift.update(dt, time, camera)
       // Inside the block only the player's storey and its neighbours can be seen; outside, every lit window counts.

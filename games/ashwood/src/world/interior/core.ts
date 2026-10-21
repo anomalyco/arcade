@@ -1,3 +1,4 @@
+import { power } from "../power"
 import { NIGHT_EXTRA } from "./lighting-state"
 import { BUILDING, CORE, ROOF_Y } from "../layout"
 import { STYLES } from "./styles"
@@ -276,9 +277,10 @@ function emergency(b: Builder, xWall: number, y: number, z: number, on: boolean)
   for (const s of [-1, 1]) {
     const h = m.clone().multiply(T(s * 0.12, 0.12, 0.03, 0, -0.5))
     b.cyl(M.beige, h, 0.035, 0.045, 0.07, 12)
-    b.cyl(on ? M.bulbWarm : M.diffuserOff, h.clone().multiply(T(0, 0.036, 0)), 0.03, 0.03, 0.005, 12, { cast: false })
+    b.cyl(on ? M.emergencyBulb : M.diffuserOff, h.clone().multiply(T(0, 0.036, 0)), 0.03, 0.03, 0.005, 12, { cast: false })
   }
-  if (on) b.lamp({ kind: "incandescent", position: [xWall + 0.25, y + 0.1, z], direction: [0.6, -0.8, 0], color: [1, 0.8, 0.55], intensity: 2.5, range: 6, angle: 0.8, penumbra: 0.6, size: 0.06 })
+  // Battery-fed: the stairs keep this light when the mains are out (world/power.ts).
+  if (on) power.exempt(b.lamp({ kind: "incandescent", position: [xWall + 0.25, y + 0.1, z], direction: [0.6, -0.8, 0], color: [1, 0.8, 0.55], intensity: 2.5, range: 6, angle: 0.8, penumbra: 0.6, size: 0.06 }))
 }
 
 /** Light on the mid-landing wall; one is dead, its lens smashed on the landing with the rubbish nobody swept up. */

@@ -10,6 +10,7 @@ import { buildGrounds } from "./facility/grounds"
 import { buildAnnex } from "./facility/annex"
 import { windowGlow } from "./facility/windows"
 import { buildProps } from "./facility/props"
+import { power } from "./power"
 
 // The facility exterior (concept r3-01, r5-01, r5-06): the two-storey board-formed concrete block and its annex,
 // window rows with a few rooms still lit, the glazed lobby front, the rooftop radio dish, the loading dock and the
@@ -41,6 +42,7 @@ export async function build(ctx: WorldContext): Promise<WorldModule> {
     { key: "facility.beaconPeriod", label: "Obstruction light blink period", group: "Facility", unit: "s", min: 0.8, max: 5, step: 0.1 },
   )
 
+  const lamp0 = ctx.lamps.length
   const root = new THREE.Group()
   root.name = "facility"
   ctx.scene.add(root)
@@ -80,6 +82,10 @@ export async function build(ctx: WorldContext): Promise<WorldModule> {
       size: 1.2,
     })
   }
+
+  // The building's own lights and lit windows run on the station mains (world/power.ts); the lot and the gate don't.
+  power.registerLamps(ctx.lamps.slice(lamp0))
+  power.registerMaterials(root)
 
   const num = (k: keyof typeof DEFAULTS) => {
     const v = Number(ctx.settings[k])

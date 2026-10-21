@@ -265,7 +265,8 @@ export async function buildNorth(s: S3, pause: () => Promise<void>) {
   // ------------------------------------------------------------------ 3-08 listening room (under the dish)
   partition(b, { axis: "z", at: 6.2, from: -21.65, to: -14.925, finish: [ROOM_BANDS, ROOM_BANDS], openings: [{ kind: "door", at: -17.2, side: "a", door: { id: "3-08b", state: "open", open: 1.45, room: "3-08b", sign: { number: "3-08B", label: "BOOTH" } } }] })
   partition(b, { axis: "x", at: -14.925, from: 6.2, to: G[12], finish: [ROOM_BANDS, ROOM_BANDS], openings: [{ kind: "glazed", from: 6.8, to: 10.5, sill: 0.95, head: 2.05, mullion: 1.85 }] })
-  s.rooms.push(room(b, { id: "3-08", name: "Listening room", rect: rect(G[10], G[12], -14.925, -1.75), exclude: [RISER_W1_OUTER], floor: "linoleum", lit: "none", anchors: [{ kind: "tape", x: 8.0, y: FLOOR_Y + 0.8, z: -14.0 }] }))
+  // 3-08's tubes were on when the mains failed: they strike again when MAIN POWER on TX-1 is thrown (world/power.ts).
+  s.rooms.push(room(b, { id: "3-08", name: "Listening room", rect: rect(G[10], G[12], -14.925, -1.75), exclude: [RISER_W1_OUTER], floor: "linoleum", lit: [[3.4, -5.4], [8.0, -9.0], [4.6, -12.6]], troffers: { flicker: [[4.6, -12.6]], intensity: 12 }, anchors: [{ kind: "tape", x: 8.0, y: FLOOR_Y + 0.8, z: -14.0 }] }))
   s.rooms.push(room(b, { id: "3-08w", name: "Listening room (recorders)", rect: rect(G[10], 6.2, -21.65, -14.925), floor: "linoleum", lit: "none" }))
   s.rooms.push(room(b, { id: "3-08b", name: "Listening booth", rect: rect(6.2, G[12], -21.65, -14.925), floor: M.carpet, lit: "none", windows: { blinds: "random", radiators: "convector" } }))
   riserW1(b, { face: "west" })
