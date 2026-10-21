@@ -10,13 +10,16 @@ import { FogScatter, fogControls, fogCone, type FogLamp } from "@arcade/kit/gpu/
 import { makeSceneShader, spriteShader } from "@arcade/kit/gpu/shaders"
 import { TexturedMeshPass, type TexturedPrimitive } from "@arcade/kit/gpu/textured-mesh"
 import { TEMPORAL_DEFAULTS } from "@arcade/kit/gpu/temporal"
+import { ForestPass, cardShadingHooks, forestControls, forestDefaults } from "@arcade/kit/gpu/forest"
 import { LabPanel } from "@arcade/kit/lab-panel"
 import { controls, defaults } from "./settings"
 import { hooks, texturedHooks, glassHooks, fenceHooks, fogVolume } from "./shaders"
 import { buildWorld, CAR, START, walls } from "./world"
-import { foliageTexture, solidTexture } from "./foliage"
+import { canvasTexture, foliageTexture, solidTexture } from "./foliage"
 import { post } from "./post"
 import { compareCamera } from "./compare-camera"
+import { dressingControls, dressingDefaults, groundHeight, leafTemplate, paintLeafAtlas, paperTemplate, pebbleTemplate, placeDressing } from "./dressing"
+import { bakeScatter, type ScatterPlacement } from "@arcade/kit/gpu/scatter-mesh"
 
 async function main() {
   const canvas = document.querySelector<HTMLCanvasElement>("#view")!
@@ -31,7 +34,9 @@ async function main() {
   const fog=new FogScatter()
   const settings = defaults()
   renderer.setTemporal({ ...TEMPORAL_DEFAULTS, mode: "taa", sharpen: 0.12 })
+  const t0=performance.now()
   const world = await buildWorld()
+  const worldMs=performance.now()-t0
   const lighting = flatLighting(0, 0, [0, 0, 0])
   renderer.setLevel({ chunks: [...world.solid,world.extra].map(data=>({data,box:[-700,-700,700,700] as const})), glass: [], ...lighting })
 
@@ -59,10 +64,53 @@ async function main() {
   const meshes = new TexturedMeshPass(renderer.passContext, [...world.ground.map((vertices):TexturedPrimitive=>({
     vertices, base: textures[0]!, normal: textures[1]!, orm: textures[2]!,
     color: [1, 1, 1, 1], roughness: 1, metalness: 0, normalScale: 0.45, blend: false, aoStrength: 1,
-  })), ...car.primitives, ...dressing.flatMap(d=>d.primitives), ...world.foliage.map((vertices):TexturedPrimitive=>({vertices,base:leaves,normal,orm,color:[1,1,1,1],roughness:1,metalness:0,normalScale:0,blend:false,alphaCutoff:0.5})), ...world.undergrowth.map((vertices):TexturedPrimitive=>({vertices,base:undergrowth,normal,orm,color:[1,1,1,1],roughness:1,metalness:0,normalScale:0,blend:false,alphaCutoff:0.5}))], texturedHooks)
+  })), ...car.primitives, ...dressing.flatMap(d=>d.primitives)], texturedHooks)
   renderer.addPass("opaque", meshes)
-  renderer.addPass("opaque",new TexturedMeshPass(renderer.passContext,world.impostors.map((vertices):TexturedPrimitive=>({vertices,base:impostors,normal,orm,color:[1,1,1,1],roughness:1,metalness:0,normalScale:0,blend:false,alphaCutoff:0.5})),texturedHooks))
   const white=solidTexture(gpu.device,[255,255,255,255])
+  const forestSettings=forestDefaults()
+  const forest=new ForestPass(renderer.passContext,world.forest.models,world.forest.trees,{ hooks:texturedHooks, impostorGrid:world.forest.impostorGrid,
+    textures:{ leaves, bark:white, impostors, normal, orm } })
+  renderer.addPass("opaque",forest)
+  renderer.addPass("opaque",new TexturedMeshPass(renderer.passContext,world.undergrowth.map((vertices):TexturedPrimitive=>({vertices,base:undergrowth,normal,orm,color:[1,1,1,1],roughness:1,metalness:0,normalScale:0,blend:false,alphaCutoff:0.5})),
+    cardShadingHooks(texturedHooks,"N.forest.x","N.forest.y")))
+  // Rule-placed ground dressing, rebuilt (debounced) when its Lab settings change.
+  const can=await loadGltf(gpu.device,base+"can_rusted.glb")
+  const leafAtlas=await canvasTexture(gpu.device,import.meta.env.BASE_URL+"ashwood/paint.js",paintLeafAtlas())
+  const templates={ leaf:[0,1,2,3].map(leafTemplate), pebble:[1,2,3,4].map(pebbleTemplate), paper:[1,2,3].map(paperTemplate) }
+  const dressingSettings=dressingDefaults()
+  let dressingPasses:TexturedMeshPass[]=[], dressingKey="", dressingTimer=0, dressingCount=0
+  const buildDressing=()=>{
+    for(const p of dressingPasses) { renderer.removePass(p); p.dispose() }
+    dressingPasses=[]
+    const items=placeDressing(world.scene.ground,world.scene.colliders,dressingSettings)
+    dressingCount=items.length
+    const groups=new Map<ArrayBuffer,ScatterPlacement[]>()
+    const add=(template:ArrayBuffer,p:ScatterPlacement)=>{ const list=groups.get(template); if(list) list.push(p); else groups.set(template,[p]) }
+    const cans:ScatterPlacement[]=[]
+    for(const d of items) {
+      const y=groundHeight(world.scene.ground,d.x,d.z), tint=0.72+0.28*d.seed
+      if(d.item==="leaf") add(templates.leaf[Math.floor(d.seed*4)]!,{x:d.x,y,z:d.z,yaw:d.yaw,scale:d.scale,tilt:(d.seed-0.5)*0.3,tint})
+      else if(d.item==="pebble") add(templates.pebble[Math.floor(d.seed*4)]!,{x:d.x,y,z:d.z,yaw:d.yaw,scale:d.scale,tint})
+      else if(d.item==="paper") add(templates.paper[Math.floor(d.seed*3)]!,{x:d.x,y,z:d.z,yaw:d.yaw,scale:d.scale})
+      else if(d.item==="can") cans.push({x:d.x,y:y+0.062,z:d.z,yaw:d.yaw,scale:d.scale,tilt:Math.PI/2})
+      else add(world.forest.plants[d.item as keyof typeof world.forest.plants],{x:d.x,y,z:d.z,yaw:d.yaw,scale:d.scale,tint})
+    }
+    const card=(t:ArrayBuffer[],texture:GPUTexture)=>t.flatMap(template=>groups.has(template) ? [{vertices:bakeScatter(template,groups.get(template)!),base:texture,normal,orm,color:[1,1,1,1],roughness:1,metalness:0,normalScale:0,blend:false,alphaCutoff:0.5} satisfies TexturedPrimitive] : [])
+    const plants=card(Object.values(world.forest.plants),undergrowth), leaves=card(templates.leaf,leafAtlas)
+    const props:TexturedPrimitive[]=[...templates.pebble,...templates.paper].flatMap(template=>groups.has(template) ? [{vertices:bakeScatter(template,groups.get(template)!),base:white,normal,orm,color:[1,1,1,1],roughness:0.9,metalness:0,normalScale:0,blend:false} satisfies TexturedPrimitive] : [])
+    if(cans.length) props.push(...can.primitives.map(p=>({...p,vertices:bakeScatter(p.vertices,cans)})))
+    if(plants.length+leaves.length) dressingPasses.push(new TexturedMeshPass(renderer.passContext,[...plants,...leaves],cardShadingHooks(texturedHooks,"N.forest.x","N.forest.y")))
+    if(props.length) dressingPasses.push(new TexturedMeshPass(renderer.passContext,props,texturedHooks))
+    for(const p of dressingPasses) renderer.addPass("opaque",p)
+  }
+  const refreshDressing=()=>{
+    const key=JSON.stringify(dressingSettings)
+    if(key===dressingKey) return
+    dressingKey=key
+    clearTimeout(dressingTimer)
+    dressingTimer=window.setTimeout(buildDressing,150)
+  }
+  dressingKey=JSON.stringify(dressingSettings); buildDressing()
   renderer.addPass("opaque",new TexturedMeshPass(renderer.passContext,world.fence.map((vertices):TexturedPrimitive=>({
     vertices,base:white,normal,orm,color:[1,1,1,1],roughness:0.6,metalness:0.85,normalScale:0,blend:false,
   })),fenceHooks))
@@ -75,6 +123,8 @@ async function main() {
   camera.height=START.height; camera.near=0.15; camera.far=1200
   const panel = new LabPanel(settings, controls(settings), new URLSearchParams(location.search), () => camera.release(), { open: false, pill: false, groupActions: false })
   const comparison=compareCamera(camera,()=>panel.visible)
+  panel.addControls(forestSettings,forestControls(forestSettings))
+  panel.addControls(dressingSettings,dressingControls(dressingSettings))
   panel.addControls(fog.settings,fogControls("Fog","fog.").filter(c=>!["density","falloff","brightness","strength"].includes(c.field ?? "")))
   // LabPanel owns Backquote, including when the canvas is pointer-locked.
   const lights = new SceneLights()
@@ -92,13 +142,16 @@ async function main() {
     position:l.position.map((v,i)=>v+(l.direction?.[i] ?? 0)*0.12) as [number,number,number],
   }))
   const shadowLamps=practicals.flatMap((l,id)=>l.shadow && l.angle ? [{id,pos:l.position,axis:l.direction ?? [0,-1,0] as const,range:l.range,intensity:l.intensity,cosOuter:Math.cos(l.angle)}] : [])
-  const frameData = newSceneFrame(), custom = new Float32Array(12), empty = new Float32Array(0)
+  // Trunks within reach of a shadowed sodium head cast into its pool.
+  casters.push(...forest.staticCasters(shadowLamps.map(l=>({x:l.pos[0],z:l.pos[2]})),40))
+  const frameData = newSceneFrame(), custom = new Float32Array(16), empty = new Float32Array(0)
   const prompts = () => {
     hud.innerHTML = [document.pointerLockElement === canvas ? "" : keyPromptHtml("Mouse0", "Look"), keyPromptHtml("KeyW", "Move"), keyPromptHtml("KeyF", "Flashlight"), keyPromptHtml("Backquote", "Night"), comparison.available ? keyPromptHtml("KeyP", "Compare position") : ""].join(" ")
   }
   prompts()
   document.addEventListener("pointerlockchange", prompts)
   let last = performance.now(), frames = 0, paused = false
+  const readyMs=performance.now()-t0
   function render(now: number) {
     if(paused) { last=now; requestAnimationFrame(render); return }
     const width = Math.max(1, Math.round(innerWidth * Math.min(devicePixelRatio, 1.5)))
@@ -116,7 +169,9 @@ async function main() {
     if(spots.update(shadowEncoder,shadowLamps,camera.eye,dt,id=>lights.indexOf(id),casters)) renderer.setSpotShadows(spots.bindings())
     device.queue.submit([shadowEncoder.finish()])
     if(smoke && frames===0) void device.queue.onSubmittedWorkDone().then(()=>performance.mark("lot:shadows-complete"))
-    custom.set([settings.density, settings.falloff, settings.sky, settings.lamp, settings.wetness, settings.haze, settings.reflectionCap, settings.specularAA, ...camera.direction, Number(camera.flashlight)])
+    custom.set([settings.density, settings.falloff, settings.sky, settings.lamp, settings.wetness, settings.haze, settings.reflectionCap, settings.specularAA, ...camera.direction, Number(camera.flashlight), forestSettings.inner, forestSettings.face, 0, 0])
+    forest.update(camera.eye, forestSettings)
+    refreshDressing()
     renderer.setCustomUniforms(custom)
     Object.assign(fog.settings,{density:settings.density,falloff:settings.falloff,brightness:0.034*settings.sky,strength:settings.haze})
     // Scattering consumes emitter radiance, not the surface BRDF's radiance / π.
@@ -136,7 +191,7 @@ async function main() {
     if(smoke && frames >= 2) paused = true
     requestAnimationFrame(render)
   }
-  Object.assign(window, { lot: { camera, settings, fog, renderer, comparison, get frames() { return frames }, get paused() { return paused }, set paused(value:boolean) { paused=value }, ready: true } })
+  Object.assign(window, { lot: { camera, settings, forest:forestSettings, forestStats:()=>forest.stats(), timings:{worldMs,readyMs}, dressing:dressingSettings, get dressingCount() { return dressingCount }, fog, renderer, comparison, get frames() { return frames }, get paused() { return paused }, set paused(value:boolean) { paused=value }, ready: true } })
   requestAnimationFrame(render)
 }
 void main().catch(error => { console.error(error); document.getElementById("hud")!.textContent = String(error) })

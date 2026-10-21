@@ -79,10 +79,10 @@ for (const w of state.litWindows()) {
   root.add(obj)
 }
 
-const streams: Record<string, { v: number[]; uv: number[] }> = Object.fromEntries(["solid","ground","foliage","fence","glass","undergrowth","impostors"].map(k=>[k,{v:[],uv:[]}]))
+const streams: Record<string, { v: number[]; uv: number[] }> = Object.fromEntries(["solid","ground","foliage","fence","glass","undergrowth"].map(k=>[k,{v:[],uv:[]}]))
 function emit(g: THREE.BufferGeometry, matrix: THREE.Matrix4, m: THREE.MeshStandardMaterial, kind: string, tint=1, first=0, count=g.index?.count ?? g.getAttribute("position").count) {
   if (!g.getAttribute("normal")) g.computeVertexNormals()
-  const p=g.getAttribute("position"), n=g.getAttribute("normal"), uv=g.getAttribute("uv"), vc=g.getAttribute("color"), pane=g.getAttribute("paneA")
+  const p=g.getAttribute("position"), n=g.getAttribute("normal"), uv=g.getAttribute("uv"), vc=g.getAttribute("color"), pane=g.getAttribute("paneA"), flex=g.getAttribute("flex")
   const target=streams[kind]!, v=new THREE.Vector3(), normal=new THREE.Vector3(), nm=new THREE.Matrix3().getNormalMatrix(matrix)
   for(let i=first;i<first+count;i++) {
     const k=g.index?.getX(i) ?? i
@@ -90,6 +90,8 @@ function emit(g: THREE.BufferGeometry, matrix: THREE.Matrix4, m: THREE.MeshStand
     const glow=kind!=="glass" && m.emissiveIntensity > 0 && m.emissive && (m.emissive.r+m.emissive.g+m.emissive.b)>0
     let c=(glow?m.emissive:m.color ?? new THREE.Color(0.1,0.1,0.1)).clone(), aux=glow?m.emissiveIntensity:0, mat=glow?MAT.glow:kind==="ground"?MAT.ground:MAT.lit
     if(pane) { c.setRGB(pane.getX(k),pane.getY(k),pane.getZ(k)); aux=0.6; mat=MAT.glow }
+    // Ashwood's card material shades limb and stem bases by this depth (forest/render.ts `vInner`); kit reads it from aux.
+    if(flex && mat===MAT.lit && (kind==="foliage" || kind==="undergrowth")) aux=Math.min(1,Math.max(0,flex.getX(k)/1.6))
     if(vc) c.multiply(new THREE.Color(vc.getX(k),vc.getY(k),vc.getZ(k)))
     c.multiplyScalar(tint)
     if(mat===MAT.glow) {
@@ -135,39 +137,69 @@ root.updateMatrixWorld(true)
 root.traverse(emitObject)
 console.log("Authored scene triangles",Object.fromEntries(Object.entries(streams).map(([k,s])=>[k,s.v.length/33])))
 
-// Exact seeded placement and limb cards, bounded to the walkable exterior's visible neighbourhood.
+// Exact seeded placement and the source's own tree models, exported as per-variant templates plus one instance per
+// tree for the kit's instanced forest (LOD bands, cross-fades and far thinning happen at runtime).
 const { placeTrees, VARIANTS }=await mod("world/forest/placement.ts")
 const { buildTree, impostorInput, impostorSize }=await mod("world/forest/species.ts")
 const trees=placeTrees({seed:1984,density:1})
 const models=VARIANTS.map((v:any)=>buildTree(v.kind,v.seed))
 await Bun.write(`${out}/tree-inputs.json`,JSON.stringify(models.map(impostorInput)))
+// Ashwood world/forest.ts FOLIAGE_COLOR (linear), applied at runtime so the Lab can compare it with white cards.
+const FOLIAGE_COLOR: Record<string,[number,number,number]>={ fir:[0.95,1,0.95], firEdge:[0.95,1,0.95], pine:[1.08,1.05,0.85], young:[1,1.05,0.95], sapling:[1.05,1.08,0.95], snag:[0.9,0.85,0.8] }
 const bark=new THREE.MeshStandardMaterial({color:0x352e24}), leaf=new THREE.MeshStandardMaterial({color:0xffffff})
-let treeCount=0
-for(let i=0;i<trees.count;i++) {
-  const x=trees.x[i],z=trees.z[i], distance=Math.hypot(x+2,z-158)
-  if(distance>1000) continue
-  if(distance>107.5) {
-    const variant=trees.variant[i], tree=models[variant]
-    if(tree.kind==="sapling") continue
-    const {w,h}=impostorSize(tree), scale=trees.scale[i], tint=trees.tint[i]
-    for(const [u,v] of [[0,0],[1,0],[1,1],[0,0],[1,1],[0,1]]) {
-      // Billboard corner + aspect in the normal slot, height in aux; evaluated against the live camera.
-      streams.impostors!.v.push(x,trees.y[i]-0.7*scale,z,u!*2-1,v!,w/h,tint,tint,tint,30,h*scale)
-      streams.impostors!.uv.push((variant%8+u!)/8,(Math.floor(variant/8)+1-v!)/2)
-    }
-    treeCount++
-    continue
-  }
-  const tree=models[trees.variant[i]], lod=distance<65?tree.lod0:tree.lod1
-  const transform=new THREE.Matrix4().compose(new THREE.Vector3(x,trees.y[i],z),new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),-trees.yaw[i]),new THREE.Vector3().setScalar(trees.scale[i]))
-  emit(lod.trunk,transform,bark,"solid",trees.tint[i]); emit(lod.foliage,transform,leaf,"foliage",trees.tint[i]); treeCount++
+const templateBytes: Uint8Array[]=[]
+let templateOffset=0
+const template=(g: THREE.BufferGeometry, m: THREE.MeshStandardMaterial, kind: "solid"|"foliage"|"undergrowth")=>{
+  const before={v:streams[kind]!.v.length,uv:streams[kind]!.uv.length}
+  emit(g,new THREE.Matrix4(),m,kind)
+  const v=streams[kind]!.v.splice(before.v), uv=streams[kind]!.uv.splice(before.uv)
+  const bytes=new Uint8Array(packTexturedVerts(v,uv))
+  templateBytes.push(bytes)
+  const range=[templateOffset,bytes.byteLength]
+  templateOffset+=bytes.byteLength
+  return range
 }
+const forestModels=models.map((tree:any)=>({kind:tree.kind,sapling:tree.kind==="sapling",impostor:impostorSize(tree),colour:FOLIAGE_COLOR[tree.kind] ?? [1,1,1],
+  lods:[tree.lod0,tree.lod1].map((lod:any)=>({trunk:template(lod.trunk,bark,"solid"),foliage:template(lod.foliage,leaf,"foliage")}))}))
+const kept:number[]=[]
+for(let i=0;i<trees.count;i++) if(Math.hypot(trees.x[i]+2,trees.z[i]-158)<=1000) kept.push(i)
+const treeCount=kept.length
+const soa=new Float32Array(treeCount*8)
+kept.forEach((i,n)=>{
+  // Stable per-tree 0..1 for far thinning (Knuth multiplicative hash of the placement index).
+  const seed=(Math.imul(i+1,2654435761)>>>0)/2**32
+  ;[trees.x[i],trees.y[i],trees.z[i],trees.scale[i],trees.yaw[i],trees.tint[i],seed,trees.variant[i]].forEach((value,k)=>{ soa[k*treeCount+n]=value })
+})
+await Bun.write(`${out}/forest-trees.bin.gz`,Bun.gzipSync(new Uint8Array(soa.buffer)))
+// Every limb card now belongs to a tree template; undergrowth keeps its own stream.
+delete streams.foliage
+// The source's own undergrowth clumps as templates for the Lot's rule-placed ground dressing.
+const plantNames=["fern","grass","salal","twigs"]
+const { layers }=await import(forest)
 const underRoot=new THREE.Group()
 const under=(await mod("world/forest/undergrowth.ts")).buildUndergrowth({...ctx,scene:underRoot},new THREE.Texture(),trees)
 const camera=new THREE.PerspectiveCamera(); camera.position.set(-2.132,1.937,158.465)
 under.update(0,8,camera)
 underRoot.updateMatrixWorld(true)
 underRoot.traverse(emitObject)
+const plants=Object.fromEntries(plantNames.map(name=>{
+  const mesh=layers.flatMap((l:any)=>l.meshes).find((m:any)=>m.name===`undergrowth-${name}`)
+  if(!mesh) throw new Error(`Missing undergrowth template ${name}`)
+  const range=template(mesh.geometry,mesh.material,"undergrowth")
+  return [name,{range}]
+}))
+const forestModelBytes=new Uint8Array(templateOffset)
+let cursor=0
+for(const bytes of templateBytes) { forestModelBytes.set(bytes,cursor); cursor+=bytes.byteLength }
+await Bun.write(`${out}/forest-models.bin.gz`,Bun.gzipSync(forestModelBytes))
+// Ground height around the gate (1 m grid) and the access road centreline, for runtime dressing placement.
+const height=await mod("world/height.ts")
+const GROUND={x0:-40,z0:100,step:1,nx:81,nz:81}
+const heights:number[]=[]
+for(let j=0;j<GROUND.nz;j++) for(let i=0;i<GROUND.nx;i++) heights.push(Math.round(height.heightAt(GROUND.x0+i*GROUND.step,GROUND.z0+j*GROUND.step)*1000)/1000)
+const accessRoad=layout.accessRoadSamples(1).map((p:any)=>[Math.round((p.x ?? p[0])*100)/100,Math.round((p.z ?? p[1])*100)/100]).filter(([x,z]:number[])=>Math.abs(x!)<60 && z!>90 && z!<200)
+const { ACCESS_ROAD, FENCE, BOOTH }=layout
+const ground={...GROUND,heights,accessRoad,roadHalfWidth:ACCESS_ROAD.width/2,shoulder:ACCESS_ROAD.shoulder,fence:FENCE,booth:BOOTH}
 const files: Record<string,string[]> = {}
 for(const [kind,s] of Object.entries(streams)) {
   if(!s.v.length) throw new Error(`Missing ${kind} geometry`)
@@ -188,7 +220,7 @@ for(const [kind,s] of Object.entries(streams)) {
 }
 const paint=await Bun.build({entrypoints:[resolve(source,"src/world/forest/paint.ts")],target:"browser",minify:true})
 await Bun.write(`${out}/paint.js`,await paint.outputs[0]!.text())
-await Bun.write(`${out}/scene.json`,JSON.stringify({version:1,files,treeCount,lamps:ctx.lamps,colliders:ctx.colliders,sources},null,2))
+await Bun.write(`${out}/scene.json`,JSON.stringify({version:1,files,treeCount,forest:{models:forestModels,trees:treeCount,impostorGrid:[8,2],plants},ground,lamps:ctx.lamps,colliders:ctx.colliders,sources},null,2))
 const used=new Set(Object.values(files).flat())
 for(const file of await readdir(out)) if(/^(solid|ground|foliage|fence|glass|undergrowth|impostors)-\d+\.bin\.gz$/.test(file) && !used.has(file)) await unlink(resolve(out,file))
 console.log("Baked",out,treeCount,"trees")

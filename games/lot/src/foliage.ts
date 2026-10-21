@@ -17,3 +17,12 @@ export function solidTexture(device:GPUDevice, color:number[]) {
   device.queue.writeTexture({texture},new Uint8Array(color),{},[1,1])
   return texture
 }
+
+/** A canvas painted at load, uploaded with the source painter's coverage-preserving mips (so cut-outs keep their area). */
+export async function canvasTexture(device: GPUDevice, painterUrl: string, canvas: OffscreenCanvas) {
+  const paint = await import(/* @vite-ignore */ painterUrl) as { mipChain(canvas: OffscreenCanvas): { width: number; height: number; data: Uint8Array }[] }
+  const levels=paint.mipChain(canvas)
+  const texture=device.createTexture({size:[levels[0]!.width,levels[0]!.height],mipLevelCount:levels.length,format:"rgba8unorm-srgb",usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST})
+  levels.forEach((level,mipLevel)=>device.queue.writeTexture({texture,mipLevel},new Uint8Array(level.data),{bytesPerRow:level.width*4},[level.width,level.height]))
+  return texture
+}

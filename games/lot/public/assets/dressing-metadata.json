@@ -30,5 +30,21 @@
       1.1203334331512451,
       0.22200000286102295
     ]
+  },
+  "can_rusted": {
+    "license": "CC0-1.0",
+    "source": "https://polyhaven.com/a/can_rusted",
+    "download": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/can_rusted/can_rusted_1k.gltf",
+    "sha256": "abf8f547346d7dda226d9360f987201537a71dab545e5597298f8770eebd46bb",
+    "lo": [
+      -0.0620175339281559,
+      -0.0012007831828668714,
+      -0.061391331255435944
+    ],
+    "hi": [
+      0.06251539289951324,
+      0.150177001953125,
+      0.06328438967466354
+    ]
   }
 }
