@@ -13,6 +13,10 @@
  *   bound it, Henyey–Greenstein forward scattering brightens it towards the lamp, and σ at the lamp × T(eye → lamp)
  *   scale it. On wet ground the same integral runs along the reflected ray with a jittered normal (long streaks),
  *   plus a narrow glint lobe per lamp.
+ * - **Street lamps (`FogLamp.lens`, `lights/street.ts`):** the light leaves a lens, not a point. Each ray takes it
+ *   samples equiangularly from the lens point nearest the ray (softened distance √(h² + b²)) and weights each sample
+ *   by the closed-form mean of 1 / (d² + b²) along the lens: the exact line-lens integral, no singular dot under the
+ *   head and no lens noise. The roadway profile replaces the round cone, so the beam fans out along the road from the whole lens.
  *
  * The volume pass returns alpha 0, so it never changes HDR alpha (Outbreak's shroud still dims it), and it runs after
  * the temporal resolve with its own half-resolution history (`Renderer` volume slots with `history: true`).
@@ -22,13 +26,14 @@ import { volumeFrameWgsl, type VolumeLightShader } from "./volume-pass"
 import { common } from "./shaders"
 import { sceneSurfaceWgsl } from "./reflections/surface"
 import { WET_ASPHALT, wetMaterialWgsl, wetSurfaceWgsl, type WetMaterial } from "./reflections/wet"
+import { STREET_LAMP_DEFAULTS, packStreetLamp, streetLampWgsl, streetProfile, type StreetLampSettings } from "./lights/street"
 
 export type Vec3 = readonly [number, number, number]
 
 /** Lamps the scattering pass evaluates per pixel. */
 export const MAX_FOG_LAMPS = 16
-/** Floats per lamp in the scatter lamp buffer (five vec4f). */
-export const FOG_LAMP_FLOATS = 20
+/** Floats per lamp in the scatter lamp buffer (six vec4f). */
+export const FOG_LAMP_FLOATS = 24
 /** Texels per side of the top-down lamp-glow map stored after the lamps in the scatter lamp buffer. */
 export const FOG_GLOW_SIZE = 32
 /** Floats of the glow map (one vec4f per texel, rgb used). */
@@ -38,7 +43,7 @@ export const FOG_GLOW_OFFSET = MAX_FOG_LAMPS * FOG_LAMP_FLOATS
 /** Floats in the scatter lamp buffer: the lamps, then the glow map. */
 export const FOG_LAMP_BUFFER_FLOATS = FOG_GLOW_OFFSET + FOG_GLOW_FLOATS
 /** Floats in the `FogParams` uniform (binding 18). */
-export const FOG_UNIFORM_FLOATS = 64
+export const FOG_UNIFORM_FLOATS = 80
 /** Scene and volume bind-group slots the renderer gives the fog. */
 export const FOG_UNIFORM_BINDING = 18
 export const FOG_LAMP_BINDING = 19
@@ -417,6 +422,73 @@ export function airlightReference(ro: Vec3, rd: Vec3, dist: number, lamp: Scatte
   return sum
 }
 
+export type ScatterLens = { pos: Vec3; range: number; arm: readonly [number, number]; a: number; b: number }
+type StreetProfileShape = Parameters<typeof streetProfile>[2]
+
+function lensIntegrand(lx: Vec3, rd: Vec3, lamp: ScatterLens, p: ScatterShape, street: StreetProfileShape): number {
+  const ld = Math.max(Math.hypot(lx[0], lx[1], lx[2]), 1e-3)
+  const ln: Vec3 = [lx[0] / ld, lx[1] / ld, lx[2] / ld]
+  const prof = streetProfile(ln, lamp.arm, street) * (1 - p.leak) + p.leak
+  const win = Math.pow(Math.max(0, Math.min(1, 1 - Math.pow(ld / lamp.range, 4))), 2) * Math.exp(-ld / p.coneLength)
+  const g = p.phaseG, g2 = g * g
+  const cosT = -(ln[0] * rd[0] + ln[1] * rd[1] + ln[2] * rd[2])
+  const hg = (1 - g2) / Math.pow(Math.max(1 + g2 - 2 * g * cosT, 1e-4), 1.5)
+  return prof * win * (1 + (hg - 1) * 0.85) / (4 * Math.PI)
+}
+
+/** Lens point nearest the ray (along the arm, clamped to ±a): the street lamp's representative point for the airlight. */
+export function lensPointNearRay(ro: Vec3, rd: Vec3, lamp: ScatterLens): Vec3 {
+  const w0: Vec3 = [lamp.pos[0] - ro[0], lamp.pos[1] - ro[1], lamp.pos[2] - ro[2]]
+  const rx = rd[0] * lamp.arm[0] + rd[2] * lamp.arm[1]
+  const den = Math.max(1 - rx * rx, 1e-4)
+  const wr = w0[0] * rd[0] + w0[1] * rd[1] + w0[2] * rd[2], wa = w0[0] * lamp.arm[0] + w0[2] * lamp.arm[1]
+  const lu = Math.max(-lamp.a, Math.min(lamp.a, (wr * rx - wa) / den))
+  return [lamp.pos[0] + lamp.arm[0] * lu, lamp.pos[1], lamp.pos[2] + lamp.arm[1] * lu]
+}
+
+/** The shader's street-lamp estimator: equiangular samples from the representative lens point, at offset `jitter`. */
+export function airlightLensEquiangular(ro: Vec3, rd: Vec3, dist: number, lamp: ScatterLens, p: ScatterShape, street: StreetProfileShape, samples: number, jitter: number): number {
+  const lp = lensPointNearRay(ro, rd, lamp)
+  const toP: Vec3 = [lp[0] - ro[0], lp[1] - ro[1], lp[2] - ro[2]]
+  const p0 = toP[0] * rd[0] + toP[1] * rd[1] + toP[2] * rd[2]
+  const hp = Math.max(Math.sqrt(Math.max(toP[0] ** 2 + toP[1] ** 2 + toP[2] ** 2 - p0 * p0, 0) + lamp.b * lamp.b), 0.03)
+  const a = Math.max(p0 - lamp.range, 0), b = Math.min(p0 + lamp.range, dist)
+  if (b <= a) return 0
+  const qa = Math.atan((a - p0) / hp), qb = Math.atan((b - p0) / hp)
+  let sum = 0
+  for (let j = 0; j < samples; j++) {
+    const t = qa + (qb - qa) * ((jitter + j) / samples)
+    const s = p0 + hp * Math.tan(t)
+    const lx: Vec3 = [rd[0] * s - toP[0], rd[1] * s - toP[1], rd[2] * s - toP[2]]
+    const xc: Vec3 = [lx[0] + lp[0] - lamp.pos[0], lx[1], lx[2] + lp[2] - lamp.pos[2]]
+    const u0 = xc[0] * lamp.arm[0] + xc[2] * lamp.arm[1]
+    const H = Math.sqrt(Math.max(xc[0] ** 2 + xc[1] ** 2 + xc[2] ** 2 - u0 * u0, 0) + lamp.b * lamp.b)
+    const kseg = (Math.atan((lamp.a - u0) / H) + Math.atan((lamp.a + u0) / H)) / (2 * lamp.a * H)
+    sum += lensIntegrand(lx, rd, lamp, p, street) * kseg * (lx[0] ** 2 + lx[1] ** 2 + lx[2] ** 2 + lamp.b * lamp.b)
+  }
+  return (sum * (qb - qa)) / (hp * samples)
+}
+
+/** Brute force: the lens kernel 1 / (d² + b²), averaged over points along the lens, integrated along the ray. */
+export function airlightLensReference(ro: Vec3, rd: Vec3, dist: number, lamp: ScatterLens, p: ScatterShape, street: StreetProfileShape, steps = 20000, lensSteps = 32): number {
+  let total = 0
+  for (let k = 0; k < lensSteps; k++) {
+    const lu = ((k + 0.5) / lensSteps) * 2 - 1
+    const lp: Vec3 = [lamp.pos[0] + lamp.arm[0] * lu * lamp.a, lamp.pos[1], lamp.pos[2] + lamp.arm[1] * lu * lamp.a]
+    const toP: Vec3 = [lp[0] - ro[0], lp[1] - ro[1], lp[2] - ro[2]]
+    const p0 = toP[0] * rd[0] + toP[1] * rd[1] + toP[2] * rd[2]
+    const a = Math.max(p0 - lamp.range, 0), b = Math.min(p0 + lamp.range, dist)
+    if (b <= a) continue
+    const ds = (b - a) / steps
+    for (let i = 0; i < steps; i++) {
+      const s = a + (i + 0.5) * ds
+      const lx: Vec3 = [rd[0] * s - toP[0], rd[1] * s - toP[1], rd[2] * s - toP[2]]
+      total += (lensIntegrand(lx, rd, lamp, p, street) / (lx[0] ** 2 + lx[1] ** 2 + lx[2] ** 2 + lamp.b * lamp.b)) * ds
+    }
+  }
+  return total / lensSteps
+}
+
 /** Weights of the 4-tap depth-aware upsample (the composite shader's), normalised. */
 export function upsampleWeights(fx: number, fy: number, tapDist: readonly [number, number, number, number], centre: number): [number, number, number, number] {
   const bil = [(1 - fx) * (1 - fy), fx * (1 - fy), (1 - fx) * fy, fx * fy]
@@ -523,6 +595,11 @@ export type FogLamp = {
   visibility?: number
   /** Stable identity for selection hysteresis (defaults to the index). */
   id?: number
+  /**
+   * Street lamp lens (\`lights/street.ts\`): plan arm (pole → head) and semi-axes a (along it) and b (m). The street
+   * profile replaces the cone (cosOuter/cosInner ignored) and the light leaves the whole lens.
+   */
+  lens?: { arm: readonly [number, number]; a: number; b: number }
 }
 
 const tmpScore: { i: number; s: number; x: number; z: number }[] = []
@@ -603,6 +680,8 @@ export type FogUpdate = {
   lamps: readonly FogLamp[]
   /** Seconds, for the bank and cloud drift (default 0: frozen). */
   time?: number
+  /** Profile shared by every lamp with a \`lens\` (default \`STREET_LAMP_DEFAULTS\`). */
+  street?: StreetLampSettings
 }
 
 /** Fog-depth blur input for `FrameInput.fogBlur` (`@arcade/kit/gpu/fog-blur`). */
@@ -694,6 +773,7 @@ export class FogScatter {
     const r = this.glowRect
     u.set(glow && r ? [r[0], r[1], 1 / (r[2] - r[0]), 1 / (r[3] - r[1])] : [0, 0, 0, 0], 52)
     u.set([s.bankLamp, s.bankUndulation, 0, 0], 56)
+    packStreetLamp(input.street ?? STREET_LAMP_DEFAULTS, u, 60)
     const L = this.frame.lamps
     for (let k = 0; k < lamps.length; k++) {
       const l = input.lamps[lamps[k]!]!
@@ -710,6 +790,10 @@ export class FogScatter {
       L.set([axis[0], axis[1], axis[2], l.cosInner ?? -1], o + 8)
       L.set([(l.size ?? 0.2) * 0.5, 0, 0, 0], o + 12)
       L.set([l.color[0] * raw, l.color[1] * raw, l.color[2] * raw, sigma], o + 16)
+      if (l.lens) {
+        const n = Math.hypot(l.lens.arm[0], l.lens.arm[1]) || 1
+        L.set([l.lens.arm[0] / n, l.lens.arm[1] / n, l.lens.a, l.lens.b], o + 20)
+      } else L.set([0, 0, 0, 0], o + 20)
     }
     this.frame.lampCount = lamps.length
     return this.frame
@@ -750,7 +834,11 @@ struct FogParams {
   cloud2: vec4f,   // cloud body (× fog), lamp underglow, wind heading cos, sin
   glowRect: vec4f, // glow map x0, z0, 1/width, 1/depth (0 = no map)
   bank3: vec4f,    // lamp beams in bank, top undulation
+  streetA: vec4f,  // street lamp profile (lights/street.ts packStreetLamp)
+  streetB: vec4f,
+  streetC: vec4f,
   pad0: vec4f,
+  pad1: vec4f,
 }
 @group(0) @binding(${FOG_UNIFORM_BINDING}) var<uniform> FOG: FogParams;
 
@@ -984,13 +1072,14 @@ ${fogParamsWgsl}
 ${fogConeWgsl}
 ${hooks.surface ? sceneSurfaceWgsl : ""}
 ${hooks.wetSettings ? wetSurfaceWgsl : ""}
-struct FogLamp { a: vec4f, b: vec4f, c: vec4f, d: vec4f, e: vec4f }
-// Five vec4f per lamp for ${MAX_FOG_LAMPS} lamps, then the ${FOG_GLOW_SIZE}² lamp-glow map.
+struct FogLamp { a: vec4f, b: vec4f, c: vec4f, d: vec4f, e: vec4f, f: vec4f }
+// Six vec4f per lamp for ${MAX_FOG_LAMPS} lamps, then the ${FOG_GLOW_SIZE}² lamp-glow map.
 @group(0) @binding(${FOG_LAMP_BINDING}) var<storage, read> fogLampData: array<vec4f>;
 fn fogLamp(i: u32) -> FogLamp {
-  let o = i * 5u;
-  return FogLamp(fogLampData[o], fogLampData[o + 1u], fogLampData[o + 2u], fogLampData[o + 3u], fogLampData[o + 4u]);
+  let o = i * 6u;
+  return FogLamp(fogLampData[o], fogLampData[o + 1u], fogLampData[o + 2u], fogLampData[o + 3u], fogLampData[o + 4u], fogLampData[o + 5u]);
 }
+${streetLampWgsl}
 ${atmo ? fogAtmosphereWgsl : ""}
 ${hooks.declarations ?? ""}
 fn fogWet(p: vec3f, n: vec3f, footprint: f32) -> f32 { return ${hooks.wet ?? "0.0"}; }
@@ -1019,6 +1108,45 @@ ${atmo ? `  // Where the bank thickens the air, the beams scatter more: σ(lamp)
   let bankLamp = select(0.0, FOG.bank3.x, FOG.bank.w > 0.5);
 ` : ""}  for (var i = 0u; i < count; i++) {
     let L = fogLamp(i);
+    if (L.f.z > 0.0) {
+      // Street lamp: the light leaves the lens, so the ray takes its light from the lens point nearest it (the
+      // representative point along the arc tube, clamped to the lens) through the lens kernel 1 / (d² + b²); the
+      // equiangular pdf over the softened distance √(h² + b²) matches that kernel exactly. Deterministic: no lens noise.
+      let ax = vec3f(L.f.x, 0.0, L.f.y);
+      let w0 = L.a.xyz - ro;
+      let rx = dot(rd, ax);
+      let den = max(1.0 - rx * rx, 1e-4);
+      let lu = clamp((dot(w0, rd) * rx - dot(w0, ax)) / den, -L.f.z, L.f.z);
+      let toP = w0 + ax * lu;
+      let p0 = dot(toP, rd);
+      let hp = max(sqrt(max(dot(toP, toP) - p0 * p0, 0.0) + L.f.w * L.f.w), 0.03);
+      let pa = max(p0 - L.a.w, 0.0);
+      let pb = min(p0 + L.a.w, dist);
+      if (pb <= pa) { continue; }
+      let qa = atan((pa - p0) / hp);
+      let qb = atan((pb - p0) / hp);
+      var lsum = 0.0;
+      for (var j = 0u; j < n; j++) {
+        let t = mix(qa, qb, (jitter + f32(j)) / f32(n));
+        let lx = rd * (p0 + hp * tan(t)) - toP;
+        let ld = max(length(lx), 1e-3);
+        let ln = lx / ld;
+        let prof = streetProfile(ln, L.f.xy, FOG.streetA, FOG.streetB.y) * (1.0 - leak) + leak;
+        let r4 = ld / L.a.w;
+        let win = pow(clamp(1.0 - r4 * r4 * r4 * r4, 0.0, 1.0), 2.0) * exp(-ld / (FOG.scatter.y * FOG.streetC.x));
+        let hg = (1.0 - g2) / pow(max(1.0 + g2 - 2.0 * g * -dot(ln, rd), 1e-4), 1.5);
+        // Exact line-lens kernel over the point kernel the pdf cancelled: the mean of 1 / (d² + b²) along the lens.
+        let xc = lx + toP - w0;
+        let u0 = dot(xc, ax);
+        let H = sqrt(max(dot(xc, xc) - u0 * u0, 0.0) + L.f.w * L.f.w);
+        let kseg = (atan((L.f.z - u0) / H) + atan((L.f.z + u0) / H)) / (2.0 * L.f.z * H);
+        var thick = 1.0;
+${atmo ? "        if (bankLamp > 0.0) { thick += bankLamp * fogBankMeanSigma(ro.y + rd.y * (p0 + hp * tan(t))) / max(L.e.w, 1e-5); }" : ""}
+        lsum += prof * win * mix(1.0, hg, 0.85) * kseg * (ld * ld + L.f.w * L.f.w) * thick;
+      }
+      acc += L.b.rgb * lsum * (qb - qa) * FOG.streetC.y / (hp * f32(n) * 12.566371);
+      continue;
+    }
     let toL = L.a.xyz - ro;
     let s0 = dot(toL, rd);
     let h = max(sqrt(max(dot(toL, toL) - s0 * s0, 0.0)), 0.03);
@@ -1135,8 +1263,12 @@ ${atmo ? `  if (FOG.cloud.w > 0.0 && rd.y > 0.01) {
         let ld = toL / dl;
         let dx = dot(ld - rm, side);
         let dy = abs(dot(ld - rm, vert)) + abs(ld.y - rm.y);
-        let lobe = exp(-(dx * dx / (across * across) + dy * dy / (along * along)));
-        let aim = fogLampCone(dot(-ld, L.c.xyz), L.b.w - 0.1, L.c.w);
+        // A lens widens its glint by its angular size; street lamps aim with their profile.
+        let ac = across + L.f.w / dl;
+        let al = along + L.f.z / dl;
+        let lobe = exp(-(dx * dx / (ac * ac) + dy * dy / (al * al)));
+        var aim = fogLampCone(dot(-ld, L.c.xyz), L.b.w - 0.1, L.c.w);
+        if (L.f.z > 0.0) { aim = min(streetProfile(-ld, L.f.xy, FOG.streetA, FOG.streetB.y), 1.0); }
         gl += L.e.rgb * lobe * (aim * 0.9 + 0.1) / (dl * dl + 4.0) * exp(-dl * L.e.w);
       }
       acc += gl * fres * wet * T * trans * FOG.reflect.z;

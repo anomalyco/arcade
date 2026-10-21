@@ -147,9 +147,9 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
     match: (s) => s === "@arcade/kit/gpu/boot" || s === "@arcade/kit/gpu/scene-frame" || s === "@arcade/kit/gpu/frame-parts",
   },
   {
-    area: "`gpu/lights/{physical,beam,flicker}`",
-    description: "Opt-in physical lights and surfaces (GGX, 3D spot cones, torch beam profile, sky reflections, specular AA) and stateless lamp flicker and failure",
-    match: (s) => s === "@arcade/kit/gpu/lights/physical" || s === "@arcade/kit/gpu/lights/beam" || s === "@arcade/kit/gpu/lights/flicker",
+    area: "`gpu/lights/{physical,beam,flicker,street}`",
+    description: "Opt-in physical lights and surfaces (GGX, 3D spot cones, torch beam profile, sky reflections, specular AA), street lamps as lens emitters with roadway photometry, and stateless lamp flicker and failure",
+    match: (s) => s === "@arcade/kit/gpu/lights/physical" || s === "@arcade/kit/gpu/lights/beam" || s === "@arcade/kit/gpu/lights/flicker" || s === "@arcade/kit/gpu/lights/street",
   },
   {
     area: "`gpu/shadows/spot-shadows`",

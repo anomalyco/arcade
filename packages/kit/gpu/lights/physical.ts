@@ -1,6 +1,7 @@
 import type { LabControl } from "../../lab-panel"
 import { spotShadowWgsl } from "../shadows/spot-shadows"
 import { DARKWOOD_BEAM, beamWgsl } from "./beam"
+import { STREET_LAMP_DEFAULTS, packStreetLamp, streetLampWgsl } from "./street"
 import type { SceneHooks } from "../shaders"
 
 /**
@@ -90,6 +91,11 @@ export type PhysicalLightOptions = {
    * halves, e.g. a custom uniform). Default: Outbreak's Darkwood beam baked as constants.
    */
   beam?: { a: string; b: string }
+  /**
+   * WGSL \`vec4f\` expressions of the shared street lamp profile (\`packStreetLamp\`'s two halves) for
+   * \`SceneLight.street\` lights (lens emitter + roadway photometry, \`lights/street.ts\`). Default: its defaults.
+   */
+  street?: { a: string; b: string }
 }
 
 /** WGSL: BRDF, light shape and environment functions. Needs `common` (Frame, Light, PI) and `ambientAt` before use. */
@@ -154,12 +160,26 @@ fn pbrFalloff(d: f32, r: f32, s: f32) -> f32 {
 }
 
 /**
+ * Distance falloff: the windowed inverse square, or for a street lamp's lens (cone.w >= 6.5, lens half-width
+ * cone.w − 7) the on-axis disc form 1 / (d² + b²), so the pool has no hotspot under the head.
+ */
+fn pbrLightFalloff(L: Light, d: f32, r: f32) -> f32 {
+  if (L.cone.w < 6.5) { return pbrFalloff(d, r, L.extra.z); }
+  let b = L.cone.w - 7.0;
+  let x = d / max(r, 1e-3);
+  let w = clamp(1.0 - x * x * x * x, 0.0, 1.0);
+  return w * w / (d * d + b * b);
+}
+
+/**
  * A light's 3D spot cone (Light.cone.w in [2.5, 4.5)): axis xz in cone.xy with y pointing down, cos outer in cone.z,
  * cos inner in cone.w − 3; or a torch beam (cone.w >= 4.5: axis x, z, y in cone.xyz, half-angle cone.w − 5) shaped by the shared beam profile
- * (\`lights/beam.ts\`). Returns 1 for other lights (the kit's plan cones and game-shaped cones keep their own code).
+ * (\`lights/beam.ts\`); or a street lamp (cone.w >= 6.5: arm xz in cone.xy, lens semi-axes cone.z and cone.w − 7) shaped by
+ * \`streetProfile\`. Returns 1 for other lights (the kit's plan cones and game-shaped cones keep their own code).
  */
 fn pbrCone(L: Light, ldir: vec3f, spill: f32) -> f32 {
   if (L.cone.w < 2.5) { return 1.0; }
+  if (L.cone.w >= 6.5) { return streetProfile(-ldir, L.cone.xy, pbrStreetA(), pbrStreetB().y); }
   if (L.cone.w >= 4.5) { return kitBeamProfile(kitBeamAngle(dot(-ldir, L.cone.xzy)) / (L.cone.w - 5.0), pbrBeamA(), pbrBeamB()); }
   let axis = vec3f(L.cone.x, -sqrt(max(1.0 - dot(L.cone.xy, L.cone.xy), 0.0)), L.cone.y);
   let c = smoothstep(L.cone.z, L.cone.w - 3.0, dot(-ldir, axis));
@@ -196,10 +216,14 @@ export function physicalLightHooks(opts: PhysicalLightOptions = {}): SceneHooks 
   const knobs = opts.knobs ?? `vec4f(${num(s.specularAA)}, ${num(s.sphereLights)}, ${num(s.envSpecular)}, ${num(s.spill)})`
   const env = opts.env ?? "mix(ambientAt(dir), ambientAt(n), rough * rough)"
   const d = DARKWOOD_BEAM
+  const st = packStreetLamp({ ...STREET_LAMP_DEFAULTS })
+  const street = opts.street ?? { a: `vec4f(${[...st.subarray(0, 4)].map(num).join(", ")})`, b: `vec4f(${[...st.subarray(4, 8)].map(num).join(", ")})` }
   const beam = opts.beam ?? { a: `vec4f(${[d.inner, d.core, d.coreWidth, d.spill].map(num).join(", ")})`, b: `vec4f(${num(d.spillWidth)}, ${num(d.rings)}, 0.0, 0.0)` }
   return {
-    declarations: `${physicalLightWgsl}${beamWgsl}${opts.spotShadows ? spotShadowWgsl : ""}
+    declarations: `${streetLampWgsl}${physicalLightWgsl}${beamWgsl}${opts.spotShadows ? spotShadowWgsl : ""}
 fn pbrKnobs() -> vec4f { return ${knobs}; }
+fn pbrStreetA() -> vec4f { return ${street.a}; }
+fn pbrStreetB() -> vec4f { return ${street.b}; }
 fn pbrBeamA() -> vec4f { return ${beam.a}; }
 fn pbrBeamB() -> vec4f { return ${beam.b}; }
 fn pbrEnvRadiance(dir: vec3f, rough: f32, n: vec3f) -> vec3f { return ${env}; }
@@ -212,12 +236,28 @@ fn pbrEnvSpecular(n: vec3f, V: vec3f, rough: f32, f0: vec3f, ao: f32) -> vec3f {
   return pbrEnvRadiance(dir, rough, n) * pbrEnvBRDF(f0, rough, nv) * pbrSpecOcclusion(nv, ao, rough) * pbrKnobs().z;
 }`,
     fragmentStart: `pbrAAKernel = pbrSpecularAAKernel(${opts.aaNormal ?? "normalize(o.normal)"}, pbrKnobs().x);`,
-    lightAttenuation: `var att = power * pbrFalloff(d3, r, L.extra.z) * pbrCone(L, ldir, pbrKnobs().w);${opts.spotShadows ? "\n    if (att > 0.0005) { att *= spotShadowVis(i, world, n); }" : ""}`,
+    lightAttenuation: `var att = power * pbrLightFalloff(L, d3, r) * pbrCone(L, ldir, pbrKnobs().w);${opts.spotShadows ? `
+    if (att > 0.0005) {
+      // A street lamp's lens softens its shadows with distance from the caster (contact hardening).
+      let lensR = select(0.0, sqrt(L.cone.z * (L.cone.w - 7.0)) * pbrStreetB().w, L.cone.w >= 6.5);
+      if (lensR > 0.01) { att *= spotShadowVisArea(i, world, n, lensR, fract(sin(dot(world, vec3f(12.9898, 78.233, 37.719))) * 43758.5453 + F.cam.w * 0.618034)); }
+      else { att *= spotShadowVis(i, world, n); }
+    }` : ""}`,
     diffuseTerm: "let diffuse = max(ndl, 0.0) / PI;",
     lightLeak: "0.0",
     wallDirectScale: "1.0",
     specularTerm: `if (att * vis > 0.0) {
-      let sp = pbrSpecular(n, V, ldir, shin, d3, L.extra.z * pbrKnobs().y);
+      var sl = ldir;
+      var sd = d3;
+      var sr = L.extra.z;
+      if (L.cone.w >= 6.5) {
+        // Representative point (Karis): the lens point nearest the mirror ray, widened by the lens half-width.
+        let lp = streetLensPoint(vec3f(L.pos.x, hl, L.pos.z), L.cone.xy, L.cone.z, L.cone.w - 7.0, world, reflect(-V, n));
+        sd = max(length(lp - world), 0.05);
+        sl = (lp - world) / sd;
+        sr = L.cone.w - 7.0;
+      }
+      let sp = pbrSpecular(n, V, sl, shin, sd, sr * pbrKnobs().y);
       out.spec += L.color.rgb * att * vis * sp.x;
       pbrSpecF += L.color.rgb * att * vis * sp.y;
     }`,
@@ -253,6 +293,13 @@ export function physicalCone(axis: readonly [number, number, number], cosOuter: 
   if (axis[1] / len > 1e-6) throw new Error("Physical spot axes point down or level (light.cone stores y ≤ 0)")
   if (!(cosInner > cosOuter) || cosOuter < 0 || cosInner > 1) throw new Error("Physical spot needs 0 ≤ cosOuter < cosInner ≤ 1")
   return [axis[0] / len, axis[2] / len, cosOuter, 3 + cosInner]
+}
+
+/** Packs a street lamp into the kit \`Light.cone\` slot: arm (plan, pole → head), lens semi-axes a (along the arm) and b. */
+export function streetCone(arm: readonly [number, number], a: number, b: number): [number, number, number, number] {
+  const len = Math.hypot(arm[0], arm[1]) || 1
+  if (!(b > 0 && b < 0.5) || !(a > 0)) throw new Error("Street lamp lens needs a > 0 and 0 < b < 0.5 m")
+  return [arm[0] / len, arm[1] / len, a, 7 + b]
 }
 
 export function falloff(d: number, r: number, s: number): number {

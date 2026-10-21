@@ -226,6 +226,60 @@ fn spotShadowVis(light: u32, world: vec3f, n: vec3f) -> f32 {
   }
   return 1.0;
 }
+
+/**
+ * Contact-hardening visibility from an emitter of radius \`lens\` (m), PCSS-style: the mean blocker depth over the
+ * lens's footprint gives the penumbra w = lens · (d − d_blocker) / d_blocker; eight comparisons on a Vogel disc of
+ * that width, rotated by \`noise\` (0..1, per pixel and frame, resolved by TAA). Falls back to \`spotShadowVis\`'s sharp
+ * result where nothing blocks. Costs nine depth loads more than \`spotShadowVis\`.
+ */
+fn spotShadowVisArea(light: u32, world: vec3f, n: vec3f, lens: f32, noise: f32) -> f32 {
+  let count = u32(SPOTS.head.x);
+  for (var s = 0u; s < count; s++) {
+    let slot = SPOTS.slots[s];
+    if (u32(slot.params.x) != light) { continue; }
+    let toL = slot.light.xyz - world;
+    let d = max(length(toL), 0.05);
+    let c = clamp(abs(dot(n, toL / d)), 0.08, 1.0);
+    let tanT = min(sqrt(max(1.0 - c * c, 0.0)) / c, 10.0);
+    let texel = d * slot.params.z;
+    let clip = slot.viewProj * vec4f(world + n * texel * 0.6, 1.0);
+    if (clip.w <= 1e-4) { return 1.0; }
+    let ndc = clip.xyz / clip.w;
+    if (any(abs(ndc.xy) >= vec2f(1.0)) || ndc.z >= 1.0) { return 1.0; }
+    let near = slot.light.w;
+    let far = slot.far.x;
+    let slack = texel * (tanT * 1.2 + 0.6) * slot.params.w;
+    let z = ndc.z - slack * near * far / ((far - near) * d * d);
+    let uv = vec2f(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+    let size = SPOTS.head.y;
+    let t = 1.0 / size;
+    let layer = i32(slot.far.y);
+    let rot = noise * 6.2831853;
+    // Blocker search over the lens's footprint on the map (in texels at the receiver), capped to keep loads coherent.
+    let search = clamp(lens / max(slot.params.z, 1e-5) * (d - near) / d, 1.0, 24.0);
+    var bsum = 0.0;
+    var bn = 0.0;
+    for (var k = 0; k < 9; k++) {
+      let a = f32(k) * 2.3999632 + rot;
+      let r = sqrt((f32(k) + 0.5) / 9.0) * search;
+      let p = clamp(vec2i((uv + vec2f(cos(a), sin(a)) * r * t) * size), vec2i(0), vec2i(i32(size) - 1));
+      let zb = textureLoad(spotShadowMap, p, layer, 0);
+      if (zb < z) { bsum += far * near / (far - zb * (far - near)); bn += 1.0; }
+    }
+    if (bn < 0.5) { return 1.0; }
+    let db = bsum / bn;
+    let pen = clamp(lens * (d - db) / max(db, 0.05) / max(texel, 1e-5), 1.0, 24.0);
+    var sum = 0.0;
+    for (var k = 0; k < 8; k++) {
+      let a = f32(k) * 2.3999632 + rot + 1.1;
+      let r = sqrt((f32(k) + 0.5) / 8.0) * pen;
+      sum += textureSampleCompareLevel(spotShadowMap, spotShadowSamp, clamp(uv + vec2f(cos(a), sin(a)) * r * t, vec2f(t), vec2f(1.0 - t)), layer, z);
+    }
+    return mix(1.0, sum / 8.0, slot.params.y);
+  }
+  return 1.0;
+}
 `
 
 /** Position-only depth shader for the shadow pass (any vertex layout with float32x3 position at offset 0). */

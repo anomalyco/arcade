@@ -8,11 +8,12 @@ import { interiorWindowHooks, thinGlassHooks } from "@arcade/kit/gpu/materials/g
 import { ROOM_ATLAS } from "@arcade/kit/gpu/materials/rooms"
 import { contactShadowVolume } from "@arcade/kit/gpu/contact-shadows"
 import { interiorWgsl } from "./interior/shader"
+import { LENS_MAT } from "./lamps"
 
-const nightUniform = `struct Night { fog: vec4f, look: vec4f, torch: vec4f, wet: vec4f, interior: vec4f, forest: vec4f, glassA: vec4f, glassB: vec4f, glassC: vec4f, contactA: vec4f, contactB: vec4f }
+const nightUniform = `struct Night { fog: vec4f, look: vec4f, torch: vec4f, wet: vec4f, interior: vec4f, forest: vec4f, glassA: vec4f, glassB: vec4f, glassC: vec4f, contactA: vec4f, contactB: vec4f, streetA: vec4f, streetB: vec4f, streetC: vec4f }
 @group(0) @binding(13) var<uniform> N: Night;`
 /** Floats in the Night uniform (`main.ts` packs it). */
-export const NIGHT_FLOATS = 44
+export const NIGHT_FLOATS = 56
 // Wet reflections follow the materials: every physical surface tags its roughness in the HDR alpha, and the asphalt's
 // wet/puddle term (kit reflections/wet) sets that roughness, so puddles mirror and the film between them smears.
 /** The lot's fog volume; `atmosphere` compiles the fog bank and cloud deck in (the CI smoke leaves them out). */
@@ -25,7 +26,8 @@ export const reflectionVolume = ssrVolume({ wetMaterial: WET_ASPHALT })
 const nightHooks: SceneHooks = {
   lampGrid: false,
   // Glow decals (the stairwell's lit panes, 5 mm off their backing; lamp lenses) win their depth tie at any distance.
-  depthBias: "select(0.0, N.forest.z, v.matAux.x > 2.5 && v.matAux.x < 3.5)",
+  // The street lens bowls sit 5 mm under Ashwood's shoebox glass, so they take the same offset to stay in front.
+  depthBias: `select(0.0, N.forest.z, (v.matAux.x > 2.5 && v.matAux.x < 3.5) || abs(v.matAux.x - ${LENS_MAT}.0) < 0.5)`,
   vertex: `if(v.matAux.x==30.0) {
     let toCam=normalize(F.cam.xz-v.pos.xz);
     let side=vec2f(toCam.y,-toCam.x);
@@ -41,6 +43,13 @@ const nightHooks: SceneHooks = {
   fragmentReturn: reflectiveSurfaceReturn(),
   surface: /* wgsl */ `
     let ray=normalize(o.world-F.cam.xyz);
+    // Street lamp lens bowls (lamps.ts): emissive, core to rim; Today leaves Ashwood's own lens.
+    if(mat==${LENS_MAT}) {
+      if(N.streetB.x<0.5) { discard; }
+      // The arc tube's core runs hot enough to bleach towards pale yellow; the rim keeps the sodium amber.
+      let core=smoothstep(0.7,1.0,o.aux);
+      col=mix(vec3f(1.0,0.55,0.18),vec3f(1.0,0.72,0.34),core*0.5)*o.aux*11.0*N.streetB.z;
+    }
     if(mat==3 && o.aux<0.0) {
       col=fogSky(F.cam.xyz,ray);
     } else {
@@ -49,7 +58,7 @@ const nightHooks: SceneHooks = {
   `,
 }
 
-const physical = { env: "mix(fogEnv(dir),fogAmbient(n),rough*rough)", knobs:"vec4f(N.look.w,1.0,1.0,0.02)", spotShadows:true }
+const physical = { env: "mix(fogEnv(dir),fogAmbient(n),rough*rough)", knobs:"vec4f(N.look.w,1.0,1.0,0.02)", spotShadows:true, street:{ a:"N.streetA", b:"N.streetB" } }
 export const hooks = withPhysicalLights(nightHooks, physical)
 export const texturedHooks: SceneHooks = withPhysicalLights({ ...nightHooks,
   surface: `if(mat==3) { col*=texBase.rgb; }\n${nightHooks.surface}`,

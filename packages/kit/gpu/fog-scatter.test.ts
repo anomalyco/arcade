@@ -11,6 +11,8 @@ import {
   FogScatter,
   SODIUM_CONE,
   airlightEquiangular,
+  airlightLensEquiangular,
+  airlightLensReference,
   airlightReference,
   atmosphereControls,
   bakeLampGlow,
@@ -35,6 +37,7 @@ import {
   type Vec3,
 } from "./fog-scatter"
 import { makeSceneShader, postShader, spriteShader } from "./shaders"
+import { STREET_LAMP_DEFAULTS } from "./lights/street"
 import { volumeAccumulateShader, volumeBilinearShader, volumeUpsampleShader } from "./volume-pass"
 import { fogBlurDownWgsl, fogBlurMixWgsl } from "./fog-blur"
 
@@ -204,7 +207,9 @@ describe("lamp picker", () => {
     const sigma = 0.01 * Math.exp(-0.05 * 8)
     const t = Math.exp(-fogOpticalDepth(eye, [0, 8, 20], medium))
     expect(frame.lamps[4]).toBeCloseTo(2000 * sigma * t * FOG_DEFAULTS.strength, 4)
-    expect(frame.lamps[FOG_LAMP_FLOATS - 1]).toBeCloseTo(sigma, 6)
+    expect(frame.lamps[19]).toBeCloseTo(sigma, 6)
+    expect(FOG_LAMP_FLOATS).toBe(24)
+    expect([...frame.lamps.subarray(20, 24)]).toEqual([0, 0, 0, 0])
     expect(frame.uniforms[3]).toBe(1)
     expect(frame.uniforms[27]).toBe(1)
     fog.settings.mode = "today"
@@ -374,4 +379,50 @@ describe("WGSL validates with naga", () => {
       }
     })
   }
+})
+
+describe("street lamp airlight (lens emitter)", () => {
+  const lamp = { pos: [0, 6.4, 0] as Vec3, range: 30, arm: [1, 0] as const, a: 0.3, b: 0.14 }
+  const shape = { leak: 0.03, coneLength: 4.5, phaseG: 0.6 }
+  const street = { along: 2.4, street: 1.5, house: 0.7, cutoff: 78, glow: 0.04 }
+  // Rays passing 1.5 m or more from the lens; a ray grazing it is checked within 60 % (the profile's direction then
+  // differs across the lens, which the representative point ignores).
+  const rays: [Vec3, Vec3][] = [
+    [[8, 1.7, 6], [-0.7, 0.25, -0.55]],
+    [[0, 1.7, 12], [0, 0.4, -0.92]],
+    [[3, 1.7, -9], [-0.2, 0.25, 0.95]],
+  ]
+  test("the representative-point estimator stays within 15 % of the full lens integral", () => {
+    for (const [ro, d] of rays) {
+      const l = Math.hypot(d[0], d[1], d[2])
+      const rd: Vec3 = [d[0] / l, d[1] / l, d[2] / l]
+      const ref = airlightLensReference(ro, rd, 60, lamp, shape, street, 6000, 24)
+      let est = 0
+      const N = 4000
+      for (let k = 0; k < N; k++) est += airlightLensEquiangular(ro, rd, 60, lamp, shape, street, 4, (k + 0.5) / N)
+      est /= N
+      expect(Math.abs(est - ref) / ref).toBeLessThan(0.15)
+    }
+    const rd: Vec3 = [-0.7 / 0.997, 0.45 / 0.997, -0.55 / 0.997]
+    let est = 0
+    for (let k = 0; k < 256; k++) est += airlightLensEquiangular([8, 1.7, 6], rd, 60, lamp, shape, street, 4, (k + 0.5) / 256)
+    expect(est / 256 / airlightLensReference([8, 1.7, 6], rd, 60, lamp, shape, street, 6000, 24)).toBeLessThan(1.6)
+  })
+  test("a ray grazing the lens stays bounded (no singular dot under the head)", () => {
+    const rd: Vec3 = [0, 0, -1]
+    const avg = (f: (j: number) => number) => { let t = 0; for (let k = 0; k < 256; k++) t += f((k + 0.5) / 256); return t / 256 }
+    const lens = (h: number) => avg((j) => airlightLensEquiangular([0, 6.4 - h, 5], rd, 60, lamp, shape, street, 4, j))
+    const spot = { pos: lamp.pos, range: 30, axis: [0, -1, 0] as Vec3, cosOuter: -1, cosInner: -0.5, near: 0.0001 }
+    const point = (h: number) => avg((j) => airlightEquiangular([0, 6.4 - h, 5], rd, 60, spot, shape, 4, j))
+    expect(lens(0.005) / lens(0.05)).toBeLessThan(1.2)
+    expect(point(0.005) / point(0.05)).toBeGreaterThan(3)
+  })
+  test("packs the lens and the street profile", () => {
+    const fog = new FogScatter(createFogSettings())
+    const eye: Vec3 = [0, 1.7, 30]
+    const vp = mat4.multiply(mat4.perspective(1.2, 16 / 9, 0.1, 1000), mat4.lookAt(eye, [0, 4, 0], [0, 1, 0]))
+    const f = fog.update({ eye, viewProj: vp, lamps: [{ x: 0, y: 6.4, z: 0, range: 30, color: [1, 0.55, 0.18], intensity: 3000, lens: { arm: [0, 2], a: 0.3, b: 0.14 } }] })
+    expect([...f.lamps.subarray(20, 24)].map((v) => +v.toFixed(3))).toEqual([0, 1, 0.3, 0.14])
+    expect(f.uniforms[60]).toBeCloseTo(STREET_LAMP_DEFAULTS.along, 5)
+  })
 })
