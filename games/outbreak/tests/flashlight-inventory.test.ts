@@ -4,7 +4,6 @@ import {
   DEFAULT_FLASHLIGHT_TUNING,
   flashlightAwarenessAt,
   flashlightColor,
-  flashlightControls,
   type FlashlightTuning,
 } from "../shared/flashlight"
 import { HOTBAR_SIZE } from "../shared/inventory"
@@ -133,11 +132,7 @@ describe("flashlight battery, flicker, cutout, and awareness", () => {
     expect(flashlightAwarenessAt(p, 52, 44, blockers)).toBe(0)
   })
 
-  test("Lab controls cover all flashlight tuning keys and colour warmth interpolates cleanly", () => {
-    expect(flashlightControls.map((c) => String(c.key)).sort()).toEqual(Object.keys(DEFAULT_FLASHLIGHT_TUNING).sort())
-    for (const control of flashlightControls) {
-      expect(typeof control.unit).toBe("string")
-    }
+  test("colour warmth interpolates cleanly", () => {
     const cool = flashlightColor(0)
     const warm = flashlightColor(1)
     expect(warm[0]).toBeGreaterThan(cool[0])

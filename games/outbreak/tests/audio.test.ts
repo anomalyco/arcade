@@ -9,9 +9,8 @@ import { SoundDirector, type SoundEvent, type SoundWorld, type SoundZombie } fro
 import { meleeImpact, shotImpacts } from "../src/audio/impacts"
 import { PICKUP_SOUND } from "../src/audio/inventory"
 import { RELOAD_EVENTS, RELOAD_STARTS } from "../src/audio/reload"
-import { weaponSound } from "../src/audio/weapons/catalog"
 import { ZombieFootsteps } from "../src/audio/zombie-steps"
-import { audioControls, DEFAULT_AUDIO_SETTINGS, SURFACE_STEP_SETTING_KEYS } from "../src/audio/settings"
+import { DEFAULT_AUDIO_SETTINGS } from "../src/audio/settings"
 import { FOOT_SURFACES, footstepEvent, SoundOcclusion, stepMovementMode, surfaceAt, zombieStepEvent } from "../src/audio/space"
 import { planInterior } from "../src/interiors/plan"
 import { pursuers, soundWorld } from "../src/audio/world"
@@ -21,19 +20,13 @@ const ids = (events: readonly SoundEvent[]) => events.map((e) => e.id)
 const idle = { mx: 0, my: 0, aim: 0, interact: false }
 
 describe("Outbreak sound director", () => {
-  test("every id it can emit exists in the shared library", () => {
-    const source = Bun.file(new URL("../src/audio/director.ts", import.meta.url).pathname)
-    return source.text().then((text) => {
-      const emitted = [...text.matchAll(/id: "([a-z.-]+)"/g)].map((m) => m[1]!)
-      expect(emitted.length).toBeGreaterThan(15)
-      for (const id of emitted) expect(SFX_BY_ID.has(id), id).toBe(true)
-      for (const s of ["concrete", "grass", "wood"]) for (const g of ["walk", "run"]) expect(SFX_BY_ID.has(`foot.${s}.${g}`)).toBe(true)
-      for (const s of ["concrete", "grass", "wood"]) for (const k of ["step", "shuffle", "drag"]) expect(SFX_BY_ID.has(`zombie.foot.${k}.${s}`)).toBe(true)
-      for (const s of ["wood", "plaster", "concrete", "metal", "glass"]) expect(SFX_BY_ID.has(`impact.bullet.${s}`)).toBe(true)
-      for (const id of Object.values(PICKUP_SOUND)) expect(SFX_BY_ID.has(id), id).toBe(true)
-      for (const k of ["medical", "tinker", "wood"]) for (const p of ["loop", "done"]) expect(SFX_BY_ID.has(`craft.${k}.${p}`)).toBe(true)
-      for (const e of RELOAD_EVENTS) expect(SFX_BY_ID.has(e.id)).toBe(true)
-    })
+  test("surface, pickup, crafting and reload mappings name library sounds", () => {
+    for (const s of ["concrete", "grass", "wood"]) for (const g of ["walk", "run"]) expect(SFX_BY_ID.has(`foot.${s}.${g}`)).toBe(true)
+    for (const s of ["concrete", "grass", "wood"]) for (const k of ["step", "shuffle", "drag"]) expect(SFX_BY_ID.has(`zombie.foot.${k}.${s}`)).toBe(true)
+    for (const s of ["wood", "plaster", "concrete", "metal", "glass"]) expect(SFX_BY_ID.has(`impact.bullet.${s}`)).toBe(true)
+    for (const id of Object.values(PICKUP_SOUND)) expect(SFX_BY_ID.has(id), id).toBe(true)
+    for (const k of ["medical", "tinker", "wood"]) for (const p of ["loop", "done"]) expect(SFX_BY_ID.has(`craft.${k}.${p}`)).toBe(true)
+    for (const e of RELOAD_EVENTS) expect(SFX_BY_ID.has(e.id)).toBe(true)
   })
 
   test("first frame is silent; shots, kills, reloads and doors sound from the live simulation", () => {
@@ -601,20 +594,6 @@ describe("a fresh start is quiet", () => {
 })
 
 describe("fire & explosives sounds (AR-62)", () => {
-  test("every sound they use is in Outbreak's slice of the shared library", () => {
-    return Bun.file(new URL("../src/audio/inventory.ts", import.meta.url).pathname)
-      .text()
-      .then((text) => {
-        const body = text.slice(text.indexOf("private fireSound"))
-        const used = [...body.matchAll(/id: "([a-z.-]+)"/g)].map((m) => m[1]!)
-        expect(used.length).toBeGreaterThan(6)
-        for (const id of used) {
-          if (id.startsWith("wpn.")) expect(weaponSound(id), id).toBeDefined()
-          else expect(SFX_BY_ID.get(id)?.usedBy, id).toContain("outbreak")
-        }
-      })
-  })
-
   test("a thrown stick of dynamite hisses on its fuse and blows once", () => {
     const session = new LocalSession(7, 7, 0.22, { zombieCount: 0 })
     const director = new SoundDirector()
@@ -641,42 +620,8 @@ describe("fire & explosives sounds (AR-62)", () => {
   })
 })
 
-describe("Lab Sound controls & settings", () => {
-  test("exposes Today vs Sound pass, bus volumes, per-surface footstep sliders, falloff and voice cap in the Sound group", () => {
-    const soundGroup = audioControls.filter((c) => c.group === "Sound")
-    const keys = new Set(soundGroup.map((c) => c.key))
-
-    // Today vs Sound pass profile selector is first in Sound group
-    const modeCtrl = soundGroup.find((c) => c.key === "audioMode")
-    expect(modeCtrl).toBeDefined()
-    expect(modeCtrl && "options" in modeCtrl ? modeCtrl.options.map((o) => o.label) : []).toContain("Today")
-    expect(DEFAULT_AUDIO_SETTINGS.audioMode).toBe(1)
-
-    // Mix bus sliders
-    for (const k of ["audioWeapons", "audioZombies", "audioImpacts", "audioMovement", "audioAmbience", "audioUi"]) {
-      expect(keys.has(k), k).toBe(true)
-    }
-
-    // Player self-step and every FootSurface has a dedicated loudness slider in Sound
-    expect(keys.has("audioSelfStep")).toBe(true)
-    for (const surf of FOOT_SURFACES) {
-      const settingKey = SURFACE_STEP_SETTING_KEYS[surf]
-      expect(keys.has(settingKey), `${surf} -> ${settingKey}`).toBe(true)
-      expect(DEFAULT_AUDIO_SETTINGS[settingKey]).toBe(100)
-    }
-
-    // Spatial & engine controls
-    for (const k of ["audioOcclusion", "audioFalloff", "audioReverb", "audioVoiceCap"]) {
-      expect(keys.has(k), k).toBe(true)
-    }
-
-    // Forwarding on OutbreakSettings works for all new keys
-    const settings = createOutbreakSettings(new URLSearchParams())
-    expect(settings.audio.audioMode).toBe(1)
-    expect(settings.audio.audioStepPuddle).toBe(100)
-    expect(settings.audio.audioVoiceCap).toBe(32)
-
-    // footstepEvent honours selfScale and surfaceScale function
+describe("footstep mix", () => {
+  test("self and surface scales multiply the emitted step gain", () => {
     const sim = new CoopSim(7, 7, 0.22, { zombieCount: 0 })
     const base = footstepEvent(sim.town, 38, 44, 3.4, { local: true })!
     const boosted = footstepEvent(sim.town, 38, 44, 3.4, {

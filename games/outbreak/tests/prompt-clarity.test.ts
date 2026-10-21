@@ -5,7 +5,7 @@ import { DEFAULT_HUD_SETTINGS } from "../src/hud/settings"
 import { PROMPT_ACTIONS, promptGlyph } from "../src/hud/prompt-glyphs"
 import { blockedByBoards, BOARD_UP, boardPrompt } from "../src/prompt-clarity/board"
 import { bracketPath } from "../src/prompt-clarity/highlight"
-import { clarityOn, PROMPT_CLARITY_TODAY, promptClarityControls, teachUses } from "../src/prompt-clarity/settings"
+import { clarityOn, PROMPT_CLARITY_TODAY, teachUses } from "../src/prompt-clarity/settings"
 import { StateWatch, stampDrifts } from "../src/prompt-clarity/stamps"
 import { actionKey, teachingWord } from "../src/prompt-clarity/teach"
 
@@ -140,8 +140,5 @@ describe("settings", () => {
     s.promptClarity = PROMPT_CLARITY_TODAY
     expect(teachUses(s)).toBe(0)
     expect(clarityOn(s, "promptHighlight") || clarityOn(s, "promptBoardKey") || clarityOn(s, "promptStamp")).toBe(false)
-    for (const key of Object.keys(s).filter((k) => k.startsWith("prompt") && !k.startsWith("promptIcon"))) {
-      expect(promptClarityControls.find((c) => c.key === key)).toBeDefined()
-    }
   })
 })

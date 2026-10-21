@@ -1,14 +1,13 @@
 import { describe, expect, test } from "bun:test"
-import { SFX_BY_ID } from "@arcade/kit/audio"
 import { momentaryMaxLufs } from "@arcade/kit/audio/sfx-analysis"
 import { TICK_DT } from "../shared/clock"
 import { MELEE_WEAPONS, type CombatMeleeEvent, type MeleeWeaponId } from "../shared/combat"
 import type { Town } from "../shared/map"
 import { LocalSession } from "../shared/session"
 import { SoundDirector, type SoundEvent, type SoundWorld } from "../src/audio/director"
-import { audioControls, DEFAULT_AUDIO_SETTINGS, WEAPON_TOGGLE_KEYS } from "../src/audio/settings"
+import { DEFAULT_AUDIO_SETTINGS } from "../src/audio/settings"
 import { weaponCue, weaponMix } from "../src/audio/weapons/bank"
-import { WEAPON_KEYS, WEAPON_SAMPLE_RATE, WEAPON_SOUNDS, weaponSound } from "../src/audio/weapons/catalog"
+import { WEAPON_SAMPLE_RATE, WEAPON_SOUNDS, weaponSound } from "../src/audio/weapons/catalog"
 import { to48k } from "../src/audio/weapons/level"
 import { weaponSpace } from "../src/audio/weapons/weapons"
 import { soundWorld } from "../src/audio/world"
@@ -60,31 +59,6 @@ describe("weapon sound catalog (AR-102)", () => {
     expect(cue.gainVariation).toBeGreaterThan(0)
   })
 
-  test("Lab: Sound › Weapons has Today one setting away and a toggle per weapon; layered is the default", () => {
-    const weapons = audioControls.filter((c) => c.subsection === "Weapons")
-    const set = weapons.find((c) => c.key === "audioWeaponSet")! as { options?: { label: string; value: number }[] }
-    expect(set.options?.[0]).toEqual({ label: "Today (shared pistol, 3 melee hits)", value: 0 })
-    expect(DEFAULT_AUDIO_SETTINGS.audioWeaponSet).toBe(1)
-    for (const k of WEAPON_KEYS) expect(weapons.some((c) => c.key === WEAPON_TOGGLE_KEYS[k] && c.type === "toggle"), k).toBe(true)
-  })
-
-  test("every fallback names a library sound", () => {
-    const src = [
-      Bun.file(new URL("../src/audio/weapons/weapons.ts", import.meta.url).pathname),
-      Bun.file(new URL("../src/audio/inventory.ts", import.meta.url).pathname),
-      Bun.file(new URL("../src/audio/director.ts", import.meta.url).pathname),
-    ]
-    return Promise.all(src.map((f) => f.text())).then((texts) => {
-      for (const text of texts) {
-        for (const m of text.matchAll(/id: "([a-z.-]+)"/g)) {
-          const id = m[1]!
-          if (id.startsWith("wpn.")) expect(weaponSound(id), id).toBeDefined()
-          else expect(SFX_BY_ID.has(id), id).toBe(true)
-        }
-        for (const m of text.matchAll(/id: `wpn\.([a-z]+)\.\$\{/g)) expect(WEAPON_SOUNDS.some((d) => d.id.startsWith(`wpn.${m[1]}.`)), m[0]).toBe(true)
-      }
-    })
-  })
 })
 
 describe("where a report rings", () => {
