@@ -262,7 +262,7 @@ function recipe(type: RoomType, household: Household, rng: Rng, condition: House
 const TALL = new Set<Prop["kind"]>(["shelf", "fridge", "closet", "dresser", "stairs"])
 const overlaps = (a: Rect, b: Rect, m = 0) => a[0] < b[2] + m && a[2] > b[0] - m && a[1] < b[3] + m && a[3] > b[1] - m
 
-type Placed = { prop: Prop; rect: Rect; room: number; essential: boolean; table?: string; closet?: boolean }
+type Placed = { prop: Prop; rect: Rect; room: number; essential: boolean; table?: string }
 
 function furnish(rooms: LRoom[], inners: Rect[], zones: Rect[], windowRects: Rect[], household: Household, condition: HouseStyle["condition"], rng: Rng): Placed[] {
   const placed: Placed[] = []
@@ -273,7 +273,7 @@ function furnish(rooms: LRoom[], inners: Rect[], zones: Rect[], windowRects: Rec
     return [r2(cx - w / 2), r2(cz - d / 2), r2(cx + w / 2), r2(cz + d / 2)]
   }
   const put = (kind: Item["kind"], cx: number, cz: number, room: number, it: Item): Placed => {
-    const p: Placed = { prop: { x: r2(cx), y: r2(cz), kind, variant: Number(rng.next().toFixed(4)) }, rect: rectAt(kind, cx, cz), room, essential: Boolean(it.essential), table: it.table, closet: kind === "closet" }
+    const p: Placed = { prop: { x: r2(cx), y: r2(cz), kind, variant: Number(rng.next().toFixed(4)) }, rect: rectAt(kind, cx, cz), room, essential: Boolean(it.essential), table: it.table }
     placed.push(p)
     return p
   }
@@ -534,14 +534,14 @@ export function planHouse(input: HousePlanInput): HousePlan | null {
 
   // Links: each room behind the front strip gets a door to a room ahead of it (same unit), open strips get archways.
   const shared = sharedEdges(rooms)
-  const doorLinks: { edge: (typeof shared)[number] }[] = []
+  const doorLinks: (typeof shared)[number][] = []
   const archLinks: (typeof shared)[number][] = []
   const linked = new Set<number>()
   const extra = layout.links ?? []
   for (const [a, b] of extra) {
     const e = shared.find((s) => s.axis === "x" && ((s.a === a && s.b === b) || (s.a === b && s.b === a)) && s.a1 - s.a0 >= 1.95)
     if (e) {
-      doorLinks.push({ edge: e })
+      doorLinks.push(e)
       linked.add(rooms[a]!.strip < 0 ? a : b)
     }
   }
@@ -549,7 +549,7 @@ export function planHouse(input: HousePlanInput): HousePlan | null {
     if (room.strip <= 0 || linked.has(i)) return
     const ahead = shared.filter((s) => s.axis === "x" && s.a === i && rooms[s.b]!.unit === room.unit && rooms[s.b]!.strip === room.strip - 1 && s.a1 - s.a0 >= 1.95)
     ahead.sort((p, q) => q.a1 - q.a0 - (p.a1 - p.a0))
-    if (ahead[0]) doorLinks.push({ edge: ahead[0] })
+    if (ahead[0]) doorLinks.push(ahead[0])
   })
   for (const s of shared) {
     if (s.axis !== "z") continue
@@ -560,7 +560,7 @@ export function planHouse(input: HousePlanInput): HousePlan | null {
   // Partitions with their door or archway.
   let roomDoor = 0
   for (const s of shared) {
-    const door = doorLinks.find((l) => l.edge === s)
+    const door = doorLinks.includes(s)
     const arch = archLinks.includes(s)
     let gap: [number, number] | null = null
     if (door) {
@@ -589,7 +589,6 @@ export function planHouse(input: HousePlanInput): HousePlan | null {
   // Outside walls: front and back doors, then windows by the style's pattern.
   const edges = boundaryEdges(rects)
   const edgeOf = (axis: "x" | "z", at: number, side: 1 | -1, a: number) => edges.find((e) => e.axis === axis && e.side === side && Math.abs(e.at - at) < 1e-4 && a >= e.a0 - 1e-4 && a <= e.a1 + 1e-4)
-  const frontRooms = new Set<number>()
   layout.fronts.forEach((f, k) => {
     const r = rooms[f.room]!.rect
     const e = edgeOf("x", r[3], 1, (r[0] + r[2]) / 2)
@@ -599,7 +598,6 @@ export function planHouse(input: HousePlanInput): HousePlan | null {
     const dx = r2(lo + (hi - lo) * f.t)
     doors.push({ id: k === 0 ? `${id}-front` : `${id}-front${k + 1}`, rect: [dx, r2(e.at - OUTER_WALL), r2(dx + 1.4), e.at], open: false })
     openings.push({ edge: e, axis: "x", at: e.at, a0: dx, a1: dx + 1.4, kind: "door" })
-    frontRooms.add(f.room)
   })
   if (layout.back !== undefined && layout.back >= 0) {
     const r = rooms[layout.back]!.rect
@@ -615,7 +613,7 @@ export function planHouse(input: HousePlanInput): HousePlan | null {
   }
   const boardShare = dressing.household === "hideout" ? 0.9 : condition === "derelict" ? Math.max(0.45, variety.boarded) : condition === "kept" ? variety.boarded : 0
   let winCount = 0
-  rooms.forEach((room, ri) => {
+  rooms.forEach((room) => {
     const r = room.rect
     const sides: [PlanEdge["axis"], number, 1 | -1, number, number][] = [
       ["x", r[3], 1, r[0], r[2]],
@@ -665,7 +663,6 @@ export function planHouse(input: HousePlanInput): HousePlan | null {
           winCount++
           openings.push({ edge: e, axis, at, a0: w0, a1: w1, kind: "window", id: winId, boarded })
         })
-        void ri
       }
     }
   })
@@ -741,7 +738,7 @@ export function planHouse(input: HousePlanInput): HousePlan | null {
   const bonus = dressing.household === "hideout" ? 4 : 0
   const bare = condition === "burnt" || dressing.household === "ransacked"
   for (const p of placed) {
-    if (p.closet) {
+    if (p.prop.kind === "closet") {
       closets.push({ x: p.prop.x, y: p.prop.y })
       continue
     }
