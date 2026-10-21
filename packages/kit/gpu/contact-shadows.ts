@@ -31,9 +31,14 @@ export type ContactShadowSettings = {
   /** Fade out by this view distance, metres. */
   distance: number
   halfRes: boolean
+  /**
+   * The share of each new frame while the view moves (1 = Today: a moving view drops the history and shows each
+   * frame's raw jittered march). Contact shadows sit on the surfaces the history reprojects by, so keeping it is exact.
+   */
+  historyMoving: number
 }
 
-export const CONTACT_SHADOW_DEFAULTS: Readonly<ContactShadowSettings> = { mode: "today", length: 0.6, steps: 12, thickness: 0.12, strength: 0.85, lights: 2, distance: 45, halfRes: true }
+export const CONTACT_SHADOW_DEFAULTS: Readonly<ContactShadowSettings> = { mode: "today", length: 0.6, steps: 12, thickness: 0.12, strength: 0.85, lights: 2, distance: 45, halfRes: true, historyMoving: 1 }
 
 export const createContactShadowSettings = (overrides: Partial<ContactShadowSettings> = {}): ContactShadowSettings => ({ ...CONTACT_SHADOW_DEFAULTS, ...overrides })
 
@@ -51,6 +56,7 @@ export function contactShadowControls(group = "Lighting", prefix = "contact."): 
     { ...key("lights"), label: "Lights per pixel", group, subsection: "Contact shadows", type: "select", options: [{ value: 1, label: "1" }, { value: 2, label: "2" }] },
     range("distance", "Fade distance", 5, 120, 1, "m"),
     { ...key("halfRes"), label: "Half resolution", group, subsection: "Contact shadows", type: "toggle" },
+    range("historyMoving", "History weight in motion", 0.05, 1, 0.01),
   ]
 }
 
@@ -64,7 +70,7 @@ export function packContactShadowKnobs<T extends Float32Array>(s: ContactShadowS
 
 /** Volume input for `FrameInput.volume` (null: Today, no pass). */
 export function contactShadowInput(s: ContactShadowSettings): VolumeInput | null {
-  return s.mode === "screen" ? { downscale: s.halfRes ? 2 : 1, history: 0.25 } : null
+  return s.mode === "screen" ? { downscale: s.halfRes ? 2 : 1, history: 0.25, moving: s.historyMoving } : null
 }
 
 export type ContactShadowHooks = {

@@ -21,7 +21,9 @@ describe("contact shadow settings", () => {
   })
 
   test("screen mode asks for a half-resolution pass with history", () => {
-    expect(contactShadowInput(createContactShadowSettings({ mode: "screen" }))).toEqual({ downscale: 2, history: 0.25 })
+    expect(contactShadowInput(createContactShadowSettings({ mode: "screen" }))).toEqual({ downscale: 2, history: 0.25, moving: 1 })
+    // Kept in motion by setting (the history reprojects by the very surfaces the shadows lie on).
+    expect(contactShadowInput(createContactShadowSettings({ mode: "screen", historyMoving: 0.25 }))?.moving).toBe(0.25)
     expect(contactShadowInput(createContactShadowSettings({ mode: "screen", halfRes: false }))?.downscale).toBe(1)
   })
 

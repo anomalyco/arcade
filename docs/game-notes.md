@@ -191,6 +191,15 @@ proven animation techniques to animation.md, not here.
   `games/lot/scripts/motion.ts`: turning pops/frame 148 → 3.7, block flashes 31 → 0 frames; the far head's wet
   reflection (mirror ROI) 4.7 → 0 pops/frame. Turning the fog bank or fog-depth blur off multiplied the reflection glitter
   15× and 7×: atmosphere hides temporal faults, so attribute with it off as well as on.
+- **Contact shadows keep their history in motion too; far mullions need exact box coverage (Lot, AR-118,
+  2026-10-21).** The screen-space contact-shadow slot dropped its history whenever the view moved, so walking under the
+  booth lamp showed its raw half-res jittered march (2436 pops/frame on the lamp walk; contact off 216).
+  `ContactShadowSettings.historyMoving` (1 = Today; lot 0.25) keeps it: the shadows sit on the surfaces the history
+  reprojects by, so it is exact (→ 230). Interior-window mullions smoothstepped over one pixel, which keeps a sub-pixel
+  bar at full strength over its centre pixel, so far bars flashed as they crossed pixel centres; Glass › Windows ›
+  Mullion edges › Box filtered covers each pixel by the bar's exact share. A halo around a near lamp scores as popping
+  under depth reprojection (its depth is the sky); score it with the box moved by the lamp's own screen motion
+  (`anchored` ROI in `motion.ts`) before "fixing" it. A per-frame sliding fence dither scored worse than the fixed one.
 - **Far glow decals need a depth offset in steps, not millimetres (Lot, AR-118, 2026-10-21).** With depth24 and near
   0.15 one depth step is ≈ d²/(near·2²⁴): 9 mm at 150 m. The facility stairwell's lit panes sat 5 mm off their opaque
   backing and the sodium lenses 0–5 mm (some −0.9 mm) off their housings, so from the gate they tied with the wall and
