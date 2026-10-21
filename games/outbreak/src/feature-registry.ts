@@ -1,5 +1,5 @@
 import type { Camera } from "@arcade/kit/client/camera"
-import type { Batch, Renderer } from "@arcade/kit/gpu/renderer"
+import type { Batch, FrameInput, Renderer } from "@arcade/kit/gpu/renderer"
 import type { LabControl } from "@arcade/kit/lab-panel"
 import type { LabCommand } from "@arcade/kit/lab/commands"
 import type { CoopSim, SurvivorSlot } from "../shared/coop-sim"
@@ -68,6 +68,8 @@ export interface OutbreakClientFeatureFrameHooks {
   batches?(ctx: OutbreakClientFrameContext): readonly Batch[]
   /** Extra point lights packed after the night, fire and detail lights (`LIGHT_FLOATS` each); returns the new count. */
   lights?(ctx: OutbreakClientFrameContext, lights: Float32Array, count: number, max: number): number
+  /** Last word on the renderer's input just before the frame is drawn (e.g. bounced light's grid). */
+  render?(ctx: OutbreakClientFrameContext, input: FrameInput): void
   /** Screen overlay, after the frame is drawn and the camera has settled. */
   overlay?(ctx: OutbreakClientFrameContext): void
 }
@@ -277,6 +279,10 @@ export class OutbreakClientFeatureRegistry
   frameLights(ctx: OutbreakClientFrameContext, lights: Float32Array, count: number, max: number): number {
     for (const feature of this.list()) if (feature.frame?.lights) count = feature.frame.lights(ctx, lights, count, max)
     return count
+  }
+
+  frameRender(ctx: OutbreakClientFrameContext, input: FrameInput): void {
+    for (const feature of this.list()) feature.frame?.render?.(ctx, input)
   }
 
   frameOverlay(ctx: OutbreakClientFrameContext): void {

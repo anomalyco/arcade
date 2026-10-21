@@ -20,6 +20,7 @@ import { DEFAULT_FIRE_SETTINGS, type OutbreakFireSettings } from "./fire/setting
 import { DEFAULT_AIR_SETTINGS, type OutbreakAirSettings } from "./air/settings"
 import { DEFAULT_IMPACT_SETTINGS, type OutbreakImpactSettings } from "./impact/settings"
 import { DEFAULT_BREACH_SETTINGS, type OutbreakBreachSettings } from "./breach/settings"
+import { DEFAULT_BOUNCE_SETTINGS, type OutbreakBounceSettings } from "./bounce-light/settings"
 import { DEFAULT_WAY_OUT_TUNING, type WayOutTuning } from "../shared/way-out/tuning"
 import { DEFAULT_INTERACTIONS_TUNING, type InteractionsTuning } from "../shared/interactions/tuning"
 import { DEFAULT_SPECIALS_TUNING, type SpecialsTuning } from "../shared/specials/kinds"
@@ -268,6 +269,7 @@ export type OutbreakSubsystemMap = {
   breach: OutbreakBreachSettings
   secrets: OutbreakSecretsSettings
   characters: OutbreakCharacterSettings
+  bounce: OutbreakBounceSettings
 }
 
 export type OutbreakSubsystemKey = keyof OutbreakSubsystemMap
@@ -359,6 +361,7 @@ export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "breach",
   "secrets",
   "characters",
+  "bounce",
 ] as const
 
 export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
@@ -411,6 +414,7 @@ export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
     breach: { ...DEFAULT_BREACH_SETTINGS },
     secrets: { ...DEFAULT_SECRETS_SETTINGS },
     characters: { ...DEFAULT_CHARACTER_SETTINGS },
+    bounce: { ...DEFAULT_BOUNCE_SETTINGS },
   }
 }
 

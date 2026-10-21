@@ -147,6 +147,13 @@
   houses 14 %, some cracked. Placement is `mirrorSpot` in `src/interiors/mesh.ts` (its footprint keeps props and
   details off). Stills and paired GPU: `bun scripts/reflections-stills.ts` (via `hivemind run --kind browser`). Tests:
   `tests/reflections.test.ts`.
+- Bounced light (AR-115, D-47, `src/bounce-light/`, Lab: Backquote › Bounced light, "Today (off)" is the default):
+  one bounce of the frame's lights (fire, torches, muzzle flashes, lamps, lit windows) in plan space through the kit's
+  `@arcade/kit/gpu/gi/plan-bounce`, held by walls, added through the scene's `bounce` hook and counted as light by the
+  colour rule (`outbreakGiIrr`). The feature sets `FrameInput.planBounce` from the `frame.render` hook; off skips every
+  pass. Stills, sheet and a hall-sweep clip: `bun scripts/bounce-stills.ts --out <dir> --clip`; paired GPU:
+  `AB_B='{"bouncedLight":1}' bun scripts/ab-gpu.ts` (both via `hivemind run --kind browser`). Tests:
+  `tests/bounce-light.test.ts`, `packages/kit/gpu/gi/plan-bounce.test.ts`.
 - Special zombies (Runner, Brute, Screamer, Bloater, Riot cop, Lurker) live in `shared/specials/` (kinds, rarity and
   stats in `kinds.ts`, behaviours in `specials.ts`) and `src/specials/` (silhouettes and accessories drawn by
   `src/zombies.ts`, gas cloud, Lab). The kind is encoded in the zombie's seed, so clients read it with
