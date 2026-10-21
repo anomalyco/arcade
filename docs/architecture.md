@@ -76,6 +76,7 @@ The table below shows which shared modules each game and the Lab import. `script
 | `gpu/lights/{physical,beam,flicker}` | Opt-in physical lights and surfaces (GGX, 3D spot cones, torch beam profile, sky reflections, specular AA) and stateless lamp flicker and failure | — | — | — | — | Yes | — | — | — |
 | `gpu/shadows/spot-shadows` | Perspective shadow maps for the few most important spot lights, re-rendered only when a slot changes | — | — | — | — | Yes | — | — | — |
 | `gpu/gi/plan-bounce` | One bounce of the frame's lights in plan space: per-frame emission, mip chain and cone gather on a world-anchored grid, held by walls | — | — | Yes | — | — | — | — | — |
+| `gpu/shadows/capsule-shadows` | Analytic soft character shadows from rig bone capsules: contact occlusion and a contact-hardening shadow per light and the sun, grid-culled | — | — | Yes | — | — | — | — | — |
 | `gpu/reflections/{ssr,surface,wet}` | Screen-space reflections volume slot (Ashwood's march, streak blur and history), HDR-alpha roughness tag, and the shared wet/puddle surface term | — | — | — | — | — | — | — | — |
 | `gpu/{motion,motion-blur,sprite-motion}` | Depth-aware 8-tap shutter gather and actor/sprite velocity history | Yes | Yes | Yes | — | Yes | — | Yes | — |
 | `gpu/{surface-materials,foliage}` & `textures` | Procedural surface recipes, 16-layer WebP array, foliage, and trample | — | Yes | Yes | — | Yes | — | Yes | — |
