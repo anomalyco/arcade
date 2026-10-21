@@ -105,6 +105,13 @@ describe("trees stay out of houses", () => {
     for (const seed of [7, 1, 2, 3, 11, 42, 99, 1234, 4242, 31337]) {
       const town = makeTown(seed, seed, 0.22, 1)
       const level = buildLevel(town)
+      // Streaming another chunk replaces this shared scratch list. A cache hit must restore the origin's plants,
+      // otherwise houseplants are mistaken for outdoor foliage and the stem checks inspect the wrong generation.
+      const footprints = plantFootprints.map((f) => ({ ...f }))
+      plantFootprints.length = 0
+      expect(buildLevel(town)).toBe(level)
+      expect(plantFootprints.length).toBeGreaterThan(40)
+      expect(plantFootprints).toEqual(footprints)
       const indoor = seenIndoors(level.chunks, town.buildings)
       expect({ seed, indoor: indoor.slice(0, 5), count: indoor.length }).toEqual({ seed, indoor: [], count: 0 })
       expect(indoor.filter((p) => p.building === TRAINING_HOUSE)).toEqual([])

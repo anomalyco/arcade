@@ -167,14 +167,18 @@ export type OriginChunk = LevelChunk & { origin: { src: number; role: OriginRole
 export type OriginLevel = Omit<LevelData, "chunks" | "glass"> & { chunks: OriginChunk[]; glass: OriginChunk[] }
 
 /** Cache immutable static generation; doors and actors stay in dynamic batches. */
-const levelCache = new Map<string, OriginLevel>()
+const levelCache = new Map<string, { level: OriginLevel; plants: typeof plantFootprints }>()
 export function buildLevel(town: Town): OriginLevel {
   const key=`${town.seed}/${town.houseSeed}/${town.terrain}/${town.foliageDensity??1}/${archSettings.houseDecay}/${archSettings.clutterDensity}/${archSettings.weathering}/${archSettings.clutterSeed}/${interiorSignature()}/${propLevelSignature()}/${vegetationSignature()}`
   const cached=levelCache.get(key)
-  if(cached)return cached
+  if(cached) {
+    plantFootprints.length=0
+    for(const plant of cached.plants)plantFootprints.push({...plant})
+    return cached.level
+  }
   const level=compileLevel(town)
   if(levelCache.size>=3)levelCache.delete(levelCache.keys().next().value!)
-  levelCache.set(key,level)
+  levelCache.set(key,{level,plants:plantFootprints.map(plant=>({...plant}))})
   return level
 }
 
