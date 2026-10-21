@@ -2,6 +2,9 @@
 
 - Unlisted first-person night exterior, `/arcade/lot/`. WebGPU through `@arcade/kit`, no Three.js runtime.
 - `src/world.ts`: baked Ashwood exterior geometry and title camera. `src/shaders.ts`: shared physical lights, fog-sky illumination and reflected airlight. `src/settings.ts`: typed live Night presets, bound to LabPanel; shared fog and spot-shadow controls use the same panel.
+- Forest: `public/ashwood/forest-models.bin.gz` holds Ashwood's 11 tree variants (LOD0/LOD1 trunk + cards) and its undergrowth clump templates; `forest-trees.bin.gz` one instance per tree (x, y, z, scale, yaw, tint, seed, variant columns). `@arcade/kit/gpu/forest` draws them (Backquote › Forest; Today reproduces the old frozen-LOD bake). Undergrowth uses the same card shading through Night uniform `N.forest`.
+- Ground dressing (`src/dressing.ts`): `@arcade/kit/sim/debris` rules along the booth island kerb, booth and wagon-apron walls, props, fence base, gate apron edges and road shoulders, with lane capsules, the booth and colliders as keep-outs; heights and the road line come from the bake (`scene.json` `ground`). Backquote › Ground; Today places nothing. Rebuilds 150 ms after a setting changes.
+- `scripts/capture-forest.ts [--base <main's dist>]`: headless muted stills (main, Today, new) and paired whole-frame GPU timings at the title camera.
 - WASD/arrow keys, pointer-lock mouse look, Shift sprint, F flashlight, Backquote Night panel. On local/tailnet previews, P copies and opens the matching Ashwood camera on port 5253. No audio.
 - Original-source downloads and normalization: `bun run fetch-assets`. Attribution and exact scope in `public/CREDITS.md`; mirrored source licence metadata in `public/assets/source-metadata.json`.
 - `bun run check`: TypeScript, focused geometry/import tests, production build. Assets are checked in, so checks do not fetch them.

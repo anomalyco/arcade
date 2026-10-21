@@ -24,7 +24,7 @@ test("baked exterior ships complete, finite, triangle-aligned geometry within ho
   const scene: SourceScene = await Bun.file(new URL("scene.json", base)).json()
   expect(scene.version).toBe(1)
   expect(scene.treeCount).toBeGreaterThan(100)
-  for (const kind of ["solid", "ground", "foliage", "fence", "glass", "undergrowth", "impostors"] as const) {
+  for (const kind of ["solid", "ground", "fence", "glass", "undergrowth"] as const) {
     expect(scene.files[kind].length).toBeGreaterThan(0)
     for (const name of scene.files[kind]) {
       const file = Bun.file(new URL(name, base))
@@ -42,6 +42,39 @@ test("baked exterior ships complete, finite, triangle-aligned geometry within ho
     }
   }
   expect(await Bun.file(new URL("paint.js", base)).exists()).toBe(true)
+})
+
+test("forest templates and instances match their manifest", async () => {
+  const base = new URL("../public/ashwood/", import.meta.url)
+  const scene: SourceScene = await Bun.file(new URL("scene.json", base)).json()
+  const gunzip = async (name: string) => Bun.gunzipSync(new Uint8Array(await Bun.file(new URL(name, base)).arrayBuffer()))
+  const models = await gunzip("forest-models.bin.gz"), trees = new Float32Array((await gunzip("forest-trees.bin.gz")).buffer)
+  const n = scene.forest.trees
+  expect(n).toBe(scene.treeCount)
+  expect(trees.length).toBe(n * 8)
+  expect(trees.every(Number.isFinite)).toBe(true)
+  const variants = trees.subarray(7 * n)
+  expect(Math.max(...variants)).toBe(scene.forest.models.length - 1)
+  let end = 0
+  for (const m of scene.forest.models) for (const lod of m.lods) for (const [offset, bytes] of [lod.trunk, lod.foliage]) {
+    expect(offset).toBe(end)
+    expect(bytes % 96).toBe(0)
+    end = offset! + bytes!
+  }
+  for (const plant of Object.values(scene.forest.plants)) {
+    expect(plant.range[0]).toBe(end)
+    expect(plant.range[1] % 96).toBe(0)
+    end = plant.range[0] + plant.range[1]
+  }
+  expect(end).toBe(models.byteLength)
+  // Foliage cards carry the inner-crown depth in aux (float16 at byte 22), 0 at the trunk to 1 at the limb tip.
+  const [offset, bytes] = scene.forest.models[0]!.lods[0]!.foliage
+  const view = new DataView(models.buffer, models.byteOffset + offset!, bytes!)
+  let lo = Infinity, hi = -Infinity
+  for (let o = 0; o < bytes!; o += 32) { const a = view.getFloat16(o + 22, true); lo = Math.min(lo, a); hi = Math.max(hi, a) }
+  expect(lo).toBeGreaterThanOrEqual(0)
+  expect(hi).toBeLessThanOrEqual(1)
+  expect(hi - lo).toBeGreaterThan(0.3)
 })
 
 test("shipped wagon is licensed, grounded, metre-scaled and has normals/UVs", async () => {

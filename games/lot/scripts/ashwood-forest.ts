@@ -9,9 +9,12 @@ export function foliageMaterial(_atlas: unknown, color: THREE.Color) {
   material.name = "undergrowth"
   return material
 }
+/** Every layer built during the bake, so the importer can also export the source's plant templates. */
+export const layers: InstLayer[] = []
 export class InstLayer {
   meshes: THREE.InstancedMesh[]
   constructor(readonly capacity: number, parts: { geometry: THREE.BufferGeometry; material: THREE.Material | THREE.Material[]; name: string }[]) {
+    layers.push(this)
     this.meshes = parts.map(p => {
       const mesh = new THREE.InstancedMesh(p.geometry, p.material, capacity)
       mesh.name = p.name

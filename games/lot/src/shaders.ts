@@ -2,7 +2,7 @@ import type { SceneHooks } from "@arcade/kit/gpu/shaders"
 import { withPhysicalLights } from "@arcade/kit/gpu/lights/physical"
 import { fogSceneWgsl, fogScatterVolume } from "@arcade/kit/gpu/fog-scatter"
 
-const nightUniform = `struct Night { fog: vec4f, look: vec4f, torch: vec4f }
+const nightUniform = `struct Night { fog: vec4f, look: vec4f, torch: vec4f, forest: vec4f }
 @group(0) @binding(13) var<uniform> N: Night;`
 export const fogVolume = fogScatterVolume({ declarations: nightUniform,
   wet: "N.look.x * (1.0-smoothstep(0.03,0.10,abs(p.y))) * (1.0-smoothstep(-max(0.2,footprint),max(0.2,footprint),min(abs(p.x)-6.0,max(abs(p.x)-13.0,abs(p.z-132.5)-12.5))))",

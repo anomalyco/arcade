@@ -23,7 +23,7 @@ The Objaverse snapshot names it **'80s Generic USA Station wagon – Low poly mo
 
 ## Procedural work and reference
 
-The exterior geometry is converted from Aiden's Ashwood procedural builders: building shell, dish, guard booth and furniture, barriers, lamps, roads, utility poles, wires, fence, facility grounds, seeded conifers, undergrowth and deadwood. Near trees use branch cards; distant trees use the original impostor painter with camera-facing quads. `ashwood/scene.json` records source hashes for the conversion.
+The exterior geometry is converted from Aiden's Ashwood procedural builders: building shell, dish, guard booth and furniture, barriers, lamps, roads, utility poles, wires, fence, facility grounds, seeded conifers, undergrowth and deadwood. Trees are exported as Ashwood's own per-variant models (two detail levels of branch cards) plus one instance per seeded tree, drawn by the kit's instanced forest; distant trees use the original impostor painter with camera-facing quads. Card shading (inner-crown darkening, face normals) and species colours follow Ashwood's forest material. `ashwood/scene.json` records source hashes for the conversion.
 Ashwood's home drift supplies the camera. The shared kit fog and physical-light ports supply the height fog, sky, lamp scattering, reflected airlight and specular lighting. Scanned building materials, playable facility interiors and SSR are outside this exterior conversion.
 No Mixamo assets or Three.js runtime are included.
 
@@ -37,3 +37,15 @@ Poly Haven **Metal Trash Can** and **Utility Box 01**, downloaded from their ori
 - https://polyhaven.com/a/utility_box_01
 - Licence: https://polyhaven.com/license
 - Regenerate with `bun scripts/fetch-dressing.ts`; download URLs and output hashes are in `assets/dressing-metadata.json`.
+
+## Forest LOD and ground-dressing techniques, MIT
+
+The kit's forest cross-fade (complementary Bayer 4×4 screen door shifted each frame), far-forest thinning (fewer crowns grown by 1/√(1−f)) and the rule-based debris placement (feature-anchored clusters, padded 2D SDF obstacle hash) follow **Tidewater** by Dan Greenheck: `src/materials/LODFade.js`, `src/world/vegetation/Impostors.js`, `src/world/debris/DebrisPlacement.js`.
+
+- https://github.com/dgreenheck/tidewater
+- MIT License, Copyright (c) 2026 DRG Software Solutions LLC. Reimplemented in `packages/kit/gpu/forest.ts` and `packages/kit/sim/debris.ts`; no Tidewater assets are included.
+
+## Ground dressing, CC0 1.0 and procedural
+
+Poly Haven **Can Rusted** (Rahul Chaudhary), original 1k glTF, centred and grounded: https://polyhaven.com/a/can_rusted (licence https://polyhaven.com/license). Regenerate with `bun scripts/fetch-dressing.ts can_rusted`; URL and hash in `assets/dressing-metadata.json`.
+Weed, grass, salal, fern and twig clumps are Ashwood's own undergrowth templates; leaves (an atlas painted at load), pebbles and paper scraps are procedural.
