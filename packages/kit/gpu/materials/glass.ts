@@ -94,12 +94,6 @@ export const GLASS_KNOB_FLOATS = 12
 /** F0 of one dielectric interface. */
 export const glassF0 = (ior: number) => ((ior - 1) / (ior + 1)) ** 2
 
-/** Schlick reflectance of one interface. */
-export const schlick = (f0: number, cosT: number) => f0 + (1 - f0) * (1 - Math.max(0, Math.min(1, cosT))) ** 5
-
-/** Reflectance of a thin non-absorbing slab, both interfaces and their inter-reflections: R + T²R / (1 − R²) = 2R / (1 + R). */
-export const slabReflectance = (r: number) => (2 * r) / (1 + r)
-
 /** Packs the live knobs: glass (f0, reflection, grime, condensation), (scatter, -, -, -), rooms (depth m, brightness, blinds, box-filtered mullions). */
 export function packGlassKnobs<T extends Float32Array>(glass: GlassSettings, rooms: RoomSettings, out: T = new Float32Array(GLASS_KNOB_FLOATS) as T, offset = 0): T {
   out.set([glassF0(glass.ior), glass.reflection, glass.grime, glass.condensation, glass.scatter, 0, 0, 0, rooms.depth, rooms.brightness, rooms.blinds, rooms.mullions === "box" ? 1 : 0], offset)

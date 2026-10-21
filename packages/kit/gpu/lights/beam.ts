@@ -66,22 +66,6 @@ export function beamCone(axis: readonly [number, number, number], halfAngle: num
   return [axis[0] / len, axis[2] / len, axis[1] / len, 5 + halfAngle]
 }
 
-const bell = (x: number) => 1 / (1 + x * x * (1 + 0.35 * x * x))
-const lorentz = (x: number) => 1 / (1 + x * x * (1 + 0.48 * x * x))
-const smoothstep = (a: number, b: number, x: number) => {
-  const t = Math.max(0, Math.min(1, (x - a) / (b - a)))
-  return t * t * (3 - 2 * t)
-}
-
-/** CPU mirror of `kitBeamProfile` (t = angle / half-angle). */
-export function beamProfile(t: number, p: BeamProfile): number {
-  const spillW = Math.max(p.spillWidth, 1)
-  if (t >= spillW * 1.7) return 0
-  const coreW = Math.max(p.coreWidth, 0.05)
-  const rings = 1 + p.rings * (0.2 * bell((t - 0.84) * 12.5) - 0.18 * bell((t - coreW * 1.35) * 9))
-  return (1 - smoothstep(p.inner, 1, t)) * rings + p.core * lorentz(t / Math.max(coreW, 0.04)) + p.spill * lorentz(t / spillW)
-}
-
 /** WGSL: `kitBeamAngle(cosT)` (≈ acos, Outbreak's series) and `kitBeamProfile(t, a, b)` from `packBeamProfile`. */
 export const beamWgsl = /* wgsl */ `
 fn kitBeamAngle(cosT: f32) -> f32 {
