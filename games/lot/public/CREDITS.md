@@ -49,3 +49,9 @@ The kit's forest cross-fade (complementary Bayer 4×4 screen door shifted each f
 
 Poly Haven **Can Rusted** (Rahul Chaudhary), original 1k glTF, centred and grounded: https://polyhaven.com/a/can_rusted (licence https://polyhaven.com/license). Regenerate with `bun scripts/fetch-dressing.ts can_rusted`; URL and hash in `assets/dressing-metadata.json`.
 Weed, grass, salal, fern and twig clumps are Ashwood's own undergrowth templates; leaves (an atlas painted at load), pebbles and paper scraps are procedural.
+
+## Glass, lit rooms and contact shadows (code)
+
+- Interior-mapped windows: `kitRoomBoxUV` and `kitPaneHash` in `@arcade/kit/gpu/materials/glass` are WGSL ports of `imRoomBoxUV` and `imHash` from **three-fenestra** by Edgar Perez, MIT licence (https://github.com/codedgar/three-fenestra). Its room images are not used: the room atlas is painted by our own ray tracer (`scripts/textures/paint-rooms.ts`).
+- Screen-space contact shadows (`@arcade/kit/gpu/contact-shadows`) follow Bend Studio's technique as implemented by three.js r181 `SSSNode`, MIT licence (https://github.com/mrdoob/three.js); the WGSL is written for the kit's volume pass.
+- The glass grime and condensation layer takes the idea of Martijn Steinrucken's *Heartfelt* (fogged glass with drips cut through it); no code is reused.

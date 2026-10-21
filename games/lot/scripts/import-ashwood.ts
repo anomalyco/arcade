@@ -4,6 +4,7 @@ import { resolve } from "node:path"
 import * as THREE from "three"
 import { packVerts, MAT } from "@arcade/kit/gpu/mesh"
 import { packTexturedVerts } from "@arcade/kit/gpu/textured-mesh"
+import { windowAux, type RoomKind } from "@arcade/kit/gpu/materials/rooms"
 
 // Offline conversion of Aiden's actual builders, not a second runtime renderer.
 // Usage: bun scripts/import-ashwood.ts /path/to/afterhours
@@ -66,6 +67,7 @@ parts.build(root, "power", { castShadow: true }); wires.build(root, ctx.renderer
 
 // Main-block windows are backed by actual room state in Ashwood. Bake those very same bays/tints.
 const state = await mod("world/interior/lighting-state.ts")
+const windowPanes: { obj: THREE.Mesh; kind: RoomKind; brightness: number; tint: THREE.Color }[] = []
 for (const w of state.litWindows()) {
   const g = new THREE.PlaneGeometry(w.u1-w.u0-0.12, w.head-w.sill-0.12)
   const m = new THREE.MeshStandardMaterial({ color: 0, emissive: new THREE.Color(w.tint[0],w.tint[1],w.tint[2]), emissiveIntensity: w.strength * 0.6 })
@@ -77,9 +79,27 @@ for (const w of state.litWindows()) {
   if (w.face === "west") { obj.position.set(-54.9,obj.position.y,u); obj.rotation.y=-Math.PI/2 }
   if (w.face === "east") { obj.position.set(34.9,obj.position.y,u); obj.rotation.y=Math.PI/2 }
   root.add(obj)
+  // The same pane for the interior-mapped window pass (Lot › Glass › Lit windows), 3 cm proud of the flat proxy so
+  // Today (the proxy alone) stays exact. Kind follows Ashwood's room state.
+  const pane = new THREE.Mesh(g.clone(), m)
+  pane.position.copy(obj.position); pane.rotation.copy(obj.rotation); pane.translateZ(0.03)
+  const kind: RoomKind = w.lit==="full" ? (w.storey===2 ? "lab" : (w.room.charCodeAt(w.room.length-1)%3===0 ? "conference" : "office")) : w.lit
+  windowPanes.push({ obj: pane, kind, brightness: w.strength * 0.6, tint: new THREE.Color(w.tint[0],w.tint[1],w.tint[2]) })
+}
+// Dark bays get the same front glass (sky reflection, mullions) over their dark backing, with no room light.
+const plan = await mod("world/interior/plan.ts")
+for (let storey=0; storey<5; storey++) for (const face of ["north","south","west","east"] as const) for (const w of plan.WINDOWS(storey, face)) {
+  if (state.windowLight(storey, face, (w.u0+w.u1)/2)) continue
+  const pane = new THREE.Mesh(new THREE.PlaneGeometry(w.u1-w.u0-0.12, w.head-w.sill-0.12)), u=(w.u0+w.u1)/2, y=0.15+storey*3.8+(w.sill+w.head)/2
+  if (face === "south") pane.position.set(u,y,21.9)
+  if (face === "north") { pane.position.set(u,y,-21.9); pane.rotation.y=Math.PI }
+  if (face === "west") { pane.position.set(-54.9,y,u); pane.rotation.y=-Math.PI/2 }
+  if (face === "east") { pane.position.set(34.9,y,u); pane.rotation.y=Math.PI/2 }
+  pane.translateZ(0.03)
+  windowPanes.push({ obj: pane, kind: "office", brightness: 0, tint: new THREE.Color(1,1,1) })
 }
 
-const streams: Record<string, { v: number[]; uv: number[] }> = Object.fromEntries(["solid","ground","foliage","fence","glass","undergrowth"].map(k=>[k,{v:[],uv:[]}]))
+const streams: Record<string, { v: number[]; uv: number[] }> = Object.fromEntries(["solid","ground","foliage","fence","glass","undergrowth","windows"].map(k=>[k,{v:[],uv:[]}]))
 function emit(g: THREE.BufferGeometry, matrix: THREE.Matrix4, m: THREE.MeshStandardMaterial, kind: string, tint=1, first=0, count=g.index?.count ?? g.getAttribute("position").count) {
   if (!g.getAttribute("normal")) g.computeVertexNormals()
   const p=g.getAttribute("position"), n=g.getAttribute("normal"), uv=g.getAttribute("uv"), vc=g.getAttribute("color"), pane=g.getAttribute("paneA"), flex=g.getAttribute("flex")
@@ -135,6 +155,17 @@ function emitObject(object: THREE.Object3D) {
 }
 root.updateMatrixWorld(true)
 root.traverse(emitObject)
+for (const p of windowPanes) {
+  p.obj.updateMatrixWorld(true)
+  const g=p.obj.geometry.index ? p.obj.geometry.toNonIndexed() : p.obj.geometry
+  const pos=g.getAttribute("position"), uv=g.getAttribute("uv"), v=new THREE.Vector3(), n=new THREE.Vector3(0,0,1).transformDirection(p.obj.matrixWorld)
+  const peak=Math.max(1,p.tint.r,p.tint.g,p.tint.b), c=p.tint.clone().multiplyScalar(1/peak).convertLinearToSRGB()
+  for(let i=0;i<pos.count;i++) {
+    v.fromBufferAttribute(pos,i).applyMatrix4(p.obj.matrixWorld)
+    streams.windows!.v.push(v.x,v.y,v.z,n.x,n.y,n.z,c.r,c.g,c.b,MAT.lit,windowAux(p.kind,p.brightness*peak))
+    streams.windows!.uv.push(uv.getX(i),uv.getY(i))
+  }
+}
 console.log("Authored scene triangles",Object.fromEntries(Object.entries(streams).map(([k,s])=>[k,s.v.length/33])))
 
 // Exact seeded placement and the source's own tree models, exported as per-variant templates plus one instance per
@@ -222,5 +253,5 @@ const paint=await Bun.build({entrypoints:[resolve(source,"src/world/forest/paint
 await Bun.write(`${out}/paint.js`,await paint.outputs[0]!.text())
 await Bun.write(`${out}/scene.json`,JSON.stringify({version:1,files,treeCount,forest:{models:forestModels,trees:treeCount,impostorGrid:[8,2],plants},ground,lamps:ctx.lamps,colliders:ctx.colliders,sources},null,2))
 const used=new Set(Object.values(files).flat())
-for(const file of await readdir(out)) if(/^(solid|ground|foliage|fence|glass|undergrowth|impostors)-\d+\.bin\.gz$/.test(file) && !used.has(file)) await unlink(resolve(out,file))
+for(const file of await readdir(out)) if(/^(solid|ground|foliage|fence|glass|undergrowth|impostors|windows)-\d+\.bin\.gz$/.test(file) && !used.has(file)) await unlink(resolve(out,file))
 console.log("Baked",out,treeCount,"trees")

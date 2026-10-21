@@ -33,6 +33,8 @@ export type VolumeLightShader = {
    * block, as `volumeLowDepth` (binding 22, r32float): a cheap, cache-friendly buffer to march rays against. Needs `depth`.
    */
   lowDepth?: boolean
+  /** How the slot lands in the scene: added (in-scatter, the default) or multiplied (rgb is a 0..1 visibility). */
+  composite?: "add" | "multiply"
 }
 
 /** Floats in a slot's own uniform (`VolumeInput.params`, binding 21: `array<vec4f, 8>`). */
@@ -273,6 +275,7 @@ export type VolumeView = {
 const U = () => GPUBufferUsage
 const T = () => GPUTextureUsage
 const additiveKeepAlpha: GPUBlendState = { color: { srcFactor: "one", dstFactor: "one" }, alpha: { srcFactor: "zero", dstFactor: "one-minus-src-alpha" } }
+const multiplyKeepAlpha: GPUBlendState = { color: { srcFactor: "zero", dstFactor: "src" }, alpha: { srcFactor: "zero", dstFactor: "one" } }
 
 export class VolumeSlot {
   readonly usesDepth: boolean
@@ -411,7 +414,7 @@ export class VolumeSlot {
       label: `volume ${index} composite`,
       layout: d.createPipelineLayout({ bindGroupLayouts: [this.compositeLayout] }),
       vertex: { module: comp, entryPoint: "vs" },
-      fragment: { module: comp, entryPoint: "fs", targets: [{ format: shared.format, blend: additiveKeepAlpha }] },
+      fragment: { module: comp, entryPoint: "fs", targets: [{ format: shared.format, blend: shader.composite === "multiply" ? multiplyKeepAlpha : additiveKeepAlpha }] },
       primitive: { topology: "triangle-list" },
     })
   }
