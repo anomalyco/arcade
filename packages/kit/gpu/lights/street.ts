@@ -4,11 +4,11 @@ import type { LabControl } from "../../lab-panel"
  * Street lamps as real luminaires: a glowing lens of finite size with a roadway photometric distribution, shared by
  * the surface lights (`physicalLightHooks`), the fog's airlight (`fogScatterVolume`) and the lens geometry.
  *
- * - **Photometry.** A cobra head's refractor throws a wide, asymmetric pool (IES RP-8 "Type II/III, medium"): far
- *   along the road, out to ~1.5 mounting heights on the street side, under one on the house side. `streetProfile`
- *   builds it from the pool it is designed to light: an even, flat-topped ellipse on the ground (half the peak at the
- *   reach, in mounting heights, per side), turned into candela by I = E / cos³θ. That gives the batwing a real
- *   photometric web has (the peak near 65–70° from nadir) and puts most of the light in the fog along the road.
+ * - **Photometry.** A cobra head's refractor throws an asymmetric pool (IES RP-8 "Type II/III"): along the road,
+ *   out past a mounting height on the street side, under one on the house side. `streetProfile` builds it from the
+ *   pool it is designed to light: an even, flat-topped ellipse on the ground (half the peak at the reach, in mounting
+ *   heights, per side), turned into candela by I = E / cos³θ. That gives the batwing a real photometric web has (the
+ *   defaults peak ~50° from nadir, 1.2 MH out: IES "short") and a refractor cutoff (62°) that keeps the sky dark.
  *   `streetFluxGain` keeps the lamp's flux equal to the round spot it replaces, so a lamp only redistributes light.
  * - **Area emitter.** Light leaves the lens, not a point: irradiance falls as 1 / (d² + b²) (an on-axis disc of radius
  *   b, so no 1/d² hotspot under the head), highlights and wet glints use the representative point on the lens (Karis),
@@ -42,20 +42,33 @@ export type StreetLampSettings = {
   air: number
   /** Light the beam scatters in the fog, × the scene's lamp haze (art direction; 1 is physical). */
   haze: number
+  /**
+   * Henyey–Greenstein g of the beam in the fog. Strong forward scattering (the scene's 0.6) puts the brightest air
+   * between the camera and a lamp it stands under, so the beam reads as a ball round the head; a low g lets the fan
+   * read as a wedge below the lens.
+   */
+  phase: number
+  /**
+   * Share of the light that reaches the sky glow above the lamp (cloud underglow, bank tint). A cutoff head sends
+   * nothing up directly, so this is the ground bounce; the beam's own scattering in the bank is the lens airlight.
+   */
+  uplight: number
 }
 
 export const STREET_LAMP_DEFAULTS: Readonly<StreetLampSettings> = {
   mode: "area",
-  along: 1.6,
+  along: 1.2,
   street: 1.1,
   house: 0.6,
-  cutoff: 70,
+  cutoff: 62,
   glow: 0.02,
   flux: 1.6,
   lens: 1,
   softness: 1,
-  air: 1.8,
-  haze: 2.2,
+  air: 0.6,
+  haze: 4.2,
+  phase: 0.1,
+  uplight: 0.12,
 }
 
 export const createStreetLampSettings = (overrides: Partial<StreetLampSettings> = {}): StreetLampSettings => ({ ...STREET_LAMP_DEFAULTS, ...overrides })
@@ -77,6 +90,8 @@ export function streetLampControls(group = "Lamps", prefix = ""): LabControl[] {
     range("flux", "Flux vs round spot", 0.2, 3, 0.05, "×", "Photometry"),
     range("air", "Beam reach in fog", 0.5, 5, 0.05, "×", "Emitter"),
     range("haze", "Beam brightness in fog", 0, 4, 0.05, "×", "Emitter"),
+    range("phase", "Beam forward scattering (g)", -0.2, 0.9, 0.01, "g", "Emitter"),
+    range("uplight", "Sky glow (ground bounce)", 0, 1, 0.01, "×", "Emitter"),
     range("lens", "Lens brightness", 0, 4, 0.05, "×", "Emitter"),
     range("softness", "Shadow softness (lens size)", 0, 3, 0.05, "×", "Emitter"),
   ]
@@ -84,9 +99,9 @@ export function streetLampControls(group = "Lamps", prefix = ""): LabControl[] {
 
 /** Floats `packStreetLamp` writes. */
 export const STREET_LAMP_FLOATS = 12
-/** (along, street, house, cos cutoff), (on, glow, lens, softness), (air reach, fog haze, 0, 0): WGSL `A`, `B`, `C`. */
+/** (along, street, house, cos cutoff), (on, glow, lens, softness), (air reach, fog haze, phase g, uplight): WGSL `A`, `B`, `C`. */
 export function packStreetLamp<T extends Float32Array>(s: StreetLampSettings, out: T = new Float32Array(STREET_LAMP_FLOATS) as T, offset = 0): T {
-  out.set([s.along, s.street, s.house, Math.cos((s.cutoff * Math.PI) / 180), s.mode === "area" ? 1 : 0, s.glow, s.lens, s.softness, s.air, s.haze, 0, 0], offset)
+  out.set([s.along, s.street, s.house, Math.cos((s.cutoff * Math.PI) / 180), s.mode === "area" ? 1 : 0, s.glow, s.lens, s.softness, s.air, s.haze, s.phase, s.uplight], offset)
   return out
 }
 
@@ -178,7 +193,7 @@ export type LensShape = {
 
 /**
  * Appends the glowing lens (a sag bowl, or flat glass when depth is 0) as kit vertices: colour `color`, material `mat`,
- * aux the radiance weight (1 in the core where the arc tube sits, ~0.6 at the rim). The game shades `mat` as emissive.
+ * aux the radiance weight (1 in the core where the arc tube sits, ~0.55 at the rim). The game shades `mat` as emissive.
  */
 export function pushLens(out: number[], lens: LensShape, color: Vec3, mat: number, rings = 6, segments = 28): void {
   const [cx, cy, cz] = lens.center
@@ -195,7 +210,7 @@ export function pushLens(out: number[], lens: LensShape, color: Vec3, mat: numbe
     const n = [(ax * nu - az * nv) / nl, ny / nl, (az * nu + ax * nv) / nl]
     // The arc tube lies along the arm: hottest along that line, a soft fall to the rim.
     const core = Math.exp(-(v * v) / 0.18) * Math.exp(-(u * u) / 1.4)
-    return [[x, y, z], n, 0.72 + 0.28 * core]
+    return [[x, y, z], n, 0.55 + 0.45 * core]
   }
   const vert = (p: [number[], number[], number]) => out.push(p[0][0]!, p[0][1]!, p[0][2]!, p[1][0]!, p[1][1]!, p[1][2]!, color[0], color[1], color[2], mat, p[2])
   for (let i = 0; i < rings; i++) {

@@ -251,7 +251,7 @@ async function main() {
     // Include the booth bulb: its reflection is the second, nearer wet streak.
     const fogLamps:FogLamp[]=practicals.map((l,id)=>({id,x:l.position[0],y:l.position[1],z:l.position[2],range:l.range,color:l.color,intensity:l.intensity*(id>=indoorStart?indoor.fixtures*indoor.air:settings.lamp)*(area ? l.gain() : 1),
       axis:l.direction,size:(l.size ?? 0.2)*0.5,...(l.angle ? fogCone(l.angle,1-(l.penumbra ?? 0.55)) : {}),
-      ...(area && l.street ? { lens: { arm: l.street.arm, a: l.street.a, b: l.street.b } } : {}),
+      ...(area && l.street ? { lens: { arm: l.street.arm, a: l.street.a, b: l.street.b }, uplight: street.uplight } : {}),
     }))
     packSceneFrame(frameData, { viewProj: vp, eye: camera.eye, time: 0, width, height, lightCount: lights.lightCount,
       ambient: [0,0,0,0], mapSize: [1400, 1400], ao: 0 })

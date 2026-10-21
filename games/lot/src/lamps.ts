@@ -9,8 +9,9 @@ export type StreetLamp = { arm: readonly [number, number]; a: number; b: number;
 
 /**
  * Ashwood's pole lamps as lens emitters. The arm comes from the pole's collider; the lens from the fixture Ashwood
- * builds (`world/compound/lamps.ts`): the booth's cobra head has a 0.30 × 0.14 m sag bowl centred 5 cm above the light
- * (its source bowl is a quarter-wedge, `phiLength` π/2, so it renders as a ragged blob; this bowl covers it), the lot's
+ * builds (`world/compound/lamps.ts`): the booth's cobra head is a 0.42 × 0.10 × 0.19 m half-ellipsoid housing whose
+ * source bowl is a quarter-wedge (`phiLength` π/2) that renders as a ragged blob; this bowl fills the housing's
+ * underside instead (0.64 × 0.24 m, rim tucked under the shell, sagging just below its belly), the lot's
  * shoeboxes a flat 0.56 × 0.34 m glass 9 cm up; road davits get the cobra bowl. Lamps without a pole collider beside
  * them (mast arms on wooden poles) stay point spots.
  */
@@ -30,7 +31,7 @@ export function streetLamps(scene: SourceScene): Map<SourceLamp, StreetLamp> {
     const shoebox = !!pole && reach < 2.1 && width(pole.c) >= 0.5
     const lens: LensShape = shoebox
       ? { center: [x, y + 0.075, z], arm, a: 0.29, b: 0.175, depth: 0 }
-      : { center: [x, y + 0.05, z], arm, a: 0.315, b: 0.148, depth: 0.08, tilt: 0.06 }
+      : { center: [x - arm[0] * 0.06, y + 0.012, z - arm[1] * 0.06], arm, a: 0.32, b: 0.12, depth: 0.04, tilt: 0.06 }
     out.set(l, { arm, a: lens.a, b: lens.b, lens })
   }
   return out

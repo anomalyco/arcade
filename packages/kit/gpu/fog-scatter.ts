@@ -564,7 +564,7 @@ export function bakeLampGlow(out: Float32Array, lamps: readonly FogLamp[], rect:
       let r = 0, g = 0, b = 0
       for (const l of lamps) {
         const h = Math.max(l.y - base, 0)
-        const k = (l.intensity * (l.visibility ?? 1) * FOG_GLOW_SCALE) / ((x - l.x) ** 2 + (z - l.z) ** 2 + h * h + s2)
+        const k = (l.intensity * (l.visibility ?? 1) * (l.uplight ?? 1) * FOG_GLOW_SCALE) / ((x - l.x) ** 2 + (z - l.z) ** 2 + h * h + s2)
         r += l.color[0] * k; g += l.color[1] * k; b += l.color[2] * k
       }
       out.set([r, g, b, 0], (j * n + i) * 4)
@@ -600,6 +600,8 @@ export type FogLamp = {
    * profile replaces the cone (cosOuter/cosInner ignored) and the light leaves the whole lens.
    */
   lens?: { arm: readonly [number, number]; a: number; b: number }
+  /** Share of the light the glow map (bank tint, cloud underglow) gets, default 1; cutoff street heads send only ground bounce. */
+  uplight?: number
 }
 
 const tmpScore: { i: number; s: number; x: number; z: number }[] = []
@@ -732,7 +734,7 @@ export class FogScatter {
     let key = s.glowSpread * 7.13 + base * 3.1 + lamps.length
     for (let i = 0; i < lamps.length; i++) {
       const l = lamps[i]!
-      key = (key * 31 + l.x * 1.7 + l.y * 2.3 + l.z * 2.9 + l.intensity * (l.visibility ?? 1) + l.color[0] * 5 + l.color[1] * 7 + l.color[2] * 11) % 1e9
+      key = (key * 31 + l.x * 1.7 + l.y * 2.3 + l.z * 2.9 + l.intensity * (l.visibility ?? 1) * (l.uplight ?? 1) + l.color[0] * 5 + l.color[1] * 7 + l.color[2] * 11) % 1e9
     }
     if (key !== this.glowKey) {
       this.glowKey = key
@@ -1137,7 +1139,9 @@ ${street ? `    if (L.f.z > 0.0) {
         let prof = streetProfile(ln, L.f.xy, FOG.streetA, FOG.streetB.y) * (1.0 - leak) + leak;
         let r4 = ld / L.a.w;
         let win = pow(clamp(1.0 - r4 * r4 * r4 * r4, 0.0, 1.0), 2.0) * exp(-ld / (FOG.scatter.y * FOG.streetC.x));
-        let hg = (1.0 - g2) / pow(max(1.0 + g2 - 2.0 * g * -dot(ln, rd), 1e-4), 1.5);
+        // The street beam's own phase (StreetLampSettings.phase), not the scene's.
+        let sg = FOG.streetC.z;
+        let hg = (1.0 - sg * sg) / pow(max(1.0 + sg * sg - 2.0 * sg * -dot(ln, rd), 1e-4), 1.5);
         // Exact line-lens kernel over the point kernel the pdf cancelled: the mean of 1 / (d² + b²) along the lens.
         let xc = lx + toP - w0;
         let u0 = dot(xc, ax);
