@@ -5,7 +5,7 @@ import { resolve } from "node:path"
 import { START } from "../src/world"
 
 // One requested matched-camera evidence set; not an automated appearance test.
-const out=resolve(process.env.LOT_CAPTURE_DIR ?? "captures/lot/detail-iteration-4")
+const out=resolve(process.env.LOT_CAPTURE_DIR ?? "captures/lot/detail-iteration-5")
 await mkdir(out,{recursive:true})
 const cache=`${process.env.HOME}/Library/Caches/ms-playwright`
 const executablePath=(await readdir(cache)).filter(n=>/^chromium-\d+$/.test(n)).sort().reverse().map(n=>`${cache}/${n}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`).find(existsSync)
@@ -29,6 +29,7 @@ try {
     {name:"title",x:START.x,y:START.height,z:START.z,yaw:START.yaw,pitch:START.pitch},
     {name:"gate",x:-1.5,y:1.7,z:141,yaw:-0.25,pitch:0.02},
     {name:"booth",x:3,y:1.7,z:135,yaw:-0.6,pitch:-0.22},
+    {name:"lot",x:-5,y:1.7,z:102,yaw:-0.1,pitch:-0.12},
     {name:"road",x:-1.5,y:1.7,z:145,yaw:Math.PI+0.03,pitch:0.04},
   ]
   for(const shot of shots) {
