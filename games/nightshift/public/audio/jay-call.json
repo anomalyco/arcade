@@ -1,0 +1,18 @@
+{
+  "duration": 16,
+  "stem_starts": [
+    1.0,
+    4.5,
+    7.0,
+    11.6
+  ],
+  "pitch_ratio": 0.95,
+  "tempo": 0.95,
+  "band_hz": [
+    300,
+    3400
+  ],
+  "double_delay_ms": 47,
+  "peak_dbfs": -1.9382002601611268,
+  "rms_dbfs": -27.326457113525542
+}

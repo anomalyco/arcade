@@ -6,8 +6,11 @@ export const SURFACE = { plastic: 0, fabric: 1, carpet: 2, laminate: 3, ceiling:
 export const PHONE = { x: 0.12, y: 0.82, z: -5.4 }
 export const START = { x: -0.2, z: 5.7, yaw: -0.025, pitch: -0.025 }
 export const CLOSE = { x: -0.08, z: -4.82, yaw: -0.30, pitch: -0.95 }
-export const CRADLE = [PHONE.x-0.102*1.3,PHONE.y+0.10,PHONE.z-0.015*1.3]
-export const CORD_END = [CRADLE[0],CRADLE[1],CRADLE[2]+0.169]
+export const OFFICE = { x: 3.9, z: -7.15 }
+export const BLINDS = { x: -3.72, bottom: .94, pitch: .066, count: 24, width: 2.28 }
+export const RECEIVER_PAD = .10
+export const CRADLE = [PHONE.x-0.102*1.3,PHONE.y+0.10,PHONE.z+.06]
+export const CORD_END = [CRADLE[0],CRADLE[1],CRADLE[2]+RECEIVER_PAD]
 export const walls: Rect[] = []
 const beige = hex(0xaaa28a), edge = hex(0x6c6d60), dark = hex(0x242c29), paper = hex(0xb7b5a0)
 
@@ -32,11 +35,22 @@ function ring(m:Mesh,x:number,y:number,z:number,r:number,thick:number,c:Rgb,s=0,
     tube(m,p(i/48*Math.PI*2),p((i+1)/48*Math.PI*2),thick,c,s,6)
   }
 }
+function rotate(m:Mesh,from:number,x:number,z:number,yaw:number) {
+  const c=Math.cos(yaw),s=Math.sin(yaw)
+  for(let i=from;i<m.v.length;i+=11) {
+    const dx=m.v[i]-x,dz=m.v[i+2]-z,nx=m.v[i+3],nz=m.v[i+5]
+    m.v[i]=x+c*dx+s*dz;m.v[i+2]=z-s*dx+c*dz
+    m.v[i+3]=c*nx+s*nz;m.v[i+5]=-s*nx+c*nz
+  }
+}
 function partition(m:Mesh,x:number,z:number,w:number,d:number,h=1.47) {
   box(m,x,0,z,w,h,d,hex(0x777665),1,0.02)
   box(m,x,h-0.025,z,w+0.018,0.035,d+0.018,edge,5,0.008)
-  for(const side of [-1,1]) box(m,x+side*(w/2-0.025),0,z,0.05,h+0.012,d+0.018,edge,5,0.008)
-  box(m,x,0.02,z,w,0.075,d+0.025,hex(0x474c44),5)
+  for(const side of [-1,1]) {
+    if(w>=d)box(m,x+side*w/2,0,z,0.05,h+0.012,d+0.018,edge,5,0.008)
+    else box(m,x,0,z+side*d/2,w+0.018,h+0.012,0.05,edge,5,0.008)
+  }
+  box(m,x,0.02,z,w+0.025,0.075,d+0.025,hex(0x474c44),5)
   walls.push([x-w/2,z-d/2,x+w/2,z+d/2])
 }
 function cabinet(m:Mesh,x:number,z:number,w=0.5,h=0.72) {
@@ -48,6 +62,67 @@ function cabinet(m:Mesh,x:number,z:number,w=0.5,h=0.72) {
     box(m,x,y+h/6,z+0.351,0.15,0.026,0.025,dark,5,0.003)
     box(m,x,y+h/6+0.055,z+0.347,0.13,0.036,0.005,paper,6)
   }
+}
+function archiveBox(m:Mesh,x:number,y:number,z:number,w=.38) {
+  box(m,x,y,z,w,.23,.32,hex(0x8b8064),6,.005)
+  box(m,x,y+.23,z,w+.014,.025,.334,hex(0x9d9278),6,.003)
+  box(m,x,y+.12,z+.163,w*.36,.047,.003,paper,6)
+  box(m,x,y+.183,z+.165,.09,.016,.004,dark)
+}
+function foregroundStorage(m:Mesh) {
+  // Low left credenza with an open book bay and two enclosed doors.
+  const x=-2.13,z=3.48,w=2.55
+  walls.push([x-w/2,z-.29,x+w/2,z+.29])
+  box(m,x,.07,z,w,.72,.55,hex(0x48544d),5,.012)
+  box(m,x,.80,z,w+.04,.042,.59,hex(0x746750),10,.007)
+  for(const dx of [-.36,.43]) {
+    box(m,x+dx,.10,z+.282,.75,.67,.018,hex(0x657065),5,.006)
+    box(m,x+dx+.25,.69,z+.296,.07,.014,.012,dark,5)
+  }
+  box(m,x-1.0,.10,z+.284,.43,.66,.02,hex(0x202b29))
+  box(m,x-1.0,.40,z+.31,.45,.018,.12,hex(0x766b53),10)
+  binders(m,x-1.17,.115,z+.28,5);binders(m,x-1.17,.42,z+.28,5)
+  archiveBox(m,-2.25,.844,z,.42);archiveBox(m,-2.30,1.10,z-.025,.34)
+  binders(m,-1.89,.844,z,9);plant(m,-1.02,.844,z)
+  // Broad lateral drawers, rather than a row of narrow pedestal cabinets.
+  cabinet(m,1.65,3.48,1.36,1.10);cabinet(m,3.06,3.48,1.36,1.10)
+  for(let i=0;i<3;i++) {
+    const first=m.v.length,px=1.44+i*.055,pz=3.48+i*.035,y=1.15+i*.105
+    box(m,px,y,pz,.48,.012,.36,dark,5,.003)
+    for(const s of [-1,1])box(m,px+s*.24,y,pz,.012,.073,.36,edge,5)
+    box(m,px,y,pz-.174,.48,.073,.012,edge,5)
+    box(m,px,y+.015,pz,.41,.024,.30,paper,6)
+    rotate(m,first,px,pz,-.13+i*.10)
+  }
+  archiveBox(m,2.15,1.15,3.48,.41);archiveBox(m,2.77,1.15,3.50,.44)
+}
+function windowBlinds(m:Mesh,z:number) {
+  const {x,bottom,pitch,count,width}=BLINDS
+  // Opaque night glass is dark; only the narrow blade edges emit sodium light.
+  box(m,x-.15,.87,z,.025,1.78,2.4,hex(0x0b1618),13)
+  for(const side of [-1,1])box(m,x-.06,.85,z+side*1.20,.17,1.82,.055,edge,5,.004)
+  box(m,x,2.57,z,.12,.075,2.39,hex(0x62685e),5,.009)
+  box(m,x+.01,.85,z,.27,.045,2.47,beige,0,.005)
+  box(m,x+.015,.925,z,.085,.018,width,edge,5,.005)
+  for(let i=0;i<count;i++) {
+    const y=bottom+i*pitch
+    // A bowed metal strip, tilted about its long axis; each side has real thickness.
+    for(let j=0;j<6;j++) {
+      const point=(k:number,side:number,end:number)=>{
+        const t=k/6-.5
+        return [x+t*.061,y-t*.043+.007*(1-4*t*t)+side*.0007,z+end*width/2]
+      }
+      for(const side of [-1,1]) {
+        const a=point(j,side,-1),b=point(j+1,side,-1),c=point(j+1,side,1),d=point(j,side,1)
+        m.quadAuto(...(side===1?[a,b,c,d]:[d,c,b,a]) as [number[],number[],number[],number[]],hex(side===1?0x575b50:0x303a35),MAT.lit,5)
+      }
+    }
+    tube(m,[x+.031,y-.021,z-width/2],[x+.031,y-.021,z+width/2],.0012,hex(0xb29764),11,5)
+    for(const dz of [-.75,.75])tube(m,[x-.032,y+.023,z+dz],[x+.035,y-.021,z+dz],.0016,hex(0x8c836b))
+  }
+  for(const dz of [-.75,.75])for(const dx of [-.037,.038])tube(m,[x+dx,.92,z+dz],[x+dx,2.57,z+dz],.0018,hex(0x817c69))
+  tube(m,[x+.07,2.57,z+1.08],[x+.07,1.1,z+1.08],.002,beige)
+  box(m,x+.07,1.06,z+1.08,.012,.04,.012,beige,0,.004)
 }
 function desk(m:Mesh,x:number,z:number,w=2.25) {
   box(m,x,0.745,z,w,0.045,0.88,hex(0xa3a18b),3,0.012)
@@ -73,13 +148,23 @@ function crt(m:Mesh,x:number,y:number,z:number,on:boolean) {
   box(m,x+0.19,y+0.014,z+0.261,0.009,0.006,0.004,on?hex(0x46d67b):dark,on?8:0)
   box(m,x-0.08,y+0.027,z+0.26,0.22,0.008,0.008,dark)
   for(let i=0;i<10;i++) box(m,x+0.244,y+0.22+i*0.018,z-0.12,0.004,0.006,0.19,dark)
-  // Separate sculpted keys, not a painted keyboard rectangle.
-  box(m,x,y-0.002,z+0.53,0.49,0.035,0.18,beige,0,0.012)
-  for(let row=0;row<5;row++) for(let col=0;col<15;col++) {
-    if(row===4 && col>3 && col<10) continue
-    box(m,x-0.218+col*0.031,y+0.033,z+0.465+row*0.029,0.025,0.012,0.023,hex(0x989a83),0,0.002)
+  keyboard(m,x,y,z+.53)
+}
+function keyboard(m:Mesh,x:number,y:number,z:number) {
+  // Separate dished keycaps, staggered rows, function keys and numeric keypad.
+  const first=m.v.length
+  box(m,x,y,z,.54,.031,.20,beige,0,.012)
+  box(m,x,y+.028,z,.51,.004,.17,dark,0,.006)
+  for(let row=0;row<5;row++)for(let col=0;col<17;col++) {
+    if(row===4&&col>2&&col<9)continue
+    const px=x-.239+col*.029+(row%2)*.004,pz=z-.068+row*.029
+    box(m,px,y+.032,pz,.024,.013,.023,hex(col>12?0x8b8c7c:0xb0ac96),0,.003)
+    box(m,px,y+.0451,pz,.016,.0007,.014,hex(0x9c9b87),0,.002)
+    // Tiny inset strokes read as legends rather than a blank keyboard slab.
+    if(row!==4)for(let k=0;k<2+(col%2);k++)box(m,px-.004+k*.003,y+.046,pz-.003,.001,.0005,.004,dark,6)
   }
-  box(m,x-0.02,y+0.033,z+0.581,0.18,0.012,0.023,beige,0,0.002)
+  box(m,x-.075,y+.032,z+.048,.19,.013,.024,beige,0,.003)
+  rotate(m,first,x,z,.045)
 }
 function chair(m:Mesh,x:number,z:number) {
   walls.push([x-0.28,z-0.28,x+0.28,z+0.28])
@@ -104,22 +189,8 @@ function plant(m:Mesh,x:number,y:number,z:number) {
   }
 }
 function phone(m:Mesh) {
-  const first=m.v.length
   const {x,y,z}=PHONE
-  box(m,x,y-0.03,z,0.32,0.065,0.38,hex(0x696e5d),0,0.016)
-  box(m,x,y+0.015,z-0.015,0.31,0.055,0.35,beige,0,0.016)
-  // Name/extension card, twelve keypad buttons, six line selectors with inset labels.
-  box(m,x+0.037,y+0.072,z-0.108,0.13,0.003,0.087,hex(0x8b927b),6)
-  for(let r=0;r<4;r++) for(let c=0;c<3;c++) {
-    const px=x-0.017+c*0.037,pz=z-0.025+r*0.035
-    box(m,px,y+0.073,pz,0.028,0.011,0.025,hex(0x51594c),0,0.002)
-    box(m,px,y+0.084,pz,0.005,0.001,0.009,paper,6)
-  }
-  for(let i=0;i<7;i++) {
-    box(m,x+0.127,y+0.073,z-0.13+i*0.043,0.022,0.008,0.027,i===5?hex(0xff3d21):dark,i===5?9:0,0.002)
-    box(m,x+0.1,y+0.073,z-0.13+i*0.043,0.023,0.002,0.027,paper,6)
-  }
-  for(let i=first;i<m.v.length;i+=11) { m.v[i]=x+(m.v[i]-x)*1.3;m.v[i+2]=z+(m.v[i+2]-z)*1.3 }
+  box(m,x+.165,.912,z+.11,.018,.006,.018,hex(0xff3d21),9,.002)
   // One cord from the base to the receiver. Negative aux stores arc position;
   // the vertex shader lifts its free end with the handset, keeping the base fixed.
   const a=[x+0.17,y+0.01,z+0.12],b=[x+0.2,0.798,z+0.31],c=[x-0.28,0.798,z+0.31]
@@ -135,55 +206,66 @@ function phone(m:Mesh) {
 }
 export function handset() {
   const m=new Mesh(),c=hex(0xa6a38a)
-  box(m,0,0,-0.006,0.065,0.043,0.31,c,0,0.015)
-  for(const z of [-0.13,0.13]) {box(m,0,-0.025,z,0.087,0.062,0.074,c,0,0.016);for(let i=0;i<4;i++) for(let j=0;j<4;j++) box(m,-0.021+i*0.014,0.038,z-0.021+j*0.014,0.003,0.001,0.003,dark)}
-  for(let i=0;i<m.v.length;i+=11) {m.v[i]*=1.3;m.v[i+2]*=1.3}
+  // One smooth molded shell, scaled to the base's two actual support pads.
+  const rings=[[-.218,.035,.020,.006],[-.208,.052,.029,.006],[-.185,.056,.031,.006],[-.169,.056,.031,.006],[-.145,.052,.029,.009],[-.11,.043,.022,.022],[-.06,.039,.021,.026],[0,.038,.021,.027],[.06,.039,.021,.026],[.11,.043,.022,.022],[.145,.052,.029,.009],[.169,.056,.031,.006],[.185,.056,.031,.006],[.208,.052,.029,.006],[.218,.035,.020,.006]]
+  const point=(r:number[],a:number)=>[r[1]*Math.sign(Math.cos(a))*Math.abs(Math.cos(a))**.45,r[3]+r[2]*Math.sign(Math.sin(a))*Math.abs(Math.sin(a))**.45,r[0]]
+  const normal=(i:number,a:number)=>{
+    const a0=point(rings[i],a-.001),a1=point(rings[i],a+.001),b0=point(rings[Math.max(0,i-1)],a),b1=point(rings[Math.min(rings.length-1,i+1)],a)
+    const u=a1.map((v,k)=>v-a0[k]),v=b1.map((v,k)=>v-b0[k]),n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]],d=Math.hypot(...n)
+    return n.map(v=>v/d)
+  }
+  for(let i=0;i<rings.length-1;i++)for(let j=0;j<32;j++) {
+    const a=j*Math.PI/16,b=(j+1)*Math.PI/16
+    for(const [r,t] of [[i,a],[i,b],[i+1,b],[i,a],[i+1,b],[i+1,a]])m.vert(point(rings[r],t),normal(r,t),c,MAT.lit)
+  }
+  for(const i of [0,rings.length-1])for(let j=0;j<32;j++) {
+    const n=[0,0,i===0?-1:1],a=point(rings[i],j*Math.PI/16),b=point(rings[i],(j+1)*Math.PI/16)
+    for(const p of [[0,rings[i][3],rings[i][0]],...(i===0?[b,a]:[a,b])])m.vert(p,n,c,MAT.lit)
+  }
+  for(const z of [-.169,.169])for(let i=0;i<5;i++)for(let j=0;j<4;j++)box(m,-.024+i*.012,-.0255,z-.018+j*.012,.002,.001,.002,dark)
+  for(let i=0;i<m.v.length;i+=11) {
+    m.v[i+2]*=RECEIVER_PAD/.169
+    const n=[m.v[i+3],m.v[i+4],m.v[i+5]*.169/RECEIVER_PAD],length=Math.hypot(...n)
+    for(let j=0;j<3;j++)m.v[i+3+j]=n[j]/length
+  }
   return m
 }
 export function buildWorld() {
   walls.length=0
   const m=new Mesh()
-  box(m,0,-0.12,0,12,0.12,18,hex(0x565548),2)
+  // The PBR carpet plane in props.ts owns y=0; slab top stays below it.
+  box(m,0,-0.12,0,12,0.11,18,hex(0x565548),2)
   box(m,0,2.95,0,12,0.14,18,hex(0x88897a),4)
   // The acoustic grid is real geometry with inset tiles.
   for(let x=-6;x<=6;x+=0.6) box(m,x,2.928,0,0.014,0.025,18,hex(0x5b6159),5)
   for(let z=-9;z<=9;z+=1.2) box(m,0,2.928,z,12,0.025,0.014,hex(0x5b6159),5)
-  for(const x of [-6,6]) {box(m,x,0,0,0.18,3,18,hex(0x6b766c),0);walls.push([x-0.1,-9,x+0.1,9])}
+  for(const x of [-4,6]) {box(m,x,0,0,0.18,3,18,hex(0x6b766c),0);walls.push([x-0.1,-9,x+0.1,9])}
   for(const z of [-9,9]) {box(m,0,0,z,12,3,0.18,hex(0x6b766c),0);walls.push([-6,z-0.1,6,z+0.1])}
   // Blinds: thin metal blades, ladder cords and a deep reveal, on the left exterior wall.
-  for(const z of [4,0,-4,-7]) {
-    box(m,-5.88,0.9,z,0.04,1.65,2.3,hex(0x51412d),0)
-    for(const side of [-1,1]) box(m,-5.8,0.85,z+side*1.19,0.17,1.78,0.065,edge,5)
-    box(m,-5.77,0.83,z,0.28,0.065,2.45,beige,0)
-    for(let i=0;i<24;i++) box(m,-5.72,0.94+i*0.066,z,0.10,0.035,2.28,hex(0x8d8772),5)
-    for(const dz of [-0.75,0.75]) tube(m,[-5.65,0.9,z+dz],[-5.65,2.55,z+dz],0.003,hex(0x8d8772))
-  }
+  for(const z of [4,0,-4,-7])windowBlinds(m,z)
   // Repeated dark work stations frame one uninterrupted centre aisle.
   for(const z of [4,1,-2]) for(const side of [-1,1]) {
-    partition(m,side*3.45,z-0.9,4.7,0.09,z===4?1.75:1.47)
+    partition(m,side===-1?-2.4:3.45,z-0.9,side===-1?(z===4?3.2:3.0):(z===4?5.3:4.7),0.09,z===4?1.90:1.47)
     if(z!==4) partition(m,side*1.18,z,0.09,1.8)
-    desk(m,side*3.4,z-0.4,2.6);binders(m,side*3.4,0.8,z-0.55,6)
-    crt(m,side*4.1,0.795,z-0.55,false)
+    desk(m,side===-1?-2.6:3.4,z-0.4,side===-1?2.0:2.6);binders(m,side===-1?-2.6:3.4,0.8,z-0.55,6)
+    crt(m,side===-1?-3.15:4.1,0.795,z-0.55,false)
     if(side===1) chair(m,3.3,z+0.45)
   }
-  plant(m,-2.25,0.79,3.65);binders(m,-2.9,0.795,3.7,6)
-  cabinet(m,1.85,3.9,0.65,1.04);cabinet(m,2.55,3.9,0.65,1.04)
-  binders(m,1.6,1.09,3.9,5)
-  for(let i=0;i<5;i++) box(m,2.3,1.1+i*0.06,3.9,0.62,0.045,0.46,hex(i%2?0x666551:0x8a8067),6,0.005)
+  foregroundStorage(m)
   for(const x of [-3.2,3.2]) box(m,x,0,-5.8,0.36,2.94,0.36,hex(0x67766c),0,0.012)
   partition(m,0,-6.4,3.4,0.09,1.48)
   for(const x of [-1.7,1.7]) partition(m,x,-5.35,0.09,2.2,1.48)
   desk(m,0,-5.55,3.25)
-  crt(m,-0.74,0.795,-5.72,true);phone(m);binders(m,0.65,0.795,-5.82,9)
-  chair(m,0.9,-4.58)
-  // Mug: hollow lip, dark coffee, ceramic handle and a separate old coffee ring.
-  m.prism(0.62,-5.48,0.055,0.064,0.792,0.94,32,hex(0x87816a),MAT.lit,0,false)
-  m.prism(0.62,-5.48,0.055,0.055,0.928,0.929,32,hex(0x171b13))
-  ring(m,0.62,0.94,-5.48,0.061,0.004,beige);ring(m,0.7,0.868,-5.48,0.042,0.008,beige,0,true)
-  ring(m,-0.24,0.792,-5.2,0.068,0.004,hex(0x5e6246),3)
+  keyboard(m,-.74,.795,-5.15)
+  phone(m);binders(m,0.65,0.795,-5.82,9)
+  walls.push([.73,-4.85,1.35,-4.25])
+   // Flat, broken dried stain rather than a raised torus.
+   for(let i=0;i<60;i++) {
+     if(i%13===0||i%17===0)continue
+     const a=i/60*Math.PI*2,b=(i+1)/60*Math.PI*2,r=.068+Math.sin(i*2.3)*.0015
+     m.quadAuto([-.24+Math.cos(a)*r,.791,-5.2+Math.sin(a)*r],[-.24+Math.cos(b)*r,.791,-5.2+Math.sin(b)*r],[-.24+Math.cos(b)*(r+.0025),.791,-5.2+Math.sin(b)*(r+.0025)],[-.24+Math.cos(a)*(r+.0025),.791,-5.2+Math.sin(a)*(r+.0025)],hex(0x756d4b),MAT.lit,6)
+   }
   // Pen cup, six pens, rolodex on its axle, notebook and yellow memo.
-  m.prism(1.02,-5.35,0.055,0.058,0.79,0.93,24,dark,MAT.lit,5,false)
-  for(let i=0;i<6;i++) tube(m,[1+i*0.008,0.83,-5.35],[0.98+i*0.015,1.04+(i%3)*0.018,-5.35+(i%2)*0.025],0.003,hex(i%2?0x95947b:0x2a302c),5)
   box(m,1.34,0.795,-5.42,0.23,0.035,0.18,dark,0,0.012)
   for(let i=0;i<26;i++) box(m,1.34,0.83+i*0.001,-5.46+i*0.004,0.2,0.12,0.002,hex(0x999b84),6)
   for(const x of [1.21,1.47]) ring(m,x,0.88,-5.40,0.061,0.012,dark,0,true)
@@ -194,6 +276,46 @@ export function buildWorld() {
   for(let i=0;i<13;i++) box(m,1.4,0.816,-5.4+i*0.016,0.175,0.001,0.0008,hex(0x667e77),6)
   tube(m,[1.33,0.825,-5.41],[1.46,0.825,-5.25],0.003,dark)
   plant(m,-2.2,0,-5.5)
+  // Overlapping, turned paperwork; each sheet has distinct age and line lengths.
+  for(let i=0;i<7;i++) {
+    const x=-1.28+(i%3)*.16,z=-5.25-Math.floor(i/3)*.09,first=m.v.length,y=.792+i*.0015
+    box(m,x,y,z,.21,.001,.28,hex(i%2?0xb6ae94:0x969a86),6)
+    for(let j=0;j<9;j++)box(m,x-.01,y+.0011,z-.10+j*.022,.11+(j%3)*.018,.0003,.001,hex(0x717466),6)
+    rotate(m,first,x,z,Math.sin(i*4.7)*.38)
+  }
+  // Jay's corner office: a usable doorway, ajar slab, and a warm reading lamp.
+  partition(m,2.05,-7.65,.12,2.55,2.75)
+  partition(m,2.50,-6.4,1.0,.12,2.75)
+  partition(m,5.30,-6.4,1.4,.12,2.75)
+  box(m,3.80,2.23,-6.4,1.6,.5,.13,hex(0x667267),0)
+  const door=m.v.length
+  box(m,3.47,0,-6.43,.94,2.2,.065,hex(0x75624b),10,.012)
+  box(m,3.82,1.0,-6.38,.12,.025,.035,hex(0x9a8765),5,.006)
+  rotate(m,door,3.0,-6.43,1.15)
+  walls.push([2.95,-7.32,3.42,-6.4])
+  desk(m,4.5,-8.12,2.1);chair(m,4.6,-8.65)
+  box(m,3.74,.79,-8.1,.24,.035,.22,dark,5,.02)
+  tube(m,[3.74,.81,-8.1],[3.74,1.25,-8.1],.014,hex(0x897959),5)
+  const lamp=m.v.length
+  m.prism(3.74,-8.1,.19,.10,1.15,1.43,32,hex(0xbaa06b))
+  tag(m,lamp,12)
+  binders(m,4.8,.80,-8.3,4)
+  const officeWindow=m.v.length
+  windowBlinds(m,0)
+  rotate(m,officeWindow,0,0,-Math.PI/2)
+  for(let i=officeWindow;i<m.v.length;i+=11){m.v[i]+=4.35;m.v[i+2]-=5.12}
+  // Low modesty panel and a closed file anchor the otherwise empty encounter.
+  box(m,4.5,.16,-7.77,1.92,.57,.025,hex(0x71674f),10,.006)
+  box(m,4.45,.795,-8.01,.31,.018,.23,hex(0x776744),6,.003)
+  box(m,4.46,.814,-8.01,.28,.002,.21,paper,6)
+  box(m,5.69,.08,-7.65,.35,2.30,1.24,hex(0x605845),10,.007)
+  for(let i=0;i<4;i++) {
+    const first=m.v.length
+    binders(m,-.48,.15+i*.52,0,13)
+    rotate(m,first,0,0,-Math.PI/2)
+    for(let j=first;j<m.v.length;j+=11){m.v[j]+=5.48;m.v[j+2]-=7.65}
+    box(m,5.50,.125+i*.52,-7.65,.42,.025,1.25,hex(0x827254),10)
+  }
   // Troffers: reflectors, dark housings, louvres. Only one tube is alive in each lit unit.
   for(const z of [5,0,-4,-7]) for(const x of [0,3.6,-3.6]) {
     box(m,x,2.87,z,0.36,0.06,1.12,hex(0x505a53),5)
