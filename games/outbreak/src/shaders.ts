@@ -10,8 +10,11 @@ import {
 } from "@arcade/kit/gpu/shaders"
 import { FOLIAGE_LIMB_AUX, foliageWindDeclarationsWgsl } from "@arcade/kit/gpu/foliage"
 import { capsuleShadowWgsl } from "@arcade/kit/gpu/shadows/capsule-shadows"
+import { streetLampWgsl } from "@arcade/kit/gpu/lights/street"
 import { flashlightVolumeShader } from "./flashlight-beam"
-import { lampFogVolume } from "./air/lamp-fog"
+import { outbreakContactVolume } from "./contact-shadows/wgsl"
+import { outbreakFogVolume } from "./mist/wgsl"
+import { windowRoomWgsl } from "./window-rooms/wgsl"
 import { outbreakFogOfWarDeclarationsWgsl, visibilityFieldShader } from "./fog-of-war"
 import { groundSurfaceHookWgsl, outbreakSurfaceMaterialDeclarationsWgsl, outbreakSurfaceMaterialWgsl } from "./ground"
 import { outbreakLightingDeclarationsWgsl } from "./lighting"
@@ -47,7 +50,12 @@ export const outbreakSceneHooks: SceneHooks = {
   bounce: "outbreakBounceAndGi(o.world.xz + n.xz * 0.3, 0.58 * clamp(1.38 - F.monitorBounds.w * 1.38, 0.0, 1.0) * OL.u1.z * select(1.0, OL.colour.w, outbreakInRoom) * select(1.0, 0.0, o.world.y > 2.78), o.world, n)",
   lightLeak: "0.006 * vis",
   lightAttenuation: `var att = 0.0;
-    if (L.cone.w > 1.5) {
+    if (L.cone.w > 6.5) {
+      // Lens street lamp (street-lamps/, cone (arm, flux gain, 7 + b)): the designed pool, light leaving the whole lens.
+      let lb = L.cone.w - 7.0;
+      att = power * L.cone.z * win * streetProfile(-ldir, L.cone.xy, OL.street0, OL.street1.y) / (d3 * d3 + lb * lb);
+      if (att <= 0.0035) { continue; }
+    } else if (L.cone.w > 1.5) {
       att = flashAttenuation(ldir, d3, power);
       if (att <= 0.02) { continue; }
     } else if (L.cone.w > 1.125) {
@@ -78,7 +86,7 @@ export const outbreakSceneHooks: SceneHooks = {
       }
       if (att <= 0.0035) { continue; }
     }`,
-  lightAccumulate: "if (L.cone.w > 1.5) { outbreakFlashIrr = att * diffuse * vis; }",
+  lightAccumulate: "if (L.cone.w > 1.5 && L.cone.w < 2.5) { outbreakFlashIrr = att * diffuse * vis; }",
   // Soft character shadows (AR-113, soft-shadows/): each light's capsule visibility and the contact shadow as AO.
   lightVisibility: "vis *= capsuleLightVis(i);",
   occlusion: "capsuleOcclusion",
@@ -96,7 +104,7 @@ export const outbreakSceneHooks: SceneHooks = {
     } else if (L.cone.w > 1.125 && L.cone.w < 1.5) {
       let along = dot(dv, abs(L.cone.yx));
       if (world.y > 2.75 || dot(dv, L.cone.xy) < -L.extra.x || along < L.extra.y + 1.0 || along > -1.25 - L.cone.z) { continue; }
-    } else if ((L.cone.w < -0.5 && (world.y > 2.75 || (outbreakInRoom && OL.u5.w < 0.5))) || (L.cone.w > 0.5 && dot(dv, L.cone.xy) <= 0.0)) { continue; }`,
+    } else if ((L.cone.w < -0.5 && (world.y > 2.75 || (outbreakInRoom && OL.u5.w < 0.5))) || (L.cone.w > 0.5 && L.cone.w < 6.5 && dot(dv, L.cone.xy) <= 0.0)) { continue; }`,
   material: "let inRoom = interior(o.world.xz + select(vec2f(0.0), n.xz * 0.28, mat == 4)); outbreakInRoom = inRoom; capsulePrepare(o.world, n, mat == 12 || mat == 14);",
   postLightMaterial: `${outbreakSurfaceMaterialWgsl}
     ${interiorMaterialWgsl(outbreakInteriorRefs, true)}
@@ -207,7 +215,9 @@ fn roofCut(p:vec3f, id:i32, frag:vec4f) -> bool {
 ${outbreakFogOfWarDeclarationsWgsl}
 ${interiorDeclarationsWgsl(outbreakInteriorRefs)}
 ${outbreakHeroWgsl}
-${reflectionDeclarationsWgsl}`,
+${reflectionDeclarationsWgsl}
+${streetLampWgsl}
+${windowRoomWgsl}`,
   directional: "mix(mix(vec3f(0.42, 0.50, 0.62), vec3f(1.48, 0.84, 0.38), smoothstep(0.42, 0.22, F.monitorBounds.y) * (1.0 - smoothstep(0.25, 0.75, F.monitorBounds.w))), vec3f(1.38, 1.14, 0.82), F.monitorBounds.w) * select(select(fd.g * 0.42, 0.03, abs(n.y) < 0.5), 1.0, !inRoom || o.world.y > 2.8) * evalCanopyCookie(o.world, inRoom) * capsuleSun * F.ambient.w * select(max(0.0, dot(n, F.monitorBounds.xyz)), max(0.0, (dot(n, F.monitorBounds.xyz) + 0.52) / 1.52), mat == 22)",
   cutaway: `
       if (OL.u17.z > 0.001 && OL.u17.z < 0.999 && bayer4x4(o.pos) > OL.u17.z) { discard; }
@@ -258,7 +268,9 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
     let fall = mix(1.0, 0.34, v * v);
     let tungsten = mix(vec3f(0.24, 0.115, 0.034), vec3f(0.30, 0.17, 0.065), (1.0 - v) * 0.7);
     let litGlass = tungsten * fall * mix(0.42, 1.0, curtain);
-    col = select(vec3f(0.012, 0.022, 0.045), mix(darkGlass, litGlass, windowLit), outsideView);
+    var outsideGlass = mix(darkGlass, litGlass, windowLit);
+    if (OL.rooms.x > 0.5 && outsideView) { outsideGlass = outbreakWindowRoom(o.world, n, darkGlass, windowLit, curtain); }
+    col = select(vec3f(0.012, 0.022, 0.045), outsideGlass, outsideView);
   } else if (mat == 21) {
     // Weathered slate-taupe shingles: eave lift, course steps and a ridge rim; peat-amber at dusk, heavy overcast by day.
     let eave = smoothstep(2.82, 3.62, o.world.y);
@@ -658,8 +670,9 @@ export const shaders = {
   lookPostVariant: (variant: LookVariantMode) => makeLookPostShader(outbreakPostFinish, variant),
   visField: visibilityFieldShader,
   planBounce: outbreakPlanBounceShader,
-  // Slot 1: the kit's lamp fog, a Lab option that stays off (Today) by default.
-  volume: [flashlightVolumeShader, lampFogVolume],
+  // Slot 0: contact shadows (multiplied in first), 1: the flashlight beam, 2: the kit fog shared by the lamp fog and the
+  // low mist. All but the beam are Lab options that stay off (Today) by default, and slots compile on first use.
+  volume: [outbreakContactVolume, flashlightVolumeShader, outbreakFogVolume],
   // Tyre smoke and dust take the sky ambient, so at night they stay dim until headlights or the flashlight hit them.
   tyreSmoke: { base: "(F.ambient.rgb * 2.6 + vec3f(0.035))", dust: "((F.ambient.rgb * 2.6 + vec3f(0.035)) * vec3f(1.0, 0.84, 0.64))" },
 }

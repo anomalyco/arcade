@@ -15,6 +15,8 @@ import { vegetationBuild } from "./vegetation/settings"
 import { VEG_TREE_UNIFORM_FLOATS, vegetationTreeFieldsWgsl, vegetationTreeWgsl } from "./vegetation/trees"
 import { packReflectionUniforms, REFLECTION_UNIFORM_FLOATS } from "./reflections/settings"
 import { DEFAULT_LIGHT_CURVES, LIGHT_CURVES, LIGHT_RAMP_FLOATS, lightRampFieldsWgsl, lightRampWgsl, packLightRamps } from "./light-ramps"
+import { packStreetLampUniforms, STREET_LAMP_UNIFORM_FLOATS, type OutbreakStreetLampSettings } from "./street-lamps/settings"
+import { packWindowRoomUniforms, WINDOW_ROOM_UNIFORM_FLOATS, type OutbreakWindowRoomSettings } from "./window-rooms/settings"
 
 /** Cobra-head streetlamp posts: south-east curb over the street, and the east sidewalk beside the house. */
 export const STREET_LAMP_POSTS = [
@@ -25,6 +27,24 @@ export const STREET_LAMP_POSTS = [
 /** World-space centre of a post's sodium lens (model lens at x = 1.44, y = 6.10 above the 0.08 m curb). */
 export function streetLampHead(post: (typeof STREET_LAMP_POSTS)[number]): [number, number, number] {
   return [post.x + Math.cos(post.yaw) * 1.44, 6.18, post.z + Math.sin(post.yaw) * 1.44]
+}
+
+/** Plan arm (pole → head) of the post whose lens is nearest `head` (the frame's nearest street head). */
+export function streetPostArm(head: readonly number[] | undefined): [number, number] {
+  let best: (typeof STREET_LAMP_POSTS)[number] = STREET_LAMP_POSTS[0]
+  let bestD = Infinity
+  for (const post of STREET_LAMP_POSTS) {
+    const h = streetLampHead(post)
+    // The window origin moves the posts by whole blocks; compare within the block.
+    const dx = ((((head?.[0] ?? 0) - h[0]) % SIZE) + SIZE * 1.5) % SIZE - SIZE * 0.5
+    const dz = ((((head?.[2] ?? 0) - h[2]) % SIZE) + SIZE * 1.5) % SIZE - SIZE * 0.5
+    const d = dx * dx + dz * dz
+    if (d < bestD) {
+      bestD = d
+      best = post
+    }
+  }
+  return [Math.cos(best.yaw), Math.sin(best.yaw)]
 }
 
 export type OutbreakLightingSettings = {
@@ -303,7 +323,12 @@ export const OUTBREAK_VEG_TREES_UNIFORM_OFFSET = OUTBREAK_VEG_GUST_UNIFORM_OFFSE
 export const OUTBREAK_REFLECT_UNIFORM_OFFSET = OUTBREAK_VEG_TREES_UNIFORM_OFFSET + VEG_TREE_UNIFORM_FLOATS
 /** Wet reflections' lights this frame (see `reflections/lights.ts`): each light's mirror image, packed per frame. */
 export const OUTBREAK_REFLECT_LIGHTS_UNIFORM_OFFSET = OUTBREAK_REFLECT_UNIFORM_OFFSET + REFLECTION_UNIFORM_FLOATS
-export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = OUTBREAK_REFLECT_LIGHTS_UNIFORM_OFFSET + REFLECTION_LIGHTS * REFLECTION_LIGHT_FLOATS
+export const OUTBREAK_REFLECT_LIGHTS_UNIFORM_END = OUTBREAK_REFLECT_LIGHTS_UNIFORM_OFFSET + REFLECTION_LIGHTS * REFLECTION_LIGHT_FLOATS
+/** Lens street lamps (see `street-lamps/settings.ts`): `street0..2`. */
+export const OUTBREAK_STREET_LAMP_UNIFORM_OFFSET = OUTBREAK_REFLECT_LIGHTS_UNIFORM_END
+/** Rooms behind the windows (see `window-rooms/settings.ts`): `rooms`, `rooms2`. */
+export const OUTBREAK_WINDOW_ROOM_UNIFORM_OFFSET = OUTBREAK_STREET_LAMP_UNIFORM_OFFSET + STREET_LAMP_UNIFORM_FLOATS
+export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = OUTBREAK_WINDOW_ROOM_UNIFORM_OFFSET + WINDOW_ROOM_UNIFORM_FLOATS
 
 export type OutbreakLightingUniformSettings =
   | (OutbreakLightingSettings & Partial<FlashlightBeamSettings> & Partial<UnseenSettings> & {
@@ -396,6 +421,10 @@ export type OutbreakLightingFrameState = {
   chunkFadeAlpha?: number
   /** Night sight's eased weight this frame (`look/night-sight.ts`); 0 or absent is off. */
   nightSightWeight?: number
+  /** Lens street lamps (`street-lamps/`); absent is Today. */
+  streetLamps?: OutbreakStreetLampSettings
+  /** Rooms behind the windows (`window-rooms/`); absent is Today. */
+  windowRooms?: OutbreakWindowRoomSettings
 }
 
 /**
@@ -627,6 +656,8 @@ export function packOutbreakLightingUniforms(
   out[OUTBREAK_NIGHT_UNIFORM_OFFSET + 2] = Math.max(0.5, look.nightSightFalloff ?? DEFAULT_LOOK_TRIMS.nightSightFalloff)
   out[OUTBREAK_NIGHT_UNIFORM_OFFSET + 3] = 0
   packReflectionUniforms(look, state.weather?.rippleIntensity ?? 0, out, OUTBREAK_REFLECT_UNIFORM_OFFSET)
+  packStreetLampUniforms(state.streetLamps, streetPostArm(state.streetHead), out, OUTBREAK_STREET_LAMP_UNIFORM_OFFSET)
+  packWindowRoomUniforms(state.windowRooms, out, OUTBREAK_WINDOW_ROOM_UNIFORM_OFFSET)
   // win (offset 76..79): windowOriginX, windowOriginZ, isStreamWindow, buildingCount
   const winOx = state.windowOrigin?.[0] ?? 0
   const winOz = state.windowOrigin?.[1] ?? 0
@@ -1295,6 +1326,11 @@ struct OutbreakLightingUniforms {
   refl: vec4f, // reflections: wet strength (0 off), pothole puddles on, Lab wetness, rain ripple
   mirror: vec4f, // mirrors: detail (0 baked, 1 live lights, 2 people), age, on, reserved
   reflLights: array<vec4f, ${(REFLECTION_LIGHTS * REFLECTION_LIGHT_FLOATS) / 4}>, // wet reflections: per light, image x, z, plan distance from the eye, size (0 ends); colour
+  street0: vec4f, // lens street lamps: pool reach along, street side, house side (MH), cos cutoff
+  street1: vec4f, // lens street lamps: on, side glow, air under the lens, reserved
+  street2: vec4f, // nearest street head: arm x, arm z, lens half-length, half-width
+  rooms: vec4f, // rooms behind the windows: on, depth, brightness, lit share
+  rooms2: vec4f, // rooms behind the windows: curtains, wall wash, reserved ×2
 }
 @group(0) @binding(13) var<uniform> OL: OutbreakLightingUniforms;
 ${lightRampWgsl}
@@ -1714,6 +1750,11 @@ fn evalLampAir(world: vec3f, inView: bool) -> vec3f {
   if (haze > 0.001) {
     let head = OL.u7.xyz;
     let k = 0.58;
+    // Lens street lamps (street-lamps/): the air lit by the designed pool's beam, the glow along the lens, not a dot.
+    let lensOn = OL.street1.x > 0.5;
+    let arm = OL.street2.xy;
+    let la = OL.street2.z;
+    let lb = OL.street2.w;
     var air = 0.0;
     if (rd.y < -1e-4) {
       let t0 = max(0.0, (head.y - 0.04 - ro.y) / rd.y);
@@ -1721,20 +1762,31 @@ fn evalLampAir(world: vec3f, inView: bool) -> vec3f {
       if (t1 > t0) {
         let oxz = ro.xz - head.xz;
         let tAx = clamp(-dot(oxz, rd.xz) / max(dot(rd.xz, rd.xz), 1e-6), t0, t1);
-        if (length(oxz + rd.xz * tAx) < k * head.y * 1.2 + 0.5) {
+        if (length(oxz + rd.xz * tAx) < k * head.y * select(1.2, 2.2, lensOn) + 0.5) {
           let dt = (t1 - t0) / 6.0;
           for (var i = 0; i < 6; i++) {
             let p = ro + rd * (t0 + (f32(i) + 0.5) * dt);
             let depth = head.y - p.y;
-            let coneR = 0.2 + k * depth;
             let r2 = dot(p.xz - head.xz, p.xz - head.xz);
-            air += exp(-2.0 * r2 / (coneR * coneR)) / (1.0 + depth * 0.55);
+            if (lensOn) {
+              let d2 = r2 + depth * depth;
+              let dir = (p - head) * inverseSqrt(max(d2, 1e-4));
+              air += streetProfile(dir, arm, OL.street0, OL.street1.y) * (depth * depth + lb * lb) / (d2 + lb * lb) / (1.0 + depth * 0.55);
+            } else {
+              let coneR = 0.2 + k * depth;
+              air += exp(-2.0 * r2 / (coneR * coneR)) / (1.0 + depth * 0.55);
+            }
           }
-          air *= dt;
+          air *= dt * select(1.0, OL.street1.z, lensOn);
         }
       }
     }
-    let lens = gaussLineAir(ro, rd, tMax, head - vec3f(0.0, 0.05, 0.0), 0.22, 0.3);
+    var lens = gaussLineAir(ro, rd, tMax, head - vec3f(0.0, 0.05, 0.0), 0.22, 0.3);
+    if (lensOn) {
+      let ax = vec3f(arm.x, 0.0, arm.y) * la * 0.7;
+      let sig = max(0.12, lb * 1.4);
+      lens = (gaussLineAir(ro, rd, tMax, head - ax, sig, 0.3) + gaussLineAir(ro, rd, tMax, head, sig, 0.3) + gaussLineAir(ro, rd, tMax, head + ax, sig, 0.3)) * (0.22 / sig) / 3.0;
+    }
     let halo = gaussLineAir(ro, rd, tMax, head - vec3f(0.0, 0.25, 0.0), 0.7, 0.0);
     out += vec3f(1.0, 0.42, 0.08) * (air * 0.03 + lens * 3.0 + halo * 0.03) * haze;
   }

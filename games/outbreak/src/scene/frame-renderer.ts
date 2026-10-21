@@ -1,5 +1,5 @@
 import type { Camera } from "@arcade/kit/client/camera"
-import { Renderer, SPRITE_FLOATS, type Batch, type FrameInput } from "@arcade/kit/gpu/renderer"
+import { Renderer, SPRITE_FLOATS, type Batch, type FrameInput, type VolumeInput } from "@arcade/kit/gpu/renderer"
 import { LIGHT_FLOATS, MAX_LIGHTS } from "@arcade/kit/limits"
 import { humanProfiles } from "@arcade/kit/human-profile"
 import { createLookSettings, type LookCompareMode } from "@arcade/kit/look"
@@ -51,6 +51,7 @@ import { PropDressing } from "../props/dressing"
 import type { OutbreakSettings } from "../settings"
 import { shaders } from "../shaders"
 import { applyLampFog } from "../air/lamp-fog"
+import { contactVolumeInput } from "../contact-shadows/settings"
 import { Survivor } from "../survivor"
 import { evaluateUnseenFrame } from "../unseen"
 import type { OutbreakVehicleAudio } from "../vehicle-audio"
@@ -112,6 +113,8 @@ export class OutbreakFrameRenderer {
   readonly details: DetailsPresenter
   private readonly softShadows: SoftShadowPresenter
   private readonly lifeSounds = new LifeSounds()
+  private readonly volumeSlots: (VolumeInput | null)[] = [null, null, null]
+  private readonly contactParams = new Float32Array(8)
   readonly ambientMotion: OutbreakAmbientMotion
   readonly weatherController = new OutbreakWeatherController()
   private readonly weatherAudio = new WeatherAudio()
@@ -851,7 +854,12 @@ export class OutbreakFrameRenderer {
     this.dust.frame(count, qProfile.tier, settings.look.dustAmount > 0, settings.air, this.frameLighting.lights, LIGHT_FLOATS, camX, camY)
     render.shadowLightCount = shadowLightCount
     render.occluderCount = frameLightOccluders
-    applyLampFog(render, volume)
+    // Volume slots (shaders.ts): contact shadows darken the lit scene before the beam and the fog add to it.
+    const fogSlot = applyLampFog(render, { mist: settings.mist, streetLamps: settings.streetLamps, sun: day.sun, time, torchPitch: beamState.flashlightPitch ?? -0.35 })
+    this.volumeSlots[0] = contactVolumeInput(settings.contactShadows, this.contactParams)
+    this.volumeSlots[1] = volume
+    this.volumeSlots[2] = fogSlot
+    render.volume = this.volumeSlots
     render.lampCount = SCONCE_LAMP_SLOT + 1
     render.view = view
     render.grade[0] = time

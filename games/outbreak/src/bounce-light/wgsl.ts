@@ -1,5 +1,10 @@
 import type { PlanBounceShader } from "@arcade/kit/gpu/gi/plan-bounce"
 import { planBounceSceneWgsl } from "@arcade/kit/gpu/gi/plan-bounce"
+import { streetLampWgsl } from "@arcade/kit/gpu/lights/street"
+import { DEFAULT_STREET_LAMP_SETTINGS as SL } from "../street-lamps/settings"
+
+/** The lens lamps' default pool (along, street, house, cos cutoff) as WGSL floats. */
+const STREET_LAMP_DEFAULT_POOL = [SL.slAlong, SL.slStreet, SL.slHouse, Math.cos((SL.slCutoff * Math.PI) / 180)].map((v) => v.toFixed(4))
 
 /**
  * Bounced light's emission (AR-115): the light each Outbreak light puts on the ground, as the scene's
@@ -13,7 +18,12 @@ export const outbreakPlanBounceShader: PlanBounceShader = {
     if (L.cone.w < -2.5 && (p.x < L.cone.x - 0.03 || p.x > L.cone.z + 0.03 || p.y < L.cone.y - 0.03 || p.y > L.extra.x + 0.03)) { continue; }
     if (L.cone.w > 1.125 && L.cone.w < 1.5 && dot(dv, L.cone.xy) < -L.extra.x) { continue; }
     if (L.cone.w > 0.5 && L.cone.w < 2.5 && dot(dv, L.cone.xy) <= 0.0) { continue; }
-    if (L.cone.w > 1.5 && L.cone.w < 2.5) {
+    if (L.cone.w > 6.5) {
+      // Lens street lamp (street-lamps/): the default designed pool through the lens kernel.
+      let lb = L.cone.w - 7.0;
+      let ld = vec3f(dv.x, -dy, dv.y) / d3;
+      att = power * L.cone.z * win * streetProfile(ld, L.cone.xy, vec4f(${STREET_LAMP_DEFAULT_POOL.join(", ")}), 0.02) / (d3 * d3 + lb * lb);
+    } else if (L.cone.w > 1.5 && L.cone.w < 2.5) {
       let c = dot(dv * inverseSqrt(max(dPlan2, 1e-6)), L.cone.xy);
       let halfAng = acos(clamp(L.cone.z, -1.0, 1.0));
       let cone = 1.0 - smoothstep(halfAng * 0.8, halfAng, acos(clamp(c, -1.0, 1.0)));
@@ -29,6 +39,7 @@ export const outbreakPlanBounceShader: PlanBounceShader = {
         att *= t * t * (3.0 - 2.0 * t);
       }
     }`,
+  declarations: streetLampWgsl,
 }
 
 /**

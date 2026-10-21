@@ -33,10 +33,12 @@ export function packReflectionLights(
     const power = lights[o + 7]!
     if (power <= 0.01) continue
     const type = lights[o + 11]!
-    if (type < -2.5 || type > 1.125) continue
+    // Lens street lamps (cone.w ≥ 7, street-lamps/) mirror like Today's.
+    const lens = type > 6.5
+    if (type < -2.5 || (type > 1.125 && !lens)) continue
     const x = lights[o]!
     const z = lights[o + 2]!
-    const window = type > 0.5
+    const window = type > 0.5 && !lens
     if (!window && buildings.some((bd) => x > bd.rect[0] + 0.3 && x < bd.rect[2] - 0.3 && z > bd.rect[1] + 0.3 && z < bd.rect[3] - 0.3 && inBuildingFootprint(bd, x, z))) continue
     const gy = groundY(x, z)
     const hl = Math.max(lights[o + 1]! - gy, 0.05)
@@ -48,7 +50,7 @@ export function packReflectionLights(
     const reach = size * 7.5 * 2.5
     if (px < rect[0] - reach || px > rect[2] + reach || pz < rect[1] - reach || pz > rect[3] + reach) continue
     let cone = 1
-    if (type > 0.5) {
+    if (window) {
       const dx = px - x
       const dz = pz - z
       const l = Math.hypot(dx, dz)
