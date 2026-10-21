@@ -3,11 +3,20 @@ import { packTexturedVerts, TexturedMeshPass, type TexturedPrimitive } from "@ar
 import { Mesh, MAT } from "@arcade/kit/gpu/mesh"
 import type { Renderer } from "@arcade/kit/gpu/renderer"
 import { propHooks } from "./shaders"
-import { CRADLE, RECEIVER_PAD } from "./world"
+import { CRADLE, RECEIVER_PAD, PHONE_INDICATOR } from "./world"
+
+export const PROP_DEFINITIONS=[
+  {kind:"crt",file:"period/crt",at:[-.74,.795,-5.65],size:[.52,.50,.57],yaw:0,generated:true},
+  {kind:"mouse",file:"computer",at:[-.74,.795,-5.62],size:[.94,.56,.58],yaw:0,generated:false},
+  {kind:"pen-cup",file:"pen-cup",at:[1.02,.795,-5.35],size:[.15,.25,.14],yaw:.3,generated:false},
+  {kind:"mug",file:"period/mug",at:[.62,.795,-5.48],size:[.09,.115,.125],yaw:-.7,generated:true},
+  {kind:"chair",file:"period/chair",at:[1.04,0,-4.55],size:[.62,1.02,.65],yaw:-.3,generated:true},
+  {kind:"phone",file:"period/phone-base",at:[.12,.79,-5.4],size:[.40,.13,.38],yaw:0,generated:true},
+  {kind:"rolodex",file:"period/rolodex",at:[1.34,.795,-5.55],size:[.23,.19,.23],yaw:-.15,generated:true},
+]
 
 /** Fit the two ear pads to the actual base, rather than a guessed world height. */
-export function cradleOn(primitives:{vertices:ArrayBuffer}[]) {
-  const top=(x:number,z:number)=>{
+export function phoneSurface(primitives:{vertices:ArrayBuffer}[],x:number,z:number) {
     let y=-Infinity
     for(const p of primitives) {
       const v=new Float32Array(p.vertices)
@@ -19,9 +28,11 @@ export function cradleOn(primitives:{vertices:ArrayBuffer}[]) {
         if(u>=0&&w>=0&&u+w<=1)y=Math.max(y,u*v[i+1]+w*v[i+9]+(1-u-w)*v[i+17])
       }
     }
-    if(!Number.isFinite(y))throw new Error(`Receiver support lies outside the phone base at ${x}, ${z}`)
+    if(!Number.isFinite(y))throw new Error(`Phone contact lies outside the base at ${x}, ${z}`)
     return y
-  }
+}
+export function cradleOn(primitives:{vertices:ArrayBuffer}[]) {
+  const top=(x:number,z:number)=>phoneSurface(primitives,x,z)
   let roll=0,front=0,back=0
   for(let i=0;i<4;i++) {
     front=top(CRADLE[0],CRADLE[2]+RECEIVER_PAD*Math.cos(roll)-.025*Math.sin(roll))
@@ -39,64 +50,39 @@ async function carpet(device:GPUDevice):Promise<TexturedPrimitive> {
   }
   const [base,normal,orm]=await Promise.all([texture("color",true),texture("normal",false,true),texture("orm",false)])
   const m=new Mesh()
-  m.quad([-4,0,-9],[-4,0,9],[6,0,9],[6,0,-9],[0,1,0],[.8,.73,.55],MAT.lit,2)
+  m.quad([-4,0,-9],[-4,0,9],[6,0,9],[6,0,-9],[0,1,0],[.45,.43,.36],MAT.lit,2)
   const uv:number[]=[]
   for(let i=0;i<m.v.length;i+=11)uv.push(m.v[i]/1.2,m.v[i+2]/1.2)
   return {vertices:packTexturedVerts(m.v,uv),base,normal,orm,color:[1,1,1,1],roughness:1,metalness:0,normalScale:.6,blend:false}
 }
 
-function curvedGlass(p:TexturedPrimitive) {
-  const v=new Float32Array(p.vertices),bytes=new Int8Array(p.vertices),m=new Mesh(),uv:number[]=[]
+function screenCoordinates(p:TexturedPrimitive) {
+  const v=new Float32Array(p.vertices)
   const xs:number[]=[],ys:number[]=[]
   for(let i=0;i<v.length;i+=8){xs.push(v[i]);ys.push(v[i+1])}
   const left=Math.min(...xs),bottom=Math.min(...ys),width=Math.max(...xs)-left,height=Math.max(...ys)-bottom
-  const add=(triangle:number,a:number,b:number)=>{
-    const weights=[1-a-b,a,b],pos=[0,0,0],normal=[0,0,0]
-    for(let j=0;j<3;j++)for(let k=0;k<3;k++) {
-      pos[k]+=v[triangle+j*8+k]*weights[j]
-      normal[k]+=bytes[(triangle+j*8)*4+12+k]/127*weights[j]
-    }
-    const u=(pos[0]-left)/width,w=(pos[1]-bottom)/height,x=u*2-1,y=w*2-1
-    pos[2]+=.006*(1-x*x)*(1-y*y)
-    normal[0]+=.024*x*(1-y*y)/width;normal[1]+=.024*y*(1-x*x)/height
-    const length=Math.hypot(...normal)
-    m.vert(pos,normal.map(n=>n/length),[1,1,1],MAT.lit,8);uv.push(u,w)
-  }
-  for(let t=0;t<v.length;t+=24)for(let a=0;a<12;a++)for(let b=0;b<12-a;b++) {
-    add(t,a/12,b/12);add(t,(a+1)/12,b/12);add(t,a/12,(b+1)/12)
-    if(a+b<11){add(t,(a+1)/12,b/12);add(t,(a+1)/12,(b+1)/12);add(t,a/12,(b+1)/12)}
-  }
-  p.vertices=packTexturedVerts(m.v,uv);p.roughness=.17
+  // The generated mesh already supplies curvature; preserve its topology.
+  for(let i=0;i<v.length;i+=8){v[i+6]=(v[i]-left)/width;v[i+7]=(v[i+1]-bottom)/height}
+  p.roughness=.17
 }
 
 /** Licensed static props use the shared textured/physical-light/shadow path. */
 export async function officeProps(renderer:Renderer) {
-  const definitions=[
-    {file:"computer",at:[-.74,.795,-5.62],size:[.94,.56,.58],yaw:0},
-    {file:"pen-cup",at:[1.02,.795,-5.35],size:[.15,.25,.14],yaw:.3},
-    {file:"mug",at:[.62,.795,-5.48],size:[.17,.15,.13],yaw:-.5},
-    {file:"chair",at:[1.04,0,-4.55],size:[.61,.94,.61],yaw:-.3},
-    {file:"phone",at:[.12,.79,-5.4],size:[.416,.12,.494],yaw:0},
-  ]
   let cradle={position:[...CRADLE],roll:0,supports:{front:0,back:0},gap:0}
-  const assets=await Promise.all(definitions.map(async def=>{
+  const indicator=[PHONE_INDICATOR[0],0,PHONE_INDICATOR[1]]
+  const assets=await Promise.all(PROP_DEFINITIONS.map(async def=>{
     const asset=await loadGltf(renderer.passContext.device,`${import.meta.env.BASE_URL}props/${def.file}.glb`)
-    // The base and receiver are separate source nodes. Keep our continuously
-    // animated receiver and cord; the imported base has no second handset.
-    if(def.file==="phone")asset.primitives.pop()
+    // Generated phone base contains no receiver; the scene owns that moving part.
     const lo=[Infinity,Infinity,Infinity],hi=[-Infinity,-Infinity,-Infinity]
     for(const p of asset.primitives){const f=new Float32Array(p.vertices);for(let i=0;i<f.length;i+=8)for(let k=0;k<3;k++){lo[k]=Math.min(lo[k],f[i+k]);hi[k]=Math.max(hi[k],f[i+k])}}
-    if(def.file==="computer")asset.primitives=asset.primitives.filter((_,i)=>![6,7,8,9].includes(i))
+    if(def.kind==="mouse")asset.primitives=asset.primitives.filter((_,i)=>i===1)
     for(const p of asset.primitives) {
       const f=new Float32Array(p.vertices),n=new Int8Array(p.vertices),half=new Uint16Array(p.vertices)
       const scale=def.size.map((v,k)=>v/(hi[k]-lo[k])),c=Math.cos(def.yaw),s=Math.sin(def.yaw)
-      const screen=def.file==="computer"&&p.color[0]<.1&&p.color[1]>.5&&p.color[2]>.7
-      if(def.file==="phone") {
-        // The 2000s source becomes a beige multiline base with a paper directory.
-        p.color=p.color[1]>.7&&p.color[0]<.2?[.37,.38,.28,1]:p.color[0]<.1?[.28,.29,.23,1]:[.60,.56,.43,1]
-      }
-      if(def.file==="chair"&&p.color[0]>.7)p.color=[.25,.29,.22,1]
-      p.metalness=0;p.roughness=def.file==="mug"?.35:.65
+      const screen=def.kind==="crt"&&p.color[0]<.1&&p.color[1]>.5&&p.color[2]>.7
+      if(!def.generated){p.metalness=0;p.roughness=.65}
+      if(def.kind==="chair")p.color=[1.7,1.7,1.55,1]
+      if(def.kind==="phone")p.color=[1.5,1.4,1.15,1]
       for(let i=0;i<f.length;i+=8) {
         const x=(f[i]-(lo[0]+hi[0])/2)*scale[0],z=(f[i+2]-(lo[2]+hi[2])/2)*scale[2]
         f[i]=def.at[0]+c*x+s*z;f[i+1]=def.at[1]+(f[i+1]-lo[1])*scale[1];f[i+2]=def.at[2]-s*x+c*z
@@ -104,12 +90,15 @@ export async function officeProps(renderer:Renderer) {
         n[j]=Math.round((c*nx+s*nz)/len*127);n[j+1]=Math.round(ny/len*127);n[j+2]=Math.round((-s*nx+c*nz)/len*127)
         if(screen)half[i*2+11]=0x4800 // aux = half-float 8, the CRT recipe.
       }
-      if(screen)curvedGlass(p)
+      if(screen)screenCoordinates(p)
     }
-    if(def.file==="phone")cradle=cradleOn(asset.primitives)
+    if(def.kind==="phone") {
+      cradle=cradleOn(asset.primitives)
+      indicator[1]=phoneSurface(asset.primitives,indicator[0],indicator[2])+.0007
+    }
     return asset
   }))
   const pass=new TexturedMeshPass(renderer.passContext,[...assets.flatMap(a=>a.primitives),await carpet(renderer.passContext.device)],propHooks)
   renderer.addPass("opaque",pass)
-  return {casters:pass.shadowCasters(),cradle}
+  return {casters:pass.shadowCasters(),cradle,indicator}
 }

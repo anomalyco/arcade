@@ -1,5 +1,5 @@
 import type { LabControl } from "@arcade/kit/lab-panel"
-export const defaults = () => ({ exposure: 0.92, ambient: 0.075, sodium: 12, penumbra: 0.0025, bounce: 0.025, fluorescent: 1.8, crt: 0.008, window: 0.36, officeLamp: 0.45, fog: 0.009, dust: 0.6, flicker: 1, speed: 1.7, volume: 0.55, pickup: 0.65 })
+export const defaults = () => ({ exposure: 0.92, ambient: 0.075, sodium: 12, penumbra: 0.0025, bounce: 0.025, fluorescent: 1.8, crt: 0.0035, window: 0.36, officeLamp: 0.45, fog: 0.009, dust: 0.6, flicker: 1, speed: 1.7, volume: 0.55, pickup: 0.65 })
 export type Settings = ReturnType<typeof defaults>
 export function controls(): LabControl[] {
   const row = (key: keyof Settings, label: string, min: number, max: number, step: number, unit: string, group = "Office"): LabControl => ({ key, label, min, max, step, unit, group })

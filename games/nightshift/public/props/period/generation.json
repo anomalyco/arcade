@@ -1,0 +1,41 @@
+{
+  "source": "Original gpt-image-2 product shots → TRELLIS.2, textured 512 pipeline",
+  "textureSize": 1024,
+  "assets": [
+    {
+      "file": "chair.glb",
+      "sourceSha256": "33b2097d51b61c5feb26b274e4317e0beff8d95c971a715e2c82d09e3cf2e653",
+      "sourceBytes": 7963204,
+      "runtimeBytes": 1983292,
+      "triangles": 37982
+    },
+    {
+      "file": "crt.glb",
+      "sourceSha256": "55e09d93f183b05e6bf43017dcc681258bc3e489aaeab7bb08382d97f602c552",
+      "sourceBytes": 8635220,
+      "runtimeBytes": 2313464,
+      "triangles": 38824
+    },
+    {
+      "file": "rolodex.glb",
+      "sourceSha256": "2c3e0cbe8717ff1b1cb45595ea558fa5fbfd7187a83021b86e2d05d41207e704",
+      "sourceBytes": 9949204,
+      "runtimeBytes": 2559972,
+      "triangles": 31171
+    },
+    {
+      "file": "phone-base.glb",
+      "sourceSha256": "4176a2729db4bcd0c2f77ca9973ffcf7fb86f1af1b32c0240150165b56cc20fa",
+      "sourceBytes": 7576572,
+      "runtimeBytes": 1697664,
+      "triangles": 37173
+    },
+    {
+      "file": "mug.glb",
+      "sourceSha256": "7fa3e3ea39cae518e0531b73d46ebe36c18bc2141f2d5b65025741e98845bf28",
+      "sourceBytes": 7495548,
+      "runtimeBytes": 1485764,
+      "triangles": 39886
+    }
+  ]
+}

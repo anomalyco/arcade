@@ -1,0 +1,21 @@
+{
+  "source": "Original gpt-image-2 product shots → TRELLIS.2, textured 512 pipeline",
+  "textureSize": 1024,
+  "assets": [
+    {
+      "file": "crt.glb",
+      "sourceSha256": "55e09d93f183b05e6bf43017dcc681258bc3e489aaeab7bb08382d97f602c552",
+      "sourceBytes": 8635220,
+      "runtimeBytes": 2779912,
+      "screen": {
+        "triangles": 1096,
+        "frontNormal": [
+          -0.00017369428901766484,
+          0.1353000376822528,
+          0.9908046576563287
+        ]
+      },
+      "triangles": 38824
+    }
+  ]
+}

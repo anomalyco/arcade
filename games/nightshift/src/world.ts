@@ -11,6 +11,7 @@ export const BLINDS = { x: -3.72, bottom: .94, pitch: .066, count: 24, width: 2.
 export const RECEIVER_PAD = .10
 export const CRADLE = [PHONE.x-0.102*1.3,PHONE.y+0.10,PHONE.z+.06]
 export const CORD_END = [CRADLE[0],CRADLE[1],CRADLE[2]+RECEIVER_PAD]
+export const PHONE_INDICATOR = [PHONE.x+.16,PHONE.z-.14]
 export const walls: Rect[] = []
 const beige = hex(0xaaa28a), edge = hex(0x6c6d60), dark = hex(0x242c29), paper = hex(0xb7b5a0)
 
@@ -190,7 +191,6 @@ function plant(m:Mesh,x:number,y:number,z:number) {
 }
 function phone(m:Mesh) {
   const {x,y,z}=PHONE
-  box(m,x+.165,.912,z+.11,.018,.006,.018,hex(0xff3d21),9,.002)
   // One cord from the base to the receiver. Negative aux stores arc position;
   // the vertex shader lifts its free end with the handset, keeping the base fixed.
   const a=[x+0.17,y+0.01,z+0.12],b=[x+0.2,0.798,z+0.31],c=[x-0.28,0.798,z+0.31]
@@ -230,6 +230,11 @@ export function handset() {
   }
   return m
 }
+export function phoneIndicator() {
+  const m=new Mesh()
+  box(m,0,0,0,.014,.003,.010,hex(0xff3d21),9,.001)
+  return m
+}
 export function buildWorld() {
   walls.length=0
   const m=new Mesh()
@@ -245,7 +250,7 @@ export function buildWorld() {
   for(const z of [4,0,-4,-7])windowBlinds(m,z)
   // Repeated dark work stations frame one uninterrupted centre aisle.
   for(const z of [4,1,-2]) for(const side of [-1,1]) {
-    partition(m,side===-1?-2.4:3.45,z-0.9,side===-1?(z===4?3.2:3.0):(z===4?5.3:4.7),0.09,z===4?1.90:1.47)
+    partition(m,side===-1?-2.4:3.45,z-0.9,side===-1?(z===4?3.2:3.0):(z===4?5.3:4.7),0.09,z===4?1.75:1.47)
     if(z!==4) partition(m,side*1.18,z,0.09,1.8)
     desk(m,side===-1?-2.6:3.4,z-0.4,side===-1?2.0:2.6);binders(m,side===-1?-2.6:3.4,0.8,z-0.55,6)
     crt(m,side===-1?-3.15:4.1,0.795,z-0.55,false)
@@ -265,10 +270,7 @@ export function buildWorld() {
      const a=i/60*Math.PI*2,b=(i+1)/60*Math.PI*2,r=.068+Math.sin(i*2.3)*.0015
      m.quadAuto([-.24+Math.cos(a)*r,.791,-5.2+Math.sin(a)*r],[-.24+Math.cos(b)*r,.791,-5.2+Math.sin(b)*r],[-.24+Math.cos(b)*(r+.0025),.791,-5.2+Math.sin(b)*(r+.0025)],[-.24+Math.cos(a)*(r+.0025),.791,-5.2+Math.sin(a)*(r+.0025)],hex(0x756d4b),MAT.lit,6)
    }
-  // Pen cup, six pens, rolodex on its axle, notebook and yellow memo.
-  box(m,1.34,0.795,-5.42,0.23,0.035,0.18,dark,0,0.012)
-  for(let i=0;i<26;i++) box(m,1.34,0.83+i*0.001,-5.46+i*0.004,0.2,0.12,0.002,hex(0x999b84),6)
-  for(const x of [1.21,1.47]) ring(m,x,0.88,-5.40,0.061,0.012,dark,0,true)
+  // Notebook and yellow memo; the rolodex is a separate textured prop.
   box(m,0.54,0.792,-5.2,0.14,0.001,0.13,hex(0xb3ac62),6)
   for(let i=0;i<4;i++) box(m,0.54,0.794,-5.235+i*0.016,0.08-i*0.012,0.001,0.0018,hex(0x5e6143),6)
   box(m,1.4,0.795,-5.3,0.22,0.016,0.27,hex(0x576250),0,0.006)
