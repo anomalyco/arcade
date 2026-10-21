@@ -28,6 +28,8 @@ import { dressingControls, dressingDefaults, groundHeight, leafTemplate, paintLe
 import { bakeScatter, type ScatterPlacement } from "@arcade/kit/gpu/scatter-mesh"
 import { loadInterior } from "./interior/load"
 import { interiorDefaults, interiorControls } from "./interior/settings"
+import { createStreetLampSettings, packStreetLamp, streetLampControls } from "@arcade/kit/gpu/lights/street"
+import { fluxGain, lensChunk, streetLamps } from "./lamps"
 
 async function main() {
   const canvas = document.querySelector<HTMLCanvasElement>("#view")!
@@ -53,7 +55,8 @@ async function main() {
   const interior = await loadInterior(device), indoor = interiorDefaults()
   walls.push(...interior.colliders.map(b=>[b.min[0]!,b.min[2]!,b.max[0]!,b.max[2]!] as const))
   const lighting = flatLighting(0, 0, [0, 0, 0])
-  renderer.setLevel({ chunks: [...world.solid,world.extra].map(data=>({data,box:[-700,-700,700,700] as const})), glass: [], ...lighting })
+  const street=createStreetLampSettings(), streets=streetLamps(world.scene)
+  renderer.setLevel({ chunks: [...world.solid,world.extra,lensChunk(streets)].map(data=>({data,box:[-700,-700,700,700] as const})), glass: [], ...lighting })
 
   const base = import.meta.env.BASE_URL + "assets/"
   const transform = mat4.translation([CAR.x, 0.04, CAR.z])
@@ -156,6 +159,7 @@ async function main() {
   camera.height=START.height; camera.near=0.15; camera.far=1200
   const panel = new LabPanel(settings, controls(settings), new URLSearchParams(location.search), () => camera.release(), { open: false, pill: false, groupActions: false })
   const comparison=compareCamera(camera,()=>panel.visible)
+  panel.addControls(street,streetLampControls("Lamps","lamps."))
   panel.addControls(forestSettings,forestControls(forestSettings))
   panel.addControls(dressingSettings,dressingControls(dressingSettings))
   panel.addControls(indoor,interiorControls)
@@ -178,7 +182,7 @@ async function main() {
     return {buffer,count:data.byteLength/24,stride:24}
   }).concat(meshes.shadowCasters(),insideMeshes.shadowCasters())
   // Source lighting offsets a head 12 cm along its axis, out of the luminaire's own shadow caster.
-  const practicals=[...world.scene.lamps.filter(l=>l.kind==="sodium" || l.kind==="incandescent"),...interior.lamps].map(l=>({ ...l,
+  const practicals=[...world.scene.lamps.filter(l=>l.kind==="sodium" || l.kind==="incandescent"),...interior.lamps].map(l=>({ ...l, street:streets.get(l), gain:streets.has(l) ? ()=>fluxGain(l,street) : ()=>1,
     position:l.position.map((v,i)=>v+(l.direction?.[i] ?? 0)*0.12) as [number,number,number],
   }))
   const shadowLamps=practicals.flatMap((l,id)=>l.shadow && l.angle ? [{id,pos:l.position,axis:l.direction ?? [0,-1,0] as const,range:l.range,intensity:l.intensity,cosOuter:Math.cos(l.angle)}] : [])
@@ -219,8 +223,10 @@ async function main() {
     const dt = Math.min(0.05, (now - last) / 1000); last = now
     const vp = camera.update(dt, width / height, walls)
     comparison.frame()
-    const frameLights:SceneLight[]=practicals.map((l,id)=>({id,x:l.position[0],y:l.position[2],h:l.position[1],r:l.range,color:l.color,power:l.intensity*(id>=indoorStart?indoor.fixtures:settings.lamp)/5,size:(l.size ?? 0.1)*0.5,
-      ...(l.angle ? { spot: { axis: l.direction ?? [0,-1,0] as const, cosOuter: Math.cos(l.angle), cosInner: Math.cos(l.angle*(1-(l.penumbra ?? 0.55))) } } : {}),
+    // Street mode: the lens emitter and roadway profile replace the round spot, at the same flux (lamps.ts).
+    const area=street.mode==="area"
+    const frameLights:SceneLight[]=practicals.map((l,id)=>({id,x:l.position[0],y:l.position[2],h:l.position[1],r:l.range,color:l.color,power:l.intensity*(id>=indoorStart?indoor.fixtures:settings.lamp)/5*(area ? l.gain() : 1),size:(l.size ?? 0.1)*0.5,
+      ...(area && l.street ? { street: { arm: l.street.arm, a: l.street.a, b: l.street.b } } : l.angle ? { spot: { axis: l.direction ?? [0,-1,0] as const, cosOuter: Math.cos(l.angle), cosInner: Math.cos(l.angle*(1-(l.penumbra ?? 0.55))) } } : {}),
     }))
     if(camera.flashlight) frameLights.push({id:-1,x:camera.eye[0],y:camera.eye[2],h:camera.eye[1],r:35,color:[0.85,0.92,1],power:56,size:0.4,unshadowed:true,beam:{axis:camera.direction,halfAngle:0.27}})
     lights.update(frameLights, [])
@@ -234,6 +240,7 @@ async function main() {
     custom.set([forestSettings.inner,forestSettings.face,settings.decalDepth,0],20)
     packGlassKnobs(glass,rooms,custom,24)
     packContactShadowKnobs(contact,custom,36)
+    packStreetLamp(street,custom,44)
     forest.update(camera.eye, forestSettings)
     refreshDressing()
     custom.set([indoor.fixtures,indoor.mode==="today"?0:indoor.bounce,indoor.mode==="today"?1:indoor.air,0],16)
@@ -241,15 +248,16 @@ async function main() {
     Object.assign(fog.settings,{density:settings.density,falloff:settings.falloff,brightness:0.034*settings.sky,strength:settings.haze})
     // Scattering consumes emitter radiance, not the surface BRDF's radiance / π.
     // Include the booth bulb: its reflection is the second, nearer wet streak.
-    const fogLamps:FogLamp[]=practicals.map((l,id)=>({id,x:l.position[0],y:l.position[1],z:l.position[2],range:l.range,color:l.color,intensity:l.intensity*(id>=indoorStart?indoor.fixtures*indoor.air:settings.lamp),
+    const fogLamps:FogLamp[]=practicals.map((l,id)=>({id,x:l.position[0],y:l.position[1],z:l.position[2],range:l.range,color:l.color,intensity:l.intensity*(id>=indoorStart?indoor.fixtures*indoor.air:settings.lamp)*(area ? l.gain() : 1),
       axis:l.direction,size:(l.size ?? 0.2)*0.5,...(l.angle ? fogCone(l.angle,1-(l.penumbra ?? 0.55)) : {}),
+      ...(area && l.street ? { lens: { arm: l.street.arm, a: l.street.a, b: l.street.b } } : {}),
     }))
     packSceneFrame(frameData, { viewProj: vp, eye: camera.eye, time: 0, width, height, lightCount: lights.lightCount,
       ambient: [0,0,0,0], mapSize: [1400, 1400], ao: 0 })
     lastFrame={ frame: frameData, lights: lights.lights, lightCount: lights.lightCount, shadowLightCount: lights.shadowLightCount,
       occluders: lights.occ, occluderCount: lights.occCount, lampPower: lights.power, lampCount: 0,
       view: [-700, -700, 700, 700], batches: [], alphaSprites: empty, alphaCount: 0, addSprites: empty, addCount: 0, grade: [0, 0, 0, settings.exposure],
-      fog:fog.update({eye:camera.eye,viewProj:vp,lamps:fogLamps,time:fixedTime ?? now/1000}),volume:volumes(),fogBlur:fog.blurInput() }
+      fog:fog.update({eye:camera.eye,viewProj:vp,lamps:fogLamps,time:fixedTime ?? now/1000,street}),volume:volumes(),fogBlur:fog.blurInput() }
     if(stepping) renderer.drawTo(lastFrame); else renderer.render(lastFrame)
     frames++
     if(smoke) void device.queue.onSubmittedWorkDone().then(()=>performance.mark("lot:frame-complete"))
@@ -272,8 +280,20 @@ async function main() {
     ssr.settings.mode=mode; paused=false
     return out
   }
+  /** Paired whole-frame GPU time, street lamps Today vs the lens emitter, alternating order (automation only). */
+  async function measureLamps(rounds=12) {
+    const mode=street.mode, out={today:[] as number[],area:[] as number[]}
+    const settle=()=>new Promise<void>(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r())))
+    for(let i=0;i<rounds+2;i++) for(const m of i%2 ? ["area","today"] as const : ["today","area"] as const) {
+      street.mode=m; paused=false; await settle(); paused=true
+      const ms=await renderer.measure(lastFrame!)
+      if(i>=2) out[m].push(ms)
+    }
+    street.mode=mode; paused=false
+    return out
+  }
   // measureFrame(): GPU ms of the last frame's input (timestamp-query), for scripts/atmosphere.ts.
-  Object.assign(window, { lot: { camera, settings, indoor, walls, ssr, wet, measure, measureFrames, measureFrame: () => lastFrame ? renderer.measure(lastFrame) : null, step, spots, forestPresets:FOREST_PRESETS, get input() { return lastFrame }, glass, rooms, contact, forest:forestSettings, forestStats:()=>forest.stats(), timings:{worldMs,readyMs}, dressing:dressingSettings, get dressingCount() { return dressingCount }, fog, renderer, comparison, get frames() { return frames }, get paused() { return paused }, set paused(value:boolean) { paused=value }, ready: true } })
+  Object.assign(window, { lot: { measureLamps, camera, settings, street, indoor, walls, ssr, wet, measure, measureFrames, measureFrame: () => lastFrame ? renderer.measure(lastFrame) : null, step, spots, forestPresets:FOREST_PRESETS, get input() { return lastFrame }, glass, rooms, contact, forest:forestSettings, forestStats:()=>forest.stats(), timings:{worldMs,readyMs}, dressing:dressingSettings, get dressingCount() { return dressingCount }, fog, renderer, comparison, get frames() { return frames }, get paused() { return paused }, set paused(value:boolean) { paused=value }, ready: true } })
   requestAnimationFrame(render)
 }
 void main().catch(error => { console.error(error); document.getElementById("hud")!.textContent = String(error) })
