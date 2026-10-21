@@ -14,7 +14,8 @@ const nightUniform = `struct Night { fog: vec4f, look: vec4f, torch: vec4f, fore
 export const NIGHT_FLOATS = 40
 // Wet reflections follow the materials: every physical surface tags its roughness in the HDR alpha, and the asphalt's
 // wet/puddle term (kit reflections/wet) sets that roughness, so puddles mirror and the film between them smears.
-export const fogVolume = fogScatterVolume({ declarations: nightUniform, surface: true, wetSettings: "N.wet", wetMaterial: WET_ASPHALT,
+/** The lot's fog volume; `atmosphere` compiles the fog bank and cloud deck in (the CI smoke leaves them out). */
+export const fogVolume = (atmosphere: boolean) => fogScatterVolume({ declarations: nightUniform, atmosphere, surface: true, wetSettings: "N.wet", wetMaterial: WET_ASPHALT,
   reflectionSamples:4, reflectionCap:"N.look.z",
 })
 export const reflectionVolume = ssrVolume({ wetMaterial: WET_ASPHALT })

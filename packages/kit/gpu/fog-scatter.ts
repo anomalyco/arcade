@@ -29,8 +29,16 @@ export type Vec3 = readonly [number, number, number]
 export const MAX_FOG_LAMPS = 16
 /** Floats per lamp in the scatter lamp buffer (five vec4f). */
 export const FOG_LAMP_FLOATS = 20
+/** Texels per side of the top-down lamp-glow map stored after the lamps in the scatter lamp buffer. */
+export const FOG_GLOW_SIZE = 32
+/** Floats of the glow map (one vec4f per texel, rgb used). */
+export const FOG_GLOW_FLOATS = FOG_GLOW_SIZE * FOG_GLOW_SIZE * 4
+/** Float offset of the glow map in the scatter lamp buffer (binding 19). */
+export const FOG_GLOW_OFFSET = MAX_FOG_LAMPS * FOG_LAMP_FLOATS
+/** Floats in the scatter lamp buffer: the lamps, then the glow map. */
+export const FOG_LAMP_BUFFER_FLOATS = FOG_GLOW_OFFSET + FOG_GLOW_FLOATS
 /** Floats in the `FogParams` uniform (binding 18). */
-export const FOG_UNIFORM_FLOATS = 48
+export const FOG_UNIFORM_FLOATS = 64
 /** Scene and volume bind-group slots the renderer gives the fog. */
 export const FOG_UNIFORM_BINDING = 18
 export const FOG_LAMP_BINDING = 19
@@ -86,6 +94,55 @@ export type FogSettings = {
   glint: number
   /** Vertical streaking of wet reflections. */
   streak: number
+  /** Drifting low fog bank (noise-modulated height layer marched in the volume pass); "today" leaves it out. */
+  bank: "today" | "drift"
+  /** Bank extinction at its densest (1/m). */
+  bankDensity: number
+  /** Bank top above the fog base (m). */
+  bankHeight: number
+  /** Size of the bank's billows (m). */
+  bankScale: number
+  /** Share of the noise cut away, opening gaps between billows (0..1). */
+  bankThreshold: number
+  /** How far the bank's top rises and falls with the noise (share of its height). */
+  bankUndulation: number
+  /** Wind speed (m/s) and heading (degrees, 0 = +x). */
+  bankWind: number
+  bankWindHeading: number
+  /** March steps through the bank. */
+  bankSteps: number
+  /** Distance the bank reaches before the height fog takes over (m). */
+  bankDistance: number
+  /** Bank colour as a share of the fog colour. */
+  bankBrightness: number
+  /** Lamp glow map tint in the bank. */
+  bankGlow: number
+  /** Extra lamp light scattered where the bank thickens the air (share of the physical ratio). */
+  bankLamp: number
+  /** Fog-depth blur: blur what the fog hides, so far trees and buildings read as soft masses. */
+  blur: "today" | "depth"
+  /** Blur mixed in where the fog is opaque (0..1). */
+  blurStrength: number
+  /** Optical depth multiplier for the blur (blur starts before the fog is opaque). */
+  blurReach: number
+  /** Lit cloud deck: a low cloud layer glowing from the lamps below. */
+  clouds: "today" | "lit"
+  /** Cloud base height above the fog base (m). */
+  cloudHeight: number
+  /** Share of the sky the deck covers (0..1). */
+  cloudCover: number
+  /** Size of cloud masses (m). */
+  cloudScale: number
+  /** Cloud opacity (0..1). */
+  cloudOpacity: number
+  /** Cloud body brightness as a share of the fog colour (low = shadier sky). */
+  cloudDark: number
+  /** Lamp glow on the cloud underside. */
+  cloudGlow: number
+  /** Cloud drift speed (m/s), along the bank's wind heading. */
+  cloudWind: number
+  /** Horizontal spread of each lamp's glow in the glow map (m). */
+  glowSpread: number
 }
 
 /** Aiden's Lab defaults (`atmosphere.ts`, `post.ts`). */
@@ -112,6 +169,31 @@ export const FOG_DEFAULTS: FogSettings = {
   reflection: 4,
   glint: 2,
   streak: 2.2,
+  bank: "today",
+  bankDensity: 0.04,
+  bankHeight: 4,
+  bankScale: 9,
+  bankThreshold: 0.3,
+  bankUndulation: 0.6,
+  bankWind: 0.7,
+  bankWindHeading: 200,
+  bankSteps: 6,
+  bankDistance: 140,
+  bankBrightness: 0.7,
+  bankGlow: 1,
+  bankLamp: 0.5,
+  blur: "today",
+  blurStrength: 0.7,
+  blurReach: 1,
+  clouds: "today",
+  cloudHeight: 35,
+  cloudCover: 0.55,
+  cloudScale: 170,
+  cloudOpacity: 0.9,
+  cloudDark: 0.15,
+  cloudGlow: 0.6,
+  cloudWind: 2.5,
+  glowSpread: 18,
 }
 
 export const createFogSettings = (overrides: Partial<FogSettings> = {}): FogSettings => ({ ...FOG_DEFAULTS, ...overrides })
@@ -145,6 +227,48 @@ export function fogControls(group = "Fog", prefix = ""): LabControl[] {
     range("streak", "Vertical streaking", 0, 4, 0.05, "×", "Wet ground"),
     range("history", "History weight (new frame)", 0.02, 1, 0.01, undefined, "Stability"),
     { key: key("halfRes"), ...field("halfRes"), label: "Half resolution", group, subsection: "Stability", type: "toggle" },
+  ]
+}
+
+/**
+ * Typed Lab rows for the atmosphere layered on the fog: drifting fog bank, fog-depth blur and lit cloud deck. Each
+ * starts with its Today / on select, so Today is one setting away. They need the fog on ("Lamp scattering").
+ */
+export function atmosphereControls(group = "Atmosphere", prefix = ""): LabControl[] {
+  const key = (k: keyof FogSettings) => prefix + k
+  const field = (k: keyof FogSettings) => (prefix ? { field: k } : {})
+  const range = (k: keyof FogSettings, label: string, min: number, max: number, step: number, unit: string | undefined, subsection: string): LabControl => ({
+    key: key(k), ...field(k), label, group, min, max, step, ...(unit ? { unit } : {}), subsection,
+  })
+  const select = (k: keyof FogSettings, label: string, subsection: string, options: { value: string | number; label: string }[]): LabControl => ({
+    key: key(k), ...field(k), label, group, subsection, type: "select", options,
+  })
+  return [
+    select("bank", "Fog bank", "Fog bank", [{ value: "today", label: "Today" }, { value: "drift", label: "Drifting" }]),
+    range("bankDensity", "Bank density", 0, 0.3, 0.002, "1/m", "Fog bank"),
+    range("bankHeight", "Bank height", 0.5, 20, 0.1, "m", "Fog bank"),
+    range("bankScale", "Billow size", 1, 60, 0.5, "m", "Fog bank"),
+    range("bankThreshold", "Gaps", 0, 0.9, 0.01, undefined, "Fog bank"),
+    range("bankUndulation", "Top undulation", 0, 1.5, 0.01, undefined, "Fog bank"),
+    range("bankWind", "Wind", 0, 6, 0.05, "m/s", "Fog bank"),
+    range("bankWindHeading", "Wind heading", 0, 360, 1, "°", "Fog bank"),
+    select("bankSteps", "March steps", "Fog bank", [3, 4, 6, 8, 12].map((v) => ({ value: v, label: String(v) }))),
+    range("bankDistance", "Reach", 20, 400, 5, "m", "Fog bank"),
+    range("bankBrightness", "Bank brightness", 0, 2, 0.01, "× fog", "Fog bank"),
+    range("bankGlow", "Lamp glow in bank", 0, 4, 0.05, "×", "Fog bank"),
+    range("bankLamp", "Lamp beams in bank", 0, 1, 0.01, "×", "Fog bank"),
+    select("blur", "Fog blur", "Fog blur", [{ value: "today", label: "Today" }, { value: "depth", label: "Depth blur" }]),
+    range("blurStrength", "Blur strength", 0, 1, 0.01, undefined, "Fog blur"),
+    range("blurReach", "Blur reach", 0.2, 6, 0.05, "× depth", "Fog blur"),
+    select("clouds", "Cloud deck", "Cloud deck", [{ value: "today", label: "Today" }, { value: "lit", label: "Lit from below" }]),
+    range("cloudHeight", "Cloud base", 20, 400, 1, "m", "Cloud deck"),
+    range("cloudCover", "Cover", 0, 1, 0.01, undefined, "Cloud deck"),
+    range("cloudScale", "Cloud size", 20, 800, 5, "m", "Cloud deck"),
+    range("cloudOpacity", "Opacity", 0, 1, 0.01, undefined, "Cloud deck"),
+    range("cloudDark", "Cloud body", 0, 1.5, 0.01, "× fog", "Cloud deck"),
+    range("cloudGlow", "Lamp underglow", 0, 6, 0.05, "×", "Cloud deck"),
+    range("cloudWind", "Drift", 0, 20, 0.1, "m/s", "Cloud deck"),
+    range("glowSpread", "Glow spread", 4, 80, 1, "m", "Cloud deck"),
   ]
 }
 
@@ -301,6 +425,81 @@ export function upsampleWeights(fx: number, fy: number, tapDist: readonly [numbe
   return w.map((v) => v / sum) as [number, number, number, number]
 }
 
+// ---------------------------------------------------------------- atmosphere (CPU mirrors of the WGSL)
+
+type BankShape = Pick<FogSettings, "bankDensity" | "bankHeight" | "bankThreshold" | "bankDistance"> & { base: number }
+
+/** Segment [t0, t1] of a ray (from height `eyeY`, unit dir y `dirY`, surface at `dist`) inside the bank slab. */
+export function fogBankInterval(eyeY: number, dirY: number, dist: number, b: BankShape): [number, number] {
+  const top = b.base + b.bankHeight
+  const dy = Math.abs(dirY) < 1e-5 ? (dirY < 0 ? -1e-5 : 1e-5) : dirY
+  const ta = (b.base - eyeY) / dy, tb = (top - eyeY) / dy
+  const t0 = Math.max(Math.min(ta, tb), 0)
+  const t1 = Math.min(Math.max(ta, tb), dist, b.bankDistance)
+  return t1 > t0 ? [t0, t1] : [0, 0]
+}
+
+/** Noise-free bank extinction at height y: density · E[max(n − gaps, 0)] / (1 − gaps) · (1 − h)^1.2. */
+export function fogBankMeanSigma(y: number, b: BankShape): number {
+  const h = (y - b.base) / Math.max(b.bankHeight, 1e-3)
+  if (h >= 1 || h < 0) return h < 0 ? b.bankDensity * 0.5 * (1 - b.bankThreshold) : 0
+  return b.bankDensity * 0.5 * (1 - b.bankThreshold) * Math.pow(1 - h, 1.2)
+}
+
+/** Fog-depth blur weight for a surface at `p`: 1 − exp(−reach · (height fog + mean bank optical depth)). */
+export function fogBlurAmount(eye: Vec3, p: Vec3, m: FogMedium, reach: number, bank?: BankShape): number {
+  let tau = fogOpticalDepth(eye, p, m)
+  if (bank) {
+    const d: Vec3 = [p[0] - eye[0], p[1] - eye[1], p[2] - eye[2]]
+    const len = Math.hypot(d[0], d[1], d[2])
+    if (len > 1e-6) {
+      const [t0, t1] = fogBankInterval(eye[1], d[1] / len, len, bank)
+      tau += fogBankMeanSigma(eye[1] + (d[1] / len) * (t0 + t1) * 0.5, bank) * (t1 - t0)
+    }
+  }
+  return 1 - Math.exp(-reach * tau)
+}
+
+export type GlowRect = readonly [x0: number, z0: number, x1: number, z1: number]
+
+/** Glow map texel scale: ground albedo 0.1 over π, so a texel reads as roughly the radiance of the lit ground. */
+export const FOG_GLOW_SCALE = 0.1 / Math.PI
+
+/** Rectangle the glow map covers: the lamps' footprint padded by three spreads and 20 m (null without lamps). */
+export function fogGlowRect(lamps: readonly FogLamp[], spread: number): GlowRect | null {
+  if (!lamps.length) return null
+  let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity
+  for (const l of lamps) {
+    x0 = Math.min(x0, l.x); x1 = Math.max(x1, l.x)
+    z0 = Math.min(z0, l.z); z1 = Math.max(z1, l.z)
+  }
+  const pad = spread * 3 + 20
+  return [x0 - pad, z0 - pad, x1 + pad, z1 + pad]
+}
+
+/**
+ * Bakes the top-down lamp glow (`FOG_GLOW_SIZE`² texels, rgb in each vec4): per texel centre, Σ colour · intensity ·
+ * visibility / (horizontal d² + height² + spread²) · `FOG_GLOW_SCALE`. One map lights the cloud underside and tints
+ * the fog bank, so every lamp costs one bilinear lookup (Neon Zenith's street-light map, MIT).
+ */
+export function bakeLampGlow(out: Float32Array, lamps: readonly FogLamp[], rect: GlowRect, spread: number, base = 0): void {
+  const n = FOG_GLOW_SIZE
+  const s2 = spread * spread
+  for (let j = 0; j < n; j++) {
+    const z = rect[1] + ((j + 0.5) / n) * (rect[3] - rect[1])
+    for (let i = 0; i < n; i++) {
+      const x = rect[0] + ((i + 0.5) / n) * (rect[2] - rect[0])
+      let r = 0, g = 0, b = 0
+      for (const l of lamps) {
+        const h = Math.max(l.y - base, 0)
+        const k = (l.intensity * (l.visibility ?? 1) * FOG_GLOW_SCALE) / ((x - l.x) ** 2 + (z - l.z) ** 2 + h * h + s2)
+        r += l.color[0] * k; g += l.color[1] * k; b += l.color[2] * k
+      }
+      out.set([r, g, b, 0], (j * n + i) * 4)
+    }
+  }
+}
+
 // ---------------------------------------------------------------- lamp picker and per-frame packing
 
 export type FogLamp = {
@@ -393,13 +592,21 @@ export type FogFrame = {
   readonly uniforms: Float32Array<ArrayBuffer>
   readonly lamps: Float32Array<ArrayBuffer>
   lampCount: number
+  /** Top-down lamp glow (`FOG_GLOW_FLOATS`), uploaded after the lamps when `glowVersion` changes. */
+  readonly glow?: Float32Array<ArrayBuffer>
+  glowVersion?: number
 }
 
 export type FogUpdate = {
   eye: Vec3
   viewProj: ArrayLike<number>
   lamps: readonly FogLamp[]
+  /** Seconds, for the bank and cloud drift (default 0: frozen). */
+  time?: number
 }
+
+/** Fog-depth blur input for `FrameInput.fogBlur` (`@arcade/kit/gpu/fog-blur`). */
+export type FogBlurInput = { strength: number; reach: number }
 
 /**
  * CPU side of the fog: picks lamps and packs `FogParams` and the scatter lamp list for `FrameInput.fog`. The skylight
@@ -412,9 +619,13 @@ export class FogScatter {
     uniforms: new Float32Array(FOG_UNIFORM_FLOATS),
     lamps: new Float32Array(MAX_FOG_LAMPS * FOG_LAMP_FLOATS),
     lampCount: 0,
+    glow: new Float32Array(FOG_GLOW_FLOATS),
+    glowVersion: 0,
   }
   private skyKey = ""
   private ambient: [Vec3, Vec3, Vec3] = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
+  private glowKey = NaN
+  private glowRect: GlowRect | null = null
 
   constructor(settings: FogSettings = createFogSettings()) {
     this.settings = settings
@@ -427,6 +638,30 @@ export class FogScatter {
   /** Volume-pass entry for `FrameInput.volume` (null when the fog is off). */
   volumeInput(): { downscale: number; history: number } | null {
     return this.enabled ? { downscale: this.settings.halfRes ? 2 : 1, history: this.settings.history } : null
+  }
+
+  /** Fog-depth blur entry for `FrameInput.fogBlur` (null at Today or with the fog off). */
+  blurInput(): FogBlurInput | null {
+    const s = this.settings
+    return this.enabled && s.blur === "depth" && s.blurStrength > 0 ? { strength: s.blurStrength, reach: s.blurReach } : null
+  }
+
+  /** Bakes the glow map when the lamps or the spread change; returns whether the map is in use. */
+  private updateGlow(lamps: readonly FogLamp[], base: number): boolean {
+    const s = this.settings
+    if (!(s.bank === "drift" && s.bankGlow > 0) && !(s.clouds === "lit" && s.cloudGlow > 0)) return false
+    let key = s.glowSpread * 7.13 + base * 3.1 + lamps.length
+    for (let i = 0; i < lamps.length; i++) {
+      const l = lamps[i]!
+      key = (key * 31 + l.x * 1.7 + l.y * 2.3 + l.z * 2.9 + l.intensity * (l.visibility ?? 1) + l.color[0] * 5 + l.color[1] * 7 + l.color[2] * 11) % 1e9
+    }
+    if (key !== this.glowKey) {
+      this.glowKey = key
+      this.glowRect = fogGlowRect(lamps, s.glowSpread)
+      if (this.glowRect) bakeLampGlow(this.frame.glow!, lamps, this.glowRect, s.glowSpread, base)
+      this.frame.glowVersion = (this.frame.glowVersion ?? 0) + 1
+    }
+    return !!this.glowRect
   }
 
   update(input: FogUpdate): FogFrame {
@@ -447,6 +682,18 @@ export class FogScatter {
     const lamps = on ? this.picker.pick(input.lamps, input.eye, input.viewProj, medium, s.lamps) : (this.picker.reset(), this.picker.chosen)
     u.set([s.leak, s.coneLength, s.phaseG, lamps.length], 24)
     u.set([Math.max(1, Math.round(s.samples)), s.reflection, s.glint, s.streak], 28)
+    const bank = on && s.bank === "drift" && s.bankDensity > 0
+    const clouds = on && s.clouds === "lit" && s.cloudOpacity > 0
+    const glow = on && this.updateGlow(input.lamps, s.base)
+    const heading = (s.bankWindHeading * Math.PI) / 180
+    u.set([bank ? s.bankDensity : 0, Math.max(s.bankHeight, 0.05), 1 / Math.max(s.bankScale, 0.1), bank ? Math.max(1, Math.round(s.bankSteps)) : 0], 32)
+    u.set([Math.min(s.bankThreshold, 0.95), s.bankDistance, s.bankBrightness, s.bankGlow], 36)
+    u.set([Math.cos(heading) * s.bankWind, Math.sin(heading) * s.bankWind, (input.time ?? 0) % 100000, s.cloudWind], 40)
+    u.set([s.cloudHeight, s.cloudCover, 1 / Math.max(s.cloudScale, 1), clouds ? s.cloudOpacity : 0], 44)
+    u.set([s.cloudDark, s.cloudGlow, Math.cos(heading), Math.sin(heading)], 48)
+    const r = this.glowRect
+    u.set(glow && r ? [r[0], r[1], 1 / (r[2] - r[0]), 1 / (r[3] - r[1])] : [0, 0, 0, 0], 52)
+    u.set([s.bankLamp, s.bankUndulation, 0, 0], 56)
     const L = this.frame.lamps
     for (let k = 0; k < lamps.length; k++) {
       const l = input.lamps[lamps[k]!]!
@@ -496,10 +743,14 @@ struct FogParams {
   amb2: vec4f,
   scatter: vec4f,  // cone leak, visible cone length, phase g, lamp count
   reflect: vec4f,  // samples, reflection, glint, streak
+  bank: vec4f,     // bank density (0 = off), height, 1/billow size, steps
+  bank2: vec4f,    // gaps, reach, brightness (× fog), lamp glow tint
+  wind: vec4f,     // wind x, z (m/s), time (s), cloud drift (m/s)
+  cloud: vec4f,    // cloud base, cover, 1/size, opacity (0 = off)
+  cloud2: vec4f,   // cloud body (× fog), lamp underglow, wind heading cos, sin
+  glowRect: vec4f, // glow map x0, z0, 1/width, 1/depth (0 = no map)
+  bank3: vec4f,    // lamp beams in bank, top undulation
   pad0: vec4f,
-  pad1: vec4f,
-  pad2: vec4f,
-  pad3: vec4f,
 }
 @group(0) @binding(${FOG_UNIFORM_BINDING}) var<uniform> FOG: FogParams;
 
@@ -542,6 +793,144 @@ fn fogLampCone(cosT: f32, cosOuter: f32, cosInner: f32) -> f32 { return smoothst
 /** Scene-shader declarations (`SceneHooks.declarations`): `fogApply`, `fogSky`, `fogAmbient`, `fogEnv`. */
 export const fogSceneWgsl = fogParamsWgsl + fogConeWgsl
 
+/**
+ * Volume-pass atmosphere (needs `fogParamsWgsl` and `fogLampData`): the drifting fog bank, the lit cloud deck and the
+ * lamp-glow map lookup. The bank is a ray–slab march through a noise-modulated layer with two counter-drifting,
+ * domain-warped octaves and a height falloff whose top rises and falls with the noise (three.js
+ * `webgpu_postprocessing_fog`, MIT), Beer–Lambert accumulated; Tidewater's AirHaze (MIT) layers it over the
+ * analytic height fog the same way. The deck is a plane with footprint-filtered octaves and an analytic edge width
+ * from the pixel's footprint (web-ocean, MIT), lit from below by the glow map (Neon Zenith, MIT).
+ */
+export const fogAtmosphereWgsl = /* wgsl */ `
+fn fogHash3(p: vec3i) -> f32 {
+  var h = (bitcast<u32>(p.x) * 0x8da6b343u) ^ (bitcast<u32>(p.y) * 0xd8163841u) ^ (bitcast<u32>(p.z) * 0xcb1ab31fu);
+  h = (h ^ (h >> 16u)) * 0x7feb352du;
+  h = (h ^ (h >> 15u)) * 0x846ca68bu;
+  h = h ^ (h >> 16u);
+  return f32(h >> 8u) * (1.0 / 16777216.0);
+}
+fn fogNoise3(p: vec3f) -> f32 {
+  let i = vec3i(floor(p));
+  let f = fract(p);
+  let u = f * f * (3.0 - 2.0 * f);
+  let a = mix(fogHash3(i), fogHash3(i + vec3i(1, 0, 0)), u.x);
+  let b = mix(fogHash3(i + vec3i(0, 1, 0)), fogHash3(i + vec3i(1, 1, 0)), u.x);
+  let c = mix(fogHash3(i + vec3i(0, 0, 1)), fogHash3(i + vec3i(1, 0, 1)), u.x);
+  let e = mix(fogHash3(i + vec3i(0, 1, 1)), fogHash3(i + vec3i(1, 1, 1)), u.x);
+  return mix(mix(a, b, u.y), mix(c, e, u.y), u.z);
+}
+fn fogNoise2(p: vec2f) -> f32 {
+  let i = vec2i(floor(p));
+  let f = fract(p);
+  let u = f * f * (3.0 - 2.0 * f);
+  let a = mix(fogHash3(vec3i(i, 7)), fogHash3(vec3i(i + vec2i(1, 0), 7)), u.x);
+  let b = mix(fogHash3(vec3i(i + vec2i(0, 1), 7)), fogHash3(vec3i(i + vec2i(1, 1), 7)), u.x);
+  return mix(a, b, u.y);
+}
+
+fn fogGlowAt(i: vec2i) -> vec3f {
+  let c = clamp(i, vec2i(0), vec2i(${FOG_GLOW_SIZE - 1}));
+  return fogLampData[${FOG_GLOW_OFFSET / 4}u + u32(c.y * ${FOG_GLOW_SIZE} + c.x)].rgb;
+}
+/** Top-down lamp glow at a ground position (bilinear; fades out at the map's edge). */
+fn fogGlow(xz: vec2f) -> vec3f {
+  if (FOG.glowRect.z <= 0.0) { return vec3f(0.0); }
+  let n = (xz - FOG.glowRect.xy) * FOG.glowRect.zw;
+  let uv = n * ${FOG_GLOW_SIZE}.0 - 0.5;
+  let i = vec2i(floor(uv));
+  let f = fract(uv);
+  let g = mix(mix(fogGlowAt(i), fogGlowAt(i + vec2i(1, 0)), f.x), mix(fogGlowAt(i + vec2i(0, 1)), fogGlowAt(i + vec2i(1, 1)), f.x), f.y);
+  let r = abs(n * 2.0 - 1.0);
+  return g * (1.0 - smoothstep(0.85, 1.0, max(r.x, r.y)));
+}
+
+/** Noise-free bank extinction at height y (the CPU's fogBankMeanSigma). */
+fn fogBankMeanSigma(y: f32) -> f32 {
+  let h = (y - FOG.medium.z) / FOG.bank.y;
+  let k = FOG.bank.x * 0.5 * (1.0 - FOG.bank2.x);
+  if (h < 0.0) { return k; }
+  return k * pow(max(1.0 - h, 0.0), 1.2);
+}
+/** Bank extinction at p: billows drifting with the wind, wisps counter-drifting through them, a rolling top. */
+fn fogBankSigma(p: vec3f) -> f32 {
+  let h = (p.y - FOG.medium.z) / FOG.bank.y;
+  let t = FOG.wind.z;
+  let q = p * FOG.bank.z;
+  let w = vec3f(FOG.wind.x, 0.0, FOG.wind.y) * (t * FOG.bank.z);
+  let n1 = fogNoise3(q - w + vec3f(0.0, t * 0.015, 0.0));
+  let n2 = fogNoise3(q * 2.3 + vec3f(1.7, 0.9, 2.5) + w * 0.5 + n1 * 0.6);
+  let n = clamp(((n1 * 0.68 + n2 * 0.32) - 0.5) * 1.9 + 0.5, 0.0, 1.0);
+  let top = 1.0 - clamp(h - (n - 0.5) * FOG.bank3.y, 0.0, 1.0);
+  let gaps = FOG.bank2.x;
+  return FOG.bank.x * max(n - gaps, 0.0) / (1.0 - gaps) * pow(top, 1.2);
+}
+/** The bank along eye + rd · [0, dist]: rgb in-scatter, a transmittance. */
+fn fogBank(eye: vec3f, rd: vec3f, dist: f32, jitter: f32) -> vec4f {
+  let base = FOG.medium.z;
+  let top = base + FOG.bank.y * (1.0 + 0.5 * FOG.bank3.y);
+  let dy = select(min(rd.y, -1e-5), max(rd.y, 1e-5), rd.y >= 0.0);
+  let ta = (base - 1.0 - eye.y) / dy;
+  let tb = (top - eye.y) / dy;
+  let reach = FOG.bank2.y;
+  let t0 = max(min(ta, tb), 0.0);
+  let t1 = min(min(max(ta, tb), dist), reach);
+  if (t1 <= t0) { return vec4f(0.0, 0.0, 0.0, 1.0); }
+  let n = u32(FOG.bank.w);
+  let dt = (t1 - t0) / f32(n);
+  var T = 1.0;
+  var centre = vec3f(0.0);
+  var weight = 0.0;
+  for (var i = 0u; i < n; i++) {
+    let s = t0 + (f32(i) + jitter) * dt;
+    let p = eye + rd * s;
+    let sig = fogBankSigma(p) * (1.0 - smoothstep(reach * 0.6, reach, s));
+    let a = exp(-sig * dt);
+    let wgt = T * (1.0 - a);
+    centre += p * wgt;
+    weight += wgt;
+    T *= a;
+  }
+  if (weight < 1e-5) { return vec4f(0.0, 0.0, 0.0, 1.0); }
+  // Sky-lit fog colour plus the lamp glow where the bank scatters most, faded by the height fog in front of it.
+  let mid = centre / weight;
+  let col = fogColor() * FOG.bank2.z + fogGlow(mid.xz) * FOG.bank2.w * fogTransmittance(eye, mid);
+  return vec4f(col * (1.0 - T), T);
+}
+
+/** The cloud deck along rd (before a surface at dist): rgb its colour × opacity, a 1 − opacity. */
+fn fogCloud(eye: vec3f, rd: vec3f, dist: f32, pixelAngle: f32) -> vec4f {
+  let rise = FOG.medium.z + FOG.cloud.x - eye.y;
+  if (rd.y < 0.01 || rise <= 0.0) { return vec4f(0.0, 0.0, 0.0, 1.0); }
+  let t = rise / rd.y;
+  if (t >= dist) { return vec4f(0.0, 0.0, 0.0, 1.0); }
+  let hit = eye + rd * t;
+  let drift = FOG.cloud2.zw * (FOG.wind.w * FOG.wind.z);
+  let q = (hit.xz - drift) * FOG.cloud.z;
+  // A pixel's footprint on the deck in noise units: it widens with distance and by 1/sin(elevation).
+  let foot = t * pixelAngle / rd.y * FOG.cloud.z;
+  var n = 0.0;
+  var amp = 0.5;
+  var f = 1.0;
+  var norm = 0.0;
+  for (var k = 0; k < 4; k++) {
+    // Octaves finer than a couple of footprints fade to their mean, so the far deck doesn't shimmer.
+    let keep = 1.0 - smoothstep(0.25, 0.5, foot * f);
+    n += amp * mix(0.5, fogNoise2(q * f + vec2f(f32(k) * 17.3, f32(k) * 5.1)), keep);
+    norm += amp;
+    amp *= 0.5;
+    f *= 2.03;
+  }
+  n = clamp((n / norm - 0.5) * 2.2 + 0.5, 0.0, 1.0);
+  // Analytic edge AA: the edge band is how far the noise moves across one pixel.
+  let c = 1.0 - FOG.cloud.y;
+  let w = max(foot * 2.2, 0.03);
+  let a = smoothstep(c - w, c + w, n) * FOG.cloud.w * (1.0 - smoothstep(0.8, 1.0, t / dist));
+  let tc = fogTransmittance(eye, hit);
+  let body = fogColor() * FOG.cloud2.x + fogGlow(hit.xz) * FOG.cloud2.y * (0.6 + 0.4 * smoothstep(c, 1.0, n));
+  return vec4f(a * (body * tc + fogColor() * (1.0 - tc)), 1.0 - a);
+}
+`
+
 export type FogScatterHooks = {
   /** Extra WGSL declarations (e.g. the game's custom uniform struct at binding 13). */
   declarations?: string
@@ -569,6 +958,11 @@ export type FogScatterHooks = {
   wetSettings?: string
   /** Material whose puddles the ripple follows (default asphalt). */
   wetMaterial?: WetMaterial
+  /**
+   * Compile the atmosphere (fog bank, cloud deck, glow map; `fogAtmosphereWgsl`) into the shader. Off by default so
+   * games without it, and software-GPU smoke runs, compile exactly the plain fog.
+   */
+  atmosphere?: boolean
 }
 
 /**
@@ -577,10 +971,12 @@ export type FogScatterHooks = {
  */
 export function fogScatterVolume(hooks: FogScatterHooks = {}): VolumeLightShader {
   const reflectionSamples = Math.max(1, Math.min(8, Math.round(hooks.reflectionSamples ?? 1)))
+  const atmo = !!hooks.atmosphere
   return {
     depth: true,
     history: true,
     ...(hooks.surface ? { color: true } : {}),
+    transmittance: true,
     code: /* wgsl */ `
 ${common}
 ${volumeFrameWgsl}
@@ -589,7 +985,13 @@ ${fogConeWgsl}
 ${hooks.surface ? sceneSurfaceWgsl : ""}
 ${hooks.wetSettings ? wetSurfaceWgsl : ""}
 struct FogLamp { a: vec4f, b: vec4f, c: vec4f, d: vec4f, e: vec4f }
-@group(0) @binding(${FOG_LAMP_BINDING}) var<storage, read> fogLamps: array<FogLamp>;
+// Five vec4f per lamp for ${MAX_FOG_LAMPS} lamps, then the ${FOG_GLOW_SIZE}² lamp-glow map.
+@group(0) @binding(${FOG_LAMP_BINDING}) var<storage, read> fogLampData: array<vec4f>;
+fn fogLamp(i: u32) -> FogLamp {
+  let o = i * 5u;
+  return FogLamp(fogLampData[o], fogLampData[o + 1u], fogLampData[o + 2u], fogLampData[o + 3u], fogLampData[o + 4u]);
+}
+${atmo ? fogAtmosphereWgsl : ""}
 ${hooks.declarations ?? ""}
 fn fogWet(p: vec3f, n: vec3f, footprint: f32) -> f32 { return ${hooks.wet ?? "0.0"}; }
 fn fogRoughness(p: vec3f, n: vec3f) -> f32 { return ${hooks.roughness ?? "0.5"}; }
@@ -613,8 +1015,10 @@ fn airlight(ro: vec3f, rd: vec3f, dist: f32, n: u32, jitter: f32) -> vec3f {
   let g2 = g * g;
   let leak = FOG.scatter.x;
   let count = u32(FOG.scatter.w);
-  for (var i = 0u; i < count; i++) {
-    let L = fogLamps[i];
+${atmo ? `  // Where the bank thickens the air, the beams scatter more: σ(lamp) + mean bank σ over σ(lamp).
+  let bankLamp = select(0.0, FOG.bank3.x, FOG.bank.w > 0.5);
+` : ""}  for (var i = 0u; i < count; i++) {
+    let L = fogLamp(i);
     let toL = L.a.xyz - ro;
     let s0 = dot(toL, rd);
     let h = max(sqrt(max(dot(toL, toL) - s0 * s0, 0.0)), 0.03);
@@ -635,7 +1039,9 @@ fn airlight(ro: vec3f, rd: vec3f, dist: f32, n: u32, jitter: f32) -> vec3f {
       let win = pow(clamp(1.0 - r4 * r4 * r4 * r4, 0.0, 1.0), 2.0) * smoothstep(0.0, L.d.x, ld) * exp(-ld / FOG.scatter.y);
       let cosT = -dot(ln, rd);
       let hg = (1.0 - g2) / pow(max(1.0 + g2 - 2.0 * g * cosT, 1e-4), 1.5);
-      sum += cone * win * mix(1.0, hg, 0.85);
+      var thick = 1.0;
+${atmo ? "      if (bankLamp > 0.0) { thick += bankLamp * fogBankMeanSigma(ro.y + rd.y * (s0 + h * tan(t))) / max(L.e.w, 1e-5); }" : ""}
+      sum += cone * win * mix(1.0, hg, 0.85) * thick;
     }
     acc += L.b.rgb * sum * (tb - ta) / (h * f32(n) * 12.566371);
   }
@@ -643,7 +1049,8 @@ fn airlight(ro: vec3f, rd: vec3f, dist: f32, n: u32, jitter: f32) -> vec3f {
 }
 
 @fragment fn fs(o: VO) -> @location(0) vec4f {
-  if (FOG.medium.w < 0.5 || FOG.scatter.w < 0.5) { return vec4f(0.0); }
+  // Alpha is the transmittance the scene behind keeps (the slot composites scene · a + rgb): 1 leaves it as it was.
+  if (FOG.medium.w < 0.5 || (FOG.scatter.w < 0.5${atmo ? " && FOG.bank.w < 0.5 && FOG.cloud.w <= 0.0" : ""})) { return vec4f(0.0, 0.0, 0.0, 1.0); }
   let eye = V.eye.xyz;
   let d = volumeDepth(o.uv);
   let sky = volumeIsSky(d);
@@ -657,7 +1064,23 @@ fn airlight(ro: vec3f, rd: vec3f, dist: f32, n: u32, jitter: f32) -> vec3f {
   let jitter = fogIgn(px + V.eye.w * 5.588238);
   let samples = u32(max(FOG.reflect.x, 1.0));
   var acc = airlight(eye, rd, dist, samples, jitter);
-  if (!sky && (FOG.reflect.y > 0.0 || FOG.reflect.z > 0.0)) {
+  // Clouds behind the bank, then the bank in front of everything: rgb in-scatter, a the transmittance.
+  var trans = 1.0;
+${atmo ? `  if (FOG.cloud.w > 0.0 && rd.y > 0.01) {
+    let texel = 1.0 / V.size.xy;
+    let pixelAngle = length(normalize(volumeUnproject(o.uv + vec2f(texel.x, 0.0), d) - eye) - rd);
+    let cl = fogCloud(eye, rd, dist, pixelAngle);
+    acc += cl.rgb;
+    trans *= cl.a;
+  }
+  if (FOG.bank.w > 0.5) {
+    let bank = fogBank(eye, rd, dist, fogIgn(px + vec2f(13.0, 71.0) + V.eye.w * 5.588238));
+    // Beams start both in front of and behind the bank: they keep the square root of its transmittance.
+    acc = acc * sqrt(bank.a) + bank.rgb;
+    trans *= bank.a;
+  }
+` : ""}
+  if (!sky && (FOG.reflect.y > 0.0 || FOG.reflect.z > 0.0) && FOG.scatter.w > 0.5) {
     let world = eye + rd * dist;
     ${hooks.normal ? `var nW = normalize(fogNormal(world));` : `var nW = volumeNormalAtTexel(volumeTexel(o.uv), eye);`}
     if (dot(nW, rd) > 0.0) { nW = -nW; }
@@ -696,7 +1119,7 @@ fn airlight(ro: vec3f, rd: vec3f, dist: f32, n: u32, jitter: f32) -> vec3f {
         refl+=sample*min(1.0,(${hooks.reflectionCap ?? "4.0"})/max(max(sample.r,max(sample.g,sample.b)),1e-5));
       }
       refl/=f32(taps);` : `let refl = airlight(world + nW * 0.02, rr, 250.0, max(2u, samples / 2u), jitter);`}
-      acc += refl * fres * wet * T * FOG.reflect.y;
+      acc += refl * fres * wet * T * trans * FOG.reflect.y;
       // Emitter glints: a lobe around the un-jittered mirror direction per lamp, tight across and long along the
       // view's vertical plane, both widening with roughness; only seen from inside the lamp's cone.
       let rm = normalize(reflect(rd, nW));
@@ -706,7 +1129,7 @@ fn airlight(ro: vec3f, rd: vec3f, dist: f32, n: u32, jitter: f32) -> vec3f {
       var gl = vec3f(0.0);
       let count = u32(FOG.scatter.w);
       for (var i = 0u; i < count; i++) {
-        let L = fogLamps[i];
+        let L = fogLamp(i);
         let toL = L.a.xyz - world;
         let dl = max(length(toL), 0.5);
         let ld = toL / dl;
@@ -716,10 +1139,10 @@ fn airlight(ro: vec3f, rd: vec3f, dist: f32, n: u32, jitter: f32) -> vec3f {
         let aim = fogLampCone(dot(-ld, L.c.xyz), L.b.w - 0.1, L.c.w);
         gl += L.e.rgb * lobe * (aim * 0.9 + 0.1) / (dl * dl + 4.0) * exp(-dl * L.e.w);
       }
-      acc += gl * fres * wet * T * FOG.reflect.z;
+      acc += gl * fres * wet * T * trans * FOG.reflect.z;
     }
   }
-  return vec4f(acc, 0.0);
+  return vec4f(acc, trans);
 }
 `,
   }

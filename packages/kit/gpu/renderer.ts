@@ -71,7 +71,8 @@ import {
 } from "./temporal"
 import { REACTIVE_COVERAGE_WGSL, REACTIVE_TARGET } from "./reactive"
 import { VolumeSlot, type VolumeInput, type VolumeLightShader, type VolumeView } from "./volume-pass"
-import { FOG_LAMP_FLOATS, FOG_UNIFORM_FLOATS, MAX_FOG_LAMPS, type FogFrame } from "./fog-scatter"
+import { FOG_GLOW_FLOATS, FOG_GLOW_OFFSET, FOG_LAMP_BUFFER_FLOATS, FOG_LAMP_FLOATS, FOG_UNIFORM_FLOATS, MAX_FOG_LAMPS, type FogFrame } from "./fog-scatter"
+import { FogBlur, type FogBlurInput } from "./fog-blur"
 
 export type { PassContext, PassSlot, ScenePass }
 export type { AntiAliasingMode, TemporalSettings, TemporalState } from "./temporal"
@@ -206,6 +207,8 @@ export type FrameInput = {
   volume?: VolumeInput | readonly (VolumeInput | null | undefined)[] | null
   /** Fog uniforms and scatter lamps (`FogScatter.update`), read by `fogSceneWgsl` and `fogScatterVolume`. */
   fog?: FogFrame | null
+  /** Fog-depth blur after the fog volume (`FogScatter.blurInput`, `@arcade/kit/gpu/fog-blur`); needs `fog`. */
+  fogBlur?: FogBlurInput | null
   /** time, desaturate, flash, exposure */
   grade: [number, number, number, number]
   /** Optional shared screen-space shutter + impulse motion blur (`@arcade/kit/gpu/motion-blur`). */
@@ -264,6 +267,9 @@ export class Renderer {
   private volumes: VolumeSlot[] = []
   private fogBuf: GPUBuffer
   private fogLampBuf: GPUBuffer
+  private fogGlowVersion = -1
+  private fogBlur: FogBlur | null = null
+  private readonly fogBlurInv = new Float32Array(16)
   private readonly volumeInv = new Float32Array(16)
   private readonly volumeVP = new Float32Array(16)
   private readonly volumePrevVP = new Float32Array(16)
@@ -421,7 +427,7 @@ export class Renderer {
       uniform: d.createBuffer({ size: SPOT_SHADOW_UNIFORM_FLOATS * 4, usage: U.UNIFORM }),
     }
     this.fogBuf = d.createBuffer({ label: "fog params", size: FOG_UNIFORM_FLOATS * 4, usage: U.UNIFORM | U.COPY_DST })
-    this.fogLampBuf = d.createBuffer({ label: "fog lamps", size: MAX_FOG_LAMPS * FOG_LAMP_FLOATS * 4, usage: U.STORAGE | U.COPY_DST })
+    this.fogLampBuf = d.createBuffer({ label: "fog lamps", size: FOG_LAMP_BUFFER_FLOATS * 4, usage: U.STORAGE | U.COPY_DST })
     this.inst = new GrowableInstanceBuffer(d, 4096, INST_FLOATS)
     this.sprites = d.createBuffer({ size: MAX_SPRITES * SPRITE_FLOATS * 4, usage: U.VERTEX | U.COPY_DST })
     this.sampler = d.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" })
@@ -753,6 +759,14 @@ export class Renderer {
     } else {
       this.volumeReady = false
     }
+  }
+
+  /** Blurs the image after the fog volume by its fog (`FrameInput.fogBlur`) and mixes it back into `target`. */
+  private drawFogBlur(enc: GPUCommandEncoder, f: FrameInput, vp: Float32Array, target: GPUTextureView, tw: number, th: number): void {
+    if (!f.fogBlur || !f.fog || f.fogBlur.strength <= 0) return
+    this.fogBlur ??= new FogBlur(this.device, HDR, this.fogBuf, this.sampler, (code, label) => this.module(code, label))
+    mat4.inverse(vp.subarray(0, 16), this.fogBlurInv)
+    this.fogBlur.draw(enc, f.fogBlur, target, target, tw, th, this.targets.depthView, this.targets.width, this.targets.height, DEPTH_CFG.clearValue, this.fogBlurInv, [f.frame[16]!, f.frame[17]!, f.frame[18]!])
   }
 
   private resetVolumeHistory(): void {
@@ -1501,6 +1515,10 @@ export class Renderer {
     if (f.fog) {
       d.queue.writeBuffer(this.fogBuf, 0, f.fog.uniforms)
       if (f.fog.lampCount) d.queue.writeBuffer(this.fogLampBuf, 0, f.fog.lamps.buffer, f.fog.lamps.byteOffset, Math.min(f.fog.lampCount, MAX_FOG_LAMPS) * FOG_LAMP_FLOATS * 4)
+      if (f.fog.glow && f.fog.glowVersion !== undefined && f.fog.glowVersion !== this.fogGlowVersion) {
+        this.fogGlowVersion = f.fog.glowVersion
+        d.queue.writeBuffer(this.fogLampBuf, FOG_GLOW_OFFSET * 4, f.fog.glow.buffer, f.fog.glow.byteOffset, FOG_GLOW_FLOATS * 4)
+      }
     }
     if (f.lampCount) d.queue.writeBuffer(this.lampBuf, 0, f.lampPower.buffer, f.lampPower.byteOffset, Math.min(f.lampCount, MAX_MAP_LIGHTS) * 4)
     this.gradeData.set(f.grade)
@@ -1620,7 +1638,7 @@ export class Renderer {
     const hasSmoke = !!(f.smoke && f.smokeEnabled && f.smoke.count)
     const pass = enc.beginRenderPass(
       this.targets.configureMainPass({
-        storeDepth: hasSmoke || runSharedBlur || !!taa || this.volumeNeedsDepth(f),
+        storeDepth: hasSmoke || runSharedBlur || !!taa || this.volumeNeedsDepth(f) || !!(f.fogBlur && f.fog),
         timestampWrites: this.timing && !f.shadowLightCount ? this.timer!.start : undefined,
         extraColorAttachment: motion ? this.velocityAttachment : null,
       }),
@@ -1752,6 +1770,7 @@ export class Renderer {
     }
 
     if (this.volumes.length && !taa) this.drawVolumes(enc, f, f.frame, [f.frame[16]!, f.frame[17]!, f.frame[18]!], this.targets.hdrView, this.targets.width, this.targets.height)
+    if (!taa) this.drawFogBlur(enc, f, f.frame, this.targets.hdrView, this.targets.width, this.targets.height)
 
     let activeDown0: GPUBindGroup | undefined
     let activeComposite = this.bloomPyramid.compositeGroup
@@ -1813,6 +1832,7 @@ export class Renderer {
       // Blur (when on) runs on the internal image first; the beam is added after the resolve, never into the history.
       taa.encode(enc, runSharedBlur ? this.sharedBlur!.output : this.targets.hdrView, this.targets.depthView, this.temporalSettings!.sharpen > 0.001)
       if (this.volumes.length) this.drawVolumes(enc, f, this.unjittered, [f.frame[16]!, f.frame[17]!, f.frame[18]!], taa.outputView, this.width, this.height)
+      this.drawFogBlur(enc, f, this.unjittered, taa.outputView, this.width, this.height)
     }
     this.bloomPyramid.encode(enc, this.pipes.down!, this.pipes.up!, activeDown0, this.bloomLevels)
     const output = this.timing ? this.measureView : (targetView ?? this.context.getCurrentTexture().createView())

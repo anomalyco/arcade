@@ -5,19 +5,26 @@ import { join } from "node:path"
 import { mat4 } from "wgpu-matrix"
 import {
   FOG_DEFAULTS,
+  FOG_GLOW_SIZE,
   FOG_LAMP_FLOATS,
   FogLampPicker,
   FogScatter,
   SODIUM_CONE,
   airlightEquiangular,
   airlightReference,
+  atmosphereControls,
+  bakeLampGlow,
   createFogSettings,
   fogAmbientCoefficients,
   fogAmbientNumeric,
+  fogBankInterval,
+  fogBankMeanSigma,
+  fogBlurAmount,
   fogColor,
   fogCone,
   fogControls,
   fogEnvRadiance,
+  fogGlowRect,
   fogOpticalDepth,
   fogSceneWgsl,
   fogScatterVolume,
@@ -29,6 +36,7 @@ import {
 } from "./fog-scatter"
 import { makeSceneShader, postShader, spriteShader } from "./shaders"
 import { volumeAccumulateShader, volumeBilinearShader, volumeUpsampleShader } from "./volume-pass"
+import { fogBlurDownWgsl, fogBlurMixWgsl } from "./fog-blur"
 
 const medium = { density: 0.01, falloff: 0.05, base: 0 }
 
@@ -207,6 +215,90 @@ describe("lamp picker", () => {
   })
 })
 
+describe("atmosphere", () => {
+  const eye: Vec3 = [0, 1.7, 0]
+  const vp = mat4.multiply(mat4.perspective(1.2, 16 / 9, 0.1, 1000), mat4.lookAt(eye, [0, 1.7, 10], [0, 1, 0]))
+  const sodium = (x: number, z: number, intensity = 1000): FogLamp => ({ x, y: 8, z, range: 30, color: [1, 0.55, 0.18], intensity })
+  const bank = { ...FOG_DEFAULTS, base: 0 }
+
+  test("is Today by default: bank, clouds, glow map and blur all off", () => {
+    const fog = new FogScatter(createFogSettings())
+    const u = fog.update({ eye, viewProj: vp, lamps: [sodium(0, 20)] }).uniforms
+    expect(u[32]).toBe(0)
+    expect(u[35]).toBe(0)
+    expect(u[47]).toBe(0)
+    expect(u[54]).toBe(0)
+    expect(fog.blurInput()).toBeNull()
+    expect(fog.frame.glowVersion).toBe(0)
+  })
+
+  test("packs the bank, clouds and glow map when on, and rebakes the glow only when lamps change", () => {
+    const fog = new FogScatter(createFogSettings({ bank: "drift", clouds: "lit", blur: "depth" }))
+    const lamps = [sodium(0, 20), sodium(10, 60)]
+    const u = fog.update({ eye, viewProj: vp, lamps, time: 12 }).uniforms
+    expect(u[32]).toBeCloseTo(FOG_DEFAULTS.bankDensity, 6)
+    expect(u[35]).toBe(FOG_DEFAULTS.bankSteps)
+    expect(u[42]).toBe(12)
+    expect(u[47]).toBeCloseTo(FOG_DEFAULTS.cloudOpacity, 6)
+    expect(u[54]).toBeGreaterThan(0)
+    expect(fog.blurInput()).toEqual({ strength: FOG_DEFAULTS.blurStrength, reach: FOG_DEFAULTS.blurReach })
+    expect(fog.frame.glowVersion).toBe(1)
+    fog.update({ eye, viewProj: vp, lamps, time: 13 })
+    expect(fog.frame.glowVersion).toBe(1)
+    fog.update({ eye, viewProj: vp, lamps: [sodium(0, 20, 2000), lamps[1]!], time: 14 })
+    expect(fog.frame.glowVersion).toBe(2)
+    fog.settings.mode = "today"
+    const off = fog.update({ eye, viewProj: vp, lamps })
+    expect(off.uniforms[35]).toBe(0)
+    expect(off.uniforms[47]).toBe(0)
+    expect(fog.blurInput()).toBeNull()
+  })
+
+  test("glow map peaks under each lamp and falls off with the spread", () => {
+    const lamps = [sodium(0, 0)]
+    const rect = fogGlowRect(lamps, 20)!
+    expect(rect[0]).toBeLessThan(-70)
+    expect(rect[2]).toBeGreaterThan(70)
+    const out = new Float32Array(FOG_GLOW_SIZE * FOG_GLOW_SIZE * 4)
+    bakeLampGlow(out, lamps, rect, 20)
+    const at = (i: number, j: number) => out[(j * FOG_GLOW_SIZE + i) * 4]!
+    const mid = FOG_GLOW_SIZE / 2
+    const peak = Math.max(at(mid, mid), at(mid - 1, mid - 1))
+    expect(peak).toBeGreaterThan(at(0, mid) * 8)
+    expect(at(mid - 1, mid)).toBeCloseTo(at(mid, mid - 1), 6)
+    expect(out[(mid * FOG_GLOW_SIZE + mid) * 4 + 2]! / at(mid, mid)).toBeCloseTo(0.18, 5)
+  })
+
+  test("bank slab clips the ray and the blur grows with fog depth", () => {
+    expect(fogBankInterval(1.7, 0, 50, bank)).toEqual([0, 50])
+    const [t0, t1] = fogBankInterval(10, -0.5, 1000, bank)
+    expect(t0).toBeCloseTo(12, 6)
+    expect(t1).toBeCloseTo(20, 6)
+    expect(fogBankInterval(10, 0.5, 1000, bank)).toEqual([0, 0])
+    expect(fogBankMeanSigma(bank.bankHeight + 1, bank)).toBe(0)
+    expect(fogBankMeanSigma(0, bank)).toBeCloseTo(bank.bankDensity * 0.5 * (1 - bank.bankThreshold), 9)
+    const near = fogBlurAmount(eye, [0, 0, 5], medium, 1.6), far = fogBlurAmount(eye, [0, 0, 150], medium, 1.6)
+    expect(near).toBeLessThan(0.15)
+    expect(far).toBeGreaterThan(0.85)
+    expect(fogBlurAmount(eye, [0, 0, 20], medium, 1.6, bank)).toBeGreaterThan(fogBlurAmount(eye, [0, 0, 20], medium, 1.6))
+  })
+
+  test("every atmosphere row is typed, in range, and each feature leads with its Today select", () => {
+    const rows = atmosphereControls()
+    for (const k of ["bank", "blur", "clouds"]) {
+      const row = rows.find((c) => c.key === k)!
+      expect(row).toMatchObject({ type: "select" })
+      expect("options" in row && row.options[0]!.value).toBe("today")
+    }
+    for (const c of rows) {
+      if (!("min" in c)) continue
+      const v = FOG_DEFAULTS[c.key as keyof typeof FOG_DEFAULTS] as number
+      expect(c.min).toBeLessThanOrEqual(v)
+      expect((c as { max: number }).max).toBeGreaterThanOrEqual(v)
+    }
+  })
+})
+
 describe("depth-aware upsample", () => {
   test("is bilinear on one surface", () => {
     const w = upsampleWeights(0.25, 0.75, [10, 10, 10, 10], 10)
@@ -246,6 +338,9 @@ describe("WGSL validates with naga", () => {
       roughness: "0.6",
       normal: "vec3f(0.0, 1.0, 0.0)",
     }).code,
+    "fog volume atmosphere": fogScatterVolume({ atmosphere: true, normal: "vec3f(0.0, 1.0, 0.0)", reflectionSamples: 4 }).code,
+    "fog blur down": fogBlurDownWgsl,
+    "fog blur mix": fogBlurMixWgsl,
     accumulate: volumeAccumulateShader,
     upsample: volumeUpsampleShader,
     bilinear: volumeBilinearShader,

@@ -1,4 +1,8 @@
 import type { LabControl } from "@arcade/kit/lab-panel"
+import type { FogSettings } from "@arcade/kit/gpu/fog-scatter"
+
+/** The lot's atmosphere over the fog (Backquote › Atmosphere): drifting bank, fog-depth blur, lit cloud deck. */
+export const ATMOSPHERE: Partial<FogSettings> = { bank: "drift", blur: "depth", clouds: "lit" }
 
 export const PRESETS = {
   sodium: { density: 0.01, falloff: 0.05, sky: 1, lamp: 0.3, wetness: 0.8, exposure: 2 ** -2.2, haze: 0.12 },
