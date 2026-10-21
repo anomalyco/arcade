@@ -75,6 +75,7 @@ The table below shows which shared modules each game and the Lab import. `script
 | `gpu/{boot,scene-frame}` | WebGPU canvas boot, and frame inputs for small arenas: placed lights, box occluders, flat floor lighting | — | Yes | — | — | Yes | — | Yes | Yes |
 | `gpu/lights/{physical,beam,flicker}` | Opt-in physical lights and surfaces (GGX, 3D spot cones, torch beam profile, sky reflections, specular AA) and stateless lamp flicker and failure | — | — | — | — | Yes | — | — | — |
 | `gpu/shadows/spot-shadows` | Perspective shadow maps for the few most important spot lights, re-rendered only when a slot changes | — | — | — | — | Yes | — | — | — |
+| `gpu/reflections/{ssr,surface,wet}` | Screen-space reflections volume slot (Ashwood's march, streak blur and history), HDR-alpha roughness tag, and the shared wet/puddle surface term | — | — | — | — | — | — | — | — |
 | `gpu/{motion,motion-blur,sprite-motion}` | Depth-aware 8-tap shutter gather and actor/sprite velocity history | Yes | Yes | Yes | — | Yes | — | Yes | — |
 | `gpu/{surface-materials,foliage}` & `textures` | Procedural surface recipes, 16-layer WebP array, foliage, and trample | — | Yes | Yes | — | Yes | — | Yes | — |
 | `props/*` | Generated furniture library: catalogue, `.prop` meshes, instanced batches, seeded room placement | — | — | Yes | — | Yes | — | — | — |

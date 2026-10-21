@@ -3,17 +3,19 @@ import { FirstPerson } from "@arcade/kit/client/first-person"
 import { keyPromptHtml } from "@arcade/kit/client/key-cap"
 import { openGpu } from "@arcade/kit/gpu/boot"
 import { loadGltf, imageTexture } from "@arcade/kit/gpu/gltf"
-import { Renderer } from "@arcade/kit/gpu/renderer"
+import { Renderer, type FrameInput } from "@arcade/kit/gpu/renderer"
 import { flatLighting, newSceneFrame, packSceneFrame, SceneLights, type SceneLight } from "@arcade/kit/gpu/scene-frame"
 import { SpotShadows, spotShadowControls } from "@arcade/kit/gpu/shadows/spot-shadows"
 import { FogScatter, fogControls, fogCone, type FogLamp } from "@arcade/kit/gpu/fog-scatter"
+import { Ssr, ssrControls } from "@arcade/kit/gpu/reflections/ssr"
+import { WET_DEFAULTS, packWet, wetControls } from "@arcade/kit/gpu/reflections/wet"
 import { makeSceneShader, spriteShader } from "@arcade/kit/gpu/shaders"
 import { TexturedMeshPass, type TexturedPrimitive } from "@arcade/kit/gpu/textured-mesh"
 import { TEMPORAL_DEFAULTS } from "@arcade/kit/gpu/temporal"
 import { ForestPass, cardShadingHooks, forestControls, forestDefaults } from "@arcade/kit/gpu/forest"
 import { LabPanel } from "@arcade/kit/lab-panel"
 import { controls, defaults } from "./settings"
-import { hooks, texturedHooks, glassHooks, fenceHooks, fogVolume } from "./shaders"
+import { hooks, texturedHooks, glassHooks, fenceHooks, fogVolume, reflectionVolume } from "./shaders"
 import { buildWorld, CAR, START, walls } from "./world"
 import { canvasTexture, foliageTexture, solidTexture } from "./foliage"
 import { post } from "./post"
@@ -30,8 +32,8 @@ async function main() {
   const device=gpu.device
   const smoke = new URLSearchParams(location.search).has("smoke")
   const shader = makeSceneShader(hooks)
-  const renderer = new Renderer(gpu.device, gpu.context, gpu.format, { scene: shader, sprite: spriteShader(), post, volume: [fogVolume] })
-  const fog=new FogScatter()
+  const renderer = new Renderer(gpu.device, gpu.context, gpu.format, { scene: shader, sprite: spriteShader(), post, volume: [reflectionVolume, fogVolume] })
+  const fog=new FogScatter(), ssr=new Ssr(), wet={...WET_DEFAULTS}
   const settings = defaults()
   renderer.setTemporal({ ...TEMPORAL_DEFAULTS, mode: "taa", sharpen: 0.12 })
   const t0=performance.now()
@@ -63,7 +65,7 @@ async function main() {
   const impostors=await foliageTexture(gpu.device,import.meta.env.BASE_URL+"ashwood/paint.js","impostors")
   const meshes = new TexturedMeshPass(renderer.passContext, [...world.ground.map((vertices):TexturedPrimitive=>({
     vertices, base: textures[0]!, normal: textures[1]!, orm: textures[2]!,
-    color: [1, 1, 1, 1], roughness: 1, metalness: 0, normalScale: 0.45, blend: false, aoStrength: 1,
+    color: [1, 1, 1, 1], roughness: 1, metalness: 0, normalScale: 1.1, blend: false, aoStrength: 1,
   })), ...car.primitives, ...dressing.flatMap(d=>d.primitives)], texturedHooks)
   renderer.addPass("opaque", meshes)
   const white=solidTexture(gpu.device,[255,255,255,255])
@@ -126,6 +128,8 @@ async function main() {
   panel.addControls(forestSettings,forestControls(forestSettings))
   panel.addControls(dressingSettings,dressingControls(dressingSettings))
   panel.addControls(fog.settings,fogControls("Fog","fog.").filter(c=>!["density","falloff","brightness","strength"].includes(c.field ?? "")))
+  panel.addControls(ssr.settings,ssrControls("Reflections","ssr."))
+  panel.addControls(wet,wetControls("Wet ground","wet.").filter(c=>c.field!=="wetness"))
   // LabPanel owns Backquote, including when the canvas is pointer-locked.
   const lights = new SceneLights()
   lights.setBoxes([{ rect: [-55,-22,35,22], h: 19.6 }])
@@ -144,13 +148,13 @@ async function main() {
   const shadowLamps=practicals.flatMap((l,id)=>l.shadow && l.angle ? [{id,pos:l.position,axis:l.direction ?? [0,-1,0] as const,range:l.range,intensity:l.intensity,cosOuter:Math.cos(l.angle)}] : [])
   // Trunks within reach of a shadowed sodium head cast into its pool.
   casters.push(...forest.staticCasters(shadowLamps.map(l=>({x:l.pos[0],z:l.pos[2]})),40))
-  const frameData = newSceneFrame(), custom = new Float32Array(16), empty = new Float32Array(0)
+  const frameData = newSceneFrame(), custom = new Float32Array(20), empty = new Float32Array(0)
   const prompts = () => {
     hud.innerHTML = [document.pointerLockElement === canvas ? "" : keyPromptHtml("Mouse0", "Look"), keyPromptHtml("KeyW", "Move"), keyPromptHtml("KeyF", "Flashlight"), keyPromptHtml("Backquote", "Night"), comparison.available ? keyPromptHtml("KeyP", "Compare position") : ""].join(" ")
   }
   prompts()
   document.addEventListener("pointerlockchange", prompts)
-  let last = performance.now(), frames = 0, paused = false
+  let last = performance.now(), frames = 0, paused = false, lastFrame: FrameInput | null = null
   const readyMs=performance.now()-t0
   function render(now: number) {
     if(paused) { last=now; requestAnimationFrame(render); return }
@@ -169,7 +173,8 @@ async function main() {
     if(spots.update(shadowEncoder,shadowLamps,camera.eye,dt,id=>lights.indexOf(id),casters)) renderer.setSpotShadows(spots.bindings())
     device.queue.submit([shadowEncoder.finish()])
     if(smoke && frames===0) void device.queue.onSubmittedWorkDone().then(()=>performance.mark("lot:shadows-complete"))
-    custom.set([settings.density, settings.falloff, settings.sky, settings.lamp, settings.wetness, settings.haze, settings.reflectionCap, settings.specularAA, ...camera.direction, Number(camera.flashlight), forestSettings.inner, forestSettings.face, 0, 0])
+    wet.wetness=settings.wetness
+    custom.set([settings.density, settings.falloff, settings.sky, settings.lamp, settings.wetness, settings.haze, settings.reflectionCap, settings.specularAA, ...camera.direction, Number(camera.flashlight), forestSettings.inner, forestSettings.face, 0, 0, ...packWet(wet)])
     forest.update(camera.eye, forestSettings)
     refreshDressing()
     renderer.setCustomUniforms(custom)
@@ -181,17 +186,30 @@ async function main() {
     }))
     packSceneFrame(frameData, { viewProj: vp, eye: camera.eye, time: 0, width, height, lightCount: lights.lightCount,
       ambient: [0,0,0,0], mapSize: [1400, 1400], ao: 0 })
-    renderer.render({ frame: frameData, lights: lights.lights, lightCount: lights.lightCount, shadowLightCount: lights.shadowLightCount,
+    lastFrame={ frame: frameData, lights: lights.lights, lightCount: lights.lightCount, shadowLightCount: lights.shadowLightCount,
       occluders: lights.occ, occluderCount: lights.occCount, lampPower: lights.power, lampCount: 0,
       view: [-700, -700, 700, 700], batches: [], alphaSprites: empty, alphaCount: 0, addSprites: empty, addCount: 0, grade: [0, 0, 0, settings.exposure],
-      fog:fog.update({eye:camera.eye,viewProj:vp,lamps:fogLamps}),volume:[fog.volumeInput()] })
+      fog:fog.update({eye:camera.eye,viewProj:vp,lamps:fogLamps}),volume:[ssr.volumeInput({wet}),fog.volumeInput()] }
+    renderer.render(lastFrame)
     frames++
     if(smoke) void device.queue.onSubmittedWorkDone().then(()=>performance.mark("lot:frame-complete"))
     // Software-GPU smoke must submit exactly two real frames; readiness polling can otherwise build a long queue.
     if(smoke && frames >= 2) paused = true
     requestAnimationFrame(render)
   }
-  Object.assign(window, { lot: { camera, settings, forest:forestSettings, forestStats:()=>forest.stats(), timings:{worldMs,readyMs}, dressing:dressingSettings, get dressingCount() { return dressingCount }, fog, renderer, comparison, get frames() { return frames }, get paused() { return paused }, set paused(value:boolean) { paused=value }, ready: true } })
+  /** Paired whole-frame GPU time, reflections Today vs on, alternating order (automation only). */
+  async function measure(rounds=12) {
+    paused=true
+    const mode=ssr.settings.mode, out={today:[] as number[],ssr:[] as number[]}
+    for(let i=0;i<rounds+2;i++) for(const m of i%2 ? ["ssr","today"] as const : ["today","ssr"] as const) {
+      ssr.settings.mode=m
+      const ms=await renderer.measure({...lastFrame!,volume:[ssr.volumeInput({wet}),fog.volumeInput()]})
+      if(i>=2) out[m].push(ms)
+    }
+    ssr.settings.mode=mode; paused=false
+    return out
+  }
+  Object.assign(window, { lot: { camera, settings, ssr, wet, measure, forest:forestSettings, forestStats:()=>forest.stats(), timings:{worldMs,readyMs}, dressing:dressingSettings, get dressingCount() { return dressingCount }, fog, renderer, comparison, get frames() { return frames }, get paused() { return paused }, set paused(value:boolean) { paused=value }, ready: true } })
   requestAnimationFrame(render)
 }
 void main().catch(error => { console.error(error); document.getElementById("hud")!.textContent = String(error) })

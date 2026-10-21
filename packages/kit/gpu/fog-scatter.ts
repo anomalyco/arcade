@@ -20,6 +20,8 @@
 import type { LabControl } from "../lab-navigation"
 import { volumeFrameWgsl, type VolumeLightShader } from "./volume-pass"
 import { common } from "./shaders"
+import { sceneSurfaceWgsl } from "./reflections/surface"
+import { WET_ASPHALT, wetMaterialWgsl, wetSurfaceWgsl, type WetMaterial } from "./reflections/wet"
 
 export type Vec3 = readonly [number, number, number]
 
@@ -553,6 +555,20 @@ export type FogScatterHooks = {
   reflectionSamples?: number
   /** Maximum HDR channel per reflected-airlight sample, before Fresnel and wetness. */
   reflectionCap?: string
+  /**
+   * Wet reflections follow the scene's own surfaces: roughness from the HDR-alpha tag
+   * (`@arcade/kit/gpu/reflections/surface`), wetness Ashwood's gloss weight smoothstep(cutoff, 0.2·cutoff, rough) ×
+   * dielectric. Replaces `wet` and `roughness`.
+   */
+  surface?: boolean
+  /** WGSL f32: roughness above which nothing reflects (surface mode, default 0.85). */
+  cutoff?: string
+  /** WGSL f32: reflectance of wet dielectrics (surface mode, default 0.5). */
+  dielectric?: string
+  /** WGSL vec4f of `packWet` settings: tilts the mirror normal by the wet film's ripple (flat in puddles). */
+  wetSettings?: string
+  /** Material whose puddles the ripple follows (default asphalt). */
+  wetMaterial?: WetMaterial
 }
 
 /**
@@ -564,11 +580,14 @@ export function fogScatterVolume(hooks: FogScatterHooks = {}): VolumeLightShader
   return {
     depth: true,
     history: true,
+    ...(hooks.surface ? { color: true } : {}),
     code: /* wgsl */ `
 ${common}
 ${volumeFrameWgsl}
 ${fogParamsWgsl}
 ${fogConeWgsl}
+${hooks.surface ? sceneSurfaceWgsl : ""}
+${hooks.wetSettings ? wetSurfaceWgsl : ""}
 struct FogLamp { a: vec4f, b: vec4f, c: vec4f, d: vec4f, e: vec4f }
 @group(0) @binding(${FOG_LAMP_BINDING}) var<storage, read> fogLamps: array<FogLamp>;
 ${hooks.declarations ?? ""}
@@ -640,13 +659,16 @@ fn airlight(ro: vec3f, rd: vec3f, dist: f32, n: u32, jitter: f32) -> vec3f {
   var acc = airlight(eye, rd, dist, samples, jitter);
   if (!sky && (FOG.reflect.y > 0.0 || FOG.reflect.z > 0.0)) {
     let world = eye + rd * dist;
-    ${hooks.normal ? `var nW = normalize(fogNormal(world));` : `let texel = 1.0 / V.size.zw;
-    let wx = volumeUnproject(o.uv + vec2f(texel.x, 0.0), volumeDepthAt(o.uv + vec2f(texel.x, 0.0)));
-    let wy = volumeUnproject(o.uv + vec2f(0.0, texel.y), volumeDepthAt(o.uv + vec2f(0.0, texel.y)));
-    var nW = normalize(cross(wy - world, wx - world));`}
+    ${hooks.normal ? `var nW = normalize(fogNormal(world));` : `var nW = volumeNormalAtTexel(volumeTexel(o.uv), eye);`}
     if (dot(nW, rd) > 0.0) { nW = -nW; }
-    let rough = clamp(fogRoughness(world, nW), 0.0, 1.0);
-    let wet = clamp(fogWet(world, nW, footprint), 0.0, 1.0) * smoothstep(0.55, 0.85, nW.y);
+    ${hooks.surface ? `let rough = sceneRoughness(o.uv);
+    let wet = smoothstep(${hooks.cutoff ?? "0.85"}, ${hooks.cutoff ?? "0.85"} * 0.2, rough) * (${hooks.dielectric ?? "0.5"}) * smoothstep(0.55, 0.85, nW.y);` : `let rough = clamp(fogRoughness(world, nW), 0.0, 1.0);
+    let wet = clamp(fogWet(world, nW, footprint), 0.0, 1.0) * smoothstep(0.55, 0.85, nW.y);`}
+    ${hooks.wetSettings ? `{
+      let film = wetSurface(world, nW.y, rough, 1.0, footprint, ${hooks.wetSettings}, ${wetMaterialWgsl(hooks.wetMaterial ?? WET_ASPHALT)});
+      let tilt = wetRipple(world, ${hooks.wetSettings}, film.flat);
+      nW = normalize(nW + vec3f(tilt.x, 0.0, tilt.y));
+    }` : ""}
     if (wet > 0.002) {
       // Rough wet ground smears the reflection vertically: tilt the mirror normal by a per-pixel random amount
       // along the view's vertical plane (the history and TAA integrate it into long streaks).
@@ -660,16 +682,17 @@ fn airlight(ro: vec3f, rd: vec3f, dist: f32, n: u32, jitter: f32) -> vec3f {
       let fres = 0.04 + 0.96 * pow(1.0 - cosV, 5.0);
       let T = fogTransmittance(eye, world);
       ${reflectionSamples > 1 ? `
-      // A moving view rejects volume history. Integrate several fixed lobe strata in the current frame rather than
-      // exposing one random bright ray; no reactive-mask bypass can stabilize an undersampled reflection.
+      // A moving view rejects volume history. Integrate several lobe strata in the current frame rather than exposing
+      // one random bright ray; the strata are jittered per pixel and frame (n2), so their separate images of a lamp
+      // merge into one streak instead of ending in a bright dot at the outermost stratum.
       var refl = vec3f(0.0);
       // Keep the loop bound uniform-driven: software Vulkan compilers can otherwise inline/unroll the entire
       // nested airlight integrator once per lobe tap. The ray budget also bounds quadrature at low quality.
       let taps=min(${reflectionSamples}u,samples);
       for(var tap=0u;tap<taps;tap++) {
-        let u=(f32(tap)+0.5)/f32(taps);
+        let u=(f32(tap)+n2)/f32(taps);
         let rn=normalize(nW+fwd*(u-0.5)*rough*rough*FOG.reflect.w);
-        let sample=airlight(world+nW*0.02,normalize(reflect(rd,rn)),250.0,max(2u,samples/4u),0.5);
+        let sample=airlight(world+nW*0.02,normalize(reflect(rd,rn)),250.0,max(2u,samples/4u),jitter);
         refl+=sample*min(1.0,(${hooks.reflectionCap ?? "4.0"})/max(max(sample.r,max(sample.g,sample.b)),1e-5));
       }
       refl/=f32(taps);` : `let refl = airlight(world + nW * 0.02, rr, 250.0, max(2u, samples / 2u), jitter);`}
