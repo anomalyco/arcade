@@ -28,6 +28,7 @@ import { dressingControls, dressingDefaults, groundHeight, leafTemplate, paintLe
 import { bakeScatter, type ScatterPlacement } from "@arcade/kit/gpu/scatter-mesh"
 import { loadInterior } from "./interior/load"
 import { interiorDefaults, interiorControls } from "./interior/settings"
+import { lobbyTroffer, trofferFog } from "./interior/fixtures"
 import { createStreetLampSettings, packStreetLamp, streetLampControls } from "@arcade/kit/gpu/lights/street"
 import { fluxGain, lensChunk, streetLamps } from "./lamps"
 
@@ -226,8 +227,11 @@ async function main() {
     comparison.frame()
     // Street mode: the lens emitter and roadway profile replace the round spot, at the same flux (lamps.ts).
     const area=street.mode==="area"
-    const frameLights:SceneLight[]=practicals.map((l,id)=>({id,x:l.position[0],y:l.position[2],h:l.position[1],r:l.range,color:l.color,power:l.intensity*(id>=indoorStart?indoor.fixtures:settings.lamp)/5*(area ? l.gain() : 1),size:(l.size ?? 0.1)*0.5,
+    const panels=!smoke && indoor.mode!=="today" && indoor.emitters==="area"
+    const fixtureGain=(l:{position:readonly number[]},id:number)=>id<indoorStart ? settings.lamp : l.position[2]!>9 && Math.abs(l.position[0]!)<9 ? indoor.lobbyFixtures : indoor.fixtures
+    const frameLights:SceneLight[]=practicals.map((l,id)=>({id,x:l.position[0],y:l.position[2],h:l.position[1],r:l.range,color:l.color,power:l.intensity*fixtureGain(l,id)/5*(area ? l.gain() : 1),size:(l.size ?? 0.1)*0.5,
       ...(area && l.street ? { street: { arm: l.street.arm, a: l.street.a, b: l.street.b } } : l.angle ? { spot: { axis: l.direction ?? [0,-1,0] as const, cosOuter: Math.cos(l.angle), cosInner: Math.cos(l.angle*(1-(l.penumbra ?? 0.55))) } } : {}),
+      ...(panels ? {rect:lobbyTroffer(l)} : {}),
     }))
     if(camera.flashlight) frameLights.push({id:-1,x:camera.eye[0],y:camera.eye[2],h:camera.eye[1],r:35,color:[0.85,0.92,1],power:56,size:0.4,unshadowed:true,beam:{axis:camera.direction,halfAngle:0.27}})
     lights.update(frameLights, [])
@@ -242,17 +246,18 @@ async function main() {
     packGlassKnobs(glass,rooms,custom,24)
     packContactShadowKnobs(contact,custom,36)
     packStreetLamp(street,custom,44)
+    custom.set([indoor.wear,indoor.sheen,indoor.wax,indoor.glow],56)
     forest.update(camera.eye, forestSettings)
     refreshDressing()
-    custom.set([indoor.fixtures,indoor.mode==="today"?0:indoor.bounce,indoor.mode==="today"?1:indoor.air,0],16)
+    custom.set([indoor.fixtures,indoor.mode==="today"?0:indoor.bounce,indoor.mode==="today"?1:indoor.air,indoor.mode==="today"?0:indoor.lobbyBounce],16)
     renderer.setCustomUniforms(custom)
     Object.assign(fog.settings,{density:settings.density,falloff:settings.falloff,brightness:0.034*settings.sky,strength:settings.haze})
     // Scattering consumes emitter radiance, not the surface BRDF's radiance / π.
     // Include the booth bulb: its reflection is the second, nearer wet streak.
-    const fogLamps:FogLamp[]=practicals.map((l,id)=>({id,x:l.position[0],y:l.position[1],z:l.position[2],range:l.range,color:l.color,intensity:l.intensity*(id>=indoorStart?indoor.fixtures*indoor.air:settings.lamp)*(area ? l.gain() : 1),
+    const fogLamps:FogLamp[]=practicals.flatMap((l,id)=>trofferFog({id,x:l.position[0],y:l.position[1],z:l.position[2],range:l.range,color:l.color,intensity:l.intensity*fixtureGain(l,id)*(id>=indoorStart?indoor.air:1)*(area ? l.gain() : 1),
       axis:l.direction,size:(l.size ?? 0.2)*0.5,...(l.angle ? fogCone(l.angle,1-(l.penumbra ?? 0.55)) : {}),
       ...(area && l.street ? { lens: { arm: l.street.arm, a: l.street.a, b: l.street.b }, uplight: street.uplight } : {}),
-    }))
+    },panels ? lobbyTroffer(l) : undefined))
     packSceneFrame(frameData, { viewProj: vp, eye: camera.eye, time: 0, width, height, lightCount: lights.lightCount,
       ambient: [0,0,0,0], mapSize: [1400, 1400], ao: 0 })
     lastFrame={ frame: frameData, lights: lights.lights, lightCount: lights.lightCount, shadowLightCount: lights.shadowLightCount,

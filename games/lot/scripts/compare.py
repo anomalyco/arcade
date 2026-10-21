@@ -13,7 +13,8 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 grid_only = "--grid-only" in sys.argv
-reference, capture, dest = [arg for arg in sys.argv[1:] if arg != "--grid-only"]
+lobby = "--lobby" in sys.argv
+reference, capture, dest = [arg for arg in sys.argv[1:] if arg not in ("--grid-only", "--lobby")]
 out = Path(dest)
 out.parent.mkdir(parents=True, exist_ok=True)
 a = Image.open(reference).convert("RGB")
@@ -28,7 +29,8 @@ def stats(rgb):
     lum = linear @ np.array([.2126, .7152, .0722])
     mean = rgb.mean(axis=(0, 1))
     hue, sat, value = colorsys.rgb_to_hsv(*mean)
-    return {"linear_luminance": float(lum.mean()), "rgb": mean.tolist(),
+    local = lum[2:-2, 2:-2] - (lum[:-4, 2:-2] + lum[4:, 2:-2] + lum[2:-2, :-4] + lum[2:-2, 4:]) / 4
+    return {"linear_luminance": float(lum.mean()), "rgb": mean.tolist(), "detail_contrast": float(abs(local).mean()),
             "hue_degrees": hue * 360, "saturation": sat,
             "luminance_percentiles": np.percentile(lum, [5, 25, 50, 75, 95, 99]).tolist(),
             "display_histogram": np.histogram(rgb @ np.array([.2126, .7152, .0722]), bins=32, range=(0, 1))[0].tolist()}
@@ -60,6 +62,18 @@ regions = {
     "foreground_road": (850, 700, 1600, 1050),
     "ground_dressing": (1280, 610, 1450, 670),
 }
+if lobby:
+    # Fixed 1920x1080 lobby camera, chosen from Kit's six Scrawl marks before the finish pass.
+    regions = {
+        "counter_top": (990, 598, 1610, 690),
+        "painted_back_wall": (200, 405, 1480, 500),
+        "tile_wall": (40, 545, 210, 620),
+        "ceiling": (200, 65, 1450, 280),
+        "floor": (190, 780, 850, 1030),
+        "chair_reflections": (215, 750, 640, 900),
+        "fixture_halo": (530, 290, 730, 385),
+        "back_wall_details": (900, 480, 1180, 630),
+    }
 regional = {} if grid_only else {name: {"bounds": box, **measure(ar[box[1]:box[3], box[0]:box[2]],
              br[box[1]:box[3], box[0]:box[2]])} for name, box in regions.items()}
 report = {"reference": reference, "capture": capture, "original_capture_size": original_size,

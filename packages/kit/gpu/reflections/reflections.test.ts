@@ -84,11 +84,16 @@ describe("Ssr settings", () => {
     expect(out.params!.length).toBe(VOLUME_PARAM_FLOATS)
     expect(out.params![3]).toBeCloseTo(SSR_DEFAULTS.streak, 6)
     expect(out.params![7]).toBeCloseTo(SSR_DEFAULTS.steps, 6)
+    expect(out.params![10]).toBe(64)
     const inside = ssr.volumeInput({ indoor: true })!
     expect(inside.downscale).toBeCloseTo(1 / 0.85, 6)
     expect(inside.params![3]).toBeCloseTo(SSR_DEFAULTS.streakIndoor, 6)
     expect(inside.params![7]).toBeCloseTo(SSR_DEFAULTS.stepsIndoor, 6)
+    expect(inside.params![10]).toBe(512)
     expect(Array.from(inside.params!.subarray(12, 16))).toEqual([WET_DEFAULTS.wetness, WET_DEFAULTS.puddles, WET_DEFAULTS.puddleScale, WET_DEFAULTS.ripple].map(Math.fround))
+    ssr.settings.maxStepsIndoor=2000
+    expect(ssr.volumeInput({indoor:true})!.params![10]).toBe(1024)
+    expect(ssr.volumeInput()!.params![10]).toBe(64)
   })
 })
 

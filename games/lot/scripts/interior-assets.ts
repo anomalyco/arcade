@@ -3,31 +3,16 @@ import { ALL_EXTENSIONS } from "@gltf-transform/extensions"
 import { MeshoptDecoder } from "meshoptimizer"
 import { readFile, mkdir } from "node:fs/promises"
 import { resolve } from "node:path"
-import { createRequire } from "node:module"
+import { basisDecoder, png } from "./basis-image"
 
 // Decode CC0 source props and our repository-authored paper atlas offline. Basis never ships in Lot.
 const source=resolve(process.argv[2]??"/Users/kit/worktrees/arcade/afterhours-preview/games/afterhours")
 const out=resolve(import.meta.dir,"../public/interior")
 await mkdir(out,{recursive:true})
-const basisDir=resolve(source,"public/textures/basis")
-const module={exports:undefined as any}
-new Function("module","exports","require","__dirname",await readFile(`${basisDir}/basis_transcoder.js`,"utf8"))(module,{},createRequire(import.meta.url),basisDir)
-const basis=await module.exports({wasmBinary:await readFile(`${basisDir}/basis_transcoder.wasm`)})
-basis.initializeBasis()
-async function png(data:Uint8Array,w:number,h:number){
-  const p=Bun.spawn(["magick","-size",`${w}x${h}`,"-depth","8","rgba:-","png:-"],{stdin:data,stdout:"pipe",stderr:"pipe"})
-  const bytes=new Uint8Array(await new Response(p.stdout).arrayBuffer())
-  if(await p.exited)throw Error(await new Response(p.stderr).text())
-  return bytes
-}
+const decodeBasis=await basisDecoder(source)
 async function decode(bytes:Uint8Array){
-  const f=new basis.KTX2File(bytes)
-  try{
-    if(!f.isValid()||!f.startTranscoding())throw Error("Invalid KTX2")
-    const w=f.getWidth(),h=f.getHeight(),rgba=new Uint8Array(f.getImageTranscodedSizeInBytes(0,0,0,13))
-    if(!f.transcodeImage(rgba,0,0,0,13,0,-1,-1))throw Error("Basis RGBA decode failed")
-    return await png(rgba,w,h)
-  }finally{f.close();f.delete()}
+  const {data,width,height}=decodeBasis(bytes)
+  return png(data,width,height)
 }
 const io=new NodeIO().registerExtensions(ALL_EXTENSIONS).registerDependencies({"meshopt.decoder":MeshoptDecoder})
 const names=["office_desk","desk_lamp","security_camera","wet_floor_sign","stack_chair"]

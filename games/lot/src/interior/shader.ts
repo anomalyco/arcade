@@ -6,8 +6,8 @@ fn lotIndoor(p: vec3f) -> f32 {
     * (1.0-smoothstep(3.1,3.6,p.y));
 }
 fn lotBounce(p: vec3f, n: vec3f) -> vec3f {
-  if(lotIndoor(p)<0.01 || N.interior.y<=0.0) { return vec3f(0.0); }
-  let lobby=(1.0-smoothstep(8.6,9.1,abs(p.x)))*smoothstep(8.8,9.2,p.z);
+  if(lotIndoor(p)<0.01 || max(N.interior.y,N.interior.w)<=0.0) { return vec3f(0.0); }
+  let lobby=(1.0-smoothstep(9.1,9.35,abs(p.x)))*smoothstep(8.7,8.95,p.z);
   let corridor=1.0-smoothstep(1.4,1.8,abs(p.z));
   let link=(1.0-smoothstep(1.2,1.6,abs(p.x)))*smoothstep(1.2,1.8,p.z)*(1.0-smoothstep(8.8,9.2,p.z));
   var light=vec3f(0.0);
@@ -23,8 +23,13 @@ fn lotBounce(p: vec3f, n: vec3f) -> vec3f {
     let d=max(length(delta),0.05);
     let window=pow(clamp(1.0-pow(d/max(9.0,L.pos.w*2.2),4.0),0.0,1.0),2.0);
     let facing=0.4+0.6*max(dot(n,delta/d),0.0);
-    light+=L.color.rgb*L.color.w*room*window*facing/(d*d+2.5);
+    // Floor-reflected fixture light reaches the plaster, notices and downward-facing ceiling. It adds almost
+    // nothing to the already-lit floor, preserving the warm pool and the falloff into the corners.
+    let raised=1.0-max(n.y,0.0);
+    let wallFill=0.012*lobby*(1.0-abs(n.y));
+    let indirect=facing/(d*d+2.5)+raised*(0.012+wallFill)/(1.0+dot(delta.xz,delta.xz)*0.025);
+    light+=L.color.rgb*L.color.w*room*window*indirect;
   }
-  return light*N.interior.y;
+  return light*mix(N.interior.y,N.interior.w,lobby);
 }
 `
