@@ -10,14 +10,16 @@ import { contactShadowVolume } from "@arcade/kit/gpu/contact-shadows"
 import { interiorWgsl } from "./interior/shader"
 import { LENS_MAT } from "./lamps"
 
+/** The CI smoke (`?smoke`, software GPU) keeps the street lamps at Today, so its shaders leave the street path out. */
+const STREET_SHADERS = !new URLSearchParams(globalThis.location?.search ?? "").has("smoke")
 const nightUniform = `struct Night { fog: vec4f, look: vec4f, torch: vec4f, wet: vec4f, interior: vec4f, forest: vec4f, glassA: vec4f, glassB: vec4f, glassC: vec4f, contactA: vec4f, contactB: vec4f, streetA: vec4f, streetB: vec4f, streetC: vec4f }
 @group(0) @binding(13) var<uniform> N: Night;`
 /** Floats in the Night uniform (`main.ts` packs it). */
 export const NIGHT_FLOATS = 56
 // Wet reflections follow the materials: every physical surface tags its roughness in the HDR alpha, and the asphalt's
 // wet/puddle term (kit reflections/wet) sets that roughness, so puddles mirror and the film between them smears.
-/** The lot's fog volume; `atmosphere` compiles the fog bank and cloud deck in (the CI smoke leaves them out). */
-export const fogVolume = (atmosphere: boolean) => fogScatterVolume({ declarations: nightUniform, atmosphere, surface: true,
+/** The lot's fog volume; `atmosphere` compiles the fog bank and cloud deck in, `street` the lens airlight (the CI smoke leaves both out). */
+export const fogVolume = (atmosphere: boolean, street = STREET_SHADERS) => fogScatterVolume({ declarations: nightUniform, atmosphere, street, surface: true,
   wetSettings: "select(N.wet,vec4f(0.0,0.0,1.0,0.0),world.x>-55.0 && world.x<35.0 && world.z>-3.2 && world.z<22.0)", wetMaterial: WET_ASPHALT,
   reflectionSamples:4, reflectionCap:"N.look.z",
 })
@@ -58,7 +60,7 @@ const nightHooks: SceneHooks = {
   `,
 }
 
-const physical = { env: "mix(fogEnv(dir),fogAmbient(n),rough*rough)", knobs:"vec4f(N.look.w,1.0,1.0,0.02)", spotShadows:true, street:{ a:"N.streetA", b:"N.streetB" } }
+const physical = { env: "mix(fogEnv(dir),fogAmbient(n),rough*rough)", knobs:"vec4f(N.look.w,1.0,1.0,0.02)", spotShadows:true, ...(STREET_SHADERS ? { street:{ a:"N.streetA", b:"N.streetB" } } : {}) }
 export const hooks = withPhysicalLights(nightHooks, physical)
 export const texturedHooks: SceneHooks = withPhysicalLights({ ...nightHooks,
   surface: `if(mat==3) { col*=texBase.rgb; }\n${nightHooks.surface}`,

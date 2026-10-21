@@ -1051,6 +1051,8 @@ export type FogScatterHooks = {
    * games without it, and software-GPU smoke runs, compile exactly the plain fog.
    */
   atmosphere?: boolean
+  /** Compile the street lamp lens airlight and glint aim (`FogLamp.lens`). Off by default, like `atmosphere`. */
+  street?: boolean
 }
 
 /**
@@ -1060,6 +1062,7 @@ export type FogScatterHooks = {
 export function fogScatterVolume(hooks: FogScatterHooks = {}): VolumeLightShader {
   const reflectionSamples = Math.max(1, Math.min(8, Math.round(hooks.reflectionSamples ?? 1)))
   const atmo = !!hooks.atmosphere
+  const street = !!hooks.street
   return {
     depth: true,
     history: true,
@@ -1079,7 +1082,7 @@ fn fogLamp(i: u32) -> FogLamp {
   let o = i * 6u;
   return FogLamp(fogLampData[o], fogLampData[o + 1u], fogLampData[o + 2u], fogLampData[o + 3u], fogLampData[o + 4u], fogLampData[o + 5u]);
 }
-${streetLampWgsl}
+${street ? streetLampWgsl : ""}
 ${atmo ? fogAtmosphereWgsl : ""}
 ${hooks.declarations ?? ""}
 fn fogWet(p: vec3f, n: vec3f, footprint: f32) -> f32 { return ${hooks.wet ?? "0.0"}; }
@@ -1108,7 +1111,7 @@ ${atmo ? `  // Where the bank thickens the air, the beams scatter more: σ(lamp)
   let bankLamp = select(0.0, FOG.bank3.x, FOG.bank.w > 0.5);
 ` : ""}  for (var i = 0u; i < count; i++) {
     let L = fogLamp(i);
-    if (L.f.z > 0.0) {
+${street ? `    if (L.f.z > 0.0) {
       // Street lamp: the light leaves the lens, so the ray takes its light from the lens point nearest it (the
       // representative point along the arc tube, clamped to the lens) through the lens kernel 1 / (d² + b²); the
       // equiangular pdf over the softened distance √(h² + b²) matches that kernel exactly. Deterministic: no lens noise.
@@ -1147,7 +1150,7 @@ ${atmo ? "        if (bankLamp > 0.0) { thick += bankLamp * fogBankMeanSigma(ro.
       acc += L.b.rgb * lsum * (qb - qa) * FOG.streetC.y / (hp * f32(n) * 12.566371);
       continue;
     }
-    let toL = L.a.xyz - ro;
+` : ""}    let toL = L.a.xyz - ro;
     let s0 = dot(toL, rd);
     let h = max(sqrt(max(dot(toL, toL) - s0 * s0, 0.0)), 0.03);
     let a = max(s0 - L.a.w, 0.0);
@@ -1268,8 +1271,7 @@ ${atmo ? `  if (FOG.cloud.w > 0.0 && rd.y > 0.01) {
         let al = along + L.f.z / dl;
         let lobe = exp(-(dx * dx / (ac * ac) + dy * dy / (al * al)));
         var aim = fogLampCone(dot(-ld, L.c.xyz), L.b.w - 0.1, L.c.w);
-        if (L.f.z > 0.0) { aim = min(streetProfile(-ld, L.f.xy, FOG.streetA, FOG.streetB.y), 1.0); }
-        gl += L.e.rgb * lobe * (aim * 0.9 + 0.1) / (dl * dl + 4.0) * exp(-dl * L.e.w);
+${street ? "        if (L.f.z > 0.0) { aim = min(streetProfile(-ld, L.f.xy, FOG.streetA, FOG.streetB.y), 1.0); }\n" : ""}        gl += L.e.rgb * lobe * (aim * 0.9 + 0.1) / (dl * dl + 4.0) * exp(-dl * L.e.w);
       }
       acc += gl * fres * wet * T * trans * FOG.reflect.z;
     }

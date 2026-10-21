@@ -55,7 +55,7 @@ async function main() {
   const interior = await loadInterior(device), indoor = interiorDefaults()
   walls.push(...interior.colliders.map(b=>[b.min[0]!,b.min[2]!,b.max[0]!,b.max[2]!] as const))
   const lighting = flatLighting(0, 0, [0, 0, 0])
-  // The CI smoke keeps the street lamps at Today too: on SwiftShader the lens path pushed its two frames past the deadline.
+  // The CI smoke keeps the street lamps at Today too (its shaders leave the street path out: SwiftShader compile time).
   const street=createStreetLampSettings(smoke ? {mode:"today"} : {}), streets=streetLamps(world.scene)
   renderer.setLevel({ chunks: [...world.solid,world.extra,lensChunk(streets)].map(data=>({data,box:[-700,-700,700,700] as const})), glass: [], ...lighting })
 
