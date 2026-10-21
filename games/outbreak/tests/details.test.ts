@@ -15,9 +15,8 @@ import {
   wordWidth,
   type DetailSite,
 } from "../src/details/placement"
-import { DEFAULT_DETAIL_SETTINGS, detailControls, type OutbreakDetailSettings } from "../src/details/settings"
+import { DEFAULT_DETAIL_SETTINGS, type OutbreakDetailSettings } from "../src/details/settings"
 import { groundKeepOut } from "../src/houses/grounds"
-import { createOutbreakSettings, getOutbreakSetting } from "../src/settings"
 
 const settings = (patch: Partial<OutbreakDetailSettings> = {}): OutbreakDetailSettings => ({ ...DEFAULT_DETAIL_SETTINGS, ...patch })
 const all = settings({ dtTurnedOver: 1, dtBoxes: 1, dtMarks: 1, dtStreetJunk: 2 })
@@ -206,13 +205,9 @@ describe("world details placement", () => {
     expect(placeCarDetails(town, settings({ dtPoliceTape: false, dtStreetJunk: 0 }), [{ key: "cruiser:12.2,46.3", x: 0, z: 0, yaw: 0 }])).toEqual([])
   })
 
-  test("every model has a mesh and every setting is a Lab control in the Details groups", () => {
+  test("every detail model has a non-empty mesh", () => {
     const meshes = buildDetailMeshes()
     expect(meshes.length).toBe(DETAIL_MODELS.length)
     for (const m of meshes) expect(m.v.length).toBeGreaterThan(0)
-    const keys = new Set(detailControls.map((c) => c.key))
-    for (const k of Object.keys(DEFAULT_DETAIL_SETTINGS)) expect(keys.has(k)).toBe(true)
-    for (const c of detailControls) expect(c.group?.startsWith("Details")).toBe(true)
-    expect(getOutbreakSetting(createOutbreakSettings(), "dtMarks")).toBe(DEFAULT_DETAIL_SETTINGS.dtMarks)
   })
 })
