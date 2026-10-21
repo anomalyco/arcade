@@ -139,8 +139,8 @@
   `../../docs/outbreak-art-direction.md`; beauty stills, flicker and paired GPU: `bun scripts/look-beauty.ts`. Stills: `bun scripts/look-stills.ts`
   (via `hivemind run --kind browser`). Defaults stay today's look until Kit picks. Soft Bean (Hero › Survivor style) has
   its own shape, colour and surface knobs; stills and paired GPU cost: `bun scripts/bean-stills.ts`.
-- Character shadows (AR-113, `src/soft-shadows/`, Lab: Backquote › Look · Character shadows, "Today" = `softShadowMode`
-  0): soft capsule shadows from the rig's bones for survivors, zombies, the downed and the dead (kit
+- Character shadows (AR-113, `src/soft-shadows/`, Lab: Backquote › Look · Character shadows, on by default
+  since D-48, "Today" = `softShadowMode` 0): soft capsule shadows from the rig's bones for survivors, zombies, the downed and the dead (kit
   `@arcade/kit/gpu/shadows/capsule-shadows`): a contact shadow plus one per strong nearby light and the sun or moon.
   Presenters note bodies (`forEachDrawnBody`, `forEachDrawnRig`, `noteLyingBody`); `scene/frame-renderer.ts` packs them.
   Stills: `bun scripts/soft-shadows-stills.ts --out <dir>` (via `hivemind run --kind browser`); paired GPU:
