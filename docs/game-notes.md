@@ -163,6 +163,15 @@ proven animation techniques to animation.md, not here.
 
 ## Rendering (WebGPU)
 
+- **Rectangular ceiling panels need their actual footprint.** `packages/kit/gpu/lights/rect.ts` clips a downward
+  rectangle against each receiver's horizon and integrates its spherical polygon for diffuse irradiance; shared
+  physical-light hooks use the rectangle's mirror-ray point for approximate GGX specular and the existing area
+  shadow filter. Opt in with `physicalLightHooks({rect:true})` and `SceneLight.rect` (half-extents in metres, yaw).
+  `rect.test.ts` compares floors, walls, near-field and horizon-clipped receivers against independent 160² area
+  quadrature within 0.1%; behind-panel emission is zero. Lot's lobby uses a 0.6 × 1.2 m panel and four weighted
+  samples of that footprint in the shared fog integrator. Specular, fog and shadow filtering remain approximations;
+  the diffuse polygon integral is exact. Non-panel games do not compile the polygon shader.
+
 - **Far glow decals need a depth offset in steps, not millimetres (Lot, AR-118, 2026-10-21).** With depth24 and near
   0.15 one depth step is ≈ d²/(near·2²⁴): 9 mm at 150 m. The facility stairwell's lit panes sat 5 mm off their opaque
   backing and the sodium lenses 0–5 mm (some −0.9 mm) off their housings, so from the gate they tied with the wall and

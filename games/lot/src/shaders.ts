@@ -61,7 +61,7 @@ const nightHooks: SceneHooks = {
   `,
 }
 
-const physical = { env: "mix(fogEnv(dir),fogAmbient(n),rough*rough)", knobs:"vec4f(N.look.w,1.0,1.0,0.02)", spotShadows:true, ...(STREET_SHADERS ? { street:{ a:"N.streetA", b:"N.streetB" } } : {}) }
+const physical = { env: "mix(fogEnv(dir),fogAmbient(n),rough*rough)", knobs:"vec4f(N.look.w,1.0,1.0,0.02)", spotShadows:true, rect:STREET_SHADERS, ...(STREET_SHADERS ? { street:{ a:"N.streetA", b:"N.streetB" } } : {}) }
 export const hooks = withPhysicalLights(nightHooks, physical)
 export const texturedHooks: SceneHooks = withPhysicalLights({ ...nightHooks,
   surface: `if(mat==3) {
