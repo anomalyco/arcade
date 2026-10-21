@@ -319,26 +319,32 @@ const additiveKeepAlpha: GPUBlendState = { color: { srcFactor: "one", dstFactor:
 const multiplyKeepAlpha: GPUBlendState = { color: { srcFactor: "zero", dstFactor: "src" }, alpha: { srcFactor: "zero", dstFactor: "one" } }
 const transmit: GPUBlendState = { color: { srcFactor: "one", dstFactor: "src-alpha" }, alpha: { srcFactor: "zero", dstFactor: "one" } }
 
+type VolumePipes = {
+  lowDepth: GPURenderPipeline | null
+  march: GPURenderPipeline
+  filter: GPURenderPipeline | null
+  accumulate: GPURenderPipeline | null
+  composite: GPURenderPipeline
+}
+
 export class VolumeSlot {
   readonly usesDepth: boolean
   readonly usesHistory: boolean
   readonly usesColor: boolean
-  private readonly filterPipe: GPURenderPipeline | null = null
+  private readonly hasFilter: boolean
+  private readonly hasLowDepth: boolean
+  private pipes: VolumePipes | null = null
   private readonly filterLayout: GPUBindGroupLayout | null = null
   private filterGroup: GPUBindGroup | null = null
   private filtered: GPUTexture | null = null
   private readonly paramsBuf: GPUBuffer | null = null
   private boundColor: GPUTextureView | null = null
-  private readonly lowDepthPipe: GPURenderPipeline | null = null
   private readonly lowDepthLayout: GPUBindGroupLayout | null = null
   private lowDepthGroup: GPUBindGroup | null = null
   private lowDepthTex: GPUTexture | null = null
   private readonly clearAlpha: number
-  private readonly march: GPURenderPipeline
   private readonly marchLayout: GPUBindGroupLayout
-  private readonly compositePipe: GPURenderPipeline
   private readonly compositeLayout: GPUBindGroupLayout
-  private readonly accumulatePipe: GPURenderPipeline | null = null
   private readonly accumulateLayout: GPUBindGroupLayout | null = null
   private readonly frameBuf: GPUBuffer | null = null
   private readonly frameData = new Float32Array(VOLUME_FRAME_FLOATS)
@@ -351,12 +357,14 @@ export class VolumeSlot {
   private compositeGroups: GPUBindGroup[] = []
   private accumulateGroups: GPUBindGroup[] = []
 
-  constructor(private readonly device: GPUDevice, shader: VolumeLightShader, private readonly shared: VolumeShared, index: number) {
+  constructor(private readonly device: GPUDevice, private readonly shader: VolumeLightShader, private readonly shared: VolumeShared, private readonly index: number) {
     const d = device
     const S = GPUShaderStage
     this.usesDepth = !!shader.depth || !!shader.history || !!shader.color || !!shader.filter || !!shader.lowDepth
     this.usesHistory = !!shader.history
     this.usesColor = !!shader.color
+    this.hasFilter = !!shader.filter
+    this.hasLowDepth = !!shader.lowDepth
     // A transmittance slot's empty texels keep the scene (a = 1).
     this.clearAlpha = shader.transmittance ? 1 : 0
     const entries: GPUBindGroupLayoutEntry[] = [
@@ -385,24 +393,8 @@ export class VolumeSlot {
           { binding: 4, visibility: S.FRAGMENT, buffer: { type: "uniform" } },
         ],
       })
-      const lm = shared.compile(volumeLowDepthShader, "volume low depth")
-      this.lowDepthPipe = d.createRenderPipeline({
-        label: `volume ${index} low depth`,
-        layout: d.createPipelineLayout({ bindGroupLayouts: [this.lowDepthLayout] }),
-        vertex: { module: lm, entryPoint: "vs" },
-        fragment: { module: lm, entryPoint: "fs", targets: [{ format: "r32float" }] },
-        primitive: { topology: "triangle-list" },
-      })
     }
     this.marchLayout = d.createBindGroupLayout({ entries })
-    const mod = shared.compile(shader.code, `volume light ${index}`)
-    this.march = d.createRenderPipeline({
-      label: `volume ${index} march`,
-      layout: d.createPipelineLayout({ bindGroupLayouts: [this.marchLayout] }),
-      vertex: { module: mod, entryPoint: "vs" },
-      fragment: { module: mod, entryPoint: "fs", targets: [{ format: shared.format }] },
-      primitive: { topology: "triangle-list" },
-    })
     if (shader.filter) {
       this.filterLayout = d.createBindGroupLayout({
         entries: [
@@ -414,14 +406,6 @@ export class VolumeSlot {
           { binding: VOLUME_PARAMS_BINDING, visibility: S.FRAGMENT, buffer: { type: "uniform" } },
         ],
       })
-      const fm = shared.compile(shader.filter, `volume ${index} filter`)
-      this.filterPipe = d.createRenderPipeline({
-        label: `volume ${index} filter`,
-        layout: d.createPipelineLayout({ bindGroupLayouts: [this.filterLayout] }),
-        vertex: { module: fm, entryPoint: "vs" },
-        fragment: { module: fm, entryPoint: "fs", targets: [{ format: shared.format }] },
-        primitive: { topology: "triangle-list" },
-      })
     }
     if (this.usesHistory) {
       this.accumulateLayout = d.createBindGroupLayout({
@@ -432,14 +416,6 @@ export class VolumeSlot {
           { binding: 3, visibility: S.FRAGMENT, texture: { sampleType: "depth", multisampled: true } },
           { binding: 4, visibility: S.FRAGMENT, buffer: { type: "uniform" } },
         ],
-      })
-      const acc = shared.compile(volumeAccumulateShader, "volume accumulate")
-      this.accumulatePipe = d.createRenderPipeline({
-        label: `volume ${index} accumulate`,
-        layout: d.createPipelineLayout({ bindGroupLayouts: [this.accumulateLayout] }),
-        vertex: { module: acc, entryPoint: "vs" },
-        fragment: { module: acc, entryPoint: "fs", targets: [{ format: shared.format }] },
-        primitive: { topology: "triangle-list" },
       })
     }
     this.compositeLayout = d.createBindGroupLayout({
@@ -454,14 +430,31 @@ export class VolumeSlot {
             { binding: 1, visibility: S.FRAGMENT, sampler: {} },
           ],
     })
+  }
+
+  /**
+   * Compiles the slot's shaders on its first draw: a slot whose option is off (an input of null every frame) never
+   * compiles them, which on a software GPU saves seconds before the first frame.
+   */
+  private ensurePipes(): VolumePipes {
+    if (this.pipes) return this.pipes
+    const d = this.device
+    const { shader, shared, index } = this
+    const fullscreen = (module: GPUShaderModule, label: string, layout: GPUBindGroupLayout, format: GPUTextureFormat, blend?: GPUBlendState) =>
+      d.createRenderPipeline({
+        label: `volume ${index} ${label}`,
+        layout: d.createPipelineLayout({ bindGroupLayouts: [layout] }),
+        vertex: { module, entryPoint: "vs" },
+        fragment: { module, entryPoint: "fs", targets: [{ format, blend }] },
+        primitive: { topology: "triangle-list" },
+      })
+    const lowDepth = this.lowDepthLayout ? fullscreen(shared.compile(volumeLowDepthShader, "volume low depth"), "low depth", this.lowDepthLayout, "r32float") : null
+    const march = fullscreen(shared.compile(shader.code, `volume light ${index}`), "march", this.marchLayout, shared.format)
+    const filter = shader.filter ? fullscreen(shared.compile(shader.filter, `volume ${index} filter`), "filter", this.filterLayout!, shared.format) : null
+    const accumulate = this.accumulateLayout ? fullscreen(shared.compile(volumeAccumulateShader, "volume accumulate"), "accumulate", this.accumulateLayout, shared.format) : null
     const comp = shared.compile(this.usesDepth ? volumeUpsampleShader : volumeBilinearShader, this.usesDepth ? "volume upsample" : "volume composite")
-    this.compositePipe = d.createRenderPipeline({
-      label: `volume ${index} composite`,
-      layout: d.createPipelineLayout({ bindGroupLayouts: [this.compositeLayout] }),
-      vertex: { module: comp, entryPoint: "vs" },
-      fragment: { module: comp, entryPoint: "fs", targets: [{ format: shared.format, blend: shader.transmittance ? transmit : shader.composite === "multiply" ? multiplyKeepAlpha : additiveKeepAlpha }] },
-      primitive: { topology: "triangle-list" },
-    })
+    const composite = fullscreen(comp, "composite", this.compositeLayout, shared.format, shader.transmittance ? transmit : shader.composite === "multiply" ? multiplyKeepAlpha : additiveKeepAlpha)
+    return (this.pipes = { lowDepth, march, filter, accumulate, composite })
   }
 
   /** Drops the history (camera cut, new level, resize). */
@@ -478,9 +471,9 @@ export class VolumeSlot {
       for (const t of this.hist) t.destroy()
       const usage = T().RENDER_ATTACHMENT | T().TEXTURE_BINDING
       this.tex = d.createTexture({ label: "volume", size: [w, h], format: this.shared.format, usage })
-      this.filtered = this.filterPipe ? d.createTexture({ label: "volume filtered", size: [w, h], format: this.shared.format, usage }) : null
+      this.filtered = this.hasFilter ? d.createTexture({ label: "volume filtered", size: [w, h], format: this.shared.format, usage }) : null
       this.lowDepthTex?.destroy()
-      this.lowDepthTex = this.lowDepthPipe ? d.createTexture({ label: "volume low depth", size: [w, h], format: "r32float", usage }) : null
+      this.lowDepthTex = this.hasLowDepth ? d.createTexture({ label: "volume low depth", size: [w, h], format: "r32float", usage }) : null
       this.hist = this.usesHistory ? [0, 1].map(() => d.createTexture({ label: "volume history", size: [w, h], format: this.shared.format, usage })) : []
       this.histValid = false
     }
@@ -507,7 +500,7 @@ export class VolumeSlot {
       if (color) entries.push({ binding: VOLUME_COLOR_BINDING, resource: color })
       if (this.lowDepthTex) entries.push({ binding: VOLUME_LOW_DEPTH_BINDING, resource: this.lowDepthTex.createView() })
     }
-    if (this.lowDepthPipe) {
+    if (this.hasLowDepth) {
       this.lowDepthGroup = d.createBindGroup({
         layout: this.lowDepthLayout!,
         entries: [
@@ -517,7 +510,7 @@ export class VolumeSlot {
       })
     }
     this.marchGroup = d.createBindGroup({ layout: this.marchLayout, entries })
-    if (this.filterPipe) {
+    if (this.hasFilter) {
       this.filterGroup = d.createBindGroup({
         layout: this.filterLayout!,
         entries: [
@@ -581,6 +574,7 @@ export class VolumeSlot {
     const w = Math.max(1, Math.ceil(internalWidth / downscale))
     const h = Math.max(1, Math.ceil(internalHeight / downscale))
     if (this.usesDepth && !view) return
+    const pipes = this.ensurePipes()
     this.ensureTargets(w, h, view)
     const r = input.rect ?? [0, 0, 1, 1]
     if (r[2] <= r[0] || r[3] <= r[1]) {
@@ -607,24 +601,24 @@ export class VolumeSlot {
       const y1 = Math.min(sh, Math.ceil(r[3] * sh))
       pass.setScissorRect(x0, y0, Math.max(0, x1 - x0), Math.max(0, y1 - y0))
     }
-    if (this.lowDepthPipe) {
+    if (pipes.lowDepth) {
       const lp = enc.beginRenderPass({ colorAttachments: [{ view: this.lowDepthTex!.createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 1e9, g: 0, b: 0, a: 0 } }] })
       scissor(lp, w, h)
-      lp.setPipeline(this.lowDepthPipe)
+      lp.setPipeline(pipes.lowDepth)
       lp.setBindGroup(0, this.lowDepthGroup!)
       lp.draw(3)
       lp.end()
     }
     const march = enc.beginRenderPass({ colorAttachments: [{ view: this.tex!.createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: this.clearAlpha } }] })
     scissor(march, w, h)
-    march.setPipeline(this.march)
+    march.setPipeline(pipes.march)
     march.setBindGroup(0, this.marchGroup!)
     march.draw(3)
     march.end()
-    if (this.filterPipe) {
+    if (pipes.filter) {
       const fp = enc.beginRenderPass({ colorAttachments: [{ view: this.filtered!.createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 0 } }] })
       scissor(fp, w, h)
-      fp.setPipeline(this.filterPipe)
+      fp.setPipeline(pipes.filter)
       fp.setBindGroup(0, this.filterGroup!)
       fp.draw(3)
       fp.end()
@@ -634,7 +628,7 @@ export class VolumeSlot {
       const read = this.histIndex
       const write = 1 - read
       const acc = enc.beginRenderPass({ colorAttachments: [{ view: this.hist[write]!.createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: this.clearAlpha } }] })
-      acc.setPipeline(this.accumulatePipe!)
+      acc.setPipeline(pipes.accumulate!)
       acc.setBindGroup(0, this.accumulateGroups[read]!)
       acc.draw(3)
       acc.end()
@@ -644,7 +638,7 @@ export class VolumeSlot {
     }
     const add = enc.beginRenderPass({ colorAttachments: [{ view: target, loadOp: "load", storeOp: "store" }] })
     scissor(add, tw, th)
-    add.setPipeline(this.compositePipe)
+    add.setPipeline(pipes.composite)
     add.setBindGroup(0, this.compositeGroups[source]!)
     add.draw(3)
     add.end()

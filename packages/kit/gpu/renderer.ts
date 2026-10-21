@@ -311,6 +311,7 @@ export class Renderer {
   private baselinePipes: Record<string, GPURenderPipeline> = {}
   private motionPipes: Record<string, GPURenderPipeline> = {}
   private lookPipesByVariant = new Map<LookVariantMode, Record<string, GPURenderPipeline>>()
+  private lookCompositeBuilders = new Map<LookVariantMode, (fs: "composite" | "compositeFast") => GPURenderPipeline>()
   private activeLook: LookSettings | null = null
   private activeLookCompare: { mode?: LookCompareMode; wipeSplit?: number } = {}
   private lookSceneData = new Float32Array(LOOK_UNIFORM_FLOATS)
@@ -372,7 +373,10 @@ export class Renderer {
   private spriteModule!: GPUShaderModule
   private reactivePipe: GPURenderPipeline | null = null
   private reactiveInstPipe: GPURenderPipeline | null = null
-  private sceneModule!: GPUShaderModule
+  private sceneModuleCache: GPUShaderModule | null = null
+  private buildScenePipes: (() => void) | null = null
+  private buildBaselinePipes: (() => void) | null = null
+  private buildComposite!: (baseline: boolean) => GPURenderPipeline
   private readonly unjittered = new Float32Array(22)
   /** Size the scene renders at: the output size, or smaller under temporal upscaling. */
   internalWidth = 0
@@ -598,10 +602,8 @@ export class Renderer {
     const premul: GPUBlendState = { color: { srcFactor: "one", dstFactor: "one-minus-src-alpha" }, alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha" } }
     const additive: GPUBlendState = { color: { srcFactor: "one", dstFactor: "one" }, alpha: { srcFactor: "one", dstFactor: "one" } }
     const layout = d.createPipelineLayout({ bindGroupLayouts: [sceneLayout] })
-    const scene = this.module(shaders?.scene ?? sceneShader(), "scene")
     const sprite = this.module(shaders?.sprite ?? spriteShader(), "sprite")
     this.spriteModule = sprite
-    this.sceneModule = scene
     const pipe = (module: GPUShaderModule, vs: string, buffers: GPUVertexBufferLayout[], blend?: GPUBlendState, depthWrite = true, cullMode: GPUCullMode = "back", fs = "fs", motion = false, alphaToCoverage = false) =>
       d.createRenderPipeline({
         layout,
@@ -611,18 +613,26 @@ export class Renderer {
         depthStencil: { format: DEPTH, depthWriteEnabled: depthWrite, depthCompare: "less-equal" },
         multisample: { count: SAMPLES, alphaToCoverageEnabled: alphaToCoverage && !blend && !motion },
       })
-    this.pipes.level = pipe(scene, "vsStatic", [MESH_LAYOUT], undefined, true, "none", "fsSolid")
-    this.pipes.levelCut = pipe(scene, "vsStatic", [MESH_LAYOUT], undefined, true, "none", "fs")
-    this.pipes.glass = pipe(scene, "vsStatic", [MESH_LAYOUT], premul, false, "none", shaders ? "fsSolid" : "fs")
-    this.pipes.inst = pipe(scene, "vsInst", [MESH_LAYOUT, INST_LAYOUT], undefined, true, "none", shaders ? "fsSolid" : "fs")
-    this.pipes.instAlpha = pipe(scene, "vsInst", [MESH_LAYOUT, INST_LAYOUT], premul, false, "none", "fs")
-    if (shaders) {
-      this.baselinePipes.level = this.pipes.level
-      this.baselinePipes.levelCut = this.pipes.levelCut
-      this.baselinePipes.glass = this.pipes.glass
-      this.baselinePipes.inst = this.pipes.inst
-      this.baselinePipes.instAlpha = this.pipes.instAlpha
-    } else {
+    // The scene shader's own pipelines (and the all-off baseline's) are built on first draw: a renderer that draws
+    // through a look never uses them, and on a software GPU each one costs seconds before the first frame.
+    this.buildScenePipes = () => {
+      const scene = this.sceneModule
+      this.pipes.level = pipe(scene, "vsStatic", [MESH_LAYOUT], undefined, true, "none", "fsSolid")
+      this.pipes.levelCut = pipe(scene, "vsStatic", [MESH_LAYOUT], undefined, true, "none", "fs")
+      this.pipes.glass = pipe(scene, "vsStatic", [MESH_LAYOUT], premul, false, "none", shaders ? "fsSolid" : "fs")
+      this.pipes.inst = pipe(scene, "vsInst", [MESH_LAYOUT, INST_LAYOUT], undefined, true, "none", shaders ? "fsSolid" : "fs")
+      this.pipes.instAlpha = pipe(scene, "vsInst", [MESH_LAYOUT, INST_LAYOUT], premul, false, "none", "fs")
+    }
+    this.buildBaselinePipes = () => {
+      if (shaders) {
+        this.ensureScenePipes()
+        this.baselinePipes.level = this.pipes.level!
+        this.baselinePipes.levelCut = this.pipes.levelCut!
+        this.baselinePipes.glass = this.pipes.glass!
+        this.baselinePipes.inst = this.pipes.inst!
+        this.baselinePipes.instAlpha = this.pipes.instAlpha!
+        return
+      }
       // Keep the all-off shader's arithmetic identical, including compiler rounding.
       const baselineScene = this.module(sceneShader(false), "scene baseline")
       this.baselinePipes.level = pipe(baselineScene, "vsStatic", [MESH_LAYOUT], undefined, true, "none", "fsSolid")
@@ -635,14 +645,15 @@ export class Renderer {
     this.pipes.spriteAdd = pipe(sprite, "vs", [spriteLayout], additive, false, "none")
 
     const post = this.module(shaders?.post ?? postShader(), "post")
-    const baselinePost = shaders?.post ? post : this.module(postShader(false), "post baseline")
     const postPipeLayout = d.createPipelineLayout({ bindGroupLayouts: [this.postLayout] })
-    const postPipe = (fs: string, fmt: GPUTextureFormat, blend?: GPUBlendState, baseline = false) =>
-      d.createRenderPipeline({ layout: postPipeLayout, vertex: { module: post, entryPoint: "vs" }, fragment: { module: baseline ? baselinePost : post, entryPoint: fs, targets: [{ format: fmt, blend }] }, primitive: { topology: "triangle-list" } })
+    const postPipe = (fs: string, fmt: GPUTextureFormat, blend?: GPUBlendState, module = post) =>
+      d.createRenderPipeline({ layout: postPipeLayout, vertex: { module: post, entryPoint: "vs" }, fragment: { module, entryPoint: fs, targets: [{ format: fmt, blend }] }, primitive: { topology: "triangle-list" } })
     this.pipes.down = postPipe("down", HDR)
     this.pipes.up = postPipe("up", HDR, additive)
-    this.pipes.composite = postPipe("composite", format)
-    this.baselinePipes.composite = shaders?.post ? this.pipes.composite : postPipe("composite", format, undefined, true)
+    this.buildComposite = (baseline) =>
+      !baseline ? postPipe("composite", format)
+        : shaders?.post ? this.composite(false)
+        : postPipe("composite", format, undefined, this.module(postShader(false), "post baseline"))
     this.texturesReady = this.initMaterialTextures()
   }
 
@@ -670,6 +681,29 @@ export class Renderer {
   /** Compiles a shader module and reports any compile errors with their line. */
   private module(code: string, label: string): GPUShaderModule {
     return compileShaderModuleWithLog(this.device, code, label)
+  }
+
+  private get sceneModule(): GPUShaderModule {
+    return (this.sceneModuleCache ??= this.module(this.shaders?.scene ?? sceneShader(), "scene"))
+  }
+
+  private ensureScenePipes(): Record<string, GPURenderPipeline> {
+    const build = this.buildScenePipes
+    this.buildScenePipes = null
+    build?.()
+    return this.pipes
+  }
+
+  private ensureBaselinePipes(): Record<string, GPURenderPipeline> {
+    const build = this.buildBaselinePipes
+    this.buildBaselinePipes = null
+    build?.()
+    return this.baselinePipes
+  }
+
+  private composite(baseline: boolean): GPURenderPipeline {
+    const pipes = baseline ? this.baselinePipes : this.pipes
+    return (pipes.composite ??= this.buildComposite(baseline))
   }
 
   /** Registers an optional `ScenePass` plugin in the `"sky"`, `"opaque"`, or `"alpha"` slot. */
@@ -1321,27 +1355,29 @@ export class Renderer {
       (variant === "generic" && this.shaders?.lookPost ? this.shaders.lookPost : makeLookPostShader(undefined, variant))
     const lookPostMod = this.module(postCode, `post look (${variant})`)
     const postPipeLayout = d.createPipelineLayout({ bindGroupLayouts: [this.postLayout] })
-    const pipes = {
+    const pipes: Record<string, GPURenderPipeline> = {
       level: pipe("vsStatic", [meshLayout], undefined, true, "fsSolid"),
       levelCut: pipe("vsStatic", [meshLayout], undefined, true, "fs"),
       glass: pipe("vsStatic", [meshLayout], premul, false, this.shaders ? "fsSolid" : "fs"),
       inst: pipe("vsInst", [meshLayout, instLayout], undefined, true, this.shaders ? "fsSolid" : "fs"),
       instAlpha: pipe("vsInst", [meshLayout, instLayout], premul, false, "fs"),
-      composite: d.createRenderPipeline({
-        layout: postPipeLayout,
-        vertex: { module: lookPostMod, entryPoint: "vs" },
-        fragment: { module: lookPostMod, entryPoint: "composite", targets: [{ format: this.format }] },
-        primitive: { topology: "triangle-list" },
-      }),
-      compositeFast: d.createRenderPipeline({
-        layout: postPipeLayout,
-        vertex: { module: lookPostMod, entryPoint: "vs" },
-        fragment: { module: lookPostMod, entryPoint: "compositeFast", targets: [{ format: this.format }] },
-        primitive: { topology: "triangle-list" },
-      }),
     }
+    // Only the composite a frame draws with is compiled (most looks never use the full one).
+    this.lookCompositeBuilders.set(variant, (fs) =>
+      d.createRenderPipeline({
+        layout: postPipeLayout,
+        vertex: { module: lookPostMod, entryPoint: "vs" },
+        fragment: { module: lookPostMod, entryPoint: fs, targets: [{ format: this.format }] },
+        primitive: { topology: "triangle-list" },
+      }),
+    )
     this.lookPipesByVariant.set(variant, pipes)
     return pipes
+  }
+
+  private lookComposite(variant: LookVariantMode, fs: "composite" | "compositeFast"): GPURenderPipeline {
+    const pipes = this.ensureLookPipes(variant)
+    return (pipes[fs] ??= this.lookCompositeBuilders.get(variant)!(fs))
   }
 
   render(f: FrameInput): void {
@@ -1506,8 +1542,8 @@ export class Renderer {
       : useLookPipes
         ? this.ensureLookPipes(lookVariant)
         : this.shaders || ((f.frame[45]! & ~1025) && f.frame[46]!) || (f.frame[45]! & 512)
-          ? this.pipes
-          : this.baselinePipes
+          ? this.ensureScenePipes()
+          : this.ensureBaselinePipes()
     const old = this.previousFrame
     const elapsed = old ? f.frame[19]! - old[19]! : 0
     const continuous = !!old && elapsed > 0 && elapsed < 0.1 && Math.hypot(f.frame[16]! - old[16]!, f.frame[17]! - old[17]!, f.frame[18]! - old[18]!) < 4
@@ -1904,12 +1940,8 @@ export class Renderer {
       motion
         ? this.motionPipes.composite!
         : useLookPipes
-          ? (useFastLookPost
-              ? this.ensureLookPipes(lookVariant).compositeFast!
-              : this.ensureLookPipes(lookVariant).composite!)
-          : f.frame[45]! & 1
-            ? this.pipes.composite!
-            : this.baselinePipes.composite!,
+          ? this.lookComposite(lookVariant, useFastLookPost ? "compositeFast" : "composite")
+          : this.composite(!(f.frame[45]! & 1)),
     )
     fp.setBindGroup(0, motion ? this.motionComposite : activeComposite)
     fp.draw(3)

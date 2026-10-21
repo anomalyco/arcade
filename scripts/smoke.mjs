@@ -26,10 +26,13 @@ let browser
 let bootTimeline = async () => "not loaded"
 // Most workflow steps allow 60 s; Lot allows 180 s for its dense imported exterior and software-GPU queue drain.
 // On SwiftShader the GPU process compiles every render pipeline on one thread before it
-// presents a frame (Outbreak, Oct 20: 22–36 s, ~1 s per scene-shader pipeline), and the page's main thread can block
+// presents a frame (Outbreak, Oct 21: 20–36 s for its 25 boot pipelines; the kit renderer builds unused ones only on
+// first use, which took 3–7 s off), and the page's main thread can block
 // behind it, so readiness and the first frames share one budget rather than a separate 20 s readiness limit.
 const READY_MS = game === "lot" ? 100_000 : 40_000
 const DEADLINE_MS = game === "lot" ? 165_000 : 55_000
+const CLOSE_MS = 3_000
+let passed = false
 const deadline = setTimeout(async () => {
   const boot = await Promise.race([bootTimeline().catch(() => "?"), Bun.sleep(1_000).then(() => "page unresponsive")])
   console.error(`${game}: smoke exceeded ${DEADLINE_MS / 1000} seconds; boot ${boot}`)
@@ -137,8 +140,16 @@ try {
   const outcome = await ready.jsonValue()
   if (metal) assert.match(outcome, /ready/, `${game}: WebGPU did not start on Metal (${outcome})`)
   console.log(`${game}: production smoke passed (${outcome}${metal ? ", Metal" : ""})`)
+  passed = true
 } finally {
-  await browser?.close()
+  // Shutdown is not under test. Chromium's close waits for SwiftShader to finish the frames still queued (Outbreak
+  // on CI, Oct 21: 0.3–17 s after a pass, several seconds a frame), so after CLOSE_MS the browser is killed: Playwright's
+  // exit hook SIGKILLs its process group.
+  const closed = await Promise.race([browser ? browser.close().then(() => true) : true, Bun.sleep(CLOSE_MS).then(() => false)])
   server.stop(true)
   clearTimeout(deadline)
+  if (!closed) {
+    console.log(`${game}: browser still closing after ${CLOSE_MS / 1000} s; killing it`)
+    if (passed) process.exit(0)
+  }
 }
