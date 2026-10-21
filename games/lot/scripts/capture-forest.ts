@@ -2,6 +2,7 @@ import { chromium, type Page } from "playwright-core"
 import { mkdir, readdir } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
+import { serveDist } from "./serve-dist"
 
 // Forest/ground-dressing proof at the title camera, headless and muted, through HiveMind browser admission:
 //   bun scripts/capture-forest.ts [--base <dist of origin/main's lot>]
@@ -9,14 +10,8 @@ import { resolve } from "node:path"
 // (renderer.measure, alternating configurations) and CPU build/rebuild times.
 const out = resolve(process.env.LOT_CAPTURE_DIR ?? "captures/forest")
 await mkdir(out, { recursive: true })
-const serve = (root: string) => Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
-  const pathname = decodeURIComponent(new URL(request.url).pathname)
-  if (pathname.includes("..")) return new Response("Bad path", { status: 400 })
-  const file = Bun.file(`${root}${pathname}${pathname.endsWith("/") ? "index.html" : ""}`)
-  return await file.exists() ? new Response(file) : new Response("Not found", { status: 404 })
-} })
 const baseAt = process.argv.indexOf("--base")
-const branchServer = serve(resolve(import.meta.dir, "../dist")), mainServer = baseAt > 0 ? serve(resolve(process.argv[baseAt + 1]!)) : null
+const branchServer = serveDist(resolve(import.meta.dir, "../dist")), mainServer = baseAt > 0 ? serveDist(resolve(process.argv[baseAt + 1]!)) : null
 const cache = `${process.env.HOME}/Library/Caches/ms-playwright`
 const executablePath = (await readdir(cache)).filter(n => /^chromium_headless_shell-/.test(n)).sort().reverse()
   .map(n => `${cache}/${n}/chrome-headless-shell-mac-arm64/chrome-headless-shell`).find(existsSync)

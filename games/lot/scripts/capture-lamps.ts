@@ -2,6 +2,7 @@ import { chromium, type Page } from "playwright-core"
 import { mkdir, readdir } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
+import { serveDist } from "./serve-dist"
 
 // Sodium lamp paint-over captures, headless and muted, through HiveMind browser admission:
 //   bun scripts/capture-lamps.ts [--lot <url>] [--ashwood <url>] [--dist <dir>] [--tag <name>] [--set k=v ...] [--measure]
@@ -13,12 +14,7 @@ const out = resolve(process.env.LOT_CAPTURE_DIR ?? "captures/lamps")
 await mkdir(out, { recursive: true })
 const tag = arg("--tag") ?? "lot"
 const dist = arg("--dist")
-const local = dist ? Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
-  const pathname = decodeURIComponent(new URL(request.url).pathname)
-  if (pathname.includes("..")) return new Response("Bad path", { status: 400 })
-  const file = Bun.file(`${resolve(dist)}${pathname}${pathname.endsWith("/") ? "index.html" : ""}`)
-  return await file.exists() ? new Response(file) : new Response("Not found", { status: 404 })
-} }) : null
+const local = dist ? serveDist(resolve(dist)) : null
 const lotUrl = local ? new URL("/arcade/lot/", local.url).href : arg("--lot")
 const ashwoodUrl = arg("--ashwood")
 const sets = process.argv.flatMap((a, i) => a === "--set" ? [process.argv[i + 1]!] : []).map(s => { const [k, v] = s.split("="); return [k!, v!] as const })

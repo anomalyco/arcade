@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { chromium } from "playwright-core"
 import { build } from "vite"
+import { serveDist } from "./serve-dist"
 
 /**
  * Paired in-page GPU cost and title-camera stills of the lot's atmosphere (fog bank, fog-depth blur, lit cloud deck),
@@ -36,12 +37,7 @@ const variants: Record<string, Record<string, string>> = {
 
 // The atlas painter in public/ is imported at runtime, which only the production build serves.
 await build({ root, logLevel: "error" })
-const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
-  const pathname = decodeURIComponent(new URL(request.url).pathname)
-  if (pathname.includes("..")) return new Response("Bad path", { status: 400 })
-  const file = Bun.file(`${root}/dist${pathname}${pathname.endsWith("/") ? "index.html" : ""}`)
-  return await file.exists() ? new Response(file) : new Response("Not found", { status: 404 })
-} })
+const server = serveDist(`${root}/dist`)
 const port = server.port
 const cache = `${process.env.HOME}/Library/Caches/ms-playwright`
 const executablePath = readdirSync(cache).filter((n) => /^chromium_headless_shell-\d+$/.test(n)).sort().reverse()
