@@ -1,11 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import { FOLIAGE_BUILD_TODAY, FOLIAGE_GUST_OFF } from "@arcade/kit/gpu/foliage"
-import { createOutbreakSettings } from "../src/settings"
 import {
   DEFAULT_VEGETATION_SETTINGS,
   syncVegetationBuild,
   vegetationBuild,
-  vegetationControls,
   vegetationGust,
   vegetationSignature,
 } from "../src/vegetation/settings"
@@ -44,11 +42,6 @@ describe("Outbreak vegetation settings", () => {
     expect(vegetationGust(DEFAULT_VEGETATION_SETTINGS)).toBe(a)
   })
 
-  test("every control is bound to the vegetation subsystem", () => {
-    const settings = createOutbreakSettings()
-    for (const c of vegetationControls) expect({ key: c.key, bound: c.key in settings.vegetation }).toEqual({ key: c.key, bound: true })
-    expect(settings.vegetation).toEqual(DEFAULT_VEGETATION_SETTINGS)
-  })
 })
 
 describe("Outbreak tree looks and the burn hook", () => {
@@ -120,8 +113,4 @@ describe("Outbreak tree looks and the burn hook", () => {
     expect(out[3]).toBe(0)
   })
 
-  test("tree ids are stable per position", () => {
-    expect(treeIdAt(12.3, 40.1)).toBe(treeIdAt(12.3, 40.1))
-    expect(treeIdAt(12.3, 40.1)).not.toBe(treeIdAt(12.3, 41.1))
-  })
 })

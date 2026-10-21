@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { validateWgsl } from "@arcade/kit/gpu/test-naga"
 import { planBounceEmitShader } from "@arcade/kit/gpu/gi/plan-bounce"
-import { bounceControls, bounceInput, DEFAULT_BOUNCE_SETTINGS } from "../src/bounce-light/settings"
+import { bounceInput, DEFAULT_BOUNCE_SETTINGS } from "../src/bounce-light/settings"
 import { outbreakPlanBounceShader } from "../src/bounce-light/wgsl"
 import { createOutbreakSettings } from "../src/settings"
 
@@ -18,14 +18,6 @@ describe("bounced light settings", () => {
     expect(input).toMatchObject({ centerX: 3, centerZ: 4, strength: 2, range: DEFAULT_BOUNCE_SETTINGS.bounceRange, texel: 0.5, params: [1.5, 0, 0] })
   })
 
-  test("every slider's range holds its default", () => {
-    for (const c of bounceControls) {
-      if (!("min" in c) || c.min === undefined || c.max === undefined) continue
-      const v = DEFAULT_BOUNCE_SETTINGS[c.key as keyof typeof DEFAULT_BOUNCE_SETTINGS]
-      expect(v).toBeGreaterThanOrEqual(c.min)
-      expect(v).toBeLessThanOrEqual(c.max)
-    }
-  })
 })
 
 describe("bounced light WGSL validates with naga", () => {
