@@ -663,13 +663,16 @@ fn airlight(ro: vec3f, rd: vec3f, dist: f32, n: u32, jitter: f32) -> vec3f {
       // A moving view rejects volume history. Integrate several fixed lobe strata in the current frame rather than
       // exposing one random bright ray; no reactive-mask bypass can stabilize an undersampled reflection.
       var refl = vec3f(0.0);
-      for(var tap=0u;tap<${reflectionSamples}u;tap++) {
-        let u=(f32(tap)+0.5)/${reflectionSamples}.0;
+      // Keep the loop bound uniform-driven: software Vulkan compilers can otherwise inline/unroll the entire
+      // nested airlight integrator once per lobe tap. The ray budget also bounds quadrature at low quality.
+      let taps=min(${reflectionSamples}u,samples);
+      for(var tap=0u;tap<taps;tap++) {
+        let u=(f32(tap)+0.5)/f32(taps);
         let rn=normalize(nW+fwd*(u-0.5)*rough*rough*FOG.reflect.w);
         let sample=airlight(world+nW*0.02,normalize(reflect(rd,rn)),250.0,max(2u,samples/4u),0.5);
         refl+=sample*min(1.0,(${hooks.reflectionCap ?? "4.0"})/max(max(sample.r,max(sample.g,sample.b)),1e-5));
       }
-      refl/=${reflectionSamples}.0;` : `let refl = airlight(world + nW * 0.02, rr, 250.0, max(2u, samples / 2u), jitter);`}
+      refl/=f32(taps);` : `let refl = airlight(world + nW * 0.02, rr, 250.0, max(2u, samples / 2u), jitter);`}
       acc += refl * fres * wet * T * FOG.reflect.y;
       // Emitter glints: a lobe around the un-jittered mirror direction per lamp, tight across and long along the
       // view's vertical plane, both widening with roughness; only seen from inside the lamp's cone.

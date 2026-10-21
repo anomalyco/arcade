@@ -518,12 +518,14 @@ function compileLevel(town: Town): OriginLevel {
       }
       return [...bands.values()].flatMap(bm => pack(bm, undefined, undefined)).map(c => tag("screen")({ ...c, cutBox: [c.box[0], 0, c.box[1], c.box[2], 2.85, c.box[3]] }))
     }
-    const customChunks = BUILDING_RECTS.flatMap((b, id) => {
+    // Vignettes retain only a subset of the origin houses; do not dereference absent buildings for empty buckets.
+    const customChunks = town.buildings.flatMap((building, id) => {
+      const b = building.rect
       const bounds = [b[0] - .1, 0, b[1] - .1, b[2] + .1, 5, b[3] + 1.7] as const
       return [
         ...pack(interiorCapByBuilding[id]!, bounds, "outside").map(tag("cap", id)),
         ...pack(customByBuilding[id]!, bounds, true).map(tag("custom", id)),
-        ...pack(overhangByBuilding[id]!, overhangCutBox(town.buildings[id]!, 12), "outside").map(tag("cap", id)),
+        ...pack(overhangByBuilding[id]!, overhangCutBox(building, 12), "outside").map(tag("cap", id)),
       ]
     })
     return [...pack(opaque).map(tag("opaque")), ...screenChunks(), ...customChunks]
