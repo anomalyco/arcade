@@ -1,6 +1,6 @@
 import { NodeIO, type Node } from "@gltf-transform/core"
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions"
-import { MeshoptDecoder, MeshoptEncoder } from "meshoptimizer"
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js"
 import { resolve } from "node:path"
 import { mkdir } from "node:fs/promises"
 import { sourceDecoder, png } from "./decode-source"
@@ -9,9 +9,10 @@ const source=resolve(process.argv[2] ?? "../afterhours-preview/games/afterhours"
 const out=resolve(import.meta.dir,"../public/ashwood/models")
 await mkdir(out,{recursive:true})
 const scene=await Bun.file(resolve(import.meta.dir,"../public/ashwood/scene.json")).json()
+for(const p of scene.props) if(p.included && p.name!=="car_wagon" && p.license!=="CC0-1.0") throw new Error(`Unapproved prop licence: ${p.name} (${p.license})`)
 const decode=await sourceDecoder(source)
-await Promise.all([MeshoptDecoder.ready,MeshoptEncoder.ready])
-const io=new NodeIO().registerExtensions(ALL_EXTENSIONS).registerDependencies({"meshopt.decoder":MeshoptDecoder,"meshopt.encoder":MeshoptEncoder})
+await MeshoptDecoder.ready
+const io=new NodeIO().registerExtensions(ALL_EXTENSIONS).registerDependencies({"meshopt.decoder":MeshoptDecoder})
 const sources:Record<string,unknown>={}
 for(const name of new Set<string>(scene.props.filter((p:any)=>p.included && p.name!=="car_wagon").map((p:any)=>p.name))) {
   const bytes=await Bun.file(`${source}/public/models/${name}.glb`).bytes()

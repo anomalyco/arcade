@@ -33,6 +33,8 @@ plugin({ name: "ashwood-offline", setup(b) {
     if (args.path.endsWith("/render/materials.ts")) return { contents: `export * from ${JSON.stringify(materials)}`, loader: "ts" }
     if (args.path.endsWith("/render/models.ts")) return { contents: modelStub, loader: "ts" }
     if (args.path.endsWith("/compound/models.ts")) text=text.replace("function items()", "export function items()")
+    // Canvas lettering on the distant north-gate sign is not part of the static mesh adapter.
+    if (args.path.endsWith("/compound/north.ts")) text=text.replace("if (signMat) return signMat", 'return material("metal_painted")')
     if (args.path.endsWith("/facility/props.ts")) text=text.replace("contactShadows(root, blobs)", "return [...lists].flatMap(([name,items])=>items.map(item=>({name,...item})))")
     if (args.path.endsWith("/world/forest/render.ts")) return { contents: `export * from ${JSON.stringify(forest)}`, loader: "ts" }
     if (args.path.endsWith("/render/shared.ts")) return { contents: "export const renderState={lamps:[]}; export function addControls(){}; export function num(){return 1}", loader: "ts" }
@@ -310,5 +312,5 @@ const paint=await Bun.build({entrypoints:[resolve(source,"src/world/forest/paint
 await Bun.write(`${out}/paint.js`,await paint.outputs[0]!.text())
 await Bun.write(`${out}/scene.json`,JSON.stringify({version:2,files,treeCount,forest:{models:forestModels,trees:treeCount,impostorGrid:[8,2],plants},ground,lamps:ctx.lamps,colliders:ctx.colliders,props,surfaces:recipes,sources},null,2))
 const used=new Set(Object.values(files).flat())
-for(const file of await readdir(out)) if(/^(solid|ground|foliage|fence|glass|undergrowth|impostors|windows)-\d+\.bin\.gz$/.test(file) && !used.has(file)) await unlink(resolve(out,file))
+for(const file of await readdir(out)) if(/^(solid|ground|foliage|fence|glass|stain|undergrowth|impostors|windows|surface-[a-z_]+)-\d+\.bin\.gz$/.test(file) && !used.has(file)) await unlink(resolve(out,file))
 console.log("Baked",out,treeCount,"trees")

@@ -91,6 +91,26 @@ test("source layout includes the roadside cabinet and access-road lamp with lice
   }
 })
 
+test("stairwell glow and opaque backing remain separated at distant depth24 precision", async () => {
+  const base = new URL("../public/ashwood/", import.meta.url)
+  const scene: SourceScene = await Bun.file(new URL("scene.json", base)).json()
+  let backing=-Infinity, glow=Infinity
+  for(const file of scene.files.solid) {
+    const bytes=Bun.gunzipSync(await Bun.file(new URL(file,base)).bytes())
+    const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength)
+    for(let o=0;o<bytes.length;o+=24) {
+      const x=view.getFloat32(o,true),z=view.getFloat32(o+8,true)
+      if(x< -42.3 || x> -40.5 || z<24.8 || z>25.03) continue
+      if(bytes[o+16]===5 && bytes[o+17]===8 && bytes[o+18]===7) backing=Math.max(backing,z)
+      if(view.getFloat16(o+20,true)===MAT.glow) glow=Math.min(glow,z)
+    }
+  }
+  expect(Number.isFinite(backing) && Number.isFinite(glow)).toBe(true)
+  expect(glow-backing).toBeGreaterThan(0.07)
+  const depth=(distance:number)=>Math.round((1200/(1200-0.15)-1200*0.15/((1200-0.15)*distance))*0xffffff)
+  for(const cameraZ of [145,158.465,200]) expect(depth(cameraZ-backing)-depth(cameraZ-glow)).toBeGreaterThan(3)
+})
+
 test("shipped wagon is licensed, grounded, metre-scaled and has normals/UVs", async () => {
   const metadata = await Bun.file(new URL("../public/assets/source-metadata.json", import.meta.url)).json()
   expect(metadata.wagon.license).toBe("by")

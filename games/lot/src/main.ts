@@ -173,12 +173,14 @@ async function main() {
     return {buffer,count:data.byteLength/24,stride:24}
   }).concat(meshes.shadowCasters(),insideMeshes.shadowCasters())
   // Source lighting offsets a head 12 cm along its axis, out of the luminaire's own shadow caster.
-  const practicals=[...world.scene.lamps.filter(l=>l.kind!=="beacon"),...interior.lamps].map(l=>({ ...l, street:streets.get(l), gain:streets.has(l) ? ()=>fluxGain(l,street) : ()=>1,
+  const practicals=[...world.scene.lamps,...interior.lamps].map(l=>{
+    const direction=l.kind==="incandescent" ? [0,-1,0] as [number,number,number] : l.direction
+    return { ...l, street:streets.get(l), gain:streets.has(l) ? ()=>fluxGain(l,street) : ()=>1,
     // A downward ceiling fixture keeps the warm booth spill, while its walls and
     // plinth now stop it from shining straight through the hut onto the road.
-    ...(l.kind==="incandescent" ? {direction:[0,-1,0] as [number,number,number],angle:1.3,penumbra:0.15,shadow:true} : {}),
-    position:l.position.map((v,i)=>v+(l.direction?.[i] ?? 0)*0.12) as [number,number,number],
-  }))
+    ...(l.kind==="incandescent" ? {direction,angle:1.3,penumbra:0.15,shadow:true} : {}),
+    position:l.position.map((v,i)=>v+(direction?.[i] ?? 0)*0.12) as [number,number,number],
+  }})
   const shadowLamps=practicals.flatMap((l,id)=>l.shadow && l.angle ? [{id,pos:l.position,axis:l.direction ?? [0,-1,0] as const,range:l.range,intensity:l.intensity,cosOuter:Math.cos(l.angle)}] : [])
   // Trunks within reach of a shadowed sodium head cast into its pool.
   casters.push(...forest.staticCasters(shadowLamps.map(l=>({x:l.pos[0],z:l.pos[2]})),40))

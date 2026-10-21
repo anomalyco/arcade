@@ -1,0 +1,78 @@
+{
+  "covered_car": {
+    "license": "CC0-1.0",
+    "sourceSha256": "4f424fb119a96c0262c570b69dcc74a9361160b897604fee3d74193f21e7d20a"
+  },
+  "trashbag": {
+    "license": "CC0-1.0",
+    "sourceSha256": "d22a1246d6db14fe3ae7bbe2e9f9422a04a6ed2113891ce503ae4d3ef0b1fcf4"
+  },
+  "tyre": {
+    "license": "CC0-1.0",
+    "sourceSha256": "bada183787dd00309381e3671b32287e8d1655643758d4441612039023e09645"
+  },
+  "fire_hydrant": {
+    "license": "CC0-1.0",
+    "sourceSha256": "9775107d66d58eb98c72ff348adb5e684a45c5d476e9b609601d62001b11fcc0"
+  },
+  "trash_can": {
+    "license": "CC0-1.0",
+    "sourceSha256": "2a8e238da880deb75c21eb6013f720106a2b822665de2485adb6088633233fac"
+  },
+  "utility_box_b": {
+    "license": "CC0-1.0",
+    "sourceSha256": "2d43efda95b0aadd5df9cfd6bfbfccf7f3e26d7f1825da4432f00598569c56eb"
+  },
+  "utility_box": {
+    "license": "CC0-1.0",
+    "sourceSha256": "198f58d000c476b217be2f7cd29ecb8a198ae416859d6fe7ea65d7ebc9a318e1"
+  },
+  "security_light": {
+    "license": "CC0-1.0",
+    "sourceSha256": "f5111b48b67482574d82563d374090d7a0b2e55d42516cd1adbebc17d1cb07d0"
+  },
+  "wall_clock": {
+    "license": "CC0-1.0",
+    "sourceSha256": "4a0db86277f95e61020aeace74f1eb4eff6c94b967cf63f9485820cb5f26133e"
+  },
+  "wet_floor_sign": {
+    "license": "CC0-1.0",
+    "sourceSha256": "91486cd5fd22b14707b5379f4185f0672a7c282c5cd96b2cbaacfb64e591215a"
+  },
+  "cardboard_box": {
+    "license": "CC0-1.0",
+    "sourceSha256": "c9b850aa4f195e4d1ef5d4b4f7ec1e8409bbe984525b2268c685ebc0e0162978"
+  },
+  "milk_crate": {
+    "license": "CC0-1.0",
+    "sourceSha256": "321c5aebd2d2c0a0ddf237791c4cfdcb9c0c633a2283d9fc3ef23956d2391cca"
+  },
+  "hand_truck": {
+    "license": "CC0-1.0",
+    "sourceSha256": "dfe444ed0073bd13a39feac6ed9d982e15fef984ae8973b4e35e101ae8577f66"
+  },
+  "drum_steel": {
+    "license": "CC0-1.0",
+    "sourceSha256": "9d9bc4cd5da9495d2e5c2b9eaf9f82f4b89002288fb102b5a03598ddcff5648d"
+  },
+  "drum_hazard": {
+    "license": "CC0-1.0",
+    "sourceSha256": "aa0476e7f4605ed1d699595f005962b0a6ba072f61dc4c077e474c071518ea35"
+  },
+  "ac_unit": {
+    "license": "CC0-1.0",
+    "sourceSha256": "139802c202da599394cfe5160896f587908b731881521a5ca8bc6330ecdf0e4f"
+  },
+  "security_camera": {
+    "license": "CC0-1.0",
+    "sourceSha256": "1e474d7da9c40970e026e5b50d8ad4b0c94234d1dfc5c9376eaf2564cbfaeb16"
+  },
+  "steel_shelves": {
+    "license": "CC0-1.0",
+    "sourceSha256": "260a68e8c68f27c1335045788315325d36a70167726d46b2f135787dc9d89c5f"
+  },
+  "metal_rack": {
+    "license": "CC0-1.0",
+    "sourceSha256": "429c46b31fa51c9bbfe7da063c8d29ff4d6258f2bc843b847aba7ff191acbbba"
+  }
+}
