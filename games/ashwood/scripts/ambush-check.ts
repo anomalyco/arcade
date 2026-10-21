@@ -84,13 +84,18 @@ async function hunterDeath(tag: string) {
 let pounceAt = 0
 async function rideAndDie(tag: string, walkOut: boolean) {
   // Into the car at its current floor, facing the doors, then send it to another floor.
+  // The station starts with the power out (MAIN POWER on TX-1 in 3-08): the lift needs it.
+  await G(page, "globalThis.__ashwoodPower?.on || globalThis.__ashwoodPower?.set(true, { instant: true })")
   const st = (await G(page, "globalThis.__interior.lift.state()")) as Any
   await put(-37.85, STOREY(st.cur) + 0.02, 20.3)
   await G(page, "(() => { const p = globalThis.__ashwoodPlayer; p.yaw = 0; p.pitch = -0.05 })()")
   await page.waitForTimeout(800)
   const dest = st.cur === 2 ? 1 : 2
   await G(page, `globalThis.__interior.lift.press("${dest}")`)
-  await page.waitForFunction(() => (globalThis as Any).__ashwoodAmbush?.phase === "lurk", null, { timeout: 60_000 })
+  await page.waitForFunction(() => (globalThis as Any).__ashwoodAmbush?.phase === "lurk", null, { timeout: 60_000 }).catch(async (e) => {
+    console.log("no lurk:", JSON.stringify(await G(page, "({ amb: globalThis.__ashwoodAmbush.phase, lift: globalThis.__interior.lift.state(), pos: { ...globalThis.__ashwoodPlayer.pos }, hunter: globalThis.__ashwoodHunter?.hunter.mode, hold: globalThis.__static.flow.hold })")))
+    throw e
+  })
   const at = Date.now() - t0
   console.log(`${tag}: arrived at storey ${dest}, lurking (+${(at / 1000).toFixed(1)} s)`)
   const s0 = (await G(page, "({ hold: globalThis.__static.flow.hold, scare: document.body.dataset.scare ?? null, visible: globalThis.__ashwoodAmbush.visible })")) as Any

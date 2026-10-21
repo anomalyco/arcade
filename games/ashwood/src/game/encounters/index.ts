@@ -5,7 +5,7 @@ import { objectiveText, story } from "../objectives"
 import { setObjective } from "../objective"
 import { startLiftAmbush } from "./lift-ambush"
 import { bindRoadAmbush } from "./road-ambush"
-import { clearDeath, deathVariant, playDeath, prepareDeathLights } from "../death/variants"
+import { clearDeath, playDeath, prepareDeathLights } from "../death/variants"
 import * as THREE from "three/webgpu"
 import type { Box } from "../../world/context"
 import { hunterHandle, type HunterHandle } from "../hunter"
@@ -51,44 +51,77 @@ export function startEncounters(g: GameContext, shell: EncounterShell) {
   })
 
   // The hunter (src/game/hunter) is installed after explore starts: hand it our death path once it exists.
+  // The kill is played on the hunter's OWN body (no second creature, no swap, no teleport): face to face it mauls you
+  // from exactly where it is (variants.ts "maul"); from behind or the side the view is wrenched round to it
+  // ("spin", aimed at its actual side). The kill is also started a little before the brain's own catch distance
+  // while it's rushing you head-on, so it never runs past or through the camera first.
   let wired: HunterHandle | null = null
+  let bodyWas: unknown = undefined
+  const _to = new THREE.Vector3()
+  const _view = new THREE.Vector3()
+  /** cos of the angle between the view and the direction to the hunter (horizontal). */
+  const lookingAt = (p: THREE.Vector3) => {
+    g.camera.getWorldDirection(_view)
+    _to.set(p.x - g.camera.position.x, 0, p.z - g.camera.position.z).normalize()
+    _view.y = 0
+    return _view.normalize().dot(_to)
+  }
+  const killByHunter = (h: HunterHandle) => {
+    if (dying) return
+    dying = true
+    const hunter = h.hunter
+    const body = hunter.creature
+    const at = (body?.root.position ?? hunter.pos).clone()
+    const vel = hunter.vel.clone()
+    // The brain stops driving it (dormant hides it) and the scene drives the same body from this frame on.
+    h.sleep()
+    if (!body?.rig) {
+      death.flood()
+      setTimeout(() => ambushHooksKill(), 400)
+      return
+    }
+    body.root.visible = true
+    // The player's own body would be in shot once the view is wrenched round or shoved out of it.
+    bodyWas = g.ctx.settings["body.show"]
+    g.ctx.settings["body.show"] = false
+    g.flow.hold = true
+    g.player.release()
+    ambush.hud(true)
+    void playDeath(lookingAt(at) > 0.3 ? "maul" : "spin", {
+      camera: g.camera,
+      wendigo: body,
+      ground: at.y,
+      from: at,
+      velocity: vel,
+      tick: (fn) => g.flow.onUpdate(fn),
+      scream: () => ambush.scream(),
+      chatter: () => ambush.chatter(),
+      flood: () => death.flood(),
+      lights,
+      ceiling: at.y + 2.94,
+      canvas: g.world.renderer.domElement,
+      free: (from, dir) => freeAlong(g.ctx.colliders, from, dir),
+    }).then(() => ambushHooksKill())
+  }
   const offWire = g.flow.onUpdate(() => {
     const h = hunterHandle()
-    if (!h || h === wired) return
-    wired = h
-    h.setCatchHandler(() => {
-      if (dying) return
-      dying = true
-      const body = h.hunter.creature
-      const at = (body?.root.position ?? h.hunter.pos).clone()
-      // Its body goes dormant; the death scene's (warmed) body takes its place, from where it came.
-      h.sleep()
-      const w = ambush.creature()
-      if (w) {
-        g.flow.hold = true
-        g.player.release()
-        ambush.hud(true)
-        ambush.setGround(at.y)
-        void playDeath(deathVariant(), {
-          camera: g.camera,
-          wendigo: w,
-          ground: at.y,
-          from: new THREE.Vector3(at.x, at.y, at.z),
-          tick: (fn) => g.flow.onUpdate(fn),
-          scream: () => ambush.scream(),
-          chatter: () => ambush.chatter(),
-          flood: () => death.flood(),
-          lights,
-          ceiling: at.y + 2.94,
-          canvas: g.world.renderer.domElement,
-          free: (from, dir) => freeAlong(g.ctx.colliders, from, dir),
-        }).then(() => ambushHooksKill())
-      } else {
-        // Not warmed yet (shouldn't happen after 3-08): straight to the red.
-        death.flood()
-        setTimeout(() => ambushHooksKill(), 400)
-      }
-    })
+    if (!h) return
+    if (h !== wired) {
+      wired = h
+      h.setCatchHandler(() => killByHunter(h))
+    }
+    // Head-on rush: take over while it's still in front of the camera (~3 m), before the brain's own catch.
+    const hn = h.hunter
+    if (dying || hn.grace > 0 || (hn.mode !== "hunt" && hn.mode !== "investigate") || !hn.creature?.root.visible) return
+    const p = g.camera.position
+    const dx = p.x - hn.pos.x
+    const dz = p.z - hn.pos.z
+    const d = Math.hypot(dx, dz)
+    if (d > 3.1 || Math.abs(p.y - 1.6 - hn.pos.y) > 1.3) return
+    const closing = (hn.vel.x * dx + hn.vel.z * dz) / Math.max(d, 1e-3)
+    if (closing < 1.2 || lookingAt(hn.pos) < 0.3) return
+    if (!h.nav.sees(hn.s, hn.pos.x, hn.pos.y + 1.1, hn.pos.z, p.x, p.y - 0.5, p.z)) return
+    killByHunter(h)
   })
   const ambushHooksKill = () => {
     g.flow.setPaused(true)
@@ -105,6 +138,9 @@ export function startEncounters(g: GameContext, shell: EncounterShell) {
     delete document.body.dataset.modal
     death.hide()
     clearDeath(ambush.creature(), lights)
+    clearDeath(hunterHandle()?.hunter.creature ?? null, lights)
+    if (bodyWas !== undefined) g.ctx.settings["body.show"] = bodyWas as never
+    bodyWas = undefined
     ambush.reset()
     restorePlayer(g.player, cp)
     story.stage = cp.stage

@@ -19,12 +19,14 @@ import { encounterLights } from "../encounters/lights"
 //   await playDeath("A", { camera, wendigo, ground, from, tick, scream, flood, lights })   // then the death screen
 //   clearDeath(wendigo, lights)                                                             // restart
 
-export type DeathName = "charge" | "spin" | "A" | "B" | "C"
+export type DeathName = "charge" | "spin" | "maul" | "A" | "B" | "C"
 /** The current set: the whole creature is seen for most of each. */
 export const DEATHS_NEW = { charge: "Charge", spin: "Grab and turn" } as const
 /** The first set (face-only close-ups), kept for comparison. */
 export const DEATHS_OLD = { A: "Lunge and hold", B: "Grab and pull", C: "Slam down" } as const
-export const DEATHS: Record<DeathName, string> = { ...DEATHS_NEW, ...DEATHS_OLD }
+/** In-game only (it starts from wherever the creature already is): the hunter caught you face to face. */
+export const DEATHS_GAME = { maul: "Maul (in place)" } as const
+export const DEATHS: Record<DeathName, string> = { ...DEATHS_NEW, ...DEATHS_GAME, ...DEATHS_OLD }
 const NAMES = Object.keys(DEATHS) as DeathName[]
 /** The hunter's catch uses this until the owner picks (death-lab.html "Use in game" stores the pick, dev only). */
 export const DEATH_DEFAULT: DeathName = "charge"
@@ -76,6 +78,8 @@ export type DeathCtx = {
   chatter?: () => void
   flood: () => void
   lights: DeathLights
+  /** The creature's world velocity when the scene takes over (the maul carries it on). */
+  velocity?: THREE.Vector3
   /** Ceiling over the floor (world y), so it stoops under it upright. */
   ceiling?: number
   /** Free distance from a point along a horizontal direction (walls), so a scene fits the room. */
@@ -378,7 +382,7 @@ export function playDeath(name: DeathName, ctx: DeathCtx): Promise<void> {
   a.lungeStop = 0.1
   w.setShade(1)
   w.root.visible = true
-  const script = { A: lungeHold, B: grabPull, C: slamDown, charge, spin }[name](s)
+  const script = { A: lungeHold, B: grabPull, C: slamDown, charge, spin, maul }[name](s)
   return new Promise((done) => {
     let t = 0
     const off = ctx.tick((dt) => {
@@ -400,6 +404,10 @@ export function clearDeath(w: Wendigo | null, lights: DeathLights | null) {
   w.root.visible = false
   w.setShade(1)
   if (w.cut) w.cut.cutOn.value = 0
+  if (w.animator) {
+    w.animator.stoop = 0
+    w.animator.lungeStop = 3
+  }
 }
 
 // ------------------------------------------------------------------------------------------------- A: lunge and hold
@@ -770,12 +778,20 @@ function charge(s: Scene) {
  */
 function spin(s: Scene) {
   const c = s.c
-  const fwd = s.fwd
-  const right = s.right
+  // "Behind" is where it actually is (c.from) when given, else straight behind the view.
+  const toward = c.from ? new THREE.Vector3(c.from.x - s.eye0.x, 0, c.from.z - s.eye0.z) : s.fwd.negate()
+  const dist0 = toward.length()
+  toward.normalize()
+  const fwd = toward.clone().negate()
+  const yawAway = Math.atan2(-fwd.x, -fwd.z)
+  const right = new THREE.Vector3(Math.cos(yawAway), 0, -Math.sin(yawAway))
+  // The turn: from the current view round to face it (the short way, at least a quarter turn of whip).
+  let turn = Math.atan2(-toward.x, -toward.z) - s.yaw0
+  turn = Math.atan2(Math.sin(turn), Math.cos(turn))
   const rig = s.w.rig!
   const bi = (n: string) => rig.bones.indexOf(rig.byName.get(n)!)
   const back = fwd.clone().negate()
-  const behind = Math.max(1.2, Math.min(1.5, room(s, s.eye0, back, 1.5) - 0.3))
+  const behind = Math.max(1.2, Math.min(1.5, dist0 || 1.5, room(s, s.eye0, back, 1.5) - 0.3))
   s.w.animator!.snapStance("biped")
   s.w.root.position.copy(s.eye0).addScaledVector(back, behind)
   s.w.root.position.y = c.ground
@@ -803,7 +819,7 @@ function spin(s: Scene) {
     s.eye.copy(s.eye0).addScaledVector(fwd, shove * ks)
     s.eye.y -= 0.18 * ks
     if (t < 1.5) {
-      s.yaw = yaw0 + Math.PI * ks
+      s.yaw = yaw0 + turn * ks
       s.pitch = s.pitch0 - 0.12 * kg * (1 - ks) + 0.1 * ks
       s.roll = Math.sin(Math.PI * ks) * 0.25
       // Motion blur through the turn.
@@ -832,5 +848,47 @@ function spin(s: Scene) {
       c.scream()
     }
     return strike(t, dt, 0.36)
+  }
+}
+
+// ------------------------------------------------------------------------------------------------- maul (in game)
+
+/**
+ * The hunter caught you face to face: no reset, no run-up. The scene takes the creature exactly where it is, facing
+ * and moving as it was; the view whips onto its face in ~0.12 s while it keeps coming at its own speed, teeth
+ * chattering, and the moment the skull is within ~1.7 m it goes straight into the strike (scream, jaw snap, red).
+ */
+function maul(s: Scene) {
+  const c = s.c
+  const w = s.w
+  const st = w.animator!.stance
+  const vel = new THREE.Vector3()
+  const dir = new THREE.Vector3()
+  let speed = Math.min(6, Math.max(2.8, c.velocity ? Math.hypot(c.velocity.x, c.velocity.z) : 3.5))
+  const strike = striker(s, () => st)
+  const chat = chatterer(s)
+  let striking = false
+  return (t: number, dt: number) => {
+    if (!striking) {
+      dir.set(s.eye.x - w.root.position.x, 0, s.eye.z - w.root.position.z)
+      const d = dir.length()
+      dir.normalize()
+      // It keeps coming (easing off as it arrives), face turning up to you.
+      speed = Math.max(1.5, speed - dt * 4)
+      vel.copy(dir).multiplyScalar(d > 0.6 ? speed : 0)
+      w.root.position.addScaledVector(vel, dt)
+      drive(s, dt, "lunge", st, vel, Math.min(1, t / 0.12), chat(t, dt, 0.5 + 0.5 * Math.min(1, t / 0.2), 11))
+      // The whip: onto its face in ~0.12 s.
+      s.aimAtFace(1 - Math.exp(-dt * 30))
+      s.shake = 0.6
+      const near = s.centre.distanceTo(s.eye)
+      s.finish(t, Math.min(1, t / 0.15), "rush", false, Math.min(1, t / 0.2))
+      if ((t >= 0.12 && near <= 1.7) || t > 0.4) {
+        striking = true
+        c.scream()
+      }
+      return false
+    }
+    return strike(t, dt, 0.26)
   }
 }
