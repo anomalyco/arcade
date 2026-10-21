@@ -105,6 +105,15 @@ const INST_LAYOUT: GPUVertexBufferLayout = {
     { shaderLocation: 7, offset: 32, format: "float32x4" },
   ],
 }
+const SPRITE_LAYOUT: GPUVertexBufferLayout = {
+  arrayStride: SPRITE_FLOATS * 4,
+  stepMode: "instance",
+  attributes: [
+    { shaderLocation: 0, offset: 0, format: "float32x4" },
+    { shaderLocation: 1, offset: 16, format: "float32x4" },
+    { shaderLocation: 2, offset: 32, format: "float32x4" },
+  ],
+}
 /** Size of the game's custom uniform block at binding 13. */
 export const CUSTOM_UNIFORM_BYTES = 2048
 const MAX_SPRITES = 8192
@@ -590,15 +599,6 @@ export class Renderer {
       }
     }
 
-    const spriteLayout: GPUVertexBufferLayout = {
-      arrayStride: SPRITE_FLOATS * 4,
-      stepMode: "instance",
-      attributes: [
-        { shaderLocation: 0, offset: 0, format: "float32x4" },
-        { shaderLocation: 1, offset: 16, format: "float32x4" },
-        { shaderLocation: 2, offset: 32, format: "float32x4" },
-      ],
-    }
     const premul: GPUBlendState = { color: { srcFactor: "one", dstFactor: "one-minus-src-alpha" }, alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha" } }
     const additive: GPUBlendState = { color: { srcFactor: "one", dstFactor: "one" }, alpha: { srcFactor: "one", dstFactor: "one" } }
     const layout = d.createPipelineLayout({ bindGroupLayouts: [sceneLayout] })
@@ -641,8 +641,8 @@ export class Renderer {
       this.baselinePipes.inst = pipe(baselineScene, "vsInst", [MESH_LAYOUT, INST_LAYOUT], undefined, true, "none", "fs")
       this.baselinePipes.instAlpha = pipe(baselineScene, "vsInst", [MESH_LAYOUT, INST_LAYOUT], premul, false, "none", "fs")
     }
-    this.pipes.spriteAlpha = pipe(sprite, "vs", [spriteLayout], premul, false, "none")
-    this.pipes.spriteAdd = pipe(sprite, "vs", [spriteLayout], additive, false, "none")
+    this.pipes.spriteAlpha = pipe(sprite, "vs", [SPRITE_LAYOUT], premul, false, "none")
+    this.pipes.spriteAdd = pipe(sprite, "vs", [SPRITE_LAYOUT], additive, false, "none")
 
     const post = this.module(shaders?.post ?? postShader(), "post")
     const postPipeLayout = d.createPipelineLayout({ bindGroupLayouts: [this.postLayout] })
@@ -1127,19 +1127,10 @@ export class Renderer {
   private ensureReactivePipe(): GPURenderPipeline {
     if (this.reactivePipe) return this.reactivePipe
     const layout = this.device.createPipelineLayout({ bindGroupLayouts: [this.sceneLayout] })
-    const spriteLayout: GPUVertexBufferLayout = {
-      arrayStride: SPRITE_FLOATS * 4,
-      stepMode: "instance",
-      attributes: [
-        { shaderLocation: 0, offset: 0, format: "float32x4" },
-        { shaderLocation: 1, offset: 16, format: "float32x4" },
-        { shaderLocation: 2, offset: 32, format: "float32x4" },
-      ],
-    }
     this.reactivePipe = this.device.createRenderPipeline({
         label: "temporal reactive sprites",
         layout,
-        vertex: { module: this.spriteModule, entryPoint: "vs", buffers: [spriteLayout] },
+        vertex: { module: this.spriteModule, entryPoint: "vs", buffers: [SPRITE_LAYOUT] },
         fragment: { module: this.spriteModule, entryPoint: "fs", targets: [REACTIVE_TARGET] },
         primitive: { topology: "triangle-list", cullMode: "none" },
       })
@@ -1172,33 +1163,6 @@ export class Renderer {
   private ensureMotionPipes(): void {
     if (this.motionPipes.level) return
     const d = this.device
-    const meshLayout: GPUVertexBufferLayout = {
-      arrayStride: VERT_BYTES,
-      attributes: [
-        { shaderLocation: 0, offset: 0, format: "float32x3" },
-        { shaderLocation: 1, offset: 12, format: "snorm8x4" },
-        { shaderLocation: 2, offset: 16, format: "unorm8x4" },
-        { shaderLocation: 3, offset: 20, format: "float16x2" },
-      ],
-    }
-    const instLayout: GPUVertexBufferLayout = {
-      arrayStride: INST_FLOATS * 4,
-      stepMode: "instance",
-      attributes: [
-        { shaderLocation: 5, offset: 0, format: "float32x4" },
-        { shaderLocation: 6, offset: 16, format: "float32x4" },
-        { shaderLocation: 7, offset: 32, format: "float32x4" },
-      ],
-    }
-    const spriteLayout: GPUVertexBufferLayout = {
-      arrayStride: SPRITE_FLOATS * 4,
-      stepMode: "instance",
-      attributes: [
-        { shaderLocation: 0, offset: 0, format: "float32x4" },
-        { shaderLocation: 1, offset: 16, format: "float32x4" },
-        { shaderLocation: 2, offset: 32, format: "float32x4" },
-      ],
-    }
     const premul: GPUBlendState = {
       color: { srcFactor: "one", dstFactor: "one-minus-src-alpha" },
       alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha" },
@@ -1232,21 +1196,21 @@ export class Renderer {
     const moving = this.module(sceneShader(true, true), "scene motion")
     const movingSprite = this.module(spriteShader(true), "sprite motion")
     const oldLayout: GPUVertexBufferLayout = {
-      ...instLayout,
-      attributes: [...instLayout.attributes].map((a) => ({ ...a, shaderLocation: a.shaderLocation + 3 })),
+      ...INST_LAYOUT,
+      attributes: [...INST_LAYOUT.attributes].map((a) => ({ ...a, shaderLocation: a.shaderLocation + 3 })),
     }
     const oldSprite: GPUVertexBufferLayout = {
       arrayStride: SPRITE_FLOATS * 4,
       stepMode: "instance",
       attributes: [{ shaderLocation: 3, offset: 0, format: "float32x4" }],
     }
-    this.motionPipes.level = pipe(moving, "vsStatic", [meshLayout], undefined, true, "none", "fsSolid")
-    this.motionPipes.levelCut = pipe(moving, "vsStatic", [meshLayout], undefined, true, "none", "fs")
-    this.motionPipes.glass = pipe(moving, "vsStatic", [meshLayout], premul, false, "none", "fs")
-    this.motionPipes.inst = pipe(moving, "vsInst", [meshLayout, instLayout, oldLayout], undefined, true, "none", "fs")
-    this.motionPipes.instAlpha = pipe(moving, "vsInst", [meshLayout, instLayout, oldLayout], premul, false, "none", "fs")
-    this.motionPipes.spriteAlpha = pipe(movingSprite, "vs", [spriteLayout, oldSprite], premul, false, "none", "fs")
-    this.motionPipes.spriteAdd = pipe(movingSprite, "vs", [spriteLayout, oldSprite], additive, false, "none", "fs")
+    this.motionPipes.level = pipe(moving, "vsStatic", [MESH_LAYOUT], undefined, true, "none", "fsSolid")
+    this.motionPipes.levelCut = pipe(moving, "vsStatic", [MESH_LAYOUT], undefined, true, "none", "fs")
+    this.motionPipes.glass = pipe(moving, "vsStatic", [MESH_LAYOUT], premul, false, "none", "fs")
+    this.motionPipes.inst = pipe(moving, "vsInst", [MESH_LAYOUT, INST_LAYOUT, oldLayout], undefined, true, "none", "fs")
+    this.motionPipes.instAlpha = pipe(moving, "vsInst", [MESH_LAYOUT, INST_LAYOUT, oldLayout], premul, false, "none", "fs")
+    this.motionPipes.spriteAlpha = pipe(movingSprite, "vs", [SPRITE_LAYOUT, oldSprite], premul, false, "none", "fs")
+    this.motionPipes.spriteAdd = pipe(movingSprite, "vs", [SPRITE_LAYOUT, oldSprite], additive, false, "none", "fs")
     const motionPost = this.module(postShader(true, true), "post motion")
     this.motionPipes.composite = d.createRenderPipeline({
       layout: d.createPipelineLayout({ bindGroupLayouts: [this.motionPostLayout] }),
@@ -1317,24 +1281,6 @@ export class Renderer {
     const cached = this.lookPipesByVariant.get(variant)
     if (cached) return cached
     const d = this.device
-    const meshLayout: GPUVertexBufferLayout = {
-      arrayStride: VERT_BYTES,
-      attributes: [
-        { shaderLocation: 0, offset: 0, format: "float32x3" },
-        { shaderLocation: 1, offset: 12, format: "snorm8x4" },
-        { shaderLocation: 2, offset: 16, format: "unorm8x4" },
-        { shaderLocation: 3, offset: 20, format: "float16x2" },
-      ],
-    }
-    const instLayout: GPUVertexBufferLayout = {
-      arrayStride: INST_FLOATS * 4,
-      stepMode: "instance",
-      attributes: [
-        { shaderLocation: 5, offset: 0, format: "float32x4" },
-        { shaderLocation: 6, offset: 16, format: "float32x4" },
-        { shaderLocation: 7, offset: 32, format: "float32x4" },
-      ],
-    }
     const premul: GPUBlendState = { color: { srcFactor: "one", dstFactor: "one-minus-src-alpha" }, alpha: { srcFactor: "zero", dstFactor: "one" } }
     const layout = d.createPipelineLayout({ bindGroupLayouts: [this.sceneLayout] })
     const sceneCode =
@@ -1356,11 +1302,11 @@ export class Renderer {
     const lookPostMod = this.module(postCode, `post look (${variant})`)
     const postPipeLayout = d.createPipelineLayout({ bindGroupLayouts: [this.postLayout] })
     const pipes: Record<string, GPURenderPipeline> = {
-      level: pipe("vsStatic", [meshLayout], undefined, true, "fsSolid"),
-      levelCut: pipe("vsStatic", [meshLayout], undefined, true, "fs"),
-      glass: pipe("vsStatic", [meshLayout], premul, false, this.shaders ? "fsSolid" : "fs"),
-      inst: pipe("vsInst", [meshLayout, instLayout], undefined, true, this.shaders ? "fsSolid" : "fs"),
-      instAlpha: pipe("vsInst", [meshLayout, instLayout], premul, false, "fs"),
+      level: pipe("vsStatic", [MESH_LAYOUT], undefined, true, "fsSolid"),
+      levelCut: pipe("vsStatic", [MESH_LAYOUT], undefined, true, "fs"),
+      glass: pipe("vsStatic", [MESH_LAYOUT], premul, false, this.shaders ? "fsSolid" : "fs"),
+      inst: pipe("vsInst", [MESH_LAYOUT, INST_LAYOUT], undefined, true, this.shaders ? "fsSolid" : "fs"),
+      instAlpha: pipe("vsInst", [MESH_LAYOUT, INST_LAYOUT], premul, false, "fs"),
     }
     // Only the composite a frame draws with is compiled (most looks never use the full one).
     this.lookCompositeBuilders.set(variant, (fs) =>
