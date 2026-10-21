@@ -48,21 +48,6 @@ jobs:
       - name: Smoke production bundle
         timeout-minutes: 1
         run: bun ../../scripts/smoke.mjs
-      - name: Probe boot (temporary diagnostics, main vs branch)
-        if: github.event_name == 'pull_request'
-        continue-on-error: true
-        timeout-minutes: 12
-        run: |
-          git fetch -q --depth=1 origin main
-          git worktree add -q /tmp/main FETCH_HEAD
-          (cd /tmp/main && bun install --frozen-lockfile >/dev/null && cd games/outbreak && bun run build >/dev/null 2>&1)
-          for round in 1 2; do
-            for v in main branch; do
-              root=dist/arcade/outbreak; [ $v = main ] && root=/tmp/main/games/outbreak/dist/arcade/outbreak
-              echo "== $v round $round"
-              SMOKE_GPU=swiftshader PROBE=$([ $round = 1 ] && echo 1) IDLE=1 timeout 240 bun scripts/smoke-probe.mjs /tmp/$v-$round.json $root || echo "failed $?"
-            done
-          done
       - name: Deploy
         if: github.event_name != 'pull_request'
         env:
