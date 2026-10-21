@@ -22,7 +22,7 @@ const browser = await chromium.launch({
   headless: true,
   args: metal
     ? ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio"]
-    : ["--enable-unsafe-webgpu", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--enable-features=Vulkan", "--use-vulkan=swiftshader", "--mute-audio"],
+    : ["--enable-unsafe-webgpu", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--enable-features=Vulkan", "--use-vulkan=swiftshader", "--mute-audio", ...(process.platform === "linux" ? ["--disable-vulkan-surface"] : [])],
 })
 const t0 = Date.now()
 const page = await browser.newPage({ viewport: { width: 640, height: 360 } })
