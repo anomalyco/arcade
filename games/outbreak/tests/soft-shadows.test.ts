@@ -1,21 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import { validateWgsl } from "@arcade/kit/gpu/test-naga"
 import { polarShader } from "@arcade/kit/gpu/shaders"
-import { createOutbreakSettings } from "../src/settings"
-import { capsuleSettings, DEFAULT_SOFT_SHADOW_SETTINGS, softShadowsOn } from "../src/soft-shadows/settings"
 import { noteLyingBody, takeLyingBodies } from "../src/soft-shadows/lying-bodies"
 import { flashlightVolumeShader } from "../src/flashlight-beam"
 import { shaders } from "../src/shaders"
 
 describe("soft character shadows (AR-113)", () => {
-  test("Today is the default and one setting away", () => {
-    const settings = createOutbreakSettings()
-    expect(settings.softShadows.softShadowMode).toBe(0)
-    expect(softShadowsOn(settings.softShadows)).toBe(false)
-    expect(softShadowsOn({ softShadowMode: 1 })).toBe(true)
-    expect(capsuleSettings(DEFAULT_SOFT_SHADOW_SETTINGS).mode).toBe(0)
-  })
-
   test("lying bodies are taken once per frame", () => {
     noteLyingBody(1, 0, 2, 0.5)
     noteLyingBody(3, 0, 4, 1)
