@@ -7,11 +7,12 @@ import { WET_ASPHALT, wetMaterialWgsl, wetSurfaceWgsl } from "@arcade/kit/gpu/re
 import { interiorWindowHooks, thinGlassHooks } from "@arcade/kit/gpu/materials/glass"
 import { ROOM_ATLAS } from "@arcade/kit/gpu/materials/rooms"
 import { contactShadowVolume } from "@arcade/kit/gpu/contact-shadows"
+import { interiorWgsl } from "./interior/shader"
 
-const nightUniform = `struct Night { fog: vec4f, look: vec4f, torch: vec4f, forest: vec4f, wet: vec4f, glassA: vec4f, glassB: vec4f, glassC: vec4f, contactA: vec4f, contactB: vec4f }
+const nightUniform = `struct Night { fog: vec4f, look: vec4f, torch: vec4f, wet: vec4f, interior: vec4f, forest: vec4f, glassA: vec4f, glassB: vec4f, glassC: vec4f, contactA: vec4f, contactB: vec4f }
 @group(0) @binding(13) var<uniform> N: Night;`
 /** Floats in the Night uniform (`main.ts` packs it). */
-export const NIGHT_FLOATS = 40
+export const NIGHT_FLOATS = 44
 // Wet reflections follow the materials: every physical surface tags its roughness in the HDR alpha, and the asphalt's
 // wet/puddle term (kit reflections/wet) sets that roughness, so puddles mirror and the film between them smears.
 /** The lot's fog volume; `atmosphere` compiles the fog bank and cloud deck in (the CI smoke leaves them out). */
@@ -28,9 +29,9 @@ const nightHooks: SceneHooks = {
     o.world+=vec3f(side.x*v.normal.x*v.normal.z*0.5,v.normal.y,side.y*v.normal.x*v.normal.z*0.5)*v.matAux.y;
     o.normal=normalize(vec3f(toCam.x,0.55,toCam.y));
   }`,
-  declarations: nightUniform + fogSceneWgsl + wetSurfaceWgsl + "\nvar<private> wetFootprint: f32 = 0.0;",
-  bounce: "vec3f(0.0)", directional: "vec3f(0.0)", lightLeak: "0.0", wallDirectScale: "1.0",
-  ambient: "fogAmbient(n)",
+  declarations: nightUniform + fogSceneWgsl + interiorWgsl + wetSurfaceWgsl + "\nvar<private> wetFootprint: f32 = 0.0;",
+  bounce: "lotBounce(o.world,n)", directional: "vec3f(0.0)", lightLeak: "0.0", wallDirectScale: "1.0",
+  ambient: "fogAmbient(n)*mix(1.0,0.12,lotIndoor(o.world))",
   material: /* wgsl */ `
     pbrRough=0.8;
   `,
@@ -40,7 +41,7 @@ const nightHooks: SceneHooks = {
     if(mat==3 && o.aux<0.0) {
       col=fogSky(F.cam.xyz,ray);
     } else {
-      col=fogApply(col,F.cam.xyz,o.world);
+      col=mix(fogApply(col,F.cam.xyz,o.world),col,lotIndoor(o.world)*lotIndoor(F.cam.xyz)*(1.0-N.interior.z));
     }
   `,
 }
@@ -48,6 +49,7 @@ const nightHooks: SceneHooks = {
 const physical = { env: "mix(fogEnv(dir),fogAmbient(n),rough*rough)", knobs:"vec4f(N.look.w,1.0,1.0,0.02)", spotShadows:true }
 export const hooks = withPhysicalLights(nightHooks, physical)
 export const texturedHooks: SceneHooks = withPhysicalLights({ ...nightHooks,
+  surface: `if(mat==3) { col*=texBase.rgb; }\n${nightHooks.surface}`,
   fragmentStart: "wetFootprint=max(length(dpdx(o.world)),length(dpdy(o.world)));",
   material: `${nightHooks.material}
     if(mat!=20) { pbrRough=rough; } else {

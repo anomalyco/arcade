@@ -1,7 +1,8 @@
 import type { FirstPerson } from "@arcade/kit/client/first-person"
 import { isEditableEventTarget } from "@arcade/kit/client/controls"
+import { VIEWPOINTS, type CameraPose } from "./interior/viewpoints"
+export type { CameraPose } from "./interior/viewpoints"
 
-export type CameraPose = { x: number; y: number; z: number; yaw: number; pitch: number; fov: number }
 export const cameraPose = (c: FirstPerson): CameraPose => ({ x: c.body.x, y: c.height, z: c.body.y, yaw: c.yaw, pitch: c.pitch, fov: c.fov })
 export function parsePose(value: string | null): CameraPose | null {
   if (!value) return null
@@ -14,7 +15,7 @@ export const poseQuery = (p: CameraPose) => [p.x,p.y,p.z,p.yaw,p.pitch,p.fov].jo
 /** Preview-only comparison protocol. World-space eye position and YXZ angles match Three's camera convention. */
 export function compareCamera(camera: FirstPerson, blocked: () => boolean) {
   const params = new URLSearchParams(location.search)
-  const pose = parsePose(params.get("cam"))
+  const pose = parsePose(params.get("cam")) ?? VIEWPOINTS[params.get("view") ?? "gate"]
   if (pose) { camera.body.x=pose.x; camera.body.y=pose.z; camera.height=pose.y; camera.yaw=pose.yaw; camera.pitch=pose.pitch; camera.fov=pose.fov }
   const reference = new URL(location.origin); reference.port="5253"
   const available = location.hostname.endsWith(".ts.net") || ["localhost","127.0.0.1"].includes(location.hostname)

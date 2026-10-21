@@ -24,7 +24,8 @@ The Objaverse snapshot names it **'80s Generic USA Station wagon – Low poly mo
 ## Procedural work and reference
 
 The exterior geometry is converted from Aiden's Ashwood procedural builders: building shell, dish, guard booth and furniture, barriers, lamps, roads, utility poles, wires, fence, facility grounds, seeded conifers, undergrowth and deadwood. Trees are exported as Ashwood's own per-variant models (two detail levels of branch cards) plus one instance per seeded tree, drawn by the kit's instanced forest; distant trees use the original impostor painter with camera-facing quads. Card shading (inner-crown darkening, face normals) and species colours follow Ashwood's forest material. `ashwood/scene.json` records source hashes for the conversion.
-Ashwood's home drift supplies the camera. The shared kit fog and physical-light ports supply the height fog, sky, lamp scattering, reflected airlight and specular lighting. Scanned building materials, playable facility interiors and SSR are outside this exterior conversion.
+Ashwood's home drift supplies the camera. The shared kit fog and physical-light ports supply the height fog, sky, lamp scattering, reflected airlight and specular lighting.
+The entrance, lobby and storey-0 corridor use separately baked native geometry, authored finish maps and CC0 props: [interior credits](interior/CREDITS.md).
 No Mixamo assets or Three.js runtime are included.
 
 Regenerate downloads with `bun run fetch-assets` in `games/lot`. The script refuses a wagon licence other than the verified CC BY grant. Original licence metadata and source SHA-256 are retained in `assets/source-metadata.json`.
