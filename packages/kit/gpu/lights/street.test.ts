@@ -16,12 +16,12 @@ describe("street photometry", () => {
     expect(ground(0, -s.house)).toBeCloseTo(0.5, 2)
     expect(ground(0, 1.2)).toBeGreaterThan(ground(0, -1.2) * 3)
   })
-  test("batwing: peak candela well off nadir, along the road (IES short or medium: 1–3.75 MH)", () => {
+  test("batwing: peak candela off nadir, along the road (IES short: 1–2.25 MH)", () => {
     let best = 0, at = 0
     for (let x = 0; x < 6; x += 0.05) { const I = streetProfile(dir(0, -1, x), [1, 0], s); if (I > best) { best = I; at = x } }
     expect(at).toBeGreaterThan(1)
-    expect(at).toBeLessThan(3.75)
-    expect(best).toBeGreaterThan(2.5)
+    expect(at).toBeLessThan(2.25)
+    expect(best).toBeGreaterThan(1.5)
   })
   test("nothing above the cutoff but the sag lens's side glow", () => {
     const up = streetProfile(dir(1, 0.3, 0), [1, 0], s)

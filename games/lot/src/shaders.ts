@@ -48,9 +48,9 @@ const nightHooks: SceneHooks = {
     // Street lamp lens bowls (lamps.ts): emissive, core to rim; Today leaves Ashwood's own lens.
     if(mat==${LENS_MAT}) {
       if(N.streetB.x<0.5) { discard; }
-      // The arc tube's core runs hot enough to bleach towards pale yellow; the rim keeps the sodium amber.
+      // The prismatic bowl glows evenly to its rim in sodium amber, a touch hotter over the arc tube.
       let core=smoothstep(0.7,1.0,o.aux);
-      col=mix(vec3f(1.0,0.55,0.18),vec3f(1.0,0.72,0.34),core*0.5)*o.aux*11.0*N.streetB.z;
+      col=mix(vec3f(1.0,0.55,0.18),vec3f(1.0,0.66,0.26),core*0.25)*o.aux*11.0*N.streetB.z;
     }
     if(mat==3 && o.aux<0.0) {
       col=fogSky(F.cam.xyz,ray);
