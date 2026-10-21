@@ -310,3 +310,85 @@ Each tip is ranked by expected visual impact on Outbreak's top-down look, citing
 - **Blog game source:** `src/articles/opencode-2-0/openPlanPost.ts` (lines 685–703).
 - **How it works:** Masks triangular dual-hash film grain to midtones (`smoothstep(0.02, 0.2, outLuma) * (1.0 - smoothstep(0.75, 1.0, outLuma))`) with a boost inside light shafts (`+ 0.018 * beamLift`), and adds 1-ULP Interleaved Gradient Noise dither `(ign(fragCoord.xy) - 0.5) / 255.0 * lit` gated to lit pixels (`luma > 0`) right before 8-bit sRGB output.
 - **Map to Outbreak:** Add dark-gated IGN dither and midtone grain masking to `postShader` in `packages/kit/gpu/shaders.ts:945` (and `makeLookPostShader`) to eliminate 8-bit Mach banding on dark twilight streets and smooth practical lamp falloffs while keeping unlit night shadows clean.
+
+---
+
+## 11. Candidates From the October 2026 Web Survey and the Ashwood Port
+
+A survey of recent web graphics work (2025–2026, including several Opus 5.5-built engines) and a read of Aiden's
+Ashwood renderer (`afterhours`, three.js/TSL). Full notes, licences and thumbnails:
+`~/code/home/artifacts/agent-reports/gfx-research.md`, `engine-comparison.md`, contact sheet
+`~/code/home/artifacts/gfx-research-2026-10-20/index.html`. Costs are estimates until an entry moves to
+**have** with a measurement. Licence rule: MIT/CC0/Unlicense code may be ported with credit; CC BY-NC-SA
+Shadertoys and unlicensed repos are technique only.
+
+The goal for the lot is to beat Ashwood, not match it: once a technique matches his, push past it.
+
+### Wet-road reflections: why Ashwood's road looks better
+Ashwood's wet road stacks four layers. We have the first two (`fog-scatter.ts`, #347):
+1. Fog in-scatter integrated along the mirrored ray with a per-pixel jittered normal tilted in the view's vertical
+   plane (long soft lamp streaks). **have**.
+2. A per-lamp anisotropic glint lobe around the mirror direction, tight across and long along the view's vertical
+   plane, widening with roughness². **have**.
+3. Screen-space reflections at half res with a constant roughness, followed by a streak pass that blurs along
+   screen Y by roughness² × (hit distance / view distance) with per-frame jittered taps resolved by TAA. Weight:
+   glossiness × mix(0.5 dielectric, 1 metal) × floor-facing. This is what puts the booth, windows, car, trees and
+   sky outline into the road. **missing** (needs per-pixel normal + roughness; in progress, `kit-reflections`).
+4. Material wetness with world-space puddles: near-mirror roughness in puddles, smeared asphalt between, darker
+   albedo. Not a hand-placed rectangle. **partial** (`look-shaders.ts` puddle mask; lot uses a fixed rectangle).
+A hard reflection cap kills the bright streaks; clamp fireflies luminance-weighted in the history instead.
+
+### Entries — Survey candidates
+- **LEAN slope-covariance specular AA (web-ocean, MIT):** mip slope moments (x², y², xy) plus `dpdx/dpdy` of the
+  slope give a per-pixel covariance; glints become an anisotropic Gaussian NDF that widens to a sheen where a
+  pixel can't resolve them. Fixes ground sparkle; steadies Outbreak puddle glints. ~0.05 ms. **missing**.
+- **Drifting mist slab (three.js `webgpu_postprocessing_fog` r186, Tidewater `AirHaze.js`, MIT):** ray–slab clip,
+  6–8 taps of two counter-drifting tiling 3D noise octaves with height falloff, Beer–Lambert, accumulated in the
+  fog volume slot's history with a bilateral upsample; plus a second thin analytic low layer whose colour comes
+  from the sky just above the horizon. Fog that "descends" between trunks; ground mist in Outbreak yards.
+  0.15–0.3 ms half res. **missing** (in progress, `kit-atmosphere`).
+- **Fog-depth blur (three.js `webgpu_custom_fog_scattering`, MIT):** mix a half-res blur (bloom mip 1–2) into the
+  scene by 1 − T(camera→pixel), so far trees, the dish and buildings dissolve into soft masses. ~0.05 ms.
+  **missing** (in progress, `kit-atmosphere`).
+- **Plan lamp-glow map + lit cloud deck (Neon Zenith, MIT; web-ocean cloud edge AA):** one small top-down texture
+  of emitter spill sampled by the cloud underside, mist and wall ambient, so every lamp tints the sky for one tap.
+  Clouds use footprint-filtered noise and derivative-width edges. ~0.05 ms. **missing** (in progress,
+  `kit-atmosphere`).
+- **Thin glass and interior mapping (three-fenestra, Neon Zenith, MIT; Heartfelt idea only):** Fresnel-weighted
+  opacity (≈0.04 head-on, high at grazing), `fogEnv` and lamp reflection, a grime/condensation mask that raises
+  roughness and dims transmission, and an interior-mapped room behind (`imRoomBoxUV`, per-window hash for
+  lit/unlit and tint). Instanced, LOD to a flat impostor. <0.05 ms. **missing** (in progress, `kit-glass`).
+- **Screen-space contact shadows (three.js `SSSNode`, Bend Studio, MIT):** 8–16 depth taps toward the one or two
+  dominant lights, half res, under 1 m; grounds props where shadow maps are coarse. 0.1–0.2 ms. **missing** (in
+  progress, `kit-glass`).
+- **Forest thinning + Bayer LOD crossfade (Tidewater `Impostors.js`, `LODFade.js`, MIT):** thin far crowns by up
+  to 50 % from 140–320 m and scale survivors by 1/√(1−f) so coverage holds; a per-frame-shifted 4×4 Bayer
+  screen-door between mesh and impostor that TAA resolves, no double draw. Far forest reads as masses, no pops.
+  ≤0 ms. **missing** (in progress, `kit-forest`).
+- **Rule-based debris (Tidewater `DebrisPlacement.js`, MIT):** clutter by zone (wall bases, kerbs, under trees)
+  with a 2D-SDF keep-out hash for paths, doors and colliders, plus a density mask for a camera-following pebble
+  field. Art-heavy. **missing** (in progress, `kit-forest`).
+- **2D radiance cascades in plan space ("The Bonfire"; pull-cord-lamp MIT; GMShaders RC Unlicense):** jump-flood
+  SDF, 4–5 cascades, one bounce from last frame's fluence. Every emitter bleeds colour with soft occlusion at a
+  cost fixed by grid size. Outbreak; must stay inside "colour only in light". ~0.2–0.5 ms at 256². **missing**
+  (in progress, `outbreak-bounce`; look change goes to a board decision).
+- **Analytic capsule soft shadows (Quílez's closed forms, technique):** per-bone capsules from the rig, contact
+  shadow plus a contact-hardening shadow away from nearby strong lights. ~0.03 ms. **missing** (in progress,
+  `outbreak-soft-shadows`).
+- **Dynamic resolution governor (Tidewater, Neon Zenith):** scale TAAU input resolution from frame time. Enabler.
+  **missing**.
+- **Lens droplets / condensation on the camera (Tidewater `LensDroplets.js`, MIT):** for walking out of rain or
+  fog. ~0.02 ms. **missing**.
+
+### Not worth it now
+Gaussian splats (no dynamic night lighting), ReSTIR (the lamp grid already bounds cost), a full froxel pipeline
+(only for many local media volumes; revisit for Outbreak smoke over fog), Hillaire LUT atmosphere (nothing to gain
+in a fogged night sky), HRC volumetrics (11–12 ms on an RTX 3080), full-scene SDF raymarching, cluster LOD, FFT
+ocean, 3D grid fluid fire (~1 ms+ per 64³). Where SDF and raymarching do pay for us: plan-space 2D SDFs for
+radiance cascades, short history-accumulated mist marches, derivative-AA analytic edges for road paint, decals
+and cloud edges, and closed-form capsule shadows.
+
+### What the good AI-built engines have in common
+Tidewater, web-ocean and deepsea (Opus 5.5) each run on a small custom WebGPU engine, implement a long list of
+published techniques, and check every change with headless screenshots reviewed by critic agents. They are ahead
+of our kit on sky/atmosphere, glass and LOD polish, not architecture.
