@@ -284,6 +284,8 @@ export class Renderer {
   private volumeReady = false
   private bounceTex: GPUTexture
   private planBounce: PlanBounce | null = null
+  /** Bounce pipelines compile on the first frame that asks for bounce, so a game that leaves it off pays nothing. */
+  private readonly planBounceShader: PlanBounceShader | null
   private planBounceVersion = -1
   private planBounceFallback: { view: GPUTextureView; uniform: GPUBuffer }
   private floorSampler: GPUSampler
@@ -533,10 +535,7 @@ export class Renderer {
       view: d.createTexture({ size: [1, 1], format: "rgba16float", usage: GPUTextureUsage.TEXTURE_BINDING }).createView(),
       uniform: d.createBuffer({ size: PLAN_BOUNCE_UNIFORM_FLOATS * 4, usage: U.UNIFORM }),
     }
-    if (shaders?.planBounce) {
-      this.planBounce = new PlanBounce(d, { frame: this.frameBuf, lights: this.lightBuf, polar: this.polarBuf, compile: (code, label) => this.module(code, label) }, shaders.planBounce)
-      this.planBounceVersion = this.planBounce.version
-    }
+    this.planBounceShader = shaders?.planBounce ?? null
     this.makeSceneGroup()
 
     this.polarPipe = d.createComputePipeline({
@@ -1659,6 +1658,9 @@ export class Renderer {
     }
     // The frame timer starts at the first pass: the polar pass, else the bounce, else the main pass.
     let timerStarted = !!f.shadowLightCount
+    if (!this.planBounce && this.planBounceShader && f.planBounce && f.planBounce.strength > 0) {
+      this.planBounce = new PlanBounce(d, { frame: this.frameBuf, lights: this.lightBuf, polar: this.polarBuf, compile: (code, label) => this.module(code, label) }, this.planBounceShader)
+    }
     if (this.planBounce) {
       const start = this.timing && !timerStarted ? this.timer!.start : undefined
       if (this.planBounce.encode(enc, f.planBounce, f.occluders, Math.min(f.occluderCount, MAX_OCCLUDERS), Math.min(f.lightCount, MAX_LIGHTS), Math.min(f.shadowLightCount, SLOTS), start)) timerStarted = true
