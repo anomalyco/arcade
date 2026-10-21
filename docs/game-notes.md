@@ -168,8 +168,8 @@ proven animation techniques to animation.md, not here.
   drawn: the kit renderer's own five scene pipelines and its composite (Outbreak draws through a look, which has its
   own), the look's second composite, and the lamp fog's three volume pipelines while the fog is off. The kit renderer
   (`ensureScenePipes`, `composite`, `lookComposite`) and `VolumeSlot` (`ensurePipes`) now build them on first use:
-  25 pipelines, 633k → 397k characters of WGSL, and each one still built is byte-identical to before. Paired on one
-  CI runner, Outbreak's two smoke frames came 3.6–7 s sooner. Chromium's close also waits for the frames SwiftShader
+  25 pipelines, 633k → 397k characters of WGSL, and each one still built is byte-identical to before. Paired on two
+  CI runners, Outbreak's two smoke frames came 3.6–7.1 s sooner (24.8→21.2, 30.6→23.5, 31.4→25.4, 31.3→25.2 s). Chromium's close also waits for the frames SwiftShader
   still has queued (several seconds each), so `scripts/smoke.mjs` kills the browser 3 s after a pass instead.
 - **Rectangular ceiling panels need their actual footprint.** `packages/kit/gpu/lights/rect.ts` clips a downward
   rectangle against each receiver's horizon and integrates its spherical polygon for diffuse irradiance; shared
