@@ -92,6 +92,8 @@ export type FogSettings = {
   lamps: number
   /** Temporal response: the share of each new frame (1 = no history). */
   history: number
+  /** The share of each new frame while the view moves (1 = Today: a moving view drops the history). */
+  historyMoving: number
   halfRes: boolean
   /** Lamp glow in the fog reflected on wet ground. */
   reflection: number
@@ -170,6 +172,7 @@ export const FOG_DEFAULTS: FogSettings = {
   samples: 4,
   lamps: 16,
   history: 0.1,
+  historyMoving: 1,
   halfRes: true,
   reflection: 4,
   glint: 2,
@@ -231,6 +234,7 @@ export function fogControls(group = "Fog", prefix = ""): LabControl[] {
     range("glint", "Lamp glints", 0, 4, 0.05, "×", "Wet ground"),
     range("streak", "Vertical streaking", 0, 4, 0.05, "×", "Wet ground"),
     range("history", "History weight (new frame)", 0.02, 1, 0.01, undefined, "Stability"),
+    range("historyMoving", "History weight in motion", 0.05, 1, 0.01, undefined, "Stability"),
     { key: key("halfRes"), ...field("halfRes"), label: "Half resolution", group, subsection: "Stability", type: "toggle" },
   ]
 }
@@ -717,8 +721,8 @@ export class FogScatter {
   }
 
   /** Volume-pass entry for `FrameInput.volume` (null when the fog is off). */
-  volumeInput(): { downscale: number; history: number } | null {
-    return this.enabled ? { downscale: this.settings.halfRes ? 2 : 1, history: this.settings.history } : null
+  volumeInput(): { downscale: number; history: number; moving: number } | null {
+    return this.enabled ? { downscale: this.settings.halfRes ? 2 : 1, history: this.settings.history, moving: this.settings.historyMoving } : null
   }
 
   /** Fog-depth blur entry for `FrameInput.fogBlur` (null at Today or with the fog off). */

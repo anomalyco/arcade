@@ -3,6 +3,9 @@ import type { FogSettings } from "@arcade/kit/gpu/fog-scatter"
 
 /** The lot's atmosphere over the fog (Backquote › Atmosphere): drifting bank, fog-depth blur, lit cloud deck. */
 export const ATMOSPHERE: Partial<FogSettings> = { bank: "drift", blur: "depth", clouds: "lit" }
+/** Fog and reflection histories kept while walking (Fog › Stability, Reflections › Quality; 1 is Today). */
+export const FOG_MOTION: Partial<FogSettings> = { historyMoving: 0.3 }
+export const SSR_MOTION = { historyMoving: 0.2 } as const
 
 export const PRESETS = {
   sodium: { density: 0.01, falloff: 0.05, sky: 1, lamp: 0.3, wetness: 0.8, exposure: 2 ** -2.2, haze: 0.12 },
