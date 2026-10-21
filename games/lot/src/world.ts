@@ -3,6 +3,7 @@ import type { ForestModel, ForestTrees } from "@arcade/kit/gpu/forest"
 import type { Ground } from "./dressing"
 import type { Rect } from "@arcade/kit/sim/geom"
 import { meshBytes } from "./mesh-bytes"
+import { splitStorefront } from "./interior/storefront"
 
 // Ashwood shell/play.ts drift, frozen at t=8 s. Its screenshot did not persist the exact capture clock.
 const t = 8
@@ -25,16 +26,17 @@ export async function buildWorld() {
     const response=await get(file)
     return meshBytes(response)
   }))
-  const [solid,ground,fence,glass,undergrowth,windows,forestBytes,treeBytes]=await Promise.all([load("solid"),load("ground"),load("fence"),load("glass"),load("undergrowth"),load("windows"),
+  const [opaque,ground,fence,glass,undergrowth,windows,forestBytes,treeBytes]=await Promise.all([load("solid"),load("ground"),load("fence"),load("glass"),load("undergrowth"),load("windows"),
     get("forest-models.bin.gz").then(meshBytes),get("forest-trees.bin.gz").then(meshBytes)])
+  const split=opaque.map(splitStorefront), solid=split.map(p=>p.solid), storefront=split.map(p=>p.glass).filter(p=>p.byteLength)
   walls.push(...scene.colliders.filter(b=>b.max[1]>0.5 && b.min[1]<1.5).map(b=>[b.min[0]!,b.min[2]!,b.max[0]!,b.max[2]!] as Rect))
-  // Exterior prototype: the facility is a closed mass, rather than the source's playable interior.
-  walls.push([-55,-22,35,22],[-10.9,136.6,-5.5,139])
+  // Stop at the back of the imported slice. Facade and interior partitions define the rest.
+  walls.push([-55,-22,35,-3.2],[-10.9,136.6,-5.5,139])
   const extra=new Mesh(), sky=new Mesh()
   extra.box(-700,-0.3,-700,700,-0.02,700,[0.12,0.15,0.12])
   sky.box(-699,-30,-699,699,300,699,[1,1,1],MAT.glow,-1,undefined,true)
   for(let i=0;i<sky.v.length;i+=33) for(const k of [2,1,0]) extra.v.push(...sky.v.slice(i+k*11,i+(k+1)*11))
-  return { scene,solid,ground,fence,glass,undergrowth,windows,forest:forest(scene.forest,forestBytes,treeBytes),extra:packVerts(extra.v) }
+  return { scene,solid,ground,fence,glass,storefront,undergrowth,windows,forest:forest(scene.forest,forestBytes,treeBytes),extra:packVerts(extra.v) }
 }
 
 /** Per-variant templates and one instance per tree, for the kit's instanced forest. */

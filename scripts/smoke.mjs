@@ -115,17 +115,20 @@ try {
     throw error
   })
   console.log(`${game}: boot ${await bootTimeline()}`)
-  // Let initialization promises and the first presentation frames report errors. On SwiftShader the wait for these
-  // two frames is most of the smoke's time.
-  const frames = await page.evaluate(() => new Promise(resolve => {
-    const at = []
-    const frame = () => (at.push(Math.round(performance.now())), at.length < 2 ? requestAnimationFrame(frame) : resolve(at))
-    requestAnimationFrame(frame)
-  }))
-  console.log(`${game}: presented frames at ${frames.join(", ")} ms`)
   if (game === "lot") {
+    // Lot has already submitted its two real frames and paused. Await their GPU completion directly: extra rAF
+    // callbacks can stall in headless SwiftShader after the paused canvas stops producing compositor damage.
     console.log(`lot: draining ${await page.evaluate(() => window.lot?.frames)} submitted frames`)
     await page.evaluate(() => window.lot?.renderer.passContext.device.queue.onSubmittedWorkDone())
+    console.log(`lot: GPU complete; boot ${await bootTimeline()}`)
+  } else {
+    // Let initialization promises and the first presentation frames report errors.
+    const frames = await page.evaluate(() => new Promise(resolve => {
+      const at = []
+      const frame = () => (at.push(Math.round(performance.now())), at.length < 2 ? requestAnimationFrame(frame) : resolve(at))
+      requestAnimationFrame(frame)
+    }))
+    console.log(`${game}: presented frames at ${frames.join(", ")} ms`)
   }
   if (game === "nightshift") {
     await page.evaluate(() => window.nightshift?.renderer.passContext.device.queue.onSubmittedWorkDone())

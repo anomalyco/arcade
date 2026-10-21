@@ -26,6 +26,8 @@ import { post } from "./post"
 import { compareCamera } from "./compare-camera"
 import { dressingControls, dressingDefaults, groundHeight, leafTemplate, paintLeafAtlas, paperTemplate, pebbleTemplate, placeDressing } from "./dressing"
 import { bakeScatter, type ScatterPlacement } from "@arcade/kit/gpu/scatter-mesh"
+import { loadInterior } from "./interior/load"
+import { interiorDefaults, interiorControls } from "./interior/settings"
 
 async function main() {
   const canvas = document.querySelector<HTMLCanvasElement>("#view")!
@@ -48,6 +50,8 @@ async function main() {
   const t0=performance.now()
   const world = await buildWorld()
   const worldMs=performance.now()-t0
+  const interior = await loadInterior(device), indoor = interiorDefaults()
+  walls.push(...interior.colliders.map(b=>[b.min[0]!,b.min[2]!,b.max[0]!,b.max[2]!] as const))
   const lighting = flatLighting(0, 0, [0, 0, 0])
   renderer.setLevel({ chunks: [...world.solid,world.extra].map(data=>({data,box:[-700,-700,700,700] as const})), glass: [], ...lighting })
 
@@ -77,6 +81,8 @@ async function main() {
     color: [1, 1, 1, 1], roughness: 1, metalness: 0, normalScale: 1.1, blend: false, aoStrength: 1,
   })), ...car.primitives, ...dressing.flatMap(d=>d.primitives)], texturedHooks)
   renderer.addPass("opaque", meshes)
+  const insideMeshes = new TexturedMeshPass(renderer.passContext,interior.primitives.filter(p=>!p.blend),texturedHooks)
+  renderer.addPass("opaque",insideMeshes)
   const white=solidTexture(gpu.device,[255,255,255,255])
   const forestSettings=forestDefaults()
   const forest=new ForestPass(renderer.passContext,world.forest.models,world.forest.trees,{ hooks:texturedHooks, impostorGrid:world.forest.impostorGrid,
@@ -138,6 +144,13 @@ async function main() {
   const windows=lazy(()=>new TexturedMeshPass(renderer.passContext,world.windows.map((vertices):TexturedPrimitive=>({vertices,base:atlas!,normal,orm,color:[1,1,1,1],roughness:1,metalness:0,normalScale:0,blend:false})),windowHooks))
   renderer.addPass("opaque",{draw:p=>{ if(rooms.mode==="rooms" && atlas) windows.draw(p) }})
 
+  const entrancePrimitives=world.storefront.map((vertices):TexturedPrimitive=>({
+    vertices,base:white,normal,orm,color:[1,1,1,0.12],roughness:0.04,metalness:0,normalScale:0,blend:true,
+  })).concat(interior.primitives.filter(p=>p.blend && p.roughness<0.1))
+  const entranceToday=new TexturedMeshPass(renderer.passContext,entrancePrimitives,texturedHooks)
+  const entranceGlass=lazy(()=>new TexturedMeshPass(renderer.passContext,entrancePrimitives,thinGlassHooksLot))
+  renderer.addPass("alpha",{draw:p=>(glass.mode==="thin"?entranceGlass:entranceToday).draw(p)})
+  renderer.addPass("alpha",new TexturedMeshPass(renderer.passContext,interior.primitives.filter(p=>p.blend && p.roughness>=0.1),texturedHooks))
   const camera = new FirstPerson(canvas, () => panel.visible)
   camera.body.x = START.x; camera.body.y = START.z; camera.yaw = START.yaw; camera.pitch = START.pitch
   camera.height=START.height; camera.near=0.15; camera.far=1200
@@ -145,6 +158,7 @@ async function main() {
   const comparison=compareCamera(camera,()=>panel.visible)
   panel.addControls(forestSettings,forestControls(forestSettings))
   panel.addControls(dressingSettings,dressingControls(dressingSettings))
+  panel.addControls(indoor,interiorControls)
   panel.addControls(fog.settings,fogControls("Fog","fog.").filter(c=>!["density","falloff","brightness","strength"].includes(c.field ?? "")))
   panel.addControls(ssr.settings,ssrControls("Reflections","ssr."))
   panel.addControls(wet,wetControls("Wet ground","wet.").filter(c=>c.field!=="wetness"))
@@ -154,7 +168,7 @@ async function main() {
   panel.addControls(fog.settings,atmosphereControls("Atmosphere","atmo."))
   // LabPanel owns Backquote, including when the canvas is pointer-locked.
   const lights = new SceneLights()
-  lights.setBoxes([{ rect: [-55,-22,35,22], h: 19.6 }])
+  lights.setBoxes([...world.scene.colliders,...interior.colliders].filter(b=>b.max[1]!>0.5 && b.min[1]!<1.5).map(b=>({rect:[b.min[0]!,b.min[2]!,b.max[0]!,b.max[2]!] as const,h:b.max[1]!})))
   const spots=new SpotShadows(gpu.device,{count:2})
   panel.addControls(spots.settings,spotShadowControls())
   renderer.setSpotShadows(spots.bindings())
@@ -162,14 +176,15 @@ async function main() {
     const buffer=gpu.device.createBuffer({size:data.byteLength,usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST})
     gpu.device.queue.writeBuffer(buffer,0,data)
     return {buffer,count:data.byteLength/24,stride:24}
-  }).concat(meshes.shadowCasters())
+  }).concat(meshes.shadowCasters(),insideMeshes.shadowCasters())
   // Source lighting offsets a head 12 cm along its axis, out of the luminaire's own shadow caster.
-  const practicals=world.scene.lamps.filter(l=>l.kind==="sodium" || l.kind==="incandescent").map(l=>({ ...l,
+  const practicals=[...world.scene.lamps.filter(l=>l.kind==="sodium" || l.kind==="incandescent"),...interior.lamps].map(l=>({ ...l,
     position:l.position.map((v,i)=>v+(l.direction?.[i] ?? 0)*0.12) as [number,number,number],
   }))
   const shadowLamps=practicals.flatMap((l,id)=>l.shadow && l.angle ? [{id,pos:l.position,axis:l.direction ?? [0,-1,0] as const,range:l.range,intensity:l.intensity,cosOuter:Math.cos(l.angle)}] : [])
   // Trunks within reach of a shadowed sodium head cast into its pool.
   casters.push(...forest.staticCasters(shadowLamps.map(l=>({x:l.pos[0],z:l.pos[2]})),40))
+  const indoorStart=practicals.length-interior.lamps.length
   const frameData = newSceneFrame(), custom = new Float32Array(NIGHT_FLOATS), empty = new Float32Array(0)
   const prompts = () => {
     hud.innerHTML = [document.pointerLockElement === canvas ? "" : keyPromptHtml("Mouse0", "Look"), keyPromptHtml("KeyW", "Move"), keyPromptHtml("KeyF", "Flashlight"), keyPromptHtml("Backquote", "Night"), comparison.available ? keyPromptHtml("KeyP", "Compare position") : ""].join(" ")
@@ -179,7 +194,11 @@ async function main() {
   let last = performance.now(), frames = 0, paused = false, lastFrame: FrameInput | null = null
   const readyMs=performance.now()-t0
   // Slot order: contact shadows darken the lit scene before reflections and fog add to it.
-  const volumes = () => smoke ? [ssr.volumeInput({wet}),fog.volumeInput()] : [contactShadowInput(contact),ssr.volumeInput({wet}),fog.volumeInput()]
+  const volumes = () => {
+    const inside=camera.body.x>-55 && camera.body.x<35 && camera.body.y>-3.2 && camera.body.y<22
+    const reflections=ssr.volumeInput({indoor:inside,wet:inside?{...wet,wetness:0,puddles:0,ripple:0}:wet})
+    return smoke ? [reflections,fog.volumeInput()] : [contactShadowInput(contact),reflections,fog.volumeInput()]
+  }
   /** GPU ms of n frames of the last frame's input (Renderer.measure), each after `warm` untimed frames so the GPU is at clock. */
   const measureFrames = async (n = 24, warm = 3) => {
     if(!lastFrame) return null
@@ -196,7 +215,7 @@ async function main() {
     const dt = Math.min(0.05, (now - last) / 1000); last = now
     const vp = camera.update(dt, width / height, walls)
     comparison.frame()
-    const frameLights:SceneLight[]=practicals.map((l,id)=>({id,x:l.position[0],y:l.position[2],h:l.position[1],r:l.range,color:l.color,power:l.intensity*settings.lamp/5,size:(l.size ?? 0.1)*0.5,
+    const frameLights:SceneLight[]=practicals.map((l,id)=>({id,x:l.position[0],y:l.position[2],h:l.position[1],r:l.range,color:l.color,power:l.intensity*(id>=indoorStart?indoor.fixtures:settings.lamp)/5,size:(l.size ?? 0.1)*0.5,
       ...(l.angle ? { spot: { axis: l.direction ?? [0,-1,0] as const, cosOuter: Math.cos(l.angle), cosInner: Math.cos(l.angle*(1-(l.penumbra ?? 0.55))) } } : {}),
     }))
     if(camera.flashlight) frameLights.push({id:-1,x:camera.eye[0],y:camera.eye[2],h:camera.eye[1],r:35,color:[0.85,0.92,1],power:56,size:0.4,unshadowed:true,beam:{axis:camera.direction,halfAngle:0.27}})
@@ -206,16 +225,19 @@ async function main() {
     device.queue.submit([shadowEncoder.finish()])
     if(smoke && frames===0) void device.queue.onSubmittedWorkDone().then(()=>performance.mark("lot:shadows-complete"))
     wet.wetness=settings.wetness
-    custom.set([settings.density, settings.falloff, settings.sky, settings.lamp, settings.wetness, settings.haze, settings.reflectionCap, settings.specularAA, ...camera.direction, Number(camera.flashlight), forestSettings.inner, forestSettings.face, 0, 0, ...packWet(wet)])
-    packGlassKnobs(glass,rooms,custom,20)
-    packContactShadowKnobs(contact,custom,32)
+    custom.set([settings.density, settings.falloff, settings.sky, settings.lamp, settings.wetness, settings.haze, settings.reflectionCap, settings.specularAA, ...camera.direction, Number(camera.flashlight)])
+    custom.set(packWet(wet),12)
+    custom.set([forestSettings.inner,forestSettings.face,0,0],20)
+    packGlassKnobs(glass,rooms,custom,24)
+    packContactShadowKnobs(contact,custom,36)
     forest.update(camera.eye, forestSettings)
     refreshDressing()
+    custom.set([indoor.fixtures,indoor.mode==="today"?0:indoor.bounce,indoor.mode==="today"?1:indoor.air,0],16)
     renderer.setCustomUniforms(custom)
     Object.assign(fog.settings,{density:settings.density,falloff:settings.falloff,brightness:0.034*settings.sky,strength:settings.haze})
     // Scattering consumes emitter radiance, not the surface BRDF's radiance / π.
     // Include the booth bulb: its reflection is the second, nearer wet streak.
-    const fogLamps:FogLamp[]=practicals.map((l,id)=>({id,x:l.position[0],y:l.position[1],z:l.position[2],range:l.range,color:l.color,intensity:l.intensity*settings.lamp,
+    const fogLamps:FogLamp[]=practicals.map((l,id)=>({id,x:l.position[0],y:l.position[1],z:l.position[2],range:l.range,color:l.color,intensity:l.intensity*(id>=indoorStart?indoor.fixtures*indoor.air:settings.lamp),
       axis:l.direction,size:(l.size ?? 0.2)*0.5,...(l.angle ? fogCone(l.angle,1-(l.penumbra ?? 0.55)) : {}),
     }))
     packSceneFrame(frameData, { viewProj: vp, eye: camera.eye, time: 0, width, height, lightCount: lights.lightCount,
@@ -244,7 +266,7 @@ async function main() {
     return out
   }
   // measureFrame(): GPU ms of the last frame's input (timestamp-query), for scripts/atmosphere.ts.
-  Object.assign(window, { lot: { camera, settings, ssr, wet, measure, measureFrames, measureFrame: () => lastFrame ? renderer.measure(lastFrame) : null, get input() { return lastFrame }, glass, rooms, contact, forest:forestSettings, forestStats:()=>forest.stats(), timings:{worldMs,readyMs}, dressing:dressingSettings, get dressingCount() { return dressingCount }, fog, renderer, comparison, get frames() { return frames }, get paused() { return paused }, set paused(value:boolean) { paused=value }, ready: true } })
+  Object.assign(window, { lot: { camera, settings, indoor, walls, ssr, wet, measure, measureFrames, measureFrame: () => lastFrame ? renderer.measure(lastFrame) : null, get input() { return lastFrame }, glass, rooms, contact, forest:forestSettings, forestStats:()=>forest.stats(), timings:{worldMs,readyMs}, dressing:dressingSettings, get dressingCount() { return dressingCount }, fog, renderer, comparison, get frames() { return frames }, get paused() { return paused }, set paused(value:boolean) { paused=value }, ready: true } })
   requestAnimationFrame(render)
 }
 void main().catch(error => { console.error(error); document.getElementById("hud")!.textContent = String(error) })

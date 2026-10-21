@@ -6,7 +6,7 @@
 *{box-sizing:border-box}
 body{margin:0;background:#090d0e;color:#d6dddd;font:13px system-ui;--frame-width:min(50vw,calc((100dvh - 48px)*8/9));--frame-height:calc(var(--frame-width)*9/16)}
 header{height:48px;display:flex;align-items:center;gap:12px;padding:0 16px;position:relative;z-index:2}
-button,a{color:inherit;background:#20282a;border:1px solid #3a4547;border-radius:5px;padding:6px 10px;text-decoration:none;font:inherit}
+button,a,select{color:inherit;background:#20282a;border:1px solid #3a4547;border-radius:5px;padding:6px 10px;text-decoration:none;font:inherit}
 button[aria-pressed=true]{background:#47595c}#status{margin-left:auto;color:#a2b2b4}
 main{display:flex;height:calc(100dvh - 48px);align-items:center;justify-content:center;position:relative}
 section{position:relative;width:var(--frame-width);height:var(--frame-height);flex-shrink:0}
@@ -20,13 +20,16 @@ body[data-mode=flip] #theirs{visibility:hidden}
 body[data-mode=flip][data-side=theirs] #theirs{visibility:visible;pointer-events:none}
 @media(max-width:700px){body{--frame-width:min(100vw,calc((100dvh - 100px)*8/9))}header{height:100px;flex-wrap:wrap;padding:8px}main{height:calc(100dvh - 100px);flex-direction:column}#status{margin-left:0}body[data-mode=flip] section{width:var(--frame-width);height:var(--frame-height)}body[data-mode=flip] iframe{transform:none}}
 </style>
-<header><strong>Lot / Ashwood</strong><button id="split" aria-pressed="true">Side by side</button><button id="flip" aria-pressed="false">Flip</button><button id="switch" hidden>Show Ashwood</button><button id="copy">Copy position</button><a id="open" target="ashwood-position">Open Ashwood here</a><span id="status">Loading both scenes…</span></header>
+<header><strong>Lot / Ashwood</strong><select id="viewpoint" aria-label="Viewpoint"><option value="gate">Gate</option><option value="lot">Lot</option><option value="entrance">Entrance</option><option value="lobby">Lobby</option><option value="corridor">Corridor</option></select><button id="split" aria-pressed="true">Side by side</button><button id="flip" aria-pressed="false">Flip</button><button id="switch" hidden>Show Ashwood</button><button id="copy">Copy position</button><a id="open" target="ashwood-position">Open Ashwood here</a><span id="status">Loading both scenes…</span></header>
 <main><section id="ours"><label>Lot · click to walk</label><iframe title="Lot" allow="fullscreen; clipboard-write" src="about:blank"></iframe></section><section id="theirs"><label>Ashwood</label><iframe title="Ashwood" allow="fullscreen" src="about:blank"></iframe></section></main>
 <script type="module">
 const ours=document.querySelector('#ours iframe'),theirs=document.querySelector('#theirs iframe'),status=document.querySelector('#status'),open=document.querySelector('#open');
-const a=new URL('/arcade/lot/',location.href);a.port='5251';a.searchParams.set('compare','1');
+const params=new URLSearchParams(location.search),viewpoint=document.querySelector('#viewpoint');
+const a=new URL('/arcade/lot/',location.href);if(location.port==='5254')a.port='5251';a.searchParams.set('compare','1');
 const b=new URL('/',location.href);b.port='5253';b.search='?view=gate&follow=1&shot=1';
-const initial=new URLSearchParams(location.search).get('cam');if(initial)a.searchParams.set('cam',initial);
+const initial=params.get('cam');if(initial)a.searchParams.set('cam',initial);
+viewpoint.value=params.get('view')??'gate';a.searchParams.set('view',viewpoint.value);
+viewpoint.onchange=()=>{a.searchParams.delete('cam');a.searchParams.set('view',viewpoint.value);ours.src=a.href;const url=new URL(location.href);url.searchParams.delete('cam');url.searchParams.set('view',viewpoint.value);history.replaceState(null,'',url)};
 ours.src=a.href;theirs.src=b.href;let latest=null,ack=0,ready=false,applied=null;
 const query=p=>[p.x,p.y,p.z,p.yaw,p.pitch,p.fov].join(',');
 addEventListener('message',e=>{

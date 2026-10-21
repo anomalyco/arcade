@@ -12,7 +12,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw
 
-reference, capture, dest = sys.argv[1:]
+grid_only = "--grid-only" in sys.argv
+reference, capture, dest = [arg for arg in sys.argv[1:] if arg != "--grid-only"]
 out = Path(dest)
 out.parent.mkdir(parents=True, exist_ok=True)
 a = Image.open(reference).convert("RGB")
@@ -59,7 +60,7 @@ regions = {
     "foreground_road": (850, 700, 1600, 1050),
     "ground_dressing": (1280, 610, 1450, 670),
 }
-regional = {name: {"bounds": box, **measure(ar[box[1]:box[3], box[0]:box[2]],
+regional = {} if grid_only else {name: {"bounds": box, **measure(ar[box[1]:box[3], box[0]:box[2]],
              br[box[1]:box[3], box[0]:box[2]])} for name, box in regions.items()}
 report = {"reference": reference, "capture": capture, "original_capture_size": original_size,
           "resized": original_size != a.size, "global": measure(ar, br), "grid_8x6": grid,
