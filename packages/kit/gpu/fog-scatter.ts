@@ -493,14 +493,6 @@ export function airlightLensReference(ro: Vec3, rd: Vec3, dist: number, lamp: Sc
   return total / lensSteps
 }
 
-/** Weights of the 4-tap depth-aware upsample (the composite shader's), normalised. */
-export function upsampleWeights(fx: number, fy: number, tapDist: readonly [number, number, number, number], centre: number): [number, number, number, number] {
-  const bil = [(1 - fx) * (1 - fy), fx * (1 - fy), (1 - fx) * fy, fx * fy]
-  const w = bil.map((b, i) => b * Math.exp(-Math.abs(tapDist[i]! - centre) / (0.1 * centre + 0.05)) + 1e-4)
-  const sum = w[0]! + w[1]! + w[2]! + w[3]!
-  return w.map((v) => v / sum) as [number, number, number, number]
-}
-
 // ---------------------------------------------------------------- atmosphere (CPU mirrors of the WGSL)
 
 type BankShape = Pick<FogSettings, "bankDensity" | "bankHeight" | "bankThreshold" | "bankDistance"> & { base: number }
