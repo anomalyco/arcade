@@ -1312,6 +1312,8 @@ var<private> outbreakSeen: f32;
 var<private> outbreakKnown: f32;
 /** Received lamp bounce (luminance), left by \`outbreakBounce\` for the colour mask. */
 var<private> outbreakBounceIrr: f32;
+/** Bounced light's luminance times its colour weight (AR-115, \`outbreakBounceAndGi\` in bounce-light/wgsl.ts; 0 when off). */
+var<private> outbreakGiIrr: f32;
 /** The colour mask from light alone, times the light rule, before the sight terms (for the fog's memory tone). */
 var<private> outbreakLitMask: f32;
 var<private> outbreakInRoom: bool;
@@ -1677,10 +1679,11 @@ fn outbreakBounce(p: vec2f, scale: f32) -> vec3f {
 
 /**
  * Selective-colour mask from received flashlight, practical light (every light in the lights loop: lamps, sconces,
- * windows, headlights, muzzle flash) and, under the light rule, baked lamp bounce, through a soft exponential knee.
+ * windows, headlights, muzzle flash) and, under the light rule, baked lamp bounce and bounced light (\`outbreakGiIrr\`),
+ * through a soft exponential knee.
  */
 fn outbreakColorMask(flashIrr: f32) -> f32 {
-  let e = flashIrr + outbreakPracticalIrr * OL.u16.y + outbreakBounceIrr * OL.colour.z * outbreakLightRule();
+  let e = flashIrr + outbreakPracticalIrr * OL.u16.y + (outbreakBounceIrr * OL.colour.z + outbreakGiIrr) * outbreakLightRule();
   return 1.0 - fastExpNeg(e / max(OL.u13.w, 0.01));
 }
 

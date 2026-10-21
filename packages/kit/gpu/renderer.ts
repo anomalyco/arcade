@@ -73,6 +73,7 @@ import { REACTIVE_COVERAGE_WGSL, REACTIVE_TARGET } from "./reactive"
 import { VolumeSlot, type VolumeInput, type VolumeLightShader, type VolumeView } from "./volume-pass"
 import { FOG_GLOW_FLOATS, FOG_GLOW_OFFSET, FOG_LAMP_BUFFER_FLOATS, FOG_LAMP_FLOATS, FOG_UNIFORM_FLOATS, MAX_FOG_LAMPS, type FogFrame } from "./fog-scatter"
 import { FogBlur, type FogBlurInput } from "./fog-blur"
+import { PLAN_BOUNCE_BINDINGS, PLAN_BOUNCE_UNIFORM_FLOATS, PlanBounce, type PlanBounceInput, type PlanBounceShader } from "./gi/plan-bounce"
 
 export type { PassContext, PassSlot, ScenePass }
 export type { AntiAliasingMode, TemporalSettings, TemporalState } from "./temporal"
@@ -226,6 +227,11 @@ export type FrameInput = {
   postExtra?: number
   /** Optional 2D static lamp light-list grid (`uLampGrid`) for `lights[directLightCount .. lightCount)`. */
   lampGrid?: LampGrid | null
+  /**
+   * One-bounce plan-space light (`@arcade/kit/gpu/gi/plan-bounce`; the renderer needs `shaders.planBounce`). Null or a
+   * zero strength skips its passes and the scene's `planBounceAt` returns nothing.
+   */
+  planBounce?: PlanBounceInput | null
 }
 
 /**
@@ -277,6 +283,11 @@ export class Renderer {
   private volumeFrame = 0
   private volumeReady = false
   private bounceTex: GPUTexture
+  private planBounce: PlanBounce | null = null
+  /** Bounce pipelines compile on the first frame that asks for bounce, so a game that leaves it off pays nothing. */
+  private readonly planBounceShader: PlanBounceShader | null
+  private planBounceVersion = -1
+  private planBounceFallback: { view: GPUTextureView; uniform: GPUBuffer }
   private floorSampler: GPUSampler
   private materialTex: GPUTexture
   private materialTexView: GPUTextureView
@@ -380,6 +391,8 @@ export class Renderer {
       lookPostVariant?: (variant: LookVariantMode) => string
       visField?: VisibilityFieldShader
       volume?: VolumeLightShader | readonly VolumeLightShader[]
+      /** One-bounce plan-space light (`FrameInput.planBounce`), with the game's light attenuation for its emission. */
+      planBounce?: PlanBounceShader
       /** Unlit tyre smoke and dust colour (WGSL vec3f over the scene Frame), e.g. from `F.ambient` under Noir. */
       tyreSmoke?: { base?: string; dust?: string }
     },
@@ -474,6 +487,8 @@ export class Renderer {
         { binding: SPOT_SHADOW_BINDINGS.sampler, visibility: S.FRAGMENT, sampler: { type: "comparison" } },
         { binding: SPOT_SHADOW_BINDINGS.uniform, visibility: S.FRAGMENT, buffer: { type: "uniform" } },
         { binding: 18, visibility: S.VERTEX | S.FRAGMENT, buffer: { type: "uniform" } },
+        { binding: PLAN_BOUNCE_BINDINGS.texture, visibility: S.FRAGMENT, texture: {} },
+        { binding: PLAN_BOUNCE_BINDINGS.uniform, visibility: S.FRAGMENT, buffer: { type: "uniform" } },
       ],
     })
     this.sceneLayout = sceneLayout
@@ -516,6 +531,11 @@ export class Renderer {
         { binding: 4, resource: { buffer: this.polarBuf } },
       ],
     })
+    this.planBounceFallback = {
+      view: d.createTexture({ size: [1, 1], format: "rgba16float", usage: GPUTextureUsage.TEXTURE_BINDING }).createView(),
+      uniform: d.createBuffer({ size: PLAN_BOUNCE_UNIFORM_FLOATS * 4, usage: U.UNIFORM }),
+    }
+    this.planBounceShader = shaders?.planBounce ?? null
     this.makeSceneGroup()
 
     this.polarPipe = d.createComputePipeline({
@@ -683,6 +703,8 @@ export class Renderer {
         { binding: SPOT_SHADOW_BINDINGS.sampler, resource: this.spotShadow.sampler },
         { binding: SPOT_SHADOW_BINDINGS.uniform, resource: { buffer: this.spotShadow.uniform } },
         { binding: 18, resource: { buffer: this.fogBuf } },
+        { binding: PLAN_BOUNCE_BINDINGS.texture, resource: this.planBounce?.view ?? this.planBounceFallback.view },
+        { binding: PLAN_BOUNCE_BINDINGS.uniform, resource: { buffer: this.planBounce?.uniform ?? this.planBounceFallback.uniform } },
       ],
     })
   }
@@ -1634,12 +1656,25 @@ export class Renderer {
       }
       cp.end()
     }
+    // The frame timer starts at the first pass: the polar pass, else the bounce, else the main pass.
+    let timerStarted = !!f.shadowLightCount
+    if (!this.planBounce && this.planBounceShader && f.planBounce && f.planBounce.strength > 0) {
+      this.planBounce = new PlanBounce(d, { frame: this.frameBuf, lights: this.lightBuf, polar: this.polarBuf, compile: (code, label) => this.module(code, label) }, this.planBounceShader)
+    }
+    if (this.planBounce) {
+      const start = this.timing && !timerStarted ? this.timer!.start : undefined
+      if (this.planBounce.encode(enc, f.planBounce, f.occluders, Math.min(f.occluderCount, MAX_OCCLUDERS), Math.min(f.lightCount, MAX_LIGHTS), Math.min(f.shadowLightCount, SLOTS), start)) timerStarted = true
+      if (this.planBounce.version !== this.planBounceVersion) {
+        this.planBounceVersion = this.planBounce.version
+        this.makeSceneGroup()
+      }
+    }
 
     const hasSmoke = !!(f.smoke && f.smokeEnabled && f.smoke.count)
     const pass = enc.beginRenderPass(
       this.targets.configureMainPass({
         storeDepth: hasSmoke || runSharedBlur || !!taa || this.volumeNeedsDepth(f) || !!(f.fogBlur && f.fog),
-        timestampWrites: this.timing && !f.shadowLightCount ? this.timer!.start : undefined,
+        timestampWrites: this.timing && !timerStarted ? this.timer!.start : undefined,
         extraColorAttachment: motion ? this.velocityAttachment : null,
       }),
     )

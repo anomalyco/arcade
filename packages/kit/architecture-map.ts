@@ -157,6 +157,11 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
     match: (s) => s === "@arcade/kit/gpu/shadows/spot-shadows",
   },
   {
+    area: "`gpu/gi/plan-bounce`",
+    description: "One bounce of the frame's lights in plan space: per-frame emission, mip chain and cone gather on a world-anchored grid, held by walls",
+    match: (s) => s === "@arcade/kit/gpu/gi/plan-bounce",
+  },
+  {
     area: "`gpu/reflections/{ssr,surface,wet}`",
     description: "Screen-space reflections volume slot (Ashwood's march, streak blur and history), HDR-alpha roughness tag, and the shared wet/puddle surface term",
     match: (s) => s.startsWith("@arcade/kit/gpu/reflections/"),

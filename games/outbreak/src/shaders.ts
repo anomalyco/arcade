@@ -14,6 +14,7 @@ import { lampFogVolume } from "./air/lamp-fog"
 import { outbreakFogOfWarDeclarationsWgsl, visibilityFieldShader } from "./fog-of-war"
 import { groundSurfaceHookWgsl, outbreakSurfaceMaterialDeclarationsWgsl, outbreakSurfaceMaterialWgsl } from "./ground"
 import { outbreakLightingDeclarationsWgsl } from "./lighting"
+import { outbreakBounceSceneWgsl, outbreakPlanBounceShader } from "./bounce-light/wgsl"
 import { outbreakBeanFragmentStartWgsl, outbreakHeroWgsl } from "./look/shader"
 import { MAT_MIRROR, reflectionDeclarationsWgsl, reflectionSurfaceWgsl } from "./reflections/wgsl"
 import { outbreakUnseenPostHookWgsl, outbreakUnseenPostWgsl } from "./unseen"
@@ -42,7 +43,7 @@ export const outbreakPostFinish: PostFinishOptions = {
 export const outbreakSceneHooks: SceneHooks = {
   ao: "0.42",
   mapUv: "(p - OL.win.xy) * F.map.xy",
-  bounce: "outbreakBounce(o.world.xz + n.xz * 0.3, 0.58 * clamp(1.38 - F.monitorBounds.w * 1.38, 0.0, 1.0) * OL.u1.z * select(1.0, OL.colour.w, outbreakInRoom) * select(1.0, 0.0, o.world.y > 2.78))",
+  bounce: "outbreakBounceAndGi(o.world.xz + n.xz * 0.3, 0.58 * clamp(1.38 - F.monitorBounds.w * 1.38, 0.0, 1.0) * OL.u1.z * select(1.0, OL.colour.w, outbreakInRoom) * select(1.0, 0.0, o.world.y > 2.78), o.world, n)",
   lightLeak: "0.006 * vis",
   lightAttenuation: `var att = 0.0;
     if (L.cone.w > 1.5) {
@@ -115,6 +116,7 @@ export const outbreakSceneHooks: SceneHooks = {
 @group(0) @binding(14) var visField: texture_2d<f32>;
 ${foliageWindDeclarationsWgsl}
 ${outbreakLightingDeclarationsWgsl}
+${outbreakBounceSceneWgsl}
 ${outbreakSurfaceMaterialDeclarationsWgsl}
 ${outbreakPuddleDeclarationsWgsl}
 /** Active building slot i (0..7) has the L-plan bungalow footprint (u17.w bits 0..7). */
@@ -440,7 +442,7 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
     var litMask = select(outbreakColorMask(flashIrr), 0.88, mat == 2);
     if (mat != 2) {
       let flashDeepScale = mix(1.15, 0.82, clamp(OL.beamLook.y, 0.0, 1.0));
-      let eDeep = flashIrr * flashDeepScale + outbreakPracticalIrr * OL.u16.y * 1.42 + outbreakBounceIrr * max(OL.colour.z, 0.95) * lightRule;
+      let eDeep = flashIrr * flashDeepScale + outbreakPracticalIrr * OL.u16.y * 1.42 + (outbreakBounceIrr * max(OL.colour.z, 0.95) + outbreakGiIrr) * lightRule;
       litMask = max(litMask, smoothstep(0.04, 0.88, 1.0 - fastExpNeg(eDeep / max(OL.u13.w * 0.80, 0.01))));
     }
     outbreakLitMask = max(litMask * lightRule, sunLit);
@@ -650,6 +652,7 @@ export const shaders = {
   lookSceneVariant: (variant: LookVariantMode) => makeLookSceneShader(outbreakSceneHooks, variant),
   lookPostVariant: (variant: LookVariantMode) => makeLookPostShader(outbreakPostFinish, variant),
   visField: visibilityFieldShader,
+  planBounce: outbreakPlanBounceShader,
   // Slot 1: the kit's lamp fog, a Lab option that stays off (Today) by default.
   volume: [flashlightVolumeShader, lampFogVolume],
   // Tyre smoke and dust take the sky ambient, so at night they stay dim until headlights or the flashlight hit them.

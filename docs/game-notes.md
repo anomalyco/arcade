@@ -912,6 +912,20 @@ proven animation techniques to animation.md, not here.
   panes that write no depth (the booth) get the bank drawn over them. Cost about **+1.4 ms** together at 2560×1440 on
   a shared mini; CI smoke compiles Today (`fogScatterVolume({ atmosphere: false })`).
 
+- **Bounced light as a one-level cone gather in plan space (AR-115, 2026-10-20).** `@arcade/kit/gpu/gi/plan-bounce`
+  computes one bounce of the frame's lights per frame on a 64 m world-anchored grid (emission with polar shadows, a 2×2
+  mip chain, 16 cones per texel with wall transmittance), and Outbreak adds it through its `bounce` hook
+  (`games/outbreak/src/bounce-light/`, Lab › Bounced light).
+  - Three lessons. First, sample it with openness-weighted bilinear filtering (`planBounceAt`). Plain bilinear lets a
+    lit hall's texel bleed through a 0.2 m wall into the dark room behind. Second, feed its luminance into the colour
+    rule (`outbreakGiIrr`), or bounce adds grey light to a desaturated room instead of colour. Third, the physically
+    normalised ×1 is barely visible after Outbreak's grade, so stills are shown at ×3 and ×5.
+  - It reads most in the torch-lit hall (the walls and the kitchen beside the beam warm up) and next to fire (the car
+    beside the burning dead). The crossroads lamps are too dim at 22:00 for their bounce to show, which is the shroud
+    rule working.
+  - It costs nothing measurable on Metal: paired `ab-gpu.ts` on `pro` at 3456×1894 gives Δ −0.02 to +0.04 ms at 0.5 m
+    and 0.25 m texels, inside the noise. It stays a Lab option behind Today until Kit picks (D-47).
+
 ## Art direction
 
 ### Outbreak look: one lab, knobs as trims on the day cycle (2026-10-15)

@@ -855,6 +855,7 @@ export class OutbreakFrameRenderer {
     render.lookCompare = this.lookCompare
     render.postParams = unseenEval.postParams
     render.postExtra = unseenEval.postExtra
+    outbreakClientFeatures.frameRender(featureFrame, render)
     this.renderer.render(render)
     this.details.stepLife(time, settings.details, day.lamps, drawn, (e) => audio.play(e))
     this.lifeSounds.update(lf, settings.details, weatherNow.sample.storm, session.view.vehicles, look)
