@@ -59,6 +59,8 @@ export type SsrSettings = {
   edgeFade: number
   /** Temporal response: the share of each new frame. */
   history: number
+  /** The share of each new frame while the view moves (1 = Today: a moving view drops the history). */
+  historyMoving: number
   /** Debug view: the final reflection, the surface weight (gloss × up-facing), or the hit mask. */
   view: "final" | "weight" | "hits"
 }
@@ -82,6 +84,7 @@ export const SSR_DEFAULTS: SsrSettings = {
   skyReplace: 1,
   edgeFade: 0.15,
   history: 0.08,
+  historyMoving: 1,
   view: "final",
 }
 
@@ -115,6 +118,7 @@ export function ssrControls(group = "Reflections", prefix = ""): LabControl[] {
     range("scaleIndoor", "Resolution indoors", 0.25, 1, 0.05, "× 3D res", "Quality"),
     range("streakIndoor", "Streaking indoors", 0, 4, 0.05, "×", "Quality"),
     range("history", "History weight (new frame)", 0.02, 1, 0.01, undefined, "Quality"),
+    range("historyMoving", "History weight in motion", 0.05, 1, 0.01, undefined, "Quality"),
     { key: key("view"), ...field("view"), label: "View", group, subsection: "Debug", type: "select", options: [{ value: "final", label: "Final" }, { value: "weight", label: "Surface weight" }, { value: "hits", label: "Ray hits" }] },
   ]
 }
@@ -142,7 +146,7 @@ export class Ssr {
     p.set([s.maxLuminance, s.thickness, s.maxDistance, indoor ? s.stepsIndoor : s.steps], 4)
     p.set([s.edgeFade, s.skyReplace, indoor ? Math.max(64, Math.min(1024, Math.round(s.maxStepsIndoor))) : SSR_MAX_STEPS, s.view === "weight" ? 1 : s.view === "hits" ? 2 : 0], 8)
     p.set(packWet(opts.wet ?? WET_DEFAULTS), 12)
-    return { downscale: 1 / scale, history: s.history, params: p }
+    return { downscale: 1 / scale, history: s.history, moving: s.historyMoving, params: p }
   }
 }
 

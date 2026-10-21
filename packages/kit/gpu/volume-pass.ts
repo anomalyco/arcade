@@ -60,11 +60,18 @@ export type VolumeInput = {
   rect?: readonly [number, number, number, number]
   /** History response: the share of the new frame (default 0.1). */
   history?: number
+  /**
+   * The share of the new frame once the view moves 2+ slot texels a frame (default 1: a moving view drops the history,
+   * so every frame shows a fresh, noisy march). Below 1 the history is kept in motion, clipped to the current 3×3
+   * mean ± 1.25σ instead of the padded min/max, and blended in a luminance-compressed space (Karis), so a single bright
+   * march texel (a lamp head caught by one reflection ray) can't flash for a frame: it has to persist to show.
+   */
+  moving?: number
   /** The slot's own uniforms (up to `VOLUME_PARAM_FLOATS`), `volumeParams` at binding 21. */
   params?: Float32Array
 }
 
-export const VOLUME_FRAME_FLOATS = 60
+export const VOLUME_FRAME_FLOATS = 64
 
 /** `VolumeFrame` (binding 4) and the depth helpers every depth-reading volume shader shares. */
 export const volumeFrameWgsl = /* wgsl */ `
@@ -75,6 +82,7 @@ struct VolumeFrame {
   eye: vec4f,             // eye xyz, frame index (0 without history: a static jitter)
   size: vec4f,            // volume target w, h, scene depth w, h
   params: vec4f,          // history response, history valid, depth clear value, downscale
+  motion: vec4f,          // response once moving (1 = drop the history), unused ×3
 }
 @group(0) @binding(3) var sceneDepth: texture_depth_multisampled_2d;
 @group(0) @binding(4) var<uniform> V: VolumeFrame;
@@ -178,13 +186,40 @@ ${fullscreen}
   let pc = V.prevViewProj * vec4f(world, 1.0);
   let puv = vec2f(pc.x / pc.w * 0.5 + 0.5, 0.5 - pc.y / pc.w * 0.5);
   let inside = pc.w > 0.0 && all(puv >= vec2f(0.0)) && all(puv <= vec2f(1.0));
-  // The box spans the per-pixel jitter noise, so the history may average it; the pad lets a moving beam fade, not snap.
-  let pad = (mx - mn) * 0.25;
-  let prev = clamp(textureSampleLevel(histTex, histSamp, puv, 0.0), mn - pad, mx + pad);
   let motion = length((puv - uv) * vec2f(size));
-  let a = select(1.0, mix(V.params.x, 1.0, clamp(motion / 2.0, 0.0, 1.0)), inside && V.params.y > 0.5);
-  return mix(prev, cur, a);
+  let hist = textureSampleLevel(histTex, histSamp, puv, 0.0);
+  if (V.motion.x >= 1.0) {
+    // The box spans the per-pixel jitter noise, so the history may average it; the pad lets a moving beam fade, not snap.
+    let pad = (mx - mn) * 0.25;
+    let prev = clamp(hist, mn - pad, mx + pad);
+    let a = select(1.0, mix(V.params.x, 1.0, clamp(motion / 2.0, 0.0, 1.0)), inside && V.params.y > 0.5);
+    return mix(prev, cur, a);
+  }
+  // Kept in motion: a luminance-compressed blend (rgb / (1 + luma); alpha stays linear) against a box that goes from
+  // the padded min/max when still (the history averages the march's jitter noise, as above) to mean ± 1.25σ in motion.
+  var m1 = vec4f(0.0);
+  var m2 = vec4f(0.0);
+  var cmn = vec4f(1e9);
+  var cmx = vec4f(-1e9);
+  for (var y = -1; y <= 1; y++) {
+    for (var x = -1; x <= 1; x++) {
+      let c = volumeCompress(textureLoad(curTex, clamp(px + vec2i(x, y), vec2i(0), size - 1), 0));
+      m1 += c;
+      m2 += c * c;
+      cmn = min(cmn, c);
+      cmx = max(cmx, c);
+    }
+  }
+  let mean = m1 / 9.0;
+  let sigma = sqrt(max(m2 / 9.0 - mean * mean, vec4f(0.0)));
+  let k = clamp(motion / 2.0, 0.0, 1.0);
+  let pad = (cmx - cmn) * 0.25;
+  let prev = clamp(volumeCompress(hist), mix(cmn - pad, mean - sigma * 1.25, k), mix(cmx + pad, mean + sigma * 1.25, k));
+  let a = select(1.0, mix(V.params.x, V.motion.x, k), inside && V.params.y > 0.5);
+  return volumeExpand(mix(prev, volumeCompress(cur), a));
 }
+fn volumeCompress(c: vec4f) -> vec4f { return vec4f(c.rgb / (1.0 + max(dot(c.rgb, vec3f(0.2126, 0.7152, 0.0722)), 0.0)), c.a); }
+fn volumeExpand(c: vec4f) -> vec4f { return vec4f(c.rgb / max(1.0 - max(dot(c.rgb, vec3f(0.2126, 0.7152, 0.0722)), 0.0), 1e-4), c.a); }
 `
 
 /** Joint bilateral 4-tap upsample guided by the scene depth: 10 % apart in view distance is another surface. */
@@ -561,6 +596,7 @@ export class VolumeSlot {
       f.set([view.eye[0], view.eye[1], view.eye[2], this.usesHistory ? view.frame % 64 : 0], 48)
       f.set([w, h, view.depthWidth, view.depthHeight], 52)
       f.set([Math.min(1, Math.max(0.01, input.history ?? 0.1)), this.histValid ? 1 : 0, view.depthClear, downscale], 56)
+      f.set([Math.min(1, Math.max(0.01, input.moving ?? 1)), 0, 0, 0], 60)
       this.device.queue.writeBuffer(this.frameBuf!, 0, f)
       if (input.params) this.device.queue.writeBuffer(this.paramsBuf!, 0, input.params.buffer, input.params.byteOffset, Math.min(input.params.byteLength, VOLUME_PARAM_FLOATS * 4))
     }

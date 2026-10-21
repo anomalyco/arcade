@@ -172,6 +172,18 @@ proven animation techniques to animation.md, not here.
   samples of that footprint in the shared fog integrator. Specular, fog and shadow filtering remain approximations;
   the diffuse polygon integral is exact. Non-panel games do not compile the polygon shader.
 
+||||||| parent of 714185bb (Lot walking: SSR and fog keep their history in motion (variance clip, compressed blend), spot shadows fade by distance (AR-118))
+- **Screen-space reflection and fog slots must keep their history while walking (Lot, AR-118, 2026-10-21).** The
+  kit volume slots dropped their history once the view moved 2 slot texels a frame, so walking or turning showed a raw
+  quarter-res SSR march each frame: a far lamp head caught by a few reflection rays blinked on the wet road (Kit's
+  "glittering", "the light flashes"). `VolumeInput.moving` (Ssr/Fog `historyMoving`, 1 = Today) keeps it in motion with a
+  mean ± 1.25σ clip that blends in from the padded min/max by motion (still-camera noise averaging unchanged) and a
+  luminance-compressed blend (Karis), so one bright texel has to persist to show. Lot SSR 0.2; the fog stays at 1,
+  because its in-scatter follows the view ray rather than the surface it reprojects by, so a kept history made the booth
+  head's near halo jump (pops 4.8 → 7.9).
+  `games/lot/scripts/motion.ts`: turning pops/frame 148 → 3.7, block flashes 31 → 0 frames; the far head's wet
+  reflection (mirror ROI) 4.7 → 0 pops/frame. Turning the fog bank or fog-depth blur off multiplied the reflection glitter
+  15× and 7×: atmosphere hides temporal faults, so attribute with it off as well as on.
 - **Far glow decals need a depth offset in steps, not millimetres (Lot, AR-118, 2026-10-21).** With depth24 and near
   0.15 one depth step is ≈ d²/(near·2²⁴): 9 mm at 150 m. The facility stairwell's lit panes sat 5 mm off their opaque
   backing and the sodium lenses 0–5 mm (some −0.9 mm) off their housings, so from the gate they tied with the wall and

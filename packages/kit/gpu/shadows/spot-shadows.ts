@@ -3,7 +3,8 @@ import type { LabControl } from "../../lab-panel"
 /**
  * Perspective shadow maps for a small pool of spot lights, after Aiden's Ashwood rig (`render/lighting.ts`): the most
  * important shadow-casting spots near the camera get a slot (score = intensity / max(d − 0.3·range, 1)², with 1.6×
- * hysteresis for holders and a deterministic tiebreak), slots cross-fade over 0.35 s, and a slot's map is re-rendered
+ * hysteresis for holders and a deterministic tiebreak), slots cross-fade over 0.35 s and fade with the camera's distance
+ * over the last 10 m before the pool's cut-off (so walking toward a light grows its shadows in), and a slot's map is re-rendered
  * only when it changes hands, its light moves or the world changes (`invalidate`), because the world is static. The
  * scene samples them with a slope- and distance-scaled bias and a fixed 3×3 grid of hardware-filtered comparison taps
  * (36 effective, no per-pixel noise, so nothing crawls under TAA jitter).
@@ -57,10 +58,25 @@ export type SpotCandidate = {
   intensity: number
 }
 
-export type SpotSlot = { id: number | null; weight: number; dirty: boolean; light: SpotCandidate | null }
+/**
+ * `weight` is the hand-over fade (time); `reach` fades the shadow with the camera's distance to the light over the last
+ * `REACH_FADE_M` before the pool's cut-off (range + `REACH_M`), so walking toward a light grows its shadows in instead of
+ * popping them on, and a still camera keeps a steady value. The scene sees `weight × reach`.
+ */
+export type SpotSlot = { id: number | null; weight: number; reach: number; dirty: boolean; light: SpotCandidate | null }
 
 const HYSTERESIS = 1.6
 const FADE_S = 0.35
+/** Lights farther than range + REACH_M from the camera get no slot. */
+const REACH_M = 15
+/** Width of the distance fade before that cut-off. */
+const REACH_FADE_M = 10
+/** Shadow strength by camera distance: 1 within range + 5 m, 0 at range + 15 m (smoothstep). */
+export function spotShadowReach(c: SpotCandidate, eye: Vec3): number {
+  const d = Math.hypot(c.pos[0] - eye[0], c.pos[1] - eye[1], c.pos[2] - eye[2])
+  const t = Math.max(0, Math.min(1, (c.range + REACH_M - d) / REACH_FADE_M))
+  return t * t * (3 - 2 * t)
+}
 
 /** CPU slot assignment with hysteresis and cross-fades. Pure apart from its own slot state. */
 export class SpotShadowPicker {
@@ -78,7 +94,7 @@ export class SpotShadowPicker {
     const n = Math.max(0, Math.min(MAX_SPOT_SHADOWS, Math.round(count)))
     if (n !== this.slots.length) this.snap = true
     while (this.slots.length > n) this.slots.pop()
-    while (this.slots.length < n) this.slots.push({ id: null, weight: 0, dirty: true, light: null })
+    while (this.slots.length < n) this.slots.push({ id: null, weight: 0, reach: 0, dirty: true, light: null })
   }
 
   /** The static world changed (streaming, a door, new colliders): every held map re-renders. */
@@ -99,7 +115,7 @@ export class SpotShadowPicker {
     const held = new Set<number>()
     for (const s of this.slots) if (s.id !== null && s.weight > 0) held.add(s.id)
     const byId = new Map(candidates.map((c) => [c.id, c]))
-    const near = candidates.filter((c) => Math.hypot(c.pos[0] - eye[0], c.pos[1] - eye[1], c.pos[2] - eye[2]) < c.range + 15)
+    const near = candidates.filter((c) => Math.hypot(c.pos[0] - eye[0], c.pos[1] - eye[1], c.pos[2] - eye[2]) < c.range + REACH_M)
     const ranked = near
       .map((c) => ({ c, s: SpotShadowPicker.score(c, eye, held.has(c.id)) }))
       .sort((a, b) => b.s - a.s || a.c.id - b.c.id)
@@ -112,19 +128,21 @@ export class SpotShadowPicker {
       const c = byId.get(s.id)
       if (!c || !wanted.has(s.id)) {
         s.weight = Math.max(0, s.weight - step)
-        if (s.weight === 0 || !c) Object.assign(s, { id: null, weight: 0, light: null })
+        if (s.weight === 0 || !c) Object.assign(s, { id: null, weight: 0, reach: 0, light: null })
+        else s.reach = spotShadowReach(c, eye)
         continue
       }
       s.weight = Math.min(1, s.weight + step)
       const moved = !s.light || c.pos.some((v, i) => v !== s.light!.pos[i]) || c.axis.some((v, i) => v !== s.light!.axis[i]) || c.cosOuter !== s.light.cosOuter || c.range !== s.light.range
       s.light = c
+      s.reach = spotShadowReach(c, eye)
       if (moved || this.worldDirty) s.dirty = true
     }
     for (const id of ranked) {
       if (this.slots.some((s) => s.id === id)) continue
       const free = this.slots.find((s) => s.id === null)
       if (!free) break
-      Object.assign(free, { id, weight: jump ? 1 : 0, light: byId.get(id)!, dirty: true })
+      Object.assign(free, { id, weight: jump ? 1 : 0, reach: spotShadowReach(byId.get(id)!, eye), light: byId.get(id)!, dirty: true })
     }
     this.worldDirty = false
     return this.slots
@@ -169,7 +187,8 @@ export function packSpotShadows(out: Float32Array, slots: readonly SpotSlot[], f
   let n = 0
   for (let i = 0; i < slots.length && n < MAX_SPOT_SHADOWS; i++) {
     const slot = slots[i]!
-    if (slot.id === null || !slot.light || slot.weight <= 0) continue
+    const weight = slot.weight * slot.reach
+    if (slot.id === null || !slot.light || weight <= 0) continue
     const index = frameIndexOf(slot.id)
     if (index < 0) continue
     const l = slot.light
@@ -177,7 +196,7 @@ export function packSpotShadows(out: Float32Array, slots: readonly SpotSlot[], f
     const o = 4 + n * SLOT_FLOATS
     out.set(spotViewProj(l.pos, l.axis, half, SPOT_NEAR, l.range), o)
     out.set([l.pos[0], l.pos[1], l.pos[2], SPOT_NEAR], o + 16)
-    out.set([index, slot.weight, (2 * Math.tan(half)) / s.size, s.bias], o + 20)
+    out.set([index, weight, (2 * Math.tan(half)) / s.size, s.bias], o + 20)
     out.set([l.range, i, 0, 0], o + 24)
     n++
   }

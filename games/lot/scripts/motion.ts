@@ -9,9 +9,9 @@ import { build } from "vite"
  * synthetic 60 fps clock (`lot.step`), headless and muted, with each pass toggled to attribute what flickers.
  *
  * Per frame, on display luminance (0..255) of the canvas, each pixel's world point (from the temporal resolve's linear
- * depth) is reprojected into the previous frame and compared with the 3×3 range there, so a still world under motion
+ * depth) is reprojected into the previous frame and compared with the range of the four texels it falls between, so a still world under motion
  * scores ~0 and only appearance changes count (disoccluded and off-screen pixels are skipped):
- * - **flicker**: mean distance outside that range, per 3×3 screen region; **pops**: pixels ≥ 24 outside it.
+ * - **flicker**: mean distance outside that range, per 3×3 screen region; **pops**: pixels ≥ 12 outside it.
  * - **flash**: 32×32 px blocks whose mean signed change is over 3 (an area brightening or dimming at once).
  * - **rois**: the same within a box around a projected world point (a lamp head, the stairwell glow).
  * Each run also writes a heat map of the summed change (`<path>-<variant>-heat.png`).
@@ -28,24 +28,30 @@ mkdirSync(out, { recursive: true })
 const viewport = (process.env.MOTION_VIEWPORT ?? "1920x1080").split("x").map(Number) as [number, number]
 
 type Pose = { x: number; z: number; yaw: number; pitch: number }
-type Roi = { name: string; p: [number, number, number]; r: number }
+/** A box of half-size r px (at 1080 p) around a world point, or with `mirror` around its reflection in the ground (y 0). */
+type Roi = { name: string; p: [number, number, number]; r: number; mirror?: boolean }
 type Path = { frames: number; pose: (t: number) => Pose; rois?: Roi[] }
 const WALK = 2.1
 /** Seconds → pose. Yaw 0 looks along −z, toward the facility. */
 export const PATHS: Record<string, Path> = {
   // The title camera walking toward the facility, the far lamps and the wet road reflections (Kit's pin 1).
-  walk: { frames: 240, pose: (t) => ({ x: -2.3, z: 157 - WALK * t, yaw: -0.03, pitch: 0.035 }), rois: [{ name: "head100", p: [-6.3, 9.2, 100], r: 50 }, { name: "head58", p: [19.8, 9.2, 57.8], r: 50 }] },
+  walk: { frames: 150, pose: (t) => ({ x: -2.3, z: 157 - WALK * t, yaw: -0.03, pitch: 0.035 }), rois: [{ name: "head100", p: [-6.3, 9.2, 100], r: 50 }, { name: "head58", p: [19.8, 9.2, 57.8], r: 50 }] },
   // Kit's second pin: from the gate, the facility's left end (stairwell glow column, warm bays, fence-line lights).
   gate: { frames: 180, pose: (t) => ({ x: -3 + 0.3 * t, z: 152 - WALK * t, yaw: 0.25 + 0.04 * Math.sin(t * 2), pitch: 0.03 }), rois: [{ name: "stairwell", p: [-41.4, 9, 25], r: 60 }, { name: "bays", p: [-30, 6, 22], r: 90 }] },
   "gate-turn": { frames: 150, pose: (t) => ({ x: -3, z: 150, yaw: 0.05 + 0.18 * t, pitch: 0.03 }), rois: [{ name: "stairwell", p: [-41.4, 9, 25], r: 60 }, { name: "bays", p: [-30, 6, 22], r: 90 }] },
   // Under the booth's sodium head (x 4.6, z 129.6): its pool and the wagon pass underfoot.
-  lamp: { frames: 240, pose: (t) => ({ x: 1, z: 138 - WALK * t, yaw: 0.05, pitch: -0.02 }), rois: [{ name: "boothHead", p: [4.5, 6.4, 129.6], r: 60 }] },
+  lamp: { frames: 150, pose: (t) => ({ x: 1, z: 138 - WALK * t, yaw: 0.05, pitch: -0.02 }), rois: [{ name: "boothHead", p: [4.5, 6.4, 129.6], r: 60 }] },
+  // Kit's first Scrawl at 0:12–0:16: past the mid-lot head (x −6.3, z 100) toward the facility, the far head's wet streak
+  // (x 19.8, z 57.8) and the road glitter between.
+  kit: { frames: 150, pose: (t) => ({ x: -5 + 0.2 * t, z: 102 - WALK * t, yaw: -0.1 + 0.03 * Math.sin(t * 1.7), pitch: -0.02 }), rois: [{ name: "head58", p: [19.8, 9.2, 57.8], r: 50 }, { name: "mirror58", p: [19.8, 9.2, 57.8], r: 60, mirror: true }, { name: "horizon", p: [12, 0, 62], r: 120 }] },
+  // The lamp path's first pose, held: the renderer's own noise floor with the camera still.
+  still: { frames: 90, pose: () => ({ x: 1, z: 138, yaw: 0.05, pitch: -0.02 }), rois: [{ name: "boothHead", p: [4.5, 6.4, 129.6], r: 60 }] },
   // Across the lot facing the facility, between the two far heads.
-  strafe: { frames: 240, pose: (t) => ({ x: -8 + WALK * t, z: 90, yaw: 0, pitch: 0.03 }) },
+  strafe: { frames: 150, pose: (t) => ({ x: -8 + WALK * t, z: 90, yaw: 0, pitch: 0.03 }) },
   // Looking around from the lot's centre, at a mouse-turn pace.
-  turn: { frames: 180, pose: (t) => ({ x: 2, z: 112, yaw: -1 + 0.8 * t, pitch: 0.02 }) },
+  turn: { frames: 150, pose: (t) => ({ x: 2, z: 112, yaw: -1 + 0.8 * t, pitch: 0.02 }) },
   // Close to the facility: lit windows, the far sodium head and wet asphalt at grazing angles.
-  facility: { frames: 240, pose: (t) => ({ x: -4 + 0.4 * t, z: 72 - WALK * t, yaw: 0.25 * Math.sin(t * 0.9), pitch: 0.05 }) },
+  facility: { frames: 150, pose: (t) => ({ x: -4 + 0.4 * t, z: 72 - WALK * t, yaw: 0.25 * Math.sin(t * 0.9), pitch: 0.05 }) },
 }
 
 /** In-page setting changes: each runs on a fresh copy of the shipped settings. */
@@ -72,6 +78,16 @@ const VARIANTS: Record<string, string> = {
   "decal-0-near": "lot.settings.decalDepth = 0; lot.camera.near = 0.5",
   "decal-0-taa-off": "lot.settings.decalDepth = 0; lot.renderer.setTemporal({ ...lot.renderer.getTemporal(), mode: 'msaa' })",
   "decal-0-rooms-off": "lot.settings.decalDepth = 0; lot.rooms.mode = 'today'; lot.glass.mode = 'today'",
+  "ssr-move-0.3": "lot.ssr.settings.historyMoving = 0.3",
+  "ssr-move-0.2": "lot.ssr.settings.historyMoving = 0.2",
+  "fog-move-0.3": "lot.fog.settings.historyMoving = 0.3",
+  "move-0.3": "lot.ssr.settings.historyMoving = 0.3; lot.fog.settings.historyMoving = 0.3",
+  // Today: main before AR-118 (no glow decal offset, volume histories dropped in motion, spot shadows by time only).
+  today: "lot.ssr.settings.historyMoving = 1; lot.fog.settings.historyMoving = 1; lot.settings.decalDepth = 0",
+  "move-today": "lot.ssr.settings.historyMoving = 1; lot.fog.settings.historyMoving = 1",
+  "specaa-2": "lot.settings.specularAA = 2",
+  "sharpen-0": "lot.renderer.setTemporal({ ...lot.renderer.getTemporal(), sharpen: 0 })",
+  "taa-hist-0.95": "lot.renderer.setTemporal({ ...lot.renderer.getTemporal(), history: 0.95 })",
   "dressing-off": "Object.assign(lot.dressing, { look: 'today', weeds: 0, leaves: 0, gravel: 0, litter: 0 })",
 }
 const pathNames = (process.env.MOTION_PATHS ?? Object.keys(PATHS).join(",")).split(",").filter(Boolean)
@@ -234,13 +250,17 @@ try {
           // (flashes, glitter, popping, smear) count. Disoccluded or off-screen pixels are skipped.
           const iv = inv(VP[k]!), pv = VP[1 - k]!
           const roiC = rois.map((r) => {
-            const c = VP[k]!, x = r.p[0]!, y = r.p[1]!, z = r.p[2]!
+            const c = VP[k]!
+            let x = r.p[0]!, y = r.p[1]!, z = r.p[2]!
+            if (r.mirror) { const t = eye[1]! / (eye[1]! + y); x = eye[0]! + (x - eye[0]!) * t; z = eye[2]! + (z - eye[2]!) * t; y = 0 }
             const cw = c[3]! * x + c[7]! * y + c[11]! * z + c[15]!
-            return { ...r, sx: ((c[0]! * x + c[4]! * y + c[8]! * z + c[12]!) / cw * 0.5 + 0.5) * W, sy: (0.5 - (c[1]! * x + c[5]! * y + c[9]! * z + c[13]!) / cw * 0.5) * H, ok: cw > 0, sum: 0, n: 0, pops: 0 }
+            return { ...r, r: r.r * H / 1080, sx: ((c[0]! * x + c[4]! * y + c[8]! * z + c[12]!) / cw * 0.5 + 0.5) * W, sy: (0.5 - (c[1]! * x + c[5]! * y + c[9]! * z + c[13]!) / cw * 0.5) * H, ok: cw > 0, sum: 0, n: 0, pops: 0 }
           })
           const grid = new Float64Array(9), pops = new Uint32Array(9), cnt = new Uint32Array(9)
           block.fill(0); blockN.fill(0)
           let valid = 0
+          const e0 = eye[0]!, e1 = eye[1]!, e2 = eye[2]!, c3 = VP[k]![3]!, c7 = VP[k]![7]!, c11 = VP[k]![11]!
+          const roiOn = roiC.filter((r) => r.ok)
           for (let y = 0; y < H; y++) {
             const ny = 1 - ((y + 0.5) / H) * 2, gy = Math.min(2, Math.floor((y * 3) / H))
             for (let x = 0; x < W; x++) {
@@ -249,14 +269,13 @@ try {
               // World point: unproject at two depths for the ray, then walk to the stored clip w.
               const hx = iv[0]! * nx + iv[4]! * ny + iv[8]! * 0.5 + iv[12]!, hy = iv[1]! * nx + iv[5]! * ny + iv[9]! * 0.5 + iv[13]!
               const hz = iv[2]! * nx + iv[6]! * ny + iv[10]! * 0.5 + iv[14]!, hw = iv[3]! * nx + iv[7]! * ny + iv[11]! * 0.5 + iv[15]!
-              let rx = hx / hw - eye[0]!, ry = hy / hw - eye[1]!, rz = hz / hw - eye[2]!
-              const rl = Math.hypot(rx, ry, rz); rx /= rl; ry /= rl; rz /= rl
-              const c = VP[k]!
-              const wr = c[3]! * rx + c[7]! * ry + c[11]! * rz
+              let rx = hx / hw - e0, ry = hy / hw - e1, rz = hz / hw - e2
+              const rl = 1 / Math.sqrt(rx * rx + ry * ry + rz * rz); rx *= rl; ry *= rl; rz *= rl
+              const wr = c3 * rx + c7 * ry + c11 * rz
               let w = hasDepth ? dcur[i]! : 0
               if (!(w > 0) || w > 1e5) w = 3000 * wr
               const t = w / Math.max(wr, 1e-6)
-              const wx = eye[0]! + rx * t, wy = eye[1]! + ry * t, wz = eye[2]! + rz * t
+              const wx = e0 + rx * t, wy = e1 + ry * t, wz = e2 + rz * t
               const pw = pv[3]! * wx + pv[7]! * wy + pv[11]! * wz + pv[15]!
               if (pw <= 0) continue
               const qx = ((pv[0]! * wx + pv[4]! * wy + pv[8]! * wz + pv[12]!) / pw * 0.5 + 0.5) * W - 0.5
@@ -265,20 +284,18 @@ try {
               if (cx < 1 || cy < 1 || cx >= W - 1 || cy >= H - 1) continue
               const pd = dprev[cy * W + cx]!
               if (hasDepth && pd > 0 && pd < 1e5 && w < 2000 && Math.abs(pd - pw) > 0.03 * pw + 0.05) continue
-              let lo = 255, hi = 0
-              for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
-                const v = prev[(cy + oy) * W + cx + ox]!
-                if (v < lo) lo = v
-                if (v > hi) hi = v
-              }
+              // The four texels the reprojected point falls between bound what a still, resolved scene can show there.
+              const fx = Math.floor(qx), fy = Math.floor(qy), a = fy * W + fx
+              const t00 = prev[a]!, t10 = prev[a + 1]!, t01 = prev[a + W]!, t11 = prev[a + W + 1]!
+              const lo = Math.min(t00, t10, t01, t11), hi = Math.max(t00, t10, t01, t11)
               const v = cur[i]!
               const diff = v > hi ? v - hi : v < lo ? lo - v : 0
               const gi = gy * 3 + Math.min(2, Math.floor((x * 3) / W))
               grid[gi]! += diff; cnt[gi]!++; heat[i]! += diff; valid++
-              if (diff >= 24) pops[gi]!++
+              if (diff >= 12) pops[gi]!++
               const bi = Math.floor(x / BS) + Math.floor(y / BS) * bw
               block[bi]! += v > hi ? v - hi : v < lo ? v - lo : 0; blockN[bi]!++
-              for (const r of roiC) if (r.ok && Math.abs(x - r.sx) < r.r && Math.abs(y - r.sy) < r.r) { r.sum += diff; r.n++; if (diff >= 24) r.pops++ }
+              for (let ri = 0; ri < roiOn.length; ri++) { const r = roiOn[ri]!; if (Math.abs(x - r.sx) < r.r && Math.abs(y - r.sy) < r.r) { r.sum += diff; r.n++; if (diff >= 12) r.pops++ } }
             }
           }
           // Flash: a 32 px block whose mean signed change, after reprojection, is over 3 (an area brightening or dimming).

@@ -3,6 +3,12 @@ import type { FogSettings } from "@arcade/kit/gpu/fog-scatter"
 
 /** The lot's atmosphere over the fog (Backquote › Atmosphere): drifting bank, fog-depth blur, lit cloud deck. */
 export const ATMOSPHERE: Partial<FogSettings> = { bank: "drift", blur: "depth", clouds: "lit" }
+/**
+ * The reflection history is kept while walking (Reflections › Quality › History weight in motion; 1 is Today). The fog
+ * keeps Today's: its in-scatter follows the view ray, not the surface it reprojects by, so a kept history makes a near
+ * lamp's halo jump (booth head pops/frame 4.8 → 7.9 on the lamp walk).
+ */
+export const SSR_MOTION = { historyMoving: 0.2 } as const
 
 export const PRESETS = {
   sodium: { density: 0.01, falloff: 0.05, sky: 1, lamp: 0.3, wetness: 0.8, exposure: 2 ** -2.2, haze: 0.12 },

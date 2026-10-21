@@ -9,6 +9,7 @@ import {
   SPOT_SHADOW_UNIFORM_FLOATS,
   SpotShadowPicker,
   packSpotShadows,
+  spotShadowReach,
   spotShadowControls,
   spotViewProj,
   type SpotCandidate,
@@ -65,6 +66,24 @@ describe("spot shadow picker", () => {
     // A lamp that comes into range later still fades in.
     const slots = p.update([lamp(1, 0, 6), lamp(2, 3, 6)], [0, 1.7, 0], 1 / 60)
     expect(slots[1]).toMatchObject({ id: 2, weight: 0 })
+  })
+
+  test("walking toward a light grows its shadow in with distance instead of popping it on", () => {
+    const p = new SpotShadowPicker(1)
+    const l = lamp(1, 0, 0) // range 40: no slot past 55 m, full strength inside 45 m
+    const out = new Float32Array(SPOT_SHADOW_UNIFORM_FLOATS)
+    const strength: number[] = []
+    for (let z = 60; z >= 40; z -= 2.1 / 60) {
+      packSpotShadows(out, p.update([l], [0, 1.7, z], 1 / 60), () => 0, { count: 1, size: 1024, bias: 1 })
+      strength.push(out[0] ? out[4 + 21]! : 0)
+    }
+    // Monotonic, and no frame-to-frame step bigger than 1 % of full strength.
+    for (let i = 1; i < strength.length; i++) {
+      expect(strength[i]!).toBeGreaterThanOrEqual(strength[i - 1]! - 1e-6)
+      expect(strength[i]! - strength[i - 1]!).toBeLessThan(0.01)
+    }
+    expect(strength.at(-1)).toBe(1)
+    expect(spotShadowReach(l, [0, 7, 50])).toBeCloseTo(0.5, 6)
   })
 
   test("zero slots is Today: nothing is assigned", () => {
