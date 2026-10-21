@@ -28,6 +28,7 @@ try {
       page.on("console",m=>{if(m.type()==="error"){report.errors.push(`${kind}/${view}: ${m.text()}`);console.error(m.text())}})
       const url=new URL(kind==="lot"?(process.env.LOT_URL??"https://studio.taila8e7c7.ts.net:5255/arcade/lot/"):"https://studio.taila8e7c7.ts.net:5253/")
       url.searchParams.set("view",view);url.searchParams.set("cam",[pose.x,pose.y,pose.z,pose.yaw,pose.pitch,pose.fov].join(","))
+      if(kind==="lot")url.searchParams.set("time","0")
       if(kind==="ashwood"){url.searchParams.set("shot","1");url.searchParams.set("follow","1")}
       await page.goto(url.href,{waitUntil:"domcontentloaded",timeout:60_000})
       if(kind==="lot") {
