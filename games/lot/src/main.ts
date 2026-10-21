@@ -12,7 +12,7 @@ import { WET_DEFAULTS, packWet, wetControls } from "@arcade/kit/gpu/reflections/
 import { makeSceneShader, spriteShader } from "@arcade/kit/gpu/shaders"
 import { TexturedMeshPass, type TexturedPrimitive } from "@arcade/kit/gpu/textured-mesh"
 import { TEMPORAL_DEFAULTS } from "@arcade/kit/gpu/temporal"
-import { ForestPass, cardShadingHooks, forestControls, forestDefaults } from "@arcade/kit/gpu/forest"
+import { ForestPass, FOREST_PRESETS, cardShadingHooks, forestControls, forestDefaults } from "@arcade/kit/gpu/forest"
 import { LabPanel } from "@arcade/kit/lab-panel"
 import { createGlassSettings, createRoomSettings, glassControls, packGlassKnobs, roomControls } from "@arcade/kit/gpu/materials/glass"
 import { loadRoomAtlas } from "@arcade/kit/gpu/materials/rooms"
@@ -209,6 +209,10 @@ async function main() {
   }
   function render(now: number) {
     if(paused) { last=now; requestAnimationFrame(render); return }
+    frame(now)
+    requestAnimationFrame(render)
+  }
+  function frame(now: number) {
     const width = Math.max(1, Math.round(innerWidth * Math.min(devicePixelRatio, 1.5)))
     const height = Math.max(1, Math.round(innerHeight * Math.min(devicePixelRatio, 1.5)))
     if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; renderer.resize(width, height) }
@@ -227,7 +231,7 @@ async function main() {
     wet.wetness=settings.wetness
     custom.set([settings.density, settings.falloff, settings.sky, settings.lamp, settings.wetness, settings.haze, settings.reflectionCap, settings.specularAA, ...camera.direction, Number(camera.flashlight)])
     custom.set(packWet(wet),12)
-    custom.set([forestSettings.inner,forestSettings.face,0,0],20)
+    custom.set([forestSettings.inner,forestSettings.face,settings.decalDepth,0],20)
     packGlassKnobs(glass,rooms,custom,24)
     packContactShadowKnobs(contact,custom,36)
     forest.update(camera.eye, forestSettings)
@@ -246,13 +250,16 @@ async function main() {
       occluders: lights.occ, occluderCount: lights.occCount, lampPower: lights.power, lampCount: 0,
       view: [-700, -700, 700, 700], batches: [], alphaSprites: empty, alphaCount: 0, addSprites: empty, addCount: 0, grade: [0, 0, 0, settings.exposure],
       fog:fog.update({eye:camera.eye,viewProj:vp,lamps:fogLamps,time:fixedTime ?? now/1000}),volume:volumes(),fogBlur:fog.blurInput() }
-    renderer.render(lastFrame)
+    if(stepping) renderer.drawTo(lastFrame); else renderer.render(lastFrame)
     frames++
     if(smoke) void device.queue.onSubmittedWorkDone().then(()=>performance.mark("lot:frame-complete"))
     // Software-GPU smoke must submit exactly two real frames; readiness polling can otherwise build a long queue.
     if(smoke && frames >= 2) paused = true
-    requestAnimationFrame(render)
   }
+  /** Automation only: renders one frame `ms` after the last on a synthetic clock while paused (scripted camera paths). */
+  // It draws synchronously, so the caller can copy the canvas texture in the same task.
+  let stepping = false
+  const step = (ms: number) => { stepping = true; try { frame(last + ms) } finally { stepping = false } }
   /** Paired whole-frame GPU time, reflections Today vs on, alternating order (automation only). */
   async function measure(rounds=12) {
     paused=true
@@ -266,7 +273,7 @@ async function main() {
     return out
   }
   // measureFrame(): GPU ms of the last frame's input (timestamp-query), for scripts/atmosphere.ts.
-  Object.assign(window, { lot: { camera, settings, indoor, walls, ssr, wet, measure, measureFrames, measureFrame: () => lastFrame ? renderer.measure(lastFrame) : null, get input() { return lastFrame }, glass, rooms, contact, forest:forestSettings, forestStats:()=>forest.stats(), timings:{worldMs,readyMs}, dressing:dressingSettings, get dressingCount() { return dressingCount }, fog, renderer, comparison, get frames() { return frames }, get paused() { return paused }, set paused(value:boolean) { paused=value }, ready: true } })
+  Object.assign(window, { lot: { camera, settings, indoor, walls, ssr, wet, measure, measureFrames, measureFrame: () => lastFrame ? renderer.measure(lastFrame) : null, step, spots, forestPresets:FOREST_PRESETS, get input() { return lastFrame }, glass, rooms, contact, forest:forestSettings, forestStats:()=>forest.stats(), timings:{worldMs,readyMs}, dressing:dressingSettings, get dressingCount() { return dressingCount }, fog, renderer, comparison, get frames() { return frames }, get paused() { return paused }, set paused(value:boolean) { paused=value }, ready: true } })
   requestAnimationFrame(render)
 }
 void main().catch(error => { console.error(error); document.getElementById("hud")!.textContent = String(error) })

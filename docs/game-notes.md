@@ -163,6 +163,16 @@ proven animation techniques to animation.md, not here.
 
 ## Rendering (WebGPU)
 
+- **Far glow decals need a depth offset in steps, not millimetres (Lot, AR-118, 2026-10-21).** With depth24 and near
+  0.15 one depth step is ≈ d²/(near·2²⁴): 9 mm at 150 m. The facility stairwell's lit panes sat 5 mm off their opaque
+  backing and the sodium lenses 0–5 mm (some −0.9 mm) off their housings, so from the gate they tied with the wall and
+  swapped as the camera moved and jittered: Kit's "flashing lights to the left". `SceneHooks.depthBias` (kit
+  `gpu/shaders.ts`, vsStatic) subtracts N × 2⁻²⁴ × w from clip z: a constant step margin at every distance, whose
+  world overlap stays sub-pixel. The lot pulls MAT glow 4 steps and its interior-window panes (3 cm proud of the glow
+  proxies) 8 (Glass › Glow decal depth offset, 0 = Today). `games/lot/scripts/motion.ts` (reprojected per-pixel change
+  around a projected world ROI) on the gate walk: stairwell pops 7.86 → 0 per frame, frames with a pop 33 → 0 of 179;
+  near 0.5 alone only halves it (2.56, 13 frames), TAA off makes it worse, rooms off doesn't change it. Scan for coplanar
+  emitters by brute force over the baked triangles (glow vs parallel non-glow within 20 cm), not by eye.
 - **Temporal upscaling buys Outbreak's 2× Retina frame back; keep MSAA in the smaller scene pass and add volumetrics
   after the resolve.** `@arcade/kit/gpu/temporal` (AR-72, after three.js r186 `TAAUNode` + FSR1 RCAS; rules for passes in
   [rendering-techniques.md](rendering-techniques.md#entries--post--grade)). Outbreak Lab › Anti-aliasing: MSAA (today) /

@@ -143,6 +143,13 @@ export type SceneHooks = {
   uv?: boolean
   declarations?: string
   vertex?: string
+  /**
+   * WGSL f32 (in `vsStatic`, `v` in scope): how many 24-bit depth steps to pull this vertex toward the camera, a
+   * polygon offset for decals that sit millimetres proud of a wall (lit window glow, lamp lenses). A constant step
+   * count holds the same depth margin at every distance, and the world-space overlap it allows (steps × one step's
+   * depth, ≈ 9 mm per step at 150 m with near 0.15) stays sub-pixel, so far decals stop z-fighting their backing.
+   */
+  depthBias?: string
   surface?: string
   lookSurface?: string
   /** WGSL expression for the surface base colour the look's moon rim reads (default `o.color`). */
@@ -237,6 +244,7 @@ struct VOut {
   }
   ${hooks.vertex ?? ""}
   o.pos = F.viewProj * vec4f(o.world, 1.0);
+  ${hooks.depthBias ? `o.pos.z -= (${hooks.depthBias}) * ${(2 ** -24).toExponential(8)} * o.pos.w;` : ""}
   o.color = pow(v.color.rgb, vec3f(2.2));
   o.mat = v.matAux.x;
   o.aux = v.matAux.y;
