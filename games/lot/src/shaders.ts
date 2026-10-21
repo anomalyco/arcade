@@ -24,6 +24,8 @@ export const reflectionVolume = ssrVolume({ wetMaterial: WET_ASPHALT })
 
 const nightHooks: SceneHooks = {
   lampGrid: false,
+  // Glow decals (the stairwell's lit panes, 5 mm off their backing; lamp lenses) win their depth tie at any distance.
+  depthBias: "select(0.0, N.forest.z, v.matAux.x > 2.5 && v.matAux.x < 3.5)",
   vertex: `if(v.matAux.x==30.0) {
     let toCam=normalize(F.cam.xz-v.pos.xz);
     let side=vec2f(toCam.y,-toCam.x);
@@ -77,7 +79,8 @@ export const thinGlassHooksLot = thinGlassHooks(hooks, { knobs: glassKnobs,
   roomAlbedo: "vec3f(0.5, 0.45, 0.38)" })
 /** Facility lit windows as interior-mapped rooms behind front glass (Glass › Lit windows › Rooms). */
 // Ashwood shell.ts bays: 3 lights (70 mm bars), a transom 0.47 m above the pane on storeys 1–4.
-export const windowHooks = interiorWindowHooks(hooks, { knobs: glassKnobs, layout: ROOM_ATLAS, mullions: { cols: 3, width: 0.07, transom: 0.47, transomAbove: 3.9 } })
+// Its panes sit 3 cm proud of the glow proxies, which take one offset: twice that keeps them in front.
+export const windowHooks = { ...interiorWindowHooks(hooks, { knobs: glassKnobs, layout: ROOM_ATLAS, mullions: { cols: 3, width: 0.07, transom: 0.47, transomAbove: 3.9 } }), depthBias: "N.forest.z * 2.0" }
 /** Screen-space contact shadows toward the strongest lamps; the fog sky shares the light at each pixel. */
 export const contactVolume = contactShadowVolume({ declarations: fogParamsWgsl + nightUniform, knobs: ["N.contactA", "N.contactB"], ambient: "fogAmbient(n)" })
 
