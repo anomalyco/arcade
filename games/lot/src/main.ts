@@ -18,7 +18,7 @@ import { createGlassSettings, createRoomSettings, glassControls, packGlassKnobs,
 import { loadRoomAtlas } from "@arcade/kit/gpu/materials/rooms"
 import { contactShadowControls, contactShadowInput, createContactShadowSettings, packContactShadowKnobs } from "@arcade/kit/gpu/contact-shadows"
 import type { ScenePass } from "@arcade/kit/gpu/pass-graph"
-import { ATMOSPHERE, FOG_MOTION, SSR_MOTION, controls, defaults } from "./settings"
+import { ATMOSPHERE, SSR_MOTION, controls, defaults } from "./settings"
 import { hooks, texturedHooks, glassHooks, fenceHooks, fogVolume, reflectionVolume, thinGlassHooksLot, windowHooks, contactVolume, NIGHT_FLOATS } from "./shaders"
 import { buildWorld, CAR, START, walls } from "./world"
 import { canvasTexture, foliageTexture, solidTexture } from "./foliage"
@@ -47,7 +47,7 @@ async function main() {
   // Software-GPU smoke keeps Today and compiles nothing it does not draw.
   const renderer = new Renderer(gpu.device, gpu.context, gpu.format, { scene: shader, sprite: spriteShader(), post, volume: smoke ? [reflectionVolume, fogVolume(false)] : [contactVolume, reflectionVolume, fogVolume(true)] })
   // The CI smoke keeps the atmosphere at Today: its software GPU cost is noted in docs/rendering-techniques.md.
-  const fog=new FogScatter(createFogSettings(smoke ? FOG_MOTION : {...ATMOSPHERE,...FOG_MOTION})), ssr=new Ssr(createSsrSettings(SSR_MOTION)), wet={...WET_DEFAULTS}
+  const fog=new FogScatter(createFogSettings(smoke ? {} : ATMOSPHERE)), ssr=new Ssr(createSsrSettings(SSR_MOTION)), wet={...WET_DEFAULTS}
   const settings = defaults()
   renderer.setTemporal({ ...TEMPORAL_DEFAULTS, mode: "taa", sharpen: 0.12 })
   const t0=performance.now()

@@ -178,7 +178,9 @@ proven animation techniques to animation.md, not here.
   quarter-res SSR march each frame: a far lamp head caught by a few reflection rays blinked on the wet road (Kit's
   "glittering", "the light flashes"). `VolumeInput.moving` (Ssr/Fog `historyMoving`, 1 = Today) keeps it in motion with a
   mean ± 1.25σ clip that blends in from the padded min/max by motion (still-camera noise averaging unchanged) and a
-  luminance-compressed blend (Karis), so one bright texel has to persist to show. Lot SSR 0.2, fog 0.3.
+  luminance-compressed blend (Karis), so one bright texel has to persist to show. Lot SSR 0.2; the fog stays at 1,
+  because its in-scatter follows the view ray rather than the surface it reprojects by, so a kept history made the booth
+  head's near halo jump (pops 4.8 → 7.9).
   `games/lot/scripts/motion.ts`: turning pops/frame 148 → 3.7, block flashes 31 → 0 frames; the far head's wet
   reflection (mirror ROI) 4.7 → 0 pops/frame. Turning the fog bank or fog-depth blur off multiplied the reflection glitter
   15× and 7×: atmosphere hides temporal faults, so attribute with it off as well as on.
