@@ -46,3 +46,17 @@
   world hash (`ONLINE_BENCH=1 bun test tests/online.test.ts -t bench` prints good/wifi/bad numbers).
   `bun scripts/online-proof.ts --seconds 30 --out captures/online` runs the built bundle on `wrangler dev` behind a
   proxy that delays WebSocket messages like Wi-Fi, with two headless tabs in one room, and records both.
+
+## Game shell
+
+- The title, Escape menu, Settings and quality are the kit game shell (`@arcade/kit/shell`, [docs/game-shell.md](../../docs/game-shell.md)), set up in `src/main.ts`; quality tiers (`ARCHERS_QUALITY`) are resolution only. Shell colours are at the end of `src/style.css`.
+- Deliberate changes when it moved onto the shell (Oct 22):
+  - A title card now comes first (couch play used to start at once): Play (you and bots; pads join with A, Enter splits
+    the keyboard), Play online (quick match), Play with friends and Join by code or link. `?room=` and `?watch` links
+    skip it.
+  - Couch play holds still on the title and behind the Escape menu; a room keeps running. Leave room reloads to the
+    title.
+  - Mute is new (M, or the speaker button): M is off while the keyboard is split, since it is the right-hand player's
+    jump. Settings has Master and Effects.
+  - Graphics quality is new: resolution-only tiers, High is the 1.5× it always drew at.
+  - Connection problems show in the shell's reconnect pill; the room line keeps the code, round trip and Copy invite.
