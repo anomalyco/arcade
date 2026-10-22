@@ -171,7 +171,7 @@ export class Radar {
         e.preventDefault()
         this.pinned = this.held = false
       }
-      if (e.code !== "KeyG" || e.repeat || e.metaKey || e.ctrlKey || e.altKey || isEditableEventTarget(e.composedPath()[0])) return
+      if (e.code !== "KeyG" || !this.enabled || e.repeat || e.metaKey || e.ctrlKey || e.altKey || isEditableEventTarget(e.composedPath()[0])) return
       if (this.pinned) {
         this.pinned = false
         this.tapClose = true
@@ -188,6 +188,9 @@ export class Radar {
     })
     addEventListener("blur", () => (this.held = false))
   }
+
+  /** G opens the full map only while this is on (the game in play, not behind the title or menu). */
+  enabled = true
 
   /** The full map is up (held or pinned). */
   get mapOpen(): boolean {

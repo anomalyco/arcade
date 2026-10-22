@@ -228,6 +228,13 @@ async function main() {
     },
   })
 
+  // Escape closes Carrier's own menus (Tab pinned, DEPLOY, chat, the full map) before the shell's: whether one owned
+  // this press is read here, in a capture listener added before theirs, so the menu closing first can't let the same
+  // press open the pause menu too.
+  let escapeHeld = false
+  addEventListener("keydown", (e) => {
+    if (e.code === "Escape") escapeHeld = teams.open || ops.open || chat.open || flight.radar.mapOpen
+  }, true)
   // Tab: players and ships (every carrier its own side), switching ships, captain powers. E: DEPLOY (take the helm, launch).
   const teams = new TeamMenu(document.body, {
     join: (ship) => net.board(ship),
@@ -283,8 +290,7 @@ async function main() {
     askName: true, quality, channels: ["master", "effects", "ambience"],
     start: start ? "playing" : "title",
     keysBlocked: () => chat.open || !!dev?.wantsInput,
-    // Escape closes Carrier's own menus (Tab pinned, DEPLOY) before it opens the shell's.
-    escapeOwned: () => teams.open || ops.open || chat.open,
+    escapeOwned: () => escapeHeld || teams.open || ops.open || chat.open || flight.radar.mapOpen,
     controls: () => [keyPromptHtml("KeyW", "Steer"), keyPromptHtml("Mouse0", "Look"), keyPromptHtml("Tab", "Ships"), keyPromptHtml("KeyE", "Deploy"), keyPromptHtml("KeyT", "Chat"), keyPromptHtml("KeyM", "Mute"), keyPromptHtml("Escape", "Menu")].join(" "),
     lobby: {
       friends: true, quick: () => lobbyClient.quick(), maxName: CREW.nameMax, nameRequired: "Type a callsign first.",
@@ -329,12 +335,13 @@ async function main() {
   }
   gameShell.settings.subscribe(syncAudio)
   syncAudio()
-  // The title is up: the HUD, chat and the in-game menus stay out of the way; any shell screen frees the cursor.
+  // The title is up: the HUD stays out of the way. Chat, Tab, DEPLOY and the full map (G) work only in play, so none
+  // opens behind the title or the menu; any shell screen frees the cursor.
   const syncScreen = () => {
     const title = gameShell.flow.screen === "title"
     document.body.classList.toggle("mn-open", title)
-    chat.enabled = teams.enabled = ops.enabled = !title
-    if (title) chat.hide()
+    chat.enabled = teams.enabled = ops.enabled = flight.radar.enabled = gameShell.playing
+    if (!gameShell.playing) chat.hide()
     if (!gameShell.playing) input.suspend()
   }
   gameShell.flow.subscribe(syncScreen)
