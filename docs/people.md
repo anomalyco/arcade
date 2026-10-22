@@ -61,7 +61,7 @@ blender -b --factory-startup --python scripts/people/lineup.py -- out.png <glb> 
 
 | Module | Owns |
 | --- | --- |
-| `view.ts` | `People`: lazy `load(cast)` (fetch + meshopt decode), `spawn`, `drive(person, avatar, opts)`, LOD by eye distance, `PEOPLE_CAST`. |
+| `view.ts` | `People`: lazy `load(cast)` (fetch + meshopt decode), `spawn`, `drive(person, avatar, opts)`, LOD by eye distance, `idleShift`; the members come from `cast/<look>.gen.ts` (`CAST`). |
 | `asset.ts` | GLB reader: skeleton, LOD ranges, materials. Bakes vertices into the joint-world bind pose (MPFB IBMs carry the armature's 0.1 scale), so runtime IBMs are rigid. |
 | `retarget.ts` | Rig frame → game_engine bone rotations: spine/neck/head from the rig's torso and look, two-bone IK on the mesh's own bone lengths for legs and arms, ankle target putting the mesh ball on the rig ball (blended to the heel pivot at heel strike), pelvis sink when a leg cannot reach, fingers (relaxed, torch grip) and a wrist bend so the torch barrel follows the beam. Breathing on the chest. |
 | `terrain.ts` | `terrainFeet`: a planted boot pitches to the tangent from its ball over whatever lies under its own sole (6 samples, the mesh's footprint, hung off the rig's ball pivot), rising when it hits the pitch limit; at heel strike it also clears the ground under the rig's heel point; swing feet arc over anything on the swing path and keep their heels above what is under them; hips drop on a spring. Ground is a `(x, z) => y` the game provides (woods adds its logs). |

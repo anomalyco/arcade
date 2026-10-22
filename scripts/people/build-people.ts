@@ -1,5 +1,5 @@
 // Builds the shared people cast, packages/kit/people/assets/<person>-<look>.glb (CC0; see
-// packages/kit/people/assets/CREDITS.md), and the manifest packages/kit/people/cast.gen.ts:
+// packages/kit/people/assets/CREDITS.md), and one manifest per look, packages/kit/people/cast/<look>.gen.ts (CAST):
 //
 //   hivemind run --kind render --fetch packages/kit/people --fetch scripts/people -- bun scripts/people/build-people.ts [a | woods | a-woods ...]
 //
