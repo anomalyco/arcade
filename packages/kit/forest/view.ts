@@ -281,7 +281,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     const canopy = 1 - s.canopyMist * (1 - Math.min(1, openAround * 1.4))
     Object.assign(fog.settings, {
       mode: "scatter", density: s.fogDensity, falloff: s.fogFalloff, base: fogBase, hue: s.fogHue, saturation: 0.3, brightness: s.fogBrightness * s.sky * canopy,
-      skyDark: 0.55, horizonGlow: 0.5, ground: 0.08, skylight: 1 / Math.max(canopy, 0.05), strength: s.beamAir, leak: 0.015, coneLength: s.torchReach * 2, phaseG: s.phaseG,
+      skyDark: 0.55, horizonGlow: 0.5, ground: 0.08, skylight: 1 / Math.max(canopy, 0.05), strength: s.beamAir, leak: 0.015, coneLength: s.torchReach * 2, phaseG: s.phaseG, phaseFloor: s.phaseFloor,
       samples: quality.fogSamples, lamps: smoke ? 1 : 16, history: 0.12, historyMoving: 0.45, halfRes: true, reflection: 1.5 * s.water, glint: 1.5 * s.water, streak: 0.6,
       bank: s.mist === "drift" && !smoke ? "drift" : "today", bankDensity: s.mistDensity, bankHeight: s.mistHeight, bankRelief: groundMax - fogBase + s.mistHeight * 1.6, bankScale: s.mistScale,
       bankThreshold: s.mistGaps, bankUndulation: 0.55, bankWind: s.mistDrift, bankWindHeading: (heading * 180) / Math.PI, bankSteps: quality.mistSteps, bankDistance: 90,

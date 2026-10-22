@@ -126,7 +126,7 @@ const shots: Record<string, (page: Page) => Promise<void>> = {
       woods.camera.flashlight = false
       const p = woods.state.players[1]!, b = woods.state.brains[0]!
       p.x = x - 9; p.z = z - 11; b.mode = "wait"; b.timer = 99; b.heading = 1.2
-      for (const o of woods.state.brains.slice(1)) { const q = woods.state.players[o.id]!; q.x = x + 40; q.z = z + 40; o.mode = "wait"; o.timer = 99 }
+      for (const o of woods.state.brains.slice(1)) { const q = woods.state.players.find((q) => q.id === o.id)!; q.x = x + 40; q.z = z + 40; o.mode = "wait"; o.timer = 99 }
     })
   },
   // k3: a log broadside 6 m ahead, friends with lights beyond it.
@@ -176,7 +176,7 @@ const shots: Record<string, (page: Page) => Promise<void>> = {
       woods.camera.flashlight = false
       const p = woods.state.players[1]!, b = woods.state.brains[0]!
       p.x = x + 0.5; p.z = z - 8; b.mode = "wait"; b.timer = 99; b.heading = Math.PI
-      for (const o of woods.state.brains.slice(1)) { const q = woods.state.players[o.id]!; q.x = x + 40; q.z = z + 40; o.mode = "wait"; o.timer = 99 }
+      for (const o of woods.state.brains.slice(1)) { const q = woods.state.players.find((q) => q.id === o.id)!; q.x = x + 40; q.z = z + 40; o.mode = "wait"; o.timer = 99 }
     })
   },
   // The wash-out probe: one pose, the group walking together a few metres ahead and aiming forward, with 0, 1, 2 or 4

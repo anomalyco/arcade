@@ -34,6 +34,8 @@ export type ForestLookSettings = {
   beamNear: number
   /** How much the canopy dims the mist's own glow (the sky it scatters is blocked as for surfaces): 0 off, 1 physical. */
   canopyMist: number
+  /** Isotropic share of the beams' phase: how much your own beam (seen from behind, as backscatter) glows. */
+  phaseFloor: number
   /** Henyey–Greenstein g of the mist: how much brighter a beam reads looking along it (fog droplets ≈ 0.75–0.85). */
   phaseG: number
   /** Lamp light scattered in the air (share of the physical ratio; 1 is physical). */
@@ -105,7 +107,7 @@ export type ForestLookSettings = {
 export const FOREST_LOOK_DEFAULTS: Readonly<ForestLookSettings> = {
   moon: 0.06, moonHeading: 220, moonElevation: 34, sky: 1, stars: 1, skylight: 1,
   fogDensity: 0.008, fogFalloff: 0.02, fogBrightness: 0.0035, fogHue: 215,
-  mist: "drift", mistDensity: 0.08, mistHeight: 2.4, canopyMist: 1, beamNear: 0.6, mistScale: 9, mistDrift: 0.15, mistGaps: 0.32, phaseG: 0.75, beamAir: 1, beamMist: 1,
+  mist: "drift", mistDensity: 0.08, mistHeight: 2.4, canopyMist: 1, beamNear: 0.6, mistScale: 9, mistDrift: 0.15, mistGaps: 0.32, phaseG: 0.75, phaseFloor: 0.03, beamAir: 1, beamMist: 1,
   torchPower: 70, torchAngle: 17, torchKelvin: 6000, torchReach: 40, torchCore: 0.9, torchCoreWidth: 0.42, torchRings: 0.35, torchSpill: 0.03, torchSpillWidth: 2.4,
   torchSide: 0.3, torchDrop: 0.28, torchLag: 0.07, bounce: 1, torchShadows: "map", foliageShadows: true, shadowSize: 1024, shafts: true, motes: 1,
   wind: 1, gust: 0.6, trunkSway: 1, branchSway: 1, flutter: 1,
@@ -170,6 +172,7 @@ export function forestLookControls(prefix = "woods."): LabControl[] {
     range("beamAir", "Beam in the air", F, 0, 1.5, 0.01, "×"),
     range("beamMist", "Beam in the mist", F, 0, 3, 0.05, "×"),
     range("phaseG", "Forward scattering", F, 0, 0.9, 0.01, "g"),
+    range("phaseFloor", "Backscatter floor", F, 0, 0.5, 0.01, "share"),
     range("canopyMist", "Canopy dims the mist", F, 0, 1, 0.05),
     range("beamNear", "Beam near field", F, 0.1, 4, 0.1, "m"),
     range("fogBrightness", "Mist glow", F, 0, 0.03, 0.0005, "", "Advanced"),

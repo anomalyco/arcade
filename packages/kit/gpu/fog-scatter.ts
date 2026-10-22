@@ -90,6 +90,8 @@ export type FogSettings = {
   coneLength: number
   /** Henyey–Greenstein forward scattering. */
   phaseG: number
+  /** Isotropic share blended into the lamp phase: it sets how bright a beam looks from behind its lamp (backscatter). */
+  phaseFloor: number
   samples: number
   lamps: number
   /** Temporal response: the share of each new frame (1 = no history). */
@@ -173,6 +175,7 @@ export const FOG_DEFAULTS: FogSettings = {
   leak: 0.03,
   coneLength: 4.5,
   phaseG: 0.6,
+  phaseFloor: 0.15,
   samples: 4,
   lamps: 16,
   history: 0.1,
@@ -233,6 +236,7 @@ export function fogControls(group = "Fog", prefix = ""): LabControl[] {
     range("leak", "Cone leak (halo)", 0, 0.5, 0.005, undefined, "Scattering"),
     range("coneLength", "Visible cone length", 1, 40, 0.5, "m", "Scattering"),
     range("phaseG", "Phase g (forward)", 0, 0.9, 0.01, undefined, "Scattering"),
+    range("phaseFloor", "Phase isotropic share", 0, 1, 0.01, undefined, "Scattering"),
     { key: key("samples"), ...field("samples"), label: "Samples per lamp", group, subsection: "Scattering", type: "select", options: [2, 3, 4, 6, 8].map((v) => ({ value: v, label: String(v) })) },
     range("lamps", "Lamps evaluated", 0, MAX_FOG_LAMPS, 1, undefined, "Scattering"),
     range("reflection", "Glow on wet ground", 0, 8, 0.05, "×", "Wet ground"),
@@ -627,7 +631,7 @@ export class FogScatter {
     u.set([s.cloudDark, s.cloudGlow, Math.cos(heading), Math.sin(heading)], 48)
     const r = this.glowRect
     u.set(glow && r ? [r[0], r[1], 1 / (r[2] - r[0]), 1 / (r[3] - r[1])] : [0, 0, 0, 0], 52)
-    u.set([s.bankLamp, s.bankUndulation, s.bankRelief, 0], 56)
+    u.set([s.bankLamp, s.bankUndulation, s.bankRelief, s.phaseFloor], 56)
     packStreetLamp(input.street ?? STREET_LAMP_DEFAULTS, u, 60)
     packBeamProfile(input.beam ?? DARKWOOD_BEAM, u, 72)
     const L = this.frame.lamps
@@ -689,7 +693,7 @@ struct FogParams {
   cloud: vec4f,    // cloud base, cover, 1/size, opacity (0 = off)
   cloud2: vec4f,   // cloud body (× fog), lamp underglow, wind heading cos, sin
   glowRect: vec4f, // glow map x0, z0, 1/width, 1/depth (0 = no map)
-  bank3: vec4f,    // lamp beams in bank, top undulation, relief (m), -
+  bank3: vec4f,    // lamp beams in bank, top undulation, relief (m), isotropic share of the lamp phase
   streetA: vec4f,  // street lamp profile (lights/street.ts packStreetLamp)
   streetB: vec4f,
   streetC: vec4f,
@@ -1079,7 +1083,9 @@ ${atmo ? `      if (bankLamp > 0.0) {
 ${ext ? `        // Out of the lamp to the sample, then on to the eye, through the bank (path mean of the end points' σ).
         thick *= exp(-bankLamp * ((sig + sigLamp) * 0.5 * ld + (sig + sigEye) * 0.5 * st));` : ""}
       }` : ""}
-      sum += cone * win * mix(1.0, hg, 0.85) * thick;
+      // Henyey–Greenstein with an isotropic share: a beam seen from behind its lamp is backscatter, which the share
+      // sets (HG alone at g 0.75 sends 0.08 of the isotropic amount back; a 0.15 share nearly triples it).
+      sum += cone * win * mix(hg, 1.0, FOG.bank3.w) * thick;
     }
     acc += L.b.rgb * sum * (tb - ta) / (h * f32(n) * 12.566371);
   }
