@@ -67,6 +67,10 @@ game's own `AGENTS.md`.
 - Rendering techniques, their status and cost are catalogued in
   [docs/rendering-techniques.md](docs/rendering-techniques.md); proven rendering notes are in the Rendering and Art
   direction sections of [docs/game-notes.md](docs/game-notes.md).
+- Read [docs/realism.md](docs/realism.md) before lighting, shadow, fog, smoke, weather, material, camera or ambience
+  work: what reads as real, what it costs, and what Kit picked or turned down.
+- New realism techniques go in `packages/kit/` with the game supplying hooks, not in a game folder, unless they are
+  truly game-specific. Once one is proven, give it a `docs/realism.md` entry with its cost and Kit's decision.
 
 ## Animation
 
