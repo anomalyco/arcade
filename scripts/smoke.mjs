@@ -24,13 +24,13 @@ const server = Bun.serve({
 })
 let browser
 let bootTimeline = async () => "not loaded"
-// Most workflow steps allow 60 s; Lot allows 180 s for its dense imported exterior and software-GPU queue drain.
+// Most games allow 55 s; Lot allows 75 s for loading its dense imported exterior (ready at 18–32 s on CI, Oct 21).
 // On SwiftShader the GPU process compiles every render pipeline on one thread before it
 // presents a frame (Outbreak, Oct 21: 20–36 s for its 25 boot pipelines; the kit renderer builds unused ones only on
 // first use, which took 3–7 s off), and the page's main thread can block
 // behind it, so readiness and the first frames share one budget rather than a separate 20 s readiness limit.
-const READY_MS = game === "lot" ? 100_000 : 40_000
-const DEADLINE_MS = game === "lot" ? 165_000 : 55_000
+const READY_MS = game === "lot" ? 60_000 : 40_000
+const DEADLINE_MS = game === "lot" ? 75_000 : 55_000
 const CLOSE_MS = 3_000
 let passed = false
 const deadline = setTimeout(async () => {
@@ -84,11 +84,8 @@ try {
     if (game === "lot") {
       const status = document.querySelector("#hud")?.textContent
       if (status && /needs WebGPU|No WebGPU adapter is available|WebGPU could not start/.test(status)) return status
-      if (!window.lot?.ready || window.lot.frames < 2) return false
-      // Stop submitting the dense scene once it has rendered. On SwiftShader, further frames queue behind the two
-      // required frames and can keep Chromium's GPU process busy past the smoke's shutdown deadline.
-      window.lot.paused = true
-      return "lot ready"
+      // Under ?smoke the Lot submits exactly two frames, then pauses.
+      return window.lot?.ready && window.lot.frames >= 2 ? "lot ready" : false
     }
     if (game === "lab") {
       const notice = document.querySelector("[data-lab-notice]")?.textContent
@@ -119,11 +116,15 @@ try {
   })
   console.log(`${game}: boot ${await bootTimeline()}`)
   if (game === "lot") {
-    // Lot has already submitted its two real frames and paused. Await their GPU completion directly: extra rAF
-    // callbacks can stall in headless SwiftShader after the paused canvas stops producing compositor damage.
-    console.log(`lot: draining ${await page.evaluate(() => window.lot?.frames)} submitted frames`)
-    await page.evaluate(() => window.lot?.renderer.passContext.device.queue.onSubmittedWorkDone())
-    console.log(`lot: GPU complete; boot ${await bootTimeline()}`)
+    // Lot has already submitted its two real frames (offscreen) and paused. An empty error-scope round trip returns
+    // once the GPU process has validated them (their errors reach the console first), without waiting for SwiftShader
+    // to rasterize them: the dense scene takes over three minutes a frame there (CI, Oct 21), which proves nothing more.
+    await page.evaluate(async () => {
+      const device = window.lot?.renderer.passContext.device
+      device.pushErrorScope("validation")
+      await device.popErrorScope()
+    })
+    console.log(`lot: ${await page.evaluate(() => window.lot?.frames)} frames validated; boot ${await bootTimeline()}`)
   } else {
     // Let initialization promises and the first presentation frames report errors.
     const frames = await page.evaluate(() => new Promise(resolve => {
