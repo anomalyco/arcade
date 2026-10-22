@@ -79,9 +79,9 @@ try {
     }
     await page.waitForTimeout(wait)
     let open = false
-    for (let tries = 0; tries < 6 && !open; tries++) {
+    for (let tries = 0; tries < 3 && !open; tries++) {
       await page.keyboard.press("Backquote")
-      open = await page.waitForSelector("[data-lab-panel] .lab-panel-body:not([hidden])", { timeout: 4000 }).then(() => true, () => false)
+      open = await page.waitForSelector("[data-lab-panel] .lab-panel-body:not([hidden])", { timeout: 20_000 }).then(() => true, () => false)
     }
     if (!open) {
       console.error(game, "panel did not open", errors, await page.evaluate(() => ({
