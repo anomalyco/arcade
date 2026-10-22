@@ -14,6 +14,14 @@ describe("LabControl as knobs", () => {
   test("ranges keep their bounds, step and unit without the retrigger note", () => {
     expect(describeRow(row(range), { size: 1.25 }, { size: 0.4 })).toEqual({ key: "size", label: "Size", group: "Fireball", kind: "number", default: 1.25, min: 0, max: 2, step: 0.05, unit: "m" })
   })
+  test("a folding view says how each group starts, over the control's own folded; sub-headings pass through", () => {
+    const sub: LabControl = { ...range, subsection: "Shape" }
+    expect(describeRow(row(sub), { size: 1 }, { size: 1 })).toMatchObject({ subsection: "Shape" })
+    expect(describeRow(row(sub), { size: 1 }, { size: 1 })).not.toHaveProperty("folded")
+    expect(describeRow(row(sub), { size: 1 }, { size: 1 }, { folded: false })).toMatchObject({ folded: false })
+    expect(describeRow(row({ ...range, folded: true }), { size: 1 }, { size: 1 })).toMatchObject({ folded: true })
+    expect(describeRow(row({ ...range, folded: true }), { size: 1 }, { size: 1 }, { folded: true })).toMatchObject({ folded: true })
+  })
   test("selects become choices by string id and map back to their typed values", () => {
     const d = describeRow(row(select), { style: 1 }, { style: 1 })!
     expect(d).toMatchObject({ kind: "choice", default: "1", choices: [{ id: "0", label: "Current" }, { id: "1", label: "Surface" }, { id: "2", label: "Ink" }] })
