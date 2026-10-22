@@ -1,5 +1,24 @@
-import type { SceneMeter } from "../gpu/meter"
+import type { SceneMeter, SceneMeterStatus } from "../gpu/meter"
 import type { ForestLookSettings } from "./settings"
+
+export type ForestExposureState = { stops: number; pending: boolean; wait: number }
+
+/** A live meter gets at most half a second to warm up after a cut. Failure/timeout retires the one-time snap. */
+export function stepForestExposure(state: ForestExposureState, status: SceneMeterStatus, target: number, dt: number, s: ForestLookSettings): void {
+  if (status === "off") {
+    // Smoke historically follows the fallback target immediately, including later torch/sky changes.
+    state.pending = false
+    state.stops = target
+    return
+  }
+  if (state.pending) {
+    state.wait += Math.max(0, dt)
+    if (status === "pending" && state.wait < 0.5) return
+    state.pending = false
+    if (status === "ready" && state.wait < 0.5) { state.stops = target; return }
+  }
+  state.stops = adaptForestExposure(state.stops, target, dt, s)
+}
 
 /** Scene-referred metering: neither the tone curve nor the previous exposure feeds this target. */
 export function forestExposureTarget(meter: SceneMeter | null, fallback: number, s: ForestLookSettings, offsetStops = 0): number {

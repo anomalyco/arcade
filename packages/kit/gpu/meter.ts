@@ -5,6 +5,8 @@ const W = 64
 const H = 36
 const TAPS = 6
 
+export type SceneMeterStatus = "off" | "pending" | "ready" | "failed"
+
 /** What the meter last read from the scene-referred image (before exposure, after the fog). */
 export type SceneMeter = {
   /** Mean luminance over the frame. */
@@ -33,7 +35,10 @@ export class LuminanceMeter {
   private frame = 0
   private pending: number | null = null
   private generation = 0
+  private failed = false
   last: SceneMeter | null = null
+
+  get status(): SceneMeterStatus { return this.failed ? "failed" : this.last ? "ready" : "pending" }
 
   constructor(private device: GPUDevice) {
     this.target = device.createTexture({ size: [W, H], format: "rgba16float", usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC })
@@ -98,7 +103,10 @@ export class LuminanceMeter {
       if (generation === this.generation) this.read(new Uint16Array(r.buf.getMappedRange()), this.frame - r.frame)
       r.buf.unmap()
       r.busy = false
-    }, () => { r.busy = false })
+    }, () => {
+      if (generation === this.generation) { this.failed = true; this.last = null }
+      r.busy = false
+    })
   }
 
   /** Discard the old scene, including readbacks that are still in flight. */
@@ -106,9 +114,11 @@ export class LuminanceMeter {
     this.generation++
     this.pending = null
     this.last = null
+    this.failed = false
   }
 
   private read(px: Uint16Array, age: number): void {
+    this.failed = false
     const lum = new Float32Array(W * H)
     let sum = 0, logSum = 0, wsum = 0, wtot = 0
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {

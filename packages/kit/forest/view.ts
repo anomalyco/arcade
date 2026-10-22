@@ -22,7 +22,7 @@ import { ForestBuilder } from "./offthread"
 import { ALPHA_COVERAGE_BASE } from "./alpha-coverage"
 import { GROUND_CELL, GROUND_CELLS, WOODS_FLOATS, batchHooks, cutoutDepthWgsl, forestHooks, forestShadowInstanceWgsl, moteShader, skyShader, treeVertexWgsl, woodsUniformWgsl } from "./shaders"
 import { forestPost } from "./post"
-import { adaptForestExposure, forestExposureTarget } from "./exposure"
+import { stepForestExposure, forestExposureTarget } from "./exposure"
 import { indexForestMesh } from "./index-mesh"
 import { FOREST_QUALITY, createForestLookSettings, forestLookControls, kelvinColor, torchProfile, type ForestLookSettings, type ForestQuality } from "./settings"
 import type { QualityTier } from "../quality"
@@ -206,12 +206,10 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
   const unjitteredInv = new Float32Array(16)
   const maskView = textures.base.createView({ dimension: "2d-array" })
   const foliageMask: SpotShadowMask = { view: maskView, cutoff: 0.45, layerFromAux: true, lod: 1 }
-  const cam = { exposure: 1, hit: 40, stops: 0 }
-  let exposurePending = true
+  const cam = { exposure: 1, hit: 40, stops: 0, pending: true, wait: 0 }
   let previousEye: Vec3 | null = null
   function resetExposure() {
-    Object.assign(cam, { exposure: 1, hit: 40, stops: 0 })
-    exposurePending = true
+    Object.assign(cam, { exposure: 1, hit: 40, stops: 0, pending: true, wait: 0 })
     previousEye = null
     bounce.ready = false; bounce.power = 0
     renderer.resetSceneMeter()
@@ -287,14 +285,13 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     } else bounce.power *= Math.exp(-f.dt * 10)
 
     // ---- Auto exposure from the scene-referred meter, a few frames late.
-    // After a cut hold zero stops until the first valid reading; then snap once, without a fallback-target flash.
+    // After a cut briefly hold for a live meter; absent, stalled or failed meters use the fallback.
     const coverage = Math.min(1, (Math.tan(halfAngle * 1.3) / Math.tan(f.fovY / 2)) ** 2)
     const spot = local ? (s.torchPower * 5 * 0.2) / (Math.PI * Math.max(cam.hit, 0.4) ** 2) * coverage : 0
     const metered = renderer.sceneMeter
     // The compensation follows your torch, not the whole night: camp with your torch off keeps its exposure law.
     const targetStops = forestExposureTarget(metered, spot + 0.004 * s.sky + 0.0005, s, s.clearAir && !smoke && local ? -0.25 : 0)
-    cam.stops = exposurePending ? (metered ? targetStops : 0) : adaptForestExposure(cam.stops, targetStops, f.dt, s)
-    if (metered) exposurePending = false
+    stepForestExposure(cam, renderer.sceneMeterStatus, targetStops, f.dt, s)
     cam.exposure = Math.pow(2, cam.stops)
 
     // ---- Lights.

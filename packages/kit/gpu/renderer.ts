@@ -51,7 +51,7 @@ import { SmokeRenderer } from "@arcade/kit/vehicle/smoke-renderer"
 import type { SmokeTrail } from "@arcade/kit/vehicle/smoke-trail"
 import { SURFACE_TEX_UNIFORM_FLOATS, packSurfaceTexUniforms, type SurfaceTexUniformInput } from "./surface-materials"
 import { createFallbackMaterialTextureArray, createMaterialSampler, loadMaterialTextureArray } from "../textures/loader"
-import { LuminanceMeter, type SceneMeter } from "./meter"
+import { LuminanceMeter, type SceneMeter, type SceneMeterStatus } from "./meter"
 import { boxIntersectsRect2D, drawContiguousChunks, drawContiguousChunksByMode } from "./cull"
 import {
   PassList,
@@ -1114,6 +1114,8 @@ export class Renderer {
   get sceneMeter(): SceneMeter | null {
     return this.meterPass?.last ?? null
   }
+
+  get sceneMeterStatus(): SceneMeterStatus { return this.meterPass?.status ?? "off" }
 
   /** A camera cut invalidates cached and in-flight readings of the old scene. */
   resetSceneMeter(): void { this.meterPass?.reset() }

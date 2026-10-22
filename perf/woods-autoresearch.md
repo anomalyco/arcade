@@ -226,8 +226,8 @@ Same 1440-frame fixed protocol on mini/Metal, one warmup + nine GPU samples. Thr
 original global p5 guard still fails, and this is not an eight-target rerun. The visual trade-off is for Kit to judge.
 [Today / clear air / existing paint-over sheet](https://studio.taila8e7c7.ts.net:8444/raw/woods-2026-10-21/autoresearch/clear-air-checkpoint/index.html).
 
-Two review fixes accompany the toggle: pending exposure holds zero stops until the first valid reading, rather than
-snapping to a fallback and then snapping again. Centre-meter response is derived in `adaptForestExposure`, so
+Two review fixes accompany the toggle: pending exposure initially held zero stops until the first valid reading
+(bounded by the blocker fix below). Centre-meter response is derived in `adaptForestExposure`, so
 0.35/1.8 s applies to preset imports, query params and direct assignments. The configurable response fields now
 explicitly tune the night model only; changing models no longer overwrites them through a panel callback.
 
@@ -236,6 +236,19 @@ fog pin pass (29 focused test entries, of which 14 skip Naga validation because 
 probe holds neutral for three meter-less updates and snaps to the first reading with zero stop error; other reset
 cases still pass. The probe first drains automatic renderer work left queued when pausing, so a later scheduled
 startup frame cannot be mistaken for an old in-flight readback. The Metal run has no browser errors.
+
+### Exposure-hold blocker fix
+
+Only an enabled, pending meter holds neutral exposure after a cut, for at most 0.5 s. Timeout or readback failure
+clears the hold and starts normal adaptation; a late recovery cannot snap. Readback failures invalidate the cached
+reading and are generation-guarded, so a stale rejection cannot poison a new scene. A successful read/reset clears
+failure. With no meter, every frame takes the fallback target immediately, preserving smoke before `0c2cdc70`.
+
+Woods tests, app/scripts and server typechecks, production build and 35 focused test entries pass, including the
+classic fog pin, no-meter and never-arriving-reading regressions, timely/late recovery and actual readback callback
+failure/reset tests. Fourteen Naga entries still skip validation because Naga is absent. The headless, muted Metal
+production smoke passes and compares the real forest exposure against the pre-hold fallback law: eight exact
+matches across both exposure models, torch on/off and changing sky. Checks ran on Pro through HiveMind and skulk.
 
 ## Source findings
 

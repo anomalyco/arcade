@@ -141,6 +141,34 @@ try {
     console.log(`${game}: presented frames at ${frames.join(", ")} ms`)
   }
   if (game === "woods") {
+    const exposure = await page.evaluate(() => {
+      const w = window.woods, forest = w.view.forest, s = forest.settings
+      if (w.renderer.sceneMeterStatus !== "off") throw new Error("smoke unexpectedly enabled the meter")
+      let input
+      const update = forest.update
+      forest.update = f => { input = f; update(f) }
+      try { w.step(1000 / 60) } finally { forest.update = update }
+      const saved = { sky: s.sky, exposureModel: s.exposureModel }
+      const samples = []
+      try {
+        // Reference law from before 0c2cdc70: no reading meant taking the fallback target every frame.
+        for (const model of ["robust", "metered"]) for (const on of [true, false]) for (const sky of [0, 1]) {
+          s.exposureModel = model; s.sky = sky
+          const f = { ...input, torches: input.torches.map(t => ({ ...t, on })), dt: 1 / 60 }
+          update(f)
+          const local = f.torches.find(t => t.kind !== "remote" && t.on)
+          const coverage = Math.min(1, (Math.tan(s.torchAngle * Math.PI / 180 * 1.3) / Math.tan(f.fovY / 2)) ** 2)
+          const spot = local ? s.torchPower * 5 * 0.2 / (Math.PI * Math.max(forest.camera.hit, 0.4) ** 2) * coverage : 0
+          const key = Math.max(spot + 0.004 * s.sky + 0.0005, 1e-6)
+          const stops = model === "metered" ? -Math.log2(key / 0.09) * 0.55 : s.nightStops - Math.log2(key / Math.max(s.nightKey, 1e-6)) * s.nightStrength
+          const expected = Math.pow(2, s.autoExposure ? Math.max(-s.adaptRange, Math.min(s.adaptLift, stops)) : 0)
+          if (forest.camera.exposure !== expected) throw new Error(`smoke exposure ${forest.camera.exposure} != pre-hold ${expected}`)
+          samples.push({ model, on, sky, exposure: expected })
+        }
+      } finally { Object.assign(s, saved); update(input) }
+      return samples
+    })
+    console.log(`woods: pre-0c2cdc70 smoke exposure parity (${exposure.length} exact matches)`)
     await page.evaluate(() => window.woods?.renderer.passContext.device.queue.onSubmittedWorkDone())
   }
   if (game === "nightshift") {

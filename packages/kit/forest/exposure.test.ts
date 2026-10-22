@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { adaptForestExposure, forestExposureTarget } from "./exposure"
+import { adaptForestExposure, forestExposureTarget, stepForestExposure } from "./exposure"
 import { createForestLookSettings } from "./settings"
 
 test("centre-meter reference retains the previous exposure law", () => {
@@ -55,4 +55,54 @@ test("scene compensation stays inside exposure bounds and respects manual mode",
   expect(forestExposureTarget(null, 1000, s, -0.25)).toBe(-s.adaptRange)
   s.autoExposure = false
   expect(forestExposureTarget(null, s.nightKey, s, -0.25)).toBe(0)
+})
+
+test("no meter follows every fallback target immediately, as smoke did before the hold", () => {
+  const s = createForestLookSettings()
+  const state = { stops: 0, pending: true, wait: 0 }
+  for (const fallback of [0.0005, 0.3, 0.004, 0.001]) {
+    const target = forestExposureTarget(null, fallback, s)
+    stepForestExposure(state, "off", target, 1 / 60, s)
+    expect(state.stops).toBe(target)
+    expect(state.pending).toBe(false)
+  }
+})
+
+test("a reading that never arrives releases the hold at half a second and keeps adapting", () => {
+  const s = createForestLookSettings()
+  const state = { stops: 0, pending: true, wait: 0 }
+  for (let i = 0; i < 3; i++) stepForestExposure(state, "pending", -1, 0.125, s)
+  expect(state.stops).toBe(0)
+  expect(state.pending).toBe(true)
+  stepForestExposure(state, "pending", -1, 0.125, s)
+  expect(state.pending).toBe(false)
+  expect(state.stops).toBeLessThan(0)
+  expect(state.stops).toBeGreaterThan(-1)
+  const released = state.stops
+  stepForestExposure(state, "pending", -1, 0.125, s)
+  expect(state.stops).toBeLessThan(released)
+  stepForestExposure(state, "ready", 1, 1 / 60, s)
+  expect(state.stops).toBeLessThan(0) // Late recovery adapts, never snaps.
+})
+
+test("readback failure releases the hold immediately and recovery does not snap", () => {
+  const s = createForestLookSettings()
+  const state = { stops: 0, pending: true, wait: 0 }
+  stepForestExposure(state, "failed", -1, 1 / 60, s)
+  expect(state.pending).toBe(false)
+  expect(state.stops).toBeLessThan(0)
+  stepForestExposure(state, "ready", 1, 1 / 60, s)
+  expect(state.stops).toBeLessThan(0.1)
+})
+
+test("a timely first reading snaps once, then adapts", () => {
+  const s = createForestLookSettings()
+  const state = { stops: 0, pending: true, wait: 0 }
+  stepForestExposure(state, "pending", 1, 1 / 60, s)
+  expect(state.stops).toBe(0)
+  stepForestExposure(state, "ready", -1, 1 / 60, s)
+  expect(state.stops).toBe(-1)
+  expect(state.pending).toBe(false)
+  stepForestExposure(state, "ready", 1, 1 / 60, s)
+  expect(state.stops).toBeLessThan(0)
 })
