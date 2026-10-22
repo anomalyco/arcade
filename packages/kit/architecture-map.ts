@@ -297,6 +297,11 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
     match: (s) => s.startsWith("@arcade/kit/sky/"),
   },
   {
+    area: "`water/*`",
+    description: "Opt-in continuous water normals, optics and typed controls; Carrier adapter",
+    match: (s) => s.startsWith("@arcade/kit/water/"),
+  },
+  {
     area: "`weather/*`",
     description: "Continuous-phase weather sim, wet-surface WGSL, and rain/snow/splash pass",
     match: (s) => s === "@arcade/kit/weather" || s.startsWith("@arcade/kit/weather/"),
