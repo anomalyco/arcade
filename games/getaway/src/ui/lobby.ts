@@ -1,17 +1,17 @@
 import type { Role } from "../../shared/config"
 import { randomCode } from "../../shared/protocol"
-import { esc, h } from "./dom"
+import { h } from "./dom"
 
 /** `via` says how the room was chosen: quick join retries once on a full room, create makes it private. */
 export type LobbyResult = { mode: "solo" | "room"; room: string | null; name: string; picks: Record<Role, string>; via?: "quick" | "create" | "code" }
 
-const NAME_KEY = "getaway.name"
-const PICKS: Record<Role, string> = { robber: "muscle", cop: "cruiser" }
+export const PICKS: Record<Role, string> = { robber: "muscle", cop: "cruiser" }
 const STATS_MS = 10_000
 
 const api = (path: string) => `${location.pathname.replace(/[^/]*$/, "")}api/${path}`
 
-async function askRoom(path: "quick" | "create"): Promise<string> {
+/** A room from the matchmaker (`quick`) or a fresh private one (`create`); a random code if the server can't be asked. */
+export async function askRoom(path: "quick" | "create"): Promise<string> {
   try {
     const res = await fetch(api(path), { cache: "no-store" })
     const body = (await res.json()) as { room?: unknown }
@@ -30,117 +30,32 @@ export function setRoomParam(room: string, replace = false) {
   else history.pushState(null, "", url)
 }
 
-/** Title screen: name, then quick join, create a private game, or join one by code (or from the shared link). */
-export async function lobby(root: HTMLElement, notice: string | null = null): Promise<LobbyResult> {
-  const urlRoom = new URLSearchParams(location.search).get("r")?.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8) || null
-  const storedName = localStorage.getItem(NAME_KEY) ?? ""
-
+/**
+ * Getaway's art behind the shell's title card: the night-road backdrop with passing streaks and sirens, and the live
+ * player count for the title slot. `remove()` fades the backdrop out once a session starts.
+ */
+export function titleArt(root: HTMLElement): { stats: HTMLElement; remove(): void } {
   const el = h("div", "lobby", root)
-  el.innerHTML = `
-    <div class="lb-bg"><i class="streak s1"></i><i class="streak s2"></i><i class="streak s3"></i><div class="lb-siren"></div></div>
-    <div class="lb-inner">
-      <h1 class="wordmark">GETAWAY</h1>
-      <p class="lb-tag">One driver. Everyone else is a cop. Stay free.</p>
-      ${notice ? `<p class="lb-note">${esc(notice)}</p>` : ""}
-      <input class="lb-name" maxlength="16" autocomplete="off" spellcheck="false" placeholder="YOUR NAME" value="${esc(storedName)}"/>
-      ${urlRoom ? `<button class="btn primary" data-act="join">JOIN ROOM ${esc(urlRoom)}</button>` : ""}
-      <button class="btn ${urlRoom ? "strong" : "primary"}" data-act="quick">QUICK JOIN</button>
-      <button class="btn" data-act="create">CREATE GAME</button>
-      <button class="btn" data-act="solo">SOLO PRACTICE</button>
-      <div class="lb-join"><input class="lb-code" maxlength="4" placeholder="ROOM CODE" autocomplete="off" spellcheck="false"/><button class="btn" data-act="code">JOIN</button></div>
-      <p class="lb-stats"></p>
-    </div>`
-
-  const nameInput = el.querySelector<HTMLInputElement>(".lb-name")!
-  const codeInput = el.querySelector<HTMLInputElement>(".lb-code")!
-  const quickBtn = el.querySelector<HTMLElement>('[data-act="quick"]')!
-  const statsEl = el.querySelector<HTMLElement>(".lb-stats")!
-  if (!storedName) setTimeout(() => nameInput.focus(), 50)
-
+  el.innerHTML = `<div class="lb-bg"><i class="streak s1"></i><i class="streak s2"></i><i class="streak s3"></i><div class="lb-siren"></div></div>`
+  const stats = document.createElement("p")
+  stats.className = "lb-stats"
   const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
-  const loadStats = async () => {
+  const load = async () => {
     try {
       const res = await fetch(api("stats"), { cache: "no-store" })
       if (!res.ok) return
       const s = (await res.json()) as { players: number; games: number }
-      statsEl.textContent = `${plural(s.players, "player", "players")} online · ${plural(s.games, "open game", "open games")}`
+      stats.textContent = `${plural(s.players, "player", "players")} online · ${plural(s.games, "open game", "open games")}`
     } catch {}
   }
-  void loadStats()
-  const statsTimer = setInterval(loadStats, STATS_MS)
-
-  codeInput.addEventListener("input", () => {
-    const v = codeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4)
-    if (v !== codeInput.value) codeInput.value = v
-  })
-
-  return new Promise<LobbyResult>((resolve) => {
-    let busy = false
-    const finish = (room: string, via: NonNullable<LobbyResult["via"]>) => {
-      clearInterval(statsTimer)
-      const name = nameInput.value.trim().slice(0, 16)
-      localStorage.setItem(NAME_KEY, name)
-      setRoomParam(room)
+  void load()
+  const timer = setInterval(load, STATS_MS)
+  return {
+    stats,
+    remove() {
+      clearInterval(timer)
       el.classList.add("out")
       setTimeout(() => el.remove(), 450)
-      resolve({ mode: "room", room, name, picks: { ...PICKS }, via })
-    }
-    const finishSolo = () => {
-      clearInterval(statsTimer)
-      const name = nameInput.value.trim().slice(0, 16) || "Dax"
-      if (nameInput.value.trim()) localStorage.setItem(NAME_KEY, name)
-      const url = new URL(location.href)
-      url.searchParams.delete("r")
-      url.searchParams.set("solo", "")
-      history.pushState(null, "", url)
-      el.classList.add("out")
-      setTimeout(() => el.remove(), 450)
-      resolve({ mode: "solo", room: null, name, picks: { ...PICKS } })
-    }
-    const ask = async (path: "quick" | "create", label: string) => {
-      busy = true
-      el.classList.add("busy")
-      const btn = el.querySelector<HTMLElement>(`[data-act="${path}"]`)!
-      btn.textContent = label
-      btn.classList.add("going")
-      finish(await askRoom(path), path)
-    }
-    /** A name is required: flag the field and refuse to join until there is one. */
-    const named = () => {
-      if (nameInput.value.trim()) return true
-      nameInput.focus()
-      nameInput.placeholder = "ENTER A NAME TO PLAY"
-      nameInput.classList.remove("bad")
-      void nameInput.offsetWidth
-      nameInput.classList.add("bad")
-      return false
-    }
-    nameInput.addEventListener("input", () => nameInput.classList.remove("bad"))
-    el.addEventListener("click", (ev) => {
-      const act = (ev.target as HTMLElement).closest<HTMLElement>("[data-act]")?.dataset.act
-      if (busy || !act) return
-      if (act === "solo") {
-        finishSolo()
-        return
-      }
-      if (!named()) return
-      if (act === "join" && urlRoom) finish(urlRoom, "code")
-      else if (act === "quick") void ask("quick", "FINDING A GAME…")
-      else if (act === "create") void ask("create", "CREATING…")
-      else if (act === "code") {
-        if (codeInput.value.length === 4) finish(codeInput.value, "code")
-        else {
-          codeInput.focus()
-          codeInput.classList.remove("bad")
-          void codeInput.offsetWidth
-          codeInput.classList.add("bad")
-        }
-      }
-    })
-    el.addEventListener("keydown", (ev) => {
-      if (ev.key !== "Enter") return
-      if (ev.target === codeInput) el.querySelector<HTMLElement>('[data-act="code"]')!.click()
-      else if (ev.target === nameInput) (el.querySelector<HTMLElement>('[data-act="join"]') ?? quickBtn).click()
-    })
-  })
+    },
+  }
 }

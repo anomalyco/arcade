@@ -173,3 +173,11 @@ button { font: inherit; color: inherit; }
 .h-chat { position: absolute; left: 24px; bottom: 232px; width: min(380px, 40vw); z-index: 5; --achat-font: var(--display); }
 .achat-line.robber { --achat-accent: var(--robber); }
 .achat-line.cop { --achat-accent: var(--cop); }
+
+/* The kit game shell (title, Escape menu, Settings) in Getaway's colours; the title sits on the night-road backdrop. */
+.arcade-shell { --shell-font: var(--display); --shell-title-font: var(--display); --shell-ink: var(--text); --shell-dim: var(--dim); --shell-card: rgba(6, 8, 13, 0.82); --shell-edge: rgba(255, 255, 255, 0.2); --shell-accent: var(--text); --shell-accent-ink: #05070b; --shell-radius: 0; font-size: 16px; letter-spacing: 0.06em; }
+.arcade-shell[data-screen="title"] .as-overlay { background: transparent; }
+.arcade-shell .as-title { font-weight: 300; font-size: 64px; letter-spacing: 0.34em; padding-left: 0.34em; }
+.arcade-shell .as-sub { text-transform: uppercase; letter-spacing: 0.3em; font-size: 12px; }
+.arcade-shell .as-btn { letter-spacing: 0.2em; text-transform: uppercase; }
+.arcade-shell .lb-stats { margin: 0 0 4px; }
