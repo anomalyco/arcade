@@ -36,6 +36,8 @@ export type MotionCalibration = {
   leg: number
   /** Each entry is a measured maximum, with provenance; margin is a declared policy, not anatomy. */
   limits: Record<string, { max: number; source: string }>
+  /** Optional nominal-clock envelopes. A 100ms hitch retains the tape's median clock, not a faster clock's noise. */
+  clocks?: Record<string, MotionCalibration["limits"]>
   margin: number
 }
 
@@ -193,10 +195,17 @@ export function calibrateMotion(references: readonly { name: string; frames: rea
 
 /** Throws for uncalibrated channels instead of silently skipping checks. Grip uses the reference rigid-link residual. */
 export function checkBodyMotion(frames: readonly MotionFrame[], calibration: MotionCalibration): MotionViolation[] {
-  const rigid = Math.max(0, ...Object.entries(calibration.limits).filter(([k]) => k.startsWith("bone-length/")).map(([, x]) => x.max))
+  let limits = calibration.limits
+  if (calibration.clocks && frames.length) {
+    const dt = median(frames.map(f => f.dt).filter(dt => dt > 0 && Number.isFinite(dt)))
+    const clock = Object.keys(calibration.clocks).find(fps => Math.abs(dt * Number(fps) - 1) < 1e-6)
+    if (dt && !clock) throw new Error(`No motion calibration for nominal ${1 / dt}fps`)
+    if (clock) limits = calibration.clocks[clock]!
+  }
+  const rigid = Math.max(0, ...Object.entries(limits).filter(([k]) => k.startsWith("bone-length/")).map(([, x]) => x.max))
   return measureBodyMotion(frames, calibration).flatMap(r => {
     if (r.metric === "bad-number") return [{ ...r, threshold: 0, ratio: Infinity, reason: "Non-finite or invalid input; history reset" }]
-    const entry = calibration.limits[motionKey(r)]
+    const entry = limits[motionKey(r)]
     if (!entry && r.metric !== "grip") throw new Error(`No mocap calibration for ${motionKey(r)}`)
     // 1 µm numerical floor prevents floating-point FK residuals being treated as visible stretch.
     const threshold = Math.max(1e-6, (entry?.max ?? rigid) * calibration.margin) * r.scale

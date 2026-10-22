@@ -84,8 +84,10 @@ below, the causes of past bugs and the known gaps. `docs/human-rig.md` has the m
 `bun scripts/motion-check.ts` is the root-level body-motion lint. `--actor soldier,a-woods --fps 60` narrows iteration;
 the default sweeps all shared bodies and all 18 cast variants. `--baseline <checkout>` compares production code from
 another checkout; `--baseline-actor a-woods` narrows that pass. `--calibrate --calibrate-only` regenerates the pinned-CMU
-envelopes and proves zero findings on the reference at every clock (until #428 lands, add
-`--reference-root <people-real-checkout>` for its CMU loader). `scripts/motion/acceptance.ts <pre-fix-checkout>`
+per-clock envelopes and proves zero findings on the reference at every clock. `--write-baseline` prints and refuses
+raised/new/removed channels unless `--accept-regression` is supplied after review; it preserves unsampled tapes.
+`motion-reference.test.ts` must catch 3 cm pelvis/wrist/ankle pops at 30/60 fps while all CMU controls stay clean.
+`scripts/motion/acceptance.ts <pre-fix-checkout>`
 checks that all three known people-real defects (knee flip, turned-start yaw whip, hovering stance foot) are detected.
 Read [docs/animation.md](../../../docs/animation.md#body-motion-invariants) for units, normalization and coverage limits.
 

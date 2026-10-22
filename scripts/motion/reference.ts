@@ -1,6 +1,6 @@
 import { join } from "node:path"
 import { createHash } from "node:crypto"
-import { calibrateMotion, checkBodyMotion, type MotionFrame } from "../../packages/kit/motion-check"
+import { calibrateMotion, checkBodyMotion, measureBodyMotion, motionKey, type MotionFrame, type MotionCalibration } from "../../packages/kit/motion-check"
 import type { BvhClip, RigJointMap } from "../../packages/kit/pose-diff"
 import type { V3 } from "../../packages/kit/rig"
 
@@ -16,8 +16,6 @@ const median = (a: number[]) => a.toSorted((x, y) => x - y)[a.length >> 1]!
 /** Reuses the existing CMU parser and axis normalization. Raw FK marker lengths, no gait-loop seam or pose rounding. */
 export async function referenceMotion(root: string, fixtureDir?: string) {
   const mod = await import(join(root, "games/blackout/scripts/animation/open-mocap.ts")) as MocapModule
-  if (typeof mod.loadCmu !== "function" || typeof mod.parseCmu !== "function")
-    throw new Error("CMU loader is not in this revision. Pass --reference-root <people-real checkout> until PR #428 lands.")
   const references: { name: string; frames: MotionFrame[] }[] = []
   const hashes: Record<string, string> = {}
   for (const trial of ["07_12", "09_11"]) {
@@ -74,6 +72,21 @@ export async function referenceMotion(root: string, fixtureDir?: string) {
     }
   }
   const calibration = calibrateMotion(references)
+  // Linear resampling preserves measured positions but its high-rate derivative noise must never set a slower
+  // clock's limits. Keep the common stature/speed normalization; pool normal and hitch stencils at each rate.
+  calibration.clocks = {}
+  for (const fps of [30, 60, 144]) {
+    const limits: MotionCalibration["limits"] = {}
+    for (const ref of references.filter(r => r.name.includes(` ${fps}fps`))) {
+      for (const r of measureBodyMotion(ref.frames, calibration)) {
+        const key = motionKey(r), max = r.value / r.scale
+        if (!limits[key] || limits[key]!.max < max) limits[key] = { max, source: ref.name }
+      }
+    }
+    calibration.clocks[fps] = limits
+  }
+  // The human-readable default table is 60Hz. checkBodyMotion always selects a clock when clocks are present.
+  calibration.limits = calibration.clocks[60]!
   const failures = references.flatMap(r => checkBodyMotion(r.frames, calibration).map(v => ({ source: r.name, ...v })))
   if (failures.length) throw new Error(`CMU self-check failed: ${JSON.stringify(failures[0])}`)
   return { calibration, hashes, references }

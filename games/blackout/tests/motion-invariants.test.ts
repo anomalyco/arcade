@@ -10,19 +10,19 @@ import type { MotionCalibration } from "../../../packages/kit/motion-check"
 const root = resolve(import.meta.dir, "../../..")
 const calibration: MotionCalibration = JSON.parse(readFileSync(resolve(root, "scripts/motion/calibration.json"), "utf8"))
 const baseline: Record<string, Record<string, number>> = JSON.parse(readFileSync(resolve(root, "scripts/motion/baseline.json"), "utf8"))
-test("production body-motion channels do not exceed the reviewed baseline", async () => {
+test("the production motion ledger is not empty", () => {
   expect(Object.keys(baseline).length).toBeGreaterThan(0)
+})
+for (const [key, limits] of Object.entries(baseline)) test(`production body-motion baseline: ${key}`, async () => {
   const regressions: string[] = []
-  for (const [key, limits] of Object.entries(baseline)) {
-    const [actor, fps, hitch] = key.split("/")
-    const frames = await sampleMotion(root, actor!, Number(fps), hitch === "true")
-    const measured = regressionEnvelope(frames, calibration)
-    for (const channel of Object.keys(limits)) if (!(channel in measured)) regressions.push(`${key}: missing ${channel}`)
-    for (const [channel, peak] of Object.entries(measured)) {
-      const limit = limits[channel]
-      if (limit === undefined || !Number.isFinite(peak) || peak > limit * 1.00001 + 1e-7)
-        regressions.push(`${key} ${channel}: ${peak} > ${limit}`)
-    }
+  const [actor, fps, hitch] = key.split("/")
+  const frames = await sampleMotion(root, actor!, Number(fps), hitch === "true")
+  const measured = regressionEnvelope(frames, calibration)
+  for (const channel of Object.keys(limits)) if (!(channel in measured)) regressions.push(`${key}: missing ${channel}`)
+  for (const [channel, peak] of Object.entries(measured)) {
+    const limit = limits[channel]
+    if (limit === undefined || !Number.isFinite(peak) || peak > limit * 1.00001 + 1e-7)
+      regressions.push(`${key} ${channel}: ${peak} > ${limit}`)
   }
   expect(regressions).toEqual([])
 }, 60_000)

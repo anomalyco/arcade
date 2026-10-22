@@ -8,6 +8,7 @@ import { ACTORS, sampleMotion } from "./motion/scenarios"
 import { findings, ranked, regressionEnvelope, type Finding } from "./motion/report"
 import { RIG_SEGMENTS } from "../packages/kit/pose-diff"
 import type { MotionCalibration } from "../packages/kit/motion-check"
+import { writeMotionLedger } from "./motion/ledger"
 
 const root = resolve(import.meta.dir, "..")
 const arg = (name: string, fallback: string) => { const i = process.argv.indexOf(name); return i < 0 ? fallback : process.argv[i + 1]! }
@@ -17,7 +18,7 @@ mkdirSync(out, { recursive: true })
 const calibrationFile = join(root, "scripts/motion/calibration.json")
 let calibration: MotionCalibration
 if (flag("--calibrate")) {
-  const ref = await referenceMotion(arg("--reference-root", root), arg("--bvh-dir", join(root, "games/blackout/scripts/animation/fixtures/mocap/cmu")))
+  const ref = await referenceMotion(root, arg("--bvh-dir", join(root, "games/blackout/scripts/animation/fixtures/mocap/cmu")))
   calibration = ref.calibration
   writeFileSync(calibrationFile, JSON.stringify({ ...calibration, hashes: ref.hashes }, null, 2) + "\n")
   console.log(`CMU control: 0 violations in ${ref.references.length} clock sweeps; ${ref.references.reduce((n, r) => n + r.frames.length, 0)} frames`)
@@ -60,7 +61,6 @@ for (const pass of passes) {
   console.table(reports[pass.name]!.slice(0, 25).map(v => ({ actor: v.actor, scenario: v.scenario, joint: v.joint, metric: `${v.metric}/${v.space}`, fps: v.fps, hitch: v.hitch,
     frame: v.frame, time: +v.time.toFixed(3), measured: +v.value.toPrecision(5), threshold: +v.threshold.toPrecision(5), unit: v.unit })))
 }
-if (flag("--write-baseline")) writeFileSync(join(root, "scripts/motion/baseline.json"), JSON.stringify(envelope) + "\n")
 const revision = (path: string) => { try { return execFileSync("git", ["-C", path, "rev-parse", "HEAD"], { encoding: "utf8" }).trim() } catch { return "unavailable (worker export)" } }
 const coverage = {
   revision: arg("--revision", "working tree"), sourceRoot, baselineRoot: baseline || null,
@@ -87,3 +87,8 @@ for (const [pass, list] of Object.entries(reports)) {
 }
 writeFileSync(join(out, "moments.json"), JSON.stringify({ segments: RIG_SEGMENTS, clips }))
 console.log(`Report and exact joint windows: ${out}. Render: uv run --with pillow python3 scripts/motion/render.py ${out}`)
+// Always leave the report for review, even when a ledger increase is refused.
+if (flag("--write-baseline")) {
+  writeFileSync(join(out, "baseline-candidate.json"), JSON.stringify(envelope) + "\n")
+  writeMotionLedger(join(root, "scripts/motion/baseline.json"), envelope, flag("--accept-regression"))
+}
