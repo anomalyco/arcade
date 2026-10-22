@@ -482,7 +482,7 @@ struct VO { @builtin(position) pos: vec4f, @location(0) uv: vec2f }
 `
 
 /**
- * Dust motes and moths in the beam: procedural instances wrapped in a box round the eye (world-stable), lit only by
+ * Sparse dust in the beam: procedural instances wrapped in a box round the eye (world-stable), lit only by
  * the torch's beam profile and spot shadow, with forward scattering (dust sparkles looking down the beam) and
  * energy-conserving sprite size (a sub-pixel mote is a dim pixel, a near one a soft out-of-focus disc).
  */
@@ -499,22 +499,15 @@ fn h1(n: f32) -> f32 { return fract(sin(n * 127.1) * 43758.5453); }
   let corner = array<vec2f, 6>(vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0), vec2f(-1.0, -1.0), vec2f(1.0, 1.0), vec2f(-1.0, 1.0))[vi];
   let fi = f32(ii);
   let t = F.cam.w;
-  let moth = ii < 5u;
   var p: vec3f;
   var size: f32;
   let eye = F.cam.xyz;
-  if (moth) {
-    // Moths circle a little ahead of the lens, drawn to it.
-    let c = N.torch.xyz + N.torchDir.xyz * (1.2 + 2.8 * h1(fi + 3.0));
-    let w = t * (1.5 + h1(fi) * 2.0);
-    p = c + vec3f(sin(w + fi) + 0.5 * sin(w * 2.7 + fi * 1.3), 0.6 * sin(w * 1.9 + fi * 2.1), cos(w * 1.3 + fi) + 0.5 * cos(w * 3.1 + fi)) * (0.35 + 0.5 * h1(fi + 9.0));
-    size = 0.006;
-  } else {
+  {
     let box = 14.0;
     let seed = vec3f(h1(fi + 0.1), h1(fi + 0.2), h1(fi + 0.3)) * box;
     let drift = vec3f(N.wind.x, 0.0, N.wind.y) * t * 0.12 * N.wind.z + vec3f(sin(t * 0.3 + fi), sin(t * 0.21 + fi * 1.7) * 0.6 - t * 0.008, cos(t * 0.27 + fi * 0.7)) * 0.15;
     p = eye + (fract((seed + drift - eye) / box) - 0.5) * box;
-    size = 0.0008 + 0.0012 * h1(fi + 0.4);
+    size = 0.0003 + 0.0004 * h1(fi + 0.4);
   }
   // Torch light at the mote.
   let toP = p - N.torch.xyz;
@@ -533,8 +526,9 @@ fn h1(n: f32) -> f32 { return fract(sin(n * 127.1) * 43758.5453); }
   let energy = (size * size) / (r * r);
   // Albedo × the share of the beam a speck intercepts (its cross-section over the sprite): dust is tiny and bright
   // only looking down the beam (phase); a moth is a dull grey-brown wing.
-  let reflectance = select(0.02, 0.01, moth);
-  o.col = N.torchCol.rgb * light * phase * energy * reflectance * N.motes.x * fogTransmittance(eye, p);
+  let reflectance = 0.02;
+  let rangeFade = smoothstep(0.3, 0.6, dist) * (1.0 - smoothstep(3.0, 6.0, dist));
+  o.col = N.torchCol.rgb * light * phase * energy * reflectance * N.motes.x * rangeFade * fogTransmittance(eye, p);
   let right = normalize(cross(view, vec3f(0.0, 1.0, 0.0)));
   let up = cross(right, view);
   o.pos = F.viewProj * vec4f(p + (right * corner.x + up * corner.y) * r, 1.0);

@@ -116,7 +116,7 @@ export const forestFogVolume = (smoke: boolean) => fogScatterVolume({
   declarations: woodsUniformWgsl + (smoke ? "" : woodsBankWgsl + /* wgsl */ `
 fn woodsTorchScatter(p: vec3f, eye: vec3f) -> f32 {
   if (N.pad.x < 0.5) { return 1.0; }
-  return mix(0.1, 1.0, smoothstep(0.0, 8.0, distance(p, eye)));
+  return mix(N.pad.w, 1.0, smoothstep(3.0, 12.0, distance(p, eye)));
 }
 // Integral of a linear 12 m density ramp, clear before N.pad.z. Both lamp and eye
 // legs use it; source scattering uses its derivative. This is an artistic clear
@@ -186,7 +186,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
   let models = await modelsLoading
   mark("models")
   const t1 = performance.now()
-  const buildOpts = () => ({ scatter: 1, fernDensity: settings.fernDensity, litter: settings.litter })
+  const buildOpts = () => ({ scatter: 1, fernDensity: settings.fernDensity, litter: settings.litter, smoothTrunks: settings.smoothTrunks })
   // A worker that dies mid-build takes the models it was handed: fetch them again and build here.
   const built = await builder.build(world, models, buildOpts(), ground, (time) => mark("worker", time)).catch(async (error) => {
     console.warn("forest: building on the main thread:", error)
@@ -280,6 +280,8 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     const halfAngle = (s.torchAngle * Math.PI) / 180
     const torchColor = kelvinColor(s.torchKelvin)
     const profile = torchProfile(s)
+    const torchPower = s.torchPower
+    motes.count = smoke ? 0 : Math.max(0, Math.round(s.dustCount))
 
     // ---- Where the beam lands: drives the bounce light and the exposure.
     if (local) {
@@ -291,7 +293,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
       bounce.x += (target[0]! - bounce.x) * k; bounce.y += (target[1]! - bounce.y) * k; bounce.z += (target[2]! - bounce.z) * k
       // A Lambertian spot re-emits I·tan²θ·albedo whatever its distance; the light fades as the spot does past reach.
       const fade = hit.hit ? 1 - Math.max(0, (hit.d - s.torchReach * 0.6) / (s.torchReach * 0.4)) : 0
-      const p = s.torchPower * Math.tan(halfAngle) ** 2 * hit.albedoLum * s.bounce * 1.6 * Math.max(0, fade)
+      const p = torchPower * Math.tan(halfAngle) ** 2 * hit.albedoLum * s.bounce * 1.6 * Math.max(0, fade)
       bounce.power += (p - bounce.power) * k
       for (let i = 0; i < 3; i++) bounce.color[i] = bounce.color[i]! + (hit.albedo[i]! / Math.max(hit.albedoLum, 1e-3) * torchColor[i]! - bounce.color[i]!) * k
     } else bounce.power *= Math.exp(-f.dt * 10)
@@ -299,7 +301,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     // ---- Auto exposure from the scene-referred meter, a few frames late.
     // After a cut briefly hold for a live meter; absent, stalled or failed meters use the fallback.
     const coverage = Math.min(1, (Math.tan(halfAngle * 1.3) / Math.tan(f.fovY / 2)) ** 2)
-    const spot = local ? (s.torchPower * 5 * 0.2) / (Math.PI * Math.max(cam.hit, 0.4) ** 2) * coverage : 0
+    const spot = local ? (torchPower * 5 * 0.2) / (Math.PI * Math.max(cam.hit, 0.4) ** 2) * coverage : 0
     const metered = renderer.sceneMeter
     // The compensation follows your torch, not the whole night: camp with your torch off keeps its exposure law.
     const targetStops = forestExposureTarget(metered, spot + 0.004 * s.sky + 0.0005, s, s.clearAir && !smoke && local ? -0.25 : 0)
@@ -310,7 +312,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     const frameLights: SceneLight[] = []
     for (const t of f.torches) {
       if (!t.on) continue
-      frameLights.push({ id: 1000 + t.id, x: t.pos[0], y: t.pos[2], h: t.pos[1], r: s.torchReach, color: torchColor, power: s.torchPower * (t.level ?? 1), size: 0.02, unshadowed: true, beam: { axis: t.dir, halfAngle } })
+      frameLights.push({ id: 1000 + t.id, x: t.pos[0], y: t.pos[2], h: t.pos[1], r: s.torchReach, color: torchColor, power: torchPower * (t.level ?? 1), size: 0.02, unshadowed: true, beam: { axis: t.dir, halfAngle } })
     }
     if (local && bounce.power > 0.01) frameLights.push({ id: 2000, x: bounce.x, y: bounce.z, h: bounce.y, r: 9, color: bounce.color, power: bounce.power, size: 0.6, unshadowed: true })
     for (const [i, l] of build.campLights.entries()) {
@@ -324,7 +326,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
 
     // ---- Spot shadow of the local torch (and, on High, the nearest other one).
     spots.settings.count = smoke || s.torchShadows === "off" ? 0 : quality.tier === "high" ? 2 : 1
-    const candidates: SpotCandidate[] = f.torches.filter(t => t.on).map(t => ({ id: 1000 + t.id, pos: t.pos, axis: t.dir, cosOuter: Math.cos(Math.min(1.2, halfAngle * 2.2)), range: s.torchReach, intensity: s.torchPower * (t === local ? 100 : 1) }))
+    const candidates: SpotCandidate[] = f.torches.filter(t => t.on).map(t => ({ id: 1000 + t.id, pos: t.pos, axis: t.dir, cosOuter: Math.cos(Math.min(1.2, halfAngle * 2.2)), range: s.torchReach, intensity: torchPower * (t === local ? 100 : 1) }))
     pass.update(f.eye, f.viewProj, quality, s)
     const enc = device.createCommandEncoder()
     const casters = local && spots.settings.count > 0 ? pass.casters(local.pos, s.torchReach, quality.fernNear, s.foliageShadows && quality.foliageShadows ? foliageMask : null) : []
@@ -352,7 +354,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     for (const t of f.torches) {
       if (!t.on) continue
       const id = lights.indexOf(1000 + t.id)
-      fogLamps.push({ id: 1000 + t.id, x: t.pos[0], y: t.pos[1], z: t.pos[2], range: s.torchReach, color: torchColor, intensity: s.torchPower * 5 * (t.level ?? 1), axis: t.dir, cosOuter: Math.cos(halfAngle * 1.6), cosInner: Math.cos(halfAngle * 0.5), size: t === local ? s.beamNear * 2 : 0.8, beam: halfAngle, uplight: 0, ...(t === local && s.shafts && spots.settings.count > 0 && id >= 0 ? { shadow: id } : {}) })
+      fogLamps.push({ id: 1000 + t.id, x: t.pos[0], y: t.pos[1], z: t.pos[2], range: s.torchReach, color: torchColor, intensity: torchPower * 5 * (t.level ?? 1), axis: t.dir, cosOuter: Math.cos(halfAngle * 1.6), cosInner: Math.cos(halfAngle * 0.5), size: t === local ? s.beamNear * 2 : 0.8, beam: halfAngle, uplight: 0, ...(t === local && s.shafts && spots.settings.count > 0 && id >= 0 ? { shadow: id } : {}) })
     }
     for (const [i, l] of build.campLights.entries()) {
       const k = l.kind === "bulb" ? s.stringLights : s.windows
@@ -377,7 +379,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
       // the eye's angle, so the sprite (a 2 cm core) holds its brightness and shrinks with distance.
       const prof = cosT > 0 ? beamProfileCpu(ang, profile) : 0
       if (prof <= 0.002 || spriteCount >= 8) continue
-      const intensity = s.torchPower * 5 * prof * (t.level ?? 1)
+      const intensity = torchPower * 5 * prof * (t.level ?? 1)
       glare += (intensity / (d * d)) * 0.004
       // A lens-sized source (6 cm quad, same energy as the old 40 cm one): the glare round it is the bloom's, in screen
       // space, so a friend aiming at you flares without whiting out their body.
@@ -414,14 +416,14 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     custom.set([-reach, -reach, 1 / (2 * reach), 0], 24)
     custom.set(local ? [local.pos[0], local.pos[1], local.pos[2], 1] : [0, -1000, 0, 0], 28)
     custom.set(local ? [local.dir[0], local.dir[1], local.dir[2], halfAngle] : [0, -1, 0, halfAngle], 32)
-    custom.set([torchColor[0] * s.torchPower * 5, torchColor[1] * s.torchPower * 5, torchColor[2] * s.torchPower * 5, s.torchReach], 36)
+    custom.set([torchColor[0] * torchPower * 5, torchColor[1] * torchPower * 5, torchColor[2] * torchPower * 5, s.torchReach], 36)
     custom.set([smoke ? 0 : s.motes, (2 * Math.tan(f.fovY / 2)) / f.height, local && spots.settings.count > 0 ? lights.indexOf(1000 + local.id) : -1, 0], 40)
     custom.set([1, 1, 1, profile.spill], 44)
     packBeamProfile(profile, custom, 48)
     invert(f.viewProj, unjitteredInv)
     custom.set(unjitteredInv, 56)
     custom.set([textures.size, 0.5, Math.log2(ALPHA_COVERAGE_BASE / textures.size), 0], 72)
-    custom.set([s.clearAir && !smoke ? 1 : 0, s.depthMist && !smoke ? s.depthDensity : 0, s.depthStart, 0], 76)
+    custom.set([s.clearAir && !smoke ? 1 : 0, s.depthMist && !smoke ? s.depthDensity : 0, s.depthStart, s.nearScatter], 76)
     renderer.setCustomUniforms(custom)
 
     packSceneFrame(frameData, { viewProj: f.viewProj, eye: f.eye, time: f.time, width: f.width, height: f.height, lightCount: lights.lightCount, ambient: [0, 0, 0, 0], mapSize: [1, 1], ao: 0 })
@@ -432,7 +434,8 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
       view: [-reach, -reach, reach, reach], batches: f.batches ?? [], alphaSprites: f.sprites?.alpha ?? empty, alphaCount: f.sprites?.alphaCount ?? 0, addSprites: sprites, addCount: spriteCount,
       grade: [f.time, s.noise, s.vignette, s.exposure * cam.exposure],
       postParams: [s.aberration, s.halation, s.bloom],
-      postCustom: [s.chromaNoise, glare, Math.pow(2, Math.max(0, cam.stops)) * Math.sqrt(s.exposure / 1.6), 0],
+      postCustom: [s.chromaNoise, glare, Math.pow(2, Math.max(0, cam.stops)) * Math.sqrt(s.exposure / 1.6), Number(s.nightDesaturate) + 2 * Number(s.nightPurkinje)],
+      postExtra: s.nightAcuity,
       fog: fog.update({ eye: f.eye, viewProj: f.viewProj, lamps: fogLamps, time: f.time, beam: profile }),
       volume: volumes, fogBlur: fog.blurInput(),
     }
@@ -833,7 +836,7 @@ class MotePass implements ScenePass {
     this.pipe = d.createRenderPipeline(this.descriptor)
   }
   draw(pass: GPURenderPassEncoder) { pass.setPipeline(this.pipe); pass.draw(6, this.count) }
-  /** Motes and moths drift on their own: under TAA they go into the reactive mask, so they don't ghost. */
+  /** Dust drifts independently: under TAA it goes into the reactive mask, so it doesn't ghost. */
   drawReactive(pass: GPURenderPassEncoder) {
     if (this.count <= 0) return
     this.reactivePipe ??= this.ctx.device.createRenderPipeline(reactivePipelineDescriptor(this.descriptor))

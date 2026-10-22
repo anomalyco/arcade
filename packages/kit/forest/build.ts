@@ -66,7 +66,7 @@ export type ForestBuild = {
   logs: ForestWorld["logs"]
 }
 
-export type BuildOptions = { scatter: number; fernDensity: number; litter: number }
+export type BuildOptions = { scatter: number; fernDensity: number; litter: number; smoothTrunks?: boolean }
 
 type Rand = () => number
 const TAU = Math.PI * 2
@@ -152,7 +152,7 @@ export function buildForest(input: ForestWorld, models: ForestModels, opts: Buil
       const vr = mulberry(seed)
       const t: ForestTree = { x: 0, z: 0, species, r: spec.r, h: spec.h, lean: species === "birch" ? 0.03 + vr() * 0.1 : species === "snag" ? vr() * 0.06 : vr() * 0.025, leanYaw: vr() * TAU, seed }
       const nearW: [VertexWriter, VertexWriter] = [new VertexWriter(), new VertexWriter()], farW: [VertexWriter, VertexWriter] = [new VertexWriter(), new VertexWriter()]
-      tree(nearW[0], nearW[1], t, 0, true)
+      tree(nearW[0], nearW[1], t, 0, true, opts.smoothTrunks)
       tree(farW[0], farW[1], t, 0, false)
       variants[species].push(addTemplate({ name: `${species}-${v}`, kind: "tree", near: { opaque: nearW[0].finish(), masked: nearW[1].finish() }, far: { opaque: farW[0].finish(), masked: farW[1].finish() }, nearDist: 40, maxDist: 400 }))
     }
@@ -504,16 +504,27 @@ function axisAt(t: ForestTree, base: number, y: number, seed: number): [number, 
   return [t.x + Math.cos(yaw) * Math.sin(lean) * y + Math.cos(seed * 9) * bend, base + y * Math.cos(lean), t.z + Math.sin(yaw) * Math.sin(lean) * y + Math.sin(seed * 9) * bend]
 }
 
-function tree(opaque: VertexWriter, masked: VertexWriter, t: ForestTree, base: number, near: boolean) {
+function tree(opaque: VertexWriter, masked: VertexWriter, t: ForestTree, base: number, near: boolean, smoothTrunk = false) {
   const rand = mulberry(t.seed)
   const s01 = rand()
   const layer = barkLayer(t)
   const top = t.species === "snag" ? t.h * (0.55 + 0.3 * rand()) : t.h
   // Trunk: denser rings near the flare.
-  const sides = near ? (t.species === "birch" ? 8 : t.r > 0.3 ? 14 : 10) : t.r > 0.25 ? 6 : 5
+  const sides = near ? (smoothTrunk ? 32 : t.species === "birch" ? 8 : t.r > 0.3 ? 14 : 10) : t.r > 0.25 ? 6 : 5
   const rings = near ? Math.max(8, Math.min(24, Math.round(top / 1.3))) : 5
   const reps = Math.max(1, Math.round((TAU * t.r) / BARK_TILE))
   const mossAmount = t.species === "birch" ? 0.25 : 0.55 + 0.45 * rand()
+  // Evaluate the same surface on either side of a ring: sharing its normal avoids
+  // the horizontal lighting seams caused by each band's independent slope.
+  const surface = (y: number, th: number) => {
+    const f = y / top
+    const taper = t.species === "snag" ? 1 - 0.45 * f : Math.pow(Math.max(0.01, 1 - 0.92 * f), 0.85)
+    const flare = 1 + (t.species === "birch" ? 0.25 : 0.6) * Math.exp(-y / (0.7 * t.r + 0.25))
+    const lobes = 1 + 0.13 * Math.exp(-y / 0.9) * Math.cos(4 * th + s01 * 7) + 0.03 * Math.cos(9 * th + y * 0.7)
+    const r = Math.max(0.015, t.r * taper * flare) * lobes
+    const c = axisAt(t, base - 0.25, y, s01)
+    return [c[0] + Math.cos(th) * r, c[1], c[2] + Math.sin(th) * r]
+  }
   const ringPts: { c: [number, number, number]; r: number; y: number }[] = []
   for (let k = 0; k <= rings; k++) {
     const f = Math.pow(k / rings, 1.35)
@@ -532,7 +543,13 @@ function tree(opaque: VertexWriter, masked: VertexWriter, t: ForestTree, base: n
         const rr = ring.r * lobes
         const nx = Math.cos(th), nz = Math.sin(th)
         const moss = mossAmount * Math.exp(-ring.y / 3.5) * (0.6 + 0.4 * Math.max(0, -nz))
-        return { p: [ring.c[0] + nx * rr, ring.c[1], ring.c[2] + nz * rr], n: [nx, (a.r - b.r) / Math.max(0.3, b.y - a.y), nz], c: [moss, ring.y / t.h, 0, 0] as RGBA, uv: [(ii / sides) * reps, -ring.y / BARK_TILE] }
+        let n = [nx, (a.r - b.r) / Math.max(0.3, b.y - a.y), nz]
+        if (smoothTrunk) {
+          const left = surface(ring.y, th - 0.002), right = surface(ring.y, th + 0.002)
+          const below = surface(ring.y - 0.002, th), above = surface(ring.y + 0.002, th)
+          n = norm(cross(above.map((v, j) => v - below[j]!), right.map((v, j) => v - left[j]!)))
+        }
+        return { p: [ring.c[0] + nx * rr, ring.c[1], ring.c[2] + nz * rr], n, c: [moss, ring.y / t.h, 0, 0] as RGBA, uv: [(ii / sides) * reps, -ring.y / BARK_TILE] }
       })
       for (const idx of [0, 1, 2, 0, 2, 3]) {
         const v = verts[idx]!

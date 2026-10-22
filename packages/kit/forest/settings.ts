@@ -44,6 +44,7 @@ export type ForestLookSettings = {
   beamMist: number
   /** Thin torch in-scatter within 8 m of the eye; compensate by −0.25 stop only while your torch is on. */
   clearAir: boolean
+  nearScatter: number
   /** Extra distance extinction beyond the clear near field, forest volume only. */
   depthMist: boolean
   depthDensity: number
@@ -73,6 +74,7 @@ export type ForestLookSettings = {
   /** Shadowed shafts in the air (the torch's light stops behind trunks in the mist). */
   shafts: boolean
   motes: number
+  dustCount: number
   // Wind
   wind: number
   gust: number
@@ -81,6 +83,8 @@ export type ForestLookSettings = {
   flutter: number
   // Floor
   fernDensity: number
+  /** Geometry setting; takes effect on world rebuild/reload. */
+  smoothTrunks: boolean
   litter: number
   moss: number
   // Camp and water
@@ -115,6 +119,9 @@ export type ForestLookSettings = {
   halation: number
   /** Veiling glare: a little of every hot source's light lifts the whole frame. */
   glare: number
+  nightDesaturate: boolean
+  nightPurkinje: boolean
+  nightAcuity: number
 }
 
 export const FOREST_LOOK_DEFAULTS: Readonly<ForestLookSettings> = {
@@ -122,15 +129,18 @@ export const FOREST_LOOK_DEFAULTS: Readonly<ForestLookSettings> = {
   fogDensity: 0.008, fogFalloff: 0.02, fogBrightness: 0.0035, fogHue: 215,
   mist: "drift", mistDensity: 0.08, mistHeight: 2.4, canopyMist: 1, beamNear: 0.6, mistScale: 9, mistDrift: 0.15, mistGaps: 0.32, phaseG: 0.75, phaseFloor: 0.03, beamAir: 1, beamMist: 1,
   clearAir: true,
+  nearScatter: 0,
   depthMist: true, depthDensity: 0.05, depthStart: 12,
   torchPower: 70, torchAngle: 17, torchKelvin: 6000, torchReach: 40, torchCore: 0.9, torchCoreWidth: 0.42, torchRings: 0.35, torchSpill: 0.03, torchSpillWidth: 2.4,
   torchSide: 0.3, torchDrop: 0.28, torchLag: 0.07, bounce: 1, torchShadows: "map", foliageShadows: true, shadowSize: 1024, shafts: true, motes: 1,
+  dustCount: 80,
   wind: 1, gust: 0.6, trunkSway: 1, branchSway: 1, flutter: 1,
-  fernDensity: 1, litter: 1, moss: 1,
+  fernDensity: 1, litter: 1, moss: 1, smoothTrunks: true,
   windows: 1, stringLights: 1, water: 1,
-  exposure: 1.6, autoExposure: true, meterGain: 3, adaptDarken: 0.8, adaptBrighten: 6, adaptRange: 1.5,
+  exposure: 1.6, autoExposure: true, meterGain: 3, adaptDarken: 0.35, adaptBrighten: 8, adaptRange: 1.5,
   exposureModel: "robust", nightKey: 0.003, nightStops: 0.8, nightStrength: 0.85, adaptLift: 0.8,
-  noise: 1, chromaNoise: 0.35, vignette: 0.35, aberration: 0.6, bloom: 0.22, halation: 0.12, glare: 0.5,
+  noise: 1, chromaNoise: 0.35, vignette: 0.4, aberration: 0.6, bloom: 0.22, halation: 0.12, glare: 0.5,
+  nightDesaturate: true, nightPurkinje: true, nightAcuity: 0.5,
 }
 
 export const createForestLookSettings = (o: Partial<ForestLookSettings> = {}): ForestLookSettings => ({ ...FOREST_LOOK_DEFAULTS, ...o })
@@ -166,7 +176,8 @@ export function forestLookControls(settings: ForestLookSettings, prefix = "woods
     toggle("shafts", "Shafts in the mist", T),
     toggle("foliageShadows", "Fern and needle shadows", T),
     select("shadowSize", "Shadow map size", T, [512, 1024, 2048].map(v => ({ value: v, label: String(v) }))),
-    range("motes", "Motes and insects", T, 0, 3, 0.05, "×"),
+    range("motes", "Dust brightness", T, 0, 3, 0.05, "×"),
+    range("dustCount", "Dust candidates", T, 0, 300, 10),
     range("torchCore", "Hot spot", T, 0, 3, 0.05, "×", "Beam profile"),
     range("torchCoreWidth", "Hot spot width", T, 0.1, 1, 0.01, "×", "Beam profile"),
     range("torchRings", "Reflector rings", T, 0, 1.5, 0.05, "", "Beam profile"),
@@ -183,6 +194,7 @@ export function forestLookControls(settings: ForestLookSettings, prefix = "woods
     range("moonElevation", "Moon elevation", N, 5, 85, 1, "°", "Moon"),
     select("mist", "Mist pockets", F, [{ value: "drift", label: "Drifting in hollows" }, { value: "off", label: "Off" }]),
     toggle("clearAir", "Clear air near you", F),
+    range("nearScatter", "Near beam scatter", F, 0, 1, 0.05, "×"),
     toggle("depthMist", "Dark distance mist", F),
     range("depthDensity", "Distance extinction", F, 0, 0.15, 0.005, "/m"),
     range("depthStart", "Clear distance", F, 4, 25, 1, "m"),
@@ -209,11 +221,15 @@ export function forestLookControls(settings: ForestLookSettings, prefix = "woods
     range("fernDensity", "Ferns", G, 0, 2, 0.05, "×"),
     range("litter", "Twigs and litter", G, 0, 2, 0.05, "×"),
     range("moss", "Moss", G, 0, 2, 0.05, "×"),
+    toggle("smoothTrunks", "Smooth trunks (reload)", G),
     range("windows", "Lit windows", K, 0, 3, 0.05, "×"),
     range("stringLights", "String lights", K, 0, 3, 0.05, "×"),
     range("water", "Lake reflections", K, 0, 2, 0.05, "×"),
     range("exposure", "Exposure", C, 0.2, 6, 0.05, "×"),
     toggle("autoExposure", "Auto exposure", C),
+    toggle("nightDesaturate", "Low-light colour loss", C),
+    toggle("nightPurkinje", "Rod colour sensitivity", C),
+    range("nightAcuity", "Low-light detail loss", C, 0, 1, 0.05, "×"),
     select("exposureModel", "Exposure model", C, [{ value: "metered", label: "Centre meter" }, { value: "robust", label: "Night log mean" }], "Auto exposure"),
     range("nightKey", "Night key", C, 0.001, 0.05, 0.001, "linear", "Auto exposure"),
     range("nightStops", "Night offset", C, -2, 2, 0.05, "stops", "Auto exposure"),

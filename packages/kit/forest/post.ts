@@ -6,13 +6,13 @@ import { customPostGradeWgsl } from "../gpu/post-uniform"
  *
  * - Lens: lateral chromatic aberration growing to the corners (px), cos⁴-style vignette, bloom and a red halation
  *   halo round hot sources, and veiling glare (a little of every bright source's light lifted over the frame).
- * - Exposure: the host's bounded night exposure (0.8 s stop-down / 6 s opening time constants).
+ * - Exposure: the host's bounded night exposure (0.35 s stop-down / 8 s opening time constants).
  * - Sensor: noise in linear light before the curve, read noise plus shot noise (∝ √signal), scaled by the exposure
  *   gain, so a dark frame the camera has opened up on is the noisy one; a little of it in colour.
  * - Curve: a hue-preserving filmic shoulder, then sRGB.
  *
- * Uniforms: frame (time, noise /255, vignette, exposure), look.yzw (aberration px, halation, bloom), custom
- * (colour noise, glare level, gain, unused).
+ * Uniforms: frame (time, noise /255, vignette, exposure), look (acuity loss, aberration px, halation, bloom), custom
+ * (colour noise, glare level, gain, night-perception flags).
  */
 export const forestPost = postShader(false, false, { chromatic: 0, bloom: 0.22, grain: 0, vignette: 0.35, composite: /* wgsl */ `
   let uv = o.uv;
@@ -25,6 +25,26 @@ export const forestPost = postShader(false, false, { chromatic: 0, bloom: 0.22, 
     clean(textureSample(src, samp, uv)).g,
     clean(textureSample(src, samp, uv - ca)).b,
   );
+  // Heuristic scene-linear thresholds, not cd/m²: bright beam patches retain
+  // colour and acuity. No extra light is emitted by either night-vision effect.
+  let sceneY = dot(max(hdr, vec3f(0.0)), vec3f(0.2126, 0.7152, 0.0722));
+  let rod = 1.0 - smoothstep(log2(0.0002), log2(0.02), log2(max(sceneY, 1e-6)));
+  if (grade.look.x > 0.0) {
+    let delta = vec2f(0.75) / size;
+    let soft = (textureSampleLevel(src, samp, uv + vec2f(delta.x, 0.0), 0.0).rgb
+      + textureSampleLevel(src, samp, uv - vec2f(delta.x, 0.0), 0.0).rgb
+      + textureSampleLevel(src, samp, uv + vec2f(0.0, delta.y), 0.0).rgb
+      + textureSampleLevel(src, samp, uv - vec2f(0.0, delta.y), 0.0).rgb) * 0.25;
+    // Reject bright neighbours so detail loss cannot spread a lamp into dark woods.
+    hdr = mix(hdr, min(soft, hdr * 1.05), rod * grade.look.x);
+  }
+  let nightFlags = u32(grade.custom.w);
+  let photo = dot(hdr, vec3f(0.2126, 0.7152, 0.0722));
+  if ((nightFlags & 2u) != 0u) {
+    let scotopic = dot(hdr, vec3f(0.062, 0.608, 0.33));
+    hdr *= mix(1.0, min(1.0, scotopic / max(photo, 1e-6)), rod);
+  }
+  if ((nightFlags & 1u) != 0u) { hdr = mix(hdr, vec3f(dot(hdr, vec3f(0.2126, 0.7152, 0.0722))), rod * 0.8); }
   let bloom = textureSample(bloomTex, samp, uv).rgb;
   hdr += bloom * (grade.look.w + vec3f(1.0, 0.3, 0.1) * grade.look.z);
   hdr += vec3f(1.0, 0.97, 0.94) * grade.custom.y;

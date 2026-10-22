@@ -33,6 +33,12 @@ type Woods = {
 declare const woods: Woods
 
 export const shots: Record<string, (page: Page) => Promise<void>> = {
+  trunkClose: async (page) => { await page.evaluate(() => {
+    const c = woods.world.camp
+    const t = woods.world.trees.filter(t => t.radius > 0.3).sort((a, b) => Math.hypot(a.x - c.x, a.z - c.z + 55) - Math.hypot(b.x - c.x, b.z - c.z + 55))[0]!
+    woods.setPose(t.x, t.z + t.radius + 0.85, 0, -0.25)
+    for (const p of woods.state.players.slice(1)) { p.x = c.x; p.z = c.z }
+  }) },
   // Default view out of camp at spawn.
   camp: async (page) => { await page.evaluate(() => { const s = woods.world.camp.spawn; woods.setPose(s.x, s.z, s.yaw, 0.02); woods.camera.flashlight = false }) },
   // Round 4: across the clearing toward the planned ring (-4,+2), with cabins behind it.
