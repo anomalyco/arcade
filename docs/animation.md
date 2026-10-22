@@ -658,6 +658,149 @@ and gait numbers are unchanged. What held up, measured with `bun scripts/people/
   planted (5–7 cm at the ankle). `scripts/people/gait-clip.sh` (idle, turn, walk off, curve, stop, backpedal) reports
   the worst frame-to-frame knee/foot jump: 7–10 cm through the hand-overs, a swinging foot's own speed.
 
+## Body-motion invariants
+
+`@arcade/kit/motion-check` checks the **displayed world-space joints**, after IK and retargeting. It is pure TypeScript:
+`checkBodyMotion(frames, calibration)` returns joint, frame (zero-based), time (seconds at the end of the frame), rule,
+space, measured value, threshold, unit, ratio and reason. `measureBodyMotion` exposes the same measurements for a
+baseline or a debug display. It reuses `pose-diff`'s canonical joint IDs; the sweep uses its joint extractors and the
+same production adapters as `gait-metrics`, `survivor-legs` and `scripts/people/gait-metrics`.
+
+```sh
+# Before and after every animation change; run from the repository root.
+hivemind run --kind cargo --fetch captures/motion -- bun scripts/motion-check.ts --out captures/motion
+# Narrow iteration, or compare a checkout (both checkouts need dependencies).
+bun scripts/motion-check.ts --actor soldier,a-woods --fps 60 --baseline /path/to/before
+# Reference calibration only; downloads two hash-pinned CMU files into the fixture cache.
+bun scripts/motion-check.ts --calibrate --calibrate-only
+# Render deterministic highlighted side/front strips and ¼-speed H.264 clips on a render worker.
+hivemind run --kind render --fetch captures/motion -- uv run --with pillow python3 scripts/motion/render.py captures/motion
+# Targeted checks. The CMU reference test downloads the two pinned takes on a cold cache.
+hivemind run --kind cargo -- bun test --max-concurrency 4 packages/kit/motion-check.test.ts games/blackout/tests/motion-*.test.ts
+```
+
+### What the rules measure
+
+| Rule | Measurement |
+| --- | --- |
+| Pops | Every joint's displacement, velocity, acceleration and jerk, in world space and with pelvis translation subtracted. Relative space retains yaw; a turning or whipping limb must not disappear through coordinate rotation. |
+| Bone length / width | Change from the first valid pose in each segment for limb links, hip width and shoulder width. This checks displayed joint separation, including a boot separating from its IK-clamped shin. |
+| Hinges | Unsigned knee/elbow flexion and its rate; signed bend-plane reversal distance. Knee forward follows the boot, elbow backward follows the shoulder bar. Nearly straight limbs do not require normalizing a tiny bend-plane normal. |
+| Twists | Wrapped pelvis/torso yaw rate and acceleration, from rigid-frame yaw when supplied, otherwise the hip/shoulder bars. Crossing ±π is not a pop. |
+| Feet | Horizontal speed of the same planted sole point; sink/hover from terrain to the lowest sole surface; ankle, ball and toe speed at either contact edge. Contact labels come from the animation state, never inferred from the measured game's foot height. |
+| Grip | Change in wrist-to-independent-prop-anchor distance while a grip is active. Release clears that grip's history. |
+| Bad numbers | Non-finite joint, yaw, contact or grip coordinates, non-positive/non-finite dt, missing pelvis, or invalid speed. Invalid samples break derivative history. |
+
+The input's `dt` is the **actual elapsed sample interval**, including a hitch, not the rig's internally clamped step.
+Velocity/acceleration/jerk are order-1/2/3 divided differences, using the full elapsed stencil at irregular sample
+intervals. There are no artificial zero derivatives at startup. `reset: true` starts new derivative, contact, bone and
+grip history for an intentional spawn/teleport. Supply sole points separately from ankle bone origins; optional
+`surfaceY` measures the lowest heel/ball surface without switching which point is tracked for slip.
+
+### Thresholds and their evidence
+
+`scripts/motion/calibration.json` stores each channel's measured maximum, its source take/window/clock, both source
+SHA-256 hashes and the margin. Calibration is **CMU 07_12 walk, source frames 30–240, and 09_11 run, frames 2–165**,
+using the existing `open-mocap.ts` loader, parser, orientation normalization and steady-window selector. The calibration
+poses/resets at the beginning of the cgspeed BVHs are excluded explicitly. No procedural output enters calibration.
+Each take is sampled at 30, 60 and 144 fps, with and without a 100 ms interval: **12 reference sweeps, 1,406 frames,
+zero violations**. Linear resampling's rigid-link residuals stay in the reference envelope.
+
+**Calibrate each nominal clock separately.** The original pooled table let 144 fps interpolation kinks set the
+30/60 fps acceleration and jerk allowances. `calibration.clocks` now separates 30, 60 and 144 fps; the median valid
+sample interval chooses the table, so one 100 ms hitch retains its nominal clock. Unsupported clocks fail explicitly.
+The top-level `limits` mirror 60 fps for display; they are not a fallback for unsupported clocks. The 144 fps capture
+remains noisy, but cannot weaken the lower-rate checks. No procedural samples or injected pops train these limits.
+
+Threshold = reference channel maximum × **1.10** × stature × speed factor^derivative order. Stature is measured leg
+length / reference leg length (**0.84155 m**). Speed factor = max(1, locomotion speed / stature / reference median speed
+**2.00827 m/s**); the fastest speed in a derivative's four-sample history is retained across a stop. Angular channels
+omit stature, static geometric channels omit speed, and displacement multiplies the velocity allowance by dt.
+The 10% margin is an explicit measurement-envelope policy, not a claimed anatomical constant. Left/right share the
+larger reference bound. A 1 µm numerical floor prevents FK roundoff becoming a violation.
+
+World-space limits at reference stature/speed, including the 10% margin (JSON is authoritative):
+
+| Joint | 30 fps acceleration / jerk | 60 fps acceleration / jerk | 144 fps acceleration / jerk |
+| --- | --- | --- | --- |
+| Pelvis | 14.14 m/s² / 778.6 m/s³ | 47.81 / 4,356 | 175.53 / 50,075 |
+| Wrist | 18.21 / 656.9 | 64.82 / 7,519 | 274.97 / 65,625 |
+| Ankle | 55.90 / 1,262 | 68.92 / 4,900 | 226.32 / 39,303 |
+
+`motion-reference.test.ts` verifies all twelve unmodified CMU controls stay clean under the saved calibration, then
+injects one **3 cm** sample into the CMU walk's pelvis, wrist and ankle at 30 and 60 fps on each of X/Y/Z. All eighteen
+pop cases must trigger an acceleration or jerk finding at the affected joint; a bone-length alarm does not count.
+
+CMU has no force-plate/contact labels here. Reference mid-stance uses independently low **and** slow ball markers
+(each foot's lower quartiles); its stance-median marker height supplies the sole offset. This avoids training the
+slip limit on a heel rocker or swinging foot. Raw capture and interpolation noise remain conservative limitations,
+especially at 144 fps. The same reference controls pass, including the hitch. No fixture offers a held prop, so grip
+uses that clock's measured rigid-link residual,
+not a claim of mocap grip evidence. The parser exposes one toe marker; toe-tip calibration is its rigid extension,
+not independent toe-flexion evidence.
+
+### Sweep, acceptance and regression ledger
+
+The tape includes starts/stops, walk→run→sprint→run→walk, turns in place, backpedal, strafe, sudden reversals, Outbreak
+crouch, downward torch aim while reading the Woods map, and a walk start after turning 180°. It runs Blackout survivor
+and soldier, Outbreak survivor and zombie, and all **18 people cast/look combinations** through `People.drive` itself
+(gait blend, terrain, weight shift and retargeting included). The optional remote pass feeds the production
+`SnapshotBuffer` and `hermite2` into the survivor animator at 20 Hz snapshot rate and 100 ms interpolation delay.
+Every clock also gets one 100 ms interval just after walk→run.
+
+Coverage boundaries are in every report: shared avatars/people have no crouch button or jump/land pose; the Outbreak
+adapter alone has a crouch input. No jump is synthesized. Woods' remote friends have no map-hand pose; only its
+downward torch axis is covered, not the first-person sheet/HUD. Straight walk/run envelopes are candidate alerts
+for armed poses and fast turns, not universal anatomical limits. Joint points cannot reveal axial bone rotation;
+this tool checks bend planes and body yaw, not full elbow/knee rotational anatomy.
+
+`bun scripts/motion/acceptance.ts /path/to/pre-fix` is the negative control on people-real's **33a5d629**: it must find
+the reversed knee, turned-start yaw whip and hovering stance foot at the gait blend at all three frame rates.
+The regression test uses `scripts/motion/baseline.json`, a separate ledger of current **per-joint/channel maxima**
+over the production tape. It fails on a new channel, a non-finite sample or a worse maximum. Existing findings stay
+in the report; they are not erased by widening CMU limits. Refresh the ledger only after reviewing a deliberate
+animation change (`--write-baseline --actor ... --fps ...`) and record the reason here. The CLI prints every raised,
+new or removed channel and refuses the write without `--accept-regression`. It leaves the report and
+`baseline-candidate.json` for review; partial refreshes preserve unsampled tapes. Invalid values are never accepted.
+
+Reports rank by estimated visible travel rather than ratio to a nearly-zero numerical threshold. Each finding retains
+the exact frame/time, raw units and source limit. `scripts/motion/render.py` draws those production joints with the
+offending joint red, holds samples for their actual dt at ¼ speed, checks encoded frame counts and per-tile contrast,
+and streams frames to ffmpeg without leaving raw frame dumps. It is a diagnostic line rig, not a shaded game capture.
+
+The regression ledger covers seven bodies (the four shared adapters plus `a-woods`, `d-office`
+and `f-survivor`) at 60 fps, with/without the hitch: fourteen 30-second tapes. It records current defects so future
+changes cannot silently worsen them; it is not an animation-quality approval. The full report additionally sweeps all
+18 cast/look combinations at all three frame rates. `People.spawn` and `People.drive` run headlessly with only GPU
+allocation stubbed, so each checkout initializes its own production state. The reviewed refresh moves the people
+baseline from **0a28cd80** to **5d61493a**, which includes the approved #428 gait, carry and retargeting changes.
+Raised channels are accepted as existing main debt, not animation fixes in this branch. The full ranked report keeps
+that debt visible. The relative tolerance is 0.001%; Linux x86 CI must pass before merging this ARM-generated ledger.
+
+Reviewed sweep, 2026-10-22, after #428: **138 production tapes** (22 bodies at six clocks, plus six remote tapes).
+Per-clock calibration produces **22,798** deduplicated scenario/joint/rule candidates. Counts include different
+derivatives of the same event and identical motion across outfits; they are not distinct bug counts. Five distinct
+high-travel events are exported by `scripts/motion/export-reviewed.ts` for owner review:
+
+| Source / event | Measurement | CMU-scaled allowance |
+| --- | --- | --- |
+| Outbreak zombie, run→walk, 60 fps, t=8.0167 s | Left ankle contact-edge speed 106.07 m/s (1.768 m in one frame) | 2.150 m/s |
+| Blackout survivor, reversals, 30 fps + hitch, t=17.300 s | Right elbow flexion rate 47.46 rad/s (90.6° in one sample) | 6.463 rad/s |
+| Soldier, reversals, 30 fps + hitch, t=17.733 s | Right knee velocity 15.72 m/s | 4.880 m/s |
+| People `b-woods`, reversals, 144 fps, t=17.618 s | Left elbow flexion rate 157.46 rad/s (62.7° in one sample) | 8.925 rad/s |
+| People `e-woods`, reversals, 60 fps, t=17.200 s | Left toe velocity 37.04 m/s | 9.288 m/s |
+
+The original pre-fix acceptance run detected reversed knee, torso yaw and hovering foot at all three clocks; its
+clips are historical evidence, superseded by this current-main gallery. The zombie uses the same
+1.4/4.2/6.3 m/s stress tape as the other bodies, beyond a normal shambler's speed: reproduce at gameplay speeds
+before treating that extreme as an ordinary gameplay failure. The reversal tape flips direction every 400 ms;
+CMU locomotion envelopes alone do not prove an invalid arm pose, so inspect actual adjacent-sample travel. The
+five clips show discontinuities, not merely sustained poses outside a walking envelope. The guarded ledger refresh
+printed and refused 511 raised/new/removed channels before explicit acceptance of #428's existing people debt;
+the shared-body tapes did not rise. No animation changes accompany this checker.
+Report, exact joint windows, highlighted strips and ¼-speed clips:
+`~/code/home/artifacts/motion-invariants-2026-10-22/`.
+
 ## Known gaps
 
 - **Run late-swing knee extension still leads mocap by ~8°.** Walk leg RMSE is now **8.07°** (hip 4.48°, knee 10.94°,

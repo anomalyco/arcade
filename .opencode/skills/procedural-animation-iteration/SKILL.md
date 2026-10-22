@@ -25,7 +25,11 @@ below, the causes of past bugs and the known gaps. `docs/human-rig.md` has the m
 1. **Write down Kit's note as a claim you can test.** "The run limps" means unequal L/R step time
    or length. "The body bounces twice" points at a COM subharmonic. "The arms look stiff" means a
    small elbow range or a phase lag. Pick the metric before opening any code.
-2. **Measure the current code first.** Run `gait-metrics.ts` and `pose-diff.ts` with `--tag before`
+2. **Measure the current code first.** Run `bun scripts/motion-check.ts --out captures/motion-before` from the repo root
+   before **every animation change**, including people retargeting, gait blends and hand/prop poses. It samples production
+   joints at 30/60/144 fps plus a 100 ms hitch and ranks pops, stretch, reversed hinges, twists, contact and grip failures.
+   Keep its CMU calibration fixed: never tune a reference limit to make a procedural failure disappear.
+   Then run `gait-metrics.ts` and `pose-diff.ts` with `--tag before`
    (see Tools). They drive `animate`/`locomotion` from Bun with fixed `dt = 1/60`, constant speeds
    (walk 1.4, run 4.2, sprint 6.3 m/s), a warm-up and several cycles, for every consumer: Blackout
    survivor, Blackout soldier and Outbreak survivor. Add a case to the script if the note concerns
@@ -54,7 +58,13 @@ below, the causes of past bugs and the known gaps. `docs/human-rig.md` has the m
    or `packages/kit/human-pose.ts`, not in one game. Check `docs/animation.md` for a past cause that
    matches. Find the cause before changing constants: a tweaked amplitude that hides a coupling bug
    comes back in another mode.
-7. **Fix it, then rerun with `--tag after`.** Both scripts plot before and after together when both
+7. **Fix it, then rerun motion-check** (`--out captures/motion-after`, or `--baseline <before-checkout>` for the same
+   deterministic input tape on both versions). Inspect the reported joint and exact frame, then render its highlighted
+   line-rig clips/strips with `uv run --with pillow python3 scripts/motion/render.py captures/motion-after` through a
+   HiveMind render slot. The renderer verifies frame counts and nonblank tiles and pipes frames directly to ffmpeg.
+   Check `games/blackout/tests/motion-invariants.test.ts` and `packages/kit/motion-check.test.ts`; updating the regression
+   ledger requires reviewing the ranked findings and documenting why. A ledger is existing debt, not the mocap limit.
+   **Rerun gait-metrics and pose-diff with `--tag after`.** Both scripts plot before and after together when both
    tags are in the same output folder. Check that metrics you did not target have not regressed.
 8. **Keep soldier parity and tests green.** Run `bun games/blackout/scripts/prove-human-parity.ts`.
    It checks soldier posture, weapon stability and 900-frame pose hashes. If the soldier's motion is
@@ -71,7 +81,17 @@ below, the causes of past bugs and the known gaps. `docs/human-rig.md` has the m
 
 ## Tools
 
-All live in `games/blackout/scripts/animation/` and run from the repository root or `games/blackout`.
+`bun scripts/motion-check.ts` is the root-level body-motion lint. `--actor soldier,a-woods --fps 60` narrows iteration;
+the default sweeps all shared bodies and all 18 cast variants. `--baseline <checkout>` compares production code from
+another checkout; `--baseline-actor a-woods` narrows that pass. `--calibrate --calibrate-only` regenerates the pinned-CMU
+per-clock envelopes and proves zero findings on the reference at every clock. `--write-baseline` prints and refuses
+raised/new/removed channels unless `--accept-regression` is supplied after review; it preserves unsampled tapes.
+`motion-reference.test.ts` must catch 3 cm pelvis/wrist/ankle pops at 30/60 fps while all CMU controls stay clean.
+`scripts/motion/acceptance.ts <pre-fix-checkout>`
+checks that all three known people-real defects (knee flip, turned-start yaw whip, hovering stance foot) are detected.
+Read [docs/animation.md](../../../docs/animation.md#body-motion-invariants) for units, normalization and coverage limits.
+
+The gait and pose tools below live in `games/blackout/scripts/animation/` and run from the repository root or `games/blackout`.
 Output goes to `captures/animation/<tool>/` (git-ignored) unless you pass `--out`. The first bare
 argument or `--tag` names the pass.
 
