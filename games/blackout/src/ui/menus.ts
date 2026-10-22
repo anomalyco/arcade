@@ -50,8 +50,7 @@ export class LandingPicks {
       <div class="pickhead">MAP <span>new rooms</span></div>
       <div class="mappick">${MAP_CHOICES.map((m) => `<button class="${m === this.maps ? "on" : ""}" data-map="${m}" title="${esc(MAP_BLURBS[m])}">${MAP_NAMES[m]}</button>`).join("")}</div>
       <div class="modeblurb">${this.mapBlurbHtml(this.maps)}</div>
-      <button class="sandbox" data-act="sandbox">SOLO SANDBOX</button>
-      <div class="stats"></div>`
+      <div class="pickfoot"><button class="sandbox" data-act="sandbox">SOLO SANDBOX</button><div class="stats"></div></div>`
     this.el.addEventListener("click", (e) => {
       const t = (e.target as HTMLElement).closest<HTMLElement>("button")
       if (!t) return

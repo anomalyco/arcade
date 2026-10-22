@@ -147,7 +147,7 @@ async function main() {
   })
   const gameShell = createGameShell({
     game: "blackout", title: "BLACKOUT", subtitle: "Firefights at night: office floors and downtown streets.",
-    quickLabel: "Quick join", soloLabel: "Bot practice", friendsNote: "a private room with your mode and map",
+    quickLabel: "Quick join", soloLabel: "Bot practice", friendsNote: "a private room",
     askName: true, quality, channels: ["master", "effects", "ambience"],
     hidden: input.mux ? true : undefined,
     keysBlocked: () => debug.hasFocus(),
