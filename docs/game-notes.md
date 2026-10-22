@@ -175,6 +175,13 @@ proven animation techniques to animation.md, not here.
   25 pipelines, 633k → 397k characters of WGSL, and each one still built is byte-identical to before. Paired on two
   CI runners, Outbreak's two smoke frames came 3.6–7.1 s sooner (24.8→21.2, 30.6→23.5, 31.4→25.4, 31.3→25.2 s). Chromium's close also waits for the frames SwiftShader
   still has queued (several seconds each), so `scripts/smoke.mjs` kills the browser 3 s after a pass instead.
+- **A software-GPU smoke validates frames; it does not wait for them (Lot smoke, 2026-10-21).** One Lot frame takes
+  ~190 s for SwiftShader to rasterize at 640×360 on CI (~95 s at 160×90; with #387's surfaces and props it doubled),
+  so waiting on `onSubmittedWorkDone` broke the 165 s smoke. Presenting to the canvas also makes Chromium's GPU
+  process wait for the frame before it handles later commands, so even an error-scope round trip hung. Under `?smoke`
+  the Lot now draws its two frames offscreen (same passes and pipelines, canvas format), and the smoke's empty
+  error-scope round trip returns 1.1 s after the second submit, with any validation error already on the console.
+  `renderer.render()` also holds a frame back while the previous one is on the GPU, so the smoke uses `drawTo`.
 - **Rectangular ceiling panels need their actual footprint.** `packages/kit/gpu/lights/rect.ts` clips a downward
   rectangle against each receiver's horizon and integrates its spherical polygon for diffuse irradiance; shared
   physical-light hooks use the rectangle's mirror-ray point for approximate GGX specular and the existing area
