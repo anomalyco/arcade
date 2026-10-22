@@ -12,6 +12,7 @@ import { motionProbe } from "./autoresearch-motion"
 import { exposureProbe } from "./autoresearch-exposure"
 import { resetProbe } from "./autoresearch-reset"
 import { profileProbe } from "./autoresearch-profile"
+import { depthProbe } from "./autoresearch-depth"
 import { makeWorld, standHeight } from "../shared/world"
 import type { ForestFrameInput, ForestView } from "../../../packages/kit/forest/view"
 
@@ -141,7 +142,9 @@ try {
           if (i % 8 === 7) await new Promise(r => setTimeout(r, 0))
         }
       }, settleFrames)
-      await page.locator("#view").screenshot({ path: resolve(dir, `${name}.png`) })
+      // The deterministic clock is paused; locator screenshots wait for RAF-based
+      // element stability. The canvas fills this fixed viewport, so capture it directly.
+      await page.screenshot({ path: resolve(dir, `${name}.png`) })
       const data = await page.evaluate(async () => {
         const f = woods.view.forest
         await f.measure(1) // warm-up, discarded
@@ -170,6 +173,7 @@ try {
         } finally { buffer.destroy() }
       }, signalCandidates) })
       records[name] = data
+      if (process.env.AUTORESEARCH_DEPTH === "1") Object.assign(data, { trunkDepth: await page.evaluate(depthProbe) })
       writeFileSync(resolve(out, "capture.json"), JSON.stringify(report, null, 2))
       console.log(`METRIC ${variant.id}.${name}.gpu_ms=${data.gpu?.median}`)
       assert.equal(errors.length, 0, errors.join("\n"))

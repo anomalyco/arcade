@@ -11,6 +11,7 @@ Scrawl's unwanted frames are NOT optimization targets; their checkpoint-2 paint-
 """
 import json
 import sys
+import os
 from pathlib import Path
 import numpy as np
 from PIL import Image
@@ -83,7 +84,27 @@ def signal(records, directory):
     background = float(np.median(off[mask]))
     return dict(delta_p90=delta, background=background, contrast=delta / max(background, .01),
                 valid_probe=valid_probe, unoccluded_points=len(visible_points),
-                visible=bool(valid_probe and delta >= .02 and delta / max(background, .01) >= .25), pixels=int(mask.sum()))
+                 visible=bool(valid_probe and delta >= .02 and delta / max(background, .01) >= .25), pixels=int(mask.sum()))
+
+def trunk_contrast(record, path):
+    probe = record.get("trunkDepth")
+    if not probe: return None
+    # Native-resolution luminance: preserve narrow distant trunks. A vertical 3-pixel
+    # mean reduces sensor noise without mixing across either silhouette edge.
+    y = lum(np.asarray(Image.open(path).convert("RGB"), dtype=float) / 255)
+    assert y.shape == (probe["height"], probe["width"])
+    bins = {}
+    for lo, hi in [(8, 20), (20, 30), (30, 50), (50, 100)]:
+        points = [p for p in probe["points"] if lo <= p["distance"] < hi]
+        pairs = [(float(y[p["y"]-1:p["y"]+2, p["x"]].mean()),
+                  float(y[p["y"]-1:p["y"]+2, p["bx"]].mean())) for p in points]
+        absolute = [abs(a-b) for a,b in pairs]
+        contrast = [abs(a-b) / max(a+b, .02) for a,b in pairs]
+        bins[f"{lo}-{hi}"] = dict(samples=len(points), sufficient=len(points) >= 10,
+            absolute_median=float(np.median(absolute)) if pairs else None,
+            contrast_median=float(np.median(contrast)) if pairs else None,
+            absolute_p90=float(np.quantile(absolute, .9)) if pairs else None)
+    return bins
 
 result = {"definition": "v2; display luminance unless linear_ prefixed; dark <0.04; p5 <0.025; signal requires >=40/80 depth-visible points, delta >=0.02 and contrast >=0.25", "variants": {}}
 for variant, records in manifest["variants"].items():
@@ -91,11 +112,15 @@ for variant, records in manifest["variants"].items():
     views = {}
     tones = {}
     target_tones = {}
+    depth = {}
     for name in records:
         if name in ["motion", "adaptation", "profile"]: continue
         current = image(directory / f"{name}.png")
         tones[name] = tone(current[22:338, 20:620])
+        depth[name] = trunk_contrast(records[name], directory / f"{name}.png")
         target = targets / "paintover" / f"po-{NAMES[name]}.jpg" if name in NAMES else targets / "look/checkpoints/2/renders" / f"po-{name}.png"
+        if os.environ.get("AUTORESEARCH_TARGETS"):
+            target = Path(os.environ["AUTORESEARCH_TARGETS"]) / f"{name}.png"
         if target.exists():
             reference = image(target)
             views[name] = distance(current, reference)
@@ -115,7 +140,7 @@ for variant, records in manifest["variants"].items():
             between[f"l{n}"] = dict(p5=float(np.quantile(y, .05)), median=float(np.median(y)), dark_pct=float(np.mean(y < .04) * 100), pixels=int(mask.sum()))
     summary = dict(distance=float(np.mean([v["distance"] for v in views.values()])) if views else None, views=views, tone=tones,
                    gpu_median=float(np.median(gpu)), gpu_view_p95=float(np.quantile(gpu, .95)),
-                   signal=sig, motion=records.get("motion"), adaptation=records.get("adaptation"), target_tone=target_tones, between_beams=between,
+                    signal=sig, trunk_depth=depth, motion=records.get("motion"), adaptation=records.get("adaptation"), target_tone=target_tones, between_beams=between,
                    proposed_target_bounds={name: dict(p5_max=t["p5"] + .008, dark_min=max(0, t["dark_pct"] - 12), dark_max=min(100, t["dark_pct"] + 12)) for name, t in target_tones.items()},
                    constraints=dict(dark_monotone=strict_dark, dark_percentages=darks,
                                     no_milky_lift=all(t["p5"] < .025 for t in tones.values()), signal_visible=sig and sig["visible"]))

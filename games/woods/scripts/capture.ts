@@ -35,6 +35,8 @@ declare const woods: Woods
 export const shots: Record<string, (page: Page) => Promise<void>> = {
   // Default view out of camp at spawn.
   camp: async (page) => { await page.evaluate(() => { const s = woods.world.camp.spawn; woods.setPose(s.x, s.z, s.yaw, 0.02); woods.camera.flashlight = false }) },
+  // Round 4: across the clearing toward the planned ring (-4,+2), with cabins behind it.
+  fireRing: async (page) => { await page.evaluate(() => { const c = woods.world.camp; woods.setPose(c.x - 10, c.z + 11, Math.atan2(-6, 9), -0.12); woods.camera.flashlight = false }) },
   // Looking back at camp from the woods: the lit mess hall through the trunks.
   hall: async (page) => { await page.evaluate(() => { const c = woods.world.camp; woods.setPose(c.x - 30, c.z - 75, Math.PI + 0.25, 0.02) }) },
   // A friend's beam through mist far off: you dark, a friend 35 m away sweeping their light, another signalling.

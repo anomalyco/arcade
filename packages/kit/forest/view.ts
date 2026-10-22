@@ -118,8 +118,20 @@ fn woodsTorchScatter(p: vec3f, eye: vec3f) -> f32 {
   if (N.pad.x < 0.5) { return 1.0; }
   return mix(0.1, 1.0, smoothstep(0.0, 8.0, distance(p, eye)));
 }
+// Integral of a linear 12 m density ramp, clear before N.pad.z. Both lamp and eye
+// legs use it; source scattering uses its derivative. This is an artistic clear
+// near field, not a spatially uniform physical atmosphere.
+fn fogDistanceDepth(a: vec3f, b: vec3f) -> f32 {
+  let d = max(0.0, distance(a, b) - N.pad.z);
+  let ramp = min(d, 12.0);
+  return N.pad.y * (ramp * ramp / 24.0 + max(0.0, d - 12.0));
+}
+fn fogDistanceSigma(p: vec3f, eye: vec3f) -> f32 {
+  return N.pad.y * clamp((distance(p, eye) - N.pad.z) / 12.0, 0.0, 1.0);
+}
+fn fogDistanceColor() -> vec3f { return vec3f(0.000015, 0.00002, 0.00003); }
 `), atmosphere: !smoke, bankLocal: "woodsBankLocal(p)", bankExtinction: true, torches: true,
-  ...(!smoke ? { torchScatter: "woodsTorchScatter(ro + rd * (s0 + h * tan(t)), ro)" } : {}),
+  ...(!smoke ? { torchScatter: "woodsTorchScatter(ro + rd * (s0 + h * tan(t)), ro)", distanceFog: true } : {}),
   // Only glossy ground mirrors the lamps (water, wet boards, shore mud); dry litter and the camp's dirt do not.
   cutoff: "0.4", spotShadows: !smoke, surface: !smoke, reflectionSamples: 2, reflectionCap: "3.0",
   bankMask: "1.0 + 0.6 * (1.0 - smoothstep(0.85, 1.5, length((p.xz - N.lake.xy) / N.lake.zw)))",
@@ -334,7 +346,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
       samples: quality.fogSamples, lamps: smoke ? 1 : 16, history: 0.12, historyMoving: 0.45, halfRes: true, reflection: 1.5 * s.water, glint: 1.5 * s.water, streak: 0.6,
       bank: s.mist === "drift" && !smoke ? "drift" : "today", bankDensity: s.mistDensity, bankHeight: s.mistHeight, bankRelief: groundMax - fogBase + s.mistHeight * 1.6, bankScale: s.mistScale,
       bankThreshold: s.mistGaps, bankUndulation: 0.55, bankWind: s.mistDrift, bankWindHeading: (heading * 180) / Math.PI, bankSteps: quality.mistSteps, bankDistance: 90,
-      bankBrightness: 0.35, bankGlow: 0.7, bankLamp: s.beamMist, blur: "depth", blurStrength: 0.35, blurReach: 0.8, glowSpread: 10,
+      bankBrightness: s.depthMist ? 0 : 0.35, bankGlow: 0.7, bankLamp: s.beamMist, blur: "depth", blurStrength: 0.35, blurReach: 0.8, glowSpread: 10,
     })
     const fogLamps: FogLamp[] = []
     for (const t of f.torches) {
@@ -409,7 +421,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     invert(f.viewProj, unjitteredInv)
     custom.set(unjitteredInv, 56)
     custom.set([textures.size, 0.5, Math.log2(ALPHA_COVERAGE_BASE / textures.size), 0], 72)
-    custom.set([s.clearAir && !smoke ? 1 : 0, 0, 0, 0], 76)
+    custom.set([s.clearAir && !smoke ? 1 : 0, s.depthMist && !smoke ? s.depthDensity : 0, s.depthStart, 0], 76)
     renderer.setCustomUniforms(custom)
 
     packSceneFrame(frameData, { viewProj: f.viewProj, eye: f.eye, time: f.time, width: f.width, height: f.height, lightCount: lights.lightCount, ambient: [0, 0, 0, 0], mapSize: [1, 1], ao: 0 })

@@ -50,7 +50,7 @@ struct Woods {
   beamB: vec4f,
   invViewProj: mat4x4f,
   misc: vec4f,        // texture size, alpha cutoff, mips below the coverage table's base, -
-  pad: vec4f,         // clear air near the eye, -, -, -
+  pad: vec4f,         // clear air near the eye, distance density, clear distance, -
   groundAt: vec4f,    // ground grid x0, z0, 1/cell, -
   ground: array<vec4f, ${(GROUND_CELLS * GROUND_CELLS) / 4}>,
 }

@@ -1009,6 +1009,8 @@ export type FogScatterHooks = {
   torches?: boolean
   /** Torch-only in-scatter multiplier expression; does not change extinction or classic lamps. Requires torches. */
   torchScatter?: string
+  /** Extra medium supplied by declarations: fogDistanceDepth(a,b), fogDistanceSigma(p,eye), fogDistanceColor(). */
+  distanceFog?: boolean
 }
 
 /**
@@ -1154,7 +1156,9 @@ ${!atmo ? "" : !stratified ? `      if (bankLamp > 0.0) { let bp = ro + rd * (s0
 ${ext ? `        // Out of the lamp to the sample, then on to the eye, through the bank (each leg's height integral).
         thick *= exp(-bankLamp * (fogBankDepth(L.a.xyz, bp, local) + fogBankDepth(ro, bp, local)) * ${mask("bp")});` : ""}
       }`}
-${torches ? `      // Henyey–Greenstein with an isotropic share: a beam seen from behind its lamp is backscatter, which the share
+${hooks.distanceFog ? `      let mediumPoint = ro + rd * (s0 + h * tan(t));
+      thick = (thick + fogDistanceSigma(mediumPoint, ro) / max(L.e.w, 1e-5)) * exp(-fogDistanceDepth(ro, mediumPoint) - fogDistanceDepth(L.a.xyz, mediumPoint));
+` : ""}${torches ? `      // Henyey–Greenstein with an isotropic share: a beam seen from behind its lamp is backscatter, which the share
       // sets (HG alone at g 0.75 sends 0.08 of the isotropic amount back; a 0.15 share nearly triples it).
       sum += cone * win * mix(hg, 1.0, FOG.bank3.w) * thick${hooks.torchScatter ? ` * select(1.0, ${hooks.torchScatter}, L.d.z > 0.0)` : ""};` : `      sum += cone * win * mix(1.0, hg, 0.85) * thick;`}
     }
@@ -1180,7 +1184,10 @@ ${torches ? `      // Henyey–Greenstein with an isotropic share: a beam seen f
   let samples = u32(max(FOG.reflect.x, 1.0));
   var acc = airlight(eye, rd, dist, samples, jitter);
   // Clouds behind the bank, then the bank in front of everything: rgb in-scatter, a the transmittance.
-  var trans = 1.0;
+  var trans = 1.0;${hooks.distanceFog ? `
+  let distanceT = exp(-fogDistanceDepth(eye, eye + rd * dist));
+  trans *= distanceT;
+  acc += fogDistanceColor() * (1.0 - distanceT);` : ""}
 ${atmo ? `  if (FOG.cloud.w > 0.0 && rd.y > 0.01) {
     let texel = 1.0 / V.size.xy;
     let pixelAngle = length(normalize(volumeUnproject(o.uv + vec2f(texel.x, 0.0), d) - eye) - rd);

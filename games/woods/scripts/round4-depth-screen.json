@@ -1,0 +1,7 @@
+[
+  {"id":"control"},
+  {"id":"depth","look":{"depthMist":true}},
+  {"id":"middle","look":{"depthMist":true,"nightStops":0.8,"adaptLift":0.8}},
+  {"id":"deep","look":{"depthMist":true,"depthDensity":0.075,"nightStops":0.8,"adaptLift":0.8}},
+  {"id":"pools","look":{"depthMist":true,"nightStops":0.8,"adaptLift":0.8,"mistHeight":4,"mistDensity":0.12}}
+]

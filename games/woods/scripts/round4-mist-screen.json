@@ -1,0 +1,6 @@
+[
+  {"id":"control"},
+  {"id":"distance","look":{"fogDensity":0.025,"fogBrightness":0.0005}},
+  {"id":"banks","look":{"mistDensity":0.15,"mistHeight":6,"mistGaps":0.18,"mistScale":14}},
+  {"id":"combined","look":{"fogDensity":0.025,"fogBrightness":0.0005,"mistDensity":0.15,"mistHeight":6,"mistGaps":0.18,"mistScale":14}}
+]

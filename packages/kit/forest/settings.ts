@@ -44,6 +44,10 @@ export type ForestLookSettings = {
   beamMist: number
   /** Thin torch in-scatter within 8 m of the eye; compensate by −0.25 stop only while your torch is on. */
   clearAir: boolean
+  /** Extra distance extinction beyond the clear near field, forest volume only. */
+  depthMist: boolean
+  depthDensity: number
+  depthStart: number
   // Flashlight
   torchPower: number
   /** Outer half-angle of the main beam (deg). */
@@ -118,13 +122,14 @@ export const FOREST_LOOK_DEFAULTS: Readonly<ForestLookSettings> = {
   fogDensity: 0.008, fogFalloff: 0.02, fogBrightness: 0.0035, fogHue: 215,
   mist: "drift", mistDensity: 0.08, mistHeight: 2.4, canopyMist: 1, beamNear: 0.6, mistScale: 9, mistDrift: 0.15, mistGaps: 0.32, phaseG: 0.75, phaseFloor: 0.03, beamAir: 1, beamMist: 1,
   clearAir: true,
+  depthMist: true, depthDensity: 0.05, depthStart: 12,
   torchPower: 70, torchAngle: 17, torchKelvin: 6000, torchReach: 40, torchCore: 0.9, torchCoreWidth: 0.42, torchRings: 0.35, torchSpill: 0.03, torchSpillWidth: 2.4,
   torchSide: 0.3, torchDrop: 0.28, torchLag: 0.07, bounce: 1, torchShadows: "map", foliageShadows: true, shadowSize: 1024, shafts: true, motes: 1,
   wind: 1, gust: 0.6, trunkSway: 1, branchSway: 1, flutter: 1,
   fernDensity: 1, litter: 1, moss: 1,
   windows: 1, stringLights: 1, water: 1,
   exposure: 1.6, autoExposure: true, meterGain: 3, adaptDarken: 0.8, adaptBrighten: 6, adaptRange: 1.5,
-  exposureModel: "robust", nightKey: 0.003, nightStops: 1.5, nightStrength: 0.85, adaptLift: 1.5,
+  exposureModel: "robust", nightKey: 0.003, nightStops: 0.8, nightStrength: 0.85, adaptLift: 0.8,
   noise: 1, chromaNoise: 0.35, vignette: 0.35, aberration: 0.6, bloom: 0.22, halation: 0.12, glare: 0.5,
 }
 
@@ -178,6 +183,9 @@ export function forestLookControls(settings: ForestLookSettings, prefix = "woods
     range("moonElevation", "Moon elevation", N, 5, 85, 1, "°", "Moon"),
     select("mist", "Mist pockets", F, [{ value: "drift", label: "Drifting in hollows" }, { value: "off", label: "Off" }]),
     toggle("clearAir", "Clear air near you", F),
+    toggle("depthMist", "Dark distance mist", F),
+    range("depthDensity", "Distance extinction", F, 0, 0.15, 0.005, "/m"),
+    range("depthStart", "Clear distance", F, 4, 25, 1, "m"),
     range("fogDensity", "Air density", F, 0, 0.03, 0.0005, "/m"),
     range("mistDensity", "Mist density", F, 0, 0.15, 0.002, "/m"),
     range("mistHeight", "Mist height", F, 0.3, 6, 0.1, "m"),
