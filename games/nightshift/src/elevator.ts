@@ -22,6 +22,10 @@ export function buildElevator(m:Mesh,walls:Rect[]){
   for(const side of [-1,1])for(let i=0;i<6;i++)block(m,side*(.005+i*.008),2.51+i*.008,8.799,.013,.013,.008,hex(0xf5ae42),13)
   block(m,1.4,1.0,8.82,.13,.29,.025)
   block(m,1.4,1.115,8.8,.042,.042,.008,hex(0xf5ae42),13)
+  // The destination is already selected. A single tactile B button and speaker grille.
+  block(m,.94,1.02,9.6,.045,.43,.24,hex(0x403d32))
+  block(m,.91,1.13,9.6,.012,.105,.10,hex(0xf5ae42),13)
+  for(let i=0;i<7;i++)block(m,.905,1.34+i*.012,9.6,.01,.004,.13,hex(0x191e1a))
 }
 export function elevatorLeaf(){const m=new Mesh();block(m,0,.025,0,.975,2.37,.065,bronze);return m}
 export class Elevator {

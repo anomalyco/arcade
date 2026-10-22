@@ -1,0 +1,79 @@
+{
+  "floor-apologise": {
+    "duration": 5.1,
+    "speechEnd": 4.8,
+    "filter": "phone",
+    "peakDbFS": -18.67,
+    "rmsDbFS": -39.0
+  },
+  "floor-private": {
+    "duration": 3.24737,
+    "speechEnd": 2.94738,
+    "filter": "phone",
+    "peakDbFS": -17.6,
+    "rmsDbFS": -39.0
+  },
+  "hall-noticed": {
+    "duration": 2.15267,
+    "speechEnd": 1.85267,
+    "filter": "speaker",
+    "peakDbFS": -12.73,
+    "rmsDbFS": -34.0
+  },
+  "hall-sweet": {
+    "duration": 2.57371,
+    "speechEnd": 2.27371,
+    "filter": "speaker",
+    "peakDbFS": -13.89,
+    "rmsDbFS": -34.0
+  },
+  "hall-using": {
+    "duration": 3.24737,
+    "speechEnd": 2.94738,
+    "filter": "speaker",
+    "peakDbFS": -16.61,
+    "rmsDbFS": -34.0
+  },
+  "hall-work": {
+    "duration": 3.24737,
+    "speechEnd": 2.94738,
+    "filter": "speaker",
+    "peakDbFS": -14.92,
+    "rmsDbFS": -34.0
+  },
+  "lift-down": {
+    "duration": 3.75267,
+    "speechEnd": 3.45267,
+    "filter": "speaker",
+    "peakDbFS": -11.28,
+    "rmsDbFS": -34.0
+  },
+  "lift-many": {
+    "duration": 2.91054,
+    "speechEnd": 2.61054,
+    "filter": "speaker",
+    "peakDbFS": -15.93,
+    "rmsDbFS": -34.0
+  },
+  "lift-read": {
+    "duration": 2.91054,
+    "speechEnd": 2.61054,
+    "filter": "speaker",
+    "peakDbFS": -18.85,
+    "rmsDbFS": -34.0
+  },
+  "lift-terms": {
+    "duration": 3.24737,
+    "speechEnd": 2.94738,
+    "filter": "speaker",
+    "peakDbFS": -12.64,
+    "rmsDbFS": -34.19
+  },
+  "lift-token": {
+    "duration": 4.84738,
+    "speechEnd": 4.54737,
+    "filter": "speaker",
+    "peakDbFS": -19.49,
+    "rmsDbFS": -34.0
+  }
+}
