@@ -1,10 +1,11 @@
 // Camera lab proof (headless, muted; run after `bun run build`, through HiveMind):
-//   bun scripts/camera-lab.ts [--out <dir>] [--size 1600x900] [--only look-eyes,fx-flare] [--measure] [--clip bodycam]
+//   bun scripts/camera-lab.ts [--out <dir>] [--size 1600x900] [--only look-eyes,fx-flare] [--measure] [--clip bodycam [--seconds 7] [--date 1996-11-15T23:41:00Z]]
 // Stages the camera lab's fixed night spot (`?lab=camera`), finds the moment a friend's sweep crosses the lens, then
 // from that same moment captures every camera look and an off/on pair for each realism effect (pairs that need motion
 // share the same scripted pan or focus pull). `--measure` adds paired whole-frame GPU medians (Eyes, then each look and
 // effect, interleaved). `--clip <look>` also writes `clip-<look>/` JPEG frames: 8 s at 30 fps of that look, a slow pan
-// across the spot with the friend's sweep crossing the lens mid-clip. Writes PNGs and camera-lab.json.
+// across the spot with the friend's sweep crossing the lens mid-clip, the page's HUD hidden (the camera's own overlay
+// stays); `--date` sets the page clock the overlay stamps from. Writes PNGs and camera-lab.json.
 import { mkdirSync, writeFileSync } from "node:fs"
 import { resolve, sep } from "node:path"
 import { chromium } from "playwright-core"
@@ -16,6 +17,8 @@ const only = arg("--only", "").split(",").filter(Boolean)
 const measure = process.argv.includes("--measure")
 const rounds = Number(arg("--rounds", "3"))
 const clip = arg("--clip", "")
+const clipSeconds = Number(arg("--seconds", "8"))
+const clipDate = arg("--date", "")
 
 type Motion = "still" | "pan" | "focus"
 type Shot = { id: string; look: string; effect?: string; motion: Motion; label: string }
@@ -70,6 +73,15 @@ const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(req) {
 const browser = await chromium.launch({ headless: true, timeout: 120000, args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio"] })
 const page = await browser.newPage({ viewport: { width: w, height: h } })
 const errors: string[] = []
+if (clipDate) await page.addInitScript((at: number) => {
+  // Shift the page's wall clock (not performance.now) so the overlay's stamp reads that night.
+  const Real = Date, off = at - Real.now()
+  class Shifted extends Real {
+    constructor(...a: unknown[]) { if (a.length) super(...(a as [number])); else super(Real.now() + off) }
+    static override now() { return Real.now() + off }
+  }
+  ;(globalThis as { Date: DateConstructor }).Date = Shifted as unknown as DateConstructor
+}, Date.parse(clipDate))
 page.on("pageerror", (e) => errors.push(e.message))
 page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") errors.push(m.text()) })
 await page.goto(`http://127.0.0.1:${server.port}${prefix}?quality=high&lab=camera`, { waitUntil: "load" })
@@ -136,7 +148,8 @@ if (!only.length || only.some((id) => id.startsWith("control-"))) {
 if (clip) {
   const dir = `${out}/clip-${clip}`
   mkdirSync(dir, { recursive: true })
-  const seconds = 8, fps = 30, lead = Math.max(0, best.frame - (seconds * 60) / 2)
+  await page.addStyleTag({ content: "body > :not(canvas) { visibility: hidden !important; }" })
+  const seconds = clipSeconds, fps = 30, lead = Math.max(0, best.frame - (seconds * 60) / 2)
   await stage(clip, undefined, "still", lead)
   const yaw0 = await page.evaluate(() => woods.camera.yaw)
   for (let i = 0; i < seconds * fps; i++) {
