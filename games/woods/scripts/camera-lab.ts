@@ -1,9 +1,10 @@
 // Camera lab proof (headless, muted; run after `bun run build`, through HiveMind):
-//   bun scripts/camera-lab.ts [--out <dir>] [--size 1600x900] [--only look-eyes,fx-flare] [--measure]
+//   bun scripts/camera-lab.ts [--out <dir>] [--size 1600x900] [--only look-eyes,fx-flare] [--measure] [--clip bodycam]
 // Stages the camera lab's fixed night spot (`?lab=camera`), finds the moment a friend's sweep crosses the lens, then
 // from that same moment captures every camera look and an off/on pair for each realism effect (pairs that need motion
 // share the same scripted pan or focus pull). `--measure` adds paired whole-frame GPU medians (Eyes, then each look and
-// effect, interleaved). Writes PNGs and camera-lab.json.
+// effect, interleaved). `--clip <look>` also writes `clip-<look>/` JPEG frames: 8 s at 30 fps of that look, a slow pan
+// across the spot with the friend's sweep crossing the lens mid-clip. Writes PNGs and camera-lab.json.
 import { mkdirSync, writeFileSync } from "node:fs"
 import { resolve, sep } from "node:path"
 import { chromium } from "playwright-core"
@@ -14,6 +15,7 @@ const [w, h] = arg("--size", "1600x900").split("x").map(Number) as [number, numb
 const only = arg("--only", "").split(",").filter(Boolean)
 const measure = process.argv.includes("--measure")
 const rounds = Number(arg("--rounds", "3"))
+const clip = arg("--clip", "")
 
 type Motion = "still" | "pan" | "focus"
 type Shot = { id: string; look: string; effect?: string; motion: Motion; label: string }
@@ -126,6 +128,26 @@ for (const [id, chain] of [["control-eyes-again", true], ["control-no-final-pass
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
   await page.screenshot({ path: `${out}/${id}.png` })
   await page.evaluate(() => (woods as unknown as { renderer: { setFinalPass(p: unknown): void } }).renderer.setFinalPass((woods.cameraLook as unknown as { chain: unknown }).chain))
+}
+
+if (clip) {
+  const dir = `${out}/clip-${clip}`
+  mkdirSync(dir, { recursive: true })
+  const seconds = 8, fps = 30, lead = Math.max(0, best.frame - (seconds * 60) / 2)
+  await stage(clip, undefined, "still", lead)
+  const yaw0 = await page.evaluate(() => woods.camera.yaw)
+  for (let i = 0; i < seconds * fps; i++) {
+    // A slow 14° pan left to right and back, with a little drift in pitch, two 60 fps steps per frame.
+    await page.evaluate(({ i, yaw0, n }) => {
+      const u = i / n
+      woods.camera.yaw = yaw0 + 0.12 * Math.cos(u * Math.PI) - 0.04
+      woods.camera.pitch = -0.07 + 0.025 * Math.sin(u * Math.PI * 2)
+      woods.step(1000 / 60); woods.step(1000 / 60)
+    }, { i, yaw0, n: seconds * fps })
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
+    await page.screenshot({ path: `${dir}/${String(i).padStart(4, "0")}.jpg`, type: "jpeg", quality: 92 })
+  }
+  console.log("clip", dir)
 }
 
 const results: Record<string, unknown> = {}

@@ -25,7 +25,7 @@ const variants: StationVariant[] = [
   effect("flare", "Lens flare from torches", "When a friend's beam sweeps across you: aperture ghosts and a six-blade starburst.", set("woods.artifacts.flare", true)),
   effect("dirt", "Lens dirt", "Smudges, specks and a thumb print, lit only by bright light.", set("woods.artifacts.dirt", true)),
   effect("condensation", "Condensation", "Fog creeping in from the lens edges.", set("woods.artifacts.condensation", true)),
-  effect("eyeshine", "Eyeshine", "A deer's eyes 32 m out in your beam.", set("woods.eyeshine", true), set("woods.eyeshineNow", true)),
+  effect("eyeshine", "Eyeshine", "A deer's eyes about 16 m out in your beam.", set("woods.eyeshine", true), set("woods.eyeshineNow", true)),
 ]
 
 export default defineStation({

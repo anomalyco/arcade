@@ -182,7 +182,7 @@ export class CameraLook {
     return !!w
   }
 
-  /** The Lab's "Show eyes now": a deer 32 m out where you look. */
+  /** The Lab's "Show eyes now": a deer about 16 m out where you look. */
   showEyes() {
     if (this.world) this.eyeshine.show(this.world, this.lastEye, this.lastYaw, this.lastT, this.blocked)
   }

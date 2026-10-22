@@ -12,7 +12,7 @@ import { nextRandom, standHeight, treesNear, type WoodsWorld } from "../shared/w
 export type EyeKind = "deer" | "fox" | "raccoon" | "owl"
 const EYES: Record<EyeKind, { gap: number; height: number; color: readonly [number, number, number] }> = {
   // Deer: blue-green to white; foxes and raccoons yellow-green to amber; owls (no tapetum to speak of) a dull red-orange.
-  deer: { gap: 0.1, height: 1.42, color: [0.78, 1, 0.74] },
+  deer: { gap: 0.12, height: 1.42, color: [0.78, 1, 0.74] },
   fox: { gap: 0.05, height: 0.34, color: [1, 0.93, 0.5] },
   raccoon: { gap: 0.045, height: 0.3, color: [1, 0.8, 0.38] },
   owl: { gap: 0.065, height: 0, color: [1, 0.48, 0.16] },
@@ -30,7 +30,7 @@ export class Eyeshine {
   private next = -1
   private list: Sighting[] = []
   /** Brightness of the returned light (× retroreflection); the sprite carries the energy, the exposure does the rest. */
-  gain = 1
+  gain = 3
 
   constructor(seed: number) { this.rng = { seed: seed ^ 0x3ee7 } }
 
@@ -40,7 +40,7 @@ export class Eyeshine {
    * A pair of eyes about `distance` m out where you look (the Lab's "Show eyes now"), watching for `seconds`: the
    * nearest bearing and range to that with a clear line of sight.
    */
-  show(world: WoodsWorld, eye: readonly number[], yaw: number, t: number, blocked: (a: readonly number[], b: readonly number[]) => boolean, kind: EyeKind = "deer", distance = 32, seconds = 40) {
+  show(world: WoodsWorld, eye: readonly number[], yaw: number, t: number, blocked: (a: readonly number[], b: readonly number[]) => boolean, kind: EyeKind = "deer", distance = 16, seconds = 40) {
     for (const turn of [0, 0.06, -0.06, 0.12, -0.12, 0.18, -0.18, 0.25, -0.25]) for (const k of [1, 0.8, 1.25, 0.65]) {
       const a = yaw + turn, d = distance * k, x = eye[0]! - Math.sin(a) * d, z = eye[2]! - Math.cos(a) * d
       if (treesNear(world, x, z, 0.5).length || blocked(eye, [x, standHeight(world, x, z) + EYES[kind].height, z])) continue
