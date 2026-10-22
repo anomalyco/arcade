@@ -63,6 +63,7 @@ export type LabPanelView = {
 // telemetry above it as a glass card at the same radius, and the pill as a capsule.
 const CSS = `
 [data-lab-panel]{position:fixed;z-index:1000;right:10px;top:10px;width:300px;max-width:calc(100vw - 20px);max-height:calc(100dvh - 20px);display:flex;flex-direction:column;align-items:stretch;gap:6px;color:rgba(255,255,255,.92);font:12px/1.35 system-ui,-apple-system,"SF Pro Text",sans-serif}
+[data-lab-panel][data-tabs]:not([data-layout=inspector]){width:320px}
 [data-lab-panel][data-layout=inspector]{position:relative;right:auto;top:auto;z-index:auto;width:100%;height:100%;max-width:none;max-height:none;gap:0}
 [data-lab-panel] [hidden]{display:none!important}
 [data-lab-panel]>.lab-panel-pill{align-self:flex-end;font:inherit;color:inherit;background:rgba(28,28,30,.88);border:0;border-radius:999px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.1),inset 0 1px 0 rgba(255,255,255,.09),0 12px 36px rgba(0,0,0,.52);padding:4px 12px;cursor:pointer;-webkit-backdrop-filter:blur(24px) saturate(1.6);backdrop-filter:blur(24px) saturate(1.6)}
@@ -440,6 +441,8 @@ export class LabPanel implements LabKnobsHost {
   setTabs(tabs: readonly LabTab[] = []) {
     if (JSON.stringify(tabs) === JSON.stringify(this.tabs)) return
     this.tabs = tabs
+    // A floating panel widens a little so a tab strip's labels fit.
+    this.host.toggleAttribute("data-tabs", tabs.length > 0)
     if (this.main) {
       this.main.dispose()
       this.main = null
