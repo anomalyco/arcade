@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { AdaptiveQualityController, selectStartupTier, type QualityMode, type QualityTier } from "./quality"
-import { ShellFlow } from "./shell/flow"
+import { GameShell, audioRuntimeSync } from "./shell"
+import { ShellFlow, isTextEntry } from "./shell/flow"
 import { ShellLobby } from "./shell/lobby"
 import { LeaveGuard, ShellLoading } from "./shell/page"
 import { ShellSettings, muteStorageKey } from "./shell/settings"
@@ -22,11 +23,26 @@ class FakeDoc extends EventTarget {
   }
 }
 
-const esc = (win: EventTarget) => {
+const esc = (win: EventTarget, target?: object) => {
   const e = new Event("keydown", { cancelable: true }) as Event & { code: string; repeat: boolean; target: EventTarget | null }
   Object.defineProperty(e, "code", { value: "Escape" })
   Object.defineProperty(e, "repeat", { value: false })
+  if (target) Object.defineProperty(e, "target", { value: target })
   win.dispatchEvent(e)
+}
+
+/** A GameShell needs a window and document; these stand in for both while `run` builds and drives one. */
+function withFakePage<T>(run: () => T): T {
+  const g = globalThis as Record<string, unknown>
+  const saved = { window: g.window, document: g.document }
+  g.window = new EventTarget()
+  g.document = new FakeDoc()
+  try {
+    return run()
+  } finally {
+    g.window = saved.window
+    g.document = saved.document
+  }
 }
 
 describe("@arcade/kit/shell settings", () => {
@@ -166,6 +182,92 @@ describe("@arcade/kit/shell flow", () => {
   })
 })
 
+describe("@arcade/kit/shell keys after using a control", () => {
+  test("sliders, checkboxes and buttons aren't text entry; text fields are", () => {
+    for (const type of ["range", "checkbox", "radio", "button", "submit", "color"]) expect(isTextEntry({ tagName: "INPUT", type })).toBe(false)
+    for (const type of ["text", "search", "number", "email", "password"]) expect(isTextEntry({ tagName: "INPUT", type })).toBe(true)
+    expect(isTextEntry({ tagName: "TEXTAREA" })).toBe(true)
+    expect(isTextEntry({ tagName: "BUTTON" })).toBe(false)
+  })
+
+  test("Escape closes Settings with a volume slider still focused; in a text field it only leaves the field", () => {
+    const doc = new FakeDoc()
+    const win = new EventTarget()
+    const flow = new ShellFlow({ doc: doc as never, win: win as never, start: "playing" })
+    flow.pause()
+    flow.openSettings(true)
+    let blurred = 0
+    esc(win, { tagName: "INPUT", type: "text", blur: () => blurred++ })
+    expect(flow.settingsOpen).toBe(true)
+    expect(blurred).toBe(1)
+    esc(win, { tagName: "INPUT", type: "range", blur: () => blurred++ })
+    expect(flow.settingsOpen).toBe(false)
+    expect(flow.screen).toBe("paused")
+    expect(blurred).toBe(1)
+  })
+})
+
+describe("@arcade/kit/shell leaving a room", () => {
+  const loc = () => ({ origin: "https://anoma.ly", pathname: "/arcade/brawl/", search: "?room=ab12" })
+
+  test("Leave from the pause menu leaves the room: room, invite param and guard clear, and the game's Leave runs once", () =>
+    withFakePage(() => {
+      let left = 0
+      const shell = new GameShell({ game: "brawl", title: "BRAWL", view: false, hidden: false, start: "playing", onLeave: () => left++, lobby: { storage: memory(), location: loc(), onJoin: () => {} } })
+      const lobby = shell.lobby!
+      expect(lobby.join("ab12")).toBe(true)
+      expect(shell.guard!.armed).toBe(true)
+      shell.flow.pause()
+      shell.flow.leave()
+      expect(lobby.room).toBe(null)
+      expect(lobby.linkedRoom).toBe(null)
+      expect(shell.guard!.armed).toBe(false)
+      expect(left).toBe(1)
+      shell.dispose()
+    }))
+
+  test("a game's own onLeaveRoom runs before its Leave; the room card's Leave room uses Leave when there is none", () =>
+    withFakePage(() => {
+      const calls: string[] = []
+      const own = new GameShell({ game: "g", title: "G", view: false, hidden: false, start: "playing", onLeave: () => calls.push("leave"), lobby: { storage: memory(), location: loc(), onJoin: () => {}, onLeaveRoom: () => calls.push("room") } })
+      own.lobby!.join("ab12")
+      own.flow.leave()
+      expect(calls).toEqual(["room", "leave"])
+      own.dispose()
+      calls.length = 0
+      const plain = new GameShell({ game: "g", title: "G", view: false, hidden: false, start: "title", onLeave: () => calls.push("leave"), lobby: { storage: memory(), location: loc(), onJoin: () => {} } })
+      plain.lobby!.join("ab12")
+      plain.lobby!.leaveRoom()
+      expect(calls).toEqual(["leave"])
+      plain.dispose()
+    }))
+
+  test("a game whose onLeave calls flow.leave() again still leaves once", () =>
+    withFakePage(() => {
+      let left = 0
+      const shell: GameShell = new GameShell({ game: "g", title: "G", view: false, hidden: false, start: "playing", onLeave: () => { left++; shell.flow.leave() } })
+      shell.flow.leave()
+      expect(left).toBe(1)
+      shell.dispose()
+    }))
+
+  test("Play alone from an invite link clears the room from the address", () => {
+    const l = new ShellLobby({ game: "g", storage: memory(), location: loc(), onJoin: () => {}, onSolo: () => {} })
+    expect(l.linkedRoom).toBe("ab12")
+    l.playAlone()
+    expect(l.linkedRoom).toBe(null)
+  })
+})
+
+describe("@arcade/kit/shell audio runtime", () => {
+  test("the sync turns the runtime's own M off so mute isn't bound twice", () => {
+    const runtime = { muted: false, muteKey: true, ctx: undefined, setMuted() {}, setVolume() {}, setBusGain() {} }
+    const sync = audioRuntimeSync(new ShellSettings({ game: "g", storage: memory(), automated: false }), runtime)
+    expect(runtime.muteKey).toBe(false)
+    sync()
+  })
+})
+
 describe("@arcade/kit/shell lobby", () => {
   const loc = { origin: "https://anoma.ly", pathname: "/arcade/woods/", search: "?room=ab12" }
   test("names, codes, invite links", () => {
@@ -216,6 +318,18 @@ describe("@arcade/kit/shell lobby", () => {
     expect(l.connection).toBe("reconnecting")
     l.setSocketStatus(null)
     expect(l.connection).toBe("online")
+  })
+
+  test("an idle warning stays online with its line; a final lost isn't overwritten by later status", () => {
+    const l = new ShellLobby({ game: "g", storage: memory(), location: loc })
+    l.setSocketStatus("IDLE · kicked in 20 s")
+    expect(l.connection).toBe("online")
+    expect(l.message).toBe("IDLE · kicked in 20 s")
+    l.setConnection("lost", "The room is full.")
+    l.setSocketStatus(null)
+    l.setSocketStatus("Connecting…")
+    expect(l.connection).toBe("lost")
+    expect(l.message).toBe("The room is full.")
   })
 })
 

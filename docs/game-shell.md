@@ -57,7 +57,7 @@ audio.master = shell.settings.gain("master")   // master × channel, 0 while mut
 | Settings | `ShellSettings` (`shell.settings`): `volumes`, `muted`, `gain(channel)`, `volume(channel)`, `reduceMotion`, `keyLabels`, `quality`, game `sections` | Reads values or subscribes and applies them to its mix, camera and quality. Plugs its own player settings in as `sections` (range, toggle, choice rows). |
 | Flow | `ShellFlow` (`shell.flow`): `screen` (`title`, `playing`, `paused`), `overlay`, `settingsOpen`, `play()`, `pause()`, `resume()`, `leave()` | Simulates while `shell.playing` (or keeps running in a room). Runs its Leave in `onLeave`. |
 | Lobby | `ShellLobby` (`shell.lobby`): `name` (saved as `<game>.name`), `room`, `players`, `connection`, `inviteLink()`, `join()`, `playWithFriends()` (`api/create`), `quickMatch()` (`api/quick`, with `quick: true`), `linkedRoom` (an invite link opened the page). No `onSolo`: no Play alone. `nameRequired`: rooms wait for a typed name instead of `fallbackName` | Owns the room socket; pushes `setRoom`, `setPlayers`, and `setSocketStatus(socket.status())` for the reconnect pill. A game that plays as soon as it joins calls `shell.flow.play()` in `onJoin`; one that gathers first leaves the room card up (players, ready, start). |
-| Audio runtime | `audioRuntimeSync(settings, runtime)` | Games on the kit `AudioRuntime` call it once a frame: mute, master and per-channel bus gains. Its own M stays off (`autoBindDom: false`). |
+| Audio runtime | `audioRuntimeSync(settings, runtime)` | Games on the kit `AudioRuntime` call it once a frame: mute, master and per-channel bus gains. It turns the runtime's own M off (`muteKey = false`); keep `autoBindDom` on, since it also unlocks audio on the first gesture. |
 | Leave warning | `LeaveGuard` (`shell.guard`) | Nothing, or its own `leaveGuard: () => boolean`. |
 | Loading | `ShellLoading` (`shell.loading`): weighted `stage()`s, `done()`, `finish()`, `fail()` | Reports real work; calls `finish()` after the first frame. |
 | View | `ShellView` (`shell.view`): title and pause cards, Settings inside them, loading bar, reconnect pill | Restyles with `--shell-font`, `--shell-title-font`, `--shell-ink`, `--shell-dim`, `--shell-card`, `--shell-edge`, `--shell-field`, `--shell-accent`, `--shell-accent-ink`, `--shell-backdrop`, `--shell-radius`. `view: false` draws nothing (headless). |
@@ -81,7 +81,8 @@ not the game's real load.
 - [ ] `createGameShell` with the title, the channels the game has, `pointerLock` (if any), `blocked` and
   `keysBlocked` for the Lab panel, `controls` key-cap prompts, and `lobby` for room games.
 - [ ] The game's audio reads `shell.settings.gain(...)`/`volume(...)` and `muted`; no other mute or volume UI. If the
-  audio runtime binds M itself (`AudioRuntime` `autoBindDom`), turn that off and bind the shell's mute instead.
+  audio runtime binds M itself, turn only that off (`audioRuntimeSync` sets `AudioRuntime.muteKey = false`). Don't use
+  `autoBindDom: false` for it: that also drops the first-gesture audio unlock unless the game unlocks audio itself.
 - [ ] Simulation pauses with `shell.playing` in solo play; rooms keep running behind the menu.
 - [ ] Game menus that close on Escape are named in `escapeOwned`.
 - [ ] Player settings that aren't volume or quality go in as `sections`, not Lab rows.
@@ -108,7 +109,8 @@ not the game's real load.
 - Lot: the Lab's Sound › Mute and Walking › Reduce camera motion rows moved to Settings; Sound › Volume is now
   "Mix level". Footsteps are the Effects channel, beds, one-shots and weather are Ambience.
 - Night Shift: the Lab's Look › Quality tier and Feel › Reduce camera motion rows moved to Settings (its saved
-  `nightshift.reduceMotion` is read once). Quality is now saved and uses the slow-frames policy. The phone and the
+  `nightshift.reduceMotion` is read once). Quality is now saved, uses the slow-frames policy and sizes the canvas
+  with the Lab's Look off too (Today had always drawn at 1.5×, so before, the Quality setting did nothing by default). The phone and the
   descent voices are Voices ("Phone and voices"), movement is Effects, room tone and machinery are Ambience. Audio
   Volume is now "Mix level".
 - Night Shift: the READY screen no longer prints "Begin"; the title card's Begin starts the opening.

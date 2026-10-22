@@ -122,7 +122,7 @@ export class ShellView {
     if (overlay === null) return
     const settingsOpen = this.flow.settingsOpen
     const l = this.lobby
-    const key = [overlay, settingsOpen, l?.room, l?.busy, l?.connection, JSON.stringify(l?.players ?? []), this.flow.lockRefused, this.copied, this.settings.quality?.mode, this.settings.reduceMotion, this.settings.keyLabels].join("|")
+    const key = [overlay, settingsOpen, l?.room, l?.linkedRoom, l?.busy, l?.connection, JSON.stringify(l?.players ?? []), this.flow.lockRefused, this.copied, this.settings.quality?.mode, this.settings.reduceMotion, this.settings.keyLabels].join("|")
     if (force || key !== this.layout) {
       this.layout = key
       this.card.innerHTML = settingsOpen ? this.settingsHtml() : overlay === "title" ? this.titleHtml() : this.pauseHtml()
@@ -156,6 +156,12 @@ export class ShellView {
         const out = el.parentElement?.querySelector("output")
         if (out && row.kind === "range") out.textContent = `${row.get()}${row.unit ?? ""}`
       }
+    // The lobby's line (a bad code, a missing name, a refused room) updates in place so typing in a field keeps focus.
+    const message = this.card.querySelector<HTMLElement>("[data-lobby-message]")
+    if (message) {
+      message.textContent = this.lobby?.message ?? ""
+      message.hidden = !this.lobby?.message
+    }
     const name = this.card.querySelector<HTMLInputElement>("input[data-field=name]")
     if (name && this.lobby && name.ownerDocument.activeElement !== name) name.value = this.lobby.name
   }
@@ -172,7 +178,7 @@ export class ShellView {
     else if (l?.friends)
       body = `${l.hasQuick ? `<button class="as-btn as-primary as-big" data-act="quick"${l.busy ? " disabled" : ""}>${esc(o.quickLabel ?? "Quick match")}</button>` : ""}<div class="as-choices">${l.hasSolo ? `<button class="as-btn${l.hasQuick ? "" : " as-primary"}" data-act="solo">${esc(o.soloLabel ?? "Play alone")}${o.soloNote ? `<small>${esc(o.soloNote)}</small>` : ""}</button>` : ""}<button class="as-btn" data-act="friends"${l.busy ? " disabled" : ""}>Play with friends${o.friendsNote ? `<small>${esc(o.friendsNote)}</small>` : ""}</button></div><div class="as-join"><input type="text" data-field="code" placeholder="Room code or invite link" autocomplete="off" spellcheck="false" /><button class="as-btn" data-act="join">Join</button></div>`
     else body = `<button class="as-btn as-primary as-big" data-act="${l ? "solo" : "play"}">${esc(o.playLabel ?? o.soloLabel ?? "Play")}</button>`
-    const message = l?.message ? `<p class="as-message">${esc(l.message)}</p>` : ""
+    const message = l ? `<p class="as-message" data-lobby-message hidden></p>` : ""
     const refused = this.flow.lockRefused ? `<p class="as-message">Click again to take the mouse.</p>` : ""
     return `${this.cornerHtml()}${top}<div class="as-slot-host"></div>${name}${body}${message}${refused}${this.footHtml()}`
   }
@@ -299,7 +305,7 @@ export class ShellView {
 
   private renderPill(): void {
     const l = this.lobby
-    const show = Boolean(l?.room) && (l!.connection === "connecting" || l!.connection === "reconnecting" || l!.connection === "lost")
+    const show = Boolean(l?.room) && (l!.connection === "connecting" || l!.connection === "reconnecting" || l!.connection === "lost" || (l!.connection === "online" && Boolean(l!.message)))
     this.pill.hidden = !show
     if (!show) return
     this.pill.dataset.state = l!.connection

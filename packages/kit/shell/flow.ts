@@ -192,7 +192,7 @@ export class ShellFlow {
 
   private key(e: KeyboardEvent): void {
     if (e.code !== "Escape" || e.repeat || e.defaultPrevented || this.o.escapeOwned?.()) return
-    if (isEditable(e.target)) {
+    if (isTextEntry(e.target)) {
       ;(e.target as HTMLElement).blur?.()
       return
     }
@@ -231,8 +231,13 @@ function defaultLock(el: HTMLElement): void {
   }
 }
 
-function isEditable(t: EventTarget | null): boolean {
-  const el = t as { tagName?: string; isContentEditable?: boolean } | null
+/** Inputs that take no typing: a volume slider or checkbox keeps focus after use, and M and Escape must still work. */
+const NON_TEXT_INPUTS = new Set(["range", "checkbox", "radio", "button", "submit", "reset", "color", "file", "image"])
+
+/** Is the key going into a text field (where M is a letter and Escape only leaves the field)? */
+export function isTextEntry(t: unknown): boolean {
+  const el = t as { tagName?: string; type?: string; isContentEditable?: boolean } | null
   const tag = el?.tagName?.toUpperCase() ?? ""
-  return Boolean(el?.isContentEditable) || tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT"
+  if (tag === "INPUT") return !NON_TEXT_INPUTS.has((el?.type ?? "text").toLowerCase())
+  return Boolean(el?.isContentEditable) || tag === "TEXTAREA" || tag === "SELECT"
 }

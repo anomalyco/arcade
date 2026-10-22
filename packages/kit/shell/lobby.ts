@@ -73,7 +73,7 @@ export class ShellLobby {
 
   constructor(private readonly o: ShellLobbyOptions) {
     this.friends = o.friends ?? Boolean(o.onJoin)
-    this.loc = o.location ?? (typeof location === "undefined" ? { origin: "", pathname: "/", search: "" } : location)
+    this.loc = o.location ? { ...o.location } : typeof location === "undefined" ? { origin: "", pathname: "/", search: "" } : location
     this.name = this.read(o.nameKey ?? `${o.game}.name`) ?? ""
   }
 
@@ -144,6 +144,8 @@ export class ShellLobby {
 
   playAlone(): void {
     this.message = null
+    // Playing alone from an invite link: the address bar mustn't keep offering (or rejoining) that room.
+    if (!this.room) this.replaceRoomParam(null)
     this.o.onSolo?.(this.playName)
     this.emit()
   }
@@ -250,8 +252,12 @@ export class ShellLobby {
     this.emit()
   }
 
-  /** Maps a `RoomSocket.status()` line (null when fine) onto the connection state. */
+  /**
+   * Maps a `RoomSocket.status()` line (null when fine) onto the connection state. A final `lost` stays until the
+   * player leaves or joins again; an idle warning stays online with its line shown.
+   */
   setSocketStatus(status: string | null): void {
+    if (this.connection === "lost") return
     if (status === null) return this.setConnection("online")
     this.setConnection(/connecting…$/i.test(status) && !/lost/i.test(status) ? "connecting" : /idle/i.test(status) ? "online" : "reconnecting", status)
   }
@@ -276,7 +282,15 @@ export class ShellLobby {
   }
 
   private replaceRoomParam(room: string | null): void {
-    if (typeof history === "undefined" || typeof location === "undefined" || this.o.location) return
+    if (this.o.location) {
+      const params = new URLSearchParams(this.loc.search)
+      if (room) params.set(this.o.roomParam ?? "room", room)
+      else params.delete(this.o.roomParam ?? "room")
+      const search = params.toString()
+      this.loc.search = search ? `?${search}` : ""
+      return
+    }
+    if (typeof history === "undefined" || typeof location === "undefined") return
     const url = new URL(location.href)
     const key = this.o.roomParam ?? "room"
     if (room) url.searchParams.set(key, room)

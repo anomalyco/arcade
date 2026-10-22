@@ -2,7 +2,7 @@ import { QUALITY_PROFILES, type QualityScaling, type QualityTiers } from "@arcad
 
 /**
  * The office look's tiers. High keeps Today's 1.5× pixel cap; Balanced and Low trade pixels and the look's own passes
- * (bounce grid, dusty shafts, contact shading). Today ignores tiers: it always draws at min(devicePixelRatio, 1.5).
+ * (bounce grid, dusty shafts, contact shading). The tier sizes the canvas with the look on or off (Today draws no look passes).
  * The player picks the mode in the game shell's Settings (`createShellQuality` in main.ts, saved per browser).
  */
 export interface LookQuality extends QualityScaling {

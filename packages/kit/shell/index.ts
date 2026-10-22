@@ -1,7 +1,7 @@
 import type { VolumeChannel } from "../audio/volume"
 import { GameQuality, type GameQualityOptions } from "../client/quality"
 import type { QualityScaling } from "../quality"
-import { ShellFlow, type ShellFlowOptions } from "./flow"
+import { ShellFlow, isTextEntry, type ShellFlowOptions } from "./flow"
 import { ShellLobby, type ShellLobbyOptions } from "./lobby"
 import { LEAVE_GUARD_AFTER_MS, LeaveGuard, ShellLoading } from "./page"
 import { ShellSettings, type ShellQuality, type ShellSection } from "./settings"
@@ -88,19 +88,25 @@ export class GameShell {
       // Hidden, a game without pointer lock starts in play (nobody will click Play); a pointer-lock game starts when it takes the lock.
       start: o.start ?? (hidden && !o.pointerLock ? "playing" : "title"),
     })
-    this.lobby = o.lobby ? new ShellLobby({ game: o.game, ...o.lobby }) : null
+    const onLeave = o.onLeave
+    const onLeaveRoom = o.lobby?.onLeaveRoom
+    // Leaving a room is the game's Leave unless it has its own; Leave from the pause menu leaves the room too.
+    this.lobby = o.lobby ? new ShellLobby({ game: o.game, ...o.lobby, onLeaveRoom: () => (onLeaveRoom ?? onLeave)?.() }) : null
     this.loading = o.loading ? new ShellLoading(o.loading) : null
     this.view = o.view === false || typeof document === "undefined" ? null : new ShellView(o.root ?? document.body, { ...o, muteKey: o.muteKey !== false && this.settings.channels.length > 0 }, this.settings, this.flow, this.lobby, hidden ? null : this.loading)
     const guard = o.leaveGuard
     this.guard = guard === false ? null : new LeaveGuard(guard ?? (() => Boolean(this.lobby?.room) || (this.flow.started && this.playedMs >= LEAVE_GUARD_AFTER_MS)))
-    const onLeave = o.onLeave
     this.offs.push(
       this.flow.subscribe(() => {
-        if (!this.flow.started) {
-          this.playedMs = 0
-          if (this.wasStarted) onLeave?.()
-        }
+        // Updated first: a game's onLeave that calls flow.leave() again mustn't leave twice.
+        const was = this.wasStarted
         this.wasStarted = this.flow.started
+        if (this.flow.started || !was) return
+        this.playedMs = 0
+        if (this.lobby?.room) {
+          this.lobby.leaveRoom()
+          if (onLeaveRoom) onLeave?.()
+        } else onLeave?.()
       }),
     )
     this.wasStarted = this.flow.started
@@ -108,7 +114,7 @@ export class GameShell {
     if (muteKeyOn && typeof window !== "undefined") {
       const muteKey = typeof o.muteKey === "function" ? o.muteKey : () => true
       const key = (e: KeyboardEvent) => {
-        if (e.code !== "KeyM" || !muteKey() || e.repeat || e.metaKey || e.ctrlKey || e.altKey || o.keysBlocked?.() || isEditable(e.target)) return
+        if (e.code !== "KeyM" || !muteKey() || e.repeat || e.metaKey || e.ctrlKey || e.altKey || o.keysBlocked?.() || isTextEntry(e.target)) return
         this.settings.toggleMute()
       }
       window.addEventListener("keydown", key)
@@ -136,9 +142,3 @@ export class GameShell {
 }
 
 export const createGameShell = (o: GameShellOptions) => new GameShell(o)
-
-function isEditable(t: EventTarget | null): boolean {
-  const el = t as { tagName?: string; isContentEditable?: boolean } | null
-  const tag = el?.tagName?.toUpperCase() ?? ""
-  return Boolean(el?.isContentEditable) || tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT"
-}

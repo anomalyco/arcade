@@ -126,9 +126,9 @@ export class OfficeLook {
 
   casters() { return this.extraCasters }
 
-  /** Canvas size: Today keeps min(dpr, 1.5); the look follows its quality tier and dynamic resolution. */
-  canvasSize(s: LookSettings, w: number, h: number, dpr: number) {
-    if (!this.on(s)) { const r = Math.min(dpr, 1.5); return { width: Math.max(1, Math.round(w * r)), height: Math.max(1, Math.round(h * r)) } }
+  /** Canvas size from the quality tier and dynamic resolution (High is Today's 1.5× cap); smoke keeps min(dpr, 1.5). */
+  canvasSize(_s: LookSettings, w: number, h: number, dpr: number) {
+    if (this.smoke) { const r = Math.min(dpr, 1.5); return { width: Math.max(1, Math.round(w * r)), height: Math.max(1, Math.round(h * r)) } }
     return this.quality.canvasDimensions(w, h, dpr)
   }
 

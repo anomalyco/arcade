@@ -178,8 +178,8 @@ async function main() {
     terminal.update(opening.time,opening.tokens)
     look.update(settings,physics.chairs,camera.eye,time);look.carX=elevator.downstairs?BASEMENT_X:0
     shell.tick(now)
-    // Quality learns from frames in play with the look on (Today ignores tiers), not the title, menu or scripted steps.
-    if(look.on(settings)&&shell.playing&&!stepping)quality.frame(now);else quality.pause()
+    // Quality learns from frames in play, not the title, menu or scripted steps; its tier sizes the canvas with the look on or off.
+    if(shell.playing&&!stepping)quality.frame(now);else quality.pause()
     const {width,height}=look.canvasSize(settings,innerWidth,innerHeight,devicePixelRatio)
     if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;renderer.resize(width,height)}
     const onCord=call.phase==="pickup"||call.phase==="call"
