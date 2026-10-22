@@ -81,7 +81,7 @@ async function main() {
     quickLabel: "Play online", friendsNote: "a private room", quality, channels: ["master", "effects"],
     // M is the right-hand player's jump once Enter splits the keyboard.
     muteKey: () => !split(),
-    start: watch ? "playing" : "title",
+    start: watch ? "playing" : undefined,
     controls: () => [keyPromptHtml("KeyW", "Move"), keyPromptHtml("Space", "Jump"), keyPromptHtml("ShiftLeft", "Shoot"), keyPromptHtml("KeyE", "Dodge"), keyPromptHtml("Enter", "Split keyboard"), keyPromptHtml("KeyM", "Mute"), keyPromptHtml("Escape", "Menu")].join(" "),
     lobby: { friends: true, quick: true, onJoin: (code) => (location.search = `?room=${code}`) },
     onLeave: () => {
