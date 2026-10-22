@@ -13,6 +13,8 @@ docs folder. Start with `AGENTS.md` at the root; it says which of these to read 
   `socketJitter`, and the new-game checklist). Read before any multiplayer or net work.
 - [rendering-techniques.md](rendering-techniques.md): catalogue of rendering techniques with have/missing status,
   cost and location. Read before adding lighting, shadows, materials, post-processing or GPU performance work.
+- [threading.md](threading.md): worker ownership, dependencies, browser limits and ranked threading experiments.
+  Read before moving CPU work off-thread or changing worker protocols.
 - [realism.md](realism.md): the realism playbook by topic (lights to ambience) with cost, Kit's decisions and taste.
 - [animation.md](animation.md): rules and measured values for procedural human animation (gait, contacts, arms,
   posture, transitions, weapons) and the known gaps. Read before touching any character's motion.
