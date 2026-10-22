@@ -1,4 +1,5 @@
-import type { Camera } from "../render/camera"
+import { TraumaShake, shakeWave } from "@arcade/kit/client/camera"
+import { SHAKE, type Camera } from "../render/camera"
 
 const DEG = Math.PI / 180
 
@@ -43,8 +44,9 @@ export class ChaseCam {
   private dist = CHASE.dist
   private fy = 0
   private idle = 0
-  private time = 0
   private placed = false
+  /** Its clock and the shared shake settings; the trauma itself comes from the ship every frame (`ChaseTarget`). */
+  private readonly shake = new TraumaShake(SHAKE)
 
   /** Snaps behind the target on the next update. */
   reset(): void {
@@ -52,7 +54,7 @@ export class ChaseCam {
   }
 
   update(cam: Camera, t: ChaseTarget, dt: number, aspect: number, drag: { dx: number; dy: number; wheel: number; dragging: boolean }): void {
-    this.time += dt
+    this.shake.tick(dt)
     const ty = CHASE.pivotY + t.heave * CHASE.heaveFollow
     if (!this.placed) {
       this.placed = true
@@ -74,10 +76,10 @@ export class ChaseCam {
     this.fy += (ty - this.fy) * ease(dt, CHASE.heaveLag)
 
     // Trauma² shake: two incommensurate sines per axis, so it never loops visibly.
-    const s = t.trauma * t.trauma * CHASE.shake
-    const n = this.time
-    const jx = s * (Math.sin(n * 23.1) * 0.6 + Math.sin(n * 37.7 + 1.3) * 0.4)
-    const jy = s * (Math.sin(n * 29.3 + 0.7) * 0.6 + Math.sin(n * 41.9 + 2.1) * 0.4)
+    const s = this.shake.intensity(t.trauma) * CHASE.shake
+    const n = this.shake.time
+    const jx = s * shakeWave(n, 23.1, 0, 37.7, 1.3)
+    const jy = s * shakeWave(n, 29.3, 0.7, 41.9, 2.1)
 
     cam.x = t.x + jx
     cam.z = t.z

@@ -103,8 +103,6 @@ export class BoatDriver {
   onRelease: (() => void) | null = null
   /** Rounds fired this step (for the wire and the sound). */
   onFire: ((n: number) => void) | null = null
-  /** Camera shake from hits (the host adds; decays). */
-  trauma = 0
   /** Recovery only arms once the boat has left the crane's reach (or sped up) after a launch. */
   armed = false
   /** Offline the driver decides the pickup itself; online the room does (`beginRecover`, `destroy` from its tuple). */
@@ -238,7 +236,7 @@ export class BoatDriver {
       if (b.slams !== this.slamsHeard) {
         this.slamsHeard = b.slams
         this.audio?.slam(b.slam, 0)
-        this.trauma = Math.max(this.trauma, b.slam * 0.8)
+        this.cam.shake.raise(b.slam * 0.8)
       }
       const home = w.home
       const pick = home && this.hp > 0 ? recoverable(b, home) : null
@@ -305,11 +303,11 @@ export class BoatDriver {
       const d = lerpBoat(this.prev, this.boat, k, this.draw)
       Object.assign(s, { x: d.x, z: d.z, heave: d.heave, heading: d.heading, pitch: d.pitch, roll: d.roll, u: d.u, v: d.v })
     }
-    this.trauma *= Math.exp(-dt * 3)
+    this.cam.shake.decay(dt, 3)
     if (camera) {
       const look = paused ? { dx: 0, dy: 0 } : this.input.look
       const water = (x: number, z: number) => seaHeight(sea, x, z, this.boat.t)
-      this.cam.update(camera, { x: s.x, z: s.z, heave: s.heave, heading: s.heading, trauma: Math.max(this.trauma, this.boat.ground, this.boat.slam * 0.6), boost: this.boat.boosting ? 1 : 0 }, look, dt, aspect, water, this.trigger)
+      this.cam.update(camera, { x: s.x, z: s.z, heave: s.heave, heading: s.heading, trauma: Math.max(this.boat.ground, this.boat.slam * 0.6), boost: this.boat.boosting ? 1 : 0 }, look, dt, aspect, water, this.trigger)
       this.aim[0] = this.cam.aim[0]
       this.aim[1] = this.cam.aim[1]
       this.aim[2] = this.cam.aim[2]

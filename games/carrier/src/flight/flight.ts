@@ -52,7 +52,6 @@ export class Flight {
   private hook = 0
   /** Ship-local catapult z at the previous step (to draw the deck run between steps). */
   private prevZ = 0
-  private trauma = 0
   private pose: PlaneDrawPose = { x: 0, y: 0, z: 0, qx: 0, qy: 0, qz: 0, qw: 1, pitch: 0, roll: 0, gear: 1, throttle: 0, burner: 0 }
   private wantLaunch = false
   private att = { heading: 0, pitch: 0, bank: 0 }
@@ -89,14 +88,14 @@ export class Flight {
     this.plane.crashed = "shot"
     this.phase = "crashed"
     this.crashTime = 0
-    this.trauma = 1
+    this.cam.shake.raise(1)
     this.landing = this.prevLanding = null
     this.landingShip = null
   }
 
   /** Camera shake from outside (being hit): trauma 0..1, presentation only. */
   shake(trauma: number): void {
-    this.trauma = Math.max(this.trauma, Math.min(1, trauma))
+    this.cam.shake.raise(trauma)
   }
 
   requestLaunch(): void {
@@ -138,7 +137,7 @@ export class Flight {
         this.phase = "flying"
         this.airborne = 0
       }
-      this.trauma = Math.max(this.trauma, this.launch.shake)
+      this.cam.shake.raise(this.launch.shake)
       return
     }
     if (this.phase === "flying") {
@@ -148,7 +147,7 @@ export class Flight {
       if (this.plane.crashed) {
         this.phase = "crashed"
         this.crashTime = 0
-        this.trauma = 1
+        this.cam.shake.raise(1)
       }
       return
     }
@@ -160,8 +159,8 @@ export class Flight {
       Object.assign(this.prevLanding!, l)
       const touched = l.phase === "approach"
       const done = landingStep(l, this.plane, ship, dt)
-      if (touched && l.phase !== "approach") this.trauma = Math.max(this.trauma, 0.7)
-      this.trauma = Math.max(this.trauma, l.shake)
+      if (touched && l.phase !== "approach") this.cam.shake.raise(0.7)
+      this.cam.shake.raise(l.shake)
       if (done) {
         if (this.onLanded) this.onLanded()
         else this.toDeck(ship)
@@ -229,7 +228,7 @@ export class Flight {
       Object.assign(l, b, { x: m(a.x, b.x), y: m(a.y, b.y), z: m(a.z, b.z), yaw: m(a.yaw, b.yaw), pitch: m(a.pitch, b.pitch), bank: m(a.bank, b.bank), since: m(a.since, b.since) })
       landingPose(l, lship, p)
     }
-    this.trauma = Math.max(this.trauma * Math.exp(-dt * 2.2), this.phase === "flying" ? p.stall * 0.45 + Math.max(0, p.g - 7) * 0.05 : 0)
+    this.cam.shake.decay(dt, 2.2, this.phase === "flying" ? p.stall * 0.45 + Math.max(0, p.g - 7) * 0.05 : 0)
     const look = this.input.freeLook ? this.input.look : null
     // The landing: on the glideslope and in the trap the chase camera swings out to a high three-quarter view that
     // frames the jet coming down onto the deck.
@@ -240,8 +239,8 @@ export class Flight {
     this.cam.framing.dist = showDeck ? 1.6 : 1
     this.cam.nose = VEHICLES[this.vehicle].probes[0]![2]
     this.cam.setBombs(this.phase === "flying" && this.airborne > SIGHT_AFTER_LAUNCH && !!this.bombsight?.())
-    if (this.phase === "crashed") this.cam.crashView(p.x, p.y, p.z, seaHeight(this.cam.eye[0], this.cam.eye[2]), dt, aspect, Math.min(1, this.trauma))
-    else this.cam.update(p, dt, aspect, Math.min(1, this.trauma), look, this.eyeModel, VEHICLES[this.vehicle].flight)
+    if (this.phase === "crashed") this.cam.crashView(p.x, p.y, p.z, seaHeight(this.cam.eye[0], this.cam.eye[2]), dt, aspect)
+    else this.cam.update(p, dt, aspect, look, this.eyeModel, VEHICLES[this.vehicle].flight)
 
     const pose = this.pose
     pose.x = p.x

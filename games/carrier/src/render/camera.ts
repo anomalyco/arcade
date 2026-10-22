@@ -1,3 +1,4 @@
+import { cameraShakeDefaults } from "@arcade/kit/client/camera"
 import { mat4d } from "wgpu-matrix"
 
 const DEG = Math.PI / 180
@@ -16,6 +17,12 @@ export const DEFAULT_VIEW = { x: 0, z: 0, yaw: 0, pitch: 24 * DEG, dist: 650 }
  * at shallow pitches and a ship at the focus later sits in the lower middle like the concepts.
  */
 const LIFT = Math.atan(0.3 * Math.tan(FOV / 2))
+
+/**
+ * Camera shake settings every rig's `TraumaShake` reads (`shakeScale`, `reduceMotion`; the OS reduced-motion setting
+ * also stops it). The CONTROLS debug tab edits them live.
+ */
+export const SHAKE = cameraShakeDefaults()
 
 /** Slab of heights that static geometry can occupy, for culling: seabed to the highest peaks. */
 export const STATIC_Y0 = -80

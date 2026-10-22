@@ -279,7 +279,7 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
   },
   {
     area: "`client/{input,camera,side-camera,smooth}` & `orbit-gestures`",
-    description: "Top-down `Input`, `Camera` (trauma² shake, directional kick, `HitStop`), side-view `SideCamera`, and orbit/pan/zoom gestures",
+    description: "Top-down `Input`, `Camera` (trauma² shake, directional kick, `HitStop`), rig-agnostic `TraumaShake`, side-view `SideCamera`, and orbit/pan/zoom gestures",
     match: (s) =>
       s === "@arcade/kit/client/input" ||
       s === "@arcade/kit/client/camera" ||

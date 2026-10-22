@@ -86,6 +86,15 @@ scope): `skyColor(dir)`, `hazeColor(dir)` (the fog colour, equal to the sky at t
 `renderer.module(code, label)` compiles WGSL and logs errors with line numbers. Static chunks open the opaque slot.
 `Grade` (`post.ts`, `DEFAULT_GRADE`): exposure, bloom, threshold, saturation, vignette, grain, warmth.
 
+## Camera shake (`@arcade/kit/client/camera`, `SHAKE` in `src/render/camera.ts`)
+
+- Every rig owns a kit `TraumaShake` (trauma², presentation only) reading the one `SHAKE` (`cameraShakeDefaults()`:
+  `shakeScale`, `reduceMotion`; the OS reduced-motion setting also stops it; dev CONTROLS tab edits both). The rigs
+  keep their own magnitudes and `shakeWave` frequencies: chase (`src/game/chase.ts`, the ship's grounding/slam passed
+  in per frame), boat (`BoatCam.shake`, hits and slams, decay 3/s), turret (`TurretCam.shake`, recoil, linear 2.4/s),
+  flight and crash (`FlightCam.shake`, catapult, trap, buffet floor, hits, explosions, decay 2.2/s). No hit-stop: the
+  frame draws a room-synced world.
+
 ## Sea (`shared/sea.ts`, `shared/sea.wgsl.ts`)
 
 Deterministic, seeded, Gerstner-style sum of waves (a dominant swell direction with long crests, a secondary swell, and
@@ -638,7 +647,8 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
     and keep burning (on a deck they ride the ship, in its frame), flung earth or deck debris, dust, sparks, a scorch.
   - `blast(seed, x, y, z, size, surface)` and `boatKill(seed, x, y, z, vx, vz, heading, size)` for anything else.
   - Fireballs throw a short light (an additive glow and a pool on the surface, strong at night); nearby bursts add
-    camera trauma (`takeTrauma`, the seam shakes the chase and crash cameras). Puffs are opaque alpha-to-coverage
+    camera trauma (`takeTrauma`, the seam shakes the chase and crash cameras; falloff `attenuateShake` from
+    `@arcade/kit/client/camera`). Puffs are opaque alpha-to-coverage
     icospheres (no blended overdraw), pieces opaque, trail smoke one premultiplied ribbon, sparks additive; fixed pools.
 - Dev harness (not built): `weapons.html` (`src/weapons/harness.ts`), offline with AI drones (`src/weapons/drones.ts`).
   Params: `?drone=N`, `?hostile`, `?flares`, `?air`, `?f35`. Real-GPU checks: `scripts/weapons-shot.ts`; captures go
