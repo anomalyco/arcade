@@ -8,11 +8,11 @@ import { readPerson, SRC_FLOATS } from "./asset"
 import { qRot } from "./quat"
 import { newPose, personRest, posePerson, type PersonRest } from "./retarget"
 import { terrainFeet } from "./terrain"
-import { personLod } from "./view"
+import { idleShift, personLod } from "./view"
 
 await MeshoptDecoder.ready
 const io = new NodeIO().registerExtensions(ALL_EXTENSIONS).registerDependencies({ "meshopt.decoder": MeshoptDecoder })
-const asset = readPerson(await io.read(new URL("./assets/hiker-a.glb", import.meta.url).pathname), "hiker-a")
+const asset = readPerson(await io.read(new URL("./assets/a-woods.glb", import.meta.url).pathname), "a-woods")
 const rest = personRest(asset.skeleton)
 const dist = (a: V3, b: V3) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2])
 const at = (r: PersonRest, n: string) => r.idx[n]!
@@ -25,7 +25,7 @@ function walk(seconds: number, speed: number, ground: (x: number, z: number) => 
   const dt = 1 / 60
   for (let f = 0, x = start[0]; f < seconds * 60; f++, x += speed * dt) {
     animate(a, dt, f * dt, x / s, start[1] / s, speed / s, 0, 0)
-    const { lift, feet, tilt } = terrainFeet(terrain, a, a.body!, s, ground, dt)
+    const { lift, feet, tilt } = terrainFeet(terrain, a, a.body!, s, ground, dt, rest.sole)
     posePerson(rest, { body: a.body!, lift, feet, tilt, torch: torch ? { side: 1, dir: torch } : undefined }, pose)
     each(pose, a, f * dt)
   }
@@ -68,22 +68,46 @@ describe("people", () => {
   })
 
   test("feet stand on the ground and step over a log instead of through it", () => {
-    // A 0.3 m log across the path at x = 2.
+    // A 0.3 m log across the path at x = 2, on rolling ground.
     const log = (x: number) => (Math.abs(x - 2) < 0.15 ? Math.sqrt(0.15 ** 2 - (x - 2) ** 2) * 2 : 0)
     const ground = (x: number, z: number) => 0.08 * Math.sin(x * 0.9) + 0.05 * Math.sin(z * 1.3 + 1) + log(x)
-    let worstSink = 0, worstFloat = 0
+    let worstSink = 0, worstFloat = 0, swingGap = Infinity
     walk(4, 1.2, ground, (pose, a) => {
       for (let k = 0; k < 2; k++) {
-        const ball = pose.pos[at(rest, k === 0 ? "ball_l" : "ball_r")]!
-        const foot = pose.pos[at(rest, k === 0 ? "foot_l" : "foot_r")]!
-        const g = Math.max(ground(ball[0], ball[2]), ground(foot[0], foot[2]))
-        // Bone origins sit inside the boot: ankle ~7 cm, ball ~1 cm above the sole.
-        worstSink = Math.max(worstSink, g - Math.min(foot[1] - 0.06, ball[1]))
-        if (a.feet[k]!.planted) worstFloat = Math.max(worstFloat, Math.min(ball[1], foot[1] - 0.06) - g)
+        // The sole under the ball and under the heel (mesh points), and their gaps to the ground.
+        const foot = at(rest, k === 0 ? "foot_l" : "foot_r"), ball = pose.pos[at(rest, k === 0 ? "ball_l" : "ball_r")]!
+        const h = qRot(pose.rot[foot]!, rest.heel[k]!), heel: V3 = [pose.pos[foot]![0] + h[0], pose.pos[foot]![1] + h[1], pose.pos[foot]![2] + h[2]]
+        const gaps = [[ball[0], ball[1] - rest.ballHeight, ball[2]] as V3, heel].map((p) => p[1] - ground(p[0], p[2]))
+        worstSink = Math.max(worstSink, -Math.min(...gaps))
+        if (a.feet[k]!.planted && Math.abs(a.body!.ft[k]!.x[1]) < 0.02) worstFloat = Math.max(worstFloat, Math.min(...gaps))
+        if (!a.feet[k]!.planted && Math.abs(ball[0] - 2) < 0.25) swingGap = Math.min(swingGap, ...gaps)
       }
     })
-    expect(worstSink).toBeLessThan(0.05)
-    expect(worstFloat).toBeLessThan(0.06)
+    // Heel strikes on the slope press in about a centimetre; nothing goes through the log.
+    expect(worstSink).toBeLessThan(0.02)
+    // A flat planted boot touches the ground (or the log) somewhere along its sole.
+    expect(worstFloat).toBeLessThan(0.005)
+    expect(swingGap).toBeGreaterThan(0)
+  })
+
+  test("standing still, the weight shifts from leg to leg without moving the feet", () => {
+    const idle = { still: 0, phase: 0, rate: 1 }
+    const shifts: number[] = []
+    for (let f = 0; f < 60 * 20; f++) shifts.push(idleShift(idle, 0, true, 1 / 60))
+    expect(Math.max(...shifts)).toBeGreaterThan(0.9)
+    expect(Math.min(...shifts)).toBeLessThan(-0.9)
+    // A step eases it out within a quarter second.
+    for (let f = 0; f < 15; f++) idleShift(idle, 1.2, false, 1 / 60)
+    expect(Math.abs(idleShift(idle, 1.2, false, 1 / 60))).toBeLessThan(0.1)
+    // Posed at full shift, planted balls stay put and the hips slide over the loaded leg.
+    const a = newAvatar("idle", 0, 0, 0, "rifle")
+    a.unarmed = true
+    for (let f = 0; f < 120; f++) animate(a, 1 / 60, f / 60, 0, 0, 0, 0, 0)
+    const still = newPose(rest), shifted = newPose(rest)
+    posePerson(rest, { body: a.body!, lift: 0, shift: 0 }, still)
+    posePerson(rest, { body: a.body!, lift: 0, shift: 1 }, shifted)
+    for (const b of ["ball_l", "ball_r"]) expect(dist(shifted.pos[at(rest, b)]!, still.pos[at(rest, b)]!)).toBeLessThan(0.002)
+    expect(dist(shifted.pos[at(rest, "pelvis")]!, still.pos[at(rest, "pelvis")]!)).toBeGreaterThan(0.025)
   })
 
   test("a torch points along its beam from the hand", () => {

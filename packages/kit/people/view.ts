@@ -18,21 +18,23 @@ import { PeoplePass, type PersonInstance, type PersonModel } from "./pass"
 import { newPose, personRest, posePerson, skinMatrices, type HandPose, type PersonPose, type PersonRest } from "./retarget"
 import { terrainFeet, type TerrainState } from "./terrain"
 
-/** The cast: one GLB per person (scripts/people/cast.json). Vite emits each as a lazily fetched asset. */
-export const PEOPLE_CAST = {
-  "hiker-a": new URL("./assets/hiker-a.glb", import.meta.url).href,
-} as const
-export type CastId = keyof typeof PEOPLE_CAST
+/**
+ * One person in one look (`a-woods`, `c-office`, ...): a GLB from scripts/people/cast.json. Each look's members come
+ * from its own generated module (`@arcade/kit/people/cast/woods`), so a game bundles only the looks it imports.
+ */
+export type CastMember = { readonly id: string; readonly url: string; readonly person: string; readonly look: string; readonly outfit: string }
 
 type Loaded = { model: PersonModel; rest: PersonRest }
 
 export type Person = {
-  readonly cast: CastId
+  readonly cast: CastMember
   readonly inst: PersonInstance
   readonly rest: PersonRest
   readonly pose: PersonPose
   readonly terrain: TerrainState
   breath: Spring
+  /** Standing idle: how still (0 moving .. 1 stood a while), its weight-shift phase and this person's rate. */
+  idle: { still: number; phase: number; rate: number }
 }
 
 export type DriveOptions = {
@@ -58,10 +60,27 @@ export function personLod(rest: PersonRest, pose: PersonPose, eye: V3, current: 
   return d > distance * (current === 1 ? 0.9 : 1) ? 1 : 0
 }
 
+const bothPlanted = (a: Locomotion) => a.feet[0].planted && a.feet[1].planted
+
+/**
+ * Standing weight shift (`PoseInput.shift`): after about a second stood still the person settles onto one leg,
+ * dwells there 3 to 5 s and shifts across in about a second, at a rate of their own. Any step or movement eases it out
+ * within a quarter second, so it never fights the rig's steps.
+ */
+export function idleShift(idle: Person["idle"], speed: number, planted: boolean, dt: number): number {
+  const stood = planted && speed < 0.08
+  const k = stood ? 1 - Math.exp(-dt / 0.9) : 1 - Math.exp(-dt / 0.12)
+  idle.still += ((stood ? 1 : 0) - idle.still) * k
+  // A full cycle (left, across, right, across) every ~9 s at rate 1.
+  if (stood) idle.phase += dt * idle.rate * ((Math.PI * 2) / 9)
+  const dwell = Math.tanh(2.4 * Math.sin(idle.phase)) / Math.tanh(2.4)
+  return dwell * idle.still * idle.still
+}
+
 export class People {
   readonly pass: PeoplePass
-  private loads = new Map<CastId, Promise<Loaded>>()
-  private ready = new Map<CastId, Loaded>()
+  private loads = new Map<CastMember, Promise<Loaded>>()
+  private ready = new Map<CastMember, Loaded>()
   private spawned = 0
 
   constructor(ctx: PassContext, hooks: SceneHooks, readonly lodDistance = 9) {
@@ -69,15 +88,15 @@ export class People {
   }
 
   /** Starts fetching a cast member; resolves when it can be drawn. Safe to call repeatedly. */
-  load(cast: CastId): Promise<Loaded> {
+  load(cast: CastMember): Promise<Loaded> {
     let p = this.loads.get(cast)
     if (!p) {
       p = (async () => {
         await MeshoptDecoder.ready
         const io = new WebIO().registerExtensions(ALL_EXTENSIONS).registerDependencies({ "meshopt.decoder": MeshoptDecoder })
-        const res = await fetch(PEOPLE_CAST[cast])
+        const res = await fetch(cast.url)
         if (!res.ok) throw new Error(`${cast}: HTTP ${res.status}`)
-        const asset = readPerson(await io.readBinary(new Uint8Array(await res.arrayBuffer())), cast)
+        const asset = readPerson(await io.readBinary(new Uint8Array(await res.arrayBuffer())), cast.id)
         const loaded = { model: await this.pass.upload(asset), rest: personRest(asset.skeleton) }
         this.ready.set(cast, loaded)
         return loaded
@@ -88,15 +107,16 @@ export class People {
   }
 
   /** Rig scale of a loaded cast member (world = rig × scale), or null while it loads. */
-  scale(cast: CastId): number | null {
+  scale(cast: CastMember): number | null {
     return this.ready.get(cast)?.rest.scale ?? null
   }
 
   /** A new person, or null until the cast member has loaded (call `load` first). */
-  spawn(cast: CastId): Person | null {
+  spawn(cast: CastMember): Person | null {
     const l = this.ready.get(cast)
     if (!l) return null
-    return { cast, inst: this.pass.spawn(l.model), rest: l.rest, pose: newPose(l.rest), terrain: { drop: spring(), init: false }, breath: { x: (this.spawned++ * 2.39996) % (Math.PI * 2), v: 0 } }
+    return { cast, inst: this.pass.spawn(l.model), rest: l.rest, pose: newPose(l.rest), terrain: { drop: spring(), init: false }, breath: { x: (this.spawned * 2.39996) % (Math.PI * 2), v: 0 },
+      idle: { still: 0, phase: (this.spawned * 1.7) % (Math.PI * 2), rate: 0.75 + ((this.spawned++ * 0.618034) % 1) * 0.5 } }
   }
 
   remove(p: Person): void {
@@ -111,13 +131,13 @@ export class People {
     if (!a.body) { p.inst.visible = false; return null }
     p.inst.visible = true
     const ground = o.ground ?? (() => 0)
-    const { lift, feet, tilt } = terrainFeet(p.terrain, a, a.body, p.rest.scale, ground, o.dt)
+    const { lift, feet, tilt } = terrainFeet(p.terrain, a, a.body, p.rest.scale, ground, o.dt, p.rest.sole)
     // Breathing: ~15 breaths/min standing, faster when moving.
     const speed = Math.hypot(a.svx, a.svy) * p.rest.scale
     p.breath.x += o.dt * Math.PI * 2 * (0.25 + 0.12 * Math.min(1, speed / 3))
     posePerson(p.rest, {
       body: a.body, lift, feet, tilt, torch: o.torch, look: o.look, grip: o.grip,
-      breath: 1, breathPhase: p.breath.x,
+      breath: 1, breathPhase: p.breath.x, shift: idleShift(p.idle, speed, bothPlanted(a), o.dt),
     }, p.pose)
     skinMatrices(p.rest, p.pose, p.inst.matrices)
     if (o.eye) p.inst.lod = personLod(p.rest, p.pose, o.eye, p.inst.lod, this.lodDistance)

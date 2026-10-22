@@ -10,7 +10,7 @@ export type PeopleLook = {
 
 export const PEOPLE_LOOK: PeopleLook = {
   sheen: 0.6,
-  rough: { skin: 0.52, cloth: 0.9, nylon: 0.48, hair: 0.45, brow: 0.8, eye: 0.1, knit: 0.96 },
+  rough: { skin: 0.52, cloth: 0.9, nylon: 0.48, hair: 0.45, brow: 0.8, eye: 0.1, knit: 0.96, plastic: 0.4, lens: 0.08 },
 }
 
 const num = (x: number) => (Number.isInteger(x) ? `${x}.0` : String(x))
@@ -33,7 +33,7 @@ export function personHooks(game: SceneHooks, look: PeopleLook = PEOPLE_LOOK): S
     var share = 1.0;
     if (abs(o.aux - ${k("skin")}) < 0.5) { share = 0.35; }
     if (abs(o.aux - ${k("nylon")}) < 0.5) { share = 0.55; }
-    if (abs(o.aux - ${k("eye")}) < 0.5) { share = 0.0; }
+    if (abs(o.aux - ${k("eye")}) < 0.5 || abs(o.aux - ${k("plastic")}) < 0.5 || abs(o.aux - ${k("lens")}) < 0.5) { share = 0.0; }
     col += mix(vec3f(1.0), texBase.rgb * o.color * 2.0, 0.5) * (${game.ambient ?? "ambientAt(n)"}) * edge * share * ${num(look.sheen)};
   }`
   return {

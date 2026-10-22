@@ -9,7 +9,7 @@ import { qBasis, type Q } from "./quat"
 import type { Skeleton } from "./retarget"
 
 /** Shading kinds, written to the vertex aux channel (`PEOPLE_AUX + kind`) for `personHooks`. */
-export const KINDS = ["skin", "cloth", "nylon", "hair", "brow", "eye", "knit"] as const
+export const KINDS = ["skin", "cloth", "nylon", "hair", "brow", "eye", "knit", "plastic", "lens"] as const
 export type Kind = (typeof KINDS)[number]
 export const PEOPLE_AUX = 60
 
