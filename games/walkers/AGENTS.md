@@ -102,3 +102,16 @@
   no steps; cadence, stride length and CoT are undefined. It has not learned walking, duck/crawl/vault, timed waiting,
   plate pressing, hand pickup or escape. UI says **Balance only**. Two attempts to start the8s walking fine-tune
   were capacity-gated for30min each. The trained quadruped remains the completed heist option.
+
+## Game shell
+
+- The title, Escape menu and Settings are the kit game shell (`@arcade/kit/shell`, [docs/game-shell.md](../../docs/game-shell.md)), set up in `src/main.ts`; shell colours are in `index.html`. Walkers is silent, so it passes `channels: []`: no Sound section, mute button or M key. Every training knob stays in the Lab panel.
+- Deliberate changes when it moved onto the shell (Oct 22):
+  - The page opens on a WALKERS title card (Watch them learn) over the live sim; training still starts behind it.
+  - Escape opens the menu (Resume, Settings, Quit to title). It freezes playback and holds training; Resume picks
+    both up where they were. Quit to title lets the sim train on behind the title.
+  - Settings has a Playback section (speed, show pre-trained, slow motion on near misses), mirrored in the Lab panel,
+    plus the shared Reduce camera motion and Key labels. Walkers has no camera shake, so Reduce camera motion
+    changes nothing here.
+  - Space, R, B and P are ignored on the title and the menu.
+  - After 30 s of watching, closing the tab asks first (the trained brain is lost unless saved).
