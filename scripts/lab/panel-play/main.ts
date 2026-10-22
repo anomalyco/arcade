@@ -1,6 +1,9 @@
 // A stand-in game for prove-panel-play.ts: a canvas that locks the pointer on click and counts the keys it takes, gated
 // on `panel.holdsInput` the way the games are, under a capture "focus" LabPanel with groups, sub-headings and Volume.
-import { isEditableEventTarget } from "@arcade/kit/client/controls"
+// It also runs the kit's `Input` blocked on `holdsInput` (Outbreak's wiring) and a window-capture key listener that
+// swallows Enter and Escape the way Outbreak's lobby does. `?capture=open` and `?open=<group>` change the panel.
+import { isEditableEventTarget, isLabPanelEventTarget } from "@arcade/kit/client/controls"
+import { Input } from "@arcade/kit/client/input"
 import { LabPanel, type LabControl } from "@arcade/kit/lab-panel"
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game")!
@@ -37,13 +40,26 @@ const controls: LabControl[] = [
   range("ambience", "Ambience", "Volume", 0, 1, 0.05),
 ]
 
-const game = { accepted: [] as string[], released: 0 }
-const panel = new LabPanel(settings, controls, new URLSearchParams(location.search), () => { game.released++ }, {
-  open: false, pill: false, groupActions: false, capture: "focus", openGroups: ["Walking"],
+const params = new URLSearchParams(location.search)
+const game = { accepted: [] as string[], released: 0, input: [] as string[], lobby: [] as string[], clicks: [] as string[] }
+const panel = new LabPanel(settings, controls, params, () => { game.released++ }, {
+  open: false, pill: false, groupActions: false, capture: params.get("capture") === "open" ? "open" : "focus",
+  openGroups: [params.get("open") ?? "Walking"],
 })
-canvas.addEventListener("click", () => { if (!panel.holdsInput) void canvas.requestPointerLock() })
+const input = new Input(canvas, ["KeyE"])
+input.blocked = () => panel.holdsInput
+input.onKey = code => game.input.push(code)
+window.addEventListener("keydown", e => {
+  if (isLabPanelEventTarget(e.target) || (e.code !== "Enter" && e.code !== "Escape")) return
+  e.stopImmediatePropagation()
+  game.lobby.push(e.code)
+}, true)
+canvas.addEventListener("click", () => {
+  game.clicks.push(panel.holdsInput ? "held" : "lock")
+  if (!panel.holdsInput) canvas.requestPointerLock()?.catch?.((e: unknown) => game.clicks.push(String(e)))
+})
 window.addEventListener("keydown", e => {
   if (e.code === "Backquote" || isEditableEventTarget(e.target) || panel.holdsInput || document.pointerLockElement !== canvas) return
   game.accepted.push(e.code)
 })
-Object.assign(window, { harness: { panel, game, settings } })
+Object.assign(window, { harness: { panel, game, settings, input } })
