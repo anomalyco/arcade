@@ -405,6 +405,7 @@ export class Renderer {
   emaGpuMs = 0
   private bloomLevels = BLOOM_LEVELS
   private temporalSettings: TemporalSettings | null = null
+  private infiniteSky = false
   private temporal: TemporalResolve | null = null
   private bloomSource: GPUTexture | null = null
   private bloomSourceView: GPUTextureView | null = null
@@ -1156,6 +1157,13 @@ export class Renderer {
     return this.temporalSettings ? { ...this.temporalSettings } : null
   }
 
+  /** Opt in only while a camera-relative sky owns the untouched depth background. */
+  setInfiniteSky(enabled: boolean): void {
+    if (this.infiniteSky === enabled) return
+    this.infiniteSky = enabled
+    this.resetTemporalHistory()
+  }
+
   /** Drops the temporal history (camera cut or teleport the eye-jump check would miss). */
   resetTemporalHistory(): void {
     this.temporal?.reset()
@@ -1442,7 +1450,7 @@ export class Renderer {
     const fr = f.frame
     this.unjittered.set(fr.subarray(0, 22))
     // The reactive mask is cleared and drawn every temporal frame, so the resolve always reads it.
-    const [jx, jy] = taa.begin(fr, s, true)
+    const [jx, jy] = taa.begin(fr, s, true, this.infiniteSky)
     jitterViewProj(fr, jx, jy, this.internalWidth, this.internalHeight)
     fr[20] = this.internalWidth
     fr[21] = this.internalHeight
