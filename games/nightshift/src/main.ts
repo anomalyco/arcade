@@ -122,7 +122,14 @@ async function main() {
     interact(call,canAnswer())
     if(call.phase==="pickup")answered=true
   }
-  const prompts=()=>hud.innerHTML=[keyPromptHtml("Mouse0","Look"),keyPromptHtml("KeyW","Move"),keyPromptHtml("KeyF","Flashlight"),keyPromptHtml("KeyM","Mute"),keyPromptHtml("Backquote","Office")].join(" ")
+  // Playtest Oct 21 (03:16): "I can't jump. That's my biggest..." Kit: "I'll make you jumpable." Space stands you up from the chair first.
+  const hop=(e:KeyboardEvent)=>{
+    if(!opening.complete||elevator.done||camera.speed<=0)return
+    e.preventDefault()
+    if(!opening.standing)opening.stand()
+    else camera.jump()
+  }
+  const prompts=()=>hud.innerHTML=[keyPromptHtml("Mouse0","Look"),keyPromptHtml("KeyW","Move"),keyPromptHtml("Space","Jump"),keyPromptHtml("KeyF","Flashlight"),keyPromptHtml("KeyM","Mute"),keyPromptHtml("Backquote","Office")].join(" ")
   prompts();onKeyLayoutChange(prompts)
   canvas.addEventListener("click",()=>{if(!boot.isReady||boot.failed)return;opening.start();void audio.unlock().then(()=>storyAudio.unlock(audio.context!))})
   window.addEventListener("mousemove",e=>{if(!opening.complete)e.stopImmediatePropagation()},true)
@@ -133,7 +140,7 @@ async function main() {
       if(e.code!=="Backquote"&&e.code!=="KeyM"){e.preventDefault();e.stopImmediatePropagation()}
     }else if(["KeyW","KeyA","KeyS","KeyD","ArrowUp","ArrowLeft","ArrowDown","ArrowRight"].includes(e.code))opening.stand()
   },true)
-  window.addEventListener("keydown",e=>{if(e.repeat||e.metaKey||e.ctrlKey||e.altKey||isEditableEventTarget(e.target)||panel.visible||document.pointerLockElement!==canvas)return;if(e.code==="KeyE")action();if(e.code==="KeyM")audio.muted=!audio.muted})
+  window.addEventListener("keydown",e=>{if(e.repeat||e.metaKey||e.ctrlKey||e.altKey||isEditableEventTarget(e.target)||panel.visible||document.pointerLockElement!==canvas)return;if(e.code==="KeyE")action();if(e.code==="KeyM")audio.muted=!audio.muted;if(e.code==="Space")hop(e)})
   window.addEventListener("pagehide",()=>{storyAudio.dispose();audio.dispose()})
   function render(now:number) {
     const frameMs=now-last,dt=Math.min(0.05,frameMs/1000);last=now
