@@ -19,6 +19,7 @@ import { CameraLook, stageCameraLab } from "./camera-look"
 import { CreatureView } from "./creature-view"
 import { FEEL_CONTROLS } from "./feel-controls"
 import { FriendsView } from "./friends-view"
+import { HeldMap, heldMapControls } from "./held-map"
 import { PaperMap } from "./map"
 import { SettingsMenu } from "./menu"
 import { OnlineSession, SoloSession, type Session } from "./session"
@@ -69,6 +70,7 @@ async function main() {
   const creatures = new CreatureView(renderer)
   if (params.get("smooth") === "0") friends.smooth = false
   const map = new PaperMap(document.body)
+  const held = new HeldMap(renderer, import.meta.env.BASE_URL, undefined, !smoke)
   const audio = new WoodsAudio()
   const story = new StoryHud(audio)
   const fp = new FrameParts()
@@ -79,6 +81,7 @@ async function main() {
     if (rebuild) view.setWorld(world)
     friends.setLogs(view.forest.build.logs, (x, z) => standHeight(world, x, z))
     map.setWorld(world)
+    held.setWorld(world)
   }
   useWorld(world, false)
   performance.mark("woods:world")
@@ -102,6 +105,7 @@ async function main() {
     { key: "woods.beamSettle", field: "beamSettle", label: "Friend beam settle", group: "Friends", subsection: "Drawing", min: 0.02, max: 0.4, step: 0.01, unit: "s" },
   ])
   panel.addControls({}, [{ key: "creatureTrigger", label: "Trigger now", group: "Creature", type: "action", run: () => { creature.trigger() } }])
+  panel.addControls(held.settings as unknown as Record<string, number | string | boolean>, heldMapControls())
   // Camera looks and realism effects (Lab › Camera look): a post chain after the forest's own camera, all off by default.
   const cameraLook = new CameraLook({ renderer, device, format: canvasFormat, camera, forest: view.forest, panel, params, smoke, seed: world.params.seed })
   audio.bindControls(panel, () => menu.sync())
@@ -374,21 +378,34 @@ async function main() {
     }
 
     const p = session.self
+    // The held map and compass (Map style: Held): its hands follow the raise; while up, your torch is the one in its
+    // right glove, aimed at the sheet, on its low setting.
+    held.tier = quality.getActiveTier()
+    // The props follow the rendered view, so a body camera's mount turns them with it.
+    const mount = camera.mount
+    held.frame({ state, me: meId, raise: p.mapRaise, eye: camera.eye, yaw: camera.yaw + mount.yaw, pitch: Math.max(-1.5, Math.min(1.5, camera.pitch + mount.pitch)), roll: camera.walk.roll + mount.roll, aspect: width / height, dt, time, walk: camera.walk })
+    const heldTorch = held.held ? held.torch() : null
+    const heldUp = heldTorch ? held.raiseShare : 0
     // Brightness on the page's own clock: the tick or snapshot time would step a flicker into a strobe.
-    const level = beamLevel(p, time, settings)
+    const level = beamLevel(p, time, settings) * (heldTorch ? Math.pow(held.settings.readingLevel, held.dimShare) : 1)
     ownLevel += (level - ownLevel) * (1 - Math.exp(-dt / 0.04))
     // Your beam: from the hand, along the view; down onto the sheet while the map is up.
     const lookDir = viewDir(camera.yaw, camera.pitch)
     const reading = viewDir(camera.yaw, -1.05)
     const r = p.mapRaise
-    const axis = lookDir.map((v, i) => v + (reading[i]! - v) * r)
+    const axis = lookDir.map((v, i) => v + (reading[i]! - v) * (held.held ? 0 : r))
     const k = laggedReady ? 1 - Math.exp(-dt / Math.max(view.forest.settings.torchLag, 0.001)) : 1
     laggedReady = true
     for (let i = 0; i < 3; i++) lagged[i] = lagged[i]! + (axis[i]! - lagged[i]!) * k
     const al = Math.hypot(lagged[0], lagged[1], lagged[2]) || 1
-    const ownAxis: [number, number, number] = [lagged[0] / al, lagged[1] / al, lagged[2] / al]
+    let ownAxis: [number, number, number] = [lagged[0] / al, lagged[1] / al, lagged[2] / al]
     // The hand stays where it is when a body camera hangs the view lower.
-    const ownOrigin = handFrom([camera.eye[0], camera.eye[1] - camera.mount.height, camera.eye[2]], camera.yaw, lookDir)
+    let ownOrigin = handFrom([camera.eye[0], camera.eye[1] - camera.mount.height, camera.eye[2]], camera.yaw, lookDir)
+    if (heldTorch) {
+      const mixed = ownAxis.map((v, i) => v + (heldTorch.axis[i]! - v) * heldUp), ml = Math.hypot(mixed[0]!, mixed[1]!, mixed[2]!) || 1
+      ownAxis = [mixed[0]! / ml, mixed[1]! / ml, mixed[2]! / ml]
+      ownOrigin = ownOrigin.map((v, i) => v + (heldTorch.origin[i]! - v) * heldUp) as [number, number, number]
+    }
 
     fp.begin()
     view.draw(fp, world, state, state.t, camera.eye, settings)
@@ -404,7 +421,7 @@ async function main() {
     const place = view.lights(world, state.t, settings)
     // Every torch is a photometric beam: the forest renderer lights, shadows and scatters it (your own gets the
     // shadow map, the exposure and the bounce).
-    const torches: ForestTorch[] = beams.filter((b) => !debug.dark.includes(b.id === OWN ? meId : b.id)).map((b) => ({ id: b.id, pos: b.origin, dir: b.axis, on: true, kind: b.id === OWN ? "local" : "remote", level: b.level }))
+    const torches: ForestTorch[] = beams.filter((b) => !debug.dark.includes(b.id === OWN ? meId : b.id)).map((b) => ({ id: b.id, pos: b.origin, dir: b.axis, on: true, kind: b.id === OWN ? "local" : "remote", level: b.level, ...(b.id === OWN && heldUp > 0.3 ? { shadowNear: 0.04 } : {}) }))
     debug.beams = beams.length
     cameraLook.frame({ t: state.t, dt, eye: camera.eye, yaw: camera.yaw, pitch: camera.pitch, torches, world, fp, place })
     if (trace) {
@@ -419,7 +436,7 @@ async function main() {
     // The smoke draws offscreen and synchronously (a presented frame makes SwiftShader's GPU process wait on it).
     if (smoke && (!smokeTarget || smokeTarget.width !== width || smokeTarget.height !== height)) { smokeTarget?.destroy(); smokeTarget = device.createTexture({ size: [width, height], format: canvasFormat, usage: GPUTextureUsage.RENDER_ATTACHMENT }) }
     creature.frame()
-    view.frame({ eye: [camera.eye[0], camera.eye[1], camera.eye[2]], viewProj: vp as Float32Array, width, height, time: state.t, dt, fovY: ((camera.fov + camera.mount.fov) * Math.PI) / 180, torches, fp, place, casters: friends.casters(ownOrigin, view.forest.settings.torchReach), batches: creatures.frame(world, time) }, stepping, smokeTarget?.createView())
+    view.frame({ eye: [camera.eye[0], camera.eye[1], camera.eye[2]], viewProj: vp as Float32Array, width, height, time: state.t, dt, fovY: ((camera.fov + camera.mount.fov) * Math.PI) / 180, torches, fp, place, casters: [...friends.casters(ownOrigin, view.forest.settings.torchReach), ...held.casters()], batches: creatures.frame(world, time) }, stepping, smokeTarget?.createView())
     // Frame time alone decides: the renderer's GPU reading runs from before encoding to the queue finishing, so it
     // counts CPU work and queue waits and read over budget on GPUs that hold 60 fps at High.
     if (!smoke && playing && quality.recordFrame(frameMs)) { view.forest.setQuality(quality.getActiveTier()); menu.sync() }
@@ -432,7 +449,7 @@ async function main() {
       prompt.innerHTML = keyPromptHtml("KeyE", has ? "Untie tape" : "Tie tape", { hold: true, progress })
     } else prompt.innerHTML = ""
     const campLight = Math.max(0, 1 - Math.hypot(at.x - world.camp.x, at.z - world.camp.z) / 30) * 0.5 * settings.campGlow
-    map.frame(state, meId, p.mapRaise, camera.yaw, ownLevel * r + campLight + 0.04, camera.walk.lateral * 40, dt)
+    map.frame(state, meId, held.held ? 0 : p.mapRaise, camera.yaw, ownLevel * r + campLight + 0.04, camera.walk.lateral * 40, dt)
     if (performance.now() > toastUntil) toast.style.opacity = "0"
     // The story: the trailhead opening at your first step out, the FIND BARBARA card, subtitles.
     // Online, not before the room has seated you (until then you'd be nobody, at the room's t 0).
@@ -449,7 +466,7 @@ async function main() {
   Object.assign(window, {
     woods: {
       get ready() { return true }, get frames() { return frames }, get time() { return time }, get paused() { return paused }, set paused(v: boolean) { paused = v },
-      renderer, camera, settings, panel, map, debug, audio, story, view, look: view.forest.settings, quality, friends, cameraLook, creature, creatures,
+      renderer, camera, settings, panel, map, held, debug, audio, story, view, look: view.forest.settings, quality, friends, cameraLook, creature, creatures,
       measure: (n?: number) => view.forest.measure(n), stats: () => view.forest.stats(),
       get state() { return session instanceof SoloSession ? session.state : session.view }, get world() { return world }, get session() { return session },
       /** Automation: room readout (your id, people and walkers seen, tapes, bytes in, KB/s, connection status). */

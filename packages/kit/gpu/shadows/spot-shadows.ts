@@ -56,6 +56,8 @@ export type SpotCandidate = {
   range: number
   /** Nominal intensity: not flicker, which would reshuffle slots every frame. */
   intensity: number
+  /** Shadow near plane (m); default `SPOT_NEAR`. Lower it for a lamp held close to what it lights (a map in hand). */
+  near?: number
 }
 
 /**
@@ -133,7 +135,7 @@ export class SpotShadowPicker {
         continue
       }
       s.weight = Math.min(1, s.weight + step)
-      const moved = !s.light || c.pos.some((v, i) => v !== s.light!.pos[i]) || c.axis.some((v, i) => v !== s.light!.axis[i]) || c.cosOuter !== s.light.cosOuter || c.range !== s.light.range
+      const moved = !s.light || c.pos.some((v, i) => v !== s.light!.pos[i]) || c.axis.some((v, i) => v !== s.light!.axis[i]) || c.cosOuter !== s.light.cosOuter || c.range !== s.light.range || (c.near ?? SPOT_NEAR) !== (s.light.near ?? SPOT_NEAR)
       s.light = c
       s.reach = spotShadowReach(c, eye)
       if (moved || this.worldDirty) s.dirty = true
@@ -194,8 +196,9 @@ export function packSpotShadows(out: Float32Array, slots: readonly SpotSlot[], f
     const l = slot.light
     const half = Math.min(Math.acos(Math.max(-1, Math.min(1, l.cosOuter))), 1.45)
     const o = 4 + n * SLOT_FLOATS
-    out.set(spotViewProj(l.pos, l.axis, half, SPOT_NEAR, l.range), o)
-    out.set([l.pos[0], l.pos[1], l.pos[2], SPOT_NEAR], o + 16)
+    const near = l.near ?? SPOT_NEAR
+    out.set(spotViewProj(l.pos, l.axis, half, near, l.range), o)
+    out.set([l.pos[0], l.pos[1], l.pos[2], near], o + 16)
     out.set([index, weight, (2 * Math.tan(half)) / s.size, s.bias], o + 20)
     out.set([l.range, i, 0, 0], o + 24)
     n++
@@ -519,7 +522,7 @@ export class SpotShadows {
       const s = slots[i]!
       if (!s.dirty || !s.light) continue
       const half = Math.min(Math.acos(Math.max(-1, Math.min(1, s.light.cosOuter))), 1.45)
-      this.device.queue.writeBuffer(this.camBuf, i * 256, spotViewProj(s.light.pos, s.light.axis, half, SPOT_NEAR, s.light.range))
+      this.device.queue.writeBuffer(this.camBuf, i * 256, spotViewProj(s.light.pos, s.light.axis, half, s.light.near ?? SPOT_NEAR, s.light.range))
       const pass = enc.beginRenderPass({ colorAttachments: [], depthStencilAttachment: { view: this.layers[i]!, depthClearValue: 1, depthLoadOp: "clear", depthStoreOp: "store" } })
       pass.setBindGroup(0, this.camGroup, [i * 256])
       for (const c of casters) {

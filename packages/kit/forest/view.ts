@@ -40,6 +40,8 @@ export type ForestTorch = {
   kind?: "local" | "remote"
   /** Output share (battery sag, flicker); default 1. */
   level?: number
+  /** Its spot shadow's near plane (m) when held close to a caster (the map in hand); default the kit's. */
+  shadowNear?: number
 }
 
 /** A small bright source seen as a point: its core sprite and the glow the air puts round it (a mast beacon). */
@@ -327,7 +329,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
 
     // ---- Spot shadow of the local torch (and, on High, the nearest other one).
     spots.settings.count = smoke || s.torchShadows === "off" ? 0 : quality.tier === "high" ? 2 : 1
-    const candidates: SpotCandidate[] = f.torches.filter(t => t.on).map(t => ({ id: 1000 + t.id, pos: t.pos, axis: t.dir, cosOuter: Math.cos(Math.min(1.2, halfAngle * 2.2)), range: s.torchReach, intensity: torchPower * (t === local ? 100 : 1) }))
+    const candidates: SpotCandidate[] = f.torches.filter(t => t.on).map(t => ({ id: 1000 + t.id, pos: t.pos, axis: t.dir, cosOuter: Math.cos(Math.min(1.2, halfAngle * 2.2)), range: s.torchReach, intensity: torchPower * (t === local ? 100 : 1), ...(t.shadowNear ? { near: t.shadowNear } : {}) }))
     pass.update(f.eye, f.viewProj, quality, s)
     const enc = device.createCommandEncoder()
     const casters = local && spots.settings.count > 0 ? pass.casters(local.pos, s.torchReach, quality.fernNear, s.foliageShadows && quality.foliageShadows ? foliageMask : null) : []

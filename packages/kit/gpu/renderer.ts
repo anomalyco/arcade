@@ -260,6 +260,17 @@ export interface FinalPass {
 }
 
 /**
+ * A pass drawn onto the resolved HDR image after temporal AA, volumes and fog, before metering, bloom and the composite:
+ * first-person viewmodels the temporal history must never see. It brings its own depth and multisampling; `frame` is
+ * the scene's group 0 (layout `passContext.frameLayout`). Without TAA it draws into the scene image before motion blur.
+ * Inactive passes cost nothing.
+ */
+export interface OverlayPass {
+  readonly active: boolean
+  encode(encoder: GPUCommandEncoder, target: GPUTextureView, width: number, height: number, frame: GPUBindGroup): void
+}
+
+/**
  * WebGPU renderer. Per frame: (1) a compute pass casts POLAR_RAYS rays from each culled light against the occluders
  * within its reach (walls, furniture with heights, people), (2) an MSAA HDR pass draws the level chunks in view,
  * instanced characters, glass and light haze, and sprites, all lit through that polar shadow map, (3) bloom, then a
@@ -333,6 +344,7 @@ export class Renderer {
   private polarPipe: GPUComputePipeline
   private pipes: Record<string, GPURenderPipeline> = {}
   private finalPass: FinalPass | null = null
+  private overlayPass: OverlayPass | null = null
   private baselinePipes: Record<string, GPURenderPipeline> = {}
   private motionPipes: Record<string, GPURenderPipeline> = {}
   private lookPipesByVariant = new Map<LookVariantMode, Record<string, GPURenderPipeline>>()
@@ -1135,6 +1147,11 @@ export class Renderer {
     this.finalPass = pass
   }
 
+  /** A pass onto the resolved image after temporal AA (viewmodels); null removes it. */
+  setOverlayPass(pass: OverlayPass | null): void {
+    this.overlayPass = pass
+  }
+
   getTemporal(): TemporalSettings | null {
     return this.temporalSettings ? { ...this.temporalSettings } : null
   }
@@ -1853,6 +1870,7 @@ export class Renderer {
 
     if (this.volumes.length && !taa) this.drawVolumes(enc, f, f.frame, [f.frame[16]!, f.frame[17]!, f.frame[18]!], this.targets.hdrView, this.targets.width, this.targets.height)
     if (!taa) this.drawFogBlur(enc, f, f.frame, this.targets.hdrView, this.targets.width, this.targets.height)
+    if (!taa && this.overlayPass?.active) this.overlayPass.encode(enc, this.targets.hdrView, this.targets.width, this.targets.height, this.sceneGroup)
 
     let activeDown0: GPUBindGroup | undefined
     let activeComposite = this.bloomPyramid.compositeGroup
@@ -1915,6 +1933,7 @@ export class Renderer {
       taa.encode(enc, runSharedBlur ? this.sharedBlur!.output : this.targets.hdrView, this.targets.depthView, this.temporalSettings!.sharpen > 0.001)
       if (this.volumes.length) this.drawVolumes(enc, f, this.unjittered, [f.frame[16]!, f.frame[17]!, f.frame[18]!], taa.outputView, this.width, this.height)
       this.drawFogBlur(enc, f, this.unjittered, taa.outputView, this.width, this.height)
+      if (this.overlayPass?.active) this.overlayPass.encode(enc, taa.outputView, this.width, this.height, this.sceneGroup)
     }
     if (this.meterPass && this.bloomSourceView) this.meterPass.encode(enc, this.bloomSourceView)
     this.bloomPyramid.encode(enc, this.pipes.down!, this.pipes.up!, activeDown0, this.bloomLevels)
