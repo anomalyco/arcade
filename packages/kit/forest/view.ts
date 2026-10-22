@@ -22,6 +22,7 @@ import { ForestBuilder } from "./offthread"
 import { ALPHA_COVERAGE_BASE } from "./alpha-coverage"
 import { GROUND_CELL, GROUND_CELLS, WOODS_FLOATS, batchHooks, cutoutDepthWgsl, forestHooks, forestShadowInstanceWgsl, moteShader, skyShader, treeVertexWgsl, woodsUniformWgsl } from "./shaders"
 import { forestPost } from "./post"
+import { adaptForestExposure, forestExposureTarget } from "./exposure"
 import { FOREST_QUALITY, createForestLookSettings, forestLookControls, kelvinColor, torchProfile, type ForestLookSettings, type ForestQuality } from "./settings"
 import type { QualityTier } from "../quality"
 import type { LabControl } from "../lab-navigation"
@@ -268,10 +269,8 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     const coverage = Math.min(1, (Math.tan(halfAngle * 1.3) / Math.tan(f.fovY / 2)) ** 2)
     const spot = local ? (s.torchPower * 5 * 0.2) / (Math.PI * Math.max(cam.hit, 0.4) ** 2) * coverage : 0
     const metered = renderer.sceneMeter
-    const key = metered ? metered.centre * s.meterGain : spot + 0.004 * s.sky + 0.0005
-    const targetStops = s.autoExposure ? Math.max(-s.adaptRange, Math.min(s.adaptRange, -Math.log2(key / 0.09) * 0.55)) : 0
-    const tau = targetStops < cam.stops ? s.adaptDarken : s.adaptBrighten
-    cam.stops += (targetStops - cam.stops) * (1 - Math.exp(-f.dt / Math.max(tau, 0.01)))
+    const targetStops = forestExposureTarget(metered, spot + 0.004 * s.sky + 0.0005, s)
+    cam.stops = adaptForestExposure(cam.stops, targetStops, f.dt, s)
     cam.exposure = Math.pow(2, cam.stops)
 
     // ---- Lights.

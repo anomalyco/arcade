@@ -84,12 +84,19 @@ export type ForestLookSettings = {
   // Camera
   exposure: number
   autoExposure: boolean
-  /** How strongly the metered frame (centre-weighted mean luminance) drives the exposure: higher stops down more. */
+  exposureModel: "metered" | "robust"
+  /** Scene-referred luminance at the fixed night exposure; the adaptive term is relative to this. */
+  nightKey: number
+  nightStops: number
+  nightStrength: number
+  /** Maximum lift above the fixed exposure, independent of the stop-down limit. */
+  adaptLift: number
+  /** Calibration gain on the scene-referred meter; higher stops down more. */
   meterGain: number
-  /** Seconds to settle when the scene gets brighter (the eye stopping down) and darker (opening up). */
+  /** Exponential time constants (63% response) when stopping down and opening up, in seconds. */
   adaptDarken: number
   adaptBrighten: number
-  /** Most the exposure moves from its base, in stops. */
+  /** Maximum stop-down below the base, in stops; adaptLift independently bounds opening. */
   adaptRange: number
   /** Sensor noise in the dark, as 1/255 at midtones; it grows with the exposure gain. */
   noise: number
@@ -113,7 +120,8 @@ export const FOREST_LOOK_DEFAULTS: Readonly<ForestLookSettings> = {
   wind: 1, gust: 0.6, trunkSway: 1, branchSway: 1, flutter: 1,
   fernDensity: 1, litter: 1, moss: 1,
   windows: 1, stringLights: 1, water: 1,
-  exposure: 1.6, autoExposure: true, meterGain: 3, adaptDarken: 0.35, adaptBrighten: 1.8, adaptRange: 1.5,
+  exposure: 1.6, autoExposure: true, meterGain: 3, adaptDarken: 0.8, adaptBrighten: 6, adaptRange: 1.5,
+  exposureModel: "robust", nightKey: 0.003, nightStops: 1.5, nightStrength: 0.85, adaptLift: 1.5,
   noise: 1, chromaNoise: 0.35, vignette: 0.35, aberration: 0.6, bloom: 0.22, halation: 0.12, glare: 0.5,
 }
 
@@ -194,10 +202,15 @@ export function forestLookControls(prefix = "woods."): LabControl[] {
     range("water", "Lake reflections", K, 0, 2, 0.05, "×"),
     range("exposure", "Exposure", C, 0.2, 6, 0.05, "×"),
     toggle("autoExposure", "Auto exposure", C),
+    select("exposureModel", "Exposure model", C, [{ value: "metered", label: "Centre meter" }, { value: "robust", label: "Night key" }], "Auto exposure"),
+    range("nightKey", "Night key", C, 0.001, 0.05, 0.001, "linear", "Auto exposure"),
+    range("nightStops", "Night offset", C, -2, 2, 0.05, "stops", "Auto exposure"),
+    range("nightStrength", "Adaptation strength", C, 0, 1, 0.05, "×", "Auto exposure"),
+    range("adaptLift", "Maximum lift", C, 0, 3, 0.05, "stops", "Auto exposure"),
     range("meterGain", "Meter gain", C, 0.1, 10, 0.05, "×", "Auto exposure"),
-    range("adaptDarken", "Stop down in", C, 0.05, 2, 0.05, "s", "Auto exposure"),
-    range("adaptBrighten", "Open up in", C, 0.2, 5, 0.1, "s", "Auto exposure"),
-    range("adaptRange", "Range", C, 0, 3, 0.1, "stops", "Auto exposure"),
+    range("adaptDarken", "Stop-down response", C, 0.05, 5, 0.05, "s", "Auto exposure"),
+    range("adaptBrighten", "Opening response", C, 0.2, 20, 0.1, "s", "Auto exposure"),
+    range("adaptRange", "Maximum stop-down", C, 0, 3, 0.1, "stops", "Auto exposure"),
     range("noise", "Sensor noise", C, 0, 3, 0.05, "/255", "Sensor"),
     range("chromaNoise", "Colour noise", C, 0, 1, 0.05, "", "Sensor"),
     range("vignette", "Vignette", C, 0, 1, 0.01, "", "Lens"),

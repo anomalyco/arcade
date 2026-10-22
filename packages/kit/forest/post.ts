@@ -6,7 +6,7 @@ import { customPostGradeWgsl } from "../gpu/post-uniform"
  *
  * - Lens: lateral chromatic aberration growing to the corners (px), cos⁴-style vignette, bloom and a red halation
  *   halo round hot sources, and veiling glare (a little of every bright source's light lifted over the frame).
- * - Exposure: the host's auto-exposure value (lags the scene: 0.2–0.6 s to stop down, 1–3 s to open up).
+ * - Exposure: the host's bounded night exposure (0.8 s stop-down / 6 s opening time constants).
  * - Sensor: noise in linear light before the curve, read noise plus shot noise (∝ √signal), scaled by the exposure
  *   gain, so a dark frame the camera has opened up on is the noisy one; a little of it in colour.
  * - Curve: a hue-preserving filmic shoulder, then sRGB.
