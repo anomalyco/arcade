@@ -11,12 +11,6 @@ import { boardStat, rulesColumns, rulesTeam, rulesWinner } from "./rules-hud"
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 
 export type MenuActions = {
-  quick(name: string): void
-  practice(name: string, mode: ModeId): void
-  sandbox(name: string): void
-  /** A private room whose first match is `mode`, playing on `maps`. */
-  create(name: string, mode: ModeId, maps: MapChoice): void
-  join(name: string, room: string): void
   /** End screen: a vote for the next mode. */
   vote(mode: ModeId): void
   /** Room host, team modes: move a player to a team, or deal random even teams. */
@@ -36,27 +30,94 @@ const MAP_KEY = "blackout.map"
 const MAP_NAMES: Record<MapChoice, string> = { office: "OFFICE", downtown: "DOWNTOWN", random: "RANDOM" }
 const MAP_BLURBS: Record<MapChoice, string> = { office: "A new office tower floor every match.", downtown: "City blocks at night: streets, alleys, shops and a plaza.", random: "Office or downtown, picked fresh every match." }
 
-/** The landing page and the scoreboard (held with Tab, and shown between floors). */
+/**
+ * Blackout's picks on the shell's title card: the mode for Bot practice and a new private room, the map that room
+ * plays on, Solo sandbox, and the live player count.
+ */
+export class LandingPicks {
+  readonly el: HTMLDivElement
+  /** The mode Bot practice and Play with friends use. */
+  mode: ModeId = modeChoices().find((id) => id === localStorage.getItem(MODE_KEY)) ?? "tdm"
+  /** What a new private room plays on. */
+  maps: MapChoice = mapChoiceOf(localStorage.getItem(MAP_KEY)) ?? "random"
+
+  constructor(sandbox: () => void) {
+    this.el = document.createElement("div")
+    this.el.className = "landing picks"
+    this.el.innerHTML = `<div class="pickhead">MODE <span>bot practice and new rooms</span></div>
+      <div class="modepick">${modeChoices().map((m) => `<button class="${m === this.mode ? "on" : ""}" data-mode="${m}" title="${esc(MODES[m].label)}">${esc(MODES[m].short)}</button>`).join("")}</div>
+      <div class="modeblurb">${this.blurbHtml(this.mode)}</div>
+      <div class="pickhead">MAP <span>new rooms</span></div>
+      <div class="mappick">${MAP_CHOICES.map((m) => `<button class="${m === this.maps ? "on" : ""}" data-map="${m}" title="${esc(MAP_BLURBS[m])}">${MAP_NAMES[m]}</button>`).join("")}</div>
+      <div class="modeblurb">${this.mapBlurbHtml(this.maps)}</div>
+      <div class="pickfoot"><button class="sandbox" data-act="sandbox">SOLO SANDBOX</button><div class="stats"></div></div>`
+    this.el.addEventListener("click", (e) => {
+      const t = (e.target as HTMLElement).closest<HTMLElement>("button")
+      if (!t) return
+      if (t.dataset.act === "sandbox") return sandbox()
+      const m = modeOf(t.dataset.mode)
+      if (m) return this.pickMode(m)
+      const map = mapChoiceOf(t.dataset.map)
+      if (map) this.pickMap(map)
+    })
+    // Hovering a mode chip shows its blurb; anywhere else, the picked mode's.
+    this.el.addEventListener("mouseover", (e) => {
+      const t = (e.target as HTMLElement).closest<HTMLElement>(".modepick [data-mode]")
+      this.blurb(modeOf(t?.dataset.mode) ?? this.mode)
+    })
+  }
+
+  /** Live counts under the picks. */
+  stats(players: number, games: number): void {
+    const el = this.el.querySelector(".stats")
+    if (el) el.textContent = players ? `${players} playing · ${games} open game${games === 1 ? "" : "s"}` : ""
+  }
+
+  private pickMode(m: ModeId): void {
+    this.mode = m
+    localStorage.setItem(MODE_KEY, m)
+    for (const b of this.el.querySelectorAll<HTMLElement>(".modepick [data-mode]")) b.classList.toggle("on", b.dataset.mode === m)
+    this.blurb(m)
+  }
+
+  private pickMap(m: MapChoice): void {
+    this.maps = m
+    localStorage.setItem(MAP_KEY, m)
+    for (const b of this.el.querySelectorAll<HTMLElement>(".mappick [data-map]")) b.classList.toggle("on", b.dataset.map === m)
+    const el = this.el.querySelector(".mappick + .modeblurb")
+    if (el) el.innerHTML = this.mapBlurbHtml(m)
+  }
+
+  private blurb(m: ModeId): void {
+    const el = this.el.querySelector(".modepick + .modeblurb")
+    const html = this.blurbHtml(m)
+    if (el && el.innerHTML !== html) el.innerHTML = html
+  }
+
+  private blurbHtml(m: ModeId): string {
+    return `<b>${esc(MODES[m].label.toUpperCase())}</b>${esc(MODES[m].blurb)}`
+  }
+
+  private mapBlurbHtml(m: MapChoice): string {
+    return `<b>${MAP_NAMES[m]}</b>${esc(MAP_BLURBS[m])}`
+  }
+}
+
+/** The scoreboard (held with Tab, and shown between floors). */
 export class Menus {
   private key = ""
-  private busy = false
-  /** The mode Create game will use. */
-  private mode: ModeId = modeChoices().find((id) => id === localStorage.getItem(MODE_KEY)) ?? "tdm"
-  /** What Create game plays on. */
-  private maps: MapChoice = mapChoiceOf(localStorage.getItem(MAP_KEY)) ?? "random"
   /** Host controls: the restart waiting on its confirming click ("reset" or a mode), and whether it's a new floor. */
   private armed: { what: string; at: number } | null = null
   private newFloor = true
 
   constructor(
     private root: HTMLElement,
-    private name: string,
     private a: MenuActions,
   ) {
     root.addEventListener("click", (e) => {
-      const t = (e.target as HTMLElement).closest<HTMLElement>("[data-act]")
-      if (t?.dataset.act === "map") return this.pickMap(mapChoiceOf(t.dataset.map) ?? this.maps)
-      if (t) this.act(t.dataset.act!, t.dataset.mode)
+      const t = (e.target as HTMLElement).closest<HTMLElement>("[data-act=vote]")
+      const m = modeOf(t?.dataset.mode)
+      if (m) this.a.vote(m)
     })
     // Team picks act on press: the scoreboard re-renders as the match goes on, which can swallow a click.
     root.addEventListener("pointerdown", (e) => {
@@ -70,37 +131,6 @@ export class Menus {
       else if (t.dataset.host === "reset" || t.dataset.host === "mode") this.confirm(t.dataset.host === "mode" ? (modeOf(t.dataset.mode) ?? "") : "reset")
       this.key = ""
     })
-    // Hovering a mode chip shows its blurb; anywhere else, the picked mode's.
-    root.addEventListener("mouseover", (e) => {
-      const t = (e.target as HTMLElement).closest<HTMLElement>(".modepick [data-mode]")
-      this.blurb(modeOf(t?.dataset.mode) ?? this.mode)
-    })
-    root.addEventListener("keydown", (e) => {
-      const t = e.target as HTMLElement
-      if (e.key !== "Enter") return
-      if (t.id === "code") this.act("join")
-      else if (t.id === "name") this.act(this.root.querySelector("[data-primary]")?.getAttribute("data-act") ?? "quick")
-    })
-  }
-
-  private act(act: string, mode?: string): void {
-    const m = modeOf(mode)
-    if (act === "vote" && m) return this.a.vote(m)
-    if (act === "mode" && m) return this.pickMode(m)
-    if (this.busy) return
-    const name = this.root.querySelector<HTMLInputElement>("#name")?.value ?? this.name
-    if (act === "quick") this.a.quick(name)
-    else if (act === "practice") this.a.practice(name, this.mode)
-    else if (act === "sandbox") this.a.sandbox(name)
-    else if (act === "create") this.a.create(name, this.mode, this.maps)
-    else if (act === "join") {
-      const fixed = this.root.querySelector<HTMLElement>("[data-room]")?.dataset.room
-      const code = (fixed ?? this.root.querySelector<HTMLInputElement>("#code")?.value ?? "").toLowerCase().replace(/[^a-z0-9]/g, "")
-      if (!code) return void this.root.querySelector<HTMLInputElement>("#code")?.focus()
-      this.a.join(name, code)
-    } else return
-    this.busy = true
-    for (const b of this.root.querySelectorAll<HTMLButtonElement>("button")) b.disabled = true
   }
 
   /** The first click arms a restart, a second within CONFIRM_MS sends it. */
@@ -113,74 +143,6 @@ export class Menus {
     }
     this.armed = null
     this.a.host(modeOf(what), this.newFloor)
-  }
-
-  private pickMode(m: ModeId): void {
-    this.mode = m
-    localStorage.setItem(MODE_KEY, m)
-    for (const b of this.root.querySelectorAll<HTMLElement>(".modepick [data-mode]")) b.classList.toggle("on", b.dataset.mode === m)
-    this.blurb(m)
-  }
-
-  private pickMap(m: MapChoice): void {
-    this.maps = m
-    localStorage.setItem(MAP_KEY, m)
-    for (const b of this.root.querySelectorAll<HTMLElement>(".mappick [data-map]")) b.classList.toggle("on", b.dataset.map === m)
-    const el = this.root.querySelector(".mappick + .modeblurb")
-    if (el) el.innerHTML = `<b>${MAP_NAMES[m]}</b>${esc(MAP_BLURBS[m])}`
-  }
-
-  /** Map chips under the modes: what a created room plays on. */
-  private mapPicker(): string {
-    return `<div class="mappick">${MAP_CHOICES.map((m) => `<button class="${m === this.maps ? "on" : ""}" data-act="map" data-map="${m}" title="${esc(MAP_BLURBS[m])}">${MAP_NAMES[m]}</button>`).join("")}</div>
-      <div class="modeblurb"><b>${MAP_NAMES[this.maps]}</b>${esc(MAP_BLURBS[this.maps])}</div>`
-  }
-
-  private blurb(m: ModeId): void {
-    const el = this.root.querySelector(".modepick + .modeblurb")
-    const html = this.blurbHtml(m)
-    if (el && el.innerHTML !== html) el.innerHTML = html
-  }
-
-  private blurbHtml(m: ModeId): string {
-    return `<b>${esc(MODES[m].label.toUpperCase())}</b>${esc(MODES[m].blurb)}`
-  }
-
-  /** The mode chips under Create game: a compact grid of short names, the hovered or picked mode's blurb below. */
-  private modePicker(): string {
-    return `<div class="modepick">${modeChoices().map((m) => `<button class="${m === this.mode ? "on" : ""}" data-act="mode" data-mode="${m}" title="${esc(MODES[m].label)}">${esc(MODES[m].short)}</button>`).join("")}</div>
-      <div class="modeblurb">${this.blurbHtml(this.mode)}</div>`
-  }
-
-  /** Name, then quick join, create game, or join a room by code. A shared link (?room=) offers just that room. */
-  landing(room: string | null, notice = ""): void {
-    this.key = "landing"
-    this.busy = false
-    this.root.className = "full"
-    this.root.innerHTML = `<div class="landing">
-      <div class="logo">BLACKOUT</div>
-      <div class="tag">Firefights at night: office floors and downtown streets.</div>
-      ${notice ? `<div class="notice">${esc(notice)}</div>` : ""}
-      <label>NAME<input id="name" maxlength="14" value="${esc(this.name)}" placeholder="your name" autofocus /></label>
-      ${
-        room
-          ? `<div class="room" data-room="${esc(room)}">ROOM <b>${esc(room.toUpperCase())}</b></div><button class="primary" data-act="join" data-primary>JOIN GAME</button>`
-          : `<button class="primary" data-act="quick" data-primary>QUICK JOIN</button>
-             <button data-act="create">CREATE GAME</button>
-             <button data-act="practice">BOT PRACTICE</button>
-             <button data-act="sandbox">SOLO SANDBOX</button>
-             ${this.modePicker()}
-             ${this.mapPicker()}
-             <div class="row"><input id="code" maxlength="8" placeholder="room code" autocapitalize="off" /><button data-act="join">JOIN</button></div>`
-      }
-      <div class="stats" id="stats"></div>
-    </div>`
-  }
-
-  /** Live counts under the buttons. */
-  stats(players: number, games: number): void {
-    const el = this.root.querySelector("#stats")
-    if (el) el.textContent = players ? `${players} playing · ${games} open game${games === 1 ? "" : "s"}` : ""
   }
 
   hide(): void {

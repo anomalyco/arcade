@@ -35,3 +35,19 @@
 - Client/server version: `scripts/build-id.ts` hashes `shared/` into `shared/build.gen.ts` (gitignored; check, test, build, deploy and dev generate it). The client sends it in `hello`; a server with a different hash replies `reload` and the client reloads into the same room (old clients without a build get an error asking them to reload).
 - Cross-game techniques and lessons: `../../docs/game-notes.md`. Shared code plans: `../../docs/shared-code.md`.
 - Characters use the shared human rig (the adapter is `@arcade/kit/avatar/anim`, re-exported from `src/game/anim.ts`; Brawl uses it too). Motion rules: `../../docs/animation.md`; tuning scripts: `scripts/animation/` (see the `procedural-animation-iteration` skill). All shared docs: `../../docs/README.md`.
+
+## Game shell
+
+- The title, lobby, Escape menu and Settings are the kit game shell (`@arcade/kit/shell`, [docs/game-shell.md](../../docs/game-shell.md)), set up in `src/main.ts`. The mode and map picks, Solo sandbox and the live player count sit in its title slot (`LandingPicks` in `src/ui/menus.ts`); the scoreboard, host controls and vote stay Blackout's own. Shell colours are at the end of `src/style.css`.
+- Deliberate changes when it moved onto the shell (Oct 22):
+  - The landing page is the shell's title: name, Quick join, Bot practice, Play with friends (Create game: a private
+    room with the picked mode and map) and Join by code or invite link, with Settings and mute in the corner. An
+    invite link shows "Join room CODE" first.
+  - Escape opens the menu (Resume, Settings, Leave room or Quit to title). Bot practice and the sandbox pause behind
+    it; a room keeps playing. Leave returns to the title.
+  - Volume and mute moved from the Lab's Volume rows to Settings (same `arcade.volume.blackout.v1` levels); M still
+    mutes. Quality is in Settings, not the Lab's View group, and uses the slow-frames policy. Reduce camera motion
+    sets the shake settings' Reduce motion.
+  - A lost connection returns to the title with the message; the reconnect state shows in the shell's pill, and the
+    HUD keeps only the idle warning.
+  - Gameplay keys (guns, equipment, T, votes, B) are ignored on the title and the menu; Backquote still opens the Lab.
