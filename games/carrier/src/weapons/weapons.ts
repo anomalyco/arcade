@@ -1,5 +1,5 @@
 import { Bullets, CombatWorld, type CombatEvent, type Ground, type MissileLaunch, bombLaunch, flareAt, groundHit } from "../../shared/combat"
-import { PLANE, type Plane, type Quat, type Vec3, bodyToWorld, quatAxis, quatMul, quatRotate } from "../../shared/plane"
+import { PLANE, type Plane, type Quat, type Vec3, bodyToWorld, quatAxis, quatMul, quatRotate, worldToShip } from "../../shared/plane"
 import { VEHICLES } from "../../shared/vehicles"
 import {
   WEAPONS,
@@ -49,6 +49,8 @@ export type WeaponsNet = {
   lock(target: number, locked: boolean): void
   /** Our rounds hit carrier `ship` `n` times since the last report. */
   shipHits(ship: number, n: number): void
+  /** Our rounds hit the jet parked in slot `slot` on carrier `ship`'s deck `n` times since the last report. */
+  deckHits(ship: number, slot: number, n: number): void
 }
 
 /** Another jet as the weapons see it this frame. */
@@ -145,6 +147,11 @@ export class Weapons {
   private bombQueued = false
   private pendingHits = new Map<number, number>()
   private pendingShipHits = new Map<number, number>()
+  /** Rounds on parked jets, by ship × 64 + slot. */
+  private pendingDeckHits = new Map<number, number>()
+  /** The parked jet (slot) at a ship-local point of carrier `ship`, or -1; the host wires it (shared/deck-jets.ts parkedAt). */
+  deckJet: ((ship: number, x: number, y: number, z: number) => number) | null = null
+  private local: Vec3 = [0, 0, 0]
   /** Burning carriers, smoke and the sinking (src/weapons/ship-fx.ts). */
   private shipFx: ShipFx
   private hitIn = 0
@@ -454,6 +461,12 @@ export class Weapons {
     }
   }
 
+  /** A jet parked on a carrier's deck was destroyed: a kill feed line and the killer's confirmation. */
+  deckKill(by: number, victim: { name: string; color: string }, at?: { x: number; y: number; z: number }): void {
+    this.hud.feed(by >= 0 ? this.who(by) : null, victim, by === this.id, "✕", "DESTROYED")
+    if (at) this.audio.explosion(this.dist(at.x, at.y, at.z), 1.4, "bomb-land")
+  }
+
   /** Our jet crashed on its own (sea, land, ship, lost). Offline the world credits whoever damaged it lately. */
   crashed(): void {
     if (this.world.authority) this.world.crash(this.id)
@@ -515,7 +528,11 @@ export class Weapons {
       this.fx.impact(kind, x, y, z)
       // Rounds on an enemy carrier: reported for the room to apply (the hit marker says they landed).
       if (kind === "ship" && ship && ship.id !== undefined && ship.team !== undefined && ship.team !== this.team) {
-        if (this.net) this.pendingShipHits.set(ship.id, (this.pendingShipHits.get(ship.id) ?? 0) + 1)
+        // A round into a jet parked on the deck counts for that jet (the room keeps its health), else for the hull.
+        const l = this.deckJet ? worldToShip(ship, x, y, z, this.local) : null
+        const slot = l ? this.deckJet!(ship.id, l[0], l[1], l[2]) : -1
+        if (this.net && slot >= 0) this.pendingDeckHits.set(ship.id * 64 + slot, (this.pendingDeckHits.get(ship.id * 64 + slot) ?? 0) + 1)
+        else if (this.net) this.pendingShipHits.set(ship.id, (this.pendingShipHits.get(ship.id) ?? 0) + 1)
         this.hud.hit()
       }
       if (target < 0) return
@@ -629,12 +646,14 @@ export class Weapons {
     for (const [id] of this.lockers) if (!this.jets.has(id) && !this.sams?.gunner(id)) this.lockers.delete(id)
     if (this.net) {
       this.hitIn -= dt
-      if (this.hitIn <= 0 && (this.pendingHits.size || this.pendingShipHits.size)) {
+      if (this.hitIn <= 0 && (this.pendingHits.size || this.pendingShipHits.size || this.pendingDeckHits.size)) {
         this.hitIn = HIT_EVERY
         for (const [target, n] of this.pendingHits) this.net.hits(target, n)
         for (const [ship, n] of this.pendingShipHits) this.net.shipHits(ship, n)
+        for (const [k, n] of this.pendingDeckHits) this.net.deckHits(Math.floor(k / 64), k % 64, n)
         this.pendingHits.clear()
         this.pendingShipHits.clear()
+        this.pendingDeckHits.clear()
       }
     }
 

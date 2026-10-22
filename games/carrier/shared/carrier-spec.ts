@@ -87,6 +87,8 @@ export const PARKING: readonly ParkingSpot[] = [
   { kind: "cart", x: -19.5, z: -2, yaw: 0, radius: 1.8 },
   { kind: "jet", x: -25, z: 36, yaw: 0.55, radius: 8.6 },
   { kind: "jet", x: -25.6, z: 92, yaw: 0.55, radius: 8.6 },
+  // Aft of the island, ahead of the stern quarter: the strike jet's bay (shared/deck-jets.ts).
+  { kind: "jet", x: -25, z: -96, yaw: 0.55, radius: 8.6 },
   { kind: "tractor", x: -17, z: 116, yaw: -0.35, radius: 2.6 },
   { kind: "crew-yellow", x: -13.6, z: 14, yaw: 1.2, radius: 0.6 },
   { kind: "crew-yellow", x: -15, z: 62, yaw: 0.8, radius: 0.6 },

@@ -1,4 +1,5 @@
 import { type Conn, RoomCore } from "../../server/core"
+import { BUILD } from "../../shared/build.gen"
 
 /** The Room Durable Object's tick (server/room.ts). */
 const TICK_MS = 50
@@ -11,7 +12,7 @@ const TICK_MS = 50
 export function localRoom(): (url: string) => WebSocket {
   const core = new RoomCore(Date.now, undefined, { dev: true })
   let timer: ReturnType<typeof setInterval> | null = null
-  return () => {
+  const open = () => {
     const sock = {
       readyState: 0 as number,
       onopen: null as ((e: Event) => void) | null,
@@ -40,4 +41,8 @@ export function localRoom(): (url: string) => WebSocket {
     timer ??= setInterval(() => core.step(), TICK_MS)
     return sock as unknown as WebSocket
   }
+  // Scripted captures join extra players through the same sockets (`open()`, a hello with `build`).
+  const g = globalThis as { carrierRoom?: unknown }
+  g.carrierRoom = { core, open, build: BUILD }
+  return open
 }

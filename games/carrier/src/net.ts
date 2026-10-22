@@ -5,6 +5,7 @@ import { kick, promote, setLock } from "../shared/squad"
 import { type Hull, unpackHull } from "../shared/fleet"
 import type { AimTuple, GunFireTuple, InterceptTuple } from "../shared/gunnery"
 import type { BoatCtlTuple, BoatTuple } from "../shared/boat"
+import type { DeckRound } from "../shared/deck-jets"
 import { type ClientMsg, type FireTuple, type FlareTuple, type PlaneTuple, type ServerMsg, type ShipTuple, type World, decodeServer, encode, roomName } from "../shared/protocol"
 import { type ObjectiveView, unpackObjective } from "../shared/objective"
 import type { BotCmd, BotInfo } from "../shared/bots"
@@ -13,8 +14,8 @@ import { RoomTime, TIME_OVERRIDE_LEAD, timeOverride, unpackTime } from "../share
 import { RoomWeather, WEATHER_OVERRIDE_LEAD, type Weather, type WeatherKind, overrideTo, packWeather, unpackOverride } from "../shared/weather"
 
 /** The room's combat messages (relays and results), queued for the weapons controller. */
-export type CombatMsg = Extract<ServerMsg, { type: "gun" | "fire" | "flare" | "seek" | "boom" | "hp" | "kill" | "sunk" }>
-const COMBAT_TYPES = new Set(["gun", "fire", "flare", "seek", "boom", "hp", "kill", "sunk"])
+export type CombatMsg = Extract<ServerMsg, { type: "gun" | "fire" | "flare" | "seek" | "boom" | "hp" | "kill" | "sunk" | "deckkill" }>
+const COMBAT_TYPES = new Set(["gun", "fire", "flare", "seek", "boom", "hp", "kill", "sunk", "deckkill"])
 /** Queued combat messages beyond this are dropped (nobody is draining them). */
 const COMBAT_MAX = 512
 /** Queued chat lines beyond this are dropped (nobody is draining them). */
@@ -61,6 +62,9 @@ export interface Net {
   sendFlare(f: FlareTuple): void
   sendSeek(on: number, locked: boolean): void
   sendShipHits(ship: number, n: number): void
+  /** Rounds on the jet parked in slot `slot` on carrier `ship`'s deck since the last report (shared/deck-jets.ts):
+   *  `w` DECK_ROUND (the jet gun, a CIWS or the boat's 25 mm). */
+  sendDeckHits(w: DeckRound, ship: number, slot: number, n: number): void
   // Ship guns (shared/gunnery.ts; dropped unless online).
   sendAim(a: AimTuple): void
   sendGunFire(g: GunFireTuple): void
@@ -280,6 +284,10 @@ class NetClient implements Net {
 
   sendSeek(on: number, locked: boolean): void {
     this.send({ type: "seek", on, locked })
+  }
+
+  sendDeckHits(w: DeckRound, ship: number, slot: number, n: number): void {
+    this.send({ type: "deckhits", w, ship, slot, n })
   }
 
   sendAim(a: AimTuple): void {

@@ -2,6 +2,7 @@ import "./style.css"
 import "@fontsource/ibm-plex-mono/300.css"
 import { makeArchipelago, type Archipelago } from "../shared/islands"
 import { teamCss, playerOf, shipOf } from "../shared/crew"
+import { DECK_ROUND, parkedAt } from "../shared/deck-jets"
 import { playerBoat, shipOps } from "../shared/ops"
 import { FLEET } from "../shared/fleet"
 import { PLANE_MODE } from "../shared/protocol"
@@ -141,6 +142,7 @@ async function main() {
     fire: (g) => net.sendGunFire(g),
     hits: (on, n) => net.sendTurretHits(on, n),
     shipHits: (ship, n) => net.sendTurretShipHits(ship, n),
+    deckHits: (ship, slot, n) => net.sendDeckHits(DECK_ROUND.ciws, ship, slot, n),
     intercept: (i) => net.sendIntercept(i),
     lock: (on, locked) => net.sendSeek(on, locked),
   }
@@ -164,6 +166,14 @@ async function main() {
   const boat = new BoatModule(renderer, input, canvas, net)
   boat.weapons = flight.weapons
   game.setBoat(boat)
+  // Rounds that strike a jet parked on a deck (shared/deck-jets.ts) count for that jet: the parked set from the crew.
+  const deckJet = (ship: number, x: number, y: number, z: number): number => {
+    const s = net.crew && shipOf(net.crew, ship)
+    return s ? parkedAt(s, net.serverNow(), x, y, z) : -1
+  }
+  flight.weapons.deckJet = deckJet
+  gunnery.deckJet = deckJet
+  boat.deckJet = deckJet
   renderer.addPass("sky", sky)
   renderer.addPass("sky", stars)
   renderer.addPass("opaque", ocean)
