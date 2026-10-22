@@ -1,7 +1,7 @@
 import type { Renderer } from "@arcade/kit/gpu/renderer"
 import { WEATHER_PRESETS, WeatherSimulation, weatherDefaults, evaluateWeatherGust, type WeatherFrameState, type WeatherLight, type WeatherPrepareInput, type WeatherSettings, type WeatherNumericKey, weatherRanges } from "@arcade/kit/weather"
-import { BoltPass, BOLT_LOOK } from "./bolt-pass"
-import { FlashLimiter, makeStrike, pickStrikeLights, rng, strikeEnd, type BoltKind, type Strike, type StrikeLight, type StrikePlan } from "./bolt"
+import { BoltPass, BOLT_LOOK } from "@arcade/kit/weather/lightning-pass"
+import { FlashLimiter, makeStrike, pickStrikeLights, rng, strikeEnd, type BoltKind, type Strike, type StrikeLight, type StrikePlan } from "@arcade/kit/weather/lightning"
 import { LOT_WEATHER, type LotWeatherSettings } from "./settings"
 import { EAVES, SHELTER_RECTS } from "./shelter"
 
