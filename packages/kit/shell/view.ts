@@ -198,7 +198,8 @@ export class ShellView {
   }
 
   private cornerHtml(): string {
-    return `<div class="as-corner"><button class="as-icon" data-act="mute" aria-label="Mute" title="Mute${this.o.muteKey === false ? "" : " (M)"}">${SPEAKER}</button><button class="as-icon as-gear" data-act="settings" aria-label="Settings" title="Settings">⚙</button></div>`
+    const mute = this.settings.channels.length ? `<button class="as-icon" data-act="mute" aria-label="Mute" title="Mute${this.o.muteKey === false ? "" : " (M)"}">${SPEAKER}</button>` : ""
+    return `<div class="as-corner">${mute}<button class="as-icon as-gear" data-act="settings" aria-label="Settings" title="Settings">⚙</button></div>`
   }
 
   private footHtml(): string {
@@ -209,13 +210,14 @@ export class ShellView {
   private settingsHtml(): string {
     const s = this.settings
     const vol = s.channels.map((c) => `<label class="as-field"><span>${esc(s.labels[c])}</span><input type="range" min="0" max="100" step="5" data-vol="${c}" /><output></output></label>`).join("")
+    const sound = s.channels.length > 0
     const mute = `<div class="as-field"><span></span><button class="as-btn as-mute" data-act="mute" aria-pressed="false"><span class="as-mute-label">Mute</span>${this.o.muteKey === false ? "" : keyCapHtml("KeyM")}</button></div>`
     const quality = s.quality
       ? `<div class="as-head">Graphics</div><div class="as-field"><span>Quality</span><div class="as-seg">${QUALITY.map(([m, label]) => `<button data-act="quality" data-mode="${m}" aria-pressed="${s.quality!.mode === m}">${label}</button>`).join("")}</div></div><div class="as-note" data-note="quality"></div>`
       : ""
     const sections = s.sections.map((sec) => `<div class="as-head">${esc(sec.title)}</div>${sec.rows.map((r) => this.rowHtml(sec.id, r)).join("")}`).join("")
     const controls = `<div class="as-head">Controls</div><label class="as-field"><span>Reduce camera motion</span><input type="checkbox" data-act="reduce-motion"${s.reduceMotion ? " checked" : ""} /><i></i></label><div class="as-field"><span>Key labels</span><div class="as-seg as-seg2">${KEY_LABEL_OPTIONS.map((k) => `<button data-act="key-labels" data-mode="${k.value}" aria-pressed="${s.keyLabels === k.value}">${esc(k.label)}</button>`).join("")}</div></div>`
-    return `<h2 class="as-heading">Settings</h2><div class="as-settings"><div class="as-head">Sound</div>${vol}${mute}${quality}${sections}${controls}</div><button class="as-btn as-primary" data-act="back">Done</button>`
+    return `<h2 class="as-heading">Settings</h2><div class="as-settings">${sound ? `<div class="as-head">Sound</div>${vol}${mute}` : ""}${quality}${sections}${controls}</div><button class="as-btn as-primary" data-act="back">Done</button>`
   }
 
   private rowHtml(section: string, r: ShellRow): string {

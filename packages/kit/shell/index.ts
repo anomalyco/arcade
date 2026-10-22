@@ -25,6 +25,7 @@ export function createShellQuality<P extends QualityScaling>(options: Omit<GameQ
 export type GameShellOptions = Omit<ShellViewOptions, "muteKey"> & {
   /** The game's id (storage keys, `<game>.name`). */
   game: string
+  /** Volume channels, master first; `[]` for a silent game (no Sound section, mute button or M key). */
   channels?: readonly VolumeChannel[]
   labels?: Partial<Record<VolumeChannel, string>>
   quality?: ShellQuality | null
@@ -88,7 +89,7 @@ export class GameShell {
     })
     this.lobby = o.lobby ? new ShellLobby({ game: o.game, ...o.lobby }) : null
     this.loading = o.loading ? new ShellLoading(o.loading) : null
-    this.view = o.view === false || typeof document === "undefined" ? null : new ShellView(o.root ?? document.body, { ...o, muteKey: o.muteKey !== false }, this.settings, this.flow, this.lobby, hidden ? null : this.loading)
+    this.view = o.view === false || typeof document === "undefined" ? null : new ShellView(o.root ?? document.body, { ...o, muteKey: o.muteKey !== false && this.settings.channels.length > 0 }, this.settings, this.flow, this.lobby, hidden ? null : this.loading)
     const guard = o.leaveGuard
     this.guard = guard === false ? null : new LeaveGuard(guard ?? (() => Boolean(this.lobby?.room) || (this.flow.started && this.playedMs >= LEAVE_GUARD_AFTER_MS)))
     const onLeave = o.onLeave
@@ -102,7 +103,8 @@ export class GameShell {
       }),
     )
     this.wasStarted = this.flow.started
-    if (o.muteKey !== false && typeof window !== "undefined") {
+    const muteKeyOn = o.muteKey !== false && this.settings.channels.length > 0
+    if (muteKeyOn && typeof window !== "undefined") {
       const muteKey = typeof o.muteKey === "function" ? o.muteKey : () => true
       const key = (e: KeyboardEvent) => {
         if (e.code !== "KeyM" || !muteKey() || e.repeat || e.metaKey || e.ctrlKey || e.altKey || o.keysBlocked?.() || isEditable(e.target)) return
