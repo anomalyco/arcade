@@ -174,8 +174,9 @@ pole feet, kerbs, furniture and cars where shadow maps are too coarse.
   reconstruct depth at the exact integer texel (Night Shift, #389); the Lot excludes its street lamps from the contact
   irradiance.
 
-**Baked contact AO.** Floor AO under walls and furniture and vertex AO in foliage cost nothing per frame. Missing on
-architecture and props (`v.color.a` is unused).
+**Baked contact AO.** Floor AO under walls and furniture and vertex AO in foliage cost nothing per frame. Outbreak
+also stamps base darkening and edge tone into `v.color.a` on its buildings and props (`stampOutbreakVertexTone` in
+`games/outbreak/src/lighting.ts`); the kit's `Mesh.box` and `bevelBox` still leave it at 1.0, so other games miss it.
 
 ## Fog, mist and volumetrics
 
