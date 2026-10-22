@@ -14,6 +14,8 @@ proven animation techniques to animation.md, not here.
 
 ## Proving a change
 
+- **One signal for fluorescent light and sound (Night Shift).** `games/nightshift/src/polish/tube.ts` supplies the same seeded level/edge pair to the tube, light and live/offline ballast mixer. The production 24-second input tape records 11 starter frames with no browser/GPU errors; stereo audio peaks at −26.81 dBFS without clipping. Whole-polish Metal cost and its shared-worker caveat are in `games/nightshift/POLISH-NOTES.md`; do not attribute that cost to the tube alone.
+
 - **Half-resolution contact-shadow stripes (Night Shift).** Reconstruct depth at the sampled texel's centre and use integer ±1 neighbours for normals (`gpu/contact-shadows.ts`, `volumeWorldAtTexel`). Floating UV neighbour offsets at half-resolution centres can round into the wrong full-resolution texel. A matched 48-frame turn reduced affected-panel luminance-difference RMS from .011944 to .001563 (−86.9%) with shadows enabled; removing material detail or spotlight/blind shadows did not help. Proof: Night Shift `scripts/turn-proof.ts`, `WALK-NOTES.md`, gallery `nightshift-2026-10-20/iteration-17/turn/`.
 
 - **Minified normals and wet reflections (Lot, AR-103).** `gpu/normal-mips.ts` filters decoded unit normals without
