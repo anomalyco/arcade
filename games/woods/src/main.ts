@@ -256,7 +256,7 @@ async function main() {
   /**
    * The creature's Lab hooks. Trigger now places a sighting at once by the schedule's own rules (solo: in the sim, so it
    * plays like a scheduled one; a room: on this machine only). With no friend's light 48 m out to cross, solo stages
-   * one: a friend 70 m ahead signalling, then it triggers a second later when the shaft is up.
+   * one: a friend 64–96 m ahead sweeping their beam back past you, and it triggers a second later.
    */
   const creature = {
     stageAt: 0,
@@ -272,22 +272,25 @@ async function main() {
         if (plan) { e = { kind: "creature", at: state.t, x0: plan.x0, z0: plan.z0, x1: plan.x1, z1: plan.z1, dur: plan.dur, seed: plan.seed, seq: -1 }; creatures.start(e, time); audio.event(e) }
       }
       if (e) { creature.last = e; return e }
-      if (session instanceof SoloSession && !creature.stageAt && creature.stage()) { creature.stageAt = time + 1.2; say("A friend is signalling up ahead…", 2); return null }
+      if (session instanceof SoloSession && !creature.stageAt && creature.stage()) { creature.stageAt = time + 1.2; say("A friend's light, far ahead…", 2); return null }
       say("Nothing for it to cross: it needs a friend's light 48 m or more away in sight.", 4)
       return null
     },
-    /** Solo: a friend 70 m ahead, in sight, beam up (Trigger now's backdrop). */
+    /** Solo: a friend 64–96 m ahead in sight (farther first, so it crosses inside their beam), sweeping it back past you. */
     stage(): boolean {
       if (!(session instanceof SoloSession)) return false
       const st = session.state, me = session.self
       const brain = st.brains[0], bot = brain && st.players.find((p) => p.id === brain.id)
       if (!brain || !bot) return false
-      for (const off of [0, 0.08, -0.08, 0.16, -0.16, 0.25, -0.25, 0.35, -0.35]) for (const d of [70, 64, 76, 58, 84]) {
+      for (const off of [0, 0.08, -0.08, 0.16, -0.16, 0.25, -0.25, 0.35, -0.35]) for (const d of [88, 80, 96, 72, 64]) {
         const yaw = camera.yaw + off, x = me.x - Math.sin(yaw) * d, z = me.z - Math.cos(yaw) * d
         const h = world.params.half - 8
         if (Math.abs(x) > h || Math.abs(z) > h || isDeepWater(world, x, z) || trunkBetween(world, me.x, me.z, x, z, 0.3)) continue
+        const back = Math.atan2(-(me.x - x), -(me.z - z)) + 0.4, bx = x - Math.sin(back) * 10, bz = z - Math.cos(back) * 10
+        if (trunkBetween(world, me.x, me.z, bx, bz, 0.3)) continue
+        // Their beam swept back past you: the mist scatters it forward, so its air glows behind the crossing.
         Object.assign(bot, { x, z, vx: 0, vz: 0, light: true })
-        brain.mode = "found"; brain.timer = 24
+        brain.mode = "wait"; brain.timer = 8; brain.heading = back
         return true
       }
       return false
@@ -446,7 +449,7 @@ async function main() {
 
   Object.assign(window, {
     woods: {
-      get ready() { return true }, get frames() { return frames }, get paused() { return paused }, set paused(v: boolean) { paused = v },
+      get ready() { return true }, get frames() { return frames }, get time() { return time }, get paused() { return paused }, set paused(v: boolean) { paused = v },
       renderer, camera, settings, panel, map, debug, audio, story, view, look: view.forest.settings, quality, friends, cameraLook, creature, creatures,
       measure: (n?: number) => view.forest.measure(n), stats: () => view.forest.stats(),
       get state() { return session instanceof SoloSession ? session.state : session.view }, get world() { return world }, get session() { return session },

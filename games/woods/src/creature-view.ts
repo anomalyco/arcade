@@ -27,6 +27,8 @@ export class CreatureView {
   private runs: Run[] = []
   /** Drawn this frame (automation): the creature's chest in world space, or null. */
   readonly last: { at: V3 | null; seq: number; drawn: number } = { at: null, seq: -1, drawn: 0 }
+  /** Automation only: draw it white (0..1) to find it in a frame. */
+  debugFlash = 0
 
   constructor(renderer: Renderer) {
     const seg = (length: number, top: number, bottom: number, sides = 6): Part => {
@@ -37,18 +39,19 @@ export class CreatureView {
     }
     const head = new Mesh()
     // A narrow skull with a long jaw: two tapered prisms, hanging down from the crown.
-    head.prism(0, 0, 0.085, 0.045, -0.1, 0, 7, [...BLACK], MAT.glow, 0)
-    head.prism(0, 0, 0.035, 0.085, -BODY.head, -0.1, 7, [...BLACK], MAT.glow, 0)
+    head.prism(0, 0, 0.1, 0.055, -0.1, 0, 7, [...BLACK], MAT.glow, 0)
+    head.prism(0, 0, 0.045, 0.1, -BODY.head, -0.1, 7, [...BLACK], MAT.glow, 0)
     this.parts = {
-      thigh: seg(BODY.thigh, 0.07, 0.045),
-      shin: seg(BODY.shin, 0.045, 0.024),
-      foot: seg(BODY.foot, 0.03, 0.012, 4),
-      torso: seg(BODY.torso, 0.13, 0.075, 7),
-      neck: seg(BODY.neck, 0.038, 0.032, 5),
+      // Thin for its length, but thick enough to cover a pixel at 45–80 m, or the far limbs would just vanish.
+      thigh: seg(BODY.thigh, 0.1, 0.062),
+      shin: seg(BODY.shin, 0.062, 0.036),
+      foot: seg(BODY.foot, 0.04, 0.016, 4),
+      torso: seg(BODY.torso, 0.17, 0.1, 7),
+      neck: seg(BODY.neck, 0.05, 0.042, 5),
       head: { model: renderer.addModel(head), length: BODY.head },
-      upper: seg(BODY.upper, 0.042, 0.03),
-      fore: seg(BODY.fore, 0.03, 0.018),
-      fingers: seg(BODY.fingers, 0.018, 0.004, 4),
+      upper: seg(BODY.upper, 0.058, 0.044),
+      fore: seg(BODY.fore, 0.044, 0.028),
+      fingers: seg(BODY.fingers, 0.026, 0.006, 4),
     }
   }
 
@@ -109,7 +112,7 @@ export class CreatureView {
     const lowest = Math.min(L.a[1], R.a[1])
     const hip: V3 = [x + right[0] * sway, ground - lowest + 0.05 + 0.015 * Math.cos(phase * 2), z + right[2] * sway]
     const push = this.fp.push
-    const seg = (part: Part, from: V3, to: V3) => emit(push, part.model, limb(from, to, f, up), BLACK, 0)
+    const seg = (part: Part, from: V3, to: V3) => emit(push, part.model, limb(from, to, f, up), BLACK, this.debugFlash)
     for (const [side, g] of [[-1, L], [1, R]] as const) {
       const h = madd(hip, right, side * B.hipW * s)
       const knee = add(h, g.k), ankle = add(h, g.a)
