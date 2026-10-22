@@ -2,25 +2,25 @@ import "./style.css"
 import "@fontsource/barlow-condensed/600.css"
 import "@fontsource/barlow-condensed/800.css"
 import { Input } from "@arcade/kit/client/input"
-import { GameQuality } from "@arcade/kit/client/quality"
+import { keyPromptHtml } from "@arcade/kit/client/key-cap"
 import { attachLabPanelControl } from "@arcade/kit/dev-control"
 import { openGpu } from "@arcade/kit/gpu/boot"
 import { applyLookPreset, createLookControls, createLookSettings } from "@arcade/kit/gpu/look"
 import { Renderer } from "@arcade/kit/gpu/renderer"
 import { GpuPerf } from "@arcade/kit/gpu-perf"
 import { type LabControl, LabPanel, type LabSettings } from "@arcade/kit/lab-panel"
+import { audioRuntimeSync, createGameShell, createShellQuality, type GameShell } from "@arcade/kit/shell"
 import { ROSTER } from "../shared/characters"
 import { DEFAULT_FEEL, FEEL, GAME } from "../shared/config"
-import { cleanName } from "../shared/protocol"
+import { NAME_MAX, cleanName } from "../shared/protocol"
 import { Game } from "./game/game"
 import { ARENA_THEMES, type ArenaThemeId, DEFAULT_ARENA_THEME } from "./render/arena-mesh"
 import { LocalSession, NetSession, REJOIN_KEY, type Session } from "./session"
 import { Sound } from "./sound"
 import { Hud } from "./ui/hud"
-import { Menus } from "./ui/menus"
+import { Menus, titleArt } from "./ui/menus"
 import { BRAWL_QUALITY } from "./quality"
 
-const NAME_KEY = `${GAME.id}.name`
 const PICK_KEY = `${GAME.id}.pick`
 
 async function main() {
@@ -36,14 +36,18 @@ async function main() {
   const perf = new GpuPerf(g.device)
   const renderer = new Renderer(g.device, g.context, g.format)
   const params = new URLSearchParams(location.search)
-  // Resolution and bloom follow the quality tier (Auto by default; View → Quality in the Lab).
-  const quality = new GameQuality({
+  // Resolution and bloom follow the quality tier: Auto starts High and steps down only on slow frames (Settings).
+  const quality = createShellQuality({
     game: GAME.id,
     tiers: BRAWL_QUALITY,
     params,
     gpuMs: () => perf.gpuMs ?? renderer.lastGpuMs,
-    onChange: (tier) => renderer.setBloomLevels(tier.bloomLevels),
+    onChange: (tier) => {
+      renderer.setBloomLevels(tier.bloomLevels)
+      shell?.settings.changed()
+    },
   }).expose()
+  let shell: GameShell | null = null
   renderer.setBloomLevels(quality.profile.bloomLevels)
   const themeParam = params.get("theme") as ArenaThemeId | null
   let activeTheme: ArenaThemeId = themeParam && themeParam in ARENA_THEMES ? themeParam : DEFAULT_ARENA_THEME
@@ -103,7 +107,6 @@ async function main() {
     input.release()
     Object.assign(FEEL, labSettings)
   }, { open: false, presets: false })
-  quality.addTo(labPanel)
   attachLabPanelControl(labPanel)
 
   const begin = (s: Session) => {
@@ -116,24 +119,11 @@ async function main() {
     if (zoom) game.zoom = zoom
   }
   const play = (name: string, s: (name: string) => Session) => {
-    const clean = cleanName(name)
-    localStorage.setItem(NAME_KEY, clean)
-    begin(s(clean))
+    begin(s(cleanName(name)))
     menus.hide()
   }
   const watch = () => begin(new LocalSession("", { watch: true, bots: Number(params.get("bots")) || 4, seed }))
-  const fatal = (message: string) => {
-    history.replaceState(null, "", location.pathname)
-    watch()
-    menus.landing(null, message)
-  }
-  const base = location.pathname.replace(/[^/]*$/, "")
-  const api = (path: string) => fetch(`${base}api/${path}`, { method: "POST" }).then((r) => r.json() as Promise<{ room: string }>)
-  const failed = (e: unknown) => menus.landing(null, `Couldn't reach the server (${e instanceof Error ? e.message : String(e)}).`)
-  const enter = (name: string, room: string, priv = false) => {
-    history.replaceState(null, "", `?room=${room}`)
-    play(name, (n) => new NetSession(room, n, pick, fatal, priv))
-  }
+  const enter = (name: string, room: string, priv = false) => play(name, (n) => new NetSession(room, n, pick, fatal, priv))
   const practice = (name: string) => play(name, (n) => new LocalSession(n, { pick, seed }))
   const choose = (char: string) => {
     pick = char
@@ -145,21 +135,44 @@ async function main() {
     session?.send({ type: "ready", ready: on })
     sound.play(on ? "ui.ping" : "ui.tick")
   }
-  const menus = new Menus(menuEl, localStorage.getItem(NAME_KEY) ?? "", {
-    quick: (name) => api("quick").then((r) => enter(name, r.room), failed),
-    practice,
-    create: (name) => api("create").then((r) => enter(name, r.room, true), failed),
-    join: (name, room) => enter(name, room),
-    watch: () => {
+  const menus = new Menus(menuEl, { pick: choose, ready })
+  // The title, lobby, Escape menu and Settings are the kit game shell. The bots play behind the title.
+  const gameShell = createGameShell({
+    game: GAME.id, title: GAME.title, subtitle: "3-stock ring-out brawler", quickLabel: "Quick play", soloLabel: "Practice vs bots",
+    friendsNote: "a private room", askName: true, legacyMuteKey: "brawl.muted", quality,
+    channels: ["master", "effects"],
+    keysBlocked: () => labPanel.hasFocus(),
+    start: params.has("practice") || params.has("watch") || Boolean(roomParam && sessionStorage.getItem(REJOIN_KEY) === roomParam) ? "playing" : "title",
+    controls: () => [keyPromptHtml("KeyW", "Move"), keyPromptHtml("Mouse0", "Attack"), keyPromptHtml("KeyQ", "Power"), keyPromptHtml("KeyE", "Power"), keyPromptHtml("Space", "Dodge"), keyPromptHtml("KeyM", "Mute"), keyPromptHtml("Escape", "Menu")].join(" "),
+    lobby: {
+      friends: true, quick: true, maxName: NAME_MAX, fallbackName: "guest",
+      onSolo: (name) => practice(name),
+      // Brawl plays as soon as it joins: its own select screen is where the room gathers and readies.
+      onJoin: (room, name) => {
+        enter(name, room, false)
+        gameShell.flow.play()
+      },
+    },
+    onLeave: () => {
       watch()
       menus.hide()
+      gameShell.lobby!.setRoom(null)
     },
-    pick: choose,
-    ready,
   })
+  shell = gameShell
+  const lobby = gameShell.lobby!
+  gameShell.view?.titleSlot.append(titleArt(() => {
+    watch()
+    gameShell.flow.play()
+  }))
+  const syncAudio = audioRuntimeSync(gameShell.settings, sound.runtime)
+  function fatal(message: string) {
+    gameShell.flow.leave()
+    lobby.setConnection("offline", message)
+  }
 
   input.onKey = (code) => {
-    if (code === "KeyM") sound.setMuted(!sound.muted)
+    if (!gameShell.playing) return
     const snap = game?.snap
     if (!game || !snap || !session?.myId) return
     if (snap.phase === "select") {
@@ -178,20 +191,18 @@ async function main() {
   // Back from a version reload: straight into the same room.
   const rejoin = sessionStorage.getItem(REJOIN_KEY)
   sessionStorage.removeItem(REJOIN_KEY)
-  const storedName = localStorage.getItem(NAME_KEY) ?? ""
-  if (rejoin && rejoin === roomParam) enter(storedName, rejoin)
-  else if (params.has("practice")) {
+  const storedName = lobby.name
+  if (rejoin && rejoin === roomParam) {
+    enter(storedName, rejoin)
+    lobby.setRoom(rejoin)
+  } else if (params.has("practice")) {
     if (params.get("pick")) pick = params.get("pick")!
     practice(storedName || "you")
     if (params.get("auto") === "1") {
       if (!pick) choose(ROSTER[0]!.id)
       ready(true)
     }
-  } else if (params.has("watch")) watch()
-  else {
-    watch()
-    menus.landing(roomParam)
-  }
+  } else watch()
 
   const resize = () => {
     if (quality.fit(canvas, innerWidth, innerHeight)) renderer.resize(canvas.width, canvas.height)
@@ -206,17 +217,26 @@ async function main() {
     last = now
     const w = innerWidth
     const h = innerHeight
-    quality.frame(now)
+    gameShell.tick(now)
+    syncAudio()
+    if (gameShell.flow.screen === "title" || gameShell.playing) quality.frame(now)
+    else quality.pause()
     perf.enabled = quality.wantsGpuTiming
     if (quality.fit(canvas, w, h)) renderer.resize(canvas.width, canvas.height)
     if (game && session) {
-      input.enabled = game.snap?.phase === "play" && !!session.myId
-      game.update(dt, input, w, h)
-      renderer.render(game.build(w, h, dt))
+      const title = gameShell.flow.screen === "title"
+      // Paused practice stops the clock; a room keeps playing behind the menu.
+      const frozen = gameShell.flow.screen === "paused" && session instanceof LocalSession && !title
+      input.enabled = gameShell.playing && game.snap?.phase === "play" && !!session.myId
+      if (!frozen) game.update(dt, input, w, h)
+      renderer.render(game.build(w, h, frozen ? 0 : dt))
       sound.listen(game.cam.x, game.cam.z)
-      hud.show(!menus.landingShown)
-      hud.update(game, w, h, session.status())
-      menus.update(game.snap, game.roster, session.myId, session.room, (id) => game!.colorOf(id))
+      hud.show(!title)
+      const status = session.status()
+      if (session.room) lobby.setSocketStatus(status)
+      hud.update(game, w, h, status && /idle/i.test(status) ? status : null)
+      if (title) menus.hide()
+      else menus.update(game.snap, game.roster, session.myId, session.room, (id) => game!.colorOf(id))
     }
     requestAnimationFrame(frame)
   }

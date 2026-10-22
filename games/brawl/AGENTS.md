@@ -22,3 +22,16 @@
   `globalThis.practice` is the offline World.
 - Captures: `bun scripts/capture.ts --query "watch&seed=4" --video 25 --out captures/v` against a built `dist`; run
   it through `hivemind run --kind browser`.
+
+## Game shell
+
+- The title, lobby, Escape menu and Settings are the kit game shell (`@arcade/kit/shell`, [docs/game-shell.md](../../docs/game-shell.md)), set up in `src/main.ts`. The roster parade and Watch the bots sit in its title slot (`titleArt` in `src/ui/menus.ts`); the character select and results stay Brawl's own room screens. Shell colours are at the end of `src/style.css`.
+- Deliberate changes when it moved onto the shell (Oct 22):
+  - The landing page is the shell's title: name, Quick play, Practice vs bots, Play with friends (a private room) and
+    Join by code or invite link, with Settings and mute in the corner. An invite link shows "Join room CODE" first.
+  - Escape opens the menu (Resume, Settings, Leave room or Quit to title). Practice pauses behind it; a room keeps
+    playing. Leave returns to the title with the bots playing behind it.
+  - M mutes from the shell (the old `brawl.muted` is read once); Settings has Master and Effects. Quality is in
+    Settings, not the Lab's View group, and uses the slow-frames policy.
+  - Connection problems show in the shell's reconnect pill; the HUD keeps only the idle warning.
+  - Gameplay keys are ignored on the title and the menu.
