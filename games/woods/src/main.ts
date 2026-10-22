@@ -78,7 +78,8 @@ async function main() {
   performance.mark("woods:world")
 
   let forcePlay = false, begun = false
-  // The Lab panel stays open while you play: it only takes keys while it has focus, and a click on the woods locks.
+  // The Lab panel stays open while you play (capture "focus"): it takes keys only while it has focus, and a click on the
+  // woods hands input back and locks.
   const locked = () => document.pointerLockElement === canvas
   const active = () => forcePlay || (locked() && !document.hidden)
   const camera = new WoodsCamera(canvas, () => false, settings, active)
@@ -86,15 +87,16 @@ async function main() {
   const spawn = world.camp.spawn
   camera.yaw = spawn.yaw; camera.pitch = -0.05
 
-  const panel = new LabPanel(settings, [...FEEL_CONTROLS.filter((c) => !LOOK_KEYS.has(c.field ?? c.key)), ...WALK_CONTROLS], params, () => { camera.release(); keys.clear() }, { open: false, pill: false, groupActions: false, capture: "focus", onToggle: () => { if (locked()) unfocusPanel(); syncOverlays() } })
+  const panel = new LabPanel(settings, [...FEEL_CONTROLS.filter((c) => !LOOK_KEYS.has(c.field ?? c.key)), ...WALK_CONTROLS], params, () => { camera.release(); keys.clear() }, { open: false, pill: false, groupActions: false, capture: "focus", openGroups: ["Flashlight"], onToggle: () => syncOverlays() })
   panel.addControls(view.forest.settings as unknown as Record<string, number | string | boolean>, view.forest.controls())
   panel.addControls(look, [{ key: "woods.quality", field: "quality", label: "Quality", group: "Camera", subsection: "Performance", type: "select", options: [{ value: "auto", label: "Auto" }, { value: "high", label: "High" }, { value: "balanced", label: "Balanced" }, { value: "low", label: "Low" }] }])
   panel.addControls(friends as unknown as Record<string, boolean>, [
-    { key: "woods.realisticPeople", field: "realistic", label: "Realistic people", group: "Camera", subsection: "Friends", type: "toggle" },
-    { key: "woods.smoothFriends", field: "smooth", label: "Smooth friends", group: "Camera", subsection: "Friends", type: "toggle" },
-    { key: "woods.beamSettle", field: "beamSettle", label: "Friend beam settle", group: "Camera", subsection: "Friends", min: 0.02, max: 0.4, step: 0.01, unit: "s" },
+    { key: "woods.realisticPeople", field: "realistic", label: "Realistic people", group: "Friends", subsection: "Drawing", type: "toggle" },
+    { key: "woods.smoothFriends", field: "smooth", label: "Smooth friends", group: "Friends", subsection: "Drawing", type: "toggle" },
+    { key: "woods.beamSettle", field: "beamSettle", label: "Friend beam settle", group: "Friends", subsection: "Drawing", min: 0.02, max: 0.4, step: 0.01, unit: "s" },
   ])
   audio.bindControls(panel)
+  panel.setView({ order: ["Walking", "Flashlight", "Camera", "Mist", "Night", "Forest", "Tape & map", "Friends", "Sound", "Volume"] })
   attachLabPanelControl(panel)
   let regenAt = 0, worldKey = `${settings.trunkDensity}`, qualityMode = look.quality
 
@@ -120,7 +122,6 @@ async function main() {
     setMode: (mode) => { look.quality = mode; panel.sync() },
     active: () => quality.getActiveTier(),
   })
-  function unfocusPanel() { if (panel.hasFocus()) (document.activeElement as HTMLElement | null)?.blur() }
   function syncOverlays() {
     const free = !forcePlay && !locked()
     start.hidden = !free || begun || panel.visible
@@ -133,7 +134,7 @@ async function main() {
   const play = () => { audio.begin(); requestCanvasPointerLock(canvas) }
   document.addEventListener("pointerlockchange", () => {
     release()
-    if (locked()) { begun = true; unfocusPanel() }
+    if (locked()) begun = true
     syncOverlays()
   })
   canvas.addEventListener("click", () => audio.begin())

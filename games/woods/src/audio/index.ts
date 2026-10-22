@@ -129,9 +129,9 @@ export class WoodsAudio {
     this.bank.bindControls(panel)
     panel.addControls(this.sound, SOUND_CONTROLS)
     const controls: LabControl[] = [
-      { key: "audition", label: "Distant sound", group: "Sound", type: "select", options: DISTANT_SOUNDS.map((s, i) => ({ value: i, label: s.slice(4) })) },
-      { key: "auditionPlay", label: "Play it somewhere out there", group: "Sound", type: "action", run: () => { void this.auditionNow(DISTANT_SOUNDS[this.lab.audition] ?? "far.owl") } },
-      { key: "solo", label: "Solo a layer", group: "Sound", type: "select", options: [{ value: -1, label: "Everything" }, ...LAYERS.map((l, i) => ({ value: i, label: l }))], change: (v) => { if (this.mix) this.mix.scape.solo = LAYERS[Number(v)] ?? null } },
+      { key: "audition", label: "Distant sound", group: "Sound", subsection: "Audition", type: "select", options: DISTANT_SOUNDS.map((s, i) => ({ value: i, label: s.slice(4) })) },
+      { key: "auditionPlay", label: "Play it somewhere out there", group: "Sound", subsection: "Audition", type: "action", run: () => { void this.auditionNow(DISTANT_SOUNDS[this.lab.audition] ?? "far.owl") } },
+      { key: "solo", label: "Solo a layer", group: "Sound", subsection: "Audition", type: "select", options: [{ value: -1, label: "Everything" }, ...LAYERS.map((l, i) => ({ value: i, label: l }))], change: (v) => { if (this.mix) this.mix.scape.solo = LAYERS[Number(v)] ?? null } },
     ]
     panel.addControls(this.lab, controls)
   }
