@@ -93,3 +93,12 @@ test("the opening: Walt and five calls the first night, two calls after, never y
   expect(Math.min(...d)).toBeLessThan(15)
   expect(Math.max(...d)).toBeGreaterThan(100)
 })
+
+test("two players seated as different searchers hear the same opening takes from the others", () => {
+  const y = world.camp.spawn.yaw, from = { x: world.camp.spawn.x, z: world.camp.spawn.z, fx: -Math.sin(y), fz: -Math.cos(y) }
+  const owen = openingLines(world, from, "owen", 1, 9), tess = openingLines(world, from, "tess", 1, 9)
+  const key = (e: VoiceEvent) => `${e.seq}:${e.line}`
+  // Owen isn't in the opening, so Owen's client hears every beat; Tess's misses only her own.
+  expect(tess.map(key)).toEqual(owen.filter((e) => e.cast !== "tess").map(key))
+  expect(owen.some((e) => e.cast === "tess")).toBe(true)
+})

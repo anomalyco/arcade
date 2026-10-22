@@ -12,6 +12,8 @@ export type SettingsHost = {
   /** What the searchers say, shown as it reaches you. */
   subtitles(): boolean
   setSubtitles(on: boolean): void
+  /** Something here changed a setting the Lab panel also shows. */
+  changed(): void
 }
 
 const TIER: Record<QualityTier, string> = { high: "High", balanced: "Balanced", low: "Low" }
@@ -36,12 +38,13 @@ export class SettingsMenu {
         host.bank.volumes[key] = Number(input.value)
         host.bank.applyVolumes()
         this.sync()
+        host.changed()
       })
       return [input, input.nextElementSibling as HTMLOutputElement, key]
     })
-    this.mute.addEventListener("click", () => { host.bank.setMuted(!host.bank.muted); this.sync() })
-    this.subtitles.addEventListener("click", () => { host.setSubtitles(!host.subtitles()); this.sync() })
-    for (const b of this.modes) b.addEventListener("click", () => { host.setMode(b.dataset.mode as QualityMode); this.sync() })
+    this.mute.addEventListener("click", () => { host.bank.setMuted(!host.bank.muted); this.sync(); host.changed() })
+    this.subtitles.addEventListener("click", () => { host.setSubtitles(!host.subtitles()); this.sync(); host.changed() })
+    for (const b of this.modes) b.addEventListener("click", () => { host.setMode(b.dataset.mode as QualityMode); this.sync(); host.changed() })
     this.sync()
   }
 

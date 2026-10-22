@@ -8,7 +8,7 @@ import type { WoodsWorld } from "../../shared/world"
 import { WOODS_SFX } from "../sfx"
 import { SOUND, SOUND_CONTROLS, type SoundSettings } from "./settings"
 import { Soundscape, type Listener, type SoundLayer } from "./soundscape"
-import { VOICE, VOICE_CONTROLS, VoiceBus, voiceHeard, type VoiceSettings } from "./voices"
+import { BRUSH_IDS, VOICE, VOICE_CONTROLS, VoiceBus, voiceHeard, type VoiceSettings } from "./voices"
 
 export { Soundscape, type Listener, type SoundLayer } from "./soundscape"
 export { VOICE, VoiceBus, voiceHeard, type VoiceSettings } from "./voices"
@@ -24,7 +24,7 @@ export class WoodsMix {
   readonly voices: VoiceBus
   readonly limiter: DynamicsCompressorNode
 
-  constructor(readonly ctx: BaseAudioContext, sound: SoundSettings, baseUrl: string, world: () => WoodsWorld, voice: VoiceSettings = VOICE) {
+  constructor(readonly ctx: BaseAudioContext, sound: SoundSettings, baseUrl: string, world: () => WoodsWorld, voice: VoiceSettings = VOICE, fetcher?: (url: string) => Promise<ArrayBuffer>) {
     this.limiter = ctx.createDynamicsCompressor()
     this.limiter.threshold.value = -6
     this.limiter.knee.value = 0
@@ -41,7 +41,7 @@ export class WoodsMix {
     this.scapeOut.connect(this.limiter)
     this.feet = new Footsteps(ctx, this.feetOut)
     this.scape = new Soundscape(ctx, this.scapeOut, sound, baseUrl, world)
-    this.voices = new VoiceBus(ctx, this.limiter, voice, baseUrl, world)
+    this.voices = new VoiceBus(ctx, this.limiter, voice, baseUrl, world, fetcher)
   }
 
   /** Player volumes in 0..1 (master × effects for feet, master × ambience for the woods, master × voice); mute silences all. */
@@ -88,6 +88,10 @@ export class WoodsAudio {
   private pending: Pick<TapeFrame, "steps" | "distant" | "voices"> = { steps: [], distant: [], voices: [] }
   private queued: DistantEvent[] = []
   private queuedVoices: VoiceEvent[] = []
+  /** Lines heard before the mix existed (the context still starting): said once it does, unless long gone. */
+  private waitingVoices: VoiceEvent[] = []
+  /** Lines to have decoded ahead of time (the brush, the opening's): pinned in the bus once there is one. */
+  private readonly wantVoices = new Set<string>(BRUSH_IDS)
   /** Lines on their way to you, for `onLine` when they arrive (page clock, s). */
   private arriving: { at: number; e: VoiceEvent; heard: ReturnType<typeof voiceHeard> }[] = []
   private clock = 0
@@ -97,7 +101,6 @@ export class WoodsAudio {
   private begun = false
   private live = false
   private retryAt = 0
-  private voiceRetryAt = 0
   private resuming = false
 
   constructor(private readonly baseUrl = typeof document === "undefined" ? "./audio/" : new URL("./audio/", document.baseURI).href) {
@@ -123,17 +126,13 @@ export class WoodsAudio {
     const ctx = this.bank.runtime.ctx!
     if (!this.mix) {
       this.mix = new WoodsMix(ctx, this.sound, this.baseUrl, () => this.world!, this.voice)
+      void this.mix.voices.preload(this.wantVoices)
       this.mix.scape.solo = LAYERS[this.lab.solo] ?? null
     }
     const scape = this.mix.scape
     if (!scape.complete && !scape.loading && ctx.currentTime >= this.retryAt) {
       this.retryAt = ctx.currentTime + 10
       void scape.load().catch((e) => console.warn("woods audio:", e))
-    }
-    const voices = this.mix.voices
-    if (scape.loaded && !voices.complete && !voices.loading && ctx.currentTime >= this.voiceRetryAt) {
-      this.voiceRetryAt = ctx.currentTime + 10
-      void voices.load().catch((e) => console.warn("woods voice:", e))
     }
     return this.mix
   }
@@ -143,13 +142,15 @@ export class WoodsAudio {
     this.live = false
     this.queued.length = 0
     this.queuedVoices.length = 0
+    this.waitingVoices.length = 0
     this.arriving.length = 0
     this.mix?.scape.stopAll()
     this.mix?.voices.stopAll()
     if (this.running()) this.bank.runtime.suspend()
   }
 
-  bindControls(panel: Pick<LabPanel, "addControls">): void {
+  /** `changed`: a Lab edit here the Escape menu also shows (the voices volume). */
+  bindControls(panel: Pick<LabPanel, "addControls">, changed: () => void = () => {}): void {
     this.bank.bindControls(panel)
     panel.addControls(this.sound, SOUND_CONTROLS)
     const controls: LabControl[] = [
@@ -158,7 +159,7 @@ export class WoodsAudio {
       { key: "solo", label: "Solo a layer", group: "Sound", subsection: "Audition", type: "select", options: [{ value: -1, label: "Everything" }, ...LAYERS.map((l, i) => ({ value: i, label: l }))], change: (v) => { if (this.mix) this.mix.scape.solo = LAYERS[Number(v)] ?? null } },
     ]
     panel.addControls(this.lab, controls)
-    panel.addControls(this.bank.volumes, [{ key: "volumeVoice", label: "Voices volume", group: "Voices", min: 0, max: 100, step: 1, unit: "%", change: () => this.bank.applyVolumes() }])
+    panel.addControls(this.bank.volumes, [{ key: "volumeVoice", label: "Voices volume", group: "Voices", min: 0, max: 100, step: 1, unit: "%", change: () => { this.bank.applyVolumes(); changed() } }])
     panel.addControls(this.voice, VOICE_CONTROLS)
   }
 
@@ -189,11 +190,14 @@ export class WoodsAudio {
     for (const e of this.queuedVoices) {
       this.pending.voices!.push(e)
       const heard = voiceHeard(world, e, this.listener, this.voice)
-      if (mix?.voices.loaded) mix.voices.say(e, this.listener, this.sim)
+      this.waitingVoices.push(e)
       const late = Math.max(0, this.sim - e.at)
       if (late < heard.delay + 2) this.arriving.push({ at: this.clock + Math.max(0, heard.delay - late), e, heard })
     }
     this.queuedVoices.length = 0
+    // The bus decodes each line on first use and places it by how much of its travel has passed.
+    if (mix) for (const e of this.waitingVoices.splice(0)) mix.voices.say(e, this.listener, this.sim)
+    else this.waitingVoices = this.waitingVoices.filter((e) => this.sim - e.at < 20)
     for (let i = this.arriving.length - 1; i >= 0; i--) {
       const a = this.arriving[i]!
       if (a.at > this.clock) continue
@@ -217,6 +221,12 @@ export class WoodsAudio {
     if (e.kind === "distant" && (this.live || this.tape)) this.queued.push(e)
     // Lines are read even while the woods are silent (subtitles), but only once you're out there.
     if (e.kind === "voice" && (this.live || this.tape)) this.queuedVoices.push(e)
+  }
+
+  /** Have these lines decoded before they're needed (the opening's, from `StoryHud`). */
+  preloadVoices(ids: Iterable<string>): void {
+    for (const id of ids) this.wantVoices.add(id)
+    if (this.mix) void this.mix.voices.preload(ids)
   }
 
   /** Plays one distant sound where the schedule would put it now. Automation and the proof; plays only once loaded. */
@@ -256,10 +266,11 @@ export class WoodsAudio {
   async renderTape(tape: readonly TapeFrame[], world: WoodsWorld, seconds: number, opts: { solo?: SoundLayer | null; footsteps?: boolean; voices?: boolean; sound?: Partial<SoundSettings>; volume?: { master: number; effects: number; ambience: number; voice?: number }; fetcher?: (url: string) => Promise<ArrayBuffer>; ctx?: OfflineAudioContext } = {}): Promise<AudioBuffer> {
     const sr = 48000
     const ctx = opts.ctx ?? new OfflineAudioContext(2, Math.ceil(seconds * sr), sr)
-    const mix = new WoodsMix(ctx, { ...this.sound, ...opts.sound }, this.baseUrl, () => world, this.voice)
+    const mix = new WoodsMix(ctx, { ...this.sound, ...opts.sound }, this.baseUrl, () => world, this.voice, opts.fetcher)
     mix.scape.solo = opts.solo ?? null
     await mix.scape.load(opts.fetcher)
-    if (opts.voices !== false) await mix.voices.load(opts.fetcher)
+    // Offline, every line on the tape is decoded up front so each starts on its frame.
+    if (opts.voices !== false) await mix.voices.preload([...BRUSH_IDS, ...tape.flatMap((f) => (f.voices ?? []).map((e) => e.line))])
     const b = this.bank.volumes
     const v = opts.volume ?? { master: b.volumeMaster / 100, effects: b.volumeEffects / 100, ambience: b.volumeAmbience / 100, voice: b.volumeVoice / 100 }
     mix.feetOut.gain.value = v.master * v.effects

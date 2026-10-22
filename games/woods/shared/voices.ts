@@ -357,12 +357,13 @@ export function openingLines(world: WoodsWorld, from: { x: number; z: number; fx
   const out: VoiceEvent[] = []
   let seq = -1000
   for (const b of beats) {
-    if (b.cast === me) continue
+    // Every beat draws its take and seq, said or not, so players seated as different searchers hear the same takes.
     const pool = linesOf(b.cast, b.pool)
     const line = pool[Math.floor(nextRandom(rng) * pool.length) % Math.max(1, pool.length)]
-    if (!line) continue
+    const n = seq++
+    if (b.cast === me || !line) continue
     const p = at(b.ahead, b.right)
-    out.push({ kind: "voice", line: line.id, cast: b.cast, by: -1, x: p.x, y: terrainHeight(world.terrain, p.x, p.z) + MOUTH, z: p.z, at: b.t, seq: seq++ })
+    out.push({ kind: "voice", line: line.id, cast: b.cast, by: -1, x: p.x, y: terrainHeight(world.terrain, p.x, p.z) + MOUTH, z: p.z, at: b.t, seq: n })
   }
   return out
 }

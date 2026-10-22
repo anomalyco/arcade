@@ -4,7 +4,8 @@
 // ahead, the FIND BARBARA card and subtitles, which are page DOM so the frames carry them), walking a little up the old
 // path from 7 s to show it never holds you. Records what the ears got (`WoodsAudio.tape`), renders it offline through
 // the game's own mix and muxes opening.mp4; renders the voices alone for their levels and a waveform; and lists each
-// line as it reached you (distance, trunks in the way, the loudest 400 ms there) in opening.json.
+// line as it reached you (distance, trunks in the way, the loudest 400 ms there) in opening.json. The page's live
+// context runs too (muted): `live` lists the lines its voice bus actually started, so the first line can't go silent.
 import { $ } from "bun"
 import { mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { join, resolve, sep } from "node:path"
@@ -42,7 +43,7 @@ type W = {
   hold(code: string, down: boolean): void
   camera: { yaw: number; pitch: number }
   world: unknown
-  audio: { tape: TapeFrame[] | null; renderTape(tape: readonly TapeFrame[], world: unknown, seconds: number, opts?: { footsteps?: boolean; sound?: Record<string, number>; volume?: { master: number; effects: number; ambience: number; voice?: number } }): Promise<AudioBuffer> }
+  audio: { begin(): void; mix: { voices: { heard: { line: string }[] } } | null; tape: TapeFrame[] | null; renderTape(tape: readonly TapeFrame[], world: unknown, seconds: number, opts?: { footsteps?: boolean; sound?: Record<string, number>; volume?: { master: number; effects: number; ambience: number; voice?: number } }): Promise<AudioBuffer> }
 }
 declare const woods: W
 
@@ -65,6 +66,7 @@ await page.evaluate(([x, z, yaw]) => {
   woods.settings.walkSpeed = 1.5
   woods.setPose(x!, z!, yaw!, -0.03)
   woods.audio.tape = []
+  woods.audio.begin()
 }, [s.x, s.z, yaw])
 const total = Math.round(seconds * FPS)
 for (let f = 0; f < total; f++) {
@@ -77,6 +79,7 @@ for (let f = 0; f < total; f++) {
   await page.screenshot({ path: join(frames, `${String(f).padStart(5, "0")}.jpg`), type: "jpeg", quality: 84 })
 }
 const tape = await page.evaluate(() => { const t = woods.audio.tape!; woods.audio.tape = null; return t })
+const live = await page.evaluate(() => woods.audio.mix?.voices.heard.map((h) => h.line) ?? [])
 
 async function render(name: string, opts: Parameters<W["audio"]["renderTape"]>[3]) {
   const b64 = await page.evaluate(async ({ tape, secs, opts }) => {
@@ -128,7 +131,8 @@ const lines = tape.flatMap((f) => (f.voices ?? []).map((e: VoiceEvent) => {
   const b = bed.moments.filter(([t]) => t >= arrive + 0.2 && t <= arrive + line.seconds + 0.4).map(([, v]) => v)
   return { at: +arrive.toFixed(2), cast: e.cast, line: e.line, text: line.text, distance: Math.round(h.distance), trees: h.trees, cutoffHz: Math.round(h.cutoff), estLufs: +h.lufs.toFixed(1), voiceMmax: m.length ? Math.max(...m) : null, bedM: b.length ? +(b.reduce((s, v) => s + v, 0) / b.length).toFixed(1) : null }
 }))
-const report = { night, seconds, mix: { I: mix.I, peak: mix.peak }, voices: { I: voices.I, peak: voices.peak }, bed: { I: bed.I, peak: bed.peak }, lines, errors: errors.slice(0, 20) }
+const said = tape.flatMap((f) => (f.voices ?? []).map((e: VoiceEvent) => e.line))
+const report = { night, seconds, live: { said: said.length, started: said.filter((l) => live.includes(l)).length, missing: said.filter((l) => !live.includes(l)) }, mix: { I: mix.I, peak: mix.peak }, voices: { I: voices.I, peak: voices.peak }, bed: { I: bed.I, peak: bed.peak }, lines, errors: errors.slice(0, 20) }
 writeFileSync(join(out, "opening.json"), JSON.stringify(report, null, 1))
 await $`rm -f ${out}/opening-bed.wav ${out}/opening.wav`.quiet().nothrow()
 await $`ffmpeg -v error -y -i ${voiceWav} -c:a libmp3lame -b:a 160k ${join(out, "opening-voices.mp3")}`.quiet()

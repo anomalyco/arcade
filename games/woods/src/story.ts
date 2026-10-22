@@ -1,3 +1,4 @@
+import type { LabPanel } from "@arcade/kit/lab-panel"
 import { VOICE_LINES } from "../shared/lines.gen"
 import { BOT_ID, type WoodsState } from "../shared/sim"
 import { CAST_NAMES, openingLines, voiceRoles, type VoiceEvent } from "../shared/voices"
@@ -12,17 +13,21 @@ const SUBTITLE_FLOOR = -54
 /**
  * The search's story on screen (STORY.md): the trailhead opening at your first step out (Walt, then searchers calling
  * for Barbara around and ahead of you), the FIND BARBARA card, and subtitles as each searcher's line reaches you. None
- * of it holds you still. Later nights in the same browser get a shorter opening and card.
+ * of it holds you still. Later nights in the same browser get a shorter opening and card. Its clock runs only while you
+ * can hear the woods, so the Escape menu holds the opening and the card where they are.
  */
 export class StoryHud {
-  /** The opening's lines still to come, in sim time. */
+  /** The opening's lines still to come, `at` in seconds of this clock since `begin`. */
   private opening: VoiceEvent[] = []
+  private begunAt = 0
   private begun = false
   private time = 0
   private cardAt = Infinity
   private cardUntil = 0
   private subs: { el: HTMLElement; until: number }[] = []
   night = 0
+  /** A setting changed here (the menu shows it too). */
+  onChange: (() => void) | null = null
 
   constructor(private readonly audio: WoodsAudio, private readonly objective = document.getElementById("objective")!, private readonly subsEl = document.getElementById("subs")!) {
     audio.voice.subtitles = localStorage.getItem(SUBTITLES_KEY) !== "0"
@@ -36,6 +41,12 @@ export class StoryHud {
     this.audio.voice.subtitles = on
     localStorage.setItem(SUBTITLES_KEY, on ? "1" : "0")
     if (!on) for (const s of this.subs.splice(0)) s.el.remove()
+    this.onChange?.()
+  }
+
+  /** The Lab's Subtitles toggle, through the same setter as the menu's button. */
+  bindControls(panel: Pick<LabPanel, "addControls">): void {
+    panel.addControls(this.audio.voice, [{ key: "subtitles", label: "Subtitles", group: "Voices", type: "toggle", change: (v) => { this.subtitles = !!v } }])
   }
 
   /** Your first step out: the opening plays around where you stand, facing `yaw`. Once per page. */
@@ -45,7 +56,9 @@ export class StoryHud {
     this.night = (Number(localStorage.getItem(NIGHTS_KEY)) || 0) + 1
     localStorage.setItem(NIGHTS_KEY, String(this.night))
     const cast = voiceRoles(state.players, BOT_ID).byWalker.get(me) ?? null
-    this.opening = openingLines(world, { x, z, fx: -Math.sin(yaw), fz: -Math.cos(yaw) }, cast, this.night, world.params.seed).map((e) => ({ ...e, at: e.at + state.t }))
+    this.opening = openingLines(world, { x, z, fx: -Math.sin(yaw), fz: -Math.cos(yaw) }, cast, this.night, world.params.seed)
+    this.begunAt = this.time
+    this.audio.preloadVoices(this.opening.map((e) => e.line))
     const first = this.night <= 1
     this.objective.querySelector(".kicker")!.textContent = first ? "Barbara K. Nakamura · missing since Thursday" : ""
     this.objective.querySelector(".task")!.textContent = "FIND BARBARA"
@@ -53,14 +66,18 @@ export class StoryHud {
     this.cardUntil = this.cardAt + (first ? 5.5 : 2.8)
   }
 
-  /** Once per frame, before `audio.frame`: the opening's lines that are due go to the audio as the room's would. */
+  /**
+   * Each frame you can hear the woods (playing, or the Lab panel open after Begin), before `audio.frame`: the opening's
+   * lines that are due go to the audio, said now in sim time, as the room's would be.
+   */
   frame(dt: number, state: WoodsState, world: WoodsWorld): void {
     this.time += dt
-    if (this.opening.length && this.opening[0]!.at <= state.t) {
+    const since = this.time - this.begunAt
+    if (this.opening.length && this.opening[0]!.at <= since) {
       // A searcher someone walks as (a bot or a friend) calls from where they are; the rest are out in the woods.
       const roles = voiceRoles(state.players, BOT_ID).byWalker
-      while (this.opening.length && this.opening[0]!.at <= state.t) {
-        const e = this.opening.shift()!
+      while (this.opening.length && this.opening[0]!.at <= since) {
+        const e = { ...this.opening.shift()!, at: state.t }
         const w = state.players.find((p) => roles.get(p.id) === e.cast)
         this.audio.event(w ? { ...e, by: w.id, x: w.x, y: terrainHeight(world.terrain, w.x, w.z) + 1.6, z: w.z } : e)
       }

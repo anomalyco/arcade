@@ -100,8 +100,10 @@ async function main() {
   ])
   // Camera looks and realism effects (Lab › Camera look): a post chain after the forest's own camera, all off by default.
   const cameraLook = new CameraLook({ renderer, device, format: canvasFormat, camera, forest: view.forest, panel, params, smoke, seed: world.params.seed })
-  audio.bindControls(panel)
-  panel.setView({ order: ["Walking", "Flashlight", "Camera", "Mist", "Night", "Forest", "Tape & map", "Friends", "Sound", "Volume"] })
+  audio.bindControls(panel, () => menu.sync())
+  story.bindControls(panel)
+  story.onChange = () => menu.sync()
+  panel.setView({ order: ["Walking", "Flashlight", "Camera", "Mist", "Night", "Forest", "Tape & map", "Friends", "Sound", "Voices", "Volume"] })
   attachLabPanelControl(panel)
   let regenAt = 0, worldKey = `${settings.trunkDensity}`, qualityMode = look.quality
 
@@ -124,10 +126,11 @@ async function main() {
   const menu = new SettingsMenu({
     bank: audio.bank,
     mode: () => look.quality,
-    setMode: (mode) => { look.quality = mode; panel.sync() },
+    setMode: (mode) => { look.quality = mode },
     active: () => quality.getActiveTier(),
     subtitles: () => story.subtitles,
-    setSubtitles: (on) => { story.subtitles = on; panel.sync() },
+    setSubtitles: (on) => { story.subtitles = on },
+    changed: () => panel.sync(),
   })
   function syncOverlays() {
     const free = !forcePlay && !locked()
@@ -380,8 +383,9 @@ async function main() {
     map.frame(state, meId, p.mapRaise, camera.yaw, ownLevel * r + campLight + 0.04, camera.walk.lateral * 40, dt)
     if (performance.now() > toastUntil) toast.style.opacity = "0"
     // The story: the trailhead opening at your first step out, the FIND BARBARA card, subtitles.
-    if (playing) story.begin(world, state, meId, at.x, at.z, camera.yaw)
-    story.frame(dt, state, world)
+    // Online, not before the room has seated you (until then you'd be nobody, at the room's t 0).
+    if (playing && (!online || meId >= 0)) story.begin(world, state, meId, at.x, at.z, camera.yaw)
+    if (playing || (begun && panel.visible)) story.frame(dt, state, world)
     // You hear the woods while playing, or with the knobs open once you've begun (to tune the mix).
     audio.frame(camera.eye, camera.yaw, dt, world, state, playing || panel.visible)
 
