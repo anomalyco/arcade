@@ -41,7 +41,7 @@ export default defineStation({
   metrics: [
     { label: "GPU per effect", value: "a fraction of a ms", source: "~/code/home/artifacts/woods-2026-10-21/camera-lab/index.html" },
     { label: "GPU per look", value: "under 1 ms", source: "~/code/home/artifacts/woods-2026-10-21/camera-lab/index.html" },
-    { label: "Eyes vs no final pass", value: "bit-identical", source: "games/woods/scripts/camera-lab.ts" },
+    { label: "Eyes (all off)", value: "no final pass, same path as today", source: "packages/kit/gpu/post/camera-artifacts.test.ts" },
   ],
   paths: ["games/woods/src/camera-look.ts", "games/woods/src/eyeshine.ts", "packages/kit/gpu/post/camera-artifacts.ts", "packages/kit/gpu/post/final-chain.ts"],
   branches: ["woods-camera"],

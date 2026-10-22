@@ -120,16 +120,17 @@ const best = await page.evaluate(async () => {
 })
 console.log("moment", JSON.stringify(best))
 
-// Today is the same pixels: one staged Eyes moment drawn through the (inactive) chain, with no final pass at all, then
-// through the chain again. The sim is paused between them, so only the forest's own per-frame grain can differ.
+// Today, as pictures: the same staged Eyes moment through the (inactive) chain, with no final pass at all, and through
+// the chain again. The page only draws when stepped, so each is staged and stepped afresh; chain vs chain is the
+// run-to-run floor (exposure and temporal history carry over) to read chain vs no final pass against.
 if (!only.length || only.some((id) => id.startsWith("control-"))) {
   const setChain = (on: boolean) => page.evaluate((on) => (woods as unknown as { renderer: { setFinalPass(p: unknown): void } }).renderer.setFinalPass(on ? (woods.cameraLook as unknown as { chain: unknown }).chain : null), on)
-  await stage("eyes", undefined, "still", best.frame)
   for (const [id, chain] of [["control-chain", true], ["control-no-final-pass", false], ["control-chain-again", true]] as const) {
     await setChain(chain)
-    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
+    await stage("eyes", undefined, "still", best.frame)
     await page.screenshot({ path: `${out}/${id}.png` })
   }
+  await setChain(true)
 }
 
 if (clip) {
