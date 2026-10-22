@@ -98,6 +98,7 @@ async function main() {
     session?.close()
     session = null
     game = null
+    scores = false
     hud.show(false)
     menus.hide()
   }
@@ -146,7 +147,7 @@ async function main() {
   })
   const gameShell = createGameShell({
     game: "blackout", title: "BLACKOUT", subtitle: "Firefights at night: office floors and downtown streets.",
-    quickLabel: "Quick join", soloLabel: "Bot practice", friendsNote: "a private room with the mode and map below",
+    quickLabel: "Quick join", soloLabel: "Bot practice", friendsNote: "a private room with your mode and map",
     askName: true, quality, channels: ["master", "effects", "ambience"],
     hidden: input.mux ? true : undefined,
     keysBlocked: () => debug.hasFocus(),
@@ -174,6 +175,11 @@ async function main() {
     },
   })
   shell = gameShell
+  // Keys and the mouse drive only in play: not behind the title or menu, nor while the Lab panel holds input.
+  input.blocked = () => !gameShell.playing || debug.holdsInput
+  gameShell.flow.subscribe(() => {
+    if (!gameShell.playing) input.release()
+  })
   const lobby = gameShell.lobby!
   gameShell.view?.titleSlot.append(picks.el)
   // The shell owns volume, mute and Reduce camera motion (the shake settings' switch).
@@ -358,11 +364,13 @@ async function main() {
       renderer.render(scene)
       manualRenderDt=0
       const status = session.status()
-      if (session.room) lobby.setSocketStatus(status)
-      hud.update(game, cam, w, h, input.mouse, status && /idle/i.test(status) ? status : null)
+      // The HUD shows the idle warning itself; the shell's pill shows connection trouble.
+      const idle = status && /idle/i.test(status) ? status : null
+      if (session.room) lobby.setSocketStatus(idle ? null : status)
+      hud.update(game, cam, w, h, input.mouse, idle)
       spellHud.draw(game)
       modeHud.update(game, cam, w, h)
-      menus.update(game.snap, game.roster, session.myId, session.room, input.held("Tab") || scores, (id) => game!.colorOf(id))
+      menus.update(game.snap, game.roster, session.myId, session.room, gameShell.playing && (input.held("Tab") || scores), (id) => game!.colorOf(id))
       telemetry.enabled = debug.visible || input.mux || quality.wantsGpuTiming
       const chunks = renderer.drawnChunks
       const perf = debug.sample(now, elapsed, telemetry, chunks, game.lightCount)
