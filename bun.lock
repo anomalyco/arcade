@@ -180,6 +180,20 @@
         "wrangler": "^4.149.0",
       },
     },
+    "games/woods": {
+      "name": "@arcade/woods",
+      "dependencies": {
+        "@arcade/kit": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "^1.4.2",
+        "@webgpu/types": "^0.1.74",
+        "playwright-core": "^1.64.0",
+        "typescript": "^5.9.3",
+        "vite": "^8.3.4",
+        "wrangler": "^4.149.0",
+      },
+    },
     "packages/kit": {
       "name": "@arcade/kit",
       "dependencies": {
@@ -216,6 +230,8 @@
     "@arcade/lot": ["@arcade/lot@workspace:games/lot"],
 
     "@arcade/nightshift": ["@arcade/nightshift@workspace:games/nightshift"],
+
+    "@arcade/woods": ["@arcade/woods@workspace:games/woods"],
 
     "@cloudflare/kv-asset-handler": ["@cloudflare/kv-asset-handler@0.5.0", "", {}, "sha512-jxQYkj8dSIzc0cD6cMMNdOc1UVjqSqu8BZdor5s8cGjW2I8BjODt/kWPVdY+u9zj3ms75Q5qaZgnxUad83+eAg=="],
 
