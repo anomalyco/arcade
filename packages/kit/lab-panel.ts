@@ -177,6 +177,13 @@ export class LabPanel implements LabKnobsHost {
     this.host.addEventListener("keydown", event => {
       this.release()
       this.leaving = event.key === "Escape"
+      // Escape closes a floating panel from anywhere in it but a text field (where knobs clears or leaves it first).
+      if (event.key === "Escape" && this.layoutMode === "floating" && !this.typingTarget(event)) {
+        event.preventDefault()
+        event.stopPropagation()
+        this.leaving = false
+        this.escape()
+      }
     }, { capture: true })
     this.host.addEventListener("focusin", () => this.onFocusChange?.(true, this.navigation.active))
     this.host.addEventListener("focusout", event => {
