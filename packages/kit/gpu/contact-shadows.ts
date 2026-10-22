@@ -110,8 +110,6 @@ struct VO { @builtin(position) pos: vec4f, @location(0) uv: vec2f }
   return o;
 }
 
-fn csPos(uv: vec2f) -> vec3f { return volumeWorldAtTexel(volumeTexel(uv)); }
-
 /**
  * Normal from the scene depth (per axis, the neighbour whose depth is closer, so silhouettes don't smear) in xyz, and in
  * w the depth slope: how far the surface moves along the view ray from one pixel to the next, the march's bias floor.
@@ -176,18 +174,20 @@ fn csMarch(p: vec3f, n: vec3f, eyeDist: f32, slope: f32, lp: vec3f, jitter: f32)
     if (any(uv < vec2f(0.0)) || any(uv > vec2f(1.0))) { break; }
     // Samples within two pixels of the start mostly read the surface itself (Bend's near-pixel rejection).
     if (distance(uv * V.size.zw, px0) < 2.0) { continue; }
-    let d = volumeDepthAt(uv);
+    let texel = volumeTexel(uv);
+    let d = textureLoad(sceneDepth, texel, 0);
     if (volumeIsSky(d)) { continue; }
-    let behind = length(q - V.eye.xyz) - length(csPos(uv) - V.eye.xyz);
+    let behind = length(q - V.eye.xyz) - length(volumeWorldAtTexel(texel) - V.eye.xyz);
     if (behind > bias && behind < k.y) { return 1.0 - 0.5 * t / len; }
   }
   return 0.0;
 }
 
 @fragment fn fs(o: VO) -> @location(0) vec4f {
-  let d = volumeDepthAt(o.uv);
+  let texel = volumeTexel(o.uv);
+  let d = textureLoad(sceneDepth, texel, 0);
   if (volumeIsSky(d)) { return vec4f(1.0); }
-  let p = csPos(o.uv);
+  let p = volumeWorldAtTexel(texel);
   let eyeDist = length(p - V.eye.xyz);
   let k = csKnobsA();
   let fade = 1.0 - smoothstep(k.w * 0.6, k.w, eyeDist);
