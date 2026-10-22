@@ -1,8 +1,8 @@
 /**
- * Realistic people for any kit game: lazy-loaded MakeHuman cast (CC0) skinned on the GPU and driven by the shared
- * human rig. A game keeps its avatars and `animate` calls; it feeds them rig-space positions (`world / scale`) and
- * hands each posed avatar to `People.drive`, which adds terrain under each foot, poses the skeleton and returns the
- * held torch's frame. See docs/people.md.
+ * Realistic people for any kit game: lazy-loaded MakeHuman cast (CC0) skinned on the GPU, walking and running with
+ * mocap cycles (`gait.ts`) and standing with the shared human rig. A game keeps its avatars and `animate` calls; it
+ * feeds them rig-space positions (`world / scale`) and hands each posed avatar to `People.drive`, which picks the
+ * gait, adds terrain under each foot, poses the skeleton and returns the held torch's frame. See docs/people.md.
  */
 import { WebIO } from "@gltf-transform/core"
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions"
@@ -13,10 +13,11 @@ import type { HumanBody } from "../human-pose"
 import type { Locomotion } from "../human-locomotion"
 import { spring, type Frame, type Spring, type V3 } from "../rig"
 import { readPerson } from "./asset"
-import { personHooks } from "./hooks"
+import { personHooks, type PeopleLook } from "./hooks"
 import { PeoplePass, type PersonInstance, type PersonModel } from "./pass"
 import { newPose, personRest, posePerson, skinMatrices, type HandPose, type PersonPose, type PersonRest } from "./retarget"
-import { terrainFeet, type TerrainState } from "./terrain"
+import { terrainFeet, type TerrainLoco, type TerrainState } from "./terrain"
+import { gaitBody, newGait, type GaitState } from "./gait"
 
 /**
  * One person in one look (`a-woods`, `c-office`, ...): a GLB from scripts/people/cast.json. Each look's members come
@@ -32,6 +33,7 @@ export type Person = {
   readonly rest: PersonRest
   readonly pose: PersonPose
   readonly terrain: TerrainState
+  readonly gait: GaitState
   breath: Spring
   /** Standing idle: how still (0 moving .. 1 stood a while), its weight-shift phase and this person's rate. */
   idle: { still: number; phase: number; rate: number }
@@ -48,6 +50,8 @@ export type DriveOptions = {
   grip?: [HandPose | null, HandPose | null]
   /** Camera position, for the level of detail. */
   eye?: V3
+  /** "mocap" (default): walk and run with mocap cycles; "rig": the procedural rig's gait throughout. */
+  gait?: "mocap" | "rig"
 }
 
 /**
@@ -60,7 +64,7 @@ export function personLod(rest: PersonRest, pose: PersonPose, eye: V3, current: 
   return d > distance * (current === 1 ? 0.9 : 1) ? 1 : 0
 }
 
-const bothPlanted = (a: Locomotion) => a.feet[0].planted && a.feet[1].planted
+const bothPlanted = (a: TerrainLoco) => a.feet[0].planted && a.feet[1].planted
 
 /**
  * Standing weight shift (`PoseInput.shift`): after about a second stood still the person settles onto one leg,
@@ -83,8 +87,12 @@ export class People {
   private ready = new Map<CastMember, Loaded>()
   private spawned = 0
 
-  constructor(ctx: PassContext, hooks: SceneHooks, readonly lodDistance = 9) {
-    this.pass = new PeoplePass(ctx, personHooks(hooks))
+  /**
+   * `material` is `MAT.lit` (lit only by the scene) unless a game wants its actors' fill and rim (`MAT.actor`);
+   * `look` sets roughness per kind and the optional ambient sheen.
+   */
+  constructor(ctx: PassContext, hooks: SceneHooks, readonly lodDistance = 9, opts: { material?: number; look?: PeopleLook } = {}) {
+    this.pass = new PeoplePass(ctx, personHooks(hooks, opts.look), opts.material)
   }
 
   /** Starts fetching a cast member; resolves when it can be drawn. Safe to call repeatedly. */
@@ -115,7 +123,7 @@ export class People {
   spawn(cast: CastMember): Person | null {
     const l = this.ready.get(cast)
     if (!l) return null
-    return { cast, inst: this.pass.spawn(l.model), rest: l.rest, pose: newPose(l.rest), terrain: { drop: spring(), init: false }, breath: { x: (this.spawned * 2.39996) % (Math.PI * 2), v: 0 },
+    return { cast, inst: this.pass.spawn(l.model), rest: l.rest, pose: newPose(l.rest), terrain: { drop: spring(), init: false }, gait: newGait(), breath: { x: (this.spawned * 2.39996) % (Math.PI * 2), v: 0 },
       idle: { still: 0, phase: (this.spawned * 1.7) % (Math.PI * 2), rate: 0.75 + ((this.spawned++ * 0.618034) % 1) * 0.5 } }
   }
 
@@ -127,17 +135,18 @@ export class People {
    * Poses a person from an avatar the rig animated in rig space (positions = world / `person.rest.scale`), lifts it
    * onto the ground under each foot and uploads its joints. Returns the torch frame (world) if it holds one.
    */
-  drive(p: Person, a: Locomotion & { body: HumanBody | null }, o: DriveOptions): Frame | null {
+  drive(p: Person, a: Locomotion & { body: HumanBody | null; reach?: { l?: V3; r?: V3; k: number } }, o: DriveOptions): Frame | null {
     if (!a.body) { p.inst.visible = false; return null }
     p.inst.visible = true
     const ground = o.ground ?? (() => 0)
-    const { lift, feet, tilt } = terrainFeet(p.terrain, a, a.body, p.rest.scale, ground, o.dt, p.rest.sole)
+    const { body, loco }: { body: HumanBody; loco: TerrainLoco } = o.gait === "rig" ? { body: a.body, loco: a } : gaitBody(p.gait, a, a.body, p.rest.scale, o.dt)
+    const { lift, feet, tilt } = terrainFeet(p.terrain, loco, body, p.rest.scale, ground, o.dt, p.rest.sole)
     // Breathing: ~15 breaths/min standing, faster when moving.
     const speed = Math.hypot(a.svx, a.svy) * p.rest.scale
     p.breath.x += o.dt * Math.PI * 2 * (0.25 + 0.12 * Math.min(1, speed / 3))
     posePerson(p.rest, {
-      body: a.body, lift, feet, tilt, torch: o.torch, look: o.look, grip: o.grip,
-      breath: 1, breathPhase: p.breath.x, shift: idleShift(p.idle, speed, bothPlanted(a), o.dt),
+      body, lift, feet, tilt, torch: o.torch, look: o.look, grip: o.grip,
+      breath: 1, breathPhase: p.breath.x, shift: idleShift(p.idle, speed, bothPlanted(loco), o.dt),
     }, p.pose)
     skinMatrices(p.rest, p.pose, p.inst.matrices)
     if (o.eye) p.inst.lod = personLod(p.rest, p.pose, o.eye, p.inst.lod, this.lodDistance)
