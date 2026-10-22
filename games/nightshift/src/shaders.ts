@@ -2,18 +2,18 @@ import { withPhysicalLights } from "@arcade/kit/gpu/lights/physical"
 import { fogSceneWgsl, fogScatterVolume } from "@arcade/kit/gpu/fog-scatter"
 import { postShader, type SceneHooks } from "@arcade/kit/gpu/shaders"
 import { contactShadowVolume } from "@arcade/kit/gpu/contact-shadows"
-import { BLINDS } from "./world"
+import { officeUniform } from "./office-uniform"
+import { blindCookieWgsl } from "./blind-cookie"
 
-const uniform = `struct Office { look: vec4f, lamps: vec4f, phone: vec4f, cord: vec4f, contactA: vec4f, contactB: vec4f, lightShape: vec4f }
-@group(0) @binding(13) var<uniform> O: Office;`
+const uniform = officeUniform
 const ambient = "vec3f(0.27,0.65,0.88)*O.look.x*(0.4+0.6*max(n.y,0.0))"
 export const fogVolume = fogScatterVolume({ declarations: uniform })
 export const contactVolume = contactShadowVolume({ declarations: uniform, knobs: ["O.contactA", "O.contactB"], ambient })
 const base: SceneHooks = {
   lampGrid: false,
-  vertex: `if(v.matAux.y<0.0){let t=clamp((-v.matAux.y-1.0)/100.0,0.0,1.0);o.world+=O.cord.xyz*t*t;}`,
+  vertex: `if(v.matAux.y<0.0){let t=clamp((-v.matAux.y-1.0)/100.0,0.0,1.0);o.world+=O.cord.xyz*t*t+O.swing.xyz*sin(t*3.14159265);}`,
   fragmentStart: "officeFootprint=max(length(dpdx(o.world)),length(dpdy(o.world)));",
-  declarations: uniform + fogSceneWgsl + /* wgsl */ `
+  declarations: uniform + fogSceneWgsl + blindCookieWgsl + /* wgsl */ `
 var<private> officeFootprint: f32;
 fn officeHash(p: vec3f) -> f32 { return fract(sin(dot(p,vec3f(127.1,311.7,74.7)))*43758.5453); }
 fn officeNoise(p: vec3f) -> f32 {
@@ -26,21 +26,7 @@ fn officeDetail(p: vec3f, frequency: f32) -> f32 {
   return mix(officeNoise(p*frequency),0.5,smoothstep(0.25,0.75,officeFootprint*frequency));
 }
 fn blindCookie(p: vec3f, lamp: vec3f) -> f32 {
-  // Project to the actual aperture, including its sill and head. The old gobo
-  // omitted these bounds and painted stripes onto surfaces above the window.
-  let axis=select(vec3f(0.9,-0.5,-0.5),vec3f(0.6,-0.22,-0.72),lamp.z<0.0);
-  let distance=max(0.0,p.x-(${BLINDS.x}));
-  let q=p-axis*distance/axis.x;
-  let centre=select(4.0,0.0,lamp.z<0.0);
-  let pen=0.003+distance*O.lightShape.x+officeFootprint*0.5;
-  let aperture=smoothstep(0.90-pen,0.90+pen,q.y)*(1.0-smoothstep(2.55-pen,2.55+pen,q.y))*(1.0-smoothstep(1.14-pen,1.14+pen,abs(q.z-centre)));
-  // Box-filtered periodic gaps conserve their mean when blades become subpixel.
-  let phase=(q.y-${BLINDS.bottom})/${BLINDS.pitch};
-  let width=max(0.002,pen/${BLINDS.pitch});
-  let a=phase-width;let b=phase+width;
-  let fa=floor(a)*0.40+clamp(fract(a)-0.60,0.0,0.40);
-  let fb=floor(b)*0.40+clamp(fract(b)-0.60,0.0,0.40);
-  return aperture*(fb-fa)/(2.0*width);
+  return blindCookieAt(p,lamp,officeFootprint);
 }
 fn officeBounce(p: vec3f,n:vec3f) -> vec3f {
   // One diffuse floor-patch bounce, an area-source approximation, not GI.
@@ -63,10 +49,10 @@ fn officeOcclusion(p:vec3f,n:vec3f)->f32 {
   }
   return occlusion;
 }
-fn terminal(uv:vec2f)->vec3f {
+fn terminalAt(uv:vec2f,version:f32)->vec3f {
   let cell=vec2f(uv.x,1.0-uv.y)*vec2f(80,25);
   let id=floor(cell);let f=fract(cell);
-  let seed=officeHash(vec3f(id,87.0));
+  let seed=officeHash(vec3f(id,87.0+version*13.0));
   // 3x5 hexadecimal diagnostic glyphs, 80 columns by 25 rows like a 5151.
   let glyphs=array<u32,16>(31599u,9362u,29671u,29391u,23497u,31183u,31215u,29257u,31727u,31695u,31725u,23534u,31015u,19182u,31207u,31204u);
   let pixel=min(vec2u(f*vec2f(4,7)),vec2u(3,6));
@@ -113,11 +99,17 @@ fn terminal(uv:vec2f)->vec3f {
   `,
   surface: /* wgsl */ `
     let kind=i32(round(o.aux));
-    if(kind==7) { col=vec3f(0.77,0.89,0.70)*O.lamps.x*2.5; }
+    if(kind==7) {
+      let stutter=select(1.0,O.lamps.x,abs(o.world.x)<.5||O.polish.x<.5);
+      col=vec3f(.77,.89,.70)*stutter*2.5*select(1.0,O.polish.z,O.polish.x>.5);
+      let ends=smoothstep(.35,.46,abs(o.world.z));
+      if(abs(o.world.x)<.5&&O.polish.x>.5){col+=vec3f(1.0,.28,.07)*ends*O.polish.y*(1.0-stutter);}
+    }
     if(kind==8) {
       let uv=(o.world.xy-vec2f(-0.74,1.18))/vec2f(.31,.22)+.5;
-      col=terminal(uv)+col*.12;
+      col=terminalAt(uv,0.0)+col*.12;
     }
+    if(kind==14&&O.polish.x>.5){col=terminalAt((o.world.xy-vec2f(4.1,1.118))/vec2f(.366,.266)+.5,O.changes.w)*.22;}
     if(kind==9) { col=vec3f(3.5,0.11,0.025)*O.lamps.y; }
     if(kind==11) { col+=vec3f(1.0,0.38,0.10)*O.lamps.z*(0.45+0.55*officeNoise(o.world*3.0))*(1.0-0.8*smoothstep(1.2,2.55,o.world.y)); }
     if(kind==12) { col+=vec3f(1.0,0.55,0.18)*O.lamps.w; }

@@ -1,5 +1,6 @@
 import { Mesh, MAT, packVerts, hex, type Rgb } from "@arcade/kit/gpu/mesh"
 import type { Rect } from "@arcade/kit/sim/geom"
+import type { MovingMesh } from "./polish/moving-mesh"
 
 // Metres. Surface IDs are carried in aux; the scene owns the material recipes.
 export const SURFACE = { plastic: 0, fabric: 1, carpet: 2, laminate: 3, ceiling: 4, metal: 5, paper: 6, tube: 7, crt: 8, led: 9, wood: 10 }
@@ -13,7 +14,11 @@ export const CRADLE = [PHONE.x-0.102*1.3,PHONE.y+0.10,PHONE.z+.06]
 export const CORD_END = [CRADLE[0],CRADLE[1],CRADLE[2]+RECEIVER_PAD]
 export const PHONE_INDICATOR = [PHONE.x+.16,PHONE.z-.14]
 export const walls: Rect[] = []
-export const chairs: Rect[] = []
+export type ChairRect=[number,number,number,number]
+export const chairs: ChairRect[] = []
+export const movingMeshes:MovingMesh[]=[]
+let moveEnabled=true
+function moving(m:Mesh,first:number,kind:MovingMesh["kind"],x:number,z:number){if(moveEnabled)movingMeshes.push({kind,x,z,data:packVerts(m.v.splice(first))})}
 type Range={first:number;count:number}
 export const stackContacts:{id:string;support:Range;prop:Range}[]=[]
 function range(m:Mesh,first:number):Range{return {first:first/11,count:(m.v.length-first)/11}}
@@ -73,10 +78,16 @@ function cabinet(m:Mesh,x:number,z:number,w=0.5,h=0.72) {
   box(m,x,0.04,z,w,h,0.65,hex(0x777a6b),5,0.015)
   const shell=range(m,first)
   for(let i=0;i<3;i++) {
+    const from=m.v.length
     const y=0.065+i*h/3
     box(m,x,y,z+0.333,w-0.035,h/3-0.028,0.018,hex(0x848371),5,0.004)
     box(m,x,y+h/6,z+0.351,0.15,0.026,0.025,dark,5,0.003)
     box(m,x,y+h/6+0.055,z+0.347,0.13,0.036,0.005,paper,6)
+    if(x===1.65&&z===3.48&&i===0){
+      box(m,x,y,z+.16,w-.06,.012,.31,dark,5)
+      for(const side of [-1,1])box(m,x+side*(w/2-.035),y,z+.16,.014,h/3-.04,.31,edge,5)
+      moving(m,from,"drawer",x,z)
+    }
   }
   return shell
 }
@@ -169,7 +180,7 @@ function crt(m:Mesh,x:number,y:number,z:number,on:boolean) {
   box(m,x,y+0.095,z-0.03,0.44,0.05,0.35,edge,0,0.012)
   box(m,x,y+0.145,z-0.08,0.48,0.37,0.4,beige,0,0.035)
   box(m,x,y+0.167,z+0.131,0.417,0.312,0.018,hex(0x343f35),0,0.022)
-  box(m,x,y+0.19,z+0.144,0.366,0.266,0.019,on?hex(0x65b48c):hex(0x19241f),on?8:0,0.021)
+  box(m,x,y+0.19,z+0.144,0.366,0.266,0.019,on?hex(0x65b48c):hex(0x19241f),x===4.1&&z===-2.55?14:on?8:0,0.021)
   box(m,x+0.19,y+0.014,z+0.261,0.009,0.006,0.004,on?hex(0x46d67b):dark,on?8:0)
   box(m,x-0.08,y+0.027,z+0.26,0.22,0.008,0.008,dark)
   for(let i=0;i<10;i++) box(m,x+0.244,y+0.22+i*0.018,z-0.12,0.004,0.006,0.19,dark)
@@ -192,7 +203,8 @@ function keyboard(m:Mesh,x:number,y:number,z:number) {
   rotate(m,first,x,z,.045)
 }
 function chair(m:Mesh,x:number,z:number) {
-  const collider:Rect=[x-0.28,z-0.28,x+0.28,z+0.28];walls.push(collider);chairs.push(collider)
+  const from=m.v.length
+  const collider:ChairRect=[x-0.28,z-0.28,x+0.28,z+0.28];walls.push(collider);chairs.push(collider)
   const cloth=hex(0x46534d)
   box(m,x,0.43,z,0.46,0.075,0.44,cloth,1,0.032)
   box(m,x,0.52,z+0.2,0.43,0.43,0.075,cloth,1,0.035)
@@ -203,6 +215,7 @@ function chair(m:Mesh,x:number,z:number) {
     box(m,px,0.015,pz,0.075,0.055,0.045,dark,0,0.012)
   }
   for(const s of [-1,1]) { tube(m,[x+s*0.27,0.46,z+0.1],[x+s*0.27,0.65,z+0.1],0.013,edge,5);box(m,x+s*0.27,0.65,z,0.045,0.03,0.3,dark,0,0.01) }
+  moving(m,from,"chair",x,z)
 }
 function plant(m:Mesh,x:number,y:number,z:number) {
   m.prism(x,z,0.12,0.16,y,y+0.22,24,hex(0x73766a));m.prism(x,z,0.147,0.147,y+0.215,y+0.22,24,hex(0x292d23))
@@ -259,9 +272,10 @@ export function phoneIndicator() {
   box(m,0,0,0,.014,.003,.010,hex(0xff3d21),9,.001)
   return m
 }
-export function buildWorld() {
+export function buildWorld(movable=true) {
+  moveEnabled=movable
   walls.length=0
-  chairs.length=0;stackContacts.length=0
+  chairs.length=0;stackContacts.length=0;movingMeshes.length=0
   const m=new Mesh()
   // The PBR carpet plane in props.ts owns y=0; slab top stays below it.
   box(m,0,-0.12,0,12,0.11,18,hex(0x565548),2)
@@ -288,7 +302,7 @@ export function buildWorld() {
   desk(m,0,-5.55,3.25)
   keyboard(m,-.74,.795,-5.15)
   phone(m);binders(m,0.65,0.795,-5.82,9)
-  const heroChair:Rect=[.34,-4.85,.96,-4.25];walls.push(heroChair);chairs.push(heroChair)
+  const heroChair:ChairRect=[.34,-4.85,.96,-4.25];walls.push(heroChair);chairs.push(heroChair)
    // Flat, broken dried stain rather than a raised torus.
    for(let i=0;i<60;i++) {
      if(i%13===0||i%17===0)continue
@@ -309,6 +323,7 @@ export function buildWorld() {
     box(m,x,y,z,.21,.001,.28,hex(i%2?0xb6ae94:0x969a86),6)
     for(let j=0;j<9;j++)box(m,x-.01,y+.0011,z-.10+j*.022,.11+(j%3)*.018,.0003,.001,hex(0x717466),6)
     rotate(m,first,x,z,Math.sin(i*4.7)*.38)
+    moving(m,first,"paper",x,z)
   }
   // Jay's corner office: a usable doorway, ajar slab, and a warm reading lamp.
   partition(m,2.05,-7.65,.12,2.55,2.75)

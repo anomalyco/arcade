@@ -4,6 +4,7 @@ import { Mesh, MAT } from "@arcade/kit/gpu/mesh"
 import type { Renderer } from "@arcade/kit/gpu/renderer"
 import { propHooks } from "./shaders"
 import { CRADLE, RECEIVER_PAD, PHONE_INDICATOR } from "./world"
+import { transformPacked } from "./polish/moving-mesh"
 
 export const PROP_DEFINITIONS=[
   {kind:"crt",file:"authored/crt",at:[-.74,.795,-5.65],size:[.52,.50,.57],yaw:0},
@@ -97,5 +98,13 @@ export async function officeProps(renderer:Renderer) {
   }))
   const pass=new TexturedMeshPass(renderer.passContext,[...assets.flatMap(a=>a.primitives),await carpet(renderer.passContext.device)],propHooks)
   renderer.addPass("opaque",pass)
-  return {casters:pass.shadowCasters(),cradle,indicator}
+  const casters=pass.shadowCasters(),movable:{kind:string;at:number[];source:ArrayBuffer;out:ArrayBuffer;buffer:GPUBuffer;pose:string}[]=[]
+  let casterIndex=0
+  assets.forEach((asset,i)=>{for(const p of asset.primitives){if(p.blend||(p.alphaCutoff??0)>0)continue;const caster=casters[casterIndex++];if(PROP_DEFINITIONS[i].kind==="chair"||PROP_DEFINITIONS[i].kind==="mug")movable.push({kind:PROP_DEFINITIONS[i].kind,at:PROP_DEFINITIONS[i].at,source:p.vertices,out:p.vertices.slice(0),buffer:caster.buffer,pose:""})}})
+  const move=(kind:string,dx:number,dz:number,yaw:number)=>{
+    let dirty=false
+    for(const m of movable){if(m.kind!==kind)continue;const pose=[dx,dz,yaw].join(":");if(m.pose===pose)continue;m.pose=pose;transformPacked(m.source,m.out,32,m.at[0],m.at[2],dx,dz,yaw);renderer.passContext.device.queue.writeBuffer(m.buffer,0,m.out);dirty=true}
+    return dirty
+  }
+  return {casters,cradle,indicator,move}
 }
