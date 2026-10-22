@@ -16,6 +16,7 @@ import { PromptView } from "./hud/prompt"
 import { FINISHER_GLYPH, promptGlyph, promptGlyphHtml } from "./hud/prompt-glyphs"
 import { blockedByBoards, BOARD_UP, boardPrompt, MAX_PLANKS } from "./prompt-clarity/board"
 import { clarityOn, DEFAULT_PROMPT_CLARITY_SETTINGS, teachUses, type PromptClaritySettings } from "./prompt-clarity/settings"
+import { radialInteract } from "./radial/state"
 import { actionKey, teachingWord } from "./prompt-clarity/teach"
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
@@ -273,7 +274,8 @@ export class InventoryHud {
     const below = target.kind === "bench" || target.kind === "page"
     const anchorHeight = (isPeeking ? 0.15 : below ? 0.1 : 1.45) + supportHeight(town, target.worldX, target.worldY)
     const proj = cam.project(target.worldX, anchorHeight, below ? target.rect[3] + 0.2 : target.worldY, w, h)
-    if (!proj.ok) {
+    // The radial E menu replaces the prompt while it is up, at the cursor.
+    if (!proj.ok || radialInteract.isOpen) {
       prompt.update(null)
       return
     }
@@ -289,7 +291,7 @@ export class InventoryHud {
       y: proj.y,
       place: isPeeking || below ? "below" : "above",
       gap: isPeeking ? 18 : below ? 8 : 0,
-      hold: holdProgress(p),
+      hold: radialInteract.busy ? radialInteract.openProgress(performance.now()) : holdProgress(p),
     })
   }
 

@@ -141,6 +141,11 @@ export type RawInteractCandidate = {
   priority?: number
 }
 
+/** Whether `id` is one of the target's own actions (its tap, hold, Shift+E or any listed). */
+export function offersAction(target: RawInteractCandidate, id: InteractActionId): boolean {
+  return target.primary.id === id || target.secondary?.id === id || target.alt?.id === id || target.actions.some((a) => a.id === id)
+}
+
 export type InteractTarget = RawInteractCandidate & {
   dist: number
   facing: number

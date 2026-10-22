@@ -40,6 +40,14 @@ Cross-game keyboard and mouse conventions for Getaway, Blackout, Outbreak, Carri
      turns warm.
    - `KeyF` is the dedicated **Flashlight** toggle in Outbreak (matching PC survival-horror conventions), accepted as a silent alias for `KeyE` in Blackout on foot, and used for aircraft countermeasures (flares) in Carrier flight (where `KeyQ`/`KeyE` are yaw rudder; carrier landing is `KeyR`).
 
+   - **Outbreak's radial E menu** (playtest Oct 21: "It should be that radial thing where you press E and then it
+     gives you the radial thing to pick what action you want to do and you can just click it"; Lab › Controls › E
+     actions, "Today" keeps tap and hold). On a target with one action E acts at once. With more, a tap still takes
+     E's own action on release, and holding E for 0.2 s (the prompt's ring fills) opens a ring at the cursor with
+     E's tap, its hold, Shift+E's alternative and B's board-up, each with its glyph, verb and number cap. Point and let
+     go of E, click, or press the number; let go in the middle or press Esc to cancel. The aim holds still and nothing
+     fires while it is up. Choices go out as `Command.interactAction`, so co-op carries them (`src/radial/`,
+     `tests/radial-interact.test.ts`, `scripts/radial-proof.ts`). Shift+E, B and Today's hold still work.
    - **Boarding up stays on its own key, `KeyB`** (AR-89 audit). E's tap and hold are both taken on every door and
      window (Open/Lock, Peek/Open, Climb/Close), so moving boarding onto E would hide one of them behind a mode. B is
      now drawn in the door and window prompt as a third cap with the board-up glyph whenever it would act (planks in
