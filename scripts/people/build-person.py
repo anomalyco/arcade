@@ -80,11 +80,14 @@ for o in bpy.data.objects:
 
 # --- textures --------------------------------------------------------------------------------------------------------
 def load(path, size):
-    img = bpy.data.images.load(path)
-    if max(img.size) > size:
-        img.scale(size, size)
-        img.pixels[:] = img.pixels[:]  # mark dirty so the exporter writes the scaled pixels, not the source file
-        img.update()
+    src = bpy.data.images.load(path)
+    if max(src.size) <= size:
+        return src
+    src.scale(size, size)
+    # A generated copy: the exporter writes a file-backed image's source file, ignoring the scaled pixels.
+    img = bpy.data.images.new(os.path.splitext(os.path.basename(path))[0], size, size, alpha=True)
+    store(img, np.array(src.pixels[:], dtype=np.float32))
+    bpy.data.images.remove(src)
     return img
 
 
@@ -96,6 +99,8 @@ def pixels(img):
 def store(img, px):
     img.pixels[:] = np.clip(px, 0, 1).ravel()
     img.update()
+    # Packed, so a later colour-space change (normal maps) reloads these pixels instead of regenerating a blank image.
+    img.pack()
 
 
 def lum(px):
