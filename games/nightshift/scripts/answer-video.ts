@@ -82,7 +82,7 @@ try {
   const first=trace.find(f=>f.phase==="call")
   if(!first||trace.at(-1)?.phase!=="ended"||errors.length)throw new Error(JSON.stringify({errors,last:trace.at(-1)}))
   const offset=first.frame/24
-  const mux=Bun.spawn(["ffmpeg","-v","error","-y","-i",resolve(out,"silent.mp4"),"-itsoffset",String(offset),"-i",resolve(import.meta.dir,"../public/audio/jay-call.mp3"),"-map","0:v","-map","1:a","-c:v","copy","-c:a","aac","-b:a","160k","-movflags","+faststart",resolve(out,"answering.mp4")],{stdout:"inherit",stderr:"inherit"})
+  const mux=Bun.spawn(["ffmpeg","-v","error","-y","-i",resolve(out,"silent.mp4"),"-itsoffset",String(offset),"-i",resolve(import.meta.dir,"../public/audio/kit-call.mp3"),"-map","0:v","-map","1:a","-c:v","copy","-c:a","aac","-b:a","160k","-movflags","+faststart",resolve(out,"answering.mp4")],{stdout:"inherit",stderr:"inherit"})
   if(await mux.exited!==0)throw new Error("Audio mux failed")
   await Bun.write(resolve(out,"trace.json"),JSON.stringify({errors,audioOffset:offset,fps:24,trace},null,2))
   console.log(JSON.stringify({out,audioOffset:offset,frames:trace.length,errors}))

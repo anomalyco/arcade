@@ -16,7 +16,7 @@ import { attachCameraFilter } from "@arcade/kit/gpu/post/camcorder"
 import { controls, defaults } from "./settings"
 import { hooks, post, fogVolume, contactVolume } from "./shaders"
 import { buildWorld, handset, phoneIndicator, PHONE, START, CLOSE, CORD_END, RECEIVER_PAD, walls, chairs, movingMeshes, CONTINUITY_MONITOR } from "./world"
-import { newCall, interact, stepCall, subtitle, ringEnvelope, CALL_CLICK } from "../shared/call"
+import { newCall, interact, stepCall, subtitle, ringEnvelope, CALL_FIRST_LINE_END } from "../shared/call"
 import { OfficeAudio, renderBeatAudio } from "./audio"
 import { officeProps } from "./props"
 import { renderFoley } from "./foley"
@@ -39,6 +39,7 @@ async function main() {
   const opening=new Opening(),cinema=openingSettings(),elevator=new Elevator(),terminal=new Terminal(device)
   let seen=false
   try{seen=localStorage.getItem("nightshift.openingSeen")==="true"}catch{}
+  const repeatView=seen
   if(smoke)settings.polish=0
   const contact=createContactShadowSettings({mode:"screen",length:0.35,thickness:0.06})
   const renderer=new Renderer(device,gpu.context,gpu.format,{scene:makeSceneShader(hooks),sprite:spriteShader(),post:smoke?post:lensPost,volume:smoke?[fogVolume]:[contactVolume,fogVolume]})
@@ -77,8 +78,9 @@ async function main() {
   continuity.targets.find(t=>t.kind==="monitor")!.bounds=[monitor.x-.3,.79,monitor.z-.3,monitor.x+.3,1.5,monitor.z+.3]
   const distance=()=>Math.hypot(camera.body.x-PHONE.x,camera.body.y-PHONE.z)
   const canAnswer=()=>distance()<1.35 && camera.direction[0]*(PHONE.x-camera.eye[0])+camera.direction[2]*(PHONE.z-camera.eye[2])>0.15
+  const canHangUp=()=>repeatView&&call.phase==="call"&&call.elapsed>=CALL_FIRST_LINE_END
   const action=()=>{
-    if(!opening.complete||elevator.closing||!audio.ready||call.phase==="call"&&call.elapsed<CALL_CLICK)return
+    if(!opening.complete||elevator.closing||!audio.ready||call.phase==="call"&&!canHangUp())return
     if((call.phase==="ringing"&&canAnswer())||call.phase==="call") {
       camera.release();handYaw=Math.atan2(Math.sin(camera.yaw),Math.cos(camera.yaw));lastLookYaw=camera.yaw
     }
@@ -182,7 +184,7 @@ async function main() {
     const fogLamps:FogLamp[]=lampDefs.filter(l=>l.id===3||l.id===4).map(l=>({id:l.id!,x:l.x,y:l.h,z:l.y,range:l.r,color:l.color,intensity:l.power,axis:l.spot!.axis,size:l.size}))
     packSceneFrame(frame,{viewProj:vp,eye:camera.eye,time,width,height,lightCount:lights.lightCount,ambient:[0,0,0,0],mapSize:[20,20],ao:0})
     const blur=!opening.complete&&!settings.reduceMotion?Math.max(-.12,Math.min(.12,opening.yaw.v/60*cinema.whipBlur)):0
-    const fade=Math.max(opening.started?opening.fade:0,elevator.fade)
+    const fade=Math.max(opening.fade,elevator.fade)
     cameraFilter.fade=fade
     renderer.render({frame,lights:lights.lights,lightCount:lights.lightCount,shadowLightCount:lights.shadowLightCount,occluders:lights.occ,occluderCount:lights.occCount,lampPower:lights.power,lampCount:0,view:[-7,-10,7,11],batches:parts.batches(),alphaSprites:parts.alpha,alphaCount:parts.nAlpha,addSprites:parts.add,addCount:parts.nAdd,grade:smoke?[0,0,0,settings.exposure]:[time,settings.lensVignette,settings.lensGrain,settings.exposure],postParams:[settings.lensSoftness,settings.lensFringe,Number(settings.polish&&settings.lens)],postCustom:[blur,cameraFilter.active?0:fade,0,0],fog:fog.update({eye:camera.eye,viewProj:vp,lamps:fogLamps}),volume:smoke?[fog.volumeInput()]:[contactShadowInput(contact),fog.volumeInput()]})
     const dx=PHONE.x-camera.eye[0],dz=PHONE.z-camera.eye[2]
@@ -192,7 +194,7 @@ async function main() {
     document.getElementById("reticle")!.style.visibility=opening.complete&&!elevator.closing?"visible":"hidden"
     document.getElementById("title")!.style.opacity=String(.55*(1-fade))
     document.getElementById("credits")!.style.visibility=opening.complete&&!elevator.closing?"visible":"hidden"
-    prompt.innerHTML=!opening.started?keyPromptHtml("Mouse0","Begin"):!active?keyPromptHtml("Mouse0","Resume"):!opening.complete?seen?keyPromptHtml("Space","Skip opening"):"":call.phase==="ringing"&&canAnswer()?audio.error?"Call audio could not load. Reload to retry.":audio.ready?keyPromptHtml("KeyE","Answer"):"Connecting…":call.phase==="call"&&call.elapsed>=CALL_CLICK?keyPromptHtml("KeyE","Hang up"):""
+    prompt.innerHTML=!opening.started?keyPromptHtml("Mouse0","Begin"):!active?keyPromptHtml("Mouse0","Resume"):!opening.complete?seen?keyPromptHtml("Space","Skip opening"):"":call.phase==="ringing"&&canAnswer()?audio.error?"Call audio could not load. Reload to retry.":audio.ready?keyPromptHtml("KeyE","Answer"):"Connecting…":canHangUp()?keyPromptHtml("KeyE","Hang up"):""
     if(call.phase==="ended"&&active)prompt.textContent=elevator.closing?"":"Take the elevator at the far end of the floor."
     sub.textContent=subtitle(call)
     frames++;if(smoke&&frames>=2)paused=true

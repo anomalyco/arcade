@@ -8,6 +8,7 @@ import type { Opening } from "../src/opening"
 import type { Elevator } from "../src/elevator"
 import type { Settings } from "../src/settings"
 import type { Call } from "../shared/call"
+import { CALL_DURATION, CALL_FIRST_LINE_END } from "../shared/call"
 import type { BeatAudioFrame,OfficeAudio,renderBeatAudio } from "../src/audio"
 import type { OfficePhysics } from "../src/polish/props"
 import type { Continuity } from "../src/polish/continuity"
@@ -63,6 +64,7 @@ try{
   await page.goto(`${server.url}arcade/nightshift/`,{waitUntil:"domcontentloaded"})
   await page.waitForFunction(()=>!!(window as unknown as Host).nightshift,undefined,{polling:100,timeout:120000})
   await page.evaluate(()=>{const a=(window as unknown as Host).nightshift;a.paused=true;a.renderer.render=a.renderer.drawTo.bind(a.renderer);a.step(0)})
+  if(controls)await page.evaluate(async()=>{const w=window as unknown as Host;await w.capture(0);if(w.pixelMean!==0)throw Error("Scene visible before Begin")})
   await page.locator("#view").click({force:true})
   await page.waitForFunction(()=>document.pointerLockElement?.id==="view"&&(window as unknown as Host).nightshift.audio.ready,undefined,{polling:100,timeout:30000}).catch(async e=>{console.error(await page.evaluate(()=>{const a=(window as unknown as Host).nightshift;return {locked:document.pointerLockElement?.id,started:a.opening.started,audioReady:a.audio.ready,audioError:a.audio.error,hidden:document.hidden,focus:document.hasFocus()}}));throw e})
   if(filters){
@@ -97,6 +99,14 @@ try{
       return {bodycamHandoffContinuous:true,firstStandMount:mount,reducedMotionMountZero:true}
     }))
   }else if(controls){
+    await page.evaluate(async()=>{const w=window as unknown as Host;await w.capture(0);if(w.pixelMean!==0)throw Error("Begin did not continue from black")})
+    const checkHangUp=async(elapsed:number,allowed:boolean)=>{
+      const offered=await page.evaluate(elapsed=>{const a=(window as unknown as Host).nightshift;Object.assign(a.call,{phase:"call",elapsed,lift:1});a.step(0);return document.getElementById("prompt")!.textContent!.includes("Hang up")},elapsed)
+      if(offered!==allowed)throw Error(`Incorrect hangup prompt at ${elapsed}: ${offered}`)
+      await page.keyboard.press("e")
+      const phase=await page.evaluate(()=>(window as unknown as Host).nightshift.call.phase)
+      if(phase!==(allowed?"hangup":"call"))throw Error(`Incorrect hangup action at ${elapsed}: ${phase}`)
+    }
     await page.keyboard.down("w");await page.keyboard.press("e")
     await page.evaluate(()=>(window as unknown as Host).nightshift.step(50))
     await page.keyboard.up("w")
@@ -121,15 +131,20 @@ try{
     await page.keyboard.down("w")
     const height=await page.evaluate(()=>{const a=(window as unknown as Host).nightshift;a.step(50);return a.camera.height})
     await page.keyboard.up("w");if(!(height>1.4&&height<1.5))throw Error("First movement did not smoothly stand")
+    await checkHangUp(CALL_FIRST_LINE_END,false)
+    await checkHangUp(CALL_DURATION-.01,false)
     await page.evaluate(()=>localStorage.setItem("nightshift.reduceMotion","true"))
     await page.reload({waitUntil:"domcontentloaded"});await page.waitForFunction(()=>!!(window as unknown as Host).nightshift,undefined,{polling:100})
     await page.evaluate(()=>{const a=(window as unknown as Host).nightshift;a.paused=true;a.renderer.render=a.renderer.drawTo.bind(a.renderer);a.step(0);if(!a.settings.reduceMotion)throw Error("Reduced motion not restored")})
-    await page.locator("#view").click({force:true});await page.waitForFunction(()=>!!document.pointerLockElement,undefined,{polling:50})
+    await page.locator("#view").click({force:true});await page.waitForFunction(()=>!!document.pointerLockElement&&(window as unknown as Host).nightshift.audio.ready,undefined,{polling:50})
     const pose=await page.evaluate(()=>{const a=(window as unknown as Host).nightshift;return [a.camera.yaw,a.camera.pitch,a.camera.height]})
     await page.keyboard.press("Space")
     const skipped=await page.evaluate(()=>{const a=(window as unknown as Host).nightshift;return {skipping:a.opening.skipping,pose:[a.camera.yaw,a.camera.pitch,a.camera.height]}})
     if(!skipped.skipping||JSON.stringify(skipped.pose)!==JSON.stringify(pose))throw Error("Skip jumped the pose or ignored prior viewing")
-    trace.push({introInputBlocked:true,pointerUnlockPauses:true,panelPauses:true,completionPersisted:true,firstMoveHeight:height,reducedMotionRestored:true,skipPoseContinuous:true})
+    await page.evaluate(()=>{const a=(window as unknown as Host).nightshift;while(!a.opening.complete)a.opening.step(.05,true,true);a.step(0)})
+    await checkHangUp(CALL_FIRST_LINE_END-.01,false)
+    await checkHangUp(CALL_FIRST_LINE_END,true)
+    trace.push({beginsBlack:true,beginContinuesFromBlack:true,firstCallForced:true,repeatHangupAfterFirstLine:true,introInputBlocked:true,pointerUnlockPauses:true,panelPauses:true,completionPersisted:true,firstMoveHeight:height,reducedMotionRestored:true,skipPoseContinuous:true})
   }else if(stills){
     for(const [name,time] of [["01-at-desk",2],["02-whip-to-phone",7.4],["03-look-across",16.5]] as const){
       const jpg=await page.evaluate(async time=>{const w=window as unknown as Host;while(w.nightshift.opening.time<time-.05){w.nightshift.step(50);await w.nightshift.renderer.passContext.device.queue.onSubmittedWorkDone()}return w.capture(50)},time)

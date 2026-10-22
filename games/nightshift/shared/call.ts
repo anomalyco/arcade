@@ -25,3 +25,4 @@ export function ringEnvelope(time: number) {
 import recording from "./kit-call.json"
 export const CALL_DURATION=recording.duration
 export const CALL_CLICK=recording.click
+export const CALL_FIRST_LINE_END=recording.cues[0]!.end
