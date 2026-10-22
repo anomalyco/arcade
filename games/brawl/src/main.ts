@@ -219,7 +219,7 @@ async function main() {
     const h = innerHeight
     gameShell.tick(now)
     syncAudio()
-    if (gameShell.flow.screen === "title" || gameShell.playing) quality.frame(now)
+    if (gameShell.playing) quality.frame(now)
     else quality.pause()
     perf.enabled = quality.wantsGpuTiming
     if (quality.fit(canvas, w, h)) renderer.resize(canvas.width, canvas.height)
