@@ -57,6 +57,8 @@ game's own `AGENTS.md`.
   `packages/kit/`; [docs/architecture.md](docs/architecture.md) shows which kit modules each game already uses. Check
   both before writing something a game already has. `games/*/shared/` imports only pure kit modules (`sim/`, `net/`,
   `limits`).
+- Read [docs/assets.md](docs/assets.md) before adding or generating assets: CC0 or credited CC BY only, a
+  `CREDITS.md` per game, hashed sources, compressed files under 25 MiB.
 - Read [docs/game-notes.md](docs/game-notes.md) and [docs/rendering-techniques.md](docs/rendering-techniques.md)
   before rendering, performance, input, multiplayer or feel work, and read [docs/netcode.md](docs/netcode.md) before any
   multiplayer or net work. Add a technique to `docs/game-notes.md` once it is proven in a game, with where it lives and

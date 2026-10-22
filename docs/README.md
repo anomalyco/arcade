@@ -27,6 +27,9 @@ docs folder. Start with `AGENTS.md` at the root; it says which of these to read 
   on `@arcade/kit` primitives and `LabPanel` knobs before building custom meshes, shaders or multiplayer rooms.
 - [shared-code.md](shared-code.md): what the games still duplicate and what belongs in `packages/kit/`. Check
   before writing something another game already has.
+- [assets.md](assets.md): where to find models, textures, motion and sound (accepted licences, sources Arcade uses
+  and ones to evaluate) and when to generate them instead (image model, TRELLIS, MPFB, procedural, ElevenLabs). Read
+  before adding or generating assets.
 - [human-rig.md](human-rig.md): API and module ownership of the shared human rig, profiles, attachments,
   detachment and the Characters page. Read before using the rig in a game.
 - [people.md](people.md): realistic skinned people (`@arcade/kit/people`): the MakeHuman build, GPU skinning,
