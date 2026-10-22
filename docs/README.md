@@ -29,6 +29,8 @@ docs folder. Start with `AGENTS.md` at the root; it says which of these to read 
   before writing something another game already has.
 - [human-rig.md](human-rig.md): API and module ownership of the shared human rig, profiles, attachments,
   detachment and the Characters page. Read before using the rig in a game.
+- [people.md](people.md): realistic skinned people (`@arcade/kit/people`): the MakeHuman build, GPU skinning,
+  retargeting from the rig, terrain feet, licences and measurements. Read before adding a person or outfit.
 - [controls.md](controls.md): cross-game key bindings and HUD prompts. Read before changing input or prompts.
 - [architecture.md](architecture.md): the current engine map (layers, `@arcade/kit` and `@arcade/knobs` areas,
   generated per-game shared-module adoption table, core patterns, and staged roadmap). Read before a cross-game

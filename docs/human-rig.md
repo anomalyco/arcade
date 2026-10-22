@@ -1,7 +1,7 @@
 # Human rig
 
 `@arcade/kit/rig` is the canonical Outbreak/Blackout frame, spring, IK and proportion module. The Blackout
-`src/game/rig.ts` path re-exports it. There is no second skeleton or renderer in this package. For how the rig
+`src/game/rig.ts` path re-exports it. The rig has one skeleton; `people/` maps it onto skinned meshes rather than adding a second motion source. For how the rig
 should move and why, read [animation.md](animation.md).
 
 ## Ownership
@@ -12,6 +12,7 @@ should move and why, read [animation.md](animation.md).
 | `human-locomotion` | World-locked contacts, toe roll, swing/reach, timing asymmetry, foot drag and pelvis springs |
 | `human-pose` | Arm/leg IK, semantic bones, attachments, visibility and copied detach motion |
 | `avatar/*` | Avatar adapter (`anim`), weapon aim/recoil and action clips, soldier/wizard/zombie/skeleton meshes, single-tone `simple-figure` meshes (mannequin, capsule, Soft Bean) for any bone set, ragdolls; Blackout's `src/game/anim.ts`, `ragdoll.ts` and `src/render/person.ts` re-export them |
+| `people/*` | Realistic skinned MakeHuman people posed from the rig's frames (retarget, mesh IK, terrain feet, torch hand, GPU skinning); see [people.md](people.md) |
 
 All frames and velocities use world XYZ with Y up. The locomotion adapter's `x/y`, `vx/vy` and aim follow the
 games' X/Z ground plane. Angles are radians, distances metres, linear velocities metres/sec, angular velocities

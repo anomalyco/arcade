@@ -1,0 +1,33 @@
+{
+  "lod1": { "body": 0.2, "default": 0.3, "hair": 0.4, "eyes": 1.0, "beanie": 0.5 },
+  "outfits": {
+    "hiker": {
+      "note": "Rain jacket over a fleece, dark trail trousers, leather boots, beanie. Tints are per person (cast tints) and per instance at runtime.",
+      "clothes": [
+        {
+          "asset": "clothes/male_casualsuit05",
+          "parts": [
+            { "name": "trousers", "rule": "b > r * 1.1", "albedo": [0.075, 0.08, 0.07], "kind": "cloth", "rough": 0.9 },
+            { "name": "shirt", "rule": "r > g * 1.15", "albedo": [0.2, 0.21, 0.22], "kind": "cloth", "rough": 0.95 },
+            { "name": "jacket", "rule": "True", "albedo": [0.62, 0.46, 0.05], "kind": "nylon", "rough": 0.42 }
+          ]
+        },
+        { "asset": "clothes/shoes03", "size": 512, "parts": [{ "name": "boots", "albedo": [0.15, 0.09, 0.05], "kind": "cloth", "rough": 0.6 }] }
+      ]
+    }
+  },
+  "people": [
+    {
+      "id": "hiker-a",
+      "note": "Thirties man, average build, yellow rain jacket, rust beanie.",
+      "outfit": "hiker",
+      "macro": { "gender": 1.0, "age": 0.45, "muscle": 0.56, "weight": 0.5, "height": 0.58, "proportions": 0.55, "race": { "caucasian": 0.7, "african": 0.15, "asian": 0.15 } },
+      "skin": "skins/young_caucasian_male/young_lightskinned_male_diffuse.png",
+      "hair": { "asset": "hair/short02", "albedo": [0.07, 0.05, 0.035] },
+      "eyes": "brown",
+      "brows": "eyebrows/eyebrow001",
+      "beanie": { "albedo": [0.4, 0.13, 0.05], "rim": 0.1, "slouch": 0.06 },
+      "tints": {}
+    }
+  ]
+}
