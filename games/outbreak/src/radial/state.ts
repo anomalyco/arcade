@@ -75,6 +75,8 @@ export class RadialInteract {
   hover = -1
   private pressedAt = 0
   private delay = 0.2
+  /** Called on every reset, so the drawn ring hides even when frames stop (the pause menu). */
+  onReset?: () => void
 
   /** E went down. Returns true when the press is the radial's (the caller drops the tap). */
   press(now: number, options: RadialOption[], targetId: string, cursor: Point, aim: number): boolean {
@@ -156,6 +158,7 @@ export class RadialInteract {
     this.options = []
     this.targetId = ""
     this.hover = -1
+    this.onReset?.()
   }
 }
 

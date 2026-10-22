@@ -76,7 +76,8 @@ export class OutbreakInputController {
         else this.sendRadial(radialInteract.choose(digit))
         return
       }
-      if (code === "KeyE" && this.radialOn()) {
+      // Shift+E is the target's alternative, as Today: no radial for it.
+      if (code === "KeyE" && this.radialOn() && !this.input.sprinting) {
         const p = session.view.player
         const target = cam.unproject(this.input.mouse.x, this.input.mouse.y, innerWidth, innerHeight)
         const options = p.vehicleId ? [] : radialOptions(session.view, session.view.prompt)
@@ -187,6 +188,8 @@ export class OutbreakInputController {
   /** Steps all due fixed-tick simulation substeps for `wallNow` and returns the total stepped `dt` in seconds. */
   stepSubsteps(wallNow: number, clock: FrameClock): number {
     if (radialInteract.busy && !this.radialOn()) radialInteract.reset()
+    // The release that closes the radial resets it below; this tick's aim and trigger still belong to it.
+    const wasBusy = radialInteract.busy
     this.sendRadial(
       radialInteract.frame(
         wallNow,
@@ -217,10 +220,12 @@ export class OutbreakInputController {
     const hotbarDelta = this.pendingHotbarDelta
     let fireEdge = this.input.takeFirePress()
     // While the radial is up a click picks the wedge under the cursor, the aim holds and nothing fires.
-    const radialBusy = radialInteract.busy
+    const radialBusy = wasBusy || radialInteract.busy
     if (radialBusy && fireEdge) {
       if (radialInteract.isOpen) this.sendRadial(radialInteract.choose(radialInteract.hover))
       fireEdge = false
+      // The click was a pick: holding the button on afterwards must not start firing.
+      this.input.firing = false
     }
     const reloadEdge = this.input.takeReload()
     const meleeEdge = this.input.takeMelee()

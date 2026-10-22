@@ -5,6 +5,7 @@ import { RadialView } from "./view"
 
 /** The radial E menu (Backquote › Controls › E actions): the input drives `radialInteract`, this draws it. */
 let view: RadialView | null = null
+radialInteract.onReset = () => view?.draw(radialInteract, 0)
 
 export const outbreakRadialFeature = registerOutbreakClientFeature({
   id: "radial",

@@ -26,6 +26,7 @@ import {
   executeInteraction,
   fenceInteractionHandler,
   InteractionRegistry,
+  offersAction,
   peekInfoFor,
   selectInteractTarget,
   stepHoldInteraction,
@@ -393,12 +394,18 @@ export class CoopSim implements OutbreakSim {
       ping: command.ping,
       pick: command.pick,
     }
-    if (!verbs.barricade && command.interact) {
+    // A chosen action (the radial E menu, bots) must be one the target offers; anything else is ignored.
+    const chosen = command.interactAction
+    const offered = !chosen || !target || offersAction(target, chosen)
+    if (!verbs.barricade && command.interact && offered) {
+      const action0 = chosen ?? (command.sprint && target?.alt ? target.alt.id : target?.primary.id)
+      // Peeking through the boards, and prying one off when picked from the radial (Today's hold reaches it below).
       const isBarricadedPortal =
         target &&
         (target.kind === "door" || target.kind === "window") &&
         this.ai.getBarricadePlanks(target.id) > 0 &&
-        (command.interactAction ?? (command.sprint && target.alt ? target.alt.id : target.primary.id)) !== "peek"
+        action0 !== "peek" &&
+        !(action0 === "pry" && target.secondary?.id === "pry")
       if (isBarricadedPortal) {
         const planks = this.ai.getBarricadePlanks(target.id)
         p.lootMessage = target.secondary?.id === "pry" ? `Boarded ${planks}/3 · hold E to pry one off` : `Blocked by barricade (${planks}/3 planks)`
@@ -406,7 +413,12 @@ export class CoopSim implements OutbreakSim {
       } else {
         // Shift+E takes a target's alternative (smash a container open instead of searching it).
         const action = command.interactAction ?? (command.sprint && target?.alt ? target.alt.id : "primary")
+        // Picking "Pry off a board" from the radial is the hold that pries (a doorless frame's boards only answer a hold).
+        const pickedPry = chosen === "pry"
+        const wasTriggered = p.holdTriggered
+        if (pickedPry) p.holdTriggered = true
         const outcome = executeInteraction(town, p, action, this.registry, Boolean(command.interactHeld))
+        if (pickedPry) p.holdTriggered = wasTriggered
         if (outcome.handled && outcome.noise) {
           const noiseKind = outcome.noiseKind ?? (outcome.action === "climb" ? "vault" : outcome.kind === "window" ? "window" : "door")
           this.ai.emitNoise(p.x, p.y, outcome.noise, noiseKind, this.time, slot.id)
