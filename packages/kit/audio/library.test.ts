@@ -55,7 +55,9 @@ describe("sound library catalogue", () => {
         // Playback gain lands every variant on the target; generated files are normalised so that gain stays small (it only makes up for the -1 dBFS peak cap on peaky takes).
         expect(Math.abs(f.loudness + 20 * Math.log10(f.gain) - entry.target), f.file).toBeLessThan(0.15)
         if (entry.generate) expect(f.gain, f.file).toBeLessThan(1.7)
-        expect(f.peakDb, f.file).toBeLessThan(-0.5)
+        // Reused files keep their own processing: Carrier's Opus takes were limited to -1 dBTP but a few decode a little
+        // over full scale. Overs in float PCM are recoverable (playback gain applies before the output limiter).
+        expect(f.peakDb, f.file).toBeLessThan(entry.reuse ? 0.5 : -0.5)
         const [lo, hi] = entry.durationRange
         expect(f.durationSeconds, f.file).toBeGreaterThanOrEqual(lo - 0.02)
         expect(f.durationSeconds, f.file).toBeLessThanOrEqual(hi + 0.05)

@@ -1,6 +1,8 @@
 // Browser entry for scripts/audio-render.ts: renders scripted jet-audio scenes through the real mixer and JetAudio on an
 // OfflineAudioContext (48 kHz stereo), stepping the scene every 1024 frames (21 ms) with suspend/resume, and returns
 // 16-bit WAV bytes (base64) plus peak and RMS. Exposed as `globalThis.renderScene(name, base)`.
+import { encodeWavPcm16 } from "@arcade/kit/audio/offline"
+import { mulberry32 } from "@arcade/kit/sim/rng"
 import type { PlaneTuple } from "../shared/protocol"
 import type { VehicleKind } from "../shared/vehicles"
 import { LAUNCH } from "../shared/launch"
@@ -691,6 +693,8 @@ function logSounds(mx: ReturnType<typeof mixer>): void {
 }
 
 async function renderScene(name: string, base: string): Promise<{ wav: string; peak: number; rms: number; loaded: number; fired: string[] }> {
+  // Seeded per scene (pooled takes, loop start points), so two builds render the same notes and can be compared.
+  Math.random = mulberry32(0x5eed)
   const scene = SCENES[name]!()
   const ctx = new OfflineAudioContext(2, Math.ceil(scene.dur * RATE), RATE)
   // The game's shared mixer, rebuilt on this context (weapon and weather audio find it there too).
@@ -739,25 +743,7 @@ async function renderScene(name: string, base: string): Promise<{ wav: string; p
     sum += l[i]! * l[i]! + r[i]! * r[i]!
   }
   const n = l.length
-  const out = new DataView(new ArrayBuffer(44 + n * 4))
-  const str = (o: number, s: string) => [...s].forEach((c, i) => out.setUint8(o + i, c.charCodeAt(0)))
-  str(0, "RIFF")
-  out.setUint32(4, 36 + n * 4, true)
-  str(8, "WAVEfmt ")
-  out.setUint32(16, 16, true)
-  out.setUint16(20, 1, true)
-  out.setUint16(22, 2, true)
-  out.setUint32(24, RATE, true)
-  out.setUint32(28, RATE * 4, true)
-  out.setUint16(32, 4, true)
-  out.setUint16(34, 16, true)
-  str(36, "data")
-  out.setUint32(40, n * 4, true)
-  for (let i = 0; i < n; i++) {
-    out.setInt16(44 + i * 4, Math.max(-1, Math.min(1, l[i]!)) * 32767, true)
-    out.setInt16(46 + i * 4, Math.max(-1, Math.min(1, r[i]!)) * 32767, true)
-  }
-  const bytes = new Uint8Array(out.buffer)
+  const bytes = encodeWavPcm16(buf)
   let bin = ""
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
   return { wav: btoa(bin), peak, rms: Math.sqrt(sum / (2 * n)), loaded: bank.loaded, fired: [...fired] }

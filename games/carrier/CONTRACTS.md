@@ -816,13 +816,20 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
 
 ## Sound (`src/audio/{mixer,mixer-lab,sfx-*,sounds-lab,jet-*,ship-audio,ui-audio,weapon-audio,weather-audio}.ts`, `public/sfx/`, `scripts/{sfx-cinematic,sfx-picks-plugin,audio-demo,audio-render}.ts`)
 
-- **One mix** (`mixer()` in `src/audio/mixer.ts`), started on the first gesture: buses `engines` (other jets), `flyby`,
-  `weather` (sea, weather, ship ambience) behind a canopy low-pass that closes in the cockpit; `own` (your engine and
-  cockpit), `sfx`, `weapons`, `ui` (dry). Sends: `reverb` (a synthesized 3.4 s open-air ocean impulse), `echo` (a dark
-  140 ms slapback off the water), `room` (a small metal cockpit). Then a gentle glue compressor, a -3 dB peak limiter,
-  an output trim (loudness: the 60 s montage measures -16.1 LUFS integrated, -1.7 dBTP), master, soft clip. `duck()`
-  dips engines, flybys and ambience under explosions and passes. `mixer.listener` (camera pose, set by jet-audio.ts each
-  frame) lets anything place a sound in the world. Levels and mute persist (`carrier.audio.v4`); **M mutes**.
+- **One mix** (`mixer()` in `src/audio/mixer.ts`) on the kit's `AudioRuntime` (`@arcade/kit/audio/runtime`, the
+  `mix` option; graph in `@arcade/kit/audio/mix`): `CARRIER_MIX` declares buses `engines` (other jets), `flyby`,
+  `weather` (sea, weather, ship ambience) behind the muffle low-pass (the canopy, 1.3 kHz closed; `setCockpit` →
+  `runtime.setMuffle`); `own` (your engine and cockpit), `sfx`, `weapons`, `ui` (dry). Sends: `reverb` (a synthesized
+  3.4 s open-air ocean impulse, `impulseResponse`), `echo` (a dark 140 ms slapback off the water, feeding the reverb),
+  `room` (a small metal cockpit). Then a gentle glue compressor, a -3 dB peak limiter, an output trim 0.9 (loudness:
+  the 60 s montage measures -16.1 LUFS integrated, -1.7 dBTP), master, soft clip. `duck()` → `runtime.duckBuses` dips
+  engines, flybys, ambience and your engine under explosions and passes. The runtime owns the context: started on the
+  first gesture, suspended with the tab, **M mutes** (`bindDomLifecycle`); Carrier keeps its designer levels and mute
+  (`carrier.audio.v4`, toast on M) and the kit's player volumes (`arcade.volume.carrier.v1`). Library cues
+  (`runtime.playCue`) land on Carrier's buses through `CARRIER_MIX.route`. The procedural noise bank is the kit's
+  `noiseBank`. `mixer.listener` (camera pose, set by jet-audio.ts each frame) lets anything place a sound in the world.
+  The port to the kit was null-tested against the old graph: every demo scene renders within one 16-bit step (null
+  RMS -120 to -135 dBFS, the same as two renders of the old build; `captures/audio/kit-port/`).
 - **Live, state-driven sounds are procedural, by design** (user decision): everything that follows a jet's live state
   (engines, afterburner, cockpit engine, canopy wind, buffet, breathing, creaks, wind rush, flybys, the sonic crack, the
   stall warning) or the trigger (the M61, rounds cracking past) is synthesized every frame from rpm, throttle,
@@ -865,6 +872,9 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
 - **Picks**: `public/sfx/picks.json` (shipped defaults: take, trim dB, ratings per slot), overridden live by the SOUNDS
   tab in localStorage (`carrier.sfx.picks`). The dev server's `POST /__sfx/picks` (`scripts/sfx-picks-plugin.ts`)
   writes picks.json; the SOUNDS tab's SAVE does that, COPY PICKS exports the JSON anywhere.
+- **Shared library**: every slot is also a library id (`SLOT_LIBRARY_ID`, e.g. `explosion.jet.air`) reusing the takes
+  Carrier plays, so the Lab's Audio › Sound library auditions them beside every other game's sounds
+  ([sfx-library.md](../../docs/sfx-library.md#carrier)); `tests/sfx-library.test.ts` keeps picks and library in step.
 - **SOUNDS tab** (`sounds-lab.ts`, ` menu, `?sounds=1` opens it): every slot, its takes (▶ dry or in context at 40 m,
   300 m, 1.5 km with the reverb, from the chase view or behind the canopy; ★ pick, live; level trim; 1-5 rating),
   category filter, COPY / SAVE / RESET. The AUDIO tab keeps the bus levels, engine/cockpit tuning, a recorded on/off
@@ -890,6 +900,9 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   Interface (`ui-audio.ts`): a very quiet tick per button click; the kill confirm (`weapon-audio.ts`). Registered but wired by their owners: `deck-fire`, `sinking`, `missile-motor`, `impact-water`,
   `ciws`, `sam-launch`, `naval-gun`, `boat-engine`.
 - Offline renders: `scripts/audio-render.ts` (instructions at its top) renders the `scripts/audio-demo.ts` scenes (the
-  60 s montage, engines, flybys, carrier ops, gun, weather, a mix, the explosion reel) on hailmary into
+  60 s montage, engines, flybys, carrier ops, gun, weather, a mix, the explosion reel; seeded, WAVs by the kit's
+  `encodeWavPcm16`) in headless Chrome on hailmary or Playwright's Chromium anywhere (no GPU needed);
+  `scripts/audio-compare.ts <before> <after> --mp3=<dir>` compares two render folders (kit LUFS per scene and per 2 s
+  section, peak, spectral centroid, high-band share, null test). Earlier renders went into
   `captures/audio/v5-gun-*` (the M61), `v4-*` (engines and flybys) and `v3-*` (recorded slots); `captures/audio/v3-candidates-<category>.mp3` are every take back to back (index in
   `v3-candidates.md`). `public/sfx/boom/{far-1,bomb-water-2}.mp3` stay only for `scripts/video-epic.ts`.

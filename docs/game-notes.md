@@ -91,6 +91,12 @@ proven animation techniques to animation.md, not here.
   clock half a sim tick from the 60 Hz ship grid, or float drift gives 0- or 2-step frames. Raw BGRA readback through
   the game's device piped into ffmpeg: 1,800 1080p frames in ~5.5 min on the M4 Max; frame-difference spikes only at
   cuts and lightning.
+- **Port a mix onto the kit by null test (Carrier).** `AudioRuntime`'s `mix` option (`packages/kit/audio/mix.ts`)
+  builds a game-defined graph: named buses, a shared muffle low-pass, per-bus ducks, convolver and slapback sends, glue,
+  limiter, trim and soft clip. Carrier's hand-built mixer became `CARRIER_MIX` with the same nodes in the same order;
+  its seeded demo scenes (`scripts/audio-demo.ts`, Chromium `OfflineAudioContext`) rendered before and after differ by
+  at most one 16-bit step, null RMS -120 to -135 dBFS, exactly the spread of two renders of the old build
+  (`scripts/audio-compare.ts`). Seed `Math.random` per scene or pooled takes and loop starts break the comparison.
 - **Capture the game's own audio in lockstep with a frame-stepped video.** Carrier's `scripts/video-epic.ts` moves the
   game's mixer onto one `OfflineAudioContext` (`mixer.use`, then a synthetic `pointerdown` so the weather and weapon
   sounds start on it) and, after every 1/60 s step, schedules `ctx.suspend` at that step's sample, resumes and awaits it:

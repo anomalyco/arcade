@@ -42,8 +42,8 @@
   CREATE SHIP in a sunk carrier's empty berth, captains LOCK, KICK, promote); C free camera (WASD pan, drag orbit, wheel zoom); G full map (hold, tap to pin; the radar and target markers show by themselves in flight, CONTRACTS.md "Pilot's map"); T chat to everyone, Y to your carrier's crew (Tab in the input switches; Enter sends, Esc cancels; the input owns the keyboard; `src/ui/chat.ts`, rules `shared/chat.ts`); M mute; ` debug menu. Shared rules: `shared/{crew,squad,ops}.ts`.
 - Objective: capture zones (CONTRACTS.md "Capture zones"): hold a 650 m zone alone to score; zones move every
   5 minutes; first carrier to 1,200 points wins the round.
-- Sound: one mix in `src/audio/mixer.ts`; every recorded sound is a slot in `src/audio/sfx-slots.ts` (takes in
-  `public/sfx/v3/`, picks in `public/sfx/picks.json`), played with `sfx().play/loop` (`sfx-bank.ts`). SOUNDS tab in the
+- Sound: one mix in `src/audio/mixer.ts` (`CARRIER_MIX` on the kit's `AudioRuntime`); every recorded sound is a slot in `src/audio/sfx-slots.ts` (takes in
+  `public/sfx/v3/`, picks in `public/sfx/picks.json`), played with `sfx().play/loop` (`sfx-bank.ts`) and is a shared library id the Lab can audition (`SLOT_LIBRARY_ID`). SOUNDS tab in the
   debug menu (or `?sounds=1`): audition every take and pick by ear; AUDIO tab: levels. See CONTRACTS.md "Sound".
 - Renderer (`src/render/`): raw WebGPU, HDR rgba16float, MSAA x4, depth32float with reversed Z (clear 0,
   `greater-equal`), bloom and an ACES-graded composite (`post.ts`). Static world via `renderer.setStatic` (packed

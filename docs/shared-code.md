@@ -46,4 +46,10 @@ Remaining overlap, checked against [sfx-inventory.md](sfx-inventory.md); none is
   graph-identical to the Lab's path (`games/lab/scripts/prove-game-audio.ts`). Library samples would change their
   sound. To share them, render the synth into library entries or give the library procedural entries.
 - **Blackout's crash samples** (`public/sfx/vehicles/`) are different encodes of Getaway's crash family. Pick one.
-- **Getaway** shares only `ui.click` with the library. **Carrier** keeps its own slot bank and audition board.
+- **Getaway** shares only `ui.click` with the library.
+- **Carrier** runs on the kit runtime (`AudioRuntime` with a game-defined `mix`, `@arcade/kit/audio/mix`) and its
+  played takes are library ids (`usedBy: ["carrier"]`, reused in place). It keeps its own playback chain for recorded
+  slots (`sfx-bank.ts`: a 3D listener with HRTF panners, distance gain, air absorption, travel delay, a 6-voice priority
+  budget): the runtime's `spatialize` is a top-down 2D model (ear height, 260 m/s Doppler, 150 m default range) and
+  would change how they sound. Its picking board (SOUNDS tab, picks.json, ratings) is the curation step for its
+  candidate takes. To share further: a 3D listener in the runtime, then `playCue` for the bank.

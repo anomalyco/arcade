@@ -687,4 +687,155 @@ export const LIBRARY_FILES: Record<string, readonly LibraryFile[]> = {
   "ui.tick": [
     {"file":"ui-click-1.ogg","path":"games/carrier/public/sfx/v3/ui-click-1.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's picked interface click take (eleven_text_to_sound_v2)","durationSeconds":0.48,"loudness":-26,"peakDb":-5.3,"gain":1.261,"bytes":7620},
   ],
+  "aircraft.carrier.trap": [
+    {"file":"trap-4.ogg","path":"games/carrier/public/sfx/v3/trap-4.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"trap\" take 4 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":4.713,"loudness":-10,"peakDb":-4.4,"gain":0.628,"bytes":37148},
+  ],
+  "impact.bullet.water": [
+    {"file":"impact-water-1.ogg","path":"games/carrier/public/sfx/v3/impact-water-1.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"impact-water\" take 1 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":2,"loudness":-12.9,"peakDb":-0.8,"gain":0.702,"bytes":21586},
+    {"file":"impact-water-2.ogg","path":"games/carrier/public/sfx/v3/impact-water-2.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"impact-water\" take 2 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":1.842,"loudness":-13,"peakDb":-1,"gain":0.706,"bytes":23899},
+    {"file":"impact-water-3.ogg","path":"games/carrier/public/sfx/v3/impact-water-3.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"impact-water\" take 3 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":2,"loudness":-14.1,"peakDb":0,"gain":0.799,"bytes":21501},
+  ],
+  "impact.cannon.metal": [
+    {"file":"impact-metal-1.ogg","path":"games/carrier/public/sfx/v3/impact-metal-1.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"impact-metal\" take 1 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":2,"loudness":-12.2,"peakDb":-1.2,"gain":0.647,"bytes":20928},
+    {"file":"impact-metal-2.ogg","path":"games/carrier/public/sfx/v3/impact-metal-2.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"impact-metal\" take 2 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":1.568,"loudness":-12.8,"peakDb":-1.5,"gain":0.688,"bytes":16999},
+    {"file":"impact-metal-3.ogg","path":"games/carrier/public/sfx/v3/impact-metal-3.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"impact-metal\" take 3 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":1.822,"loudness":-12.5,"peakDb":-6,"gain":0.669,"bytes":21404},
+  ],
+  "missile.launch": [
+    {"file":"missile-launch-1.ogg","path":"games/carrier/public/sfx/v3/missile-launch-1.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"missile-launch\" take 1 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":4,"loudness":-11.1,"peakDb":-3.6,"gain":0.714,"bytes":45331},
+  ],
+  "missile.motor": [
+    {"file":"missile-motor-2.ogg","path":"games/carrier/public/sfx/v3/missile-motor-2.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"missile-motor\" take 2 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":3.85,"loudness":-20,"peakDb":-11.8,"gain":1.002,"bytes":42675,"loopStart":0,"loopEnd":3.85},
+  ],
+  "missile.flares": [
+    {"file":"flares-1.ogg","path":"games/carrier/public/sfx/v3/flares-1.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"flares\" take 1 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":3,"loudness":-15.6,"peakDb":-9.1,"gain":1.07,"bytes":27018},
+    {"file":"flares-2.ogg","path":"games/carrier/public/sfx/v3/flares-2.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"flares\" take 2 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":2.991,"loudness":-15.7,"peakDb":-9.2,"gain":1.086,"bytes":25778},
+    {"file":"flares-3.ogg","path":"games/carrier/public/sfx/v3/flares-3.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"flares\" take 3 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":3,"loudness":-13.3,"peakDb":-7.7,"gain":0.819,"bytes":29478},
+    {"file":"flares-4.ogg","path":"games/carrier/public/sfx/v3/flares-4.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"flares\" take 4 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":2.956,"loudness":-15,"peakDb":-9.3,"gain":1.005,"bytes":26379},
+  ],
+  "missile.sam.launch": [
+    {"file":"sam-launch-2.ogg","path":"games/carrier/public/sfx/v3/sam-launch-2.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"sam-launch\" take 2 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":5,"loudness":-12.3,"peakDb":-5.9,"gain":0.818,"bytes":51778},
+  ],
+  "bomb.release": [
+    {"file":"bomb-release-1.ogg","path":"games/carrier/public/sfx/v3/bomb-release-1.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"bomb-release\" take 1 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":1.48,"loudness":-14.4,"peakDb":-1.5,"gain":0.828,"bytes":18211},
+  ],
+  "bomb.whistle": [
+    {"file":"bomb-whistle-2.ogg","path":"games/carrier/public/sfx/v3/bomb-whistle-2.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"bomb-whistle\" take 2 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":4,"loudness":-13.8,"peakDb":-10.9,"gain":0.619,"bytes":55801},
+  ],
+  "explosion.geyser": [
+    {"file":"water-geyser-1.ogg","path":"games/carrier/public/sfx/v3/water-geyser-1.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"water-geyser\" take 1 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":5,"loudness":-12.3,"peakDb":-4.7,"gain":0.729,"bytes":48925},
+  ],
+  "explosion.jet.air": [
+    {"file":"boom-air-1.ogg","path":"games/carrier/public/sfx/v3/boom-air-1.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"boom-air\" take 1 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":6,"loudness":-12.3,"peakDb":-5.4,"gain":1.03,"bytes":62520},
+    {"file":"boom-air-2.ogg","path":"games/carrier/public/sfx/v3/boom-air-2.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"boom-air\" take 2 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":5.789,"loudness":-11.6,"peakDb":-3.7,"gain":0.957,"bytes":56176},
+    {"file":"boom-air-3.ogg","path":"games/carrier/public/sfx/v3/boom-air-3.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"boom-air\" take 3 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":6,"loudness":-11.4,"peakDb":-5.9,"gain":0.937,"bytes":52649},
+    {"file":"boom-air-4.ogg","path":"games/carrier/public/sfx/v3/boom-air-4.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"boom-air\" take 4 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":6,"loudness":-11.8,"peakDb":-4.2,"gain":0.979,"bytes":56793},
+  ],
+  "explosion.missile.air": [
+    {"file":"boom-missile-1.ogg","path":"games/carrier/public/sfx/v3/boom-missile-1.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"boom-missile\" take 1 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":4,"loudness":-12.7,"peakDb":-6.9,"gain":1.086,"bytes":45309},
+    {"file":"boom-missile-2.ogg","path":"games/carrier/public/sfx/v3/boom-missile-2.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"boom-missile\" take 2 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":4,"loudness":-13.8,"peakDb":-8.8,"gain":1.225,"bytes":44987},
+    {"file":"boom-missile-3.ogg","path":"games/carrier/public/sfx/v3/boom-missile-3.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"boom-missile\" take 3 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":4,"loudness":-13.3,"peakDb":-5.4,"gain":1.158,"bytes":47473},
+    {"file":"boom-missile-4.ogg","path":"games/carrier/public/sfx/v3/boom-missile-4.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"boom-missile\" take 4 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":3.582,"loudness":-13.6,"peakDb":-8.1,"gain":1.206,"bytes":39592},
+  ],
+  "explosion.bomb.land": [
+    {"file":"boom-bomb-land-1.ogg","path":"games/carrier/public/sfx/v3/boom-bomb-land-1.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"boom-bomb-land\" take 1 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":6,"loudness":-11.2,"peakDb":-0.7,"gain":0.914,"bytes":65206},
+    {"file":"boom-bomb-land-2.ogg","path":"games/carrier/public/sfx/v3/boom-bomb-land-2.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"boom-bomb-land\" take 2 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":6,"loudness":-11.9,"peakDb":-4.9,"gain":0.992,"bytes":68104},
+    {"file":"boom-bomb-land-3.ogg","path":"games/carrier/public/sfx/v3/boom-bomb-land-3.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"boom-bomb-land\" take 3 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":6,"loudness":-11.5,"peakDb":-4.2,"gain":0.943,"bytes":66090},
+    {"file":"boom-bomb-land-4.ogg","path":"games/carrier/public/sfx/v3/boom-bomb-land-4.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"boom-bomb-land\" take 4 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":6,"loudness":-10.9,"peakDb":-2.7,"gain":0.88,"bytes":71679},
+  ],
+  "explosion.bomb.water": [
+    {"file":"boom-bomb-water-1.ogg","path":"games/carrier/public/sfx/v3/boom-bomb-water-1.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"boom-bomb-water\" take 1 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":5.999,"loudness":-10.3,"peakDb":-2.3,"gain":0.825,"bytes":63273},
+    {"file":"boom-bomb-water-2.ogg","path":"games/carrier/public/sfx/v3/boom-bomb-water-2.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"boom-bomb-water\" take 2 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":6,"loudness":-12.6,"peakDb":-2.2,"gain":1.071,"bytes":64188},
+    {"file":"boom-bomb-water-3.ogg","path":"games/carrier/public/sfx/v3/boom-bomb-water-3.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"boom-bomb-water\" take 3 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":6,"loudness":-8.7,"peakDb":-1.8,"gain":0.687,"bytes":71546},
+    {"file":"boom-bomb-water-4.ogg","path":"games/carrier/public/sfx/v3/boom-bomb-water-4.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"boom-bomb-water\" take 4 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":6,"loudness":-12.5,"peakDb":-2.7,"gain":1.056,"bytes":73236},
+  ],
+  "explosion.crash.sea": [
+    {"file":"boom-crash-sea-1.ogg","path":"games/carrier/public/sfx/v3/boom-crash-sea-1.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"boom-crash-sea\" take 1 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":5,"loudness":-13.3,"peakDb":-7.6,"gain":1.164,"bytes":54486},
+    {"file":"boom-crash-sea-2.ogg","path":"games/carrier/public/sfx/v3/boom-crash-sea-2.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"boom-crash-sea\" take 2 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":5,"loudness":-14.3,"peakDb":-8.2,"gain":1.299,"bytes":53845},
+    {"file":"boom-crash-sea-3.ogg","path":"games/carrier/public/sfx/v3/boom-crash-sea-3.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"boom-crash-sea\" take 3 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":4.999,"loudness":-10.9,"peakDb":-5.1,"gain":0.877,"bytes":54457},
+    {"file":"boom-crash-sea-4.ogg","path":"games/carrier/public/sfx/v3/boom-crash-sea-4.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"boom-crash-sea\" take 4 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":5,"loudness":-11.6,"peakDb":-6.2,"gain":0.95,"bytes":56849},
+  ],
+  "explosion.crash.land": [
+    {"file":"boom-crash-land-1.ogg","path":"games/carrier/public/sfx/v3/boom-crash-land-1.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"boom-crash-land\" take 1 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":6,"loudness":-12.7,"peakDb":-6.2,"gain":1.085,"bytes":71141},
+    {"file":"boom-crash-land-2.ogg","path":"games/carrier/public/sfx/v3/boom-crash-land-2.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"boom-crash-land\" take 2 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":6,"loudness":-11.1,"peakDb":-4.5,"gain":0.901,"bytes":68395},
+    {"file":"boom-crash-land-3.ogg","path":"games/carrier/public/sfx/v3/boom-crash-land-3.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"boom-crash-land\" take 3 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":5.481,"loudness":-10.9,"peakDb":-3,"gain":0.877,"bytes":65735},
+    {"file":"boom-crash-land-4.ogg","path":"games/carrier/public/sfx/v3/boom-crash-land-4.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"boom-crash-land\" take 4 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":6,"loudness":-12.8,"peakDb":-5.7,"gain":1.094,"bytes":70762},
+  ],
+  "explosion.far": [
+    {"file":"boom-far-1.ogg","path":"games/carrier/public/sfx/v3/boom-far-1.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"boom-far\" take 1 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":6,"loudness":-11.5,"peakDb":-1.2,"gain":0.597,"bytes":66550},
+    {"file":"boom-far-2.ogg","path":"games/carrier/public/sfx/v3/boom-far-2.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"boom-far\" take 2 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":6,"loudness":-11.7,"peakDb":-3.6,"gain":0.608,"bytes":67047},
+    {"file":"boom-far-3.ogg","path":"games/carrier/public/sfx/v3/boom-far-3.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"boom-far\" take 3 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":6,"loudness":-10.2,"peakDb":-1.3,"gain":0.511,"bytes":70953},
+    {"file":"boom-far-4.ogg","path":"games/carrier/public/sfx/v3/boom-far-4.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"boom-far\" take 4 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":6,"loudness":-10.4,"peakDb":-1.5,"gain":0.526,"bytes":65535},
+  ],
+  "gun.ciws": [
+    {"file":"ciws-1.ogg","path":"games/carrier/public/sfx/v3/ciws-1.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"ciws\" take 1 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":4.85,"loudness":-20,"peakDb":-12,"gain":1.253,"bytes":54357,"loopStart":0,"loopEnd":4.85},
+  ],
+  "gun.naval.five-inch": [
+    {"file":"naval-gun-1.ogg","path":"games/carrier/public/sfx/v3/naval-gun-1.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"naval-gun\" take 1 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":4,"loudness":-11.6,"peakDb":-1.6,"gain":0.955,"bytes":50002},
+  ],
+  "vehicle.boat.engine": [
+    {"file":"boat-engine-3.ogg","path":"games/carrier/public/sfx/v3/boat-engine-3.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"boat-engine\" take 3 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":6.85,"loudness":-19.9,"peakDb":-12.4,"gain":0.79,"bytes":76424,"loopStart":0,"loopEnd":6.85},
+  ],
+  "ambience.carrier.deck": [
+    {"file":"carrier-bed-4.ogg","path":"games/carrier/public/sfx/v3/carrier-bed-4.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"carrier-bed\" take 4 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":7.85,"loudness":-20,"peakDb":-10,"gain":0.5,"bytes":102161,"loopStart":0,"loopEnd":7.85},
+  ],
+  "ship.horn": [
+    {"file":"ship-horn-1.ogg","path":"games/carrier/public/sfx/v3/ship-horn-1.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"ship-horn\" take 1 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":5,"loudness":-15.3,"peakDb":-10.4,"gain":0.918,"bytes":64839},
+  ],
+  "ship.hull.slam": [
+    {"file":"hull-slam-1.ogg","path":"games/carrier/public/sfx/v3/hull-slam-1.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"hull-slam\" take 1 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":4,"loudness":-10.9,"peakDb":-0.4,"gain":0.555,"bytes":47430},
+    {"file":"hull-slam-2.ogg","path":"games/carrier/public/sfx/v3/hull-slam-2.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"hull-slam\" take 2 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":2.874,"loudness":-11.3,"peakDb":-0.1,"gain":0.584,"bytes":33502},
+    {"file":"hull-slam-3.ogg","path":"games/carrier/public/sfx/v3/hull-slam-3.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"hull-slam\" take 3 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":4,"loudness":-10.9,"peakDb":-1.2,"gain":0.559,"bytes":45226},
+    {"file":"hull-slam-4.ogg","path":"games/carrier/public/sfx/v3/hull-slam-4.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"hull-slam\" take 4 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":4,"loudness":-12.1,"peakDb":0.2,"gain":0.638,"bytes":48237},
+  ],
+  "ship.hull.creak": [
+    {"file":"hull-creak-1.ogg","path":"games/carrier/public/sfx/v3/hull-creak-1.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"hull-creak\" take 1 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":5,"loudness":-12,"peakDb":-3,"gain":0.4,"bytes":58800},
+  ],
+  "ship.fire": [
+    {"file":"deck-fire-2.ogg","path":"games/carrier/public/sfx/v3/deck-fire-2.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"deck-fire\" take 2 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":5.85,"loudness":-19.9,"peakDb":-7.3,"gain":0.789,"bytes":62660,"loopStart":0,"loopEnd":5.85},
+  ],
+  "ship.sinking": [
+    {"file":"sinking-1.ogg","path":"games/carrier/public/sfx/v3/sinking-1.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"sinking\" take 1 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":5.723,"loudness":-13.7,"peakDb":-1,"gain":0.77,"bytes":68914},
+  ],
+  "ambience.ocean.calm": [
+    {"file":"ocean-calm-1.ogg","path":"games/carrier/public/sfx/v3/ocean-calm-1.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"ocean-calm\" take 1 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":7.85,"loudness":-20,"peakDb":-4.5,"gain":0.502,"bytes":98103,"loopStart":0,"loopEnd":7.85},
+  ],
+  "ambience.ocean.rough": [
+    {"file":"ocean-rough-4.ogg","path":"games/carrier/public/sfx/v3/ocean-rough-4.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"ocean-rough\" take 4 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":7.85,"loudness":-20,"peakDb":-3.9,"gain":0.5,"bytes":97008,"loopStart":0,"loopEnd":7.85},
+  ],
+  "ambience.ocean.storm": [
+    {"file":"ocean-storm-3.ogg","path":"games/carrier/public/sfx/v3/ocean-storm-3.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"ocean-storm\" take 3 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":7.85,"loudness":-20,"peakDb":-5.5,"gain":0.633,"bytes":98097,"loopStart":0,"loopEnd":7.85},
+  ],
+  "ambience.wind.light": [
+    {"file":"wind-light-1.ogg","path":"games/carrier/public/sfx/v3/wind-light-1.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"wind-light\" take 1 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":6.85,"loudness":-20,"peakDb":-8.8,"gain":0.396,"bytes":84703,"loopStart":0,"loopEnd":6.85},
+  ],
+  "ambience.wind.gale": [
+    {"file":"wind-gale-1.ogg","path":"games/carrier/public/sfx/v3/wind-gale-1.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"wind-gale\" take 1 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":6.85,"loudness":-19.9,"peakDb":-8.6,"gain":0.627,"bytes":89116,"loopStart":0,"loopEnd":6.85},
+  ],
+  "ambience.rain.sea.light": [
+    {"file":"rain-light-1.ogg","path":"games/carrier/public/sfx/v3/rain-light-1.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"rain-light\" take 1 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":6.85,"loudness":-22.4,"peakDb":-1.4,"gain":0.416,"bytes":92171,"loopStart":0,"loopEnd":6.85},
+  ],
+  "ambience.rain.sea.heavy": [
+    {"file":"rain-heavy-3.ogg","path":"games/carrier/public/sfx/v3/rain-heavy-3.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"rain-heavy\" take 3 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":6.85,"loudness":-20,"peakDb":-11.6,"gain":0.448,"bytes":88110,"loopStart":0,"loopEnd":6.85},
+  ],
+  "ambience.rain.canopy": [
+    {"file":"rain-canopy-1.ogg","path":"games/carrier/public/sfx/v3/rain-canopy-1.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"rain-canopy\" take 1 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":6.85,"loudness":-20,"peakDb":-2.5,"gain":0.448,"bytes":102265,"loopStart":0,"loopEnd":6.85},
+  ],
+  "weather.thunder.sea.near": [
+    {"file":"thunder-near-1.ogg","path":"games/carrier/public/sfx/v3/thunder-near-1.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"thunder-near\" take 1 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":5.931,"loudness":-11.8,"peakDb":-3.1,"gain":0.618,"bytes":59277},
+    {"file":"thunder-near-2.ogg","path":"games/carrier/public/sfx/v3/thunder-near-2.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"thunder-near\" take 2 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":6.999,"loudness":-11.1,"peakDb":-2.5,"gain":0.567,"bytes":71477},
+    {"file":"thunder-near-3.ogg","path":"games/carrier/public/sfx/v3/thunder-near-3.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"thunder-near\" take 3 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":6.324,"loudness":-9.8,"peakDb":-0.7,"gain":0.492,"bytes":65197},
+    {"file":"thunder-near-4.ogg","path":"games/carrier/public/sfx/v3/thunder-near-4.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"thunder-near\" take 4 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":5.468,"loudness":-11,"peakDb":-2.2,"gain":0.563,"bytes":56278},
+  ],
+  "weather.thunder.sea.far": [
+    {"file":"thunder-far-1.ogg","path":"games/carrier/public/sfx/v3/thunder-far-1.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"thunder-far\" take 1 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":7.829,"loudness":-12.4,"peakDb":-0.5,"gain":0.333,"bytes":88478},
+    {"file":"thunder-far-2.ogg","path":"games/carrier/public/sfx/v3/thunder-far-2.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"thunder-far\" take 2 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":7.626,"loudness":-11.3,"peakDb":-1.9,"gain":0.291,"bytes":91734},
+    {"file":"thunder-far-3.ogg","path":"games/carrier/public/sfx/v3/thunder-far-3.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"thunder-far\" take 3 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":7.801,"loudness":-11.7,"peakDb":-0.8,"gain":0.306,"bytes":88968},
+    {"file":"thunder-far-4.ogg","path":"games/carrier/public/sfx/v3/thunder-far-4.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"thunder-far\" take 4 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":7.55,"loudness":-11.5,"peakDb":-2.2,"gain":0.299,"bytes":83952},
+  ],
+  "weather.lightning.crack": [
+    {"file":"lightning-crack-1.ogg","path":"games/carrier/public/sfx/v3/lightning-crack-1.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"lightning-crack\" take 1 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":1.953,"loudness":-14.1,"peakDb":-1.5,"gain":0.8,"bytes":29938},
+  ],
+  "ui.kill-confirm": [
+    {"file":"ui-kill-1.ogg","path":"games/carrier/public/sfx/v3/ui-kill-1.ogg","source":"elevenlabs-sound-v2","license":"ElevenLabs commercial sound-generation license (Anomaly)","provenance":"Carrier's \"ui-kill\" take 1 (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)","durationSeconds":1.48,"loudness":-21.6,"peakDb":-7.6,"gain":0.959,"bytes":22003},
+  ],
 }
