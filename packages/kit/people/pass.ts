@@ -1,7 +1,8 @@
 /**
  * GPU skinning for people: one compute dispatch per visible person writes its skinned triangles, in world space,
  * straight into the kit's textured vertex layout, and the stock textured scene pipeline draws them. So people get the
- * game's own lights, beams, fog, shadows and temporal resolve with no second lighting path. A `ScenePass` for the
+ * game's own lights, beams, fog, shadows and temporal resolve with no second lighting path. They are `MAT.actor`, so
+ * they also get the cool fill and rim every game gives its blocky actors to read in the dark. A `ScenePass` for the
  * renderer's opaque slot.
  */
 import { imageTexture } from "../gpu/gltf"
@@ -143,7 +144,7 @@ export class PeoplePass implements ScenePass {
     const params = d.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
     const p = new ArrayBuffer(16)
     new Uint32Array(p)[0] = g.lod.indices.length
-    new Float32Array(p)[1] = MAT.lit
+    new Float32Array(p)[1] = MAT.actor
     d.queue.writeBuffer(params, 0, p)
     const compute = d.createBindGroup({ layout: this.computePipeline.getBindGroupLayout(0), entries: [
       { binding: 0, resource: { buffer: g.source } }, { binding: 1, resource: { buffer: g.indices } },

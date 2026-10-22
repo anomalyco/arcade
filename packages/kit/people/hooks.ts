@@ -9,7 +9,7 @@ export type PeopleLook = {
 }
 
 export const PEOPLE_LOOK: PeopleLook = {
-  sheen: 2.2,
+  sheen: 0.8,
   rough: { skin: 0.52, cloth: 0.9, nylon: 0.36, hair: 0.45, brow: 0.8, eye: 0.1, knit: 0.96 },
 }
 
