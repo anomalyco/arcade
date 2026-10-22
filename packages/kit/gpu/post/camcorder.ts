@@ -759,8 +759,12 @@ export class CameraFilter implements FinalPass {
     this.settings = settings
   }
 
+  /** The renderer asks every frame. While off, `encode` never runs, so forget the last filter here: picking one again starts a fresh recording. */
   get active(): boolean {
-    return familyOf(this.settings.mode) !== null
+    if (familyOf(this.settings.mode) !== null) return true
+    this.valid = false
+    this.lastMode = "today"
+    return false
   }
 
   /** The texture the renderer composites into while a filter is on. */
