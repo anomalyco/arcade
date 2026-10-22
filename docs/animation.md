@@ -602,8 +602,9 @@ What the first pass (2026-10-19, `8404f9ab`) showed, angle RMSE at matched speed
 ## Skinned people on the rig
 
 `@arcade/kit/people` ([people.md](people.md)) poses a skinned MakeHuman mesh (game_engine skeleton) from the rig's
-frames instead of drawing parts; the rig's motion and gait numbers are unchanged (`gait-metrics.ts --tag after`
-matches main). What held up, measured with `bun scripts/people/measure.ts`:
+frames instead of drawing parts. It walks and runs with mocap and stands with the rig (below); the rig's own motion
+and gait numbers are unchanged. What held up, measured with `bun scripts/people/measure.ts` and
+`bun scripts/people/gait-metrics.ts`:
 
 - **IK on the mesh's own bone lengths, not the rig's.** Copying rig rotations onto a skeleton with different thigh and
   shin lengths slides planted feet. Retargeting by positions (rig ball and ankle targets, two-bone IK with the mesh's
@@ -624,8 +625,24 @@ matches main). What held up, measured with `bun scripts/people/measure.ts`:
 - **Standing weight shift.** Hips slide 3.5 cm over the loaded leg and roll 4° down on the free side, chest counter-rolls
   2.6°, hands ride with the shoulders; the leg IK unlocks the free knee by itself. Dwell 3–5 s per side, ~1 s across,
   faded in after ~1 s still and out within 0.25 s of any step.
-- **Torch hand.** A wrist bend after the arm IK turns the barrel onto the beam (0° worst error while walking) and a
-  measured palm axis (`hands` rest) seats it; fingers take a torch grip.
+- **Torch hand.** A wrist bend after the arm IK turns the barrel onto the beam (0° worst error while walking). The
+  barrel lies diagonally in the palm (heel of the hand to the index knuckle) and each hand solves its own finger
+  angles at load so every joint sits on the barrel's surface; one set of angles for all hands put PIP joints inside
+  the barrel and the thumb 6–9 cm off it, because fingers differ in length and knuckle height.
+- **Carry a torch low, thumb forward** (`torchCarry`). Held out at chest height, a fist aims its barrel up the
+  forearm's side, so only a 55–66° wrist fold aims it ahead; carried by the hip with the thumb forward, the diagonal
+  grip already points it forward and down (wrist 8–47° over every beam direction, searched for least bend).
+- **Arms on the mesh's shoulder, never locked.** The MakeHuman arm is 10–13% shorter and its shoulder narrower than
+  the rig's at leg scale, so absolute rig wrist targets locked the elbow straight 50–75% of a walk. Hang the rig's
+  shoulder→wrist vector from the mesh's own shoulder scaled to its arm, then ease reach toward 97.5% (86% with a torch).
+- **Mocap gait over the rig's on a realistic mesh.** Side by side on the same body (`scripts/people/walk-compare.sh`),
+  the rig's walk reads as a crouched shuffle (stance knee stays bent, short stride, little heel–toe roll) and CMU's
+  brisk walk reads as a person: straight stance leg at heel strike, heel-to-toe roll and push-off, longer stride, arms
+  hanging close. 100STYLE (CC BY 4.0) tops out at 0.93 m/s walking and 1.59 m/s "running" in its steady windows, too
+  slow for woods' 1.9 m/s walk and 3.4 m/s sprint; CMU 07_12 (≈2.0 m/s) and 09_11 (3.42 m/s) match them.
+- **Lock the ball the mesh is pinned to.** A foot lock on the joint-map ball still slid ~5 mm a frame while a lifted
+  heel blended flat: the rig pins the mesh ball at √(foot² + ankle²) along ankle→ball, and that line's length changes
+  in a blend. Locking that point took the worst stance slip from 113 mm to under 10 mm.
 
 ## Known gaps
 

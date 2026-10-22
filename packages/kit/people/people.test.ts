@@ -6,7 +6,8 @@ import { animate, newAvatar } from "../avatar/anim"
 import { spring, type V3 } from "../rig"
 import { readPerson, SRC_FLOATS } from "./asset"
 import { qRot } from "./quat"
-import { newPose, personRest, posePerson, type PersonRest } from "./retarget"
+import { gaitBody, newGait } from "./gait"
+import { newPose, personRest, posePerson, torchCarry, type PersonRest } from "./retarget"
 import { terrainFeet } from "./terrain"
 import { idleShift, personLod } from "./view"
 
@@ -148,5 +149,64 @@ describe("people", () => {
       }
     }
     expect(bad).toBe(0)
+  })
+})
+
+test("the solved torch grip closes every finger on the barrel and the thumb over it", () => {
+  const pose = newPose(rest)
+  const a = newAvatar("grip", 0, 0, 0, "rifle")
+  a.unarmed = true
+  animate(a, 1 / 60, 0, 0, 0, 0, 0, 0)
+  posePerson(rest, { body: a.body!, lift: 0, torch: { side: 1, dir: [1, -0.25, 0] } }, pose)
+  const t = pose.torch!
+  const off = (p: V3) => { const d: V3 = [p[0] - t.p[0], p[1] - t.p[1], p[2] - t.p[2]], u = d[0] * t.x[0] + d[1] * t.x[1] + d[2] * t.x[2]; return Math.hypot(d[0] - u * t.x[0], d[1] - u * t.x[1], d[2] - u * t.x[2]) }
+  for (const f of ["index", "middle", "ring", "pinky", "thumb"]) {
+    const j = [1, 2, 3].map((k) => pose.pos[at(rest, `${f}_0${k}_r`)]!)
+    const tip: V3 = [0, 1, 2].map((k) => j[2]![k]! + (j[2]![k]! - j[1]![k]!) * 0.85) as V3
+    // Finger centrelines one half-thickness outside an 18 mm barrel (never inside it), within 4 cm of its axis.
+    for (const p of f === "thumb" ? [tip] : [j[1]!, j[2]!, tip]) {
+      expect(off(p)).toBeGreaterThan(0.02)
+      expect(off(p)).toBeLessThan(0.04)
+    }
+  }
+})
+
+test("a torch arm keeps its elbow bent wherever the beam points", () => {
+  for (const [yaw, pitch] of [[0, -0.25], [0.5, 0], [-0.5, -0.5], [0.3, 0.4]] as const) {
+    const ch = rest.arms[1]
+    walk(2, 1.4, () => 0, (pose, a, t) => {
+      a.reach = { r: torchCarry(pitch), k: 1 }
+      if (t < 1) return
+      const reach = dist(pose.pos[ch.end]!, pose.pos[ch.upper]!) / (ch.lu + ch.ll)
+      expect(reach).toBeLessThan(0.87)
+    }, [Math.cos(yaw) * Math.cos(pitch), Math.sin(pitch), Math.sin(yaw) * Math.cos(pitch)])
+  }
+})
+
+describe("mocap gait", () => {
+  test("planted balls stay put walking, running and stopping", () => {
+    for (const speedAt of [() => 1.9, () => 3.4, (t: number) => (t < 2 ? 1.9 : 0)]) {
+      const s = rest.scale, a = newAvatar("gait", 0, 0, 0, "rifle")
+      a.unarmed = true
+      const pose = newPose(rest), terrain = { drop: spring(), init: false }, gait = newGait()
+      const dt = 1 / 60, stance = [0, 0], prev: (V3 | null)[] = [null, null]
+      let x = 0, worst = 0
+      for (let f = 0; f < 60 * 4; f++) {
+        const v = speedAt(f * dt)
+        x += v * dt
+        animate(a, dt, f * dt, x / s, 0, v / s, 0, 0)
+        const { body, loco } = gaitBody(gait, a, a.body!, s, dt)
+        posePerson(rest, { body, ...terrainFeet(terrain, loco, body, s, () => 0, dt, rest.sole) }, pose)
+        if (f < 90) continue
+        for (let k = 0; k < 2; k++) {
+          const ball = pose.pos[at(rest, k ? "ball_r" : "ball_l")]!
+          if (loco.feet[k].planted && prev[k]) stance[k]! += Math.hypot(ball[0] - prev[k]![0], ball[2] - prev[k]![2])
+          if (!loco.feet[k].planted) stance[k] = 0
+          prev[k] = loco.feet[k].planted ? [...ball] : null
+          worst = Math.max(worst, stance[k]!)
+        }
+      }
+      expect(worst).toBeLessThan(0.012)
+    }
   })
 })

@@ -6,10 +6,16 @@
  * World units; the rig is in rig space (world / scale).
  */
 import type { HumanBody } from "../human-pose"
-import type { Locomotion } from "../human-locomotion"
-import { at, RIG, stepSpring, type Frame, type Spring } from "../rig"
+import { at, RIG, stepSpring, type Frame, type Spring, type V3 } from "../rig"
 
 export type TerrainState = { drop: Spring; init: boolean }
+/** What `terrainFeet` reads of a gait (the rig's `Locomotion`, or the mocap gait's own foot state), rig units. */
+export type TerrainLoco = {
+  x: number; y: number
+  feet: [TerrainFoot, TerrainFoot]
+  motion: { targets: readonly V3[] }
+}
+type TerrainFoot = { planted: boolean; p: V3; lift: V3 }
 
 const smoother = (u: number) => u * u * u * (u * (u * 6 - 15) + 10)
 const smoothstep = (a: number, b: number, x: number) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t) }
@@ -31,7 +37,7 @@ export type Sole = { toAnkle: number; toHeel: number }
 const TILT = { down: -0.35, up: 0.75 }
 const SOLE_SAMPLES = 6
 
-export function terrainFeet(st: TerrainState, a: Locomotion, body: HumanBody, s: number, ground: (x: number, z: number) => number, dt: number, sole?: Sole): TerrainFeet {
+export function terrainFeet(st: TerrainState, a: TerrainLoco, body: HumanBody, s: number, ground: (x: number, z: number) => number, dt: number, sole?: Sole): TerrainFeet {
   const G = (x: number, z: number) => ground(x * s, z * s)
   const toAnkle = (sole?.toAnkle ?? RIG.foot * s) / s, toHeel = (sole?.toHeel ?? (RIG.foot + RIG.heel) * s) / s
   /** The rig's ball pivot (where retarget.ts pins the mesh ball), in rig plan coordinates. */

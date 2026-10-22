@@ -75,6 +75,8 @@ export type HandRest = {
   barrel: V3
   /** Grip centre, hand-local. */
   grip: V3
+  /** Fingers closed round that barrel, solved for this hand (`solveTorchGrip`). */
+  torch: HandPose
   joints: { index: number; finger: Finger; joint: number; flex: V3; spread: V3; oppose?: V3 }[]
 }
 export type Finger = "index" | "middle" | "ring" | "pinky" | "thumb"
@@ -115,7 +117,7 @@ export function personRest(skeleton: Skeleton): PersonRest {
   const midHip = mul(add(P("thigh_l"), P("thigh_r")), 0.5)
   let top = 0
   for (const p of bindPos) top = Math.max(top, p[1])
-  return {
+  const rest: PersonRest = {
     skeleton, local, idx, scale, footBind,
     ballHeight: Math.max(0, P("ball_l")[1]),
     sole: (() => {
@@ -132,6 +134,8 @@ export function personRest(skeleton: Skeleton): PersonRest {
     height: top + 0.12,
     hands: [handRest(skeleton, idx, "l"), handRest(skeleton, idx, "r")],
   }
+  for (const side of [0, 1] as const) rest.hands[side].torch = solveTorchGrip(rest, side)
+  return rest
 }
 
 const FINGERS = ["index", "middle", "ring", "pinky"] as const
@@ -162,12 +166,67 @@ function handRest(sk: Skeleton, idx: Record<string, number>, s: "l" | "r"): Hand
       joints.push({ index, finger, joint: j, flex: qRot(binv, flex), spread: qRot(binv, palm), oppose })
     }
   }
-  const knuckle = len(sub(P(`middle_01_${s}`), hand))
-  // A flashlight barrel runs through the fist across the palm, front end out past the index/thumb, tipped a little
-  // toward the fingers; it sits under the proximal finger bones, a little toward the palm.
-  const barrel = qRot(inv, norm(add(across, mul(along, 0.3))))
-  const grip = qRot(inv, add(mul(along, knuckle * 1.05), mul(palm, 0.028)))
-  return { barrel, grip, joints }
+  // A flashlight lies diagonally in the fist, from the heel of the hand to the index knuckle, front end out past the
+  // index and thumb; its axis runs one finger's half-thickness plus the barrel's radius in front of the knuckles.
+  const barrel = qRot(inv, norm(add(across, mul(along, GRIP.diagonal))))
+  const knuckles = mul(add(P(`index_01_${s}`), P(`pinky_01_${s}`)), 0.5)
+  const grip = qRot(inv, add(sub(knuckles, hand), add(mul(palm, GRIP.radius + GRIP.finger), mul(along, GRIP.back))))
+  return { barrel, grip, torch: TORCH_GRIP, joints }
+}
+
+/** A held flashlight: barrel radius, a finger's half-thickness (m), its diagonal in the palm (along per across), and
+ * how far behind the knuckles its axis sits (m). */
+export const GRIP = { radius: 0.018, finger: 0.0085, diagonal: 0.45, back: -0.012 }
+
+/**
+ * Closes one hand round its flashlight barrel: per finger, the MCP and PIP flexion (DIP two-thirds of PIP) that put
+ * the finger's joints and tip on the barrel's surface; then the thumb's opposition, swing and curl that wrap it over
+ * the other side. Fingers differ in length and knuckle height, so one set of angles for every hand leaves some
+ * fingers inside the barrel and others off it. Once per person, at load.
+ */
+function solveTorchGrip(rest: PersonRest, side: 0 | 1): HandPose {
+  const sk = rest.skeleton, hr = rest.hands[side]!, s = side === 1 ? "r" : "l"
+  const pose: PersonPose = { rot: sk.bindRot.map((q) => [...q] as Q), pos: sk.bindPos.map((p) => [...p] as V3), torch: null }
+  const hand = rest.idx[`hand_${s}`]!
+  const axis = qRot(sk.bindRot[hand]!, hr.barrel), centre = add(sk.bindPos[hand]!, qRot(sk.bindRot[hand]!, hr.grip))
+  const R = GRIP.radius + GRIP.finger
+  const off = (p: V3) => { const d = sub(p, centre); return len(sub(d, mul(axis, dot(d, axis)))) }
+  const pts = (f: Finger) => {
+    const j = [1, 2, 3].map((k) => pose.pos[rest.idx[`${f}_0${k}_${s}`]!]!)
+    return [j[1]!, j[2]!, add(j[2]!, mul(sub(j[2]!, j[1]!), 0.85))]
+  }
+  const best: HandPose = { ...TORCH_GRIP, index: [...TORCH_GRIP.index], middle: [...TORCH_GRIP.middle], ring: [...TORCH_GRIP.ring], pinky: [...TORCH_GRIP.pinky], thumb: [...TORCH_GRIP.thumb], together: 0 }
+  // Inside the barrel costs more than off it.
+  const miss = (ps: V3[]) => ps.reduce((a, p) => { const e = off(p) - R; return a + (e < 0 ? 4 * e * e : e * e) }, 0)
+  for (const f of FINGERS) {
+    let low = Infinity
+    const at = (m: number, q: number) => {
+      if (m < 0 || m > 95 || q < 0 || q > 110) return
+      poseFingers(rest, side, { ...best, [f]: [m, q, q * 0.66] }, pose)
+      const c = miss(pts(f))
+      if (c < low) { low = c; best[f] = [m, q, q * 0.66] }
+    }
+    for (let m = 0; m <= 95; m += 5) for (let q = 0; q <= 110; q += 5) at(m, q)
+    const [m0, q0] = best[f]
+    for (const dm of [-2.5, 0, 2.5]) for (const dq of [-2.5, 0, 2.5]) at(m0 + dm, q0 + dq)
+  }
+  let low = Infinity
+  const along = (p: V3) => dot(sub(p, centre), axis)
+  poseFingers(rest, side, best, pose)
+  const indexAt = along(pose.pos[rest.idx[`index_02_${s}`]!]!)
+  const thumb = (o: number, w: number, c: number) => {
+    if (o < 0 || o > 90 || w < -60 || w > 30 || c < 0 || c > 60) return
+    const trial = { ...best, thumbOppose: o, thumbAlong: w, thumb: [c * 0.5, c, c] as [number, number, number] }
+    poseFingers(rest, side, trial, pose)
+    const [, b, tip] = pts("thumb")
+    // The thumb closes over the barrel at the index end, its last bone and tip on the surface.
+    const cost = miss([b!, tip!]) + 0.05 * (along(tip!) - indexAt) ** 2
+    if (cost < low) { low = cost; best.thumbOppose = o; best.thumbAlong = w; best.thumb = trial.thumb }
+  }
+  for (let o = 0; o <= 90; o += 10) for (let w = -60; w <= 30; w += 10) for (let c = 0; c <= 60; c += 10) thumb(o, w, c)
+  const [o0, w0, c0] = [best.thumbOppose, best.thumbAlong, best.thumb[1]]
+  for (const d of [-5, 0, 5]) for (const e of [-5, 0, 5]) for (const g of [-5, 0, 5]) thumb(o0 + d, w0 + e, c0 + g)
+  return best
 }
 
 /** Finger angles in degrees: [MCP, PIP, DIP] per finger, thumb opposition, swing and curl, fingers together. */
@@ -176,8 +235,8 @@ export type HandPose = {
   thumbOppose: number; thumbAlong: number; thumb: [number, number, number]; together: number
 }
 /** A relaxed, hanging hand (flexion grows from index to pinky). */
-export const RELAXED: HandPose = { index: [12, 26, 14], middle: [16, 32, 16], ring: [20, 36, 18], pinky: [24, 40, 20], thumbOppose: 28, thumbAlong: 0, thumb: [6, 10, 14], together: 4 }
-/** A fist round a flashlight barrel (~35 mm). */
+export const RELAXED: HandPose = { index: [28, 42, 20], middle: [32, 50, 22], ring: [36, 54, 24], pinky: [40, 56, 26], thumbOppose: 40, thumbAlong: -10, thumb: [10, 18, 20], together: -6 }
+/** A fist round a flashlight barrel (~35 mm): the starting point; each hand solves its own (`HandRest.torch`). */
 export const TORCH_GRIP: HandPose = { index: [62, 78, 40], middle: [68, 80, 42], ring: [72, 80, 44], pinky: [76, 80, 46], thumbOppose: 60, thumbAlong: -45, thumb: [20, 30, 38], together: 2 }
 
 export type PoseInput = {
@@ -328,15 +387,24 @@ export function posePerson(rest: PersonRest, input: PoseInput, out: PersonPose):
   out.torch = null
   for (let i = 0; i < 2; i++) {
     const ch = rest.arms[i]!
-    const fa = b.fa[i]!
-    // Hands ride with the shoulders when the weight shifts (the chest leans back about half the hips' slide).
-    const carry = mul(slide, 0.5)
-    const target = add(W([fa.p[0] - fa.y[0] * RIG.fore, fa.p[1] - fa.y[1] * RIG.fore, fa.p[2] - fa.y[2] * RIG.fore], -sink), carry)
-    solveChain(ch, target, add(W(fa.p, -sink), carry), b.ua[i]!.z)
+    const fa = b.fa[i]!, ua = b.ua[i]!
+    // The rig's arm, shoulder to elbow to wrist, hung from the mesh's own shoulder and scaled to the mesh's arm: the
+    // same angles at every elbow, never a wrist target past the mesh's reach (the mesh's arms are 10-13% shorter and
+    // its shoulders narrower than the rig's at leg scale, so absolute targets locked its elbows straight).
+    const k = (ch.lu + ch.ll) / ((RIG.upper + RIG.fore) * s)
+    const sh = W(ua.p), root = pos[ch.upper]!
+    const fromShoulder = (p: V3) => add(root, mul(sub(W(p), sh), k))
+    const torch = input.torch?.side === i ? input.torch : null
+    // An elbow never locks: reach eases toward a soft limit, lower for a hand holding a torch out, which keeps the
+    // elbow bent about 60° as people hold a flashlight (the rig's reach puts it at 91-100% of the arm).
+    const want = sub(fromShoulder([fa.p[0] - fa.y[0] * RIG.fore, fa.p[1] - fa.y[1] * RIG.fore, fa.p[2] - fa.y[2] * RIG.fore]), root)
+    const reach = len(want) / (ch.lu + ch.ll), [knee, limit] = torch ? ARM_REACH.torch : ARM_REACH.free
+    const eased = reach <= knee ? reach : knee + (limit - knee) * (1 - Math.exp(-(reach - knee) / (limit - knee)))
+    const target = add(root, mul(want, eased / (reach || 1)))
+    solveChain(ch, target, fromShoulder(fa.p), ua.z)
     subtree(ch.upper)
     const hand = ch.end
     const hr = rest.hands[i]!
-    const torch = input.torch?.side === i ? input.torch : null
     if (torch) {
       // Bend the wrist so the barrel points along the beam (up to 75°), then the torch frame comes from the hand.
       const now = qRot(rot[hand]!, hr.barrel)
@@ -350,7 +418,7 @@ export function posePerson(rest: PersonRest, input: PoseInput, out: PersonPose):
       const z = norm(cross(x, up0)), y = cross(z, x)
       out.torch = { p: add(pos[hand]!, qRot(rot[hand]!, hr.grip)), x, y, z }
     }
-    const grip = input.grip?.[i] ?? (torch ? TORCH_GRIP : RELAXED)
+    const grip = input.grip?.[i] ?? (torch ? hr.torch : RELAXED)
     poseFingers(rest, i, grip, out)
   }
 }
@@ -358,6 +426,16 @@ export function posePerson(rest: PersonRest, input: PoseInput, out: PersonPose):
 const DEG = Math.PI / 180
 /** Weight shift at full `shift`: hips slide (m) and roll (rad), the chest counter-rolls (rad). */
 export const SHIFT = { slide: 0.035, hipRoll: 0.07, chestRoll: 0.045 }
+/**
+ * Where a person carries a flashlight, torso space (x forward, y up from the hips, z right; `Avatar.reach.r`), for a
+ * beam at `pitch` (rad): low and a little forward of the hip with the thumb forward, so the fist aims the barrel ahead
+ * and down with a nearly straight wrist; raised for a beam above level. Searched with the cast for least wrist bend
+ * (26° at a −0.25 rad beam, against 55° with the hand held out at chest height).
+ */
+export const torchCarry = (pitch: number): V3 => [0.17, -0.1 + Math.max(0, Math.min(1, pitch)) * 0.35, 0.2]
+
+/** Arm reach as a fraction of the mesh arm: [where easing starts, the limit it approaches]. */
+export const ARM_REACH = { free: [0.9, 0.975], torch: [0.7, 0.86] } as const
 
 function poseFingers(rest: PersonRest, side: number, p: HandPose, out: PersonPose): void {
   const { skeleton: sk, local } = rest
