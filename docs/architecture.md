@@ -84,7 +84,7 @@ The table below shows which shared modules each game and the Lab import. `script
 | `props/*` | Generated furniture library: catalogue, `.prop` meshes, instanced batches, seeded room placement | — | — | Yes | — | Yes | — | — | — |
 | `look` & `gpu/look-shaders` | `LookSettings` presets and WGSL scene/post grading hooks | — | Yes | Yes | — | Yes | — | Yes | Yes |
 | `gpu/post/camcorder` | Opt-in Camera filter final pass (iPhone, VHS, CRT TV, body cam) on `Renderer.setFinalPass` | — | — | Yes | — | — | — | — | — |
-| `gpu-perf`, `fx/frame-timer` & `quality` | Rolling p50/p95/FPS `PerfSampler`, GPU pass timestamp telemetry and adaptive quality tiers (`GameQuality`) | Yes | Yes | Yes | Yes | Yes | — | Yes | — |
+| `gpu-perf`, `fx/frame-timer` & `quality` | Rolling p50/p95/FPS `PerfSampler`, GPU pass timestamp telemetry and adaptive quality tiers (`GameQuality`) | Yes | Yes | Yes | Yes | Yes | — | Yes | Yes |
 | `fx/{particles,particle-renderer}` | Fixed typed-array particle pool, `Emitter`, and billboard/spark/debris pass | Yes | Yes | Yes | Yes | Yes | — | Yes | Yes |
 | `fx/{volume*,smoke-trail,tyre-renderer}` | Flood-fill volumetric smoke and continuous ribbon tyre trails | Yes | Yes | Yes | — | Yes | — | — | — |
 | `fx/{explosion,projectile-trail,fire-water,splatter*}` | Multi-stage explosions with trailing fragments and water splashes, fire/water jets, and surface blood decals | Yes | Yes | Yes | Yes | Yes | — | Yes | — |
@@ -96,7 +96,7 @@ The table below shows which shared modules each game and the Lab import. `script
 | `audio/*` | Web Audio runtime, offline renderer, procedural synth, and `sfx-library` | Yes | Yes | Yes | Yes | Yes | — | Yes | Yes |
 | `sky/*` | Lazy catalogue stars, HDR night sky, textured Moon, astronomical clock and lunar illuminance | — | — | Yes | — | Yes | — | — | — |
 | `weather/*` | Continuous-phase weather sim, wet-surface WGSL, and rain/snow/splash pass | — | — | Yes | — | Yes | — | — | — |
-| `shell` | The player-facing game shell: settings (volume, mute, quality, reduce motion, key labels), title and lobby, Escape menu, leave warning and loading ([game-shell.md](game-shell.md)) | — | — | — | — | — | — | Yes | — |
+| `shell` | The player-facing game shell: settings (volume, mute, quality, reduce motion, key labels), title and lobby, Escape menu, leave warning and loading ([game-shell.md](game-shell.md)) | — | — | — | — | — | — | Yes | Yes |
 | `lab-panel` & `@arcade/knobs` | Backquote debug overlay and Lab Inspector drawn by `packages/knobs` | Yes | Yes | Yes | Yes | Yes | — | Yes | Yes |
 | `ramps` & `ramp-table` | Gradient and curve settings kept as JSON text, baked into lookup tables for per-frame reads | — | — | Yes | — | Yes | — | — | — |
 | `lab/*` & `compare` | Lab workbench, sections, adapters, A/B compare, variation grid, and stations | Yes | Yes | Yes | — | Yes | — | — | — |

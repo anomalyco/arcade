@@ -35,3 +35,9 @@ canvas#view { position: fixed; inset: 0; width: 100vw; height: 100vh; display: b
 #hud .net b { color: var(--bone); font-weight: 800; letter-spacing: 0.2em; }
 #hud .net button { all: unset; cursor: pointer; margin-left: 8px; color: var(--bone); border-bottom: 1px solid var(--ash); }
 #hud .net .problem { margin-top: 4px; color: #e9a07a; }
+
+/* The kit game shell (title, Escape menu, Settings) in the Noir Silhouette palette. */
+.arcade-shell { --shell-font: "Barlow Condensed", system-ui, sans-serif; --shell-title-font: "Barlow Condensed", system-ui, sans-serif; --shell-ink: var(--bone); --shell-dim: var(--ash); --shell-card: rgba(7, 7, 10, 0.86); --shell-accent: var(--bone); --shell-accent-ink: var(--night); --shell-radius: 6px; font-size: 17px; }
+.arcade-shell .as-title { font-weight: 800; font-size: 58px; letter-spacing: 0.2em; margin-right: -0.2em; }
+.arcade-shell .as-heading { font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase; }
+.arcade-shell .as-btn { font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
