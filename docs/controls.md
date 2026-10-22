@@ -110,7 +110,7 @@ installs itself on first use.
 | Map | `M` | `KeyG` in Carrier, `KeyN` in Outbreak (`KeyM` is mute in both) | `G` / `N` | `I` / `B` | Hold for the full map, tap to pin (Carrier); tap to open and close (Outbreak, [outbreak-map.md](outbreak-map.md)) |
 | Mute Audio | `M` | `KeyM` | `M` | `M` | Global audio mute in Getaway, Blackout, Carrier, Outbreak (Outbreak also has a speaker button top right with volume sliders); Lab mute in Edit mode |
 | Pause / Release / Close | `Esc` | `Escape` | `Esc` | `Esc` | Releases Pointer Lock, closes menus/chat/Lab, exits Lab Play mode |
-| Lab / Debug Overlay | `` ` `` / `~` | `Backquote` (`F2` alias in Carrier) | `` ` `` | `` ` `` | Opens `LabPanel` / `DebugMenu` and releases held gameplay keys |
+| Lab / Debug Overlay | `` ` `` / `~` | `Backquote` (`F2` alias in Carrier) | `` ` `` | `` ` `` | Opens `LabPanel` / `DebugMenu` and releases held gameplay keys; with `capture: "focus"` a click on the game plays on with the panel open ([lab.md](lab.md#bind-controls-to-typed-production-settings)) |
 
 ## Full binding inventory & audit across games and Lab surfaces
 
