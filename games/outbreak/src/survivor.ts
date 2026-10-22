@@ -71,7 +71,7 @@ export const PISTOL_HOLD = { fwd: 0.375, up: 1.35, side: 0.045 } as const
 export const PISTOL_LOW_READY = { fwd: 0.28, up: 1.13, side: 0.165 } as const
 const REST_SHOULDER_Y = HIP + RIG.waist + RIG.shoulderY
 const BLADE_PISTOL = 0.235
-/** The crouch (Ctrl): how far the hips drop (m), how far the pelvis tips and how far the chest leans over the knees (rad). */
+/** The crouch (Z): how far the hips drop (m), how far the pelvis tips and how far the chest leans over the knees (rad). */
 const STEALTH_DROP = 0.3
 const STEALTH_PELVIS = 0.28
 const STEALTH_CHEST = 0.34
@@ -317,7 +317,7 @@ export class Survivor {
   private chest = spring()
   private head = spring()
   private reachDrop = spring()
-  /** 0 standing, 1 crouched low (Ctrl, D-19 verbs): knees bent, hips down, chest over the knees. */
+  /** 0 standing, 1 crouched low (Z, D-19 verbs): knees bent, hips down, chest over the knees. */
   private stealth = spring()
   private twist = spring()
   private arms = [spring(), spring()] as const

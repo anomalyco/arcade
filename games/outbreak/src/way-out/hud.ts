@@ -48,6 +48,8 @@ export type WayOutHudInput = {
   car: { fuel: number; range: number } | null
   /** A hold in progress by the local survivor: hotwiring a car, cutting a chain. */
   hold: { label: string; progress: number } | null
+  /** The map's key, for "pinned" (Backquote › Controls › Map key). */
+  mapKey: string
 }
 
 /** `lines` are HTML (escaped where they are words). */
@@ -142,7 +144,7 @@ export class WayOutHud {
       const bearing = Math.atan2(plan.y - 44, plan.x - 44)
       this.queue.push({ art: clueArt(kind, plan.kind, bearing), title: words.title, lines: (by ? [...words.lines, `Found by ${by}`] : words.lines).map(esc), tone: "clue" })
       if (v.tier >= 3 && this.seenTier < 3 && kind !== "arrive") {
-        this.queue.push({ art: placeArt(plan.kind), title: w.short, lines: [`Pinned on your map. ${keyCapHtml("KeyN")}`], tone: "warm" })
+        this.queue.push({ art: placeArt(plan.kind), title: w.short, lines: [`Pinned on your map. ${keyCapHtml(i.mapKey)}`], tone: "warm" })
       }
     } else if (v.last === EVENT_SIGNAL) {
       this.queue.push({ art: clueArt("signal", plan.kind), title: "Signal sent", lines: [i.tuning.standRule ? "Hold until they come." : "Hold until dawn."].map(esc), tone: "warm" })
@@ -201,7 +203,7 @@ export class WayOutHud {
         html = `<b>Hold ${esc(w.short.toLowerCase())}</b> <span>${i.tuning.standRule ? "until they come" : "until dawn"} · ${mmss(left)}</span>`
       } else if (v.clues.has("arrive") && d <= i.tuning.evacRadius * 3) {
         html = `<b>${esc(w.short)}</b> <span>Signal them: ${keyCapHtml("KeyE")} at the post, a flare, or the horn</span> ${when}`
-      } else if (v.tier >= 3) html = `<b>${esc(w.short)}</b> <span>${roughDistance(d)} · pinned ${keyCapHtml("KeyN")}</span> ${when}`
+      } else if (v.tier >= 3) html = `<b>${esc(w.short)}</b> <span>${roughDistance(d)} · pinned ${keyCapHtml(i.mapKey)}</span> ${when}`
       else if (v.tier >= 2) html = `<b>${esc(w.short)}?</b> <span>${esc(plan.bearing)} of town, ${roughDistance(plan.distance)} by road</span> ${when}`
       else html = `<b>A way out?</b> <span>${esc(w.short)}. Find where.</span> ${when}`
       // Driving there: how far the tank goes, so you know whether to find gas cans first.

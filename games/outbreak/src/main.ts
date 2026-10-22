@@ -14,6 +14,7 @@ import { wrapHour } from "../shared/day-cycle"
 import { LocalSession } from "../shared/session"
 import { OutbreakAudio } from "./audio"
 import { BotsLabController } from "./bots-lab"
+import { muteOnM, type ControlSettings } from "./controls/settings"
 import { CoopView } from "./coop-view"
 import type { DiscoveryHost } from "./discovery/stage"
 import { outbreakClientFeatures } from "./features"
@@ -125,7 +126,7 @@ async function main() {
     })(),
     automated: navigator.webdriver,
   })
-  audio.arm()
+  audio.arm(window, () => muteOnM(settings.hud as unknown as ControlSettings))
   const vehicleAudio = new OutbreakVehicleAudio(audio)
   const frameRenderer = new OutbreakFrameRenderer({
     device,

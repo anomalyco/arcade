@@ -1,6 +1,7 @@
 import type { LabControl } from "@arcade/kit/lab-panel"
 import { leftTheHouse } from "../../shared/onboarding/training"
 import type { LocalSession } from "../../shared/session"
+import { crouchCodes, type ControlSettings } from "../controls/settings"
 import { registerOutbreakClientFeature } from "../feature-registry"
 import { inventoryPresenter } from "../inventory/hooks"
 import { BEATS, TrainingGuide, type BeatId } from "./beats"
@@ -163,11 +164,12 @@ export const outbreakOnboardingFeature = registerOutbreakClientFeature({
         fade ??= new Fade()
       }
       const lobby = ctx.coop.lobby
+      const crouchKey = crouchCodes(ctx.settings.hud as unknown as ControlSettings)[0]!
       const pr = practising(ctx.session)
       if (pr) {
         const bag = inventoryPresenter()
         lobby?.tuck(Boolean(bag?.owns() && bag.open))
-        hints?.update(ctx.session.view, ctx.cam, ctx.w, ctx.h, stepPractice(pr, lobby?.loadout, ctx.dt, !bag?.owns() || bag.open))
+        hints?.update(ctx.session.view, ctx.cam, ctx.w, ctx.h, stepPractice(pr, lobby?.loadout, ctx.dt, !bag?.owns() || bag.open, crouchKey))
         skip?.update(false, 0)
         return
       }
@@ -182,6 +184,7 @@ export const outbreakOnboardingFeature = registerOutbreakClientFeature({
       // The case (AR-94) is taught by opening it; Today's dock sheet has nothing new to teach.
       const bag = inventoryPresenter()
       if (!bag?.owns() || bag.open) t.guide.noteCase()
+      t.guide.crouchKey = crouchKey
       const beat = t.guide.step(t.session.sim, view.actorId, ctx.dt)
       const hint = t.age > 1.2 && !t.finishing ? quietHint(t.guide.hint(t.session.sim, view.actorId, beat), view.prompt) : null
       hints?.update(view, ctx.cam, ctx.w, ctx.h, hint)

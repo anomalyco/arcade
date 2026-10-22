@@ -104,8 +104,8 @@ export class OutbreakAudio {
     this.weapons = new WeaponBank(this.runtime)
   }
 
-  /** Starts audio on the first pointer or key press (autoplay rules), binds `M`, and pauses with the tab. */
-  arm(target: Window = window): void {
+  /** Starts audio on the first pointer or key press (autoplay rules), binds `M` while `muteKey` says so, and pauses with the tab. */
+  arm(target: Window = window, muteKey: () => boolean = () => true): void {
     if (this.armed) return
     const signal = (this.armed = new AbortController()).signal
     const unlock = () => {
@@ -119,7 +119,7 @@ export class OutbreakAudio {
     }
     for (const type of ["pointerdown", "keydown", "touchend"]) target.addEventListener(type, unlock, { capture: true, signal })
     target.addEventListener("keydown", (e) => {
-      if (e.code !== "KeyM" || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return
+      if (e.code !== "KeyM" || e.repeat || e.metaKey || e.ctrlKey || e.altKey || !muteKey()) return
       const el = e.target as HTMLElement | null
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return
       this.toggleMute()

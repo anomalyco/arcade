@@ -12,6 +12,7 @@ import { roadblocksOf, ROADBLOCK_WORDS, type Roadblock } from "../../shared/way-
 import { clueSites, evacuate, planOf, revealTo, signalEvac, type WayOutState } from "../../shared/way-out/runtime"
 import { wayOutOf, type WayOutView } from "../../shared/way-out/state"
 import { DEFAULT_WAY_OUT_TUNING, wayOutControls, type WayOutTuning } from "../../shared/way-out/tuning"
+import { mapCodes, type ControlSettings } from "../controls/settings"
 import type { CoopView } from "../coop-view"
 import { localSlot } from "../death/spectate"
 import { registerOutbreakClientFeature, type OutbreakClientFrameContext } from "../feature-registry"
@@ -267,6 +268,7 @@ export const outbreakWayOutFeature = registerOutbreakClientFeature({
         hour: session.view.hour,
         time: session.view.time,
         timeScale: net ? COOP_TIME_SCALE : settings.dayCycle.timeScale,
+        mapKey: mapCodes(settings.hud as unknown as ControlSettings)[0]!,
         name: (index) => nameOf(session, coop, index),
       })
     },
