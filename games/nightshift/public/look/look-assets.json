@@ -1,0 +1,123 @@
+{
+  "layers": [
+    "fabric-partition",
+    "ceiling-tile-fissured",
+    "carpet-dirty",
+    "plastic-beige-rough"
+  ],
+  "layerSize": 512,
+  "props": [
+    {
+      "file": "mug",
+      "sourceSha256": "fbaae99373e34674bfedb778a67a5c69617c3d668ac2d29d6ee44fc89c857a0c",
+      "sourceBytes": 102664,
+      "runtimeBytes": 45308,
+      "texture": 256
+    },
+    {
+      "file": "paper-stack",
+      "sourceSha256": "719cd6218ed2b64e680855f53b62416d61365a362cc57027329a034606cde8c3",
+      "sourceBytes": 568028,
+      "runtimeBytes": 10812,
+      "texture": 256
+    },
+    {
+      "file": "paper-sheet",
+      "sourceSha256": "554211a2e24eb2755ddcc5b1885f7eff445411c5f15cabb7870acad6b8070c89",
+      "sourceBytes": 570352,
+      "runtimeBytes": 13140,
+      "texture": 256
+    },
+    {
+      "file": "yellow-pad",
+      "sourceSha256": "ffe8fcc1b3653ada312a6f920a5313cf1a46404be29ed20566397da76e80b79f",
+      "sourceBytes": 568028,
+      "runtimeBytes": 10812,
+      "texture": 256
+    },
+    {
+      "file": "sticky-note",
+      "sourceSha256": "092d332f0ee6d60dbac7de56a09a29e45dc1587c7de3551844c26695881075e7",
+      "sourceBytes": 567784,
+      "runtimeBytes": 10584,
+      "texture": 256
+    },
+    {
+      "file": "phone-alt",
+      "sourceSha256": "4cc8f19300154d918995d19087d0a9effc05482a6e51ed93d7e0a8920f051441",
+      "sourceBytes": 204160,
+      "runtimeBytes": 188752,
+      "texture": 256
+    },
+    {
+      "file": "desk-lamp",
+      "sourceSha256": "0bbd9bec342ca0d06413192ac030186aad1bd9b147c46a318cb51c5faa64605d",
+      "sourceBytes": 94240,
+      "runtimeBytes": 90200,
+      "texture": 256
+    },
+    {
+      "file": "dead-plant",
+      "sourceSha256": "2ddde44cf8e39a4f1490321e71b653200c0265feb710a747142f3a23a59d8144",
+      "sourceBytes": 562224,
+      "runtimeBytes": 179024,
+      "texture": 256
+    },
+    {
+      "file": "waste-bin",
+      "sourceSha256": "0934ffec0a1a53c247a12bb55368d365d3f592fc83d6f07c719cc995de5df296",
+      "sourceBytes": 1065236,
+      "runtimeBytes": 83356,
+      "texture": 256
+    },
+    {
+      "file": "file-box",
+      "sourceSha256": "92e8067f386c584a0964f514ac5a7f93238048da9808689203f929225efcec02",
+      "sourceBytes": 1207032,
+      "runtimeBytes": 53544,
+      "texture": 256
+    },
+    {
+      "file": "cardboard-box",
+      "sourceSha256": "27f80a4b710eb5b0f8b2a314c16a3697f2d44a07f82c63cf152221b12be65fcb",
+      "sourceBytes": 446908,
+      "runtimeBytes": 209864,
+      "texture": 512
+    },
+    {
+      "file": "letter-tray",
+      "sourceSha256": "3178570c3d9c6ff247b32eb9cf6eec283994c88a05d7654a16611b4d1c90bb7c",
+      "sourceBytes": 1084816,
+      "runtimeBytes": 102608,
+      "texture": 256
+    },
+    {
+      "file": "clipboard",
+      "sourceSha256": "49f0e4847ff19e9c4d6f1a2c81be405d24f27a242aaf46c57af07492a548cf1b",
+      "sourceBytes": 345380,
+      "runtimeBytes": 184048,
+      "texture": 256
+    },
+    {
+      "file": "stapler",
+      "sourceSha256": "b3ccb9065d8e4e3addf8592964682010d86500926d955175ad777fa8e7fe53a4",
+      "sourceBytes": 584516,
+      "runtimeBytes": 202288,
+      "texture": 256
+    },
+    {
+      "file": "wall-clock",
+      "sourceSha256": "876c5e995a299f887908fd5d2f67ad9878d7ba10c65743e460b6002f1a85e210",
+      "sourceBytes": 310480,
+      "runtimeBytes": 168076,
+      "texture": 256
+    },
+    {
+      "file": "pen-cup-ph",
+      "sourceSha256": "1e2eddc55414a43c92f3c90f8ac6b1cde1e9c4fe9dc093caf0e772ea4737437d",
+      "sourceBytes": 434508,
+      "runtimeBytes": 162664,
+      "texture": 256
+    }
+  ]
+}

@@ -4,7 +4,7 @@ import type { MovingMesh } from "./polish/moving-mesh"
 import { buildElevator } from "./elevator"
 
 // Metres. Surface IDs are carried in aux; the scene owns the material recipes.
-export const SURFACE = { plastic: 0, fabric: 1, carpet: 2, laminate: 3, ceiling: 4, metal: 5, paper: 6, tube: 7, crt: 8, led: 9, wood: 10 }
+export const SURFACE = { plastic: 0, fabric: 1, carpet: 2, laminate: 3, ceiling: 4, metal: 5, paper: 6, tube: 7, crt: 8, led: 9, wood: 10, deadTube: 15, carSteel: 20, carWood: 21, carLight: 22, hallScreen: 23, doorGlow: 24 }
 export const PHONE = { x: 0.12, y: 0.82, z: -5.4 }
 export const START = { x: -0.2, z: 5.7, yaw: -0.025, pitch: -0.025 }
 export const CLOSE = { x: -0.08, z: -4.82, yaw: -0.30, pitch: -0.95 }
@@ -15,6 +15,9 @@ export const CRADLE = [PHONE.x-0.102*1.3,PHONE.y+0.10,PHONE.z+.06]
 export const CORD_END = [CRADLE[0],CRADLE[1],CRADLE[2]+RECEIVER_PAD]
 export const PHONE_INDICATOR = [PHONE.x+.16,PHONE.z-.14]
 export const walls: Rect[] = []
+/** Light blockers with heights (partitions, walls, furniture) for the look's bounced-light grid. */
+export const occluders: { rect: Rect; h: number }[] = []
+export const partitions: { x: number; z: number; w: number; d: number; h: number }[] = []
 export type ChairRect=[number,number,number,number]
 export const chairs: ChairRect[] = []
 export const movingMeshes:MovingMesh[]=[]
@@ -73,11 +76,11 @@ function partition(m:Mesh,x:number,z:number,w:number,d:number,h=1.47) {
     else box(m,x,0,z+side*d/2,w+0.018,h+0.012,0.05,edge,5,0.008)
   }
   box(m,x,0.02,z,w+0.025,0.075,d+0.025,hex(0x474c44),5)
-  walls.push([x-w/2,z-d/2,x+w/2,z+d/2])
+  walls.push([x-w/2,z-d/2,x+w/2,z+d/2]);occluders.push({rect:[x-w/2,z-d/2,x+w/2,z+d/2],h});partitions.push({x,z,w,d,h})
 }
 function cabinet(m:Mesh,x:number,z:number,w=0.5,h=0.72) {
   const first=m.v.length
-  walls.push([x-w/2,z-0.325,x+w/2,z+0.325])
+  walls.push([x-w/2,z-0.325,x+w/2,z+0.325]);occluders.push({rect:[x-w/2,z-0.325,x+w/2,z+0.325],h:h+.04})
   box(m,x,0.04,z,w,h,0.65,hex(0x777a6b),5,0.015)
   const shell=range(m,first)
   for(let i=0;i<3;i++) {
@@ -168,7 +171,7 @@ function desk(m:Mesh,x:number,z:number,w=2.25) {
   box(m,x,0.727,z,w+0.006,0.019,0.885,hex(0x53574d),5,0.003)
   cabinet(m,x+w/2-0.29,z,0.48,0.67)
   for(const side of [-1,1]) box(m,x-w/2+0.055,0.02,z+side*0.35,0.038,0.72,0.038,edge,5)
-  walls.push([x-w/2,z-0.44,x+w/2,z+0.44])
+  walls.push([x-w/2,z-0.44,x+w/2,z+0.44]);occluders.push({rect:[x-w/2,z-0.44,x+w/2,z+0.44],h:.79})
 }
 function binders(m:Mesh,x:number,y:number,z:number,count=7) {
   for(let i=0;i<count;i++) {
@@ -278,7 +281,7 @@ export function phoneIndicator() {
 export function buildWorld(movable=true) {
   moveEnabled=movable
   walls.length=0
-  chairs.length=0;stackContacts.length=0;movingMeshes.length=0
+  chairs.length=0;stackContacts.length=0;movingMeshes.length=0;occluders.length=0;partitions.length=0
   const m=new Mesh()
   // The PBR carpet plane in props.ts owns y=0; slab top stays below it.
   box(m,0,-0.12,0,12,0.11,18,hex(0x565548),2)
@@ -286,9 +289,9 @@ export function buildWorld(movable=true) {
   // The acoustic grid is real geometry with inset tiles.
   for(let x=-6;x<=6;x+=0.6) box(m,x,2.928,0,0.014,0.025,18,hex(0x5b6159),5)
   for(let z=-9;z<=9;z+=1.2) box(m,0,2.928,z,12,0.025,0.014,hex(0x5b6159),5)
-  for(const x of [-4,6]) {box(m,x,0,0,0.18,3,18,hex(0x6b766c),0);walls.push([x-0.1,-9,x+0.1,9])}
-  box(m,0,0,-9,12,3,.18,hex(0x6b766c));walls.push([-6,-9.1,6,-8.9])
-  for(const [a,b] of [[-6,-1],[1,6]]){box(m,(a+b)/2,0,9,b-a,3,.18,hex(0x6b766c));walls.push([a,8.9,b,9.1])}
+  for(const x of [-4,6]) {box(m,x,0,0,0.18,3,18,hex(0x6b766c),0);walls.push([x-0.1,-9,x+0.1,9]);occluders.push({rect:[x-0.1,-9,x+0.1,9],h:3})}
+  box(m,0,0,-9,12,3,.18,hex(0x6b766c));walls.push([-6,-9.1,6,-8.9]);occluders.push({rect:[-6,-9.1,6,-8.9],h:3})
+  for(const [a,b] of [[-6,-1],[1,6]]){box(m,(a+b)/2,0,9,b-a,3,.18,hex(0x6b766c));walls.push([a,8.9,b,9.1]);occluders.push({rect:[a,8.9,b,9.1],h:3})}
   box(m,0,2.65,9,2,.35,.18,hex(0x6b766c));buildElevator(m,walls)
   // Blinds: thin metal blades, ladder cords and a deep reveal, on the left exterior wall.
   for(const z of [4,0,-4,-7])windowBlinds(m,z)
@@ -368,7 +371,7 @@ export function buildWorld(movable=true) {
   for(const z of [5,0,-4,-7]) for(const x of [0,3.6,-3.6]) {
     box(m,x,2.87,z,0.36,0.06,1.12,hex(0x505a53),5)
     box(m,x,2.866,z,0.29,0.006,1.02,hex(0x888b79),5)
-    for(const side of [-1,1]) box(m,x+side*0.085,2.80,z,0.035,0.025,0.95,hex(0xb6c3a8),x===0&&z===0&&side===1?7:x===-3.6&&z===-4&&side===1?7:0,0.01)
+    for(const side of [-1,1]) box(m,x+side*0.085,2.80,z,0.035,0.025,0.95,hex(0xb6c3a8),x===0&&z===0&&side===1?7:x===-3.6&&z===-4&&side===1?7:15,0.01)
     for(let i=0;i<5;i++) box(m,x,2.83,z-0.49+i*0.24,0.31,0.028,0.008,hex(0x59645a),5)
   }
   return { data: packVerts(m.v), vertices: m.v.length/11 }

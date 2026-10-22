@@ -5,6 +5,7 @@ import { contactShadowVolume } from "@arcade/kit/gpu/contact-shadows"
 import { officeUniform } from "./office-uniform"
 import { blindCookieWgsl } from "./blind-cookie"
 import { withCinematicPost } from "./cinema-post"
+import { lookGlassWgsl, lookMaterialWgsl, lookSceneWgsl, lookSurfaceWgsl } from "./look/wgsl"
 
 const uniform = officeUniform
 const ambient = "vec3f(0.27,0.65,0.88)*O.look.x*(0.4+0.6*max(n.y,0.0))"
@@ -65,9 +66,11 @@ fn terminalAt(uv:vec2f,version:f32)->vec3f {
   let face=pow(max(0.0,1.0-dot(uv-.5,uv-.5)*1.6),.5);
   return vec3f(.012,.041,.025)*face+vec3f(.16,.85,.34)*text*face;
 }
+${lookSceneWgsl}
+${lookGlassWgsl}
 `,
-  bounce: "officeBounce(o.world,n)", directional: "vec3f(0.0)", lightLeak: "0.0", wallDirectScale: "1.0",
-  ambient: `(${ambient})*officeOcclusion(o.world,n)`,
+  bounce: "(officeBounce(o.world,n)+lookBounce(o.world,n))*lookOcclusion(o.world,n)", directional: "vec3f(0.0)", lightLeak: "0.0", wallDirectScale: "1.0",
+  ambient: `(${ambient})*officeOcclusion(o.world,n)*lookOcclusion(o.world,n)`,
   material: /* wgsl */ `
     pbrRough=0.65;
     let p=o.world;
@@ -96,7 +99,8 @@ fn terminalAt(uv:vec2f,version:f32)->vec3f {
     if(kind==4) { albedo*=0.48+0.65*grain;pbrRough=0.97; }
     if(kind==5) { pbrRough=0.46;pbrMetal=0.2; }
     if(kind==6) { pbrRough=0.94;albedo*=0.9+0.15*grain; }
-    if(kind==0) { pbrRough=0.43+wear*0.15;albedo*=0.95+grain*0.1; }
+    if(kind==0||kind==15) { pbrRough=0.43+wear*0.15;albedo*=0.95+grain*0.1; }
+${lookMaterialWgsl}
   `,
   surface: /* wgsl */ `
     let kind=i32(round(o.aux));
@@ -114,6 +118,7 @@ fn terminalAt(uv:vec2f,version:f32)->vec3f {
     if(kind==11) { col+=vec3f(1.0,0.38,0.10)*O.lamps.z*(0.45+0.55*officeNoise(o.world*3.0))*(1.0-0.8*smoothstep(1.2,2.55,o.world.y)); }
     if(kind==12) { col+=vec3f(1.0,0.55,0.18)*O.lamps.w; }
     if(kind==13) { col=vec3f(1.8,0.75,0.15); }
+${lookSurfaceWgsl}
     col=fogApply(col,F.cam.xyz,o.world);
   `,
 }
@@ -126,6 +131,6 @@ export const hooks: SceneHooks = {...physical, lightAttenuation: physical.lightA
 export const propHooks: SceneHooks = {...hooks,
   fragmentStart: hooks.fragmentStart!.replace("normalize(o.normal)","texNormal"),
   material: hooks.material+"\n pbrRough=rough;pbrMetal=metal;",
-  surface: hooks.surface!.replace("col=terminalAt(uv,0.0)+col*.12;","col=texBase.rgb*.8+col*.04;"),
+  surface: hooks.surface!.replace("col=terminalAt(uv,0.0)+col*.12;","col=texBase.rgb*.8+col*.04;col=lookGlass(col,o.uv,o.world,n);"),
 }
 export const post=withCinematicPost(postShader(false,false,{chromatic:0,bloom:0.22,grain:0.006,vignette:0.3,bloomGate:{cap:0.06,hot:0.7},shadowLiftColor:[0.0001,0.0004,0.0005],shadowTint:[0.9,1.0,1.03],highlightTint:[1.04,1,0.91],saturation:0.95}))
