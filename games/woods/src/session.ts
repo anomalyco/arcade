@@ -25,42 +25,75 @@ export interface Session {
   tick(input: PlayerInput): void
   /** Your drawn position between ticks (`alpha` 0..1 of the way to the newest), with corrections eased out. */
   drawn(alpha: number): { x: number; z: number }
-  /** Presentation for this frame: friends interpolated, corrections decayed. */
-  frame(dt: number): void
+  /** Presentation for this frame (`alpha` 0..1 of the way from the last tick to the next): friends interpolated, corrections decayed. */
+  frame(dt: number, alpha: number): void
   drain(): WoodsEvent[]
   status(): string | null
   roster(): readonly RosterRow[]
   close(): void
 }
 
+type Pose = { x: number; z: number; yaw: number; pitch: number }
+
 export class SoloSession implements Session {
   readonly online = false
   readonly dt = 1 / 60
   readonly me = 0
+  /** The sim (automation writes here); `view` is what to draw. */
+  readonly state: WoodsState
   view: WoodsState
+  /** Draw friends between their last two ticks (a 120 Hz screen otherwise shows a 60 Hz sim as stutter). */
+  smooth = true
   private inputs = new Map<number, PlayerInput>()
   private events: WoodsEvent[] = []
   private prev = { x: 0, z: 0 }
+  private before = new Map<number, Pose>()
+  private shown = new Map<number, Player>()
+  private drawnView = {} as WoodsState
 
   constructor(readonly world: WoodsWorld, private readonly feel: Feel) {
-    this.view = createWoods(world, feel.botCount)
+    this.state = this.view = createWoods(world, feel.botCount)
     this.prev = { x: this.self.x, z: this.self.z }
   }
   get self(): Player {
-    return this.view.players.find((p) => p.id === 0)!
+    return this.state.players.find((p) => p.id === 0)!
   }
   tick(input: PlayerInput) {
-    if (this.view.brains.length !== this.feel.botCount) setBotCount(this.view, this.world, this.feel.botCount)
+    if (this.state.brains.length !== this.feel.botCount) setBotCount(this.state, this.world, this.feel.botCount)
     this.prev = { x: this.self.x, z: this.self.z }
+    for (const p of this.state.players) {
+      const b = this.before.get(p.id)
+      if (b) Object.assign(b, { x: p.x, z: p.z, yaw: p.yaw, pitch: p.pitch })
+      else this.before.set(p.id, { x: p.x, z: p.z, yaw: p.yaw, pitch: p.pitch })
+    }
     this.inputs.set(0, input)
-    stepWoods(this.view, this.world, this.inputs, this.dt, this.feel)
-    this.events.push(...this.view.events)
+    stepWoods(this.state, this.world, this.inputs, this.dt, this.feel)
+    this.events.push(...this.state.events)
   }
   drawn(alpha: number) {
     const s = this.self
     return { x: this.prev.x + (s.x - this.prev.x) * alpha, z: this.prev.z + (s.z - this.prev.z) * alpha }
   }
-  frame() {}
+  frame(_dt: number, alpha: number) {
+    if (!this.smooth) { this.view = this.state; return }
+    const players = this.state.players.map((p) => {
+      if (p.id === this.me) return p
+      let d = this.shown.get(p.id)
+      if (d) Object.assign(d, p)
+      else this.shown.set(p.id, (d = { ...p }))
+      const b = this.before.get(p.id)
+      // A teleport (automation, a respawn) shows where it lands.
+      if (b && Math.hypot(p.x - b.x, p.z - b.z) < 2) {
+        d.x = b.x + (p.x - b.x) * alpha
+        d.z = b.z + (p.z - b.z) * alpha
+        d.yaw = lerpAngle(b.yaw, p.yaw, alpha)
+        d.pitch = b.pitch + (p.pitch - b.pitch) * alpha
+      }
+      return d
+    })
+    if (this.shown.size > players.length) for (const id of this.shown.keys()) if (!players.some((p) => p.id === id)) this.shown.delete(id)
+    this.view = Object.assign(this.drawnView, this.state, { players })
+  }
   drain() {
     const out = this.events
     this.events = []

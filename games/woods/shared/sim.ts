@@ -249,12 +249,17 @@ function stepFlicker(state: WoodsState, p: Player, feel: Feel, dt: number) {
   }
 }
 
-/** 0..1 output of a player's flashlight this step (presentation reads it; `feel.flashFlicker` 0 disables dips). */
+/**
+ * 0..1 output of a player's flashlight at presentation time `t` (a continuous local clock, not the tick or snapshot
+ * time, so a dip doesn't step). A dip is a sputter between 0.15 and 0.8 at a few hertz, not a strobe;
+ * `feel.flashFlicker` 0 disables dips.
+ */
 export function beamLevel(p: Player, t: number, feel: Feel): number {
   if (!p.light) return 0
   if (p.flickerLeft <= 0 || feel.flashFlicker <= 0) return 1
-  const n = Math.sin(t * 61.3 + p.id * 4.1) * Math.sin(t * 23.7 + p.id)
-  return n > 0.15 ? 0.15 : 0.75
+  const n = Math.sin(t * 17.3 + p.id * 4.1) * 0.6 + Math.sin(t * 7.9 + p.id) * 0.4
+  const k = Math.max(0, Math.min(1, (n + 0.1) / 0.6))
+  return 0.8 - 0.65 * k * k * (3 - 2 * k)
 }
 
 const TIE_RELEASE = 0.2

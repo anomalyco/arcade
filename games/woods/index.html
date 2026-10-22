@@ -12,18 +12,52 @@
       #prompt { position: fixed; left: 50%; top: 70%; transform: translateX(-50%); pointer-events: none; font-size: 14px; text-shadow: 0 1px 4px #000, 0 0 12px #000; }
       #toast { position: fixed; left: 50%; bottom: 9%; transform: translateX(-50%); pointer-events: none; font: italic 15px Georgia, serif; color: #d8d2c0; text-shadow: 0 1px 6px #000; opacity: 0; transition: opacity 0.6s; text-align: center; max-width: 70vw; z-index: 5; }
       #reticle { position: fixed; left: 50%; top: 50%; width: 3px; height: 3px; margin: -1.5px; border-radius: 50%; background: rgba(230,235,240,0.35); pointer-events: none; }
-      #start { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: radial-gradient(ellipse at center, rgba(0,0,0,0.25), rgba(0,0,0,0.75)); cursor: pointer; z-index: 6; }
-      #start h1 { margin: 0; font: 300 44px Georgia, serif; letter-spacing: 0.3em; color: #cfc8b4; }
-      #start p { margin: 0; font: italic 15px Georgia, serif; color: #a59f8e; }
-      #start .row { display: flex; gap: 8px; align-items: center; margin-top: 14px; font: 13px system-ui, sans-serif; color: #a59f8e; }
-      #start input, #start button { font: 13px system-ui, sans-serif; color: #e8e2cf; background: rgba(20,22,20,0.8); border: 1px solid rgba(207,200,180,0.25); border-radius: 4px; padding: 6px 10px; }
-      #start input { width: 140px; }
-      #start button { cursor: pointer; }
-      #start button:hover { border-color: rgba(207,200,180,0.6); }
-      #start a { color: #a59f8e; font-size: 12px; }
-      #start b { color: #e8e2cf; letter-spacing: 0.15em; }
       #room { position: fixed; top: 12px; right: 14px; pointer-events: none; font-size: 12px; text-align: right; line-height: 1.6; opacity: 0.7; text-shadow: 0 1px 3px #000; }
       #room .away { opacity: 0.45; }
+      #tuning { position: fixed; left: 50%; top: 46px; transform: translateX(-50%); pointer-events: none; font-size: 13px; color: #efe6cc; text-shadow: 0 1px 4px #000; z-index: 4; }
+
+      /* The title and the Escape menu: a lit card over the dark woods. */
+      .overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(ellipse at center, rgba(0,0,0,0.05), rgba(0,0,0,0.6)); z-index: 6; cursor: pointer; }
+      .overlay[hidden] { display: none; }
+      .card { cursor: default; display: flex; flex-direction: column; align-items: stretch; gap: 18px; width: min(460px, calc(100vw - 40px)); max-height: calc(100dvh - 32px); overflow: auto; box-sizing: border-box; padding: 30px 32px 26px; border-radius: 16px; background: rgba(10, 12, 11, 0.78); box-shadow: inset 0 0 0 1px rgba(239,230,204,0.14), 0 24px 70px rgba(0,0,0,0.6); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); color: #efe6cc; font: 15px system-ui, sans-serif; }
+      .card h1 { margin: 0; text-align: center; font: 400 64px/1 Georgia, serif; letter-spacing: 0.28em; margin-right: -0.28em; color: #f6eed6; text-shadow: 0 2px 24px rgba(255,214,140,0.25); }
+      .card h2 { margin: 0; text-align: center; font: 400 34px/1 Georgia, serif; letter-spacing: 0.12em; color: #f6eed6; }
+      .card .sub { margin: -6px 0 0; text-align: center; font: italic 18px Georgia, serif; color: #ddd4bd; }
+      .card label.name { display: flex; align-items: center; gap: 12px; font-size: 15px; color: #ddd4bd; }
+      .card input[type=text] { flex: 1; font: 16px system-ui, sans-serif; color: #f6eed6; background: rgba(255,255,255,0.06); border: 1px solid rgba(239,230,204,0.3); border-radius: 8px; padding: 10px 12px; }
+      .card input[type=text]:focus { outline: none; border-color: rgba(239,230,204,0.7); }
+      .card button { font: 600 15px system-ui, sans-serif; color: #f6eed6; background: rgba(255,255,255,0.06); border: 1px solid rgba(239,230,204,0.35); border-radius: 10px; padding: 10px 14px; cursor: pointer; }
+      .card button:hover { border-color: rgba(239,230,204,0.8); background: rgba(255,255,255,0.1); }
+      .card button:focus-visible { outline: 2px solid #f2c96b; outline-offset: 2px; }
+      .card button.primary { color: #17130a; background: #f2c96b; border-color: #f2c96b; }
+      .card button.primary:hover { background: #ffd982; border-color: #ffd982; }
+      .card button:disabled { opacity: 0.5; cursor: default; }
+      .choices[hidden] { display: none; }
+      .choices { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      .choices button { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 16px 12px; font-size: 18px; }
+      .choices button small { font: 400 13px system-ui, sans-serif; opacity: 0.8; }
+      #invite { display: flex; flex-direction: column; gap: 12px; }
+      #invite[hidden] { display: none; }
+      #invite .line { display: flex; align-items: center; gap: 10px; justify-content: center; font-size: 15px; color: #ddd4bd; }
+      #invite b, #pause-room b { color: #f6eed6; letter-spacing: 0.15em; font-size: 17px; }
+      #invite .big { padding: 16px; font-size: 18px; }
+      .card a { color: #ddd4bd; font-size: 14px; text-align: center; }
+      .card .hint { margin: -8px 0 0; text-align: center; font-size: 13px; color: #b9b19c; }
+      #pause-room { display: flex; align-items: center; justify-content: center; gap: 10px; color: #ddd4bd; }
+      #pause-room[hidden] { display: none; }
+
+      #settings { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px 14px; padding-top: 16px; border-top: 1px solid rgba(239,230,204,0.14); font-size: 14px; color: #ddd4bd; }
+      #settings .head { grid-column: 1 / -1; font: 600 12px system-ui, sans-serif; letter-spacing: 0.12em; text-transform: uppercase; color: #b9b19c; margin-top: 2px; }
+      #settings input[type=range] { width: 100%; accent-color: #f2c96b; }
+      #settings output { min-width: 2.4em; text-align: right; font-variant-numeric: tabular-nums; color: #f6eed6; }
+      #settings .wide { grid-column: 2 / -1; }
+      #mute { display: inline-flex; align-items: center; gap: 8px; justify-self: start; padding: 6px 12px; font-weight: 500; }
+      #mute[aria-pressed=true] { color: #17130a; background: #f2c96b; border-color: #f2c96b; }
+      .seg { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid rgba(239,230,204,0.35); border-radius: 10px; overflow: hidden; }
+      .seg button { border: 0; border-radius: 0; padding: 8px 4px; font-weight: 500; background: transparent; }
+      .seg button + button { border-left: 1px solid rgba(239,230,204,0.2); }
+      .seg button[aria-pressed=true] { color: #17130a; background: #f2c96b; }
+      #quality-note { grid-column: 2 / -1; margin-top: -4px; font-size: 12px; color: #b9b19c; }
     </style>
   </head>
   <body>
@@ -33,10 +67,41 @@
     <div id="prompt"></div>
     <div id="toast"></div>
     <div id="room"></div>
-    <div id="start">
-      <h1>WOODS</h1><p id="start-sub">Click to step out of camp</p>
-      <div class="row"><input id="name" maxlength="16" placeholder="Your name" autocomplete="off" /><button id="friends">Play with friends</button></div>
-      <div class="row" id="invite" hidden>Room <b id="code"></b><button id="copy">Copy invite link</button><a href="./">play alone</a></div>
+    <div id="tuning" hidden></div>
+    <div id="start" class="overlay">
+      <div class="card">
+        <h1>WOODS</h1>
+        <p class="sub" id="start-sub">A night survey out of Camp Tamarack</p>
+        <label class="name">Your name <input type="text" id="name" maxlength="16" placeholder="Camper" autocomplete="off" /></label>
+        <div class="choices" id="choices">
+          <button id="solo" class="primary">Play alone<small>you and three campers</small></button>
+          <button id="friends">Play with friends<small>a private room, up to 6</small></button>
+        </div>
+        <div id="invite" hidden>
+          <div class="line">Room <b id="code"></b><button id="copy">Copy invite link</button></div>
+          <button id="join" class="primary big">Step out of camp</button>
+          <a href="./">Play alone instead</a>
+        </div>
+        <div id="settings">
+          <div class="head">Volume</div>
+          <span>Master</span><input type="range" id="vol-master" min="0" max="100" step="1" /><output for="vol-master"></output>
+          <span>Effects</span><input type="range" id="vol-effects" min="0" max="100" step="1" /><output for="vol-effects"></output>
+          <span>Ambience</span><input type="range" id="vol-ambience" min="0" max="100" step="1" /><output for="vol-ambience"></output>
+          <span></span><button id="mute" class="wide" aria-pressed="false"></button>
+          <div class="head">Graphics</div>
+          <span>Quality</span>
+          <div class="seg wide" id="quality-modes"><button data-mode="auto">Auto</button><button data-mode="high">High</button><button data-mode="balanced">Balanced</button><button data-mode="low">Low</button></div>
+          <div id="quality-note"></div>
+        </div>
+      </div>
+    </div>
+    <div id="pause" class="overlay" hidden>
+      <div class="card">
+        <h2>Paused</h2>
+        <button id="resume" class="primary big">Back to the woods</button>
+        <p class="hint">or click anywhere outside this card</p>
+        <div id="pause-room" hidden>Room <b id="pause-code"></b><button id="pause-copy">Copy invite link</button></div>
+      </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

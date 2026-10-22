@@ -1720,6 +1720,19 @@ Candidates from the code audits; measure and playtest before moving any into the
 
 ## Multiplayer
 
+- **Draw other walkers between ticks, ease their beams, and flicker on the page's clock.** Kit (woods, 2026-10-22):
+  "smoothly animate the other players so they don't just jump, the lights don't jump", and "the lights kind of
+  strobe". Three causes: solo bots were drawn at the 60 Hz sim tick (every other frame repeated on a 120 Hz screen, and
+  0 or 2 ticks a frame when rAF wobbles at 60 Hz); bot and remote headings snap (a new heading is set in one tick), so
+  the beam axis jumped up to 40° in a frame; and battery flicker was a 0.15/0.75 square wave read on the sim or 15 Hz
+  snapshot clock. Fixes in `games/woods`: `SoloSession.frame(dt, alpha)` draws a copy of each friend between their
+  last two ticks (`state` stays the sim), `FriendsView` puts each beam's direction on an exact critically damped
+  spring (`beamSettle` 0.12 s) and eases brightness over 40 ms, and `beamLevel` is a soft sputter evaluated on the
+  page clock. `scripts/jitter.ts` (raw `?smooth=0` against smoothed, same worker): solo bots on a 120 Hz clock 53% →
+  4–8% repeated frames, speed jitter 2.8 → 0.015 m/s, largest beam step 34–42° → 3.4–4.0°; a room friend walking and
+  sweeping its look in real time, speed jitter 1.14 → 0.32 m/s, beam jitter 567 → 38 °/s, largest beam step
+  51° → 15°. Lab: Camera › Friends › Smooth friends, Friend beam settle.
+
 - **Replicate persistent hazards and the spectator's target.** Outbreak clients inferred Bloater gas from observed
   deaths, so late joiners missed damaging clouds. `shared/specials/net.ts` now sends active, interest-filtered hazards:
   one small-id cloud costs 20 payload bytes and unchanged deltas cost zero. Body rise counters need their own section
