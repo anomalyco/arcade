@@ -1,9 +1,10 @@
 import type { LabControl } from "@arcade/kit/lab-panel"
 import { polishControls, polishDefaults } from "./polish/settings"
-export const defaults = () => ({ ...polishDefaults(), exposure: 0.92, ambient: 0.05, sodium: 12, deskSodium: 1.6, penumbra: 0.0025, bounce: 0.025, fluorescent: 1.8, crt: 0.0035, window: 0.36, officeLamp: 0.45, fog: 0.009, dust: 0.6, flicker: 1, speed: 1.7, volume: 0.55, pickup: 0.65, cameraMotion:1, reduceMotion:false, stepLength:.72, walkSettle:.3, foley:.8, roomTone:.7 })
+import { lookControls, lookDefaults } from "./look/settings"
+export const defaults = () => ({ ...lookDefaults(), ...polishDefaults(), exposure: 0.92, ambient: 0.05, sodium: 12, deskSodium: 1.6, penumbra: 0.0025, bounce: 0.025, fluorescent: 1.8, crt: 0.0035, window: 0.36, officeLamp: 0.45, fog: 0.009, dust: 0.6, flicker: 1, speed: 1.7, volume: 0.55, pickup: 0.65, cameraMotion:1, reduceMotion:false, stepLength:.72, walkSettle:.3, foley:.8, roomTone:.7 })
 export type Settings = ReturnType<typeof defaults>
 export function controls(): LabControl[] {
-  return [...polishControls(),...officeControls()]
+  return [...lookControls(),...polishControls(),...officeControls()]
 }
 function officeControls(): LabControl[] {
   const row = (key: keyof Settings, label: string, min: number, max: number, step: number, unit: string, group = "Office"): LabControl => ({ key, label, min, max, step, unit, group })

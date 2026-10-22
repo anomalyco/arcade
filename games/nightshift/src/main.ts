@@ -14,7 +14,10 @@ import { TEMPORAL_DEFAULTS } from "@arcade/kit/gpu/temporal"
 import { LabPanel } from "@arcade/kit/lab-panel"
 import { attachCameraFilter } from "@arcade/kit/gpu/post/camcorder"
 import { controls, defaults } from "./settings"
-import { hooks, post, fogVolume, contactVolume } from "./shaders"
+import { hooks, post, fogVolume, contactVolume, propHooks } from "./shaders"
+import { OfficeLook } from "./look"
+import { lookPlanBounce } from "./look/wgsl"
+import { shaftVolume } from "./look/shafts"
 import { buildWorld, handset, phoneIndicator, PHONE, START, CLOSE, CORD_END, RECEIVER_PAD, walls, chairs, movingMeshes, CONTINUITY_MONITOR, COLLEAGUES } from "./world"
 import { newCall, interact, stepCall, subtitle, ringEnvelope, CALL_FIRST_LINE_END } from "../shared/call"
 import { OfficeAudio, renderBeatAudio } from "./audio"
@@ -63,7 +66,7 @@ async function main() {
   const repeatView=seen
   if(smoke)settings.polish=0
   const contact=createContactShadowSettings({mode:"screen",length:0.35,thickness:0.06})
-  const renderer=new Renderer(device,gpu.context,gpu.format,{scene:makeSceneShader(hooks),sprite:spriteShader(),post:smoke?post:lensPost,volume:smoke?[fogVolume]:[contactVolume,fogVolume]})
+  const renderer=new Renderer(device,gpu.context,gpu.format,{scene:makeSceneShader(hooks),sprite:spriteShader(),post:smoke?post:lensPost,volume:smoke?[fogVolume]:[contactVolume,shaftVolume,fogVolume],planBounce:lookPlanBounce})
   renderer.setTemporal({...TEMPORAL_DEFAULTS,mode:"taa",sharpen:0.15})
   renderer.setLevel({chunks:[{data:world.data,box:[-7,-10,7,11]},{data:basement.data,box:basement.box}],glass:[],...flatLighting(0,0,[0,0,0])})
   const receiver=renderer.addModel(handset()),indicator=renderer.addModel(phoneIndicator()),parts=new FrameParts()
@@ -97,7 +100,9 @@ async function main() {
   const moving=smoke?null:new MovingMeshPass(renderer.passContext,movingMeshes,hooks)
   if(moving)renderer.addPass("opaque",moving)
   const casters=[{buffer,count:world.vertices,stride:24},{buffer:hallBuffer,count:basement.vertices,stride:24},...props.casters,...screens.pass.shadowCasters(),...hall.pass.shadowCasters(),...(moving?.casters??[])]
-  const frame=newSceneFrame(),custom=new Float32Array(40),dustField=new DustField()
+  const look=new OfficeLook(renderer,propHooks,smoke,async path=>{const r=await fetch(`${import.meta.env.BASE_URL}${path}`);if(!r.ok)throw Error(`${path}: ${r.status}`);return new Uint8Array(await r.arrayBuffer())})
+  let lookVersion=look.version
+  const frame=newSceneFrame(),custom=new Float32Array(56),dustField=new DustField()
   const beamDust=smoke?null:new BeamDust(renderer.passContext)
   if(beamDust)renderer.addPass("alpha",beamDust)
   let time=0,frames=0,paused=false,stepping=false,last=performance.now(),fixedTime:number|null=null
@@ -130,7 +135,7 @@ async function main() {
   window.addEventListener("keydown",e=>{if(e.repeat||e.metaKey||e.ctrlKey||e.altKey||isEditableEventTarget(e.target)||panel.visible||document.pointerLockElement!==canvas)return;if(e.code==="KeyE")action();if(e.code==="KeyM")audio.muted=!audio.muted})
   window.addEventListener("pagehide",()=>{storyAudio.dispose();audio.dispose()})
   function render(now:number) {
-    const dt=Math.min(0.05,(now-last)/1000);last=now
+    const frameMs=now-last,dt=Math.min(0.05,frameMs/1000);last=now
     if(paused&&!stepping){requestAnimationFrame(render);return}
     const active=document.pointerLockElement===canvas&&document.hasFocus()&&!document.hidden&&!panel.visible
     const wasComplete=opening.complete
@@ -140,7 +145,8 @@ async function main() {
     if(!opening.complete){camera.yaw=opening.yaw.x;camera.pitch=opening.pitch.x}
     camera.height=opening.height.x
     terminal.update(opening.time,opening.tokens)
-    const width=Math.max(1,Math.round(innerWidth*Math.min(devicePixelRatio,1.5))),height=Math.max(1,Math.round(innerHeight*Math.min(devicePixelRatio,1.5)))
+    look.update(settings,physics.chairs,camera.eye,time);look.recordFrame(settings,frameMs);look.carX=elevator.downstairs?BASEMENT_X:0
+    const {width,height}=look.canvasSize(settings,innerWidth,innerHeight,devicePixelRatio)
     if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;renderer.resize(width,height)}
     const playerMoving=active&&opening.complete&&!elevator.done
     camera.speed=playerMoving?settings.speed:0
@@ -181,23 +187,26 @@ async function main() {
     const ringTime=Math.max(0,opening.time-OPENING.ring)
     const signal=tubeSignal(time,settings.flicker),flicker=signal.level, led=opening.time<OPENING.ring?0.015:call.phase==="ringing"?0.18+0.82*ringEnvelope(ringTime):call.phase==="ended"?0.015:0.7
     const lampDefs:SceneLight[]=[
-      {id:1,x:-3.55,y:2.9,h:2.4,r:11,color:[1,0.43,0.14],power:settings.sodium,size:0.28,spot:{axis:[0.9,-0.5,-0.5],cosOuter:0.45,cosInner:0.75}},
-      {id:2,x:-3.55,y:-.75,h:2.45,r:10,color:[1,0.43,0.14],power:settings.sodium*settings.deskSodium,size:0.32,spot:{axis:[0.6,-0.25,-0.72],cosOuter:0.88,cosInner:0.97}},
-      {id:3,x:0,y:0,h:2.80,r:7,color:[0.78,0.89,0.87],power:settings.fluorescent*flicker,size:0.35,spot:{axis:[0,-1,0],cosOuter:0.15,cosInner:0.5}},
-      {id:4,x:-0.74,y:-5.48,h:1.14,r:2.7,color:[0.16,1,0.48],power:settings.crt,size:0.19,spot:{axis:[0,-0.35,0.937],cosOuter:0.05,cosInner:0.5}},
+      {id:1,x:-3.55,y:2.9,h:2.4,r:11,color:[1,0.43,0.14],power:settings.sodium*look.slat(settings),size:0.28,spot:{axis:[0.9,-0.5,-0.5],cosOuter:0.45,cosInner:0.75}},
+      {id:2,x:-3.55,y:-.75,h:2.45,r:10,color:[1,0.43,0.14],power:settings.sodium*settings.deskSodium*look.slat(settings),size:0.32,spot:{axis:[0.6,-0.25,-0.72],cosOuter:0.88,cosInner:0.97}},
+      {id:3,x:0,y:0,h:2.80,r:7,color:[0.78,0.89,0.87],power:settings.fluorescent*flicker*look.tubes(settings),size:0.35,spot:{axis:[0,-1,0],cosOuter:0.15,cosInner:0.5}},
+      {id:4,x:-0.74,y:-5.48,h:1.14,r:2.7,color:look.crtColor(settings,opening.time>=3),power:settings.crt*look.crt(settings),size:0.19,spot:{axis:[0,-0.35,0.937],cosOuter:0.05,cosInner:0.5}},
       {id:5,x:props.indicator[0],y:props.indicator[2],h:props.indicator[1]+.004,r:0.18,color:[1,0.025,0.004],power:0.0005*led,size:0.008,unshadowed:true},
-      {id:6,x:-3.6,y:-4,h:2.8,r:4,color:[0.6,0.77,0.68],power:settings.fluorescent*0.12*(settings.polish?1:flicker),size:0.25,unshadowed:true},
+      {id:6,x:-3.6,y:-4,h:2.8,r:4,color:[0.6,0.77,0.68],power:settings.fluorescent*0.12*(settings.polish?1:flicker)*look.tubes(settings),size:0.25,unshadowed:true},
       {id:8,x:3.74,y:-8.1,h:1.13,r:4.2,color:[1,.58,.22],power:settings.officeLamp,size:.12,spot:{axis:[0,-.8,.6],cosOuter:.05,cosInner:.4}},
-      {id:9,x:0,y:10,h:2.45,r:4,color:[1,.49,.16],power:1.5,size:.3,unshadowed:true},
+      {id:9,x:0,y:10,h:2.45,r:4,color:[1,.49,.16],power:1.5*look.carLight(settings,time),size:.3,unshadowed:true},
     ]
-    if(elevator.downstairs)lampDefs.splice(0,lampDefs.length,...basement.lamps.map(l=>({...l,power:l.power*(.97+.03*Math.sin(time*.61+l.id!))})))
+    if(elevator.downstairs){lampDefs.splice(0,lampDefs.length,...basement.lamps.map(l=>({...l,power:l.power*(.97+.03*Math.sin(time*.61+l.id!))})));look.basementLamps(settings,lampDefs,time,camera.eye)}
+    else lampDefs.push(...look.lamps({settings,time}))
     if(camera.flashlight)lampDefs.push({id:7,x:camera.eye[0],y:camera.eye[2],h:camera.eye[1],r:12,color:[0.85,0.92,1],power:0.9,size:0.08,unshadowed:true,beam:{axis:camera.direction,halfAngle:0.27}})
     lights.update(lampDefs,[])
     const enc=device.createCommandEncoder()
-    if(spots.update(enc,lampDefs.filter(l=>l.spot).map(l=>({id:l.id!,pos:[l.x,l.h,l.y] as const,axis:l.spot!.axis,range:l.r,intensity:l.id===3?settings.fluorescent:l.power,cosOuter:l.spot!.cosOuter})),camera.eye,dt,id=>lights.indexOf(id),casters))renderer.setSpotShadows(spots.bindings())
+    if(look.version!==lookVersion){lookVersion=look.version;spots.picker.invalidate()}
+    if(spots.update(enc,lampDefs.filter(l=>l.spot&&!l.unshadowed).map(l=>({id:l.id!,pos:[l.x,l.h,l.y] as const,axis:l.spot!.axis,range:l.r,intensity:l.id===3?settings.fluorescent:l.power,cosOuter:l.spot!.cosOuter})),camera.eye,dt,id=>lights.indexOf(id),[...casters,...look.casters()]))renderer.setSpotShadows(spots.bindings())
     device.queue.submit([enc.finish()])
     parts.begin()
     for(const ox of [0,BASEMENT_X])for(const side of [-1,1])parts.push(leaf,ox+side*elevator.leafX,0,9.06,0,[1,1,1],0,0,0)
+    look.parts(settings,parts.push,physics.chairs,c=>c.yaw+(c===watched?continuity.value("chair")*.6:0),[0,BASEMENT_X])
     parts.push(indicator,props.indicator[0],props.indicator[1],props.indicator[2],0,[1,1,1],0,0,0)
     // Set the one receiver beside the base when leaving; the optional lines stay at this desk.
     if(answered&&(parked>0||distance()>1.2||call.phase==="hangup"||call.phase==="ended"))parked=Math.min(1,parked+simDt/.6)
@@ -209,11 +218,12 @@ async function main() {
     parts.push(receiver,p[0],p[1],p[2],yaw,[1,1,1],0,roll,0)
     const cord=[p[0]-RECEIVER_PAD*Math.cos(roll)*Math.sin(yaw),p[1]-RECEIVER_PAD*Math.sin(roll),p[2]+RECEIVER_PAD*Math.cos(roll)*Math.cos(yaw)]
     physics.cord(simDt,cord,settings)
-    custom.set([settings.ambient,settings.fog,settings.dust,time,flicker,led,settings.window,settings.officeLamp,t,0,0,0,...cord.map((v,i)=>v-CORD_END[i]),0])
+    custom.set([settings.ambient*look.fill(settings),settings.fog,settings.dust,time,flicker,led,settings.window,settings.officeLamp,t,0,0,0,...cord.map((v,i)=>v-CORD_END[i]),0])
     packContactShadowKnobs(contact,custom,16)
-    custom.set([settings.penumbra,settings.bounce,0,0],24)
+    custom.set([settings.penumbra,settings.bounce*look.fill(settings),0,0],24)
     custom.set([Number(settings.polish),settings.tubeEnds,settings.fluorescent/1.8,0],28)
     custom.set([...physics.swing,0],32)
+    look.pack(custom,settings,time,opening.time>=3)
     custom.set([0,0,0,continuity.value("monitor")],36);renderer.setCustomUniforms(custom)
     if(beamDust){dustField.step(simDt,time,camera.body.x,camera.body.y,settings.polish&&playerMoving?settings.dustWake:0);beamDust.frame(dustField.data,settings.polish&&settings.beamDust?settings.dust:0,settings.dustRadius,settings.dustBrightness,[lights.indexOf(1),lights.indexOf(2)])}
     for(let i=0;i<(!settings.polish?150:0);i++) {
@@ -223,13 +233,15 @@ async function main() {
       const strength=Math.exp(-((z-0.5)**2)/5)*flicker+Math.exp(-((z+5.4)**2)/0.9)*0.4
       parts.sprite(true,x+drift,y+Math.sin(time*0.17+i*3)*0.03,z,0.0035,0.62,0.69,0.48,strength*settings.dust*0.09,0)
     }
-    Object.assign(fog.settings,{density:settings.fog})
-    const fogLamps:FogLamp[]=lampDefs.filter(l=>l.spot&&(elevator.downstairs||l.id===3||l.id===4)).map(l=>({id:l.id!,x:l.x,y:l.h,z:l.y,range:l.r,color:l.color,intensity:l.power,axis:l.spot!.axis,size:l.size}))
+    Object.assign(fog.settings,look.fog(settings,elevator.downstairs))
+    const fogLamps:FogLamp[]=lampDefs.filter(l=>l.spot&&(elevator.downstairs||l.id===3||l.id===4)).map(l=>({id:l.id!,x:l.x,y:l.h,z:l.y,range:l.r,color:l.color,intensity:l.power,axis:l.spot!.axis,size:l.size}) as FogLamp)
+    fogLamps.push(...(elevator.downstairs?look.basementFog(settings,time,16-fogLamps.length):look.fogLamps(settings)))
     packSceneFrame(frame,{viewProj:vp,eye:camera.eye,time,width,height,lightCount:lights.lightCount,ambient:[0,0,0,0],mapSize:[20,20],ao:0})
     const blur=!opening.complete&&!settings.reduceMotion?Math.max(-.12,Math.min(.12,opening.yaw.v/60*cinema.whipBlur)):0
     const fade=Math.max(opening.fade,elevator.fade)
     cameraFilter.fade=fade
-    renderer.render({frame,lights:lights.lights,lightCount:lights.lightCount,shadowLightCount:lights.shadowLightCount,occluders:lights.occ,occluderCount:lights.occCount,lampPower:lights.power,lampCount:0,view:elevator.downstairs?basement.box:[-7,-10,7,11],batches:parts.batches(),alphaSprites:parts.alpha,alphaCount:parts.nAlpha,addSprites:parts.add,addCount:parts.nAdd,grade:smoke?[0,0,0,settings.exposure]:[time,settings.lensVignette,settings.lensGrain,settings.exposure],postParams:[settings.lensSoftness,settings.lensFringe,Number(settings.polish&&settings.lens)],postCustom:[blur,cameraFilter.active?0:fade,elevator.downstairs&&camera.body.y<8&&!settings.reduceMotion?descent.heat:0,time],fog:fog.update({eye:camera.eye,viewProj:vp,lamps:fogLamps}),volume:smoke?[fog.volumeInput()]:[contactShadowInput(contact),fog.volumeInput()]})
+    const upstairsLook=look.on(settings)&&!elevator.downstairs
+    renderer.render({frame,lights:lights.lights,lightCount:lights.lightCount,shadowLightCount:lights.shadowLightCount,occluders:upstairsLook?look.occ:lights.occ,occluderCount:upstairsLook?look.occCount:lights.occCount,planBounce:elevator.downstairs?null:look.bounce(settings,camera.eye[0],camera.eye[2]),lampPower:lights.power,lampCount:0,view:elevator.downstairs?basement.box:[-7,-10,7,11],batches:parts.batches(),alphaSprites:parts.alpha,alphaCount:parts.nAlpha,addSprites:parts.add,addCount:parts.nAdd,grade:smoke?[0,0,0,settings.exposure]:[time,settings.lensVignette,settings.lensGrain,settings.exposure],postParams:[settings.lensSoftness,settings.lensFringe,Number(settings.polish&&settings.lens)],postCustom:[blur,cameraFilter.active?0:fade,elevator.downstairs&&camera.body.y<8&&!settings.reduceMotion?descent.heat:0,time],fog:fog.update({eye:camera.eye,viewProj:vp,lamps:fogLamps}),volume:smoke?[fog.volumeInput()]:[contactShadowInput(contact),elevator.downstairs?null:look.shafts(settings,lampDefs.filter(l=>l.id===1||l.id===2).map(l=>({pos:[l.x,l.h,l.y] as const,power:l.power,axis:l.spot!.axis,cosOuter:l.spot!.cosOuter}))),fog.volumeInput()]})
     const dx=PHONE.x-camera.eye[0],dz=PHONE.z-camera.eye[2]
     audio.update(ringTime,distance(),(dx*Math.cos(camera.yaw)-dz*Math.sin(camera.yaw))/Math.max(distance(),0.1),call,settings.volume*(1-elevator.fade),active&&opening.started,opening.time,park)
     audio.movement({time:camera.walk.time,x:camera.body.x,z:camera.body.y,yaw:camera.yaw,volume:settings.volume*(1-elevator.fade),active:active&&opening.started,tube:flicker,foley:settings.foley,room:elevator.downstairs?0:settings.roomTone*opening.roomGain,ballast:settings.polish&&settings.tubeSound?signal:undefined,crackle:settings.tubeCrackle},camera.walk.events)
@@ -248,7 +260,7 @@ async function main() {
     if(frames===1)void device.queue.onSubmittedWorkDone().then(()=>{boot.ready(["READY.","","> SESSION 087    02:13"],keyPromptHtml("Mouse0","Begin"));performance.mark("nightshift:ready")})
     requestAnimationFrame(render)
   }
-  Object.assign(window,{nightshift:{camera,settings,cinema,opening,elevator,audio,renderer,call,action,setCamera,renderFoley,renderBeatAudio,renderDescentAudio,descent,storyAudio,get parked(){return parked},get storyFrame(){return storyFrame},physics,continuity,dustField,tubeSignal,cradle:props.cradle,get clock(){return time},step(ms:number){stepping=true;try{render(last+ms)}finally{stepping=false}},get frames(){return frames},get paused(){return paused},set paused(v:boolean){paused=v},set time(v:number){fixedTime=v},ready:true}})
+  Object.assign(window,{nightshift:{look,lookReady:()=>look.ready(settings),quality:{pin(tier:string|null){settings.lookTier=tier===null?-1:["low","balanced","high"].indexOf(tier)},state:()=>({mode:look.quality.getMode(),tier:look.quality.getActiveTier(),scale:look.quality.getResolutionScale()})},camera,settings,cinema,opening,elevator,audio,renderer,call,action,setCamera,renderFoley,renderBeatAudio,renderDescentAudio,descent,storyAudio,get parked(){return parked},get storyFrame(){return storyFrame},physics,continuity,dustField,tubeSignal,cradle:props.cradle,get clock(){return time},step(ms:number){stepping=true;try{render(last+ms)}finally{stepping=false}},get frames(){return frames},get paused(){return paused},set paused(v:boolean){paused=v},set time(v:number){fixedTime=v},ready:true}})
   boot.stage("frame","FIRST FRAME")
   requestAnimationFrame(render)
 }
