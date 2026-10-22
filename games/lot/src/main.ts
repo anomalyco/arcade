@@ -39,7 +39,7 @@ async function main() {
   hud.textContent = "Loading the lot…"
   const gpu = await openGpu(canvas, "LOT")
   if (typeof gpu === "string") throw new Error(gpu)
-  const device=gpu.device
+  const device=gpu.device, format=gpu.format
   const query = new URLSearchParams(location.search)
   const smoke = query.has("smoke")
   // Automation only: freezes the bank and cloud drift at a time in seconds.
@@ -191,7 +191,7 @@ async function main() {
   }
   prompts()
   document.addEventListener("pointerlockchange", prompts)
-  let last = performance.now(), frames = 0, paused = false, lastFrame: FrameInput | null = null
+  let last = performance.now(), frames = 0, paused = false, lastFrame: FrameInput | null = null, smokeTarget: GPUTexture | null = null
   const readyMs=performance.now()-t0
   // Slot order: contact shadows darken the lit scene before reflections and fog add to it.
   const volumes = () => {
@@ -258,8 +258,12 @@ async function main() {
       view: [-700, -700, 700, 700], batches: [], alphaSprites: empty, alphaCount: 0, addSprites: empty, addCount: 0, grade: [0, 0, 0, settings.exposure],
       fog:fog.update({eye:camera.eye,viewProj:vp,lamps:fogLamps,time:fixedTime ?? now/1000,street}),volume:volumes(),fogBlur:fog.blurInput() }
     // The smoke draws synchronously: render() holds a frame back while the previous one is on the GPU, which on
-    // SwiftShader would leave the second frame unsubmitted for minutes.
-    if(stepping || smoke) renderer.drawTo(lastFrame); else renderer.render(lastFrame)
+    // SwiftShader would leave the second frame unsubmitted for minutes. It draws offscreen: presenting the canvas
+    // makes Chromium's GPU process wait for the frame to finish before it validates anything submitted after it.
+    if(smoke) {
+      if(smokeTarget?.width!==width || smokeTarget.height!==height) { smokeTarget?.destroy(); smokeTarget=device.createTexture({size:[width,height],format,usage:GPUTextureUsage.RENDER_ATTACHMENT}) }
+      renderer.drawTo(lastFrame,smokeTarget.createView())
+    } else if(stepping) renderer.drawTo(lastFrame); else renderer.render(lastFrame)
     frames++
     if(smoke) performance.mark(`lot:frame-${frames-1}-submitted`)
     // Software-GPU smoke must submit exactly two real frames; readiness polling can otherwise build a long queue.
