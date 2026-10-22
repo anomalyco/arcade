@@ -152,15 +152,14 @@ async function main() {
       return d<1.6&&camera.eye[2]<s.z-.2&&(dx*camera.direction[0]+dy*camera.direction[1]+dz*camera.direction[2])/d>.9
     })
     const wasDownstairs=elevator.downstairs
-    elevator.step(simDt,camera.body,opening.complete,station,descent,storyAudio.ready)
-    if(elevator.phase!=="floor"){call.phase="ended";call.lift=0}
+    elevator.step(simDt,camera.body,opening.complete,station,descent,call.phase==="ended")
     if(wasDownstairs!==elevator.downstairs)spots.picker.invalidate()
     camera.height+=elevator.sway(time,settings.reduceMotion,descent)
     const sceneWalls=elevator.downstairs?basement.walls:walls
     const before=[camera.body.x,camera.body.y]
     // Keep the authored seated pose; optional camera movement comes in with the first-move stand.
     cameraFilter.motion=settings.reduceMotion?0:Math.max(0,Math.min(1,(opening.height.x-OPENING.across.height)/(1.65-OPENING.across.height)))
-    const vp=camera.update(dt,width/height,[...sceneWalls,...elevator.collisions()])
+    const vp=camera.update(dt,width/height,[...sceneWalls,...elevator.collisions(call.phase==="ended")])
     physics.flutter(simDt,camera.body.x,camera.body.y,playerMoving?Math.hypot(camera.body.x-before[0],camera.body.y-before[1])/Math.max(dt,.001):0,settings)
     continuity.step(time,vp,call.phase==="ended",settings,[watched.x-.6,0,watched.z-.6,watched.x+.6,1.1,watched.z+.6],active&&opening.complete&&!elevator.downstairs)
     screens.update(continuity.value("monitor"))

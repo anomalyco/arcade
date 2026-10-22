@@ -12,7 +12,8 @@ import type { Settings } from "../src/settings"
 import type { Call } from "../shared/call"
 type App={camera:WalkCamera;renderer:Renderer;opening:Opening;elevator:Descent;settings:Settings;descent:DescentSettings;storyAudio:DescentAudio;audio:{ready:boolean};parked:number;call:Call;storyFrame:DescentAudioFrame;clock:number;paused:boolean;step(ms:number):void;renderDescentAudio:typeof renderDescentAudio}
 type Host=Window&{nightshift:App;capture(ms:number):Promise<string>;tape:DescentAudioFrame[];feet:FoleyFrame[];pixelMax:number}
-const out=resolve(process.env.NIGHTSHIFT_DESCENT_DIR??"captures/nightshift-descent"),fps=30,stills=process.argv.includes("--stills")
+const review=process.argv.includes("--review-fixes")
+const out=resolve(process.env.NIGHTSHIFT_DESCENT_DIR??(review?"captures/nightshift-descent-review":"captures/nightshift-descent")),fps=30,stills=process.argv.includes("--stills")
 mkdirSync(out,{recursive:true})
 const server=Bun.serve({hostname:"127.0.0.1",port:0,async fetch(req){const p=new URL(req.url).pathname,f=Bun.file(`${import.meta.dir}/../dist${p}${p.endsWith("/")?"index.html":""}`);return await f.exists()?new Response(f):new Response(null,{status:404})}})
 const cache=`${process.env.HOME}/Library/Caches/ms-playwright`
@@ -23,7 +24,15 @@ const errors:string[]=[],trace:unknown[]=[]
 let encoder:ReturnType<typeof Bun.spawn>|undefined
 try{
   const page=await browser.newPage({viewport:{width:1280,height:720},deviceScaleFactor:1})
-  page.on("pageerror",e=>errors.push(e.message));page.on("console",m=>{if(m.type()==="error")errors.push(m.text())})
+  const requests:string[]=[]
+  page.on("request",r=>{if(r.url().includes("/audio/descent/"))requests.push(r.url())})
+  if(review)await page.route("**/audio/descent/*",route=>{
+    const url=route.request().url()
+    if(url.endsWith("lift-down.mp3"))return route.fulfill({status:503,body:"Expected test failure"})
+    if(url.endsWith("lift-token.mp3"))return route.fulfill({status:200,contentType:"audio/mpeg",body:"Undecodable test audio"})
+    return route.continue()
+  })
+  page.on("pageerror",e=>errors.push(e.message));page.on("console",m=>{if(m.type()==="error"&&!(review&&m.text().includes("503")))errors.push(m.text())})
   await page.addInitScript(()=>{
     const w=window as unknown as Host;window.requestAnimationFrame=()=>1;w.tape=[];w.feet=[]
     let configured=false,readback:GPUBuffer|undefined
@@ -47,8 +56,19 @@ try{
   await page.goto(`${server.url}arcade/nightshift/`,{waitUntil:"domcontentloaded"})
   await page.waitForFunction(()=>!!(window as unknown as Host).nightshift,undefined,{polling:100,timeout:120000})
   await page.evaluate(()=>{const a=(window as unknown as Host).nightshift;a.paused=true;a.renderer.render=a.renderer.drawTo.bind(a.renderer);a.step(0)})
-  await page.waitForSelector("#arcade-boot[data-ready]",{state:"attached",timeout:30000});await page.locator("#view").click({force:true})
-  await page.waitForFunction(()=>document.pointerLockElement?.id==="view"&&(window as unknown as Host).nightshift.storyAudio.loaded===11&&(window as unknown as Host).nightshift.audio.ready,undefined,{polling:100,timeout:30000})
+  await page.waitForSelector("#arcade-boot[data-ready]",{state:"attached",timeout:30000})
+  if(requests.length)throw Error(`Descent fetched ${requests.length} stems before Begin`)
+  trace.push({bootStemRequests:requests.length})
+  await page.locator("#view").click({force:true})
+  await page.waitForFunction(()=>{const a=(window as unknown as Host).nightshift;return document.pointerLockElement?.id==="view"&&a.storyAudio.loaded+a.storyAudio.errors.length===11&&a.audio.ready},undefined,{polling:100,timeout:30000})
+  if(review){
+    await page.evaluate(()=>{const a=(window as unknown as Host).nightshift;Object.assign(a.opening,{started:true,complete:true,standing:true,time:30});a.opening.height.x=1.65;Object.assign(a.camera.body,{x:0,y:8});a.camera.yaw=-Math.PI;a.step(0)})
+    await page.keyboard.down("w")
+    const gate=await page.evaluate(()=>{const a=(window as unknown as Host).nightshift;for(let i=0;i<90;i++)a.step(1000/30);return {call:a.call.phase,car:a.elevator.phase,z:a.camera.body.y}})
+    await page.keyboard.up("w")
+    if(gate.call!=="ringing"||gate.car!=="floor"||gate.z>=8.8)throw Error(`Ringing boarding gate failed: ${JSON.stringify(gate)}`)
+    trace.push({gate})
+  }
   // Verify the first call cannot own movement or drag the receiver across the floor.
   await page.evaluate(()=>{const a=(window as unknown as Host).nightshift;Object.assign(a.opening,{started:true,complete:true,standing:true,time:30});a.opening.height.x=1.65;Object.assign(a.camera.body,{x:-.08,y:-4.82});a.camera.yaw=0;a.camera.pitch=-.6;a.step(0)})
   await page.keyboard.press("e")
@@ -58,6 +78,22 @@ try{
   await page.keyboard.up("s")
   if(phone.phase!=="call"||phone.walked<1||phone.parked!==1)throw Error(`Call exploration failed: ${JSON.stringify(phone)}`)
   trace.push({phone})
+  if(review){
+    await page.evaluate(()=>{const a=(window as unknown as Host).nightshift;Object.assign(a.camera.body,{x:0,y:8,vx:0,vy:0});a.camera.yaw=-Math.PI;a.step(0)})
+    await page.keyboard.down("w")
+    const gate=await page.evaluate(()=>{const a=(window as unknown as Host).nightshift;for(let i=0;i<90;i++)a.step(1000/30);return {call:a.call.phase,car:a.elevator.phase,z:a.camera.body.y}})
+    await page.keyboard.up("w")
+    if(gate.call!=="call"||gate.car!=="floor"||gate.z>=8.8)throw Error(`Speaking boarding gate failed: ${JSON.stringify(gate)}`)
+    const subtitles=await page.evaluate(()=>{
+      const a=(window as unknown as Host).nightshift,seen=new Set<string>();a.call.phase="ended";a.call.lift=0;Object.assign(a.camera.body,{x:0,y:9.8,vx:0,vy:0})
+      for(let i=0;i<60*30;i++){if(a.elevator.phase==="basement")a.camera.body.y=6;a.step(1000/30);if(document.getElementById("subtitle")!.textContent)seen.add(a.elevator.line!)}
+      return {seen:[...seen],loaded:a.storyAudio.loaded,failures:a.storyAudio.errors,car:a.elevator.phase}
+    })
+    if(subtitles.seen.length!==9||subtitles.seen[0]!=="lift-down"||subtitles.seen[1]!=="lift-token"||subtitles.loaded!==9||subtitles.failures.length!==2||subtitles.car!=="basement")throw Error(`Audio fallback failed: ${JSON.stringify(subtitles)}`)
+    trace.push({gate,subtitles})
+    if(errors.length)throw Error(JSON.stringify(errors))
+    console.log(JSON.stringify(trace,null,2));process.exitCode=0
+  }else{
   await page.evaluate(()=>{const a=(window as unknown as Host).nightshift;Object.assign(a.call,{phase:"ended",lift:0,elapsed:0});Object.assign(a.camera.body,{x:0,y:6,vx:0,vy:0});a.camera.yaw=-Math.PI;a.camera.pitch=-.08;a.camera.resetWalk();a.step(0)})
   const elevator=await page.evaluate(()=>(window as unknown as Host).capture(0));await Bun.write(resolve(out,"04-elevator.jpg"),Buffer.from(elevator,"base64"))
   if(stills){
@@ -67,7 +103,7 @@ try{
     const enc=Bun.spawn(["ffmpeg","-v","error","-y","-f","image2pipe","-framerate",String(fps),"-i","-","-an","-c:v","libx264","-threads","2","-preset","fast","-crf","21","-pix_fmt","yuv420p",resolve(out,"silent.mp4")],{stdin:"pipe",stdout:"inherit",stderr:"inherit"});encoder=enc
     let closing=-1,arrived=-1,saved=false
     await page.keyboard.down("w")
-    for(let i=0;i<28*fps;i++){
+    for(let i=0;i<38*fps;i++){
       if(closing>=0&&i===closing+1)await page.keyboard.up("w")
       if(closing>=0&&i===closing+3*fps)await page.keyboard.down("a")
       if(closing>=0&&i===closing+3*fps+8)await page.keyboard.up("a")
@@ -92,9 +128,10 @@ try{
     const audio=await page.evaluate(async()=>{const w=window as unknown as Host,a=w.nightshift;if(a.elevator.phase!=="basement"||a.camera.body.y>7)throw Error("Did not walk out of elevator");const wav=new Uint8Array(await a.renderDescentAudio(w.tape,w.feet,w.tape.length/30));let s="";for(let i=0;i<wav.length;i+=8192)s+=String.fromCharCode(...wav.subarray(i,i+8192));return btoa(s)})
     await Bun.write(resolve(out,"descent.wav"),Buffer.from(audio,"base64"))
     const mux=Bun.spawn(["ffmpeg","-v","error","-y","-i",resolve(out,"silent.mp4"),"-i",resolve(out,"descent.wav"),"-map","0:v","-map","1:a","-c:v","copy","-c:a","aac","-b:a","160k","-movflags","+faststart",resolve(out,"descent.mp4")],{stdout:"inherit",stderr:"inherit"});if(await mux.exited!==0)throw Error("Mux failed")
-    const ending=await page.evaluate(async()=>{const w=window as unknown as Host,a=w.nightshift;Object.assign(a.camera.body,{x:40,y:-15.7});for(let i=0;i<40;i++)a.elevator.step(.05,a.camera.body,true,-1,a.descent);await w.capture(0);return {done:a.elevator.done,pixelMax:w.pixelMax}})
+    const ending=await page.evaluate(async()=>{const w=window as unknown as Host,a=w.nightshift;Object.assign(a.camera.body,{x:40,y:-15.7});for(let i=0;i<40;i++)a.elevator.step(.05,a.camera.body,true,-1,a.descent,true);await w.capture(0);return {done:a.elevator.done,pixelMax:w.pixelMax}})
     if(!ending.done||ending.pixelMax!==0)throw Error(`Final door fade failed: ${JSON.stringify(ending)}`)
     trace.push({ending})
   }
   if(errors.length)throw Error(JSON.stringify(errors))
+  }
 }finally{if(encoder&&encoder.exitCode===null){encoder.kill();await encoder.exited}await Bun.write(resolve(out,"report.json"),JSON.stringify({fps,errors,trace},null,2));await browser.close();server.stop(true)}

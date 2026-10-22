@@ -49,17 +49,20 @@ class DescentMixer {
   dispose(){for(const s of this.sources){s.stop();s.disconnect()}this.speech?.stop();this.speech?.disconnect();this.master.disconnect()}
 }
 export class DescentAudio {
-  private bytes=new Map<DescentLineId,Promise<ArrayBuffer>>()
   private buffers=new Map<DescentLineId,AudioBuffer>()
   private mixer?:DescentMixer
   readonly errors: string[]=[]
-  constructor(){for(const l of descentLines){const p=fetch(`${import.meta.env.BASE_URL}audio/descent/${l.id}.mp3`).then(r=>{if(!r.ok)throw Error(`${l.id}: HTTP ${r.status}`);return r.arrayBuffer()});p.catch(e=>this.errors.push(String(e)));this.bytes.set(l.id,p)}}
   async unlock(ctx:AudioContext){
     if(this.mixer)return
     this.mixer=new DescentMixer(ctx,ctx.destination)
-    await Promise.allSettled([...this.bytes].map(async([id,p])=>{try{this.buffers.set(id,await ctx.decodeAudioData((await p).slice(0)))}catch(e){this.errors.push(String(e))}}))
+    await Promise.allSettled(descentLines.map(async({id})=>{
+      try{
+        const r=await fetch(`${import.meta.env.BASE_URL}audio/descent/${id}.mp3`)
+        if(!r.ok)throw Error(`${id}: HTTP ${r.status}`)
+        this.buffers.set(id,await ctx.decodeAudioData(await r.arrayBuffer()))
+      }catch(e){this.errors.push(`${id}: ${String(e)}`)}
+    }))
   }
-  ready=(id:DescentLineId)=>this.buffers.has(id)
   get loaded(){return this.buffers.size}
   update(frame:DescentAudioFrame){this.mixer?.update(frame,this.buffers)}
   dispose(){this.mixer?.dispose()}
