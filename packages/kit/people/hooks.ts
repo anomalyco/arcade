@@ -66,6 +66,8 @@ var<private> peopleSkin: bool = false;`,
     // A torch lights nothing behind its lens: without this the beam's wide spill burns the holder's own sleeve and chest.
     lightMask: `${game.lightMask ?? ""}
     if (peopleShaded && L.cone.w >= 4.5 && L.cone.w < 6.5 && dot(world - L.pos.xyz, L.cone.xzy) < 0.02) { continue; }`,
+    // Non-PBR scenes dim direct light on upright surfaces (walls); a person is not a wall.
+    wallDirectScale: game.wallDirectScale ?? "1.0",
     lightAccumulate: `${game.lightAccumulate ?? ""}
     ${scatter}`,
     surface: `${sheen}

@@ -6,8 +6,11 @@ import { animate, newAvatar } from "../avatar/anim"
 import { spring, type V3 } from "../rig"
 import { readPerson, SRC_FLOATS } from "./asset"
 import { qRot } from "./quat"
-import { gaitBody, newGait } from "./gait"
-import { newPose, personRest, posePerson, torchCarry, type PersonRest } from "./retarget"
+import { gaitBody, newGait, type GaitState } from "./gait"
+import type { HumanBody } from "../human-pose"
+import { personHooks } from "./hooks"
+import { newPose, personRest, posePerson, torchCarry, type PersonPose, type PersonRest } from "./retarget"
+import type { TerrainLoco } from "./terrain"
 import { terrainFeet } from "./terrain"
 import { idleShift, personLod } from "./view"
 
@@ -209,4 +212,119 @@ describe("mocap gait", () => {
       expect(worst).toBeLessThan(0.012)
     }
   })
+})
+
+const CAST = await Promise.all(["a", "b", "c", "d", "e", "f"].map(async (id) => personRest(readPerson(await io.read(new URL(`./assets/${id}-woods.glb`, import.meta.url).pathname), `${id}-woods`).skeleton)))
+
+type Move = { v: number; aim: number; dir?: number }
+type Frame = { pose: PersonPose; loco: TerrainLoco; gait: GaitState; body: HumanBody; t: number; m: Move }
+/** Drives a person the way `People.drive` does (mocap gait) through `scene(t)`: speed, aim and travel direction. */
+function gaitRun(r: PersonRest, seconds: number, scene: (t: number) => Move, each: (f: Frame) => void) {
+  const s = r.scale, a = newAvatar("gait", 0, 0, scene(0).aim, "rifle")
+  a.unarmed = true
+  const pose = newPose(r), terrain = { drop: spring(), init: false }, gait = newGait(), dt = 1 / 60
+  let x = 0, z = 0
+  for (let f = 0; f < seconds * 60; f++) {
+    const t = f * dt, m = scene(t), dir = m.dir ?? m.aim
+    const vx = Math.cos(dir) * m.v, vz = Math.sin(dir) * m.v
+    x += vx * dt; z += vz * dt
+    animate(a, dt, t, x / s, z / s, vx / s, vz / s, m.aim)
+    const { body, loco } = gaitBody(gait, a, a.body!, s, dt)
+    posePerson(r, { body, ...terrainFeet(terrain, loco, body, s, () => 0, dt, r.sole) }, pose)
+    each({ pose, loco, gait, body, t, m })
+  }
+}
+const startStop = (t: number): Move => ({ v: t % 3 < 1.5 ? 1.9 * Math.min(1, (t % 3) / 0.4) : 1.9 * Math.max(0, 1 - ((t % 3) - 1.5) / 0.4), aim: 0.7 })
+
+describe("mocap gait, every woods cast member", () => {
+  test("knees always bend forward through walk and run cycles, starts and stops", () => {
+    const scenes: ((t: number) => Move)[] = [() => ({ v: 1.9, aim: 0.3 }), () => ({ v: 3.4, aim: -0.4 }), startStop, (t) => ({ v: 1.9, aim: t * 0.5 })]
+    for (const r of CAST) for (const scene of scenes) {
+      let worst = 0
+      gaitRun(r, 6, scene, ({ pose, gait, t }) => {
+        if (t < 0.5) return
+        const fwd: V3 = [Math.cos(gait.yaw), 0, Math.sin(gait.yaw)]
+        for (const ch of r.legs) {
+          const hip = pose.pos[ch.upper]!, knee = pose.pos[ch.lower]!, ank = pose.pos[ch.end]!
+          const d: V3 = [ank[0] - hip[0], ank[1] - hip[1], ank[2] - hip[2]], l = Math.hypot(...d)
+          const u = ((knee[0] - hip[0]) * d[0] + (knee[1] - hip[1]) * d[1] + (knee[2] - hip[2]) * d[2]) / (l * l)
+          const bend = [0, 1, 2].map((k) => knee[k]! - hip[k]! - d[k]! * u)
+          worst = Math.min(worst, bend[0]! * fwd[0] + bend[2]! * fwd[2])
+        }
+      })
+      // A knee behind the hip–ankle line by more than 5 mm has flipped.
+      expect(worst).toBeGreaterThan(-0.005)
+    }
+  })
+
+  test("the walk faces the rig's aim from idle, turning in place and backpedalling, so starting never whips the hips", () => {
+    const r = CAST[0]!
+    const scenes: ((t: number) => Move)[] = [
+      // Spawned idle facing 1.2 rad, then walks off that way.
+      (t) => ({ v: t < 1 ? 0 : 1.9, aim: 1.2 }),
+      // Turns in place for a second, then walks off the new way.
+      (t) => ({ v: t < 1.5 ? 0 : 1.9, aim: Math.min(1.5, t) * 1.4 }),
+      // Backpedals, then walks forward.
+      (t) => ({ v: t < 1.5 ? 1.2 : 1.9, aim: 0.5, dir: t < 1.5 ? 0.5 + Math.PI : 0.5 }),
+    ]
+    for (const scene of scenes) {
+      let last: number | null = null, whip = 0, pinch = Infinity
+      const hipW = (b: HumanBody) => Math.hypot(b.th[0].p[0] - b.th[1].p[0], b.th[0].p[2] - b.th[1].p[2])
+      let ref = 0
+      gaitRun(r, 3, scene, ({ body, t }) => {
+        const yaw = Math.atan2(body.pelvis.x[2], body.pelvis.x[0])
+        if (t < 0.1) { ref = hipW(body); last = yaw; return }
+        whip = Math.max(whip, Math.abs(Math.atan2(Math.sin(yaw - last!), Math.cos(yaw - last!))))
+        pinch = Math.min(pinch, hipW(body) / ref)
+        last = yaw
+      })
+      // No more than 4° of pelvis yaw in one frame, and the hips never narrow by more than 12%.
+      expect(whip).toBeLessThan(0.07)
+      expect(pinch).toBeGreaterThan(0.88)
+    }
+  })
+
+  test("a planted foot is on the ground walking and while the gait blends in and out", () => {
+    for (const r of CAST) {
+      let worst = 0
+      gaitRun(r, 9, startStop, ({ pose, loco, t }) => {
+        if (t < 0.5) return
+        for (let k = 0; k < 2; k++) if (loco.feet[k].planted) {
+          const ball = pose.pos[r.idx[k ? "ball_r" : "ball_l"]!]!, heel = pose.pos[r.idx[k ? "foot_r" : "foot_l"]!]!
+          // The lower of ball and ankle over the ground, less its standing height.
+          worst = Math.max(worst, Math.min(ball[1] - r.ballHeight, heel[1] - 0.09))
+        }
+      })
+      // Was 4-8 cm where the rig and the cycle blend.
+      expect(worst).toBeLessThan(0.025)
+    }
+  })
+})
+
+test("no knee or foot pops through standing, turning in place, walking off, a curve and a stop", () => {
+  // As scripts/people/gait-clip.ts, without its rig-only backpedal.
+  const scene = (t: number): Move => {
+    if (t < 1) return { v: 0, aim: 0 }
+    if (t < 2) return { v: 0, aim: Math.min(1, t - 1) * 1.2 }
+    if (t < 4) return { v: 1.9 * Math.min(1, (t - 2) / 0.5), aim: 1.2 }
+    if (t < 6) return { v: 1.9, aim: 1.2 + (t - 4) * 0.6 }
+    return { v: 1.9 * Math.max(0, 1 - (t - 6) / 0.5), aim: 2.4 }
+  }
+  for (const r of CAST) {
+    const watch = ["calf_l", "calf_r", "foot_l", "foot_r", "ball_l", "ball_r"].map((n) => r.idx[n]!)
+    let prev: V3[] | null = null, worst = 0
+    gaitRun(r, 7.5, scene, ({ pose, t }) => {
+      const pel = pose.pos[r.idx.pelvis!]!
+      const rel = watch.map((i): V3 => [pose.pos[i]![0] - pel[0], pose.pos[i]![1], pose.pos[i]![2] - pel[2]])
+      if (prev && t > 0.2) for (let k = 0; k < rel.length; k++) worst = Math.max(worst, dist(rel[k]!, prev[k]!))
+      prev = rel
+    })
+    // A swinging foot moves up to ~8 cm a frame relative to the hips at 1.9 m/s; the flips and hand-overs were 29-41.
+    expect(worst).toBeLessThan(0.105)
+  }
+})
+
+test("people keep a game's full direct light on their upright surfaces (no wall dimming)", () => {
+  expect(personHooks({}).wallDirectScale).toBe("1.0")
+  expect(personHooks({ wallDirectScale: "0.5" }).wallDirectScale).toBe("0.5")
 })

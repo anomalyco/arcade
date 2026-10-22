@@ -327,7 +327,9 @@ export function posePerson(rest: PersonRest, input: PoseInput, out: PersonPose):
     const rigHeel = W([ft.p[0] - ft.x[0] * RIG.heel - ft.y[0] * RIG.ankle, ft.p[1] - ft.x[1] * RIG.heel - ft.y[1] * RIG.ankle, ft.p[2] - ft.x[2] * RIG.heel - ft.y[2] * RIG.ankle], heelDy)
     const fromBall = sub(rigBall, qRot(footRot, local.pos[ball]!)), fromHeel = sub(rigHeel, qRot(footRot, rest.heel[i]!))
     const w = smooth(0, 0.06, ft.x[1])
-    return { foot, ball, footRot, ankle: add(mul(fromBall, 1 - w), mul(fromHeel, w)), pole: W(b.sh[i]!.p, dy) }
+    // The pole sits 20 cm ahead of the rig knee along the thigh's forward axis. On the raw knee, a nearly straight
+    // leg (heel strike, terminal stance) let the mesh's own hip→ankle chord pass in front of it and the knee flip back.
+    return { foot, ball, footRot, ankle: add(mul(fromBall, 1 - w), mul(fromHeel, w)), pole: add(W(b.sh[i]!.p, dy), mul(b.th[i]!.x, 0.2)) }
   })
   // Pelvis bone origin: the rig's mid-hip, plus the mesh's own pelvis offset turned with the hips. Where the mesh's
   // legs are a little short of the rig's targets (other proportions), the whole body sinks just enough to reach.

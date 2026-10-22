@@ -643,6 +643,20 @@ and gait numbers are unchanged. What held up, measured with `bun scripts/people/
 - **Lock the ball the mesh is pinned to.** A foot lock on the joint-map ball still slid ~5 mm a frame while a lifted
   heel blended flat: the rig pins the mesh ball at √(foot² + ankle²) along ankle→ball, and that line's length changes
   in a blend. Locking that point took the worst stance slip from 113 mm to under 10 mm.
+- **Pole the knee ahead of the rig knee.** On a nearly straight mocap leg (heel strike, terminal stance) the mesh's
+  hip→ankle chord can pass in front of the raw rig knee, and the IK flips the knee backward for a frame (18 cm). The
+  pole sits 20 cm ahead along the thigh's forward axis.
+- **Hand over between rig and cycle on the rig's terms.** While the rig leads, the cycle faces its aim (not the travel
+  direction, which is reversed backpedalling) and follows its stride phase (the rig's left foot lands at phase 0, the
+  clip's at its first plant). A planted foot takes its height from the gait that planted it, before the lock reads
+  its ball. Otherwise starts whip the pelvis ~5° a frame and planted feet hover 4–8 cm mid-blend.
+- **Level and trim the mocap plants.** One CMU foot sat toe-up 5 cm through its whole stance (marker placement); the
+  bake levels each foot so its flat-stance ball is `RIG.ankle` below its ankle. A foot is planted while the ball the
+  mesh is pinned to is down or the heel is down; heel up with that ball lifted is push-off on the toe.
+- **No margin on a swinging sole's ground.** `terrainFeet` measured a swinging boot's pitch against its ground less
+  1 cm, so flat ground read as an obstacle: every swinging boot tilted 17° toes-up and snapped flat the frame it
+  planted (5–7 cm at the ankle). `scripts/people/gait-clip.sh` (idle, turn, walk off, curve, stop, backpedal) reports
+  the worst frame-to-frame knee/foot jump: 7–10 cm through the hand-overs, a swinging foot's own speed.
 
 ## Known gaps
 

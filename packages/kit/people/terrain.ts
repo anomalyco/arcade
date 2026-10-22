@@ -115,7 +115,9 @@ export function terrainFeet(st: TerrainState, a: TerrainLoco, body: HumanBody, s
     g[i] = g0 + (g1 - g0) * smoother(e) + clear
     // A swinging boot keeps its heel above whatever is under it (the log it just stepped off), so the stance tilt
     // eases out over the swing instead of dropping the heel through the log at lift-off.
-    const p = solePitch(body.ft[i]!, g[i] - 0.01, 0)
+    // Against the swing's own ground: a 1 cm margin here made flat ground an obstacle, tilting every swinging boot
+    // 17° toes-up and snapping it flat the frame it planted.
+    const p = solePitch(body.ft[i]!, g[i], 0)
     tilt[i] = p.th
     g[i] += p.raise
   }

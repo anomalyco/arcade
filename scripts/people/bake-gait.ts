@@ -6,7 +6,7 @@
 import { writeFileSync } from "node:fs"
 import { findSteadyWindow, loadCmu, normaliseClip, OPEN_MOCAP_CREDITS, parseCmu } from "../../games/blackout/scripts/animation/open-mocap"
 import { POSE_JOINTS, retargetBvhFrame, type RigJointMap } from "../../packages/kit/pose-diff"
-import { HIP } from "../../packages/kit/rig"
+import { HIP, RIG } from "../../packages/kit/rig"
 
 const FRAMES = 48
 const CLIPS = [
@@ -35,6 +35,16 @@ for (const c of CLIPS) {
   const dur = (c1 - c0) * raw.dt
   const stride = Math.hypot(f[c1]!.Hips![0] - f[c0]!.Hips![0], f[c1]!.Hips![2] - f[c0]!.Hips![2]) * scaleH
   const ret = cut.map((p) => retargetBvhFrame(p, meanPelvisY, minFootY))
+  // Level each foot: with the foot flat on the ground (ankle at its lowest) the ball sits RIG.ankle below the ankle,
+  // as the rig's own foot does. Marker placement left one CMU foot toe-up by 3-5 cm through its whole stance.
+  const level: Record<string, number> = {}
+  for (const sd of ["L", "R"] as const) {
+    const ank = ret.map((r) => r[`ankle${sd}`][1]), lowest = Math.min(...ank)
+    const flat = ret.filter((_, i) => ank[i]! < lowest + 0.015).map((r) => r[`ankle${sd}`][1] - r[`ball${sd}`][1]).sort((x, y) => x - y)
+    const dy = flat[flat.length >> 1]! - RIG.ankle
+    level[sd] = +dy.toFixed(3)
+    for (const r of ret) for (const j of [`ball${sd}`, `toe${sd}`] as const) r[j] = [r[j][0], r[j][1] + dy, r[j][2]]
+  }
   // Close the loop: the last frame (the next peak) should equal the first; spread the difference over the cycle.
   const n = ret.length - 1
   const seam = Object.fromEntries(POSE_JOINTS.map((j) => [j, ret[n]![j].map((x, k) => x - ret[0]![j][k]!)])) as Record<string, number[]>
@@ -50,7 +60,11 @@ for (const c of CLIPS) {
     const b = side ? "ballR" : "ballL", a = side ? "ankleR" : "ankleL"
     const nx = frames[(i + 1) % FRAMES]!, pv = frames[(i + FRAMES - 1) % FRAMES]!
     const vx = (nx[b][0] - pv[b][0]) / (2 * dur / FRAMES) + v, vz = (nx[b][2] - pv[b][2]) / (2 * dur / FRAMES)
-    const low = Math.min(fr[b][1], fr[a][1] - 0.04) < 0.06
+    // In stance while the ball is down or the heel is down; heel up with the ball lifted is push-off on the toe. The
+    // ball is the one the mesh is pinned to (√(foot² + ankle²) along ankle -> ball), which lifts first.
+    const d = Math.hypot(fr[b][0] - fr[a][0], fr[b][1] - fr[a][1], fr[b][2] - fr[a][2]) || 1
+    const pinned = fr[a][1] + (fr[b][1] - fr[a][1]) * (Math.hypot(RIG.foot, RIG.ankle) / d)
+    const low = pinned < 0.025 || fr[a][1] < 0.1
     return low && Math.hypot(vx, vz) < 0.45 * v + 0.15 ? 1 : 0
   }).map((x, i, all) => (all[(i + FRAMES - 1) % FRAMES] && all[(i + 1) % FRAMES] ? 1 : x)))
   const flat = frames.flatMap((fr) => POSE_JOINTS.flatMap((j) => fr[j].map((x) => Math.round(x * 1000))))
@@ -63,7 +77,7 @@ for (const c of CLIPS) {
     /** FRAMES × POSE_JOINTS × xyz, rig units × 1000, in place (pelvis over the origin), x forward, z right. */
     joints: [${flat.join(",")}],
   },`)
-  summary[c.name] = { window: win, stride: +stride.toFixed(3), duration: +dur.toFixed(3), rigSpeed: +(stride / dur).toFixed(2), planted: planted.map((p) => p.join("")) }
+  summary[c.name] = { level, window: win, stride: +stride.toFixed(3), duration: +dur.toFixed(3), rigSpeed: +(stride / dur).toFixed(2), planted: planted.map((p) => p.join("")) }
 }
 
 const credit = OPEN_MOCAP_CREDITS.cmu

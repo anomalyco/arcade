@@ -20,10 +20,10 @@ export const GAIT = { move: [0.3, 0.8], run: [2.4, 3.1], strafe: 1.2, stride: [0
 /** How far (rig units) a planted foot may be left behind the gait's own foot before it follows. */
 const LOCK_REACH = 0.45
 
-type Lock = { on: boolean; at: [number, number]; off: [number, number]; lift: V3 }
+type Lock = { on: boolean; at: [number, number]; off: [number, number]; lift: V3; ground: number }
 export type GaitState = { phase: number; move: number; run: number; yaw: number; init: boolean; lock: [Lock, Lock]; loco: TerrainLoco & { motion: { targets: V3[] } } }
 
-const newLock = (): Lock => ({ on: false, at: [0, 0], off: [0, 0], lift: [0, 0, 0] })
+const newLock = (): Lock => ({ on: false, at: [0, 0], off: [0, 0], lift: [0, 0, 0], ground: 0 })
 export const newGait = (): GaitState => ({
   phase: 0, move: 0, run: 0, yaw: 0, init: false, lock: [newLock(), newLock()],
   loco: { x: 0, y: 0, feet: [{ planted: true, p: [0, 0, 0], lift: [0, 0, 0] }, { planted: true, p: [0, 0, 0], lift: [0, 0, 0] }], motion: { targets: [[0, 0, 0], [0, 0, 0]] } },
@@ -40,7 +40,17 @@ function sampleClip(c: Clip, u: number, out: Float32Array): void {
   const a = i0 * J * 3, b = i1 * J * 3
   for (let k = 0; k < J * 3; k++) out[k] = (c.joints[a + k]! + (c.joints[b + k]! - c.joints[a + k]!) * t) / 1000
 }
-const plantedAt = (c: Clip, side: number, u: number) => c.planted[side]![Math.floor((((u % 1) + 1) % 1) * GAIT_FRAMES) % GAIT_FRAMES] === "1"
+/** Planted between two frames only if both are: the last stance frame blends into a lifted foot. */
+const plantedAt = (c: Clip, side: number, u: number) => {
+  const i = Math.floor((((u % 1) + 1) % 1) * GAIT_FRAMES) % GAIT_FRAMES
+  return c.planted[side]![i] === "1" && c.planted[side]![(i + 1) % GAIT_FRAMES] === "1"
+}
+/** Phase at which a foot's stance begins in a clip. */
+const plantStart = (c: Clip, side: number) => {
+  const s = c.planted[side]!
+  for (let i = 0; i < GAIT_FRAMES; i++) if (s[i] === "1" && s[(i + GAIT_FRAMES - 1) % GAIT_FRAMES] === "0") return i / GAIT_FRAMES
+  return 0
+}
 /** Phase at which each foot next plants (from u). */
 function nextPlant(c: Clip, side: number, u: number): number {
   const s = c.planted[side]!, i0 = Math.floor((((u % 1) + 1) % 1) * GAIT_FRAMES)
@@ -84,18 +94,24 @@ function cycleAt(st: GaitState, u: number, k: number, x: number, z: number): Rig
  */
 export function gaitBody(st: GaitState, a: Locomotion & { reach?: { l?: V3; r?: V3; k: number } }, idle: HumanBody, s: number, dt: number): { body: HumanBody; loco: TerrainLoco } {
   const v = Math.hypot(a.svx, a.svy), vw = v * s
-  const heading = v > 1e-4 ? Math.atan2(a.svy, a.svx) : st.yaw
-  if (!st.init) { st.yaw = heading; st.init = true }
+  const heading = v > 1e-4 ? Math.atan2(a.svy, a.svx) : a.aim
   const sideways = vw > 0.2 && Math.abs(angleDiff(heading, a.aim)) > GAIT.strafe
+  // The cycle faces where the rig's body faces: its aim when standing, slow, backpedalling or strafing (so blending
+  // in never meets a stale or reversed facing), the direction of travel when walking forward.
+  const facing = a.back || sideways || vw <= 0.2 ? a.aim : heading
+  if (!st.init || st.move < 0.01) { st.yaw = facing; st.init = true }
+  else st.yaw += angleDiff(facing, st.yaw) * (1 - Math.exp(-GAIT.turnRate * dt))
   st.move = ease(st.move, a.back || sideways ? 0 : smooth(GAIT.move[0], GAIT.move[1], vw), GAIT.blendRate, dt)
   st.run = ease(st.run, smooth(GAIT.run[0], GAIT.run[1], vw), GAIT.blendRate, dt)
-  if (vw > 0.2) st.yaw += angleDiff(heading, st.yaw) * (1 - Math.exp(-GAIT.turnRate * dt))
   const stride = GAITS.walk.stride + (GAITS.run.stride - GAITS.walk.stride) * st.run
   const natural = stride / (GAITS.walk.duration + (GAITS.run.duration - GAITS.walk.duration) * st.run)
   const k = Math.max(GAIT.stride[0], Math.min(GAIT.stride[1], Math.sqrt(v / natural)))
-  st.phase = (st.phase + (dt * v) / (k * stride)) % 1
-  const mocap = st.move > 0.5
   const clip = st.run < 0.5 ? GAITS.walk : GAITS.run
+  // While the rig leads, the cycle follows its stride: the rig's left foot lands at its phase 0, the clip's at its
+  // first plant. So the hand-over never meets a foot the rig has planted mid-swing in the clip, or the reverse.
+  if (st.move < 0.01) st.phase = (a.phase + plantStart(clip, 0)) % 1
+  else st.phase = (st.phase + (dt * v) / (k * stride)) % 1
+  const mocap = st.move > 0.5
   const m = st.move > 0.01 ? cycleAt(st, st.phase, k, a.x, a.y) : null
   const rig = st.move < 0.999 ? extractBodyJoints(idle) : null
   const joints = {} as RigJointMap
@@ -105,18 +121,29 @@ export function gaitBody(st: GaitState, a: Locomotion & { reach?: { l?: V3; r?: 
   const loco = st.loco
   loco.x = a.x; loco.y = a.y
   for (let side = 0; side < 2; side++) {
-    const L = st.lock[side]!, ankle = side ? "ankleR" : "ankleL", jb = joints[side ? "ballR" : "ballL"], ja = joints[ankle]
+    const L = st.lock[side]!, ankle = side ? "ankleR" : "ankleL"
+    const planted = mocap ? plantedAt(clip, side, st.phase) : a.feet[side].planted
+    // A planted foot stands at the height of the gait that planted it: blending in the other's foot would lift it.
+    // Before the lock: the foot's height tilts the ankle -> ball line, which moves the ball the lock holds.
+    // Eased, so a hand-over where the gaits disagree on which foot is down does not drop or lift one in a frame.
+    // The leader's foot height crosses from rig to cycle over move 0.4-0.6, not in the frame the lead changes.
+    const lw = smooth(0.4, 0.6, st.move)
+    L.ground = ease(L.ground, planted ? 1 : 0, 20, dt)
+    for (const n of LEG[side]!) if (!n.startsWith("knee")) {
+      const ly = !m ? rig![n][1] : !rig ? m[n][1] : rig[n][1] + (m[n][1] - rig[n][1]) * lw
+      joints[n] = [joints[n][0], joints[n][1] + (ly - joints[n][1]) * L.ground, joints[n][2]]
+    }
+    const jb = joints[side ? "ballR" : "ballL"], ja = joints[ankle]
     // The ball the mesh is pinned to: along ankle -> ball at the rig foot's own length (jointsToBody, posePerson).
     const d0 = Math.hypot(jb[0] - ja[0], jb[1] - ja[1], jb[2] - ja[2]) || 1, reachBall = Math.hypot(RIG.foot, RIG.ankle) / d0
     const ball: V3 = [ja[0] + (jb[0] - ja[0]) * reachBall, 0, ja[2] + (jb[2] - ja[2]) * reachBall]
-    const planted = mocap ? plantedAt(clip, side, st.phase) : a.feet[side].planted
     if (planted && !L.on) { L.on = true; L.at = [ball[0] + L.off[0], ball[2] + L.off[1]] }
     if (!planted && L.on) { L.on = false; L.lift = [joints[ankle][0] + L.off[0], joints[ankle][1], joints[ankle][2] + L.off[1]] }
     if (L.on) {
       L.off = [L.at[0] - ball[0], L.at[1] - ball[2]]
       const d = Math.hypot(L.off[0], L.off[1])
       if (d > LOCK_REACH) { L.off = [(L.off[0] * LOCK_REACH) / d, (L.off[1] * LOCK_REACH) / d]; L.at = [ball[0] + L.off[0], ball[2] + L.off[1]] }
-    } else L.off = [L.off[0] * Math.exp(-dt * 18), L.off[1] * Math.exp(-dt * 18)]
+    } else L.off = [L.off[0] * Math.exp(-dt * 10), L.off[1] * Math.exp(-dt * 10)]
     for (const n of LEG[side]!) { const p = joints[n], w = n.startsWith("knee") ? 0.5 : 1; joints[n] = [p[0] + L.off[0] * w, p[1], p[2] + L.off[1] * w] }
     const f = loco.feet[side]!
     f.planted = planted
