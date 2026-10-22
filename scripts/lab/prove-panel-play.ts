@@ -120,8 +120,12 @@ async function harness() {
   const subs = await page.locator('[data-lab-panel] .knobs-subhead[aria-expanded]').evaluateAll(els => els.filter(e => e.getClientRects().length).map(e => [e.textContent, e.getAttribute("aria-expanded")]))
   assert(subs.length >= 2 && subs.every(([, e]) => e === "false"), `sub-headings start folded: ${JSON.stringify(subs)}`)
   ok("sub-headings start folded")
-  await page.locator('[data-lab-panel] .knobs-subhead', { hasText: "Beam profile" }).click()
+  const beam = page.locator('[data-lab-panel] .knobs-subhead', { hasText: "Beam profile" })
+  // Clicks while Flashlight's card is still folding open can miss: click until it reads open.
+  for (let i = 0; i < 5 && (await beam.getAttribute("aria-expanded")) !== "true"; i++) { await beam.click(); await page.waitForTimeout(400) }
+  assert.equal(await beam.getAttribute("aria-expanded"), "true", "Beam profile opens from its sub-heading")
   await head(page, "Walking").click()
+  await page.waitForTimeout(400)
   await page.reload()
   await page.waitForFunction(() => "harness" in window)
   await page.keyboard.press("Backquote")
