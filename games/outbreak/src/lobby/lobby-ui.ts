@@ -189,6 +189,7 @@ export class OutbreakLobby {
     this.root.hidden = false
     window.dispatchEvent(new Event("outbreak-menu-open"))
     this.render(true)
+    this.root.querySelector<HTMLButtonElement>('[data-act="resume"]')?.focus()
   }
 
   openCoop(net: NetSession): void {
@@ -200,6 +201,8 @@ export class OutbreakLobby {
   }
 
   close(): void {
+    const active = document.activeElement
+    if (active instanceof HTMLElement && this.root.contains(active)) active.blur()
     this.mode = "closed"
     this.root.hidden = true
     this.lastKey = ""

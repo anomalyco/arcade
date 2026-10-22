@@ -3,7 +3,11 @@ import { parseRunSeed, runSeedCode, runSeedLink } from "../src/lobby/run-seed"
 import { createOutbreakSettings } from "../src/settings"
 
 test("replay codes preserve both the town and changed house seed", () => {
-  for (const run of [{ seed: 7, houseSeed: 7, terrain: 0.22 }, { seed: 7, houseSeed: 123456789, terrain: 0.4 }]) {
+  for (const run of [
+    { seed: 7, houseSeed: 7, terrain: 0.22 },
+    { seed: 7, houseSeed: 123456789, terrain: 0.4 },
+    { seed: 0, houseSeed: 4294967295, terrain: 0 },
+  ]) {
     expect(parseRunSeed(runSeedCode(run))).toEqual({ seed: run.seed, houseSeed: run.houseSeed })
     const url = new URL(runSeedLink(run))
     const settings = createOutbreakSettings(url.searchParams)
