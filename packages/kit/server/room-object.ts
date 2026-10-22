@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers"
 import type { Conn } from "../net/room-core"
+import { settle } from "./settle"
 
 /** What the Durable Object drives: a `RoomCore` or anything shaped like one. */
 export type TickedCore = {
@@ -139,6 +140,6 @@ export abstract class RoomObject<Env, Core extends TickedCore, Report = void> ex
     if (!empty && (now - this.reportAt < REPORT_MIN_MS || (key === this.reported && now - this.reportAt < this.heartbeatMs))) return
     this.reported = key
     this.reportAt = now
-    this.send(report).then(undefined, () => (this.reported = ""))
+    settle(() => this.send(report), () => (this.reported = ""))
   }
 }
