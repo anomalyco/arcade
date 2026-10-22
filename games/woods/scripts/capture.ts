@@ -18,17 +18,6 @@ const measure = process.argv.includes("--measure")
 /** `--debug key=false,...`: the forest's draw toggles (`woods.view.forest.debug`); `--quality high` pins the tier. */
 const debugs = Object.fromEntries(arg("--debug", "").split(",").filter(Boolean).map((kv) => { const [k, v] = kv.split("="); return [k!, v !== "false"] }))
 const tier = arg("--quality", "high")
-mkdirSync(out, { recursive: true })
-const root = resolve("dist/arcade/woods")
-const prefix = "/arcade/woods/"
-const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(req) {
-  const path = new URL(req.url).pathname
-  if (!path.startsWith(prefix)) return new Response("no", { status: 404 })
-  const file = resolve(root, decodeURIComponent(path.slice(prefix.length)) || "index.html")
-  if (!file.startsWith(root + sep)) return new Response("no", { status: 404 })
-  const f = Bun.file(file)
-  return (await f.exists()) ? new Response(f) : new Response("no", { status: 404 })
-} })
 
 type Woods = {
   frames: number; paused: boolean
@@ -43,7 +32,7 @@ type Woods = {
 }
 declare const woods: Woods
 
-const shots: Record<string, (page: Page) => Promise<void>> = {
+export const shots: Record<string, (page: Page) => Promise<void>> = {
   // Default view out of camp at spawn.
   camp: async (page) => { await page.evaluate(() => { const s = woods.world.camp.spawn; woods.setPose(s.x, s.z, s.yaw, 0.02); woods.camera.flashlight = false }) },
   // Looking back at camp from the woods: the lit mess hall through the trunks.
@@ -199,6 +188,18 @@ const shots: Record<string, (page: Page) => Promise<void>> = {
   map: async (page) => { await page.evaluate(() => { const s = woods.world.camp.spawn; woods.setPose(s.x, s.z - 40, 0.4, -0.1); woods.hold("KeyG", true) }) },
 }
 
+if (import.meta.main) {
+mkdirSync(out, { recursive: true })
+const root = resolve("dist/arcade/woods")
+const prefix = "/arcade/woods/"
+const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(req) {
+  const path = new URL(req.url).pathname
+  if (!path.startsWith(prefix)) return new Response("no", { status: 404 })
+  const file = resolve(root, decodeURIComponent(path.slice(prefix.length)) || "index.html")
+  if (!file.startsWith(root + sep)) return new Response("no", { status: 404 })
+  const f = Bun.file(file)
+  return (await f.exists()) ? new Response(f) : new Response("no", { status: 404 })
+} })
 const browser = await chromium.launch({ headless: true, timeout: 120000, args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio"] })
 const page = await browser.newPage({ viewport: { width: w, height: h } })
 const errors: string[] = []
@@ -230,3 +231,4 @@ writeFileSync(`${out}/capture.json`, JSON.stringify({ timing, errors }, null, 2)
 if (errors.length) console.log("browser messages:", errors.slice(0, 10))
 await browser.close()
 server.stop(true)
+}
