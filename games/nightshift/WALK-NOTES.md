@@ -16,6 +16,10 @@ Start/stop amplitude and turn roll use critically damped springs (duration 0.30 
 
 All movement and room sounds are original seeded PCM synthesis in `src/foley.ts`: low-passed carpet heel/toe noise, cloth rustle, stop/pivot scuff, damped chair impact, HVAC and a spatial 120 Hz fluorescent hum, plus sparse distant creaks. No downloaded samples. Variants are cached, one-shot nodes disconnect on completion, and the HVAC seam is overlap-crossfaded. The live mixer and offline recording use the same graph and contact events. Focus loss, the panel and mute gate playback; no audio starts before the canvas click.
 
+Kit's playtest found the initial footsteps much too loud. The revised carpet bank has 32 seeded variants with 22–36 ms compression attacks, varied decay/colour/weight and a much weaker heel resonance. Contact gain is `.025 + .175 * min(speed / 1.7, 1)^1.6`; sprint raises cadence, not loudness. At 0.5 m/s, contacts are 12.1 dB quieter than at 1.7 m/s. Stop/pivot scuffs and cloth are also lowered. The existing movement/room controls stay at .8/.7.
+
+Measured across all 32 variants using the loudest 100 ms RMS window, normal-walk contacts are 24.3–29.4 dB below the original bank/gain and at least 3.6 dB below the HVAC bed alone at default settings, even before stereo-pan attenuation. Slow contacts are a further 12.1 dB down. Measurements use generated PCM without playback (`iteration-17/carpet-levels.json`); the original walking clip below preserves the **earlier, louder mix**. The live development preview is the current audition surface. Six focused walk/audio tests, TypeScript and the production build passed after the change.
+
 `scripts/walk-trace.ts` writes per-frame offsets and contact events at 30/60/120/144 Hz, including interrupted movement, speed changes, turns, reduced motion and focus loss. `scripts/walk-video.ts` drives the actual controller with keyboard events, captures GPU frames headlessly with `--mute-audio`, then renders the same event tape into an OfflineAudioContext and muxes the saved WAV. No speaker playback is needed.
 
 ## Storage contacts

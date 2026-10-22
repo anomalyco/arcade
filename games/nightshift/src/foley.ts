@@ -7,10 +7,16 @@ export function synth(sound:Sound,seed:number,rate=24000):Float32Array<ArrayBuff
   const duration=durations[sound],a=new Float32Array(Math.ceil(duration*rate))
   let rng=(seed+1)*7919,low=0,mid=0,phase=0
   const random=()=>{rng^=rng<<13;rng^=rng>>>17;rng^=rng<<5;return (rng>>>0)/4294967296*2-1}
+  // Carpet compresses rather than clicks. Vary the envelope and low-pass colour,
+  // not just the noise; keep the heel resonance below the soft fabric contact.
+  const shade=sound==="step"?(random()+1)/2:0,weight=sound==="step"?.75+.25*(random()+1)/2:1
   for(let i=0;i<a.length;i++){
     const t=i/rate,u=t/duration,n=random(),attack=1-Math.exp(-t*180),end=Math.min(1,(duration-t)*35)
     low+=(n-low)*.045;mid+=(n-mid)*.28
-    if(sound==="step")a[i]=(low*.8+mid*.19)*attack*Math.exp(-t*19)*end+.09*Math.sin(2*Math.PI*(68+seed%17)*t)*attack*Math.exp(-t*30)*end
+    if(sound==="step"){
+      const press=Math.sin(Math.min(1,t/(.022+.014*shade))*Math.PI/2)**2
+      a[i]=((low*(.35+.1*shade)+mid*.025)*Math.exp(-t*(15+8*shade))+.009*Math.sin(2*Math.PI*(62+seed%23)*t)*Math.exp(-t*28))*press*end*weight
+    }
     if(sound==="cloth"||sound==="scuff")a[i]=(mid-low)*Math.sin(Math.PI*u)**2*(sound==="cloth"?.055:.19)
     if(sound==="bump")a[i]=(.17*Math.sin(t*2*Math.PI*83)+.085*Math.sin(t*2*Math.PI*151)+mid*.08)*attack*Math.exp(-t*12)*end
     if(sound==="creak"){
@@ -49,8 +55,8 @@ export class Foley {
     this.hum=this.loop("hum",this.humPan)
   }
   private buffer(kind:Sound,seed:number){
-    const key=`${kind}:${seed%8}`;let b=this.cache.get(key)
-    if(!b){const pcm=synth(kind,seed%8);b=this.ctx.createBuffer(1,pcm.length,24000);b.copyToChannel(pcm,0);this.cache.set(key,b)}return b
+    const variants=kind==="step"?32:8,key=`${kind}:${seed%variants}`;let b=this.cache.get(key)
+    if(!b){const pcm=synth(kind,seed%variants);b=this.ctx.createBuffer(1,pcm.length,24000);b.copyToChannel(pcm,0);this.cache.set(key,b)}return b
   }
   private loop(kind:Sound,to:AudioNode){const s=this.ctx.createBufferSource(),g=this.ctx.createGain();g.gain.value=0;s.buffer=this.buffer(kind,0);s.loop=true;s.connect(g);g.connect(to);s.start();return g}
   update(room:RoomSample,events:readonly FoleyEvent[],now=this.ctx.currentTime){

@@ -42,10 +42,10 @@ export class Walk {
     for(let step=Math.floor(before)+1;step<=Math.floor(this.phase);step++){
       // Match the ~30 ms group delay of the critically damped 0.10 s pose spring.
       const at=start+dt*(step-before)/(this.phase-before)+.03,pan=step%2?.14:-.14
-      emit("step",.28+.72*power,pan,at);emit("cloth",.18+.20*power,-pan,at+.035)
+      emit("step",.025+.175*Math.min(power,1)**1.6,pan,at);emit("cloth",.06+.08*power,-pan,at+.035)
     }
     if(i.active&&this.time-this.scuffAt>.65&&((this.wasMoving&&!moving)||(Math.abs(turn)>1.1&&this.speed<.8))){
-      emit("scuff",this.wasMoving?.5:.22,turn*.06);this.scuffAt=this.time
+      emit("scuff",this.wasMoving?.12:.06,turn*.06);this.scuffAt=this.time
     }
     if(i.active&&i.bump&&!this.touching&&this.time-this.bumpAt>.8){emit("bump",.65);this.bumpAt=this.time}
     this.touching=i.active&&!!i.bump
