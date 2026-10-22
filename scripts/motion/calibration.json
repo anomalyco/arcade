@@ -1,0 +1,538 @@
+{
+  "version": 1,
+  "sources": [
+    "CMU 07_12[30:241] 30fps",
+    "CMU 07_12[30:241] 30fps+100ms",
+    "CMU 07_12[30:241] 60fps",
+    "CMU 07_12[30:241] 60fps+100ms",
+    "CMU 07_12[30:241] 144fps",
+    "CMU 07_12[30:241] 144fps+100ms",
+    "CMU 09_11[2:166] 30fps",
+    "CMU 09_11[2:166] 30fps+100ms",
+    "CMU 09_11[2:166] 60fps",
+    "CMU 09_11[2:166] 60fps+100ms",
+    "CMU 09_11[2:166] 144fps",
+    "CMU 09_11[2:166] 144fps+100ms"
+  ],
+  "speed": 2.0082742693465994,
+  "leg": 0.8415489663414956,
+  "limits": {
+    "bone-length/local/hipSide:kneeSide": {
+      "max": 0.0004963369974401141,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "bone-length/local/kneeSide:ankleSide": {
+      "max": 0.0006975437404284869,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "bone-length/local/ankleSide:ballSide": {
+      "max": 0.004384915419738344,
+      "source": "CMU 09_11[2:166] 144fps+100ms"
+    },
+    "bone-length/local/ballSide:toeSide": {
+      "max": 0.0017539661678953183,
+      "source": "CMU 09_11[2:166] 144fps+100ms"
+    },
+    "bone-length/local/shoulderSide:elbowSide": {
+      "max": 0.00010079573767546313,
+      "source": "CMU 09_11[2:166] 144fps"
+    },
+    "bone-length/local/elbowSide:wristSide": {
+      "max": 0.0000767379376585553,
+      "source": "CMU 09_11[2:166] 144fps"
+    },
+    "width/local/hipSide:hipSide": {
+      "max": 0.0001310771595392779,
+      "source": "CMU 09_11[2:166] 144fps"
+    },
+    "width/local/shoulderSide:shoulderSide": {
+      "max": 0.00002347720307327439,
+      "source": "CMU 09_11[2:166] 144fps"
+    },
+    "hinge-flexion/local/kneeSide": {
+      "max": 2.14169148259019,
+      "source": "CMU 09_11[2:166] 144fps"
+    },
+    "hinge-reverse/local/kneeSide": {
+      "max": 0.01760505992568266,
+      "source": "CMU 09_11[2:166] 144fps"
+    },
+    "hinge-flexion/local/elbowSide": {
+      "max": 2.2599208469603402,
+      "source": "CMU 09_11[2:166] 30fps"
+    },
+    "hinge-reverse/local/elbowSide": {
+      "max": 0,
+      "source": "CMU 07_12[30:241] 30fps"
+    },
+    "displacement/world/pelvis": {
+      "max": 2.860032169750868,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "velocity/world/pelvis": {
+      "max": 2.8600321697508777,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "displacement/pelvis/pelvis": {
+      "max": 0,
+      "source": "CMU 07_12[30:241] 30fps"
+    },
+    "velocity/pelvis/pelvis": {
+      "max": 0,
+      "source": "CMU 07_12[30:241] 30fps"
+    },
+    "displacement/world/waist": {
+      "max": 2.505596804153694,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "velocity/world/waist": {
+      "max": 2.5055968041537025,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "displacement/pelvis/waist": {
+      "max": 0.40769374635605066,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "velocity/pelvis/waist": {
+      "max": 0.40769374635605204,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "displacement/world/chest": {
+      "max": 2.40804490747243,
+      "source": "CMU 09_11[2:166] 144fps"
+    },
+    "velocity/world/chest": {
+      "max": 2.4080449074724384,
+      "source": "CMU 09_11[2:166] 144fps"
+    },
+    "displacement/pelvis/chest": {
+      "max": 0.905986103013402,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "velocity/pelvis/chest": {
+      "max": 0.9059861030134051,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "displacement/world/neck": {
+      "max": 2.741038766376428,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "velocity/world/neck": {
+      "max": 2.7410387663764384,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "displacement/pelvis/neck": {
+      "max": 1.279481391467304,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "velocity/pelvis/neck": {
+      "max": 1.2794813914673084,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "displacement/world/headTop": {
+      "max": 2.579410978945307,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "velocity/world/headTop": {
+      "max": 2.5794109789453157,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "displacement/pelvis/headTop": {
+      "max": 1.1988946165044658,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "velocity/pelvis/headTop": {
+      "max": 1.19889461650447,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "displacement/world/shoulderSide": {
+      "max": 2.543479326936146,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "velocity/world/shoulderSide": {
+      "max": 2.543479326936155,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "displacement/pelvis/shoulderSide": {
+      "max": 0.8362440641456971,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "velocity/pelvis/shoulderSide": {
+      "max": 0.8362440641457,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "displacement/world/elbowSide": {
+      "max": 3.284139845319309,
+      "source": "CMU 09_11[2:166] 144fps"
+    },
+    "velocity/world/elbowSide": {
+      "max": 3.2841398453193076,
+      "source": "CMU 09_11[2:166] 144fps"
+    },
+    "displacement/pelvis/elbowSide": {
+      "max": 1.4324486222309125,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "velocity/pelvis/elbowSide": {
+      "max": 1.4324486222309176,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "displacement/world/wristSide": {
+      "max": 3.9488571724062766,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "velocity/world/wristSide": {
+      "max": 3.94885717240629,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "displacement/pelvis/wristSide": {
+      "max": 2.2826669624486016,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "velocity/pelvis/wristSide": {
+      "max": 2.28266696244861,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "displacement/world/hipSide": {
+      "max": 3.0305047271391383,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "velocity/world/hipSide": {
+      "max": 3.030504727139149,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "displacement/pelvis/hipSide": {
+      "max": 0.5933876860325946,
+      "source": "CMU 09_11[2:166] 144fps+100ms"
+    },
+    "velocity/pelvis/hipSide": {
+      "max": 0.5933876860325967,
+      "source": "CMU 09_11[2:166] 144fps+100ms"
+    },
+    "displacement/world/kneeSide": {
+      "max": 6.62548235051359,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "velocity/world/kneeSide": {
+      "max": 6.625482350513614,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "displacement/pelvis/kneeSide": {
+      "max": 4.864686544468601,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "velocity/pelvis/kneeSide": {
+      "max": 4.864686544468618,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "displacement/world/ankleSide": {
+      "max": 6.1216444691928125,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "velocity/world/ankleSide": {
+      "max": 6.121644469192835,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "displacement/pelvis/ankleSide": {
+      "max": 4.397067021010848,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "velocity/pelvis/ankleSide": {
+      "max": 4.397067021010864,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "displacement/world/ballSide": {
+      "max": 6.688774810711636,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "velocity/world/ballSide": {
+      "max": 6.688774810711661,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "displacement/pelvis/ballSide": {
+      "max": 4.940179317799321,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "velocity/pelvis/ballSide": {
+      "max": 4.940179317799338,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "displacement/world/toeSide": {
+      "max": 6.937353247427453,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "velocity/world/toeSide": {
+      "max": 6.9373532474274775,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "displacement/pelvis/toeSide": {
+      "max": 5.183179313066559,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "velocity/pelvis/toeSide": {
+      "max": 5.183179313066577,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "hinge-rate/local/kneeSide": {
+      "max": 25.408030849593725,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "hinge-rate/local/elbowSide": {
+      "max": 4.619970692692629,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "yaw-rate/local/pelvis": {
+      "max": 4.611286314867125,
+      "source": "CMU 09_11[2:166] 144fps"
+    },
+    "yaw-rate/local/torso": {
+      "max": 1.6075730123111458,
+      "source": "CMU 09_11[2:166] 144fps+100ms"
+    },
+    "foot-sink/local/ballSide": {
+      "max": 0.011477609266923785,
+      "source": "CMU 09_11[2:166] 30fps"
+    },
+    "foot-hover/local/ballSide": {
+      "max": 0.02885659412165037,
+      "source": "CMU 09_11[2:166] 144fps+100ms"
+    },
+    "contact-snap/local/ankleSide": {
+      "max": 1.016636436068965,
+      "source": "CMU 09_11[2:166] 144fps+100ms"
+    },
+    "contact-snap/local/ballSide": {
+      "max": 1.0011365569126933,
+      "source": "CMU 09_11[2:166] 30fps"
+    },
+    "contact-snap/local/toeSide": {
+      "max": 1.0919530495935814,
+      "source": "CMU 09_11[2:166] 30fps"
+    },
+    "acceleration/world/pelvis": {
+      "max": 159.5751486793941,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "acceleration/pelvis/pelvis": {
+      "max": 0,
+      "source": "CMU 07_12[30:241] 30fps"
+    },
+    "acceleration/world/waist": {
+      "max": 112.67430160149326,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "acceleration/pelvis/waist": {
+      "max": 55.409594255558204,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "acceleration/world/chest": {
+      "max": 74.58847182163319,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "acceleration/pelvis/chest": {
+      "max": 123.13243167900647,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "acceleration/world/neck": {
+      "max": 200.83809716046716,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "acceleration/pelvis/neck": {
+      "max": 267.0803106029943,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "acceleration/world/headTop": {
+      "max": 131.41318252632982,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "acceleration/pelvis/headTop": {
+      "max": 255.49863872198074,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "acceleration/world/shoulderSide": {
+      "max": 188.2747095043232,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "acceleration/pelvis/shoulderSide": {
+      "max": 150.76664774401047,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "acceleration/world/elbowSide": {
+      "max": 235.98157571914788,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "acceleration/pelvis/elbowSide": {
+      "max": 200.0205726751482,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "acceleration/world/wristSide": {
+      "max": 249.97070114995572,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "acceleration/pelvis/wristSide": {
+      "max": 214.44993486135098,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "acceleration/world/hipSide": {
+      "max": 192.0821684606307,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "acceleration/pelvis/hipSide": {
+      "max": 118.1021510785108,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "acceleration/world/kneeSide": {
+      "max": 599.6868608651895,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "acceleration/pelvis/kneeSide": {
+      "max": 601.3797371190739,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "acceleration/world/ankleSide": {
+      "max": 205.7419008901348,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "acceleration/pelvis/ankleSide": {
+      "max": 241.21070115590715,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "acceleration/world/ballSide": {
+      "max": 394.34056980338227,
+      "source": "CMU 09_11[2:166] 144fps"
+    },
+    "acceleration/pelvis/ballSide": {
+      "max": 397.4679712277724,
+      "source": "CMU 09_11[2:166] 144fps"
+    },
+    "acceleration/world/toeSide": {
+      "max": 565.0728100225723,
+      "source": "CMU 09_11[2:166] 144fps"
+    },
+    "acceleration/pelvis/toeSide": {
+      "max": 568.037300221538,
+      "source": "CMU 09_11[2:166] 144fps"
+    },
+    "yaw-acceleration/local/pelvis": {
+      "max": 416.33971774926306,
+      "source": "CMU 09_11[2:166] 144fps"
+    },
+    "yaw-acceleration/local/torso": {
+      "max": 178.98567816303355,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "foot-slip/local/ballSide": {
+      "max": 0.44317286886670393,
+      "source": "CMU 09_11[2:166] 144fps"
+    },
+    "jerk/world/pelvis": {
+      "max": 45523.127924318906,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "jerk/pelvis/pelvis": {
+      "max": 0,
+      "source": "CMU 07_12[30:241] 30fps"
+    },
+    "jerk/world/waist": {
+      "max": 31240.334510873614,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "jerk/pelvis/waist": {
+      "max": 15125.128136995738,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "jerk/world/chest": {
+      "max": 17574.848094468285,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "jerk/pelvis/chest": {
+      "max": 33611.39585998739,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "jerk/world/neck": {
+      "max": 56765.94724386803,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "jerk/pelvis/neck": {
+      "max": 59942.46427326354,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "jerk/world/headTop": {
+      "max": 35287.64708947971,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "jerk/pelvis/headTop": {
+      "max": 63733.711036242225,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "jerk/world/shoulderSide": {
+      "max": 43480.08865197317,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "jerk/pelvis/shoulderSide": {
+      "max": 40236.3441579567,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "jerk/world/elbowSide": {
+      "max": 57136.45161543662,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "jerk/pelvis/elbowSide": {
+      "max": 54030.19809049667,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "jerk/world/wristSide": {
+      "max": 59659.532158577706,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "jerk/pelvis/wristSide": {
+      "max": 56557.903830884105,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "jerk/world/hipSide": {
+      "max": 54301.87135239131,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "jerk/pelvis/hipSide": {
+      "max": 24891.31305877333,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "jerk/world/kneeSide": {
+      "max": 109645.82416360438,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "jerk/pelvis/kneeSide": {
+      "max": 105863.49327231475,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "jerk/world/ankleSide": {
+      "max": 35730.423664667505,
+      "source": "CMU 07_12[30:241] 144fps"
+    },
+    "jerk/pelvis/ankleSide": {
+      "max": 62505.47734597246,
+      "source": "CMU 07_12[30:241] 144fps+100ms"
+    },
+    "jerk/world/ballSide": {
+      "max": 62315.9051707218,
+      "source": "CMU 09_11[2:166] 144fps"
+    },
+    "jerk/pelvis/ballSide": {
+      "max": 63014.29162985074,
+      "source": "CMU 09_11[2:166] 144fps"
+    },
+    "jerk/world/toeSide": {
+      "max": 89003.05835328401,
+      "source": "CMU 09_11[2:166] 144fps"
+    },
+    "jerk/pelvis/toeSide": {
+      "max": 89682.3171062226,
+      "source": "CMU 09_11[2:166] 144fps"
+    }
+  },
+  "margin": 1.1,
+  "hashes": {
+    "07_12": "704b63c1ecb291cde10625d2cd6b90d8f77d14763ba9931233ab2dc02148a578",
+    "09_11": "1ecc12d8ae242f271d8e1b17ac9b204d1c71cb17d06ba881bc1915a5b72dc712"
+  }
+}
