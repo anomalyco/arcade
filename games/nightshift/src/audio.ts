@@ -1,5 +1,6 @@
 import { ringEnvelope, type Call } from "../shared/call"
 import { Foley, type RoomSample } from "./foley"
+import { OPENING } from "./opening"
 import type { FoleyEvent } from "./walk"
 import { encodeWavPcm16 } from "@arcade/kit/audio/offline"
 
@@ -53,8 +54,8 @@ export class OfficeAudio {
   movement(room:RoomSample,events:readonly FoleyEvent[]){this.foley?.update({...room,active:room.active&&!this.muted},events)}
   dispose() { void this.ctx?.close() }
 }
-export function introTone(time:number){const t=Math.max(0,Math.min(1,(time-3)/2));return {hz:660*Math.pow(110/660,t),gain:time>=3&&time<5?.022*Math.sin(Math.PI*t)**.6:0}}
-function bellLevel(time:number,openingTime:number,distance:number,phase:Call["phase"]){return openingTime>=6.2&&phase==="ringing"?ringEnvelope(time)/(1+distance*distance*.22)*(.65+.35*Math.sin(time*2*Math.PI*23)**2):0}
+export function introTone(time:number){const span=OPENING.empty-OPENING.drain,t=Math.max(0,Math.min(1,(time-OPENING.drain)/span));return {hz:660*Math.pow(110/660,t),gain:time>=OPENING.drain&&time<OPENING.empty?.022*Math.sin(Math.PI*t)**.6:0}}
+function bellLevel(time:number,openingTime:number,distance:number,phase:Call["phase"]){return openingTime>=OPENING.ring&&phase==="ringing"?ringEnvelope(time)/(1+distance*distance*.22)*(.65+.35*Math.sin(time*2*Math.PI*23)**2):0}
 export type BeatAudioFrame={time:number;openingTime:number;ringTime:number;distance:number;pan:number;call:Call;room:RoomSample;events:FoleyEvent[]}
 /** Review-file audio uses the same PCM, levels and clocks, with no speaker output. */
 export async function renderBeatAudio(tape:BeatAudioFrame[],duration:number,recording:ArrayBuffer){
