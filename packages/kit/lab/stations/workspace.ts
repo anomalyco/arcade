@@ -86,6 +86,9 @@ export function createStations(opts: {
 
   let current: LabStation | null = null
   let variant: StationVariant | null = null
+  // Each page setup run carries the whole composed setup, so only the newest may land (an older one can still be
+  // waiting for the page).
+  let frameRun = 0
   /** Each variant group's pick; they compose (see `composedSetup`). */
   let picks = new Map<string, StationVariant>()
   let missing: string | null = null
@@ -452,11 +455,13 @@ export function createStations(opts: {
     return null
   }
   async function runInFrame(commands: readonly StationCommand[] | undefined, label: string) {
+    const run = ++frameRun
     if (!commands?.length) return
     const rt = await frameRuntime()
     if (!rt) return
     if (commands.some(step => step.command === "scene.set-param" || step.command === "lab.set")) await framePanel(PAGE_PANEL_WAIT_MS)
     await new Promise(done => setTimeout(done, 300))
+    if (run !== frameRun) return
     for (const step of commands) {
       const res = await rt.invokeLocal(step.command, step.args)
       if (!res.ok) { say(`${label}: ${step.command} failed: ${res.error ?? "unavailable"}`, true); return }
