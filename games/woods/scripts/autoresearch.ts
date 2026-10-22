@@ -9,6 +9,7 @@ import { createHash } from "node:crypto"
 import { chromium } from "playwright-core"
 import { shots } from "./capture"
 import { motionProbe } from "./autoresearch-motion"
+import { exposureProbe } from "./autoresearch-exposure"
 import { makeWorld, standHeight } from "../shared/world"
 import type { ForestFrameInput, ForestView } from "../../../packages/kit/forest/view"
 
@@ -17,6 +18,8 @@ const root = resolve(import.meta.dir, "../dist/arcade/woods"), prefix = "/arcade
 mkdirSync(out, { recursive: true })
 const variants: { id: string; look?: Record<string, unknown>; quality?: Record<string, unknown> }[] = JSON.parse(process.env.AUTORESEARCH_VARIANTS ?? '[{"id":"baseline"}]')
 const names = (process.env.AUTORESEARCH_SHOTS ?? "camp,beam,trail,marker,k1,k3,k4,k6,l0,l1,l2,l4,signal60,signal60off").split(",")
+const settleFrames = Number(process.env.AUTORESEARCH_SETTLE_FRAMES ?? 240)
+assert(Number.isInteger(settleFrames) && settleFrames >= 240, "settling must include at least the standard 240 frames")
 const signalX = -33.25 // Depth-calibrated gap; the original +14 m probe was behind a trunk.
 const zeroConeDisabled = process.env.AUTORESEARCH_ZERO_CONE === "off"
 const calibrationWorld = process.env.AUTORESEARCH_CALIBRATE ? makeWorld() : null
@@ -85,8 +88,8 @@ try {
     woods.__putTime = t => { fixedTime = t; woods.state.t = t }
     forest.update = f => { woods.__input = { ...f, time: fixedTime }; update(woods.__input) }
   })
-  const sources = Object.fromEntries(await Promise.all(["packages/kit/gpu/fog-scatter.ts", "packages/kit/forest/settings.ts"].map(async p => [p, createHash("sha256").update(await Bun.file(p).text()).digest("hex")])))
-  const report: any = { version: 2, host: hostname(), sources, zeroConeDisabled, signalX, seed: 1987, time: 12, viewport: [1600, 900], adapter, overrides: variants, variants: {}, errors }
+  const sources = Object.fromEntries(await Promise.all(["packages/kit/gpu/fog-scatter.ts", "packages/kit/forest/settings.ts", "packages/kit/forest/exposure.ts", "packages/kit/forest/post.ts", "packages/kit/forest/view.ts"].map(async p => [p, createHash("sha256").update(await Bun.file(p).text()).digest("hex")])))
+  const report: any = { version: 3, host: hostname(), sources, zeroConeDisabled, signalX, settleFrames, seed: 1987, time: 12, viewport: [1600, 900], adapter, overrides: variants, variants: {}, errors }
   for (const variant of variants) {
     const dir = resolve(out, variant.id); mkdirSync(dir, { recursive: true })
     const records: any = {}
@@ -121,20 +124,20 @@ try {
         woods.state.players[0].yaw = woods.camera.yaw; woods.state.players[0].pitch = woods.camera.pitch
       }, { name, signalX })
       // Drain each frame so exposure readbacks have a fixed number of opportunities to land.
-      await page.evaluate(async () => {
+      await page.evaluate(async settleFrames => {
         const device = woods.view.forest.renderer.passContext.device
-        for (let i = 0; i < 240; i++) {
+        for (let i = 0; i < settleFrames; i++) {
           woods.step(1000 / 60)
           await device.queue.onSubmittedWorkDone()
           if (i % 8 === 7) await new Promise(r => setTimeout(r, 0))
         }
-      })
+      }, settleFrames)
       await page.locator("#view").screenshot({ path: resolve(dir, `${name}.png`) })
       const data = await page.evaluate(async () => {
         const f = woods.view.forest
         await f.measure(1) // warm-up, discarded
         const gpu = await f.measure(9)
-        return { gpu, stats: f.stats(), look: { ...f.settings }, quality: { ...f.quality }, eye: woods.__input.eye, viewProj: Array.from(woods.__input.viewProj), torches: woods.__input.torches, players: woods.state.players.map((p: any) => ({ id: p.id, x: p.x, z: p.z, yaw: p.yaw, pitch: p.pitch, light: p.light })) }
+        return { gpu, stats: f.stats(), meter: f.renderer.sceneMeter, look: { ...f.settings }, quality: { ...f.quality }, eye: woods.__input.eye, viewProj: Array.from(woods.__input.viewProj), torches: woods.__input.torches, players: woods.state.players.map((p: any) => ({ id: p.id, x: p.x, z: p.z, yaw: p.yaw, pitch: p.pitch, light: p.light })) }
       })
       if (name === "signal60") Object.assign(data, { signalDepth: await page.evaluate(async candidates => {
         const f = woods.view.forest, renderer = f.renderer as any, device: GPUDevice = renderer.passContext.device
@@ -164,6 +167,11 @@ try {
     if (process.env.AUTORESEARCH_MOTION !== "0") {
       records.motion = await page.evaluate(motionProbe)
       console.log(`METRIC ${variant.id}.pops_per_frame=${records.motion.popsPerFrame}`)
+    }
+    if (process.env.AUTORESEARCH_EXPOSURE === "1") {
+      await shots.l4!(page)
+      records.adaptation = await page.evaluate(exposureProbe)
+      console.log(`METRIC ${variant.id}.max_exposure_step=${records.adaptation.maxFrameStep}`)
     }
     assert.equal(errors.length, 0, errors.join("\n"))
     report.variants[variant.id] = records

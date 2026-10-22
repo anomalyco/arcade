@@ -2,7 +2,7 @@
 # requires-python = ">=3.11"
 # dependencies = ["numpy", "pillow", "scipy", "scikit-image"]
 # ///
-"""uv run games/woods/scripts/autoresearch-score.py CAPTURE_DIR TARGET_ROOT
+"""uv run games/woods/scripts/autoresearch-score.py CAPTURE_DIR TARGET_ROOT [FIXED_MASK_BASELINE_DIR]
 
 Target distance is a direction aid, not a realism score. Paint-overs are unregistered:
 60% Lab marginal histogram Wasserstein, 25% regional tone, 15% coarse luminance SSIM.
@@ -20,6 +20,7 @@ from skimage.color import rgb2lab
 from skimage.metrics import structural_similarity
 
 root, targets = map(Path, sys.argv[1:3])
+baseline = Path(sys.argv[3]) if len(sys.argv) > 3 else None
 manifest = json.loads((root / "capture.json").read_text())
 NAMES = {"camp": "camp", "beam": "friend-beam", "trail": "tape-trail", "marker": "marker"}
 REGIONS = {"upper": (0.06, 0.38), "middle": (0.38, 0.72), "ground": (0.72, 0.94)}
@@ -35,6 +36,7 @@ def tone(rgb):
     lin = np.where(rgb <= .04045, rgb / 12.92, ((rgb + .055) / 1.055) ** 2.4) @ [0.2126, .7152, .0722]
     return dict(p5=float(np.quantile(y, .05)), median=float(np.median(y)), p95=float(np.quantile(y, .95)),
                 dark_pct=float(np.mean(y < .04) * 100), local_contrast=float(np.mean(np.abs(y - gaussian_filter(y, 3)))),
+                black_pct=float(np.mean(y < 1 / 255) * 100), clipped_pct=float(np.mean(np.max(rgb, axis=-1) >= 254 / 255) * 100),
                 linear_p5=float(np.quantile(lin, .05)), linear_median=float(np.median(lin)), linear_p95=float(np.quantile(lin, .95)))
 
 def distance(a, b):
@@ -88,19 +90,33 @@ for variant, records in manifest["variants"].items():
     directory = root / variant
     views = {}
     tones = {}
+    target_tones = {}
     for name in records:
-        if name == "motion": continue
+        if name in ["motion", "adaptation"]: continue
         current = image(directory / f"{name}.png")
         tones[name] = tone(current[22:338, 20:620])
         target = targets / "paintover" / f"po-{NAMES[name]}.jpg" if name in NAMES else targets / "look/checkpoints/2/renders" / f"po-{name}.png"
-        if target.exists(): views[name] = distance(current, image(target))
+        if target.exists():
+            reference = image(target)
+            views[name] = distance(current, reference)
+            target_tones[name] = tone(reference[22:338, 20:620])
     darks = [tones[f"l{n}"]["dark_pct"] for n in [0, 1, 2, 4] if f"l{n}" in tones]
     strict_dark = all(b >= a for a, b in zip(darks, darks[1:])) if len(darks) == 4 else None
-    gpu = [r["gpu"]["median"] for name, r in records.items() if name != "motion" and r.get("gpu")]
+    gpu = [r["gpu"]["median"] for name, r in records.items() if r.get("gpu")]
     sig = signal(records, directory)
+    between = {}
+    if baseline and all((baseline / f"l{n}.png").exists() for n in [0, 4]):
+        off, on = [lum(image(baseline / f"l{n}.png"))[22:338, 20:620] for n in [0, 4]]
+        # Fixed old-build mask, shared by every candidate: dark surroundings outside strongly lit beam pixels.
+        mask = (off < .08) & ((on - off) < .025)
+        for n in [0, 1, 2, 4]:
+            if f"l{n}" not in tones: continue
+            y = lum(image(directory / f"l{n}.png"))[22:338, 20:620][mask]
+            between[f"l{n}"] = dict(p5=float(np.quantile(y, .05)), median=float(np.median(y)), dark_pct=float(np.mean(y < .04) * 100), pixels=int(mask.sum()))
     summary = dict(distance=float(np.mean([v["distance"] for v in views.values()])) if views else None, views=views, tone=tones,
                    gpu_median=float(np.median(gpu)), gpu_view_p95=float(np.quantile(gpu, .95)),
-                   signal=sig, motion=records.get("motion"),
+                   signal=sig, motion=records.get("motion"), adaptation=records.get("adaptation"), target_tone=target_tones, between_beams=between,
+                   proposed_target_bounds={name: dict(p5_max=t["p5"] + .008, dark_min=max(0, t["dark_pct"] - 12), dark_max=min(100, t["dark_pct"] + 12)) for name, t in target_tones.items()},
                    constraints=dict(dark_monotone=strict_dark, dark_percentages=darks,
                                     no_milky_lift=all(t["p5"] < .025 for t in tones.values()), signal_visible=sig and sig["visible"]))
     result["variants"][variant] = summary
