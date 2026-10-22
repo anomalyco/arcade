@@ -5,7 +5,7 @@ import assert from "node:assert/strict"
 
 const mode = process.argv[2] ?? "hang-page"
 // Model a slow build before the browser scope and a slow encode after it.
-if (mode === "phases") await Bun.sleep(3_500)
+if (mode === "phases") await Bun.sleep(10_500)
 await using budget = browserBudget()
 const { chromium } = budget
 const options = { headless: true, args: ["--mute-audio"] }
@@ -29,7 +29,7 @@ else if (mode === "phases") {
   await budget.finish()
   await budget.finish()
   await assert.rejects(() => chromium.launch(options), /already closed/)
-  await Bun.sleep(3_500)
+  await Bun.sleep(10_500)
   console.log("NON_BROWSER_PHASES_FINISHED")
 }
 else {

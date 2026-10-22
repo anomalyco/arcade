@@ -6,7 +6,7 @@ const modes = process.argv.slice(2)
 for (const mode of modes.length ? modes : ["success", "throw", "persistent", "hang-page", "hang-work", "blocked-host", "phases"]) {
   const started = performance.now()
   const child = spawn(process.execPath, ["scripts/browser-budget-fixture.ts", mode], {
-    env: { ...process.env, ARCADE_BROWSER_BUDGET_S: mode.startsWith("hang") || mode === "blocked-host" || mode === "phases" ? "3" : "30" },
+    env: { ...process.env, ARCADE_BROWSER_BUDGET_S: mode === "phases" ? "10" : mode.startsWith("hang") || mode === "blocked-host" ? "3" : "30" },
     stdio: ["ignore", "pipe", "pipe"],
   })
   let output = ""

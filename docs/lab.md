@@ -41,6 +41,8 @@ run directly in Bun, as do Walkers' `train.ts`, `pretrain.ts`, `human-metrics.ts
 `hivemind run --kind browser -- bun scripts/browser-budget-proof.ts` checks success, an exception, a
 persistent context, a never-resolving page, a never-resolving host promise and a blocked host with a
 three-second override, then checks that the Chromium process IDs are gone or awaiting OS reaping.
+The `phases` case also checks that browser-free preparation and encoding can each outlast a ten-second
+browser budget, and that a finished budget cannot launch another browser.
 
 ## Tune one change and reproduce it
 
