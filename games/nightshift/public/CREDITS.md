@@ -2,6 +2,11 @@
 
 An original Arcade scene based on Kit's approved October 20, 2026 generated Night Shift concept.
 
+The opt-in shared night sky uses the Yale BSC5 catalogue (public-domain JSON conversion by aduboisforge) and
+NASA SVS CGI Moon Kit 2019 (Ernie Wright / LRO–LROC). The colour map is compressed and mip-filtered; the catalogue
+is normalized into a binary asset. Exact sources, licence evidence and hashes live in
+`packages/kit/sky/assets/CREDITS.md` and `sources.json` in the Arcade source.
+
 - Geometry: original procedural office, receiver, continuously attached cord, paper clutter, blinds and plants, plus the authored, generated and imported props below.
 - Materials: original analytic woven fabric, laminate, acoustic tile, wear and CRT phosphor recipes, generated prop colour/roughness/metalness maps, the pen-cup's source texture and ambientCG carpet.
 - Audio: Kit Langton's explicitly authorized ElevenLabs v4 voice performs the caller in the opening's ten-line script. Offline processing adds telephone filtering, pitch shift, whisper double, hiss, codec grit, clicks and dial tone. The descending terminal tone, bells and ballast hum are original synthesis.

@@ -293,6 +293,11 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
     match: (s) => s === "@arcade/kit/audio" || s.startsWith("@arcade/kit/audio/"),
   },
   {
+    area: "`sky/*`",
+    description: "Lazy catalogue stars, HDR night sky, textured Moon, astronomical clock and lunar illuminance",
+    match: (s) => s.startsWith("@arcade/kit/sky/"),
+  },
+  {
     area: "`weather/*`",
     description: "Continuous-phase weather sim, wet-surface WGSL, and rain/snow/splash pass",
     match: (s) => s === "@arcade/kit/weather" || s.startsWith("@arcade/kit/weather/"),

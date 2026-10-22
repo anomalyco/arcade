@@ -98,7 +98,8 @@ struct Temporal {
   invCur: mat4x4f,    // inverse(current view-projection), unjittered
   jitter: vec4f,      // jitter px x, y (input pixels, y down), base current weight, history valid (0/1)
   sizes: vec4f,       // input w, h, output w, h
-  params: vec4f,      // depth reject (relative), RCAS strength, reactive gain, unused
+   params: vec4f,      // depth reject (relative), RCAS strength, reactive gain, infinite sky enabled
+   previousEyeClip: vec4f, // previous VP × current eye: remove translation for untouched background depth
 }
 struct VO { @builtin(position) pos: vec4f }
 @vertex fn vs(@builtin(vertex_index) i: u32) -> VO {
@@ -225,10 +226,12 @@ fn resolveAt(frag: vec2f) -> vec4f {
   let ndc = sampleNdc(closestTap);
   let p4 = vec4f(ndc, closest, 1.0);
   let world = U.invCur * p4;
-  let prevClip = U.reproject * p4;
+  let sky = U.params.w > 0.5 && closest >= 1.0;
+  var prevClip = U.reproject * p4;
+  if (sky) { prevClip -= U.previousEyeClip * world.w; }
   let prevNdc = prevClip.xy / prevClip.w;
   let historyUv = uv + (prevNdc - ndc) * vec2f(0.5, -0.5);
-  let expectedLin = prevClip.w / world.w;
+  let expectedLin = select(prevClip.w / world.w, 1e9, sky);
   var valid = U.jitter.w > 0.5 && prevClip.w > 1e-6 && expectedLin > 0.0
     && all(historyUv >= vec2f(0.0)) && all(historyUv <= vec2f(1.0));
   if (valid) {
@@ -285,7 +288,8 @@ ${uniformStruct}
   let q = vec2i(o.pos.xy);
   let z = textureLoad(depthTex, q, 0);
   let w = U.invCur * vec4f(sampleNdc(q), z, 1.0);
-  return vec4f(select(1e9, 1.0 / w.w, w.w > 1e-9), 0.0, 0.0, 1.0);
+  let sky = U.params.w > 0.5 && z >= 1.0;
+  return vec4f(select(select(1e9, 1.0 / w.w, w.w > 1e-9), 1e9, sky), 0.0, 0.0, 1.0);
 }
 `
 }
@@ -461,7 +465,7 @@ export class TemporalResolve {
    * Starts a frame from the game's unjittered view-projection (`frame[0..15]`, eye at `frame[16..18]`): detects cuts,
    * computes the reprojection and writes the uniforms. Returns this frame's jitter in input pixels.
    */
-  begin(frame: Float32Array, s: TemporalSettings, reactive: boolean): [number, number] {
+  begin(frame: Float32Array, s: TemporalSettings, reactive: boolean, infiniteSky = false): [number, number] {
     const eye = frame.subarray(16, 19)
     if (this.hasPrev && Math.hypot(eye[0]! - this.lastEye[0]!, eye[1]! - this.lastEye[1]!, eye[2]! - this.lastEye[2]!) > TEMPORAL_CUT_DISTANCE) this.reset()
     this.lastEye.set(eye)
@@ -470,6 +474,8 @@ export class TemporalResolve {
     const cur = frame.subarray(0, 16)
     mat4.inverse(cur, this.invCur)
     mat4.multiply(this.hasPrev ? this.prevVP : cur, this.invCur, this.reproject)
+    const previous = this.hasPrev ? this.prevVP : cur
+    for (let row = 0; row < 4; row++) this.uniforms[44 + row] = previous[row]! * eye[0]! + previous[4 + row]! * eye[1]! + previous[8 + row]! * eye[2]! + previous[12 + row]!
     this.prevVP.set(cur)
     const u = this.uniforms
     u.set(this.reproject, 0)
@@ -485,7 +491,7 @@ export class TemporalResolve {
     u[40] = TEMPORAL_DEPTH_REJECT
     u[41] = Math.min(1, Math.max(0, s.sharpen))
     u[42] = reactive ? TEMPORAL_REACTIVE_GAIN : 0
-    u[43] = 0
+    u[43] = Number(infiniteSky)
     this.device.queue.writeBuffer(this.uniformBuf, 0, u)
     this.hasPrev = true
     return [jx, jy]

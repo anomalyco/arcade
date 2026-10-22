@@ -5,7 +5,7 @@
  */
 export const WORLD_PRESET_VERSION = 1
 
-export type WorldPresetIdea = "look" | "light" | "weather" | "materials" | "vegetation"
+export type WorldPresetIdea = "look" | "light" | "sky" | "weather" | "materials" | "vegetation"
 export type WorldPreset = {
   id: string
   label: string
@@ -15,6 +15,11 @@ export type WorldPreset = {
 }
 
 export const WORLD_PRESETS: readonly WorldPreset[] = [
+  { id: "sky-today", label: "Today", idea: "sky", note: "Original night background.", values: { hour: 0, skyMode: "today" } },
+  { id: "sky-moonless", label: "Moonless", idea: "sky", note: "Catalogue stars, airglow and a faint Milky Way.", values: { hour: 0, skyMode: "physical", skyMoon: "none" } },
+  { id: "sky-crescent", label: "Crescent", idea: "sky", note: "A half-degree crescent with earthshine.", values: { hour: 0, skyMode: "physical", skyMoon: "crescent" } },
+  { id: "sky-half", label: "Half moon", idea: "sky", note: "Quarter-phase Moon.", values: { hour: 0, skyMode: "physical", skyMoon: "half" } },
+  { id: "sky-full", label: "Full moon", idea: "sky", note: "Full Moon with a haze aureole.", values: { hour: 0, skyMode: "physical", skyMoon: "full" } },
   { id: "day", label: "Clear day", idea: "light", note: "13:00, no grade, dry: the neutral reference.", values: {} },
   { id: "golden-hour", label: "Golden hour", idea: "look", note: "18:30 sun low in the west under the Golden hour grade.", values: { hour: 18.5, lookPreset: "cozy_golden_hour" } },
   { id: "dusk", label: "Dusk", idea: "look", note: "19:30, lamps coming on, the Dusk grade.", values: { hour: 19.5, lookPreset: "cinematic_dusk" } },

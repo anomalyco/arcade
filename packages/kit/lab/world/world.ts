@@ -1,6 +1,8 @@
 import { LOOK_PRESETS, LOOK_PRESET_IDS, applyLookPreset, createLookSettings, resolveLookPresetId, type LookSettings } from "../../gpu/look"
 import { applyFoliagePreset, cloneFoliageParams, type FoliageKind, type FoliageParams } from "../../gpu/foliage"
 import { lampFlicker } from "../../gpu/lights/flicker"
+import { createSkySettings, SKY_DEFAULTS, type SkySettings } from "../../sky/settings"
+import { attachSky } from "../../sky/controller"
 import { BEAM_PROFILES, beamReach, packBeamProfile, type BeamProfileId } from "../../gpu/lights/beam"
 import { packPhysicalLightKnobs, physicalLightHooks, type LightModel } from "../../gpu/lights/physical"
 import { Renderer, type FrameInput } from "../../gpu/renderer"
@@ -83,6 +85,7 @@ export type DebugWorld = {
   readonly state: WorldState
   readonly look: LookSettings
   readonly weather: WeatherSettings
+  readonly sky: SkySettings
   readonly vegetation: FoliageParams
   setLook(preset: string): void
   setWeather(preset: string): void
@@ -109,12 +112,14 @@ export function createDebugWorld(context: LabContext): DebugWorld {
   const state: WorldState = { ...WORLD_DEFAULTS }
   const look = createLookSettings("current")
   const weather = createWeatherSettings("clear")
+  const sky = createSkySettings()
   const vegetation = cloneFoliageParams()
   applyFoliagePreset("tree", "oak", vegetation)
   applyFoliagePreset("bush", "hedge", vegetation)
   applyFoliagePreset("grass", "lawn", vegetation)
 
   const renderers: Partial<Record<LightModel, Renderer>> = {}
+  const skies = new Map<Renderer, ReturnType<typeof attachSky>>()
   const drawn = new Map<Renderer, WorldGeometry>()
   let geometry: WorldGeometry | null = null
   let dirty = true
@@ -146,6 +151,7 @@ export function createDebugWorld(context: LabContext): DebugWorld {
         })
       : new Renderer(device, ctx, format)
     renderers[model] = r
+    skies.set(r, attachSky(r, sky))
     return r
   }
 
@@ -209,6 +215,7 @@ export function createDebugWorld(context: LabContext): DebugWorld {
     state,
     look,
     weather,
+    sky,
     vegetation,
     setLook(preset) {
       const id = resolveLookPresetId(preset)
@@ -231,6 +238,7 @@ export function createDebugWorld(context: LabContext): DebugWorld {
       Object.assign(state, WORLD_DEFAULTS)
       applyLookPreset(look, "current")
       applyWeatherPreset(weather, "clear")
+      Object.assign(sky, SKY_DEFAULTS)
       Object.assign(vegetation, cloneFoliageParams())
       applyFoliagePreset("tree", "oak", vegetation)
       applyFoliagePreset("bush", "hedge", vegetation)
@@ -261,6 +269,7 @@ export function createDebugWorld(context: LabContext): DebugWorld {
       }
       r.resize(width, height)
       const clock = worldClock(state.hour)
+      skies.get(r)!.update({ time, localHour: state.hour, daylight: clock.day, sceneUnitsPerCdM2: 1 })
       const flick = worldFlicker(state.flicker, time)
       const scene = [
         ...worldLights(clock, { lampPower: state.lampPower, headlights: state.headlights, flashlight: state.flashlight, porch: state.porch, flicker: flick, physical: state.lightModel === "physical" }),

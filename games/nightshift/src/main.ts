@@ -3,6 +3,9 @@ import { isEditableEventTarget, isLabPanelEventTarget, onKeyLayoutChange } from 
 import { keyPromptHtml } from "@arcade/kit/client/key-cap"
 import { openGpu } from "@arcade/kit/gpu/boot"
 import { Renderer } from "@arcade/kit/gpu/renderer"
+import { attachSky } from "@arcade/kit/sky/controller"
+import { createSkySettings, skyControls } from "@arcade/kit/sky/settings"
+import { skyWindowGeometry } from "./sky-windows"
 import { FrameParts } from "@arcade/kit/gpu/frame-parts"
 import { flatLighting, newSceneFrame, packSceneFrame, SceneLights, type SceneLight } from "@arcade/kit/gpu/scene-frame"
 import { SpotShadows } from "@arcade/kit/gpu/shadows/spot-shadows"
@@ -80,6 +83,9 @@ async function main() {
   Object.assign(camera.body,{x:OPENING.seat.x,y:OPENING.seat.z});Object.assign(camera,{height:OPENING.seat.height,yaw:OPENING.seat.yaw,pitch:OPENING.seat.pitch})
   if(smoke)setCamera("wide")
   const panel=new LabPanel(settings,controls(),new URLSearchParams(location.search),()=>camera.release(),{open:false,pill:false,groupActions:false,capture:"focus",openGroups:["Feel"]})
+  const skySettings=createSkySettings(),sky=attachSky(renderer,skySettings)
+  let skyWindows=false,skyWorld:ArrayBuffer|undefined
+  panel.addControls(skySettings,skyControls())
   panel.addControls(contact,contactShadowControls("Shadows"))
   panel.addControls(descent,descentControls)
   const cameraFilter=attachCameraFilter(renderer,panel,device,gpu.format,{bodycam:camera})
@@ -235,6 +241,9 @@ async function main() {
     custom.set([Number(settings.polish),settings.tubeEnds,settings.fluorescent/1.8,0],28)
     custom.set([...physics.swing,0],32)
     look.pack(custom,settings,time,opening.time>=3)
+    sky.update({time,sceneUnitsPerCdM2:1})
+    const openSky=sky.active&&!elevator.downstairs
+    if(openSky!==skyWindows){skyWindows=openSky;if(openSky)skyWorld??=skyWindowGeometry(world.data);renderer.setLevel({chunks:[{data:openSky?skyWorld!:world.data,box:[-7,-10,7,11]},{data:basement.data,box:basement.box}],glass:[],...flatLighting(0,0,[0,0,0])})}
     custom.set([0,0,0,continuity.value("monitor")],36);renderer.setCustomUniforms(custom)
     if(beamDust){dustField.step(simDt,time,camera.body.x,camera.body.y,settings.polish&&playerMoving?settings.dustWake:0);beamDust.frame(dustField.data,settings.polish&&settings.beamDust?settings.dust:0,settings.dustRadius,settings.dustBrightness,[lights.indexOf(1),lights.indexOf(2)])}
     for(let i=0;i<(!settings.polish?150:0);i++) {
@@ -271,7 +280,7 @@ async function main() {
     if(frames===1)void device.queue.onSubmittedWorkDone().then(()=>{boot.ready(["READY.","","> SESSION 087    02:13"],keyPromptHtml("Mouse0","Begin"));performance.mark("nightshift:ready")})
     requestAnimationFrame(render)
   }
-  Object.assign(window,{nightshift:{look,lookReady:()=>look.ready(settings),quality:{pin(tier:string|null){settings.lookTier=tier===null?-1:["low","balanced","high"].indexOf(tier)},state:()=>({mode:look.quality.getMode(),tier:look.quality.getActiveTier(),scale:look.quality.getResolutionScale()})},camera,settings,cinema,opening,elevator,audio,renderer,call,action,setCamera,renderFoley,renderBeatAudio,renderDescentAudio,descent,storyAudio,get parked(){return parked},get storyFrame(){return storyFrame},physics,continuity,dustField,tubeSignal,cradle:props.cradle,get clock(){return time},step(ms:number){stepping=true;try{render(last+ms)}finally{stepping=false}},get frames(){return frames},get paused(){return paused},set paused(v:boolean){paused=v},set time(v:number){fixedTime=v},ready:true}})
+  Object.assign(window,{nightshift:{sky,look,lookReady:()=>look.ready(settings),quality:{pin(tier:string|null){settings.lookTier=tier===null?-1:["low","balanced","high"].indexOf(tier)},state:()=>({mode:look.quality.getMode(),tier:look.quality.getActiveTier(),scale:look.quality.getResolutionScale()})},camera,settings,cinema,opening,elevator,audio,renderer,call,action,setCamera,renderFoley,renderBeatAudio,renderDescentAudio,descent,storyAudio,get parked(){return parked},get storyFrame(){return storyFrame},physics,continuity,dustField,tubeSignal,cradle:props.cradle,get clock(){return time},step(ms:number){stepping=true;try{render(last+ms)}finally{stepping=false}},get frames(){return frames},get paused(){return paused},set paused(v:boolean){paused=v},set time(v:number){fixedTime=v},ready:true}})
   boot.stage("frame","FIRST FRAME")
   requestAnimationFrame(render)
 }

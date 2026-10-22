@@ -1,0 +1,18 @@
+[
+  {
+    "file": "bsc.json",
+    "url": "https://raw.githubusercontent.com/aduboisforge/Bright-Star-Catalog-JSON/704675ce4981e3b7ca8c7b8530165a83f9a454cc/BSC.json",
+    "licence": "Public domain",
+    "licenceUrl": "https://github.com/aduboisforge/Bright-Star-Catalog-JSON/blob/704675ce4981e3b7ca8c7b8530165a83f9a454cc/README.md#license",
+    "sha256": "f2a09b88b55d1d6159b510fdbf378e4ca1705944c6a78599682b0c89e985d5ab",
+    "bytes": 1310249
+  },
+  {
+    "file": "moon-source.jpg",
+    "url": "https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/lroc_color_poles_1k.jpg",
+    "licence": "Public domain",
+    "licenceUrl": "https://svs.gsfc.nasa.gov/help/#faq",
+    "sha256": "b246064f217f8d479df78c49c7c8595a8f5fbda008a72fd539978d2e121e0109",
+    "bytes": 139068
+  }
+]

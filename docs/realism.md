@@ -56,6 +56,20 @@ links to those instead of repeating them.
 
 ## Lights
 
+**Catalogue night sky (candidate, `night-sky`).** `packages/kit/sky` draws 9,096 Yale catalogue stars with
+temperature colours, atmospheric extinction, sidereal rotation and a pixel-integrated point spread. Airglow and
+a faint procedural Galactic band sit behind a NASA-textured, half-degree Moon. The host supplies linear scene
+units per cd/m² and owns exposure. `moonLight()` supplies lux and direction for the host's shadowed lighting.
+- Where: opt-in adapters in Lot, Night Shift, Outbreak and the shared world/Sky station. Today remains the default.
+- Cost: initial sky-only mini Metal proof, 1920×1080 MSAA4, +0.204 ms median (MAD 0.028 ms); this precedes the
+  lunar occultation and mip-filtering follow-up. No whole-game cost claim.
+- Stability: integrated star energy varies 0.035% across 32 subpixel positions. Translation-free sky TAA drifts
+  0.031 px after 64 m camera travel in the isolated production-pass fixture.
+- Kit: requested; no visual pick yet. Woods adoption, calibrated exposure, cloud composition and shadowed
+  moonlight remain integration work. Measurements and boundaries: [night-sky ledger](../perf/night-sky.md).
+- Pitfalls: do not use a long-exposure photograph's brightness as an eye-level target; do not raise forest ambient
+  to make stars visible. Moon mips filter in linear light, and the unlit disk also occludes stars.
+
 **Physical lights and surfaces.** GGX with height-correlated Smith, Karis sphere-light widening so a fixture
 mirrors as a patch, geometric specular AA, and a split-sum sky reflection with a fitted env BRDF. Reads as wet
 asphalt, car paint and metal instead of Blinn hot spots.

@@ -29,7 +29,7 @@ export const reflectionVolume = ssrVolume({ wetMaterial: WET_ASPHALT })
 
 /**
  * Weather (Backquote › Weather; all zero in Today). `N.storm`: lightning irradiance and the unit direction toward the
- * strike. `N.stormB`: rain on glass, weather clock (s), sky glow toward the strike, 0.
+ * strike. `N.stormB`: rain on glass, weather clock (s), sky glow toward the strike, shared sky active.
  */
 const stormWgsl = /* wgsl */ `
 fn lotFlash(p: vec3f, n: vec3f) -> vec3f {
@@ -108,6 +108,7 @@ const nightHooks: SceneHooks = {
       col=mix(vec3f(1.0,0.55,0.18),vec3f(1.0,0.66,0.26),core*0.25)*o.aux*11.0*N.streetB.z;
     }
     if(mat==3 && o.aux<0.0) {
+      if(N.stormB.w>0.5) { discard; }
       col=fogSky(F.cam.xyz,ray)+lotSkyFlash(ray);
     } else {
       col=mix(fogApply(col,F.cam.xyz,o.world),col,lotIndoor(o.world)*lotIndoor(F.cam.xyz)*(1.0-N.interior.z));
