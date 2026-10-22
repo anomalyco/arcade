@@ -45,15 +45,15 @@ struct V { @builtin(position) pos: vec4f }
   let centre=dot(eq,vec3f(-0.05487556,-0.87343709,-0.48383502));
   let band=exp(-north*north/0.014)*(0.4+0.6*noise(eq*17.0));
   let rift=1.0-0.65*exp(-pow(north+0.018*sin(centre*13.0),2.0)/0.00045)*smoothstep(-0.3,0.5,centre);
-  let milky=0.00012*S.layers.x*band*rift;
+  let milky=0.00012*S.layers.x*band*rift*mix(1.0,6.0,S.equatorY.w);
   // Finite 90 km emission shell (van Rhijn), suppressed at the horizon by extinction.
   let shell=inverseSqrt(max(0.028,1.0-0.972*(1.0-d.y*d.y)));
   let air=0.00011*S.layers.y*shell*(0.9+0.1*noise(d*8.0));
   let ecliptic=dot(eq,vec3f(0.0,-0.397777,0.917482));
   let zodiac=0.00005*S.layers.z*exp(-ecliptic*ecliptic/0.02)*pow(max(dot(d,S.sun.xyz),0.0),6.0);
-  var colour=(vec3f(0.000055)+vec3f(0.96,1.02,0.96)*air+vec3f(1.04,1.0,0.94)*(milky+zodiac))*trans;
+  var colour=(vec3f(0.000055)+vec3f(0.96,1.02,0.96)*air+vec3f(1.04,1.0,0.94)*(milky+zodiac))*trans*pow(1.0-S.sun.w,2.0);
   // Night-only fitted scattering, not a full daytime atmosphere LUT.
-  let daylight=smoothstep(-0.31,0.08,S.sun.y);
+  let daylight=max(S.sun.w,smoothstep(-0.31,0.08,S.sun.y));
   colour+=daylight*vec3f(0.12,0.2,0.36)*(0.3+0.7*max(d.y,0.0));
   let cosine=clamp(dot(d,S.moon.xyz),-1.0,1.0);
   let angle=acos(cosine);
@@ -75,14 +75,15 @@ struct V { @builtin(position) pos: vec4f }
   let earth=S.phase.z*pow(sin(S.phase.x*0.5),2.0);
   let surface=tex*S.phase.y*(ls+earth);
   colour=mix(colour,surface*moonTrans,disk*S.phase.w);
-  colour=colour*smoothstep(-0.025,0.015,d.y)*S.radiometry.x+S.flash.rgb;
+  colour=colour*smoothstep(-0.025,0.015,d.y)*S.radiometry.x*S.equatorZ.w+S.flash.rgb;
   return vec4f(colour,1.0);
 }
-struct StarIn { @location(0) eq: vec3f, @location(1) magnitude: f32, @location(2) lux: vec3f, @location(3) id: f32 }
+struct StarIn { @location(0) eq: vec3f, @location(1) visibilityWeight: f32, @location(2) lux: vec3f, @location(3) id: f32 }
 struct StarOut {
   @builtin(position) pos: vec4f,
   @location(0) @interpolate(flat) centre: vec2f,
   @location(1) @interpolate(flat) radiance: vec3f,
+  @location(2) @interpolate(flat) psfScale: f32,
 }
 @vertex fn starVertex(v: StarIn, @builtin(vertex_index) i: u32) -> StarOut {
   let corners=array<vec2f,6>(vec2f(-1,-1),vec2f(1,-1),vec2f(-1,1),vec2f(-1,1),vec2f(1,-1),vec2f(1,1));
@@ -100,10 +101,12 @@ struct StarOut {
   let scint=1.0+S.radiometry.w*(1.0-0.7*max(d.y,0.0))*(0.65*sin(S.radiometry.z*3.1+seed)+0.35*sin(S.radiometry.z*5.7+seed*1.71));
   let visible=select(0.0,1.0,p.w>0.0001);
   var o:StarOut;
-  let clip=ndc+corners[i]*2.5/F.screen.xy*2.0;
+  // Include MSAA sample offsets beyond the pixel-integrated PSF's support.
+  let clip=ndc+corners[i]*3.0/F.screen.xy*2.0;
   o.pos=vec4f(select(vec2f(4.0),clip,p.w>0.0001),S.flash.w,1);
   o.centre=centre;
-  o.radiance=v.lux*trans*S.radiometry.x*S.equatorX.w*scint*visible/max(omega,1e-12);
+  o.radiance=v.lux*mix(1.0,v.visibilityWeight,S.equatorY.w)*trans*S.radiometry.x*S.equatorX.w*S.equatorZ.w*scint*visible/max(omega,1e-12);
+  o.psfScale=mix(1.0,0.72,S.equatorY.w);
   return o;
 }
 fn cdf(v: f32) -> f32 {
@@ -114,7 +117,7 @@ fn cdf(v: f32) -> f32 {
 }
 @fragment fn starFragment(v: StarOut) -> @location(0) vec4f {
   let p=v.pos.xy-v.centre;
-  let energy=max(0.0,cdf(p.x+0.5)-cdf(p.x-0.5))*max(0.0,cdf(p.y+0.5)-cdf(p.y-0.5));
+  let energy=max(0.0,cdf((p.x+0.5)/v.psfScale)-cdf((p.x-0.5)/v.psfScale))*max(0.0,cdf((p.y+0.5)/v.psfScale)-cdf((p.y-0.5)/v.psfScale));
   // The unlit lunar disk is opaque too: stars must not shine through earthshine.
   let angle=acos(clamp(dot(cameraRay(v.pos.xy),S.moon.xyz),-1.0,1.0));
   let edge=max(fwidth(angle),0.00001);

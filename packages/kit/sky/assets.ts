@@ -1,5 +1,6 @@
 import { decodeCatalogue, type CatalogueStar } from "./catalogue"
 import { imageMipChain } from "../gpu/image-mips"
+import { skyAssetCache } from "./resources"
 
 /** Bundler-owned local URLs: no game prefix assumptions and no third-party runtime requests. */
 export const SKY_ASSET_URLS = {
@@ -8,6 +9,7 @@ export const SKY_ASSET_URLS = {
   credits: new URL("./assets/CREDITS.md", import.meta.url).href,
 }
 export type SkyAssets = { stars: CatalogueStar[]; moon: GPUTexture; credits: string; dispose(): void }
+export const acquireSkyAssets = skyAssetCache(loadSkyAssets)
 export async function loadSkyAssets(device: GPUDevice, urls = SKY_ASSET_URLS): Promise<SkyAssets> {
   const responses = await Promise.all([fetch(urls.stars), fetch(urls.moon)])
   for (const response of responses) if (!response.ok) throw new Error(`Sky asset HTTP ${response.status}: ${response.url}`)
