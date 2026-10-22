@@ -214,6 +214,7 @@ describe("mocap gait", () => {
   })
 })
 
+// The six-person gait tests take about a second here; the timeout only keeps a loaded CI worker from failing them.
 const CAST = await Promise.all(["a", "b", "c", "d", "e", "f"].map(async (id) => personRest(readPerson(await io.read(new URL(`./assets/${id}-woods.glb`, import.meta.url).pathname), `${id}-woods`).skeleton)))
 
 type Move = { v: number; aim: number; dir?: number }
@@ -255,7 +256,7 @@ describe("mocap gait, every woods cast member", () => {
       // A knee behind the hip–ankle line by more than 5 mm has flipped.
       expect(worst).toBeGreaterThan(-0.005)
     }
-  })
+  }, 60_000)
 
   test("the walk faces the rig's aim from idle, turning in place and backpedalling, so starting never whips the hips", () => {
     const r = CAST[0]!
@@ -282,7 +283,7 @@ describe("mocap gait, every woods cast member", () => {
       expect(whip).toBeLessThan(0.07)
       expect(pinch).toBeGreaterThan(0.88)
     }
-  })
+  }, 60_000)
 
   test("a planted foot is on the ground walking and while the gait blends in and out", () => {
     for (const r of CAST) {
@@ -298,7 +299,7 @@ describe("mocap gait, every woods cast member", () => {
       // Was 4-8 cm where the rig and the cycle blend.
       expect(worst).toBeLessThan(0.025)
     }
-  })
+  }, 60_000)
 })
 
 test("no knee or foot pops through standing, turning in place, walking off, a curve and a stop", () => {
@@ -322,7 +323,7 @@ test("no knee or foot pops through standing, turning in place, walking off, a cu
     // A swinging foot moves up to ~8 cm a frame relative to the hips at 1.9 m/s; the flips and hand-overs were 29-41.
     expect(worst).toBeLessThan(0.105)
   }
-})
+}, 60_000)
 
 test("people keep a game's full direct light on their upright surfaces (no wall dimming)", () => {
   expect(personHooks({}).wallDirectScale).toBe("1.0")
