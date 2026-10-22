@@ -381,6 +381,17 @@ l = lum(px)[..., None]
 px[..., :3] = (l + (px[..., :3] - l) * spec.get("skinSaturation", 0.72)) * spec.get("skinGain", 0.86)
 store(skin_img, px)
 skin = material("skin", skin_img, rough=0.5)
+albedos = {}  # piece -> default albedo computed here (procedural gear, skin-toned pieces); build-people.ts reads them
+
+
+def srgb_lin(c):
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+
+# A piece tinted to this person's skin (bare legs above office shoes, where the shoe's sock was): the luminance
+# texture averages MEAN, so this factor renders the skin's mean colour.
+_lit = px[..., :3][lum(px) > 0.05]
+skin_tone = [0.85 * srgb_lin(float(c)) * MEAN / srgb_lin(MEAN) for c in _lit.mean(0)]  # legs, a touch under the face
 set_material(body, skin)
 
 meshes = {}  # final name -> object, LOD0
@@ -408,6 +419,10 @@ for item in outfit["clothes"]:
             normal = bpy.data.images.new(item["asset"].split("/")[-1] + "_n", 512, 512)
             store(normal, np.tile(np.array([0.5, 0.5, 1.0, 1.0], np.float32), (512, 512, 1)))
         apply_patterns(lt, region, parts, painted, normal)
+    if normal is not None and any(p.get("flatNormal") for p in parts):
+        # Bare skin where a sock was: no knit relief.
+        flat = np.isin(region, [i for i, p in enumerate(parts) if p.get("flatNormal")])
+        soften_normals(normal, 1.0, flat)
     store(src, lt)
     src.name = item["asset"].split("/")[-1] + "_lum"
     split = split_by_region(obj, region, [p["name"] for p in parts]) if len(parts) > 1 else {parts[0]["name"]: obj}
@@ -429,6 +444,20 @@ for item in outfit["clothes"]:
         set_material(o, material(f"{kind}.{p['name']}", src, normal, rough=p.get("rough", 0.85)))
         meshes[p["name"]] = o
         piece_kind[p["name"]] = kind
+        if p.get("skinTone"):
+            albedos[p["name"]] = skin_tone
+
+if hair is not None and spec["hair"].get("trimFringe"):
+    # A fringe that hangs over the eyes is lifted to just above the brows, so the face reads at a distance.
+    ez = [eyes.matrix_world @ v.co for v in eyes.data.vertices]
+    brow = max(q.z for q in ez) + 0.018
+    ex = (min(q.x for q in ez), max(q.x for q in ez))
+    front = min(q.y for q in ez)  # MPFB faces -Y
+    for v in hair.data.vertices:
+        q = hair.matrix_world @ v.co
+        if q.z < brow and q.y < front + 0.05 and ex[0] - 0.03 < q.x < ex[1] + 0.03 and q.z > brow - 0.09:
+            q.z = brow + (q.z - brow) * 0.15
+            v.co = hair.matrix_world.inverted() @ q
 
 if hair is not None:
     d = asset(spec["hair"]["asset"])
@@ -552,7 +581,6 @@ if beanie:
 # --- carried gear: backpack and straps, headlamp ---------------------------------------------------------------------
 from mathutils import kdtree  # noqa: E402
 
-albedos = {}  # procedural piece -> default linear albedo (build-people.ts sets baseColorFactor from these)
 bone_w = {b.name: rig.matrix_world @ b.head_local for b in rig.data.bones}
 fwd = bone_w["ball_l"] - bone_w["foot_l"]
 fwd.z = 0
@@ -663,38 +691,249 @@ def outer_radius(pts, centre, dirs, axis_a, axis_b, keep, window=0.05):
     return out
 
 
+
+def skin_from(o, sources, anchors, k=14):
+    """Bone weights per vertex: the inverse-distance mean of the k source vertices (body and clothes) nearest its
+    anchor on the body, so a piece lying on the back bends with it and cannot sink through it."""
+    o.parent = rig
+    pool, tree_pts = [], []
+    for src in sources:
+        names = {g.index: g.name for g in src.vertex_groups}
+        for v in src.data.vertices:
+            ws = {names[g.group]: g.weight for g in v.groups if g.weight > 0 and g.group in names}
+            if ws:
+                pool.append(ws)
+                tree_pts.append(src.matrix_world @ v.co)
+    tree = kdtree.KDTree(len(tree_pts))
+    for i, q in enumerate(tree_pts):
+        tree.insert(q, i)
+    tree.balance()
+    groups = {}
+    for v, at in zip(o.data.vertices, anchors):
+        acc = {}
+        for _, i, d in tree.find_n(at, k):
+            w = 1.0 / (d + 0.01)
+            for n, x in pool[i].items():
+                acc[n] = acc.get(n, 0.0) + x * w
+        top = sorted(acc.items(), key=lambda kv: -kv[1])[:4]
+        tot = sum(x for _, x in top) or 1.0
+        for n, x in top:
+            if n not in groups:
+                groups[n] = o.vertex_groups.new(name=n)
+            groups[n].add([v.index], x / tot, "REPLACE")
+    mod = o.modifiers.new("Armature", "ARMATURE")
+    mod.object = rig
+
+
+def pack_texture(size=512):
+    """The daypack's luminance and relief, in its own UV layout: front panel (u < 0.5) with a zipped lid arc and a
+    zipped front pocket; padded back panel (0.5..0.74); the rim (u > 0.76, v round the outline) with the main zip
+    and two compression straps down each side. Ripstop weave throughout."""
+    u, v = uv_grid((size, size))
+    cells = 96
+    weave = 0.5 * np.sin(u * math.pi * 2 * cells) * np.sin(v * math.pi * 2 * cells)
+    grid = np.maximum(np.cos(u * math.pi * 2 * cells / 5) ** 40, np.cos(v * math.pi * 2 * cells / 5) ** 40)
+    hgt = 0.5 * weave + 0.25 * grid
+    lgain = np.ones((size, size))
+    groove = np.zeros((size, size))
+    # Front panel: local (fu -1..1 across, fv 0 top .. 1 bottom).
+    fu, fv = (u - 0.02) / 0.46 * 2 - 1, 1 - (v - 0.02) / 0.96
+    front = (u < 0.5)
+    lid = np.abs((np.abs(fu) / 0.82) ** 4 + ((fv - 0.6) / 0.5) ** 4 - 1) < 0.06
+    lid &= front & (fv < 0.6)
+    pocket = front & (np.abs(fu) < 0.66) & (fv > 0.56) & (fv < 0.93)
+    pocket_edge = pocket & ~((np.abs(fu) < 0.63) & (fv > 0.585) & (fv < 0.91))
+    pocket_zip = front & (np.abs(fu) < 0.6) & (np.abs(fv - 0.62) < 0.008)
+    for m, g in ((lid, 0.45), (pocket_edge, 0.62), (pocket_zip, 0.45)):
+        lgain = np.where(m, g, lgain)
+        groove = np.where(m, 1.0, groove)
+    lgain = np.where(pocket & ~pocket_edge, lgain * 0.92, lgain)
+    # Back panel: padded mesh, darker, in vertical channels.
+    backp = (u >= 0.5) & (u < 0.75)
+    chan = np.cos((u - 0.5) / 0.25 * math.pi * 6) ** 8
+    lgain = np.where(backp, 0.62 + 0.1 * chan, lgain)
+    hgt = np.where(backp, chan, hgt)
+    # Rim: t across the wall (0 back .. 1 front), s round the outline (0 top-left, clockwise).
+    rim = u >= 0.76
+    t, sp = (u - 0.76) / 0.22, v
+    zip_line = rim & (np.abs(t - 0.55) < 0.03) & ((sp < 0.42) | (sp > 0.93))
+    straps = rim & (np.minimum.reduce([np.abs(sp - c) for c in (0.33, 0.43, 0.82, 0.92)]) < 0.012)
+    for m, g in ((zip_line, 0.42), (straps, 0.4)):
+        lgain = np.where(m, g, lgain)
+        groove = np.where(m, 1.0, groove)
+    hgt = hgt - 0.8 * groove + 0.6 * straps
+    img = bpy.data.images.new("pack", size, size)
+    px = np.ones((size, size, 4), np.float32)
+    px[..., 0] = px[..., 1] = px[..., 2] = MEAN * lgain * (1 + 0.06 * (hgt - hgt.mean()))
+    store(img, px)
+    dx, dy = np.gradient(hgt, axis=1) * 2.5, np.gradient(hgt, axis=0) * 2.5
+    n = np.stack([-dx, -dy, np.ones_like(dx)], -1)
+    n /= np.linalg.norm(n, axis=-1, keepdims=True)
+    nimg = bpy.data.images.new("pack_n", size, size)
+    npx = np.ones((size, size, 4), np.float32)
+    npx[..., :3] = n * 0.5 + 0.5
+    store(nimg, npx)
+    return img, nimg
+
+
+def daypack(pts, W, H, D, z_top, away):
+    """A daypack W wide, H tall and D deep whose back panel follows the wearer's back (sampled from the clothes, a
+    little flattened across, so it rests on the shoulder blades and lower back), narrower at the top and fuller at
+    the bottom, with rounded walls and a mesh pocket bulging on each side. Returns the object and, per vertex, its
+    anchor on the back (for skin_from)."""
+    NX, NZ, RINGS = 13, 17, 6
+    zone = [p for p in pts if abs(p.x) < W / 2 + 0.04 and z_top - H - 0.04 < p.z < z_top + 0.04]
+    mid = (max(p.dot(away) for p in zone) + min(p.dot(away) for p in zone)) / 2
+    zone = [p for p in zone if p.dot(away) > mid]
+
+    def rounded(a, b, r=0.32):
+        # Grid square (a, b in -1..1) onto a rectangle with round corners.
+        ca, cb = abs(a) - (1 - r), abs(b) - (1 - r)
+        if ca > 0 and cb > 0:
+            d = math.hypot(ca, cb) / r
+            if d > 1:
+                ca, cb = ca / d, cb / d
+            a = math.copysign(1 - r + ca, a)
+            b = math.copysign(1 - r + cb, b)
+        return a, b
+
+    grid = []
+    for j in range(NZ):
+        row = []
+        for i in range(NX):
+            a, b = rounded(i / (NX - 1) * 2 - 1, j / (NZ - 1) * 2 - 1)
+            vv = (b + 1) / 2  # 0 top .. 1 bottom
+            x = a * W / 2 * (0.84 + 0.16 * vv)
+            z = z_top - vv * H
+            row.append((a, vv, x, z))
+        grid.append(row)
+
+    raw = [[None] * NX for _ in range(NZ)]
+    for j in range(NZ):
+        for i in range(NX):
+            _, _, x, z = grid[j][i]
+            near = [p.dot(away) for p in zone if abs(p.x - x) < 0.03 and abs(p.z - z) < 0.03]
+            raw[j][i] = max(near) if near else None
+    known = [x for r in raw for x in r if x is not None]
+    fallback = max(known) if known else mid + 0.1
+    for j in range(NZ):
+        for i in range(NX):
+            if raw[j][i] is None:
+                nb = [raw[jj][ii] for jj in range(max(0, j - 2), min(NZ, j + 3)) for ii in range(max(0, i - 2), min(NX, i + 3)) if raw[jj][ii] is not None]
+                raw[j][i] = max(nb) if nb else fallback
+    panel = [r[:] for r in raw]
+    for _ in range(2):
+        panel = [[sum(panel[jj][ii] for jj in range(max(0, j - 1), min(NZ, j + 2)) for ii in range(max(0, i - 1), min(NX, i + 2)))
+                  / len([1 for jj in range(max(0, j - 1), min(NZ, j + 2)) for ii in range(max(0, i - 1), min(NX, i + 2))]) for i in range(NX)] for j in range(NZ)]
+    for j in range(NZ):
+        rowmax = max(panel[j])
+        for i in range(NX):
+            # Flattened across (a padded panel bridges the spine), never inside the clothes.
+            # The bottom stands off a little more: the hips swing under it in the walk.
+            vv = grid[j][i][1]
+            panel[j][i] = max(0.88 * panel[j][i] + 0.12 * rowmax, raw[j][i]) + 0.01 + 0.009 * max(0.0, (vv - 0.7) / 0.3)
+
+    def thick(a, vv):
+        across = (1 - min(1.0, abs(a)) ** 3) ** (1 / 3)
+        down = (1 - min(1.0, abs(vv * 2 - 1)) ** 3) ** (1 / 3)
+        return D * (0.42 + 0.58 * across * down) * (0.78 + 0.22 * vv)
+
+    bm = bmesh.new()
+    uvl = bm.loops.layers.uv.new("UVMap")
+    anchors = []
+
+    def vert(x, z, depth, anchor_depth):
+        anchors.append(side * x + up * z + away * (anchor_depth - 0.01))
+        return bm.verts.new(side * x + up * z + away * depth)
+
+    front, back = [], []
+    for j in range(NZ):
+        fr, br = [], []
+        for i in range(NX):
+            a, vv, x, z = grid[j][i]
+            pd = panel[j][i]
+            fr.append(vert(x, z, pd + thick(a, vv), pd))
+            br.append(vert(x, z, pd, pd))
+        front.append(fr)
+        back.append(br)
+
+    def quad(vs, uvs):
+        f = bm.faces.new(vs)
+        for loop, uv in zip(f.loops, uvs):
+            loop[uvl].uv = uv
+        return f
+
+    fuv = lambda i, j: (0.02 + 0.46 * i / (NX - 1), 0.98 - 0.96 * j / (NZ - 1))
+    buv = lambda i, j: (0.51 + 0.23 * (NX - 1 - i) / (NX - 1), 0.98 - 0.96 * j / (NZ - 1))
+    for j in range(NZ - 1):
+        for i in range(NX - 1):
+            quad([front[j][i], front[j + 1][i], front[j + 1][i + 1], front[j][i + 1]], [fuv(i, j), fuv(i, j + 1), fuv(i + 1, j + 1), fuv(i + 1, j)])
+            quad([back[j][i], back[j][i + 1], back[j + 1][i + 1], back[j + 1][i]], [buv(i, j), buv(i + 1, j), buv(i + 1, j + 1), buv(i, j + 1)])
+
+    # The rim: the outline, clockwise from the top-left, walled in RINGS steps from the back panel to the front.
+    loop_ij = [(i, 0) for i in range(NX - 1)] + [(NX - 1, j) for j in range(NZ - 1)] + [(i, NZ - 1) for i in range(NX - 1, 0, -1)] + [(0, j) for j in range(NZ - 1, 0, -1)]
+    L = len(loop_ij)
+    outline = [Vector((grid[j][i][2], grid[j][i][3])) for i, j in loop_ij]
+    rings = []
+    for k, (i, j) in enumerate(loop_ij):
+        prev, nxt = outline[k - 1], outline[(k + 1) % L]
+        tng = (nxt - prev).normalized()
+        nrm = Vector((tng.y, -tng.x))  # outward in (x, z) for a clockwise outline seen from behind
+        if nrm.dot(outline[k] - Vector((0, z_top - H / 2))) < 0:
+            nrm = -nrm
+        a, vv, x, z = grid[j][i]
+        pd, fd = panel[j][i], panel[j][i] + thick(a, vv)
+        sp = k / L
+        # Mesh side pockets: the lower half of each side wall bulges out.
+        side_low = (i in (0, NX - 1)) and vv > 0.5
+        col = []
+        for r in range(RINGS + 1):
+            t = r / RINGS
+            if r == 0:
+                col.append(back[j][i])
+                continue
+            if r == RINGS:
+                col.append(front[j][i])
+                continue
+            bulge = 0.012 * math.sin(math.pi * t) ** 0.7 + (0.028 * math.sin(math.pi * min(1.0, t * 1.3)) * min(1.0, (vv - 0.5) * 5) if side_low else 0.0)
+            q = outline[k] + nrm * bulge
+            col.append(vert(q.x, q.y, pd + (fd - pd) * t, pd))
+        rings.append((col, sp))
+    for k in range(L):
+        (ca, sa), (cb, sb) = rings[k], rings[(k + 1) % L]
+        if k == L - 1:
+            sb = 1.0
+        for r in range(RINGS):
+            t0, t1 = r / RINGS, (r + 1) / RINGS
+            quad([ca[r], cb[r], cb[r + 1], ca[r + 1]], [(0.76 + 0.22 * t0, sa), (0.76 + 0.22 * t0, sb), (0.76 + 0.22 * t1, sb), (0.76 + 0.22 * t1, sa)])
+    bm.verts.index_update()
+    bm.normal_update()
+    # Faces point out of the pack (away from its middle).
+    centre = sum((v.co for v in bm.verts), Vector()) / len(bm.verts)
+    for f in bm.faces:
+        if f.normal.dot(f.calc_center_median() - centre) < 0:
+            f.normal_flip()
+    bm.normal_update()
+    order = [v.index for v in bm.verts]
+    o = mesh_object("backpack", bm)
+    img, nimg = pack_texture()
+    set_material(o, material("nylon.backpack", img, nimg, rough=0.55))
+    return o, [anchors[i] for i in order]
+
 torso_objs = [body] + [o for k, o in meshes.items() if k not in ("hair", "eyes", "brows", "beanie")]
 backpack = spec.get("backpack")
 if backpack:
-    W, H, D = backpack.get("size", [0.3, 0.42, 0.15])
+    W, H, D = backpack.get("size", [0.3, 0.45, 0.18])
     pts = surface_points(torso_objs)
-    z_top = neck_z - 0.05
+    # Straight back from the body (MPFB faces -Y), not from the feet, whose toes turn out.
+    away = Vector((0, 1, 0))
+    z_top = neck_z - 0.07
     band = [p for p in pts if abs(p.x) < W / 2 and z_top - H < p.z < z_top]
-    back = max(-p.dot(fwd) for p in band)
-    centre = Vector((0, 0, z_top - H / 2)) - fwd * (back + 0.012 + D / 2)
-    bm = bmesh.new()
-    bmesh.ops.create_cube(bm, size=1.0)
-    for v in bm.verts:
-        x, y, z = v.co.x * W, v.co.y * D, v.co.z * H
-        # Narrower at the top, rounder on the outside.
-        x *= 1.0 - 0.12 * (v.co.z + 0.5)
-        v.co = Vector((x, y, z))
-    bmesh.ops.bevel(bm, geom=list(bm.edges), offset=min(W, D) * 0.28, segments=3, affect="EDGES", profile=0.6)
-    bm.normal_update()
-    # Pack axes: y away from the back (−fwd), z up.
-    away = -fwd
-    for v in bm.verts:
-        p = v.co.copy()
-        bulge = 0.025 * max(0.0, p.y / D + 0.5) * math.cos(min(1.0, abs(p.z) / (H / 2)) * math.pi / 2)
-        v.co = centre + side * p.x + away * (p.y + bulge) + up * p.z
-    bm.normal_update()
-    box_uvs(bm, 6.0)
-    pack = mesh_object("backpack", bm)
-    wimg, wnorm = weave_texture("ripstop")
-    set_material(pack, material("nylon.backpack", wimg, wnorm, rough=0.55))
-    weight_all(pack, "spine_03")
+    pack, anchors = daypack(pts, W, H, D, z_top, away)
+    skin_from(pack, torso_objs, anchors)
     meshes["backpack"] = pack
     albedos["backpack"] = backpack.get("albedo", [0.08, 0.08, 0.08])
+    wimg, wnorm = weave_texture("ripstop")
 
     # Shoulder straps: ribbons over each shoulder, from the top of the pack to the bottom of the ribs, on the clothes.
     straps = bmesh.new()

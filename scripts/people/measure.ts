@@ -2,7 +2,7 @@
 // games/blackout/scripts/animation/gait-metrics.ts; the people layer does not change them):
 //   bun scripts/people/measure.ts [cast-id]
 // Planted-ball slip (flat walk), foot sink/float over rolling ground with a 30 cm log, swing-foot clearance over the
-// log, torch-to-beam angle and CPU pose cost per person-frame.
+// log, torch-to-beam angle, CPU pose cost per person-frame, and the backpack's fit (rest gap, clipping in motion).
 import { NodeIO } from "@gltf-transform/core"
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions"
 import { MeshoptDecoder } from "meshoptimizer"
@@ -85,8 +85,92 @@ walk(3, 1.4, () => 0, (pose) => {
   torchDeg = Math.max(torchDeg, (Math.acos(Math.min(1, x[0] * beam[0] + x[1] * beam[1] + x[2] * beam[2])) * 180) / Math.PI)
 }, beam)
 
-slips.sort((a, b) => a - b)
 const mm = (x: number) => Math.round(x * 10000) / 10
+// The backpack against the back: per pack vertex near the torso, its nearest torso vertex in bind pose (body and
+// clothes under it, not the arms), then per frame the signed gap along that torso vertex's skinned normal. Negative
+// is the pack inside the torso. Walk, run and the standing weight shift (both ways), breathing throughout.
+const lod = asset.lods[0]!, src = new Float32Array(lod.source), srcU = new Uint32Array(lod.source)
+const SF = lod.source.byteLength / 4 / lod.vertices
+const byPiece = (keep: (piece: string) => boolean) => {
+  const out = new Set<number>()
+  for (const r of lod.ranges) if (keep(asset.materials[r.material]!.piece)) for (let i = r.start; i < r.start + r.count; i++) out.add(lod.indices[i]!)
+  return [...out]
+}
+const NOT_TORSO = new Set(["backpack", "straps", "hair", "brows", "eyes", "eye", "headlamp", "lens", "headband", "beanie", "hood"])
+const armJoint = (v: number) => {
+  const j = srcU[v * SF + 3]! & 255
+  return /arm|hand|thumb|index|middle|ring|pinky|thigh|calf|foot|ball/.test(asset.skeleton.names[j]!)
+}
+const packV = byPiece((p) => p === "backpack")
+let packClip: unknown = null
+if (packV.length) {
+  const P = (v: number): V3 => [src[v * SF]!, src[v * SF + 1]!, src[v * SF + 2]!]
+  const lo = [0, 1, 2].map((k) => Math.min(...packV.map((v) => P(v)[k]!))), hi = [0, 1, 2].map((k) => Math.max(...packV.map((v) => P(v)[k]!)))
+  const torsoV = byPiece((p) => !NOT_TORSO.has(p)).filter((v) => {
+    const q = P(v)
+    return !armJoint(v) && q[0] > lo[0]! - 0.05 && q[0] < hi[0]! + 0.05 && q[1] > lo[1]! - 0.05 && q[1] < hi[1]! + 0.05 && q[2] > lo[2]! - 0.03
+  })
+  const pairs: [number, number][] = []
+  const restGap: number[] = []
+  for (const v of packV) {
+    const q = P(v)
+    let best = -1, bd = 0.06
+    for (const t of torsoV) { const d = dist(q, P(t)); if (d < bd) { bd = d; best = t } }
+    if (best < 0) continue
+    pairs.push([v, best])
+    // Back-panel vertices (facing the body: +Z in model space, the way the person faces) at rest: their gap to the
+    // back along its normal.
+    if (src[v * SF + 6]! > 0.5) {
+      const q = P(best), n: V3 = [src[best * SF + 4]!, src[best * SF + 5]!, src[best * SF + 6]!]
+      restGap.push(((P(v)[0] - q[0]) * n[0] + (P(v)[1] - q[1]) * n[1] + (P(v)[2] - q[2]) * n[2]) / (Math.hypot(...n) || 1))
+    }
+  }
+  const skin = (v: number, w: boolean): V3 => {
+    const o = v * SF, x = src[o + (w ? 4 : 0)]!, y = src[o + (w ? 5 : 1)]!, z = src[o + (w ? 6 : 2)]!, t = w ? 0 : 1
+    const out: V3 = [0, 0, 0]
+    for (let k = 0; k < 4; k++) {
+      const wk = src[o + 8 + k]!
+      if (!wk) continue
+      const m = ((srcU[o + 3]! >>> (8 * k)) & 255) * 16
+      out[0] += wk * (mats[m]! * x + mats[m + 4]! * y + mats[m + 8]! * z + mats[m + 12]! * t)
+      out[1] += wk * (mats[m + 1]! * x + mats[m + 5]! * y + mats[m + 9]! * z + mats[m + 13]! * t)
+      out[2] += wk * (mats[m + 2]! * x + mats[m + 6]! * y + mats[m + 10]! * z + mats[m + 14]! * t)
+    }
+    return out
+  }
+  const worst = { walk: Infinity, run: Infinity, idle: Infinity }
+  const where: Record<string, unknown> = {}
+  const check = (k: keyof typeof worst) => {
+    for (const [v, t] of pairs) {
+      const a = skin(v, false), b = skin(t, false), n = skin(t, true), nl = Math.hypot(...n) || 1
+      const g = ((a[0] - b[0]) * n[0] + (a[1] - b[1]) * n[1] + (a[2] - b[2]) * n[2]) / nl
+      if (g < worst[k]) { worst[k] = g; where[k] = { pack: P(v).map((x) => Math.round(x * 100) / 100), torso: asset.materials[lod.ranges.find((r) => [...lod.indices.subarray(r.start, r.start + r.count)].includes(t))!.material]!.piece } }
+    }
+  }
+  walk(3, 1.4, () => 0, () => check("walk"))
+  walk(2, 3.6, () => 0, () => check("run"))
+  {
+    const a = newAvatar("idle", 0, 0, 0, "rifle")
+    a.unarmed = true
+    const pose = newPose(rest)
+    for (let f = 0; f < 60 * 8; f++) {
+      animate(a, 1 / 60, f / 60, 0, 0, 0, 0, 0)
+      posePerson(rest, { body: a.body!, lift: 0, breath: 1, breathPhase: f / 60 * 1.6, shift: Math.sin(f / 60 * 0.8) }, pose)
+      skinMatrices(rest, pose, mats)
+      if (f % 4 === 0) check("idle")
+    }
+  }
+  restGap.sort((a, b) => a - b)
+  packClip = {
+    restBackPanelGapMm: { median: mm(restGap[Math.floor(restGap.length / 2)] ?? 0), p95: mm(restGap[Math.floor(restGap.length * 0.95)] ?? 0) },
+    // Most negative gap seen (mm): below zero the pack is inside the torso.
+    minGapMm: { walk: mm(worst.walk), run: mm(worst.run), idle: mm(worst.idle) },
+    minGapAt: where,
+    sizeCm: [0, 1, 2].map((k) => Math.round((hi[k]! - lo[k]!) * 100)),
+  }
+}
+
+slips.sort((a, b) => a - b)
 console.log(JSON.stringify({
   cast: id, joints: asset.skeleton.names.length, height: Math.round(rest.height * 1000) / 1000, rigScale: Math.round(rest.scale * 1000) / 1000,
   tris: asset.lods.map((l) => l.triangles),
@@ -95,5 +179,6 @@ console.log(JSON.stringify({
   worstSinkAt: worst,
   worstFloatAt: worstFloat,
   torchToBeamMaxDeg: Math.round(torchDeg * 10) / 10,
+  pack: packClip,
   cpuPoseMsPerPerson: Math.round(flatMs * 1000) / 1000,
 }, null, 2))
