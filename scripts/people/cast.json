@@ -84,7 +84,7 @@
       "eyes": "brown",
       "brows": "eyebrows/eyebrow001",
       "looks": {
-        "woods": { "outfit": "hiker", "tints": { "jacket": [0.62, 0.46, 0.05] }, "beanie": { "albedo": [0.4, 0.13, 0.05], "rim": 0.1, "slouch": 0.06 } },
+        "woods": { "outfit": "hiker", "tints": { "jacket": [0.44, 0.3, 0.025] }, "beanie": { "albedo": [0.4, 0.13, 0.05], "rim": 0.1, "slouch": 0.06 } },
         "survivor": { "outfit": "survivor", "tints": { "tee": [0.18, 0.2, 0.12] }, "backpack": { "albedo": [0.08, 0.08, 0.08], "size": [0.3, 0.42, 0.15] } },
         "office": { "outfit": "office" }
       }
