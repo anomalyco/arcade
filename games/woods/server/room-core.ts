@@ -11,6 +11,8 @@ import { makeWorld, type WoodsWorld } from "../shared/world"
 type Sent = { tapes: number; found: number; names: string; trail: number; mapTapes: number; mapMarkers: number; heard: string }
 const fresh = (): Sent => ({ tapes: -1, found: -1, names: "", trail: 0, mapTapes: -1, mapMarkers: -1, heard: "" })
 
+const HOLD_TICKS = 9
+
 /** Room seed from its code, so each room's bots and flicker differ while the forest stays the printed one. */
 function codeSeed(code: string): number {
   let h = 2166136261
@@ -29,6 +31,8 @@ export class WoodsRoomCore extends RoomCore<ClientMsg, PlayerInput, RosterRow, W
   private readonly names = new Map<number, string>()
   private readonly away = new Set<number>()
   private readonly inputs = new Map<number, PlayerInput>()
+  /** Each person's last applied input and how many ticks ago, to hold their keys over a tick the jitter buffer skips. */
+  private readonly last = new Map<number, { input: PlayerInput; age: number }>()
   private readonly acks = new Map<number, number>()
   private readonly sent = new Map<string, Sent>()
   private events: WoodsEvent[] = []
@@ -78,6 +82,7 @@ export class WoodsRoomCore extends RoomCore<ClientMsg, PlayerInput, RosterRow, W
     this.names.delete(pid)
     this.away.delete(pid)
     this.inputs.delete(pid)
+    this.last.delete(pid)
     this.acks.delete(pid)
     this.fillBots()
   }
@@ -90,6 +95,7 @@ export class WoodsRoomCore extends RoomCore<ClientMsg, PlayerInput, RosterRow, W
     // A dropped seat's buffered stand-ins don't walk them on: they wait where they were.
     if (pid === undefined || this.away.has(pid)) return
     this.inputs.set(pid, intent)
+    this.last.set(pid, { input: intent, age: 0 })
     this.acks.set(pid, seq)
   }
   protected activity(intent: PlayerInput, a: Activity) {
@@ -107,8 +113,13 @@ export class WoodsRoomCore extends RoomCore<ClientMsg, PlayerInput, RosterRow, W
     return this.pids.has(id) ? "play" : "gone"
   }
   protected stepWorld() {
+    // A tick without a fresh input (the jitter buffer balancing a stand-in, or a short stall) keeps the person's held
+    // keys and look but doesn't walk them; after `HOLD_TICKS`, or once dropped, they stand still with hands down.
+    for (const [pid, l] of this.last) {
+      if (this.inputs.has(pid) || this.away.has(pid) || ++l.age > HOLD_TICKS) continue
+      this.inputs.set(pid, { ...l.input, mx: 0, mz: 0, sprint: false })
+    }
     stepWoods(this.state, this.world, this.inputs, TICK_DT, ROOM_FEEL)
-    // Held keys only last while inputs arrive: a stalled or dropped person stands still.
     this.inputs.clear()
     this.events.push(...this.state.events)
   }

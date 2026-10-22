@@ -57,6 +57,8 @@ for (let t = 0; t < 30 * 30 && Math.hypot(stand.x - me().x, stand.z - me().z) > 
 }
 console.log("at tree", tree.id, "distance", Math.hypot(stand.x - me().x, stand.z - me().z).toFixed(2), "target", tieTarget(world, { ...me(), yaw: 0 } as never, 1.6)?.id)
 await drive([a, b], 2, (c) => (c === a ? { tie: true } : {}))
+const tapeEvents = a.got.flatMap((m) => (m.type === "ev" ? (m as { events: { kind: string; tree?: number; by?: number }[] }).events : [])).filter((e) => e.kind.startsWith("tape"))
+console.log("tape events seen by Kit:", JSON.stringify(tapeEvents.map((e) => [e.kind, e.tree, e.by])), "Kit's tie:", JSON.stringify(row().slice(7)))
 check(b.tapes.some((r) => tapeFromRow(world, r)?.tree === tree.id), `Aiden received Kit's tape on tree ${tree.id}`)
 
 // Aiden drops and comes back with the seat token.

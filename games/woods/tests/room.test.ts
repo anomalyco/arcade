@@ -70,6 +70,17 @@ test("a tape one person ties is in everyone's snapshot, and so is untying it", (
   void last
 })
 
+test("a tie survives a ragged input stream (bursts and gaps the jitter buffer smooths over)", () => {
+  const { tick, connect, send, room } = setup()
+  const a = connect("Kit")
+  const me = room.state.players.find((p) => p.id === 1)!
+  const tree = room.world.trees.find((t) => t.species === "pine" && Math.abs(t.x) < 100)!
+  Object.assign(me, { x: tree.x, z: tree.z + tree.radius + 0.8, yaw: 0 })
+  // A slow client clock: about 2 inputs every 3 ticks, sometimes in pairs.
+  for (let i = 0; i < 120; i++) { if (i % 3 !== 2) send(a, { tie: true }); if (i % 7 === 0) send(a, { tie: true }); tick() }
+  expect(room.state.tapes.map((t) => t.tree)).toEqual([tree.id])
+})
+
 test("standing together with a map up swaps pencil marks; a marker find reaches everyone", () => {
   const { tick, connect, send, last, room } = setup()
   const a = connect("Kit"), b = connect("Aiden")
