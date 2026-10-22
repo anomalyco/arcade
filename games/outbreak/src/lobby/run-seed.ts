@@ -20,3 +20,10 @@ export function runSeedLink(run: RunSeed): string {
   url.searchParams.set("terrain", String(run.terrain))
   return url.href
 }
+
+/** Reload this page with a new run, retaining the player's URL-selected look, name and other options. */
+export function runSeedLocation(run: RunSeed, href: string): string {
+  const url = new URL(href)
+  for (const [key, value] of new URL(runSeedLink(run)).searchParams) url.searchParams.set(key, value)
+  return url.href
+}

@@ -15,6 +15,7 @@ type ProofWindow = Window & {
   __arcadeHarness: OutbreakHarness
   cameraFilter: CameraFilter
   pauseProbe: { frames: number; time: number; maxStep: number }
+  leakedPauseKeys: string[]
 }
 const cache = `${process.env.HOME}/Library/Caches/ms-playwright`
 const executablePath = readdirSync(cache).filter((n) => /^chromium_headless_shell-\d+$/.test(n)).sort().reverse()
@@ -38,6 +39,12 @@ try {
   await page.locator('[data-act="solo"]').click()
   await page.evaluate(() => {
     const w = window as unknown as ProofWindow
+    // The graph runs for the silence check; Chromium's --mute-audio keeps speakers silent throughout.
+    w.__arcadeHarness.setLab("audioMuted", 0)
+    w.leakedPauseKeys = []
+    window.addEventListener("keydown", (e) => {
+      if (w.__arcadeHarness.coop()?.lobby?.mode === "pause") w.leakedPauseKeys.push(e.code)
+    })
     w.pauseProbe = { frames: 0, time: 0, maxStep: 0 }
     const encode = w.cameraFilter.encode.bind(w.cameraFilter)
     w.cameraFilter.encode = (encoder, target, frame) => {
@@ -49,6 +56,8 @@ try {
     }
   })
   await page.waitForFunction(() => (window as unknown as ProofWindow).pauseProbe.frames >= 4)
+  await page.waitForFunction(() => (window as unknown as ProofWindow).__arcadeHarness.audio().voices > 0)
+  const voicesBeforePause = await page.evaluate(() => (window as unknown as ProofWindow).__arcadeHarness.audio().voices)
   await page.getByRole("button", { name: "Pause", exact: true }).click()
   await page.locator('[data-role="run-seed"]').waitFor()
   assert.equal(await page.locator('[data-role="run-seed"]').inputValue(), "7.1234")
@@ -60,13 +69,17 @@ try {
   })
   // Start-screen shortcuts must never select a survivor, host a room, or start a new session in Pause.
   await page.locator('[data-act="resume"]').evaluate((el) => (el as HTMLElement).blur())
-  for (const key of ["1", "h", "t", "Enter", "w"]) await page.keyboard.press(key)
+  for (const key of ["1", "h", "t", "Enter", "w", "Control+e", "Alt+1", "Control+Space", "Meta+e"]) await page.keyboard.press(key)
   const after = await page.evaluate(async () => {
     await new Promise((resolve) => setTimeout(resolve, 350))
     const w = window as unknown as ProofWindow
     return { simTime: w.__arcadeHarness.state().time, ...w.pauseProbe }
   })
   assert.deepEqual(after, held, "pause must freeze simulation, lighting updates and camera-filter submissions")
+  assert.deepEqual(await page.evaluate(() => (window as unknown as ProofWindow).leakedPauseKeys), [])
+  const voicesWhilePaused = await page.evaluate(() => (window as unknown as ProofWindow).__arcadeHarness.audio().voices)
+  assert.equal(voicesWhilePaused, 0, "pause must stop ambient beds, held voices and the horde")
+  report.audio = { voicesBeforePause, voicesWhilePaused }
   assert.equal(await page.evaluate(() => (window as unknown as ProofWindow).__arcadeHarness.coop()?.lobby?.mode), "pause")
   assert.equal(await page.locator("#outbreak-lobby").evaluate((el) => el.classList.contains("is-practice")), false)
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
@@ -83,7 +96,8 @@ try {
   assert.equal(link, "https://anoma.ly/arcade/outbreak/?seed=7&houseSeed=1234&terrain=0.22")
   await page.evaluate(() => { navigator.clipboard.writeText = async () => { throw new Error("Denied") } })
   await page.locator('[data-act="copy-seed"]').click()
-  await page.getByRole("button", { name: "Copy unavailable", exact: true }).waitFor()
+  await page.getByRole("button", { name: link, exact: true }).waitFor()
+  await page.getByRole("button", { name: "Copy replay link", exact: true }).waitFor()
   report.replay = link
 
   await page.locator('[data-role="run-seed"]').fill("4294967296")
@@ -99,10 +113,13 @@ try {
   assert(resumed.simTime > held.simTime)
   assert(resumed.maxStep < 0.25, "resume must not feed paused wall time into the filter")
   report.resumed = resumed
+  await page.waitForFunction(() => (window as unknown as ProofWindow).__arcadeHarness.audio().voices > 0)
+  report.audioResumed = true
 
   await page.getByRole("button", { name: "Pause", exact: true }).click()
   await page.locator('[data-act="loadout"]').click()
   await page.waitForFunction(() => (window as unknown as ProofWindow).__arcadeHarness.coop()?.lobby?.practice)
+  await page.waitForFunction(() => (window as unknown as ProofWindow).__arcadeHarness.audio().voices > 0)
   await page.keyboard.press("Enter")
   await page.waitForFunction(() => (window as unknown as ProofWindow).__arcadeHarness.coop()?.lobby?.mode === "closed")
   report.practiceRoundTrip = true

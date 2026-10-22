@@ -18,7 +18,7 @@ import type { NetSession } from "../net-session"
 import { SURVIVORS, survivorSpec, type SurvivorLookSpec } from "./survivors"
 import { lobbyKeyAction } from "./keys"
 import { lobbyWaitingOn } from "./waiting"
-import { parseRunSeed, runSeedCode, runSeedLink, type RunSeed } from "./run-seed"
+import { parseRunSeed, runSeedCode, runSeedLink, runSeedLocation, type RunSeed } from "./run-seed"
 
 export type LobbyMode = "closed" | "start" | "coop" | "pause"
 
@@ -171,6 +171,7 @@ export class OutbreakLobby {
   }
 
   openStart(): void {
+    if (this.mode === "pause") window.dispatchEvent(new Event("outbreak-menu-close"))
     this.mode = "start"
     this.joinError = null
     this.root.hidden = false
@@ -201,6 +202,7 @@ export class OutbreakLobby {
   }
 
   close(): void {
+    if (this.mode === "pause") window.dispatchEvent(new Event("outbreak-menu-close"))
     const active = document.activeElement
     if (active instanceof HTMLElement && this.root.contains(active)) active.blur()
     this.mode = "closed"
@@ -312,14 +314,14 @@ export class OutbreakLobby {
       this.close()
       return
     }
+    if (this.mode === "pause") {
+      // Native editing/navigation still works, but modified keys must not queue gameplay actions either.
+      if (e.code !== "Backquote") e.stopImmediatePropagation()
+      return
+    }
     const active = document.activeElement
     if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "SELECT")) return
     if (e.metaKey || e.ctrlKey || e.altKey || e.code === "Backquote") return
-    if (this.mode === "pause") {
-      // Keep native button activation and tab navigation, without starting a run or queuing gameplay input.
-      e.stopImmediatePropagation()
-      return
-    }
     if (this.mode === "coop" && !this.net) return
     const action = lobbyKeyAction(e.code, {
       mode: this.mode === "coop" ? "coop" : "start",
@@ -398,17 +400,18 @@ export class OutbreakLobby {
   }
 
   private localRunLink(run: RunSeed): string {
-    const replay = new URL(runSeedLink(run))
-    return `${location.pathname}${replay.search}`
+    return runSeedLocation(run, location.href)
   }
 
   private async copySeed(button: HTMLButtonElement): Promise<void> {
+    const link = runSeedLink(this.run)
     try {
-      await navigator.clipboard.writeText(runSeedLink(this.run))
+      await navigator.clipboard.writeText(link)
       button.textContent = "Link copied"
     } catch {
-      button.textContent = "Copy unavailable"
+      button.textContent = link
     }
+    setTimeout(() => (button.textContent = "Copy replay link"), 2400)
   }
 
   /** Starts solo; the first time in a browser (or with `training`, always) it begins in the training room (AR-89). */
