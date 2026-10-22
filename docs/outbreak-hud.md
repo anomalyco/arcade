@@ -64,6 +64,17 @@ tag shows. A downed teammate's mark is red and pulses; on screen within 28 m the
 Distances are from the screen centre, so they still read while watching a teammate after death. The rules are pure
 (`edge.ts`: `edgeMark`, `markMode`, `tests/teammate-markers.test.ts`).
 
+## Night clock
+
+After the Oct 21 playtest ("I have no concept of how much time is left", 1:38:07; Kit: "There should definitely be
+like a clock"), `src/night-clock/` puts a chip at the top left while it is dark: a moon, "Night 2", a bar of how much
+of the night is left and "Dawn in 3:53" in real minutes. It turns warm in the last minute, and in the last 90 real
+seconds of daylight it warns "Dusk · Dark in 1:12" in amber. Dark is darkness ≥ 0.5 (about 17:00 to 07:00), the
+same line as the Way Out's countdown; co-op uses the room's clock speed. The Diegetic style hides the top-left
+summary, which was the only place the hour showed, so the night had no visible end. With a style that shows the
+summary, the chip sits under it. Lab › HUD › Night clock ("Today (none)") and Warn before dark; the rules are pure
+(`reading.ts`, `tests/night-clock.test.ts`); stills from `scripts/night-clock-still.ts`.
+
 ## Volume button and lobby Ready
 
 Also from the Oct 20 playtest ("I need to have a volume button too"): `src/volume/` puts a speaker button in the top
