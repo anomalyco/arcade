@@ -11,13 +11,14 @@ export type LabControl = {
   label: string
   group?: string
   unit?: string
+  /** The control's group starts folded. */
   folded?: boolean
   /** Mirrors scene state (for example the selection's position) rather than an authored default. */
   derived?: boolean
   visible?: (settings: Readonly<LabSettings>) => boolean
   change?: (value: LabValue) => void
   enabled?: (settings: Readonly<LabSettings>) => boolean
-  /** A sub-heading inside the group (knobs' `subsection`). Sub-headings named "Advanced" start folded. */
+  /** A collapsible sub-heading inside the group (knobs' `subsection`); sub-headings start folded. */
   subsection?: string
   /**
    * Draws this range and the range `pair.key` (its upper end) as one low–high row with two thumbs that can't cross.
@@ -45,10 +46,17 @@ export const isSwitchControl = (control: LabControl): control is LabSwitch =>
   control.type !== "action" && !isRampControl(control) && !("min" in control) && !("options" in control)
 export type LabRow = { group: string; control?: LabControl }
 /**
- * A Details tab (the inspector layout): the groups it shows, each by its id or as `[id, label]` when the tab makes part
- * of the name redundant ("Tree Structure" on the Trees tab reads "Structure"). Ids stay the groups' identity.
+ * A tab over a panel's groups (the Lab's Details inspector, a game's floating panel): the groups it shows, each by its
+ * id or as `[id, label]` when the tab makes part of the name redundant ("Tree Structure" on the Trees tab reads
+ * "Structure"). Ids stay the groups' identity. `match` takes groups by id that no tab lists (for groups added later);
+ * the `rest` tab takes every group no tab lists or matches, which would otherwise show on every tab.
  */
-export type LabTab = { label: string; groups: readonly (string | readonly [group: string, label: string])[] }
+export type LabTab = {
+  label: string
+  groups: readonly (string | readonly [group: string, label: string])[]
+  match?: (group: string) => boolean
+  rest?: boolean
+}
 
 /** Resolves the property name on a subsystem `settings` object for a `LabControl`. */
 export function resolveControlField(control: LabControl, settings: Readonly<Record<string, unknown>>): string {

@@ -22,12 +22,25 @@ export type LabOptions = {
   /** All on / All off buttons when the panel has switches. */
   presets?: boolean
   shortcut?: boolean
+  /**
+   * `"open"` (the default): an open floating panel keeps every key from the game. `"focus"`: play with the panel open.
+   * Keys reach the game unless focus is in the panel; a click outside the panel (on the game) or pointer lock hands
+   * input back to the game while the panel stays up, and a click on the panel takes it again. Games gate their input
+   * on `holdsInput` rather than `visible`.
+   */
   capture?: "open" | "focus"
   layout?: "floating" | "inspector"
   /** Random (the dice); Reset and Copy stay. */
   groupActions?: boolean
   /** The pill that shows a closed floating panel. */
   pill?: boolean
+  /**
+   * Floating panel: the groups that start open (the first group when omitted); the others start folded. What the user
+   * folds and opens is remembered per page. Inspector groups start open.
+   */
+  openGroups?: readonly string[]
+  /** Called with each setting a panel edit changes (the same as passing a function as `options`). */
+  onChange?: (key: string, value: LabValue) => void
   /** Saved variants are kept per this id (by default per page and section); `false` turns them off. */
   variants?: string | false | (() => string | false)
   /** The host's undo stack (the Lab workbench); knobs' Undo and Redo follow it. Without it knobs keeps its own history. */
@@ -60,6 +73,9 @@ const CSS = `
 [data-lab-panel][data-layout=inspector] .lab-panel-telemetry{display:none}
 [data-lab-panel] .lab-panel-empty{padding:12px;color:rgba(255,255,255,.42)}
 `
+
+/** The game's path segment (`/arcade/<game>/…`): saved variants and folds are kept per game. */
+const pagePrefix = () => location.pathname.match(/\/arcade\/([^/]+)/)?.[1] ?? "page"
 
 /**
  * Presentation controls, drawn by knobs. LabNavigation and the settings objects stay the source of truth; this class
@@ -97,10 +113,11 @@ export class LabPanel implements LabKnobsHost {
   private detachControl?: () => void
   private view: LabPanelView = {}
   private tabs: readonly LabTab[] = []
+  private openGroups?: readonly string[]
 
   constructor(settings: LabSettings, controls: LabControl[], params: URLSearchParams, private release: () => void, options?: LabOptions | ((key: string, value: LabValue) => void)) {
-    const change = typeof options === "function" ? options : undefined
     const opts = typeof options === "object" ? options : {}
+    const change = typeof options === "function" ? options : opts.onChange
     this.allowPresets = opts.presets !== false
     this.groupActions = opts.groupActions !== false
     this.focusOnly = opts.capture === "focus"
@@ -109,6 +126,7 @@ export class LabPanel implements LabKnobsHost {
     this.onToggle = opts.onToggle
     this.onFocusChange = opts.onFocusChange
     this.variants = opts.variants
+    this.openGroups = opts.openGroups
     this.history = opts.history
     if (opts.onPin) this.pin = { toggle: opts.onPin, has: key => Boolean(opts.isPinned?.(key)) }
     this.navigation = new LabNavigation({}, [], (key, value) => {
@@ -178,6 +196,20 @@ export class LabPanel implements LabKnobsHost {
       if (this.keyboard(key, true)) event.stopImmediatePropagation()
     }, { capture: true, signal: this.events.signal })
     window.addEventListener("blur", () => { if (this.visible) release() }, { signal: this.events.signal })
+    if (this.focusOnly && this.layoutMode === "floating") {
+      // Play with the panel open: a press anywhere but the panel (and its menus) gives input back to the game, and so
+      // does pointer lock. The panel stays up.
+      document.addEventListener("pointerdown", event => {
+        if (this.visible && !this.owns(event.target)) this.handBack()
+      }, { capture: true, signal: this.events.signal })
+      document.addEventListener("pointerlockchange", () => {
+        if (document.pointerLockElement) this.handBack()
+      }, { signal: this.events.signal })
+      // knobs' menus sit on <body>: keys typed in them stop before the game's window listeners.
+      for (const type of ["keydown", "keyup", "keypress"] as const) document.addEventListener(type, event => {
+        if (this.visible && event.target instanceof Element && event.target.closest(".knobs-menu")) event.stopPropagation()
+      }, { signal: this.events.signal })
+    }
 
     const lab = opts.open ?? (params.get("perf") === "1" || params.get("lab") === "1")
     this.body.hidden = true
@@ -254,10 +286,33 @@ export class LabPanel implements LabKnobsHost {
     return this.pending !== null || [...this.views].some(view => view.interacting)
   }
 
-  /** Whether keyboard focus is inside the panel or one of its views (knobs rows, editors or buttons). */
+  /** Whether keyboard focus is inside the panel or one of its views (knobs rows, editors, buttons or menus). */
   hasFocus(): boolean {
+    return this.owns(document.activeElement)
+  }
+
+  /**
+   * Whether the panel has the game's input now: while a floating panel is open with capture `"open"`, and otherwise
+   * while focus is in it. Games gate keys, look and pointer lock on this rather than on `visible`.
+   */
+  get holdsInput(): boolean {
+    if (this.layoutMode === "floating" && !this.focusOnly) return this.visible
+    return this.visible && (this.hasFocus() || this.isInteracting())
+  }
+
+  private owns(target: EventTarget | null): boolean {
+    if (!(target instanceof Node)) return false
+    if (this.host.contains(target) || [...this.views].some(view => view.element.contains(target))) return true
+    return target instanceof Element && Boolean(target.closest(".knobs-menu"))
+  }
+
+  /** Focus leaves the panel for the game; the panel stays open. */
+  private handBack() {
+    if (!this.hasFocus()) return
+    this.end()
     const active = document.activeElement
-    return this.host.contains(active) || [...this.views].some(view => view.element.contains(active))
+    if (active instanceof HTMLElement) active.blur()
+    this.onFocusChange?.(false, this.navigation.active)
   }
 
   private snapshotSettings(): LabSettings {
@@ -309,8 +364,7 @@ export class LabPanel implements LabKnobsHost {
     const raw = typeof this.variants === "function" ? this.variants() : this.variants
     if (raw === false) return undefined
     if (typeof raw === "string") return raw
-    const prefix = location.pathname.match(/\/arcade\/([^/]+)/)?.[1] ?? "page"
-    return `arcade-${prefix}`
+    return `arcade-${pagePrefix()}`
   }
 
   /** The panel's own knobs view: every row, after the Details filter and order. Built when first needed. */
@@ -318,9 +372,12 @@ export class LabPanel implements LabKnobsHost {
     if (this.main) return this.main
     if (!this.navigation.rows.some(row => row.control)) return null
     const switches = this.navigation.rows.flatMap(row => row.control && isSwitchControl(row.control) ? [row.control] : [])
+    const floating = this.layoutMode === "floating"
     this.main = new LabKnobsView(this, this.body, {
-      id: `${this.layoutMode}-panel`,
+      id: `${pagePrefix()}-${this.layoutMode}-panel`,
       variantsId: this.variantsId(),
+      folding: floating ? { start: "folded", open: () => this.openGroups ?? [] } : { start: "open" },
+      rememberFolds: true,
       include: row => (!this.navigation.filter || this.navigation.filter(row)) && !this.claimed(row),
       order: () => this.view.order ?? [],
       keys: this.keys(),
@@ -444,6 +501,7 @@ export class LabPanel implements LabKnobsHost {
       this.body.hidden = false
       this.sync()
     }
+    if (revealIfFolded) for (const view of this.views) view.show(key)
     const element = this.viewFor(key)?.rowElement(key) ?? null
     if (revealIfFolded) element?.scrollIntoView({ block: "nearest" })
     return element
@@ -516,7 +574,11 @@ export class LabPanel implements LabKnobsHost {
   }
 
   toggle() {
-    this.release()
+    const opening = this.body.hidden
+    // Closing a panel the player is playing beside leaves the game as it is.
+    if (opening || !this.focusOnly || this.hasFocus()) this.release()
+    // Opening frees the pointer for the panel; a click back on the game locks it again.
+    if (opening && this.layoutMode === "floating" && document.pointerLockElement) document.exitPointerLock()
     this.body.hidden = !this.body.hidden
     this.pill.setAttribute("aria-expanded", String(this.visible))
     if (this.visible) {
