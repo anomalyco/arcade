@@ -86,7 +86,7 @@ async function main() {
   camera.yaw = spawn.yaw; camera.pitch = -0.05
 
   const panel = new LabPanel(settings, [...FEEL_CONTROLS, ...WALK_CONTROLS], params, () => { camera.release(); keys.clear() }, { open: false, pill: false, groupActions: false, onToggle: () => syncStart() })
-  audio.bank.bindControls(panel)
+  audio.bindControls(panel)
   attachLabPanelControl(panel)
   let regenAt = 0, worldKey = `${settings.trunkDensity}`, shadowKey = settings.trunkShadows
 
@@ -234,6 +234,7 @@ async function main() {
     roster(now)
     {
       for (const e of session.drain()) {
+        audio.event(e)
         const mine = "by" in e && e.by === meId
         if (e.kind === "tape-tied") audio.play("pack.close", e.x, e.z, mine ? 1 : 0.6)
         if (e.kind === "tape-removed") audio.play("pack.open", e.x, e.z, mine ? 1 : 0.6)
@@ -319,7 +320,7 @@ async function main() {
     const campLight = Math.max(0, 1 - Math.hypot(at.x - world.camp.x, at.z - world.camp.z) / 30) * 0.5 * settings.campGlow
     map.frame(state, meId, p.mapRaise, camera.yaw, level * r + campLight + 0.04, camera.walk.lateral * 40, dt)
     if (performance.now() > toastUntil) toast.style.opacity = "0"
-    audio.frame(at.x, at.z)
+    audio.frame(camera.eye, camera.yaw, dt, world, state)
 
     frames++
     if (smoke && frames >= 2) paused = true
@@ -328,7 +329,7 @@ async function main() {
   Object.assign(window, {
     woods: {
       get ready() { return true }, get frames() { return frames }, get paused() { return paused }, set paused(v: boolean) { paused = v },
-      renderer, camera, settings, panel, map, debug,
+      renderer, camera, settings, panel, map, debug, audio,
       get state() { return session.view }, get world() { return world }, get session() { return session },
       /** Automation: room readout (your id, people and walkers seen, tapes, bytes in, KB/s, connection status). */
       get net() {

@@ -22,6 +22,13 @@ proven animation techniques to animation.md, not here.
   6.09/255 road, 15.70 lot and 9.58 booth; these include the newer lamp/fog/window treatment and do not establish
   visual parity or a before/after improvement. Evidence is in `lot-2026-10-20/detail-iteration-5` in the gallery.
 
+- **Shared distant sounds and a gust field that travels (Woods).** `games/woods/shared/distant.ts` keeps the dread
+  schedule as plain seeded data stepped with only + − × ÷ √ (rejection-sampled directions, no trig), so one authority
+  picks sound, take, place and emission time and each client adds its own travel delay (d / 343 m/s), distance
+  low-pass and forest reverb. Canopy wind is four voices 26 m around the listener, each reading a gust field that
+  moves downwind at 7 m/s, so gusts audibly cross the trees; exposure from local relief puts the ridge 11.5 dB over a
+  hollow. Measured in Chrome offline renders (`games/woods/scripts/audio-proof.ts`, gallery `woods-2026-10-21/audio`).
+
 - **Shared quiet first-person walking (Lot / Night Shift).** `client/walk` and `client/walk-camera` share the
   actual-displacement contact clock and critically damped presentation; Night Shift's adapter keeps chair impacts
   and furniture creaks. `audio/footsteps` shares its quiet PCM and live/offline scheduler. All 256 sound/seed checks

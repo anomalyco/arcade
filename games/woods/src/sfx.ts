@@ -1,2 +1,2 @@
-/** Library placeholders: the night bed, torch clicks, the find chime, tape rustles. */
-export const WOODS_SFX = ["ambience.night.suburb", "flashlight.click", "ui.ping", "pack.open", "pack.close", "ui.tick"] as const
+/** Library cues: torch clicks, the find chime, tape rustles. The night itself is the woods' own soundscape (src/audio/). */
+export const WOODS_SFX = ["flashlight.click", "ui.ping", "pack.open", "pack.close", "ui.tick"] as const
