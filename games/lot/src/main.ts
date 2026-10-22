@@ -257,11 +257,11 @@ async function main() {
       occluders: lights.occ, occluderCount: lights.occCount, lampPower: lights.power, lampCount: 0,
       view: [-700, -700, 700, 700], batches: [], alphaSprites: empty, alphaCount: 0, addSprites: empty, addCount: 0, grade: [0, 0, 0, settings.exposure],
       fog:fog.update({eye:camera.eye,viewProj:vp,lamps:fogLamps,time:fixedTime ?? now/1000,street}),volume:volumes(),fogBlur:fog.blurInput() }
-    // The smoke draws synchronously: render() defers a frame while the previous one is in flight, so a mark taken
-    // after it would time the shadow pass, not the frame.
+    // The smoke draws synchronously: render() holds a frame back while the previous one is on the GPU, which on
+    // SwiftShader would leave the second frame unsubmitted for minutes.
     if(stepping || smoke) renderer.drawTo(lastFrame); else renderer.render(lastFrame)
     frames++
-    if(smoke) { const n=frames-1; performance.mark(`lot:frame-${n}-submitted`); void device.queue.onSubmittedWorkDone().then(()=>performance.mark(`lot:frame-${n}-complete`)) }
+    if(smoke) performance.mark(`lot:frame-${frames-1}-submitted`)
     // Software-GPU smoke must submit exactly two real frames; readiness polling can otherwise build a long queue.
     if(smoke && frames >= 2) paused = true
   }
