@@ -1,3 +1,4 @@
+import type { CreatureEvent } from "../../shared/creature"
 import type { DistantEvent, DistantSound } from "../../shared/distant"
 import { treesNear, type Tree, type WoodsWorld } from "../../shared/world"
 import { WOODS_FILES, type WoodsSoundId } from "./files"
@@ -30,6 +31,9 @@ const DISTANT_LEVEL: Record<DistantSound, number> = {
   "far.loon": 0.54, "far.fox": 0.6, "far.owl": 0.34, "far.snap": 0.55, "far.steps": 0.7, "far.knock": 0.76,
   "far.whistle": 0.56, "far.radio": 0.55, "far.cardoor": 0.93, "far.screendoor": 0.66,
 }
+
+/** The creature's brush crash against the distant sounds (× the Lab's loudness): a few dB under a far branch snap. */
+const CREATURE_LEVEL = 0.17
 
 /** Distance loudness, compressed for legibility: −6 dB per 3.2× distance past 20 m instead of per 2×. */
 export const distanceGain = (d: number) => (20 / Math.max(20, d)) ** 0.6
@@ -99,6 +103,48 @@ function buzz(ctx: BaseAudioContext, seconds = 4): AudioBuffer {
   return buf
 }
 
+/**
+ * Something fast going through the brush: a rustle that rises and falls with its strides (about 5.5 a second), dry
+ * twigs snapping under some of them, then the leaves settling. Synthesized per seed, RMS-normalised to about −20 dBFS.
+ */
+export function brushCrash(ctx: BaseAudioContext, seed: number, seconds: number): AudioBuffer {
+  const sr = ctx.sampleRate, n = Math.floor((seconds + 0.7) * sr)
+  const buf = ctx.createBuffer(1, n, sr)
+  const d = buf.getChannelData(0)
+  let s = (Math.floor(seed * 1e6) ^ 0x5bd1e995) >>> 0
+  const rnd = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296 }
+  const steps: number[] = []
+  for (let t = 0.04 + 0.06 * rnd(); t < seconds; t += 0.17 + 0.03 * rnd()) steps.push(t)
+  // Rustle: band-limited noise (two one-poles), its level a bump per stride over a swell.
+  let lp = 0, hp = 0, prev = 0
+  const aLp = 1 - Math.exp((-2 * Math.PI * 4200) / sr), aHp = Math.exp((-2 * Math.PI * 700) / sr)
+  for (let i = 0; i < n; i++) {
+    const t = i / sr
+    const w = rnd() * 2 - 1
+    lp += (w - lp) * aLp
+    hp = aHp * (hp + lp - prev)
+    prev = lp
+    let env = 0
+    for (const st of steps) if (t >= st && t < st + 0.25) env += Math.exp(-(t - st) * 22) * (0.6 + 0.4 * Math.sin(st * 31))
+    const swell = Math.min(1, t / 0.12) * (t < seconds ? 1 : Math.exp(-(t - seconds) * 6))
+    d[i] = hp * (env * 0.8 + 0.12) * swell
+  }
+  // Twigs: a click and a short ring at 1.6–3.6 kHz under about half the strides.
+  for (const st of steps) {
+    if (rnd() > 0.55) continue
+    const f = 1600 + 2000 * rnd(), g = 0.6 + 0.8 * rnd(), at = Math.floor((st + 0.01 * rnd()) * sr)
+    for (let k = 0; k < Math.floor(0.03 * sr) && at + k < n; k++) {
+      const t = k / sr
+      d[at + k]! += g * Math.exp(-t * 260) * (Math.sin(2 * Math.PI * f * t) * 0.7 + (rnd() * 2 - 1) * Math.exp(-t * 900))
+    }
+  }
+  let sum = 0
+  for (let i = 0; i < n; i++) sum += d[i]! * d[i]!
+  const rms = Math.sqrt(sum / n) || 1
+  for (let i = 0; i < n; i++) d[i]! *= 0.1 / rms
+  return buf
+}
+
 type Voice = { src: AudioBufferSourceNode; fade: GainNode; at: number; distant: boolean; faded: boolean }
 
 const BEDS: readonly WoodsSoundId[] = ["bed.canopy", "bed.leaves", "bed.crickets", "bed.lake", "bed.walls"]
@@ -122,7 +168,7 @@ export class Soundscape {
   /** Solo one layer (listening page, Lab); null plays everything. */
   solo: SoundLayer | null = null
   /** Distant events played, for automation. */
-  readonly heard: { sound: DistantSound; distance: number; delay: number; time: number }[] = []
+  readonly heard: { sound: DistantSound | "creature"; distance: number; delay: number; time: number }[] = []
 
   private readonly outdoor: BiquadFilterNode
   private readonly outdoorGain: GainNode
@@ -416,6 +462,54 @@ export class Soundscape {
     this.voices.add(voice)
     src.onended = () => { this.voices.delete(voice); for (const n of [src, lp, lp2, fade, dry, wet, pan]) n.disconnect() }
     src.start(at)
+    return { distance: d, delay }
+  }
+
+  private crashes = new Map<number, AudioBuffer>()
+
+  /**
+   * The creature going through the brush along its path, as quiet as a far branch knock: positional (the panner moves
+   * with it), with travel delay, distance low-pass and the forest reverb; the crickets near you hush for a moment.
+   */
+  creature(e: CreatureEvent, l: Listener, simNow: number, ground: (x: number, z: number) => number): { distance: number; delay: number } | null {
+    if (!this.on("distant")) return null
+    const take = Math.round(e.seed * 1000) % 3, dur = Math.round(e.dur * 10) / 10, key = take * 100 + dur * 10
+    let buffer = this.crashes.get(key)
+    if (!buffer) this.crashes.set(key, (buffer = brushCrash(this.ctx, take / 3 + 0.17, dur)))
+    const ctx = this.ctx
+    const mx = (e.x0 + e.x1) / 2, mz = (e.z0 + e.z1) / 2, y = ground(mx, mz) + 0.4
+    const d = Math.hypot(mx - l.x, y - l.y, mz - l.z)
+    const delay = Math.max(0, d / SPEED_OF_SOUND - Math.max(0, simNow - e.at))
+    const at = ctx.currentTime + delay + 0.01
+    const src = ctx.createBufferSource()
+    src.buffer = buffer
+    const lp = ctx.createBiquadFilter()
+    lp.type = "lowpass"
+    lp.frequency.value = distanceCutoff(d)
+    lp.Q.value = 0.5
+    const level = this.settings.distantLevel * CREATURE_LEVEL
+    const dry = ctx.createGain()
+    dry.gain.value = level * distanceGain(d)
+    const wet = ctx.createGain()
+    wet.gain.value = level * 0.45 * (0.3 + 0.7 * Math.min(1, d / 220))
+    const pan = this.panner(true)
+    const y0 = ground(e.x0, e.z0) + 0.4, y1 = ground(e.x1, e.z1) + 0.4
+    Soundscape.place(pan, e.x0, y0, e.z0, at)
+    if (pan.positionX) { pan.positionX.linearRampToValueAtTime(e.x1, at + e.dur); pan.positionY.linearRampToValueAtTime(y1, at + e.dur); pan.positionZ.linearRampToValueAtTime(e.z1, at + e.dur) }
+    const fade = ctx.createGain()
+    src.connect(lp)
+    lp.connect(fade)
+    fade.connect(dry)
+    dry.connect(pan)
+    pan.connect(this.outdoor)
+    fade.connect(wet)
+    wet.connect(this.verbIn)
+    const voice: Voice = { src, fade, at, distant: false, faded: false }
+    this.voices.add(voice)
+    src.onended = () => { this.voices.delete(voice); for (const n of [src, lp, fade, dry, wet, pan]) n.disconnect() }
+    src.start(at)
+    this.hush.push({ from: at, to: at + 2.5 })
+    this.heard.push({ sound: "creature", distance: Math.round(d), delay: Math.round(delay * 100) / 100, time: ctx.currentTime })
     return { distance: d, delay }
   }
 

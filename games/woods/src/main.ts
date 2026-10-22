@@ -9,12 +9,14 @@ import { AdaptiveQualityController, loadSavedQualityMode, saveQualityMode, type 
 import { FOREST_QUALITY } from "@arcade/kit/forest/settings"
 import type { ForestTorch } from "@arcade/kit/forest/view"
 import { randomRoomCode } from "@arcade/kit/sim/matchmaking"
+import { planCreature, triggerCreature, trunkBetween, type CreatureEvent } from "../shared/creature"
 import { ROOM_CODE } from "../shared/protocol"
-import { beamLevel, EYE_HEIGHT, TAPE_HEIGHT, FEEL, tapeOnTree, tieTarget, viewDir, type Player, type PlayerInput } from "../shared/sim"
-import { dockAt, lakeDistance, makeWorld, standHeight, trailDistance, type WoodsWorld } from "../shared/world"
+import { beamLevel, EYE_HEIGHT, TAPE_HEIGHT, FEEL, SIGNAL_HOLD_SECONDS, tapeOnTree, tieTarget, viewDir, type Player, type PlayerInput } from "../shared/sim"
+import { dockAt, isDeepWater, lakeDistance, makeWorld, standHeight, trailDistance, type WoodsWorld } from "../shared/world"
 import { WoodsAudio } from "./audio"
 import { WoodsCamera } from "./camera"
 import { CameraLook, stageCameraLab } from "./camera-look"
+import { CreatureView } from "./creature-view"
 import { FEEL_CONTROLS } from "./feel-controls"
 import { FriendsView } from "./friends-view"
 import { PaperMap } from "./map"
@@ -64,6 +66,7 @@ async function main() {
   const view = await WorldView.create(gpu, world, { smoke, quality: quality.getActiveTier() })
   const renderer = view.renderer
   const friends = new FriendsView(renderer, params.get("people") === "real")
+  const creatures = new CreatureView(renderer)
   if (params.get("smooth") === "0") friends.smooth = false
   const map = new PaperMap(document.body)
   const audio = new WoodsAudio()
@@ -98,6 +101,7 @@ async function main() {
     { key: "woods.smoothFriends", field: "smooth", label: "Smooth friends", group: "Friends", subsection: "Drawing", type: "toggle" },
     { key: "woods.beamSettle", field: "beamSettle", label: "Friend beam settle", group: "Friends", subsection: "Drawing", min: 0.02, max: 0.4, step: 0.01, unit: "s" },
   ])
+  panel.addControls({}, [{ key: "creatureTrigger", label: "Trigger now", group: "Creature", type: "action", run: () => { creature.trigger() } }])
   // Camera looks and realism effects (Lab › Camera look): a post chain after the forest's own camera, all off by default.
   const cameraLook = new CameraLook({ renderer, device, format: canvasFormat, camera, forest: view.forest, panel, params, smoke, seed: world.params.seed })
   audio.bindControls(panel, () => menu.sync())
@@ -249,6 +253,50 @@ async function main() {
     rosterSeen = here
   }
 
+  /**
+   * The creature's Lab hooks. Trigger now places a sighting at once by the schedule's own rules (solo: in the sim, so it
+   * plays like a scheduled one; a room: on this machine only). With no friend's light 48 m out to cross, solo stages
+   * one: a friend 70 m ahead signalling, then it triggers a second later when the shaft is up.
+   */
+  const creature = {
+    stageAt: 0,
+    last: null as CreatureEvent | null,
+    trigger(): CreatureEvent | null {
+      const state = session instanceof SoloSession ? session.state : session.view
+      let e: CreatureEvent | null = null
+      if (session instanceof SoloSession) {
+        e = triggerCreature(session.state.distant, world, session.state.players, session.state.t, settings, SIGNAL_HOLD_SECONDS)
+        if (e) session.inject(e)
+      } else {
+        const plan = planCreature(world, state.players.map((p) => (p.id === session.me ? { ...p, yaw: camera.yaw, pitch: camera.pitch } : p)), settings, { seed: (time * 1000) | 0 }, SIGNAL_HOLD_SECONDS, true)
+        if (plan) { e = { kind: "creature", at: state.t, x0: plan.x0, z0: plan.z0, x1: plan.x1, z1: plan.z1, dur: plan.dur, seed: plan.seed, seq: -1 }; creatures.start(e, time); audio.event(e) }
+      }
+      if (e) { creature.last = e; return e }
+      if (session instanceof SoloSession && !creature.stageAt && creature.stage()) { creature.stageAt = time + 1.2; say("A friend is signalling up ahead…", 2); return null }
+      say("Nothing for it to cross: it needs a friend's light 48 m or more away in sight.", 4)
+      return null
+    },
+    /** Solo: a friend 70 m ahead, in sight, beam up (Trigger now's backdrop). */
+    stage(): boolean {
+      if (!(session instanceof SoloSession)) return false
+      const st = session.state, me = session.self
+      const brain = st.brains[0], bot = brain && st.players.find((p) => p.id === brain.id)
+      if (!brain || !bot) return false
+      for (const off of [0, 0.08, -0.08, 0.16, -0.16, 0.25, -0.25, 0.35, -0.35]) for (const d of [70, 64, 76, 58, 84]) {
+        const yaw = camera.yaw + off, x = me.x - Math.sin(yaw) * d, z = me.z - Math.cos(yaw) * d
+        const h = world.params.half - 8
+        if (Math.abs(x) > h || Math.abs(z) > h || isDeepWater(world, x, z) || trunkBetween(world, me.x, me.z, x, z, 0.3)) continue
+        Object.assign(bot, { x, z, vx: 0, vz: 0, light: true })
+        brain.mode = "found"; brain.timer = 24
+        return true
+      }
+      return false
+    },
+    frame() {
+      if (creature.stageAt && time >= creature.stageAt) { creature.stageAt = 0; creature.trigger() }
+    },
+  }
+
   function loop(now: number) {
     if (paused) last = now
     else frame(now)
@@ -302,6 +350,7 @@ async function main() {
     roster(now)
     {
       for (const e of session.drain()) {
+        if (e.kind === "creature") { creatures.start(e, time, state.t - e.at); audio.event(e); continue }
         audio.event(e)
         if (e.kind === "distant") cameraLook.event(e)
         const mine = "by" in e && e.by === meId
@@ -367,7 +416,8 @@ async function main() {
     }
     // The smoke draws offscreen and synchronously (a presented frame makes SwiftShader's GPU process wait on it).
     if (smoke && (!smokeTarget || smokeTarget.width !== width || smokeTarget.height !== height)) { smokeTarget?.destroy(); smokeTarget = device.createTexture({ size: [width, height], format: canvasFormat, usage: GPUTextureUsage.RENDER_ATTACHMENT }) }
-    view.frame({ eye: [camera.eye[0], camera.eye[1], camera.eye[2]], viewProj: vp as Float32Array, width, height, time: state.t, dt, fovY: ((camera.fov + camera.mount.fov) * Math.PI) / 180, torches, fp, place, casters: friends.casters(ownOrigin, view.forest.settings.torchReach) }, stepping, smokeTarget?.createView())
+    creature.frame()
+    view.frame({ eye: [camera.eye[0], camera.eye[1], camera.eye[2]], viewProj: vp as Float32Array, width, height, time: state.t, dt, fovY: ((camera.fov + camera.mount.fov) * Math.PI) / 180, torches, fp, place, casters: friends.casters(ownOrigin, view.forest.settings.torchReach), batches: creatures.frame(world, time) }, stepping, smokeTarget?.createView())
     // Frame time alone decides: the renderer's GPU reading runs from before encoding to the queue finishing, so it
     // counts CPU work and queue waits and read over budget on GPUs that hold 60 fps at High.
     if (!smoke && playing && quality.recordFrame(frameMs)) { view.forest.setQuality(quality.getActiveTier()); menu.sync() }
@@ -397,7 +447,7 @@ async function main() {
   Object.assign(window, {
     woods: {
       get ready() { return true }, get frames() { return frames }, get paused() { return paused }, set paused(v: boolean) { paused = v },
-      renderer, camera, settings, panel, map, debug, audio, story, view, look: view.forest.settings, quality, friends, cameraLook,
+      renderer, camera, settings, panel, map, debug, audio, story, view, look: view.forest.settings, quality, friends, cameraLook, creature, creatures,
       measure: (n?: number) => view.forest.measure(n), stats: () => view.forest.stats(),
       get state() { return session instanceof SoloSession ? session.state : session.view }, get world() { return world }, get session() { return session },
       /** Automation: room readout (your id, people and walkers seen, tapes, bytes in, KB/s, connection status). */

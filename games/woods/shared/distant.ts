@@ -1,3 +1,4 @@
+import { createCreature, type CreatureState } from "./creature"
 import { lakeDistance, nextRandom, terrainHeight, treesNear, type WoodsWorld } from "./world"
 
 /**
@@ -41,6 +42,8 @@ export type DistantState = {
   quietUntil: number
   /** The last event is still sounding until about here, travel time included. */
   busyUntil: number
+  /** The creature's sightings (`shared/creature.ts`): its own seeded stream, sharing `busyUntil` with the sounds. */
+  creature: CreatureState
 }
 
 type Place = "lake" | "woods" | "tree" | "canopy" | "camp" | "beyond"
@@ -75,7 +78,7 @@ const SPEED_OF_SOUND = 343
 
 export function createDistant(seed: number): DistantState {
   const rng = { seed: (seed * 2654435761) | 0 }
-  return { rng, next: 70 + 50 * nextRandom(rng), seq: 0, recent: [], quietUntil: 0, busyUntil: 0 }
+  return { rng, next: 70 + 50 * nextRandom(rng), seq: 0, recent: [], quietUntil: 0, busyUntil: 0, creature: createCreature(seed) }
 }
 
 /** Keep the woods quiet until `until` (a signal, a friend speaking); a due event waits for it. */

@@ -1,4 +1,5 @@
 import { stepBody } from "@arcade/kit/sim/move"
+import { stepCreature, type CreatureEvent } from "./creature"
 import { createDistant, holdDistant, stepDistant, type DistantEvent, type DistantState } from "./distant"
 import { BOT_ORDER, CAST_NAMES, createVoices, stepVoices, voicesBusyUntil, type VoiceCue, type VoiceEvent, type VoiceState } from "./voices"
 import { isDeepWater, nextRandom, solidsNear, standHeight, treesNear, type Tree, type WoodsWorld } from "./world"
@@ -47,6 +48,15 @@ export const FEEL = {
   chatter: 1,
   /** People's own searchers speak at key moments (a find, a sighting): 1 on, 0 never. */
   voicePeople: 1,
+  /** The thing in the woods (`shared/creature.ts`): off until Kit has seen it; a room runs these defaults. */
+  creature: false,
+  /** How often it comes (×; 1 ≈ every five minutes when there's a light to cross). */
+  creatureRate: 1,
+  /** How far from whoever sees it (m). */
+  creatureNear: 45,
+  creatureFar: 80,
+  /** Its running speed (m/s). */
+  creatureSpeed: 11,
 }
 export type Feel = typeof FEEL
 
@@ -122,6 +132,8 @@ export type WoodsEvent =
   | DistantEvent
   /** A searcher says a line (`shared/voices.ts`): the same line, place and emission time for every player. */
   | VoiceEvent
+  /** The creature crossing in front of a distant light (`shared/creature.ts`), seen by everyone at the same moment. */
+  | CreatureEvent
 
 export type WoodsState = {
   t: number
@@ -467,7 +479,9 @@ export function stepWoods(state: WoodsState, world: WoodsWorld, inputs: Readonly
   if (state.players.some((p) => p.signal > SIGNAL_HOLD)) holdDistant(state.distant, state.t + DISTANT_AFTER_SIGNAL)
   const sound = stepDistant(state.distant, world, state.players.filter((p) => !p.bot), state.t, feel.distantRate)
   if (sound) state.events.push(sound)
-  // The creature's crossing (`shared/creature.ts`) is read by kind, so this works either side of it landing.
+  const creature = stepCreature(state.distant, world, state.players, state.t, feel, SIGNAL_HOLD)
+  if (creature) state.events.push(creature)
+  // A sighting cues the searchers too (`VOICE_CUES`).
   const cues = (state.events as readonly { kind: string }[]).filter((e) => VOICE_CUES.has(e.kind)) as VoiceCue[]
   state.events.push(...stepVoices(state.voices, world, state.players, cues, state.t, dt, feel, BOT_ID))
   holdDistant(state.distant, voicesBusyUntil(state.voices))

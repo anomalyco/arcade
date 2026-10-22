@@ -1,10 +1,11 @@
 import { SoundBank } from "@arcade/kit/audio"
 import { Footsteps, type FootEvent, type FootSurface } from "@arcade/kit/audio/footsteps"
 import type { LabControl, LabPanel } from "@arcade/kit/lab-panel"
+import type { CreatureEvent } from "../../shared/creature"
 import { DISTANT_SOUNDS, placeDistant, type DistantEvent, type DistantSound } from "../../shared/distant"
 import { SIGNAL_HOLD_SECONDS, type WoodsEvent, type WoodsState } from "../../shared/sim"
 import type { VoiceEvent } from "../../shared/voices"
-import type { WoodsWorld } from "../../shared/world"
+import { groundHeight, type WoodsWorld } from "../../shared/world"
 import { WOODS_SFX } from "../sfx"
 import { SOUND, SOUND_CONTROLS, type SoundSettings } from "./settings"
 import { Soundscape, type Listener, type SoundLayer } from "./soundscape"
@@ -63,6 +64,8 @@ export type TapeFrame = {
   distant: DistantEvent[]
   /** Searchers' lines (`shared/voices.ts`). */
   voices?: VoiceEvent[]
+  /** The creature's brush crashes that started this frame. */
+  creature?: CreatureEvent[]
   /** Someone was signalling (distant sounds that start now fade out). */
   signal?: boolean
 }
@@ -85,8 +88,8 @@ export class WoodsAudio {
   /** Set to [] to record a tape (automation). */
   tape: TapeFrame[] | null = null
   private tapeTime = 0
-  private pending: Pick<TapeFrame, "steps" | "distant" | "voices"> = { steps: [], distant: [], voices: [] }
-  private queued: DistantEvent[] = []
+  private pending: Pick<TapeFrame, "steps" | "distant" | "voices"> & { creature: CreatureEvent[] } = { steps: [], distant: [], voices: [], creature: [] }
+  private queued: (DistantEvent | CreatureEvent)[] = []
   private queuedVoices: VoiceEvent[] = []
   /** Lines heard before the mix existed (the context still starting): said once it does, unless long gone. */
   private waitingVoices: VoiceEvent[] = []
@@ -182,6 +185,11 @@ export class WoodsAudio {
     } else if (this.live) this.quiet()
     const mix = this.live ? this.ensureMix() : null
     for (const e of this.queued) {
+      if (e.kind === "creature") {
+        this.pending.creature.push(e)
+        if (mix?.scape.loaded) mix.scape.creature(e, this.listener, this.sim, (x, z) => groundHeight(world, x, z))
+        continue
+      }
       this.pending.distant.push(e)
       if (mix?.scape.loaded) mix.scape.distant(e, this.listener, this.sim)
     }
@@ -208,7 +216,7 @@ export class WoodsAudio {
       this.tapeTime += dt
       this.tape.push({ t: this.tapeTime, sim: state.t, l: this.listener, signal: signalling, ...this.pending })
     }
-    this.pending = { steps: [], distant: [], voices: [] }
+    this.pending = { steps: [], distant: [], voices: [], creature: [] }
     if (!mix) return
     const v = this.bank.volumes
     mix.levels(v.volumeMaster / 100, v.volumeEffects / 100, v.volumeAmbience / 100, this.bank.muted, v.volumeVoice / 100)
@@ -218,7 +226,7 @@ export class WoodsAudio {
 
   /** The session's events: a distant event plays where it happens, on the next `frame` (with that frame's clock). */
   event(e: WoodsEvent): void {
-    if (e.kind === "distant" && (this.live || this.tape)) this.queued.push(e)
+    if ((e.kind === "distant" || e.kind === "creature") && (this.live || this.tape)) this.queued.push(e)
     // Lines are read even while the woods are silent (subtitles), but only once you're out there.
     if (e.kind === "voice" && (this.live || this.tape)) this.queuedVoices.push(e)
   }
@@ -288,6 +296,7 @@ export class WoodsAudio {
         for (const e of f.distant) mix.scape.distant(e, f.l, f.sim)
         mix.voices.update(f.l)
         for (const e of f.voices ?? []) mix.voices.say(e, f.l, f.sim)
+        for (const e of f.creature ?? []) mix.scape.creature(e, f.l, f.sim, (x, z) => groundHeight(world, x, z))
         void ctx.resume()
       })
     }

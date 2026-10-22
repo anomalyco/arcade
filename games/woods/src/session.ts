@@ -99,6 +99,10 @@ export class SoloSession implements Session {
     this.events = []
     return out
   }
+  /** An event made outside a tick (the Lab's creature Trigger now), played like the sim's own. */
+  inject(e: WoodsEvent) {
+    this.events.push(e)
+  }
   status() {
     return null
   }

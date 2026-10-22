@@ -4,6 +4,8 @@ import { BUILD } from "../shared/build.gen"
 import { BOT_ID, MAX_TAPES, TRAIL_MAX, tieTarget, type MapKnowledge } from "../shared/sim"
 import { applyMapDelta, decodeServer, packIntent, ROOM_FEEL, TEAM, tapeFromRow, type ServerMsg, type Snapshot } from "../shared/protocol"
 import type { PlayerInput } from "../shared/sim"
+import { trunkBetween } from "../shared/creature"
+import { isDeepWater } from "../shared/world"
 
 /** A fake client that keeps what a real one would: the tapes (join list + events) and its map (from deltas). */
 type Client = { conn: { send(d: string): void; close(): void }; got: ServerMsg[]; keep: boolean; bytes: number; biggest: number; token?: string; seq: number; closed: boolean; tapes: Map<number, number>; map: MapKnowledge }
@@ -161,6 +163,41 @@ test("every person hears the room's distant sounds as the same events", () => {
   const heard = (c: Client) => c.got.flatMap((m) => (m.type === "ev" ? m.events.filter((e) => e.kind === "distant") : []))
   expect(heard(a).length).toBe(1)
   expect(heard(b)).toEqual(heard(a))
+})
+
+test("everyone in a room sees the creature as the same event at the same moment", () => {
+  const { tick, connect, room } = setup()
+  const a = connect("Kit"), b = connect("Aiden")
+  tick(2)
+  // Kit faces a bot that holds its beam up, 100 m off over open ground: something to cross.
+  const kit = room.state.players.find((p) => p.name === "Kit")!, aiden = room.state.players.find((p) => p.name === "Aiden")!
+  const bot = room.state.players.find((p) => p.bot)!, brain = room.state.brains.find((x) => x.id === bot.id)!
+  const was = { ...ROOM_FEEL }
+  Object.assign(ROOM_FEEL, { creature: true })
+  try {
+    let found = false
+    for (let x = -150; x <= 150 && !found; x += 9) for (let z = -150; z <= 150 && !found; z += 9) {
+      const bx = x + 100, bz = z
+      if (Math.abs(bx) > 180 || trunkBetween(room.world, x, z, bx, bz, 0.3) || isDeepWater(room.world, x, z) || isDeepWater(room.world, bx, bz)) continue
+      Object.assign(kit, { x, z }); Object.assign(aiden, { x: x - 2, z }); Object.assign(bot, { x: bx, z: bz })
+      found = true
+    }
+    expect(found).toBe(true)
+    room.state.distant.creature.next = room.state.distant.creature.tryAt = room.state.t + 0.2
+    room.state.distant.busyUntil = 0
+    for (let i = 0; i < 90; i++) {
+      const p = { x: kit.x, z: kit.z }
+      brain.mode = "found"; brain.timer = 24
+      Object.assign(bot, { vx: 0, vz: 0 })
+      // Hold Kit and Aiden still, looking east at the bot.
+      kit.yaw = aiden.yaw = -Math.PI / 2
+      tick()
+      Object.assign(kit, p); Object.assign(aiden, { x: p.x - 2, z: p.z })
+    }
+  } finally { Object.assign(ROOM_FEEL, was) }
+  const seen = (c: Client) => c.got.flatMap((m) => (m.type === "ev" ? m.events.filter((e) => e.kind === "creature") : []))
+  expect(seen(a).length).toBe(1)
+  expect(seen(b)).toEqual(seen(a))
 })
 
 test("bandwidth: a 6-person room stays small per player", () => {

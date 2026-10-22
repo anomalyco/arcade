@@ -1,7 +1,7 @@
 import type { FogLamp } from "@arcade/kit/gpu/fog-scatter"
 import type { FrameParts } from "@arcade/kit/gpu/frame-parts"
 import { MAT, Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
-import type { Renderer } from "@arcade/kit/gpu/renderer"
+import type { Batch, Renderer } from "@arcade/kit/gpu/renderer"
 import type { SceneLight } from "@arcade/kit/gpu/scene-frame"
 import type { SpotShadowCaster } from "@arcade/kit/gpu/shadows/spot-shadows"
 import { createForestView, type ForestGlow, type ForestTorch, type ForestView } from "@arcade/kit/forest/view"
@@ -79,6 +79,8 @@ export type WorldFrame = {
   place: PlaceLights
   /** Moving torch-shadow casters (realistic friends). */
   casters?: readonly SpotShadowCaster[]
+  /** Batches drawn beside `fp`'s (the creature's, which go into the TAA reactive mask). */
+  batches?: readonly Batch[]
 }
 
 /**
@@ -187,7 +189,7 @@ export class WorldView {
   frame(f: WorldFrame, sync = false, target?: GPUTextureView): void {
     this.forest[sync || target ? "update" : "frame"]({
       eye: f.eye, viewProj: f.viewProj, width: f.width, height: f.height, time: f.time, dt: f.dt, fovY: f.fovY, torches: f.torches,
-      batches: f.fp.batches(), sprites: { alpha: f.fp.alpha, alphaCount: f.fp.nAlpha, add: f.fp.add, addCount: f.fp.nAdd },
+      batches: f.batches?.length ? [...f.fp.batches(), ...f.batches] : f.fp.batches(), sprites: { alpha: f.fp.alpha, alphaCount: f.fp.nAlpha, add: f.fp.add, addCount: f.fp.nAdd },
       lights: f.place.scene, fogLamps: f.place.fog, glows: this.glows, casters: f.casters,
     })
     if (sync || target) this.forest.drawTo(target)
