@@ -1,6 +1,6 @@
 # Shared night sky ledger
 
-Branch: night-sky, rebased onto `0a28cd80` (origin/main, 22 October 2026).
+Branch: night-sky, rebased onto `5d61493a` (origin/main, 22 October 2026).
 
 ## Goal
 
@@ -67,6 +67,11 @@ Nothing pushed. The adapters are candidates; actual visibility and verification 
 - The dome now uses the same selected daylight value as the stars; host-clock mode no longer
   overrides the host with a brighter astronomical twilight in the shader.
 - Existing review-gallery Physical frames predate these two shader corrections; Today is unchanged.
+- Shipping checks via HiveMind: 180/181 sky/GPU tests passed on the initial job, which unexpectedly
+  spilled from Pro to loaded Studio despite `--worker pro`; the foliage blight case exceeded its 5 s
+  limit. With `HIVEMIND_STRICT_PIN=1`, that single case passed on Pro without changing the test.
+  Kit, root scripts, Lab/client+server, Lot, Night Shift and Outbreak/client+server typechecks pass.
+  Outbreak required its normal build-id generation before the clean-worker typecheck.
 
 ## Remaining limits
 
