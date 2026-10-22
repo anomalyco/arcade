@@ -18,14 +18,16 @@ import type { NetSession } from "../net-session"
 import { SURVIVORS, survivorSpec, type SurvivorLookSpec } from "./survivors"
 import { lobbyKeyAction } from "./keys"
 import { lobbyWaitingOn } from "./waiting"
+import { parseRunSeed, runSeedCode, runSeedLink, runSeedLocation, type RunSeed } from "./run-seed"
 
-export type LobbyMode = "closed" | "start" | "coop"
+export type LobbyMode = "closed" | "start" | "coop" | "pause"
 
 export type OutbreakLobbyCallbacks = {
   onStartSolo: (variant: SurvivorVariant, loadout: LoadoutId, name: string) => void
   onHostCoop: (variant: SurvivorVariant, loadout: LoadoutId, name: string) => void
   onJoinCoop: (room: string, variant: SurvivorVariant, loadout: LoadoutId, name: string) => void
   onLeaveCoop: () => void
+  onReturnToLobby: () => void
   onPickChange: (patch: { variant?: SurvivorVariant; loadout?: LoadoutId; name?: string }) => void
 }
 
@@ -116,6 +118,7 @@ export class OutbreakLobby {
   private lastKey = ""
   private net: NetSession | null = null
   private practising = false
+  private run: RunSeed = { seed: 7, houseSeed: 7, terrain: 0.22 }
 
   constructor(
     parent: HTMLElement,
@@ -168,10 +171,26 @@ export class OutbreakLobby {
   }
 
   openStart(): void {
+    if (this.mode === "pause") window.dispatchEvent(new Event("outbreak-menu-close"))
     this.mode = "start"
     this.joinError = null
     this.root.hidden = false
     this.render(true)
+  }
+
+  syncRun(run: RunSeed): void {
+    this.run = { seed: run.seed, houseSeed: run.houseSeed, terrain: run.terrain }
+  }
+
+  openPause(): void {
+    if (this.isOpen) return
+    this.mode = "pause"
+    this.practice = false
+    this.tuck(false)
+    this.root.hidden = false
+    window.dispatchEvent(new Event("outbreak-menu-open"))
+    this.render(true)
+    this.root.querySelector<HTMLButtonElement>('[data-act="resume"]')?.focus()
   }
 
   openCoop(net: NetSession): void {
@@ -183,6 +202,9 @@ export class OutbreakLobby {
   }
 
   close(): void {
+    if (this.mode === "pause") window.dispatchEvent(new Event("outbreak-menu-close"))
+    const active = document.activeElement
+    if (active instanceof HTMLElement && this.root.contains(active)) active.blur()
     this.mode = "closed"
     this.root.hidden = true
     this.lastKey = ""
@@ -252,6 +274,10 @@ export class OutbreakLobby {
   private onInput(e: Event): void {
     const target = e.target as HTMLInputElement | null
     if (!target) return
+    if (target.dataset.role === "run-seed") {
+      target.setCustomValidity("")
+      return
+    }
     if (target.dataset.role === "name") {
       const cleaned = cleanPlayerName(target.value, MAX_NAME, "Survivor")
       this.name = cleaned
@@ -282,6 +308,17 @@ export class OutbreakLobby {
 
   private onGlobalKeyDown(e: KeyboardEvent): void {
     if (!this.isOpen) return
+    if (this.mode === "pause" && e.code === "Escape") {
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      this.close()
+      return
+    }
+    if (this.mode === "pause") {
+      // Native editing/navigation still works, but modified keys must not queue gameplay actions either.
+      if (e.code !== "Backquote") e.stopImmediatePropagation()
+      return
+    }
     const active = document.activeElement
     if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "SELECT")) return
     if (e.metaKey || e.ctrlKey || e.altKey || e.code === "Backquote") return
@@ -338,7 +375,43 @@ export class OutbreakLobby {
       return
     }
     const act = el.dataset.act
-    if (act) this.act(act === "ready" ? "toggle-ready" : act)
+    if (act === "resume") {
+      this.close()
+    } else if (act === "loadout") {
+      this.openStart()
+      this.callbacks.onReturnToLobby()
+    } else if (act === "copy-seed") {
+      const button = el as HTMLButtonElement
+      void this.copySeed(button)
+    } else if (act === "play-seed") {
+      const input = this.root.querySelector<HTMLInputElement>('[data-role="run-seed"]')!
+      const seed = parseRunSeed(input.value)
+      input.setCustomValidity(seed ? "" : "Enter a seed from 0 to 4294967295, or a town.house seed.")
+      if (!input.reportValidity() || !seed) return
+      location.assign(this.localRunLink({ ...this.run, ...seed }))
+    } else if (act === "restart-run") {
+      location.assign(this.localRunLink(this.run))
+    } else if (act === "new-town") {
+      const seed = crypto.getRandomValues(new Uint32Array(1))[0]!
+      location.assign(this.localRunLink({ ...this.run, seed, houseSeed: seed }))
+    } else if (act) {
+      this.act(act === "ready" ? "toggle-ready" : act)
+    }
+  }
+
+  private localRunLink(run: RunSeed): string {
+    return runSeedLocation(run, location.href)
+  }
+
+  private async copySeed(button: HTMLButtonElement): Promise<void> {
+    const link = runSeedLink(this.run)
+    try {
+      await navigator.clipboard.writeText(link)
+      button.textContent = "Link copied"
+    } catch {
+      button.textContent = link
+    }
+    setTimeout(() => (button.textContent = "Copy replay link"), 2400)
   }
 
   /** Starts solo; the first time in a browser (or with `training`, always) it begins in the training room (AR-89). */
@@ -391,6 +464,26 @@ export class OutbreakLobby {
 
   render(force = false): void {
     if (this.mode === "closed") return
+    if (this.mode === "pause") {
+      if (!force) return
+      this.root.innerHTML = `<div class="ob-lobby-dialog hud-panel" role="dialog" aria-modal="true" aria-labelledby="ob-pause-title">
+        <h1 id="ob-pause-title" class="ob-lobby-title">Paused</h1>
+        <button type="button" class="ob-lobby-btn is-primary" data-act="resume">Resume ${keyCapHtml("Escape")}</button>
+        <label class="ob-lobby-callsign"><span class="ob-lobby-label">Seed</span>
+          <input class="ob-lobby-input" data-role="run-seed" value="${runSeedCode(this.run)}" inputmode="decimal" autocomplete="off" spellcheck="false" />
+        </label>
+        <div class="ob-lobby-primary-actions">
+          <button type="button" class="ob-lobby-btn" data-act="copy-seed">Copy replay link</button>
+          <button type="button" class="ob-lobby-btn" data-act="play-seed">Play seed</button>
+        </div>
+        <div class="ob-lobby-primary-actions">
+          <button type="button" class="ob-lobby-btn" data-act="restart-run">Restart</button>
+          <button type="button" class="ob-lobby-btn" data-act="new-town">New town</button>
+          <button type="button" class="ob-lobby-btn" data-act="loadout">Lobby</button>
+        </div>
+      </div>`
+      return
+    }
     const activeEl = document.activeElement as HTMLInputElement | null
     const editingInput = activeEl && this.root.contains(activeEl) && activeEl.tagName === "INPUT"
     if (editingInput && !force) return
@@ -1166,4 +1259,3 @@ body:has(.ob-lobby-backdrop.is-practice:not([hidden]):not([data-tucked="true"]))
 `
   document.head.appendChild(style)
 }
-

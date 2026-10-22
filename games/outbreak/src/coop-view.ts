@@ -74,7 +74,7 @@ export class CoopView {
     this.net = net
     this.room = room
     this.hud = new CoopHud(net, room, {
-      onOpenLobby: () => this.lobby?.openStart(),
+      onOpenLobby: () => this.lobby?.openPause(),
       onLeaveRoom: () => this.leaveRoom(),
     })
     this.hud.root.hidden = !menu && !net
@@ -103,6 +103,7 @@ export class CoopView {
               this.connectRoom(code, name, variant, loadout, true)
             },
             onLeaveCoop: () => this.leaveRoom(),
+            onReturnToLobby: () => this.onSessionChange?.(),
             onPickChange: (patch) => {
               if (patch.variant !== undefined) this.soloVariant = patch.variant
               if (patch.loadout !== undefined) this.soloLoadout = patch.loadout
@@ -123,7 +124,7 @@ export class CoopView {
     }
   }
 
-  /** True while the Start/Loadout screen or pre-game Co-op Lobby is open over a still frame (no practice space). */
+  /** True for the solo pause menu or a lobby without a live practice space. */
   get paused(): boolean {
     return Boolean(this.lobby?.isOpen) && !this.practising
   }
@@ -355,6 +356,7 @@ export class CoopView {
   /** Menu, roster and name tags; call after the camera is updated. */
   overlay(cam: Camera, w: number, h: number, town: Town, vision: Vision, localPlayer?: { x: number; y: number }): void {
     this.hud.update()
+    this.lobby?.syncRun(town)
     this.syncLobby()
     if (this.paused) {
       this.hud.nameTags([])

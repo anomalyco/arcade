@@ -103,7 +103,7 @@ export const outbreakOnboardingFeature = registerOutbreakClientFeature({
     restart = ctx.restart
     const settings = ctx.settings.hud as unknown as TrainingSettings
     const lobby = ctx.coop.lobby
-    const practise = Boolean(lobby?.isOpen) && settings.lobbyPractice !== PRACTICE_OFF
+    const practise = (lobby?.mode === "start" || lobby?.mode === "coop") && settings.lobbyPractice !== PRACTICE_OFF
     if (lobby) lobby.practice = practise
     if (practise && lobby) {
       training = null

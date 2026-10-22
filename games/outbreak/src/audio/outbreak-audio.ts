@@ -126,6 +126,8 @@ export class OutbreakAudio {
     }, { signal })
     target.document.addEventListener("visibilitychange", () => (target.document.hidden ? this.silence() : void this.runtime.resume()), { signal })
     target.addEventListener("blur", () => this.silence(), { signal })
+    target.addEventListener("outbreak-menu-open", () => this.silence(), { signal })
+    target.addEventListener("outbreak-menu-close", () => void this.runtime.resume(), { signal })
     target.addEventListener("pagehide", () => this.dispose(), { signal })
   }
 
