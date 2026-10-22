@@ -70,7 +70,7 @@ try {
   page.on("requestfailed", request => errors.push(`${request.url()}: ${request.failure()?.errorText}`))
   page.on("response", response => { if (response.status() >= 400) errors.push(`${response.status()} ${response.url()}`) })
   // The Lab's bench mode exposes window.lab after its first frame and keeps audio locked.
-  const response = await page.goto(`http://127.0.0.1:${server.port}${prefix}${game === "lab" ? "?bench" : game === "lot" || game === "nightshift" ? "?smoke" : ""}`, { waitUntil: "load", timeout: 15_000 })
+  const response = await page.goto(`http://127.0.0.1:${server.port}${prefix}${game === "lab" ? "?bench" : game === "lot" || game === "nightshift" || game === "outbreak" ? "?smoke" : ""}`, { waitUntil: "load", timeout: 15_000 })
   assert.equal(response.status(), 200)
   // Require JS-created UI, not the static HTML shell. A missing GPU is an explicit
   // supported outcome for these WebGPU-only games, never a blanket error waiver. Interval polling, not the default

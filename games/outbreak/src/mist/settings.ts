@@ -2,15 +2,16 @@ import type { FogSettings } from "@arcade/kit/gpu/fog-scatter"
 import type { LabControl } from "@arcade/kit/lab-panel"
 
 /**
- * Low mist in yards and gutters (Lab › Look · Low mist, `mistStyle` 0 is Today): the kit's drifting fog bank (#359,
+ * Low mist in yards and gutters (Lab › Look · Low mist; on by default since Kit's pick, D-50, `mistStyle` 0 is Today): the kit's drifting fog bank (#359,
  * `fogScatterVolume({ atmosphere: true })`) retuned for Outbreak's camera. From 38 m above, the Lot's 4 m bank read as
- * ~6 % haze, so the mist here is a dense, knee-high layer that pools where the ground is low: thick in yards and in
- * the gutters along the kerbs, thin on the carriageway and sidewalks, none indoors (`mist/wgsl.ts` `outbreakMistMask`).
+ * ~6 % haze, so the mist here is a dense, knee-high layer that pools: against house walls, in hollows across the yards
+ * and in a line along the gutters, thin to nothing on the open road and none indoors or on roofs (`mist/wgsl.ts`
+ * `outbreakMistMask`). An even layer read as a flat grey wash from above; pooling keeps clear ground between the mist.
  * It is grey sky-lit air at night, takes colour only where a lamp's glow or the torch's beam is in it, and the sight
  * shroud dims it like everything else (it leaves the scene's colour mask in HDR alpha alone).
  */
 export type OutbreakMistSettings = {
-  /** 0 Today (no mist), 1 low mist. */
+  /** 0 Today (no mist), 1 low mist (default). */
   mistStyle: number
   /** Extinction inside the thickest mist, per metre. */
   mistDensity: number
@@ -30,7 +31,15 @@ export type OutbreakMistSettings = {
   mistGutters: number
   /** Mist over the road and sidewalks, × density. */
   mistRoads: number
-  /** Sky-lit mist brightness at night (kept near black: colour only in light). */
+  /** Mist banked up against house walls, × density. */
+  mistWalls: number
+  /** How far the mist against the walls reaches out, metres. */
+  mistWallReach: number
+  /** How much the yard mist gathers in hollows (0 an even layer over the yards). */
+  mistHollows: number
+  /** Size of the hollows the yard mist lies in, metres. */
+  mistHollowSize: number
+  /** Sky-lit mist brightness at night (0: the mist shows only where a lamp or the torch lights it, and the shroud stays black). */
   mistNight: number
   /** Sky-lit mist brightness by day. */
   mistDay: number
@@ -45,7 +54,7 @@ export type OutbreakMistSettings = {
 }
 
 export const DEFAULT_MIST_SETTINGS: OutbreakMistSettings = {
-  mistStyle: 0,
+  mistStyle: 1,
   mistDensity: 0.9,
   mistHeight: 1.1,
   mistScale: 5.5,
@@ -54,8 +63,12 @@ export const DEFAULT_MIST_SETTINGS: OutbreakMistSettings = {
   mistHeading: 210,
   mistYards: 1,
   mistGutters: 1.4,
-  mistRoads: 0.3,
-  mistNight: 0.006,
+  mistRoads: 0,
+  mistWalls: 1.2,
+  mistWallReach: 1.4,
+  mistHollows: 1,
+  mistHollowSize: 5,
+  mistNight: 0,
   mistDay: 0.05,
   mistLamps: 1.6,
   mistBeams: 6,
@@ -85,6 +98,10 @@ export const mistControls: readonly LabControl[] = [
   { key: "mistYards", label: "Yards", group: G, subsection: "Where it pools", min: 0, max: 2, step: 0.05, unit: "×" },
   { key: "mistGutters", label: "Gutters", group: G, subsection: "Where it pools", min: 0, max: 3, step: 0.05, unit: "×" },
   { key: "mistRoads", label: "Road and sidewalks", group: G, subsection: "Where it pools", min: 0, max: 2, step: 0.05, unit: "×" },
+  { key: "mistWalls", label: "Against walls", group: G, subsection: "Where it pools", min: 0, max: 3, step: 0.05, unit: "×" },
+  { key: "mistWallReach", label: "Wall reach", group: G, subsection: "Where it pools", min: 0.3, max: 5, step: 0.1, unit: "m" },
+  { key: "mistHollows", label: "Hollows", group: G, subsection: "Where it pools", min: 0, max: 1, step: 0.05, unit: "" },
+  { key: "mistHollowSize", label: "Hollow size", group: G, subsection: "Where it pools", min: 2, max: 30, step: 0.5, unit: "m" },
   { key: "mistNight", label: "Sky light at night", group: G, subsection: "Light", min: 0, max: 0.05, step: 0.001, unit: "" },
   { key: "mistDay", label: "Sky light by day", group: G, subsection: "Light", min: 0, max: 0.3, step: 0.005, unit: "" },
   { key: "mistLamps", label: "Lamp glow in the mist", group: G, subsection: "Light", min: 0, max: 5, step: 0.05, unit: "×" },
@@ -95,8 +112,8 @@ export const mistControls: readonly LabControl[] = [
 
 export const mistOn = (s: Pick<OutbreakMistSettings, "mistStyle"> | undefined): boolean => (s?.mistStyle ?? 0) > 0.5
 
-/** Floats in the mist mask's volume params: (yards, gutters, roads, 0). */
-export const MIST_PARAM_FLOATS = 4
+/** Floats in the mist mask's volume params: (yards, gutters, roads, on), (walls, hollows, 1 / hollow size, wall reach). */
+export const MIST_PARAM_FLOATS = 8
 
 /**
  * The fog the mist rides on: with the lamp fog at Today, a near-clear scatter medium (so only the bank and the beams
@@ -106,7 +123,9 @@ export function mistFogSettings(base: FogSettings, lampFogOn: boolean, m: Outbre
   Object.assign(out, base)
   out.mode = "scatter"
   if (!lampFogOn) {
-    out.density = 0.0015
+    // Next to no air of its own (a veil over the whole frame read as a grey wash); the lamps still scatter in the
+    // bank, whose share doesn't depend on this density (FogScatter divides it back out).
+    out.density = 0.00003
     out.falloff = 0.12
     out.strength = 0.25
     out.leak = 0.02

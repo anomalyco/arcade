@@ -13,17 +13,25 @@ import { lensStreetFlux, streetArm, streetLensGain, todayStreetFlux } from "../s
 import { DEFAULT_STREET_LAMP_SETTINGS, packStreetLampUniforms } from "../src/street-lamps/settings"
 import { packWindowRoomUniforms } from "../src/window-rooms/settings"
 
-describe("the four look ports default to Today", () => {
-  test("street lamps, mist, contact shadows and lit rooms are off", () => {
+describe("the four look ports are on by default (D-49 to D-52), Today one setting away", () => {
+  test("street lamps, mist, contact shadows and lit rooms are on", () => {
     const s = createOutbreakSettings()
-    expect(s.streetLamps.streetLampStyle).toBe(0)
+    expect(s.streetLamps.streetLampStyle).toBe(1)
+    expect(s.mist.mistStyle).toBe(1)
+    expect(s.contactShadows.contactShadowStyle).toBe(1)
+    expect(s.windowRooms.windowRoomStyle).toBe(1)
+  })
+
+  test("the CI smoke keeps the mist and contact shadows (their own pipelines) at Today", () => {
+    const s = createOutbreakSettings(new URLSearchParams("smoke"))
     expect(s.mist.mistStyle).toBe(0)
     expect(s.contactShadows.contactShadowStyle).toBe(0)
-    expect(s.windowRooms.windowRoomStyle).toBe(0)
+    expect(s.streetLamps.streetLampStyle).toBe(1)
+    expect(s.windowRooms.windowRoomStyle).toBe(1)
   })
 
   test("Today sends no contact-shadow pass", () => {
-    expect(contactVolumeInput(DEFAULT_CONTACT_SHADOW_SETTINGS, new Float32Array(8))).toBeNull()
+    expect(contactVolumeInput({ ...DEFAULT_CONTACT_SHADOW_SETTINGS, contactShadowStyle: 0 }, new Float32Array(8))).toBeNull()
     const on = contactVolumeInput({ ...DEFAULT_CONTACT_SHADOW_SETTINGS, contactShadowStyle: 1 }, new Float32Array(8))
     expect(on).toMatchObject({ downscale: 2, moving: DEFAULT_CONTACT_SHADOW_SETTINGS.csHistoryMoving })
     expect(Array.from(on!.params!).slice(0, 6)).toEqual([0.7, 0.35, 0.85, 80, 12, 2].map(Math.fround))
@@ -77,7 +85,7 @@ describe("lens street lamps", () => {
     packStreetLampUniforms({ ...DEFAULT_STREET_LAMP_SETTINGS, streetLampStyle: 1 }, [0, 1], out, 0)
     expect(out[4]).toBe(1)
     expect(Array.from(out.slice(8))).toEqual([0, 1, 0.22, 0.13].map(Math.fround))
-    packStreetLampUniforms(undefined, [1, 0], out, 0)
+    packStreetLampUniforms({ ...DEFAULT_STREET_LAMP_SETTINGS, streetLampStyle: 0 }, [1, 0], out, 0)
     expect(out[4]).toBe(0)
   })
 })
@@ -95,7 +103,7 @@ describe("low mist and lit rooms", () => {
     expect(OUTBREAK_WINDOW_ROOM_UNIFORM_OFFSET).toBe(OUTBREAK_STREET_LAMP_UNIFORM_OFFSET + 12)
     expect(OUTBREAK_LIGHTING_UNIFORM_FLOATS).toBe(OUTBREAK_WINDOW_ROOM_UNIFORM_OFFSET + 8)
     const out = new Float32Array(8)
-    packWindowRoomUniforms(undefined, out, 0)
+    packWindowRoomUniforms({ ...createOutbreakSettings().windowRooms, windowRoomStyle: 0 }, out, 0)
     expect(out[0]).toBe(0)
     packWindowRoomUniforms({ ...createOutbreakSettings().windowRooms, windowRoomStyle: 1 }, out, 0)
     expect(out[0]).toBe(1)

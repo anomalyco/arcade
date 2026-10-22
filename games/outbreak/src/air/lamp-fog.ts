@@ -3,7 +3,7 @@ import { createStreetLampSettings, type StreetLampSettings } from "@arcade/kit/g
 import type { FrameInput, VolumeInput } from "@arcade/kit/gpu/renderer"
 import type { LabControl } from "@arcade/kit/lab-panel"
 import { LIGHT_FLOATS } from "@arcade/kit/limits"
-import { mistFogSettings, mistOn, type OutbreakMistSettings } from "../mist/settings"
+import { MIST_PARAM_FLOATS, mistFogSettings, mistOn, type OutbreakMistSettings } from "../mist/settings"
 import type { OutbreakStreetLampSettings } from "../street-lamps/settings"
 
 /**
@@ -40,7 +40,7 @@ export type LampFogFrame = {
 const lamps: FogLamp[] = []
 const working = new FogScatter(createFogSettings())
 const street: StreetLampSettings = createStreetLampSettings()
-const mistParams = new Float32Array(4)
+const mistParams = new Float32Array(MIST_PARAM_FLOATS)
 
 /** The fog this frame (lamp fog, mist, or both) and its volume slot input; null with both at Today. */
 export function applyLampFog(render: FrameInput, frame: LampFogFrame): VolumeInput | null {
@@ -62,7 +62,8 @@ export function applyLampFog(render: FrameInput, frame: LampFogFrame): VolumeInp
     const kind = L[k + 11]!
     if (power <= 0.001) continue
     const id = L[k + 15]! >= 0 ? L[k + 15]! : 100000 + i
-    const base = { x: L[k]!, y: L[k + 1]!, z: L[k + 2]!, range: L[k + 3]!, color: [L[k + 4]!, L[k + 5]!, L[k + 6]!] as const, id }
+    // The glow map lights the mist only inside each lamp's reach (×1.5), so no lamp lifts mist out past its pool.
+    const base = { x: L[k]!, y: L[k + 1]!, z: L[k + 2]!, range: L[k + 3]!, color: [L[k + 4]!, L[k + 5]!, L[k + 6]!] as const, id, glowRange: mist ? L[k + 3]! * 1.5 : undefined }
     if (kind > 6.5) {
       // cone.z is the lens lamp's flux gain (street-lamps/lens.ts); its length comes from the settings.
       lamps.push({ ...base, intensity: power * L[k + 10]! * LENS_INTENSITY_PER_POWER, size: 0.3, lens: { arm: [L[k + 8]!, L[k + 9]!], a: s.slLensA, b: kind - 7 }, uplight: 0.12 })
@@ -80,6 +81,7 @@ export function applyLampFog(render: FrameInput, frame: LampFogFrame): VolumeInp
   render.fog = fog.update({ eye: [f[16]!, f[17]!, f[18]!], viewProj: f, lamps, time: frame.time, street })
   const input = fog.volumeInput()
   if (!input) return null
-  mistParams.set([frame.mist.mistYards, frame.mist.mistGutters, frame.mist.mistRoads, mist ? 1 : 0])
+  const m = frame.mist
+  mistParams.set([m.mistYards, m.mistGutters, m.mistRoads, mist ? 1 : 0, m.mistWalls, m.mistHollows, 1 / Math.max(m.mistHollowSize, 0.5), m.mistWallReach])
   return { ...input, downscale: mist ? Math.max(input.downscale, frame.mist.mistDownscale) : input.downscale, params: mistParams }
 }

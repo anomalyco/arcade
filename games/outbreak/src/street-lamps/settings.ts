@@ -2,13 +2,13 @@ import type { LabControl } from "@arcade/kit/lab-panel"
 
 /**
  * Street lamps as the Lot's lens emitters (`@arcade/kit/gpu/lights/street`, #364/#368), through Outbreak's own lamp
- * grid and polar shadows (Lab › Look · Street lamps, `streetLampStyle` 0 is Today). A cobra head throws the pool it is
+ * grid and polar shadows (Lab › Look · Street lamps; the default since Kit's pick, D-49, and `streetLampStyle` 0 is Today). A cobra head throws the pool it is
  * designed to light: an even ellipse along the road, out past a mounting height on the street side, short on the house
  * side (the photometric web I = E / cos³θ), light leaving the whole lens (1 / (d² + b²): no hot spot under the head),
  * polar shadows softened by the lens size, and the air under the lens lit from the lens, not a dot.
  */
 export type OutbreakStreetLampSettings = {
-  /** 0 Today (round point lamp, unshadowed), 1 lens emitter + street photometry. */
+  /** 0 Today (round point lamp, unshadowed), 1 lens emitter + street photometry (default). */
   streetLampStyle: number
   /** Half-maximum reach of the pool along the road, in mounting heights. */
   slAlong: number
@@ -35,7 +35,7 @@ export type OutbreakStreetLampSettings = {
 }
 
 export const DEFAULT_STREET_LAMP_SETTINGS: OutbreakStreetLampSettings = {
-  streetLampStyle: 0,
+  streetLampStyle: 1,
   slAlong: 1.2,
   slStreet: 1.1,
   slHouse: 0.6,

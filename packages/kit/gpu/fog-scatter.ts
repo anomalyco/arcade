@@ -398,7 +398,10 @@ export function bakeLampGlow(out: Float32Array, lamps: readonly FogLamp[], rect:
       let r = 0, g = 0, b = 0
       for (const l of lamps) {
         const h = Math.max(l.y - base, 0)
-        const k = (l.intensity * (l.visibility ?? 1) * (l.uplight ?? 1) * FOG_GLOW_SCALE) / ((x - l.x) ** 2 + (z - l.z) ** 2 + h * h + s2)
+        const d2 = (x - l.x) ** 2 + (z - l.z) ** 2
+        const win = l.glowRange ? Math.max(0, 1 - d2 / (l.glowRange * l.glowRange)) ** 2 : 1
+        if (win <= 0) continue
+        const k = (l.intensity * (l.visibility ?? 1) * (l.uplight ?? 1) * win * FOG_GLOW_SCALE) / (d2 + h * h + s2)
         r += l.color[0] * k; g += l.color[1] * k; b += l.color[2] * k
       }
       out.set([r, g, b, 0], (j * n + i) * 4)
@@ -436,6 +439,8 @@ export type FogLamp = {
   lens?: { arm: readonly [number, number]; a: number; b: number }
   /** Share of the light the glow map (bank tint, cloud underglow) gets, default 1; cutoff street heads send only ground bounce. */
   uplight?: number
+  /** Plan distance (m) at which this lamp's glow-map light fades to nothing (smooth window); omitted reaches everywhere. */
+  glowRange?: number
 }
 
 const tmpScore: { i: number; s: number; x: number; z: number }[] = []
@@ -568,7 +573,7 @@ export class FogScatter {
     let key = s.glowSpread * 7.13 + base * 3.1 + lamps.length
     for (let i = 0; i < lamps.length; i++) {
       const l = lamps[i]!
-      key = (key * 31 + l.x * 1.7 + l.y * 2.3 + l.z * 2.9 + l.intensity * (l.visibility ?? 1) * (l.uplight ?? 1) + l.color[0] * 5 + l.color[1] * 7 + l.color[2] * 11) % 1e9
+      key = (key * 31 + l.x * 1.7 + l.y * 2.3 + l.z * 2.9 + l.intensity * (l.visibility ?? 1) * (l.uplight ?? 1) + (l.glowRange ?? 0) * 0.37 + l.color[0] * 5 + l.color[1] * 7 + l.color[2] * 11) % 1e9
     }
     if (key !== this.glowKey) {
       this.glowKey = key
@@ -777,6 +782,9 @@ fn fogBankMeanSigma(y: f32) -> f32 {
 }
 /** Bank extinction at p: billows drifting with the wind, wisps counter-drifting through them, a rolling top. */
 fn fogBankSigma(p: vec3f) -> f32 {
+  // Where the game's mask keeps the bank out, skip the noise.
+  let mask = fogBankMask(p);
+  if (mask <= 0.0) { return 0.0; }
   let h = (p.y - FOG.medium.z) / FOG.bank.y;
   let t = FOG.wind.z;
   let q = p * FOG.bank.z;
@@ -786,7 +794,7 @@ fn fogBankSigma(p: vec3f) -> f32 {
   let n = clamp(((n1 * 0.68 + n2 * 0.32) - 0.5) * 1.9 + 0.5, 0.0, 1.0);
   let top = 1.0 - clamp(h - (n - 0.5) * FOG.bank3.y, 0.0, 1.0);
   let gaps = FOG.bank2.x;
-  return FOG.bank.x * max(n - gaps, 0.0) / (1.0 - gaps) * pow(top, 1.2) * fogBankMask(p);
+  return FOG.bank.x * max(n - gaps, 0.0) / (1.0 - gaps) * pow(top, 1.2) * mask;
 }
 /** The bank along eye + rd · [0, dist]: rgb in-scatter, a transmittance. */
 fn fogBank(eye: vec3f, rd: vec3f, dist: f32, jitter: f32) -> vec4f {
