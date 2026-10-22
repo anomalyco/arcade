@@ -4,7 +4,7 @@ Branch: night-sky, rebased onto `d4b6a9f2` (origin/main, 22 October 2026).
 
 ## Goal
 
-A single shared sky for Arcade. Primary metric: unintended star flux variation under subpixel motion with scintillation disabled. Secondary: detectable stars at woods exposure; paired GPU delta on mini at 1920×1080. Budget <0.5 ms for the sky alone. Actual woods visibility is measured; absolute calibration and current mini cost remain open.
+A single shared sky for Arcade. Judge the production woods images against the targets, retaining dark foreground silhouettes. Stability and visibility instruments support that review. Kit's latest direction removes exact GPU timing and quiet-mini waits; historical measurements below remain evidence of earlier revisions only. Absolute calibration remains open.
 
 ## Contract and research
 
@@ -20,6 +20,7 @@ Sky owns `packages/kit/sky`; weather owns clouds and shared eye adaptation. Wood
 - `6789f767`: opt-in Lab/Lot/Night Shift/Outbreak adapters, credits and consumer capture fixture.
 - `4e03cdcf`: initial experiment ledger.
 - `f868f9d5`: review fixes and adapted visibility.
+- `3b428a58`: exact default parity via geometry windows, synchronous Outbreak proof and visibility instrumentation.
 
 Nothing pushed. The adapters are candidates; actual visibility and verification limits are below.
 
@@ -49,9 +50,11 @@ Nothing pushed. The adapters are candidates; actual visibility and verification 
 - Review GPU run spilled from mini to Studio: photometric variation **0.035087%**, adapted **0.035832%**, translation drift **0.031247 px** over 64 m, lunar transmission zero, no GPU errors. Not mini timing evidence.
 - Main baseline production builds for Lot/Night Shift/Outbreak completed at `d4b6a9f2`. Final default frames for **all three are pixel-identical** at 1920×1080. The initial Night Shift shader aperture changed nine pixels by one byte, with an exact baseline/control; moving the discard did not help. Geometry apertures remove that shader change. Synchronous parity rejects blank frames; Outbreak uses its actual `__arcadeHarness`.
 - Night Shift's final production consumer check passes with no errors: zero Today sky-asset requests, both assets in Physical, return to Today. The inspected frame shows stars through the blind gaps; the Moon is outside this view.
-- Integration tree `night-sky-woods` is based on woods `4d14b07f`; owner tree remains separate.
+- Integration tree `night-sky-woods` is now based on woods `fe3e6756`; owner tree remains separate.
 - Production woods clearing/lake Today/new stills use a matched 8 s render clock and the existing host eye response. Six-second camp look-up retained from the advancing-clock run. Both captures pass without browser/GPU errors. Forest and root-proof typechecks pass.
-- Mini review timing attempt waited 1800 s and exited 75 without running (all slots occupied, then reserved for a high-priority job). A longer admitted queue attempt is pending; Studio timings are not substituted.
+- Matched-clock visibility, strong peaks ≥12/255: clearing **0 → 446** (target 4868), lake **0 → 298** (target 4263). Diffuse contrast clearing **0.432** (target 0.418), lake **0.155** (target 0.461). New sky medians **7.93/255** and **9.28/255**, targets **7.14** and **6.14**. Weak sensor-noise peaks are reported separately; generated points are image features, not astronomical counts.
+- Woods bridge originally committed as `7c319cd5`; rebased onto current woods **`fe3e6756`**, now **`d8df2180`** (reviewed core `97220ab7`). Includes typed settings, host eye-state mapping, finite-mist sky predicate, distant-spot lunar shadows, production capture script and credits. Current-base kit/root-script typechecks, production build and clearing/lake captures pass without browser/GPU errors. Inspected stills and regenerated statistics are published; metrics match the prior matched-clock capture. The six-second camp clip retains the earlier woods `4d14b07f` base.
+- Mini review timing attempt waited 1800 s and exited 75 without running. The longer queue was cancelled by the server restart. No timing job or timing wait remains; per Kit's latest direction this is no longer a completion gate. Final main root-script typecheck passed before the restart.
 
 ## Remaining limits
 
