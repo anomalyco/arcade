@@ -53,7 +53,8 @@ struct V { @builtin(position) pos: vec4f }
   let zodiac=0.00005*S.layers.z*exp(-ecliptic*ecliptic/0.02)*pow(max(dot(d,S.sun.xyz),0.0),6.0);
   var colour=(vec3f(0.000055)+vec3f(0.96,1.02,0.96)*air+vec3f(1.04,1.0,0.94)*(milky+zodiac))*trans*pow(1.0-S.sun.w,2.0);
   // Night-only fitted scattering, not a full daytime atmosphere LUT.
-  let daylight=max(S.sun.w,smoothstep(-0.31,0.08,S.sun.y));
+  // The CPU selects host or astronomical daylight once for both stars and dome.
+  let daylight=S.sun.w;
   colour+=daylight*vec3f(0.12,0.2,0.36)*(0.3+0.7*max(d.y,0.0));
   let cosine=clamp(dot(d,S.moon.xyz),-1.0,1.0);
   let angle=acos(cosine);
@@ -74,8 +75,9 @@ struct V { @builtin(position) pos: vec4f }
   let tex=textureSample(moonMap,moonSampler,uv).rgb;
   let earth=S.phase.z*pow(sin(S.phase.x*0.5),2.0);
   let surface=tex*S.phase.y*(ls+earth);
-  colour=mix(colour,surface*moonTrans,disk*S.phase.w);
-  colour=colour*smoothstep(-0.025,0.015,d.y)*S.radiometry.x*S.equatorZ.w+S.flash.rgb;
+  // Adapt the diffuse sky and halo, not the already-bright lunar surface.
+  colour=mix(colour*S.equatorZ.w,surface*moonTrans,disk*S.phase.w);
+  colour=colour*smoothstep(-0.025,0.015,d.y)*S.radiometry.x+S.flash.rgb;
   return vec4f(colour,1.0);
 }
 struct StarIn { @location(0) eq: vec3f, @location(1) visibilityWeight: f32, @location(2) lux: vec3f, @location(3) id: f32 }

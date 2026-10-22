@@ -1,6 +1,6 @@
 # Shared night sky ledger
 
-Branch: night-sky, rebased onto `d4b6a9f2` (origin/main, 22 October 2026).
+Branch: night-sky, rebased onto `0a28cd80` (origin/main, 22 October 2026).
 
 ## Goal
 
@@ -55,6 +55,18 @@ Nothing pushed. The adapters are candidates; actual visibility and verification 
 - Matched-clock visibility, strong peaks ≥12/255: clearing **0 → 446** (target 4868), lake **0 → 298** (target 4263). Diffuse contrast clearing **0.432** (target 0.418), lake **0.155** (target 0.461). New sky medians **7.93/255** and **9.28/255**, targets **7.14** and **6.14**. Weak sensor-noise peaks are reported separately; generated points are image features, not astronomical counts.
 - Woods bridge originally committed as `7c319cd5`; rebased onto current woods **`fe3e6756`**, now **`d8df2180`** (reviewed core `97220ab7`). Includes typed settings, host eye-state mapping, finite-mist sky predicate, distant-spot lunar shadows, production capture script and credits. Current-base kit/root-script typechecks, production build and clearing/lake captures pass without browser/GPU errors. Inspected stills and regenerated statistics are published; metrics match the prior matched-clock capture. The six-second camp clip retains the earlier woods `4d14b07f` base.
 - Mini review timing attempt waited 1800 s and exited 75 without running. The longer queue was cancelled by the server restart. No timing job or timing wait remains; per Kit's latest direction this is no longer a completion gate. Final main root-script typecheck passed before the restart.
+
+## Shipping delta review
+
+- Opus delta review reported no blockers; the preceding sky/GPU run passed 181 tests.
+- Woods already supplies `darkAdaptation` from its camera stops in the separate integration branch.
+  Main-branch hosts omit it and therefore use the fully dark-adapted fallback, attenuated by daylight.
+- Adapted vision still brightens the diffuse dome and lunar halo by up to 10× and the Galactic band
+  by an additional 6×. It is a whole-sky perceptual candidate, not only a faint-star boost.
+  The lunar disk is now excluded from that sensitivity gain.
+- The dome now uses the same selected daylight value as the stars; host-clock mode no longer
+  overrides the host with a brighter astronomical twilight in the shader.
+- Existing review-gallery Physical frames predate these two shader corrections; Today is unchanged.
 
 ## Remaining limits
 
