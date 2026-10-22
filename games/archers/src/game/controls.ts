@@ -24,8 +24,14 @@ const PAD_SHOOT = [2, 3]
 const PAD_DODGE = [1, 4, 5, 6, 7]
 
 export class Controls {
-  readonly keys = new KeyStateTracker({ shouldPreventDefault: (c) => c.startsWith("Arrow") || c === "Space" })
+  // Off (the title or menu up), Space and the arrows go to the page: Space presses a focused menu button.
+  readonly keys = new KeyStateTracker({ shouldPreventDefault: (c) => this.enabled && (c.startsWith("Arrow") || c === "Space") })
   enabled = true
+
+  /** Lets go of every held key (pausing mustn't leave a player running when play comes back). */
+  release(): void {
+    this.keys.release()
+  }
 
   buttons(d: Device): Buttons {
     if (!this.enabled) return 0

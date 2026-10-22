@@ -76,6 +76,7 @@ async function main() {
   // Joining a room reloads into it (`?room=`), as P always did.
   const quality = createShellQuality({ game: GAME.id, tiers: ARCHERS_QUALITY, params, onChange: () => shell.settings.changed() })
   const split = () => seats.some((s) => s.device === "kbR")
+  let creating = false
   const shell = createGameShell({
     game: GAME.id, title: GAME.title, subtitle: "Arena archery for up to four", soloLabel: "Play", soloNote: "you and bots; pads join with A",
     quickLabel: "Play online", friendsNote: "a private room", quality, channels: ["master", "effects"],
@@ -83,12 +84,29 @@ async function main() {
     muteKey: () => !split(),
     start: watch ? "playing" : undefined,
     controls: () => [keyPromptHtml("KeyW", "Move"), keyPromptHtml("Space", "Jump"), keyPromptHtml("ShiftLeft", "Shoot"), keyPromptHtml("KeyE", "Dodge"), keyPromptHtml("Enter", "Split keyboard"), keyPromptHtml("KeyM", "Mute"), keyPromptHtml("Escape", "Menu")].join(" "),
-    lobby: { friends: true, quick: true, onJoin: (code) => (location.search = `?room=${code}`) },
+    lobby: {
+      friends: true, quick: true,
+      // Play with friends makes a private room (kept out of Play online's matchmaking).
+      createRoom: () => {
+        creating = true
+        return fetch(`${location.pathname.replace(/[^/]*$/, "")}api/create`, { method: "POST", cache: "no-store" })
+          .then((r) => r.json() as Promise<{ room?: string }>)
+          .then((r) => r.room ?? "")
+      },
+      onJoin: (code) => (location.search = `?room=${code}${creating ? "&private=1" : ""}`),
+    },
     onLeave: () => {
       if (room) location.search = ""
     },
   })
   if (room) shell.lobby!.setRoom(room)
+  // Keys drive a seat only in play: paused (a room keeps going behind the menu), nobody's held keys act.
+  const syncControls = () => {
+    controls.enabled = shell.playing
+    if (!shell.playing) controls.release()
+  }
+  shell.flow.subscribe(syncControls)
+  syncControls()
   const syncAudio = audioRuntimeSync(shell.settings, sound.runtime)
   if (params.get("focus")) {
     game.focus = params.get("focus")
