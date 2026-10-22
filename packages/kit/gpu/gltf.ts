@@ -5,6 +5,7 @@ import { mat4, vec3 } from "wgpu-matrix"
 import { MAT, Mesh } from "./mesh"
 import { packTexturedVerts, type TexturedPrimitive } from "./textured-mesh"
 import { normalMipChain } from "./normal-mips"
+import { imageMipChain } from "./image-mips"
 
 export type DecodedImage = { width: number; height: number; data: Uint8Array<ArrayBuffer> }
 export type KtxDecoder = (bytes: Uint8Array) => Promise<DecodedImage>
@@ -26,20 +27,10 @@ export async function imageTexture(device: GPUDevice, bytes: Uint8Array, srgb: b
   const levels = 1 + Math.floor(Math.log2(Math.max(canvas.width, canvas.height)))
   const texture = device.createTexture({ size: [canvas.width, canvas.height], mipLevelCount: levels,
     format: srgb ? "rgba8unorm-srgb" : "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT })
-  let width = canvas.width, height = canvas.height
-  if(normalMap) {
-    for(const [mipLevel,mip] of normalMipChain(width,height,ctx.getImageData(0,0,width,height).data).entries())
-      device.queue.writeTexture({texture,mipLevel},mip.data,{bytesPerRow:mip.width*4},[mip.width,mip.height])
-    return texture
-  }
-  let source=canvas
-  for (let mipLevel = 0; mipLevel < levels; mipLevel++) {
-    const mip = document.createElement("canvas"); mip.width = width; mip.height = height
-    mip.getContext("2d")!.drawImage(source, 0, 0, width, height)
-    device.queue.copyExternalImageToTexture({ source: mip }, { texture, mipLevel }, [width, height])
-    source=mip
-    width = Math.max(1, width >> 1); height = Math.max(1, height >> 1)
-  }
+  const { width, height } = canvas, rgba = ctx.getImageData(0, 0, width, height).data
+  const mips = normalMap ? normalMipChain(width, height, rgba) : imageMipChain(width, height, rgba, srgb)
+  for (const [mipLevel, mip] of mips.entries())
+    device.queue.writeTexture({ texture, mipLevel }, mip.data, { bytesPerRow: mip.width * 4 }, [mip.width, mip.height])
   return texture
 }
 

@@ -22,6 +22,23 @@ proven animation techniques to animation.md, not here.
   6.09/255 road, 15.70 lot and 9.58 booth; these include the newer lamp/fog/window treatment and do not establish
   visual parity or a before/after improvement. Evidence is in `lot-2026-10-20/detail-iteration-5` in the gallery.
 
+- **Shared quiet first-person walking (Lot / Night Shift).** `client/walk` and `client/walk-camera` share the
+  actual-displacement contact clock and critically damped presentation; Night Shift's adapter keeps chair impacts
+  and furniture creaks. `audio/footsteps` shares its quiet PCM and live/offline scheduler. All 256 sound/seed checks
+  against Night Shift's committed source were byte-identical, including its room tone and ballast crackle. Lot's
+  authored-triangle/AO query selects material contacts; its muted real-input tape produced 18 contacts across wet
+  asphalt, puddle, concrete and dirt, including reduced-motion contacts. Every material's loudest 100 ms over 32
+  variants is 5.13–12.82 dB below default outdoor wind/traffic; sprint raises cadence without raising contact gain.
+
+- **Colour mips are not a complete shimmer fix (Lot).** `gpu/image-mips` filters sRGB textures in linear light,
+  weights transparent colour by alpha and retains odd-dimension edge texels. Normal maps still use variance-preserving
+  `normal-mips`. On matched 150-frame Metal paths, retained changes measured 11.416→11.148 (kit),
+  162.597→153.792 (lamp), and 22.208→23.906 (turn) pops/frame: no consistent temporal improvement. Ground already
+  had 8× anisotropy. Rejected card coverage thinned fences; wet procedural filtering and environment-AA were ineffective
+  and removed. Depth reprojection overcounts halos: the lamp-head score was 63.65 at scene depth but 1.56 with
+  lamp-anchored reprojection. Use material heatmaps and removal probes to locate a source, not to declare every
+  view-dependent highlight a sampling error. Evidence: `lot-2026-10-20/shimmer-evidence` in the gallery.
+
 - **One signal for fluorescent light and sound (Night Shift).** `games/nightshift/src/polish/tube.ts` supplies the same seeded level/edge pair to the tube, light and live/offline ballast mixer. The production 24-second input tape records 11 starter frames with no browser/GPU errors; stereo audio peaks at −26.81 dBFS without clipping. Whole-polish Metal cost and its shared-worker caveat are in `games/nightshift/POLISH-NOTES.md`; do not attribute that cost to the tube alone.
 
 - **Half-resolution contact-shadow stripes (Night Shift).** Reconstruct depth at the sampled texel's centre and use integer ±1 neighbours for normals (`gpu/contact-shadows.ts`, `volumeWorldAtTexel`). Floating UV neighbour offsets at half-resolution centres can round into the wrong full-resolution texel. A matched 48-frame turn reduced affected-panel luminance-difference RMS from .011944 to .001563 (−86.9%) with shadows enabled; removing material detail or spotlight/blind shadows did not help. Proof: Night Shift `scripts/turn-proof.ts`, `WALK-NOTES.md`, gallery `nightshift-2026-10-20/iteration-17/turn/`.

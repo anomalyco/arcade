@@ -1,24 +1,9 @@
-import { FirstPerson } from "@arcade/kit/client/first-person"
-import type { Rect } from "@arcade/kit/sim/geom"
+import { WalkCamera as SharedWalkCamera } from "@arcade/kit/client/walk-camera"
 import type { Settings } from "./settings"
-import { Walk } from "./walk"
 import { chairs } from "./world"
 
-/** Presentation-only offsets after the shared collision controller; input yaw/pitch stay 1:1. */
-export class WalkCamera extends FirstPerson {
-  walk=new Walk()
-  constructor(canvas:HTMLCanvasElement,blocked:()=>boolean,private settings:Settings,private active:()=>boolean){super(canvas,blocked)}
-  resetWalk(){this.walk=new Walk()}
-  override update(dt:number,aspect:number,walls:readonly Rect[]){
-    const x=this.body.x,z=this.body.y
-    super.update(dt,aspect,walls)
-    const dx=this.body.x-x,dz=this.body.y-z,travel=Math.hypot(dx,dz)
-    const collision=Math.hypot(this.body.vx,this.body.vy)*Math.min(dt,.05)-travel>.002
-    const nearChair=chairs.some(r=>Math.hypot(this.body.x-Math.max(r[0],Math.min(r[2],this.body.x)),this.body.y-Math.max(r[1],Math.min(r[3],this.body.y)))<.285)
-    this.walk.update({dx,dz,yaw:this.yaw,dt,active:this.active(),amount:this.settings.cameraMotion,reduced:this.settings.reduceMotion,stride:this.settings.stepLength,settling:this.settings.walkSettle,bump:collision&&nearChair})
-    const w=this.walk,c=Math.cos(this.yaw),s=Math.sin(this.yaw)
-    this.eye[0]+=w.lateral*c;this.eye[1]+=w.vertical;this.eye[2]-=w.lateral*s
-    // Rolling about the unchanged view direction preserves aim.
-    return this.compose(aspect,w.roll)
+export class WalkCamera extends SharedWalkCamera {
+  constructor(canvas:HTMLCanvasElement,blocked:()=>boolean,settings:Settings,active:()=>boolean){
+    super(canvas,blocked,settings,active,{creaks:true,bump:(x,z)=>chairs.some(r=>Math.hypot(x-Math.max(r[0],Math.min(r[2],x)),z-Math.max(r[1],Math.min(r[3],z)))<.285)})
   }
 }

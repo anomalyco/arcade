@@ -135,7 +135,8 @@ export const stainHooks: SceneHooks = { ...hooks,
 }
 
 /** Ashwood's 50 mm diamond grid with subpixel coverage preserved by screen-space dithering. */
-export const fenceHooks: SceneHooks = { ...hooks, fragmentStart: /* wgsl */ `
+export const fenceHooks: SceneHooks = { ...hooks,
+  fragmentStart: /* wgsl */ `
   let grid=vec2f(o.uv.x+o.uv.y,o.uv.x-o.uv.y)/0.070710678;
   let d=(fract(grid)-0.5)*0.05;
   let fw=max(fwidth(grid)*0.05,vec2f(0.00001));

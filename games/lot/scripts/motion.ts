@@ -1,9 +1,11 @@
 import assert from "node:assert/strict"
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readdirSync, renameSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { chromium } from "playwright-core"
 import { build } from "vite"
 import { serveDist } from "./serve-dist"
+import { SurfaceQuery } from "../src/surface-query"
+import { matchedPaths } from "./motion-paths"
 
 /**
  * Temporal stability of the lot in motion: scripted camera paths (walk, strafe, turn) rendered frame by frame on a
@@ -45,16 +47,16 @@ export const PATHS: Record<string, Path> = {
   gate: { frames: 180, pose: (t) => ({ x: -3 + 0.3 * t, z: 152 - WALK * t, yaw: 0.25 + 0.04 * Math.sin(t * 2), pitch: 0.03 }), rois: [{ name: "stairwell", p: [-41.4, 9, 25], r: 60 }, { name: "bays", p: [-30, 6, 22], r: 90 }] },
   "gate-turn": { frames: 150, pose: (t) => ({ x: -3, z: 150, yaw: 0.05 + 0.18 * t, pitch: 0.03 }), rois: [{ name: "stairwell", p: [-41.4, 9, 25], r: 60 }, { name: "bays", p: [-30, 6, 22], r: 90 }] },
   // Under the booth's sodium head (x 4.6, z 129.6): its pool and the wagon pass underfoot.
-  lamp: { frames: 150, pose: (t) => ({ x: 1, z: 138 - WALK * t, yaw: 0.05, pitch: -0.02 }), rois: [{ name: "boothHead", p: [4.5, 6.4, 129.6], r: 60, anchored: true }, { name: "pool", p: [3, 0, 126], r: 160 }, { name: "booth", p: [9, 1.4, 127.5], r: 160 }] },
+  lamp: { ...matchedPaths.lamp!, rois: [{ name: "boothHead", p: [4.5, 6.4, 129.6], r: 60, anchored: true }, { name: "pool", p: [3, 0, 126], r: 160 }, { name: "booth", p: [9, 1.4, 127.5], r: 160 }] },
   // Kit's first Scrawl at 0:12–0:16: past the mid-lot head (x −6.3, z 100) toward the facility, the far head's wet streak
   // (x 19.8, z 57.8) and the road glitter between.
-  kit: { frames: 150, pose: (t) => ({ x: -5 + 0.2 * t, z: 102 - WALK * t, yaw: -0.1 + 0.03 * Math.sin(t * 1.7), pitch: -0.02 }), rois: [{ name: "head58", p: [19.8, 9.2, 57.8], r: 50 }, { name: "mirror58", p: [19.8, 9.2, 57.8], r: 60, mirror: true }, { name: "horizon", p: [12, 0, 62], r: 120 }, { name: "kerbL", p: [-12, 0.15, 60], r: 140 }, { name: "farPool", p: [13, 0.1, 40], r: 90 }, { name: "windows", p: [5, 7, 22], r: 110 }] },
+  kit: { ...matchedPaths.kit!, rois: [{ name: "head58", p: [19.8, 9.2, 57.8], r: 50 }, { name: "mirror58", p: [19.8, 9.2, 57.8], r: 60, mirror: true }, { name: "horizon", p: [12, 0, 62], r: 120 }, { name: "kerbL", p: [-12, 0.15, 60], r: 140 }, { name: "farPool", p: [13, 0.1, 40], r: 90 }, { name: "windows", p: [5, 7, 22], r: 110 }] },
   // The lamp path's first pose, held: the renderer's own noise floor with the camera still.
   still: { frames: 90, pose: () => ({ x: 1, z: 138, yaw: 0.05, pitch: -0.02 }), rois: [{ name: "boothHead", p: [4.5, 6.4, 129.6], r: 60 }] },
   // Across the lot facing the facility, between the two far heads.
   strafe: { frames: 150, pose: (t) => ({ x: -8 + WALK * t, z: 90, yaw: 0, pitch: 0.03 }) },
   // Looking around from the lot's centre, at a mouse-turn pace.
-  turn: { frames: 150, pose: (t) => ({ x: 2, z: 112, yaw: -1 + 0.8 * t, pitch: 0.02 }) },
+  turn: matchedPaths.turn!,
   // Close to the facility: lit windows, the far sodium head and wet asphalt at grazing angles.
   facility: { frames: 150, pose: (t) => ({ x: -4 + 0.4 * t, z: 72 - WALK * t, yaw: 0.25 * Math.sin(t * 0.9), pitch: 0.05 }) },
 }
@@ -118,6 +120,7 @@ const VARIANTS: Record<string, string> = {
 const pathNames = (process.env.MOTION_PATHS ?? Object.keys(PATHS).join(",")).split(",").filter(Boolean)
 const variantNames = (process.env.MOTION_VARIANTS ?? Object.keys(VARIANTS).join(",")).split(",").filter(Boolean)
 const record = new Set((process.env.MOTION_RECORD ?? "").split(",").filter(Boolean))
+const limit = Number(process.env.MOTION_FRAMES ?? 0)
 for (const v of variantNames) assert(v in VARIANTS || v.startsWith("eval:"), `unknown variant ${v}`)
 
 const dist = process.env.MOTION_BASE ? resolve(process.env.MOTION_BASE) : `${root}/dist`
@@ -128,9 +131,20 @@ const executablePath = readdirSync(cache).filter((n) => /^chromium_headless_shel
   .map((n) => `${cache}/${n}/chrome-headless-shell-mac-arm64/chrome-headless-shell`).find(existsSync)
 assert(executablePath, "headless Chromium is missing")
 const browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio"] })
-const report: Record<string, any> = { viewport, captured: new Date().toISOString(), runs: {} }
+const errors: string[] = []
+const report: Record<string, any> = { viewport, captured: new Date().toISOString(), runs: {}, errors }
 try {
   const page = await browser.newPage({ viewport: { width: viewport[0], height: viewport[1] }, deviceScaleFactor: 1 })
+  let activeRun = ""
+  await page.exposeFunction("motionCheckpoint", (checkpoint: unknown) => {
+    // Separate from motion.json: partial runs must never look like complete comparisons.
+    const file = resolve(out, "motion-progress.json")
+    writeFileSync(`${file}.tmp`, JSON.stringify({
+      complete: false, run: activeRun, viewport, adapter: report.adapter,
+      saved: new Date().toISOString(), errors, checkpoint,
+    }, null, 1))
+    renameSync(`${file}.tmp`, file)
+  })
   // The canvas texture is copied back on the GPU after each frame (drawImage of a presented WebGPU canvas reads black).
   await page.addInitScript(() => {
     const request=GPUAdapter.prototype.requestDevice
@@ -150,18 +164,42 @@ try {
       return create.call(this, d.label === "temporal previous depth" ? { ...d, usage: d.usage | GPUTextureUsage.COPY_SRC } : d)
     }
   })
-  const errors: string[] = []
-  page.on("pageerror", (e) => errors.push(e.message))
-  page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); else if(m.text().startsWith("MOTION")) console.log(m.text()) })
+  const pending=new Set<string>()
+  let failBoot:((error:Error)=>void)|undefined
+  const fatal=new Promise<never>((_,reject)=>{failBoot=reject})
+  void fatal.catch(()=>{})
+  const fail=(message:string)=>{errors.push(message);console.error(message);failBoot?.(new Error(message))}
+  page.on("pageerror",e=>fail(e.message))
+  page.on("request",r=>pending.add(r.url()))
+  page.on("requestfinished",r=>pending.delete(r.url()))
+  page.on("requestfailed",r=>{pending.delete(r.url());fail(`${r.url()}: ${r.failure()?.errorText}`)})
+  page.on("console",m=>{if(m.type()==="error")fail(m.text());else if(m.text().startsWith("Motion progress"))console.log(m.text())})
   const load = async () => {
     await page.goto(`http://127.0.0.1:${server.port}/arcade/lot/?time=8`, { timeout: 240_000 })
-    await page.waitForFunction(() => (window as any).lot?.ready && (window as any).lot.frames > 8, undefined, { timeout: 600_000 })
+    try {
+      await Promise.race([fatal,page.waitForFunction(() => (window as any).lot?.ready && (window as any).lot.frames > 8, undefined, { timeout: 600_000, polling:100 })])
+    } catch(error) {
+      report.bootFailure={message:String(error),pending:[...pending],state:await Promise.race([
+        page.evaluate(()=>({hud:document.getElementById("hud")?.textContent,lot:(window as any).lot?{frames:(window as any).lot.frames,timings:(window as any).lot.timings}:null,marks:performance.getEntriesByType("mark").map(e=>({name:e.name,start:e.startTime}))})).catch(e=>({error:String(e)})),
+        new Promise(resolve=>setTimeout(()=>resolve({error:"Page unresponsive to boot diagnostics for 5 s"}),5000)),
+      ])}
+      console.error("Motion boot failure",JSON.stringify(report.bootFailure))
+      throw error
+    }
     await page.addStyleTag({ content: "#hud,#credits,[data-lab-panel]{display:none!important}" })
-    await page.evaluate(() => {
+    await page.evaluate(async queryCode => {
       const lot = (window as any).lot
       lot.paused = true
-      lot.defaults = JSON.stringify({ settings: lot.settings, fog: lot.fog.settings, ssr: lot.ssr.settings, spots: lot.spots.settings, contact: lot.contact, glass: lot.glass, rooms: lot.rooms, forest: lot.forest, dressing: lot.dressing, temporal: lot.renderer.getTemporal() })
-    })
+      if(!lot.surfaceQuery){
+        const root="/arcade/lot/ashwood/",scene=await (await fetch(root+"scene.json")).json()
+        const surfaces=await Promise.all(Object.keys(scene.surfaces).map(async name=>({name,vertices:await Promise.all((scene.files[`surface-${name}`]??[]).map(async (file:string)=>{
+          const data=await (await fetch(root+file)).arrayBuffer(),bytes=new Uint8Array(data)
+          return bytes[0]===31&&bytes[1]===139?await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer():data
+        }))})))
+        lot.surfaceQuery=new (new Function(`return (${queryCode})`)())(surfaces)
+      }
+      lot.defaults = JSON.stringify({ settings: lot.settings, wet: lot.wet, fog: lot.fog.settings, ssr: lot.ssr.settings, spots: lot.spots.settings, contact: lot.contact, glass: lot.glass, rooms: lot.rooms, forest: lot.forest, dressing: lot.dressing, temporal: lot.renderer.getTemporal() })
+    },SurfaceQuery.toString())
   }
   await load()
   report.adapter=await page.evaluate(()=>(window as any).__lotMotionAdapter)
@@ -170,18 +208,19 @@ try {
   assert.deepEqual(errors, [], "motion boot: browser errors invalidate measurements")
   for (const path of pathNames) {
     const p = PATHS[path]!
-    const poses = Array.from({ length: p.frames }, (_, i) => p.pose(i / 60))
+    const poses = Array.from({ length: limit || p.frames }, (_, i) => p.pose(i / 60))
     const warm = p.pose(0)
     for (const variant of variantNames) {
       assert.deepEqual(errors, [], "motion: browser errors invalidate measurements")
       console.log(`Starting ${path}/${variant}`)
+      activeRun = `${path}/${variant}`
       const code = variant.startsWith("eval:") ? variant.slice(5) : VARIANTS[variant]!
       const rec = record.has(variant)
-      const result = await page.evaluate(async ({ code, poses, warm, rec, size, rois }) => {
-        const started=performance.now(), timing={warm:0,readback:0,analysis:0}
+      const result = await Promise.race([fatal,page.evaluate(async ({ code, poses, warm, rec, size, rois }) => {
         const lot = (window as any).lot
         const d = JSON.parse(lot.defaults)
         Object.assign(lot.settings, d.settings); Object.assign(lot.fog.settings, d.fog); Object.assign(lot.ssr.settings, d.ssr)
+        Object.assign(lot.wet, d.wet)
         Object.assign(lot.spots.settings, d.spots); Object.assign(lot.contact, d.contact); Object.assign(lot.glass, d.glass)
         Object.assign(lot.rooms, d.rooms); Object.assign(lot.forest, d.forest); Object.assign(lot.dressing, d.dressing)
         lot.renderer.setTemporal(d.temporal); lot.camera.near = 0.15
@@ -196,7 +235,6 @@ try {
         lot.renderer.resetTemporalHistory()
         for (let i = 0; i < 40; i++) lot.step(1000 / 60)
         await device.queue.onSubmittedWorkDone()
-        timing.warm=performance.now()-started
         const canvas: HTMLCanvasElement = document.querySelector("#view")!
         const [W, H] = [canvas.width, canvas.height]
         const c2 = new OffscreenCanvas(W, H), g = c2.getContext("2d", { willReadFrequently: true })!
@@ -244,7 +282,13 @@ try {
         const BS = 32, bw = Math.ceil(W / BS), bh = Math.ceil(H / BS)
         const block = new Float64Array(bw * bh), blockN = new Uint32Array(bw * bh)
         const frames: any[] = []
+        const regions: Record<string,number> = {}
+        const worldPops: Record<string,number> = {}
         const jpegs: string[] = []
+        const overlays: string[] = []
+        const overlayCanvas=new OffscreenCanvas(W,H),og=overlayCanvas.getContext("2d")!
+        const overlay=g.createImageData(W,H)
+        const timings={readbackMs:0,metricMs:0,encodeMs:0}
         const inv = (m: Float32Array) => {
           const o = new Float64Array(16)
           const [a00, a01, a02, a03, a10, a11, a12, a13, a20, a21, a22, a23, a30, a31, a32, a33] = Array.from(m)
@@ -267,13 +311,14 @@ try {
           put(poses[f]!)
           lot.step(1000 / 60)
           const px = await grab()
+          if(rec)overlay.data.set(px)
           const k = f % 2, cur = L[k]!, prev = L[1 - k]!, dcur = D[k]!, dprev = D[1 - k]!
           VP[k]!.set(lot.input.frame.subarray(0, 16))
           const eye = Array.from(lot.input.frame.subarray(16, 19)) as number[]
           for (let i = 0, j = 0; i < N; i++, j += 4) cur[i] = 0.2126 * px[j]! + 0.7152 * px[j + 1]! + 0.0722 * px[j + 2]!
           const hasDepth = await grabDepth(dcur)
-          timing.readback+=performance.now()-frameStart
-          const analysisStart=performance.now()
+          timings.readbackMs+=performance.now()-frameStart
+          const encodeStart=performance.now()
           if (rec) {
             g.putImageData(image, 0, 0)
             const blob = await c2.convertToBlob({ type: "image/jpeg", quality: 0.9 })
@@ -282,7 +327,9 @@ try {
             for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000))
             jpegs.push(btoa(s))
           }
+          timings.encodeMs+=performance.now()-encodeStart
           if (f === 0) continue
+          const metricStart=performance.now()
           // Reproject: each pixel's world point (from its clip w) into last frame; compare with last frame's 3×3
           // neighbourhood range there, so sub-pixel resampling of a still scene scores zero and only appearance changes
           // (flashes, glitter, popping, smear) count. Disoccluded or off-screen pixels are skipped.
@@ -348,7 +395,14 @@ try {
               const diff = v > hi ? v - hi : v < lo ? lo - v : 0
               const gi = gy * 3 + Math.min(2, Math.floor((x * 3) / W))
               grid[gi]! += diff; cnt[gi]!++; heat[i]! += diff; valid++
-              if (diff >= 12) { pops[gi]!++; popMap[i]!++ }
+              if (diff >= 12) {
+                pops[gi]!++; popMap[i]!++
+                const region=lot.surfaceQuery?.region(wx,wy,wz) ?? (wy<1?"ground":"above ground")
+                regions[region]=(regions[region]??0)+1
+                const cell=`${region}:${Math.round(wx)},${Math.round(wy)},${Math.round(wz)}`
+                worldPops[cell]=(worldPops[cell]??0)+1
+                if(rec){overlay.data[i*4]=255;overlay.data[i*4+1]=32;overlay.data[i*4+2]=0}
+              }
               const bi = Math.floor(x / BS) + Math.floor(y / BS) * bw
               block[bi]! += v > hi ? v - hi : v < lo ? v - lo : 0; blockN[bi]!++
               for (let ri = 0; ri < roiOn.length; ri++) { const r = roiOn[ri]!; if (Math.abs(x - r.sx) < r.r && Math.abs(y - r.sy) < r.r) { r.sum += diff; r.n++; if (diff >= 12) r.pops++ } }
@@ -363,8 +417,23 @@ try {
           }
           frames.push({ grid: Array.from(grid, (v, i) => (cnt[i] ? v / cnt[i]! : 0)), fire: Array.from(pops), flash, flashMax, valid: valid / N,
             roi: { ...Object.fromEntries(roiC.map((r) => [r.name, [r.n ? r.sum / r.n : 0, r.pops]])), ...anchored } })
-          timing.analysis+=performance.now()-analysisStart
-          if(f%30===0)console.log("MOTION progress",f,"of",poses.length,JSON.stringify(timing))
+          timings.metricMs+=performance.now()-metricStart
+          const overlayStart=performance.now()
+          if(rec){
+            og.putImageData(overlay,0,0)
+            const b=new Uint8Array(await (await overlayCanvas.convertToBlob({type:"image/jpeg",quality:.92})).arrayBuffer())
+            let s="";for(let i=0;i<b.length;i+=0x8000)s+=String.fromCharCode(...b.subarray(i,i+0x8000))
+            overlays.push(btoa(s))
+          }
+          timings.encodeMs+=performance.now()-overlayStart
+          if (f % 30 === 0 || f === poses.length - 1) {
+            await (window as any).motionCheckpoint({
+              capturedFrames: f + 1, expectedFrames: poses.length,
+              comparisons: frames.length, lastPose: poses[f], frames,
+              regionPopTotals: regions, timings,
+            })
+            console.log("Motion progress", f, "/", poses.length, JSON.stringify(timings))
+          }
         }
         depthBuf?.destroy()
         readBuf.destroy()
@@ -388,14 +457,17 @@ try {
         const hb = new Uint8Array(await (await c2.convertToBlob({ type: "image/png" })).arrayBuffer())
         let hs = ""
         for (let i = 0; i < hb.length; i += 0x8000) hs += String.fromCharCode(...hb.subarray(i, i + 0x8000))
-        return { frames, jpegs, heat: btoa(hs), pops: btoa(ps), size: [W, H],timing }
-      }, { code, poses, warm, rec, size: viewport, rois: p.rois ?? [] })
+        return { frames, jpegs, overlays, timings, worldPops:Object.entries(worldPops).sort((a,b)=>b[1]-a[1]).slice(0,80), regions:Object.fromEntries(Object.entries(regions).map(([k,v])=>[k,v/(poses.length-1)])), heat: btoa(hs), pops: btoa(ps), size: [W, H] }
+      }, { code, poses, warm, rec, size: viewport, rois: p.rois ?? [] })])
       if (errors.length) throw new Error(errors.join("\n"))
       const fr = result.frames as { grid: number[]; fire: number[]; flash: number; flashMax: number; valid: number; roi: Record<string, [number, number]> }[]
       const mean = (f: (x: (typeof fr)[0]) => number) => fr.reduce((s, x) => s + f(x), 0) / fr.length
       const grid = Array.from({ length: 9 }, (_, i) => mean((x) => x.grid[i]!))
       const summary = {
-        timing:result.timing,
+        timings:result.timings,
+        gpuMs:await page.evaluate(()=>(window as any).lot.measureFrames(12,3)),
+        regions:result.regions,
+        worldPops:result.worldPops,
         flicker: grid.reduce((a, b) => a + b, 0) / 9,
         grid: grid.map((v) => +v.toFixed(3)),
         fireflies: mean((x) => x.fire.reduce((a, b) => a + b, 0)),
@@ -414,6 +486,8 @@ try {
         const dir = resolve(out, "frames", `${path}-${variant}`)
         mkdirSync(dir, { recursive: true })
         result.jpegs.forEach((b: string, i: number) => writeFileSync(resolve(dir, `${String(i + 1).padStart(4, "0")}.jpg`), Buffer.from(b, "base64")))
+        const overlayDir=resolve(out,"overlays",`${path}-${variant}`);mkdirSync(overlayDir,{recursive:true})
+        result.overlays.forEach((b:string,i:number)=>writeFileSync(resolve(overlayDir,`${String(i+1).padStart(4,"0")}.jpg`),Buffer.from(b,"base64")))
       }
       console.log(`${path.padEnd(9)} ${variant.padEnd(14)} flicker ${summary.flicker.toFixed(3)}  pops ${summary.fireflies.toFixed(1)}  flash frames ${summary.flashFrames} (max ${summary.flashMax.toFixed(1)})  grid ${summary.grid.join(" ")}  valid ${summary.valid.toFixed(2)}  ${Object.entries(summary.roi).map(([n, r]) => `${n} ${r.flicker}/${r.pops}/${r.popFrames}f`).join("  ")}`)
       writeFileSync(resolve(out, "motion.json"), JSON.stringify(report, null, 1))
