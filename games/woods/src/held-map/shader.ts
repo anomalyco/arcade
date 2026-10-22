@@ -342,10 +342,10 @@ fn shadeOpaque(o: VOut, front: bool) -> vec4f {
     let inside = 0.5 + 0.5 * cos((ux - 0.5) * 6.2831853);
     let wob = vnoise3(o.local * 600.0) * 1.6;
     let phase = (o.uv.y - round(o.uv.y)) * 34.0 + wob;
-    let fold = sin(phase) * joint * (0.35 + 0.65 * inside);
-    dn += T * cos(phase) * joint * (0.35 + 0.65 * inside) * 1.1;
+    let fold = sin(phase) * joint * (0.2 + 0.8 * inside);
+    dn += T * cos(phase) * joint * (0.2 + 0.8 * inside) * 0.75;
     // Fine wrinkles along the whole finger (leather that has been flexed for years).
-    let fine = sin(o.uv.y * 140.0 + vnoise3(o.local * 300.0) * 5.0) * fingerish * 0.12;
+    let fine = sin(o.uv.y * 140.0 + vnoise3(o.local * 300.0) * 5.0) * fingerish * 0.07;
     dn += T * fine;
     // Welted seams: a raised ridge with a groove each side and stitches along it.
     let c = select(0.75, 0.25, ux < 0.5);
@@ -359,11 +359,11 @@ fn shadeOpaque(o: VOut, front: bool) -> vec4f {
     dn += T * band * 0.8;
     n = normalize(n + dn - n * dot(dn, n));
     let wear = H.leather.y;
-    let scuff = smoothstep(0.55, 0.85, vnoise3(o.local * 160.0)) * wear;
+    let scuff = smoothstep(0.62, 0.9, vnoise3(o.local * 160.0)) * wear;
     let tone = 0.75 + 0.5 * vnoise3(o.local * 60.0);
     albedo = H.glove.rgb * tone;
     // Rubbed high spots and knuckles go lighter and duller; fold valleys and seams collect dirt.
-    albedo = mix(albedo, albedo * 1.6 + vec3f(0.01, 0.008, 0.005), clamp(scuff * 0.6 + joint * (1.0 - inside) * 0.5 * wear + welt * 0.25 * fingerish, 0.0, 1.0));
+    albedo = mix(albedo, albedo * 1.45 + vec3f(0.006, 0.004, 0.002), clamp(scuff * 0.45 + joint * (1.0 - inside) * 0.35 * wear + welt * 0.2 * fingerish, 0.0, 1.0));
     albedo *= 1.0 - 0.45 * max(-fold, 0.0) - 0.4 * stitch - 0.35 * bandStitch;
     rough = mix(0.62, 0.85, scuff) - 0.08 * max(fold, 0.0);
     f0 = 0.035;

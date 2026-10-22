@@ -105,7 +105,7 @@ page.on("pageerror", (e) => errors.push(e.message))
 page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") errors.push(m.text()) })
 await page.goto(`http://127.0.0.1:${server.port}${prefix}?quality=${arg("--quality", "high")}`, { waitUntil: "load" })
 await page.waitForFunction(() => (window as unknown as { woods?: Woods }).woods && woods.frames > 2, null, { timeout: 180000 }).catch((e) => { console.log(errors.join("\n")); throw e })
-await page.evaluate((sets) => { document.getElementById("start")!.style.display = "none"; document.getElementById("hud")!.style.display = "none"; woods.paused = true; Object.assign(woods.held.settings, sets) }, sets)
+await page.evaluate((sets) => { document.getElementById("start")!.style.display = "none"; document.getElementById("hud")!.style.display = "none"; for (const id of ["objective", "subs", "toast"]) { const el = document.getElementById(id); if (el) el.style.visibility = "hidden" }; woods.paused = true; Object.assign(woods.held.settings, sets) }, sets)
 await story(page)
 defaults = await page.evaluate(() => ({ ...woods.held.settings }))
 const dumpCanvases = async () => {

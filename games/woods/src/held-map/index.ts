@@ -735,7 +735,7 @@ export class HeldMap {
     const bc = toW(bezel, [0, 0, B.h * mm]), bn = v3.norm(dir(mul(invView, bezel), [0, 0, 1]))
     u.set([bc[0], bc[1], bc[2], B.outer * mm], o); o += 4
     u.set([bn[0], bn[1], bn[2], B.inner * mm], o); o += 4
-    const leather: V3 = [lerp(0.03, 0.14, tone), lerp(0.015, 0.07, tone), lerp(0.007, 0.032, tone)]
+    const leather: V3 = [lerp(0.022, 0.12, tone), lerp(0.011, 0.06, tone), lerp(0.006, 0.028, tone)]
     u.set([leather[0], leather[1], leather[2], 0], o); o += 4
     // Your torch (matched in the light list by its lens): its beam profile flattened on the props while reading.
     const lensW = toW(torch, [0, 0, 0])
