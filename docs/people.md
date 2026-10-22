@@ -50,7 +50,10 @@ blender -b --factory-startup --python scripts/people/lineup.py -- out.png <glb> 
   therefore dress a whole cast, and Outbreak survivors or office workers swap outfits in `cast.json`.
 - Materials are named `kind.piece` (`nylon.jacket`, `cloth.trousers`, `knit.beanie`, `skin`, `hair`, `brow`, `eye`);
   `extras.people` carries `kind`, `piece`, `albedo` and `mean`.
-- Gear is procedural: the backpack (a bevelled, tapered box on `spine_03`) and its shoulder straps (ribbons traced
+- Gear is procedural: the backpack (a daypack about 44 × 27 × 18 cm: its back panel is sampled from the wearer's
+  back and flattened a little across, so it rests on the shoulder blades and lower back 1 cm off the clothes; tapered,
+  fuller at the bottom, rounded walls, mesh side pockets, a zipped lid and front pocket, compression straps; each
+  vertex takes the averaged weights of the body under it, so it bends with the back) and its shoulder straps (ribbons traced
   over the clothes' outer surface, skinned by copying the nearest body vertex's weights), the headlamp band (traced
   round the head, beanie and hair at brow height) with its housing and lens on `head`, and the knit beanie. Ripstop
   and webbing are generated luminance textures; the housing and lens are untextured (`plastic`, `lens` kinds).
@@ -96,6 +99,7 @@ for the beam and the torch mesh. Woods' adapter is `games/woods/src/people-view.
 | Planted ball slip, flat walk 1.4 m/s | 0 mm (max 0.1 mm), every body |
 | Rolling ground + 30 cm log at 1.2 m/s, sole points | worst sink 11–14 mm (heel strikes on the slope), planted float ≤ 4.4 mm except f's 35 mm (a flat boot touching a round log at one point between heel and ball), swing clearance over the log 5–62 mm |
 | Torch barrel vs beam | 0° worst over a 1.4 m/s walk |
+| Backpack to back (7 packs, `measure.ts` `pack`) | 0.9–1.0 cm clear at rest (bridging the spine groove: median 1.5–2.1 cm along the back's normal); smallest gap over walk, run and weight shift +2.2 mm (never inside the clothes) |
 | Gait | unchanged: the rig drives it (`gait-metrics.ts --tag after` matches main) |
 
 ## Known gaps
