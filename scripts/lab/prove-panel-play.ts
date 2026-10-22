@@ -9,7 +9,8 @@
 //   ... -- bun scripts/lab/prove-panel-play.ts --clip woods     also records clicking off the panel into a game's dist
 // Never opens a visible window and never plays sound (muted browser).
 import assert from "node:assert/strict"
-import { existsSync, mkdirSync, readdirSync, renameSync, writeFileSync } from "node:fs"
+import { execFileSync } from "node:child_process"
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { resolve, sep } from "node:path"
 import { chromium, type Page } from "playwright-core"
 import { createServer } from "vite"
@@ -176,6 +177,8 @@ async function harness() {
   await server.close()
 }
 
+// Playwright's screencast doesn't keep up with a WebGPU game, so the clip is screenshots (about 4 a second) with a
+// caption naming each step, encoded with ffmpeg; the frames are deleted afterwards.
 async function record(game: string) {
   const built = resolve(root, "games", game, "dist/arcade", game)
   assert(existsSync(built), `build ${game} first (bun run --cwd games/${game} build)`)
@@ -188,47 +191,76 @@ async function record(game: string) {
     const f = Bun.file(file)
     return (await f.exists()) ? new Response(f) : new Response("Not found", { status: 404 })
   } })
-  const dir = resolve(out, "clip")
-  mkdirSync(dir, { recursive: true })
-  const context = await browser.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1, recordVideo: { dir, size: { width: 1280, height: 720 } } })
-  const page = await context.newPage()
+  const frames = resolve(out, `${game}-frames`)
+  rmSync(frames, { recursive: true, force: true })
+  mkdirSync(frames, { recursive: true })
+  const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 })
   await page.goto(`http://127.0.0.1:${server.port}${prefix}?quality=balanced`)
   await page.waitForSelector("[data-lab-panel]", { state: "attached", timeout: 300_000 })
-  await page.waitForTimeout(4000)
-  // Into the game, then open the panel and tune.
-  await page.mouse.click(640, 400)
-  await page.waitForTimeout(800)
-  await page.keyboard.press("Backquote")
-  await page.waitForTimeout(900)
-  const heads = page.locator("[data-lab-panel] .knobs-group-head[data-foldable]")
-  if (await heads.count() > 1) { await heads.nth(1).click(); await page.waitForTimeout(700) }
-  const slider = page.locator('[data-lab-panel] .knobs-row [role="slider"]').first()
-  await slider.focus()
-  for (let i = 0; i < 6; i++) { await page.keyboard.press("ArrowRight"); await page.waitForTimeout(90) }
-  await page.waitForTimeout(500)
-  // Click off: back into the game with the panel still up, walk and look.
-  await page.mouse.click(500, 420)
-  await page.waitForTimeout(400)
-  report.clipLocked = await page.evaluate(() => Boolean(document.pointerLockElement))
-  await page.keyboard.down("KeyW")
-  for (let i = 0; i < 30; i++) { await page.mouse.move(500 + i * 6, 420); await page.waitForTimeout(40) }
-  await page.keyboard.up("KeyW")
-  await page.waitForTimeout(400)
-  // And back to the panel: Backquote frees the pointer and focuses it; Backquote again closes it.
-  await page.keyboard.press("Backquote")
-  await page.waitForTimeout(500)
-  await page.keyboard.press("Backquote")
-  await page.waitForTimeout(700)
-  await page.keyboard.press("Backquote")
-  await page.waitForTimeout(900)
-  const video = page.video()
-  await context.close()
-  server.stop(true)
-  if (video) {
-    const path = resolve(out, `${game}-play-with-panel.webm`)
-    renameSync(await video.path(), path)
-    report.clip = path
+  await page.waitForTimeout(3000)
+  await page.evaluate(() => {
+    const c = document.createElement("div")
+    c.id = "proof-caption"
+    c.style.cssText = "position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:2147483647;padding:8px 14px;border-radius:10px;background:rgba(0,0,0,.72);color:#fff;font:600 15px system-ui;pointer-events:none"
+    document.body.append(c)
+  })
+  let n = 0
+  const caption = (text: string) => page.evaluate(t => { document.getElementById("proof-caption")!.textContent = t }, text)
+  const shoot = async (count: number) => {
+    for (let i = 0; i < count; i++) await page.screenshot({ path: resolve(frames, `${String(n++).padStart(4, "0")}.jpg`), type: "jpeg", quality: 85, timeout: 60_000 })
   }
+  const locked = () => page.evaluate(() => Boolean(document.pointerLockElement))
+  const steps: Record<string, unknown>[] = []
+  const note = async (step: string) => steps.push({ step, locked: await locked(), panel: await page.evaluate(() => !document.querySelector("[data-lab-panel] .lab-panel-body")!.hasAttribute("hidden")) })
+
+  await caption("The woods: click Play alone")
+  await shoot(3)
+  await page.locator("#solo").click()
+  await page.waitForTimeout(500)
+  await note("playing")
+  await caption("Playing · press ` to open the knobs")
+  await shoot(3)
+  await page.keyboard.press("Backquote")
+  await page.waitForTimeout(600)
+  await note("panel open")
+  await caption("` opens the knobs and frees the pointer · groups folded, Flashlight open")
+  await shoot(5)
+  await page.locator('[data-lab-panel] .knobs-group-head[data-group="Camera"]').click()
+  await page.waitForTimeout(500)
+  await caption("Open Camera, tune Exposure")
+  const exposure = page.locator('[data-lab-panel] .knobs-row[data-field="woods.exposure"] [role="slider"]')
+  await exposure.focus()
+  for (let i = 0; i < 10; i++) { await page.keyboard.press("ArrowRight"); await shoot(1) }
+  await shoot(3)
+  await caption("Click the woods: back to playing, the knobs stay open")
+  await page.mouse.click(520, 420)
+  await page.waitForTimeout(300)
+  await note("clicked off")
+  await shoot(2)
+  await caption("W walks, the mouse looks · keys go to the game, not the panel")
+  await page.keyboard.down("KeyW")
+  for (let i = 0; i < 12; i++) { await page.mouse.move(520 + i * 8, 420); await shoot(1) }
+  await page.keyboard.up("KeyW")
+  await note("walked")
+  await caption("` again: back to the knobs (pointer freed, panel focused)")
+  await page.keyboard.press("Backquote")
+  await page.waitForTimeout(400)
+  await page.keyboard.press("Backquote")
+  await page.waitForTimeout(500)
+  await note("back to panel")
+  await shoot(4)
+  await caption("Escape closes it")
+  await page.keyboard.press("Escape")
+  await page.waitForTimeout(500)
+  await note("closed")
+  await shoot(4)
+  await page.close()
+  server.stop(true)
+  const path = resolve(out, `${game}-play-with-panel.mp4`)
+  execFileSync("ffmpeg", ["-v", "error", "-y", "-framerate", "4", "-i", resolve(frames, "%04d.jpg"), "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart", path])
+  rmSync(frames, { recursive: true, force: true })
+  report.clip = path
+  report.clipSteps = steps
 }
 
 try {
