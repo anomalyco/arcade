@@ -221,7 +221,25 @@ out of Random, hold `\` to see the values from before the last change, `⇧S` sa
 section or page), the row menu and `?` for the rest. In the Lab, `u`/`z` in a panel use the workbench's undo, the same
 history as `⌘Z`. Compare's preview and its release apply to the settings but are never undo steps: holding `\` first
 closes a gesture still settling, so that gesture stays one step of its own. A panel only works while focus is inside
-it, and an open game overlay keeps every key from the game.
+it.
+
+A game's Backquote overlay (floating layout) is compact by default: every group folds from its header, only the
+groups in `openGroups` start open (the first group, or the first on each tab, when it names none), sub-headings
+(`subsection`) start folded, and what the player folds and opens is remembered per game in localStorage
+(`knobs:lab:arcade-<game>:folds:v1`). Search spans folds and tabs, and `reveal(key)` opens a row's group and
+sub-heading. A group's header carries a modified dot while anything inside differs from its default, beside its reset.
+Long panels split into tabs (`setTabs`): a tab's `match` takes groups by id, including groups added later, and the
+`rest` tab takes whatever no tab claims (Outbreak's six tabs, `games/outbreak/src/lab-tabs.ts`). The Lab's inspector
+groups fold the same way but start open.
+
+With `capture: "focus"` (Woods, Outbreak, Night Shift, the Lot) the player plays with the overlay open: Backquote
+opens it with focus (freeing a locked pointer), a click on the game hands input back and relocks while the panel
+stays up, a click on the panel takes input again, and Backquote while playing closes it without leaving the game.
+Games gate keys, look and pointer lock on `panel.holdsInput`, not `panel.visible`: the kit `Input` takes
+`input.blocked = () => panel.holdsInput`, and a game's window-capture key listener skips targets where
+`isLabPanelEventTarget` (`@arcade/kit/client/controls`) is true. Keys typed in the panel (its rows,
+search, menus) never reach the game; Escape or the close button closes it. `capture: "open"` overlays keep every key
+from the game while open. Proof: `bun scripts/lab/prove-panel-play.ts`.
 
 - Put every tunable visual, material, physics and audio value in a typed settings object consumed by the real code.
   Bind it with `LabPanel.addControls(settings, controls)` or a `LabSection`'s `settings`/`controls`. `LabSettings`
@@ -343,8 +361,8 @@ Text editors, search, `<select>` dropdowns and preset dialogs own printable keys
 shortcuts. They must not trigger canvas actions. A list with type-to-filter (the Library) owns printable keys the same
 way: mark its host `data-typeahead` so capture-phase letter shortcuts (`M` mute) skip it, and stop
 propagation for the keys it handles. Placement/move ghosts precede Inspector navigation; focused Inspector
-precedes gameplay. Standalone `LabPanel` uses `capture: "focus"`, `layout: "inspector"`; game overlays use floating/open
-capture.
+precedes gameplay. Standalone `LabPanel` uses `capture: "focus"`, `layout: "inspector"`; game overlays are floating,
+with `capture: "focus"` to play beside them (gate on `holdsInput`) or `"open"` to keep every key while they show.
 
 Canvas click in Edit selects/places and never possesses a character. Enter Play explicitly with `P` or the Play button
 when a character exists. Escape or sidebar/toolbar focus exits Play and releases held keys, including Dvorak movement

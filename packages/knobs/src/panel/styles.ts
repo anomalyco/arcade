@@ -368,8 +368,9 @@ ${POINTER_ROW} :is(.knobs-card>*,.knobs-sub,.knobs-x-head):not(:hover)::after{op
 .knobs-panel .knobs-slider{height:var(--k-row);contain:layout style}
 .knobs-panel .knobs-row:where(:not(.knobs-slider,.knobs-x,.knobs-spring)){display:flex;align-items:center;justify-content:space-between;gap:8px;height:var(--k-row);padding:0 var(--k-inset);contain:layout style}
 .knobs-panel .knobs-row>span:first-child{color:var(--k-label);font-weight:var(--k-label-weight);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.knobs-row>span:first-child::after{content:"";display:inline-block;width:4px;height:4px;margin-left:5px;border-radius:50%;background:var(--k-modified);vertical-align:middle;opacity:0;transform:scale(.4);transition:opacity .16s ease-out,transform .28s cubic-bezier(.34,1.5,.64,1)}
-.knobs-modified.knobs-row>span:first-child::after{opacity:.95;transform:none}
+/* Rows, and group and sub-heading labels with something changed inside, carry the modified dot. */
+:is(.knobs-row>span:first-child,.knobs-group-label,.knobs-subhead-label)::after{content:"";display:inline-block;width:4px;height:4px;margin-left:5px;border-radius:50%;background:var(--k-modified);vertical-align:middle;opacity:0;transform:scale(.4);transition:opacity .16s ease-out,transform .28s cubic-bezier(.34,1.5,.64,1)}
+:is(.knobs-modified.knobs-row>span:first-child,:is(.knobs-group-head,.knobs-subhead)[data-modified] :is(.knobs-group-label,.knobs-subhead-label))::after{opacity:.95;transform:none}
 /* A locked row's lock sits just left of its readout (or its control), where the eye reads the value.
    Its room opens at once (it's right-aligned, so nothing beside it moves); the icon fades and
    scales in place. */
@@ -819,17 +820,19 @@ ${POINTER_ROW} .knobs-slider.knobs-modified:not(:hover,.knobs-active) .knobs-val
 /* Hint mode: stable short codes, zero layout shift */
 .knobs-hinting .knobs-hint-miss{opacity:var(--k-disabled-opacity);transition:opacity .1s}
 .knobs-hint-layer{position:absolute;left:0;top:0;width:0;height:0;pointer-events:none;z-index:5;animation:knobs-in .1s var(--k-ease)}
-.knobs-hint{position:absolute;transform:translateY(-50%);display:inline-flex;align-items:center;height:15px;padding:0 4px;border-radius:var(--k-radius-sm);background:var(--k-accent);color:var(--k-bg);box-shadow:0 1px 3px rgba(0,0,0,calc(.35 * var(--k-lift)));
+/* The badges are <kbd>s, so they outrank the scoped reset's (0,1,1). */
+.knobs-panel .knobs-hint{position:absolute;transform:translateY(-50%);display:inline-flex;align-items:center;height:15px;padding:0 4px;border-radius:var(--k-radius-sm);background:var(--k-accent);color:var(--k-bg);box-shadow:0 1px 3px rgba(0,0,0,calc(.35 * var(--k-lift)));
   font:700 var(--k-text-cap)/1 var(--k-mono);letter-spacing:.04em;text-transform:uppercase;pointer-events:none}
+.knobs-panel .knobs-hint[hidden]{display:none}
 .knobs-hint-typed{opacity:var(--k-hint-typed-opacity)}
 .knobs-hint-rest{opacity:1}
 
 /* A focused row's options: tiny digits in hint mode's look, once focus settles (optkeys.ts). */
 .knobs-optkeys{position:absolute;left:0;top:0;width:0;height:0;pointer-events:none;z-index:5}
-.knobs-optkey{position:absolute;transform:translateY(-50%);display:inline-flex;align-items:center;height:12px;padding:0 3px;border-radius:var(--k-radius-sm);background:var(--k-accent);color:var(--k-bg);box-shadow:0 1px 3px rgba(0,0,0,calc(.35 * var(--k-lift)));
+.knobs-panel .knobs-optkey{position:absolute;transform:translateY(-50%);display:inline-flex;align-items:center;height:12px;padding:0 3px;border-radius:var(--k-radius-sm);background:var(--k-accent);color:var(--k-bg);box-shadow:0 1px 3px rgba(0,0,0,calc(.35 * var(--k-lift)));
   font:700 calc(var(--k-text-cap) * .85)/1 var(--k-mono);letter-spacing:.04em;pointer-events:none;opacity:0;transition:opacity .12s var(--k-ease)}
-.knobs-optkey-range{transform:translate(-100%,-50%)}
-.knobs-optkey[data-shown]{opacity:.85;transition-duration:.15s}
+.knobs-panel .knobs-optkey-range{transform:translate(-100%,-50%)}
+.knobs-panel .knobs-optkey[data-shown]{opacity:.85;transition-duration:.15s}
 
 /* Custom actions */
 .knobs-panel .knobs-custom-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:var(--k-gap);margin-top:var(--k-section-gap)}

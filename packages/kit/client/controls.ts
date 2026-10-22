@@ -330,6 +330,12 @@ export function isEditableEventTarget(target: EventTarget | null | undefined): b
   return el.isContentEditable === true || tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT"
 }
 
+/** True when `target` is in the Lab panel or one of its knobs menus: its keys are the panel's, not the game's. */
+export function isLabPanelEventTarget(target: EventTarget | null | undefined): boolean {
+  const el = target as { closest?: unknown } | null | undefined
+  return typeof el?.closest === "function" && Boolean((el as Element).closest("[data-lab-panel],.knobs-menu"))
+}
+
 export const isNavigationKey = (code: string): boolean =>
   code === "Space" || code === "ArrowUp" || code === "ArrowDown" || code === "ArrowLeft" || code === "ArrowRight"
 

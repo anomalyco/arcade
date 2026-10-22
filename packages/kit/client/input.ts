@@ -41,6 +41,8 @@ export class Input<Selection extends string = string> {
   }
   onKey: ((code: string) => void) | null = null
   onWheel: ((delta: number) => void) | null = null
+  /** While true (a Lab panel holding input), keydowns and pointer moves stay out of the game; releases still land. */
+  blocked: (() => boolean) | null = null
   readonly mux = new URLSearchParams(location.search).has("mux") && parent !== window
   readonly parentOrigin = document.referrer ? new URL(document.referrer).origin : location.origin
   readonly muxRun = new URLSearchParams(location.search).get("muxRun") ?? ""
@@ -48,7 +50,7 @@ export class Input<Selection extends string = string> {
   constructor(canvas: HTMLElement, private interactCodes = ["KeyE", "KeyF"]) {
     canvas.tabIndex = -1
     window.addEventListener("keydown", (e) => {
-      if (isEditableEventTarget(e.target)) return
+      if (isEditableEventTarget(e.target) || this.blocked?.()) return
       if (e.code === "Tab" || isNavigationKey(e.code)) e.preventDefault()
       const msg: MuxKey = { type: "mux-key", kind: "keydown", code: e.code, key: e.key, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey, ctrlKey: e.ctrlKey }
       if (this.mux) { if (!e.repeat) this.forward(msg) }
@@ -64,6 +66,7 @@ export class Input<Selection extends string = string> {
       this.release()
     })
     window.addEventListener("mousemove", (e) => {
+      if (this.blocked?.()) return
       this.mouseEvent(e)
     })
     canvas.addEventListener("mousedown", (e) => {

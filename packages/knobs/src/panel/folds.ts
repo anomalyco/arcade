@@ -1,7 +1,7 @@
 import { storageKey, type StoragePort } from "../core/storage.js"
 
-/** What a page remembers folded or open: its sections and its group cards. */
-export type FoldKind = "sections" | "groups"
+/** What a page or panel remembers folded or open: sections, group cards and a panel's sub-headings. */
+export type FoldKind = "sections" | "groups" | "subsections"
 
 export interface FoldMemory {
   /** What the user last chose for it, if anything. */
@@ -10,9 +10,9 @@ export interface FoldMemory {
 }
 
 /**
- * A page's folds, kept under `knobs:<id>:folds:v1` in `storage` as
- * `{ sections: Record<string, boolean>, groups: Record<string, boolean> }`, and nothing else (no
- * values, locks or variants). `null` storage remembers nothing.
+ * A page's or panel's folds, kept under `knobs:<id>:folds:v1` in `storage` as
+ * `{ sections?: Record<string, boolean>, groups?: Record<string, boolean>, subsections?: … }`, and
+ * nothing else (no values, locks or variants). `null` storage remembers nothing.
  */
 export function foldMemory(id: string, storage: () => StoragePort | null): FoldMemory {
   const key = storageKey(id, "folds")
@@ -34,11 +34,7 @@ export function foldMemory(id: string, storage: () => StoragePort | null): FoldM
       if (!port) return
       const data = read()
       if (data[kind]?.[at] === folded) return
-      const next = {
-        sections: { ...data.sections },
-        groups: { ...data.groups },
-        [kind]: { ...data[kind], [at]: folded },
-      }
+      const next = { ...data, [kind]: { ...data[kind], [at]: folded } }
       try {
         port.setItem(key, JSON.stringify(next))
       } catch {

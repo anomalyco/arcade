@@ -2,6 +2,7 @@ import { Camera } from "@arcade/kit/client/camera"
 import { keyLabelSetting } from "@arcade/kit/client/controls"
 import { Renderer } from "@arcade/kit/gpu/renderer"
 import { LabPanel } from "@arcade/kit/lab-panel"
+import { OUTBREAK_LAB_TABS } from "./lab-tabs"
 import { attachCameraFilter } from "@arcade/kit/gpu/post/camcorder"
 import { createLookControls } from "@arcade/kit/look"
 import {
@@ -237,8 +238,10 @@ async function main() {
       inputController.release()
       pacer.clock.pause(performance.now())
     },
-    (key, value) => onSettingChanged(key, value),
+    { capture: "focus", openGroups: ["Feel"], onChange: (key, value) => onSettingChanged(key, value) },
   )
+  lab.setTabs(OUTBREAK_LAB_TABS)
+  input.blocked = () => lab.holdsInput
   bindOutbreakLabControls(lab, settings, controls)
 
   registerOutbreakGameCommands({

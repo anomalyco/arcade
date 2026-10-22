@@ -63,7 +63,8 @@ export function fromKnobs(control: LabControl, value: Value): LabValue | undefin
 }
 
 /** Where a row sits in a view: its tab and heading there, and the upper end it pairs with (a low–high range). */
-export type DescribePlace = { tab?: string; groupLabel?: string; pair?: LabControl }
+/** `folded`: how the row's group starts when its view folds groups (over the control's own `folded`). */
+export type DescribePlace = { tab?: string; groupLabel?: string; pair?: LabControl; folded?: boolean }
 
 /**
  * One row as a knobs descriptor, or null when knobs can't draw it (a select with no options). `disabled` is the row's
@@ -83,7 +84,7 @@ export function describe(row: LabRow & { control: LabControl }, defaults: Readon
     ...(c.subsection ? { subsection: c.subsection } : {}),
     ...(c.enabled?.(settings) === false || upper?.enabled?.(settings) === false ? { disabled: true } : {}),
     ...(isStructuralKey(c.key) ? { random: false } : {}),
-    ...(c.folded ? { folded: true } : {}),
+    ...(place.folded !== undefined ? { folded: place.folded } : c.folded ? { folded: true } : {}),
   }
   if (c.type === "action") return { ...base, kind: "action" }
   if (c.type === "readout") {
