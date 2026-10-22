@@ -9,7 +9,7 @@
   room (games in progress reset), so CI runs `scripts/deploy.ts --if-changed`: it skips the deploy when the build's
   fingerprint (`/arcade/carrier/deploy.txt`) matches the live one, e.g. a merge that only touches other games.
 - WebGPU only runs in secure contexts: test via the deployed URL or `localhost`, never a bare LAN hostname.
-- No params: the load screen (quick join, create, join by code; see CONTRACTS.md "Multiplayer"). URL params:
+- No params: the title (the kit game shell: quick join, create, join by code; see CONTRACTS.md "Multiplayer"). URL params:
   `?room=name` (join it directly), `?seed=N` (offline, fixed world, no menu), `?t=S` (freeze sea time),
   `?cam=x,z,yaw,pitch,dist` (yaw/pitch in degrees, yaw 0 looks north), `?weather=clear|light|medium|heavy` (local
   weather preview from the start, dev builds), `?lab=weather` (dev: opens the dev panel on its weather section; any section id works),
@@ -58,3 +58,20 @@
 - `shared/` runs in the Durable Object and the browser: keep it free of DOM and Worker APIs. `scripts/build-id.ts`
   hashes it into `shared/build.gen.ts` (gitignored) for the client/server version handshake.
 - Cross-game techniques and lessons: `../../docs/game-notes.md`. Shared code plans: `../../docs/shared-code.md`.
+
+## Game shell
+
+- The title, lobby, Escape menu and Settings are the kit game shell (`@arcade/kit/shell`, [docs/game-shell.md](../../docs/game-shell.md)), set up in `src/main.ts` over the live offline sea. Carrier is rooms only (no Play alone) and needs a callsign (`nameRequired`). The Tab menu, DEPLOY and chat stay Carrier's own. Shell colours are in `src/ui/menu.css`.
+- Deliberate changes when it moved onto the shell (Oct 22):
+  - The load screen (`src/ui/menu.ts`, removed) is the shell's title: callsign, Quick join, Play with friends (Create
+    game) and Join by code or invite link, with Settings and mute in the corner. An invite link without a saved
+    callsign shows "Join room CODE" instead of a prefilled code field; a full room returns to the title with the
+    message (the pre-check of `GET /api/room/:code` is gone).
+  - Escape first closes Carrier's own menus (Tab pinned, DEPLOY, the radar map), then opens the shell's menu
+    (Resume, Settings, Leave room). The room keeps playing behind it with the controls idle; Leave room returns to
+    the title over the offline sea.
+  - Volume and mute are in Settings (Master, Effects, Ambience: the same `arcade.volume.carrier.v1`); the mixer's
+    designer levels stay underneath in the dev panel. M mutes from the shell (the runtime's own M is off; the mute in
+    `carrier.audio.v4` is carried over once) and the "SOUND OFF" toast stays. Quality is in Settings and uses the
+    slow-frames policy.
+  - Connection trouble shows in the shell's reconnect pill.

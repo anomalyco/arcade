@@ -167,7 +167,10 @@ export class Radar {
     this.map = root.querySelector<HTMLCanvasElement>(".map")!
     this.mask.width = this.mask.height = MASK
     addEventListener("keydown", (e) => {
-      if (e.code === "Escape") this.pinned = this.held = false
+      if (e.code === "Escape" && (this.pinned || this.held)) {
+        e.preventDefault()
+        this.pinned = this.held = false
+      }
       if (e.code !== "KeyG" || e.repeat || e.metaKey || e.ctrlKey || e.altKey || isEditableEventTarget(e.composedPath()[0])) return
       if (this.pinned) {
         this.pinned = false

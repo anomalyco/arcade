@@ -281,10 +281,12 @@ grid, so the room's combat sim sees exactly the jet its clients draw); ships and
 (lossless). Each timed list carries one f64 of whole ms plus a varint offset per entry. `scripts/net-bandwidth.ts`
 measures a full 32-player room (JSON before: 32.0 KB/s down per client; binary: 10.7 KB/s).
 
-## Multiplayer (`shared/{crew,squad,ops}.ts`, `server/{lobby,matchmaking,core,room}.ts`, `src/ui/{lobby,menu,team-menu,ops-menu}.ts`)
+## Multiplayer (`shared/{crew,squad,ops}.ts`, `server/{lobby,matchmaking,core,room}.ts`, `src/ui/{lobby,team-menu,ops-menu}.ts`)
 
-- Load screen (`menu.ts`, over an offline sea, seed 7): name, QUICK JOIN, CREATE GAME, JOIN GAME by code. `?room=X`
-  joins straight away, `?seed=N` plays offline; both skip it. The chosen room goes into the address bar as `?room=`.
+- Title (the kit game shell in `src/main.ts`, over an offline sea, seed 7): callsign (required), Quick join, Play with
+  friends (Create game, private), Join by code or invite link. `?room=X` with a saved callsign joins straight away
+  (without one the title offers "Join room X"), `?seed=N` plays offline; both skip it. The room is in the address bar
+  as `?room=`; Escape's Leave room returns to the title.
 - Lobby Durable Object (`Lobby`, binding `LOBBY`, singleton, room reports persisted): `GET /api/quick` (fullest open
   public room, else a shared fresh code), `POST /api/create` (fresh private code; quick join never hands it out),
   `GET /api/room/:code`, `GET /api/stats`. Rooms report `{ code, players, private }` (1 s throttle, 10 s heartbeat,
