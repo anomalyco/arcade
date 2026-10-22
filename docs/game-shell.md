@@ -37,7 +37,7 @@ const shell = createGameShell({
   game: "lot", title: "LOT", subtitle: "Ashwood, after hours", playLabel: "Walk the lot",
   channels: ["master", "effects", "ambience"], quality,
   pointerLock: canvas,                       // omit for cursor games
-  blocked: () => panel.visible,              // hides the overlays while the Lab panel is open
+  blocked: () => panel.holdsInput,           // hides the overlays while the Lab panel has the input
   keysBlocked: () => panel.hasFocus(),       // the shell ignores M and Escape while typing in the panel
   loading: { gpu: 1, world: 4, frame: 1 },   // or omit when the game has its own loading art
   controls: () => [keyPromptHtml("KeyW", "Move"), keyPromptHtml("Escape", "Menu")].join(" "),
@@ -119,7 +119,7 @@ Woods (`games/woods`, branch `woods`) built the shell's first draft: `src/menu.t
 and `#pause` cards in `index.html`, and quality that starts High and is remembered (`woods.quality`). To adopt the
 kit shell: replace `SettingsMenu` and both cards with `createGameShell({ game: "woods", title: "WOODS", subtitle,
 soloLabel: "Play alone", soloNote: "you and three campers", friendsNote: "a private room, up to 6", resumeLabel:
-"Back to the woods", pointerLock: canvas, blocked: () => panel.visible, keysBlocked: () => panel.hasFocus(), quality,
+"Back to the woods", pointerLock: canvas, blocked: () => panel.holdsInput, keysBlocked: () => panel.hasFocus(), quality,
 lobby: { friends: true, onJoin: (room) => (location.search = `?room=${room}`) } })`; build quality with
 `createShellQuality({ game: "woods", tiers: FOREST_QUALITY, ... })` (the saved key becomes `arcade.quality.woods.v1`);
 point the sound bank's volumes and mute at `shell.settings` (channels master, effects, ambience); drop the Lab's
