@@ -54,3 +54,14 @@ test("tube reuses the exact stateless kit signal and starter stays quiet when st
   for(let i=0;i<60*240;i++){const t=i/240,s=tubeSignal(t,1);expect(s.level).toBe(lampFlicker("fluorescent",87,t,1).level);if(s.crackle>0)edges++}
   expect(edges).toBeGreaterThan(0);expect(tubeSignal(4,0)).toEqual({level:1,crackle:0})
 })
+test("cinematic gate preserves changed poses and tracks visibility without scheduling changes",()=>{
+  const s=polishDefaults(),c=new Continuity()
+  for(let t=0;t<200;t++)c.step(t,view(true),false,s)
+  expect(c.events.length).toBeGreaterThan(0)
+  const values=c.targets.map(t=>t.value),events=c.events.length
+  for(let t=200;t<500;t++)c.step(t,view(false),true,s,undefined,false)
+  expect(c.targets.map(t=>t.value)).toEqual(values);expect(c.events.length).toBe(events)
+  expect(c.targets.every(t=>t.lastSeen===499)).toBe(true)
+  c.step(500,view(true),true,s)
+  expect(c.events.length).toBe(events)
+})

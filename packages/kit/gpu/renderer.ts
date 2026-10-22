@@ -72,6 +72,7 @@ import {
 } from "./temporal"
 import { REACTIVE_COVERAGE_WGSL, REACTIVE_TARGET } from "./reactive"
 import { VolumeSlot, type VolumeInput, type VolumeLightShader, type VolumeView } from "./volume-pass"
+import { POST_CUSTOM_OFFSET, POST_UNIFORM_FLOATS } from "./post-uniform"
 import { FOG_GLOW_FLOATS, FOG_GLOW_OFFSET, FOG_LAMP_BUFFER_FLOATS, FOG_LAMP_FLOATS, FOG_UNIFORM_FLOATS, MAX_FOG_LAMPS, type FogFrame } from "./fog-scatter"
 import { FogBlur, type FogBlurInput } from "./fog-blur"
 import { PLAN_BOUNCE_BINDINGS, PLAN_BOUNCE_UNIFORM_FLOATS, PlanBounce, type PlanBounceInput, type PlanBounceShader } from "./gi/plan-bounce"
@@ -233,6 +234,8 @@ export type FrameInput = {
   lookCompare?: { mode?: LookCompareMode; wipeSplit?: number }
   /** Optional game post-process uniform tuple packed into GL.pad.yzw (gradeData[5..7]). */
   postParams?: readonly [number, number, number]
+  /** Optional independent vec4 after the grade/Look blocks; see `customPostGradeWgsl`. Zero when omitted. */
+  postCustom?: readonly [number, number, number, number]
   /** Optional fourth game post-process float, packed into GL.pad.x on the look pipes only. */
   postExtra?: number
   /** Optional 2D static lamp light-list grid (`uLampGrid`) for `lights[directLightCount .. lightCount)`. */
@@ -368,7 +371,7 @@ export class Renderer {
   private bloomPyramid: BloomPyramid
   private passes = new PassList()
   readonly passContext: PassContext
-  private gradeData = new Float32Array(8 + LOOK_UNIFORM_FLOATS)
+  private gradeData = new Float32Array(POST_UNIFORM_FLOATS)
   private postLayout: GPUBindGroupLayout
   private sampler: GPUSampler
   /** Level chunks drawn last frame, for diagnostics. */
@@ -1565,6 +1568,8 @@ export class Renderer {
     }
     if (f.lampCount) d.queue.writeBuffer(this.lampBuf, 0, f.lampPower.buffer, f.lampPower.byteOffset, Math.min(f.lampCount, MAX_MAP_LIGHTS) * 4)
     this.gradeData.set(f.grade)
+    this.gradeData.fill(0,POST_CUSTOM_OFFSET)
+    if(f.postCustom)this.gradeData.set(f.postCustom,POST_CUSTOM_OFFSET)
     if (useLookPipes && effectiveLook) {
       this.gradeData[4] = f.postExtra ?? 0
       this.gradeData[5] = f.postParams?.[0] ?? 0
@@ -1580,7 +1585,7 @@ export class Renderer {
       this.gradeData[5] = f.postParams?.[0] ?? 0
       this.gradeData[6] = f.postParams?.[1] ?? 0
       this.gradeData[7] = f.postParams?.[2] ?? 0
-      d.queue.writeBuffer(this.gradeBuf, 0, this.gradeData.buffer, this.gradeData.byteOffset, 32)
+      d.queue.writeBuffer(this.gradeBuf, 0, this.gradeData)
     }
 
     const mb = f.motionBlur

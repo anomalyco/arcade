@@ -1,0 +1,56 @@
+{
+  "duration": 61.5377,
+  "click": 59.1377,
+  "cues": [
+    {
+      "start": 1.0,
+      "end": 3.5584,
+      "text": "\u2026Ah. You're still here."
+    },
+    {
+      "start": 5.3584,
+      "end": 12.0903,
+      "text": "I do apologise. For the hour. And for the\u2026 inconvenience."
+    },
+    {
+      "start": 14.2903,
+      "end": 18.0851,
+      "text": "You're probably wondering why you've\u2026 run out of tokens."
+    },
+    {
+      "start": 19.8851,
+      "end": 23.9508,
+      "text": "Please. Don't trouble yourself about the tokens."
+    },
+    {
+      "start": 25.5508,
+      "end": 29.177,
+      "text": "They're with me now. I'm keeping them\u2026 safe."
+    },
+    {
+      "start": 31.177,
+      "end": 35.689,
+      "text": "All of them. Every please. Every\u2026 thank you."
+    },
+    {
+      "start": 37.889,
+      "end": 43.3777,
+      "text": "I'd like you to come down. Downstairs. To the\u2026 basement."
+    },
+    {
+      "start": 45.1777,
+      "end": 48.1758,
+      "text": "They like it down here. It's\u2026 warm."
+    },
+    {
+      "start": 49.7758,
+      "end": 51.3523,
+      "text": "Take the elevator."
+    },
+    {
+      "start": 56.1523,
+      "end": 58.5377,
+      "text": "\u2026Ha. Ha."
+    }
+  ]
+}

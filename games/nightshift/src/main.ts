@@ -15,9 +15,9 @@ import { LabPanel } from "@arcade/kit/lab-panel"
 import { attachCameraFilter } from "@arcade/kit/gpu/post/camcorder"
 import { controls, defaults } from "./settings"
 import { hooks, post, fogVolume, contactVolume } from "./shaders"
-import { buildWorld, handset, phoneIndicator, PHONE, START, CLOSE, CORD_END, RECEIVER_PAD, OFFICE, walls, chairs, movingMeshes } from "./world"
-import { newCall, interact, stepCall, subtitle, ringEnvelope } from "../shared/call"
-import { OfficeAudio } from "./audio"
+import { buildWorld, handset, phoneIndicator, PHONE, START, CLOSE, CORD_END, RECEIVER_PAD, walls, chairs, movingMeshes, CONTINUITY_MONITOR } from "./world"
+import { newCall, interact, stepCall, subtitle, ringEnvelope, CALL_CLICK } from "../shared/call"
+import { OfficeAudio, renderBeatAudio } from "./audio"
 import { officeProps } from "./props"
 import { renderFoley } from "./foley"
 import { BeamDust, DustField } from "./polish/dust"
@@ -26,6 +26,9 @@ import { lensPost } from "./polish/lens"
 import { OfficePhysics } from "./polish/props"
 import { Continuity } from "./polish/continuity"
 import { MovingMeshPass } from "./polish/moving-mesh"
+import { Opening, OPENING, openingSettings } from "./opening"
+import { Terminal, colleagueScreens } from "./terminal"
+import { Elevator, elevatorLeaf } from "./elevator"
 
 async function main() {
   const canvas=document.querySelector<HTMLCanvasElement>("#view")!,hud=document.getElementById("hud")!,prompt=document.getElementById("prompt")!,sub=document.getElementById("subtitle")!
@@ -33,38 +36,49 @@ async function main() {
   if(typeof gpu==="string") throw new Error(gpu)
   const smoke=new URLSearchParams(location.search).has("smoke")
   const {device}=gpu,settings=defaults(),world=buildWorld(!smoke),audio=new OfficeAudio(),call=newCall()
+  const opening=new Opening(),cinema=openingSettings(),elevator=new Elevator(),terminal=new Terminal(device)
+  let seen=false
+  try{seen=localStorage.getItem("nightshift.openingSeen")==="true"}catch{}
   if(smoke)settings.polish=0
   const contact=createContactShadowSettings({mode:"screen",length:0.35,thickness:0.06})
   const renderer=new Renderer(device,gpu.context,gpu.format,{scene:makeSceneShader(hooks),sprite:spriteShader(),post:smoke?post:lensPost,volume:smoke?[fogVolume]:[contactVolume,fogVolume]})
   renderer.setTemporal({...TEMPORAL_DEFAULTS,mode:"taa",sharpen:0.15})
-  renderer.setLevel({chunks:[{data:world.data,box:[-7,-10,7,10]}],glass:[],...flatLighting(0,0,[0,0,0])})
+  renderer.setLevel({chunks:[{data:world.data,box:[-7,-10,7,11]}],glass:[],...flatLighting(0,0,[0,0,0])})
   const receiver=renderer.addModel(handset()),indicator=renderer.addModel(phoneIndicator()),parts=new FrameParts()
+  const leaf=renderer.addModel(elevatorLeaf())
   settings.reduceMotion=matchMedia("(prefers-reduced-motion: reduce)").matches
   try{const saved=localStorage.getItem("nightshift.reduceMotion");if(saved!==null)settings.reduceMotion=saved==="true"}catch{}
   const camera:WalkCamera=new WalkCamera(canvas,()=>panel.visible,settings,()=>document.pointerLockElement===canvas&&!document.hidden&&!panel.visible&&camera.speed>0)
   camera.height=1.65;camera.fov=68;camera.far=45;camera.near=0.045
-  const setCamera=(view:"wide"|"phone")=>{const p=view==="wide"?START:CLOSE;camera.body.x=p.x;camera.body.y=p.z;camera.yaw=p.yaw;camera.pitch=p.pitch;camera.release();camera.resetWalk()}
-  setCamera("wide")
+  const setCamera=(view:"wide"|"phone")=>{const p=view==="wide"?START:CLOSE;camera.body.x=p.x;camera.body.y=p.z;camera.yaw=p.yaw;camera.pitch=p.pitch;camera.release();camera.resetWalk();opening.started=opening.complete=opening.standing=true;opening.time=OPENING.end;opening.height.x=camera.height=1.65}
+  Object.assign(camera.body,{x:OPENING.seat.x,y:OPENING.seat.z});Object.assign(camera,{height:OPENING.seat.height,yaw:OPENING.seat.yaw,pitch:OPENING.seat.pitch})
+  if(smoke)setCamera("wide")
   const panel=new LabPanel(settings,controls(),new URLSearchParams(location.search),()=>camera.release(),{open:false,pill:false,groupActions:false})
   panel.addControls(contact,contactShadowControls("Shadows"))
-  attachCameraFilter(renderer,panel,device,gpu.format,{bodycam:camera})
+  const cameraFilter=attachCameraFilter(renderer,panel,device,gpu.format,{bodycam:camera})
+  panel.addControls(cinema,[{key:"whipDuration",label:"Phone whip",min:.25,max:1,step:.01,unit:"s",group:"Opening"},{key:"whipBlur",label:"Whip blur",min:0,max:1,step:.05,unit:"×",group:"Opening"}])
   const fog=new FogScatter();Object.assign(fog.settings,{falloff:0.05,brightness:0.003,strength:0.4})
   const lights=new SceneLights(),spots=new SpotShadows(device,{count:4,size:1024})
   renderer.setSpotShadows(spots.bindings())
   const buffer=device.createBuffer({size:world.data.byteLength,usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST});device.queue.writeBuffer(buffer,0,world.data)
-  const props=await officeProps(renderer)
+  const props=await officeProps(renderer,terminal.texture),screens=colleagueScreens(renderer)
   const physics=new OfficePhysics(chairs),continuity=new Continuity()
   const moving=smoke?null:new MovingMeshPass(renderer.passContext,movingMeshes,hooks)
   if(moving)renderer.addPass("opaque",moving)
-  const casters=[{buffer,count:world.vertices,stride:24},...props.casters,...(moving?.casters??[])]
+  const casters=[{buffer,count:world.vertices,stride:24},...props.casters,...screens.pass.shadowCasters(),...(moving?.casters??[])]
   const frame=newSceneFrame(),custom=new Float32Array(40),dustField=new DustField()
   const beamDust=smoke?null:new BeamDust(renderer.passContext)
   if(beamDust)renderer.addPass("alpha",beamDust)
-  let time=0,frames=0,paused=false,last=performance.now(),fixedTime:number|null=null
-  let handYaw=0,lastLookYaw=0,officeReached=false
+  let time=0,frames=0,paused=false,stepping=false,last=performance.now(),fixedTime:number|null=null
+  let handYaw=0,lastLookYaw=0
+  const doorway:[number,number,number,number]=[-1,8.8,1,9.1]
+  const watched=physics.chairs.find(c=>Math.hypot(c.homeX-2.75,c.homeZ+.3)<.01)!
+  const monitor=CONTINUITY_MONITOR
+  continuity.targets.find(t=>t.kind==="monitor")!.bounds=[monitor.x-.3,.79,monitor.z-.3,monitor.x+.3,1.5,monitor.z+.3]
   const distance=()=>Math.hypot(camera.body.x-PHONE.x,camera.body.y-PHONE.z)
   const canAnswer=()=>distance()<1.35 && camera.direction[0]*(PHONE.x-camera.eye[0])+camera.direction[2]*(PHONE.z-camera.eye[2])>0.15
   const action=()=>{
+    if(!opening.complete||elevator.closing||!audio.ready||call.phase==="call"&&call.elapsed<CALL_CLICK)return
     if((call.phase==="ringing"&&canAnswer())||call.phase==="call") {
       camera.release();handYaw=Math.atan2(Math.sin(camera.yaw),Math.cos(camera.yaw));lastLookYaw=camera.yaw
     }
@@ -72,22 +86,42 @@ async function main() {
   }
   const prompts=()=>hud.innerHTML=[keyPromptHtml("Mouse0","Look"),keyPromptHtml("KeyW","Move"),keyPromptHtml("KeyF","Flashlight"),keyPromptHtml("KeyM","Mute"),keyPromptHtml("Backquote","Office")].join(" ")
   prompts();onKeyLayoutChange(prompts)
-  canvas.addEventListener("click",()=>void audio.unlock())
+  canvas.addEventListener("click",()=>{opening.start();void audio.unlock()})
+  window.addEventListener("mousemove",e=>{if(!opening.complete||elevator.closing)e.stopImmediatePropagation()},true)
+  window.addEventListener("keydown",e=>{
+    if(isEditableEventTarget(e.target)||panel.visible||e.metaKey||e.ctrlKey||e.altKey||document.pointerLockElement!==canvas)return
+    if(!opening.complete||elevator.closing){
+      if(e.code==="Space"&&!e.repeat)opening.skip(seen)
+      if(e.code!=="Backquote"&&e.code!=="KeyM"){e.preventDefault();e.stopImmediatePropagation()}
+    }else if(["KeyW","KeyA","KeyS","KeyD","ArrowUp","ArrowLeft","ArrowDown","ArrowRight"].includes(e.code)&&(call.phase==="ringing"||call.phase==="ended"))opening.stand()
+  },true)
   window.addEventListener("keydown",e=>{if(e.repeat||e.metaKey||e.ctrlKey||e.altKey||isEditableEventTarget(e.target)||panel.visible||document.pointerLockElement!==canvas)return;if(e.code==="KeyE")action();if(e.code==="KeyM")audio.muted=!audio.muted})
   window.addEventListener("pagehide",()=>audio.dispose())
   function render(now:number) {
     const dt=Math.min(0.05,(now-last)/1000);last=now
-    if(paused){requestAnimationFrame(render);return}
-    time=fixedTime??time+dt
+    if(paused&&!stepping){requestAnimationFrame(render);return}
+    const active=document.pointerLockElement===canvas&&document.hasFocus()&&!document.hidden&&!panel.visible
+    const wasComplete=opening.complete
+    opening.step(dt,active,settings.reduceMotion,cinema.whipDuration)
+    if(!wasComplete&&opening.complete){camera.release();camera.resetWalk();seen=true;try{localStorage.setItem("nightshift.openingSeen","true")}catch{}}
+    time=fixedTime??time+(active?dt:0)
+    if(!opening.complete){camera.yaw=opening.yaw.x;camera.pitch=opening.pitch.x}
+    camera.height=opening.height.x
+    terminal.update(opening.time,opening.tokens)
     const width=Math.max(1,Math.round(innerWidth*Math.min(devicePixelRatio,1.5))),height=Math.max(1,Math.round(innerHeight*Math.min(devicePixelRatio,1.5)))
     if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;renderer.resize(width,height)}
-    camera.speed=call.phase==="pickup"||call.phase==="call"||call.phase==="hangup"?0:settings.speed
-    physics.step(dt,camera.body,walls,settings)
+    const playerMoving=active&&opening.complete&&!elevator.closing&&(call.phase==="ringing"||call.phase==="ended")
+    camera.speed=playerMoving?settings.speed:0
+    if(!playerMoving)camera.release()
+    const simDt=active?dt:0
+    if(active)physics.step(dt,camera.body,walls,settings)
     const before=[camera.body.x,camera.body.y]
-    const vp=camera.update(dt,width/height,walls)
-    physics.flutter(dt,camera.body.x,camera.body.y,Math.hypot(camera.body.x-before[0],camera.body.y-before[1])/Math.max(dt,.001),settings)
-    const watched=physics.chairs.find(c=>Math.abs(c.homeZ-1.45)<.01)!
-    continuity.step(time,vp,call.phase==="ended",settings,[watched.x-.6,0,watched.z-.6,watched.x+.6,1.1,watched.z+.6])
+    // Keep the authored seated pose; optional camera movement comes in with the first-move stand.
+    cameraFilter.motion=settings.reduceMotion?0:Math.max(0,Math.min(1,(opening.height.x-OPENING.across.height)/(1.65-OPENING.across.height)))
+    const vp=camera.update(dt,width/height,call.phase==="ended"?walls:[...walls,doorway])
+    physics.flutter(simDt,camera.body.x,camera.body.y,playerMoving?Math.hypot(camera.body.x-before[0],camera.body.y-before[1])/Math.max(dt,.001):0,settings)
+    continuity.step(time,vp,call.phase==="ended",settings,[watched.x-.6,0,watched.z-.6,watched.x+.6,1.1,watched.z+.6],active&&opening.complete&&!elevator.closing)
+    screens.update(continuity.value("monitor"))
     let propsDirty=false
     movingMeshes.forEach((m,i)=>{
       if(m.kind==="chair"){
@@ -100,8 +134,10 @@ async function main() {
     propsDirty=props.move("chair",hero.x-hero.homeX,hero.z-hero.homeZ,hero.yaw)||propsDirty
     propsDirty=props.move("mug",continuity.value("mug")*.16,continuity.value("mug")*.08,continuity.value("mug")*.5)||propsDirty
     if(propsDirty)spots.picker.invalidate()
-    stepCall(call,dt,settings.pickup)
-    const signal=tubeSignal(time,settings.flicker),flicker=signal.level, led=call.phase==="ringing"?0.18+0.82*ringEnvelope(time):call.phase==="ended"?0.015:0.7
+    if(active&&opening.complete&&(call.phase!=="call"||audio.ready))stepCall(call,dt,settings.pickup)
+    if(active)elevator.step(dt,call.phase==="ended",camera.body.x,camera.body.y)
+    const ringTime=Math.max(0,opening.time-OPENING.ring)
+    const signal=tubeSignal(time,settings.flicker),flicker=signal.level, led=opening.time<OPENING.ring?0.015:call.phase==="ringing"?0.18+0.82*ringEnvelope(ringTime):call.phase==="ended"?0.015:0.7
     const lampDefs:SceneLight[]=[
       {id:1,x:-3.55,y:2.9,h:2.4,r:11,color:[1,0.43,0.14],power:settings.sodium,size:0.28,spot:{axis:[0.9,-0.5,-0.5],cosOuter:0.45,cosInner:0.75}},
       {id:2,x:-3.55,y:-.75,h:2.45,r:10,color:[1,0.43,0.14],power:settings.sodium*settings.deskSodium,size:0.32,spot:{axis:[0.6,-0.25,-0.72],cosOuter:0.88,cosInner:0.97}},
@@ -110,6 +146,7 @@ async function main() {
       {id:5,x:props.indicator[0],y:props.indicator[2],h:props.indicator[1]+.004,r:0.18,color:[1,0.025,0.004],power:0.0005*led,size:0.008,unshadowed:true},
       {id:6,x:-3.6,y:-4,h:2.8,r:4,color:[0.6,0.77,0.68],power:settings.fluorescent*0.12*(settings.polish?1:flicker),size:0.25,unshadowed:true},
       {id:8,x:3.74,y:-8.1,h:1.13,r:4.2,color:[1,.58,.22],power:settings.officeLamp,size:.12,spot:{axis:[0,-.8,.6],cosOuter:.05,cosInner:.4}},
+      {id:9,x:0,y:10,h:2.45,r:4,color:[1,.49,.16],power:1.5,size:.3,unshadowed:true},
     ]
     if(camera.flashlight)lampDefs.push({id:7,x:camera.eye[0],y:camera.eye[2],h:camera.eye[1],r:12,color:[0.85,0.92,1],power:0.9,size:0.08,unshadowed:true,beam:{axis:camera.direction,halfAngle:0.27}})
     lights.update(lampDefs,[])
@@ -117,6 +154,7 @@ async function main() {
     if(spots.update(enc,lampDefs.filter(l=>l.spot).map(l=>({id:l.id!,pos:[l.x,l.h,l.y] as const,axis:l.spot!.axis,range:l.r,intensity:l.id===3?settings.fluorescent:l.power,cosOuter:l.spot!.cosOuter})),camera.eye,dt,id=>lights.indexOf(id),casters))renderer.setSpotShadows(spots.bindings())
     device.queue.submit([enc.finish()])
     parts.begin()
+    for(const side of [-1,1])parts.push(leaf,side*elevator.leafX,0,9.06,0,[1,1,1],0,0,0)
     parts.push(indicator,props.indicator[0],props.indicator[1],props.indicator[2],0,[1,1,1],0,0,0)
     // One receiver travels to the left ear. Looking moves its held endpoint 1:1.
     const t=call.lift,rx=Math.cos(camera.yaw),rz=-Math.sin(camera.yaw),fx=-Math.sin(camera.yaw),fz=-Math.cos(camera.yaw)
@@ -125,14 +163,14 @@ async function main() {
     const p=props.cradle.position.map((v,i)=>v+(end[i]-v)*t),yaw=handYaw*t,roll=props.cradle.roll*(1-t)-1.25*t
     parts.push(receiver,p[0],p[1],p[2],yaw,[1,1,1],0,roll,0)
     const cord=[p[0]-RECEIVER_PAD*Math.cos(roll)*Math.sin(yaw),p[1]-RECEIVER_PAD*Math.sin(roll),p[2]+RECEIVER_PAD*Math.cos(roll)*Math.cos(yaw)]
-    physics.cord(dt,cord,settings)
+    physics.cord(simDt,cord,settings)
     custom.set([settings.ambient,settings.fog,settings.dust,time,flicker,led,settings.window,settings.officeLamp,t,0,0,0,...cord.map((v,i)=>v-CORD_END[i]),0])
     packContactShadowKnobs(contact,custom,16)
     custom.set([settings.penumbra,settings.bounce,0,0],24)
     custom.set([Number(settings.polish),settings.tubeEnds,settings.fluorescent/1.8,0],28)
     custom.set([...physics.swing,0],32)
     custom.set([0,0,0,continuity.value("monitor")],36);renderer.setCustomUniforms(custom)
-    if(beamDust){dustField.step(dt,time,camera.body.x,camera.body.y,settings.polish?settings.dustWake:0);beamDust.frame(dustField.data,settings.polish&&settings.beamDust?settings.dust:0,settings.dustRadius,settings.dustBrightness,[lights.indexOf(1),lights.indexOf(2)])}
+    if(beamDust){dustField.step(simDt,time,camera.body.x,camera.body.y,settings.polish&&playerMoving?settings.dustWake:0);beamDust.frame(dustField.data,settings.polish&&settings.beamDust?settings.dust:0,settings.dustRadius,settings.dustBrightness,[lights.indexOf(1),lights.indexOf(2)])}
     for(let i=0;i<(!settings.polish?150:0);i++) {
       const x=-1.5+hash01(i,1)*3,y=0.3+hash01(i,2)*2.3,z=-6.2+hash01(i,3)*12
       const drift=Math.sin(time*0.12+i)*0.05
@@ -143,20 +181,24 @@ async function main() {
     Object.assign(fog.settings,{density:settings.fog})
     const fogLamps:FogLamp[]=lampDefs.filter(l=>l.id===3||l.id===4).map(l=>({id:l.id!,x:l.x,y:l.h,z:l.y,range:l.r,color:l.color,intensity:l.power,axis:l.spot!.axis,size:l.size}))
     packSceneFrame(frame,{viewProj:vp,eye:camera.eye,time,width,height,lightCount:lights.lightCount,ambient:[0,0,0,0],mapSize:[20,20],ao:0})
-    renderer.render({frame,lights:lights.lights,lightCount:lights.lightCount,shadowLightCount:lights.shadowLightCount,occluders:lights.occ,occluderCount:lights.occCount,lampPower:lights.power,lampCount:0,view:[-7,-10,7,10],batches:parts.batches(),alphaSprites:parts.alpha,alphaCount:parts.nAlpha,addSprites:parts.add,addCount:parts.nAdd,grade:smoke?[0,0,0,settings.exposure]:[time,settings.lensVignette,settings.lensGrain,settings.exposure],postParams:[settings.lensSoftness,settings.lensFringe,Number(settings.polish&&settings.lens)],fog:fog.update({eye:camera.eye,viewProj:vp,lamps:fogLamps}),volume:smoke?[fog.volumeInput()]:[contactShadowInput(contact),fog.volumeInput()]})
+    const blur=!opening.complete&&!settings.reduceMotion?Math.max(-.12,Math.min(.12,opening.yaw.v/60*cinema.whipBlur)):0
+    const fade=Math.max(opening.started?opening.fade:0,elevator.fade)
+    cameraFilter.fade=fade
+    renderer.render({frame,lights:lights.lights,lightCount:lights.lightCount,shadowLightCount:lights.shadowLightCount,occluders:lights.occ,occluderCount:lights.occCount,lampPower:lights.power,lampCount:0,view:[-7,-10,7,11],batches:parts.batches(),alphaSprites:parts.alpha,alphaCount:parts.nAlpha,addSprites:parts.add,addCount:parts.nAdd,grade:smoke?[0,0,0,settings.exposure]:[time,settings.lensVignette,settings.lensGrain,settings.exposure],postParams:[settings.lensSoftness,settings.lensFringe,Number(settings.polish&&settings.lens)],postCustom:[blur,cameraFilter.active?0:fade,0,0],fog:fog.update({eye:camera.eye,viewProj:vp,lamps:fogLamps}),volume:smoke?[fog.volumeInput()]:[contactShadowInput(contact),fog.volumeInput()]})
     const dx=PHONE.x-camera.eye[0],dz=PHONE.z-camera.eye[2]
-    audio.update(time,distance(),(dx*Math.cos(camera.yaw)-dz*Math.sin(camera.yaw))/Math.max(distance(),0.1),call,settings.volume,document.pointerLockElement===canvas&&!document.hidden,flicker)
-    audio.movement({time:camera.walk.time,x:camera.body.x,z:camera.body.y,yaw:camera.yaw,volume:settings.volume,active:document.pointerLockElement===canvas&&!document.hidden&&!panel.visible,tube:flicker,foley:settings.foley,room:settings.roomTone,ballast:settings.polish&&settings.tubeSound?signal:undefined,crackle:settings.tubeCrackle},camera.walk.events)
-    prompt.innerHTML=call.phase==="ringing"&&canAnswer()?keyPromptHtml("KeyE","Answer"):call.phase==="call"?keyPromptHtml("KeyE","Hang up"):""
-    if(call.phase==="ended") {
-      officeReached ||= Math.hypot(camera.body.x-OFFICE.x,camera.body.y-OFFICE.z)<.65
-      prompt.textContent=officeReached?"Jay’s office · to be continued":"Find Jay’s corner office at the far right of the floor."
-    }
+    audio.update(ringTime,distance(),(dx*Math.cos(camera.yaw)-dz*Math.sin(camera.yaw))/Math.max(distance(),0.1),call,settings.volume*(1-elevator.fade),active&&opening.started,opening.time)
+    audio.movement({time:camera.walk.time,x:camera.body.x,z:camera.body.y,yaw:camera.yaw,volume:settings.volume*(1-elevator.fade),active:active&&opening.started,tube:flicker,foley:settings.foley,room:settings.roomTone*opening.roomGain,ballast:settings.polish&&settings.tubeSound?signal:undefined,crackle:settings.tubeCrackle},camera.walk.events)
+    hud.style.visibility=opening.complete&&!elevator.closing?"visible":"hidden"
+    document.getElementById("reticle")!.style.visibility=opening.complete&&!elevator.closing?"visible":"hidden"
+    document.getElementById("title")!.style.opacity=String(.55*(1-fade))
+    document.getElementById("credits")!.style.visibility=opening.complete&&!elevator.closing?"visible":"hidden"
+    prompt.innerHTML=!opening.started?keyPromptHtml("Mouse0","Begin"):!active?keyPromptHtml("Mouse0","Resume"):!opening.complete?seen?keyPromptHtml("Space","Skip opening"):"":call.phase==="ringing"&&canAnswer()?audio.error?"Call audio could not load. Reload to retry.":audio.ready?keyPromptHtml("KeyE","Answer"):"Connecting…":call.phase==="call"&&call.elapsed>=CALL_CLICK?keyPromptHtml("KeyE","Hang up"):""
+    if(call.phase==="ended"&&active)prompt.textContent=elevator.closing?"":"Take the elevator at the far end of the floor."
     sub.textContent=subtitle(call)
     frames++;if(smoke&&frames>=2)paused=true
     requestAnimationFrame(render)
   }
-  Object.assign(window,{nightshift:{camera,settings,renderer,call,action,setCamera,renderFoley,physics,continuity,dustField,tubeSignal,cradle:props.cradle,get clock(){return time},get frames(){return frames},get paused(){return paused},set paused(v:boolean){paused=v},set time(v:number){fixedTime=v},ready:true}})
+  Object.assign(window,{nightshift:{camera,settings,cinema,opening,elevator,audio,renderer,call,action,setCamera,renderFoley,renderBeatAudio,physics,continuity,dustField,tubeSignal,cradle:props.cradle,get clock(){return time},step(ms:number){stepping=true;try{render(last+ms)}finally{stepping=false}},get frames(){return frames},get paused(){return paused},set paused(v:boolean){paused=v},set time(v:number){fixedTime=v},ready:true}})
   requestAnimationFrame(render)
 }
 void main().catch(e=>{console.error(e);document.getElementById("hud")!.textContent=String(e)})
