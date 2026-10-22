@@ -169,7 +169,9 @@ const CORNERS = array<vec2f, 6>(vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0,
     }
     if (li >= u32(F.screen.z)) { return o; }
     let L = lights[li];
-    if (L.color.w <= 0.01 || L.cone.w > 1.5) { return o; }
+    // Lens street lamps (cone.w ≥ 7, street-lamps/) light motes like Today's street lamps.
+    let lensLamp = L.cone.w > 6.5;
+    if (L.color.w <= 0.01 || (L.cone.w > 1.5 && !lensLamp)) { return o; }
     var r = L.pos.w;
     var lc = L.pos.xyz;
     // A capsule (a burning figure or tree, a jet of flame): its box spans the segment, lit from the nearest point.
@@ -197,7 +199,8 @@ const CORNERS = array<vec2f, 6>(vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0,
     let dPlan2 = dot(dv, dv);
     if (dPlan2 >= r * r) { return o; }
     // The same cuts the surfaces get: sconces stop at their wall, windows light outwards, lamps stay under the ceiling.
-    if (L.cone.w < -2.5) {
+    if (lensLamp) {
+    } else if (L.cone.w < -2.5) {
       if (p.y > 2.75 || p.x < L.cone.x || p.x > L.cone.z || p.z < L.cone.y || p.z > L.extra.x) { return o; }
     } else if (L.cone.w > 1.125) {
       if (p.y > 2.75 || dot(dv, L.cone.xy) < -L.extra.x) { return o; }
@@ -371,7 +374,8 @@ export class DustPass implements ScenePass {
       if (lights && air!.beamMoteLamps >= 0.5) {
         for (let i = 1; i < lightCount; i++) {
           const k = i * stride
-          if (lights[k + 7]! <= 0.01 || lights[k + 11]! > 1.5) continue
+          const kind = lights[k + 11]!
+          if (lights[k + 7]! <= 0.01 || (kind > 1.5 && kind < 6.5)) continue
           const d2 = (lights[k]! - px) ** 2 + (lights[k + 2]! - pz) ** 2
           if (d2 < 22 * 22) pick.push({ i, d2 })
         }

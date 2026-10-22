@@ -80,6 +80,11 @@ export type ContactShadowHooks = {
   knobs: readonly [string, string]
   /** WGSL `vec3f` of (`p`, `n`): sky/ambient irradiance at the pixel, so lights share the light with it. */
   ambient?: string
+  /**
+   * WGSL `f32` of (`L: Light`, `p`, `n`): a light's diffuse irradiance (luminance) at the pixel, for games whose lights
+   * don't follow the kit's windowed inverse square and physical cones. Default `csIrradiance`.
+   */
+  irradiance?: string
 }
 
 export function contactShadowVolume(hooks: ContactShadowHooks): VolumeLightShader {
@@ -94,6 +99,7 @@ ${hooks.declarations ?? ""}
 fn csKnobsA() -> vec4f { return ${hooks.knobs[0]}; }
 fn csKnobsB() -> vec4f { return ${hooks.knobs[1]}; }
 fn csAmbient(p: vec3f, n: vec3f) -> vec3f { return ${hooks.ambient ?? "vec3f(0.0)"}; }
+fn csLightIrradiance(L: Light, p: vec3f, n: vec3f) -> f32 { return ${hooks.irradiance ?? "csIrradiance(L, p, n)"}; }
 
 struct VO { @builtin(position) pos: vec4f, @location(0) uv: vec2f }
 @vertex fn vs(@builtin(vertex_index) i: u32) -> VO {
@@ -189,7 +195,7 @@ fn csMarch(p: vec3f, n: vec3f, eyeDist: f32, slope: f32, lp: vec3f, jitter: f32)
   var total = dot(csAmbient(p, n), vec3f(0.2126, 0.7152, 0.0722));
   let count = min(u32(F.screen.z), MAX_LIGHTS);
   for (var i = 0u; i < count; i++) {
-    let e = csIrradiance(lights[i], p, n);
+    let e = csLightIrradiance(lights[i], p, n);
     total += e;
     if (e > e1) { e2 = e1; i2 = i1; e1 = e; i1 = i; } else if (e > e2) { e2 = e; i2 = i; }
   }

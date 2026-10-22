@@ -35,6 +35,7 @@ import {
   OUTBREAK_VEG_TREES_UNIFORM_OFFSET,
   OUTBREAK_INTERIOR_UNIFORM_OFFSET,
   OUTBREAK_LIGHTING_UNIFORM_FLOATS,
+  OUTBREAK_REFLECT_LIGHTS_UNIFORM_END,
   OUTBREAK_REFLECT_LIGHTS_UNIFORM_OFFSET,
   OUTBREAK_REFLECT_UNIFORM_OFFSET,
   packOutbreakLightingUniforms,
@@ -48,6 +49,8 @@ import { resolveBeamColor } from "../look/world"
 import type { OutbreakSettings } from "../settings"
 import type { Survivor } from "../survivor"
 import { packReflectionLights } from "../reflections/lights"
+import { applyStreetLens } from "../street-lamps/lens"
+import { streetLensOn } from "../street-lamps/settings"
 import { TableLampLights } from "../table-lamps"
 import { vegetationGust } from "../vegetation/settings"
 import { packVegetationTrees } from "../vegetation/trees"
@@ -465,16 +468,19 @@ export class OutbreakFrameLighting {
     }
     let unshadowedCount = 0
     const maxUnshadowed = qProfile.maxUnshadowedLamps
+    const lensLamps = streetLensOn(settings.streetLamps)
     for (let i = 0; i < town.lamps.length; i++) {
       const lamp = town.lamps[i]!
       const resolved = resolveLampLight(lamp, town.buildings, day.lamps, settings.lighting, inInteriorView, this.scratchResolvedLamp, settings.look.litWindows)
       input.lampTrim?.(lamp, resolved)
       this.lampPower[i] = resolved.fixtureBrightness
       if (resolved.power <= 0.001) continue
+      // Culled by where Today's pool is, so the lens lamps keep Today's set of lamps.
+      const dCam = Math.hypot(resolved.lx - camX, resolved.ly - camY)
+      if (lensLamps && lamp.kind === "street") applyStreetLens(lamp, resolved, settings.streetLamps, settings.lighting.lightFalloff)
       const { lx, lh, ly, r, rEff, color, power, cone, softness, castShadows } = resolved
-      const dCam = Math.hypot(lx - camX, ly - camY)
       if (dCam > (lamp.kind === "street" ? 15.5 : 16.5)) continue
-      if (inInteriorView && !castShadows) continue
+      if (inInteriorView && (!castShadows || lamp.kind === "street")) continue
       if (lx + rEff < vx0 || lx - rEff > vx1 || ly + rEff < vy0 || ly - rEff > vy1 || !inLightFrustum(lx, ly, rEff)) continue
       if (lamp.kind === "room") {
         let b: (typeof town.buildings)[number] | undefined
@@ -491,7 +497,8 @@ export class OutbreakFrameLighting {
           if (!roofOpen) continue
         }
       }
-      const usePolarShadow = castShadows && lamp.kind === "room"
+      // Lens street lamps (street-lamps/) cast polar shadows whose penumbra is the lens size.
+      const usePolarShadow = castShadows && (lamp.kind === "room" || lamp.kind === "street")
       if (usePolarShadow) {
         if (count < MAX_LIGHTS) {
           writeLightSlot(this.lights, count++, lx, lh, ly, r, color[0], color[1], color[2], power, cone[0], cone[1], cone[2], cone[3], 0, lightOccluders, softness, i)
@@ -643,6 +650,8 @@ export class OutbreakFrameLighting {
         unseen: unseenEval,
         chunkFadeAlpha: currentIsStreamWindow ? sceneLevel.worldStreamer.chunkFadeAlpha : 0,
         nightSightWeight: sceneLevel.nightSightWeight,
+        streetLamps: settings.streetLamps,
+        windowRooms: settings.windowRooms,
       },
       flashRgb,
       this.lightingUniforms,
@@ -651,7 +660,7 @@ export class OutbreakFrameLighting {
     settings.flashlight.flashlightRange = tunedRange
     if (this.lightingUniforms[OUTBREAK_REFLECT_UNIFORM_OFFSET]! > 0) {
       packReflectionLights(this.lights, lightCount, activeBuildings, cam.groundRect(0.2), cam.eye, (x, z) => supportHeight(town, x, z), this.lightingUniforms, OUTBREAK_REFLECT_LIGHTS_UNIFORM_OFFSET)
-    } else this.lightingUniforms.fill(0, OUTBREAK_REFLECT_LIGHTS_UNIFORM_OFFSET, OUTBREAK_LIGHTING_UNIFORM_FLOATS)
+    } else this.lightingUniforms.fill(0, OUTBREAK_REFLECT_LIGHTS_UNIFORM_OFFSET, OUTBREAK_REFLECT_LIGHTS_UNIFORM_END)
     packFoliageUniforms(foliageSettings, this.lightingUniforms, OUTBREAK_FOLIAGE_UNIFORM_OFFSET)
     packFoliageActors(foliageActors(p, zombies), this.lightingUniforms, OUTBREAK_FOLIAGE_UNIFORM_OFFSET + FOLIAGE_WIND_FLOATS)
     packFoliageGust(vegetationGust(settings.vegetation), this.lightingUniforms, OUTBREAK_VEG_GUST_UNIFORM_OFFSET)

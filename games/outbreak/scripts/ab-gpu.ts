@@ -15,8 +15,8 @@ const A: Record<string, number | string> = JSON.parse(process.env.AB_A ?? "{}")
 const B: Record<string, number | string> = JSON.parse(process.env.AB_B ?? "{}")
 const rounds = Number(process.env.AB_ROUNDS ?? 12)
 // Optional diagnostic hack applied to variant B after setup (e.g. "h.render.shadowLightCount = 0"); never shipped.
-// Lamp fog on: `const m = globalThis.__abLampFog, v = h.render.volume; m.lampFog.settings.mode = "scatter";
-// m.applyLampFog(h.render, Array.isArray(v) ? v[0] : v)` (and "today" in AB_HACK_A).
+// Lamp fog on: `globalThis.__abLampFog.lampFog.settings.mode = "scatter"` (and "today" in AB_HACK_A); the next frame's
+// applyLampFog fills volume slot 2. The low mist is a plain Lab key (`mistStyle`).
 const hackB = process.env.AB_HACK_B ?? ""
 // Optional hack applied to variant A after setup, e.g. to undo a persistent B hack.
 const hackA = process.env.AB_HACK_A ?? ""

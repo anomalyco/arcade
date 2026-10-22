@@ -786,7 +786,7 @@ fn fogBankSigma(p: vec3f) -> f32 {
   let n = clamp(((n1 * 0.68 + n2 * 0.32) - 0.5) * 1.9 + 0.5, 0.0, 1.0);
   let top = 1.0 - clamp(h - (n - 0.5) * FOG.bank3.y, 0.0, 1.0);
   let gaps = FOG.bank2.x;
-  return FOG.bank.x * max(n - gaps, 0.0) / (1.0 - gaps) * pow(top, 1.2);
+  return FOG.bank.x * max(n - gaps, 0.0) / (1.0 - gaps) * pow(top, 1.2) * fogBankMask(p);
 }
 /** The bank along eye + rd · [0, dist]: rgb in-scatter, a transmittance. */
 fn fogBank(eye: vec3f, rd: vec3f, dist: f32, jitter: f32) -> vec4f {
@@ -889,6 +889,11 @@ export type FogScatterHooks = {
   atmosphere?: boolean
   /** Compile the street lamp lens airlight and glint aim (`FogLamp.lens`). Off by default, like `atmosphere`. */
   street?: boolean
+  /**
+   * WGSL `f32` of `p: vec3f` (needs `atmosphere`): how much of the bank stands at p, multiplying its density and the
+   * thickening of lamp beams inside it, so a game can pool it in yards and gutters and keep it out of houses. Default 1.
+   */
+  bankMask?: string
 }
 
 /**
@@ -919,7 +924,7 @@ fn fogLamp(i: u32) -> FogLamp {
   return FogLamp(fogLampData[o], fogLampData[o + 1u], fogLampData[o + 2u], fogLampData[o + 3u], fogLampData[o + 4u], fogLampData[o + 5u]);
 }
 ${street ? streetLampWgsl : ""}
-${atmo ? fogAtmosphereWgsl : ""}
+${atmo ? `${fogAtmosphereWgsl}\nfn fogBankMask(p: vec3f) -> f32 { return ${hooks.bankMask ?? "1.0"}; }` : ""}
 ${hooks.declarations ?? ""}
 fn fogWet(p: vec3f, n: vec3f, footprint: f32) -> f32 { return ${hooks.wet ?? "0.0"}; }
 fn fogRoughness(p: vec3f, n: vec3f) -> f32 { return ${hooks.roughness ?? "0.5"}; }
@@ -982,7 +987,7 @@ ${street ? `    if (L.f.z > 0.0) {
         let H = sqrt(max(dot(xc, xc) - u0 * u0, 0.0) + L.f.w * L.f.w);
         let kseg = (atan((L.f.z - u0) / H) + atan((L.f.z + u0) / H)) / (2.0 * L.f.z * H);
         var thick = 1.0;
-${atmo ? "        if (bankLamp > 0.0) { thick += bankLamp * fogBankMeanSigma(ro.y + rd.y * (p0 + hp * tan(t))) / max(L.e.w, 1e-5); }" : ""}
+${atmo ? `        if (bankLamp > 0.0) { let bp = ro + rd * (p0 + hp * tan(t)); thick += bankLamp * fogBankMeanSigma(bp.y) * ${hooks.bankMask ? "fogBankMask(bp)" : "1.0"} / max(L.e.w, 1e-5); }` : ""}
         lsum += prof * win * mix(1.0, hg, 0.85) * kseg * (ld * ld + L.f.w * L.f.w) * thick;
       }
       acc += L.b.rgb * lsum * (qb - qa) * FOG.streetC.y / (hp * f32(n) * 12.566371);
@@ -1009,7 +1014,7 @@ ${atmo ? "        if (bankLamp > 0.0) { thick += bankLamp * fogBankMeanSigma(ro.
       let cosT = -dot(ln, rd);
       let hg = (1.0 - g2) / pow(max(1.0 + g2 - 2.0 * g * cosT, 1e-4), 1.5);
       var thick = 1.0;
-${atmo ? "      if (bankLamp > 0.0) { thick += bankLamp * fogBankMeanSigma(ro.y + rd.y * (s0 + h * tan(t))) / max(L.e.w, 1e-5); }" : ""}
+${atmo ? `      if (bankLamp > 0.0) { let bp = ro + rd * (s0 + h * tan(t)); thick += bankLamp * fogBankMeanSigma(bp.y) * ${hooks.bankMask ? "fogBankMask(bp)" : "1.0"} / max(L.e.w, 1e-5); }` : ""}
       sum += cone * win * mix(1.0, hg, 0.85) * thick;
     }
     acc += L.b.rgb * sum * (tb - ta) / (h * f32(n) * 12.566371);

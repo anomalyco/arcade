@@ -21,6 +21,10 @@ import { DEFAULT_AIR_SETTINGS, type OutbreakAirSettings } from "./air/settings"
 import { DEFAULT_IMPACT_SETTINGS, type OutbreakImpactSettings } from "./impact/settings"
 import { DEFAULT_BREACH_SETTINGS, type OutbreakBreachSettings } from "./breach/settings"
 import { DEFAULT_BOUNCE_SETTINGS, type OutbreakBounceSettings } from "./bounce-light/settings"
+import { DEFAULT_CONTACT_SHADOW_SETTINGS, type OutbreakContactShadowSettings } from "./contact-shadows/settings"
+import { DEFAULT_MIST_SETTINGS, type OutbreakMistSettings } from "./mist/settings"
+import { DEFAULT_STREET_LAMP_SETTINGS, type OutbreakStreetLampSettings } from "./street-lamps/settings"
+import { DEFAULT_WINDOW_ROOM_SETTINGS, type OutbreakWindowRoomSettings } from "./window-rooms/settings"
 import { DEFAULT_WAY_OUT_TUNING, type WayOutTuning } from "../shared/way-out/tuning"
 import { DEFAULT_INTERACTIONS_TUNING, type InteractionsTuning } from "../shared/interactions/tuning"
 import { DEFAULT_SPECIALS_TUNING, type SpecialsTuning } from "../shared/specials/kinds"
@@ -272,6 +276,10 @@ export type OutbreakSubsystemMap = {
   characters: OutbreakCharacterSettings
   bounce: OutbreakBounceSettings
   softShadows: OutbreakSoftShadowSettings
+  streetLamps: OutbreakStreetLampSettings
+  mist: OutbreakMistSettings
+  contactShadows: OutbreakContactShadowSettings
+  windowRooms: OutbreakWindowRoomSettings
 }
 
 export type OutbreakSubsystemKey = keyof OutbreakSubsystemMap
@@ -365,6 +373,10 @@ export const OUTBREAK_SUBSYSTEM_KEYS: readonly OutbreakSubsystemKey[] = [
   "characters",
   "bounce",
   "softShadows",
+  "streetLamps",
+  "mist",
+  "contactShadows",
+  "windowRooms",
 ] as const
 
 export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
@@ -419,6 +431,10 @@ export function createOutbreakSubsystemDefaults(): OutbreakSubsystemMap {
     characters: { ...DEFAULT_CHARACTER_SETTINGS },
     bounce: { ...DEFAULT_BOUNCE_SETTINGS },
     softShadows: { ...DEFAULT_SOFT_SHADOW_SETTINGS },
+    streetLamps: { ...DEFAULT_STREET_LAMP_SETTINGS },
+    mist: { ...DEFAULT_MIST_SETTINGS },
+    contactShadows: { ...DEFAULT_CONTACT_SHADOW_SETTINGS },
+    windowRooms: { ...DEFAULT_WINDOW_ROOM_SETTINGS },
   }
 }
 

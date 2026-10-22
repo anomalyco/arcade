@@ -98,8 +98,9 @@ export class OutbreakFxParticles {
         const k = i * LIGHT_FLOATS
         const power = lights[k + 7]!
         const r = lights[k + 3]!
-        // Skip spots and wall washes: the particle shader lights by distance only.
-        if (power <= 0.01 || r <= 0.1 || lights[k + 11]! > 0.5) continue
+        // Skip spots and wall washes: the particle shader lights by distance only. Lens street lamps (cone.w ≥ 7) count.
+        const kind = lights[k + 11]!
+        if (power <= 0.01 || r <= 0.1 || (kind > 0.5 && kind < 6.5)) continue
         const d2 = (lights[k]! - cx) ** 2 + (lights[k + 2]! - cz) ** 2
         pick.push({ i, score: (power * r * r) / (1 + d2 / 64) })
       }
