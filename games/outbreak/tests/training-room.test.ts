@@ -232,7 +232,12 @@ function practiceSpace(loadout: LoadoutId = "standard") {
 
 /** A stand-in for the lobby and room the session hook reads (`CoopView`). */
 function fakeCoop(open: boolean, net: unknown = null) {
-  const lobby = { isOpen: open, practice: false, loadout: "standard" as LoadoutId }
+  const lobby = {
+    mode: open ? "start" : "closed",
+    get isOpen() { return this.mode !== "closed" },
+    practice: false,
+    loadout: "standard" as LoadoutId,
+  }
   return { lobby, net, coop: { lobby, net } as never }
 }
 
@@ -300,7 +305,7 @@ describe("lobby practice space (Kit: \"While loading out you can train\")", () =
     space!.sim.ai.addBarricadePlank("ash-east")
     expect(hook(hookCtx(solo.coop))).toBe(space)
     // Play Solo: the lobby closes and the run is the normal session, with nothing carried over.
-    solo.lobby.isOpen = false
+    solo.lobby.mode = "closed"
     expect(hook(hookCtx(solo.coop))).toBeNull()
     expect(solo.lobby.practice).toBe(false)
     const run = new LocalSession(7)
@@ -311,9 +316,10 @@ describe("lobby practice space (Kit: \"While loading out you can train\")", () =
   test("in a co-op room each player practises locally, and the room's run is the room's session", () => {
     const hook = outbreakOnboardingFeature.session!
     const room = fakeCoop(true)
+    room.lobby.mode = "coop"
     const space = hook(hookCtx(room.coop))
     expect(isPracticeSession(space)).toBe(true)
-    room.lobby.isOpen = false
+    room.lobby.mode = "closed"
     expect(hook(hookCtx(fakeCoop(false, {}).coop))).toBeNull()
     // Off: today's paused lobby, no local session.
     const off = fakeCoop(true)
@@ -321,6 +327,13 @@ describe("lobby practice space (Kit: \"While loading out you can train\")", () =
     ;(ctx.settings as { hud: { lobbyPractice: number } }).hud.lobbyPractice = PRACTICE_OFF
     expect(hook(ctx)).toBeNull()
     expect(off.lobby.practice).toBe(false)
+  })
+
+  test("restarting settings while paused never turns the solo run into lobby practice", () => {
+    const solo = fakeCoop(true)
+    solo.lobby.mode = "pause"
+    expect(outbreakOnboardingFeature.session!(hookCtx(solo.coop))).toBeNull()
+    expect(solo.lobby.practice).toBe(false)
   })
 
   test("the room's sim never turns into a practice space", () => {
