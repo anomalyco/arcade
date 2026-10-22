@@ -326,6 +326,8 @@ export class LabPanel implements LabKnobsHost {
       keys: this.keys(),
       search: true,
       tabs: this.tabs,
+      // A floating panel shows a close button: Backquote isn't the only way out.
+      close: this.layoutMode === "floating" ? () => { if (this.visible) this.toggle() } : undefined,
       actions: this.allowPresets && switches.length ? [
         { label: "All on", run: () => { for (const c of switches) this.navigation.set(c, c.on ?? true) } },
         { label: "All off", run: () => { for (const c of switches) this.navigation.set(c, c.off ?? false) } },
