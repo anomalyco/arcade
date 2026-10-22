@@ -14,6 +14,14 @@ proven animation techniques to animation.md, not here.
 
 ## Proving a change
 
+- **Preserve source terrain weights through shading (Lot).** Store grass/dirt weights in the imported vertex colour
+  and recolour the scanned floor's luminance in the fragment. Baking the source tint multipliers into unorm vertex
+  colours clipped values above one and multiplied RGB instead of luminance. Ground aux selects separate road, lot,
+  gravel and concrete wet recipes (`games/lot/src/surface-materials.ts`, `scripts/import-ashwood.ts`). Five acknowledged
+  camera pairs on Pro's Metal adapter passed without browser errors. Lower-frame RGB MAE against Ashwood is
+  6.09/255 road, 15.70 lot and 9.58 booth; these include the newer lamp/fog/window treatment and do not establish
+  visual parity or a before/after improvement. Evidence is in `lot-2026-10-20/detail-iteration-5` in the gallery.
+
 - **One signal for fluorescent light and sound (Night Shift).** `games/nightshift/src/polish/tube.ts` supplies the same seeded level/edge pair to the tube, light and live/offline ballast mixer. The production 24-second input tape records 11 starter frames with no browser/GPU errors; stereo audio peaks at −26.81 dBFS without clipping. Whole-polish Metal cost and its shared-worker caveat are in `games/nightshift/POLISH-NOTES.md`; do not attribute that cost to the tube alone.
 
 - **Half-resolution contact-shadow stripes (Night Shift).** Reconstruct depth at the sampled texel's centre and use integer ±1 neighbours for normals (`gpu/contact-shadows.ts`, `volumeWorldAtTexel`). Floating UV neighbour offsets at half-resolution centres can round into the wrong full-resolution texel. A matched 48-frame turn reduced affected-panel luminance-difference RMS from .011944 to .001563 (−86.9%) with shadows enabled; removing material detail or spotlight/blind shadows did not help. Proof: Night Shift `scripts/turn-proof.ts`, `WALK-NOTES.md`, gallery `nightshift-2026-10-20/iteration-17/turn/`.

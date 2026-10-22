@@ -14,7 +14,8 @@ from PIL import Image, ImageDraw
 
 grid_only = "--grid-only" in sys.argv
 lobby = "--lobby" in sys.argv
-reference, capture, dest = [arg for arg in sys.argv[1:] if arg not in ("--grid-only", "--lobby")]
+matched = "--matched" in sys.argv
+reference, capture, dest = [arg for arg in sys.argv[1:] if arg not in ("--grid-only", "--lobby", "--matched")]
 out = Path(dest)
 out.parent.mkdir(parents=True, exist_ok=True)
 a = Image.open(reference).convert("RGB")
@@ -84,7 +85,7 @@ diff = Image.fromarray(np.uint8(np.clip(abs(ar-br)*4*255, 0, 255)))
 sheet = Image.new("RGB", (w*2, h+42), "#12181a")
 sheet.paste(a, (0, 42)); sheet.paste(b, (w, 42))
 draw = ImageDraw.Draw(sheet)
-draw.text((16, 14), "ASHWOOD — saved reference", fill="white")
+draw.text((16, 14), "ASHWOOD — matched camera" if matched else "ASHWOOD — saved reference", fill="white")
 draw.text((w+16, 14), f"LOT — {out.name}   RGB MAE {report['global']['rgb_mae_255']:.2f}/255", fill="white")
 sheet.save(out.with_suffix(".jpg"), quality=94)
 diff.save(str(out)+"-diff.jpg", quality=94)

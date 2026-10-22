@@ -6,6 +6,7 @@ import { packVerts, MAT } from "@arcade/kit/gpu/mesh"
 import { packTexturedVerts } from "@arcade/kit/gpu/textured-mesh"
 import { windowAux, type RoomKind } from "@arcade/kit/gpu/materials/rooms"
 import { recipes } from "./surface-recipes"
+import { EXTERIOR_WET, TERRAIN_MAT } from "../src/surface-materials"
 
 // Offline conversion of Aiden's actual builders, not a second runtime renderer.
 // Usage: bun scripts/import-ashwood.ts /path/to/afterhours
@@ -145,7 +146,8 @@ function emit(g: THREE.BufferGeometry, matrix: THREE.Matrix4, m: THREE.MeshStand
     if(m.name==="window-backing" && v.z>24.9) v.z-=0.08
     const glow=kind!=="glass" && m.emissiveIntensity > 0 && m.emissive && (m.emissive.r+m.emissive.g+m.emissive.b)>0
     const recipe=recipes[m.userData.library]
-    let c=(glow?m.emissive:m.color ?? new THREE.Color(0.1,0.1,0.1)).clone(), aux=glow?m.emissiveIntensity:0, mat:number=glow?MAT.glow:m.userData.library?.startsWith("asphalt")?MAT.ground:MAT.lit
+    const wet=EXTERIOR_WET.findIndex(([name])=>name===m.userData.library)
+    let c=(glow?m.emissive:m.color ?? new THREE.Color(0.1,0.1,0.1)).clone(), aux=glow?m.emissiveIntensity:Math.max(0,wet), mat:number=glow?MAT.glow:wet>=0?MAT.ground:MAT.lit
     if(pane) { c.setRGB(pane.getX(k),pane.getY(k),pane.getZ(k)); aux=0.6; mat=MAT.glow }
     // Ashwood's card material shades limb and stem bases by this depth (forest/render.ts `vInner`); kit reads it from aux.
     if(flex && mat===MAT.lit && (kind==="foliage" || kind==="undergrowth")) aux=Math.min(1,Math.max(0,flex.getX(k)/1.6))
@@ -156,6 +158,8 @@ function emit(g: THREE.BufferGeometry, matrix: THREE.Matrix4, m: THREE.MeshStand
     }
     if(kind==="solid" && mat===MAT.lit && !pane) {mat=40;aux=Math.round(m.metalness*15)*2+m.roughness}
     if(vc) c.multiply(new THREE.Color(vc.getX(k),vc.getY(k),vc.getZ(k)))
+    const terrain=g.getAttribute("surface")
+    if(terrain) { mat=TERRAIN_MAT; c.setRGB(terrain.getX(k),terrain.getY(k),1) }
     c.multiplyScalar(tint)
     if(mat===MAT.glow) {
       const peak=Math.max(1,c.r,c.g,c.b)
@@ -213,17 +217,17 @@ for (const p of windowPanes) {
 // no recenter seam; the outer mesh meets its border exactly rather than overlapping.
 const terrainMat=(await import("./ashwood-materials")).material("forest_floor")
 for(const [x0,z0,x1,z1,step] of [[-130,-140,130,300,1],[-700,-700,700,-140,10],[-700,300,700,700,10],[-700,-140,-130,300,10],[130,-140,700,300,10]]) {
-  const nx=Math.round((x1!-x0!)/step!),nz=Math.round((z1!-z0!)/step!),positions:number[]=[],uvs:number[]=[],colors:number[]=[],indices:number[]=[]
+  const nx=Math.round((x1!-x0!)/step!),nz=Math.round((z1!-z0!)/step!),positions:number[]=[],uvs:number[]=[],weights:number[]=[],indices:number[]=[]
   for(let j=0;j<=nz;j++) for(let i=0;i<=nx;i++) {
     const x=x0!+i*step!,z=z0!+j*step!,roadDistance=height.roadEdgeDistance(x,z),comp=height.compoundDistance(x,z)
     const n=height.microAt(x*0.37+11,z*0.37-7)*6
     const dirt=Math.max(1-height.smoothstep(height.SHOULDER-0.3,height.SHOULDER+0.9+n*0.3,roadDistance),height.ditchAt(roadDistance,comp)/-height.DITCH.depth*0.45)
     const grass=Math.max(height.smoothstep(height.SHOULDER-0.2,height.SHOULDER+1.2,roadDistance)*(1-height.smoothstep(5.5+n,9.5+n*1.5,roadDistance)),1-height.smoothstep(1+n*0.5,7+n,comp))
     positions.push(x,height.heightAt(x,z),z); uvs.push(x,-z)
-    for(let k=0;k<3;k++) colors.push((1+([1.35,1.3,0.78][k]!*1.15-1)*grass)*(1-dirt)+[1.25,1.05,0.85][k]!*1.05*dirt)
+    weights.push(grass,dirt)
     if(i<nx && j<nz) {const a=j*(nx+1)+i,b=a+1,c=a+nx+1,d=c+1;indices.push(a,c,b,b,c,d)}
   }
-  const g=new THREE.BufferGeometry().setAttribute("position",new THREE.Float32BufferAttribute(positions,3)).setAttribute("uv",new THREE.Float32BufferAttribute(uvs,2)).setAttribute("color",new THREE.Float32BufferAttribute(colors,3)).setIndex(indices)
+  const g=new THREE.BufferGeometry().setAttribute("position",new THREE.Float32BufferAttribute(positions,3)).setAttribute("uv",new THREE.Float32BufferAttribute(uvs,2)).setAttribute("surface",new THREE.Float32BufferAttribute(weights,2)).setIndex(indices)
   emit(g,new THREE.Matrix4(),terrainMat,"surface-forest_floor")
 }
 console.log("Authored scene triangles",Object.fromEntries(Object.entries(streams).map(([k,s])=>[k,s.v.length/33])))
