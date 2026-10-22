@@ -1,6 +1,6 @@
 # Woods night-sky integration checkpoint
 
-Base: woods `4d14b07f`, plus the sky core through `3961d857` (equivalent to main-based `f868f9d5`). This branch is local and separate from the woods owner's tree.
+Base: current woods `fe3e6756`, plus the sky core through `97220ab7` (equivalent to main-based `f868f9d5`). Bridge: `d8df2180`. This branch is local and separate from the woods owner's tree. Original integration was on woods `4d14b07f` with core `3961d857` and bridge `7c319cd5`; the rebase preserves the newer tape and panel work.
 
 ## Kept
 
@@ -21,7 +21,10 @@ lake 298 (target 4263); Today has zero in both fixed upper-sky regions. Diffuse 
 versus targets .418/.461. Sky medians are 7.93/9.28 per 255, versus 7.14/6.14. Weak peaks include sensor
 noise and are counted separately. `spots.rendered` in the capture stats counts maps redrawn that frame,
 not active shadow slots: a fixed lunar map can report zero once cached.
-The root-script typecheck passes for the final checkpoint script. Bridge commit: `7c319cd5`.
+Current woods `fe3e6756` kit/root-script typechecks, production build and fresh clearing/lake captures pass
+without browser/GPU errors. The inspected current-base stills are published with regenerated statistics;
+the values above match the prior matched-clock run. The six-second camp clip retains the original
+`4d14b07f` woods base. Exact timing is no longer a review gate per Kit; no quiet-mini wait.
 
 ## Remaining boundaries
 
