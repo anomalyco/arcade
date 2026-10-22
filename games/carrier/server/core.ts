@@ -65,7 +65,7 @@ import { type CollideEntry, ShipCollider, hullSolid } from "../shared/ship-colli
 import { RoomTime, TIME_OVERRIDE_LEAD, type TimeOverride, packTime, timeOverride } from "../shared/daycycle"
 import { RoomWeather, WEATHER_OVERRIDE_LEAD, type WeatherOverride, type WeatherSea, makeWeather, makeWeatherSea, overrideTo, packOverride, unpackWeather } from "../shared/weather"
 
-export type Conn = { send(data: string): void; close(code?: number, reason?: string): void }
+export type Conn = { send(data: string | Uint8Array): void; close(code?: number, reason?: string): void }
 
 /** A joined connection silent this long is dropped. Clients ping every 2 s, but hidden tabs can throttle timers to
  *  once a minute. */
@@ -681,7 +681,7 @@ export class RoomCore {
     return this.objective?.state ?? null
   }
 
-  private objectiveFrame(): string {
+  private objectiveFrame(): string | Uint8Array {
     return encode({ type: "obj", o: this.objective ? packObjective(this.objective.state) : [] })
   }
 
@@ -811,7 +811,7 @@ export class RoomCore {
     }
   }
 
-  private hullsFrame(): string {
+  private hullsFrame(): string | Uint8Array {
     const t = this.seaTime(this.clock())
     return encode({ type: "hulls", h: [...this.fleet.hulls.values()].map((h) => packHull(h, t)) })
   }
@@ -1009,7 +1009,7 @@ export class RoomCore {
     return s
   }
 
-  private statsFrame(): string {
+  private statsFrame(): string | Uint8Array {
     const s: StatTuple[] = [...this.stats].map(([id, v]) => [id, v.kills, v.deaths])
     return encode({ type: "stats", s })
   }
@@ -1029,23 +1029,23 @@ export class RoomCore {
     for (const [c, pid] of this.ids) if (this.seen.has(c) && hearsChat(crew, pid, p.team, channel)) c.send(data)
   }
 
-  private sendTo(id: number, data: string): void {
+  private sendTo(id: number, data: string | Uint8Array): void {
     for (const [c, pid] of this.ids) if (pid === id) c.send(data)
   }
 
-  private sendOthers(id: number, data: string): void {
+  private sendOthers(id: number, data: string | Uint8Array): void {
     for (const c of this.seen.keys()) if (this.ids.get(c) !== id) c.send(data)
   }
 
-  private timeFrame(): string {
+  private timeFrame(): string | Uint8Array {
     return encode({ type: "time", o: this.time ? packTime(this.time) : null })
   }
 
-  private weatherFrame(): string {
+  private weatherFrame(): string | Uint8Array {
     return encode({ type: "weather", o: this.weather ? packOverride(this.weather) : null })
   }
 
-  private shipsFrame(): string {
+  private shipsFrame(): string | Uint8Array {
     const s: ShipTuple[] = []
     for (const [id, { ship: p }] of this.sims)
       s.push([id, round(p.t, 1e3), round(p.x, 1e2), round(p.z, 1e2), round(p.heading, 1e5), round(p.u, 1e3), round(p.v, 1e3), round(p.r, 1e5), round(p.order, 1e3), round(p.rudder, 1e3), round(p.power, 1e3)])
@@ -1306,7 +1306,7 @@ export class RoomCore {
     this.bots?.clear()
   }
 
-  private sendAll(data: string): void {
+  private sendAll(data: string | Uint8Array): void {
     for (const c of this.seen.keys()) c.send(data)
   }
 

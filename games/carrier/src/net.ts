@@ -455,6 +455,8 @@ class NetClient implements Net {
     }
     this.ws = ws
     this.pings = 0
+    // The high-rate messages arrive as binary frames (shared/wire.ts).
+    ws.binaryType = "arraybuffer"
     ws.onopen = () => {
       if (this.ws !== ws) return
       this.helloAt = performance.now()

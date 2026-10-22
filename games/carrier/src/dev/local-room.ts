@@ -18,7 +18,8 @@ export function localRoom(): (url: string) => WebSocket {
       onmessage: null as ((e: MessageEvent) => void) | null,
       onclose: null as ((e: CloseEvent) => void) | null,
       onerror: null as ((e: Event) => void) | null,
-      send(data: string) {
+      binaryType: "arraybuffer" as BinaryType,
+      send(data: string | Uint8Array) {
         if (sock.readyState === 1) core.message(conn, data)
       },
       close() {

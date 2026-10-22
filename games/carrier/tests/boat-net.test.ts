@@ -140,14 +140,14 @@ describe("the boat over the network", () => {
   test("protocol round-trips the boat messages and rejects malformed ones", () => {
     expect(decodeClient(encode({ type: "boat", c: [1, -0.5, 1, 1200, -100, 1] }))).toEqual({ type: "boat", c: [1, -0.5, 1, 1200, -100, 1] })
     expect(decodeClient(encode({ type: "boat", c: [2, 0, 0, 0, 0, 0] }))).toBeNull()
-    expect(decodeClient(encode({ type: "boat", c: [1, 0, 0.5, 0, 0, 0] }))).toBeNull()
+    expect(decodeClient(JSON.stringify({ type: "boat", c: [1, 0, 0.5, 0, 0, 0] }))).toBeNull()
     expect(decodeClient(encode({ type: "bhits", k: 2, on: 3, n: 4 }))).toEqual({ type: "bhits", k: 2, on: 3, n: 4 })
     expect(decodeClient(encode({ type: "bhits", k: 3, on: 3, n: 4 }))).toBeNull()
     expect(decodeClient(encode({ type: "bhits", k: 0, on: 3, n: 400 }))).toBeNull()
     const b = packBoat({ id: 3, t: 10, x: 1, z: 2, heading: 0.5, u: 10, v: 0, r: 0, power: 1, rudder: 0, yaw: 0.2, pitch: 0.1, mode: BOAT_MODE.drive, modeAt: 5, ship: 1, from: null, firing: true, boosting: false })
     const m = decodeServer(encode({ type: "boats", b: [b] }))
     expect(m?.type === "boats" && unpackBoat(m.b[0]!).firing).toBe(true)
-    expect(decodeServer(encode({ type: "boats", b: [[1, 2, 3]] } as unknown as ServerMsg))).toBeNull()
+    expect(decodeServer(JSON.stringify({ type: "boats", b: [[1, 2, 3]] } as unknown as ServerMsg))).toBeNull()
   })
 
   test("launch: the crane lowers it, the room releases it moving with the carrier, and drives it on the driver's orders", () => {

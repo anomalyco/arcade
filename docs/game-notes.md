@@ -1831,6 +1831,13 @@ Candidates from the code audits; measure and playtest before moving any into the
   raised the mean correction from 1.0 to 4.8 mm. Getaway (`games/getaway/shared/wire.ts`) does the same for `WorldView`,
   cars, helicopter, standings, props and `you`: 2-player chase snapshots drop 1,918 → 577 B (−69.9%), downlink
   bandwidth 29.4 → 10.9 KB/s (−62.9%), and server tick time ~30% while keeping `you` and `phaseT` exact for replay.
+- **Binary frames for the high-rate messages only, behind the same decoder.** Carrier (`games/carrier/shared/wire.ts`,
+  `@arcade/kit/net/bytes`) sends jets, ships, boats, turrets, aims, boat orders, triggers and hit reports as binary
+  frames (kind byte, varints on the old rounding grids, one f64 of ms per list plus varint offsets) and keeps
+  hello/crew/chat/objective/events as JSON on the same socket. The binary decoder yields the same message objects, so
+  the JSON validation runs unchanged on both. Full 32-player room (`games/carrier/scripts/net-bandwidth.ts`: 12 jets at
+  20 Hz, 12 gunners, 4 boats): 32.0 → 10.7 KB/s down per client (−67%), a 12-jet `planes` frame 1,901 → 388 B, client
+  uplink 2.23 → 0.77 KB/s per pilot.
 - **Time-stretch `SnapshotBuffer.renderTime` so clock and adaptive-delay shifts never jump a frame.** Calling
   `localTime - offset - effectiveDelay()` directly stepped `renderTime` by up to ±2 ms on snapshot arrival frames,
   creating 1.5–3 m/s velocity spikes on fast vehicles at 120 fps. Slewing the combined shift (`offset + effectiveDelay()`)
