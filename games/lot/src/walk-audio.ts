@@ -2,10 +2,11 @@ import { Footsteps, type FootEvent, type FootSurface } from "@arcade/kit/audio/f
 import { encodeWavPcm16 } from "@arcade/kit/audio/offline"
 import { ambiencePcm, type AmbientSound } from "@arcade/kit/audio/ambience"
 import type { WalkSettings } from "./walk-settings"
-import { isEditableEventTarget } from "@arcade/kit/client/controls"
 import type { StormAudioFrame, StormListener } from "./weather/audio"
 export type AudioLamp={position:readonly number[]}
-export type WalkAudioFrame={time:number;x:number;z:number;yaw:number;active:boolean;surface:FootSurface;inside:boolean;wetness:number;events:FootEvent[];settings:WalkSettings;storm?:StormAudioFrame}
+/** The player's volumes from the game shell, 0..1 (master is 0 while muted); 1 each when absent (offline renders). */
+export type PlayerMix={master:number;effects:number;ambience:number}
+export type WalkAudioFrame={time:number;x:number;z:number;yaw:number;active:boolean;surface:FootSurface;inside:boolean;wetness:number;events:FootEvent[];settings:WalkSettings;storm?:StormAudioFrame;mix?:PlayerMix}
 /** Weather sound inside the walking master (weather/audio.ts), attached once weather is first turned on. */
 /** `play`: the walking sound is audible and its clock is running; one-shots and thunder are only scheduled then. */
 export type StormVoice={update(f:StormAudioFrame,l:StormListener,now:number,play:boolean):void;interrupt():void}
@@ -14,6 +15,9 @@ export type StormLoader=(ctx:BaseAudioContext,destination:AudioNode)=>Promise<St
 /** Scene-owned emitter placement; shared footsteps own contact synthesis and scheduling. */
 export class LotAudioGraph {
   private master:GainNode
+  /** Player channels under the master: footsteps are Effects; beds, one-shots and weather are Ambience. */
+  private effects:GainNode
+  private ambience:GainNode
   private feet:Footsteps
   private buffers=new Map<AmbientSound,AudioBuffer>()
   private loops:{kind:AmbientSound;gain:GainNode;pan:StereoPannerNode;position?:readonly number[]}[]=[]
@@ -25,7 +29,9 @@ export class LotAudioGraph {
   private stormLoading?:Promise<void>
   constructor(private ctx:BaseAudioContext,destination:AudioNode,lamps:readonly AudioLamp[]){
     this.master=ctx.createGain();this.master.gain.value=0;this.master.connect(destination)
-    this.feet=new Footsteps(ctx,this.master)
+    this.effects=ctx.createGain();this.effects.connect(this.master)
+    this.ambience=ctx.createGain();this.ambience.connect(this.master)
+    this.feet=new Footsteps(ctx,this.effects)
     for(const kind of ["wind","traffic","hvac"] as const)this.loop(kind)
     for(const lamp of lamps)this.loop("buzz",lamp.position)
   }
@@ -33,18 +39,20 @@ export class LotAudioGraph {
     let b=this.buffers.get(kind)
     if(!b){const pcm=ambiencePcm(kind);b=this.ctx.createBuffer(1,pcm.length,24000);b.copyToChannel(pcm,0);this.buffers.set(kind,b)}return b
   }
-  private voice(kind:AmbientSound){const source=this.ctx.createBufferSource(),gain=this.ctx.createGain(),pan=this.ctx.createStereoPanner();source.buffer=this.buffer(kind);source.connect(gain);gain.connect(pan);pan.connect(this.master);return {source,gain,pan}}
+  private voice(kind:AmbientSound){const source=this.ctx.createBufferSource(),gain=this.ctx.createGain(),pan=this.ctx.createStereoPanner();source.buffer=this.buffer(kind);source.connect(gain);gain.connect(pan);pan.connect(this.ambience);return {source,gain,pan}}
   private loop(kind:AmbientSound,position?:readonly number[]){const v=this.voice(kind);v.source.loop=true;v.gain.gain.value=0;v.source.start();this.loops.push({kind,...v,position})}
   attachStorm(load:StormLoader){
     // A failed fetch is not cached: the next attach (weather toggled again, the next play gesture) tries again.
-    this.stormLoading??=load(this.ctx,this.master).then(v=>{this.storm=v},e=>{this.stormLoading=undefined;throw e})
+    this.stormLoading??=load(this.ctx,this.ambience).then(v=>{this.storm=v},e=>{this.stormLoading=undefined;throw e})
     return this.stormLoading
   }
   /** A suspended live context freezes `currentTime`; anything scheduled then would all fire at once on resume. */
   private get running(){return typeof AudioContext==="undefined"||!(this.ctx instanceof AudioContext)||this.ctx.state==="running"}
   update(f:WalkAudioFrame,now=this.ctx.currentTime){
-    const s=f.settings,enabled=f.active&&s.walkMode!=="today"&&!s.muted,outside=f.inside?.12:1
-    this.master.gain.setTargetAtTime(enabled?s.volume:0,now,.025)
+    const s=f.settings,mix=f.mix??{master:1,effects:1,ambience:1},enabled=f.active&&s.walkMode!=="today"&&mix.master>0,outside=f.inside?.12:1
+    this.master.gain.setTargetAtTime(enabled?s.volume*mix.master:0,now,.025)
+    this.effects.gain.setTargetAtTime(mix.effects,now,.025)
+    this.ambience.gain.setTargetAtTime(mix.ambience,now,.025)
     if(f.storm&&this.storm)this.storm.update(f.storm,{x:f.x,z:f.z,yaw:f.yaw,inside:f.inside,time:f.storm.clock},now,enabled&&this.running)
     for(const l of this.loops){
       let gain=0,pan=0
@@ -85,22 +93,20 @@ export class LotAudio {
   dispose(){void this.ctx?.close()}
 }
 /** Explicit play gesture unlocks sound. Focus/pointer-lock loss suspends it;
- * returning to the tab does not restart it until the next play gesture. */
-export function bindLotAudio(canvas:HTMLCanvasElement,audio:LotAudio,settings:WalkSettings,blocked:()=>boolean){
+ * returning to the tab does not restart it until the next play gesture. The game shell's mute (M, Settings)
+ * suspends it too, and `unlock` is the shell's Play and Resume. */
+export function bindLotAudio(canvas:HTMLCanvasElement,audio:LotAudio,settings:WalkSettings,blocked:()=>boolean,muted:()=>boolean){
   const abort=new AbortController(),options={signal:abort.signal}
-  const unlock=()=>{if(!blocked()&&settings.walkMode!=="today"&&!settings.muted)void audio.unlock().catch(e=>console.warn("Lot audio",e))}
+  const unlock=()=>{if(!blocked()&&settings.walkMode!=="today"&&!muted())void audio.unlock().catch(e=>console.warn("Lot audio",e))}
   canvas.addEventListener("click",unlock,options)
-  window.addEventListener("keydown",e=>{
-    if(e.code!=="KeyM"||e.repeat||e.metaKey||e.ctrlKey||e.altKey||blocked()||isEditableEventTarget(e.target)||document.pointerLockElement!==canvas)return
-    settings.muted=!settings.muted
-    if(settings.muted)audio.suspend();else unlock()
-  },options)
   window.addEventListener("blur",()=>audio.suspend(),options)
   document.addEventListener("visibilitychange",()=>{if(document.hidden)audio.suspend()},options)
   document.addEventListener("pointerlockchange",()=>{if(document.pointerLockElement!==canvas)audio.suspend()},options)
   const dispose=()=>{abort.abort();audio.dispose()}
   window.addEventListener("pagehide",e=>{if(e.persisted)audio.suspend();else dispose()},options)
-  return dispose
+  /** The shell's mute changed, or it started play from a click on Play or Resume. */
+  const sync=()=>{if(muted())audio.suspend();else if(document.pointerLockElement===canvas)unlock()}
+  return {dispose,sync}
 }
 export async function renderWalkAudio(tape:readonly WalkAudioFrame[],duration:number,lamps:readonly AudioLamp[],storm?:StormLoader){
   const ctx=new OfflineAudioContext(2,Math.ceil(duration*48000),48000),graph=new LotAudioGraph(ctx,ctx.destination,lamps)

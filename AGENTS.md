@@ -44,6 +44,8 @@ game's own `AGENTS.md`.
 - Adding a game: put it in `games/<name>`, give its Worker the name `arcade-<name>` with the routes above, set Vite's
   outDir to `dist/arcade/<name>`, strip the `/arcade/<name>` prefix in the Worker, add a workflow, add it to the root
   `package.json` workspaces and `WORKSPACE_GAMES` in `scripts/verify.ts`, and add a panel to `landing/index.html`. If it had an old `anoma.ly/labs/<name>` URL, add it to `redirects/` (GAMES and routes).
+  Put it on the shared game shell from the first commit ([docs/game-shell.md](docs/game-shell.md#checklist-for-a-new-game)):
+  title, Escape menu, Settings and lobby from `@arcade/kit/shell`, quality from `createShellQuality`.
 - New game ideas start as a single-screen low-res toy prototype (`bun scripts/new-toy.ts <name>`, [docs/prototyping.md](docs/prototyping.md)) on `@arcade/kit` primitives to prove the feel of movement, camera and the core verb before adding custom meshes, shaders or multiplayer. Cheap presentation, shared feel on by default: test models, but the kit's camera shake, hit-stop, effects, sounds, rig and bots from day one; add missing pieces to the kit, not the toy.
 - Prototypes are unlisted: deploy normally, skip the landing panel, add `noindex`, and list the game in the README's
   prototypes section. Promote a game by adding the landing panel and removing `noindex`.
@@ -63,6 +65,13 @@ game's own `AGENTS.md`.
   before rendering, performance, input, multiplayer or feel work, and read [docs/netcode.md](docs/netcode.md) before any
   multiplayer or net work. Add a technique to `docs/game-notes.md` once it is proven in a game, with where it lives and
   what it measured (animation techniques go in `docs/animation.md`).
+
+## Game shell
+
+- Read [docs/game-shell.md](docs/game-shell.md) before touching a title screen, lobby, pause menu, settings, volume,
+  mute, graphics quality or loading screen. Every game uses `@arcade/kit/shell` for settings, pause, title and lobby.
+  Default graphics is High (Auto starts High and steps down only on slow frames). Volume and mute are always reachable
+  from the title and the Escape menu. No game ships its own volume or quality UI.
 
 ## Rendering
 

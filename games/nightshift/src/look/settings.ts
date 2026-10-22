@@ -44,8 +44,6 @@ export const lookDefaults = () => ({
   car: true,
   /** Chairs pushed back and turned. */
   chairsPushed: true,
-  /** Quality tier for the look's expensive parts: -1 auto. */
-  lookTier: -1,
 })
 export type LookSettings = ReturnType<typeof lookDefaults>
 
@@ -74,6 +72,5 @@ export function lookControls(): LabControl[] {
     { key: "dressing", label: "Dressed desks", group: G, type: "toggle" },
     { key: "chairsPushed", label: "Chairs pushed back", group: G, type: "toggle" },
     { key: "car", label: "Worn elevator car", group: G, type: "toggle" },
-    { key: "lookTier", label: "Quality tier", group: G, type: "select", options: [{ value: -1, label: "Auto" }, { value: 2, label: "High" }, { value: 1, label: "Balanced" }, { value: 0, label: "Low" }] },
   ]
 }

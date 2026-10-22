@@ -6,6 +6,8 @@ import {
   resolveQualityMode,
   saveQualityMode,
   type QualityMode,
+  type QualityStepDown,
+  type QualityTier,
   type QualityScaling,
   type QualityState,
   type QualityTiers,
@@ -24,6 +26,8 @@ export type GameQualityOptions<P extends QualityScaling> = {
   gpuMs?: () => number | null | undefined
   /** Called whenever the tier or resolution scale changes, with the tier now in force. */
   onChange?: (profile: P) => void
+  /** When Auto steps down; the game shell passes `"slow-frames"` (see `AdaptiveQualityOptions.stepDown`). */
+  stepDown?: QualityStepDown
 }
 
 export const qualityStorageKey = (game: string) => `arcade.quality.${game}.v1`
@@ -55,7 +59,7 @@ export class GameQuality<P extends QualityScaling> {
     this.pinned = Boolean(pinned)
     const automated = typeof navigator !== "undefined" && navigator.webdriver
     const mode = pinned ? resolveQualityMode(pinned) : (!automated && loadSavedQualityMode(this.storage, this.key)) || "auto"
-    this.controller = new AdaptiveQualityController({ mode, profiles: options.tiers })
+    this.controller = new AdaptiveQualityController({ mode, profiles: options.tiers, stepDown: options.stepDown })
     this.settings = { quality: mode }
   }
 
@@ -65,6 +69,11 @@ export class GameQuality<P extends QualityScaling> {
 
   get profile(): P {
     return this.controller.getProfile()
+  }
+
+  /** The tier in force (what Auto settled on, or the pinned tier). */
+  get tier(): QualityTier {
+    return this.controller.getActiveTier()
   }
 
   /** Picks a mode (Auto restarts its startup probe) and, unless `persist` is false, saves it as the player's choice. */

@@ -1,8 +1,9 @@
-import { AdaptiveQualityController, QUALITY_PROFILES, type QualityScaling, type QualityTier, type QualityTiers } from "@arcade/kit/quality"
+import { QUALITY_PROFILES, type QualityScaling, type QualityTiers } from "@arcade/kit/quality"
 
 /**
  * The office look's tiers. High keeps Today's 1.5× pixel cap; Balanced and Low trade pixels and the look's own passes
- * (bounce grid, dusty shafts, contact shading). Today ignores tiers: it always draws at min(devicePixelRatio, 1.5).
+ * (bounce grid, dusty shafts, contact shading). The tier sizes the canvas with the look on or off (Today draws no look passes).
+ * The player picks the mode in the game shell's Settings (`createShellQuality` in main.ts, saved per browser).
  */
 export interface LookQuality extends QualityScaling {
   /** Bounced light grid, metres per texel (0 off). */
@@ -18,12 +19,4 @@ export const LOOK_QUALITY: QualityTiers<LookQuality> = {
   high: { ...QUALITY_PROFILES.high, label: "High (1.5×)", dprCap: 1.5, minScale: .85, bounceTexel: .25, shaftDownscale: 2, shaftSteps: 14, contactShading: true },
   balanced: { ...QUALITY_PROFILES.balanced, label: "Balanced (1.25×)", dprCap: 1.25, minScale: .75, bounceTexel: .5, shaftDownscale: 4, shaftSteps: 10, contactShading: true },
   low: { ...QUALITY_PROFILES.low, label: "Low (1.0×)", dprCap: 1, minScale: .6, bounceTexel: .5, shaftDownscale: 0, shaftSteps: 0, contactShading: false },
-}
-
-const TIERS: QualityTier[] = ["low", "balanced", "high"]
-/** `lookTier` setting (-1 auto, 0 low, 1 balanced, 2 high) to a controller mode. */
-export const lookTierMode = (v: number) => (v < 0 ? "auto" : TIERS[Math.max(0, Math.min(2, Math.round(v)))]!)
-
-export function lookQualityController() {
-  return new AdaptiveQualityController<LookQuality>({ profiles: LOOK_QUALITY })
 }

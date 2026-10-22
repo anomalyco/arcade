@@ -42,6 +42,8 @@ import { DescentAudio, renderDescentAudio, type DescentAudioFrame } from "./desc
 import { descentControls } from "./descent/controls"
 import { BootScreen, bootBytes } from "@arcade/kit/client/boot-screen"
 import { BOOT_PLAN, OFFICE_FILES } from "./assets"
+import { createGameShell, createShellQuality, type GameShell } from "@arcade/kit/shell"
+import { LOOK_QUALITY } from "./look/quality"
 
 const boot=new BootScreen(BOOT_PLAN)
 performance.mark("nightshift:program")
@@ -74,9 +76,19 @@ async function main() {
   renderer.setLevel({chunks:[{data:world.data,box:[-7,-10,7,11]},{data:basement.data,box:basement.box}],glass:[],...flatLighting(0,0,[0,0,0])})
   const receiver=renderer.addModel(handset()),indicator=renderer.addModel(phoneIndicator()),parts=new FrameParts()
   const leaf=renderer.addModel(elevatorLeaf())
-  settings.reduceMotion=matchMedia("(prefers-reduced-motion: reduce)").matches
-  try{const saved=localStorage.getItem("nightshift.reduceMotion");if(saved!==null)settings.reduceMotion=saved==="true"}catch{}
-  boot.reducedMotion=settings.reduceMotion
+  // The game shell: the title over the READY screen, the Escape menu and Settings (volume, mute, quality, reduce
+  // camera motion). Auto starts at High and steps down only on slow frames; the pick is remembered.
+  const live:{panel:LabPanel|null}={panel:null}
+  let shellReady:GameShell|null=null
+  const quality=createShellQuality({game:"nightshift",tiers:LOOK_QUALITY,params:new URLSearchParams(location.search),gpuMs:()=>renderer.lastGpuMs,onChange:()=>shellReady?.settings.changed()})
+  const shell=createGameShell({game:"nightshift",title:"NIGHT SHIFT ’87",subtitle:"Session 087 · 02:13",playLabel:"Begin",resumeLabel:"Back to the office",
+    channels:["master","effects","ambience","voice"],labels:{effects:"Movement",ambience:"Room tone",voice:"Phone and voices"},quality,legacyReduceMotionKey:"nightshift.reduceMotion",
+    pointerLock:canvas,blocked:()=>!boot.isReady||boot.failed||Boolean(live.panel?.holdsInput),keysBlocked:()=>Boolean(live.panel?.hasFocus()),
+    controls:()=>[keyPromptHtml("KeyW","Move"),keyPromptHtml("Mouse0","Look"),keyPromptHtml("KeyE","Answer"),keyPromptHtml("Space","Jump"),keyPromptHtml("KeyF","Flashlight"),keyPromptHtml("KeyM","Mute"),keyPromptHtml("Escape","Menu")].join(" ")})
+  shellReady=shell
+  const shellSettings=shell.settings
+  const applyShell=()=>{settings.reduceMotion=shellSettings.reduceMotion;boot.reducedMotion=settings.reduceMotion;audio.muted=shellSettings.muted}
+  applyShell()
   const camera:WalkCamera=new WalkCamera(canvas,()=>panel.holdsInput||!boot.isReady||boot.failed,settings,()=>document.pointerLockElement===canvas&&!document.hidden&&!panel.holdsInput&&camera.speed>0)
   camera.height=1.65;camera.fov=68;camera.far=45;camera.near=0.045
   const setCamera=(view:"wide"|"phone")=>{const p=view==="wide"?START:CLOSE;camera.body.x=p.x;camera.body.y=p.z;camera.yaw=p.yaw;camera.pitch=p.pitch;camera.release();camera.resetWalk();opening.started=opening.complete=opening.standing=true;opening.time=OPENING.end;opening.height.x=camera.height=1.65}
@@ -86,6 +98,8 @@ async function main() {
   const skySettings=createSkySettings(),sky=attachSky(renderer,skySettings)
   let skyWindows=false,skyWorld:ArrayBuffer|undefined
   panel.addControls(skySettings,skyControls())
+  live.panel=panel
+  shellSettings.subscribe(()=>{applyShell();panel.sync()})
   panel.addControls(contact,contactShadowControls("Shadows"))
   panel.addControls(descent,descentControls)
   const cameraFilter=attachCameraFilter(renderer,panel,device,gpu.format,{bodycam:camera})
@@ -106,7 +120,7 @@ async function main() {
   const moving=smoke?null:new MovingMeshPass(renderer.passContext,movingMeshes,hooks)
   if(moving)renderer.addPass("opaque",moving)
   const casters=[{buffer,count:world.vertices,stride:24},{buffer:hallBuffer,count:basement.vertices,stride:24},...props.casters,...screens.pass.shadowCasters(),...hall.pass.shadowCasters(),...(moving?.casters??[])]
-  const look=new OfficeLook(renderer,propHooks,smoke,async path=>{const r=await fetch(`${import.meta.env.BASE_URL}${path}`);if(!r.ok)throw Error(`${path}: ${r.status}`);return new Uint8Array(await r.arrayBuffer())})
+  const look=new OfficeLook(renderer,propHooks,smoke,async path=>{const r=await fetch(`${import.meta.env.BASE_URL}${path}`);if(!r.ok)throw Error(`${path}: ${r.status}`);return new Uint8Array(await r.arrayBuffer())},quality.controller)
   let lookVersion=look.version
   const frame=newSceneFrame(),custom=new Float32Array(56),dustField=new DustField()
   const beamDust=smoke?null:new BeamDust(renderer.passContext)
@@ -135,9 +149,12 @@ async function main() {
     if(!opening.standing)opening.stand()
     else camera.jump()
   }
-  const prompts=()=>hud.innerHTML=[keyPromptHtml("Mouse0","Look"),keyPromptHtml("KeyW","Move"),keyPromptHtml("Space","Jump"),keyPromptHtml("KeyF","Flashlight"),keyPromptHtml("KeyM","Mute"),keyPromptHtml("Backquote","Office")].join(" ")
+  const prompts=()=>hud.innerHTML=[keyPromptHtml("Mouse0","Look"),keyPromptHtml("KeyW","Move"),keyPromptHtml("Space","Jump"),keyPromptHtml("KeyF","Flashlight"),keyPromptHtml("KeyM","Mute"),keyPromptHtml("Escape","Menu"),keyPromptHtml("Backquote","Office")].join(" ")
   prompts();onKeyLayoutChange(prompts)
-  canvas.addEventListener("click",()=>{if(!boot.isReady||boot.failed)return;opening.start();void audio.unlock().then(()=>storyAudio.unlock(audio.context!))})
+  const begin=()=>{if(!boot.isReady||boot.failed)return;opening.start();void audio.unlock().then(()=>storyAudio.unlock(audio.context!))}
+  canvas.addEventListener("click",begin)
+  // The shell's Begin and Resume take the pointer lock from their own click, not the canvas's.
+  shell.flow.subscribe(()=>{if(shell.playing)begin()})
   window.addEventListener("mousemove",e=>{if(!opening.complete&&!isLabPanelEventTarget(e.target))e.stopImmediatePropagation()},true)
   window.addEventListener("keydown",e=>{
     if(isEditableEventTarget(e.target)||panel.holdsInput||e.metaKey||e.ctrlKey||e.altKey||document.pointerLockElement!==canvas)return
@@ -146,7 +163,7 @@ async function main() {
       if(e.code!=="Backquote"&&e.code!=="KeyM"){e.preventDefault();e.stopImmediatePropagation()}
     }else if(["KeyW","KeyA","KeyS","KeyD","ArrowUp","ArrowLeft","ArrowDown","ArrowRight"].includes(e.code))opening.stand()
   },true)
-  window.addEventListener("keydown",e=>{if(e.repeat||e.metaKey||e.ctrlKey||e.altKey||isEditableEventTarget(e.target)||panel.holdsInput||document.pointerLockElement!==canvas)return;if(e.code==="KeyE")action();if(e.code==="KeyM")audio.muted=!audio.muted;if(e.code==="Space")hop(e)})
+  window.addEventListener("keydown",e=>{if(e.repeat||e.metaKey||e.ctrlKey||e.altKey||isEditableEventTarget(e.target)||panel.holdsInput||document.pointerLockElement!==canvas)return;if(e.code==="KeyE")action();if(e.code==="Space")hop(e)})
   window.addEventListener("pagehide",()=>{storyAudio.dispose();audio.dispose()})
   function render(now:number) {
     const frameMs=now-last,dt=Math.min(0.05,frameMs/1000);last=now
@@ -159,7 +176,10 @@ async function main() {
     if(!opening.complete){camera.yaw=opening.yaw.x;camera.pitch=opening.pitch.x}
     camera.height=opening.height.x
     terminal.update(opening.time,opening.tokens)
-    look.update(settings,physics.chairs,camera.eye,time);look.recordFrame(settings,frameMs);look.carX=elevator.downstairs?BASEMENT_X:0
+    look.update(settings,physics.chairs,camera.eye,time);look.carX=elevator.downstairs?BASEMENT_X:0
+    shell.tick(now)
+    // Quality learns from frames in play, not the title, menu or scripted steps; its tier sizes the canvas with the look on or off.
+    if(shell.playing&&!stepping)quality.frame(now);else quality.pause()
     const {width,height}=look.canvasSize(settings,innerWidth,innerHeight,devicePixelRatio)
     if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;renderer.resize(width,height)}
     const onCord=call.phase==="pickup"||call.phase==="call"
@@ -263,24 +283,27 @@ async function main() {
     const upstairsLook=look.on(settings)&&!elevator.downstairs
     renderer.render({frame,lights:lights.lights,lightCount:lights.lightCount,shadowLightCount:lights.shadowLightCount,occluders:upstairsLook?look.occ:lights.occ,occluderCount:upstairsLook?look.occCount:lights.occCount,planBounce:elevator.downstairs?null:look.bounce(settings,camera.eye[0],camera.eye[2]),lampPower:lights.power,lampCount:0,view:elevator.downstairs?basement.box:[-7,-10,7,11],batches:parts.batches(),alphaSprites:parts.alpha,alphaCount:parts.nAlpha,addSprites:parts.add,addCount:parts.nAdd,grade:smoke?[0,0,0,settings.exposure]:[time,settings.lensVignette,settings.lensGrain,settings.exposure],postParams:[settings.lensSoftness,settings.lensFringe,Number(settings.polish&&settings.lens)],postCustom:[blur,cameraFilter.active?0:fade,elevator.downstairs&&camera.body.y<8&&!settings.reduceMotion?descent.heat:0,time],fog:fog.update({eye:camera.eye,viewProj:vp,lamps:fogLamps}),volume:smoke?[fog.volumeInput()]:[contactShadowInput(contact),elevator.downstairs?null:look.shafts(settings,lampDefs.filter(l=>l.id===1||l.id===2).map(l=>({pos:[l.x,l.h,l.y] as const,power:l.power,axis:l.spot!.axis,cosOuter:l.spot!.cosOuter}))),fog.volumeInput()]})
     const dx=PHONE.x-camera.eye[0],dz=PHONE.z-camera.eye[2]
-    audio.update(ringTime,distance(),(dx*Math.cos(camera.yaw)-dz*Math.sin(camera.yaw))/Math.max(distance(),0.1),call,settings.volume*(1-elevator.fade),active&&opening.started,opening.time,park)
-    audio.movement({time:camera.walk.time,x:camera.body.x,z:camera.body.y,yaw:camera.yaw,volume:settings.volume*(1-elevator.fade),active:active&&opening.started,tube:flicker,foley:settings.foley,room:elevator.downstairs?0:settings.roomTone*opening.roomGain,ballast:settings.polish&&settings.tubeSound?signal:undefined,crackle:settings.tubeCrackle},camera.walk.events)
-    storyFrame={time,line:elevator.line,lineTime:elevator.lineTime,x:camera.body.x,z:camera.body.y,yaw:camera.yaw,downstairs:elevator.downstairs,speed:elevator.speed,volume:settings.volume*(1-elevator.fade),voice:descent.voice,machinery:descent.machinery,active:active&&opening.started&&!audio.muted}
+    // The player's channels (Settings) scale the designer mix: the phone and the voices are Voices, movement is
+    // Effects, room tone and machinery are Ambience; master and mute are inside gain().
+    const mix=shellSettings,level=(c:"effects"|"ambience"|"voice")=>mix.volume(c)/100
+    audio.update(ringTime,distance(),(dx*Math.cos(camera.yaw)-dz*Math.sin(camera.yaw))/Math.max(distance(),0.1),call,settings.volume*(1-elevator.fade)*mix.gain("voice"),active&&opening.started,opening.time,park)
+    audio.movement({time:camera.walk.time,x:camera.body.x,z:camera.body.y,yaw:camera.yaw,volume:settings.volume*(1-elevator.fade)*mix.gain("master"),active:active&&opening.started,tube:flicker,foley:settings.foley*level("effects"),room:elevator.downstairs?0:settings.roomTone*opening.roomGain*level("ambience"),ballast:settings.polish&&settings.tubeSound?signal:undefined,crackle:settings.tubeCrackle},camera.walk.events)
+    storyFrame={time,line:elevator.line,lineTime:elevator.lineTime,x:camera.body.x,z:camera.body.y,yaw:camera.yaw,downstairs:elevator.downstairs,speed:elevator.speed,volume:settings.volume*(1-elevator.fade)*mix.gain("master"),voice:descent.voice*level("voice"),machinery:descent.machinery*level("ambience"),active:active&&opening.started&&!audio.muted}
     storyAudio.update(storyFrame)
     hud.style.visibility=opening.complete&&!elevator.done?"visible":"hidden"
     document.getElementById("reticle")!.style.visibility=opening.complete&&!elevator.done?"visible":"hidden"
     document.getElementById("title")!.style.opacity=String(.55*(1-fade))
     document.getElementById("credits")!.style.visibility=opening.complete&&!elevator.done?"visible":"hidden"
     if(opening.started)void boot.dismiss()
-    prompt.innerHTML=!opening.started?"":!active?keyPromptHtml("Mouse0","Resume"):!opening.complete?seen?keyPromptHtml("Space","Skip opening"):"":call.phase==="ringing"&&canAnswer()?audio.error?"Call audio could not load. Reload to retry.":audio.ready?keyPromptHtml("KeyE","Answer"):"Connecting…":canHangUp()?keyPromptHtml("KeyE","Hang up"):""
+    prompt.innerHTML=!opening.started?"":!active?(shell.flow.overlay?"":keyPromptHtml("Mouse0","Resume")):!opening.complete?seen?keyPromptHtml("Space","Skip opening"):"":call.phase==="ringing"&&canAnswer()?audio.error?"Call audio could not load. Reload to retry.":audio.ready?keyPromptHtml("KeyE","Answer"):"Connecting…":canHangUp()?keyPromptHtml("KeyE","Hang up"):""
     if(call.phase==="ended"&&active)prompt.textContent=elevator.phase==="floor"?"Take the elevator at the far end of the floor.":""
     sub.textContent=elevator.done?"":elevator.subtitle||subtitle(call)
     frames++;if(smoke&&frames>=2)paused=true
     // Begin waits for the GPU to finish the first frame, so the opening never starts on a compile stall.
-    if(frames===1)void device.queue.onSubmittedWorkDone().then(()=>{boot.ready(["READY.","","> SESSION 087    02:13"],keyPromptHtml("Mouse0","Begin"));performance.mark("nightshift:ready")})
+    if(frames===1)void device.queue.onSubmittedWorkDone().then(()=>{boot.ready(["READY.","","> SESSION 087    02:13"],shell.hidden?keyPromptHtml("Mouse0","Begin"):"");performance.mark("nightshift:ready")})
     requestAnimationFrame(render)
   }
-  Object.assign(window,{nightshift:{sky,look,lookReady:()=>look.ready(settings),quality:{pin(tier:string|null){settings.lookTier=tier===null?-1:["low","balanced","high"].indexOf(tier)},state:()=>({mode:look.quality.getMode(),tier:look.quality.getActiveTier(),scale:look.quality.getResolutionScale()})},camera,settings,cinema,opening,elevator,audio,renderer,call,action,setCamera,renderFoley,renderBeatAudio,renderDescentAudio,descent,storyAudio,get parked(){return parked},get storyFrame(){return storyFrame},physics,continuity,dustField,tubeSignal,cradle:props.cradle,get clock(){return time},step(ms:number){stepping=true;try{render(last+ms)}finally{stepping=false}},get frames(){return frames},get paused(){return paused},set paused(v:boolean){paused=v},set time(v:number){fixedTime=v},ready:true}})
+  Object.assign(window,{nightshift:{sky,look,lookReady:()=>look.ready(settings),quality:{pin(tier:string|null){quality.setMode(tier??"auto",false)},state:()=>({mode:look.quality.getMode(),tier:look.quality.getActiveTier(),scale:look.quality.getResolutionScale()})},shell,camera,settings,cinema,opening,elevator,audio,renderer,call,action,setCamera,renderFoley,renderBeatAudio,renderDescentAudio,descent,storyAudio,get parked(){return parked},get storyFrame(){return storyFrame},physics,continuity,dustField,tubeSignal,cradle:props.cradle,get clock(){return time},step(ms:number){stepping=true;try{render(last+ms)}finally{stepping=false}},get frames(){return frames},get paused(){return paused},set paused(v:boolean){paused=v},set time(v:number){fixedTime=v},ready:true}})
   boot.stage("frame","FIRST FRAME")
   requestAnimationFrame(render)
 }

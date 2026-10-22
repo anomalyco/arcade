@@ -185,7 +185,15 @@ export interface AdaptiveQualityOptions<P extends QualityScaling = QualityProfil
   recoverWindows?: number
   /** Consecutive CPU-bound windows (slow frames, idle GPU) before dropping a tier, which sheds CPU-side work (default: 3). */
   cpuWindows?: number
+  /**
+   * When Auto steps down. `"headroom"` (default) also steps down when GPU time alone leaves little headroom, before
+   * frames miss. `"slow-frames"` (the game shell's policy, docs/game-shell.md) keeps High until frames are measured
+   * missing the budget, at startup and at runtime.
+   */
+  stepDown?: QualityStepDown
 }
+
+export type QualityStepDown = "headroom" | "slow-frames"
 
 /** A one-line readout for Lab telemetry: `Quality Auto → High (Retina 2.0×) · 1.80× · GPU 11.2 ms · 14% slow`. */
 export function describeQualityState(s: QualityState<QualityScaling>): string {
@@ -208,8 +216,8 @@ function roundPixelRatio(pr: number): number {
  * Picks the initial quality tier from startup frame/GPU medians once shaders and textures have warmed up.
  * Keeps `high` (full Retina 2.0×) whenever GPU/frame time fits inside the 60 fps budget.
  */
-export function selectStartupTier(frameMedianMs: number, gpuMedianMs: number, budgetMs = 1000 / 60): QualityTier {
-  if (gpuMedianMs > 0) {
+export function selectStartupTier(frameMedianMs: number, gpuMedianMs: number, budgetMs = 1000 / 60, stepDown: QualityStepDown = "headroom"): QualityTier {
+  if (gpuMedianMs > 0 && stepDown === "headroom") {
     if (gpuMedianMs > budgetMs * 1.35) return "low"
     // Leave headroom: the first scene is rarely the heaviest, and a frame's CPU work adds to its GPU time.
     if (gpuMedianMs > budgetMs * 0.85) return "balanced"
@@ -246,6 +254,7 @@ export class AdaptiveQualityController<P extends QualityScaling = QualityProfile
   private readonly minWindowSamples: number
   private readonly recoverWindows: number
   private readonly cpuWindows: number
+  private readonly stepDown: QualityStepDown
 
   private seenFrames = 0
   private startupResolved = false
@@ -277,6 +286,7 @@ export class AdaptiveQualityController<P extends QualityScaling = QualityProfile
     this.minWindowSamples = options.minWindowSamples ?? 10
     this.recoverWindows = options.recoverWindows ?? 3
     this.cpuWindows = options.cpuWindows ?? 3
+    this.stepDown = options.stepDown ?? "headroom"
     this.upgradeWindows = this.recoverWindows
   }
 
@@ -391,7 +401,7 @@ export class AdaptiveQualityController<P extends QualityScaling = QualityProfile
       if (medGpu > 0) this.lastGpuMs = medGpu
       this.startupFrameBuf.length = 0
       this.startupGpuBuf.length = 0
-      const chosen = selectStartupTier(medFrame, medGpu, budget)
+      const chosen = selectStartupTier(medFrame, medGpu, budget, this.stepDown)
       if (chosen !== this.activeTier) {
         this.activeTier = chosen
         this.resolutionScale = 1.0
@@ -436,8 +446,9 @@ export class AdaptiveQualityController<P extends QualityScaling = QualityProfile
     const slow = missedShare >= 0.12 || medFrame > budget * 1.25
     // Shed pixels when the GPU is a real part of slow frames (or telemetry is unavailable), or has no headroom left.
     const gpuShare = medGpu === 0 || medGpu > budget * 0.5
-    const overloaded = (slow && gpuShare) || medGpu > budget * 0.9
-    const severelyOverloaded = (medFrame > budget * 1.65 && gpuShare) || medGpu > budget * 1.45
+    const headroom = this.stepDown === "headroom"
+    const overloaded = (slow && gpuShare) || (headroom && medGpu > budget * 0.9)
+    const severelyOverloaded = (medFrame > budget * 1.65 && gpuShare) || (headroom && medGpu > budget * 1.45)
     const cpuBound = !overloaded && (slow || hitches >= 3)
 
     if (overloaded) {

@@ -303,6 +303,11 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
     match: (s) => s === "@arcade/kit/weather" || s.startsWith("@arcade/kit/weather/"),
   },
   {
+    area: "`shell`",
+    description: "The player-facing game shell: settings (volume, mute, quality, reduce motion, key labels), title and lobby, Escape menu, leave warning and loading ([game-shell.md](game-shell.md))",
+    match: (s) => s === "@arcade/kit/shell" || s.startsWith("@arcade/kit/shell/"),
+  },
+  {
     area: "`lab-panel` & `@arcade/knobs`",
     description: "Backquote debug overlay and Lab Inspector drawn by `packages/knobs`",
     match: (s) =>
