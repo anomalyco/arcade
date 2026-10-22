@@ -86,6 +86,8 @@ async function main() {
     controls: () => [keyPromptHtml("KeyW", "Move"), keyPromptHtml("Space", "Jump"), keyPromptHtml("ShiftLeft", "Shoot"), keyPromptHtml("KeyE", "Dodge"), keyPromptHtml("Enter", "Split keyboard"), keyPromptHtml("KeyM", "Mute"), keyPromptHtml("Escape", "Menu")].join(" "),
     lobby: {
       friends: true, quick: true,
+      // Play is couch play right here (the shell plays on); without onSolo the title would offer rooms only.
+      onSolo: () => {},
       // Play with friends makes a private room (kept out of Play online's matchmaking).
       createRoom: () => {
         creating = true
