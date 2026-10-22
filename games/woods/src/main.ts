@@ -103,8 +103,9 @@ async function main() {
   const release = () => keys.clear()
   window.addEventListener("keydown", (e) => {
     if (isEditableEventTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return
+    // M mutes in play and on the title or Escape menu (not while typing in the Lab panel).
+    if (e.code === "KeyM" && !e.repeat && !panel.hasFocus()) { audio.bank.toggleMute(); menu.sync(); panel.sync() }
     if (!locked()) return
-    if (e.code === "KeyM" && !e.repeat) { audio.bank.toggleMute(); menu.sync() }
     if (MOVE_KEYS.has(e.code)) { keys.add(e.code); e.preventDefault() }
   })
   window.addEventListener("keyup", (e) => { keys.delete(e.code); if (isMetaKey(e.code)) release() })
@@ -244,7 +245,8 @@ async function main() {
   }
 
   function frame(now: number) {
-    const dt = Math.min(0.05, (now - last) / 1000)
+    const frameMs = now - last
+    const dt = Math.min(0.05, frameMs / 1000)
     last = now
     const playing = active()
     time += dt
@@ -354,7 +356,7 @@ async function main() {
     view.frame({ eye: [camera.eye[0], camera.eye[1], camera.eye[2]], viewProj: vp as Float32Array, width, height, time: state.t, dt, fovY: (camera.fov * Math.PI) / 180, torches, fp, place, casters: friends.casters(ownOrigin, view.forest.settings.torchReach) }, stepping, smokeTarget?.createView())
     // Frame time alone decides: the renderer's GPU reading runs from before encoding to the queue finishing, so it
     // counts CPU work and queue waits and read over budget on GPUs that hold 60 fps at High.
-    if (!smoke && playing && quality.recordFrame(dt * 1000)) { view.forest.setQuality(quality.getActiveTier()); menu.sync() }
+    if (!smoke && playing && quality.recordFrame(frameMs)) { view.forest.setQuality(quality.getActiveTier()); menu.sync() }
 
     // HUD: the tie prompt, the map, toasts.
     const target = playing && p.mapRaise < 0.3 ? tieTarget(world, p, settings.tapeReach) : null
