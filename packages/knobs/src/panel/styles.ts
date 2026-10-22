@@ -368,8 +368,9 @@ ${POINTER_ROW} :is(.knobs-card>*,.knobs-sub,.knobs-x-head):not(:hover)::after{op
 .knobs-panel .knobs-slider{height:var(--k-row);contain:layout style}
 .knobs-panel .knobs-row:where(:not(.knobs-slider,.knobs-x,.knobs-spring)){display:flex;align-items:center;justify-content:space-between;gap:8px;height:var(--k-row);padding:0 var(--k-inset);contain:layout style}
 .knobs-panel .knobs-row>span:first-child{color:var(--k-label);font-weight:var(--k-label-weight);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.knobs-row>span:first-child::after{content:"";display:inline-block;width:4px;height:4px;margin-left:5px;border-radius:50%;background:var(--k-modified);vertical-align:middle;opacity:0;transform:scale(.4);transition:opacity .16s ease-out,transform .28s cubic-bezier(.34,1.5,.64,1)}
-.knobs-modified.knobs-row>span:first-child::after{opacity:.95;transform:none}
+/* Rows, and group and sub-heading labels with something changed inside, carry the modified dot. */
+:is(.knobs-row>span:first-child,.knobs-group-label,.knobs-subhead-label)::after{content:"";display:inline-block;width:4px;height:4px;margin-left:5px;border-radius:50%;background:var(--k-modified);vertical-align:middle;opacity:0;transform:scale(.4);transition:opacity .16s ease-out,transform .28s cubic-bezier(.34,1.5,.64,1)}
+:is(.knobs-modified.knobs-row>span:first-child,:is(.knobs-group-head,.knobs-subhead)[data-modified] :is(.knobs-group-label,.knobs-subhead-label))::after{opacity:.95;transform:none}
 /* A locked row's lock sits just left of its readout (or its control), where the eye reads the value.
    Its room opens at once (it's right-aligned, so nothing beside it moves); the icon fades and
    scales in place. */
