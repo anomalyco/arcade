@@ -58,19 +58,22 @@ for clip in data["clips"]:
     target = out / (clip["id"] + ".mp4")
     cmd = ["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pixel_format", "rgb24", "-video_size", f"{W}x{H}", "-framerate", "60", "-i", "pipe:0",
            "-an", "-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-threads", "2", str(target)]
-    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
     count = max(1, math.ceil((frames[-1]["time"]-frames[0]["time"])*4*60))
-    for i in range(count):
-        t = frames[0]["time"] + i / 240
-        # Hold each sampled pose until the next sample. The 100 ms hitch stays visible, with its real duration.
-        frame = next((f for f in reversed(frames) if f["time"] <= t), frames[0])
-        proc.stdin.write(draw_frame(clip, frame).tobytes())
-    proc.stdin.close()
-    if proc.wait(): raise RuntimeError("ffmpeg failed")
+    if "--strips-only" not in sys.argv or not target.exists():
+        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+        for i in range(count):
+            t = frames[0]["time"] + i / 240
+            # Hold each sampled pose until the next sample. The 100 ms hitch stays visible, with its real duration.
+            frame = next((f for f in reversed(frames) if f["time"] <= t), frames[0])
+            proc.stdin.write(draw_frame(clip, frame).tobytes())
+        proc.stdin.close()
+        if proc.wait(): raise RuntimeError("ffmpeg failed")
     strip = Image.new("RGB", (W*3, H*2))
     contrast = []
+    event = min(range(len(frames)), key=lambda k: abs(frames[k]["time"] - clip["finding"]["time"]))
     for k in range(6):
-        frame = frames[round(k*(len(frames)-1)/5)]
+        # Adjacent samples include the exact violating frame (tile 3). Even spacing can miss a one-frame pop.
+        frame = frames[max(0, min(len(frames)-1, event + k - 2))]
         tile = draw_frame(clip, frame)
         contrast.append(ImageStat.Stat(tile.crop((20,90,W-20,410)).convert("L")).stddev[0])
         strip.paste(tile, ((k%3)*W, (k//3)*H))
