@@ -176,6 +176,21 @@ describe("@arcade/kit/shell lobby", () => {
     expect(l.canStart).toBe(true)
   })
 
+  test("a required name stops room joins until one is typed; solo still plays", () => {
+    const joined: string[] = []
+    const solo: string[] = []
+    const l = new ShellLobby({ game: "g", storage: memory(), location: loc, fallbackName: "Dax", nameRequired: "Type a callsign.", onJoin: (r) => joined.push(r), onSolo: (n) => solo.push(n) })
+    expect(l.join("ab12")).toBe(false)
+    expect(l.message).toBe("Type a callsign.")
+    l.playAlone()
+    expect(solo).toEqual(["Dax"])
+    l.setName("Kit")
+    expect(l.join("ab12")).toBe(true)
+    expect(joined).toEqual(["ab12"])
+    expect(l.hasSolo).toBe(true)
+    expect(new ShellLobby({ game: "g", storage: memory(), location: loc, onJoin: () => {} }).hasSolo).toBe(false)
+  })
+
   test("socket status maps onto reconnect UI", () => {
     const l = new ShellLobby({ game: "g", storage: memory(), location: loc })
     l.setSocketStatus("Connecting…")

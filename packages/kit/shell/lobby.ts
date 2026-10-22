@@ -21,6 +21,8 @@ export type ShellLobbyOptions = {
   maxName?: number
   /** The name used when the field is empty. */
   fallbackName?: string
+  /** Rooms need a typed name (Carrier's callsign, Getaway): the message shown instead of joining without one. */
+  nameRequired?: string
   /** Whether the title offers Play with friends (create, join, invite). */
   friends?: boolean
   /** The invite link's query parameter (default `room`; Getaway's is `r`). */
@@ -146,13 +148,17 @@ export class ShellLobby {
     this.emit()
   }
 
+  get hasSolo(): boolean {
+    return Boolean(this.o.onSolo)
+  }
+
   get hasQuick(): boolean {
     return Boolean(this.o.quick)
   }
 
   /** Joins the fullest open public room (or a fresh one when the server can't be asked). */
   async quickMatch(): Promise<void> {
-    if (this.busy || !this.o.quick) return
+    if (this.busy || !this.o.quick || !this.named()) return
     this.busy = true
     this.message = null
     this.emit()
@@ -166,7 +172,7 @@ export class ShellLobby {
 
   /** Creates a private room and enters it. */
   async playWithFriends(): Promise<void> {
-    if (this.busy) return
+    if (this.busy || !this.named()) return
     this.busy = true
     this.message = null
     this.emit()
@@ -180,6 +186,7 @@ export class ShellLobby {
 
   /** Joins by code or invite link; false (with a message) when it isn't one. */
   join(input: string): boolean {
+    if (!this.named()) return false
     const room = this.parseRoom(input)
     if (!room) {
       this.message = "Enter a room code or paste an invite link."
@@ -252,6 +259,13 @@ export class ShellLobby {
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
+  }
+
+  private named(): boolean {
+    if (!this.o.nameRequired || this.name.trim()) return true
+    this.message = this.o.nameRequired
+    this.emit()
+    return false
   }
 
   private enter(room: string): void {

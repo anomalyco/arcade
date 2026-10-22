@@ -164,9 +164,9 @@ export class ShellView {
     let body: string
     if (l?.room) body = this.roomHtml()
     else if (l?.linkedRoom)
-      body = `<button class="as-btn as-primary as-big" data-act="join-linked">Join room ${esc(l.linkedRoom.toUpperCase())}</button><button class="as-btn" data-act="solo">${esc(o.soloLabel ?? "Play alone")}</button>`
+      body = `<button class="as-btn as-primary as-big" data-act="join-linked">Join room ${esc(l.linkedRoom.toUpperCase())}</button>${l.hasSolo ? `<button class="as-btn" data-act="solo">${esc(o.soloLabel ?? "Play alone")}</button>` : ""}`
     else if (l?.friends)
-      body = `${l.hasQuick ? `<button class="as-btn as-primary as-big" data-act="quick"${l.busy ? " disabled" : ""}>${esc(o.quickLabel ?? "Quick match")}</button>` : ""}<div class="as-choices"><button class="as-btn${l.hasQuick ? "" : " as-primary"}" data-act="solo">${esc(o.soloLabel ?? "Play alone")}${o.soloNote ? `<small>${esc(o.soloNote)}</small>` : ""}</button><button class="as-btn" data-act="friends"${l.busy ? " disabled" : ""}>Play with friends${o.friendsNote ? `<small>${esc(o.friendsNote)}</small>` : ""}</button></div><div class="as-join"><input type="text" data-field="code" placeholder="Room code or invite link" autocomplete="off" spellcheck="false" /><button class="as-btn" data-act="join">Join</button></div>`
+      body = `${l.hasQuick ? `<button class="as-btn as-primary as-big" data-act="quick"${l.busy ? " disabled" : ""}>${esc(o.quickLabel ?? "Quick match")}</button>` : ""}<div class="as-choices">${l.hasSolo ? `<button class="as-btn${l.hasQuick ? "" : " as-primary"}" data-act="solo">${esc(o.soloLabel ?? "Play alone")}${o.soloNote ? `<small>${esc(o.soloNote)}</small>` : ""}</button>` : ""}<button class="as-btn" data-act="friends"${l.busy ? " disabled" : ""}>Play with friends${o.friendsNote ? `<small>${esc(o.friendsNote)}</small>` : ""}</button></div><div class="as-join"><input type="text" data-field="code" placeholder="Room code or invite link" autocomplete="off" spellcheck="false" /><button class="as-btn" data-act="join">Join</button></div>`
     else body = `<button class="as-btn as-primary as-big" data-act="${l ? "solo" : "play"}">${esc(o.playLabel ?? o.soloLabel ?? "Play")}</button>`
     const message = l?.message ? `<p class="as-message">${esc(l.message)}</p>` : ""
     const refused = this.flow.lockRefused ? `<p class="as-message">Click again to take the mouse.</p>` : ""
@@ -181,7 +181,7 @@ export class ShellView {
     const ready = l.hasReady ? `<button class="as-btn${l.ready ? "" : " as-primary"} as-big" data-act="ready">${l.ready ? "Not ready" : "Ready"}</button>` : ""
     const start = l.hasStart && l.isHost ? `<button class="as-btn as-primary as-big" data-act="start"${l.canStart ? "" : " disabled"}>Start</button>` : ""
     const play = !l.hasReady && !l.hasStart ? `<button class="as-btn as-primary as-big" data-act="play">${esc(this.o.playLabel ?? "Play")}</button>` : ""
-    return `${this.inviteHtml()}${players}${ready}${start}${play}<button class="as-link" data-act="leave-room">Play alone instead</button>`
+    return `${this.inviteHtml()}${players}${ready}${start}${play}<button class="as-link" data-act="leave-room">${l.hasSolo ? "Play alone instead" : "Leave room"}</button>`
   }
 
   private inviteHtml(): string {
