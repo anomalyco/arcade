@@ -135,8 +135,9 @@ if (gpu) {
 if (clip) {
   // The group walks past left to right 8 m ahead, your torch on them.
   await page.evaluate(() => { woods.friends.realistic = true })
-  await group(page, { ...MID, light: true, ahead: 8, spread: 4, pitch: -0.08, mode: "regroup", walk: [30, 2], dx: -2 })
-  await page.evaluate(() => woods.state.brains.forEach((b, k) => { const p = woods.state.players.find((q) => q.id === b.id)!; p.x -= 7 + k * 0.4 }))
+  // At the clear spot of the group stills: they start off to the left and cross 6 m ahead in your beam.
+  await group(page, { ...MID, light: true, ahead: 6, spread: 3, pitch: -0.12, mode: "regroup", walk: [30, 3] })
+  await page.evaluate(() => woods.state.brains.forEach((b, k) => { const p = woods.state.players.find((q) => q.id === b.id)!; p.x -= 6 + k * 0.5; b.tx -= 6 }))
   await settle(20)
   mkdirSync(`${out}/clip`, { recursive: true })
   for (let f = 0; f < 150; f++) {
