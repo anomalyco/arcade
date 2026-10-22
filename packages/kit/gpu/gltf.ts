@@ -35,13 +35,18 @@ export async function imageTexture(device: GPUDevice, bytes: Uint8Array, srgb: b
 }
 
 /** glTF 2 static meshes: node transforms, normalized/quantized accessors, meshopt, PBR textures and optional KTX2.
- * Skins, animation and morph targets deliberately require a different adapter. Caller owns returned textures. */
-export async function loadGltf(device: GPUDevice, url: string, transform = mat4.identity(), ktx?: KtxDecoder) {
+ * Skins, animation and morph targets deliberately require a different adapter. Caller owns returned textures.
+ * `source` is a URL or the already-fetched GLB bytes (for example from a boot screen's progress fetch). */
+export async function loadGltf(device: GPUDevice, source: string | Uint8Array, transform = mat4.identity(), ktx?: KtxDecoder) {
   await MeshoptDecoder.ready
   const io = new WebIO().registerExtensions(ALL_EXTENSIONS).registerDependencies({ "meshopt.decoder": MeshoptDecoder })
-  const response = await fetch(url)
-  if (!response.ok) throw new Error(`${url}: ${response.status}`)
-  const doc = await io.readBinary(new Uint8Array(await response.arrayBuffer()))
+  let bytes: Uint8Array
+  if (typeof source === "string") {
+    const response = await fetch(source)
+    if (!response.ok) throw new Error(`${source}: ${response.status}`)
+    bytes = new Uint8Array(await response.arrayBuffer())
+  } else bytes = source
+  const doc = await io.readBinary(bytes)
   const scene = doc.getRoot().getDefaultScene() ?? doc.getRoot().listScenes()[0]
   if (!scene) throw new Error("glTF has no scene")
   const textures: GPUTexture[] = []
