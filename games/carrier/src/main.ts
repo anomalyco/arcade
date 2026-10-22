@@ -132,6 +132,7 @@ async function main() {
   const view = new FlightView()
   const sky = new Sky(renderer)
   const ocean = new Ocean(renderer)
+  if (!params.has("smoke") && params.get("water") === "continuous") ocean.water.mode = "continuous"
   const clouds = new Clouds(renderer)
   // Night lights on every carrier and jet: made before the game and the jets so their passes hang their lights on it.
   const lights = new Lights(renderer)
@@ -213,6 +214,7 @@ async function main() {
     input,
     weather,
     daynight,
+    ocean,
     game,
     audio: flight.audio,
     flight,
@@ -352,7 +354,7 @@ async function main() {
   syncScreen()
 
   const debug: { renderer: Renderer; camera: Camera; net: typeof net; input: Input; frame: Float32Array; grade: typeof grade; atmosphere: typeof atmosphere; arch: Archipelago | null; ocean: Ocean; clouds: Clouds } = { renderer, camera, net, input, frame, grade, atmosphere, arch: null, ocean, clouds }
-  Object.assign(globalThis, { carrier: Object.assign(debug, { game, gunnery, boat, roster: teams, teams, ops, flight, weather, baseOcean, daynight, stars, lights, zones, chat }, dev ? { lab: dev.lab, debugMenu: dev.menu, bots: dev.bots } : {}) })
+  Object.assign(globalThis, { carrier: Object.assign(debug, { game, gunnery, boat, roster: teams, teams, ops, flight, weather, baseOcean, daynight, stars, lights, zones, chat }, dev ? { lab: dev.lab, debugMenu: dev.menu, bots: dev.bots, perf } : {}) })
 
   let carrierBlastTimer = 0
   registerGameCommands(commands => {

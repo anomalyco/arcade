@@ -23,6 +23,8 @@ import { WeatherLab } from "./weather-lab"
 import type { CarrierQuality } from "../quality"
 import { zonesSection } from "../objective/lab"
 import { applyZoneRules } from "../objective/zones"
+import type { Ocean } from "../render/ocean"
+import { waterSection } from "./water-lab"
 
 export { localRoom } from "./local-room"
 
@@ -33,6 +35,7 @@ export type DevToolsContext = {
   input: Input
   weather: WeatherSystem
   daynight: DayNight
+  ocean: Ocean
   game: Game
   audio: JetAudio
   /** The current connection (it changes when the menu picks another room). */
@@ -65,6 +68,7 @@ export function installDevTools(ctx: DevToolsContext) {
   const bots = new BotsLab({ ...ctx.bots, net: ctx.net })
   panel.add(
     lab.section,
+    waterSection(ctx.ocean),
     new TimeLab({ daynight: ctx.daynight, broadcast: (hour, speed, fade) => ctx.net().sendTime(hour, speed, fade) }).section,
     // AUDIO: levels, jet sound tuning and test buttons (M mutes anywhere).
     new MixerLab(ctx.audio).section,
