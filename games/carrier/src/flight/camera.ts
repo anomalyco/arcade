@@ -1,7 +1,8 @@
 import type { LabControl } from "@arcade/kit/lab-panel"
 import { mat4d } from "wgpu-matrix"
 import { PLANE, type Plane, type PlaneTuning, type Quat, planeQuat, planeSpeed, quatAxis, quatMul, quatRotate, quatSlerp, type Vec3 } from "../../shared/plane"
-import { FAR, NEAR } from "../render/camera"
+import { TraumaShake, shakeWave } from "@arcade/kit/client/camera"
+import { FAR, NEAR, SHAKE } from "../render/camera"
 import { RelView } from "../render/ocean-view"
 
 const DEG = Math.PI / 180
@@ -92,8 +93,8 @@ export class FlightCam {
   framing = { yaw: 0, pitch: 0, dist: 1 }
   private frame = { yaw: 0, pitch: 0, dist: 1 }
   private placed = false
-  private shakeT = 0
-  private time = 0
+  /** Trauma 0..1 (catapult, stall buffet, hits, crash): the host raises and decays it, `update`/`crashView` shake by it. */
+  readonly shake = new TraumaShake(SHAKE)
   private view = new Float64Array(16)
   private proj = new Float64Array(16)
   private target = new Float64Array(3)
@@ -136,11 +137,10 @@ export class FlightCam {
   }
 
   /**
-   * `trauma` 0..1 (catapult, stall buffet, crash). `look` is free-look mouse movement while held (null when released).
-   * `eyeModel` is the pilot's eye in model space.
+   * `look` is free-look mouse movement while held (null when released). `eyeModel` is the pilot's eye in model space.
    */
-  update(p: Plane, dt: number, aspect: number, trauma: number, look: { dx: number; dy: number } | null, eyeModel: Vec3, P: PlaneTuning = PLANE): void {
-    this.time += dt
+  update(p: Plane, dt: number, aspect: number, look: { dx: number; dy: number } | null, eyeModel: Vec3, P: PlaneTuning = PLANE): void {
+    this.shake.tick(dt)
     const pq = planeQuat(p, this.tq)
     // Bank as seen against the world: take most of it out while upright, none of it when vertical or inverted.
     const l = quatRotate(pq[0], pq[1], pq[2], pq[3], 1, 0, 0, this.v)
@@ -180,10 +180,10 @@ export class FlightCam {
 
     const speed = planeSpeed(p)
     const fast = Math.max(0, Math.min(1, (speed - P.optimalSpeed) / (P.boostSpeed - P.optimalSpeed)))
-    const s2 = trauma * trauma
-    const n = this.time
-    const jx = s2 * (Math.sin(n * 41.3) * 0.6 + Math.sin(n * 67.1 + 1.3) * 0.4)
-    const jy = s2 * (Math.sin(n * 47.9 + 0.7) * 0.6 + Math.sin(n * 73.3 + 2.1) * 0.4)
+    const s2 = this.shake.intensity()
+    const n = this.shake.time
+    const jx = s2 * shakeWave(n, 41.3, 0, 67.1, 1.3)
+    const jy = s2 * shakeWave(n, 47.9, 0.7, 73.3, 2.1)
 
     let fov: number
     if (sight) {
@@ -231,8 +231,8 @@ export class FlightCam {
     // Look along the camera's forward, tipped down a little so the jet sits below centre; wobble with trauma.
     const down = sight ? SIGHT_CAM.sightDown * DEG : this.mode === "chase" ? FLIGHT_CAM.lookDown : FLIGHT_CAM.cockpitDown
     const wob = s2 * FLIGHT_CAM.shakeAngle
-    quatMul(cq, quatAxis(1, 0, 0, down + wob * Math.sin(n * 53.7), this.tq), cq)
-    quatMul(cq, quatAxis(0, 0, 1, wob * Math.sin(n * 59.3 + 1), this.tq), cq)
+    quatMul(cq, quatAxis(1, 0, 0, down + wob * shakeWave(n, 53.7), this.tq), cq)
+    quatMul(cq, quatAxis(0, 0, 1, wob * shakeWave(n, 59.3, 1), this.tq), cq)
     const fw = quatRotate(cq[0], cq[1], cq[2], cq[3], 0, 0, 1, this.v)
     this.forward[0] = fw[0]
     this.forward[1] = fw[1]
@@ -246,9 +246,9 @@ export class FlightCam {
 
   /**
    * After a crash: the camera stops where it was, climbs clear of the water (never below `floor`) and backs away,
-   * looking just above the wreck at (x, y, z) (where its fireball and smoke rise), horizon level, shaken by `trauma`.
+   * looking just above the wreck at (x, y, z) (where its fireball and smoke rise), horizon level, shaken by `shake`.
    */
-  crashView(x: number, y: number, z: number, floor: number, dt: number, aspect: number, trauma = 0): void {
+  crashView(x: number, y: number, z: number, floor: number, dt: number, aspect: number): void {
     let dx = this.eye[0] - x
     let dz = this.eye[2] - z
     const d = Math.hypot(dx, dz) || 1
@@ -261,10 +261,10 @@ export class FlightCam {
     if (this.eye[1] < floor) this.eye[1] = floor
     const want = Math.max(floor + 16, this.eye[1])
     this.eye[1] += (want - this.eye[1]) * Math.min(1, dt * 3)
-    const s2 = trauma * trauma
-    this.shakeT += dt
-    const jx = s2 * FLIGHT_CAM.shake * 2 * Math.sin(this.shakeT * 37.1)
-    const jy = s2 * FLIGHT_CAM.shake * 2 * Math.sin(this.shakeT * 43.7 + 1.3)
+    this.shake.tick(dt)
+    const s2 = this.shake.intensity()
+    const jx = s2 * FLIGHT_CAM.shake * 2 * shakeWave(this.shake.time, 37.1)
+    const jy = s2 * FLIGHT_CAM.shake * 2 * shakeWave(this.shake.time, 43.7, 1.3)
     const fx = x - this.eye[0] - jx
     const fy = y + 6 - this.eye[1] - jy
     const fz = z - this.eye[2]

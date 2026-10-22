@@ -71,6 +71,68 @@ export function prefersReducedMotion(): boolean {
   return false
 }
 
+/**
+ * Two incommensurate sines weighted 0.6/0.4, in `[-1, 1]`: a cheap shake wave that never loops visibly. Without a
+ * second frequency it is the plain sine `sin(t·f1 + p1)`.
+ */
+export function shakeWave(t: number, f1: number, p1 = 0, f2?: number, p2 = 0): number {
+  if (f2 === undefined) return Math.sin(t * f1 + p1)
+  return Math.sin(t * f1 + p1) * 0.6 + Math.sin(t * f2 + p2) * 0.4
+}
+
+/**
+ * Trauma² shake for any camera rig (chase, orbit, first person), the rig-independent part of `Camera`'s shake. Hosts
+ * `add` or `raise` trauma in `[0, 1]` and decay it (`decay` exponential, `drain` linear); the rig `tick`s the clock,
+ * reads `intensity()` (trauma² × `shakeScale`, 0 under reduced motion) and offsets its own eye and aim by
+ * `intensity × shakeWave(time, …) × its own metres/radians`. Presentation only.
+ */
+export class TraumaShake {
+  trauma = 0
+  /** Shake clock in seconds, advanced by `tick`. */
+  time = 0
+
+  constructor(readonly settings: Pick<CameraShakeSettings, "shakeScale" | "reduceMotion"> = cameraShakeDefaults()) {}
+
+  get reduced(): boolean {
+    return Boolean(this.settings.reduceMotion) || prefersReducedMotion()
+  }
+
+  /** Adds `amount`, never past `cap` (a light, repeated source caps low). */
+  add(amount: number, cap = 1): void {
+    this.trauma = Math.min(cap, this.trauma + amount)
+  }
+
+  /** At least `amount` (clamped to 1). */
+  raise(amount: number): void {
+    this.trauma = Math.max(this.trauma, Math.min(1, amount))
+  }
+
+  /** Exponential decay at `rate` per second, never below `floor` (a sustained source such as a buffet). */
+  decay(dt: number, rate: number, floor = 0): void {
+    this.trauma = Math.max(this.trauma * Math.exp(-dt * rate), floor)
+  }
+
+  /** Linear decay of `rate` per second. */
+  drain(dt: number, rate: number): void {
+    this.trauma = Math.max(0, this.trauma - rate * dt)
+  }
+
+  tick(dt: number): void {
+    this.time += dt
+  }
+
+  /** trauma² × `shakeScale` of the larger of the held trauma and `extra` (a per-frame source), 0 under reduced motion. */
+  intensity(extra = 0): number {
+    if (this.reduced) return 0
+    const t = Math.min(1, Math.max(this.trauma, extra))
+    return t * t * Math.max(0, this.settings.shakeScale)
+  }
+
+  reset(): void {
+    this.trauma = 0
+  }
+}
+
 /** Trivial presentation-only hit-stop timer. Scales visual `dt` without altering simulation ticks. */
 export class HitStop {
   remaining = 0

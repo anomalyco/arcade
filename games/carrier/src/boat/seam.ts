@@ -240,7 +240,7 @@ export class BoatModule {
     }
     // Health from the room (or the local world offline); a drop shakes the camera.
     const hp = this.weapons?.world.hp(this.net.id) ?? d.hp
-    if (hp < this.lastHp - 0.5) d.trauma = Math.min(1, d.trauma + (this.lastHp - hp > 20 ? 0.9 : 0.25))
+    if (hp < this.lastHp - 0.5) d.cam.shake.add(this.lastHp - hp > 20 ? 0.9 : 0.25)
     this.lastHp = hp
     d.hp = hp
     if (!this.online && hp <= 0 && d.phase === "drive") d.destroy()

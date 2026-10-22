@@ -1,4 +1,5 @@
-import type { Camera } from "../render/camera"
+import { TraumaShake, shakeWave } from "@arcade/kit/client/camera"
+import { SHAKE, type Camera } from "../render/camera"
 
 const DEG = Math.PI / 180
 
@@ -32,6 +33,7 @@ export const BOAT_CAM = {
   reach: 1300,
 }
 
+/** `trauma`: this frame's hull trauma (grounding, slams), on top of the held `BoatCam.shake` (hits). */
 export type BoatCamTarget = { x: number; z: number; heave: number; heading: number; trauma: number; boost: number }
 
 const wrap = (a: number) => a - Math.PI * 2 * Math.floor((a + Math.PI) / (Math.PI * 2))
@@ -49,8 +51,9 @@ export class BoatCam {
   /** The aim point under the crosshair this frame (world). */
   readonly aim: [number, number, number] = [0, 0, 0]
   private fy = 0
+  /** Camera shake from hits (the host adds and decays it). */
+  readonly shake = new TraumaShake(SHAKE)
   private idle = 0
-  private time = 0
   private placed = false
   private eye = [0, 0, 0]
   private fwd = [0, 0, -1]
@@ -62,7 +65,7 @@ export class BoatCam {
 
   update(cam: Camera, t: BoatCamTarget, look: { dx: number; dy: number }, dt: number, aspect: number, water: (x: number, z: number) => number, busy = false): void {
     const C = BOAT_CAM
-    this.time += dt
+    this.shake.tick(dt)
     const ty = t.heave * C.heaveFollow + C.pivotY
     if (!this.placed) {
       this.placed = true
@@ -80,9 +83,10 @@ export class BoatCam {
       this.pitch += (C.restAim - this.pitch) * k
     }
     this.fy += (ty - this.fy) * ease(dt, C.heaveLag)
-    const s = t.trauma * t.trauma * C.shake
-    const jx = s * (Math.sin(this.time * 23.1) * 0.6 + Math.sin(this.time * 37.7 + 1.3) * 0.4)
-    const jy = s * (Math.sin(this.time * 29.3 + 0.7) * 0.6 + Math.sin(this.time * 41.9 + 2.1) * 0.4)
+    const s = this.shake.intensity(t.trauma) * C.shake
+    const n = this.shake.time
+    const jx = s * shakeWave(n, 23.1, 0, 37.7, 1.3)
+    const jy = s * shakeWave(n, 29.3, 0.7, 41.9, 2.1)
     // Aim direction (compass yaw: forward is (sin, −cos)), and the eye behind the pivot along the lifted line.
     const cp = Math.cos(this.pitch)
     const fx = Math.sin(this.yaw) * cp

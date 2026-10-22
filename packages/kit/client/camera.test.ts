@@ -5,7 +5,9 @@ import {
   attenuateShake,
   cameraShakeControls,
   cameraShakeDefaults,
+  TraumaShake,
   kickVector,
+  shakeWave,
   smoothNoise1D,
 } from "./camera"
 
@@ -106,5 +108,42 @@ describe("Camera shake, directional kick, and HitStop", () => {
     const vdt2 = hs.step(0.02)
     expect(vdt2).toBeCloseTo(0.014 * 0.1 + 0.006, 5)
     expect(hs.remaining).toBe(0)
+  })
+})
+
+describe("TraumaShake for rig-owned cameras", () => {
+  test("add caps, raise holds the larger, decay keeps a floor, drain is linear", () => {
+    const s = new TraumaShake()
+    s.add(0.3, 0.45)
+    s.add(0.3, 0.45)
+    expect(s.trauma).toBeCloseTo(0.45, 6)
+    s.raise(0.2)
+    expect(s.trauma).toBeCloseTo(0.45, 6)
+    s.raise(3)
+    expect(s.trauma).toBe(1)
+    s.decay(1, 2.2, 0.1)
+    expect(s.trauma).toBeCloseTo(Math.exp(-2.2), 6)
+    s.decay(10, 2.2, 0.1)
+    expect(s.trauma).toBeCloseTo(0.1, 6)
+    s.drain(0.1, 2.4)
+    expect(s.trauma).toBe(0)
+  })
+
+  test("intensity is trauma² of the larger source, scaled, and zero under reduced motion", () => {
+    const settings = cameraShakeDefaults()
+    const s = new TraumaShake(settings)
+    s.raise(0.5)
+    expect(s.intensity()).toBeCloseTo(0.25, 6)
+    expect(s.intensity(0.8)).toBeCloseTo(0.64, 6)
+    expect(s.intensity(2)).toBeCloseTo(1, 6)
+    settings.shakeScale = 2
+    expect(s.intensity()).toBeCloseTo(0.5, 6)
+    settings.reduceMotion = 1
+    expect(s.intensity()).toBe(0)
+  })
+
+  test("shakeWave mixes two sines 0.6/0.4, or is one plain sine", () => {
+    expect(shakeWave(0.3, 23.1, 0, 37.7, 1.3)).toBeCloseTo(Math.sin(0.3 * 23.1) * 0.6 + Math.sin(0.3 * 37.7 + 1.3) * 0.4, 9)
+    expect(shakeWave(0.3, 53.7, 1)).toBeCloseTo(Math.sin(0.3 * 53.7 + 1), 9)
   })
 })

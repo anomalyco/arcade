@@ -1,4 +1,5 @@
 import "./team-menu.css"
+import { isEditableEventTarget } from "@arcade/kit/client/controls"
 import { gunOp } from "../../shared/ops"
 import { CAPACITY, CREW, type Crew, type CrewError, type CrewPlayer, type CrewShip, createShipError, crewCount, freeTeam, joinShipError, playerOf, teamCss } from "../../shared/crew"
 import { kickLeft, members } from "../../shared/squad"
@@ -75,7 +76,7 @@ export class TeamMenu {
     this.el.hidden = true
     parent.append(this.el)
     addEventListener("keydown", (e) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      if (isEditableEventTarget(e.target)) return
       if (e.code === "Tab") {
         if (!this.enabled) return
         e.preventDefault()
