@@ -29,11 +29,25 @@ import { MovingMeshPass } from "./polish/moving-mesh"
 import { Opening, OPENING, openingSettings } from "./opening"
 import { Terminal, colleagueScreens } from "./terminal"
 import { Elevator, elevatorLeaf } from "./elevator"
+import { BootScreen, bootBytes } from "@arcade/kit/client/boot-screen"
+import { BOOT_PLAN, OFFICE_FILES } from "./assets"
+
+const boot=new BootScreen(BOOT_PLAN)
+performance.mark("nightshift:program")
+const bundle=(performance.getEntriesByName(import.meta.url)[0] as PerformanceResourceTiming|undefined)?.encodedBodySize
+boot.done("program",bundle?bootBytes(bundle):"OK")
+// Start every office file as soon as the bundle runs, in parallel with WebGPU, the world build and each other.
+const officeBytes=new Map(OFFICE_FILES.map(f=>{const p=boot.fetch(f.id,`${import.meta.env.BASE_URL}${f.path}`,f.label);p.catch(()=>{});return [f.path,p]}))
 
 async function main() {
   const canvas=document.querySelector<HTMLCanvasElement>("#view")!,hud=document.getElementById("hud")!,prompt=document.getElementById("prompt")!,sub=document.getElementById("subtitle")!
+  boot.stage("video","VIDEO ADAPTER")
   const gpu=await openGpu(canvas,"NIGHT SHIFT")
-  if(typeof gpu==="string") throw new Error(gpu)
+  if(typeof gpu==="string"){hud.textContent=gpu;boot.fail("NO VIDEO ADAPTER: THIS OFFICE NEEDS WEBGPU");return}
+  boot.done("video")
+  const pipelines=boot.watchPipelines(gpu.device)
+  boot.stage("office","LOADING OFFICE.DAT");await boot.paint()
+  performance.mark("nightshift:gpu")
   const smoke=new URLSearchParams(location.search).has("smoke")
   const {device}=gpu,settings=defaults(),world=buildWorld(!smoke),audio=new OfficeAudio(),call=newCall()
   const opening=new Opening(),cinema=openingSettings(),elevator=new Elevator(),terminal=new Terminal(device)
@@ -49,6 +63,7 @@ async function main() {
   const leaf=renderer.addModel(elevatorLeaf())
   settings.reduceMotion=matchMedia("(prefers-reduced-motion: reduce)").matches
   try{const saved=localStorage.getItem("nightshift.reduceMotion");if(saved!==null)settings.reduceMotion=saved==="true"}catch{}
+  boot.reducedMotion=settings.reduceMotion
   const camera:WalkCamera=new WalkCamera(canvas,()=>panel.visible,settings,()=>document.pointerLockElement===canvas&&!document.hidden&&!panel.visible&&camera.speed>0)
   camera.height=1.65;camera.fov=68;camera.far=45;camera.near=0.045
   const setCamera=(view:"wide"|"phone")=>{const p=view==="wide"?START:CLOSE;camera.body.x=p.x;camera.body.y=p.z;camera.yaw=p.yaw;camera.pitch=p.pitch;camera.release();camera.resetWalk();opening.started=opening.complete=opening.standing=true;opening.time=OPENING.end;opening.height.x=camera.height=1.65}
@@ -62,7 +77,12 @@ async function main() {
   const lights=new SceneLights(),spots=new SpotShadows(device,{count:4,size:1024})
   renderer.setSpotShadows(spots.bindings())
   const buffer=device.createBuffer({size:world.data.byteLength,usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST});device.queue.writeBuffer(buffer,0,world.data)
-  const props=await officeProps(renderer,terminal.texture),screens=colleagueScreens(renderer)
+  boot.done("office");performance.mark("nightshift:office")
+  const shaders=boot.stage("shaders","COMPILING SHADERS")
+  void device.queue.onSubmittedWorkDone().then(()=>{shaders.done(`${pipelines()} PROGRAMS`);performance.mark("nightshift:shaders")})
+  // Each file decodes in its own task, so the boot log repaints between them.
+  const props=await officeProps(renderer,terminal.texture,{bytes:async path=>{const bytes=await officeBytes.get(path)!;await new Promise(r=>setTimeout(r));return bytes},loaded:path=>boot.done(OFFICE_FILES.find(f=>f.path===path)!.id)}),screens=colleagueScreens(renderer)
+  performance.mark("nightshift:props")
   const physics=new OfficePhysics(chairs),continuity=new Continuity()
   const moving=smoke?null:new MovingMeshPass(renderer.passContext,movingMeshes,hooks)
   if(moving)renderer.addPass("opaque",moving)
@@ -194,13 +214,17 @@ async function main() {
     document.getElementById("reticle")!.style.visibility=opening.complete&&!elevator.closing?"visible":"hidden"
     document.getElementById("title")!.style.opacity=String(.55*(1-fade))
     document.getElementById("credits")!.style.visibility=opening.complete&&!elevator.closing?"visible":"hidden"
-    prompt.innerHTML=!opening.started?keyPromptHtml("Mouse0","Begin"):!active?keyPromptHtml("Mouse0","Resume"):!opening.complete?seen?keyPromptHtml("Space","Skip opening"):"":call.phase==="ringing"&&canAnswer()?audio.error?"Call audio could not load. Reload to retry.":audio.ready?keyPromptHtml("KeyE","Answer"):"Connecting…":canHangUp()?keyPromptHtml("KeyE","Hang up"):""
+    if(opening.started)void boot.dismiss()
+    prompt.innerHTML=!opening.started?"":!active?keyPromptHtml("Mouse0","Resume"):!opening.complete?seen?keyPromptHtml("Space","Skip opening"):"":call.phase==="ringing"&&canAnswer()?audio.error?"Call audio could not load. Reload to retry.":audio.ready?keyPromptHtml("KeyE","Answer"):"Connecting…":canHangUp()?keyPromptHtml("KeyE","Hang up"):""
     if(call.phase==="ended"&&active)prompt.textContent=elevator.closing?"":"Take the elevator at the far end of the floor."
     sub.textContent=subtitle(call)
     frames++;if(smoke&&frames>=2)paused=true
+    // Begin waits for the GPU to finish the first frame, so the opening never starts on a compile stall.
+    if(frames===1)void device.queue.onSubmittedWorkDone().then(()=>{boot.ready(["READY.","","> SESSION 087    02:13"],keyPromptHtml("Mouse0","Begin"));performance.mark("nightshift:ready")})
     requestAnimationFrame(render)
   }
   Object.assign(window,{nightshift:{camera,settings,cinema,opening,elevator,audio,renderer,call,action,setCamera,renderFoley,renderBeatAudio,physics,continuity,dustField,tubeSignal,cradle:props.cradle,get clock(){return time},step(ms:number){stepping=true;try{render(last+ms)}finally{stepping=false}},get frames(){return frames},get paused(){return paused},set paused(v:boolean){paused=v},set time(v:number){fixedTime=v},ready:true}})
+  boot.stage("frame","FIRST FRAME")
   requestAnimationFrame(render)
 }
-void main().catch(e=>{console.error(e);document.getElementById("hud")!.textContent=String(e)})
+void main().catch(e=>{console.error(e);document.getElementById("hud")!.textContent=String(e);boot.fail(e instanceof Error&&/DISK ERROR/.test(e.message)?e.message:"SYSTEM ERROR. THE OFFICE COULD NOT LOAD")})
