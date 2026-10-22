@@ -23,7 +23,10 @@ assert(executablePath, "Install Playwright Chromium")
 const browser = await chromium.launch({ executablePath, headless: true, args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio", "--autoplay-policy=user-gesture-required"] })
 const report: Record<string, unknown> = {}
 /** Per-game URL extras and what to click to reach play. */
-const SETUP: Record<string, { query?: string; timeout?: number; built?: boolean }> = { nightshift: { timeout: 180_000 }, lot: { timeout: 180_000, built: true } }
+const SETUP: Record<string, { query?: string; timeout?: number; built?: boolean; lobby?: boolean }> = {
+  nightshift: { timeout: 180_000 }, lot: { timeout: 180_000, built: true },
+  brawl: { lobby: true }, outbreak: { lobby: true }, getaway: { lobby: true }, blackout: { lobby: true }, carrier: { lobby: true }, archers: { lobby: true },
+}
 
 const screen = (page: Page) => page.evaluate(() => document.querySelector<HTMLElement>(".arcade-shell")?.dataset.screen ?? null)
 const shot = (page: Page, name: string) => page.screenshot({ path: `${out}/${name}.png` })
@@ -51,6 +54,15 @@ async function run(game: string, clip: boolean) {
     await page.locator(".as-card [data-act=settings]").first().click()
     await page.waitForSelector(".as-settings")
     if (!clip) await shot(page, `${tag}-settings`)
+    if (!clip && SETUP[game]?.lobby) {
+      // The lobby: a private room's card (code, Copy invite link, players) for games that gather first, or the
+      // title with its lobby choices for games that play as soon as they join.
+      await page.locator("[data-act=back]").click()
+      await page.locator(".as-card input[data-field=name]").fill("Kit").catch(() => {})
+      await shot(page, `${tag}-lobby`)
+      await page.locator(".as-card [data-act=settings]").first().click()
+      await page.waitForSelector(".as-settings")
+    }
     else {
       await page.waitForTimeout(700)
       await page.locator(".as-seg [data-mode=low]").click()
