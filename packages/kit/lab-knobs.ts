@@ -44,6 +44,8 @@ export type LabKnobsViewOptions = {
   search?: boolean
   /** Tabs over the groups (the Details inspector); groups no tab names show on every tab. */
   tabs?: readonly LabTab[]
+  /** A close button in the header (and Esc from the panel) that calls this. */
+  close?: () => void
 }
 
 /** A row knobs draws; `upper` is the second key of a low–high pair (both stay their own settings). */
@@ -132,6 +134,7 @@ export class LabKnobsView {
       session: false,
       haptics: false,
       keys: { leave: "Escape", ...options.keys },
+      ...(options.close ? { onClose: options.close } : {}),
       copy: () => this.copyText(),
       rowAccessory: key => this.accessory(key),
       // A group with its own seeded "Randomize <group>" action rolls through it (it may reseed its effect on purpose).
