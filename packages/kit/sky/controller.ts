@@ -1,6 +1,6 @@
 import type { Renderer } from "../gpu/renderer"
 import type { ScenePass } from "../gpu/pass-graph"
-import { loadSkyAssets, type SkyAssets } from "./assets"
+import type { SkyAssets } from "./assets"
 import type { SkySettings } from "./settings"
 import type { SkyFrame, SkyPass } from "./pass"
 
@@ -16,7 +16,7 @@ export function attachSky(renderer: Renderer, settings: SkySettings, today?: Sce
     if (disposed || settings.skyMode === "today" || pass) return
     if (loading) return loading
     loading = (async () => {
-      const [{ SkyPass }, loaded] = await Promise.all([import("./pass"), loadSkyAssets(renderer.passContext.device)])
+      const [{ SkyPass }, loaded] = await Promise.all([import("./pass"), import("./assets").then(m => m.loadSkyAssets(renderer.passContext.device))])
       if (disposed) { loaded.dispose(); return }
       assets = loaded
       try { pass = new SkyPass(renderer.passContext, loaded, settings) }

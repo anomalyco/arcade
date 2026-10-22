@@ -71,7 +71,7 @@ struct V { @builtin(position) pos: vec4f }
   let ls=lit/max(lit+z,0.0001);
   // NASA near side is centred on longitude zero; north stays up in the disk.
   let uv=vec2f(0.5+atan2(xy.x,z)/(2.0*PI),0.5-asin(clamp(xy.y,-1.0,1.0))/PI);
-  let tex=textureSampleLevel(moonMap,moonSampler,uv,0.0).rgb;
+  let tex=textureSample(moonMap,moonSampler,uv).rgb;
   let earth=S.phase.z*pow(sin(S.phase.x*0.5),2.0);
   let surface=tex*S.phase.y*(ls+earth);
   colour=mix(colour,surface*moonTrans,disk*S.phase.w);
@@ -115,6 +115,10 @@ fn cdf(v: f32) -> f32 {
 @fragment fn starFragment(v: StarOut) -> @location(0) vec4f {
   let p=v.pos.xy-v.centre;
   let energy=max(0.0,cdf(p.x+0.5)-cdf(p.x-0.5))*max(0.0,cdf(p.y+0.5)-cdf(p.y-0.5));
-  return vec4f(v.radiance*energy,0.0);
+  // The unlit lunar disk is opaque too: stars must not shine through earthshine.
+  let angle=acos(clamp(dot(cameraRay(v.pos.xy),S.moon.xyz),-1.0,1.0));
+  let edge=max(fwidth(angle),0.00001);
+  let visibility=mix(1.0,smoothstep(0.0045204028-edge*0.5,0.0045204028+edge*0.5,angle),S.phase.w);
+  return vec4f(v.radiance*energy*visibility,0.0);
 }
 `
