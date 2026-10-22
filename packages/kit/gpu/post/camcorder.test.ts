@@ -3,7 +3,8 @@ import { mat4 } from "wgpu-matrix"
 import { validateWgsl } from "../test-naga"
 import { BODYCAM_PRESETS, CAMERA_FILTER_DEFAULTS, CAMERA_FILTER_WGSL, CRT_PRESETS, applyCameraFilterPreset, cameraFilterControls, cameraFlow, createCameraFilterSettings } from "./camcorder"
 import { bodycamStamp, GLYPH_H, GLYPH_W, glyphPixels, hasGlyph, layoutText, phoneTimecode, textWidth, vhsStamp } from "./camcorder-font"
-import { bodycamRenderFov } from "../../client/bodycam-rig"
+import { BodycamRig, bodycamRenderFov } from "../../client/bodycam-rig"
+import type { FirstPerson } from "../../client/first-person"
 
 describe("camera filter settings", () => {
   test("off by default; ?camera= picks a filter", () => {
@@ -123,5 +124,30 @@ describe("body cam lens", () => {
     expect(fov).toBeCloseTo(106.8, 0)
     const half = (fov / 2) * Math.PI / 180
     expect(2 * Math.atan(Math.tan(half) * Math.hypot(16 / 9, 1)) * 180 / Math.PI).toBeCloseTo(140, 3)
+  })
+})
+
+describe("body cam rig", () => {
+  const settings = { lens: 140, mount: 0.35, sway: 1, lag: 0.5, bob: 1 }
+  const camera = () => ({ yaw: 0, pitch: 0, fov: 68, body: { x: 0, y: 0, vx: 0, vy: 0 }, mount: { yaw: 0, pitch: 0, roll: 0, height: 0, fov: 0 } })
+  test("hangs below the eyes with the lens's field of view; off leaves the camera alone", () => {
+    const c = camera(), rig = new BodycamRig()
+    rig.step(c as unknown as FirstPerson, 1 / 60, 16 / 9, settings, 1, true)
+    expect(c.mount.height).toBeCloseTo(-0.35, 6)
+    expect(c.fov + c.mount.fov).toBeCloseTo(bodycamRenderFov(140, 16 / 9), 6)
+    rig.step(c as unknown as FirstPerson, 1 / 60, 16 / 9, settings, 1, false)
+    expect(c.mount).toEqual({ yaw: 0, pitch: 0, roll: 0, height: 0, fov: 0 })
+    rig.step(c as unknown as FirstPerson, 1 / 60, 16 / 9, settings, 0, true)
+    expect(Math.abs(c.mount.height) + Math.abs(c.mount.fov) + Math.abs(c.mount.yaw)).toBe(0)
+  })
+  test("a sudden turn lags, swings past and settles on the aim", () => {
+    const c = camera(), rig = new BodycamRig()
+    rig.step(c as unknown as FirstPerson, 1 / 60, 16 / 9, { ...settings, sway: 0 }, 1, true)
+    c.yaw = 1
+    const lags: number[] = []
+    for (let i = 0; i < 120; i++) { rig.step(c as unknown as FirstPerson, 1 / 60, 16 / 9, { ...settings, sway: 0 }, 1, true); lags.push(c.mount.yaw) }
+    expect(lags[0]!).toBeLessThan(-0.3)
+    expect(Math.max(...lags)).toBeGreaterThan(0.005)
+    expect(Math.abs(lags.at(-1)!)).toBeLessThan(0.01)
   })
 })

@@ -72,11 +72,17 @@ export class FirstPerson {
     this.direction[0] = -s * Math.cos(this.pitch)
     this.direction[1] = Math.sin(this.pitch)
     this.direction[2] = -c * Math.cos(this.pitch)
-    const yaw = this.yaw + m.yaw, pitch = Math.max(-1.5, Math.min(1.5, this.pitch + m.pitch))
-    this.look[0] = this.eye[0] - Math.sin(yaw) * Math.cos(pitch)
-    this.look[1] = this.eye[1] + Math.sin(pitch)
-    this.look[2] = this.eye[2] - Math.cos(yaw) * Math.cos(pitch)
-    this.up[0] = Math.cos(yaw) * Math.sin(m.roll); this.up[1] = Math.cos(m.roll); this.up[2] = -Math.sin(yaw) * Math.sin(m.roll)
+    return this.compose(aspect)
+  }
+
+  /** `viewProj` from `eye` along the aim plus `mount`, rolled about the view direction by `mount.roll + roll`. */
+  protected compose(aspect: number, roll = 0) {
+    const m = this.mount
+    const yaw = this.yaw + m.yaw, pitch = Math.max(-1.5, Math.min(1.5, this.pitch + m.pitch)), r = roll + m.roll
+    const s = Math.sin(yaw), c = Math.cos(yaw), sp = Math.sin(pitch), cp = Math.cos(pitch)
+    this.look[0] = this.eye[0] - s * cp; this.look[1] = this.eye[1] + sp; this.look[2] = this.eye[2] - c * cp
+    // Up perpendicular to the view, turned towards the right vector by the roll.
+    this.up[0] = s * sp * Math.cos(r) + c * Math.sin(r); this.up[1] = cp * Math.cos(r); this.up[2] = c * sp * Math.cos(r) - s * Math.sin(r)
     mat4.lookAt(this.eye, this.look, this.up, this.view)
     mat4.perspective((this.fov + m.fov) * Math.PI / 180, aspect, this.near, this.far, this.projection)
     mat4.multiply(this.projection, this.view, this.viewProj)
