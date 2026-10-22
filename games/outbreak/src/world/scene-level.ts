@@ -9,7 +9,7 @@ import { sightRects, type Building, type Town } from "../../shared/map"
 import { SceneryMemory } from "../../shared/scenery-memory"
 import type { LocalSession } from "../../shared/session"
 import type { OutbreakVehicle } from "../../shared/vehicles"
-import { FOG_SIZE, Vision } from "../../shared/vision"
+import { FOG_SIZE, Vision, type VisionBeam } from "../../shared/vision"
 import type { WorldMode } from "../../shared/world"
 import { archSettings } from "../architecture"
 import type { OutbreakCombatFX } from "../combat-fx"
@@ -46,6 +46,10 @@ export interface OutbreakSceneLevelFrameInput {
   readonly drivingHeadlights: boolean
   readonly effectiveVisionAim: number
   readonly lowBeam: BeamLook
+  /** Teammates' lit flashlights as sight (`Vision.setBeams`), set before this frame's sight. */
+  readonly beams?: readonly VisionBeam[]
+  /** Where the roof is cut for you (the survivor, or the room a peek looks into): other buildings keep their roofs. */
+  readonly roofCut?: { x: number; y: number }
 }
 
 export interface OutbreakSceneLevelFrameResult {
@@ -257,6 +261,7 @@ export class OutbreakSceneLevel {
       this.lightOccluders = packed.count
       this.lightWalls = packed.walls
     }
+    this.vision.setBeams(input.beams ?? [], this.lightWalls, input.beams?.length ? this.roofedRects(town, input.roofCut ?? p) : [])
     // Night sight: without a light at night, sight fades to dark a few metres out (Look › Night sight).
     const nightLit = drivingHeadlights ? 1 : Math.min(1, p.flashlightOutput * 4) * (settings.flashlight.flashlightIntensity > 0.01 ? 1 : 0)
     const nightTarget = watch ? 0 : nightSightTarget(settings.look, dayCycle(session.view.hour).darkness, nightLit)
@@ -345,6 +350,19 @@ export class OutbreakSceneLevel {
       }
     }
     return false
+  }
+
+  private roofed: (readonly [number, number, number, number])[] = []
+
+  /** Footprints of the buildings whose roofs are drawn for you: all but the one the roof cut is in. */
+  private roofedRects(town: Town, cut: { x: number; y: number }): readonly (readonly [number, number, number, number])[] {
+    this.roofed.length = 0
+    for (const b of this.activeBuildings(town)) {
+      const r = b.rect
+      if (cut.x > r[0] - 0.1 && cut.x < r[2] + 0.1 && cut.y > r[1] - 0.1 && cut.y < r[3] + 0.1) continue
+      this.roofed.push(r)
+    }
+    return this.roofed
   }
 
   activeBuildings(town: Town): readonly Building[] {

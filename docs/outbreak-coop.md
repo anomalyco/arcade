@@ -58,8 +58,9 @@ Each client renders its own line of sight and fog from `shared/vision.ts` (owned
 calls `Vision.visible`). Remote survivors are drawn only when inside your sight, but their flashlights always light
 the world. Since the Oct 21 playtest ("Why can't I see your flashlight?") a teammate's beam is the same light as your
 own (`src/teammates/beams.ts`, cone.w 3 in the scene's light hooks: full range and profile about their lens, wall
-shadows, a faint shaft), what it lands on shows through your shroud, the zombies it lights are drawn (`Vision.beams`),
-and whoever holds a lit torch shows wherever you have a clear line to them. Backquote › Flashlight › Teammates'
+shadows, a faint shaft; its own cone and tint whatever your battery), what it lands on shows through your shroud, the
+zombies it lights are drawn (`Vision.setBeams`: not through closed windows, not under a roof drawn for you, and never
+added to what you have explored), and whoever holds a lit torch shows wherever you have a clear line to them. Backquote › Flashlight › Teammates'
 flashlights keeps Today's dim 6 m hint one setting away. Clip: `bun scripts/team-beams-clip.ts` (via
 `hivemind run --kind browser`). Every seat has a colour and a name tag. Lab tuning stays local in co-op: AI and generation controls only
 change the offline session.

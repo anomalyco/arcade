@@ -293,11 +293,12 @@ export class CoopView {
       const p = slot.survivor
       if (count >= MAX_LIGHTS - 2 || p.flashlightOutput <= 0.001 || !p.flashlightOn) continue
       if (full) {
-        // The same light as your own: full range and profile about their lens, shadowed by walls (teammates/beams.ts).
-        const ground = supportHeight(town, p.x, p.y)
-        const beam = beamPose(this.lensRig(slot, ground), p.x, p.y, p.aim, ground, flash.beamPoolDistance, blockers)
+        // In a car or a closet their torch lights nothing you should see.
+        if (p.vehicleId || this.hidden(slot.id)) continue
+        // The same light as your own: full range, cone and profile about their lens, shadowed by walls (teammates/beams.ts).
+        const beam = this.mateBeam(slot, town, flash.beamPoolDistance, blockers)
         const power = p.flashlightOutput * flash.flashlightIntensity * (flash.teamBeamPower ?? DEFAULT_TEAM_BEAM_SETTINGS.teamBeamPower)
-        writeMateBeam(lights, count++, beam, flash.flashlightRange, rgb, power, flash.teamBeamShaft ?? DEFAULT_TEAM_BEAM_SETTINGS.teamBeamShaft, occluders)
+        writeMateBeam(lights, count++, beam, flash.flashlightRange, rgb, power, flash.flashlightCone, flash.teamBeamShaft ?? DEFAULT_TEAM_BEAM_SETTINGS.teamBeamShaft, occluders)
         continue
       }
       const inside = town.buildings.some((b) => p.x > b.rect[0] - 0.1 && p.x < b.rect[2] + 0.1 && p.y > b.rect[1] - 0.1 && p.y < b.rect[3] + 0.1)
@@ -325,18 +326,26 @@ export class CoopView {
     )
   }
 
+  /** A teammate's beam from their posed lens, as drawn (`beamPose`). */
+  private mateBeam(slot: SurvivorSlot, town: Town, poolDistance: number, blockers: readonly (readonly [number, number, number, number])[]) {
+    const p = slot.survivor
+    const ground = supportHeight(town, p.x, p.y)
+    return beamPose(this.lensRig(slot, ground), p.x, p.y, p.aim, ground, poolDistance, blockers)
+  }
+
   /**
-   * Teammates' lit beams as sight, so the zombies their flashlights find are drawn for you too (`Vision.beams`).
-   * Empty with Today's teammate beams.
+   * Teammates' lit beams as sight, so the zombies their flashlights find are drawn for you too (`Vision.setBeams`),
+   * from the same lens and aim as the light they cast. Empty with Today's teammate beams.
    */
-  beamSights(settings: LightSettings): VisionBeam[] {
+  beamSights(settings: LightSettings, town: Town, blockers: readonly (readonly [number, number, number, number])[]): VisionBeam[] {
     const flash = "flashlight" in settings ? settings.flashlight : settings
     if ((flash.teamBeams ?? DEFAULT_TEAM_BEAM_SETTINGS.teamBeams) === TEAM_BEAMS_TODAY) return []
     const out: VisionBeam[] = []
     for (const slot of this.others) {
       const p = slot.survivor
-      if (p.flashlightOutput <= 0.01 || !p.flashlightOn || p.vehicleId) continue
-      out.push(mateBeamSight(p.x, p.y, p.aim, flash.flashlightRange, flash.flashlightCone, p.flashlightOutput))
+      if (p.flashlightOutput <= 0.01 || !p.flashlightOn || p.vehicleId || this.hidden(slot.id)) continue
+      const beam = this.mateBeam(slot, town, flash.beamPoolDistance, blockers)
+      out.push(mateBeamSight(beam.x, beam.y, beam.yaw, flash.flashlightRange, flash.flashlightCone, p.flashlightOutput))
     }
     return out
   }

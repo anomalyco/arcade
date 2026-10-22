@@ -45,11 +45,22 @@ export class Vision {
    */
   skyFlash = 0
   /**
-   * Teammates' flashlights this frame (presentation only, set by the client): actors their beams light count as seen,
-   * past your own cone and range, if nothing blocks the line from their lens.
+   * Teammates' flashlights this frame (presentation only, set with `setBeams` before the frame's sight update): actors
+   * their beams light count as seen, past your own cone and range, if nothing blocks the line from their lens.
+   * Never part of what you have explored (`ownVisible`).
    */
   beams: readonly VisionBeam[] = []
   private blockers: readonly Rect[] = []
+  /** What stops a teammate's beam: walls, closed doors and closed windows (the light casters). */
+  private beamBlockers: readonly Rect[] = []
+  /** Building footprints whose roofs are drawn for you: a beam inside one lights nothing you can see. */
+  private roofed: readonly Rect[] = []
+
+  setBeams(beams: readonly VisionBeam[], blockers: readonly Rect[], roofed: readonly Rect[]): void {
+    this.beams = beams
+    this.beamBlockers = blockers
+    this.roofed = roofed
+  }
 
   setWindowOrigin(ox: number, oy: number): boolean {
     if (ox === this.originX && oy === this.originY) return false
@@ -269,15 +280,17 @@ export class Vision {
   }
 
   visible(x: number, y: number): boolean {
-    return this.ownSight(x, y) || this.beamSight(x, y) > 0.5
+    return this.ownVisible(x, y) || this.beamSight(x, y) > 0.5
   }
 
   /**
    * How much teammates' beams show the point (0..1): inside a cone and range, with a clear line from that lens past
-   * walls, closed doors and windows. A soft rim keeps actors at the edge from popping. Whoever holds a lit torch shows
-   * too, wherever you have a clear line to them.
+   * walls, closed doors and closed windows, and not under a roof drawn over it. A soft rim keeps actors at the edge from
+   * popping. Whoever holds a lit torch shows too, wherever you have a clear line to them.
    */
   beamSight(x: number, y: number): number {
+    if (!this.beams.length) return 0
+    for (const r of this.roofed) if (x > r[0] && x < r[2] && y > r[1] && y < r[3]) return 0
     let best = 0
     for (const beam of this.beams) {
       const dx = x - beam.x
@@ -294,12 +307,13 @@ export class Vision {
       const cone = facing >= beam.coneCos ? 1 : (facing - feather) / (beam.coneCos - feather)
       const reach = d <= beam.range - 1.5 ? 1 : (beam.range - d) / 1.5
       const w = cone * reach
-      if (w > best && clearLine(beam.x, beam.y, x, y, this.blockers)) best = w
+      if (w > best && clearLine(beam.x, beam.y, x, y, this.beamBlockers)) best = w
     }
     return best
   }
 
-  private ownSight(x: number, y: number): boolean {
+  /** Your own sight alone, without teammates' beams: what you explore and remember. */
+  ownVisible(x: number, y: number): boolean {
     const dx = x - this.x
     const dy = y - this.y
     const d2 = dx * dx + dy * dy

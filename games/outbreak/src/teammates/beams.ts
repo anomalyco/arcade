@@ -41,7 +41,9 @@ export const MATE_BEAM_CONE_W = 3
 
 /**
  * Writes one teammate's beam into a light slot: lens position and range, colour and power, the plan axis in cone.xy,
- * shaft strength in cone.z, and the lens pitch in extra.x (shadowed by the frame's wall occluders).
+ * its own outer half-angle in cone.z (radians, so a low local battery that narrows your beam leaves theirs alone), the
+ * shaft strength in the fraction of the cone code (cone.w = 3 + shaft × 0.2), and the lens pitch in extra.x (shadowed
+ * by the frame's wall occluders).
  */
 export function writeMateBeam(
   lights: Float32Array,
@@ -50,11 +52,14 @@ export function writeMateBeam(
   range: number,
   rgb: readonly [number, number, number],
   power: number,
+  coneDeg: number,
   shaft: number,
   occluders: number,
 ): void {
+  const halfRad = (Math.max(10, Math.min(120, coneDeg)) * Math.PI) / 360
+  const code = MATE_BEAM_CONE_W + Math.max(0, Math.min(1.5, shaft)) * 0.2
   lights.set(
-    [beam.x, beam.h, beam.y, range, rgb[0], rgb[1], rgb[2], power, Math.cos(beam.yaw), Math.sin(beam.yaw), shaft, MATE_BEAM_CONE_W, beam.pitch, occluders, 0.06, -1],
+    [beam.x, beam.h, beam.y, range, rgb[0], rgb[1], rgb[2], power, Math.cos(beam.yaw), Math.sin(beam.yaw), halfRad, code, beam.pitch, occluders, 0.06, -1],
     slot * LIGHT_FLOATS,
   )
 }
