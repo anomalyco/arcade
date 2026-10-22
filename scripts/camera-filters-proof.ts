@@ -58,10 +58,13 @@ async function open(browser: Browser, url: string): Promise<Page> {
   page.setDefaultTimeout(180_000)
   // Outbreak opens its own device: ask for timestamp queries everywhere so the filter can time itself.
   await page.addInitScript(() => {
-    // Opt-in virtual clock for clips: while on, animation frames run only on __tick, at exact steps.
+    // Opt-in virtual clock for clips: while on, time (performance.now, which the kit's frame pacer also paces by) and
+    // animation frames only advance on __tick, so every frame is exactly one step apart.
     const raf = window.requestAnimationFrame.bind(window)
+    const realNow = performance.now.bind(performance)
     let queued: FrameRequestCallback[] = []
     const clock = { on: false, t: 0 }
+    performance.now = () => clock.on ? clock.t : realNow()
     window.requestAnimationFrame = cb => clock.on ? queued.push(cb) : raf(cb)
     Object.assign(window, {
       __clock: clock,
@@ -70,6 +73,7 @@ async function open(browser: Browser, url: string): Promise<Page> {
         const q = queued
         queued = []
         for (const cb of q) cb(clock.t)
+        await new Promise(r => raf(r))
         await new Promise(r => raf(r))
       },
     })
@@ -152,7 +156,8 @@ async function setLook(page: Page, look: string) {
 async function stills(game: string, d: Driver) {
   await d.page.addStyleTag({ content: HIDE })
   const shots: Record<string, string> = {}
-  for (const look of LOOKS[game]!) {
+  const only = arg("looks")?.split(",")
+  for (const look of LOOKS[game]!.filter(l => !only || only.includes(l))) {
     await setLook(d.page, look)
     const mode = look.split("-")[0]!
     await d.advance(mode === "iphone" || mode === "bodycam" ? 150 : 40)
@@ -244,10 +249,11 @@ async function swayClip(d: Driver) {
   await setLook(d.page, "bodycam-patrol")
   await d.page.addStyleTag({ content: HIDE })
   await d.advance(60)
-  await d.page.evaluate(() => { window.nightshift.time = 40; window.__clock.t = performance.now(); window.__clock.on = true })
+  await d.page.evaluate(() => { window.nightshift.time = 40; window.__clock.t = performance.now() + 1000 / 30; window.__clock.on = true })
   await d.page.evaluate(() => window.__tick(1000 / 30))
   const yaw0 = await d.page.evaluate(() => window.nightshift.camera.yaw as number)
   const N = 180
+  const track: unknown[] = []
   for (let i = 0; i < N; i++) {
     const t = i / 30
     const flick = Math.min(1, Math.max(0, (t - 2.6) / 0.25))
@@ -259,11 +265,12 @@ async function swayClip(d: Driver) {
       if (walk) keys.add("KeyW"); else keys.delete("KeyW")
     }, { t, yaw: yaw0 + 1.22 * flick * flick * (3 - 2 * flick), walk: (t > 0.7 && t < 2.6) || (t > 3.1 && t < 4.9) })
     await d.page.evaluate(() => window.__tick(1000 / 30))
+    if (i % 10 === 0) track.push(await d.page.evaluate(() => { const c = window.nightshift.camera; return [+c.body.x.toFixed(2), +c.body.y.toFixed(2), +c.yaw.toFixed(2), window.nightshift.frames] }))
     await d.page.screenshot({ path: `${dir}/${String(i).padStart(4, "0")}.jpg`, type: "jpeg", quality: 90 })
   }
   await d.page.evaluate(() => { (window.nightshift.camera.keys as Set<string>).clear(); window.__clock.on = false; return window.__tick(0) })
   encode(dir, 30, "nightshift-bodycam-sway.mp4")
-  ;(report.clips as Record<string, unknown>).bodycam = { file: "nightshift-bodycam-sway.mp4", seconds: N / 30, script: "stand 0.7 s, walk to 2.6 s, flick the view 70° in 0.25 s, walk 3.1–4.9 s, stop; 30 fps virtual clock" }
+  ;(report.clips as Record<string, unknown>).bodycam = { file: "nightshift-bodycam-sway.mp4", seconds: N / 30, script: "stand 0.7 s, walk to 2.6 s, flick the view 70° in 0.25 s, walk 3.1–4.9 s, stop; 30 fps virtual clock", track }
 }
 
 const browser = await chromium.launch({ executablePath: chromiumPath(), headless: true, args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio"] })
@@ -272,12 +279,13 @@ try {
     const { server, url } = await serve(game)
     try {
       const d = await (game === "nightshift" ? nightshift : game === "lot" ? lot : outbreak)(browser, url)
-      await stills(game, d)
+      if (!flag("no-stills")) await stills(game, d)
       if (!flag("no-timing")) await timing(game, d)
       if (!flag("no-clips") && game === "nightshift") {
-        await exposureClip(d)
-        await trackingClip(d, game)
-        await swayClip(d)
+        const clips = arg("clips", "iphone,vhs,bodycam")!.split(",")
+        if (clips.includes("iphone")) await exposureClip(d)
+        if (clips.includes("vhs")) await trackingClip(d, game)
+        if (clips.includes("bodycam")) await swayClip(d)
       }
       await d.page.close()
     } finally {

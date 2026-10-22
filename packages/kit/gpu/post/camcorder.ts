@@ -682,10 +682,9 @@ fn mask(px: vec2f, kind: f32, cell: f32, strength: f32) -> vec3f {
     let g = u.c2.z * k;
     if (g > 0.001) {
       let r1 = vec2f(0.009 / asp, 0.009);
-      let near = L(w + r1) + L(w - r1) + L(w + vec2f(r1.x, -r1.y)) + L(w - vec2f(r1.x, -r1.y));
+      let near = (L(w + r1) + L(w - r1) + L(w + vec2f(r1.x, -r1.y)) + L(w - vec2f(r1.x, -r1.y))) * 0.25;
       let far = M(w);
-      let halo = near * 0.15 + far * far * 0.4;
-      c += halo * g * 0.3 + max(halo - 0.45, vec3f(0.0)) * g * 0.8;
+      c += (near * 0.12 + far * far * 0.12) * g + max(near - 0.35, vec3f(0.0)) * g * 0.8;
     }
     c *= mask(px, u.c1.x, u.c1.z, u.c1.y * k);
     // Filmed at a shutter that doesn't match the refresh: a soft dark band rolls down, the level jitters.
@@ -702,13 +701,13 @@ fn mask(px: vec2f, kind: f32, cell: f32, strength: f32) -> vec3f {
     // Glass: off-black phosphor under room light, a window's highlight high on the left.
     let gl = u.c3.w * k;
     let hp = (w - vec2f(0.24, 0.2)) * a;
-    c += (vec3f(0.006, 0.007, 0.008) + vec3f(0.05, 0.055, 0.06) * exp(-dot(hp, hp) * 10.0)) * gl;
+    c += (vec3f(0.0012, 0.0014, 0.0016) + vec3f(0.03, 0.033, 0.036) * exp(-dot(hp, hp) * 10.0)) * gl;
     tube = c;
   } else {
     res.hist = vec4f(0.0, 0.0, 0.0, 1.0);
   }
   // Plastic bezel, catching a little of the picture near its edge.
-  let bezel = vec3f(0.012, 0.0115, 0.011) + L(clamp(w, vec2f(0.01), vec2f(0.99))) * 0.05 * exp(-max(dist, 0.0) * 25.0);
+  let bezel = vec3f(0.005, 0.0048, 0.0046) + L(clamp(w, vec2f(0.01), vec2f(0.99))) * 0.05 * exp(-max(dist, 0.0) * 25.0);
   res.color = vec4f(sqrt(max(mix(bezel, tube, inside), vec3f(0.0))), 1.0);
   return res;
 }
