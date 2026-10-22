@@ -9,7 +9,8 @@
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { chromium, type Browser, type Page } from "playwright-core"
-import { createServer, type ViteDevServer } from "vite"
+import { createServer } from "vite"
+import { serveDist } from "../games/lot/scripts/serve-dist"
 
 const repo = resolve(import.meta.dir, "..")
 const arg = (name: string, fallback?: string) => {
@@ -27,7 +28,14 @@ const report: Record<string, unknown> = { viewport: [W, H], gpu: "metal", stills
 type Filter = { settings: Record<string, unknown>; measure(): Promise<number | null>; preset(look: string, id: string): boolean }
 declare global { interface Window { cameraFilter: Filter; nightshift: any; lot: any; __arcadeHarness: any; __clock: { on: boolean; t: number }; __tick(ms: number): Promise<void> } }
 
-async function serve(game: string): Promise<{ server: ViteDevServer; url: string }> {
+async function serve(game: string): Promise<{ server: { close(): unknown }; url: string }> {
+  // The lot loads its Ashwood painter from public/ at runtime, which only a production build serves.
+  if (game === "lot") {
+    const build = Bun.spawnSync(["bun", "run", "build"], { cwd: resolve(repo, "games/lot"), stdout: "ignore", stderr: "pipe" })
+    if (build.exitCode !== 0) throw new Error(build.stderr.toString())
+    const server = serveDist(resolve(repo, "games/lot/dist"))
+    return { server: { close: () => server.stop(true) }, url: `http://127.0.0.1:${server.port}/arcade/lot/` }
+  }
   if (game === "outbreak") Bun.spawnSync(["bun", "scripts/build-id.ts"], { cwd: resolve(repo, "games/outbreak") })
   const root = resolve(repo, "games", game)
   const server = await createServer({ root, configFile: resolve(root, "vite.config.ts"), logLevel: "error", server: { host: "127.0.0.1", port: 0, fs: { allow: [repo] } } })
@@ -165,14 +173,16 @@ async function timing(game: string, d: Driver) {
     await setLook(d.page, look)
     await d.advance(20)
     const samples: number[] = []
-    for (let i = 0; i < 24; i++) {
+    for (let i = 0; i < 40; i++) {
       const p = d.page.evaluate(() => window.cameraFilter.measure())
       await d.advance(2)
       const ms = await p
       if (ms != null) samples.push(ms)
     }
     samples.sort((a, b) => a - b)
-    result[mode] = samples.length ? { min: +samples[0]!.toFixed(3), p50: +samples[samples.length >> 1]!.toFixed(3), n: samples.length } : null
+    // Shared workers' GPU work and clock drops only ever add time: the low tail is the estimate, the median is context.
+    const q = (p: number) => +samples[Math.floor((samples.length - 1) * p)]!.toFixed(3)
+    result[mode] = samples.length ? { min: q(0), p10: q(0.1), p50: q(0.5), n: samples.length } : null
   }
   await setFilter(d.page, { mode: "today" })
   ;(report.timing as Record<string, unknown>)[game] = result

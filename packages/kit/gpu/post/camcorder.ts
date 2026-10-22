@@ -270,6 +270,7 @@ fn toSrgb(c: vec3f) -> vec3f {
 }
 `
 
+const LOCAL_W = 48, LOCAL_H = 27
 /** 2×1 rgba32float: texel 0 exposure (log2 gain, velocity) and focus (offset, velocity); texel 1 white balance gains and the remembered scene level. */
 const STATE_WGSL = COMMON + /* wgsl */ `
 @group(0) @binding(1) var src: texture_2d<f32>;
@@ -329,6 +330,18 @@ const STATE_WGSL = COMMON + /* wgsl */ `
   if (v.pos.x < 1.0) { return vec4f(e, ev, f, fv); }
   return vec4f(gains, slow);
 }
+/** The frame's local mean on a coarse grid (6×6 taps per cell); sampled bilinearly it is a smooth neighbourhood level. */
+@fragment fn fs_local(v: V) -> @location(0) vec4f {
+  let cell = 1.0 / vec2f(${LOCAL_W}.0, ${LOCAL_H}.0);
+  let base = floor(v.pos.xy) * cell;
+  var c = vec3f(0.0);
+  for (var j = 0; j < 6; j++) {
+    for (var i = 0; i < 6; i++) {
+      c += textureSampleLevel(src, samp, base + (vec2f(f32(i), f32(j)) + 0.5) * cell / 6.0, 0.0).rgb;
+    }
+  }
+  return vec4f(c / 36.0, 1.0);
+}
 `
 
 const MAIN_COMMON = COMMON + /* wgsl */ `
@@ -337,16 +350,18 @@ const MAIN_COMMON = COMMON + /* wgsl */ `
 @group(0) @binding(3) var state: texture_2d<f32>;
 @group(0) @binding(4) var overlay: texture_2d<f32>;
 @group(0) @binding(5) var samp: sampler;
+@group(0) @binding(6) var localMean: texture_2d<f32>;
 struct Out { @location(0) color: vec4f, @location(1) hist: vec4f };
 fn S(uv: vec2f) -> vec3f { return textureSampleLevel(src, samp, uv, 0.0).rgb; }
+fn M(uv: vec2f) -> vec3f { return textureSampleLevel(localMean, samp, uv, 0.0).rgb; }
 `
 
 const PHONE_WGSL = MAIN_COMMON + /* wgsl */ `
 fn shoulder(x: vec3f) -> vec3f { return select(x, 0.72 + 0.28 * (1.0 - exp(-(x - 0.72) / 0.28)), x > vec3f(0.72)); }
 /** Exposure, then local exposure: dark neighbourhoods (ym) brightened, bright ones held back; black stays black. */
 fn look(c: vec3f, gain: vec3f, ym: f32, hdr: f32) -> vec3f {
-  let d = toSrgb(shoulder(toLin(c) * gain)) * clamp(pow(0.42 / max(ym, 0.03), 0.45 * hdr), 0.75, 1.6);
-  return pow(max(d, vec3f(0.0)), vec3f(mix(1.0, 0.9, hdr)));
+  let d = toSrgb(shoulder(toLin(c) * gain)) * clamp(pow(0.4 / max(ym, 0.03), 0.3 * hdr), 0.8, 1.3);
+  return pow(max(d, vec3f(0.0)), vec3f(mix(1.0, 0.95, hdr)));
 }
 /** Equidistant fisheye from the wide rectilinear render: the angle grows with the radius, the corners stay the corners. */
 fn fisheye(uv: vec2f, asp: f32, amount: f32) -> vec2f {
@@ -415,8 +430,7 @@ fn ui(c: vec3f, uv: vec2f) -> vec3f {
   let d1 = vec2f(1.25, 0.0) * texel;
   let d2 = vec2f(0.0, 1.25) * texel;
   let near = (S(q + d1) + S(q - d1) + S(q + d2) + S(q - d2)) * 0.25;
-  let r = vec2f(0.035 * size.y) * texel;
-  let wide = (S(q + r) + S(q - r) + S(q + vec2f(r.x, -r.y)) + S(q + vec2f(-r.x, r.y))) * 0.25;
+  let wide = M(q);
   // Auto exposure and white balance act on light; the shoulder rolls off what the gain pushes past white.
   let gain = exp2(s0.x * k) * mix(vec3f(1.0), s1.rgb, k);
   let hdr = u.p0.x * k;
@@ -431,7 +445,8 @@ fn ui(c: vec3f, uv: vec2f) -> vec3f {
   d = mix(vec3f(lum(d)), d, 1.0 + 0.12 * hdr);
   // Sharpening on luma: the bright/dark rims around edges.
   d += (y0 - lum(nearL)) * 1.7 * u.p0.y * k;
-  d = max(d - 0.018 * hdr, vec3f(0.0)) / (1.0 - 0.018 * hdr);
+  d = max(d - 0.04 * hdr, vec3f(0.0)) / (1.0 - 0.04 * hdr);
+  d = mix(d, d * d * (3.0 - 2.0 * d), 0.3 * hdr);
   // Sensor noise grows with the gain; the denoiser leaves it as soft grain and slow chroma blotches.
   let dark = 1.0 - smoothstep(0.02, 0.55, lum(d));
   let amount = u.p0.z * k * clamp(0.3 + max(s0.x * k, 0.0) * 0.6, 0.3, 1.6) * (0.2 + 0.8 * dark);
@@ -664,15 +679,13 @@ fn mask(px: vec2f, kind: f32, cell: f32, strength: f32) -> vec3f {
       plain += col * select(f, 1.0 - f, j == 0);
     }
     var c = mix(plain, beam, u.c0.y * k);
-    // Halation: light scattered in the faceplate, two soft rings of taps.
+    // Halation: light scattered in the faceplate, a ring of near taps and the wide local mean.
     let g = u.c2.z * k;
     if (g > 0.001) {
       let r1 = vec2f(0.009 / asp, 0.009);
-      let r2 = vec2f(0.028 / asp, 0.0);
-      let r3 = vec2f(0.0, 0.028);
       let near = L(w + r1) + L(w - r1) + L(w + vec2f(r1.x, -r1.y)) + L(w - vec2f(r1.x, -r1.y));
-      let far = L(w + r2) + L(w - r2) + L(w + r3) + L(w - r3);
-      let halo = near * 0.15 + far * 0.1;
+      let far = M(w);
+      let halo = near * 0.15 + far * far * 0.4;
       c += halo * g * 0.3 + max(halo - 0.45, vec3f(0.0)) * g * 0.8;
     }
     c *= mask(px, u.c1.x, u.c1.z, u.c1.y * k);
@@ -717,11 +730,14 @@ export class CameraFilter implements FinalPass {
   readonly settings: CameraFilterSettings
   private targets: Targets | null = null
   private state: [GPUTexture, GPUTexture] | null = null
+  private stateViews: [GPUTextureView, GPUTextureView] | null = null
+  private local: GPUTexture | null = null
+  private localView: GPUTextureView | null = null
   private overlayTex: GPUTexture | null = null
   private overlayKey = ""
   private overlaySize: [number, number] = [0, 0]
   private canvas: OffscreenCanvas | HTMLCanvasElement | null = null
-  private pipes: Partial<Record<"state" | "phone" | "vhs" | "crt", GPURenderPipeline>> = {}
+  private pipes: Partial<Record<"state" | "local" | "phone" | "vhs" | "crt", GPURenderPipeline>> = {}
   private mainLayout: GPUBindGroupLayout | null = null
   private stateLayout: GPUBindGroupLayout | null = null
   private sampler: GPUSampler | null = null
@@ -794,25 +810,33 @@ export class CameraFilter implements FinalPass {
     this.device.queue.writeBuffer(this.uniform!, 0, this.data)
     const read = this.parity, write = 1 - read
     const timing = this.measureNext.length > 0 && !this.timer?.busy ? this.ensureTimer() : null
-    if (sensor && !hold) {
+    let begun = false
+    const begin = () => {
+      if (!timing || begun) return {}
+      begun = true
+      return { beginningOfPassWriteIndex: 0 }
+    }
+    const small = (view: GPUTextureView, pipe: GPURenderPipeline) => {
+      const ts = begin()
       const pass = encoder.beginRenderPass({
-        colorAttachments: [{ view: this.state![write].createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 0 } }],
-        timestampWrites: timing ? { querySet: timing.query, beginningOfPassWriteIndex: 0 } : undefined,
+        colorAttachments: [{ view, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 0 } }],
+        timestampWrites: timing && "beginningOfPassWriteIndex" in ts ? { querySet: timing.query, ...ts } : undefined,
       })
-      pass.setPipeline(this.pipes.state!)
+      pass.setPipeline(pipe)
       pass.setBindGroup(0, this.groups!.state[read]!)
       pass.draw(3)
       pass.end()
-    } else if (sensor) {
-      // Held frame: carry the state forward untouched.
-      encoder.copyTextureToTexture({ texture: this.state![read] }, { texture: this.state![write] }, [2, 1])
     }
+    if (sensor && !hold) small(this.stateViews![write], this.pipes.state!)
+    // Held frame: carry the state forward untouched.
+    else if (sensor) encoder.copyTextureToTexture({ texture: this.state![read] }, { texture: this.state![write] }, [2, 1])
+    if (!hold && mode !== "vhs") small(this.localView!, this.pipes.local!)
     const main = encoder.beginRenderPass({
       colorAttachments: [
         { view: target, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } },
         { view: t.histViews[write], loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } },
       ],
-      timestampWrites: timing ? (sensor && !hold ? { querySet: timing.query, endOfPassWriteIndex: 1 } : { querySet: timing.query, beginningOfPassWriteIndex: 0, endOfPassWriteIndex: 1 }) : undefined,
+      timestampWrites: timing ? { querySet: timing.query, ...begin(), endOfPassWriteIndex: 1 } : undefined,
     })
     main.setPipeline(this.pipes[sensor ? "phone" : mode]!)
     main.setBindGroup(0, this.groups!.main[read]!)
@@ -836,6 +860,8 @@ export class CameraFilter implements FinalPass {
     this.targets?.source.destroy()
     this.targets?.hist.forEach(h => h.destroy())
     this.state?.forEach(s => s.destroy())
+    this.local?.destroy()
+    this.local = null
     this.overlayTex?.destroy()
     this.uniform?.destroy()
     this.targets = null
@@ -893,6 +919,7 @@ export class CameraFilter implements FinalPass {
         { binding: 3, visibility: F, texture: { sampleType: "unfilterable-float" } },
         { binding: 4, visibility: F, texture: { sampleType: "float" } },
         { binding: 5, visibility: F, sampler: { type: "filtering" } },
+        { binding: 6, visibility: F, texture: { sampleType: "float" } },
       ] })
       this.stateLayout = d.createBindGroupLayout({ label: "camera filter state", entries: [
         { binding: 0, visibility: FV, buffer: { type: "uniform" } },
@@ -906,10 +933,13 @@ export class CameraFilter implements FinalPass {
     if (!this.state) {
       const usage = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST
       this.state = [0, 1].map(() => d.createTexture({ label: "camera filter state", size: [2, 1], format: "rgba32float", usage })) as [GPUTexture, GPUTexture]
+      this.stateViews = [this.state[0].createView(), this.state[1].createView()]
+      this.local = d.createTexture({ label: "camera filter local mean", size: [LOCAL_W, LOCAL_H], format: "rgba16float", usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING })
+      this.localView = this.local.createView()
       this.groups = null
     }
     if (!this.overlayTex) this.overlayTex = d.createTexture({ size: [1, 1], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT })
-    const pipe = (key: "state" | "phone" | "vhs" | "crt", code: string, entry: string, layout: GPUBindGroupLayout, targets: GPUColorTargetState[]) => {
+    const pipe = (key: "state" | "local" | "phone" | "vhs" | "crt", code: string, entry: string, layout: GPUBindGroupLayout, targets: GPUColorTargetState[]) => {
       if (this.pipes[key]) return
       const module = d.createShaderModule({ label: `camera filter ${key}`, code })
       this.pipes[key] = d.createRenderPipeline({ label: `camera filter ${key}`, layout: d.createPipelineLayout({ bindGroupLayouts: [layout] }), vertex: { module, entryPoint: "vs" }, fragment: { module, entryPoint: entry, targets }, primitive: { topology: "triangle-list" } })
@@ -918,11 +948,12 @@ export class CameraFilter implements FinalPass {
     if (mode === "phone" || mode === "body") {
       pipe("state", CAMERA_FILTER_WGSL.state, "fs_state", this.stateLayout!, [{ format: "rgba32float" }])
       pipe("phone", CAMERA_FILTER_WGSL.phone, "fs_phone", this.mainLayout, targets)
-    } else if (mode === "vhs") pipe("vhs", CAMERA_FILTER_WGSL.vhs, "fs_vhs", this.mainLayout, targets)
-    else pipe("crt", CAMERA_FILTER_WGSL.crt, "fs_crt", this.mainLayout, targets)
+    }
+    if (mode !== "vhs") pipe("local", CAMERA_FILTER_WGSL.state, "fs_local", this.stateLayout!, [{ format: "rgba16float" }])
+    if (mode === "vhs") pipe("vhs", CAMERA_FILTER_WGSL.vhs, "fs_vhs", this.mainLayout, targets)
+    else if (mode === "crt") pipe("crt", CAMERA_FILTER_WGSL.crt, "fs_crt", this.mainLayout, targets)
     if (!this.groups) {
-      const t = this.targets!, st = this.state, ov = this.overlayTex.createView()
-      const stateViews = st.map(s => s.createView())
+      const t = this.targets!, ov = this.overlayTex.createView(), stateViews = this.stateViews!
       this.groups = {
         main: [0, 1].map(i => d.createBindGroup({ layout: this.mainLayout!, entries: [
           { binding: 0, resource: { buffer: this.uniform! } },
@@ -932,6 +963,7 @@ export class CameraFilter implements FinalPass {
           { binding: 3, resource: stateViews[1 - i]! },
           { binding: 4, resource: ov },
           { binding: 5, resource: this.sampler! },
+          { binding: 6, resource: this.localView! },
         ] })),
         state: [0, 1].map(i => d.createBindGroup({ layout: this.stateLayout!, entries: [
           { binding: 0, resource: { buffer: this.uniform! } },
