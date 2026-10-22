@@ -1,11 +1,12 @@
-import type { DebugTab } from "../dev/debug-menu"
+import type { LabControl, LabPanel, LabSettings } from "@arcade/kit/lab-panel"
+import type { DevSection } from "../dev/dev-panel"
 import type { JetAudio } from "./jet-audio"
 import { JET_TUNE } from "./jet-audio"
-import { BOOM_KINDS, type BoomKind } from "./jet-boom"
-import { sfx } from "./sfx-bank"
+import { BOOM_KINDS } from "./jet-boom"
 import { COCKPIT_TUNE } from "./jet-cockpit"
 import { ENGINE_TUNE } from "./jet-engine"
 import { DEFAULT_LEVELS, type Level } from "./mixer"
+import { sfx } from "./sfx-bank"
 
 const LEVELS: readonly (readonly [Level, string])[] = [
   ["master", "Master"],
@@ -17,134 +18,127 @@ const LEVELS: readonly (readonly [Level, string])[] = [
   ["ui", "Interface"],
 ]
 
-/** Live tuning knobs: [object, key, label, min, max]. */
-const KNOBS: readonly (readonly [Record<string, number>, string, string, number, number])[] = [
-  [JET_TUNE, "doppler", "Doppler", 0, 1],
-  [JET_TUNE, "flybyDuck", "Pass duck", 0, 1],
-  [ENGINE_TUNE, "whine", "Whine", 0, 2],
-  [ENGINE_TUNE, "roar", "Roar", 0, 2],
-  [ENGINE_TUNE, "burner", "Afterburner", 0, 2],
-  [COCKPIT_TUNE, "wind", "Wind", 0, 2],
-  [COCKPIT_TUNE, "breath", "Breathing", 0, 2],
-  [COCKPIT_TUNE, "bed", "Cockpit bed", 0, 2],
+/** Live tuning: [object, field, label, max]. Every value is a gain multiplier (0 silences it), read each frame. */
+const TUNING: readonly (readonly [Record<string, number>, string, string, number])[] = [
+  [JET_TUNE, "doppler", "Doppler", 1],
+  [JET_TUNE, "flybyDuck", "Pass duck", 1],
+  [ENGINE_TUNE, "whine", "Whine", 2],
+  [ENGINE_TUNE, "roar", "Roar", 2],
+  [ENGINE_TUNE, "burner", "Afterburner", 2],
+  [COCKPIT_TUNE, "wind", "Wind", 2],
+  [COCKPIT_TUNE, "breath", "Breathing", 2],
+  [COCKPIT_TUNE, "bed", "Cockpit bed", 2],
 ]
 
-const CSS = /* css */ `
-.audio-lab .meter { height: 4px; margin: 8px 0 2px; background: rgba(255,255,255,0.1); position: relative; }
-.audio-lab .meter i { position: absolute; left: 0; top: 0; bottom: 0; background: #e8eef4; }
-.audio-lab .meter i.hot { background: #ff8a6a; }
-.audio-lab .note { margin-top: 8px; opacity: 0.55; text-transform: none; letter-spacing: 0.04em; }
-`
+const STATUS = "Audio"
+const LEVELS_GROUP = "Levels"
+const TUNE_GROUP = "Jet tuning"
+const TEST_GROUP = "Test sounds"
 
 /**
- * AUDIO, the debug menu's sound tab: bus levels (persisted, like M for mute), live tuning of the jet engines, flybys and
- * cockpit, test buttons that fly a jet past the camera or fire the catapult, trap and crash sounds, and readouts (voices,
- * passes, loaded takes, output peak).
+ * AUDIO, the dev panel's mix section: bus levels (persisted, like M for mute), live tuning of the jet engines, flybys and
+ * cockpit, test buttons that fly a jet past the camera or fire the catapult, trap, crash and explosion sounds (each an
+ * explicit audition; flybys pass 40 m from the camera at 210-250 m/s, recorded sounds are the Sounds tab's picks), and readouts (context, voices, passes, loaded takes, output peak).
  */
 export class MixerLab {
-  readonly tab: DebugTab
-  private el = document.createElement("div")
-  private status: Record<string, HTMLElement> = {}
-  private meter: HTMLElement
+  /** Explosion tests at 2.5 km instead of close by. */
+  readonly settings = { far: false }
   private hold = 0
+  private panel: LabPanel | null = null
   private lastUi = 0
-  private far = false
 
-  constructor(private jets: JetAudio) {
-    const mixer = jets.mixer
-    this.el.className = "audio-lab"
-    const slider = (key: string, label: string, min: number, max: number, step = 0.01) =>
-      `<div class="slider"><span>${label}</span><input type="range" data-k="${key}" min="${min}" max="${max}" step="${step}"><span class="v" data-v="${key}"></span></div>`
-    this.el.innerHTML = `
-      <div class="status">
-        <span class="k">Context</span><span class="v" data-s="ctx"></span>
-        <span class="k">Engines · passes · jets</span><span class="v" data-s="voices"></span>
-        <span class="k">Recorded takes loaded</span><span class="v" data-s="takes"></span>
-        <span class="k">Peak</span><span class="v" data-s="peak"></span>
-      </div>
-      <div class="meter"><i></i></div>
-      <h2>Levels</h2>
-      ${LEVELS.map(([k, l]) => slider(`level:${k}`, l, 0, 1.5)).join("")}
-      <div class="row"><button data-act="mute">Mute (M)</button><button data-act="reset">Reset levels</button></div>
-      <h2>Tuning</h2>
-      ${KNOBS.map(([, k, l, a, b]) => slider(`tune:${k}`, l, a, b)).join("")}
-      <div class="row"><button data-act="samples">Recorded sounds on</button></div>
-      <h2>Test</h2>
-      <div class="row"><button data-test="flyby">Flyby</button><button data-test="flyby-ab">Burner pass</button><button data-test="boom">Crack</button></div>
-      <div class="row"><button data-test="catapult">Catapult</button><button data-test="trap">Trap</button><button data-test="crash">Crash</button></div>
-      <h2>Explosions</h2>
-      <div class="row">${BOOM_KINDS.map((k) => `<button data-boom="${k}">${k.replace("-", " ")}</button>`).join("")}</div>
-      <div class="row"><button data-act="far">Far (2.5 km)</button></div>
-      <div class="note">Flybys go 40 m past the camera at 210-250 m/s. Recorded sounds come from the SOUNDS tab's picks; switch them off to hear the procedural placeholders.</div>`
-    this.el.querySelectorAll<HTMLElement>("[data-s]").forEach((e) => (this.status[e.dataset.s!] = e))
-    this.meter = this.el.querySelector(".meter i")!
-    const knob = (key: string) => KNOBS.find(([, k]) => `tune:${k}` === key)
-    const value = (key: string): number => {
-      if (key.startsWith("level:")) return mixer.levels[key.slice(6) as Level]
-      const k = knob(key)
-      return k ? k[0][k[1]]! : 0
-    }
-    const show = () => {
-      this.el.querySelectorAll<HTMLInputElement>("input[data-k]").forEach((i) => {
-        const k = i.dataset.k!
-        i.value = String(value(k))
-        this.el.querySelector(`[data-v="${k}"]`)!.textContent = value(k).toFixed(2)
-      })
-      this.el.querySelector<HTMLButtonElement>('[data-act="mute"]')!.classList.toggle("on", mixer.muted)
-      const s = this.el.querySelector<HTMLButtonElement>('[data-act="samples"]')!
-      s.classList.toggle("on", mixer.samplesOn)
-      s.textContent = mixer.samplesOn ? "Recorded sounds on" : "Procedural placeholders only"
-      this.el.querySelector<HTMLButtonElement>('[data-act="far"]')!.classList.toggle("on", this.far)
-    }
-    this.el.addEventListener("input", (e) => {
-      const i = e.target as HTMLInputElement
-      const k = i.dataset.k
-      if (!k) return
-      const v = Number(i.value)
-      if (k.startsWith("level:")) mixer.setLevel(k.slice(6) as Level, v)
-      else {
-        const kb = knob(k)
-        if (kb) kb[0][kb[1]] = v
+  constructor(private jets: JetAudio) {}
+
+  readonly section: DevSection = {
+    id: "audio",
+    tab: "Audio",
+    bind: (panel) => {
+      this.panel = panel
+      panel.addControls({}, this.readouts())
+      panel.addControls(this.mixSettings(), this.mixControls(), this.mixDefaults())
+      for (const [obj, field, label, max] of TUNING) {
+        const defaults = { [field]: obj[field]! }
+        panel.addControls(obj, [{ key: `tune.${field}`, field, label, group: TUNE_GROUP, min: 0, max, step: 0.01, unit: "×" }], defaults)
       }
-      this.el.querySelector(`[data-v="${k}"]`)!.textContent = v.toFixed(2)
-    })
-    this.el.addEventListener("click", (e) => {
-      const b = (e.target as HTMLElement).closest("button")
-      if (!b) return
-      mixer.start()
-      const act = b.dataset.act
-      if (act === "mute") mixer.setMuted(!mixer.muted)
-      if (act === "reset") for (const [k] of LEVELS) mixer.setLevel(k, DEFAULT_LEVELS[k])
-      if (act === "far") this.far = !this.far
-      if (b.dataset.boom) jets.testBoom(b.dataset.boom as BoomKind, this.far)
-      if (act === "samples") {
-        mixer.samplesOn = !mixer.samplesOn
-      }
-      const t = b.dataset.test
-      if (t === "flyby") jets.testFlyby(false)
-      if (t === "flyby-ab") jets.testFlyby(true)
-      if (t === "boom") jets.sfx.boom(0.9, { at: { x: 20, y: 10, z: -30 } })
-      if (t === "catapult") jets.testLaunch()
-      if (t === "trap" || t === "crash") jets.testEvent(t)
-      show()
-    })
-    show()
-    this.tab = { id: "audio", label: "Audio", css: CSS, mount: (el) => (el.append(this.el), show()), frame: () => this.frame() }
+      panel.addControls(this.settings, this.tests(), { far: false })
+    },
+    frame: () => {
+      this.hold = Math.max(this.jets.mixer.peak(), this.hold * 0.95)
+      const now = performance.now()
+      if (now - this.lastUi < 200) return
+      this.lastUi = now
+      this.panel?.refresh()
+    },
   }
 
-  private frame(): void {
+  /** Levels and recorded samples as settings over the mixer (which persists the levels itself; Mute is on the Game tab). */
+  private mixSettings(): LabSettings {
     const m = this.jets.mixer
-    const peak = m.peak()
-    this.hold = Math.max(peak, this.hold * 0.95)
-    this.meter.style.width = `${Math.min(100, this.hold * 100)}%`
-    this.meter.classList.toggle("hot", this.hold > 0.95)
-    const now = performance.now()
-    if (now - this.lastUi < 200) return
-    this.lastUi = now
-    const s = this.jets.stats
-    this.status.ctx!.textContent = m.ctx ? `${m.ctx.state} ${m.ctx.sampleRate / 1000} kHz${m.muted ? " · MUTED" : ""}` : "waiting for a click"
-    this.status.voices!.textContent = `${s.voices} · ${s.flybys} · ${s.jets}`
-    this.status.takes!.textContent = `${sfx(m).loaded}`
-    this.status.peak!.textContent = `${(20 * Math.log10(this.hold + 1e-6)).toFixed(1)} dBFS`
+    const s: LabSettings = {}
+    for (const [level] of LEVELS) Object.defineProperty(s, level, { enumerable: true, get: () => m.levels[level], set: (v) => m.setLevel(level, Number(v)) })
+    Object.defineProperty(s, "samplesOn", { enumerable: true, get: () => m.samplesOn, set: (v) => (m.samplesOn = !!v) })
+    return s
+  }
+
+  private mixDefaults(): LabSettings {
+    return { ...DEFAULT_LEVELS, samplesOn: true }
+  }
+
+  private mixControls(): LabControl[] {
+    return [
+      ...LEVELS.map(([level, label]): LabControl => ({ key: `level.${level}`, field: level, label, group: LEVELS_GROUP, min: 0, max: 1.5, step: 0.01, unit: "×" })),
+      { key: "level.samplesOn", field: "samplesOn", label: "Recorded sounds (off: procedural placeholders)", group: LEVELS_GROUP },
+    ]
+  }
+
+  private readouts(): LabControl[] {
+    const m = this.jets.mixer
+    return [
+      { key: "audio-ctx", label: "Context", group: STATUS, type: "readout", read: () => (m.ctx ? `${m.ctx.state} ${m.ctx.sampleRate / 1000} kHz${m.muted ? " · MUTED" : ""}` : "waiting for a click") },
+      { key: "audio-voices", label: "Engines · passes · jets", group: STATUS, type: "readout", read: () => `${this.jets.stats.voices} · ${this.jets.stats.flybys} · ${this.jets.stats.jets}` },
+      { key: "audio-takes", label: "Recorded takes loaded", group: STATUS, type: "readout", read: () => sfx(m).loaded },
+      { key: "audio-peak", label: "Peak", group: STATUS, type: "readout", display: "meter", scale: { min: 0, max: 1, warn: 0.8, critical: 0.95 }, hz: 15, read: () => Math.min(1, this.hold) },
+      { key: "audio-peak-db", label: "Peak level", group: STATUS, type: "readout", read: () => `${(20 * Math.log10(this.hold + 1e-6)).toFixed(1)} dBFS` },
+    ]
+  }
+
+  private tests(): LabControl[] {
+    const jets = this.jets
+    const play = (run: () => void) => () => {
+      jets.mixer.start()
+      run()
+    }
+    return [
+      {
+        key: "audio-test-flight",
+        label: "Flight",
+        group: TEST_GROUP,
+        type: "buttons",
+        items: [
+          { key: "audio-flyby", label: "Flyby", run: play(() => jets.testFlyby(false)) },
+          { key: "audio-flyby-ab", label: "Burner pass", run: play(() => jets.testFlyby(true)) },
+          { key: "audio-boom", label: "Crack", run: play(() => jets.sfx.boom(0.9, { at: { x: 20, y: 10, z: -30 } })) },
+        ],
+      },
+      {
+        key: "audio-test-deck",
+        label: "Deck",
+        group: TEST_GROUP,
+        type: "buttons",
+        items: [
+          { key: "audio-catapult", label: "Catapult", run: play(() => jets.testLaunch()) },
+          { key: "audio-trap", label: "Trap", run: play(() => jets.testEvent("trap")) },
+          { key: "audio-crash", label: "Crash", run: play(() => jets.testEvent("crash")) },
+        ],
+      },
+      {
+        key: "audio-test-booms",
+        label: "Explosions",
+        group: TEST_GROUP,
+        type: "buttons",
+        items: BOOM_KINDS.map((k) => ({ key: `audio-boom-${k}`, label: k.replace("-", " "), run: play(() => jets.testBoom(k, this.settings.far)) })),
+      },
+      { key: "audio.far", field: "far", label: "Explosions far away (2.5 km)", group: TEST_GROUP },
+    ]
   }
 }

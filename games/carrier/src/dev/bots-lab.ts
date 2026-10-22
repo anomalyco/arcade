@@ -1,17 +1,12 @@
-import { LabPanel, type LabControl, type LabSettings } from "@arcade/kit/lab-panel"
+import type { LabControl, LabPanel, LabSettings } from "@arcade/kit/lab-panel"
 import { BEHAVIORS, BOT_DEFAULTS, BOT_RANGES, type BotAt, type BotCmd, type BotInfo, type BotKind, type BotSettings, botKind } from "../../shared/bots"
-import { playerOf, shipOf, teamCss } from "../../shared/crew"
+import { playerOf, shipOf } from "../../shared/crew"
 import { OPS } from "../../shared/ops"
 import type { Net } from "../net"
-import type { DebugTab } from "./debug-menu"
-
-/** Stylesheets the shared panel (and knobs, which draws it) put in the document head; the debug menu is a shadow root. */
-const PANEL_STYLES = "style[data-knobs-style], style[data-knobs-preset], style[data-lab-knobs], style[data-lab-panel-css]"
+import type { DevSection } from "./dev-panel"
 
 export type BotsHost = {
   net: () => Net
-  release: () => void
-  close: () => void
   /** Where I am (my jet in the air, else my ship, else the camera): plan position, height, heading (rad, 0 north). */
   me: () => { x: number; y: number; z: number; heading: number; flying: boolean }
 }
@@ -58,20 +53,21 @@ function defaults(): LabSettings {
   }
 }
 
-const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!)
+/** The live-bots picker: every bot, a group ("g3") or one bot ("b17"). */
+const ALL = "all"
+const LIVE = "Live bots"
 
 /**
- * BOTS tab (dev builds, dev rooms): quick scenarios, a spawner and the bots' behavior on the shared Lab panel (typed
- * settings with labels, units, ranges and Reset), and the live list from the room (state, health, what each is doing;
- * LOAD its settings, APPLY the panel's behavior, SHOOT DOWN, REMOVE). Offline it offers the in-page room
- * (`?seed=N&bots`), since bots live in a room.
+ * BOTS (dev builds, dev rooms): quick scenarios, a spawner and the bots' behavior as typed settings on the dev panel
+ * (labels, units, ranges and Reset), and the live list from the room (state, health, what each is doing). Pick every
+ * bot, a group or one bot under Live bots, then LOAD its settings, APPLY the panel's behavior, SHOOT DOWN or REMOVE.
+ * Offline it offers the in-page room (`?seed=N&bots`), since bots live in a room.
  */
-export class BotsTab {
+export class BotsLab {
   private panel: LabPanel | null = null
-  private status: HTMLElement | null = null
-  private listEl: HTMLElement | null = null
   private s = defaults()
   private readonly approved = defaults()
+  private readonly live: LabSettings = { pick: ALL }
   private carriers: { value: number; label: string }[] = [
     { value: ENEMY, label: "Nearest enemy" },
     { value: MINE, label: "My carrier" },
@@ -84,60 +80,31 @@ export class BotsTab {
     { value: MINE, label: "My carrier" },
     { value: ANY, label: "Nearest enemy" },
   ]
+  private picks: { value: string; label: string }[] = [{ value: ALL, label: "Every bot" }]
   private shape = ""
   private listKey = ""
   private refreshIn = 0
 
   constructor(private host: BotsHost) {}
 
-  readonly tab: DebugTab = {
+  readonly section: DevSection = {
     id: "bots",
-    label: "Bots",
-    css: CSS,
-    mount: (el) => {
-      el.replaceChildren()
-      this.status = document.createElement("div")
-      this.status.className = "bots-status"
-      el.append(this.status)
-      const panel = new LabPanel({}, [], new URLSearchParams(), this.host.release, {
-        layout: "inspector",
-        capture: "focus",
-        open: true,
-        presets: false,
-        groupActions: false,
-        pill: false,
-        variants: "carrier-bots",
-        onToggle: (visible) => {
-          if (!visible) this.host.close()
-        },
-      })
-      panel.addControls(this.s, this.controls(), this.approved)
-      for (const s of document.head.querySelectorAll(PANEL_STYLES)) el.append(s.cloneNode(true))
-      el.append(panel.host)
-      this.listEl = document.createElement("div")
-      this.listEl.className = "bots-list"
-      this.listEl.addEventListener("click", (e) => this.clickList(e))
-      el.append(this.listEl)
+    tab: "Bots",
+    bind: (panel) => {
       this.panel = panel
-      this.listKey = ""
-      this.shape = ""
+      panel.addControls({}, [{ key: "bots-status", label: "Room", group: "Scenarios", type: "readout", read: () => this.status() }])
+      panel.addControls(this.s, this.controls(), this.approved)
+      panel.addControls(this.live, this.liveControls(), { pick: ALL })
+    },
+    shown: (on) => {
+      if (on) this.refreshIn = 0
+    },
+    frame: (dt) => {
+      this.refreshIn -= dt
+      if (this.refreshIn > 0) return
+      this.refreshIn = 0.5
       this.refresh()
     },
-    unmount: () => {
-      this.panel?.dispose()
-      this.panel = null
-      this.status = null
-      this.listEl = null
-    },
-  }
-
-  /** Every frame (the menu calls it while any tab is shown): the status, pickers and list twice a second. */
-  frame(dt: number): void {
-    if (!this.panel) return
-    this.refreshIn -= dt
-    if (this.refreshIn > 0) return
-    this.refreshIn = 0.5
-    this.refresh()
   }
 
   private kind(): BotKind {
@@ -151,45 +118,61 @@ export class BotsTab {
     const behaviors = (kind: BotKind) => BEHAVIORS[kind].map((b) => ({ value: b, label: b === "eight" ? "figure-eight" : b }))
     const range = (key: keyof typeof BOT_RANGES, group: string, visible?: () => boolean): LabControl => {
       const r = BOT_RANGES[key]
-      return { key, label: r.label, group, unit: r.unit, min: r.min, max: r.max, step: r.step, ...(visible ? { visible } : {}) }
+      return { key: `bots.${key}`, label: r.label, group, unit: r.unit, min: r.min, max: r.max, step: r.step, ...(visible ? { visible } : {}) }
     }
-    const action = (key: string, label: string, run: () => void): LabControl => ({ key, label, group: "Scenarios", type: "action", run })
+    const scenario = (key: string, label: string, run: () => void) => ({ key: `bots-${key}`, label, run, enabled: () => this.inRoom() })
     return [
-      action("s-duel", "1v1 dogfight · 2 km", () => this.duel()),
-      action("s-bomber", "Bomber run on my carrier", () => this.bomberRun()),
-      action("s-swarm", "Swarm of 4", () => this.swarm()),
-      action("s-battle", "Carrier battle", () => this.battle()),
-      action("s-practice", "Target practice ×3", () => this.practice()),
-      action("s-boats", "Boat attack ×2", () => this.boats()),
-      action("s-clear", "Remove all bots", () => this.send({ c: "clear" })),
-      { key: "role", label: "Role", group: "Spawn", options: roles },
-      { key: "carrier", label: "Carrier (side)", group: "Spawn", options: this.carriers },
-      { key: "count", label: "Count", group: "Spawn", unit: "", min: 1, max: 8, step: 1 },
-      { key: "start", label: "Start", group: "Spawn", options: [{ value: "air", label: "Near me (air / water)" }, { value: "deck", label: "From the deck" }], visible: () => k() === "jet" || k() === "boat" },
-      { key: "distance", label: "Distance from me", group: "Spawn", unit: "m", min: 300, max: 8000, step: 100, visible: () => (k() === "jet" || k() === "boat") && this.s.start === "air" },
-      { key: "bearing", label: "Bearing off my nose", group: "Spawn", unit: "°", min: -180, max: 180, step: 5, visible: () => (k() === "jet" || k() === "boat") && this.s.start === "air" },
-      { key: "facing", label: "Facing", group: "Spawn", options: FACINGS.map((f) => ({ value: f, label: f })), visible: () => (k() === "jet" || k() === "boat") && this.s.start === "air" },
-      { key: "rules", label: "Obey slot caps and recharges", group: "Spawn" },
-      { key: "spawn", label: "Spawn", group: "Spawn", type: "action", run: () => this.spawnFromPanel() },
-      { key: "jet", label: "Behavior", group: "Behavior", options: behaviors("jet"), visible: jets },
-      { key: "boat", label: "Behavior", group: "Behavior", options: behaviors("boat"), visible: () => k() === "boat" },
-      { key: "gun", label: "Behavior", group: "Behavior", options: behaviors("gun"), visible: () => k() === "gun" },
-      { key: "helm", label: "Behavior", group: "Behavior", options: behaviors("helm"), visible: () => k() === "helm" },
+      {
+        key: "bots-scenarios",
+        label: "Fights",
+        group: "Scenarios",
+        type: "buttons",
+        items: [
+          scenario("duel", "1v1 dogfight · 2 km", () => this.duel()),
+          scenario("bomber", "Bomber run on my carrier", () => this.bomberRun()),
+          scenario("swarm", "Swarm of 4", () => this.swarm()),
+          scenario("battle", "Carrier battle", () => this.battle()),
+        ],
+      },
+      {
+        key: "bots-scenarios-2",
+        label: "Practice",
+        group: "Scenarios",
+        type: "buttons",
+        items: [
+          scenario("practice", "Target practice ×3", () => this.practice()),
+          scenario("boats", "Boat attack ×2", () => this.boats()),
+          scenario("clear", "Remove all bots", () => this.send({ c: "clear" })),
+        ],
+      },
+      { key: "bots.role", label: "Role", group: "Spawn", options: roles },
+      { key: "bots.carrier", label: "Carrier (side)", group: "Spawn", options: this.carriers },
+      { key: "bots.count", label: "Count", group: "Spawn", unit: "", min: 1, max: 8, step: 1 },
+      { key: "bots.start", label: "Start", group: "Spawn", options: [{ value: "air", label: "Near me (air / water)" }, { value: "deck", label: "From the deck" }], visible: () => k() === "jet" || k() === "boat" },
+      { key: "bots.distance", label: "Distance from me", group: "Spawn", unit: "m", min: 300, max: 8000, step: 100, visible: () => (k() === "jet" || k() === "boat") && this.s.start === "air" },
+      { key: "bots.bearing", label: "Bearing off my nose", group: "Spawn", unit: "°", min: -180, max: 180, step: 5, visible: () => (k() === "jet" || k() === "boat") && this.s.start === "air" },
+      { key: "bots.facing", label: "Facing", group: "Spawn", options: FACINGS.map((f) => ({ value: f, label: f })), visible: () => (k() === "jet" || k() === "boat") && this.s.start === "air" },
+      { key: "bots.rules", label: "Obey slot caps and recharges", group: "Spawn" },
+      { key: "bots-spawn", label: "Spawn", group: "Spawn", type: "buttons", items: [{ key: "bots-spawn-now", label: "Spawn", run: () => this.spawnFromPanel(), enabled: () => this.inRoom() }] },
+      { key: "bots.jet", label: "Behavior", group: "Behavior", options: behaviors("jet"), visible: jets },
+      { key: "bots.boat", label: "Behavior", group: "Behavior", options: behaviors("boat"), visible: () => k() === "boat" },
+      { key: "bots.gun", label: "Behavior", group: "Behavior", options: behaviors("gun"), visible: () => k() === "gun" },
+      { key: "bots.helm", label: "Behavior", group: "Behavior", options: behaviors("helm"), visible: () => k() === "helm" },
       range("alt", "Behavior", jets),
       range("speed", "Behavior", jets),
       range("radius", "Behavior", () => jets() || k() === "boat"),
       range("throttle", "Behavior", () => k() === "boat" || k() === "helm"),
-      { key: "target", label: "Hunt", group: "Behavior", options: this.targets, visible: () => k() !== "helm" },
-      { key: "targetShip", label: "Target carrier", group: "Behavior", options: this.ships },
-      { key: "apply", label: "Apply behavior to every bot of this kind", group: "Behavior", type: "action", run: () => this.applyAll() },
+      { key: "bots.target", label: "Hunt", group: "Behavior", options: this.targets, visible: () => k() !== "helm" },
+      { key: "bots.targetShip", label: "Target carrier", group: "Behavior", options: this.ships },
+      { key: "bots-apply-kind", label: "Every bot of this kind", group: "Behavior", type: "buttons", items: [{ key: "bots-apply-all", label: "Apply behavior", run: () => this.applyAll(), enabled: () => this.inRoom() }] },
       range("skill", "Skill"),
       range("aggression", "Skill"),
       range("accuracy", "Skill"),
-      { key: "weapons", label: "Weapons", group: "Weapons" },
-      { key: "flares", label: "Flares", group: "Weapons" },
-      { key: "ammo", label: "Infinite ammo", group: "Weapons" },
-      { key: "invulnerable", label: "Invulnerable", group: "Weapons" },
-      { key: "respawn", label: "Respawn when destroyed", group: "Weapons" },
+      { key: "bots.weapons", label: "Weapons", group: "Weapons" },
+      { key: "bots.flares", label: "Flares", group: "Weapons" },
+      { key: "bots.ammo", label: "Infinite ammo", group: "Weapons" },
+      { key: "bots.invulnerable", label: "Invulnerable", group: "Weapons" },
+      { key: "bots.respawn", label: "Respawn when destroyed", group: "Weapons" },
     ]
   }
 
@@ -358,10 +341,96 @@ export class BotsTab {
 
   // ---- the live view --------------------------------------------------------------------------------------------
 
-  /** Pickers follow the crew (carriers, players), the status line and the bot list follow the room. */
+  private inRoom(): boolean {
+    const net = this.host.net()
+    return net.state !== "offline" && net.dev
+  }
+
+  private status(): string {
+    const net = this.host.net()
+    if (net.state === "offline") return "Offline: bots live in a room"
+    if (!net.dev) return "Not a dev room: it refuses bots"
+    const refused = net.refused && performance.now() - net.refused.at < 4000 ? ` · refused: ${net.refused.error}` : ""
+    return `${net.room === "local" ? "In-page dev room" : `Dev room ${net.room ?? ""}`} · ${net.bots.length} bot${net.bots.length === 1 ? "" : "s"}${refused}`
+  }
+
+  private liveControls(): LabControl[] {
+    return [
+      {
+        key: "bots-offline",
+        label: "Offline",
+        group: LIVE,
+        type: "buttons",
+        visible: () => this.host.net().state === "offline",
+        items: [{ key: "bots-local-room", label: "Reload with an in-page room", run: () => location.assign(`${location.href}${location.search ? "&" : "?"}bots`) }],
+      },
+      { key: "bots-list", label: "Bots", group: LIVE, type: "readout", display: "table", columns: ["", "What", "State", "Doing"], read: () => this.table() },
+      { key: "bots.pick", field: "pick", label: "Act on", group: LIVE, options: this.picks },
+      {
+        key: "bots-act",
+        label: "Selected",
+        group: LIVE,
+        type: "buttons",
+        items: [
+          { key: "bots-load", label: "Load", run: () => this.load(), enabled: () => String(this.live.pick).startsWith("b") },
+          { key: "bots-apply", label: "Apply", run: () => this.act("apply"), enabled: () => this.selected().length > 0 },
+          { key: "bots-kill", label: "Shoot down", run: () => this.act("kill"), enabled: () => this.selected().length > 0 },
+          { key: "bots-remove", label: "Remove", run: () => this.act("remove"), enabled: () => this.selected().length > 0 },
+        ],
+      },
+    ]
+  }
+
+  /** One row per live bot: name, role · carrier, state and health, what it is doing. */
+  private table(): (readonly string[])[] {
+    const net = this.host.net()
+    const crew = net.crew
+    if (!net.bots.length) return [["None", "", "", ""]]
+    return net.bots.map((b) => {
+      const ship = crew && shipOf(crew, b.ship)
+      const hp = botKind(b.role) === "jet" || botKind(b.role) === "boat" ? ` · ${b.hp} HP` : ""
+      return [b.name, `${ROLE_LABELS[b.role] ?? b.role} · ${ship?.name ?? "?"}`, `${b.state}${hp}${b.s.invulnerable ? " · invuln" : ""}`, b.note]
+    })
+  }
+
+  /** The bots the Act on picker names, by id. */
+  private selected(): number[] {
+    const bots = this.host.net().bots
+    const pick = String(this.live.pick)
+    if (pick === ALL) return bots.map((b) => b.id)
+    const n = Number(pick.slice(1))
+    return bots.filter((b) => (pick[0] === "g" ? b.group === n : b.id === n)).map((b) => b.id)
+  }
+
+  private act(what: "apply" | "kill" | "remove"): void {
+    const ids = this.selected().slice(0, 24)
+    if (!ids.length) return
+    if (what !== "apply") return this.send({ c: what, ids })
+    const bots = this.host.net().bots.filter((b) => ids.includes(b.id))
+    const kind = botKind(bots[0]?.role ?? "") ?? this.kind()
+    this.send({ c: "set", ids: bots.filter((b) => botKind(b.role) === kind).map((b) => b.id), s: this.settings(kind) })
+  }
+
+  /** The picked bot's role, behavior and settings into the panel. */
+  private load(): void {
+    const ids = this.selected()
+    const b = this.host.net().bots.find((x) => x.id === ids[0])
+    if (!b) return
+    const kind = botKind(b.role) ?? "jet"
+    const s = this.s
+    s.role = b.role
+    s[kind] = b.s.behavior
+    for (const k of ["alt", "speed", "radius", "throttle", "skill", "aggression", "accuracy", "weapons", "flares", "ammo", "invulnerable", "respawn"] as const) s[k] = b.s[k]
+    s.target = b.s.target === this.host.net().id ? ME : b.s.target
+    s.targetShip = b.s.targetShip === this.myShip() ? MINE : b.s.targetShip
+    this.panel?.refresh()
+  }
+
+  /** Pickers follow the crew (carriers, players) and the live bots; the readouts follow the room. */
   private refresh(): void {
     const net = this.host.net()
     const crew = net.crew
+    let changed = false
     if (crew) {
       const mine = this.myShip()
       const shape = JSON.stringify([crew.ships.map((s) => [s.id, s.name, s.team]), crew.players.map((p) => [p.id, p.name]), mine])
@@ -370,89 +439,17 @@ export class BotsTab {
         this.carriers.splice(2, Infinity, ...crew.ships.map((s) => ({ value: s.id, label: `${s.name}${s.id === mine ? " (mine)" : ""}` })))
         this.targets.splice(2, Infinity, ...crew.players.filter((p) => p.id !== net.id).map((p) => ({ value: p.id, label: p.name })))
         this.ships.splice(2, Infinity, ...crew.ships.map((s) => ({ value: s.id, label: `${s.name}${s.id === mine ? " (mine)" : ""}` })))
-        this.panel?.refresh()
+        changed = true
       }
     }
-    if (this.status) {
-      const refused = net.refused && performance.now() - net.refused.at < 4000 ? ` · REFUSED: ${net.refused.error}` : ""
-      const offline = net.state === "offline"
-      const here = `${location.href}${location.search ? "&" : "?"}bots`
-      this.status.innerHTML = offline
-        ? `OFFLINE: BOTS LIVE IN A ROOM. <a href="${esc(here)}">RELOAD WITH AN IN-PAGE ROOM</a>`
-        : !net.dev
-          ? "THIS ROOM IS NOT IN DEV MODE: IT REFUSES BOTS."
-          : `${net.room === "local" ? "IN-PAGE DEV ROOM" : `DEV ROOM ${esc(net.room ?? "")}`} · ${net.bots.length} BOT${net.bots.length === 1 ? "" : "S"}${esc(refused)}`
+    const key = JSON.stringify(net.bots.map((b) => [b.id, b.name, b.group]))
+    if (key !== this.listKey) {
+      this.listKey = key
+      const groups = [...new Set(net.bots.map((b) => b.group))]
+      this.picks.splice(1, Infinity, ...groups.map((g) => ({ value: `g${g}`, label: `Group ${g}` })), ...net.bots.map((b) => ({ value: `b${b.id}`, label: b.name })))
+      if (!this.picks.some((p) => p.value === this.live.pick)) this.live.pick = ALL
+      changed = true
     }
-    this.renderList(net)
-  }
-
-  private renderList(net: Net): void {
-    const el = this.listEl
-    if (!el) return
-    const key = JSON.stringify(net.bots.map((b) => [b.id, b.state, b.note, b.hp, b.ship]))
-    if (key === this.listKey) return
-    this.listKey = key
-    if (!net.bots.length) {
-      el.innerHTML = `<h2>LIVE BOTS</h2><div class="none">NONE</div>`
-      return
-    }
-    const groups = new Map<number, BotInfo[]>()
-    for (const b of net.bots) groups.set(b.group, [...(groups.get(b.group) ?? []), b])
-    const crew = net.crew
-    let html = `<h2>LIVE BOTS</h2>`
-    for (const [g, list] of groups) {
-      html += `<div class="group"><span>GROUP ${g}</span><button data-act="apply" data-ids="${list.map((b) => b.id).join(",")}">APPLY</button><button data-act="remove" data-ids="${list.map((b) => b.id).join(",")}">REMOVE</button></div>`
-      for (const b of list) {
-        const ship = crew && shipOf(crew, b.ship)
-        const team = crew && playerOf(crew, b.id)?.team
-        const role = ROLE_LABELS[b.role] ?? b.role.toUpperCase()
-        const hp = botKind(b.role) === "jet" || botKind(b.role) === "boat" ? ` · ${b.hp} HP` : ""
-        html += `<div class="bot"><div class="name" style="color:${teamCss(team ?? undefined)}">${esc(b.name)}</div>`
-        html += `<div class="what">${esc(role)} · ${esc(ship?.name ?? "?")} · ${esc(b.state.toUpperCase())}${hp}${b.s.invulnerable ? " · INVULN" : ""}</div>`
-        html += `<div class="note">${esc(b.note)}</div>`
-        html += `<div class="row"><button data-act="load" data-ids="${b.id}">LOAD</button><button data-act="apply" data-ids="${b.id}">APPLY</button><button data-act="kill" data-ids="${b.id}">SHOOT DOWN</button><button data-act="remove" data-ids="${b.id}">REMOVE</button></div></div>`
-      }
-    }
-    el.innerHTML = html
-  }
-
-  private clickList(e: Event): void {
-    const t = (e.target as HTMLElement).closest<HTMLButtonElement>("button[data-act]")
-    if (!t) return
-    const ids = (t.dataset.ids ?? "").split(",").map(Number).filter((n) => Number.isInteger(n))
-    const act = t.dataset.act
-    if (!ids.length) return
-    if (act === "remove" || act === "kill") this.send({ c: act, ids })
-    else if (act === "apply") {
-      const bots = this.host.net().bots.filter((b) => ids.includes(b.id))
-      const kind = botKind(bots[0]?.role ?? "") ?? this.kind()
-      this.send({ c: "set", ids, s: this.settings(kind) })
-    } else if (act === "load") {
-      const b = this.host.net().bots.find((x) => x.id === ids[0])
-      if (!b) return
-      const kind = botKind(b.role) ?? "jet"
-      const s = this.s
-      s.role = b.role
-      s[kind] = b.s.behavior
-      for (const k of ["alt", "speed", "radius", "throttle", "skill", "aggression", "accuracy", "weapons", "flares", "ammo", "invulnerable", "respawn"] as const) s[k] = b.s[k]
-      s.target = b.s.target === this.host.net().id ? ME : b.s.target
-      s.targetShip = b.s.targetShip === this.myShip() ? MINE : b.s.targetShip
-      this.panel?.refresh()
-    }
+    if (changed || this.panel?.visible) this.panel?.refresh()
   }
 }
-
-const CSS = `
-.bots-status { padding: 2px 0 8px; opacity: 0.85; line-height: 1.6 }
-.bots-status a { color: #ffd27a }
-.bots-list { margin-top: 10px }
-.bots-list .none { opacity: 0.5 }
-.bots-list .group { display: flex; gap: 6px; align-items: center; margin: 10px 0 4px; opacity: 0.75 }
-.bots-list .group span { flex: 1 }
-.bots-list .bot { padding: 6px 0; border-top: 1px solid rgba(255, 255, 255, 0.08) }
-.bots-list .name { font-size: 11px; letter-spacing: 0.2em }
-.bots-list .what, .bots-list .note { opacity: 0.7; letter-spacing: 0.08em }
-.bots-list .note { text-transform: none; opacity: 0.55 }
-.bots-list .row { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap }
-.bots-list button { font-size: 9px; padding: 2px 6px }
-`

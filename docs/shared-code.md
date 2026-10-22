@@ -51,5 +51,5 @@ Remaining overlap, checked against [sfx-inventory.md](sfx-inventory.md); none is
   played takes are library ids (`usedBy: ["carrier"]`, reused in place). It keeps its own playback chain for recorded
   slots (`sfx-bank.ts`: a 3D listener with HRTF panners, distance gain, air absorption, travel delay, a 6-voice priority
   budget): the runtime's `spatialize` is a top-down 2D model (ear height, 260 m/s Doppler, 150 m default range) and
-  would change how they sound. Its picking board (SOUNDS tab, picks.json, ratings) is the curation step for its
+  would change how they sound. Its picking board (the Sounds tab of its dev panel, the shared `LabPanel` with `buttons` and `readout` rows; picks.json, ratings) is the curation step for its
   candidate takes. To share further: a 3D listener in the runtime, then `playCue` for the bank.

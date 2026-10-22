@@ -31,18 +31,35 @@ export type LabControl = {
   | { type?: "select"; options: readonly { value: number | string; label: string }[] }
   | { type?: "toggle"; on?: number; off?: number }
   | { type: "action"; run: (button: HTMLButtonElement) => void | Promise<void> }
+  /**
+   * A live value the panel shows and nobody edits (knobs' readout rows): a number or text (`watch`), rows of cells or a
+   * key-value record (`table`), or a bar over `scale` (`meter`). `read` is polled only while the row is on screen.
+   */
+  | { type: "readout"; read: () => LabReadoutValue; display?: "watch" | "table" | "meter"; columns?: readonly string[]; scale?: LabReadoutScale; hz?: number }
+  /** A row of buttons (knobs' toolbar): commands that hold no value, such as presets, spawns or auditions. */
+  | { type: "buttons"; items: readonly LabButton[] }
   /** A colour over 0…1. The setting holds the stops as JSON text (see `ramps.ts`). */
   | { type: "gradient"; space?: GradientSpace; presets?: Readonly<Record<string, readonly GradientStop[]>> }
   /** A number over 0…1, y in `range` ([0, 1] by default). The setting holds the points as JSON text (see `ramps.ts`). */
   | { type: "curve"; range?: readonly [number, number]; interp?: CurveInterp; presets?: Readonly<Record<string, readonly CurvePoint[]>> }
 )
+/** What a readout row shows: a number or text, table rows (cells by column) or a key-value record. */
+export type LabReadoutValue = number | string | readonly (readonly (string | number)[])[] | Readonly<Record<string, string | number>>
+/** A meter's range and where it turns the warning and critical colours. */
+export type LabReadoutScale = { min: number; max: number; warn?: number; critical?: number }
+/** One button of a `buttons` row; its key is unique across the panel. */
+export type LabButton = { key: string; label: string; run: () => void | Promise<void>; enabled?: (settings: Readonly<LabSettings>) => boolean }
+/** Rows that hold a setting: everything but actions, readouts and button rows. */
+export type LabValueControl = Exclude<LabControl, { type: "action" | "readout" | "buttons" }>
+export const holdsValue = (control: LabControl): control is LabValueControl =>
+  control.type !== "action" && control.type !== "readout" && control.type !== "buttons"
 /** Gradient and curve rows: edited in knobs' ramp editors, never stepped, cycled or randomized by the Lab itself. */
 export const isRampControl = (control: LabControl): control is Extract<LabControl, { type: "gradient" | "curve" }> =>
   control.type === "gradient" || control.type === "curve"
 /** On/off rows: what is left once actions, ranges, choices and ramps are set aside. */
-export type LabSwitch = Exclude<LabControl, { type: "action" | "gradient" | "curve" } | { min: number } | { options: readonly unknown[] }>
+export type LabSwitch = Exclude<LabControl, { type: "action" | "readout" | "buttons" | "gradient" | "curve" } | { min: number } | { options: readonly unknown[] }>
 export const isSwitchControl = (control: LabControl): control is LabSwitch =>
-  control.type !== "action" && !isRampControl(control) && !("min" in control) && !("options" in control)
+  holdsValue(control) && !isRampControl(control) && !("min" in control) && !("options" in control)
 export type LabRow = { group: string; control?: LabControl }
 /**
  * A Details tab (the inspector layout): the groups it shows, each by its id or as `[id, label]` when the tab makes part
@@ -135,7 +152,7 @@ export class LabNavigation {
   }
 
   isModified(control: LabControl): boolean {
-    if (control.type === "action" || control.derived || !(control.key in this.defaults)) return false
+    if (!holdsValue(control) || control.derived || !(control.key in this.defaults)) return false
     const value = this.settings[control.key], initial = this.defaults[control.key]
     if (typeof value === "number" && typeof initial === "number") {
       const step = "min" in control ? control.step ?? 0.01 : 1e-6
@@ -165,14 +182,14 @@ export class LabNavigation {
   }
   jump(row: LabRow) { this.folded.delete(row.group); this.active = row }
   set(control: LabControl, value: LabValue) {
-    if (control.type === "action") return
+    if (!holdsValue(control)) return
     this.settings[control.key] = value
     control.change?.(value)
     this.change?.(control.key, value)
   }
   adjust(direction: number, shift = false, alt = false) {
     const c = this.active?.control
-    if (!c || c.type === "action" || isRampControl(c) || c.enabled?.(this.settings) === false) return
+    if (!c || !holdsValue(c) || isRampControl(c) || c.enabled?.(this.settings) === false) return
     if ("min" in c) {
       const delta = direction * (c.step ?? .01) * (shift ? 10 : 1) * (alt ? 0.1 : 1)
       this.set(c, Number(Math.max(c.min, Math.min(c.max, Number(this.settings[c.key]) + delta)).toPrecision(12)))

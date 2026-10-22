@@ -1,37 +1,23 @@
 import { bindVolumeControls } from "@arcade/kit/audio/volume"
+import { cameraShakeControls, cameraShakeDefaults } from "@arcade/kit/client/camera"
+import { keyLabelSetting } from "@arcade/kit/client/controls"
 import type { GameQuality } from "@arcade/kit/client/quality"
-import { LabPanel } from "@arcade/kit/lab-panel"
 import { mixer } from "../audio/mixer"
 import type { CarrierQuality } from "../quality"
-import type { DebugTab } from "./debug-menu"
+import { SHAKE } from "../render/camera"
+import type { DevSection } from "./dev-panel"
 
-/** Stylesheets the shared panel (and knobs, which draws it) put in the document head; the debug menu is a shadow root. */
-const PANEL_STYLES = "style[data-knobs-style], style[data-knobs-preset], style[data-lab-knobs], style[data-lab-panel-css]"
-
-/** VIEW tab: the quality tier and player volume (Auto adapts resolution and bloom to the GPU; choices are saved for the game). */
-export class ViewLab {
-  private panel: LabPanel | null = null
-
-  constructor(private opts: { quality: GameQuality<CarrierQuality>; close: () => void; release: () => void }) {}
-
-  readonly tab: DebugTab = {
+/**
+ * VIEW: the quality tier and player volume (Auto adapts resolution and bloom to the GPU; choices are saved for the game),
+ * the shared Key labels choice (prompts name QWERTY keys unless the player picks their own layout) and the shared camera
+ * shake every rig reads (`SHAKE`, src/render/camera.ts; Carrier's TraumaShake reads only the scale and reduced motion).
+ */
+export function viewSection(quality: GameQuality<CarrierQuality>): DevSection {
+  return {
     id: "view",
-    label: "View",
-    mount: (el) => {
-      el.replaceChildren()
-      const panel = new LabPanel({}, [], new URLSearchParams(), this.opts.release, {
-        layout: "inspector",
-        capture: "focus",
-        open: true,
-        presets: false,
-        groupActions: false,
-        pill: false,
-        variants: false,
-        onToggle: (visible) => {
-          if (!visible) this.opts.close()
-        },
-      })
-      this.opts.quality.addTo(panel)
+    tab: "Game",
+    bind: (panel) => {
+      quality.addTo(panel)
       const mix = mixer()
       bindVolumeControls(panel, {
         volumes: mix.volumes,
@@ -40,13 +26,10 @@ export class ViewLab {
         setMuted: (m) => mix.setMuted(m),
         onChange: () => mix.setVolumes(),
       })
-      for (const s of document.head.querySelectorAll(PANEL_STYLES)) el.append(s.cloneNode(true))
-      el.append(panel.host)
-      this.panel = panel
-    },
-    unmount: () => {
-      this.panel?.dispose()
-      this.panel = null
+      const keys = keyLabelSetting("Controls")
+      panel.addControls(keys.settings, [keys.control], keys.defaults)
+      const shake = cameraShakeControls.filter((c) => c.key === "shakeScale" || c.key === "reduceMotion")
+      panel.addControls(SHAKE, shake, cameraShakeDefaults())
     },
   }
 }

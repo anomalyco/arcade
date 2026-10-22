@@ -22,7 +22,7 @@ import {
   type FoliageLighting,
 } from "../gpu/foliage"
 import { LOOK_PRESETS, LOOK_PRESET_IDS, resolveLookPresetId, type LookGroup } from "../gpu/look"
-import type { LabPanel, LabValue } from "../lab-panel"
+import { holdsValue, type LabPanel, type LabValue } from "../lab-panel"
 import { getTwoFingerScrollMode, setTwoFingerScrollMode } from "../orbit-gestures"
 import type { LabCommandContext, LabCommandRegistry } from "./commands"
 import type { createEffects } from "./effects"
@@ -208,8 +208,8 @@ export function registerWorkbenchCommands(commands: LabCommandRegistry, host: Wo
       return sec.id
     }
     const active = activeSection()
-    if (active.controls.some(c => c.key === key && c.type !== "action")) return active.id
-    const owner = sections.find(s => s.controls.some(c => c.key === key && c.type !== "action"))
+    if (active.controls.some(c => c.key === key && holdsValue(c))) return active.id
+    const owner = sections.find(s => s.controls.some(c => c.key === key && holdsValue(c)))
     if (!owner) throw new Error(`Unknown setting "${key}".`)
     return owner.id
   }

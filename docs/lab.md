@@ -226,6 +226,12 @@ it, and an open game overlay keeps every key from the game.
 - Put every tunable visual, material, physics and audio value in a typed settings object consumed by the real code.
   Bind it with `LabPanel.addControls(settings, controls)` or a `LabSection`'s `settings`/`controls`. `LabSettings`
   is a primitive-valued record, not domain validation; keep stronger types and validation at the production boundary.
+- Commands and live values belong on the panel too. A `type: "buttons"` row is a row of buttons (knobs' toolbar: presets,
+  spawns, auditions, Broadcast; each item's `enabled` gates it); a `type: "readout"` row shows a live value nobody edits
+  (knobs' readouts: text or a number, a `table` of rows or a key-value record, a `meter` over `scale`), and its `read`
+  is polled only while the row is on screen. Neither holds a setting (`holdsValue`), so Reset, Random, Copy and
+  variants skip them; `scene.get-param` reads a readout and `scene.set-param` presses a button by key or label.
+  Carrier's dev panel (`games/carrier/src/dev/dev-panel.ts`) is built from them.
 - Use `LabControl` ranges, typed select options, toggles and actions. Supply concise labels, named groups, numeric
   `min`/`max`/`step` and explicit `unit`. Use `unit: ""` for seeds or unitless values and `"×"` for multipliers.
   Inferred units can be wrong: shard size scaling is not metres, and radians must not be labelled degrees.

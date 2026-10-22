@@ -372,12 +372,12 @@ check(miss2 < 6, `run 2: the burst is within a step of the predicted one (${miss
 if (hit2) console.log(`run 2: deck strike ${Math.hypot(hit2.x - want2.local[0]!, hit2.y - want2.local[1]!, hit2.z - want2.local[2]!).toFixed(2)} m from the predicted point`)
 await js("globalThis.__look = null")
 
-// ---- 3. the SIGHT tab ------------------------------------------------------------------------------------------------
+// ---- 3. the bombsight on the dev panel ---------------------------------------------------------------------------------------------
 await js("c.debugMenu.open('sight')")
 await page.waitForTimeout(800)
 await shot("13-lab-sight-tab")
-const rows = await page.evaluate(() => document.querySelector("[data-debug]")?.shadowRoot?.querySelectorAll("[data-lab-panel] .knobs-slider, [data-lab-panel] .knobs-row").length ?? 0)
-check(rows >= 8, `the SIGHT tab shows the bombsight settings on the Lab panel (${rows} rows)`)
+const rows = await page.evaluate(() => document.querySelector("[data-carrier-dev]")?.querySelectorAll('.knobs-row[data-field^="sight"]').length ?? 0)
+check(rows >= 8, `the Flight tab shows the bombsight settings on the dev panel (${rows} rows)`)
 
 console.log(logs.length ? `console:\n${logs.slice(0, 20).join("\n")}` : "no console errors")
 await browser.close()

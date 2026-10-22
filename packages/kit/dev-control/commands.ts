@@ -7,7 +7,7 @@ import {
 } from "../gpu/look"
 import type { LabCommandRegistry } from "../lab-commands"
 import { parseCurve, parseGradient } from "../ramps"
-import { formatLabValue, inferControlUnit, type LabControl, type LabPanel, type LabRow, type LabValue } from "../lab-panel"
+import { formatLabValue, holdsValue, inferControlUnit, type LabControl, type LabPanel, type LabRow, type LabValue } from "../lab-panel"
 import type { Stage } from "../lab/stage"
 import type { PanelLabCommandOptions, StageCameraCommandOptions } from "./types"
 
@@ -186,8 +186,16 @@ export function findControlRow(
   return null
 }
 
+/** What `scene.get-param` says about a row without a value: an action, a readout's current value or a button row's buttons. */
+function describeValueless(c: LabControl, group: string): Record<string, unknown> {
+  const base = { key: c.key, label: c.label, group, type: c.type }
+  if (c.type === "readout") return { ...base, value: c.read() }
+  if (c.type === "buttons") return { ...base, buttons: c.items.map(i => ({ key: i.key, label: i.label })) }
+  return base
+}
+
 export function coerceControlValue(control: LabControl, rawValue: unknown): LabValue {
-  if (control.type === "action") return true
+  if (!holdsValue(control)) return true
   if (control.type === "curve" || control.type === "gradient") {
     const value = control.type === "curve" ? parseCurve(rawValue, [], { range: control.range }) : parseGradient(rawValue, [])
     if (value.length < 2) {
@@ -257,8 +265,8 @@ export function registerPanelLabCommands(commands: LabCommandRegistry, opts: Pan
             for (const row of panel.navigation.rows) {
               const c = row.control
               if (!c) continue
-              if (c.type === "action") {
-                controls.push({ key: c.key, label: c.label, group: row.group, type: "action" })
+              if (!holdsValue(c)) {
+                controls.push(describeValueless(c, row.group))
                 continue
               }
               const val = panel.navigation.settings[c.key]!
@@ -282,9 +290,7 @@ export function registerPanelLabCommands(commands: LabCommandRegistry, opts: Pan
         const found = findControlRow(panels, rawPath)
         if (found) {
           const { panel, row, control: c } = found
-          if (c.type === "action") {
-            return { key: c.key, label: c.label, group: row.group, type: "action" }
-          }
+          if (!holdsValue(c)) return describeValueless(c, row.group)
           const val = panel.navigation.settings[c.key]!
           return {
             key: c.key,
@@ -339,6 +345,17 @@ export function registerPanelLabCommands(commands: LabCommandRegistry, opts: Pan
             void render?.()
             return { key: c.key, label: c.label, group: row.group, action: "triggered" }
           }
+          if (c.type === "buttons") {
+            const wanted = String(rawValue ?? "").toLowerCase()
+            const item = c.items.find(i => i.key.toLowerCase() === wanted || i.label.toLowerCase() === wanted)
+            if (!item) throw new Error(`"${c.label}" has no button "${String(rawValue)}". Buttons: ${c.items.map(i => i.key).join(", ")}.`)
+            if (item.enabled?.(panel.navigation.settings) === false) throw new Error(`"${item.label}" is unavailable now.`)
+            void item.run()
+            panel.sync()
+            void render?.()
+            return { key: c.key, label: item.label, group: row.group, action: "triggered", button: item.key }
+          }
+          if (c.type === "readout") throw new Error(`"${c.label}" is a readout: it can be read, not set.`)
           const prev = panel.navigation.settings[c.key]
           const next = coerceControlValue(c, rawValue)
           panel.navigation.set(c, next)
@@ -423,7 +440,7 @@ export function registerPanelLabCommands(commands: LabCommandRegistry, opts: Pan
         if (!key || val === undefined) throw new Error("look.set requires key and value.")
         const panels = getPanels()
         const found = findControlRow(panels, key)
-        if (found && found.control.type !== "action") {
+        if (found && holdsValue(found.control)) {
           const before = found.panel.navigation.settings[found.control.key]
           const next = coerceControlValue(found.control, val)
           found.panel.navigation.set(found.control, next)
