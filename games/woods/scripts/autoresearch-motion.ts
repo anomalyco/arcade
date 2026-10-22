@@ -27,11 +27,13 @@ export async function motionProbe() {
   w.debug.dark = w.state.players.slice(1).map((p: any) => p.id)
   w.camera.flashlight = true; w.state.players[0].light = true
   w.setPose(start.x, start.z, 0.15, -0.32)
+  renderer.temporal.frameIndex = 0
   for (let i = 0; i < 120; i++) { w.__putTime(12); w.step(1000 / 60); await device.queue.onSubmittedWorkDone() }
   const frames: { pops: number; valid: number; flicker: number }[] = []
   try {
     for (let f = 0; f <= 60; f++) {
-      w.setPose(start.x, start.z - 2.1 * f / 60, 0.15, -0.32)
+      // Continuous movement must not invoke setPose's camera-cut/exposure reset on every sample.
+      w.session.teleport(start.x, start.z - 2.1 * f / 60)
       w.__putTime(12 + f / 60); w.step(1000 / 60)
       const tex = ctx.getCurrentTexture(), enc = device.createCommandEncoder()
       enc.copyTextureToBuffer({ texture: tex }, { buffer: colour, bytesPerRow: row }, [W, H])

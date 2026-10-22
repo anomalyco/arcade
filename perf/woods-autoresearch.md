@@ -15,7 +15,7 @@ uv run games/woods/scripts/autoresearch-score.py captures/woods-autoresearch/run
 HiveMind may spill an occupied mini to another worker. Check its receipt and the adapter in `capture.json`; do not label
 Pro results as mini timings. Browser jobs fetch `captures/` automatically. Give the shell at least 15 minutes per full run.
 
-`AUTORESEARCH_VARIANTS` accepts JSON rows `{id, look?, quality?}`. Each row resets to shipped defaults; changes never stack.
+`AUTORESEARCH_VARIANTS` accepts JSON rows `{id, look?, quality?, debug?}`. Each row resets to shipped defaults; changes never stack.
 `AUTORESEARCH_SHOTS` selects a comma list. `AUTORESEARCH_MOTION=0` skips the temporal probe for early-rejected candidates.
 Capture and score files retain every view, raw GPU sample, pose, torch, region and constraint result.
 `AUTORESEARCH_ZERO_CONE=off` serves a control bundle with only experiment 8's exact-zero guard removed (asserts exactly
@@ -145,6 +145,68 @@ deferred at the mandatory paint-over checkpoint.
 - [Paint-over checkpoint](https://studio.taila8e7c7.ts.net:8444/raw/woods-2026-10-21/autoresearch/exposure-checkpoint/index.html)
 - [Full exposure report](https://studio.taila8e7c7.ts.net:8444/raw/woods-2026-10-21/autoresearch/EXPOSURE-REPORT.md)
 - [Live retained preview](https://studio.taila8e7c7.ts.net:5322/arcade/woods/?quality=high)
+
+## Round 3: exposure reset, near-field fog and indexed templates
+
+Rebased onto Woods' updated people and server RPC fix (`4f529455`). Centre meter restores its 0.35/1.8 s response
+times in one selection; the other model is labelled **Night log mean**. Benchmark source/output paths resolve from
+`import.meta.dir`. Camera cuts invalidate cached and in-flight meter reads; short explicit teleports, regeneration
+and eye jumps over 3 m reset exposure and snap to the first new valid meter reading. The Metal probe passes all four
+reset cases with zero first-reading stop error.
+
+Experiments #22–32 stopped after eleven trials. Near-camera density falloff (8/12 m), stronger short-range forward
+phase, height-dependent thinning and the existing 2 m beam-near radius all preserve a valid 60 m signal, but worsen
+the fixed target score. Clearing the air opens auto exposure, lifting the surroundings. A −0.25 stop compensation
+restores darker forest frames but makes camp darker too: density-comp distance 0.069345, radius-comp 0.068900 versus
+0.067322 baseline; camp darkness 31.7% versus 24.8%. None becomes the default. Exact settings, images and the trial
+patch remain in the ledger/checkpoint; the production fog shader and controls retain their pre-trial state.
+
+Three paired removal rounds identify foliage as the main cost: l4 all 15.23 ms, no fog 13.09, no shadow sampling
+14.59, no ferns 10.17, no trees 10.20. These removal deltas overlap and cannot be summed. A zero-alpha early return
+regressed; specialized foliage shaders and instance culling were removed to keep the retained optimization small.
+
+**Retained #32: byte-exact vertex indexing of instanced forest templates.** Deduplicate complete 32-byte vertices,
+preserving triangle order, normals and UV seams. Raster draws use unique vertices plus uint32 indices; shadow draws
+keep the original expanded buffers. Static meshes retain their existing path. Additional raster buffers trade memory
+and upload-time CPU work for vertex reuse; neither memory nor whole-application frame latency is claimed improved.
+
+Final auto-exposure run (`index-final`): mini/Metal, High, 1600×900, seed 1987, time 12, 1440 settling frames,
+one GPU warmup plus nine samples per view. Every one of the 14 candidate view medians is below 12 ms (8.42–11.91).
+
+| View | Before GPU ms | Indexed GPU ms | Candidate MAD ms | Mean absolute pixel difference /255 |
+|---|---:|---:|---:|---:|
+| Four lights (l4) | 15.1255 | 11.2989 | 0.0116 | 0.1102 |
+| Own beam (k6) | 12.5640 | 9.4211 | 0.0051 | 0.0834 |
+| Torch off (k1) | 11.4517 | 9.4401 | 0.0142 | 0.0021 |
+
+This is a **25.3% reduction** in the l4 renderer interval. GPU timing excludes CPU work and the separate shadow-update
+submission. Isolated fixed-exposure control/candidate/control brackets independently measured l4
+15.095/11.315/15.120 ms, k6 12.514/9.400/12.518, k1 11.441/9.421/11.429.
+
+Eight-view distance is effectively stable, 0.06733084→0.06733821 (+0.011%). Final l4/k6/k1 dark coverage is
+45.769/8.273/25.560%; p5 is 0.01790/0.03867/0.02635. The original dark-monotone and p5 guards **still fail**;
+thresholds and scoring targets did not move. Signal contrast is 113.74%, delta 0.08319, with 56/80 depth-visible
+samples. Geometry is byte-equivalent, not a claim of identical final pixels: temporal/raster noise remains.
+
+The capture harness now aligns Halton phase explicitly; dropping temporal history alone does not reset its phase.
+Earlier culling/indexing screen edge differences therefore overstate the candidate's pixel impact. The walking
+probe also moves the solo state continuously rather than calling the camera-cut API on every frame; older motion
+figures from this round are camera-cut stress measurements, not a continuous-walk comparison.
+Corrected continuous-walk control/indexed/control: 1645.43/1644.90/1643.25 pops per frame; flicker
+0.404860/0.404849/0.404833, with ≥91.78% reprojection coverage. The difference is within repeat noise.
+The same short final bracket measured l4 15.108/11.330/15.153 ms, k6 12.546/9.431/12.534,
+k1 11.439/9.414/11.609. Its shorter settling is used for timing only, not the final tone comparison.
+
+Checks: packed vertex reconstruction/seam test, exposure tests and classic fog pin pass (27 test entries; 14 Naga
+validator cases skip because Naga is absent). Woods app/scripts and server typechecks pass after generating the
+build ID. The final Metal run reports zero browser errors. Earlier Woods tests pass after the one distant-simulation
+case exceeded five seconds under load and passed its targeted 30-second rerun. Room ws-smoke passes all five
+assertions at 3.18 KB/s/client; the post-reload Worker log is free of the inherited `JsRpcPromise.then` error.
+
+- [Before/after and fresh paint-over checkpoint](https://studio.taila8e7c7.ts.net:8444/raw/woods-2026-10-21/autoresearch/index-checkpoint/index.html)
+- [Full ledger](https://studio.taila8e7c7.ts.net:8444/raw/woods-2026-10-21/autoresearch/LEDGER.md)
+- [Look preview](https://studio.taila8e7c7.ts.net:5322/arcade/woods/?quality=high)
+- [Room preview](https://studio.taila8e7c7.ts.net:5298/arcade/woods/)
 
 ## Source findings
 

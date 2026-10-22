@@ -92,7 +92,7 @@ for variant, records in manifest["variants"].items():
     tones = {}
     target_tones = {}
     for name in records:
-        if name in ["motion", "adaptation"]: continue
+        if name in ["motion", "adaptation", "profile"]: continue
         current = image(directory / f"{name}.png")
         tones[name] = tone(current[22:338, 20:620])
         target = targets / "paintover" / f"po-{NAMES[name]}.jpg" if name in NAMES else targets / "look/checkpoints/2/renders" / f"po-{name}.png"
@@ -102,7 +102,7 @@ for variant, records in manifest["variants"].items():
             target_tones[name] = tone(reference[22:338, 20:620])
     darks = [tones[f"l{n}"]["dark_pct"] for n in [0, 1, 2, 4] if f"l{n}" in tones]
     strict_dark = all(b >= a for a, b in zip(darks, darks[1:])) if len(darks) == 4 else None
-    gpu = [r["gpu"]["median"] for name, r in records.items() if r.get("gpu")]
+    gpu = [r["gpu"]["median"] for name, r in records.items() if isinstance(r, dict) and r.get("gpu")]
     sig = signal(records, directory)
     between = {}
     if baseline and all((baseline / f"l{n}.png").exists() for n in [0, 4]):

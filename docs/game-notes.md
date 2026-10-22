@@ -14,6 +14,13 @@ proven animation techniques to animation.md, not here.
 
 ## Proving a change
 
+- **Index byte-identical forest vertices (Woods).** `forest/index-mesh.ts` deduplicates the complete packed vertex,
+  preserving triangle order and UV/normal seams. Instanced raster draws reuse the vertices; shadow casters keep
+  their original buffers. On mini/Metal at 1600×900 High, four-light renderer GPU time fell 15.13→11.30 ms (25.3%);
+  all 14 view medians were below 12 ms. Extra raster buffers cost memory and upload work; CPU and separate shadow
+  submission are outside that timing. `perf/woods-autoresearch.md` records brackets and stable tone scores.
+  Pixel comparisons must align TAA Halton phase as well as reset history. Continuous-motion probes must not call
+  a teleport API that resets exposure/history each frame.
 - **Skip exactly-zero fog samples before bank work (Woods).** The `torches` opt-in in `gpu/fog-scatter.ts` rejects a
   zero cone after shadowing, before terrain-relative bank sampling and extinction. Bracketed mini controls put the
   four-light view at 16.42–17.75 ms versus 15.35 ms with the early-out; marker cost was inconclusive. Fourteen fixed

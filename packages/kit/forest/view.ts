@@ -23,6 +23,7 @@ import { ALPHA_COVERAGE_BASE } from "./alpha-coverage"
 import { GROUND_CELL, GROUND_CELLS, WOODS_FLOATS, batchHooks, cutoutDepthWgsl, forestHooks, forestShadowInstanceWgsl, moteShader, skyShader, treeVertexWgsl, woodsUniformWgsl } from "./shaders"
 import { forestPost } from "./post"
 import { adaptForestExposure, forestExposureTarget } from "./exposure"
+import { indexForestMesh } from "./index-mesh"
 import { FOREST_QUALITY, createForestLookSettings, forestLookControls, kelvinColor, torchProfile, type ForestLookSettings, type ForestQuality } from "./settings"
 import type { QualityTier } from "../quality"
 import type { LabControl } from "../lab-navigation"
@@ -501,12 +502,21 @@ function invert(m: ArrayLike<number>, out: Float32Array) {
 
 // ------------------------------------------------------------------ passes
 
-type GpuMesh = { buffer: GPUBuffer; count: number } | null
-const gpuMesh = (device: GPUDevice, data: ArrayBuffer): GpuMesh => {
+type GpuMesh = { buffer: GPUBuffer; count: number; indexed?: { vertices: GPUBuffer; indices: GPUBuffer } } | null
+const gpuMesh = (device: GPUDevice, data: ArrayBuffer, indexed = false): GpuMesh => {
   if (!data.byteLength) return null
   const buffer = device.createBuffer({ size: data.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST })
   device.queue.writeBuffer(buffer, 0, data)
-  return { buffer, count: data.byteLength / 32 }
+  // Shadow casters still consume the expanded buffer; indexing is raster-only.
+  const mesh: NonNullable<GpuMesh> = { buffer, count: data.byteLength / 32 }
+  if (indexed) {
+    const packed = indexForestMesh(data)
+    const vertices = device.createBuffer({ size: packed.vertices.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST })
+    const indices = device.createBuffer({ size: packed.indices.byteLength, usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST })
+    device.queue.writeBuffer(vertices, 0, packed.vertices); device.queue.writeBuffer(indices, 0, packed.indices)
+    mesh.indexed = { vertices, indices }
+  }
+  return mesh
 }
 
 const INSTANCE_LAYOUT: GPUVertexBufferLayout = { arrayStride: INSTANCE_FLOATS * 4, stepMode: "instance", attributes: [{ shaderLocation: 8, offset: 0, format: "float32x4" }, { shaderLocation: 9, offset: 16, format: "float32x4" }] }
@@ -530,7 +540,7 @@ class ForestPass implements ScenePass {
   private trunkGrid = new Map<number, number[]>()
   readonly stats = { chunks: 0, instances: 0, drawCalls: 0, triangles: 0 }
   /** Profiling switches (automation only): draw statics, and each template kind. */
-  readonly debug = { statics: true, tree: true, fern: true, rock: true, floor: true, prepass: true }
+  readonly debug = { statics: true, tree: true, fern: true, rock: true, floor: true, prepass: true, indexed: true }
 
   constructor(private ctx: PassContext, private build: ForestBuild, textures: ForestTextures, private world: ForestWorld) {
     const d = ctx.device
@@ -570,8 +580,8 @@ class ForestPass implements ScenePass {
       { binding: 4, resource: field.createView() },
       { binding: 5, resource: d.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" }) },
     ] })
-    const pair = (m: { opaque: ArrayBuffer; masked: ArrayBuffer }) => ({ opaque: gpuMesh(d, m.opaque), masked: gpuMesh(d, m.masked) })
-    this.templates = build.templates.map(t => ({ near: pair(t.near), far: t.far ? pair(t.far) : null, nearDist: t.nearDist, maxDist: t.maxDist, kind: t.kind }))
+    const pair = (m: { opaque: ArrayBuffer; masked: ArrayBuffer }, indexed = false) => ({ opaque: gpuMesh(d, m.opaque, indexed), masked: gpuMesh(d, m.masked, indexed) })
+    this.templates = build.templates.map(t => ({ near: pair(t.near, true), far: t.far ? pair(t.far, true) : null, nearDist: t.nearDist, maxDist: t.maxDist, kind: t.kind }))
     this.chunks = build.chunks.map(c => ({ box: c.box, cx: c.x + CHUNK / 2, cz: c.z + CHUNK / 2, near: pair(c.near), far: pair(c.far), groups: c.groups }))
     this.water = gpuMesh(d, build.water)
     this.instanceBuf = d.createBuffer({ size: this.instanceData.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST })
@@ -589,7 +599,7 @@ class ForestPass implements ScenePass {
     this.instanceBuf.destroy()
     this.field.destroy()
     const meshes = [this.water, ...this.templates.flatMap(t => [t.near.opaque, t.near.masked, t.far?.opaque ?? null, t.far?.masked ?? null]), ...this.chunks.flatMap(c => [c.near.opaque, c.near.masked, c.far.opaque, c.far.masked])]
-    for (const m of meshes) m?.buffer.destroy()
+    for (const m of meshes) { m?.buffer.destroy(); m?.indexed?.vertices.destroy(); m?.indexed?.indices.destroy() }
   }
 
   /**
@@ -690,7 +700,13 @@ class ForestPass implements ScenePass {
       if (this.debug.statics) for (const s of this.statics) if (s.masked === masked && s.inView) { pass.setVertexBuffer(0, s.mesh.buffer); pass.draw(s.mesh.count) }
       if (phase === "opaque" && this.water) { pass.setVertexBuffer(0, this.water.buffer); pass.draw(this.water.count) }
       pass.setPipeline(phase === "opaque" ? this.pipes.treeOpaque : phase === "depth" ? this.pipes.treeMaskedDepth : phase === "single" ? this.pipes.treeMaskedSingle : this.pipes.treeMasked)
-      for (const d of this.draws) if (d.masked === masked && drawn(d)) { pass.setVertexBuffer(0, d.mesh.buffer); pass.draw(d.mesh.count, d.count - d.hidden, 0, d.first + d.hidden) }
+      for (const d of this.draws) if (d.masked === masked && drawn(d)) {
+        const indexed = this.debug.indexed ? d.mesh.indexed : undefined
+        pass.setVertexBuffer(0, indexed?.vertices ?? d.mesh.buffer)
+        if (indexed) pass.setIndexBuffer(indexed.indices, "uint32")
+        if (indexed) pass.drawIndexed(d.mesh.count, d.count - d.hidden, 0, 0, d.first + d.hidden)
+        else pass.draw(d.mesh.count, d.count - d.hidden, 0, d.first + d.hidden)
+      }
     }
   }
 

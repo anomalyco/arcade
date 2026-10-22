@@ -1,6 +1,7 @@
 import type { ForestFrameInput, ForestView } from "../../../packages/kit/forest/view"
+import type { WoodsWorld } from "../shared/world"
 
-declare const woods: { view: { forest: ForestView }; __input: ForestFrameInput; step(ms: number): void; setPose(x: number, z: number, yaw: number, pitch?: number): void }
+declare const woods: { world: WoodsWorld; view: { forest: ForestView; setWorld(world: WoodsWorld): void }; __input: ForestFrameInput; step(ms: number): void; setPose(x: number, z: number, yaw: number, pitch?: number): void }
 
 /** Real GPU readback regression: a queued old scene must not survive a cut; the first new meter snaps. */
 export async function resetProbe() {
@@ -29,5 +30,9 @@ export async function resetProbe() {
   f.update(woods.__input)
   const error = Math.abs(Math.log2(f.camera.exposure) - Math.max(-s.adaptRange, Math.min(s.adaptLift, target)))
   check(error < 1e-8, "first valid reading adapted instead of snapping")
-  return { staleReadDiscarded: true, shortTeleportReset: true, firstReadingErrorStops: error, frames }
+  f.update({ ...woods.__input, eye: [eye[0] + 4, eye[1], eye[2]] })
+  check(renderer.sceneMeter === null, "authoritative camera jump kept the old meter")
+  woods.view.setWorld(woods.world)
+  check(f.camera.exposure === 1 && renderer.sceneMeter === null, "world rebuild failed to reset exposure")
+  return { staleReadDiscarded: true, shortTeleportReset: true, cameraJumpReset: true, regenerationReset: true, firstReadingErrorStops: error, frames }
 }
