@@ -14,6 +14,13 @@ proven animation techniques to animation.md, not here.
 
 ## Proving a change
 
+- **Bound bloom by local radiance after a removal probe (Woods, round 6 candidate).** The close-trunk halo survived
+  disabling air scatter but vanished without bloom/halation. `forest/post.ts` caps bloom to 5% of local HDR only
+  when the highlight shoulder is enabled. Right-edge ROI luminance .263855 → .119581, close to the no-bloom
+  reference .119031; fixed bark clipping stays at zero. This is a radiance gate, not silhouette/depth rejection,
+  and it reduces other source halos too. Six wide-view p5 guards and the 60 m signal pass. The held-map proof
+  must wait for its asynchronous print before stepping the final frames. See `perf/woods-autoresearch.md`.
+
 - **Separate highlight clipping from bloom, and foliage geometry from shadow motion (Woods, round 5 candidate).**
   The opt-in log shoulder in `forest/post.ts` bounds the peak while preserving RGB ratios: fixed close-bark clipping
   9.52% → 0%, hotspot high-pass detail 3.24×, equal exposure. Bloom still leaves a pale patch relative to the target.

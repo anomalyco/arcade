@@ -330,6 +330,12 @@ const material = /* wgsl */ `
     n = nn;
     woodsAo = mix(0.5, 1.0, wts.r);
     pbrRough = 0.62;
+  } else if (mat == ${MAT.cable}) {
+    albedo = vec3f(0.012, 0.014, 0.013);
+    pbrRough = 0.24;
+  } else if (mat == ${MAT.concrete}) {
+    albedo = vec3f(0.17, 0.175, 0.16) * (0.8 + 0.3 * noise2(o.world.xz * 24.0));
+    pbrRough = 0.92;
   } else if (mat == ${MAT.water}) {
     let t = F.cam.w;
     let p = o.world.xz;

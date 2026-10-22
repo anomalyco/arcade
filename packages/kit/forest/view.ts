@@ -376,6 +376,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
       const k = l.kind === "bulb" ? s.stringLights : s.windows
       if (k <= 0) continue
       // A string bulb is a few candela: a faint halo, not a ball of fog.
+      if (l.surfaceOnly) continue
       fogLamps.push({ id: 3000 + i, x: l.x, y: l.y, z: l.z, range: l.kind === "window" ? 9 : 4, color: l.color, intensity: l.power * k * (l.kind === "window" ? 3 : l.kind === "bulb" ? 1.2 : 5), size: l.kind === "window" ? 1 : 0.1,
         ...(l.cosOuter > 0 ? { axis: l.axis, cosOuter: l.cosOuter, cosInner: Math.min(0.999, l.cosOuter + 0.3) } : {}), uplight: 0.5 })
     }

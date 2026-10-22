@@ -45,7 +45,11 @@ export const forestPost = postShader(false, false, { chromatic: 0, bloom: 0.22, 
     hdr *= mix(1.0, min(1.0, scotopic / max(photo, 1e-6)), rod);
   }
   if ((nightFlags & 1u) != 0u) { hdr = mix(hdr, vec3f(dot(hdr, vec3f(0.2126, 0.7152, 0.0722))), rod * 0.8); }
-  let bloom = textureSample(bloomTex, samp, uv).rgb;
+  var bloom = textureSample(bloomTex, samp, uv).rgb;
+  // The Eyes shoulder keeps reflected hotspots on their surfaces. Bound the
+  // lens contribution by local scene radiance so a bright trunk cannot paint
+  // a pink disc over dark air. This is radiance gating, not a depth mask.
+  if ((nightFlags & 4u) != 0u) { bloom = min(bloom, max(hdr, vec3f(0.0)) * 0.05); }
   hdr += bloom * (grade.look.w + vec3f(1.0, 0.3, 0.1) * grade.look.z);
   hdr += vec3f(1.0, 0.97, 0.94) * grade.custom.y;
   var x = max(hdr * grade.frame.w, vec3f(0.0));

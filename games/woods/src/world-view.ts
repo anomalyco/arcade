@@ -87,8 +87,11 @@ export type WorldFrame = {
  * The world as the forest renderer draws it: the toy's adapter plus what only the picture needs. The camp's string
  * lights hang between posts at the span ends (the toy lists every bulb); each survey marker stands in a small clearing.
  */
-function forestWorld(world: WoodsWorld): ForestWorld {
+function forestWorld(world: WoodsWorld, campDetail = false): ForestWorld {
   const fw = toForestWorld(world)
+  // Presentation-only gathering point. The old adapter never supplied a fire
+  // pit, so the renderer's ring geometry and the paths to it could not appear.
+  if (campDetail && fw.camp) fw.camp = { ...fw.camp, props: [...(fw.camp.props ?? []), { kind: "fire-pit", x: world.camp.x - 4, z: world.camp.z + 2, yaw: 0 }] }
   const bulbs = world.lamps.filter((l) => l.kind === "string").sort((a, b) => a.x - b.x)
   const camp = fw.camp && bulbs.length > 1 ? (() => {
     const x0 = bulbs[0]!.x, x1 = bulbs[bulbs.length - 1]!.x, z = bulbs[0]!.z, top = Math.max(...bulbs.map((b) => b.y))
@@ -111,7 +114,7 @@ export class WorldView {
 
   /** Loads the forest's scanned assets and builds `world`. */
   static async create(gpu: { device: GPUDevice; context: GPUCanvasContext; format: GPUTextureFormat }, world: WoodsWorld, opts: { smoke?: boolean; quality?: QualityTier } = {}): Promise<WorldView> {
-    const forest = await createForestView(gpu, forestWorld(world), { assetRoot: import.meta.env.BASE_URL + "forest-assets/", smoke: !!opts.smoke, quality: opts.quality ?? "balanced", markPrefix: "woods" })
+    const forest = await createForestView(gpu, forestWorld(world), { assetRoot: import.meta.env.BASE_URL + "forest-assets/", smoke: !!opts.smoke, quality: opts.quality ?? "balanced", markPrefix: "woods", settings: { highlightShoulder: true } })
     const view = new WorldView(forest)
     view.models(world)
     return view
@@ -138,7 +141,7 @@ export class WorldView {
 
   /** Rebuilds the static world. Call again when the world is regenerated (trunk density, seed). */
   setWorld(world: WoodsWorld): void {
-    this.forest.setWorld(forestWorld(world))
+    this.forest.setWorld(forestWorld(world, this.forest.settings.campDetail))
     this.models(world)
     this.tapes.reset()
   }

@@ -120,6 +120,12 @@ for (const [name, setup] of Object.entries(stills)) {
   await settle(page, 60)
   await setup(page)
   await settle(page, 150)
+  // Printing runs on wall time, not the stepped clock. Its last texture may
+  // arrive after settling; draw again once the overlay can actually render.
+  if (name !== "down" && name !== "today") {
+    await page.waitForFunction(() => woods.held.debug.active, null, { timeout: 60000 })
+    await settle(page, 60)
+  }
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
   await page.screenshot({ path: `${out}/${name}.png` })
   const info = await page.evaluate(() => woods.held.debug)

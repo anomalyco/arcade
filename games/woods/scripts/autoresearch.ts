@@ -99,7 +99,7 @@ try {
     woods.__putTime = t => { fixedTime = t; woods.state.t = t }
     forest.update = f => { woods.__input = { ...f, time: fixedTime }; update(woods.__input) }
   })
-  const sources = Object.fromEntries(await Promise.all(["packages/kit/gpu/fog-scatter.ts", "packages/kit/gpu/lights/beam.ts", "packages/kit/forest/build.ts", "packages/kit/forest/settings.ts", "packages/kit/forest/exposure.ts", "packages/kit/forest/post.ts", "packages/kit/forest/view.ts", "packages/kit/forest/shaders.ts", "packages/kit/forest/index-mesh.ts"].map(async p => [p, createHash("sha256").update(await Bun.file(resolve(repo, p)).text()).digest("hex")])))
+  const sources = Object.fromEntries(await Promise.all(["games/woods/src/world-view.ts", "games/woods/src/held-map/index.ts", "games/woods/scripts/autoresearch.ts", "packages/kit/gpu/fog-scatter.ts", "packages/kit/gpu/lights/beam.ts", "packages/kit/forest/build.ts", "packages/kit/forest/settings.ts", "packages/kit/forest/exposure.ts", "packages/kit/forest/post.ts", "packages/kit/forest/view.ts", "packages/kit/forest/shaders.ts", "packages/kit/forest/index-mesh.ts"].map(async p => [p, createHash("sha256").update(await Bun.file(resolve(repo, p)).text()).digest("hex")])))
   const report: any = { version: 3, host: hostname(), sources, zeroConeDisabled, signalX, settleFrames, seed: 1987, time: 12, viewport: [1600, 900], adapter, overrides: variants, variants: {}, errors }
   if (process.env.AUTORESEARCH_RESET === "1") report.reset = await page.evaluate(resetProbe)
   for (const variant of variants) {

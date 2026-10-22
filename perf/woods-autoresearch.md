@@ -308,3 +308,47 @@ accepts absent timing. `AUTORESEARCH_ROUNDS` alternates variant order when expli
 Evidence: [Today | candidate | target and walking clips](https://studio.taila8e7c7.ts.net:8444/raw/woods-2026-10-21/autoresearch/round5/review.html).
 Full manifests, per-frame records, scores and trial history are alongside that page. Renderer review precedes
 promotion of defaults, fast-forwarding Woods and refreshing the accepted 5322 preview.
+
+## Round 6: silhouette halo and camp construction (2026-10-22)
+
+Approved round 5 was rebased as `2cb0fb0e` and fast-forwarded into Woods. This round was checked on the map-merged
+`860e341b` base, then rebased and recaptured on shared-sky head `f71a6250`, and awaits renderer review. Woods now initializes `highlightShoulder: true` in its presentation
+adapter; the kit default remains false. Turning the shoulder off restores Today's post path. Camp stays opt-in.
+
+Removal probes on Studio/Metal isolated bloom/halation: the right-edge trunk ROI mean display luminance was
+.263855 with the shoulder, .119031 without bloom/halation, and .263495 without torch air/mist. The shoulder path
+now bounds sampled bloom per channel to 5% of local nonnegative HDR radiance before bloom/halation composition.
+The candidate ROI was .119581. This is a radiance gate, not a depth mask, and also reduces glow around other
+bright sources against dark backgrounds. It adds no pass and leaves exposure and air scatter alone.
+
+Camp detail uses open stairs between the inner posts, recessed risers, inclined stringers, landing pads,
+concrete footings and a deck 50 cm above its entry sample. The porch lamp moves toward the deck edge. Eight-sided
+smooth cable has roughness .24 and 12 mm radius, sockets and a .045-power/.9 m surface-only light beside each bulb.
+Those lights skip fog; existing grouped bulbs still illuminate the ground. Trodden paths connect cabin entries to
+the fire pit, with existing litter at their edges, small rocks and tapered terrain-following roots near trees.
+Woods had never supplied a fire-pit descriptor; its presentation adapter now adds one only for detailed camp rebuilds.
+
+Final source-matched mini/Metal capture: 1600×900 High, seed 1987, 240 settled frames, Today/candidate at seven
+poses. Woods typecheck, build and 13 targeted build/exposure tests passed with `--max-concurrency 4`, including
+worker/main byte parity with camp detail. No browser errors. All 12 recorded source hashes match the retained files.
+
+| Measure | Today | Candidate |
+| --- | ---: | ---: |
+| Close-bark max-channel clipping | 9.5238% | 0% |
+| Hotspot high-pass detail | .00176226 | .00984402 |
+| Four-light dark coverage | 69.1519% | 69.1218% |
+| 60 m signal delta / contrast | .058931 / 5.5345 | .059601 / 5.5974 |
+| Depth-visible signal samples | 56 | 53 |
+
+All six wide-view p5 guards pass. One pre-sky candidate camp GPU median is 12.68 ms (nine samples, 12.24–13.72 ms),
+not a paired cost or a stable budget claim. Camp lights rise from 21 to 42 in this view. Camp construction reads
+better, but ground detail and the wide ring remain short of the target, so it is not promoted.
+
+Held-map compatibility uses the production default shoulder with camp off. The first proof raced the async print
+and captured the forest before the overlay drew. `map-proof.ts` now waits for `held.debug.active` and draws 60 more
+settled frames. Its scoped recapture shows the printed sheet, glove and compass with no browser errors; production
+map code is unchanged. No walking, foliage, or creature-mist changes were made this round.
+The sky-base run repeats typecheck/build and the affected captures, including the held map, with no browser errors;
+it does not repeat tests or timing. The 5322 preview was refreshed from the approved `f71a6250` integration head.
+
+Evidence: [round-6 triptychs, held map and ledger](https://studio.taila8e7c7.ts.net:8444/raw/woods-2026-10-21/autoresearch/round6/review.html).

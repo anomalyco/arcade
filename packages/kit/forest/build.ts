@@ -18,7 +18,7 @@ import { deriveDeadfall, mulberry, segDist, smoothNoise } from "../sim/forest-de
 import { LAYER, type ForestModels, type ModelPart } from "./assets"
 import { VertexWriter, readVertex, type RGBA } from "./mesh"
 
-export const MAT = { terrain: 40, bark: 41, needles: 42, prop: 43, fern: 44, water: 45, glow: 46, wood: 47, tape: 49, bulb: 50, paint: 51 } as const
+export const MAT = { terrain: 40, bark: 41, needles: 42, prop: 43, fern: 44, water: 45, glow: 46, wood: 47, tape: 49, bulb: 50, paint: 51, cable: 52, concrete: 53 } as const
 
 export const CHUNK = 16
 /** How far past the level's edge the backdrop forest goes (m). */
@@ -46,7 +46,7 @@ export type ForestChunk = {
   groups: InstanceGroup[]
 }
 
-export type CampLight = { x: number; y: number; z: number; axis: Vec3; color: Vec3; power: number; range: number; cosOuter: number; kind: "window" | "bulb" | "porch" }
+export type CampLight = { x: number; y: number; z: number; axis: Vec3; color: Vec3; power: number; range: number; cosOuter: number; kind: "window" | "bulb" | "porch"; surfaceOnly?: boolean }
 
 export type ForestBuild = {
   templates: ForestTemplate[]
@@ -727,7 +727,8 @@ function terrain(w: VertexWriter, world: ForestWorld, x0: number, z0: number, st
   const n = Math.round(CHUNK / step)
   const lake = world.lake
   const buildings = world.camp?.buildings ?? []
-  const centre: Vec2 = [buildings.reduce((s, b) => s + b.x, 0) / Math.max(1, buildings.length), buildings.reduce((s, b) => s + b.z, 0) / Math.max(1, buildings.length)]
+  const fire = world.camp?.props?.find(p => p.kind === "fire-pit")
+  const centre: Vec2 = fire ? [fire.x, fire.z] : [buildings.reduce((s, b) => s + b.x, 0) / Math.max(1, buildings.length), buildings.reduce((s, b) => s + b.z, 0) / Math.max(1, buildings.length)]
   const walks: Vec2[][] = detail ? buildings.map(b => {
     const reach = b.d / 2 + (b.porch ? 2.6 : 0)
     return [[b.x - Math.sin(b.yaw) * reach, b.z + Math.cos(b.yaw) * reach], centre]
@@ -738,10 +739,12 @@ function terrain(w: VertexWriter, world: ForestWorld, x0: number, z0: number, st
     for (const p of world.paths ?? []) trail = Math.max(trail, smooth(p.width * 0.5 + 0.6, p.width * 0.25, segDist(p.points, x, z) + smoothNoise(world.seed + 33, x / 1.7, z / 1.7) * 0.35))
     const camp = world.camp ? Math.max(0, ...buildings.map(b => smooth(Math.max(b.w, b.d) * 0.9 + 4, Math.max(b.w, b.d) * 0.5, Math.hypot(x - b.x, z - b.z)))) * 0.75 : 0
     const patches = detail ? smoothNoise(world.seed + 37, x / 2.7, z / 2.7) : 0
-    if (detail) for (const path of walks) trail = Math.max(trail, smooth(1.5, 0.35, segDist(path, x, z) + patches * 0.25) * 0.9)
-    const damp = detail ? camp * smooth(0.05, 0.65, patches) * 0.65 : 0
+    let trodden = 0
+    if (detail) for (const path of walks) trodden = Math.max(trodden, smooth(1.3, 0.45, segDist(path, x, z) + patches * 0.18))
+    trail = Math.max(trail, trodden)
+    const damp = detail ? Math.max(trodden * 0.9, camp * smooth(0.05, 0.65, patches) * 0.35) : 0
     const mud = Math.max(damp, lake ? smooth(lake.level + 0.9, lake.level + 0.1, H(x, z)) : 0)
-    if (detail) return [moss * (1 - trail), Math.max(trail, camp * (0.2 + smooth(-0.4, 0.5, patches) * 0.3)), mud, 0]
+    if (detail) return [moss * (1 - trail) * (1 - camp), trail, mud, 0]
     return [moss * (1 - trail), Math.max(trail, camp), mud, 0]
   }
   const P = (i: number, j: number) => {
@@ -902,13 +905,14 @@ function camp(world: ForestWorld, chunks: Chunks, models: ForestModels, lights: 
     const ch = chunks.at(b.x, b.z)
     const w = ch.near[0], f = ch.far[0]
     const ground = Math.min(H(b.x - b.w / 2, b.z - b.d / 2), H(b.x + b.w / 2, b.z - b.d / 2), H(b.x - b.w / 2, b.z + b.d / 2), H(b.x + b.w / 2, b.z + b.d / 2))
-    const floor = ground + 0.45
     const c = Math.cos(b.yaw), s = Math.sin(b.yaw)
-    const L = (x: number, y: number, z: number) => [b.x + x * c - z * s, y, b.z + x * s + z * c]
+    const L = (x: number, y: number, z: number): Vec3 => [b.x + x * c - z * s, y, b.z + x * s + z * c]
+    const entry = L(0, 0, b.d / 2 + 2.6)
+    const floor = detail && b.porch ? H(entry[0], entry[2]) + 0.5 : ground + 0.45
     for (const target of [w, f]) {
       // Walls (thin boxes) leave a gap where every window goes; roof is a gable of two slabs.
       box(target, b.x, floor + b.h / 2, b.z, b.yaw, b.w, b.h, b.d, MAT.wood, LAYER.planks, 1.6)
-      box(target, b.x, ground + 0.22, b.z, b.yaw, b.w + 0.2, 0.45, b.d + 0.2, MAT.prop, LAYER["rock-lichen"], 1.5)
+      box(target, b.x, detail ? (ground + floor) / 2 : ground + 0.22, b.z, b.yaw, b.w + 0.2, detail ? floor - ground : 0.45, b.d + 0.2, MAT.prop, LAYER["rock-lichen"], 1.5)
       const pitch = 0.5, run = b.d / 2 + 0.5, rise = Math.tan(pitch) * run
       for (const side of [-1, 1]) {
         const slab = Math.hypot(run, rise)
@@ -926,21 +930,36 @@ function camp(world: ForestWorld, chunks: Chunks, models: ForestModels, lights: 
       const pd = 2.6
       box(w, ...(L(0, floor - 0.08, b.d / 2 + pd / 2) as [number, number, number]), b.yaw, b.w * 0.8, 0.16, pd, MAT.wood, LAYER.planks, 1.2, [0, 0, 0.3, 0])
       if (detail) {
-        // Closed risers extend below the sampled terrain, rather than floating treads.
-        for (let i = 0; i < 12; i++) {
-          const z = b.d / 2 + pd + 0.16 + i * 0.3, p = L(0, 0, z)
-          const corners = [-0.8, 0.8].flatMap(x => [-0.17, 0.17].map(dz => L(x, 0, z + dz)))
-          const bottom = Math.min(...corners.map(v => H(v[0]!, v[2]!))) - 0.04
-          const top = floor - (i + 1) * 0.15
-          if (top <= bottom) break
-          box(w, p[0]!, (top + bottom) / 2, p[2]!, b.yaw, 1.6, top - bottom, 0.34, MAT.wood, LAYER.planks, 1.2, [0, 0, 0.3, 0])
+        const edge = b.d / 2 + pd, width = b.w * 0.26 - 0.14
+        const landing = L(0, 0, edge + 0.9), grade = H(landing[0], landing[2])
+        const rises = Math.max(2, Math.min(6, Math.ceil((floor - grade) / 0.17))), rise = (floor - grade) / rises
+        // Treads overlap the deck edge; the clear width matches the two inner posts.
+        for (let i = 0; i < rises - 1; i++) {
+          const top = floor - (i + 1) * rise, z = edge + 0.07 + i * 0.29
+          const p = L(0, top - 0.022, z)
+          box(w, ...p, b.yaw, width, 0.044, 0.34, MAT.wood, LAYER.planks, 0.7)
+          // Recessed riser leaves a bright tread nose and a narrow shadow line.
+          box(w, ...L(0, top - rise / 2 - 0.03, z + 0.12), b.yaw, width - 0.08, rise - 0.02, 0.025, MAT.wood, LAYER.planks, 0.7)
         }
+        for (const side of [-1, 1]) {
+          const x = side * (width / 2 - 0.08), end = edge + 0.07 + (rises - 2) * 0.29
+          timber(w, L(x, floor - 0.18, edge - 0.16), L(x, grade + 0.02, end + 0.15), 0.075, 0.18)
+        }
+        const pad = L(0, 0, edge + 0.07 + (rises - 2) * 0.29 + 0.2), padY = H(pad[0], pad[2])
+        box(w, pad[0], padY + 0.015, pad[2], b.yaw, width + 0.18, 0.09, 0.4, MAT.concrete, 0)
+        // Fascia and rear supports make the dark space beneath read as a crawlspace.
+        box(w, ...L(0, floor - 0.17, edge - 0.06), b.yaw, b.w * 0.8, 0.18, 0.12, MAT.wood, LAYER.planks, 1)
+        for (const x of [-0.4, 0.4]) porchPost(w, L(x * b.w, floor - 0.16, b.d / 2 + 0.1), floor - 0.16, b.yaw, H)
       }
-      for (const px of [-0.4, -0.13, 0.13, 0.4]) box(w, ...(L(px * b.w, floor + 1.25, b.d / 2 + pd - 0.1) as [number, number, number]), b.yaw, 0.14, 2.5, 0.14, MAT.wood, LAYER.planks, 1)
+      for (const px of [-0.4, -0.13, 0.13, 0.4]) {
+        const p = L(px * b.w, floor + 1.25, b.d / 2 + pd - 0.1)
+        if (detail) porchPost(w, p, floor + 2.5, b.yaw, H)
+        else box(w, ...p, b.yaw, 0.14, 2.5, 0.14, MAT.wood, LAYER.planks, 1)
+      }
       const p = L(0, floor + 2.55, b.d / 2 + pd / 2)
       roofSlab(w, p, b.yaw, b.w * 0.85, pd + 0.4, 0.18)
       // Porch lamp.
-      const lamp = L(0, floor + 2.25, b.d / 2 + 0.25)
+      const lamp = L(0, floor + 2.25, b.d / 2 + (detail ? pd - 0.4 : 0.25))
       bulb(w, lamp[0]!, lamp[1]!, lamp[2]!, 0.07, 3)
       lights.push({ x: lamp[0]!, y: lamp[1]!, z: lamp[2]!, axis: [0, -1, 0], color: [1, 0.68, 0.38], power: 2.4, range: 9, cosOuter: Math.cos(1.25), kind: "porch" })
     }
@@ -1003,19 +1022,61 @@ function camp(world: ForestWorld, chunks: Chunks, models: ForestModels, lights: 
     const steps = 60
     for (let i = 0; i < steps; i++) {
       const a = sample(i / steps), b = sample((i + 1) / steps)
-      wire(ch.near[0], a, b, detail ? 0.012 : 0.006)
+      if (detail) tube(ch.near[0], a, b, 0.012, 0.012, MAT.cable)
+      else wire(ch.near[0], a, b, 0.006)
     }
     for (let i = 0; i < sl.bulbs; i++) {
       const p = sample((i + 0.5) / sl.bulbs)
-      bulb(ch.near[0], p[0], p[1] - 0.06, p[2], 0.035, 1.6 + rand() * 0.5)
+      if (detail) tube(ch.near[0], p, [p[0], p[1] - 0.075, p[2]], 0.025, 0.032, MAT.cable)
+      bulb(ch.near[0], p[0], p[1] - (detail ? 0.105 : 0.06), p[2], 0.035, 1.6 + rand() * 0.5)
+      // Local bulb light reaches its own socket/cable, not the ground. Existing
+      // grouped lights still provide the camp's ground illumination.
+      if (detail) lights.push({ x: p[0], y: p[1] - 0.105, z: p[2], axis: [0, -1, 0], color: [1, 0.7, 0.4], power: 0.045, range: 0.9, cosOuter: -1, kind: "bulb", surfaceOnly: true })
       if (i % 3 === 1) lights.push({ x: p[0], y: p[1] - 0.06, z: p[2], axis: [0, -1, 0], color: [1, 0.7, 0.4], power: 0.55, range: 7, cosOuter: -1, kind: "bulb" })
     }
     for (const p of pts) {
       const g = H(p[0], p[2])
-      if (p[1] - g > 2) box(ch.near[0], p[0], (p[1] + g) / 2, p[2], 0, 0.12, p[1] - g + 0.2, 0.12, MAT.wood, LAYER.log, 0.6)
+      if (p[1] - g > 2) {
+        if (detail) porchPost(ch.near[0], p, p[1], 0, H)
+        else box(ch.near[0], p[0], (p[1] + g) / 2, p[2], 0, 0.12, p[1] - g + 0.2, 0.12, MAT.wood, LAYER.log, 0.6)
+      }
     }
   }
   // Props.
+  if (detail) {
+    const fire = cp.props?.find(p => p.kind === "fire-pit")
+    // Small stones at approach edges; a separate seeded stream leaves all other
+    // forest placement and camp lamps unchanged.
+    const dressing = mulberry(world.seed + 405)
+    for (const b of cp.buildings) {
+      const reach = b.d / 2 + 3.8, start: Vec2 = [b.x - Math.sin(b.yaw) * reach, b.z + Math.cos(b.yaw) * reach]
+      const end: Vec2 = fire ? [fire.x, fire.z] : [start[0] - Math.sin(b.yaw) * 5, start[1] + Math.cos(b.yaw) * 5]
+      const dx = end[0] - start[0], dz = end[1] - start[1], len = Math.hypot(dx, dz) || 1
+      for (let i = 0; i < 3; i++) {
+        const t = 0.08 + dressing() * 0.65, side = i % 2 ? -1 : 1
+        const x = start[0] + dx * t + dz / len * side * 1.05, z = start[1] + dz * t - dx / len * side * 1.05
+        const part = models["rocks-b"][i % models["rocks-b"].length]!, extent = Math.max(part.max[0]! - part.min[0]!, part.max[2]! - part.min[2]!)
+        const scale = (0.22 + dressing() * 0.23) / extent
+        placeModel(chunks.at(x, z).near[0], part, x, H(x, z) - part.min[1]! * scale * 0.55 - 0.035, z, dressing() * TAU, [scale, scale * 0.55, scale], MAT.prop, LAYER["rocks-b"], () => [0.15, 0, 0, 0])
+      }
+    }
+    for (const tree of world.trees) {
+      if (!cp.buildings.some(b => Math.hypot(b.x - tree.x, b.z - tree.z) < 16)) continue
+      // Narrow roots emerge from real trunks, following terrain rather than
+      // scattering detached scans through the clearing.
+      for (let i = 0; i < 3; i++) {
+        const angle = hash01(tree.seed + i * 17) * TAU, length = 0.7 + tree.r * 2
+        let last: Vec3 = [tree.x + Math.cos(angle) * tree.r * 0.7, H(tree.x, tree.z) + 0.1, tree.z + Math.sin(angle) * tree.r * 0.7]
+        for (let j = 1; j <= 4; j++) {
+          const f = j / 4, a = angle + Math.sin(f * 3) * 0.15
+          const x = tree.x + Math.cos(a) * (tree.r * 0.7 + length * f), z = tree.z + Math.sin(a) * (tree.r * 0.7 + length * f)
+          const next: Vec3 = [x, H(x, z) + 0.025 * (1 - f), z]
+          tube(chunks.at(tree.x, tree.z).near[0], last, next, 0.07 * (1 - (j - 1) / 4) + 0.008, 0.07 * (1 - f) + 0.008, MAT.bark, LAYER["bark-spruce"], [0.5, 0, 0, 0])
+          last = next
+        }
+      }
+    }
+  }
   for (const p of cp.props ?? []) {
     const ch = chunks.at(p.x, p.z)
     const y = H(p.x, p.z)
@@ -1056,6 +1117,40 @@ function roofSlab(w: VertexWriter, mid: readonly number[], yaw: number, width: n
   for (const flip of [false, true]) {
     const order = flip ? [0, 2, 1, 0, 3, 2] : [0, 1, 2, 0, 2, 3]
     for (const idx of order) { const v = q[idx]!; const nn = flip ? nUp.map(x => -x) : nUp; w.vert(v[0]!, v[1]! - (flip ? 0.08 : 0), v[2]!, nn[0]!, nn[1]!, nn[2]!, [0, 0, 0, 0], MAT.wood, flip ? LAYER.planks : LAYER.roof, uv[idx]![0]!, uv[idx]![1]!) }
+  }
+}
+
+function porchPost(w: VertexWriter, p: Vec3, top: number, yaw: number, height: (x: number, z: number) => number) {
+  const grade = height(p[0], p[2]), base = grade + 0.12
+  box(w, p[0], grade + 0.045, p[2], yaw, 0.34, 0.15, 0.34, MAT.concrete, 0)
+  if (top > base) box(w, p[0], (base + top) / 2, p[2], yaw, 0.14, top - base, 0.14, MAT.wood, LAYER.planks, 1)
+}
+
+/** Rectangular timber with its long axis between two points (stair stringers). */
+function timber(w: VertexWriter, a: Vec3, b: Vec3, width: number, height: number) {
+  const delta = b.map((v, i) => v - a[i]!), length = Math.hypot(...delta), along = norm(delta)
+  const side = norm(cross([0, 1, 0], along)), up = cross(along, side)
+  const local = new VertexWriter()
+  box(local, 0, 0, 0, 0, width, height, length, MAT.wood, LAYER.planks, 0.7)
+  const bytes = local.finish(), data = new DataView(bytes)
+  for (let i = 0; i < bytes.byteLength / 32; i++) {
+    const v = readVertex(data, i)
+    const p = a.map((x, j) => (x + b[j]!) / 2 + side[j]! * v.p[0] + up[j]! * v.p[1] + along[j]! * v.p[2])
+    const n = side.map((x, j) => x * v.n[0] + up[j]! * v.n[1] + along[j]! * v.n[2])
+    w.vert(p[0]!, p[1]!, p[2]!, n[0]!, n[1]!, n[2]!, [0, 0, 0, 0], MAT.wood, LAYER.planks, v.uv[0], v.uv[1])
+  }
+}
+
+/** Smooth eight-sided cable/root; unlike crossed cards it has a curved specular normal. */
+function tube(w: VertexWriter, a: Vec3, b: Vec3, ra: number, rb: number, mat: number, layer = 0, color: RGBA = [0, 0, 0, 0]) {
+  const d = norm(b.map((v, i) => v - a[i]!))
+  const side = norm(cross(d, Math.abs(d[1]!) > 0.9 ? [1, 0, 0] : [0, 1, 0])), up = cross(side, d)
+  for (let i = 0; i < 8; i++) {
+    const vertex = (end: number, corner: number) => {
+      const th = corner / 8 * TAU, n = side.map((v, k) => v * Math.cos(th) + up[k]! * Math.sin(th)), p = end ? b : a, r = end ? rb : ra
+      w.vert(p[0] + n[0]! * r, p[1] + n[1]! * r, p[2] + n[2]! * r, n[0]!, n[1]!, n[2]!, color, mat, layer, corner / 8, end)
+    }
+    for (const [end, corner] of [[0, i], [1, i], [1, i + 1], [0, i], [1, i + 1], [0, i + 1]]) vertex(end!, corner!)
   }
 }
 
