@@ -271,6 +271,12 @@
   breach debris, throws and dynamite are `reactive` batches, beam dust a `drawReactive` pass; Restart, New town and
   regenerate drop the history in `scene/frame-renderer.ts`). Paired GPU, frame time, walking flicker, ghosting crops,
   stills and a side-by-side clip in one run: `bun scripts/taa-proof.ts --out <dir>` (via `hivemind run --kind browser`).
+- Motion stability (AR-123): `bun scripts/motion.ts` (via `hivemind run --kind browser`, one job per path under the
+  30-minute cap: `MOTION_PATHS=street`) scores pops per frame after depth reprojection on scripted walks and pans
+  (street, lamps, rain, pan-lamps, pan-wet, pan-rain, indoor, indoor-lamps) against each path held still, per Lab
+  variant (`MOTION_VARIANTS=base,before,…`), with pop maps and `MOTION_RECORD` frames for clips. Fixes so far: lamp
+  pools fade across their cull distance (Lab › Anti-aliasing › Motion stability › Lamp reach fade, 0 = Today) and LEAN
+  puddle glints (Look · Reflections › Glint anti-aliasing, 0 = Today). Numbers: `../../docs/game-notes.md`.
 - Prompt clarity (AR-89, `src/prompt-clarity/`, Lab: Backquote › Controls, "Today" one setting away): verbs beside
   glyphs for each action's first three uses, corner brackets on what E acts on, B (board up) and board pips in door
   and window prompts (B boards the prompt's target), a glyph stamp after a door, window, barricade or container

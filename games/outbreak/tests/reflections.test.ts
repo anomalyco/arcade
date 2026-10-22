@@ -96,6 +96,14 @@ describe("reflections", () => {
     expect([out[0], out[1], out[3], out[6]]).toEqual([1, 1, 0.5, 1])
   })
 
+  test("LEAN glint anti-aliasing is on by default and one setting from Today", () => {
+    const out = new Float32Array(REFLECTION_UNIFORM_FLOATS)
+    packReflectionUniforms(DEFAULT_REFLECTION_TRIMS, 0, out, 0)
+    expect(out[7]).toBe(1)
+    packReflectionUniforms({ ...DEFAULT_REFLECTION_TRIMS, glintAA: 0 }, 0, out, 0)
+    expect(out[7]).toBe(0)
+  })
+
   test("wet reflections take outdoor lights near the view and skip table lamps, sconces and the flashlight", () => {
     const town = makeTown(7)
     const ash = town.buildings.find((b) => b.id === "ash")!

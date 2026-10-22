@@ -18,6 +18,11 @@ export const DEFAULT_ANTI_ALIASING_SETTINGS = {
   aaSharpen: 0.35,
   /** Weight of the reprojected history in a still pixel. */
   aaHistory: 0.9,
+  /**
+   * Seconds a street, porch or room lamp takes to fade in or out as the survivor walks across its reach (15.5 m, 16.5
+   * m), instead of its pool popping on or off in one frame (0 Today). A still survivor sees no difference.
+   */
+  lampReachFade: 0.5,
 }
 
 export type AntiAliasingSettings = typeof DEFAULT_ANTI_ALIASING_SETTINGS
@@ -36,6 +41,7 @@ export const antiAliasingControls: LabControl[] = [
   { key: "aaRenderScale", label: "Render scale (TAA + upscale)", group: "Anti-aliasing", min: 0.5, max: 1, step: 0.01, unit: "×" },
   { key: "aaSharpen", label: "Sharpen", group: "Anti-aliasing", min: 0, max: 1, step: 0.05 },
   { key: "aaHistory", label: "History weight", group: "Anti-aliasing", min: 0.75, max: 0.97, step: 0.01 },
+  { key: "lampReachFade", label: "Lamp reach fade (0 Today)", group: "Motion stability", min: 0, max: 2, step: 0.05, unit: "s" },
 ]
 
 /** The renderer's temporal settings for these values (null keeps today's MSAA path). */

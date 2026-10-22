@@ -115,7 +115,7 @@ export const outbreakSceneHooks: SceneHooks = {
     albedo *= vTone;
     outbreakAlbedo = albedo;
     outbreakPracticalIrr = max(0.0, dot(lit.diff, vec3f(0.2126, 0.7152, 0.0722)) - dot(OL.u5.rgb, vec3f(0.2126, 0.7152, 0.0722)) * outbreakFlashIrr) * GAIN;`,
-  fragmentStart: `let dWorldX = dpdx(o.world); let dWorldY = dpdy(o.world); surfaceFootprint = sqrt(max(dot(dWorldX, dWorldX), dot(dWorldY, dWorldY))); surfaceTime = F.cam.w; ${outbreakBeanFragmentStartWgsl} ${interiorFragmentStartWgsl}`,
+  fragmentStart: `let dWorldX = dpdx(o.world); let dWorldY = dpdy(o.world); surfaceFootprint = sqrt(max(dot(dWorldX, dWorldX), dot(dWorldY, dWorldY))); outbreakPlanJ = vec4f(dWorldX.xz, dWorldY.xz); surfaceTime = F.cam.w; ${outbreakBeanFragmentStartWgsl} ${interiorFragmentStartWgsl}`,
   vertex: /* wgsl */ `
   if ((v.matAux.x > 21.5 && v.matAux.x < 22.5) || (v.matAux.x > 23.5 && v.matAux.x < 24.5 && v.matAux.y > ${FOLIAGE_LIMB_AUX - 0.5})) {
     let fw = applyFoliageWindField(o.world, o.normal, v.matAux.y, v.matAux.x, F.cam.w, F.cam.xyz, OL.veg, OL.vegGust, OL.vegActors);

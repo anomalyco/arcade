@@ -134,6 +134,8 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
     adapterInfo: { vendor: adapter.info.vendor, architecture: adapter.info.architecture },
     renderer,
     render,
+    /** The view camera, for automation that pans it (`scripts/motion.ts`). */
+    cam,
     lab,
     session: () => host.session(),
     vision: () => host.vision(),

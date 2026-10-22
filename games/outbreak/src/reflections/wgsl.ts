@@ -29,6 +29,9 @@ const lean = Math.hypot(MIRROR_H, MIRROR_LEAN - MIRROR_TOP_OUT)
 const rise = Math.sqrt(MIRROR_H * MIRROR_H - (MIRROR_LEAN - MIRROR_TOP_OUT) ** 2)
 
 export const reflectionDeclarationsWgsl = /* wgsl */ `
+/** The pixel's footprint on the ground: dpdx(world.xz), dpdy(world.xz), set in fragmentStart (shaders.ts). */
+var<private> outbreakPlanJ: vec4f;
+
 /** One pothole's standing water: an irregular pool about half a metre across. */
 fn outbreakPothole(q: vec2f, c: vec3f) -> f32 {
   let d = q - c.xy;
@@ -106,7 +109,22 @@ fn outbreakWetGlints(world: vec3f, puddle: f32, wet: f32) -> vec3f {
   if (gloss <= 0.01) { return vec3f(0.0); }
   let e = F.cam.xyz;
   var q = world.xz;
-  if (OL.refl.w > 0.01 && puddle > 0.05) { q += outbreakRainRipple(world.xz) * OL.refl.w * puddle; }
+  // LEAN (Olano & Baker 2010; web-ocean's slope covariance, MIT): each image is a Gaussian in plan, so what one pixel
+  // covers (its ground footprint) and the raindrop rings it can't resolve (the share outbreakRainRipple fades out) add
+  // their covariance to it. An image smaller than a pixel widens into a sheen with the same energy instead of
+  // crawling as the camera pans; one many pixels wide is unchanged. OL.mirror.w scales it (0 Today).
+  let aa = max(OL.mirror.w, 0.0);
+  var ripVar = 0.0;
+  if (OL.refl.w > 0.01 && puddle > 0.05) {
+    q += outbreakRainRipple(world.xz) * OL.refl.w * puddle;
+    let amp = 0.028 * OL.refl.w * puddle;
+    ripVar = amp * amp * smoothstep(0.05, 0.2, surfaceFootprint);
+  }
+  let jx = outbreakPlanJ.xy;
+  let jy = outbreakPlanJ.zw;
+  let pxx = (0.25 * (jx.x * jx.x + jy.x * jy.x) + ripVar) * aa;
+  let pxy = 0.25 * (jx.x * jx.y + jy.x * jy.y) * aa;
+  let pyy = (0.25 * (jx.y * jx.y + jy.y * jy.y) + ripVar) * aa;
   var cover = vec2f(0.0);
   var covered = false;
   var acc = vec3f(0.0);
@@ -117,21 +135,28 @@ fn outbreakWetGlints(world: vec3f, puddle: f32, wet: f32) -> vec3f {
     let sLong = mix(img.w * 7.5, img.w * 1.8, puddle);
     let dq = q - img.xy;
     let d2 = dot(dq, dq);
-    if (d2 > 6.0 * sLong * sLong) { continue; }
+    if (d2 > 6.0 * sLong * sLong + 12.0 * (pxx + pyy)) { continue; }
     let toEye = normalize(e.xz - img.xy + vec2f(1e-4, 0.0));
+    let side = vec2f(-toEye.y, toEye.x);
     let along = dot(dq, toEye);
-    let across = dot(dq, vec2f(-toEye.y, toEye.x));
+    let across = dot(dq, side);
     // The streak runs from the image toward the eye; behind it the image stays tight.
     let sL = select(sA, sLong, along > 0.0);
-    let r2 = across * across / (sA * sA) + along * along / (sL * sL);
+    // The image's covariance, diag(sA², sL²) / 2 across and along, plus the footprint's in the same frame.
+    let ca = 0.5 * sA * sA + side.x * side.x * pxx + 2.0 * side.x * side.y * pxy + side.y * side.y * pyy;
+    let cl = 0.5 * sL * sL + toEye.x * toEye.x * pxx + 2.0 * toEye.x * toEye.y * pxy + toEye.y * toEye.y * pyy;
+    let cal = side.x * toEye.x * pxx + (side.x * toEye.y + side.y * toEye.x) * pxy + side.y * toEye.y * pyy;
+    let det = max(ca * cl - cal * cal, 1e-12);
+    let r2 = (across * across * cl - 2.0 * across * along * cal + along * along * ca) / (2.0 * det);
     if (r2 > 6.0) { continue; }
+    let energy = 0.5 * sA * sA * 0.5 * sL * sL;
     if (!covered) {
       outbreakFigureCover(q, OL.u6.xy, OL.u6.z, &cover);
       outbreakFigureCover(q, OL.u9.xy, world.y, &cover);
       outbreakFigureCover(q, OL.u9.zw, world.y, &cover);
       covered = true;
     }
-    var g = exp(-r2);
+    var g = exp(-r2) * sqrt(energy / det);
     if (img.z > cover.y + 0.15) { g *= 1.0 - cover.x; }
     acc += OL.reflLights[j * 2u + 1u].rgb * g;
   }
@@ -143,14 +168,16 @@ fn outbreakWetGlints(world: vec3f, puddle: f32, wet: f32) -> vec3f {
     let k = bh / (bh + max(e.y - world.y, 1.0));
     let pm = bp + (e.xz - bp) * k;
     let dq = q - pm;
-    let r2 = dot(dq, dq) / (0.16 + 0.5 * (1.0 - puddle));
+    let s2 = 0.16 + 0.5 * (1.0 - puddle);
+    let s2f = s2 + pxx + pyy;
+    let r2 = dot(dq, dq) / s2f;
     if (r2 < 6.0) {
       if (!covered) {
         outbreakFigureCover(q, OL.u6.xy, OL.u6.z, &cover);
         outbreakFigureCover(q, OL.u9.xy, world.y, &cover);
         outbreakFigureCover(q, OL.u9.zw, world.y, &cover);
       }
-      var g = exp(-r2) * smoothstep(0.6, 1.2, OL.u17.x - world.y);
+      var g = exp(-r2) * (s2 / s2f) * smoothstep(0.6, 1.2, OL.u17.x - world.y);
       if (length(bp - e.xz) > cover.y + 0.15) { g *= 1.0 - cover.x; }
       acc += OL.u5.rgb * bouncePower * g * 0.35;
     }
