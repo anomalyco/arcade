@@ -5,7 +5,7 @@ import { sfxPicksPlugin } from "./scripts/sfx-picks-plugin"
 export default defineConfig({
   base: "./",
   plugins: [feedbackPlugin(), sfxPicksPlugin()],
-  build: { target: "esnext", outDir: "dist/arcade/carrier", emptyOutDir: true, rolldownOptions: { input: { main: "index.html", ship: "ship.html", menu: "menu.html" } } },
+  build: { target: "esnext", outDir: "dist/arcade/carrier", emptyOutDir: true, rolldownOptions: { input: { main: "index.html", ship: "ship.html", menu: "menu.html", water: "water.html" } } },
   server: {
     fs: { allow: ["../.."] },
     port: 5197,
