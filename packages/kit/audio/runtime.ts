@@ -439,6 +439,9 @@ export class AudioRuntime {
     return ctx.state === "running"
   }
 
+  /** M toggles mute in `bindDomLifecycle` (off where the game shell owns mute). */
+  muteKey = true
+
   bindDomLifecycle(): void {
     if (typeof window === "undefined") return
     const signal = this.domEvents.signal
@@ -452,7 +455,7 @@ export class AudioRuntime {
     window.addEventListener(
       "keydown",
       e => {
-        if ((e.code !== "KeyM" && e.key.toLowerCase() !== "m") || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return
+        if (!this.muteKey || (e.code !== "KeyM" && e.key.toLowerCase() !== "m") || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return
         const t = e.target as HTMLElement | null
         if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return
         this.setMuted(!this.muted)
