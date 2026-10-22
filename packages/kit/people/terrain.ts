@@ -7,7 +7,7 @@
  */
 import type { HumanBody } from "../human-pose"
 import type { Locomotion } from "../human-locomotion"
-import { at, RIG, stepSpring, type Spring } from "../rig"
+import { at, RIG, stepSpring, type Frame, type Spring } from "../rig"
 
 export type TerrainState = { drop: Spring; init: boolean }
 
@@ -25,20 +25,62 @@ export type TerrainFeet = {
   tilt: [number, number]
 }
 
-export function terrainFeet(st: TerrainState, a: Locomotion, body: HumanBody, s: number, ground: (x: number, z: number) => number, dt: number): TerrainFeet {
+/** The boot along the ground (world m): ball back to the ankle and to the heel. Defaults to the rig's own foot. */
+export type Sole = { toAnkle: number; toHeel: number }
+/** Boot pitch limits on uneven ground (rad, heel up positive), and samples along the sole. */
+const TILT = { down: -0.35, up: 0.75 }
+const SOLE_SAMPLES = 6
+
+export function terrainFeet(st: TerrainState, a: Locomotion, body: HumanBody, s: number, ground: (x: number, z: number) => number, dt: number, sole?: Sole): TerrainFeet {
   const G = (x: number, z: number) => ground(x * s, z * s)
+  const toAnkle = (sole?.toAnkle ?? RIG.foot * s) / s, toHeel = (sole?.toHeel ?? (RIG.foot + RIG.heel) * s) / s
+  /** The rig's ball pivot (where retarget.ts pins the mesh ball), in rig plan coordinates. */
+  const ballAt = (ft: Frame): [number, number] => [ft.p[0] + ft.x[0] * RIG.foot - ft.y[0] * RIG.ankle, ft.p[2] + ft.x[2] * RIG.foot - ft.y[2] * RIG.ankle]
+  /**
+   * Pitch (rad, heel up positive) of a boot whose ball is at height `gb` and whose sole clears the ground back to
+   * its heel: the tangent from the ball over a log, or the heel's own ground when everything behind is lower. A
+   * pitched sole reaches back only d·cos θ in plan, so θ is found by a few fixed-point steps.
+   */
+  const solePitch = (ft: Frame, gb: number, lo: number) => {
+    const [bx, bz] = ballAt(ft)
+    const hl = Math.hypot(ft.x[0], ft.x[2]) || 1, dx = ft.x[0] / hl, dz = ft.x[2] / hl
+    let th = 0
+    for (let it = 0; it < 4; it++) {
+      let sin = -Infinity
+      const c = Math.cos(th)
+      for (let k = 1; k <= SOLE_SAMPLES; k++) {
+        const d = (toHeel * k) / SOLE_SAMPLES
+        const rise = (G(bx - dx * d * c, bz - dz * d * c) - gb) / (d * s)
+        // Behind and below the ball only the heel matters (it rests on the ground there); above, any point does.
+        sin = Math.max(sin, k === SOLE_SAMPLES || rise > 0 ? rise : -Infinity)
+      }
+      th = Math.max(lo, Math.min(TILT.up, Math.asin(Math.max(-1, Math.min(1, sin)))))
+    }
+    // At the limit the whole boot rises until its sole clears (a heel on the top of a log, toes toward the ground).
+    let raise = 0
+    const c = Math.cos(th), sn = Math.sin(th)
+    for (let k = 1; k <= SOLE_SAMPLES; k++) {
+      const d = (toHeel * k) / SOLE_SAMPLES
+      raise = Math.max(raise, G(bx - dx * d * c, bz - dz * d * c) - gb - d * s * sn)
+    }
+    return { th, raise }
+  }
   const g: [number, number] = [0, 0]
   const tilt: [number, number] = [0, 0]
   for (let i = 0; i < 2; i++) {
     const f = a.feet[i]!
     if (f.planted) {
       // The ball takes the ground under it; the boot then pitches so its heel rests on the ground (or log) behind.
+      // Heel and ankle are sampled where the mesh's own boot puts them (the ball is pinned to the rig's): a rig heel
+      // further back would find a log edge the boot never touches and stand the foot on tiptoe in the air.
+      // The footprint is flat and hangs off the ball pivot the rig locks (as retarget.ts pins it), so heel strike and
+      // heel rise do not slide the samples off a log the boot is standing on. Samples are where the mesh's own boot
+      // is; the rig's longer foot would find log edges the boot never touches.
       const ft = body.ft[i]!
-      const bx = ft.p[0] + ft.x[0] * RIG.foot, bz = ft.p[2] + ft.x[2] * RIG.foot
-      const hx = ft.p[0] - ft.x[0] * RIG.heel, hz = ft.p[2] - ft.x[2] * RIG.heel
-      const gb = G(bx, bz), gh = Math.max(G(hx, hz), G(ft.p[0], ft.p[2]))
-      g[i] = gb
-      tilt[i] = Math.max(-0.35, Math.min(0.5, Math.atan2(gh - gb, (RIG.foot + RIG.heel) * s)))
+      const gb = G(...ballAt(ft))
+      const p = solePitch(ft, gb, TILT.down)
+      tilt[i] = p.th
+      g[i] = gb + p.raise
       continue
     }
     const t = a.motion.targets[i]!
@@ -58,6 +100,11 @@ export function terrainFeet(st: TerrainState, a: Locomotion, body: HumanBody, s:
       clear = Math.max(clear, (over + 0.05) * reach)
     }
     g[i] = g0 + (g1 - g0) * smoother(e) + clear
+    // A swinging boot keeps its heel above whatever is under it (the log it just stepped off), so the stance tilt
+    // eases out over the swing instead of dropping the heel through the log at lift-off.
+    const p = solePitch(body.ft[i]!, g[i] - 0.01, 0)
+    tilt[i] = p.th
+    g[i] += p.raise
   }
   const root = G(a.x, a.y)
   const support = root * 0.65 + (G(a.feet[0].p[0], a.feet[0].p[2]) + G(a.feet[1].p[0], a.feet[1].p[2])) * 0.175
