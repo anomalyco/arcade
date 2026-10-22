@@ -44,4 +44,14 @@ describe("night clock", () => {
     expect(countdownText(245.2)).toBe("4:06")
     expect(countdownText(0)).toBe("0:00")
   })
+
+  test("the first evening's slow clock stretches the countdown until 18:00", () => {
+    // A 17:30 start at 120x with the clock at 0.25x until nightfall: half an hour takes 60 s, not 15 s.
+    const plain = nightClockReading(17.5, 120, 90)
+    const slow = nightClockReading(17.5, 120, 90, { factor: 0.25, until: 18 })
+    expect(plain?.mode === "night" && slow?.mode === "night").toBe(true)
+    expect(slow!.seconds - plain!.seconds).toBeCloseTo(45, 5)
+    // Past 18:00 it no longer applies.
+    expect(nightClockReading(20, 120, 90, { factor: 0.25, until: 18 })!.seconds).toBeCloseTo(nightClockReading(20, 120, 90)!.seconds, 5)
+  })
 })

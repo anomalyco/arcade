@@ -24,10 +24,23 @@ export class NightClock {
     this.fill = this.root.querySelector(".nc-bar > i")!
     this.time = this.root.querySelector(".nc-time")!
     parent.append(this.root)
+    // The pause menu stops frames, so the chip would sit frozen over it: it hides until the menu closes.
+    addEventListener("outbreak-menu-open", this.onPause, { signal: this.abort.signal })
+    addEventListener("outbreak-menu-close", this.onResume, { signal: this.abort.signal })
+  }
+
+  private paused = false
+  private readonly abort = new AbortController()
+  private readonly onPause = () => {
+    this.paused = true
+    this.draw(null, 0)
+  }
+  private readonly onResume = () => {
+    this.paused = false
   }
 
   draw(reading: NightClockReading, night: number): void {
-    if (!reading) {
+    if (!reading || this.paused) {
       this.shown = null
       if (!this.root.hidden) this.root.hidden = true
       return
@@ -51,6 +64,7 @@ export class NightClock {
   }
 
   dispose(): void {
+    this.abort.abort()
     this.root.remove()
   }
 }

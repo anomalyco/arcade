@@ -24,14 +24,26 @@ export type NightClockReading =
   | null
 
 /**
+ * The first evening's slow clock (`openingClockActive`): until `until` (18:00) the clock runs at `factor` of its
+ * rate, so the countdown spends those hours at that speed.
+ */
+export type OpeningClock = { factor: number; until: number }
+
+/**
  * What the night clock shows at `hour`: at night the real seconds until dawn and the fraction of the night left;
  * in the last `warnSeconds` of daylight the real seconds until dark; otherwise nothing. `timeScale` is game seconds per
- * real second; a stopped clock (0) still reads which part of the night it is.
+ * real second; a stopped clock (0) still reads which part of the night it is. `opening`, while it applies, slows the
+ * hours from now up to its end.
  */
-export function nightClockReading(hour: number, timeScale: number, warnSeconds: number): NightClockReading {
+export function nightClockReading(hour: number, timeScale: number, warnSeconds: number, opening?: OpeningClock | null): NightClockReading {
   const h = wrapHour(hour)
   const scale = Math.max(0, timeScale)
-  const toSeconds = (hours: number) => (scale > 0 ? (hours * 3600) / scale : Infinity)
+  const slowFor = opening && opening.factor > 0 && h < opening.until ? opening.until - h : 0
+  const toSeconds = (hours: number) => {
+    if (scale <= 0) return Infinity
+    const slow = Math.min(hours, slowFor)
+    return ((slow / (opening?.factor ?? 1) + (hours - slow)) * 3600) / scale
+  }
   if (dayCycle(h).darkness >= 0.5) {
     const toDawn = wrapHour(DAWN_HOUR - h)
     return { mode: "night", seconds: toSeconds(toDawn), left: Math.min(1, toDawn / NIGHT_HOURS) }
