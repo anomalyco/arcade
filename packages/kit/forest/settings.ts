@@ -141,7 +141,7 @@ export function kelvinColor(k: number): [number, number, number] {
   return [lin[0] / l, lin[1] / l, lin[2] / l]
 }
 
-export function forestLookControls(prefix = "woods."): LabControl[] {
+export function forestLookControls(settings: ForestLookSettings, prefix = "woods."): LabControl[] {
   const range = (k: keyof ForestLookSettings, label: string, group: string, min: number, max: number, step: number, unit?: string, subsection?: string): LabControl =>
     ({ key: prefix + k, field: k, label, group, min, max, step, ...(unit ? { unit } : {}), ...(subsection ? { subsection } : {}) })
   const toggle = (k: keyof ForestLookSettings, label: string, group: string, subsection?: string): LabControl => ({ key: prefix + k, field: k, label, group, type: "toggle", ...(subsection ? { subsection } : {}) })
@@ -202,7 +202,8 @@ export function forestLookControls(prefix = "woods."): LabControl[] {
     range("water", "Lake reflections", K, 0, 2, 0.05, "×"),
     range("exposure", "Exposure", C, 0.2, 6, 0.05, "×"),
     toggle("autoExposure", "Auto exposure", C),
-    select("exposureModel", "Exposure model", C, [{ value: "metered", label: "Centre meter" }, { value: "robust", label: "Night key" }], "Auto exposure"),
+    { ...select("exposureModel", "Exposure model", C, [{ value: "metered", label: "Centre meter" }, { value: "robust", label: "Night log mean" }], "Auto exposure"),
+      change: value => { settings.adaptDarken = value === "metered" ? 0.35 : FOREST_LOOK_DEFAULTS.adaptDarken; settings.adaptBrighten = value === "metered" ? 1.8 : FOREST_LOOK_DEFAULTS.adaptBrighten } },
     range("nightKey", "Night key", C, 0.001, 0.05, 0.001, "linear", "Auto exposure"),
     range("nightStops", "Night offset", C, -2, 2, 0.05, "stops", "Auto exposure"),
     range("nightStrength", "Adaptation strength", C, 0, 1, 0.05, "×", "Auto exposure"),

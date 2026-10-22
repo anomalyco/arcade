@@ -1115,6 +1115,9 @@ export class Renderer {
     return this.meterPass?.last ?? null
   }
 
+  /** A camera cut invalidates cached and in-flight readings of the old scene. */
+  resetSceneMeter(): void { this.meterPass?.reset() }
+
   setTemporal(settings: TemporalSettings | null): void {
     const next = temporalEnabled(settings) ? { ...settings } : null
     const prev = this.temporalSettings

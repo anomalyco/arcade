@@ -84,6 +84,8 @@ export type ForestView = {
   readonly build: ForestBuild
   /** Rebuilds the static forest for a new world (same textures and models). */
   setWorld(world: ForestWorld): void
+  /** Snap to the new scene's exposure after a camera cut, teleport or respawn. */
+  resetExposure(): void
   /** Typed LabPanel rows for every look setting. */
   controls(prefix?: string): LabControl[]
   quality: ForestQuality
@@ -198,6 +200,16 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
   const maskView = textures.base.createView({ dimension: "2d-array" })
   const foliageMask: SpotShadowMask = { view: maskView, cutoff: 0.45, layerFromAux: true, lod: 1 }
   const cam = { exposure: 1, hit: 40, stops: 0 }
+  let exposurePending = true
+  let previousEye: Vec3 | null = null
+  function resetExposure() {
+    Object.assign(cam, { exposure: 1, hit: 40, stops: 0 })
+    exposurePending = true
+    previousEye = null
+    bounce.ready = false; bounce.power = 0
+    renderer.resetSceneMeter()
+    renderer.resetTemporalHistory()
+  }
   const bounce = { x: 0, y: 0, z: 0, power: 0, color: [1, 1, 1] as [number, number, number], ready: false }
   let lastFrame: FrameInput | null = null
   let debug = pass.debug as Record<string, boolean>
@@ -242,6 +254,9 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
   applyQuality()
 
   function frame(f: ForestFrameInput) {
+    // Catch authoritative respawns/corrections as well as explicit automation teleports.
+    if (previousEye && Math.hypot(...f.eye.map((v, i) => v - previousEye![i]!)) > 3) resetExposure()
+    previousEye = [...f.eye]
     lastInput = f
     const s = settings
     const local = f.torches.find(t => t.kind !== "remote" && t.on) ?? null
@@ -270,7 +285,8 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     const spot = local ? (s.torchPower * 5 * 0.2) / (Math.PI * Math.max(cam.hit, 0.4) ** 2) * coverage : 0
     const metered = renderer.sceneMeter
     const targetStops = forestExposureTarget(metered, spot + 0.004 * s.sky + 0.0005, s)
-    cam.stops = adaptForestExposure(cam.stops, targetStops, f.dt, s)
+    cam.stops = exposurePending ? targetStops : adaptForestExposure(cam.stops, targetStops, f.dt, s)
+    if (metered) exposurePending = false
     cam.exposure = Math.pow(2, cam.stops)
 
     // ---- Lights.
@@ -421,8 +437,10 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
       world = next
       lake = lakeOf(next); fogBase = fogBaseOf(next)
       groundKey = ""; openAround = -1
+      resetExposure()
     },
-    controls: (prefix = "woods.") => forestLookControls(prefix),
+    resetExposure,
+    controls: (prefix = "woods.") => forestLookControls(settings, prefix),
     get quality() { return quality },
     set quality(q: ForestQuality) { quality = q; applyQuality() },
     setQuality(tier: QualityTier) { quality = FOREST_QUALITY[tier]; applyQuality() },

@@ -323,7 +323,7 @@ async function main() {
         return { online: s.online, me: s.me, status: s.status(), walkers: s.view.players.length, roster: s.roster(), tapes: s.view.tapes.map((t) => t.tree), found: s.view.found, bytesIn: s instanceof OnlineSession ? s.bytesIn : 0, kbps: debug.kbps, self: { x: s.self.x, z: s.self.z }, heard: s.self.map.heard.map((h) => h.from), markers: s.self.map.markers }
       },
       /** Automation: stand at (x, z) looking along yaw/pitch (solo); in a room only the look changes. */
-      setPose(x: number, z: number, yaw: number, pitch = 0) { if (session instanceof SoloSession) session.teleport(x, z); camera.yaw = yaw; camera.pitch = pitch; camera.resetWalk() },
+      setPose(x: number, z: number, yaw: number, pitch = 0) { if (session instanceof SoloSession) session.teleport(x, z); camera.yaw = yaw; camera.pitch = pitch; camera.resetWalk(); view.forest.resetExposure() },
       /** Automation: walk to (x, z) with real inputs (works in a room). */
       walkTo(x: number, z: number) { autopilot = { x, z } },
       get walking() { return !!autopilot },

@@ -13,7 +13,8 @@ import { exposureProbe } from "./autoresearch-exposure"
 import { makeWorld, standHeight } from "../shared/world"
 import type { ForestFrameInput, ForestView } from "../../../packages/kit/forest/view"
 
-const out = resolve(process.env.AUTORESEARCH_OUT ?? process.env.LEASE_OUT ?? "captures/woods-autoresearch")
+const repo = resolve(import.meta.dir, "../../..")
+const out = resolve(repo, process.env.AUTORESEARCH_OUT ?? process.env.LEASE_OUT ?? "captures/woods-autoresearch")
 const root = resolve(import.meta.dir, "../dist/arcade/woods"), prefix = "/arcade/woods/"
 mkdirSync(out, { recursive: true })
 const variants: { id: string; look?: Record<string, unknown>; quality?: Record<string, unknown> }[] = JSON.parse(process.env.AUTORESEARCH_VARIANTS ?? '[{"id":"baseline"}]')
@@ -88,7 +89,7 @@ try {
     woods.__putTime = t => { fixedTime = t; woods.state.t = t }
     forest.update = f => { woods.__input = { ...f, time: fixedTime }; update(woods.__input) }
   })
-  const sources = Object.fromEntries(await Promise.all(["packages/kit/gpu/fog-scatter.ts", "packages/kit/forest/settings.ts", "packages/kit/forest/exposure.ts", "packages/kit/forest/post.ts", "packages/kit/forest/view.ts"].map(async p => [p, createHash("sha256").update(await Bun.file(p).text()).digest("hex")])))
+  const sources = Object.fromEntries(await Promise.all(["packages/kit/gpu/fog-scatter.ts", "packages/kit/forest/settings.ts", "packages/kit/forest/exposure.ts", "packages/kit/forest/post.ts", "packages/kit/forest/view.ts"].map(async p => [p, createHash("sha256").update(await Bun.file(resolve(repo, p)).text()).digest("hex")])))
   const report: any = { version: 3, host: hostname(), sources, zeroConeDisabled, signalX, settleFrames, seed: 1987, time: 12, viewport: [1600, 900], adapter, overrides: variants, variants: {}, errors }
   for (const variant of variants) {
     const dir = resolve(out, variant.id); mkdirSync(dir, { recursive: true })
@@ -102,8 +103,7 @@ try {
         woods.view.forest.quality = { ...JSON.parse(woods.__quality), ...quality }
         woods.debug.dark = []; woods.camera.flashlight = true; woods.__putTime(12)
         woods.view.forest.renderer.resetTemporalHistory()
-        // Exposure settles on the real meter; only its initial adaptation state is reset.
-        Object.assign(woods.view.forest.camera, { exposure: 1, stops: 0 })
+        woods.view.forest.resetExposure()
       }, { look: variant.look ?? {}, quality: variant.quality ?? {} })
       const setup = name.startsWith("signal60") ? shots.beam! : shots[name]!
       assert(setup, `unknown shot ${name}`)

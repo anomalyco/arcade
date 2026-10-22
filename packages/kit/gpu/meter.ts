@@ -32,6 +32,7 @@ export class LuminanceMeter {
   private ring: { buf: GPUBuffer; busy: boolean; frame: number }[]
   private frame = 0
   private pending: number | null = null
+  private generation = 0
   last: SceneMeter | null = null
 
   constructor(private device: GPUDevice) {
@@ -92,11 +93,19 @@ export class LuminanceMeter {
     this.pending = null
     r.busy = true
     r.frame = this.frame
+    const generation = this.generation
     r.buf.mapAsync(GPUMapMode.READ).then(() => {
-      this.read(new Uint16Array(r.buf.getMappedRange()), this.frame - r.frame)
+      if (generation === this.generation) this.read(new Uint16Array(r.buf.getMappedRange()), this.frame - r.frame)
       r.buf.unmap()
       r.busy = false
     }, () => { r.busy = false })
+  }
+
+  /** Discard the old scene, including readbacks that are still in flight. */
+  reset(): void {
+    this.generation++
+    this.pending = null
+    this.last = null
   }
 
   private read(px: Uint16Array, age: number): void {
