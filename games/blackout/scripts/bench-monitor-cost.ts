@@ -1,9 +1,12 @@
 // Frozen-frame, same-device OFF/ON pairs resolve costs smaller than reload-to-reload GPU clock variance.
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { hostname } from "node:os"
 import { findChromeExecutable, installGpuInstrumentation, verifyMonitorBounds } from "./compare"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const base = process.argv.find((s) => s.startsWith("--base="))?.slice(7)
 const experiment = process.argv.find((s) => s.startsWith("--experiment="))?.slice(13) ?? "monitor-cost"

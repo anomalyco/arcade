@@ -11,8 +11,11 @@
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { generateWorldChunk } from "../shared/world"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const game = resolve(import.meta.dir, "..")
 const arg = (name: string, fallback?: string) => {

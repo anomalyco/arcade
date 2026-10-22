@@ -6,7 +6,8 @@
 import { existsSync, openSync, writeSync, closeSync } from "node:fs"
 import { join } from "node:path"
 import { spawn, type ChildProcess } from "node:child_process"
-import { chromium, type Browser, type Page } from "playwright-core"
+import { type Browser, type Page } from "playwright-core"
+import type { browserBudget } from "../../../../scripts/browser-budget"
 import { installPage, type EncoderSpec } from "./page"
 
 export const ffmpeg = existsSync("/opt/homebrew/bin/ffmpeg") ? "/opt/homebrew/bin/ffmpeg" : "ffmpeg"
@@ -100,7 +101,8 @@ export type Session = {
 
 export type LaunchOptions = { dist: string; width: number; height: number; path: string; logs?: string[]; quiet?: boolean }
 
-export async function launch(o: LaunchOptions): Promise<Session> {
+export async function launch(o: LaunchOptions, budget: ReturnType<typeof browserBudget>): Promise<Session> {
+  const { chromium } = budget
   const streams = new Map<string, Stream>()
   const server = Bun.serve<{ key: string }>({
     port: 0,

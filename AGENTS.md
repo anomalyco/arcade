@@ -25,6 +25,7 @@ game's own `AGENTS.md`.
 - Every `tests/` and `scripts/` file is typechecked (Getaway's `tsconfig.scripts.json` also covers root `scripts/`).
   Proof scripts for kit code go in root `scripts/` (Lab proofs in `scripts/lab/`), not in `packages/kit/`.
 - Local smoke uses the Metal adapter on macOS (~80x faster than SwiftShader); `SMOKE_GPU=swiftshader` reproduces CI.
+- Browser scripts use `scripts/browser-budget.ts` with `await using`: 180 s per script, `ARCADE_BROWSER_BUDGET_S` override ≤300 s; CPU-only sweeps run directly in Bun (`--kind cargo`).
 
 ## Routing and deploy
 

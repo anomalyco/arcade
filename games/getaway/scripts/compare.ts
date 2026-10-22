@@ -1,9 +1,12 @@
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { homedir, hostname } from "node:os"
 import { join } from "node:path"
 import { encode } from "../../../scripts/encode"
 import { installMainHook } from "@arcade/kit/getaway-main-hook"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 type BenchStepResult = {
   cpuMs: number

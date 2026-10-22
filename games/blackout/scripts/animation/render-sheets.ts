@@ -1,10 +1,13 @@
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../../scripts/browser-budget"
 import { createServer } from "vite"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { spawnSync } from "node:child_process"
 import { findChromeExecutable } from "../compare"
 import { blackoutRoot, parseArgs, repoRoot } from "./common"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 // Shaded 3D key-frame sheets of the unarmed survivor through the real Characters page renderer.
 // Usage: bun games/blackout/scripts/animation/render-sheets.ts --tag before|after [--out dir]
@@ -360,4 +363,4 @@ try {
 }
 
 const py = spawnSync("python3", [join(import.meta.dir, "stitch-sheets.py"), OUT_DIR, tag], { stdio: "inherit" })
-if (py.status !== 0) process.exit(py.status ?? 1)
+if (py.status !== 0) await budget.exit(py.status ?? 1)

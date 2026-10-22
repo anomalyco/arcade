@@ -1,9 +1,12 @@
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync } from "node:fs"
 import { resolve } from "node:path"
-import { chromium } from "playwright-core"
+import { browserBudget } from "../browser-budget"
 import { createServer } from "vite"
 import { WEATHER_PRESET_IDS, type WeatherPresetId } from "@arcade/kit/weather"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const repoRoot = resolve(import.meta.dir, "../..")
 const outbreakRoot = resolve(repoRoot, "games/outbreak")

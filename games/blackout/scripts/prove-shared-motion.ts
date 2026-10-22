@@ -1,8 +1,11 @@
 /// <reference types="@webgpu/types" />
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { createServer } from "vite"
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const root=resolve(import.meta.dir,".."),out=resolve(root,"../../captures/shared-blackout-motion")
 mkdirSync(out,{recursive:true})

@@ -10,9 +10,13 @@
 //   ciws: tracks a drone in range and shreds it. intercept: an incoming missile and a bomb shot down by the CIWS.
 //   sam: locks a drone and kills it with a SAM. gun: lobs 5-inch shells at the enemy carrier (splashes, a hit).
 //   mp: the real game, two pages in one room: A mans the CIWS on its carrier and shoots down B's jet; B sees A's turret turn.
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const args = process.argv.slice(2)
 const opt = (k: string, d: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d
@@ -533,4 +537,4 @@ for (const k of only) {
 await browser.close()
 if (logs.length) console.log(`console:\n${[...new Set(logs)].slice(0, 30).join("\n")}`)
 console.log(failures ? `${failures} failure(s)` : "all ok")
-process.exit(failures ? 1 : 0)
+await budget.exit(failures ? 1 : 0)

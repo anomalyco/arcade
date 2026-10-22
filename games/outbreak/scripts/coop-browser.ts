@@ -8,7 +8,11 @@ import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync } from "node:fs"
 import { resolve } from "node:path"
 import { randomRoomCode } from "@arcade/kit/sim/matchmaking"
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const arg = (name: string) => process.argv.find((a) => a.startsWith(`--${name}=`))?.split("=").slice(1).join("=")
 const base = arg("url") ?? "http://127.0.0.1:8797/arcade/outbreak/"

@@ -1,4 +1,4 @@
-import {chromium} from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import {mkdir,readdir} from "node:fs/promises"
 import {existsSync} from "node:fs"
 import {resolve} from "node:path"
@@ -7,6 +7,9 @@ import type {Renderer} from "@arcade/kit/gpu/renderer"
 import type {Settings} from "../src/settings"
 import type {FoleyFrame,renderFoley} from "../src/foley"
 import type {Call} from "../shared/call"
+
+await using budget = browserBudget()
+const { chromium } = budget
 type App={camera:WalkCamera;renderer:Renderer;settings:Settings;call:Call;renderFoley:typeof renderFoley}
 type WindowProof={nightshift:App;step(capture:boolean,label:string):Promise<string>}
 const out=resolve(process.env.NIGHTSHIFT_WALK_DIR??"captures/nightshift-walk")

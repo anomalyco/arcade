@@ -9,9 +9,13 @@
 // empty carrier taken over by JOIN, the Tab view of every carrier; the captain locks (another player can't join), kicks
 // a member (who lands on the least crewed other carrier), a JOIN to a rival carrier, the captain leaves (captaincy
 // passes on).
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const args = process.argv.slice(2)
 const opt = (k: string, d: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d
@@ -270,7 +274,7 @@ if (!only.includes("ops") && !only.includes("squads")) {
   console.log(logs.length ? `console:\n${logs.slice(0, 30).join("\n")}` : "console: clean")
   console.log(failures ? `${failures} FAILED` : "all checks passed")
   await browser.close()
-  process.exit(failures ? 1 : 0)
+  await budget.exit(failures ? 1 : 0)
 }
 
 // 2. Five players in a fresh room, each joiner on a carrier of their own until bo and di board ada's (pilots on deck)
@@ -429,4 +433,4 @@ await shot(ed, "tab-narrow")
 console.log(logs.length ? `console:\n${logs.slice(0, 30).join("\n")}` : "console: clean")
 console.log(failures ? `${failures} FAILED` : "all checks passed")
 await browser.close()
-process.exit(failures ? 1 : 0)
+await budget.exit(failures ? 1 : 0)

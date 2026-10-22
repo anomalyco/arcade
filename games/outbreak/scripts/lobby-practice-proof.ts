@@ -3,8 +3,12 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process"
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { randomRoomCode } from "@arcade/kit/sim/matchmaking"
-import { chromium, type Browser, type Page } from "playwright-core"
+import { type Browser, type Page } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { createServer } from "vite"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 /**
  * Lobby practice proof (AR-89, Kit: "Maybe a tutorial in the loadout. While loading out you can train.") in headless

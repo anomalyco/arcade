@@ -26,9 +26,12 @@
 import { mkdirSync, writeFileSync, existsSync, rmSync, readdirSync, statSync, readFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { spawn, spawnSync } from "node:child_process"
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { WEATHER_PRESETS, mixWeather, makeWeather, type Weather } from "../shared/weather"
 import { phaseOfHour } from "../shared/daycycle"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const args = process.argv.slice(2)
 const opt = (k: string, d: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d
@@ -520,7 +523,7 @@ const adapter = await page.evaluate(async () => {
   return a ? `${a.info.vendor} / ${a.info.architecture} / ${a.info.description}` : "no adapter"
 })
 console.log(`adapter: ${adapter}`)
-if (/swiftshader/i.test(adapter) || adapter === "no adapter") process.exit(2)
+if (/swiftshader/i.test(adapter) || adapter === "no adapter") await budget.exit(2)
 
 type V = { step(ms: number): number; now: number }
 for (let i = 0; ; i++) {

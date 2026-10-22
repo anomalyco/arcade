@@ -2,7 +2,9 @@
 // Usage:
 //   bun scripts/compare.ts --phase=before
 //   bun scripts/compare.ts --phase=after
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
+
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { homedir, hostname } from "node:os"
 import { join } from "node:path"
@@ -811,6 +813,8 @@ async function stitchBeforeAfter(page: Page, beforeJson: BenchResult, afterJson:
 }
 
 async function main(): Promise<void> {
+  await using budget = browserBudget()
+  const { chromium } = budget
   const assembleOnly = args.includes("--assemble-only")
   const stopVite = assembleOnly ? null : await ensureViteServer()
   const exe = findChromeExecutable()

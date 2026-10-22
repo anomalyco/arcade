@@ -15,8 +15,12 @@
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { chromium, type Browser, type Page } from "playwright-core"
+import { type Browser, type Page } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { createServer, type ViteDevServer } from "vite"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const root = resolve(import.meta.dir, "..")
 const arg = (name: string, fallback?: string) => {

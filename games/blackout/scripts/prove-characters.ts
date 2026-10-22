@@ -1,9 +1,12 @@
 // Headless Metal proof for the interactive Characters page (characters.html). Run through hivemind.
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { createServer } from "vite"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { findChromeExecutable } from "./compare"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const out = join(import.meta.dir, "../../../captures/rig-page")
 mkdirSync(out, { recursive: true })

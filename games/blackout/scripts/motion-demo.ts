@@ -1,7 +1,10 @@
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { findChromeExecutable, installGpuInstrumentation } from "./compare"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 // Actual simulation + presentation, deterministic input. Only fixture placement/camera framing is scripted.
 const root = join(import.meta.dir, "../../.."), out = join(root, "captures/blackout-motion-demo")

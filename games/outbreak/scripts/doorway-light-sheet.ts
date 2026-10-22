@@ -13,10 +13,13 @@
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { sharedEdges } from "../shared/houses/geometry"
 import { inBuildingFootprint, propShape } from "../shared/map"
 import { generateWorldChunk } from "../shared/world"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const game = resolve(import.meta.dir, "..")
 const arg = (name: string, fallback?: string) => {
@@ -89,7 +92,7 @@ function plan(): Shot[] {
 const shots = plan()
 if (process.argv.includes("--plan")) {
   for (const s of shots) console.log(s.name, s.label, s.doorId ?? "", s.x.toFixed(2), s.y.toFixed(2))
-  process.exit(0)
+  await budget.exit(0)
 }
 assert(shots.length >= 12, `only ${shots.length} openings`)
 mkdirSync(out, { recursive: true })

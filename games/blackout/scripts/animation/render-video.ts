@@ -1,10 +1,13 @@
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../../scripts/browser-budget"
 import { createServer } from "vite"
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"
 import { spawnSync } from "node:child_process"
 import { findChromeExecutable } from "../compare"
 import { blackoutRoot, parseArgs, repoRoot } from "./common"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 // Side-view video of the unarmed survivor: 2 s walk, then 2 s run, frame-stepped through the Characters page.
 // Usage: bun games/blackout/scripts/animation/render-video.ts [--out dir]
@@ -149,5 +152,5 @@ const ff = spawnSync(
   ],
   { stdio: "inherit" },
 )
-if (ff.status !== 0) process.exit(ff.status ?? 1)
+if (ff.status !== 0) await budget.exit(ff.status ?? 1)
 console.log(`Saved ${outMp4}`)

@@ -1,8 +1,11 @@
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdir,readdir } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
 import { START } from "../src/world"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 // One requested matched-camera evidence set; not an automated appearance test.
 const out=resolve(process.env.LOT_CAPTURE_DIR ?? "captures/lot/detail-iteration-5")

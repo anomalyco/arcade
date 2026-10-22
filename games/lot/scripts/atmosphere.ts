@@ -1,9 +1,12 @@
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { build } from "vite"
 import { serveDist } from "./serve-dist"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 /**
  * Paired in-page GPU cost and title-camera stills of the lot's atmosphere (fog bank, fog-depth blur, lit cloud deck),

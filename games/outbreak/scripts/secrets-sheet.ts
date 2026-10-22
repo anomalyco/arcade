@@ -10,8 +10,11 @@
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { SECRET_SCENES } from "../src/secrets/stage"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const game = resolve(import.meta.dir, "..")
 const arg = (name: string, fallback?: string) => {

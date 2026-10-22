@@ -2,10 +2,13 @@
 // Getaway pixel parity for the shared driving FX: renders the same seeded drift (tyre smoke, skids, sparks) with the
 // shared modules from BASE_REF (default origin/main) and from the working tree, and requires identical screenshots.
 // Headless Metal, muted, no visible window: `hivemind run --kind browser -- bun games/getaway/scripts/prove-driving-fx-parity.ts`
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { createServer, type ViteDevServer } from "vite"
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const root = resolve(import.meta.dir, "../../.."), out = join(root, "captures/driving-fx")
 mkdirSync(out, { recursive: true })
@@ -22,7 +25,7 @@ const baseline = new Map(shared.map(p => {
   if (!existsSync(join(snapshot, p))) throw Error(`No ${base}:${p}; run once with git to snapshot it`)
   return [join(root, p), readFileSync(join(snapshot, p), "utf8")]
 }))
-if (process.argv.includes("--snapshot")) process.exit(0)
+if (process.argv.includes("--snapshot")) await budget.exit(0)
 const servers: ViteDevServer[] = [], swapped = new Set<string>()
 const fixture = async (useBase: boolean) => {
   const dir = join(root, "games/getaway")

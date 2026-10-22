@@ -8,9 +8,13 @@
 //   ssh hailmary 'cd /tmp/carrier-zones && ~/.bun/bin/bun zones-shot.ts --out=/tmp/carrier-zones/out'
 //
 // Options: --base=URL  --size=1536x960
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const args = process.argv.slice(2)
 const opt = (k: string, d: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d
@@ -338,4 +342,4 @@ await shot(o, "11-round-won")
 console.log(logs.length ? `console:\n${logs.slice(0, 30).join("\n")}` : "console: clean")
 console.log(failures ? `${failures} FAILED` : "all checks passed")
 await browser.close()
-process.exit(failures ? 1 : 0)
+await budget.exit(failures ? 1 : 0)

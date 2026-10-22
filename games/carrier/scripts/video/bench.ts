@@ -17,6 +17,9 @@ import { join, resolve } from "node:path"
 import { spawn } from "node:child_process"
 import { launch, requireGpu, h264, h264In, fileSink, procSink, muxH264, ffmpeg, sec, type Session, type Sink } from "./core"
 import type { Clock, EncoderSpec, Recorder } from "./page"
+import { browserBudget } from "../../../../scripts/browser-budget"
+
+await using budget = browserBudget()
 
 const args = process.argv.slice(2)
 const opt = (k: string, d: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d
@@ -74,7 +77,7 @@ function loop(s: Session, n: number, cap: boolean): Promise<number> {
 }
 
 async function open(): Promise<Session> {
-  const s = await launch({ dist, width: W, height: H, path: "?seed=7&lab=0", quiet: true })
+  const s = await launch({ dist, width: W, height: H, path: "?seed=7&lab=0", quiet: true }, budget)
   await requireGpu(s.page)
   await ready(s)
   return s

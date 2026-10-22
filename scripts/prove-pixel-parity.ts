@@ -7,8 +7,12 @@
 // runs it for `advance` ms, for games without a manual clock. Math.random is seeded on every driver.
 import { mkdirSync } from "node:fs"
 import { join, resolve, sep } from "node:path"
-import { chromium, type Browser } from "playwright-core"
+import { type Browser } from "playwright-core"
+import { browserBudget } from "./browser-budget"
 import type { Renderer } from "../packages/kit/gpu/renderer"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const [game, baseDir, headDir] = process.argv.slice(2).filter((a) => !a.startsWith("--"))
 const opt = (k: string, d: string) => process.argv.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d

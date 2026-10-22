@@ -1,9 +1,12 @@
 // One headless Metal browser, through hivemind. No authenticated pages or audio.
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { createServer } from "vite"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { findChromeExecutable } from "./compare"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const out = join(import.meta.dir, "../../../captures/shared-human")
 mkdirSync(out, { recursive: true })

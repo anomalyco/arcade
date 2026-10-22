@@ -1,9 +1,12 @@
 /// <reference types="@webgpu/types" />
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { createServer, type ViteDevServer } from "vite"
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { installGpuInstrumentation } from "../../blackout/scripts/compare"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const root=resolve(import.meta.dir,"../../.."),out=join(root,"captures/fx-integration")
 mkdirSync(out,{recursive:true})

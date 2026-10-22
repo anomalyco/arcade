@@ -8,9 +8,13 @@
  */
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { chromium, type Browser, type Page } from "playwright-core"
+import { type Browser, type Page } from "playwright-core"
+import { browserBudget } from "./browser-budget"
 import { createServer } from "vite"
 import { serveDist } from "../games/lot/scripts/serve-dist"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const repo = resolve(import.meta.dir, "..")
 const arg = (name: string, fallback?: string) => {

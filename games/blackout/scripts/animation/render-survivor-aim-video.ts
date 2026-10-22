@@ -1,10 +1,13 @@
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../../scripts/browser-budget"
 import { createServer } from "vite"
 import { mkdirSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { spawnSync } from "node:child_process"
 import { findChromeExecutable } from "../compare"
 import { parseArgs, repoRoot } from "./common"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const { out: OUT_DIR, flags } = parseArgs(process.argv.slice(2), { tag: "video", out: "survivor-aim" })
 const framesOnly = flags.has("frames-only")
@@ -126,7 +129,7 @@ try {
 
 if (framesOnly) {
   console.log(`Captured ${totalFrames * 2} frames in ${vidFramesDir}`)
-  process.exit(0)
+  await budget.exit(0)
 }
 
 const stitchPy = `
@@ -210,7 +213,7 @@ for f in range(144):
     out.save(os.path.join(vid_dir, f"pair-{f:04d}.png"))
 `
 const pyRes = spawnSync("python3", ["-c", stitchPy, vidFramesDir, OUT_DIR], { stdio: "inherit" })
-if (pyRes.status !== 0) process.exit(pyRes.status ?? 1)
+if (pyRes.status !== 0) await budget.exit(pyRes.status ?? 1)
 
 const outMp4 = join(OUT_DIR, "survivor-aim-topdown.mp4")
 const ff = spawnSync(
@@ -232,7 +235,7 @@ const ff = spawnSync(
   ],
   { stdio: "inherit" },
 )
-if (ff.status !== 0) process.exit(ff.status ?? 1)
+if (ff.status !== 0) await budget.exit(ff.status ?? 1)
 // Clean up temporary frame directory
 spawnSync("rm", ["-rf", vidFramesDir])
 console.log(`Saved ${outMp4}`)

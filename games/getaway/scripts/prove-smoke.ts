@@ -1,7 +1,10 @@
 /// <reference types="@webgpu/types" />
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdirSync, readdirSync, existsSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 // Sequential, silent Metal captures of a fixed 30 Hz launch/turn. Requires the named Nexus preview.
 const out = join(import.meta.dir, "../../../captures/getaway-smoke")

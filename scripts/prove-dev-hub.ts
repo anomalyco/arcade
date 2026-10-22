@@ -1,10 +1,14 @@
 // Headless proof of the single-origin developer router and hub. Writes captures/dev-hub/.
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "./browser-budget"
 import { createServer } from "vite"
 import { spawn, type ChildProcess } from "node:child_process"
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { createServer as createNetServer } from "node:net"
 import { join, resolve } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const root = resolve(import.meta.dir, ".."), out = join(root, "captures/dev-hub")
 mkdirSync(out, { recursive: true })

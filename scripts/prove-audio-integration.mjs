@@ -2,7 +2,10 @@
 import assert from "node:assert/strict"
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
 import { resolve, sep } from "node:path"
-import { chromium } from "playwright-core"
+import { browserBudget } from "./browser-budget.ts"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const production = process.argv.includes("--production")
 const out = resolve(process.env.OUT ?? "captures/audio-integration")

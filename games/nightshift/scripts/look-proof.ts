@@ -3,7 +3,7 @@
  * Headless, muted Metal readback on a synthetic clock. `--perf` times only; `--set key=value,...` overrides the new
  * look's settings; `--variants today,look` picks what to capture; `--tier low|balanced|high` pins the quality tier.
  */
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdir,readdir } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
@@ -13,6 +13,9 @@ import type { Settings } from "../src/settings"
 import type { Opening } from "../src/opening"
 import type { Call } from "../shared/call"
 import { LOOK_SPOTS } from "../src/look/spots"
+
+await using budget = browserBudget()
+const { chromium } = budget
 type App={elevator:{phase:string;downstairs:boolean;closure:number};camera:WalkCamera;renderer:Renderer;settings:Settings;opening:Opening;call:Call;time:number;setCamera(view:"wide"|"phone"):void;lookReady():Promise<void>;quality:{pin(tier:string|null):void;state():unknown}}
 type Proof={nightshift:App;step(capture:boolean,measure?:boolean):Promise<{png:string;ms:number}>}
 const arg=(name:string)=>{const i=process.argv.indexOf(name);return i>=0?process.argv[i+1]:undefined}

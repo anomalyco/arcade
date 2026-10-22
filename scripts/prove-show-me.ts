@@ -1,12 +1,15 @@
 // Headless Metal end-to-end proof for `ui.note`, `arcade note`, and the 10-step `arcade tour` (.arcade-tours/overnight.json).
 // Verifies every step connects, applies setup commands, renders the pinned Show Me card & target highlight ring,
 // sets document.title to "▸ <title>", supports Esc/× dismissal without blocking input, and exports <=1280px screenshots.
-import { chromium } from "playwright-core"
+import { browserBudget } from "./browser-budget"
 import { spawn, type ChildProcess } from "node:child_process"
 import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs"
 import { createServer as createNetServer } from "node:net"
 import { homedir } from "node:os"
 import { join, resolve } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const root = resolve(import.meta.dirname, "..")
 const artifactsDir = join(homedir(), "code/home/artifacts/2026-10-14-show-me")

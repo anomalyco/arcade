@@ -1,10 +1,13 @@
 // Sequential, muted Metal proof. Run from the repository root against the two Nexus previews.
-import { chromium } from "playwright-core"
+import { browserBudget } from "./browser-budget.ts"
 import ts from "typescript"
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { resolve, join, dirname } from "node:path"
 import { execFileSync } from "node:child_process"
 import { createHash } from "node:crypto"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const game = process.argv[2] ?? "getaway", label = process.argv[3] ?? "after", before = label === "before"
 const base = process.env.BASE_REF ?? "8dff83439c254a6a70daaf2f934c12e918941f5c"

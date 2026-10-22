@@ -1,7 +1,10 @@
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdir,readdir } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const out=resolve("captures/lot/synced-compare")
 await mkdir(out,{recursive:true})

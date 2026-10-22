@@ -1,9 +1,13 @@
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "./browser-budget"
 import { serveDist } from "../games/lot/scripts/serve-dist"
 import type { WalkAudioFrame } from "../games/lot/src/walk-audio"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 // Lot weather proof, headless and muted (run through HiveMind browser admission; never plays audio):
 //   bun scripts/lot-storm-proof.ts stills    one still per Weather mode at the gate, and one mid-strike

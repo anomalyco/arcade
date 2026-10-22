@@ -1,9 +1,13 @@
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs"
 import { resolve } from "node:path"
-import { chromium, type Page } from "playwright-core"
+import { type Page } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { TICK_DT } from "../shared/clock"
 import { LocalSession } from "../shared/session"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const game = resolve(import.meta.dir, "..")
 const artifactDir = "/Users/kit/code/home/artifacts/2026-10-14-zombie-ai"

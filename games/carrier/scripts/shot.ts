@@ -2,11 +2,14 @@
 // On headless Linux, any submit that touches a WebGPU canvas texture destroys the SwiftShader device, so an init
 // script swaps the canvas texture for an offscreen one; this reads it back through the game's device and writes a PNG.
 // Usage: bun scripts/shot.ts [url] [--out=file.png] [--wait=seconds] [--query=seed=1&t=120] [--size=1536x1024]
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { deflateSync } from "node:zlib"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const args = process.argv.slice(2)
 const opt = (k: string, d: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d

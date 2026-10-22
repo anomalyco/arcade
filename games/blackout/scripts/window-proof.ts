@@ -1,8 +1,11 @@
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { mkdirSync, writeFileSync, unlinkSync, readFileSync, existsSync } from "node:fs"
 import { join } from "node:path"
 import { createHash } from "node:crypto"
 import { findChromeExecutable, installGpuInstrumentation } from "./compare"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const root = join(import.meta.dir, "../../.."), out = join(root, "captures/blackout-window")
 mkdirSync(out, { recursive: true })

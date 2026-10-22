@@ -7,10 +7,14 @@
  * navigation, every resource (bytes, start, end), the game's `nightshift:` marks, WebGPU adapter/device time,
  * pipeline counts, the first submitted frame's GPU completion and the longest main-thread frame gap.
  */
-import { chromium, type Browser } from "playwright-core"
+import { type Browser } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { existsSync } from "node:fs"
 import { readdir } from "node:fs/promises"
 import { resolve } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const arg=(name:string)=>{const i=process.argv.indexOf(`--${name}`);return i<0?undefined:process.argv[i+1]}
 const runs=Number(arg("runs")??3),profile=process.argv.includes("--profile"),mbps=arg("mbps")?Number(arg("mbps")):undefined,root=resolve(import.meta.dir,"..")

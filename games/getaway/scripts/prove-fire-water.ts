@@ -1,6 +1,9 @@
-import { chromium } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { existsSync,mkdirSync,readdirSync,writeFileSync } from "node:fs"
 import { resolve } from "node:path"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const out=process.env.FX_OUT??resolve(import.meta.dir,"../../../captures/fire-water")
 mkdirSync(out,{recursive:true})

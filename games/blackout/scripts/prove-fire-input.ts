@@ -2,13 +2,17 @@
  * bun scripts/prove-fire-input.ts --base=http://blackout-fire.localhost:1355 --out=/path/to/proof.json
  * --baseline expects the first between-tick tap to be lost, against an unmodified baseline preview.
  */
-import { chromium, type WebSocketRoute } from "playwright-core"
+import { type WebSocketRoute } from "playwright-core"
+import { browserBudget } from "../../../scripts/browser-budget"
 import { writeFileSync } from "node:fs"
 import assert from "node:assert/strict"
 import { decodeClient, encodeServer } from "../shared/protocol"
 import { World } from "../shared/sim/world"
 import { buildSnapshot, rosterOf } from "../shared/sim/view"
 import { findChromeExecutable } from "./compare"
+
+await using budget = browserBudget()
+const { chromium } = budget
 
 const opt = (key: string, fallback: string) => process.argv.find((s) => s.startsWith(`--${key}=`))?.slice(key.length + 3) ?? fallback
 const baseline = process.argv.includes("--baseline")
