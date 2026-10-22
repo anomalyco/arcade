@@ -68,12 +68,12 @@ export function texturedSceneShader(hooks: SceneHooks, masked = false): string {
        texNormalVariance = min((1.0 - normalLength) / normalLength, 1.0) * Mtl.surface.z * Mtl.surface.z;
       let dp1 = dpdx(o.world); let dp2 = dpdy(o.world);
       let du1 = dpdx(o.uv); let du2 = dpdy(o.uv);
-      let N = normalize(o.normal);
-      let p1 = cross(dp2, N); let p2 = cross(N, dp1);
+      let texGeometricNormal = normalize(o.normal);
+      let p1 = cross(dp2, texGeometricNormal); let p2 = cross(texGeometricNormal, dp1);
       let T = p1 * du1.x + p2 * du2.x;
       let B = p1 * du1.y + p2 * du2.y;
       let inv = inverseSqrt(max(max(dot(T,T), dot(B,B)), 1e-12));
-       texNormal = normalize((T * tn.x + B * tn.y) * inv * Mtl.surface.z + N * tn.z);
+       texNormal = normalize((T * tn.x + B * tn.y) * inv * Mtl.surface.z + texGeometricNormal * tn.z);
        ${masked ? "if (texBase.a < Mtl.surface.w) { discard; }" : ""}
       ${hooks.fragmentStart ?? ""}`,
     material: `

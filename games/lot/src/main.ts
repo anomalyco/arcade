@@ -1,5 +1,5 @@
 import { mat4 } from "wgpu-matrix"
-import { FirstPerson } from "@arcade/kit/client/first-person"
+import { WalkCamera } from "@arcade/kit/client/walk-camera"
 import { keyPromptHtml } from "@arcade/kit/client/key-cap"
 import { openGpu } from "@arcade/kit/gpu/boot"
 import { loadGltf } from "@arcade/kit/gpu/gltf"
@@ -33,6 +33,10 @@ import { lobbyTroffer, trofferFog } from "./interior/fixtures"
 import { createStreetLampSettings, packStreetLamp, streetLampControls } from "@arcade/kit/gpu/lights/street"
 import { fluxGain, lensChunk, streetLamps } from "./lamps"
 import { sourceSurfaces } from "./surfaces"
+import { SurfaceQuery } from "./surface-query"
+import { footSurface } from "./foot-surface"
+import { walkDefaults, walkControls } from "./walk-settings"
+import { LotAudio, bindLotAudio, renderWalkAudio, type WalkAudioFrame } from "./walk-audio"
 
 async function main() {
   const canvas = document.querySelector<HTMLCanvasElement>("#view")!
@@ -54,6 +58,8 @@ async function main() {
   renderer.setTemporal({ ...TEMPORAL_DEFAULTS, mode: "taa", sharpen: 0.12 })
   const t0=performance.now()
   const world = await buildWorld()
+  const surfaceQuery = new SurfaceQuery(world.surfaces)
+  const surfaceAt = await footSurface(surfaceQuery)
   const worldMs=performance.now()-t0
   const interior = await loadInterior(device), indoor = interiorDefaults()
   walls.push(...interior.colliders.map(b=>[b.min[0]!,b.min[2]!,b.max[0]!,b.max[2]!] as const))
@@ -146,11 +152,17 @@ async function main() {
   const entranceGlass=lazy(()=>new TexturedMeshPass(renderer.passContext,entrancePrimitives,thinGlassHooksLot))
   renderer.addPass("alpha",{draw:p=>(glass.mode==="thin"?entranceGlass:entranceToday).draw(p)})
   renderer.addPass("alpha",new TexturedMeshPass(renderer.passContext,interior.primitives.filter(p=>p.blend && p.roughness>=0.1),texturedHooks))
-  const camera = new FirstPerson(canvas, () => panel.visible)
+  const walking=walkDefaults()
+  const playing=()=>!panel.visible&&!document.hidden&&document.hasFocus()&&document.pointerLockElement===canvas
+  const camera = new WalkCamera(canvas, () => panel.visible, walking, ()=>playing()&&walking.walkMode!=="today")
   camera.body.x = START.x; camera.body.y = START.z; camera.yaw = START.yaw; camera.pitch = START.pitch
   camera.height=START.height; camera.near=0.15; camera.far=1200
   const panel = new LabPanel(settings, controls(settings), new URLSearchParams(location.search), () => camera.release(), { open: false, pill: false, groupActions: false })
   const comparison=compareCamera(camera,()=>panel.visible)
+  panel.addControls(walking,walkControls)
+  const audio=new LotAudio(world.scene.lamps)
+  bindLotAudio(canvas,audio,walking,()=>panel.visible)
+  let audioFrame:WalkAudioFrame|null=null
   panel.addControls(street,streetLampControls("Lamps","lamps."))
   panel.addControls(forestSettings,forestControls(forestSettings))
   panel.addControls(dressingSettings,dressingControls(dressingSettings))
@@ -189,7 +201,7 @@ async function main() {
   const indoorStart=practicals.length-interior.lamps.length
   const frameData = newSceneFrame(), custom = new Float32Array(NIGHT_FLOATS), empty = new Float32Array(0)
   const prompts = () => {
-    hud.innerHTML = [document.pointerLockElement === canvas ? "" : keyPromptHtml("Mouse0", "Look"), keyPromptHtml("KeyW", "Move"), keyPromptHtml("KeyF", "Flashlight"), keyPromptHtml("Backquote", "Night"), comparison.available ? keyPromptHtml("KeyP", "Compare position") : ""].join(" ")
+    hud.innerHTML = [document.pointerLockElement === canvas ? "" : keyPromptHtml("Mouse0", "Look"), keyPromptHtml("KeyW", "Move"), keyPromptHtml("KeyF", "Flashlight"), keyPromptHtml("KeyM", "Mute"), keyPromptHtml("Backquote", "Night"), comparison.available ? keyPromptHtml("KeyP", "Compare position") : ""].join(" ")
   }
   prompts()
   document.addEventListener("pointerlockchange", prompts)
@@ -219,7 +231,10 @@ async function main() {
     const height = Math.max(1, Math.round(innerHeight * Math.min(devicePixelRatio, 1.5)))
     if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; renderer.resize(width, height) }
     const dt = Math.min(0.05, (now - last) / 1000); last = now
+    camera.speed=walking.walkMode==="today"?2.1:1.7
     const vp = camera.update(dt, width / height, walls)
+    audioFrame={time:camera.walk.time,x:camera.body.x,z:camera.body.y,yaw:camera.yaw,active:playing(),surface:surfaceAt(camera.body.x,camera.body.y,{...wet,wetness:settings.wetness}),inside:camera.body.x>-55&&camera.body.x<35&&camera.body.y>-3.2&&camera.body.y<22,wetness:settings.wetness,events:camera.walk.events,settings:{...walking}}
+    audio.update(audioFrame)
     comparison.frame()
     // Street mode: the lens emitter and roadway profile replace the round spot, at the same flux (lamps.ts).
     const area=street.mode==="area"
@@ -301,6 +316,8 @@ async function main() {
   }
   // measureFrame(): GPU ms of the last frame's input (timestamp-query), for scripts/atmosphere.ts.
   Object.assign(window, { lot: { measureLamps, camera, settings, street, indoor, walls, ssr, wet, measure, measureFrames, measureFrame: () => lastFrame ? renderer.measure(lastFrame) : null, step, spots, forestPresets:FOREST_PRESETS, get input() { return lastFrame }, glass, rooms, contact, forest:forestSettings, forestStats:()=>forest.stats(), timings:{worldMs,readyMs}, dressing:dressingSettings, get dressingCount() { return dressingCount }, fog, renderer, comparison, get frames() { return frames }, get paused() { return paused }, set paused(value:boolean) { paused=value }, ready: true } })
+  Object.assign((window as any).lot, { surfaceQuery, surfaceAt, walking, renderWalkAudio:(tape:WalkAudioFrame[],duration:number)=>renderWalkAudio(tape,duration,world.scene.lamps) })
+  Object.defineProperty((window as any).lot,"audioFrame",{get:()=>audioFrame})
   requestAnimationFrame(render)
 }
 void main().catch(error => { console.error(error); document.getElementById("hud")!.textContent = String(error) })

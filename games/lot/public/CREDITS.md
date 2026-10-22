@@ -75,3 +75,6 @@ written for the kit after these MIT-licensed examples; no source files are inclu
   https://github.com/billpwchan/neon-zenith
 - web-ocean footprint-filtered cloud octaves and analytic edge width, © 2026 Maksymilian Dendura, MIT:
   https://github.com/Noniv/web-ocean
+# Walking audio
+
+Footsteps, clothing, wind, traffic, lamp buzz, water drips, HVAC and distant wildlife are original deterministic synthesis. No sampled recordings are used. The quiet contact bank and walking camera are shared with Night Shift ’87 through `@arcade/kit`.
