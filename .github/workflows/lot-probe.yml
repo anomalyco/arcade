@@ -8,7 +8,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        viewport: ["640x360", "160x90"]
+        probe: ["base,noOpaque", "noAlpha,noLevel", "noVolumes,noShadowLights", "noLights,noTaa", "dropOpaque0,dropOpaque1", "dropOpaque2,dropOpaque3", "dropOpaque4,dropOpaque5,dropOpaque6"]
     defaults:
       run:
         working-directory: games/lot
@@ -21,10 +21,8 @@ jobs:
         working-directory: .
       - run: bunx vite build
       - run: bunx --no-install playwright-core install chromium --only-shell
-      - name: Smoke ${{ matrix.viewport }}
-        timeout-minutes: 15
+      - name: Probe ${{ matrix.probe }}
+        timeout-minutes: 20
         env:
-          SMOKE_VIEWPORT: ${{ matrix.viewport }}
-          SMOKE_DEADLINE_MS: "800000"
-          SMOKE_READY_MS: "300000"
-        run: bun ../../scripts/smoke.mjs
+          PROBE: ${{ matrix.probe }}
+        run: bun scripts/probe-smoke.mjs
