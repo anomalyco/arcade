@@ -314,7 +314,7 @@ fn ghost(px: vec2f, p: vec2f, c: vec2f, k: f32, r: f32, tint: vec3f) -> vec3f {
     let gain = clamp(u.f.z, 0.0, 4.0);
     let dark = 1.0 - smoothstep(0.0, 0.3, lum(toSrgb(wide)));
     let darkPx = 1.0 - smoothstep(0.02, 0.5, lum(d));
-    let sigma = gainA * (0.012 + 0.02 * gain) * (0.4 + 0.6 * dark) * (0.5 + darkPx);
+    let sigma = gainA * (0.028 + 0.022 * gain) * (0.4 + 0.6 * dark) * (0.5 + darkPx);
     let tk = u32(u.k.z);
     let g1 = hf(px.x, px.y, tk * 3u + 1u) + hf(px.x, px.y, tk * 3u + 2u) - 1.0;
     let tt = t * 8.0;
@@ -324,7 +324,7 @@ fn ghost(px: vec2f, p: vec2f, c: vec2f, k: f32, r: f32, tint: vec3f) -> vec3f {
     let cb = mix(vnoise2(px / bs, tb + 101u), vnoise2(px / bs, tb + 102u), tf) - 0.5;
     let cr = mix(vnoise2(px / bs + 37.0, tb + 201u), vnoise2(px / bs + 37.0, tb + 202u), tf) - 0.5;
     let fpn = (hf(px.x, 0.0, 77u) - 0.5) * 0.35;
-    d += vec3f(g1 + fpn) * sigma + vec3f(1.4 * cr, -0.34 * cb - 0.71 * cr, 1.77 * cb) * sigma * 2.2 * (0.3 + dark);
+    d += vec3f(g1 + fpn) * sigma + vec3f(1.4 * cr, -0.34 * cb - 0.71 * cr, 1.77 * cb) * sigma * 1.8 * (0.3 + dark);
     if (u.b.z < 0.5) {
       let h = textureLoad(hist, ip, 0).rgb;
       let w = u.k.x * 0.88 * (0.25 + 0.75 * darkPx) * (1.0 - smoothstep(0.05, 0.22, length(d - h))) * min(gainA, 1.0);
