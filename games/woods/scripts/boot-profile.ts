@@ -1,7 +1,8 @@
 /**
  * Where the boot goes: loads the built game headless (Metal) with a query (default `?smoke`), records a CPU profile
  * until two frames are drawn, and prints the `woods:` boot marks and the top self-time functions. Run through HiveMind
- * after `vite build` (add `--minify false` for readable names): `bun scripts/boot-profile.ts [?query]`.
+ * after `vite build` (add `--minify false` for readable names): `bun scripts/boot-profile.ts [?query]`. `BOOT_PROFILE=0`
+ * records no profile (marks only, without the sampler's overhead).
  */
 import { resolve, sep } from "node:path"
 import { chromium } from "playwright-core"
@@ -21,14 +22,18 @@ const browser = await chromium.launch({ headless: true, args: ["--enable-unsafe-
 const page = await browser.newPage({ viewport: { width: 640, height: 360 } })
 page.on("pageerror", (e) => console.log("pageerror", e.message))
 const cdp = await page.context().newCDPSession(page)
-await cdp.send("Profiler.enable")
-await cdp.send("Profiler.setSamplingInterval", { interval: 1000 })
-await cdp.send("Profiler.start")
+const profiling = process.env.BOOT_PROFILE !== "0"
+if (profiling) {
+  await cdp.send("Profiler.enable")
+  await cdp.send("Profiler.setSamplingInterval", { interval: 1000 })
+  await cdp.send("Profiler.start")
+}
 await page.goto(`http://127.0.0.1:${server.port}${prefix}${process.argv[2] ?? "?smoke"}`, { waitUntil: "load", timeout: 30_000 })
 await page.waitForFunction(() => ((window as unknown as { woods?: { frames: number } }).woods?.frames ?? 0) >= 2, undefined, { timeout: 120_000, polling: 250 })
-const { profile } = (await cdp.send("Profiler.stop")) as { profile: { nodes: Node[]; samples: number[]; timeDeltas: number[] } }
 console.log("marks", JSON.stringify(await page.evaluate(() => performance.getEntriesByType("mark").map((m) => [m.name, Math.round(m.startTime)]))))
 console.log("stats", JSON.stringify(await page.evaluate(() => (window as unknown as { woods: { stats(): { loadMs: number; buildMs: number } } }).woods.stats()).then(({ loadMs, buildMs }) => ({ loadMs, buildMs }))))
+if (!profiling) { await browser.close(); server.stop(true); process.exit(0) }
+const { profile } = (await cdp.send("Profiler.stop")) as { profile: { nodes: Node[]; samples: number[]; timeDeltas: number[] } }
 const byId = new Map(profile.nodes.map((n) => [n.id, n]))
 const self = new Map<string, number>()
 profile.samples.forEach((id, i) => {

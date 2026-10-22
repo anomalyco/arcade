@@ -107,7 +107,11 @@ class Chunks {
 /** Seeds as 31-bit integers: a world may give 0..1 hashes (the woods toy) or integers (the demo). */
 const intSeed = (seed: number) => (Number.isInteger(seed) ? seed : Math.floor(Math.abs(seed) * 2147483647)) >>> 0
 
-export function buildForest(input: ForestWorld, models: ForestModels, opts: BuildOptions): ForestBuild {
+/**
+ * Builds the forest. `ground` is the ground on the terrain mesh's grid (`forestHeightGrid`); pass it when it was sampled
+ * elsewhere (the build worker gets it instead of the game's height function).
+ */
+export function buildForest(input: ForestWorld, models: ForestModels, opts: BuildOptions, ground: HeightGrid = forestHeightGrid(input)): ForestBuild {
   const world: ForestWorld & { logs: ForestWorld["logs"] } = {
     ...input,
     trees: input.trees.map(t => ({ ...t, seed: intSeed(t.seed) })),
@@ -129,8 +133,8 @@ export function buildForest(input: ForestWorld, models: ForestModels, opts: Buil
     ]
   })
   const reach = world.half + BACKDROP
-  // Everything after the deadfall (a game derives that from its own heights) stands on the terrain as drawn.
-  world.height = meshHeight(input.height, Math.ceil(reach + 12))
+  // Everything stands on the terrain as drawn.
+  world.height = gridHeight(ground, input.height)
   const rand = mulberry(world.seed * 31 + 5)
   const chunks = new Chunks()
   const H = world.height
@@ -418,24 +422,45 @@ export function buildForest(input: ForestWorld, models: ForestModels, opts: Buil
   return { templates, chunks: out, campLights, water: water.finish(), trunks: new Float32Array(trunkData), rocks: new Float32Array(rockData), field, fieldSize, stats, logs: world.logs }
 }
 
+/** The ground sampled on the terrain mesh's 1 m grid: integer metres from −half to +half on both axes, row by row in z. */
+export type HeightGrid = { half: number; data: Float32Array }
+
 /**
- * The ground as the terrain mesh draws it: the game's height sampled once on the mesh's 1 m grid (integer metres, out
- * to ±half) and read back over the same triangles (each quad split corner (i, j) to (i + 1, j + 1)), the game's own
- * function past the edge. Props sit on the surface you see, and the build calls the game's height ~250 k times instead
- * of ~4 M (a terrain function that costs 60 ns in Bun can cost µs in a page).
+ * Samples the game's height once on the terrain mesh's grid, out past the backdrop: the build reads the ground from it
+ * (`gridHeight`), calling the game's height ~250 k times instead of ~4 M (a terrain function that costs 60 ns in Bun
+ * can cost µs in a page).
  */
-function meshHeight(height: (x: number, z: number) => number, half: number): (x: number, z: number) => number {
-  const n = 2 * half + 1
-  const g = new Float32Array(n * n)
-  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) g[j * n + i] = height(i - half, j - half)
+export function forestHeightGrid(world: Pick<ForestWorld, "half" | "height">): HeightGrid {
+  // The terrain's last chunk ends on the chunk grid past the backdrop; its normals and mist hollows look 9.5 m further.
+  const half = Math.ceil((world.half + BACKDROP) / CHUNK) * CHUNK + 12, n = 2 * half + 1
+  const data = new Float32Array(n * n)
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) data[j * n + i] = world.height(i - half, j - half)
+  return { half, data }
+}
+
+/**
+ * The ground as the terrain mesh draws it: the grid read back over the same triangles (each quad split corner (i, j)
+ * to (i + 1, j + 1)), so props sit on the surface you see; `outside` past the grid's edge.
+ */
+export function gridHeight(grid: HeightGrid, outside: (x: number, z: number) => number): (x: number, z: number) => number {
+  const { half, data: g } = grid, n = 2 * half + 1
   return (x, z) => {
     const gx = x + half, gz = z + half
     const i = Math.floor(gx), j = Math.floor(gz)
-    if (!(i >= 0 && j >= 0 && i < n - 1 && j < n - 1)) return height(x, z)
+    if (!(i >= 0 && j >= 0 && i < n - 1 && j < n - 1)) return outside(x, z)
     const fx = gx - i, fz = gz - j, k = j * n + i
     const a = g[k]!, b = g[k + 1]!, c = g[k + n + 1]!, d = g[k + n]!
     return fz > fx ? a + fz * (d - a) + fx * (c - d) : a + fx * (b - a) + fz * (c - b)
   }
+}
+
+/** The grid's nearest edge sample past its edge (for a build without the game's height function). */
+export function clampedGridHeight(grid: HeightGrid): (x: number, z: number) => number {
+  const { half, data } = grid, n = 2 * half + 1
+  return gridHeight(grid, (x, z) => {
+    const i = Math.min(n - 1, Math.max(0, Math.round(x + half))), j = Math.min(n - 1, Math.max(0, Math.round(z + half)))
+    return data[j * n + i]!
+  })
 }
 
 function hollowness(world: ForestWorld, x: number, z: number): number {

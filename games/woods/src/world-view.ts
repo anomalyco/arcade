@@ -116,11 +116,18 @@ export class WorldView {
   private models(world: WoodsWorld) {
     const markers = new Mesh()
     for (const k of world.markers) marker(markers, k.x, k.z, k.y, k.id)
-    this.markerModel = this.renderer.addModel(markers)
+    this.markerModel = this.slot(this.markerModel, markers)
     const m = world.buildings.find((b) => b.kind === "mast")
     const tower = new Mesh()
     if (m) mast(tower, (m.rect[0] + m.rect[2]) / 2, (m.rect[1] + m.rect[3]) / 2, m.y, m.h)
-    this.mastModel = this.renderer.addModel(tower)
+    this.mastModel = this.slot(this.mastModel, tower)
+  }
+
+  /** A model slot: allocated once, refilled when the world is regenerated. */
+  private slot(id: number, mesh: Mesh): number {
+    if (id < 0) return this.renderer.addModel(mesh)
+    this.renderer.setModel(id, mesh)
+    return id
   }
 
   /** Rebuilds the static world. Call again when the world is regenerated (trunk density, seed). */

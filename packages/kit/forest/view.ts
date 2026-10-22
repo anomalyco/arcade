@@ -4,6 +4,7 @@
  * kit `Renderer`, the forest passes, the torch's spot shadow, the mist and the camera model. See
  * `docs/game-notes.md` (Woods look) for what each trick buys and costs.
  */
+import { reactivePipelineDescriptor } from "../gpu/reactive"
 import { Renderer, TEMPORAL_DEFAULTS, type Batch, type FrameInput } from "../gpu/renderer"
 import { makeSceneShader, spriteShader } from "../gpu/shaders"
 import { compileShaderModuleWithLog, type PassContext, type ScenePass } from "../gpu/pass-graph"
@@ -16,7 +17,8 @@ import { WET_DEFAULTS } from "../gpu/reflections/wet"
 import { packBeamProfile } from "../gpu/lights/beam"
 import type { ForestWorld, Vec3 } from "../sim/forest-world"
 import { loadForestModels, loadForestTextures, type ForestTextures } from "./assets"
-import { buildForest, CHUNK, INSTANCE_FLOATS, type ForestBuild } from "./build"
+import { buildForest, CHUNK, forestHeightGrid, INSTANCE_FLOATS, type ForestBuild } from "./build"
+import { ForestBuilder } from "./offthread"
 import { ALPHA_COVERAGE_BASE } from "./alpha-coverage"
 import { GROUND_CELL, GROUND_CELLS, WOODS_FLOATS, batchHooks, cutoutDepthWgsl, forestHooks, forestShadowInstanceWgsl, moteShader, skyShader, treeVertexWgsl, woodsUniformWgsl } from "./shaders"
 import { forestPost } from "./post"
@@ -105,7 +107,7 @@ const TAU = Math.PI * 2
 
 /** The forest's fog volume: mist pools in the hollows (the bank sits at absolute heights) and thickens over the lake. */
 export const forestFogVolume = (smoke: boolean) => fogScatterVolume({
-  declarations: woodsUniformWgsl + (smoke ? "" : woodsBankWgsl), atmosphere: !smoke, bankLocal: "woodsBankLocal(p)", bankExtinction: true,
+  declarations: woodsUniformWgsl + (smoke ? "" : woodsBankWgsl), atmosphere: !smoke, bankLocal: "woodsBankLocal(p)", bankExtinction: true, torches: true,
   // Only glossy ground mirrors the lamps (water, wet boards, shore mud); dry litter and the camp's dirt do not.
   cutoff: "0.4", spotShadows: !smoke, surface: !smoke, reflectionSamples: 2, reflectionCap: "3.0",
   bankMask: "1.0 + 0.6 * (1.0 - smoothstep(0.85, 1.5, length((p.xz - N.lake.xy) / N.lake.zw)))",
@@ -146,14 +148,34 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
   renderer.setLevel({ chunks: [], glass: [], ...flatLighting(0, 0, [0, 0, 0]) })
   renderer.setBloomLevels(quality.bloomLevels)
 
+  // The build runs on a worker while the page decodes and uploads the textures. The worker's script and the models fetch
+  // first: the browser opens a few connections per host, and they must not queue behind the images. The ground is
+  // sampled meanwhile.
+  const mark = (phase: string, startTime?: number) => performance.mark(`${opts.markPrefix ?? "forest"}:${phase}`, startTime === undefined ? undefined : { startTime })
   const t0 = performance.now()
-  const [textures, models] = await Promise.all([loadForestTextures(device, opts.assetRoot, quality.textureSize), loadForestModels(opts.assetRoot)])
-  const loadMs = performance.now() - t0
-  performance.mark(`${opts.markPrefix ?? "forest"}:assets`)
+  const builder = new ForestBuilder()
+  const modelsLoading = loadForestModels(opts.assetRoot)
+  const texturesLoading = loadForestTextures(device, opts.assetRoot, quality.textureSize)
+  texturesLoading.then(() => mark("textures"), () => {})
+  const ground = forestHeightGrid(world)
+  mark("grid")
+  let models = await modelsLoading
+  mark("models")
   const t1 = performance.now()
-  let build = buildForest(world, models, { scatter: 1, fernDensity: settings.fernDensity, litter: settings.litter })
+  const buildOpts = () => ({ scatter: 1, fernDensity: settings.fernDensity, litter: settings.litter })
+  // A worker that dies mid-build takes the models it was handed: fetch them again and build here.
+  const built = await builder.build(world, models, buildOpts(), ground, (time) => mark("worker", time)).catch(async (error) => {
+    console.warn("forest: building on the main thread:", error)
+    const again = await loadForestModels(opts.assetRoot)
+    return { build: buildForest(world, again, buildOpts(), ground), models: again }
+  })
+  let build = built.build
+  models = built.models
   let buildMs = performance.now() - t1
-  performance.mark(`${opts.markPrefix ?? "forest"}:build`)
+  mark("build")
+  const textures = await texturesLoading
+  const loadMs = performance.now() - t0
+  mark("assets")
 
   let pass = new ForestPass(renderer.passContext, build, textures, world)
   renderer.addPass("sky", new SkyPass(renderer.passContext))
@@ -385,7 +407,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     get build() { return build },
     setWorld(next: ForestWorld) {
       const t = performance.now()
-      build = buildForest(next, models, { scatter: 1, fernDensity: settings.fernDensity, litter: settings.litter })
+      build = buildForest(next, models, buildOpts())
       buildMs = performance.now() - t
       const old = pass
       renderer.removePass(old)
@@ -481,6 +503,7 @@ class ForestPass implements ScenePass {
   private chunks: { box: readonly number[]; cx: number; cz: number; near: { opaque: GpuMesh; masked: GpuMesh }; far: { opaque: GpuMesh; masked: GpuMesh }; groups: { template: number; data: Float32Array }[] }[]
   private water: GpuMesh
   private instanceBuf: GPUBuffer
+  private field: GPUTexture
   private instanceData = new Float32Array(INSTANCE_FLOATS * 4096)
   private draws: { mesh: NonNullable<GpuMesh>; masked: boolean; first: number; count: number; hidden: number; prefix: { d: number; end: number }[]; template: number; near: boolean; kind: string }[] = []
   private statics: { mesh: NonNullable<GpuMesh>; masked: boolean; near: boolean; chunk: number; d: number; inView: boolean }[] = []
@@ -517,7 +540,7 @@ class ForestPass implements ScenePass {
       treeOpaque: pipe("vsTree", true, "opaque"), treeMasked: pipe("vsTree", true, "shade"), treeMaskedDepth: pipe("vsTree", true, "depth"),
       maskedSingle: pipe("vsStatic", false, "single"), treeMaskedSingle: pipe("vsTree", true, "single"),
     }
-    const field = d.createTexture({ size: [build.fieldSize, build.fieldSize], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
+    const field = this.field = d.createTexture({ size: [build.fieldSize, build.fieldSize], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
     d.queue.writeTexture({ texture: field }, build.field as Uint8Array<ArrayBuffer>, { bytesPerRow: build.fieldSize * 4 }, [build.fieldSize, build.fieldSize])
     this.group = d.createBindGroup({ layout, entries: [
       { binding: 0, resource: textures.base.createView({ dimension: "2d-array" }) },
@@ -544,6 +567,7 @@ class ForestPass implements ScenePass {
 
   dispose() {
     this.instanceBuf.destroy()
+    this.field.destroy()
     const meshes = [this.water, ...this.templates.flatMap(t => [t.near.opaque, t.near.masked, t.far?.opaque ?? null, t.far?.masked ?? null]), ...this.chunks.flatMap(c => [c.near.opaque, c.near.masked, c.far.opaque, c.far.masked])]
     for (const m of meshes) m?.buffer.destroy()
   }
@@ -739,20 +763,30 @@ class SkyPass implements ScenePass {
 
 class MotePass implements ScenePass {
   private pipe: GPURenderPipeline
+  private reactivePipe?: GPURenderPipeline
+  private readonly descriptor: GPURenderPipelineDescriptor
   count = 700
-  constructor(ctx: PassContext) {
+  constructor(private readonly ctx: PassContext) {
     const d = ctx.device
     const module = compileShaderModuleWithLog(d, moteShader, "forest motes")
-    this.pipe = d.createRenderPipeline({
+    this.descriptor = {
       layout: d.createPipelineLayout({ bindGroupLayouts: [ctx.frameLayout] }),
       vertex: { module, entryPoint: "vs" },
       fragment: { module, entryPoint: "fs", targets: [{ format: ctx.color, blend: { color: { srcFactor: "one", dstFactor: "one" }, alpha: { srcFactor: "zero", dstFactor: "one" } } }] },
       primitive: { topology: "triangle-list" },
       depthStencil: { format: ctx.depth, depthWriteEnabled: false, depthCompare: ctx.depthCompare ?? "less-equal" },
       multisample: { count: ctx.samples },
-    })
+    }
+    this.pipe = d.createRenderPipeline(this.descriptor)
   }
   draw(pass: GPURenderPassEncoder) { pass.setPipeline(this.pipe); pass.draw(6, this.count) }
+  /** Motes and moths drift on their own: under TAA they go into the reactive mask, so they don't ghost. */
+  drawReactive(pass: GPURenderPassEncoder) {
+    if (this.count <= 0) return
+    this.reactivePipe ??= this.ctx.device.createRenderPipeline(reactivePipelineDescriptor(this.descriptor))
+    pass.setPipeline(this.reactivePipe)
+    pass.draw(6, this.count)
+  }
 }
 
 export { TAU }
