@@ -20,14 +20,16 @@ export async function footSurface(query:SurfaceQuery){
     const at=(x:number,y:number)=>m.data[(((y+m.height)%m.height)*m.width+(x+m.width)%m.width)*4]!/255
     return at(ix,iy)*(1-tx)*(1-ty)+at(ix+1,iy)*tx*(1-ty)+at(ix,iy+1)*(1-tx)*ty+at(ix+1,iy+1)*tx*ty
   }
-  return (x:number,z:number,wet:WetSettings):FootSurface=>{
+  /** `rain` (Weather, 0 in Today): soaked turf squelches and bare earth turns to mud. */
+  return (x:number,z:number,wet:WetSettings,rain=0):FootSurface=>{
     if(x> -55&&x<35&&z> -3.2&&z<22)return "tile"
     if(Math.abs(x-9)<1.7&&Math.abs(z-127.5)<1.4)return "wood"
     const s=query.at(x,z,.5)
     if(s.name.startsWith("asphalt"))return puddleAt(x,z,ao(s.name,s.u,s.v),wet,wetMaterials.get(s.name))>.3?"puddle":wet.wetness>.2?"wet-asphalt":"asphalt"
     if(s.name==="gravel")return "gravel"
-    if(s.name==="grass")return "grass"
-    if(s.name==="dirt"||s.name==="forest_floor")return "dirt"
+    if(s.name==="grass")return rain>.3?"wet-grass":"grass"
+    if(s.name==="dirt")return rain>.3?"mud":"dirt"
+    if(s.name==="forest_floor")return rain>.55?"mud":"dirt"
     if(s.name.startsWith("concrete"))return "concrete"
     return "dirt"
   }

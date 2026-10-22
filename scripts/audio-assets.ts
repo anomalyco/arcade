@@ -20,11 +20,13 @@ export type AudioAssetOptions = {
    * served and emitted once under `audio-assets/sfx/` from its single source in the repository.
    */
   sfx?: readonly string[] | "all"
+  /** The shared Lab sample manifest (Getaway's samples and stems); a host that only plays library ids can leave it out. */
+  manifest?: boolean
 }
 
 /** Each Lab host owns an identical, manifest-bounded asset route under its own deployment prefix. */
 export function audioAssets(options: AudioAssetOptions = {}): Plugin {
-  const assets = new Map(DEFAULT_SAMPLE_MANIFEST.map(asset => [`audio-assets/${asset.url}`, repo(`games/getaway/public/sfx/${asset.url}`)]))
+  const assets = new Map(options.manifest === false ? [] : DEFAULT_SAMPLE_MANIFEST.map(asset => [`audio-assets/${asset.url}`, repo(`games/getaway/public/sfx/${asset.url}`)]))
   for (const entry of selectSfx(options.sfx)) for (const file of entry.files) assets.set(`audio-assets/${sfxUrl(file)}`, repo(file.path))
   const byteCache = new Map<string, Buffer>()
   const readCached = (file: string): Buffer => {

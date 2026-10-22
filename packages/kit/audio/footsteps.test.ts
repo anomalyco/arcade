@@ -1,7 +1,7 @@
 import { expect,test } from "bun:test"
 import { synthFoley,type FootSurface } from "./footsteps"
 test("each foot surface is seeded, distinct, finite and leaves peak headroom",()=>{
-  const surfaces:FootSurface[]=["carpet","asphalt","wet-asphalt","puddle","gravel","dirt","grass","concrete","wood","tile"]
+  const surfaces:FootSurface[]=["carpet","asphalt","wet-asphalt","puddle","gravel","dirt","grass","concrete","wood","tile","wet-grass","mud"]
   const signatures=new Set<string>()
   for(const surface of surfaces){
     const a=synthFoley("step",3,24000,surface)
@@ -14,7 +14,7 @@ test("each foot surface is seeded, distinct, finite and leaves peak headroom",()
   expect(signatures.size).toBe(surfaces.length)
 })
 test("all contact variants stay within the quiet bank's 100ms RMS budget",()=>{
-  const surfaces:FootSurface[]=["carpet","asphalt","wet-asphalt","puddle","gravel","dirt","grass","concrete","wood","tile"]
+  const surfaces:FootSurface[]=["carpet","asphalt","wet-asphalt","puddle","gravel","dirt","grass","concrete","wood","tile","wet-grass","mud"]
   for(const surface of surfaces)for(let seed=0;seed<32;seed++){
     const pcm=synthFoley("step",seed,24000,surface)
     let sum=0,peak=0

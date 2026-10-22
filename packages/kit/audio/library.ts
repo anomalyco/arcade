@@ -77,6 +77,7 @@ const step = (surface: string, gait: "walk" | "run") =>
 const OUTBREAK = ["outbreak"] as const
 const BRAWL = ["brawl"] as const
 const ARCHERS = ["archers"] as const
+const LOT = ["lot"] as const
 
 const SURFACE_PHRASE: Record<SfxSurface, string> = { concrete: "a gritty concrete sidewalk", grass: "short dry grass and soft earth", wood: "old wooden floorboards inside a house" }
 
@@ -570,6 +571,78 @@ export const SFX_SPECS: readonly SfxSpec[] = [
     id: "weather.thunder.roll", label: "Thunder roll (far)", group: "weather", bus: "ambience", variants: 3, target: -21, gain: 0.85, pitchJitter: 0.06, gainJitter: 0.1,
     cooldown: 0.5, maxVoices: 2, priority: 70, range: { ref: 40, max: 400 }, wet: 0.3, usedBy: OUTBREAK, durationRange: [3, 10],
     generate: { prompt: `Distant thunder: a long low rolling rumble of thunder far away across the sky, slowly swelling and fading. Outdoors, deep and soft, no sharp crack. ${NO_SPEECH}`, duration: 7, candidates: 5, influence: 0.55 },
+  },
+
+  // Lot storm (Backquote › Weather): thunder by distance, positional rain beds, wind and edge drips
+  {
+    id: "weather.thunder.close", label: "Thunder, close strike", group: "weather", bus: "ambience", variants: 3, target: -16, gain: 0.9, pitchJitter: 0.03, gainJitter: 0.06,
+    cooldown: 0.3, maxVoices: 2, priority: 85, range: { ref: 0, max: 0 }, wet: 0.3, usedBy: LOT, durationRange: [3, 9.5],
+    generate: { prompt: `A lightning strike very close by, a hundred metres away: an instant sharp tearing crack like ripping canvas and splitting wood, then one heavy concussive boom that rolls away and rumbles for several seconds. Outdoors at night in light rain, huge, powerful and natural. ${NO_SPEECH}`, duration: 8, candidates: 5, influence: 0.6 },
+  },
+  {
+    id: "weather.thunder.mid", label: "Thunder, mid distance", group: "weather", bus: "ambience", variants: 3, target: -20, gain: 0.85, pitchJitter: 0.04, gainJitter: 0.08,
+    cooldown: 0.4, maxVoices: 2, priority: 75, range: { ref: 0, max: 0 }, wet: 0.3, usedBy: LOT, durationRange: [4, 10],
+    generate: { prompt: `Thunder from a lightning strike about a kilometre away: a crack softened and dulled by distance, then a long rolling rumble that grumbles and echoes off hills and buildings and fades slowly. Outdoors at night. ${NO_SPEECH}`, duration: 9, candidates: 5, influence: 0.55 },
+  },
+  {
+    id: "weather.thunder.far", label: "Thunder, far roll", group: "weather", bus: "ambience", variants: 3, target: -24, gain: 0.8, pitchJitter: 0.05, gainJitter: 0.1,
+    cooldown: 0.5, maxVoices: 2, priority: 65, range: { ref: 0, max: 0 }, wet: 0.3, usedBy: LOT, durationRange: [4, 10],
+    generate: { prompt: `Very distant thunder many kilometres away: only a low soft muffled rolling rumble, no crack at all, deep and dark, swelling and fading slowly across the horizon. ${NO_SPEECH}`, duration: 8, candidates: 4, influence: 0.55 },
+  },
+  {
+    id: "weather.thunder.sky", label: "Thunder, cloud to cloud", group: "weather", bus: "ambience", variants: 2, target: -21, gain: 0.85, pitchJitter: 0.04, gainJitter: 0.08,
+    cooldown: 0.5, maxVoices: 2, priority: 70, range: { ref: 0, max: 0 }, wet: 0.3, usedBy: LOT, durationRange: [6, 13],
+    generate: { prompt: `Cloud-to-cloud lightning high overhead: a long continuous grumbling thunder that crackles faintly and rolls across the whole sky from one side to the other for many seconds, no single sharp crack. ${NO_SPEECH}`, duration: 12, candidates: 4, influence: 0.55 },
+  },
+  {
+    id: "weather.rain.asphalt", label: "Rain on open asphalt", group: "weather", bus: "ambience", variants: 1, loop: true, target: -30, gain: 1, pitchJitter: 0, gainJitter: 0,
+    range: { ref: 0, max: 0 }, wet: 0, usedBy: LOT, durationRange: [10, 21],
+    generate: { prompt: `Field recording of steady rain falling on an open asphalt parking lot at night: an even fine hiss of drops on wet pavement and shallow puddles. No roofs, no gutters, no trees, no thunder, no wind, no traffic. Close and detailed. ${NO_SPEECH}`, duration: 18, candidates: 3, loop: true, influence: 0.5 },
+  },
+  {
+    id: "weather.rain.car", label: "Rain on a car roof", group: "weather", bus: "ambience", variants: 1, loop: true, target: -30, gain: 1, pitchJitter: 0, gainJitter: 0,
+    range: { ref: 1.5, max: 10 }, wet: 0, usedBy: LOT, durationRange: [10, 21],
+    generate: { prompt: `Rain falling on the metal roof and bonnet of a parked car, recorded close from outside the car: bright dense pinging patter on sheet metal and on the windscreen glass, steady. No thunder, no wind, no engine. ${NO_SPEECH}`, duration: 18, candidates: 3, loop: true, influence: 0.5 },
+  },
+  {
+    id: "weather.rain.hut", label: "Rain on a booth roof", group: "weather", bus: "ambience", variants: 1, loop: true, target: -30, gain: 1, pitchJitter: 0, gainJitter: 0,
+    range: { ref: 2, max: 12 }, wet: 0, usedBy: LOT, durationRange: [10, 21],
+    generate: { prompt: `Rain drumming on the flat sheet-metal roof of a tiny guard booth, heard standing right under its edge: hollow resonant metallic drumming, and water running off the roof edge and splattering onto pavement. Steady, no thunder. ${NO_SPEECH}`, duration: 18, candidates: 3, loop: true, influence: 0.5 },
+  },
+  {
+    id: "weather.rain.glass", label: "Rain from inside, on glass", group: "weather", bus: "ambience", variants: 1, loop: true, target: -32, gain: 1, pitchJitter: 0, gainJitter: 0,
+    range: { ref: 0, max: 0 }, wet: 0, usedBy: LOT, durationRange: [10, 21],
+    generate: { prompt: `Rain heard from inside a quiet building lobby: drops tapping and streaming on a large plate-glass window, a muffled drumming on the flat roof above, the outdoor rain dulled by the glass. Calm, intimate, close to the window. No thunder, no voices, no air conditioning hum. ${NO_SPEECH}`, duration: 18, candidates: 3, loop: true, influence: 0.5 },
+  },
+  {
+    id: "weather.gutter", label: "Downpipe gush", group: "weather", bus: "ambience", variants: 1, loop: true, target: -30, gain: 1, pitchJitter: 0, gainJitter: 0,
+    range: { ref: 1.5, max: 14 }, wet: 0, usedBy: LOT, durationRange: [8, 17],
+    generate: { prompt: `Rainwater gushing out of a metal downpipe onto concrete at the corner of a building: a steady splashing, gurgling stream with trickles and spatter, recorded close. No thunder. ${NO_SPEECH}`, duration: 15, candidates: 3, loop: true, influence: 0.5 },
+  },
+  {
+    id: "weather.wind.moan", label: "Wind around the building", group: "weather", bus: "ambience", variants: 1, loop: true, target: -32, gain: 1, pitchJitter: 0, gainJitter: 0,
+    range: { ref: 0, max: 0 }, wet: 0, usedBy: LOT, durationRange: [10, 21],
+    generate: { prompt: `Storm wind moaning and whistling around the corners of a large concrete building at night: low hollow howling that rises and falls in gusts. No rain, no thunder. ${NO_SPEECH}`, duration: 18, candidates: 3, loop: true, influence: 0.5 },
+  },
+  {
+    id: "weather.wind.gust", label: "Gust through pines", group: "weather", bus: "ambience", variants: 3, target: -26, gain: 0.8, pitchJitter: 0.06, gainJitter: 0.12,
+    cooldown: 2, maxVoices: 2, steal: "drop", range: { ref: 0, max: 0 }, wet: 0.1, usedBy: LOT, durationRange: [2.5, 7],
+    generate: { prompt: `A single strong gust of wind sweeping through tall pine trees at night: a rising rush of needles and swaying branches that peaks and then eases off. Natural, outdoors, no rain. ${NO_SPEECH}`, duration: 6, candidates: 5, influence: 0.55 },
+  },
+  {
+    id: "weather.fence.rattle", label: "Fence and sign rattle", group: "weather", bus: "foley", variants: 3, target: -26, gain: 0.75, pitchJitter: 0.06, gainJitter: 0.12,
+    cooldown: 1.5, maxVoices: 2, steal: "drop", range: { ref: 3, max: 30 }, wet: 0.08, usedBy: LOT, durationRange: [0.8, 4],
+    generate: { prompt: `A loose chain-link fence and a metal sign rattling and clanking in a sudden gust of wind outdoors: a short burst of metallic shaking that settles. ${NO_SPEECH}`, duration: 3, candidates: 4, influence: 0.55 },
+  },
+  {
+    id: "weather.glass.rattle", label: "Thunder rattling glass", group: "weather", bus: "foley", variants: 3, target: -24, gain: 0.75, pitchJitter: 0.05, gainJitter: 0.1,
+    cooldown: 1, maxVoices: 2, steal: "drop", range: { ref: 3, max: 20 }, wet: 0.05, usedBy: LOT, durationRange: [0.6, 3.2],
+    generate: { prompt: `The shock wave of a close thunderclap rattling a large plate-glass window and the body panels of a parked car: a brief low buzzing vibration and glassy rattle that dies away quickly. No thunder itself. ${NO_SPEECH}`, duration: 2.5, candidates: 4, influence: 0.6 },
+  },
+  {
+    id: "weather.drip", label: "Edge drip into puddle", group: "weather", bus: "foley", variants: 6, target: -30, gain: 0.7, pitchJitter: 0.12, gainJitter: 0.25,
+    cooldown: 0.05, maxVoices: 4, steal: "drop", range: { ref: 1, max: 9 }, wet: 0.05, usedBy: LOT, durationRange: [0.08, 0.8],
+    generate: { prompt: `Single large water drops falling from a roof edge into a shallow puddle on concrete, one at a time with clear silent gaps between them: plinks, plops and small splashes, close and dry. No rain. ${NO_SPEECH}`, duration: 10, candidates: 2, influence: 0.55, slice: { minGapSeconds: 0.35, maxSeconds: 0.6 } },
   },
 
   // Party brawler powers

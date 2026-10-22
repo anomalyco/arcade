@@ -16,7 +16,7 @@ function contact(a:Float32Array,gain=1){
 const db=(x:number)=>20*Math.log10(Math.max(x,1e-12))
 const settings=walkDefaults()
 const air=Math.hypot(rms(ambiencePcm("wind"),settings.wind),rms(ambiencePcm("traffic"),settings.traffic))*settings.volume
-const surfaces:FootSurface[]=["carpet","asphalt","wet-asphalt","puddle","gravel","dirt","grass","concrete","wood","tile"]
+const surfaces:FootSurface[]=["carpet","asphalt","wet-asphalt","puddle","gravel","dirt","grass","concrete","wood","tile","wet-grass","mud"]
 const gain=(speed:number)=>{
   const walk=new Walk()
   for(let i=0;i<300;i++){

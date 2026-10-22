@@ -36,7 +36,9 @@ import { sourceSurfaces } from "./surfaces"
 import { SurfaceQuery } from "./surface-query"
 import { footSurface } from "./foot-surface"
 import { walkDefaults, walkControls } from "./walk-settings"
-import { LotAudio, bindLotAudio, renderWalkAudio, type WalkAudioFrame } from "./walk-audio"
+import { LotAudio, bindLotAudio, renderWalkAudio, type StormLoader, type WalkAudioFrame } from "./walk-audio"
+import { applyLotWeather, lotWeatherDefaults, lotWeatherControls, type LotWeatherMode } from "./weather/settings"
+import type { LotStorm, StormFrame, StormLamp } from "./weather/storm"
 
 async function main() {
   const canvas = document.querySelector<HTMLCanvasElement>("#view")!
@@ -159,6 +161,14 @@ async function main() {
   camera.height=START.height; camera.near=0.15; camera.far=1200
   const panel = new LabPanel(settings, controls(settings), new URLSearchParams(location.search), () => camera.release(), { open: false, pill: false, groupActions: false })
   const comparison=compareCamera(camera,()=>panel.visible)
+  // Weather is its own chunk, loaded the first time it is turned on (or a strike is asked for): Today and the smoke
+  // never fetch, compile or draw any of it.
+  const weather=lotWeatherDefaults(query)
+  let storm:LotStorm|null=null, stormLoad:Promise<LotStorm>|null=null, stormFrame:StormFrame|null=null
+  const loadStorm=()=>stormLoad??=import("./weather/storm").then(m=>storm=new m.LotStorm(renderer))
+  const loadStormAudio:StormLoader=(ctx,destination)=>import("./weather/audio").then(async m=>new m.StormAudio(ctx,destination,await m.loadStormBank(ctx)))
+  const strike=(plan?:Parameters<LotStorm["strikeNow"]>[0])=>{ audio.enableStorm(loadStormAudio); return loadStorm().then(s=>s.strikeNow(plan)) }
+  panel.addControls(weather,lotWeatherControls(weather,()=>void strike()))
   panel.addControls(walking,walkControls)
   const audio=new LotAudio(world.scene.lamps)
   bindLotAudio(canvas,audio,walking,()=>panel.visible)
@@ -205,12 +215,13 @@ async function main() {
   }
   prompts()
   document.addEventListener("pointerlockchange", prompts)
+  let fogFlashBase:{hue:number;saturation:number;history:number;cloudDark:number}|null=null
   let last = performance.now(), frames = 0, paused = false, lastFrame: FrameInput | null = null, smokeTarget: GPUTexture | null = null
   const readyMs=performance.now()-t0
   // Slot order: contact shadows darken the lit scene before reflections and fog add to it.
-  const volumes = () => {
+  const volumes = (wetNow=wet) => {
     const inside=camera.body.x>-55 && camera.body.x<35 && camera.body.y>-3.2 && camera.body.y<22
-    const reflections=ssr.volumeInput({indoor:inside,wet:inside?{...wet,wetness:0,puddles:0,ripple:0}:wet})
+    const reflections=ssr.volumeInput({indoor:inside,wet:inside?{...wet,wetness:0,puddles:0,ripple:0}:wetNow})
     return smoke ? [reflections,fog.volumeInput()] : [contactShadowInput(contact),reflections,fog.volumeInput()]
   }
   /** GPU ms of n frames of the last frame's input (Renderer.measure), each after `warm` untimed frames so the GPU is at clock. */
@@ -233,7 +244,13 @@ async function main() {
     const dt = Math.min(0.05, (now - last) / 1000); last = now
     camera.speed=walking.walkMode==="today"?2.1:1.7
     const vp = camera.update(dt, width / height, walls)
-    audioFrame={time:camera.walk.time,x:camera.body.x,z:camera.body.y,yaw:camera.yaw,active:playing(),surface:surfaceAt(camera.body.x,camera.body.y,{...wet,wetness:settings.wetness}),inside:camera.body.x>-55&&camera.body.x<35&&camera.body.y>-3.2&&camera.body.y<22,wetness:settings.wetness,events:camera.walk.events,settings:{...walking}}
+    const insideNow=camera.body.x>-55&&camera.body.x<35&&camera.body.y>-3.2&&camera.body.y<22
+    if(weather.weather!=="today") { void loadStorm(); audio.enableStorm(loadStormAudio) }
+    let sf=stormFrame?.active ? stormFrame : null
+    // Rain soaks the film first; standing water grows only a little and stays in the dips (RESEARCH.md: 5–20% puddled).
+    const wetNow=sf ? {...wet,wetness:Math.max(settings.wetness,sf.wetness),puddles:Math.min(0.6,wet.puddles+sf.puddles*0.2),puddleScale:wet.puddleScale*(1+0.25*sf.puddles)} : {...wet,wetness:settings.wetness}
+    audioFrame={time:camera.walk.time,x:camera.body.x,z:camera.body.y,yaw:camera.yaw,active:playing(),surface:surfaceAt(camera.body.x,camera.body.y,wetNow,sf?.rain ?? 0),inside:insideNow,wetness:wetNow.wetness,events:camera.walk.events,settings:{...walking},
+      ...(sf ? {storm:{amount:sf.amount,rain:sf.rain,storm:weather.weather==="storm"?1:0,wind:weather.wind,gust:sf.gust,heading:Math.atan2(sf.sway[2],sf.sway[1]),clock:sf.time,thunder:sf.thunder,rainVolume:weather.rainVolume,thunderVolume:weather.thunderVolume,windVolume:weather.windVolume}} : {})}
     audio.update(audioFrame)
     comparison.frame()
     // Street mode: the lens emitter and roadway profile replace the round spot, at the same flux (lamps.ts).
@@ -246,22 +263,42 @@ async function main() {
     }))
     if(camera.flashlight) frameLights.push({id:-1,x:camera.eye[0],y:camera.eye[2],h:camera.eye[1],r:35,color:[0.85,0.92,1],power:56,size:0.4,unshadowed:true,beam:{axis:camera.direction,halfAngle:0.27}})
     lights.update(frameLights, [])
+    if(storm) {
+      // The nearest lit practicals light the rain (the weather layer evaluates up to twelve).
+      const stormLamps:StormLamp[]=frameLights.filter(l=>(l.id ?? 0)>=0&&l.power>0).map(l=>({l,d:Math.hypot(l.x-camera.eye[0],l.y-camera.eye[2])})).sort((a,b)=>a.d-b.d).slice(0,10)
+        .map(({l})=>({x:l.x,y:l.h,z:l.y,color:l.color,power:Math.min(4,Math.sqrt(l.power)*0.9),range:l.r,axis:l.spot?.axis,cosOuter:l.spot?.cosOuter}))
+      stormFrame=storm.frame({dt,settings:weather,eye:camera.eye,direction:camera.direction,fovY:camera.fov*Math.PI/180,width,height,groundY:groundHeight(world.scene.ground,camera.eye[0],camera.eye[2]),
+        inside:insideNow,lamps:stormLamps,fog:[settings.density,settings.falloff],frame:frameData})
+      sf=stormFrame.active ? stormFrame : null
+    }
     const shadowEncoder=device.createCommandEncoder()
     if(spots.update(shadowEncoder,shadowLamps,camera.eye,dt,id=>lights.indexOf(id),casters)) renderer.setSpotShadows(spots.bindings())
     device.queue.submit([shadowEncoder.finish()])
     wet.wetness=settings.wetness
-    custom.set([settings.density, settings.falloff, settings.sky, settings.lamp, settings.wetness, settings.haze, settings.reflectionCap, settings.specularAA, ...camera.direction, Number(camera.flashlight)])
-    custom.set(packWet(wet),12)
+    custom.set([settings.density, settings.falloff, settings.sky, settings.lamp, wetNow.wetness, settings.haze, settings.reflectionCap, settings.specularAA, ...camera.direction, Number(camera.flashlight)])
+    custom.set(packWet(wetNow),12)
     custom.set([forestSettings.inner,forestSettings.face,settings.decalDepth,0],20)
     packGlassKnobs(glass,rooms,custom,24)
     packContactShadowKnobs(contact,custom,36)
     packStreetLamp(street,custom,44)
     custom.set([indoor.wear,indoor.sheen,indoor.wax,indoor.glow],56)
-    forest.update(camera.eye, forestSettings)
+    custom.set(sf ? [sf.flash*0.4,...sf.flashDir,sf.glass,sf.time,sf.flash*0.25,0] : [0,0,0,0,0,0,0,0],60)
+    forest.update(camera.eye, forestSettings, sf && sf.sway[0]>0 ? [sf.sway[0]*sf.sway[3],Math.atan2(sf.sway[2],sf.sway[1]),sf.time] : undefined)
     refreshDressing()
     custom.set([indoor.fixtures,indoor.mode==="today"?0:indoor.bounce,indoor.mode==="today"?1:indoor.air,indoor.mode==="today"?0:indoor.lobbyBounce],16)
     renderer.setCustomUniforms(custom)
-    Object.assign(fog.settings,{density:settings.density,falloff:settings.falloff,brightness:0.034*settings.sky,strength:settings.haze})
+    // Rain thickens the air a little; a flash lights the whole fog and sky from inside.
+    Object.assign(fog.settings,{density:settings.density*(1+0.12*(sf?.rain ?? 0)),falloff:settings.falloff,brightness:0.034*settings.sky*(sf?.skyBoost ?? 1),strength:settings.haze})
+    // During a flash the air goes blue-white, and the fog volume drops its history so the clouds flicker with the
+    // strokes instead of lagging behind them; the Fog panel's own values come back once it has passed.
+    const flashing=(sf?.flash ?? 0)>0.002
+    if(flashing && !fogFlashBase) fogFlashBase={hue:fog.settings.hue,saturation:fog.settings.saturation,history:fog.settings.history,cloudDark:fog.settings.cloudDark}
+    if(fogFlashBase) {
+      const k=Math.min(1,(sf?.flash ?? 0)*2)
+      // The deck lights from inside: its underside lifts toward the fog colour.
+      Object.assign(fog.settings,{hue:fogFlashBase.hue+(222-fogFlashBase.hue)*k,saturation:fogFlashBase.saturation*(1-0.7*k),history:flashing?1:fogFlashBase.history,cloudDark:fogFlashBase.cloudDark+(0.85-fogFlashBase.cloudDark)*k})
+      if(!flashing) { Object.assign(fog.settings,fogFlashBase); fogFlashBase=null }
+    }
     // Scattering consumes emitter radiance, not the surface BRDF's radiance / π.
     // Include the booth bulb: its reflection is the second, nearer wet streak.
     const fogLamps:FogLamp[]=practicals.flatMap((l,id)=>trofferFog({id,x:l.position[0],y:l.position[1],z:l.position[2],range:l.range,color:l.color,intensity:l.intensity*fixtureGain(l,id)*(id>=indoorStart?indoor.air:1)*(area ? l.gain() : 1),
@@ -273,7 +310,7 @@ async function main() {
     lastFrame={ frame: frameData, lights: lights.lights, lightCount: lights.lightCount, shadowLightCount: lights.shadowLightCount,
       occluders: lights.occ, occluderCount: lights.occCount, lampPower: lights.power, lampCount: 0,
       view: [-700, -700, 700, 700], batches: [], alphaSprites: empty, alphaCount: 0, addSprites: empty, addCount: 0, grade: [0, 0, 0, settings.exposure],
-      fog:fog.update({eye:camera.eye,viewProj:vp,lamps:fogLamps,time:fixedTime ?? now/1000,street}),volume:volumes(),fogBlur:fog.blurInput() }
+      fog:fog.update({eye:camera.eye,viewProj:vp,lamps:fogLamps,time:fixedTime ?? now/1000,street}),volume:volumes(wetNow),fogBlur:fog.blurInput(), weather:sf?.weather ?? null }
     // The smoke draws synchronously: render() holds a frame back while the previous one is on the GPU, which on
     // SwiftShader would leave the second frame unsubmitted for minutes. It draws offscreen: presenting the canvas
     // makes Chromium's GPU process wait for the frame to finish before it validates anything submitted after it.
@@ -316,8 +353,10 @@ async function main() {
   }
   // measureFrame(): GPU ms of the last frame's input (timestamp-query), for scripts/atmosphere.ts.
   Object.assign(window, { lot: { measureLamps, camera, settings, street, indoor, walls, ssr, wet, measure, measureFrames, measureFrame: () => lastFrame ? renderer.measure(lastFrame) : null, step, spots, forestPresets:FOREST_PRESETS, get input() { return lastFrame }, glass, rooms, contact, forest:forestSettings, forestStats:()=>forest.stats(), timings:{worldMs,readyMs}, dressing:dressingSettings, get dressingCount() { return dressingCount }, fog, renderer, comparison, get frames() { return frames }, get paused() { return paused }, set paused(value:boolean) { paused=value }, ready: true } })
-  Object.assign((window as any).lot, { surfaceQuery, surfaceAt, walking, renderWalkAudio:(tape:WalkAudioFrame[],duration:number)=>renderWalkAudio(tape,duration,world.scene.lamps) })
+  Object.assign((window as any).lot, { surfaceQuery, surfaceAt, walking, weather, strike, loadStorm, setWeather:(mode:LotWeatherMode)=>applyLotWeather(weather,mode), get storm() { return storm }, get stormFrame() { return stormFrame },
+    renderWalkAudio:(tape:WalkAudioFrame[],duration:number)=>renderWalkAudio(tape,duration,world.scene.lamps,tape.some(f=>f.storm)?loadStormAudio:undefined) })
   Object.defineProperty((window as any).lot,"audioFrame",{get:()=>audioFrame})
+  Object.defineProperties((window as any).lot,{storm:{get:()=>storm},stormFrame:{get:()=>stormFrame}})
   requestAnimationFrame(render)
 }
 void main().catch(error => { console.error(error); document.getElementById("hud")!.textContent = String(error) })

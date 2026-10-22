@@ -223,6 +223,17 @@ fn forestBayer(pixel: vec2f) -> f32 {
     nrm = vec3f(v.normal.x * c - v.normal.z * sn, v.normal.y, v.normal.x * sn + v.normal.z * c);
     o.uv = v.uv;
   }
+  // Wind (grid.yzw: amplitude at 20 m, heading, clock; 0 = still): the tree bends with the square of its height, in
+  // gusts that travel downwind across the stand, and the cards add a faster flutter.
+  if (FU.grid.y > 0.0) {
+    let h = max(world.y - ip.y, 0.0) / 20.0;
+    let wd = vec2f(cos(FU.grid.z), sin(FU.grid.z));
+    let along = dot(ip.xz, wd);
+    let gust = 0.55 + 0.45 * sin(FU.grid.w * 0.9 - along * 0.035 + id.z * 6.0) + 0.25 * sin(FU.grid.w * 2.3 - along * 0.08 + id.z * 17.0);
+    let bend = FU.grid.y * h * h * gust;
+    let flutter = select(0.0, FU.grid.y * 0.08 * h * sin(FU.grid.w * 5.3 + dot(world.xz, vec2f(0.9, 0.7)) + id.z * 31.0), !hard);
+    world += vec3f(wd.x * bend + wd.y * flutter, -0.15 * bend * h, wd.y * bend - wd.x * flutter);
+  }
   o.world = world;
   o.normal = nrm;
   let card = !hard && level < 1.5;
@@ -377,7 +388,8 @@ export class ForestPass implements ScenePass {
     return buffer
   }
 
-  update(eye: readonly number[], s: ForestSettings) {
+  /** `wind`: sway amplitude at 20 m (m), heading (rad, 0 = +x), clock (s); omitted or 0 keeps the forest still. */
+  update(eye: readonly number[], s: ForestSettings, wind?: readonly [amplitude: number, heading: number, time: number]) {
     const b = forestBands(s)
     const key = [s.lod0, s.lod1, s.fade].join()
     const moved = Math.hypot(eye[0]! - this.listEye[0]!, eye[2]! - this.listEye[2]!)
@@ -396,7 +408,7 @@ export class ForestPass implements ScenePass {
     const u = this.uniformData
     u.set([eye[0]!, eye[1]!, eye[2]!, this.frame++ % 65536, b.near, b.mid, b.fade, b.far,
       s.thinStart, Math.max(s.thinStart + 1e-3, s.thinEnd), f, s.crown / Math.sqrt(1 - f) - 1,
-      s.inner, s.face, s.species, this.options.impostorGrid[0], this.options.impostorGrid[1], 0, 0, 0])
+      s.inner, s.face, s.species, this.options.impostorGrid[0], this.options.impostorGrid[1], wind?.[0] ?? 0, wind?.[1] ?? 0, wind?.[2] ?? 0])
     this.models.forEach((m, v) => {
       u.set([m.impostor.w, m.impostor.h, Number(m.sapling ?? false), 0], 20 + v * 4)
       u.set([...m.colour, 0], 20 + MAX_VARIANTS * 4 + v * 4)

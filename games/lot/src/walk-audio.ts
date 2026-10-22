@@ -3,8 +3,12 @@ import { encodeWavPcm16 } from "@arcade/kit/audio/offline"
 import { ambiencePcm, type AmbientSound } from "./ambience"
 import type { WalkSettings } from "./walk-settings"
 import { isEditableEventTarget } from "@arcade/kit/client/controls"
+import type { StormAudioFrame, StormListener } from "./weather/audio"
 export type AudioLamp={position:readonly number[]}
-export type WalkAudioFrame={time:number;x:number;z:number;yaw:number;active:boolean;surface:FootSurface;inside:boolean;wetness:number;events:FootEvent[];settings:WalkSettings}
+export type WalkAudioFrame={time:number;x:number;z:number;yaw:number;active:boolean;surface:FootSurface;inside:boolean;wetness:number;events:FootEvent[];settings:WalkSettings;storm?:StormAudioFrame}
+/** Weather sound inside the walking master (weather/audio.ts), attached once weather is first turned on. */
+export type StormVoice={update(f:StormAudioFrame,l:StormListener,now:number):void;interrupt():void}
+export type StormLoader=(ctx:BaseAudioContext,destination:AudioNode)=>Promise<StormVoice>
 
 /** Scene-owned emitter placement; shared footsteps own contact synthesis and scheduling. */
 export class LotAudioGraph {
@@ -16,6 +20,8 @@ export class LotAudioGraph {
   private animalAt=23
   private serial=0
   private oneShots=new Set<AudioBufferSourceNode>()
+  private storm?:StormVoice
+  private stormLoading?:Promise<void>
   constructor(private ctx:BaseAudioContext,destination:AudioNode,lamps:readonly AudioLamp[]){
     this.master=ctx.createGain();this.master.gain.value=0;this.master.connect(destination)
     this.feet=new Footsteps(ctx,this.master)
@@ -28,9 +34,11 @@ export class LotAudioGraph {
   }
   private voice(kind:AmbientSound){const source=this.ctx.createBufferSource(),gain=this.ctx.createGain(),pan=this.ctx.createStereoPanner();source.buffer=this.buffer(kind);source.connect(gain);gain.connect(pan);pan.connect(this.master);return {source,gain,pan}}
   private loop(kind:AmbientSound,position?:readonly number[]){const v=this.voice(kind);v.source.loop=true;v.gain.gain.value=0;v.source.start();this.loops.push({kind,...v,position})}
+  attachStorm(load:StormLoader){this.stormLoading??=load(this.ctx,this.master).then(v=>{this.storm=v});return this.stormLoading}
   update(f:WalkAudioFrame,now=this.ctx.currentTime){
     const s=f.settings,enabled=f.active&&s.walkMode!=="today"&&!s.muted,outside=f.inside?.12:1
     this.master.gain.setTargetAtTime(enabled?s.volume:0,now,.025)
+    if(f.storm&&this.storm)this.storm.update(f.storm,{x:f.x,z:f.z,yaw:f.yaw,inside:f.inside,time:f.storm.clock},now)
     for(const l of this.loops){
       let gain=0,pan=0
       if(l.kind==="wind")gain=s.wind*outside
@@ -50,7 +58,7 @@ export class LotAudioGraph {
     if(f.time>=this.animalAt){one(this.serial%2?"owl":"dog",s.wildlife*outside*.35,.75*Math.sin(this.serial*4.1));this.animalAt=f.time+29+(this.serial%11)}
   }
   interrupt(){
-    this.feet.stop();for(const source of this.oneShots)source.stop();this.oneShots.clear()
+    this.feet.stop();for(const source of this.oneShots)source.stop();this.oneShots.clear();this.storm?.interrupt()
     this.master.gain.cancelScheduledValues(this.ctx.currentTime)
     this.master.gain.setValueAtTime(0,this.ctx.currentTime)
   }
@@ -58,8 +66,11 @@ export class LotAudioGraph {
 export class LotAudio {
   private ctx?:AudioContext
   private graph?:LotAudioGraph
+  private stormLoader?:StormLoader
   constructor(private lamps:readonly AudioLamp[]){}
-  async unlock(){if(!this.ctx){this.ctx=new AudioContext();this.graph=new LotAudioGraph(this.ctx,this.ctx.destination,this.lamps)}await this.ctx.resume()}
+  async unlock(){if(!this.ctx){this.ctx=new AudioContext();this.graph=new LotAudioGraph(this.ctx,this.ctx.destination,this.lamps);if(this.stormLoader)void this.graph.attachStorm(this.stormLoader).catch(e=>console.warn("Lot storm audio",e))}await this.ctx.resume()}
+  /** Weather was turned on: fetch its samples now (or at the next play gesture). */
+  enableStorm(load:StormLoader){if(this.stormLoader)return;this.stormLoader=load;if(this.graph)void this.graph.attachStorm(load).catch(e=>console.warn("Lot storm audio",e))}
   update(frame:WalkAudioFrame){this.graph?.update(frame)}
   suspend(){this.graph?.interrupt();void this.ctx?.suspend()}
   dispose(){void this.ctx?.close()}
@@ -82,8 +93,9 @@ export function bindLotAudio(canvas:HTMLCanvasElement,audio:LotAudio,settings:Wa
   window.addEventListener("pagehide",e=>{if(e.persisted)audio.suspend();else dispose()},options)
   return dispose
 }
-export async function renderWalkAudio(tape:readonly WalkAudioFrame[],duration:number,lamps:readonly AudioLamp[]){
+export async function renderWalkAudio(tape:readonly WalkAudioFrame[],duration:number,lamps:readonly AudioLamp[],storm?:StormLoader){
   const ctx=new OfflineAudioContext(2,Math.ceil(duration*48000),48000),graph=new LotAudioGraph(ctx,ctx.destination,lamps)
+  if(storm)await graph.attachStorm(storm)
   for(const frame of tape)graph.update(frame,frame.time)
   return encodeWavPcm16(await ctx.startRendering())
 }
