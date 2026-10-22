@@ -1,5 +1,11 @@
 # Woods credits
 
+## Night sky
+
+- Yale Bright Star Catalogue, public-domain JSON conversion by aduboisforge: https://github.com/aduboisforge/Bright-Star-Catalog-JSON
+- NASA SVS CGI Moon Kit (2019), Ernie Wright / NASA LRO–LROC: https://svs.gsfc.nasa.gov/4720/
+- Source hashes and conversion notes: `packages/kit/sky/assets/CREDITS.md` and `sources.json`.
+
 ## Sound
 
 - Every file in `audio/` was generated with ElevenLabs `eleven_text_to_sound_v2` on Kit's account under the ElevenLabs commercial sound-generation licence (Anomaly), then trimmed, loop-crossfaded, loudness-normalised and encoded to Ogg Opus by `scripts/audio/sounds.ts`. The prompt, take, request id and measured loudness of each file are in `src/audio/files.ts`.

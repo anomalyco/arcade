@@ -1,12 +1,13 @@
 import type { LabControl } from "../lab-navigation"
 import type { BeamProfile } from "../gpu/lights/beam"
 import type { QualityScaling, QualityTier, QualityTiers } from "../quality"
+import { SKY_DEFAULTS, skyControls, type SkySettings } from "../sky/settings"
 
 /**
  * Every look choice of the night forest, typed, with units and approved defaults (RESEARCH.md's starting values). The
  * Lab binds these to its panel (`forestLookControls`); a game keeps the defaults and only scales them by tier.
  */
-export type ForestLookSettings = {
+export type ForestLookSettings = SkySettings & {
   // Night sky
   /** Faint moonlight through the canopy (0 = moonless). */
   moon: number
@@ -129,6 +130,7 @@ export type ForestLookSettings = {
 }
 
 export const FOREST_LOOK_DEFAULTS: Readonly<ForestLookSettings> = {
+  ...SKY_DEFAULTS,
   moon: 0.06, moonHeading: 220, moonElevation: 34, sky: 1, stars: 1, skylight: 1,
   fogDensity: 0.008, fogFalloff: 0.02, fogBrightness: 0.0035, fogHue: 215,
   mist: "drift", mistDensity: 0.08, mistHeight: 2.4, canopyMist: 1, beamNear: 0.6, mistScale: 9, mistDrift: 0.15, mistGaps: 0.32, phaseG: 0.75, phaseFloor: 0.03, beamAir: 1, beamMist: 1,
@@ -192,6 +194,7 @@ export function forestLookControls(settings: ForestLookSettings, prefix = "woods
     range("torchSide", "Lens offset right", T, 0, 0.6, 0.01, "m", "Hand"),
     range("torchDrop", "Lens offset down", T, 0, 0.6, 0.01, "m", "Hand"),
     range("torchLag", "Beam lag", T, 0, 0.3, 0.005, "s", "Hand"),
+    ...skyControls().map(c => ({ ...c, field: c.key, key: `${prefix}${c.key}`, group: N })),
     range("moon", "Moonlight", N, 0, 1, 0.01, "×"),
     range("sky", "Sky glow", N, 0, 3, 0.05, "×"),
     range("stars", "Stars", N, 0, 3, 0.05, "×"),

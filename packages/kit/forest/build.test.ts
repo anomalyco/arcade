@@ -37,7 +37,7 @@ test("smooth trunk rings share normals across adjacent bands and the UV seam", a
       if (data.getUint16(o + 20, true) !== toHalf(41) || data.getUint8(o + 18) !== 0) continue
       const key = [0, 4, 8].map(k => data.getFloat32(o + k, true).toFixed(5)).join(",")
       const normal = [12, 13, 14].map(k => data.getInt8(o + k)).join(",")
-      if (normals.has(key)) { expect(normal).toBe(normals.get(key)); checked++ }
+      if (normals.has(key)) { expect(normal).toBe(normals.get(key)!); checked++ }
       normals.set(key, normal)
     }
   }

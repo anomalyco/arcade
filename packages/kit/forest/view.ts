@@ -5,6 +5,8 @@
  * `docs/game-notes.md` (Woods look) for what each trick buys and costs.
  */
 import { reactivePipelineDescriptor } from "../gpu/reactive"
+import { attachSky } from "../sky/controller"
+import { moonLight } from "../sky/model"
 import { Renderer, TEMPORAL_DEFAULTS, type Batch, type FrameInput } from "../gpu/renderer"
 import { makeSceneShader, spriteShader } from "../gpu/shaders"
 import { compileShaderModuleWithLog, type PassContext, type ScenePass } from "../gpu/pass-graph"
@@ -83,6 +85,7 @@ export type ForestViewOptions = {
 }
 
 export type ForestView = {
+  readonly sky: ReturnType<typeof attachSky>
   readonly renderer: Renderer
   readonly settings: ForestLookSettings
   readonly build: ForestBuild
@@ -134,7 +137,7 @@ fn fogDistanceSigma(p: vec3f, eye: vec3f) -> f32 {
 }
 fn fogDistanceColor() -> vec3f { return vec3f(0.000015, 0.00002, 0.00003); }
 `), atmosphere: !smoke, bankLocal: "woodsBankLocal(p)", bankExtinction: true, torches: true,
-  ...(!smoke ? { torchScatter: "woodsTorchScatter(ro + rd * (s0 + h * tan(t)), ro)", distanceFog: true } : {}),
+  ...(!smoke ? { torchScatter: "woodsTorchScatter(ro + rd * (s0 + h * tan(t)), ro)", distanceFog: true, distanceFogSky: "N.misc.w < 0.5" } : {}),
   // Only glossy ground mirrors the lamps (water, wet boards, shore mud); dry litter and the camp's dirt do not.
   cutoff: "0.4", spotShadows: !smoke, surface: !smoke, reflectionSamples: 2, reflectionCap: "3.0",
   bankMask: "1.0 + 0.6 * (1.0 - smoothstep(0.85, 1.5, length((p.xz - N.lake.xy) / N.lake.zw)))",
@@ -205,7 +208,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
   mark("assets")
 
   let pass = new ForestPass(renderer.passContext, build, textures, world)
-  renderer.addPass("sky", new SkyPass(renderer.passContext))
+  const sky = attachSky(renderer, settings, new SkyPass(renderer.passContext))
   renderer.addPass("opaque", pass)
   const motes = new MotePass(renderer.passContext)
   renderer.addPass("alpha", motes)
@@ -310,6 +313,11 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     const targetStops = forestExposureTarget(metered, spot + 0.004 * s.sky + 0.0005, s, s.clearAir && !smoke && local ? -0.25 : 0)
     stepForestExposure(cam, renderer.sceneMeterStatus, targetStops, f.dt, s)
     cam.exposure = Math.pow(2, cam.stops)
+    // Reuse the forest's existing bounded eye state; there is no second adaptation clock.
+    const darkAdaptation = Math.max(0, Math.min(1, (cam.stops + s.adaptRange) / Math.max(0.01, s.adaptRange + s.adaptLift)))
+    sky.update({ time: f.time, sceneUnitsPerCdM2: 1, darkAdaptation })
+    const lunar = moonLight(s)
+    const physicalMoon = sky.active && !smoke && lunar.illuminanceLux > 0
 
     // ---- Lights.
     const frameLights: SceneLight[] = []
@@ -329,12 +337,17 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
 
     // ---- Spot shadow of the local torch (and, on High, the nearest other one).
     spots.settings.count = smoke || s.torchShadows === "off" ? 0 : quality.tier === "high" ? 2 : 1
+    if (physicalMoon) spots.settings.count++
     const candidates: SpotCandidate[] = f.torches.filter(t => t.on).map(t => ({ id: 1000 + t.id, pos: t.pos, axis: t.dir, cosOuter: Math.cos(Math.min(1.2, halfAngle * 2.2)), range: s.torchReach, intensity: torchPower * (t === local ? 100 : 1), ...(t.shadowNear ? { near: t.shadowNear } : {}) }))
+    // A distant narrow spotlight approximates parallel lunar shadow rays over the
+    // 100 m near field, reusing the host's cut-out foliage/terrain shadow casters.
+    const moonShadowId = 65000
+    if (physicalMoon) candidates.push({ id: moonShadowId, pos: [Math.round(f.eye[0] / 8) * 8 + lunar.direction[0] * 512, f.eye[1] + lunar.direction[1] * 512, Math.round(f.eye[2] / 8) * 8 + lunar.direction[2] * 512], axis: [-lunar.direction[0], -lunar.direction[1], -lunar.direction[2]], cosOuter: 0.98, range: 650, intensity: 1e8 })
     pass.update(f.eye, f.viewProj, quality, s)
     const enc = device.createCommandEncoder()
-    const casters = local && spots.settings.count > 0 ? pass.casters(local.pos, s.torchReach, quality.fernNear, s.foliageShadows && quality.foliageShadows ? foliageMask : null) : []
+    const casters = spots.settings.count > 0 && (local || physicalMoon) ? pass.casters(physicalMoon ? f.eye : local!.pos, physicalMoon ? 140 : s.torchReach, physicalMoon ? 100 : quality.fernNear, s.foliageShadows && quality.foliageShadows ? foliageMask : null) : []
     if (casters.length && f.casters?.length) { casters.push(...f.casters); spots.invalidate() }
-    if (spots.update(enc, candidates, f.eye, f.dt, id => lights.indexOf(id), casters)) renderer.setSpotShadows(spots.bindings())
+    if (spots.update(enc, candidates, f.eye, f.dt, id => id === moonShadowId ? moonShadowId : lights.indexOf(id), casters)) renderer.setSpotShadows(spots.bindings())
     // Moving torches re-render every frame: the picker only knows a light moved, the world is static.
     device.queue.submit([enc.finish()])
 
@@ -413,6 +426,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     // w: the exposure the post pass applies (fluorescent tape keeps its hue under it).
     custom.set([s.trunkSway, s.branchSway, s.flutter, s.exposure * cam.exposure], 4)
     custom.set([Math.cos(moonE) * Math.cos(moonH), Math.sin(moonE), Math.cos(moonE) * Math.sin(moonH), s.moon], 8)
+    if (sky.active) custom.set([...lunar.direction, physicalMoon ? lunar.illuminanceLux : 0], 8)
     custom.set([s.sky, s.stars, s.skylight, s.moss], 12)
     custom.set([s.windows, s.stringLights, s.water, lake.level], 16)
     custom.set([lake.x, lake.z, lake.rx, lake.rz], 20)
@@ -426,7 +440,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     packBeamProfile(profile, custom, 48)
     invert(f.viewProj, unjitteredInv)
     custom.set(unjitteredInv, 56)
-    custom.set([textures.size, 0.5, Math.log2(ALPHA_COVERAGE_BASE / textures.size), 0], 72)
+    custom.set([textures.size, 0.5, Math.log2(ALPHA_COVERAGE_BASE / textures.size), sky.active ? 1 : 0], 72)
     custom.set([s.clearAir && !smoke ? 1 : 0, s.depthMist && !smoke ? s.depthDensity : 0, s.depthStart, s.nearScatter], 76)
     renderer.setCustomUniforms(custom)
 
@@ -446,7 +460,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
   }
 
   return {
-    renderer, settings,
+    renderer, settings, sky,
     get build() { return build },
     setWorld(next: ForestWorld) {
       const t = performance.now()

@@ -367,13 +367,18 @@ const material = /* wgsl */ `
 const sceneHooks: SceneHooks = {
   uv: true,
   lampGrid: false,
-  declarations: woodsUniformWgsl + fogSceneWgsl + textures + woodsSkyWgsl + woodsEnvWgsl + windWgsl,
+  declarations: woodsUniformWgsl + fogSceneWgsl + textures + woodsSkyWgsl + woodsEnvWgsl + windWgsl + /* wgsl */ `
+fn forestMoon(world: vec3f, n: vec3f, open: f32) -> vec3f {
+  if (N.misc.w < 0.5) { return vec3f(0.55, 0.66, 0.95) * N.moon.w * max(dot(n, N.moon.xyz), 0.0) * open * open * 0.35; }
+  return vec3f(N.moon.w * max(dot(n, N.moon.xyz), 0.0) / 3.14159265) * spotShadowVis(65000u, world, n);
+}
+`,
   vertex,
   fragmentStart: `wDpx = dpdx(o.world); wDpy = dpdy(o.world); wDux = dpdx(o.uv); wDuy = dpdy(o.uv);`,
   material,
   bounce: "vec3f(0.0)",
   ambient: "fogAmbient(n) * N.sky.z * mix(0.22, 1.0, woodsOpen) * woodsAo",
-  directional: "vec3f(0.55, 0.66, 0.95) * N.moon.w * max(dot(n, N.moon.xyz), 0.0) * woodsOpen * woodsOpen * 0.35",
+  directional: "forestMoon(o.world, n, woodsOpen)",
   lightLeak: "0.0",
   wallDirectScale: "1.0",
   // Thin leaves pass about a third of what lands on their back to the front.

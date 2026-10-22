@@ -18,7 +18,8 @@ try {
     const bytes = new Uint8Array(await Bun.file(bmp).arrayBuffer()), d = new DataView(bytes.buffer)
     const offset = d.getUint32(10, true), width = d.getInt32(18, true), height = d.getInt32(22, true)
     const bits = d.getUint16(28, true), compression = d.getUint32(30, true)
-    if (width !== W || Math.abs(height) !== H || ![24, 32].includes(bits) || compression !== 0) throw Error("Expected uncompressed 24/32-bit BMP")
+    const bgra = bits === 32 && compression === 3 && d.getUint32(54, true) === 0xff0000 && d.getUint32(58, true) === 0xff00 && d.getUint32(62, true) === 0xff
+    if (width !== W || Math.abs(height) !== H || ![24, 32].includes(bits) || (compression !== 0 && !bgra)) throw Error("Expected uncompressed BGR/BGRA BMP")
     const stride = Math.ceil(W * bits / 32) * 4, pixelBytes = bits / 8
     const y = new Float32Array(W * H)
     for (let row = 0; row < H; row++) for (let x = 0; x < W; x++) {
@@ -57,12 +58,14 @@ try {
     tiles.sort((a,b) => a-b); field.sort((a,b) => a-b)
     const quantile = (a: number[], q: number) => a[Math.min(a.length - 1, Math.floor(a.length * q))]!
     const low = quantile(tiles, .1), high = quantile(tiles, .9)
-    reports.push({ file, view, size: [W,H], roi, visiblePointSources: peaks.length,
-      pointsPerMegapixel: peaks.length * 1e6 / ((x1-x0)*(y1-y0)),
+    const strong = peaks.filter(p => p.contrast >= 12).length
+    reports.push({ file, view, size: [W,H], roi, lowThresholdPeaks: peaks.length,
+      visiblePointSources: strong,
+      pointsPerMegapixel: strong * 1e6 / ((x1-x0)*(y1-y0)),
       strongerPeaks: { contrast12: peaks.filter(p => p.contrast >= 12).length, contrast24: peaks.filter(p => p.contrast >= 24).length },
       medianSkyByte: quantile(field,.5), diffuseP10Byte: low, diffuseP90Byte: high,
       diffuseContrast: quantile(field,.5) >= 3 ? (high-low) / Math.max(high+low, 1) : null,
-      pointThreshold: { peakAboveBackgroundByte: 4, absolutePeakByte: 9, integratedExcessByte: 10 } })
+      pointThreshold: { peakAboveBackgroundByte: 12, lowThresholdByte: 4, absolutePeakByte: 9, integratedExcessByte: 10 } })
   }
   console.log(JSON.stringify({ method: "fixed-upper-sky ROI; 5px annular background; 3x3 peak/excess; 32px median diffuse contrast", reports }, null, 2))
 } finally { await rm(scratch, { recursive: true, force: true }) }

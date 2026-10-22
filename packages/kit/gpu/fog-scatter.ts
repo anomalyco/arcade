@@ -1011,6 +1011,8 @@ export type FogScatterHooks = {
   torchScatter?: string
   /** Extra medium supplied by declarations: fogDistanceDepth(a,b), fogDistanceSigma(p,eye), fogDistanceColor(). */
   distanceFog?: boolean
+  /** Whether the extra surface-distance medium also covers sky rays. Defaults to true. */
+  distanceFogSky?: string
 }
 
 /**
@@ -1185,7 +1187,7 @@ ${hooks.distanceFog ? `      let mediumPoint = ro + rd * (s0 + h * tan(t));
   var acc = airlight(eye, rd, dist, samples, jitter);
   // Clouds behind the bank, then the bank in front of everything: rgb in-scatter, a the transmittance.
   var trans = 1.0;${hooks.distanceFog ? `
-  let distanceT = exp(-fogDistanceDepth(eye, eye + rd * dist));
+  let distanceT = select(exp(-fogDistanceDepth(eye, eye + rd * dist)), 1.0, sky && !(${hooks.distanceFogSky ?? "true"}));
   trans *= distanceT;
   acc += fogDistanceColor() * (1.0 - distanceT);` : ""}
 ${atmo ? `  if (FOG.cloud.w > 0.0 && rd.y > 0.01) {
