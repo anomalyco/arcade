@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { mat4 } from "wgpu-matrix"
 import { validateWgsl } from "../test-naga"
-import { BODYCAM_PRESETS, CAMERA_FILTER_DEFAULTS, CAMERA_FILTER_WGSL, CRT_PRESETS, applyCameraFilterPreset, cameraFilterControls, cameraFlow, createCameraFilterSettings } from "./camcorder"
+import { BODYCAM_PRESETS, CAMERA_FILTER_DEFAULTS, CameraFilter, CAMERA_FILTER_WGSL, CRT_PRESETS, applyCameraFilterPreset, cameraFilterControls, cameraFlow, createCameraFilterSettings } from "./camcorder"
 import { bodycamStamp, GLYPH_H, GLYPH_W, glyphPixels, hasGlyph, layoutText, phoneTimecode, textWidth, vhsStamp } from "./camcorder-font"
 import { BodycamRig, bodycamRenderFov } from "../../client/bodycam-rig"
 import type { FirstPerson } from "../../client/first-person"
@@ -149,5 +149,22 @@ describe("body cam rig", () => {
     expect(lags[0]!).toBeLessThan(-0.3)
     expect(Math.max(...lags)).toBeGreaterThan(0.005)
     expect(Math.abs(lags.at(-1)!)).toBeLessThan(0.01)
+  })
+})
+
+describe("camera filter lifecycle", () => {
+  test("switching off forgets the last filter, so iPhone → Today → iPhone starts a fresh recording", () => {
+    const filter = new CameraFilter({} as GPUDevice, "bgra8unorm", createCameraFilterSettings())
+    const state = filter as unknown as { valid: boolean; lastMode: string }
+    filter.settings.mode = "iphone"
+    expect(filter.active).toBe(true)
+    // As after a filtered frame.
+    state.valid = true
+    state.lastMode = "iphone"
+    expect(filter.active).toBe(true)
+    expect(state).toMatchObject({ valid: true, lastMode: "iphone" })
+    filter.settings.mode = "today"
+    expect(filter.active).toBe(false)
+    expect(state).toMatchObject({ valid: false, lastMode: "today" })
   })
 })
