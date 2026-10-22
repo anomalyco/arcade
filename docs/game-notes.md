@@ -1475,6 +1475,7 @@ kit renderer's `fxParticles` path; Today is one Lab setting away (Fire style, Wo
 - Auto exposure metered one raycast point of the local beam, so a level beam (hit 40 m) read as dark and opened +1.5 stops while four beams lit the fog. `LuminanceMeter` (`packages/kit/gpu/meter.ts`, `Renderer.setMeter`) reduces the scene-referred image after the fog to 64×36 block means and reads them back through a 3-buffer ring a few frames late; the forest keys on its centre-weighted mean × `meterGain` 3. Captures that step frames in a loop must yield (`setTimeout 0`) for `mapAsync` to land.
 - Your own beam is seen as backscatter. The fixed 15 % isotropic share in the lamp phase nearly triples HG(0.75)'s backscatter and drew Kit's "solid wedge"; it is now `FogSettings.phaseFloor` (default 0.15, forest 0.03).
 - Result at 1/2/4 torches: p5 0.020/0.016/0.024 (was 0.086/0.114/0.094), mean ≈ 0.10 (was 0.19–0.23), 31–46 % dark (was 0 %). Sheet: `~/code/home/artifacts/woods-2026-10-21/look/washout/index.html`.
+- Boot: the forest build called the woods terrain function ~4 M times; 66 ns each in Bun but ~4 µs each in the page, so `?smoke` took 29–68 s against the 55 s deadline. `buildForest` now samples the game's height once on the terrain mesh's 1 m grid and reads the same triangles back (`meshHeight`, 0.28 M calls): smoke boots in 11 s, and props stand on the surface as drawn. Boot phases are `performance.mark`ed (`woods:assets`, `:build`, `:world`, `:frame1`), which `scripts/smoke.mjs` prints on a timeout.
 
 ## Researched, not yet adopted
 
