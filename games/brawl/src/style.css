@@ -165,3 +165,13 @@ kbd { font: inherit; }
 .results .row .place { font-weight: 800; font-size: 24px; color: var(--sun); }
 .results .row b { font-weight: 800; }
 .results .next { font-weight: 600; font-size: 22px; }
+
+/* The kit game shell (title, Escape menu, Settings) in Brawl's colours. */
+.arcade-shell { --shell-font: "Barlow Condensed", system-ui, sans-serif; --shell-title-font: "Barlow Condensed", system-ui, sans-serif; --shell-accent: var(--sun); --shell-accent-ink: var(--ink); --shell-card: rgba(10, 12, 24, 0.88); --shell-backdrop: radial-gradient(ellipse at 50% 38%, rgba(16, 20, 38, 0.45), rgba(6, 7, 14, 0.88)); font-size: 17px; }
+.arcade-shell .as-title { font-weight: 800; font-size: 76px; letter-spacing: 0.02em; color: var(--sun); -webkit-text-stroke: 3px var(--ink); paint-order: stroke fill; text-shadow: 0 5px 0 var(--ink), 0 0 30px rgba(255, 46, 85, 0.5); transform: rotate(-3deg); }
+.arcade-shell .as-heading { font-weight: 800; font-size: 34px; color: var(--sun); }
+.arcade-shell .as-btn { font-weight: 800; font-size: 18px; letter-spacing: 0.03em; }
+.title-art { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.title-art .parade { gap: 6px; margin: 0; }
+.title-art .parade-face { width: 52px; height: 68px; border-width: 3px; border-radius: 10px; box-shadow: 0 4px 0 var(--ink); }
+.title-art .watch { order: 2; }

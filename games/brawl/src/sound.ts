@@ -1,11 +1,9 @@
 import { AudioRuntime, DEFAULT_CUES, DEFAULT_SAMPLE_MANIFEST, selectSfx, sfxCues, sfxManifest } from "@arcade/kit/audio"
 import { SFX } from "./sfx-ids"
 
-const STORAGE_KEY = "brawl.muted"
-
 /**
  * The game's sound: library samples and the shared synth cues through one `AudioRuntime`, panned around the camera.
- * Silent until the first press (autoplay rules); `M` mutes. Automation starts muted.
+ * Silent until the first press (autoplay rules). Mute and volume are the game shell's (`audioRuntimeSync` in main.ts).
  */
 export class Sound {
   readonly runtime: AudioRuntime
@@ -22,23 +20,13 @@ export class Sound {
       reverbWet: 0.12,
       autoBindDom: false,
     })
-    const saved = localStorage.getItem(STORAGE_KEY)
-    this.runtime.muted = saved === null ? navigator.webdriver : saved === "1"
+    this.runtime.muted = navigator.webdriver
     const unlock = () => {
       if (this.unlocked) return
       this.unlocked = true
       void this.runtime.unlock()
     }
     for (const type of ["pointerdown", "keydown"]) addEventListener(type, unlock, { capture: true })
-  }
-
-  get muted(): boolean {
-    return this.runtime.muted
-  }
-
-  setMuted(m: boolean): void {
-    this.runtime.setMuted(m)
-    localStorage.setItem(STORAGE_KEY, m ? "1" : "0")
   }
 
   /** The listener sits over the camera's focus. */
