@@ -12,7 +12,7 @@ Workbench, on the Inventory First baseline); the design write-up is the D-11 rou
 | --- | --- | --- |
 | Hotbar (5 slots) | Fists (slot 1, bound: never dropped or looted), pistol (one each, `unique`), melee weapon, medical, throwable | The flashlight is on the shoulder, not a slot (`F`). Items go to their usual slot when it is free (`preferSlots`). Fists or an empty slot shove on `Mouse0`; `Mouse0` uses the held item; holding a melee weapon swings on `Mouse0` (tap for a 2–3 hit combo, hold for a charged heavy cleave; `V` always shoves). |
 | Case (`pack`, a grid store) | Everything else: supplies (9mm boxes of 15, plank bundles of 3, scrap 5, chem 2, batteries 2, keys 4, a gas can each), spare tools and weapons, parts | The Attaché Case (AR-94, D-46): every item lies at its shape (`shared/progression/shapes.ts`, e.g. pistol 2×2, machete 4×1, gas can 2×3) and turns a quarter to fit. What fits is what you carry: there are no per-item caps. Reload, barricade, crafting, keys and fuel draw from it. `Tab` opens it ([outbreak-hud.md](outbreak-hud.md#the-attaché-case-ar-94-d-46)). |
-| Worn (counters) | The bag and its pouches | The case is the biggest bag worn (school backpack 6×3 to start, the Breacher's attaché case 7×3, a hiking pack 7×4, a duffel 9×4), a row more per pouch (two at most, made at a workbench). It only grows; the bag stays on you when you fall. |
+| Worn (counters) | The bag and its pouches | The case is the biggest bag worn (school backpack 6×3 to start, the Breacher's attaché case 7×3, a hiking pack 7×4, a duffel 9×4; the duffel itself lies 4×2), a row more per pouch (two at most, made at a workbench). It only grows; the bag stays on you when you fall. |
 
 ### Melee weapons (`games/outbreak/shared/combat.ts`)
 

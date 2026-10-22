@@ -1,6 +1,8 @@
 import { keyCapHtml } from "@arcade/kit/client/key-cap"
 import { refAttr, type CaseItem, type InvCell, type InvMate, type InvModel } from "./model"
 import { PORTRAITS } from "../portraits"
+import { fitThumb, thumbHtml, type Box } from "../portraits/thumb"
+import { LID, lidSlots } from "./layout"
 
 /**
  * The Attaché Case (AR-94, D-46) as markup from one model: quick slots on the lid, the case on grid paper with every
@@ -28,12 +30,10 @@ export function artHtml(item: string, w: number, h: number, turned = false): str
   return `<span class="inv-art-box" style="${style}" data-turned="${turned}"><img class="inv-art" src="${url}" alt="" draggable="false" decoding="async"></span>`
 }
 
-/** The portrait contained in a box of any shape (quick slots, the dock). */
-export function artFitHtml(item: string): string {
-  const url = PORTRAITS[item]
-  if (!url) return `<span class="inv-noart">${esc(item)}</span>`
-  return `<img class="inv-art-fit" src="${url}" alt="" draggable="false" decoding="async">`
-}
+const cells = (n: number) => `calc(var(--inv-cell) * ${n})`
+
+/** How far into the open transition a piece starts (0..1 of the case's progress), in reading order. */
+const delay = (n: number) => (0.22 + Math.min(0.24, n * 0.022)).toFixed(3)
 
 function chargeHtml(c: InvCell): string {
   const ch = c.charge
@@ -66,17 +66,19 @@ function attrs(c: InvCell, st: RenderState, extra: string[] = []): string {
     .join(" ")
 }
 
-/** A quick slot on the lid: the portrait fitted into it, its key cap, its count or charge. */
-function quickHtml(c: InvCell, index: number, st: RenderState): string {
-  const art = c.stack ? artFitHtml(c.stack.item) : ""
-  return `<div class="inv-quick" ${attrs(c, st)}>${art}${countHtml(c)}${chargeHtml(c)}<span class="inv-key">${keyCapHtml(`Digit${index + 1}`)}</span></div>`
+/** A quick slot on the lid: a fitted thumbnail of the item (long ones on the diagonal), its key cap, count or charge. */
+function quickHtml(c: InvCell, index: number, slot: Box, st: RenderState, shape: (item: string) => Box): string {
+  const item = c.stack?.item
+  const art = item ? thumbHtml(item, fitThumb(shape(item), slot, LID.pad), cells, "inv-thumb") || `<span class="inv-noart">${esc(item)}</span>` : ""
+  const style = `width:${cells(slot.w)};height:${cells(slot.h)};--d:${delay(index)}`
+  return `<div class="inv-quick inv-in" ${attrs(c, st, [`style="${style}"`])}>${art}${countHtml(c)}${chargeHtml(c)}<span class="inv-key">${keyCapHtml(`Digit${index + 1}`)}</span></div>`
 }
 
 /** An item lying on a grid at (`x`, `y`), `w`×`h` cells as it lies. */
-function placedHtml(c: InvCell, st: RenderState, x: number, y: number, w: number, h: number, turned: boolean): string {
+function placedHtml(c: InvCell, st: RenderState, x: number, y: number, w: number, h: number, turned: boolean, order = 0): string {
   const item = c.stack!.item
-  const style = `--x:${x};--y:${y};--w:${w};--h:${h}`
-  return `<div class="inv-item" ${attrs(c, st, [`style="${style}"`, turned ? `data-turned="true"` : ""])}>${artHtml(item, turned ? h : w, turned ? w : h, turned)}${countHtml(c)}${chargeHtml(c)}</div>`
+  const style = `--x:${x};--y:${y};--w:${w};--h:${h};--d:${delay(order)}`
+  return `<div class="inv-item inv-in" ${attrs(c, st, [`style="${style}"`, turned ? `data-turned="true"` : ""])}>${artHtml(item, turned ? h : w, turned ? w : h, turned)}${countHtml(c)}${chargeHtml(c)}</div>`
 }
 
 function gridCellsHtml(cols: number, rows: number, grown: RenderState["grown"]): string {
@@ -132,7 +134,7 @@ function crateHtml(m: InvModel, st: RenderState, shape: (item: string) => { w: n
   )
   const rows = Math.max(2, ...shapes.map((s) => s.y + s.h))
   const byRef = new Map(cells.map((c) => [refAttr(c.ref), c]))
-  const items = shapes.map((s) => placedHtml(byRef.get(s.id)!, st, s.x, s.y, s.w, s.h, s.rot)).join("")
+  const items = shapes.map((s) => placedHtml(byRef.get(s.id)!, st, s.x, s.y, s.w, s.h, s.rot, 5 + s.y * 2 + s.x * 0.5)).join("")
   return `<div class="inv-crate" data-ref="target:-1" data-kind="${t.kind}">
     <div class="inv-head"><span>${esc(t.title)}</span></div>
     <div class="inv-paper inv-crate-paper" style="--cols:${CRATE_COLS};--rows:${rows}">${gridCellsHtml(CRATE_COLS, rows, null)}${items || `<span class="inv-none">Empty</span>`}</div>
@@ -153,8 +155,10 @@ function matesHtml(mates: readonly InvMate[]): string {
 /** The whole case: the lid's quick slots, the case on grid paper, the crate and teammates beside it, the key hints. */
 export function caseHtml(m: InvModel, st: RenderState, shape: (item: string) => { w: number; h: number }): string {
   const c = m.case
-  const quick = m.hands.map((h, i) => quickHtml(h, i, st)).join("")
-  const items = c.items.map((it: CaseItem) => placedHtml(it, st, it.x, it.y, it.w, it.h, it.r)).join("")
+  const slots = lidSlots(c.cols)
+  const quick = m.hands.map((h, i) => quickHtml(h, i, slots[i]!, st, shape)).join("")
+  // Pieces come in in reading order: the lid, then the case top-left to bottom-right.
+  const items = c.items.map((it: CaseItem) => placedHtml(it, st, it.x, it.y, it.w, it.h, it.r, 3 + it.y * 2 + it.x * 0.5)).join("")
   const pouches = c.pouches ? ` <small>+${c.pouches} pouch${c.pouches > 1 ? "es" : ""}</small>` : ""
   const grownNote = st.grown ? `<span class="inv-grew">${c.cols}×${c.rows}</span>` : ""
   const hints = [

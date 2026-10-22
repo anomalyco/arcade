@@ -1,9 +1,14 @@
-// Headless Metal proof of the Attaché Case (AR-94, D-46): one still and one muted clip on a staged scene (night in
-// Ash, a searched dresser holding a machete, planks, rounds and a hiking pack, a teammate beside you). The clip opens
-// the case with Tab, picks the toolbox up and turns it with R mid-drag, turns a knife where it lies, drags the machete
-// in from the dresser onto the row that freed, and drags the hiking pack in so the case grows. Real pointer and key input throughout.
+// Headless Metal proof of the Attaché Case (AR-94, D-46) on a staged scene (night in Ash, a searched dresser holding a
+// machete, rounds and a hiking pack, a crowbar in hand, a teammate beside you). Writes:
+//   after.png            the case open: fitted thumbnails on the lid, art at its shape on the grid
+//   transition.mp4       Tab open, close, then Tab spam, 60 frames a second of game time (and -slow.mp4 at 1/4 speed)
+//   transition.json      the stage's opacity, rise, scale, the lid's swing and the dim, read from the DOM every frame,
+//                        checked for jumps (motion.ts is traced in tests/inventory-motion.test.ts too)
+//   clip.mp4             packing: the toolbox turned with R mid-drag, the knife turned where it lies, the hiking pack
+//                        dragged in (the case grows), the machete dragged onto the new row
+// Real pointer and key input throughout.
 // Run from games/outbreak: bun scripts/attache-case-proof.ts (fleet: hivemind run --kind browser
-// --fetch captures/outbreak-attache). Writes after.png, clip.mp4 and index.json.
+// --fetch captures/outbreak-attache).
 import assert from "node:assert/strict"
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
@@ -68,19 +73,19 @@ async function scene(page: Page) {
      const st = ledger.store(c.id); st.slots = [{ item: "machete", count: 1, charge: 24 }, { item: "hiking-pack", count: 1 }, { item: "ammo", count: 8 }, { item: "bandage", count: 2 }]; st.size = st.slots.length; st.revealed = true; st.rev = ++ledger.rev
      return { x: c.x, y: c.y }`,
   )
-  // A known layout in the 6×3 school backpack: the toolbox lying top-left, rounds, a knife, the bottom row free.
+  // A known layout in the 6×3 school backpack: the toolbox lying top-left, a knife beside it, rounds below that.
   await sim(
     page,
     `const a = view.actorId
      const pk = ledger.store(a + "/pack")
      for (let i = 0; i < pk.slots.length; i++) pk.slots[i] = null
      pk.rev = ++ledger.rev
-     for (const [item, count] of [["medkit", 2]]) ledger.apply({ kind: "grant", actor: a, item, count })
+     for (const [item, count] of [["medkit", 2], ["crowbar", 1]]) ledger.apply({ kind: "grant", actor: a, item, count })
      const hb = ledger.store(a + "/hotbar")
      const put = (item, count, x, y, extra = {}) => { const i = pk.slots.indexOf(null); pk.slots[i] = { item, count, ...extra }; pk.places[i] = { x, y }; pk.rev = ++ledger.rev }
      put("toolbox", 1, 0, 0)
-     put("ammo", 14, 3, 0)
-     put("knife", 1, 4, 0, { charge: 18 })
+     put("knife", 1, 3, 0, { charge: 18 })
+     put("ammo", 14, 5, 1)
      session.sim.progression.project(session.slot)`,
   )
   await page.evaluate(async (d) => {
@@ -174,7 +179,18 @@ try {
     if (m.type() === "error") errors.push(m.text())
   })
   await page.goto(`http://127.0.0.1:${port}/?seed=7&bench`)
-  await page.waitForFunction(() => (window as any).__arcadeHarness?.ready, null, { timeout: 300_000 })
+  // A cold Vite cache re-optimises dependencies and reloads the page once: wait until it is ready and stays put.
+  let navigated = false
+  page.on("framenavigated", (f) => {
+    if (f === page.mainFrame()) navigated = true
+  })
+  for (let tries = 0; ; tries++) {
+    navigated = false
+    await page.waitForFunction(() => (window as any).__arcadeHarness?.ready, null, { timeout: 300_000 })
+    await page.waitForTimeout(2000)
+    if (!navigated) break
+    assert.ok(tries < 3, "the page kept reloading")
+  }
   const adapter = await page.evaluate(() => (window as any).__arcadeHarness.adapterInfo)
   log("harness ready")
 
@@ -192,7 +208,76 @@ try {
   await page.keyboard.press("Tab")
   await step(page, 20)
 
-  // The clip, 30 frames a second of game time.
+  // The transition: every frame of game time, with the DOM read back each frame.
+  const tdir = resolve(out, "transition-frames")
+  rmSync(tdir, { recursive: true, force: true })
+  mkdirSync(tdir, { recursive: true })
+  type Sample = { f: number; hidden: boolean; opacity: number; ty: number; scale: number; lid: string; dim: number; piece: number; p: number }
+  const samples: Sample[] = []
+  let tf = 0
+  const tframes = async (n: number) => {
+    for (let i = 0; i < n; i++) {
+      await step(page, 1)
+      samples.push(
+        await page.evaluate((f) => {
+          const root = document.querySelector<HTMLElement>("#inv")
+          const stage = document.querySelector<HTMLElement>("#inv .inv-stage")
+          const cs = stage ? getComputedStyle(stage) : null
+          const m = cs && cs.transform !== "none" ? new DOMMatrix(cs.transform) : new DOMMatrix()
+          const quick = document.querySelector<HTMLElement>("#inv .inv-quick")
+          const motion = (window as any).__arcadeHarness.state().inventory.motion
+          return {
+            f,
+            hidden: !root || root.hidden,
+            opacity: cs ? Number(cs.opacity) : 0,
+            ty: m.m42,
+            scale: m.m11,
+            lid: document.querySelector<HTMLElement>("#inv .inv-lid")?.style.transform ?? "",
+            dim: Number(document.querySelector<HTMLElement>("#inv .inv-floor")?.style.opacity || 0),
+            piece: quick ? Number(getComputedStyle(quick).opacity) : 0,
+            p: motion?.p ?? 0,
+          }
+        }, tf),
+      )
+      await page.screenshot({ path: resolve(tdir, `f${String(tf++).padStart(4, "0")}.png`) })
+    }
+  }
+  log("transition: recording")
+  await tframes(6)
+  await page.keyboard.press("Tab")
+  await tframes(28)
+  await page.keyboard.press("Tab")
+  await tframes(16)
+  // Tab spam: open, shut, open, shut, open, each a few frames apart, then shut.
+  for (const gap of [4, 3, 5, 3]) {
+    await page.keyboard.press("Tab")
+    await tframes(gap)
+  }
+  await page.keyboard.press("Tab")
+  await tframes(24)
+  await page.keyboard.press("Tab")
+  await tframes(16)
+  for (let i = 1; i < samples.length; i++) {
+    const a = samples[i - 1]!
+    const b = samples[i]!
+    if (a.hidden || b.hidden) {
+      // It only leaves the page once it has faded out.
+      if (!a.hidden && b.hidden) assert.ok(a.opacity < 0.05, `frame ${b.f}: hidden at opacity ${a.opacity}`)
+      continue
+    }
+    assert.ok(Math.abs(b.opacity - a.opacity) <= 0.42, `frame ${b.f}: opacity jumped ${a.opacity} → ${b.opacity}`)
+    assert.ok(Math.abs(b.ty - a.ty) <= 4.2, `frame ${b.f}: rise jumped ${a.ty} → ${b.ty}`)
+    assert.ok(Math.abs(b.scale - a.scale) <= 0.016, `frame ${b.f}: scale jumped ${a.scale} → ${b.scale}`)
+    assert.ok(Math.abs(b.dim - a.dim) <= 0.31, `frame ${b.f}: dim jumped ${a.dim} → ${b.dim}`)
+  }
+  writeFileSync(resolve(out, "transition.json"), JSON.stringify(samples, null, 1))
+  for (const [name, filter] of [["transition.mp4", "null"], ["transition-slow.mp4", "setpts=4*PTS"]] as const) {
+    const r = Bun.spawnSync(["ffmpeg", "-y", "-loglevel", "error", "-framerate", "60", "-i", resolve(tdir, "f%04d.png"), "-vf", filter, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-r", "60", resolve(out, name)])
+    assert.equal(r.exitCode, 0, r.stderr.toString())
+  }
+  log(`transition: ${samples.length} frames, max opacity step ${Math.max(...samples.slice(1).map((s, i) => Math.abs(s.opacity - samples[i]!.opacity))).toFixed(3)}`)
+
+  // The packing clip, 30 frames a second of game time.
   const dir = resolve(out, "frames")
   rmSync(dir, { recursive: true, force: true })
   mkdirSync(dir, { recursive: true })
@@ -219,10 +304,11 @@ try {
     await page.keyboard.press("KeyR")
     await frames(16)
   }
-  // In from the dresser: the machete lies down on its four cells.
-  await drag(page, `#inv .inv-crate [data-item="machete"]`, () => landing(page, "machete", false), frames)
   // The hiking pack: worn at once, and the case unfolds a column and a row.
   await drag(page, `#inv .inv-crate [data-item="hiking-pack"]`, () => centerOf(page, "#inv .inv-case-paper"), frames)
+  await frames(20)
+  // In from the dresser: the machete lies down on the new row.
+  await drag(page, `#inv .inv-crate [data-item="machete"]`, () => landing(page, "machete", false), frames)
   await page.mouse.move(5, 5)
   await frames(36)
   const after = await caseItems(page)

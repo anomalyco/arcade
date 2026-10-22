@@ -9,9 +9,12 @@
  *
  * Each item is painted by an image model (gpt-image-1.5, transparent background) from one locked style prompt plus a
  * line about the object, so the set shares a light direction (warm key from the upper left), palette and brushwork.
- * The painting is cached in `.scratch/item-portraits/` (raw PNGs are big and not committed); processing trims it to
- * the object, fits it into its footprint (cells across × down from `shared/progression/shapes.ts`, 128 px a cell)
- * and writes `src/portraits/<id>.webp` and the URL table `portraits/index.ts`. The drop shadow is CSS.
+ * The painting is cached in `~/.cache/arcade/item-portraits/` (raw PNGs are big and not committed; ITEM_PORTRAITS_CACHE
+ * moves it); processing trims it to the object, fits it into its footprint (cells across × down from
+ * `shared/progression/shapes.ts`, exactly 128 px a cell, 9 px margin) and writes `src/portraits/<id>.webp` and the URL
+ * table `portraits/index.ts`. Without a cached painting it reprocesses the committed WebP. The drop shadow is CSS.
+ * `tests/inventory-art.test.ts` checks every portrait's size and that the painted object's aspect matches its shape:
+ * when one fails, repaint it with a line that says how long it is, or change its shape.
  *
  * To restyle the set, change STYLE and run with --force; to fix one item, change its line and run --only id --force.
  * Requests read OPENAI_API_KEY, or 1Password (op://Anomaly/OpenAI API Key/credential).
@@ -23,10 +26,11 @@ import { ITEMS } from "../shared/progression/catalog"
 import { ITEM_SHAPES } from "../shared/progression/shapes"
 
 const ROOT = new URL("..", import.meta.url).pathname
-const RAW = `${ROOT}.scratch/item-portraits`
+const RAW = process.env.ITEM_PORTRAITS_CACHE ?? `${process.env.HOME}/.cache/arcade/item-portraits`
 const OUT = `${ROOT}src/portraits`
 const CELL_PX = 128
-const PAD = 0.06
+/** Margin on every side, in pixels: the same at every shape, so a 1×1 and a 4×1 sit alike on the grid. */
+const PAD = Math.round(CELL_PX * 0.07)
 
 const STYLE = [
   "Inventory item portrait for a gritty survival-horror game, hand-painted in the manner of classic late-1990s dark",
@@ -44,7 +48,7 @@ const STYLE = [
 const OBJECTS: Record<string, string> = {
   fists: "a clenched fist with the knuckles wrapped in grubby white cloth tape, seen from the back of the hand",
   pistol: "a worn black 9mm semi-automatic police pistol with a checkered grip and a scuffed slide, muzzle pointing right",
-  knife: "a kitchen chef's knife with a riveted dark wooden handle and a stained steel blade, blade to the right",
+  knife: "a short, broad utility knife with a chunky riveted dark wooden handle and a wide stained steel blade, blade to the right; the whole knife is only about twice as long as it is tall",
   hammer: "a claw hammer with a hickory handle and a rust-flecked steel head, the head at the right end",
   pipe: "a heavy length of dull grey lead pipe with threaded ends and a dent in the middle",
   crowbar: "a long steel crowbar with chipped red paint, the hooked claw at the right end",
@@ -56,22 +60,22 @@ const OBJECTS: Record<string, string> = {
   medkit: "a white enamelled metal first aid box with a red cross, rounded corners, a carry handle and chipped edges",
   bandage: "a rolled white cotton bandage, slightly unravelled, with a safety pin through the loose end",
   noisemaker: "a homemade noise lure: an old wind-up kitchen timer taped to a tin can, with a small battery and twisted wires",
-  bottle: "an empty dark green glass bottle with a long neck, dusty, catching the light, standing upright",
+  bottle: "an empty, stout dark green glass bottle with a short neck, dusty, catching the light, standing upright; it is half as wide as it is tall",
   cans: "three dented tin cans tied together on a length of twine, a homemade tripwire rattle",
   flare: "a red road flare with a black striker cap and a plain paper wrapper",
-  food: "a dented tin of canned beans with a plain faded paper wrapper",
+  food: "a short, wide, dented tin of canned beans with a plain faded paper wrapper, about as wide as it is tall",
   flamethrower: "a homemade flamethrower: a scuffed propane tank strapped by a rubber hose to a long welded steel nozzle with a trigger grip, nozzle to the right",
   dynamite: "two sticks of red dynamite bound with black electrical tape, a short fuse at the top, standing upright",
-  firecrackers: "a bundle of red paper firecrackers with braided green fuses",
+  firecrackers: "a squat bundle of red paper firecrackers lying on their side with braided green fuses, about as wide as it is tall",
   molotov: "a molotov cocktail: a clear glass bottle half full of amber liquid with a cloth rag stuffed in the neck, standing upright",
   "flare-gun": "an orange plastic emergency flare pistol with a wide barrel, muzzle pointing right",
   "bear-trap": "a rusty steel bear trap with its toothed jaws open and a short chain",
   baseball: "a scuffed white leather baseball with red stitching",
   brick: "a chipped red clay house brick",
   rock: "a fist-sized grey granite rock",
-  "tin-can": "a single empty tin can with its jagged lid bent open",
+  "tin-can": "a single empty tin can lying on its side, its jagged lid bent open, about as wide as it is tall in the picture",
   ammo: "a small open cardboard box of 9mm pistol cartridges, brass rounds standing in rows",
-  plank: "three long, narrow rough pine planks stacked flat and tied together with twine, about eight times longer than they are wide, seen side-on, grain and knots visible",
+  plank: "seen from directly above, three very long, narrow rough pine boards lying side by side and tied with twine at both ends, the bundle exactly four times as long as it is wide, grain and knots visible",
   scrap: "a small heap of scrap: bent nails, a hinge, washers and a twisted strip of sheet metal",
   chem: "a brown glass bottle of rubbing alcohol with a folded white cloth rag draped over it, standing upright",
   battery: "two worn D-cell flashlight batteries lying side by side",
@@ -123,7 +127,7 @@ const readKey = (cmd: string[]) => {
 
 async function paint(id: string): Promise<void> {
   const file = `${RAW}/${id}.png`
-  if (!values.force && (await Bun.file(file).exists())) return
+  if (!values.force && ((await Bun.file(file).exists()) || (await Bun.file(`${OUT}/${id}.webp`).exists()))) return
   key ||= readKey(["2password", "read", keyRef]) || readKey(["op", "read", keyRef])
   if (!key) throw Error(`No OpenAI key: set OPENAI_API_KEY or sign in to 1Password (${keyRef})`)
   const { prompt, size } = promptFor(id)
@@ -149,23 +153,23 @@ async function paint(id: string): Promise<void> {
   throw Error(`${id}: not painted`)
 }
 
-/** Trims the painting to the object, fits it into its footprint with a margin, and writes the WebP. */
+/** Trims the painting to the object, fits it into its footprint with a margin, and writes the WebP (exactly W × H). */
 async function process1(id: string): Promise<void> {
   const raw = `${RAW}/${id}.png`
-  if (!(await Bun.file(raw).exists())) return
+  const committed = `${OUT}/${id}.webp`
+  const source = (await Bun.file(raw).exists()) ? raw : (await Bun.file(committed).exists()) ? Buffer.from(await Bun.file(committed).arrayBuffer()) : null
+  if (!source) return
   const { w, h } = ITEM_SHAPES[id]!
   const W = w * CELL_PX
   const H = h * CELL_PX
-  const pad = Math.round(Math.min(W, H) * PAD)
-  const trimmed = await sharp(raw).ensureAlpha().trim({ threshold: 8 }).toBuffer()
+  const trimmed = await sharp(source).ensureAlpha().trim({ threshold: 8 }).toBuffer()
   const fitted = await sharp(trimmed)
-    .resize({ width: W - pad * 2, height: H - pad * 2, fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 }, kernel: "lanczos3" })
+    .resize({ width: W - PAD * 2, height: H - PAD * 2, fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 }, kernel: "lanczos3" })
     .toBuffer()
   await sharp(fitted)
-    .extend({ top: pad, bottom: pad, left: pad, right: pad, background: { r: 0, g: 0, b: 0, alpha: 0 } })
-    .resize(W, H, { fit: "fill" })
+    .extend({ top: PAD, bottom: PAD, left: PAD, right: PAD, background: { r: 0, g: 0, b: 0, alpha: 0 } })
     .webp({ quality: 86, alphaQuality: 90, effort: 6 })
-    .toFile(`${OUT}/${id}.webp`)
+    .toFile(committed)
 }
 
 const queue = [...selected]

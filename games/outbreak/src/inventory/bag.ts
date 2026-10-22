@@ -3,6 +3,7 @@ import type { InventoryOp, InvRef } from "../../shared/inventory-ops/types"
 import type { Command, SessionView } from "../../shared/session"
 import type { InventoryPresenter } from "./hooks"
 import { cellAt, fitAt, inventoryModel, moveFor, parseRef, quickMoveFor, refAttr, type CaseItem, type InvModel } from "./model"
+import { caseShut, caseStyle, SHUT, stepCaseMotion, type CaseMotion } from "./motion"
 import { artHtml, caseHtml, CRATE_COLS, type RenderState } from "./render"
 import { DEFAULT_INVENTORY_SETTINGS, type InventorySettings } from "./settings"
 import "./inventory.css"
@@ -78,6 +79,11 @@ export class InventoryBag implements InventoryPresenter {
   private cellPx = 56
   /** Where the survivor faced when the case opened: the cursor is on the case now, so it no longer aims. */
   private aimAtOpen: number | null = null
+  /** The open/close transition (`motion.ts`): the case stays on the page until it is all the way shut. */
+  private motion: CaseMotion = SHUT
+  private body: HTMLElement | null = null
+  private floor: HTMLElement | null = null
+  private reduced: MediaQueryList | null = null
   /** Moves sent, for the harness. */
   sent = 0
 
@@ -161,6 +167,7 @@ export class InventoryBag implements InventoryPresenter {
     return {
       style: this.settings().inventoryStyle,
       open: this.open,
+      motion: this.motionState(),
       hovered: this.hovered ? refAttr(this.hovered) : null,
       queued: this.queue.length,
       sent: this.sent,
@@ -202,8 +209,11 @@ export class InventoryBag implements InventoryPresenter {
     const model = inventoryModel(f.view, f.session, f.names, f.colours)
     this.noteFresh(model)
     this.model = model
-    if (!this.open || f.view.player.vehicleId) {
-      if (this.open && f.view.player.vehicleId) this.close()
+    if (this.open && f.view.player.vehicleId) this.close()
+    this.reduced ??= typeof matchMedia === "function" ? matchMedia("(prefers-reduced-motion: reduce)") : null
+    const reduced = Boolean(this.reduced?.matches)
+    this.motion = stepCaseMotion(this.motion, this.open ? 1 : 0, f.dt, reduced)
+    if (caseShut(this.motion)) {
       if (this.root && !this.root.hidden) {
         this.root.hidden = true
         this.cancelDrag()
@@ -213,6 +223,13 @@ export class InventoryBag implements InventoryPresenter {
     this.ensureDom()
     const root = this.root!
     root.hidden = false
+    root.dataset.state = this.open ? "open" : "closing"
+    // Closing, the case leaves as it was: nothing is re-laid out or re-drawn on the way out.
+    if (!this.open) {
+      if (this.caption) this.caption.dataset.on = "false"
+      this.applyMotion(reduced)
+      return
+    }
     this.noteGrowth(model)
     for (const [ref, until] of this.pending) if (this.time > until || model.key !== this.lastKey) this.pending.delete(ref)
     this.lastKey = model.key
@@ -230,8 +247,27 @@ export class InventoryBag implements InventoryPresenter {
       this.stage!.innerHTML = html
       this.decorate()
     }
+    this.applyMotion(reduced)
     this.landSettle(model)
     this.syncCaption()
+  }
+
+  /** Writes this frame of the transition: the dim, the case rising and growing, the lid's swing, the pieces' stagger. */
+  private applyMotion(reduced: boolean): void {
+    const s = caseStyle(this.motion, reduced)
+    const snap = (n: number) => Math.round(n * 64) / 64
+    this.root!.style.setProperty("--inv-p", s.pieces.toFixed(4))
+    this.floor!.style.opacity = s.dim.toFixed(4)
+    const body = this.body!
+    body.style.opacity = s.opacity.toFixed(4)
+    body.style.transform = s.y || s.scale !== 1 || s.squash !== 1 ? `translateY(${snap(s.y)}px) scale(${s.scale.toFixed(4)}, ${(s.scale * s.squash).toFixed(4)})` : ""
+    const lid = this.stage!.querySelector<HTMLElement>(".inv-lid")
+    if (lid) lid.style.transform = s.lid ? `perspective(700px) rotateX(${s.lid.toFixed(2)}deg)` : ""
+  }
+
+  /** This frame of the transition, for the harness and proofs. */
+  motionState() {
+    return { ...this.motion, style: caseStyle(this.motion, Boolean(this.reduced?.matches)) }
   }
 
   private shapeOf(item: string, turned = false): { w: number; h: number } {
@@ -277,10 +313,12 @@ export class InventoryBag implements InventoryPresenter {
     root.id = "inv"
     root.hidden = true
     root.dataset.style = "case"
-    root.innerHTML = `<div class="inv-floor" data-ref="ground:0"></div><div class="inv-stage"></div><div class="inv-caption" aria-live="polite"></div>`
+    root.innerHTML = `<div class="inv-floor" data-ref="ground:0"></div><div class="inv-stage"><div class="inv-body"></div></div><div class="inv-caption" aria-live="polite"></div>`
     document.body.appendChild(root)
     this.root = root
-    this.stage = root.querySelector<HTMLElement>(".inv-stage")
+    this.floor = root.querySelector<HTMLElement>(".inv-floor")
+    this.body = root.querySelector<HTMLElement>(".inv-stage")
+    this.stage = root.querySelector<HTMLElement>(".inv-body")
     this.caption = root.querySelector<HTMLElement>(".inv-caption")
     root.addEventListener("pointerdown", (e) => this.onDown(e))
     root.addEventListener("pointerover", (e) => this.onOver(e))

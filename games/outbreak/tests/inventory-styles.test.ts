@@ -105,7 +105,7 @@ describe("the Attaché Case (AR-94, D-46)", () => {
     expect(html).toContain('data-ref="case:-1"')
     expect(html).toContain("plank.webp")
     expect(html).toContain('data-ref="target:0"')
-    expect(html.match(/class="inv-quick"/g)).toHaveLength(5)
+    expect(html.match(/class="inv-quick /g)).toHaveLength(5)
     expect(html.match(/data-new="true"/g)).toHaveLength(3)
     expect(html).toContain("School Backpack")
   })
