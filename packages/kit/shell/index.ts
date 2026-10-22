@@ -82,7 +82,8 @@ export class GameShell {
     this.flow = new ShellFlow({
       pointerLock: o.pointerLock,
       blocked: () => hidden || Boolean(o.blocked?.()),
-      escapeOwned: () => Boolean(o.escapeOwned?.() || o.keysBlocked?.()),
+      // Hidden for automation, Escape stays the game's (a proof closing a bag must not pause an invisible menu).
+      escapeOwned: () => hidden || Boolean(o.escapeOwned?.() || o.keysBlocked?.()),
       pauseOnHidden: o.pauseOnHidden,
       // Hidden, a game without pointer lock starts in play (nobody will click Play); a pointer-lock game starts when it takes the lock.
       start: o.start ?? (hidden && !o.pointerLock ? "playing" : "title"),
