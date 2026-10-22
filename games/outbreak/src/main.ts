@@ -238,7 +238,7 @@ async function main() {
       inputController.release()
       pacer.clock.pause(performance.now())
     },
-    { capture: "focus", onChange: (key, value) => onSettingChanged(key, value) },
+    { capture: "focus", openGroups: ["Feel"], onChange: (key, value) => onSettingChanged(key, value) },
   )
   lab.setTabs(OUTBREAK_LAB_TABS)
   bindOutbreakLabControls(lab, settings, controls)

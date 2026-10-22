@@ -116,8 +116,8 @@ try {
         fits: body.scrollHeight <= body.clientHeight + 1,
       }
     })
-    await page.screenshot({ path: resolve(out, `${game}-${label}.png`) })
-    await page.locator("[data-lab-panel]").screenshot({ path: resolve(out, `${game}-${label}-panel.png`) })
+    await page.locator("[data-lab-panel]").screenshot({ path: resolve(out, `${game}-${label}-panel.png`), timeout: 120_000 })
+    await page.screenshot({ path: resolve(out, `${game}-${label}.png`), timeout: 120_000 }).catch(e => errors.push(String(e).slice(0, 200)))
     writeFileSync(resolve(out, `${game}-${label}.json`), `${JSON.stringify({ game, label, root, shape, errors }, null, 2)}\n`)
     console.log(game, label, JSON.stringify({ groups: shape.groups.length, subheads: shape.subheads.length, rowsShown: shape.rowsShown, rowsTotal: shape.rowsTotal, contentHeight: shape.contentHeight, fits: shape.fits }))
     await page.close()
