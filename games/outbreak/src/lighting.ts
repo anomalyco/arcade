@@ -1361,6 +1361,9 @@ ${outbreakLightingStructWgsl}
 ${vegetationTreeWgsl}
 var<private> outbreakFlashMask: f32;
 var<private> outbreakFlashIrr: f32;
+/** Teammates' flashlights (cone.w 3, teammates/beams.ts): received irradiance and the closed-form air glow of their shafts. */
+var<private> outbreakMateIrr: f32;
+var<private> outbreakMateAir: f32;
 var<private> outbreakAlbedo: vec3f;
 var<private> outbreakPracticalIrr: f32;
 var<private> outbreakSeen: f32;
@@ -1661,6 +1664,25 @@ fn flashAttenuation(toLight: vec3f, d3: f32, power: f32) -> f32 {
   return power * FLASH_RADIANCE * flashProfile(cosT) * flashFalloff(d3 * d3) * nearReach;
 }
 
+/**
+ * A teammate's flashlight (cone.w 3): the local beam's profile and falloff about the teammate's own lens axis (plan
+ * direction in cone.xy, pitch in extra.x), windowed to its own range.
+ */
+fn mateBeamAttenuation(toLight: vec3f, d3: f32, power: f32, dir: vec2f, pitch: f32, range: f32) -> f32 {
+  let cp = cos(pitch);
+  let cosT = -dot(toLight, vec3f(dir.x * cp, sin(pitch), dir.y * cp));
+  if (cosT <= OL.u16.z) { return 0.0; }
+  let x2 = d3 * d3 / max(range * range, 1.0);
+  let win = clamp(1.0 - x2 * x2, 0.0, 1.0);
+  let soft = max(OL.u13.z, 0.1);
+  return power * FLASH_RADIANCE * flashProfile(cosT) * win * win / (1.0 + d3 * d3 / (soft * soft));
+}
+
+/** Where a teammate's flashlight lands, it counts as seen: their light shows you the world through your own shroud. */
+fn outbreakMateSeen() -> f32 {
+  return smoothstep(0.012, 0.1, outbreakMateIrr);
+}
+
 /** Inverse-square falloff softened inside the near-lens radius and windowed smoothly to zero at the beam range. */
 fn flashFalloff(d2: f32) -> f32 {
   let r = max(OL.u4.y, 1.0);
@@ -1683,7 +1705,7 @@ fn flashFalloff(d2: f32) -> f32 {
  * of unseen rooms). Leaves the received flashlight irradiance in outbreakFlashMask.
  */
 fn evalFlashlight(world: vec3f, n: vec3f) -> vec3f {
-  var irr = outbreakFlashIrr;
+  var irr = outbreakFlashIrr + outbreakMateIrr;
   var add = vec3f(0.0);
   let air = OL.u14.w * OL.u2.x * OL.u4.z;
   let rel = world.xz - OL.u3.xy;

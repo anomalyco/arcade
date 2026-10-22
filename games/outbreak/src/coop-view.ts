@@ -9,24 +9,27 @@ import { clampSurvivorVariant, DEFAULT_LOADOUT, type LoadoutId, type SurvivorVar
 import type { Town } from "../shared/map"
 import type { LocalSession } from "../shared/session"
 import { supportHeight } from "../shared/terrain"
-import type { Vision } from "../shared/vision"
+import type { Vision, VisionBeam } from "../shared/vision"
 import { CoopHud, coopBasePath, copyInviteLink, inviteLink, playerName, type NameTag } from "./coop-hud"
 import type { HudRemote } from "./hud"
 import { OutbreakLobby, shouldShowStartScreen } from "./lobby/lobby-ui"
 import { NetSession, remoteLift, SURVIVOR_COLOURS, type NetSessionFeatures } from "./net-session"
 import { beamPose } from "./flashlight-beam"
+import { DEFAULT_TEAM_BEAM_SETTINGS, mateBeamSight, TEAM_BEAMS_TODAY, writeMateBeam, type TeamBeamSettings } from "./teammates/beams"
 import { resolveBeamColor } from "./look/world"
 import { Survivor, type SurvivorAimTuning } from "./survivor"
 
 type LightSettings =
-  | (Pick<FlashlightTuning, "flashlightRange" | "flashlightCone" | "flashlightIntensity" | "flashlightWarmth"> & {
-      practicalWarmth: number
-      beamPoolDistance: number
-    })
-  | {
-      flashlight: Pick<FlashlightTuning, "flashlightRange" | "flashlightCone" | "flashlightIntensity" | "flashlightWarmth"> & {
+  | (Pick<FlashlightTuning, "flashlightRange" | "flashlightCone" | "flashlightIntensity" | "flashlightWarmth"> &
+      Partial<TeamBeamSettings> & {
+        practicalWarmth: number
         beamPoolDistance: number
-      }
+      })
+  | {
+      flashlight: Pick<FlashlightTuning, "flashlightRange" | "flashlightCone" | "flashlightIntensity" | "flashlightWarmth"> &
+        Partial<TeamBeamSettings> & {
+          beamPoolDistance: number
+        }
       lighting: { practicalWarmth: number }
       look?: { beamWarmth: number; beamTightness?: number }
     }
@@ -285,22 +288,57 @@ export class CoopView {
     const effCone = flash.flashlightCone * (1 - 0.28 * tightShare)
     const cosHalf = Math.cos((effCone * Math.PI) / 360)
     const directScale = practicalWarmth > 0.6 ? 0.28 + 0.24 * tightShare : 1.0
+    const full = (flash.teamBeams ?? DEFAULT_TEAM_BEAM_SETTINGS.teamBeams) !== TEAM_BEAMS_TODAY
     for (const slot of others) {
       const p = slot.survivor
       if (count >= MAX_LIGHTS - 2 || p.flashlightOutput <= 0.001 || !p.flashlightOn) continue
+      if (full) {
+        // The same light as your own: full range and profile about their lens, shadowed by walls (teammates/beams.ts).
+        const ground = supportHeight(town, p.x, p.y)
+        const beam = beamPose(this.lensRig(slot, ground), p.x, p.y, p.aim, ground, flash.beamPoolDistance, blockers)
+        const power = p.flashlightOutput * flash.flashlightIntensity * (flash.teamBeamPower ?? DEFAULT_TEAM_BEAM_SETTINGS.teamBeamPower)
+        writeMateBeam(lights, count++, beam, flash.flashlightRange, rgb, power, flash.teamBeamShaft ?? DEFAULT_TEAM_BEAM_SETTINGS.teamBeamShaft, occluders)
+        continue
+      }
       const inside = town.buildings.some((b) => p.x > b.rect[0] - 0.1 && p.x < b.rect[2] + 0.1 && p.y > b.rect[1] - 0.1 && p.y < b.rect[3] + 0.1)
       const power = p.flashlightOutput * flash.flashlightIntensity * directScale
       const range = Math.min(flash.flashlightRange, (inside ? 5.2 : 6.4) + 1.8 * tightShare)
       const ground = supportHeight(town, p.x, p.y)
-      const avatar = this.avatars.get(slot.index)?.avatar
-      const rig = avatar?.light ?? { p: [p.x + Math.cos(p.aim) * 0.25, ground + 1.18, p.y + Math.sin(p.aim) * 0.25] as const, d: [Math.cos(p.aim), 0, Math.sin(p.aim)] as const, mounted: false }
-      const beam = beamPose(rig, p.x, p.y, p.aim, ground, flash.beamPoolDistance, blockers)
+      const beam = beamPose(this.lensRig(slot, ground), p.x, p.y, p.aim, ground, flash.beamPoolDistance, blockers)
       lights.set(
         [beam.x, beam.h, beam.y, range, rgb[0], rgb[1], rgb[2], power, Math.cos(beam.yaw), Math.sin(beam.yaw), cosHalf, 1, 0, occluders, 0.06, -1],
         count++ * LIGHT_FLOATS,
       )
     }
     return count
+  }
+
+  /** A remote survivor's posed lens (their pistol or hand), or a stand-in at the hip before their body is drawn. */
+  private lensRig(slot: SurvivorSlot, ground: number): Parameters<typeof beamPose>[0] {
+    const p = slot.survivor
+    return (
+      this.avatars.get(slot.index)?.avatar.light ?? {
+        p: [p.x + Math.cos(p.aim) * 0.25, ground + 1.18, p.y + Math.sin(p.aim) * 0.25] as const,
+        d: [Math.cos(p.aim), 0, Math.sin(p.aim)] as const,
+        mounted: false,
+      }
+    )
+  }
+
+  /**
+   * Teammates' lit beams as sight, so the zombies their flashlights find are drawn for you too (`Vision.beams`).
+   * Empty with Today's teammate beams.
+   */
+  beamSights(settings: LightSettings): VisionBeam[] {
+    const flash = "flashlight" in settings ? settings.flashlight : settings
+    if ((flash.teamBeams ?? DEFAULT_TEAM_BEAM_SETTINGS.teamBeams) === TEAM_BEAMS_TODAY) return []
+    const out: VisionBeam[] = []
+    for (const slot of this.others) {
+      const p = slot.survivor
+      if (p.flashlightOutput <= 0.01 || !p.flashlightOn || p.vehicleId) continue
+      out.push(mateBeamSight(p.x, p.y, p.aim, flash.flashlightRange, flash.flashlightCone, p.flashlightOutput))
+    }
+    return out
   }
 
   /** Bodies of remote survivors you can see. */

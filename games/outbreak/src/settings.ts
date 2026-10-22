@@ -64,8 +64,9 @@ import { survivorAimTuning, type SurvivorAimTuning } from "./survivor"
 import { applyUnseenModePreset, DEFAULT_UNSEEN_SETTINGS, type UnseenSettings } from "./unseen"
 import { DEFAULT_OUTBREAK_WEATHER, type OutbreakWeatherSettings } from "./weather/settings"
 import { zombieTuning, type ZombieTuning } from "./zombie-profile"
+import { DEFAULT_TEAM_BEAM_SETTINGS, type TeamBeamSettings } from "./teammates/beams"
 
-export type OutbreakFlashlightSettings = FlashlightTuning & FlashlightBeamSettings
+export type OutbreakFlashlightSettings = FlashlightTuning & FlashlightBeamSettings & TeamBeamSettings
 /** `zombieLook`: 0 today's boxes, 1 refined (chamfered parts, seeded clothing palettes, torn hems; Look · Zombies). */
 export type OutbreakZombieSettings = ZombieTuning & { humanProfile: number; zombieLook: number }
 
@@ -136,6 +137,7 @@ export type OutbreakBotSettings = PacingTargetConfig & {
 export const DEFAULT_OUTBREAK_FLASHLIGHT: OutbreakFlashlightSettings = {
   ...DEFAULT_FLASHLIGHT_TUNING,
   ...DEFAULT_FLASHLIGHT_BEAM,
+  ...DEFAULT_TEAM_BEAM_SETTINGS,
 }
 
 export const DEFAULT_OUTBREAK_ZOMBIES: OutbreakZombieSettings = {

@@ -453,6 +453,8 @@ export class OutbreakFrameRenderer {
       settings.survivor,
     )
     const { vision } = this.sceneLevel
+    // Teammates' flashlights show you what they light (teammates/beams.ts).
+    vision.beams = coop.beamSights(settings)
     const coopBatches = coop.bodies(vdt, time, town, vision, settings.survivor)
     const featureFrame = { session, coop, cam, renderer: this.renderer, settings, quality: qProfile, vision, dt: vdt, w, h }
     const localSlot = "local" in session ? session.local : session.slot
