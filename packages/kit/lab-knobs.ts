@@ -46,6 +46,14 @@ export type LabKnobsViewOptions = {
   tabs?: readonly LabTab[]
   /** A close button in the header (and Esc from the panel) that calls this. */
   close?: () => void
+  /**
+   * Every group folds from its header. `"open"`: groups start open; otherwise they start folded except the ones
+   * `open` names (the first group when it names none). A control's own `folded` still folds its group. Without it,
+   * only groups a control folds can fold. Sub-headings always start folded.
+   */
+  folding?: { start: "open" } | { start: "folded"; open?: () => readonly string[] }
+  /** The browser remembers what the user folded and opened (localStorage, under the view's store id). */
+  rememberFolds?: boolean
 }
 
 /** A row knobs draws; `upper` is the second key of a low–high pair (both stay their own settings). */
@@ -66,6 +74,10 @@ function variantStorage(id: string | undefined, rows: () => readonly LabRow[]): 
     },
     setItem: (key, value) => local!.setItem(key, value),
   }
+}
+
+function localStorageOrNull(): StoragePort | null {
+  try { return localStorage } catch { return null }
 }
 
 /**
@@ -145,7 +157,8 @@ export class LabKnobsView {
       },
       ...(options.search ? { search: { placeholder: "Search details" } } : {}),
       ...(options.tabs?.length ? { tabs: options.tabs.map(t => t.label) } : {}),
-      subsectionFolded: { Advanced: true },
+      subsectionFolded: true,
+      foldStorage: options.rememberFolds ? localStorageOrNull() : null,
       actions: options.actions?.map(a => ({ label: a.label, run: () => { this.host.begin(a.label); a.run(); this.host.end(); this.host.edited(this) } })),
     })
   }
@@ -189,7 +202,7 @@ export class LabKnobsView {
     if (!row) return
     const tab = this.tabOf(row.group)
     if (tab && this.panel.tab() !== tab.label) this.panel.tab(tab.label)
-    this.panel.fold(row.group, false)
+    this.panel.unfold(row.control.key)
     const element = this.rowElement(key)
     if (element && !element.getClientRects().length && this.search().query + (this.search().modified ? "m" : "")) this.setSearch({ query: "", modified: false })
   }
@@ -270,12 +283,14 @@ export class LabKnobsView {
 
   /** The tab a group sits on, and how its heading reads there. */
   private tabOf(group: string): { label: string; groupLabel?: string } | undefined {
-    for (const tab of this.options.tabs ?? [])
+    const tabs = this.options.tabs ?? []
+    for (const tab of tabs)
       for (const g of tab.groups) {
         if (g === group) return { label: tab.label }
         if (typeof g !== "string" && g[0] === group) return { label: tab.label, groupLabel: g[1] }
       }
-    return undefined
+    const tab = tabs.find(t => t.match?.(group)) ?? tabs.find(t => t.rest)
+    return tab ? { label: tab.label } : undefined
   }
 
   /** The knobs value of a row: its setting, or `[low, high]` for a pair. */
@@ -295,11 +310,12 @@ export class LabKnobsView {
     const kept = new Map<string, Row>()
     const aliases = new Map<string, string>()
     const uppers = new Set(rows.flatMap(r => (r.control.pair ? [r.control.pair.key] : [])))
+    const folded = this.foldedGroups(rows)
     for (const row of rows) {
       if (uppers.has(row.control.key)) continue
       const upper = row.control.pair ? nav.rows.find(r => r.control?.key === row.control.pair!.key)?.control : undefined
       const tab = this.tabOf(row.group)
-      const d = describe(row, nav.defaults, nav.settings, { tab: tab?.label, groupLabel: tab?.groupLabel, pair: upper })
+      const d = describe(row, nav.defaults, nav.settings, { tab: tab?.label, groupLabel: tab?.groupLabel, pair: upper, folded: folded?.(row.group) })
       if (!d || kept.has(d.key)) continue
       descriptors.push(d)
       kept.set(d.key, upper ? { ...row, upper } : row)
@@ -321,6 +337,23 @@ export class LabKnobsView {
     this.store.update(descriptors, this.shown, { land, mixed })
     if (this.panel) this.refreshPins()
     return true
+  }
+
+  /** How each group starts under `folding`, or undefined when groups fold only where a control says. */
+  private foldedGroups(rows: readonly Row[]): ((group: string) => boolean) | undefined {
+    const folding = this.options.folding
+    if (!folding) return undefined
+    const declared = new Set(rows.flatMap(r => (r.control.folded ? [r.group] : [])))
+    if (folding.start === "open") return group => declared.has(group)
+    const named = folding.open?.() ?? []
+    // Otherwise the first group opens (on each tab, when there are tabs).
+    const firsts = new Map<string | undefined, string>()
+    for (const r of rows) {
+      const tab = this.tabOf(r.group)?.label
+      if (!firsts.has(tab)) firsts.set(tab, r.group)
+    }
+    const open = new Set(named.length ? named : firsts.values())
+    return group => declared.has(group) || !open.has(group)
   }
 
   /** The draw for the roll in progress; the first draw of a roll starts it from the current tuning seed. */
