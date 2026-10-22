@@ -235,7 +235,9 @@ groups fold the same way but start open.
 With `capture: "focus"` (Woods, Outbreak, Night Shift, the Lot) the player plays with the overlay open: Backquote
 opens it with focus (freeing a locked pointer), a click on the game hands input back and relocks while the panel
 stays up, a click on the panel takes input again, and Backquote while playing closes it without leaving the game.
-Games gate keys, look and pointer lock on `panel.holdsInput`, not `panel.visible`. Keys typed in the panel (its rows,
+Games gate keys, look and pointer lock on `panel.holdsInput`, not `panel.visible`: the kit `Input` takes
+`input.blocked = () => panel.holdsInput`, and a game's window-capture key listener skips targets where
+`isLabPanelEventTarget` (`@arcade/kit/client/controls`) is true. Keys typed in the panel (its rows,
 search, menus) never reach the game; Escape or the close button closes it. `capture: "open"` overlays keep every key
 from the game while open. Proof: `bun scripts/lab/prove-panel-play.ts`.
 
