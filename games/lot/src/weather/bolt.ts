@@ -143,19 +143,22 @@ export function strokeSchedule(seed: number, kind: BoltKind): Stroke[] {
  */
 export class FlashLimiter {
   private pulses: number[] = []
-  constructor(public max = 3, public window = 1) {}
-  allow(strokes: readonly Stroke[], t: number, maxForStrike = this.max): number[] {
+  private last = -Infinity
+  /** The window is 1.25 s, not 1: a pulse starting under a brighter one still decaying only reads as a flash later. */
+  constructor(public max = 3, public window = 1.25) {}
+  /** `minGap` (s): a pulse also needs this long since the last one (Reduced: one swell has to end before the next). */
+  allow(strokes: readonly Stroke[], t: number, maxForStrike = this.max, minGap = 0): number[] {
     const allowed: number[] = []
     strokes.forEach((s, i) => {
       const at = t + s.at
       this.pulses = this.pulses.filter(p => p > at - this.window - 1e-6)
-      if (allowed.length < maxForStrike && this.pulses.length < this.max) { this.pulses.push(at); allowed.push(i) }
+      if (allowed.length < maxForStrike && this.pulses.length < this.max && at - this.last >= minGap) { this.pulses.push(at); this.last = at; allowed.push(i) }
     })
     return allowed
   }
   /** Scene pulses inside any `window` seconds, for tests. */
   get recent() { return [...this.pulses] }
-  reset() { this.pulses = [] }
+  reset() { this.pulses = []; this.last = -Infinity }
 }
 
 export type StrikeLight = {
@@ -222,7 +225,7 @@ export type StrikePlan = { seed: number; kind: BoltKind; bearing: number; distan
  * Builds a strike around a listener at `(x, z)`: ground strikes land on the treeline or out past it, cloud-to-cloud
  * strikes run across the sky. `ceiling` is where the channel disappears into the cloud (the sky dome's height).
  */
-export function makeStrike(plan: StrikePlan, t: number, x: number, z: number, groundY: number, ceiling: number, limiter: FlashLimiter, maxScene = 3): Strike {
+export function makeStrike(plan: StrikePlan, t: number, x: number, z: number, groundY: number, ceiling: number, limiter: FlashLimiter, maxScene = 3, minGap = 0): Strike {
   const r = rng(plan.seed)
   const gx = x + Math.sin(plan.bearing) * plan.distance, gz = z - Math.cos(plan.bearing) * plan.distance
   const kind = plan.kind
@@ -241,6 +244,27 @@ export function makeStrike(plan: StrikePlan, t: number, x: number, z: number, gr
   return {
     kind, seed: plan.seed, t, leader: kind === "cloud" ? 0.06 : 0.08 + 0.05 * r(), strokes,
     shape: boltShape(plan.seed, top, ground, kind), position: kind === "cloud" ? [gx, top[1], gz] : ground,
-    distance: plan.distance, power: plan.power, scenePulses: limiter.allow(strokes, t, maxScene),
+    distance: plan.distance, power: plan.power, // With a gap (Reduced) the strike is one swell from its first stroke, so only that stroke may take the pulse.
+    scenePulses: limiter.allow(minGap > 0 ? strokes.slice(0, 1) : strokes, t, maxScene, minGap),
   }
+}
+
+const DARK: StrikeLight = { channel: 0, branches: 0, front: 0, leader: 0, scene: 0, after: 0 }
+
+/** How strongly a strike lights the lot per unit of scene light: close ground strikes more, cloud flashes a fixed share. */
+export const strikeReach = (s: Strike) => s.kind === "cloud" ? 0.55 : Math.min(1.4, Math.max(0.3, 420 / s.distance))
+
+/**
+ * This frame's lighting from every live strike. The channel drawn is the brightest one; the scene light comes from the
+ * strike lighting the lot most, picked on its own, so a strike the limiter kept dark can never take over the flash.
+ */
+export function pickStrikeLights(strikes: readonly Strike[], t: number, smooth: boolean) {
+  let bolt: Strike | null = null, light = DARK, scene: Strike | null = null, sceneLight = 0
+  for (const k of strikes) {
+    const l = strikeLight(k, t, smooth)
+    if (!bolt || l.channel + l.leader + l.after > light.channel + light.leader + light.after) { bolt = k; light = l }
+    const lit = l.scene * strikeReach(k)
+    if (lit > sceneLight) { scene = k; sceneLight = lit }
+  }
+  return { bolt, light, scene, sceneLight }
 }

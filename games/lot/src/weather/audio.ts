@@ -36,6 +36,8 @@ export async function loadStormBank(ctx: BaseAudioContext, base = `${import.meta
 }
 
 export type StormAudioFrame = {
+  /** Weather is on (not Today). Turning it off cuts thunder still on its way. */
+  on: boolean
   /** Weather fade 0..1 (Today = 0) and rain intensity 0..1. */
   amount: number
   rain: number
@@ -86,6 +88,10 @@ export class StormAudio {
   private gustReady = 0
   private lastGust = 1
   private brown: AudioBuffer
+  private echoes: { send: GainNode; delay: DelayNode; pan: StereoPannerNode; extra: number }[] = []
+  private wasOn = false
+  /** Thunder from a strike asked for in Today keeps the bus open this long (ctx time). */
+  private looseUntil = 0
 
   constructor(private ctx: BaseAudioContext, destination: AudioNode, private bank: StormBank) {
     this.limiter = ctx.createDynamicsCompressor()
@@ -99,6 +105,13 @@ export class StormAudio {
     for (const id of ["weather.rain.asphalt", "weather.rain.car", "weather.rain.hut", "weather.wind.moan"] as const) this.beds.push(this.bed(id, this.outdoor))
     this.beds.push(this.bed("weather.rain.glass", this.bus))
     for (let i = 0; i < STORM_PLACES.downpipes.length; i++) this.pipes.push(this.bed("weather.gutter", this.outdoor, i * 3.7))
+    // Two persistent facade echoes (the path there and back, then a second bounce), duller and from the building's side.
+    for (const [extra, level] of [[0, 0.26], [0.26, 0.13]] as const) {
+      const send = ctx.createGain(), delay = ctx.createDelay(4), f = ctx.createBiquadFilter(), g = ctx.createGain(), pan = ctx.createStereoPanner()
+      f.type = "lowpass"; f.frequency.value = 2400; g.gain.value = level; delay.delayTime.value = 0.5
+      send.connect(delay); delay.connect(f); f.connect(g); g.connect(pan); pan.connect(this.outdoor)
+      this.echoes.push({ send, delay, pan, extra })
+    }
     // Brown noise for the synthesized thunder roll under the samples (Wings' rolling envelope).
     const n = ctx.sampleRate * 6, b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0)
     let last = 0, s = 0x2545f491
@@ -127,17 +140,22 @@ export class StormAudio {
     const s = this.sample(id, opts.pick ?? this.serial++), src = this.ctx.createBufferSource(), g = this.ctx.createGain(), p = this.ctx.createStereoPanner()
     src.buffer = s.buffer; src.playbackRate.value = opts.rate ?? 1
     g.gain.value = gain * s.gain; p.pan.value = clamp(pan, -1, 1)
-    let head: AudioNode = src
-    if (opts.lowpass) { const f = this.ctx.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = opts.lowpass; f.Q.value = 0.5; src.connect(f); head = f }
+    let head: AudioNode = src, f: BiquadFilterNode | null = null
+    if (opts.lowpass) { f = this.ctx.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = opts.lowpass; f.Q.value = 0.5; src.connect(f); head = f }
     head.connect(g); g.connect(p); p.connect(opts.out ?? this.outdoor)
     this.voices.add(src)
-    src.onended = () => { this.voices.delete(src); src.disconnect(); g.disconnect(); p.disconnect() }
+    // Disconnecting from an echo send leaves what is already in its delay line to drain (DelayNode tail time).
+    src.onended = () => { this.voices.delete(src); src.disconnect(); f?.disconnect(); g.disconnect(); p.disconnect() }
     src.start(Math.max(this.ctx.currentTime, at))
     return { src, g, p }
   }
 
-  update(f: StormAudioFrame, l: StormListener, now: number) {
+  /** `play` false (muted, focus or pointer lock lost, context suspended): beds follow, nothing new is scheduled. */
+  update(f: StormAudioFrame, l: StormListener, now: number, play: boolean) {
     const tau = 0.25, inside = l.inside ? 1 : 0
+    if (this.wasOn && !f.on) this.interrupt()
+    this.wasOn = f.on
+    this.bus.gain.setTargetAtTime(0.9 * Math.max(f.amount, now < this.looseUntil ? 1 : 0), now, 0.3)
     this.muffle.frequency.setTargetAtTime(l.inside ? 650 : 18000, now, 0.35)
     this.outdoor.gain.setTargetAtTime(l.inside ? 0.4 : 1, now, 0.35)
     const rain = f.rain * f.amount * f.rainVolume
@@ -154,7 +172,20 @@ export class StormAudio {
     set(this.beds[3]!, f.storm * f.amount * f.wind * f.windVolume * (0.35 + 0.35 * clamp(f.gust - 0.6, 0, 1.4)) * (0.45 + 0.55 / (1 + (facade / 45) ** 2)), -0.3 * Math.cos(f.heading + l.yaw))
     set(this.beds[4]!, rain * 0.6 * inside, 0)
     this.pipes.forEach((b, i) => { const p = STORM_PLACES.downpipes[i]!, q = this.place(l, p[0], p[1], 1.6); set(b, rain * 0.9 * q.gain, q.pan) })
-    if (f.amount < 0.01) return
+    const gustRose = f.gust > 1.25 && this.lastGust <= 1.25
+    this.lastGust = f.gust
+    for (const t of f.thunder) {
+      if (this.scheduled.has(t.id)) continue
+      const delay = t.arrives - f.clock
+      // Thunder that arrived while silent is gone; thunder still on its way waits until sound is back.
+      if (delay < -0.5) { this.scheduled.add(t.id); continue }
+      if (!play) continue
+      this.scheduled.add(t.id)
+      const at = now + Math.max(0, delay)
+      if (!f.on) this.looseUntil = Math.max(this.looseUntil, at + 14)
+      this.thunder(t, at, l, f.thunderVolume)
+    }
+    if (!play || f.amount < 0.01) return
 
     // Edge drips: off the booth roof and the canopy when you are near them; puddle plops anywhere outdoors.
     if (l.time >= this.dripAt && rain > 0.02) {
@@ -173,21 +204,12 @@ export class StormAudio {
     }
     // A gust rising through 1.25 rushes through the pines, and rattles the gate fence if it is close.
     const windLevel = f.wind * f.windVolume * f.amount
-    if (windLevel > 0.05 && f.gust > 1.25 && this.lastGust <= 1.25 && l.time >= this.gustReady) {
+    if (windLevel > 0.05 && gustRose && l.time >= this.gustReady) {
       const k = this.serial++
       this.shot("weather.wind.gust", now, windLevel * clamp(f.gust - 0.6, 0.3, 1.4), -0.5 * Math.cos(f.heading + l.yaw), { pick: k, rate: 0.9 + 0.2 * hash(k) })
       const fz = STORM_PLACES.fence, fx = clamp(l.x, fz.x0, fz.x1), q = this.place(l, fx, fz.z, 6)
       if (q.d < 30) this.shot("weather.fence.rattle", now + 0.35 + 0.3 * hash(k * 3), windLevel * 0.9 * q.gain, q.pan, { pick: k + 1 })
       this.gustReady = l.time + 4
-    }
-    this.lastGust = f.gust
-
-    for (const t of f.thunder) {
-      if (this.scheduled.has(t.id)) continue
-      const delay = t.arrives - f.clock
-      if (delay < -0.5) { this.scheduled.add(t.id); continue }
-      this.scheduled.add(t.id)
-      this.thunder(t, now + Math.max(0, delay), l, f.thunderVolume)
     }
   }
 
@@ -200,21 +222,22 @@ export class StormAudio {
     // Bearing is clockwise from the view at yaw 0, and the view's own bearing is -yaw.
     const pan = 0.7 * Math.sin(t.bearing + l.yaw)
     const pick = Math.floor(hash(t.id * 977) * 16)
-    const main = this.shot(id, at, level, pan, { pick, lowpass, rate: 0.96 + 0.08 * hash(t.id), out: this.bus })
-    // Rolling echoes off the facility's face: the path there and back, quieter, duller and from its side.
+    // Thunder is outdoors: inside the lobby it comes through the same muffle as the rain.
+    const main = this.shot(id, at, level, pan, { pick, lowpass, rate: 0.96 + 0.08 * hash(t.id) })
+    // Rolling echoes off the facility's face, through the two persistent chains.
     if (!l.inside && t.kind === "ground" && t.distance < 2500) {
       const back = Math.max(8, l.z - STORM_PLACES.facadeZ) * 2 / 343
-      for (const [k, extra, g] of [[0, 0, 0.26], [1, 0.21, 0.13]] as const) {
-        const delay = this.ctx.createDelay(4), f = this.ctx.createBiquadFilter(), gain = this.ctx.createGain(), p = this.ctx.createStereoPanner()
-        delay.delayTime.value = Math.min(3.9, back + extra + k * 0.05); f.type = "lowpass"; f.frequency.value = 2400; gain.gain.value = g
-        p.pan.value = clamp(Math.sin(l.yaw) * 0.6, -0.8, 0.8)
-        main.g.connect(delay); delay.connect(f); f.connect(gain); gain.connect(p); p.connect(this.bus)
+      for (const e of this.echoes) {
+        e.delay.delayTime.setValueAtTime(Math.min(3.9, back + e.extra), Math.max(this.ctx.currentTime, at))
+        e.pan.pan.setValueAtTime(clamp(Math.sin(l.yaw) * 0.6, -0.8, 0.8), Math.max(this.ctx.currentTime, at))
+        main.g.connect(e.send)
       }
     }
     this.roll(t, at, level, pan)
     if (t.kind === "ground" && t.distance < 700) {
+      // The pane you are behind rattles in the room with you; outdoors it is one more thing out there.
       const k = 1 - t.distance / 700
-      this.shot("weather.glass.rattle", at + 0.06, volume * k * (l.inside ? 1.1 : 0.6), l.inside ? 0 : pan * 0.5, { pick: pick + 1, out: this.bus })
+      this.shot("weather.glass.rattle", at + 0.06, volume * k * (l.inside ? 1.1 : 0.6), l.inside ? 0 : pan * 0.5, { pick: pick + 1, out: l.inside ? this.bus : this.outdoor })
     }
   }
 
@@ -234,7 +257,7 @@ export class StormAudio {
     a.type = b.type = "lowpass"; a.frequency.value = b.frequency.value = clamp(300 - d / 40, 90, 300)
     g.gain.value = 0; g.gain.setValueCurveAtTime(curve, Math.max(this.ctx.currentTime, at), len)
     p.pan.value = pan
-    src.connect(a); a.connect(b); b.connect(g); g.connect(p); p.connect(this.bus)
+    src.connect(a); a.connect(b); b.connect(g); g.connect(p); p.connect(this.outdoor)
     this.voices.add(src)
     src.onended = () => { this.voices.delete(src); src.disconnect(); a.disconnect(); b.disconnect(); g.disconnect(); p.disconnect() }
     src.start(Math.max(this.ctx.currentTime, at), hash(t.id) * 4); src.stop(Math.max(this.ctx.currentTime, at) + len + 0.1)

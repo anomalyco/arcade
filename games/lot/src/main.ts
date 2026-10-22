@@ -165,10 +165,18 @@ async function main() {
   // never fetch, compile or draw any of it.
   const weather=lotWeatherDefaults(query)
   let storm:LotStorm|null=null, stormLoad:Promise<LotStorm>|null=null, stormFrame:StormFrame|null=null
-  const loadStorm=()=>stormLoad??=import("./weather/storm").then(m=>storm=new m.LotStorm(renderer))
+  // A failed load is not cached: it shows a quiet note under the prompts and tries again 10 s later.
+  let stormNote="", stormRetry=0
+  const loadStorm=()=>{
+    if(!stormLoad&&performance.now()<stormRetry) return Promise.reject(Error("Weather is retrying"))
+    return stormLoad??=import("./weather/storm").then(m=>{stormNote="";prompts();return storm=new m.LotStorm(renderer)},e=>{
+      console.warn("Lot weather failed to load",e); stormLoad=null; stormRetry=performance.now()+10000; stormNote="Weather didn’t load; retrying"; prompts(); throw e
+    })
+  }
   const loadStormAudio:StormLoader=(ctx,destination)=>import("./weather/audio").then(async m=>new m.StormAudio(ctx,destination,await m.loadStormBank(ctx)))
   const strike=(plan?:Parameters<LotStorm["strikeNow"]>[0])=>{ audio.enableStorm(loadStormAudio); return loadStorm().then(s=>s.strikeNow(plan)) }
-  panel.addControls(weather,lotWeatherControls(weather,()=>void strike()))
+  // Reset goes back to Today even when a ?weather= deep link opened the page.
+  panel.addControls(weather,lotWeatherControls(weather,()=>void strike().catch(()=>{})),lotWeatherDefaults())
   panel.addControls(walking,walkControls)
   const audio=new LotAudio(world.scene.lamps)
   bindLotAudio(canvas,audio,walking,()=>panel.visible)
@@ -211,7 +219,7 @@ async function main() {
   const indoorStart=practicals.length-interior.lamps.length
   const frameData = newSceneFrame(), custom = new Float32Array(NIGHT_FLOATS), empty = new Float32Array(0)
   const prompts = () => {
-    hud.innerHTML = [document.pointerLockElement === canvas ? "" : keyPromptHtml("Mouse0", "Look"), keyPromptHtml("KeyW", "Move"), keyPromptHtml("KeyF", "Flashlight"), keyPromptHtml("KeyM", "Mute"), keyPromptHtml("Backquote", "Night"), comparison.available ? keyPromptHtml("KeyP", "Compare position") : ""].join(" ")
+    hud.innerHTML = [document.pointerLockElement === canvas ? "" : keyPromptHtml("Mouse0", "Look"), keyPromptHtml("KeyW", "Move"), keyPromptHtml("KeyF", "Flashlight"), keyPromptHtml("KeyM", "Mute"), keyPromptHtml("Backquote", "Night"), comparison.available ? keyPromptHtml("KeyP", "Compare position") : "", stormNote ? `<span class="note">${stormNote}</span>` : ""].join(" ")
   }
   prompts()
   document.addEventListener("pointerlockchange", prompts)
@@ -245,12 +253,12 @@ async function main() {
     camera.speed=walking.walkMode==="today"?2.1:1.7
     const vp = camera.update(dt, width / height, walls)
     const insideNow=camera.body.x>-55&&camera.body.x<35&&camera.body.y>-3.2&&camera.body.y<22
-    if(weather.weather!=="today") { void loadStorm(); audio.enableStorm(loadStormAudio) }
+    if(weather.weather!=="today") { if(!storm) loadStorm().catch(()=>{}); audio.enableStorm(loadStormAudio) }
     let sf=stormFrame?.active ? stormFrame : null
     // Rain soaks the film first; standing water grows only a little and stays in the dips (RESEARCH.md: 5–20% puddled).
     const wetNow=sf ? {...wet,wetness:Math.max(settings.wetness,sf.wetness),puddles:Math.min(0.6,wet.puddles+sf.puddles*0.2),puddleScale:wet.puddleScale*(1+0.25*sf.puddles)} : {...wet,wetness:settings.wetness}
     audioFrame={time:camera.walk.time,x:camera.body.x,z:camera.body.y,yaw:camera.yaw,active:playing(),surface:surfaceAt(camera.body.x,camera.body.y,wetNow,sf?.rain ?? 0),inside:insideNow,wetness:wetNow.wetness,events:camera.walk.events,settings:{...walking},
-      ...(sf ? {storm:{amount:sf.amount,rain:sf.rain,storm:weather.weather==="storm"?1:0,wind:weather.wind,gust:sf.gust,heading:Math.atan2(sf.sway[2],sf.sway[1]),clock:sf.time,thunder:sf.thunder,rainVolume:weather.rainVolume,thunderVolume:weather.thunderVolume,windVolume:weather.windVolume}} : {})}
+      ...(sf ? {storm:{on:weather.weather!=="today",amount:sf.amount,rain:sf.rain,storm:weather.weather==="storm"?1:0,wind:weather.wind,gust:sf.gust,heading:Math.atan2(sf.sway[2],sf.sway[1]),clock:sf.time,thunder:sf.thunder,rainVolume:weather.rainVolume,thunderVolume:weather.thunderVolume,windVolume:weather.windVolume}} : {})}
     audio.update(audioFrame)
     comparison.frame()
     // Street mode: the lens emitter and roadway profile replace the round spot, at the same flux (lamps.ts).
@@ -282,7 +290,7 @@ async function main() {
     packContactShadowKnobs(contact,custom,36)
     packStreetLamp(street,custom,44)
     custom.set([indoor.wear,indoor.sheen,indoor.wax,indoor.glow],56)
-    custom.set(sf ? [sf.flash*0.4,...sf.flashDir,sf.glass,sf.time,sf.flash*0.25,0] : [0,0,0,0,0,0,0,0],60)
+    custom.set(sf ? [sf.flash*0.4,...sf.flashDir,sf.glass,sf.time,sf.flash*0.02,0] : [0,0,0,0,0,0,0,0],60)
     forest.update(camera.eye, forestSettings, sf && sf.sway[0]>0 ? [sf.sway[0]*sf.sway[3],Math.atan2(sf.sway[2],sf.sway[1]),sf.time] : undefined)
     refreshDressing()
     custom.set([indoor.fixtures,indoor.mode==="today"?0:indoor.bounce,indoor.mode==="today"?1:indoor.air,indoor.mode==="today"?0:indoor.lobbyBounce],16)

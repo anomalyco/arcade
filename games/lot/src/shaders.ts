@@ -43,7 +43,9 @@ fn lotSkyFlash(ray: vec3f) -> vec3f {
   if (N.stormB.z <= 0.0) { return vec3f(0.0); }
   let c = max(dot(ray, normalize(vec3f(N.storm.y, max(N.storm.z, 0.15), N.storm.w))), 0.0);
   let up = smoothstep(-0.02, 0.25, ray.y);
-  return vec3f(0.62, 0.66, 1.0) * N.stormB.z * (pow(c, 6.0) * 1.6 + pow(c, 1.5) * 0.35 + 0.08) * up;
+  // Broad and faint, near the lit deck's own brightness: the deck hides the sky behind it, so a strong lobe there
+  // would outline the deck's edge as a hard slab.
+  return vec3f(0.62, 0.66, 1.0) * N.stormB.z * (pow(c, 3.0) * 0.7 + 0.3) * up;
 }
 // Rain on glass: rivulets wander down each pane and beads ride them; static droplets fill the gaps. Returns the
 // normal tilt (xy in the pane's frame) and coverage (z). Filtered out where a pane is under a pixel.
@@ -169,9 +171,12 @@ export const thinGlassHooksLot: SceneHooks = { ...thinGlass,
   material: `${thinGlass.material}
     if(N.stormB.x>0.0) {
       let rg=lotRainGlass(o.world,normalize(o.normal),N.stormB.y,N.stormB.x,wetFootprint);
-      let gside=normalize(vec3f(-o.normal.z,0.0,o.normal.x));
-      n=normalize(n+gside*rg.x+vec3f(0.0,rg.y,0.0));
-      kitGlassAlpha=min(1.0,kitGlassAlpha+rg.z*0.06);
+      // Only walls of glass run with water (lotRainGlass returns 0 where |n.y| > 0.6); a flat pane has no side axis.
+      if(rg.z>0.0 && length(o.normal.xz)>1e-3) {
+        let gside=normalize(vec3f(-o.normal.z,0.0,o.normal.x));
+        n=normalize(n+gside*rg.x+vec3f(0.0,rg.y,0.0));
+        kitGlassAlpha=min(1.0,kitGlassAlpha+rg.z*0.06);
+      }
     }`,
 }
 /** Facility lit windows as interior-mapped rooms behind front glass (Glass › Lit windows › Rooms). */

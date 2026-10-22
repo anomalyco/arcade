@@ -7,7 +7,8 @@ import type { StormAudioFrame, StormListener } from "./weather/audio"
 export type AudioLamp={position:readonly number[]}
 export type WalkAudioFrame={time:number;x:number;z:number;yaw:number;active:boolean;surface:FootSurface;inside:boolean;wetness:number;events:FootEvent[];settings:WalkSettings;storm?:StormAudioFrame}
 /** Weather sound inside the walking master (weather/audio.ts), attached once weather is first turned on. */
-export type StormVoice={update(f:StormAudioFrame,l:StormListener,now:number):void;interrupt():void}
+/** `play`: the walking sound is audible and its clock is running; one-shots and thunder are only scheduled then. */
+export type StormVoice={update(f:StormAudioFrame,l:StormListener,now:number,play:boolean):void;interrupt():void}
 export type StormLoader=(ctx:BaseAudioContext,destination:AudioNode)=>Promise<StormVoice>
 
 /** Scene-owned emitter placement; shared footsteps own contact synthesis and scheduling. */
@@ -34,11 +35,17 @@ export class LotAudioGraph {
   }
   private voice(kind:AmbientSound){const source=this.ctx.createBufferSource(),gain=this.ctx.createGain(),pan=this.ctx.createStereoPanner();source.buffer=this.buffer(kind);source.connect(gain);gain.connect(pan);pan.connect(this.master);return {source,gain,pan}}
   private loop(kind:AmbientSound,position?:readonly number[]){const v=this.voice(kind);v.source.loop=true;v.gain.gain.value=0;v.source.start();this.loops.push({kind,...v,position})}
-  attachStorm(load:StormLoader){this.stormLoading??=load(this.ctx,this.master).then(v=>{this.storm=v});return this.stormLoading}
+  attachStorm(load:StormLoader){
+    // A failed fetch is not cached: the next attach (weather toggled again, the next play gesture) tries again.
+    this.stormLoading??=load(this.ctx,this.master).then(v=>{this.storm=v},e=>{this.stormLoading=undefined;throw e})
+    return this.stormLoading
+  }
+  /** A suspended live context freezes `currentTime`; anything scheduled then would all fire at once on resume. */
+  private get running(){return typeof AudioContext==="undefined"||!(this.ctx instanceof AudioContext)||this.ctx.state==="running"}
   update(f:WalkAudioFrame,now=this.ctx.currentTime){
     const s=f.settings,enabled=f.active&&s.walkMode!=="today"&&!s.muted,outside=f.inside?.12:1
     this.master.gain.setTargetAtTime(enabled?s.volume:0,now,.025)
-    if(f.storm&&this.storm)this.storm.update(f.storm,{x:f.x,z:f.z,yaw:f.yaw,inside:f.inside,time:f.storm.clock},now)
+    if(f.storm&&this.storm)this.storm.update(f.storm,{x:f.x,z:f.z,yaw:f.yaw,inside:f.inside,time:f.storm.clock},now,enabled&&this.running)
     for(const l of this.loops){
       let gain=0,pan=0
       if(l.kind==="wind")gain=s.wind*outside
@@ -68,9 +75,11 @@ export class LotAudio {
   private graph?:LotAudioGraph
   private stormLoader?:StormLoader
   constructor(private lamps:readonly AudioLamp[]){}
-  async unlock(){if(!this.ctx){this.ctx=new AudioContext();this.graph=new LotAudioGraph(this.ctx,this.ctx.destination,this.lamps);if(this.stormLoader)void this.graph.attachStorm(this.stormLoader).catch(e=>console.warn("Lot storm audio",e))}await this.ctx.resume()}
+  async unlock(){if(!this.ctx){this.ctx=new AudioContext();this.graph=new LotAudioGraph(this.ctx,this.ctx.destination,this.lamps);if(this.stormLoader)this.attach(this.stormLoader)}await this.ctx.resume()}
+  private attach(load:StormLoader){void this.graph!.attachStorm(load).catch(e=>{console.warn("Lot storm audio failed to load; retrying in 10 s",e);this.stormLoader=undefined;this.stormRetry=performance.now()+10000})}
+  private stormRetry=0
   /** Weather was turned on: fetch its samples now (or at the next play gesture). */
-  enableStorm(load:StormLoader){if(this.stormLoader)return;this.stormLoader=load;if(this.graph)void this.graph.attachStorm(load).catch(e=>console.warn("Lot storm audio",e))}
+  enableStorm(load:StormLoader){if(this.stormLoader||performance.now()<this.stormRetry)return;this.stormLoader=load;if(this.graph)this.attach(load)}
   update(frame:WalkAudioFrame){this.graph?.update(frame)}
   suspend(){this.graph?.interrupt();void this.ctx?.suspend()}
   dispose(){void this.ctx?.close()}

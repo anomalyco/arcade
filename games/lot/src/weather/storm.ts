@@ -1,7 +1,7 @@
 import type { Renderer } from "@arcade/kit/gpu/renderer"
 import { WEATHER_PRESETS, WeatherSimulation, weatherDefaults, evaluateWeatherGust, type WeatherFrameState, type WeatherLight, type WeatherPrepareInput, type WeatherSettings, type WeatherNumericKey, weatherRanges } from "@arcade/kit/weather"
 import { BoltPass, BOLT_LOOK } from "./bolt-pass"
-import { FlashLimiter, makeStrike, rng, strikeEnd, strikeLight, type BoltKind, type Strike, type StrikeLight, type StrikePlan } from "./bolt"
+import { FlashLimiter, makeStrike, pickStrikeLights, rng, strikeEnd, type BoltKind, type Strike, type StrikeLight, type StrikePlan } from "./bolt"
 import { LOT_WEATHER, type LotWeatherSettings } from "./settings"
 import { EAVES, SHELTER_RECTS } from "./shelter"
 
@@ -121,22 +121,18 @@ export class LotStorm {
     } else if (rate <= 0) this.nextAt = this.time + 2
     this.strikes = this.strikes.filter(k => strikeEnd(k) > this.time)
 
-    // The brightest live strike draws and lights the scene.
-    let strike: Strike | null = null, light: StrikeLight = { channel: 0, branches: 0, front: 0, leader: 0, scene: 0, after: 0 }
-    for (const k of this.strikes) {
-      const l = strikeLight(k, this.time, reduce)
-      if (!strike || l.channel + l.scene + l.leader > light.channel + light.scene + light.leader) { strike = k; light = l }
-    }
+    const pick = pickStrikeLights(this.strikes, this.time, reduce)
+    const strike = pick.bolt
+    let light = pick.light
     const visible = strike && strike.distance < 900 && !dark
     const look = reduce ? { ...BOLT_LOOK, coreIntensity: BOLT_LOOK.coreIntensity * 0.45, glowIntensity: BOLT_LOOK.glowIntensity * 0.45 } : BOLT_LOOK
     this.bolt.frame(visible ? strike : null, light, look, [i.fog[0], i.fog[1], 0], i.fovY)
     let flash = 0, dir: [number, number, number] = [0, 1, 0]
-    if (strike && light.scene > 0 && !dark) {
-      const p = strike.position, mid: [number, number, number] = [p[0] - eye[0], (strike.kind === "cloud" ? p[1] : 160) - eye[1], p[2] - eye[2]]
+    if (pick.scene && pick.sceneLight > 0 && !dark) {
+      const k = pick.scene, p = k.position, mid: [number, number, number] = [p[0] - eye[0], (k.kind === "cloud" ? p[1] : 160) - eye[1], p[2] - eye[2]]
       const l = Math.hypot(...mid) || 1
       dir = [mid[0] / l, mid[1] / l, mid[2] / l]
-      const near = strike.kind === "cloud" ? 0.55 : Math.min(1.4, Math.max(0.3, 420 / strike.distance))
-      flash = light.scene * near * s.flash * (reduce ? 0.5 : 1)
+      flash = pick.sceneLight * s.flash * (reduce ? 0.5 : 1)
     }
     const st: WeatherFrameState = { ...state, flash: Math.min(1, flash) }
     const rain = Math.min(1, this.kit.intensity)
@@ -147,7 +143,7 @@ export class LotStorm {
       settings: kit, state: st, viewProj: i.frame, eye: i.eye, focusXZ: forward, viewportWidth: i.width, viewportHeight: i.height,
       fovYRad: i.fovY, groundY: i.groundY, ambientLum: 0.06, lights, excludeRects: SHELTER_RECTS, eaves: EAVES, cameraDist: 10,
     } : null
-    if (dark) light = { ...light, scene: 0 }
+    light = { ...light, scene: dark ? 0 : pick.sceneLight }
     const gust = evaluateWeatherGust(this.time, eye[0], eye[2], kit.windDir, kit.windGust)
     const swayAmp = this.amount * (on ? s.wind : 0) * 0.35
     return {
@@ -169,7 +165,8 @@ export class LotStorm {
       if (over > 1) p = { ...plan, distance: plan.distance / over }
     }
     // One scene-light pulse per strike in every mode; the shared limiter also keeps overlapping strikes to three a second.
-    const k = makeStrike(p, this.time + leader, eye[0]!, eye[2]!, groundY, CEILING, this.limiter, 1)
+    // Reduced: a strike only lights the scene once the last swell has faded (3 s), so swells never stack and dip.
+    const k = makeStrike(p, this.time + leader, eye[0]!, eye[2]!, groundY, CEILING, this.limiter, 1, reduce ? 3 : 0)
     this.strikes.push(k)
     // Sound: the crack leaves the channel's nearest point, the roll follows from its farther reaches.
     const slant = Math.hypot(p.distance, k.kind === "cloud" ? CEILING * 0.85 : 60)
