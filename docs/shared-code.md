@@ -5,7 +5,8 @@ and what to do about it. What is already shared, and which game uses which `@arc
 table in [architecture.md](architecture.md); check it before writing something a game might already have.
 
 Extract something only when it is the same idea across games and has a current consumer in each. Game rules, maps,
-meshes and the look stay in the games. A game path that re-exports a kit module in one line (for example
+meshes and the look stay in the games. Realism techniques (lights, shadows, fog, weather, materials, camera, sound)
+are the exception: they start in the kit even with one consumer, and the game supplies hooks and settings. A game path that re-exports a kit module in one line (for example
 `games/getaway/src/game/fx.ts` → `@arcade/kit/vehicle/fx`) is not duplication.
 
 ## Where it goes
@@ -33,6 +34,32 @@ Roughly in order of value against risk. Line counts are from `main` at the time 
 | Camera and shake | `client/camera` (`Camera.add`, `HitStop`, shake controls; Blackout, Brawl, Lab, Outbreak; `TraumaShake`, `shakeWave`, `attenuateShake` for rig-owned 3D cameras: Carrier) | Getaway `src/game/camera.ts` (93) plus `Scene.shake`/`hitStop` | Carrier's chase, boat, turret and flight/crash rigs each own a `TraumaShake` reading one `cameraShakeDefaults()` (`SHAKE` in `src/render/camera.ts`, honours reduced motion); the rigs stay per game. Carrier has no hit-stop: its frame draws an interpolated, room-synced world and flight, so freezing presentation would desync it from sea time. |
 | Vehicle simulation | none; presentation is shared (`vehicle/{chassis,body-pose,emissions,fx,lights,audio}`) | Getaway `shared/sim/vehicle.ts` (415), Blackout `shared/sim/vehicle{,-rules}.ts` (353 + 369), Outbreak `shared/vehicles.ts` (1,852) | Handling is tuned per game. A shared core is worth it only if a fourth game needs cars. |
 | Tyre marks | `fx/skids` + `fx/skid-renderer` through `vehicle/driving-fx` (Outbreak) | Blackout's sprite skids in `src/game/vehicles.ts`; Getaway keeps its sprite path on purpose (byte-identical captures, `prove-driving-fx-parity.ts`) | Blackout can switch to `contacts()` + `SkidMarks` the way Outbreak did. |
+
+## Realism techniques still in one game
+
+Realism techniques belong in `packages/kit/` from the start (root [AGENTS.md](../AGENTS.md)); these were built
+inside a game and would help others. [realism.md](realism.md) describes each one. Effort: S under a day, M a few
+days, L a week.
+
+| Technique | Lives in | Target kit module | Would help | Effort | State |
+|---|---|---|---|---|---|
+| Lightning channel, stroke timing, WCAG flash limiter, ribbon pass | Lot `src/weather/bolt.ts`, `bolt-pass.ts` | `weather/lightning`, `weather/lightning-pass` | Outbreak, woods, Night Shift | S | Moved (branch `kit-lightning`) |
+| Synthesized night ambience (wind, traffic, buzz, HVAC, drips, wildlife) | Lot `src/ambience.ts` | `audio/ambience` | Woods, Night Shift | S | Moved (branch `kit-ambience`) |
+| Thunder by distance, surface rain emitters, indoor muffle; shelter rects and eaves | Lot `src/weather/audio.ts`, `shelter.ts` | `audio/thunder`, `weather` shelter type | Outbreak (own `src/weather/audio.ts`), woods | M | AR-131 |
+| Outbreak's strike schedule on the kit flash limiter | Outbreak `shared/weather/lightning.ts`; kit `weatherStrikeFlash` | `weather/lightning` | Every storm | S | AR-131 |
+| Top-down lens-lamp adapter (flux matching, arm from the road) | Outbreak `src/street-lamps/lens.ts` | `gpu/lights/street` | Blackout, Getaway | M | AR-132 |
+| Mist pooling mask (walls, hollows, gutters) | Outbreak `src/mist/wgsl.ts` | `gpu/fog-scatter` | Woods, Lot | M | AR-132 |
+| Lamp reach fade | Outbreak `src/scene/frame-lighting.ts` (`stepLampReach`) | `gpu/scene-frame` | Blackout, any distance-culled lamps | S | AR-132 |
+| Looks in quality tiers (`QUALITY_TIER`, `fromTier`) | Outbreak `src/quality.ts` | `quality` | Lot, Night Shift, woods | S | AR-132 |
+| Tube signal driving light, emissive and ballast sound | Night Shift `src/polish/tube.ts` | `gpu/lights/flicker` | Outbreak sconces, Lot interior | S | AR-133 |
+| Analytic blind gobo shared by surfaces and dust | Night Shift `src/blind-cookie.ts` | a kit cookie module | Lot interior, Outbreak windows | M | AR-133 |
+| Lens finish (edge softness, fringe, midtone grain) | Night Shift `src/polish/lens.ts` | `gpu/look` | Lot, woods | S | AR-133 |
+| Shadow-gated dust motes | Outbreak `src/air/dust.ts`, Night Shift `src/polish/dust.ts` | `fx/dust` with a visibility hook | Lot, woods, Blackout (`MAT.mote` is unshadowed) | M–L | AR-134 |
+| Volumetric torch shaft pass | Outbreak `src/flashlight-beam.ts` | `gpu/lights/beam` | Lot, woods, Night Shift | M | AR-134 |
+| Analytic puddle light mirrors and LEAN glints | Outbreak `src/reflections/` | `gpu/reflections` | Blackout, Getaway; LEAN for the Lot's asphalt | M | AR-135 |
+| Motion-stability metric | Lot and Outbreak `scripts/motion.ts` | root `scripts/motion/` | Night Shift, woods | M | AR-136 |
+| Baked bounce and lamp pools | Blackout `bakeBounce`, Outbreak `bakeOutbreakBounce` + `src/lightbake.ts` | `gpu/level` | Top-down games | M | Not carded: only top-down games bake |
+| Forest renderer | branch `woods-look` | `packages/kit/forest` | Woods first, then the Lot | — | Being built in the kit |
 
 Intentional copies, not to extract: Carrier's ocean rain (`src/render/rain.ts`, displaced onto Gerstner waves) and
 Wings's Three.js rain are not `@arcade/kit/weather`; Wings is an independent project.
