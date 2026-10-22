@@ -44,6 +44,8 @@ export class ShellView {
   readonly root: HTMLDivElement
   /** Game content for the title card (survivor picks, a mode chooser); kept across redraws. */
   readonly titleSlot: HTMLDivElement
+  /** Game content for the pause card under Resume (Outbreak's seed and restart tools); kept across redraws. */
+  readonly pauseSlot: HTMLDivElement
   private readonly overlay: HTMLDivElement
   private readonly card: HTMLDivElement
   private readonly pill: HTMLDivElement
@@ -73,6 +75,8 @@ export class ShellView {
     this.loader = this.root.querySelector(".as-loading")!
     this.titleSlot = doc.createElement("div")
     this.titleSlot.className = "as-slot"
+    this.pauseSlot = doc.createElement("div")
+    this.pauseSlot.className = "as-slot"
     this.overlay.addEventListener("click", (e) => {
       // A click outside the pause card plays again (a click is what pointer lock needs).
       if (e.target === this.overlay && this.flow.overlay === "paused" && !this.flow.settingsOpen) this.flow.resume()
@@ -122,7 +126,7 @@ export class ShellView {
     if (force || key !== this.layout) {
       this.layout = key
       this.card.innerHTML = settingsOpen ? this.settingsHtml() : overlay === "title" ? this.titleHtml() : this.pauseHtml()
-      if (overlay === "title" && !settingsOpen) this.card.querySelector(".as-slot-host")?.replaceWith(this.titleSlot)
+      if (!settingsOpen) this.card.querySelector(".as-slot-host")?.replaceWith(overlay === "title" ? this.titleSlot : this.pauseSlot)
     }
     this.sync()
   }
@@ -194,7 +198,7 @@ export class ShellView {
   private pauseHtml(): string {
     const leave = this.o.leaveLabel === null ? "" : `<button class="as-btn" data-act="leave">${esc(this.o.leaveLabel ?? (this.lobby?.room ? "Leave room" : "Quit to title"))}</button>`
     const refused = this.flow.lockRefused ? `<p class="as-message">The browser wants one more click. Click Resume.</p>` : ""
-    return `${this.cornerHtml()}<h2 class="as-heading">Paused</h2><button class="as-btn as-primary as-big" data-act="resume">${esc(this.o.resumeLabel ?? "Resume")}</button>${refused}<div class="as-row2"><button class="as-btn" data-act="settings">Settings</button>${leave}</div>${this.inviteHtml()}<p class="as-hint">or click outside this card · ${keyCapHtml("Escape")}</p>${this.footHtml()}`
+    return `${this.cornerHtml()}<h2 class="as-heading">Paused</h2><button class="as-btn as-primary as-big" data-act="resume">${esc(this.o.resumeLabel ?? "Resume")}</button>${refused}<div class="as-slot-host"></div><div class="as-row2"><button class="as-btn" data-act="settings">Settings</button>${leave}</div>${this.inviteHtml()}<p class="as-hint">or click outside this card · ${keyCapHtml("Escape")}</p>${this.footHtml()}`
   }
 
   private cornerHtml(): string {

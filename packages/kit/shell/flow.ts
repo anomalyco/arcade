@@ -38,6 +38,8 @@ export class ShellFlow {
   private begun: boolean
   private pausedFlag = false
   private _settingsOpen = false
+  /** Settings was opened from play (a HUD gear or speaker button): closing it plays again instead of showing the pause card. */
+  private settingsFromPlay = false
   /** When the pointer lock last went: an Escape right after it is the one that released it, not a second press. */
   private lostAt = -Infinity
   private _lockRefused = false
@@ -93,6 +95,7 @@ export class ShellFlow {
   /** From the title: start playing (takes the pointer lock in pointer-lock games; call it from a click). */
   play(): void {
     this._settingsOpen = false
+    this.settingsFromPlay = false
     this._lockRefused = false
     if (this.target) {
       if (this.locked) {
@@ -121,6 +124,7 @@ export class ShellFlow {
   /** Back to play from the pause menu (or Settings over it). Call it from a click in pointer-lock games. */
   resume(): void {
     this._settingsOpen = false
+    this.settingsFromPlay = false
     this._lockRefused = false
     if (!this.begun) return this.play()
     if (this.target) this.lock()
@@ -130,6 +134,7 @@ export class ShellFlow {
 
   /** Back to the title (the game leaves its room or run in `onLeave`). */
   leave(): void {
+    this.settingsFromPlay = false
     this.begun = false
     this.pausedFlag = false
     this._settingsOpen = false
@@ -137,9 +142,18 @@ export class ShellFlow {
     this.emit()
   }
 
+  /** Opens or closes Settings. Opened in play, it pauses; closing it then plays again (not in pointer-lock games, whose lock needs a click on Resume). */
   openSettings(open = true): void {
-    if (open && this.screen === "playing") this.pause()
+    if (open) {
+      this.settingsFromPlay = this.screen === "playing" && !this.target
+      if (this.screen === "playing") this.pause()
+    }
     this._settingsOpen = open
+    if (!open && this.settingsFromPlay) {
+      this.settingsFromPlay = false
+      this.resume()
+      return
+    }
     this.emit()
   }
 
@@ -182,11 +196,7 @@ export class ShellFlow {
       ;(e.target as HTMLElement).blur?.()
       return
     }
-    if (this._settingsOpen && this.screen !== "playing") {
-      this._settingsOpen = false
-      this.emit()
-      return
-    }
+    if (this._settingsOpen && this.screen !== "playing") return this.openSettings(false)
     const s = this.screen
     if (this.target && now() - this.lostAt < 300) return
     if (s === "playing") this.pause()

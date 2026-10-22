@@ -8,8 +8,9 @@ tool; the shell is what players see.
 ## Rules
 
 1. **Every game uses `@arcade/kit/shell` for settings, pause, title and lobby.** A game keeps its own backdrop, art
-   and game-specific title content (`shell.view.titleSlot`), and restyles with the `--shell-*` CSS variables. It
-   never forks the behaviour.
+   and game-specific title and pause content (`shell.view.titleSlot`, `shell.view.pauseSlot`), and restyles with the
+   `--shell-*` CSS variables. It never forks the behaviour. A HUD gear or speaker button calls
+   `shell.flow.openSettings()`: Settings pauses, and closing it plays again.
 2. **Default graphics is High (Auto starts High).** Build quality with `createShellQuality`: Auto starts at the
    game's High tier and steps down only on measured slow frames (startup and runtime), never on GPU headroom alone.
    The pick is saved per game (`arcade.quality.<game>.v1`) and applies live. `?quality=` pins a mode for automation.

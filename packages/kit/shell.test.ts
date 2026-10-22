@@ -137,6 +137,23 @@ describe("@arcade/kit/shell flow", () => {
     expect(refusing.lockRefused).toBe(true)
   })
 
+  test("Settings opened from play (a HUD button) goes straight back to play when closed", () => {
+    const doc = new FakeDoc(), win = new EventTarget()
+    const flow = new ShellFlow({ doc: doc as never, win: win as never, start: "playing" })
+    flow.openSettings()
+    expect(flow.screen).toBe("paused")
+    expect(flow.settingsOpen).toBe(true)
+    flow.openSettings(false)
+    expect(flow.screen).toBe("playing")
+    flow.openSettings()
+    esc(win)
+    expect(flow.screen).toBe("playing")
+    flow.pause()
+    flow.openSettings()
+    flow.openSettings(false)
+    expect(flow.screen).toBe("paused")
+  })
+
   test("a game menu that owns Escape keeps it", () => {
     const doc = new FakeDoc(), win = new EventTarget()
     let owned = true
