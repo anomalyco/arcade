@@ -159,6 +159,8 @@ export class LabKnobsView {
       foldStorage: options.rememberFolds ? localStorageOrNull() : null,
       actions: options.actions?.map(a => ({ label: a.label, run: () => { this.host.begin(a.label); a.run(); this.host.end(); this.host.edited(this) } })),
     })
+    // knobs names the close button after the store id ("Close lab:arcade-woods").
+    this.panel.element.querySelector(".knobs-close")?.setAttribute("aria-label", "Close")
   }
 
   /** Pushes outside changes to knobs: a new shape when rows came, went or changed state, else changed values. */
