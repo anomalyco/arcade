@@ -92,7 +92,7 @@ async function main() {
     keysBlocked: () => Boolean(debugPanel?.hasFocus()),
     controls: () => [keyPromptHtml("KeyW", "Drive"), keyPromptHtml("Space", "Handbrake"), keyPromptHtml("ShiftLeft", "Boost"), keyPromptHtml("KeyT", "Chat"), keyPromptHtml("KeyM", "Mute"), keyPromptHtml("Escape", "Menu")].join(" "),
     lobby: {
-      friends: true, roomParam: "r", upperCase: true, maxName: 16, fallbackName: "Dax",
+      friends: true, roomParam: "r", upperCase: true, maxName: 16, fallbackName: "Dax", nameRequired: "Enter a name to play online.",
       quick: () => {
         via = "quick"
         return quickRoom()

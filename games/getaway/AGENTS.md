@@ -11,8 +11,8 @@
 - The title, lobby, Escape menu and Settings are the kit game shell (`@arcade/kit/shell`, [docs/game-shell.md](../../docs/game-shell.md)), set up in `src/main.ts`. The night-road backdrop and the live player count stay Getaway's (`titleArt` in `src/ui/lobby.ts`); the waiting room, chat and end card stay in the HUD. Shell colours are at the end of `src/style.css`.
 - Deliberate changes when it moved onto the shell (Oct 22):
   - The title is the shell's: name, Quick join, Solo practice, Play with friends (Create game) and Join by code or
-    invite link (`?r=`, upper-case codes; a pasted link works too), with Settings and mute in the corner. An empty
-    name plays as "Dax" instead of blocking a room join.
+    invite link (`?r=`, upper-case codes; a pasted link works too), with Settings and mute in the corner. Rooms still
+    need a name (`nameRequired`); solo plays as "Dax" without one.
   - Escape opens the menu (Resume, Settings, Leave room or Quit to title). Solo practice pauses behind it; a room keeps
     playing with the car idling. Leave reloads the page onto the title (the scene is built from the session's city).
     Escape still closes chat first.
