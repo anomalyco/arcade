@@ -50,7 +50,22 @@ async function run(game: string, clip: boolean) {
     await page.waitForFunction(() => document.querySelector<HTMLElement>(".arcade-shell")?.dataset.screen === "title")
     await page.waitForTimeout(1500)
     const tag = clip ? `${game}-clip` : game
-    if (!clip) await shot(page, `${tag}-title`)
+    const fit: Record<string, { overflow: number; fade: string }> = {}
+    const measure = () => page.evaluate(() => {
+      const c = document.querySelector<HTMLElement>(".as-card")!
+      return { overflow: c.scrollHeight - c.clientHeight, fade: c.dataset.fade ?? "" }
+    })
+    if (!clip) {
+      await shot(page, `${tag}-title`)
+      fit["1280x720"] = await measure()
+      // The title must fit (or scroll with a fade) at both common sizes.
+      await page.setViewportSize({ width: 1920, height: 1080 })
+      await page.waitForTimeout(500)
+      await shot(page, `${tag}-title-1080`)
+      fit["1920x1080"] = await measure()
+      await page.setViewportSize({ width: 1280, height: 720 })
+      await page.waitForTimeout(300)
+    }
     await page.locator(".as-card [data-act=settings]").first().click()
     await page.waitForSelector(".as-settings")
     if (!clip) await shot(page, `${tag}-settings`)
@@ -65,21 +80,30 @@ async function run(game: string, clip: boolean) {
     }
     else {
       await page.waitForTimeout(700)
-      await page.locator(".as-seg [data-mode=low]").click()
-      await page.waitForTimeout(900)
+      // Silent games (Walkers) have no Sound section; games without quality have no Graphics row.
+      const quality = (await page.locator(".as-seg [data-mode=low]").count()) > 0
+      if (quality) {
+        await page.locator(".as-seg [data-mode=low]").click()
+        await page.waitForTimeout(900)
+      }
       const master = page.locator("input[data-vol=master]")
-      const box = (await master.boundingBox())!
-      await page.mouse.move(box.x + box.width * 0.8, box.y + box.height / 2)
-      await page.mouse.down()
-      await page.mouse.move(box.x + box.width * 0.35, box.y + box.height / 2, { steps: 12 })
-      await page.mouse.up()
-      await page.waitForTimeout(700)
-      await page.keyboard.press("KeyM")
-      await page.waitForTimeout(600)
-      await page.keyboard.press("KeyM")
-      await page.waitForTimeout(600)
-      await page.locator(".as-seg [data-mode=high]").click()
-      await page.waitForTimeout(900)
+      if ((await master.count()) > 0) {
+        const box = (await master.boundingBox())!
+        await page.mouse.move(box.x + box.width * 0.8, box.y + box.height / 2)
+        await page.mouse.down()
+        await page.mouse.move(box.x + box.width * 0.35, box.y + box.height / 2, { steps: 12 })
+        await page.mouse.up()
+        await page.waitForTimeout(700)
+        // The slider keeps focus after the drag: M must still mute and unmute.
+        await page.keyboard.press("KeyM")
+        await page.waitForTimeout(600)
+        await page.keyboard.press("KeyM")
+        await page.waitForTimeout(600)
+      }
+      if (quality) {
+        await page.locator(".as-seg [data-mode=high]").click()
+        await page.waitForTimeout(900)
+      }
     }
     await page.locator("[data-act=back]").click()
     const play = page.locator(".as-card [data-act=play], .as-card [data-act=solo]").first()
@@ -98,7 +122,7 @@ async function run(game: string, clip: boolean) {
       await page.waitForFunction(() => document.querySelector<HTMLElement>(".arcade-shell")?.dataset.screen === "playing")
       await page.waitForTimeout(1500)
     }
-    report[tag] = { ok: true, finalScreen: await screen(page), errors }
+    report[tag] = { ok: true, finalScreen: await screen(page), titleFit: fit, errors }
   } catch (e) {
     await shot(page, `${game}-failure`).catch(() => {})
     report[game] = { ok: false, error: String(e), errors }

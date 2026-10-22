@@ -26,6 +26,9 @@ tool; the shell is what players see.
 7. **Automation sees the game, not the shell.** Under `navigator.webdriver` the overlays are hidden (pointer-lock
    games start when they take the lock; others start in play), automation starts muted, and saved volumes and quality
    are ignored. Add `?shell` to a URL to show the shell in a proof.
+8. **Every card fits a 1280×720 window.** A taller card scrolls inside itself with a soft fade at the edge that has
+   more, never clips; keep title slots compact enough that the title card fits without scrolling. The mute and gear
+   icons sit in their own row above the title. Check the title at 1280×720 and 1920×1080.
 
 ## Using it
 
@@ -86,7 +89,8 @@ not the game's real load.
 - [ ] Simulation pauses with `shell.playing` in solo play; rooms keep running behind the menu.
 - [ ] Game menus that close on Escape are named in `escapeOwned`.
 - [ ] Player settings that aren't volume or quality go in as `sections`, not Lab rows.
-- [ ] Prove it with `bun scripts/prove-game-shell.ts <game>` (stills of the title, Settings and pause with `?shell`).
+- [ ] Prove it with `bun scripts/prove-game-shell.ts <game>` (stills of the title at 1280×720 and 1920×1080, Settings,
+  lobby and pause with `?shell`).
 
 ## Status (Oct 22)
 

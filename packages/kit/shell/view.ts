@@ -82,6 +82,8 @@ export class ShellView {
       if (e.target === this.overlay && this.flow.overlay === "paused" && !this.flow.settingsOpen) this.flow.resume()
     })
     this.card.addEventListener("click", (e) => this.click(e))
+    this.card.addEventListener("scroll", () => this.fade(), { passive: true })
+    doc.defaultView?.addEventListener("resize", this.onResize)
     this.card.addEventListener("input", (e) => this.input(e))
     this.card.addEventListener("change", (e) => this.input(e))
     this.card.addEventListener("keydown", (e) => {
@@ -99,7 +101,7 @@ export class ShellView {
       if (flow.overlay !== blocked) {
         blocked = flow.overlay
         this.render()
-      }
+      } else if (!this.overlay.hidden) this.fade()
       this.raf = requestAnimationFrame(tick)
     }
     this.raf = requestAnimationFrame(tick)
@@ -108,6 +110,7 @@ export class ShellView {
 
   dispose(): void {
     cancelAnimationFrame(this.raf)
+    this.root.ownerDocument.defaultView?.removeEventListener("resize", this.onResize)
     for (const off of this.offs) off()
     this.root.remove()
   }
@@ -129,6 +132,19 @@ export class ShellView {
       if (!settingsOpen) this.card.querySelector(".as-slot-host")?.replaceWith(overlay === "title" ? this.titleSlot : this.pauseSlot)
     }
     this.sync()
+    this.fade()
+  }
+
+  private readonly onResize = () => this.fade()
+
+  /** Marks which edges of a scrolling card have more content, for the CSS fade. */
+  private fade(): void {
+    const c = this.card
+    const over = c.scrollHeight - c.clientHeight > 1
+    const start = over && c.scrollTop > 1
+    const end = over && c.scrollTop + c.clientHeight < c.scrollHeight - 1
+    const fade = start && end ? "both" : start ? "start" : end ? "end" : ""
+    if (c.dataset.fade !== fade) c.dataset.fade = fade
   }
 
   private sync(): void {
@@ -345,6 +361,11 @@ export const SHELL_CSS = `
 .arcade-shell .as-overlay { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; background: var(--shell-backdrop); }
 .arcade-shell[data-screen="paused"] .as-overlay { cursor: pointer; }
 .arcade-shell .as-card { position: relative; cursor: default; display: flex; flex-direction: column; gap: 14px; width: min(440px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; box-sizing: border-box; padding: 28px 28px 22px; border-radius: var(--shell-radius); background: var(--shell-card); box-shadow: inset 0 0 0 1px var(--shell-edge), 0 24px 70px rgba(0,0,0,0.55); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+/* A card taller than the window scrolls inside itself and fades out at the edge with more to see, never clips. */
+.arcade-shell .as-card { --fade: 40px; overscroll-behavior: contain; }
+.arcade-shell .as-card[data-fade=end] { -webkit-mask-image: linear-gradient(#000 calc(100% - var(--fade)), transparent); mask-image: linear-gradient(#000 calc(100% - var(--fade)), transparent); }
+.arcade-shell .as-card[data-fade=start] { -webkit-mask-image: linear-gradient(transparent, #000 var(--fade)); mask-image: linear-gradient(transparent, #000 var(--fade)); }
+.arcade-shell .as-card[data-fade=both] { -webkit-mask-image: linear-gradient(transparent, #000 var(--fade), #000 calc(100% - var(--fade)), transparent); mask-image: linear-gradient(transparent, #000 var(--fade), #000 calc(100% - var(--fade)), transparent); }
 .arcade-shell .as-title { margin: 0 0 2px; text-align: center; font: 700 44px/1 var(--shell-title-font); letter-spacing: 0.12em; }
 .arcade-shell .as-heading { margin: 0; text-align: center; font: 600 26px/1.1 var(--shell-title-font); letter-spacing: 0.06em; }
 .arcade-shell .as-sub { margin: -6px 0 0; text-align: center; color: var(--shell-dim); }
@@ -373,7 +394,8 @@ export const SHELL_CSS = `
 .arcade-shell .as-row2 .as-btn:only-child { grid-column: 1 / -1; }
 .arcade-shell .as-hint, .arcade-shell .as-message { margin: -4px 0 0; text-align: center; font-size: 13px; color: var(--shell-dim); }
 .arcade-shell .as-message { color: var(--shell-accent); }
-.arcade-shell .as-corner { position: absolute; top: 10px; right: 10px; display: flex; gap: 4px; }
+/* Its own row above the title (tucked into the card's padding), so no title runs under the icons. */
+.arcade-shell .as-corner { align-self: flex-end; display: flex; gap: 4px; margin: -18px -18px -12px 0; }
 .arcade-shell .as-icon { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; color: var(--shell-dim); background: none; border: 0; border-radius: 8px; cursor: pointer; font-size: 18px; }
 .arcade-shell .as-icon:hover { color: var(--shell-ink); background: var(--shell-field); }
 .arcade-shell .as-cross { display: none; }
