@@ -255,8 +255,9 @@ async function main() {
 
   /**
    * The creature's Lab hooks. Trigger now places a sighting at once by the schedule's own rules (solo: in the sim, so it
-   * plays like a scheduled one; a room: on this machine only). With no friend's light 48 m out to cross, solo stages
-   * one: a friend 64–96 m ahead sweeping their beam back past you, and it triggers a second later.
+   * plays like a scheduled one; a room: on this machine only). With no bright light 49 m out to cross (a friend's signal or
+   * beam aimed back at you, camp lights from outside camp), solo stages one: a friend 64–96 m ahead holding up a
+   * signal, and it triggers a second later.
    */
   const creature = {
     stageAt: 0,
@@ -273,10 +274,10 @@ async function main() {
       }
       if (e) { creature.last = e; return e }
       if (session instanceof SoloSession && !creature.stageAt && creature.stage()) { creature.stageAt = time + 1.2; say("A friend's light, far ahead…", 2); return null }
-      say("Nothing for it to cross: it needs a friend's light 48 m or more away in sight.", 4)
+      say("Nothing for it to cross: it needs a friend's signal or beam aimed at you, or camp lights from outside camp, 49 m or more away in sight.", 5)
       return null
     },
-    /** Solo: a friend 64–96 m ahead in sight (farther first, so it crosses inside their beam), sweeping it back past you. */
+    /** Solo: a friend 64–96 m ahead in sight (farther first, so it cuts more of the shaft) holding up a signal. */
     stage(): boolean {
       if (!(session instanceof SoloSession)) return false
       const st = session.state, me = session.self
@@ -286,11 +287,9 @@ async function main() {
         const yaw = camera.yaw + off, x = me.x - Math.sin(yaw) * d, z = me.z - Math.cos(yaw) * d
         const h = world.params.half - 8
         if (Math.abs(x) > h || Math.abs(z) > h || isDeepWater(world, x, z) || trunkBetween(world, me.x, me.z, x, z, 0.3)) continue
-        const back = Math.atan2(-(me.x - x), -(me.z - z)) + 0.4, bx = x - Math.sin(back) * 10, bz = z - Math.cos(back) * 10
-        if (trunkBetween(world, me.x, me.z, bx, bz, 0.3)) continue
-        // Their beam swept back past you: the mist scatters it forward, so its air glows behind the crossing.
+        // A signal: the brightest backdrop a friend makes, held about ten seconds ("found" lifts the beam while its timer is over 14).
         Object.assign(bot, { x, z, vx: 0, vz: 0, light: true })
-        brain.mode = "wait"; brain.timer = 8; brain.heading = back
+        brain.mode = "found"; brain.timer = 24
         return true
       }
       return false

@@ -10,9 +10,12 @@ import type { DistantState } from "./distant"
  * unchanged), stepped by `stepWoods` and broadcast as a `CreatureEvent`, so everyone in a room sees it at the same
  * moment. Only + − × ÷ √ and `nextRandom`, so any machine that steps the sim places it the same.
  *
- * It only comes when it has something to cross: a person looking towards a lit shaft (a friend's beam, a signal, a lit
- * camp window) 48 m or more away with a clear line of sight. It crosses in front of that light 45–80 m from them, never
- * within 35 m of anyone, starting and ending where a trunk hides it if it can.
+ * It only comes when it has something bright to cross, because a black figure reads only where it covers light: a person
+ * looking towards a friend's signal, a friend's beam aimed back at them, or a lit camp window or porch seen from outside
+ * camp, 49 m or more away with a clear line of sight. A beam aimed across the view doesn't count: at 45–80 m its lit mist
+ * is too faint for the figure to read (scripts/creature-visibility.ts measures it from the rendered frames). If nobody
+ * has such a light, nothing comes. It crosses in front of that light 45–80 m from them, never within 35 m of anyone,
+ * starting and ending where a trunk hides it if it can.
  */
 
 export type CreatureEvent = {
@@ -68,8 +71,11 @@ export function createCreature(seed: number): CreatureState {
 }
 
 export type Watcher = { x: number; z: number; yaw: number; pitch: number; light: boolean; bot: boolean; id: number; signal: number }
-/** A lit thing seen from far off: the plan point of its brightest air and how much it is worth crossing. */
-type Shaft = { x: number; z: number; owner: number; weight: number; /** A beam's plan direction (none for a signal or a lamp). */ dir?: [number, number] }
+/** A bright thing seen from far off: its plan point and how much it is worth crossing. */
+type Shaft = { x: number; z: number; owner: number; weight: number; kind: "signal" | "beam" | "lamp"; /** A beam's plan direction. */ dir?: [number, number] }
+
+/** A beam backs a crossing only when it points at the watcher within about this (cos 35°), lens and glare behind it. */
+const AIMED_BACK = 0.82
 
 const sqrt = Math.sqrt
 
@@ -99,15 +105,13 @@ function shafts(world: WoodsWorld, players: readonly Watcher[], signalHold: numb
     if (!p.light) continue
     if (p.signal > signalHold || p.pitch > 1.1) {
       // A signal: the beam stands straight up; its base glows a few metres over the hand.
-      out.push({ x: p.x, z: p.z, owner: p.id, weight: 3 })
-    } else {
-      // A beam: the lit air some metres out from the lens, where the cone is brightest.
-      const c = 1 - p.pitch * p.pitch * 0.5
-      const fx = -sinApprox(p.yaw) * c, fz = -cosApprox(p.yaw) * c
-      for (const d of [0, 5, 10, 15]) out.push({ x: p.x + fx * d, z: p.z + fz * d, owner: p.id, weight: 0.5, dir: [fx, fz] })
+      out.push({ x: p.x, z: p.z, owner: p.id, weight: 3, kind: "signal" })
+    } else if (p.pitch > -0.35 && p.pitch < 0.35) {
+      // A level beam: only worth it from in front (the lens and its glare), which planCreature checks per watcher.
+      out.push({ x: p.x, z: p.z, owner: p.id, weight: 2, kind: "beam", dir: [-sinApprox(p.yaw), -cosApprox(p.yaw)] })
     }
   }
-  for (const l of world.lamps) if (l.kind === "window" || l.kind === "porch") out.push({ x: l.x, z: l.z, owner: -1, weight: l.kind === "window" ? 1 : 0.6 })
+  for (const l of world.lamps) if (l.kind === "window" || l.kind === "porch") out.push({ x: l.x, z: l.z, owner: -1, weight: l.kind === "window" ? 1 : 0.6, kind: "lamp" })
   return out
 }
 
@@ -137,14 +141,19 @@ export function planCreature(world: WoodsWorld, players: readonly Watcher[], fee
   const scratch: Tree[] = []
   const half = world.params.half - 4
   const options: { plan: CreaturePlan; weight: number }[] = []
+  const lights = shafts(world, players, signalHold)
   for (const w of people) {
     const fx = -sinApprox(w.yaw), fz = -cosApprox(w.yaw)
-    for (const s of shafts(world, players, signalHold)) {
+    const cdx = w.x - world.camp.x, cdz = w.z - world.camp.z
+    const outsideCamp = cdx * cdx + cdz * cdz > world.camp.radius * world.camp.radius
+    for (const s of lights) {
       if (s.owner === w.id) continue
+      if (s.kind === "lamp" && !outsideCamp) continue
       const dx = s.x - w.x, dz = s.z - w.z
       const dL = sqrt(dx * dx + dz * dz)
       if (dL < near + 4 || dL > 220) continue
       const ux = dx / dL, uz = dz / dL
+      if (s.dir && -(s.dir[0] * ux + s.dir[1] * uz) < AIMED_BACK) continue
       // They're looking that way (within about 40°; Trigger now takes about 75°), and nothing stands between them and the light.
       if (ux * fx + uz * fz < (relaxed ? 0.26 : 0.76)) continue
       if (trunkBetween(world, w.x, w.z, s.x, s.z, 0.1, scratch)) continue
@@ -177,9 +186,7 @@ export function planCreature(world: WoodsWorld, players: readonly Watcher[], fee
       const hidden = (trunkBetween(world, w.x, w.z, x0, z0, 0.2, scratch) ? 1 : 0) + (trunkBetween(world, w.x, w.z, x1, z1, 0.2, scratch) ? 1 : 0)
       const plan: CreaturePlan = { x0: cm(x0), z0: cm(z0), x1: cm(x1), z1: cm(z1), dur: Math.round(dur * 1000) / 1000, seed: Math.round(nextRandom(rng) * 1000) / 1000, watcher: w.id, shaft: { x: s.x, z: s.z }, cross }
       const cover = dL / cross
-      // Mist scatters forward: a beam aimed back past the watcher glows far brighter behind the crossing.
-      const toward = s.dir ? Math.max(0, -(s.dir[0] * ux + s.dir[1] * uz)) : 0
-      options.push({ plan, weight: s.weight * (1 + hidden) * cover * cover * (1 + 2 * toward) })
+      options.push({ plan, weight: s.weight * (1 + hidden) * cover * cover })
     }
   }
   if (!options.length) return null

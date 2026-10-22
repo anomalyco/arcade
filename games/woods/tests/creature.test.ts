@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { CREATURE_FIRST, CREATURE_INTERVAL, CREATURE_MIN, segmentDistance, triggerCreature, trunkBetween, type CreatureEvent } from "../shared/creature"
+import { CREATURE_FIRST, CREATURE_INTERVAL, CREATURE_MIN, planCreature, segmentDistance, triggerCreature, trunkBetween, type CreatureEvent, type Watcher } from "../shared/creature"
 import { createWoods, FEEL, SIGNAL_HOLD_SECONDS, stepWoods, type PlayerInput, type WoodsState } from "../shared/sim"
 import { isDeepWater, makeWorld } from "../shared/world"
 
@@ -87,4 +87,49 @@ test("Trigger now places one at once by the same rules and keeps the distant sou
   expect(e).not.toBeNull()
   expect(segmentDistance(line.x, line.z, e!.x0, e!.z0, e!.x1, e!.z1)).toBeGreaterThanOrEqual(CREATURE_MIN)
   expect(state.distant.busyUntil).toBeGreaterThan(5 + e!.dur)
+})
+
+/** You and one friend 70 m off along the clear line, their beam level at `aim` (plan yaw), nothing else lit near. */
+function pair(aim: number, pitch = -0.1): Watcher[] {
+  return [
+    { id: 0, x: line.x, z: line.z, yaw: line.yaw, pitch: 0, light: false, bot: false, signal: 0 },
+    { id: 100, x: line.bx, z: line.bz, yaw: aim, pitch, light: true, bot: true, signal: 0 },
+  ]
+}
+const feel = { ...FEEL, creature: true }
+const back = Math.atan2(-(line.x - line.bx), -(line.z - line.bz))
+
+test("only bright backdrops: a friend's beam across your view gives no sighting, even for Trigger now", () => {
+  for (const off of [Math.PI / 2, -Math.PI / 2, Math.PI]) for (let seed = 1; seed < 30; seed++) {
+    expect(planCreature(world, pair(back + off), feel, { seed }, SIGNAL_HOLD_SECONDS, true)).toBeNull()
+  }
+})
+
+test("a friend's beam aimed back at you, or their signal, is a backdrop", () => {
+  let aimed = 0, signal = 0
+  for (let seed = 1; seed < 30; seed++) {
+    if (planCreature(world, pair(back + 0.2), feel, { seed }, SIGNAL_HOLD_SECONDS)) aimed++
+    if (planCreature(world, pair(back + 2, 1.35), feel, { seed }, SIGNAL_HOLD_SECONDS)) signal++
+  }
+  expect(aimed).toBeGreaterThan(20)
+  expect(signal).toBeGreaterThan(20)
+})
+
+test("camp lights count only from outside camp", () => {
+  // The same lit windows, from just inside the camp's far edge and from just outside it.
+  const seen = (r: number) => {
+    let n = 0
+    for (const deg of [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330]) {
+      const a = (deg * Math.PI) / 180, x = world.camp.x + Math.cos(a) * r, z = world.camp.z + Math.sin(a) * r
+      if (isDeepWater(world, x, z)) continue
+      for (const l of world.lamps) {
+        if (l.kind !== "window") continue
+        const me: Watcher = { id: 0, x, z, yaw: Math.atan2(-(l.x - x), -(l.z - z)), pitch: 0, light: false, bot: false, signal: 0 }
+        for (let seed = 1; seed < 6; seed++) if (planCreature(world, [me], feel, { seed }, SIGNAL_HOLD_SECONDS)) n++
+      }
+    }
+    return n
+  }
+  expect(seen(world.camp.radius - 1)).toBe(0)
+  expect(seen(world.camp.radius + 12)).toBeGreaterThan(0)
 })
