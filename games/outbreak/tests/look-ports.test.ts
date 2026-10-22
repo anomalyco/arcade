@@ -3,36 +3,73 @@ import { createFogSettings } from "@arcade/kit/gpu/fog-scatter"
 import { streetProfile } from "@arcade/kit/gpu/lights/street"
 import { validateWgsl } from "@arcade/kit/gpu/test-naga"
 import { dustShader } from "../src/air/dust"
-import { contactVolumeInput, DEFAULT_CONTACT_SHADOW_SETTINGS } from "../src/contact-shadows/settings"
+import { contactVolumeInput, DEFAULT_CONTACT_SHADOW_SETTINGS, resolveContactShadows } from "../src/contact-shadows/settings"
 import { outbreakContactVolume } from "../src/contact-shadows/wgsl"
 import { OUTBREAK_LIGHTING_UNIFORM_FLOATS, OUTBREAK_STREET_LAMP_UNIFORM_OFFSET, OUTBREAK_WINDOW_ROOM_UNIFORM_OFFSET, streetLampHead, streetPostArm, STREET_LAMP_POOLS, STREET_LAMP_POSTS } from "../src/lighting"
-import { DEFAULT_MIST_SETTINGS, mistFogSettings } from "../src/mist/settings"
+import { DEFAULT_MIST_SETTINGS, mistFogSettings, resolveMist } from "../src/mist/settings"
 import { outbreakFogVolume } from "../src/mist/wgsl"
+import { bounceInput } from "../src/bounce-light/settings"
+import { OUTBREAK_QUALITY_PROFILES, QUALITY_TIER } from "../src/quality"
 import { createOutbreakSettings } from "../src/settings"
+import { capsuleSettings } from "../src/soft-shadows/settings"
 import { lensStreetFlux, streetArm, streetLensGain, todayStreetFlux } from "../src/street-lamps/lens"
 import { DEFAULT_STREET_LAMP_SETTINGS, packStreetLampUniforms } from "../src/street-lamps/settings"
 import { packWindowRoomUniforms } from "../src/window-rooms/settings"
 
-describe("the four look ports are on by default (D-49 to D-52), Today one setting away", () => {
-  test("street lamps, mist, contact shadows and lit rooms are on", () => {
+describe("the four look ports follow the quality tier by default (D-49 to D-52), Today one setting away", () => {
+  const resolved = (tier: "high" | "balanced" | "low", s = createOutbreakSettings()) => {
+    const q = OUTBREAK_QUALITY_PROFILES[tier]
+    return {
+      mist: resolveMist(s.mist, q, { ...s.mist }),
+      contact: resolveContactShadows(s.contactShadows, q, { ...s.contactShadows }),
+      bounce: bounceInput(s.bounce, q, 0, 0),
+      soft: capsuleSettings(s.softShadows, q),
+    }
+  }
+
+  test("street lamps and lit rooms are on; mist and contact shadows are left to the tier", () => {
     const s = createOutbreakSettings()
     expect(s.streetLamps.streetLampStyle).toBe(1)
-    expect(s.mist.mistStyle).toBe(1)
-    expect(s.contactShadows.contactShadowStyle).toBe(1)
     expect(s.windowRooms.windowRoomStyle).toBe(1)
+    expect(s.mist.mistStyle).toBe(QUALITY_TIER)
+    expect(s.contactShadows.contactShadowStyle).toBe(QUALITY_TIER)
   })
 
-  test("the CI smoke keeps the mist and contact shadows (their own pipelines) at Today", () => {
+  test("High is Kit's picks as shipped in #401", () => {
+    const r = resolved("high")
+    expect([r.mist.mistStyle, r.mist.mistDownscale]).toEqual([1, 3])
+    expect([r.contact.contactShadowStyle, r.contact.csLights, r.contact.csSteps]).toEqual([1, 2, 12])
+    expect(r.bounce?.texel).toBe(0.5)
+    expect(r.soft.lights).toBe(3)
+  })
+
+  test("Balanced is the measured cut; Low turns mist and contact shadows off", () => {
+    const b = resolved("balanced")
+    expect([b.mist.mistStyle, b.mist.mistDownscale, b.contact.csLights, b.contact.csSteps]).toEqual([1, 4, 1, 8])
+    const l = resolved("low")
+    expect([l.mist.mistStyle, l.contact.contactShadowStyle, l.bounce?.texel, l.soft.lights]).toEqual([0, 0, 1, 1])
+  })
+
+  test("an explicit Lab value beats the tier", () => {
+    const s = createOutbreakSettings()
+    s.mist.mistStyle = 1
+    s.mist.mistDownscale = 2
+    s.contactShadows.csSteps = 16
+    const l = resolved("low", s)
+    expect([l.mist.mistStyle, l.mist.mistDownscale, l.contact.csSteps]).toEqual([1, 2, 16])
+  })
+
+  test("the CI smoke keeps the mist and contact shadows (their own pipelines) at Today on every tier", () => {
     const s = createOutbreakSettings(new URLSearchParams("smoke"))
-    expect(s.mist.mistStyle).toBe(0)
-    expect(s.contactShadows.contactShadowStyle).toBe(0)
+    const h = resolved("high", s)
+    expect([h.mist.mistStyle, h.contact.contactShadowStyle]).toEqual([0, 0])
     expect(s.streetLamps.streetLampStyle).toBe(1)
-    expect(s.windowRooms.windowRoomStyle).toBe(1)
   })
 
   test("Today sends no contact-shadow pass", () => {
-    expect(contactVolumeInput({ ...DEFAULT_CONTACT_SHADOW_SETTINGS, contactShadowStyle: 0 }, new Float32Array(8))).toBeNull()
-    const on = contactVolumeInput({ ...DEFAULT_CONTACT_SHADOW_SETTINGS, contactShadowStyle: 1 }, new Float32Array(8))
+    const high = resolveContactShadows(DEFAULT_CONTACT_SHADOW_SETTINGS, OUTBREAK_QUALITY_PROFILES.high, { ...DEFAULT_CONTACT_SHADOW_SETTINGS })
+    expect(contactVolumeInput({ ...high, contactShadowStyle: 0 }, new Float32Array(8))).toBeNull()
+    const on = contactVolumeInput(high, new Float32Array(8))
     expect(on).toMatchObject({ downscale: 2, moving: DEFAULT_CONTACT_SHADOW_SETTINGS.csHistoryMoving })
     expect(Array.from(on!.params!).slice(0, 6)).toEqual([0.7, 0.35, 0.85, 80, 12, 2].map(Math.fround))
   })

@@ -12,6 +12,7 @@ import type { OutbreakCommandFeatures, OutbreakGameCommandsHost } from "./game-c
 import type { OutbreakHarness, OutbreakHarnessFeatures, OutbreakHarnessHost } from "./harness"
 import type { OutbreakLabControlHost, OutbreakLabFeatures } from "./lab-controls"
 import type { NetSession, NetSessionFeatures } from "./net-session"
+import type { OutbreakQualityProfile } from "./quality"
 import type { OutbreakSettings, OutbreakSubsystemKey } from "./settings"
 
 export interface OutbreakClientFeatureFeelHooks {
@@ -40,6 +41,8 @@ export interface OutbreakClientFrameContext {
   readonly cam: Camera
   readonly renderer: Renderer
   readonly settings: OutbreakSettings
+  /** The active quality tier (Auto's pick or the player's), for settings left on "Quality tier". */
+  readonly quality: OutbreakQualityProfile
   readonly vision: Vision
   /** Seconds since the last frame (hit-stop applied for `batches`). */
   readonly dt: number

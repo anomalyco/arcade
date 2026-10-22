@@ -33,6 +33,7 @@ import {
   migrateOutbreakLocalStorage,
   resolveWorldMode,
 } from "./settings"
+import { OUTBREAK_QUALITY_PROFILES } from "./quality"
 import { shaders } from "./shaders"
 import { LAMP_FOG_DEFAULTS, lampFog, lampFogControls } from "./air/lamp-fog"
 import "./style.css"
@@ -52,6 +53,7 @@ if (!params.has("quality") && !params.has("view.quality") && !navigator.webdrive
 }
 const qualityController = new AdaptiveQualityController({
   mode: resolveQualityMode(settings.view.quality),
+  profiles: OUTBREAK_QUALITY_PROFILES,
 })
 
 async function main() {
