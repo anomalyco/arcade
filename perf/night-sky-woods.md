@@ -16,6 +16,13 @@ Base: woods `4d14b07f`, plus the sky core through `3961d857` (equivalent to main
 
 The first production capture and six-second camp clip completed on Studio with no browser/GPU errors. Both new views show catalogue stars, Galactic structure and a small hazy crescent above dark forest silhouettes. The Moon adds one shadow layer. Final measurements and linked media are in the shared sky gallery.
 
+Matched-clock stills also pass without browser/GPU errors. Strong peaks ≥12/255: clearing 446 (target 4868),
+lake 298 (target 4263); Today has zero in both fixed upper-sky regions. Diffuse contrast is .432/.155,
+versus targets .418/.461. Sky medians are 7.93/9.28 per 255, versus 7.14/6.14. Weak peaks include sensor
+noise and are counted separately. `spots.rendered` in the capture stats counts maps redrawn that frame,
+not active shadow slots: a fixed lunar map can report zero once cached.
+The root-script typecheck passes for the final checkpoint script. Bridge commit: `7c319cd5`.
+
 ## Remaining boundaries
 
 - Woods owner's final adoption and weather's common eye-response/composition agreement remain to be confirmed.
