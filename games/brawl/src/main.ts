@@ -242,8 +242,10 @@ async function main() {
       sound.listen(game.cam.x, game.cam.z)
       hud.show(!title)
       const status = session.status()
-      if (session.room) lobby.setSocketStatus(status)
-      hud.update(game, w, h, status && /idle/i.test(status) ? status : null)
+      // The HUD shows the idle warning itself; the shell's pill shows connection trouble.
+      const idle = status && /idle/i.test(status) ? status : null
+      if (session.room) lobby.setSocketStatus(idle ? null : status)
+      hud.update(game, w, h, idle)
       if (title) menus.hide()
       else menus.update(game.snap, game.roster, session.myId, session.room, (id) => game!.colorOf(id))
     }
