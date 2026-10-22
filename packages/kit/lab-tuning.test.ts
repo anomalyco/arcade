@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { isRampControl, isSwitchControl, resolveControlField, type LabControl, type LabRow } from "./lab-navigation"
+import { holdsValue, isRampControl, isSwitchControl, resolveControlField, type LabControl, type LabRow } from "./lab-navigation"
 import { curveText, gradientText } from "./ramps"
 import { createRemoteControls, type State, type Value } from "@arcade/knobs"
 import { describe as describeRow, fromKnobs, isStructuralKey, isTunable, migrateKnobsVariantJson, nextTuningSeed, orderRows, seededRandom, toKnobs } from "./lab-tuning"
@@ -25,6 +25,21 @@ describe("LabControl as knobs", () => {
     expect(toKnobs(toggle, 0)).toBe(false)
     expect(fromKnobs(toggle, true)).toBe(1)
     expect(fromKnobs(toggle, false)).toBe(0)
+  })
+  test("readouts and button rows hold no value: readouts poll `read`, buttons become a toolbar", () => {
+    const read = () => "42 kn"
+    const watch: LabControl = { key: "wind", label: "Wind", group: "Weather", type: "readout", read }
+    expect(describeRow(row(watch), {}, {})).toEqual({ key: "wind", label: "Wind", group: "Weather", kind: "watch", get: read })
+    const meter: LabControl = { key: "peak", label: "Peak", group: "Audio", type: "readout", display: "meter", scale: { min: 0, max: 1, critical: 0.95 }, read: () => 0.5 }
+    expect(describeRow(row(meter), {}, {})).toMatchObject({ kind: "meter", min: 0, max: 1, critical: 0.95 })
+    const buttons: LabControl = { key: "presets", label: "Presets", group: "Weather", type: "buttons", items: [{ key: "clear", label: "Clear", run: () => {} }, { key: "storm", label: "Storm", run: () => {}, enabled: s => s.live === true }] }
+    expect(describeRow(row(buttons), {}, { live: false })).toEqual({ key: "presets", label: "Presets", group: "Weather", kind: "toolbar", items: [{ key: "clear", label: "Clear" }, { key: "storm", label: "Storm", disabled: true }] })
+    for (const c of [watch, meter, buttons]) {
+      expect(holdsValue(c)).toBe(false)
+      expect(isSwitchControl(c)).toBe(false)
+      expect(isTunable(c, {})).toBe(false)
+      expect(toKnobs(c, 1)).toBeUndefined()
+    }
   })
   test("a select without options isn't drawn; a broken range gets safe bounds", () => {
     expect(describeRow(row({ key: "x", label: "X", type: "select", options: [] }), {}, {})).toBeNull()

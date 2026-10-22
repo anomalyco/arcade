@@ -12,18 +12,21 @@
 - No params: the load screen (quick join, create, join by code; see CONTRACTS.md "Multiplayer"). URL params:
   `?room=name` (join it directly), `?seed=N` (offline, fixed world, no menu), `?t=S` (freeze sea time),
   `?cam=x,z,yaw,pitch,dist` (yaw/pitch in degrees, yaw 0 looks north), `?weather=clear|light|medium|heavy` (local
-  weather preview from the start, dev builds), `?lab=weather` (dev: opens the debug menu on its weather tab),
-  `?tod=H` (freeze the local clock at hour H, 0-24, for scripted captures), `?bots` (dev: opens the BOTS tab; with
+  weather preview from the start, dev builds), `?lab=weather` (dev: opens the dev panel on its weather section; any section id works),
+  `?tod=H` (freeze the local clock at hour H, 0-24, for scripted captures), `?bots` (dev: opens the Bots tab; with
   `?seed=N` it plays on an in-page dev room, `src/dev/local-room.ts`, so bots work offline).
   `globalThis.carrier` exposes the renderer, camera, net, frame, grade and atmosphere (the live-editable sunny bases;
   the time of day, then the weather, are applied on top), `weather`, `daynight`, `stars`, `lights`, and in dev builds
-  `lab`, `debugMenu` and `bots`, for debugging and screenshots.
-- Dev only: ` (or F2) opens the debug menu (`src/dev/debug-menu.ts`). `src/main.ts` imports `src/dev/dev-tools.ts`
-  behind `import.meta.env.DEV`, so production bundles contain no menu, tab or bot code: add dev tabs in
-  `dev-tools.ts`, never statically in main.ts. WEATHER tab: timeline/manual, presets, every weather parameter, strike
-  now, sea-time pause/speed, readouts, copy/paste JSON, BROADCAST TO ROOM. TIME tab: clock, sun/moon readouts, local
-  hour scrub, presets, speed/freeze, BROADCAST TO ROOM (see CONTRACTS.md "Day-night"). BOTS tab: see CONTRACTS.md
-  "Bots".
+  `lab`, `debugMenu` (the dev panel) and `bots`, for debugging and screenshots.
+- Dev only: ` opens the dev panel (`src/dev/dev-panel.ts`): the shared floating Lab panel (`@arcade/kit/lab-panel`,
+  drawn with knobs) with tabs World (weather, time), Audio, Sounds, Flight (bombsight, radar), Bots and Game (zones,
+  quality, volume, key labels, camera shake). Every tunable is a typed setting with label, unit, range, step, approved default and
+  Reset; commands are `buttons` rows and live values `readout` rows. `src/main.ts` imports `src/dev/dev-tools.ts`
+  behind `import.meta.env.DEV`, so production bundles contain no panel, section or bot code: add a `DevSection` in
+  `dev-tools.ts`, never statically in main.ts, and no bespoke menu UI. Weather: timeline/manual, presets, every weather
+  parameter, strike now, sea-time pause/speed, readouts, copy/paste JSON, Broadcast to room. Time: clock, sun/moon
+  readouts, local hour scrub, presets, speed/freeze, Broadcast to room (see CONTRACTS.md "Day-night"). Bots: see
+  CONTRACTS.md "Bots". `globalThis.carrier.debugMenu` is the `DevPanel` (`open(id)`, `select`, `close`, `toggle`).
 - Dev rooms: a room runs in dev mode only when the Worker's own config says so (`CARRIER_DEV=1` in `.dev.vars`, read
   by `wrangler dev`, never uploaded by `wrangler deploy`). Only then does it take `shared/protocol.ts` `DEV_MESSAGES`
   (weather, time, objective, bot); anywhere else `RoomCore.message` answers `nope` "dev-only", the one gate.
@@ -39,12 +42,12 @@
   "Boat"); pilots wait on deck until they launch. Mouse: aboard, the first click takes Pointer Lock and the mouse then orbits the ship camera (the stick in
   flight); Esc frees it, menus free it and give it back. Controls: at the helm W/S throttle, 1-9/0/= presets, A/D rudder; as a pilot the flight keys plus
   Space/LMB fire, 1/2/3 or wheel/V weapons, F flares, or close to and pointing at your own carrier R LAND (a scripted landing; a flight ends only by landing aboard, a crash or being shot down); Tab players and ships (hold, tap to pin: every carrier in its colour with its crew; JOIN switches ship and so side,
-  CREATE SHIP in a sunk carrier's empty berth, captains LOCK, KICK, promote); C free camera (WASD pan, drag orbit, wheel zoom); G full map (hold, tap to pin; the radar and target markers show by themselves in flight, CONTRACTS.md "Pilot's map"); T chat to everyone, Y to your carrier's crew (Tab in the input switches; Enter sends, Esc cancels; the input owns the keyboard; `src/ui/chat.ts`, rules `shared/chat.ts`); M mute; ` debug menu. Shared rules: `shared/{crew,squad,ops}.ts`.
+  CREATE SHIP in a sunk carrier's empty berth, captains LOCK, KICK, promote); C free camera (WASD pan, drag orbit, wheel zoom); G full map (hold, tap to pin; the radar and target markers show by themselves in flight, CONTRACTS.md "Pilot's map"); T chat to everyone, Y to your carrier's crew (Tab in the input switches; Enter sends, Esc cancels; the input owns the keyboard; `src/ui/chat.ts`, rules `shared/chat.ts`); M mute; ` dev panel (dev builds). Shared rules: `shared/{crew,squad,ops}.ts`.
 - Objective: capture zones (CONTRACTS.md "Capture zones"): hold a 650 m zone alone to score; zones move every
   5 minutes; first carrier to 1,200 points wins the round.
 - Sound: one mix in `src/audio/mixer.ts` (`CARRIER_MIX` on the kit's `AudioRuntime`); every recorded sound is a slot in `src/audio/sfx-slots.ts` (takes in
-  `public/sfx/v3/`, picks in `public/sfx/picks.json`), played with `sfx().play/loop` (`sfx-bank.ts`) and is a shared library id the Lab can audition (`SLOT_LIBRARY_ID`). SOUNDS tab in the
-  debug menu (or `?sounds=1`): audition every take and pick by ear; AUDIO tab: levels. See CONTRACTS.md "Sound".
+  `public/sfx/v3/`, picks in `public/sfx/picks.json`), played with `sfx().play/loop` (`sfx-bank.ts`) and is a shared library id the Lab can audition (`SLOT_LIBRARY_ID`). Sounds tab of the
+  dev panel (or `?sounds=1`): audition every take and pick by ear; Audio tab: levels. See CONTRACTS.md "Sound".
 - Renderer (`src/render/`): raw WebGPU, HDR rgba16float, MSAA x4, depth32float with reversed Z (clear 0,
   `greater-equal`), bloom and an ACES-graded composite (`post.ts`). Static world via `renderer.setStatic` (packed
   `Mesh` chunks, `lit.ts`); everything else is a `ScenePass` in the sky/opaque/alpha slots. Sun, sky and fog live in

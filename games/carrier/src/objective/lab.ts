@@ -1,12 +1,8 @@
-import { LabPanel } from "@arcade/kit/lab-panel"
-import type { LabControl } from "@arcade/kit/lab-navigation"
+import type { LabControl } from "@arcade/kit/lab-panel"
 import { OBJECTIVE_DEFAULTS, OBJECTIVE_RANGES, type ObjectiveRules } from "../../shared/objective"
-import type { DebugTab } from "../dev/debug-menu"
+import type { DevSection } from "../dev/dev-panel"
 import { ZONE_LOOK, ZONE_LOOK_DEFAULTS } from "./zone-pass"
 import { ZONE_RULES } from "./zones"
-
-/** Stylesheets the shared panel (and knobs, which draws it) put in the document head; the debug menu is a shadow root. */
-const PANEL_STYLES = "style[data-knobs-style], style[data-lab-knobs], style[data-knobs-preset], style[data-lab-panel-css]"
 
 const range = (key: keyof ObjectiveRules, label: string, step: number, unit: string): LabControl => {
   const [min, max] = OBJECTIVE_RANGES[key]
@@ -36,41 +32,18 @@ const LOOK_CONTROLS: LabControl[] = [
 ]
 
 /**
- * ZONES tab: the objective's rules (shared/objective.ts) and the zones' look (src/objective/zone-pass.ts) on the shared
- * Lab panel, with their approved defaults and Reset. APPLY TO ROOM sends the rules to the room (dev rooms only) or
+ * ZONES: the objective's rules (shared/objective.ts) and the zones' look (src/objective/zone-pass.ts) on the dev panel's
+ * Game tab, with their approved defaults and Reset. APPLY TO ROOM sends the rules to the room (dev rooms only) or
  * restarts the offline objective with them.
  */
-export class ZonesLab {
-  private panel: LabPanel | null = null
-
-  constructor(private opts: { close: () => void; release: () => void; apply: () => void }) {}
-
-  readonly tab: DebugTab = {
+export function zonesSection(apply: () => void): DevSection {
+  const group = RULE_CONTROLS[0]!.group!
+  return {
     id: "zones",
-    label: "Zones",
-    mount: (el) => {
-      el.replaceChildren()
-      const panel = new LabPanel({}, [], new URLSearchParams(), this.opts.release, {
-        layout: "inspector",
-        capture: "focus",
-        open: true,
-        presets: false,
-        groupActions: false,
-        pill: false,
-        variants: "carrier-zones",
-        onToggle: (visible) => {
-          if (!visible) this.opts.close()
-        },
-      })
-      panel.addControls(ZONE_RULES, [...RULE_CONTROLS, { key: "apply", label: "APPLY TO ROOM", group: "Rules (APPLY restarts the round)", type: "action", run: () => this.opts.apply() }], OBJECTIVE_DEFAULTS)
+    tab: "Game",
+    bind: (panel) => {
+      panel.addControls(ZONE_RULES, [...RULE_CONTROLS, { key: "zones-apply", label: "Room", group, type: "buttons", items: [{ key: "zones-apply-now", label: "Apply to room", run: apply }] }], OBJECTIVE_DEFAULTS)
       panel.addControls(ZONE_LOOK, LOOK_CONTROLS, ZONE_LOOK_DEFAULTS)
-      for (const s of document.head.querySelectorAll(PANEL_STYLES)) el.append(s.cloneNode(true))
-      el.append(panel.host)
-      this.panel = panel
-    },
-    unmount: () => {
-      this.panel?.dispose()
-      this.panel = null
     },
   }
 }

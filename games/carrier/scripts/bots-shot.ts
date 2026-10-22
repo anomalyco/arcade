@@ -165,11 +165,11 @@ async function until(page: Page, cond: string, ms: number): Promise<boolean> {
   return false
 }
 
-/** Clicks a BOTS panel button by its label (Playwright's locators pierce the debug menu's shadow root). */
+/** Clicks a Bots button on the dev panel by its label. */
 async function press(page: Page, label: string): Promise<void> {
   await js(page, `if (!c.debugMenu.visible) c.debugMenu.open("bots"); else c.debugMenu.select("bots")`)
   await page.waitForTimeout(400)
-  const b = page.locator("button", { hasText: label }).first()
+  const b = page.locator("[data-carrier-dev] button", { hasText: label }).first()
   await b.click({ timeout: 5000 })
   console.log(`pressed "${label}"`)
   await page.waitForTimeout(300)
@@ -196,8 +196,8 @@ const url = `${base}?room=${room}&tod=10.5&weather=clear`
 if (only.includes("panel") || only.includes("duel")) {
   const a = await open(`${url}&bots`, "ada")
   await a.waitForTimeout(2500)
-  const status = await js<string>(a, `return c.debugMenu.host.shadowRoot.querySelector(".bots-status")?.textContent ?? ""`)
-  check(status.includes("DEV ROOM"), `panel status: ${status}`)
+  const status = await js<string>(a, `return document.querySelector('[data-carrier-dev] .knobs-row[data-field="bots-status"]')?.textContent ?? ""`)
+  check(/dev room/i.test(status), `panel status: ${status}`)
   check(await js<boolean>(a, "return n.dev"), "the room says it is in dev mode")
   await shot(a, "panel")
   if (only.includes("duel")) {
@@ -348,16 +348,15 @@ if (only.includes("prod") && prod) {
   await p.waitForFunction(() => !!(globalThis as { carrier?: { game?: { state: { sea: unknown } } } }).carrier?.game?.state.sea, null, { timeout: 60_000 })
   await p.waitForTimeout(2000)
   await p.keyboard.press("Backquote")
-  await p.keyboard.press("F2")
   await p.waitForTimeout(500)
-  const none = await p.evaluate(() => !document.querySelector("[data-debug]") && !document.querySelector("[data-lab-panel]") && !(globalThis as unknown as { carrier: { debugMenu?: unknown } }).carrier.debugMenu)
-  check(none, "a production build has no debug menu (` and F2 do nothing)")
+  const none = await p.evaluate(() => !document.querySelector("[data-carrier-dev]") && !document.querySelector("[data-lab-panel]") && !(globalThis as unknown as { carrier: { debugMenu?: unknown } }).carrier.debugMenu)
+  check(none, "a production build has no dev panel (` does nothing)")
   await p.screenshot({ path: join(out, "prod-no-menu.png") })
   // The dev entry points do nothing either: ?bots, ?lab=weather, ?sounds=1.
   await p.goto(`${prod}?seed=7&tod=10.5&bots&lab=weather&sounds=1`, { waitUntil: "load" })
   await p.waitForFunction(() => !!(globalThis as { carrier?: { game?: { state: { sea: unknown } } } }).carrier?.game?.state.sea, null, { timeout: 60_000 })
   await p.waitForTimeout(1500)
-  check(await p.evaluate(() => !document.querySelector("[data-debug]") && (globalThis as unknown as { carrier: { net: { state: string } } }).carrier.net.state === "offline"), "?bots, ?lab=weather and ?sounds=1 open nothing; ?seed stays offline")
+  check(await p.evaluate(() => !document.querySelector("[data-lab-panel]") && (globalThis as unknown as { carrier: { net: { state: string } } }).carrier.net.state === "offline"), "?bots, ?lab=weather and ?sounds=1 open nothing; ?seed stays offline")
   await p.close()
 }
 

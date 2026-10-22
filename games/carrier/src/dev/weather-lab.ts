@@ -1,4 +1,5 @@
-import { GpuPerf } from "../../../../packages/kit/gpu-perf"
+import { GpuPerf } from "@arcade/kit/gpu-perf"
+import type { LabControl, LabPanel, LabSettings } from "@arcade/kit/lab-panel"
 import { seaDisplace } from "../../shared/sea"
 import {
   clampWeather,
@@ -16,8 +17,7 @@ import {
   type WeatherKind,
 } from "../../shared/weather"
 import type { WeatherSystem } from "../render/weather-system"
-import type { DebugTab } from "./debug-menu"
-import css from "./weather-lab.css?inline"
+import { copyText, pasteText, type DevSection } from "./dev-panel"
 
 export type WeatherLabHost = {
   system: WeatherSystem
@@ -32,60 +32,43 @@ export type WeatherLabHost = {
 
 type Mode = "timeline" | "manual"
 
-type SliderDef = { key: keyof Weather; label: string; step: number; fmt?: (v: number, w: Weather) => string }
-
-const pct = (v: number) => v.toFixed(2)
-const GROUPS: { title: string; sliders: SliderDef[] }[] = [
-  {
-    title: "Rain",
-    sliders: [
-      { key: "rain", label: "Intensity", step: 0.01 },
-      { key: "density", label: "Density", step: 0.01, fmt: (v) => `x${v.toFixed(2)}` },
-      { key: "streak", label: "Streak len", step: 0.01, fmt: (v) => `x${v.toFixed(2)}` },
-      { key: "splash", label: "Splashes", step: 0.01, fmt: (v) => `x${v.toFixed(2)}` },
-    ],
-  },
-  {
-    title: "Wind and sea",
-    sliders: [
-      { key: "wind", label: "Wind", step: 0.01, fmt: (v, w) => `${pct(v)} ${windKnots(w).toFixed(0)}kn` },
-      { key: "windDir", label: "Wind dir", step: 1, fmt: (v) => `${v >= 0 ? "+" : ""}${v.toFixed(0)}°` },
-      { key: "sea", label: "Sea state", step: 0.01 },
-      { key: "swell", label: "Swell/chop", step: 0.01, fmt: (v) => (Math.abs(v - 0.5) < 0.005 ? "both" : v < 0.5 ? `chop ${pct(v)}` : `swell ${pct(v)}`) },
-      { key: "foam", label: "Whitecaps", step: 0.01 },
-    ],
-  },
-  {
-    title: "Sky",
-    sliders: [
-      { key: "cloud", label: "Cloud cover", step: 0.01 },
-      { key: "dark", label: "Cloud dark", step: 0.01 },
-      { key: "sun", label: "Sun", step: 0.01 },
-      { key: "lightning", label: "Lightning", step: 0.01 },
-    ],
-  },
-  {
-    title: "Grade",
-    sliders: [
-      { key: "desat", label: "Desaturate", step: 0.01 },
-      { key: "darken", label: "Darken", step: 0.01 },
-    ],
-  },
+/** Every weather parameter on the panel: [key, label, group, step, unit]. Ranges are WEATHER_RANGE (also the wire's). */
+const PARAMS: readonly (readonly [keyof Weather, string, string, number, string])[] = [
+  ["rain", "Intensity", "Rain", 0.01, ""],
+  ["density", "Density", "Rain", 0.01, "×"],
+  ["streak", "Streak length", "Rain", 0.01, "×"],
+  ["splash", "Splashes", "Rain", 0.01, "×"],
+  ["wind", "Wind", "Wind and sea", 0.01, ""],
+  ["windDir", "Rain and foam wind", "Wind and sea", 1, "°"],
+  ["sea", "Sea state", "Wind and sea", 0.01, ""],
+  ["swell", "Chop ← → swell", "Wind and sea", 0.01, ""],
+  ["foam", "Whitecaps", "Wind and sea", 0.01, ""],
+  ["cloud", "Cloud cover", "Sky", 0.01, ""],
+  ["dark", "Cloud darkness", "Sky", 0.01, ""],
+  ["fog", "Fog", "Sky", 0.01, ""],
+  ["sun", "Sun", "Sky", 0.01, ""],
+  ["lightning", "Lightning", "Sky", 0.01, ""],
+  ["desat", "Desaturate", "Grade", 0.01, ""],
+  ["darken", "Darken", "Grade", 0.01, ""],
 ]
 
-const SPEEDS = [0.25, 1, 4] as const
 const DEG = 180 / Math.PI
-/** Minutes of schedule shown in the strip. */
-const STRIP_MIN = 40
+/** Minutes of schedule the Upcoming table covers. */
+const AHEAD_MIN = 40
 const PRESET_URL = "/__weather/presets"
+const GROUP = "Weather"
+const SHARE = "Share weather"
+const SEA_TIME = "Sea time"
+const READOUTS = "Weather readouts"
 
 /**
- * WEATHER LAB, the debug menu's weather tab. TIMELINE shows the room's synced weather (read-only, live values and the
- * upcoming schedule); MANUAL drives every weather parameter locally (presets animate with the real transition curve).
- * BROADCAST sends the manual weather to the room as an override, so every client's visuals and every ship's physics
- * agree. Local sea-time controls (pause, x0.25, x4) and readouts (crest to trough near the camera, wind, GPU time).
+ * WEATHER LAB, the dev panel's weather section. TIMELINE shows the room's synced weather (live values, the schedule
+ * ahead); MANUAL drives every weather parameter locally (presets animate with the real transition curve; moving a value
+ * switches to manual). BROADCAST sends the manual weather to the room as an override, so every client's visuals and
+ * every ship's physics agree. Local sea-time controls (pause, x0.25, x4) and readouts (crest to trough near the camera,
+ * wind, ship motion, GPU time).
  *
- * The weather logic (`frame`, `time`) runs every frame whether the tab is shown or not; `tab` is the UI.
+ * The weather logic (`frame`, `time`) runs every frame whether the section is shown or not; `section` is the UI.
  */
 export class WeatherLab {
   mode: Mode = "timeline"
@@ -96,160 +79,152 @@ export class WeatherLab {
   private transDur = 0
   /** Fading back from manual to the timeline. */
   private back: { from: Weather; start: number } | null = null
-  /** Transition time (s) for presets and for returning to the timeline. */
-  transition = 20
   private shown: Weather = makeWeather()
 
-  // Local sea-time control.
-  paused = false
-  speed: number = 1
+  /** The panel's own settings: transition (s), and local sea time (paused, speed). */
+  readonly settings = { transition: 20, paused: false, speed: 1 }
   private local: number | null = null
 
-  readonly tab: DebugTab
-  private el = document.createElement("div")
-  private shownTab = false
-  private inputs = new Map<keyof Weather, { input: HTMLInputElement; value: HTMLElement; def: SliderDef }>()
-  private status: Record<string, HTMLElement> = {}
-  private strip: HTMLElement
-  private ticks: HTMLElement
-  private note: HTMLElement
-  private paste: HTMLTextAreaElement
+  private panel: LabPanel | null = null
+  private onScreen = false
   private gpu: GpuPerf | null = null
   private fps = 60
   private lastUi = 0
   private t = 0
+  private note = ""
 
-  constructor(private h: WeatherLabHost) {
-    this.el.className = "weather-lab"
-    this.el.innerHTML = `
-          <div class="status">
-            <span class="k">Room</span><span class="v" data-s="room"></span>
-            <span class="k">Next</span><span class="v" data-s="next"></span>
-            <span class="k">Showing</span><span class="v" data-s="showing"></span>
-          </div>
-          <div class="strip"></div>
-          <div class="ticks"></div>
-          <h2>Mode</h2>
-          <div class="row"><button data-mode="timeline">Timeline</button><button data-mode="manual">Manual</button></div>
-          <h2>Presets</h2>
-          <div class="row">${WEATHER_KINDS.map((k) => `<button data-preset="${k}">${k}</button>`).join("")}</div>
-          <div class="slider"><span>Transition</span><input type="range" data-trans min="0" max="180" step="1"><span class="v" data-s="trans"></span></div>
-          <div data-sliders></div>
-          <div class="row" style="margin-top:6px"><button data-act="strike">Strike now</button></div>
-          <h2>Sea time</h2>
-          <div class="row"><button data-act="pause">Pause</button>${SPEEDS.map((s) => `<button data-speed="${s}">x${s}</button>`).join("")}<button data-act="sync">Sync</button></div>
-          <h2>Readouts</h2>
-          <div class="status">
-            <span class="k">Crest–trough</span><span class="v" data-s="waves"></span>
-            <span class="k">Wind</span><span class="v" data-s="wind"></span>
-            <span class="k">Pitch·roll·heave</span><span class="v" data-s="ship"></span>
-            <span class="k">Frame</span><span class="v" data-s="fps"></span>
-            <span class="k">GPU</span><span class="v" data-s="gpu"></span>
-            <span class="k">Sea time</span><span class="v" data-s="time"></span>
-          </div>
-          <h2>Share</h2>
-          <div class="row"><button data-act="reset">Reset to timeline</button><button data-act="broadcast">Broadcast to room</button></div>
-          <div class="row" style="margin-top:4px"><button data-act="copy">Copy JSON</button><button data-act="paste">Paste JSON</button><button data-act="save">Save preset</button></div>
-          <textarea hidden spellcheck="false" placeholder='{ "rain": 0.8, ... }'></textarea>
-          <div class="row" data-paste-row hidden style="margin-top:4px"><button data-act="apply">Apply</button><button data-act="cancel">Cancel</button></div>
-          <div class="note"></div>`
-    const q = <T extends Element>(sel: string) => this.el.querySelector<T>(sel)!
-    this.strip = q(".strip")
-    this.ticks = q(".ticks")
-    this.note = q(".note")
-    this.paste = q("textarea")
-    this.el.querySelectorAll<HTMLElement>("[data-s]").forEach((el) => (this.status[el.dataset.s!] = el))
-    this.ticks.innerHTML = [0, 10, 20, 30, 40].map((m) => `<span>${m ? `+${m}m` : "now"}</span>`).join("")
+  constructor(private h: WeatherLabHost) {}
 
-    const sliders = q("[data-sliders]")
-    for (const g of GROUPS) {
-      const h2 = document.createElement("h2")
-      h2.textContent = g.title
-      sliders.append(h2)
-      for (const def of g.sliders) {
-        const row = document.createElement("div")
-        row.className = "slider"
-        const label = document.createElement("span")
-        label.textContent = def.label
-        const input = document.createElement("input")
-        input.type = "range"
-        const [lo, hi] = WEATHER_RANGE[def.key]
-        input.min = String(lo)
-        input.max = String(hi)
-        input.step = String(def.step)
-        const value = document.createElement("span")
-        value.className = "v"
-        input.oninput = () => this.setParam(def.key, Number(input.value))
-        row.append(label, input, value)
-        sliders.append(row)
-        this.inputs.set(def.key, { input, value, def })
-      }
-    }
-    const trans = q<HTMLInputElement>("[data-trans]")
-    trans.value = String(this.transition)
-    trans.oninput = () => (this.transition = Number(trans.value))
-
-    this.el.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach((b) => (b.onclick = () => (b.dataset.mode === "manual" ? this.toManual() : this.toTimeline())))
-    this.el.querySelectorAll<HTMLButtonElement>("[data-preset]").forEach((b) => (b.onclick = () => this.preset(b.dataset.preset as WeatherKind)))
-    this.el.querySelectorAll<HTMLButtonElement>("[data-speed]").forEach(
-      (b) =>
-        (b.onclick = () => {
-          this.speed = Number(b.dataset.speed)
-          this.sync()
-        }),
-    )
-    const act: Record<string, () => void> = {
-      strike: () => this.strike(),
-      pause: () => {
-        this.paused = !this.paused
-        this.sync()
-      },
-      sync: () => {
-        this.paused = false
-        this.speed = 1
-        this.local = null
-        this.sync()
-      },
-      reset: () => this.toTimeline(),
-      broadcast: () => this.broadcast(),
-      copy: () => void this.copy(),
-      paste: () => this.showPaste(true),
-      apply: () => this.applyPaste(),
-      cancel: () => this.showPaste(false),
-      save: () => void this.save(),
-    }
-    this.el.querySelectorAll<HTMLButtonElement>("[data-act]").forEach((b) => (b.onclick = () => act[b.dataset.act!]?.()))
-    if (!h.broadcast) q<HTMLButtonElement>("[data-act=broadcast]").title = "Room weather wiring is not connected yet"
-    if (!import.meta.env.DEV) q<HTMLButtonElement>("[data-act=save]").hidden = true
-
-    this.tab = {
-      id: "weather",
-      label: "Weather",
-      css,
-      mount: (parent) => {
-        parent.append(this.el)
-        this.shownTab = true
-        this.gpu ??= new GpuPerf(this.h.device)
-        this.gpu.enabled = true
-        this.sync()
-      },
-      unmount: () => {
-        this.el.remove()
-        this.shownTab = false
-        if (this.gpu) this.gpu.enabled = false
-      },
-    }
+  get transition(): number {
+    return this.settings.transition
   }
 
   get visible(): boolean {
-    return this.shownTab
+    return this.onScreen
   }
 
-  /** Local sea time: the synced time unless paused or sped up (then it runs on its own until SYNC). */
+  readonly section: DevSection = {
+    id: "weather",
+    tab: "World",
+    bind: (panel) => {
+      this.panel = panel
+      panel.addControls(this.weatherSettings(), this.controls(), { mode: "timeline", ...makeWeather() })
+      panel.addControls(this.settings, this.ownControls(), { transition: 20, paused: false, speed: 1 })
+      panel.addControls({}, this.readouts())
+    },
+    shown: (on) => {
+      this.onScreen = on
+      if (on) this.gpu ??= new GpuPerf(this.h.device)
+      if (this.gpu) this.gpu.enabled = on
+    },
+    frame: () => {
+      const now = performance.now()
+      if (now - this.lastUi < 120) return
+      this.lastUi = now
+      this.panel?.refresh()
+    },
+  }
+
+  /** The weather on show as settings: manual's target, else the live weather; writing one switches to manual. */
+  private weatherSettings(): LabSettings {
+    const s: LabSettings = {}
+    Object.defineProperty(s, "mode", {
+      enumerable: true,
+      get: () => this.mode,
+      set: (v) => (v === "manual" ? this.toManual() : this.toTimeline()),
+    })
+    for (const [key] of PARAMS)
+      Object.defineProperty(s, key, {
+        enumerable: true,
+        get: () => (this.mode === "manual" ? this.target : this.current())[key],
+        set: (v) => this.setParam(key, Number(v)),
+      })
+    return s
+  }
+
+  private controls(): LabControl[] {
+    const params = PARAMS.map(([key, label, group, step, unit]): LabControl => {
+      const [min, max] = WEATHER_RANGE[key]
+      return { key: `weather.${key}`, label, group, min, max, step, unit }
+    })
+    return [
+      { key: "weather.mode", label: "Mode", group: GROUP, options: [{ value: "timeline", label: "Timeline (room)" }, { value: "manual", label: "Manual (local)" }] },
+      { key: "presets", label: "Presets", group: GROUP, type: "buttons", items: WEATHER_KINDS.map((k) => ({ key: `weather-${k}`, label: k[0]!.toUpperCase() + k.slice(1), run: () => this.preset(k) })) },
+      ...params,
+      { key: "weather-act", label: "Lightning", group: "Sky", type: "buttons", items: [{ key: "weather-strike", label: "Strike now", run: () => this.strike() }] },
+    ]
+  }
+
+  private ownControls(): LabControl[] {
+    return [
+      { key: "weather.transition", label: "Preset transition", group: GROUP, min: 0, max: 180, step: 1, unit: "s" },
+      { key: "weather.paused", label: "Pause sea time", group: SEA_TIME },
+      { key: "weather.speed", label: "Sea time speed", group: SEA_TIME, options: [0.25, 1, 4].map((s) => ({ value: s, label: `x${s}` })) },
+      { key: "sea-sync", label: "Sea time", group: SEA_TIME, type: "buttons", items: [{ key: "weather-sync", label: "Sync to room", run: () => this.syncTime() }] },
+      {
+        key: "weather-share",
+        label: "Room",
+        group: SHARE,
+        type: "buttons",
+        items: [
+          { key: "weather-broadcast", label: "Broadcast to room", run: () => this.broadcast(), enabled: () => !!this.h.broadcast },
+          { key: "weather-timeline", label: "Back to timeline", run: () => this.toTimeline() },
+        ],
+      },
+      {
+        key: "weather-json",
+        label: "JSON",
+        group: SHARE,
+        type: "buttons",
+        items: [
+          { key: "weather-copy", label: "Copy", run: () => this.copy() },
+          { key: "weather-paste", label: "Paste", run: () => this.paste() },
+          { key: "weather-save", label: "Save preset", run: () => this.save() },
+        ],
+      },
+      { key: "weather-note", label: "Note", group: SHARE, type: "readout", read: () => this.note || "—" },
+    ]
+  }
+
+  private readouts(): LabControl[] {
+    const sys = this.h.system
+    return [
+      { key: "weather-room", label: "Room", group: GROUP, type: "readout", read: () => {
+        const room = sys.room.at(this.t, makeWeather())
+        return `${kindOf(room)} ${room.rain.toFixed(2)}${sys.room.active(this.t) ? " · override" : ""}`
+      } },
+      { key: "weather-showing", label: "Showing", group: GROUP, type: "readout", read: () => {
+        const cur = this.current()
+        return `${this.mode === "manual" ? "manual" : this.back ? "returning" : "room"} · ${kindOf(cur)} ${cur.rain.toFixed(2)}`
+      } },
+      { key: "weather-ahead", label: "Upcoming", group: GROUP, type: "readout", display: "table", columns: ["Weather", "Starts", "Lasts"], read: () => {
+        const t = this.t
+        return weatherSchedule(sys.room.seed, t, 8)
+          .filter((s) => s.end > t && s.start < t + AHEAD_MIN * 60)
+          .map((s) => [s.kind, s.start <= t ? "now" : `in ${clock(s.start - t)}`, clock(s.end - Math.max(s.start, t))])
+      } },
+      { key: "weather-waves", label: "Crest to trough", group: READOUTS, type: "readout", read: () => this.crestToTrough() },
+      { key: "weather-wind", label: "Wind", group: READOUTS, type: "readout", read: () => `${windKnots(this.current()).toFixed(0)} kn` },
+      { key: "weather-ship", label: "Pitch · roll · heave", group: READOUTS, type: "readout", read: () => {
+        const ship = this.h.ship?.()
+        return ship ? `${(ship.pitch * DEG).toFixed(1)}° ${(ship.roll * DEG).toFixed(1)}° ${ship.heave.toFixed(1)} m` : "—"
+      } },
+      { key: "weather-fps", label: "Frame", group: READOUTS, type: "readout", read: () => `${this.fps.toFixed(0)} fps · ${(1000 / Math.max(1, this.fps)).toFixed(1)} ms` },
+      { key: "weather-gpu", label: "GPU", group: READOUTS, type: "readout", read: () => {
+        const g = this.gpu
+        return g?.gpuMs != null ? `${g.gpuMs.toFixed(2)} ms ${g.gpuKind === "timestamp" ? "hw" : "queue"}` : "—"
+      } },
+      { key: "weather-time", label: "Sea time", group: READOUTS, type: "readout", read: () =>
+        `${clock(this.t)}${this.local !== null || this.settings.paused ? ` local${this.settings.paused ? " ⏸" : ` x${this.settings.speed}`}` : ""}` },
+    ]
+  }
+
+  /** Local sea time: the synced time unless paused or sped up (then it runs on its own until Sync to room). */
   time(synced: number, dt: number): number {
-    if (this.local === null && !this.paused && this.speed === 1) return synced
+    const { paused, speed } = this.settings
+    if (this.local === null && !paused && speed === 1) return synced
     this.local ??= synced
-    if (!this.paused) this.local += dt * this.speed
+    if (!paused) this.local += dt * speed
     return this.local
   }
 
@@ -274,10 +249,6 @@ export class WeatherLab {
         sys.manual = mixWeather(this.back.from, room, u, this.shown)
       }
     } else sys.manual = null
-    if (this.visible && now - this.lastUi > 120) {
-      this.lastUi = now
-      this.refresh()
-    }
   }
 
   private current(): Weather {
@@ -291,41 +262,44 @@ export class WeatherLab {
     this.transDur = 0
     this.back = null
     this.mode = "manual"
-    this.sync()
   }
 
   private toTimeline(): void {
     if (this.mode === "manual") this.back = { from: makeWeather(this.h.system.manual ?? this.current()), start: performance.now() }
     this.mode = "timeline"
-    this.sync()
+    this.panel?.refresh()
   }
 
-  /** Local manual weather: a preset, faded in over `fade` seconds (default: the transition slider). */
+  /** Local manual weather: a preset, faded in over `fade` seconds (default: the transition setting). */
   force(kind: WeatherKind, fade = this.transition): void {
-    const keep = this.transition
-    this.transition = fade
-    this.preset(kind)
-    this.transition = keep
+    this.preset(kind, fade)
   }
 
-  private preset(kind: WeatherKind): void {
+  private preset(kind: WeatherKind, fade = this.transition): void {
     this.toManual()
     Object.assign(this.from, this.h.system.manual ?? this.current())
     Object.assign(this.target, WEATHER_PRESETS[kind])
     this.transStart = performance.now()
-    this.transDur = this.transition
-    this.sync()
+    this.transDur = fade
+    this.panel?.refresh()
   }
 
   private setParam(key: keyof Weather, v: number): void {
+    if (!Number.isFinite(v)) return
     this.toManual()
-    // A slider settles any running transition, then sets its field directly.
+    // An edit settles any running transition, then sets its field directly.
     Object.assign(this.from, this.h.system.manual ?? this.target)
     Object.assign(this.target, this.from)
     this.target[key] = v
     this.from[key] = v
     this.transDur = 0
-    this.refresh()
+  }
+
+  private syncTime(): void {
+    this.settings.paused = false
+    this.settings.speed = 1
+    this.local = null
+    this.panel?.refresh()
   }
 
   private strike(): void {
@@ -334,7 +308,7 @@ export class WeatherLab {
   }
 
   private broadcast(): void {
-    if (!this.h.broadcast) return this.say("Room wiring not connected yet (phase B): the manual weather stays local.")
+    if (!this.h.broadcast) return this.say("Room weather wiring is not connected: the manual weather stays local.")
     const w = this.mode === "manual" ? makeWeather(this.target) : null
     this.h.broadcast(w, this.transition)
     this.say(w ? `Sent to the room: fades over ${this.transition}s.` : "Room returns to its timeline.")
@@ -348,50 +322,38 @@ export class WeatherLab {
   }
 
   private async copy(): Promise<void> {
-    const text = this.json()
-    console.log(`[weather lab] preset:\n${text}`)
-    try {
-      await navigator.clipboard.writeText(text)
-      this.say("Copied (also printed to the console).")
-    } catch {
-      this.say("Clipboard blocked: printed to the console.")
-    }
+    this.say(await copyText(this.json(), "weather preset"))
   }
 
-  private showPaste(on: boolean): void {
-    this.paste.hidden = !on
-    this.el.querySelector<HTMLElement>("[data-paste-row]")!.hidden = !on
-    if (on) {
-      this.paste.value = ""
-      this.paste.focus()
-    }
-  }
-
-  private applyPaste(): void {
+  /** Pasted JSON (a weather, or `{ weather }`): every known finite field, clamped, faded in like a preset. */
+  private async paste(): Promise<void> {
+    const text = await pasteText("weather JSON")
+    if (!text) return
+    let raw: unknown
     try {
-      const raw = JSON.parse(this.paste.value) as Record<string, unknown>
-      const src = (raw.weather && typeof raw.weather === "object" ? raw.weather : raw) as Record<string, unknown>
-      this.toManual()
-      const w = makeWeather(this.target)
-      let n = 0
-      for (const k of WEATHER_KEYS) {
-        const v = src[k]
-        if (typeof v === "number" && Number.isFinite(v)) {
-          w[k] = v
-          n++
-        }
-      }
-      clampWeather(w)
-      Object.assign(this.from, this.h.system.manual ?? this.target)
-      Object.assign(this.target, w)
-      this.transStart = performance.now()
-      this.transDur = this.transition
-      this.showPaste(false)
-      this.say(`Applied ${n} fields.`)
-      this.sync()
+      raw = JSON.parse(text)
     } catch (e) {
-      this.say(`Bad JSON: ${(e as Error).message}`)
+      return this.say(`Bad JSON: ${(e as Error).message}`)
     }
+    const obj = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}
+    const src = (obj.weather && typeof obj.weather === "object" ? obj.weather : obj) as Record<string, unknown>
+    const w = makeWeather(this.mode === "manual" ? this.target : this.current())
+    let n = 0
+    for (const k of WEATHER_KEYS) {
+      const v = src[k]
+      if (typeof v === "number" && Number.isFinite(v)) {
+        w[k] = v
+        n++
+      }
+    }
+    if (!n) return this.say("No weather fields in the pasted JSON.")
+    clampWeather(w)
+    this.toManual()
+    Object.assign(this.from, this.h.system.manual ?? this.target)
+    Object.assign(this.target, w)
+    this.transStart = performance.now()
+    this.transDur = this.transition
+    this.say(`Applied ${n} fields.`)
   }
 
   private async save(): Promise<void> {
@@ -406,64 +368,8 @@ export class WeatherLab {
   }
 
   private say(msg: string): void {
-    this.note.textContent = msg
-  }
-
-  /** Mode, preset, speed highlights and slider positions. */
-  private sync(): void {
-    this.el.classList.toggle("timeline", this.mode === "timeline")
-    this.el.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach((b) => b.classList.toggle("on", b.dataset.mode === this.mode))
-    this.el.querySelectorAll<HTMLButtonElement>("[data-speed]").forEach((b) => b.classList.toggle("on", Number(b.dataset.speed) === this.speed))
-    const pause = this.el.querySelector<HTMLButtonElement>("[data-act=pause]")!
-    pause.textContent = this.paused ? "Resume" : "Pause"
-    pause.classList.toggle("on", this.paused)
-    this.el.querySelector<HTMLButtonElement>("[data-act=broadcast]")!.disabled = !this.h.broadcast
-    this.refresh()
-  }
-
-  private refresh(): void {
-    const sys = this.h.system
-    const w = this.mode === "manual" ? this.target : this.current()
-    for (const [key, { input, value, def }] of this.inputs) {
-      if ((this.el.getRootNode() as Document | ShadowRoot).activeElement !== input) input.value = String(w[key])
-      value.textContent = def.fmt ? def.fmt(w[key], w) : pct(w[key])
-    }
-    this.status.trans!.textContent = `${this.transition}s`
-    this.el.querySelectorAll<HTMLButtonElement>("[data-preset]").forEach((b) => {
-      const p = WEATHER_PRESETS[b.dataset.preset as WeatherKind]
-      b.classList.toggle("on", this.mode === "manual" && WEATHER_KEYS.every((k) => Math.abs(p[k] - this.target[k]) < 1e-6))
-    })
-
-    // Room: the synced weather (timeline plus any room override), and the seeded schedule ahead.
-    const t = this.t
-    const seed = sys.room.seed
-    const room = sys.room.at(t, makeWeather())
-    const o = sys.room.active(t)
-    this.status.room!.textContent = `${kindOf(room)} ${pct(room.rain)}${o ? " · override" : ""}`
-    const spans = weatherSchedule(seed, t, 8)
-    const next = spans.find((s) => s.start > t)
-    this.status.next!.textContent = next ? `${next.kind} in ${clock(next.start - t)}` : "—"
-    const cur = this.current()
-    this.status.showing!.textContent = `${this.mode === "manual" ? "manual" : this.back ? "returning" : "room"} · ${kindOf(cur)} ${pct(cur.rain)}`
-    const win = STRIP_MIN * 60
-    this.strip.innerHTML = spans
-      .filter((s) => s.end > t && s.start < t + win)
-      .map((s) => {
-        const a = Math.max(s.start, t)
-        const b = Math.min(s.end, t + win)
-        return `<div class="${s.kind}" style="width:${((b - a) / win) * 100}%">${b - a > 240 ? s.kind : ""}</div>`
-      })
-      .join("")
-
-    // Readouts.
-    this.status.waves!.textContent = this.crestToTrough()
-    this.status.wind!.textContent = `${windKnots(cur).toFixed(0)} kn`
-    const ship = this.h.ship?.()
-    this.status.ship!.textContent = ship ? `${(ship.pitch * DEG).toFixed(1)}° ${(ship.roll * DEG).toFixed(1)}° ${ship.heave.toFixed(1)}m` : "—"
-    this.status.fps!.textContent = `${this.fps.toFixed(0)} fps · ${(1000 / Math.max(1, this.fps)).toFixed(1)} ms`
-    const g = this.gpu
-    this.status.gpu!.textContent = g?.gpuMs != null ? `${g.gpuMs.toFixed(2)} ms ${g.gpuKind === "timestamp" ? "hw" : "queue"}` : "—"
-    this.status.time!.textContent = `${clock(t)}${this.local !== null || this.paused ? ` local${this.paused ? " ⏸" : ` x${this.speed}`}` : ""}`
+    this.note = msg
+    this.panel?.refresh()
   }
 
   /** Highest crest minus lowest trough within ±250 m of the camera focus along the primary swell. */

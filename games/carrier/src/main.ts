@@ -82,7 +82,7 @@ async function main() {
     showNotice(hudEl, "The GPU stopped responding. Reload to try again.")
   })
   const params = new URLSearchParams(location.search)
-  // Resolution and bloom follow the quality tier (Auto by default; the dev menu's VIEW tab sets the saved choice).
+  // Resolution and bloom follow the quality tier (Auto by default; the dev panel's Game tab sets the saved choice).
   const quality = new GameQuality({
     game: "carrier",
     tiers: CARRIER_QUALITY,
@@ -184,8 +184,9 @@ async function main() {
   const daynight = new DayNight(dayBases)
   const tod = Number(params.get("tod") ?? Number.NaN)
   if (params.has("tod") && Number.isFinite(tod)) daynight.setManual(tod, 0)
-  // Dev builds: the debug menu (` or F2) with its tabs (src/dev/dev-tools.ts: add dev tabs there, never statically here,
-  // so production bundles stay free of them). ?lab=weather, ?sounds=1, ?bots open it; ?weather=kind previews a weather.
+  // Dev builds: the dev panel (the shared Lab panel, `) with its sections (src/dev/dev-tools.ts: add dev sections there,
+  // never statically here, so production bundles stay free of them). ?lab=weather, ?sounds=1, ?bots open it; ?weather=kind
+  // previews a weather.
   const dev = devTools?.installDevTools({
     params,
     device: renderer.context.device,
