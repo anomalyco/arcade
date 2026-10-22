@@ -14,6 +14,13 @@ proven animation techniques to animation.md, not here.
 
 ## Proving a change
 
+- **Skip exactly-zero fog samples before bank work (Woods).** The `torches` opt-in in `gpu/fog-scatter.ts` rejects a
+  zero cone after shadowing, before terrain-relative bank sampling and extinction. Bracketed mini controls put the
+  four-light view at 16.42–17.75 ms versus 15.35 ms with the early-out; marker cost was inconclusive. Fourteen fixed
+  views differ by at most 0.001192/255 mean absolute RGB error, below baseline-repeat noise; the reprojected walk
+  stays within repeat variation. Classic WGSL hashes remain pinned. The 10–12 ms budget and existing darkness
+  constraints are still unmet. `perf/woods-autoresearch.md` records the rejected look trials and measurement limits.
+
 - **Preserve source terrain weights through shading (Lot).** Store grass/dirt weights in the imported vertex colour
   and recolour the scanned floor's luminance in the fragment. Baking the source tint multipliers into unorm vertex
   colours clipped values above one and multiplied RGB instead of luminance. Ground aux selects separate road, lot,

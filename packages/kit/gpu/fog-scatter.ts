@@ -1133,7 +1133,10 @@ ${torches ? `      var cone = fogLampCone(dot(ln, L.c.xyz), L.b.w, L.c.w) * (1.0
       // profile carries its own spill, and the body behind the reflector sends nothing back, so it takes no leak. The
       // profile is packed in FOG.pad0/pad1 (bank3.z is the bank's relief, bank3.w the phase's isotropic share).
       if (L.d.z > 0.0) { cone = kitBeamProfile(kitBeamAngle(dot(ln, L.c.xyz)) / L.d.z, FOG.pad0, FOG.pad1); }` : `      ${hooks.spotShadows ? "var" : "let"} cone = fogLampCone(dot(ln, L.c.xyz), L.b.w, L.c.w) * (1.0 - leak) + leak;`}
-${hooks.spotShadows ? `      if (L.d.y > 0.5 && cone > 1e-4) { cone *= spotShadowAir(u32(L.d.y - 0.5), ro + rd * (s0 + h * tan(t))); }\n` : ""}      let r4 = ld / L.a.w;
+${hooks.spotShadows ? `      if (L.d.y > 0.5 && cone > 1e-4) { cone *= spotShadowAir(u32(L.d.y - 0.5), ro + rd * (s0 + h * tan(t))); }\n` : ""}${torches ? `      // Outside the torch profile (or fully shadowed), the sample contributes exactly zero.
+      // Avoid the terrain-relative bank lookup and both extinction integrals for these samples.
+      if (cone == 0.0) { continue; }
+` : ""}      let r4 = ld / L.a.w;
 ${torches ? `      // Near field: within about its size a lamp's light hasn't spread to I/d² yet (a torch's beam leaves a 5 cm lens
       // as a column), so irradiance levels off at I/d0² instead of climbing to the lens.
       let win = pow(clamp(1.0 - r4 * r4 * r4 * r4, 0.0, 1.0), 2.0) * (ld * ld / (ld * ld + L.d.x * L.d.x)) * exp(-ld / FOG.scatter.y);` : `      let win = pow(clamp(1.0 - r4 * r4 * r4 * r4, 0.0, 1.0), 2.0) * smoothstep(0.0, L.d.x, ld) * exp(-ld / FOG.scatter.y);`}
