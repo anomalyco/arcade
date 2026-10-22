@@ -63,7 +63,7 @@ audio.master = shell.settings.gain("master")   // master × channel, 0 while mut
 
 Volume channels are the kit's (`@arcade/kit/audio/volume`): Master, Effects, Ambience, Voices and Music, saved per
 game in `arcade.volume.<game>.v1`, so games that already saved them keep the player's levels. List only the channels
-the game has sound for; `labels` renames one (Voices → "Zombies"). Mute is `arcade.mute.<game>.v1`
+the game has sound for (`channels: []` for a silent game such as Walkers: no Sound section, mute button or M); `labels` renames one (Voices → "Zombies"). Mute is `arcade.mute.<game>.v1`
 (`legacyMuteKey` reads an older one once). Reduce camera motion is one choice for every game
 (`arcade.reduceMotion`, default from `prefers-reduced-motion`), like Key labels (`arcade.keyLabels`).
 
