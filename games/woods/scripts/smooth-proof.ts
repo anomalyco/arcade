@@ -1,5 +1,5 @@
 // Headless, muted proof of friend smoothing and the menus (through HiveMind, after `bun run build`):
-//   bun scripts/smooth-proof.ts [--out <dir>]
+//   bun scripts/smooth-proof.ts [--out <dir>] [--clip-only]
 // friend.mp4: a camper walking and turning in front of you, drawn raw (left, `?smooth=0`) and smoothed (right), on the
 // same synthetic 60 Hz clock with rAF's ±1.5 ms wobble, so both show the same sim. Stills: the title (alone and in a
 // room), the Escape menu, and the Lab panel open over the woods.
@@ -21,7 +21,7 @@ const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(req) {
 } })
 type P = { x: number; z: number }
 type W = { frames: number; autoplay: boolean; paused: boolean; setPose(x: number, z: number, yaw: number, pitch?: number): void; step(ms: number): void
-  state: { players: P[]; brains: { mode: string; timer: number; heading: number; since: number }[] }; world: { camp: { x: number; z: number } }; panel: { toggle(): void } }
+  state: { players: P[]; brains: { mode: string; timer: number; heading: number; since: number }[] }; world: { camp: { x: number; z: number } }; panel: { toggle(): void }; camera: { flashlight: boolean } }
 declare const woods: W
 
 const browser = await chromium.launch({ headless: true, args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio"] })
@@ -32,8 +32,8 @@ async function open(query: string, size = { width: 640, height: 400 }): Promise<
   return page
 }
 
-// The clip: in the camp clearing facing the lake, one camper 8 m out crossing from left to right, turning once (a new
-// heading at 1.5 s) while sweeping its beam.
+// The clip: in camp facing the lit cabins with your torch off, one camper 6 m out walking from left to right while
+// sweeping its beam, then turning sharply away (bots set a new heading in one tick, which is what made beams jump).
 const frames = 270
 for (const [name, q] of [["raw", "&smooth=0"], ["smoothed", ""]] as const) {
   const page = await open(`?quality=high${q}`)
@@ -41,29 +41,33 @@ for (const [name, q] of [["raw", "&smooth=0"], ["smoothed", ""]] as const) {
   rmSync(dir, { recursive: true, force: true })
   mkdirSync(dir, { recursive: true })
   await page.evaluate((label) => {
+    // Paused: only the synthetic steps below draw and tick (the page's own loop would tick in real time between shots).
+    woods.paused = true
     woods.autoplay = true
     for (const id of ["hud", "toast", "prompt", "reticle"]) document.getElementById(id)!.style.display = "none"
     const tag = document.createElement("div")
     tag.textContent = label
     tag.style.cssText = "position:fixed;left:14px;top:12px;font:600 16px system-ui;color:#f6eed6;text-shadow:0 1px 4px #000;z-index:9"
     document.body.append(tag)
-    const c = woods.world.camp, x = c.x - 2, z = c.z
-    woods.setPose(x, z, Math.PI, -0.08)
+    const c = woods.world.camp, x = c.x - 2, z = c.z + 9
+    woods.setPose(x, z, 0, 0.02)
+    woods.camera.flashlight = false
     const [p, ...rest] = woods.state.players.slice(1), [b, ...others] = woods.state.brains
-    p!.x = x + 5; p!.z = z + 8
-    b!.mode = "wander"; b!.heading = Math.PI / 2; b!.timer = 1.5; b!.since = 0
+    p!.x = x - 4; p!.z = z - 6
+    b!.mode = "wander"; b!.heading = -Math.PI / 2; b!.timer = 99; b!.since = 0
     rest.forEach((q, k) => { q.x = x + 60 + k * 3; q.z = z + 60 })
     for (const o of others) o.mode = "wait", o.timer = 99
     for (let k = 0; k < 20; k++) woods.step(1000 / 60)
   }, name === "raw" ? "Before: drawn as ticked" : "After: smoothed")
   for (let k = 0; k < frames; k++) {
-    await page.evaluate((k) => woods.step(1000 / 60 + 1.5 * Math.sin(k * 2.3)), k)
+    await page.evaluate((k) => { const b = woods.state.brains[0]!; b.mode = "wander"; b.timer = 99; b.since = 0; b.heading = k < 120 ? -Math.PI / 2 : -Math.PI / 2 + 1.2; woods.step(1000 / 60 + 1.5 * Math.sin(k * 2.3)) }, k)
     await page.screenshot({ path: `${dir}/${String(k).padStart(4, "0")}.jpg`, type: "jpeg", quality: 85 })
   }
   await page.context().close()
 }
 const ff = Bun.spawnSync(["ffmpeg", "-y", "-loglevel", "error", "-framerate", "60", "-i", `${out}/frames-raw/%04d.jpg`, "-framerate", "60", "-i", `${out}/frames-smoothed/%04d.jpg`, "-filter_complex", "[0:v][1:v]hstack=inputs=2,format=yuv420p", "-c:v", "libx264", "-crf", "20", `${out}/friend.mp4`])
 console.log(ff.exitCode === 0 ? `wrote ${out}/friend.mp4` : `ffmpeg failed: ${ff.stderr.toString()}`)
+if (process.argv.includes("--clip-only")) { await browser.close(); server.stop(true); process.exit(0) }
 
 // Stills at 1280×720.
 const still = async (query: string, file: string, prep?: (page: Page) => Promise<void>) => {
