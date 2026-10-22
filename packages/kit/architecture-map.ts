@@ -208,6 +208,11 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
       s === "@arcade/kit/gpu/look-shaders",
   },
   {
+    area: "`gpu/post/camcorder`",
+    description: "Opt-in Camera filter final pass (iPhone, VHS, CRT TV, body cam) on `Renderer.setFinalPass`",
+    match: (s) => s === "@arcade/kit/gpu/post/camcorder",
+  },
+  {
     area: "`gpu-perf`, `fx/frame-timer` & `quality`",
     description: "Rolling p50/p95/FPS `PerfSampler`, GPU pass timestamp telemetry and adaptive quality tiers (`GameQuality`)",
     match: (s) =>

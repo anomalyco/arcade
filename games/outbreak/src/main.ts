@@ -2,6 +2,7 @@ import { Camera } from "@arcade/kit/client/camera"
 import { keyLabelSetting } from "@arcade/kit/client/controls"
 import { Renderer } from "@arcade/kit/gpu/renderer"
 import { LabPanel } from "@arcade/kit/lab-panel"
+import { attachCameraFilter } from "@arcade/kit/gpu/post/camcorder"
 import { createLookControls } from "@arcade/kit/look"
 import {
   AdaptiveQualityController,
@@ -265,6 +266,7 @@ async function main() {
 
   const keyLabels = keyLabelSetting("HUD")
   lab.addControls(keyLabels.settings, [keyLabels.control], keyLabels.defaults)
+  attachCameraFilter(renderer, lab, device, format, { params })
   lab.addControls(lampFog.settings as unknown as Record<string, string | number | boolean>, lampFogControls(), { ...LAMP_FOG_DEFAULTS })
   lab.addControls(
     vehicleRenderer.drivingFx.settings as unknown as Record<string, string | number | boolean>,

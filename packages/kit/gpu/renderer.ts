@@ -245,6 +245,17 @@ export type FrameInput = {
 }
 
 /**
+ * A screen-space pass after the composite (camera filters, `@arcade/kit/gpu/post/camcorder`). While `active`, the
+ * composite draws into `source()` and the pass draws that to the canvas; `frame` holds the unjittered viewProj, eye
+ * and time at 0..19. Inactive passes cost nothing.
+ */
+export interface FinalPass {
+  readonly active: boolean
+  source(width: number, height: number): GPUTextureView
+  encode(encoder: GPUCommandEncoder, target: GPUTextureView, frame: Float32Array): void
+}
+
+/**
  * WebGPU renderer. Per frame: (1) a compute pass casts POLAR_RAYS rays from each culled light against the occluders
  * within its reach (walls, furniture with heights, people), (2) an MSAA HDR pass draws the level chunks in view,
  * instanced characters, glass and light haze, and sprites, all lit through that polar shadow map, (3) bloom, then a
@@ -317,6 +328,7 @@ export class Renderer {
   private computeGroup: GPUBindGroup
   private polarPipe: GPUComputePipeline
   private pipes: Record<string, GPURenderPipeline> = {}
+  private finalPass: FinalPass | null = null
   private baselinePipes: Record<string, GPURenderPipeline> = {}
   private motionPipes: Record<string, GPURenderPipeline> = {}
   private lookPipesByVariant = new Map<LookVariantMode, Record<string, GPURenderPipeline>>()
@@ -1093,6 +1105,11 @@ export class Renderer {
     if (temporalScale(prev) !== temporalScale(next) || !next !== !prev) {
       if (this.width) this.applyInternalSize()
     }
+  }
+
+  /** A pass after the composite (camera filters); null removes it. */
+  setFinalPass(pass: FinalPass | null): void {
+    this.finalPass = pass
   }
 
   getTemporal(): TemporalSettings | null {
@@ -1874,7 +1891,9 @@ export class Renderer {
       this.drawFogBlur(enc, f, this.unjittered, taa.outputView, this.width, this.height)
     }
     this.bloomPyramid.encode(enc, this.pipes.down!, this.pipes.up!, activeDown0, this.bloomLevels)
-    const output = this.timing ? this.measureView : (targetView ?? this.context.getCurrentTexture().createView())
+    const finalPass = this.finalPass?.active ? this.finalPass : null
+    const dest = this.timing ? this.measureView : (targetView ?? this.context.getCurrentTexture().createView())
+    const output = finalPass ? finalPass.source(this.width, this.height) : dest
     const fp = enc.beginRenderPass({ colorAttachments: [{ view: output, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })
     const useFastLookPost =
       useLookPipes &&
@@ -1892,7 +1911,8 @@ export class Renderer {
     fp.setBindGroup(0, motion ? this.motionComposite : activeComposite)
     fp.draw(3)
     fp.end()
-    if(this.timing) this.timer!.finish(enc,output)
+    if (finalPass) finalPass.encode(enc, dest, taa ? this.unjittered : f.frame)
+    if(this.timing) this.timer!.finish(enc,dest)
     d.queue.submit([enc.finish()])
     this.submittedFrames++
   }
