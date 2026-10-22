@@ -1,7 +1,9 @@
 # Woods night-sky integration checkpoint
 
-Base: woods `2cb0fb0e`, including woods-camera and the staged highlight shoulder/camp dressing.
-Reviewed core: `36396d73`; bridge: `80db0cfa`. This supersedes the integration on `fe3e6756`
+Base: woods `860e341b`, including woods-camera, the staged highlight shoulder/camp dressing
+and the held-map review fixes. Reviewed core: `076a818c`; bridge: `a3a8e4c5`.
+The final rebase preserves the new per-torch shadow near plane alongside the lunar candidate.
+This supersedes the integration on `fe3e6756`
 (core `97220ab7`, bridge `d8df2180`) and the original `4d14b07f` integration.
 
 Main sky shipped in PR #430, squash merge `3b80159ca8dfaa51f9bf5a7b591b293db4256658`.
@@ -11,9 +13,11 @@ Woods already supplies `darkAdaptation` from its camera stops. Today remains the
 Kit decides whether to promote Physical. The earlier gallery stills and camp clip retain their
 documented bases and predate these final shader corrections.
 
-Post-rebase checks passed sequentially through strict-pinned HiveMind Pro: kit, root-script,
+Checks on woods base `2cb0fb0e` passed sequentially through strict-pinned HiveMind Pro: kit, root-script,
 woods client and woods server typechecks. Runtime settings assertion confirms Today is the
 default. `git diff 3b80159c -- packages/kit/sky` is empty.
+After the held-map rebase onto `860e341b`, those four typechecks and the Today assertion
+passed again on Pro, covering the merged shadow-near-plane code.
 
 ## Kept
 
