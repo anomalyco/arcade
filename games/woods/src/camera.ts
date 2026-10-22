@@ -29,7 +29,11 @@ export class WoodsCamera extends FirstPerson {
     this.walk.update({ dx, dz, yaw: this.yaw, dt, active: this.active(), amount: s.cameraMotion, reduced: s.reduceMotion, stride: s.stepLength, settling: s.walkSettle })
     this.body.x = x
     this.body.y = z
+    this.body.vx = dt > 0 ? dx / dt : 0
+    this.body.vy = dt > 0 ? dz / dt : 0
     this.height = height
+    // A body-worn camera's mount (camera looks): the view hangs and sways, the aim stays yours.
+    this.rig?.(this, dt, aspect)
     const w = this.walk, sy = Math.sin(this.yaw), cy = Math.cos(this.yaw)
     this.eye[0] = x + w.lateral * cy
     this.eye[1] = height + this.mount.height + w.vertical

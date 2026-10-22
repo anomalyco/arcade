@@ -14,6 +14,7 @@ import { beamLevel, EYE_HEIGHT, TAPE_HEIGHT, FEEL, tapeOnTree, tieTarget, viewDi
 import { dockAt, lakeDistance, makeWorld, standHeight, trailDistance, type WoodsWorld } from "../shared/world"
 import { WoodsAudio } from "./audio"
 import { WoodsCamera } from "./camera"
+import { CameraLook, stageCameraLab } from "./camera-look"
 import { FEEL_CONTROLS } from "./feel-controls"
 import { FriendsView } from "./friends-view"
 import { PaperMap } from "./map"
@@ -95,6 +96,8 @@ async function main() {
     { key: "woods.smoothFriends", field: "smooth", label: "Smooth friends", group: "Friends", subsection: "Drawing", type: "toggle" },
     { key: "woods.beamSettle", field: "beamSettle", label: "Friend beam settle", group: "Friends", subsection: "Drawing", min: 0.02, max: 0.4, step: 0.01, unit: "s" },
   ])
+  // Camera looks and realism effects (Lab › Camera look): a post chain after the forest's own camera, all off by default.
+  const cameraLook = new CameraLook({ renderer, device, format: canvasFormat, camera, forest: view.forest, panel, params, smoke, seed: world.params.seed })
   audio.bindControls(panel)
   panel.setView({ order: ["Walking", "Flashlight", "Camera", "Mist", "Night", "Forest", "Tape & map", "Friends", "Sound", "Volume"] })
   attachLabPanelControl(panel)
@@ -293,6 +296,7 @@ async function main() {
     {
       for (const e of session.drain()) {
         audio.event(e)
+        if (e.kind === "distant") cameraLook.event(e)
         const mine = "by" in e && e.by === meId
         if (e.kind === "tape-tied") audio.play("pack.close", e.x, e.z, mine ? 1 : 0.6)
         if (e.kind === "tape-removed") audio.play("pack.open", e.x, e.z, mine ? 1 : 0.6)
@@ -325,7 +329,8 @@ async function main() {
     for (let i = 0; i < 3; i++) lagged[i] = lagged[i]! + (axis[i]! - lagged[i]!) * k
     const al = Math.hypot(lagged[0], lagged[1], lagged[2]) || 1
     const ownAxis: [number, number, number] = [lagged[0] / al, lagged[1] / al, lagged[2] / al]
-    const ownOrigin = handFrom(camera.eye, camera.yaw, lookDir)
+    // The hand stays where it is when a body camera hangs the view lower.
+    const ownOrigin = handFrom([camera.eye[0], camera.eye[1] - camera.mount.height, camera.eye[2]], camera.yaw, lookDir)
 
     fp.begin()
     view.draw(fp, world, state, state.t, camera.eye, settings)
@@ -343,6 +348,7 @@ async function main() {
     // shadow map, the exposure and the bounce).
     const torches: ForestTorch[] = beams.filter((b) => !debug.dark.includes(b.id === OWN ? meId : b.id)).map((b) => ({ id: b.id, pos: b.origin, dir: b.axis, on: true, kind: b.id === OWN ? "local" : "remote", level: b.level }))
     debug.beams = beams.length
+    cameraLook.frame({ t: state.t, dt, eye: camera.eye, yaw: camera.yaw, pitch: camera.pitch, torches, world, fp, place })
     if (trace) {
       const at = performance.now()
       for (const q of state.players) {
@@ -354,7 +360,7 @@ async function main() {
     }
     // The smoke draws offscreen and synchronously (a presented frame makes SwiftShader's GPU process wait on it).
     if (smoke && (!smokeTarget || smokeTarget.width !== width || smokeTarget.height !== height)) { smokeTarget?.destroy(); smokeTarget = device.createTexture({ size: [width, height], format: canvasFormat, usage: GPUTextureUsage.RENDER_ATTACHMENT }) }
-    view.frame({ eye: [camera.eye[0], camera.eye[1], camera.eye[2]], viewProj: vp as Float32Array, width, height, time: state.t, dt, fovY: (camera.fov * Math.PI) / 180, torches, fp, place, casters: friends.casters(ownOrigin, view.forest.settings.torchReach) }, stepping, smokeTarget?.createView())
+    view.frame({ eye: [camera.eye[0], camera.eye[1], camera.eye[2]], viewProj: vp as Float32Array, width, height, time: state.t, dt, fovY: ((camera.fov + camera.mount.fov) * Math.PI) / 180, torches, fp, place, casters: friends.casters(ownOrigin, view.forest.settings.torchReach) }, stepping, smokeTarget?.createView())
     // Frame time alone decides: the renderer's GPU reading runs from before encoding to the queue finishing, so it
     // counts CPU work and queue waits and read over budget on GPUs that hold 60 fps at High.
     if (!smoke && playing && quality.recordFrame(frameMs)) { view.forest.setQuality(quality.getActiveTier()); menu.sync() }
@@ -380,7 +386,7 @@ async function main() {
   Object.assign(window, {
     woods: {
       get ready() { return true }, get frames() { return frames }, get paused() { return paused }, set paused(v: boolean) { paused = v },
-      renderer, camera, settings, panel, map, debug, audio, view, look: view.forest.settings, quality, friends,
+      renderer, camera, settings, panel, map, debug, audio, view, look: view.forest.settings, quality, friends, cameraLook,
       measure: (n?: number) => view.forest.measure(n), stats: () => view.forest.stats(),
       get state() { return session instanceof SoloSession ? session.state : session.view }, get world() { return world }, get session() { return session },
       /** Automation: room readout (your id, people and walkers seen, tapes, bytes in, KB/s, connection status). */
@@ -417,6 +423,8 @@ async function main() {
       },
     },
   })
+  // Automation and the Lab's camera station: the fixed night spot with your torch and two friends'.
+  if (params.get("lab") === "camera" && !smoke) stageCameraLab((window as unknown as { woods: Parameters<typeof stageCameraLab>[0] }).woods)
   requestAnimationFrame(loop)
 }
 

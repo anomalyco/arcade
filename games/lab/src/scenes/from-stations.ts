@@ -9,7 +9,7 @@ export const STATION_AREAS: readonly { id: string; title: string; stations: read
   { id: "world", title: "Look and world", stations: ["look-and-world", "effects"] },
   { id: "characters", title: "Characters and feel", stations: ["characters", "survivor-aim", "game-feel"] },
   { id: "outbreak", title: "Outbreak", stations: ["outbreak-look", "outbreak", "outbreak-vehicles", "first-night", "outbreak-hud", "outbreak-onboarding", "outbreak-progression", "outbreak-map", "outbreak-melee", "outbreak-impact", "outbreak-zombie-behaviour", "outbreak-interactions", "outbreak-breach", "outbreak-discovery", "outbreak-hordes", "outbreak-fire", "outbreak-weather", "outbreak-way-out", "outbreak-blood-lights", "outbreak-details", "outbreak-characters", "outbreak-vegetation", "outbreak-houses", "outbreak-secrets", "survivor-bots", "rugs-interiors", "styles"] },
-  { id: "games", title: "Other games", stations: ["blackout", "getaway", "carrier", "brawl", "archers"] },
+  { id: "games", title: "Other games", stations: ["blackout", "getaway", "carrier", "brawl", "archers", "woods-camera"] },
   { id: "assets", title: "Textures, props and sound", stations: ["rugs", "props", "audio"] },
   // Superseded by the Look and world and Effects labs; archived in every browser until Kit decides to delete them.
   { id: "archive", title: "Archive", archived: true, stations: ["looks", "lighting", "weather", "materials", "vegetation", "explosions", "smoke-fire"] },

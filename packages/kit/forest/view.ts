@@ -488,7 +488,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
   }
 }
 
-function beamProfileCpu(t: number, p: { inner: number; core: number; coreWidth: number; spill: number; spillWidth: number; rings: number }): number {
+export function beamProfileCpu(t: number, p: { inner: number; core: number; coreWidth: number; spill: number; spillWidth: number; rings: number }): number {
   const spillW = Math.max(p.spillWidth, 1)
   if (t >= spillW * 1.7) return 0
   const bell = (x: number) => 1 / (1 + x * x * (1 + 0.35 * x * x))
