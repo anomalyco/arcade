@@ -399,6 +399,22 @@ first build.
   - Kit asked for them: "it would make everything else look realistic, like that body cam game" (AR-125).
   - Pitfalls: the filter runs after tonemapping, so it can't recover clipped highlights; don't stack its exposure
     hunting on another exposure controller. VHS and CRT are period looks, not a realism upgrade (woods research).
+- **Lens and codec artifacts.** Eight switches around the camera filter, chained lens → filter → codec with
+  `FinalPassChain` on `Renderer.setFinalPass` (all off composites straight to the canvas): compression starvation
+  (macroblocks, banding and stale blocks while moving, a 1 s quality pump), autofocus hunting (waits, starts the wrong
+  way, overshoots, settles; focus breathing), sensor gain (luma/chroma noise and denoise smear that grow in the dark),
+  LED PWM banding (friends' torches through a rolling shutter), lens flare (ghosts plus a six-blade starburst from
+  torches pointed at the lens), lens dirt, condensation, infrared monochrome. Eyeshine (retroreflecting eyes in your
+  beam, from the shared distant-sound events) and an IR lamp at the lens are woods scene pieces.
+  - Where: `packages/kit/gpu/post/camera-artifacts.ts`, `final-chain.ts`; woods `src/camera-look.ts` (presets Eyes,
+    Body cam night, Camcorder NightShot, Phone night mode, VHS), `src/eyeshine.ts`, station `woods-camera`.
+  - Cost (`mini` Metal, 1600×900 High, paired against Eyes, whole frame ≈ 11.4 ms): compression +0.16, focus +0.21,
+    gain +0.27, PWM +0.13, flare +0.27, dirt +0.33, condensation +0.34, eyeshine +0.09 ms; looks: body cam +0.22,
+    NightShot +0.61, phone +0.61, VHS +0.48 ms.
+  - Kit: "What are some interesting rendering effects, like the bodycam etc., that could make this look cooler… to
+    make it feel realer?" Contact sheet: gallery `woods-2026-10-21/camera-lab/`.
+  - Pitfalls: flare needs sources projected from the torches, not a bright-pixel threshold, or every lit trunk ghosts;
+    the PWM band is subtle at a few hundred hertz, so its depth is a knob.
 - **Restrained walking camera.** Contacts come from actual displacement with critically damped presentation
   (`packages/kit/client/walk.ts`, `walk-camera.ts`). Night Shift, Lot. Woods research: 0.5–1.5 cm translation and
   0.1–0.35° roll tied to contacts, no idle sine.

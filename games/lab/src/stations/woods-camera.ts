@@ -39,7 +39,9 @@ export default defineStation({
   defaultVariant: ["eyes", "fx-look"],
   variants: variants.map((v) => ({ ...v, url: page })),
   metrics: [
-    { label: "GPU per effect (paired, whole frame)", value: "see the contact sheet", source: "~/code/home/artifacts/woods-2026-10-21/camera-lab/index.html" },
+    { label: "Effects, GPU each (mini, paired)", value: "+0.09–0.34 ms", source: "~/code/home/artifacts/woods-2026-10-21/camera-lab/index.html" },
+    { label: "Looks, GPU (mini, paired)", value: "+0.22–0.61 ms", source: "~/code/home/artifacts/woods-2026-10-21/camera-lab/index.html" },
+    { label: "Eyes vs no final pass", value: "42.5 dB PSNR (grain only)", source: "games/woods/scripts/camera-lab.ts" },
   ],
   paths: ["games/woods/src/camera-look.ts", "games/woods/src/eyeshine.ts", "packages/kit/gpu/post/camera-artifacts.ts", "packages/kit/gpu/post/final-chain.ts"],
   branches: ["woods-camera"],
