@@ -794,9 +794,30 @@ fn fogGlow(xz: vec2f) -> vec3f {
 
 /** The bank's vertical profile at height share h above its floor: full below, a soft shoulder up to 1 + spread. */
 fn fogBankProfile(h: f32, spread: f32) -> f32 { return 1.0 - smoothstep(0.0, 1.0 + spread, h); }
+/** Height integral of fogBankProfile(h, 0.3) from 0: closed form of 1 − smoothstep (full below the floor). */
+fn fogBankProfileInt(h: f32) -> f32 {
+  let w = 1.3;
+  if (h <= 0.0) { return h; }
+  if (h >= w) { return w * 0.5; }
+  let u = h / w;
+  return h - w * (u * u * u - 0.5 * u * u * u * u);
+}
+/**
+ * Noise-free bank optical depth from a to b, taking the floor, height and density the game gives (\`local\`) for the
+ * whole leg (the bank is stratified in height round its local floor): a ray that climbs out of it loses only what it
+ * crossed.
+ */
+fn fogBankDepth(a: vec3f, b: vec3f, local: vec3f) -> f32 {
+  let hs = FOG.bank.y * local.y;
+  let h0 = (a.y - local.x) / hs;
+  let h1 = (b.y - local.x) / hs;
+  let k = FOG.bank.x * 0.5 * (1.0 - FOG.bank2.x) * local.z * length(b - a);
+  if (abs(h1 - h0) < 1e-3) { return k * fogBankProfile(0.5 * (h0 + h1), 0.3); }
+  return k * (fogBankProfileInt(h1) - fogBankProfileInt(h0)) / (h1 - h0);
+}
 /** Noise-free bank extinction at p (the CPU's fogBankMeanSigma at the floor the game's \`bankLocal\` gives). */
-fn fogBankMeanSigma(p: vec3f) -> f32 {
-  let local = fogBankLocal(p);
+fn fogBankMeanSigma(p: vec3f) -> f32 { return fogBankMeanSigmaAt(p, fogBankLocal(p)); }
+fn fogBankMeanSigmaAt(p: vec3f, local: vec3f) -> f32 {
   let h = (p.y - local.x) / (FOG.bank.y * local.y);
   return FOG.bank.x * 0.5 * (1.0 - FOG.bank2.x) * local.z * fogBankProfile(h, 0.3);
 }
@@ -1054,8 +1075,7 @@ ${atmo ? `        if (bankLamp > 0.0) { let bp = ro + rd * (p0 + hp * tan(t)); t
     let ta = atan((a - s0) / h);
     let tb = atan((b - s0) / h);
     var sum = 0.0;
-${ext ? `    let sigEye = fogBankMeanSigma(ro) * ${mask("ro")};
-    let sigLamp = fogBankMeanSigma(L.a.xyz) * ${mask("L.a.xyz")};` : ""}
+
     for (var j = 0u; j < n; j++) {
       let t = mix(ta, tb, (jitter + f32(j)) / f32(n));
       let lx = rd * (s0 + h * tan(t)) - toL;
@@ -1078,10 +1098,11 @@ ${hooks.spotShadows ? `      if (L.d.y > 0.5 && cone > 1e-4) { cone *= spotShado
 ${atmo ? `      if (bankLamp > 0.0) {
         let st = s0 + h * tan(t);
         let bp = ro + rd * st;
-        let sig = fogBankMeanSigma(bp) * ${mask("bp")};
+        let local = fogBankLocal(bp);
+        let sig = fogBankMeanSigmaAt(bp, local) * ${mask("bp")};
         thick += bankLamp * sig / max(L.e.w, 1e-5);
-${ext ? `        // Out of the lamp to the sample, then on to the eye, through the bank (path mean of the end points' σ).
-        thick *= exp(-bankLamp * ((sig + sigLamp) * 0.5 * ld + (sig + sigEye) * 0.5 * st));` : ""}
+${ext ? `        // Out of the lamp to the sample, then on to the eye, through the bank (each leg's height integral).
+        thick *= exp(-bankLamp * (fogBankDepth(L.a.xyz, bp, local) + fogBankDepth(ro, bp, local)) * ${mask("bp")});` : ""}
       }` : ""}
       // Henyey–Greenstein with an isotropic share: a beam seen from behind its lamp is backscatter, which the share
       // sets (HG alone at g 0.75 sends 0.08 of the isotropic amount back; a 0.15 share nearly triples it).
