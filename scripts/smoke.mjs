@@ -98,11 +98,12 @@ try {
       return window.__arcadeHarness?.ready ? "local session ready" : false
     }
     const sel = {
-      blackout: ["#menu .notice", '#menu [data-act="practice"]'],
-      brawl: ["#menu .notice", '#menu [data-act="practice"]'],
+      // Games on the kit game shell are ready once `.arcade-shell` exists (hidden under automation, the game behind it).
+      blackout: ["#menu .notice", '#menu [data-act="practice"], .arcade-shell'],
+      brawl: ["#menu .notice", '#menu [data-act="practice"], .arcade-shell'],
       archers: ["#hud .notice", "#hud .strip .slot"],
-      getaway: ["#overlay .nogpu p", '#overlay [data-act="solo"]'],
-      carrier: ["#hud .notice", '.mn [data-act="quick"]'],
+      getaway: ["#overlay .nogpu p", '#overlay [data-act="solo"], .arcade-shell'],
+      carrier: ["#hud .notice", '.mn [data-act="quick"], .arcade-shell'],
       // Canvas 2D and Web Workers, no WebGPU: ready once the first generation has been scored.
       walkers: ["#toast", '#app[data-ready] #stats b'],
     }[game]
