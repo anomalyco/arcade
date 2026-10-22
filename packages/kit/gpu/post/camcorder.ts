@@ -535,23 +535,22 @@ fn rgb(c: vec3f) -> vec3f {
   // Luma: ~333 samples per line (3 MHz) with a touch of vertical softness.
   let lp = size.x / 333.0 * u.v0.x * k * edge / size.x;
   let ly = 0.35 / lines * k;
-  let s0 = yiq(S(uv + vec2f(-lp, -ly))).x;
-  let s1 = yiq(S(uv + vec2f(-0.5 * lp, ly))).x;
-  let s2 = yiq(S(uv)).x;
-  let s3 = yiq(S(uv + vec2f(0.5 * lp, ly))).x;
-  let s4 = yiq(S(uv + vec2f(lp, -ly))).x;
-  var y = (s0 + 4.0 * s1 + 6.0 * s2 + 4.0 * s3 + s4) / 16.0;
+  // Three bilinear taps: the outer two straddle texels, so the kernel is wider than its tap count.
+  let s0 = yiq(S(uv + vec2f(-0.7 * lp, -ly))).x;
+  let s2 = yiq(S(uv + vec2f(0.0, ly))).x;
+  let s4 = yiq(S(uv + vec2f(0.7 * lp, -ly))).x;
+  var y = (s0 + 2.0 * s2 + s4) * 0.25;
   // Chroma: ~40 samples per line (colour-under), arriving late so colour smears right of its edges.
   let cw = size.x / 40.0 * u.v0.y * k / size.x;
   var iq = vec2f(0.0);
   var yw = 0.0;
-  for (var i = 0; i < 6; i++) {
-    let s = yiq(S(uv + vec2f(((f32(i) + 0.5) / 6.0 - 0.5) * cw - cw * 0.35, 0.0)));
+  for (var i = 0; i < 4; i++) {
+    let s = yiq(S(uv + vec2f(((f32(i) + 0.5) / 4.0 - 0.5) * cw - cw * 0.35, 0.0)));
     iq += s.yz;
     yw += s.x;
   }
-  iq /= 6.0;
-  yw /= 6.0;
+  iq *= 0.25;
+  yw *= 0.25;
   // Camcorder aperture correction rings a halo beside edges; highlights smear sideways.
   y += (y - 0.5 * (s0 + s4)) * u.v2.w * k * 1.2;
   let bl = u.v2.x * k;
