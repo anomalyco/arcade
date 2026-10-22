@@ -1468,6 +1468,14 @@ kit renderer's `fxParticles` path; Today is one Lab setting away (Fire style, Wo
 - Ground dressing is `sim/debris` rules (Tidewater-style feature anchors + padded SDF keep-outs) with Ashwood's plant templates, procedural leaves/pebbles/paper and a CC0 can. Lane capsules matter: the gate apron's edge crosses the road, and without them weeds grew in the lamp pool.
 - Stills: `~/code/home/artifacts/lot-2026-10-20/forest-crops.jpg`, `forest-aiden-before-after.jpg`, `forest-far-masses.jpg`.
 
+### Woods: many torches in fog without wash-out (2026-10-22)
+
+- Kit: with everyone's lights on "the whole screen seems kind of washed out". Measured at one pose with 0/1/2/4 torches (`games/woods/scripts/capture.ts` shots `l0`–`l4`, a `woods.debug.dark` list hides chosen torches): one torch lifted the frame's 5th-percentile luma from 0.004 to 0.086 and left 0 % of pixels below 0.05; lens glare and bloom made no difference.
+- Causes, all in the fog volume (`packages/kit/gpu/fog-scatter.ts`): the global cone `leak` (1.5 % of peak, all round the lamp) added to a torch's beam profile radiated about as much flux as the beam; torches were also baked into the bank's isotropic glow map; the bank scaled beam in-scatter by up to 7× with no matching extinction. Fixes: profiled (`FogLamp.beam`) lamps take no leak, torches pass `uplight: 0` (as Outbreak's do), and the `bankExtinction` hook dims each beam sample by the bank's path-mean σ on the lamp and eye legs.
+- Auto exposure metered one raycast point of the local beam, so a level beam (hit 40 m) read as dark and opened +1.5 stops while four beams lit the fog. `LuminanceMeter` (`packages/kit/gpu/meter.ts`, `Renderer.setMeter`) reduces the scene-referred image after the fog to 64×36 block means and reads them back through a 3-buffer ring a few frames late; the forest keys on its centre-weighted mean × `meterGain` 3. Captures that step frames in a loop must yield (`setTimeout 0`) for `mapAsync` to land.
+- Your own beam is seen as backscatter. The fixed 15 % isotropic share in the lamp phase nearly triples HG(0.75)'s backscatter and drew Kit's "solid wedge"; it is now `FogSettings.phaseFloor` (default 0.15, forest 0.03).
+- Result at 1/2/4 torches: p5 0.020/0.016/0.024 (was 0.086/0.114/0.094), mean ≈ 0.10 (was 0.19–0.23), 31–46 % dark (was 0 %). Sheet: `~/code/home/artifacts/woods-2026-10-21/look/washout/index.html`.
+
 ## Researched, not yet adopted
 
 ### Blackout snapshot rate (2026-10-16)
