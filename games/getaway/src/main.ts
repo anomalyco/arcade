@@ -177,7 +177,8 @@ async function main() {
     controls.forward({ type: "mux-release" })
   }, scene, sound)
   debugPanel = debug
-  // Leaving play lets go of held keys, so the car idles behind the menu.
+  // Leaving play lets go of held keys, so the car idles behind the menu; keys only drive in play.
+  controls.active = () => gameShell.playing
   gameShell.flow.subscribe(() => {
     if (!gameShell.playing) controls.release()
   })
@@ -222,6 +223,7 @@ async function main() {
     ])
   })
   const chat = session.chat ? new Chat(document.getElementById("hud")!, controls, session) : null
+  if (chat) chat.active = () => gameShell.playing
   let snapped = false
   let freeze = 0
   let previousFuel = 1
