@@ -151,7 +151,8 @@ async function main() {
   }
 
   let acc = 0, last = performance.now(), time = 0, frames = 0, paused = false, prevLight = camera.flashlight
-  const debug = { beams: 0, kbps: 0 }
+  /** `dark`: player ids whose torches aren't drawn (captures that count lights; presentation only). */
+  const debug = { beams: 0, kbps: 0, dark: [] as number[] }
   let stepping = false, smokeTarget: GPUTexture | null = null
   /** Automation: walk towards a point (cleared on arrival). */
   let autopilot: { x: number; z: number } | null = null
@@ -282,7 +283,7 @@ async function main() {
     const place = view.lights(world, state.t, settings)
     // Every torch is a photometric beam: the forest renderer lights, shadows and scatters it (your own gets the
     // shadow map, the exposure and the bounce).
-    const torches: ForestTorch[] = beams.map((b) => ({ id: b.id, pos: b.origin, dir: b.axis, on: true, kind: b.id === OWN ? "local" : "remote", level: beamLevel(b.id === OWN ? p : state.players.find((x) => x.id === b.id)!, state.t, settings) }))
+    const torches: ForestTorch[] = beams.filter((b) => !debug.dark.includes(b.id === OWN ? meId : b.id)).map((b) => ({ id: b.id, pos: b.origin, dir: b.axis, on: true, kind: b.id === OWN ? "local" : "remote", level: beamLevel(b.id === OWN ? p : state.players.find((x) => x.id === b.id)!, state.t, settings) }))
     debug.beams = beams.length
     // The smoke draws offscreen and synchronously (a presented frame makes SwiftShader's GPU process wait on it).
     if (smoke && (!smokeTarget || smokeTarget.width !== width || smokeTarget.height !== height)) { smokeTarget?.destroy(); smokeTarget = device.createTexture({ size: [width, height], format: canvasFormat, usage: GPUTextureUsage.RENDER_ATTACHMENT }) }

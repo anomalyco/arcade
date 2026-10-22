@@ -931,6 +931,12 @@ export type FogScatterHooks = {
    * 1, 1.
    */
   bankLocal?: string
+  /**
+   * Beams lose light to the bank as well as scatter more in it (needs \`atmosphere\`): each sample is dimmed by the
+   * bank's mean extinction on the way from the lamp and on the way to the eye, so thick mist glows near a beam and goes
+   * dark away from it instead of turning the whole frame milky. Off by default (the bank only thickens beams).
+   */
+  bankExtinction?: boolean
 }
 
 /**
@@ -941,6 +947,8 @@ export function fogScatterVolume(hooks: FogScatterHooks = {}): VolumeLightShader
   const reflectionSamples = Math.max(1, Math.min(8, Math.round(hooks.reflectionSamples ?? 1)))
   const atmo = !!hooks.atmosphere
   const street = !!hooks.street
+  const ext = atmo && !!hooks.bankExtinction
+  const mask = (p: string) => (hooks.bankMask ? `fogBankMask(${p})` : "1.0")
   return {
     depth: true,
     history: true,
@@ -1042,6 +1050,8 @@ ${atmo ? `        if (bankLamp > 0.0) { let bp = ro + rd * (p0 + hp * tan(t)); t
     let ta = atan((a - s0) / h);
     let tb = atan((b - s0) / h);
     var sum = 0.0;
+${ext ? `    let sigEye = fogBankMeanSigma(ro) * ${mask("ro")};
+    let sigLamp = fogBankMeanSigma(L.a.xyz) * ${mask("L.a.xyz")};` : ""}
     for (var j = 0u; j < n; j++) {
       let t = mix(ta, tb, (jitter + f32(j)) / f32(n));
       let lx = rd * (s0 + h * tan(t)) - toL;
@@ -1049,9 +1059,10 @@ ${atmo ? `        if (bankLamp > 0.0) { let bp = ro + rd * (p0 + hp * tan(t)); t
       let ln = lx / ld;
       // The refractor leaks a little light sideways: that leak draws the small round halo round each head.
       var shape = fogLampCone(dot(ln, L.c.xyz), L.b.w, L.c.w);
-      // A torch takes the shared beam profile: its hot spot and reflector rings show in the air as on the ground.
-      if (L.d.z > 0.0) { shape = kitBeamProfile(kitBeamAngle(dot(ln, L.c.xyz)) / L.d.z, FOG.beamA, FOG.beamB); }
+      // A torch takes the shared beam profile: its hot spot and reflector rings show in the air as on the ground. The
+      // profile carries its own spill, and the body behind the reflector sends nothing back, so it takes no leak.
       var cone = shape * (1.0 - leak) + leak;
+      if (L.d.z > 0.0) { cone = kitBeamProfile(kitBeamAngle(dot(ln, L.c.xyz)) / L.d.z, FOG.beamA, FOG.beamB); }
 ${hooks.spotShadows ? `      if (L.d.y > 0.5 && cone > 1e-4) { cone *= spotShadowAir(u32(L.d.y - 0.5), ro + rd * (s0 + h * tan(t))); }` : ""}
       let r4 = ld / L.a.w;
       // Near field: within about its size a lamp's light hasn't spread to I/d² yet (a torch's beam leaves a 5 cm lens
@@ -1060,7 +1071,14 @@ ${hooks.spotShadows ? `      if (L.d.y > 0.5 && cone > 1e-4) { cone *= spotShado
       let cosT = -dot(ln, rd);
       let hg = (1.0 - g2) / pow(max(1.0 + g2 - 2.0 * g * cosT, 1e-4), 1.5);
       var thick = 1.0;
-${atmo ? `      if (bankLamp > 0.0) { let bp = ro + rd * (s0 + h * tan(t)); thick += bankLamp * fogBankMeanSigma(bp) * ${hooks.bankMask ? "fogBankMask(bp)" : "1.0"} / max(L.e.w, 1e-5); }` : ""}
+${atmo ? `      if (bankLamp > 0.0) {
+        let st = s0 + h * tan(t);
+        let bp = ro + rd * st;
+        let sig = fogBankMeanSigma(bp) * ${mask("bp")};
+        thick += bankLamp * sig / max(L.e.w, 1e-5);
+${ext ? `        // Out of the lamp to the sample, then on to the eye, through the bank (path mean of the end points' σ).
+        thick *= exp(-bankLamp * ((sig + sigLamp) * 0.5 * ld + (sig + sigEye) * 0.5 * st));` : ""}
+      }` : ""}
       sum += cone * win * mix(1.0, hg, 0.85) * thick;
     }
     acc += L.b.rgb * sum * (tb - ta) / (h * f32(n) * 12.566371);
@@ -1095,8 +1113,9 @@ ${atmo ? `  if (FOG.cloud.w > 0.0 && rd.y > 0.01) {
   }
   if (FOG.bank.w > 0.5) {
     let bank = fogBank(eye, rd, dist, fogIgn(px + vec2f(13.0, 71.0) + V.eye.w * 5.588238));
-    // Beams start both in front of and behind the bank: they keep the square root of its transmittance.
-    acc = acc * sqrt(bank.a) + bank.rgb;
+    // Beams start both in front of and behind the bank: they keep the square root of its transmittance (unless the
+    // march already took the bank's extinction per sample).
+    acc = acc * ${ext ? "1.0" : "sqrt(bank.a)"} + bank.rgb;
     trans *= bank.a;
   }
 ` : ""}

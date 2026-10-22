@@ -179,6 +179,22 @@ const shots: Record<string, (page: Page) => Promise<void>> = {
       for (const o of woods.state.brains.slice(1)) { const q = woods.state.players[o.id]!; q.x = x + 40; q.z = z + 40; o.mode = "wait"; o.timer = 99 }
     })
   },
+  // The wash-out probe: one pose, the group walking together a few metres ahead and aiming forward, with 0, 1, 2 or 4
+  // torches drawn (yours first, then friends nearest first).
+  ...Object.fromEntries([0, 1, 2, 4].map((n) => [`l${n}`, async (page: Page) => {
+    await page.evaluate((n) => {
+      const c = woods.world.camp, x = c.x + 10, z = c.z - 70
+      woods.setPose(x, z, 0, -0.05)
+      const fr = woods.state.players.slice(1)
+      ;[[-3, -5, 0.15], [4, -7, -0.2], [-7, -11, 0.3]].forEach(([dx, dz, yaw], i) => {
+        const p = fr[i], b = woods.state.brains[i]
+        if (!p || !b) return
+        p.x = x + dx!; p.z = z + dz!; b.mode = "wait"; b.timer = 99; b.heading = yaw!
+      })
+      const order = [woods.state.players[0]!.id, ...fr.map((p) => p.id)]
+      ;(woods as unknown as { debug: { dark: number[] } }).debug.dark = order.slice(n === 4 ? 4 : n)
+    }, n)
+  }])),
   // The map raised next to the camp, flashlight on it.
   map: async (page) => { await page.evaluate(() => { const s = woods.world.camp.spawn; woods.setPose(s.x, s.z - 40, 0.4, -0.1); woods.hold("KeyG", true) }) },
 }
@@ -194,11 +210,15 @@ await page.evaluate(({ sets, looks, debugs }) => { document.getElementById("star
 const timing: Record<string, number> = {}
 for (const [name, setup] of Object.entries(shots)) {
   if (only && !only.split(",").includes(name)) continue
-  await page.evaluate(() => { woods.hold("KeyG", false); woods.camera.flashlight = true })
+  await page.evaluate(() => { woods.hold("KeyG", false); woods.camera.flashlight = true; (woods as unknown as { debug: { dark: number[] } }).debug.dark = [] })
   await setup(page)
   const t0 = Date.now()
   // Settle the walk, TAA and fog history at 60 fps.
-  await page.evaluate((name) => { for (let i = 0; i < (name === "ridge" ? 0 : 90); i++) woods.step(1000 / 60) }, name)
+  // Yield every few steps so async GPU readbacks (the exposure meter) land as they would between real frames.
+  await page.evaluate(async (name) => {
+    const n = name === "ridge" ? 0 : /^l\d$/.test(name) ? 300 : 90
+    for (let i = 0; i < n; i++) { woods.step(1000 / 60); if (i % 5 === 4) await new Promise((r) => setTimeout(r, 0)) }
+  }, name)
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
   timing[name] = Date.now() - t0
   console.log(name, JSON.stringify(await page.evaluate(() => ({ debug: (woods as unknown as { debug: unknown }).debug, players: woods.state.players.map((p) => [p.id, Math.round(p.x), Math.round(p.z), +p.pitch.toFixed(2), p.light]) }))))

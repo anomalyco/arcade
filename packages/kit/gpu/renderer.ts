@@ -51,6 +51,7 @@ import { SmokeRenderer } from "@arcade/kit/vehicle/smoke-renderer"
 import type { SmokeTrail } from "@arcade/kit/vehicle/smoke-trail"
 import { SURFACE_TEX_UNIFORM_FLOATS, packSurfaceTexUniforms, type SurfaceTexUniformInput } from "./surface-materials"
 import { createFallbackMaterialTextureArray, createMaterialSampler, loadMaterialTextureArray } from "../textures/loader"
+import { LuminanceMeter, type SceneMeter } from "./meter"
 import { boxIntersectsRect2D, drawContiguousChunks, drawContiguousChunksByMode } from "./cull"
 import {
   PassList,
@@ -394,6 +395,8 @@ export class Renderer {
   private temporalSettings: TemporalSettings | null = null
   private temporal: TemporalResolve | null = null
   private bloomSource: GPUTexture | null = null
+  private bloomSourceView: GPUTextureView | null = null
+  private meterPass: LuminanceMeter | null = null
   private spriteModule!: GPUShaderModule
   private reactivePipe: GPURenderPipeline | null = null
   private reactiveInstPipe: GPURenderPipeline | null = null
@@ -1101,6 +1104,17 @@ export class Renderer {
    * Opt-in temporal anti-aliasing (`"taa"`) or upscaling (`"taau"`); `null` or `"msaa"` is today's MSAA-only path.
    * Cheap to call every frame: only a change of mode or render scale reallocates.
    */
+  /** Meter the scene-referred image (after the fog, before exposure) each frame, for a host's auto exposure. */
+  setMeter(on: boolean): void {
+    if (on) this.meterPass ??= new LuminanceMeter(this.device)
+    else { this.meterPass?.destroy(); this.meterPass = null }
+  }
+
+  /** The meter's latest reading (a few frames old), or null while it is off or warming up. */
+  get sceneMeter(): SceneMeter | null {
+    return this.meterPass?.last ?? null
+  }
+
   setTemporal(settings: TemporalSettings | null): void {
     const next = temporalEnabled(settings) ? { ...settings } : null
     const prev = this.temporalSettings
@@ -1133,6 +1147,7 @@ export class Renderer {
 
   /** Points bloom and the composite at the image they should read: the temporal output or the resolved scene. */
   private syncBloomSource(src: GPUTexture, view: GPUTextureView): void {
+    this.bloomSourceView = view
     if (this.bloomSource === src) return
     this.bloomSource = src
     this.bloomPyramid.resize({ hdr: src, hdrView: view, layout: this.postLayout, sampler: this.sampler, gradeBuffer: this.gradeBuf })
@@ -1896,6 +1911,7 @@ export class Renderer {
       if (this.volumes.length) this.drawVolumes(enc, f, this.unjittered, [f.frame[16]!, f.frame[17]!, f.frame[18]!], taa.outputView, this.width, this.height)
       this.drawFogBlur(enc, f, this.unjittered, taa.outputView, this.width, this.height)
     }
+    if (this.meterPass && this.bloomSourceView) this.meterPass.encode(enc, this.bloomSourceView)
     this.bloomPyramid.encode(enc, this.pipes.down!, this.pipes.up!, activeDown0, this.bloomLevels)
     const finalPass = this.finalPass?.active ? this.finalPass : null
     const dest = this.timing ? this.measureView : (targetView ?? this.context.getCurrentTexture().createView())
@@ -1920,6 +1936,7 @@ export class Renderer {
     if (finalPass) finalPass.encode(enc, dest, taa ? this.unjittered : f.frame)
     if(this.timing) this.timer!.finish(enc,dest)
     d.queue.submit([enc.finish()])
+    this.meterPass?.afterSubmit()
     this.submittedFrames++
   }
 

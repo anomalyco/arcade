@@ -82,6 +82,8 @@ export type ForestLookSettings = {
   // Camera
   exposure: number
   autoExposure: boolean
+  /** How strongly the metered frame (centre-weighted mean luminance) drives the exposure: higher stops down more. */
+  meterGain: number
   /** Seconds to settle when the scene gets brighter (the eye stopping down) and darker (opening up). */
   adaptDarken: number
   adaptBrighten: number
@@ -109,7 +111,7 @@ export const FOREST_LOOK_DEFAULTS: Readonly<ForestLookSettings> = {
   wind: 1, gust: 0.6, trunkSway: 1, branchSway: 1, flutter: 1,
   fernDensity: 1, litter: 1, moss: 1,
   windows: 1, stringLights: 1, water: 1,
-  exposure: 1.6, autoExposure: true, adaptDarken: 0.35, adaptBrighten: 1.8, adaptRange: 1.5,
+  exposure: 1.6, autoExposure: true, meterGain: 3, adaptDarken: 0.35, adaptBrighten: 1.8, adaptRange: 1.5,
   noise: 1, chromaNoise: 0.35, vignette: 0.35, aberration: 0.6, bloom: 0.22, halation: 0.12, glare: 0.5,
 }
 
@@ -189,6 +191,7 @@ export function forestLookControls(prefix = "woods."): LabControl[] {
     range("water", "Lake reflections", K, 0, 2, 0.05, "×"),
     range("exposure", "Exposure", C, 0.2, 6, 0.05, "×"),
     toggle("autoExposure", "Auto exposure", C),
+    range("meterGain", "Meter gain", C, 0.1, 10, 0.05, "×", "Auto exposure"),
     range("adaptDarken", "Stop down in", C, 0.05, 2, 0.05, "s", "Auto exposure"),
     range("adaptBrighten", "Open up in", C, 0.2, 5, 0.1, "s", "Auto exposure"),
     range("adaptRange", "Range", C, 0, 3, 0.1, "stops", "Auto exposure"),

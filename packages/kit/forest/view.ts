@@ -103,7 +103,7 @@ const TAU = Math.PI * 2
 
 /** The forest's fog volume: mist pools in the hollows (the bank sits at absolute heights) and thickens over the lake. */
 export const forestFogVolume = (smoke: boolean) => fogScatterVolume({
-  declarations: woodsUniformWgsl + (smoke ? "" : woodsBankWgsl), atmosphere: !smoke, bankLocal: "woodsBankLocal(p)",
+  declarations: woodsUniformWgsl + (smoke ? "" : woodsBankWgsl), atmosphere: !smoke, bankLocal: "woodsBankLocal(p)", bankExtinction: true,
   // Only glossy ground mirrors the lamps (water, wet boards, shore mud); dry litter and the camp's dirt do not.
   cutoff: "0.4", spotShadows: !smoke, surface: !smoke, reflectionSamples: 2, reflectionCap: "3.0",
   bankMask: "1.0 + 0.6 * (1.0 - smoothstep(0.85, 1.5, length((p.xz - N.lake.xy) / N.lake.zw)))",
@@ -139,6 +139,8 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     volume: smoke ? [fogVolume] : [ssrVolume(), fogVolume],
   })
   renderer.setTemporal({ ...TEMPORAL_DEFAULTS, mode: "taa", sharpen: 0.15 })
+  // Auto exposure meters the frame as drawn (every beam, the fog they light, friends' lenses), not a guess at it.
+  if (!smoke) renderer.setMeter(true)
   renderer.setLevel({ chunks: [], glass: [], ...flatLighting(0, 0, [0, 0, 0]) })
   renderer.setBloomLevels(quality.bloomLevels)
 
@@ -233,10 +235,12 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
       for (let i = 0; i < 3; i++) bounce.color[i] = bounce.color[i]! + (hit.albedo[i]! / Math.max(hit.albedoLum, 1e-3) * torchColor[i]! - bounce.color[i]!) * k
     } else bounce.power *= Math.exp(-f.dt * 10)
 
-    // ---- Auto exposure: the lit spot's luminance times how much of the frame it covers, plus the night.
+    // ---- Auto exposure: the centre-weighted mean luminance of the frame as drawn (the meter, a few frames late),
+    // or until it reads, the lit spot's luminance times how much of the frame it covers, plus the night.
     const coverage = Math.min(1, (Math.tan(halfAngle * 1.3) / Math.tan(f.fovY / 2)) ** 2)
     const spot = local ? (s.torchPower * 5 * 0.2) / (Math.PI * Math.max(cam.hit, 0.4) ** 2) * coverage : 0
-    const key = spot + 0.004 * s.sky + 0.0005
+    const metered = renderer.sceneMeter
+    const key = metered ? metered.centre * s.meterGain : spot + 0.004 * s.sky + 0.0005
     const targetStops = s.autoExposure ? Math.max(-s.adaptRange, Math.min(s.adaptRange, -Math.log2(key / 0.09) * 0.55)) : 0
     const tau = targetStops < cam.stops ? s.adaptDarken : s.adaptBrighten
     cam.stops += (targetStops - cam.stops) * (1 - Math.exp(-f.dt / Math.max(tau, 0.01)))
@@ -287,7 +291,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     for (const t of f.torches) {
       if (!t.on) continue
       const id = lights.indexOf(1000 + t.id)
-      fogLamps.push({ id: 1000 + t.id, x: t.pos[0], y: t.pos[1], z: t.pos[2], range: s.torchReach, color: torchColor, intensity: s.torchPower * 5 * (t.level ?? 1), axis: t.dir, cosOuter: Math.cos(halfAngle * 1.6), cosInner: Math.cos(halfAngle * 0.5), size: t === local ? s.beamNear * 2 : 0.8, beam: halfAngle, ...(t === local && s.shafts && spots.settings.count > 0 && id >= 0 ? { shadow: id } : {}) })
+      fogLamps.push({ id: 1000 + t.id, x: t.pos[0], y: t.pos[1], z: t.pos[2], range: s.torchReach, color: torchColor, intensity: s.torchPower * 5 * (t.level ?? 1), axis: t.dir, cosOuter: Math.cos(halfAngle * 1.6), cosInner: Math.cos(halfAngle * 0.5), size: t === local ? s.beamNear * 2 : 0.8, beam: halfAngle, uplight: 0, ...(t === local && s.shafts && spots.settings.count > 0 && id >= 0 ? { shadow: id } : {}) })
     }
     for (const [i, l] of build.campLights.entries()) {
       const k = l.kind === "bulb" ? s.stringLights : s.windows
@@ -409,7 +413,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
       samples.sort((a, b) => a - b)
       return { median: samples[Math.floor(samples.length / 2)]!, samples }
     },
-    stats: () => ({ ...build.stats, ...pass.stats, loadMs: Math.round(loadMs), buildMs: Math.round(buildMs), shadowLayers: spots.rendered, lights: lights.lightCount, exposure: +cam.exposure.toFixed(3), hit: +cam.hit.toFixed(2), tier: quality.tier, frames: lastInput ? 1 : 0 }),
+    stats: () => ({ ...build.stats, ...pass.stats, loadMs: Math.round(loadMs), buildMs: Math.round(buildMs), shadowLayers: spots.rendered, lights: lights.lightCount, exposure: +cam.exposure.toFixed(3), meter: +(renderer.sceneMeter?.centre ?? -1).toPrecision(3), hit: +cam.hit.toFixed(2), tier: quality.tier, frames: lastInput ? 1 : 0 }),
     camera: cam,
     get debug() { return debug },
   }
