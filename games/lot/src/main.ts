@@ -155,12 +155,12 @@ async function main() {
   renderer.addPass("alpha",{draw:p=>(glass.mode==="thin"?entranceGlass:entranceToday).draw(p)})
   renderer.addPass("alpha",new TexturedMeshPass(renderer.passContext,interior.primitives.filter(p=>p.blend && p.roughness>=0.1),texturedHooks))
   const walking=walkDefaults()
-  const playing=()=>!panel.visible&&!document.hidden&&document.hasFocus()&&document.pointerLockElement===canvas
-  const camera = new WalkCamera(canvas, () => panel.visible, walking, ()=>playing()&&walking.walkMode!=="today")
+  const playing=()=>!panel.holdsInput&&!document.hidden&&document.hasFocus()&&document.pointerLockElement===canvas
+  const camera = new WalkCamera(canvas, () => panel.holdsInput, walking, ()=>playing()&&walking.walkMode!=="today")
   camera.body.x = START.x; camera.body.y = START.z; camera.yaw = START.yaw; camera.pitch = START.pitch
   camera.height=START.height; camera.near=0.15; camera.far=1200
-  const panel = new LabPanel(settings, controls(settings), new URLSearchParams(location.search), () => camera.release(), { open: false, pill: false, groupActions: false })
-  const comparison=compareCamera(camera,()=>panel.visible)
+  const panel = new LabPanel(settings, controls(settings), new URLSearchParams(location.search), () => camera.release(), { open: false, pill: false, groupActions: false, capture: "focus", openGroups: ["Walking"] })
+  const comparison=compareCamera(camera,()=>panel.holdsInput)
   // Weather is its own chunk, loaded the first time it is turned on (or a strike is asked for): Today and the smoke
   // never fetch, compile or draw any of it.
   const weather=lotWeatherDefaults(query)
@@ -179,7 +179,7 @@ async function main() {
   panel.addControls(weather,lotWeatherControls(weather,()=>void strike().catch(()=>{})),lotWeatherDefaults())
   panel.addControls(walking,walkControls)
   const audio=new LotAudio(world.scene.lamps)
-  bindLotAudio(canvas,audio,walking,()=>panel.visible)
+  bindLotAudio(canvas,audio,walking,()=>panel.holdsInput)
   let audioFrame:WalkAudioFrame|null=null
   panel.addControls(street,streetLampControls("Lamps","lamps."))
   panel.addControls(forestSettings,forestControls(forestSettings))
