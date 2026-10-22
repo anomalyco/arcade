@@ -19,6 +19,8 @@ export type ReflectionTrims = {
   mirrorDetail: number
   /** Foxing, worn silvering at the edges and grime on the glass (0 new glass). */
   mirrorAge: number
+  /** × LEAN glint anti-aliasing: images smaller than a pixel, and rings it can't resolve, widen into a sheen (0 Today). */
+  glintAA: number
 }
 
 export const DEFAULT_REFLECTION_TRIMS: ReflectionTrims = {
@@ -29,6 +31,7 @@ export const DEFAULT_REFLECTION_TRIMS: ReflectionTrims = {
   mirrors: 2,
   mirrorDetail: 2,
   mirrorAge: 1,
+  glintAA: 1,
 }
 
 /** Today: the look before reflections. */
@@ -64,13 +67,14 @@ export const reflectionControls: LabControl[] = [
     ],
   },
   { key: "mirrorAge", label: "Mirror age (foxing, worn silver)", group: GROUP, min: 0, max: 1.5, step: 0.05, unit: "" },
+  { key: "glintAA", label: "Glint anti-aliasing (LEAN, 0 Today)", group: GROUP, min: 0, max: 2, step: 0.1, unit: "×" },
 ]
 
 /** Floats packed by `packReflectionUniforms`: `refl` then `mirror` (two vec4f). */
 export const REFLECTION_UNIFORM_FLOATS = 8
 
 /**
- * refl: wet strength (0 off), pothole puddles on, Lab wetness, rain ripple; mirror: detail, age, on, reserved.
+ * refl: wet strength (0 off), pothole puddles on, Lab wetness, rain ripple; mirror: detail, age, on, glint AA.
  * `ripple` is the weather's raindrop ripple intensity (0 when dry).
  */
 export function packReflectionUniforms(t: Partial<ReflectionTrims> | undefined, ripple: number, out: Float32Array, offset: number): void {
@@ -83,7 +87,7 @@ export function packReflectionUniforms(t: Partial<ReflectionTrims> | undefined, 
   out[offset + 4] = Math.round(t?.mirrorDetail ?? d.mirrorDetail)
   out[offset + 5] = Math.max(0, t?.mirrorAge ?? d.mirrorAge)
   out[offset + 6] = on && (t?.mirrors ?? d.mirrors) > 0 ? 1 : 0
-  out[offset + 7] = 0
+  out[offset + 7] = Math.max(0, t?.glintAA ?? d.glintAA)
 }
 
 /** Whether mirrors are drawn this frame, and which: 0 none, 1 the start house's, 2 every house's. */

@@ -196,6 +196,12 @@ export interface OutbreakFrameBeamState {
   readonly sightAwareness: number
 }
 
+/** One frame of a lamp's reach fade toward `inReach` (0 or 1) by `step`; `was` undefined (new, or a jump) snaps. */
+export function stepLampReach(was: number | undefined, inReach: number, step: number): number {
+  if (was === undefined) return inReach
+  return inReach > was ? Math.min(inReach, was + step) : Math.max(inReach, was - step)
+}
+
 /**
  * Owns Outbreak's per-frame light slot packing (sight light, player/co-op flashlights and vehicle headlights,
  * muzzle flash, street/room lamps with frustum + roof-cutout culling, wall sconces, table lamps), custom lighting
@@ -225,6 +231,10 @@ export class OutbreakFrameLighting {
   private readonly flashlightBounce: [number, number] = [0, 0]
   private readonly flashlightOrigin: [number, number] = [0, 0]
   private readonly invViewProj = new Float32Array(16)
+  /** Each lamp's fade (0..1) across its reach from the survivor, so walking past one never pops its pool on or off. */
+  private readonly lampReach = new WeakMap<Lamp, number>()
+  private reachX = Number.NaN
+  private reachY = Number.NaN
   private lastSightX = -1e3
   private lastSightY = -1e3
   private fieldWindowX = 0
@@ -426,6 +436,8 @@ export class OutbreakFrameLighting {
     readonly interiors: InteriorPresenter
     readonly count: number
     readonly shadowLightCount: number
+    /** Frame time (s), for the lamps' reach fade. */
+    readonly dt?: number
     /** Adjusts a resolved map lamp before it is packed (Night lights' dying street lamps). */
     readonly lampTrim?: (lamp: Lamp, resolved: ResolvedLamp) => void
     /** Packs extra map-range lights after the table lamps (Night lights); returns the new count. */
@@ -469,17 +481,27 @@ export class OutbreakFrameLighting {
     let unshadowedCount = 0
     const maxUnshadowed = qProfile.maxUnshadowedLamps
     const lensLamps = streetLensOn(settings.streetLamps)
+    // A jump (a new town, a teleport, the first frame) snaps every lamp to where it belongs.
+    const jumped = !(Math.hypot(camX - this.reachX, camY - this.reachY) < 4)
+    this.reachX = camX
+    this.reachY = camY
+    const fadeS = settings.view.lampReachFade
+    const fadeStep = fadeS > 0 ? (input.dt ?? 0) / fadeS : 1
     for (let i = 0; i < town.lamps.length; i++) {
       const lamp = town.lamps[i]!
       const resolved = resolveLampLight(lamp, town.buildings, day.lamps, settings.lighting, inInteriorView, this.scratchResolvedLamp, settings.look.litWindows)
       input.lampTrim?.(lamp, resolved)
       this.lampPower[i] = resolved.fixtureBrightness
-      if (resolved.power <= 0.001) continue
-      // Culled by where Today's pool is, so the lens lamps keep Today's set of lamps.
+      // Culled by where Today's pool is, so the lens lamps keep Today's set of lamps. The fade steps even while the lamp
+      // is dark (a dying sodium lamp's dropout), so it comes back where it should be.
       const dCam = Math.hypot(resolved.lx - camX, resolved.ly - camY)
+      const inReach = dCam <= (lamp.kind === "street" ? 15.5 : 16.5) ? 1 : 0
+      const reach = stepLampReach(jumped ? undefined : this.lampReach.get(lamp), inReach, fadeStep)
+      this.lampReach.set(lamp, reach)
+      if (resolved.power <= 0.001 || reach <= 0) continue
       if (lensLamps && lamp.kind === "street") applyStreetLens(lamp, resolved, settings.streetLamps, settings.lighting.lightFalloff)
-      const { lx, lh, ly, r, rEff, color, power, cone, softness, castShadows } = resolved
-      if (dCam > (lamp.kind === "street" ? 15.5 : 16.5)) continue
+      const { lx, lh, ly, r, rEff, color, cone, softness, castShadows } = resolved
+      const power = resolved.power * reach * reach * (3 - 2 * reach)
       if (inInteriorView && (!castShadows || lamp.kind === "street")) continue
       if (lx + rEff < vx0 || lx - rEff > vx1 || ly + rEff < vy0 || ly - rEff > vy1 || !inLightFrustum(lx, ly, rEff)) continue
       if (lamp.kind === "room") {

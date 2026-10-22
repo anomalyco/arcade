@@ -221,6 +221,21 @@ proven animation techniques to animation.md, not here.
   around a projected world ROI) on the gate walk: stairwell pops 7.86 → 0 per frame, frames with a pop 33 → 0 of 179;
   near 0.5 alone only halves it (2.56, 13 frames), TAA off makes it worse, rooms off doesn't change it. Scan for coplanar
   emitters by brute force over the baked triangles (glow vs parallel non-glow within 20 cm), not by eye.
+- **A lamp's pool must fade across its cull distance, not cut (Outbreak, AR-123, 2026-10-21).** Outbreak packs a map
+  lamp only while it is within 15.5 m (street) or 16.5 m of the camera target, so walking down a street a whole pool at
+  the screen edge switched on or off in one frame (block flashes up to 25 luminance). `lampReachFade` (Lab ›
+  Anti-aliasing › Motion stability, 0.5 s, 0 = Today; `stepLampReach` in `scene/frame-lighting.ts`) eases each lamp's
+  power over that time instead; a camera jump of 4 m or more snaps. `games/outbreak/scripts/motion.ts` (the lot's
+  reprojected pops metric on Outbreak's camera, 1536×960, 120 frames, soft shadows and bounce on): street walk with the
+  flashlight 1603 → 937 pops/frame, rain walk 2535 → 2087, block flash max 25 → 12 and 23 → 8; lamp pans, wet pan and
+  indoor unchanged (~98, ~98, ~1300; still floors 32–90). The scene at rest is unchanged (PSNR 52–57 dB, JPEG noise).
+  LEAN on the puddle glints (`outbreakWetGlints`: the pixel's plan footprint covariance plus the ripple rings' variance
+  added to each Gaussian glint image, energy kept; Look · Reflections › Glint anti-aliasing, 0 = Today) only engages
+  when an image nears a pixel: rain walk at the farthest camera 592 → 557 pops/frame (flash frames 20 → 13), and
+  nothing measurable at the default distance, where an image spans many pixels. Exclude what flashes by design before
+  attributing: police light bars just off screen and dying sodium lamps scored 10–40k pops on one frame in three
+  (the script turns the night practicals off); what remains is the hand-held beam and the walking survivor (real light
+  and real motion), drip and ripple rings, and rain.
 - **Temporal upscaling buys Outbreak's 2× Retina frame back; keep MSAA in the smaller scene pass and add volumetrics
   after the resolve.** `@arcade/kit/gpu/temporal` (AR-72, after three.js r186 `TAAUNode` + FSR1 RCAS; rules for passes in
   [rendering-techniques.md](rendering-techniques.md#entries--post--grade)). Outbreak Lab › Anti-aliasing: MSAA (today) /

@@ -572,6 +572,7 @@ export class OutbreakFrameRenderer {
       interiors: this.interiors,
       count,
       shadowLightCount,
+      dt,
       lampTrim: (lamp, resolved) => this.nightLights.trimLamp(town, settings.nightLights, lamp, resolved, time),
       extraLights: (lights, n, max, lampPower) =>
         outbreakClientFeatures.frameLights(
