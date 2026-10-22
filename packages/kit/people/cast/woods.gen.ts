@@ -3,10 +3,10 @@ import type { CastMember } from "../view"
 
 /** The cast in the woods look. */
 export const CAST: readonly CastMember[] = [
-  { id: "a-woods", url: new URL("../assets/a-woods.glb", import.meta.url).href, person: "a", look: "woods", outfit: "hiker" },
-  { id: "b-woods", url: new URL("../assets/b-woods.glb", import.meta.url).href, person: "b", look: "woods", outfit: "hiker" },
-  { id: "c-woods", url: new URL("../assets/c-woods.glb", import.meta.url).href, person: "c", look: "woods", outfit: "hiker" },
+  { id: "a-woods", url: new URL("../assets/a-woods.glb", import.meta.url).href, person: "a", look: "woods", outfit: "shell" },
+  { id: "b-woods", url: new URL("../assets/b-woods.glb", import.meta.url).href, person: "b", look: "woods", outfit: "shell" },
+  { id: "c-woods", url: new URL("../assets/c-woods.glb", import.meta.url).href, person: "c", look: "woods", outfit: "vest" },
   { id: "d-woods", url: new URL("../assets/d-woods.glb", import.meta.url).href, person: "d", look: "woods", outfit: "fleece" },
-  { id: "e-woods", url: new URL("../assets/e-woods.glb", import.meta.url).href, person: "e", look: "woods", outfit: "hiker" },
-  { id: "f-woods", url: new URL("../assets/f-woods.glb", import.meta.url).href, person: "f", look: "woods", outfit: "hiker" },
+  { id: "e-woods", url: new URL("../assets/e-woods.glb", import.meta.url).href, person: "e", look: "woods", outfit: "hoodie" },
+  { id: "f-woods", url: new URL("../assets/f-woods.glb", import.meta.url).href, person: "f", look: "woods", outfit: "puffer" },
 ]

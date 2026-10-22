@@ -1,16 +1,103 @@
 {
-  "lod1": { "body": 0.2, "default": 0.3, "hair": 0.4, "eyes": 1.0, "beanie": 0.5, "backpack": 0.5, "straps": 0.6, "headlamp": 0.6 },
+  "lod1": { "body": 0.2, "default": 0.3, "hair": 0.4, "eyes": 1.0, "beanie": 0.5, "backpack": 0.5, "straps": 0.6, "headlamp": 0.6, "hood": 0.5 },
   "outfits": {
-    "hiker": {
-      "note": "Rain jacket over a shirt, dark trail trousers, leather boots.",
+    "shell": {
+      "note": "Hooded rain shell (hood down): plain matte nylon, welded seams, no pockets; shirt; trail trousers; boots.",
+      "hood": { "on": "jacket", "length": 0.2, "bunch": 0.035 },
       "clothes": [
         {
           "asset": "clothes/male_casualsuit05",
           "normalSize": 512,
+          "normalStrength": 0.55,
           "parts": [
+            {
+              "name": "pockets",
+              "rule": "((u>0.17)&(u<0.26)&(v>0.83)&(v<0.9)) | ((u>0.41)&(u<0.51)&(v>0.72)&(v<0.88)) | ((u>0.83)&(u<0.93)&(v>0.76)&(v<0.87)) | ((u>0.245)&(u<0.3)&(v>0.45)&(v<0.66)) | ((u>0.81)&(u<0.9)&(v>0.37)&(v<0.44))",
+              "drop": true
+            },
             { "name": "trousers", "rule": "b > r * 1.1", "albedo": [0.075, 0.08, 0.07], "kind": "cloth", "rough": 0.9 },
             { "name": "shirt", "rule": "r > g * 1.15", "albedo": [0.2, 0.21, 0.22], "kind": "cloth", "rough": 0.95 },
-            { "name": "jacket", "rule": "True", "albedo": [0.62, 0.46, 0.05], "kind": "nylon", "rough": 0.42 }
+            {
+              "name": "jacket",
+              "rule": "True",
+              "albedo": [0.44, 0.3, 0.025],
+              "kind": "cloth",
+              "rough": 0.66,
+              "contrast": 0.25,
+              "fillHoles": { "maxPerimeter": 0.9, "uv": [0.12, 0.6125] },
+              "patterns": [{ "type": "seams", "width": 0.0035, "dark": 0.8, "tape": 1.08 }]
+            }
+          ]
+        },
+        { "asset": "clothes/shoes03", "size": 512, "parts": [{ "name": "boots", "albedo": [0.15, 0.09, 0.05], "kind": "cloth", "rough": 0.6 }] }
+      ]
+    },
+    "puffer": {
+      "note": "Puffer jacket: quilted baffles, lofted; shirt; trail trousers; boots.",
+      "clothes": [
+        {
+          "asset": "clothes/male_casualsuit05",
+          "normalSize": 512,
+          "normalStrength": 0.35,
+          "parts": [
+            {
+              "name": "pockets",
+              "rule": "((u>0.17)&(u<0.26)&(v>0.83)&(v<0.9)) | ((u>0.41)&(u<0.51)&(v>0.72)&(v<0.88)) | ((u>0.83)&(u<0.93)&(v>0.76)&(v<0.87)) | ((u>0.245)&(u<0.3)&(v>0.45)&(v<0.66)) | ((u>0.81)&(u<0.9)&(v>0.37)&(v<0.44))",
+              "drop": true
+            },
+            { "name": "trousers", "rule": "b > r * 1.1", "albedo": [0.075, 0.08, 0.07], "kind": "cloth", "rough": 0.9 },
+            { "name": "shirt", "rule": "r > g * 1.15", "albedo": [0.2, 0.21, 0.22], "kind": "cloth", "rough": 0.95 },
+            {
+              "name": "jacket",
+              "rule": "True",
+              "albedo": [0.04, 0.1, 0.11],
+              "kind": "cloth",
+              "rough": 0.58,
+              "contrast": 0.15,
+              "fillHoles": { "maxPerimeter": 0.9, "uv": [0.12, 0.6125] },
+              "inflate": 0.01,
+              "patterns": [{ "type": "quilt", "period": 0.045, "relief": 1.2 }]
+            }
+          ]
+        },
+        { "asset": "clothes/shoes03", "size": 512, "parts": [{ "name": "boots", "albedo": [0.15, 0.09, 0.05], "kind": "cloth", "rough": 0.6 }] }
+      ]
+    },
+    "vest": {
+      "note": "Puffer vest over a flannel shirt; jeans; boots.",
+      "clothes": [
+        {
+          "asset": "clothes/male_casualsuit03",
+          "normalSize": 512,
+          "parts": [
+            { "name": "trousers", "rule": "b > r * 1.1", "albedo": [0.07, 0.075, 0.07], "kind": "cloth", "rough": 0.9 },
+            { "name": "flannel", "rule": "True", "albedo": [0.32, 0.05, 0.035], "kind": "cloth", "rough": 0.95, "contrast": 0.0, "patterns": [{ "type": "plaid", "period": 0.05 }] }
+          ]
+        },
+        {
+          "asset": "clothes/male_casualsuit05",
+          "normalSize": 512,
+          "normalStrength": 0.35,
+          "parts": [
+            {
+              "name": "pockets",
+              "rule": "((u>0.17)&(u<0.26)&(v>0.83)&(v<0.9)) | ((u>0.41)&(u<0.51)&(v>0.72)&(v<0.88)) | ((u>0.83)&(u<0.93)&(v>0.76)&(v<0.87)) | ((u>0.245)&(u<0.3)&(v>0.45)&(v<0.66)) | ((u>0.81)&(u<0.9)&(v>0.37)&(v<0.44))",
+              "drop": true
+            },
+            { "name": "sleeves", "rule": "(u>0.3)&(u<0.83)&(v>0.45)&(v<0.715)", "drop": true },
+            { "name": "under-trousers", "rule": "b > r * 1.1", "drop": true },
+            { "name": "under-shirt", "rule": "r > g * 1.15", "drop": true },
+            {
+              "name": "vest",
+              "rule": "True",
+              "albedo": [0.1, 0.12, 0.06],
+              "kind": "cloth",
+              "rough": 0.58,
+              "contrast": 0.15,
+              "fillHoles": { "maxPerimeter": 0.9, "uv": [0.12, 0.6125] },
+              "inflate": 0.008,
+              "patterns": [{ "type": "quilt", "period": 0.05, "relief": 1.2 }]
+            }
           ]
         },
         { "asset": "clothes/shoes03", "size": 512, "parts": [{ "name": "boots", "albedo": [0.15, 0.09, 0.05], "kind": "cloth", "rough": 0.6 }] }
@@ -23,11 +110,42 @@
           "asset": "clothes/male_casualsuit02",
           "normalSize": 512,
           "parts": [
-            { "name": "fleece", "rule": "(v > 0.6) | (u > 0.74)", "albedo": [0.05, 0.12, 0.08], "kind": "knit", "rough": 0.97, "contrast": 0.0 },
+            {
+              "name": "fleece",
+              "rule": "(v > 0.6) | (u > 0.74)",
+              "albedo": [0.05, 0.12, 0.08],
+              "kind": "knit",
+              "rough": 0.97,
+              "contrast": 0.0,
+              "patterns": [{ "type": "seams", "width": 0.003, "dark": 0.85, "tape": 1.0 }]
+            },
             { "name": "trousers", "rule": "True", "albedo": [0.09, 0.085, 0.075], "kind": "cloth", "rough": 0.9 }
           ]
         },
         { "asset": "clothes/shoes03", "size": 512, "parts": [{ "name": "boots", "albedo": [0.12, 0.08, 0.05], "kind": "cloth", "rough": 0.6 }] }
+      ]
+    },
+    "hoodie": {
+      "note": "Cotton hoodie (hood down, front pocket); trail trousers; boots.",
+      "hood": { "on": "hoodie", "length": 0.22, "bunch": 0.045 },
+      "clothes": [
+        {
+          "asset": "clothes/male_casualsuit02",
+          "normalSize": 512,
+          "parts": [
+            {
+              "name": "hoodie",
+              "rule": "(v > 0.6) | (u > 0.74)",
+              "albedo": [0.06, 0.06, 0.065],
+              "kind": "cloth",
+              "rough": 0.92,
+              "contrast": 0.0,
+              "patterns": [{ "type": "seams", "width": 0.003, "dark": 0.85, "tape": 1.0 }, { "type": "marks", "rects": [[0.47, 0.63, 0.65, 0.72]], "gain": 0.72, "width": 0.004 }]
+            },
+            { "name": "trousers", "rule": "True", "albedo": [0.09, 0.085, 0.075], "kind": "cloth", "rough": 0.9 }
+          ]
+        },
+        { "asset": "clothes/shoes03", "size": 512, "parts": [{ "name": "boots", "albedo": [0.15, 0.09, 0.05], "kind": "cloth", "rough": 0.6 }] }
       ]
     },
     "survivor": {
@@ -84,7 +202,7 @@
       "eyes": "brown",
       "brows": "eyebrows/eyebrow001",
       "looks": {
-        "woods": { "outfit": "hiker", "tints": { "jacket": [0.44, 0.3, 0.025] }, "beanie": { "albedo": [0.4, 0.13, 0.05], "rim": 0.1, "slouch": 0.06 } },
+        "woods": { "outfit": "shell", "tints": { "jacket": [0.44, 0.3, 0.025] }, "beanie": { "albedo": [0.4, 0.13, 0.05], "rim": 0.1, "slouch": 0.06 } },
         "survivor": { "outfit": "survivor", "tints": { "tee": [0.18, 0.2, 0.12] }, "backpack": { "albedo": [0.08, 0.08, 0.08], "size": [0.3, 0.42, 0.15] } },
         "office": { "outfit": "office" }
       }
@@ -98,7 +216,12 @@
       "eyes": "brown",
       "brows": "eyebrows/eyebrow008",
       "looks": {
-        "woods": { "outfit": "hiker", "tints": { "jacket": [0.04, 0.07, 0.17], "trousers": [0.1, 0.1, 0.09] }, "headlamp": { "albedo": [0.05, 0.05, 0.05] }, "backpack": { "albedo": [0.03, 0.14, 0.14], "size": [0.26, 0.36, 0.13] } },
+        "woods": {
+          "outfit": "shell",
+          "tints": { "jacket": [0.035, 0.06, 0.15], "trousers": [0.1, 0.1, 0.09] },
+          "headlamp": { "albedo": [0.05, 0.05, 0.05] },
+          "backpack": { "albedo": [0.03, 0.14, 0.14], "size": [0.26, 0.36, 0.13] }
+        },
         "survivor": { "outfit": "survivor", "tints": { "tee": [0.25, 0.08, 0.06] } },
         "office": { "outfit": "office-f" }
       }
@@ -113,7 +236,12 @@
       "eyes": "brown",
       "brows": "eyebrows/eyebrow004",
       "looks": {
-        "woods": { "outfit": "hiker", "tints": { "jacket": [0.12, 0.15, 0.06] }, "beanie": { "albedo": [0.12, 0.12, 0.12], "rim": 0.12, "slouch": 0.02 }, "backpack": { "albedo": [0.25, 0.08, 0.03], "size": [0.34, 0.5, 0.18] } },
+        "woods": {
+          "outfit": "vest",
+          "tints": { "vest": [0.1, 0.12, 0.05], "flannel": [0.32, 0.05, 0.035] },
+          "beanie": { "albedo": [0.12, 0.12, 0.12], "rim": 0.12, "slouch": 0.02 },
+          "backpack": { "albedo": [0.25, 0.08, 0.03], "size": [0.34, 0.5, 0.18] }
+        },
         "survivor": { "outfit": "survivor", "tints": { "tee": [0.1, 0.12, 0.2] }, "backpack": { "albedo": [0.12, 0.1, 0.06], "size": [0.32, 0.46, 0.16] } },
         "office": { "outfit": "office", "tints": { "suit": [0.09, 0.08, 0.07] } }
       }
@@ -141,7 +269,7 @@
       "eyes": "brown",
       "brows": "eyebrows/eyebrow002",
       "looks": {
-        "woods": { "outfit": "hiker", "tints": { "jacket": [0.32, 0.07, 0.03] }, "headlamp": { "albedo": [0.05, 0.05, 0.05] }, "backpack": { "albedo": [0.06, 0.06, 0.06], "size": [0.3, 0.46, 0.15] } },
+        "woods": { "outfit": "hoodie", "tints": { "hoodie": [0.07, 0.07, 0.075] }, "headlamp": { "albedo": [0.05, 0.05, 0.05] }, "backpack": { "albedo": [0.06, 0.06, 0.06], "size": [0.3, 0.46, 0.15] } },
         "survivor": { "outfit": "survivor", "tints": { "tee": [0.05, 0.05, 0.05] } },
         "office": { "outfit": "office", "tints": { "suit": [0.03, 0.04, 0.08] } }
       }
@@ -156,7 +284,7 @@
       "eyes": "brownlight",
       "brows": "eyebrows/eyebrow006",
       "looks": {
-        "woods": { "outfit": "hiker", "tints": { "jacket": [0.13, 0.13, 0.13], "trousers": [0.06, 0.07, 0.1] }, "beanie": { "albedo": [0.06, 0.1, 0.16], "rim": 0.1, "slouch": 0.04 } },
+        "woods": { "outfit": "puffer", "tints": { "jacket": [0.035, 0.09, 0.1], "trousers": [0.06, 0.07, 0.1] }, "beanie": { "albedo": [0.06, 0.1, 0.16], "rim": 0.1, "slouch": 0.04 } },
         "survivor": { "outfit": "survivor", "tints": { "tee": [0.2, 0.12, 0.2] }, "backpack": { "albedo": [0.2, 0.17, 0.1], "size": [0.28, 0.38, 0.14] } },
         "office": { "outfit": "office-f", "tints": { "blouse": [0.5, 0.42, 0.35], "skirt": [0.03, 0.04, 0.08] } }
       }

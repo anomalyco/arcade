@@ -136,11 +136,19 @@ def classify(px, rules):
 MEAN = 0.72  # luminance textures are normalised so each region averages this; baseColorFactor = albedo / MEAN
 
 
-def luminance_texture(px, region, n, ao=None, contrast=(1.0,)):
-    """Per region: luminance normalised to MEAN, its variation scaled by that region's contrast (0 = flat)."""
+def luminance_texture(px, region, n, ao=None, contrast=(1.0,), fill=False):
+    """Per region: luminance normalised to MEAN, its variation scaled by that region's contrast (0 = flat). With fill,
+    unpainted (black) texels take their region's mean: cloth under a dropped piece (a pocket) is plain cloth."""
     l = lum(px)
     if ao is not None:
         l = l * (0.35 + 0.65 * ao)
+    if fill:
+        l = l.copy()
+        for i in range(n):
+            m = region == i
+            lit = m & (l > 0.03)
+            if lit.any():
+                l[m & (l <= 0.03)] = l[lit].mean()
     out = np.zeros_like(l)
     for i in range(n):
         m = region == i
@@ -181,6 +189,152 @@ def material(name, image=None, normal=None, rough=0.8, alpha=False):
 def set_material(o, mat):
     o.data.materials.clear()
     o.data.materials.append(mat)
+
+
+def resample(a, shape):
+    """Nearest-texel resize of a 2-D map (masks and region maps onto a normal map of another size)."""
+    h, w = a.shape[:2]
+    return a[(np.arange(shape[0]) * h) // shape[0]][:, (np.arange(shape[1]) * w) // shape[1]]
+
+
+def erode(mask, r):
+    out = mask.copy()
+    for _ in range(r):
+        out[1:] &= out[:-1].copy()
+        out[:-1] &= out[1:].copy()
+        out[:, 1:] &= out[:, :-1].copy()
+        out[:, :-1] &= out[:, 1:].copy()
+    return out
+
+
+def uv_grid(shape):
+    h, w = shape
+    v, u = np.mgrid[0:h, 0:w]
+    return (u + 0.5) / w, (v + 0.5) / h
+
+
+def pattern_height(pat, shape):
+    """Height field (0..1) of a fabric pattern over a texture of `shape`, for its luminance and normals."""
+    u, v = uv_grid(shape)
+    kind = pat["type"]
+    if kind == "quilt":
+        # Puffer baffles: horizontal channels (UV v runs up the body panels), stitched flat at each join.
+        ph = (v / pat.get("period", 0.045)) % 1.0
+        return np.sin(np.pi * ph) ** 0.6
+    if kind == "plaid":
+        per = pat.get("period", 0.05)
+        su = ((u / per) % 1.0) < 0.5
+        sv = ((v / per) % 1.0) < 0.5
+        return np.where(su & sv, 0.0, np.where(su | sv, 0.5, 1.0))
+    return np.zeros(shape)
+
+
+def apply_patterns(lt, region, parts, painted, nimg):
+    """Fabric patterns per part, in place: luminance on lt, relief on the normal map nimg (if any).
+
+    quilt (puffer baffles), plaid (flannel check), seams (stitched seam lines along every panel edge, with a lighter
+    tape inside: a rain shell's welded seams), marks (outlined patches in UV: a hoodie's pocket).
+    """
+    l = lt[..., 0].copy()
+    npx = pixels(nimg) if nimg is not None else None
+    nreg = resample(region, npx.shape[:2]) if npx is not None else None
+    for i, p in enumerate(parts):
+        m = region == i
+        for pat in p.get("patterns", []):
+            kind = pat["type"]
+            if kind in ("quilt", "plaid"):
+                hgt = pattern_height(pat, l.shape)
+                if kind == "quilt":
+                    ph = (uv_grid(l.shape)[1] / pat.get("period", 0.045)) % 1.0
+                    f = (0.8 + 0.3 * hgt) * np.where((ph < 0.035) | (ph > 0.965), 0.72, 1.0)
+                else:
+                    f = np.choose((hgt * 2).astype(int), [0.38, 0.78, 1.3])
+                    f = f * (1 + 0.05 * np.sin(uv_grid(l.shape)[0] * 2400 + uv_grid(l.shape)[1] * 2400))
+                l = np.where(m, l * f, l)
+                if npx is not None and pat.get("relief", 0) > 0:
+                    nh = pattern_height(pat, npx.shape[:2])
+                    dx = np.gradient(nh, axis=1) * pat["relief"] * npx.shape[1] / 256
+                    dy = np.gradient(nh, axis=0) * pat["relief"] * npx.shape[0] / 256
+                    n = np.stack([-dx, -dy, np.ones_like(dx)], -1)
+                    n /= np.linalg.norm(n, axis=-1, keepdims=True)
+                    nm = nreg == i
+                    npx[..., :3] = np.where(nm[..., None], n * 0.5 + 0.5, npx[..., :3])
+            elif kind == "seams":
+                w = max(1, int(round(pat.get("width", 0.004) * l.shape[0])))
+                e1 = erode(painted, w)
+                e2 = erode(e1, w)
+                l = np.where(m & painted & ~e1, l * pat.get("dark", 0.78), l)
+                l = np.where(m & e1 & ~e2, l * pat.get("tape", 1.1), l)
+            elif kind == "marks":
+                u, v = uv_grid(l.shape)
+                wd = pat.get("width", 0.004)
+                for r in pat["rects"]:
+                    u0, v0, u1, v1 = r
+                    inside = (u > u0) & (u < u1) & (v > v0) & (v < v1)
+                    core = (u > u0 + wd) & (u < u1 - wd) & (v > v0 + wd) & (v < v1 - wd)
+                    l = np.where(m & inside & ~core, l * pat.get("gain", 0.75), l)
+                    l = np.where(m & core, l * pat.get("fillGain", 1.0), l)
+    lt[..., 0] = lt[..., 1] = lt[..., 2] = l
+    if npx is not None:
+        store(nimg, npx)
+
+
+def soften_normals(nimg, strength, flat=None):
+    """Blends a normal map toward flat (strength 0 = flat) and flattens it wholly where `flat` (a source mask) is set."""
+    npx = pixels(nimg)
+    n = npx[..., :3] * 2 - 1
+    n = np.array([0.0, 0.0, 1.0]) + (n - np.array([0.0, 0.0, 1.0])) * strength
+    if flat is not None:
+        n = np.where(resample(flat, npx.shape[:2])[..., None], np.array([0.0, 0.0, 1.0]), n)
+    n /= np.maximum(np.linalg.norm(n, axis=-1, keepdims=True), 1e-6)
+    npx[..., :3] = n * 0.5 + 0.5
+    store(nimg, npx)
+
+
+def fill_holes(o, opt):
+    """Closes small openings in a garment's front (where a dropped pocket was sewn over a hole), with faces that take
+    the texture at `uv` (plain cloth). Openings wider than maxPerimeter (hem, cuffs, collar) or off the torso stay."""
+    bm = bmesh.new()
+    bm.from_mesh(o.data)
+    edges = [e for e in bm.edges if e.is_boundary]
+    seen, loops = set(), []
+    for e in edges:
+        if e in seen:
+            continue
+        loop, stack = [], [e]
+        while stack:
+            x = stack.pop()
+            if x in seen:
+                continue
+            seen.add(x)
+            loop.append(x)
+            for v in x.verts:
+                stack.extend(y for y in v.link_edges if y.is_boundary and y not in seen)
+        loops.append(loop)
+    uvl = bm.loops.layers.uv.active
+    mid = sum((o.matrix_world @ v.co for v in bm.verts), Vector()) / max(1, len(bm.verts))
+    filled = 0
+    for loop in loops:
+        per = sum(e.calc_length() for e in loop)
+        vs = {v for e in loop for v in e.verts}
+        wc = [o.matrix_world @ v.co for v in vs]
+        at = sum(wc, Vector()) / len(wc)
+        # On the front of the torso only (MPFB faces -Y): armholes at the sides and the collar stay open.
+        if per > opt.get("maxPerimeter", 0.9) or max(abs(p.x) for p in wc) > opt.get("maxX", 0.3) or mid.y - at.y < opt.get("ahead", 0.05):
+            continue
+        new = bmesh.ops.holes_fill(bm, edges=loop, sides=0)["faces"]
+        for f in new:
+            f.normal_update()
+            if f.normal.y > 0:  # face out of the front (-Y), like the cloth round it
+                f.normal_flip()
+            f.smooth = True
+            for lp in f.loops:
+                lp[uvl].uv = opt.get("uv", (0.12, 0.6))
+        filled += 1
+    bm.normal_update()
+    bm.to_mesh(o.data)
+    bm.free()
+    print("FILLED", o.name, filled, "of", len(loops), "openings", file=sys.stderr)
 
 
 def split_by_region(obj, region, names):
@@ -230,6 +384,7 @@ skin = material("skin", skin_img, rough=0.5)
 set_material(body, skin)
 
 meshes = {}  # final name -> object, LOD0
+piece_kind = {}  # clothing piece -> shading kind
 for item in outfit["clothes"]:
     obj = pieces[item["asset"]]
     d = asset(item["asset"])
@@ -240,20 +395,40 @@ for item in outfit["clothes"]:
     ao = lum(pixels(load(ao_path, size))) if ao_path else None
     normal_path = find_tex(d, "_normal.png")
     normal = load(normal_path, item.get("normalSize", size)) if normal_path and item.get("normal", True) else None
-    parts = item["parts"]  # [{name, rule, albedo, kind, rough}]
+    parts = item["parts"]  # [{name, rule, albedo, kind, rough, drop, patterns, inflate}]
     rules = [[p["name"], p.get("rule", "True")] for p in parts]
     region = classify(spx, rules) if len(parts) > 1 else np.zeros(spx.shape[:2], dtype=np.int32)
-    store(src, luminance_texture(spx, region, len(parts), ao, [p.get("contrast", item.get("contrast", 1.0)) for p in parts]))
+    painted = lum(spx) > 0.03
+    lt = luminance_texture(spx, region, len(parts), ao, [p.get("contrast", item.get("contrast", 1.0)) for p in parts], fill=True)
+    if normal is not None and (item.get("normalStrength", 1.0) != 1.0 or any(p.get("drop") for p in parts)):
+        # Under a dropped piece (pockets) the cloth is flat: no relief of the piece that was sewn on there.
+        soften_normals(normal, item.get("normalStrength", 1.0), ~painted if any(p.get("drop") for p in parts) else None)
+    if any(p.get("patterns") for p in parts):
+        if normal is None and any(pt.get("relief") for p in parts for pt in p.get("patterns", [])):
+            normal = bpy.data.images.new(item["asset"].split("/")[-1] + "_n", 512, 512)
+            store(normal, np.tile(np.array([0.5, 0.5, 1.0, 1.0], np.float32), (512, 512, 1)))
+        apply_patterns(lt, region, parts, painted, normal)
+    store(src, lt)
     src.name = item["asset"].split("/")[-1] + "_lum"
     split = split_by_region(obj, region, [p["name"] for p in parts]) if len(parts) > 1 else {parts[0]["name"]: obj}
     for p in parts:
         o = split.get(p["name"])
         if o is None:
             continue
+        if p.get("drop"):
+            bpy.data.objects.remove(o)
+            continue
         o.name = p["name"]
+        if p.get("fillHoles"):
+            fill_holes(o, p["fillHoles"])
+        if p.get("inflate"):
+            # Puffer loft: the piece stands off the body along its normals.
+            for vtx in o.data.vertices:
+                vtx.co += vtx.normal * p["inflate"]
         kind = p.get("kind", "cloth")
         set_material(o, material(f"{kind}.{p['name']}", src, normal, rough=p.get("rough", 0.85)))
         meshes[p["name"]] = o
+        piece_kind[p["name"]] = kind
 
 if hair is not None:
     d = asset(spec["hair"]["asset"])
@@ -346,12 +521,25 @@ if beanie:
     if hair is not None:
         bm = bmesh.new()
         bm.from_mesh(hair.data)
+        # Every strand above the rim goes, however far it stands off the head (a bob's volume would otherwise sit round
+        # the beanie like a helmet); below the rim, hair is drawn in to the beanie's radius and flares out with depth.
+        scale = Vector((half.x * 1.1, half.y * 1.08, half.z * (1.0 + slouch * 0.6)))
+        centre = Vector((c.x, c.y, c.z + 0.012))
         inside = []
+        inv = hair.matrix_world.inverted()
         for v in bm.verts:
             q = hair.matrix_world @ v.co
-            e = Vector(((q.x - c.x) / (half.x * 1.1), (q.y - c.y) / (half.y * 1.08), (q.z - c.z - 0.012) / (half.z * (1.0 + slouch * 0.6))))
-            if e.length < 1.02 and e.z > cut + 0.18 * e.y + 0.04:
+            e = Vector(((q.x - centre.x) / scale.x, (q.y - centre.y) / scale.y, (q.z - centre.z) / scale.z))
+            depth = cut + 0.18 * e.y + 0.03 - e.z
+            if depth < 0 and e.length < 1.8:
                 inside.append(v)
+            elif depth < 0.3:
+                h = math.hypot(e.x, e.y)
+                limit = 0.97 + depth * 0.6
+                if h > limit:
+                    k = limit / h
+                    e = Vector((e.x * k, e.y * k, e.z))
+                    v.co = inv @ Vector((centre.x + e.x * scale.x, centre.y + e.y * scale.y, centre.z + e.z * scale.z))
         bmesh.ops.delete(bm, geom=inside, context="VERTS")
         bm.to_mesh(hair.data)
         bm.free()
@@ -536,6 +724,80 @@ if backpack:
     skin_like_body(so)
     meshes["straps"] = so
     albedos["straps"] = [0.03, 0.03, 0.03]
+
+hood = outfit.get("hood")
+if hood:
+    # A hood lying down: a soft, bunched sheet round the back of the neck, draped down the upper back (short under a
+    # pack), traced over the clothes like the straps and skinned to the body. Same cloth and tint as its garment.
+    on = hood.get("on", "jacket")
+    pts = surface_points(torso_objs)
+    ring = [p for p in pts if abs(p.z - neck_z) < 0.02]
+    nc = Vector((sum(p.x for p in ring) / len(ring), sum(p.y for p in ring) / len(ring), neck_z))
+    c = nc - up * 0.12
+    length = hood.get("length", 0.2) if not backpack else hood.get("packLength", 0.07)
+    bunch = hood.get("bunch", 0.03)
+    elev = [math.radians(e) for e in range(82, -40, -3)]
+    rows = []
+    azimuths = list(range(-115, 116, 10))
+    for az in azimuths:
+        a = math.radians(az)
+        d = -fwd * math.cos(a) + side * math.sin(a)
+        perp = up.cross(d)
+        sl = [p for p in pts if abs((p - c).dot(perp)) < 0.015 and (p - c).dot(d) > 0 and p.z < neck_z + 0.03 and (p - c).length < 0.32]
+        r = outer_radius(sl, c, elev, d, up, lambda p: True, window=0.06)
+        path = [c + (d * math.cos(e) + up * math.sin(e)) * ri for e, ri in zip(elev, r) if ri > 0]
+        if len(path) < 3:
+            rows.append(None)
+            continue
+        back = max(0.0, math.cos(a))
+        L = length * (0.2 + 0.8 * back * back) + 0.02
+        # Resample the first L metres of the path into N points, standing off by the bunched thickness.
+        N = 9
+        cum = [0.0]
+        for p0, p1 in zip(path, path[1:]):
+            cum.append(cum[-1] + (p1 - p0).length)
+        row = []
+        for k in range(N):
+            t = k / (N - 1)
+            target = min(cum[-1], t * L)
+            j = max(i for i in range(len(cum)) if cum[i] <= target)
+            j = min(j, len(path) - 2)
+            f = (target - cum[j]) / max(cum[j + 1] - cum[j], 1e-6)
+            q = path[j].lerp(path[j + 1], f)
+            out = (q - c).normalized()
+            th = 0.008 + bunch * (0.35 + 0.65 * back) * math.sin(math.pi * min(1.0, t * 1.15)) ** 0.7
+            row.append((q + out * th, (az + 115) / 230, t))
+        rows.append(row)
+    hb = bmesh.new()
+    uvl = hb.loops.layers.uv.new("UVMap")
+    verts = [[(hb.verts.new(p), u, t) for p, u, t in row] if row else None for row in rows]
+    for ra, rb in zip(verts, verts[1:]):
+        if ra is None or rb is None:
+            continue
+        for k in range(len(ra) - 1):
+            quad = [ra[k], rb[k], rb[k + 1], ra[k + 1]]
+            f = hb.faces.new([q[0] for q in quad])
+            for loop, q in zip(f.loops, quad):
+                loop[uvl].uv = (q[1], q[2])
+    bmesh.ops.recalc_face_normals(hb, faces=list(hb.faces))
+    ho = mesh_object("hood", hb)
+    solidify(ho, 0.005)
+    # Cloth: plain, with the centre seam down the back and a hemmed rim.
+    size = 128
+    u, v = uv_grid((size, size))
+    hl = np.full((size, size), MEAN)
+    hl = np.where(np.abs(u - 0.5) < 0.008, MEAN * 0.78, hl)
+    hl = np.where(v > 0.9, MEAN * 0.88, hl)
+    hl = np.where((v > 0.88) & (v < 0.9), MEAN * 0.75, hl)
+    himg = bpy.data.images.new("hood", size, size)
+    hpx = np.ones((size, size, 4), np.float32)
+    hpx[..., 0] = hpx[..., 1] = hpx[..., 2] = hl
+    store(himg, hpx)
+    kind = piece_kind.get(on, "cloth")
+    set_material(ho, material(f"{kind}.hood", himg, rough=next((p.get("rough", 0.85) for cl in outfit["clothes"] for p in cl["parts"] if p["name"] == on), 0.85)))
+    skin_like_body(ho)
+    meshes["hood"] = ho
+    albedos["hood"] = spec.get("tints", {}).get(on) or next(p["albedo"] for cl in outfit["clothes"] for p in cl["parts"] if p["name"] == on)
 
 headlamp = spec.get("headlamp")
 if headlamp:
