@@ -7,7 +7,7 @@ import { createServer } from "vite"
 /**
  * Paired in-page GPU cost of Lab settings at 3456×1894: alternates variants A and B on the same page, same frozen
  * state, timing each with the renderer's timestamp queries, so cross-run drift on a shared machine cancels out.
- * AB_A / AB_B are JSON Lab overrides; AB_ROUNDS alternations (default 12) × 6 timed frames per variant per round.
+ * AB_A / AB_B are JSON Lab overrides (values persist between variants, so A must name every key B sets); AB_ROUNDS alternations (default 12) × 6 timed frames per variant per round.
  * AB_SCENES optionally replaces the street/interior poses: JSON `[{ name, x, y, zoom, hour }]`.
  */
 const root = resolve(import.meta.dir, "..")

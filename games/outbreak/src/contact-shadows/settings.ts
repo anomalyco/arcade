@@ -2,7 +2,7 @@ import type { VolumeInput } from "@arcade/kit/gpu/renderer"
 import type { LabControl } from "@arcade/kit/lab-panel"
 
 /**
- * Contact shadows on props (Lab › Look · Contact shadows, `contactShadowStyle` 0 is Today): the Lot's screen-space contact
+ * Contact shadows on props (Lab › Look · Contact shadows; on by default since Kit's pick, D-52, `contactShadowStyle` 0 is Today): the Lot's screen-space contact
  * shadows (#356/#374, `@arcade/kit/gpu/contact-shadows`) as a depth-only volume slot. Each pixel marches a short ray
  * towards the one or two Outbreak lights that light it most (the torch's plan cone, lamps, sconces, fire;
  * `contact-shadows/wgsl.ts`), so furniture, cars, bins and debris sit on the floor where the flashlight and the lamps
@@ -10,7 +10,7 @@ import type { LabControl } from "@arcade/kit/lab-panel"
  * The history is kept while the view moves (#374), clipped to the current neighbourhood.
  */
 export type OutbreakContactShadowSettings = {
-  /** 0 Today, 1 screen-space contact shadows. */
+  /** 0 Today, 1 screen-space contact shadows (default). */
   contactShadowStyle: number
   /** March length towards the light, metres. */
   csLength: number
@@ -31,7 +31,7 @@ export type OutbreakContactShadowSettings = {
 }
 
 export const DEFAULT_CONTACT_SHADOW_SETTINGS: OutbreakContactShadowSettings = {
-  contactShadowStyle: 0,
+  contactShadowStyle: 1,
   csLength: 0.7,
   csStrength: 0.85,
   csThickness: 0.35,

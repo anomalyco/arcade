@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { mat4 } from "wgpu-matrix"
 import { validateWgsl } from "./test-naga"
-import { FOG_DEFAULTS, FogLampPicker, FogScatter, createFogSettings, fogOpticalDepth, fogSceneWgsl, fogScatterVolume, type FogLamp, type Vec3 } from "./fog-scatter"
+import { FOG_DEFAULTS, FOG_GLOW_SIZE, FogLampPicker, FogScatter, bakeLampGlow, createFogSettings, fogOpticalDepth, fogSceneWgsl, fogScatterVolume, type FogLamp, type Vec3 } from "./fog-scatter"
 import { makeSceneShader, postShader, spriteShader } from "./shaders"
 import { volumeAccumulateShader, volumeBilinearShader, volumeUpsampleShader } from "./volume-pass"
 import { fogBlurDownWgsl, fogBlurMixWgsl } from "./fog-blur"
@@ -75,3 +75,19 @@ const sources = {
   postLooks: postShader(true, false, { chromatic: 0, bloom: 0.26, grain: 0.01, vignette: 0.45, bloomGate: { cap: 0.02, hot: 4 } }),
 }
 for (const [name, code] of Object.entries(sources)) test(`WGSL: ${name}`, () => validateWgsl(code))
+
+test("a lamp's glowRange keeps its glow-map light inside that reach", () => {
+  const rect: [number, number, number, number] = [-20, -20, 20, 20]
+  const lamp: FogLamp = { x: 0, y: 3, z: 0, range: 4, color: [1, 1, 1], intensity: 10 }
+  const at = (out: Float32Array, x: number) => {
+    const i = Math.floor(((x - rect[0]) / (rect[2] - rect[0])) * FOG_GLOW_SIZE)
+    return out[(Math.floor(FOG_GLOW_SIZE / 2) * FOG_GLOW_SIZE + i) * 4]!
+  }
+  const open = new Float32Array(FOG_GLOW_SIZE * FOG_GLOW_SIZE * 4)
+  const ranged = new Float32Array(FOG_GLOW_SIZE * FOG_GLOW_SIZE * 4)
+  bakeLampGlow(open, [lamp], rect, 4)
+  bakeLampGlow(ranged, [{ ...lamp, glowRange: 6 }], rect, 4)
+  expect(at(open, 10)).toBeGreaterThan(0)
+  expect(at(ranged, 10)).toBe(0)
+  expect(at(ranged, 1)).toBeGreaterThan(at(open, 1) * 0.8)
+})

@@ -780,12 +780,18 @@ export function migrateOutbreakUrlParams(
   if (params.has("peaceful")) {
     setField("ai", "zombieCount", 0)
   }
+  if (params.has("smoke")) {
+    // The CI smoke (software GPU) keeps the two look ports with their own volume pipelines at Today, so it compiles
+    // neither (like the Lot's `?smoke`, #366); the street lamps and lit rooms are uniforms in the scene shader.
+    setField("mist", "mistStyle", 0)
+    setField("contactShadows", "contactShadowStyle", 0)
+  }
   if (params.has("infiniteAmmo")) {
     const raw = params.get("infiniteAmmo")
     setField("combat", "infiniteAmmo", raw === "0" || raw === "false" ? 0 : 1)
   }
 
-  const reserved = new Set(["world", "peaceful", "infiniteAmmo", "seed", "room", "r", "bench", "perf", "lab", "mux", "muxRun", "station", "name"])
+  const reserved = new Set(["world", "peaceful", "infiniteAmmo", "smoke", "seed", "room", "r", "bench", "perf", "lab", "mux", "muxRun", "station", "name"])
   for (const [rawKey, rawVal] of params.entries()) {
     if (reserved.has(rawKey)) continue
     const routed = resolveOutbreakSettingTarget(rawKey)

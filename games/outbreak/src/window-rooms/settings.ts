@@ -1,7 +1,7 @@
 import type { LabControl } from "@arcade/kit/lab-panel"
 
 /**
- * Lit rooms behind the windows (Lab › Look · Lit rooms, `windowRoomStyle` 0 is Today): the Lot's interior mapping (#356,
+ * Lit rooms behind the windows (Lab › Look · Lit rooms; on by default since Kit's pick, D-51, `windowRoomStyle` 0 is Today): the Lot's interior mapping (#356,
  * van Dongen's ray–box room behind each pane) on Outbreak's house glass, drawn analytically instead of from an atlas:
  * floor, back and side walls and ceiling of a room box behind the wall, lit from the house's own room lamp
  * (`resolveLampLight`'s per-room practicals: the living room and kitchen behind the front windows), so a pane looks
@@ -10,7 +10,7 @@ import type { LabControl } from "@arcade/kit/lab-panel"
  * panes into the same room agree.
  */
 export type OutbreakWindowRoomSettings = {
-  /** 0 Today (flat tungsten glass), 1 rooms behind the glass. */
+  /** 0 Today (flat tungsten glass), 1 rooms behind the glass (default). */
   windowRoomStyle: number
   /** Room depth behind the wall, metres. */
   roomDepth: number
@@ -25,7 +25,7 @@ export type OutbreakWindowRoomSettings = {
 }
 
 export const DEFAULT_WINDOW_ROOM_SETTINGS: OutbreakWindowRoomSettings = {
-  windowRoomStyle: 0,
+  windowRoomStyle: 1,
   roomDepth: 3.4,
   roomBrightness: 1,
   roomLitShare: 0.75,
