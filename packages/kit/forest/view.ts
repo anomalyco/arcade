@@ -62,6 +62,8 @@ export type ForestFrameInput = {
   lights?: readonly SceneLight[]
   fogLamps?: readonly FogLamp[]
   glows?: readonly ForestGlow[]
+  /** Moving torch-shadow casters the game draws itself (skinned people); their slots re-render while there are any. */
+  casters?: readonly SpotShadowCaster[]
 }
 
 export type ForestViewOptions = {
@@ -294,6 +296,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     pass.update(f.eye, f.viewProj, quality, s)
     const enc = device.createCommandEncoder()
     const casters = local && spots.settings.count > 0 ? pass.casters(local.pos, s.torchReach, quality.fernNear, s.foliageShadows && quality.foliageShadows ? foliageMask : null) : []
+    if (casters.length && f.casters?.length) { casters.push(...f.casters); spots.invalidate() }
     if (spots.update(enc, candidates, f.eye, f.dt, id => lights.indexOf(id), casters)) renderer.setSpotShadows(spots.bindings())
     // Moving torches re-render every frame: the picker only knows a light moved, the world is static.
     device.queue.submit([enc.finish()])

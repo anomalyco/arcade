@@ -441,6 +441,11 @@ export class SpotShadows {
     this.picker.invalidate()
   }
 
+  /** Re-renders every slot next update: something the static-world picker cannot see moved (a walking person). */
+  invalidate(): void {
+    this.picker.invalidate()
+  }
+
   private pipeline(stride: number, instanced = false): GPURenderPipeline {
     const key = stride * 2 + Number(instanced)
     let p = this.pipelines.get(key)

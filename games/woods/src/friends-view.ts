@@ -3,22 +3,31 @@ import { registerPersonModels } from "@arcade/kit/avatar/soldier"
 import type { FrameParts } from "@arcade/kit/gpu/frame-parts"
 import { MAT, Mesh } from "@arcade/kit/gpu/mesh"
 import type { Renderer } from "@arcade/kit/gpu/renderer"
+import type { SpotShadowCaster } from "@arcade/kit/gpu/shadows/spot-shadows"
 import { RIG, type V3 } from "@arcade/kit/rig"
 import { SIGNAL_PITCH, viewDir, type Player, type WoodsState } from "../shared/sim"
 import { standHeight, type WoodsWorld } from "../shared/world"
+import { PeopleView, type Log } from "./people-view"
 
 /** Raincoats in the dark: muted yellow, olive, rust, navy, grey. */
 const COATS: readonly (readonly [number, number, number])[] = [[0.62, 0.48, 0.12], [0.24, 0.28, 0.14], [0.45, 0.16, 0.08], [0.12, 0.15, 0.26], [0.3, 0.3, 0.3]]
 
 export type Beam = { id: number; origin: [number, number, number]; axis: [number, number, number] }
 
-/** Friends drawn with the shared human rig, holding their flashlights where their beams start. */
+/**
+ * Friends drawn with the shared human rig, holding their flashlights where their beams start: blocky parts (today) or,
+ * with `realistic` (the Lab's "Realistic people", `?people=real`), skinned people from `@arcade/kit/people`, each
+ * drawn blocky until their person has loaded.
+ */
 export class FriendsView {
   private parts: ReturnType<typeof registerPersonModels>
   private torch: number
   private avatars = new Map<number, Avatar>()
+  private real: PeopleView | null = null
+  /** Camera position, for the people's level of detail. */
+  eye: V3 | null = null
 
-  constructor(renderer: Renderer) {
+  constructor(private renderer: Renderer, public realistic = false) {
     this.parts = registerPersonModels((m) => renderer.addModel(m))
     const torch = new Mesh()
     torch.box(-0.1, -0.022, -0.022, 0.06, 0.022, 0.022, [0.05, 0.05, 0.055], MAT.shiny)
@@ -36,13 +45,54 @@ export class FriendsView {
     return a
   }
 
+  /** The realistic people (created on first use, so blocky mode loads nothing). */
+  realPeople(): PeopleView {
+    return (this.real ??= new PeopleView(this.renderer, this.logs))
+  }
+
+  /** Deadfall the realistic people step over: the forest's logs (centre, plan yaw, length, radius) on `ground`. */
+  logs: Log[] = []
+  setLogs(logs: readonly { x: number; z: number; yaw: number; length: number; r: number }[], ground: (x: number, z: number) => number): void {
+    this.logs = logs.map((l) => {
+      const ca = Math.cos(l.yaw), sa = Math.sin(l.yaw)
+      let g = -Infinity
+      for (let k = -2; k <= 2; k++) g = Math.max(g, ground(l.x + ca * l.length * k / 4, l.z + sa * l.length * k / 4))
+      // As the forest bakes them: resting on the highest ground under them, sunk a third of their radius.
+      return { ...l, y: g + l.r * 0.65 }
+    })
+    if (this.real) this.real.logs = this.logs
+  }
+
+  /** Torch-shadow casters for your torch at `from`: the realistic people within `reach` (none when blocky). */
+  casters(from: V3, reach: number): SpotShadowCaster[] {
+    return this.realistic && this.real ? this.real.casters(from, reach) : []
+  }
+
   /**
    * Poses every friend (not `me`) for this frame and returns their beams. `steps` reports footfalls near the listener.
    */
   frame(fp: FrameParts, world: WoodsWorld, state: WoodsState, me: number, dt: number, beamLevel: (p: Player) => number, steps: (p: Player) => void): Beam[] {
     const beams: Beam[] = []
+    const real = this.realistic ? this.realPeople() : null
+    if (!real) this.real?.hideAll()
+    else real.keep(new Set(state.players.map((p) => p.id)))
     for (const p of state.players) {
       if (p.id === me) continue
+      if (real) {
+        const [dx, dy, dz] = viewDir(p.yaw, p.pitch)
+        const knot = p.tie && p.tie.progress < 1 ? Math.sin(state.t * 9) * 0.04 : 0
+        const up = Math.max(-0.4, Math.min(1, p.pitch))
+        const reach = p.tie && p.tie.progress < 1
+          ? { l: [0.42, 0.18, -0.08] as V3, r: [0.44, 0.2 + knot, 0.06] as V3, k: 1 }
+          : { r: (p.pitch > SIGNAL_PITCH ? [0.12, 0.78, 0.16] : [0.4, 0.12 + up * 0.32, 0.17]) as V3, k: 1 }
+        const torch = real.frame(p, state.t, dt, Math.atan2(dz, dx), [dx, dy, dz], reach, (x, z) => standHeight(world, x, z), this.eye, () => steps(p))
+        if (torch) {
+          const level = beamLevel(p)
+          fp.push(this.torch, torch.p[0], torch.p[1], torch.p[2], Math.atan2(torch.x[2], torch.x[0]), [3 * level + 0.02, 2.8 * level + 0.02, 2.4 * level + 0.02], Math.asin(Math.max(-1, Math.min(1, torch.x[1]))), 0, 0)
+          if (level > 0) beams.push({ id: p.id, origin: [torch.p[0] + torch.x[0] * 0.1, torch.p[1] + torch.x[1] * 0.1, torch.p[2] + torch.x[2] * 0.1], axis: [dx, dy, dz] })
+          continue
+        }
+      }
       const a = this.avatar(p)
       const [dx, dy, dz] = viewDir(p.yaw, p.pitch)
       const signalling = p.pitch > SIGNAL_PITCH

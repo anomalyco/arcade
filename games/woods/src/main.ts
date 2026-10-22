@@ -58,7 +58,7 @@ async function main() {
   hud.textContent = "Loading the woods…"
   const view = await WorldView.create(gpu, world, { smoke, quality: quality.getActiveTier() })
   const renderer = view.renderer
-  const friends = new FriendsView(renderer)
+  const friends = new FriendsView(renderer, params.get("people") === "real")
   const map = new PaperMap(document.body)
   const audio = new WoodsAudio()
   const fp = new FrameParts()
@@ -67,6 +67,7 @@ async function main() {
   const useWorld = (w: WoodsWorld, rebuild = true) => {
     world = w
     if (rebuild) view.setWorld(world)
+    friends.setLogs(view.forest.build.logs, (x, z) => standHeight(world, x, z))
     map.setWorld(world)
   }
   useWorld(world, false)
@@ -82,6 +83,7 @@ async function main() {
   const panel = new LabPanel(settings, [...FEEL_CONTROLS.filter((c) => !LOOK_KEYS.has(c.field ?? c.key)), ...WALK_CONTROLS], params, () => { camera.release(); keys.clear() }, { open: false, pill: false, groupActions: false, onToggle: () => syncStart() })
   panel.addControls(view.forest.settings as unknown as Record<string, number | string | boolean>, view.forest.controls())
   panel.addControls(look, [{ key: "woods.quality", field: "quality", label: "Quality", group: "Camera", subsection: "Performance", type: "select", options: [{ value: "auto", label: "Auto" }, { value: "high", label: "High" }, { value: "balanced", label: "Balanced" }, { value: "low", label: "Low" }] }])
+  panel.addControls(friends as unknown as Record<string, boolean>, [{ key: "woods.realisticPeople", field: "realistic", label: "Realistic people", group: "Camera", subsection: "Friends", type: "toggle" }])
   audio.bindControls(panel)
   attachLabPanelControl(panel)
   let regenAt = 0, worldKey = `${settings.trunkDensity}`, qualityMode = look.quality
@@ -272,6 +274,7 @@ async function main() {
 
     fp.begin()
     view.draw(fp, world, state, state.t, camera.eye, settings)
+    friends.eye = [camera.eye[0], camera.eye[1], camera.eye[2]]
     const beams = friends.frame(fp, world, state, meId, dt, (q) => beamLevel(q, state.t, settings), (q) => {
       const d = Math.hypot(q.x - at.x, q.z - at.z)
       if (d > 14 || !playing) return
@@ -287,7 +290,7 @@ async function main() {
     debug.beams = beams.length
     // The smoke draws offscreen and synchronously (a presented frame makes SwiftShader's GPU process wait on it).
     if (smoke && (!smokeTarget || smokeTarget.width !== width || smokeTarget.height !== height)) { smokeTarget?.destroy(); smokeTarget = device.createTexture({ size: [width, height], format: canvasFormat, usage: GPUTextureUsage.RENDER_ATTACHMENT }) }
-    view.frame({ eye: [camera.eye[0], camera.eye[1], camera.eye[2]], viewProj: vp as Float32Array, width, height, time: state.t, dt, fovY: (camera.fov * Math.PI) / 180, torches, fp, place }, stepping, smokeTarget?.createView())
+    view.frame({ eye: [camera.eye[0], camera.eye[1], camera.eye[2]], viewProj: vp as Float32Array, width, height, time: state.t, dt, fovY: (camera.fov * Math.PI) / 180, torches, fp, place, casters: friends.casters(ownOrigin, view.forest.settings.torchReach) }, stepping, smokeTarget?.createView())
     if (!smoke && playing) { if (quality.recordFrame(dt * 1000, renderer.lastGpuMs)) view.forest.setQuality(quality.getActiveTier()) }
 
     // HUD: the tie prompt, the map, toasts.
@@ -311,7 +314,7 @@ async function main() {
   Object.assign(window, {
     woods: {
       get ready() { return true }, get frames() { return frames }, get paused() { return paused }, set paused(v: boolean) { paused = v },
-      renderer, camera, settings, panel, map, debug, audio, view, look: view.forest.settings, quality,
+      renderer, camera, settings, panel, map, debug, audio, view, look: view.forest.settings, quality, friends,
       measure: (n?: number) => view.forest.measure(n), stats: () => view.forest.stats(),
       get state() { return session.view }, get world() { return world }, get session() { return session },
       /** Automation: room readout (your id, people and walkers seen, tapes, bytes in, KB/s, connection status). */
