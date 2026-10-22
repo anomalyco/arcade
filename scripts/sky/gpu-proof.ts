@@ -4,6 +4,7 @@ import { createServer } from "vite"
 import { existsSync } from "node:fs"
 import { mkdir, readdir, writeFile } from "node:fs/promises"
 import { resolve } from "node:path"
+import { hostname } from "node:os"
 
 const out=resolve("captures/sky-gpu")
 await mkdir(out,{recursive:true})
@@ -20,14 +21,21 @@ try {
   page.on("console",message=>{if(message.type()==="error")errors.push(message.text())})
   await page.goto(`${server.resolvedUrls!.local[0]}scripts/sky/fixture.html`,{waitUntil:"domcontentloaded"})
   await page.waitForFunction(()=>"skyProof" in window||!!document.body.dataset.error,undefined,{timeout:120000})
-  const report=await page.evaluate(async()=>{
-    type Proof={adapter:unknown;timestamps:boolean;errors:string[];measure():Promise<unknown>;stability():Promise<unknown>}
+  const report=await page.evaluate(async(extra)=>{
+    type Proof={adapter:unknown;timestamps:boolean;errors:string[];measure():Promise<unknown>;stability():Promise<unknown>;temporalTranslation():Promise<unknown>;occultation():Promise<unknown>}
     if(document.body.dataset.error)throw new Error(document.body.dataset.error)
     const p=(window as unknown as {skyProof:Proof}).skyProof
-    return {adapter:p.adapter,timestamps:p.timestamps,stability:await p.stability(),timings:await p.measure(),errors:p.errors}
-  })
+    return {adapter:p.adapter,timestamps:p.timestamps,...(extra === "occultation" ? {occultation:await p.occultation()} : extra === "temporal" ? {temporal:await p.temporalTranslation()} : {stability:await p.stability(),timings:await p.measure()}),errors:p.errors}
+  },process.argv.includes("--occultation") ? "occultation" : process.argv.includes("--temporal") ? "temporal" : "all")
   await page.screenshot({path:resolve(out,"physical.png")})
-  await writeFile(resolve(out,"report.json"),JSON.stringify({...report,host:process.env.HOSTNAME,errors:[...errors,...report.errors]},null,2))
+  if(process.argv.includes("--temporal")) for(const phase of ["crescent","half","full"]) {
+    await page.evaluate(async phase=>{
+      const p=(window as unknown as {skyProof:{draw(settings:Record<string,unknown>,view:Record<string,number>):Promise<void>}}).skyProof
+      await p.draw({skyMoon:phase},{yaw:-220*Math.PI/180,pitch:0.45})
+    },phase)
+    await page.screenshot({path:resolve(out,`${phase}.png`)})
+  }
+  await writeFile(resolve(out,process.argv.includes("--occultation")?"occultation.json":process.argv.includes("--temporal")?"temporal.json":"report.json"),JSON.stringify({...report,host:hostname(),errors:[...errors,...report.errors]},null,2))
   if(errors.length||report.errors.length)throw new Error([...errors,...report.errors].join("\n"))
   console.log(JSON.stringify(report,null,2))
 } finally {await browser.close();await server.close()}

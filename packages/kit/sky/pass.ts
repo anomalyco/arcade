@@ -46,7 +46,7 @@ export class SkyPass implements ScenePass {
     this.bind = d.createBindGroup({ layout, entries: [
       { binding: 0, resource: { buffer: this.uniform } },
       { binding: 1, resource: assets.moon.createView() },
-      { binding: 2, resource: d.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "repeat" }) },
+      { binding: 2, resource: d.createSampler({ magFilter: "linear", minFilter: "linear", mipmapFilter: "linear", addressModeU: "repeat" }) },
     ] })
     const module = compileShaderModuleWithLog(d, skyShader, "Shared night sky")
     const pipelineLayout = d.createPipelineLayout({ bindGroupLayouts: [ctx.frameLayout, layout] })
