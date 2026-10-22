@@ -13,6 +13,19 @@ export const CRADLE = [PHONE.x-0.102*1.3,PHONE.y+0.10,PHONE.z+.06]
 export const CORD_END = [CRADLE[0],CRADLE[1],CRADLE[2]+RECEIVER_PAD]
 export const PHONE_INDICATOR = [PHONE.x+.16,PHONE.z-.14]
 export const walls: Rect[] = []
+export const chairs: Rect[] = []
+type Range={first:number;count:number}
+export const stackContacts:{id:string;support:Range;prop:Range}[]=[]
+function range(m:Mesh,first:number):Range{return {first:first/11,count:(m.v.length-first)/11}}
+function top(m:Mesh,r:Range){let y=-Infinity;for(let i=r.first*11;i<(r.first+r.count)*11;i+=11)y=Math.max(y,m.v[i+1]);return y}
+/** Fit the built geometry, including bevels and lids, onto its supporting geometry. */
+function stack(m:Mesh,id:string,support:Range,build:()=>void):Range{
+  const from=m.v.length;build();let bottom=Infinity
+  for(let i=from;i<m.v.length;i+=11)bottom=Math.min(bottom,m.v[i+1])
+  const dy=top(m,support)-bottom
+  for(let i=from;i<m.v.length;i+=11)m.v[i+1]+=dy
+  const prop=range(m,from);stackContacts.push({id,support,prop});return prop
+}
 const beige = hex(0xaaa28a), edge = hex(0x6c6d60), dark = hex(0x242c29), paper = hex(0xb7b5a0)
 
 function tag(mesh: Mesh, from: number, surface: number) { for(let i=from+10;i<mesh.v.length;i+=11) mesh.v[i]=surface }
@@ -55,14 +68,17 @@ function partition(m:Mesh,x:number,z:number,w:number,d:number,h=1.47) {
   walls.push([x-w/2,z-d/2,x+w/2,z+d/2])
 }
 function cabinet(m:Mesh,x:number,z:number,w=0.5,h=0.72) {
+  const first=m.v.length
   walls.push([x-w/2,z-0.325,x+w/2,z+0.325])
   box(m,x,0.04,z,w,h,0.65,hex(0x777a6b),5,0.015)
+  const shell=range(m,first)
   for(let i=0;i<3;i++) {
-    const y=0.1+i*h/3
-    box(m,x,y,z+0.333,w-0.035,h/3-0.018,0.018,hex(0x848371),5,0.004)
+    const y=0.065+i*h/3
+    box(m,x,y,z+0.333,w-0.035,h/3-0.028,0.018,hex(0x848371),5,0.004)
     box(m,x,y+h/6,z+0.351,0.15,0.026,0.025,dark,5,0.003)
     box(m,x,y+h/6+0.055,z+0.347,0.13,0.036,0.005,paper,6)
   }
+  return shell
 }
 function archiveBox(m:Mesh,x:number,y:number,z:number,w=.38) {
   box(m,x,y,z,w,.23,.32,hex(0x8b8064),6,.005)
@@ -75,7 +91,9 @@ function foregroundStorage(m:Mesh) {
   const x=-2.13,z=3.48,w=2.55
   walls.push([x-w/2,z-.29,x+w/2,z+.29])
   box(m,x,.07,z,w,.72,.55,hex(0x48544d),5,.012)
+  const lid=m.v.length
   box(m,x,.80,z,w+.04,.042,.59,hex(0x746750),10,.007)
+  const credenza=range(m,lid)
   for(const dx of [-.36,.43]) {
     box(m,x+dx,.10,z+.282,.75,.67,.018,hex(0x657065),5,.006)
     box(m,x+dx+.25,.69,z+.296,.07,.014,.012,dark,5)
@@ -83,19 +101,25 @@ function foregroundStorage(m:Mesh) {
   box(m,x-1.0,.10,z+.284,.43,.66,.02,hex(0x202b29))
   box(m,x-1.0,.40,z+.31,.45,.018,.12,hex(0x766b53),10)
   binders(m,x-1.17,.115,z+.28,5);binders(m,x-1.17,.42,z+.28,5)
-  archiveBox(m,-2.25,.844,z,.42);archiveBox(m,-2.30,1.10,z-.025,.34)
-  binders(m,-1.89,.844,z,9);plant(m,-1.02,.844,z)
+  const carton=stack(m,"left lower box",credenza,()=>archiveBox(m,-2.25,0,z,.42))
+  stack(m,"left upper box",carton,()=>archiveBox(m,-2.25,0,z,.34))
+  stack(m,"credenza binders",credenza,()=>binders(m,-1.89,0,z,9))
+  stack(m,"credenza plant",credenza,()=>plant(m,-1.02,0,z))
   // Broad lateral drawers, rather than a row of narrow pedestal cabinets.
-  cabinet(m,1.65,3.48,1.36,1.10);cabinet(m,3.06,3.48,1.36,1.10)
+  const left=cabinet(m,1.65,3.48,1.36,1.10),right=cabinet(m,3.06,3.48,1.36,1.10)
+  let support=left
   for(let i=0;i<3;i++) {
-    const first=m.v.length,px=1.44+i*.055,pz=3.48+i*.035,y=1.15+i*.105
-    box(m,px,y,pz,.48,.012,.36,dark,5,.003)
-    for(const s of [-1,1])box(m,px+s*.24,y,pz,.012,.073,.36,edge,5)
-    box(m,px,y,pz-.174,.48,.073,.012,edge,5)
-    box(m,px,y+.015,pz,.41,.024,.30,paper,6)
-    rotate(m,first,px,pz,-.13+i*.10)
+    const px=1.44,pz=3.48
+    let floor:Range={first:0,count:0}
+    support=stack(m,`tray ${i}`,support,()=>{
+      const first=m.v.length;box(m,px,0,pz,.48,.012,.36,dark,5,.003);floor=range(m,first)
+      for(const s of [-1,1])box(m,px+s*.24,0,pz,.012,.073,.36,edge,5)
+      box(m,px,0,pz-.174,.48,.073,.012,edge,5)
+    })
+    stack(m,`tray ${i} paper`,floor,()=>box(m,px,0,pz,.41,.024,.30,paper,6))
   }
-  archiveBox(m,2.15,1.15,3.48,.41);archiveBox(m,2.77,1.15,3.50,.44)
+  stack(m,"right file box A",left,()=>archiveBox(m,2.08,0,3.48,.41))
+  stack(m,"right file box B",right,()=>archiveBox(m,2.77,0,3.50,.44))
 }
 function windowBlinds(m:Mesh,z:number) {
   const {x,bottom,pitch,count,width}=BLINDS
@@ -168,7 +192,7 @@ function keyboard(m:Mesh,x:number,y:number,z:number) {
   rotate(m,first,x,z,.045)
 }
 function chair(m:Mesh,x:number,z:number) {
-  walls.push([x-0.28,z-0.28,x+0.28,z+0.28])
+  const collider:Rect=[x-0.28,z-0.28,x+0.28,z+0.28];walls.push(collider);chairs.push(collider)
   const cloth=hex(0x46534d)
   box(m,x,0.43,z,0.46,0.075,0.44,cloth,1,0.032)
   box(m,x,0.52,z+0.2,0.43,0.43,0.075,cloth,1,0.035)
@@ -237,6 +261,7 @@ export function phoneIndicator() {
 }
 export function buildWorld() {
   walls.length=0
+  chairs.length=0;stackContacts.length=0
   const m=new Mesh()
   // The PBR carpet plane in props.ts owns y=0; slab top stays below it.
   box(m,0,-0.12,0,12,0.11,18,hex(0x565548),2)
@@ -263,7 +288,7 @@ export function buildWorld() {
   desk(m,0,-5.55,3.25)
   keyboard(m,-.74,.795,-5.15)
   phone(m);binders(m,0.65,0.795,-5.82,9)
-  walls.push([.34,-4.85,.96,-4.25])
+  const heroChair:Rect=[.34,-4.85,.96,-4.25];walls.push(heroChair);chairs.push(heroChair)
    // Flat, broken dried stain rather than a raised torus.
    for(let i=0;i<60;i++) {
      if(i%13===0||i%17===0)continue

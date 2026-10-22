@@ -9,6 +9,10 @@ An original Arcade scene based on Kit's approved October 20, 2026 generated Nigh
 - Contact shadows: the shared kit's depth-march implementation of Bend Studio's technique, following three.js r181 `SSSNode` (MIT). Source and attribution are in `packages/kit/gpu/contact-shadows.ts`.
 - Carpet: [ambientCG Carpet001](https://ambientcg.com/view?id=Carpet001), [CC0](https://docs.ambientcg.com/license). Base colour, OpenGL normal and roughness maps, converted to 1024px WebP by `scripts/prepare-carpet.py`; warm tint and 1.2 m tiling are scene adaptations. The source lists its technique as approximation, not a scan.
 
+## Movement and room audio
+
+Carpet footsteps, cloth rustle, stop/pivot scuffs, chair impacts, HVAC, fluorescent hum and distant creaks are original deterministic synthesis in `src/foley.ts`. No third-party samples are used. The same synthesis and mixer render live audio and the offline proof soundtrack.
+
 ## Authored hard-surface props
 
 The active CRT, phone base and rolodex are original Blender models authored against the approved concepts. Their earlier TRELLIS candidates had torn casing surfaces, an incomplete keypad and distorted cards. `scripts/author-hard-surface.py` rebuilds these forms with rolled bevels, curved glass, vent details, twelve numbered keys, a receiver-free cradle and separate radial index cards. Materials use unlit base-colour/roughness values and the game's live lighting; there are no painted or baked shadows. The glass uses the live phosphor shader.

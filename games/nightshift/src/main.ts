@@ -1,4 +1,4 @@
-import { FirstPerson } from "@arcade/kit/client/first-person"
+import { WalkCamera } from "./walk-camera"
 import { isEditableEventTarget, onKeyLayoutChange } from "@arcade/kit/client/controls"
 import { keyPromptHtml } from "@arcade/kit/client/key-cap"
 import { openGpu } from "@arcade/kit/gpu/boot"
@@ -18,6 +18,7 @@ import { buildWorld, handset, phoneIndicator, PHONE, START, CLOSE, CORD_END, REC
 import { newCall, interact, stepCall, subtitle, ringEnvelope } from "../shared/call"
 import { OfficeAudio } from "./audio"
 import { officeProps } from "./props"
+import { renderFoley } from "./foley"
 
 async function main() {
   const canvas=document.querySelector<HTMLCanvasElement>("#view")!,hud=document.getElementById("hud")!,prompt=document.getElementById("prompt")!,sub=document.getElementById("subtitle")!
@@ -30,9 +31,11 @@ async function main() {
   renderer.setTemporal({...TEMPORAL_DEFAULTS,mode:"taa",sharpen:0.15})
   renderer.setLevel({chunks:[{data:world.data,box:[-7,-10,7,10]}],glass:[],...flatLighting(0,0,[0,0,0])})
   const receiver=renderer.addModel(handset()),indicator=renderer.addModel(phoneIndicator()),parts=new FrameParts()
-  const camera=new FirstPerson(canvas,()=>panel.visible)
+  settings.reduceMotion=matchMedia("(prefers-reduced-motion: reduce)").matches
+  try{const saved=localStorage.getItem("nightshift.reduceMotion");if(saved!==null)settings.reduceMotion=saved==="true"}catch{}
+  const camera:WalkCamera=new WalkCamera(canvas,()=>panel.visible,settings,()=>document.pointerLockElement===canvas&&!document.hidden&&!panel.visible&&camera.speed>0)
   camera.height=1.65;camera.fov=68;camera.far=45;camera.near=0.045
-  const setCamera=(view:"wide"|"phone")=>{const p=view==="wide"?START:CLOSE;camera.body.x=p.x;camera.body.y=p.z;camera.yaw=p.yaw;camera.pitch=p.pitch;camera.release()}
+  const setCamera=(view:"wide"|"phone")=>{const p=view==="wide"?START:CLOSE;camera.body.x=p.x;camera.body.y=p.z;camera.yaw=p.yaw;camera.pitch=p.pitch;camera.release();camera.resetWalk()}
   setCamera("wide")
   const panel=new LabPanel(settings,controls(),new URLSearchParams(location.search),()=>camera.release(),{open:false,pill:false,groupActions:false})
   panel.addControls(contact,contactShadowControls("Shadows"))
@@ -107,6 +110,7 @@ async function main() {
     renderer.render({frame,lights:lights.lights,lightCount:lights.lightCount,shadowLightCount:lights.shadowLightCount,occluders:lights.occ,occluderCount:lights.occCount,lampPower:lights.power,lampCount:0,view:[-7,-10,7,10],batches:parts.batches(),alphaSprites:parts.alpha,alphaCount:parts.nAlpha,addSprites:parts.add,addCount:parts.nAdd,grade:[0,0,0,settings.exposure],fog:fog.update({eye:camera.eye,viewProj:vp,lamps:fogLamps}),volume:smoke?[fog.volumeInput()]:[contactShadowInput(contact),fog.volumeInput()]})
     const dx=PHONE.x-camera.eye[0],dz=PHONE.z-camera.eye[2]
     audio.update(time,distance(),(dx*Math.cos(camera.yaw)-dz*Math.sin(camera.yaw))/Math.max(distance(),0.1),call,settings.volume,document.pointerLockElement===canvas&&!document.hidden,flicker)
+    audio.movement({time:camera.walk.time,x:camera.body.x,z:camera.body.y,yaw:camera.yaw,volume:settings.volume,active:document.pointerLockElement===canvas&&!document.hidden&&!panel.visible,tube:flicker,foley:settings.foley,room:settings.roomTone},camera.walk.events)
     prompt.innerHTML=call.phase==="ringing"&&canAnswer()?keyPromptHtml("KeyE","Answer"):call.phase==="call"?keyPromptHtml("KeyE","Hang up"):""
     if(call.phase==="ended") {
       officeReached ||= Math.hypot(camera.body.x-OFFICE.x,camera.body.y-OFFICE.z)<.65
@@ -116,7 +120,7 @@ async function main() {
     frames++;if(smoke&&frames>=2)paused=true
     requestAnimationFrame(render)
   }
-  Object.assign(window,{nightshift:{camera,settings,renderer,call,action,setCamera,cradle:props.cradle,get frames(){return frames},get paused(){return paused},set paused(v:boolean){paused=v},set time(v:number){fixedTime=v},ready:true}})
+  Object.assign(window,{nightshift:{camera,settings,renderer,call,action,setCamera,renderFoley,cradle:props.cradle,get frames(){return frames},get paused(){return paused},set paused(v:boolean){paused=v},set time(v:number){fixedTime=v},ready:true}})
   requestAnimationFrame(render)
 }
 void main().catch(e=>{console.error(e);document.getElementById("hud")!.textContent=String(e)})

@@ -14,14 +14,17 @@ root = Path(sys.argv[1])
 z, y = np.meshgrid(np.linspace(.2, .95, 48), np.linspace(.24, 1.24, 48))
 regions = {"right_fabric": np.stack([np.full_like(z, 1.135), y, z, np.ones_like(z)], axis=-1).reshape(-1, 4),
            "left_fabric": np.stack([np.full_like(z, -1.135), y, z, np.ones_like(z)], axis=-1).reshape(-1, 4)}
+z, y = np.meshgrid(np.linspace(1.05, 1.45, 256), np.linspace(.9, 1.3, 32))
+regions["left_bands"] = np.stack([np.full_like(z, -1.135), y, z, np.ones_like(z)], axis=-1).reshape(-1, 4)
 x, z = np.meshgrid(np.linspace(-.7, .7, 64), np.linspace(-1.4, .2, 48))
 regions["carpet"] = np.stack([x, np.zeros_like(x), z, np.ones_like(x)], axis=-1).reshape(-1, 4)
-result = {"method":"90 frames at 60 Hz; bilinear luminance at fixed world points, static lighting/dust; display RGB /255", "variants":{}}
+result = {"method":"60 Hz; bilinear luminance at fixed world points, static lighting/dust; display RGB /255", "variants":{}}
 poses = None
-for variant in ["motion-before", "motion-filter-only", "motion-after"]:
+for variant in sys.argv[2:] or ["motion-before", "motion-filter-only", "motion-after"]:
     folder = root / variant
     trace = json.loads((folder / "trace.json").read_text())
-    current = np.array([f["eye"] for f in trace["trace"]])
+    assert not trace.get("errors"), f"GPU errors in {variant}"
+    current = np.array([f["eye"] + f["viewProj"] for f in trace["trace"]])
     if poses is not None:
         assert np.max(np.abs(current-poses)) < 1e-6, "Camera paths differ"
     poses = current
@@ -45,6 +48,6 @@ for variant in ["motion-before", "motion-filter-only", "motion-after"]:
         stats[name] = {"points":a.shape[1], "delta_rms":float(np.sqrt(np.mean(delta**2))),
             "delta_abs_p90":float(np.percentile(np.abs(delta),90)), "temporal_std_mean":float(np.std(a,axis=0).mean())}
     result["variants"][variant] = stats
-result["caveat"] = "Before was captured on M4 Pro; filter-only on M2 Max. No performance claim; all paths match."
+result["caveat"] = "Reprojected surface samples, not a perceptual score or performance claim. All camera paths match."
 (root / "motion-metrics.json").write_text(json.dumps(result, indent=2))
 print(json.dumps(result, indent=2))

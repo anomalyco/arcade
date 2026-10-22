@@ -1,4 +1,6 @@
 import { ringEnvelope, type Call } from "../shared/call"
+import { Foley, type RoomSample } from "./foley"
+import type { FoleyEvent } from "./walk"
 
 /** Synthesized room/bells and Kit's authorized recorded fictional performance. */
 export class OfficeAudio {
@@ -9,15 +11,14 @@ export class OfficeAudio {
   private recording?: AudioBuffer
   private speech?: AudioBufferSourceNode
   private speechStart=0
-  private hum?: GainNode
+  private foley?: Foley
   muted=false
   async unlock() {
     if(this.ctx) { await this.ctx.resume();return }
     const c=this.ctx=new AudioContext(),master=this.master=c.createGain();master.gain.value=0;master.connect(c.destination)
     const bell=this.bell=c.createGain(),pan=this.pan=c.createStereoPanner();bell.gain.value=0;bell.connect(pan);pan.connect(master)
     for(const [hz,gain] of [[838,0.18],[1174,0.1],[2514,0.022]]) {const o=c.createOscillator(),g=c.createGain();o.frequency.value=hz;g.gain.value=gain;o.connect(g);g.connect(bell);o.start()}
-    const hum=this.hum=c.createGain();hum.gain.value=0;hum.connect(master)
-    const ballast=c.createOscillator();ballast.type="triangle";ballast.frequency.value=120;ballast.connect(hum);ballast.start()
+    this.foley=new Foley(c,c.destination)
     void fetch(`${import.meta.env.BASE_URL}audio/jay-call.mp3`).then(r=>{if(!r.ok)throw new Error(`Call audio: ${r.status}`);return r.arrayBuffer()}).then(b=>c.decodeAudioData(b)).then(b=>{this.recording=b}).catch(e=>console.error(e))
     await c.resume()
   }
@@ -34,7 +35,7 @@ export class OfficeAudio {
       const s=this.speech=this.ctx.createBufferSource();s.buffer=this.recording!;s.connect(this.master)
       this.speechStart=now-call.elapsed;s.start(now,call.elapsed)
     }
-    gain(this.hum,0.008*tube)
   }
+  movement(room:RoomSample,events:readonly FoleyEvent[]){this.foley?.update({...room,active:room.active&&!this.muted},events)}
   dispose() { void this.ctx?.close() }
 }
