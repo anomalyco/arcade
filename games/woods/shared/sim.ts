@@ -137,7 +137,7 @@ const NAMES = ["Sam", "Robin", "Alex", "Jo", "Casey"]
 /** Bots take ids from here up, so they never collide with people's ids (0 solo, 1–6 in a room). */
 export const BOT_ID = 100
 
-function newPlayer(id: number, bot: boolean, name: string, x: number, z: number, yaw: number): Player {
+export function newPlayer(id: number, bot: boolean, name: string, x: number, z: number, yaw: number): Player {
   return {
     id, bot, name, x, z, vx: 0, vz: 0, yaw, pitch: -0.1, light: true,
     flickerLeft: 0, flickerNext: 20 + (id % 16) * 7, mapRaise: 0, tie: null, signal: 0,

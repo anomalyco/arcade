@@ -15,6 +15,15 @@
       #start { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: radial-gradient(ellipse at center, rgba(0,0,0,0.25), rgba(0,0,0,0.75)); cursor: pointer; z-index: 6; }
       #start h1 { margin: 0; font: 300 44px Georgia, serif; letter-spacing: 0.3em; color: #cfc8b4; }
       #start p { margin: 0; font: italic 15px Georgia, serif; color: #a59f8e; }
+      #start .row { display: flex; gap: 8px; align-items: center; margin-top: 14px; font: 13px system-ui, sans-serif; color: #a59f8e; }
+      #start input, #start button { font: 13px system-ui, sans-serif; color: #e8e2cf; background: rgba(20,22,20,0.8); border: 1px solid rgba(207,200,180,0.25); border-radius: 4px; padding: 6px 10px; }
+      #start input { width: 140px; }
+      #start button { cursor: pointer; }
+      #start button:hover { border-color: rgba(207,200,180,0.6); }
+      #start a { color: #a59f8e; font-size: 12px; }
+      #start b { color: #e8e2cf; letter-spacing: 0.15em; }
+      #room { position: fixed; top: 12px; right: 14px; pointer-events: none; font-size: 12px; text-align: right; line-height: 1.6; opacity: 0.7; text-shadow: 0 1px 3px #000; }
+      #room .away { opacity: 0.45; }
     </style>
   </head>
   <body>
@@ -23,7 +32,12 @@
     <div id="reticle"></div>
     <div id="prompt"></div>
     <div id="toast"></div>
-    <div id="start"><h1>WOODS</h1><p>Click to step out of camp</p></div>
+    <div id="room"></div>
+    <div id="start">
+      <h1>WOODS</h1><p id="start-sub">Click to step out of camp</p>
+      <div class="row"><input id="name" maxlength="16" placeholder="Your name" autocomplete="off" /><button id="friends">Play with friends</button></div>
+      <div class="row" id="invite" hidden>Room <b id="code"></b><button id="copy">Copy invite link</button><a href="./">play alone</a></div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

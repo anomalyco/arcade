@@ -54,7 +54,7 @@ export const intentOps: InputOps<PlayerInput> = {
 // ---------------------------------------------------------------- client → room
 
 export type Hello = { type: "hello"; token?: string; build?: string; name?: string }
-export type ClientMsg = Hello | { type: "intent"; seq: number; i: PlayerInput }
+export type ClientMsg = Hello | { type: "intent"; seq: number; i: PlayerInput } | { type: "name"; name: string }
 
 export function decodeClient(raw: unknown): (ClientMsg | RoomClientFrame<PlayerInput>) | null {
   if (typeof raw !== "string" || raw.length > 2048) return null
@@ -63,6 +63,7 @@ export function decodeClient(raw: unknown): (ClientMsg | RoomClientFrame<PlayerI
   if (!m || typeof m !== "object") return null
   if (m.type === "ping" && typeof m.t === "number") return { type: "ping", t: m.t }
   if (m.type === "hello") return { type: "hello", token: typeof m.token === "string" ? m.token.slice(0, 64) : undefined, build: typeof m.build === "string" ? m.build.slice(0, 32) : undefined, name: cleanPlayerName(m.name, MAX_NAME, "") }
+  if (m.type === "name") { const name = cleanPlayerName(m.name, MAX_NAME, ""); return name ? { type: "name", name } : null }
   if (m.type === "intent" && typeof m.seq === "number" && Number.isInteger(m.seq) && m.seq >= 0 && Array.isArray(m.i)) return { type: "intent", seq: m.seq, i: unpackIntent(m.i as number[]) }
   return null
 }

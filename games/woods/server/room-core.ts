@@ -97,7 +97,12 @@ export class WoodsRoomCore extends RoomCore<ClientMsg, PlayerInput, RosterRow, W
     a.aim = intent.yaw
     return moved
   }
-  protected handle() {}
+  protected handle(id: string, msg: ClientMsg) {
+    const pid = this.pids.get(id), p = this.state.players.find((q) => q.id === pid)
+    if (msg.type !== "name" || pid === undefined || !p) return
+    this.names.set(pid, msg.name)
+    p.name = msg.name
+  }
   protected idleState(id: string): IdleState {
     return this.pids.has(id) ? "play" : "gone"
   }
