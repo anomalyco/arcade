@@ -23,7 +23,8 @@ export function quietHint(hint: BeatHint | null, prompt: SessionView["prompt"]):
  * One frame of the practice space: the lobby's kit swapped in if it changed, the guide stepped, and the hint for the
  * first thing not yet tried. Hints only suggest: nothing waits on them and Ready is always one key away.
  */
-export function stepPractice(pr: Practice, loadout: LoadoutId | undefined, dt: number, caseOpened: boolean): BeatHint | null {
+export function stepPractice(pr: Practice, loadout: LoadoutId | undefined, dt: number, caseOpened: boolean, crouchKey = "KeyZ"): BeatHint | null {
+  pr.guide.crouchKey = crouchKey
   if (loadout && loadout !== pr.loadout) {
     pr.loadout = loadout
     swapPracticeKit(pr.session, loadout)

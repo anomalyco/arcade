@@ -81,8 +81,8 @@ summary, the chip sits under it. Lab › HUD › Night clock ("Today (none)") an
 
 Also from the Oct 20 playtest ("I need to have a volume button too"): `src/volume/` puts a speaker button in the top
 right corner. It opens Master, Effects, Ambience and Zombies sliders and Mute, the same `settings.audio` values as
-Lab › Volume, which `OutbreakAudio` applies and saves per browser. Raising a slider unmutes; `M` still mutes from
-anywhere; Esc or a click outside closes it (`tests/volume-menu.test.ts`).
+Lab › Volume, which `OutbreakAudio` applies and saves per browser. Raising a slider unmutes; since the Oct 21
+playtest `M` opens the map and mutes only with Lab › Controls › Map key "Today" (the Mute row's M cap shows then); Esc or a click outside closes it (`tests/volume-menu.test.ts`).
 
 The lobby says who it is waiting on ("waiting for you: press Ready", "waiting for B") and the Ready button pulses
 "Click to Ready Up" until you press it, because players sat waiting without knowing they had to click it

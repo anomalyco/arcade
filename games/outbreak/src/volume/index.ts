@@ -1,3 +1,4 @@
+import { muteOnM, type ControlSettings } from "../controls/settings"
 import { registerOutbreakClientFeature } from "../feature-registry"
 import { VolumeMenu, type VolumeTarget } from "./menu"
 
@@ -10,7 +11,11 @@ export const outbreakVolumeFeature = registerOutbreakClientFeature({
   frame: {
     overlay: (ctx) => {
       if (typeof document === "undefined") return
-      menu ??= new VolumeMenu(() => ctx.settings.audio as unknown as VolumeTarget)
+      const settings = ctx.settings
+      menu ??= new VolumeMenu(
+        () => settings.audio as unknown as VolumeTarget,
+        () => muteOnM(settings.hud as unknown as ControlSettings),
+      )
       menu.sync()
     },
   },

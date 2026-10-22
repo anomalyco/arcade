@@ -51,6 +51,8 @@ function portalCentre(sim: CoopSim, id: string, z: number): { x: number; y: numb
  */
 export class TrainingGuide {
   readonly done = new Set<BeatId>()
+  /** The key the crouch hint shows (Backquote › Controls › Crouch key). */
+  crouchKey = "KeyZ"
   private sprintFor = 0
   private crouchFor = 0
 
@@ -136,7 +138,7 @@ export class TrainingGuide {
         // Shut it behind you, once through.
         return p.y > 30 ? { beat, keys: [{ code: "KeyE" }], glyph: "door-close", at: portalCentre(sim, TRAINING_ROOM_DOOR, 1.5), target: TRAINING_ROOM_DOOR } : null
       case "crouch":
-        return Math.hypot(p.x - TRAINING_GLASS.x, p.y - TRAINING_GLASS.y) < 4.5 ? { beat, keys: [{ code: "ControlLeft", hold: true }], at: "self" } : null
+        return Math.hypot(p.x - TRAINING_GLASS.x, p.y - TRAINING_GLASS.y) < 4.5 ? { beat, keys: [{ code: this.crouchKey, hold: true }], at: "self" } : null
       case "board":
         // No planks yet: back to the dresser that has them.
         if (ledger.count(actorId, "plank") <= 0) return { beat, keys: [{ code: "KeyE" }], glyph: "search", at: atDresser, target: TRAINING_DRESSER }

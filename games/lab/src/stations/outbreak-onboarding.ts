@@ -18,7 +18,7 @@ const beats: [string, string, string][] = [
   ["craft", "Recipe board", "E at the workbench opens the board; a digit makes the bandage."],
   ["door-open", "Open the hall door", "E and the door-open glyph over the bedroom door."],
   ["door-close", "Shut it behind you", "Once through, E and the door-close glyph."],
-  ["crouch", "Crouch over the glass", "Hold Ctrl near the glass the dead broke in through: crouched, it doesn't crunch."],
+  ["crouch", "Crouch over the glass", "Hold Z near the glass the dead broke in through: crouched, it doesn't crunch."],
   ["board", "Board the window", "B and the board-up glyph over the window it came through; the prompt shows the board pips."],
   ["sprint", "Sprint", "Shift while you move."],
   ["front-door", "Front door", "E at the front door."],

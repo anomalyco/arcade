@@ -4,11 +4,12 @@ import type { FrameClock } from "../../shared/clock"
 import { HOLD_DURATION } from "../../shared/interact"
 import { LocalSession, type Command } from "../../shared/session"
 import type { BotsLabController } from "../bots-lab"
+import { CROUCH_CTRL, crouchCodes, mapCodes, type ControlSettings } from "../controls/settings"
 import { CRAFT_KEY } from "../crafting/settings"
 import type { InventoryHud } from "../inventory-hud"
 import { inventoryPresenter } from "../inventory/hooks"
 import { BOARD_UP } from "../prompt-clarity/board"
-import { MAP_KEY, type OutbreakMap } from "../map/map"
+import type { OutbreakMap } from "../map/map"
 import type { NetSession } from "../net-session"
 import type { OutbreakSettings } from "../settings"
 import { applyVehicleStunt } from "../vehicle-lab"
@@ -31,8 +32,8 @@ export interface OutbreakInputHost {
 
 /**
  * Translates keyboard, mouse, wheel, and tap-vs-hold (`KeyG`) input into fixed-tick `Command` substeps for
- * `session.update`, while routing HUD/map shortcuts (`Digit1`–`Digit9`, `Tab`, `Escape`, `KeyN`, `KeyC` recipes,
- * `KeyQ` ping).
+ * `session.update`, while routing HUD/map shortcuts (`Digit1`–`Digit9`, `Tab`, `Escape`, `KeyM` map, `KeyC`
+ * recipes, `KeyQ` ping). Crouch and map keys follow Backquote › Controls (`controls/settings.ts`).
  */
 export class OutbreakInputController {
   readonly input: Input
@@ -47,10 +48,12 @@ export class OutbreakInputController {
     const { canvas, inventoryHud, map } = host
     this.input = new Input(canvas, ["KeyE"])
     this.input.enabled = true
-    // Ctrl is crouch: keep the browser's Ctrl shortcuts (save, bookmark, find) from firing while sneaking.
+    // With Today's Ctrl crouch, keep the browser's Ctrl shortcuts (save, bookmark, find) from firing while sneaking.
+    // Ctrl+W, Ctrl+T and Ctrl+N never reach the page, which is why crouch moved to Z.
     window.addEventListener("keydown", (e) => {
       const t = e.target as HTMLElement | null
       if (
+        this.keys().crouchKey === CROUCH_CTRL &&
         e.ctrlKey &&
         !e.metaKey &&
         /^(Key[A-Z]|Digit\d|Space)$/.test(e.code) &&
@@ -87,7 +90,7 @@ export class OutbreakInputController {
       if (code === "KeyQ") this.pendingVerbs.ping = true
       if (code === "Tab") inventoryHud.togglePack()
       if (code === "Escape") inventoryHud.close()
-      if (code === MAP_KEY) map.toggle()
+      if (mapCodes(this.keys()).includes(code)) map.toggle()
       else if (code === "Escape") map.close()
       else map.key(code)
       // The open bag (AR-94) takes G for what the cursor is over, before G's drop-held and bundle.
@@ -105,6 +108,10 @@ export class OutbreakInputController {
     window.addEventListener("keyup", (e) => {
       if (e.code === "MetaLeft" || e.code === "MetaRight") this.release()
     })
+  }
+
+  private keys(): ControlSettings {
+    return this.host.settings.hud as unknown as ControlSettings
   }
 
   liveMove(): { mx: number; my: number; sprint: boolean } {
@@ -154,7 +161,7 @@ export class OutbreakInputController {
     const meleeEdge = this.input.takeMelee()
     const seatEdge = this.input.takeSeat()
     const hornHeld = this.input.held("KeyH")
-    const crouchHeld = this.input.enabled && (this.input.held("ControlLeft") || this.input.held("ControlRight"))
+    const crouchHeld = this.input.enabled && crouchCodes(this.keys()).some((code) => this.input.held(code))
     const spaceHeld = Boolean(session.view.player.vehicleId) && this.input.held("Space")
     const barricadeEdge = this.pendingBarricade
     this.pollHolds(wallNow)
