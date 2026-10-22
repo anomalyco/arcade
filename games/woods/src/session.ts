@@ -164,7 +164,7 @@ export class OnlineSession implements Session {
     if (s.names) this.names = s.names
     if (s.tapes) this.view.tapes = s.tapes.map((r) => tapeFromRow(this.world, r)).filter((t) => t !== null)
     if (s.found) this.view.found = s.found
-    if (s.sounds) Object.assign(this.view.sounds, s.sounds)
+    if (s.distant) this.view.distant = s.distant
     if (s.map) applyMapDelta(this.self.map, s.map)
     const mine = s.p.find((r) => r[0] === s.me)
     if (mine) {

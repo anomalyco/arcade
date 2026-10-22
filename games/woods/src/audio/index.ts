@@ -1,8 +1,8 @@
 import { SoundBank } from "@arcade/kit/audio"
 import { Footsteps, type FootEvent, type FootSurface } from "@arcade/kit/audio/footsteps"
 import type { LabControl, LabPanel } from "@arcade/kit/lab-panel"
-import { createDistant, DISTANT_SOUNDS, holdDistant, placeDistant, stepDistant, type DistantEvent, type DistantSound } from "../../shared/distant"
-import type { WoodsEvent, WoodsState } from "../../shared/sim"
+import { DISTANT_SOUNDS, placeDistant, type DistantEvent, type DistantSound } from "../../shared/distant"
+import { SIGNAL_HOLD_SECONDS, type WoodsEvent, type WoodsState } from "../../shared/sim"
 import type { WoodsWorld } from "../../shared/world"
 import { WOODS_SFX } from "../sfx"
 import { SOUND, SOUND_CONTROLS, type SoundSettings } from "./settings"
@@ -30,6 +30,9 @@ export class WoodsMix {
     this.limiter.connect(ctx.destination)
     this.feetOut = ctx.createGain()
     this.scapeOut = ctx.createGain()
+    // Silent until `levels` says otherwise, so starting muted never leaks the first fade-in.
+    this.feetOut.gain.value = 0
+    this.scapeOut.gain.value = 0
     this.feetOut.connect(this.limiter)
     this.scapeOut.connect(this.limiter)
     this.feet = new Footsteps(ctx, this.feetOut)
@@ -52,17 +55,19 @@ export type TapeFrame = {
   l: Listener
   steps: { events: FootEvent[]; surface: FootSurface; walkTime: number; gain: number }[]
   distant: DistantEvent[]
+  /** Someone was signalling (distant sounds that start now fade out). */
+  signal?: boolean
 }
 
 /**
  * The woods' sound: the shared library bank for UI cues, the shared quiet footsteps, and the soundscape (beds, tree
- * sounds, lake and camp, distant events). Files load after Begin (the first gesture), never on page load.
+ * sounds, lake and camp, distant events). Nothing is created or fetched before Begin (`begin()`, from its click) or a
+ * Lab audition; it all goes quiet while you are not playing (start screen, lost pointer lock, hidden tab). The sim owns
+ * the distant-sound schedule (`shared/distant.ts` in `stepWoods`); this only plays its events.
  */
 export class WoodsAudio {
-  readonly bank = new SoundBank("woods", WOODS_SFX)
+  readonly bank = new SoundBank("woods", WOODS_SFX, { unlockOnGesture: false })
   readonly sound: SoundSettings = { ...SOUND }
-  /** The distant-event schedule. Plain data: the sim can own it once a server does (see shared/distant.ts). */
-  readonly distant = createDistant(1987)
   /** Lab-only: audition one distant sound, solo one layer. */
   readonly lab = { audition: 0, solo: -1 }
   mix: WoodsMix | null = null
@@ -70,21 +75,54 @@ export class WoodsAudio {
   tape: TapeFrame[] | null = null
   private tapeTime = 0
   private pending: Pick<TapeFrame, "steps" | "distant"> = { steps: [], distant: [] }
+  private queued: DistantEvent[] = []
   private listener: Listener = { x: 0, y: 1.7, z: 0, yaw: 0 }
   private sim = 0
   private world: WoodsWorld | null = null
+  private begun = false
+  private live = false
+  private retryAt = 0
+  private resuming = false
 
-  constructor(private readonly baseUrl = typeof document === "undefined" ? "./audio/" : new URL("./audio/", document.baseURI).href) {}
+  constructor(private readonly baseUrl = typeof document === "undefined" ? "./audio/" : new URL("./audio/", document.baseURI).href) {
+    if (typeof document === "undefined") return
+    document.addEventListener("visibilitychange", () => { if (document.hidden) this.quiet() })
+    addEventListener("pagehide", () => this.quiet())
+  }
 
-  private ready(): boolean {
+  /** Begin (its click is the gesture): create or resume the context; the files load on the next playing frame. */
+  begin(): void {
+    this.begun = true
+    void this.bank.unlock()
+  }
+
+  private running(): boolean {
     const ctx = this.bank.runtime.ctx
-    if (!ctx || ctx.state !== "running" || this.bank.runtime.isOffline) return false
+    return !!ctx && ctx.state === "running" && !this.bank.runtime.isOffline
+  }
+
+  /** The mix, created and loading once the context runs after Begin; failed files are fetched again every 10 s. */
+  private ensureMix(): WoodsMix | null {
+    if (!this.begun || !this.running()) return null
+    const ctx = this.bank.runtime.ctx!
     if (!this.mix) {
       this.mix = new WoodsMix(ctx, this.sound, this.baseUrl, () => this.world!)
       this.mix.scape.solo = LAYERS[this.lab.solo] ?? null
-      void this.mix.scape.load().catch((e) => console.warn("woods audio:", e))
     }
-    return true
+    const scape = this.mix.scape
+    if (!scape.complete && !scape.loading && ctx.currentTime >= this.retryAt) {
+      this.retryAt = ctx.currentTime + 10
+      void scape.load().catch((e) => console.warn("woods audio:", e))
+    }
+    return this.mix
+  }
+
+  /** Stops what is scheduled and suspends the context (hidden tab, lost pointer lock, start screen). */
+  private quiet(): void {
+    this.live = false
+    this.queued.length = 0
+    this.mix?.scape.stopAll()
+    if (this.running()) this.bank.runtime.suspend()
   }
 
   bindControls(panel: Pick<LabPanel, "addControls">): void {
@@ -92,63 +130,79 @@ export class WoodsAudio {
     panel.addControls(this.sound, SOUND_CONTROLS)
     const controls: LabControl[] = [
       { key: "audition", label: "Distant sound", group: "Sound", type: "select", options: DISTANT_SOUNDS.map((s, i) => ({ value: i, label: s.slice(4) })) },
-      { key: "auditionPlay", label: "Play it somewhere out there", group: "Sound", type: "action", run: () => { this.audition(DISTANT_SOUNDS[this.lab.audition] ?? "far.owl") } },
+      { key: "auditionPlay", label: "Play it somewhere out there", group: "Sound", type: "action", run: () => { void this.auditionNow(DISTANT_SOUNDS[this.lab.audition] ?? "far.owl") } },
       { key: "solo", label: "Solo a layer", group: "Sound", type: "select", options: [{ value: -1, label: "Everything" }, ...LAYERS.map((l, i) => ({ value: i, label: l }))], change: (v) => { if (this.mix) this.mix.scape.solo = LAYERS[Number(v)] ?? null } },
     ]
     panel.addControls(this.lab, controls)
   }
 
-  /** Once per frame, after the sim: the ears at the eye, facing `yaw`. */
-  frame(eye: readonly number[], yaw: number, dt: number, world: WoodsWorld, state: WoodsState): void {
+  /**
+   * Once per frame, after the session ticked and its events went to `event()`: the ears at the eye, facing `yaw`.
+   * `live` is whether you can hear the woods now (playing, or the Lab panel open after Begin).
+   */
+  frame(eye: readonly number[], yaw: number, dt: number, world: WoodsWorld, state: WoodsState, live: boolean): void {
     this.world = world
     this.sim = state.t
     this.listener = { x: eye[0]!, y: eye[1]!, z: eye[2]!, yaw }
     this.bank.listen(eye[0]!, eye[2]!, 1.7)
-    const people = state.players.filter((p) => !p.bot)
-    const e = stepDistant(this.distant, world, people, state.t, this.sound.distantRate)
-    if (e) this.event(e)
+    const signalling = state.players.some((p) => p.signal > SIGNAL_HOLD_SECONDS)
+    if (live && this.begun && !(typeof document !== "undefined" && document.hidden)) {
+      this.live = true
+      if (!this.running() && !this.resuming) {
+        this.resuming = true
+        void this.bank.runtime.resume().finally(() => { this.resuming = false })
+      }
+    } else if (this.live) this.quiet()
+    const mix = this.live ? this.ensureMix() : null
+    for (const e of this.queued) {
+      this.pending.distant.push(e)
+      if (mix?.scape.loaded) mix.scape.distant(e, this.listener, this.sim)
+    }
+    this.queued.length = 0
     if (this.tape) {
       this.tapeTime += dt
-      this.tape.push({ t: this.tapeTime, sim: state.t, l: this.listener, ...this.pending })
+      this.tape.push({ t: this.tapeTime, sim: state.t, l: this.listener, signal: signalling, ...this.pending })
     }
     this.pending = { steps: [], distant: [] }
-    if (!this.ready()) return
+    if (!mix) return
     const v = this.bank.volumes
-    this.mix!.levels(v.volumeMaster / 100, v.volumeEffects / 100, v.volumeAmbience / 100, this.bank.muted)
-    this.mix!.scape.update(this.listener, state.t)
+    mix.levels(v.volumeMaster / 100, v.volumeEffects / 100, v.volumeAmbience / 100, this.bank.muted)
+    mix.scape.update(this.listener, state.t, signalling)
   }
 
-  /** Sim events: a signal keeps the woods quiet for a while; a distant event plays where it happens. */
-  event(e: WoodsEvent | DistantEvent): void {
-    if (e.kind === "signal") holdDistant(this.distant, this.sim + 8)
-    if (e.kind !== "distant") return
-    this.pending.distant.push(e)
-    if (this.ready()) this.mix!.scape.distant(e, this.listener, this.sim)
+  /** The session's events: a distant event plays where it happens, on the next `frame` (with that frame's clock). */
+  event(e: WoodsEvent): void {
+    if (e.kind === "distant" && (this.live || this.tape)) this.queued.push(e)
   }
 
-  /** A friend is talking (voice chat, later): no distant sound over them. */
-  speaking(seconds = 3): void {
-    holdDistant(this.distant, this.sim + seconds + 2)
-  }
-
-  /** Plays one distant sound where the schedule would put it now (the Lab's audition button). */
+  /** Plays one distant sound where the schedule would put it now. Automation and the proof; plays only once loaded. */
   audition(sound: DistantSound, seed = (this.sim * 1000) | 0): DistantEvent | null {
     if (!this.world) return null
     const e = placeDistant(this.world, sound, this.listener, this.sim, seed)
-    if (e) this.event(e)
+    if (e) this.queued.push(e)
     return e
+  }
+
+  /** The Lab's audition button (a gesture, so it may start the sound before Begin): waits for the files, then plays. */
+  private async auditionNow(sound: DistantSound): Promise<void> {
+    this.begun = true
+    if (!(await this.bank.unlock())) return
+    this.live = true
+    const mix = this.ensureMix()
+    if (!mix) return
+    if (!mix.scape.loaded) await mix.scape.load().catch(() => {})
+    this.audition(sound)
   }
 
   /** Footstep and cloth contacts from the walk clock (`Walk.events`, sample-accurate) or a friend's gait. */
   steps(events: readonly FootEvent[], surface: FootSurface, walkTime: number, gain = 1): void {
     if (!events.length) return
     if (this.tape) this.pending.steps.push({ events: events.map((e) => ({ ...e })), surface, walkTime, gain })
-    if (!this.ready()) return
-    this.mix!.feet.play(events, surface, walkTime, gain)
+    if (this.live && this.mix && this.running()) this.mix.feet.play(events, surface, walkTime, gain)
   }
 
   play(id: (typeof WOODS_SFX)[number], x?: number, z?: number, gain = 1): void {
-    this.bank.play(id, x, z, { gain })
+    if (this.live && this.running()) this.bank.play(id, x, z, { gain })
   }
 
   /**
@@ -171,7 +225,7 @@ export class WoodsAudio {
       if (at <= last) continue
       last = at
       void ctx.suspend(at).then(() => {
-        mix.scape.update(f.l, f.sim)
+        mix.scape.update(f.l, f.sim, f.signal ?? false)
         if (opts.footsteps !== false) for (const s of f.steps) mix.feet.play(s.events, s.surface, s.walkTime, s.gain)
         for (const e of f.distant) mix.scape.distant(e, f.l, f.sim)
         void ctx.resume()

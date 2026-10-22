@@ -176,7 +176,7 @@ export class WoodsRoomCore extends RoomCore<ClientMsg, PlayerInput, RosterRow, W
     const names = s.players.map((p) => `${p.id}:${p.name}`).join("|")
     if (names !== sent.names) { sent.names = names; snap.names = Object.fromEntries(s.players.map((p) => [p.id, p.name])) }
     if (s.rev.found !== sent.found) { sent.found = s.rev.found; snap.found = s.found }
-    if (!ents) { snap.tapes = s.tapes.map(tapeRow); snap.sounds = { seed: s.sounds.seed, next: s.sounds.next } }
+    if (!ents) { snap.tapes = s.tapes.map(tapeRow); snap.distant = { ...s.distant, rng: { ...s.distant.rng }, recent: [...s.distant.recent] } }
     if (me) {
       const map = mapDelta(me.map, sent, !ents)
       if (map) snap.map = map

@@ -148,7 +148,19 @@ test("a dropped person keeps their seat, place and map, and gets everything agai
   expect(snaps[0]!.you![1]).toBeCloseTo(before.z, 1)
   expect(snaps[0]!.tapes).toBeDefined()
   expect(snaps[0]!.map!.from).toBe(0)
+  expect(snaps[0]!.distant).toEqual(room.state.distant)
+  expect(snaps.slice(1).some((s) => s.distant)).toBe(false)
   expect(room.humans).toBe(2)
+})
+
+test("every person hears the room's distant sounds as the same events", () => {
+  const { tick, connect, room } = setup()
+  const a = connect("Kit"), b = connect("Aiden")
+  room.state.distant.next = room.state.t + 0.5
+  tick(60)
+  const heard = (c: Client) => c.got.flatMap((m) => (m.type === "ev" ? m.events.filter((e) => e.kind === "distant") : []))
+  expect(heard(a).length).toBe(1)
+  expect(heard(b)).toEqual(heard(a))
 })
 
 test("bandwidth: a 6-person room stays small per player", () => {

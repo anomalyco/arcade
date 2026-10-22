@@ -104,7 +104,7 @@ async function main() {
   document.addEventListener("visibilitychange", () => { if (document.hidden) release() })
   function syncStart() { start.style.display = forcePlay || document.pointerLockElement === canvas || panel.visible ? "none" : "flex" }
   document.addEventListener("pointerlockchange", () => { release(); syncStart() })
-  start.addEventListener("click", (e) => { if (!panel.visible && !(e.target as HTMLElement).closest("input, button, a")) canvas.requestPointerLock() })
+  start.addEventListener("click", (e) => { if (!panel.visible && !(e.target as HTMLElement).closest("input, button, a")) { audio.begin(); canvas.requestPointerLock() } })
   nameInput.addEventListener("change", () => {
     const name = nameInput.value.trim().slice(0, 16)
     localStorage.setItem("woods.name", name)
@@ -320,7 +320,8 @@ async function main() {
     const campLight = Math.max(0, 1 - Math.hypot(at.x - world.camp.x, at.z - world.camp.z) / 30) * 0.5 * settings.campGlow
     map.frame(state, meId, p.mapRaise, camera.yaw, level * r + campLight + 0.04, camera.walk.lateral * 40, dt)
     if (performance.now() > toastUntil) toast.style.opacity = "0"
-    audio.frame(camera.eye, camera.yaw, dt, world, state)
+    // You hear the woods while playing, or with the knobs open once you've begun (to tune the mix).
+    audio.frame(camera.eye, camera.yaw, dt, world, state, playing || panel.visible)
 
     frames++
     if (smoke && frames >= 2) paused = true

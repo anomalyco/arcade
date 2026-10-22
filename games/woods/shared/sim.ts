@@ -1,5 +1,5 @@
 import { stepBody } from "@arcade/kit/sim/move"
-import { soundAt, type DistantSound } from "./sounds"
+import { createDistant, holdDistant, stepDistant, type DistantEvent, type DistantState } from "./distant"
 import { isDeepWater, nextRandom, solidsNear, standHeight, treesNear, type Tree, type WoodsWorld } from "./world"
 
 /**
@@ -40,6 +40,8 @@ export const FEEL = {
   botTapeEvery: 26,
   /** Each bot keeps at most this many tapes up; tying another unties its oldest. */
   botTapes: 8,
+  /** How often the distant sounds come (×; `shared/distant.ts`). The room's is authoritative. */
+  distantRate: 1,
 }
 export type Feel = typeof FEEL
 
@@ -61,6 +63,8 @@ export const SIGNAL_PITCH = 1.1
 /** Seconds the beam must point up before it counts as a signal. */
 export const SIGNAL_HOLD_SECONDS = 0.8
 const SIGNAL_HOLD = SIGNAL_HOLD_SECONDS
+/** Seconds after a signal ends before a distant sound may come. */
+export const DISTANT_AFTER_SIGNAL = 6
 const COMPARE_RANGE = 3.5
 
 export type Tie = { tree: number; progress: number; removing: boolean }
@@ -109,8 +113,8 @@ export type WoodsEvent =
   | { kind: "maps-compared"; a: number; b: number }
   | { kind: "signal"; by: number; x: number; z: number }
   | { kind: "light"; by: number; on: boolean }
-  /** A seeded distant sound (`shared/sounds.ts`): same time and world position for every player in the room. */
-  | { kind: "sound"; sound: DistantSound }
+  /** A distant sound (`shared/distant.ts`): the same sound, take, place and emission time for every player. */
+  | DistantEvent
 
 export type WoodsState = {
   t: number
@@ -128,8 +132,8 @@ export type WoodsState = {
   rev: { found: number }
   /** Last walker serial handed out (`Player.serial`). */
   serial: number
-  /** The distant-sound schedule's cursor: index and time of the next sound (`shared/sounds.ts`). */
-  sounds: { seed: number; next: number; at: number }
+  /** The distant-sound schedule (`shared/distant.ts`), stepped here; a room sends it on join. */
+  distant: DistantState
 }
 
 /** One player's controls for a step: the same for a person (sent to the room, predicted locally) and a bot. */
@@ -161,7 +165,7 @@ export type Human = { id: number; name: string }
 
 /** A fresh night: `humans` start at camp (solo is one person with id 0), `bots` friends spread just north of them. */
 export function createWoods(world: WoodsWorld, bots = FEEL.botCount, seed = world.params.seed, humans: readonly Human[] = [{ id: 0, name: "You" }]): WoodsState {
-  const state: WoodsState = { t: 0, rng: { seed }, players: [], brains: [], tapes: [], nextTape: 1, found: {}, compared: {}, events: [], rev: { found: 0 }, serial: 0, sounds: { seed: seed ^ 0x51ed, next: 0, at: soundAt(seed ^ 0x51ed, 0, world).at } }
+  const state: WoodsState = { t: 0, rng: { seed }, players: [], brains: [], tapes: [], nextTape: 1, found: {}, compared: {}, events: [], rev: { found: 0 }, serial: 0, distant: createDistant(seed ^ 0x51ed) }
   for (const h of humans) addHuman(state, world, h.id, h.name)
   setBotCount(state, world, bots)
   return state
@@ -425,12 +429,6 @@ function botInput(state: WoodsState, world: WoodsWorld, b: Brain, p: Player, fee
 export function stepWoods(state: WoodsState, world: WoodsWorld, inputs: ReadonlyMap<number, PlayerInput>, dt: number, feel: Feel = FEEL): void {
   state.t += dt
   state.events.length = 0
-  while (state.t >= state.sounds.at) {
-    const sound = soundAt(state.sounds.seed, state.sounds.next, world)
-    state.events.push({ kind: "sound", sound })
-    state.sounds.next++
-    state.sounds.at = soundAt(state.sounds.seed, state.sounds.next, world).at
-  }
   for (const p of state.players) {
     const brain = p.bot ? state.brains.find((b) => b.id === p.id) : undefined
     const input = brain ? botInput(state, world, brain, p, feel, dt) : inputs.get(p.id) ?? { yaw: p.yaw, pitch: p.pitch, light: p.light, tie: false, map: false, mx: 0, mz: 0 }
@@ -449,6 +447,10 @@ export function stepWoods(state: WoodsState, world: WoodsWorld, inputs: Readonly
     const a = state.players[i]!, b = state.players[j]!
     if ((a.mapRaise > 0.9 || b.mapRaise > 0.9) && Math.hypot(a.x - b.x, a.z - b.z) < COMPARE_RANGE) compareMaps(state, a, b)
   }
+  // The woods keep quiet while anyone is signalling and for a few seconds after.
+  if (state.players.some((p) => p.signal > SIGNAL_HOLD)) holdDistant(state.distant, state.t + DISTANT_AFTER_SIGNAL)
+  const sound = stepDistant(state.distant, world, state.players.filter((p) => !p.bot), state.t, feel.distantRate)
+  if (sound) state.events.push(sound)
 }
 
 /** Eye position of a player standing on the terrain. */

@@ -99,11 +99,26 @@ function buzz(ctx: BaseAudioContext, seconds = 4): AudioBuffer {
   return buf
 }
 
+type Voice = { src: AudioBufferSourceNode; fade: GainNode; at: number; distant: boolean; faded: boolean }
+
+const BEDS: readonly WoodsSoundId[] = ["bed.canopy", "bed.leaves", "bed.crickets", "bed.lake", "bed.walls"]
+
+async function fetchFile(url: string): Promise<ArrayBuffer> {
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`${res.status} ${url}`)
+  return res.arrayBuffer()
+}
+
 type Bed = { src: AudioBufferSourceNode; gain: GainNode; filter?: BiquadFilterNode; panner?: PannerNode }
 
 export class Soundscape {
-  readonly buffers = new Map<WoodsSoundId, AudioBuffer[]>()
+  /** Decoded takes by file index; a file that failed to load is a hole until a later `load()` fills it. */
+  readonly buffers = new Map<WoodsSoundId, (AudioBuffer | undefined)[]>()
+  /** The beds are in, so the woods can start. */
   loaded = false
+  /** Every file is in. */
+  complete = false
+  loading: Promise<boolean> | null = null
   /** Solo one layer (listening page, Lab); null plays everything. */
   solo: SoundLayer | null = null
   /** Distant events played, for automation. */
@@ -124,6 +139,9 @@ export class Soundscape {
   private hush: { from: number; to: number }[] = []
   private ctxCache = { at: -1, exposure: 1, density: 0.5, insects: 1, densities: [0.5, 0.5, 0.5, 0.5] }
   private near: Tree[] = []
+  /** One-shots scheduled or sounding, so a lost focus stops them and a signal fades the distant ones. */
+  private voices = new Set<Voice>()
+  private signalSince: number | null = null
 
   constructor(readonly ctx: BaseAudioContext, private readonly out: AudioNode, private readonly settings: SoundSettings, private readonly baseUrl: string, private readonly world: () => WoodsWorld) {
     this.outdoor = ctx.createBiquadFilter()
@@ -142,16 +160,37 @@ export class Soundscape {
     this.verbOut.connect(this.outdoor)
   }
 
-  /** Fetches and decodes every file (after Begin, never on load). */
-  async load(fetcher: (url: string) => Promise<ArrayBuffer> = async (url) => (await fetch(url)).arrayBuffer()): Promise<void> {
-    const jobs: Promise<void>[] = []
-    for (const [id, files] of Object.entries(WOODS_FILES) as [WoodsSoundId, readonly { file: string }[]][]) {
-      const list: AudioBuffer[] = []
-      this.buffers.set(id, list)
-      files.forEach((f, i) => jobs.push(fetcher(this.baseUrl + f.file).then((b) => this.ctx.decodeAudioData(b)).then((a) => { list[i] = a })))
+  /**
+   * Fetches and decodes the files not loaded yet (after Begin, never on page load). A file that fails is skipped and
+   * tried again on the next call. Resolves whether every file is in.
+   */
+  load(fetcher: (url: string) => Promise<ArrayBuffer> = fetchFile): Promise<boolean> {
+    if (this.loading) return this.loading
+    const run = async () => {
+      const jobs: Promise<void>[] = []
+      let failed = 0
+      for (const [id, files] of Object.entries(WOODS_FILES) as [WoodsSoundId, readonly { file: string }[]][]) {
+        let list = this.buffers.get(id)
+        if (!list) this.buffers.set(id, (list = []))
+        const into = list
+        files.forEach((f, i) => {
+          if (into[i]) return
+          jobs.push(fetcher(this.baseUrl + f.file).then((b) => this.ctx.decodeAudioData(b)).then((a) => { into[i] = a }, (e) => { failed++; console.warn("woods audio:", f.file, e) }))
+        })
+      }
+      await Promise.all(jobs)
+      this.loaded = BEDS.every((id) => this.buffers.get(id)?.[0])
+      this.complete = failed === 0
+      return this.complete
     }
-    await Promise.all(jobs)
-    this.loaded = true
+    this.loading = run().finally(() => { this.loading = null })
+    return this.loading
+  }
+
+  /** Stops every one-shot, scheduled or sounding (focus lost: nothing waits in a suspended context to play late). */
+  stopAll(): void {
+    for (const v of this.voices) { try { v.src.stop() } catch {} }
+    this.voices.clear()
   }
 
   private random(): number {
@@ -235,11 +274,24 @@ export class Soundscape {
     }
   }
 
-  /** Once per frame: `t` is sim time (it drives the gust field, the same on every machine). */
-  update(l: Listener, t: number): void {
+  /**
+   * Once per frame: `t` is sim time (it drives the gust field, the same on every machine). While `signalling`, distant
+   * sounds that start (reach you) during the signal fade out; ones already sounding play on.
+   */
+  update(l: Listener, t: number, signalling = false): void {
     if (!this.loaded) return
     if (!this.started) this.start()
     const world = this.world(), s = this.settings, now = this.ctx.currentTime
+    if (signalling) {
+      this.signalSince ??= now
+      for (const v of this.voices) {
+        if (!v.distant || v.faded || v.at < this.signalSince) continue
+        v.faded = true
+        const from = Math.max(now, v.at)
+        v.fade.gain.setTargetAtTime(0, from, 0.12)
+        v.src.stop(from + 0.8)
+      }
+    } else this.signalSince = null
     this.listen(l, now)
     const tau = 0.25
     const set = (b: Bed | undefined, v: number, k = tau) => b && b.gain.gain.setTargetAtTime(Math.max(0, v), now, k)
@@ -323,10 +375,12 @@ export class Soundscape {
   }
 
   /** A positional one-shot: travel delay, distance level and low-pass, HRTF panning and a distance-weighted reverb send. */
-  oneShot(id: WoodsSoundId, take: number, x: number, y: number, z: number, l: Listener, level: number, opts: { reverb?: number; rate?: number; elapsed?: number } = {}): { distance: number; delay: number } | null {
-    const list = this.buffers.get(id)
-    if (!list?.length) return null
-    const buffer = list[take % list.length]!
+  oneShot(id: WoodsSoundId, take: number, x: number, y: number, z: number, l: Listener, level: number, opts: { reverb?: number; rate?: number; elapsed?: number; distant?: boolean } = {}): { distance: number; delay: number } | null {
+    // The chosen take, or the next one that loaded.
+    const list = this.buffers.get(id), n = WOODS_FILES[id].length
+    let buffer: AudioBuffer | undefined
+    for (let k = 0; k < n && !buffer; k++) buffer = list?.[(take + k) % n]
+    if (!buffer) return null
     const ctx = this.ctx
     const d = Math.hypot(x - l.x, y - l.y, z - l.z)
     const delay = Math.max(0, d / SPEED_OF_SOUND - (opts.elapsed ?? 0))
@@ -349,14 +403,18 @@ export class Soundscape {
     wet.gain.value = level * (opts.reverb ?? 0.3) * (0.3 + 0.7 * Math.min(1, d / 220))
     const pan = this.panner(true)
     Soundscape.place(pan, x, y, z, ctx.currentTime)
+    const fade = ctx.createGain()
     src.connect(lp)
     lp.connect(lp2)
-    lp2.connect(dry)
+    lp2.connect(fade)
+    fade.connect(dry)
     dry.connect(pan)
     pan.connect(this.outdoor)
-    lp2.connect(wet)
+    fade.connect(wet)
     wet.connect(this.verbIn)
-    src.onended = () => { for (const n of [src, lp, lp2, dry, wet, pan]) n.disconnect() }
+    const voice: Voice = { src, fade, at, distant: !!opts.distant, faded: false }
+    this.voices.add(voice)
+    src.onended = () => { this.voices.delete(voice); for (const n of [src, lp, lp2, fade, dry, wet, pan]) n.disconnect() }
     src.start(at)
     return { distance: d, delay }
   }
@@ -366,7 +424,7 @@ export class Soundscape {
     if (!this.on("distant")) return
     const level = this.settings.distantLevel * DISTANT_LEVEL[e.sound] * 0.55
     const elapsed = Math.max(0, simNow - e.at)
-    const r = this.oneShot(e.sound, e.take, e.x, e.y, e.z, l, level, { reverb: 0.5, elapsed, rate: 1 + ((e.seq * 0.37) % 1 - 0.5) * 0.04 })
+    const r = this.oneShot(e.sound, e.take, e.x, e.y, e.z, l, level, { reverb: 0.5, elapsed, distant: true, rate: 1 + ((e.seq * 0.37) % 1 - 0.5) * 0.04 })
     if (!r) return
     this.heard.push({ sound: e.sound, distance: Math.round(r.distance), delay: Math.round(r.delay * 100) / 100, time: this.ctx.currentTime })
     if (e.sound === "far.steps") { const t0 = this.ctx.currentTime + r.delay; this.hush.push({ from: t0, to: t0 + 7 }) }

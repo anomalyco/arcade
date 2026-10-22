@@ -4,13 +4,13 @@ import { lakeDistance, nextRandom, terrainHeight, treesNear, type WoodsWorld } f
  * Sparse distant sounds, the woods' dread: a loon on the lake, a fox, an owl, a branch giving way, something heavy in
  * the brush, three knocks, a whistle, a radio, a car door much too far away, the camp's screen door.
  *
- * The schedule is plain seeded data (`DistantState`) stepped by `stepDistant`, using only + − × ÷ and `nextRandom`, so
- * the sim (or a server) owns it and every player gets the same event: same sound, same take, same world position, same
+ * The schedule is plain seeded data (`DistantState`) stepped by `stepDistant`, using only + − × ÷ and `nextRandom`.
+ * `stepWoods` owns it (the room's sim online, the local sim solo), so every player gets the same event: same sound, same take, same world position, same
  * emission time. Clients add their own travel delay (distance / 343 m/s), filtering and reverb.
  *
  * Pacing: the first comes after a minute or two; then they come a little more often and a little closer the longer the
  * group has been out and the further its furthest member is from camp. Never two at once, and never over a signal or a
- * friend's speech (`holdDistant`).
+ * friend's speech (`holdDistant`; the sim holds it while anyone signals).
  */
 
 export const DISTANT_SOUNDS = ["far.loon", "far.fox", "far.owl", "far.snap", "far.steps", "far.knock", "far.whistle", "far.radio", "far.cardoor", "far.screendoor"] as const
@@ -42,9 +42,6 @@ export type DistantState = {
   /** The last event is still sounding until about here, travel time included. */
   busyUntil: number
 }
-
-/** Shared tuning: how often (×). Loudness is each client's mix. */
-export const DISTANT_FEEL = { distantRate: 1 }
 
 type Place = "lake" | "woods" | "tree" | "canopy" | "camp" | "beyond"
 type Rule = {
@@ -154,7 +151,7 @@ function place(rule: Rule, world: WoodsWorld, ax: number, az: number, dread: num
  * Advances the schedule to sim time `t` with the people out there (any order; bots may be included or not, as long as
  * every machine passes the same list). Returns the event that starts now, if any.
  */
-export function stepDistant(ds: DistantState, world: WoodsWorld, people: readonly { x: number; z: number }[], t: number, rate = DISTANT_FEEL.distantRate): DistantEvent | null {
+export function stepDistant(ds: DistantState, world: WoodsWorld, people: readonly { x: number; z: number }[], t: number, rate = 1): DistantEvent | null {
   if (t < ds.next || !people.length || rate <= 0) return null
   const wait = Math.max(ds.quietUntil, ds.busyUntil)
   if (t < wait) { ds.next = wait + 2 + 4 * nextRandom(ds.rng); return null }
@@ -188,7 +185,8 @@ export function stepDistant(ds: DistantState, world: WoodsWorld, people: readonl
   ds.busyUntil = t + Math.min(reach, 900) / SPEED_OF_SOUND + rule.seconds + 4
   ds.recent.push(sound)
   if (ds.recent.length > 3) ds.recent.shift()
-  return { kind: "distant", sound, x: at[0], y: at[1], z: at[2], at: t, take, seq: ds.seq++ }
+  const cm = (v: number) => Math.round(v * 100) / 100
+  return { kind: "distant", sound, x: cm(at[0]), y: cm(at[1]), z: cm(at[2]), at: Math.round(t * 1000) / 1000, take, seq: ds.seq++ }
 }
 
 /** An event of a chosen sound placed as the schedule would (auditions, the Lab, the listening page). */

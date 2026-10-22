@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
-import { createWoods, FEEL, stepWoods, tieTarget, type PlayerInput } from "../shared/sim"
+import type { DistantEvent } from "../shared/distant"
+import { createWoods, DISTANT_AFTER_SIGNAL, FEEL, SIGNAL_HOLD_SECONDS, stepWoods, tieTarget, type PlayerInput } from "../shared/sim"
 import { groundHeight, isDeepWater, makeWorld, terrainHeight } from "../shared/world"
 
 const world = makeWorld()
@@ -101,6 +102,29 @@ test("bots wander the woods, tie tape and answer a signal", () => {
   expect(state.tapes.some((t) => t.by !== 0)).toBe(true)
   for (let i = 0; i < 60 * 1.5; i++) stepWoods(state, world, new Map([[0, { ...still(), pitch: 1.4 }]]), 1 / 60)
   expect(state.brains.every((b) => b.mode === "signal" || b.mode === "regroup")).toBe(true)
+})
+
+test("the sim owns the distant sounds: the same seed gives the same events, and none start while anyone signals", () => {
+  const night = (signal: (t: number) => boolean) => {
+    const state = createWoods(world, 0)
+    const out: { e: DistantEvent; signalling: boolean }[] = []
+    let until = -1
+    for (let i = 0; i < 60 * 60 * 12; i++) {
+      const t = i / 60
+      stepWoods(state, world, new Map([[0, { ...still(), pitch: signal(t) ? 1.4 : 0 }]]), 1 / 60, { ...FEEL, distantRate: 3 })
+      if (state.players[0]!.signal > SIGNAL_HOLD_SECONDS) until = state.t + DISTANT_AFTER_SIGNAL
+      for (const e of state.events) if (e.kind === "distant") out.push({ e, signalling: state.t < until })
+    }
+    return out
+  }
+  const a = night(() => false), b = night(() => false)
+  expect(a.length).toBeGreaterThan(8)
+  expect(b.map((x) => x.e)).toEqual(a.map((x) => x.e))
+  // A long signal (two minutes, far past the old 8 s hold) holds the woods quiet throughout, then they come back.
+  const held = night((t) => t > 120 && t < 240)
+  expect(held.filter((x) => x.signalling)).toEqual([])
+  expect(held.some((x) => x.e.at > 240 + DISTANT_AFTER_SIGNAL)).toBe(true)
+  expect(held.filter((x) => x.e.at > 120 && x.e.at < 240 + DISTANT_AFTER_SIGNAL)).toEqual([])
 })
 
 test("the world converts to the forest renderer's shape with one ground height", async () => {

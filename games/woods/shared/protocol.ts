@@ -3,6 +3,7 @@ import type { InputOps } from "@arcade/kit/net/jitter-buffer"
 import { cleanPlayerName } from "@arcade/kit/sim/matchmaking"
 import { FEEL, SIGNAL_HOLD_SECONDS, type MapKnowledge, type Player, type PlayerInput, type Tape, type WoodsEvent } from "./sim"
 import { TAPE_HEIGHT } from "./sim"
+import type { DistantState } from "./distant"
 import type { WoodsWorld } from "./world"
 
 /**
@@ -96,8 +97,8 @@ export type Snapshot = {
   found?: Record<number, number[]>
   /** Your map's new pencil marks, as changes since the last snapshot (all of it with `reset`, on join). */
   map?: MapDelta
-  /** The room's distant-sound schedule seed and cursor (for the audio layer to look ahead). */
-  sounds?: { seed: number; next: number }
+  /** The room's distant-sound schedule, on join only (`distant` events carry each sound after). */
+  distant?: DistantState
 }
 
 /**

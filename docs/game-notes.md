@@ -23,8 +23,8 @@ proven animation techniques to animation.md, not here.
   visual parity or a before/after improvement. Evidence is in `lot-2026-10-20/detail-iteration-5` in the gallery.
 
 - **Shared distant sounds and a gust field that travels (Woods).** `games/woods/shared/distant.ts` keeps the dread
-  schedule as plain seeded data stepped with only + − × ÷ √ (rejection-sampled directions, no trig), so one authority
-  picks sound, take, place and emission time and each client adds its own travel delay (d / 343 m/s), distance
+  schedule as plain seeded data stepped with only + − × ÷ √ (rejection-sampled directions, no trig) inside
+  `stepWoods`, so the room picks sound, take, place and emission time and each client adds its own travel delay (d / 343 m/s), distance
   low-pass and forest reverb. Canopy wind is four voices 26 m around the listener, each reading a gust field that
   moves downwind at 7 m/s, so gusts audibly cross the trees; exposure from local relief puts the ridge 11.5 dB over a
   hollow. Measured in Chrome offline renders (`games/woods/scripts/audio-proof.ts`, gallery `woods-2026-10-21/audio`).
