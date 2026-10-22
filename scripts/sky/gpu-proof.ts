@@ -25,10 +25,10 @@ try {
     type Proof={adapter:unknown;timestamps:boolean;errors:string[];measure():Promise<unknown>;stability():Promise<unknown>;temporalTranslation():Promise<unknown>;occultation():Promise<unknown>}
     if(document.body.dataset.error)throw new Error(document.body.dataset.error)
     const p=(window as unknown as {skyProof:Proof}).skyProof
-    return {adapter:p.adapter,timestamps:p.timestamps,...(extra === "occultation" ? {occultation:await p.occultation()} : extra === "temporal" ? {temporal:await p.temporalTranslation()} : {stability:await p.stability(),timings:await p.measure()}),errors:p.errors}
+    return {adapter:p.adapter,timestamps:p.timestamps,...(extra === "occultation" ? {occultation:await p.occultation()} : extra === "temporal" ? {temporal:await p.temporalTranslation()} : {stability:await p.stability(),timings:await p.measure(),temporal:await p.temporalTranslation(),occultation:await p.occultation()}),errors:p.errors}
   },process.argv.includes("--occultation") ? "occultation" : process.argv.includes("--temporal") ? "temporal" : "all")
   await page.screenshot({path:resolve(out,"physical.png")})
-  if(process.argv.includes("--temporal")) for(const phase of ["crescent","half","full"]) {
+  if(!process.argv.includes("--occultation")) for(const phase of ["crescent","half","full"]) {
     await page.evaluate(async phase=>{
       const p=(window as unknown as {skyProof:{draw(settings:Record<string,unknown>,view:Record<string,number>):Promise<void>}}).skyProof
       await p.draw({skyMoon:phase},{yaw:-220*Math.PI/180,pitch:0.45})

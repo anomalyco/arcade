@@ -2,6 +2,17 @@ import { DEG, MOON_RADIUS, equatorialToWorld, extinction, julianDate, moonPhaseG
 import { skyUtc, type SkySettings } from "./settings"
 
 export type MoonLight = { direction: SkyVector; colour: SkyVector; illuminanceLux: number; angularRadius: number; phaseAngle: number }
+/** Local solar time, not a civil timezone. Preserve the UTC day rollover. */
+export function skyClockSettings(s: SkySettings, localHour?: number): SkySettings {
+  return s.skyClock === "host" && localHour !== undefined ? { ...s, skyHour: localHour - s.skyLongitude / 15 } : s
+}
+
+/** Lunar north is screen-up for a horizon-level observer. */
+export function moonBasis([x, y, z]: SkyVector): { right: SkyVector; up: SkyVector } {
+  const r = Math.hypot(x, z)
+  const right: SkyVector = r > 1e-8 ? [-z / r, 0, x / r] : [1, 0, 0]
+  return { right, up: [-right[2] * y, right[2] * x - right[0] * z, right[0] * y] }
+}
 export function moonLight(s: SkySettings): MoonLight {
   const alt = s.skyMoonAltitude * DEG, az = s.skyMoonAzimuth * DEG
   const phase = s.skyMoon === "crescent" ? 135 * DEG : s.skyMoon === "half" ? Math.PI / 2 : 0

@@ -268,8 +268,8 @@ export function createDebugWorld(context: LabContext): DebugWorld {
         drawn.set(r, geometry!)
       }
       r.resize(width, height)
-      skies.get(r)!.update({ time, sceneUnitsPerCdM2: 1 })
       const clock = worldClock(state.hour)
+      skies.get(r)!.update({ time, localHour: state.hour, daylight: clock.day, sceneUnitsPerCdM2: 1 })
       const flick = worldFlicker(state.flicker, time)
       const scene = [
         ...worldLights(clock, { lampPower: state.lampPower, headlights: state.headlights, flashlight: state.flashlight, porch: state.porch, flicker: flick, physical: state.lightModel === "physical" }),

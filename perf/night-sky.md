@@ -39,6 +39,17 @@ Nothing pushed. The adapters are candidates; visibility/calibration and parity g
 
 ## Verification pending
 
+## Review round: 22 October
+
+- Corrected lunar north-up basis; expanded star quads to 3 px; host local-solar clock/daylight now drives Lab and Outbreak.
+- Failed code imports wait for late asset acquisition and release it. Explicit load or Today → Physical retries; per-device reference-counted leases share the catalogue and Moon upload.
+- Night Shift's Office uniform grew **56 → 60 floats** (224 → 240 bytes), including a new sky-control vec4. The TAA fields reused padding; the Office fields did not.
+- Candidate adapted vision redistributes catalogue flux with a magnitude-7 floor and exponent 0.65, normalizing the aggregate budget; 0.72 px integrated PSF. Host adaptation supplies bounded 1–10× observer sensitivity, with no sky history. This is a perceptual pre-composition response, not calibrated physical radiance; weather composition still needs agreement.
+- Targeted model/resource/perception tests: 10 passed, 49 assertions. Real-catalogue aggregate flux error <1e-6.
+- Review GPU run spilled from mini to Studio: photometric variation **0.035087%**, adapted **0.035832%**, translation drift **0.031247 px** over 64 m, lunar transmission zero, no GPU errors. Not mini timing evidence.
+- Main baseline production builds for Lot/Night Shift/Outbreak completed at `d4b6a9f2`. Synchronous parity driver rejects blank frames; comparisons pending.
+- Integration tree `night-sky-woods` is based on woods `4d14b07f`; owner tree remains separate.
+
 - Consumer celestial visibility through atmosphere/windows.
 - Default pixel parity against main; current reference conversion is explicitly 1 scene unit per cd/m².
 - Woods adoption/base agreement, exposure calibration, actual star visibility, shadowed moonlight and camp clip.

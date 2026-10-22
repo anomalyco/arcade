@@ -99,16 +99,21 @@ async function main() {
   }
   async function stability() {
     // Zenith test star at the zenith's equatorial coordinate (date/precession disabled by using J2000).
-    const testSettings=createSkySettings({skyMode:"physical",skyYear:2000,skyDay:1,skyHour:12,skyLatitude:90,skyLongitude:0,skyAirglow:0,skyMilkyWay:0,skyZodiacal:0,skyScintillation:0})
+    const testSettings=createSkySettings({skyMode:"physical",skyVision:"photometric",skyYear:2000,skyDay:1,skyHour:12,skyLatitude:90,skyLongitude:0,skyAirglow:0,skyMilkyWay:0,skyZodiacal:0,skyScintillation:0})
     const testSky=new SkyPass(passContext,{...assets,stars:[{id:424,ra:0,dec:Math.PI/2,magnitude:0,temperature:5778,pmRa:0,pmDec:0}]},testSettings)
     const savedPitch=pitch;pitch=Math.PI/2-0.000001
-    const samples:number[]=[]
+    const results:Record<string,{samples:number[];relativePeakToPeak:number;mean:number}>={}
     try {
-      for(let i=0;i<32;i++) { draw(i/32,testSky);const on=await readCentre();testSettings.skyStars=0;draw(i/32,testSky);const off=await readCentre();testSettings.skyStars=1;samples.push(on.sum-off.sum) }
-      const mean=samples.reduce((a,b)=>a+b,0)/samples.length
-      const variation=(Math.max(...samples)-Math.min(...samples))/mean
-      if(!Number.isFinite(variation)||variation>0.01) throw new Error(`Star flux variation ${(variation*100).toFixed(3)}% exceeds 1%`)
-      return {samples,relativePeakToPeak:variation,mean}
+      for(const vision of ["photometric","adapted"] as const) {
+        testSettings.skyVision=vision
+        const samples:number[]=[]
+        for(let i=0;i<32;i++) { draw(i/32,testSky);const on=await readCentre();testSettings.skyStars=0;draw(i/32,testSky);const off=await readCentre();testSettings.skyStars=1;samples.push(on.sum-off.sum) }
+        const mean=samples.reduce((a,b)=>a+b,0)/samples.length
+        const variation=(Math.max(...samples)-Math.min(...samples))/mean
+        if(!Number.isFinite(variation)||variation>0.01) throw new Error(`${vision} star flux variation ${(variation*100).toFixed(3)}% exceeds 1%`)
+        results[vision]={samples,relativePeakToPeak:variation,mean}
+      }
+      return results
     } finally { pitch=savedPitch;testSky.dispose();draw() }
   }
   async function temporalTranslation() {

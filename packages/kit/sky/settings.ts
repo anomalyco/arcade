@@ -2,6 +2,8 @@ import type { LabControl } from "../lab-navigation"
 export type MoonPhase = "none" | "crescent" | "half" | "full"
 export type SkySettings = {
   skyMode: "today" | "physical"
+  skyClock: "host" | "utc"
+  skyVision: "photometric" | "adapted"
   skyLatitude: number
   skyLongitude: number
   skyYear: number
@@ -23,7 +25,7 @@ export type SkySettings = {
   skyMoonLux: number
 }
 export const SKY_DEFAULTS: Readonly<SkySettings> = {
-  skyMode: "today", skyLatitude: 45, skyLongitude: -73,
+  skyMode: "today", skyClock: "host", skyVision: "adapted", skyLatitude: 45, skyLongitude: -73,
   skyYear: 2026, skyDay: 295, skyHour: 6, skyStars: 1, skyExtinction: 0.15,
   skyScintillation: 0.035, skyMilkyWay: 1, skyAirglow: 1, skyZodiacal: 0.2,
   skyHaze: 0.15, skyMoon: "none", skyMoonAzimuth: 220, skyMoonAltitude: 34,
@@ -36,6 +38,8 @@ export function skyControls(): LabControl[] {
   const range = (key: keyof SkySettings, label: string, min: number, max: number, step: number, unit: string): LabControl => ({ key, label, group: "Sky", type: "range", min, max, step, unit })
   return [
     { key: "skyMode", label: "Sky", group: "Sky", type: "select", options: [{ value: "today", label: "Today" }, { value: "physical", label: "Physical" }] },
+    { key: "skyClock", label: "Clock", group: "Sky", type: "select", options: [{ value: "host", label: "Scene" }, { value: "utc", label: "UTC" }] },
+    { key: "skyVision", label: "Vision", group: "Sky", type: "select", options: [{ value: "adapted", label: "Dark-adapted" }, { value: "photometric", label: "Photometric" }] },
     range("skyLatitude", "Latitude", -90, 90, 0.1, "°"),
     range("skyLongitude", "Longitude", -180, 180, 0.1, "°"),
     range("skyHour", "UTC hour", 0, 24, 0.05, "h"),

@@ -1,13 +1,20 @@
 import { compileShaderModuleWithLog, type PassContext, type ScenePass } from "../gpu/pass-graph"
 import { magnitudeLux, moonPhaseGain, temperatureRgb } from "./astronomy"
 import type { SkyAssets } from "./assets"
-import { equatorialBasis, moonLight, sunDirection } from "./model"
+import { equatorialBasis, moonBasis, moonLight, skyClockSettings, sunDirection } from "./model"
 import type { SkySettings } from "./settings"
 import { skyShader } from "./shaders"
+import { skySensitivity, starVisibilityWeights } from "./perception"
 
 export type SkyFrame = {
   /** Monotonic simulation seconds. Only scintillation uses this; the astronomical clock is in settings. */
   time: number
+  /** Host local solar hour. Omit for a scene pinned to the settings' UTC clock. */
+  localHour?: number
+  /** Host daylight (0 night, 1 day); absent uses the astronomical solar altitude. */
+  daylight?: number
+  /** Shared host eye state: 0 dazzled, 1 dark-adapted. No sky-owned adaptation history. */
+  darkAdaptation?: number
   /** Explicit host calibration, linear scene radiance per cd/m². Never includes current exposure. */
   sceneUnitsPerCdM2: number
   skyFlashRadiance?: readonly [number, number, number]
@@ -29,11 +36,12 @@ export class SkyPass implements ScenePass {
     this.uniform = d.createBuffer({ label: "Sky radiometry", size: this.data.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
     const packed = new Float32Array(assets.stars.length * 8)
     const colours = new Map<number, readonly [number, number, number]>()
+    const visibility = starVisibilityWeights(assets.stars.map(s => s.magnitude))
     assets.stars.forEach((s, i) => {
       let rgb = colours.get(s.temperature)
       if (!rgb) { rgb = temperatureRgb(s.temperature); colours.set(s.temperature, rgb) }
       const e = magnitudeLux(s.magnitude)
-      packed.set([Math.cos(s.dec)*Math.cos(s.ra), Math.cos(s.dec)*Math.sin(s.ra), Math.sin(s.dec), s.magnitude, rgb[0]*e, rgb[1]*e, rgb[2]*e, s.id], i*8)
+      packed.set([Math.cos(s.dec)*Math.cos(s.ra), Math.cos(s.dec)*Math.sin(s.ra), Math.sin(s.dec), visibility[i]!, rgb[0]*e, rgb[1]*e, rgb[2]*e, s.id], i*8)
     })
     this.count = assets.stars.length
     this.instances = d.createBuffer({ label: "Yale stars", size: packed.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST })
@@ -55,7 +63,7 @@ export class SkyPass implements ScenePass {
     this.stars = d.createRenderPipeline({ ...base, label: "Catalogue stars", vertex: { module, entryPoint: "starVertex", buffers: [{ arrayStride: 32, stepMode: "instance", attributes: [{ shaderLocation: 0, offset: 0, format: "float32x3" }, { shaderLocation: 1, offset: 12, format: "float32" }, { shaderLocation: 2, offset: 16, format: "float32x3" }, { shaderLocation: 3, offset: 28, format: "float32" }] }] }, fragment: { module, entryPoint: "starFragment", targets: [{ format: ctx.color, writeMask: GPUColorWrite.RED | GPUColorWrite.GREEN | GPUColorWrite.BLUE, blend: { color: { srcFactor: "one", dstFactor: "one" }, alpha: { srcFactor: "zero", dstFactor: "one" } } }] } })
   }
   update(frame: SkyFrame): void {
-    const s = this.settings, u = this.data
+    const s = skyClockSettings(this.settings, frame.localHour), u = this.data
     this.enabled = s.skyMode === "physical"
     if (!this.enabled) return
     if (!Number.isFinite(frame.sceneUnitsPerCdM2) || frame.sceneUnitsPerCdM2 <= 0) throw new Error("Sky requires a positive sceneUnitsPerCdM2 calibration")
@@ -65,11 +73,12 @@ export class SkyPass implements ScenePass {
       u.set(sunDirection(s),24)
       this.clock = clock
     }
-    u[3] = s.skyStars
-    const moon = moonLight(s), [x,y,z] = moon.direction
-    const r = Math.hypot(x,z)
-    const right: [number,number,number] = r > 1e-8 ? [-z/r,0,x/r] : [1,0,0]
-    const up = [y*right[2],z*right[0]-x*right[2],-y*right[0]]
+    const astronomicalDay = Math.max(0, Math.min(1, (u[25]! + 0.18) / 0.12))
+    u[27] = s.skyClock === "host" && frame.daylight !== undefined ? Math.max(0, Math.min(1, frame.daylight)) : astronomicalDay
+    u[3] = s.skyStars * (1 - u[27]!) ** 4
+    const adapted = s.skyVision === "adapted" ? Math.max(0, Math.min(1, frame.darkAdaptation ?? 1)) * (1-u[27]!) : 0
+    u[7] = adapted; u[11] = skySensitivity(adapted)
+    const moon = moonLight(s), { right, up } = moonBasis(moon.direction)
     u.set(moon.direction,12); u[15] = moon.illuminanceLux
     u.set(right,16); u.set(up,20)
     u.set([frame.sceneUnitsPerCdM2,s.skyExtinction,frame.time,s.skyScintillation],28)
