@@ -2,16 +2,43 @@ import { type Activity, type IdleState, RoomCore } from "@arcade/kit/net/room-co
 import { BUILD } from "../shared/build.gen"
 import {
   decodeClient, encodeServer, GRACE_MS, intentOps, MAX_PLAYERS, playerRow, ROOM_FEEL, roundTrail, SNAP_EVERY, tapeRow, TEAM, TICK_DT,
-  type ClientMsg, type Hello, type PlayerRow, type RosterRow, type ServerMsg, type Snapshot,
+  type ClientMsg, type Hello, type MapDelta, type PlayerRow, type RosterRow, type ServerMsg, type Snapshot,
 } from "../shared/protocol"
-import { addHuman, createWoods, removePlayer, setBotCount, stepWoods, type PlayerInput, type WoodsEvent, type WoodsState } from "../shared/sim"
+import { addHuman, createWoods, removePlayer, setBotCount, stepWoods, type MapKnowledge, type PlayerInput, type WoodsEvent, type WoodsState } from "../shared/sim"
 import { makeWorld, type WoodsWorld } from "../shared/world"
 
 /** What a seat has already been sent, so a snapshot carries only what changed (the socket is reliable and ordered). */
-type Sent = { tapes: number; found: number; names: string; trail: number; mapTapes: number; mapMarkers: number; heard: string }
-const fresh = (): Sent => ({ tapes: -1, found: -1, names: "", trail: 0, mapTapes: -1, mapMarkers: -1, heard: "" })
+type Sent = { found: number; names: string; trail: number; tapes: Set<number>; markers: number; heard: Map<number, { serial: number; len: number }> }
+const fresh = (): Sent => ({ found: -1, names: "", trail: 0, tapes: new Set(), markers: -1, heard: new Map() })
 
 const HOLD_TICKS = 9
+
+/** What changed on a map since `sent` (which it updates): new path points, tape ids learned and gone, copied paths' new points. */
+function mapDelta(m: MapKnowledge, sent: Sent, reset: boolean): MapDelta | null {
+  const d: MapDelta = { from: sent.trail, trail: roundTrail(m.trail, sent.trail) }
+  if (reset) d.reset = true
+  sent.trail = m.trail.length
+  const known = new Set(m.tapes)
+  const learned = m.tapes.filter((t) => !sent.tapes.has(t)), gone = [...sent.tapes].filter((t) => !known.has(t))
+  if (learned.length) d.tapes = learned
+  if (gone.length) d.gone = gone
+  sent.tapes = known
+  if (m.markers.length !== sent.markers) { sent.markers = m.markers.length; d.markers = m.markers.slice() }
+  const heard: NonNullable<MapDelta["heard"]> = []
+  for (const h of m.heard) {
+    const was = sent.heard.get(h.from)
+    // Paths only grow at the end, so the same walker's longer copy is the old one plus new points.
+    const same = !!was && was.serial === h.serial && was.len <= h.trail.length
+    const at = same ? was!.len : 0
+    if (!same || at < h.trail.length) heard.push({ from: h.from, at, trail: roundTrail(h.trail, at) })
+    sent.heard.set(h.from, { serial: h.serial, len: h.trail.length })
+  }
+  const unheard = [...sent.heard.keys()].filter((from) => !m.heard.some((h) => h.from === from))
+  for (const from of unheard) sent.heard.delete(from)
+  if (heard.length) d.heard = heard
+  if (unheard.length) d.unheard = unheard
+  return reset || d.trail.length || d.tapes || d.gone || d.markers || d.heard || d.unheard ? d : null
+}
 
 /** Room seed from its code, so each room's bots and flicker differ while the forest stays the printed one. */
 function codeSeed(code: string): number {
@@ -88,7 +115,10 @@ export class WoodsRoomCore extends RoomCore<ClientMsg, PlayerInput, RosterRow, W
   }
   protected override dropped(id: string) {
     const pid = this.pids.get(id)
-    if (pid !== undefined) this.away.add(pid)
+    if (pid === undefined) return
+    this.away.add(pid)
+    // Keys held when the socket dropped don't replay on reconnect.
+    this.last.delete(pid)
   }
   protected push(id: string, seq: number, intent: PlayerInput) {
     const pid = this.pids.get(id)
@@ -145,16 +175,11 @@ export class WoodsRoomCore extends RoomCore<ClientMsg, PlayerInput, RosterRow, W
     if (me) snap.you = [me.x, me.z, me.vx, me.vz, me.mapRaise].map((v) => Math.round(v * 1e5) / 1e5)
     const names = s.players.map((p) => `${p.id}:${p.name}`).join("|")
     if (names !== sent.names) { sent.names = names; snap.names = Object.fromEntries(s.players.map((p) => [p.id, p.name])) }
-    if (s.rev.tapes !== sent.tapes) { sent.tapes = s.rev.tapes; snap.tapes = s.tapes.map(tapeRow) }
     if (s.rev.found !== sent.found) { sent.found = s.rev.found; snap.found = s.found }
-    if (!ents) snap.sounds = { seed: s.sounds.seed, next: s.sounds.next }
+    if (!ents) { snap.tapes = s.tapes.map(tapeRow); snap.sounds = { seed: s.sounds.seed, next: s.sounds.next } }
     if (me) {
-      const m = me.map, heard = m.heard.map((h) => `${h.from}:${h.trail.length}`).join("|")
-      const map: NonNullable<Snapshot["map"]> = { from: sent.trail, trail: roundTrail(m.trail, sent.trail) }
-      if (m.tapes.length !== sent.mapTapes) { sent.mapTapes = m.tapes.length; map.tapes = m.tapes }
-      if (m.markers.length !== sent.mapMarkers) { sent.mapMarkers = m.markers.length; map.markers = m.markers }
-      if (heard !== sent.heard) { sent.heard = heard; map.heard = m.heard.map((h) => ({ from: h.from, trail: roundTrail(h.trail) })) }
-      if (map.trail.length || map.tapes || map.markers || map.heard) { sent.trail = m.trail.length; snap.map = map }
+      const map = mapDelta(me.map, sent, !ents)
+      if (map) snap.map = map
     }
     this.bytes.set(id, (this.bytes.get(id) ?? 0) + JSON.stringify(snap).length)
     return snap

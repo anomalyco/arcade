@@ -90,14 +90,46 @@ export type Snapshot = {
   p: PlayerRow[]
   /** Everyone's names by player id, when the set of walkers changes. */
   names?: Record<number, string>
-  /** All tapes [id, tree, yaw·1000, by, at·10], when they change. */
+  /** All tapes [id, tree, yaw·1000, by, at·10], on join only; `tape-tied`/`tape-removed` events keep them after. */
   tapes?: number[][]
   /** Marker id → finders, when it changes. */
   found?: Record<number, number[]>
-  /** Your map's new pencil marks: own path from index `from`, tapes and markers known, friends' paths when changed. */
-  map?: { from: number; trail: number[]; tapes?: number[]; markers?: number[]; heard?: MapKnowledge["heard"] }
+  /** Your map's new pencil marks, as changes since the last snapshot (all of it with `reset`, on join). */
+  map?: MapDelta
   /** The room's distant-sound schedule seed and cursor (for the audio layer to look ahead). */
   sounds?: { seed: number; next: number }
+}
+
+/**
+ * Changes to your map: own path points from index `from`; tape ids learned (`tapes`) and gone (`gone`); the markers;
+ * copied friends' paths as points appended from index `at` (0 = replace) and the friends whose copies were dropped.
+ */
+export type MapDelta = {
+  reset?: true
+  from: number
+  trail: number[]
+  tapes?: number[]
+  gone?: number[]
+  markers?: number[]
+  heard?: { from: number; at: number; trail: number[] }[]
+  unheard?: number[]
+}
+
+/** A client's copy of its map from the room's deltas. */
+export function applyMapDelta(m: MapKnowledge, d: MapDelta): void {
+  if (d.reset) { m.trail = []; m.tapes = []; m.markers = []; m.heard = [] }
+  m.trail.length = Math.min(m.trail.length, d.from)
+  m.trail.push(...d.trail)
+  if (d.gone) m.tapes = m.tapes.filter((id) => !d.gone!.includes(id))
+  if (d.tapes) for (const id of d.tapes) if (!m.tapes.includes(id)) m.tapes.push(id)
+  if (d.markers) m.markers = d.markers
+  if (d.unheard) m.heard = m.heard.filter((h) => !d.unheard!.includes(h.from))
+  for (const h of d.heard ?? []) {
+    let e = m.heard.find((x) => x.from === h.from)
+    if (!e) m.heard.push((e = { from: h.from, serial: 0, trail: [] }))
+    e.trail.length = Math.min(e.trail.length, h.at)
+    e.trail.push(...h.trail)
+  }
 }
 
 export type ServerMsg = RoomFrame<RosterRow, WoodsEvent> | Snapshot

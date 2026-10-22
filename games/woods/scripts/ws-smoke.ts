@@ -29,6 +29,11 @@ function join(name: string, token?: string): Promise<Client> {
       c.got.push(m)
       if (m.type === "welcome") c.token = (m as { token: string }).token
       if (m.type === "s") { c.snap = m; c.me = m.me; if (m.tapes) c.tapes = m.tapes; resolve(c) }
+      // After the join list, tapes come and go as events.
+      if (m.type === "ev") for (const e of m.events) {
+        if (e.kind === "tape-tied") c.tapes.push([e.tape, e.tree, Math.round(e.yaw * 1000), e.by, Math.round(e.at * 10)])
+        if (e.kind === "tape-removed") c.tapes = c.tapes.filter((r) => r[0] !== e.tape)
+      }
       if (m.type === "error" || m.type === "reload") reject(new Error(`${name}: ${raw}`))
     }
   })

@@ -51,6 +51,26 @@ test("holding tie on a tree for the tie time ties one tape; holding again remove
   expect(state.tapes.length).toBe(0)
 })
 
+test("a bot keeps at most botTapes up, ties only bare trunks, and a tape that comes down leaves every map", () => {
+  const state = createWoods(world, 1, world.params.seed, [])
+  const bot = state.players[0]!, brain = state.brains[0]!
+  const trees = world.trees.filter((t) => t.species === "pine" && Math.abs(t.x) < 120).slice(0, FEEL.botTapes + 3)
+  const tieAt = (id: number) => {
+    const t = world.trees[id]!
+    Object.assign(bot, { x: t.x, z: t.z + t.radius + 0.8, vx: 0, vz: 0 })
+    Object.assign(brain, { mode: "tie", heading: 0, timer: FEEL.tapeTieTime + 0.6 })
+    for (let i = 0; i < 60 * 2; i++) { stepWoods(state, world, new Map(), 1 / 60); bot.x = t.x; bot.z = t.z + t.radius + 0.8 }
+  }
+  for (const t of trees) tieAt(t.id)
+  const mine = state.tapes.filter((t) => t.by === bot.id)
+  expect(mine.length).toBe(FEEL.botTapes)
+  expect(mine.map((t) => t.tree)).toEqual(trees.slice(-FEEL.botTapes).map((t) => t.id))
+  expect(bot.map.tapes.sort()).toEqual(mine.map((t) => t.id).sort())
+  // Back at a trunk that already has its tape: it doesn't take it down.
+  tieAt(trees.at(-1)!.id)
+  expect(state.tapes.some((t) => t.tree === trees.at(-1)!.id)).toBe(true)
+})
+
 test("walking near a marker finds it and pencils it onto that map only", () => {
   const state = createWoods(world, 1)
   const m = world.markers[0]!

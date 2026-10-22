@@ -2,8 +2,8 @@ import { Glide, hermite2, lerpAngle, SnapshotBuffer } from "@arcade/kit/net/inte
 import { Predictor, Smoother } from "@arcade/kit/net/prediction"
 import { RoomSocket } from "@arcade/kit/net/room-socket"
 import { BUILD } from "../shared/build.gen"
-import { BIT, decodeServer, GAME, packIntent, quantizeInput, ROOM_FEEL, tapeFromRow, TICK_DT, type PlayerRow, type RosterRow, type ServerMsg, type Snapshot } from "../shared/protocol"
-import { createWoods, newPlayer, setBotCount, stepMotion, stepWoods, type Feel, type MapKnowledge, type Player, type PlayerInput, type WoodsEvent, type WoodsState } from "../shared/sim"
+import { applyMapDelta, BIT, decodeServer, GAME, packIntent, quantizeInput, ROOM_FEEL, tapeFromRow, TICK_DT, type PlayerRow, type RosterRow, type ServerMsg, type Snapshot } from "../shared/protocol"
+import { createWoods, newPlayer, setBotCount, stepMotion, stepWoods, type Feel, type Player, type PlayerInput, type WoodsEvent, type WoodsState } from "../shared/sim"
 import type { WoodsWorld } from "../shared/world"
 
 /**
@@ -165,7 +165,7 @@ export class OnlineSession implements Session {
     if (s.tapes) this.view.tapes = s.tapes.map((r) => tapeFromRow(this.world, r)).filter((t) => t !== null)
     if (s.found) this.view.found = s.found
     if (s.sounds) Object.assign(this.view.sounds, s.sounds)
-    if (s.map) this.applyMap(this.self.map, s.map)
+    if (s.map) applyMapDelta(this.self.map, s.map)
     const mine = s.p.find((r) => r[0] === s.me)
     if (mine) {
       this.self.flickerLeft = mine[7]! & BIT.flicker ? 1 : 0
@@ -190,15 +190,6 @@ export class OnlineSession implements Session {
     this.snaps.push(s.t, s, performance.now() / 1000)
   }
 
-  private applyMap(m: MapKnowledge, d: NonNullable<Snapshot["map"]>) {
-    if (d.from === 0) m.trail = []
-    m.trail.length = Math.min(m.trail.length, d.from)
-    m.trail.push(...d.trail)
-    if (d.tapes) m.tapes = d.tapes
-    if (d.markers) m.markers = d.markers
-    if (d.heard) m.heard = d.heard
-  }
-
   frame(dt: number) {
     this.smoother.step(dt)
     const br = this.snaps.sample(performance.now() / 1000)
@@ -209,7 +200,9 @@ export class OnlineSession implements Session {
         const id = b[0]!
         if (id === this.me) continue
         seen.add(id)
-        const a = rowA.get(id) ?? b
+        let a = rowA.get(id) ?? b
+        // A reused id (a bot replaced, a seat re-filled) is a different walker: don't blend the old one into it.
+        if ((a[7]! & BIT.bot) !== (b[7]! & BIT.bot) || Math.hypot(a[1]! - b[1]!, a[2]! - b[2]!) > 1000) a = b
         let r = this.remotes.get(id)
         if (!r) {
           r = { player: newPlayer(id, !!(b[7]! & BIT.bot), this.names[id] ?? "Friend", b[1]! / 100, b[2]! / 100, b[5]! / 1000), glide: new Glide(10, 4) }

@@ -38,6 +38,8 @@ export const FEEL = {
   botSpeed: 1.45,
   botLeash: 70,
   botTapeEvery: 26,
+  /** Each bot keeps at most this many tapes up; tying another unties its oldest. */
+  botTapes: 8,
 }
 export type Feel = typeof FEEL
 
@@ -47,9 +49,13 @@ export const PLAYER_ACCEL = 18
 export const EYE_HEIGHT = 1.68
 /** Height of a tied tape above the ground at its tree (m). */
 export const TAPE_HEIGHT = 1.5
-/** Spacing of pencil samples along a walked path (m). */
+/** Spacing of pencil samples along a walked path (m); it widens by this much every `TRAIL_COARSEN` samples. */
 export const TRAIL_STEP = 3
-const TRAIL_MAX = 6000
+const TRAIL_COARSEN = 500
+/** Samples a path keeps at most (2000 cover about 15 km); paths only ever grow at the end, so rooms send just the new points. */
+export const TRAIL_MAX = 2000
+/** Tapes a room keeps up at most; past it the oldest comes down. */
+export const MAX_TAPES = 300
 /** Pitch above which a beam counts as pointing up: the regroup signal. */
 export const SIGNAL_PITCH = 1.1
 /** Seconds the beam must point up before it counts as a signal. */
@@ -62,8 +68,8 @@ export type Tie = { tree: number; progress: number; removing: boolean }
 export type MapKnowledge = {
   /** Own path, flat x,z pairs every `TRAIL_STEP`. */
   trail: number[]
-  /** Paths copied from friends' maps when comparing. */
-  heard: { from: number; trail: number[] }[]
+  /** Paths copied from friends' maps when comparing (`serial` tells a reused id's new walker apart). */
+  heard: { from: number; serial: number; trail: number[] }[]
   tapes: number[]
   markers: number[]
 }
@@ -85,6 +91,8 @@ export type Player = {
   /** 0 = map down, 1 = raised. */
   mapRaise: number
   tie: Tie | null
+  /** Unique per walker in a room (ids get reused when bots leave and come back). */
+  serial: number
   /** After a tie or untie, E must be let go this long (s) before it starts another, so a lost input mid-hold can't undo it. */
   tieHold: number
   /** Seconds the beam has pointed up (`SIGNAL_PITCH`). */
@@ -116,8 +124,10 @@ export type WoodsState = {
   /** Pair key → time of the last map compare. */
   compared: Record<string, number>
   events: WoodsEvent[]
-  /** Bumped whenever `tapes` or `found` change, so a room re-sends them only then. */
-  rev: { tapes: number; found: number }
+  /** Bumped whenever `found` changes, so a room re-sends it only then. */
+  rev: { found: number }
+  /** Last walker serial handed out (`Player.serial`). */
+  serial: number
   /** The distant-sound schedule's cursor: index and time of the next sound (`shared/sounds.ts`). */
   sounds: { seed: number; next: number; at: number }
 }
@@ -142,7 +152,7 @@ export const BOT_ID = 100
 export function newPlayer(id: number, bot: boolean, name: string, x: number, z: number, yaw: number): Player {
   return {
     id, bot, name, x, z, vx: 0, vz: 0, yaw, pitch: -0.1, light: true,
-    flickerLeft: 0, flickerNext: 20 + (id % 16) * 7, mapRaise: 0, tie: null, tieHold: 0, signal: 0,
+    flickerLeft: 0, flickerNext: 20 + (id % 16) * 7, mapRaise: 0, tie: null, serial: 0, tieHold: 0, signal: 0,
     map: { trail: [x, z], heard: [], tapes: [], markers: [] },
   }
 }
@@ -151,7 +161,7 @@ export type Human = { id: number; name: string }
 
 /** A fresh night: `humans` start at camp (solo is one person with id 0), `bots` friends spread just north of them. */
 export function createWoods(world: WoodsWorld, bots = FEEL.botCount, seed = world.params.seed, humans: readonly Human[] = [{ id: 0, name: "You" }]): WoodsState {
-  const state: WoodsState = { t: 0, rng: { seed }, players: [], brains: [], tapes: [], nextTape: 1, found: {}, compared: {}, events: [], rev: { tapes: 0, found: 0 }, sounds: { seed: seed ^ 0x51ed, next: 0, at: soundAt(seed ^ 0x51ed, 0, world).at } }
+  const state: WoodsState = { t: 0, rng: { seed }, players: [], brains: [], tapes: [], nextTape: 1, found: {}, compared: {}, events: [], rev: { found: 0 }, serial: 0, sounds: { seed: seed ^ 0x51ed, next: 0, at: soundAt(seed ^ 0x51ed, 0, world).at } }
   for (const h of humans) addHuman(state, world, h.id, h.name)
   setBotCount(state, world, bots)
   return state
@@ -161,28 +171,38 @@ export function createWoods(world: WoodsWorld, bots = FEEL.botCount, seed = worl
 export function addHuman(state: WoodsState, world: WoodsWorld, id: number, name: string): Player {
   const s = world.camp.spawn, k = id % 6
   const p = newPlayer(id, false, name, s.x + ((k % 3) - 1) * 1.6, s.z + Math.floor(k / 3) * 1.6, s.yaw)
+  p.serial = ++state.serial
   state.players.splice(state.players.filter((q) => !q.bot).length, 0, p)
   return p
 }
 
-/** A person leaves for good (their tapes and the room's finds stay). */
+/** A walker leaves for good: their tapes and the room's finds stay, the copies of their path on other maps go. */
 export function removePlayer(state: WoodsState, id: number): void {
   state.players = state.players.filter((p) => p.id !== id)
   state.brains = state.brains.filter((b) => b.id !== id)
+  for (const p of state.players) if (p.map.heard.some((h) => h.from === id)) p.map.heard = p.map.heard.filter((h) => h.from !== id)
+}
+
+/** A tape comes down: out of the room and off every map that knew it. */
+export function removeTape(state: WoodsState, tape: Tape, by: number): void {
+  state.tapes = state.tapes.filter((t) => t !== tape)
+  for (const p of state.players) { const i = p.map.tapes.indexOf(tape.id); if (i >= 0) p.map.tapes.splice(i, 1) }
+  state.events.push({ kind: "tape-removed", by, tape: tape.id, x: tape.x, z: tape.z })
 }
 
 export function setBotCount(state: WoodsState, world: WoodsWorld, n: number): void {
   const want = Math.max(0, Math.round(n))
   while (state.brains.length > want) {
-    const b = state.brains.pop()!
-    state.players = state.players.filter((p) => p.id !== b.id)
+    removePlayer(state, state.brains.at(-1)!.id)
   }
   while (state.brains.length < want) {
     let id = BOT_ID
     while (state.players.some((p) => p.id === id)) id++
     const s = world.camp.spawn, k = state.brains.length
     const x = s.x - 7 + k * 6, z = s.z - 12 - (k % 2) * 3
-    state.players.push(newPlayer(id, true, NAMES[(id - BOT_ID) % NAMES.length]!, x, z, -0.4 + k * 0.4))
+    const bot = newPlayer(id, true, NAMES[(id - BOT_ID) % NAMES.length]!, x, z, -0.4 + k * 0.4)
+    bot.serial = ++state.serial
+    state.players.push(bot)
     state.brains.push({ id, mode: "wander", heading: -0.5 + k * 0.5 + (nextRandom(state.rng) - 0.5) * 0.4, timer: 1 + k * 1.5, since: 0, tx: x, tz: z, sweep: nextRandom(state.rng) * 6 })
   }
 }
@@ -250,17 +270,18 @@ function stepTie(state: WoodsState, world: WoodsWorld, p: Player, held: boolean,
   p.tie.progress = Math.min(1, p.tie.progress + dt / Math.max(time, 0.05))
   if (p.tie.progress < 1) return
   if (p.tie.removing) {
-    if (existing) {
-      state.tapes = state.tapes.filter((t) => t !== existing)
-      state.rev.tapes++
-      state.events.push({ kind: "tape-removed", by: p.id, tape: existing.id, x: existing.x, z: existing.z })
-    }
+    if (existing) removeTape(state, existing, p.id)
   } else if (!existing) {
     const tape: Tape = { id: state.nextTape++, tree: target.id, x: target.x, y: target.y + TAPE_HEIGHT, z: target.z, yaw: Math.atan2(p.z - target.z, p.x - target.x), by: p.id, at: state.t }
     state.tapes.push(tape)
-    state.rev.tapes++
     addUnique(p.map.tapes, tape.id)
     state.events.push({ kind: "tape-tied", by: p.id, tape: tape.id, x: tape.x, z: tape.z, tree: tape.tree, yaw: tape.yaw, at: tape.at })
+    // Bots keep a short trail of tape behind them, and the room a bounded number in all.
+    if (p.bot) {
+      const mine = state.tapes.filter((t) => t.by === p.id)
+      for (let k = 0; k < mine.length - Math.max(1, feel.botTapes); k++) removeTape(state, mine[k]!, p.id)
+    }
+    while (state.tapes.length > MAX_TAPES) removeTape(state, state.tapes[0]!, -1)
   }
   // Keep holding does nothing more until the key is released (for `TIE_RELEASE`) and pressed again.
   p.tie = { tree: target.id, progress: 1, removing: p.tie.removing }
@@ -270,7 +291,8 @@ function stepTie(state: WoodsState, world: WoodsWorld, p: Player, held: boolean,
 function stepKnowledge(state: WoodsState, world: WoodsWorld, p: Player, feel: Feel) {
   const m = p.map
   const lx = m.trail[m.trail.length - 2]!, lz = m.trail[m.trail.length - 1]!
-  if (Math.hypot(p.x - lx, p.z - lz) >= TRAIL_STEP && m.trail.length < TRAIL_MAX * 2) m.trail.push(p.x, p.z)
+  const n = m.trail.length / 2
+  if (n < TRAIL_MAX && Math.hypot(p.x - lx, p.z - lz) >= TRAIL_STEP * (1 + Math.floor(n / TRAIL_COARSEN))) m.trail.push(p.x, p.z)
   for (const t of state.tapes) if (Math.hypot(t.x - p.x, t.z - p.z) < feel.tapeSeen) addUnique(m.tapes, t.id)
   for (const k of world.markers) {
     if (m.markers.includes(k.id) || Math.hypot(k.x - p.x, k.z - p.z) > feel.findRadius) continue
@@ -291,8 +313,8 @@ function compareMaps(state: WoodsState, a: Player, b: Player) {
     for (const id of from.map.tapes) addUnique(to.map.tapes, id)
     for (const id of from.map.markers) addUnique(to.map.markers, id)
     const heard = to.map.heard.filter((h) => h.from !== from.id)
-    heard.push({ from: from.id, trail: from.map.trail.slice() })
-    for (const h of from.map.heard) if (h.from !== to.id && !heard.some((x) => x.from === h.from)) heard.push({ from: h.from, trail: h.trail.slice() })
+    heard.push({ from: from.id, serial: from.serial, trail: from.map.trail.slice() })
+    for (const h of from.map.heard) if (h.from !== to.id && !heard.some((x) => x.from === h.from)) heard.push({ from: h.from, serial: h.serial, trail: h.trail.slice() })
     to.map.heard = heard
   }
   state.events.push({ kind: "maps-compared", a: a.id, b: b.id })
@@ -355,7 +377,7 @@ function botInput(state: WoodsState, world: WoodsWorld, b: Brain, p: Player, fee
     }
     case "tie":
       speed = 0; tie = true; yawOffset = 0; pitch = -0.1
-      if (b.timer <= 0 || (p.tie && p.tie.progress >= 1)) { b.mode = "wander"; b.since = 0; b.timer = 2 }
+      if (b.timer <= 0 || (p.tie && (p.tie.progress >= 1 || p.tie.removing))) { b.mode = "wander"; b.since = 0; b.timer = 2 }
       break
     case "wait":
       speed = 0
@@ -378,7 +400,11 @@ function botInput(state: WoodsState, world: WoodsWorld, b: Brain, p: Player, fee
       const h = world.params.half - 12
       if (isDeepWater(world, ahead.x, ahead.z) || Math.abs(ahead.x) > h || Math.abs(ahead.z) > h) b.heading += dt * 2.5
       b.since += Math.hypot(p.vx, p.vz) * dt
-      if (b.since > feel.botTapeEvery && tieTarget(world, { ...p, yaw: b.heading }, feel.tapeReach + 0.6)) { b.mode = "tie"; b.timer = feel.tapeTieTime + 0.6 }
+      if (b.since > feel.botTapeEvery) {
+        // Only a bare trunk: a bot never takes down a tape someone else put up.
+        const t = tieTarget(world, { ...p, yaw: b.heading }, feel.tapeReach + 0.6)
+        if (t && !tapeOnTree(state, t.id)) { b.mode = "tie"; b.timer = feel.tapeTieTime + 0.6 }
+      }
       if (nextRandom(state.rng) < dt / 110) { b.mode = "wait"; b.timer = 6 + nextRandom(state.rng) * 8 }
     }
   }

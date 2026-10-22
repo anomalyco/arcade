@@ -1,18 +1,31 @@
 import { expect, test } from "bun:test"
 import { WoodsRoomCore } from "../server/room-core"
 import { BUILD } from "../shared/build.gen"
-import { BOT_ID, tieTarget } from "../shared/sim"
-import { decodeServer, packIntent, ROOM_FEEL, TEAM, tapeFromRow, type ServerMsg, type Snapshot } from "../shared/protocol"
+import { BOT_ID, MAX_TAPES, TRAIL_MAX, tieTarget, type MapKnowledge } from "../shared/sim"
+import { applyMapDelta, decodeServer, packIntent, ROOM_FEEL, TEAM, tapeFromRow, type ServerMsg, type Snapshot } from "../shared/protocol"
 import type { PlayerInput } from "../shared/sim"
 
-type Client = { conn: { send(d: string): void; close(): void }; got: ServerMsg[]; bytes: number; token?: string; seq: number; closed: boolean }
+/** A fake client that keeps what a real one would: the tapes (join list + events) and its map (from deltas). */
+type Client = { conn: { send(d: string): void; close(): void }; got: ServerMsg[]; keep: boolean; bytes: number; biggest: number; token?: string; seq: number; closed: boolean; tapes: Map<number, number>; map: MapKnowledge }
+
+function receive(c: Client, m: ServerMsg) {
+  if (c.keep) c.got.push(m)
+  if (m.type === "s") {
+    if (m.tapes) c.tapes = new Map(m.tapes.map((r) => [r[0]!, r[1]!]))
+    if (m.map) applyMapDelta(c.map, m.map)
+  }
+  if (m.type === "ev") for (const e of m.events) {
+    if (e.kind === "tape-tied") c.tapes.set(e.tape, e.tree)
+    if (e.kind === "tape-removed") c.tapes.delete(e.tape)
+  }
+}
 
 function setup() {
   let now = 0
   const room = new WoodsRoomCore("test1", () => now)
   const tick = (n = 1) => { for (let i = 0; i < n; i++) { now += 1000 / 30; room.step() } }
-  const connect = (name: string, token?: string): Client => {
-    const c: Client = { got: [], bytes: 0, seq: 0, closed: false, conn: { send: (d) => { c.bytes += d.length; const m = decodeServer(d); if (m) c.got.push(m) }, close: () => { c.closed = true } } }
+  const connect = (name: string, token?: string, keep = true): Client => {
+    const c: Client = { got: [], keep, bytes: 0, biggest: 0, seq: 0, closed: false, tapes: new Map(), map: { trail: [], heard: [], tapes: [], markers: [] }, conn: { send: (d) => { c.bytes += d.length; c.biggest = Math.max(c.biggest, d.length); const m = decodeServer(d); if (m) receive(c, m) }, close: () => { c.closed = true } } }
     room.open(c.conn)
     room.message(c.conn, JSON.stringify({ type: "hello", build: BUILD, name, token }))
     const w = c.got.find((m) => m.type === "welcome") as { token: string } | undefined
@@ -53,21 +66,41 @@ test("movement is the room's: inputs walk you, the ack and your motion come back
   expect(s.you![1]).toBeCloseTo(me.z, 3)
 })
 
-test("a tape one person ties is in everyone's snapshot, and so is untying it", () => {
-  const { tick, connect, send, last, room } = setup()
+test("a tape one person ties reaches everyone, and so does untying it", () => {
+  const { tick, connect, send, room } = setup()
   const a = connect("Kit"), b = connect("Aiden")
   const me = room.state.players.find((p) => p.id === 1)!
   const tree = room.world.trees.find((t) => t.species === "pine" && Math.abs(t.x) < 100)!
   Object.assign(me, { x: tree.x, z: tree.z + tree.radius + 0.8, yaw: 0 })
   expect(tieTarget(room.world, me, ROOM_FEEL.tapeReach)?.id).toBe(tree.id)
   for (let i = 0; i < 45; i++) { send(a, { tie: true }); send(b, {}); tick() }
-  const rows = b.got.filter((m): m is Snapshot => m.type === "s" && !!m.tapes).at(-1)!.tapes!
-  expect(rows.map((r) => tapeFromRow(room.world, r)!.tree)).toEqual([tree.id])
+  expect([...b.tapes.values()]).toEqual([tree.id])
   expect(b.got.some((m) => m.type === "ev" && m.events.some((e) => e.kind === "tape-tied" && e.tree === tree.id))).toBe(true)
+  // After the join, snapshots never carry the tape list again: the events do.
+  expect(b.got.filter((m) => m.type === "s" && m.tapes).length).toBe(1)
   for (let i = 0; i < 10; i++) { send(a, {}); tick() }
   for (let i = 0; i < 45; i++) { send(a, { tie: true }); tick() }
-  expect(b.got.filter((m): m is Snapshot => m.type === "s" && !!m.tapes).at(-1)!.tapes).toEqual([])
-  void last
+  expect(b.tapes.size).toBe(0)
+  expect(room.state.players.every((p) => p.map.tapes.length === 0)).toBe(true)
+  expect(b.map.tapes).toEqual([])
+  // A late joiner gets the current list in its first snapshot.
+  const c = connect("Ryan")
+  expect(c.tapes.size).toBe(0)
+  void tapeFromRow
+})
+
+test("held keys don't replay after a reconnect", () => {
+  const { tick, connect, send, room } = setup()
+  const a = connect("Kit")
+  const me = () => room.state.players.find((p) => p.id === 1)!
+  for (let i = 0; i < 20; i++) { send(a, { map: true }); tick() }
+  expect(me().mapRaise).toBeGreaterThan(0.3)
+  room.close(a.conn)
+  tick(60)
+  expect(me().mapRaise).toBe(0)
+  connect("Kit", a.token)
+  tick(12)
+  expect(me().mapRaise).toBe(0)
 })
 
 test("a tie survives a ragged input stream (bursts and gaps the jitter buffer smooths over)", () => {
@@ -131,3 +164,73 @@ test("bandwidth: a 6-person room stays small per player", () => {
   expect(Math.max(...kbs)).toBeLessThan(12)
   expect(room.humans).toBe(6)
 })
+
+/** Plays `minutes` of a room: Kit spams tie/untie on one trunk, Aiden walks a wide loop and keeps comparing maps with
+ * the bots, Ryan joins and leaves every few minutes (so bots leave, come back and reuse ids). Returns bytes per minute. */
+function longRoom(minutes: number) {
+  const env = setup()
+  const { room, tick, connect, send } = env
+  const kit = connect("Kit", undefined, false), aiden = connect("Aiden", undefined, false)
+  const pk = room.state.players.find((p) => p.id === 1)!, pa = room.state.players.find((p) => p.id === 2)!
+  const tree = room.world.trees.find((t) => t.species === "pine" && Math.abs(t.x) < 100)!
+  const c = room.world.camp
+  let ryan: Client | null = null
+  const perMinute: number[][] = []
+  let mark = [0, 0], botUntied = 0
+  for (let i = 0; i < minutes * 60 * 30; i++) {
+    const sec = i / 30
+    Object.assign(pk, { x: tree.x, z: tree.z + tree.radius + 0.8, vx: 0, vz: 0 })
+    send(kit, { tie: i % 60 < 45 })
+    // The last bot is the one that leaves when Ryan arrives, so its copied path must go too.
+    const bot = [...room.state.players].reverse().find((p) => p.bot)
+    const comparing = sec % 90 < 3 && bot
+    if (comparing) Object.assign(pa, { x: bot.x + 1, z: bot.z })
+    else Object.assign(pa, { x: c.x + 80 * Math.cos(sec / 60), z: c.z - 90 + 80 * Math.sin(sec / 60) })
+    send(aiden, { map: !!comparing })
+    if (ryan) send(ryan, {})
+    if (i % (30 * 240) === 30 * 60) ryan = connect("Ryan", undefined, false)
+    if (ryan && i % (30 * 240) === 30 * 120) { room.close(ryan.conn); ryan = null }
+    tick()
+    for (const e of room.state.events) if (e.kind === "tape-removed" && e.by >= BOT_ID) botUntied++
+    if ((i + 1) % (30 * 60) === 0) { perMinute.push([kit.bytes - mark[0]!, aiden.bytes - mark[1]!]); mark = [kit.bytes, aiden.bytes] }
+  }
+  return { ...env, kit, aiden, perMinute, tree, botUntied }
+}
+
+test("a long room stays bounded: tapes, known tapes, copied paths, and bytes per seat stay flat", () => {
+  // Bots tie every 10 m and keep 2 up here, so the cap comes into play within the run (sim.test covers it exactly).
+  const was = { botTapes: ROOM_FEEL.botTapes, botTapeEvery: ROOM_FEEL.botTapeEvery }
+  Object.assign(ROOM_FEEL, { botTapes: 2, botTapeEvery: 10 })
+  let run: ReturnType<typeof longRoom>
+  try { run = longRoom(15) } finally { Object.assign(ROOM_FEEL, was) }
+  const { room, kit, aiden, perMinute, botUntied } = run
+  const s = room.state, ids = new Set(s.tapes.map((t) => t.id)), walkers = new Map(s.players.map((p) => [p.id, p]))
+  const bots = s.players.filter((p) => p.bot)
+  // Bot tapes: at most 2 per bot id still up (ids are reused as bots come and go), plus Kit's one.
+  expect(s.tapes.length).toBeLessThanOrEqual(2 * new Set(s.tapes.map((t) => t.by)).size + 1)
+  expect(s.tapes.length).toBeLessThanOrEqual(MAX_TAPES)
+  for (const b of bots) expect(s.tapes.filter((t) => t.by === b.id).length).toBeLessThanOrEqual(2)
+  expect(s.nextTape).toBeGreaterThan(200)
+  expect(botUntied).toBeGreaterThan(0)
+  console.log(`long room: ${s.nextTape - 1} tapes tied, ${botUntied} bot tapes taken down by the cap, ${s.tapes.length} up at the end`)
+  for (const p of s.players) {
+    expect(p.map.tapes.every((id) => ids.has(id))).toBe(true)
+    expect(p.map.heard.every((h) => walkers.get(h.from)?.serial === h.serial)).toBe(true)
+    expect(p.map.trail.length).toBeLessThanOrEqual(TRAIL_MAX * 2)
+  }
+  expect(room.state.players.find((p) => p.id === 2)!.map.heard.length).toBeGreaterThan(0)
+  // The clients' copies, built only from the join snapshot, events and deltas, match the room's.
+  for (const [c, pid] of [[kit, 1], [aiden, 2]] as const) {
+    const m = s.players.find((p) => p.id === pid)!.map
+    expect([...c.tapes.keys()].sort()).toEqual([...ids].sort())
+    expect([...c.map.tapes].sort()).toEqual([...m.tapes].sort())
+    expect(c.map.trail).toEqual(m.trail.map((v) => Math.round(v * 100) / 100))
+    expect(c.map.heard.map((h) => [h.from, h.trail.length]).sort()).toEqual(m.heard.map((h) => [h.from, h.trail.length]).sort())
+    for (const h of m.heard) expect(c.map.heard.find((x) => x.from === h.from)!.trail).toEqual(h.trail.map((v) => Math.round(v * 100) / 100))
+  }
+  // Bytes per seat per minute: the last minutes cost no more than the early ones.
+  const avg = (rows: number[][], k: number) => rows.reduce((a, r) => a + r[k]!, 0) / rows.length
+  for (const k of [0, 1]) expect(avg(perMinute.slice(-4), k)).toBeLessThan(avg(perMinute.slice(2, 6), k) * 1.3)
+  expect(Math.max(kit.biggest, aiden.biggest)).toBeLessThan(16_000)
+  console.log(`long room, KB/s per seat by minute (Kit, Aiden): ${perMinute.map((r) => r.map((b) => (b / 60 / 1024).toFixed(2)).join("/")).join(" ")}; biggest frame ${Math.max(kit.biggest, aiden.biggest)} B`)
+}, 120_000)

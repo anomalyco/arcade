@@ -31,4 +31,5 @@ export const FEEL_CONTROLS: LabControl[] = [
   { key: "botSpeed", label: "Friend walk speed", group: "Friends", min: 0.5, max: 3, step: 0.05, unit: "m/s" },
   { key: "botLeash", label: "Friends stray up to", group: "Friends", min: 15, max: 180, step: 5, unit: "m" },
   { key: "botTapeEvery", label: "Friends tie tape every", group: "Friends", min: 8, max: 80, step: 1, unit: "m" },
+  { key: "botTapes", label: "Tapes each friend keeps up", group: "Friends", min: 1, max: 40, step: 1, unit: "" },
 ]
