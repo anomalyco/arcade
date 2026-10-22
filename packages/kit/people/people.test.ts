@@ -4,10 +4,11 @@ import { ALL_EXTENSIONS } from "@gltf-transform/extensions"
 import { MeshoptDecoder } from "meshoptimizer"
 import { animate, newAvatar } from "../avatar/anim"
 import { spring, type V3 } from "../rig"
-import { readPerson } from "./asset"
+import { readPerson, SRC_FLOATS } from "./asset"
 import { qRot } from "./quat"
 import { newPose, personRest, posePerson, type PersonRest } from "./retarget"
 import { terrainFeet } from "./terrain"
+import { personLod } from "./view"
 
 await MeshoptDecoder.ready
 const io = new NodeIO().registerExtensions(ALL_EXTENSIONS).registerDependencies({ "meshopt.decoder": MeshoptDecoder })
@@ -17,13 +18,13 @@ const dist = (a: V3, b: V3) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2])
 const at = (r: PersonRest, n: string) => r.idx[n]!
 
 /** Walks a person `seconds` at `speed` m/s over `ground`, calling `each` with the pose every frame. */
-function walk(seconds: number, speed: number, ground: (x: number, z: number) => number, each: (pose: ReturnType<typeof newPose>, a: ReturnType<typeof newAvatar>, t: number) => void, torch?: V3) {
-  const s = rest.scale, a = newAvatar("test", 0, 0, 0, "rifle")
+function walk(seconds: number, speed: number, ground: (x: number, z: number) => number, each: (pose: ReturnType<typeof newPose>, a: ReturnType<typeof newAvatar>, t: number) => void, torch?: V3, start: [number, number] = [0, 0]) {
+  const s = rest.scale, a = newAvatar("test", start[0] / s, start[1] / s, 0, "rifle")
   a.unarmed = true
   const pose = newPose(rest), terrain = { drop: spring(), init: false }
   const dt = 1 / 60
-  for (let f = 0, x = 0; f < seconds * 60; f++, x += speed * dt) {
-    animate(a, dt, f * dt, x / s, 0, speed / s, 0, 0)
+  for (let f = 0, x = start[0]; f < seconds * 60; f++, x += speed * dt) {
+    animate(a, dt, f * dt, x / s, start[1] / s, speed / s, 0, 0)
     const { lift, feet, tilt } = terrainFeet(terrain, a, a.body!, s, ground, dt)
     posePerson(rest, { body: a.body!, lift, feet, tilt, torch: torch ? { side: 1, dir: torch } : undefined }, pose)
     each(pose, a, f * dt)
@@ -101,5 +102,27 @@ describe("people", () => {
     const hr = rest.hands[1]
     const along = qRot(rest.skeleton.bindRot[at(rest, "hand_r")]!, hr.barrel)
     expect(Math.hypot(...along)).toBeCloseTo(1, 5)
+  })
+
+  test("level of detail follows the person, not the skeleton root, far from the origin", () => {
+    let pose: ReturnType<typeof newPose> | null = null
+    walk(1, 1.4, () => 0, (p) => { pose = p }, undefined, [500, -300])
+    const at500: V3 = [pose!.pos[at(rest, "pelvis")]![0] + 2, 1.6, -300]
+    expect(personLod(rest, pose!, at500, 0, 9)).toBe(0)
+    expect(personLod(rest, pose!, [0, 1.6, 0], 0, 9)).toBe(1)
+    // Hysteresis: once far, it stays far until 10% inside the distance.
+    expect(personLod(rest, pose!, [at500[0] + 8.5, 1.6, -300], 1, 9)).toBe(1)
+  })
+
+  test("every baked vertex has a finite position, a unit normal and weights summing to one", () => {
+    let bad = 0
+    for (const lod of asset.lods) {
+      const f = new Float32Array(lod.source)
+      for (let o = 0; o < f.length; o += SRC_FLOATS) {
+        const nl = Math.hypot(f[o + 4]!, f[o + 5]!, f[o + 6]!), ws = f[o + 8]! + f[o + 9]! + f[o + 10]! + f[o + 11]!
+        if (![f[o]!, f[o + 1]!, f[o + 2]!].every(Number.isFinite) || Math.abs(nl - 1) > 1e-3 || Math.abs(ws - 1) > 1e-3) bad++
+      }
+    }
+    expect(bad).toBe(0)
   })
 })

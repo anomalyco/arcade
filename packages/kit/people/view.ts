@@ -48,6 +48,16 @@ export type DriveOptions = {
   eye?: V3
 }
 
+/**
+ * Level of detail for a posed person seen from `eye`: 1 beyond `distance` from the pelvis (the bone that carries the
+ * person's world transform; the skeleton root stays at its bind position), with 10% hysteresis.
+ */
+export function personLod(rest: PersonRest, pose: PersonPose, eye: V3, current: number, distance: number): number {
+  const h = pose.pos[rest.idx.pelvis!]!
+  const d = Math.hypot(h[0] - eye[0], h[1] - eye[1], h[2] - eye[2])
+  return d > distance * (current === 1 ? 0.9 : 1) ? 1 : 0
+}
+
 export class People {
   readonly pass: PeoplePass
   private loads = new Map<CastId, Promise<Loaded>>()
@@ -110,11 +120,7 @@ export class People {
       breath: 1, breathPhase: p.breath.x,
     }, p.pose)
     skinMatrices(p.rest, p.pose, p.inst.matrices)
-    if (o.eye) {
-      const h = p.pose.pos[0]!
-      const d = Math.hypot(h[0] - o.eye[0], h[1] - o.eye[1], h[2] - o.eye[2])
-      p.inst.lod = d > this.lodDistance * (p.inst.lod === 1 ? 0.9 : 1) ? 1 : 0
-    }
+    if (o.eye) p.inst.lod = personLod(p.rest, p.pose, o.eye, p.inst.lod, this.lodDistance)
     return p.pose.torch
   }
 

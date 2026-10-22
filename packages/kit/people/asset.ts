@@ -38,7 +38,7 @@ export type PersonLod = {
 }
 export type PersonAsset = { id: string; skeleton: Skeleton; materials: PersonMaterial[]; lods: PersonLod[] }
 
-const SRC_FLOATS = 16
+export const SRC_FLOATS = 16
 
 export function readPerson(doc: Document, id = ""): PersonAsset {
   const root = doc.getRoot()
@@ -119,7 +119,9 @@ export function readPerson(doc: Document, id = ""): PersonAsset {
         const o = (vBase + v) * SRC_FLOATS
         pos.getElement(v, p); nor.getElement(v, nn); joints.getElement(v, jj); weights.getElement(v, w)
         if (uv) uv.getElement(v, t); else { t[0] = 0; t[1] = 0 }
-        const ws = w[0]! + w[1]! + w[2]! + w[3]! || 1
+        // A vertex with no weights would bake to the origin with a zero normal: give it wholly to its first joint.
+        if (!(w[0]! + w[1]! + w[2]! + w[3]! > 0)) { w[0] = 1; w[1] = w[2] = w[3] = 0 }
+        const ws = w[0]! + w[1]! + w[2]! + w[3]!
         let px = 0, py = 0, pz = 0, nx = 0, ny = 0, nz = 0
         for (let k = 0; k < 4; k++) {
           const wk = w[k]! / ws

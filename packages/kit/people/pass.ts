@@ -27,7 +27,8 @@ struct Params { count: u32, mat: f32, pad0: f32, pad1: f32 }
   let s = src[idx[i]];
   let m = joints[s.j & 255u] * s.w.x + joints[(s.j >> 8u) & 255u] * s.w.y + joints[(s.j >> 16u) & 255u] * s.w.z + joints[s.j >> 24u] * s.w.w;
   let p = (m * vec4f(s.p, 1.0)).xyz;
-  let n = normalize((m * vec4f(s.n, 0.0)).xyz);
+  let rn = (m * vec4f(s.n, 0.0)).xyz;
+  let n = select(vec3f(0.0, 1.0, 0.0), normalize(rn), dot(rn, rn) > 1e-12);
   let o = i * 8u;
   outv[o] = bitcast<u32>(p.x); outv[o + 1u] = bitcast<u32>(p.y); outv[o + 2u] = bitcast<u32>(p.z);
   outv[o + 3u] = pack4x8snorm(vec4f(n, 0.0));
