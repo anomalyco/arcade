@@ -1361,6 +1361,9 @@ ${outbreakLightingStructWgsl}
 ${vegetationTreeWgsl}
 var<private> outbreakFlashMask: f32;
 var<private> outbreakFlashIrr: f32;
+/** Teammates' flashlights (cone.w 3, teammates/beams.ts): received irradiance and the closed-form air glow of their shafts. */
+var<private> outbreakMateIrr: f32;
+var<private> outbreakMateAir: vec3f;
 var<private> outbreakAlbedo: vec3f;
 var<private> outbreakPracticalIrr: f32;
 var<private> outbreakSeen: f32;
@@ -1622,8 +1625,13 @@ const FLASH_RADIANCE: f32 = 9.0;
 
 /** Beam intensity at angle acos(cosT) off the axis: soft cone, hot core, reflector rings and a wide dim spill. */
 fn flashProfile(cosT: f32) -> f32 {
+  return flashProfileFor(cosT, OL.u17.y);
+}
+
+/** The beam profile for a lens whose outer half-angle is 1 / invHalf (a teammate's beam keeps its own, nominal cone). */
+fn flashProfileFor(cosT: f32, invHalf: f32) -> f32 {
   let omc = max(0.0, 1.0 - clamp(cosT, -1.0, 1.0));
-  let t = sqrt(2.0 * omc) * (1.0 + 0.083333 * omc) * OL.u17.y;
+  let t = sqrt(2.0 * omc) * (1.0 + 0.083333 * omc) * invHalf;
   let tight = clamp(OL.beamLook.y, 0.0, 2.0);
   let tightShare = clamp(tight, 0.0, 1.0);
   let effInner = mix(OL.u11.z, min(OL.u11.z, 0.38), tightShare);
@@ -1661,6 +1669,31 @@ fn flashAttenuation(toLight: vec3f, d3: f32, power: f32) -> f32 {
   return power * FLASH_RADIANCE * flashProfile(cosT) * flashFalloff(d3 * d3) * nearReach;
 }
 
+/**
+ * A teammate's flashlight (cone.w 3): the beam's profile and falloff about the teammate's own lens axis (plan direction
+ * in cone.xy, pitch in extra.x), with its own nominal outer half-angle in cone.z (radians) rather than the local beam's,
+ * which a low local battery narrows. Windowed to its own range.
+ */
+fn mateBeamAttenuation(toLight: vec3f, d3: f32, power: f32, dir: vec2f, pitch: f32, range: f32, halfRad: f32) -> f32 {
+  let cp = cos(pitch);
+  let cosT = -dot(toLight, vec3f(dir.x * cp, sin(pitch), dir.y * cp));
+  if (cosT <= cos(min(3.1416 * 0.95, halfRad * OL.u12.z * 1.7))) { return 0.0; }
+  let x2 = d3 * d3 / max(range * range, 1.0);
+  let win = clamp(1.0 - x2 * x2, 0.0, 1.0);
+  let soft = max(OL.u13.z, 0.1);
+  return power * FLASH_RADIANCE * flashProfileFor(cosT, 1.0 / max(halfRad, 1e-3)) * win * win / (1.0 + d3 * d3 / (soft * soft));
+}
+
+/** A teammate's shaft strength, packed into the fraction of its cone code (cone.w = 3 + shaft × 0.2). */
+fn mateShaft(code: f32) -> f32 {
+  return clamp((code - 3.0) * 5.0, 0.0, 1.5);
+}
+
+/** Where a teammate's flashlight lands, it counts as seen: their light shows you the world through your own shroud. */
+fn outbreakMateSeen() -> f32 {
+  return smoothstep(0.012, 0.1, outbreakMateIrr);
+}
+
 /** Inverse-square falloff softened inside the near-lens radius and windowed smoothly to zero at the beam range. */
 fn flashFalloff(d2: f32) -> f32 {
   let r = max(OL.u4.y, 1.0);
@@ -1683,7 +1716,7 @@ fn flashFalloff(d2: f32) -> f32 {
  * of unseen rooms). Leaves the received flashlight irradiance in outbreakFlashMask.
  */
 fn evalFlashlight(world: vec3f, n: vec3f) -> vec3f {
-  var irr = outbreakFlashIrr;
+  var irr = outbreakFlashIrr + outbreakMateIrr;
   var add = vec3f(0.0);
   let air = OL.u14.w * OL.u2.x * OL.u4.z;
   let rel = world.xz - OL.u3.xy;

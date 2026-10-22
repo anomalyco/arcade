@@ -418,7 +418,11 @@ export class OutbreakFrameRenderer {
     )
     const smoothPeek = (settings.view.peekStyle ?? 1) !== 0
     const peekSight = this.peekView.sight(activePeek, peek, p, effectiveVisionAim, settings.vision, settings.view)
+    // Teammates' flashlights show you what they light (teammates/beams.ts), from this frame's sight on.
+    const beamCutBlend = smoothPeek ? this.peekBlend : 1
     const { mode, windowMoved, visChanged } = this.sceneLevel.stepFrame({
+      beams: coop.beamSights(settings, town, this.sceneLevel.lightWalls),
+      roofCut: activePeek ? { x: look.x + (activePeek.cutX - look.x) * beamCutBlend, y: look.y + (activePeek.cutY - look.y) * beamCutBlend } : look,
       drawn: look,
       activePeek,
       visionPeek: smoothPeek ? (activePeek ? sightAsPeek(activePeek, peekSight) : null) : peek,
