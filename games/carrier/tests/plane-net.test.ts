@@ -53,7 +53,7 @@ const jet = (t: number, mode = 1): PlaneTuple => [t, mode, 100.25, 250.5, -300.7
 
 describe("jets over the network", () => {
   test("protocol round-trips a jet and rejects malformed ones", () => {
-    const p = jet(12.5)
+    const p = compactPlane(jet(12.5)) // on the wire grid (shared/wire.ts), so it round-trips exactly
     expect(p.length).toBe(PLANE_TUPLE_LENGTH)
     const raw = encode({ type: "plane", p })
     expect(raw.length).toBeLessThan(512)

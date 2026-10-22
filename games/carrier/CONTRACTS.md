@@ -270,6 +270,16 @@ points), server `chat { from, name, team, text, crew? }` stamped from the room's
 (over it dropped silently; `Net.sendChat` refuses first and the feed says TOO FAST), crew lines only to the sender's
 team (`hearsChat`). `Net.chat` queues lines for `src/ui/chat.ts`; offline they echo locally.
 Offline (`?seed`) the same crew rules run locally on a crew of one.
+Wire format (`shared/protocol.ts` `encode`/`decodeClient`/`decodeServer`, codecs in `shared/wire.ts` on
+`@arcade/kit/net/bytes`): the high-rate messages travel as binary frames (first byte a `WIRE` kind; client `plane`,
+`aim`, `boat`, `gun`, `hits`, `shiphits`, `thits`, `tshiphits`, `bhits`; room `planes`, `ships`, `boats`, `turrets`,
+`gun`), everything else (hello/welcome, crew, chat, ops, objective, hulls, combat events, errors) as JSON text on the
+same socket (`binaryType = "arraybuffer"`). A binary frame decodes to the same message object JSON would and passes the
+same checks; malformed, truncated, trailing or oversized frames (512 B client, 64 KiB room) decode to null. Grids: jets
+1 ms, 1 cm, quaternion 1/32767 (landing angles 1e-4 rad), velocity 0.1 m/s, controls 1/100 (`compactPlane` is that
+grid, so the room's combat sim sees exactly the jet its clients draw); ships and boats keep the room's own rounding
+(lossless). Each timed list carries one f64 of whole ms plus a varint offset per entry. `scripts/net-bandwidth.ts`
+measures a full 32-player room (JSON before: 32.0 KB/s down per client; binary: 10.7 KB/s).
 
 ## Multiplayer (`shared/{crew,squad,ops}.ts`, `server/{lobby,matchmaking,core,room}.ts`, `src/ui/{lobby,menu,team-menu,ops-menu}.ts`)
 
