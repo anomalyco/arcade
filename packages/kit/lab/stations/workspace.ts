@@ -452,6 +452,8 @@ export function createStations(opts: {
     if (!commands?.length) return
     const rt = await frameRuntime()
     if (!rt) return
+    // A page that loads its world before it builds its panel (the woods) has no settings to set until then.
+    if (commands.some(step => step.command === "scene.set-param" || step.command === "lab.set")) await framePanel(30000)
     await new Promise(done => setTimeout(done, 300))
     for (const step of commands) {
       const res = await rt.invokeLocal(step.command, step.args)
