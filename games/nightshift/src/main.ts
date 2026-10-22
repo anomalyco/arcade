@@ -1,5 +1,5 @@
 import { WalkCamera } from "./walk-camera"
-import { isEditableEventTarget, onKeyLayoutChange } from "@arcade/kit/client/controls"
+import { isEditableEventTarget, isLabPanelEventTarget, onKeyLayoutChange } from "@arcade/kit/client/controls"
 import { keyPromptHtml } from "@arcade/kit/client/key-cap"
 import { openGpu } from "@arcade/kit/gpu/boot"
 import { Renderer } from "@arcade/kit/gpu/renderer"
@@ -132,7 +132,7 @@ async function main() {
   const prompts=()=>hud.innerHTML=[keyPromptHtml("Mouse0","Look"),keyPromptHtml("KeyW","Move"),keyPromptHtml("Space","Jump"),keyPromptHtml("KeyF","Flashlight"),keyPromptHtml("KeyM","Mute"),keyPromptHtml("Backquote","Office")].join(" ")
   prompts();onKeyLayoutChange(prompts)
   canvas.addEventListener("click",()=>{if(!boot.isReady||boot.failed)return;opening.start();void audio.unlock().then(()=>storyAudio.unlock(audio.context!))})
-  window.addEventListener("mousemove",e=>{if(!opening.complete)e.stopImmediatePropagation()},true)
+  window.addEventListener("mousemove",e=>{if(!opening.complete&&!isLabPanelEventTarget(e.target))e.stopImmediatePropagation()},true)
   window.addEventListener("keydown",e=>{
     if(isEditableEventTarget(e.target)||panel.holdsInput||e.metaKey||e.ctrlKey||e.altKey||document.pointerLockElement!==canvas)return
     if(!opening.complete){

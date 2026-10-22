@@ -4,13 +4,17 @@
 // panel never reach the game, a click on the game hands input back (pointer lock) while the panel stays up, a click
 // on the panel takes it again, Escape and the close button close it, only the chosen group starts open, sub-headings
 // start folded, folds are remembered across a reload, search reveals folded rows, a group's header carries a modified
-// dot and a reset, and the folded panel fits on screen.
+// dot and a reset, and the folded panel fits on screen. Regressions from review: Backquote focuses the panel when its
+// first row is folded away, a canvas click right after a nudge or a search Escape hands input back (and doesn't close
+// the panel), keys and pointer moves typed at the panel reach neither a window-capture lobby nor the kit's Input, and a
+// capture "open" panel leaves keys typed in a knobs menu to the menu.
 //   hivemind run --kind browser --fetch captures/lab-panel-ux -- bun scripts/lab/prove-panel-play.ts
 //   ... -- bun scripts/lab/prove-panel-play.ts --clip woods     also records clicking off the panel into a game's dist
 // Never opens a visible window and never plays sound (muted browser).
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
-import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { resolve, sep } from "node:path"
 import { chromium, type Page } from "playwright-core"
 import { createServer } from "vite"
@@ -39,10 +43,17 @@ const browser = await chromium.launch({
 })
 const report: Record<string, unknown> = {}
 
-type Harness = { panel: { visible: boolean; holdsInput: boolean; hasFocus(): boolean }; game: { accepted: string[] } }
+type Harness = {
+  panel: { visible: boolean; holdsInput: boolean; hasFocus(): boolean }
+  game: { accepted: string[]; input: string[]; lobby: string[]; clicks: string[] }
+  input: { mouse: { x: number; y: number } }
+}
 const state = (page: Page) => page.evaluate(() => {
   const h = (window as unknown as { harness: Harness }).harness
-  return { visible: h.panel.visible, holds: h.panel.holdsInput, focused: h.panel.hasFocus(), locked: document.pointerLockElement?.id === "game", accepted: [...h.game.accepted] }
+  return {
+    visible: h.panel.visible, holds: h.panel.holdsInput, focused: h.panel.hasFocus(), locked: document.pointerLockElement?.id === "game",
+    accepted: [...h.game.accepted], input: [...h.game.input], lobby: [...h.game.lobby], clicks: [...h.game.clicks], mouse: { ...h.input.mouse },
+  }
 })
 const head = (page: Page, group: string) => page.locator(`[data-lab-panel] .knobs-group-head[data-group="${group}"]`)
 const expanded = async (page: Page, group: string) => (await head(page, group).getAttribute("aria-expanded")) === "true"
@@ -56,16 +67,26 @@ const until = async (page: Page, test: (s: Awaited<ReturnType<typeof state>>) =>
 }
 
 async function harness() {
-  const server = await createServer({ root: resolve(import.meta.dir, "panel-play"), server: { host: "127.0.0.1", port: 0 }, logLevel: "error" })
+  // No dependency discovery and a fresh cache: a dependency optimised mid-run reloads the page and loses its state.
+  const cacheDir = mkdtempSync(resolve(tmpdir(), "panel-play-vite-"))
+  const server = await createServer({
+    root: resolve(import.meta.dir, "panel-play"), server: { host: "127.0.0.1", port: 0 }, logLevel: "error",
+    cacheDir, optimizeDeps: { noDiscovery: true },
+  })
   await server.listen()
   const addr = server.httpServer!.address()
   if (!addr || typeof addr === "string") throw new Error("No dev server port")
   const url = `http://127.0.0.1:${addr.port}/`
-  const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2 })
   const errors: string[] = []
-  page.on("pageerror", e => errors.push(e.message))
-  await page.goto(url)
-  await page.waitForFunction(() => "harness" in window)
+  // Each page is its own browser context, so fold memory starts empty.
+  const open = async (query = "") => {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2 })
+    page.on("pageerror", e => errors.push(e.message))
+    await page.goto(url + query)
+    await page.waitForFunction(() => "harness" in window)
+    return page
+  }
+  const page = await open()
   const checks: string[] = []
   const ok = (name: string) => checks.push(name)
 
@@ -76,7 +97,12 @@ async function harness() {
   await page.keyboard.press("KeyW")
   s = await state(page)
   assert.deepEqual(s.accepted, [], "keys pressed on the panel stay out of the game")
+  assert.deepEqual(s.input, [], "keys pressed on the panel stay out of the kit Input")
   ok("keys on the panel stay out of the game")
+  await page.mouse.move(600, 500)
+  s = await state(page)
+  assert(Math.abs(s.mouse.x - 600) > 1 || Math.abs(s.mouse.y - 500) > 1, `the kit Input doesn't aim while the panel holds input: ${JSON.stringify(s.mouse)}`)
+  ok("pointer moves while the panel holds input stay out of the kit Input")
 
   // Folding: only the chosen group opens; sub-headings start folded; the folded panel fits.
   assert.equal(await expanded(page, "Walking"), true, "Walking starts open")
@@ -111,10 +137,22 @@ async function harness() {
   await until(page, s => s.locked && !s.holds, "relock")
   await page.evaluate(() => document.exitPointerLock())
   await until(page, s => !s.locked, "unlock")
+  await page.mouse.move(650, 420)
+  await until(page, s => Math.abs(s.mouse.x - 650) < 0.5 && Math.abs(s.mouse.y - 420) < 0.5, "the kit Input aims again once the panel lets go")
+  ok("the kit Input aims again once the panel lets go")
   await head(page, "Flashlight").click()
   s = await until(page, s => s.holds && s.focused, "click on the panel takes input")
   assert.equal(await expanded(page, "Flashlight"), true, "clicking Flashlight's header opens it")
   ok("click on the panel takes input back; group header opens it")
+
+  // A nudge keeps the gesture open for a moment; a click on the game straight after still hands input back.
+  await page.locator('[data-lab-panel] .knobs-row[data-field="walkSpeed"] [role="slider"]').focus()
+  await page.keyboard.press("ArrowRight")
+  await page.mouse.click(400, 400)
+  await until(page, s => s.locked && !s.holds && s.visible, "a click right after a nudge locks the pointer")
+  ok("a click on the game right after a nudge hands input back")
+  await page.evaluate(() => document.exitPointerLock())
+  await until(page, s => !s.locked, "unlock after nudge")
 
   // Sub-headings start folded and fold memory survives a reload.
   const subs = await page.locator('[data-lab-panel] .knobs-subhead[aria-expanded]').evaluateAll(els => els.filter(e => e.getClientRects().length).map(e => [e.textContent, e.getAttribute("aria-expanded")]))
@@ -151,6 +189,20 @@ async function harness() {
   ok("search reveals a folded row; typing stays in the field")
   await search.fill("")
 
+  // Escape clearing a search, then a click on the game: input goes back to the game and the panel stays up.
+  await search.click()
+  await page.keyboard.type("walk")
+  await page.keyboard.press("Escape")
+  assert.equal(await search.inputValue(), "", "Escape clears the search")
+  s = await state(page)
+  assert(s.visible && s.focused && s.lobby.length === 0, `Escape in search clears it without closing: ${JSON.stringify(s)}`)
+  await page.waitForTimeout(50)
+  await page.mouse.click(400, 400)
+  await until(page, s => s.locked && !s.holds && s.visible, "a click after a search Escape hands input back, panel open")
+  ok("Escape in search, then a click on the game, keeps the panel open")
+  await page.evaluate(() => document.exitPointerLock())
+  await until(page, s => !s.locked, "unlock after search")
+
   // Modified dot and reset on a group header.
   await page.evaluate(() => { const h = (window as unknown as { harness: { settings: Record<string, number>; panel: { refresh(): void } } }).harness; h.settings.vignette = 0.8; h.panel.refresh() })
   await page.waitForTimeout(200)
@@ -164,21 +216,60 @@ async function harness() {
   assert(!(await head(page, "Camera").evaluate(e => e.hasAttribute("data-modified"))), "Camera's mark clears")
   ok("a group header carries a modified dot and a reset")
 
-  // Escape from the panel and the close button both close it.
+  // Escape from the panel and the close button both close it, past a lobby listening in window capture.
   await head(page, "Volume").click()
+  await page.keyboard.press("Enter")
   await page.keyboard.press("Escape")
-  await until(page, s => !s.visible, "Escape closes")
-  ok("Escape from the panel closes it")
+  s = await until(page, s => !s.visible, "Escape closes")
+  assert.deepEqual(s.lobby, [], "Enter and Escape typed in the panel never reach a window-capture lobby")
+  ok("Escape from the panel closes it; Enter and Escape there skip the game's capture listeners")
   await page.keyboard.press("Backquote")
   await until(page, s => s.visible, "reopen")
   await page.locator("[data-lab-panel] .knobs-close").click()
   await until(page, s => !s.visible, "close button closes")
   ok("the close button closes it")
 
+  await page.close()
+
+  // The first row in a folded group: Backquote still gives the panel the keyboard, and Escape closes it.
+  const folded = await open("?open=Volume")
+  await folded.keyboard.press("Backquote")
+  s = await until(folded, s => s.visible && s.focused && s.holds, "Backquote focuses a panel whose first row is folded")
+  assert.equal(await expanded(folded, "Walking"), false, "Walking (the first row's group) starts folded")
+  await folded.keyboard.press("KeyW")
+  s = await state(folded)
+  assert.deepEqual(s.input, [], "keys go to the panel, not the game, when its first row is folded")
+  await folded.keyboard.press("Escape")
+  await until(folded, s => !s.visible, "Escape closes a panel whose first row is folded")
+  ok("Backquote focuses the panel when its first row is folded; keys stay out; Escape closes")
+  await folded.close()
+
+  // Capture "open": keys typed in a knobs menu on <body> (a stand-in menu here) belong to the menu, not the panel.
+  const capture = await open("?capture=open")
+  await capture.keyboard.press("Backquote")
+  await until(capture, s => s.visible && s.holds, "capture open panel opens")
+  const walk = () => capture.evaluate(() => (window as unknown as { harness: { settings: Record<string, number> } }).harness.settings.walkSpeed)
+  const walkBefore = await walk()
+  await capture.evaluate(() => {
+    const menu = Object.assign(document.createElement("div"), { className: "knobs-menu", tabIndex: -1, id: "proof-menu" })
+    menu.addEventListener("keydown", e => { menu.dataset.keys = `${menu.dataset.keys ?? ""}${e.code} ` })
+    document.body.append(menu)
+    menu.focus()
+  })
+  await capture.keyboard.press("ArrowDown")
+  await capture.keyboard.press("ArrowLeft")
+  const menuKeys = await capture.locator("#proof-menu").getAttribute("data-keys")
+  assert.equal(menuKeys?.trim(), "ArrowDown ArrowLeft", "keys typed in a knobs menu reach the menu")
+  assert.equal(await walk(), walkBefore, "keys typed in a knobs menu don't move the panel's first row")
+  s = await state(capture)
+  assert(s.visible && s.focused, `the panel counts its menu as its own: ${JSON.stringify(s)}`)
+  ok("capture open: keys typed in a knobs menu go to the menu")
+  await capture.close()
+
   assert.deepEqual(errors, [], "no page errors")
   report.harness = checks
-  await page.close()
   await server.close()
+  rmSync(cacheDir, { recursive: true, force: true })
 }
 
 // Playwright's screencast doesn't keep up with a WebGPU game, so the clip is screenshots (about 4 a second) with a

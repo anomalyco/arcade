@@ -194,8 +194,25 @@ export class LabKnobsView {
   focus(key?: string) {
     const row = key ? this.rowElement(key) : null
     const target = row?.querySelector<HTMLElement>('[role="slider"],button,[tabindex="0"]') ?? row
-    if (target) target.focus({ preventScroll: true })
-    else this.panel.focus()
+    // A row in a folded group can't take focus; the panel takes it instead so the game still lets go of keys.
+    if (target && !target.closest("[hidden]") && target.getClientRects().length) target.focus({ preventScroll: true })
+    if (!this.element.contains(document.activeElement)) this.panel.focus()
+    if (!this.element.contains(document.activeElement)) this.panel.element.focus({ preventScroll: true })
+  }
+
+  /**
+   * Ends the gesture now, for a click that hands input back to the game: an arrow-key burst knobs still holds for a
+   * moment after the last keyup, or a nudge or reset's idle window.
+   */
+  letGo() {
+    this.held.clear()
+    this.settle()
+  }
+
+  private settle() {
+    clearTimeout(this.idle)
+    this.idle = 0
+    this.host.end()
   }
 
   /** Brings a setting's row on screen: its tab, its folded group, and past a search that hides it. */
@@ -463,12 +480,6 @@ export class LabKnobsView {
   private schedule(ms: number) {
     clearTimeout(this.idle)
     this.idle = window.setTimeout(() => this.settle(), ms)
-  }
-
-  private settle() {
-    clearTimeout(this.idle)
-    this.idle = 0
-    this.host.end()
   }
 
   /** The visible settings as JSON; a Random since the defaults adds the tuning seed that reproduces it. */

@@ -1,3 +1,4 @@
+import { isLabPanelEventTarget } from "@arcade/kit/client/controls"
 import { keyCapHtml } from "@arcade/kit/client/key-cap"
 import { cleanPlayerName } from "@arcade/kit/sim/matchmaking"
 import {
@@ -307,7 +308,8 @@ export class OutbreakLobby {
   }
 
   private onGlobalKeyDown(e: KeyboardEvent): void {
-    if (!this.isOpen) return
+    // Keys typed in the Lab panel (or its menus) are the panel's: Escape there mustn't unpause, nor Enter start a run.
+    if (!this.isOpen || isLabPanelEventTarget(e.target)) return
     if (this.mode === "pause" && e.code === "Escape") {
       e.preventDefault()
       e.stopImmediatePropagation()

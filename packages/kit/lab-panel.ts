@@ -187,9 +187,15 @@ export class LabPanel implements LabKnobsHost {
         this.escape()
       }
     }, { capture: true })
+    // knobs lets go of focus during Escape's keydown or not at all (an Escape that only clears the search): a keyup still
+    // in the panel means it stayed, and a later blur (a click on the game) isn't leaving.
+    this.host.addEventListener("keyup", () => { this.leaving = false }, { capture: true })
     this.host.addEventListener("focusin", () => this.onFocusChange?.(true, this.navigation.active))
     this.host.addEventListener("focusout", event => {
-      if (this.host.contains(event.relatedTarget as Node | null)) return
+      if (this.host.contains(event.relatedTarget as Node | null)) {
+        this.leaving = false
+        return
+      }
       // knobs' Esc lets go of focus; the Lab hands it back to the canvas and a floating panel closes.
       if (this.leaving && !event.relatedTarget) queueMicrotask(() => this.escape())
       this.leaving = false
@@ -317,6 +323,9 @@ export class LabPanel implements LabKnobsHost {
 
   /** Focus leaves the panel for the game; the panel stays open. */
   private handBack() {
+    this.leaving = false
+    // A nudge or reset still settling would keep holdsInput true past the click that handed input back.
+    for (const view of this.views) view.letGo()
     if (!this.hasFocus()) return
     this.end()
     const active = document.activeElement
@@ -562,7 +571,7 @@ export class LabPanel implements LabKnobsHost {
   private keyboard(event: KeyboardEvent, forwarded = false) {
     if (!this.host.isConnected) return false
     const first = event.composedPath()[0]
-    const inside = first instanceof Node && this.host.contains(first)
+    const inside = this.owns(first ?? null)
     const typing = this.typingTarget(event)
     if (event.code === "Backquote" && !typing && !event.metaKey && !event.ctrlKey && !event.altKey) {
       event.stopImmediatePropagation()

@@ -241,6 +241,7 @@ async function main() {
     { capture: "focus", openGroups: ["Feel"], onChange: (key, value) => onSettingChanged(key, value) },
   )
   lab.setTabs(OUTBREAK_LAB_TABS)
+  input.blocked = () => lab.holdsInput
   bindOutbreakLabControls(lab, settings, controls)
 
   registerOutbreakGameCommands({
