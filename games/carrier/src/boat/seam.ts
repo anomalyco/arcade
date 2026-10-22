@@ -25,6 +25,7 @@ import { BoatFx } from "../render/boat-fx"
 import { loadBoatModel } from "../render/boat-glb"
 import { type BoatDrawPose, BoatPass } from "../render/boat-pass"
 import { BoatWake } from "../render/boat-wake"
+import { wakeTarget } from "../render/ocean-wake"
 import type { Camera } from "../render/camera"
 import type { Renderer } from "../render/renderer"
 import { playerTeamColor, teamColor } from "../render/team"
@@ -114,7 +115,7 @@ export class BoatModule {
     this.input = new BoatInput(gameInput, canvas)
     this.driver = new BoatDriver(this.input, undefined, this.audio)
     this.wfx = new WeaponFx(renderer)
-    this.fx = new BoatFx(this.wfx)
+    this.fx = new BoatFx(this.wfx, () => wakeTarget(renderer.context.device).water)
     this.wake = new BoatWake(renderer)
     renderer.addPass("alpha", this.wake)
     renderer.addPass("alpha", this.wfx)

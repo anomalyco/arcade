@@ -115,10 +115,12 @@ export class BoatWake implements ScenePass {
     this.t = t
     this.n = 0
     this.frame++
+    this.target.boats.length = 0
   }
 
   /** One boat's foam (`id` keys its trail). */
   boat(id: number, b: Pick<Boat, "x" | "z" | "heading" | "u" | "wet" | "wetAft">): void {
+    if (this.target.water?.mode === "continuous") this.target.boats.push({ x: b.x, z: b.z, heading: b.heading, speed: b.u, wet: b.wetAft })
     let trail = this.trails.get(id)
     if (!trail) this.trails.set(id, (trail = { points: [], seen: 0 }))
     trail.seen = this.frame
@@ -172,7 +174,9 @@ export class BoatWake implements ScenePass {
     this.ribbon(
       n,
       (i, side, out) => {
-        const w = Math.min(W.maxHalfWidth, W.halfWidth + age[i]! * W.spread)
+        const w = this.target.water?.mode === "continuous"
+          ? Math.min(14, W.halfWidth + dist[i]! * 0.10)
+          : Math.min(W.maxHalfWidth, W.halfWidth + age[i]! * W.spread)
         out[0] = px[i]! + nx[i]! * w * side
         out[1] = pz[i]! + nz[i]! * w * side
       },
@@ -183,11 +187,12 @@ export class BoatWake implements ScenePass {
       this.ribbon(
         n,
         (i, side, out) => {
-          const c = (2.2 + dist[i]! * W.kelvin) * arm + W.armWidth * (1 + dist[i]! / 80) * side
+          const continuous = this.target.water?.mode === "continuous"
+          const c = (2.2 + dist[i]! * W.kelvin) * arm + (continuous ? 2.1 : W.armWidth) * (1 + dist[i]! / 80) * side
           out[0] = px[i]! + nx[i]! * c
           out[1] = pz[i]! + nz[i]! * c
         },
-        (i) => str[i]! * W.armStrength * Math.max(0, 1 - dist[i]! / W.armReach) * Math.min(1, dist[i]! / 6) * tail(i),
+        (i) => str[i]! * (this.target.water?.mode === "continuous" ? 0.8 : W.armStrength) * Math.max(0, 1 - dist[i]! / W.armReach) * Math.min(1, dist[i]! / 6) * tail(i),
         () => 0.5,
       )
     }

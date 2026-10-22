@@ -108,7 +108,7 @@ async function main() {
   const planePass = new PlanePass(renderer, models)
   const planeFx = new PlaneFx(renderer, models)
   const wfx = new WeaponFx(renderer)
-  const fx = new BoatFx(wfx)
+  const fx = new BoatFx(wfx, () => ocean.water)
   renderer.addPass("sky", sky)
   renderer.addPass("sky", stars)
   renderer.addPass("opaque", shipPass)
