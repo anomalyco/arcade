@@ -11,6 +11,10 @@ Woods already supplies `darkAdaptation` from its camera stops. Today remains the
 Kit decides whether to promote Physical. The earlier gallery stills and camp clip retain their
 documented bases and predate these final shader corrections.
 
+Post-rebase checks passed sequentially through strict-pinned HiveMind Pro: kit, root-script,
+woods client and woods server typechecks. Runtime settings assertion confirms Today is the
+default. `git diff 3b80159c -- packages/kit/sky` is empty.
+
 ## Kept
 
 - `ForestLookSettings` includes typed shared sky settings. Today is the default and retains its existing sky pass. The production `attachSky` handle is available as `forest.sky`.
