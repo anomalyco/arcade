@@ -9,7 +9,7 @@ import {
   type LookPresetId,
   type LookSettings,
 } from "@arcade/kit/look"
-import { resolveQualityMode, type AdaptiveQualityController, type QualityMode } from "@arcade/kit/quality"
+import { resolveQualityMode, type QualityMode } from "@arcade/kit/quality"
 import type { AIState } from "../shared/ai"
 import { dayCycle } from "../shared/day-cycle"
 import { flashlightColor } from "../shared/flashlight"
@@ -38,6 +38,7 @@ import {
   setOutbreakSetting,
   type OutbreakSettings,
 } from "./settings"
+import type { OutbreakQualityController } from "./quality"
 import type { Survivor } from "./survivor"
 import { evaluateUnseenFrame } from "./unseen"
 import type { OutbreakVehicleAudio } from "./vehicle-audio"
@@ -84,7 +85,7 @@ export interface OutbreakHarnessHost {
   readonly vehicleHost: VehicleLabHost
   readonly vehicleRenderer: OutbreakVehicleRenderer
   readonly botsLab: BotsLabController
-  readonly qualityController: AdaptiveQualityController
+  readonly qualityController: OutbreakQualityController
   readonly promptEl: HTMLElement | null
   readonly getPeekBlend: () => number
   readonly resetPeek: () => void

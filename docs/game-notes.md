@@ -795,6 +795,16 @@ proven animation techniques to animation.md, not here.
   11.7–13 ms, Balanced 4.9–6.5 ms, Low 2.7–5.4 ms for Brawl, Blackout and Carrier; Auto holds High there. Getaway
   runs 50–130 ms frames headless at any resolution (main thread idle, same on `main`), so its Auto pick there
   (Balanced 0.9× to Low 0.8×) is not what a real window would choose.
+- **When a tier carries expensive looks, step the tier before shedding most of the resolution (Outbreak, AR-124).**
+  Outbreak's tiers (`games/outbreak/src/quality.ts`) also scale its night looks: Balanced draws the mist at a quarter of
+  the screen and contact shadows from one light in 8 steps, and Low turns both off and coarsens the bounced light. Each
+  Lab setting defaults to "Quality tier" (-1), so the tier fills it in and an explicit Lab value wins. With the kit's
+  High `minScale` 0.7, a Mac mini (M4 Pro) on a 4K monitor at 2× sat at High 1.4×, with full looks and fewer pixels.
+  With 0.85 it steps down to Balanced 1.5× after one short resolution step, because the cheaper looks cost less than the
+  extra lost pixels. Headless timing can't settle this: with no display, Chromium copies a 4K canvas back every frame
+  and runs near 5 fps whatever the GPU does (full Chrome headless was no better), which drove Auto to Low 0.5×. So
+  `games/outbreak/scripts/auto-quality.ts` times the GPU per tier and scale (timestamp queries on a frozen frame),
+  replays the real controller against those timings, and shoots the stills.
 - **Filter procedural detail before divergent branches.** Shared outdoor material hooks compute a world-space
   pixel footprint at the fragment entry, before material branches or cutaway discards. Computing `fwidth` inside
   those branches failed WGSL uniformity validation on Metal. The corrected shaders pass all four Outbreak views.

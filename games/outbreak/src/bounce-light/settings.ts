@@ -1,5 +1,6 @@
 import type { PlanBounceInput } from "@arcade/kit/gpu/gi/plan-bounce"
 import type { LabControl } from "@arcade/kit/lab-panel"
+import { fromTier, QUALITY_TIER, type OutbreakQualityProfile } from "../quality"
 
 /**
  * Bounced light (AR-115): one bounce of coloured light in plan space, so fire, muzzle flashes, the flashlight pool,
@@ -13,7 +14,7 @@ export type OutbreakBounceSettings = {
   bounceStrength: number
   /** How far bounced light reaches from where it lands, in metres. */
   bounceRange: number
-  /** Grid size: metres per texel (0.25 fine, 0.5 default, 1 coarse). */
+  /** Grid size: metres per texel (0.25 fine, 0.5, 1 coarse; -1 the quality tier's: 0.5, coarse at Low). */
   bounceTexel: number
   /** How much light floors send back (reflectance). */
   bounceFloor: number
@@ -27,7 +28,7 @@ export const DEFAULT_BOUNCE_SETTINGS: OutbreakBounceSettings = {
   bouncedLight: 1,
   bounceStrength: 3,
   bounceRange: 5,
-  bounceTexel: 0.5,
+  bounceTexel: QUALITY_TIER,
   bounceFloor: 0.35,
   bounceWalls: 1.5,
   bounceColour: 1,
@@ -54,8 +55,9 @@ export const bounceControls: readonly LabControl[] = [
     group: G,
     type: "select",
     options: [
+      { value: QUALITY_TIER, label: "Quality tier" },
       { value: 0.25, label: "Fine (0.25 m)" },
-      { value: 0.5, label: "Default (0.5 m)" },
+      { value: 0.5, label: "Medium (0.5 m)" },
       { value: 1, label: "Coarse (1 m)" },
     ],
   },
@@ -65,14 +67,14 @@ export const bounceControls: readonly LabControl[] = [
 ]
 
 /** The kit input for this frame, or null when bounced light is off. */
-export function bounceInput(s: OutbreakBounceSettings, centerX: number, centerZ: number): PlanBounceInput | null {
+export function bounceInput(s: OutbreakBounceSettings, q: Pick<OutbreakQualityProfile, "bounceTexel">, centerX: number, centerZ: number): PlanBounceInput | null {
   if (s.bouncedLight < 0.5 || !(s.bounceStrength > 0)) return null
   return {
     centerX,
     centerZ,
     strength: s.bounceStrength,
     range: s.bounceRange,
-    texel: s.bounceTexel,
+    texel: fromTier(s.bounceTexel, q.bounceTexel),
     albedo: s.bounceFloor,
     walls: s.bounceWalls,
     // The scene hook's colour weight (`outbreakGiIrr`).

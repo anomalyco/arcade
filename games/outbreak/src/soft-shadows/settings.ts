@@ -1,5 +1,6 @@
 import { CAPSULE_CHARACTER_LIGHTS, CAPSULE_SHADOW_DEFAULTS, type CapsuleShadowSettings } from "@arcade/kit/gpu/shadows/capsule-shadows"
 import type { LabControl } from "@arcade/kit/lab-panel"
+import { fromTier, QUALITY_TIER, type OutbreakQualityProfile } from "../quality"
 
 /**
  * Soft character shadows (AR-113, Lab: Backquote › Look · Character shadows): survivors, zombies, the downed and the
@@ -21,7 +22,7 @@ export type OutbreakSoftShadowSettings = {
   softShadowMinAngle: number
   /** Longest shadow, metres (fades over its last 40%). */
   softShadowReach: number
-  /** Lights per body, strongest first. */
+  /** Lights per body, strongest first (-1 the quality tier's: 3, 1 at Low). */
   softShadowLights: number
   /** Weakest light (estimated at the body) that still casts. */
   softShadowMinLight: number
@@ -40,7 +41,7 @@ export const DEFAULT_SOFT_SHADOW_SETTINGS: OutbreakSoftShadowSettings = {
   softShadowLightSize: K.lightSize,
   softShadowMinAngle: K.minAngle,
   softShadowReach: K.reach,
-  softShadowLights: K.lights,
+  softShadowLights: QUALITY_TIER,
   softShadowMinLight: K.minLight,
   softShadowSun: K.sun,
   softShadowSunAngle: K.sunAngle,
@@ -64,7 +65,7 @@ export const softShadowControls: LabControl[] = [
   { key: "softShadowLightSize", label: "Light size (penumbra)", group: GROUP, min: 0.25, max: 8, step: 0.05, unit: "× fixture" },
   { key: "softShadowMinAngle", label: "Softest edge floor", group: GROUP, min: 0, max: 0.2, step: 0.005, unit: "rad" },
   { key: "softShadowReach", label: "Longest shadow", group: GROUP, min: 1, max: 12, step: 0.25, unit: "m" },
-  { key: "softShadowLights", label: "Lights per body", group: GROUP, min: 1, max: CAPSULE_CHARACTER_LIGHTS, step: 1 },
+  { key: "softShadowLights", label: "Lights per body", group: GROUP, type: "select", options: [{ value: QUALITY_TIER, label: "Quality tier" }, ...Array.from({ length: CAPSULE_CHARACTER_LIGHTS }, (_, i) => ({ value: i + 1, label: String(i + 1) }))] },
   { key: "softShadowMinLight", label: "Weakest light that casts", group: GROUP, min: 0, max: 1, step: 0.01, unit: "" },
   { key: "softShadowSun", label: "Shadow from the sun and moon", group: GROUP, min: 0, max: 1, step: 0.05, unit: "×" },
   { key: "softShadowSunAngle", label: "Sun and moon softness", group: GROUP, min: 0.005, max: 0.3, step: 0.005, unit: "rad" },
@@ -73,8 +74,8 @@ export const softShadowControls: LabControl[] = [
 /** True when soft capsule shadows replace Today's. */
 export const softShadowsOn = (s: Pick<OutbreakSoftShadowSettings, "softShadowMode"> | undefined): boolean => (s?.softShadowMode ?? 0) > 0.5
 
-/** The kit's settings from Outbreak's. */
-export function capsuleSettings(s: OutbreakSoftShadowSettings): CapsuleShadowSettings {
+/** The kit's settings from Outbreak's, "Quality tier" values filled in from the active tier. */
+export function capsuleSettings(s: OutbreakSoftShadowSettings, q: Pick<OutbreakQualityProfile, "softShadowLights">): CapsuleShadowSettings {
   return {
     mode: s.softShadowMode,
     contact: s.softShadowContact,
@@ -82,7 +83,7 @@ export function capsuleSettings(s: OutbreakSoftShadowSettings): CapsuleShadowSet
     lightSize: s.softShadowLightSize,
     minAngle: s.softShadowMinAngle,
     reach: s.softShadowReach,
-    lights: s.softShadowLights,
+    lights: fromTier(s.softShadowLights, q.softShadowLights),
     minLight: s.softShadowMinLight,
     sun: s.softShadowSun,
     sunAngle: s.softShadowSunAngle,
