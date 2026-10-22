@@ -71,6 +71,8 @@ export type WoodsWorld = {
   rocks: Rock[]
   buildings: Building[]
   lamps: WorldLamp[]
+  /** Posts the string lights hang between (top of each post); bulbs sag 0.45 m mid-span. */
+  stringPosts: (readonly [number, number, number])[]
   markers: Marker[]
   /** The radio mast's blinking red light, the landmark on the north ridge. */
   ridgeLight: { x: number; y: number; z: number }
@@ -236,12 +238,14 @@ export function makeWorld(params: Partial<WorldParams> = {}): WoodsWorld {
   for (const [wx, wz] of [[-3.2, -5.3], [3.2, -5.3], [-3.2, 5.3], [3.2, 5.3], [-7.3, 0], [7.3, 0]] as const)
     lamps.push({ kind: "window", x: messX + wx, y: ground(messX, messZ) + 1.5, z: messZ + wz, color: [1, 0.55, 0.22], power: 3, range: 16 })
   // String lights along the cabin fronts, sagging between posts; a few bulbs are dead.
+  const stringPosts: (readonly [number, number, number])[] = []
   const sx0 = camp.x - 9, sx1 = camp.x + 24, sz = cabinZ + 4.4
   for (let i = 0, n = 22; i <= n; i++) {
     const t = i / n, x = sx0 + (sx1 - sx0) * t, span = (t * 4) % 1
     if (hashU(i, 3, seed) < 0.2) continue
     lamps.push({ kind: "string", x, y: ground(x, sz) + 2.7 - 0.45 * 4 * span * (1 - span), z: sz, color: [1, 0.7, 0.35], power: 0.22, range: 5 })
   }
+  for (let k = 0; k <= 4; k++) { const x = sx0 + ((sx1 - sx0) * k) / 4; stringPosts.push([x, ground(x, sz) + 2.7, sz]) }
   for (const cx of cabinXs) lamps.push({ kind: "porch", x: camp.x + cx, y: ground(camp.x + cx, cabinZ + 3) + 2.4, z: cabinZ + 3.1, color: [1, 0.62, 0.3], power: 0.5, range: 7 })
 
   // The ridge mast and its red light.
@@ -306,7 +310,7 @@ export function makeWorld(params: Partial<WorldParams> = {}): WoodsWorld {
   }
 
   return {
-    params: p, terrain, lake, trail, trees, rocks, buildings, lamps, markers, ridgeLight, grid,
+    params: p, terrain, lake, trail, trees, rocks, buildings, lamps, stringPosts, markers, ridgeLight, grid,
     // You start on the lakefront under the string lights, facing the cabins, the mess hall and the woods behind them.
     camp: { ...camp, spawn: { x: camp.x + 3, z: camp.z + 2, yaw: 0.4 } },
   }

@@ -86,7 +86,11 @@ test("the world converts to the forest renderer's shape with one ground height",
   expect(f.trees.length).toBe(world.trees.length)
   expect(f.height(12, -40)).toBe(groundHeight(world, 12, -40))
   expect(f.camp!.buildings.filter((b) => b.kind === "mess-hall")[0]!.lit).toBe(1)
-  // Knot due east of the trunk (atan2 yaw 0) faces +x: yaw π/2 about +y with 0 facing +z.
-  expect(f.flags![0]!.yaw).toBeCloseTo(Math.PI / 2)
+  // Flag yaw is Tape.yaw unchanged (atan2(dz, dx) of the knot), as the forest build reads it.
+  expect(f.flags![0]!.yaw).toBe(0)
+  // The dock starts at the shore end and runs +z over its whole footprint; string lights hang between 5 posts.
+  const dock = world.buildings.find((b) => b.kind === "dock")!
+  expect(f.camp!.dock).toEqual({ x: (dock.rect[0] + dock.rect[2]) / 2, z: dock.rect[1], yaw: 0, length: dock.rect[3] - dock.rect[1], width: dock.rect[2] - dock.rect[0] })
+  expect(f.camp!.stringLights![0]!.points.length).toBe(5)
   expect(f.flags![0]!.r).toBe(tree.radius)
 })

@@ -73,7 +73,7 @@ async function main() {
   const spawn = world.camp.spawn
   camera.body.x = spawn.x; camera.body.y = spawn.z; camera.yaw = spawn.yaw; camera.pitch = -0.05
 
-  const panel = new LabPanel(settings, [...FEEL_CONTROLS, ...WALK_CONTROLS], params, () => { camera.release(); keys.clear() }, { open: false, pill: false, groupActions: false })
+  const panel = new LabPanel(settings, [...FEEL_CONTROLS, ...WALK_CONTROLS], params, () => { camera.release(); keys.clear() }, { open: false, pill: false, groupActions: false, onToggle: () => syncStart() })
   audio.bank.bindControls(panel)
   attachLabPanelControl(panel)
   let regenAt = 0, worldKey = `${settings.trunkDensity}`, shadowKey = settings.trunkShadows
@@ -83,7 +83,6 @@ async function main() {
   const release = () => keys.clear()
   window.addEventListener("keydown", (e) => {
     if (isEditableEventTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return
-    if (e.code === "Backquote" && !e.repeat) { panel.toggle(); return }
     if (document.pointerLockElement !== canvas || panel.visible) return
     if (e.code === "KeyM" && !e.repeat) audio.bank.toggleMute()
     if (e.code === "KeyE" || e.code === "KeyG") { keys.add(e.code); e.preventDefault() }
@@ -91,8 +90,9 @@ async function main() {
   window.addEventListener("keyup", (e) => { keys.delete(e.code); if (isMetaKey(e.code)) release() })
   window.addEventListener("blur", release)
   document.addEventListener("visibilitychange", () => { if (document.hidden) release() })
-  document.addEventListener("pointerlockchange", () => { release(); start.style.display = document.pointerLockElement === canvas || panel.visible ? "none" : "flex" })
-  start.addEventListener("click", () => canvas.requestPointerLock())
+  function syncStart() { start.style.display = forcePlay || document.pointerLockElement === canvas || panel.visible ? "none" : "flex" }
+  document.addEventListener("pointerlockchange", () => { release(); syncStart() })
+  start.addEventListener("click", () => { if (!panel.visible) canvas.requestPointerLock() })
 
   const controlsHud = () => {
     hud.innerHTML = [keyPromptHtml("KeyW", "Walk"), keyPromptHtml("KeyF", "Flashlight"), keyPromptHtml("KeyE", "Tie tape", { hold: true }), keyPromptHtml("KeyG", "Map", { hold: true }), keyPromptHtml("KeyM", "Mute"), keyPromptHtml("Backquote", "Knobs")].join(" ")
@@ -269,7 +269,7 @@ async function main() {
       /** Automation: step the sim and draw `ms` later on a synthetic clock even without pointer lock. */
       step(ms: number) { const was = forcePlay; forcePlay = true; try { frame(last + ms) } finally { forcePlay = was } },
       /** Automation: play without pointer lock (the camera then takes no keyboard input; drive it with setPose). */
-      set autoplay(v: boolean) { forcePlay = v; start.style.display = v ? "none" : "flex" },
+      set autoplay(v: boolean) { forcePlay = v; syncStart() },
       friend(id: number): Player | undefined { return state.players.find((p) => p.id === id) },
       /** Automation: a tape on tree `id`, knot facing (fx, fz) from the trunk. */
       addTape(id: number, fx = 0, fz = 1) {

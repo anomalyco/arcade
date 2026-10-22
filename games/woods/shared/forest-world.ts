@@ -6,7 +6,8 @@ import { terrainHeight, type WoodsWorld } from "./world"
  * The woods as the forest renderer's `ForestWorld` (the look agent's `@arcade/kit/sim/forest-world`, proposed in
  * branch `woods-look`). The types below mirror that file structurally so nothing here conflicts before it merges;
  * once it lands, replace them with `import type { ForestWorld } from "@arcade/kit/sim/forest-world"`.
- * Their yaw is about +y with 0 facing +z (south here); x east, z south, metres.
+ * Building/dock yaw is about +y with 0 facing +z (south here, towards the lake); flag yaw is atan2(dz, dx). The dock's
+ * x, z is its shore end. String-light points are support posts. x east, z south, metres.
  */
 type Vec2 = readonly [number, number]
 type Vec3 = readonly [number, number, number]
@@ -29,9 +30,9 @@ export type ForestWorld = {
   flags?: readonly { x: number; z: number; y: number; yaw: number; r: number }[]
 }
 
-/** Tapes as renderer flags: wrapped round their trunk `TAPE_HEIGHT` above the ground, knot towards the tier. */
+/** Tapes as renderer flags: wrapped round their trunk `TAPE_HEIGHT` above the ground; yaw is `Tape.yaw` (atan2(dz, dx) of the knot), as build.ts reads it. */
 export function forestFlags(world: WoodsWorld, tapes: readonly Tape[]): NonNullable<ForestWorld["flags"]> {
-  return tapes.map((t) => ({ x: t.x, z: t.z, y: TAPE_HEIGHT, yaw: Math.PI / 2 - t.yaw, r: world.trees[t.tree]?.radius ?? 0 }))
+  return tapes.map((t) => ({ x: t.x, z: t.z, y: TAPE_HEIGHT, yaw: t.yaw, r: world.trees[t.tree]?.radius ?? 0 }))
 }
 
 /** The static world (plus current tapes) in the renderer's shape. Buildings face the lake (+z), so their yaw is 0. */
@@ -56,8 +57,8 @@ export function toForestWorld(world: WoodsWorld, tapes: readonly Tape[] = []): F
     lake: { x: world.lake.x, z: world.lake.z, rx: world.lake.rx, rz: world.lake.rz, level: world.lake.level },
     camp: {
       buildings,
-      dock: dock && (() => { const c = centre(dock.rect); return { x: c.x, z: c.z, yaw: 0, length: c.d, width: c.w } })(),
-      stringLights: strings.length ? [{ points: strings.map((l) => [l.x, l.y, l.z] as const), bulbs: strings.length }] : [],
+      dock: dock && { x: (dock.rect[0] + dock.rect[2]) / 2, z: dock.rect[1], yaw: 0, length: dock.rect[3] - dock.rect[1], width: dock.rect[2] - dock.rect[0] },
+      stringLights: world.stringPosts.length > 1 ? [{ points: world.stringPosts, bulbs: strings.length }] : [],
       props: world.buildings.flatMap((b): NonNullable<NonNullable<ForestWorld["camp"]>["props"]>[number][] => {
         const c = centre(b.rect)
         return b.kind === "canoe" ? [{ kind: "canoe", x: c.x, z: c.z, yaw: 0 }] : b.kind === "table" ? [{ kind: "picnic-table", x: c.x, z: c.z, yaw: Math.PI / 2 }] : []
