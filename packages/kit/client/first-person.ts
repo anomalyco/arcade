@@ -23,6 +23,12 @@ export class FirstPerson {
   private projection = mat4.identity()
   private view = mat4.identity()
   onKey?: (code: string) => void
+  /** Moves only the rendered view (a body-worn camera's mount and sway); aim, movement and `direction` stay the player's. */
+  readonly mount = { yaw: 0, pitch: 0, roll: 0, height: 0, fov: 0 }
+  /** Called at the start of each update to set `mount`. */
+  rig?: (camera: FirstPerson, dt: number, aspect: number) => void
+  private look: [number, number, number] = [0, 0, -1]
+  private up: [number, number, number] = [0, 1, 0]
 
   constructor(private canvas: HTMLCanvasElement, private blocked: () => boolean) {
     const options = { signal: this.abort.signal }
@@ -60,12 +66,19 @@ export class FirstPerson {
     const s = Math.sin(this.yaw), c = Math.cos(this.yaw)
     stepBody(this.body, right * c - forward * s, -right * s - forward * c,
       this.speed * (this.keys.has("ShiftLeft") || this.keys.has("ShiftRight") ? 1.8 : 1), walls, Math.min(dt, 0.05), 0.28, 18)
-    this.eye[0] = this.body.x; this.eye[1] = this.height; this.eye[2] = this.body.y
+    this.rig?.(this, dt, aspect)
+    const m = this.mount
+    this.eye[0] = this.body.x; this.eye[1] = this.height + m.height; this.eye[2] = this.body.y
     this.direction[0] = -s * Math.cos(this.pitch)
     this.direction[1] = Math.sin(this.pitch)
     this.direction[2] = -c * Math.cos(this.pitch)
-    mat4.lookAt(this.eye, this.eye.map((v, i) => v + this.direction[i]!), [0, 1, 0], this.view)
-    mat4.perspective(this.fov * Math.PI / 180, aspect, this.near, this.far, this.projection)
+    const yaw = this.yaw + m.yaw, pitch = Math.max(-1.5, Math.min(1.5, this.pitch + m.pitch))
+    this.look[0] = this.eye[0] - Math.sin(yaw) * Math.cos(pitch)
+    this.look[1] = this.eye[1] + Math.sin(pitch)
+    this.look[2] = this.eye[2] - Math.cos(yaw) * Math.cos(pitch)
+    this.up[0] = Math.cos(yaw) * Math.sin(m.roll); this.up[1] = Math.cos(m.roll); this.up[2] = -Math.sin(yaw) * Math.sin(m.roll)
+    mat4.lookAt(this.eye, this.look, this.up, this.view)
+    mat4.perspective((this.fov + m.fov) * Math.PI / 180, aspect, this.near, this.far, this.projection)
     mat4.multiply(this.projection, this.view, this.viewProj)
     return this.viewProj
   }

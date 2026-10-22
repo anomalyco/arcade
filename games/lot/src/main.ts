@@ -14,6 +14,7 @@ import { TexturedMeshPass, type TexturedPrimitive } from "@arcade/kit/gpu/textur
 import { TEMPORAL_DEFAULTS } from "@arcade/kit/gpu/temporal"
 import { ForestPass, FOREST_PRESETS, cardShadingHooks, forestControls, forestDefaults } from "@arcade/kit/gpu/forest"
 import { LabPanel } from "@arcade/kit/lab-panel"
+import { attachCameraFilter } from "@arcade/kit/gpu/post/camcorder"
 import { createGlassSettings, createRoomSettings, glassControls, packGlassKnobs, roomControls } from "@arcade/kit/gpu/materials/glass"
 import { loadRoomAtlas } from "@arcade/kit/gpu/materials/rooms"
 import { contactShadowControls, contactShadowInput, createContactShadowSettings, packContactShadowKnobs } from "@arcade/kit/gpu/contact-shadows"
@@ -158,6 +159,7 @@ async function main() {
   panel.addControls(ssr.settings,ssrControls("Reflections","ssr."))
   panel.addControls(wet,wetControls("Wet ground","wet.").filter(c=>c.field!=="wetness"))
   panel.addControls(glass,glassControls("Glass"))
+  attachCameraFilter(renderer,panel,device,gpu.format,{bodycam:camera})
   panel.addControls(rooms,roomControls("Glass"))
   panel.addControls(contact,contactShadowControls("Shadows"))
   panel.addControls(fog.settings,atmosphereControls("Atmosphere","atmo."))

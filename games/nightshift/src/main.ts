@@ -12,6 +12,7 @@ import { hash01 } from "@arcade/kit/gpu/lights/flicker"
 import { makeSceneShader, spriteShader } from "@arcade/kit/gpu/shaders"
 import { TEMPORAL_DEFAULTS } from "@arcade/kit/gpu/temporal"
 import { LabPanel } from "@arcade/kit/lab-panel"
+import { attachCameraFilter } from "@arcade/kit/gpu/post/camcorder"
 import { controls, defaults } from "./settings"
 import { hooks, post, fogVolume, contactVolume } from "./shaders"
 import { buildWorld, handset, phoneIndicator, PHONE, START, CLOSE, CORD_END, RECEIVER_PAD, OFFICE, walls, chairs, movingMeshes } from "./world"
@@ -46,6 +47,7 @@ async function main() {
   setCamera("wide")
   const panel=new LabPanel(settings,controls(),new URLSearchParams(location.search),()=>camera.release(),{open:false,pill:false,groupActions:false})
   panel.addControls(contact,contactShadowControls("Shadows"))
+  attachCameraFilter(renderer,panel,device,gpu.format,{bodycam:camera})
   const fog=new FogScatter();Object.assign(fog.settings,{falloff:0.05,brightness:0.003,strength:0.4})
   const lights=new SceneLights(),spots=new SpotShadows(device,{count:4,size:1024})
   renderer.setSpotShadows(spots.bindings())
