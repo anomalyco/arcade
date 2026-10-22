@@ -67,6 +67,7 @@ try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 })
     const errors: string[] = []
     page.on("pageerror", e => errors.push(e.message))
+    page.on("console", m => { if (m.type() === "error") errors.push(m.text().slice(0, 300)) })
     await page.goto(`http://127.0.0.1:${server.port}/arcade/${game}/${query}`)
     const ready = await page.waitForSelector("[data-lab-panel]", { state: "attached", timeout: 300_000 }).then(() => true, () => false)
     if (!ready) {
@@ -83,7 +84,11 @@ try {
       open = await page.waitForSelector("[data-lab-panel] .lab-panel-body:not([hidden])", { timeout: 4000 }).then(() => true, () => false)
     }
     if (!open) {
-      console.error(game, "panel did not open", errors, await page.evaluate(() => document.body.innerText.slice(0, 400)))
+      console.error(game, "panel did not open", errors, await page.evaluate(() => ({
+        active: document.activeElement?.outerHTML.slice(0, 160),
+        host: document.querySelector("[data-lab-panel]")?.outerHTML.slice(0, 300),
+        bodyHidden: document.querySelector("[data-lab-panel] .lab-panel-body")?.hasAttribute("hidden"),
+      })))
       await page.screenshot({ path: resolve(out, `${game}-${label}-failed.png`) })
       await page.close()
       await server.close()
