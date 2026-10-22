@@ -198,6 +198,15 @@ proven animation techniques to animation.md, not here.
 
 ## Rendering (WebGPU)
 
+### Catalogue sky, isolated proof (`night-sky` candidate)
+
+`packages/kit/sky` integrates a cubic B-spline point spread over each pixel rather than drawing a sampled radial
+dot. With scintillation off, a magnitude-zero star varied 0.035114% in total HDR energy over 32 subpixel phases
+at 1920×1080 MSAA4 on mini Metal. The fixture uses the production `SkyPass`; it does not establish woods visibility.
+`scripts/sky/gpu-proof.ts --temporal` also exercises `gpu/temporal.ts`'s opt-in translation-free background
+reprojection: 64 m camera travel gave 0.030859 px star-centroid drift. The default temporal path stays unchanged.
+Raw results, scope and follow-up work are recorded in [the ledger](../perf/night-sky.md).
+
 - **Build a pipeline when it is first drawn, not when the renderer is made (Outbreak smoke, AR-119, 2026-10-21).** On
   SwiftShader (CI) every scene-shader pipeline costs seconds, and Outbreak's boot compiled 35 of which 10 were never
   drawn: the kit renderer's own five scene pipelines and its composite (Outbreak draws through a look, which has its
