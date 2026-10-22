@@ -1,4 +1,4 @@
-"""Asset QA: imports built people GLBs in a row and renders front and three-quarter-back views (Eevee, flat studio light).
+"""Asset QA: imports built people GLBs in a row and renders front, side and back views (Eevee, flat studio light).
 
   blender -b --factory-startup --python scripts/people/lineup.py -- <out.png> <a.glb> [<b.glb> ...]
 """
@@ -47,13 +47,17 @@ scene.collection.objects.link(cam)
 scene.camera = cam
 cam.data.type = "ORTHO"
 cam.data.ortho_scale = max(width, 2.1 * scene.render.resolution_x / scene.render.resolution_y)
+roots = [o for o in bpy.data.objects if o.parent is None and o.type not in ("CAMERA", "LIGHT")]
+for o in roots:
+    o.rotation_mode = "XYZ"
+base = {o: o.rotation_euler.z for o in roots}
+# MPFB humans face -Y: the camera looks from -Y, and each person turns in place for the side and back views.
+cam.location = Vector((0, -8, 0.95))
+cam.rotation_euler = (math.radians(90), 0, 0)
 paths = []
-for name, yaw in (("front", 0.0), ("back", 180.0 - 35.0)):
-    a = math.radians(yaw)
-    # glTF imports face +Y in Blender after the axis conversion? MPFB humans face -Y: look from -Y for the front.
-    d = Vector((math.sin(a), -math.cos(a), 0))
-    cam.location = Vector((0, 0, 0.95)) + d * 8
-    cam.rotation_euler = (math.radians(90), 0, math.atan2(d.x, -d.y))
+for name, yaw in (("front", 0.0), ("side", 90.0), ("back", 180.0)):
+    for o in roots:
+        o.rotation_euler.z = base[o] + math.radians(yaw)
     path = OUT.replace(".png", f"-{name}.png")
     scene.render.filepath = path
     bpy.ops.render.render(write_still=True)

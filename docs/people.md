@@ -16,7 +16,7 @@ person-look (`<person>-<look>.glb`, 720–970 KB):
 
 | Look | Outfit | Gear |
 | --- | --- | --- |
-| `woods` | rain jacket over a shirt, or a fleece (d); trail trousers; boots | beanies, headlamps (b, d, e), backpacks (b, c, e) |
+| `woods` | hooded rain shell (a, b), puffer vest over flannel (c), fleece (d), hoodie (e), puffer jacket (f); trail trousers; boots | beanies, headlamps (b, d, e), backpacks (b, c, e) |
 | `survivor` | tee, jeans, trainers | backpacks (a, c, d, f) |
 | `office` | suit, shirt and tie (a, c, e) or blouse and skirt (b, d, f); dress shoes | — |
 
@@ -41,7 +41,7 @@ people, looks or person-looks (`c`, `woods`, `c-woods`); `--manifest` only rewri
 
 ```
 hivemind run --kind render --fetch packages/kit/people -- bun scripts/people/build-people.ts [a | woods | a-woods ...]
-blender -b --factory-startup --python scripts/people/lineup.py -- out.png <glb> ...   # front and back lineup stills
+blender -b --factory-startup --python scripts/people/lineup.py -- out.png <glb> ...   # front, side and back lineup stills
 ```
 
 - Clothes are split into pieces (`jacket`, `shirt`, `trousers`, `boots`) by colour regions of their UV texture.
@@ -54,6 +54,13 @@ blender -b --factory-startup --python scripts/people/lineup.py -- out.png <glb> 
   over the clothes' outer surface, skinned by copying the nearest body vertex's weights), the headlamp band (traced
   round the head, beanie and hair at brow height) with its housing and lens on `head`, and the knit beanie. Ripstop
   and webbing are generated luminance textures; the housing and lens are untextured (`plastic`, `lens` kinds).
+- Outfits are made from the few CC0 garments by cutting and re-texturing (`cast.json` part options): `drop` removes a
+  piece (cargo pockets, the vest's sleeves) and `fillHoles` closes the openings it leaves on the front; `patterns`
+  draws `quilt` baffles (luminance and relief), a `plaid` check, `seams` and `marks` (a hoodie pocket) in UV space;
+  `inflate` lofts a puffer; `normalStrength` softens the source wrinkles. An outfit's `hood` is a procedural hood lying
+  down, traced over the shoulders (short under a pack) in its garment's cloth and tint. Shells and puffers use the
+  `cloth` kind, so nothing is glossy. Hair above a beanie's rim is cut whatever its volume, and drawn in to the rim
+  below it. `lineup.py` renders front, side and back.
 - Blender exports a file-backed image's source file, not its scaled pixels, so `load()` copies a downscaled image
   into a new packed image. Without this the 4096² MakeHuman normal maps shipped at full size (1.46 MB → 804 KB).
 
