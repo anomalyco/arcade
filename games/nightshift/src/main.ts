@@ -29,7 +29,7 @@ import { lensPost } from "./polish/lens"
 import { OfficePhysics } from "./polish/props"
 import { Continuity } from "./polish/continuity"
 import { MovingMeshPass } from "./polish/moving-mesh"
-import { Opening, OPENING, openingSettings } from "./opening"
+import { Opening, OPENING, openingSettings, cordLimit, CORD_REACH } from "./opening"
 import { Terminal, colleagueScreens } from "./terminal"
 import { elevatorLeaf } from "./elevator"
 import { Descent, BASEMENT_X, descentDefaults } from "./descent/state"
@@ -110,6 +110,7 @@ async function main() {
   const watched=physics.chairs.find(c=>Math.hypot(c.homeX-2.75,c.homeZ+.3)<.01)!
   const monitor=CONTINUITY_MONITOR
   continuity.targets.find(t=>t.kind==="monitor")!.bounds=[monitor.x-.3,.79,monitor.z-.3,monitor.x+.3,1.5,monitor.z+.3]
+  const holdToCord=(body:{x:number;y:number},from:readonly number[])=>{cordLimit(body,from,PHONE,CORD_REACH)}
   const distance=()=>Math.hypot(camera.body.x-PHONE.x,camera.body.y-PHONE.z)
   const canAnswer=()=>distance()<1.35 && camera.direction[0]*(PHONE.x-camera.eye[0])+camera.direction[2]*(PHONE.z-camera.eye[2])>0.15
   const canHangUp=()=>repeatView&&call.phase==="call"&&call.elapsed>=CALL_FIRST_LINE_END
@@ -148,6 +149,7 @@ async function main() {
     look.update(settings,physics.chairs,camera.eye,time);look.recordFrame(settings,frameMs);look.carX=elevator.downstairs?BASEMENT_X:0
     const {width,height}=look.canvasSize(settings,innerWidth,innerHeight,devicePixelRatio)
     if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;renderer.resize(width,height)}
+    const onCord=call.phase==="pickup"||call.phase==="call"
     const playerMoving=active&&opening.complete&&!elevator.done
     camera.speed=playerMoving?settings.speed:0
     if(!playerMoving)camera.release()
@@ -165,6 +167,7 @@ async function main() {
     const before=[camera.body.x,camera.body.y]
     // Keep the authored seated pose; optional camera movement comes in with the first-move stand.
     cameraFilter.motion=settings.reduceMotion?0:Math.max(0,Math.min(1,(opening.height.x-OPENING.across.height)/(1.65-OPENING.across.height)))
+    camera.constrain=onCord?holdToCord:undefined
     const vp=camera.update(dt,width/height,[...sceneWalls,...elevator.collisions(call.phase==="ended")])
     physics.flutter(simDt,camera.body.x,camera.body.y,playerMoving?Math.hypot(camera.body.x-before[0],camera.body.y-before[1])/Math.max(dt,.001):0,settings)
     continuity.step(time,vp,call.phase==="ended",settings,[watched.x-.6,0,watched.z-.6,watched.x+.6,1.1,watched.z+.6],active&&opening.complete&&!elevator.downstairs)
@@ -209,7 +212,8 @@ async function main() {
     look.parts(settings,parts.push,physics.chairs,c=>c.yaw+(c===watched?continuity.value("chair")*.6:0),[0,BASEMENT_X])
     parts.push(indicator,props.indicator[0],props.indicator[1],props.indicator[2],0,[1,1,1],0,0,0)
     // Set the one receiver beside the base when leaving; the optional lines stay at this desk.
-    if(answered&&(parked>0||distance()>1.2||call.phase==="hangup"||call.phase==="ended"))parked=Math.min(1,parked+simDt/.6)
+    // The cord holds you within reach while the receiver is up, so the handset parks only when the call ends.
+    if(answered&&(parked>0||call.phase==="hangup"||call.phase==="ended"))parked=Math.min(1,parked+simDt/.6)
     const park=parked*parked*(3-2*parked),t=call.lift*(1-park),rx=Math.cos(camera.yaw),rz=-Math.sin(camera.yaw),fx=-Math.sin(camera.yaw),fz=-Math.cos(camera.yaw)
     const end=[camera.eye[0]-rx*0.32+fx*0.08,camera.eye[1]-0.08,camera.eye[2]-rz*0.32+fz*0.08]
     handYaw+=camera.yaw-lastLookYaw;lastLookYaw=camera.yaw
