@@ -14,7 +14,7 @@ Ship this file with any game that loads them.
   Used by `scripts/people/cast.json` (people a–f; woods, survivor and office looks):
   - clothes: `male_casualsuit02`, `male_casualsuit03`, `male_casualsuit05`, `male_casualsuit06`, `male_elegantsuit01`,
     `female_elegantsuit01`, `shoes02`, `shoes03`, `shoes04`
-  - hair: `bob01`, `braid01`, `ponytail01`, `short01`, `short02`, `short04`
+  - hair: `bob02`, `braid01`, `ponytail01`, `short01`, `short02`, `short04`
   - eyebrows: `eyebrow001`, `eyebrow002`, `eyebrow004`, `eyebrow006`, `eyebrow008`, `eyebrow010`
   - skins: `young_caucasian_male` (young_lightskinned_male_diffuse), `young_asian_female`
     (young_lightskinned_female_diffuse3), `middleage_african_male` (middleage_darkskinned_male_diffuse),
@@ -25,7 +25,8 @@ Ship this file with any game that loads them.
   knit texture; the hoods (lying down); the backpack, its shoulder straps, the headlamp band, housing and lens; the
   ripstop and webbing textures; the quilted baffle, flannel check, seam and pocket patterns drawn over the clothes.
 - Changes: clothes split into pieces (jacket, shirt, trousers, boots, ...) and re-textured as AO-baked luminance for
-  runtime tints; cargo pockets and (for the vest) sleeves removed, the openings under them closed, puffers lofted; skin desaturated; hidden skin under clothes deleted; decimated LOD1.
+  runtime tints; cargo pockets and (for the vest) sleeves removed, the openings under them closed, puffers lofted; the office
+  shoes' socks retinted as bare skin; d's fringe lifted above the brows; skin desaturated; hidden skin under clothes deleted; decimated LOD1.
 
 No attribution is required for any of the above.
 

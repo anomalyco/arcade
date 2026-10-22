@@ -178,7 +178,7 @@
       ]
     },
     "office-f": {
-      "note": "Office worker: striped blouse, pencil skirt, dress shoes.",
+      "note": "Office worker: striped blouse, pencil skirt, matte dark leather shoes, bare legs.",
       "clothes": [
         {
           "asset": "clothes/female_elegantsuit01",
@@ -188,7 +188,14 @@
             { "name": "skirt", "rule": "True", "albedo": [0.06, 0.06, 0.07], "kind": "cloth", "rough": 0.8 }
           ]
         },
-        { "asset": "clothes/shoes04", "size": 512, "parts": [{ "name": "shoes", "albedo": [0.03, 0.025, 0.02], "kind": "cloth", "rough": 0.35 }] }
+        {
+          "asset": "clothes/shoes04",
+          "size": 512,
+          "parts": [
+            { "name": "legs", "rule": "(u > 0.82) & (v > 0.72)", "albedo": [0.3, 0.2, 0.15], "kind": "skin", "rough": 0.55, "contrast": 0.08, "skinTone": true, "flatNormal": true },
+            { "name": "shoes", "rule": "True", "albedo": [0.025, 0.02, 0.018], "kind": "cloth", "rough": 0.62, "contrast": 0.45 }
+          ]
+        }
       ]
     }
   },
@@ -203,7 +210,7 @@
       "brows": "eyebrows/eyebrow001",
       "looks": {
         "woods": { "outfit": "shell", "tints": { "jacket": [0.44, 0.3, 0.025] }, "beanie": { "albedo": [0.4, 0.13, 0.05], "rim": 0.1, "slouch": 0.06 } },
-        "survivor": { "outfit": "survivor", "tints": { "tee": [0.18, 0.2, 0.12] }, "backpack": { "albedo": [0.08, 0.08, 0.08], "size": [0.3, 0.42, 0.15] } },
+        "survivor": { "outfit": "survivor", "tints": { "tee": [0.18, 0.2, 0.12] }, "backpack": { "albedo": [0.08, 0.08, 0.08], "size": [0.26, 0.43, 0.17] } },
         "office": { "outfit": "office" }
       }
     },
@@ -220,7 +227,7 @@
           "outfit": "shell",
           "tints": { "jacket": [0.035, 0.06, 0.15], "trousers": [0.1, 0.1, 0.09] },
           "headlamp": { "albedo": [0.05, 0.05, 0.05] },
-          "backpack": { "albedo": [0.03, 0.14, 0.14], "size": [0.26, 0.36, 0.13] }
+          "backpack": { "albedo": [0.03, 0.14, 0.14], "size": [0.25, 0.42, 0.16] }
         },
         "survivor": { "outfit": "survivor", "tints": { "tee": [0.25, 0.08, 0.06] } },
         "office": { "outfit": "office-f" }
@@ -240,23 +247,23 @@
           "outfit": "vest",
           "tints": { "vest": [0.1, 0.12, 0.05], "flannel": [0.32, 0.05, 0.035] },
           "beanie": { "albedo": [0.12, 0.12, 0.12], "rim": 0.12, "slouch": 0.02 },
-          "backpack": { "albedo": [0.25, 0.08, 0.03], "size": [0.34, 0.5, 0.18] }
+          "backpack": { "albedo": [0.25, 0.08, 0.03], "size": [0.27, 0.45, 0.18] }
         },
-        "survivor": { "outfit": "survivor", "tints": { "tee": [0.1, 0.12, 0.2] }, "backpack": { "albedo": [0.12, 0.1, 0.06], "size": [0.32, 0.46, 0.16] } },
+        "survivor": { "outfit": "survivor", "tints": { "tee": [0.1, 0.12, 0.2] }, "backpack": { "albedo": [0.12, 0.1, 0.06], "size": [0.27, 0.45, 0.18] } },
         "office": { "outfit": "office", "tints": { "suit": [0.09, 0.08, 0.07] } }
       }
     },
     {
       "id": "d",
-      "note": "Mid-forties woman, average build, bob.",
+      "note": "Mid-forties woman, average build, straight bob.",
       "macro": { "gender": 0.0, "age": 0.62, "muscle": 0.5, "weight": 0.55, "height": 0.6, "proportions": 0.5, "cupsize": 0.5, "race": { "caucasian": 0.9, "african": 0.05, "asian": 0.05 } },
       "skin": "skins/middleage_caucasian_female/middleage_lightskinned_female_diffuse.png",
-      "hair": { "asset": "hair/bob01", "albedo": [0.2, 0.11, 0.05] },
+      "hair": { "asset": "hair/bob02", "albedo": [0.2, 0.11, 0.05], "trimFringe": true },
       "eyes": "green",
       "brows": "eyebrows/eyebrow010",
       "looks": {
         "woods": { "outfit": "fleece", "tints": { "fleece": [0.04, 0.12, 0.08] }, "beanie": { "albedo": [0.45, 0.32, 0.06], "rim": 0.12, "slouch": 0.1 }, "headlamp": { "albedo": [0.15, 0.03, 0.02] } },
-        "survivor": { "outfit": "survivor", "tints": { "tee": [0.3, 0.28, 0.22] }, "backpack": { "albedo": [0.1, 0.14, 0.07], "size": [0.28, 0.4, 0.14] } },
+        "survivor": { "outfit": "survivor", "tints": { "tee": [0.3, 0.28, 0.22] }, "backpack": { "albedo": [0.1, 0.14, 0.07], "size": [0.25, 0.42, 0.16] } },
         "office": { "outfit": "office-f", "tints": { "blouse": [0.2, 0.3, 0.45] } }
       }
     },
@@ -269,7 +276,7 @@
       "eyes": "brown",
       "brows": "eyebrows/eyebrow002",
       "looks": {
-        "woods": { "outfit": "hoodie", "tints": { "hoodie": [0.07, 0.07, 0.075] }, "headlamp": { "albedo": [0.05, 0.05, 0.05] }, "backpack": { "albedo": [0.06, 0.06, 0.06], "size": [0.3, 0.46, 0.15] } },
+        "woods": { "outfit": "hoodie", "tints": { "hoodie": [0.07, 0.07, 0.075] }, "headlamp": { "albedo": [0.05, 0.05, 0.05] }, "backpack": { "albedo": [0.06, 0.06, 0.06], "size": [0.26, 0.44, 0.17] } },
         "survivor": { "outfit": "survivor", "tints": { "tee": [0.05, 0.05, 0.05] } },
         "office": { "outfit": "office", "tints": { "suit": [0.03, 0.04, 0.08] } }
       }
@@ -285,7 +292,7 @@
       "brows": "eyebrows/eyebrow006",
       "looks": {
         "woods": { "outfit": "puffer", "tints": { "jacket": [0.035, 0.09, 0.1], "trousers": [0.06, 0.07, 0.1] }, "beanie": { "albedo": [0.06, 0.1, 0.16], "rim": 0.1, "slouch": 0.04 } },
-        "survivor": { "outfit": "survivor", "tints": { "tee": [0.2, 0.12, 0.2] }, "backpack": { "albedo": [0.2, 0.17, 0.1], "size": [0.28, 0.38, 0.14] } },
+        "survivor": { "outfit": "survivor", "tints": { "tee": [0.2, 0.12, 0.2] }, "backpack": { "albedo": [0.2, 0.17, 0.1], "size": [0.24, 0.4, 0.16] } },
         "office": { "outfit": "office-f", "tints": { "blouse": [0.5, 0.42, 0.35], "skirt": [0.03, 0.04, 0.08] } }
       }
     }

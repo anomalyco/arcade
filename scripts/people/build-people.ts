@@ -94,7 +94,8 @@ for (const { person, look, spec, id } of jobs) {
     const name: string = m.getName()
     const [kind, piece] = name.includes(".") ? name.split(".") : [name, name]
     let albedo: number[] | null = null
-    if (parts.has(piece!)) albedo = spec.tints?.[piece!] ?? parts.get(piece!)!.albedo
+    // Pieces the build tinted itself (skin-toned) come back in `gear`; cast tints still win.
+    if (parts.has(piece!)) albedo = spec.tints?.[piece!] ?? gear[piece!] ?? parts.get(piece!)!.albedo
     else if (kind === "hair" && person.hair) albedo = spec.tints?.hair ?? person.hair.albedo
     else if (piece === "beanie" && spec.beanie) albedo = spec.tints?.beanie ?? spec.beanie.albedo
     else if (gear[piece!]) albedo = spec.tints?.[piece!] ?? gear[piece!]!
