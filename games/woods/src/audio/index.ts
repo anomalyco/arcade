@@ -3,24 +3,28 @@ import { Footsteps, type FootEvent, type FootSurface } from "@arcade/kit/audio/f
 import type { LabControl, LabPanel } from "@arcade/kit/lab-panel"
 import { DISTANT_SOUNDS, placeDistant, type DistantEvent, type DistantSound } from "../../shared/distant"
 import { SIGNAL_HOLD_SECONDS, type WoodsEvent, type WoodsState } from "../../shared/sim"
+import type { VoiceEvent } from "../../shared/voices"
 import type { WoodsWorld } from "../../shared/world"
 import { WOODS_SFX } from "../sfx"
 import { SOUND, SOUND_CONTROLS, type SoundSettings } from "./settings"
 import { Soundscape, type Listener, type SoundLayer } from "./soundscape"
+import { VOICE, VOICE_CONTROLS, VoiceBus, voiceHeard, type VoiceSettings } from "./voices"
 
 export { Soundscape, type Listener, type SoundLayer } from "./soundscape"
+export { VOICE, VoiceBus, voiceHeard, type VoiceSettings } from "./voices"
 
 const LAYERS: SoundLayer[] = ["wind", "creaks", "room", "leaves", "insects", "lake", "dock", "lights", "walls", "distant"]
 
-/** Footsteps (the shared quiet bank, #398 levels) and the soundscape, each on its player level, through one limiter. */
+/** Footsteps (the shared quiet bank, #398 levels), the soundscape and the searchers' voices, each on its player level, through one limiter. */
 export class WoodsMix {
   readonly feet: Footsteps
   readonly scape: Soundscape
   readonly feetOut: GainNode
   readonly scapeOut: GainNode
+  readonly voices: VoiceBus
   readonly limiter: DynamicsCompressorNode
 
-  constructor(readonly ctx: BaseAudioContext, sound: SoundSettings, baseUrl: string, world: () => WoodsWorld) {
+  constructor(readonly ctx: BaseAudioContext, sound: SoundSettings, baseUrl: string, world: () => WoodsWorld, voice: VoiceSettings = VOICE) {
     this.limiter = ctx.createDynamicsCompressor()
     this.limiter.threshold.value = -6
     this.limiter.knee.value = 0
@@ -37,13 +41,15 @@ export class WoodsMix {
     this.scapeOut.connect(this.limiter)
     this.feet = new Footsteps(ctx, this.feetOut)
     this.scape = new Soundscape(ctx, this.scapeOut, sound, baseUrl, world)
+    this.voices = new VoiceBus(ctx, this.limiter, voice, baseUrl, world)
   }
 
-  /** Player volumes in 0..1 (master × effects for feet, master × ambience for the woods); mute silences both. */
-  levels(master: number, effects: number, ambience: number, muted: boolean): void {
+  /** Player volumes in 0..1 (master × effects for feet, master × ambience for the woods, master × voice); mute silences all. */
+  levels(master: number, effects: number, ambience: number, muted: boolean, voice = 1): void {
     const now = this.ctx.currentTime
     this.feetOut.gain.setTargetAtTime(muted ? 0 : master * effects, now, 0.05)
     this.scapeOut.gain.setTargetAtTime(muted ? 0 : master * ambience, now, 0.05)
+    this.voices.out.gain.setTargetAtTime(muted ? 0 : master * voice, now, 0.05)
   }
 }
 
@@ -55,6 +61,8 @@ export type TapeFrame = {
   l: Listener
   steps: { events: FootEvent[]; surface: FootSurface; walkTime: number; gain: number }[]
   distant: DistantEvent[]
+  /** Searchers' lines (`shared/voices.ts`). */
+  voices?: VoiceEvent[]
   /** Someone was signalling (distant sounds that start now fade out). */
   signal?: boolean
 }
@@ -68,20 +76,28 @@ export type TapeFrame = {
 export class WoodsAudio {
   readonly bank = new SoundBank("woods", WOODS_SFX, { unlockOnGesture: false })
   readonly sound: SoundSettings = { ...SOUND }
+  readonly voice: VoiceSettings = { ...VOICE }
+  /** Each line as it reaches you (after its travel), for subtitles: whether you'd hear it, from how far. */
+  onLine: ((e: VoiceEvent, heard: ReturnType<typeof voiceHeard>) => void) | null = null
   /** Lab-only: audition one distant sound, solo one layer. */
   readonly lab = { audition: 0, solo: -1 }
   mix: WoodsMix | null = null
   /** Set to [] to record a tape (automation). */
   tape: TapeFrame[] | null = null
   private tapeTime = 0
-  private pending: Pick<TapeFrame, "steps" | "distant"> = { steps: [], distant: [] }
+  private pending: Pick<TapeFrame, "steps" | "distant" | "voices"> = { steps: [], distant: [], voices: [] }
   private queued: DistantEvent[] = []
+  private queuedVoices: VoiceEvent[] = []
+  /** Lines on their way to you, for `onLine` when they arrive (page clock, s). */
+  private arriving: { at: number; e: VoiceEvent; heard: ReturnType<typeof voiceHeard> }[] = []
+  private clock = 0
   private listener: Listener = { x: 0, y: 1.7, z: 0, yaw: 0 }
   private sim = 0
   private world: WoodsWorld | null = null
   private begun = false
   private live = false
   private retryAt = 0
+  private voiceRetryAt = 0
   private resuming = false
 
   constructor(private readonly baseUrl = typeof document === "undefined" ? "./audio/" : new URL("./audio/", document.baseURI).href) {
@@ -106,13 +122,18 @@ export class WoodsAudio {
     if (!this.begun || !this.running()) return null
     const ctx = this.bank.runtime.ctx!
     if (!this.mix) {
-      this.mix = new WoodsMix(ctx, this.sound, this.baseUrl, () => this.world!)
+      this.mix = new WoodsMix(ctx, this.sound, this.baseUrl, () => this.world!, this.voice)
       this.mix.scape.solo = LAYERS[this.lab.solo] ?? null
     }
     const scape = this.mix.scape
     if (!scape.complete && !scape.loading && ctx.currentTime >= this.retryAt) {
       this.retryAt = ctx.currentTime + 10
       void scape.load().catch((e) => console.warn("woods audio:", e))
+    }
+    const voices = this.mix.voices
+    if (scape.loaded && !voices.complete && !voices.loading && ctx.currentTime >= this.voiceRetryAt) {
+      this.voiceRetryAt = ctx.currentTime + 10
+      void voices.load().catch((e) => console.warn("woods voice:", e))
     }
     return this.mix
   }
@@ -121,7 +142,10 @@ export class WoodsAudio {
   private quiet(): void {
     this.live = false
     this.queued.length = 0
+    this.queuedVoices.length = 0
+    this.arriving.length = 0
     this.mix?.scape.stopAll()
+    this.mix?.voices.stopAll()
     if (this.running()) this.bank.runtime.suspend()
   }
 
@@ -134,6 +158,8 @@ export class WoodsAudio {
       { key: "solo", label: "Solo a layer", group: "Sound", subsection: "Audition", type: "select", options: [{ value: -1, label: "Everything" }, ...LAYERS.map((l, i) => ({ value: i, label: l }))], change: (v) => { if (this.mix) this.mix.scape.solo = LAYERS[Number(v)] ?? null } },
     ]
     panel.addControls(this.lab, controls)
+    panel.addControls(this.bank.volumes, [{ key: "volumeVoice", label: "Voices volume", group: "Voices", min: 0, max: 100, step: 1, unit: "%", change: () => this.bank.applyVolumes() }])
+    panel.addControls(this.voice, VOICE_CONTROLS)
   }
 
   /**
@@ -159,20 +185,38 @@ export class WoodsAudio {
       if (mix?.scape.loaded) mix.scape.distant(e, this.listener, this.sim)
     }
     this.queued.length = 0
+    this.clock += dt
+    for (const e of this.queuedVoices) {
+      this.pending.voices!.push(e)
+      const heard = voiceHeard(world, e, this.listener, this.voice)
+      if (mix?.voices.loaded) mix.voices.say(e, this.listener, this.sim)
+      const late = Math.max(0, this.sim - e.at)
+      if (late < heard.delay + 2) this.arriving.push({ at: this.clock + Math.max(0, heard.delay - late), e, heard })
+    }
+    this.queuedVoices.length = 0
+    for (let i = this.arriving.length - 1; i >= 0; i--) {
+      const a = this.arriving[i]!
+      if (a.at > this.clock) continue
+      this.arriving.splice(i, 1)
+      this.onLine?.(a.e, a.heard)
+    }
     if (this.tape) {
       this.tapeTime += dt
       this.tape.push({ t: this.tapeTime, sim: state.t, l: this.listener, signal: signalling, ...this.pending })
     }
-    this.pending = { steps: [], distant: [] }
+    this.pending = { steps: [], distant: [], voices: [] }
     if (!mix) return
     const v = this.bank.volumes
-    mix.levels(v.volumeMaster / 100, v.volumeEffects / 100, v.volumeAmbience / 100, this.bank.muted)
+    mix.levels(v.volumeMaster / 100, v.volumeEffects / 100, v.volumeAmbience / 100, this.bank.muted, v.volumeVoice / 100)
     mix.scape.update(this.listener, state.t, signalling)
+    mix.voices.update(this.listener)
   }
 
   /** The session's events: a distant event plays where it happens, on the next `frame` (with that frame's clock). */
   event(e: WoodsEvent): void {
     if (e.kind === "distant" && (this.live || this.tape)) this.queued.push(e)
+    // Lines are read even while the woods are silent (subtitles), but only once you're out there.
+    if (e.kind === "voice" && (this.live || this.tape)) this.queuedVoices.push(e)
   }
 
   /** Plays one distant sound where the schedule would put it now. Automation and the proof; plays only once loaded. */
@@ -209,15 +253,18 @@ export class WoodsAudio {
    * Renders a tape through the same mix in an OfflineAudioContext (never to the speakers). `solo` keeps one layer;
    * `footsteps: false` drops the feet.
    */
-  async renderTape(tape: readonly TapeFrame[], world: WoodsWorld, seconds: number, opts: { solo?: SoundLayer | null; footsteps?: boolean; sound?: Partial<SoundSettings>; volume?: { master: number; effects: number; ambience: number } } = {}): Promise<AudioBuffer> {
+  async renderTape(tape: readonly TapeFrame[], world: WoodsWorld, seconds: number, opts: { solo?: SoundLayer | null; footsteps?: boolean; voices?: boolean; sound?: Partial<SoundSettings>; volume?: { master: number; effects: number; ambience: number; voice?: number }; fetcher?: (url: string) => Promise<ArrayBuffer>; ctx?: OfflineAudioContext } = {}): Promise<AudioBuffer> {
     const sr = 48000
-    const ctx = new OfflineAudioContext(2, Math.ceil(seconds * sr), sr)
-    const mix = new WoodsMix(ctx, { ...this.sound, ...opts.sound }, this.baseUrl, () => world)
+    const ctx = opts.ctx ?? new OfflineAudioContext(2, Math.ceil(seconds * sr), sr)
+    const mix = new WoodsMix(ctx, { ...this.sound, ...opts.sound }, this.baseUrl, () => world, this.voice)
     mix.scape.solo = opts.solo ?? null
-    await mix.scape.load()
-    const v = opts.volume ?? { master: this.bank.volumes.volumeMaster / 100, effects: this.bank.volumes.volumeEffects / 100, ambience: this.bank.volumes.volumeAmbience / 100 }
+    await mix.scape.load(opts.fetcher)
+    if (opts.voices !== false) await mix.voices.load(opts.fetcher)
+    const b = this.bank.volumes
+    const v = opts.volume ?? { master: b.volumeMaster / 100, effects: b.volumeEffects / 100, ambience: b.volumeAmbience / 100, voice: b.volumeVoice / 100 }
     mix.feetOut.gain.value = v.master * v.effects
     mix.scapeOut.gain.value = v.master * v.ambience
+    mix.voices.out.gain.value = opts.voices === false ? 0 : v.master * (v.voice ?? 1)
     let last = -1
     for (const f of tape) {
       if (f.t >= seconds - 0.05) break
@@ -228,6 +275,8 @@ export class WoodsAudio {
         mix.scape.update(f.l, f.sim, f.signal ?? false)
         if (opts.footsteps !== false) for (const s of f.steps) mix.feet.play(s.events, s.surface, s.walkTime, s.gain)
         for (const e of f.distant) mix.scape.distant(e, f.l, f.sim)
+        mix.voices.update(f.l)
+        for (const e of f.voices ?? []) mix.voices.say(e, f.l, f.sim)
         void ctx.resume()
       })
     }

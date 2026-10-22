@@ -20,6 +20,7 @@ import { FriendsView } from "./friends-view"
 import { PaperMap } from "./map"
 import { SettingsMenu } from "./menu"
 import { OnlineSession, SoloSession, type Session } from "./session"
+import { StoryHud } from "./story"
 import { WorldView } from "./world-view"
 
 const WALK = { cameraMotion: 1, reduceMotion: globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false, stepLength: 0.72, walkSettle: 0.3, footsteps: 0.9 }
@@ -66,6 +67,7 @@ async function main() {
   if (params.get("smooth") === "0") friends.smooth = false
   const map = new PaperMap(document.body)
   const audio = new WoodsAudio()
+  const story = new StoryHud(audio)
   const fp = new FrameParts()
 
   let session: Session = online ? new OnlineSession(world, roomCode, nameInput.value.trim()) : new SoloSession(world, settings)
@@ -124,6 +126,8 @@ async function main() {
     mode: () => look.quality,
     setMode: (mode) => { look.quality = mode; panel.sync() },
     active: () => quality.getActiveTier(),
+    subtitles: () => story.subtitles,
+    setSubtitles: (on) => { story.subtitles = on; panel.sync() },
   })
   function syncOverlays() {
     const free = !forcePlay && !locked()
@@ -180,7 +184,7 @@ async function main() {
 
   let toastUntil = 0
   const say = (text: string, seconds = 3.5) => { toast.textContent = text; toast.style.opacity = "1"; toastUntil = performance.now() + seconds * 1000 }
-  say(online ? `Camp Tamarack, nightfall. Room ${roomCode}: your friends start at camp too. Find the old survey markers together.` : "Camp Tamarack, nightfall. Find the old survey markers in the woods.", 6)
+  if (online) say(`Room ${roomCode}: your friends start at camp too.`, 6)
 
   const nameOf = (id: number) => session.view.players.find((p) => p.id === id)?.name ?? "Someone"
   // Your torch: in the right hand, low, a quarter metre ahead of the eye (the look's Hand settings).
@@ -375,6 +379,9 @@ async function main() {
     const campLight = Math.max(0, 1 - Math.hypot(at.x - world.camp.x, at.z - world.camp.z) / 30) * 0.5 * settings.campGlow
     map.frame(state, meId, p.mapRaise, camera.yaw, ownLevel * r + campLight + 0.04, camera.walk.lateral * 40, dt)
     if (performance.now() > toastUntil) toast.style.opacity = "0"
+    // The story: the trailhead opening at your first step out, the FIND BARBARA card, subtitles.
+    if (playing) story.begin(world, state, meId, at.x, at.z, camera.yaw)
+    story.frame(dt, state, world)
     // You hear the woods while playing, or with the knobs open once you've begun (to tune the mix).
     audio.frame(camera.eye, camera.yaw, dt, world, state, playing || panel.visible)
 
@@ -386,7 +393,7 @@ async function main() {
   Object.assign(window, {
     woods: {
       get ready() { return true }, get frames() { return frames }, get paused() { return paused }, set paused(v: boolean) { paused = v },
-      renderer, camera, settings, panel, map, debug, audio, view, look: view.forest.settings, quality, friends, cameraLook,
+      renderer, camera, settings, panel, map, debug, audio, story, view, look: view.forest.settings, quality, friends, cameraLook,
       measure: (n?: number) => view.forest.measure(n), stats: () => view.forest.stats(),
       get state() { return session instanceof SoloSession ? session.state : session.view }, get world() { return world }, get session() { return session },
       /** Automation: room readout (your id, people and walkers seen, tapes, bytes in, KB/s, connection status). */

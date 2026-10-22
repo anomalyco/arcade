@@ -1,5 +1,6 @@
 import { stepBody } from "@arcade/kit/sim/move"
 import { createDistant, holdDistant, stepDistant, type DistantEvent, type DistantState } from "./distant"
+import { BOT_ORDER, CAST_NAMES, createVoices, stepVoices, voicesBusyUntil, type VoiceCue, type VoiceEvent, type VoiceState } from "./voices"
 import { isDeepWater, nextRandom, solidsNear, standHeight, treesNear, type Tree, type WoodsWorld } from "./world"
 
 /**
@@ -42,6 +43,10 @@ export const FEEL = {
   botTapes: 8,
   /** How often the distant sounds come (×; `shared/distant.ts`). The room's is authoritative. */
   distantRate: 1,
+  /** How often the searchers talk among themselves (×; 0 is silence apart from key moments; `shared/voices.ts`). */
+  chatter: 1,
+  /** People's own searchers speak at key moments (a find, a sighting): 1 on, 0 never. */
+  voicePeople: 1,
 }
 export type Feel = typeof FEEL
 
@@ -115,6 +120,8 @@ export type WoodsEvent =
   | { kind: "light"; by: number; on: boolean }
   /** A distant sound (`shared/distant.ts`): the same sound, take, place and emission time for every player. */
   | DistantEvent
+  /** A searcher says a line (`shared/voices.ts`): the same line, place and emission time for every player. */
+  | VoiceEvent
 
 export type WoodsState = {
   t: number
@@ -134,6 +141,8 @@ export type WoodsState = {
   serial: number
   /** The distant-sound schedule (`shared/distant.ts`), stepped here; a room sends it on join. */
   distant: DistantState
+  /** The searchers' voices (`shared/voices.ts`), stepped here. */
+  voices: VoiceState
 }
 
 /** One player's controls for a step: the same for a person (sent to the room, predicted locally) and a bot. */
@@ -149,7 +158,9 @@ export type PlayerInput = {
   sprint?: boolean
 }
 
-const NAMES = ["Sam", "Robin", "Alex", "Jo", "Casey"]
+const VOICE_CUES = new Set(["marker-found", "signal", "distant", "tape-tied", "creature"])
+/** Bots are the searchers `BOT_ORDER` gives them (STORY.md). */
+const NAMES = BOT_ORDER.map((c) => CAST_NAMES[c])
 /** Bots take ids from here up, so they never collide with people's ids (0 solo, 1–6 in a room). */
 export const BOT_ID = 100
 
@@ -165,7 +176,7 @@ export type Human = { id: number; name: string }
 
 /** A fresh night: `humans` start at camp (solo is one person with id 0), `bots` friends spread just north of them. */
 export function createWoods(world: WoodsWorld, bots = FEEL.botCount, seed = world.params.seed, humans: readonly Human[] = [{ id: 0, name: "You" }]): WoodsState {
-  const state: WoodsState = { t: 0, rng: { seed }, players: [], brains: [], tapes: [], nextTape: 1, found: {}, compared: {}, events: [], rev: { found: 0 }, serial: 0, distant: createDistant(seed ^ 0x51ed) }
+  const state: WoodsState = { t: 0, rng: { seed }, players: [], brains: [], tapes: [], nextTape: 1, found: {}, compared: {}, events: [], rev: { found: 0 }, serial: 0, distant: createDistant(seed ^ 0x51ed), voices: createVoices(seed ^ 0x3a7c) }
   for (const h of humans) addHuman(state, world, h.id, h.name)
   setBotCount(state, world, bots)
   return state
@@ -456,6 +467,10 @@ export function stepWoods(state: WoodsState, world: WoodsWorld, inputs: Readonly
   if (state.players.some((p) => p.signal > SIGNAL_HOLD)) holdDistant(state.distant, state.t + DISTANT_AFTER_SIGNAL)
   const sound = stepDistant(state.distant, world, state.players.filter((p) => !p.bot), state.t, feel.distantRate)
   if (sound) state.events.push(sound)
+  // The creature's crossing (`shared/creature.ts`) is read by kind, so this works either side of it landing.
+  const cues = (state.events as readonly { kind: string }[]).filter((e) => VOICE_CUES.has(e.kind)) as VoiceCue[]
+  state.events.push(...stepVoices(state.voices, world, state.players, cues, state.t, dt, feel, BOT_ID))
+  holdDistant(state.distant, voicesBusyUntil(state.voices))
 }
 
 /** Eye position of a player standing on the terrain. */

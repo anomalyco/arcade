@@ -12,6 +12,18 @@
       #prompt { position: fixed; left: 50%; top: 70%; transform: translateX(-50%); pointer-events: none; font-size: 14px; text-shadow: 0 1px 4px #000, 0 0 12px #000; }
       #toast { position: fixed; left: 50%; bottom: 9%; transform: translateX(-50%); pointer-events: none; font: italic 15px Georgia, serif; color: #d8d2c0; text-shadow: 0 1px 6px #000; opacity: 0; transition: opacity 0.6s; text-align: center; max-width: 70vw; z-index: 5; }
       #reticle { position: fixed; left: 50%; top: 50%; width: 3px; height: 3px; margin: -1.5px; border-radius: 50%; background: rgba(230,235,240,0.35); pointer-events: none; }
+      /* The search's task (FIND BARBARA): over the woods, never in the way; it fades on its own. */
+      #objective { position: fixed; left: 50%; top: 21%; transform: translateX(-50%); pointer-events: none; text-align: center; opacity: 0; transition: opacity 1.4s ease; z-index: 5; }
+      #objective.on { opacity: 1; transition-duration: 0.5s; }
+      #objective .kicker { font: 600 12px system-ui, sans-serif; letter-spacing: 0.3em; text-transform: uppercase; color: #c9c0a8; text-shadow: 0 1px 4px #000; }
+      #objective .kicker:empty { display: none; }
+      #objective .rule { width: 132px; height: 1px; margin: 12px auto; background: linear-gradient(90deg, transparent, rgba(239,230,204,0.55), transparent); }
+      #objective .task { font: 400 46px/1.05 Georgia, serif; letter-spacing: 0.26em; margin-right: -0.26em; color: #f6eed6; text-shadow: 0 2px 24px rgba(255,214,140,0.28), 0 1px 8px #000; }
+      /* What the searchers say, as it reaches you; far-off lines are dimmer. */
+      #subs { position: fixed; left: 50%; bottom: 15%; transform: translateX(-50%); pointer-events: none; display: flex; flex-direction: column; align-items: center; gap: 4px; max-width: 72vw; z-index: 5; font: 15px system-ui, sans-serif; color: #efe6cc; text-shadow: 0 1px 4px #000, 0 0 12px #000; }
+      #subs div { transition: opacity 0.5s; text-align: center; }
+      #subs b { font-weight: 600; color: #f2c96b; margin-right: 0.4em; }
+      #subs .far { font-style: italic; color: #cfc7b2; }
       #room { position: fixed; top: 12px; right: 14px; pointer-events: none; font-size: 12px; text-align: right; line-height: 1.6; opacity: 0.7; text-shadow: 0 1px 3px #000; }
       #room .away { opacity: 0.45; }
       #tuning { position: fixed; left: 50%; top: 46px; transform: translateX(-50%); pointer-events: none; font-size: 13px; color: #efe6cc; text-shadow: 0 1px 4px #000; z-index: 4; }
@@ -51,6 +63,9 @@
       #settings input[type=range] { width: 100%; accent-color: #f2c96b; }
       #settings output { min-width: 2.4em; text-align: right; font-variant-numeric: tabular-nums; color: #f6eed6; }
       #settings .wide { grid-column: 2 / -1; }
+      #settings .toggles { display: flex; gap: 8px; }
+      #subtitles { padding: 6px 12px; font-weight: 500; }
+      #subtitles[aria-pressed=true] { color: #17130a; background: #f2c96b; border-color: #f2c96b; }
       #mute { display: inline-flex; align-items: center; gap: 8px; justify-self: start; padding: 6px 12px; font-weight: 500; }
       #mute[aria-pressed=true] { color: #17130a; background: #f2c96b; border-color: #f2c96b; }
       .seg { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid rgba(239,230,204,0.35); border-radius: 10px; overflow: hidden; }
@@ -66,15 +81,17 @@
     <div id="reticle"></div>
     <div id="prompt"></div>
     <div id="toast"></div>
+    <div id="objective" aria-live="polite"><div class="kicker"></div><div class="rule"></div><div class="task"></div></div>
+    <div id="subs" aria-live="polite"></div>
     <div id="room"></div>
     <div id="tuning" hidden></div>
     <div id="start" class="overlay">
       <div class="card">
         <h1>WOODS</h1>
-        <p class="sub" id="start-sub">A night survey out of Camp Tamarack</p>
+        <p class="sub" id="start-sub">Camp Tamarack, November 1996. Her car is still in the lot.</p>
         <label class="name">Your name <input type="text" id="name" maxlength="16" placeholder="Camper" autocomplete="off" /></label>
         <div class="choices" id="choices">
-          <button id="solo" class="primary">Play alone<small>you and three campers</small></button>
+          <button id="solo" class="primary">Play alone<small>you and three searchers</small></button>
           <button id="friends">Play with friends<small>a private room, up to 6</small></button>
         </div>
         <div id="invite" hidden>
@@ -87,7 +104,8 @@
           <span>Master</span><input type="range" id="vol-master" min="0" max="100" step="1" /><output for="vol-master"></output>
           <span>Effects</span><input type="range" id="vol-effects" min="0" max="100" step="1" /><output for="vol-effects"></output>
           <span>Ambience</span><input type="range" id="vol-ambience" min="0" max="100" step="1" /><output for="vol-ambience"></output>
-          <span></span><button id="mute" class="wide" aria-pressed="false"></button>
+          <span>Voices</span><input type="range" id="vol-voice" min="0" max="100" step="1" /><output for="vol-voice"></output>
+          <span></span><div class="wide toggles"><button id="mute" aria-pressed="false"></button><button id="subtitles" aria-pressed="true">Subtitles</button></div>
           <div class="head">Graphics</div>
           <span>Quality</span>
           <div class="seg wide" id="quality-modes"><button data-mode="auto">Auto</button><button data-mode="high">High</button><button data-mode="balanced">Balanced</button><button data-mode="low">Low</button></div>
