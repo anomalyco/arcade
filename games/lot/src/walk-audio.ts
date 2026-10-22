@@ -1,6 +1,6 @@
 import { Footsteps, type FootEvent, type FootSurface } from "@arcade/kit/audio/footsteps"
 import { encodeWavPcm16 } from "@arcade/kit/audio/offline"
-import { ambiencePcm, type AmbientSound } from "./ambience"
+import { ambiencePcm, type AmbientSound } from "@arcade/kit/audio/ambience"
 import type { WalkSettings } from "./walk-settings"
 import { isEditableEventTarget } from "@arcade/kit/client/controls"
 import type { StormAudioFrame, StormListener } from "./weather/audio"

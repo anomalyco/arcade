@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { synthFoley, type FootSurface } from "../packages/kit/audio/footsteps"
 import { Walk } from "../packages/kit/client/walk"
-import { ambiencePcm } from "../games/lot/src/ambience"
+import { ambiencePcm } from "../packages/kit/audio/ambience"
 import { walkDefaults } from "../games/lot/src/walk-settings"
 
 // No playback: conservative mono levels, including the loudest 100 ms of every variant.
