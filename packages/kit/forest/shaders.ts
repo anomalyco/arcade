@@ -35,7 +35,7 @@ export const WOODS_FLOATS = 84 + GROUND_CELLS * GROUND_CELLS
 export const woodsUniformWgsl = /* wgsl */ `
 struct Woods {
   wind: vec4f,        // dir x, dir z, strength, gust
-  sway: vec4f,        // trunk, branch, flutter, -
+  sway: vec4f,        // trunk, branch, flutter, exposure the post pass applies
   moon: vec4f,        // dir xyz, strength
   sky: vec4f,         // sky glow, stars, skylight, moss
   camp: vec4f,        // windows, string lights, water, lake level
@@ -550,11 +550,32 @@ fn h1(n: f32) -> f32 { return fract(sin(n * 127.1) * 43758.5453); }
 /** The renderer's own scene shader, for what a game draws through `FrameInput.batches` (players, props): same night. */
 export const batchHooks: SceneHooks = withPhysicalLights({
   lampGrid: false,
-  declarations: woodsUniformWgsl + fogSceneWgsl,
+  declarations: woodsUniformWgsl + fogSceneWgsl + /* wgsl */ `var<private> batchThin: f32 = 0.0;
+/**
+ * Fluorescent dye turns the light landing on it into its own colour, so bright tape stays saturated instead of
+ * bleaching: past a level the result takes the dye's hue, and it rolls off below the post pass's white mix (which
+ * starts at 1.5 after exposure).
+ */
+fn tapeFluoresce(col: vec3f, dye: vec3f) -> vec3f {
+  let peak = max(max(col.r, col.g), col.b);
+  let l = peak * max(N.sway.w, 1e-3);
+  let hue = dye / max(max(max(dye.r, dye.g), dye.b), 1e-5);
+  let k = 2.4 * (1.0 - exp(-l / 2.4)) / max(l, 1e-5);
+  return mix(col, hue * peak, smoothstep(0.5, 2.0, l)) * k;
+}`,
+  // Flagging tape (the kit's MAT.tape): thin glossy plastic, lit from whichever face you see, passing ~40% of a torch
+  // behind it through; aux > 1 is a game's readability gain on its fluorescent colour.
+  material: /* wgsl */ `if (mat == 5) {
+      if (dot(n, V) < 0.0) { n = -n; }
+      pbrRough = 0.3;
+      batchThin = 0.4;
+      albedo *= max(o.aux, 1.0);
+    }`,
+  diffuseTerm: "let diffuse = (max(ndl, 0.0) + max(-ndl, 0.0) * batchThin) / PI;",
   bounce: "vec3f(0.0)",
   ambient: "fogAmbient(n) * N.sky.z * 0.5",
   directional: "vec3f(0.0)",
   lightLeak: "0.0",
   wallDirectScale: "1.0",
-  surface: "col = fogApply(col, F.cam.xyz, o.world);",
+  surface: "if (mat == 5) { col = tapeFluoresce(col, o.color); } col = fogApply(col, F.cam.xyz, o.world);",
 }, { knobs: "N.pbr", spotShadows: true, beam: { a: "N.beamA", b: "N.beamB" }, env: "mix(fogEnv(dir), fogAmbient(n), rough * rough)" })

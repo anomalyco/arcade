@@ -35,6 +35,11 @@ export function forestFlags(world: WoodsWorld, tapes: readonly Tape[]): NonNulla
   return tapes.map((t) => ({ x: t.x, z: t.z, y: TAPE_HEIGHT, yaw: t.yaw, r: world.trees[t.tree]?.radius ?? 0 }))
 }
 
+/** A tree as the renderer draws it. */
+export function forestTree(t: WoodsWorld["trees"][number]): ForestWorld["trees"][number] {
+  return { x: t.x, z: t.z, species: t.species === "fir" ? "spruce" : t.species, r: t.radius, h: t.height, seed: t.seed }
+}
+
 /** The static world (plus current tapes) in the renderer's shape. Buildings face the lake (+z), so their yaw is 0. */
 export function toForestWorld(world: WoodsWorld, tapes: readonly Tape[] = []): ForestWorld {
   const centre = (r: readonly number[]) => ({ x: (r[0]! + r[2]!) / 2, z: (r[1]! + r[3]!) / 2, w: r[2]! - r[0]!, d: r[3]! - r[1]! })
@@ -49,7 +54,7 @@ export function toForestWorld(world: WoodsWorld, tapes: readonly Tape[] = []): F
     seed: world.params.seed,
     half: world.params.half,
     height: (x, z) => terrainHeight(world.terrain, x, z),
-    trees: world.trees.map((t) => ({ x: t.x, z: t.z, species: t.species === "fir" ? "spruce" : t.species, r: t.radius, h: t.height, seed: t.seed })),
+    trees: world.trees.map(forestTree),
     rocks: world.rocks.map((k) => ({ x: k.x, z: k.z, r: Math.max(k.w, k.d) / 2, h: k.h, yaw: k.yaw, seed: k.seed })),
     logs: [],
     paths: [{ points: world.trail.points, width: 1.6 }],

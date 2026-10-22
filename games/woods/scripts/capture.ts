@@ -25,12 +25,52 @@ type Woods = {
   hold(code: string, down: boolean): void
   addTape(id: number, fx?: number, fz?: number): void
   step(ms: number): void
-  state: { t: number; players: { id: number; x: number; z: number; yaw: number; pitch: number; light: boolean }[]; brains: { id: number; mode: string; timer: number; heading: number }[]; tapes: unknown[] }
-  world: { camp: { x: number; z: number; spawn: { x: number; z: number; yaw: number } }; trees: { id: number; x: number; z: number; radius: number }[]; markers: { x: number; z: number }[]; ridgeLight: { x: number; z: number } }
+  state: { t: number; players: { id: number; x: number; z: number; yaw: number; pitch: number; light: boolean }[]; brains: { id: number; mode: string; timer: number; heading: number; sweep: number }[]; tapes: unknown[] }
+  world: { camp: { x: number; z: number; spawn: { x: number; z: number; yaw: number } }; trees: { id: number; x: number; z: number; radius: number; species: string }[]; markers: { x: number; z: number }[]; ridgeLight: { x: number; z: number } }
   settings: Record<string, number | boolean>
   camera: { flashlight: boolean }
 }
 declare const woods: Woods
+
+/**
+ * Runs in the page: ties one tape on a mid-size pine north of camp with a clear 20 m sightline, knot towards the
+ * camera, and stands `d` m off its bark looking at the band. Under 10 m your own light is on; further, it is off and a
+ * friend 5 m from the trunk holds their beam on it. Returns the tree id and where the camera stands.
+ */
+export function tapeShot(d: number): { tree: number; x: number; z: number } {
+  const c = woods.world.camp, trees = woods.world.trees
+  const segDist = (px: number, pz: number, x0: number, z0: number, x1: number, z1: number) => {
+    const dx = x1 - x0, dz = z1 - z0, k = Math.max(0, Math.min(1, ((px - x0) * dx + (pz - z0) * dz) / (dx * dx + dz * dz)))
+    return Math.hypot(px - x0 - dx * k, pz - z0 - dz * k)
+  }
+  const cand = trees.filter((t) => t.species === "pine" && t.radius > 0.3 && t.radius < 0.5).sort((a, b) => Math.hypot(a.x - c.x, a.z - c.z + 50) - Math.hypot(b.x - c.x, b.z - c.z + 50))
+  for (const t of cand) for (let k = 0; k < 16; k++) {
+    const a = (k / 16) * Math.PI * 2, fx = Math.cos(a), fz = Math.sin(a)
+    const far = t.radius + 21, ex = t.x + fx * far, ez = t.z + fz * far
+    if (!trees.every((o) => o.id === t.id || segDist(o.x, o.z, t.x + fx * t.radius, t.z + fz * t.radius, ex, ez) > o.radius + 0.7)) continue
+    woods.state.tapes.length = 0
+    woods.addTape(t.id, fx, fz)
+    const x = t.x + fx * (t.radius + d), z = t.z + fz * (t.radius + d)
+    woods.setPose(x, z, Math.atan2(-(t.x - x), -(t.z - z)), Math.atan2(1.3 - 1.68, d + 0.3))
+    for (const b of woods.state.brains) b.mode = "wait", b.timer = 99
+    const fr = woods.state.players.slice(1)
+    fr.forEach((p, i) => { p.x = t.x + 60 + i * 3; p.z = t.z + 60 })
+    if (d >= 10) {
+      woods.camera.flashlight = false
+      const p = fr[0], b = woods.state.brains[0]
+      if (p && b) {
+        // A waiting bot sweeps its beam (`botInput`): end the 90 settle steps at the top of the pitch sweep (−0.1),
+        // its yaw sweep taken out of the heading, from 4 m its axis meets the trunk ~40 cm under the band: the band sits in the beam, not its blown-out centre.
+        const sx = -fz, sz = fx, end = Math.PI / 2 / 0.7
+        p.x = t.x + fx * 3.6 + sx * 2.2; p.z = t.z + fz * 3.6 + sz * 2.2
+        b.sweep = end - 1.5
+        b.heading = Math.atan2(-(t.x - p.x), -(t.z - p.z)) - Math.sin(end * 0.45) * 0.55
+      }
+    }
+    return { tree: t.id, x, z }
+  }
+  throw new Error("no tape tree with a clear sightline")
+}
 
 export const shots: Record<string, (page: Page) => Promise<void>> = {
   trunkClose: async (page) => { await page.evaluate(() => {
@@ -192,6 +232,8 @@ export const shots: Record<string, (page: Page) => Promise<void>> = {
       ;(woods as unknown as { debug: { dark: number[] } }).debug.dark = order.slice(n === 4 ? 4 : n)
     }, n)
   }])),
+  // Flagging tape on a pine north of camp, knot towards you: 1 m and 5 m in your own beam, 20 m in a friend's.
+  ...Object.fromEntries([1, 5, 20].map((d) => [`tape${d}`, async (page: Page) => { await page.evaluate(tapeShot, d) }])),
   // The map raised next to the camp, flashlight on it.
   map: async (page) => { await page.evaluate(() => { const s = woods.world.camp.spawn; woods.setPose(s.x, s.z - 40, 0.4, -0.1); woods.hold("KeyG", true) }) },
 }

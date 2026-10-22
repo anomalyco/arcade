@@ -9,6 +9,7 @@ import type { QualityTier } from "@arcade/kit/quality"
 import type { Rect } from "@arcade/kit/sim/geom"
 import type { Feel, WoodsState } from "../shared/sim"
 import { toForestWorld, type ForestWorld } from "../shared/forest-world"
+import { TapeView } from "./tape-view"
 import type { WoodsWorld } from "../shared/world"
 
 /**
@@ -19,7 +20,6 @@ import type { WoodsWorld } from "../shared/world"
  * `occluders`, `draw`, plus `frame` to draw a frame.
  */
 
-const TAPE: Rgb = [0.85, 0.2, 0.02]
 const ROCK: Rgb = [0.2, 0.2, 0.19]
 const MOSS: Rgb = [0.07, 0.09, 0.045]
 const mix3 = (a: Rgb, b: Rgb, t: number): Rgb => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]
@@ -98,13 +98,14 @@ function forestWorld(world: WoodsWorld): ForestWorld {
 }
 
 export class WorldView {
-  private tapeModels = new Map<number, number>()
   private markerModel = -1
   private mastModel = -1
   private glows: ForestGlow[] = []
-  private tails: number[] = []
+  private readonly tapes: TapeView
 
-  private constructor(readonly forest: ForestView) {}
+  private constructor(readonly forest: ForestView) {
+    this.tapes = new TapeView(forest.renderer)
+  }
 
   /** Loads the forest's scanned assets and builds `world`. */
   static async create(gpu: { device: GPUDevice; context: GPUCanvasContext; format: GPUTextureFormat }, world: WoodsWorld, opts: { smoke?: boolean; quality?: QualityTier } = {}): Promise<WorldView> {
@@ -137,6 +138,7 @@ export class WorldView {
   setWorld(world: WoodsWorld): void {
     this.forest.setWorld(forestWorld(world))
     this.models(world)
+    this.tapes.reset()
   }
 
   /** Footprints of trunks, rocks and buildings with their top heights (for any polar-shadow user). */
@@ -171,59 +173,9 @@ export class WorldView {
     return { scene, fog }
   }
 
-  private tapeModel(radius: number): number {
-    const bucket = Math.max(3, Math.ceil(radius / 0.02))
-    let id = this.tapeModels.get(bucket)
-    if (id !== undefined) return id
-    const m = new Mesh()
-    const r = bucket * 0.02 + 0.012
-    m.prism(0, 0, r, r, -0.026, 0.026, 16, TAPE, MAT.lit, 0, false)
-    // The knot: a small lump where the ends are tied off (the tails hang from it, see \`tailModels\`).
-    m.bevelBox(r - 0.005, -0.03, -0.025, r + 0.03, 0.03, 0.025, 0.008, TAPE, TAPE)
-    id = this.renderer.addModel(m)
-    this.tapeModels.set(bucket, id)
-    return id
-  }
-
-  /**
-   * Loose tape ends: a ribbon hanging from its pivot at the origin down -y, twisting a quarter turn along its length,
-   * both faces. Drawn per tape and frame, swung about the knot.
-   */
-  private tailModels(): number[] {
-    if (this.tails.length) return this.tails
-    for (const len of [0.44, 0.33]) {
-      const m = new Mesh()
-      const n = 6, w = 0.022
-      for (let i = 0; i < n; i++) {
-        const at = (k: number) => { const f = k / n, tw = f * 1.3, sag = f * f * 0.05; return { y: -f * len, x: sag, c: Math.cos(tw) * w, s: Math.sin(tw) * w } }
-        const p = at(i), q = at(i + 1)
-        const a = [p.x - p.s, p.y, -p.c], b = [p.x + p.s, p.y, p.c], c = [q.x + q.s, q.y, q.c], d = [q.x - q.s, q.y, -q.c]
-        m.quadAuto(a, b, c, d, TAPE, MAT.lit, 0)
-        m.quadAuto(d, c, b, a, TAPE, MAT.lit, 0)
-      }
-      this.tails.push(this.renderer.addModel(m))
-    }
-    return this.tails
-  }
-
-  /** Per-frame world content: tapes (ring, knot and two swaying tails), survey markers and the mast. */
-  draw(fp: FrameParts, world: WoodsWorld, state: WoodsState, t: number, _eye: readonly number[], _feel: Feel): void {
-    const tails = this.tailModels()
-    for (const tape of state.tapes) {
-      const tree = world.trees[tape.tree]
-      if (!tree) continue
-      const r = tree.radius * (1 - (TAPE_RISE * 0.7) / tree.height)
-      fp.push(this.tapeModel(r), tape.x, tape.y, tape.z, tape.yaw, [1, 1, 1], 0, 0, 0)
-      // The ends hang off the knot, lifted out by the trunk's curve, and stir in the air: a slow swing with gusts.
-      const c = Math.cos(tape.yaw), s = Math.sin(tape.yaw), kr = Math.max(3, Math.ceil(r / 0.02)) * 0.02 + 0.04
-      for (const [i, dz] of [[0, -0.02], [1, 0.02]] as const) {
-        const ph = tape.id * 1.7 + i * 2.3
-        const gust = 0.5 + 0.5 * Math.sin(t * 0.37 + tape.id)
-        const pitch = 0.18 + i * 0.12 + Math.sin(t * 1.9 + ph) * 0.12 * gust
-        const roll = Math.sin(t * 1.3 + ph * 1.4) * 0.3 * gust + Math.sin(t * 4.7 + ph) * 0.05
-        fp.push(tails[i]!, tape.x + kr * c - dz * s, tape.y, tape.z + kr * s + dz * c, tape.yaw, [1, 1, 1], pitch, roll, 0)
-      }
-    }
+  /** Per-frame world content: tapes (`TapeView`), survey markers and the mast. */
+  draw(fp: FrameParts, world: WoodsWorld, state: WoodsState, t: number, eye: readonly number[], feel: Feel): void {
+    this.tapes.draw(fp, world, state.tapes, t, eye, feel, this.forest.settings, this.forest.quality.near)
     if (this.markerModel >= 0) fp.push(this.markerModel, 0, 0, 0, 0, [1, 1, 1], 0, 0, 0)
     if (this.mastModel >= 0) fp.push(this.mastModel, 0, 0, 0, 0, [1, 1, 1], 0, 0, 0)
   }
@@ -241,4 +193,3 @@ export class WorldView {
     if (sync || target) this.forest.drawTo(target)
   }
 }
-const TAPE_RISE = 1.9

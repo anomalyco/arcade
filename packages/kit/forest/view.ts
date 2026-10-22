@@ -22,6 +22,7 @@ import { ForestBuilder } from "./offthread"
 import { ALPHA_COVERAGE_BASE } from "./alpha-coverage"
 import { GROUND_CELL, GROUND_CELLS, WOODS_FLOATS, batchHooks, cutoutDepthWgsl, forestHooks, forestShadowInstanceWgsl, moteShader, skyShader, treeVertexWgsl, woodsUniformWgsl } from "./shaders"
 import { forestPost } from "./post"
+import { FOREST_WIND_DIR } from "./wind"
 import { stepForestExposure, forestExposureTarget } from "./exposure"
 import { indexForestMesh } from "./index-mesh"
 import { FOREST_QUALITY, createForestLookSettings, forestLookControls, kelvinColor, torchProfile, type ForestLookSettings, type ForestQuality } from "./settings"
@@ -404,10 +405,11 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     glare = Math.min(glare, 0.5) * s.glare
 
     // ---- Custom uniforms.
-    const wind = [0.88, 0.47]
+    const wind = FOREST_WIND_DIR
     const moonH = (s.moonHeading * Math.PI) / 180, moonE = (s.moonElevation * Math.PI) / 180
     custom.set([wind[0]!, wind[1]!, s.wind, s.gust], 0)
-    custom.set([s.trunkSway, s.branchSway, s.flutter, 0], 4)
+    // w: the exposure the post pass applies (fluorescent tape keeps its hue under it).
+    custom.set([s.trunkSway, s.branchSway, s.flutter, s.exposure * cam.exposure], 4)
     custom.set([Math.cos(moonE) * Math.cos(moonH), Math.sin(moonE), Math.cos(moonE) * Math.sin(moonH), s.moon], 8)
     custom.set([s.sky, s.stars, s.skylight, s.moss], 12)
     custom.set([s.windows, s.stringLights, s.water, lake.level], 16)

@@ -155,7 +155,7 @@ export class PaperMap {
     g.setLineDash([])
     g.strokeStyle = "rgba(45,45,52,0.8)"; g.lineWidth = 1.7
     path(m.trail)
-    g.strokeStyle = "rgba(225,95,20,0.95)"; g.lineWidth = 2
+    g.strokeStyle = "rgba(230,40,135,0.95)"; g.lineWidth = 2
     for (const id of m.tapes) {
       const t = state.tapes.find((k) => k.id === id)
       if (!t) continue

@@ -77,8 +77,38 @@ const FIR_SPRAYS: readonly (readonly [number, number, number, number])[] = [[0.1
 const PINE_SPRAYS: readonly (readonly [number, number, number, number])[] = [[0.03, 0.05, 0.215, 0.44]]
 
 /** Canonical size of each species' variants; instances scale trunk radius (xz) and height (y) from these. */
-const SPECIES: Record<ForestTree["species"], { r: number; h: number; variants: number }> = {
+export const SPECIES: Record<ForestTree["species"], { r: number; h: number; variants: number }> = {
   pine: { r: 0.42, h: 27, variants: 7 }, spruce: { r: 0.3, h: 21, variants: 7 }, birch: { r: 0.14, h: 15, variants: 5 }, snag: { r: 0.32, h: 12, variants: 4 },
+}
+/** How far a tree instance sits below the drawn ground (m). */
+export const TREE_SINK = 0.05
+
+/** The canonical tree a species' variant `v` is built from: its size, its own lean and seed. */
+export function treeVariant(worldSeed: number, species: ForestTree["species"], v: number): ForestTree {
+  const spec = SPECIES[species]
+  const seed = (worldSeed * 1009 + v * 7919 + species.length * 104729) >>> 0
+  const vr = mulberry(seed)
+  return { x: 0, z: 0, species, r: spec.r, h: spec.h, lean: species === "birch" ? 0.03 + vr() * 0.1 : species === "snag" ? vr() * 0.06 : vr() * 0.025, leanYaw: vr() * TAU, seed }
+}
+
+/**
+ * How a tree (integer seed) instances its species' variant: which variant, its yaw, the crown's xz scale, the packed
+ * trunk scale (`vsTree`), the trunk's xz scale as the shader unpacks it, the height scale and the wind phase.
+ */
+export function treePlacement(t: ForestTree) {
+  const spec = SPECIES[t.species]
+  // Crown width follows height (and a little per tree); the trunk its own radius (packed, see `vsTree`).
+  const trunkPacked = Math.max(1, Math.round((t.r / spec.r) * 256)) + Math.min(0.999, ((t.seed >>> 12) % 1000) / 1000)
+  return {
+    variant: t.seed % spec.variants,
+    yaw: ((t.seed >>> 8) % 6283) / 1000,
+    crownScale: Math.pow(t.h / spec.h, 0.8) * (0.85 + 0.3 * (((t.seed >>> 16) % 1000) / 1000)),
+    trunkPacked,
+    trunkScale: Math.floor(trunkPacked) / 256,
+    heightScale: t.h / spec.h,
+    /** Wind phase 0..1. */
+    phase: ((t.seed >>> 4) % 1000) / 1000,
+  }
 }
 
 class Chunks {
@@ -105,7 +135,7 @@ class Chunks {
 }
 
 /** Seeds as 31-bit integers: a world may give 0..1 hashes (the woods toy) or integers (the demo). */
-const intSeed = (seed: number) => (Number.isInteger(seed) ? seed : Math.floor(Math.abs(seed) * 2147483647)) >>> 0
+export const intSeed = (seed: number) => (Number.isInteger(seed) ? seed : Math.floor(Math.abs(seed) * 2147483647)) >>> 0
 
 /**
  * Builds the forest. `ground` is the ground on the terrain mesh's grid (`forestHeightGrid`); pass it when it was sampled
@@ -148,9 +178,7 @@ export function buildForest(input: ForestWorld, models: ForestModels, opts: Buil
     const spec = SPECIES[species]
     variants[species] = []
     for (let v = 0; v < spec.variants; v++) {
-      const seed = (world.seed * 1009 + v * 7919 + species.length * 104729) >>> 0
-      const vr = mulberry(seed)
-      const t: ForestTree = { x: 0, z: 0, species, r: spec.r, h: spec.h, lean: species === "birch" ? 0.03 + vr() * 0.1 : species === "snag" ? vr() * 0.06 : vr() * 0.025, leanYaw: vr() * TAU, seed }
+      const t = treeVariant(world.seed, species, v)
       const nearW: [VertexWriter, VertexWriter] = [new VertexWriter(), new VertexWriter()], farW: [VertexWriter, VertexWriter] = [new VertexWriter(), new VertexWriter()]
       tree(nearW[0], nearW[1], t, 0, true, opts.smoothTrunks)
       tree(farW[0], farW[1], t, 0, false)
@@ -205,14 +233,8 @@ export function buildForest(input: ForestWorld, models: ForestModels, opts: Buil
   const trunkData: number[] = []
   for (const t of trees) {
     const y = H(t.x, t.z)
-    const spec = SPECIES[t.species]
-    const list = variants[t.species]
-    const tpl = list[t.seed % list.length]!
-    const yaw = ((t.seed >>> 8) % 6283) / 1000
-    // Crown width follows height (and a little per tree); the trunk its own radius (packed, see `vsTree`).
-    const crownScale = Math.pow(t.h / spec.h, 0.8) * (0.85 + 0.3 * (((t.seed >>> 16) % 1000) / 1000))
-    const trunkPacked = Math.max(1, Math.round((t.r / spec.r) * 256)) + Math.min(0.999, ((t.seed >>> 12) % 1000) / 1000)
-    chunks.instance(tpl, t.x, y - 0.05, t.z, yaw, crownScale, t.h / spec.h, ((t.seed >>> 4) % 1000) / 1000, trunkPacked)
+    const p = treePlacement(t)
+    chunks.instance(variants[t.species][p.variant]!, t.x, y - TREE_SINK, t.z, p.yaw, p.crownScale, p.heightScale, p.phase, p.trunkPacked)
     chunks.extend(t.x, t.z, y - 1, y + t.h + 1)
     trunkData.push(t.x, t.z, t.r, y + t.h)
     stats.trees++
@@ -504,27 +526,17 @@ function axisAt(t: ForestTree, base: number, y: number, seed: number): [number, 
   return [t.x + Math.cos(yaw) * Math.sin(lean) * y + Math.cos(seed * 9) * bend, base + y * Math.cos(lean), t.z + Math.sin(yaw) * Math.sin(lean) * y + Math.sin(seed * 9) * bend]
 }
 
-function tree(opaque: VertexWriter, masked: VertexWriter, t: ForestTree, base: number, near: boolean, smoothTrunk = false) {
-  const rand = mulberry(t.seed)
+/**
+ * A trunk's rings (axis point, radius before lobes, height above the base) and side count, drawing `s01` and a snag's
+ * broken top from `rand` in the order `tree` always has. `drawnTrunk` (trunk.ts) reads the same rings. A smooth near trunk
+ * (`BuildOptions.smoothTrunks`) has 32 sides.
+ */
+export function trunkRings(t: ForestTree, base: number, near: boolean, rand: Rand, smooth = false) {
   const s01 = rand()
-  const layer = barkLayer(t)
   const top = t.species === "snag" ? t.h * (0.55 + 0.3 * rand()) : t.h
   // Trunk: denser rings near the flare.
-  const sides = near ? (smoothTrunk ? 32 : t.species === "birch" ? 8 : t.r > 0.3 ? 14 : 10) : t.r > 0.25 ? 6 : 5
+  const sides = near ? (smooth ? 32 : t.species === "birch" ? 8 : t.r > 0.3 ? 14 : 10) : t.r > 0.25 ? 6 : 5
   const rings = near ? Math.max(8, Math.min(24, Math.round(top / 1.3))) : 5
-  const reps = Math.max(1, Math.round((TAU * t.r) / BARK_TILE))
-  const mossAmount = t.species === "birch" ? 0.25 : 0.55 + 0.45 * rand()
-  // Evaluate the same surface on either side of a ring: sharing its normal avoids
-  // the horizontal lighting seams caused by each band's independent slope.
-  const surface = (y: number, th: number) => {
-    const f = y / top
-    const taper = t.species === "snag" ? 1 - 0.45 * f : Math.pow(Math.max(0.01, 1 - 0.92 * f), 0.85)
-    const flare = 1 + (t.species === "birch" ? 0.25 : 0.6) * Math.exp(-y / (0.7 * t.r + 0.25))
-    const lobes = 1 + 0.13 * Math.exp(-y / 0.9) * Math.cos(4 * th + s01 * 7) + 0.03 * Math.cos(9 * th + y * 0.7)
-    const r = Math.max(0.015, t.r * taper * flare) * lobes
-    const c = axisAt(t, base - 0.25, y, s01)
-    return [c[0] + Math.cos(th) * r, c[1], c[2] + Math.sin(th) * r]
-  }
   const ringPts: { c: [number, number, number]; r: number; y: number }[] = []
   for (let k = 0; k <= rings; k++) {
     const f = Math.pow(k / rings, 1.35)
@@ -533,13 +545,35 @@ function tree(opaque: VertexWriter, masked: VertexWriter, t: ForestTree, base: n
     const flare = 1 + (t.species === "birch" ? 0.25 : 0.6) * Math.exp(-y / (0.7 * t.r + 0.25))
     ringPts.push({ c: axisAt(t, base - 0.25, y, s01), r: Math.max(0.015, t.r * taper * flare), y })
   }
+  return { s01, top, sides, rings, ringPts }
+}
+
+/** Out-of-round factor of a trunk ring at angle `th` and height `y`: buttress lobes near the flare, fine fluting above. */
+export const trunkLobes = (th: number, y: number, s01: number) => 1 + 0.13 * Math.exp(-y / 0.9) * Math.cos(4 * th + s01 * 7) + 0.03 * Math.cos(9 * th + y * 0.7)
+
+function tree(opaque: VertexWriter, masked: VertexWriter, t: ForestTree, base: number, near: boolean, smoothTrunk = false) {
+  const rand = mulberry(t.seed)
+  const layer = barkLayer(t)
+  const { s01, top, sides, rings, ringPts } = trunkRings(t, base, near, rand, smoothTrunk)
+  const reps = Math.max(1, Math.round((TAU * t.r) / BARK_TILE))
+  const mossAmount = t.species === "birch" ? 0.25 : 0.55 + 0.45 * rand()
+  // Evaluate the same surface on either side of a ring: sharing its normal avoids
+  // the horizontal lighting seams caused by each band's independent slope.
+  const surface = (y: number, th: number) => {
+    const f = y / top
+    const taper = t.species === "snag" ? 1 - 0.45 * f : Math.pow(Math.max(0.01, 1 - 0.92 * f), 0.85)
+    const flare = 1 + (t.species === "birch" ? 0.25 : 0.6) * Math.exp(-y / (0.7 * t.r + 0.25))
+    const r = Math.max(0.015, t.r * taper * flare) * trunkLobes(th, y, s01)
+    const c = axisAt(t, base - 0.25, y, s01)
+    return [c[0] + Math.cos(th) * r, c[1], c[2] + Math.sin(th) * r]
+  }
   for (let k = 0; k < rings; k++) {
     const a = ringPts[k]!, b = ringPts[k + 1]!
     for (let i = 0; i < sides; i++) {
       const quad = [[i, a], [i + 1, a], [i + 1, b], [i, b]] as const
       const verts = quad.map(([ii, ring]) => {
         const th = (ii / sides) * TAU
-        const lobes = 1 + 0.13 * Math.exp(-ring.y / 0.9) * Math.cos(4 * th + s01 * 7) + 0.03 * Math.cos(9 * th + ring.y * 0.7)
+        const lobes = trunkLobes(th, ring.y, s01)
         const rr = ring.r * lobes
         const nx = Math.cos(th), nz = Math.sin(th)
         const moss = mossAmount * Math.exp(-ring.y / 3.5) * (0.6 + 0.4 * Math.max(0, -nz))
