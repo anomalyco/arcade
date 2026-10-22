@@ -19,6 +19,8 @@ export type ShellViewOptions = {
   soloNote?: string
   /** Play with friends' small print. */
   friendsNote?: string
+  /** Quick match's label (`Quick play`). */
+  quickLabel?: string
   /** The title's primary button when there is no lobby (`Begin`, `Play`). */
   playLabel?: string
   /** Resume's label (`Back to the woods`). */
@@ -161,8 +163,10 @@ export class ShellView {
     const name = l && o.askName ? `<label class="as-name"><span>Your name</span><input type="text" data-field="name" maxlength="16" autocomplete="off" spellcheck="false" /></label>` : ""
     let body: string
     if (l?.room) body = this.roomHtml()
+    else if (l?.linkedRoom)
+      body = `<button class="as-btn as-primary as-big" data-act="join-linked">Join room ${esc(l.linkedRoom.toUpperCase())}</button><button class="as-btn" data-act="solo">${esc(o.soloLabel ?? "Play alone")}</button>`
     else if (l?.friends)
-      body = `<div class="as-choices"><button class="as-btn as-primary" data-act="solo">${esc(o.soloLabel ?? "Play alone")}${o.soloNote ? `<small>${esc(o.soloNote)}</small>` : ""}</button><button class="as-btn" data-act="friends"${l.busy ? " disabled" : ""}>Play with friends${o.friendsNote ? `<small>${esc(o.friendsNote)}</small>` : ""}</button></div><div class="as-join"><input type="text" data-field="code" placeholder="Room code or invite link" autocomplete="off" spellcheck="false" /><button class="as-btn" data-act="join">Join</button></div>`
+      body = `${l.hasQuick ? `<button class="as-btn as-primary as-big" data-act="quick"${l.busy ? " disabled" : ""}>${esc(o.quickLabel ?? "Quick match")}</button>` : ""}<div class="as-choices"><button class="as-btn${l.hasQuick ? "" : " as-primary"}" data-act="solo">${esc(o.soloLabel ?? "Play alone")}${o.soloNote ? `<small>${esc(o.soloNote)}</small>` : ""}</button><button class="as-btn" data-act="friends"${l.busy ? " disabled" : ""}>Play with friends${o.friendsNote ? `<small>${esc(o.friendsNote)}</small>` : ""}</button></div><div class="as-join"><input type="text" data-field="code" placeholder="Room code or invite link" autocomplete="off" spellcheck="false" /><button class="as-btn" data-act="join">Join</button></div>`
     else body = `<button class="as-btn as-primary as-big" data-act="${l ? "solo" : "play"}">${esc(o.playLabel ?? o.soloLabel ?? "Play")}</button>`
     const message = l?.message ? `<p class="as-message">${esc(l.message)}</p>` : ""
     const refused = this.flow.lockRefused ? `<p class="as-message">Click again to take the mouse.</p>` : ""
@@ -233,6 +237,10 @@ export class ShellView {
         return this.flow.play()
       case "friends":
         return void l?.playWithFriends()
+      case "quick":
+        return void l?.quickMatch()
+      case "join-linked":
+        return void (l?.linkedRoom && l.join(l.linkedRoom))
       case "join":
         return void l?.join(this.card.querySelector<HTMLInputElement>("input[data-field=code]")?.value ?? "")
       case "copy":

@@ -11,6 +11,7 @@ export { ShellFlow, type ShellFlowOptions, type ShellScreen } from "./flow"
 export { ShellLobby, type LobbyConnection, type LobbyPlayer, type ShellLobbyOptions } from "./lobby"
 export { LEAVE_GUARD_AFTER_MS, LeaveGuard, ShellLoading, type LoadingStage } from "./page"
 export { CHANNEL_LABEL, REDUCE_MOTION_STORAGE_KEY, ShellSettings, muteStorageKey, type ShellQuality, type ShellRow, type ShellSection, type ShellSettingsOptions } from "./settings"
+export { audioRuntimeSync, type ShellAudioRuntime } from "./audio"
 export { SHELL_CSS, ShellView, installShellStyles, shellKeysHtml, type ShellViewOptions } from "./view"
 
 /**

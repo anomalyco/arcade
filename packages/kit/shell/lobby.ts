@@ -31,6 +31,8 @@ export type ShellLobbyOptions = {
   upperCase?: boolean
   /** Asks the server for a fresh private room (`api/create`); a random code when it can't be reached. */
   createRoom?: () => Promise<string>
+  /** Offer Quick match (the fullest open public room, `api/quick`), or a custom finder. */
+  quick?: boolean | (() => Promise<string>)
   /** Play alone, from the title. */
   onSolo?: (name: string) => void
   /** Enter a room (created, joined by code or from an invite link). */
@@ -144,6 +146,24 @@ export class ShellLobby {
     this.emit()
   }
 
+  get hasQuick(): boolean {
+    return Boolean(this.o.quick)
+  }
+
+  /** Joins the fullest open public room (or a fresh one when the server can't be asked). */
+  async quickMatch(): Promise<void> {
+    if (this.busy || !this.o.quick) return
+    this.busy = true
+    this.message = null
+    this.emit()
+    let room: string | null = null
+    try {
+      room = this.parseRoom(await (typeof this.o.quick === "function" ? this.o.quick() : askRoom("quick")))
+    } catch {}
+    this.busy = false
+    this.enter(room ?? (this.o.upperCase ? randomRoomCode().toUpperCase() : randomRoomCode()))
+  }
+
   /** Creates a private room and enters it. */
   async playWithFriends(): Promise<void> {
     if (this.busy) return
@@ -152,7 +172,7 @@ export class ShellLobby {
     this.emit()
     let room: string | null = null
     try {
-      room = this.parseRoom(await (this.o.createRoom ?? defaultCreateRoom)())
+      room = this.parseRoom(await (this.o.createRoom ?? (() => askRoom("create")))())
     } catch {}
     this.busy = false
     this.enter(room ?? (this.o.upperCase ? randomRoomCode().toUpperCase() : randomRoomCode()))
@@ -269,8 +289,8 @@ export class ShellLobby {
   }
 }
 
-async function defaultCreateRoom(): Promise<string> {
-  const res = await fetch("api/create", { method: "POST", cache: "no-store" })
+async function askRoom(what: "create" | "quick"): Promise<string> {
+  const res = await fetch(`${location.pathname.replace(/[^/]*$/, "")}api/${what}`, { method: "POST", cache: "no-store" })
   const body = (await res.json()) as { room?: unknown }
   return typeof body.room === "string" ? body.room : ""
 }
