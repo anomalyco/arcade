@@ -3,6 +3,7 @@ import { createWoods, FEEL, stepWoods, tieTarget, type PlayerInput } from "../sh
 import { groundHeight, isDeepWater, makeWorld, terrainHeight } from "../shared/world"
 
 const world = makeWorld()
+const still = (): PlayerInput => ({ yaw: 0, pitch: 0, light: true, tie: false, map: false, mx: 0, mz: 0 })
 
 test("the world is deterministic and plain data", () => {
   const again = makeWorld()
@@ -25,7 +26,7 @@ function standFacing(state: ReturnType<typeof createWoods>, treeId: number) {
   const t = world.trees[treeId]!
   const p = state.players[0]!
   p.x = t.x; p.z = t.z + t.radius + 0.8; p.yaw = 0
-  return { yaw: 0, pitch: 0, light: true, map: false, pos: { x: p.x, z: p.z, vx: 0, vz: 0 } }
+  return { yaw: 0, pitch: 0, light: true, map: false, mx: 0, mz: 0 }
 }
 
 test("holding tie on a tree for the tie time ties one tape; holding again removes it", () => {
@@ -49,7 +50,8 @@ test("holding tie on a tree for the tie time ties one tape; holding again remove
 test("walking near a marker finds it and pencils it onto that map only", () => {
   const state = createWoods(world, 1)
   const m = world.markers[0]!
-  stepWoods(state, world, new Map([[0, { yaw: 0, pitch: 0, light: true, tie: false, map: false, pos: { x: m.x + 1, z: m.z, vx: 0, vz: 0 } }]]), 1 / 60)
+  Object.assign(state.players[0]!, { x: m.x + 1, z: m.z })
+  stepWoods(state, world, new Map([[0, still()]]), 1 / 60)
   expect(state.events.some((e) => e.kind === "marker-found" && e.marker === m.id)).toBe(true)
   expect(state.players[0]!.map.markers).toEqual([m.id])
   expect(state.players[1]!.map.markers).toEqual([])
@@ -60,7 +62,8 @@ test("raising the map next to a friend copies their pencil marks", () => {
   const friend = state.players[1]!
   friend.map.markers.push(3)
   friend.map.trail.push(friend.x + 30, friend.z)
-  for (let i = 0; i < 60; i++) stepWoods(state, world, new Map([[0, { yaw: 0, pitch: 0, light: true, tie: false, map: true, pos: { x: friend.x + 1, z: friend.z, vx: 0, vz: 0 } }]]), 1 / 60)
+  Object.assign(state.players[0]!, { x: friend.x + 1, z: friend.z })
+  for (let i = 0; i < 60; i++) stepWoods(state, world, new Map([[0, { ...still(), map: true }]]), 1 / 60)
   expect(state.players[0]!.map.markers).toContain(3)
   expect(state.players[0]!.map.heard.some((h) => h.from === friend.id)).toBe(true)
 })
@@ -68,12 +71,11 @@ test("raising the map next to a friend copies their pencil marks", () => {
 test("bots wander the woods, tie tape and answer a signal", () => {
   const state = createWoods(world, 3)
   const you = state.players[0]!
-  const still = () => new Map([[0, { yaw: 0, pitch: 0, light: true, tie: false, map: false, pos: { x: you.x, z: you.z, vx: 0, vz: 0 } }]])
-  for (let i = 0; i < 60 * 90; i++) stepWoods(state, world, still(), 1 / 60)
+  for (let i = 0; i < 60 * 90; i++) stepWoods(state, world, new Map([[0, still()]]), 1 / 60)
   const moved = state.players.slice(1).map((p) => Math.hypot(p.x - you.x, p.z - you.z))
   expect(Math.max(...moved)).toBeGreaterThan(15)
   expect(state.tapes.some((t) => t.by !== 0)).toBe(true)
-  for (let i = 0; i < 60 * 1.5; i++) stepWoods(state, world, new Map([[0, { yaw: 0, pitch: 1.4, light: true, tie: false, map: false, pos: { x: you.x, z: you.z, vx: 0, vz: 0 } }]]), 1 / 60)
+  for (let i = 0; i < 60 * 1.5; i++) stepWoods(state, world, new Map([[0, { ...still(), pitch: 1.4 }]]), 1 / 60)
   expect(state.brains.every((b) => b.mode === "signal" || b.mode === "regroup")).toBe(true)
 })
 

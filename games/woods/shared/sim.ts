@@ -1,5 +1,5 @@
-import type { LabControl } from "@arcade/kit/lab-panel"
 import { stepBody } from "@arcade/kit/sim/move"
+import { soundAt, type DistantSound } from "./sounds"
 import { isDeepWater, nextRandom, solidsNear, standHeight, treesNear, type Tree, type WoodsWorld } from "./world"
 
 /**
@@ -41,37 +41,6 @@ export const FEEL = {
 }
 export type Feel = typeof FEEL
 
-export const FEEL_CONTROLS: LabControl[] = [
-  { key: "walkSpeed", label: "Walk speed", group: "Walking", min: 1, max: 4, step: 0.05, unit: "m/s" },
-  { key: "mapWalk", label: "Walk speed with map up", group: "Walking", min: 0, max: 1, step: 0.05, unit: "×" },
-  { key: "flashReach", label: "Flashlight reach", group: "Flashlight", min: 8, max: 70, step: 1, unit: "m" },
-  { key: "flashCone", label: "Flashlight cone (half-angle)", group: "Flashlight", min: 0.1, max: 0.7, step: 0.01, unit: "rad" },
-  { key: "flashPower", label: "Flashlight brightness", group: "Flashlight", min: 4, max: 200, step: 1, unit: "cd-ish" },
-  { key: "flashFlicker", label: "Battery flicker", group: "Flashlight", min: 0, max: 6, step: 0.1, unit: "/min" },
-  { key: "beamHaze", label: "Beam haze in mist", group: "Flashlight", min: 0, max: 40, step: 0.5, unit: "×" },
-  { key: "beamPresence", label: "Far beams read (0 = physical)", group: "Flashlight", min: 0, max: 1.5, step: 0.05, unit: "" },
-  { key: "ownHaze", label: "Your own beam's haze", group: "Flashlight", min: 0, max: 1, step: 0.01, unit: "×" },
-  { key: "beamLength", label: "Visible beam length", group: "Flashlight", min: 2, max: 40, step: 0.5, unit: "m" },
-  { key: "mist", label: "Mist density", group: "Mist", min: 0, max: 0.09, step: 0.001, unit: "m⁻¹" },
-  { key: "mistFalloff", label: "Mist height falloff", group: "Mist", min: 0, max: 0.15, step: 0.002, unit: "m⁻¹" },
-  { key: "mistBank", label: "Drifting ground mist", group: "Mist", min: 0, max: 0.08, step: 0.002, unit: "m⁻¹" },
-  { key: "ambient", label: "Night sky light", group: "Mist", min: 0, max: 4, step: 0.05, unit: "×" },
-  { key: "exposure", label: "Exposure", group: "Mist", min: 0.2, max: 4, step: 0.05, unit: "×" },
-  { key: "trunkDensity", label: "Trunk density", group: "Forest", min: 1, max: 10, step: 0.25, unit: "/100 m²" },
-  { key: "trunkShadows", label: "Trunk shadows", group: "Forest", type: "toggle" },
-  { key: "campGlow", label: "Camp lights", group: "Forest", min: 0, max: 4, step: 0.05, unit: "×" },
-  { key: "ridgeGlow", label: "Ridge light", group: "Forest", min: 0, max: 4, step: 0.05, unit: "×" },
-  { key: "tapeTieTime", label: "Tape tie time", group: "Tape & map", min: 0.2, max: 3, step: 0.05, unit: "s" },
-  { key: "tapeReach", label: "Tape reach", group: "Tape & map", min: 0.8, max: 3, step: 0.05, unit: "m" },
-  { key: "tapeShine", label: "Tape shine with distance", group: "Tape & map", min: 0, max: 1.5, step: 0.05, unit: "/m" },
-  { key: "tapeSeen", label: "Tape noticed within", group: "Tape & map", min: 2, max: 25, step: 0.5, unit: "m" },
-  { key: "mapRaise", label: "Map raise time", group: "Tape & map", min: 0.08, max: 1.2, step: 0.01, unit: "s" },
-  { key: "findRadius", label: "Marker find radius", group: "Tape & map", min: 1, max: 6, step: 0.1, unit: "m" },
-  { key: "botCount", label: "Friends (bots)", group: "Friends", min: 0, max: 5, step: 1 },
-  { key: "botSpeed", label: "Friend walk speed", group: "Friends", min: 0.5, max: 3, step: 0.05, unit: "m/s" },
-  { key: "botLeash", label: "Friends stray up to", group: "Friends", min: 15, max: 180, step: 5, unit: "m" },
-  { key: "botTapeEvery", label: "Friends tie tape every", group: "Friends", min: 8, max: 80, step: 1, unit: "m" },
-]
 
 export const PLAYER_RADIUS = 0.28
 export const PLAYER_ACCEL = 18
@@ -83,7 +52,9 @@ export const TRAIL_STEP = 3
 const TRAIL_MAX = 6000
 /** Pitch above which a beam counts as pointing up: the regroup signal. */
 export const SIGNAL_PITCH = 1.1
-const SIGNAL_HOLD = 0.8
+/** Seconds the beam must point up before it counts as a signal. */
+export const SIGNAL_HOLD_SECONDS = 0.8
+const SIGNAL_HOLD = SIGNAL_HOLD_SECONDS
 const COMPARE_RANGE = 3.5
 
 export type Tie = { tree: number; progress: number; removing: boolean }
@@ -122,12 +93,14 @@ export type Tape = { id: number; tree: number; x: number; y: number; z: number; 
 export type Brain = { id: number; mode: "wander" | "tie" | "regroup" | "signal" | "wait" | "found"; heading: number; timer: number; since: number; tx: number; tz: number; sweep: number }
 
 export type WoodsEvent =
-  | { kind: "tape-tied"; by: number; tape: number; x: number; z: number }
+  | { kind: "tape-tied"; by: number; tape: number; x: number; z: number; tree: number; yaw: number; at: number }
   | { kind: "tape-removed"; by: number; tape: number; x: number; z: number }
   | { kind: "marker-found"; by: number; marker: number; x: number; z: number }
   | { kind: "maps-compared"; a: number; b: number }
   | { kind: "signal"; by: number; x: number; z: number }
   | { kind: "light"; by: number; on: boolean }
+  /** A seeded distant sound (`shared/sounds.ts`): same time and world position for every player in the room. */
+  | { kind: "sound"; sound: DistantSound }
 
 export type WoodsState = {
   t: number
@@ -141,37 +114,59 @@ export type WoodsState = {
   /** Pair key → time of the last map compare. */
   compared: Record<string, number>
   events: WoodsEvent[]
+  /** Bumped whenever `tapes` or `found` change, so a room re-sends them only then. */
+  rev: { tapes: number; found: number }
+  /** The distant-sound schedule's cursor: index and time of the next sound (`shared/sounds.ts`). */
+  sounds: { seed: number; next: number; at: number }
 }
 
-/** One player's controls for a step. A person's position comes from their own client in the toy (`pos`). */
+/** One player's controls for a step: the same for a person (sent to the room, predicted locally) and a bot. */
 export type PlayerInput = {
   yaw: number
   pitch: number
   light: boolean
   tie: boolean
   map: boolean
-  /** Plan move direction (x, z), length ≤ 1; ignored when `pos` is given. */
-  mx?: number
-  mz?: number
+  /** Plan move direction (x, z), length ≤ 1. */
+  mx: number
+  mz: number
   sprint?: boolean
-  pos?: { x: number; z: number; vx: number; vz: number }
 }
 
 const NAMES = ["Sam", "Robin", "Alex", "Jo", "Casey"]
+/** Bots take ids from here up, so they never collide with people's ids (0 solo, 1–6 in a room). */
+export const BOT_ID = 100
 
-function newPlayer(id: number, bot: boolean, x: number, z: number, yaw: number): Player {
+function newPlayer(id: number, bot: boolean, name: string, x: number, z: number, yaw: number): Player {
   return {
-    id, bot, name: bot ? NAMES[(id - 1) % NAMES.length]! : "You", x, z, vx: 0, vz: 0, yaw, pitch: -0.1, light: bot,
-    flickerLeft: 0, flickerNext: 20 + id * 7, mapRaise: 0, tie: null, signal: 0,
+    id, bot, name, x, z, vx: 0, vz: 0, yaw, pitch: -0.1, light: true,
+    flickerLeft: 0, flickerNext: 20 + (id % 16) * 7, mapRaise: 0, tie: null, signal: 0,
     map: { trail: [x, z], heard: [], tapes: [], markers: [] },
   }
 }
 
-export function createWoods(world: WoodsWorld, bots = FEEL.botCount, seed = world.params.seed): WoodsState {
-  const s = world.camp.spawn
-  const state: WoodsState = { t: 0, rng: { seed }, players: [newPlayer(0, false, s.x, s.z, s.yaw)], brains: [], tapes: [], nextTape: 1, found: {}, compared: {}, events: [] }
+export type Human = { id: number; name: string }
+
+/** A fresh night: `humans` start at camp (solo is one person with id 0), `bots` friends spread just north of them. */
+export function createWoods(world: WoodsWorld, bots = FEEL.botCount, seed = world.params.seed, humans: readonly Human[] = [{ id: 0, name: "You" }]): WoodsState {
+  const state: WoodsState = { t: 0, rng: { seed }, players: [], brains: [], tapes: [], nextTape: 1, found: {}, compared: {}, events: [], rev: { tapes: 0, found: 0 }, sounds: { seed: seed ^ 0x51ed, next: 0, at: soundAt(seed ^ 0x51ed, 0, world).at } }
+  for (const h of humans) addHuman(state, world, h.id, h.name)
   setBotCount(state, world, bots)
   return state
+}
+
+/** A person joins at camp (spread so nobody spawns inside another). */
+export function addHuman(state: WoodsState, world: WoodsWorld, id: number, name: string): Player {
+  const s = world.camp.spawn, k = id % 6
+  const p = newPlayer(id, false, name, s.x + ((k % 3) - 1) * 1.6, s.z + Math.floor(k / 3) * 1.6, s.yaw)
+  state.players.splice(state.players.filter((q) => !q.bot).length, 0, p)
+  return p
+}
+
+/** A person leaves for good (their tapes and the room's finds stay). */
+export function removePlayer(state: WoodsState, id: number): void {
+  state.players = state.players.filter((p) => p.id !== id)
+  state.brains = state.brains.filter((b) => b.id !== id)
 }
 
 export function setBotCount(state: WoodsState, world: WoodsWorld, n: number): void {
@@ -181,10 +176,11 @@ export function setBotCount(state: WoodsState, world: WoodsWorld, n: number): vo
     state.players = state.players.filter((p) => p.id !== b.id)
   }
   while (state.brains.length < want) {
-    const id = Math.max(0, ...state.players.map((p) => p.id)) + 1
+    let id = BOT_ID
+    while (state.players.some((p) => p.id === id)) id++
     const s = world.camp.spawn, k = state.brains.length
     const x = s.x - 7 + k * 6, z = s.z - 12 - (k % 2) * 3
-    state.players.push(newPlayer(id, true, x, z, -0.4 + k * 0.4))
+    state.players.push(newPlayer(id, true, NAMES[(id - BOT_ID) % NAMES.length]!, x, z, -0.4 + k * 0.4))
     state.brains.push({ id, mode: "wander", heading: -0.5 + k * 0.5 + (nextRandom(state.rng) - 0.5) * 0.4, timer: 1 + k * 1.5, since: 0, tx: x, tz: z, sweep: nextRandom(state.rng) * 6 })
   }
 }
@@ -246,13 +242,15 @@ function stepTie(state: WoodsState, world: WoodsWorld, p: Player, held: boolean,
   if (p.tie.removing) {
     if (existing) {
       state.tapes = state.tapes.filter((t) => t !== existing)
+      state.rev.tapes++
       state.events.push({ kind: "tape-removed", by: p.id, tape: existing.id, x: existing.x, z: existing.z })
     }
   } else if (!existing) {
     const tape: Tape = { id: state.nextTape++, tree: target.id, x: target.x, y: target.y + TAPE_HEIGHT, z: target.z, yaw: Math.atan2(p.z - target.z, p.x - target.x), by: p.id, at: state.t }
     state.tapes.push(tape)
+    state.rev.tapes++
     addUnique(p.map.tapes, tape.id)
-    state.events.push({ kind: "tape-tied", by: p.id, tape: tape.id, x: tape.x, z: tape.z })
+    state.events.push({ kind: "tape-tied", by: p.id, tape: tape.id, x: tape.x, z: tape.z, tree: tape.tree, yaw: tape.yaw, at: tape.at })
   }
   // Keep holding does nothing more until the key is released and pressed again.
   p.tie = { tree: target.id, progress: 1, removing: p.tie.removing }
@@ -268,6 +266,7 @@ function stepKnowledge(state: WoodsState, world: WoodsWorld, p: Player, feel: Fe
     m.markers.push(k.id)
     const by = (state.found[k.id] ??= [])
     addUnique(by, p.id)
+    state.rev.found++
     state.events.push({ kind: "marker-found", by: p.id, marker: k.id, x: k.x, z: k.z })
   }
 }
@@ -296,17 +295,41 @@ export function movePlayer(world: WoodsWorld, p: Player, mx: number, mz: number,
   p.x = body.x; p.z = body.y; p.vx = body.vx; p.vz = body.vy
 }
 
+/**
+ * One step of a player's own motion: look, the map's raise, then walking (slower with the map up). The room, solo
+ * play and a client predicting itself all run exactly this, so replaying unacknowledged inputs lands where the room did.
+ */
+export function stepMotion(world: WoodsWorld, p: Player, input: PlayerInput, feel: Feel, dt: number): void {
+  p.yaw = input.yaw
+  p.pitch = input.pitch
+  const raiseRate = dt / Math.max(feel.mapRaise, 0.02)
+  p.mapRaise = Math.max(0, Math.min(1, p.mapRaise + (input.map ? raiseRate : -raiseRate * 1.4)))
+  const speed = (p.bot ? feel.botSpeed : feel.walkSpeed * (input.sprint ? 1.8 : 1)) * (p.mapRaise > 0.5 ? feel.mapWalk : 1)
+  movePlayer(world, p, input.mx, input.mz, speed, dt)
+}
+
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a))
 
+function nearestHuman(state: WoodsState, p: Player, signalling = false): Player | undefined {
+  let best: Player | undefined, bd = Infinity
+  for (const q of state.players) {
+    if (q.bot || (signalling && q.signal <= SIGNAL_HOLD)) continue
+    const d = Math.hypot(q.x - p.x, q.z - p.z)
+    if (d < bd) { bd = d; best = q }
+  }
+  return best
+}
+
 function botInput(state: WoodsState, world: WoodsWorld, b: Brain, p: Player, feel: Feel, dt: number): PlayerInput {
-  const you = state.players[0]!
+  const you = nearestHuman(state, p)
+  const caller = nearestHuman(state, p, true)
   b.timer -= dt
   b.sweep += dt
   let speed = 1, tie = false, pitch = -0.22 + Math.sin(b.sweep * 0.7) * 0.12, yawOffset = Math.sin(b.sweep * 0.45) * 0.55
-  const toYou = Math.hypot(you.x - p.x, you.z - p.z)
-  if (you.signal > SIGNAL_HOLD && b.mode !== "regroup" && b.mode !== "signal" && toYou < 260) {
+  const toYou = you ? Math.hypot(you.x - p.x, you.z - p.z) : 0
+  if (caller && b.mode !== "regroup" && b.mode !== "signal" && Math.hypot(caller.x - p.x, caller.z - p.z) < 260) {
     // Reply with your own beam, then head over.
-    b.mode = "signal"; b.timer = 1.6; b.tx = you.x; b.tz = you.z
+    b.mode = "signal"; b.timer = 1.6; b.tx = caller.x; b.tz = caller.z
   }
   switch (b.mode) {
     case "signal":
@@ -338,7 +361,7 @@ function botInput(state: WoodsState, world: WoodsWorld, b: Brain, p: Player, fee
         b.timer = 4 + nextRandom(state.rng) * 7
       }
       // Stay within reach of you; keep out of the lake and inside the map.
-      if (toYou > feel.botLeash) b.heading += wrap(Math.atan2(-(you.x - p.x), -(you.z - p.z)) - b.heading) * Math.min(1, dt * 1.5)
+      if (you && toYou > feel.botLeash) b.heading += wrap(Math.atan2(-(you.x - p.x), -(you.z - p.z)) - b.heading) * Math.min(1, dt * 1.5)
       const [ax, , az] = viewDir(b.heading, 0)
       const ahead = { x: p.x + ax * 8, z: p.z + az * 8 }
       const h = world.params.half - 12
@@ -358,26 +381,26 @@ function botInput(state: WoodsState, world: WoodsWorld, b: Brain, p: Player, fee
   return { yaw: b.heading + yawOffset, pitch, light: true, tie, map: false, mx: mx * speed, mz: mz * speed }
 }
 
+/**
+ * One tick of the night for everyone. People without an input this tick (a dropped seat) stand still with their
+ * light as it was; bots think for themselves.
+ */
 export function stepWoods(state: WoodsState, world: WoodsWorld, inputs: ReadonlyMap<number, PlayerInput>, dt: number, feel: Feel = FEEL): void {
   state.t += dt
   state.events.length = 0
+  while (state.t >= state.sounds.at) {
+    const sound = soundAt(state.sounds.seed, state.sounds.next, world)
+    state.events.push({ kind: "sound", sound })
+    state.sounds.next++
+    state.sounds.at = soundAt(state.sounds.seed, state.sounds.next, world).at
+  }
   for (const p of state.players) {
     const brain = p.bot ? state.brains.find((b) => b.id === p.id) : undefined
-    const input = brain ? botInput(state, world, brain, p, feel, dt) : inputs.get(p.id)
-    if (!input) continue
-    if (input.pos) {
-      p.x = input.pos.x; p.z = input.pos.z; p.vx = input.pos.vx; p.vz = input.pos.vz
-    } else {
-      const speed = (p.bot ? feel.botSpeed : feel.walkSpeed * (input.sprint ? 1.8 : 1)) * (p.mapRaise > 0.5 ? feel.mapWalk : 1)
-      movePlayer(world, p, input.mx ?? 0, input.mz ?? 0, speed, dt)
-    }
-    p.yaw = input.yaw
-    p.pitch = input.pitch
+    const input = brain ? botInput(state, world, brain, p, feel, dt) : inputs.get(p.id) ?? { yaw: p.yaw, pitch: p.pitch, light: p.light, tie: false, map: false, mx: 0, mz: 0 }
+    stepMotion(world, p, input, feel, dt)
     if (input.light !== p.light) state.events.push({ kind: "light", by: p.id, on: input.light })
     p.light = input.light
     stepFlicker(state, p, feel, dt)
-    const raiseRate = dt / Math.max(feel.mapRaise, 0.02)
-    p.mapRaise = Math.max(0, Math.min(1, p.mapRaise + (input.map ? raiseRate : -raiseRate * 1.4)))
     stepTie(state, world, p, input.tie && p.mapRaise < 0.3, feel, dt)
     const wasSignal = p.signal > SIGNAL_HOLD
     p.signal = p.light && p.pitch > SIGNAL_PITCH ? p.signal + dt : 0

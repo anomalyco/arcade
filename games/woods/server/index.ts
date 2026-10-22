@@ -1,7 +1,9 @@
-type Env = { ASSETS: { fetch(request: Request): Promise<Response> } }
-export default {
-  fetch(request: Request, env: Env): Promise<Response> | Response {
-    if (new URL(request.url).pathname === "/arcade/woods/api/health") return new Response("ok")
-    return env.ASSETS.fetch(request)
-  },
-}
+import { gameWorker } from "@arcade/kit/server/worker"
+import { GAME, ROOM_CODE } from "../shared/protocol"
+import { type Env, lobbyOf } from "./env"
+
+export { Lobby } from "./lobby"
+export { WoodsRoom } from "./room"
+
+/** Strips `/arcade/woods`, answers health and room creation from the Lobby, sends `/ws/<code>` to that room. */
+export default gameWorker<Env>({ game: GAME, lobby: lobbyOf, lab: false, roomCode: (raw) => (ROOM_CODE.test(raw.toLowerCase()) ? raw.toLowerCase() : null) })
