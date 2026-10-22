@@ -7,6 +7,16 @@ declare const woods: { world: WoodsWorld; view: { forest: ForestView; setWorld(w
 export async function resetProbe() {
   const f = woods.view.forest, renderer = f.renderer, device = renderer.passContext.device
   const check = (ok: boolean, message: string) => { if (!ok) throw new Error(message) }
+  // Pausing the game does not cancel a frame already queued by the renderer's automatic scheduler.
+  // Drain that startup work so the stale-read check owns every subsequent submission.
+  for (let i = 0; i < 8; i++) {
+    await device.queue.onSubmittedWorkDone()
+    await new Promise(r => setTimeout(r, 0))
+    if (!renderer.hasPending) break
+  }
+  check(!renderer.hasPending, "automatic renderer did not drain after pause")
+  await device.queue.onSubmittedWorkDone()
+  await new Promise(r => setTimeout(r, 0))
   // Queue old readings, then reset before their mapAsync callbacks land.
   woods.step(1000 / 60)
   f.resetExposure()
@@ -16,6 +26,11 @@ export async function resetProbe() {
   const eye = woods.__input.eye
   woods.setPose(eye[0] + 0.1, eye[2], 0, -0.2)
   check(f.camera.exposure === 1, "short teleport failed to reset exposure")
+  // Exercise several update-only frames without submitting new meter work.
+  for (let i = 0; i < 3; i++) {
+    f.update(woods.__input)
+    check(f.camera.exposure === 1, "pending meter used a fallback exposure before its first reading")
+  }
   let frames = 0
   while (!renderer.sceneMeter && frames++ < 32) {
     woods.step(1000 / 60)
@@ -34,5 +49,5 @@ export async function resetProbe() {
   check(renderer.sceneMeter === null, "authoritative camera jump kept the old meter")
   woods.view.setWorld(woods.world)
   check(f.camera.exposure === 1 && renderer.sceneMeter === null, "world rebuild failed to reset exposure")
-  return { staleReadDiscarded: true, shortTeleportReset: true, cameraJumpReset: true, regenerationReset: true, firstReadingErrorStops: error, frames }
+  return { staleReadDiscarded: true, shortTeleportReset: true, pendingReadingHeld: true, cameraJumpReset: true, regenerationReset: true, firstReadingErrorStops: error, frames }
 }

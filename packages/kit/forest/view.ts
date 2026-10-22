@@ -113,7 +113,13 @@ const TAU = Math.PI * 2
 
 /** The forest's fog volume: mist pools in the hollows (the bank sits at absolute heights) and thickens over the lake. */
 export const forestFogVolume = (smoke: boolean) => fogScatterVolume({
-  declarations: woodsUniformWgsl + (smoke ? "" : woodsBankWgsl), atmosphere: !smoke, bankLocal: "woodsBankLocal(p)", bankExtinction: true, torches: true,
+  declarations: woodsUniformWgsl + (smoke ? "" : woodsBankWgsl + /* wgsl */ `
+fn woodsTorchScatter(p: vec3f, eye: vec3f) -> f32 {
+  if (N.pad.x < 0.5) { return 1.0; }
+  return mix(0.1, 1.0, smoothstep(0.0, 8.0, distance(p, eye)));
+}
+`), atmosphere: !smoke, bankLocal: "woodsBankLocal(p)", bankExtinction: true, torches: true,
+  ...(!smoke ? { torchScatter: "woodsTorchScatter(ro + rd * (s0 + h * tan(t)), ro)" } : {}),
   // Only glossy ground mirrors the lamps (water, wet boards, shore mud); dry litter and the camp's dirt do not.
   cutoff: "0.4", spotShadows: !smoke, surface: !smoke, reflectionSamples: 2, reflectionCap: "3.0",
   bankMask: "1.0 + 0.6 * (1.0 - smoothstep(0.85, 1.5, length((p.xz - N.lake.xy) / N.lake.zw)))",
@@ -280,13 +286,14 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
       for (let i = 0; i < 3; i++) bounce.color[i] = bounce.color[i]! + (hit.albedo[i]! / Math.max(hit.albedoLum, 1e-3) * torchColor[i]! - bounce.color[i]!) * k
     } else bounce.power *= Math.exp(-f.dt * 10)
 
-    // ---- Auto exposure: the centre-weighted mean luminance of the frame as drawn (the meter, a few frames late),
-    // or until it reads, the lit spot's luminance times how much of the frame it covers, plus the night.
+    // ---- Auto exposure from the scene-referred meter, a few frames late.
+    // After a cut hold zero stops until the first valid reading; then snap once, without a fallback-target flash.
     const coverage = Math.min(1, (Math.tan(halfAngle * 1.3) / Math.tan(f.fovY / 2)) ** 2)
     const spot = local ? (s.torchPower * 5 * 0.2) / (Math.PI * Math.max(cam.hit, 0.4) ** 2) * coverage : 0
     const metered = renderer.sceneMeter
-    const targetStops = forestExposureTarget(metered, spot + 0.004 * s.sky + 0.0005, s)
-    cam.stops = exposurePending ? targetStops : adaptForestExposure(cam.stops, targetStops, f.dt, s)
+    // The compensation follows your torch, not the whole night: camp with your torch off keeps its exposure law.
+    const targetStops = forestExposureTarget(metered, spot + 0.004 * s.sky + 0.0005, s, s.clearAir && !smoke && local ? -0.25 : 0)
+    cam.stops = exposurePending ? (metered ? targetStops : 0) : adaptForestExposure(cam.stops, targetStops, f.dt, s)
     if (metered) exposurePending = false
     cam.exposure = Math.pow(2, cam.stops)
 
@@ -405,6 +412,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     invert(f.viewProj, unjitteredInv)
     custom.set(unjitteredInv, 56)
     custom.set([textures.size, 0.5, Math.log2(ALPHA_COVERAGE_BASE / textures.size), 0], 72)
+    custom.set([s.clearAir && !smoke ? 1 : 0, 0, 0, 0], 76)
     renderer.setCustomUniforms(custom)
 
     packSceneFrame(frameData, { viewProj: f.viewProj, eye: f.eye, time: f.time, width: f.width, height: f.height, lightCount: lights.lightCount, ambient: [0, 0, 0, 0], mapSize: [1, 1], ao: 0 })

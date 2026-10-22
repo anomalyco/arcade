@@ -208,6 +208,35 @@ assertions at 3.18 KB/s/client; the post-reload Worker log is free of the inheri
 - [Look preview](https://studio.taila8e7c7.ts.net:5322/arcade/woods/?quality=high)
 - [Room preview](https://studio.taila8e7c7.ts.net:5298/arcade/woods/)
 
+## Review follow-up: optional clear near air
+
+The density8 idea from #28 is now an off-by-default typed `clearAir` setting. On preview **5322**, press
+**Backquote → Mist → Clear air near you**. Off is Today; no other setting needs changing. The forest-only fog hook
+multiplies torch in-scatter by 0.1→1 over 8 m, leaving extinction, surface lighting and classic lamps alone.
+The −0.25 stop compensation now applies only while the local torch is on (and before exposure clamping). Camp with
+the local torch off avoids the former global-offset darkening. With your torch on at camp, compensation still applies.
+
+| View | GPU Today → clear air, ms | Dark coverage Today → clear air | Exposure Today → clear air |
+|---|---:|---:|---:|
+| l4 | 11.3506 → 11.4031 | 45.78% → 54.44% | 1.077 → 1.096 |
+| k6 | 9.4365 → 9.4537 | 8.29% → 15.42% | 0.956 → 0.927 |
+| Camp, local torch off | 11.6639 → 11.6329 | 24.78% → 24.77% | 0.803 → 0.803 |
+
+Same 1440-frame fixed protocol on mini/Metal, one warmup + nine GPU samples. Three requested views only; the
+original global p5 guard still fails, and this is not an eight-target rerun. The visual trade-off is for Kit to judge.
+[Today / clear air / existing paint-over sheet](https://studio.taila8e7c7.ts.net:8444/raw/woods-2026-10-21/autoresearch/clear-air-checkpoint/index.html).
+
+Two review fixes accompany the toggle: pending exposure holds zero stops until the first valid reading, rather than
+snapping to a fallback and then snapping again. Centre-meter response is derived in `adaptForestExposure`, so
+0.35/1.8 s applies to preset imports, query params and direct assignments. The configurable response fields now
+explicitly tune the night model only; changing models no longer overwrites them through a panel callback.
+
+Checks: 30 Woods tests, app/scripts + server typechecks, seven exposure tests, packed reconstruction test and classic
+fog pin pass (29 focused test entries, of which 14 skip Naga validation because Naga is absent). The real-GPU reset
+probe holds neutral for three meter-less updates and snaps to the first reading with zero stop error; other reset
+cases still pass. The probe first drains automatic renderer work left queued when pausing, so a later scheduled
+startup frame cannot be mistaken for an old in-flight readback. The Metal run has no browser errors.
+
 ## Source findings
 
 - The camp wire already exists (`forest/build.ts`, 60 sagging segments, 6 mm radius); its visibility is the gap.

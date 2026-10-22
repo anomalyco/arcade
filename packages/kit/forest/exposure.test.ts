@@ -37,3 +37,22 @@ test("manual exposure and zero elapsed time do not acquire adaptive gain", () =>
   expect(forestExposureTarget(null, 0, s)).toBe(0)
   expect(adaptForestExposure(0.3, -1, 0, s)).toBe(0.3)
 })
+
+test("centre response is model-derived for imported and directly assigned settings", () => {
+  const s = createForestLookSettings()
+  Object.assign(s, { exposureModel: "metered", adaptDarken: 0.8, adaptBrighten: 6 })
+  expect(adaptForestExposure(0, -1, 0.35, s)).toBeCloseTo(-1 + Math.exp(-1), 12)
+  expect(adaptForestExposure(0, 1, 1.8, s)).toBeCloseTo(1 - Math.exp(-1), 12)
+  const query = createForestLookSettings({ exposureModel: "metered" })
+  expect(adaptForestExposure(0, 1, 1.8, query)).toBe(adaptForestExposure(0, 1, 1.8, s))
+  s.exposureModel = "robust"
+  expect(adaptForestExposure(0, 1, 6, s)).toBeCloseTo(1 - Math.exp(-1), 12)
+})
+
+test("scene compensation stays inside exposure bounds and respects manual mode", () => {
+  const s = createForestLookSettings({ nightStops: 0 })
+  expect(forestExposureTarget(null, s.nightKey, s, -0.25)).toBe(-0.25)
+  expect(forestExposureTarget(null, 1000, s, -0.25)).toBe(-s.adaptRange)
+  s.autoExposure = false
+  expect(forestExposureTarget(null, s.nightKey, s, -0.25)).toBe(0)
+})

@@ -1007,6 +1007,8 @@ export type FogScatterHooks = {
    * `FogSettings.phaseFloor` instead of a fixed 0.15.
    */
   torches?: boolean
+  /** Torch-only in-scatter multiplier expression; does not change extinction or classic lamps. Requires torches. */
+  torchScatter?: string
 }
 
 /**
@@ -1154,7 +1156,7 @@ ${ext ? `        // Out of the lamp to the sample, then on to the eye, through t
       }`}
 ${torches ? `      // Henyey–Greenstein with an isotropic share: a beam seen from behind its lamp is backscatter, which the share
       // sets (HG alone at g 0.75 sends 0.08 of the isotropic amount back; a 0.15 share nearly triples it).
-      sum += cone * win * mix(hg, 1.0, FOG.bank3.w) * thick;` : `      sum += cone * win * mix(1.0, hg, 0.85) * thick;`}
+      sum += cone * win * mix(hg, 1.0, FOG.bank3.w) * thick${hooks.torchScatter ? ` * select(1.0, ${hooks.torchScatter}, L.d.z > 0.0)` : ""};` : `      sum += cone * win * mix(1.0, hg, 0.85) * thick;`}
     }
     acc += L.b.rgb * sum * (tb - ta) / (h * f32(n) * 12.566371);
   }
