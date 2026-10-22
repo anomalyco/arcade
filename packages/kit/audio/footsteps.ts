@@ -1,5 +1,5 @@
 /** Original deterministic PCM synthesis. Surface is supplied by the game's collision/ground query. */
-export type FootSurface = "carpet"|"asphalt"|"wet-asphalt"|"puddle"|"gravel"|"dirt"|"grass"|"concrete"|"wood"|"tile"
+export type FootSurface = "carpet"|"asphalt"|"wet-asphalt"|"puddle"|"gravel"|"dirt"|"grass"|"concrete"|"wood"|"tile"|"wet-grass"|"mud"
 export type FootEvent = { kind:"step"|"cloth"|"scuff"|"bump"|"creak"; time:number; gain:number; pan:number; seed:number }
 export const foleyDurations = {step:.26,cloth:.32,scuff:.38,bump:.55,creak:1.8} as const
 const surfaces: Record<FootSurface, { low:number; grain:number; tone:number; hz:number; decay:number }> = {
@@ -13,6 +13,8 @@ const surfaces: Record<FootSurface, { low:number; grain:number; tone:number; hz:
   concrete:{low:.52,grain:.24,tone:.15,hz:115,decay:29},
   wood:{low:.44,grain:.16,tone:.2,hz:132,decay:20},
   tile:{low:.3,grain:.3,tone:.18,hz:190,decay:33},
+  "wet-grass":{low:.42,grain:.4,tone:.02,hz:58,decay:12},
+  mud:{low:.6,grain:.22,tone:.04,hz:66,decay:15},
 }
 export function synthFoley(sound:FootEvent["kind"],seed:number,rate=24000,surface:FootSurface="carpet"):Float32Array<ArrayBuffer>{
   const duration=foleyDurations[sound],a=new Float32Array(Math.ceil(duration*rate)),p=surfaces[surface]
@@ -36,8 +38,11 @@ export function synthFoley(sound:FootEvent["kind"],seed:number,rate=24000,surfac
       if(surface==="puddle")a[i]+=(mid-low)*.45*Math.sin(Math.PI*u)**2+.055*Math.sin(2*Math.PI*(520*t-350*t*t))*attack*Math.exp(-t*15)*end
       if(surface==="wet-asphalt")a[i]+=(mid-low)*.16*Math.sin(Math.PI*u)**2
       if(surface==="grass")a[i]+=(mid-low)*.24*Math.sin(Math.PI*u)**2
+      // Soaked turf squelches as the sole presses water out; mud adds the suck of the heel lifting free.
+      if(surface==="wet-grass")a[i]+=(mid-low)*.34*Math.sin(Math.PI*u)**2+.03*Math.sin(2*Math.PI*(300*t-260*t*t))*attack*Math.exp(-t*20)*end
+      if(surface==="mud")a[i]+=(mid-low)*.2*Math.sin(Math.PI*u)**2+.07*Math.sin(2*Math.PI*(150*t-180*t*t))*Math.sin(Math.PI*Math.min(1,u*1.6))**2*end
       // Crunch and splashes have a longer noisy tail; level-match those to the quiet contact bank.
-      a[i]*=.32*(surface==="puddle"?.4:surface==="gravel"?.5:surface==="grass"?.7:1)
+      a[i]*=.32*(surface==="puddle"?.4:surface==="gravel"?.5:surface==="grass"?.7:surface==="wet-grass"?.62:surface==="mud"?.68:1)
       }
     }
     if(sound==="cloth"||sound==="scuff")a[i]=(mid-low)*Math.sin(Math.PI*u)**2*(sound==="cloth"?.055:.19)

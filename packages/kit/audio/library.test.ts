@@ -14,8 +14,12 @@ const REQUIRED = [
   ...["concrete", "grass", "wood"].flatMap(s => [`foot.${s}.walk`, `foot.${s}.run`]),
 ]
 
-/** Budget for files the library owns (compressed, MB). 3 → 4 for Outbreak's three stereo rain beds and thunder (AR-71, +0.96 MB). */
-const LIBRARY_MB = 4
+/**
+ * Budget for files the library owns (compressed, MB). 3 → 4 for Outbreak's three stereo rain beds and thunder (AR-71,
+ * +0.96 MB); 4 → 6 for the Lot storm's six positional beds, thunder by distance, wind and drips (+1.7 MB, fetched only
+ * once its weather is first turned on).
+ */
+const LIBRARY_MB = 6
 
 describe("sound library catalogue", () => {
   test("ids are unique, semantic and include every id the games use", () => {
@@ -41,7 +45,8 @@ describe("sound library catalogue", () => {
     const owned = SFX_LIBRARY.flatMap(e => e.files).filter(f => f.path.startsWith("packages/kit/audio/sfx/"))
     const total = owned.reduce((s, f) => s + f.bytes, 0)
     expect(total / 1048576).toBeLessThan(LIBRARY_MB)
-    for (const f of owned) expect(f.bytes, f.file).toBeLessThan(f.path.includes("ambience.") ? 420_000 : 60_000)
+    const loops = new Set(SFX_LIBRARY.filter(e => e.loop).flatMap(e => e.files.map(f => f.file)))
+    for (const f of owned) expect(f.bytes, f.file).toBeLessThan(loops.has(f.file) ? 420_000 : 60_000)
   })
 
   test("variants are loudness-matched to their target, unclipped, and inside the id's duration range", () => {
