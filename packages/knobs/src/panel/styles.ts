@@ -820,17 +820,19 @@ ${POINTER_ROW} .knobs-slider.knobs-modified:not(:hover,.knobs-active) .knobs-val
 /* Hint mode: stable short codes, zero layout shift */
 .knobs-hinting .knobs-hint-miss{opacity:var(--k-disabled-opacity);transition:opacity .1s}
 .knobs-hint-layer{position:absolute;left:0;top:0;width:0;height:0;pointer-events:none;z-index:5;animation:knobs-in .1s var(--k-ease)}
-.knobs-hint{position:absolute;transform:translateY(-50%);display:inline-flex;align-items:center;height:15px;padding:0 4px;border-radius:var(--k-radius-sm);background:var(--k-accent);color:var(--k-bg);box-shadow:0 1px 3px rgba(0,0,0,calc(.35 * var(--k-lift)));
+/* The badges are <kbd>s, so they outrank the scoped reset's (0,1,1). */
+.knobs-panel .knobs-hint{position:absolute;transform:translateY(-50%);display:inline-flex;align-items:center;height:15px;padding:0 4px;border-radius:var(--k-radius-sm);background:var(--k-accent);color:var(--k-bg);box-shadow:0 1px 3px rgba(0,0,0,calc(.35 * var(--k-lift)));
   font:700 var(--k-text-cap)/1 var(--k-mono);letter-spacing:.04em;text-transform:uppercase;pointer-events:none}
+.knobs-panel .knobs-hint[hidden]{display:none}
 .knobs-hint-typed{opacity:var(--k-hint-typed-opacity)}
 .knobs-hint-rest{opacity:1}
 
 /* A focused row's options: tiny digits in hint mode's look, once focus settles (optkeys.ts). */
 .knobs-optkeys{position:absolute;left:0;top:0;width:0;height:0;pointer-events:none;z-index:5}
-.knobs-optkey{position:absolute;transform:translateY(-50%);display:inline-flex;align-items:center;height:12px;padding:0 3px;border-radius:var(--k-radius-sm);background:var(--k-accent);color:var(--k-bg);box-shadow:0 1px 3px rgba(0,0,0,calc(.35 * var(--k-lift)));
+.knobs-panel .knobs-optkey{position:absolute;transform:translateY(-50%);display:inline-flex;align-items:center;height:12px;padding:0 3px;border-radius:var(--k-radius-sm);background:var(--k-accent);color:var(--k-bg);box-shadow:0 1px 3px rgba(0,0,0,calc(.35 * var(--k-lift)));
   font:700 calc(var(--k-text-cap) * .85)/1 var(--k-mono);letter-spacing:.04em;pointer-events:none;opacity:0;transition:opacity .12s var(--k-ease)}
-.knobs-optkey-range{transform:translate(-100%,-50%)}
-.knobs-optkey[data-shown]{opacity:.85;transition-duration:.15s}
+.knobs-panel .knobs-optkey-range{transform:translate(-100%,-50%)}
+.knobs-panel .knobs-optkey[data-shown]{opacity:.85;transition-duration:.15s}
 
 /* Custom actions */
 .knobs-panel .knobs-custom-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:var(--k-gap);margin-top:var(--k-section-gap)}
