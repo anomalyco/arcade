@@ -13,7 +13,7 @@ export type SkyFrame = {
   localHour?: number
   /** Host daylight (0 night, 1 day); absent uses the astronomical solar altitude. */
   daylight?: number
-  /** Shared host eye state: 0 dazzled, 1 dark-adapted. No sky-owned adaptation history. */
+  /** Optional host eye state: 0 dazzled, 1 dark-adapted. Omission assumes 1; no sky-owned history. */
   darkAdaptation?: number
   /** Explicit host calibration, linear scene radiance per cd/m². Never includes current exposure. */
   sceneUnitsPerCdM2: number

@@ -1,6 +1,15 @@
 # Woods night-sky integration checkpoint
 
-Base: current woods `fe3e6756`, plus the sky core through `97220ab7` (equivalent to main-based `f868f9d5`). Bridge: `d8df2180`. This branch is local and separate from the woods owner's tree. Original integration was on woods `4d14b07f` with core `3961d857` and bridge `7c319cd5`; the rebase preserves the newer tape and panel work.
+Base: woods `2cb0fb0e`, including woods-camera and the staged highlight shoulder/camp dressing.
+Reviewed core: `36396d73`; bridge: `80db0cfa`. This supersedes the integration on `fe3e6756`
+(core `97220ab7`, bridge `d8df2180`) and the original `4d14b07f` integration.
+
+Main sky shipped in PR #430, squash merge `3b80159ca8dfaa51f9bf5a7b591b293db4256658`.
+The shared sky source here matches that merge, including the final corrections: the lunar disk
+is excluded from the adapted gain, and dome/stars use the same selected twilight value.
+Woods already supplies `darkAdaptation` from its camera stops. Today remains the default;
+Kit decides whether to promote Physical. The earlier gallery stills and camp clip retain their
+documented bases and predate these final shader corrections.
 
 ## Kept
 
