@@ -59,11 +59,17 @@ export const forestPost = postShader(false, false, { chromatic: 0, bloom: 0.22, 
   let sigma = grade.frame.y / 255.0 * grade.custom.z * (0.35 + 1.6 * sqrt(max(l, 0.0)));
   let chroma = grade.custom.x;
   x = max(x + sigma * (vec3f(n1) * (1.0 - chroma) + vec3f(n1 + n2, n1 - n3 * 0.5, n1 + n3) * chroma * 0.6), vec3f(0.0));
-  // Filmic shoulder that keeps hue in the highlights (the beam's hot spot stays white-yellow, not pink).
+  // Peak scaling preserves linear RGB ratios. The bounded shoulder joins the old
+  // curve at peak=1 with the same value (5/9) and derivative (1/3), tending to 1.
   let peak = max(max(x.r, x.g), max(x.b, 1e-5));
-  let mapped = peak * (1.0 + peak / 9.0) / (1.0 + peak);
+  let preserveHighlights = (nightFlags & 4u) != 0u;
+  var mapped = peak * (1.0 + peak / 9.0) / (1.0 + peak);
+  if (preserveHighlights && peak > 1.0) {
+    // Log compression keeps useful separation even many stops beyond the knee.
+    mapped = 1.0 - (4.0 / 9.0) / (1.0 + 0.75 * log(peak));
+  }
   var c = x * (mapped / peak);
-  c = mix(c, vec3f(mapped), smoothstep(1.5, 12.0, peak) * 0.7);
+  if (!preserveHighlights) { c = mix(c, vec3f(mapped), smoothstep(1.5, 12.0, peak) * 0.7); }
   // Vignette: natural falloff plus the lens's own.
   let v = length(fromC * vec2f(size.x / size.y, 1.0)) / length(vec2f(size.x / size.y, 1.0) * 0.5);
   c *= mix(1.0, pow(max(1.0 - 0.32 * v * v, 0.0), 2.0), grade.frame.z * 2.0);

@@ -17,10 +17,16 @@ import { makeWorld, standHeight } from "../shared/world"
 import type { ForestFrameInput, ForestView } from "../../../packages/kit/forest/view"
 
 const repo = resolve(import.meta.dir, "../../..")
+if (process.env.AUTORESEARCH_HOST) assert(hostname().includes(process.env.AUTORESEARCH_HOST), `wrong benchmark host: ${hostname()}`)
 const out = resolve(repo, process.env.AUTORESEARCH_OUT ?? process.env.LEASE_OUT ?? "captures/woods-autoresearch")
 const root = resolve(import.meta.dir, "../dist/arcade/woods"), prefix = "/arcade/woods/"
 mkdirSync(out, { recursive: true })
-const variants: { id: string; look?: Record<string, unknown>; quality?: Record<string, unknown>; debug?: Record<string, boolean> }[] = JSON.parse(process.env.AUTORESEARCH_VARIANTS ?? '[{"id":"baseline"}]')
+type Variant = { id: string; look?: Record<string, unknown>; quality?: Record<string, unknown>; debug?: Record<string, boolean> }
+const inputs: Variant[] = JSON.parse(process.env.AUTORESEARCH_VARIANTS ?? '[{"id":"baseline"}]')
+const rounds = Number(process.env.AUTORESEARCH_ROUNDS ?? 1)
+assert(Number.isInteger(rounds) && rounds >= 1 && rounds <= 9, "rounds must be 1–9")
+// Alternate order between rounds to expose drift within the same GPU lease.
+const variants = Array.from({ length: rounds }, (_, r) => (r % 2 ? [...inputs].reverse() : inputs).map(v => ({ ...v, id: rounds === 1 ? v.id : `${v.id}-r${r + 1}` }))).flat()
 const names = (process.env.AUTORESEARCH_SHOTS ?? "camp,beam,trail,marker,k1,k3,k4,k6,l0,l1,l2,l4,signal60,signal60off").split(",")
 const settleFrames = Number(process.env.AUTORESEARCH_SETTLE_FRAMES ?? 240)
 assert(Number.isInteger(settleFrames) && settleFrames >= 240, "settling must include at least the standard 240 frames")
@@ -97,7 +103,7 @@ try {
   const report: any = { version: 3, host: hostname(), sources, zeroConeDisabled, signalX, settleFrames, seed: 1987, time: 12, viewport: [1600, 900], adapter, overrides: variants, variants: {}, errors }
   if (process.env.AUTORESEARCH_RESET === "1") report.reset = await page.evaluate(resetProbe)
   for (const variant of variants) {
-    if (variants.some(v => ["smoothTrunks", "litter"].some(key => key in (v.look ?? {})))) await page.evaluate(look => {
+    if (variants.some(v => ["smoothTrunks", "litter", "campDetail"].some(key => key in (v.look ?? {})))) await page.evaluate(look => {
       Object.assign(woods.look, JSON.parse(woods.__look), look)
       woods.view.setWorld(woods.world)
     }, variant.look ?? {})
@@ -150,12 +156,13 @@ try {
       // element stability. The canvas fills this fixed viewport, so capture it directly.
       await page.screenshot({ path: resolve(dir, `${name}.png`) })
       assert.equal(errors.length, 0, errors.join("\n"))
-      const data = await page.evaluate(async () => {
+      const timing = !process.env.AUTORESEARCH_TIMING || process.env.AUTORESEARCH_TIMING === `${variant.id}:${name}`
+      const data = await page.evaluate(async timing => {
         const f = woods.view.forest
-        await f.measure(1) // warm-up, discarded
-        const gpu = await f.measure(9)
+        if (timing) await f.measure(1) // warm-up, discarded
+        const gpu = timing ? await f.measure(9) : null
         return { gpu, stats: f.stats(), meter: f.renderer.sceneMeter, look: { ...f.settings }, quality: { ...f.quality }, eye: woods.__input.eye, viewProj: Array.from(woods.__input.viewProj), torches: woods.__input.torches, players: woods.state.players.map((p: any) => ({ id: p.id, x: p.x, z: p.z, yaw: p.yaw, pitch: p.pitch, light: p.light })) }
-      })
+      }, timing)
       if (name === "signal60") Object.assign(data, { signalDepth: await page.evaluate(async candidates => {
         const f = woods.view.forest, renderer = f.renderer as any, device: GPUDevice = renderer.passContext.device
         const tex: GPUTexture = renderer.temporal.prevLin, row = Math.ceil(tex.width * 4 / 256) * 256
@@ -180,11 +187,21 @@ try {
       records[name] = data
       if (process.env.AUTORESEARCH_DEPTH === "1") Object.assign(data, { trunkDepth: await page.evaluate(depthProbe) })
       writeFileSync(resolve(out, "capture.json"), JSON.stringify(report, null, 2))
-      console.log(`METRIC ${variant.id}.${name}.gpu_ms=${data.gpu?.median}`)
+      if (data.gpu) console.log(`METRIC ${variant.id}.${name}.gpu_ms=${data.gpu.median}`)
+      else console.log(`CAPTURE ${variant.id}.${name}`)
       assert.equal(errors.length, 0, errors.join("\n"))
     }
     if (process.env.AUTORESEARCH_MOTION !== "0") {
-      records.motion = await page.evaluate(motionProbe)
+      const slow = process.env.AUTORESEARCH_MOTION === "slow"
+      const { video, ...motion } = await page.evaluate(motionProbe, slow ? { frames: 180, fps: 30, speed: 0.7, video: true } : {})
+      records.motion = motion
+      if (video) {
+        const raw = resolve(dir, "walk.h264"), mp4 = resolve(dir, "walk.mp4")
+        writeFileSync(raw, Buffer.from(video, "base64"))
+        const mux = Bun.spawn(["ffmpeg", "-y", "-loglevel", "error", "-r", String(motion.fps), "-i", raw, "-c:v", "copy", "-movflags", "+faststart", mp4], { stdout: "inherit", stderr: "inherit" })
+        assert.equal(await mux.exited, 0, "walk mux failed")
+        await Bun.file(raw).delete()
+      }
       console.log(`METRIC ${variant.id}.pops_per_frame=${records.motion.popsPerFrame}`)
     }
     if (process.env.AUTORESEARCH_EXPOSURE === "1") {

@@ -1,8 +1,21 @@
 // Lot motion.ts's depth-reprojected four-texel range test, reduced to a 60-frame forest walk.
 // Read back the presented colour and temporal linear depth in the SAME task as drawTo.
-export async function motionProbe() {
+export async function motionProbe(options: { frames?: number; fps?: number; speed?: number; video?: boolean } = {}) {
+  const count = options.frames ?? 60, fps = options.fps ?? 60, speed = options.speed ?? 2.1
   const w = (window as any).woods
   const renderer = w.view.forest.renderer, device: GPUDevice = renderer.passContext.device
+  // Probe-only access to the production pass: correlate visible count/LOD jumps
+  // with image discontinuities rather than calling all differences foliage pops.
+  const pass = renderer.passes.slots.opaque.find((p: any) => Array.isArray(p.draws) && Array.isArray(p.templates))
+  const layers = () => {
+    const counts: Record<string, number> = {}
+    for (const d of pass?.draws ?? []) {
+      if (pass.debug[d.kind] === false || d.count <= d.hidden) continue
+      const key = `${d.kind}.${d.near ? "near" : "far"}.${d.masked ? "masked" : "opaque"}`
+      counts[key] = (counts[key] ?? 0) + d.count - d.hidden
+    }
+    return counts
+  }
   const canvas = document.querySelector<HTMLCanvasElement>("#view")!, ctx = canvas.getContext("webgpu")!
   const W = canvas.width, H = canvas.height, N = W * H, row = Math.ceil(W * 4 / 256) * 256
   const lin: GPUTexture = renderer.temporal.prevLin
@@ -29,16 +42,27 @@ export async function motionProbe() {
   w.setPose(start.x, start.z, 0.15, -0.32)
   renderer.temporal.frameIndex = 0
   for (let i = 0; i < 120; i++) { w.__putTime(12); w.step(1000 / 60); await device.queue.onSubmittedWorkDone() }
-  const frames: { pops: number; valid: number; flicker: number }[] = []
+  const frames: { pops: number; valid: number; flicker: number; layers: Record<string, number>; stats: Record<string, number | string> }[] = []
+  const chunks: Uint8Array[] = []
+  let encodeError: Error | undefined
+  const encoder = options.video ? new VideoEncoder({
+    output: chunk => { const bytes = new Uint8Array(chunk.byteLength); chunk.copyTo(bytes); chunks.push(bytes) },
+    error: error => { encodeError = error },
+  }) : undefined
+  encoder?.configure({ codec: "avc1.640028", width: W, height: H, framerate: fps, bitrate: 12000000, avc: { format: "annexb" }, hardwareAcceleration: "prefer-hardware" })
   try {
-    for (let f = 0; f <= 60; f++) {
+    for (let f = 0; f <= count; f++) {
       // Continuous movement must not invoke setPose's camera-cut/exposure reset on every sample.
-      w.session.teleport(start.x, start.z - 2.1 * f / 60)
-      w.__putTime(12 + f / 60); w.step(1000 / 60)
+      w.session.teleport(start.x, start.z - speed * f / fps)
+      w.__putTime(12 + f / fps); w.step(1000 / fps)
       const tex = ctx.getCurrentTexture(), enc = device.createCommandEncoder()
       enc.copyTextureToBuffer({ texture: tex }, { buffer: colour, bytesPerRow: row }, [W, H])
       enc.copyTextureToBuffer({ texture: lin }, { buffer: depth, bytesPerRow: row }, [W, H])
       device.queue.submit([enc.finish()])
+      if (encoder) {
+        const frame = new VideoFrame(canvas, { timestamp: Math.round(f * 1000000 / fps) })
+        encoder.encode(frame, { keyFrame: f % fps === 0 }); frame.close()
+      }
       await Promise.all([colour.mapAsync(GPUMapMode.READ), depth.mapAsync(GPUMapMode.READ)])
       const bytes = new Uint8Array(colour.getMappedRange()), dep = new Float32Array(depth.getMappedRange())
       const k = f % 2, cur = L[k]!, prev = L[1 - k]!, dc = D[k]!, dp = D[1 - k]!
@@ -76,8 +100,20 @@ export async function motionProbe() {
         valid++; sum += diff; if (diff >= 12) pops++
       }
       if (valid < N * 0.4) throw new Error(`insufficient reprojection coverage: ${valid / N}`)
-      frames.push({ pops, valid: valid / N, flicker: sum / valid })
+      frames.push({ pops, valid: valid / N, flicker: sum / valid, layers: layers(), stats: w.view.forest.stats() })
+      if (encoder && f % 8 === 0) await encoder.flush()
     }
-  } finally { colour.destroy(); depth.destroy() }
-  return { frames, popsPerFrame: frames.reduce((s, f) => s + f.pops, 0) / frames.length, flicker: frames.reduce((s, f) => s + f.flicker, 0) / frames.length }
+    await encoder?.flush()
+    if (encodeError) throw encodeError
+  } finally { encoder?.close(); colour.destroy(); depth.destroy() }
+  let video = ""
+  if (encoder) {
+    const bytes = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0))
+    let offset = 0
+    for (const c of chunks) { bytes.set(c, offset); offset += c.length }
+    let binary = ""
+    for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192))
+    video = btoa(binary)
+  }
+  return { frames, fps, speed, video, popsPerFrame: frames.reduce((s, f) => s + f.pops, 0) / frames.length, flicker: frames.reduce((s, f) => s + f.flicker, 0) / frames.length }
 }

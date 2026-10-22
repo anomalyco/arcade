@@ -88,6 +88,8 @@ export type ForestLookSettings = {
   litter: number
   moss: number
   // Camp and water
+  /** Static camp dressing; takes effect on world rebuild/reload. */
+  campDetail: boolean
   windows: number
   stringLights: number
   water: number
@@ -122,6 +124,8 @@ export type ForestLookSettings = {
   nightDesaturate: boolean
   nightPurkinje: boolean
   nightAcuity: number
+  /** Bounded peak shoulder above scene-linear 1; live, with no exposure feedback. */
+  highlightShoulder: boolean
 }
 
 export const FOREST_LOOK_DEFAULTS: Readonly<ForestLookSettings> = {
@@ -136,11 +140,12 @@ export const FOREST_LOOK_DEFAULTS: Readonly<ForestLookSettings> = {
   dustCount: 80,
   wind: 1, gust: 0.6, trunkSway: 1, branchSway: 1, flutter: 1,
   fernDensity: 1, litter: 1, moss: 1, smoothTrunks: true,
-  windows: 1, stringLights: 1, water: 1,
+  windows: 1, stringLights: 1, water: 1, campDetail: false,
   exposure: 1.6, autoExposure: true, meterGain: 3, adaptDarken: 0.35, adaptBrighten: 8, adaptRange: 1.5,
   exposureModel: "robust", nightKey: 0.003, nightStops: 0.8, nightStrength: 0.85, adaptLift: 0.8,
   noise: 1, chromaNoise: 0.35, vignette: 0.4, aberration: 0.6, bloom: 0.22, halation: 0.12, glare: 0.5,
   nightDesaturate: true, nightPurkinje: true, nightAcuity: 0.5,
+  highlightShoulder: false,
 }
 
 export const createForestLookSettings = (o: Partial<ForestLookSettings> = {}): ForestLookSettings => ({ ...FOREST_LOOK_DEFAULTS, ...o })
@@ -224,10 +229,12 @@ export function forestLookControls(settings: ForestLookSettings, prefix = "woods
     range("moss", "Moss", W, 0, 2, 0.05, "×", "Floor"),
     toggle("smoothTrunks", "Smooth trunks (reload)", W, "Floor"),
     range("windows", "Lit windows", W, 0, 3, 0.05, "×", "Camp"),
+    toggle("campDetail", "Camp detail (reload)", W, "Camp"),
     range("stringLights", "String lights", W, 0, 3, 0.05, "×", "Camp"),
     range("water", "Lake reflections", W, 0, 2, 0.05, "×", "Camp"),
     range("exposure", "Exposure", C, 0.2, 6, 0.05, "×"),
     toggle("autoExposure", "Auto exposure", C),
+    toggle("highlightShoulder", "Preserve highlight colour", C),
     toggle("nightDesaturate", "Low-light colour loss", C),
     toggle("nightPurkinje", "Rod colour sensitivity", C),
     range("nightAcuity", "Low-light detail loss", C, 0, 1, 0.05, "×"),

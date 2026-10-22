@@ -106,6 +106,23 @@ def trunk_contrast(record, path):
             absolute_p90=float(np.quantile(absolute, .9)) if pairs else None)
     return bins
 
+def near_bark(path):
+    # Fixed native-pixel ROI inside the deterministic trunkClose silhouette. Never
+    # choose pixels by candidate brightness: that would hide a clipped highlight.
+    rgb = np.asarray(Image.open(path).convert("RGB"), dtype=float)
+    h, w = rgb.shape[:2]
+    roi = rgb[int(h*.18):int(h*.88), int(w*.43):int(w*.59)]
+    peak = roi.max(axis=-1)
+    y = lum(roi / 255)
+    hot = rgb[int(h*.55):int(h*.73), int(w*.55):int(w*.59)] / 255
+    hy = lum(hot)
+    return dict(roi_normalized=[.43,.18,.59,.88], pixels=int(peak.size),
+                max_channel_clip_pct=float(np.mean(peak == 255)*100),
+                near_clip_pct=float(np.mean(peak >= 254)*100),
+                p95=float(np.quantile(y,.95)),
+                hotspot_contrast=float(np.std(hy)),
+                hotspot_detail=float(np.mean(np.abs(hy-gaussian_filter(hy,3)))))
+
 result = {"definition": "v3; display luminance unless linear_ prefixed; dark <0.04; p5 <0.025 on p5_guard_views (close-up trunk detail probes excluded); signal requires >=40/80 depth-visible points, delta >=0.02 and contrast >=0.25", "variants": {}}
 for variant, records in manifest["variants"].items():
     directory = root / variant
@@ -141,7 +158,8 @@ for variant, records in manifest["variants"].items():
             between[f"l{n}"] = dict(p5=float(np.quantile(y, .05)), median=float(np.median(y)), dark_pct=float(np.mean(y < .04) * 100), pixels=int(mask.sum()))
     guard_views = [name for name in tones if name not in ["trunkFoot", "trunkClose"]]
     summary = dict(distance=float(np.mean([v["distance"] for v in views.values()])) if views else None, views=views, tone=tones,
-                   gpu_median=float(np.median(gpu)), gpu_view_p95=float(np.quantile(gpu, .95)),
+                    gpu_median=float(np.median(gpu)) if gpu else None, gpu_view_p95=float(np.quantile(gpu, .95)) if gpu else None,
+                    near_bark=near_bark(directory / "trunkClose.png") if "trunkClose" in records else None,
                     signal=sig, trunk_depth=depth, motion=records.get("motion"), adaptation=records.get("adaptation"), target_tone=target_tones, between_beams=between,
                    proposed_target_bounds={name: dict(p5_max=t["p5"] + .008, dark_min=max(0, t["dark_pct"] - 12), dark_max=min(100, t["dark_pct"] + 12)) for name, t in target_tones.items()},
                    constraints=dict(dark_monotone=strict_dark, dark_percentages=darks,

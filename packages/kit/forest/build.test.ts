@@ -15,7 +15,7 @@ async function models() {
 test("the build worker's world (the height grid, no height function) builds byte for byte the page's forest", async () => {
   const world = demoForestWorld(7, 60)
   const m = await models()
-  const opts = { scatter: 1, fernDensity: 1, litter: 1 }
+  const opts = { scatter: 1, fernDensity: 1, litter: 1, campDetail: true }
   const page = buildForest(world, m, opts)
   const ground = forestHeightGrid(world)
   const { height: _height, ...data } = world

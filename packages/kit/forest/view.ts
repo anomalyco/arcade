@@ -187,7 +187,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
   let models = await modelsLoading
   mark("models")
   const t1 = performance.now()
-  const buildOpts = () => ({ scatter: 1, fernDensity: settings.fernDensity, litter: settings.litter, smoothTrunks: settings.smoothTrunks })
+  const buildOpts = () => ({ scatter: 1, fernDensity: settings.fernDensity, litter: settings.litter, smoothTrunks: settings.smoothTrunks, campDetail: settings.campDetail })
   // A worker that dies mid-build takes the models it was handed: fetch them again and build here.
   const built = await builder.build(world, models, buildOpts(), ground, (time) => mark("worker", time)).catch(async (error) => {
     console.warn("forest: building on the main thread:", error)
@@ -436,7 +436,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
       view: [-reach, -reach, reach, reach], batches: f.batches ?? [], alphaSprites: f.sprites?.alpha ?? empty, alphaCount: f.sprites?.alphaCount ?? 0, addSprites: sprites, addCount: spriteCount,
       grade: [f.time, s.noise, s.vignette, s.exposure * cam.exposure],
       postParams: [s.aberration, s.halation, s.bloom],
-      postCustom: [s.chromaNoise, glare, Math.pow(2, Math.max(0, cam.stops)) * Math.sqrt(s.exposure / 1.6), Number(s.nightDesaturate) + 2 * Number(s.nightPurkinje)],
+      postCustom: [s.chromaNoise, glare, Math.pow(2, Math.max(0, cam.stops)) * Math.sqrt(s.exposure / 1.6), Number(s.nightDesaturate) + 2 * Number(s.nightPurkinje) + 4 * Number(s.highlightShoulder)],
       postExtra: s.nightAcuity,
       fog: fog.update({ eye: f.eye, viewProj: f.viewProj, lamps: fogLamps, time: f.time, beam: profile }),
       volume: volumes, fogBlur: fog.blurInput(),

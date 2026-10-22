@@ -14,6 +14,14 @@ proven animation techniques to animation.md, not here.
 
 ## Proving a change
 
+- **Separate highlight clipping from bloom, and foliage geometry from shadow motion (Woods, round 5 candidate).**
+  The opt-in log shoulder in `forest/post.ts` bounds the peak while preserving RGB ratios: fixed close-bark clipping
+  9.52% → 0%, hotspot high-pass detail 3.24×, equal exposure. Bloom still leaves a pale patch relative to the target.
+  The slow walk in `games/woods/scripts/autoresearch-motion.ts` records video and per-layer near/far counts:
+  disabling torch shadows cuts reprojected excursions 578.06 → 185.03/frame; forcing near ferns adds only .15/frame.
+  Large spikes also occur without visible-count changes. This implicates shadow behaviour, not a measured fern-LOD
+  fix; moving illumination also affects the metric. No foliage change retained. See `perf/woods-autoresearch.md`.
+
 - **Night forest obscuration and perception (Woods, round 4).** `forest/view.ts` ramps extinction from a 12 m clear
   zone over 12 m to .05/m; this is an artistic distance gate, not a uniform physical atmosphere. Night lift/offset
   .8 stops preserves darkness and the depth-validated 60 m signal (delta .05865, contrast 5.51). `forest/post.ts`

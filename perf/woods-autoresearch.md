@@ -256,3 +256,55 @@ matches across both exposure models, torch on/off and changing sky. Checks ran o
 - Scanned roots already surround large non-birch trunks (`r >=0.36`), and moss already blends into the ground.
   Increasing detail means changing distribution/material response, not implementing absent asset support.
 - Forest-only fog work must remain behind `torches` / stratified-bank opt-ins; default WGSL hashes stay pinned.
+
+## Round 5: highlights, camp and walking diagnosis (review candidate)
+
+Rebased onto Woods `8a274bab` (camera final chain). Kit changed acceptance to image-led judgement and one rough
+timing, with a single long-admission combined job. It completed on mini/Metal with no browser errors. Seed 1987,
+1600×900 High, time 12, 240 settling frames on both sides. Source hashes are in each manifest.
+
+**Retained, off by default pending review:** `highlightShoulder` and `campDetail` in `forest/settings.ts`.
+
+- Above scene-linear peak 1, `forest/post.ts` uses `1 - (4/9)/(1 + .75*ln(peak))`, matching the old curve's value and
+  slope at the knee, tending to 1. RGB ratios survive instead of highlight desaturation. Exposure is unchanged.
+  Close-bark clipping falls 9.5238% → 0%; fixed-hotspot high-pass detail .001762 → .005709 (3.24×), at identical .354
+  exposure. The warm bloom patch remains broader/paler than the target; this is a partial improvement.
+- Camp detail clears scattered branches only inside camp clearings, gives the existing sagging wire a 12 mm radius,
+  grounds closed-riser porch steps, and varies trodden/damp/litter terrain weights. Ring/ash geometry was removed:
+  the named `fireRing` pose shows the cabins, not a useful view of the ring, so it did not establish that change's value.
+  The retained camp was rebuilt and recaptured after removal, with typecheck and both build tests passing.
+- Four-light dark coverage 69.9552% → 69.9525% (exposure .825 both); all seven wide-view p5 guards pass. The paired
+  60 m signal has 54 depth-visible samples on both sides, delta .059648 → .059657, contrast 5.60187 → 5.60275.
+  This round does not re-establish the full 0/1/2/4-light monotonicity sequence. Close jacket and the other branch's
+  held-map reading pose have not been independently captured with this curve; map owner was notified.
+- One rough candidate camp GPU number: **12.04 ms**, before removing the ring/ash draft. Not a paired performance
+  result and excludes CPU work and shadow updates. No new timing was taken for the retained camp.
+
+**Rejected:** source-axis 1–3 m scatter fade. k6 mean absolute RGB difference .04777/255, max 9/255, 7.90% pixels
+changed, p5 .01680. It does not visibly remove the central wedge; the existing eye-distance mask already suppresses
+in-scatter inside 3 m. The setting and shader branch are removed.
+
+**Walking diagnosis, no foliage fix:** `AUTORESEARCH_MOTION=slow` records 180 comparisons at 30 fps and .7 m/s,
+with H.264 video and visible near/far instance counts. The metric counts depth-reprojected luminance excursions,
+including moving illumination; it does not count proven geometry pops.
+
+| Removal probe | Excursions/frame |
+|---|---:|
+| Today (new shoulder, existing foliage/shadows) | 578.056 |
+| Torch shadows off | 185.028 |
+| Shadows off + all-near ferns | 184.878 |
+| Floor-scatter raster off | 578.033 |
+
+Removing shadows reduces disagreement 68.0%; fixing fern LOD adds only .08%. Today's frame 119 has 1689 excursions
+with unchanged visible counts; frame 123 peaks at 1739 with six far-tree instances added and no fern transition.
+The all-near probe still has chunk culling, and `debug.floor` disables raster only, not floor shadow casters.
+These results implicate the shadow path, not fern LOD as the dominant cause on this walk. They do not distinguish
+shadow sampling, moving leaf shadows, or shadow-caster admission. No alpha fade or production LOD/culling edit is justified.
+
+Harness additions: `AUTORESEARCH_TIMING=candidate:camp` measures only that view; `none` skips timing. The scorer
+accepts absent timing. `AUTORESEARCH_ROUNDS` alternates variant order when explicitly requested;
+`AUTORESEARCH_HOST` optionally guards a required host. No repeated timing rounds were used in the combined run.
+
+Evidence: [Today | candidate | target and walking clips](https://studio.taila8e7c7.ts.net:8444/raw/woods-2026-10-21/autoresearch/round5/review.html).
+Full manifests, per-frame records, scores and trial history are alongside that page. Renderer review precedes
+promotion of defaults, fast-forwarding Woods and refreshing the accepted 5322 preview.

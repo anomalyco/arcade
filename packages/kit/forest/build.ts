@@ -66,7 +66,7 @@ export type ForestBuild = {
   logs: ForestWorld["logs"]
 }
 
-export type BuildOptions = { scatter: number; fernDensity: number; litter: number; smoothTrunks?: boolean }
+export type BuildOptions = { scatter: number; fernDensity: number; litter: number; smoothTrunks?: boolean; campDetail?: boolean }
 
 type Rand = () => number
 const TAU = Math.PI * 2
@@ -245,8 +245,8 @@ export function buildForest(input: ForestWorld, models: ForestModels, opts: Buil
   for (let cz = grid0; cz < reach; cz += CHUNK) for (let cx = grid0; cx < reach; cx += CHUNK) {
     const c = chunks.at(cx + 1, cz + 1)
     const inner = Math.max(Math.abs(cx + CHUNK / 2), Math.abs(cz + CHUNK / 2)) < world.half + CHUNK
-    if (inner) terrain(c.near[0], world, cx, cz, 1)
-    terrain(c.far[0], world, cx, cz, 4)
+    if (inner) terrain(c.near[0], world, cx, cz, 1, opts.campDetail)
+    terrain(c.far[0], world, cx, cz, 4, opts.campDetail)
     for (const [x, z] of [[cx, cz], [cx + CHUNK, cz], [cx, cz + CHUNK], [cx + CHUNK, cz + CHUNK], [cx + CHUNK / 2, cz + CHUNK / 2]] as const) chunks.extend(cx + 1, cz + 1, H(x, z) - 2, H(x, z) + 1)
   }
 
@@ -383,7 +383,10 @@ export function buildForest(input: ForestWorld, models: ForestModels, opts: Buil
     if (lakeD(x, z) < 1.02 || onPath(x, z, 0.1) || inCamp(x, z, 1)) continue
     const pick = twigsT[Math.floor(rand() * twigsT.length)]!
     const s = 0.8 + rand() * 0.8
-    chunks.instance(pick.t, x, H(x, z) - 0.02, z, rand() * TAU, s, s, 0, 0.2)
+    const yaw = rand() * TAU
+    // Consume the same random values so the rest of the forest stays put.
+    if (opts.campDetail && clearingDepth(x, z) > 0 && inCamp(x, z, 18)) continue
+    chunks.instance(pick.t, x, H(x, z) - 0.02, z, yaw, s, s, 0, 0.2)
   }
 
   // ---- Flagging tape.
@@ -391,7 +394,7 @@ export function buildForest(input: ForestWorld, models: ForestModels, opts: Buil
 
   // ---- Camp.
   const campLights: CampLight[] = []
-  if (world.camp) camp(world, chunks, models, campLights, (x, y, z, yaw) => chunks.instance(tableT.t, x, y, z, yaw, 1, 1, 0, 0))
+  if (world.camp) camp(world, chunks, models, campLights, (x, y, z, yaw) => chunks.instance(tableT.t, x, y, z, yaw, 1, 1, 0, 0), opts.campDetail)
 
   // ---- Water.
   const water = new VertexWriter()
@@ -719,16 +722,26 @@ function card(w: VertexWriter, p: readonly number[], dir: readonly number[], rol
 
 // ------------------------------------------------------------------ floor
 
-function terrain(w: VertexWriter, world: ForestWorld, x0: number, z0: number, step: number) {
+function terrain(w: VertexWriter, world: ForestWorld, x0: number, z0: number, step: number, detail = false) {
   const H = world.height
   const n = Math.round(CHUNK / step)
   const lake = world.lake
+  const buildings = world.camp?.buildings ?? []
+  const centre: Vec2 = [buildings.reduce((s, b) => s + b.x, 0) / Math.max(1, buildings.length), buildings.reduce((s, b) => s + b.z, 0) / Math.max(1, buildings.length)]
+  const walks: Vec2[][] = detail ? buildings.map(b => {
+    const reach = b.d / 2 + (b.porch ? 2.6 : 0)
+    return [[b.x - Math.sin(b.yaw) * reach, b.z + Math.cos(b.yaw) * reach], centre]
+  }) : []
   const weights = (x: number, z: number): RGBA => {
     const moss = smooth(0.1, 0.65, smoothNoise(world.seed + 31, x / 7, z / 7) * 0.6 + smoothNoise(world.seed + 32, x / 2.3, z / 2.3) * 0.25 + hollowness(world, x, z) * 0.6)
     let trail = 0
     for (const p of world.paths ?? []) trail = Math.max(trail, smooth(p.width * 0.5 + 0.6, p.width * 0.25, segDist(p.points, x, z) + smoothNoise(world.seed + 33, x / 1.7, z / 1.7) * 0.35))
-    const camp = world.camp ? Math.max(...world.camp.buildings.map(b => smooth(Math.max(b.w, b.d) * 0.9 + 4, Math.max(b.w, b.d) * 0.5, Math.hypot(x - b.x, z - b.z)))) * 0.75 : 0
-    const mud = lake ? smooth(lake.level + 0.9, lake.level + 0.1, H(x, z)) : 0
+    const camp = world.camp ? Math.max(0, ...buildings.map(b => smooth(Math.max(b.w, b.d) * 0.9 + 4, Math.max(b.w, b.d) * 0.5, Math.hypot(x - b.x, z - b.z)))) * 0.75 : 0
+    const patches = detail ? smoothNoise(world.seed + 37, x / 2.7, z / 2.7) : 0
+    if (detail) for (const path of walks) trail = Math.max(trail, smooth(1.5, 0.35, segDist(path, x, z) + patches * 0.25) * 0.9)
+    const damp = detail ? camp * smooth(0.05, 0.65, patches) * 0.65 : 0
+    const mud = Math.max(damp, lake ? smooth(lake.level + 0.9, lake.level + 0.1, H(x, z)) : 0)
+    if (detail) return [moss * (1 - trail), Math.max(trail, camp * (0.2 + smooth(-0.4, 0.5, patches) * 0.3)), mud, 0]
     return [moss * (1 - trail), Math.max(trail, camp), mud, 0]
   }
   const P = (i: number, j: number) => {
@@ -880,7 +893,7 @@ function quad(w: VertexWriter, a: readonly number[], b: readonly number[], c: re
   for (const idx of [0, 1, 2, 0, 2, 3]) { const v = q[idx]!; w.vert(v[0]!, v[1]!, v[2]!, n[0]!, n[1]!, n[2]!, color, mat, aux, uv[idx]![0]!, uv[idx]![1]!) }
 }
 
-function camp(world: ForestWorld, chunks: Chunks, models: ForestModels, lights: CampLight[], table: (x: number, y: number, z: number, yaw: number) => void) {
+function camp(world: ForestWorld, chunks: Chunks, models: ForestModels, lights: CampLight[], table: (x: number, y: number, z: number, yaw: number) => void, detail = false) {
   const H = world.height
   const cp = world.camp!
   const rand = mulberry(world.seed + 404)
@@ -912,6 +925,17 @@ function camp(world: ForestWorld, chunks: Chunks, models: ForestModels, lights: 
     if (b.porch) {
       const pd = 2.6
       box(w, ...(L(0, floor - 0.08, b.d / 2 + pd / 2) as [number, number, number]), b.yaw, b.w * 0.8, 0.16, pd, MAT.wood, LAYER.planks, 1.2, [0, 0, 0.3, 0])
+      if (detail) {
+        // Closed risers extend below the sampled terrain, rather than floating treads.
+        for (let i = 0; i < 12; i++) {
+          const z = b.d / 2 + pd + 0.16 + i * 0.3, p = L(0, 0, z)
+          const corners = [-0.8, 0.8].flatMap(x => [-0.17, 0.17].map(dz => L(x, 0, z + dz)))
+          const bottom = Math.min(...corners.map(v => H(v[0]!, v[2]!))) - 0.04
+          const top = floor - (i + 1) * 0.15
+          if (top <= bottom) break
+          box(w, p[0]!, (top + bottom) / 2, p[2]!, b.yaw, 1.6, top - bottom, 0.34, MAT.wood, LAYER.planks, 1.2, [0, 0, 0.3, 0])
+        }
+      }
       for (const px of [-0.4, -0.13, 0.13, 0.4]) box(w, ...(L(px * b.w, floor + 1.25, b.d / 2 + pd - 0.1) as [number, number, number]), b.yaw, 0.14, 2.5, 0.14, MAT.wood, LAYER.planks, 1)
       const p = L(0, floor + 2.55, b.d / 2 + pd / 2)
       roofSlab(w, p, b.yaw, b.w * 0.85, pd + 0.4, 0.18)
@@ -979,7 +1003,7 @@ function camp(world: ForestWorld, chunks: Chunks, models: ForestModels, lights: 
     const steps = 60
     for (let i = 0; i < steps; i++) {
       const a = sample(i / steps), b = sample((i + 1) / steps)
-      wire(ch.near[0], a, b, 0.006)
+      wire(ch.near[0], a, b, detail ? 0.012 : 0.006)
     }
     for (let i = 0; i < sl.bulbs; i++) {
       const p = sample((i + 0.5) / sl.bulbs)
