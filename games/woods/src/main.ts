@@ -3,13 +3,11 @@ import { keyCapHtml, keyPromptHtml } from "@arcade/kit/client/key-cap"
 import type { FootSurface } from "@arcade/kit/audio/footsteps"
 import { attachLabPanelControl } from "@arcade/kit/dev-control"
 import { openGpu } from "@arcade/kit/gpu/boot"
-import { FogScatter, createFogSettings, fogCone, type FogLamp } from "@arcade/kit/gpu/fog-scatter"
 import { FrameParts } from "@arcade/kit/gpu/frame-parts"
-import { Renderer, type FrameInput } from "@arcade/kit/gpu/renderer"
-import { newSceneFrame, packSceneFrame, SceneLights, type SceneLight } from "@arcade/kit/gpu/scene-frame"
-import { makeSceneShader, spriteShader } from "@arcade/kit/gpu/shaders"
-import { TEMPORAL_DEFAULTS } from "@arcade/kit/gpu/temporal"
 import { LabPanel, type LabControl } from "@arcade/kit/lab-panel"
+import { AdaptiveQualityController, type QualityMode } from "@arcade/kit/quality"
+import { FOREST_QUALITY } from "@arcade/kit/forest/settings"
+import type { ForestTorch } from "@arcade/kit/forest/view"
 import { randomRoomCode } from "@arcade/kit/sim/matchmaking"
 import { ROOM_CODE } from "../shared/protocol"
 import { beamLevel, EYE_HEIGHT, TAPE_HEIGHT, FEEL, tapeOnTree, tieTarget, viewDir, type Player, type PlayerInput } from "../shared/sim"
@@ -20,8 +18,7 @@ import { FEEL_CONTROLS } from "./feel-controls"
 import { FriendsView } from "./friends-view"
 import { PaperMap } from "./map"
 import { OnlineSession, SoloSession, type Session } from "./session"
-import { fogVolume, hooks, post, WOODS_FLOATS } from "./shaders"
-import { viewRect, WorldView } from "./world-view"
+import { WorldView } from "./world-view"
 
 const WALK = { cameraMotion: 1, reduceMotion: globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false, stepLength: 0.72, walkSettle: 0.3, footsteps: 0.9 }
 const WALK_CONTROLS: LabControl[] = [
@@ -31,9 +28,8 @@ const WALK_CONTROLS: LabControl[] = [
   { key: "walkSettle", label: "Start/stop spring", min: 0.1, max: 0.6, step: 0.01, unit: "s", group: "Walking" },
   { key: "footsteps", label: "Footsteps", min: 0, max: 2, step: 0.05, unit: "×", group: "Walking" },
 ]
-/** Lit tape colour gain (cheap retroreflection) and own-beam offset from the eye (right, down, forward; m). */
-const TAPE_GAIN = 1
-const HAND = [0.2, -0.3, 0.2] as const
+/** Feel knobs the forest renderer's own look settings replace (its Flashlight, Mist, Night and Camera groups). */
+const LOOK_KEYS = new Set(["flashReach", "flashCone", "flashPower", "beamHaze", "beamPresence", "ownHaze", "beamLength", "mist", "mistFalloff", "mistBank", "ambient", "exposure", "trunkShadows", "tapeShine"])
 /** Your own beam's light id (friends and bots are never 0 in a room; solo you are 0). */
 const OWN = 0
 const MOVE_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight", "KeyE", "KeyG"])
@@ -51,31 +47,29 @@ async function main() {
   if (typeof gpu === "string") { hud.textContent = gpu; return }
   performance.mark("woods:gpu")
   const { device } = gpu
+  const canvasFormat = gpu.format
   const settings = { ...FEEL, ...WALK }
   if (smoke) Object.assign(settings, { trunkDensity: 1, botCount: 1 })
 
-  const renderer = new Renderer(device, gpu.context, gpu.format, { scene: makeSceneShader(hooks), sprite: spriteShader(), post, volume: [fogVolume(!smoke)] })
-  renderer.setTemporal({ ...TEMPORAL_DEFAULTS, mode: "taa", sharpen: 0.15 })
-  const view = new WorldView(renderer)
+  // A room walks the printed forest (default params) so everyone and the server share it; solo follows the knobs.
+  let world: WoodsWorld = online ? makeWorld() : makeWorld({ trunkDensity: settings.trunkDensity })
+  const look = { quality: (params.get("quality") as QualityMode | null) ?? "auto" }
+  const quality = new AdaptiveQualityController({ mode: smoke ? "low" : look.quality, profiles: FOREST_QUALITY })
+  hud.textContent = "Loading the woods…"
+  const view = await WorldView.create(gpu, world, { smoke, quality: quality.getActiveTier() })
+  const renderer = view.renderer
   const friends = new FriendsView(renderer)
   const map = new PaperMap(document.body)
   const audio = new WoodsAudio()
-  const fog = new FogScatter(createFogSettings({ hue: 205, saturation: 0.25, brightness: 0.0009, skyDark: 0.55, horizonGlow: 0.25, ground: 0.1, leak: 0.004, phaseG: 0.55, samples: 6 }))
-  const lights = new SceneLights()
   const fp = new FrameParts()
-  const frameData = newSceneFrame()
-  const custom = new Float32Array(WOODS_FLOATS)
 
-  // A room walks the printed forest (default params) so everyone and the server share it; solo follows the knobs.
-  let world: WoodsWorld = online ? makeWorld() : makeWorld({ trunkDensity: settings.trunkDensity })
   let session: Session = online ? new OnlineSession(world, roomCode, nameInput.value.trim()) : new SoloSession(world, settings)
-  const useWorld = (w: WoodsWorld) => {
+  const useWorld = (w: WoodsWorld, rebuild = true) => {
     world = w
-    view.setWorld(world)
+    if (rebuild) view.setWorld(world)
     map.setWorld(world)
-    lights.setBoxes(settings.trunkShadows ? view.occluders(world) : [])
   }
-  useWorld(world)
+  useWorld(world, false)
   performance.mark("woods:world")
 
   let forcePlay = false
@@ -85,10 +79,12 @@ async function main() {
   const spawn = world.camp.spawn
   camera.yaw = spawn.yaw; camera.pitch = -0.05
 
-  const panel = new LabPanel(settings, [...FEEL_CONTROLS, ...WALK_CONTROLS], params, () => { camera.release(); keys.clear() }, { open: false, pill: false, groupActions: false, onToggle: () => syncStart() })
+  const panel = new LabPanel(settings, [...FEEL_CONTROLS.filter((c) => !LOOK_KEYS.has(c.field ?? c.key)), ...WALK_CONTROLS], params, () => { camera.release(); keys.clear() }, { open: false, pill: false, groupActions: false, onToggle: () => syncStart() })
+  panel.addControls(view.forest.settings as unknown as Record<string, number | string | boolean>, view.forest.controls())
+  panel.addControls(look, [{ key: "woods.quality", field: "quality", label: "Quality", group: "Camera", subsection: "Performance", type: "select", options: [{ value: "auto", label: "Auto" }, { value: "high", label: "High" }, { value: "balanced", label: "Balanced" }, { value: "low", label: "Low" }] }])
   audio.bindControls(panel)
   attachLabPanelControl(panel)
-  let regenAt = 0, worldKey = `${settings.trunkDensity}`, shadowKey = settings.trunkShadows
+  let regenAt = 0, worldKey = `${settings.trunkDensity}`, qualityMode = look.quality
 
   // Held keys the game reads (walking, tie, map); mouse look and F live in the shared camera.
   const keys = new Set<string>()
@@ -139,10 +135,14 @@ async function main() {
   say(online ? `Camp Tamarack, nightfall. Room ${roomCode}: your friends start at camp too. Find the old survey markers together.` : "Camp Tamarack, nightfall. Find the old survey markers in the woods.", 6)
 
   const nameOf = (id: number) => session.view.players.find((p) => p.id === id)?.name ?? "Someone"
+  // Your torch: in the right hand, low, a quarter metre ahead of the eye (the look's Hand settings).
   const handFrom = (eye: readonly number[], yaw: number, d: readonly number[]): [number, number, number] => {
-    const rx = Math.cos(yaw), rz = -Math.sin(yaw)
-    return [eye[0]! + rx * HAND[0] + d[0]! * HAND[2], eye[1]! + HAND[1], eye[2]! + rz * HAND[0] + d[2]! * HAND[2]]
+    const s = view.forest.settings, rx = Math.cos(yaw), rz = -Math.sin(yaw)
+    return [eye[0]! + rx * s.torchSide + d[0]! * 0.25, eye[1]! - s.torchDrop, eye[2]! + rz * s.torchSide + d[2]! * 0.25]
   }
+  /** The beam trails the view by the hand's lag (s). */
+  const lagged: [number, number, number] = [0, 0, -1]
+  let laggedReady = false
   const surfaceAt = (x: number, z: number): FootSurface => {
     if (dockAt(world, x, z)) return "wood"
     if (lakeDistance(world.lake, x, z) < 1.02) return "puddle"
@@ -151,7 +151,8 @@ async function main() {
   }
 
   let acc = 0, last = performance.now(), time = 0, frames = 0, paused = false, prevLight = camera.flashlight
-  const debug = { beams: 0, fogLamps: 0, picked: 0, lights: 0, kbps: 0 }
+  const debug = { beams: 0, kbps: 0 }
+  let stepping = false, smokeTarget: GPUTexture | null = null
   /** Automation: walk towards a point (cleared on arrival). */
   let autopilot: { x: number; z: number } | null = null
 
@@ -213,10 +214,11 @@ async function main() {
       solo.teleport(pos.x, pos.z)
       session = solo
     }
-    if (shadowKey !== settings.trunkShadows) { shadowKey = settings.trunkShadows; lights.setBoxes(settings.trunkShadows ? view.occluders(world) : []) }
+    if (look.quality !== qualityMode) { qualityMode = look.quality; if (quality.setMode(qualityMode)) view.forest.setQuality(quality.getActiveTier()) }
 
-    const width = Math.max(1, Math.round(innerWidth * Math.min(devicePixelRatio, 1.5))), height = Math.max(1, Math.round(innerHeight * Math.min(devicePixelRatio, 1.5)))
-    if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; renderer.resize(width, height) }
+    const ratio = Math.min(devicePixelRatio, quality.getProfile().dprCap) * quality.getResolutionScale()
+    const width = Math.max(1, Math.round(innerWidth * ratio)), height = Math.max(1, Math.round(innerHeight * ratio))
+    if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; view.forest.resize(width, height) }
 
     // Walk: fixed ticks of the shared sim (solo) or the room's prediction (online); a room keeps ticking while you're
     // on the start screen so friends still see you standing there.
@@ -256,13 +258,16 @@ async function main() {
     const p = session.self
     const level = beamLevel(p, state.t, settings)
     // Your beam: from the hand, along the view; down onto the sheet while the map is up.
-    const look = viewDir(camera.yaw, camera.pitch)
+    const lookDir = viewDir(camera.yaw, camera.pitch)
     const reading = viewDir(camera.yaw, -1.05)
     const r = p.mapRaise
-    const axis = look.map((v, i) => v + (reading[i]! - v) * r)
-    const al = Math.hypot(axis[0]!, axis[1]!, axis[2]!)
-    const ownAxis: [number, number, number] = [axis[0]! / al, axis[1]! / al, axis[2]! / al]
-    const ownOrigin = handFrom(camera.eye, camera.yaw, look)
+    const axis = lookDir.map((v, i) => v + (reading[i]! - v) * r)
+    const k = laggedReady ? 1 - Math.exp(-dt / Math.max(view.forest.settings.torchLag, 0.001)) : 1
+    laggedReady = true
+    for (let i = 0; i < 3; i++) lagged[i] = lagged[i]! + (axis[i]! - lagged[i]!) * k
+    const al = Math.hypot(lagged[0], lagged[1], lagged[2]) || 1
+    const ownAxis: [number, number, number] = [lagged[0] / al, lagged[1] / al, lagged[2] / al]
+    const ownOrigin = handFrom(camera.eye, camera.yaw, lookDir)
 
     fp.begin()
     view.draw(fp, world, state, state.t, camera.eye, settings)
@@ -275,40 +280,14 @@ async function main() {
     if (level > 0) beams.unshift({ id: OWN, origin: ownOrigin, axis: ownAxis })
 
     const place = view.lights(world, state.t, settings)
-    const sceneLights: SceneLight[] = []
-    const fogLamps: FogLamp[] = []
-    const cone = fogCone(settings.flashCone, 0.45)
-    for (const b of beams) {
-      const q = b.id === OWN ? p : state.players.find((x) => x.id === b.id)!
-      const k = beamLevel(q, state.t, settings)
-      sceneLights.push({ id: b.id, x: b.origin[0], y: b.origin[2], h: b.origin[1], r: settings.flashReach, color: [0.86, 0.92, 1], power: settings.flashPower * k, size: 0.04, beam: { axis: b.axis, halfAngle: settings.flashCone }, unshadowed: !settings.trunkShadows })
-      // Your own beam starts its haze a little ahead of you and fainter (`ownHaze`): in first person the near cone otherwise fills the view.
-      fogLamps.push({ id: b.id, x: b.origin[0], y: b.origin[1], z: b.origin[2], range: settings.flashReach, color: [0.86, 0.92, 1], intensity: settings.flashPower * k * settings.beamHaze * (b.id === OWN ? settings.ownHaze : 1), axis: b.axis, ...cone, size: b.id === OWN ? 1.6 : 0.6, visibility: 1 })
-    }
-    debug.beams = beams.length; debug.fogLamps = fogLamps.length
-    sceneLights.push(...place.scene)
-    fogLamps.push(...place.fog)
-    // Readability over physics: in-scatter falls off as 1/distance, so far beams vanish while a friend's beam beside
-    // you floods the view. `beamPresence` evens that out (0 = physical).
-    for (const l of fogLamps) {
-      if (l.id === OWN) continue
-      const d = Math.hypot(l.x - camera.eye[0], l.y - camera.eye[1], l.z - camera.eye[2])
-      l.intensity *= Math.min(8, Math.max(0.02, (d / 12) ** settings.beamPresence))
-    }
-    lights.update(sceneLights, state.players.filter((q) => q !== p).map((q) => ({ x: q.x, y: q.z, r: 0.25, h: standHeight(world, q.x, q.z) + 1.8 })))
-
-    Object.assign(fog.settings, { density: settings.mist, falloff: settings.mistFalloff, brightness: 0.0009 * settings.ambient, strength: 1, coneLength: settings.beamLength, bank: settings.mistBank > 0 && !smoke ? "drift" : "today", bankDensity: settings.mistBank, bankHeight: 3, bankScale: 14, bankWind: 0.35 })
-    custom.set([1, TAPE_GAIN, settings.tapeShine, 0])
-    renderer.setCustomUniforms(custom)
-    packSceneFrame(frameData, { viewProj: vp, eye: camera.eye, time: state.t, width, height, lightCount: lights.lightCount, ambient: [0, 0, 0, 0], mapSize: [world.params.half * 2 + 40, world.params.half * 2 + 40], ao: 0 })
-    const input: FrameInput = {
-      frame: frameData, lights: lights.lights, lightCount: lights.lightCount, shadowLightCount: lights.shadowLightCount, occluders: lights.occ, occluderCount: lights.occCount,
-      lampPower: lights.power, lampCount: 0, view: viewRect(camera.eye, camera.yaw, camera.pitch, camera.far, (camera.fov * Math.PI / 180) * (width / height)),
-      batches: fp.batches(), alphaSprites: fp.alpha, alphaCount: fp.nAlpha, addSprites: fp.add, addCount: fp.nAdd, grade: [state.t, 0, 0, settings.exposure],
-      fog: fog.update({ eye: camera.eye, viewProj: vp, lamps: fogLamps, time: state.t }), volume: [fog.volumeInput()],
-    }
-    debug.picked = fog.frame.lampCount; debug.lights = lights.lightCount
-    renderer.render(input)
+    // Every torch is a photometric beam: the forest renderer lights, shadows and scatters it (your own gets the
+    // shadow map, the exposure and the bounce).
+    const torches: ForestTorch[] = beams.map((b) => ({ id: b.id, pos: b.origin, dir: b.axis, on: true, kind: b.id === OWN ? "local" : "remote", level: beamLevel(b.id === OWN ? p : state.players.find((x) => x.id === b.id)!, state.t, settings) }))
+    debug.beams = beams.length
+    // The smoke draws offscreen and synchronously (a presented frame makes SwiftShader's GPU process wait on it).
+    if (smoke && (!smokeTarget || smokeTarget.width !== width || smokeTarget.height !== height)) { smokeTarget?.destroy(); smokeTarget = device.createTexture({ size: [width, height], format: canvasFormat, usage: GPUTextureUsage.RENDER_ATTACHMENT }) }
+    view.frame({ eye: [camera.eye[0], camera.eye[1], camera.eye[2]], viewProj: vp as Float32Array, width, height, time: state.t, dt, fovY: (camera.fov * Math.PI) / 180, torches, fp, place }, stepping, smokeTarget?.createView())
+    if (!smoke && playing) { if (quality.recordFrame(dt * 1000, renderer.lastGpuMs)) view.forest.setQuality(quality.getActiveTier()) }
 
     // HUD: the tie prompt, the map, toasts.
     const target = playing && p.mapRaise < 0.3 ? tieTarget(world, p, settings.tapeReach) : null
@@ -330,7 +309,8 @@ async function main() {
   Object.assign(window, {
     woods: {
       get ready() { return true }, get frames() { return frames }, get paused() { return paused }, set paused(v: boolean) { paused = v },
-      renderer, camera, settings, panel, map, debug, audio,
+      renderer, camera, settings, panel, map, debug, audio, view, look: view.forest.settings, quality,
+      measure: (n?: number) => view.forest.measure(n), stats: () => view.forest.stats(),
       get state() { return session.view }, get world() { return world }, get session() { return session },
       /** Automation: room readout (your id, people and walkers seen, tapes, bytes in, KB/s, connection status). */
       get net() {
@@ -349,7 +329,7 @@ async function main() {
       /** Automation: hold or release a game key (KeyE, KeyG) without pointer lock. */
       hold(code: string, down: boolean) { if (down) keys.add(code); else keys.delete(code) },
       /** Automation: step the sim and draw `ms` later on a synthetic clock even without pointer lock. */
-      step(ms: number) { const was = forcePlay; forcePlay = true; try { frame(last + ms) } finally { forcePlay = was } },
+      step(ms: number) { const was = forcePlay; forcePlay = true; stepping = true; try { frame(last + ms) } finally { forcePlay = was; stepping = false } },
       /** Automation: play without pointer lock (the camera then takes no keyboard input; drive it with setPose). */
       set autoplay(v: boolean) { forcePlay = v; syncStart() },
       friend(id: number): Player | undefined { return session.view.players.find((p) => p.id === id) },

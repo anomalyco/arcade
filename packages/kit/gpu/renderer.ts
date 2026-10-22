@@ -579,6 +579,7 @@ export class Renderer {
       frame: this.frameBuf, lights: this.lightBuf, polar: this.polarBuf, custom: this.customBuf,
       fog: this.fogBuf, fogLamps: this.fogLampBuf, sampler: this.sampler, format: HDR,
       compile: (code, label) => this.module(code, label),
+      spotShadow: () => this.spotShadow,
     }, i))
     if (shaders?.visField) {
       const vf = shaders.visField

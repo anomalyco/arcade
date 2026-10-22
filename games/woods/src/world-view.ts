@@ -1,222 +1,60 @@
 import type { FogLamp } from "@arcade/kit/gpu/fog-scatter"
 import type { FrameParts } from "@arcade/kit/gpu/frame-parts"
-import { MAT, Mesh, packVerts, type Rgb } from "@arcade/kit/gpu/mesh"
+import { MAT, Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
 import type { Renderer } from "@arcade/kit/gpu/renderer"
-import { flatLighting, type SceneLight } from "@arcade/kit/gpu/scene-frame"
+import type { SceneLight } from "@arcade/kit/gpu/scene-frame"
+import { createForestView, type ForestGlow, type ForestTorch, type ForestView } from "@arcade/kit/forest/view"
+import type { QualityTier } from "@arcade/kit/quality"
 import type { Rect } from "@arcade/kit/sim/geom"
 import type { Feel, WoodsState } from "../shared/sim"
-import { groundHeight, lakeDistance, trailDistance, type Building, type Rock, type Tree, type WoodsWorld } from "../shared/world"
+import { toForestWorld, type ForestWorld } from "../shared/forest-world"
+import type { WoodsWorld } from "../shared/world"
 
 /**
- * The only module that turns world data into pictures. Everything it draws comes from `WoodsWorld` (static: terrain,
- * lake, camp, trees, rocks, markers, place lights) and `WoodsState` (dynamic: tapes). Today it draws greybox primitives
- * (cylinders and cones for trees, boxes for rocks and cabins); a real forest renderer replaces this file's internals
- * and keeps its four entry points: `setWorld`, `lights`, `occluders`, `draw`.
+ * The only module that turns world data into pictures. The forest itself (terrain, trees, floor, rocks, camp, lake,
+ * sky, mist, the flashlights and the camera) is the kit's night-forest renderer (`@arcade/kit/forest`), fed the world
+ * through `toForestWorld`. What is the game's own stays here as small models drawn with the renderer: tapes (they
+ * change every frame), survey markers and the ridge mast with its beacon. Entry points: `setWorld`, `lights`,
+ * `occluders`, `draw`, plus `frame` to draw a frame.
  */
 
-/** Material aux tags the scene hooks (`shaders.ts`) read. */
-export const AUX = { tape: 7, sky: -1, water: 2 } as const
-const CHUNK = 40
-
-const BARK: Rgb = [0.15, 0.115, 0.085]
-const BIRCH: Rgb = [0.52, 0.5, 0.46]
-const SNAG: Rgb = [0.2, 0.18, 0.16]
-const NEEDLES: Rgb = [0.045, 0.075, 0.05]
-const LEAVES: Rgb = [0.08, 0.1, 0.05]
-const FLOOR: Rgb = [0.12, 0.095, 0.065]
-const MOSS: Rgb = [0.08, 0.1, 0.05]
-const PATH: Rgb = [0.16, 0.13, 0.095]
-const MUD: Rgb = [0.06, 0.055, 0.045]
-const ROCK: Rgb = [0.22, 0.22, 0.21]
-const WOOD: Rgb = [0.2, 0.13, 0.08]
-const ROOF: Rgb = [0.09, 0.08, 0.075]
-const WINDOW_GLOW: Rgb = [1, 0.58, 0.26]
-const TAPE: Rgb = [1, 0.33, 0.04]
-
+const TAPE: Rgb = [0.85, 0.2, 0.02]
+const ROCK: Rgb = [0.2, 0.2, 0.19]
+const MOSS: Rgb = [0.07, 0.09, 0.045]
 const mix3 = (a: Rgb, b: Rgb, t: number): Rgb => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]
-const scale3 = (a: Rgb, k: number): Rgb => [a[0] * k, a[1] * k, a[2] * k]
-const frac = (v: number) => v - Math.floor(v)
-
-function terrainTile(m: Mesh, world: WoodsWorld, x0: number, z0: number, x1: number, z1: number, step: number) {
-  const h = (x: number, z: number) => groundHeight(world, x, z)
-  const vert = (x: number, z: number) => {
-    const y = h(x, z)
-    const nx = h(x - 0.5, z) - h(x + 0.5, z), nz = h(x, z - 0.5) - h(x, z + 0.5)
-    const l = Math.hypot(nx, 1, nz)
-    let c = mix3(FLOOR, MOSS, frac(Math.abs(x * 0.137 + z * 0.091) * 3.7) * 0.5)
-    c = scale3(c, 0.8 + 0.4 * frac(Math.abs(x * 0.71 - z * 0.37)))
-    const trail = trailDistance(world.trail, x, z)
-    if (trail.d < 2.2) c = mix3(c, PATH, (1 - trail.d / 2.2) * (1 - trail.along * 0.85))
-    const wet = lakeDistance(world.lake, x, z)
-    if (wet < 1.2) c = mix3(c, MUD, Math.min(1, (1.2 - wet) * 5))
-    m.vert([x, y, z], [nx / l, 1 / l, nz / l], c, MAT.lit)
-  }
-  for (let x = x0; x < x1 - 1e-6; x += step) for (let z = z0; z < z1 - 1e-6; z += step) {
-    const xa = x, xb = Math.min(x + step, x1), za = z, zb = Math.min(z + step, z1)
-    // Box-top winding: (x0,z1) (x1,z1) (x1,z0), (x0,z1) (x1,z0) (x0,z0).
-    vert(xa, zb); vert(xb, zb); vert(xb, za)
-    vert(xa, zb); vert(xb, za); vert(xa, za)
-  }
-}
-
-function tree(m: Mesh, t: Tree) {
-  const tint = 0.8 + 0.4 * t.seed
-  const sides = 6, phase = t.seed * 2
-  const y0 = t.y - 0.4
-  if (t.species === "birch") {
-    m.prism(t.x, t.z, t.radius, t.radius * 0.45, y0, t.y + t.height * 0.85, sides, scale3(BIRCH, tint), MAT.lit, 0, false, phase)
-    m.prism(t.x, t.z, 1 + 0.7 * t.seed, 0.35, t.y + t.height * 0.5, t.y + t.height, sides, scale3(LEAVES, tint), MAT.lit, 0, true, phase)
-    return
-  }
-  if (t.species === "snag") {
-    m.prism(t.x, t.z, t.radius, t.radius * 0.5, y0, t.y + t.height, sides, scale3(SNAG, tint), MAT.lit, 0, true, phase)
-    return
-  }
-  m.prism(t.x, t.z, t.radius, t.radius * 0.3, y0, t.y + t.height * 0.92, sides, scale3(BARK, tint), MAT.lit, 0, false, phase)
-  const needles = scale3(NEEDLES, tint)
-  if (t.species === "pine") {
-    const r = 1.1 + 0.8 * t.seed
-    m.prism(t.x, t.z, r, 0.5, t.y + t.height * 0.55, t.y + t.height * 0.8, sides, needles, MAT.lit, 0, false, phase + 0.5)
-    m.prism(t.x, t.z, r * 0.75, 0, t.y + t.height * 0.72, t.y + t.height, sides, needles, MAT.lit, 0, false, phase)
-  } else {
-    const r = 1.4 + 0.8 * t.seed
-    m.prism(t.x, t.z, r, 0.4, t.y + t.height * 0.2, t.y + t.height * 0.6, sides, needles, MAT.lit, 0, false, phase)
-    m.prism(t.x, t.z, r * 0.7, 0, t.y + t.height * 0.45, t.y + t.height, sides, needles, MAT.lit, 0, false, phase + 0.5)
-  }
-}
-
-function rock(m: Mesh, k: Rock) {
-  const tone = 0.75 + 0.5 * k.seed
-  m.yawBox(k.x, k.z, k.w, k.d, k.y - 0.4, k.y + k.h, k.yaw, scale3(ROCK, tone), MAT.lit, 0, mix3(scale3(ROCK, tone), MOSS, 0.6))
-}
-
-function building(m: Mesh, b: Building) {
-  const [x0, z0, x1, z1] = b.rect
-  const y0 = b.y, y1 = b.y + b.h
-  switch (b.kind) {
-    case "cabin":
-    case "mess-hall": {
-      m.box(x0, y0 - 0.5, z0, x1, y1, z1, WOOD, MAT.lit)
-      // Gable roof along x, overhanging.
-      const o = 0.45, ridge = y1 + (z1 - z0) * 0.32, zm = (z0 + z1) / 2
-      m.quadAuto([x0 - o, y1 - 0.15, z1 + o], [x1 + o, y1 - 0.15, z1 + o], [x1 + o, ridge, zm], [x0 - o, ridge, zm], ROOF)
-      m.quadAuto([x1 + o, y1 - 0.15, z0 - o], [x0 - o, y1 - 0.15, z0 - o], [x0 - o, ridge, zm], [x1 + o, ridge, zm], ROOF)
-      m.facet([x0, y1, z1], [x0, ridge, zm], [x0, y1, z0], WOOD)
-      m.facet([x1, y1, z0], [x1, ridge, zm], [x1, y1, z1], WOOD)
-      // Door on the lake side, steps.
-      const xm = (x0 + x1) / 2
-      m.box(xm - 0.5, y0, z1, xm + 0.5, y0 + 2.05, z1 + 0.04, [0.08, 0.06, 0.05])
-      m.box(xm - 0.9, y0 - 0.5, z1, xm + 0.9, y0 + 0.15, z1 + 0.9, WOOD)
-      if (b.kind === "cabin") {
-        for (const s of [-1, 1]) m.box(xm + s * 1.3 - 0.4, y0 + 1.1, z1, xm + s * 1.3 + 0.4, y0 + 1.8, z1 + 0.03, [0.02, 0.025, 0.03], MAT.shiny)
-        break
-      }
-      // Mess hall: warm lit panes on every side, a chimney.
-      const pane = (ax: number, az: number, bx: number, bz: number) => m.box(Math.min(ax, bx), y0 + 1.1, Math.min(az, bz), Math.max(ax, bx), y0 + 2.3, Math.max(az, bz), WINDOW_GLOW, MAT.glow, 7)
-      for (const px of [-4.6, -2, 2, 4.6]) {
-        pane(xm + px - 0.6, z1, xm + px + 0.6, z1 + 0.04)
-        pane(xm + px - 0.6, z0 - 0.04, xm + px + 0.6, z0)
-      }
-      for (const pz of [-1.6, 1.6]) {
-        pane(x0 - 0.04, zm + pz - 0.6, x0, zm + pz + 0.6)
-        pane(x1, zm + pz - 0.6, x1 + 0.04, zm + pz + 0.6)
-      }
-      m.box(x1 - 2.2, y1, zm - 0.5, x1 - 1.4, ridge + 1.1, zm + 0.5, [0.18, 0.16, 0.15])
-      break
-    }
-    case "dock": {
-      m.box(x0, y0, z0, x1, y1, z1, [0.24, 0.17, 0.11])
-      for (let z = z0 + 1; z < z1; z += 3) for (const x of [x0 + 0.1, x1 - 0.1]) m.prism(x, z, 0.1, 0.1, y0 - 2.5, y0 + 0.05, 5, [0.15, 0.11, 0.08])
-      break
-    }
-    case "canoe": {
-      const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2
-      m.prism(cx, cz - (z1 - z0) * 0.3, (x1 - x0) / 2, 0.05, y0, y0 + b.h, 6, [0.42, 0.08, 0.05])
-      m.box(x0, y0, cz - (z1 - z0) * 0.3, x1, y0 + b.h, z1 - 0.3, [0.42, 0.08, 0.05])
-      break
-    }
-    case "table":
-      m.box(x0, y0 + b.h - 0.05, z0, x1, y0 + b.h, z1, WOOD)
-      for (const [x, z] of [[x0 + 0.1, z0 + 0.1], [x1 - 0.1, z0 + 0.1], [x0 + 0.1, z1 - 0.1], [x1 - 0.1, z1 - 0.1]] as const) m.box(x - 0.04, y0, z - 0.04, x + 0.04, y0 + b.h, z + 0.04, WOOD)
-      break
-    case "mast": {
-      const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2
-      m.prism(cx, cz, 0.7, 0.15, y0 - 0.5, y1, 4, [0.3, 0.3, 0.32], MAT.lit, 0, true, Math.PI / 4)
-      m.box(cx - 1.5, y0 - 0.5, cz - 1.5, cx + 1.5, y0 + 0.1, cz + 1.5, [0.3, 0.3, 0.29])
-      break
-    }
-  }
-}
 
 function marker(m: Mesh, x: number, z: number, y: number, id: number) {
   // Old concrete survey monument with a brass disc, a few stones around and a faded witness post.
-  m.bevelBox(x - 0.16, y - 0.4, z - 0.16, x + 0.16, y + 0.75, z + 0.16, 0.03, [0.42, 0.41, 0.38], [0.46, 0.45, 0.42])
-  m.prism(x, z, 0.07, 0.07, y + 0.75, y + 0.77, 10, [0.55, 0.4, 0.16], MAT.shiny)
+  m.bevelBox(x - 0.16, y - 0.4, z - 0.16, x + 0.16, y + 0.75, z + 0.16, 0.03, [0.3, 0.29, 0.27], [0.34, 0.33, 0.3])
+  m.prism(x, z, 0.07, 0.07, y + 0.75, y + 0.77, 10, [0.45, 0.32, 0.12], MAT.shiny)
   for (let i = 0; i < 6; i++) {
     const a = i * 1.05 + id
-    m.yawBox(x + Math.cos(a) * 0.55, z + Math.sin(a) * 0.55, 0.25, 0.2, y - 0.2, y + 0.12, a, ROCK)
+    m.yawBox(x + Math.cos(a) * 0.55, z + Math.sin(a) * 0.55, 0.25, 0.2, y - 0.2, y + 0.12, a, ROCK, MAT.lit, 0, mix3(ROCK, MOSS, 0.7))
   }
   const wx = x + 0.9, wz = z - 0.4
-  m.box(wx - 0.05, y - 0.3, wz - 0.05, wx + 0.05, y + 1.2, wz + 0.05, [0.5, 0.48, 0.42])
-  m.box(wx - 0.055, y + 0.95, wz - 0.055, wx + 0.055, y + 1.12, wz + 0.055, [0.7, 0.25, 0.06])
+  m.box(wx - 0.05, y - 0.3, wz - 0.05, wx + 0.05, y + 1.2, wz + 0.05, [0.36, 0.34, 0.3])
+  m.box(wx - 0.055, y + 0.95, wz - 0.055, wx + 0.055, y + 1.12, wz + 0.055, [0.6, 0.2, 0.05])
 }
 
-function lake(m: Mesh, world: WoodsWorld) {
-  const L = world.lake, n = 48, y = L.level
-  for (let i = 0; i < n; i++) {
-    const a0 = (i / n) * Math.PI * 2, a1 = ((i + 1) / n) * Math.PI * 2
-    const r = 1.15
-    m.vert([L.x, y, L.z], [0, 1, 0], [0.012, 0.016, 0.02], MAT.shiny, AUX.water)
-    m.vert([L.x + Math.cos(a1) * L.rx * r, y, L.z + Math.sin(a1) * L.rz * r], [0, 1, 0], [0.012, 0.016, 0.02], MAT.shiny, AUX.water)
-    m.vert([L.x + Math.cos(a0) * L.rx * r, y, L.z + Math.sin(a0) * L.rz * r], [0, 1, 0], [0.012, 0.016, 0.02], MAT.shiny, AUX.water)
+/** A lattice radio mast: four legs tapering to the top, cross-bracing every few metres. */
+function mast(m: Mesh, x: number, z: number, y0: number, h: number) {
+  const steel: Rgb = [0.16, 0.16, 0.17]
+  const at = (f: number) => 1.1 * (1 - f) + 0.18 * f
+  for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) {
+    for (let k = 0; k < 12; k++) {
+      const f0 = k / 12, f1 = (k + 1) / 12
+      const a = [x + sx * at(f0), y0 + h * f0, z + sz * at(f0)], b = [x + sx * at(f1), y0 + h * f1, z + sz * at(f1)]
+      m.prism((a[0]! + b[0]!) / 2, (a[2]! + b[2]!) / 2, 0.05, 0.05, a[1]!, b[1]!, 4, steel)
+    }
   }
-}
-
-function stringBulbs(m: Mesh, world: WoodsWorld) {
-  for (const l of world.lamps) {
-    if (l.kind === "string") m.box(l.x - 0.04, l.y - 0.06, l.z - 0.04, l.x + 0.04, l.y + 0.04, l.z + 0.04, [1, 0.72, 0.4], MAT.glow, 1.4)
-    if (l.kind === "porch") m.box(l.x - 0.08, l.y - 0.1, l.z - 0.08, l.x + 0.08, l.y + 0.05, l.z + 0.08, [1, 0.66, 0.35], MAT.glow, 2)
+  for (let k = 1; k < 12; k++) {
+    const f = k / 12, r = at(f), y = y0 + h * f
+    m.box(x - r, y - 0.03, z - r - 0.03, x + r, y + 0.03, z - r + 0.03, steel)
+    m.box(x - r, y - 0.03, z + r - 0.03, x + r, y + 0.03, z + r + 0.03, steel)
+    m.box(x - r - 0.03, y - 0.03, z - r, x - r + 0.03, y + 0.03, z + r, steel)
+    m.box(x + r - 0.03, y - 0.03, z - r, x + r + 0.03, y + 0.03, z + r, steel)
   }
-}
-
-/** Static world geometry as renderer level chunks (each culled by plan rect). */
-export function buildChunks(world: WoodsWorld): { data: ArrayBuffer; box: readonly [number, number, number, number] }[] {
-  const half = world.params.half + 20
-  const tiles = new Map<string, Mesh>()
-  const tileAt = (x: number, z: number) => {
-    const key = `${Math.floor(x / CHUNK)},${Math.floor(z / CHUNK)}`
-    let m = tiles.get(key)
-    if (!m) tiles.set(key, (m = new Mesh()))
-    return m
-  }
-  for (let x = -half; x < half; x += CHUNK) for (let z = -half; z < half; z += CHUNK) terrainTile(tileAt(x + 1, z + 1), world, x, z, x + CHUNK, z + CHUNK, 2.5)
-  for (const t of world.trees) tree(tileAt(t.x, t.z), t)
-  for (const k of world.rocks) rock(tileAt(k.x, k.z), k)
-  for (const k of world.markers) marker(tileAt(k.x, k.z), k.x, k.z, k.y, k.id)
-  const place = new Mesh()
-  for (const b of world.buildings) building(place, b)
-  lake(place, world)
-  stringBulbs(place, world)
-  const out: { data: ArrayBuffer; box: readonly [number, number, number, number] }[] = []
-  for (const [key, m] of tiles) {
-    const [i, j] = key.split(",").map(Number) as [number, number]
-    // Crowns overhang their tile; pad the cull box.
-    out.push({ data: packVerts(m.v), box: [i * CHUNK - 4, j * CHUNK - 4, (i + 1) * CHUNK + 4, (j + 1) * CHUNK + 4] })
-  }
-  out.push({ data: packVerts(place.v), box: [-half, -half, half, half] })
-  return out
-}
-
-/** Plan rect that holds what a camera at `eye` looking along `yaw` can see within `far`. */
-export function viewRect(eye: readonly number[], yaw: number, pitch: number, far: number, fovX: number): readonly [number, number, number, number] {
-  if (Math.abs(pitch) > 0.7) return [eye[0]! - far * 0.75, eye[2]! - far * 0.75, eye[0]! + far * 0.75, eye[2]! + far * 0.75]
-  const xs = [eye[0]!], zs = [eye[2]!]
-  for (const a of [-fovX / 2 - 0.15, 0, fovX / 2 + 0.15]) {
-    xs.push(eye[0]! - Math.sin(yaw + a) * far)
-    zs.push(eye[2]! - Math.cos(yaw + a) * far)
-  }
-  const m = 6
-  return [Math.min(...xs) - m, Math.min(...zs) - m, Math.max(...xs) + m, Math.max(...zs) + m]
+  m.box(x - 1.5, y0 - 0.5, z - 1.5, x + 1.5, y0 + 0.1, z + 1.5, [0.22, 0.22, 0.21])
 }
 
 export type PlaceLights = { scene: SceneLight[]; fog: FogLamp[] }
@@ -227,33 +65,71 @@ export function ridgeBlink(t: number): number {
   return p < 0.3 ? Math.sin((p / 0.3) * Math.PI) ** 0.6 : 0
 }
 
+export type WorldFrame = {
+  eye: readonly [number, number, number]
+  viewProj: Float32Array
+  width: number
+  height: number
+  time: number
+  dt: number
+  fovY: number
+  torches: readonly ForestTorch[]
+  fp: FrameParts
+  place: PlaceLights
+}
+
+/**
+ * The world as the forest renderer draws it: the toy's adapter plus what only the picture needs. The camp's string
+ * lights hang between posts at the span ends (the toy lists every bulb); each survey marker stands in a small clearing.
+ */
+function forestWorld(world: WoodsWorld): ForestWorld {
+  const fw = toForestWorld(world)
+  const bulbs = world.lamps.filter((l) => l.kind === "string").sort((a, b) => a.x - b.x)
+  const camp = fw.camp && bulbs.length > 1 ? (() => {
+    const x0 = bulbs[0]!.x, x1 = bulbs[bulbs.length - 1]!.x, z = bulbs[0]!.z, top = Math.max(...bulbs.map((b) => b.y))
+    const spans = 4
+    const points = Array.from({ length: spans + 1 }, (_, i) => [x0 + ((x1 - x0) * i) / spans, top, z] as const)
+    return { ...fw.camp, stringLights: [{ points, bulbs: bulbs.length }] }
+  })() : fw.camp
+  return { ...fw, camp, clearings: [...(fw.clearings ?? []), ...world.markers.map((m) => ({ x: m.x, z: m.z, r: 3.5 }))] }
+}
+
 export class WorldView {
   private tapeModels = new Map<number, number>()
-  private skyModel: number
-  private beaconModel: number
+  private markerModel = -1
+  private mastModel = -1
+  private glows: ForestGlow[] = []
+  private tails: number[] = []
 
-  constructor(private renderer: Renderer) {
-    const sky = new Mesh()
-    // Inward-facing dome the scene hooks shade as fog sky (aux −1).
-    const n = 16, r = 280
-    for (let i = 0; i < n; i++) for (let j = 0; j < 8; j++) {
-      const a0 = (i / n) * Math.PI * 2, a1 = ((i + 1) / n) * Math.PI * 2
-      const b0 = (j / 8) * Math.PI * 0.5 - 0.15, b1 = ((j + 1) / 8) * Math.PI * 0.5 - 0.15
-      const p = (a: number, b: number) => [Math.cos(a) * Math.cos(b) * r, Math.sin(b) * r, Math.sin(a) * Math.cos(b) * r]
-      sky.quadAuto(p(a0, b0), p(a0, b1), p(a1, b1), p(a1, b0), [0, 0, 0], MAT.glow, AUX.sky)
-    }
-    this.skyModel = renderer.addModel(sky)
-    const beacon = new Mesh()
-    beacon.prism(0, 0, 0.6, 0.6, -0.6, 0.6, 8, [1, 1, 1], MAT.accent)
-    this.beaconModel = renderer.addModel(beacon)
+  private constructor(readonly forest: ForestView) {}
+
+  /** Loads the forest's scanned assets and builds `world`. */
+  static async create(gpu: { device: GPUDevice; context: GPUCanvasContext; format: GPUTextureFormat }, world: WoodsWorld, opts: { smoke?: boolean; quality?: QualityTier } = {}): Promise<WorldView> {
+    const forest = await createForestView(gpu, forestWorld(world), { assetRoot: import.meta.env.BASE_URL + "forest-assets/", smoke: !!opts.smoke, quality: opts.quality ?? "balanced" })
+    const view = new WorldView(forest)
+    view.models(world)
+    return view
   }
 
-  /** Uploads the static world. Call again when the world is regenerated (trunk density, seed). */
+  get renderer(): Renderer { return this.forest.renderer }
+
+  private models(world: WoodsWorld) {
+    const markers = new Mesh()
+    for (const k of world.markers) marker(markers, k.x, k.z, k.y, k.id)
+    this.markerModel = this.renderer.addModel(markers)
+    const m = world.buildings.find((b) => b.kind === "mast")
+    const tower = new Mesh()
+    if (m) mast(tower, (m.rect[0] + m.rect[2]) / 2, (m.rect[1] + m.rect[3]) / 2, m.y, m.h)
+    this.mastModel = this.renderer.addModel(tower)
+  }
+
+  /** Rebuilds the static world. Call again when the world is regenerated (trunk density, seed). */
   setWorld(world: WoodsWorld): void {
-    this.renderer.setLevel({ chunks: buildChunks(world), glass: [], ...flatLighting(0, 0, [0, 0, 0]) })
+    this.forest.setWorld(forestWorld(world))
+    this.models(world)
   }
 
-  /** Polar-shadow occluders: trunks, rocks and buildings with their top heights. */
+  /** Footprints of trunks, rocks and buildings with their top heights (for any polar-shadow user). */
   occluders(world: WoodsWorld): { rect: Rect; h: number }[] {
     const out: { rect: Rect; h: number }[] = []
     for (const t of world.trees) {
@@ -268,29 +144,19 @@ export class WorldView {
     return out
   }
 
-  /** The place's own lights: mess hall windows, string lights, porches, the ridge beacon. */
+  /**
+   * The place's lights beyond the forest's own (its camp windows, porches and string lights come from the buildings):
+   * the ridge beacon, a point source that lights its mast and a tight halo of air, not the treetops.
+   */
   lights(world: WoodsWorld, t: number, feel: Feel): PlaceLights {
     const scene: SceneLight[] = [], fog: FogLamp[] = []
-    let id = 1000
-    for (const l of world.lamps) {
-      const power = l.power * feel.campGlow
-      scene.push({ id: id++, x: l.x, y: l.z, h: l.y, r: l.range, color: l.color, power, size: 0.3, unshadowed: l.kind !== "window" })
-    }
-    const hall = world.buildings.find((b) => b.kind === "mess-hall")
-    if (hall) {
-      const [x0, z0, x1, z1] = hall.rect
-      fog.push({ id: 900, x: (x0 + x1) / 2, y: hall.y + 1.6, z: (z0 + z1) / 2, range: 40, color: [1, 0.55, 0.22], intensity: 60 * feel.campGlow * feel.beamHaze * 0.1, size: 10 })
-    }
-    const strings = world.lamps.filter((l) => l.kind === "string")
-    if (strings.length) {
-      const c = strings.reduce((a, l) => [a[0] + l.x / strings.length, a[1] + l.y / strings.length, a[2] + l.z / strings.length], [0, 0, 0])
-      fog.push({ id: 901, x: c[0], y: c[1], z: c[2], range: 22, color: [1, 0.7, 0.35], intensity: 4 * feel.campGlow * feel.beamHaze * 0.1, size: 14 })
-    }
     const blink = ridgeBlink(t) * feel.ridgeGlow
     const r = world.ridgeLight
+    this.glows.length = 0
     if (blink > 0) {
-      scene.push({ id: 950, x: r.x, y: r.z, h: r.y, r: 40, color: [1, 0.06, 0.02], power: 60 * blink, size: 0.4, unshadowed: true })
-      fog.push({ id: 950, x: r.x, y: r.y, z: r.z, range: 160, color: [1, 0.06, 0.02], intensity: 3000 * blink * feel.beamHaze * 0.1, size: 1.2, visibility: 1 })
+      scene.push({ id: 950, x: r.x, y: r.z, h: r.y, r: 6, color: [1, 0.05, 0.02], power: 4 * blink, size: 0.1, unshadowed: true })
+      fog.push({ id: 950, x: r.x, y: r.y, z: r.z, range: 10, color: [1, 0.05, 0.02], intensity: 40 * blink, size: 0.15, visibility: 1 })
+      this.glows.push({ x: r.x, y: r.y, z: r.z, radius: 1.6, color: [400 * blink, 22 * blink, 8 * blink] })
     }
     return { scene, fog }
   }
@@ -300,32 +166,69 @@ export class WorldView {
     let id = this.tapeModels.get(bucket)
     if (id !== undefined) return id
     const m = new Mesh()
-    const r = bucket * 0.02 + 0.01
-    m.prism(0, 0, r, r, -0.028, 0.028, 12, TAPE, MAT.lit, AUX.tape, false)
-    // Two tails from the knot on +x, both faces so they read from behind.
-    for (const [dz, lean, len] of [[-0.03, 0.12, 0.42], [0.03, 0.3, 0.34]] as const) {
-      const top = [r, 0, dz], bot = [r + lean * len, -len, dz + lean * 0.3 * len]
-      const w = 0.026
-      const a = [top[0]!, top[1]!, top[2]! - w], b = [top[0]!, top[1]!, top[2]! + w], c = [bot[0]!, bot[1]!, bot[2]! + w], d = [bot[0]!, bot[1]!, bot[2]! - w]
-      m.quadAuto(a, b, c, d, TAPE, MAT.lit, AUX.tape)
-      m.quadAuto(d, c, b, a, TAPE, MAT.lit, AUX.tape)
-    }
+    const r = bucket * 0.02 + 0.012
+    m.prism(0, 0, r, r, -0.026, 0.026, 16, TAPE, MAT.lit, 0, false)
+    // The knot: a small lump where the ends are tied off (the tails hang from it, see \`tailModels\`).
+    m.bevelBox(r - 0.005, -0.03, -0.025, r + 0.03, 0.03, 0.025, 0.008, TAPE, TAPE)
     id = this.renderer.addModel(m)
     this.tapeModels.set(bucket, id)
     return id
   }
 
-  /** Per-frame world content: tapes, the ridge beacon, the sky dome around the eye. */
-  draw(fp: FrameParts, world: WoodsWorld, state: WoodsState, t: number, eye: readonly number[], feel: Feel): void {
-    fp.push(this.skyModel, eye[0]!, eye[1]! - 20, eye[2]!, 0, [1, 1, 1], 0, 0, 0)
+  /**
+   * Loose tape ends: a ribbon hanging from its pivot at the origin down -y, twisting a quarter turn along its length,
+   * both faces. Drawn per tape and frame, swung about the knot.
+   */
+  private tailModels(): number[] {
+    if (this.tails.length) return this.tails
+    for (const len of [0.44, 0.33]) {
+      const m = new Mesh()
+      const n = 6, w = 0.022
+      for (let i = 0; i < n; i++) {
+        const at = (k: number) => { const f = k / n, tw = f * 1.3, sag = f * f * 0.05; return { y: -f * len, x: sag, c: Math.cos(tw) * w, s: Math.sin(tw) * w } }
+        const p = at(i), q = at(i + 1)
+        const a = [p.x - p.s, p.y, -p.c], b = [p.x + p.s, p.y, p.c], c = [q.x + q.s, q.y, q.c], d = [q.x - q.s, q.y, -q.c]
+        m.quadAuto(a, b, c, d, TAPE, MAT.lit, 0)
+        m.quadAuto(d, c, b, a, TAPE, MAT.lit, 0)
+      }
+      this.tails.push(this.renderer.addModel(m))
+    }
+    return this.tails
+  }
+
+  /** Per-frame world content: tapes (ring, knot and two swaying tails), survey markers and the mast. */
+  draw(fp: FrameParts, world: WoodsWorld, state: WoodsState, t: number, _eye: readonly number[], _feel: Feel): void {
+    const tails = this.tailModels()
     for (const tape of state.tapes) {
       const tree = world.trees[tape.tree]
       if (!tree) continue
-      fp.push(this.tapeModel(tree.radius * (1 - (TAPE_RISE * 0.7) / tree.height)), tape.x, tape.y, tape.z, tape.yaw, [1, 1, 1], 0, 0, 0)
+      const r = tree.radius * (1 - (TAPE_RISE * 0.7) / tree.height)
+      fp.push(this.tapeModel(r), tape.x, tape.y, tape.z, tape.yaw, [1, 1, 1], 0, 0, 0)
+      // The ends hang off the knot, lifted out by the trunk's curve, and stir in the air: a slow swing with gusts.
+      const c = Math.cos(tape.yaw), s = Math.sin(tape.yaw), kr = Math.max(3, Math.ceil(r / 0.02)) * 0.02 + 0.04
+      for (const [i, dz] of [[0, -0.02], [1, 0.02]] as const) {
+        const ph = tape.id * 1.7 + i * 2.3
+        const gust = 0.5 + 0.5 * Math.sin(t * 0.37 + tape.id)
+        const pitch = 0.18 + i * 0.12 + Math.sin(t * 1.9 + ph) * 0.12 * gust
+        const roll = Math.sin(t * 1.3 + ph * 1.4) * 0.3 * gust + Math.sin(t * 4.7 + ph) * 0.05
+        fp.push(tails[i]!, tape.x + kr * c - dz * s, tape.y, tape.z + kr * s + dz * c, tape.yaw, [1, 1, 1], pitch, roll, 0)
+      }
     }
-    const blink = ridgeBlink(t) * feel.ridgeGlow
-    const r = world.ridgeLight
-    fp.push(this.beaconModel, r.x, r.y, r.z, 0, [40 * blink + 0.04, 1.2 * blink, 0.3 * blink], 0, 0, 0)
+    if (this.markerModel >= 0) fp.push(this.markerModel, 0, 0, 0, 0, [1, 1, 1], 0, 0, 0)
+    if (this.mastModel >= 0) fp.push(this.mastModel, 0, 0, 0, 0, [1, 1, 1], 0, 0, 0)
+  }
+
+  /**
+   * Lights, shadows, mist and camera for this frame, then draws it. `sync` encodes it at once (automation stepping,
+   * where the caller copies the canvas in the same task), or into `target` offscreen (the software-GPU smoke).
+   */
+  frame(f: WorldFrame, sync = false, target?: GPUTextureView): void {
+    this.forest[sync || target ? "update" : "frame"]({
+      eye: f.eye, viewProj: f.viewProj, width: f.width, height: f.height, time: f.time, dt: f.dt, fovY: f.fovY, torches: f.torches,
+      batches: f.fp.batches(), sprites: { alpha: f.fp.alpha, alphaCount: f.fp.nAlpha, add: f.fp.add, addCount: f.fp.nAdd },
+      lights: f.place.scene, fogLamps: f.place.fog, glows: this.glows,
+    })
+    if (sync || target) this.forest.drawTo(target)
   }
 }
 const TAPE_RISE = 1.9

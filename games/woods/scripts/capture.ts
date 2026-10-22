@@ -12,6 +12,12 @@ const [w, h] = arg("--size", "1600x900").split("x").map(Number) as [number, numb
 const only = arg("--shots", "")
 const sets = Object.fromEntries(arg("--set", "").split(",").filter(Boolean).map((kv) => { const [k, v] = kv.split("="); return [k!, v === "true" ? true : v === "false" ? false : Number(v)] }))
 const tag = arg("--tag", "")
+/** `--look key=value,...`: the forest renderer's look settings (`window.woods.look`). */
+const looks = Object.fromEntries(arg("--look", "").split(",").filter(Boolean).map((kv) => { const [k, v] = kv.split("="); return [k!, v === "true" ? true : v === "false" ? false : Number.isFinite(Number(v)) ? Number(v) : v] }))
+const measure = process.argv.includes("--measure")
+/** `--debug key=false,...`: the forest's draw toggles (`woods.view.forest.debug`); `--quality high` pins the tier. */
+const debugs = Object.fromEntries(arg("--debug", "").split(",").filter(Boolean).map((kv) => { const [k, v] = kv.split("="); return [k!, v !== "false"] }))
+const tier = arg("--quality", "high")
 mkdirSync(out, { recursive: true })
 const root = resolve("dist/arcade/woods")
 const prefix = "/arcade/woods/"
@@ -54,7 +60,8 @@ const shots: Record<string, (page: Page) => Promise<void>> = {
         if (!p || !b) return
         p.x = x + dx; p.z = z + dz; b.mode = mode; b.timer = 99; b.heading = yaw
       }
-      place(0, -9, -38, 0.7, -0.2, "wait")
+      // As in the paint-over: the nearest friend aims back past you (forward scatter lights the shaft), one signals.
+      place(0, -9, -38, Math.atan2(-9, -38) + 0.45, -0.2, "wait")
       place(1, 14, -60, 0, 1.3, "signal")
       place(2, 30, -25, 1.9, -0.2, "wait")
       woods.state.brains[0]!.timer = 12
@@ -111,18 +118,79 @@ const shots: Record<string, (page: Page) => Promise<void>> = {
       for (const b of woods.state.brains) b.mode = "wait", b.timer = 99
     })
   },
+  // Kit's Scrawl viewpoints (Oct 21): k1 out of camp into the woods, a friend to the left, your light off.
+  k1: async (page) => {
+    await page.evaluate(() => {
+      const c = woods.world.camp, x = c.x - 12, z = c.z - 16
+      woods.setPose(x, z, -0.35, 0.03)
+      woods.camera.flashlight = false
+      const p = woods.state.players[1]!, b = woods.state.brains[0]!
+      p.x = x - 9; p.z = z - 11; b.mode = "wait"; b.timer = 99; b.heading = 1.2
+      for (const o of woods.state.brains.slice(1)) { const q = woods.state.players[o.id]!; q.x = x + 40; q.z = z + 40; o.mode = "wait"; o.timer = 99 }
+    })
+  },
+  // k3: a log broadside 6 m ahead, friends with lights beyond it.
+  k3: async (page) => {
+    await page.evaluate(() => {
+      const logs = (woods as unknown as { view: { forest: { build: { logs: { x: number; z: number; yaw: number; length: number }[] } } } }).view.forest.build.logs
+      const c = woods.world.camp
+      const l = logs.filter((l) => l.length > 7).sort((a, b) => Math.hypot(a.x - c.x, a.z - c.z + 60) - Math.hypot(b.x - c.x, b.z - c.z + 60))[0]!
+      const nx = -Math.sin(l.yaw), nz = Math.cos(l.yaw)
+      const x = l.x + nx * 6, z = l.z + nz * 6
+      woods.setPose(x, z, Math.atan2(nx, nz), 0.02)
+      woods.camera.flashlight = false
+      woods.state.players.slice(1).forEach((p, i) => { const b = woods.state.brains[i]!; p.x = l.x - nx * (5 + i * 2) + Math.cos(l.yaw) * (i - 1) * 3; p.z = l.z - nz * (5 + i * 2) + Math.sin(l.yaw) * (i - 1) * 3; b.mode = "wait"; b.timer = 99; b.heading = Math.atan2(-Math.cos(l.yaw), -Math.sin(l.yaw)) + i })
+    })
+  },
+  // k4: beside one end of a long log, looking along it into the woods, a friend ahead.
+  k4: async (page) => {
+    await page.evaluate(() => {
+      const logs = (woods as unknown as { view: { forest: { build: { logs: { x: number; z: number; yaw: number; length: number }[] } } } }).view.forest.build.logs
+      const c = woods.world.camp
+      const l = logs.filter((l) => l.length > 5).sort((a, b) => Math.hypot(a.x - c.x, a.z - c.z + 80) - Math.hypot(b.x - c.x, b.z - c.z + 80))[0]!
+      const ax = Math.cos(l.yaw), az = Math.sin(l.yaw), nx = -az, nz = ax
+      const ex = l.x - ax * l.length / 2, ez = l.z - az * l.length / 2
+      const x = ex - ax * 1 + nx * 1.6, z = ez - az * 1 + nz * 1.6
+      // View yaw: viewDir(yaw) looks along (−sin yaw, −cos yaw); aim at the log's far end, a little off its line.
+      const tx = l.x + ax * l.length / 2 + nx * 4, tz = l.z + az * l.length / 2 + nz * 4
+      woods.setPose(x, z, Math.atan2(-(tx - x), -(tz - z)), -0.08)
+      woods.camera.flashlight = false
+      const p = woods.state.players[1]!, b = woods.state.brains[0]!
+      p.x = tx + ax * 6; p.z = tz + az * 6; b.mode = "wait"; b.timer = 99; b.heading = Math.atan2(nx, nz)
+    })
+  },
+  // k6: your own beam down onto the path ahead.
+  k6: async (page) => {
+    await page.evaluate(() => {
+      const c = woods.world.camp, x = c.x + 8, z = c.z - 48
+      woods.setPose(x, z, 0.15, -0.32)
+      for (const b of woods.state.brains) b.mode = "wait", b.timer = 99
+      for (const p of woods.state.players.slice(1)) { p.x = x + 50; p.z = z + 50 }
+    })
+  },
+  // A friend 8 m ahead aiming their light straight at you (glare must flare the lens, not white out the body).
+  glare: async (page) => {
+    await page.evaluate(() => {
+      const c = woods.world.camp, x = c.x + 10, z = c.z - 70
+      woods.setPose(x, z, 0, 0.0)
+      woods.camera.flashlight = false
+      const p = woods.state.players[1]!, b = woods.state.brains[0]!
+      p.x = x + 0.5; p.z = z - 8; b.mode = "wait"; b.timer = 99; b.heading = Math.PI
+      for (const o of woods.state.brains.slice(1)) { const q = woods.state.players[o.id]!; q.x = x + 40; q.z = z + 40; o.mode = "wait"; o.timer = 99 }
+    })
+  },
   // The map raised next to the camp, flashlight on it.
   map: async (page) => { await page.evaluate(() => { const s = woods.world.camp.spawn; woods.setPose(s.x, s.z - 40, 0.4, -0.1); woods.hold("KeyG", true) }) },
 }
 
-const browser = await chromium.launch({ headless: true, args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio"] })
+const browser = await chromium.launch({ headless: true, timeout: 120000, args: ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist", "--mute-audio"] })
 const page = await browser.newPage({ viewport: { width: w, height: h } })
 const errors: string[] = []
 page.on("pageerror", (e) => errors.push(e.message))
 page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") errors.push(m.text()) })
-await page.goto(`http://127.0.0.1:${server.port}${prefix}`, { waitUntil: "load" })
-await page.waitForFunction(() => (window as unknown as { woods?: Woods }).woods && woods.frames > 2, null, { timeout: 60000 })
-await page.evaluate((sets) => { document.getElementById("start")!.style.display = "none"; woods.paused = true; Object.assign(woods.settings, sets) }, sets)
+await page.goto(`http://127.0.0.1:${server.port}${prefix}?quality=${tier}`, { waitUntil: "load" })
+await page.waitForFunction(() => (window as unknown as { woods?: Woods }).woods && woods.frames > 2, null, { timeout: 180000 }).catch((e) => { console.log(errors.join("\n")); throw e })
+await page.evaluate(({ sets, looks, debugs }) => { document.getElementById("start")!.style.display = "none"; woods.paused = true; Object.assign(woods.settings, sets); Object.assign((woods as unknown as { look: object }).look, looks); Object.assign((woods as unknown as { view: { forest: { debug: object } } }).view.forest.debug, debugs) }, { sets, looks, debugs })
 const timing: Record<string, number> = {}
 for (const [name, setup] of Object.entries(shots)) {
   if (only && !only.split(",").includes(name)) continue
@@ -136,6 +204,7 @@ for (const [name, setup] of Object.entries(shots)) {
   console.log(name, JSON.stringify(await page.evaluate(() => ({ debug: (woods as unknown as { debug: unknown }).debug, players: woods.state.players.map((p) => [p.id, Math.round(p.x), Math.round(p.z), +p.pitch.toFixed(2), p.light]) }))))
   await page.screenshot({ path: `${out}/${name}${tag}.png` })
   console.log(`${name}: ${timing[name]} ms for 90 steps`)
+  if (measure) console.log(name, "gpu", JSON.stringify(await page.evaluate(async () => { const w = woods as unknown as { measure(n: number): Promise<{ median: number } | null>; stats(): unknown }; return { gpu: (await w.measure(12))?.median, stats: w.stats() } })))
 }
 writeFileSync(`${out}/capture.json`, JSON.stringify({ timing, errors }, null, 2))
 if (errors.length) console.log("browser messages:", errors.slice(0, 10))

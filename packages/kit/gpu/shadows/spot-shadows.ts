@@ -247,6 +247,33 @@ fn spotShadowVis(light: u32, world: vec3f, n: vec3f) -> f32 {
 }
 `
 
+/**
+ * Volume-shader declarations (`VolumeLightShader.spotShadows`, bindings 23–25): `spotShadowAir(lightIndex, p) -> f32`,
+ * one hardware-filtered comparison at a point in the air (1 = lit, also outside the map and for lights without one), so
+ * a fog march can cut a lamp's light behind what blocks it.
+ */
+export const spotShadowVolumeWgsl = /* wgsl */ `
+struct SpotShadowSlot { viewProj: mat4x4f, light: vec4f, params: vec4f, far: vec4f }
+struct SpotShadows { head: vec4f, slots: array<SpotShadowSlot, ${MAX_SPOT_SHADOWS}> }
+@group(0) @binding(23) var spotShadowMap: texture_depth_2d_array;
+@group(0) @binding(24) var spotShadowSamp: sampler_comparison;
+@group(0) @binding(25) var<uniform> SPOTS: SpotShadows;
+fn spotShadowAir(light: u32, p: vec3f) -> f32 {
+  let count = u32(SPOTS.head.x);
+  for (var s = 0u; s < count; s++) {
+    let slot = SPOTS.slots[s];
+    if (u32(slot.params.x) != light) { continue; }
+    let clip = slot.viewProj * vec4f(p, 1.0);
+    if (clip.w <= 1e-4) { return 1.0; }
+    let ndc = clip.xyz / clip.w;
+    if (any(abs(ndc.xy) >= vec2f(1.0)) || ndc.z >= 1.0 || ndc.z <= 0.0) { return 1.0; }
+    let uv = vec2f(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+    return mix(1.0, textureSampleCompareLevel(spotShadowMap, spotShadowSamp, uv, i32(slot.far.y), ndc.z), slot.params.y);
+  }
+  return 1.0;
+}
+`
+
 /** WGSL after \`spotShadowWgsl\`: \`spotShadowVisArea\`, for scenes with lens emitters (\`lights/street.ts\`). */
 export const spotShadowAreaWgsl = /* wgsl */ `
 /**
@@ -304,15 +331,64 @@ fn spotShadowVisArea(light: u32, world: vec3f, n: vec3f, lens: f32, noise: f32) 
 }
 `
 
-/** Position-only depth shader for the shadow pass (any vertex layout with float32x3 position at offset 0). */
-const depthShader = /* wgsl */ `
-struct Cam { viewProj: mat4x4f }
-@group(0) @binding(0) var<uniform> C: Cam;
-@vertex fn vs(@location(0) p: vec3f) -> @builtin(position) vec4f { return C.viewProj * vec4f(p, 1.0); }
+/**
+ * Depth shaders for the shadow pass: position-only (any vertex layout with float32x3 position at offset 0), cut-out
+ * (the kit's 32-byte textured layout, alpha-tested), and both again instanced by `SpotShadowInstances`.
+ */
+/**
+ * Default instance transform: (x, y, z, yaw), (scale xz, scale y, …): scale, yaw about +y, then move. A renderer
+ * whose instances pack more (the forest's trunk scale) passes its own through \`SpotShadows\`'s \`instanceWgsl\`, the
+ * same signature; \`mat\` and \`color\` are the vertex's material and colour (32-byte textured casters only, else 0).
+ */
+export const SPOT_SHADOW_INSTANCE_WGSL = /* wgsl */ `
+fn instanced(p: vec3f, a: vec4f, b: vec4f, mat: f32, color: vec4f) -> vec3f {
+  let q = vec3f(p.x * b.x, p.y * b.y, p.z * b.x);
+  let c = cos(a.w);
+  let s = sin(a.w);
+  return vec3f(q.x * c - q.z * s, q.y, q.x * s + q.z * c) + a.xyz;
+}
 `
 
-/** Static geometry to draw into the maps: a vertex buffer with float32x3 position at offset 0. */
-export type SpotShadowCaster = { buffer: GPUBuffer; count: number; stride: number; firstVertex?: number }
+export const spotShadowDepthWgsl = (instanceWgsl = SPOT_SHADOW_INSTANCE_WGSL) => /* wgsl */ `
+struct Cam { viewProj: mat4x4f }
+@group(0) @binding(0) var<uniform> C: Cam;
+${instanceWgsl}
+@vertex fn vs(@location(0) p: vec3f) -> @builtin(position) vec4f { return C.viewProj * vec4f(p, 1.0); }
+@vertex fn vsInst(@location(0) p: vec3f, @location(3) a: vec4f, @location(4) b: vec4f) -> @builtin(position) vec4f { return C.viewProj * vec4f(instanced(p, a, b, 0.0, vec4f(0.0)), 1.0); }
+@vertex fn vsInstTextured(@location(0) p: vec3f, @location(1) matAux: vec2f, @location(5) color: vec4f, @location(3) a: vec4f, @location(4) b: vec4f) -> @builtin(position) vec4f { return C.viewProj * vec4f(instanced(p, a, b, matAux.x, color), 1.0); }
+
+struct MaskOut { @builtin(position) pos: vec4f, @location(0) uv: vec2f, @location(1) @interpolate(flat) layer: i32 }
+@group(1) @binding(0) var maskTex: texture_2d_array<f32>;
+@group(1) @binding(1) var maskSamp: sampler;
+@group(1) @binding(2) var<uniform> maskCut: vec4f;
+fn maskOut(world: vec3f, matAux: vec2f, uv: vec2f) -> MaskOut {
+  var o: MaskOut;
+  o.pos = C.viewProj * vec4f(world, 1.0);
+  o.uv = uv;
+  o.layer = select(i32(maskCut.y), i32(floor(matAux.y + 0.001)), maskCut.z > 0.5);
+  return o;
+}
+@vertex fn vsMask(@location(0) p: vec3f, @location(1) matAux: vec2f, @location(2) uv: vec2f) -> MaskOut { return maskOut(p, matAux, uv); }
+@vertex fn vsMaskInst(@location(0) p: vec3f, @location(1) matAux: vec2f, @location(2) uv: vec2f, @location(5) color: vec4f, @location(3) a: vec4f, @location(4) b: vec4f) -> MaskOut { return maskOut(instanced(p, a, b, matAux.x, color), matAux, uv); }
+@fragment fn fsMask(o: MaskOut) {
+  if (textureSampleLevel(maskTex, maskSamp, o.uv, o.layer, maskCut.w).a < maskCut.x) { discard; }
+}
+`
+
+/**
+ * Cut-out casters (foliage cards, ferns): alpha-tested against `view` (a 2D-array view; a plain texture's view with
+ * `dimension: "2d-array"` works) at `cutoff`, read at mip `lod` so a far card keeps its coverage. The layer is `layer`,
+ * or the vertex's aux (`matAux.y`, floored) with `layerFromAux`. Needs the kit's 32-byte textured layout.
+ */
+export type SpotShadowMask = { view: GPUTextureView; cutoff: number; layer?: number; layerFromAux?: boolean; lod?: number }
+
+/** Instances of a caster: 8 floats each, (x, y, z, yaw) and (scale xz, scale y, unused, unused). */
+export type SpotShadowInstances = { buffer: GPUBuffer; count: number; first?: number }
+
+/** Geometry to draw into the maps: a vertex buffer with float32x3 position at offset 0, optionally cut-out or instanced. */
+export type SpotShadowCaster = { buffer: GPUBuffer; count: number; stride: number; firstVertex?: number; mask?: SpotShadowMask; instances?: SpotShadowInstances }
+
+const INSTANCE_LAYOUT: GPUVertexBufferLayout = { arrayStride: 32, stepMode: "instance", attributes: [{ shaderLocation: 3, offset: 0, format: "float32x4" }, { shaderLocation: 4, offset: 16, format: "float32x4" }] }
 
 /**
  * GPU side: a depth32float 2D array (one layer per slot), the `SpotShadows` uniform, and a depth-only pass that
@@ -329,22 +405,29 @@ export class SpotShadows {
   private readonly data = new Float32Array(SPOT_SHADOW_UNIFORM_FLOATS)
   private readonly camBuf: GPUBuffer
   private readonly camGroup: GPUBindGroup
+  private readonly camGroupLayout: GPUBindGroupLayout
   private readonly pipelines = new Map<number, GPURenderPipeline>()
   private readonly layout: GPUPipelineLayout
   private readonly module: GPUShaderModule
+  private maskLayout: GPUBindGroupLayout | null = null
+  private maskPipelines: GPURenderPipeline[] = []
+  private maskSampler: GPUSampler | null = null
+  private readonly maskGroups = new WeakMap<SpotShadowMask, GPUBindGroup>()
   /** Layers rendered last frame (telemetry: 0 on most frames once settled). */
   rendered = 0
 
-  constructor(private readonly device: GPUDevice, settings: Partial<SpotShadowSettings> = {}) {
+  /** \`instanceWgsl\`: the casters' instance transform (\`SPOT_SHADOW_INSTANCE_WGSL\` by default). */
+  constructor(private readonly device: GPUDevice, settings: Partial<SpotShadowSettings> = {}, instanceWgsl?: string) {
     this.settings = { ...SPOT_SHADOW_DEFAULTS, ...settings }
     this.picker = new SpotShadowPicker(this.settings.count)
     this.uniform = device.createBuffer({ size: SPOT_SHADOW_UNIFORM_FLOATS * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
     this.sampler = device.createSampler({ compare: "less", magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" })
     this.camBuf = device.createBuffer({ size: 256 * MAX_SPOT_SHADOWS, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
     const camLayout = device.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "uniform", hasDynamicOffset: true, minBindingSize: 64 } }] })
+    this.camGroupLayout = camLayout
     this.camGroup = device.createBindGroup({ layout: camLayout, entries: [{ binding: 0, resource: { buffer: this.camBuf, size: 64 } }] })
     this.layout = device.createPipelineLayout({ bindGroupLayouts: [camLayout] })
-    this.module = device.createShaderModule({ code: depthShader, label: "spot shadow depth" })
+    this.module = device.createShaderModule({ code: spotShadowDepthWgsl(instanceWgsl), label: "spot shadow depth" })
     this.ensureTexture()
   }
 
@@ -358,18 +441,55 @@ export class SpotShadows {
     this.picker.invalidate()
   }
 
-  private pipeline(stride: number): GPURenderPipeline {
-    let p = this.pipelines.get(stride)
+  private pipeline(stride: number, instanced = false): GPURenderPipeline {
+    const key = stride * 2 + Number(instanced)
+    let p = this.pipelines.get(key)
     if (!p) {
+      const textured = instanced && stride === 32
+      const vertex: GPUVertexBufferLayout = { arrayStride: stride, attributes: [{ shaderLocation: 0, offset: 0, format: "float32x3" }, ...(textured ? [{ shaderLocation: 1, offset: 20, format: "float16x2" as const }, { shaderLocation: 5, offset: 16, format: "unorm8x4" as const }] : [])] }
       p = this.device.createRenderPipeline({
         layout: this.layout,
-        vertex: { module: this.module, entryPoint: "vs", buffers: [{ arrayStride: stride, attributes: [{ shaderLocation: 0, offset: 0, format: "float32x3" }] }] },
+        vertex: { module: this.module, entryPoint: textured ? "vsInstTextured" : instanced ? "vsInst" : "vs", buffers: instanced ? [vertex, INSTANCE_LAYOUT] : [vertex] },
         primitive: { topology: "triangle-list", cullMode: "none" },
         depthStencil: { format: "depth32float", depthWriteEnabled: true, depthCompare: "less", depthBias: 1, depthBiasSlopeScale: 1 },
       })
-      this.pipelines.set(stride, p)
+      this.pipelines.set(key, p)
     }
     return p
+  }
+
+  private masked(mask: SpotShadowMask, instanced: boolean): { pipeline: GPURenderPipeline; group: GPUBindGroup } {
+    const d = this.device
+    if (!this.maskLayout) {
+      this.maskLayout = d.createBindGroupLayout({ entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { viewDimension: "2d-array" } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+        { binding: 2, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: {} },
+      ] })
+      this.maskSampler = d.createSampler({ magFilter: "linear", minFilter: "linear", mipmapFilter: "linear", addressModeU: "repeat", addressModeV: "repeat" })
+    }
+    const k = Number(instanced)
+    if (!this.maskPipelines[k]) {
+      const vertex: GPUVertexBufferLayout = { arrayStride: 32, attributes: [
+        { shaderLocation: 0, offset: 0, format: "float32x3" }, { shaderLocation: 1, offset: 20, format: "float16x2" }, { shaderLocation: 2, offset: 24, format: "float32x2" },
+        ...(instanced ? [{ shaderLocation: 5, offset: 16, format: "unorm8x4" as const }] : []),
+      ] }
+      this.maskPipelines[k] = d.createRenderPipeline({
+        layout: d.createPipelineLayout({ bindGroupLayouts: [this.camGroupLayout, this.maskLayout] }),
+        vertex: { module: this.module, entryPoint: instanced ? "vsMaskInst" : "vsMask", buffers: instanced ? [vertex, INSTANCE_LAYOUT] : [vertex] },
+        fragment: { module: this.module, entryPoint: "fsMask", targets: [] },
+        primitive: { topology: "triangle-list", cullMode: "none" },
+        depthStencil: { format: "depth32float", depthWriteEnabled: true, depthCompare: "less", depthBias: 1, depthBiasSlopeScale: 1 },
+      })
+    }
+    let group = this.maskGroups.get(mask)
+    if (!group) {
+      const uniform = d.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
+      d.queue.writeBuffer(uniform, 0, new Float32Array([mask.cutoff, mask.layer ?? 0, mask.layerFromAux ? 1 : 0, mask.lod ?? 2]))
+      group = d.createBindGroup({ layout: this.maskLayout, entries: [{ binding: 0, resource: mask.view }, { binding: 1, resource: this.maskSampler! }, { binding: 2, resource: { buffer: uniform } }] })
+      this.maskGroups.set(mask, group)
+    }
+    return { pipeline: this.maskPipelines[k]!, group }
   }
 
   /** The texture view, sampler and uniform buffer for `Renderer.setSpotShadows`. Changes when the size changes. */
@@ -398,9 +518,16 @@ export class SpotShadows {
       const pass = enc.beginRenderPass({ colorAttachments: [], depthStencilAttachment: { view: this.layers[i]!, depthClearValue: 1, depthLoadOp: "clear", depthStoreOp: "store" } })
       pass.setBindGroup(0, this.camGroup, [i * 256])
       for (const c of casters) {
-        pass.setPipeline(this.pipeline(c.stride))
+        const inst = c.instances
+        if (inst && !inst.count) continue
+        if (c.mask) {
+          const m = this.masked(c.mask, !!inst)
+          pass.setPipeline(m.pipeline)
+          pass.setBindGroup(1, m.group)
+        } else pass.setPipeline(this.pipeline(c.stride, !!inst))
         pass.setVertexBuffer(0, c.buffer)
-        pass.draw(c.count, 1, c.firstVertex ?? 0)
+        if (inst) pass.setVertexBuffer(1, inst.buffer)
+        pass.draw(c.count, inst ? inst.count : 1, c.firstVertex ?? 0, inst?.first ?? 0)
       }
       pass.end()
       this.rendered++

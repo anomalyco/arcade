@@ -41,7 +41,15 @@ export type VolumeLightShader = {
    * HDR alpha alone (fog banks, cloud decks). Without it rgb is added and HDR alpha is multiplied by 1 − a.
    */
   transmittance?: boolean
+  /**
+   * Bind the renderer's spot shadow maps (`Renderer.setSpotShadows`) at bindings 23–25 for `spotShadowVolumeWgsl`, so
+   * the march can shadow a lamp's light in the air (a torch's shafts past trunks). Needs `depth`.
+   */
+  spotShadows?: boolean
 }
+
+/** Volume-slot bindings of the spot shadow maps (`VolumeLightShader.spotShadows`). */
+export const VOLUME_SPOT_SHADOW_BINDINGS = { map: 23, sampler: 24, uniform: 25 } as const
 
 /** Floats in a slot's own uniform (`VolumeInput.params`, binding 21: `array<vec4f, 8>`). */
 export const VOLUME_PARAM_FLOATS = 32
@@ -294,6 +302,8 @@ export type VolumeShared = {
   sampler: GPUSampler
   format: GPUTextureFormat
   compile: (code: string, label: string) => GPUShaderModule
+  /** The spot shadow maps currently bound to the scene (slots with `spotShadows`). */
+  spotShadow?: () => { view: GPUTextureView; sampler: GPUSampler; uniform: GPUBuffer }
 }
 
 /** Per-frame camera state for the depth-reading slots (all unjittered). */
@@ -333,6 +343,9 @@ export class VolumeSlot {
   readonly usesColor: boolean
   private readonly hasFilter: boolean
   private readonly hasLowDepth: boolean
+  private readonly usesSpotShadows: boolean
+  private boundSpot: GPUTextureView | null = null
+  private boundSpotUniform: GPUBuffer | null = null
   private pipes: VolumePipes | null = null
   private readonly filterLayout: GPUBindGroupLayout | null = null
   private filterGroup: GPUBindGroup | null = null
@@ -365,6 +378,7 @@ export class VolumeSlot {
     this.usesColor = !!shader.color
     this.hasFilter = !!shader.filter
     this.hasLowDepth = !!shader.lowDepth
+    this.usesSpotShadows = !!shader.spotShadows && this.usesDepth
     // A transmittance slot's empty texels keep the scene (a = 1).
     this.clearAlpha = shader.transmittance ? 1 : 0
     const entries: GPUBindGroupLayoutEntry[] = [
@@ -385,6 +399,11 @@ export class VolumeSlot {
       entries.push({ binding: VOLUME_PARAMS_BINDING, visibility: S.FRAGMENT, buffer: { type: "uniform" } })
       if (this.usesColor) entries.push({ binding: VOLUME_COLOR_BINDING, visibility: S.FRAGMENT, texture: { sampleType: "unfilterable-float" } })
       if (shader.lowDepth) entries.push({ binding: VOLUME_LOW_DEPTH_BINDING, visibility: S.FRAGMENT, texture: { sampleType: "unfilterable-float" } })
+      if (this.usesSpotShadows) entries.push(
+        { binding: VOLUME_SPOT_SHADOW_BINDINGS.map, visibility: S.FRAGMENT, texture: { sampleType: "depth", viewDimension: "2d-array" } },
+        { binding: VOLUME_SPOT_SHADOW_BINDINGS.sampler, visibility: S.FRAGMENT, sampler: { type: "comparison" } },
+        { binding: VOLUME_SPOT_SHADOW_BINDINGS.uniform, visibility: S.FRAGMENT, buffer: { type: "uniform" } },
+      )
     }
     if (shader.lowDepth) {
       this.lowDepthLayout = d.createBindGroupLayout({
@@ -479,9 +498,12 @@ export class VolumeSlot {
     }
     const depth = view?.depthView ?? null
     const color = this.usesColor ? (view?.colorView ?? null) : null
-    if (!resized && this.marchGroup && depth === this.boundDepth && color === this.boundColor) return
+    const spot = this.usesSpotShadows ? this.shared.spotShadow?.() ?? null : null
+    if (!resized && this.marchGroup && depth === this.boundDepth && color === this.boundColor && (spot?.view ?? null) === this.boundSpot && (spot?.uniform ?? null) === this.boundSpotUniform) return
     this.boundDepth = depth
     this.boundColor = color
+    this.boundSpot = spot?.view ?? null
+    this.boundSpotUniform = spot?.uniform ?? null
     const sh = this.shared
     const entries: GPUBindGroupEntry[] = [
       { binding: 0, resource: { buffer: sh.frame } },
@@ -499,6 +521,14 @@ export class VolumeSlot {
       )
       if (color) entries.push({ binding: VOLUME_COLOR_BINDING, resource: color })
       if (this.lowDepthTex) entries.push({ binding: VOLUME_LOW_DEPTH_BINDING, resource: this.lowDepthTex.createView() })
+      if (this.usesSpotShadows) {
+        if (!spot) throw new Error("Volume slot with spotShadows needs the renderer's spot shadow maps")
+        entries.push(
+          { binding: VOLUME_SPOT_SHADOW_BINDINGS.map, resource: spot.view },
+          { binding: VOLUME_SPOT_SHADOW_BINDINGS.sampler, resource: spot.sampler },
+          { binding: VOLUME_SPOT_SHADOW_BINDINGS.uniform, resource: { buffer: spot.uniform } },
+        )
+      }
     }
     if (this.hasLowDepth) {
       this.lowDepthGroup = d.createBindGroup({
