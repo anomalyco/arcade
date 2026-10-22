@@ -643,7 +643,22 @@ tr.me td {
 }
 
 .arcade-shell .as-card {
-  gap: 10px;
+  gap: 8px;
+}
+
+/* Wide-tracked monospace wraps "Play with friends" at the shell's size: one line keeps the title card inside 720p. */
+.arcade-shell .as-choices .as-btn {
+  font-size: 15px;
+  letter-spacing: 0.04em;
+  padding: 12px 8px;
+}
+
+.arcade-shell .as-big {
+  padding: 12px;
+}
+
+.picks .modepick button {
+  padding: 5px 0;
 }
 
 .arcade-shell .as-title {
