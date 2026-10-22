@@ -12,6 +12,7 @@ export function browserBudget() {
   const launching = new Set<Promise<Browser | BrowserContext>>()
   let disposed = false
   let closing: Promise<void> | undefined
+  let finishing: Promise<void> | undefined
   let expired = false
 
   async function close() {
@@ -84,10 +85,8 @@ export function browserBudget() {
     },
   })
 
-  return {
-    chromium,
-    exit,
-    async [Symbol.asyncDispose]() {
+  function finish(): Promise<void> {
+    return finishing ??= (async () => {
       const kill = setTimeout(() => {
         console.error("[browser-budget] Chromium close stalled; terminating")
         process.exit(expired ? 124 : 1)
@@ -100,6 +99,15 @@ export function browserBudget() {
         await watchdog.terminate()
         process.off("SIGUSR2", expire)
       }
-    },
+    })()
+  }
+
+  return {
+    chromium,
+    exit,
+    // Close all browsers and retire the deadline before browser-free encoding.
+    // This is final: the disposed budget cannot launch again.
+    finish,
+    [Symbol.asyncDispose]: finish,
   }
 }

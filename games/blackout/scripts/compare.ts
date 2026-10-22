@@ -2,7 +2,7 @@
 // Usage:
 //   bun scripts/compare.ts --phase=before
 //   bun scripts/compare.ts --phase=after
-import { type Page } from "playwright-core"
+import { chromium as playwright, type Page } from "playwright-core"
 import { browserBudget } from "../../../scripts/browser-budget"
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
@@ -110,7 +110,7 @@ export function findChromeExecutable(): string | undefined {
         .map((n) => join(cache, n, "chrome-headless-shell-mac-arm64/chrome-headless-shell"))
     : []
   const candidates = [
-    chromium.executablePath(),
+    playwright.executablePath(),
     ...headlessShells,
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
     "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",

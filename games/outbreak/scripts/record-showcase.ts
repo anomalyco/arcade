@@ -6,9 +6,6 @@ import { browserBudget } from "../../../scripts/browser-budget"
 import { TICK_DT } from "../shared/clock"
 import { LocalSession } from "../shared/session"
 
-await using budget = browserBudget()
-const { chromium } = budget
-
 const game = resolve(import.meta.dir, "..")
 const artifactDir = "/Users/kit/code/home/artifacts/2026-10-14-zombie-ai"
 mkdirSync(artifactDir, { recursive: true })
@@ -87,6 +84,8 @@ const chrome = readdirSync(cache)
   .find(existsSync)
 assert(chrome, "Install Chromium before the Metal proof")
 
+await using budget = browserBudget()
+const { chromium } = budget
 const browser = await chromium.launch({
   executablePath: chrome,
   headless: true,
@@ -120,6 +119,8 @@ async function encodeClip(name: string, framesDir: string) {
   console.log(`Encoded ${outMp4}`)
 }
 
+const clips: { name: string; framesDir: string }[] = []
+
 async function recordScenario(
   page: Page,
   name: string,
@@ -143,7 +144,7 @@ async function recordScenario(
       await page.screenshot({ path: resolve(artifactDir, `${name}-still.jpg`), type: "jpeg", quality: 92 })
     }
   }
-  await encodeClip(name, framesDir)
+  clips.push({ name, framesDir })
 }
 
 try {
@@ -377,8 +378,10 @@ try {
   )
 
   assert.deepEqual(errors, [])
-  console.log(`All 5 showcase videos and stills recorded to ${artifactDir}`)
 } finally {
-  await browser.close()
+  await budget.finish()
   fixture.stop(true)
 }
+
+for (const { name, framesDir } of clips) await encodeClip(name, framesDir)
+console.log(`All 5 showcase videos and stills recorded to ${artifactDir}`)

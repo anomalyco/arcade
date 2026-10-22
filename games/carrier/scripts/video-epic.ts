@@ -30,9 +30,6 @@ import { browserBudget } from "../../../scripts/browser-budget"
 import { WEATHER_PRESETS, mixWeather, makeWeather, type Weather } from "../shared/weather"
 import { phaseOfHour } from "../shared/daycycle"
 
-await using budget = browserBudget()
-const { chromium } = budget
-
 const args = process.argv.slice(2)
 const opt = (k: string, d: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d
 const root = resolve(import.meta.dir, "..")
@@ -478,6 +475,8 @@ import { terrainHeight } from ${JSON.stringify(join(root, "shared/islands.ts"))}
 const helper = await Bun.build({ entrypoints: [helperEntry], target: "browser", format: "iife" })
 const helperJs = await helper.outputs[0]!.text()
 
+await using budget = browserBudget()
+const { chromium } = budget
 const browser = await chromium.launch({
   executablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   headless: true,
@@ -1131,11 +1130,7 @@ if (opt("encode", "") !== "1") {
   }
 }
 
-if (enc) {
-  enc.stdin!.end()
-  if ((await encDone!) !== 0) throw new Error("ffmpeg failed")
-  console.log(`master: ${mid} (${((Date.now() - t0) / 1000).toFixed(0)} s)`)
-}
+if (enc) enc.stdin!.end()
 
 // Audio: finish the offline render, join the shots' sample ranges (short fades at the cuts), master it.
 const rawAudio = join(out, "epic-audio.f32")
@@ -1279,6 +1274,11 @@ async function finish(mid: string): Promise<void> {
   }
   const title = await card(`<div class="t">CARRIER</div>`, "title.png")
   const url = await card(`<div class="u">ANOMA.LY/ARCADE/CARRIER</div>`, "url.png")
+  await budget.finish()
+  if (enc) {
+    if ((await encDone!) !== 0) throw new Error("ffmpeg failed")
+    console.log(`master: ${mid} (${((Date.now() - t0) / 1000).toFixed(0)} s)`)
+  }
   const wav = withAudio ? master() : null
   const final = join(out, "epic.mp4")
   const kbps = Number(opt("kbps", "11400"))
@@ -1295,6 +1295,6 @@ async function finish(mid: string): Promise<void> {
 }
 
 if (logs.length) console.log(`console:\n${[...new Set(logs)].slice(0, 30).join("\n")}`)
-await browser.close()
+await budget.finish()
 server.stop()
 rmSync(helperEntry, { force: true })

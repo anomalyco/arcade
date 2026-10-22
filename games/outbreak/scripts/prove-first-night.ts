@@ -422,16 +422,16 @@ const simPayload = {
   solo: { before: soloBefore, after: soloAfter },
   coop4p: { before: coopBefore, after: coopAfter },
 }
-writeFileSync(resolve(out, "pacing-10m-sim.json"), JSON.stringify(simPayload, null, 2) + "\n")
+writeFileSync(resolve(out, "pacing-10m-proof.json"), JSON.stringify(simPayload, null, 2) + "\n")
 console.log(JSON.stringify(simPayload, null, 2))
 
 if (process.argv.includes("--capture")) {
 const { browserBudget } = await import("../../../scripts/browser-budget")
-await using budget = browserBudget()
-const { chromium } = budget
 // Optional headless Metal WebGPU captures.
 const build = Bun.spawnSync(["bun", "run", "build"], { cwd: game, stdout: "inherit", stderr: "inherit" })
 assert.equal(build.exitCode, 0)
+await using budget = browserBudget()
+const { chromium } = budget
 
 const root = resolve(game, "dist/arcade/outbreak")
 const fixture = Bun.serve({

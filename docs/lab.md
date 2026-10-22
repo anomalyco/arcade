@@ -14,6 +14,10 @@ Every Chromium proof, capture and Lab script owns one `browserBudget()` from
 the scope's `finally`: the shared disposer closes every browser, including browsers opened concurrently
 or before an exception. Use `await budget.exit(code)` for an early process exit after creating the scope.
 Imported launcher helpers receive their caller's budget rather than creating a fresh deadline per launch.
+For long video jobs, build before creating the budget. Once frames, offline browser audio and title-card
+stills are captured, call `await budget.finish()` to close every browser and retire the deadline before
+FFmpeg encoding/mastering. Finishing is idempotent and permanently prevents further launches; never pause
+the deadline with an open browser. Streaming an encoder while capturing still counts as browser time.
 
 The budget is **180 seconds for the entire scope**, printed at start. A deadline closes Chromium and exits
 124 even if a page evaluation or the script's own promise never resolves. Shutdown gets at most three
