@@ -726,6 +726,10 @@ type Targets = { width: number; height: number; source: GPUTexture; sourceView: 
 /** Camera filters as a renderer final pass. Construct once; `active` follows `settings.mode`. */
 export class CameraFilter implements FinalPass {
   readonly settings: CameraFilterSettings
+  /** Presentation fade after the filter and its overlay; history and sensor exposure stay unfaded. */
+  fade = 0
+  /** Additional camera movement (phone shake and body rig), for authored cameras and reduced motion. */
+  motion = 1
   private targets: Targets | null = null
   private state: [GPUTexture, GPUTexture] | null = null
   private stateViews: [GPUTextureView, GPUTextureView] | null = null
@@ -841,6 +845,8 @@ export class CameraFilter implements FinalPass {
       timestampWrites: timing ? { querySet: timing.query, ...begin(), endOfPassWriteIndex: 1 } : undefined,
     })
     main.setPipeline(this.pipes[sensor ? "phone" : mode]!)
+    const visible = 1 - Math.max(0, Math.min(1, this.fade))
+    main.setBlendConstant([visible, visible, visible, 1])
     main.setBindGroup(0, this.groups!.main[read]!)
     main.draw(3)
     main.end()
@@ -946,7 +952,10 @@ export class CameraFilter implements FinalPass {
       const module = d.createShaderModule({ label: `camera filter ${key}`, code })
       this.pipes[key] = d.createRenderPipeline({ label: `camera filter ${key}`, layout: d.createPipelineLayout({ bindGroupLayouts: [layout] }), vertex: { module, entryPoint: "vs" }, fragment: { module, entryPoint: entry, targets }, primitive: { topology: "triangle-list" } })
     }
-    const targets = [{ format: this.format }, { format: this.format }]
+    const targets: GPUColorTargetState[] = [
+      { format: this.format, blend: { color: { srcFactor: "constant", dstFactor: "zero" }, alpha: { srcFactor: "one", dstFactor: "zero" } } },
+      { format: this.format },
+    ]
     if (mode === "phone" || mode === "body") {
       pipe("state", CAMERA_FILTER_WGSL.state, "fs_state", this.stateLayout!, [{ format: "rgba32float" }])
       pipe("phone", CAMERA_FILTER_WGSL.phone, "fs_phone", this.mainLayout, targets)
@@ -1063,7 +1072,7 @@ export class CameraFilter implements FinalPass {
     const seed = this.seed
     const body = mode === "body"
     const wave = (a: number, b: number, c: number, o: number) => Math.sin(time * a + o) * 0.6 + Math.sin(time * b + o * 1.7) * 0.3 + Math.sin(time * c + o * 2.3) * 0.1
-    const shake = mode === "phone" ? s.phoneShake * k : 0
+    const shake = mode === "phone" ? s.phoneShake * k * Math.max(0, Math.min(1, this.motion)) : 0
     const amp = 4 * shake * (height / 1080)
     const crop = mode === "phone" && s.phoneVertical ? Math.min(1, (height * 9) / 16 / width) : 1
     const x0 = 0.5 - crop / 2, x1 = 0.5 + crop / 2
@@ -1115,7 +1124,7 @@ export function attachCameraFilter(renderer: Renderer, panel: LabPanel, device: 
     const previous = bodycam.rig
     bodycam.rig = (camera, dt, aspect) => {
       previous?.(camera, dt, aspect)
-      rig.step(camera, dt, aspect, { lens: s.bodyLens, mount: s.bodyMount, sway: s.bodySway, lag: s.bodyLag, bob: s.bodyBob }, s.strength, s.mode === "bodycam")
+      rig.step(camera, dt, aspect, { lens: s.bodyLens, mount: s.bodyMount, sway: s.bodySway, lag: s.bodyLag, bob: s.bodyBob }, s.strength * Math.max(0, Math.min(1, filter.motion)), s.mode === "bodycam")
     }
   }
   Object.assign(globalThis, { cameraFilter: filter })

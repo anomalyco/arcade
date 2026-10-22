@@ -1,22 +1,23 @@
 import { postShader } from "@arcade/kit/gpu/shaders"
+import { withCinematicPost } from "../cinema-post"
 
 /** Existing kit bloom/ACES/grade/grain/IGN, with three live lens controls in the grade's spare tuple. */
-export const lensPost=postShader(true,false,{
+export const lensPost=withCinematicPost(postShader(true,false,{
   chromatic:0,bloom:.22,grain:.006,vignette:.3,bloomGate:{cap:.06,hot:.7},
   composite:/* wgsl */ `
   let G=grade.frame;let on=grade.look.w>0.5;
   let uv=o.uv;let fromC=uv-.5;let texel=1.0/vec2f(textureDimensions(src));
-  let centre=clean(textureSample(src,samp,uv)).rgb;
+   let centre=cinemaShutter(uv);
   var hdr=centre;
   if(on){
     let edge=smoothstep(.15,.68,length(fromC));
     let shift=fromC*edge*grade.look.z*texel*2.0;
-    let red=clean(textureSampleLevel(src,samp,uv+shift,0)).r;
-    let blue=clean(textureSampleLevel(src,samp,uv-shift,0)).b;
+     let red=cinemaShutter(uv+shift).r;
+     let blue=cinemaShutter(uv-shift).b;
     let hot=smoothstep(.5,2.0,max(centre.r,max(centre.g,centre.b))*G.w);
     hdr=mix(centre,vec3f(red,centre.g,blue),hot);
     let blur=texel*grade.look.y*edge;
-    let soft=(clean(textureSampleLevel(src,samp,uv+blur,0)).rgb+clean(textureSampleLevel(src,samp,uv-blur,0)).rgb)*.5;
+     let soft=(cinemaShutter(uv+blur)+cinemaShutter(uv-blur))*.5;
     hdr=mix(hdr,soft,edge*.25);
   }
   hdr+=textureSample(bloomTex,samp,uv).rgb*.22;
@@ -35,4 +36,4 @@ export const lensPost=postShader(true,false,{
   c+=(ign-.5)/255.0*step(.001,l);
   return vec4f(c,1);
   `,
-})
+}))

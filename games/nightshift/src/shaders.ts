@@ -4,6 +4,7 @@ import { postShader, type SceneHooks } from "@arcade/kit/gpu/shaders"
 import { contactShadowVolume } from "@arcade/kit/gpu/contact-shadows"
 import { officeUniform } from "./office-uniform"
 import { blindCookieWgsl } from "./blind-cookie"
+import { withCinematicPost } from "./cinema-post"
 
 const uniform = officeUniform
 const ambient = "vec3f(0.27,0.65,0.88)*O.look.x*(0.4+0.6*max(n.y,0.0))"
@@ -105,14 +106,14 @@ fn terminalAt(uv:vec2f,version:f32)->vec3f {
       let ends=smoothstep(.35,.46,abs(o.world.z));
       if(abs(o.world.x)<.5&&O.polish.x>.5){col+=vec3f(1.0,.28,.07)*ends*O.polish.y*(1.0-stutter);}
     }
-    if(kind==8) {
+    if(kind==8||kind==14) {
       let uv=(o.world.xy-vec2f(-0.74,1.18))/vec2f(.31,.22)+.5;
       col=terminalAt(uv,0.0)+col*.12;
     }
-    if(kind==14&&O.polish.x>.5){col=terminalAt((o.world.xy-vec2f(4.1,1.118))/vec2f(.366,.266)+.5,O.changes.w)*.22;}
     if(kind==9) { col=vec3f(3.5,0.11,0.025)*O.lamps.y; }
     if(kind==11) { col+=vec3f(1.0,0.38,0.10)*O.lamps.z*(0.45+0.55*officeNoise(o.world*3.0))*(1.0-0.8*smoothstep(1.2,2.55,o.world.y)); }
     if(kind==12) { col+=vec3f(1.0,0.55,0.18)*O.lamps.w; }
+    if(kind==13) { col=vec3f(1.8,0.75,0.15); }
     col=fogApply(col,F.cam.xyz,o.world);
   `,
 }
@@ -125,6 +126,6 @@ export const hooks: SceneHooks = {...physical, lightAttenuation: physical.lightA
 export const propHooks: SceneHooks = {...hooks,
   fragmentStart: hooks.fragmentStart!.replace("normalize(o.normal)","texNormal"),
   material: hooks.material+"\n pbrRough=rough;pbrMetal=metal;",
-  surface: hooks.surface!.replace("(o.world.xy-vec2f(-0.74,1.18))/vec2f(.31,.22)+.5","o.uv"),
+  surface: hooks.surface!.replace("col=terminalAt(uv,0.0)+col*.12;","col=texBase.rgb*.8+col*.04;"),
 }
-export const post=postShader(false,false,{chromatic:0,bloom:0.22,grain:0.006,vignette:0.3,bloomGate:{cap:0.06,hot:0.7},shadowLiftColor:[0.0001,0.0004,0.0005],shadowTint:[0.9,1.0,1.03],highlightTint:[1.04,1,0.91],saturation:0.95})
+export const post=withCinematicPost(postShader(false,false,{chromatic:0,bloom:0.22,grain:0.006,vignette:0.3,bloomGate:{cap:0.06,hot:0.7},shadowLiftColor:[0.0001,0.0004,0.0005],shadowTint:[0.9,1.0,1.03],highlightTint:[1.04,1,0.91],saturation:0.95}))

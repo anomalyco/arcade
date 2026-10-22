@@ -62,12 +62,12 @@ function screenCoordinates(p:TexturedPrimitive) {
   for(let i=0;i<v.length;i+=8){xs.push(v[i]);ys.push(v[i+1])}
   const left=Math.min(...xs),bottom=Math.min(...ys),width=Math.max(...xs)-left,height=Math.max(...ys)-bottom
   // The authored glass already supplies curvature; preserve its topology.
-  for(let i=0;i<v.length;i+=8){v[i+6]=(v[i]-left)/width;v[i+7]=(v[i+1]-bottom)/height}
+  for(let i=0;i<v.length;i+=8){v[i+6]=(v[i]-left)/width;v[i+7]=1-(v[i+1]-bottom)/height}
   p.roughness=.17
 }
 
 /** Licensed static props use the shared textured/physical-light/shadow path. */
-export async function officeProps(renderer:Renderer) {
+export async function officeProps(renderer:Renderer,terminal:GPUTexture) {
   let cradle={position:[...CRADLE],roll:0,supports:{front:0,back:0},gap:0}
   const indicator=[PHONE_INDICATOR[0],0,PHONE_INDICATOR[1]]
   const assets=await Promise.all(PROP_DEFINITIONS.map(async def=>{
@@ -88,7 +88,7 @@ export async function officeProps(renderer:Renderer) {
         n[j]=Math.round((c*nx+s*nz)/len*127);n[j+1]=Math.round(ny/len*127);n[j+2]=Math.round((-s*nx+c*nz)/len*127)
         if(screen)half[i*2+11]=0x4800 // aux = half-float 8, the CRT recipe.
       }
-      if(screen)screenCoordinates(p)
+      if(screen){screenCoordinates(p);p.base=terminal;p.color=[1,1,1,1];p.normalScale=0}
     }
     if(def.kind==="phone") {
       cradle=cradleOn(asset.primitives)

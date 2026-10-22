@@ -17,7 +17,7 @@ export class Continuity {
   private next=0
   private sequence=0
   private seed=0
-  step(time:number,vp:Float32Array,afterCall:boolean,s:PolishSettings,chairBounds?:Bounds) {
+  step(time:number,vp:Float32Array,afterCall:boolean,s:PolishSettings,chairBounds?:Bounds,allowChanges=true) {
     if(s.continuitySeed!==this.seed){this.seed=s.continuitySeed;this.sequence=0;this.next=time+s.changeInterval;this.events.length=0;for(const t of this.targets){t.value=0;t.lastSeen=time}}
     if(chairBounds)this.targets[0].bounds=chairBounds
     extractFrustumPlanes(vp,0,this.planes)
@@ -25,6 +25,7 @@ export class Continuity {
     for(const t of this.targets){t.visible=aabbInFrustum(this.planes,...t.bounds);if(t.visible)t.lastSeen=time}
     if(!s.polish||!s.continuity){for(const t of this.targets)t.value=0;this.next=time+s.changeInterval;return}
     const interval=afterCall?s.afterCallInterval:s.changeInterval
+    if(!allowChanges){this.next=time+interval;return}
     this.next=Math.min(this.next,time+interval)
     if(time<this.next)return
     const start=Math.floor(hash01(this.seed,++this.sequence)*4)

@@ -1,6 +1,7 @@
 import { Mesh, MAT, packVerts, hex, type Rgb } from "@arcade/kit/gpu/mesh"
 import type { Rect } from "@arcade/kit/sim/geom"
 import type { MovingMesh } from "./polish/moving-mesh"
+import { buildElevator } from "./elevator"
 
 // Metres. Surface IDs are carried in aux; the scene owns the material recipes.
 export const SURFACE = { plastic: 0, fabric: 1, carpet: 2, laminate: 3, ceiling: 4, metal: 5, paper: 6, tube: 7, crt: 8, led: 9, wood: 10 }
@@ -19,6 +20,8 @@ export const chairs: ChairRect[] = []
 export const movingMeshes:MovingMesh[]=[]
 let moveEnabled=true
 function moving(m:Mesh,first:number,kind:MovingMesh["kind"],x:number,z:number){if(moveEnabled)movingMeshes.push({kind,x,z,data:packVerts(m.v.splice(first))})}
+export const COLLEAGUES=[-2,1,4].flatMap(z=>[-1.95,2.4].map(x=>({x,z:z-.35})))
+export const CONTINUITY_MONITOR=COLLEAGUES.find(c=>c.x>0&&c.z<0)!
 type Range={first:number;count:number}
 export const stackContacts:{id:string;support:Range;prop:Range}[]=[]
 function range(m:Mesh,first:number):Range{return {first:first/11,count:(m.v.length-first)/11}}
@@ -180,7 +183,7 @@ function crt(m:Mesh,x:number,y:number,z:number,on:boolean) {
   box(m,x,y+0.095,z-0.03,0.44,0.05,0.35,edge,0,0.012)
   box(m,x,y+0.145,z-0.08,0.48,0.37,0.4,beige,0,0.035)
   box(m,x,y+0.167,z+0.131,0.417,0.312,0.018,hex(0x343f35),0,0.022)
-  box(m,x,y+0.19,z+0.144,0.366,0.266,0.019,on?hex(0x65b48c):hex(0x19241f),x===4.1&&z===-2.55?14:on?8:0,0.021)
+  box(m,x,y+0.19,z+0.144,0.366,0.266,0.019,on?hex(0x65b48c):hex(0x19241f),on?8:0,0.021)
   box(m,x+0.19,y+0.014,z+0.261,0.009,0.006,0.004,on?hex(0x46d67b):dark,on?8:0)
   box(m,x-0.08,y+0.027,z+0.26,0.22,0.008,0.008,dark)
   for(let i=0;i<10;i++) box(m,x+0.244,y+0.22+i*0.018,z-0.12,0.004,0.006,0.19,dark)
@@ -284,16 +287,19 @@ export function buildWorld(movable=true) {
   for(let x=-6;x<=6;x+=0.6) box(m,x,2.928,0,0.014,0.025,18,hex(0x5b6159),5)
   for(let z=-9;z<=9;z+=1.2) box(m,0,2.928,z,12,0.025,0.014,hex(0x5b6159),5)
   for(const x of [-4,6]) {box(m,x,0,0,0.18,3,18,hex(0x6b766c),0);walls.push([x-0.1,-9,x+0.1,9])}
-  for(const z of [-9,9]) {box(m,0,0,z,12,3,0.18,hex(0x6b766c),0);walls.push([-6,z-0.1,6,z+0.1])}
+  box(m,0,0,-9,12,3,.18,hex(0x6b766c));walls.push([-6,-9.1,6,-8.9])
+  for(const [a,b] of [[-6,-1],[1,6]]){box(m,(a+b)/2,0,9,b-a,3,.18,hex(0x6b766c));walls.push([a,8.9,b,9.1])}
+  box(m,0,2.65,9,2,.35,.18,hex(0x6b766c));buildElevator(m,walls)
   // Blinds: thin metal blades, ladder cords and a deep reveal, on the left exterior wall.
   for(const z of [4,0,-4,-7])windowBlinds(m,z)
   // Repeated dark work stations frame one uninterrupted centre aisle.
   for(const z of [4,1,-2]) for(const side of [-1,1]) {
-    partition(m,side===-1?-2.4:3.45,z-0.9,side===-1?(z===4?3.2:3.0):(z===4?5.3:4.7),0.09,z===4?1.75:1.47)
-    if(z!==4) partition(m,side*1.18,z,0.09,1.8)
+    partition(m,side===-1?-2.4:3.45,z+.1,side===-1?3.0:4.7,.09,.95)
+    if(z!==4) partition(m,side*1.18,z,.09,1.8,1.05)
     desk(m,side===-1?-2.6:3.4,z-0.4,side===-1?2.0:2.6);binders(m,side===-1?-2.6:3.4,0.8,z-0.55,6)
-    crt(m,side===-1?-3.15:4.1,0.795,z-0.55,false)
-    if(side===1) chair(m,3.3,z+0.45)
+    const x=side===-1?-1.95:2.4,first=m.v.length
+    crt(m,x,.795,z-.35,false);rotate(m,first,x,z-.35,Math.PI)
+    chair(m,x+side*.35,z-1.3)
   }
   foregroundStorage(m)
   for(const x of [-3.2,3.2]) box(m,x,0,-5.8,0.36,2.94,0.36,hex(0x67766c),0,0.012)
