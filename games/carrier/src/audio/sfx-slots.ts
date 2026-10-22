@@ -77,3 +77,48 @@ const RAW: readonly (readonly [string, SlotCategory, string, boolean, number, nu
 export const SLOTS: readonly Slot[] = RAW.map(([id, category, label, loop, count, dur, prompt]) => ({ id, category, label, loop, count, dur, prompt }))
 export const SLOT_BY_ID: ReadonlyMap<string, Slot> = new Map(SLOTS.map((s) => [s.id, s]))
 export const CATEGORIES: readonly SlotCategory[] = ["carrier", "gun", "missile", "bomb", "boom", "ship", "sea", "ui", "hooks"]
+
+/** Each slot's id in the shared sound library (`@arcade/kit/audio/library`), which reuses the takes Carrier plays in place,
+ *  so the Lab's Sound library and other games can audition and play them. tests/sfx-library.test.ts keeps both in step:
+ *  after changing a shipped pick, update the slot's takes in the library and run `bun scripts/sfx/library.ts build`. */
+export const SLOT_LIBRARY_ID: Readonly<Record<string, string>> = {
+  trap: "aircraft.carrier.trap",
+  "impact-water": "impact.bullet.water",
+  "impact-metal": "impact.cannon.metal",
+  "missile-launch": "missile.launch",
+  "missile-motor": "missile.motor",
+  flares: "missile.flares",
+  "bomb-release": "bomb.release",
+  "bomb-whistle": "bomb.whistle",
+  "water-geyser": "explosion.geyser",
+  "boom-air": "explosion.jet.air",
+  "boom-missile": "explosion.missile.air",
+  "boom-bomb-land": "explosion.bomb.land",
+  "boom-bomb-water": "explosion.bomb.water",
+  "boom-crash-sea": "explosion.crash.sea",
+  "boom-crash-land": "explosion.crash.land",
+  "boom-far": "explosion.far",
+  "carrier-bed": "ambience.carrier.deck",
+  "ship-horn": "ship.horn",
+  "hull-slam": "ship.hull.slam",
+  "hull-creak": "ship.hull.creak",
+  "deck-fire": "ship.fire",
+  sinking: "ship.sinking",
+  "ocean-calm": "ambience.ocean.calm",
+  "ocean-rough": "ambience.ocean.rough",
+  "ocean-storm": "ambience.ocean.storm",
+  "wind-light": "ambience.wind.light",
+  "wind-gale": "ambience.wind.gale",
+  "rain-light": "ambience.rain.sea.light",
+  "rain-heavy": "ambience.rain.sea.heavy",
+  "rain-canopy": "ambience.rain.canopy",
+  "thunder-near": "weather.thunder.sea.near",
+  "thunder-far": "weather.thunder.sea.far",
+  "lightning-crack": "weather.lightning.crack",
+  "ui-click": "ui.tick",
+  "ui-kill": "ui.kill-confirm",
+  ciws: "gun.ciws",
+  "sam-launch": "missile.sam.launch",
+  "naval-gun": "gun.naval.five-inch",
+  "boat-engine": "vehicle.boat.engine",
+}

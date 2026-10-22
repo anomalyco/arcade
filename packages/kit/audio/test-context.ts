@@ -357,6 +357,53 @@ class DynamicsCompressorNodeImpl extends BaseNode {
   }
 }
 
+class DelayNodeImpl extends BaseNode {
+  readonly delayTime = new DeterministicAudioParam(0)
+  private ringL: Float32Array
+  private ringR: Float32Array
+  private writePtr = 0
+
+  constructor(maxDelaySeconds: number) {
+    super()
+    this.ringL = new Float32Array(Math.ceil(48000 * maxDelaySeconds) + 1)
+    this.ringR = new Float32Array(this.ringL.length)
+  }
+
+  computeBlock(startSample: number, count: number, sr: number, outL: Float32Array, outR: Float32Array): void {
+    const [inL, inR] = this.sumInputs(startSample, count, sr)
+    const n = this.ringL.length
+    for (let i = 0; i < count; i++) {
+      const d = Math.min(n - 1, Math.round(this.delayTime.sampleAt((startSample + i) / sr) * sr))
+      const w = this.writePtr
+      this.ringL[w] = inL[i]!
+      this.ringR[w] = inR[i]!
+      outL[i] = this.ringL[(w - d + n) % n]!
+      outR[i] = this.ringR[(w - d + n) % n]!
+      this.writePtr = (w + 1) % n
+    }
+  }
+}
+
+class WaveShaperNodeImpl extends BaseNode {
+  curve: Float32Array | null = null
+  oversample: OverSampleType = "none"
+
+  computeBlock(startSample: number, count: number, sr: number, outL: Float32Array, outR: Float32Array): void {
+    const [inL, inR] = this.sumInputs(startSample, count, sr)
+    const c = this.curve
+    const shape = (x: number) => {
+      if (!c || c.length < 2) return x
+      const pos = ((clamp(x, -1, 1) + 1) / 2) * (c.length - 1)
+      const i = Math.min(c.length - 2, Math.floor(pos))
+      return c[i]! + (c[i + 1]! - c[i]!) * (pos - i)
+    }
+    for (let i = 0; i < count; i++) {
+      outL[i] = shape(inL[i]!)
+      outR[i] = shape(inR[i]!)
+    }
+  }
+}
+
 class PeriodicWaveImpl {
   constructor(
     readonly real: Float32Array,
@@ -532,6 +579,14 @@ export class DeterministicOfflineAudioContext {
 
   createDynamicsCompressor(): DynamicsCompressorNode {
     return new DynamicsCompressorNodeImpl() as unknown as DynamicsCompressorNode
+  }
+
+  createDelay(maxDelaySeconds = 1): DelayNode {
+    return new DelayNodeImpl(maxDelaySeconds) as unknown as DelayNode
+  }
+
+  createWaveShaper(): WaveShaperNode {
+    return new WaveShaperNodeImpl() as unknown as WaveShaperNode
   }
 
   createOscillator(): OscillatorNode {

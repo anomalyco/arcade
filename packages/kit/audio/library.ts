@@ -13,6 +13,7 @@ export type SfxGroup =
   | "gun" | "melee" | "foot" | "door" | "window" | "glass" | "barricade" | "search" | "pickup" | "flashlight"
   | "zombie" | "body" | "ambience" | "ui" | "impact" | "craft" | "bench" | "item" | "pack" | "lure" | "generator" | "radio" | "vehicle"
   | "flare" | "dog" | "creature" | "crowd" | "cooking" | "bow" | "weather"
+  | "aircraft" | "missile" | "bomb" | "explosion" | "ship"
 
 export type SfxSurface = "concrete" | "grass" | "wood"
 
@@ -160,6 +161,30 @@ const CRAFT: Record<CraftKind, { label: string; loop: string; done: string }> = 
     done: `Finishing a spiked club: one last heavy hammer blow driving a nail home into wood, ringing briefly. Short. ${NO_SPEECH}`,
   },
 }
+
+
+/** Carrier's recorded slots (`games/carrier/src/audio/sfx-slots.ts`) as library ids, reusing in place the takes Carrier
+ *  plays with its shipped picks (`public/sfx/picks.json`: the pick, or a pooled slot's whole pool). Carrier keeps its own
+ *  spatial chain (`sfx-bank.ts`); the library entries let the Lab and other games audition and play the same files.
+ *  `games/carrier/tests/sfx-library.test.ts` keeps the two in step. */
+const CARRIER = ["carrier"] as const
+const carrierTakes = (
+  id: string, label: string, group: SfxGroup, bus: MixCategory, slot: string, takes: readonly number[],
+  o: { target: number; loop?: boolean; range: { ref: number; max: number }; wet: number; durationRange: readonly [number, number]; cooldown?: number },
+): SfxSpec => ({
+  id, label, group, bus, variants: takes.length, ...(o.loop ? { loop: true } : {}), target: o.target, gain: 1,
+  pitchJitter: o.loop ? 0 : 0.02, gainJitter: o.loop ? 0 : 0.05, ...(o.cooldown ? { cooldown: o.cooldown } : {}),
+  range: o.range, wet: o.wet, usedBy: CARRIER, durationRange: o.durationRange,
+  reuse: takes.map(t => ({
+    path: `games/carrier/public/sfx/v3/${slot}-${t}.ogg`,
+    license: "ElevenLabs commercial sound-generation license (Anomaly)",
+    provenance: `Carrier's "${slot}" take ${t} (eleven_text_to_sound_v2, games/carrier/scripts/sfx-cinematic.ts)`,
+  })),
+})
+const ALL4 = [1, 2, 3, 4] as const
+const near = { ref: 20, max: 400 }
+const far = { ref: 60, max: 3000 }
+const bed = { ref: 0, max: 0 }
 
 export const SFX_SPECS: readonly SfxSpec[] = [
   // Weapons
@@ -758,6 +783,46 @@ export const SFX_SPECS: readonly SfxSpec[] = [
     cooldown: 0.05, range: { ref: 0, max: 0 }, wet: 0, usedBy: ["carrier", "outbreak"], durationRange: [0.03, 1],
     reuse: [{ path: "games/carrier/public/sfx/v3/ui-click-1.ogg", license: "ElevenLabs commercial sound-generation license (Anomaly)", provenance: "Carrier's picked interface click take (eleven_text_to_sound_v2)" }],
   },
+
+  // Carrier: carrier ops, weapons, explosions, ships, sea and weather (see `carrierTakes`)
+  carrierTakes("aircraft.carrier.trap", "Arrested landing", "aircraft", "foley", "trap", [4], { target: -14, range: near, wet: 0.25, durationRange: [4, 5.2] }),
+  carrierTakes("impact.bullet.water", "Rounds into water", "impact", "impact", "impact-water", [1, 2, 3], { target: -16, range: near, wet: 0.3, durationRange: [1.5, 2.2], cooldown: 0.15 }),
+  carrierTakes("impact.cannon.metal", "Cannon rounds into metal", "impact", "impact", "impact-metal", [1, 2, 3], { target: -16, range: near, wet: 0.3, durationRange: [1.5, 2.2], cooldown: 0.12 }),
+  carrierTakes("missile.launch", "Missile launch", "missile", "weapon", "missile-launch", [1], { target: -14, range: far, wet: 0.35, durationRange: [3.5, 4.2] }),
+  carrierTakes("missile.motor", "Missile motor", "missile", "weapon", "missile-motor", [2], { target: -20, loop: true, range: far, wet: 0.35, durationRange: [3.5, 4.2] }),
+  carrierTakes("missile.flares", "Countermeasure flares", "missile", "weapon", "flares", ALL4, { target: -15, range: near, wet: 0.35, durationRange: [2.5, 3.2] }),
+  carrierTakes("missile.sam.launch", "SAM launch from a ship", "missile", "weapon", "sam-launch", [2], { target: -14, range: far, wet: 0.35, durationRange: [4.5, 5.2] }),
+  carrierTakes("bomb.release", "Bomb release", "bomb", "weapon", "bomb-release", [1], { target: -16, range: near, wet: 0.3, durationRange: [1, 1.7] }),
+  carrierTakes("bomb.whistle", "Falling bomb whistle", "bomb", "weapon", "bomb-whistle", [2], { target: -18, range: near, wet: 0.3, durationRange: [3.5, 4.2] }),
+  carrierTakes("explosion.geyser", "Water geyser", "explosion", "impact", "water-geyser", [1], { target: -15, range: far, wet: 0.5, durationRange: [4.5, 5.2] }),
+  carrierTakes("explosion.jet.air", "Jet shot down", "explosion", "impact", "boom-air", ALL4, { target: -12, range: far, wet: 0.5, durationRange: [5.5, 6.2], cooldown: 0.08 }),
+  carrierTakes("explosion.missile.air", "Missile airburst", "explosion", "impact", "boom-missile", ALL4, { target: -12, range: far, wet: 0.5, durationRange: [3.4, 4.2], cooldown: 0.08 }),
+  carrierTakes("explosion.bomb.land", "Bomb on land", "explosion", "impact", "boom-bomb-land", ALL4, { target: -12, range: far, wet: 0.5, durationRange: [5.5, 6.2], cooldown: 0.08 }),
+  carrierTakes("explosion.bomb.water", "Bomb on water", "explosion", "impact", "boom-bomb-water", ALL4, { target: -12, range: far, wet: 0.5, durationRange: [5.5, 6.2], cooldown: 0.08 }),
+  carrierTakes("explosion.crash.sea", "Jet crashing into the sea", "explosion", "impact", "boom-crash-sea", ALL4, { target: -12, range: far, wet: 0.5, durationRange: [4.5, 5.2], cooldown: 0.08 }),
+  carrierTakes("explosion.crash.land", "Jet crashing into land", "explosion", "impact", "boom-crash-land", ALL4, { target: -12, range: far, wet: 0.5, durationRange: [5, 6.2], cooldown: 0.08 }),
+  carrierTakes("explosion.far", "Explosion far away", "explosion", "impact", "boom-far", ALL4, { target: -16, range: far, wet: 0.6, durationRange: [5.5, 6.2], cooldown: 0.08 }),
+  carrierTakes("gun.ciws", "CIWS gatling", "gun", "weapon", "ciws", [1], { target: -18, loop: true, range: far, wet: 0.3, durationRange: [4.5, 5.2] }),
+  carrierTakes("gun.naval.five-inch", "Five-inch naval gun", "gun", "weapon", "naval-gun", [1], { target: -12, range: far, wet: 0.4, durationRange: [3.5, 4.2] }),
+  carrierTakes("vehicle.boat.engine", "Patrol boat engine", "vehicle", "engine", "boat-engine", [3], { target: -22, loop: true, range: near, wet: 0.15, durationRange: [6.5, 7.2] }),
+  carrierTakes("ambience.carrier.deck", "Carrier deck at sea", "ship", "ambience", "carrier-bed", [4], { target: -26, loop: true, range: bed, wet: 0.15, durationRange: [7.5, 8.2] }),
+  carrierTakes("ship.horn", "Carrier horn", "ship", "ambience", "ship-horn", [1], { target: -16, range: far, wet: 0.5, durationRange: [4.5, 5.2] }),
+  carrierTakes("ship.hull.slam", "Hull slam", "ship", "ambience", "hull-slam", ALL4, { target: -16, range: near, wet: 0.15, durationRange: [2.5, 4.2], cooldown: 2 }),
+  carrierTakes("ship.hull.creak", "Hull creak", "ship", "ambience", "hull-creak", [1], { target: -20, range: near, wet: 0.15, durationRange: [4.5, 5.2], cooldown: 6 }),
+  carrierTakes("ship.fire", "Deck fire", "ship", "ambience", "deck-fire", [2], { target: -22, loop: true, range: near, wet: 0.15, durationRange: [5.5, 6.2] }),
+  carrierTakes("ship.sinking", "Ship sinking", "ship", "ambience", "sinking", [1], { target: -16, range: far, wet: 0.4, durationRange: [5.5, 6.2] }),
+  carrierTakes("ambience.ocean.calm", "Open ocean, calm", "ambience", "ambience", "ocean-calm", [1], { target: -26, loop: true, range: bed, wet: 0, durationRange: [7.5, 8.2] }),
+  carrierTakes("ambience.ocean.rough", "Open ocean, rough", "ambience", "ambience", "ocean-rough", [4], { target: -26, loop: true, range: bed, wet: 0, durationRange: [7.5, 8.2] }),
+  carrierTakes("ambience.ocean.storm", "Open ocean, storm", "ambience", "ambience", "ocean-storm", [3], { target: -24, loop: true, range: bed, wet: 0, durationRange: [7.5, 8.2] }),
+  carrierTakes("ambience.wind.light", "Light sea breeze", "weather", "ambience", "wind-light", [1], { target: -28, loop: true, range: bed, wet: 0, durationRange: [6.5, 7.2] }),
+  carrierTakes("ambience.wind.gale", "Gale over the ocean", "weather", "ambience", "wind-gale", [1], { target: -24, loop: true, range: bed, wet: 0, durationRange: [6.5, 7.2] }),
+  carrierTakes("ambience.rain.sea.light", "Light rain on the sea", "weather", "ambience", "rain-light", [1], { target: -30, loop: true, range: bed, wet: 0, durationRange: [6.5, 7.2] }),
+  carrierTakes("ambience.rain.sea.heavy", "Heavy rain on the sea", "weather", "ambience", "rain-heavy", [3], { target: -27, loop: true, range: bed, wet: 0, durationRange: [6.5, 7.2] }),
+  carrierTakes("ambience.rain.canopy", "Rain on a jet canopy", "weather", "ambience", "rain-canopy", [1], { target: -27, loop: true, range: bed, wet: 0, durationRange: [6.5, 7.2] }),
+  carrierTakes("weather.thunder.sea.near", "Thunder over the sea, near", "weather", "ambience", "thunder-near", ALL4, { target: -16, range: far, wet: 0.4, durationRange: [5, 7.2] }),
+  carrierTakes("weather.thunder.sea.far", "Thunder over the sea, far", "weather", "ambience", "thunder-far", ALL4, { target: -22, range: far, wet: 0.4, durationRange: [7, 8.2] }),
+  carrierTakes("weather.lightning.crack", "Lightning crack", "weather", "ambience", "lightning-crack", [1], { target: -16, range: far, wet: 0.3, durationRange: [1.5, 2.2] }),
+  carrierTakes("ui.kill-confirm", "Kill confirm", "ui", "ui", "ui-kill", [1], { target: -22, range: bed, wet: 0, durationRange: [1, 1.7] }),
 ]
 
 export const SFX_LIBRARY: readonly SfxEntry[] = SFX_SPECS.map(spec => ({ ...spec, files: LIBRARY_FILES[spec.id] ?? [] }))

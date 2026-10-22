@@ -384,7 +384,7 @@ DriverVoice engine and gearbox, tyre squeal and scrub, nitro, crash and scrape s
 the city bed. Blackout's (`games/blackout/src/lab/audio.ts`) drives its `Sound` the way `Game` does: animation-cued
 footsteps and gun mechanics for the soldier, plus gunshots, bullet impacts, casing and magazine clinks and explosions
 for effects. Outbreak plays the shared sound library in the game ([sfx-library.md](sfx-library.md)) but has no Lab
-scene-sound adapter yet. The Audio section's **Sound library** source browses every library id: pick a sound, a
+scene-sound adapter yet. The Audio section's **Sound library** source browses every library id (Carrier's recorded slots included): pick a sound, a
 variant (0 = seeded round-robin) and a distance, then Audition (the only way to hear it) or Render offline. The shared runtime only stands in where no loaded game has a sound: glass,
 sparks, splats, vehicle-effect crashes, fire and water beds, and explosions when Blackout isn't loaded. Sections report
 effects through `LabContext.emit`; characters hand `LabCharacter.sound()` state to the adapters every simulated tick.

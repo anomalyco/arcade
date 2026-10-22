@@ -8,7 +8,7 @@
 // Serves the folder, opens it, renders every scene of scripts/audio-demo.ts (or --scenes=a,b) and writes <scene>.wav
 // with a line of stats (peak, RMS, takes loaded). Spectrograms and MP3s are made from the WAVs with ffmpeg.
 import { chromium } from "playwright-core"
-import { mkdirSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
 const args = process.argv.slice(2)
@@ -21,13 +21,15 @@ const server = Bun.serve({
   port: 0,
   fetch(req) {
     const path = new URL(req.url).pathname
-    if (path === "/") return new Response(`<!doctype html><meta charset="utf-8"><script src="demo.js"></script>`, { headers: { "content-type": "text/html" } })
+    if (path === "/") return new Response(`<!doctype html><meta charset="utf-8"><script type="module" src="demo.js"></script>`, { headers: { "content-type": "text/html" } })
     return new Response(Bun.file(join(root, path)))
   },
 })
 const base = `http://localhost:${server.port}/`
 
-const browser = await chromium.launch({ executablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", headless: true, args: ["--autoplay-policy=no-user-gesture-required"] })
+// Offline audio needs no GPU: Chrome on hailmary (macOS) or Playwright's bundled Chromium anywhere else.
+const MAC_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+const browser = await chromium.launch({ executablePath: existsSync(MAC_CHROME) ? MAC_CHROME : undefined, headless: true, args: ["--autoplay-policy=no-user-gesture-required", "--mute-audio"] })
 const page = await browser.newPage()
 page.on("console", (m) => console.log(`[page] ${m.text()}`))
 page.on("pageerror", (e) => console.log(`[pageerror] ${e.message}`))

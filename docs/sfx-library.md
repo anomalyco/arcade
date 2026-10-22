@@ -103,6 +103,7 @@ the reused UI files keep theirs. Per-file provenance (take, prompt influence, re
 | `vehicle.tyre.chirp` | 1 | tyre | 0.38 | 5 | reuses Getaway's `skid_short.mp3` |
 | `ui.click` | 1 | ui | 0.48 | 6 | reuses Getaway's `ui_click.mp3` |
 | `ui.tick` | 1 | ui | 0.48 | 7 | reuses Carrier's `ui-click-1.ogg` |
+| Carrier's 38 recorded slots (`aircraft.carrier.trap`, `impact.{bullet.water,cannon.metal}`, `missile.*`, `bomb.*`, `explosion.*`, `gun.{ciws,naval.five-inch}`, `vehicle.boat.engine`, `ship.*`, `ambience.{carrier.deck,ocean.*,wind.*,rain.sea.*,rain.canopy}`, `weather.{thunder.sea.*,lightning.crack}`, `ui.kill-confirm`) | 1–4 | various | 0.48–7.85 | 4.4 MB total, not library-owned | reuse in place the takes Carrier plays (`games/carrier/public/sfx/v3/`), see "Carrier" below |
 
 ## Making and curating sounds
 
@@ -210,6 +211,17 @@ First measurement (`bun scripts/prove-audio.ts` from `games/outbreak`, productio
 and 10 dropped by per-id limits); the audio update cost 0.037 ms per frame on average (2.1 ms worst, the first frame);
 median frame time 7.45 ms with audio on and 8.0 ms muted, the same within run-to-run noise. `tests/audio.test.ts`:
 director 0.013 ms per frame with 100 zombies; groans spaced and capped over a simulated minute.
+
+## Carrier
+
+Carrier's recorded sounds are slots (`games/carrier/src/audio/sfx-slots.ts`) with 3-4 ElevenLabs candidate takes each,
+picked by ear on its SOUNDS board (`public/sfx/picks.json`). `SLOT_LIBRARY_ID` maps every slot to a library id whose
+files are the takes Carrier plays with its shipped picks (the pick, or a pooled slot's whole pool), reused in place:
+the Lab's Sound library auditions them and any game can select them. Carrier itself keeps playing them through its
+own 3D chain (`sfx-bank.ts`); `games/carrier/tests/sfx-library.test.ts` fails if a shipped pick and the library
+disagree. After changing a pick: update the slot's takes in `library.ts` (`carrierTakes`) and run
+`bun scripts/sfx/library.ts build`. A few of these takes decode up to +0.2 dBFS (Opus overshoot on files limited to
+-1 dBTP); the catalogue test allows reused files up to +0.5 dBFS.
 
 ## Not done yet
 
