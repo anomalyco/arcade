@@ -52,6 +52,9 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent?:
   return e
 }
 
+// A page that loads its world before it builds its panel (the woods) has no panel, and so no settings, until then.
+const PAGE_PANEL_WAIT_MS = 30000
+
 /**
  * Stations as workspaces inside the Lab: a station runs its section and setup, then lays its widgets out around the
  * viewport (Outliner column, top of Details, a dock under the viewport). Kit rearranges and configures widgets with
@@ -166,7 +169,7 @@ export function createStations(opts: {
     section: station.demo.kind === "section" && !missing ? station.demo.section : null,
     missing,
     panel: host.panel,
-    pagePanel: station.demo.kind === "page" ? () => framePanel() : undefined,
+    pagePanel: station.demo.kind === "page" ? () => framePanel(PAGE_PANEL_WAIT_MS) : undefined,
     variant: () => variant,
     picks: () => picks,
     chooseVariant,
@@ -452,8 +455,7 @@ export function createStations(opts: {
     if (!commands?.length) return
     const rt = await frameRuntime()
     if (!rt) return
-    // A page that loads its world before it builds its panel (the woods) has no settings to set until then.
-    if (commands.some(step => step.command === "scene.set-param" || step.command === "lab.set")) await framePanel(30000)
+    if (commands.some(step => step.command === "scene.set-param" || step.command === "lab.set")) await framePanel(PAGE_PANEL_WAIT_MS)
     await new Promise(done => setTimeout(done, 300))
     for (const step of commands) {
       const res = await rt.invokeLocal(step.command, step.args)
