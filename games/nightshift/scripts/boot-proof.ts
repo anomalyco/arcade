@@ -45,6 +45,10 @@ try{
     await page.waitForFunction(()=>document.querySelectorAll("[data-boot-stage]").length>=8,undefined,{timeout:120_000,polling:50})
     await page.screenshot({path:`${out}/boot-loading.png`})
     const loading=Date.now()-t0
+    // A click during the load must not take the pointer or start the opening.
+    await page.mouse.click(640,360)
+    await page.waitForTimeout(200)
+    if(await page.evaluate(()=>!!document.pointerLockElement||!!(window as unknown as {nightshift?:{opening:{started:boolean}}}).nightshift?.opening.started))throw Error("A click during loading started the game")
     await page.waitForSelector("#arcade-boot[data-ready]",{timeout:120_000})
     const ready=Date.now()-t0
     await page.waitForFunction(()=>/Begin/.test(document.querySelector("[data-boot-tail]")?.textContent??""),undefined,{timeout:10_000})

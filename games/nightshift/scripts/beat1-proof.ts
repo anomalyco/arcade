@@ -65,6 +65,7 @@ try{
   await page.waitForFunction(()=>!!(window as unknown as Host).nightshift,undefined,{polling:100,timeout:120000})
   await page.evaluate(()=>{const a=(window as unknown as Host).nightshift;a.paused=true;a.renderer.render=a.renderer.drawTo.bind(a.renderer);a.step(0)})
   if(controls)await page.evaluate(async()=>{const w=window as unknown as Host;await w.capture(0);if(w.pixelMean!==0)throw Error("Scene visible before Begin")})
+  await page.waitForSelector("#arcade-boot[data-ready]",{state:"attached",timeout:30000})
   await page.locator("#view").click({force:true})
   await page.waitForFunction(()=>document.pointerLockElement?.id==="view"&&(window as unknown as Host).nightshift.audio.ready,undefined,{polling:100,timeout:30000}).catch(async e=>{console.error(await page.evaluate(()=>{const a=(window as unknown as Host).nightshift;return {locked:document.pointerLockElement?.id,started:a.opening.started,audioReady:a.audio.ready,audioError:a.audio.error,hidden:document.hidden,focus:document.hasFocus()}}));throw e})
   if(filters){

@@ -64,7 +64,7 @@ async function main() {
   settings.reduceMotion=matchMedia("(prefers-reduced-motion: reduce)").matches
   try{const saved=localStorage.getItem("nightshift.reduceMotion");if(saved!==null)settings.reduceMotion=saved==="true"}catch{}
   boot.reducedMotion=settings.reduceMotion
-  const camera:WalkCamera=new WalkCamera(canvas,()=>panel.visible,settings,()=>document.pointerLockElement===canvas&&!document.hidden&&!panel.visible&&camera.speed>0)
+  const camera:WalkCamera=new WalkCamera(canvas,()=>panel.visible||!boot.isReady||boot.failed,settings,()=>document.pointerLockElement===canvas&&!document.hidden&&!panel.visible&&camera.speed>0)
   camera.height=1.65;camera.fov=68;camera.far=45;camera.near=0.045
   const setCamera=(view:"wide"|"phone")=>{const p=view==="wide"?START:CLOSE;camera.body.x=p.x;camera.body.y=p.z;camera.yaw=p.yaw;camera.pitch=p.pitch;camera.release();camera.resetWalk();opening.started=opening.complete=opening.standing=true;opening.time=OPENING.end;opening.height.x=camera.height=1.65}
   Object.assign(camera.body,{x:OPENING.seat.x,y:OPENING.seat.z});Object.assign(camera,{height:OPENING.seat.height,yaw:OPENING.seat.yaw,pitch:OPENING.seat.pitch})
@@ -108,7 +108,7 @@ async function main() {
   }
   const prompts=()=>hud.innerHTML=[keyPromptHtml("Mouse0","Look"),keyPromptHtml("KeyW","Move"),keyPromptHtml("KeyF","Flashlight"),keyPromptHtml("KeyM","Mute"),keyPromptHtml("Backquote","Office")].join(" ")
   prompts();onKeyLayoutChange(prompts)
-  canvas.addEventListener("click",()=>{opening.start();void audio.unlock()})
+  canvas.addEventListener("click",()=>{if(!boot.isReady||boot.failed)return;opening.start();void audio.unlock()})
   window.addEventListener("mousemove",e=>{if(!opening.complete||elevator.closing)e.stopImmediatePropagation()},true)
   window.addEventListener("keydown",e=>{
     if(isEditableEventTarget(e.target)||panel.visible||e.metaKey||e.ctrlKey||e.altKey||document.pointerLockElement!==canvas)return

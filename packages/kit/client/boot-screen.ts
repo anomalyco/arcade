@@ -13,7 +13,8 @@
  *
  * The bar only advances on reported work: each stage contributes its planned weight times its reported fraction.
  * Spinner and cursor are compositor-only CSS animations, so they keep moving while the main thread decodes.
- * The screen never takes pointer input (clicks reach the game) except for its retry button after a failure.
+ * The screen never takes pointer input (clicks reach the game) except for its retry button after a failure, so gate
+ * the game's own click and pointer-lock handling on `isReady && !failed`.
  * Soft CRT hum and drive-seek ticks start only after a gesture during the load, never on their own.
  */
 
@@ -120,6 +121,7 @@ export class BootScreen {
   private tail: HTMLElement
   private stages = new Map<string, BootLine>()
   private hum?: BootHum
+  private listening = new AbortController()
   private gone = false
   isReady = false
   failed = false
@@ -138,9 +140,10 @@ export class BootScreen {
     const gesture = () => {
       if (this.isReady || this.failed || this.gone || this.muted) return
       this.hum ??= new BootHum()
+      this.listening.abort()
     }
-    addEventListener("pointerdown", gesture)
-    addEventListener("keydown", gesture)
+    addEventListener("pointerdown", gesture, { signal: this.listening.signal })
+    addEventListener("keydown", gesture, { signal: this.listening.signal })
   }
 
   /** Disables flicker and cursor blink (the game's own reduce-motion setting; the OS setting applies via CSS). */
@@ -175,7 +178,7 @@ export class BootScreen {
     if (!response.ok) throw failed(` (${response.status})`)
     const total = Number(response.headers.get("content-length")) || 0
     if (!response.body || !total) {
-      const bytes = new Uint8Array(await response.arrayBuffer())
+      const bytes = new Uint8Array(await response.arrayBuffer().catch(() => { throw failed() }))
       line.progress(share, bootBytes(bytes.byteLength))
       return bytes
     }
@@ -226,6 +229,7 @@ export class BootScreen {
   private frame = 0
   /** Redraws the bar (and a line's progress) on the next frame; several reports in one frame cost one redraw. */
   update(line?: BootLine) {
+    if (!line && (this.isReady || this.failed || this.gone)) return
     if (line) this.dirty.add(line)
     if (this.frame) return
     const draw = () => {
@@ -242,8 +246,9 @@ export class BootScreen {
 
   /** All stages complete: prints the final lines and an optional prompt (trusted HTML, e.g. a key-cap Begin). */
   ready(lines: string[] = ["READY."], promptHtml = "") {
-    if (this.isReady || this.failed) return
+    if (this.isReady || this.failed || this.gone) return
     this.isReady = true
+    this.listening.abort()
     for (const line of this.stages.values()) line.done()
     this.barEl.textContent = bar(1)
     this.tail.innerHTML = esc(lines.join("\n")) + (promptHtml ? `\n\n<span class="${ROOT}-prompt">${promptHtml}</span>` : "")
@@ -255,6 +260,7 @@ export class BootScreen {
   fail(message: string, retry = "RETRY") {
     if (this.gone) return
     this.failed = true
+    this.listening.abort()
     this.root.removeAttribute("data-ready")
     this.root.setAttribute("data-failed", "")
     for (const line of this.stages.values()) line.stop("--")
@@ -269,6 +275,7 @@ export class BootScreen {
   dismiss(): Promise<void> {
     if (this.gone) return Promise.resolve()
     this.gone = true
+    this.listening.abort()
     this.hum?.stop()
     this.root.setAttribute("data-gone", "")
     return new Promise((resolve) => {
@@ -329,6 +336,7 @@ class BootHum {
   stop() {
     const c = this.ctx
     if (c.state === "closed") return
+    this.master.gain.cancelScheduledValues(c.currentTime)
     this.master.gain.setTargetAtTime(0, c.currentTime, 0.08)
     setTimeout(() => void c.close(), 500)
   }
