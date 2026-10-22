@@ -18,4 +18,4 @@ The M2 Max Metal measurement at 1280×720 alternates Today/Polished/Polished/Tod
 
 `tests/polish.test.ts` covers deterministic continuity, visible/recently seen bounds, collision/rest, cord rest, dust replay, blocked paper motion and exact kit flicker parity. `scripts/polish-trace.ts` writes a 2,400-frame deterministic state trace. TypeScript, cycle detection, seven Naga shader validations and the production capture build passed.
 
-Evidence: [sound-enabled showcase](https://studio.taila8e7c7.ts.net:8444/raw/nightshift-2026-10-20/polish-showcase.mp4). Independent model review and release are pending.
+Evidence: [sound-enabled showcase](https://studio.taila8e7c7.ts.net:8444/raw/nightshift-2026-10-20/polish-showcase.mp4). Independent review of the implementation found no blockers.
