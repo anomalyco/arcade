@@ -14,6 +14,17 @@ proven animation techniques to animation.md, not here.
 
 ## Proving a change
 
+- **Night forest obscuration and perception (Woods, round 4).** `forest/view.ts` ramps extinction from a 12 m clear
+  zone over 12 m to .05/m; this is an artistic distance gate, not a uniform physical atmosphere. Night lift/offset
+  .8 stops preserves darkness and the depth-validated 60 m signal (delta .05865, contrast 5.51). `forest/post.ts`
+  applies bounded luminance-dependent desaturation, rod-weighted colour and four-tap acuity loss: scene-linear
+  heuristics, not calibrated retinal luminance. Stop-down/recovery constants are .35/8 s. Seven mini/Metal view
+  medians were 9.16–11.93 ms in the final vision run; earlier runs exceeded 12, so the budget is not stable.
+  `forest/build.ts` uses 32-sided near trunks and surface-derived normals shared across height bands and UV seams;
+  the close-trunk screen was 9.87→9.38 ms, not a demonstrated speedup. Three foliage fades worsened depth-reprojected
+  disagreement, and both normalized flashlight profiles failed the p5 darkness guard; none was retained. Gallery
+  `woods-2026-10-21/autoresearch/round4/LEDGER.md` records the experiments and five-view comparisons.
+
 - **Index byte-identical forest vertices (Woods).** `forest/index-mesh.ts` deduplicates the complete packed vertex,
   preserving triangle order and UV/normal seams. Instanced raster draws reuse the vertices; shadow casters keep
   their original buffers. On mini/Metal at 1600×900 High, four-light renderer GPU time fell 15.13→11.30 ms (25.3%);

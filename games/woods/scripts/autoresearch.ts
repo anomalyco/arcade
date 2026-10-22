@@ -97,7 +97,7 @@ try {
   const report: any = { version: 3, host: hostname(), sources, zeroConeDisabled, signalX, settleFrames, seed: 1987, time: 12, viewport: [1600, 900], adapter, overrides: variants, variants: {}, errors }
   if (process.env.AUTORESEARCH_RESET === "1") report.reset = await page.evaluate(resetProbe)
   for (const variant of variants) {
-    if (variants.some(v => "smoothTrunks" in (v.look ?? {}))) await page.evaluate(look => {
+    if (variants.some(v => ["smoothTrunks", "litter"].some(key => key in (v.look ?? {})))) await page.evaluate(look => {
       Object.assign(woods.look, JSON.parse(woods.__look), look)
       woods.view.setWorld(woods.world)
     }, variant.look ?? {})

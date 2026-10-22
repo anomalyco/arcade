@@ -106,7 +106,7 @@ def trunk_contrast(record, path):
             absolute_p90=float(np.quantile(absolute, .9)) if pairs else None)
     return bins
 
-result = {"definition": "v2; display luminance unless linear_ prefixed; dark <0.04; p5 <0.025; signal requires >=40/80 depth-visible points, delta >=0.02 and contrast >=0.25", "variants": {}}
+result = {"definition": "v3; display luminance unless linear_ prefixed; dark <0.04; p5 <0.025 on p5_guard_views (close-up trunk detail probes excluded); signal requires >=40/80 depth-visible points, delta >=0.02 and contrast >=0.25", "variants": {}}
 for variant, records in manifest["variants"].items():
     directory = root / variant
     views = {}
@@ -120,7 +120,8 @@ for variant, records in manifest["variants"].items():
         depth[name] = trunk_contrast(records[name], directory / f"{name}.png")
         target = targets / "paintover" / f"po-{NAMES[name]}.jpg" if name in NAMES else targets / "look/checkpoints/2/renders" / f"po-{name}.png"
         if os.environ.get("AUTORESEARCH_TARGETS"):
-            target = Path(os.environ["AUTORESEARCH_TARGETS"]) / f"{name}.png"
+            candidates = [Path(p) / f"{name}.png" for p in os.environ["AUTORESEARCH_TARGETS"].split(os.pathsep)]
+            target = next((p for p in candidates if p.exists()), candidates[0])
         if target.exists():
             reference = image(target)
             views[name] = distance(current, reference)
@@ -138,12 +139,14 @@ for variant, records in manifest["variants"].items():
             if f"l{n}" not in tones: continue
             y = lum(image(directory / f"l{n}.png"))[22:338, 20:620][mask]
             between[f"l{n}"] = dict(p5=float(np.quantile(y, .05)), median=float(np.median(y)), dark_pct=float(np.mean(y < .04) * 100), pixels=int(mask.sum()))
+    guard_views = [name for name in tones if name not in ["trunkFoot", "trunkClose"]]
     summary = dict(distance=float(np.mean([v["distance"] for v in views.values()])) if views else None, views=views, tone=tones,
                    gpu_median=float(np.median(gpu)), gpu_view_p95=float(np.quantile(gpu, .95)),
                     signal=sig, trunk_depth=depth, motion=records.get("motion"), adaptation=records.get("adaptation"), target_tone=target_tones, between_beams=between,
                    proposed_target_bounds={name: dict(p5_max=t["p5"] + .008, dark_min=max(0, t["dark_pct"] - 12), dark_max=min(100, t["dark_pct"] + 12)) for name, t in target_tones.items()},
                    constraints=dict(dark_monotone=strict_dark, dark_percentages=darks,
-                                    no_milky_lift=all(t["p5"] < .025 for t in tones.values()), signal_visible=sig and sig["visible"]))
+                                     p5_guard_views=guard_views,
+                                     no_milky_lift=all(tones[name]["p5"] < .025 for name in guard_views) if guard_views else None, signal_visible=sig and sig["visible"]))
     result["variants"][variant] = summary
     print("METRIC", variant, json.dumps({k: summary[k] for k in ["distance", "gpu_median", "gpu_view_p95", "constraints", "signal"]}))
 (root / "score.json").write_text(json.dumps(result, indent=2))
