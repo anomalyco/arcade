@@ -57,6 +57,8 @@ export type PersonRest = {
   heel: [V3, V3]
   /** Height of the mesh's ball-of-foot joint above the sole (m). */
   ballHeight: number
+  /** The mesh boot along the ground (m, world): ball back to the ankle, and ball back to the heel. */
+  sole: { toAnkle: number; toHeel: number }
   /** Pelvis bone origin relative to the mid-hip, model space. */
   pelvisOffset: V3
   arms: [Chain, Chain]
@@ -116,6 +118,10 @@ export function personRest(skeleton: Skeleton): PersonRest {
   return {
     skeleton, local, idx, scale, footBind,
     ballHeight: Math.max(0, P("ball_l")[1]),
+    sole: (() => {
+      const f = sub(P("ball_l"), P("foot_l")), toAnkle = Math.hypot(f[0], f[2])
+      return { toAnkle, toHeel: toAnkle + RIG.heel * scale }
+    })(),
     heel: (["l", "r"] as const).map((s) => {
       const f = P(`foot_${s}`), ball = P(`ball_${s}`), back = norm([f[0] - ball[0], 0, f[2] - ball[2]])
       return qRot(qConj(bindRot[need(idx, `foot_${s}`)]!), sub([f[0] + back[0] * RIG.heel * scale, 0, f[2] + back[2] * RIG.heel * scale], f))
@@ -192,6 +198,11 @@ export type PoseInput = {
   /** Breathing phase (rad); 0 amplitude when `breath` is 0. */
   breathPhase?: number
   breath?: number
+  /**
+   * Standing weight shift, −1 (onto the left leg) to 1 (onto the right): the hips slide over the loaded leg and the
+   * free hip drops, the chest leans back over, the head stays level and the free knee unlocks (by IK).
+   */
+  shift?: number
   /** Plan offset in world units, added after scaling (for placing the person at world x/z exactly). */
   origin?: V3
 }
@@ -231,11 +242,15 @@ export function posePerson(rest: PersonRest, input: PoseInput, out: PersonPose):
   }
   const breath = (input.breath ?? 0) * Math.sin(input.breathPhase ?? 0)
   const drive = (name: string, d: Q) => { const i = idx[name]; if (i !== undefined) { rot[i] = qNorm(qMul(d, sk.bindRot[i]!)); set[i] = 1 } }
-  drive("pelvis", dPelvis)
+  const shift = input.shift ?? 0
+  // Rig frames: x forward, y up, z to the right. A positive roll about x lowers the right side.
+  const hipRoll = qAxisAngle(b.pelvis.x, -shift * SHIFT.hipRoll), chestRoll = qAxisAngle(b.torso.x, shift * SHIFT.chestRoll)
+  const slide = mul(b.pelvis.z, shift * SHIFT.slide)
+  drive("pelvis", qMul(hipRoll, dPelvis))
   const chestLift = qAxisAngle(b.torso.z, breath * 0.025)
-  drive("spine_01", qSlerp(dPelvis, dTorso, 0.4))
-  drive("spine_02", qMul(chestLift, qSlerp(dPelvis, dTorso, 0.75)))
-  drive("spine_03", qMul(chestLift, dTorso))
+  drive("spine_01", qMul(qSlerp(hipRoll, chestRoll, 0.5), qSlerp(dPelvis, dTorso, 0.4)))
+  drive("spine_02", qMul(qMul(chestLift, chestRoll), qSlerp(dPelvis, dTorso, 0.75)))
+  drive("spine_03", qMul(qMul(chestLift, chestRoll), dTorso))
   drive("neck_01", qSlerp(dTorso, dHead, 0.45))
   drive("head", dHead)
   // Leg targets first. Foot attitude comes from the rig's foot frame (tilted along the ground); the ankle goes where
@@ -249,7 +264,7 @@ export function posePerson(rest: PersonRest, input: PoseInput, out: PersonPose):
     if (tiltQ) footRot = qNorm(qMul(tiltQ, footRot))
     const dy = input.feet?.[i] ?? 0
     const rigBall = W([ft.p[0] + ft.x[0] * RIG.foot - ft.y[0] * RIG.ankle, ft.p[1] + ft.x[1] * RIG.foot - ft.y[1] * RIG.ankle, ft.p[2] + ft.x[2] * RIG.foot - ft.y[2] * RIG.ankle], rest.ballHeight + dy)
-    const heelDy = dy + Math.tan(input.tilt?.[i] ?? 0) * (RIG.foot + RIG.heel) * s
+    const heelDy = dy + Math.sin(input.tilt?.[i] ?? 0) * rest.sole.toHeel
     const rigHeel = W([ft.p[0] - ft.x[0] * RIG.heel - ft.y[0] * RIG.ankle, ft.p[1] - ft.x[1] * RIG.heel - ft.y[1] * RIG.ankle, ft.p[2] - ft.x[2] * RIG.heel - ft.y[2] * RIG.ankle], heelDy)
     const fromBall = sub(rigBall, qRot(footRot, local.pos[ball]!)), fromHeel = sub(rigHeel, qRot(footRot, rest.heel[i]!))
     const w = smooth(0, 0.06, ft.x[1])
@@ -258,7 +273,7 @@ export function posePerson(rest: PersonRest, input: PoseInput, out: PersonPose):
   // Pelvis bone origin: the rig's mid-hip, plus the mesh's own pelvis offset turned with the hips. Where the mesh's
   // legs are a little short of the rig's targets (other proportions), the whole body sinks just enough to reach.
   const pelvis = need(idx, "pelvis")
-  pos[pelvis] = add(W(b.pelvis.p), qRot(dPelvis, rest.pelvisOffset))
+  pos[pelvis] = add(add(W(b.pelvis.p), slide), qRot(rot[pelvis]!, rest.pelvisOffset))
   let sink = 0
   for (let i = 0; i < 2; i++) {
     const ch = rest.legs[i]!, t = legTargets[i]!
@@ -314,8 +329,10 @@ export function posePerson(rest: PersonRest, input: PoseInput, out: PersonPose):
   for (let i = 0; i < 2; i++) {
     const ch = rest.arms[i]!
     const fa = b.fa[i]!
-    const target = W([fa.p[0] - fa.y[0] * RIG.fore, fa.p[1] - fa.y[1] * RIG.fore, fa.p[2] - fa.y[2] * RIG.fore], -sink)
-    solveChain(ch, target, W(fa.p, -sink), b.ua[i]!.z)
+    // Hands ride with the shoulders when the weight shifts (the chest leans back about half the hips' slide).
+    const carry = mul(slide, 0.5)
+    const target = add(W([fa.p[0] - fa.y[0] * RIG.fore, fa.p[1] - fa.y[1] * RIG.fore, fa.p[2] - fa.y[2] * RIG.fore], -sink), carry)
+    solveChain(ch, target, add(W(fa.p, -sink), carry), b.ua[i]!.z)
     subtree(ch.upper)
     const hand = ch.end
     const hr = rest.hands[i]!
@@ -339,6 +356,8 @@ export function posePerson(rest: PersonRest, input: PoseInput, out: PersonPose):
 }
 
 const DEG = Math.PI / 180
+/** Weight shift at full `shift`: hips slide (m) and roll (rad), the chest counter-rolls (rad). */
+export const SHIFT = { slide: 0.035, hipRoll: 0.07, chestRoll: 0.045 }
 
 function poseFingers(rest: PersonRest, side: number, p: HandPose, out: PersonPose): void {
   const { skeleton: sk, local } = rest

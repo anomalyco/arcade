@@ -218,10 +218,10 @@ export class PeoplePass implements ScenePass {
     }
   }
 
-  /** Opaque skinned triangles of every visible person, for spot/beam shadow maps. */
-  shadowCasters(): SpotShadowCaster[] {
+  /** Opaque skinned triangles of every visible person (or of `only`), for spot/beam shadow maps. */
+  shadowCasters(only?: readonly PersonInstance[]): SpotShadowCaster[] {
     const out: SpotShadowCaster[] = []
-    for (const inst of this.instances) {
+    for (const inst of only ?? this.instances) {
       if (!inst.visible) continue
       const li = Math.min(inst.lod, inst.model.lods.length - 1), l = inst.lods[li]
       if (!l) continue

@@ -2,9 +2,26 @@
 
 Skinned MakeHuman people any game can draw in place of the blocky rig figures, driven by the same shared human rig,
 so foot placement, stepping over logs, torch aiming and every game's `animate` call keep working. Woods is the first
-user (behind `?people=real`); every game still draws blocky people by default.
+user (its "Realistic people" setting, `?people=real`, default off on the `woods` branch); every game still draws blocky
+people by default.
 
-Feasibility proof, Oct 22: https://studio.taila8e7c7.ts.net:8444/raw/people-2026-10-21/index.html
+Proof: feasibility https://studio.taila8e7c7.ts.net:8444/raw/people-2026-10-21/index.html, cast
+https://studio.taila8e7c7.ts.net:8444/raw/people-cast-2026-10-22/index.html
+
+## The cast
+
+Six adults (`scripts/people/cast.json`): a (thirties man), b (late-twenties woman), c (fifties man, heavy), d
+(forties woman), e (tall, slim man), f (sixties woman, short). Each has three looks on the same body, one GLB per
+person-look (`<person>-<look>.glb`, 720–970 KB):
+
+| Look | Outfit | Gear |
+| --- | --- | --- |
+| `woods` | rain jacket over a shirt, or a fleece (d); trail trousers; boots | beanies, headlamps (b, d, e), backpacks (b, c, e) |
+| `survivor` | tee, jeans, trainers | backpacks (a, c, d, f) |
+| `office` | suit, shirt and tie (a, c, e) or blouse and skirt (b, d, f); dress shoes | — |
+
+Each look has a generated manifest, `@arcade/kit/people/cast/<look>.gen.ts` (`CAST: CastMember[]`), so a game's bundle
+carries only the looks it imports. Vite emits each GLB as a lazily fetched asset.
 
 ## Pipeline
 
@@ -19,10 +36,12 @@ scripts/people/cast.json ──► build-people.ts ──► headless Blender + 
                                               packages/kit/people/assets/<id>.glb  (+ CREDITS.md)
 ```
 
-Build one or all on a render worker (≈30 s per person on mini; Blender and the asset pack are cached):
+Build one or all on a render worker (≈15–20 s per person-look; Blender and the asset pack are cached). Filters are
+people, looks or person-looks (`c`, `woods`, `c-woods`); `--manifest` only rewrites the manifests:
 
 ```
-hivemind run --kind render --fetch packages/kit/people/assets -- bun scripts/people/build-people.ts [id ...]
+hivemind run --kind render --fetch packages/kit/people -- bun scripts/people/build-people.ts [a | woods | a-woods ...]
+blender -b --factory-startup --python scripts/people/lineup.py -- out.png <glb> ...   # front and back lineup stills
 ```
 
 - Clothes are split into pieces (`jacket`, `shirt`, `trousers`, `boots`) by colour regions of their UV texture.
@@ -31,6 +50,10 @@ hivemind run --kind render --fetch packages/kit/people/assets -- bun scripts/peo
   therefore dress a whole cast, and Outbreak survivors or office workers swap outfits in `cast.json`.
 - Materials are named `kind.piece` (`nylon.jacket`, `cloth.trousers`, `knit.beanie`, `skin`, `hair`, `brow`, `eye`);
   `extras.people` carries `kind`, `piece`, `albedo` and `mean`.
+- Gear is procedural: the backpack (a bevelled, tapered box on `spine_03`) and its shoulder straps (ribbons traced
+  over the clothes' outer surface, skinned by copying the nearest body vertex's weights), the headlamp band (traced
+  round the head, beanie and hair at brow height) with its housing and lens on `head`, and the knit beanie. Ripstop
+  and webbing are generated luminance textures; the housing and lens are untextured (`plastic`, `lens` kinds).
 - Blender exports a file-backed image's source file, not its scaled pixels, so `load()` copies a downscaled image
   into a new packed image. Without this the 4096² MakeHuman normal maps shipped at full size (1.46 MB → 804 KB).
 
@@ -38,40 +61,44 @@ hivemind run --kind render --fetch packages/kit/people/assets -- bun scripts/peo
 
 | Module | Owns |
 | --- | --- |
-| `view.ts` | `People`: lazy `load(cast)` (fetch + meshopt decode), `spawn`, `drive(person, avatar, opts)`, LOD by eye distance, `PEOPLE_CAST`. |
+| `view.ts` | `People`: lazy `load(cast)` (fetch + meshopt decode), `spawn`, `drive(person, avatar, opts)`, LOD by eye distance, `idleShift`; the members come from `cast/<look>.gen.ts` (`CAST`). |
 | `asset.ts` | GLB reader: skeleton, LOD ranges, materials. Bakes vertices into the joint-world bind pose (MPFB IBMs carry the armature's 0.1 scale), so runtime IBMs are rigid. |
 | `retarget.ts` | Rig frame → game_engine bone rotations: spine/neck/head from the rig's torso and look, two-bone IK on the mesh's own bone lengths for legs and arms, ankle target putting the mesh ball on the rig ball (blended to the heel pivot at heel strike), pelvis sink when a leg cannot reach, fingers (relaxed, torch grip) and a wrist bend so the torch barrel follows the beam. Breathing on the chest. |
-| `terrain.ts` | `terrainFeet`: planted feet take the ground under the ball and pitch so the heel rests on it; swing feet arc over anything on the swing path; hips drop on a spring. Ground is a `(x, z) => y` the game provides (woods adds its logs). |
+| `terrain.ts` | `terrainFeet`: a planted boot pitches to the tangent from its ball over whatever lies under its own sole (6 samples, the mesh's footprint, hung off the rig's ball pivot), rising when it hits the pitch limit; at heel strike it also clears the ground under the rig's heel point; swing feet arc over anything on the swing path and keep their heels above what is under them; hips drop on a spring. Ground is a `(x, z) => y` the game provides (woods adds its logs). |
 | `pass.ts` | `PeoplePass`: one compute dispatch per visible person writes world-space skinned triangles in the kit's 32-byte textured vertex layout; the stock textured scene pipeline draws them as `MAT.actor`, so people get the game's own lights, beams, fog, shadows and the actor fill and rim. `shadowCasters()` for spot shadows. |
 | `hooks.ts` | `personHooks(gameHooks)`: per-kind roughness for physical-light games, a fibre sheen from the scene's ambient at grazing angles, and a torch beam that does not light its holder behind the lens (otherwise the spill burns the sleeve and chest). |
+
+A standing person shifts their weight (`idleShift`, `PoseInput.shift`): after about a second still they settle onto
+one leg for 3–5 s and cross over in about a second, each at their own rate; the hips slide 3.5 cm and drop on the free
+side, the chest leans back, the free knee unlocks through the leg IK and the hands ride with the shoulders. Any step
+eases it out within a quarter second.
 
 A game keeps its avatars: animate them in rig space (`world / people.scale(cast)`), then call
 `people.drive(person, avatar, { dt, time, ground, torch: { side, dir }, look, eye })`. It returns the torch frame (world)
 for the beam and the torch mesh. Woods' adapter is `games/woods/src/people-view.ts` (≈80 lines) plus a
 `FriendsView.people: "blocky" | "real"` switch that draws blocky friends while the GLB loads.
 
-## Measured (hiker-a, Oct 22)
+## Measured (Oct 22)
 
 | | |
 | --- | --- |
-| Asset | 804 KB GLB (meshopt + WebP); LOD0 28,550 tris, LOD1 7,334 (beyond 9 m); 53 joints; 1.741 m |
-| GPU | ≈32 B × 3 × tris of skinned output per visible LOD (LOD0 2.7 MB); one compute dispatch per person |
-| CPU | 0.028 ms per person-frame (terrain, retarget, IK, skin matrices; `bun scripts/people/measure.ts`) |
-| Planted ball slip, flat walk 1.4 m/s | 0 mm (mean, p95, max over 6 s) |
-| Rolling ground + 30 cm log at 1.2 m/s | worst sink 28 mm, worst planted float 52 mm, swing clearance over the log −28 mm (sole estimated as ankle − 6 cm, so these over-report) |
+| Assets | 18 GLBs, 15.3 MB in the repo; a game fetches only what it spawns (woods: six, 5.3 MB, as friends arrive) |
+| Triangles | LOD0 28.5–33.1 k, LOD1 7.3–9.2 k (beyond 9 m from the pelvis); 53 joints; heights 1.59–1.86 m |
+| CPU | 0.03 ms per person-frame (terrain, retarget, IK, skin matrices; `bun scripts/people/measure.ts <id>`) |
+| GPU (woods, mini, five friends in view, your torch on) | whole frame median 26.4 ms realistic vs 25.3 ms blocky (3 alternating rounds of 48: 24.5/27.7/26.4 vs 25.4/17.9/25.3); the difference is inside the run-to-run noise on a shared mini |
+| Planted ball slip, flat walk 1.4 m/s | 0 mm (max 0.1 mm), every body |
+| Rolling ground + 30 cm log at 1.2 m/s, sole points | worst sink 11–14 mm (heel strikes on the slope), planted float ≤ 4.4 mm except f's 35 mm (a flat boot touching a round log at one point between heel and ball), swing clearance over the log 5–62 mm |
 | Torch barrel vs beam | 0° worst over a 1.4 m/s walk |
 | Gait | unchanged: the rig drives it (`gait-metrics.ts --tag after` matches main) |
 
 ## Known gaps
 
-- One cast member. The full cast (4–6 varied adults) is `cast.json` entries plus outfit tints; the build already
-  takes macros (gender, age, weight, muscle, height, proportions), skins, hair and eyebrows per person.
-- No weight-shift idle yet (breathing only); no backpack or headlamp asset; boots are MakeHuman shoes, tinted.
-- The planted foot can float a few cm when its heel and ball straddle a log edge; `terrain.ts` takes the ball's
-  ground and only tilts by the heel's.
-- People do not yet cast torch shadows in woods (`PeoplePass.shadowCasters()` exists; the forest's caster list does
-  not take it).
+- In your own beam at 4 m a person (blocky or realistic) clips: square-on to the beam with 3–4× the litter's albedo,
+  they read about ten times the ground pool the meter exposes for. A woods exposure question (meter or shoulder),
+  not a people one.
 - No mocap layer; 100STYLE (CC BY 4.0) is only the pose-diff reference.
+- Hair cards are alpha-tested and can shimmer at a distance under TAA.
+- Torch shadows from people re-render the torch's shadow slot every frame while anyone is in reach.
 
 ## Licences
 

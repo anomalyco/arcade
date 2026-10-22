@@ -616,6 +616,14 @@ matches main). What held up, measured with `bun scripts/people/measure.ts`:
   ground under the ball and pitch so the heel rests on it; swing feet arc over anything on the path (16 samples, 5 cm
   toe margin). Over a 30 cm log: worst sink 28 mm, planted float 52 mm where heel and ball straddle the log's edge
   (gap).
+- **Boots on round logs.** Pitch the planted boot to the tangent from its ball over the ground under the mesh's own
+  sole (the rig's longer foot finds log edges the boot never touches), hung off the rig's ball pivot so heel strike
+  and heel rise do not slide the samples; at heel strike also clear the ground under the rig's heel point, since near
+  a log's steep edge a centimetre of plan is a hand's height. Six bodies: sink 11–14 mm, planted float ≤ 4 mm
+  (measured at heel and ball; a flat boot on a round log touches between them).
+- **Standing weight shift.** Hips slide 3.5 cm over the loaded leg and roll 4° down on the free side, chest counter-rolls
+  2.6°, hands ride with the shoulders; the leg IK unlocks the free knee by itself. Dwell 3–5 s per side, ~1 s across,
+  faded in after ~1 s still and out within 0.25 s of any step.
 - **Torch hand.** A wrist bend after the arm IK turns the barrel onto the beam (0° worst error while walking) and a
   measured palm axis (`hands` rest) seats it; fingers take a torch grip.
 
