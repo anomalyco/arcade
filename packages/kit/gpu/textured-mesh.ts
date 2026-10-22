@@ -88,22 +88,28 @@ export function texturedSceneShader(hooks: SceneHooks, masked = false): string {
   })
 }
 
-/** Imported meshes share the kit's lights, polar shadows, scene hooks, HDR target and temporal resolve. */
-export class TexturedMeshPass implements ScenePass {
-  private draws: { buffer: GPUBuffer; uniform: GPUBuffer; group: GPUBindGroup; count: number; blend: boolean; masked: boolean }[] = []
-  private opaque: GPURenderPipeline | null
-  private alpha: GPURenderPipeline | null
-  private mask: GPURenderPipeline | null
-  constructor(ctx: PassContext, primitives: TexturedPrimitive[], hooks: SceneHooks) {
-    const d = ctx.device
-    const layout = d.createBindGroupLayout({ entries: [
-       ...[0, 1, 2, 5].map(binding => ({ binding, visibility: GPUShaderStage.FRAGMENT, texture: {} })),
-      { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
-      { binding: 4, visibility: GPUShaderStage.FRAGMENT, buffer: {} },
-    ] })
-    const module = compileShaderModuleWithLog(d, texturedSceneShader(hooks), "textured scene")
-    const pipeline = (blend: boolean, masked = false) => d.createRenderPipeline({
-      layout: d.createPipelineLayout({ bindGroupLayouts: [ctx.frameLayout, layout] }),
+// Material/geometry buffers belong to each pass; identical shaders and fixed render state belong to the renderer.
+type Pipelines = { layout: GPUBindGroupLayout; pipeline: (blend: boolean, masked?: boolean) => GPURenderPipeline }
+const pipelineCache = new WeakMap<PassContext, Map<string, Pipelines>>()
+function texturedPipelines(ctx: PassContext, hooks: SceneHooks): Pipelines {
+  let cache = pipelineCache.get(ctx)
+  if (!cache) { cache = new Map(); pipelineCache.set(ctx, cache) }
+  const code = texturedSceneShader(hooks), cached = cache.get(code)
+  if (cached) return cached
+  const d = ctx.device
+  const layout = d.createBindGroupLayout({ entries: [
+    ...[0, 1, 2, 5].map(binding => ({ binding, visibility: GPUShaderStage.FRAGMENT, texture: {} })),
+    { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+    { binding: 4, visibility: GPUShaderStage.FRAGMENT, buffer: {} },
+  ] })
+  const module = compileShaderModuleWithLog(d, code, "textured scene")
+  const pipelineLayout = d.createPipelineLayout({ bindGroupLayouts: [ctx.frameLayout, layout] })
+  const variants = new Map<string, GPURenderPipeline>()
+  const pipeline = (blend: boolean, masked = false) => {
+    const key = `${blend}:${masked}`, cached = variants.get(key)
+    if (cached) return cached
+    const result = d.createRenderPipeline({
+      layout: pipelineLayout,
       vertex: { module, entryPoint: "vsStatic", buffers: [TEXTURED_VERTEX_LAYOUT] },
       fragment: { module: masked ? compileShaderModuleWithLog(d, texturedSceneShader(hooks, true), "masked textured scene") : module, entryPoint: "fsSolid", targets: [{ format: ctx.color, ...(blend ? { blend: {
         color: { srcFactor: "one" as const, dstFactor: "one-minus-src-alpha" as const },
@@ -113,6 +119,22 @@ export class TexturedMeshPass implements ScenePass {
       depthStencil: { format: ctx.depth, depthWriteEnabled: !blend, depthCompare: ctx.depthCompare ?? "less-equal" },
       multisample: { count: ctx.samples },
     })
+    variants.set(key, result)
+    return result
+  }
+  const result = { layout, pipeline }
+  cache.set(code, result)
+  return result
+}
+
+/** Imported meshes share the kit's lights, polar shadows, scene hooks, HDR target and temporal resolve. */
+export class TexturedMeshPass implements ScenePass {
+  private draws: { buffer: GPUBuffer; uniform: GPUBuffer; group: GPUBindGroup; count: number; blend: boolean; masked: boolean }[] = []
+  private opaque: GPURenderPipeline | null
+  private alpha: GPURenderPipeline | null
+  private mask: GPURenderPipeline | null
+  constructor(ctx: PassContext, primitives: TexturedPrimitive[], hooks: SceneHooks) {
+    const d = ctx.device, { layout, pipeline } = texturedPipelines(ctx, hooks)
     // Each imported pass has a fixed draw list. Avoid compiling unused variants (especially costly on SwiftShader).
     this.opaque = primitives.some(p => !p.blend && (p.alphaCutoff ?? 0) <= 0) ? pipeline(false) : null
     this.alpha = primitives.some(p => p.blend && (p.alphaCutoff ?? 0) <= 0) ? pipeline(true) : null
@@ -135,7 +157,8 @@ export class TexturedMeshPass implements ScenePass {
     for (const blend of [false, true]) {
       for (const draw of this.draws) if (draw.blend === blend) {
         pass.setPipeline(draw.masked ? this.mask! : blend ? this.alpha! : this.opaque!)
-        pass.setBindGroup(1, draw.group); pass.setVertexBuffer(0, draw.buffer); pass.draw(draw.count)
+        pass.setBindGroup(1, draw.group); pass.setVertexBuffer(0, draw.buffer)
+        pass.draw(draw.count)
       }
     }
   }
