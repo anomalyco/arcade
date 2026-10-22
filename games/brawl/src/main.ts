@@ -137,6 +137,7 @@ async function main() {
   }
   const menus = new Menus(menuEl, { pick: choose, ready })
   // The title, lobby, Escape menu and Settings are the kit game shell. The bots play behind the title.
+  let creating = false
   const gameShell = createGameShell({
     game: GAME.id, title: GAME.title, subtitle: "3-stock ring-out brawler", quickLabel: "Quick play", soloLabel: "Practice vs bots",
     friendsNote: "a private room", askName: true, legacyMuteKey: "brawl.muted", quality,
@@ -147,9 +148,17 @@ async function main() {
     lobby: {
       friends: true, quick: true, maxName: NAME_MAX, fallbackName: "guest",
       onSolo: (name) => practice(name),
+      // Play with friends makes a private room: it never shows up in Quick play.
+      createRoom: () => {
+        creating = true
+        return fetch(`${location.pathname.replace(/[^/]*$/, "")}api/create`, { method: "POST", cache: "no-store" })
+          .then((r) => r.json() as Promise<{ room?: string }>)
+          .then((r) => r.room ?? "")
+      },
       // Brawl plays as soon as it joins: its own select screen is where the room gathers and readies.
       onJoin: (room, name) => {
-        enter(name, room, false)
+        enter(name, room, creating)
+        creating = false
         gameShell.flow.play()
       },
     },
