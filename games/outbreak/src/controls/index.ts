@@ -29,7 +29,7 @@ function closeState(ctx: OutbreakClientFrameContext) {
   const death = ctx.session.sim.getFeatureState<DeathState>("death")
   return {
     inRoom: Boolean(ctx.coop.net),
-    menuOpen: Boolean(lobby?.isOpen),
+    menuOpen: Boolean(lobby?.isOpen) || ctx.coop.menuOpen,
     runOver: Boolean(death?.runOver),
     dead: death?.records[localSlot(ctx.session).index]?.state === "dead",
     played,

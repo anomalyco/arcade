@@ -77,7 +77,7 @@ export class CoopView {
     this.net = net
     this.room = room
     this.hud = new CoopHud(net, room, {
-      onOpenLobby: () => this.lobby?.openPause(),
+      onOpenLobby: () => this.onPause?.(),
       onLeaveRoom: () => this.leaveRoom(),
     })
     this.hud.root.hidden = !menu && !net
@@ -106,7 +106,6 @@ export class CoopView {
               this.connectRoom(code, name, variant, loadout, true)
             },
             onLeaveCoop: () => this.leaveRoom(),
-            onReturnToLobby: () => this.onSessionChange?.(),
             onPickChange: (patch) => {
               if (patch.variant !== undefined) this.soloVariant = patch.variant
               if (patch.loadout !== undefined) this.soloLoadout = patch.loadout
@@ -127,9 +126,19 @@ export class CoopView {
     }
   }
 
-  /** True for the solo pause menu or a lobby without a live practice space. */
+  /** The HUD's Pause button: opens the game shell's Escape menu (`src/main.ts`). */
+  onPause?: () => void
+  /** The shell's Escape menu is up (set by `src/main.ts`). */
+  shellPaused = false
+
+  /** True for the solo pause menu or a lobby without a live practice space. A room keeps running under the menu. */
   get paused(): boolean {
-    return Boolean(this.lobby?.isOpen) && !this.practising
+    return (Boolean(this.lobby?.isOpen) && !this.practising) || (this.shellPaused && !this.roomNet)
+  }
+
+  /** A menu is open over the game (the lobby, or the shell's Escape menu). */
+  get menuOpen(): boolean {
+    return Boolean(this.lobby?.isOpen) || this.shellPaused
   }
 
   /** The lobby is open over the practice space (`src/onboarding`): the session is a local one, not the room's. */

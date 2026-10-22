@@ -7,6 +7,7 @@ import type { CameraFilter } from "@arcade/kit/gpu/post/camcorder"
 import type { OutbreakHarness } from "../src/harness"
 
 // One headless, muted run and one still. The live pacer must hold both the sim and the final filter while paused.
+// The menu is the game shell's (`?shell` shows it under automation) with Outbreak's run tools in its pause slot.
 // hivemind run --kind browser --fetch captures/outbreak-pause -- bun games/outbreak/scripts/pause-menu-proof.ts
 const game = resolve(import.meta.dir, "..")
 const out = resolve(game, "../../captures/outbreak-pause")
@@ -33,7 +34,7 @@ try {
   page.on("pageerror", (e) => errors.push(e.message))
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()) })
   const port = (server.httpServer!.address() as { port: number }).port
-  await page.goto(`http://127.0.0.1:${port}/?lobby=1&seed=7&houseSeed=1234&camera=iphone`, { waitUntil: "networkidle" })
+  await page.goto(`http://127.0.0.1:${port}/?lobby=1&seed=7&houseSeed=1234&camera=iphone&shell`, { waitUntil: "networkidle" })
   await page.waitForFunction(() => (window as unknown as ProofWindow).__arcadeHarness?.ready)
   assert.equal(await page.evaluate(() => (window as unknown as ProofWindow).__arcadeHarness.coop()?.lobby?.practice), true)
   await page.locator('[data-act="solo"]').click()
@@ -43,7 +44,7 @@ try {
     w.__arcadeHarness.setLab("audioMuted", 0)
     w.leakedPauseKeys = []
     window.addEventListener("keydown", (e) => {
-      if (w.__arcadeHarness.coop()?.lobby?.mode === "pause") w.leakedPauseKeys.push(e.code)
+      if (document.querySelector<HTMLElement>(".arcade-shell")?.dataset.screen === "paused") w.leakedPauseKeys.push(e.code)
     })
     w.pauseProbe = { frames: 0, time: 0, maxStep: 0 }
     const encode = w.cameraFilter.encode.bind(w.cameraFilter)
@@ -80,7 +81,7 @@ try {
   const voicesWhilePaused = await page.evaluate(() => (window as unknown as ProofWindow).__arcadeHarness.audio().voices)
   assert.equal(voicesWhilePaused, 0, "pause must stop ambient beds, held voices and the horde")
   report.audio = { voicesBeforePause, voicesWhilePaused }
-  assert.equal(await page.evaluate(() => (window as unknown as ProofWindow).__arcadeHarness.coop()?.lobby?.mode), "pause")
+  assert.equal(await page.evaluate(() => document.querySelector<HTMLElement>(".arcade-shell")?.dataset.screen), "paused")
   assert.equal(await page.locator("#outbreak-lobby").evaluate((el) => el.classList.contains("is-practice")), false)
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
   await page.screenshot({ path: resolve(out, "pause-menu.png") })
