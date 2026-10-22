@@ -55,6 +55,11 @@ try {
     await page.evaluate(() => { (globalThis as unknown as WaterDebug).carrier.ocean.water.mode = "today" })
     await frames(30)
     await page.locator("canvas").first().screenshot({ path: `${out}/carrier-today-restored.png` })
+    if (!process.argv.includes("--timing")) {
+      await Bun.write(`${out}/stills.json`, JSON.stringify({ hostname: hostname(), gpu, errors, canvas, settings: await page.evaluate(() => (globalThis as unknown as WaterDebug).carrier.ocean.water) }, null, 2))
+      if (errors.length) throw Error(errors.join("\n"))
+      console.log(`Water stills: ${out}`)
+    } else {
     await page.setViewportSize({ width: 1920, height: 1080 })
     await frames(120)
     await page.evaluate(() => {
@@ -82,6 +87,7 @@ try {
     const dimensions = await page.evaluate(() => { const r = (globalThis as unknown as WaterDebug).carrier.renderer; return { width: r.width, height: r.height } })
     if (errors.length) throw Error(errors[0])
     await Bun.write(`${out}/timing.json`, JSON.stringify({ hostname: hostname(), gpu, dimensions, method: "GpuPerf hardware first-pass-to-last-pass timestamps; seven alternating pairs, 120 warmup frames and 40 independent samples per block", blocks, errors }, null, 2))
+    }
   }
   if (errors.length) throw Error(errors.join("\n"))
   console.log(`Water checkpoint: ${out}`)

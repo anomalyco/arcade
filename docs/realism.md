@@ -1,5 +1,19 @@
 # Realism playbook
 
+## Water candidate (2026-10-22, awaiting Kit)
+
+Carrier's opt-in continuous ocean uses `packages/kit/water/`: irregular filtered
+normal bands, sparse sun glints and turbulent surface foam. `water/wake.ts` adds a
+bounded Kelvin cusp-normal approximation at 19.47°, driven by the real boat poses;
+wave geometry and authoritative buoyancy are unchanged. Today remains the default.
+The separate `woods-water` branch adds moon/star reflections, shallow torch scatter,
+rain rings and a draggable local log to the real forest lake, with its existing sky
+as the labelled fallback until `kit/sky` integrates. The lake needs that branch's
+forest prerequisite, not just the Carrier branch.
+
+Cost: deliberately not gated by paired timing, per Kit's latest direction. Decision:
+pending visual review. Evidence and remaining differences: [perf/water.md](../perf/water.md).
+
 What makes Arcade's scenes read as real, by what you see: lights, bounce, shadows, fog, smoke, wet ground, storms,
 foliage, materials, glass, the camera, stability, quality tiers and sound. Each entry says what the trick is and why
 it reads as real, where it lives (the kit path first, then the games using it), what it costs and how the quality

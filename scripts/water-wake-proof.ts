@@ -15,7 +15,8 @@ type Debug = {
     inspect: { yaw: number; pitch: number; dist: number }; place(ahead: number, side: number, knots: number): void }
 }
 if (!hostname().startsWith("aak2-2")) throw Error("Water proof must run on mini")
-const out = resolve("captures/water/wake")
+const arg = (name: string, fallback: string) => { const i = process.argv.indexOf(name); return i < 0 ? fallback : process.argv[i + 1]! }
+const out = resolve(arg("--out", "captures/water/wake"))
 mkdirSync(out, { recursive: true })
 writeBuildId(resolve("games/carrier"))
 const server = await createServer({ root: "games/carrier", server: { host: "127.0.0.1", port: 0, strictPort: true } })
@@ -76,12 +77,19 @@ try {
     await page.locator("canvas").first().screenshot({ path: `${out}/${mode}.png` })
     await page.close()
   }
-  if (JSON.stringify(traces[0]) !== JSON.stringify(traces[1])) throw Error("Boat, ship or camera diverged between water modes")
-  await Bun.write(`${out}/manifest.json`, JSON.stringify({ hostname: hostname(), frames: traces[0]!.length, fps: 30, seed: 7, time: 120, hour: 15, simulationAndCameraIdentical: true, traces, note: "Actual Carrier boat hull, physics and wake field in both modes; shading-only candidate, no dispersive wake simulation. Today above, candidate below." }, null, 2))
+  const simulationAndCameraIdentical = JSON.stringify(traces[0]) === JSON.stringify(traces[1])
+  await Bun.write(`${out}/manifest.json`, JSON.stringify({ hostname: hostname(), frames: traces[0]!.length, fps: 30, seed: 7, time: 120, hour: 15, simulationAndCameraIdentical, traces, note: "Actual Carrier boat hull, physics and trajectory foam field; candidate adds presentation-only Kelvin cusp normals. Today above, candidate below." }, null, 2))
+  if (!simulationAndCameraIdentical) throw Error("Boat, ship or camera diverged between water modes")
   // Encode before closing Chromium: Bun can lose subprocess-exit notifications after browser shutdown on macOS.
   const encode = Bun.spawn(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-r", "30", "-i", `${out}/today.h264`, "-r", "30", "-i", `${out}/continuous.h264`,
     "-filter_complex", "[0:v][1:v]vstack,scale=960:1080[v]",
     "-map", "[v]", "-an", "-c:v", "libx264", "-threads", "2", "-preset", "fast", "-crf", "20", "-pix_fmt", "yuv420p", "-movflags", "+faststart", `${out}/carrier-wake.mp4`], { stdout: "inherit", stderr: "inherit" })
   if (await encode.exited) throw Error("Wake encode failed")
+  for (const mode of ["today", "continuous"]) {
+    const remux = Bun.spawn(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-r", "30", "-i", `${out}/${mode}.h264`, "-c:v", "copy", "-an", "-movflags", "+faststart", `${out}/${mode}.mp4`], { stdout: "inherit", stderr: "inherit" })
+    if (await remux.exited) throw Error("Wake remux failed")
+    const strip = Bun.spawn(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", `${out}/${mode}.mp4`, "-vf", "fps=2,scale=480:-1,tile=4x3", "-frames:v", "1", `${out}/${mode}-strip.png`], { stdout: "inherit", stderr: "inherit" })
+    if (await strip.exited) throw Error("Wake strip failed")
+  }
   for (const mode of ["today", "continuous"]) unlinkSync(`${out}/${mode}.h264`)
 } finally { await browser.close(); await server.close() }

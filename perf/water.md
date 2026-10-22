@@ -1,9 +1,9 @@
 # Shared water, 2026-10-22
 
-Target: convincing continuous water at 60 fps on mini (M4 Pro), 1920×1080.
-Primary metric: paired whole-frame GPU timestamp median delta; budget 1.5 ms for the
-first shading-only ocean candidate. Secondary: shader errors, default pixel parity,
-far-wave stability, CPU/GPU swell agreement. Measurements below are whole-frame, not water-pass isolation.
+Current direction: judge the images; Kit will judge performance on his computer.
+No further paired timing or quiet-mini wait. Earlier timing experiments below are
+historical, not release gates. Shader errors, Today parity and unchanged authoritative
+sea remain correctness checks.
 
 Baseline: origin/main 52e5b830. Carrier's existing deterministic Gerstner sea,
 camera-relative clipmap, crest-memory taps and camera-centred wake field stay authoritative.
@@ -141,3 +141,85 @@ The page, both MP4 clips and this ledger returned HTTP 200 from pro after public
 Raw H.264 scratch was removed after remuxing; final MP4s and stills are retained.
 All owned worker jobs have exited. The latest integration question was finally
 delivered when the woods owner became idle; its answer is pending.
+
+## Resumed after Kit's visual rejection
+
+Kit rejected candidate 2's corduroy waves, smeared sun path and floating polygon
+wake. Carrier is first priority; the lake follows on a separate `woods-water`
+worktree created from the now-approved forest prerequisite `7f62e5bd`.
+
+Candidate 3 hypothesis (unmeasured): replace the repeating short-wave trains with
+six rotated, warped noise-gradient bands from 18 m to 0.16 m, preserve the actual
+long swell normal, filter unresolved slope into roughness, use the sun's 0.266°
+angular radius with a bounded highlight, and increase horizon haze. Continuous
+surface foam uses broken filaments and fine bubble holes. The boat's prop wash
+widens with distance on the existing trajectory field. A separate, bounded Kelvin
+cusp shading model uses the actual hull pose and speed, at 19.47°; it changes no
+height or solver state. Continuous mode reduces airborne spray to short-lived
+droplets and omits the mist discs. Today keeps its existing paths.
+
+The first candidate-3 still job expired at mini admission. A new skulk-owned wait
+allows four hours for a normal-priority slot; targeted typechecks are queued on pro.
+No candidate-3 appearance or performance claim is made before those finish.
+
+## Current ocean review: candidate 6
+
+- Candidate 3 compiled after parenthesising WGSL hash products; rejected broad glare
+  and solid crest bands. Candidate 4 separated glints from the broad lobe and replaced
+  airborne wake chunks with surface foam, but the trail was too thin and broken.
+- Candidate 5 expanded detail to seven noise-gradient bands (55 m down to 0.14 m),
+  strengthened Kelvin arms and grazing haze. Its capture job survived the restart;
+  timing had already finished before the new instruction was read. No rerun or timing
+  claim. Foam was too solid, so candidate 6 introduced turbulent holes and softened
+  the field edge, retained more broken crest whitecaps, and capped sky-reflection contrast.
+- Candidate 6 panorama and six-second wake captured on mini, headless Metal, muted.
+  All 180 boat/ship/camera trace frames match exactly; no shader/page errors.
+  Twelve-frame strip inspected. Kelvin waves are a bounded 19.47° cusp-normal
+  approximation, not dispersive simulation or changed geometry.
+- Real pointer drag moved the boat 24.73 m; Edit suppressed gameplay movement;
+  Play drove it 72.76 m; no pointer lock; Today control restored the baseline.
+  `captures/water/editor/manifest.json` holds the positions and empty error list.
+- Today WGSL token, sea and other-game source pins pass after these changes.
+  Carrier and root-script typechecks pass. The combined check's final station-test
+  command used an incorrect path; the corrected command passed all five tests.
+  Candidate 6's Today/restored raw RGB buffers are identical (2,764,800 bytes).
+- Remaining visual difference: the existing large swell still gives broader reflected
+  bands and more saturated blue than the paint-over. This is an opt-in review candidate,
+  not a claim of exact target parity or Kit approval.
+
+## Lake branch
+
+`woods-water` was cleanly fast-forwarded to Kit's requested `fe3e6756` before edits.
+Shared original lake optics live in `packages/kit/water/lake.ts`, consumed by the real
+forest material; typed controls keep Today as the normal Woods default. The first
+capture exposed an over-bright torch patch and sky hidden by the default fog, so the
+station uses a matched clear-moonlit environment preset for Today and candidate.
+The forest's existing sky is an explicitly labelled fallback: `kit/sky` is absent
+from this base. The generated old lake paint-over remains rejected.
+
+Replacement `lake-target-v2.png` was generated from the matched baseline and inspected:
+the camera, shoreline, trees and sky remain visually aligned, with no invented lights
+or props. It is a useful water-material target, not a pixel-exact edit (the output is
+1672×941 rather than 1600×900). Its broken moonlight path is **not matched** by this
+candidate: the current reflection is still a small point, stars are more prominent,
+and the surface mist is stronger. Lake work is a first review candidate, not target parity.
+
+Lake build, Woods and root-script typechecks passed. Real-input proof moved the log
+from (-24,95) to (-25.5473,95.7641), suppressed walking and pointer lock in Edit, and
+selected Today through the actual menu. `proof.json` has no page/shader errors.
+Five Lab station tests passed on the worker; the architecture map is up to date.
+The Today moon still includes its transient welcome toast; the environment and pose
+match the candidate. No image was retouched to remove it.
+
+## Review delivery
+
+- Published root: `https://studio.taila8e7c7.ts.net:8444/raw/water-2026-10-22/index.html`.
+  `candidate-6/` contains the ocean triptych, six-second stacked wake clip and traces.
+  `lake/` contains the lake triptych, torch pair, log/rain still and input proof.
+- Ocean implementation: `c7329b70`, following the four original local commits.
+  Lake implementation is a separate local commit on `woods-water` from `fe3e6756`.
+  Both station files describe the two scenes; reconcile them when combining branches.
+- Changes remain local for Kit's Claude review. No push, merge or manual deployment.
+  No showcase sent to #arcade: neither candidate is being claimed spectacular.
+- Earlier broad verification failed on historical Lot smoke and timing/time-limit
+  failures. Targeted current checks above passed; no new paired timing was run.
