@@ -66,6 +66,8 @@ export type ForestViewOptions = {
   /** URL of the folder holding `tex/` and `models/` (`scripts/woods/fetch-assets.ts`). */
   assetRoot: string
   quality?: QualityTier
+  /** Prefix of the boot phases' performance marks (\`<prefix>:assets\`, \`<prefix>:build\`); default "forest". */
+  markPrefix?: string
   /** Software-GPU smoke: no mist, reflections or shadows, a single fog lamp. */
   smoke?: boolean
   settings?: Partial<ForestLookSettings>
@@ -147,9 +149,11 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
   const t0 = performance.now()
   const [textures, models] = await Promise.all([loadForestTextures(device, opts.assetRoot, quality.textureSize), loadForestModels(opts.assetRoot)])
   const loadMs = performance.now() - t0
+  performance.mark(`${opts.markPrefix ?? "forest"}:assets`)
   const t1 = performance.now()
   let build = buildForest(world, models, { scatter: 1, fernDensity: settings.fernDensity, litter: settings.litter })
   let buildMs = performance.now() - t1
+  performance.mark(`${opts.markPrefix ?? "forest"}:build`)
 
   let pass = new ForestPass(renderer.passContext, build, textures, world)
   renderer.addPass("sky", new SkyPass(renderer.passContext))

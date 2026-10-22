@@ -304,6 +304,7 @@ async function main() {
     audio.frame(camera.eye, camera.yaw, dt, world, state, playing || panel.visible)
 
     frames++
+    if (frames <= 2) performance.mark(`woods:frame${frames}`)
     if (smoke && frames >= 2) paused = true
   }
 
