@@ -213,6 +213,20 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
     match: (s) => s === "@arcade/kit/gpu/post/camcorder",
   },
   {
+    area: "`forest/{view,settings}` & `sim/{forest-world,forest-demo}`",
+    description: "Photoreal night forest renderer (scanned trees, mist bank, beams, exposure, quality tiers) over a plain `ForestWorld`",
+    match: (s) =>
+      s === "@arcade/kit/forest/view" ||
+      s === "@arcade/kit/forest/settings" ||
+      s === "@arcade/kit/sim/forest-world" ||
+      s === "@arcade/kit/sim/forest-demo",
+  },
+  {
+    area: "`client/walk-camera`",
+    description: "First-person walking camera: stride bob, settle and reduce-motion over `client/walk`",
+    match: (s) => s === "@arcade/kit/client/walk-camera",
+  },
+  {
     area: "`gpu-perf`, `fx/frame-timer` & `quality`",
     description: "Rolling p50/p95/FPS `PerfSampler`, GPU pass timestamp telemetry and adaptive quality tiers (`GameQuality`)",
     match: (s) =>
