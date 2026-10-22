@@ -120,14 +120,16 @@ const best = await page.evaluate(async () => {
 })
 console.log("moment", JSON.stringify(best))
 
-// Today is the same pixels: Eyes through the (inactive) chain, again, and with no final pass at all.
-for (const [id, chain] of [["control-eyes-again", true], ["control-no-final-pass", false]] as const) {
-  if (only.length && !only.includes(id)) continue
-  await page.evaluate((chain) => { const r = (woods as unknown as { renderer: { setFinalPass(p: unknown): void } }).renderer; r.setFinalPass(chain ? (woods.cameraLook as unknown as { chain: unknown }).chain : null) }, chain)
+// Today is the same pixels: one staged Eyes moment drawn through the (inactive) chain, with no final pass at all, then
+// through the chain again. The sim is paused between them, so only the forest's own per-frame grain can differ.
+if (!only.length || only.some((id) => id.startsWith("control-"))) {
+  const setChain = (on: boolean) => page.evaluate((on) => (woods as unknown as { renderer: { setFinalPass(p: unknown): void } }).renderer.setFinalPass(on ? (woods.cameraLook as unknown as { chain: unknown }).chain : null), on)
   await stage("eyes", undefined, "still", best.frame)
-  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
-  await page.screenshot({ path: `${out}/${id}.png` })
-  await page.evaluate(() => (woods as unknown as { renderer: { setFinalPass(p: unknown): void } }).renderer.setFinalPass((woods.cameraLook as unknown as { chain: unknown }).chain))
+  for (const [id, chain] of [["control-chain", true], ["control-no-final-pass", false], ["control-chain-again", true]] as const) {
+    await setChain(chain)
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
+    await page.screenshot({ path: `${out}/${id}.png` })
+  }
 }
 
 if (clip) {
