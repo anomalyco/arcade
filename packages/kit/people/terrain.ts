@@ -81,6 +81,13 @@ export function terrainFeet(st: TerrainState, a: Locomotion, body: HumanBody, s:
       const p = solePitch(ft, gb, TILT.down)
       tilt[i] = p.th
       g[i] = gb + p.raise
+      // At heel strike the boot lands on the rig's heel point (retarget.ts pivots there), not on this footprint: near a
+      // log's steep edge a centimetre is a hand's height, so the heel's own ground lifts the boot if it is higher.
+      const strike = Math.max(0, Math.min(1, ft.x[1] / 0.06))
+      if (strike > 0) {
+        const heel = G(ft.p[0] - ft.x[0] * RIG.heel - ft.y[0] * RIG.ankle, ft.p[2] - ft.x[2] * RIG.heel - ft.y[2] * RIG.ankle)
+        g[i] += Math.max(0, heel - (g[i] + Math.sin(tilt[i]) * toHeel * s)) * strike
+      }
       continue
     }
     const t = a.motion.targets[i]!
