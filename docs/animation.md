@@ -599,6 +599,26 @@ What the first pass (2026-10-19, `8404f9ab`) showed, angle RMSE at matched speed
 | Survivor walk vs 100STYLE Neutral (0.93 m/s) | 16.1° | Forearm and shoulder ~20–24°; our trunk pitch moves 0.3° per cycle vs 6.4° |
 | Survivor run vs Quaternius jog / sprint | 20.7° / 27.1° | Trunk lean 9–12° vs 23° / 37° (game clips lean much harder) |
 
+## Skinned people on the rig
+
+`@arcade/kit/people` ([people.md](people.md)) poses a skinned MakeHuman mesh (game_engine skeleton) from the rig's
+frames instead of drawing parts; the rig's motion and gait numbers are unchanged (`gait-metrics.ts --tag after`
+matches main). What held up, measured with `bun scripts/people/measure.ts`:
+
+- **IK on the mesh's own bone lengths, not the rig's.** Copying rig rotations onto a skeleton with different thigh and
+  shin lengths slides planted feet. Retargeting by positions (rig ball and ankle targets, two-bone IK with the mesh's
+  lengths, pole from the rig knee) keeps a planted ball at 0 mm slip over a 6 s 1.4 m/s walk.
+- **Ball target, heel pivot at strike.** The mesh's ball sits on the rig's ball while planted; during heel strike
+  the target blends to the heel so the boot rolls over its heel instead of slapping flat.
+- **Pelvis sink when a leg cannot reach.** Uneven ground or a different leg length leaves a straight leg short; the
+  hips drop on a spring (140, ζ 0.85) by just the shortfall.
+- **Terrain is a layer after the rig** (`terrain.ts`, after Outbreak's `sharedFootGround`): planted feet take the
+  ground under the ball and pitch so the heel rests on it; swing feet arc over anything on the path (16 samples, 5 cm
+  toe margin). Over a 30 cm log: worst sink 28 mm, planted float 52 mm where heel and ball straddle the log's edge
+  (gap).
+- **Torch hand.** A wrist bend after the arm IK turns the barrel onto the beam (0° worst error while walking) and a
+  measured palm axis (`hands` rest) seats it; fingers take a torch grip.
+
 ## Known gaps
 
 - **Run late-swing knee extension still leads mocap by ~8°.** Walk leg RMSE is now **8.07°** (hip 4.48°, knee 10.94°,

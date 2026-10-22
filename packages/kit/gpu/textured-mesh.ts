@@ -89,9 +89,10 @@ export function texturedSceneShader(hooks: SceneHooks, masked = false): string {
 }
 
 // Material/geometry buffers belong to each pass; identical shaders and fixed render state belong to the renderer.
-type Pipelines = { layout: GPUBindGroupLayout; pipeline: (blend: boolean, masked?: boolean) => GPURenderPipeline }
-const pipelineCache = new WeakMap<PassContext, Map<string, Pipelines>>()
-function texturedPipelines(ctx: PassContext, hooks: SceneHooks): Pipelines {
+export type TexturedPipelines = { layout: GPUBindGroupLayout; pipeline: (blend: boolean, masked?: boolean) => GPURenderPipeline }
+const pipelineCache = new WeakMap<PassContext, Map<string, TexturedPipelines>>()
+/** Cached textured scene pipelines (opaque, blended, alpha-tested) and their material bind group layout, per renderer and hooks. */
+export function texturedPipelines(ctx: PassContext, hooks: SceneHooks): TexturedPipelines {
   let cache = pipelineCache.get(ctx)
   if (!cache) { cache = new Map(); pipelineCache.set(ctx, cache) }
   const code = texturedSceneShader(hooks), cached = cache.get(code)
