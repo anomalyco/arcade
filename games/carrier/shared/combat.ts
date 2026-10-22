@@ -602,7 +602,7 @@ export type Fighter = {
 
 export type CombatEvent =
   /** A missile or bomb burst at (x, y, z): over the sea (`water`), on a jet (`on`, else -1); `ground` what it struck. */
-  | { k: "boom"; owner: number; seq: number; x: number; y: number; z: number; on: number; water: boolean; bomb?: boolean }
+  | { k: "boom"; owner: number; seq: number; x: number; y: number; z: number; on: number; water: boolean; bomb?: boolean; intercepted?: true }
   /** A jet's health changed (damage, or repair with by -1 and w ""). */
   | { k: "hp"; on: number; hp: number; by: number; w: KillWeapon | "" }
   /** A jet was destroyed: by whom (-1 it crashed on its own) and with what ("" a crash). */
@@ -759,7 +759,7 @@ export class CombatWorld {
     for (const m of this.missiles) {
       if (!m.alive || m.owner !== owner || m.seq !== seq) continue
       m.alive = false
-      this.events.push(m.kind === "bomb" ? { k: "boom", owner, seq, x: m.x, y: m.y, z: m.z, on: -1, water: false, bomb: true } : { k: "boom", owner, seq, x: m.x, y: m.y, z: m.z, on: -1, water: false })
+      this.events.push(m.kind === "bomb" ? { k: "boom", owner, seq, x: m.x, y: m.y, z: m.z, on: -1, water: false, bomb: true, intercepted: true } : { k: "boom", owner, seq, x: m.x, y: m.y, z: m.z, on: -1, water: false, intercepted: true })
       return true
     }
     return false

@@ -39,7 +39,9 @@
   aims, LMB/Space fires, RMB zooms; pick another operation to leave), or launch the BOAT (1 per ship, craned over the
   port side; W/S A/D Shift boost, mouse aims the 25 mm turret, LMB/Space fires; it ends only when brought back alongside
   slowly or sunk, 40 s recharge, and you return to the role you launched from; dev harness `boat.html`, see CONTRACTS.md
-  "Boat"); pilots wait on deck until they launch. Mouse: aboard, the first click takes Pointer Lock and the mouse then orbits the ship camera (the stick in
+  "Boat"); pilots wait on deck until they launch. Every ready jet stands parked in its bay on its carrier's deck and enemies can
+  destroy it there (bombs, missiles, shells, rounds, crashes; its slot then recharges as after a crash; CONTRACTS.md
+  "Parked jets"). Mouse: aboard, the first click takes Pointer Lock and the mouse then orbits the ship camera (the stick in
   flight); Esc frees it, menus free it and give it back. Controls: at the helm W/S throttle, 1-9/0/= presets, A/D rudder; as a pilot the flight keys plus
   Space/LMB fire, 1/2/3 or wheel/V weapons, F flares, or close to and pointing at your own carrier R LAND (a scripted landing; a flight ends only by landing aboard, a crash or being shot down); Tab players and ships (hold, tap to pin: every carrier in its colour with its crew; JOIN switches ship and so side,
   CREATE SHIP in a sunk carrier's empty berth, captains LOCK, KICK, promote); C free camera (WASD pan, drag orbit, wheel zoom); G full map (hold, tap to pin; the radar and target markers show by themselves in flight, CONTRACTS.md "Pilot's map"); T chat to everyone, Y to your carrier's crew (Tab in the input switches; Enter sends, Esc cancels; the input owns the keyboard; `src/ui/chat.ts`, rules `shared/chat.ts`); M mute; ` dev panel (dev builds). Shared rules: `shared/{crew,squad,ops}.ts`.

@@ -272,7 +272,7 @@ team (`hearsChat`). `Net.chat` queues lines for `src/ui/chat.ts`; offline they e
 Offline (`?seed`) the same crew rules run locally on a crew of one.
 Wire format (`shared/protocol.ts` `encode`/`decodeClient`/`decodeServer`, codecs in `shared/wire.ts` on
 `@arcade/kit/net/bytes`): the high-rate messages travel as binary frames (first byte a `WIRE` kind; client `plane`,
-`aim`, `boat`, `gun`, `hits`, `shiphits`, `thits`, `tshiphits`, `bhits`; room `planes`, `ships`, `boats`, `turrets`,
+`aim`, `boat`, `gun`, `hits`, `shiphits`, `thits`, `tshiphits`, `bhits`, `deckhits`; room `planes`, `ships`, `boats`, `turrets`,
 `gun`), everything else (hello/welcome, crew, chat, ops, objective, hulls, combat events, errors) as JSON text on the
 same socket (`binaryType = "arraybuffer"`). A binary frame decodes to the same message object JSON would and passes the
 same checks; malformed, truncated, trailing or oversized frames (512 B client, 64 KiB room) decode to null. Grids: jets
@@ -802,6 +802,33 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   - `ShipHit.amount` / `ShipDamageKind` carry the shell type into `Fleet.hit`.
 - Real-GPU check: `scripts/ships-shot.ts`. Three pages on three carriers: A's F-35C bombs B's carrier (direct hit, near
   miss), C's Hornet strafes it and fires dumbfires, A's bombs finish it, B moves to its replacement. Captures go to `captures/ships/damage/`.
+
+## Parked jets (`shared/deck-jets.ts`, `server/core.ts`, `src/flight/seam.ts`, `tests/deck-jets.test.ts`)
+
+- Every ready aircraft slot (`slotReady`: no pilot, not recharging) is a jet standing in its own bay on its carrier's
+  apron: the carrier-spec `PARKING` jet spots in catalogue order (Hornet, Hornet, F-35C; the boat's slot and extra
+  rescue slots have none), angled nose-in toward the runway, clear of the runway, catapult track, landing path, island
+  and elevator (tested on the hit boxes' corners). `parkedJets(ship, now)` is the set; clients draw it from the crew
+  they already have (`FlightModule.drawParked`: the real models in the ship's colour, gear down, glued to the drawn,
+  settled deck every frame; the models have no folding wings). A launch empties the bay (the catapult run is the
+  pilot's jet as before), a landing refills it at once, a loss leaves it empty while the slot recharges.
+- Health `DECK_JET.hp` 60, room-only (`DeckJets`), repaired after 20 s without a hit, forgotten when the slot leaves
+  its bay. Damage: a jet gun round 2, a CIWS round 1.6, a boat 25 mm round 4 (each what it does to a flying jet), and
+  bursts by distance to the bay's centre 2 m above the deck: bombs `bombDamage`, missiles `blastDamage` (not stores
+  shot down in flight: `boom.intercepted`), 5-inch shells `shellDamage`, SAMs `samDamage`, and an enemy jet crashing
+  within 16 m destroys it. Friendly fire is off (the ship's `team`).
+- Rounds are shooter-authoritative like hull rounds: a round that strikes the deck inside a parked jet's box
+  (`parkedAt`, ship-local, 14 × 19 m, up to 5.5 m above the deck; wired into `Weapons`, `Gunnery` and `BoatModule` as
+  `deckJet`) is reported as `deckhits { w: 0 gun | 1 ciws | 2 cannon, ship, slot, n }` (binary) instead of a hull hit.
+  The room checks an enemy ship, the slot parked, and the weapon's own budget and reach exactly as for that hull
+  (`spendRounds` within 1.8 km, `GunneryWorld.ciwsDeckRounds`, `BoatBudget` with a boat on the water in reach).
+- Destroyed: the room sends `deckkill { ship, slot, by, w }` (JSON, rare) and runs `wreckParked` (crew event `wreck`:
+  the slot's normal loss recharge, Hornet 30 s, F-35C 45 s, as after a crash); the crew that follows empties the bay.
+  Clients blow it apart in its bay with the jet crash breakup on a deck (`Explosions.crash(.., "ship", ..)`: fireball,
+  burning pieces riding the deck, scorch), and the kill feed reads "RAIDER ✕ HORNET ON DECK" (DESTROYED confirmation for
+  the attacker). Kill/death tallies are for players only and do not count it.
+- Capture check: `scripts/deck-jets-shot.ts` (dev server, in-page dev room; a second player RAIDER bombs one parked
+  Hornet with an F-35C and strafes the other; `--swiftshader` without a GPU).
 
 ## Carrier collisions (`shared/ship-collide.ts`, hook in `server/core.ts` `collideShips`, `src/game/game.ts`)
 
