@@ -78,6 +78,7 @@ await kit.evaluate(() => woods.hold("KeyE", false))
 await sleep(500)
 const tapes = await Promise.all(pages.map((p) => p.evaluate(() => woods.net.tapes)))
 report.tapes = tapes
+report.tie = { tree: tree.id, kit: (await net(kit)).self, stand: { x: tree.x, z: tree.z + tree.radius + 0.7 } }
 check(`Kit's tape on tree ${tree.id} is in everyone's world`, tapes.every((t) => t.includes(tree.id)))
 await aiden.evaluate((t) => { woods.walkTo(t.x + 2.5, t.z + 3); }, tree)
 await aiden.waitForFunction(() => !woods.walking, null, { timeout: 20000 })

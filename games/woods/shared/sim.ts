@@ -85,6 +85,8 @@ export type Player = {
   /** 0 = map down, 1 = raised. */
   mapRaise: number
   tie: Tie | null
+  /** After a tie or untie, E must be let go this long (s) before it starts another, so a lost input mid-hold can't undo it. */
+  tieHold: number
   /** Seconds the beam has pointed up (`SIGNAL_PITCH`). */
   signal: number
   map: MapKnowledge
@@ -140,7 +142,7 @@ export const BOT_ID = 100
 export function newPlayer(id: number, bot: boolean, name: string, x: number, z: number, yaw: number): Player {
   return {
     id, bot, name, x, z, vx: 0, vz: 0, yaw, pitch: -0.1, light: true,
-    flickerLeft: 0, flickerNext: 20 + (id % 16) * 7, mapRaise: 0, tie: null, signal: 0,
+    flickerLeft: 0, flickerNext: 20 + (id % 16) * 7, mapRaise: 0, tie: null, tieHold: 0, signal: 0,
     map: { trail: [x, z], heard: [], tapes: [], markers: [] },
   }
 }
@@ -231,7 +233,15 @@ export function beamLevel(p: Player, t: number, feel: Feel): number {
   return n > 0.15 ? 0.15 : 0.75
 }
 
+const TIE_RELEASE = 0.2
+
 function stepTie(state: WoodsState, world: WoodsWorld, p: Player, held: boolean, feel: Feel, dt: number) {
+  if (p.tieHold > 0) {
+    if (held) { p.tieHold = TIE_RELEASE; return }
+    p.tieHold = Math.max(0, p.tieHold - dt)
+    p.tie = null
+    return
+  }
   const target = held ? tieTarget(world, p, feel.tapeReach) : null
   if (!target) { p.tie = null; return }
   const existing = tapeOnTree(state, target.id)
@@ -252,8 +262,9 @@ function stepTie(state: WoodsState, world: WoodsWorld, p: Player, held: boolean,
     addUnique(p.map.tapes, tape.id)
     state.events.push({ kind: "tape-tied", by: p.id, tape: tape.id, x: tape.x, z: tape.z, tree: tape.tree, yaw: tape.yaw, at: tape.at })
   }
-  // Keep holding does nothing more until the key is released and pressed again.
+  // Keep holding does nothing more until the key is released (for `TIE_RELEASE`) and pressed again.
   p.tie = { tree: target.id, progress: 1, removing: p.tie.removing }
+  p.tieHold = TIE_RELEASE
 }
 
 function stepKnowledge(state: WoodsState, world: WoodsWorld, p: Player, feel: Feel) {

@@ -42,7 +42,11 @@ test("holding tie on a tree for the tie time ties one tape; holding again remove
   expect(state.players[0]!.map.tapes).toContain(state.tapes[0]!.id)
   hold(true, 1)
   expect(state.tapes.length).toBe(1)
-  hold(false, 0.1)
+  // A blip in the held key (a lost input in a room) doesn't start untying what you just tied.
+  hold(false, 2 / 60)
+  hold(true, FEEL.tapeTieTime * 1.5)
+  expect(state.tapes.length).toBe(1)
+  hold(false, 0.3)
   hold(true, FEEL.tapeTieTime)
   expect(state.tapes.length).toBe(0)
 })
