@@ -92,7 +92,7 @@ not the game's real load.
 |---|---|---|
 | Lot | Yes | `games/lot/src/main.ts`, `src/quality.ts`, `src/walk-audio.ts` |
 | Night Shift | Yes (its boot screen stays its loading screen; the title card sits over READY) | `games/nightshift/src/main.ts`, `src/look/quality.ts` |
-| Outbreak, Getaway, Carrier, Brawl, Blackout, Archers, Walkers | Branches `game-shell-<game>` | |
+| Brawl, Archers, Blackout, Getaway, Carrier, Outbreak, Walkers | One branch each, `game-shell-<game>`; each lists its deliberate changes in the game's `AGENTS.md` under "Game shell" | |
 | Woods | Not yet (unshipped branch `woods`); see the adoption note below | |
 | Lab | Exempt: it is the authoring tool, not a game. It keeps Key labels and its own Edit-mode mute | |
 | Wings, landing, redirects | Out of scope: independent projects | |
@@ -130,7 +130,7 @@ What each game had for its player-facing shell. Paths are under `games/<game>/`.
 
 | Game | Title / start | Lobby, rooms, invite | Pause / Escape | Volume and mute | Graphics quality (default) | Key prompts | Name entry | Loading | Leave warning | Reconnect UI | LabPanel |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| Archers | None: couch play starts at once (`src/main.ts`) | `?room=`, `?online` or P quick-joins; no invite UI | None | M mutes (kit `AudioRuntime`, saved `archers.muted`); no sliders | None: fixed `MAX_DPR = 1.5` | Key caps in `src/ui/hud.ts` | None (bot names) | None | None | None | Dev playground only (`src/dev/playground.ts`) |
+| Archers | None: couch play starts at once (`src/main.ts`) | `?room=`, `?online` or P quick-joins; Copy invite in the room line (`src/ui/hud.ts`) | None | None: `Sound.setMuted` (saved `archers.muted`) is never bound, though its comment says M; no sliders | None: fixed `MAX_DPR = 1.5` | Key caps in `src/ui/hud.ts` | None (bot names) | None | None | None | Dev playground only (`src/dev/playground.ts`) |
 | Blackout | Landing in `src/ui/menus.ts` | Quick, practice, sandbox, create (mode, map), join by code; host controls on the scoreboard; rejoin after a version reload | None (Esc unused in play) | M mutes (`src/main.ts`); sliders in the Lab (`src/ui/debug-overlay.ts`, `bindVolumeControls`) | `GameQuality` Auto, headroom policy; Lab View › Quality (`src/quality.ts`) | Key caps (`src/ui/hud.ts`, `modes-hud.ts`) | Landing field, `blackout.name` | None | None | `RoomSocket.status()` in the HUD (`src/game/net.ts`) | `DebugOverlay` extends `LabPanel` |
 | Brawl | Landing in `src/ui/menus.ts` | Quick, practice, create, join; character select; results | None | M mutes (saved `brawl.muted`); no sliders | `GameQuality` Auto, headroom; Lab View | Key caps (`src/ui/menus.ts`, `hud.ts`) | Landing field, `brawl.name` | WebGPU notice only | None | `session.status()` in the HUD (`src/session.ts`) | `LabPanel` in `src/main.ts` |
 | Carrier | Load screen over the sea (`src/ui/menu.ts`) | Quick, create, join by code (`src/ui/lobby.ts`); team and ops menus | Esc frees the pointer and closes menus | M mutes (kit runtime via `src/audio/mixer.ts`, `carrier.audio.v4`); sliders in the dev panel | `GameQuality` Auto, headroom; dev panel Game tab | Key caps (`src/ui/hud.ts`, `menu.ts`, `flight/hud.ts`) | Callsign field (required) | None | None | Own socket state (`src/net.ts`) | Dev builds only (`src/dev/dev-panel.ts`) |
