@@ -1,4 +1,5 @@
 import { cameraShakeDefaults, type CameraShakeSettings } from "@arcade/kit/client/camera"
+import { SKY_DEFAULTS, type SkySettings } from "@arcade/kit/sky/settings"
 import { motionBlurDefaults, type MotionBlurSettings } from "@arcade/kit/gpu/motion-blur"
 import type { LabControl, LabPanel, LabSettings, LabValue } from "@arcade/kit/lab-panel"
 import type { LookPresetId } from "@arcade/kit/look"
@@ -106,6 +107,7 @@ export type OutbreakDayCycleSettings = DayNightCurveSettings & {
 export type OutbreakViewSettings = CameraShakeSettings &
   CameraLeadSettings &
   PeekViewSettings &
+  SkySettings &
   AntiAliasingSettings & {
   zoom: number
   diagnostic: number
@@ -189,6 +191,7 @@ export const DEFAULT_OUTBREAK_VIEW: OutbreakViewSettings = {
   ...DEFAULT_CAMERA_LEAD,
   ...DEFAULT_PEEK_VIEW,
   ...DEFAULT_ANTI_ALIASING_SETTINGS,
+  ...SKY_DEFAULTS,
 }
 
 export const DEFAULT_OUTBREAK_COMBAT: OutbreakCombatSettings = {

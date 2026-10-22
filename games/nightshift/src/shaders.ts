@@ -75,6 +75,12 @@ ${lookGlassWgsl}
     pbrRough=0.65;
     let p=o.world;
     let kind=i32(round(o.aux));
+    // Open the existing four window bays only when the shared sky is loaded; retain blinds and reveals.
+    if(O.sky.x>0.5) {
+      if(kind==13 && o.world.x < -3.8) { discard; }
+      let bay=min(min(abs(o.world.z-4.0),abs(o.world.z)),min(abs(o.world.z+4.0),abs(o.world.z+7.0)));
+      if(kind==0 && abs(o.world.x+4.0)<0.11 && o.world.y>0.87 && o.world.y<2.65 && bay<1.2) { discard; }
+    }
     let footprint=officeFootprint;
     let grain=officeDetail(p,160.0);
     let wear=officeNoise(p*6.0)*0.5+officeNoise(p*21.0)*0.5;

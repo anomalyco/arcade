@@ -4,6 +4,7 @@
  * feature adds one line here and never edits `main.ts`.
  */
 import "./air/index"
+import "./sky/index"
 import "./anti-aliasing/index"
 import "./behaviour/index"
 import "./blood/index"

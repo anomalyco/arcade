@@ -3,6 +3,7 @@ import { LOOK_PRESETS, LOOK_PRESET_IDS, createLookControls } from "../../gpu/loo
 import { MAX_SPOT_SHADOWS } from "../../gpu/shadows/spot-shadows"
 import type { LabControl, LabSettings } from "../../lab-panel"
 import { WEATHER_PRESETS, WEATHER_PRESET_IDS, createWeatherControls } from "../../weather"
+import { skyControls } from "../../sky/settings"
 import type { LabContext, LabSection } from "../types"
 import { PRESET_PICKS, WORLD_PRESETS, WORLD_PRESET_VERSION, worldPreset, type WorldPresetFile } from "./presets"
 import { FLOOR, WORLD_CAMERA, WORLD_FOCUS } from "./scene"
@@ -11,6 +12,7 @@ import { CAR_PAINT_OPTIONS, WALL_PAINT_OPTIONS, WORLD_DEFAULTS, type DebugWorld 
 export const WORLD_TABS = [
   { label: "Look", groups: ["Look"] },
   { label: "Light", groups: ["Clock & light"] },
+  { label: "Sky", groups: ["Sky"] },
   { label: "Weather", groups: ["Weather"] },
   { label: "Materials", groups: ["Materials"] },
   { label: "Vegetation", groups: ["Vegetation"] },
@@ -43,6 +45,9 @@ export function createWorldSection(context: LabContext, world: DebugWorld): LabS
     def(key, () => (world.look as Record<string, Value>)[key]!, v => { ;(world.look as Record<string, Value>)[key] = v })
   }
   def("weatherPreset", () => world.weather.preset, v => world.setWeather(String(v)))
+  for (const key of Object.keys(world.sky) as (keyof typeof world.sky)[]) {
+    def(key, () => world.sky[key], v => { (world.sky as Record<string, Value>)[key] = v })
+  }
   for (const key of Object.keys(world.weather)) {
     if (key === "preset") continue
     def(key, () => (world.weather as Record<string, Value>)[key]!, v => { ;(world.weather as Record<string, Value>)[key] = v })
@@ -63,6 +68,7 @@ export function createWorldSection(context: LabContext, world: DebugWorld): LabS
     controls.filter(c => c.type !== "action").map(c => ({ ...c, group, subsection: c.group?.replace(/^Weather · /, "") }))
 
   const controls: LabControl[] = [
+    ...skyControls(),
     {
       key: "worldPreset",
       label: "Preset",
@@ -160,6 +166,10 @@ export function createWorldSection(context: LabContext, world: DebugWorld): LabS
     world.reset()
     assign(p.values)
     preset = p.id
+    if (p.idea === "sky") {
+      stage.camPitch = -0.3
+      stage.frameTarget(WORLD_FOCUS[0], 3, WORLD_FOCUS[2], 8)
+    }
     sync()
   }
 

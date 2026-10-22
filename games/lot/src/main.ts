@@ -1,4 +1,6 @@
 import { mat4 } from "wgpu-matrix"
+import { attachSky } from "@arcade/kit/sky/controller"
+import { createSkySettings, skyControls } from "@arcade/kit/sky/settings"
 import { WalkCamera } from "@arcade/kit/client/walk-camera"
 import { keyPromptHtml } from "@arcade/kit/client/key-cap"
 import { openGpu } from "@arcade/kit/gpu/boot"
@@ -57,6 +59,8 @@ async function main() {
   // The CI smoke keeps the atmosphere at Today: its software GPU cost is noted in docs/rendering-techniques.md.
   const fog=new FogScatter(createFogSettings(smoke ? {} : ATMOSPHERE)), ssr=new Ssr(createSsrSettings(SSR_MOTION)), wet={...WET_DEFAULTS}
   const settings = defaults()
+  const skySettings = createSkySettings()
+  const sky = attachSky(renderer, skySettings)
   renderer.setTemporal({ ...TEMPORAL_DEFAULTS, mode: "taa", sharpen: 0.12 })
   const t0=performance.now()
   const world = await buildWorld()
@@ -160,6 +164,7 @@ async function main() {
   camera.body.x = START.x; camera.body.y = START.z; camera.yaw = START.yaw; camera.pitch = START.pitch
   camera.height=START.height; camera.near=0.15; camera.far=1200
   const panel = new LabPanel(settings, controls(settings), new URLSearchParams(location.search), () => camera.release(), { open: false, pill: false, groupActions: false, capture: "focus", openGroups: ["Walking"] })
+  panel.addControls(skySettings, skyControls())
   const comparison=compareCamera(camera,()=>panel.holdsInput)
   // Weather is its own chunk, loaded the first time it is turned on (or a strike is asked for): Today and the smoke
   // never fetch, compile or draw any of it.
@@ -290,7 +295,8 @@ async function main() {
     packContactShadowKnobs(contact,custom,36)
     packStreetLamp(street,custom,44)
     custom.set([indoor.wear,indoor.sheen,indoor.wax,indoor.glow],56)
-    custom.set(sf ? [sf.flash*0.4,...sf.flashDir,sf.glass,sf.time,sf.flash*0.02,0] : [0,0,0,0,0,0,0,0],60)
+    sky.update({ time: fixedTime ?? now/1000, sceneUnitsPerCdM2: 1, skyFlashRadiance: sf ? [sf.flash*0.0156,sf.flash*0.0166,sf.flash*0.02] : [0,0,0] })
+    custom.set(sf ? [sf.flash*0.4,...sf.flashDir,sf.glass,sf.time,sf.flash*0.02,Number(sky.active)] : [0,0,0,0,0,0,0,Number(sky.active)],60)
     forest.update(camera.eye, forestSettings, sf && sf.sway[0]>0 ? [sf.sway[0]*sf.sway[3],Math.atan2(sf.sway[2],sf.sway[1]),sf.time] : undefined)
     refreshDressing()
     custom.set([indoor.fixtures,indoor.mode==="today"?0:indoor.bounce,indoor.mode==="today"?1:indoor.air,indoor.mode==="today"?0:indoor.lobbyBounce],16)
@@ -360,7 +366,7 @@ async function main() {
     return out
   }
   // measureFrame(): GPU ms of the last frame's input (timestamp-query), for scripts/atmosphere.ts.
-  Object.assign(window, { lot: { measureLamps, camera, settings, street, indoor, walls, ssr, wet, measure, measureFrames, measureFrame: () => lastFrame ? renderer.measure(lastFrame) : null, step, spots, forestPresets:FOREST_PRESETS, get input() { return lastFrame }, glass, rooms, contact, forest:forestSettings, forestStats:()=>forest.stats(), timings:{worldMs,readyMs}, dressing:dressingSettings, get dressingCount() { return dressingCount }, fog, renderer, comparison, get frames() { return frames }, get paused() { return paused }, set paused(value:boolean) { paused=value }, ready: true } })
+  Object.assign(window, { lot: { sky, measureLamps, camera, settings, street, indoor, walls, ssr, wet, measure, measureFrames, measureFrame: () => lastFrame ? renderer.measure(lastFrame) : null, step, spots, forestPresets:FOREST_PRESETS, get input() { return lastFrame }, glass, rooms, contact, forest:forestSettings, forestStats:()=>forest.stats(), timings:{worldMs,readyMs}, dressing:dressingSettings, get dressingCount() { return dressingCount }, fog, renderer, comparison, get frames() { return frames }, get paused() { return paused }, set paused(value:boolean) { paused=value }, ready: true } })
   Object.assign((window as any).lot, { surfaceQuery, surfaceAt, walking, weather, strike, loadStorm, setWeather:(mode:LotWeatherMode)=>applyLotWeather(weather,mode), get storm() { return storm }, get stormFrame() { return stormFrame },
     renderWalkAudio:(tape:WalkAudioFrame[],duration:number)=>renderWalkAudio(tape,duration,world.scene.lamps,tape.some(f=>f.storm)?loadStormAudio:undefined) })
   Object.defineProperty((window as any).lot,"audioFrame",{get:()=>audioFrame})

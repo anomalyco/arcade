@@ -6,7 +6,7 @@ import { CHARACTER_AT, WORLD_ORIGIN, buildWorld, worldClock, worldLights } from 
 import { WORLD_TABS, createWorldSection } from "./section"
 import { WORLD_DEFAULTS, createDebugWorld } from "./world"
 
-const context = { device: {}, stage: { eye: new Float32Array(3), viewProj: new Float32Array(16) }, particles: { count: 0 }, sync() {} } as unknown as LabContext
+const context = { device: {}, stage: { eye: new Float32Array(3), viewProj: new Float32Array(16), frameTarget() {} }, particles: { count: 0 }, sync() {} } as unknown as LabContext
 const make = () => {
   const world = createDebugWorld(context)
   return { world, section: createWorldSection(context, world) }
@@ -41,9 +41,9 @@ describe("the base debug world", () => {
 describe("the Look and world lab", () => {
   test("one tab per idea, and every setting has exactly one control", () => {
     const { section } = make()
-    expect(WORLD_TABS.map(t => t.label)).toEqual(["Look", "Light", "Weather", "Materials", "Vegetation"])
+    expect(WORLD_TABS.map(t => t.label)).toEqual(["Look", "Light", "Sky", "Weather", "Materials", "Vegetation"])
     const groups = new Set(section.controls.map(c => c.group))
-    expect([...groups].sort()).toEqual(["Clock & light", "Look", "Materials", "Preset", "Vegetation", "Weather"])
+    expect([...groups].sort()).toEqual(["Clock & light", "Look", "Materials", "Preset", "Sky", "Vegetation", "Weather"])
     const keys = section.controls.filter(c => c.type !== "action").map(c => c.key)
     expect(new Set(keys).size).toBe(keys.length)
     for (const key of keys) expect({ key, bound: key in section.settings }).toEqual({ key, bound: true })
