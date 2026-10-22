@@ -1,0 +1,30 @@
+name: lot-probe
+on:
+  push:
+    branches: [lot-smoke]
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        viewport: ["640x360", "160x90"]
+    defaults:
+      run:
+        working-directory: games/lot
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
+      - run: bun install --frozen-lockfile
+        working-directory: .
+      - run: bunx vite build
+      - run: bunx --no-install playwright-core install chromium --only-shell
+      - name: Smoke ${{ matrix.viewport }}
+        timeout-minutes: 15
+        env:
+          SMOKE_VIEWPORT: ${{ matrix.viewport }}
+          SMOKE_DEADLINE_MS: "800000"
+          SMOKE_READY_MS: "300000"
+        run: bun ../../scripts/smoke.mjs

@@ -232,7 +232,6 @@ async function main() {
     const shadowEncoder=device.createCommandEncoder()
     if(spots.update(shadowEncoder,shadowLamps,camera.eye,dt,id=>lights.indexOf(id),casters)) renderer.setSpotShadows(spots.bindings())
     device.queue.submit([shadowEncoder.finish()])
-    if(smoke && frames===0) void device.queue.onSubmittedWorkDone().then(()=>performance.mark("lot:shadows-complete"))
     wet.wetness=settings.wetness
     custom.set([settings.density, settings.falloff, settings.sky, settings.lamp, settings.wetness, settings.haze, settings.reflectionCap, settings.specularAA, ...camera.direction, Number(camera.flashlight)])
     custom.set(packWet(wet),12)
@@ -258,9 +257,11 @@ async function main() {
       occluders: lights.occ, occluderCount: lights.occCount, lampPower: lights.power, lampCount: 0,
       view: [-700, -700, 700, 700], batches: [], alphaSprites: empty, alphaCount: 0, addSprites: empty, addCount: 0, grade: [0, 0, 0, settings.exposure],
       fog:fog.update({eye:camera.eye,viewProj:vp,lamps:fogLamps,time:fixedTime ?? now/1000,street}),volume:volumes(),fogBlur:fog.blurInput() }
-    if(stepping) renderer.drawTo(lastFrame); else renderer.render(lastFrame)
+    // The smoke draws synchronously: render() defers a frame while the previous one is in flight, so a mark taken
+    // after it would time the shadow pass, not the frame.
+    if(stepping || smoke) renderer.drawTo(lastFrame); else renderer.render(lastFrame)
     frames++
-    if(smoke) void device.queue.onSubmittedWorkDone().then(()=>performance.mark("lot:frame-complete"))
+    if(smoke) { const n=frames-1; performance.mark(`lot:frame-${n}-submitted`); void device.queue.onSubmittedWorkDone().then(()=>performance.mark(`lot:frame-${n}-complete`)) }
     // Software-GPU smoke must submit exactly two real frames; readiness polling can otherwise build a long queue.
     if(smoke && frames >= 2) paused = true
   }

@@ -29,8 +29,8 @@ let bootTimeline = async () => "not loaded"
 // presents a frame (Outbreak, Oct 21: 20–36 s for its 25 boot pipelines; the kit renderer builds unused ones only on
 // first use, which took 3–7 s off), and the page's main thread can block
 // behind it, so readiness and the first frames share one budget rather than a separate 20 s readiness limit.
-const READY_MS = game === "lot" ? 100_000 : 40_000
-const DEADLINE_MS = game === "lot" ? 165_000 : 55_000
+const READY_MS = Number(process.env.SMOKE_READY_MS ?? (game === "lot" ? 100_000 : 40_000))
+const DEADLINE_MS = Number(process.env.SMOKE_DEADLINE_MS ?? (game === "lot" ? 165_000 : 55_000))
 const CLOSE_MS = 3_000
 let passed = false
 const deadline = setTimeout(async () => {
@@ -55,7 +55,8 @@ try {
           ...(process.platform === "linux" ? ["--disable-vulkan-surface"] : []),
         ],
   })
-  const page = await browser.newPage({ viewport: { width: 640, height: 360 } })
+  const [vw, vh] = (process.env.SMOKE_VIEWPORT ?? "640x360").split("x").map(Number)
+  const page = await browser.newPage({ viewport: { width: vw, height: vh } })
   // Milliseconds since navigation: DOMContentLoaded, load, the game's own `performance.mark("<game>:…")` phases, now.
   bootTimeline = () => page.evaluate(game => {
     const nav = performance.getEntriesByType("navigation")[0]
