@@ -1,6 +1,6 @@
 import type { PassContext, ScenePass } from "@arcade/kit/gpu/pass-graph"
 import { reactivePipelineDescriptor } from "@arcade/kit/gpu/reactive"
-import { BOLT_SEGMENT_FLOATS, type Strike, type StrikeLight } from "./bolt"
+import { BOLT_SEGMENT_FLOATS, type Strike, type StrikeLight } from "./lightning"
 
 /** Most segments one strike can draw (a strike is ~300–900 after midpoint displacement). */
 export const MAX_BOLT_SEGMENTS = 2048
@@ -11,7 +11,7 @@ const UNIFORM_FLOATS = 24
  * tested against the scene (trees in front cut it) without writing depth, faded by the height fog between it and the
  * eye, and drawn into the temporal reactive mask so TAA neither smears nor averages the stroke flicker away.
  */
-const shader = /* wgsl */ `
+export const BOLT_WGSL = /* wgsl */ `
 struct Frame { viewProj: mat4x4f, cam: vec4f, screen: vec4f }
 @group(0) @binding(0) var<uniform> F: Frame;
 struct BoltU {
@@ -129,16 +129,16 @@ export class BoltPass implements ScenePass {
   constructor(ctx: PassContext) {
     const d = ctx.device
     this.device = d
-    this.uniform = d.createBuffer({ label: "lot bolt", size: UNIFORM_FLOATS * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
-    this.segments = d.createBuffer({ label: "lot bolt segments", size: MAX_BOLT_SEGMENTS * BOLT_SEGMENT_FLOATS * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST })
+    this.uniform = d.createBuffer({ label: "bolt", size: UNIFORM_FLOATS * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
+    this.segments = d.createBuffer({ label: "bolt segments", size: MAX_BOLT_SEGMENTS * BOLT_SEGMENT_FLOATS * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST })
     const layout = d.createBindGroupLayout({ entries: [
       { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
       { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: "read-only-storage" } },
     ] })
     this.group = d.createBindGroup({ layout, entries: [{ binding: 0, resource: { buffer: this.uniform } }, { binding: 1, resource: { buffer: this.segments } }] })
-    const module = d.createShaderModule({ code: shader, label: "lot bolt" })
+    const module = d.createShaderModule({ code: BOLT_WGSL, label: "bolt" })
     this.descriptor = {
-      label: "lot bolt",
+      label: "bolt",
       layout: d.createPipelineLayout({ bindGroupLayouts: [ctx.frameLayout, layout] }),
       vertex: { module, entryPoint: "vs" },
       // Additive light; the HDR alpha carries the surfaces' roughness tag for reflections, so leave it alone.
@@ -151,7 +151,7 @@ export class BoltPass implements ScenePass {
     this.pipeline = d.createRenderPipeline(this.descriptor)
   }
 
-  /** This frame's strike (or none) and its brightness; `fog` is the lot's height fog (density, falloff, base). */
+  /** This frame's strike (or none) and its brightness; `fog` is the scene's height fog (density, falloff, base). */
   frame(strike: Strike | null, light: StrikeLight, look: BoltLook, fog: readonly [number, number, number], fovY: number) {
     if (!strike || light.channel + light.branches + light.leader + light.after < 1e-4) { this.drawn = 0; return }
     if (strike !== this.uploaded) {

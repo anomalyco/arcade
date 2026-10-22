@@ -170,7 +170,7 @@ export type StrikeLight = {
   front: number
   /** Leader glow while it creeps down. */
   leader: number
-  /** Scene flash (lights the lot, clouds and rain). */
+  /** Scene flash (lights the scene, clouds and rain). */
   scene: number
   /** Afterimage: a faint violet ghost of the channel. */
   after: number
@@ -251,12 +251,12 @@ export function makeStrike(plan: StrikePlan, t: number, x: number, z: number, gr
 
 const DARK: StrikeLight = { channel: 0, branches: 0, front: 0, leader: 0, scene: 0, after: 0 }
 
-/** How strongly a strike lights the lot per unit of scene light: close ground strikes more, cloud flashes a fixed share. */
+/** How strongly a strike lights the scene per unit of scene light: close ground strikes more, cloud flashes a fixed share. */
 export const strikeReach = (s: Strike) => s.kind === "cloud" ? 0.55 : Math.min(1.4, Math.max(0.3, 420 / s.distance))
 
 /**
  * This frame's lighting from every live strike. The channel drawn is the brightest one; the scene light comes from the
- * strike lighting the lot most, picked on its own, so a strike the limiter kept dark can never take over the flash.
+ * strike lighting the scene most, picked on its own, so a strike the limiter kept dark can never take over the flash.
  */
 export function pickStrikeLights(strikes: readonly Strike[], t: number, smooth: boolean) {
   let bolt: Strike | null = null, light = DARK, scene: Strike | null = null, sceneLight = 0
