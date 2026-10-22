@@ -12,6 +12,7 @@ import type { CoopView } from "../coop-view"
 import { InventoryHud } from "../inventory-hud"
 import { gameMapFrame } from "../map/game"
 import { OutbreakMap } from "../map/map"
+import { mapCodes, type ControlSettings } from "../controls/settings"
 import { type NetSession, SURVIVOR_COLOURS } from "../net-session"
 import type { OutbreakSettings } from "../settings"
 import type { OutbreakVehicleRenderer } from "../vehicles"
@@ -89,6 +90,7 @@ export class OutbreakFrameUi {
       const s = session()
       this.syncStatus(s.view)
       this.inventoryHud.sync(s.view, cam, innerWidth, innerHeight)
+      this.map.refreshLegend()
     })
   }
 
@@ -204,6 +206,8 @@ export class OutbreakFrameUi {
     vehicleRenderer.syncHud(localVehicle, p.seatIndex ?? 0)
     this.syncStatus(session.view)
     coop.overlay(cam, w, h, town, vision, coop.pose(p))
+    // The legend's Close cap follows Backquote › Controls › Map key.
+    this.map.setKey(mapCodes(this.settings.hud as unknown as ControlSettings)[0]!)
     this.map.update(
       gameMapFrame({
         session,

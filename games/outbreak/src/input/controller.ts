@@ -90,9 +90,7 @@ export class OutbreakInputController {
       if (code === "KeyQ") this.pendingVerbs.ping = true
       if (code === "Tab") inventoryHud.togglePack()
       if (code === "Escape") inventoryHud.close()
-      const mapKeys = mapCodes(this.keys())
-      map.setKey(mapKeys[0]!)
-      if (mapKeys.includes(code)) map.toggle()
+      if (mapCodes(this.keys()).includes(code)) map.toggle()
       else if (code === "Escape") map.close()
       else map.key(code)
       // The open bag (AR-94) takes G for what the cursor is over, before G's drop-held and bundle.

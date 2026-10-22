@@ -114,6 +114,11 @@ export class OutbreakMap {
     this.screen.renderLegend()
   }
 
+  /** Redraws the legend's key caps (the keyboard layout changed). */
+  refreshLegend(): void {
+    this.screen.renderLegend()
+  }
+
   /** Keys while the sheet is open: + and − zoom. Returns true when the key was used. */
   key(code: string): boolean {
     if (!this.isOpen) return false

@@ -1,20 +1,45 @@
 import type { DeathState } from "../../shared/death/rules"
-import { registerOutbreakClientFeature } from "../feature-registry"
+import { localSlot } from "../death/spectate"
+import { registerOutbreakClientFeature, type OutbreakClientFrameContext } from "../feature-registry"
 import { controlKeyControls, type ControlSettings } from "./settings"
 
 /** Real seconds into a solo run before closing the tab asks first (a fresh run is cheap to lose). */
 const SOLO_GUARD_AFTER = 30
 
-/** Whether closing the tab now would throw away a night: in a co-op room, or a solo run under way, and not over. */
-export function guardsClose(s: Pick<ControlSettings, "askBeforeClose">, at: { inRoom: boolean; menuOpen: boolean; runOver: boolean; played: number }): boolean {
-  if (!s.askBeforeClose || at.runOver || at.menuOpen) return false
+/**
+ * Whether closing the tab now would throw away a night: in a co-op room, or a solo run under way, and not over. Any
+ * open menu (the pause menu included: Restart, New town and Play seed navigate from it) and being dead don't ask.
+ */
+export function guardsClose(
+  s: Pick<ControlSettings, "askBeforeClose">,
+  at: { inRoom: boolean; menuOpen: boolean; runOver: boolean; dead: boolean; played: number },
+): boolean {
+  if (!s.askBeforeClose || at.runOver || at.menuOpen || at.dead) return false
   return at.inRoom || at.played >= SOLO_GUARD_AFTER
 }
 
-let armed = false
+/** The latest frame's state, read again when the tab closes (the pause menu stops frames, so a flag would go stale). */
+let latest: OutbreakClientFrameContext | null = null
+let session: object | null = null
 let played = 0
+let listening = false
+
+function closeState(ctx: OutbreakClientFrameContext) {
+  const lobby = ctx.coop.lobby
+  const death = ctx.session.sim.getFeatureState<DeathState>("death")
+  return {
+    inRoom: Boolean(ctx.coop.net),
+    menuOpen: Boolean(lobby?.isOpen),
+    runOver: Boolean(death?.runOver),
+    dead: death?.records[localSlot(ctx.session).index]?.state === "dead",
+    played,
+  }
+}
+
+const asks = () => Boolean(latest && guardsClose(latest.settings.hud as unknown as ControlSettings, closeState(latest)))
+
 const onBeforeUnload = (e: BeforeUnloadEvent) => {
-  if (!armed) return
+  if (!asks()) return
   e.preventDefault()
   e.returnValue = ""
 }
@@ -30,19 +55,21 @@ export const outbreakControlsFeature = registerOutbreakClientFeature({
   labControls: () => controlKeyControls,
   frame: {
     overlay: (ctx) => {
-      // Automation never arms it: a leave-site dialog would stall a proof's next navigation.
+      // Automation never asks: a leave-site dialog would stall a proof's next navigation.
       if (typeof window === "undefined" || navigator.webdriver) return
-      const lobby = ctx.coop.lobby
-      const menuOpen = Boolean(lobby?.isOpen && lobby.mode !== "pause")
-      played = menuOpen ? 0 : played + ctx.dt
-      const runOver = Boolean(ctx.session.sim.getFeatureState<DeathState>("death")?.runOver)
-      const want = guardsClose(ctx.settings.hud as unknown as ControlSettings, { inRoom: Boolean(ctx.coop.net), menuOpen, runOver, played })
-      if (want !== armed) {
-        armed = want
-        if (armed) window.addEventListener("beforeunload", onBeforeUnload)
-        else window.removeEventListener("beforeunload", onBeforeUnload)
+      latest = ctx
+      // A new session (a restart, the death card's Again, a room) starts the half minute again.
+      if (ctx.session !== session) {
+        session = ctx.session
+        played = 0
+      }
+      const state = closeState(ctx)
+      played = state.menuOpen || state.runOver || state.dead ? 0 : played + ctx.dt
+      if (!listening) {
+        listening = true
+        window.addEventListener("beforeunload", onBeforeUnload)
       }
     },
   },
-  harnessState: () => ({ controls: { closeGuard: armed } }),
+  harnessState: () => ({ controls: { closeGuard: asks() } }),
 })

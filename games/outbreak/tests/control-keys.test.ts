@@ -34,14 +34,15 @@ describe("control keys", () => {
     expect(guide.hint(sim, "me", "crouch")?.keys).toEqual([{ code: "ControlLeft", hold: true }])
   })
 
-  test("closing the tab asks first only while a night is on: in a room, or half a minute into a solo run", () => {
+  test("closing the tab asks first only while a night is on: in a room, or half a minute into a solo run, not in a menu or dead", () => {
     const on = DEFAULT_CONTROL_SETTINGS
-    const at = { inRoom: false, menuOpen: false, runOver: false, played: 0 }
+    const at = { inRoom: false, menuOpen: false, runOver: false, dead: false, played: 0 }
     expect(guardsClose(on, at)).toBe(false)
     expect(guardsClose(on, { ...at, played: 31 })).toBe(true)
     expect(guardsClose(on, { ...at, inRoom: true })).toBe(true)
     expect(guardsClose(on, { ...at, inRoom: true, menuOpen: true })).toBe(false)
     expect(guardsClose(on, { ...at, played: 600, runOver: true })).toBe(false)
+    expect(guardsClose(on, { ...at, inRoom: true, dead: true })).toBe(false)
     expect(guardsClose({ askBeforeClose: false }, { ...at, inRoom: true })).toBe(false)
   })
 })

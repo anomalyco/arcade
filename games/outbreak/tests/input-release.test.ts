@@ -21,7 +21,7 @@ for (const reason of ["release", "blur", "hidden", "meta"]) test(`${reason} canc
       canvas: Object.assign(new EventTarget(), { focus() {} }),
       session: () => session,
       cam: { unproject: () => ({ x: 1, y: 0 }) }, settings: createOutbreakSettings(),
-      inventoryHud: { digit: () => ({ hotbarSlot: 2 }) }, map: { key() {}, setKey() {} }, incrementFrames() {},
+      inventoryHud: { digit: () => ({ hotbarSlot: 2 }) }, map: { key() {} }, incrementFrames() {},
     } as unknown as OutbreakInputHost)
     const key = (code: string, type = "keydown") => win.dispatchEvent(Object.assign(new Event(type), { code, key: "", metaKey: false }))
     for (const code of ["KeyG", "KeyQ", "KeyB", "Digit3", "KeyW"]) key(code)
