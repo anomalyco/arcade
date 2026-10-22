@@ -104,6 +104,7 @@ async function main() {
   const fatal = (message: string) => {
     shell?.flow.leave()
     stop()
+    shell?.lobby?.setRoom(null)
     shell?.lobby?.setConnection("offline", message)
   }
   const base = location.pathname.replace(/[^/]*$/, "")
