@@ -46,6 +46,7 @@ import { LAMP_FOG_DEFAULTS, lampFog, lampFogControls } from "./air/lamp-fog"
 import "./style.css"
 import { OutbreakVehicleAudio } from "./vehicle-audio"
 import { type VehicleLabHost } from "./vehicle-lab"
+import { isTrainingSession } from "./onboarding/session"
 
 const params = new URLSearchParams(location.search)
 try {
@@ -275,9 +276,10 @@ async function main() {
     escapeOwned: () => escapeOwned,
   })
   // Escape closes the bag, the map, the radial or the lobby first: read which before their handlers close them.
+  // In Training, holding Escape skips it (src/onboarding), so it never opens the menu there.
   window.addEventListener("keydown", (e) => {
     if (e.code !== "Escape") return
-    escapeOwned = Boolean(coop.lobby?.isOpen || inventoryHud.packOpen || inventoryHud.craftOpen || inventoryPresenter()?.open || map.isOpen || radialInteract.isOpen)
+    escapeOwned = Boolean(isTrainingSession(session) || coop.lobby?.isOpen || inventoryHud.packOpen || inventoryHud.craftOpen || inventoryPresenter()?.open || map.isOpen || radialInteract.isOpen)
   }, true)
   // The paused menu keeps the game's keys (Esc, Backquote and a mute M still work), as the old pause menu did.
   window.addEventListener("keydown", (e) => {
