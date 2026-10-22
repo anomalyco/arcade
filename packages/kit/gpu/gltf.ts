@@ -12,7 +12,8 @@ export type KtxDecoder = (bytes: Uint8Array) => Promise<DecodedImage>
 /** Upload a complete mip chain, including the final 1×1 level. Source images are glTF's unflipped top-left UVs. */
 export async function imageTexture(device: GPUDevice, bytes: Uint8Array, srgb: boolean, mime = "image/png", ktx?: KtxDecoder, normalMap = false): Promise<GPUTexture> {
   const canvas = document.createElement("canvas")
-  const ctx = canvas.getContext("2d")!
+  // Normal mips read pixels on the CPU. Avoid a GPU-backed canvas and its synchronous readback at boot.
+  const ctx = canvas.getContext("2d", { willReadFrequently: normalMap })!
   if (mime === "image/ktx2") {
     if (!ktx) throw new Error("KTX2 texture requires a Basis decoder")
     const image = await ktx(bytes)

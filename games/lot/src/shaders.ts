@@ -10,6 +10,7 @@ import { contactShadowVolume } from "@arcade/kit/gpu/contact-shadows"
 import { interiorWgsl } from "./interior/shader"
 import { LENS_MAT } from "./lamps"
 import { finishWgsl, finishMaterial } from "./interior/finishes"
+import { EXTERIOR_WET, TERRAIN_MAT } from "./surface-materials"
 
 /** The CI smoke (`?smoke`, software GPU) keeps the street lamps at Today, so its shaders leave the street path out. */
 const STREET_SHADERS = !new URLSearchParams(globalThis.location?.search ?? "").has("smoke")
@@ -82,13 +83,22 @@ export const texturedHooks: SceneHooks = withPhysicalLights({ ...nightHooks,
   material: `${nightHooks.material}
     if(mat!=20) { pbrRough=rough; } else {
       let geo=normalize(o.normal);
-      let wet=wetSurface(o.world,geo.y,rough,texAo,wetFootprint,N.wet,${wetMaterialWgsl(WET_ASPHALT)});
+      var recipe=${wetMaterialWgsl(WET_ASPHALT)};
+      ${EXTERIOR_WET.slice(1).map(([,recipe],i)=>`if(abs(o.aux-${(i+1).toFixed(1)})<0.5) { recipe=${wetMaterialWgsl(recipe)}; }`).join("\n")}
+      let wet=wetSurface(o.world,geo.y,rough,texAo,wetFootprint,N.wet,recipe);
       albedo*=wet.albedo;
       n=normalize(mix(n,geo,wet.flat));
       // Like Ashwood's specularAA, puddles keep the asphalt's lost mip variance (×2, capped at 0.05): far puddles go
       // satin instead of mirroring the horizon as a sharp sky patch.
       let aaVar=texNormalVariance*N.look.w;
       pbrRough=pow(min(pow(wet.roughness,4.0)+mix(aaVar,min(aaVar*2.0,0.05),wet.flat),1.0),0.25);
+    }
+    if(mat==${TERRAIN_MAT}) {
+      // Ashwood terrain/surface.ts: recolour the floor's luminance, not its RGB channels.
+      // Keeping weights until the fragment also avoids clipping the >1 grass/dirt tint in unorm vertex colours.
+      let lum=dot(texBase.rgb,vec3f(0.2126,0.7152,0.0722));
+      albedo=mix(mix(texBase.rgb,lum*vec3f(1.35,1.3,0.78)*1.15,o.color.r),lum*vec3f(1.25,1.05,0.85)*1.05,o.color.g);
+      pbrRough=mix(rough,0.95,o.color.r*0.6);
     }
     pbrMetal=metal;
     ${finishMaterial}`,

@@ -133,6 +133,12 @@ try {
   const page = await browser.newPage({ viewport: { width: viewport[0], height: viewport[1] }, deviceScaleFactor: 1 })
   // The canvas texture is copied back on the GPU after each frame (drawImage of a presented WebGPU canvas reads black).
   await page.addInitScript(() => {
+    const request=GPUAdapter.prototype.requestDevice
+    GPUAdapter.prototype.requestDevice=function(descriptor) {
+      const {vendor,architecture,device,description}=this.info
+      ;(window as any).__lotMotionAdapter={vendor,architecture,device,description}
+      return request.call(this,descriptor)
+    }
     const configure = GPUCanvasContext.prototype.configure
     GPUCanvasContext.prototype.configure = function (c: GPUCanvasConfiguration) {
       return configure.call(this, { ...c, usage: (c.usage ?? GPUTextureUsage.RENDER_ATTACHMENT) | GPUTextureUsage.COPY_SRC })
@@ -146,7 +152,7 @@ try {
   })
   const errors: string[] = []
   page.on("pageerror", (e) => errors.push(e.message))
-  page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()) })
+  page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); else if(m.text().startsWith("MOTION")) console.log(m.text()) })
   const load = async () => {
     await page.goto(`http://127.0.0.1:${server.port}/arcade/lot/?time=8`, { timeout: 240_000 })
     await page.waitForFunction(() => (window as any).lot?.ready && (window as any).lot.frames > 8, undefined, { timeout: 600_000 })
@@ -158,14 +164,21 @@ try {
     })
   }
   await load()
+  report.adapter=await page.evaluate(()=>(window as any).__lotMotionAdapter)
+  console.log("MOTION adapter",JSON.stringify(report.adapter))
+  assert(report.adapter && !/swiftshader/i.test(JSON.stringify(report.adapter)),"motion requires the worker's hardware GPU")
+  assert.deepEqual(errors, [], "motion boot: browser errors invalidate measurements")
   for (const path of pathNames) {
     const p = PATHS[path]!
     const poses = Array.from({ length: p.frames }, (_, i) => p.pose(i / 60))
     const warm = p.pose(0)
     for (const variant of variantNames) {
+      assert.deepEqual(errors, [], "motion: browser errors invalidate measurements")
+      console.log(`Starting ${path}/${variant}`)
       const code = variant.startsWith("eval:") ? variant.slice(5) : VARIANTS[variant]!
       const rec = record.has(variant)
       const result = await page.evaluate(async ({ code, poses, warm, rec, size, rois }) => {
+        const started=performance.now(), timing={warm:0,readback:0,analysis:0}
         const lot = (window as any).lot
         const d = JSON.parse(lot.defaults)
         Object.assign(lot.settings, d.settings); Object.assign(lot.fog.settings, d.fog); Object.assign(lot.ssr.settings, d.ssr)
@@ -183,6 +196,7 @@ try {
         lot.renderer.resetTemporalHistory()
         for (let i = 0; i < 40; i++) lot.step(1000 / 60)
         await device.queue.onSubmittedWorkDone()
+        timing.warm=performance.now()-started
         const canvas: HTMLCanvasElement = document.querySelector("#view")!
         const [W, H] = [canvas.width, canvas.height]
         const c2 = new OffscreenCanvas(W, H), g = c2.getContext("2d", { willReadFrequently: true })!
@@ -249,6 +263,7 @@ try {
           return o
         }
         for (let f = 0; f < poses.length; f++) {
+          const frameStart=performance.now()
           put(poses[f]!)
           lot.step(1000 / 60)
           const px = await grab()
@@ -257,6 +272,8 @@ try {
           const eye = Array.from(lot.input.frame.subarray(16, 19)) as number[]
           for (let i = 0, j = 0; i < N; i++, j += 4) cur[i] = 0.2126 * px[j]! + 0.7152 * px[j + 1]! + 0.0722 * px[j + 2]!
           const hasDepth = await grabDepth(dcur)
+          timing.readback+=performance.now()-frameStart
+          const analysisStart=performance.now()
           if (rec) {
             g.putImageData(image, 0, 0)
             const blob = await c2.convertToBlob({ type: "image/jpeg", quality: 0.9 })
@@ -346,6 +363,8 @@ try {
           }
           frames.push({ grid: Array.from(grid, (v, i) => (cnt[i] ? v / cnt[i]! : 0)), fire: Array.from(pops), flash, flashMax, valid: valid / N,
             roi: { ...Object.fromEntries(roiC.map((r) => [r.name, [r.n ? r.sum / r.n : 0, r.pops]])), ...anchored } })
+          timing.analysis+=performance.now()-analysisStart
+          if(f%30===0)console.log("MOTION progress",f,"of",poses.length,JSON.stringify(timing))
         }
         depthBuf?.destroy()
         readBuf.destroy()
@@ -369,13 +388,14 @@ try {
         const hb = new Uint8Array(await (await c2.convertToBlob({ type: "image/png" })).arrayBuffer())
         let hs = ""
         for (let i = 0; i < hb.length; i += 0x8000) hs += String.fromCharCode(...hb.subarray(i, i + 0x8000))
-        return { frames, jpegs, heat: btoa(hs), pops: btoa(ps), size: [W, H] }
+        return { frames, jpegs, heat: btoa(hs), pops: btoa(ps), size: [W, H],timing }
       }, { code, poses, warm, rec, size: viewport, rois: p.rois ?? [] })
       if (errors.length) throw new Error(errors.join("\n"))
       const fr = result.frames as { grid: number[]; fire: number[]; flash: number; flashMax: number; valid: number; roi: Record<string, [number, number]> }[]
       const mean = (f: (x: (typeof fr)[0]) => number) => fr.reduce((s, x) => s + f(x), 0) / fr.length
       const grid = Array.from({ length: 9 }, (_, i) => mean((x) => x.grid[i]!))
       const summary = {
+        timing:result.timing,
         flicker: grid.reduce((a, b) => a + b, 0) / 9,
         grid: grid.map((v) => +v.toFixed(3)),
         fireflies: mean((x) => x.fire.reduce((a, b) => a + b, 0)),
