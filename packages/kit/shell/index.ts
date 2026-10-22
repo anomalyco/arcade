@@ -31,8 +31,11 @@ export type GameShellOptions = Omit<ShellViewOptions, "muteKey"> & {
   sections?: readonly ShellSection[]
   legacyMuteKey?: string
   legacyReduceMotionKey?: string
-  /** M toggles mute (default true). Outbreak keeps M for its map and mutes from the speaker button. */
-  muteKey?: boolean
+  /**
+   * M toggles mute (default true). Outbreak keeps M for its map and mutes from the speaker button; Archers turns it
+   * off while the keyboard is split (M is the right-hand player's jump).
+   */
+  muteKey?: boolean | (() => boolean)
   /** Keys belong to something else right now (typing in the Lab panel or chat): the shell ignores M and Escape. */
   keysBlocked?: () => boolean
   /** Rooms: Play with friends, invite, players, ready and start. Omit for single-player games. */
@@ -100,8 +103,9 @@ export class GameShell {
     )
     this.wasStarted = this.flow.started
     if (o.muteKey !== false && typeof window !== "undefined") {
+      const muteKey = typeof o.muteKey === "function" ? o.muteKey : () => true
       const key = (e: KeyboardEvent) => {
-        if (e.code !== "KeyM" || e.repeat || e.metaKey || e.ctrlKey || e.altKey || o.keysBlocked?.() || isEditable(e.target)) return
+        if (e.code !== "KeyM" || !muteKey() || e.repeat || e.metaKey || e.ctrlKey || e.altKey || o.keysBlocked?.() || isEditable(e.target)) return
         this.settings.toggleMute()
       }
       window.addEventListener("keydown", key)
