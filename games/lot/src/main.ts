@@ -16,6 +16,8 @@ import { TexturedMeshPass, type TexturedPrimitive } from "@arcade/kit/gpu/textur
 import { TEMPORAL_DEFAULTS } from "@arcade/kit/gpu/temporal"
 import { ForestPass, FOREST_PRESETS, cardShadingHooks, forestControls, forestDefaults } from "@arcade/kit/gpu/forest"
 import { LabPanel } from "@arcade/kit/lab-panel"
+import { createGameShell, createShellQuality } from "@arcade/kit/shell"
+import { LOT_QUALITY } from "./quality"
 import { attachCameraFilter } from "@arcade/kit/gpu/post/camcorder"
 import { createGlassSettings, createRoomSettings, glassControls, packGlassKnobs, roomControls } from "@arcade/kit/gpu/materials/glass"
 import { loadRoomAtlas } from "@arcade/kit/gpu/materials/rooms"
@@ -42,15 +44,31 @@ import { LotAudio, bindLotAudio, renderWalkAudio, type StormLoader, type WalkAud
 import { applyLotWeather, lotWeatherDefaults, lotWeatherControls, type LotWeatherMode } from "./weather/settings"
 import type { LotStorm, StormFrame, StormLamp } from "./weather/storm"
 
+const controlsHtml = () => [keyPromptHtml("KeyW", "Move"), keyPromptHtml("Mouse0", "Look"), keyPromptHtml("ShiftLeft", "Run"), keyPromptHtml("KeyF", "Flashlight"), keyPromptHtml("KeyM", "Mute"), keyPromptHtml("Escape", "Menu")].join(" ")
+const query = new URLSearchParams(location.search)
+const smoke = query.has("smoke")
+const canvas = document.querySelector<HTMLCanvasElement>("#view")!
+// Filled in as main() builds them; the shell reads them from the first frame.
+const live: { panel: LabPanel | null; gpuMs: () => number; qualityChanged: () => void } = { panel: null, gpuMs: () => 0, qualityChanged: () => {} }
+// Auto starts at High (the 1.5× the Lot always drew) and steps down only on slow frames; automation keeps High.
+const quality = createShellQuality({ game: "lot", tiers: LOT_QUALITY, params: query, gpuMs: () => live.gpuMs(), onChange: () => live.qualityChanged() })
+if (smoke || (navigator.webdriver && !query.has("quality"))) quality.setMode("high", false)
+const shell = createGameShell({
+  game: "lot", title: "LOT", subtitle: "Ashwood, after hours", playLabel: "Walk the lot", resumeLabel: "Back to the lot",
+  channels: ["master", "effects", "ambience"], labels: { effects: "Footsteps" }, quality,
+  pointerLock: canvas, blocked: () => live.panel?.holdsInput ?? false, keysBlocked: () => live.panel?.hasFocus() ?? false,
+  loading: { gpu: 1, world: 4, interior: 3, build: 2, frame: 1 }, controls: controlsHtml,
+})
+live.qualityChanged = () => shell.settings.changed()
+
 async function main() {
-  const canvas = document.querySelector<HTMLCanvasElement>("#view")!
   const hud = document.getElementById("hud")!
-  hud.textContent = "Loading the lot…"
+  const loading = shell.loading!
+  loading.stage("gpu", "Starting the GPU")
   const gpu = await openGpu(canvas, "LOT")
   if (typeof gpu === "string") throw new Error(gpu)
+  loading.done("gpu")
   const device=gpu.device, format=gpu.format
-  const query = new URLSearchParams(location.search)
-  const smoke = query.has("smoke")
   // Automation only: freezes the bank and cloud drift at a time in seconds.
   const fixedTime = query.has("time") ? Number(query.get("time")) : null
   const shader = makeSceneShader(hooks)
@@ -63,11 +81,17 @@ async function main() {
   const sky = attachSky(renderer, skySettings)
   renderer.setTemporal({ ...TEMPORAL_DEFAULTS, mode: "taa", sharpen: 0.12 })
   const t0=performance.now()
+  live.gpuMs=()=>renderer.lastGpuMs
+  loading.stage("world", "Loading the lot")
   const world = await buildWorld()
   const surfaceQuery = new SurfaceQuery(world.surfaces)
   const surfaceAt = await footSurface(surfaceQuery)
   const worldMs=performance.now()-t0
+  loading.done("world")
+  loading.stage("interior", "Loading the lobby")
   const interior = await loadInterior(device), indoor = interiorDefaults()
+  loading.done("interior")
+  loading.stage("build", "Building the night")
   walls.push(...interior.colliders.map(b=>[b.min[0]!,b.min[2]!,b.max[0]!,b.max[2]!] as const))
   const lighting = flatLighting(0, 0, [0, 0, 0])
   // The CI smoke keeps the street lamps at Today too (its shaders leave the street path out: SwiftShader compile time).
@@ -165,6 +189,7 @@ async function main() {
   camera.height=START.height; camera.near=0.15; camera.far=1200
   const panel = new LabPanel(settings, controls(settings), new URLSearchParams(location.search), () => camera.release(), { open: false, pill: false, groupActions: false, capture: "focus", openGroups: ["Walking"] })
   panel.addControls(skySettings, skyControls())
+  live.panel = panel
   const comparison=compareCamera(camera,()=>panel.holdsInput)
   // Weather is its own chunk, loaded the first time it is turned on (or a strike is asked for): Today and the smoke
   // never fetch, compile or draw any of it.
@@ -184,7 +209,11 @@ async function main() {
   panel.addControls(weather,lotWeatherControls(weather,()=>void strike().catch(()=>{})),lotWeatherDefaults())
   panel.addControls(walking,walkControls)
   const audio=new LotAudio(world.scene.lamps)
-  bindLotAudio(canvas,audio,walking,()=>panel.holdsInput)
+  const sound=bindLotAudio(canvas,audio,walking,()=>panel.holdsInput,()=>shell.settings.muted)
+  // Reduce camera motion is the shell's (one choice for every game); the shell's mute and Play/Resume drive the sound.
+  walking.reduceMotion=shell.settings.reduceMotion
+  shell.settings.subscribe(()=>{ walking.reduceMotion=shell.settings.reduceMotion; sound.sync(); panel.sync() })
+  shell.flow.subscribe(()=>sound.sync())
   let audioFrame:WalkAudioFrame|null=null
   panel.addControls(street,streetLampControls("Lamps","lamps."))
   panel.addControls(forestSettings,forestControls(forestSettings))
@@ -224,13 +253,15 @@ async function main() {
   const indoorStart=practicals.length-interior.lamps.length
   const frameData = newSceneFrame(), custom = new Float32Array(NIGHT_FLOATS), empty = new Float32Array(0)
   const prompts = () => {
-    hud.innerHTML = [document.pointerLockElement === canvas ? "" : keyPromptHtml("Mouse0", "Look"), keyPromptHtml("KeyW", "Move"), keyPromptHtml("KeyF", "Flashlight"), keyPromptHtml("KeyM", "Mute"), keyPromptHtml("Backquote", "Night"), comparison.available ? keyPromptHtml("KeyP", "Compare position") : "", stormNote ? `<span class="note">${stormNote}</span>` : ""].join(" ")
+    hud.innerHTML = [document.pointerLockElement === canvas ? "" : keyPromptHtml("Mouse0", "Look"), keyPromptHtml("KeyW", "Move"), keyPromptHtml("KeyF", "Flashlight"), keyPromptHtml("KeyM", "Mute"), keyPromptHtml("Escape", "Menu"), keyPromptHtml("Backquote", "Night"), comparison.available ? keyPromptHtml("KeyP", "Compare position") : "", stormNote ? `<span class="note">${stormNote}</span>` : ""].join(" ")
   }
   prompts()
   document.addEventListener("pointerlockchange", prompts)
   let fogFlashBase:{hue:number;saturation:number;history:number;cloudDark:number}|null=null
   let last = performance.now(), frames = 0, paused = false, lastFrame: FrameInput | null = null, smokeTarget: GPUTexture | null = null
   const readyMs=performance.now()-t0
+  loading.done("build")
+  loading.stage("frame", "First frame")
   // Slot order: contact shadows darken the lit scene before reflections and fog add to it.
   const volumes = (wetNow=wet) => {
     const inside=camera.body.x>-55 && camera.body.x<35 && camera.body.y>-3.2 && camera.body.y<22
@@ -246,14 +277,17 @@ async function main() {
     return { median: samples[Math.floor(samples.length/2)] ?? null, samples }
   }
   function render(now: number) {
-    if(paused) { last=now; requestAnimationFrame(render); return }
+    if(paused) { last=now; quality.pause(); requestAnimationFrame(render); return }
     frame(now)
+    if(frames===1) loading.finish()
     requestAnimationFrame(render)
   }
   function frame(now: number) {
-    const width = Math.max(1, Math.round(innerWidth * Math.min(devicePixelRatio, 1.5)))
-    const height = Math.max(1, Math.round(innerHeight * Math.min(devicePixelRatio, 1.5)))
-    if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; renderer.resize(width, height) }
+    shell.tick(now)
+    // Quality learns from frames in play only: the title, the menu and scripted steps aren't the game's real load.
+    if (shell.playing && !stepping) quality.frame(now); else quality.pause()
+    if (quality.fit(canvas, innerWidth, innerHeight)) renderer.resize(canvas.width, canvas.height)
+    const width = canvas.width, height = canvas.height
     const dt = Math.min(0.05, (now - last) / 1000); last = now
     camera.speed=walking.walkMode==="today"?2.1:1.7
     const vp = camera.update(dt, width / height, walls)
@@ -263,6 +297,7 @@ async function main() {
     // Rain soaks the film first; standing water grows only a little and stays in the dips (RESEARCH.md: 5–20% puddled).
     const wetNow=sf ? {...wet,wetness:Math.max(settings.wetness,sf.wetness),puddles:Math.min(0.6,wet.puddles+sf.puddles*0.2),puddleScale:wet.puddleScale*(1+0.25*sf.puddles)} : {...wet,wetness:settings.wetness}
     audioFrame={time:camera.walk.time,x:camera.body.x,z:camera.body.y,yaw:camera.yaw,active:playing(),surface:surfaceAt(camera.body.x,camera.body.y,wetNow,sf?.rain ?? 0),inside:insideNow,wetness:wetNow.wetness,events:camera.walk.events,settings:{...walking},
+      mix:{master:shell.settings.gain("master"),effects:shell.settings.volume("effects")/100,ambience:shell.settings.volume("ambience")/100},
       ...(sf ? {storm:{on:weather.weather!=="today",amount:sf.amount,rain:sf.rain,storm:weather.weather==="storm"?1:0,wind:weather.wind,gust:sf.gust,heading:Math.atan2(sf.sway[2],sf.sway[1]),clock:sf.time,thunder:sf.thunder,rainVolume:weather.rainVolume,thunderVolume:weather.thunderVolume,windVolume:weather.windVolume}} : {})}
     audio.update(audioFrame)
     comparison.frame()
@@ -366,11 +401,11 @@ async function main() {
     return out
   }
   // measureFrame(): GPU ms of the last frame's input (timestamp-query), for scripts/atmosphere.ts.
-  Object.assign(window, { lot: { sky, measureLamps, camera, settings, street, indoor, walls, ssr, wet, measure, measureFrames, measureFrame: () => lastFrame ? renderer.measure(lastFrame) : null, step, spots, forestPresets:FOREST_PRESETS, get input() { return lastFrame }, glass, rooms, contact, forest:forestSettings, forestStats:()=>forest.stats(), timings:{worldMs,readyMs}, dressing:dressingSettings, get dressingCount() { return dressingCount }, fog, renderer, comparison, get frames() { return frames }, get paused() { return paused }, set paused(value:boolean) { paused=value }, ready: true } })
+  Object.assign(window, { lot: { sky, measureLamps, camera, settings, shell, quality, street, indoor, walls, ssr, wet, measure, measureFrames, measureFrame: () => lastFrame ? renderer.measure(lastFrame) : null, step, spots, forestPresets:FOREST_PRESETS, get input() { return lastFrame }, glass, rooms, contact, forest:forestSettings, forestStats:()=>forest.stats(), timings:{worldMs,readyMs}, dressing:dressingSettings, get dressingCount() { return dressingCount }, fog, renderer, comparison, get frames() { return frames }, get paused() { return paused }, set paused(value:boolean) { paused=value }, ready: true } })
   Object.assign((window as any).lot, { surfaceQuery, surfaceAt, walking, weather, strike, loadStorm, setWeather:(mode:LotWeatherMode)=>applyLotWeather(weather,mode), get storm() { return storm }, get stormFrame() { return stormFrame },
     renderWalkAudio:(tape:WalkAudioFrame[],duration:number)=>renderWalkAudio(tape,duration,world.scene.lamps,tape.some(f=>f.storm)?loadStormAudio:undefined) })
   Object.defineProperty((window as any).lot,"audioFrame",{get:()=>audioFrame})
   Object.defineProperties((window as any).lot,{storm:{get:()=>storm},stormFrame:{get:()=>stormFrame}})
   requestAnimationFrame(render)
 }
-void main().catch(error => { console.error(error); document.getElementById("hud")!.textContent = String(error) })
+void main().catch(error => { console.error(error); shell.loading?.fail(String(error)); document.getElementById("hud")!.textContent = String(error) })

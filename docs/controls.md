@@ -128,8 +128,8 @@ installs itself on first use.
 | Scoreboard / Roster | `Tab` | `Tab` (`KeyT` pins in Blackout) | `Tab` | `Tab` | Hold `Tab` (or tap to pin in Carrier; `KeyT` toggles in Blackout) |
 | Chat | `Enter` / `T` | `Enter`, `NumpadEnter`, `KeyT` (Carrier: `KeyT` all, `KeyY` crew) | `Enter` | `Enter` | Room chat in Getaway and Carrier |
 | Map | `M` | `KeyG` in Carrier (`KeyM` is mute), `KeyM` in Outbreak (`KeyN` also opens it) | `G` / `M` | `I` / `M` | Hold for the full map, tap to pin (Carrier); tap to open and close (Outbreak, [outbreak-map.md](outbreak-map.md)) |
-| Mute Audio | `M` | `KeyM` (not in Outbreak) | `M` | `M` | Global audio mute in Getaway, Blackout and Carrier; Outbreak mutes from its speaker button top right, because players pressed M for the map and muted the game (playtest Oct 21); Lab mute in Edit mode |
-| Pause / Release / Close | `Esc` | `Escape` | `Esc` | `Esc` | Releases Pointer Lock, closes menus/chat/Lab, exits Lab Play mode |
+| Mute Audio | `M` | `KeyM` (not in Outbreak) | `M` | `M` | Global audio mute, owned by the game shell's Settings in games on it (Lot, Night Shift); in Getaway, Blackout and Carrier; Outbreak mutes from its speaker button top right, because players pressed M for the map and muted the game (playtest Oct 21); Lab mute in Edit mode |
+| Pause / Release / Close | `Esc` | `Escape` | `Esc` | `Esc` | Opens the shared Escape menu (`@arcade/kit/shell`, [game-shell.md](game-shell.md)); releases Pointer Lock, closes menus/chat/Lab, exits Lab Play mode |
 | Lab / Debug Overlay | `` ` `` / `~` | `Backquote` (`F2` alias in Carrier) | `` ` `` | `` ` `` | Opens `LabPanel` / `DebugMenu` and releases held gameplay keys; with `capture: "focus"` a click on the game plays on with the panel open ([lab.md](lab.md#bind-controls-to-typed-production-settings)) |
 
 ## Full binding inventory & audit across games and Lab surfaces

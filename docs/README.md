@@ -36,6 +36,9 @@ docs folder. Start with `AGENTS.md` at the root; it says which of these to read 
   detachment and the Characters page. Read before using the rig in a game.
 - [people.md](people.md): realistic skinned people (`@arcade/kit/people`): the MakeHuman build, GPU skinning,
   retargeting from the rig, terrain feet, licences and measurements. Read before adding a person or outfit.
+- [game-shell.md](game-shell.md): the shared player-facing shell (`@arcade/kit/shell`): title and lobby, Escape
+  menu, Settings (volume, mute, quality, reduce motion, key labels), leave warning and loading; its rules, new-game
+  checklist and the per-game audit. Read before touching any of them.
 - [controls.md](controls.md): cross-game key bindings and HUD prompts. Read before changing input or prompts.
 - [architecture.md](architecture.md): the current engine map (layers, `@arcade/kit` and `@arcade/knobs` areas,
   generated per-game shared-module adoption table, core patterns, and staged roadmap). Read before a cross-game

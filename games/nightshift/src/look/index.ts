@@ -14,7 +14,8 @@ import { lampFlicker } from "@arcade/kit/gpu/lights/flicker"
 import type { ChairState } from "../polish/props"
 import { COLLEAGUES, occluders } from "../world"
 import type { LookSettings } from "./settings"
-import { lookQualityController, lookTierMode, type LookQuality } from "./quality"
+import type { AdaptiveQualityController } from "@arcade/kit/quality"
+import type { LookQuality } from "./quality"
 import { LOOK_SURFACES_PATH, lookSurfaces } from "./textures"
 import { coatMesh, dressingPlacements, loadDressing, partitionTrim, LOOK_PROP_PATHS } from "./dressing"
 import { carLiner } from "./car"
@@ -42,7 +43,6 @@ const FAR_LAMP = dressingPlacements().filter(p => p.file === "desk-lamp")[1]!
  * parts. With `look` at Today it adds nothing, loads nothing and leaves the frame exactly as shipped.
  */
 export class OfficeLook {
-  readonly quality = lookQualityController()
   /** Bumped when the set of shadow casters changes, so the spot-shadow picker re-renders. */
   version = 0
   private extraCasters: SpotShadowCaster[] = []
@@ -61,7 +61,6 @@ export class OfficeLook {
   carX = 0
   private wasOn = false
   private chairsPushed = false
-  private tier = NaN
   private readonly shaftParams = new Float32Array(SHAFT_PARAM_FLOATS)
   /** Time the elevator tube went out (NaN while it still burns). */
   private tubeOutAt = NaN
@@ -69,7 +68,8 @@ export class OfficeLook {
   readonly occ: Float32Array<ArrayBuffer>
   readonly occCount: number
 
-  constructor(private renderer: Renderer, private hooks: SceneHooks, private smoke: boolean, private bytes: (path: string) => Promise<Uint8Array>) {
+  /** `quality` is the game shell's (Settings › Graphics); the look reads its tier and sizes the canvas from it. */
+  constructor(private renderer: Renderer, private hooks: SceneHooks, private smoke: boolean, private bytes: (path: string) => Promise<Uint8Array>, readonly quality: AdaptiveQualityController<LookQuality>) {
     this.occ = new Float32Array(Math.max(1, occluders.length) * OCC_FLOATS)
     occluders.forEach((o, i) => this.occ.set([...o.rect, o.h, 0, 0, 0], i * OCC_FLOATS))
     this.occCount = occluders.length
@@ -107,7 +107,7 @@ export class OfficeLook {
     return this.loading
   }
 
-  /** Called once per frame before lights: toggles assets, chairs and the quality tier. */
+  /** Called once per frame before lights: toggles assets and chairs. */
   update(s: LookSettings & { flicker: number }, chairs: ChairState[], eye: readonly number[], time: number) {
     const on = this.on(s)
     // Wrongness: the dying tube by the elevator gutters out once you come near, and stays out.
@@ -115,7 +115,6 @@ export class OfficeLook {
     else if (Number.isNaN(this.tubeOutAt) && Math.hypot(eye[0]! - ELEVATOR_TUBE.x, eye[2]! - ELEVATOR_TUBE.z) < ELEVATOR_TUBE.reach) this.tubeOutAt = time
     this.tube = this.dying(time, s.flicker) * tubeOut(time - this.tubeOutAt)
     if (on) void this.ensure()
-    if (s.lookTier !== this.tier) { this.tier = s.lookTier; this.quality.setMode(lookTierMode(s.lookTier)) }
     const gate = on && this.loaded
     if (this.dressing) this.dressing.on = gate && s.dressing
     const casters = gate ? [...(s.dressing ? this.dressingCasters : []), ...(this.trimCaster ? [this.trimCaster] : [])] : []
@@ -132,7 +131,6 @@ export class OfficeLook {
     if (!this.on(s)) { const r = Math.min(dpr, 1.5); return { width: Math.max(1, Math.round(w * r)), height: Math.max(1, Math.round(h * r)) } }
     return this.quality.canvasDimensions(w, h, dpr)
   }
-  recordFrame(s: LookSettings, frameMs: number) { if (this.on(s)) this.quality.recordFrame(frameMs, this.renderer.lastGpuMs) }
 
   /** Streetlight power through the blinds, × Today's. */
   slat(s: LookSettings) { return this.on(s) ? s.slatLight : 1 }
