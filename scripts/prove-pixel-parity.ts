@@ -61,19 +61,20 @@ async function capture(browser: Browser, dist: string, name: string): Promise<Bu
   await page.goto(`http://127.0.0.1:${server.port}/arcade/${game}/?${query}`)
   let steppedPng: Buffer | undefined
   if (drive === "step") {
-    if (game !== "lot" && game !== "nightshift") throw Error("step driver supports Lot and Night Shift")
-    type App = { renderer: Renderer; step(ms: number): void; setCamera?(view: "wide"): void; paused: boolean }
-    await page.waitForFunction(key => !!(window as unknown as Record<string, App>)[key], game, { polling: 100, timeout: 180000 })
+    if (!["lot", "nightshift", "outbreak"].includes(game)) throw Error("step driver supports Lot, Night Shift and Outbreak")
+    type App = { renderer: Renderer; step(ms: number): void | Promise<unknown>; setCamera?(view: "wide"): void; freeze?(on: boolean): void; paused: boolean }
+    const key = game === "outbreak" ? "__arcadeHarness" : game
+    await page.waitForFunction(key => !!(window as unknown as Record<string, App>)[key], key, { polling: 100, timeout: 180000 })
     const png = await page.evaluate(async key => {
       const a = (window as unknown as Record<string, App>)[key]!
-      a.paused = true; a.setCamera?.("wide")
+      a.paused = true; a.freeze?.(true); a.setCamera?.("wide")
       a.renderer.render = a.renderer.drawTo.bind(a.renderer)
       const device = a.renderer.passContext.device
-      for (let i = 0; i < 32; i++) { a.step(0); await device.queue.onSubmittedWorkDone() }
-      const canvas = document.querySelector<HTMLCanvasElement>("#view")!, ctx = canvas.getContext("webgpu")!
+      for (let i = 0; i < 32; i++) { await a.step(0); await device.queue.onSubmittedWorkDone() }
+      const canvas = document.querySelector<HTMLCanvasElement>("#view, #game")!, ctx = canvas.getContext("webgpu")!
       const row = Math.ceil(canvas.width * 4 / 256) * 256
       const buffer = device.createBuffer({ size: row * canvas.height, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ })
-      a.step(0)
+      await a.step(0)
       const enc = device.createCommandEncoder()
       enc.copyTextureToBuffer({ texture: ctx.getCurrentTexture() }, { buffer, bytesPerRow: row }, [canvas.width, canvas.height])
       device.queue.submit([enc.finish()]); await buffer.mapAsync(GPUMapMode.READ)
@@ -87,7 +88,7 @@ async function capture(browser: Browser, dist: string, name: string): Promise<Bu
       const output = document.createElement("canvas"); output.width = canvas.width; output.height = canvas.height
       output.getContext("2d")!.putImageData(new ImageData(rgba, canvas.width, canvas.height), 0, 0)
       return output.toDataURL("image/png").split(",")[1]!
-    }, game)
+    }, key)
     steppedPng = Buffer.from(png, "base64")
   } else if (drive === "advance") {
     await page.waitForFunction(() => typeof (globalThis as { advance?: unknown }).advance === "function", null, { timeout: 20_000 })

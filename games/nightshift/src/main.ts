@@ -5,6 +5,7 @@ import { openGpu } from "@arcade/kit/gpu/boot"
 import { Renderer } from "@arcade/kit/gpu/renderer"
 import { attachSky } from "@arcade/kit/sky/controller"
 import { createSkySettings, skyControls } from "@arcade/kit/sky/settings"
+import { skyWindowGeometry } from "./sky-windows"
 import { FrameParts } from "@arcade/kit/gpu/frame-parts"
 import { flatLighting, newSceneFrame, packSceneFrame, SceneLights, type SceneLight } from "@arcade/kit/gpu/scene-frame"
 import { SpotShadows } from "@arcade/kit/gpu/shadows/spot-shadows"
@@ -83,6 +84,7 @@ async function main() {
   if(smoke)setCamera("wide")
   const panel=new LabPanel(settings,controls(),new URLSearchParams(location.search),()=>camera.release(),{open:false,pill:false,groupActions:false,capture:"focus",openGroups:["Feel"]})
   const skySettings=createSkySettings(),sky=attachSky(renderer,skySettings)
+  let skyWindows=false,skyWorld:ArrayBuffer|undefined
   panel.addControls(skySettings,skyControls())
   panel.addControls(contact,contactShadowControls("Shadows"))
   panel.addControls(descent,descentControls)
@@ -106,7 +108,7 @@ async function main() {
   const casters=[{buffer,count:world.vertices,stride:24},{buffer:hallBuffer,count:basement.vertices,stride:24},...props.casters,...screens.pass.shadowCasters(),...hall.pass.shadowCasters(),...(moving?.casters??[])]
   const look=new OfficeLook(renderer,propHooks,smoke,async path=>{const r=await fetch(`${import.meta.env.BASE_URL}${path}`);if(!r.ok)throw Error(`${path}: ${r.status}`);return new Uint8Array(await r.arrayBuffer())})
   let lookVersion=look.version
-  const frame=newSceneFrame(),custom=new Float32Array(60),dustField=new DustField()
+  const frame=newSceneFrame(),custom=new Float32Array(56),dustField=new DustField()
   const beamDust=smoke?null:new BeamDust(renderer.passContext)
   if(beamDust)renderer.addPass("alpha",beamDust)
   let time=0,frames=0,paused=false,stepping=false,last=performance.now(),fixedTime:number|null=null
@@ -240,7 +242,8 @@ async function main() {
     custom.set([...physics.swing,0],32)
     look.pack(custom,settings,time,opening.time>=3)
     sky.update({time,sceneUnitsPerCdM2:1})
-    custom.set([Number(sky.active && !elevator.downstairs),0,0,0],56)
+    const openSky=sky.active&&!elevator.downstairs
+    if(openSky!==skyWindows){skyWindows=openSky;if(openSky)skyWorld??=skyWindowGeometry(world.data);renderer.setLevel({chunks:[{data:openSky?skyWorld!:world.data,box:[-7,-10,7,11]},{data:basement.data,box:basement.box}],glass:[],...flatLighting(0,0,[0,0,0])})}
     custom.set([0,0,0,continuity.value("monitor")],36);renderer.setCustomUniforms(custom)
     if(beamDust){dustField.step(simDt,time,camera.body.x,camera.body.y,settings.polish&&playerMoving?settings.dustWake:0);beamDust.frame(dustField.data,settings.polish&&settings.beamDust?settings.dust:0,settings.dustRadius,settings.dustBrightness,[lights.indexOf(1),lights.indexOf(2)])}
     for(let i=0;i<(!settings.polish?150:0);i++) {

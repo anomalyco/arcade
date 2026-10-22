@@ -1,10 +1,10 @@
 # Shared night sky ledger
 
-Branch: night-sky, base 52e5b830 (origin/main, 22 October 2026).
+Branch: night-sky, rebased onto `d4b6a9f2` (origin/main, 22 October 2026).
 
 ## Goal
 
-A single calibrated sky for Arcade. Primary metric: unintended star flux variation under subpixel motion with scintillation disabled. Secondary: detectable stars at woods exposure; paired GPU delta on mini at 1920×1080. Budget <0.5 ms for the sky alone. Isolated baseline measured; woods visibility remains pending.
+A single shared sky for Arcade. Primary metric: unintended star flux variation under subpixel motion with scintillation disabled. Secondary: detectable stars at woods exposure; paired GPU delta on mini at 1920×1080. Budget <0.5 ms for the sky alone. Actual woods visibility is measured; absolute calibration and current mini cost remain open.
 
 ## Contract and research
 
@@ -13,13 +13,15 @@ Sky owns `packages/kit/sky`; weather owns clouds and shared eye adaptation. Wood
 
 ## Kept local commits
 
-- `4dd50ca2`: credited catalogue and astronomical photometry.
-- `efa04ad7`: typed settings, assets and lunar light contract.
-- `64193600`: production sky renderer/controller and opt-in infinity TAA.
-- `b053ae99`: lunar mips, dark-disk occultation and expanded GPU proofs.
-- `34f4860d`: opt-in Lab/Lot/Night Shift/Outbreak adapters, credits and consumer capture fixture.
+- `8b120607`: credited catalogue and astronomical photometry.
+- `8d59da1d`: typed settings, assets and lunar light contract.
+- `a1a18a77`: production sky renderer/controller and opt-in infinity TAA.
+- `74b2f9db`: lunar mips, dark-disk occultation and expanded GPU proofs.
+- `6789f767`: opt-in Lab/Lot/Night Shift/Outbreak adapters, credits and consumer capture fixture.
+- `4e03cdcf`: initial experiment ledger.
+- `f868f9d5`: review fixes and adapted visibility.
 
-Nothing pushed. The adapters are candidates; visibility/calibration and parity gates below remain open.
+Nothing pushed. The adapters are candidates; actual visibility and verification limits are below.
 
 ## Experiments
 
@@ -37,21 +39,24 @@ Nothing pushed. The adapters are candidates; visibility/calibration and parity g
 12. Delta typechecks passed for kit, Getaway/root scripts, Lot and Night Shift, including the final synchronous capture-fixture change. Opt-in adapters share `attachSky`; default mode is Today. Pixel parity against main is not yet measured.
 13. Corrected production-build consumer checks passed on Studio: Lot and Night Shift fetched no sky assets in Today, fetched both assets in Physical, returned to Today and logged no browser errors. Nonblank frames inspected. This is **adapter operation evidence only**: catalogue detail is not visible through Lot's existing cloud/fog/depth-blur stack; Night Shift's aperture changes but visible stars/Moon are not established. Keep both visibility tasks open. Restricted Night Shift's glass discard to exterior panes so its rotated internal-office pane remains intact; all nine generated shaders passed Naga validation afterwards.
 
-## Verification pending
-
 ## Review round: 22 October
 
 - Corrected lunar north-up basis; expanded star quads to 3 px; host local-solar clock/daylight now drives Lab and Outbreak.
 - Failed code imports wait for late asset acquisition and release it. Explicit load or Today → Physical retries; per-device reference-counted leases share the catalogue and Moon upload.
-- Night Shift's Office uniform grew **56 → 60 floats** (224 → 240 bytes), including a new sky-control vec4. The TAA fields reused padding; the Office fields did not.
+- Night Shift's Office uniform initially grew **56 → 60 floats** (224 → 240 bytes), including a new sky-control vec4. The geometry-aperture revision restores **56 floats**, and its shaders match main exactly. The TAA fields reused padding; the original Office fields did not.
 - Candidate adapted vision redistributes catalogue flux with a magnitude-7 floor and exponent 0.65, normalizing the aggregate budget; 0.72 px integrated PSF. Host adaptation supplies bounded 1–10× observer sensitivity, with no sky history. This is a perceptual pre-composition response, not calibrated physical radiance; weather composition still needs agreement.
 - Targeted model/resource/perception tests: 10 passed, 49 assertions. Real-catalogue aggregate flux error <1e-6.
 - Review GPU run spilled from mini to Studio: photometric variation **0.035087%**, adapted **0.035832%**, translation drift **0.031247 px** over 64 m, lunar transmission zero, no GPU errors. Not mini timing evidence.
-- Main baseline production builds for Lot/Night Shift/Outbreak completed at `d4b6a9f2`. Synchronous parity driver rejects blank frames; comparisons pending.
+- Main baseline production builds for Lot/Night Shift/Outbreak completed at `d4b6a9f2`. Final default frames for **all three are pixel-identical** at 1920×1080. The initial Night Shift shader aperture changed nine pixels by one byte, with an exact baseline/control; moving the discard did not help. Geometry apertures remove that shader change. Synchronous parity rejects blank frames; Outbreak uses its actual `__arcadeHarness`.
+- Night Shift's final production consumer check passes with no errors: zero Today sky-asset requests, both assets in Physical, return to Today. The inspected frame shows stars through the blind gaps; the Moon is outside this view.
 - Integration tree `night-sky-woods` is based on woods `4d14b07f`; owner tree remains separate.
+- Production woods clearing/lake Today/new stills use a matched 8 s render clock and the existing host eye response. Six-second camp look-up retained from the advancing-clock run. Both captures pass without browser/GPU errors. Forest and root-proof typechecks pass.
+- Mini review timing attempt waited 1800 s and exited 75 without running (all slots occupied, then reserved for a high-priority job). A longer admitted queue attempt is pending; Studio timings are not substituted.
 
-- Consumer celestial visibility through atmosphere/windows.
-- Default pixel parity against main; current reference conversion is explicitly 1 scene unit per cd/m².
-- Woods adoption/base agreement, exposure calibration, actual star visibility, shadowed moonlight and camp clip.
+## Remaining limits
+
+- Lot celestial visibility through its cloud/fog/blur stack.
+- Absolute scene calibration: current reference conversion is explicitly 1 scene unit per cd/m².
+- Woods owner adoption and ground-facing verification of the distant-spot lunar-shadow approximation.
 - Weather cloud/transmittance and adaptation integration with the single Sky station.
-- Resolve workspace timing/smoke failures; no push.
+- Workspace verification remains red as recorded in experiments 8–9; not all Outbreak failures were classified. No clean-workspace claim.
