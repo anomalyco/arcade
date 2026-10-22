@@ -322,6 +322,11 @@ const ACTIONS: readonly (InteractActionId | undefined)[] = [
   "drag",
   "set-down",
 ]
+/** Whether a command's `interactAction` survives the wire (others arrive as the target's primary). */
+export function netSendsAction(id: InteractActionId): boolean {
+  return ACTIONS.includes(id)
+}
+
 /** The action byte's top bit: crouching (every flag bit is taken). */
 const CROUCH_BIT = 0x80
 const PICKS: readonly PickMode[] = ["take", "craft", "pack"]
