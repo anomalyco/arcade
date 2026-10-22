@@ -366,7 +366,8 @@ fn B(i: vec2i) -> vec4f { return textureLoad(aux, clamp(i, vec2i(0), vec2i(textu
   let gx = B(bi + vec2i(1, 0)).rgb - B(bi - vec2i(1, 0)).rgb;
   let gy = B(bi + vec2i(0, 1)).rgb - B(bi - vec2i(0, 1)).rgb;
   let f = fract(px / 8.0) - 0.5;
-  let plane = dc + (gx * f.x + gy * f.y) * 0.3;
+  // Fades in with quality loss, so a zero amount reconstructs the source exactly.
+  let plane = mix(bm.rgb, dc + (gx * f.x + gy * f.y) * 0.3, clamp(q * 4.0, 0.0, 1.0));
   var rec = plane + (c - bm.rgb) * (1.0 - loss);
   // Chroma is cheap to drop: it goes to the block's.
   let cm = bm.rgb - vec3f(yb);
