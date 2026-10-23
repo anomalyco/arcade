@@ -80,6 +80,15 @@ export const FEEDBACK_DEFAULTS: Readonly<FeedbackSettings> = {
 }
 export const FEEDBACK: FeedbackSettings = { ...FEEDBACK_DEFAULTS }
 
+/** The kill punch-in's fov scale `t` seconds into it (1 at rest, before 0 or after `punchTime`, and under reduced
+ *  motion): snap in over the first 12%, hold, ease back out. Shared by the pilot's view and the gunner's sight. */
+export function punchScale(t: number, reduced: boolean): number {
+  const u = t / Math.max(1e-3, FEEDBACK.punchTime)
+  if (reduced || t < 0 || u >= 1) return 1
+  const e = u < 0.12 ? u / 0.12 : u < 0.4 ? 1 : 1 - ((u - 0.4) / 0.6) ** 2 * (3 - 2 * ((u - 0.4) / 0.6))
+  return 1 - FEEDBACK.punchZoom * Math.max(0, Math.min(1, e))
+}
+
 export const FEEDBACK_CONTROLS: LabControl[] = [
   { key: "edge", label: "Damage edge", group: "Taking damage", min: 0, max: 1.5, step: 0.05, unit: "" },
   { key: "edgeDirectional", label: "Edge toward attacker", group: "Taking damage", type: "toggle" },

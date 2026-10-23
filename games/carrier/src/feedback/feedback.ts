@@ -1,14 +1,16 @@
+import { prefersReducedMotion } from "@arcade/kit/client/camera"
 import { DECK_WIDTH, DECK_Y, ISLAND, LENGTH } from "../../shared/carrier-spec"
 import type { Missile } from "../../shared/combat"
 import { type Archipelago, terrainHeight } from "../../shared/islands"
 import { type Vec3, worldToShip } from "../../shared/plane"
 import { type Sea, seaHeight } from "../../shared/sea"
 import type { ShipPoseLike } from "../../shared/plane"
+import { SHAKE } from "../render/camera"
 import type { WeaponFx } from "../render/weapon-fx"
 import { Canopy } from "./canopy"
 import { type CalloutKind, FeedbackOverlay } from "./callouts"
 import { cautionChime, sting } from "./feedback-audio"
-import { FEEDBACK } from "./settings"
+import { FEEDBACK, punchScale } from "./settings"
 
 type Point = { x: number; y: number; z: number }
 type Moving = Point & { vx: number; vy: number; vz: number }
@@ -91,12 +93,7 @@ export class Feedback {
 
   /** The presentation fov scale this frame (the kill punch-in), 1 at rest. */
   get fovScale(): number {
-    if (this.punch < 0) return 1
-    const T = FEEDBACK.punchTime
-    const u = this.punch / T
-    // Snap in over the first 12%, hold, ease back out.
-    const e = u < 0.12 ? u / 0.12 : u < 0.4 ? 1 : 1 - ((u - 0.4) / 0.6) ** 2 * (3 - 2 * ((u - 0.4) / 0.6))
-    return 1 - FEEDBACK.punchZoom * Math.max(0, Math.min(1, e))
+    return punchScale(this.punch, Boolean(SHAKE.reduceMotion) || prefersReducedMotion())
   }
 
   /** A new sortie: clean canopy, health full. The streak lives on until we die. */

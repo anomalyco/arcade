@@ -32,6 +32,7 @@ import {
   restAngles,
   samDecoyed,
   samLockStep,
+  samTrigger,
   shellStep,
   shipHitOf,
   slewTurret,
@@ -47,6 +48,10 @@ import { buildShipWeapons, WEAPON_SCALE } from "../src/render/ship-weapons"
 import { CAPACITY, joinCrew, leaveCrew, makeCrew, playerOf, runOp, scuttle, shipOf } from "../shared/crew"
 import { OPS, gunOp, gunnerAt, shipOps } from "../shared/ops"
 import { add } from "./crew-helpers"
+import { HitStop } from "@arcade/kit/client/camera"
+import { FEEDBACK, punchScale } from "../src/feedback/settings"
+import { TurretCam } from "../src/gunnery/camera"
+import { SHAKE } from "../src/render/camera"
 import { RoomCore } from "../server/core"
 import { BUILD } from "../shared/build.gen"
 import { type ClientMsg, type ServerMsg, decodeClient, decodeServer, encode } from "../shared/protocol"
@@ -359,7 +364,7 @@ describe("SAM", () => {
     return { a, pos, dir }
   }
 
-  test("locks slower than the AIM-9 out to its range, and not inside its minimum range", () => {
+  test("locks in lockTime (quicker than the AIM-9) out to its range, and not inside its minimum range", () => {
     const { pos, dir } = mount()
     const m = WEAPON_MOUNTS[SAM]!
     muzzleWorld(SHIP, SAM, m.restYaw, 0.2, pos, dir)
@@ -373,6 +378,7 @@ describe("SAM", () => {
     }
     expect(lock.locked).toBe(true)
     expect(t).toBeCloseTo(GUNNERY.sam.lockTime, 1)
+    expect(GUNNERY.sam.lockTime).toBeLessThan(1.4)
     const close = jet(101, 1, pos[0] + dir[0] * 100, pos[1] + dir[1] * 100, pos[2] + dir[2] * 100)
     const l2 = { target: -1, time: 0, locked: false }
     samLockStep(l2, DT, pos[0], pos[1], pos[2], dir[0], dir[1], dir[2], 0, [close])
@@ -388,12 +394,49 @@ describe("SAM", () => {
     const cells: number[] = []
     for (let k = 0; k < 8; k++) {
       cells.push(takeSam(st))
-      for (let s = 0; s < 60; s++) turretStep(st, DT)
+      for (let s = 0; s < Math.ceil(GUNNERY.sam.interval / DT) + 1; s++) turretStep(st, DT)
     }
     expect(new Set(cells).size).toBe(8)
     expect(takeSam(st)).toBe(-1)
     for (let s = 0; s < Math.round((GUNNERY.sam.reloadDelay + GUNNERY.sam.reload + 0.1) / DT); s++) turretStep(st, DT)
     expect(st.cells).toBe(1)
+  })
+
+  test("an early press arms the launcher: it fires the moment the lock completes, and disarms if the track is lost", () => {
+    const { pos, dir } = mount()
+    const m = WEAPON_MOUNTS[SAM]!
+    muzzleWorld(SHIP, SAM, m.restYaw, 0.2, pos, dir)
+    const target = jet(100, 1, pos[0] + dir[0] * 2000, pos[1] + dir[1] * 2000, pos[2] + dir[2] * 2000)
+    const st = makeTurretState(SAM)
+    const step = (pressed: boolean, jets: Target[] = [target]) => {
+      samLockStep(st.lock, DT, pos[0], pos[1], pos[2], dir[0], dir[1], dir[2], 0, jets)
+      return samTrigger(st, pressed)
+    }
+    // Tracking, not locked: a press arms instead of dumbfiring.
+    expect(step(false)).toBe(false)
+    expect(st.lock.target).toBe(100)
+    expect(step(true)).toBe(false)
+    expect(st.armed).toBe(true)
+    let t = 2 * DT
+    let fired = -1
+    while (t < 3 && fired < 0) {
+      if (step(false)) fired = t
+      t += DT
+    }
+    expect(st.lock.locked).toBe(true)
+    expect(fired).toBeCloseTo(GUNNERY.sam.lockTime, 1)
+    expect(st.armed).toBe(false)
+    // Locked: a press fires at once.
+    expect(step(true)).toBe(true)
+    // Armed, then the jet leaves the seeker: disarmed, and a lock on something later doesn't fire by itself.
+    const s2 = makeTurretState(SAM)
+    samLockStep(s2.lock, DT, pos[0], pos[1], pos[2], dir[0], dir[1], dir[2], 0, [target])
+    expect(samTrigger(s2, true)).toBe(false)
+    samLockStep(s2.lock, DT, pos[0], pos[1], pos[2], dir[0], dir[1], dir[2], 0, [])
+    expect(samTrigger(s2, false)).toBe(false)
+    expect(s2.armed).toBe(false)
+    // Nothing in the seeker: a press is a dumbfire, at once.
+    expect(samTrigger(s2, true)).toBe(true)
   })
 
   /** Launches a SAM at a crossing jet; returns the events and whether it hit. */
@@ -434,6 +477,35 @@ describe("SAM", () => {
 
   test("a locked SAM flies PN onto a crossing jet and bursts on it", () => {
     expect(engage(null, 1).hit).toBe(true)
+  })
+
+  test("a SAM that overshoots its target bursts there instead of flying on", () => {
+    const world = new GunneryWorld({ sea: null, arch: null, ships: [SHIP] }, true)
+    world.man(7, 0, SHIP.id!, SAM)
+    const { a, pos, dir } = mount()
+    a.pitch = 0.35
+    muzzleWorld(SHIP, SAM, a.yaw, a.pitch, pos, dir, 0)
+    const j = jet(100, 1, pos[0] + dir[0] * 1500, pos[1] + dir[1] * 1500, pos[2] + dir[2] * 1500)
+    const e = GUNNERY.sam.eject
+    world.fire({ owner: 7, seq: 1, kind: "sam", ship: SHIP.id!, mount: SAM, t: 0, x: pos[0], y: pos[1], z: pos[2], vx: dir[0] * e, vy: dir[1] * e, vz: dir[2] * e, target: 100 })
+    let boom: GunneryEvent | null = null
+    let at = 0
+    for (let t = DT; t < 6 && !boom; t += DT) {
+      // After a second the jet jinks out to the side, far past what the SAM can follow.
+      if (Math.abs(t - 1) < DT / 2) {
+        const p = world.projectiles[0]!
+        // The starboard SAM flies out along +x: put the jet 300 m off its beam and a little behind.
+        j.x = p.x - p.vx * 0.15
+        j.y = p.y
+        j.z = p.z + 300
+      }
+      world.step(t, { jets: [j] })
+      boom = world.events.splice(0).find((ev) => ev.k === "gboom") ?? null
+      at = t
+    }
+    expect(boom?.k).toBe("gboom")
+    expect(boom && boom.k === "gboom" && boom.surface).toBe("air")
+    expect(at).toBeLessThan(1.05)
   })
 
   test("a SAM catches a jet circling hard about a kilometre out", () => {
@@ -802,5 +874,36 @@ describe("the room", () => {
     expect(decodeServer(encode({ type: "turrets", t: [[1, 2, 900, 300, 1, 4]] }))).toEqual({ type: "turrets", t: [[1, 2, 900, 300, 1, 4]] })
     expect(decodeServer(encode({ type: "kill", on: 1, by: 2, w: "sam" }))).toEqual({ type: "kill", on: 1, by: 2, w: "sam" })
     expect(decodeServer('{"type":"gboom","b":[1,2,3]}')).toBeNull()
+  })
+})
+
+describe("kill moment under reduced motion", () => {
+  test("the punch-in and the hit-stop stand still when reduced motion is on, for the sight and the pilot", () => {
+    const was = SHAKE.reduceMotion
+    try {
+      const mid = FEEDBACK.punchTime * 0.25
+      SHAKE.reduceMotion = 0
+      const cam = new TurretCam()
+      expect(cam.shake.reduced).toBe(false)
+      expect(punchScale(mid, cam.shake.reduced)).toBeLessThan(1)
+      const on = new HitStop()
+      on.trigger(0.1, 0.05, !cam.shake.reduced)
+      expect(on.step(1 / 60)).toBeLessThan(1 / 60)
+
+      SHAKE.reduceMotion = 1
+      expect(cam.shake.reduced).toBe(true)
+      expect(punchScale(mid, cam.shake.reduced)).toBe(1)
+      const off = new HitStop()
+      off.trigger(0.1, 0.05, !cam.shake.reduced)
+      expect(off.step(1 / 60)).toBe(1 / 60)
+    } finally {
+      SHAKE.reduceMotion = was
+    }
+  })
+
+  test("the punch-in is 1 at rest and after it ends", () => {
+    expect(punchScale(-1, false)).toBe(1)
+    expect(punchScale(FEEDBACK.punchTime, false)).toBe(1)
+    expect(punchScale(FEEDBACK.punchTime * 0.2, false)).toBeCloseTo(1 - FEEDBACK.punchZoom, 6)
   })
 })

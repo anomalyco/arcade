@@ -2289,6 +2289,25 @@ Candidates from the code audits; measure and playtest before moving any into the
   clears over 0.6 s, red-out from −1.5 g: a DOM layer under the HUD (`src/flight/g-overlay.ts`: a saturation-blend
   layer drains colour from the edges, a radial tunnel closes, multiply red), and the same level drives the existing
   cockpit breathing (grunts land as the tunnel closes; heard quieter in chase). Clip: `scripts/feel-shot.ts`.
+- **Lock-on weapons: arm on an early press, and measure with a scripted human (Carrier SAM, Oct 22).** After Aiden's
+  "SAM guns need work", `games/carrier/scripts/sam-playtest.ts` played scripted gunners (reaction delay, aim lag, hand
+  tremor) against scripted jets on the real seeker and `GunneryWorld`. Findings: tracking a jet in a 9° cone is easy, so
+  the wait was all lock time (2.2 s); a click before the lock was a dumbfire that hit 0 of 480 times; and a crossing jet
+  at 900 m slipped past the 15 m fuse at 16-35 m (a third of a shaky gunner's shots), after which the SAM flew on blind
+  for 9 s. Fixes: a 1.2 s lock that is heard (beeps quicken and rise, a chirp, one solid note) and seen (the box closes
+  with a progress bar, then "LOCK"); an early press arms the launcher and fires on lock (`samTrigger`, HUD "ARMED";
+  impatient gunner 0% → 98-100% on jets that don't flare); a 24 m fuse and a burst where it loses the target (shaky
+  gunner's close crossing 67% → 78%, and a miss reads as a near burst, not a 9 s fly-off). A real-GPU run showed the
+  same overshoot in the gunnery harness before the fix. The quicker
+  lock alone doubled bot SAM kills in `scripts/balance.ts` (27.9 → 57.6 a match), so launches went from 0.8 to 1.6 s
+  apart; the shipped set gives 49.3 (12 matches, 15 min). Bots fire on every lock with perfect tracking, so treat their
+  SAM numbers as an upper bound.
+- **Record a WebGPU page on a virtual clock (Carrier `scripts/sam-clip.ts`).** Replace `performance.now` and
+  `requestAnimationFrame` in an init script, step one frame per video frame, read the swapchain back through the
+  game's device and lay it under the DOM HUD before `page.screenshot`. The renderer draws in a microtask with one frame
+  in flight, so wait for `onSubmittedWorkDone` before stepping and for the hooked submit after it, or every frame comes
+  back black. Every frame is exactly 1/30 s of game time however slow the capture.
+
 ## Audio
 
 - **A procedural soundscape that ships no files (AR-86).** Outbreak's `src/audio/soundscape/` synthesizes 28 ambient

@@ -72,17 +72,19 @@ export const GUNNERY = {
   sam: {
     yawRate: 1.2,
     pitchRate: 1.0,
-    /** Cells in the box; an empty cell reloads `reload` s after the previous one, starting `reloadDelay` s after a launch. */
+    /** Cells in the box; an empty cell reloads `reload` s after the previous one, starting `reloadDelay` s after a launch;
+     *  `interval` s between launches (was 0.8: with the quicker lock, a ripple of 8 made the SAM the top jet killer). */
     cells: 8,
     reload: 3,
     reloadDelay: 2,
-    interval: 0.8,
+    interval: 1.6,
     /** Seeker on the launcher: cone half-angle off the aim (rad), lock range and minimum range (m), seconds to lock
-     *  (slower than the AIM-9's 1.4), and the keep cone/range once tracking. */
+     *  (the ship's fire-control radar: quicker than the AIM-9's 1.4; was 2.2, too long for a gunner holding a crossing
+     *  jet: scripts/sam-playtest.ts), and the keep cone/range once tracking. */
     cone: 9 * DEG,
     range: 4000,
     minRange: 250,
-    lockTime: 2.2,
+    lockTime: 1.2,
     keep: 1.4,
     keepRange: 1.1,
     /** Leaves the cell at `eject` m/s along the launcher, then the motor: acceleration, top speed, burn, drag. */
@@ -100,7 +102,9 @@ export const GUNNERY = {
     bite: 380,
     lag: 0.14,
     gimbal: 55 * DEG,
-    fuse: 15,
+    /** Proximity fuse radius (m; was 15: a crossing jet at 900 m slipped past at 16-35 m in scripts/sam-playtest.ts).
+     *  A SAM that loses its target past closest approach bursts there (a visible near miss, not a 9 s fly-off). */
+    fuse: 24,
     arm: 0.6,
     /** Heavy but not a one-shot: a close burst leaves a jet badly hurt and able to limp home (100 hp). */
     damage: 70,
@@ -333,11 +337,13 @@ export type TurretState = {
   /** Seconds until another launch or shot. */
   readyIn: number
   lock: Lock
+  /** SAM: the trigger was pressed while the seeker tracked but had not locked; it launches the moment it locks. */
+  armed: boolean
 }
 
 export function makeTurretState(mount: number): TurretState {
   const kind = WEAPON_MOUNTS[mount]!.kind
-  return { mount, kind, heat: 0, overheated: false, idle: 10, owed: 0.999, round: 0, seq: 0, cells: GUNNERY.sam.cells, reloadIn: 0, readyIn: 0, lock: { target: -1, time: 0, locked: false } }
+  return { mount, kind, heat: 0, overheated: false, idle: 10, owed: 0.999, round: 0, seq: 0, cells: GUNNERY.sam.cells, reloadIn: 0, readyIn: 0, lock: { target: -1, time: 0, locked: false }, armed: false }
 }
 
 /** CIWS trigger for one step: rounds to fire this step (0..2), heating and cooling as the jets' cannon does. */
@@ -386,6 +392,30 @@ export function takeSam(s: TurretState): number {
   s.reloadIn = c.reloadDelay + c.reload
   s.readyIn = c.interval
   return cell
+}
+
+/**
+ * The SAM trigger for one step, after the seeker's `samLockStep`. A press while the seeker tracks a jet but has not yet
+ * locked arms the launcher, and the SAM goes the moment the lock completes (and a cell is ready), so an early click is
+ * never a wasted dumbfire; losing the track disarms it. A press when locked, or with nothing in the seeker (a dumbfire,
+ * e.g. at a ship), launches at once. True: launch now (then `takeSam`).
+ */
+export function samTrigger(s: TurretState, pressed: boolean): boolean {
+  const l = s.lock
+  if (l.target < 0) s.armed = false
+  if (pressed) {
+    if (l.target >= 0 && !l.locked) {
+      s.armed = true
+      return false
+    }
+    s.armed = false
+    return true
+  }
+  if (s.armed && l.locked && s.cells > 0 && s.readyIn <= 0) {
+    s.armed = false
+    return true
+  }
+  return false
 }
 
 /** Fires the gun if the breech is ready. */
@@ -1046,10 +1076,11 @@ export class GunneryWorld {
       const ox = p.x
       const oy = p.y
       const oz = p.z
+      let lost = false
       if (p.kind === "shell") {
         shellStep(p, dt)
         p.age += dt
-      } else this.guide(p, dt, targets, flares, t)
+      } else if (this.guide(p, dt, targets, flares, t)) lost = true
       // Proximity fuse on enemy jets.
       const fuse = p.kind === "sam" ? GUNNERY.sam.fuse : GUNNERY.gun.fuse
       const arm = p.kind === "sam" ? GUNNERY.sam.arm : GUNNERY.gun.arm
@@ -1082,6 +1113,10 @@ export class GunneryWorld {
           }
         }
       }
+      if (lost) {
+        this.burst(p, p.x, p.y, p.z, targets, -1, "air")
+        continue
+      }
       const kind = p.y < MAX_PEAK ? groundHit(this.ground, p.x, p.y, p.z, t) : ""
       if (kind) {
         let skip = false
@@ -1102,8 +1137,9 @@ export class GunneryWorld {
     }
   }
 
-  /** SAM guidance for one step: flares (by chance), then PN on its target or decoy. */
-  private guide(p: GunProjectile, dt: number, targets: readonly Target[], flares: readonly LiveFlare[], t: number): void {
+  /** SAM guidance for one step: flares (by chance), then PN on its target or decoy. True when it just lost its target
+   *  out of the seeker's gimbal (it overshot): the caller bursts it there. */
+  private guide(p: GunProjectile, dt: number, targets: readonly Target[], flares: readonly LiveFlare[], t: number): boolean {
     const c = GUNNERY.sam
     let target: Target | null = null
     if (p.target >= 0) {
@@ -1143,8 +1179,12 @@ export class GunneryWorld {
       const fv = flareVelApprox(f, t)
       if (!guideSam(p, dt, p.decoy !== null, tp[0], tp[1], tp[2], fv[0], fv[1], fv[2])) p.decoy = null
     } else if (target) {
-      if (!guideSam(p, dt, true, target.x, target.y, target.z, target.vx, target.vy, target.vz)) p.target = -1
+      if (!guideSam(p, dt, true, target.x, target.y, target.z, target.vx, target.vy, target.vz)) {
+        p.target = -1
+        return true
+      }
     } else guideSam(p, dt, false, 0, 0, 0, 0, 0, 0)
+    return false
   }
 
   /** A projectile that struck the world: a carrier hit (direct) or a shell's near miss in the water. */
