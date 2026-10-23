@@ -19,7 +19,7 @@
   the time of day, then the weather, are applied on top), `weather`, `daynight`, `stars`, `lights`, and in dev builds
   `lab`, `debugMenu` (the dev panel) and `bots`, for debugging and screenshots.
 - Dev only: ` opens the dev panel (`src/dev/dev-panel.ts`): the shared floating Lab panel (`@arcade/kit/lab-panel`,
-  drawn with knobs) with tabs World (weather, time), Audio, Sounds, Flight (bombsight, radar), Bots and Game (zones,
+  drawn with knobs) with tabs World (weather, time), Audio, Sounds, Flight (bombsight, radar, flight feel), Bots and Game (zones,
   quality, volume, key labels, camera shake). Every tunable is a typed setting with label, unit, range, step, approved default and
   Reset; commands are `buttons` rows and live values `readout` rows. `src/main.ts` imports `src/dev/dev-tools.ts`
   behind `import.meta.env.DEV`, so production bundles contain no panel, section or bot code: add a `DevSection` in

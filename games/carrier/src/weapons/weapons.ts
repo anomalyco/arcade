@@ -34,6 +34,7 @@ import { type FxShip, ShipFx } from "./ship-fx"
 import { BombSight, type SightShip, aimBomb, makeBombAim } from "./bombsight"
 import type { Hull } from "../../shared/fleet"
 import { teamCss } from "../../shared/crew"
+import { FireFx } from "./fire-fx"
 
 /** What the weapons tell the room (online). Offline there is none: the local world has the authority. */
 export type WeaponsNet = {
@@ -118,6 +119,9 @@ export class Weapons {
   onDestroyed: ((by: number, w: KillWeapon | "") => void) | null = null
   /** Camera trauma owed from being hit (the host adds it and zeroes it). */
   trauma = 0
+  /** Your own shots since the host last read them, for the camera feel (the host zeroes them). */
+  readonly fired = { rounds: 0, missiles: 0, bombs: 0 }
+  private fireFx = new FireFx()
   /** Breaks shot-down jets apart and draws their wrecks' impacts (src/render/explosions.ts); the old burst when null. */
   breakup: JetBreakup | null = null
   /** Our weapons-bay doors, 0 shut .. 1 open: open while bombs are selected (and a bay bomb is waiting to drop). */
@@ -518,6 +522,8 @@ export class Weapons {
       const m = bodyToWorld(p, mz[0], mz[1], mz[2], tmp)
       for (let i = 0; i < n; i++) this.rounds.fire(this.id, this.team, l.round++, p.x + m[0], p.y + m[1], p.z + m[2], vel, fwd, up, left, (i / n) * dt)
       this.firedAt = this.time
+      this.fired.rounds += n
+      this.fireFx.rounds(n)
     }
     const firing = weapon === "gun" && trigger && !l.overheated
     if (firing !== this.sentGun) {
@@ -565,6 +571,8 @@ export class Weapons {
         const at = bodyToWorld(p, r[0], r[1], r[2], tmp)
         this.launch({ owner: this.id, seq, t: p.t, x: p.x + at[0], y: p.y + at[1], z: p.z + at[2], vx: p.vx, vy: p.vy, vz: p.vz, target: l.lock.locked ? l.lock.target : -1 })
         this.audio.missile(this.dist(p.x, p.y, p.z))
+        this.fired.missiles++
+        this.fireFx.missile(r)
       }
     }
     // Bombs drop in station order (VEHICLES[vehicle].bombs): from the bay once its doors are open, then the wings.
@@ -579,6 +587,7 @@ export class Weapons {
         drop.seq = seq
         this.launch(drop)
         this.audio.bomb(this.dist(p.x, p.y, p.z))
+        this.fired.bombs++
       }
     }
     if (this.wantFlares) {
@@ -698,6 +707,7 @@ export class Weapons {
       bodyToWorld(own, 0, 0, 1, fwd)
       fx.muzzle(own.x + m[0] + own.vx * dt, own.y + m[1] + own.vy * dt, own.z + m[2] + own.vz * dt, fwd[0], fwd[1], fwd[2])
     }
+    if (own && this.flying) this.fireFx.draw(fx, own, dt)
     for (const j of this.jetList) {
       if (j.gun && j.alive) {
         const mz = WEAPONS.gun.muzzleAt

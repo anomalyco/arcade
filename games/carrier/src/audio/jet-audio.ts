@@ -39,7 +39,7 @@ export type OwnJet = {
   readonly plane: { crashed: string }
   readonly launch: { phase: string; progress?: number } | null
   readonly landing: { phase: string } | null
-  readonly cam: { mode: string }
+  readonly cam: { mode: string; readonly feel?: { readonly strain: number } }
 }
 
 /** Live tuning (the AUDIO debug tab). */
@@ -153,7 +153,7 @@ export class JetAudio {
   private ownPhase = ""
   private ownLaunch = ""
   private ownLanding = ""
-  private ownCockpit = { interior: 0, flying: false, speed: 0, g: 1, stall: 0, brake: 0 }
+  private ownCockpit = { interior: 0, flying: false, speed: 0, g: 1, stall: 0, brake: 0, strain: 0 }
   private ownSeen = false
   private test: { t: number; x: number; y: number; z: number; vx: number; vy: number; vz: number; burner: boolean } | null = null
 
@@ -296,6 +296,7 @@ export class JetAudio {
     c.g = p.g
     c.stall = p.stall
     c.brake = p.brake
+    c.strain = crashed ? 0 : (f.cam.feel?.strain ?? 0)
   }
 
   /** launchStart: the engine surges (a fast launch spool, the afterburner lighting 0.3 s in) and the catapult starts. */

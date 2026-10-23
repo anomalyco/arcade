@@ -281,6 +281,7 @@ export class FlightModule {
       f.shake(this.weapons.trauma)
       this.weapons.trauma = 0
     }
+    this.fireFeel(f)
     // Explosions nearby shake the camera too (presentation only).
     const bang = this.boom.takeTrauma()
     if (bang > 0) f.shake(bang)
@@ -595,6 +596,16 @@ export class FlightModule {
   /** For scripts: every carrier as drawn last frame (settled), with its id and team. */
   get carriers(): readonly Ship[] {
     return this.world.ships
+  }
+
+  /** Your own shots this frame kick the camera (src/flight/feel.ts): the gun's recoil and buzz, the release bumps. */
+  private fireFeel(f: Flight): void {
+    const shots = this.weapons.fired
+    const feel = f.cam.feel
+    feel.gun(shots.rounds)
+    for (let i = 0; i < shots.missiles; i++) feel.missile()
+    for (let i = 0; i < shots.bombs; i++) feel.bomb()
+    shots.rounds = shots.missiles = shots.bombs = 0
   }
 
   /** For scripts: the weapons' state (selected weapon, heat, stores, lock, health, nearest inbound missile). */
