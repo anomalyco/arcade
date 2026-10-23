@@ -20,10 +20,12 @@ import { WEATHER_PRESET_IDS, WeatherSimulation, applyWeatherPreset, createWeathe
 import type { LabContext } from "../types"
 import { cagedBulb, fluorescentTube, ledIndicator } from "../../gpu/lights/practicals"
 import { ScreenDisplay, ScreenQuadPass } from "../../gpu/screen/display"
-import { screenSceneLight } from "../../gpu/screen/light"
+import { screenBounceSource, screenSceneLight } from "../../gpu/screen/light"
 import { ScreenProgramme, type ProgrammeKind } from "../../gpu/screen/programme"
 import { createScreenDisplaySettings, type ScreenDisplaySettings } from "../../gpu/screen/settings"
-import { CAR_PAINTS, FLOOR, LAMP, LAMP_COUNT, SCREEN_AT, SCREEN_BULB, SCREEN_LEDS, SCREEN_ROOM, SCREEN_TUBE, WALL_PAINTS, WORLD_CAMERA, WORLD_BOUNCE, WORLD_FOCUS, WORLD_LIGHT_ID, buildWorld, worldClock, worldLights, type CarPaint, type WallPaint, type WorldClock, type WorldFlicker, type WorldGeometry } from "./scene"
+import { BAKED_GI_STRUCT_FIELDS_WGSL, BAKED_GI_UNIFORM_FLOATS, HOUSE_LIGHTMAP_META, bakedLightmapHooks, packBakedLightmapUniforms, uploadBakedLightmapTexture, type BakedGiMode, type BakedLightmapGpu } from "../../gpu/gi/lightmap"
+import { CAR_PAINTS, FLOOR, LAMP, LAMP_COUNT, SCREEN_AT, SCREEN_BAKE_REFERENCE, SCREEN_BULB, SCREEN_LEDS, SCREEN_LIGHT_ID, SCREEN_ROOM, SCREEN_TUBE, WALL_PAINTS, WORLD_CAMERA, WORLD_BOUNCE, WORLD_FOCUS, WORLD_LIGHT_ID, buildWorld, worldClock, worldLights, type CarPaint, type WallPaint, type WorldClock, type WorldFlicker, type WorldGeometry } from "./scene"
+export { SCREEN_LIGHT_ID } from "./scene"
 
 /**
  * The Lab's base debug world, drawn by the kit `Renderer` (the one Brawl and Blackout ship) with the kit look,
@@ -81,6 +83,10 @@ export type WorldState = {
   bulb: boolean
   /** A row of finished props on the driveway, one per wear look (`gpu/finish`); with the albedo check, the world draws its finish variant. */
   finishProps: boolean
+  /** Today (flat bounce fill) or Cycles per-light baked lightmaps + L1 SH probes (`gpu/gi/lightmap.ts`). */
+  giMode: BakedGiMode
+  giIntensity: number
+  giProbes: number
 }
 
 export const WORLD_DEFAULTS: Readonly<WorldState> = {
@@ -117,13 +123,13 @@ export const WORLD_DEFAULTS: Readonly<WorldState> = {
   tube: false,
   bulb: false,
   finishProps: false,
+  giMode: "today",
+  giIntensity: 1,
+  giProbes: 1,
 }
 
 /** World keys whose change rebuilds the mesh (everything else is per frame). */
-const STRUCTURAL = new Set<string>(["street", "walk", "path", "floor", "wall", "car", "tree", "bush", "grass", "seed", "screen", "tube", "bulb", "finishProps"])
-
-/** `SceneLight.id`s of the screen bench's lights. */
-export const SCREEN_LIGHT_ID = { screen: 20, tube: 21, bulb: 22, tvLed: 23, deckLed: 24, deckActivity: 25 } as const
+const STRUCTURAL = new Set<string>(["street", "walk", "path", "floor", "wall", "car", "tree", "bush", "grass", "seed", "screen", "tube", "bulb", "finishProps", "giMode"])
 
 /** Scales the sun or moon and the sky ambient (the screen bench's dark room turns them down). */
 function skyScaled(clock: WorldClock, k: number): WorldClock {
@@ -182,7 +188,7 @@ export function createDebugWorld(context: LabContext): DebugWorld {
   const wear: WearSettings = { ...WEAR_DEFAULTS }
   // The finish variant (wear and the albedo validator) compiles only while something needs it.
   const finishOn = () => state.finishProps || wear.albedoCheck
-  const renderers: Partial<Record<`${LightModel}${"" | "+finish"}`, Renderer>> = {}
+  const renderers: Partial<Record<`${LightModel}${"" | "+finish" | ":baked"}`, Renderer>> = {}
   const skies = new Map<Renderer, ReturnType<typeof attachSky>>()
   const drawn = new Map<Renderer, WorldGeometry>()
   // The `skyLight` each renderer's flat bounce fill was last scaled for (the level uploads it at 1).
@@ -198,6 +204,12 @@ export function createDebugWorld(context: LabContext): DebugWorld {
   const emptySprites = new Float32Array(0) as Float32Array<ArrayBuffer>
 
   const knobs = new Float32Array(12) as Float32Array<ArrayBuffer>
+  const knobsGi = new Float32Array(BAKED_GI_UNIFORM_FLOATS) as Float32Array<ArrayBuffer>
+  let bakedGi: BakedLightmapGpu | null = null
+  const ensureBakedGi = () => {
+    if (!bakedGi) bakedGi = uploadBakedLightmapTexture(device)
+    return bakedGi
+  }
   const finishKnobs = new Float32Array(LAB_FINISH_FLOATS) as Float32Array<ArrayBuffer>
   // The props' CC0 scans, loaded on the first finish renderer and bound to every one.
   let scans: FinishScanArray | null = null
@@ -220,7 +232,8 @@ export function createDebugWorld(context: LabContext): DebugWorld {
   }
   const ensureRenderer = () => {
     const model = state.lightModel, finish = finishOn()
-    const key = finish ? (`${model}+finish` as const) : model
+    const useBakedGi = !finish && model === "physical" && state.giMode === "baked"
+    const key = finish ? (`${model}+finish` as const) : useBakedGi ? ("physical:baked" as const) : model
     const have = renderers[key]
     if (have) return have
     const format = navigator.gpu.getPreferredCanvasFormat()
@@ -238,6 +251,18 @@ export function createDebugWorld(context: LabContext): DebugWorld {
           sprite: spriteShader(),
           ...(model === "physical" ? { post: WORLD_POST } : {}),
         })
+      : useBakedGi
+      ? new Renderer(device, ctx, format, {
+          scene: makeSceneShader(
+            bakedLightmapHooks({
+              ...physicalScene,
+              declarations: `struct PhysicalKnobs { k: vec4f, beamA: vec4f, beamB: vec4f, ${BAKED_GI_STRUCT_FIELDS_WGSL} }\n@group(0) @binding(13) var<uniform> PK: PhysicalKnobs;\n${physical.declarations}`,
+            }),
+            false,
+          ),
+          sprite: spriteShader(),
+          post: WORLD_POST,
+        })
       : model === "physical"
       ? new Renderer(device, ctx, format, {
           scene: makeSceneShader({ ...physicalScene, declarations: `struct PhysicalKnobs { k: vec4f, beamA: vec4f, beamB: vec4f }\n@group(0) @binding(13) var<uniform> PK: PhysicalKnobs;\n${physical.declarations}` }, false),
@@ -246,7 +271,9 @@ export function createDebugWorld(context: LabContext): DebugWorld {
         })
       : new Renderer(device, ctx, format)
     renderers[key] = r
-    if (finish) {
+    if (useBakedGi) {
+      r.setDetailTextureArray(ensureBakedGi().view)
+    } else if (finish) {
       finishRenderers.add(r)
       if (scans) r.setDetailTextureArray(scans.view)
       else if (!scansLoading) {
@@ -265,8 +292,10 @@ export function createDebugWorld(context: LabContext): DebugWorld {
   let casters: { buffer: GPUBuffer; count: number; stride: number } | null = null
   const spotBound = new Set<Renderer>()
   let lastSpotUpdate = 0
+  let bakedRoom = false
   const rebuild = () => {
-    geometry = buildWorld({ ...state, vegetation })
+    if (state.giMode === "baked") bakedRoom = true
+    geometry = buildWorld({ ...state, vegetation, bakedRoom })
     lights.setBoxes(geometry.boxes)
     casters?.buffer.destroy()
     casters = null
@@ -385,10 +414,12 @@ export function createDebugWorld(context: LabContext): DebugWorld {
       dirty = true
     },
     invalidate(key) {
+      if (state.giMode === "baked") bakedRoom = true
       if (!key || STRUCTURAL.has(key) || key in vegetation) dirty = true
     },
     reset() {
       Object.assign(state, WORLD_DEFAULTS)
+      bakedRoom = false
       applyLookPreset(look, "current")
       applyWeatherPreset(weather, "clear")
       Object.assign(sky, SKY_DEFAULTS)
@@ -441,16 +472,27 @@ export function createDebugWorld(context: LabContext): DebugWorld {
       r.resize(width, height)
       const clock = skyScaled(worldClock(state.hour), state.skyLight)
       skies.get(r)!.update({ time, localHour: state.hour, daylight: clock.day, sceneUnitsPerCdM2: 1 })
+      if (state.giMode === "baked") bakedRoom = true
       const flick = worldFlicker(state.flicker, time)
       const scene = [
-        ...worldLights(clock, { lampPower: state.lampPower, headlights: state.headlights, flashlight: state.flashlight, porch: state.porch, flicker: flick, physical: state.lightModel === "physical" }),
+        ...worldLights(clock, { lampPower: state.lampPower, headlights: state.headlights, flashlight: state.flashlight, porch: state.porch, flicker: flick, physical: state.lightModel === "physical", bakedRoom }),
         ...extraLights(),
         ...screenBench(r),
       ]
       if (state.lightModel === "physical") {
-        packPhysicalLightKnobs({ model: "physical", specularAA: state.specularAA, sphereLights: state.sphereLights, envSpecular: state.envSpecular, spill: 0 }, knobs)
-        packBeamProfile(BEAM_PROFILES[state.beamProfile] ?? BEAM_PROFILES.darkwood, knobs, 4)
-        if (!finishRenderers.has(r)) r.setCustomUniforms(knobs)
+        if (state.giMode === "baked" && !finishRenderers.has(r)) {
+          packPhysicalLightKnobs({ model: "physical", specularAA: state.specularAA, sphereLights: state.sphereLights, envSpecular: state.envSpecular, spill: 0 }, knobsGi)
+          packBeamProfile(BEAM_PROFILES[state.beamProfile] ?? BEAM_PROFILES.darkwood, knobsGi, 4)
+          const crtBounce = state.screen && display
+            ? screenBounceSource(display, SCREEN_LIGHT_ID.screen, SCREEN_BAKE_REFERENCE)
+            : { id: SCREEN_LIGHT_ID.screen, scale: () => 0, color: () => [0, 0, 0] as const }
+          packBakedLightmapUniforms(knobsGi, HOUSE_LIGHTMAP_META, scene, state, [crtBounce])
+          r.setCustomUniforms(knobsGi)
+        } else {
+          packPhysicalLightKnobs({ model: "physical", specularAA: state.specularAA, sphereLights: state.sphereLights, envSpecular: state.envSpecular, spill: 0 }, knobs)
+          packBeamProfile(BEAM_PROFILES[state.beamProfile] ?? BEAM_PROFILES.darkwood, knobs, 4)
+          if (!finishRenderers.has(r)) r.setCustomUniforms(knobs)
+        }
       }
       lights.update(scene, geometry!.casters)
       if (state.lightModel === "physical") shadowSpots(r, scene)
@@ -489,6 +531,8 @@ export function createDebugWorld(context: LabContext): DebugWorld {
           ? { axis: l.spot?.axis ?? l.beam?.axis, isCone: true, cosHalf: l.spot?.cosOuter ?? Math.cos(l.beam!.halfAngle) }
           : l.id === WORLD_LIGHT_ID.street || l.id === WORLD_LIGHT_ID.porch
             ? { axis: [0, -1, 0] as const, cosHalf: Math.cos(l.id === WORLD_LIGHT_ID.street ? 1.1 : 1.3) } : {} : {}) }))
+      const effLift = bakedRoom && state.shadowLift === 1 ? 0 : Math.max(0, state.shadowLift)
+      const effBloom = bakedRoom && state.lensBloom === 1 ? 0.25 : Math.max(0, state.lensBloom)
       const input: FrameInput = {
         frame,
         lights: lights.lights as Float32Array<ArrayBuffer>,
@@ -526,7 +570,7 @@ export function createDebugWorld(context: LabContext): DebugWorld {
           : null,
         grade: [time, 0, sim.state.flash * 0.4, exposureScale],
         look: look.preset === "current" ? null : look,
-        ...(state.shadowLift !== 1 || state.lensBloom !== 1 ? { postCustom: [1, Math.max(0, state.shadowLift), Math.max(0, state.lensBloom), 0] as const } : {}),
+        ...(effLift !== 1 || effBloom !== 1 ? { postCustom: [1, effLift, effBloom, 0] as const } : {}),
       }
       r.drawTo(input, outputView)
       return measure ? r.measure(input) : null
