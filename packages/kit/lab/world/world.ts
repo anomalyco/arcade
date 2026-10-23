@@ -10,11 +10,16 @@ import { packPhysicalLightKnobs, physicalLightHooks, type LightModel } from "../
 import { Renderer, type FrameInput } from "../../gpu/renderer"
 import { SpotShadows, type SpotCandidate } from "../../gpu/shadows/spot-shadows"
 import { VERT_BYTES } from "../../gpu/mesh"
-import { SceneLights, newSceneFrame, packSceneFrame, type SceneLight } from "../../gpu/scene-frame"
+import { SceneLights, flatLighting, newSceneFrame, packSceneFrame, type SceneLight } from "../../gpu/scene-frame"
 import { makeSceneShader, spriteShader } from "../../gpu/shaders"
 import { WEATHER_PRESET_IDS, WeatherSimulation, applyWeatherPreset, createWeatherSettings, resolveWeatherPresetId, type WeatherLight, type WeatherSettings } from "../../weather"
 import type { LabContext } from "../types"
-import { CAR_PAINTS, FLOOR, LAMP, LAMP_COUNT, WALL_PAINTS, WORLD_CAMERA, WORLD_FOCUS, WORLD_LIGHT_ID, buildWorld, worldClock, worldLights, type CarPaint, type WallPaint, type WorldFlicker, type WorldGeometry } from "./scene"
+import { cagedBulb, fluorescentTube, ledIndicator } from "../../gpu/lights/practicals"
+import { ScreenDisplay, ScreenQuadPass } from "../../gpu/screen/display"
+import { screenSceneLight } from "../../gpu/screen/light"
+import { ScreenProgramme, type ProgrammeKind } from "../../gpu/screen/programme"
+import { createScreenDisplaySettings, type ScreenDisplaySettings } from "../../gpu/screen/settings"
+import { CAR_PAINTS, FLOOR, LAMP, LAMP_COUNT, SCREEN_AT, SCREEN_BULB, SCREEN_LEDS, SCREEN_ROOM, SCREEN_TUBE, WALL_PAINTS, WORLD_CAMERA, WORLD_BOUNCE, WORLD_FOCUS, WORLD_LIGHT_ID, buildWorld, worldClock, worldLights, type CarPaint, type WallPaint, type WorldClock, type WorldFlicker, type WorldGeometry } from "./scene"
 
 /**
  * The Lab's base debug world, drawn by the kit `Renderer` (the one Brawl and Blackout ship) with the kit look,
@@ -51,6 +56,18 @@ export type WorldState = {
   beamProfile: BeamProfileId
   /** Shared lamp flicker and failure (`gpu/lights/flicker.ts`): streetlamp sodium, porch tube, lamp inside a bulb. */
   flicker: number
+  /** Sun or moon and sky light, × (0 for a room lit only by its own lamps). */
+  skyLight: number
+  /** Camera exposure compensation, stops. */
+  exposureEV: number
+  /** The screen bench inside the house (`gpu/screen/`): a CRT on a workbench, its picture lighting the room. */
+  screen: boolean
+  /** What the screen bench's television shows. */
+  programme: ProgrammeKind
+  /** A failing fluorescent tube over the bench (`gpu/lights/practicals.ts`). */
+  tube: boolean
+  /** A caged bulb on the wall beside the bench. */
+  bulb: boolean
 }
 
 export const WORLD_DEFAULTS: Readonly<WorldState> = {
@@ -78,10 +95,25 @@ export const WORLD_DEFAULTS: Readonly<WorldState> = {
   spotShadows: 0,
   beamProfile: "darkwood",
   flicker: 0,
+  skyLight: 1,
+  exposureEV: 0,
+  screen: false,
+  programme: "show",
+  tube: false,
+  bulb: false,
 }
 
 /** World keys whose change rebuilds the mesh (everything else is per frame). */
-const STRUCTURAL = new Set<string>(["street", "walk", "path", "floor", "wall", "car", "tree", "bush", "grass", "seed"])
+const STRUCTURAL = new Set<string>(["street", "walk", "path", "floor", "wall", "car", "tree", "bush", "grass", "seed", "screen", "tube", "bulb"])
+
+/** `SceneLight.id`s of the screen bench's lights. */
+export const SCREEN_LIGHT_ID = { screen: 20, tube: 21, bulb: 22, tvLed: 23, deckLed: 24, deckActivity: 25 } as const
+
+/** Scales the sun or moon and the sky ambient (the screen bench's dark room turns them down). */
+function skyScaled(clock: WorldClock, k: number): WorldClock {
+  if (k === 1) return clock
+  return { ...clock, ambient: [clock.ambient[0] * k, clock.ambient[1] * k, clock.ambient[2] * k, clock.ambient[3] * k], key: { ...clock.key, power: clock.key.power * k } }
+}
 
 export type DebugWorld = {
   readonly state: WorldState
@@ -91,6 +123,10 @@ export type DebugWorld = {
   readonly exposure: ExposureSettings
   readonly rainLighting: RainLightingSettings
   readonly vegetation: FoliageParams
+  /** The screen bench television's display settings (the Screen tab). */
+  readonly screen: ScreenDisplaySettings
+  /** Runs the television's degauss coil. */
+  degauss(): void
   setLook(preset: string): void
   setWeather(preset: string): void
   setVegetation(kind: FoliageKind, preset: string): void
@@ -128,6 +164,8 @@ export function createDebugWorld(context: LabContext): DebugWorld {
   const renderers: Partial<Record<LightModel, Renderer>> = {}
   const skies = new Map<Renderer, ReturnType<typeof attachSky>>()
   const drawn = new Map<Renderer, WorldGeometry>()
+  // The `skyLight` each renderer's flat bounce fill was last scaled for (the level uploads it at 1).
+  const bounceScale = new Map<Renderer, number>()
   let geometry: WorldGeometry | null = null
   let dirty = true
   let time = 0
@@ -139,6 +177,21 @@ export function createDebugWorld(context: LabContext): DebugWorld {
   const emptySprites = new Float32Array(0) as Float32Array<ArrayBuffer>
 
   const knobs = new Float32Array(12) as Float32Array<ArrayBuffer>
+  const screenSettings = createScreenDisplaySettings()
+  let display: ScreenDisplay | null = null
+  let programme: ScreenProgramme | null = null
+  const quads = new Map<Renderer, ScreenQuadPass>()
+  let screenDt = 0
+  // The display clock when the programme last started from the top (a reset or preset restarts the show).
+  let showFrom = 0
+  const ensureDisplay = () => {
+    if (!display) {
+      display = new ScreenDisplay(device, { settings: screenSettings, label: "lab screen" })
+      programme = new ScreenProgramme(state.programme)
+      display.setSource(programme.source)
+    }
+    return display
+  }
   const ensureRenderer = () => {
     const model = state.lightModel
     const have = renderers[model]
@@ -150,7 +203,7 @@ export function createDebugWorld(context: LabContext): DebugWorld {
     const ctx = canvas.getContext("webgpu")!
     ctx.configure({ device, format, alphaMode: "opaque" })
     // Physical swaps only the scene shader; Today's baseline is the same shader without the hooks.
-    const physical = physicalLightHooks({ knobs: "PK.k", spotShadows: true, beam: { a: "PK.beamA", b: "PK.beamB" } })
+    const physical = physicalLightHooks({ knobs: "PK.k", spotShadows: true, beam: { a: "PK.beamA", b: "PK.beamB" }, rect: true, panel: true })
     const r = model === "physical"
       ? new Renderer(device, ctx, format, {
           scene: makeSceneShader({ ...physical, declarations: `struct PhysicalKnobs { k: vec4f, beamA: vec4f, beamB: vec4f }\n@group(0) @binding(13) var<uniform> PK: PhysicalKnobs;\n${physical.declarations}`, lampGrid: false }, false),
@@ -192,7 +245,8 @@ export function createDebugWorld(context: LabContext): DebugWorld {
     for (const l of scene) {
       if (l.id === undefined) continue
       const pos = [l.x, l.h, l.y] as const
-      if (l.spot) candidates.push({ id: l.id, pos, axis: l.spot.axis, cosOuter: l.spot.cosOuter, range: l.r, intensity: l.r * l.r })
+      // Wide lobes (a screen's cosine spot) have no useful perspective map.
+      if (l.spot && l.spot.cosOuter > 0.17) candidates.push({ id: l.id, pos, axis: l.spot.axis, cosOuter: l.spot.cosOuter, range: l.r, intensity: l.r * l.r })
       else if (l.beam) candidates.push({ id: l.id, pos, axis: l.beam.axis, cosOuter: Math.cos(Math.min(beamReach(l.beam.halfAngle, BEAM_PROFILES[state.beamProfile]), 1.45)), range: l.r, intensity: l.r * l.r })
     }
     const enc = device.createCommandEncoder({ label: "world spot shadows" })
@@ -218,6 +272,45 @@ export function createDebugWorld(context: LabContext): DebugWorld {
     return out
   }
 
+  const bench = { tube: 0, bulb: 0, tvLed: 0, deckLed: 0 }
+  /** The screen bench's lights this frame (and its fixtures' glow), and its glass drawn into renderer `r`. */
+  const screenBench = (r: Renderer): SceneLight[] => {
+    bench.tube = bench.bulb = bench.tvLed = bench.deckLed = 0
+    for (const [renderer, quad] of quads) quad.visible = state.screen && renderer === r
+    if (!state.screen) return []
+    const d = ensureDisplay()
+    if (!quads.has(r)) {
+      const quad = new ScreenQuadPass(r.passContext, d, { ...SCREEN_AT, room: SCREEN_ROOM })
+      r.addPass("opaque", quad)
+      quads.set(r, quad)
+    }
+    programme!.kind = state.programme
+    programme!.paint(d.time - showFrom)
+    d.update(screenDt)
+    screenDt = 0
+    const model = state.lightModel === "physical" ? "physical" : "today"
+    const out: SceneLight[] = []
+    const add = (l: SceneLight | null, id: number) => { if (l) out.push({ ...l, id }) }
+    add(screenSceneLight(d, SCREEN_AT, { model }), SCREEN_LIGHT_ID.screen)
+    if (state.tube) {
+      const t = fluorescentTube(SCREEN_TUBE, time, model)
+      add(t.light, SCREEN_LIGHT_ID.tube)
+      bench.tube = t.emissive
+    }
+    if (state.bulb) {
+      const b = cagedBulb(SCREEN_BULB, time)
+      add(b.light, SCREEN_LIGHT_ID.bulb)
+      bench.bulb = b.emissive
+    }
+    const tv = ledIndicator(SCREEN_LEDS.tv, time), deck = ledIndicator(SCREEN_LEDS.deck, time), act = ledIndicator(SCREEN_LEDS.deckActivity, time)
+    bench.tvLed = screenSettings.power ? tv.emissive : 0
+    bench.deckLed = Math.max(deck.emissive, act.emissive)
+    if (screenSettings.power) add(tv.light, SCREEN_LIGHT_ID.tvLed)
+    add(deck.light, SCREEN_LIGHT_ID.deckLed)
+    add(act.light, SCREEN_LIGHT_ID.deckActivity)
+    return out
+  }
+
   const world: DebugWorld = {
     state,
     look,
@@ -226,6 +319,10 @@ export function createDebugWorld(context: LabContext): DebugWorld {
     exposure,
     rainLighting,
     vegetation,
+    screen: screenSettings,
+    degauss() {
+      display?.degauss()
+    },
     setLook(preset) {
       const id = resolveLookPresetId(preset)
       if (!id) throw new Error(`Unknown look preset "${preset}". Valid presets: ${LOOK_PRESET_IDS.join(", ")}.`)
@@ -251,6 +348,9 @@ export function createDebugWorld(context: LabContext): DebugWorld {
       Object.assign(exposure, EXPOSURE_DEFAULTS)
       Object.assign(rainLighting, RAIN_LIGHTING_DEFAULTS)
       eyeAdaptation.reset(); exposureMultiplier = 1
+      Object.assign(screenSettings, createScreenDisplaySettings())
+      display?.power.reset(screenSettings.power)
+      showFrom = display?.time ?? 0
       Object.assign(vegetation, cloneFoliageParams())
       applyFoliagePreset("tree", "oak", vegetation)
       applyFoliagePreset("bush", "hedge", vegetation)
@@ -269,6 +369,7 @@ export function createDebugWorld(context: LabContext): DebugWorld {
     update(dt) {
       if (!state.playing) return
       time += dt
+      screenDt += dt
       if (state.timeScale > 0) state.hour = (state.hour + (dt * state.timeScale) / 3600) % 24
       sim.step(dt, weather, [stage.eye[0]!, stage.eye[1]!, stage.eye[2]!], focusXZ)
       // Relative flash stimulus, not measured scene luminance. No shadow lift by default.
@@ -280,14 +381,23 @@ export function createDebugWorld(context: LabContext): DebugWorld {
       if (drawn.get(r) !== geometry) {
         r.setLevel(geometry!.level)
         drawn.set(r, geometry!)
+        bounceScale.set(r, 1)
+      }
+      if (bounceScale.get(r) !== state.skyLight) {
+        // The fill is daylight returned off the ground, so it dims with the sky (the shader squares the map).
+        const k = Math.sqrt(Math.max(0, state.skyLight))
+        const { bounce } = flatLighting(0, 1, WORLD_BOUNCE.map(v => Math.min(1, v * k)) as [number, number, number])
+        r.updateBounce(bounce.data as Uint8Array<ArrayBuffer>, bounce.w, bounce.h)
+        bounceScale.set(r, state.skyLight)
       }
       r.resize(width, height)
-      const clock = worldClock(state.hour)
+      const clock = skyScaled(worldClock(state.hour), state.skyLight)
       skies.get(r)!.update({ time, localHour: state.hour, daylight: clock.day, sceneUnitsPerCdM2: 1 })
       const flick = worldFlicker(state.flicker, time)
       const scene = [
         ...worldLights(clock, { lampPower: state.lampPower, headlights: state.headlights, flashlight: state.flashlight, porch: state.porch, flicker: flick, physical: state.lightModel === "physical" }),
         ...extraLights(),
+        ...screenBench(r),
       ]
       if (state.lightModel === "physical") {
         packPhysicalLightKnobs({ model: "physical", specularAA: state.specularAA, sphereLights: state.sphereLights, envSpecular: state.envSpecular, spill: 0 }, knobs)
@@ -312,6 +422,10 @@ export function createDebugWorld(context: LabContext): DebugWorld {
       lampPower[LAMP.street] = lampsOn * flick.street.level
       lampPower[LAMP.interior] = lampsOn * flick.interior.level
       lampPower[LAMP.headlights] = state.headlights ? 1 : 0
+      lampPower[LAMP.tube] = bench.tube
+      lampPower[LAMP.bulb] = bench.bulb
+      lampPower[LAMP.tvLed] = bench.tvLed
+      lampPower[LAMP.deckLed] = bench.deckLed
       sim.step(0, weather, [stage.eye[0]!, stage.eye[1]!, stage.eye[2]!], focusXZ)
       // Live switches to Today also reset sensitivity while the Lab's simulation is paused.
       exposureMultiplier = eyeAdaptation.step({ dt: 0, luminance: 1 + sim.state.flash * 48, referenceLuminance: 1 }, exposure).multiplier
@@ -356,7 +470,7 @@ export function createDebugWorld(context: LabContext): DebugWorld {
               cameraDist: stage.camDist,
             }
           : null,
-        grade: [time, 0, sim.state.flash * 0.4, clock.exposure * exposureMultiplier],
+        grade: [time, 0, sim.state.flash * 0.4, clock.exposure * exposureMultiplier * 2 ** state.exposureEV],
         look: look.preset === "current" ? null : look,
       }
       r.drawTo(input, outputView)
@@ -364,7 +478,8 @@ export function createDebugWorld(context: LabContext): DebugWorld {
     },
     telemetry() {
       const clock = worldClock(state.hour)
-      return `World · ${LOOK_PRESETS[look.preset]?.label ?? look.preset} · ${weather.preset} · ${clock.hour.toFixed(1)} h {"lights":${lights.lightCount},"vertices":${geometry?.vertices ?? 0},"particles":${context.particles.count ?? 0},"spotShadows":${spotTelemetry()}}`
+      const screen = state.screen && display ? `,"screen":{"power":${screenSettings.power},"light":[${display.emission().map(v => v.toFixed(3)).join(",")}],"readbacks":${display.light.samples}}` : ""
+      return `World · ${LOOK_PRESETS[look.preset]?.label ?? look.preset} · ${weather.preset} · ${clock.hour.toFixed(1)} h {"lights":${lights.lightCount},"vertices":${geometry?.vertices ?? 0},"particles":${context.particles.count ?? 0},"spotShadows":${spotTelemetry()}${screen}}`
     },
   }
   return world

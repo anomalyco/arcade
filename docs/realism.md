@@ -160,6 +160,24 @@ with distance from the aperture, shared by the surfaces and the dust in the same
 −0.62 ms in Outbreak on `mini`) and CPU frustum culling. A lamp must fade across its cull distance, not cut (Outbreak
 `stepLampReach`, 0.5 s, AR-123).
 
+**Screens as displays and lights (`kit-crt`, awaiting Kit).** A CRT or LCD on a 3D quad or full screen
+(`packages/kit/gpu/screen/`) shows any canvas, video or texture: scanline beams that widen when bright, an aperture
+grille, slot or delta mask filtered by the pixel footprint, misconvergence, afterglow from a history texture, halation,
+a bulging glass that reflects the room and the lamps, and power-off and degauss animations that cool rather than cut
+(fades only under reduced motion). The picture's 4×3 mip is read back through a three-slot ring of mapped buffers, so
+the light lags one to three frames and the CPU never waits. That average lights the room as an upright area panel
+(`SceneLight.panel`, exact polygon diffuse) or a cosine spot. `screenBounceSource` lets a lightmap baker scale a
+screen's baked bounce by the live picture. Practicals ride along: a failing fluorescent tube, a caged bulb and LED
+indicators (`gpu/lights/practicals.ts`).
+- Where: Lab › Look and world, preset "CRT in a dark room" and the CRT and screen light station; Outbreak › Details ›
+  Nearest television shows a picture (off by default). Today is unchanged unless a game turns it on.
+- Physically, a wall 2 m from a 150-nit set gets about 1/150 of the picture, so the room is near black at an
+  exposure that keeps the picture unclipped. The screen light knob (1 = physical) goes to ×16; the dark-room preset
+  uses ×6 and dims the Lab world's flat bounce fill with its sky (`skyLight`).
+- Cost: the screen bench added 0.19 ms (1.08 → 1.28 ms) in the Lab's 708×564 canvas on Metal, and 1.05 ms on a
+  second, slower worker (18.2 → 19.3 ms). Both are unpaired medians of nine frames. The display costs nothing until a
+  game creates one.
+
 ## Bounced and indirect light
 
 **One-bounce plan-space light.** Fire, torches, muzzle flashes, lamps and lit windows spill their colour onto nearby

@@ -2,6 +2,8 @@ import { buildFoliageBush, buildFoliageTree, emitGrassClump, scatterGrassClumps,
 import type { LevelData } from "../../gpu/level"
 import { MAT, Mesh, hex, type Rgb } from "../../gpu/mesh"
 import { coldSodiumTint, type FlickerSample } from "../../gpu/lights/flicker"
+import { cagedBulbMesh, fluorescentTubeMesh, ledIndicatorMesh, type CagedBulb, type FluorescentTube, type LedIndicator } from "../../gpu/lights/practicals"
+import type { ScreenPlacement } from "../../gpu/screen/light"
 import type { SceneLight } from "../../gpu/scene-frame"
 import { flatLighting } from "../../gpu/scene-frame"
 import type { Rect } from "../../sim/geom"
@@ -57,11 +59,19 @@ export type WorldBuild = {
   tree: boolean
   bush: boolean
   grass: boolean
+  /** The screen bench inside the house: a CRT television and a tape deck on a workbench (`screen` lab). */
+  screen?: boolean
+  /** Practical fixtures over the bench: a failing fluorescent tube and a caged bulb on the side wall. */
+  tube?: boolean
+  bulb?: boolean
 }
 
+/** The world's flat bounce fill (`flatLighting`): daylight and sky returned off the ground, everywhere. */
+export const WORLD_BOUNCE = [0.46, 0.46, 0.42] as const
+
 /** Fixture ids for `MAT.lamp`: the renderer dims each by `lampPower[id]`. */
-export const LAMP = { porch: 0, street: 1, interior: 2, headlights: 3 } as const
-export const LAMP_COUNT = 4
+export const LAMP = { porch: 0, street: 1, interior: 2, headlights: 3, tube: 4, bulb: 5, tvLed: 6, deckLed: 7 } as const
+export const LAMP_COUNT = 8
 
 export type WorldGeometry = {
   level: LevelData
@@ -127,6 +137,7 @@ export function buildWorld(b: WorldBuild): WorldGeometry {
   m.box(-20, 0, -6, 60, 3.2, 1.6, rgb(0x16201a), MAT.lit)
 
   addHouse(m, glass, b, boxes)
+  if (b.screen) addScreenBench(m, b)
   addStreetlamp(m, boxes, casters)
   addCar(m, glass, b, boxes)
   addCharacter(m, casters)
@@ -160,7 +171,7 @@ export function buildWorld(b: WorldBuild): WorldGeometry {
   for (const c of casters) { c.x -= ox; c.y -= oz }
   const data = m.pack()
   const glassData = glass.pack()
-  const lighting = flatLighting(0, 1, [0.46, 0.46, 0.42])
+  const lighting = flatLighting(0, 1, WORLD_BOUNCE)
   return {
     level: {
       chunks: [{ data, box: [-ox, -oz, WORLD_MAP - ox, WORLD_MAP - oz] }],
@@ -246,6 +257,88 @@ function addHouse(m: Mesh, glass: Mesh, b: WorldBuild, boxes: { rect: Rect; h: n
   m.facet([x1, h, z0], [x1, h, z1], [x1, ridge - 0.05, mid], wall, MAT.wall)
   m.facet([x0, h, z1], [x0, h, z0], [x0, ridge - 0.05, mid], wall, MAT.wall)
   m.box(ex0, h - 0.18, ez1 - 0.06, ex1, h - 0.02, ez1, trim, MAT.lit)
+}
+
+/**
+ * The screen bench, inside the house against its back wall (plan coordinates; `SCREEN_*` below are in world
+ * coordinates, after the set moves to the origin): a workbench with a wood-cased CRT television, a tape deck beside it,
+ * and the practicals the screen lab can switch on over it.
+ */
+const BENCH = { x0: 15.5, x1: 17.45, z0: 8.22, z1: 8.87, top: 0.98 } as const
+const TV = { x: 16.15, w: 0.58, h: 0.47, d: 0.5, y0: 0.995, front: 8.85, screenW: 0.4, screenH: 0.3, screenY: 1.245 } as const
+const DECK = { x0: 16.62, x1: 17.08, y0: 0.985, y1: 1.075, z0: 8.38, z1: 8.76 } as const
+const [OX, OZ] = WORLD_ORIGIN
+
+/** The television's glass, facing into the room (world coordinates). */
+export const SCREEN_AT: ScreenPlacement = { center: [TV.x - OX, TV.screenY, TV.front - 0.022 - OZ], yaw: Math.PI / 2, width: TV.screenW, height: TV.screenH }
+/** The room the glass reflects (inside the house walls, world coordinates). */
+export const SCREEN_ROOM = { min: [11.18 - OX, 0.24, 8.18 - OZ] as const, max: [18.64 - OX, 2.9, 13.64 - OZ] as const, albedo: 0.5 }
+/** An armchair facing the set across a pale rug: what the screen's light falls on (plan coordinates). */
+const CHAIR = { x0: 15.78, x1: 16.58, z0: 10.55, z1: 11.35, seat: 0.66 } as const
+const RUG = { x0: 15.2, x1: 17.1, z0: 9.05, z1: 11.6 } as const
+/** Where the screen lab looks from: inside the room, off to one side, the set, the rug and the chair in view. */
+export const SCREEN_CAMERA = { target: [TV.x - OX - 0.3, 0.86, 9.85 - OZ] as const, yaw: 0.95, pitch: 0.24, dist: 2.6 } as const
+export const SCREEN_TUBE: FluorescentTube = { at: [16.45 - OX, 2.55, 8.62 - OZ], length: 1.2, seed: 29, failing: 1.2, power: 1.1 }
+export const SCREEN_BULB: CagedBulb = { at: [18.42 - OX, 1.95, 9.55 - OZ], seed: 31, wander: 0.7, power: 0.55 }
+export const SCREEN_LEDS: { tv: LedIndicator; deck: LedIndicator; deckActivity: LedIndicator } = {
+  tv: { at: [TV.x + TV.w / 2 - 0.06 - OX, TV.y0 + 0.032, TV.front + 0.001 - OZ], color: "red", pattern: "steady" },
+  deck: { at: [DECK.x0 + 0.04 - OX, DECK.y0 + 0.05, DECK.z1 + 0.003 - OZ], color: "green", pattern: "steady" },
+  deckActivity: { at: [DECK.x1 - 0.05 - OX, DECK.y0 + 0.05, DECK.z1 + 0.003 - OZ], color: "amber", pattern: "heartbeat", seed: 3 },
+}
+
+function addScreenBench(m: Mesh, b: WorldBuild): void {
+  const wood = rgb(0x5d4029), dark = rgb(0x26231f), steel = rgb(0x45484a)
+  const { x0, x1, z0, z1, top } = BENCH
+  // Workbench: a thick top, four legs and a lower shelf.
+  m.bevelBox(x0, top - 0.045, z0, x1, top, z1, 0.008, wood, rgb(0x6c4b31), MAT.shiny)
+  for (const x of [x0 + 0.03, x1 - 0.08]) for (const z of [z0 + 0.03, z1 - 0.08]) m.box(x, 0.24, z, x + 0.05, top - 0.045, z + 0.05, wood, MAT.lit)
+  m.box(x0 + 0.03, 0.34, z0 + 0.05, x1 - 0.03, 0.365, z1 - 0.05, wood, MAT.lit)
+  m.box(x0 + 0.2, 0.365, z0 + 0.12, x0 + 0.62, 0.62, z1 - 0.12, rgb(0x3b3a37), MAT.lit)
+  // The television: a wood-grain cabinet with a charcoal bezel round a 4:3 tube, a control strip under it.
+  const cx = TV.x, hw = TV.w / 2, y0 = TV.y0, y1 = TV.y0 + TV.h, front = TV.front, back = front - TV.d
+  const caseWood = rgb(0x6a4a2c), bezel = rgb(0x2b2927)
+  for (const fx of [cx - hw + 0.04, cx + hw - 0.07]) m.box(fx, top, front - 0.08, fx + 0.03, y0, front - 0.03, dark, MAT.lit)
+  m.bevelBox(cx - hw, y0, front - 0.17, cx + hw, y1, front - 0.06, 0.012, caseWood, rgb(0x765335), MAT.shiny)
+  m.box(cx - hw * 0.75, y0 + 0.03, back, cx + hw * 0.75, y1 - 0.05, front - 0.17, rgb(0x34302b), MAT.lit)
+  const sx0 = cx - TV.screenW / 2 - 0.012, sx1 = cx + TV.screenW / 2 + 0.012
+  const sy0 = TV.screenY - TV.screenH / 2 - 0.012, sy1 = TV.screenY + TV.screenH / 2 + 0.012
+  const bz0 = front - 0.06
+  m.box(cx - hw, y0, bz0, sx0, y1, front, bezel, MAT.lit)
+  m.box(sx1, y0, bz0, cx + hw, y1, front, bezel, MAT.lit)
+  m.box(sx0, sy1, bz0, sx1, y1, front, bezel, MAT.lit)
+  m.box(sx0, y0, bz0, sx1, sy0, front, bezel, MAT.lit)
+  // The glass sits a little in from the bezel; a dark lip shows round it.
+  m.box(sx0, sy0, bz0, sx1, sy1, front - 0.03, rgb(0x0b0b0b), MAT.lit)
+  // Controls: a channel row and a speaker grille on the bezel's foot.
+  for (let i = 0; i < 6; i++) m.box(cx - 0.17 + i * 0.03, y0 + 0.02, front, cx - 0.155 + i * 0.03, y0 + 0.045, front + 0.004, rgb(0x55524c), MAT.lit)
+  for (let i = 0; i < 7; i++) m.box(cx + 0.03 + i * 0.016, y0 + 0.015, front, cx + 0.038 + i * 0.016, y0 + 0.05, front + 0.002, rgb(0x161514), MAT.lit)
+  // A tape deck beside it, its LEDs on the front panel.
+  m.bevelBox(DECK.x0, DECK.y0, DECK.z0, DECK.x1, DECK.y1, DECK.z1, 0.006, steel, rgb(0x505355), MAT.shiny)
+  m.box(DECK.x0 + 0.1, DECK.y0 + 0.03, DECK.z1, DECK.x1 - 0.12, DECK.y0 + 0.06, DECK.z1 + 0.002, rgb(0x0f1011), MAT.lit)
+  const shift = (l: LedIndicator): LedIndicator => ({ ...l, at: [l.at[0] + OX, l.at[1], l.at[2] + OZ] })
+  ledIndicatorMesh(m, shift(SCREEN_LEDS.tv), LAMP.tvLed)
+  ledIndicatorMesh(m, shift(SCREEN_LEDS.deck), LAMP.deckLed)
+  ledIndicatorMesh(m, shift(SCREEN_LEDS.deckActivity), LAMP.deckLed)
+  // A pale rug and an armchair facing the set: the seat, a high back, two arms and short feet.
+  m.box(RUG.x0, 0.24, RUG.z0, RUG.x1, 0.252, RUG.z1, rgb(0xa79c86), MAT.lit)
+  const fabric = rgb(0x8d7f69), fabricDark = rgb(0x6f6352)
+  const c = CHAIR
+  for (const fx of [c.x0 + 0.05, c.x1 - 0.09]) for (const fz of [c.z0 + 0.05, c.z1 - 0.09]) m.box(fx, 0.252, fz, fx + 0.04, 0.33, fz + 0.04, dark, MAT.lit)
+  m.bevelBox(c.x0, 0.33, c.z0, c.x1, c.seat - 0.12, c.z1, 0.02, fabricDark, fabric, MAT.lit)
+  m.bevelBox(c.x0 + 0.12, c.seat - 0.12, c.z0 + 0.04, c.x1 - 0.12, c.seat, c.z1 - 0.18, 0.03, fabric, fabric, MAT.lit)
+  m.bevelBox(c.x0 + 0.04, 0.33, c.z1 - 0.2, c.x1 - 0.04, 1.32, c.z1, 0.04, fabric, fabric, MAT.lit)
+  for (const ax of [c.x0, c.x1 - 0.12]) m.bevelBox(ax, 0.33, c.z0 + 0.02, ax + 0.12, 0.86, c.z1 - 0.06, 0.03, fabric, fabric, MAT.lit)
+  // The practicals, shown only when they're on.
+  if (b.tube) {
+    const t = { ...SCREEN_TUBE, at: [SCREEN_TUBE.at[0] + OX, SCREEN_TUBE.at[1], SCREEN_TUBE.at[2] + OZ] as const }
+    fluorescentTubeMesh(m, t, LAMP.tube)
+    for (const dx of [-0.45, 0.45]) m.box(t.at[0] + dx - 0.003, t.at[1] + 0.07, t.at[2] - 0.003, t.at[0] + dx + 0.003, 2.9, t.at[2] + 0.003, steel, MAT.lit)
+  }
+  if (b.bulb) {
+    const bl = { ...SCREEN_BULB, at: [SCREEN_BULB.at[0] + OX, SCREEN_BULB.at[1], SCREEN_BULB.at[2] + OZ] as const }
+    cagedBulbMesh(m, bl, LAMP.bulb)
+    m.box(bl.at[0], bl.at[1] + 0.1, bl.at[2] - 0.012, 18.64, bl.at[1] + 0.124, bl.at[2] + 0.012, steel, MAT.lit)
+  }
 }
 
 function addStreetlamp(m: Mesh, boxes: { rect: Rect; h: number }[], casters: { x: number; y: number; r: number; h: number }[]): void {

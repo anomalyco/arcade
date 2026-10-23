@@ -237,6 +237,11 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
     match: (s) => s === "@arcade/kit/gpu/post/camcorder",
   },
   {
+    area: "`gpu/screen` & `gpu/lights/{panel,practicals}`",
+    description: "Opt-in CRT/LCD displays on a 3D quad or full screen whose picture lights the room (async mip readback, upright panel light), and practical fixture presets (failing tube, caged bulb, LEDs)",
+    match: (s) => s.startsWith("@arcade/kit/gpu/screen/") || s === "@arcade/kit/gpu/lights/panel" || s === "@arcade/kit/gpu/lights/practicals",
+  },
+  {
     area: "`forest/{view,settings}` & `sim/{forest-world,forest-demo}`",
     description: "Photoreal night forest renderer (scanned trees, mist bank, beams, exposure, quality tiers) over a plain `ForestWorld`",
     match: (s) =>
