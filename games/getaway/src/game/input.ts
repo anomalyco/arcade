@@ -10,12 +10,14 @@ export class Controls {
   readonly parentOrigin = document.referrer ? new URL(document.referrer).origin : location.origin
   /** While true (chat open) the car gets neutral input. */
   paused = false
+  /** Keys drive only while this holds (the game in play): behind the title or menu, Space and the arrows reach the page. */
+  active: () => boolean = () => true
   mouse = { nx: 0.5, ny: 0.5, buttons: 0 }
 
   constructor() {
     const mux = this.mux
     addEventListener("keydown", (e) => {
-      if (isEditableEventTarget(e.target) || e.code === "Escape") return
+      if (isEditableEventTarget(e.target) || e.code === "Escape" || !this.active()) return
       if (mux) {
         if (!e.repeat) this.forward({ type: "mux-key", kind: "keydown", code: e.code, key: e.key, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey, ctrlKey: e.ctrlKey })
         e.preventDefault()

@@ -73,6 +73,8 @@ export class AudioEngine {
   /** Reverb send; spatial voices feed it more the further away they are. */
   verb!: GainNode
   muted = false
+  /** M toggles mute (off where the game shell owns mute). */
+  muteKey = true
   volumes: VolumeSettings = { volumeMaster: 100, volumeEffects: 100, volumeAmbience: 100, volumeVoice: 100, volumeMusic: 100 }
   private savedVolumes = ""
   private busFade: Record<Bus, number> = { sfx: 1, amb: 1, sting: 1 }
@@ -120,7 +122,7 @@ export class AudioEngine {
     addEventListener("keydown", unlock, true)
     addEventListener("touchend", unlock, true)
     window.addEventListener("keydown", (e) => {
-      if (e.code !== "KeyM" || e.repeat || e.metaKey || e.ctrlKey || e.altKey || isEditableEventTarget(e.target)) return
+      if (e.code !== "KeyM" || !this.muteKey || e.repeat || e.metaKey || e.ctrlKey || e.altKey || isEditableEventTarget(e.target)) return
       this.setMuted(!this.muted)
     })
     document.addEventListener("visibilitychange", () => {
