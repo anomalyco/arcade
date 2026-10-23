@@ -6,8 +6,8 @@ import {
   type ClientMsg, type Hello, type MapDelta, type PlayerRow, type RosterRow, type ServerMsg, type Snapshot,
 } from "../shared/protocol"
 import { castVote } from "../shared/verdict"
-import { addHuman, createWoods, removePlayer, setBotCount, stepWoods, type MapKnowledge, type PlayerInput, type WoodsEvent, type WoodsState } from "../shared/sim"
-import { makeWorld, type WoodsWorld } from "../shared/world"
+import { addHuman, createWoods, PLAYER_RADIUS, removePlayer, setBotCount, stepWoods, type MapKnowledge, type PlayerInput, type WoodsEvent, type WoodsState } from "../shared/sim"
+import { clampInside, makeWorld, type WoodsWorld } from "../shared/world"
 
 /** What a seat has already been sent, so a snapshot carries only what changed (the socket is reliable and ordered). */
 type Sent = { found: number; names: string; trail: number; tapes: Set<number>; markers: number; clues: number; flares: number; seen: number; heard: Map<number, { serial: number; len: number }>; seed: number; night: number }
@@ -113,6 +113,8 @@ export class WoodsRoomCore extends RoomCore<ClientMsg, PlayerInput, RosterRow, W
     // A disconnected walker stops immediately, rather than coasting on their last input.
     // The flare key they held is up now: a held flare is thrown or kept only on their next input.
     for (const p of core.state.players) if (!p.bot) { p.vx = p.vz = 0; p.tie = null; p.flareLatch = false }
+    // Nobody resumes outside the boundary fence.
+    for (const p of core.state.players) clampInside(core.world, p, PLAYER_RADIUS)
     core.restoreSeats(night.seats)
     return core
   }

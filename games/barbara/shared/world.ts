@@ -339,6 +339,22 @@ export function treesNear(world: WoodsWorld, x: number, z: number, r: number, ou
 export const BOUNDARY_INSET = 3
 /** Where the boundary fence stands: |x| and |z| up to this. */
 export const boundaryLine = (world: WoodsWorld) => world.params.half - BOUNDARY_INSET
+/** How far past the fence its collision reaches (m): well past the map's edge, so nothing ends up outside it. */
+const BOUNDARY_DEPTH = 20
+/**
+ * The fence as four solid slabs `[x0, z0, x1, z1]`, each from the line out past the map's edge, so a body caught in
+ * the strip between the line and the edge is pushed back in, never out.
+ */
+export function boundarySlabs(world: WoodsWorld): Rect[] {
+  const h = boundaryLine(world), o = h + BOUNDARY_DEPTH
+  return [[-o, -o, -h, o], [h, -o, o, o], [-o, -o, o, -h], [-o, h, o, o]]
+}
+/** Moves a walker of `radius` standing past the fence (an old checkpoint, a teleport) back inside it, clear of it. */
+export function clampInside(world: WoodsWorld, p: { x: number; z: number }, radius: number): void {
+  const m = boundaryLine(world) - radius - 0.01
+  p.x = Math.max(-m, Math.min(m, p.x))
+  p.z = Math.max(-m, Math.min(m, p.z))
+}
 
 /** Solid footprints near (x, z) for `stepBody`: trunks, rocks, buildings and the boundary fence. */
 export function solidsNear(world: WoodsWorld, x: number, z: number, r = 4): Rect[] {
@@ -358,10 +374,10 @@ export function solidsNear(world: WoodsWorld, x: number, z: number, r = 4): Rect
     if (x < x0 - r || x > x1 + r || z < z0 - r || z > z1 + r) continue
     out.push(b.rect)
   }
-  const h = boundaryLine(world)
-  if (x < -h + r) out.push([-h - 2, -h - 2, -h, h + 2])
-  if (x > h - r) out.push([h, -h - 2, h + 2, h + 2])
-  if (z < -h + r) out.push([-h - 2, -h - 2, h + 2, -h])
-  if (z > h - r) out.push([-h - 2, h, h + 2, h + 2])
+  const h = boundaryLine(world), [w, e, n, s] = boundarySlabs(world)
+  if (x < -h + r) out.push(w!)
+  if (x > h - r) out.push(e!)
+  if (z < -h + r) out.push(n!)
+  if (z > h - r) out.push(s!)
   return out
 }

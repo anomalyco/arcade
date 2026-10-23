@@ -21,7 +21,7 @@ import { dockAt, isDeepWater, lakeDistance, makeWorld, standHeight, trailDistanc
 import { toBoundary } from "./boundary-view"
 import { WoodsAudio } from "./audio"
 import { WoodsCamera } from "./camera"
-import { CAMERA_LOOKS, CameraLook, stageCameraLab, type CameraLookId } from "./camera-look"
+import { CAMERA_LOOKS, CameraLook, savedCameraLook, stageCameraLab, type CameraLookId } from "./camera-look"
 import { CreatureView } from "./creature-view"
 import { FEEL_CONTROLS } from "./feel-controls"
 import { FlareView } from "./flare-view"
@@ -211,8 +211,9 @@ async function main() {
   // Camera looks and realism effects (Lab › Camera look): a post chain after the forest's own camera, all off by default.
   const cameraLook = new CameraLook({ renderer, device, format: canvasFormat, camera, forest: view.forest, panel, params, smoke, seed: world.params.seed })
   live.cameraLook = cameraLook
-  const savedLook = smoke ? null : localStorage.getItem(CAMERA_LOOK_KEY)
-  if (savedLook && savedLook in CAMERA_LOOKS) cameraLook.apply(savedLook as CameraLookId)
+  const savedLook = savedCameraLook(localStorage.getItem(CAMERA_LOOK_KEY), params, smoke || Boolean(navigator.webdriver))
+  if (savedLook) cameraLook.apply(savedLook)
+  cameraLook.onLook = () => shell.settings.changed()
   audio.bindControls(panel)
   story.bindControls(panel)
   story.onChange = () => shell.settings.changed()

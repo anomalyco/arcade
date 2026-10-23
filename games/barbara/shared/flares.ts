@@ -1,7 +1,7 @@
 import { flareEnvelope } from "@arcade/kit/sim/flare-burn"
 import { stepThrown, throwBody, type ThrownBody, type ThrownEnv } from "@arcade/kit/sim/thrown"
 import { cosApprox, sinApprox } from "./creature"
-import { lakeDistance, standHeight, treesNear, type Tree, type WoodsWorld } from "./world"
+import { boundarySlabs, lakeDistance, standHeight, treesNear, type Tree, type WoodsWorld } from "./world"
 
 /**
  * Road flares (1996 fusees) as plain data, stepped by `stepWoods`. Everyone carries one and the camp table has a couple
@@ -196,6 +196,7 @@ export function flareEnv(world: WoodsWorld): ThrownEnv {
   let env = envCache.get(world)
   if (env) return env
   const walls = world.buildings.filter((b) => b.kind !== "dock")
+  const fence = boundarySlabs(world)
   env = {
     ground(x, z) {
       const g = standHeight(world, x, z)
@@ -218,6 +219,12 @@ export function flareEnv(world: WoodsWorld): ThrownEnv {
         const [x0, z0, x1, z1] = b.rect
         if (x < x0 - reach || x > x1 + reach || z < z0 - reach || z > z1 + reach) continue
         out.push(x0, z0, x1, z1, b.y + b.h)
+        n++
+      }
+      // The boundary fence stops a flare at any height, so none lands outside the woods.
+      for (const [x0, z0, x1, z1] of fence) {
+        if (x < x0 - reach || x > x1 + reach || z < z0 - reach || z > z1 + reach) continue
+        out.push(x0, z0, x1, z1, Infinity)
         n++
       }
       return n

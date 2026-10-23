@@ -30,6 +30,12 @@ const SHEET_TILT = 0.6
 /** Where the free left hand hangs, for easing it up to the map. */
 const HANG_L: V3 = [0.04, -0.18, -0.24]
 const norm3 = (v: V3): V3 => { const n = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / n, v[1] / n, v[2] / n] }
+/**
+ * A friend's beam level with the map `read` (0..1) up: dimmed towards `readingLevel` (×), as your own torch goes while
+ * you read, but never off. Null when their torch is off.
+ */
+export const friendBeamLevel = (level: number, read: number, readingLevel: number): number | null =>
+  level > 0.01 ? level * Math.pow(readingLevel, read) : null
 const lerp3 = (a: V3, b: V3, k: number): V3 => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k]
 
 /**
@@ -136,7 +142,7 @@ export class FriendsView {
       const aim = this.aim(p, beamLevel(p), dt)
       const tying = !!p.tie && p.tie.progress < 1
       const read = tying ? 0 : Math.min(1, Math.max(0, (aim.read - 0.05) / 0.9))
-      const level = aim.level * Math.pow(this.readingLevel, read)
+      const level = friendBeamLevel(aim.level, read, this.readingLevel)
       // Reading, the body faces the view's heading and the beam goes down onto the sheet.
       const look = viewDir(p.yaw, 0), facing = Math.atan2(look[2], look[0])
       const fw: V3 = [Math.cos(facing), 0, Math.sin(facing)]
@@ -158,9 +164,9 @@ export class FriendsView {
           : read > 0 ? { l: lerp3(HANG_L, READ_L, read), r: lerp3(carry, READ_R, read), k: 1 } : { r: carry, k: 1 }
         const torch = real.frame(p, state.t, dt, heading, [dx, dy, dz], reach, (x, z) => standHeight(world, x, z), this.eye, () => steps(p), read)
         if (torch) {
-          fp.push(this.torch, torch.p[0], torch.p[1], torch.p[2], Math.atan2(torch.x[2], torch.x[0]), [3 * level + 0.02, 2.8 * level + 0.02, 2.4 * level + 0.02], Math.asin(Math.max(-1, Math.min(1, torch.x[1]))), 0, 0)
+          fp.push(this.torch, torch.p[0], torch.p[1], torch.p[2], Math.atan2(torch.x[2], torch.x[0]), [3 * (level ?? 0) + 0.02, 2.8 * (level ?? 0) + 0.02, 2.4 * (level ?? 0) + 0.02], Math.asin(Math.max(-1, Math.min(1, torch.x[1]))), 0, 0)
           sheetAt(torch.left, torch.p)
-          if (level > 0.01) beams.push({ id: p.id, origin: [torch.p[0] + torch.x[0] * 0.1, torch.p[1] + torch.x[1] * 0.1, torch.p[2] + torch.x[2] * 0.1], axis: [dx, dy, dz], level })
+          if (level !== null) beams.push({ id: p.id, origin: [torch.p[0] + torch.x[0] * 0.1, torch.p[1] + torch.x[1] * 0.1, torch.p[2] + torch.x[2] * 0.1], axis: [dx, dy, dz], level })
           continue
         }
       }
@@ -184,8 +190,8 @@ export class FriendsView {
       const hand: V3 = [fa.p[0] - fa.y[0] * RIG.fore, fa.p[1] - fa.y[1] * RIG.fore + ground, fa.p[2] - fa.y[2] * RIG.fore]
       if (fl) sheetAt([fl.p[0] - fl.y[0] * RIG.fore, fl.p[1] - fl.y[1] * RIG.fore + ground, fl.p[2] - fl.y[2] * RIG.fore], hand)
       const pitch = Math.asin(Math.max(-1, Math.min(1, dy)))
-      fp.push(this.torch, hand[0], hand[1], hand[2], Math.atan2(dz, dx), [3 * level + 0.02, 2.8 * level + 0.02, 2.4 * level + 0.02], pitch, 0, 0)
-      if (level > 0.01) beams.push({ id: p.id, origin: [hand[0] + dx * 0.1, hand[1] + dy * 0.1, hand[2] + dz * 0.1], axis: [dx, dy, dz], level })
+      fp.push(this.torch, hand[0], hand[1], hand[2], Math.atan2(dz, dx), [3 * (level ?? 0) + 0.02, 2.8 * (level ?? 0) + 0.02, 2.4 * (level ?? 0) + 0.02], pitch, 0, 0)
+      if (level !== null) beams.push({ id: p.id, origin: [hand[0] + dx * 0.1, hand[1] + dy * 0.1, hand[2] + dz * 0.1], axis: [dx, dy, dz], level })
     }
     for (const id of this.avatars.keys()) if (!state.players.some((p) => p.id === id)) this.avatars.delete(id)
     for (const id of this.aims.keys()) if (!state.players.some((p) => p.id === id)) this.aims.delete(id)
