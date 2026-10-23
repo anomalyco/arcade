@@ -92,6 +92,13 @@ and what Kit decided; this page keeps the evidence. Headings follow the playbook
   neighbourhood clamp, with a moving-edge regression covering both signed masks and the non-negative roughness/shroud
   consumers. Left unchanged so far: cross-game temporal verification is broader than a cheap local fix, and settled
   stills do not prove that behaviour.
+- **Flare smoke crosshatch: read `ign` with `hp`** (PR #499, `games/barbara/scripts/flare-smoke-proof.ts`). `ign` is
+  how much the frame's fine noise is shaped like interleaved gradient noise's lattice, and `hp` is the size of that
+  noise. With the flare 2.5 m ahead and the camera still, `ign` rose 0.107 → 0.545 while `hp` fell 2.235 → 1.636
+  (moving: 0.156 → 0.16, 2.118 → 2.079). The crosshatch didn't get worse: the high-frequency energy fell once the
+  smoke left TAA's reactive mask. What's left is mostly the fixed 1-LSB output dither (`packages/kit/forest/post.ts`,
+  `ign` before the 8-bit write), which is itself IGN, so it becomes a bigger share of a quieter residual. A higher
+  `ign` with a lower `hp` means quieter. Only both rising means a worse lattice.
 
 ## Sources
 
