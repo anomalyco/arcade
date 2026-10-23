@@ -189,7 +189,7 @@ async function main() {
   renderer.addPass("opaque", ocean)
   renderer.addPass("opaque", clouds)
   renderer.addPass("alpha", lights)
-  // Life around you: radio chatter, seabirds over the shores, rain on the canopy (src/game/life.ts).
+  // Life around you: seabirds over the shores, rain on the canopy (src/game/life.ts).
   const life = new Life(renderer, flight)
 
   // Weather (shared/weather.ts): the room's synced rain, wind and storm seas, applied to the sea every hull floats on,
@@ -220,7 +220,6 @@ async function main() {
     game,
     audio: flight.audio,
     flight,
-    life,
     net: () => net,
     quality,
     bots: {
@@ -296,7 +295,7 @@ async function main() {
   } catch {}
   const gameShell = createGameShell({
     game: "carrier", title: "CARRIER", quickLabel: "Quick join", friendsNote: "a private room to share",
-    askName: true, quality, channels: ["master", "effects", "ambience", "voice"],
+    askName: true, quality, channels: ["master", "effects", "ambience"],
     start: start ? "playing" : "title",
     keysBlocked: () => chat.open || !!dev?.wantsInput,
     escapeOwned: () => escapeHeld || teams.open || ops.open || chat.open || flight.radar.mapOpen,
@@ -521,7 +520,7 @@ async function main() {
     clouds.update(t, view)
     weather.draw(dt, t, view, frame, camera.fov)
     zones.update(t, camera.eye, net, game.state.ship, gameShell.flow.screen === "title")
-    life.update({ dt, playing: gameShell.playing, net, eye: camera.eye, fov: camera.fov, width: canvas.width, height: canvas.height, rain: w.rain * w.density, frame })
+    life.update({ dt, playing: gameShell.playing, eye: camera.eye, fov: camera.fov, width: canvas.width, height: canvas.height, rain: w.rain * w.density, frame })
     renderer.render(frame, shownGrade)
     if (inRoom) lobby.setConnection(net.state === "online" ? "online" : "connecting")
     requestAnimationFrame(tick)

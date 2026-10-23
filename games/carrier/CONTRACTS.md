@@ -765,7 +765,6 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   confirm for SPLASH ONE (the hit marker then stays silent: `WeaponHud.hit(kill, sound)`), the confirm pitched up with a
   short arpeggio for multi-kills, a low gong for SHIP HIT, confirm + gong for sinkings and deck jets, a panned
   procedural whoosh for CLOSE CALL.
-- Hook for radio chatter: `onCallout((kind, streak) => ...)` from `src/feedback/callouts.ts` fires as each callout shows.
 - Tunables: `FEEDBACK` (`src/feedback/settings.ts`) on the dev panel's Flight tab ("feedback"), with preview buttons
   (gun / missile hit, kill, ship hit, close call). Capture check: `scripts/feedback-shot.ts` (in-page dev room, two bots
   shot down through the real `hits` path; captures in `captures/feedback/` or wherever `--out` points).
@@ -1040,20 +1039,6 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   `seam.ts` `audio.ships(...)`): the deck bed near a hull, hull slams (`Ship.slams`), creaks in heavy seas, a rare horn.
   Interface (`ui-audio.ts`): a very quiet tick per button click; the kill confirm (`weapon-audio.ts`). Registered but wired by their owners: `deck-fire`, `sinking`, `missile-motor`, `impact-water`,
   `ciws`, `sam-launch`, `naval-gun`, `boat-engine`.
-- **Radio chatter** (`src/audio/radio.ts`, `radio-director.ts`, wired by `src/game/life.ts`): short voice lines on your
-  own moments only: the catapult shot ("Hornet two, you're cleared. Good shot."), the scripted landing starting ("call
-  the ball"), an enemy lock ("Spike! Spike!", weapons `warning` 1), a missile inbound ("Missile! Break left/right!" by
-  the side of the nearest missile homing on you, from the camera's right vector; SAMs alternate), your kills ("Splash
-  one!", from `onCallout`: SPLASH ONE, multi-kills, CARRIER SUNK, DECK JET DESTROYED), your jet badly hurt ("I'm hit!"), your carrier losing health
-  ("Mother's taking hits!"), your side taking a zone, zones about to move. Each line is a pooled slot `radio-<line>`
-  (category `radio`, 2 ElevenLabs text-to-speech takes, `public/sfx/CREDITS.md`) played through a procedural radio:
-  band-pass 420 Hz-3.1 kHz, a presence peak, tanh saturation, a squelch click and static burst at the start and end, a
-  faint band-limited hiss under the voice; on its own dry `radio` bus (never behind the canopy) whose gain follows the
-  shell's **Voices** volume; the world ducks to 72% under it. One line at a time: priority missile 4 > lock 3 > kill 2 >
-  hit 1.5 > the rest 1; a more urgent line cuts a lesser one off, a lesser one waits up to 2.5 s for the air (one
-  waiting slot), every line has a cooldown (3-25 s) and 0.5 s of quiet follows each. A small green subtitle ("◉ SPIKE,
-  SPIKE") shows the line bottom left. Tunables: `RADIO` on the Audio tab (with a Say button per line). Offline render:
-  the `radio` scene of `scripts/audio-demo.ts`.
 - Offline renders: `scripts/audio-render.ts` (instructions at its top) renders the `scripts/audio-demo.ts` scenes (the
   60 s montage, engines, flybys, carrier ops, gun, weather, a mix, the explosion reel; seeded, WAVs by the kit's
   `encodeWavPcm16`) in headless Chrome on hailmary or Playwright's Chromium anywhere (no GPU needed);

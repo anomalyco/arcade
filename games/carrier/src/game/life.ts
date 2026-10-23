@@ -1,12 +1,4 @@
-import { playerOf, shipOf } from "../../shared/crew"
-import { FLEET } from "../../shared/fleet"
-import { mixer } from "../audio/mixer"
-import { RADIO, Radio } from "../audio/radio"
-import { RadioDirector } from "../audio/radio-director"
-import { onCallout } from "../feedback/callouts"
 import type { FlightModule } from "../flight/seam"
-import type { Net } from "../net"
-import { objectiveZones } from "../objective/zones"
 import { BIRDS, Birds } from "../render/birds"
 import { CANOPY_RAIN, CanopyRain } from "../render/canopy-rain"
 import type { Renderer } from "../render/renderer"
@@ -17,7 +9,6 @@ import { planeSpeed } from "../../shared/plane"
 export type LifeFrame = {
   dt: number
   playing: boolean
-  net: Net
   eye: ArrayLike<number>
   fov: number
   width: number
@@ -28,17 +19,14 @@ export type LifeFrame = {
 }
 
 /**
- * Life around you: radio chatter on your own moments (src/audio/radio.ts, radio-director.ts), seabirds over the island
- * shores (src/render/birds.ts) and rain on the canopy and the chase camera's lens (src/render/canopy-rain.ts). One
- * object so main.ts wires it in a few lines.
+ * Life around you: seabirds over the island shores (src/render/birds.ts) and rain on the canopy and the chase camera's
+ * lens (src/render/canopy-rain.ts). One object so main.ts wires it in a few lines.
  */
 export class Life {
-  readonly radio = new Radio()
-  readonly director = new RadioDirector(this.radio)
   readonly birds: Birds
   readonly canopyRain: CanopyRain
   /** The live settings (the dev panel's rows), for scripts: `carrier.life.settings.birds.span = 4`. */
-  readonly settings = { radio: RADIO, birds: BIRDS, canopyRain: CANOPY_RAIN }
+  readonly settings = { birds: BIRDS, canopyRain: CANOPY_RAIN }
   private jets: number[] = []
   private ships: number[] = []
 
@@ -47,10 +35,6 @@ export class Life {
     renderer.addPass("opaque", this.birds)
     this.canopyRain = new CanopyRain(renderer)
     renderer.addPass("alpha", this.canopyRain)
-    // Our kills, as the HUD calls them out (src/feedback/callouts.ts): "splash one".
-    onCallout((kind) => {
-      if (kind !== "ship-hit" && kind !== "close-call") this.director.kill()
-    })
   }
 
   setWorld(arch: Archipelago): void {
@@ -62,24 +46,6 @@ export class Life {
     const w = this.flight.weapons
     const inJet = f.phase !== "idle"
     const flying = f.phase === "flying" || f.phase === "landing"
-    const net = v.net
-    const crew = net.crew
-    const me = crew ? playerOf(crew, net.id) : undefined
-    const ship = crew && me ? shipOf(crew, me.ship) : undefined
-    const hull = me ? net.hulls.get(me.ship) : undefined
-    this.director.update(v.dt, {
-      playing: v.playing,
-      phase: f.phase,
-      warn: w.warning,
-      hp: w.world.hp(w.id),
-      own: flying ? f.plane : null,
-      right: mixer().listener.right,
-      missiles: w.world.missiles,
-      me: net.id,
-      shipHp: hull ? hull.hp / FLEET.hp : null,
-      zones: objectiveZones(),
-      team: ship?.team ?? -1,
-    })
 
     // What scares the birds: every jet in the air (ours included) and every carrier.
     const jets = this.jets

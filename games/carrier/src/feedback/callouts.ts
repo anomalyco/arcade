@@ -1,6 +1,6 @@
 import { FEEDBACK } from "./settings"
 
-/** A reward moment the HUD calls out (and radio chatter may voice: `onCallout`). */
+/** A reward moment the HUD calls out. */
 export type CalloutKind = "splash" | "double" | "triple" | "multi" | "ship-hit" | "sunk" | "deck-jet" | "close-call"
 
 const TEXT: Record<CalloutKind, string> = {
@@ -16,18 +16,6 @@ const TEXT: Record<CalloutKind, string> = {
 
 /** Which moments outrank which while one is still showing (a SHIP HIT never covers a DOUBLE KILL). */
 const RANK: Record<CalloutKind, number> = { "close-call": 0, "ship-hit": 1, splash: 2, "deck-jet": 2, double: 3, triple: 4, multi: 5, sunk: 5 }
-
-type Listener = (kind: CalloutKind, streak: number) => void
-const listeners = new Set<Listener>()
-
-/**
- * Listen for callouts (SPLASH ONE, DOUBLE KILL, SHIP HIT, CLOSE CALL...) as they show, with the current kill streak:
- * the hook for radio chatter to voice them. Returns the unsubscribe.
- */
-export function onCallout(fn: Listener): () => void {
-  listeners.add(fn)
-  return () => listeners.delete(fn)
-}
 
 const CSS = `
 #fb { position: fixed; inset: 0; pointer-events: none; color: var(--ink, #f4f7fb); font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
@@ -108,7 +96,6 @@ export class FeedbackOverlay {
     this.call.innerHTML = `<span>${TEXT[kind]}</span>${sub}`
     this.call.getAnimations().forEach((a) => a.cancel())
     this.call.animate(POP, { duration: FEEDBACK.calloutTime * 1000, fill: "forwards" })
-    for (const fn of listeners) fn(kind, streak)
     return true
   }
 

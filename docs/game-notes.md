@@ -147,13 +147,6 @@ proven animation techniques to animation.md, not here.
   its seeded demo scenes (`scripts/audio-demo.ts`, Chromium `OfflineAudioContext`) rendered before and after differ by
   at most one 16-bit step, null RMS -120 to -135 dBFS, exactly the spread of two renders of the old build
   (`scripts/audio-compare.ts`). Seed `Math.random` per scene or pooled takes and loop starts break the comparison.
-- **Radio chatter: clean generated voices, the radio in code (Carrier).** `src/audio/radio.ts` plays ElevenLabs
-  text-to-speech takes (`eleven_v4`, library voices, 2 takes per line, trimmed and -16 LUFS by `sfx-cinematic.ts`)
-  through a live chain: high-pass 420 Hz, +5 dB presence at 1.9 kHz, low-pass 3.1 kHz, tanh saturation (gain / √drive
-  keeps the level), a squelch click and band-limited static burst at both ends. Keeping the takes clean lets the radio
-  be retuned on the Lab panel without regenerating. The static must stay in the voice's band: full-band white noise
-  read as hiss, not radio (seen on the spectrogram of the `radio` scene of `scripts/audio-demo.ts`). One line at a time with
-  priorities and cooldowns, on its own dry bus under the shell's Voices volume.
 - **Capture the game's own audio in lockstep with a frame-stepped video.** Carrier's `scripts/video-epic.ts` moves the
   game's mixer onto one `OfflineAudioContext` (`mixer.use`, then a synthetic `pointerdown` so the weather and weapon
   sounds start on it) and, after every 1/60 s step, schedules `ctx.suspend` at that step's sample, resumes and awaits it:

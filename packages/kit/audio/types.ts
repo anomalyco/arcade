@@ -222,7 +222,7 @@ export type SampleAssetMeta = {
   url: string
   category: MixCategory
   material?: MaterialTag
-  source: "project" | "elevenlabs-sound-v2" | "elevenlabs-tts" | "procedural-bake"
+  source: "project" | "elevenlabs-sound-v2" | "procedural-bake"
   prompt?: string
   modelId?: string
   requestId?: string
