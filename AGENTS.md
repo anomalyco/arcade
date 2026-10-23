@@ -5,6 +5,8 @@ game's own `AGENTS.md`.
 
 ## Workspace and checks
 
+- [packages/kit/TESTING.md](packages/kit/TESTING.md) documents the fast tests and nightly network, audio, physics and training soaks.
+
 - Bun workspace: `games/blackout/`, `games/getaway/`, `games/outbreak/`, `games/carrier/`, `games/brawl/`,
   `games/archers/`, `games/lab/` and `packages/*` share the root `bun.lock`. Run `bun install --frozen-lockfile` at the root; `bun run
   verify` (below) runs the checks.

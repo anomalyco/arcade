@@ -6,6 +6,8 @@
     "dev": "vite",
     "build": "vite build",
     "test": "bun test tests",
+    "test:training": "bun scripts/verify-training.ts",
+    "test:soak": "ARCADE_TEST_SOAK=1 bun test --max-concurrency 4 tests/sim.test.ts",
     "typecheck": "tsc --noEmit",
     "typecheck:server": "tsc --noEmit -p tsconfig.server.json",
     "train": "bun scripts/train.ts",

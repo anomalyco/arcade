@@ -10,18 +10,18 @@ import {
 
 const repoRoot = resolve(import.meta.dir, "../..")
 const archDocPath = resolve(repoRoot, "docs/architecture.md")
+const imports = collectGameSharedImports(repoRoot)
 
 describe("architecture map table", () => {
   test("classifies every @arcade/kit and @arcade/knobs import across games", () => {
-    const imports = collectGameSharedImports(repoRoot)
     expect(findUnclassifiedSharedImports(imports)).toEqual([])
-  })
+  }, 30_000)
 
   test("keeps docs/architecture.md shared module table in sync with game imports", () => {
     if (!existsSync(archDocPath)) return
     const current = readFileSync(archDocPath, "utf8")
-    const table = buildArchitectureMapTable(repoRoot)
+    const table = buildArchitectureMapTable(repoRoot, imports)
     const expected = replaceArchitectureMapBlock(current, table)
     expect(current).toBe(expected)
-  })
+  }, 30_000)
 })

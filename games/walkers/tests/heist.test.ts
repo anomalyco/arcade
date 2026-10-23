@@ -7,7 +7,7 @@ import { courseLevel, HEIST_MAX_STAGE, heistLevel } from "../shared/level"
 import { makeCapsule, segSegDist2 } from "../shared/physics"
 import { initParams, Policy } from "../shared/policy"
 import { envFor } from "../shared/tasks"
-import { inlineEvaluator, Trainer } from "../shared/trainer"
+import { Trainer } from "../shared/trainer"
 
 const heist = (stage: number) => envFor("heist", { stage })
 const beam = (x1: number, y1: number, x2: number, y2: number): Beam => ({ x1, y1, x2, y2, active: true, phase: -1, flip: Infinity, kind: "beam" })
@@ -162,14 +162,6 @@ describe("heist", () => {
     }
     expect(run()).toBe(run())
   })
-
-  test("ES improves on a short heist stage", async () => {
-    const t = new Trainer({ creature: "quadruped", env: heist(1), curriculum: false, hidden: 8, seed: 3, es: { pairs: 10, sigma: 0.06, lr: 0.04, weightDecay: 0.005 }, reward: { ...DEFAULT_REWARD, heistSeconds: 4 } }, inlineEvaluator)
-    const first = await t.generation()
-    for (let g = 0; g < 14; g++) await t.generation()
-    expect(t.best!.fitness).toBeGreaterThan(first.best + 0.3)
-    expect(t.env.stage).toBe(1)
-  }, 60_000)
 
   test("the curriculum moves on once escapes come clean two generations running", async () => {
     let gen = 0

@@ -13,6 +13,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit && tsc --noEmit -p server/tsconfig.json",
     "test": "bun test",
+    "test:soak": "bun ../../scripts/kit-soak.ts",
     "check": "bun run typecheck && bun run test"
   },
   "dependencies": {

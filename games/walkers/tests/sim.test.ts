@@ -7,6 +7,12 @@ import { jointAngle, makeBox, makeJoint, makeStatics, World, worldHash } from ".
 import { initParams, Policy } from "../shared/policy"
 import { envFor, TASK_IDS } from "../shared/tasks"
 
+const soakSetting = process.env.ARCADE_TEST_SOAK
+if (soakSetting !== undefined && soakSetting !== "0" && soakSetting !== "1") {
+  throw new Error("ARCADE_TEST_SOAK must be unset, 0 or 1")
+}
+const soak = soakSetting === "1"
+
 describe("fmath", () => {
   test("matches Math closely", () => {
     for (let x = -40; x <= 40; x += 0.37) {
@@ -87,15 +93,17 @@ describe("sim", () => {
   test("every task builds and runs", () => {
     for (const task of TASK_IDS) {
       const shape = policyShape("quadruped", 8)
-      const r = evaluate("quadruped", task, shape, initParams(shape, mulberry32(1)))
+      // Construction/smoke coverage; complete trajectories are covered by the pretrained replays.
+      const reward = soak ? DEFAULT_REWARD : { ...DEFAULT_REWARD, seconds: 0.5, heistSeconds: 0.5 }
+      const r = evaluate("quadruped", task, shape, initParams(shape, mulberry32(1)), reward)
       expect(Number.isFinite(r.fitness)).toBe(true)
     }
   })
 })
 
 describe("physics v2", () => {
-  test("the quadruped stands still for a minute without creeping or jittering", () => {
-    const ep = new Episode("quadruped", "room", null, { ...DEFAULT_REWARD, seconds: 60 })
+  test("the quadruped stands still without creeping or jittering", () => {
+    const ep = new Episode("quadruped", "room", null, { ...DEFAULT_REWARD, seconds: soak ? 60 : 3 })
     const y0 = ep.torso.y
     let fastest = 0
     while (!ep.done) {
@@ -108,12 +116,13 @@ describe("physics v2", () => {
     expect(fastest).toBeLessThan(0.01)
   })
 
-  test("random flailing for a long run never blows up", () => {
+  test("random flailing never blows up", () => {
     const shape = policyShape("quadruped", 16)
+    const seconds = soak ? 30 : 3
     for (const seed of [1, 2, 3]) {
-      const ep = new Episode("quadruped", envFor("course", { seed }), new Policy(shape, initParams(shape, mulberry32(seed)).map((v) => v * 3)), { ...DEFAULT_REWARD, fall: 0, seconds: 30 })
+      const ep = new Episode("quadruped", envFor("course", { seed }), new Policy(shape, initParams(shape, mulberry32(seed)).map((v) => v * 3)), { ...DEFAULT_REWARD, fall: 0, seconds })
       let fastest = 0
-      while (ep.time < 30) {
+      while (ep.time < seconds) {
         ep.step()
         ep.done = false
         for (const b of ep.world.bodies) fastest = Math.max(fastest, Math.hypot(b.vx, b.vy))
