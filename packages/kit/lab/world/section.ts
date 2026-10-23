@@ -8,6 +8,7 @@ import { exposureControls } from "../../weather/exposure"
 import { PROGRAMME_OPTIONS } from "../../gpu/screen/programme"
 import { applyScreenPreset, screenDisplayControls } from "../../gpu/screen/settings"
 import { rainLightingControls } from "../../weather/rain-lighting"
+import { wearControls } from "../../gpu/materials/wear"
 import type { LabContext, LabSection } from "../types"
 import { PRESET_PICKS, WORLD_PRESETS, WORLD_PRESET_VERSION, worldPreset, type WorldPresetFile } from "./presets"
 import { FLOOR, WORLD_CAMERA, WORLD_FOCUS } from "./scene"
@@ -53,7 +54,7 @@ export function createWorldSection(context: LabContext, world: DebugWorld): LabS
   for (const key of Object.keys(world.sky) as (keyof typeof world.sky)[]) {
     def(key, () => world.sky[key], v => { (world.sky as Record<string, Value>)[key] = v })
   }
-  for (const [prefix, object] of [["exposure.", world.exposure], ["rainLight.", world.rainLighting], ["screen.", world.screen]] as const) {
+  for (const [prefix, object] of [["exposure.", world.exposure], ["rainLight.", world.rainLighting], ["screen.", world.screen], ["wear.", world.wear]] as const) {
     const values: Record<string, Value> = object
     for (const key of Object.keys(values)) def(prefix + key, () => values[key]!, v => { values[key] = v })
   }
@@ -142,6 +143,9 @@ export function createWorldSection(context: LabContext, world: DebugWorld): LabS
     { key: "floor", label: "Floor inside", group: "Materials", type: "select", options: [{ value: FLOOR.planks, label: "Planks" }, { value: FLOOR.carpet, label: "Carpet" }, { value: FLOOR.lino, label: "Linoleum" }] },
     { key: "wall", label: "Walls", group: "Materials", type: "select", options: WALL_PAINT_OPTIONS },
     { key: "car", label: "Car paint", group: "Materials", type: "select", options: CAR_PAINT_OPTIONS },
+    { key: "finishProps", label: "Finished props (six wear looks)", group: "Materials", subsection: "Finish" },
+    // The validator reads every lit surface, so it stays visible without the props.
+    ...wearControls("wear.", "Materials", "Finish").map((c): LabControl => ({ ...c, field: c.key, ...(c.field === "albedoCheck" ? {} : { visible: s => s.finishProps === true }) })),
 
     { key: "tree", label: "Tree", group: "Vegetation" },
     { key: "treePreset", label: "Tree recipe", group: "Vegetation", type: "select", options: TREE_PRESET_IDS.map(id => ({ value: id, label: TREE_PRESETS[id].label })), change: sync },

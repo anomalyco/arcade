@@ -78,6 +78,9 @@
   Windows (`windows.ts`), fitted cabinets (`cabinetry.ts`), skirting and wall wear follow the interior material
   standard in [docs/outbreak-art-direction.md](../../docs/outbreak-art-direction.md); the **Interior craft** setting
   (Today / Craft pass) gates them.
+  Follow-up (Oct 23, the kit albedo validator run on the kitchen in branch `kit-finish-adoption`): the dining table,
+  wallpaper, worktop edges and tile grout read darker than 50 sRGB (blue). Lift them into range when next touched;
+  the finished cabinetry was in range.
 - Generated furniture (`@arcade/kit/props`, pipeline in `scripts/props/README.md`) furnishes the start block's houses
   from `src/props/`: anchors replace the gameplay furniture's boxes one for one (collisions stay `PROP_SHAPES`), and
   clutter is client-only. The level bake reads the same plan through `propDressingState`: floor clutter over 0.3 m

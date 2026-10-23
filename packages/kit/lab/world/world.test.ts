@@ -1,11 +1,14 @@
 import { describe, expect, test } from "bun:test"
 import { cloneFoliageParams } from "../../gpu/foliage"
+import { VERT_BYTES } from "../../gpu/mesh"
+import { physicalLightHooks } from "../../gpu/lights/physical"
 import type { LabContext } from "../types"
+import { LAB_FINISH_FLOATS, labFinishHooks } from "./finish"
 import { WORLD_PRESETS } from "./presets"
 import { writeOrbitCamera } from "../stage"
 import { CHARACTER_AT, INTERIOR_LIGHT, SCREEN_AT, SCREEN_CAMERA, SCREEN_CHAIR, WORLD_ORIGIN, buildWorld, worldClock, worldLights } from "./scene"
 import { WORLD_TABS, createWorldSection } from "./section"
-import { postShader } from "../../gpu/shaders"
+import { makeSceneShader, postShader } from "../../gpu/shaders"
 import { validateWgsl } from "../../gpu/test-naga"
 import { WORLD_DEFAULTS, WORLD_POST, createDebugWorld } from "./world"
 
@@ -38,6 +41,23 @@ describe("the base debug world", () => {
     expect(dusk.day).toBeLessThan(1)
     expect(worldLights(night, { lampPower: 1, headlights: false, flashlight: false, porch: true }).length).toBe(4)
     expect(worldLights(noon, { lampPower: 1, headlights: false, flashlight: false, porch: true }).length).toBe(1)
+  })
+
+  test("finished props tag their vertices with a look; the default world has no finished vertex", () => {
+    const looks = (finishProps: boolean) => {
+      const bytes = new Uint8Array(buildWorld({ ...WORLD_DEFAULTS, finishProps, vegetation: cloneFoliageParams() }).level.chunks[0]!.data)
+      const seen = new Map<number, number>()
+      for (let i = 15; i < bytes.length; i += VERT_BYTES) if (bytes[i]! & 1) seen.set((bytes[i]! >> 1) & 7, (seen.get((bytes[i]! >> 1) & 7) ?? 0) + 1)
+      return seen
+    }
+    expect(looks(false).size).toBe(0)
+    expect(looks(true).size).toBe(6)
+  })
+
+  test("the finish variant compiles under both light models and fits the custom uniform", () => {
+    validateWgsl(makeSceneShader(labFinishHooks({ lampGrid: false }, false), false))
+    validateWgsl(makeSceneShader(labFinishHooks({ ...physicalLightHooks({ knobs: "PK.k", spotShadows: true, beam: { a: "PK.beamA", b: "PK.beamB" }, rect: true, panel: true }), lampGrid: false }, true), false))
+    expect(LAB_FINISH_FLOATS * 4).toBeLessThanOrEqual(2048)
   })
 })
 

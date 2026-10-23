@@ -1,3 +1,5 @@
+import { autoChamfer, chamferBox, chamferCylinder, FINISH_SPLIT, splitLong, type FinishVertex } from "./finish-geom"
+
 export type Rgb = readonly [number, number, number]
 
 /** sRGB hex (0xRRGGBB) to a 0..1 triple. */
@@ -57,8 +59,11 @@ function toHalf(v: number): number {
 const clampByte = (v: number) => Math.max(0, Math.min(255, Math.round(v * 255)))
 const snorm = (v: number) => Math.max(-127, Math.min(127, Math.round(v * 127)))
 
-/** Packs build-time vertices (FLOATS_PER_VERT each) into the GPU layout. */
-export function packVerts(v: ArrayLike<number>, from = 0, to = v.length): ArrayBuffer {
+/**
+ * Packs build-time vertices (FLOATS_PER_VERT each) into the GPU layout. Byte 15 (normal.w) and byte 19 (colour.a)
+ * are the finishing pass's (`finish-bake.ts`); `finish` supplies them, two per vertex, else they stay 0 and 255.
+ */
+export function packVerts(v: ArrayLike<number>, from = 0, to = v.length, finish?: Uint8Array | null): ArrayBuffer {
   const n = (to - from) / FLOATS_PER_VERT
   const out = new ArrayBuffer(n * VERT_BYTES)
   const f = new Float32Array(out)
@@ -74,19 +79,80 @@ export function packVerts(v: ArrayLike<number>, from = 0, to = v.length): ArrayB
     i8[o + 12] = snorm(v[s + 3]!)
     i8[o + 13] = snorm(v[s + 4]!)
     i8[o + 14] = snorm(v[s + 5]!)
-    i8[o + 15] = 0
+    i8[o + 15] = finish ? (finish[k * 2]! << 24) >> 24 : 0
     b[o + 16] = clampByte(v[s + 6]!)
     b[o + 17] = clampByte(v[s + 7]!)
     b[o + 18] = clampByte(v[s + 8]!)
-    b[o + 19] = 255
+    b[o + 19] = finish ? finish[k * 2 + 1]! : 255
     h[(o + 20) / 2] = toHalf(v[s + 9]!)
     h[(o + 22) / 2] = toHalf(v[s + 10]!)
   }
   return out
 }
 
+export type MeshOptions = {
+  /**
+   * One-segment chamfer on every `box` and `cylinder` edge: metres, or "auto" (about 1.2% of the part's smallest side,
+   * 2–12 mm, `autoChamfer`). 0 (the default) draws today's square boxes.
+   */
+  chamfer?: number | "auto"
+  /** Width of the wear band inset on each chamfered face (m), so edge wear has vertices to fade over. */
+  wearBand?: number
+}
+
 export class Mesh {
   readonly v: number[] = []
+  chamfer: number | "auto"
+  wearBand: number
+  /** Curvature per vertex index written by the chamfered builders (sparse; holes are baked by `finish`). */
+  readonly curvatureHints: number[] = []
+  /** Finish look index per vertex index, from `finishPart` (sparse; untagged vertices stay unfinished). */
+  readonly finishLooks: number[] = []
+  /** Bytes 15 and 19 per vertex from `finish`; `pack` uses them while they cover every vertex. */
+  finishBytes: Uint8Array | null = null
+  /** Depth of `finishPart` calls running: bevel boxes record curvature only inside one. */
+  private tagging = 0
+
+  constructor(opts: MeshOptions = {}) {
+    this.chamfer = opts.chamfer ?? 0
+    this.wearBand = opts.wearBand ?? 0.03
+  }
+
+  /**
+   * Tags everything `build` emits with a finish look (an index into `FINISH_LOOKS`), optionally with chamfered edges
+   * while it runs; `finishTagged` (`finish.ts`) bakes the tagged vertices before packing.
+   */
+  finishPart(look: number, build: () => void, chamfer: number | "auto" = this.chamfer): void {
+    const prior = this.chamfer, first = this.count
+    this.chamfer = chamfer
+    this.tagging++
+    try { build() } finally { this.chamfer = prior; this.tagging-- }
+    for (let i = first; i < this.count; i++) this.finishLooks[i] = look
+  }
+
+  /** Appends `src`'s triangle starting at float `at`, with its finishing tags. */
+  copyTriangle(src: Mesh, at: number): void {
+    const from = at / FLOATS_PER_VERT, to = this.count
+    for (let k = at; k < at + FLOATS_PER_VERT * 3; k++) this.v.push(src.v[k]!)
+    for (let j = 0; j < 3; j++) {
+      const look = src.finishLooks[from + j], hint = src.curvatureHints[from + j]
+      if (look !== undefined) this.finishLooks[to + j] = look
+      if (hint !== undefined) this.curvatureHints[to + j] = hint
+    }
+  }
+
+  private chamferFor(w: number, h: number, d: number): number {
+    if (this.chamfer === "auto") return autoChamfer(w, h, d)
+    return Math.max(0, this.chamfer)
+  }
+
+  private emitFinished(tris: readonly FinishVertex[], col: (face: number) => Rgb, mat: (face: number) => Mat, aux: number): void {
+    for (const t of tris) {
+      const c = col(t.face)
+      this.curvatureHints[this.v.length / FLOATS_PER_VERT] = t.k
+      this.v.push(t.p[0], t.p[1], t.p[2], t.n[0], t.n[1], t.n[2], c[0], c[1], c[2], mat(t.face), aux)
+    }
+  }
 
   vert(p: readonly number[], n: readonly number[], c: Rgb, mat: Mat, aux = 0): void {
     this.v.push(p[0]!, p[1]!, p[2]!, n[0]!, n[1]!, n[2]!, c[0], c[1], c[2], mat, aux)
@@ -141,6 +207,12 @@ export class Mesh {
 
   /** Axis-aligned box. `top` overrides the colour of the upper face. */
   box(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, col: Rgb, mat: Mat = MAT.lit, aux = 0, top?: Rgb, bottom = false, topMat: Mat = mat): void {
+    const r = this.chamfer ? this.chamferFor(x1 - x0, y1 - y0, z1 - z0) : 0
+    if (r > 0) {
+      const tc = top ?? col
+      this.emitFinished(splitLong(chamferBox(x0, y0, z0, x1, y1, z1, r, this.wearBand, bottom ? 0b111111 : 0b011111), FINISH_SPLIT), f => (f === 0 ? tc : col), f => (f === 0 ? topMat : mat), aux)
+      return
+    }
     const t = top ?? col
     const tr = t[0], tg = t[1], tb = t[2]
     const cr = col[0], cg = col[1], cb = col[2]
@@ -214,6 +286,9 @@ export class Mesh {
     this.quad([x0, ys, z0], [x0, ys, z1], [ix0, y1, iz1], [ix0, y1, iz0], [-s, s, 0], edge, topMat)
     this.quad([x1, ys, z1], [x1, ys, z0], [ix1, y1, iz0], [ix1, y1, iz1], [s, s, 0], edge, topMat)
     this.quad([ix0, y1, iz1], [ix1, y1, iz1], [ix1, y1, iz0], [ix0, y1, iz0], [0, 1, 0], top, topMat)
+    // Curvature for the finishing bake: the sloped strips are the edge; the wide faces carry none (no band to fade over).
+    const first = this.count - 54
+    if (this.tagging) for (let i = 0; i < 54; i++) this.curvatureHints[first + i] = i >= 24 && i < 48 ? 1 : 0
   }
 
   /** Vertical n-gon prism around (cx, cz), radius r0 at y0 tapering to r1 at y1. */
@@ -229,6 +304,16 @@ export class Mesh {
       this.quad(p(a0, r0, y0), p(a0, r1, y1), p(a1, r1, y1), p(a1, r0, y0), [n[0]! / l, n[1]! / l, n[2]! / l], col, mat, aux)
       if (cap && r1 > 0.001) this.quad([cx, y1, cz], p(a1, r1, y1), p(a0, r1, y1), [cx, y1, cz], [0, 1, 0], col, mat, aux)
     }
+  }
+
+  /**
+   * Smooth vertical cylinder around (cx, cz), radius `r` from y0 to y1, capped on top (and below when `bottom`). With
+   * the mesh's chamfer set, its rims get a one-segment chamfer and a wear band.
+   */
+  cylinder(cx: number, cz: number, r: number, y0: number, y1: number, sides: number, col: Rgb, mat: Mat = MAT.lit, aux = 0, opts: { top?: boolean; bottom?: boolean; phase?: number; topColor?: Rgb } = {}): void {
+    const c = this.chamfer ? this.chamferFor(r * 2, y1 - y0, r * 2) : 0
+    const tc = opts.topColor ?? col
+    this.emitFinished(chamferCylinder(cx, cz, r, y0, y1, sides, c, c > 0 ? this.wearBand : 0, opts), f => (f === 0 ? tc : col), () => mat, aux)
   }
 
   /** A box rotated by `yaw` around Y about its own centre; for clutter that should not sit on the grid. */
@@ -275,6 +360,7 @@ export class Mesh {
   }
 
   pack(): ArrayBuffer {
-    return packVerts(this.v)
+    const f = this.finishBytes
+    return packVerts(this.v, 0, this.v.length, f && f.length === this.count * 2 ? f : null)
   }
 }
