@@ -3,13 +3,23 @@ import { TICK_HZ } from "../shared/protocol"
 import { type Env, lobbyOf } from "./env"
 import type { RoomReport } from "./lobby"
 import { WoodsRoomCore } from "./room-core"
+import { loadNight } from "./checkpoint"
 
 /** One Durable Object per room code (`@arcade/kit/server/room-object`), ticking the night at 30 Hz. */
 export class WoodsRoom extends RoomObject<Env, WoodsRoomCore, RoomReport> {
   protected readonly tickMs = 1000 / TICK_HZ
 
   protected async open(code: string): Promise<WoodsRoomCore> {
-    return (this.core ??= new WoodsRoomCore(code))
+    if (this.core) return this.core
+    const sql = this.ctx.storage.sql
+    sql.exec("CREATE TABLE IF NOT EXISTS night (id INTEGER PRIMARY KEY CHECK (id = 1), data TEXT NOT NULL)")
+    const row = sql.exec<{ data: string }>("SELECT data FROM night WHERE id = 1").toArray()[0]
+    const core = loadNight(code, row?.data, () => { sql.exec("DELETE FROM night WHERE id = 1") })
+    core.onCheckpoint = (night) => {
+      if (!core.humans) sql.exec("DELETE FROM night WHERE id = 1")
+      else sql.exec("INSERT OR REPLACE INTO night (id, data) VALUES (1, ?)", JSON.stringify(night))
+    }
+    return (this.core = core)
   }
 
   /** Alive while anyone is connected or a dropped person's seat is still held for them. */

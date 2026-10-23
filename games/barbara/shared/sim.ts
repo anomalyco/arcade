@@ -1,4 +1,5 @@
 import { stepBody } from "@arcade/kit/sim/move"
+import { startHop, stepHop, type Hop } from "@arcade/kit/sim/hop"
 import { stepCreature, type CreatureEvent } from "./creature"
 import { answerCall, createDistant, holdDistant, stepDistant, type DistantEvent, type DistantState } from "./distant"
 import { VOICE_LINES } from "./lines.gen"
@@ -15,6 +16,7 @@ import { isDeepWater, nextRandom, solidsNear, standHeight, treesNear, type Tree,
 
 export const FEEL = {
   walkSpeed: 1.9,
+  jumpHeight: 0.3,
   mapWalk: 0.55,
   flashReach: 30,
   flashCone: 0.3,
@@ -115,6 +117,7 @@ export type Player = {
   z: number
   vx: number
   vz: number
+  air: Hop
   /** View yaw (0 looks north, −z) and pitch (rad). */
   yaw: number
   pitch: number
@@ -210,6 +213,8 @@ export type PlayerInput = {
   mx: number
   mz: number
   sprint?: boolean
+  /** One-shot press, carried by the room's input jitter buffer. */
+  jump?: boolean
 }
 
 const VOICE_CUES = new Set(["clue-found", "signal", "distant", "tape-tied", "creature"])
@@ -220,7 +225,7 @@ export const BOT_ID = 100
 
 export function newPlayer(id: number, bot: boolean, name: string, x: number, z: number, yaw: number): Player {
   return {
-    id, bot, name, x, z, vx: 0, vz: 0, yaw, pitch: -0.1, light: true,
+    id, bot, name, x, z, vx: 0, vz: 0, air: { y: 0, v: 0, airborne: false }, yaw, pitch: -0.1, light: true,
     flickerLeft: 0, flickerNext: 20 + (id % 16) * 7, mapRaise: 0, tie: null, serial: 0, tieHold: 0, signal: 0,
     charge: 1, spare: false, swap: 0, isolated: 0, capture: null,
     map: { trail: [x, z], heard: [], tapes: [], markers: [], clues: [] },
@@ -404,9 +409,10 @@ function compareMaps(state: WoodsState, a: Player, b: Player) {
 }
 
 /** Moves a player through the forest (the shared `stepBody`, trunks and rocks as solids, deep water refused). */
-export function movePlayer(world: WoodsWorld, p: Player, mx: number, mz: number, speed: number, dt: number) {
-  const body = { x: p.x, y: p.z, vx: p.vx, vy: p.vz }
-  stepBody(body, mx, mz, speed, solidsNear(world, p.x, p.z, 3), dt, PLAYER_RADIUS, PLAYER_ACCEL)
+export function movePlayer(world: WoodsWorld, p: Player, mx: number, mz: number, speed: number, dt: number, players: readonly Player[] = []) {
+  const body = { collisionId: p.id, x: p.x, y: p.z, vx: p.vx, vy: p.vz }
+  const circles = players.filter((q) => q.id !== p.id).map((q) => ({ collisionId: q.id, x: q.x, y: q.z, radius: PLAYER_RADIUS }))
+  stepBody(body, mx, mz, speed, solidsNear(world, p.x, p.z, 3), dt, PLAYER_RADIUS, PLAYER_ACCEL, circles)
   if (isDeepWater(world, body.x, body.y)) { body.x = p.x; body.y = p.z; body.vx = body.vy = 0 }
   p.x = body.x; p.z = body.y; p.vx = body.vx; p.vz = body.vy
 }
@@ -415,14 +421,16 @@ export function movePlayer(world: WoodsWorld, p: Player, mx: number, mz: number,
  * One step of a player's own motion: look, the map's raise, then walking (slower with the map up). The room, solo
  * play and a client predicting itself all run exactly this, so replaying unacknowledged inputs lands where the room did.
  */
-export function stepMotion(world: WoodsWorld, p: Player, input: PlayerInput, feel: Feel, dt: number): void {
+export function stepMotion(world: WoodsWorld, p: Player, input: PlayerInput, feel: Feel, dt: number, players: readonly Player[] = []): void {
   p.yaw = input.yaw
   p.pitch = input.pitch
   const raiseRate = dt / Math.max(feel.mapRaise, 0.02)
   p.mapRaise = Math.max(0, Math.min(1, p.mapRaise + (input.map ? raiseRate : -raiseRate * 1.4)))
   const speed = (p.bot ? feel.botSpeed : feel.walkSpeed * (input.sprint ? 1.8 : 1)) * (p.mapRaise > 0.5 ? feel.mapWalk : 1)
-  if (p.capture) movePlayer(world, p, 0, 0, speed, dt)
-  else movePlayer(world, p, input.mx, input.mz, speed, dt)
+  if (p.capture) movePlayer(world, p, 0, 0, speed, dt, players)
+  else movePlayer(world, p, input.mx, input.mz, speed, dt, players)
+  if (input.jump && !p.capture) startHop(p.air, feel.jumpHeight)
+  stepHop(p.air, dt, feel.jumpHeight)
 }
 
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a))
@@ -570,7 +578,7 @@ export function stepWoods(state: WoodsState, world: WoodsWorld, inputs: Readonly
   for (const p of state.players) {
     const brain = p.bot ? state.brains.find((b) => b.id === p.id) : undefined
     const input = brain ? botInput(state, world, brain, p, feel, dt) : inputs.get(p.id) ?? { yaw: p.yaw, pitch: p.pitch, light: p.light, tie: false, map: false, mx: 0, mz: 0 }
-    stepMotion(world, p, input, feel, dt)
+    stepMotion(world, p, input, feel, dt, state.players)
     // A dead or swapping torch stays off whatever the switch says (`shared/night.ts` owns the battery).
     const light = input.light && canLight(p)
     if (light !== p.light) state.events.push({ kind: "light", by: p.id, on: light })
@@ -632,5 +640,5 @@ export function stepWoods(state: WoodsState, world: WoodsWorld, inputs: Readonly
 
 /** Eye position of a player standing on the terrain. */
 export function eyeOf(world: WoodsWorld, p: Player): [number, number, number] {
-  return [p.x, standHeight(world, p.x, p.z) + EYE_HEIGHT, p.z]
+  return [p.x, standHeight(world, p.x, p.z) + EYE_HEIGHT + p.air.y, p.z]
 }
