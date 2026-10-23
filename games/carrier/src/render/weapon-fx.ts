@@ -907,16 +907,39 @@ export class WeaponFx implements ScenePass {
     tr.z = z
   }
 
-  /** A damaged jet (key = its id) at (x, y, z) moving at v: grey smoke when `state` is 1, fire and black smoke at 2. */
-  damage(key: number, x: number, y: number, z: number, vx: number, vy: number, vz: number, state: number): void {
+  /**
+   * A damaged jet (key = its id) at (x, y, z) moving at v: grey smoke when `state` is 1, fire and black smoke at 2.
+   * `thick` (1 = the plain trail) widens, darkens, lengthens and densifies it as health falls (src/feedback).
+   */
+  damage(key: number, x: number, y: number, z: number, vx: number, vy: number, vz: number, state: number, thick = 1): void {
     if (state <= 0) return
+    const k = Math.max(1, thick)
     if (state >= 2) {
       const f = 0.7 + 0.3 * Math.random()
-      this.glowAt(x, y, z, 2.6 * f, 7, 2.6, 0.6, 1)
-      if (Math.random() < this.dt * 40) this.puff(0, x, y, z, vx * 0.6, vy * 0.6, vz * 0.6, 0.35, 2.2, 1.2, 6, 2.2, 0.5, 0.9, 3)
+      this.glowAt(x, y, z, 2.6 * f * Math.sqrt(k), 7, 2.6, 0.6, 1)
+      if (Math.random() < this.dt * 40 * k) this.puff(0, x, y, z, vx * 0.6, vy * 0.6, vz * 0.6, 0.35, 2.2 * Math.sqrt(k), 1.2, 6, 2.2, 0.5, 0.9, 3)
     }
-    const dark = state >= 2 ? 0.08 : 0.42
-    this.trail(key + 0x100000, x, y, z, 5, dark, dark, state >= 2 ? 0.75 : 0.5, state >= 2 ? 4 : 3, 1.2, state >= 2 ? 7 : 5)
+    const dark = (state >= 2 ? 0.08 : 0.42) / Math.sqrt(k)
+    const a = Math.min(0.92, (state >= 2 ? 0.75 : 0.5) * (1 + (k - 1) * 0.3))
+    this.trail(key + 0x100000, x, y, z, 5 / Math.sqrt(k), dark, dark, a, (state >= 2 ? 4 : 3) * (1 + (k - 1) * 0.5), 1.2 * Math.sqrt(k), (state >= 2 ? 7 : 5) * k)
+  }
+
+  /** Sparks off an airframe struck at (x, y, z) moving at v: a hot glint and `n` sparks carried along with it. */
+  strike(x: number, y: number, z: number, vx: number, vy: number, vz: number, n: number): void {
+    this.glowAt(x, y, z, 2.2, 12, 8, 3.5, 1)
+    this.puff(0, x, y, z, vx, vy, vz, 0.07, 1.4, 2.8, 10, 6.5, 2.4, 1)
+    for (let i = 0; i < n; i++) {
+      const sx = vx * 0.9 + rnd(-45, 45)
+      const sy = vy * 0.9 + rnd(-20, 40)
+      const sz = vz * 0.9 + rnd(-45, 45)
+      this.spawn(0, x, y, z, x + (sx - vx) * 0.015, y + (sy - vy) * 0.015, z + (sz - vz) * 0.015, sx, sy, sz, rnd(0.2, 0.55), 0.1, 0.05, 10, 6, 2, 1, 1.2, -9.81)
+    }
+  }
+
+  /** A piece of a broken jet flung on its own path (kill debris past the canopy), tumbling, burning if `burning`. */
+  shard(x: number, y: number, z: number, vx: number, vy: number, vz: number, size: number, life: number, burning: boolean): void {
+    const g = 0.16 + Math.random() * 0.12
+    this.spawnRock(burning ? 2 : 1, x, y, z, vx, vy, vz, life, size, size, g, g * 0.98, g * 0.95, burning ? 3 : 0, burning ? 0.8 : 0, 1, 9.81, 0.15, [1, rnd(0.15, 0.4), rnd(0.5, 1.4)], rnd(-12, 12))
   }
 
   /**

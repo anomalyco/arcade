@@ -215,6 +215,7 @@ async function main() {
     daynight,
     game,
     audio: flight.audio,
+    flight,
     net: () => net,
     quality,
     bots: {
