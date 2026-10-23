@@ -1983,6 +1983,14 @@ Candidates from the code audits; measure and playtest before moving any into the
 
 ## Feel
 
+- **Reward and damage feedback as presentation over existing events (Carrier).** `games/carrier/src/feedback/` turns
+  the room's `hp`/`kill`/`boom`/`sunk`/`deckkill` and the local missile copy into a damage edge with a wedge toward the
+  attacker, airframe sparks everyone sees, cockpit canopy cracks and oil (2D canvases, cracks redrawn only on a hit),
+  a soft master caution chime, a kill punch-in that narrows only the presentation fov for 0.7 s (the world stays in
+  step with the room), debris past the canopy, and callouts (SPLASH ONE, DOUBLE KILL, SHIP HIT, CLOSE CALL) with one
+  sting each that replaces the hit marker's sound. Close calls use the closest approach along each frame's relative
+  path, so a 600 m/s missile pass is not missed between frames. `onCallout` is the hook for voiced chatter. Proof:
+  `games/carrier/scripts/feedback-shot.ts` on hailmary (two bots shot down via `hits`, a sea skim).
 - **Pick the opening hour for the look, then pace with the clock and perception.** Outbreak's first-night pacing
   started at 16:00 for workbench daylight, which made the first frame the undeveloped day grade (mean luminance 29 → 65,
   saturation ×3 against the 18:00 Noir start; renderer PRs #69–#84 were pixel-identical at equal hours). It now starts

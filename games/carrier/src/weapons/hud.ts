@@ -175,9 +175,9 @@ export class WeaponHud {
     this.warnEl.classList.toggle("missile", v.warn === 2)
   }
 
-  /** Our rounds or missile hit an enemy (a kill shows red). Presentation only. */
-  hit(kill = false): void {
-    this.marker.hit(kill)
+  /** Our rounds or missile hit an enemy (a kill shows red). `sound` false: the moment's sting plays elsewhere. */
+  hit(kill = false, sound = true): void {
+    this.marker.hit(kill, sound)
   }
 
   /** A kill feed line, newest on top: killer ✕ victim in their team colours (killer null: the victim crashed on their

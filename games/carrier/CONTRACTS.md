@@ -685,6 +685,35 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   Params: `?drone=N`, `?hostile`, `?flares`, `?air`, `?f35`. Real-GPU checks: `scripts/weapons-shot.ts`; captures go
   to `captures/weapons/`.
 
+## Damage and reward feedback (`src/feedback/**`, `src/dev/feedback-lab.ts`, `scripts/feedback-shot.ts`)
+
+- Presentation only, from events the game already has (the room's `hp`, `kill`, `boom`, `sunk`, `deckkill` and our
+  own world's missiles): nothing reaches the room or changes the simulation, sea time or flight. `Feedback`
+  (`src/feedback/feedback.ts`) is owned by `FlightModule` (`flight.feedback`) and fed by `Weapons` through
+  `WeaponFeedback` (`weapons.feedback`: `struck`, `kill`, `burst`, `sunk`, `deckKill`, `died`) and `frame(...)` per frame.
+- Taking damage: a red damage edge (`#fb .dmg`, its own radial ring, not the g-force vignette) scaled by the damage,
+  with a wedge toward the attacker (`#fb .dir`); sparks off any jet's airframe on every health drop (`WeaponFx.strike`,
+  everyone sees them); in the cockpit view canopy cracks that accumulate over the sortie (chips for gun hits,
+  spiderwebs for heavy hits) and oil streaking over the glass below half health (`canopy.ts`, two 2D canvases); a soft
+  master caution chime once on crossing into smoke and every 2.6 s below a quarter, and the edge breathing faintly. The
+  damage smoke/fire thickens as health falls (`WeaponFx.damage(..., thick)`, `FEEDBACK.smokeScale`).
+- Kill moment: the view punches in ~7% for 0.7 s (`Feedback.fovScale`; the seam narrows the flight camera's fov and
+  projection for that frame and restores it before the next camera step), a warm edge pulse (`#fb .pulse`), and from
+  any kill within 260 m debris tumbling past the canopy (`WeaponFx.shard`).
+- Callouts (`callouts.ts`, centred above SHOT DOWN, Plex Mono with hairlines, no instruction text): SPLASH ONE,
+  DOUBLE / TRIPLE / MULTI KILL (kills within 10 s), SHIP HIT (our missile or bomb bursting on or beside an enemy
+  carrier), CARRIER SUNK, DECK JET DESTROYED, CLOSE CALL (an enemy missile homing on us that passes within 30 m, or is
+  decoyed by our flares within 600 m, or skimming the sea, land, a deck or an island at 90 m/s+ within 8 m, once per
+  dip, at most every 6 s). A bigger callout is never covered by a smaller one. A STREAK counter (kills since our last
+  death) sits above the weapons row from 2. One sting per callout (`feedback-audio.ts`, UI bus): the recorded kill
+  confirm for SPLASH ONE (the hit marker then stays silent: `WeaponHud.hit(kill, sound)`), the confirm pitched up with a
+  short arpeggio for multi-kills, a low gong for SHIP HIT, confirm + gong for sinkings and deck jets, a panned
+  procedural whoosh for CLOSE CALL.
+- Hook for radio chatter: `onCallout((kind, streak) => ...)` from `src/feedback/callouts.ts` fires as each callout shows.
+- Tunables: `FEEDBACK` (`src/feedback/settings.ts`) on the dev panel's Flight tab ("feedback"), with preview buttons
+  (gun / missile hit, kill, ship hit, close call). Capture check: `scripts/feedback-shot.ts` (in-page dev room, two bots
+  shot down through the real `hits` path; captures in `captures/feedback/` or wherever `--out` points).
+
 ## Gunnery (`shared/gunnery.ts`, `src/gunnery/**`, `src/render/turret-*.ts`, `src/audio/turret-audio.ts`)
 
 - Crewed from DEPLOY (`gun` ops above). The game's role `gunner` hands the camera to `Gunnery.update` (first
@@ -902,7 +931,7 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   jet (progress from the relayed catapult z), distance-attenuated. Your own jet keeps a steady perspective: no Doppler,
   a fixed from-behind cone, no air absorption, no flyby or crack. The landing is one trap take (no tailhook, gear-down or
   capture chime). Interface: one very quiet tick per button click, nothing on hover or when panels open. A kill is one
-  confirm. The bank's voice budget enforces it: at most 6 recorded one-shots at once, a per-slot cooldown (150 ms by
+  confirm (or its callout's sting, which replaces it: "Damage and reward feedback"). The bank's voice budget enforces it: at most 6 recorded one-shots at once, a per-slot cooldown (150 ms by
   default, hull slams 2 s, creaks 6 s), and priority (explosions 5 > weapons 4 > deck events 3 > thunder 2 > ship
   accents and interface 1, horn and creaks 0): a higher one ducks lesser ones already playing, replaces the least
   important when the budget is full, and keeps accents from starting for half a second. Decorative levels are low by

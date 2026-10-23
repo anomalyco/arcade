@@ -68,12 +68,13 @@ export class HitMarker {
     this.el.hidden = h
   }
 
-  hit(kill = false): void {
+  /** `sound` false: the marker pops silently (a callout's sting is the moment's one sound). */
+  hit(kill = false, sound = true): void {
     const now = performance.now()
     if (!kill && (now - this.last < HIT_GAP || now < this.killUntil)) return
     this.last = now
     if (kill) this.killUntil = now + KILL_MS * 0.6
-    hitSound(kill)
+    if (sound) hitSound(kill)
     this.mark.classList.toggle("kill", kill)
     this.mark.getAnimations().forEach((a) => a.cancel())
     this.mark.animate(kill ? KILL : HIT, { duration: kill ? KILL_MS : HIT_MS, fill: "forwards" })

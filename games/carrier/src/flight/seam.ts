@@ -39,6 +39,7 @@ import { FlightInput } from "./input"
 import { RemotePlanes } from "./remote-planes"
 import { Radar, type RadarScene } from "./radar"
 import { TargetMarkers } from "./target-markers"
+import { Feedback } from "../feedback/feedback"
 
 /** What the flight module needs from the connection: the jet relay, the weapon events and the room's combat queue. */
 export type FlightNet = Pick<Net, "state" | "id" | "sendPlane" | "sendGun" | "sendHits" | "sendShipHits" | "sendDeckHits" | "sendFire" | "sendFlare" | "sendSeek" | "combat" | "serverNow">
@@ -134,6 +135,10 @@ export class FlightModule {
   /** Our own crash has had its explosion; each remote crash (by its first crashed pose's time) too. */
   private ownBoom = false
   private remoteBooms = new Map<number, number>()
+  /** Damage and reward feedback: canopy, damage edge, kill moment, callouts, close calls (src/feedback/feedback.ts). */
+  readonly feedback: Feedback
+  /** The flight camera's own fov while the kill punch-in narrows it (restored before the next camera step). */
+  private punchBase: number | null = null
 
   constructor(
     private renderer: Renderer,
@@ -158,6 +163,8 @@ export class FlightModule {
     }
     this.weaponInput = new WeaponInput(canvas)
     this.weapons = new Weapons(wfx, new WeaponHud(), new WeaponAudio(), this.weaponInput, null)
+    this.feedback = new Feedback(wfx)
+    this.weapons.feedback = this.feedback
     this.boom = new Explosions(renderer)
     // Shot-down jets break apart (seeded by pilot and sortie, so every client sees the same pieces).
     this.weapons.breakup = {
@@ -238,6 +245,7 @@ export class FlightModule {
     this.weapons.setPilot(this.net.id, me?.team ?? 0, me?.name ?? "YOU", teamCss(me?.team ?? 0))
     this.hud.homeColor = teamCss(me?.team ?? 0)
     this.weapons.sortie(f.vehicle)
+    this.feedback.sortie()
   }
 
   stop(): void {
@@ -306,11 +314,20 @@ export class FlightModule {
         p.z = wreck.z
       }
     const k = Math.max(0, Math.min(1, (t - f.plane.t) / PLANE.tick))
+    if (this.punchBase !== null) f.cam.fov = this.punchBase
+    this.punchBase = null
     const sea = this.sea
     const arch = this.arch
     // The crash camera's floor: the sea, or the land under it.
     this.pose = f.frame(dt, k, aspect, (x, z) => Math.max(sea ? seaHeight(sea, x, z, t) : 0, arch ? terrainHeight(arch, x, z) + 45 : -1e9), { w: innerWidth, h: innerHeight }, deck)
     const cam = f.cam
+    // The kill punch-in (presentation only): narrows this frame's view and its projection, then gives the fov back.
+    const punch = this.feedback.fovScale
+    if (punch !== 1 && f.phase === "flying") {
+      this.punchBase = cam.fov
+      cam.fov *= punch
+      cam.compute(aspect)
+    }
     this.camera.lookAlong(cam.eye, cam.forward, cam.up, cam.fov, aspect)
 
     this.sendIn -= dt
@@ -484,6 +501,26 @@ export class FlightModule {
     this.shipHud.update(v.dt, v.t, me ?? null, v.crew, v.ships ?? [], hulls ?? null, cam, airborne && (f.phase === "flying" || f.phase === "landing"), v.paused)
     w.frame(v.dt, v.t, v.eye, cam?.fov ?? this.camera.fov, innerHeight, (x, y, z) => (cam ? cam.project(x, y, z, innerWidth, innerHeight) : null), v.paused)
     const flying = airborne && (f.phase === "flying" || f.phase === "landing")
+    const inAir = airborne && f.phase === "flying" && w.flying
+    this.feedback.frame({
+      dt: v.dt,
+      t: v.t,
+      paused: v.paused,
+      flying: inAir,
+      airborne: f.airborne,
+      cockpit: f.cam.mode === "cockpit" && !f.cam.sighting,
+      plane: inAir ? f.draw : null,
+      hp: w.world.hp(this.net.id),
+      id: this.net.id,
+      team: me?.team ?? -1,
+      eye: v.eye,
+      forward: this.camera.forward,
+      up: this.camera.upDir,
+      sea: this.sea,
+      arch: this.arch,
+      ships: v.ships ?? [],
+      missiles: w.world.missiles,
+    })
     const sc = this.scene
     sc.me = me ?? null
     sc.crew = v.crew

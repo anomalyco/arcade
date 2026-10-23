@@ -16,6 +16,8 @@ import { feelSection } from "./feel-lab"
 import { juiceSection } from "./juice-lab"
 import { radarSection } from "./radar-lab"
 import { sightSection } from "./sight-lab"
+import { feedbackSection } from "./feedback-lab"
+import type { FlightModule } from "../flight/seam"
 import { viewSection } from "./view-lab"
 import { WeatherLab } from "./weather-lab"
 import type { CarrierQuality } from "../quality"
@@ -37,6 +39,8 @@ export type DevToolsContext = {
   net: () => Net
   bots: Omit<BotsHost, "net">
   quality: GameQuality<CarrierQuality>
+  /** The flight module (the feedback section previews damage and rewards on it). */
+  flight: FlightModule
 }
 
 /**
@@ -72,6 +76,8 @@ export function installDevTools(ctx: DevToolsContext) {
     feelSection,
     // JUICE: speed streaks, vapour, the vapour cone, burner, heat shimmer and sea spray (src/render/flight-fx.ts).
     juiceSection,
+    // FEEDBACK: damage and reward feedback (canopy, damage edge, kill moment, callouts, close calls) and previews.
+    feedbackSection(ctx.flight),
     // BOTS: spawn and drive bots in a dev room (server/bots.ts).
     bots.section,
     // ZONES: the objective's rules (Apply to room restarts the round with them) and the zones' look.

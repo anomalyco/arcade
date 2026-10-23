@@ -35,6 +35,22 @@ import { BombSight, type SightShip, aimBomb, makeBombAim } from "./bombsight"
 import type { Hull } from "../../shared/fleet"
 import { teamCss } from "../../shared/crew"
 import { FireFx } from "./fire-fx"
+import { FEEDBACK } from "../feedback/settings"
+
+/** Damage and reward feedback (src/feedback/feedback.ts `Feedback`): presentation hooks fed from the same events. */
+export type WeaponFeedback = {
+  /** A jet lost `amount` health: `own` ours; `from` the attacker's position when known. */
+  struck(own: boolean, amount: number, at: Target, from: { x: number; y: number; z: number } | null): void
+  /** A jet was shot down (`mine`: by us). True when the kill's own sting played (the hit marker then stays silent). */
+  kill(mine: boolean, at: Target | null): boolean
+  /** Our missile or bomb burst without hitting a jet. */
+  burst(x: number, y: number, z: number): void
+  /** We sank a carrier / destroyed a parked jet. True when the sting played. */
+  sunk(): boolean
+  deckKill(): boolean
+  /** Our jet was destroyed. */
+  died(): void
+}
 
 /** What the weapons tell the room (online). Offline there is none: the local world has the authority. */
 export type WeaponsNet = {
@@ -132,6 +148,8 @@ export class Weapons {
   sightView: (() => boolean) | null = null
   /** Names and team colours of players not in view (the kill feed), from the host's crew. */
   resolve: ((id: number) => { name: string; color: string } | null) | null = null
+  /** Damage and reward feedback (src/feedback), or null (harnesses). */
+  feedback: WeaponFeedback | null = null
   /** When each jet was last shot down (presentation clock), so the host can skip its generic crash effect. */
   private killedAt = new Map<number, number>()
   private net: WeaponsNet | null
@@ -346,11 +364,17 @@ export class Weapons {
         else this.fx.explosion(e.x, e.y, e.z, j?.vx ?? 0, j?.vy ?? 0, j?.vz ?? 0, e.on === this.id ? 0.55 : 1, e.water, e.on === this.id ? "pop" : "missile")
         this.audio.explosion(this.dist(e.x, e.y, e.z), e.bomb ? 1.8 : 1, e.bomb ? (e.water ? "bomb-water" : "bomb-land") : "missile")
         if (e.owner === this.id && e.on >= 0) this.hud.hit()
+        if (e.owner === this.id && e.on < 0) this.feedback?.burst(e.x, e.y, e.z)
         return
       }
       case "hp": {
         const before = this.world.hp(e.on)
         this.world.setHp(e.on, e.hp)
+        if (e.hp < before && this.feedback) {
+          const j = this.jetOrOwn(e.on)
+          const src = e.by >= 0 ? this.jets.get(e.by) : undefined
+          if (j) this.feedback.struck(e.on === this.id, before - e.hp, j, src ?? null)
+        }
         if (e.on === this.id && e.hp < before) {
           const heavy = before - e.hp > 20
           this.audio.hurt(heavy)
@@ -365,9 +389,10 @@ export class Weapons {
         if (f) f.alive = false
         const killer = e.by >= 0 ? this.who(e.by) : null
         this.hud.feed(killer, this.who(e.on), e.by === this.id && e.on !== this.id)
-        if (e.by === this.id && e.on !== this.id) {
-          this.hud.hit(true)
-        }
+        const mine = e.by === this.id && e.on !== this.id
+        const stung = this.feedback?.kill(mine, e.on === this.id ? null : this.jetOrOwn(e.on)) ?? false
+        if (mine) this.hud.hit(true, !stung)
+        if (e.on === this.id) this.feedback?.died()
         // A jet shot down blows up and its wreck falls, burning.
         if (e.w) {
           const j = this.jetOrOwn(e.on)
@@ -458,6 +483,7 @@ export class Weapons {
   sunk(ship: number, name: string, team: number, by: number, color = teamCss(team)): void {
     const killer = by >= 0 ? this.who(by) : null
     this.hud.feed(killer, { name, color }, by === this.id, "SUNK", "SUNK")
+    if (by === this.id) this.feedback?.sunk()
     const s = this.fleetShips.find((x) => x.id === ship)
     if (s) {
       this.fx.explosion(s.x, s.heave + 26, s.z, 0, 0, 0, 3, false, "ship")
@@ -468,12 +494,14 @@ export class Weapons {
   /** A jet parked on a carrier's deck was destroyed: a kill feed line and the killer's confirmation. */
   deckKill(by: number, victim: { name: string; color: string }, at?: { x: number; y: number; z: number }): void {
     this.hud.feed(by >= 0 ? this.who(by) : null, victim, by === this.id, "✕", "DESTROYED")
+    if (by === this.id) this.feedback?.deckKill()
     if (at) this.audio.explosion(this.dist(at.x, at.y, at.z), 1.4, "bomb-land")
   }
 
   /** Our jet crashed on its own (sea, land, ship, lost). Offline the world credits whoever damaged it lately. */
   crashed(): void {
     if (this.world.authority) this.world.crash(this.id)
+    this.feedback?.died()
     this.land()
   }
 
@@ -797,10 +825,14 @@ export class Weapons {
 
   /** Smoke or fire from a damaged jet's tail. */
   private damageFx(id: number, j: Target, qx: number, qy: number, qz: number, qw: number): void {
-    const state = damageState(this.world.hp(id))
+    const hp = this.world.hp(id)
+    const state = damageState(hp)
     if (state === 0 || state === 3) return
     const at = quatRotate(qx, qy, qz, qw, state >= 2 ? 1.2 : 0, 0.4, -6.5, tmp)
-    this.fx.damage(id, j.x + at[0], j.y + at[1], j.z + at[2], j.vx, j.vy, j.vz, state)
+    // Thicker as health falls: 1 at the smoke threshold, FEEDBACK.smokeScale near zero.
+    const smoke = WEAPONS.health.max * WEAPONS.health.smoke
+    const thick = 1 + (FEEDBACK.smokeScale - 1) * Math.max(0, Math.min(1, 1 - hp / smoke))
+    this.fx.damage(id, j.x + at[0], j.y + at[1], j.z + at[2], j.vx, j.vy, j.vz, state, thick)
   }
 
   /** The missiles still on a jet's rails: with one left, it is on the rail that fires next. */
