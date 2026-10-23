@@ -4,6 +4,7 @@ import { treesNear, type Tree, type WoodsWorld } from "../../shared/world"
 import { WOODS_FILES, type WoodsSoundId } from "./files"
 import type { SoundSettings } from "./settings"
 import { canopyDensity, gustAt, indoorsAt, insectLevel, nearestShore, nearestStringLight, windExposure } from "./space"
+import { StormSound, type StormSoundFrame } from "./storm"
 
 /**
  * The night forest around the listener, in one Web Audio graph that runs the same in a live `AudioContext` and an
@@ -21,7 +22,7 @@ import { canopyDensity, gustAt, indoorsAt, insectLevel, nearestShore, nearestStr
 
 export type Listener = { x: number; y: number; z: number; yaw: number }
 /** Layers the listening page and the Lab can solo. */
-export type SoundLayer = "wind" | "creaks" | "room" | "leaves" | "insects" | "lake" | "dock" | "lights" | "walls" | "distant" | "flares"
+export type SoundLayer = "wind" | "creaks" | "room" | "leaves" | "insects" | "lake" | "dock" | "lights" | "walls" | "distant" | "flares" | "storm"
 /** A burning road flare as the ears get it (`shared/flares.ts` `flareSources`). */
 export type FlareSound = { id: number; x: number; y: number; z: number; level: number }
 /** Road flares' levels: the scrape and the catch in the hand, and the hiss within 1.5 m (it falls off as 1/d past that). */
@@ -212,6 +213,10 @@ export class Soundscape {
   private voices = new Set<Voice>()
   private signalSince: number | null = null
   private flareLoops = new Map<number, { src: AudioBufferSourceNode; gain: GainNode; lp: BiquadFilterNode; pan: PannerNode; wet: GainNode }>()
+  /** The storm's sound (thunder, rain, drips, gusts) on this chain. */
+  readonly storm: StormSound
+  /** What the storm is doing (`WoodsAudio` sets it each frame); null is a still, dry night. */
+  weather: Omit<StormSoundFrame, "inside"> | null = null
 
   constructor(readonly ctx: BaseAudioContext, private readonly out: AudioNode, private readonly settings: SoundSettings, private readonly baseUrl: string, private readonly world: () => WoodsWorld) {
     this.outdoor = ctx.createBiquadFilter()
@@ -228,6 +233,7 @@ export class Soundscape {
     this.verbIn.connect(conv)
     conv.connect(this.verbOut)
     this.verbOut.connect(this.outdoor)
+    this.storm = new StormSound(ctx, this.outdoor, out, this.verbIn, settings, new URL("../audio-assets/sfx/", new URL(baseUrl, "http://localhost/")).href.replace(/^http:\/\/localhost/, ""), world)
   }
 
   /**
@@ -263,6 +269,7 @@ export class Soundscape {
   stopAll(): void {
     for (const v of this.voices) { try { v.src.stop() } catch {} }
     this.voices.clear()
+    this.storm.stopAll()
     this.flares([], { x: 0, y: 0, z: 0, yaw: 0 })
   }
 
@@ -317,7 +324,7 @@ export class Soundscape {
     this.rng = (Math.imul(this.rng, 1664525) + 1013904223) >>> 0
     return this.rng / 4294967296
   }
-  private on(layer: SoundLayer) { return this.solo === null || this.solo === layer }
+  on(layer: SoundLayer) { return this.solo === null || this.solo === layer }
 
   private loop(buffer: AudioBuffer, id: WoodsSoundId | null, offset: number, rate = 1): AudioBufferSourceNode {
     const src = this.ctx.createBufferSource()
@@ -433,16 +440,21 @@ export class Soundscape {
     this.outdoorGain.gain.setTargetAtTime(1 - 0.6 * inside, now, 0.1)
     this.verbOut.gain.setTargetAtTime(0.5 * s.soundReverb, now, 0.1)
 
-    // Wind high in the canopy: four voices around you, each with the gust where it is.
-    const gustHere = gustAt(l.x, l.z, t)
+    // Wind high in the canopy: four voices around you, each with the gust where it is; a storm's wind and its gusts
+    // (the same ones the trees and the rain follow) on top.
+    const storm = this.weather, windK = storm ? storm.wind : 1
+    const gustHere = Math.min(1.6, gustAt(l.x, l.z, t) * Math.sqrt(windK))
     for (let i = 0; i < 4; i++) {
       const [dx, dz] = W[i]!, px = l.x + dx * R, pz = l.z + dz * R
-      const g = gustAt(px, pz, t)
+      const g = Math.min(1.6, gustAt(px, pz, t) * Math.sqrt(windK))
       const b = this.wind[i]!
       Soundscape.place(b.panner!, px, l.y + 14, pz, now)
       b.filter!.frequency.setTargetAtTime(1800 + 9000 * g * g, now, 0.4)
-      set(b, this.on("wind") ? s.soundWind * 0.115 * g * (0.35 + 0.65 * Math.min(1, c.densities[i]!)) * c.exposure : 0, 0.4)
+      set(b, this.on("wind") ? s.soundWind * 0.115 * g * Math.sqrt(windK) * (0.35 + 0.65 * Math.min(1, c.densities[i]!)) * c.exposure : 0, 0.4)
     }
+    if (storm && (storm.rain > 0 || storm.wind > 1 || storm.gust > 0) && !this.storm.loaded) void this.storm.load()
+    // Once loaded the storm always updates, dry and still when it's off or another layer is soloed, so its beds fade out.
+    if (this.storm.loaded) this.storm.update(l, storm && this.on("storm") ? { ...storm, inside } : { rain: 0, wind: 1, gust: 0, clock: storm?.clock ?? 0, inside }, now)
     set(this.beds.get("leaves"), this.on("leaves") ? s.soundLeaves * 0.085 * (0.3 + 0.7 * gustHere) * (0.35 + 0.65 * Math.min(1, c.density)) * Math.sqrt(c.exposure) : 0, 0.4)
     set(this.beds.get("room"), this.on("room") ? s.soundRoom * 0.0054 : 0)
     // Crickets go quiet while something heavy moves nearby.

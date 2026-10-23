@@ -362,6 +362,28 @@ any second to three scene flashes (WCAG 2.3.1); Full / Reduced / Off, with Reduc
   doesn't average the flicker away. Strike now lands 220–420 m out because the Lot's sky dome is ±699 m.
 - Research: `~/code/home/artifacts/lot-2026-10-20/storm/RESEARCH.md` (NOAA, Rakov & Uman, WCAG G15).
 
+**Forest storm (`barbara-looks`).** The kit strike envelope under a canopy: `StormStrikes` (`weather/storm.ts`)
+schedules strikes and emits each one's thunder with its position and arrival (slant / 343 m/s); on a shared clock
+(`SharedStormClock`) scheduled strikes come from the seed and the second alone, so a room sees the same ones.
+`ForestStorm` (`forest/storm.ts`) lights the forest from the channel as a directional light through a spot shadow map
+from the strike's direction (so trunks and crowns cast), adds the lit cloud base to the sky (`flashSky`, for far
+strikes flickering through canopy gaps) and only 4% of the flash as ambient, draws far channels scaled inside the far
+plane, and darkens the eye after the flash (`EyeAdaptation`, 1.6 EV, ~3 s recovery; its glare widens the channel's
+glow) while the forest's own meter holds. Rain uses the weather layer's light-volume mode (#463, #467: lit streaks
+only in torch, window and porch cones, `streakGain` 6 and 20 ms streaks in the forest); drips fall from the nearest
+crowns' lowest branches 3–12 m out and fade inside 3.5 m of the lens. BARBARA's thunder goes through its own
+soundscape with travel delay.
+- Where: `packages/kit/forest/storm.ts`, `packages/kit/weather/storm.ts`, `games/barbara/src/looks.ts` (Storm coming,
+  Downpour), `games/barbara/src/audio/storm.ts`.
+- Cost: Downpour vs Today at the camera-lab spot (mini Metal, 1600×900, 12-frame median, three runs): +0.6–1.4 ms High,
+  +0.15–0.4 ms Low.
+- Kit: asked for it with restraint (dark between flashes, no milky wash). A full-strength cloud dome on surfaces lit
+  the whole floor grey; the dome is now 4% of the flash. Awaiting his pick.
+- Pitfalls: the forest's scene units make a full moon (0.25 lx) about as bright as a torch pool, so flash "lux" is
+  relative to the moon, not to real lightning (10–100 lx would wash everything). Eave drips within a metre or two of
+  the lens draw as bright slabs (the "white rectangle" on a trunk in the first near-strike still): keep drip sources
+  off the camera.
+
 **Shared shelter and wind.** One list of sheltered rects and dripping eaves drives rain, wetness and sound
 (`games/lot/src/weather/shelter.ts`); the weather's gust (`evaluateWeatherGust`) drives forest sway.
 

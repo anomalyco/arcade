@@ -210,7 +210,7 @@ export function forestLookControls(settings: ForestLookSettings, prefix = "woods
     select("mist", "Mist pockets", F, [{ value: "drift", label: "Drifting in hollows" }, { value: "off", label: "Off" }]),
     toggle("clearAir", "Clear air near you", F),
     range("fogDensity", "Air density", F, 0, 0.03, 0.0005, "/m"),
-    range("mistDensity", "Mist density", F, 0, 0.15, 0.002, "/m"),
+    range("mistDensity", "Mist density", F, 0, 0.6, 0.002, "/m"),
     range("mistHeight", "Mist height", F, 0.3, 6, 0.1, "m"),
     toggle("depthMist", "Dark distance mist", F, "Distance"),
     range("depthDensity", "Distance extinction", F, 0, 0.15, 0.005, "/m", "Distance"),

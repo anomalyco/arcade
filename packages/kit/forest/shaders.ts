@@ -35,7 +35,13 @@ const COVERAGE_LEVELS = 8
 export const GROUND_CELLS = 18
 export const GROUND_CELL = 10
 /** Floats in the forest's custom uniform (binding 13): the named slots, the grid's origin, then its heights. */
-export const WOODS_FLOATS = 84 + GROUND_CELLS * GROUND_CELLS
+export const WOODS_FLOATS = 92 + GROUND_CELLS * GROUND_CELLS
+/** Float offsets of the storm slots and the ground grid in the forest's custom uniform. */
+export const WOODS_STORM = 80
+export const WOODS_GROUND_AT = 88
+export const WOODS_GROUND = 92
+/** Spot-shadow id of the lightning's canopy shadow (the moon's is 65000). */
+export const FLASH_SHADOW_ID = 65001
 
 export const woodsUniformWgsl = /* wgsl */ `
 struct Woods {
@@ -45,7 +51,7 @@ struct Woods {
   sky: vec4f,         // sky glow, stars, skylight, moss
   camp: vec4f,        // windows, string lights, water, lake level
   lake: vec4f,        // centre x, z, radii x, z
-  field: vec4f,       // field map x0, z0, 1/size, -
+  field: vec4f,       // field map x0, z0, 1/size, overcast cloud glow (cd/m²)
   torch: vec4f,       // local torch position, on
   torchDir: vec4f,    // axis, half-angle (rad)
   torchCol: vec4f,    // colour × intensity, range
@@ -56,6 +62,8 @@ struct Woods {
   invViewProj: mat4x4f,
   misc: vec4f,        // texture size, alpha cutoff, mips below the coverage table's base, -
   pad: vec4f,         // clear air near the eye, distance density, clear distance, -
+  storm: vec4f,       // unit direction toward the lightning, its illuminance (lux) on the forest
+  storm2: vec4f,      // cloud base luminance in the flash, wetness, standing water, flash shadow map (0/1)
   groundAt: vec4f,    // ground grid x0, z0, 1/cell, -
   ground: array<vec4f, ${(GROUND_CELLS * GROUND_CELLS) / 4}>,
 }
@@ -285,6 +293,17 @@ const material = /* wgsl */ `
     nn = normalize(mix(nn, geo, wet * 0.6));
     // Large-scale tone variation: drier and wetter patches of litter.
     alb *= mix(0.78, 1.12, fbm(o.world.xz * 0.045 + 13.0));
+    // Rain: soaked litter darkens and takes a sheen (still rough enough to stay out of the mirror reflections);
+    // standing water collects in the trail's ruts, by the shore and in low patches.
+    let soak = N.storm2.y;
+    if (soak > 0.0) {
+      alb *= mix(1.0, 0.6, soak);
+      rough = mix(rough, max(0.42, rough * 0.62), soak);
+      let pool = N.storm2.z * smoothstep(0.62, 0.78, fbm(o.world.xz * 0.38 + 7.0) * 0.7 + wt * 0.35 + wet * 0.4);
+      alb = mix(alb, alb * 0.3, pool);
+      rough = mix(rough, 0.05, pool);
+      nn = normalize(mix(nn, geo, pool));
+    }
     albedo = alb * mix(1.0, ao * ao, 0.6);
     n = nn;
     woodsAo = ao;
@@ -313,6 +332,13 @@ const material = /* wgsl */ `
       // Soil splash and damp at the foot of each trunk.
       alb *= mix(0.62, 1.0, smoothstep(0.0, 0.035, wts.g));
       alb *= mix(vec3f(0.92, 0.95, 1.0), vec3f(1.06, 1.0, 0.94), fract(o.aux));
+    }
+    // Rain: bark darkens in runs down the trunk and catches a sheen; rocks, logs and boards go darker and glossier.
+    if (N.storm2.y > 0.0) {
+      let run = select(1.0, 0.55 + 0.45 * smoothstep(0.3, 0.7, fbm(vec2f(atan2(geo.z, geo.x) * 3.0, o.world.y * 0.35))), mat == ${MAT.bark});
+      let soak = N.storm2.y * run;
+      alb *= mix(1.0, select(0.6, 0.52, mat == ${MAT.bark}), soak);
+      rough = mix(rough, select(0.32, 0.42, mat == ${MAT.bark}), soak);
     }
     // Wet boards on the dock and porch (blue channel): darker and glossier.
     let damp = select(0.0, wts.b, mat == ${MAT.wood} || mat == ${MAT.campWood});
@@ -349,7 +375,8 @@ const material = /* wgsl */ `
     }
     n = nn;
     woodsAo = mix(0.5, 1.0, wts.r);
-    pbrRough = 0.62;
+    albedo *= mix(1.0, 0.8, N.storm2.y);
+    pbrRough = mix(0.62, 0.46, N.storm2.y);
   } else if (mat == ${MAT.ash}) {
     let edge = smoothstep(0.45, 1.0, length(o.uv));
     let grit = woodsTex(${LAYER["ground-trail"]}, o.world.xz * 1.4, wDpx.xz * 1.4, wDpy.xz * 1.4);
@@ -407,6 +434,23 @@ const material = /* wgsl */ `
   }
 `
 
+/**
+ * Lightning on surfaces: the strike's direct light from where the channel is (through the canopy's own shadow map when
+ * there is one, else the sky openness), and the cloud base it lights as a dim overcast dome, both a blue-white of
+ * ~7000 K. Zero between strikes.
+ */
+const forestFlashWgsl = /* wgsl */ `
+fn forestFlash(world: vec3f, n: vec3f, open: f32) -> vec3f {
+  if (N.storm.w <= 0.0) { return vec3f(0.0); }
+  let ndl = max(dot(n, N.storm.xyz), 0.0);
+  let vis = select(open * open, spotShadowVis(${65001}u, world, n), N.storm2.w > 0.5);
+  return vec3f(0.84, 0.88, 1.0) * N.storm.w * ndl * vis / 3.14159265;
+}
+fn forestCloudLight(n: vec3f) -> vec3f {
+  return (vec3f(0.8, 0.85, 1.0) * N.storm.w * 0.04 + vec3f(1.0, 0.82, 0.62) * N.field.w) * (0.5 + 0.5 * max(n.y, 0.0));
+}
+`
+
 const sceneHooks: SceneHooks = {
   uv: true,
   lampGrid: false,
@@ -415,13 +459,14 @@ fn forestMoon(world: vec3f, n: vec3f, open: f32) -> vec3f {
   if (N.misc.w < 0.5) { return vec3f(0.55, 0.66, 0.95) * N.moon.w * max(dot(n, N.moon.xyz), 0.0) * open * open * 0.35; }
   return vec3f(N.moon.w * max(dot(n, N.moon.xyz), 0.0) / 3.14159265) * spotShadowVis(65000u, world, n);
 }
+${forestFlashWgsl}
 `,
   vertex,
   fragmentStart: `wDpx = dpdx(o.world); wDpy = dpdy(o.world); wDux = dpdx(o.uv); wDuy = dpdy(o.uv);`,
   material,
   bounce: "vec3f(0.0)",
-  ambient: "fogAmbient(n) * N.sky.z * mix(0.22, 1.0, woodsOpen) * woodsAo",
-  directional: "forestMoon(o.world, n, woodsOpen)",
+  ambient: "(fogAmbient(n) * N.sky.z + forestCloudLight(n)) * mix(0.22, 1.0, woodsOpen) * woodsAo",
+  directional: "forestMoon(o.world, n, woodsOpen) + forestFlash(o.world, n, woodsOpen)",
   lightLeak: "0.0",
   wallDirectScale: "1.0",
   // Thin leaves pass about a third of what lands on their back to the front.
@@ -619,6 +664,37 @@ struct VO { @builtin(position) pos: vec4f, @location(0) uv: vec2f }
 `
 
 /**
+ * The storm's cloud base over whichever sky is drawn (Today's or the physical one), added on top: the overcast's own dim
+ * glow from distant towns, brighter low in the town's direction, and the flash lighting the clouds from within, brightest
+ * round the strike. Opaque geometry covers it, so it shows through the canopy's gaps only.
+ */
+export const stormSkyShader = /* wgsl */ `
+${common}
+${fogParamsWgsl}
+${woodsUniformWgsl}
+struct VO { @builtin(position) pos: vec4f, @location(0) uv: vec2f }
+@vertex fn vs(@builtin(vertex_index) i: u32) -> VO {
+  let p = vec2f(f32((i << 1u) & 2u), f32(i & 2u));
+  var o: VO;
+  o.pos = vec4f(p * 2.0 - 1.0, 0.0, 1.0);
+  o.uv = vec2f(p.x, 1.0 - p.y);
+  return o;
+}
+@fragment fn fs(o: VO) -> @location(0) vec4f {
+  let h = N.invViewProj * vec4f(o.uv.x * 2.0 - 1.0, 1.0 - o.uv.y * 2.0, 1.0, 1.0);
+  let dir = normalize(h.xyz / h.w - F.cam.xyz);
+  let up = smoothstep(-0.04, 0.12, dir.y);
+  let town = max(dot(normalize(dir.xz + vec2f(1e-4)), vec2f(0.6, -0.8)), 0.0);
+  let glow = vec3f(1.0, 0.82, 0.62) * N.field.w * (0.55 + 0.45 * exp(-max(dir.y, 0.0) * 3.0) + 0.8 * pow(town, 3.0) * exp(-max(dir.y, 0.0) * 6.0));
+  let toward = max(dot(dir, N.storm.xyz), 0.0);
+  // Cloud texture: the flash lights the billows unevenly.
+  let billow = 0.6 + 0.4 * noise2(dir.xz / max(dir.y, 0.08) * 1.7);
+  let flash = vec3f(0.8, 0.84, 1.0) * N.storm2.x * (0.2 + 0.8 * pow(toward, 4.0)) * billow;
+  return vec4f((glow + flash) * up, 0.0);
+}
+`
+
+/**
  * Sparse dust in the beam: procedural instances wrapped in a box round the eye (world-stable), lit only by
  * the torch's beam profile and spot shadow, with forward scattering (dust sparkles looking down the beam) and
  * energy-conserving sprite size (a sub-pixel mote is a dim pixel, a near one a soft out-of-focus disc).
@@ -699,7 +775,8 @@ fn tapeFluoresce(col: vec3f, dye: vec3f) -> vec3f {
   let hue = dye / max(max(max(dye.r, dye.g), dye.b), 1e-5);
   let k = 2.4 * (1.0 - exp(-l / 2.4)) / max(l, 1e-5);
   return mix(col, hue * peak, smoothstep(0.5, 2.0, l)) * k;
-}`,
+}
+${forestFlashWgsl}`,
   // Flagging tape (the kit's MAT.tape): thin glossy plastic, lit from whichever face you see, passing ~40% of a torch
   // behind it through; aux > 1 is a game's readability gain on its fluorescent colour.
   material: /* wgsl */ `if (mat == 5) {
@@ -710,8 +787,8 @@ fn tapeFluoresce(col: vec3f, dye: vec3f) -> vec3f {
     }`,
   diffuseTerm: "let diffuse = (max(ndl, 0.0) + max(-ndl, 0.0) * batchThin) / PI;",
   bounce: "vec3f(0.0)",
-  ambient: "fogAmbient(n) * N.sky.z * 0.5",
-  directional: "vec3f(0.0)",
+  ambient: "(fogAmbient(n) * N.sky.z + forestCloudLight(n)) * 0.5",
+  directional: "forestFlash(o.world, n, 1.0)",
   lightLeak: "0.0",
   wallDirectScale: "1.0",
   surface: "if (mat == 5) { col = tapeFluoresce(col, o.color); } col = fogApply(col, F.cam.xyz, o.world);",

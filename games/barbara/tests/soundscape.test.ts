@@ -92,3 +92,20 @@ test("a distant sound that would reach you during a signal fades out; stopAll cl
   scape.stopAll()
   expect(stopped.length).toBe(3)
 })
+
+test("once the storm's sounds are in, it updates every frame, dry when it's off or another layer is soloed", async () => {
+  const { ctx } = fakeContext()
+  const scape = new Soundscape(ctx, ctx.destination, { ...SOUND }, "/a/", () => world)
+  await scape.load(async () => new ArrayBuffer(4))
+  const rains: number[] = []
+  scape.storm.loaded = true
+  scape.storm.update = (_l, f) => { rains.push(f.rain) }
+  scape.weather = { rain: 1, wind: 1.5, gust: 0, clock: 1 }
+  scape.update(ear, 0)
+  scape.solo = "wind"
+  scape.update(ear, 0.1)
+  scape.solo = null
+  scape.weather = null
+  scape.update(ear, 0.2)
+  expect(rains).toEqual([1, 0, 0])
+})

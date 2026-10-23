@@ -11,6 +11,8 @@ export const SOUND = {
   soundFlares: 1,
   distantLevel: 1,
   soundReverb: 1,
+  soundThunder: 1,
+  soundRain: 1,
 }
 export type SoundSettings = typeof SOUND
 
@@ -24,4 +26,6 @@ export const SOUND_CONTROLS: LabControl[] = [
   { key: "soundCamp", label: "String-light buzz", group: "Sound", subsection: "Layers", min: 0, max: 3, step: 0.05, unit: "×" },
   { key: "soundRoom", label: "Forest room tone", group: "Sound", subsection: "Layers", min: 0, max: 3, step: 0.05, unit: "×" },
   { key: "soundFlares", label: "Road flares", group: "Sound", subsection: "Layers", min: 0, max: 3, step: 0.05, unit: "×" },
+  { key: "soundThunder", label: "Thunder", group: "Sound", subsection: "Storm", min: 0, max: 3, step: 0.05, unit: "×" },
+  { key: "soundRain", label: "Rain and drips", group: "Sound", subsection: "Storm", min: 0, max: 3, step: 0.05, unit: "×" },
 ]

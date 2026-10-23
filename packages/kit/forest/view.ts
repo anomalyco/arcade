@@ -23,7 +23,11 @@ import { loadForestModels, loadForestTextures, type ForestTextures } from "./ass
 import { buildForest, CHUNK, forestHeightGrid, INSTANCE_FLOATS, type ForestBuild } from "./build"
 import { ForestBuilder } from "./offthread"
 import { ALPHA_COVERAGE_BASE } from "./alpha-coverage"
-import { GROUND_CELL, GROUND_CELLS, WOODS_FLOATS, batchHooks, cutoutDepthWgsl, forestHooks, forestShadowInstanceWgsl, moteShader, skyShader, treeVertexWgsl, woodsUniformWgsl, forestLakeHooks } from "./shaders"
+import { FLASH_SHADOW_ID, GROUND_CELL, GROUND_CELLS, WOODS_FLOATS, WOODS_GROUND, WOODS_GROUND_AT, WOODS_STORM, batchHooks, cutoutDepthWgsl, forestHooks, forestShadowInstanceWgsl, moteShader, skyShader, stormSkyShader, treeVertexWgsl, woodsUniformWgsl, forestLakeHooks } from "./shaders"
+import type { ForestStormView } from "./storm"
+import { BoltPass, BOLT_LOOK } from "../weather/lightning-pass"
+import type { Strike, StrikeLight } from "../weather/lightning"
+import type { WeatherEave, WeatherExcludeRect, WeatherLight, WeatherPrepareInput } from "../weather"
 import { forestPost } from "./post"
 import { FOREST_WIND_DIR } from "./wind"
 import { stepForestExposure, forestExposureTarget } from "./exposure"
@@ -87,6 +91,8 @@ export type ForestFrameInput = {
    * points) over a night-dark `ambient`. The game steps the pool.
    */
   particles?: { pool: Particles; lights: readonly SceneLight[]; ambient?: readonly [number, number, number] }
+  /** A storm this frame (`ForestStorm.frame(...).view`): lightning, rain, wet surfaces, storm wind, the eye after a flash. */
+  storm?: ForestStormView | null
 }
 
 export type ForestViewOptions = {
@@ -242,6 +248,10 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
   renderer.addPass("opaque", pass)
   const motes = new MotePass(renderer.passContext)
   renderer.addPass("alpha", motes)
+  // The storm's passes exist from its first frame: the cloud base over the sky and the lightning channel.
+  let stormSky: StormSkyPass | null = null
+  let bolt: BoltPass | null = null
+  const boltShapes = new WeakMap<Strike, Strike>()
 
   const fog = new FogScatter(createFogSettings())
   const spots = new SpotShadows(device, { count: smoke ? 0 : 1, size: quality.shadowSize, bias: 1.2 }, forestShadowInstanceWgsl)
@@ -283,8 +293,8 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
       groundGrid[j * GROUND_CELLS + i] = h
       groundMax = Math.max(groundMax, h)
     }
-    custom.set([x0, z0, 1 / GROUND_CELL, 0], 80)
-    custom.set(groundGrid, 84)
+    custom.set([x0, z0, 1 / GROUND_CELL, 0], WOODS_GROUND_AT)
+    custom.set(groundGrid, WOODS_GROUND)
   }
   // Sky openness round the eye (the field map's red, 24 m disc), eased: under the canopy the airglow lighting the mist
   // is blocked as much as it is for surfaces, so the mist dims with it instead of glowing behind black trunks.
@@ -313,6 +323,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     previousEye = [...f.eye]
     lastInput = f
     const s = settings
+    const st = f.storm ?? null
     const local = f.torches.find(t => t.kind !== "remote" && t.on) ?? null
     const halfAngle = (s.torchAngle * Math.PI) / 180
     const torchColor = kelvinColor(s.torchKelvin)
@@ -342,8 +353,10 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     const metered = renderer.sceneMeter
     // The compensation follows your torch, not the whole night: camp with your torch off keeps its exposure law.
     const targetStops = forestExposureTarget(metered, spot + 0.004 * s.sky + 0.0005, s, s.clearAir && !smoke && local ? -0.25 : 0)
-    stepForestExposure(cam, renderer.sceneMeterStatus, targetStops, f.dt, s)
+    // While a lightning flash is in the meter the storm's eye adaptation answers it; this clock waits.
+    if (!st?.holdExposure) stepForestExposure(cam, renderer.sceneMeterStatus, targetStops, f.dt, s)
     cam.exposure = Math.pow(2, cam.stops)
+    const eye = st ? st.exposure : 1
     // Reuse the forest's existing bounded eye state; there is no second adaptation clock.
     const darkAdaptation = Math.max(0, Math.min(1, (cam.stops + s.adaptRange) / Math.max(0.01, s.adaptRange + s.adaptLift)))
     sky.update({ time: f.time, sceneUnitsPerCdM2: 1, darkAdaptation })
@@ -366,11 +379,16 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     // ---- Spot shadow of the local torch (and, on High, the nearest other one).
     spots.settings.count = smoke || s.torchShadows === "off" ? 0 : quality.tier === "high" ? 2 : 1
     if (physicalMoon) spots.settings.count++
+    // A live strike shades the forest through the canopy's own shadow, rendered once from its direction.
+    const flashShadow = !smoke && !!st?.bolt && st.flashDir[1] > 0.02
+    if (flashShadow) spots.settings.count++
     const candidates: SpotCandidate[] = f.torches.filter(t => t.on).map(t => ({ id: 1000 + t.id, pos: t.pos, axis: t.dir, cosOuter: Math.cos(Math.min(1.2, halfAngle * 2.2)), range: s.torchReach, intensity: torchPower * (t === local ? 100 : 1), ...(t.shadowNear ? { near: t.shadowNear } : {}) }))
     // A distant narrow spotlight approximates parallel lunar shadow rays over the
     // 100 m near field, reusing the host's cut-out foliage/terrain shadow casters.
     const moonShadowId = 65000
     if (physicalMoon) candidates.push({ id: moonShadowId, pos: [Math.round(f.eye[0] / 8) * 8 + lunar.direction[0] * 512, f.eye[1] + lunar.direction[1] * 512, Math.round(f.eye[2] / 8) * 8 + lunar.direction[2] * 512], axis: [-lunar.direction[0], -lunar.direction[1], -lunar.direction[2]], cosOuter: 0.98, range: 650, intensity: 1e8 })
+    if (flashShadow) { const d = st!.flashDir; candidates.push({ id: FLASH_SHADOW_ID, pos: [Math.round(f.eye[0] / 8) * 8 + d[0] * 512, f.eye[1] + d[1] * 512, Math.round(f.eye[2] / 8) * 8 + d[2] * 512], axis: [-d[0], -d[1], -d[2]], cosOuter: 0.98, range: 650, intensity: 1e9 }) }
+    const wide = physicalMoon || flashShadow
     pass.update(f.eye, f.viewProj, quality, s)
     if (moonlitLake) {
       lakeFrame.set([s.lakeRipples, s.lakeRain, s.lakeScatter, 0, s.lakeMist, lakeTime(f.time), Number(sky.active && lakeSky.active), sky.active ? lunar.illuminanceLux : s.moon,
@@ -379,9 +397,9 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     } else pass.moonlit(null, null)
     const enc = device.createCommandEncoder()
     lakeSky.prepare(enc)
-    const casters = spots.settings.count > 0 && (local || physicalMoon) ? pass.casters(physicalMoon ? f.eye : local!.pos, physicalMoon ? 140 : s.torchReach, physicalMoon ? 100 : quality.fernNear, s.foliageShadows && quality.foliageShadows ? foliageMask : null) : []
+    const casters = spots.settings.count > 0 && (local || wide) ? pass.casters(wide ? f.eye : local!.pos, wide ? 140 : s.torchReach, wide ? 100 : quality.fernNear, s.foliageShadows && quality.foliageShadows ? foliageMask : null) : []
     if (casters.length && f.casters?.length) { casters.push(...f.casters); spots.invalidate() }
-    if (spots.update(enc, candidates, f.eye, f.dt, id => id === moonShadowId ? moonShadowId : lights.indexOf(id), casters)) renderer.setSpotShadows(spots.bindings())
+    if (spots.update(enc, candidates, f.eye, f.dt, id => id === moonShadowId || id === FLASH_SHADOW_ID ? id : lights.indexOf(id), casters)) renderer.setSpotShadows(spots.bindings())
     // Moving torches re-render every frame: the picker only knows a light moved, the world is static.
     device.queue.submit([enc.finish()])
 
@@ -393,7 +411,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     // The mist's own glow follows the canopy; the ambient it feeds surfaces (skylight) stays as it was.
     const canopy = 1 - s.canopyMist * (1 - Math.min(1, openAround * 1.4))
     Object.assign(fog.settings, {
-      mode: "scatter", density: s.fogDensity, falloff: s.fogFalloff, base: fogBase, hue: s.fogHue, saturation: 0.3, brightness: s.fogBrightness * s.sky * canopy,
+      mode: "scatter", density: s.fogDensity, falloff: s.fogFalloff, base: fogBase, hue: s.fogHue, saturation: 0.3, brightness: s.fogBrightness * s.sky * canopy + (st ? st.flashMist * Math.min(1, openAround * 1.4 + 0.25) : 0),
       skyDark: 0.55, horizonGlow: 0.5, ground: 0.08, skylight: 1 / Math.max(canopy, 0.05), strength: s.beamAir, leak: 0.015, coneLength: s.torchReach * 2, phaseG: s.phaseG, phaseFloor: s.phaseFloor,
       samples: quality.fogSamples, lamps: smoke ? 1 : 16, history: 0.12, historyMoving: 0.45, halfRes: true, reflection: 1.5 * s.water, glint: 1.5 * s.water, streak: 0.6,
       bank: s.mist === "drift" && !smoke ? "drift" : "today", bankDensity: s.mistDensity, bankHeight: s.mistHeight, bankRelief: groundMax - fogBase + s.mistHeight * 1.6, bankScale: s.mistScale,
@@ -458,16 +476,16 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     // ---- Custom uniforms.
     const wind = FOREST_WIND_DIR
     const moonH = (s.moonHeading * Math.PI) / 180, moonE = (s.moonElevation * Math.PI) / 180
-    custom.set([wind[0]!, wind[1]!, s.wind, s.gust], 0)
+    custom.set([wind[0]!, wind[1]!, s.wind * (st ? st.wind : 1), s.gust], 0)
     // w: the exposure the post pass applies (fluorescent tape keeps its hue under it).
-    custom.set([s.trunkSway, s.branchSway, s.flutter, s.exposure * cam.exposure], 4)
+    custom.set([s.trunkSway, s.branchSway, s.flutter, s.exposure * cam.exposure * eye], 4)
     custom.set([Math.cos(moonE) * Math.cos(moonH), Math.sin(moonE), Math.cos(moonE) * Math.sin(moonH), s.moon], 8)
     if (sky.active) custom.set([...lunar.direction, physicalMoon ? lunar.illuminanceLux : 0], 8)
     custom.set([s.sky, s.stars, s.skylight, s.moss], 12)
     custom.set([s.windows, s.stringLights, s.water, lake.level], 16)
     custom.set([lake.x, lake.z, lake.rx, lake.rz], 20)
     const reach = world.half + 50
-    custom.set([-reach, -reach, 1 / (2 * reach), 0], 24)
+    custom.set([-reach, -reach, 1 / (2 * reach), st ? st.cloudGlow : 0], 24)
     custom.set(local ? [local.pos[0], local.pos[1], local.pos[2], 1] : [0, -1000, 0, 0], 28)
     custom.set(local ? [local.dir[0], local.dir[1], local.dir[2], halfAngle] : [0, -1, 0, halfAngle], 32)
     custom.set([torchColor[0] * torchPower * 5, torchColor[1] * torchPower * 5, torchColor[2] * torchPower * 5, s.torchReach], 36)
@@ -478,7 +496,28 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     custom.set(unjitteredInv, 56)
     custom.set([textures.size, 0.5, Math.log2(ALPHA_COVERAGE_BASE / textures.size), sky.active ? 1 : 0], 72)
     custom.set([s.clearAir && !smoke ? 1 : 0, s.depthMist && !smoke ? s.depthDensity : 0, s.depthStart, s.nearScatter], 76)
+    custom.set(st ? [...st.flashDir, st.flash, st.flashSky, st.wetness, st.puddles, flashShadow ? 1 : 0] : [0, 1, 0, 0, 0, 0, 0, 0], WOODS_STORM)
     renderer.setCustomUniforms(custom)
+
+    // ---- Storm: the cloud base over the sky, the channel, the rain.
+    if (st && !stormSky && (st.cloudGlow > 0 || st.flashSky > 0)) { stormSky = new StormSkyPass(renderer.passContext); renderer.addPass("sky", stormSky) }
+    if (stormSky) stormSky.on = !!st && (st.cloudGlow > 0 || st.flashSky > 0)
+    if (st?.bolt && !bolt) { bolt = new BoltPass(renderer.passContext); renderer.addPass("alpha", bolt) }
+    if (bolt) {
+      const k = st?.bolt ?? null
+      // The camera's far plane is a few hundred metres: a far channel is drawn scaled toward the eye, which keeps its
+      // picture exactly (same rays) and puts it behind everything nearer than ~0.9 × far.
+      let drawn: Strike | null = null, scale = 1
+      if (k) {
+        drawn = boltShapes.get(k) ?? null
+        if (!drawn) { drawn = scaledStrike(k, f.eye, BOLT_FAR); boltShapes.set(k, drawn) }
+        scale = (drawn as Strike & { scale?: number }).scale ?? 1
+      }
+      // The eye's glare after the flash lands round the channel itself (its glow), never as a veil over the frame.
+      const b = st?.boltBrightness ?? 1, g = 1 + 3 * (st?.glare ?? 0)
+      bolt.frame(drawn, st?.light ?? NO_STRIKE_LIGHT, { ...BOLT_LOOK, coreIntensity: BOLT_LOOK.coreIntensity * b, glowIntensity: BOLT_LOOK.glowIntensity * b * g, coreWidth: BOLT_LOOK.coreWidth * scale, glowWidth: BOLT_LOOK.glowWidth * scale }, [0, 0, 0], f.fovY)
+    }
+    const weather = st?.rain && !smoke ? rainInput(st, f, local, halfAngle, torchColor) : null
 
     packSceneFrame(frameData, { viewProj: f.viewProj, eye: f.eye, time: f.time, width: f.width, height: f.height, lightCount: lights.lightCount, ambient: [0, 0, 0, 0], mapSize: [1, 1], ao: 0 })
     const volumes = smoke ? [fog.volumeInput()] : [debug.ssr === false ? null : ssr.volumeInput({ indoor: false, wet: { ...WET_DEFAULTS, wetness: 1, puddles: 1, ripple: 0.15 }, exclude: moonlitLake ? lake : null }), fog.volumeInput()]
@@ -486,17 +525,72 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
       frame: frameData, lights: lights.lights, lightCount: lights.lightCount, shadowLightCount: lights.shadowLightCount,
       occluders: lights.occ, occluderCount: lights.occCount, lampPower: lights.power, lampCount: 0,
       view: [-reach, -reach, reach, reach], batches: f.batches ?? [], alphaSprites: f.sprites?.alpha ?? empty, alphaCount: f.sprites?.alphaCount ?? 0, addSprites: sprites, addCount: spriteCount,
-      grade: [f.time, s.noise, s.vignette, s.exposure * cam.exposure],
+      grade: [f.time, s.noise, s.vignette, s.exposure * cam.exposure * eye],
       postParams: [s.aberration, s.halation, s.bloom],
       postCustom: [s.chromaNoise, glare, Math.pow(2, Math.max(0, cam.stops)) * Math.sqrt(s.exposure / 1.6), Number(s.nightDesaturate) + 2 * Number(s.nightPurkinje) + 4 * Number(s.highlightShoulder)],
       postExtra: s.nightAcuity,
       fog: fog.update({ eye: f.eye, viewProj: f.viewProj, lamps: fogLamps, time: f.time, beam: profile }),
-      volume: volumes, fogBlur: fog.blurInput(),
+      volume: volumes, fogBlur: fog.blurInput(), weather,
     }
     if (f.particles && f.particles.pool.count > 0) {
       fxLights.update(f.particles.lights, [])
       lastFrame.fxParticles = f.particles.pool
       lastFrame.fxLighting = { ambient: f.particles.ambient ?? [0.002, 0.0022, 0.003], lights: fxLights.lights, lightCount: fxLights.lightCount }
+    }
+  }
+
+  // ---- Rain: every beam and lamp as a light volume (drops show only inside them), drips off the nearest crowns' lowest
+  // branches and the cabin eaves, no rain indoors.
+  const rainLights: WeatherLight[] = []
+  const eaves: WeatherEave[] = []
+  const shelters: WeatherExcludeRect[] = []
+  function rainInput(st: ForestStormView, f: ForestFrameInput, local: ForestTorch | null, halfAngle: number, torchColor: readonly number[]): WeatherPrepareInput {
+    const s = settings, rain = st.rain!
+    const ex = f.eye[0], ez = f.eye[2], groundY = world.height(ex, ez)
+    rainLights.length = 0
+    // The beam's core and its bright fringe: drops just outside the core catch the spill too.
+    const cone = Math.cos(Math.min(1.2, halfAngle * 2))
+    for (const t of f.torches) {
+      if (!t.on || rainLights.length >= 12) continue
+      rainLights.push({ x: t.pos[0], y: t.pos[1], z: t.pos[2], radius: s.torchReach * 0.7, r: torchColor[0]!, g: torchColor[1]!, b: torchColor[2]!, power: s.torchPower * (t.level ?? 1) * RAIN_LIGHT * rain.glow, axis: t.dir, cosHalf: cone, isCone: true })
+    }
+    // The nearest camp lights (windows and porches as cones, bulbs as points).
+    const camp = build.campLights.map((l, i) => ({ l, i, d: Math.hypot(l.x - ex, l.z - ez) })).filter(c => c.d < 40).sort((a, b) => a.d - b.d)
+    for (const { l } of camp) {
+      if (rainLights.length >= 12) break
+      const k = (l.kind === "bulb" ? s.stringLights : s.windows) * (l.kind === "window" ? 3 : l.kind === "bulb" ? 1.2 : 5)
+      if (k <= 0) continue
+      rainLights.push({ x: l.x, y: l.y, z: l.z, radius: Math.min(l.range, 12), r: l.color[0], g: l.color[1], b: l.color[2], power: l.power * k * RAIN_LIGHT * rain.glow, ...(l.cosOuter > 0 ? { axis: l.axis, cosHalf: l.cosOuter, isCone: true } : {}) })
+    }
+    eaves.length = 0
+    shelters.length = 0
+    if (rain.drips > 0) {
+      // Cabin eaves within 12 m, then the lowest branches of the nearest crowns on the side facing you.
+      for (const b of world.camp?.buildings ?? []) {
+        const c = Math.cos(b.yaw), sn = Math.sin(b.yaw)
+        const at = (lx: number, lz: number) => [b.x + lx * c + lz * sn, b.z - lx * sn + lz * c] as const
+        const hw = b.w / 2 + 0.35, hd = b.d / 2 + 0.35
+        for (const side of [-1, 1]) {
+          const a = at(-hw, side * hd), e = at(hw, side * hd)
+          const mx = (a[0] + e[0]) / 2, mz = (a[1] + e[1]) / 2
+          if (Math.hypot(mx - ex, mz - ez) < 12 && eaves.length < 3) eaves.push([a[0], a[1], e[0], e[1], world.height(mx, mz) + b.h])
+        }
+        const corners = [at(-b.w / 2, -b.d / 2), at(b.w / 2, -b.d / 2), at(b.w / 2, b.d / 2), at(-b.w / 2, b.d / 2)]
+        if (shelters.length < 8 && Math.hypot(b.x - ex, b.z - ez) < 40) shelters.push([Math.min(...corners.map(p => p[0])), Math.min(...corners.map(p => p[1])), Math.max(...corners.map(p => p[0])), Math.max(...corners.map(p => p[1]))])
+      }
+      const near = world.trees.filter(t => t.species !== "snag" && Math.abs(t.x - ex) < 12 && Math.abs(t.z - ez) < 12).map(t => ({ t, d: Math.hypot(t.x - ex, t.z - ez) })).filter(n => n.d > 3 && n.d < 12).sort((a, b) => a.d - b.d)
+      for (const { t, d } of near) {
+        if (eaves.length >= Math.min(8, 3 + Math.round(5 * Math.min(1, rain.drips)))) break
+        const ux = (ex - t.x) / d, uz = (ez - t.z) / d, crown = Math.max(1, t.h * 0.09)
+        const cx = t.x + ux * crown * 0.7, cz = t.z + uz * crown * 0.7, half = crown * 0.8
+        eaves.push([cx - uz * half, cz + ux * half, cx + uz * half, cz - ux * half, world.height(t.x, t.z) + Math.max(3, Math.min(7, t.h * 0.3))])
+      }
+    }
+    const forward = [ex + (local ? local.dir[0] : 0) * 6, ez + (local ? local.dir[2] : 0) * 6] as const
+    return {
+      settings: { ...rain.settings, splashRate: rain.settings.splashRate * Math.max(0.2, rain.drips) }, state: { ...rain.state, flash: rain.state.flash * RAIN_FLASH },
+      viewProj: f.viewProj, eye: f.eye, focusXZ: forward, viewportWidth: f.width, viewportHeight: f.height, fovYRad: f.fovY, groundY,
+      ambientLum: 0, lights: rainLights, excludeRects: shelters, eaves, cameraDist: 6, rainLighting: rain.lighting,
     }
   }
 
@@ -909,6 +1003,51 @@ function boxInFrustum(planes: number[][], b: readonly number[]): boolean {
     if (p[0]! * x + p[1]! * y + p[2]! * z + p[3]! < 0) return false
   }
   return true
+}
+
+/** The storm's cloud base, added over the sky (Today's or the physical one) in the sky slot. */
+class StormSkyPass implements ScenePass {
+  private pipe: GPURenderPipeline
+  on = false
+  constructor(ctx: PassContext) {
+    const d = ctx.device
+    const module = compileShaderModuleWithLog(d, stormSkyShader, "forest storm sky")
+    this.pipe = d.createRenderPipeline({
+      layout: d.createPipelineLayout({ bindGroupLayouts: [ctx.frameLayout] }),
+      vertex: { module, entryPoint: "vs" },
+      fragment: { module, entryPoint: "fs", targets: [{ format: ctx.color, writeMask: GPUColorWrite.RED | GPUColorWrite.GREEN | GPUColorWrite.BLUE, blend: { color: { srcFactor: "one", dstFactor: "one" }, alpha: { srcFactor: "zero", dstFactor: "one" } } }] },
+      primitive: { topology: "triangle-list" },
+      depthStencil: { format: ctx.depth, depthWriteEnabled: false, depthCompare: "always" },
+      multisample: { count: ctx.samples },
+    })
+  }
+  draw(pass: GPURenderPassEncoder) { if (!this.on) return; pass.setPipeline(this.pipe); pass.draw(3) }
+}
+
+const NO_STRIKE_LIGHT: StrikeLight = { channel: 0, branches: 0, front: 0, leader: 0, scene: 0, after: 0 }
+/** Where a far lightning channel is drawn (m from the eye): inside the camera's far plane, behind the forest. */
+const BOLT_FAR = 270
+/** Weather-layer light power per torch candela (calibrated so drops in a beam sit near the lit mist). */
+const RAIN_LIGHT = 0.012
+/** Share of the flash the rain catches (the weather layer's own flash gain is set for a street). */
+const RAIN_FLASH = 0.25
+
+/** A copy of `k` with its channel scaled about the eye so the farthest point sits at `far` (same picture, nearer depth). */
+function scaledStrike(k: Strike, eye: readonly number[], far: number): Strike & { scale: number } {
+  const seg = k.shape.segments
+  let max = 0
+  for (let i = 0; i < k.shape.count; i++) for (const o of [0, 4]) {
+    const b = i * 12 + o
+    max = Math.max(max, Math.hypot(seg[b]! - eye[0]!, seg[b + 1]! - eye[1]!, seg[b + 2]! - eye[2]!))
+  }
+  const scale = Math.min(1, far / Math.max(max, 1))
+  if (scale >= 1) return { ...k, scale: 1 }
+  const out = new Float32Array(seg)
+  for (let i = 0; i < k.shape.count; i++) for (const o of [0, 4]) {
+    const b = i * 12 + o
+    for (let c = 0; c < 3; c++) out[b + c] = eye[c]! + (seg[b + c]! - eye[c]!) * scale
+  }
+  return { ...k, shape: { ...k.shape, segments: out }, scale }
 }
 
 class SkyPass implements ScenePass {
