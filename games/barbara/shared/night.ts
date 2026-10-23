@@ -1,10 +1,12 @@
 import { cosApprox, sinApprox } from "./creature"
+import { chooseVerdict, createVerdict, EVIDENCE, SUSPECT_NAMES, isGone, radioLive, RADIO_NEAR, stepVerdict, type Verdict, type VerdictEvent, type VerdictState } from "./verdict"
 import { isDeepWater, nextRandom, terrainHeight, treesNear, type WoodsWorld } from "./world"
 
 /**
  * One night as a game (NIGHT.md): STORY.md's five key moments as a trail of clues, each pointing to the next, ending at
- * the red light on the ridge; a clock that runs out at dawn, torch batteries that run out sooner, and the end. Plain data stepped in `stepWoods` after everyone moves, so the room,
- * solo play and every client agree; the layout comes from the night's seed alone (`placeNight`, only + − × ÷ √ and
+ * the red light on the ridge, where the group names what took her (`verdict.ts`); a clock that runs out at dawn, torch
+ * batteries that run out sooner, and the end. Plain data stepped in `stepWoods` after everyone moves, so the room, solo
+ * play and every client agree; the layout comes from the night's seed alone (`placeNight`, only + − × ÷ √ and
  * `nextRandom`), so a replay of the same seed is the same night.
  */
 
@@ -37,10 +39,19 @@ export type Clue = {
   leads: Lead[]
 }
 export type Spare = { id: number; x: number; z: number; y: number; camp: boolean }
-export type NightLayout = { seed: number; /** The ridge light's plan position. */ ridge: { x: number; z: number }; clues: Clue[]; spares: Spare[] }
+export type NightLayout = {
+  seed: number
+  /** The ridge light's plan position, and the county radio at the foot of the tower. */
+  ridge: { x: number; z: number }
+  radio: { x: number; z: number; y: number }
+  clues: Clue[]
+  spares: Spare[]
+  /** What took her, and the evidence on each of the first four clues. */
+  verdict: Verdict
+}
 
 export type NightPhase = "camp" | "search" | "won" | "lost"
-export type NightReason = "" | "strip" | "dawn" | "dark"
+export type NightReason = "" | "named" | "dawn" | "dark" | "taken"
 export type Find = {
   clue: number
   by: number
@@ -74,6 +85,8 @@ export type NightState = {
   callAt: number
   /** Times it has called. */
   calls: number
+  /** Votes at the radio, suspects named wrong, the searchers taken (`verdict.ts`). */
+  verdict: VerdictState
   bots: Record<number, BotLead>
   /** Bumped when anything a room sends in `NightWire` changes. */
   rev: number
@@ -280,11 +293,14 @@ export function placeNight(world: WoodsWorld, seed: number): NightLayout {
       break
     }
   }
-  return { seed, ridge, clues, spares }
+  // The county radio: bolted to the foot of the mast, on the side you come up from.
+  const [rux, ruz] = unit(camp.x - ridge.x, camp.z - ridge.z)
+  const [rx, rz] = offTrunks(world, ridge.x + rux * 2.5, ridge.z + ruz * 2.5)
+  return { seed, ridge, radio: { x: rx, z: rz, y: ground(rx, rz) }, clues, spares, verdict: chooseVerdict(seed) }
 }
 
 export function createNight(world: WoodsWorld, seed: number): NightState {
-  return { seed, layout: placeNight(world, seed), phase: "camp", start: 0, dawn: 0, end: 0, reason: "", finds: [], taken: [], dark: 0, tapeAt: 0, tapeBy: -1, dawnSaid: false, callAt: 0, calls: 0, bots: {}, rev: 0 }
+  return { seed, layout: placeNight(world, seed), phase: "camp", start: 0, dawn: 0, end: 0, reason: "", finds: [], taken: [], dark: 0, tapeAt: 0, tapeBy: -1, dawnSaid: false, callAt: 0, calls: 0, verdict: createVerdict(), bots: {}, rev: 0 }
 }
 
 /** Minutes after midnight on the watch at sim time `t` (12:40 until the search starts; it stops at the end). */
@@ -348,6 +364,7 @@ export type NightEvent =
   | { kind: "spare-taken"; by: number; spare: number }
   | { kind: "torch"; by: number; state: "low" | "dead" | "swap" | "fresh" }
   | { kind: "night"; phase: NightPhase; reason: NightReason; at: number; debrief?: Debrief }
+  | VerdictEvent
 
 /** The end's record: each walker's path (thinned) and the finds. */
 export type Debrief = {
@@ -391,7 +408,10 @@ export function stepNight(n: NightState, world: WoodsWorld, walkers: readonly Ni
     events.push({ kind: "night", phase: "search", reason: "", at: t })
   }
   const live = n.phase === "camp" || n.phase === "search"
-  for (const w of walkers) {
+  // The taken are out of the night: no torch, no finds, nobody to be alone.
+  const active = walkers.filter((w) => !isGone(n, w.id))
+  for (const w of walkers) if (!active.includes(w)) w.light = false
+  for (const w of active) {
     if (w.capture) w.light = false
     if (w.swap > 0) {
       w.swap = Math.max(0, w.swap - dt)
@@ -416,7 +436,7 @@ export function stepNight(n: NightState, world: WoodsWorld, walkers: readonly Ni
     }
   }
   if (n.phase === "search") {
-    for (const w of walkers) {
+    for (const w of active) {
       if (!w.light) continue
       for (const c of n.layout.clues) {
         if (w.map.clues.includes(c.id) || !seesClue(w, c, eyeY(w))) continue
@@ -429,21 +449,26 @@ export function stepNight(n: NightState, world: WoodsWorld, walkers: readonly Ni
       }
     }
     // Bots tell each other, and pick up what a person near them has seen (people compare maps themselves).
-    for (const a of walkers) for (const b of walkers) {
+    for (const a of active) for (const b of active) {
       if (a === b || !b.bot || dist(a.x, a.z, b.x, b.z) > 6) continue
       for (const id of a.map.clues) addUnique(b.map.clues, id)
     }
   }
   // On your own in the dark: your torch out, nobody lit near (the spider's hook; nothing reacts yet).
-  for (const w of walkers) {
+  for (const w of active) {
     if (w.bot) continue
-    const alone = !w.light && !walkers.some((o) => o !== w && o.light && dist(o.x, o.z, w.x, w.z) < ISOLATED_RANGE)
+    const alone = !w.light && !active.some((o) => o !== w && o.light && dist(o.x, o.z, w.x, w.z) < ISOLATED_RANGE)
     w.isolated = alone ? w.isolated + dt : 0
   }
   if (n.phase !== "search") return events
-  if (n.finds.some((f) => f.clue === CLUE.strip)) { end(n, walkers, tapes, t, "won", "strip", events); return events }
+  const said: VerdictEvent[] = []
+  const verdict = stepVerdict(n, active, t, said)
+  events.push(...said)
+  if (verdict === "named") { end(n, walkers, tapes, t, "won", "named", events); return events }
+  if (verdict === "taken") { end(n, walkers, tapes, t, "lost", "taken", events); return events }
   if (t >= n.dawn) { end(n, walkers, tapes, t, "lost", "dawn", events); return events }
-  const out = walkers.every((w) => w.capture || (w.charge <= 0 && !w.spare && w.swap <= 0))
+  const left = active.filter((w) => !isGone(n, w.id))
+  const out = left.every((w) => w.capture || (w.charge <= 0 && !w.spare && w.swap <= 0))
   n.dark = out ? n.dark + dt : 0
   if (n.dark >= DARK_LOSS) end(n, walkers, tapes, t, "lost", "dark", events)
   return events
@@ -503,6 +528,11 @@ const LINE_REACH = 150
  */
 export function botWaypoint(n: NightState, bot: NightWalker, others: readonly NightWalker[]): { x: number; z: number; searching: boolean } | null {
   if (n.phase !== "search") return null
+  // Once the radio is live, every bot goes to it (to name it, then to wait there with the others).
+  if (radioLive(n)) {
+    const a = (bot.id % 7) * 0.9
+    return { x: n.layout.radio.x + Math.cos(a) * (RADIO_NEAR - 2), z: n.layout.radio.z + Math.sin(a) * (RADIO_NEAR - 2), searching: false }
+  }
   // What it hasn't seen itself is still to look for, even if someone else found it (it can sight it again).
   const targets = targetsFrom(n.layout, bot.map.clues, new Set(bot.map.clues), n.calls > 0)
   let lead = n.bots[bot.id]
@@ -552,15 +582,27 @@ export function leadText(c: Clue): string {
   }
 }
 
+/** What a clue also shows about what took her (`verdict.ts`), or "" for the strip. */
+export function evidenceText(layout: NightLayout, clue: number): string {
+  const i = layout.verdict.evidence[clue]
+  return i === undefined ? "" : EVIDENCE[i]!.text
+}
+
 /**
  * The search's next step for one person, in plain words: what their own map knows, what they heard and what friends
  * found. Drawn small in a corner so the goal is never a guess (Kit's playtest: "make it clear what the goal is").
  */
-export function nextStep(n: Pick<NightState, "phase" | "layout" | "finds" | "calls">, known: readonly number[], name: (id: number) => string): string {
-  if (n.phase === "won") return "You reached the ridge. Tab: the debrief."
+export function nextStep(n: Pick<NightState, "phase" | "layout" | "finds" | "calls" | "verdict">, known: readonly number[], name: (id: number) => string, me = -1): string {
+  if (n.phase === "won") return "You named it, and the sky is coming up grey. Tab: the debrief."
   if (n.phase === "lost") return "The search is over for tonight. Tab: the debrief."
+  if (isGone(n, me)) return "You were taken. The others have until dawn to name it."
   const has = (k: number) => known.includes(k)
   const c = n.layout.clues
+  if (radioLive(n)) {
+    const struck = n.verdict.struck
+    if (struck.length) return `It wasn't ${SUSPECT_NAMES[struck.at(-1)!]}, and now it's taking people. Name it again at the radio by the tower (E).`
+    return "The county radio at the foot of the tower is on. Stand at it and press E to name what took her."
+  }
   if (n.calls > 0) return "Someone shouted \"Over here!\" from up by the red light on the ridge. Go."
   if (has(CLUE.cassette)) return `She was going up to ${RIDGE_NAME}. Head for it.`
   // A friend's find you haven't seen: go and get it from them.

@@ -11,7 +11,9 @@ import { createGameShell, createShellQuality } from "@arcade/kit/shell"
 import { planCreature, triggerCreature, trunkBetween, type CreatureEvent } from "../shared/creature"
 import { answerCall, MIMIC_LINES, triggerUncanny, UNCANNY_SOUNDS, type UncannySound } from "../shared/distant"
 import { VOICE_LINES } from "../shared/lines.gen"
-import { CLUE_NAMES, dawnShare, leadText, nextStep } from "../shared/night"
+import { CLUE_NAMES, dawnShare, evidenceText, leadText, nextStep } from "../shared/night"
+import { canVote, isGone, SUSPECT_NAMES, SUSPECTS } from "../shared/verdict"
+import { VerdictCard } from "./verdict-hud"
 import { FLARE_SCRAPE, flareSources, heldFlare, layFlare } from "../shared/flares"
 import { ROOM_CODE } from "../shared/protocol"
 import { beamLevel, EYE_HEIGHT, TAPE_HEIGHT, FEEL, SIGNAL_HOLD_SECONDS, tapeOnTree, tieTarget, viewDir, type Player, type PlayerInput } from "../shared/sim"
@@ -52,6 +54,9 @@ const controlsHtml = () => [keyPromptHtml("KeyW", "Walk"), keyPromptHtml("ShiftL
 const MOVE_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight", "KeyE", "KeyG", "KeyQ"])
 /** Solo nights played in this browser: the next night's layout (`?night=` replays one). */
 const NIGHT_KEY = "barbara.night"
+/** Beam ids for dropped torches (`DROPPED` + the taken walker's id). */
+const DROPPED = 10000
+const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1)
 /** A solo night's seed from its number (rooms seed theirs from the room code the same way). */
 const nightSeed = (base: number, night: number) => (base + Math.imul(night, 7919)) >>> 0
 
@@ -204,6 +209,7 @@ async function main() {
   // Held keys the game reads (walking, tie, map); mouse look and F live in the shared camera. M (mute) and Escape
   // (the menu) are the shell's.
   const keys = new Set<string>()
+  const verdictCard = new VerdictCard()
   let jumpPressed = false, poseVersion = 0
   const release = () => { keys.clear(); jumpPressed = false }
   window.addEventListener("keydown", (e) => {
@@ -211,6 +217,13 @@ async function main() {
     if (!locked()) return
     // Tab brings the end card back once a night is over.
     if (e.code === "Tab") { e.preventDefault(); if (endCard.canShow(session.view.night)) endCard.show(); return }
+    // The radio by the tower: E picks up the handset (the naming card), 1–4 names it, E or Escape puts it down.
+    if (verdictCard.visible) {
+      const pick = /^Digit([1-4])$/.exec(e.code)
+      if (pick && !e.repeat) session.vote(SUSPECTS[Number(pick[1]) - 1]!)
+      if ((e.code === "KeyE" || e.code === "Escape") && !e.repeat) verdictCard.close()
+      if (pick || e.code === "KeyE") { e.preventDefault(); return }
+    } else if (e.code === "KeyE" && !e.repeat && canVote(session.view.night, session.self)) { verdictCard.open(); e.preventDefault(); return }
     if (e.code === "Space") { if (!e.repeat) jumpPressed = true; e.preventDefault() }
     if (MOVE_KEYS.has(e.code)) { keys.add(e.code); e.preventDefault() }
   })
@@ -315,7 +328,7 @@ async function main() {
     jumpPressed = false
     const flare = keys.has("KeyQ") || flareTap > 0
     if (flareTap > 0) flareTap--
-    return { yaw: camera.yaw, pitch: camera.pitch, light: camera.flashlight, tie: keys.has("KeyE"), map: keys.has("KeyG"), mx, mz, sprint: !!k("ShiftLeft", "ShiftRight"), jump, flare }
+    return { yaw: camera.yaw, pitch: camera.pitch, light: camera.flashlight, tie: keys.has("KeyE") && !verdictCard.visible, map: keys.has("KeyG"), mx, mz, sprint: !!k("ShiftLeft", "ShiftRight"), jump, flare }
   }
 
   // The room's roster: who is here, who dropped, who just walked in.
@@ -477,9 +490,13 @@ async function main() {
         // A clue: everyone hears who found what; only the finder reads what it says (it goes on their map alone).
         if (e.kind === "clue-found") {
           const clue = state.night.layout.clues[e.clue]
-          if (mine && clue) { audio.play("ui.ping"); say(`You found ${CLUE_NAMES[e.what]}. ${leadText(clue)} It's on your map.`, 9) }
+          if (mine && clue) { audio.play("ui.ping"); say(`You found ${CLUE_NAMES[e.what]}. ${leadText(clue)} ${evidenceText(state.night.layout, e.clue)} It's on your map.`.replace("  ", " "), 11) }
           else say(`${nameOf(e.by)} found ${CLUE_NAMES[e.what]}.${e.what === "strip" ? "" : e.what === "cassette" ? " Ask them what's on it." : " Ask them where it points."}`, 5)
         }
+        // The verdict (NIGHT.md): votes at the radio, the outcome, and the taken.
+        if (e.kind === "vote") say(e.why ? `${nameOf(e.by)}: "It was ${SUSPECT_NAMES[e.suspect]}. ${cap(e.why)}."` : `${mine ? "You name" : `${nameOf(e.by)} names`} ${SUSPECT_NAMES[e.suspect]}.`, 6)
+        if (e.kind === "verdict") say(e.right ? `It was ${SUSPECT_NAMES[e.suspect]}. The radio goes quiet, and the sky starts to grey.` : `It wasn't ${SUSPECT_NAMES[e.suspect]}. Something in the trees has started moving. Keep together, and name it again at the radio.`, 9)
+        if (e.kind === "taken") { say(mine ? "Something has you. Your torch is in the leaves." : `${nameOf(e.by)} is gone. Their torch lies where they stood.`, 7); if (mine) verdictCard.close() }
         if (e.kind === "spare-taken" && mine) { audio.play("pack.open"); say("A spare battery, in your pocket. It goes in when your torch dies.", 4) }
         if (e.kind === "torch" && mine) {
           if (e.state === "low") say("Your torch is starting to dim.", 3)
@@ -541,13 +558,20 @@ async function main() {
     nightView.draw(fp, state.night, world)
     dawn.apply(view.forest.settings, dawnShare(state.night, state.t))
     friends.eye = [camera.eye[0], camera.eye[1], camera.eye[2]]
-    const beams = friends.frame(fp, world, state, meId, dt, (q) => beamLevel(q, time, settings), (q) => {
+    // The taken are gone from the woods (`verdict.ts`): no body, only their torch lying lit where they stood.
+    const gone = state.night.verdict.gone
+    const shown = gone.length ? { ...state, players: state.players.filter((q) => !isGone(state.night, q.id)) } : state
+    const beams = friends.frame(fp, world, shown, meId, dt, (q) => beamLevel(q, time, settings), (q) => {
       const d = Math.hypot(q.x - at.x, q.z - at.z)
       if (d > 14 || !playing) return
       const pan = Math.max(-0.8, Math.min(0.8, ((q.x - at.x) * Math.cos(camera.yaw) - (q.z - at.z) * Math.sin(camera.yaw)) / Math.max(d, 1)))
       audio.steps([{ kind: "step", time: camera.walk.time, gain: 0.5 / (1 + d * d * 0.08), pan, seed: (state.t * 977) | 0 }], surfaceAt(q.x, q.z), camera.walk.time, settings.footsteps)
     })
     if (level > 0) beams.unshift({ id: OWN, origin: ownOrigin, axis: ownAxis, level: ownLevel })
+    for (const g of gone) {
+      const fx = -Math.sin(g.yaw), fz = -Math.cos(g.yaw)
+      beams.push({ id: DROPPED + g.id, origin: [g.x + fx * 0.6, standHeight(world, g.x + fx * 0.6, g.z + fz * 0.6) + 0.06, g.z + fz * 0.6], axis: [fx * 0.995, -0.1, fz * 0.995], level: 0.75 })
+    }
 
     const place = view.lights(world, state.t, settings)
     // Road flares: fire and smoke on the page's clock, their light on the woods and in the mist.
@@ -576,8 +600,12 @@ async function main() {
     view.frame({ eye: [camera.eye[0], camera.eye[1], camera.eye[2]], viewProj: vp as Float32Array, width, height, time: state.t, dt, fovY: ((camera.fov + camera.mount.fov) * Math.PI) / 180, torches, fp, place, casters: [...friends.casters(ownOrigin, view.forest.settings.torchReach), ...held.casters()], batches: creatures.frame(world, time), flares: lit }, stepping, smokeTarget?.createView())
 
     // HUD: the tie prompt, the map, toasts.
-    const target = playing && p.mapRaise < 0.3 ? tieTarget(world, p, settings.tapeReach) : null
-    if (target) {
+    const atRadio = playing && canVote(state.night, p)
+    if (verdictCard.visible && !atRadio) verdictCard.close()
+    verdictCard.frame(state.night, p.map.clues, meId)
+    const target = playing && p.mapRaise < 0.3 && !atRadio ? tieTarget(world, p, settings.tapeReach) : null
+    if (atRadio) prompt.innerHTML = verdictCard.visible ? "" : keyPromptHtml("KeyE", "Name what took her")
+    else if (target) {
       const has = !!tapeOnTree(state, target.id)
       const progress = p.tie && p.tie.tree === target.id && keys.has("KeyE") ? p.tie.progress : 0
       prompt.innerHTML = keyPromptHtml("KeyE", has ? "Untie tape" : "Tie tape", { hold: true, progress })
@@ -608,7 +636,7 @@ async function main() {
     if (now >= goalAt) {
       goalAt = now + 250
       goal.classList.toggle("on", playing && story.started && p.mapRaise < 0.5)
-      const text = nextStep(state.night, p.map.clues, nameOf)
+      const text = nextStep(state.night, p.map.clues, nameOf, meId)
       if (goalText.textContent !== text) goalText.textContent = text
     }
     endCard.label = online ? `Room ${roomCode}` : `Night ${night + 1}`
@@ -626,7 +654,9 @@ async function main() {
   Object.assign(window, {
     woods: {
       get ready() { return true }, get frames() { return frames }, get time() { return time }, get paused() { return paused }, set paused(v: boolean) { paused = v },
-      renderer, camera, settings, panel, map, held, debug, flares, audio, story, view, look: view.forest.settings, quality, friends, cameraLook, creature, creatures, lakeEditor, endCard,
+      renderer, camera, settings, panel, map, held, debug, flares, audio, story, view, look: view.forest.settings, quality, friends, cameraLook, creature, creatures, lakeEditor, endCard, verdictCard,
+      /** Automation: name what took her, as if at the radio (`verdict.ts`). */
+      vote: (s: (typeof SUSPECTS)[number]) => session.vote(s),
       /** Automation: the night (phase, clock, finds, the layout) and the next one. */
       get night() { return session.view.night }, nextNight,
       measure: (n?: number) => view.forest.measure(n), stats: () => view.forest.stats(),

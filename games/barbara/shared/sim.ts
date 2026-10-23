@@ -6,7 +6,8 @@ import { answerCall, createDistant, holdDistant, stepDistant, type DistantEvent,
 import { VOICE_LINES } from "./lines.gen"
 import { NIGHT_LINES } from "./night-lines.gen"
 import { botWaypoint, CALL_EVERY, handOff, canLight, CLUE, createNight, stepNight, type NightEvent, type NightState } from "./night"
-import { BOT_ORDER, CAST_NAMES, createVoices, sayExtra, sayTape, stepVoices, voicesBusyUntil, type VoiceCue, type VoiceEvent, type VoiceState } from "./voices"
+import { isGone, radioLive } from "./verdict"
+import { BOT_ORDER, CAST_NAMES, createVoices, sayExtra, sayTaken, sayTape, voiceRoles, stepVoices, voicesBusyUntil, type VoiceCue, type VoiceEvent, type VoiceState } from "./voices"
 import { isDeepWater, nextRandom, solidsNear, standHeight, treesNear, type Tree, type WoodsWorld } from "./world"
 
 /**
@@ -270,6 +271,9 @@ export function removePlayer(state: WoodsState, id: number): void {
   const gone = state.players.find((p) => p.id === id)
   state.players = state.players.filter((p) => p.id !== id)
   if (gone) handOff(state.night, gone, state.players)
+  // Their vote at the radio leaves with them.
+  const v = state.night.verdict
+  if (v.votes.some((q) => q.by === id)) { v.votes = v.votes.filter((q) => q.by !== id); state.night.rev++ }
   state.brains = state.brains.filter((b) => b.id !== id)
   for (const p of state.players) if (p.map.heard.some((h) => h.from === id)) p.map.heard = p.map.heard.filter((h) => h.from !== id)
 }
@@ -473,7 +477,7 @@ const SEARCH_PACE = 0.55
 function nearestHuman(state: WoodsState, p: Player, signalling = false): Player | undefined {
   let best: Player | undefined, bd = Infinity
   for (const q of state.players) {
-    if (q.bot || (signalling && q.signal <= SIGNAL_HOLD)) continue
+    if (q.bot || (signalling && q.signal <= SIGNAL_HOLD) || isGone(state.night, q.id)) continue
     const d = Math.hypot(q.x - p.x, q.z - p.z)
     if (d < bd) { bd = d; best = q }
   }
@@ -558,6 +562,8 @@ function botInput(state: WoodsState, world: WoodsWorld, b: Brain, p: Player, fee
         // Walking with a friend whose torch is lit (a person, or a bot ahead of it in the list): one light between two
         // saves a battery.
         if (state.players.some((q) => q !== p && q.light && (!q.bot || q.id < p.id) && Math.hypot(q.x - p.x, q.z - p.z) < (p.light ? 5 : 8))) light = false
+        // Standing at the radio with the others.
+        if (!way.searching && d < 1.2) speed = 0
         if (way.searching) { speed = SEARCH_PACE; pitch = -0.48 + Math.sin(b.sweep * 0.7) * 0.1; yawOffset = Math.sin(b.sweep * 1.1) * 0.6 }
         b.since += Math.hypot(p.vx, p.vz) * dt
         if (b.since > feel.botTapeEvery) {
@@ -604,10 +610,22 @@ function botInput(state: WoodsState, world: WoodsWorld, b: Brain, p: Player, fee
 export function stepWoods(state: WoodsState, world: WoodsWorld, inputs: ReadonlyMap<number, PlayerInput>, dt: number, feel: Feel = FEEL): void {
   state.t += dt
   state.events.length = 0
+  // The taken have no body to bump into (`verdict.ts`).
+  const solid = state.night.verdict.gone.length ? state.players.filter((p) => !isGone(state.night, p.id)) : state.players
   for (const p of state.players) {
+    // Taken (`verdict.ts`): gone from the woods. A person can still look around; nothing else (the map comes down).
+    if (isGone(state.night, p.id)) {
+      const look = inputs.get(p.id)
+      if (look && !p.bot) { p.yaw = look.yaw; p.pitch = look.pitch }
+      p.vx = 0; p.vz = 0; p.light = false; p.signal = 0; p.tie = null; p.mapRaise = 0
+      p.air.y = 0; p.air.v = 0; p.air.airborne = false
+      // A flare in their hand falls lit where they stood, by the torch.
+      dropFlare(state.flares, world, p, state.t, state.events)
+      continue
+    }
     const brain = p.bot ? state.brains.find((b) => b.id === p.id) : undefined
     const input = brain ? botInput(state, world, brain, p, feel, dt) : inputs.get(p.id) ?? { yaw: p.yaw, pitch: p.pitch, light: p.light, tie: false, map: false, mx: 0, mz: 0 }
-    stepMotion(world, p, input, feel, dt, state.players)
+    stepMotion(world, p, input, feel, dt, solid)
     // A dead or swapping torch stays off whatever the switch says (`shared/night.ts` owns the battery).
     const light = input.light && canLight(p)
     if (light !== p.light) state.events.push({ kind: "light", by: p.id, on: light })
@@ -624,27 +642,35 @@ export function stepWoods(state: WoodsState, world: WoodsWorld, inputs: Readonly
   const night = state.night
   for (const e of stepNight(night, world, state.players, state.tapes, state.t, dt, feel, (w) => standHeight(world, w.x, w.z) + EYE_HEIGHT)) {
     state.events.push(e)
+    // Taken: one short cry from where they stood, in their own voice.
+    if (e.kind === "taken") {
+      const cast = voiceRoles(state.players, BOT_ID).byWalker.get(e.by)
+      const line = cast ? sayTaken(state.voices, world, cast, e, state.players, state.t) : null
+      if (line) state.events.push(line)
+    }
     const brain = e.kind === "clue-found" ? state.brains.find((b) => b.id === e.by) : undefined
     if (brain) { brain.mode = "found"; brain.timer = 14 }
   }
   stepFlareBodies(state.flares, world, state.t, dt, feel, new Set(state.players.filter((p) => !p.capture).map((p) => p.id)))
-  for (let i = 0; i < state.players.length; i++) for (let j = i + 1; j < state.players.length; j++) {
-    const a = state.players[i]!, b = state.players[j]!
+  // Everyone still in the woods (the taken are out of it).
+  const here = state.players.filter((p) => !isGone(night, p.id))
+  for (let i = 0; i < here.length; i++) for (let j = i + 1; j < here.length; j++) {
+    const a = here[i]!, b = here[j]!
     if ((a.mapRaise > 0.9 || b.mapRaise > 0.9) && Math.hypot(a.x - b.x, a.z - b.z) < COMPARE_RANGE) compareMaps(state, a, b)
   }
   // The woods keep quiet while anyone is signalling and for a few seconds after.
   if (state.players.some((p) => p.signal > SIGNAL_HOLD)) holdDistant(state.distant, state.t + DISTANT_AFTER_SIGNAL)
-  const people = state.players.filter((p) => !p.bot)
+  const people = here.filter((p) => !p.bot)
   const sound = stepDistant(state.distant, world, people, state.t, feel.distantRate, feel)
   if (sound) state.events.push(sound)
-  const creature = stepCreature(state.distant, world, state.players, state.t, feel, SIGNAL_HOLD, flareSources(state.flares, world, state.players, state.t, feel))
+  const creature = stepCreature(state.distant, world, here, state.t, feel, SIGNAL_HOLD, flareSources(state.flares, world, here, state.t, feel))
   if (creature) state.events.push(creature)
   // A sighting cues the searchers too (`VOICE_CUES`).
   const cues = (state.events as readonly { kind: string }[]).filter((e) => VOICE_CUES.has(e.kind)) as VoiceCue[]
   // Dawn coming, and dawn come, get a line each.
   if (night.phase === "search" && !night.dawnSaid && state.t >= night.dawn - 120) { night.dawnSaid = true; cues.push({ kind: "dawn" }) }
   if (state.events.some((e) => e.kind === "night" && e.reason === "dawn")) cues.push({ kind: "daylight" })
-  const lines = stepVoices(state.voices, world, state.players, cues, state.t, dt, feel, BOT_ID)
+  const lines = stepVoices(state.voices, world, state.players, cues, state.t, dt, feel, BOT_ID, (id) => isGone(night, id))
   state.events.push(...lines)
   // A call for Barbara may be answered from the wrong side (`answerCall`, the uncanny tier's mimic).
   for (const e of lines) if (!people.some((p) => p.id === e.by)) answerCall(state.distant, world, people, e.line, e, VOICE_LINES.find((l) => l.id === e.line)?.seconds ?? 2, state.t, feel)
@@ -661,7 +687,7 @@ export function stepWoods(state: WoodsState, world: WoodsWorld, inputs: Readonly
   }
   // It calls once a person is up near the ridge, or a few minutes after the tape whoever is up there.
   const ridgeNear = people.some((p) => Math.hypot(p.x - night.layout.ridge.x, p.z - night.layout.ridge.z) < CALL_NEAR)
-  if (night.callAt > 0 && night.phase === "search" && (ridgeNear || night.calls > 0 || state.t >= night.callAt + CALL_LATE) && state.t >= night.callAt && state.t >= voicesBusyUntil(state.voices)) {
+  if (night.callAt > 0 && night.phase === "search" && !radioLive(night) && (ridgeNear || night.calls > 0 || state.t >= night.callAt + CALL_LATE) && state.t >= night.callAt && state.t >= voicesBusyUntil(state.voices)) {
     const strip = night.layout.clues[CLUE.strip]!
     state.events.push(sayExtra(state.voices, world, strip.x, strip.z, state.players, state.t))
     night.calls++; night.rev++

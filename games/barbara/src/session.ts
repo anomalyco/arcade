@@ -5,6 +5,7 @@ import { BUILD } from "../shared/build.gen"
 import { createNight, canLight } from "../shared/night"
 import { applyFlares, applyMapDelta, applyNightWire, BIT, decodeServer, GAME, packIntent, quantizeInput, ROOM_FEEL, tapeFromRow, TICK_DT, type PlayerRow, type RosterRow, type ServerMsg, type Snapshot } from "../shared/protocol"
 import { createWoods, newPlayer, setBotCount, stepMotion, stepWoods, type Feel, type Player, type PlayerInput, type WoodsEvent, type WoodsState } from "../shared/sim"
+import { castVote, isGone, type Suspect } from "../shared/verdict"
 import type { WoodsWorld } from "../shared/world"
 import { flyFor } from "../shared/flares"
 
@@ -32,6 +33,8 @@ export interface Session {
   drain(): WoodsEvent[]
   /** The sim's clock now (s), smooth between ticks and snapshots: what flares burn by. */
   roomTime(): number
+  /** Name what took her at the radio (`verdict.ts`); the room or the local sim decides if it counts. */
+  vote(suspect: Suspect): void
   status(): string | null
   roster(): readonly RosterRow[]
   close(): void
@@ -100,6 +103,10 @@ export class SoloSession implements Session {
     if (this.shown.size > players.length) for (const id of this.shown.keys()) if (!players.some((p) => p.id === id)) this.shown.delete(id)
     this.view = Object.assign(this.drawnView, this.state, { players })
   }
+  vote(suspect: Suspect) {
+    const me = this.state.players.find((p) => p.id === 0)
+    if (me) castVote(this.state.night, me, suspect, this.state.t)
+  }
   drain() {
     const out = this.events
     this.events = []
@@ -159,6 +166,9 @@ export class OnlineSession implements Session {
   }
   /** Room time of the newest snapshot and when it arrived (performance.now ms). */
   private clock = { t: 0, at: 0 }
+  vote(suspect: Suspect) {
+    this.socket.send({ type: "vote", suspect })
+  }
   /** Bytes received over the socket (bandwidth readout). */
   bytesIn = 0
   readonly startedAt = performance.now()
@@ -188,10 +198,13 @@ export class OnlineSession implements Session {
 
   tick(input: PlayerInput) {
     if (this.me < 0 || this.socket.problem) return
-    const q = quantizeInput(input)
+    // Taken (`verdict.ts`): the room holds you still (map down), so only look; don't predict anything else.
+    const taken = isGone(this.view.night, this.me)
+    const q = quantizeInput(taken ? { ...input, mx: 0, mz: 0, jump: false, light: false, tie: false, map: false } : input)
     this.prev = { x: this.self.x, z: this.self.z, y: this.self.air.y }
     const seq = this.predictor.record(q)
-    stepMotion(this.world, this.self, q, ROOM_FEEL, TICK_DT, this.obstacles)
+    if (taken) Object.assign(this.self, { yaw: q.yaw, pitch: q.pitch, vx: 0, vz: 0, mapRaise: 0 })
+    else stepMotion(this.world, this.self, q, ROOM_FEEL, TICK_DT, this.obstacles)
     this.self.light = q.light && canLight(this.self)
     this.socket.send({ type: "intent", seq, i: packIntent(q) })
   }
@@ -225,8 +238,6 @@ export class OnlineSession implements Session {
     if (first) { this.snaps.clear(); this.poseVersion++ }
     this.me = s.me
     this.self.id = s.me
-    // Collision reads the newest authoritative positions, never the delayed presentation poses.
-    this.obstacles = s.p.filter((r) => r[0] !== s.me).map((r) => newPlayer(r[0]!, !!(r[7]! & BIT.bot), "", r[1]! / 100, r[2]! / 100, r[5]! / 1000))
     this.view.t = s.t
     this.clock = { t: s.t, at: performance.now() }
     if (s.names) this.names = s.names
@@ -238,6 +249,9 @@ export class OnlineSession implements Session {
       if (s.night.seed !== this.view.night.seed) this.view.night = createNight(this.world, s.night.seed)
       applyNightWire(this.view.night, s.night)
     }
+    // Collision reads the newest authoritative positions, never the delayed presentation poses; the taken have no body.
+    this.obstacles = s.p.filter((r) => r[0] !== s.me && !isGone(this.view.night, r[0]!)).map((r) => newPlayer(r[0]!, !!(r[7]! & BIT.bot), "", r[1]! / 100, r[2]! / 100, r[5]! / 1000))
+    const taken = isGone(this.view.night, s.me)
     if (s.map) applyMapDelta(this.self.map, s.map)
     const mine = s.p.find((r) => r[0] === s.me)
     if (mine) {
@@ -260,7 +274,7 @@ export class OnlineSession implements Session {
         this.smoother.x = this.smoother.y = 0
       } else {
         const bx = this.self.x, bz = this.self.z, by = this.self.air.y
-        this.predictor.reconcile(s.ack, restore, (cmd) => stepMotion(this.world, this.self, cmd, ROOM_FEEL, TICK_DT, this.obstacles))
+        this.predictor.reconcile(s.ack, restore, (cmd) => { if (!taken) stepMotion(this.world, this.self, cmd, ROOM_FEEL, TICK_DT, this.obstacles) })
         this.smoother.correct(bx, bz, this.self.x, this.self.z)
         this.prev.x += this.self.x - bx
         this.prev.z += this.self.z - bz

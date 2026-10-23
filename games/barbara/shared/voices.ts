@@ -26,7 +26,7 @@ export type Loudness = "shout" | "call" | "talk" | "quiet"
 export const POOLS = [
   "open", "call", "ask", "answer", "keep", "where", "here", "hear", "dismiss", "tape", "torch", "apart", "regroup", "light", "sighting", "sightreply", "clue", "coming", "bark",
   // The night's (NIGHT.md): a reaction to each clue, dawn coming and come, the cassette, and the extra searcher's call.
-  "car", "page", "badge", "cassette", "strip", "dawn", "daylight", "tape-tower", "extra",
+  "car", "page", "badge", "cassette", "strip", "dawn", "daylight", "tape-tower", "extra", "taken",
 ] as const
 export type Pool = (typeof POOLS)[number]
 
@@ -167,9 +167,9 @@ function stepRoamers(vs: VoiceState, world: WoodsWorld, roaming: readonly CastId
 
 type Speaker = { cast: CastId; by: number; x: number; z: number; person: boolean }
 
-function speakers(walkers: readonly Walker[], roles: ReturnType<typeof voiceRoles>, roamers: readonly Roamer[]): Speaker[] {
+function speakers(walkers: readonly Walker[], roles: ReturnType<typeof voiceRoles>, roamers: readonly Roamer[], silent?: (id: number) => boolean): Speaker[] {
   const out: Speaker[] = []
-  for (const w of walkers) { const c = roles.byWalker.get(w.id); if (c) out.push({ cast: c, by: w.id, x: w.x, z: w.z, person: !w.bot }) }
+  for (const w of walkers) { const c = roles.byWalker.get(w.id); if (c && !silent?.(w.id)) out.push({ cast: c, by: w.id, x: w.x, z: w.z, person: !w.bot }) }
   for (const r of roamers) out.push({ cast: r.cast, by: -1, x: r.x, z: r.z, person: false })
   return out
 }
@@ -196,12 +196,13 @@ function nearestTo(all: readonly Speaker[], x: number, z: number, range: number,
  * One step of the voices at sim time `t`: reactions to this step's `cues`, chatter when it's due, and whatever is
  * planned for now. Returns the lines that start now.
  */
-export function stepVoices(vs: VoiceState, world: WoodsWorld, walkers: readonly Walker[], cues: readonly VoiceCue[], t: number, dt: number, feel: VoiceFeel, botBase = 100): VoiceEvent[] {
+export function stepVoices(vs: VoiceState, world: WoodsWorld, walkers: readonly Walker[], cues: readonly VoiceCue[], t: number, dt: number, feel: VoiceFeel, botBase = 100, silent?: (id: number) => boolean): VoiceEvent[] {
   const people = walkers.filter((w) => !w.bot)
   if (!people.length) return []
   const roles = voiceRoles(walkers, botBase)
   stepRoamers(vs, world, roles.roaming, people, dt)
-  const all = speakers(walkers, roles, vs.roamers)
+  // Roles come from everyone (so nobody's voice changes when someone is taken); the taken say nothing.
+  const all = speakers(walkers, roles, vs.roamers, silent)
   const keyPeople = feel.voicePeople > 0
   const roll = () => nextRandom(vs.rng)
   // Chatter 0 (and the opening) leaves only key moments: a find, a sighting.
@@ -357,6 +358,12 @@ export function sayTape(vs: VoiceState, world: WoodsWorld, from: { id: number; x
 export function sayExtra(vs: VoiceState, world: WoodsWorld, x: number, z: number, walkers: readonly Walker[], t: number): VoiceEvent {
   const line = linesOf("walt", "extra")[0]!
   return say(vs, world, line, { by: -1, x, z }, walkers.filter((w) => !w.bot), t)
+}
+
+/** A searcher taken (`verdict.ts`): one short cut-off cry from where they stood, in their own voice. */
+export function sayTaken(vs: VoiceState, world: WoodsWorld, cast: CastId, at: { by: number; x: number; z: number }, walkers: readonly Walker[], t: number): VoiceEvent | null {
+  const line = linesOf(cast, "taken")[0]
+  return line ? say(vs, world, line, at, walkers.filter((w) => !w.bot), t) : null
 }
 
 /** Until when the woods' distant sounds should wait for the voices (`holdDistant`). */
