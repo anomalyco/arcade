@@ -5,7 +5,8 @@ import { validateWgsl } from "@arcade/kit/gpu/test-naga"
 import { dustShader } from "../src/air/dust"
 import { contactVolumeInput, DEFAULT_CONTACT_SHADOW_SETTINGS, resolveContactShadows } from "../src/contact-shadows/settings"
 import { outbreakContactVolume } from "../src/contact-shadows/wgsl"
-import { OUTBREAK_LIGHTING_UNIFORM_FLOATS, OUTBREAK_STREET_LAMP_UNIFORM_OFFSET, OUTBREAK_WINDOW_ROOM_UNIFORM_OFFSET, streetLampHead, streetPostArm, STREET_LAMP_POOLS, STREET_LAMP_POSTS } from "../src/lighting"
+import { FINISH_UNIFORM_FLOATS } from "../src/interiors/finish"
+import { OUTBREAK_FINISH_UNIFORM_OFFSET, OUTBREAK_LIGHTING_UNIFORM_FLOATS, OUTBREAK_STREET_LAMP_UNIFORM_OFFSET, OUTBREAK_WINDOW_ROOM_UNIFORM_OFFSET, streetLampHead, streetPostArm, STREET_LAMP_POOLS, STREET_LAMP_POSTS } from "../src/lighting"
 import { DEFAULT_MIST_SETTINGS, mistFogSettings, resolveMist } from "../src/mist/settings"
 import { outbreakFogVolume } from "../src/mist/wgsl"
 import { bounceInput } from "../src/bounce-light/settings"
@@ -138,7 +139,8 @@ describe("low mist and lit rooms", () => {
 
   test("uniform tail fits and the rooms pack on/off", () => {
     expect(OUTBREAK_WINDOW_ROOM_UNIFORM_OFFSET).toBe(OUTBREAK_STREET_LAMP_UNIFORM_OFFSET + 12)
-    expect(OUTBREAK_LIGHTING_UNIFORM_FLOATS).toBe(OUTBREAK_WINDOW_ROOM_UNIFORM_OFFSET + 8)
+    expect(OUTBREAK_FINISH_UNIFORM_OFFSET).toBe(OUTBREAK_WINDOW_ROOM_UNIFORM_OFFSET + 8)
+    expect(OUTBREAK_LIGHTING_UNIFORM_FLOATS).toBe(OUTBREAK_FINISH_UNIFORM_OFFSET + FINISH_UNIFORM_FLOATS)
     const out = new Float32Array(8)
     packWindowRoomUniforms({ ...createOutbreakSettings().windowRooms, windowRoomStyle: 0 }, out, 0)
     expect(out[0]).toBe(0)

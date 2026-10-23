@@ -64,6 +64,17 @@ export class VertexWriter {
   }
 
   finish(): ArrayBuffer { return this.buf.slice(0, this.count * 32) }
+
+  /** The live buffer, for editing written vertices in place (replaced when the writer grows). */
+  get buffer(): ArrayBuffer { return this.buf }
+}
+
+/** Float of an IEEE half (material and aux are stored as f16). */
+export function fromHalf(h: number): number {
+  const s = h & 0x8000 ? -1 : 1, e = (h >> 10) & 31, m = h & 1023
+  if (e === 0) return s * m * 2 ** -24
+  if (e === 31) return m ? NaN : s * Infinity
+  return s * (1 + m / 1024) * 2 ** (e - 15)
 }
 
 export const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x)

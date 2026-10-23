@@ -5,6 +5,7 @@ import { terrainVertex, supportHeight } from "../shared/terrain"
 import { house, plantOutdoors, plantFootprints, archSettings } from "./architecture"
 import { emitWallCapMoulding } from "./interiors/mesh"
 import { interiorSettings, interiorSignature, planInterior } from "./interiors/plan"
+import { bakeFinishedProps } from "./interiors/finish"
 import { emitCraftWindow } from "./interiors/windows"
 import { propFloorFootprints, propLamps } from "./props/furnish"
 import { propLevelSignature, replacedByLibrary } from "./props/state"
@@ -438,7 +439,7 @@ function compileLevel(town: Town): OriginLevel {
         x0 = Math.min(x0, source.v[i]!); x1 = Math.max(x1, source.v[i]!)
         z0 = Math.min(z0, source.v[i + 2]!); z1 = Math.max(z1, source.v[i + 2]!); top = Math.max(top, source.v[i + 1]!)
       }
-      return [tag("glass")({ data: stampOutbreakVertexTone(source.pack()), box: [x0, z0, x1, z1] as const, cutBox: [x0, 0, z0, x1, top, z1] })]
+      return [tag("glass")({ data: stampOutbreakVertexTone(bakeFinishedProps(source).pack()), box: [x0, z0, x1, z1] as const, cutBox: [x0, 0, z0, x1, top, z1] })]
     }
     const opaque = new Mesh()
     const screen = new Mesh()
@@ -450,7 +451,7 @@ function compileLevel(town: Town): OriginLevel {
       if (isPlantMaterial(Math.round(sv[i + 9]!), sv[i + 10]!) && isPlantMaterial(Math.round(sv[i + 20]!), sv[i + 21]!) && isPlantMaterial(Math.round(sv[i + 31]!), sv[i + 32]!)) {
         const over = triangleFate(houseRooms, sv, i, i + 11, i + 22)
         if (over >= 0) {
-          for (let k = i; k < i + 33; k++) overhangByBuilding[over]!.v.push(sv[k]!)
+          overhangByBuilding[over]!.copyTriangle(source, i)
           continue
         }
       }
@@ -491,8 +492,8 @@ function compileLevel(town: Town): OriginLevel {
           }
         }
       }
-      const dst = customId >= 0 ? (strictlyInsideCutout ? interiorCapByBuilding[customId]! : customByBuilding[customId]!).v : hasScreen ? screen.v : opaque.v
-      for (let k = i; k < i + 33; k++) dst.push(source.v[k]!)
+      const dst = customId >= 0 ? (strictlyInsideCutout ? interiorCapByBuilding[customId]! : customByBuilding[customId]!) : hasScreen ? screen : opaque
+      dst.copyTriangle(source, i)
     }
     const pack = (m: Mesh, cutBox?: readonly number[], customCutaway?: boolean | "outside"): LevelChunk[] => {
       if (!m.count) return []
@@ -502,7 +503,7 @@ function compileLevel(town: Town): OriginLevel {
         top = Math.max(top, m.v[i + 1]!)
         z0 = Math.min(z0, m.v[i + 2]!); z1 = Math.max(z1, m.v[i + 2]!)
       }
-      return [{ data: stampOutbreakVertexTone(m.pack()), box: [x0, z0, x1, z1] as const, cutBox: cutBox ?? (customCutaway ? [x0, 0, z0, x1, top, z1] : undefined), customCutaway }]
+      return [{ data: stampOutbreakVertexTone(bakeFinishedProps(m).pack()), box: [x0, z0, x1, z1] as const, cutBox: cutBox ?? (customCutaway ? [x0, 0, z0, x1, top, z1] : undefined), customCutaway }]
     }
     const screenChunks = (): OriginChunk[] => {
       if (!screen.count) return []
@@ -514,7 +515,7 @@ function compileLevel(town: Town): OriginLevel {
         const key = xBand * 64 + zBand
         let bm = bands.get(key)
         if (!bm) { bm = new Mesh(); bands.set(key, bm) }
-        for (let k = i; k < i + 33; k++) bm.v.push(screen.v[k]!)
+        bm.copyTriangle(screen, i)
       }
       return [...bands.values()].flatMap(bm => pack(bm, undefined, undefined)).map(c => tag("screen")({ ...c, cutBox: [c.box[0], 0, c.box[1], c.box[2], 2.85, c.box[3]] }))
     }

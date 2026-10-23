@@ -2,12 +2,13 @@ import type { LabControl } from "../lab-navigation"
 import type { BeamProfile } from "../gpu/lights/beam"
 import type { QualityScaling, QualityTier, QualityTiers } from "../quality"
 import { SKY_DEFAULTS, skyControls, type SkySettings } from "../sky/settings"
+import { WEAR_DEFAULTS, wearControls, type WearSettings } from "../gpu/materials/wear"
 
 /**
  * Every look choice of the night forest, typed, with units and approved defaults (RESEARCH.md's starting values). The
  * Lab binds these to its panel (`forestLookControls`); a game keeps the defaults and only scales them by tier.
  */
-export type ForestLookSettings = SkySettings & {
+export type ForestLookSettings = SkySettings & WearSettings & {
   // Night sky
   /** Faint moonlight through the canopy (0 = moonless). */
   moon: number
@@ -99,6 +100,8 @@ export type ForestLookSettings = SkySettings & {
   // Camp and water
   /** Static camp dressing; takes effect on world rebuild/reload. */
   campDetail: boolean
+  /** Finished camp props (`gpu/finish.ts`): chamfered boards, baked AO and wear on cabins, porches and the fire ring; reload. */
+  campFinish: boolean
   windows: number
   stringLights: number
   water: number
@@ -148,6 +151,7 @@ export type ForestLookSettings = SkySettings & {
 
 export const FOREST_LOOK_DEFAULTS: Readonly<ForestLookSettings> = {
   ...SKY_DEFAULTS,
+  ...WEAR_DEFAULTS,
   moon: 0.06, moonHeading: 220, moonElevation: 34, sky: 1, stars: 1, skylight: 1, canopyScatter: 0.03, moonMist: 1, moonAir: 0,
   fogDensity: 0.008, fogFalloff: 0.02, fogBrightness: 0.0035, fogHue: 215,
   mist: "drift", mistDensity: 0.08, mistHeight: 2.4, canopyMist: 1, beamNear: 0.6, mistScale: 9, mistDrift: 0.15, mistGaps: 0.32, phaseG: 0.75, phaseFloor: 0.03, beamAir: 1, beamMist: 1,
@@ -159,7 +163,7 @@ export const FOREST_LOOK_DEFAULTS: Readonly<ForestLookSettings> = {
   dustCount: 80,
   wind: 1, gust: 0.6, trunkSway: 1, branchSway: 1, flutter: 1,
   fernDensity: 1, litter: 1, moss: 1, smoothTrunks: true,
-  windows: 1, stringLights: 1, water: 1, campDetail: false,
+  windows: 1, stringLights: 1, water: 1, campDetail: false, campFinish: false,
   lakeLook: "today", lakeRipples: 1, lakeRain: 0, lakeScatter: 0.12, lakeMist: 0.6,
   exposure: 1.6, autoExposure: true, meterGain: 3, adaptDarken: 0.35, adaptBrighten: 8, adaptRange: 1.5, darkAdapt: 0, darkAdaptTime: 60,
   exposureModel: "robust", nightKey: 0.003, nightStops: 0.8, nightStrength: 0.85, adaptLift: 0.8,
@@ -254,6 +258,8 @@ export function forestLookControls(settings: ForestLookSettings, prefix = "woods
     toggle("smoothTrunks", "Smooth trunks (reload)", W, "Floor"),
     range("windows", "Lit windows", W, 0, 3, 0.05, "×", "Camp"),
     toggle("campDetail", "Camp detail (reload)", W, "Camp"),
+    toggle("campFinish", "Finished props (reload)", W, "Camp"),
+    ...wearControls(prefix, W, "Camp finish"),
     range("stringLights", "String lights", W, 0, 3, 0.05, "×", "Camp"),
     range("water", "Lake reflections", W, 0, 2, 0.05, "×", "Camp"),
     select("lakeLook", "Water look", "Water", [{ value: "today", label: "Today" }, { value: "moonlit", label: "Moonlit" }]),

@@ -123,7 +123,8 @@ export class WorldView {
   static async create(gpu: { device: GPUDevice; context: GPUCanvasContext; format: GPUTextureFormat }, world: WoodsWorld, opts: { smoke?: boolean; quality?: QualityTier } = {}): Promise<WorldView> {
     // The catalogue night sky is on here with a full moon through the canopy and eyes that dark-adapt over a minute
     // with the torch off (moonless, no adaptation: one setting each); the software-GPU smoke keeps the kit's Today.
-    const settings = { highlightShoulder: true, campDetail: true, skyMode: opts.smoke ? "today" as const : "physical" as const, skyMoon: "full" as const, darkAdapt: 1 }
+    // Finished camp props (chamfers, baked AO and wear) are on too; `woods.campFinish` off is Today's camp.
+    const settings = { highlightShoulder: true, campDetail: true, campFinish: true, skyMode: opts.smoke ? "today" as const : "physical" as const, skyMoon: "full" as const, darkAdapt: 1 }
     const forest = await createForestView(gpu, forestWorld(world, settings.campDetail), { assetRoot: import.meta.env.BASE_URL + "forest-assets/", smoke: !!opts.smoke, quality: opts.quality ?? "balanced", markPrefix: "woods", settings })
     const view = new WorldView(forest)
     view.models(world)

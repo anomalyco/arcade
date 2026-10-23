@@ -4,6 +4,8 @@ import { loadForestModels } from "./assets"
 import { buildForest, clampedGridHeight, forestHeightGrid, type ForestBuild } from "./build"
 import { buildTransfers } from "./build-worker"
 import { toHalf } from "./mesh"
+import { decodeFinish } from "../gpu/finish-bake"
+import { lookIndex } from "../gpu/materials/wear"
 
 const root = new URL("./assets/", import.meta.url).pathname
 async function models() {
@@ -43,3 +45,27 @@ test("smooth trunk rings share normals across adjacent bands and the UV seam", a
   }
   expect(checked).toBeGreaterThan(1000)
 }, 30_000)
+
+test("a finished camp bakes wear onto its boards and stones only, the same in the worker, and Today is untouched", async () => {
+  const world = demoForestWorld(7, 60)
+  const m = await models()
+  const opts = { scatter: 1, fernDensity: 1, litter: 1, campDetail: true }
+  const flagged = (b: ForestBuild) => {
+    const looks = new Map<number, number>()
+    for (const c of b.chunks) for (const buf of [c.near.opaque, c.near.masked, c.far.opaque, c.far.masked]) {
+      const u = new Uint8Array(buf)
+      for (let o = 0; o < u.length; o += 32) if (u[o + 15]! & 1) { const look = decodeFinish(u[o + 15]!, u[o + 19]!)!.look; looks.set(look, (looks.get(look) ?? 0) + 1) }
+    }
+    return looks
+  }
+  expect(flagged(buildForest(world, m, opts)).size).toBe(0)
+  const page = buildForest(world, m, { ...opts, campFinish: true })
+  const looks = flagged(page)
+  expect([...looks.keys()].sort()).toEqual([lookIndex("old-wood"), lookIndex("weathered-stone")].sort())
+  expect(looks.get(lookIndex("old-wood"))!).toBeGreaterThan(10_000)
+  const ground = forestHeightGrid(world)
+  const { height: _height, ...data } = world
+  const worker = buildForest({ ...structuredClone(data), height: clampedGridHeight(ground) }, m, { ...opts, campFinish: true }, structuredClone(ground))
+  const bytes = (b: ForestBuild) => buildTransfers(b).map((x) => Buffer.from(x).toString("base64"))
+  expect(bytes(worker)).toEqual(bytes(page))
+}, 60_000)

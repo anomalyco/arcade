@@ -54,6 +54,50 @@ function summarise(bake: FinishBake) {
   return { ao: { mean: sum / n, min }, edges: edges / n, exposure: expo / n }
 }
 
+/**
+ * Bakes the vertices `Mesh.finishPart` tagged and sets `mesh.finishBytes` (untagged vertices stay unfinished, 0 and
+ * 255). Untagged triangles near the tagged ones occlude them: the wall behind a cabinet darkens its back corners.
+ * Returns the mesh, or it untouched when nothing is tagged.
+ */
+export function finishTagged(mesh: Mesh, bake: FinishBakeOptions = {}, wear = 1): Mesh {
+  const n = mesh.count, v = mesh.v, looks = mesh.finishLooks
+  const tagged: number[] = []
+  for (let i = 0; i < n; i++) if (looks[i] !== undefined) tagged.push(i)
+  if (!tagged.length) return mesh
+  const pos = new Float32Array(tagged.length * 3), nrm = new Float32Array(tagged.length * 3), hints = new Float32Array(tagged.length).fill(NaN)
+  const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity]
+  tagged.forEach((vi, j) => {
+    const s = vi * FLOATS_PER_VERT
+    for (let k = 0; k < 3; k++) {
+      pos[j * 3 + k] = v[s + k]!; nrm[j * 3 + k] = v[s + 3 + k]!
+      lo[k] = Math.min(lo[k]!, v[s + k]!); hi[k] = Math.max(hi[k]!, v[s + k]!)
+    }
+    const h = mesh.curvatureHints[vi]
+    if (h !== undefined) hints[j] = h
+  })
+  // Occluders: untagged triangles touching the tagged parts' box grown by the longest ray.
+  const pad = Math.max(bake.reach ?? 0.6, bake.exposure !== undefined ? 0 : bake.skyReach ?? 4)
+  const occluders: number[] = bake.occluders ? Array.from(bake.occluders) : []
+  for (let t = 0; t + 2 < n; t += 3) {
+    if (looks[t] !== undefined && looks[t + 1] !== undefined && looks[t + 2] !== undefined) continue
+    let inside = true
+    for (let k = 0; k < 3 && inside; k++) {
+      const a = v[t * FLOATS_PER_VERT + k]!, b = v[(t + 1) * FLOATS_PER_VERT + k]!, c = v[(t + 2) * FLOATS_PER_VERT + k]!
+      inside = Math.max(a, b, c) >= lo[k]! - pad && Math.min(a, b, c) <= hi[k]! + pad
+    }
+    if (inside) for (let j = 0; j < 3; j++) for (let k = 0; k < 3; k++) occluders.push(v[(t + j) * FLOATS_PER_VERT + k]!)
+  }
+  const result = bakeFinish(pos, nrm, { ...bake, occluders, curvatureHints: hints })
+  const out = new Uint8Array(n * 2)
+  for (let i = 0; i < n; i++) out[i * 2 + 1] = 255
+  tagged.forEach((vi, j) => {
+    out[vi * 2] = finishByte15(result.curvature[j]! * wear, looks[vi]!) & 255
+    out[vi * 2 + 1] = finishByte19(1 - (1 - result.ao[j]!) * wear, result.exposure[j]!)
+  })
+  mesh.finishBytes = out
+  return mesh
+}
+
 /** Finishes a mesh (or builds one with `chamfer` and finishes it): bakes, tags the look, and checks vertex albedo. */
 export function finish(target: Mesh | ((m: Mesh) => void), opts: FinishOptions): { mesh: Mesh; report: FinishReport } {
   const t0 = performance.now()
@@ -72,7 +116,9 @@ export function finish(target: Mesh | ((m: Mesh) => void), opts: FinishOptions):
   const hints = new Float32Array(n).fill(NaN)
   mesh.curvatureHints.forEach((k, i) => { if (i < n && k !== undefined) hints[i] = k })
   const bake = bakeFinish(pos, nrm, { ...opts.bake, curvatureHints: hints })
-  mesh.finishBytes = finishBytes(bake, lookIndex(opts.look), opts.wear ?? 1)
+  const index = lookIndex(opts.look)
+  for (let i = 0; i < n; i++) mesh.finishLooks[i] = index
+  mesh.finishBytes = finishBytes(bake, index, opts.wear ?? 1)
   const look = finishLook(opts.look)
   const albedo = { checked: 0, dark: 0, bright: 0, cls: look.albedoClass }
   if (!look.replace) for (let i = 0; i < n; i++) {
@@ -86,39 +132,62 @@ export function finish(target: Mesh | ((m: Mesh) => void), opts: FinishOptions):
 }
 
 /**
- * One range of packed vertices (`stride` 24 or 32), the look (and wear) it gets, and any curvature its builder already
- * knows (NaN = bake). A look of null leaves the range unfinished but lets it occlude the others.
+ * One range of triangle-list vertices (`stride` 24 or 32) and the look its triangles get: one for the range, or per
+ * triangle from its first vertex's index in `buf` (e.g. by material). Null leaves a triangle unfinished but lets it
+ * occlude the others. `hints` is curvature its builder already knows, per vertex of the range (NaN = bake).
  */
-export type FinishRange = { buf: ArrayBuffer; stride: number; first: number; count: number; look: FinishLookId | null; wear?: number; hints?: ArrayLike<number> }
+export type FinishRange = {
+  buf: ArrayBuffer
+  stride: number
+  first: number
+  count: number
+  look: FinishLookId | null | ((vertex: number) => FinishLookId | null)
+  wear?: number
+  hints?: ArrayLike<number>
+  /** Convex part per vertex of the range, unique across ranges (negative = none; `FinishBakeOptions.parts`). */
+  parts?: ArrayLike<number>
+}
 
 /**
  * Finishes ranges of packed vertices in place. Every range's triangles occlude every other's, so a porch roof shades
  * the deck under it even when they live in different buffers.
  */
 export function finishPacked(ranges: readonly FinishRange[], bake: FinishBakeOptions = {}): FinishBake {
-  const looked = ranges.filter(r => r.look !== null), blockers = ranges.filter(r => r.look === null)
-  const total = looked.reduce((s, r) => s + r.count, 0)
-  const pos = new Float32Array(total * 3), nrm = new Float32Array(total * 3), hints = new Float32Array(total).fill(NaN)
-  let at = 0
-  for (const r of looked) {
-    const p = readPacked(r.buf, r.stride, r.first, r.count)
-    pos.set(p.pos, at * 3); nrm.set(p.nrm, at * 3)
-    if (r.hints) for (let i = 0; i < r.count; i++) hints[at + i] = r.hints[i] ?? NaN
-    at += r.count
-  }
-  // Unfinished ranges only occlude: their own vertices are never baked.
-  const extra = bake.occluders ? Array.from(bake.occluders) : []
-  for (const r of blockers) for (const v of readPacked(r.buf, r.stride, r.first, r.count - (r.count % 3)).pos) extra.push(v)
-  const result = bakeFinish(pos, nrm, { ...bake, occluders: extra, curvatureHints: hints })
-  at = 0
-  for (const r of looked) {
-    const i8 = new Int8Array(r.buf), u8 = new Uint8Array(r.buf)
-    const look = lookIndex(r.look!), wear = r.wear ?? 1
-    for (let i = 0; i < r.count; i++, at++) {
-      const o = (r.first + i) * r.stride
-      i8[o + 15] = finishByte15(result.curvature[at]! * wear, look)
-      u8[o + 19] = finishByte19(1 - (1 - result.ao[at]!) * wear, result.exposure[at]!)
+  // Per range, the look index of each triangle (−1 = occluder only).
+  const looks = ranges.map(r => {
+    const out = new Int8Array(Math.floor(r.count / 3))
+    for (let t = 0; t < out.length; t++) {
+      const id = typeof r.look === "function" ? r.look(r.first + t * 3) : r.look
+      out[t] = id === null ? -1 : lookIndex(id)
     }
-  }
+    return out
+  })
+  const total = looks.reduce((s, l) => s + l.reduce((n, k) => n + (k >= 0 ? 3 : 0), 0), 0)
+  const pos = new Float32Array(total * 3), nrm = new Float32Array(total * 3), hints = new Float32Array(total).fill(NaN), parts = new Int32Array(total).fill(-1)
+  const extra = bake.occluders ? Array.from(bake.occluders) : []
+  let at = 0
+  ranges.forEach((r, ri) => {
+    const p = readPacked(r.buf, r.stride, r.first, looks[ri]!.length * 3)
+    looks[ri]!.forEach((k, t) => {
+      if (k < 0) { for (let j = 0; j < 9; j++) extra.push(p.pos[t * 9 + j]!); return }
+      pos.set(p.pos.subarray(t * 9, t * 9 + 9), at * 3); nrm.set(p.nrm.subarray(t * 9, t * 9 + 9), at * 3)
+      if (r.hints) for (let j = 0; j < 3; j++) hints[at + j] = r.hints[t * 3 + j] ?? NaN
+      if (r.parts) for (let j = 0; j < 3; j++) parts[at + j] = r.parts[t * 3 + j] ?? -1
+      at += 3
+    })
+  })
+  const result = bakeFinish(pos, nrm, { ...bake, occluders: extra, curvatureHints: hints, parts })
+  at = 0
+  ranges.forEach((r, ri) => {
+    const i8 = new Int8Array(r.buf), u8 = new Uint8Array(r.buf), wear = r.wear ?? 1
+    looks[ri]!.forEach((k, t) => {
+      if (k < 0) return
+      for (let j = 0; j < 3; j++, at++) {
+        const o = (r.first + t * 3 + j) * r.stride
+        i8[o + 15] = finishByte15(result.curvature[at]! * wear, k)
+        u8[o + 19] = finishByte19(1 - (1 - result.ao[at]!) * wear, result.exposure[at]!)
+      }
+    })
+  })
   return result
 }

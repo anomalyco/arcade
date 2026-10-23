@@ -6,6 +6,7 @@ import { buildingFootprint, inBuildingFootprint, type Building, type Town } from
 import { supportHeight } from "../shared/terrain"
 import { baseRun, tallCabinet, upperRun, WALNUT_KITCHEN } from "./interiors/cabinetry"
 import type { Frame } from "./interiors/frame"
+import { finishedCabinetry } from "./interiors/finish"
 import { emitBuildingRugs, emitInteriorDecor, emitWallCapMoulding } from "./interiors/mesh"
 import { interiorSettings, planInterior } from "./interiors/plan"
 import { boardPlank, emitFaceWindow } from "./interiors/windows"
@@ -535,15 +536,19 @@ export function house(m:Mesh,b:Building,id:number,town:Town) {
     // North-wall sink run (AR-69): a pantry where the second fridge stood, framed base cabinets with a sink well under
     // the pass-through window, wall cabinets either side of it, all from the shared cabinetry builder.
     const f: Frame = { alongX: true, inner: kz, out: -1 }
-    tallCabinet(m, f, r-5.95, r-5.08, WALNUT_KITCHEN, .62)
-    baseRun(m, f, r-5.02, r-1.38, WALNUT_KITCHEN, { sink: [r-4.12, r-3.18], splash: 1.02 })
+    finishedCabinetry(m, () => {
+      tallCabinet(m, f, r-5.95, r-5.08, WALNUT_KITCHEN, .62)
+      baseRun(m, f, r-5.02, r-1.38, WALNUT_KITCHEN, { sink: [r-4.12, r-3.18], splash: 1.02 })
+    })
     m.bevelBox(r-2.96,.96,kz+.1,r-2.32,1.3,kz+.5,.02,rgb(0x685e4e),rgb(0x786d5b),MAT.lit,MAT.lit)
     m.box(r-2.9,1.0,kz+.5,r-2.5,1.25,kz+.512,rgb(0x1e201e),MAT.shiny)
     m.box(r-2.46,1.04,kz+.5,r-2.36,1.22,kz+.514,rgb(0x4a443a),MAT.lit)
     m.yawBox(r-4.62,kz+.34,.34,.24,.96,.985,.12,rgb(0x7c5c3c),MAT.timber)
     emitFaceWindow(m, true, kz, 1, r-4.26, r-3.04, 1.08, 2.14, rgb(0x8e5214), kLamp, theme)
-    upperRun(m, f, r-5.02, r-4.54, WALNUT_KITCHEN, { lamp: kLamp })
-    upperRun(m, f, r-2.76, r-1.38, WALNUT_KITCHEN, { lamp: kLamp })
+    finishedCabinetry(m, () => {
+      upperRun(m, f, r-5.02, r-4.54, WALNUT_KITCHEN, { lamp: kLamp })
+      upperRun(m, f, r-2.76, r-1.38, WALNUT_KITCHEN, { lamp: kLamp })
+    })
   } else {
     // 1970s harvest-almond / warm-putty refrigerator with freezer seam, handles & magnet notes
     m.bevelBox(r-5.95,.13,kz,r-5.05,1.88,kz+.72,.03,rgb(0x7c715c),rgb(0x8a7e68))

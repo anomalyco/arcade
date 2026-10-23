@@ -24,6 +24,7 @@ import { MAT_MIRROR, reflectionDeclarationsWgsl, reflectionSurfaceWgsl } from ".
 import { outbreakUnseenPostHookWgsl, outbreakUnseenPostWgsl } from "./unseen"
 import { interiorDeclarationsWgsl, interiorFragmentStartWgsl, interiorMaterialWgsl, outbreakInteriorRefs } from "./interiors/wgsl"
 import { outbreakPuddleDeclarationsWgsl, outbreakWetGroundWgsl, outbreakWetSheenWgsl } from "./weather/puddles"
+import { finishDeclarationsWgsl, finishFragmentStartWgsl, finishMaterialWgsl, finishSurfaceWgsl } from "./interiors/finish"
 
 export const outbreakPostFinish: PostFinishOptions = {
   chromatic: 0.001,
@@ -110,7 +111,9 @@ export const outbreakSceneHooks: SceneHooks = {
     }`,
   // Soft character shadows (AR-113, soft-shadows/): each light's capsule visibility and the contact shadow as AO.
   lightVisibility: "vis *= capsuleLightVis(i);",
-  occlusion: "capsuleOcclusion",
+  // Finished props add their baked occlusion (interiors/finish.ts) to the ambient.
+  occlusion: "capsuleOcclusion * select(1.0, o.finish.x, o.finish.w > 0.5)",
+  finish: true,
   // Soft Bean (outbreakWrap = its wrap + 1) takes its own light wrap; everything else keeps the shared one.
   diffuseTerm: "let wrapK = select(wrap, outbreakWrap - 1.0, outbreakWrap > 0.5); let diffuse = max((ndl + wrapK) / (1.0 + wrapK), 0.0);",
   wallDirectScale: "mix(0.18, 0.34, smoothstep(0.0, 1.5, o.world.y))",
@@ -134,9 +137,10 @@ export const outbreakSceneHooks: SceneHooks = {
       * select(1.0, 1.15, !isPropTone && n.y > 0.35 && n.y < 0.88 && o.world.y > 0.35 && o.world.y < 2.45)
       * select(1.0, 0.68, n.y < -0.5 && o.world.y > 2.2);
     albedo *= vTone;
+    ${finishMaterialWgsl}
     outbreakAlbedo = albedo;
     outbreakPracticalIrr = max(0.0, dot(lit.diff, vec3f(0.2126, 0.7152, 0.0722)) - dot(OL.u5.rgb, vec3f(0.2126, 0.7152, 0.0722)) * (outbreakFlashIrr + outbreakMateIrr)) * GAIN;`,
-  fragmentStart: `let dWorldX = dpdx(o.world); let dWorldY = dpdy(o.world); surfaceFootprint = sqrt(max(dot(dWorldX, dWorldX), dot(dWorldY, dWorldY))); outbreakPlanJ = vec4f(dWorldX.xz, dWorldY.xz); surfaceTime = F.cam.w; ${outbreakBeanFragmentStartWgsl} ${interiorFragmentStartWgsl}`,
+  fragmentStart: `let dWorldX = dpdx(o.world); let dWorldY = dpdy(o.world); surfaceFootprint = sqrt(max(dot(dWorldX, dWorldX), dot(dWorldY, dWorldY))); outbreakPlanJ = vec4f(dWorldX.xz, dWorldY.xz); surfaceTime = F.cam.w; ${outbreakBeanFragmentStartWgsl} ${interiorFragmentStartWgsl} ${finishFragmentStartWgsl}`,
   vertex: /* wgsl */ `
   if ((v.matAux.x > 21.5 && v.matAux.x < 22.5) || (v.matAux.x > 23.5 && v.matAux.x < 24.5 && v.matAux.y > ${FOLIAGE_LIMB_AUX - 0.5})) {
     let fw = applyFoliageWindField(o.world, o.normal, v.matAux.y, v.matAux.x, F.cam.w, F.cam.xyz, OL.veg, OL.vegGust, OL.vegActors);
@@ -238,7 +242,8 @@ ${interiorDeclarationsWgsl(outbreakInteriorRefs)}
 ${outbreakHeroWgsl}
 ${reflectionDeclarationsWgsl}
 ${streetLampWgsl}
-${windowRoomWgsl}`,
+${windowRoomWgsl}
+${finishDeclarationsWgsl}`,
   directional: "mix(mix(vec3f(0.42, 0.50, 0.62), vec3f(1.48, 0.84, 0.38), smoothstep(0.42, 0.22, F.monitorBounds.y) * (1.0 - smoothstep(0.25, 0.75, F.monitorBounds.w))), vec3f(1.38, 1.14, 0.82), F.monitorBounds.w) * select(select(fd.g * 0.42, 0.03, abs(n.y) < 0.5), 1.0, !inRoom || o.world.y > 2.8) * evalCanopyCookie(o.world, inRoom) * capsuleSun * F.ambient.w * select(max(0.0, dot(n, F.monitorBounds.xyz)), max(0.0, (dot(n, F.monitorBounds.xyz) + 0.52) / 1.52), mat == 22)",
   cutaway: `
       if (OL.u17.z > 0.001 && OL.u17.z < 0.999 && bayer4x4(o.pos) > OL.u17.z) { discard; }
@@ -255,8 +260,8 @@ ${windowRoomWgsl}`,
     `,
   // High/roof triangles are always routed through fs; low opaque triangles cannot hit these discards.
   solidCutaway: "",
-  surface: buildOutbreakSurfaceWgsl(true),
-  lookSurface: buildOutbreakSurfaceWgsl(false),
+  surface: buildOutbreakSurfaceWgsl(true) + finishSurfaceWgsl,
+  lookSurface: buildOutbreakSurfaceWgsl(false) + finishSurfaceWgsl,
   lookBaseColor: "select(o.color, outbreakAlbedo, mat == 25)",
 }
 

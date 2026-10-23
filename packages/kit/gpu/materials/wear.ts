@@ -334,7 +334,6 @@ ${triplanar}
 fn wearApply(s: WearSurface, fin: vec4f, p: vec3f, g: vec3f, dpx: vec3f, dpy: vec3f) -> WearSurface {
   var r = s;
   let on = ${P("0")}.x;
-  r.wet = ${P("0")}.z;
   let slot = wearSlot(i32(round(fin.w)) - 1);
   if (fin.w < 0.5 || slot < 0 || on < 0.5) { return r; }
   let o = 1 + slot * ${WEAR_LOOK_VEC4};
@@ -344,6 +343,7 @@ fn wearApply(s: WearSurface, fin: vec4f, p: vec3f, g: vec3f, dpx: vec3f, dpy: ve
   let amt = ${P("o + 3")};
   let amt2 = ${P("o + 4")};
   let scanCfg = ${P("o + 5")};
+  r.wet = clamp(s.wet + ${P("0")}.z, 0.0, 1.0);
   let fw = max(length(dpx), length(dpy));
   let ao = fin.x;
   let curv = fin.y;
@@ -394,11 +394,12 @@ fn wearApply(s: WearSurface, fin: vec4f, p: vec3f, g: vec3f, dpx: vec3f, dpy: ve
   let damp = (below * 0.85 + rim * 0.6) * vertical * amt.z * step(-0.05, h);
   r.albedo *= mix(vec3f(1.0), vec3f(0.62, 0.58, 0.5), rim * vertical * amt.z);
 
-  // Rain streaks on exposed faces, running down from the top; dust in sheltered ones (under eaves and sills).
+  // Rain streaks on exposed faces, running down from the top; dust settles where rain never washes: sheltered tops
+  // most, sheltered sides a little.
   let along = select(p.x, p.z, abs(g.x) > abs(g.z));
   let run = wearBand(vec3f(along * 6.0, p.y * 0.35, along * 2.3), 1.0, fw * 6.0);
   let streak = smoothstep(0.58, 0.82, run + (n1 - 0.5) * 0.2) * vertical * expo * amt.w;
-  let dust = (1.0 - expo) * vertical * 0.6 * amt.w;
+  let dust = (1.0 - expo) * mix(0.25 * vertical, 1.0, smoothstep(0.6, 0.9, g.y)) * smoothstep(0.2, 0.6, breakup + 0.15) * 0.7 * amt.w;
   r.albedo *= mix(vec3f(1.0), vec3f(0.6, 0.57, 0.52), streak);
   r.albedo = mix(r.albedo, r.albedo * vec3f(0.86, 0.84, 0.8) + vec3f(0.012), dust);
   r.rough = mix(r.rough, min(1.0, r.rough + 0.12), dust);

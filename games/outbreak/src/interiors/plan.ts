@@ -48,6 +48,8 @@ export const interiorSettings = {
   wallCaps: 1,
   /** Interior craft pass (AR-69): 1 builds walls, windows, cabinetry and trim to the floors' standard, 0 is Today. */
   craft: 1,
+  /** Finished props (`finish.ts`): the fitted kitchen chamfered, baked and worn; 0 is Today. */
+  finish: 1,
 }
 
 /** Rug top height above the 0.13 m house floor. */
@@ -202,4 +204,4 @@ export function planInterior(b: Building, houseSeed: number): InteriorPlan {
 export const themeIndex = (t: InteriorTheme) => INTERIOR_THEMES.indexOf(t)
 
 /** Cache-key fragment for everything in `interiorSettings` that changes level geometry. */
-export const interiorSignature = () => `${interiorSettings.theme}|${interiorSettings.rugSeed}|${interiorSettings.rugs}|${interiorSettings.decor}|${interiorSettings.wainscot}|${interiorSettings.wallCaps}|${interiorSettings.craft}`
+export const interiorSignature = () => `${interiorSettings.theme}|${interiorSettings.rugSeed}|${interiorSettings.rugs}|${interiorSettings.decor}|${interiorSettings.wainscot}|${interiorSettings.wallCaps}|${interiorSettings.craft}|${interiorSettings.finish}`

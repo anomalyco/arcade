@@ -27,6 +27,10 @@ export type FinishBakeOptions = {
   /** Sky rays per vertex (default 16) and their length (m, default 4): eaves and sills shelter what is below. */
   skyRays?: number
   skyReach?: number
+  /** A fixed sky exposure instead of sky rays, e.g. 0 indoors when the roof isn't part of what is baked. */
+  exposure?: number
+  /** Corners closer than this (m) that face the same way share one set of rays (default 2 cm; a chamfer's edge). */
+  merge?: number
   /** Ground under the mesh: a height (m), a height function, or null for none. Rays that pass below it are blocked. */
   ground?: number | ((x: number, z: number) => number) | null
   /** Extra occluding triangles (xyz per corner, triangle list) that are not themselves baked, such as a room's walls. */
@@ -38,77 +42,121 @@ export type FinishBakeOptions = {
   edgeBand?: number
   /** Curvature already known per vertex (NaN = bake it), e.g. from a chamfered box builder. */
   curvatureHints?: ArrayLike<number>
+  /**
+   * Convex part per vertex (a box, a cylinder; negative = none): rays skip their own part's triangles, which can't
+   * occlude them, so a chamfered box's own 90-odd triangles cost nothing.
+   */
+  parts?: ArrayLike<number>
 }
 
 type V3 = [number, number, number]
 
-/** A uniform grid over triangles for short ray casts. */
-class TriangleGrid {
-  readonly cells = new Map<number, number[]>()
-  readonly min: V3
-  readonly size: number
-  readonly dims: V3
-  constructor(readonly tri: Float32Array, cellTarget: number) {
+/** A bounding-volume hierarchy over triangles for short ray casts (median splits, up to four triangles a leaf). */
+class TriangleBvh {
+  /** Per triangle (in leaf order): its first corner, then its two edges from it. */
+  readonly edges: Float64Array
+  /** Original index of each leaf-ordered triangle (for the per-triangle stamps and parts). */
+  readonly order: Int32Array
+  /** Per node: min xyz, max xyz. */
+  readonly box: Float64Array
+  /** Per node: first child (inner) or first triangle (leaf), and triangle count (0 = inner). */
+  readonly first: Int32Array
+  readonly count: Int32Array
+  nodes = 0
+  constructor(tri: Float32Array) {
     const n = tri.length / 9
-    const lo: V3 = [Infinity, Infinity, Infinity], hi: V3 = [-Infinity, -Infinity, -Infinity]
-    for (let i = 0; i < tri.length; i += 3) for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k]!, tri[i + k]!); hi[k] = Math.max(hi[k]!, tri[i + k]!) }
-    if (!n) { lo.fill(0); hi.fill(1) }
-    const extent = Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2], 1e-3)
-    this.size = Math.max(cellTarget, extent / 96)
-    this.min = [lo[0] - this.size * 0.5, lo[1] - this.size * 0.5, lo[2] - this.size * 0.5]
-    this.dims = [0, 1, 2].map(k => Math.max(1, Math.ceil((hi[k]! - this.min[k]!) / this.size) + 1)) as V3
-    for (let t = 0; t < n; t++) {
-      const o = t * 9
-      const c0 = [0, 1, 2].map(k => Math.floor((Math.min(tri[o + k]!, tri[o + 3 + k]!, tri[o + 6 + k]!) - this.min[k]!) / this.size))
-      const c1 = [0, 1, 2].map(k => Math.floor((Math.max(tri[o + k]!, tri[o + 3 + k]!, tri[o + 6 + k]!) - this.min[k]!) / this.size))
-      for (let x = c0[0]!; x <= c1[0]!; x++) for (let y = c0[1]!; y <= c1[1]!; y++) for (let z = c0[2]!; z <= c1[2]!; z++) {
-        const key = this.key(x, y, z)
-        let list = this.cells.get(key)
-        if (!list) this.cells.set(key, (list = []))
-        list.push(t)
+    const lo = new Float64Array(n * 3), hi = new Float64Array(n * 3), mid = new Float64Array(n * 3)
+    for (let t = 0; t < n; t++) for (let k = 0; k < 3; k++) {
+      const a = tri[t * 9 + k]!, b = tri[t * 9 + 3 + k]!, c = tri[t * 9 + 6 + k]!
+      lo[t * 3 + k] = Math.min(a, b, c); hi[t * 3 + k] = Math.max(a, b, c); mid[t * 3 + k] = (a + b + c) / 3
+    }
+    const idx = new Int32Array(n).map((_, i) => i)
+    const cap = Math.max(1, 2 * n)
+    this.box = new Float64Array(cap * 6); this.first = new Int32Array(cap); this.count = new Int32Array(cap)
+    const build = (node: number, from: number, to: number) => {
+      let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity
+      let c0 = [Infinity, Infinity, Infinity], c1 = [-Infinity, -Infinity, -Infinity]
+      for (let i = from; i < to; i++) {
+        const t = idx[i]! * 3
+        x0 = Math.min(x0, lo[t]!); y0 = Math.min(y0, lo[t + 1]!); z0 = Math.min(z0, lo[t + 2]!)
+        x1 = Math.max(x1, hi[t]!); y1 = Math.max(y1, hi[t + 1]!); z1 = Math.max(z1, hi[t + 2]!)
+        for (let k = 0; k < 3; k++) { c0[k] = Math.min(c0[k]!, mid[t + k]!); c1[k] = Math.max(c1[k]!, mid[t + k]!) }
+      }
+      this.box.set([x0, y0, z0, x1, y1, z1], node * 6)
+      const axis = c1[0]! - c0[0]! >= c1[1]! - c0[1]! && c1[0]! - c0[0]! >= c1[2]! - c0[2]! ? 0 : c1[1]! - c0[1]! >= c1[2]! - c0[2]! ? 1 : 2
+      if (to - from <= 4 || c1[axis]! - c0[axis]! < 1e-9) { this.first[node] = from; this.count[node] = to - from; return }
+      // Split at the centroid bounds' middle (falls back to the median when one side would be empty).
+      const split = (c0[axis]! + c1[axis]!) / 2
+      let m = from
+      for (let i = from; i < to; i++) if (mid[idx[i]! * 3 + axis]! < split) { const tmp = idx[i]!; idx[i] = idx[m]!; idx[m] = tmp; m++ }
+      if (m === from || m === to) {
+        const part = Array.from(idx.subarray(from, to)).sort((a, b) => mid[a * 3 + axis]! - mid[b * 3 + axis]!)
+        idx.set(part, from)
+        m = (from + to) >> 1
+      }
+      const left = this.nodes; this.nodes += 2
+      this.first[node] = left; this.count[node] = 0
+      build(left, from, m); build(left + 1, m, to)
+    }
+    this.nodes = 1
+    if (n) build(0, 0, n)
+    else { this.box.set([0, 0, 0, -1, -1, -1]); this.count[0] = 0; this.first[0] = 0 }
+    this.order = idx
+    this.edges = new Float64Array(n * 9)
+    for (let i = 0; i < n; i++) {
+      const p = idx[i]! * 9, q = i * 9
+      for (let k = 0; k < 3; k++) {
+        this.edges[q + k] = tri[p + k]!
+        this.edges[q + 3 + k] = tri[p + 3 + k]! - tri[p + k]!
+        this.edges[q + 6 + k] = tri[p + 6 + k]! - tri[p + k]!
       }
     }
   }
-  private key(x: number, y: number, z: number) { return (x * this.dims[1] + y) * this.dims[2] + z }
 
-  /** Distance to the first triangle hit along `d` from `o` within `maxT`, or Infinity. Möller–Trumbore, two-sided. */
-  cast(o: V3, d: V3, maxT: number, stamp: Int32Array, ray: number): number {
-    const s = this.size
-    let x = Math.floor((o[0] - this.min[0]) / s), y = Math.floor((o[1] - this.min[1]) / s), z = Math.floor((o[2] - this.min[2]) / s)
-    const step = [Math.sign(d[0]), Math.sign(d[1]), Math.sign(d[2])]
-    const next = (c: number, k: number) => (this.min[k]! + (c + (step[k]! > 0 ? 1 : 0)) * s - o[k]!) / (d[k]! || 1e-30)
-    let tx = d[0] ? next(x, 0) : Infinity, ty = d[1] ? next(y, 1) : Infinity, tz = d[2] ? next(z, 2) : Infinity
-    const dx = d[0] ? s / Math.abs(d[0]) : Infinity, dy = d[1] ? s / Math.abs(d[1]) : Infinity, dz = d[2] ? s / Math.abs(d[2]) : Infinity
-    let best = Infinity, t0 = 0
-    const tri = this.tri
-    while (t0 <= maxT && t0 < best) {
-      if (x >= 0 && y >= 0 && z >= 0 && x < this.dims[0] && y < this.dims[1] && z < this.dims[2]) {
-        const list = this.cells.get(this.key(x, y, z))
-        if (list) for (const t of list) {
-          if (stamp[t] === ray) continue
-          stamp[t] = ray
-          const p = t * 9
-          const e1x = tri[p + 3]! - tri[p]!, e1y = tri[p + 4]! - tri[p + 1]!, e1z = tri[p + 5]! - tri[p + 2]!
-          const e2x = tri[p + 6]! - tri[p]!, e2y = tri[p + 7]! - tri[p + 1]!, e2z = tri[p + 8]! - tri[p + 2]!
-          const px = d[1] * e2z - d[2] * e2y, py = d[2] * e2x - d[0] * e2z, pz = d[0] * e2y - d[1] * e2x
-          const det = e1x * px + e1y * py + e1z * pz
-          if (Math.abs(det) < 1e-12) continue
-          const inv = 1 / det
-          const sx = o[0] - tri[p]!, sy = o[1] - tri[p + 1]!, sz = o[2] - tri[p + 2]!
-          const u = (sx * px + sy * py + sz * pz) * inv
-          if (u < 0 || u > 1) continue
-          const qx = sy * e1z - sz * e1y, qy = sz * e1x - sx * e1z, qz = sx * e1y - sy * e1x
-          const v = (d[0] * qx + d[1] * qy + d[2] * qz) * inv
-          if (v < 0 || u + v > 1) continue
-          const hit = (e2x * qx + e2y * qy + e2z * qz) * inv
-          if (hit > 1e-5 && hit < best && hit <= maxT) best = hit
-        }
+  private readonly stack = new Int32Array(128)
+
+  /**
+   * Distance to the first triangle hit along `d` from `o` within `maxT`, or Infinity. Möller–Trumbore, two-sided.
+   * `any` returns at the first hit found (a visibility test), not necessarily the nearest. Triangles whose `part` is
+   * `self` are skipped.
+   */
+  cast(o: V3, d: V3, maxT: number, any = false, part: Int32Array | null = null, self = -2): number {
+    const e = this.edges, box = this.box, first = this.first, count = this.count, order = this.order, stack = this.stack
+    const ox = o[0], oy = o[1], oz = o[2], ddx = d[0], ddy = d[1], ddz = d[2]
+    const ix = 1 / ddx, iy = 1 / ddy, iz = 1 / ddz
+    let best = maxT, found = false, sp = 0
+    stack[sp++] = 0
+    while (sp > 0) {
+      const node = stack[--sp]!, b = node * 6
+      let ta = (box[b]! - ox) * ix, tb = (box[b + 3]! - ox) * ix
+      let tmin = Math.min(ta, tb), tmax = Math.max(ta, tb)
+      ta = (box[b + 1]! - oy) * iy; tb = (box[b + 4]! - oy) * iy
+      tmin = Math.max(tmin, Math.min(ta, tb)); tmax = Math.min(tmax, Math.max(ta, tb))
+      ta = (box[b + 2]! - oz) * iz; tb = (box[b + 5]! - oz) * iz
+      tmin = Math.max(tmin, Math.min(ta, tb)); tmax = Math.min(tmax, Math.max(ta, tb))
+      if (!(tmax >= Math.max(tmin, 0) && tmin <= best)) continue
+      const c = count[node]!
+      if (c === 0) { stack[sp++] = first[node]! + 1; stack[sp++] = first[node]!; continue }
+      for (let i = first[node]!, end = i + c; i < end; i++) {
+        if (part !== null && part[order[i]!] === self) continue
+        const p = i * 9
+        const e1x = e[p + 3]!, e1y = e[p + 4]!, e1z = e[p + 5]!
+        const e2x = e[p + 6]!, e2y = e[p + 7]!, e2z = e[p + 8]!
+        const px = ddy * e2z - ddz * e2y, py = ddz * e2x - ddx * e2z, pz = ddx * e2y - ddy * e2x
+        const det = e1x * px + e1y * py + e1z * pz
+        if (det > -1e-12 && det < 1e-12) continue
+        const inv = 1 / det
+        const sx = ox - e[p]!, sy = oy - e[p + 1]!, sz = oz - e[p + 2]!
+        const u = (sx * px + sy * py + sz * pz) * inv
+        if (u < 0 || u > 1) continue
+        const qx = sy * e1z - sz * e1y, qy = sz * e1x - sx * e1z, qz = sx * e1y - sy * e1x
+        const v = (ddx * qx + ddy * qy + ddz * qz) * inv
+        if (v < 0 || u + v > 1) continue
+        const hit = (e2x * qx + e2y * qy + e2z * qz) * inv
+        if (hit > 1e-5 && hit <= best) { best = hit; found = true; if (any) return hit }
       }
-      if (tx <= ty && tx <= tz) { t0 = tx; tx += dx; x += step[0]! }
-      else if (ty <= tz) { t0 = ty; ty += dy; y += step[1]! }
-      else { t0 = tz; tz += dz; z += step[2]! }
     }
-    return best
+    return found ? best : Infinity
   }
 }
 
@@ -152,14 +200,16 @@ export function bakeFinish(pos: ArrayLike<number>, nrm: ArrayLike<number>, opts:
   const tri = new Float32Array(count * 3 + extra)
   for (let i = 0; i < count * 3; i++) tri[i] = pos[i]!
   for (let i = 0; i < extra; i++) tri[count * 3 + i] = opts.occluders![i]!
-  const grid = new TriangleGrid(tri, Math.max(reach / 2, 0.05))
-  const stamp = new Int32Array(tri.length / 9).fill(-1)
-  let ray = 0
+  const grid = new TriangleBvh(tri)
+  const part = opts.parts ? new Int32Array(tri.length / 9).fill(-1) : null
+  if (part) for (let t = 0; t < count / 3; t++) { const k = opts.parts![t * 3]; part[t] = k !== undefined && k >= 0 ? k : -1 }
 
   const hemi = spiral(rays, true)
   const sky = spiral(skyRays, false, Math.PI / 3)
   const ao = new Float32Array(count), exposure = new Float32Array(count), curvature = new Float32Array(count)
-  // Triangle lists repeat every corner several times with the same normal: cast once per distinct corner.
+  // Triangle lists repeat every corner several times, and a chamfer's corners sit millimetres from its faces': cast once
+  // per cell of `merge` facing the same way.
+  const merge = opts.merge ?? 0.02
   const seenAt = new Map<string, number>()
   const below = (p: V3, d: V3, t: number) => {
     if (!groundAt) return false
@@ -174,7 +224,10 @@ export function bakeFinish(pos: ArrayLike<number>, nrm: ArrayLike<number>, opts:
     const n: V3 = [nrm[i * 3]!, nrm[i * 3 + 1]!, nrm[i * 3 + 2]!]
     const nl = Math.hypot(...n) || 1
     n[0] /= nl; n[1] /= nl; n[2] /= nl
-    const corner = `${Math.round(p[0] * 1e4)},${Math.round(p[1] * 1e4)},${Math.round(p[2] * 1e4)},${Math.round(n[0] * 64)},${Math.round(n[1] * 64)},${Math.round(n[2] * 64)}`
+    const ax = Math.abs(n[0]) >= Math.abs(n[1]) && Math.abs(n[0]) >= Math.abs(n[2]) ? (n[0] > 0 ? 0 : 1) : Math.abs(n[1]) >= Math.abs(n[2]) ? (n[1] > 0 ? 2 : 3) : n[2] > 0 ? 4 : 5
+    const pk = opts.parts?.[i]
+    const self = pk !== undefined && pk >= 0 ? pk : -2
+    const corner = `${Math.round(p[0] / merge)},${Math.round(p[1] / merge)},${Math.round(p[2] / merge)},${ax},${self}`
     const prior = seenAt.get(corner)
     if (prior !== undefined) { ao[i] = ao[prior]!; exposure[i] = exposure[prior]!; continue }
     seenAt.set(corner, i)
@@ -184,18 +237,19 @@ export function bakeFinish(pos: ArrayLike<number>, nrm: ArrayLike<number>, opts:
     let open = 0
     for (const h of hemi) {
       const d: V3 = [t[0] * h[0] + b[0] * h[1] + n[0] * h[2], t[1] * h[0] + b[1] * h[1] + n[1] * h[2], t[2] * h[0] + b[2] * h[1] + n[2] * h[2]]
-      let hit = grid.cast(o, d, reach, stamp, ray++)
+      let hit = grid.cast(o, d, reach, false, part, self)
       if (below(o, d, reach)) hit = Math.min(hit, reach * 0.5)
       // Near hits occlude fully, hits at the end of reach hardly at all.
       open += hit === Infinity ? 1 : Math.min(1, hit / reach) ** 0.75
     }
     ao[i] = open / rays
+    if (opts.exposure !== undefined) { exposure[i] = opts.exposure; continue }
     let seen = 0, possible = 0
     for (const s of sky) {
       const d: V3 = [s[0], s[2], s[1]]
       possible++
       if (d[0] * n[0] + d[1] * n[1] + d[2] * n[2] <= 0.02) continue
-      if (grid.cast(o, d, skyReach, stamp, ray++) === Infinity) seen++
+      if (grid.cast(o, d, skyReach, true, part, self) === Infinity) seen++
     }
     exposure[i] = possible ? seen / possible : 1
   }

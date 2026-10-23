@@ -27,6 +27,7 @@ import { MOON_RADIUS } from "../sky/astronomy"
 import { WATER_WGSL } from "../water/shader"
 import { LAKE_WGSL } from "../water/lake"
 import { LAKE_HORIZON_BINS } from "../water/lake-horizon"
+import { wearFloats, wearVec4s, wearWgsl, type FinishLookId } from "../gpu/materials/wear"
 
 /** Mip levels of the coverage table the shader uses: past 7 (8² texels a card) the atlas-wide share is noise. */
 const COVERAGE_LEVELS = 8
@@ -34,13 +35,19 @@ const COVERAGE_LEVELS = 8
 /** Cells per side of the eye-centred ground grid in the custom uniform (the mist bank's floor), and their size (m). */
 export const GROUND_CELLS = 18
 export const GROUND_CELL = 10
-/** Floats in the forest's custom uniform (binding 13): the named slots, the grid's origin, then its heights. */
-export const WOODS_FLOATS = 100 + GROUND_CELLS * GROUND_CELLS
-/** Float offsets of the storm slots, the moonlight slots and the ground grid in the forest's custom uniform. */
+/**
+ * Looks the finished camp uses (`build.ts` `campLook`), in the order of the wear table. The camp's planks and stones
+ * already carry their own scans through UVs, so no triplanar scan layers are bound here.
+ */
+export const FOREST_WEAR_LOOKS = ["old-wood", "weathered-stone"] as const satisfies readonly FinishLookId[]
+/** Float offsets of the storm slots, the moonlight slots, the ground grid and the wear table in the forest's custom uniform. */
 export const WOODS_STORM = 80
 export const WOODS_MOONLIT = 88
 export const WOODS_GROUND_AT = 96
 export const WOODS_GROUND = 100
+export const WOODS_WEAR = WOODS_GROUND + GROUND_CELLS * GROUND_CELLS
+/** Floats in the forest's custom uniform (binding 13): the named slots, the grid's origin, its heights, then wear. */
+export const WOODS_FLOATS = WOODS_WEAR + wearFloats(FOREST_WEAR_LOOKS)
 /** Where the moon's canopy map gives way to the sky openness (m from the eye, in plan): inside its ~100 m reach. */
 export const MOON_MAP_FADE = [70, 95] as const
 /** Spot-shadow ids of the moon's canopy shadow map and the lightning's. */
@@ -72,6 +79,7 @@ struct Woods {
   moonlit2: vec4f,    // moon shaft steps, reach (m), moonlit sky gain (kit/sky skyMoonScatter), extinction (mag/airmass)
   groundAt: vec4f,    // ground grid x0, z0, 1/cell, -
   ground: array<vec4f, ${(GROUND_CELLS * GROUND_CELLS) / 4}>,
+  wear: array<vec4f, ${wearVec4s(FOREST_WEAR_LOOKS)}>, // finished camp: on, albedo check, wetness, -; then each look
 }
 @group(0) @binding(13) var<uniform> N: Woods;
 fn woodsGroundCell(i: i32, j: i32) -> f32 {
@@ -217,6 +225,9 @@ var<private> wDpx: vec3f;
 var<private> wDpy: vec3f;
 var<private> wDux: vec2f;
 var<private> wDuy: vec2f;
+/** The albedo validator view is on (\`N.wear[0].y\`): the surface shows its false colour, unlit and unfogged. */
+var<private> woodsCheck: bool = false;
+${wearWgsl({ looks: FOREST_WEAR_LOOKS, params: "N.wear", ground: p => `woodsGround(${p}.xz)` })}
 `
 
 /** Wind displacement of a vertex (world position before wind, its material and aux, colour weights, phase 0..1). */
@@ -368,10 +379,18 @@ const material = /* wgsl */ `
       alb = vec3f(0.012) + vec3f(dot(alb, vec3f(0.2126, 0.7152, 0.0722))) * 0.16;
       rough = 0.96;
     }
+    if (o.finish.w > 0.5) {
+      // Finished camp props (build.ts campFinish): worn edges, grime, damp and dust from the baked data.
+      var ws: WearSurface;
+      ws.albedo = alb; ws.rough = rough; ws.metal = 0.0; ws.wet = 0.0;
+      let wr = wearApply(ws, o.finish, o.world, geo, wDpx, wDpy);
+      alb = wr.albedo; rough = wr.rough; pbrMetal = wr.metal;
+    }
     // Cavity: furrows hold their own shade even under a light from the eye, which flattens everything else.
     albedo = alb * mix(1.0, s.orm.r * s.orm.r, 0.75);
     n = nn;
-    woodsAo = s.orm.r;
+    // Finished props add their baked occlusion (corners, under eaves and sills) to the scan's.
+    woodsAo = s.orm.r * select(1.0, o.finish.x, o.finish.w > 0.5);
     pbrRough = clamp(rough + woodsVariance(s.n) * 0.35, 0.05, 1.0);
   } else if (mat == ${MAT.needles} || mat == ${MAT.fern}) {
     let s = woodsTex(layer, o.uv, wDux, wDuy);
@@ -445,6 +464,11 @@ const material = /* wgsl */ `
     albedo = o.color;
     pbrRough = 0.5;
   }
+  if (N.wear[0].y > 0.5) {
+    // Albedo validator: false colour where albedo leaves its measured range, shown at the post pass's exposure.
+    woodsCheck = true;
+    woodsEmit = wearCheck(albedo, pbrMetal) / max(N.sway.w, 1e-6);
+  }
 `
 
 /**
@@ -489,6 +513,7 @@ fn forestMoonAmbient(n: vec3f, open: f32) -> vec3f {
 
 const sceneHooks: SceneHooks = {
   uv: true,
+  finish: true,
   lampGrid: false,
   declarations: woodsUniformWgsl + fogSceneWgsl + textures + woodsSkyWgsl + woodsEnvWgsl + windWgsl + forestMoonWgsl + /* wgsl */ `
 fn forestMoon(world: vec3f, n: vec3f, open: f32) -> vec3f {
@@ -512,6 +537,7 @@ ${forestFlashWgsl}
   surface: /* wgsl */ `
     col += woodsEmit;
     col = fogApply(col, F.cam.xyz, o.world);
+    if (woodsCheck) { col = woodsEmit; }
   `,
   fragmentReturn: /* wgsl */ `{
     if (woodsMasked) { return vec4f(col, a); }

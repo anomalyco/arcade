@@ -23,7 +23,8 @@ import { loadForestModels, loadForestTextures, type ForestTextures } from "./ass
 import { buildForest, CHUNK, forestHeightGrid, INSTANCE_FLOATS, type ForestBuild } from "./build"
 import { ForestBuilder } from "./offthread"
 import { ALPHA_COVERAGE_BASE } from "./alpha-coverage"
-import { FLASH_SHADOW_ID, GROUND_CELL, GROUND_CELLS, MOON_SHADOW_ID, WOODS_FLOATS, WOODS_GROUND, WOODS_GROUND_AT, WOODS_MOONLIT, WOODS_STORM, batchHooks, cutoutDepthWgsl, forestHooks, forestShadowInstanceWgsl, moteShader, skyShader, stormSkyShader, torchReactiveShader, treeVertexWgsl, woodsUniformWgsl, forestLakeHooks } from "./shaders"
+import { packWear } from "../gpu/materials/wear"
+import { FLASH_SHADOW_ID, FOREST_WEAR_LOOKS, GROUND_CELL, GROUND_CELLS, MOON_SHADOW_ID, WOODS_FLOATS, WOODS_GROUND, WOODS_GROUND_AT, WOODS_MOONLIT, WOODS_STORM, WOODS_WEAR, batchHooks, cutoutDepthWgsl, forestHooks, forestShadowInstanceWgsl, moteShader, skyShader, stormSkyShader, torchReactiveShader, treeVertexWgsl, woodsUniformWgsl, forestLakeHooks } from "./shaders"
 import type { ForestStormView } from "./storm"
 import { BoltPass, BOLT_LOOK } from "../weather/lightning-pass"
 import type { Strike, StrikeLight } from "../weather/lightning"
@@ -254,7 +255,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
   let models = await modelsLoading
   mark("models")
   const t1 = performance.now()
-  const buildOpts = () => ({ scatter: 1, fernDensity: settings.fernDensity, litter: settings.litter, smoothTrunks: settings.smoothTrunks, campDetail: settings.campDetail })
+  const buildOpts = () => ({ scatter: 1, fernDensity: settings.fernDensity, litter: settings.litter, smoothTrunks: settings.smoothTrunks, campDetail: settings.campDetail, campFinish: settings.campFinish })
   // A worker that dies mid-build takes the models it was handed: fetch them again and build here.
   const built = await builder.build(world, models, buildOpts(), ground, (time) => mark("worker", time)).catch(async (error) => {
     console.warn("forest: building on the main thread:", error)
@@ -558,6 +559,8 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     custom.set(physicalMoon
       ? [moonSkyIlluminance(s) * s.skylight, lunar.illuminanceLux * Math.max(0, lunar.direction[1]) * s.canopyScatter, s.moonMist, s.moonMist * s.moonAir, quality.mistSteps, MOON_SHAFT_REACH, s.skyMoonScatter, s.skyExtinction]
       : [0, 0, 0, 0, 0, 0, 0, 0], WOODS_MOONLIT)
+    // The forest's own rain already soaks the boards, so the weather adds no wear wetness on top.
+    packWear(custom, WOODS_WEAR, FOREST_WEAR_LOOKS, s)
     renderer.setCustomUniforms(custom)
 
     // ---- Storm: the cloud base over the sky, the channel, the rain.

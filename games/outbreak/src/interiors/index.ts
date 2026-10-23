@@ -1,4 +1,5 @@
 import type { LabControl } from "@arcade/kit/lab-panel"
+import { WEAR_DEFAULTS, wearControls, type WearSettings } from "@arcade/kit/gpu/materials/wear"
 import { defaultTextureBaseUrl } from "@arcade/kit/textures/manifest"
 import { distToRect } from "@arcade/kit/sim/geom"
 import type { Building } from "../../shared/map"
@@ -12,7 +13,7 @@ export { interiorSettings, planInterior } from "./plan"
 export { SCONCE_LAMP_SLOT, SconceLights } from "./sconces"
 
 /** Typed Lab settings for rugs and themed interiors. */
-export type InteriorLabSettings = SconceLightSettings & {
+export type InteriorLabSettings = SconceLightSettings & WearSettings & {
   /** 0 procedural bake, 1 the hand-painted manifest rugs, 2 flat placeholder colour. */
   rugSource: number
   rugResolution: number
@@ -28,6 +29,8 @@ export type InteriorLabSettings = SconceLightSettings & {
   wallCaps: number
   /** Interior craft pass (AR-69): 1 craft walls, windows, cabinets and trim; 0 Today. */
   interiorCraft: number
+  /** Finished props (`finish.ts`, kit `gpu/finish`): chamfered, baked and worn kitchen cabinetry; 0 Today. */
+  propFinish: number
   /** Painted-wall wear (water streaks, rising damp, corner and ceiling shade), 0 off. */
   wallWear: number
   /** Spike (AR-42): Ash's living room and hall floor drawn from a painted plate (0 off, 1 on). */
@@ -56,6 +59,7 @@ export const DEFAULT_INTERIOR_SETTINGS: InteriorLabSettings = {
   wainscot: 1,
   wallCaps: 1,
   interiorCraft: 1,
+  propFinish: 1,
   wallWear: 1,
   paintedPlate: 1,
   plateBrightness: 1.7,
@@ -66,10 +70,11 @@ export const DEFAULT_INTERIOR_SETTINGS: InteriorLabSettings = {
   decalStrength: 1,
   skirtingGrime: 0.6,
   ...DEFAULT_SCONCE_LIGHT_SETTINGS,
+  ...WEAR_DEFAULTS,
 }
 
 /** Keys whose change rebuilds static level geometry (rug quads, decor) rather than updating uniforms. */
-export const INTERIOR_STRUCTURAL_KEYS = new Set(["interiorTheme", "rugSeed", "interiorDecor", "wainscot", "wallCaps", "interiorCraft"])
+export const INTERIOR_STRUCTURAL_KEYS = new Set(["interiorTheme", "rugSeed", "interiorDecor", "wainscot", "wallCaps", "interiorCraft", "propFinish"])
 
 export function interiorControls(onStructural: () => void, onPool: () => void, onSource: () => void = () => {}): LabControl[] {
   const group = "Rugs & interiors"
@@ -84,6 +89,8 @@ export function interiorControls(onStructural: () => void, onPool: () => void, o
     { key: "wainscot", label: "Wainscoting", group, type: "toggle", change: onStructural },
     { key: "interiorCraft", label: "Interior craft", group, type: "select", options: [{ value: 0, label: "Today" }, { value: 1, label: "Craft pass (AR-69)" }], change: onStructural },
     { key: "wallWear", label: "Wall wear (stains, damp, shade)", group, min: 0, max: 1.5, step: 0.05, unit: "×" },
+    { key: "propFinish", label: "Finished props", group, type: "select", options: [{ value: 0, label: "Today" }, { value: 1, label: "Chamfered, baked and worn" }], change: onStructural },
+    ...wearControls("", group, "Finished props"),
     { key: "wallCaps", label: "Moulded wall tops", group: "Look · Detail", type: "toggle", change: onStructural },
     { key: "sconceLights", label: "Lit sconce pairs", group, type: "select", options: [{ value: -1, label: "Quality tier" }, { value: 0, label: "Off" }, { value: 1, label: "1" }, { value: 2, label: "2" }, { value: 3, label: "3" }, { value: 4, label: "4" }] },
     { key: "sconcePower", label: "Sconce brightness", group, min: 0, max: 3, step: 0.05, unit: "×" },
@@ -178,6 +185,7 @@ export class InteriorPresenter {
     interiorSettings.wainscot = this.settings.wainscot
     interiorSettings.wallCaps = this.settings.wallCaps
     interiorSettings.craft = this.settings.interiorCraft
+    interiorSettings.finish = this.settings.propFinish
   }
 
   /** Applies one changed setting; returns what the host must do ("structural" rebuilds the level). */

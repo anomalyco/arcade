@@ -106,12 +106,36 @@ export class Mesh {
   wearBand: number
   /** Curvature per vertex index written by the chamfered builders (sparse; holes are baked by `finish`). */
   readonly curvatureHints: number[] = []
+  /** Finish look index per vertex index, from `finishPart` (sparse; untagged vertices stay unfinished). */
+  readonly finishLooks: number[] = []
   /** Bytes 15 and 19 per vertex from `finish`; `pack` uses them while they cover every vertex. */
   finishBytes: Uint8Array | null = null
 
   constructor(opts: MeshOptions = {}) {
     this.chamfer = opts.chamfer ?? 0
     this.wearBand = opts.wearBand ?? 0.03
+  }
+
+  /**
+   * Tags everything `build` emits with a finish look (an index into `FINISH_LOOKS`), optionally with chamfered edges
+   * while it runs; `finishTagged` (`finish.ts`) bakes the tagged vertices before packing.
+   */
+  finishPart(look: number, build: () => void, chamfer: number | "auto" = this.chamfer): void {
+    const prior = this.chamfer, first = this.count
+    this.chamfer = chamfer
+    try { build() } finally { this.chamfer = prior }
+    for (let i = first; i < this.count; i++) this.finishLooks[i] = look
+  }
+
+  /** Appends `src`'s triangle starting at float `at`, with its finishing tags. */
+  copyTriangle(src: Mesh, at: number): void {
+    const from = at / FLOATS_PER_VERT, to = this.count
+    for (let k = at; k < at + FLOATS_PER_VERT * 3; k++) this.v.push(src.v[k]!)
+    for (let j = 0; j < 3; j++) {
+      const look = src.finishLooks[from + j], hint = src.curvatureHints[from + j]
+      if (look !== undefined) this.finishLooks[to + j] = look
+      if (hint !== undefined) this.curvatureHints[to + j] = hint
+    }
   }
 
   private chamferFor(w: number, h: number, d: number): number {

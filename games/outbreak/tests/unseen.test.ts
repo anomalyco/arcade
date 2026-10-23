@@ -1,3 +1,4 @@
+import { FINISH_UNIFORM_FLOATS } from "../src/interiors/finish"
 import { describe, expect, test } from "bun:test"
 import { CUSTOM_UNIFORM_BYTES } from "@arcade/kit/gpu/renderer"
 import { LIGHT_RAMP_FLOATS } from "../src/light-ramps"
@@ -82,8 +83,8 @@ describe("outbreak unseen visibility & post-process", () => {
     expect(unseenUniformsStruct.byteSize).toBe(32)
     expect(OUTBREAK_UNSEEN_UNIFORM_OFFSET).toBe(228)
     // The falloff curves' flags and tables follow the unseen block (see light-ramps.ts).
-    // Then the simple survivor's surface, the light-colour rule, the dust motes, Soft Bean, the shroud/unlit controls, the beam look, the sight shroud, the Darkwood surfaces and night sight (one vec4f each), then the vegetation wind field (12), the tree look and burning trees (36), reflections (two vec4f) and the wet reflections’ lights (two vec4f each), the lens street lamps (three vec4f) and the rooms behind the windows (two vec4f).
-    expect(OUTBREAK_LIGHTING_UNIFORM_FLOATS).toBe(236 + LIGHT_RAMP_FLOATS + 36 + 12 + 36 + 8 + 64 + 12 + 8)
+    // Then the simple survivor's surface, the light-colour rule, the dust motes, Soft Bean, the shroud/unlit controls, the beam look, the sight shroud, the Darkwood surfaces and night sight (one vec4f each), then the vegetation wind field (12), the tree look and burning trees (36), reflections (two vec4f) and the wet reflections’ lights (two vec4f each), the lens street lamps (three vec4f), the rooms behind the windows (two vec4f) and the finished props' wear table.
+    expect(OUTBREAK_LIGHTING_UNIFORM_FLOATS).toBe(236 + LIGHT_RAMP_FLOATS + 36 + 12 + 36 + 8 + 64 + 12 + 8 + FINISH_UNIFORM_FLOATS)
     expect(OUTBREAK_LIGHTING_UNIFORM_FLOATS * 4).toBeLessThanOrEqual(CUSTOM_UNIFORM_BYTES)
 
     const settings = createOutbreakSettings()

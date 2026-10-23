@@ -16,7 +16,10 @@
 import type { ForestTree, ForestWorld, Vec2, Vec3 } from "../sim/forest-world"
 import { deriveDeadfall, mulberry, segDist, smoothNoise } from "../sim/forest-demo"
 import { LAYER, type ForestModels, type ModelPart } from "./assets"
-import { VertexWriter, readVertex, type RGBA } from "./mesh"
+import { VertexWriter, fromHalf, readVertex, type RGBA } from "./mesh"
+import { chamferBox } from "../gpu/finish-geom"
+import { finishPacked, type FinishRange } from "../gpu/finish"
+import type { FinishLookId } from "../gpu/materials/wear"
 
 export const MAT = { terrain: 40, bark: 41, needles: 42, prop: 43, fern: 44, water: 45, glow: 46, wood: 47, tape: 49, bulb: 50, paint: 51, cable: 52, concrete: 53, path: 54, campWood: 55, ash: 56, litter: 57, charcoal: 58 } as const
 
@@ -66,7 +69,8 @@ export type ForestBuild = {
   logs: ForestWorld["logs"]
 }
 
-export type BuildOptions = { scatter: number; fernDensity: number; litter: number; smoothTrunks?: boolean; campDetail?: boolean }
+/** `campFinish`: chamfered camp boxes, baked AO, curvature and sky exposure, and a wear look per material (`finishCamp`). */
+export type BuildOptions = { scatter: number; fernDensity: number; litter: number; smoothTrunks?: boolean; campDetail?: boolean; campFinish?: boolean }
 
 type Rand = () => number
 const TAU = Math.PI * 2
@@ -394,7 +398,15 @@ export function buildForest(input: ForestWorld, models: ForestModels, opts: Buil
 
   // ---- Camp.
   const campLights: CampLight[] = []
-  if (world.camp) camp(world, chunks, models, campLights, (x, y, z, yaw) => chunks.instance(tableT.t, x, y, z, yaw, 1, 1, 0, 0), opts.campDetail)
+  if (world.camp) {
+    const before = new Map([...chunks.map.values()].flatMap(c => [[c.near[0], c.near[0].count], [c.far[0], c.far[0].count]] as const))
+    if (opts.campFinish) campChamfer = { hints: new Map(), parts: new Map(), next: 0 }
+    try {
+      camp(world, chunks, models, campLights, (x, y, z, yaw) => chunks.instance(tableT.t, x, y, z, yaw, 1, 1, 0, 0), opts.campDetail)
+      // Only the near level: past it the wear is below a pixel and the far camp keeps its plain shading.
+      if (campChamfer) finishCamp([...chunks.map.values()].map(c => c.near[0]), before, campChamfer, H)
+    } finally { campChamfer = null }
+  }
 
   // ---- Water.
   const water = new VertexWriter()
@@ -868,10 +880,66 @@ function tape(w: VertexWriter, x: number, y: number, z: number, r: number, yaw: 
 
 // ------------------------------------------------------------------ camp
 
+/**
+ * Set while a finished camp is built: its boxes are chamfered (`gpu/finish-geom.ts`) and each chamfered vertex's
+ * curvature is kept per writer for the bake. The build is synchronous, so this never outlives one `buildForest`.
+ */
+let campChamfer: { hints: Map<VertexWriter, number[]>; parts: Map<VertexWriter, number[]>; next: number } | null = null
+
+/** Box faces in `chamferBox` order (+Y, −X, +X, +Z, −Z, −Y): the u and v axes of each face's planar uv. */
+const BOX_UV: [Vec3, Vec3][] = [[[1, 0, 0], [0, 0, -1]], [[0, 0, 1], [0, 1, 0]], [[0, 0, -1], [0, 1, 0]], [[1, 0, 0], [0, 1, 0]], [[-1, 0, 0], [0, 1, 0]], [[1, 0, 0], [0, 0, 1]]]
+
+/** The camp's wear look for a vertex's material and texture layer, or null to leave it unfinished. */
+function campLook(mat: number, layer: number): FinishLookId | null {
+  if (mat === MAT.campWood || (mat === MAT.wood && (layer === LAYER.planks || layer === LAYER.log))) return "old-wood"
+  if (mat === MAT.prop && (layer === LAYER["rock-lichen"] || layer === LAYER["rocks-b"])) return "weathered-stone"
+  // Bark stays unfinished: the wind reads its colour alpha as needle flutter.
+  return null
+}
+
+/**
+ * Bakes what the camp added to each writer since `before` (AO, curvature, sky exposure; the terrain as the ground) and
+ * tags each triangle with its material's look. Everything else the camp drew (leaves, glass, the roof) only occludes.
+ */
+function finishCamp(writers: VertexWriter[], before: ReadonlyMap<VertexWriter, number>, built: NonNullable<typeof campChamfer>, ground: (x: number, z: number) => number) {
+  const ranges: FinishRange[] = []
+  for (const w of writers) {
+    const first = before.get(w) ?? 0, count = w.count - first
+    if (count < 3) continue
+    const buf = w.buffer, h16 = new Uint16Array(buf)
+    const hints = built.hints.get(w), parts = built.parts.get(w)
+    ranges.push({
+      buf, stride: 32, first, count,
+      look: v => campLook(Math.round(fromHalf(h16[v * 16 + 10]!)), Math.floor(fromHalf(h16[v * 16 + 11]!) + 0.001)),
+      hints: hints ? Array.from({ length: count }, (_, i) => hints[first + i] ?? NaN) : undefined,
+      parts: parts ? Array.from({ length: count }, (_, i) => parts[first + i] ?? -1) : undefined,
+    })
+  }
+  finishPacked(ranges, { ground, rays: 12, skyRays: 8 })
+}
+
 function box(w: VertexWriter, cx: number, cy: number, cz: number, yaw: number, sx: number, sy: number, sz: number, mat: number, layer: number, tile = 1.2, color: RGBA = [0, 0, 0, 0]) {
   const c = Math.cos(yaw), s = Math.sin(yaw)
   const P = (x: number, y: number, z: number) => [cx + x * c - z * s, cy + y, cz + x * s + z * c]
   const N = (x: number, y: number, z: number) => [x * c - z * s, y, x * s + z * c]
+  if (campChamfer) {
+    const hints = campChamfer.hints.get(w) ?? [], parts = campChamfer.parts.get(w) ?? []
+    campChamfer.hints.set(w, hints)
+    campChamfer.parts.set(w, parts)
+    const part = campChamfer.next++
+    const r = Math.max(0.002, Math.min(0.012, 0.012 * Math.min(sx, sy, sz)))
+    const tris = chamferBox(-sx / 2, -sy / 2, -sz / 2, sx / 2, sy / 2, sz / 2, r, 0.03, 0b111111)
+    // The forest winds its triangles the other way round from the kit's Mesh.
+    for (let t = 0; t < tris.length; t += 3) for (const k of [0, 2, 1]) {
+      const v = tris[t + k]!, [u, vv] = BOX_UV[v.face]!
+      const p = P(v.p[0], v.p[1], v.p[2]), n = N(v.n[0], v.n[1], v.n[2])
+      const lu = v.p[0] * u[0] + v.p[1] * u[1] + v.p[2] * u[2], lv = v.p[0] * vv[0] + v.p[1] * vv[1] + v.p[2] * vv[2]
+      hints[w.count] = v.k
+      parts[w.count] = part
+      w.vert(p[0]!, p[1]!, p[2]!, n[0]!, n[1]!, n[2]!, color, mat, layer, lu / tile, -lv / tile)
+    }
+    return
+  }
   const faces: [number[], number[], number[], number[], number[], number, number][] = [
     [[1, 0, 0], [0, 0, -1], [0, 1, 0], [sx, sy, sz], [0, 0, 0], sz, sy], [[-1, 0, 0], [0, 0, 1], [0, 1, 0], [sx, sy, sz], [0, 0, 0], sz, sy],
     [[0, 0, 1], [1, 0, 0], [0, 1, 0], [sx, sy, sz], [0, 0, 0], sx, sy], [[0, 0, -1], [-1, 0, 0], [0, 1, 0], [sx, sy, sz], [0, 0, 0], sx, sy],

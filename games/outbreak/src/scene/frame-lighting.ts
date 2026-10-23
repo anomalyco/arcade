@@ -9,6 +9,8 @@ import {
 } from "@arcade/kit/gpu/foliage"
 import { LampGrid, type FrameInput, type Renderer, type VolumeInput } from "@arcade/kit/gpu/renderer"
 import { FRAME_FLOATS } from "@arcade/kit/gpu/shaders"
+import { packWear } from "@arcade/kit/gpu/materials/wear"
+import { OUTBREAK_WEAR_LOOKS } from "../interiors/finish"
 import { LIGHT_FLOATS, MAX_LIGHTS, MAX_MAP_LIGHTS } from "@arcade/kit/limits"
 import type { QualityProfile } from "@arcade/kit/quality"
 import { raycast } from "@arcade/kit/sim/geom"
@@ -34,6 +36,7 @@ import {
   OUTBREAK_VEG_GUST_UNIFORM_OFFSET,
   OUTBREAK_VEG_TREES_UNIFORM_OFFSET,
   OUTBREAK_INTERIOR_UNIFORM_OFFSET,
+  OUTBREAK_FINISH_UNIFORM_OFFSET,
   OUTBREAK_LIGHTING_UNIFORM_FLOATS,
   OUTBREAK_REFLECT_LIGHTS_UNIFORM_END,
   OUTBREAK_REFLECT_LIGHTS_UNIFORM_OFFSET,
@@ -690,6 +693,7 @@ export class OutbreakFrameLighting {
     const deferRugWork = !inInteriorView && (Math.abs(p.vx) > 0.05 || Math.abs(p.vy) > 0.05)
     interiors.update(activeBuildings, town.houseSeed, p.x, p.y, performance.now(), deferRugWork)
     interiors.pack(this.lightingUniforms, OUTBREAK_INTERIOR_UNIFORM_OFFSET, activeBuildings, town.houseSeed)
+    packWear(this.lightingUniforms, OUTBREAK_FINISH_UNIFORM_OFFSET, OUTBREAK_WEAR_LOOKS, interiors.settings)
     renderer.setCustomUniforms(this.lightingUniforms)
     this.lastSightX = sightX
     this.lastSightY = sightY

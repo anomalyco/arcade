@@ -6,6 +6,7 @@ import type { LookPresetId } from "@arcade/kit/look"
 import { inBuildingFootprint, SIZE, type Building, type Lamp, type Town } from "../shared/map"
 import { unseenUniformsStruct, type UnseenFrameEvaluation, type UnseenSettings } from "./unseen"
 import { INTERIOR_UNIFORM_FLOATS, interiorUniformFieldsWgsl } from "./interiors/wgsl"
+import { FINISH_UNIFORM_FLOATS, finishUniformFieldsWgsl } from "./interiors/finish"
 import { DEFAULT_HERO_LOOK, type HeroLookSettings } from "./look/hero"
 import { DEFAULT_LIT_WINDOWS, windowLampBuilding, windowsLit } from "./look/lit-windows"
 import { DEFAULT_LOOK_TRIMS, trimLighting, type OutbreakLookTrims } from "./look/world"
@@ -348,7 +349,9 @@ export const OUTBREAK_REFLECT_LIGHTS_UNIFORM_END = OUTBREAK_REFLECT_LIGHTS_UNIFO
 export const OUTBREAK_STREET_LAMP_UNIFORM_OFFSET = OUTBREAK_REFLECT_LIGHTS_UNIFORM_END
 /** Rooms behind the windows (see `window-rooms/settings.ts`): `rooms`, `rooms2`. */
 export const OUTBREAK_WINDOW_ROOM_UNIFORM_OFFSET = OUTBREAK_STREET_LAMP_UNIFORM_OFFSET + STREET_LAMP_UNIFORM_FLOATS
-export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = OUTBREAK_WINDOW_ROOM_UNIFORM_OFFSET + WINDOW_ROOM_UNIFORM_FLOATS
+/** Finished props' wear table (see `interiors/finish.ts`): `finish`, packed by kit `packWear`. */
+export const OUTBREAK_FINISH_UNIFORM_OFFSET = OUTBREAK_WINDOW_ROOM_UNIFORM_OFFSET + WINDOW_ROOM_UNIFORM_FLOATS
+export const OUTBREAK_LIGHTING_UNIFORM_FLOATS = OUTBREAK_FINISH_UNIFORM_OFFSET + FINISH_UNIFORM_FLOATS
 
 export type OutbreakLightingUniformSettings =
   | (OutbreakLightingSettings & Partial<FlashlightBeamSettings> & Partial<UnseenSettings> & {
@@ -1259,6 +1262,8 @@ export function stampOutbreakVertexTone(buf: ArrayBuffer): ArrayBuffer {
   const n = buf.byteLength / VERT_BYTES
   for (let k = 0; k < n; k++) {
     const o = k * VERT_BYTES
+    // Finished props (interiors/finish.ts) carry their baked AO and exposure in this byte.
+    if (i8[o + 15]! & 1) continue
     const y = f32[o / 4 + 1]!
     const ny = i8[o + 13]! / 127
     let tone = 1.0
@@ -1350,7 +1355,7 @@ struct OutbreakLightingUniforms {
   street1: vec4f, // lens street lamps: on, side glow, air under the lens, reserved
   street2: vec4f, // nearest street head: arm x, arm z, lens half-length, half-width
   rooms: vec4f, // rooms behind the windows: on, depth, brightness, lit share
-  rooms2: vec4f, // rooms behind the windows: curtains, wall wash, reserved ×2
+  rooms2: vec4f, // rooms behind the windows: curtains, wall wash, reserved ×2${finishUniformFieldsWgsl}
 }
 @group(0) @binding(13) var<uniform> OL: OutbreakLightingUniforms;
 ${lightRampWgsl}

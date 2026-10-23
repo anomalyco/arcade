@@ -34,7 +34,7 @@ function placeOf(c: LabControl): Place {
     case "Night": return { section: "Light & Sky", sub: s === "Moon" ? "Moon" : /^woods\.sky[A-Z]/.test(c.key) ? "Catalogue sky" : "Night sky" }
     case "Mist": return { section: "Weather", sub: !s ? "Mist" : s === "Beam in the mist" ? s : `Mist: ${s.toLowerCase()}` }
     case "Weather": return { section: "Weather", sub: s === "Eye adaptation" ? "Eye after a flash" : s === "Sky" ? "Overcast" : s ?? "Storm" }
-    case "Forest": return s === "Wind" ? { section: "Weather", sub: "Wind" } : s === "Camp" ? { section: "Camp", sub: "Camp" } : { section: "Forest", sub: s ?? "Trees" }
+    case "Forest": return s === "Wind" ? { section: "Weather", sub: "Wind" } : s === "Camp" || s === "Camp finish" ? { section: "Camp", sub: s } : { section: "Forest", sub: s ?? "Trees" }
     case "Water": return { section: "Camp", sub: "Lake" }
     case "Road flare": return { section: "Light & Sky", sub: s ? `Road flare: ${s.toLowerCase()}` : "Road flare" }
     case "Walking": return { section: "People", sub: "Walking" }

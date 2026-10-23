@@ -322,8 +322,8 @@ export function createOutbreakHarness(host: OutbreakHarnessHost) {
     sconces: () => host.interiors.sconces.list(),
     setInterior(key: string, value: number) {
       if (!(key in host.interiors.settings)) throw new Error(`Invalid interior key: ${key}`)
-      if ((host.interiors.settings as Record<string, number>)[key] === value) return
-      ;(host.interiors.settings as Record<string, number>)[key] = value
+      if ((host.interiors.settings as unknown as Record<string, number>)[key] === value) return
+      ;(host.interiors.settings as unknown as Record<string, number>)[key] = value
       if (host.interiors.apply(key) === "structural") host.rebuildLevel()
     },
     setLab(rawKey: string, value: number | boolean | string) {
