@@ -39,7 +39,7 @@ The rules that matter most: drive both feet from one anti-phase stride clock; ne
 the body's vertical motion as one smooth curve sampled from phase, never from impulses; drive arms by joint
 angles, not by Cartesian hand targets; and never let a planted foot pull a leg past its length.
 
-Numbers below come from `games/blackout/scripts/animation/gait-metrics.ts` and `pose-diff.ts` at fixed
+Numbers below come from `scripts/animation/gait-metrics.ts` and Blackout's `pose-diff.ts` at fixed
 speeds (walk 1.4, run 4.2, sprint 6.3 m/s, `dt = 1/60`) on main on 2026-10-14 (`23e8250`), unless a line says otherwise. Mocap
 means the walk and run reference clips that `common.ts` downloads on first use.
 
