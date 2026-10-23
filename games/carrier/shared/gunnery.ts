@@ -80,7 +80,7 @@ export const GUNNERY = {
     /** Seeker on the launcher: cone half-angle off the aim (rad), lock range and minimum range (m), seconds to lock
      *  (slower than the AIM-9's 1.4), and the keep cone/range once tracking. */
     cone: 9 * DEG,
-    range: 5800,
+    range: 4000,
     minRange: 250,
     lockTime: 2.2,
     keep: 1.4,
@@ -91,7 +91,7 @@ export const GUNNERY = {
     topSpeed: 820,
     burn: 3.0,
     drag: 0.00008,
-    life: 14,
+    life: 9,
     /** No steering for the first `boost` s (it clears the ship). */
     boost: 0.35,
     nav: 4,
@@ -102,12 +102,12 @@ export const GUNNERY = {
     gimbal: 55 * DEG,
     fuse: 15,
     arm: 0.6,
-    /** A heavier warhead than the AIM-9's: a burst within a few metres kills outright. */
-    damage: 110,
-    edge: 50,
+    /** Heavy but not a one-shot: a close burst leaves a jet badly hurt and able to limp home (100 hp). */
+    damage: 70,
+    edge: 30,
     /** Flares: a burst seduces a SAM only by chance (`decoy`, hashed per missile and flare; AIM-9s are always fooled),
      *  within its first `seduce` s and `seduceRange` m. */
-    decoy: 0.35,
+    decoy: 0.55,
     seduce: 0.6,
     seduceRange: 1800,
     /** A SAM striking a carrier (hp of shared/fleet.ts's 1,000). */

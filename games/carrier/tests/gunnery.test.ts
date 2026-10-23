@@ -359,11 +359,12 @@ describe("SAM", () => {
     return { a, pos, dir }
   }
 
-  test("locks slower than the AIM-9 out to ~5.8 km, and not inside its minimum range", () => {
+  test("locks slower than the AIM-9 out to its range, and not inside its minimum range", () => {
     const { pos, dir } = mount()
     const m = WEAPON_MOUNTS[SAM]!
     muzzleWorld(SHIP, SAM, m.restYaw, 0.2, pos, dir)
-    const far = jet(100, 1, pos[0] + dir[0] * 5400, pos[1] + dir[1] * 5400, pos[2] + dir[2] * 5400)
+    const r = GUNNERY.sam.range * 0.93
+    const far = jet(100, 1, pos[0] + dir[0] * r, pos[1] + dir[1] * r, pos[2] + dir[2] * r)
     const lock = { target: -1, time: 0, locked: false }
     let t = 0
     while (!lock.locked && t < 5) {
@@ -482,9 +483,11 @@ describe("SAM", () => {
       if (r.decoy) decoys++
       if (r.hit) hits++
     }
-    // Some bursts fool it, most don't (AIM-9s are always seduced in the same geometry).
+    // Some bursts fool it and some don't (AIM-9s are always seduced in the same geometry): about `decoy` of them.
     expect(decoys).toBeGreaterThan(0)
-    expect(hits).toBeGreaterThan(decoys)
+    expect(hits).toBeGreaterThan(0)
+    expect(decoys / 24).toBeGreaterThan(GUNNERY.sam.decoy - 0.25)
+    expect(decoys / 24).toBeLessThan(GUNNERY.sam.decoy + 0.25)
     expect(samDecoyed(7, 3, { owner: 100, t0: 1.25 })).toBe(samDecoyed(7, 3, { owner: 100, t0: 1.25 }))
   })
 
