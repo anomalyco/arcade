@@ -7,7 +7,8 @@ Browser games by Anomaly, served at https://anoma.ly/arcade/.
 | `landing/` | Index page | https://anoma.ly/arcade/ | `arcade-landing` |
 | `games/blackout/` | Top-down stealth shooter (WebGPU, Durable Objects) | https://anoma.ly/arcade/blackout/ | `arcade-blackout` |
 | `games/getaway/` | Cops-and-robbers driving chase (WebGPU, Durable Objects) | https://anoma.ly/arcade/getaway/ | `arcade-getaway` |
-| `games/wings/` | Multiplayer aerial combat with carrier strike groups (WebGPU, Durable Objects) | https://anoma.ly/arcade/wings/ | `arcade-wings` |
+| `games/carrier/` | Naval combat: crew a carrier at the helm, in its jets, boat or guns (WebGPU, Durable Objects) | https://anoma.ly/arcade/carrier/ | `arcade-carrier` |
+| `games/wings/` | Multiplayer aerial combat with carrier strike groups (WebGPU, Durable Objects). Off the landing; Carrier replaces it | https://anoma.ly/arcade/wings/ | `arcade-wings` |
 | `redirects/` | 301s from the old `anoma.ly/labs/<game>` URLs to `/arcade/<game>` | — | `arcade-labs-redirects` |
 
 ## Prototypes
