@@ -12,19 +12,30 @@ import { makeSlots, opById, opError } from "../shared/ops"
 import { type Archipelago, terrainHeight } from "../shared/islands"
 import { type Sea } from "../shared/sea"
 import { type Ship } from "../shared/ship"
-import { type Plane, type PlaneControls, PLANE, bodyToWorld, makePlane, planeAttitude, planeSpeed, planeStep, quatAxis, quatMul, quatRotate, setPlaneQuat } from "../shared/plane"
-import { VEHICLES, type VehicleKind } from "../shared/vehicles"
+import { type Plane, type PlaneControls, PLANE, bodyToWorld, makePlane, planeAttitude, planeSpeed, planeStep, quatAxis, quatMul, quatRotate, setPlaneQuat, shipToWorld, worldToShip } from "../shared/plane"
+import { VEHICLES, type VehicleKind, landingVehicle } from "../shared/vehicles"
+import { type Landing, CAPTURE_BLEND, landTarget, landingStep, startLanding } from "../shared/landing"
+import { type Hull, FLEET } from "../shared/fleet"
+import { type ObjectiveState } from "../shared/objective"
+import { DECK_JET, DECK_ROUND, bayWorld, parkedAt, parkedJets, type ParkedJet } from "../shared/deck-jets"
+import { DECK_Y, STERN_Z } from "../shared/carrier-spec"
+import { type HelmMemory, type MatchShip, type MatchView, avoid, helmMemory, helmPlan, jetMission, routeHeading, steerClear, strikeTarget } from "./bot-match"
 import { type Launch, LAUNCH, launchStep, startLaunch } from "../shared/launch"
 import { type Lock, type Loadout, type Shooter, type Target, LOADOUTS, WEAPONS, gunStep, hash01, loadoutStep, lockStep, makeLoadout, railOf, takeBomb, takeFlares, takeMissile } from "../shared/weapons"
 import { type CombatEvent, type CombatWorld, type GroundShip, type MissileLaunch, Bullets, bombImpact, bombLaunch, makeBombImpact } from "../shared/combat"
 import { type GunneryWorld, type Interceptable, type TurretAngles, type TurretState, GUNNERY, TurretRounds, anglesOf, asInterceptable, ciwsStep, leadPoint, makeTurretState, muzzleWorld as mountMuzzle, packAim, packGunFire, predictImpact, restAngles, samLockStep, shipPointVel, slewTurret, takeSam, takeShell, toLocalDir, turretStep as mountStep } from "../shared/gunnery"
-import { type Boat, type BoatMode, type BoatTarget, type Turret, BOAT_HIT, BOAT_MODE, BoatRounds, GUN, boatVelocity, makeTurret, muzzleWorld as boatMuzzle, turretGun, turretStep } from "../shared/boat"
+import { type Boat, type BoatMode, type BoatTarget, type Turret, BOAT, BOAT_HIT, BOAT_MODE, BoatRounds, GUN, boatVelocity, makeTurret, muzzleWorld as boatMuzzle, turretGun, turretStep } from "../shared/boat"
 import { WEAPON_MOUNTS } from "../shared/carrier-spec"
 import { type ClientMsg, type PlaneTuple, PLANE_MODE, encode } from "../shared/protocol"
 import { type BotAt, type BotCmd, type BotInfo, type BotKind, type BotSettings, BOT_ROOM_MAX, behaviorFor, botKind, botName } from "../shared/bots"
 
 /** What the bots need from their room (server/core.ts builds it from its own state). */
 export type BotRoom = {
+  /** Most bots at once (default BOT_ROOM_MAX). */
+  max?: number
+  /** The capture zones and scores (match bots), and a carrier's health. */
+  objective(): ObjectiveState | null
+  hull(ship: number): Hull | undefined
   crew(): Crew | null
   /** Room clock (ms) and sea time (s) at it. */
   now(): number
@@ -78,7 +89,8 @@ type Base = {
 type JetBot = Base & {
   kind: "jet"
   vehicle: VehicleKind
-  phase: "deck" | "fly" | "down" | "wait"
+  /** "land": the scripted landing has it; "landed": stopped on deck, the sortie ends at the next report. */
+  phase: "deck" | "fly" | "down" | "wait" | "land" | "landed"
   plane: Plane
   launch: Launch | null
   sortie: number
@@ -107,13 +119,26 @@ type JetBot = Base & {
   bombCheck: number
   target: number
   trigger: boolean
+  /** Rounds on parked jets, by "ship:slot". */
+  deckHits: Map<string, number>
+  /** Match: the mission, when it is next reconsidered (bot sea time), the jet it hunts, the carrier it strikes. */
+  mission: JetMissionState
+  missionAt: number
+  hunt: number
+  strike: number
+  /** Seconds flying this sortie (the landing prompt waits LANDING.cooldown after the launch). */
+  airborne: number
+  /** The scripted landing while it has the jet (phase "land"). */
+  land: Landing | null
 }
 
-type BoatBot = Base & { kind: "boat"; tr: Turret; placed: boolean; firing: boolean; ctl: [number, number, number]; hits: Map<string, number>; flushIn: number; target: number; sortie: number }
+type JetMissionState = ReturnType<typeof jetMission> | ""
 
-type GunBot = Base & { kind: "gun"; mount: number; ts: TurretState; aim: TurretAngles; firing: boolean; aimIn: number; hits: Map<number, number>; shipHits: Map<number, number>; claims: [number, number, number][]; flushIn: number; target: number; bias: number; refineIn: number }
+type BoatBot = Base & { kind: "boat"; tr: Turret; placed: boolean; firing: boolean; ctl: [number, number, number]; hits: Map<string, number>; flushIn: number; target: number; sortie: number; home: boolean }
 
-type HelmBot = Base & { kind: "helm" }
+type GunBot = Base & { kind: "gun"; mount: number; ts: TurretState; aim: TurretAngles; firing: boolean; aimIn: number; hits: Map<number, number>; shipHits: Map<number, number>; deckHits: Map<string, number>; claims: [number, number, number][]; flushIn: number; target: number; bias: number; refineIn: number; seek: number }
+
+type HelmBot = Base & { kind: "helm"; mem: HelmMemory }
 
 type Bot = JetBot | BoatBot | GunBot | HelmBot
 
@@ -210,6 +235,11 @@ export class RoomBots {
   private subPool: Target[] = []
   private shooter: Shooter = { x: 0, y: 0, z: 0, fx: 0, fy: 0, fz: 1, team: 0 }
   private impact = makeBombImpact()
+  /** Match bots: the carriers as their brain sees them (once per room step), the room clock, scratch. */
+  private view: MatchView | null = null
+  private ms = 0
+  private parked: ParkedJet[] = []
+  private aimAt: [number, number, number] = [0, 0, 0]
   private ml: MissileLaunch = { owner: 0, seq: 0, t: 0, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, target: -1, kind: "bomb" }
 
   constructor(private room: BotRoom) {}
@@ -254,7 +284,7 @@ export class RoomBots {
     const kind = botKind(cmd.role)
     if (!kind) return "bad-op"
     if (!shipOf(crew, cmd.ship)) return "no-ship"
-    if (this.bots.size + cmd.n > BOT_ROOM_MAX) return "too-many-bots"
+    if (this.bots.size + cmd.n > (this.room.max ?? BOT_ROOM_MAX)) return "too-many-bots"
     const group = ++this.groups
     const now = this.room.now()
     let error: string | null = null
@@ -325,14 +355,21 @@ export class RoomBots {
         bombCheck: 0,
         target: -1,
         trigger: false,
+        deckHits: new Map(),
+        mission: "",
+        missionAt: 0,
+        hunt: -1,
+        strike: -1,
+        airborne: 0,
+        land: null,
       }
     }
-    if (b.kind === "boat") return { ...b, kind: "boat", tr: makeTurret(), placed: false, firing: false, ctl: [0, 0, 0], hits: new Map(), flushIn: FLUSH, target: -1, sortie: -1 }
+    if (b.kind === "boat") return { ...b, kind: "boat", tr: makeTurret(), placed: false, firing: false, ctl: [0, 0, 0], hits: new Map(), flushIn: FLUSH, target: -1, sortie: -1, home: false }
     if (b.kind === "gun") {
       const mount = opById(b.role)?.mount ?? 0
-      return { ...b, kind: "gun", mount, ts: makeTurretState(mount), aim: restAngles(mount), firing: false, aimIn: 0, hits: new Map(), shipHits: new Map(), claims: [], flushIn: FLUSH, target: -1, bias: 0, refineIn: 0 }
+      return { ...b, kind: "gun", mount, ts: makeTurretState(mount), aim: restAngles(mount), firing: false, aimIn: 0, hits: new Map(), shipHits: new Map(), deckHits: new Map(), claims: [], flushIn: FLUSH, target: -1, bias: 0, refineIn: 0, seek: -1 }
     }
-    return { ...b, kind: "helm" }
+    return { ...b, kind: "helm", mem: helmMemory() }
   }
 
   /**
@@ -425,6 +462,9 @@ export class RoomBots {
   step(t: number, now: number): void {
     const crew = this.room.crew()
     if (!crew) return
+    const nowMs = now
+    this.ms = now
+    this.view = null
     for (const id of [...this.bots.keys()]) if (!playerOf(crew, id)) this.bots.delete(id)
     if (!this.bots.size && !this.bullets.live && !this.turretRounds.live && !this.boatRounds.live) {
       this.t = t
@@ -448,25 +488,31 @@ export class RoomBots {
         else if (b.kind === "gun") this.gunTick(b, back, ground)
       }
       const now = this.sub(back)
-      this.bullets.step(DT, this.t, now, ground, (owner, target, kind, _x, _y, _z, ship) => {
+      this.bullets.step(DT, this.t, now, ground, (owner, target, kind, x, y, z, ship) => {
         const b = this.bots.get(owner)
         if (!b || b.kind !== "jet") return
         if (kind === "jet") b.hits.set(target, (b.hits.get(target) ?? 0) + 1)
-        else if (kind === "ship" && ship?.id !== undefined && ship.team !== this.teamOf(owner)) b.shipHits.set(ship.id, (b.shipHits.get(ship.id) ?? 0) + 1)
+        else if (kind === "ship" && ship?.id !== undefined && ship.team !== this.teamOf(owner)) this.shipRound(b.shipHits, b.deckHits, ship, x, y, z, crew, nowMs)
       })
-      this.turretRounds.step(DT, this.t, now, this.stores, ground, (owner, kind, target, _x, _y, _z, ship) => {
+      this.turretRounds.step(DT, this.t, now, this.stores, ground, (owner, kind, target, x, y, z, ship) => {
         const b = this.bots.get(owner)
         if (!b || b.kind !== "gun") return
         if (kind === "jet") b.hits.set(target, (b.hits.get(target) ?? 0) + 1)
         else if (kind === "store") {
           const s = this.stores[target]
           if (s && !b.claims.some((c) => c[0] === s.owner && c[1] === s.seq)) b.claims.push([s.owner, s.seq, s.store])
-        } else if (kind === "ship" && ship?.id !== undefined && ship.team !== this.teamOf(owner)) b.shipHits.set(ship.id, (b.shipHits.get(ship.id) ?? 0) + 1)
+        } else if (kind === "ship" && ship?.id !== undefined && ship.team !== this.teamOf(owner)) this.shipRound(b.shipHits, b.deckHits, ship, x, y, z, crew, nowMs)
       })
-      this.boatRounds.step(DT, this.t, now, this.boatTargets, ground, (owner, kind, id, _x, _y, _z, ship) => {
+      this.boatRounds.step(DT, this.t, now, this.boatTargets, ground, (owner, kind, id, x, y, z, ship) => {
         const b = this.bots.get(owner)
         if (!b || b.kind !== "boat") return
-        const key = kind === "jet" ? `${BOAT_HIT.jet}:${id}` : kind === "boat" ? `${BOAT_HIT.boat}:${id}` : kind === "ship" && ship?.id !== undefined && ship.team !== this.teamOf(owner) ? `${BOAT_HIT.ship}:${ship.id}` : ""
+        if (kind === "ship" && ship?.id !== undefined && ship.team !== this.teamOf(owner)) {
+          const slot = this.parkedHit(ship, x, y, z, crew, nowMs)
+          const key = slot >= 0 ? `d:${ship.id}:${slot}` : `${BOAT_HIT.ship}:${ship.id}`
+          b.hits.set(key, (b.hits.get(key) ?? 0) + 1)
+          return
+        }
+        const key = kind === "jet" ? `${BOAT_HIT.jet}:${id}` : kind === "boat" ? `${BOAT_HIT.boat}:${id}` : ""
         if (key) b.hits.set(key, (b.hits.get(key) ?? 0) + 1)
       })
     }
@@ -489,6 +535,21 @@ export class RoomBots {
       out.push(s)
     }
     return out
+  }
+
+  /** The parked jet (slot) of carrier `ship` a round striking world (x, y, z) hit, or -1 (shared/deck-jets.ts parkedAt). */
+  private parkedHit(ship: GroundShip, x: number, y: number, z: number, crew: Crew, now: number): number {
+    const s = ship.id === undefined ? undefined : shipOf(crew, ship.id)
+    if (!s) return -1
+    const l = worldToShip(ship, x, y, z, tmp)
+    return parkedAt(s, now, l[0], l[1], l[2])
+  }
+
+  /** A round on an enemy carrier: on a parked jet it is a deck hit, else a hull hit (as a client reports them). */
+  private shipRound(hull: Map<number, number>, deck: Map<string, number>, ship: GroundShip, x: number, y: number, z: number, crew: Crew, now: number): void {
+    const slot = this.parkedHit(ship, x, y, z, crew, now)
+    if (slot >= 0) deck.set(`${ship.id}:${slot}`, (deck.get(`${ship.id}:${slot}`) ?? 0) + 1)
+    else hull.set(ship.id!, (hull.get(ship.id!) ?? 0) + 1)
   }
 
   private teamOf(id: number): number {
@@ -559,6 +620,10 @@ export class RoomBots {
     b.run = "in"
     b.doors = 0
     b.phi = 0
+    b.airborne = 0
+    b.land = null
+    b.mission = ""
+    b.missionAt = 0
     const ship = this.room.sim(p.ship)
     if (b.start === "deck" && ship) {
       const { launch } = startLaunch(ship, b.plane, b.vehicle)
@@ -593,6 +658,20 @@ export class RoomBots {
       }
       return
     }
+    if (b.phase === "land") {
+      // The scripted landing (shared/landing.ts) flies it onto its own carrier; it can still be shot down meanwhile.
+      const ship = this.room.sim(b.ship)
+      const f = this.room.combat().fighters.get(b.id)
+      if (!f || !f.alive) return this.down(b)
+      if (!ship || !b.land) {
+        b.phase = "fly"
+        b.land = null
+        return
+      }
+      if (landingStep(b.land, p, ship, DT)) b.phase = "landed"
+      b.note = `landing ${b.land.phase}`
+      return
+    }
     if (b.phase !== "fly") {
       p.t += DT
       return
@@ -603,6 +682,7 @@ export class RoomBots {
       this.down(b)
       return
     }
+    b.airborne += DT
     this.brain(b, back, f.team)
     planeStep(p, b.c, DT, ground, spec.flight, spec.probes)
     if (p.crashed) {
@@ -645,13 +725,13 @@ export class RoomBots {
   }
 
   /** The nearest enemy jet worth chasing (the set target first), or null. Positions at this sub-step. */
-  private pickJet(b: JetBot, team: number): Target | null {
+  private pickJet(b: JetBot, team: number, want = b.s.target): Target | null {
     const p = b.plane
     let best: Target | null = null
     let score = Infinity
     for (const tg of this.jetTargets) {
       if (!tg.alive || tg.surface || tg.team === team || tg.id === b.id) continue
-      if (b.s.target >= 0 && tg.id === b.s.target) return tg
+      if (want >= 0 && tg.id === want) return tg
       const d = Math.hypot(tg.x - p.x, tg.y - p.y, tg.z - p.z)
       const sp = planeSpeed(p) || 1
       const ahead = ((tg.x - p.x) * p.vx + (tg.y - p.y) * p.vy + (tg.z - p.z) * p.vz) / (d * sp || 1)
@@ -723,6 +803,9 @@ export class RoomBots {
       case "bomber":
         this.bomber(b, team, gain)
         break
+      case "match":
+        this.match(b, team, gain, back)
+        break
     }
   }
 
@@ -733,23 +816,181 @@ export class RoomBots {
 
   /** Patterns are centred so the start point lies on them: the orbit's centre is `radius` to the right of the start. */
   private orbit(b: JetBot, gain: number): void {
-    const p = b.plane
     const s = b.s
     const [ax, , az, h] = b.at
-    const cx = ax + Math.cos(h) * s.radius
-    const cz = az + Math.sin(h) * s.radius
+    this.circle(b, ax + Math.cos(h) * s.radius, az + Math.sin(h) * s.radius, s.radius, s.alt, gain)
+    b.note = `orbit r ${Math.round(s.radius)} m`
+  }
+
+  /** Circles (cx, cz) clockwise seen from above at radius R and height alt: the tangent, turned in or out by the error. */
+  private circle(b: JetBot, cx: number, cz: number, R: number, alt: number, gain: number): void {
+    const p = b.plane
     const rx = p.x - cx
     const rz = p.z - cz
     const r = Math.hypot(rx, rz) || 1
-    // Clockwise seen from above: the tangent, turned in or out by the radius error.
     let tx = -rz / r
     let tz = rx / r
-    const err = clamp((r - s.radius) / 400, -1, 1)
+    const err = clamp((r - R) / 400, -1, 1)
     tx -= (rx / r) * err
     tz -= (rz / r) * err
-    navigate(p, b.c, Math.atan2(tx, -tz), s.alt, 1.1, gain)
+    navigate(p, b.c, Math.atan2(tx, -tz), alt, 1.1, gain)
+    holdSpeed(p, b.c, b.s.speed, false)
+  }
+
+  // ---- the match brain (server/bot-match.ts decides, this flies it) -------------------------------------------------
+
+  /** Every carrier as the match brain sees it, built once per room step. */
+  private matchView(): MatchView {
+    if (this.view) return this.view
+    const ships: MatchShip[] = []
+    for (const h of this.room.hulls()) {
+      if (h.id === undefined) continue
+      const hull = this.room.hull(h.id)
+      const v = shipPointVel(h, tmp2)
+      ships.push({ id: h.id, team: h.team ?? -1, x: h.x, z: h.z, heading: h.heading, vx: v[0], vz: v[2], hp: hull?.hp ?? FLEET.hp, sinking: hull ? hull.sinkAt !== -1 : false })
+    }
+    return (this.view = { t: this.t, ships, objective: this.room.objective() })
+  }
+
+  /**
+   * A match jet: reconsider the mission every few seconds (bot-match.ts `jetMission`), then fly it with the same
+   * pieces as the other behaviors: dogfight to defend or intercept, bomb runs (F-35C) or strafing passes on parked jets
+   * and the island (Hornet) on the side's strike target, CAP over the own carrier, or back to land and rearm.
+   */
+  private match(b: JetBot, team: number, gain: number, back: number): void {
+    const p = b.plane
+    const home = this.room.hulls().find((h) => h.id === b.ship)
+    if (this.t >= b.missionAt) {
+      b.missionAt = this.t + 2 + 2 * (1 - b.s.skill)
+      let nearMe = Infinity
+      let nearHome = Infinity
+      let meId = -1
+      let homeId = -1
+      for (const tg of this.jetTargets) {
+        if (!tg.alive || tg.surface || tg.team === team) continue
+        const dm = Math.hypot(tg.x - p.x, tg.y - p.y, tg.z - p.z)
+        if (dm < nearMe) {
+          nearMe = dm
+          meId = tg.id
+        }
+        const dh = home ? Math.hypot(tg.x - home.x, tg.z - home.z) : Infinity
+        if (dh < nearHome) {
+          nearHome = dh
+          homeId = tg.id
+        }
+      }
+      const st = home ? strikeTarget(this.matchView(), team, home.x, home.z) : null
+      b.strike = st?.id ?? -1
+      const hp = this.room.combat().fighters.get(b.id)?.hp ?? WEAPONS.health.max
+      b.mission = jetMission({ vehicle: b.vehicle, hp, missiles: b.loadout.missiles, bombs: b.loadout.bombs, nearMe, nearHome, coin: b.coin }, b.s, b.mission)
+      b.hunt = b.mission === "defend" ? homeId : b.mission === "intercept" ? meId : -1
+    }
+    switch (b.mission) {
+      case "defend":
+      case "intercept":
+        if (this.jetTargets.some((tg) => tg.id === b.hunt && tg.alive)) {
+          this.dogfight(b, team, gain, back, b.hunt)
+          break
+        }
+        b.missionAt = 0
+        this.cap(b, team, gain, home)
+        break
+      case "strike":
+        if (LOADOUTS[b.vehicle].bombs > 0) this.bomber(b, team, gain, b.strike)
+        else this.strafe(b, team, gain, b.strike, back)
+        break
+      case "rtb":
+        this.rtb(b, team, gain)
+        break
+      default:
+        this.cap(b, team, gain, home)
+    }
+    b.note = `${b.mission}: ${b.note}`
+  }
+
+  /** Combat air patrol over the own carrier: circle it, and lock and shoot what flies into the seeker. */
+  private cap(b: JetBot, team: number, gain: number, home: { x: number; z: number } | undefined): void {
+    const c = home ?? { x: 0, z: 0 }
+    this.circle(b, c.x, c.z, 1800, Math.max(700, b.s.alt), gain)
+    const tg = this.pickJet(b, team, -1)
+    this.seeker(b, team, tg && Math.hypot(tg.x - b.plane.x, tg.z - b.plane.z) < WEAPONS.missile.range ? tg : null)
+    b.note = "cap"
+  }
+
+  /**
+   * Back to the own carrier to land (the "R LAND" rules, shared/landing.ts landTarget): fly at it low enough, nose on
+   * it, and hand the jet to the scripted landing once the prompt would show; circle off while its deck burns.
+   */
+  private rtb(b: JetBot, team: number, gain: number): void {
+    const p = b.plane
+    const ship = this.room.sim(b.ship)
+    if (!ship) return this.cap(b, team, gain, undefined)
+    this.seeker(b, team, null)
+    const vehicle = landingVehicle(b.vehicle)
+    const hull = this.room.hull(b.ship)
+    if (landTarget(p, b.airborne, ship, hull, this.t, vehicle)) {
+      b.land = startLanding(p, ship, vehicle)
+      b.phase = "land"
+      b.trigger = false
+      b.state = "landing"
+      b.note = "landing"
+      return
+    }
+    const d = Math.hypot(ship.x - p.x, ship.z - p.z)
+    if (hull && hull.deckFire > this.t) {
+      this.circle(b, ship.x, ship.z, 2200, 700, gain)
+      b.note = "rtb: deck fire"
+      return
+    }
+    // Inside the prompt's range but not lined up (overflew it, or too high): open out and come round again.
+    if (d < 1300) {
+      this.circle(b, ship.x, ship.z, 2000, 350, gain)
+      b.note = "rtb: lining up"
+      return
+    }
+    navigate(p, b.c, bearing(p.x, p.z, ship.x, ship.z), ship.heave + DECK_Y + 300, 1.0, gain)
+    holdSpeed(p, b.c, 160, false)
+    b.note = `rtb ${(d / 1000).toFixed(1)} km`
+  }
+
+  /**
+   * Strafing pass (a Hornet's strike): dive on a parked jet of the target carrier if any stands on its deck (60 hp,
+   * shared/deck-jets.ts), else on the island, gun from 1.3 km, pull out low, extend and come round again.
+   */
+  private strafe(b: JetBot, team: number, gain: number, want: number, back: number): void {
+    const p = b.plane
+    const s = b.s
+    const ship = this.pickShip(p.x, p.z, team, want)
+    if (!ship || ship.id === undefined) return this.cap(b, team, gain, undefined)
+    b.target = ship.id
+    const [svx, , svz] = shipPointVel(ship, tmp2)
+    const d = Math.hypot(ship.x - p.x, ship.z - p.z)
+    if (b.run === "out") {
+      navigate(p, b.c, Math.hypot(p.x, p.z) > HOME ? bearing(p.x, p.z, 0, 0) : bearing(ship.x, ship.z, p.x, p.z), s.alt, 0.9, gain)
+      holdSpeed(p, b.c, s.speed, false)
+      if (d > 3000) b.run = "in"
+      b.note = `strafe: extending ${(d / 1000).toFixed(1)} km`
+      return
+    }
+    const crew = this.room.crew()
+    const cs = crew && shipOf(crew, ship.id)
+    const parked = cs ? parkedJets(cs, this.ms, this.parked) : []
+    const aim = this.aimAt
+    if (parked.length) bayWorld(ship, parked[0]!.bay, DECK_JET.centreY, aim)
+    else {
+      aim[0] = ship.x
+      aim[1] = ship.heave + DECK_Y + 4
+      aim[2] = ship.z
+    }
+    const tof = Math.hypot(aim[0] - p.x, aim[1] - p.y, aim[2] - p.z) / (WEAPONS.gun.muzzle + planeSpeed(p))
+    const ax = aim[0] + svx * (tof + back)
+    const ay = aim[1] + 0.5 * G * WEAPONS.gun.gravity * tof * tof
+    const az = aim[2] + svz * (tof + back)
+    pursue(p, b.c, ax, ay, az, gain)
     holdSpeed(p, b.c, s.speed, false)
-    b.note = `orbit r ${Math.round(s.radius)} m`
+    b.trigger = s.weapons && d < 1300 && pursueError(p, ax, ay, az) < 0.02 + (1 - s.accuracy) * 0.04
+    if (d < 380 || p.y - this.groundAt(p.x, p.z) < 140) b.run = "out"
+    b.note = `strafe ${parked.length ? "deck jets" : "island"} ${(d / 1000).toFixed(1)} km`
   }
 
   /** A figure-eight (a lemniscate along the start heading) at the set height: chase a point running round it. */
@@ -807,10 +1048,19 @@ export class RoomBots {
     b.lockedFor = this.room.seekers(b.id) > 0 ? b.lockedFor + DT : 0
     if (b.lockedFor === 0) b.lockFlared = false
     if (s.behavior === "straight" || s.behavior === "orbit" || s.behavior === "eight") return false
-    let near: (typeof combat.missiles)[number] | null = null
+    let near: { owner: number; seq: number; x: number; y: number; z: number } | null = null
     let d = Infinity
     for (const m of combat.missiles) {
       if (!m.alive || m.kind !== "missile" || m.target !== b.id) continue
+      const e = Math.hypot(m.x - p.x, m.y - p.y, m.z - p.z)
+      if (e < d) {
+        d = e
+        near = m
+      }
+    }
+    // Ships' SAMs home on jets too (the MISSILE warning doesn't care who fired).
+    for (const m of this.room.gunnery().projectiles) {
+      if (!m.alive || m.kind !== "sam" || m.target !== b.id) continue
       const e = Math.hypot(m.x - p.x, m.y - p.y, m.z - p.z)
       if (e < d) {
         d = e
@@ -851,11 +1101,11 @@ export class RoomBots {
     this.room.handle(b.id, { type: "flare", f: [p.t, p.x, p.y, p.z, p.vx, p.vy, p.vz] })
   }
 
-  private dogfight(b: JetBot, team: number, gain: number, back: number): void {
+  private dogfight(b: JetBot, team: number, gain: number, back: number, want = b.s.target): void {
     const p = b.plane
     const c = b.c
     const s = b.s
-    const tg = this.pickJet(b, team)
+    const tg = this.pickJet(b, team, want)
     if (!tg) {
       this.orbit(b, gain)
       b.note = "dogfight: searching"
@@ -942,10 +1192,10 @@ export class RoomBots {
    * when a bomb dropped now lands, less the bomb's own travel), checks the world's own bomb prediction and releases
    * while it lands on the target, then extends and comes round again. A Hornet strafes it with the gun instead.
    */
-  private bomber(b: JetBot, team: number, gain: number): void {
+  private bomber(b: JetBot, team: number, gain: number, want = b.s.targetShip): void {
     const p = b.plane
     const s = b.s
-    const ship = this.pickShip(p.x, p.z, team, s.targetShip)
+    const ship = this.pickShip(p.x, p.z, team, want)
     if (!ship) {
       this.orbit(b, gain)
       b.note = "bomber: no target"
@@ -1046,6 +1296,7 @@ export class RoomBots {
     let aim: [number, number, number] | null = null
     let dist = Infinity
     b.target = -1
+    const home = s.behavior === "match" ? this.boatHome(b, boat) : null
     if (s.behavior === "patrol") {
       const [ax, , az] = b.at
       const rx = boat.x - ax
@@ -1059,8 +1310,13 @@ export class RoomBots {
       tz -= (rz / r) * err
       steerTo = Math.atan2(tx, -tz)
       b.note = `patrol r ${Math.round(R)} m`
-    } else if (s.behavior === "attack") {
-      // A set player's jet or boat, else the nearest enemy boat, else the target (or nearest) enemy carrier.
+    } else if (home) {
+      steerTo = home.steer
+      throttle = home.throttle
+      b.note = home.note
+    } else if (s.behavior === "attack" || s.behavior === "match") {
+      // A set player's jet or boat, else the nearest enemy boat, else the target (or nearest) enemy carrier (a match
+      // boat: its side's strike target, server/bot-match.ts).
       let tgt: { x: number; y: number; z: number; vx: number; vy: number; vz: number; id: number } | null = null
       for (const t of this.jetTargets) if (t.alive && t.team !== team && t.id === s.target) tgt = t
       if (!tgt) {
@@ -1082,15 +1338,19 @@ export class RoomBots {
         aim = [tgt.x + tgt.vx * tof, tgt.y + tgt.vy * tof + 0.5 * G * tof * tof, tgt.z + tgt.vz * tof]
         b.note = `attack → #${tgt.id} ${Math.round(dist)} m`
       } else {
-        const ship = this.pickShip(boat.x, boat.z, team, s.targetShip)
+        const ship = this.pickShip(boat.x, boat.z, team, s.behavior === "match" ? this.boatStrike(b) : s.targetShip)
         if (ship) {
           b.target = ship.id ?? -1
           dist = Math.hypot(ship.x - boat.x, ship.z - boat.z)
-          // Run in, then circle the hull at ~400 m, gun on its island.
+          // Run in, then circle the hull at ~400 m, gun on a parked jet if one stands on its deck, else its island.
           const b0 = bearing(ship.x, ship.z, boat.x, boat.z)
           steerTo = dist > 700 ? bearing(boat.x, boat.z, ship.x, ship.z) : b0 + Math.PI / 2 + clamp((dist - 400) / 300, -0.6, 0.6)
-          aim = [ship.x, ship.heave + 30, ship.z]
-          b.note = `attack → ship ${(dist / 1000).toFixed(1)} km`
+          const crew = this.room.crew()
+          const cs = crew && ship.id !== undefined ? shipOf(crew, ship.id) : undefined
+          const parked = cs ? parkedJets(cs, this.ms, this.parked) : []
+          const w = parked.length ? bayWorld(ship, parked[0]!.bay, DECK_JET.centreY, this.aimAt) : null
+          aim = w ? [w[0], w[1], w[2]] : [ship.x, ship.heave + 30, ship.z]
+          b.note = `attack → ship ${(dist / 1000).toFixed(1)} km${parked.length ? " (deck jets)" : ""}`
         } else b.note = "attack: no target"
       }
     } else {
@@ -1120,6 +1380,35 @@ export class RoomBots {
       for (let i = 0; i < n; i++) this.boatRounds.fire(b.id, team, b.tr.round++, pos[0], pos[1], pos[2], dir[0], dir[1], dir[2], vx, vz)
       if (s.ammo) b.tr.heat = Math.min(b.tr.heat, 0.5)
     }
+  }
+
+  /** A match boat's side's strike target (server/bot-match.ts), from its own carrier. */
+  private boatStrike(b: BoatBot): number {
+    const view = this.matchView()
+    const own = view.ships.find((x) => x.id === b.ship)
+    return own ? (strikeTarget(view, own.team, own.x, own.z)?.id ?? -1) : -1
+  }
+
+  /**
+   * A match boat badly hurt goes home to be recovered (shared/boat.ts `recoverable`: astern of its carrier, slow
+   * relative to it), and fights again once repaired. Returns the steering for the way home, or null to fight.
+   */
+  private boatHome(b: BoatBot, boat: Boat): { steer: number; throttle: number; note: string } | null {
+    const hp = this.room.combat().fighters.get(b.id)?.hp ?? WEAPONS.health.max
+    if (!b.home && hp < 35) b.home = true
+    else if (b.home && hp >= 90) b.home = false
+    const ship = b.home ? this.room.hulls().find((h) => h.id === b.ship) : undefined
+    if (!ship) return null
+    // Aim for a point astern of the stern and close on it at the carrier's own speed plus a little.
+    const at = shipToWorld(ship, 0, 0, STERN_Z - 45, tmp)
+    const [svx, , svz] = shipPointVel(ship, tmp2)
+    const dx = at[0] - boat.x
+    const dz = at[2] - boat.z
+    const d = Math.hypot(dx, dz)
+    const k = clamp(d * 0.12, 0, 30)
+    const wx = svx + (dx / (d || 1)) * k
+    const wz = svz + (dz / (d || 1)) * k
+    return { steer: Math.atan2(wx, -wz), throttle: clamp(Math.hypot(wx, wz) / BOAT.topSpeed, 0.05, 1), note: `home ${Math.round(d)} m (${Math.round(hp)}%)` }
   }
 
   // ---- gunners ------------------------------------------------------------------------------------------------------
@@ -1218,6 +1507,7 @@ export class RoomBots {
     } else if (kind === "sam") {
       const tgs = this.jetTargets.filter((x) => x.id === best!.id)
       samLockStep(b.ts.lock, DT, pos[0], pos[1], pos[2], dir[0], dir[1], dir[2], g.team, tgs, (id) => this.room.combat().blind(id))
+      this.samSeek(b)
       if (b.ts.lock.locked && on) {
         if (s.ammo) {
           b.ts.cells = Math.max(1, b.ts.cells)
@@ -1242,6 +1532,15 @@ export class RoomBots {
     b.note = `${kind} → ${best.id >= 0 ? `#${best.id}` : "store"} ${Math.round(bd)} m`
   }
 
+  /** A SAM gunner's seeker tells its target, as a client's does (the jet's LOCK warning). */
+  private samSeek(b: GunBot): void {
+    const l = b.ts.lock
+    const key = l.target < 0 ? -1 : l.target * 2 + (l.locked ? 1 : 0)
+    if (key === b.seek) return
+    b.seek = key
+    this.room.handle(b.id, { type: "seek", on: l.target, locked: l.locked })
+  }
+
   // ---- helm ---------------------------------------------------------------------------------------------------------
 
   private helm(b: HelmBot, crew: Crew): void {
@@ -1258,6 +1557,20 @@ export class RoomBots {
     } else if (s.behavior === "circle") {
       rudder = 0.6
       b.note = "circling"
+    } else if (s.behavior === "match") {
+      const view = this.matchView()
+      const me = view.ships.find((x) => x.id === b.ship)
+      const arch = this.room.arch()
+      if (me) {
+        const plan = helmPlan(view, me, s, b.mem)
+        // Round the islands toward the plan (a ram goes straight: the target is in open water).
+        let heading = plan.heading
+        if (plan.ram < 0) heading = avoid(view, me, arch && plan.to ? routeHeading(arch, sim, plan.to, this.t, b.mem) : heading)
+        const nav = arch && plan.ram < 0 ? steerClear(arch, sim, heading, plan.throttle, this.t, b.mem) : plan
+        throttle = nav.throttle
+        rudder = clamp(wrap(nav.heading - sim.heading) * 1.5, -1, 1)
+        b.note = plan.note
+      }
     } else if (s.behavior === "chase") {
       const ship = this.pickShip(sim.x, sim.z, p.team, s.targetShip)
       if (ship) {
@@ -1267,7 +1580,7 @@ export class RoomBots {
     } else b.note = `cruise ${Math.round(throttle * 100)}%`
     // Islands: steer for the deeper side when land is ahead; the map's edge: turn for home.
     const arch = this.room.arch()
-    if (arch && s.behavior !== "stop") {
+    if (arch && s.behavior !== "stop" && s.behavior !== "match") {
       const h = sim.heading
       const probe = (a: number, d: number) => terrainHeight(arch, sim.x + Math.sin(h + a) * d, sim.z - Math.cos(h + a) * d)
       if (Math.max(probe(0, 700), probe(0, 1300)) > -8) rudder = probe(-0.5, 900) < probe(0.5, 900) ? -1 : 1
@@ -1282,18 +1595,26 @@ export class RoomBots {
   private report(b: Bot, crew: Crew): void {
     if (b.kind === "helm") return this.helm(b, crew)
     if (b.kind === "jet") {
-      const p = b.plane
       if (b.phase === "down" && this.t - b.downAt >= LAUNCH.respawnDelay) {
         b.phase = "wait"
         this.room.handle(b.id, { type: "recover", how: "crashed" })
         return
       }
-      if (b.phase === "deck" || b.phase === "fly" || b.phase === "down") this.room.handle(b.id, { type: "plane", p: this.tuple(b) })
+      if (b.phase === "landed") {
+        // Stopped on the deck: the flight is over and the slot frees at once (a fresh jet, fully armed, next launch).
+        b.phase = "wait"
+        b.land = null
+        b.state = "landed"
+        this.room.handle(b.id, { type: "recover", how: "landed" })
+        return
+      }
+      if (b.phase === "deck" || b.phase === "fly" || b.phase === "down" || b.phase === "land") this.room.handle(b.id, { type: "plane", p: this.tuple(b) })
       b.flushIn -= 0.05
       if (b.flushIn <= 0) {
         b.flushIn = FLUSH
         for (const [on, n] of b.hits) this.room.handle(b.id, { type: "hits", on, n: Math.min(200, n) })
         for (const [ship, n] of b.shipHits) this.room.handle(b.id, { type: "shiphits", ship, n: Math.min(200, n) })
+        this.flushDeck(b.id, DECK_ROUND.gun, b.deckHits)
         b.hits.clear()
         b.shipHits.clear()
       }
@@ -1308,6 +1629,11 @@ export class RoomBots {
       if (b.flushIn <= 0) {
         b.flushIn = FLUSH
         for (const [key, n] of b.hits) {
+          if (key.startsWith("d:")) {
+            const [ship, slot] = key.slice(2).split(":").map(Number) as [number, number]
+            this.room.handle(b.id, { type: "deckhits", w: DECK_ROUND.cannon, ship, slot, n: Math.min(300, n) })
+            continue
+          }
           const [k, on] = key.split(":").map(Number) as [number, number]
           this.room.handle(b.id, { type: "bhits", k, on, n: Math.min(60, n) })
         }
@@ -1327,16 +1653,31 @@ export class RoomBots {
       for (const [on, n] of b.hits) this.room.handle(b.id, { type: "thits", on, n: Math.min(300, n) })
       for (const [ship, n] of b.shipHits) this.room.handle(b.id, { type: "tshiphits", ship, n: Math.min(300, n) })
       for (const i of b.claims) this.room.handle(b.id, { type: "intercept", i })
+      this.flushDeck(b.id, DECK_ROUND.ciws, b.deckHits)
       b.hits.clear()
       b.shipHits.clear()
       b.claims.length = 0
     }
   }
 
+  /** Rounds on parked jets ("ship:slot" → n) as `deckhits`, then forgotten. */
+  private flushDeck(id: number, w: (typeof DECK_ROUND)[keyof typeof DECK_ROUND], hits: Map<string, number>): void {
+    for (const [key, n] of hits) {
+      const [ship, slot] = key.split(":").map(Number) as [number, number]
+      this.room.handle(id, { type: "deckhits", w, ship, slot, n: Math.min(300, n) })
+    }
+    hits.clear()
+  }
+
   private tuple(b: JetBot): PlaneTuple {
     const p = b.plane
     const r = (v: number, k: number) => Math.round(v * k) / k
-    const mode = b.phase === "deck" ? PLANE_MODE.deck : b.phase === "fly" ? PLANE_MODE.flying : PLANE_MODE.crashed
+    const l = b.land
+    // The landing goes out in the carrier's frame once its capture blend is over (as a client's does).
+    const local = b.phase === "land" && l !== null && l.since >= CAPTURE_BLEND
+    const mode = b.phase === "deck" ? PLANE_MODE.deck : b.phase === "fly" || b.phase === "land" ? (local ? PLANE_MODE.landing : PLANE_MODE.flying) : PLANE_MODE.crashed
+    if (local)
+      return [r(p.t, 1e3), mode, r(l.x, 1e2), r(l.y, 1e2), r(l.z, 1e2), r(l.yaw, 1e4), r(l.pitch, 1e4), r(l.bank, 1e4), 0, r(p.vx, 10), r(p.vy, 10), r(p.vz, 10), r(p.throttle, 100), 0, 1, 0, 0, 0, 0]
     return [
       r(p.t, 1e3),
       mode,
