@@ -1,5 +1,5 @@
 import { $ } from "bun"
-import { mkdtempSync, rmSync } from "node:fs"
+import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -12,11 +12,13 @@ export const FULL_TEST_INPUTS = [
   "**/public/**", "**/assets/**", "**/art/**", "**/fixtures/**", "**/__snapshots__/**",
   "**/*.json", "**/*.wgsl", "**/*.glsl", "**/*.txt", "perf/**",
   // Lab discovers stations with readdir + dynamic import, outside Bun's graph.
-  "games/lab/src/stations/**",
+  "games/lab/src/stations/**", "games/lab/src/styles.ts",
+  "games/getaway/src/main.ts", // read as text by kit/getaway-main-hook.ts
 ]
 
-export function fullTestReason(files: string[]): string | undefined {
+export function fullTestReason(files: string[], repo?: string): string | undefined {
   for (const file of files) {
+    if (repo && !existsSync(join(repo, file))) return `${file} (deleted or renamed input)`
     const pattern = FULL_TEST_INPUTS.find(pattern => new Bun.Glob(pattern).match(file))
     if (pattern) return `${file} (${pattern})`
     // Only source and ordinary documentation are eligible for graph selection.
@@ -33,15 +35,15 @@ export async function changedSnapshot(repo: string, files: string[]) {
   const env = { ...process.env, GIT_DIR: dir, GIT_WORK_TREE: repo, GIT_INDEX_FILE: join(dir, "index") }
   const git = (...args: string[]) => $`git ${args}`.cwd(repo).env(env).quiet().text()
   try {
-    await git("init", "--bare", "--quiet", dir)
+    await $`git init --bare --quiet ${dir}`.quiet()
     await git("config", "core.bare", "false")
     await Bun.write(join(dir, "info/exclude"), "*\n")
-    const blob = (await $`git hash-object -w --stdin`.cwd(repo).env(env).stdin("").quiet().text()).trim()
+    const blob = (await $`git hash-object -w --stdin < ${Buffer.alloc(0)}`.cwd(repo).env(env).quiet().text()).trim()
     for (const file of files) {
       if (!file || file.startsWith("/") || file.split("/").includes("..") || /[\r\n\0]/.test(file)) throw new Error(`Invalid changed path: ${file}`)
     }
-    await $`git update-index -z --index-info`.cwd(repo).env(env)
-      .stdin(files.map(file => `100644 ${blob}\t${file}\0`).join("")).quiet()
+    const entries = Buffer.from(files.map(file => `100644 ${blob}\t${file}\0`).join(""))
+    await $`git update-index -z --index-info < ${entries}`.cwd(repo).env(env).quiet()
     const tree = (await git("write-tree")).trim()
     // --changed accepts a tree, so no commit, author identity or signing is needed.
     await git("read-tree", "--empty")

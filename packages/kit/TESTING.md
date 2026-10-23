@@ -2,6 +2,22 @@
 
 The full network/audio checks and Walkers physics/training checks run nightly at 03:17 UTC in
 [`nightly-soak.yml`](../../.github/workflows/nightly-soak.yml), which also supports manual dispatch.
+It also runs every workspace's full unit suite and typechecks on `main` with `verify --all`.
+
+Per-edit `verify` and CI check jobs use `bun test --changed=<base>` (normally `origin/main`, the PR base
+SHA in CI, or the push's previous SHA). `verify:remote` supplies its changed-path snapshot through a
+private temporary Git index on the worker; it never modifies the worker's checkout or source files.
+`verify --all` and `verify:release` always run full suites.
+
+The explicit fallback inputs are in [`scripts/test-selection.ts`](../../scripts/test-selection.ts):
+package/lock/config files, setup/preload, scripts, runtime assets/fixtures/shaders, and unknown non-source
+inputs run full tests for each selected target. Lab stations also fall back because tests discover them
+through dynamic imports. **All `packages/**` changes fall back**: Bun 1.4.2 and 1.4.4 both miss
+`@arcade/kit/...` workspace-source imports during selection. Relative transitive imports work.
+Commands including the kit suite also run in full, because its architecture inventory reads game
+source as text (including the combined Getaway/Blackout test commands). Deleted/renamed inputs fall back.
+Ordinary docs-only changes still select no targets. Missing Git/base data runs full tests, never an empty
+success. A missing requested Git ref fails with a fetch instruction.
 
 Run the default suite through a cargo worker from the repository root:
 
