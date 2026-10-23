@@ -134,6 +134,20 @@ class Chunks {
   }
 }
 
+/** Grows a (x0, y0, z0, x1, y1, z1) box over a mesh's world-space vertices. */
+function growBox(box: number[], mesh: ArrayBuffer) {
+  const f = new Float32Array(mesh)
+  for (let i = 0; i < f.length; i += 8) {
+    const x = f[i]!, y = f[i + 1]!, z = f[i + 2]!
+    if (x < box[0]!) box[0] = x
+    if (y < box[1]!) box[1] = y
+    if (z < box[2]!) box[2] = z
+    if (x > box[3]!) box[3] = x
+    if (y > box[4]!) box[4] = y
+    if (z > box[5]!) box[5] = z
+  }
+}
+
 /** Seeds as 31-bit integers: a world may give 0..1 hashes (the woods toy) or integers (the demo). */
 export const intSeed = (seed: number) => (Number.isInteger(seed) ? seed : Math.floor(Math.abs(seed) * 2147483647)) >>> 0
 
@@ -441,7 +455,11 @@ export function buildForest(input: ForestWorld, models: ForestModels, opts: Buil
     stats.staticTriangles += (near.opaque.byteLength + near.masked.byteLength) / 96
     const groups = [...c.groups].map(([template, list]) => ({ template, data: new Float32Array(list) }))
     for (const g of groups) stats.instances += g.data.length / INSTANCE_FLOATS
-    out.push({ key, x: c.x, z: c.z, box: [c.x, c.y0, c.z, c.x + CHUNK, c.y1, c.z + CHUNK], near, far, groups })
+    // The cull box holds all of the chunk's baked geometry, not just its cell: the dock, buildings and string lights are
+    // filed under the cell of one point but reach into the next.
+    const box = [c.x, c.y0, c.z, c.x + CHUNK, c.y1, c.z + CHUNK]
+    for (const mesh of [near.opaque, near.masked, far.opaque, far.masked]) growBox(box, mesh)
+    out.push({ key, x: c.x, z: c.z, box, near, far, groups })
   }
   for (const t of templates) stats.templateTriangles += (t.near.opaque.byteLength + t.near.masked.byteLength + (t.far ? t.far.opaque.byteLength + t.far.masked.byteLength : 0)) / 96
   return { templates, chunks: out, campLights, water: water.finish(), trunks: new Float32Array(trunkData), rocks: new Float32Array(rockData), field, fieldSize, stats, logs: world.logs }

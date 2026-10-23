@@ -127,6 +127,13 @@ export const shots: Record<string, (page: Page) => Promise<void>> = {
     for (const b of woods.state.brains) { b.mode = "wait"; b.timer = 99 }
     for (const p of woods.state.players.slice(1)) { p.x = 0; p.z = 40 }
   }) },
+  // Halfway out the dock looking along it: its far end is in the next chunk, so a cull box held to its cell lost it.
+  dockMid: async (page) => { await page.evaluate(() => {
+    woods.setPose(-22, 83, Math.PI, -0.3)
+    woods.camera.flashlight = true
+    for (const b of woods.state.brains) { b.mode = "wait"; b.timer = 99 }
+    for (const p of woods.state.players.slice(1)) { p.x = 0; p.z = 40 }
+  }) },
   trunkFoot: async (page) => { await page.evaluate(() => {
     const c = woods.world.camp
     const t = woods.world.trees.filter(t => t.radius > 0.3).sort((a, b) => Math.hypot(a.x - c.x, a.z - c.z + 55) - Math.hypot(b.x - c.x, b.z - c.z + 55))[0]!
