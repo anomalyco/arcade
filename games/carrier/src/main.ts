@@ -44,6 +44,7 @@ import { createGameShell, createShellQuality, type GameShell, muteStorageKey } f
 import { CREW, roomCode } from "../shared/crew"
 import { GpuPerf } from "@arcade/kit/gpu-perf"
 import { CARRIER_QUALITY } from "./quality"
+import { setFlightFxQuality } from "./render/flight-fx"
 
 /** The quiet sea behind the load screen (offline, until a room is chosen). */
 const MENU_SEED = 7
@@ -94,10 +95,12 @@ async function main() {
     gpuMs: () => perf.gpuMs,
     onChange: (tier) => {
       renderer.setBloomLevels(tier.bloomLevels)
+      setFlightFxQuality(tier.flightFx)
       shell?.settings.changed()
     },
   }).expose()
   renderer.setBloomLevels(quality.profile.bloomLevels)
+  setFlightFxQuality(quality.profile.flightFx)
   const tParam = params.get("t")
   const frozen = tParam !== null && Number.isFinite(Number(tParam)) ? Number(tParam) : null
   // `?seed` plays offline and `?room=` joins straight away; otherwise the menu picks a room over an offline sea.

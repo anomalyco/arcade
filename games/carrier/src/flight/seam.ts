@@ -9,6 +9,7 @@ import { type Sea, seaHeight } from "../../shared/sea"
 import type { Ship } from "../../shared/ship"
 import type { Camera } from "../render/camera"
 import { PlaneFx } from "../render/plane-fx"
+import { FlightJuice, type JuiceJet } from "./juice"
 import { type PlaneModels, loadPlaneModels } from "../render/plane-glb"
 import { type PlaneDrawPose, PlanePass } from "../render/plane-pass"
 import type { Renderer } from "../render/renderer"
@@ -91,6 +92,11 @@ export class FlightModule {
   readonly remotes = new RemotePlanes()
   private pass: PlanePass | null = null
   private fx: PlaneFx | null = null
+  /** Speed streaks, vapour, cones, shimmer and sea spray for every jet (src/flight/juice.ts). */
+  private juice: FlightJuice | null = null
+  private wfx: WeaponFx
+  private ownJet: JuiceJet = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, qx: 0, qy: 0, qz: 0, qw: 1, g: 1, throttle: 0, burner: 0, kind: "hornet", flying: false }
+  private remoteJet: JuiceJet = { ...this.ownJet }
   private sea: Sea | null = null
   private arch: Archipelago | null = null
   private ctx: FlightStart | null = null
@@ -140,6 +146,7 @@ export class FlightModule {
     this.flight = new Flight(this.input, this.hud, [0, 2.74, 4.35])
     const wfx = new WeaponFx(renderer)
     renderer.addPass("alpha", wfx)
+    this.wfx = wfx
     this.weaponsNet = {
       gun: (on) => this.net.sendGun(on),
       hits: (target, n) => this.net.sendHits(target, n),
@@ -179,6 +186,11 @@ export class FlightModule {
       this.models = m
       this.pass = new PlanePass(renderer, m)
       this.fx = new PlaneFx(renderer, m)
+      this.juice = new FlightJuice(renderer, m, this.wfx)
+      // Passing the cone speed thumps the pilot's own view a little.
+      this.juice.onBoom = (id) => {
+        if (id < 0) this.flight.shake(0.22)
+      }
       this.boom.setModels(m)
       renderer.addPass("opaque", this.pass)
       renderer.addPass("alpha", this.fx)
@@ -386,6 +398,8 @@ export class FlightModule {
       pass.begin()
       fx.begin(v.eye, v.t)
     }
+    const juice = this.juice
+    juice?.begin(v.eye, this.camera.viewProj, this.camera.fov, v.t, v.dt, this.sea, this.arch)
     const camNow = airborne && this.flight.phase !== "crashed" ? this.flight.cam : null
     this.boom.begin(v.dt, v.t, v.eye, camNow?.fov ?? this.camera.fov, innerHeight, v.ships)
     const f = this.flight
@@ -397,10 +411,20 @@ export class FlightModule {
       const m = pass ? pass.modelMatrix(this.pose, this.matrix) : null
       if (pass && fx && m) {
         pass.add(this.pose)
-        fx.plane(-1, m, this.pose.throttle, this.pose.burner, this.flight.vapour, f.vehicle)
+        const j = this.ownJet
+        const p = f.draw
+        Object.assign(j, { x: p.x, y: p.y, z: p.z, vx: p.vx, vy: p.vy, vz: p.vz, qx: p.qx, qy: p.qy, qz: p.qz, qw: p.qw, g: p.g, throttle: this.pose.throttle, burner: this.pose.burner })
+        j.kind = f.vehicle
+        j.flying = f.phase === "flying"
+        const vapour = juice ? juice.jet(-1, m, j) : this.flight.vapour
+        juice?.streaks(j, f.cam.mode === "cockpit")
+        fx.plane(-1, m, this.pose.throttle, this.pose.burner, vapour, f.vehicle)
       }
       w.setOwnModel(f.phase === "flying" || f.phase === "landing" ? m : null)
-    } else w.setOwnModel(null)
+    } else {
+      w.setOwnModel(null)
+      juice?.streaks(null, false)
+    }
     this.audio.own(airborne ? f : null)
     // A crash breaks the jet up where it hit (once). A jet that was shot down already has its breakup and burning
     // wreck: no crash for it.
@@ -437,8 +461,13 @@ export class FlightModule {
       if (pass && fx && m) {
         pass.add(pose)
         const speed = Math.hypot(last[9], last[10], last[11])
-        const g = (speed * PLANE.pitchRate * Math.abs(pose.pitch)) / 9.81
-        fx.plane(id, m, pose.throttle, pose.burner, last[1] === 1 ? Math.max(0, Math.min(1, (g - 7) / 5)) : 0, kind)
+        const g = 1 + (speed * PLANE.pitchRate * Math.abs(pose.pitch)) / 9.81
+        const j = this.remoteJet
+        Object.assign(j, { x: pose.x, y: pose.y, z: pose.z, vx: last[9], vy: last[10], vz: last[11], qx: pose.qx, qy: pose.qy, qz: pose.qz, qw: pose.qw, g, throttle: pose.throttle, burner: pose.burner })
+        j.kind = kind
+        j.flying = last[1] === PLANE_MODE.flying
+        const vapour = juice ? juice.jet(id, m, j) : 0
+        fx.plane(id, m, pose.throttle, pose.burner, vapour, kind)
       }
     }
     if (pass) this.drawParked(pass, v)
@@ -470,6 +499,11 @@ export class FlightModule {
     if (pass && fx) {
       pass.upload()
       fx.upload()
+    }
+    if (juice) {
+      juice.end()
+      // The kick is applied by the flight camera next frame (src/flight/camera.ts fovKick).
+      f.cam.fovKick = juice.fovKick
     }
   }
 

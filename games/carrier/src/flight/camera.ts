@@ -81,6 +81,9 @@ export class FlightCam {
   readonly forward: Vec3 = [0, 0, -1]
   readonly up: Vec3 = [0, 1, 0]
   fov = FLIGHT_CAM.fov
+  /** Extra FOV from the effects (radians, src/flight/juice.ts `fovKick`: burner light-up, vapour cone); chase and cockpit. */
+  fovKick = 0
+  private kicked = 0
   readonly viewProj = new Float32Array(16)
   readonly viewProj64 = new Float64Array(16)
   private q: Quat = [0, 0, 0, 1]
@@ -233,7 +236,11 @@ export class FlightCam {
       this.eye[2] = p.z + this.rel[2]
       fov = FLIGHT_CAM.fov + FLIGHT_CAM.fovSpeed * fast + FLIGHT_CAM.fovBoost * p.boosting
     }
+    // The effects' kick rides on top of the eased FOV, never into it.
+    this.fov -= this.kicked
     this.fov += (fov - this.fov) * ease(dt, 0.5)
+    this.kicked = sight ? 0 : this.fovKick
+    this.fov += this.kicked
     // Look along the camera's forward, tipped down a little so the jet sits below centre; wobble with trauma.
     const down = sight ? SIGHT_CAM.sightDown * DEG : this.mode === "chase" ? FLIGHT_CAM.lookDown : FLIGHT_CAM.cockpitDown
     const wob = s2 * FLIGHT_CAM.shakeAngle

@@ -1,4 +1,5 @@
 import { ATMOSPHERE_WGSL } from "./atmosphere"
+import { FLIGHT_FX } from "./flight-fx"
 import { FRAME_BINDING_WGSL } from "./frame"
 import { type Lights, lightsFor } from "./lights"
 import type { VehicleKind } from "../../shared/vehicles"
@@ -115,6 +116,8 @@ const MAX_TRAIL_VERTS = 33 * 2 * TRAIL_POINTS * 6
 
 type TrailPoint = { x: number; y: number; z: number; t: number; a: number }
 type Trails = { tips: TrailPoint[][]; seen: number }
+/** Each jet's burner as last drawn and when it last lit (for the light-up pulse). */
+type Burner = { on: boolean; lit: number; seen: number }
 
 export type FlameInput = { model: Float32Array; throttle: number; burner: number; phase: number }
 
@@ -133,6 +136,7 @@ export class PlaneFx implements ScenePass {
   private trailData = new Float32Array(MAX_TRAIL_VERTS * TRAIL_FLOATS)
   private trailVerts = 0
   private trails = new Map<number, Trails>()
+  private burners = new Map<number, Burner>()
   private eye: [number, number, number] = [0, 0, 0]
   private time = 0
   private lights: Lights | null = null
@@ -206,10 +210,21 @@ export class PlaneFx implements ScenePass {
     if (set !== undefined) this.lights?.jet(set, m, throttle, burner, id)
     const r = model.nozzleRadius
     const heat = Math.max(0, throttle - 0.55) / 0.45
+    // Light-up: the burner catches with a bright, long pulse that settles; a lit burner flickers a little.
+    let b = this.burners.get(id)
+    if (!b) this.burners.set(id, (b = { on: burner > 0.5, lit: -1e9, seen: this.time }))
+    if (burner > 0.5 && !b.on) b.lit = this.time
+    b.on = burner > 0.5
+    b.seen = this.time
+    const since = this.time - b.lit
+    const pulse = since >= 0 && since < FLIGHT_FX.burnerPulseTime * 3 ? FLIGHT_FX.burnerPulse * Math.min(1, since / 0.04) * Math.exp(-since / FLIGHT_FX.burnerPulseTime) : 0
+    const flicker = 1 + FLIGHT_FX.burnerFlicker * burner * (Math.sin(this.time * 53 + id * 1.7) * 0.6 + Math.sin(this.time * 31.7 + id) * 0.4)
+    const grow = (1 + 0.3 * pulse) * flicker
+    const glow = (1 + pulse) * flicker
     for (const n of model.nozzles) {
       // Plume and core: length and brightness from throttle, much longer and brighter with the burner lit.
-      this.flame(m, n, r * (0.9 + 0.15 * burner), 1.2 + 1.6 * heat + 6.8 * burner, 0.25 * heat + 2.6 * burner, burner, 1)
-      if (burner > 0.05) this.flame(m, n, r * 0.62, 2.2 + 2.6 * burner, 3.2 * burner, burner, 0)
+      this.flame(m, n, r * (0.9 + 0.15 * burner) * (1 + 0.12 * pulse), (1.2 + 1.6 * heat + 6.8 * burner) * grow, (0.25 * heat + 2.6 * burner) * glow, burner, 1)
+      if (burner > 0.05) this.flame(m, n, r * 0.62, (2.2 + 2.6 * burner) * grow, 3.2 * burner * glow, burner, 0)
     }
     this.trail(id, m, vapour, model)
   }
@@ -328,6 +343,7 @@ export class PlaneFx implements ScenePass {
 
   upload(): void {
     for (const [id, tr] of this.trails) if (this.time - tr.seen > 2) this.trails.delete(id)
+    for (const [id, b] of this.burners) if (this.time - b.seen > 2) this.burners.delete(id)
     const q = this.renderer.context.device.queue
     if (this.flames) q.writeBuffer(this.flameBuf, 0, this.flameData, 0, this.flames * FLAME_FLOATS)
     if (this.trailVerts) q.writeBuffer(this.trailBuf, 0, this.trailData, 0, this.trailVerts * TRAIL_FLOATS)

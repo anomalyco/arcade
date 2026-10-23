@@ -2168,6 +2168,16 @@ Candidates from the code audits; measure and playtest before moving any into the
   faceted blobs replaced by soft smoke. Nitro onset below 24 m/s adds a 0.45 s rear-wheel skid/smoke burst under the
   existing skid switch; the capture recorded exactly 26 connected segments (two per frame) and five smoke sprites,
   then no further segments while boost stayed held. CPU/GPU cost and Kit's playtest verdict remain unmeasured.
+- **Flight juice from state every client already has (Carrier, 2026-10-22).** `src/flight/juice.ts` drives every jet's
+  effects from its pose, velocity, load factor and burner, so remote jets get them from the relayed tuple with no new
+  net fields: air streaks are world-fixed points respawned ahead of the camera and drawn as speed × 45 ms motion-blur
+  lines (true parallax, no screen-space fake); wingtip and over-wing vapour rise with g and angle of attack (nose vs
+  flight path); the vapour cone fires once per crossing of 0.9 × the burner top speed (jets never reach Mach 1); the
+  burner flame overshoots on light-up and the camera takes a 2.5° FOV kick there (`FlightCam.fovKick`, layered on the
+  eased FOV so it never accumulates). Heat shimmer is a composite-time UV wobble inside up to four screen capsules (the
+  nearest plumes) passed in the grade uniform, so it needs no scene copy or extra target. Sea spray reuses WeaponFx's
+  spray chunks and a BoatWake trail. One premultiplied draw of CPU-built geometry (~1-3k vertices); the quality tier's
+  `flightFx` scales streak and spray counts and drops shimmer on Low. Captures: `scripts/juice-shot.ts`.
 
 - **Flight feel lives in one presentation layer, stepped in closed form.** Carrier's `src/flight/feel.ts`
   (`FlightFeel`, owned by `FlightCam.feel`) turns the jet's smoothed body rates and g into camera offsets the chase and

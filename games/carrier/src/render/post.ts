@@ -24,9 +24,15 @@ export const DEFAULT_GRADE: Grade = { exposure: 1.0, bloom: 0.16, threshold: 1.4
 
 export const BLOOM_LEVELS = DEFAULT_BLOOM_LEVELS
 
+/** Heat shimmer sources (src/flight/juice.ts): per source two vec4s, the plume's screen segment (from, to) in pixels and
+ *  (radius at from, radius at to, strength in pixels, 0). A zero strength is off. */
+export const HEAT_SOURCES = 4
+export const HEAT_FLOATS = HEAT_SOURCES * 8
+
 export const CarrierGradeStruct = wgslStruct("Grade", {
   a: "vec4f",
   b: "vec4f",
+  heat: `array<vec4f, ${HEAT_SOURCES * 2}>`,
 })
 
 /** G: exposure, bloom, threshold, saturation | vignette, grain, time, warmth */
@@ -113,8 +119,28 @@ fn hash(p: vec2f) -> f32 {
   return fract((r.x + r.y) * r.x);
 }
 
+/** Heat shimmer: a flowing wobble inside each plume's screen capsule, strongest at the nozzle. In pixels. */
+fn heatOffset(px: vec2f) -> vec2f {
+  var off = vec2f(0.0);
+  for (var i = 0u; i < ${HEAT_SOURCES}u; i++) {
+    let s = G.heat[i * 2u + 1u];
+    if (s.z <= 0.0) { continue; }
+    let seg = G.heat[i * 2u];
+    let ab = seg.zw - seg.xy;
+    let l2 = max(dot(ab, ab), 1e-3);
+    let k = clamp(dot(px - seg.xy, ab) / l2, 0.0, 1.0);
+    let r = mix(s.x, s.y, k);
+    let d = length(px - (seg.xy + ab * k));
+    let w = s.z * (1.0 - smoothstep(0.3 * r, r, d)) * (1.0 - k) * smoothstep(0.0, 0.15, k);
+    if (w <= 0.0) { continue; }
+    let q = px / max(r, 4.0) * 4.5 - normalize(ab) * G.b.z * 14.0;
+    off += w * vec2f(sin(q.y * 2.3 + q.x * 0.7 + G.b.z * 21.0), cos(q.x * 2.9 - q.y * 0.6 + G.b.z * 17.0));
+  }
+  return off;
+}
+
 @fragment fn composite(o: VO) -> @location(0) vec4f {
-  let uv = o.uv;
+  let uv = clamp(o.uv + heatOffset(o.pos.xy) * P.xy, vec2f(0.0), vec2f(1.0));
   var hdr = clean(textureSample(src, samp, uv)).rgb;
   hdr += textureSample(bloomTex, samp, uv).rgb * G.a.y;
   // Hill's fit is darker than a plain curve; 1.6 puts exposure 1 at a natural midday brightness.
@@ -150,6 +176,8 @@ export class Post {
   private finalPass: GPURenderPassDescriptor | null = null
   /** Bloom levels drawn (the quality tier's; up to `BLOOM_LEVELS`). */
   bloomLevels = BLOOM_LEVELS
+  /** Heat shimmer sources for the next frame (layout at HEAT_FLOATS); the writer clears what it no longer uses. */
+  readonly heat = new Float32Array(HEAT_FLOATS)
 
   constructor(
     private device: GPUDevice,
@@ -198,6 +226,7 @@ export class Post {
       {
         a: [g.exposure, g.bloom, g.threshold, g.saturation],
         b: [g.vignette, g.grain, time, g.warmth],
+        heat: this.heat,
       },
       this.gradeData,
       0,
