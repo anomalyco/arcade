@@ -29,6 +29,7 @@ import type { PlaneDrawPose } from "../render/plane-pass"
 import type { WeaponFx } from "../render/weapon-fx"
 import type { JetBreakup } from "../render/explosions"
 import type { WeaponHud, WeaponHudView } from "./hud"
+import { gunLead, makeGunLead } from "./reticle"
 import type { WeaponInput } from "./input"
 import { type FxShip, ShipFx } from "./ship-fx"
 import { BombSight, type SightShip, aimBomb, makeBombAim } from "./bombsight"
@@ -194,6 +195,8 @@ export class Weapons {
   private sight = new BombSight()
   private aim = makeBombAim()
   private lockView = { x: 0, y: 0, progress: 0, locked: false }
+  private gunLead = makeGunLead()
+  private leadView = { x: 0, y: 0, range: 0, solution: false }
   private shooter: Shooter = { x: 0, y: 0, z: 0, fx: 0, fy: 0, fz: 1, team: 0 }
 
   constructor(
@@ -209,7 +212,7 @@ export class Weapons {
     this.others.hits = false
     this.own = { id: 0, team: 0, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, alive: false }
     this.shipFx = new ShipFx(fx, audio, () => this.ear)
-    this.hudView = { weapons: [], slot: 0, heat: 0, overheated: false, missiles: 0, missileMax: 0, bombs: 0, bombMax: 0, flares: 0, flareMax: 0, hp: 100, lock: null, warn: 0, nose: null }
+    this.hudView = { weapons: [], slot: 0, heat: 0, overheated: false, missiles: 0, missileMax: 0, bombs: 0, bombMax: 0, flares: 0, flareMax: 0, hp: 100, lock: null, warn: 0, nose: null, cone: 0, rearm: 0, lead: null }
   }
 
   /** Online (room has authority) or offline (we do). */
@@ -811,9 +814,33 @@ export class Weapons {
         v.lock = this.lockView
       }
     }
+    v.rearm = l.missiles < l.spec.missiles ? 1 - l.rearm / WEAPONS.missile.reload : 0
+    v.lead = null
+    v.cone = 0
     if (own) {
       bodyToWorld(own, 0, 0, 1, fwd)
-      v.nose = project(own.x + fwd[0] * 1000, own.y + fwd[1] * 1000, own.z + fwd[2] * 1000)
+      const nose = (v.nose = project(own.x + fwd[0] * 1000, own.y + fwd[1] * 1000, own.z + fwd[2] * 1000))
+      if (nose && weapon === "missile") {
+        // The lock cone's edge through the live camera, so the circle is what actually locks.
+        bodyToWorld(own, 0, 1, 0, up)
+        const c = Math.cos(WEAPONS.missile.cone) * 1000
+        const s = Math.sin(WEAPONS.missile.cone) * 1000
+        const e = project(own.x + fwd[0] * c + up[0] * s, own.y + fwd[1] * c + up[1] * s, own.z + fwd[2] * c + up[2] * s)
+        v.cone = e ? Math.hypot(e.x - nose.x, e.y - nose.y) : 0
+      }
+      const lead = nose && weapon === "gun" ? gunLead(own, this.jetList, this.team, this.gunLead) : null
+      if (lead) {
+        // On the boresight's 1 km sphere, like the nose: in chase view the cue sits where the pipper must go.
+        const d = lead.dir
+        const s = project(own.x + d[0] * 1000, own.y + d[1] * 1000, own.z + d[2] * 1000)
+        if (s) {
+          this.leadView.x = s.x
+          this.leadView.y = s.y
+          this.leadView.range = lead.range
+          this.leadView.solution = lead.solution
+          v.lead = this.leadView
+        }
+      }
     }
     this.hud.update(dt, v)
     // Bombs selected: where one released now lands, by the world's own bomb (shared/combat.ts bombImpact).

@@ -1,5 +1,6 @@
 import type { WeaponKind } from "../../shared/weapons"
 import { HitMarker } from "../ui/hit-marker"
+import { Reticle, type ReticleView } from "./reticle"
 
 /** What the weapons HUD shows each frame. */
 export type WeaponHudView = {
@@ -21,8 +22,14 @@ export type WeaponHudView = {
   lock: { x: number; y: number; progress: number; locked: boolean } | null
   /** 0 none, 1 an enemy is locking or locked on us, 2 a missile is inbound. */
   warn: 0 | 1 | 2
-  /** The boresight on screen (the hit marker sits on it). */
+  /** The boresight on screen (the hit marker and the reticle sit on it). */
   nose: { x: number; y: number } | null
+  /** The seeker's lock cone radius on screen (CSS px), projected through the live camera. */
+  cone: number
+  /** Rearm progress of the next missile, 0..1. */
+  rearm: number
+  /** The gun's lead cue on screen (src/weapons/reticle.ts gunLead), or null. */
+  lead: ReticleView["lead"]
 }
 
 const LABEL: Record<WeaponKind, string> = { gun: "GUN", missile: "AIM-9", bomb: "BOMB" }
@@ -70,7 +77,8 @@ const CONFIRM_TIME = 1.5
 /**
  * Weapons HUD, Blackout/Carrier typography, no instruction text: the aircraft's weapons in a row above the flight
  * readout (the selected one bright: a heat bar for the gun, pips for missiles and bombs), flare pips, a thin health bar
- * while damaged, the seeker's box on the target (dashed while locking, closing in; solid red when locked), LOCK / a
+ * while damaged, the selected weapon's reticle on the boresight (src/weapons/reticle.ts: gunsight or seeker circle),
+ * the seeker's box on the target (dashed while locking, closing in; solid red when locked), LOCK / a
  * flashing MISSILE warning, a brief hit marker on the boresight, a kill feed top right (newest on top) and a brief
  * SHOT DOWN · NAME confirmation for our own kills.
  */
@@ -81,6 +89,8 @@ export class WeaponHud {
   private hpFill: HTMLElement
   private lockBox: HTMLElement
   private marker: HitMarker
+  private reticle: Reticle
+  private reticleView: ReticleView = { weapon: "gun", nose: { x: 0, y: 0 }, cone: 0, overheated: false, lead: null, missiles: 0, missileMax: 0, rearm: 0, lock: null }
   private warnEl: HTMLElement
   private feedEl: HTMLElement
   private confEl: HTMLElement
@@ -107,6 +117,7 @@ export class WeaponHud {
     this.hpBar = q(".hp")
     this.hpFill = q(".hp i")
     this.lockBox = q(".lock")
+    this.reticle = new Reticle(root)
     this.marker = new HitMarker(root)
     this.warnEl = q(".warn")
     this.feedEl = q(".feed")
@@ -130,6 +141,20 @@ export class WeaponHud {
         this.feedLines.splice(i, 1)
       }
     }
+    const weapon = v?.weapons[v.slot]
+    if (v?.nose && weapon) {
+      const r = this.reticleView
+      r.weapon = weapon
+      r.nose = v.nose
+      r.cone = v.cone
+      r.overheated = v.overheated
+      r.lead = v.lead
+      r.missiles = v.missiles
+      r.missileMax = v.missileMax
+      r.rearm = v.rearm
+      r.lock = v.lock
+      this.reticle.update(dt, r)
+    } else this.reticle.update(dt, null)
     this.arm.hidden = !v
     if (!v) {
       this.hpBar.hidden = true
@@ -173,6 +198,11 @@ export class WeaponHud {
     const warn = v.warn === 2 ? "MISSILE" : v.warn === 1 ? "LOCK" : ""
     if (this.warnEl.textContent !== warn) this.warnEl.textContent = warn
     this.warnEl.classList.toggle("missile", v.warn === 2)
+  }
+
+  /** Whether the gun or seeker reticle shows (the flight HUD's boresight cross steps aside for it). */
+  get reticleShown(): boolean {
+    return this.reticle.shown
   }
 
   /** Our rounds or missile hit an enemy (a kill shows red). `sound` false: the moment's sting plays elsewhere. */

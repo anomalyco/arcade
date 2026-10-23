@@ -662,6 +662,17 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   pipper is drawn in that enemy's frame (where it is now). Tunables: the dev panel's Flight tab (the shared Lab panel:
   `SIGHT_CAM` in `src/flight/camera.ts`, `SIGHT_STYLE` in `src/weapons/bombsight.ts`). GPU check:
   `scripts/bombsight-shot.ts` (captures in `captures/bombsight/`).
+- Reticles (`src/weapons/reticle.ts`, drawn by `WeaponHud` on the boresight; the flight HUD's boresight cross steps
+  aside via `FlightHud.reticle`). Gun: a centre pipper in a ring with range ticks, an amber range arc (the target's
+  round flight time over the round's life) and a lead cue on the enemy jet nearest the boresight within reach
+  (`gunLead`: the round as `Bullets.fire` launches it, aimed by `leadPoint`), placed on the boresight's 1 km sphere so
+  pipper-on-cue is right in chase and cockpit; the cue turns amber when the rounds would pass within the hit sphere.
+  AIM-9: a circle the size of the real lock cone (`WEAPONS.missile.cone` projected through the live camera), a seeker
+  diamond caged on the boresight that slews onto the tracked jet (amber; solid red on lock, inside the lock box), the
+  keep cone dashed while tracking, rail pips (the next one filling as it rearms) below. Bombs keep the bombsight. A
+  weapon change pops the new reticle in (120 ms). Tunables: `RETICLE` on the dev panel's Flight tab
+  (`src/dev/reticle-lab.ts`); `tests/weapon-reticle.test.ts` fires real rounds at the lead cue. Capture:
+  `scripts/reticle-shot.ts`.
 - Controls in flight (`src/weapons/input.ts`), as in Battlefield 3/4 (fire on Space + LMB, 1/2 select). Space or LMB
   under Pointer Lock fires the selected weapon; 1/2/3 select (only weapons the aircraft has); the mouse wheel or V
   cycles; F always drops flares (F launches and lands nothing). Space is no longer nose-up (`src/flight/input.ts`). R
