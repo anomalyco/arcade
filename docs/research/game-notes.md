@@ -22,8 +22,10 @@ proven animation techniques to animation.md, not here.
 
 - **Use golden replays for simulation regressions.** `@arcade/kit/sim/replay` records seeded per-player inputs and
   checks a state hash after every tick in `bun test`. Outbreak's first two tapes cover 30 seconds each of four-player
-  scavenging and two-player combat in 676 ms combined on mini. With short bot-runner contract checks, they replace
-  the 90-second determinism and 60-second squad loops: 857 → 716 ms median (five warm samples, October 22).
+  scavenging and two-player combat in 526 ms combined on Studio. With short bot-runner contract checks, they replace
+  the 90-second determinism and 60-second squad loops: 635 → 556 ms median (nine noisy warm samples, October 22).
+  Outbreak normalizes snapshot fractions to nine decimal places to absorb measured Mac/Linux math drift; input
+  hashes stay exact and the sim is untouched. The shared helper's default is bit-exact.
   Failures name the first divergent tick and changed fields. Re-record only after reviewing an intentional sim
   change; commands and coverage are in [the fixture README](../../games/outbreak/tests/replays/README.md).
   Use replays and unit tests for logic work, scoped to changed games. Real play is for iterating on that game's
