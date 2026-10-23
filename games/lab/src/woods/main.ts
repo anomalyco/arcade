@@ -133,7 +133,7 @@ async function main() {
     const s = view.settings
     // The hand trails the head; the lens sits low and to the right.
     const want = aimOverride ? torchAim : camera.direction
-    const k = laggedReady ? 1 - Math.exp(-dt / Math.max(s.torchLag, 0.001)) : 1
+    const k = laggedReady && s.torchLag > 0 ? 1 - Math.exp(-dt / s.torchLag) : 1
     for (let i = 0; i < 3; i++) lagged[i] = lagged[i]! + (want[i]! - lagged[i]!) * k
     const l = Math.hypot(...lagged) || 1
     for (let i = 0; i < 3; i++) lagged[i] = lagged[i]! / l

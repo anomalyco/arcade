@@ -356,6 +356,8 @@ async function main() {
   let stepping = false, smokeTarget: GPUTexture | null = null
   /** Automation: every friend's drawn position, beam axis and level per drawn frame (`woods.trace`). */
   let trace: { now: number; id: number; x: number; z: number; yaw: number; axis: [number, number, number] | null; level: number }[] | null = null
+  /** Automation: your torch per drawn frame (`woods.torchTrace`): lens, where the view aims, the drawn axis, the view-projection. */
+  let torchTrace: { origin: number[]; aim: number[]; axis: number[]; eye: number[]; vp: number[] }[] | null = null
   /** Automation: walk towards a point (cleared on arrival). */
   let autopilot: { x: number; z: number } | null = null
   /** Ticks left of a tapped flare key (the Lab's Throw a flare, automation). */
@@ -596,7 +598,7 @@ async function main() {
     const reading = viewDir(camera.yaw, -1.05)
     const r = p.mapRaise
     const axis = lookDir.map((v, i) => v + (reading[i]! - v) * (held.held ? 0 : r))
-    const k = laggedReady ? 1 - Math.exp(-dt / Math.max(view.forest.settings.torchLag, 0.001)) : 1
+    const k = laggedReady && view.forest.settings.torchLag > 0 ? 1 - Math.exp(-dt / view.forest.settings.torchLag) : 1
     laggedReady = true
     for (let i = 0; i < 3; i++) lagged[i] = lagged[i]! + (axis[i]! - lagged[i]!) * k
     const al = Math.hypot(lagged[0], lagged[1], lagged[2]) || 1
@@ -644,6 +646,7 @@ async function main() {
     // shadow map, the exposure and the bounce).
     const torches: ForestTorch[] = beams.filter((b) => !debug.dark.includes(b.id === OWN ? meId : b.id)).map((b) => ({ id: b.id, pos: b.origin, dir: b.axis, on: true, kind: b.id === OWN ? "local" : "remote", level: b.level, ...(b.id === OWN && heldUp > 0.3 ? { shadowNear: 0.04 } : {}) }))
     debug.beams = beams.length
+    if (torchTrace && level > 0) torchTrace.push({ origin: [...ownOrigin], aim: [...axis], axis: [...ownAxis], eye: [...camera.eye], vp: [...vp] })
     cameraLook.frame({ t: state.t, dt, eye: camera.eye, yaw: camera.yaw, pitch: camera.pitch, torches, world, fp, place })
     if (trace) {
       const at = performance.now()
@@ -759,6 +762,9 @@ async function main() {
       /** Automation: start recording friends as drawn each frame; `traced()` returns and stops. */
       trace() { trace = [] },
       traced() { const t = trace ?? []; trace = null; return t },
+      /** Automation: start recording your own torch per drawn frame; `torchTraced()` returns and stops. */
+      torchTrace() { torchTrace = [] },
+      torchTraced() { const t = torchTrace ?? []; torchTrace = null; return t },
       friend(id: number): Player | undefined { return session.view.players.find((p) => p.id === id) },
       /** Automation: a tape on tree `id`, knot facing (fx, fz) from the trunk. */
       addTape(id: number, fx = 0, fz = 1) {

@@ -54,6 +54,7 @@ export type ForestLookSettings = SkySettings & {
   torchPower: number
   /** Outer half-angle of the main beam (deg). */
   torchAngle: number
+  /** Colour at a full battery: a '90s krypton bulb is ~3000–3600 K (white LEDs ~6000 K read clinical); it warms as it fades. */
   torchKelvin: number
   torchReach: number
   torchCore: number
@@ -64,7 +65,7 @@ export type ForestLookSettings = SkySettings & {
   /** Where the lens sits relative to the eye (m): right, down. */
   torchSide: number
   torchDrop: number
-  /** How far the beam trails the view (s): the hand lags the head. */
+  /** How far the beam trails the view (s). 0: a real torch's spot is locked to the hand; any lag reads as a late spot. */
   torchLag: number
   /** Near-field bounce of the beam's hit point onto its surroundings. */
   bounce: number
@@ -142,8 +143,8 @@ export const FOREST_LOOK_DEFAULTS: Readonly<ForestLookSettings> = {
   clearAir: true,
   nearScatter: 0,
   depthMist: true, depthDensity: 0.05, depthStart: 12,
-  torchPower: 70, torchAngle: 17, torchKelvin: 6000, torchReach: 40, torchCore: 0.9, torchCoreWidth: 0.42, torchRings: 0.35, torchSpill: 0.03, torchSpillWidth: 2.4,
-  torchSide: 0.3, torchDrop: 0.28, torchLag: 0.07, bounce: 1, torchShadows: "map", foliageShadows: true, shadowSize: 1024, shafts: true, motes: 1,
+  torchPower: 70, torchAngle: 17, torchKelvin: 3600, torchReach: 40, torchCore: 1.3, torchCoreWidth: 0.3, torchRings: 0.35, torchSpill: 0.05, torchSpillWidth: 2.4,
+  torchSide: 0.3, torchDrop: 0.28, torchLag: 0, bounce: 1, torchShadows: "map", foliageShadows: true, shadowSize: 1024, shafts: true, motes: 1,
   dustCount: 80,
   wind: 1, gust: 0.6, trunkSway: 1, branchSway: 1, flutter: 1,
   fernDensity: 1, litter: 1, moss: 1, smoothTrunks: true,

@@ -760,6 +760,42 @@ fn h1(n: f32) -> f32 { return fract(sin(n * 127.1) * 43758.5453); }
 }
 `
 
+/**
+ * Your torch's light in the temporal reactive mask (`@arcade/kit/gpu/reactive`). The beam turns with the view, but TAA
+ * reprojects the history as if light were fixed to the world, so on a pan each pixel takes last frame's pattern from a
+ * little way off and the spot smears behind the aim. Per pixel, at the beam's hit distance along the view ray, this
+ * compares the beam profile now and last frame: the share of the light that changed is how far the history is wrong.
+ * Where the light stayed (a still view, the inside of a wide core) the mask stays 0 and TAA keeps its history.
+ */
+export const torchReactiveShader = /* wgsl */ `
+${common}
+${woodsUniformWgsl}
+${beamWgsl}
+struct TorchBefore { pos: vec4f, dir: vec4f } // lens last frame, hit distance; axis last frame, gain
+@group(1) @binding(0) var<uniform> T: TorchBefore;
+struct VO { @builtin(position) pos: vec4f, @location(0) ndc: vec2f }
+@vertex fn vs(@builtin(vertex_index) i: u32) -> VO {
+  let p = vec2f(f32((i << 1u) & 2u), f32(i & 2u)) * 2.0 - 1.0;
+  var o: VO;
+  o.pos = vec4f(p, 0.0, 1.0);
+  o.ndc = p;
+  return o;
+}
+fn torchAt(p: vec3f, lens: vec3f, axis: vec3f) -> f32 {
+  return kitBeamProfile(kitBeamAngle(dot(normalize(p - lens), axis)) / max(N.torchDir.w, 0.01), N.beamA, N.beamB);
+}
+@fragment fn fs(o: VO) -> @location(0) vec4f {
+  let q = N.invViewProj * vec4f(o.ndc, 0.5, 1.0);
+  let p = F.cam.xyz + normalize(q.xyz / q.w - F.cam.xyz) * T.pos.w;
+  let now = torchAt(p, N.torch.xyz, N.torchDir.xyz);
+  let was = torchAt(p, T.pos.xyz, T.dir.xyz);
+  let hi = max(now, was);
+  // Relative change, ignored where the beam throws next to nothing.
+  let moved = abs(now - was) / max(hi, 1e-4) * hi / (hi + 0.02);
+  return vec4f(clamp(moved * T.dir.w, 0.0, 1.0));
+}
+`
+
 /** The renderer's own scene shader, for what a game draws through `FrameInput.batches` (players, props): same night. */
 export const batchHooks: SceneHooks = withPhysicalLights({
   lampGrid: false,
