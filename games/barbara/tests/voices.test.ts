@@ -116,7 +116,7 @@ test("a quiet default night still stages one matching mimic call and answer dete
   const answers = a.events.filter((e): e is DistantEvent => e.kind === "distant" && e.sound === "far.mimic")
   expect(calls).toHaveLength(1)
   expect(answers).toHaveLength(1)
-  expect(MIMIC_LINES[answers[0]!.take]).toBe(calls[0]!.line)
+  expect(calls[0]!.line).toBe(MIMIC_LINES[answers[0]!.take]!)
   expect(answers[0]!.at).toBeGreaterThan(calls[0]!.at + lineOf(calls[0]!.line).seconds)
   expect(night(false).events.filter((e) => e.kind === "voice" && lineOf(e.line).pool === "call")).toEqual([])
 })
