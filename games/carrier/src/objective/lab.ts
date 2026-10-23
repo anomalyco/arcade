@@ -26,6 +26,8 @@ const LOOK_CONTROLS: LabControl[] = [
   { key: "band", label: "Boundary width", group: "Look", min: 4, max: 60, step: 1, unit: "m" },
   { key: "ring", label: "Boundary glow", group: "Look", min: 0, max: 12, step: 0.1, unit: "×" },
   { key: "fill", label: "Water tint", group: "Look", min: 0, max: 0.4, step: 0.01, unit: "" },
+  { key: "wallHeight", label: "Curtain height", group: "Look", min: 0, max: 800, step: 10, unit: "m" },
+  { key: "wall", label: "Curtain glow", group: "Look", min: 0, max: 3, step: 0.05, unit: "×" },
   { key: "spin", label: "Dash turn rate", group: "Look", min: 0, max: 30, step: 0.5, unit: "°/s" },
 ]
 

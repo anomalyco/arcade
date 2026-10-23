@@ -12,6 +12,9 @@ export type ZoneLook = {
   ring: number
   /** Tint over the water inside (alpha). */
   fill: number
+  /** The light curtain standing on the boundary: height (m) and strength. */
+  wallHeight: number
+  wall: number
   /** The boundary's dash marks turn this fast (°/s). */
   spin: number
 }
@@ -20,6 +23,8 @@ export const ZONE_LOOK_DEFAULTS: Readonly<ZoneLook> = {
   band: 16,
   ring: 3.2,
   fill: 0.07,
+  wallHeight: 240,
+  wall: 0.55,
   spin: 4,
 }
 export const ZONE_LOOK: ZoneLook = { ...ZONE_LOOK_DEFAULTS }
@@ -48,6 +53,7 @@ const ZONE_FLOATS = 16
 const SEGMENTS = 160
 const RINGS = 30
 const DISC_EDGE = 1.08
+const WALL_SEGMENTS = 160
 
 const WGSL = /* wgsl */ `
 ${FRAME_BINDING_WGSL}
@@ -61,7 +67,7 @@ struct Zone {
   misc: vec4f, // dash phase, band width, 0, 0
 }
 struct Look {
-  a: vec4f, // ring, fill, unused, unused
+  a: vec4f, // ring, fill, wall height, wall
   b: vec4f, // 0, 0, sea origin x, z
 }
 @group(1) @binding(0) var<uniform> sea: SeaUniform;
@@ -72,11 +78,12 @@ const TAU: f32 = 6.283185307;
 const NEUTRAL: vec3f = vec3f(0.82, 0.86, 0.92);
 const SEGS: u32 = ${SEGMENTS}u;
 const RINGS: u32 = ${RINGS}u;
+const WSEGS: u32 = ${WALL_SEGMENTS}u;
 
 struct V {
   @builtin(position) pos: vec4f,
   @location(0) world: vec3f,
-  // disc: distance from the centre (m), angle (rad)
+  // disc: distance from the centre (m), angle (rad); wall: height fraction, angle
   @location(1) polar: vec2f,
   @location(2) @interpolate(flat) zone: u32,
 }
@@ -164,16 +171,57 @@ fn fogged(c: vec3f, a: f32, w: vec3f) -> vec4f {
   }
   return fogged(c, a, v.world);
 }
+
+@vertex fn vsWall(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> V {
+  let z = Z[ii];
+  let cell = vi / 6u;
+  let k = quadCorner(vi);
+  let seg = cell + k.x;
+  let a = f32(seg) / f32(WSEGS) * TAU;
+  let h = f32(k.y);
+  let p = z.c.xy + vec2f(sin(a), -cos(a)) * z.c.z;
+  // From below the water (the waves cut its foot) up to the wall height; ghost spots have none.
+  let top = select(L.a.z, 0.0, z.c.w > 0.5);
+  let w = vec3f(L.b.z + p.x, mix(-8.0, top, h), L.b.w + p.y);
+  var o: V;
+  o.pos = F.viewProj * vec4f(w, 1.0);
+  o.world = w;
+  o.polar = vec2f(h, a);
+  o.zone = ii;
+  return o;
+}
+
+@fragment fn fsWall(v: V) -> @location(0) vec4f {
+  let z = Z[v.zone];
+  let h = v.polar.x;
+  let n = vec3f(sin(v.polar.y), 0.0, -cos(v.polar.y));
+  let view = normalize(v.world - F.eye.xyz);
+  // Edge-on parts of the curtain read stronger, like a sheet of light.
+  let edge = 1.0 - abs(dot(n, view));
+  // Seen from above the whole sheet faces the camera and read as a second, raised ring: it fades out as the view
+  // steepens, so from the air only the ring on the water shows. It also dies away well before its top edge.
+  let level = 1.0 - smoothstep(0.25, 0.6, abs(view.y));
+  let fade = pow(1.0 - h, 3.0) * level;
+  let streak = 0.75 + 0.25 * sin(v.polar.y * 240.0 + F.eye.w * 0.6283 * 2.0 - h * 6.0);
+  let k = L.a.w * glowScale() * (0.25 + edge * edge * 0.9) * fade * streak * (1.0 + z.cap.w * 1.2);
+  var col = zoneColor(z);
+  if (z.col.w > 0.0 && z.col.w < 1.0) {
+    col = mix(col, z.cap.rgb, z.col.w);
+  }
+  return fogged(col * k, 0.0, v.world);
+}
 `
 
 /**
  * The zones on the sea (shared/objective.ts), in the alpha slot: a glowing boundary band and a faint tint on the
- * displaced water (the band carries the capture arc and slowly turning dash marks). Upcoming spots are a dashed ghost ring. Nothing stands at the centre: from far away the radar and its
+ * displaced water (the band carries the capture arc and slowly turning dash marks) and a curtain of light standing on
+ * the boundary. Upcoming spots are a dashed ghost ring. Nothing stands at the centre: from far away the radar and its
  * markers find the zones (src/flight/radar.ts, objectiveZones()).
  */
 export class ZonePass implements ScenePass {
   private device: GPUDevice
   private disc: GPURenderPipeline
+  private wall: GPURenderPipeline
   private group: GPUBindGroup
   private seaBuf: GPUBuffer
   private zoneBuf: GPUBuffer
@@ -204,6 +252,7 @@ export class ZonePass implements ScenePass {
         multisample: { count: ctx.samples },
       })
     this.disc = pipe("vsDisc", "fsDisc", "zone-disc")
+    this.wall = pipe("vsWall", "fsWall", "zone-wall")
     const usage = GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     this.seaBuf = d.createBuffer({ label: "zone-sea", size: SEA_UNIFORM_FLOATS * 4, usage })
     this.zoneBuf = d.createBuffer({ label: "zone-list", size: this.zoneU.byteLength, usage })
@@ -231,7 +280,7 @@ export class ZonePass implements ScenePass {
       u.set([z.x - ox, z.z - oz, z.r, z.next ? 1 : 0, ...z.color, z.progress, ...z.capColor, z.contested ? 0.5 + 0.5 * Math.sin(t * Math.PI * 5) : 0, z.spin, ZONE_LOOK.band, 0, 0], o)
     }
     const L = ZONE_LOOK
-    this.lookU.set([L.ring, L.fill, 0, 0, 0, 0, ox, oz])
+    this.lookU.set([L.ring, L.fill, L.wallHeight, L.wall, 0, 0, ox, oz])
     const q = this.device.queue
     q.writeBuffer(this.seaBuf, 0, this.seaU)
     q.writeBuffer(this.zoneBuf, 0, u)
@@ -241,6 +290,8 @@ export class ZonePass implements ScenePass {
   draw(pass: GPURenderPassEncoder): void {
     if (!this.n) return
     pass.setBindGroup(1, this.group)
+    pass.setPipeline(this.wall)
+    pass.draw(WALL_SEGMENTS * 6, this.n)
     pass.setPipeline(this.disc)
     pass.draw(SEGMENTS * RINGS * 6, this.n)
   }

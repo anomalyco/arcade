@@ -575,7 +575,7 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   and to joiners. Offline the client runs its own on the local ship. Dev rooms take `objective` (rules, clamped;
   the round restarts) from the dev panel's Game tab (Zones: rules + look, Apply to room).
 - Client: `Zones` (`src/objective/zones.ts`) draws `ZonePass` (a glowing boundary on the displaced sea with the
-  capture arc and turning dash marks, a faint tint; nothing stands above the water) and the
+  capture arc and turning dash marks, a faint tint, a low light curtain on the boundary; no centre beam) and the
   top-centre `ObjectiveHud` (zone pips, scores in carrier colours with bars to the target, MOVE countdown, a capture
   meter, one event line, the WINS banner). `objectiveZones()` gives other HUD pieces (the radar) the zones.
 - Real-GPU check: `scripts/zones-shot.ts` (dev room; captures in `captures/zones/`).
