@@ -27,6 +27,20 @@ test("the build worker's world (the height grid, no height function) builds byte
   expect(worker.campLights).toEqual(page.campLights)
 }, 30_000)
 
+test("each chunk's cull box holds all of its static geometry, the dock and buildings that run past the cell included", async () => {
+  const world = demoForestWorld(7, 20)
+  const build = buildForest(world, await models(), { scatter: 0, fernDensity: 0, litter: 0, campDetail: true })
+  const outside: string[] = []
+  for (const c of build.chunks) for (const mesh of [c.near.opaque, c.near.masked, c.far.opaque, c.far.masked]) {
+    const data = new DataView(mesh)
+    for (let o = 0; o < data.byteLength; o += 32) {
+      const p = [0, 4, 8].map(k => data.getFloat32(o + k, true))
+      if (p.some((v, i) => v < c.box[i]! - 1e-3 || v > c.box[i + 3]! + 1e-3)) { outside.push(`${c.key}: ${p.map(v => v.toFixed(1))}`); break }
+    }
+  }
+  expect(outside).toEqual([])
+}, 30_000)
+
 test("smooth trunk rings share normals across adjacent bands and the UV seam", async () => {
   const world = demoForestWorld(7, 20)
   const build = buildForest(world, await models(), { scatter: 0, fernDensity: 0, litter: 0, smoothTrunks: true })
