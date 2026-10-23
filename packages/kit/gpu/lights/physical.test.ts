@@ -20,5 +20,6 @@ const sources = {
   motion: makeSceneShader({ ...physicalLightHooks({ settings: { spill: 0.05 } }), lampGrid: true }, true, true),
   composed: makeSceneShader(withPhysicalLights(base, { knobs: "N.light", env: "mix(vec3f(0.01, 0.04, 0.04), ambientAt(n), rough * rough)" })),
   shadows: makeSceneShader(withPhysicalLights(base, { knobs: "N.light", beam: { a: "N.fog", b: "N.look" }, spotShadows: true })),
+  lensShadows: makeSceneShader(withPhysicalLights(base, { spotShadows: true, spotShadowRadius: "L.extra.z" })),
 }
 for (const [name, code] of Object.entries(sources)) test(`WGSL: ${name}`, () => validateWgsl(code))

@@ -438,6 +438,8 @@ fn forestMoon(world: vec3f, n: vec3f, open: f32) -> vec3f {
 export const forestHooks: SceneHooks = withPhysicalLights(sceneHooks, {
   knobs: "N.pbr",
   spotShadows: true,
+  // The torch's finite lens casts a penumbra behind nearby fronds, not a razor-sharp moving cutout.
+  spotShadowRadius: "L.extra.z",
   beam: { a: "N.beamA", b: "N.beamB" },
   env: "woodsEnv(dir, rough, n)",
 })

@@ -186,6 +186,16 @@ cross-fades, re-rendering only on change, and a fixed 3×3 hardware PCF (no per-
   the pool's edge (`SpotSlot.reach`), not only on hand-over. Rendering a moving torch's map every frame is a separate
   cost from sampling; budget it separately.
 
+**Finite torch lens shadows (BARBARA candidate).** The forest opts into the kit's contact-hardening spot filter
+with its existing 2 cm torch radius and a fixed sampling pattern. Nearby fronds cast a penumbra onto the floor.
+- Where: `PhysicalLightOptions.spotShadowRadius` in `gpu/lights/physical.ts`, used by `forest/shaders.ts`.
+- Cost: rough whole-renderer timing 11.97 → 12.73 ms on shared mini/Metal, unpaired and noisy.
+- Evidence: one matched slow walk reduced reprojected excursions 643.54 → 553.16/frame (14.0%) and the peak
+  1,983 → 1,353 (31.8%). Fixed caster admission changed the metric by 0.05%; freezing visible wind reduced it
+  7%. The shadow caster geometry itself has no wind. [Full diagnosis](../perf/barbara-shadow-pops.md).
+- Kit: awaiting visual review. Remaining excursions include genuine moving light and wind; this is a partial
+  reduction, and volumetric shadow sampling retains its existing path.
+
 **Soft character shadows from capsules.** Each body is 14 bone capsules; every fragment gets a contact term and a
 soft shadow from each of its four strongest lights, sharp at the feet and widening up the body. It exists only where
 that light lands, so darkness stays dark.

@@ -14,6 +14,14 @@ proven animation techniques to animation.md, not here.
 
 ## Proving a change
 
+- **Measure shadow admission separately from moving illumination (BARBARA).** A fixed shadow-caster union over
+  a 4.2 m walk eliminated 1,005 membership changes but left excursions unchanged (643.54 → 643.88/frame).
+  The largest spikes occurred with no admission changes. Visible-wind freezing reduced the metric 7%; doubling
+  shadow resolution worsened it 14%. Using the torch's existing lens radius in the contact-hardening filter
+  reduced excursions 14% and the worst spike 32%, with a rough 0.75 ms renderer increase. This remains a visual
+  review candidate, not proof that every excursion is a sampling bug. `scripts/barbara-shadow-probe.ts` records
+  both membership and image metrics; `perf/barbara-shadow-pops.md` records the limitations and failed setups.
+
 - **Contain bloom at its source (Woods, round 7 candidate).** The round-6 destination-radiance cap was rejected:
   halos land on dark pixels, so it also removed light-source halos. `forest/shaders.ts` now tags nearby rough,
   non-emissive surfaces in HDR alpha; `forest/post.ts` limits those source taps before the bloom downsample.

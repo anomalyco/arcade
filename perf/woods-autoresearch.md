@@ -22,8 +22,10 @@ and 21 targeted tests (forest build/exposure/light packing and GPU look defaults
 Pro was below its 20 GiB disk floor; HiveMind routed the job to mini after admission waited. No new capture or
 timing run was needed for the port; the approved round-11 build and shader sources are carried verbatim.
 
-This port awaits review before PR creation. Shadow sampling, animated leaf shadows and caster admission will
-each get one measurement on `barbara-shadow-pops` after camp integration; round 5 has not distinguished them yet.
+The port shipped in #465 as `f0577ca8` after Kit's review and 13/13 green checks; `release-4` was fast-forwarded.
+The one-line light sort preserves ground-lighting camp sources before decorative bulbs while retaining IDs.
+`surfaceOnly` is already applied by fog assembly and is not a `SceneLight` field. The subsequent three-probe
+shadow diagnosis and partial lens-shadow improvement are recorded in [barbara-shadow-pops.md](barbara-shadow-pops.md).
 
 ## Camp review: rounds 8–11 (2026-10-22)
 
