@@ -88,7 +88,7 @@ struct WeatherUniforms {
   offNear: vec4f,       // wrapped drift - anchor (xyz), NEAR_BOX
   offFar: vec4f,        // wrapped drift - anchor (xyz), FAR_BOX
   velExposure: vec4f,   // relative drop velocity (xyz), exposure (s)
-  windGust: vec4f,      // windX, windZ, windSpeedMs, gust
+  windGust: vec4f,      // windX, windZ, windSpeedMs (volume mode: streak radiance gain), gust
   counts: vec4f,        // nearCap, nearAmount, farAmount, splashAmount
   counts2: vec4f,       // dripAmount, mistAmount, lightCount, excludeCount
   shape: vec4f,         // dropWidthM, minPx, splashSizeM, snowMode (0 or 1)
@@ -138,7 +138,7 @@ fn isExcludedInterior(xz: vec2f) -> bool {
  * Evaluates scene point lights & spotlight cones (streetlamps, porch lamps, windows, flashlight)
  * at world point p, returning HDR light radiance reaching the droplet/splash/mist.
  */
-fn evalWeatherLightAt(world: vec3f) -> vec3f {
+fn evalWeatherLightAt(world: vec3f, streak: bool) -> vec3f {
   var sum = vec3f(0.0);
   let nLights = i32(W.counts2.z);
   let V = normalize(W.eyeTime.xyz - world + vec3f(1e-4));
@@ -173,7 +173,14 @@ fn evalWeatherLightAt(world: vec3f) -> vec3f {
     }
     if (att <= 0.001) { continue; }
     let ldir = d3Vec / d3;
-    let scatter = 0.85 + 0.95 * pow(max(0.0, dot(V, -ldir)), 2.0);
+    var scatter = 0.85 + 0.95 * pow(max(0.0, dot(V, -ldir)), 2.0);
+    if (streak && W.anchor.w > 0.5 && W.shape.w < 0.5) {
+      // Broad reflection keeps a carried torch readable; forward transmission peaks when viewing the source
+      // through the rain. A bounded HG lobe (g=.65), not a uniform glow outside the source's cone.
+      let mu = clamp(dot(V, -ldir), -1.0, 1.0);
+      let hg = 0.5775 / pow(1.4225 - 1.3 * mu, 1.5);
+      scatter = 0.6 + 0.22 * hg;
+    }
     sum += lc.rgb * (att * scatter);
   }
   return sum;
@@ -200,10 +207,36 @@ struct StreakOut {
   let fade = saturate(amount - f32(local));
   if (fade <= 0.0) { return o; }
 
-  let boxXZ = select(W.offNear.w, W.offFar.w, isFar);
-  let boxY = select(${NEAR_HEIGHT}.0, ${FAR_HEIGHT}.0, isFar);
-  let off = select(W.offNear.xyz, W.offFar.xyz, isFar);
+  var boxXZ = select(W.offNear.w, W.offFar.w, isFar);
+  var boxY = select(${NEAR_HEIGHT}.0, ${FAR_HEIGHT}.0, isFar);
+  var off = select(W.offNear.xyz, W.offFar.xyz, isFar);
   let h = rand3(vec3u(local, select(11u, 23u, isFar), 0x5eedu));
+  var anchor = W.anchor.xyz;
+  if (W.anchor.w > 0.5 && W.shape.w < 0.5) {
+    if (isFar) {
+      // Spend the existing far-drop budget where light can reveal it, rather than mostly above/outside cones.
+      // The tile translates around a source, but the lattice and drift remain world-anchored: aiming a torch
+      // changes illumination, not drop positions. Tile periods divide the original wrap periods exactly.
+      var eligible = 0u;
+      for (var j = 0u; j < u32(W.counts2.z); j++) {
+        if (W.lightsCone[j].w >= -1.0 && distance(W.lightsPos[j].xyz, W.eyeTime.xyz) < 48.0) { eligible++; }
+      }
+      if (eligible > 0u) {
+        var pick = local % eligible;
+        for (var j = 0u; j < u32(W.counts2.z); j++) {
+          if (W.lightsCone[j].w < -1.0 || distance(W.lightsPos[j].xyz, W.eyeTime.xyz) >= 48.0) { continue; }
+          if (pick == 0u) { anchor.x = W.lightsPos[j].x; anchor.z = W.lightsPos[j].z; break; }
+          pick--;
+        }
+        boxXZ = ${FAR_BOX / 3};
+        boxY = ${FAR_HEIGHT / 2};
+        off += W.anchor.xyz - anchor;
+      }
+    } else {
+      boxXZ = ${NEAR_BOX / 2};
+      boxY = ${NEAR_HEIGHT / 2};
+    }
+  }
   var rel = wrapBox3(h * vec3f(boxXZ, boxY, boxXZ) + off, boxXZ, boxY);
 
   let isSnow = W.shape.w > 0.5;
@@ -215,7 +248,7 @@ struct StreakOut {
   }
 
   let groundY = W.anchor.y;
-  let world = vec3f(W.anchor.x + rel.x, groundY + rel.y, W.anchor.z + rel.z);
+  let world = anchor + rel;
   if (world.y < groundY + 0.05 || isExcludedInterior(world.xz)) {
     return o;
   }
@@ -231,13 +264,15 @@ struct StreakOut {
   // Evaluate scene light cones & pools at the droplet's 3D world position
   let vertexHead = vi % 6u == 1u || vi % 6u == 2u || vi % 6u == 4u;
   let sampleWorld = select(world - W.velExposure.xyz * W.velExposure.w * (0.85 + 0.30 * fract(h.z * 7.13)), world, vertexHead);
-  let litRgb = evalWeatherLightAt(select(world, sampleWorld, W.anchor.w > 0.5));
+  let litRgb = evalWeatherLightAt(select(world, sampleWorld, W.anchor.w > 0.5), true);
   let litIntensity = max(litRgb.r, max(litRgb.g, litRgb.b));
   let litOnly = W.lighting.x;
   let flash = W.lighting.y;
   let unlitFloor = mix(0.62, select(0.14, 0.0, W.anchor.w > 0.5), litOnly);
   let lightGate = clamp(unlitFloor + litIntensity * (1.55 + 2.15 * litOnly) + flash * 1.85, 0.0, 3.6);
-  a *= min(1.45, lightGate);
+  // Volume streaks scatter light once, in radiance. Gating alpha with the same attenuation made dim drops
+  // quadratically dark, especially after shortening their shutter trace.
+  if (W.anchor.w < 0.5 || isSnow) { a *= min(1.45, lightGate); }
   if (a <= 0.003 && W.anchor.w < 0.5) { return o; }
 
   let dropSize = W.shape.x * (0.65 + 0.70 * h.x * h.y);
@@ -285,7 +320,11 @@ struct StreakOut {
   c = vec4f(c.xy + (px * 2.0 / vp) * c.w, c.z, c.w);
 
   let ambCol = W.baseColor.rgb * (0.48 + 0.52 * W.lighting.z + flash * 2.6);
-  let finalCol = ambCol * mix(1.0, 0.32, litOnly) + litRgb * (1.75 + 1.65 * litOnly);
+  var finalCol = ambCol * mix(1.0, 0.32, litOnly) + litRgb * (1.75 + 1.65 * litOnly);
+  if (W.anchor.w > 0.5 && !isSnow) {
+    // No ambient floor: an unlit drop contributes exactly zero. Flash remains an explicit broad source.
+    finalCol = litRgb * W.windGust.z + W.baseColor.rgb * flash * 2.6;
+  }
 
   o.pos = c;
   o.uv = vec2f(side, end * 2.0 - 1.0);
@@ -306,6 +345,10 @@ struct StreakOut {
     shape = across * (0.24 + 0.76 * along);
   }
   let a = o.alpha * shape;
+  if (W.anchor.w > 0.5 && !isSnow) {
+    // Tiny translucent drops add scattered radiance, not opaque grey strokes over the background.
+    ${retStmt("vec4f(o.color * a, 0.0)")}
+  }
   ${retStmt("vec4f(o.color * a, a)")}
 }
 
@@ -377,7 +420,7 @@ struct SplashOut {
   let dripTime = age*period;
   let dripHead = max(base.y,eaveY-0.5*9.81*dripTime*dripTime);
   let lightPoint = select(base+vec3f(0.0,0.25,0.0),vec3f(base.x,dripHead,base.z),isDrip && vi>=6u && W.anchor.w>0.5);
-  let litRgb = evalWeatherLightAt(lightPoint);
+  let litRgb = evalWeatherLightAt(lightPoint, false);
   let litIntensity = max(litRgb.r, max(litRgb.g, litRgb.b));
   let litOnly = W.lighting.x;
   let flash = W.lighting.y;
@@ -480,7 +523,7 @@ struct MistOut {
   a *= smoothstep(3.5, 8.5, dist);
   if (a <= 0.002) { return o; }
 
-  let litRgb = evalWeatherLightAt(center);
+  let litRgb = evalWeatherLightAt(center, false);
   let flash = W.lighting.y;
   let ambCol = W.baseColor.rgb * (0.14 + 0.25 * W.lighting.z + flash * 0.75);
   let col = ambCol + litRgb * 0.68;
@@ -674,9 +717,14 @@ export class WeatherRenderer {
   prepare(input: WeatherPrepareInput, camera?: WeatherCamera): void {
     const { settings, state } = input
     const eaves = input.eaves ?? []
+    const rainLighting = input.rainLighting?.mode === "volume" ? input.rainLighting : null
+    // Confining rain to actual cones already removes most visible drops. The legacy HiDPI density penalty
+    // starved those small lit volumes; retain the normal capped budget at every render scale.
     const lod = computeWeatherLod(settings, input.cameraDist ?? 34, eaves.length > 0, input.viewportWidth)
-    this.nearCount = lod.nearCount
-    this.farCount = lod.farCount
+    const streakLod = rainLighting && !settings.snowMode
+      ? computeWeatherLod(settings, input.cameraDist ?? 34, eaves.length > 0, Math.min(2200, input.viewportWidth)) : lod
+    this.nearCount = streakLod.nearCount
+    this.farCount = streakLod.farCount
     this.splashCount = lod.splashCount
     this.dripCount = lod.dripCount
     this.mistCount = lod.mistCount
@@ -704,7 +752,6 @@ export class WeatherRenderer {
     u[20] = focusX
     u[21] = groundY
     u[22] = focusZ
-    const rainLighting = input.rainLighting?.mode === "volume" ? input.rainLighting : null
     u[23] = rainLighting ? 1 : 0
 
     const vpW = Math.max(1, camera?.width ?? input.viewportWidth)
@@ -738,7 +785,7 @@ export class WeatherRenderer {
 
     u[40] = state.windX
     u[41] = state.windZ
-    u[42] = state.windSpeedMs
+    u[42] = rainLighting ? Math.max(0, Math.min(12, rainLighting.streakGain ?? 4)) : state.windSpeedMs
     u[43] = state.gust
 
     const nearCap = NEAR_BASE * MAX_DENSITY_SCALE
