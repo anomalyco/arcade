@@ -131,7 +131,7 @@ function readTimed(r: ByteReader, max: number, each: (base: number) => unknown):
  * A binary frame for a high-rate message, or null for one that travels as JSON. `msg` must already be valid (the
  * sender's own message types); values outside the grid's range are clamped.
  */
-export function encodeWire(msg: Msg): Uint8Array | null {
+export function encodeWire(msg: Msg): Uint8Array<ArrayBuffer> | null {
   const w = writer.reset()
   const m = msg as Record<string, any>
   switch (msg.type) {

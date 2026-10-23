@@ -1,13 +1,11 @@
 {
   "compilerOptions": {
-    "incremental": true,
-    "tsBuildInfoFile": "../../node_modules/.cache/tsc/blackout-scripts.tsbuildinfo",
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "target": "ESNext",
     "module": "Preserve",
     "moduleDetection": "force",
     "moduleResolution": "bundler",
-    "types": ["bun", "@webgpu/types"],
+    "types": ["bun", "@webgpu/types", "vite/client"],
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "noEmit": true,

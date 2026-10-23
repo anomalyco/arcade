@@ -222,14 +222,14 @@ async function solo(): Promise<void> {
   await shot(page, "04-full-map")
   await mapKey(page, false)
   await page.waitForTimeout(200)
-  check(await page.evaluate(() => document.querySelector<HTMLCanvasElement>("#rd .map")!.hidden), "releasing G after a hold closes it")
+  check(await page.evaluate(() => Boolean(document.querySelector<HTMLCanvasElement>("#rd .map")!.hidden)), "releasing G after a hold closes it")
   // A tap pins it, a second tap closes it.
   await page.keyboard.press("g")
   await page.waitForTimeout(200)
   const pinned = await page.evaluate(() => !document.querySelector<HTMLCanvasElement>("#rd .map")!.hidden)
   await page.keyboard.press("g")
   await page.waitForTimeout(200)
-  const closed = await page.evaluate(() => document.querySelector<HTMLCanvasElement>("#rd .map")!.hidden)
+  const closed = await page.evaluate(() => Boolean(document.querySelector<HTMLCanvasElement>("#rd .map")!.hidden))
   check(pinned && closed, "a tap pins the map, a second tap closes it")
   // A missile homing on us from behind (local world only, for the radar's blinking dot).
   await js(

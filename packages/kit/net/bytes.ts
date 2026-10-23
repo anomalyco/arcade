@@ -102,7 +102,7 @@ export class ByteWriter {
   }
 
   /** Copy of the written bytes. */
-  finish(): Uint8Array {
+  finish(): Uint8Array<ArrayBuffer> {
     return this.buf.slice(0, this.length)
   }
 }

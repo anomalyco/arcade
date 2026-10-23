@@ -1,7 +1,5 @@
 {
   "compilerOptions": {
-    "incremental": true,
-    "tsBuildInfoFile": "../../node_modules/.cache/tsc/kit.tsbuildinfo",
     "lib": [
       "ESNext",
       "DOM",
@@ -13,7 +11,8 @@
     "moduleResolution": "bundler",
     "types": [
       "bun",
-      "@webgpu/types"
+      "@webgpu/types",
+      "vite/client"
     ],
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,

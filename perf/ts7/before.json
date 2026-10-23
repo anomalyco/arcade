@@ -1,0 +1,90 @@
+[
+  {
+    "project": "games/getaway/tsconfig.json",
+    "temperature": "cold",
+    "seconds": 3.259,
+    "exit": 0,
+    "load": [
+      16.7197265625,
+      11.486328125,
+      13.0341796875
+    ]
+  },
+  {
+    "project": "games/getaway/tsconfig.json",
+    "temperature": "warm",
+    "seconds": 0.883,
+    "exit": 0,
+    "load": [
+      16.34130859375,
+      11.49462890625,
+      13.02783203125
+    ]
+  },
+  {
+    "project": "games/blackout/tsconfig.json",
+    "temperature": "cold",
+    "seconds": 3.513,
+    "exit": 0,
+    "load": [
+      16.34130859375,
+      11.49462890625,
+      13.02783203125
+    ]
+  },
+  {
+    "project": "games/blackout/tsconfig.json",
+    "temperature": "warm",
+    "seconds": 0.849,
+    "exit": 0,
+    "load": [
+      15.99365234375,
+      11.5029296875,
+      13.021484375
+    ]
+  },
+  {
+    "project": "games/lab/tsconfig.json",
+    "temperature": "cold",
+    "seconds": 6.09,
+    "exit": 0,
+    "load": [
+      16.07421875,
+      11.59375,
+      13.04443359375
+    ]
+  },
+  {
+    "project": "games/lab/tsconfig.json",
+    "temperature": "warm",
+    "seconds": 1.821,
+    "exit": 0,
+    "load": [
+      16.07421875,
+      11.59375,
+      13.04443359375
+    ]
+  },
+  {
+    "project": "packages/kit/tsconfig.json",
+    "temperature": "cold",
+    "seconds": 4.53,
+    "exit": 0,
+    "load": [
+      16.38818359375,
+      11.73291015625,
+      13.0849609375
+    ]
+  },
+  {
+    "project": "packages/kit/tsconfig.json",
+    "temperature": "warm",
+    "seconds": 1.291,
+    "exit": 0,
+    "load": [
+      16.38818359375,
+      11.73291015625,
+      13.0849609375
+    ]
+  }
+]

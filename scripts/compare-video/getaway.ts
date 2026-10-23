@@ -1,4 +1,4 @@
-import ts from "typescript"
+import ts from "typescript-api"
 import type { Page } from "playwright-core"
 import { createHash } from "node:crypto"
 

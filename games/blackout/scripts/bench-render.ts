@@ -48,7 +48,8 @@ try {
       const write = GPUQueue.prototype.writeBuffer
       GPUQueue.prototype.writeBuffer = function (buffer, offset, data, dataOffset, size) {
         if (data instanceof Float32Array && data.length === 64) w.__shadowMatrices.add(Array.from(data.subarray(16, 32)).join(","))
-        return write.call(this, buffer, offset, data, dataOffset, size)
+        // Forward either DOM/@webgpu overload, including shared-buffer views.
+        return Reflect.apply(write, this, [buffer, offset, data, dataOffset, size])
       }
     })
     await installGpuInstrumentation(page)
