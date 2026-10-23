@@ -1,0 +1,15 @@
+{
+  "id": "camp-cooler",
+  "date": "2026-10-23",
+  "author": "Anomaly",
+  "source": "scripts/props/author-camp-cooler.py",
+  "license": "Original authored geometry and procedural materials; no external assets",
+  "bake": "Blender 5.2.2 LTS, Cycles CPU 32 samples, density-normalised UVs, high-to-low base/normal/AO/roughness/metallic, 512px lossless WebP via glTF-Transform 4.3.0",
+  "triangles": 2999,
+  "bytes": 371260,
+  "raw_sha256": "3e840d3719c3960cbc6b8eaa2cc6e6113b2e8860f07a8827e0b5a31c59cb127a",
+  "sha256": "0f4bb78fc067102a12ec3bc45c0c69a4d63db0a2fc5165ebf1d4428ddee7f8d9",
+  "surface_error_p90": 0.00027770833108773426,
+  "uv_coverage": 0.5712,
+  "texels_per_metre": 360.7
+}

@@ -1,0 +1,32 @@
+{
+  "date": "2026-10-23",
+  "source": "Original OpenAI-generated product shots; prompts in scripts/props/sources.ts",
+  "generator": "TRELLIS.2 Apple Silicon port, seed 42, best of 3 (selected 2060), BiRefNet cutouts, 2048px PBR",
+  "generator_license": "MIT; offline mtldiffrast uses NVIDIA Source Code License; conditioning uses Meta DINOv3 license (see scripts/props/README.md#licences)",
+  "bake": "Blender 5.2.2 LTS, Cycles CPU 32 samples, density-normalised UVs, high-to-low base/normal/AO/roughness/metallic, 512px lossless WebP via glTF-Transform 4.3.0",
+  "source_directory": "artifacts/2026-10-16-props/source",
+  "raw_directory": "mini:code/home/artifacts/kit-textured-props-2026-10-23/raw",
+  "props": [
+    {
+      "id": "rotary-phone", "triangles": 2968, "bytes": 929736,
+      "image_sha256": "377bd210dcd0520ebde7703d4398256fcfeefba03b48aae244abbecd9857dc04",
+      "raw_sha256": "e69c6a155077d634d71433e1bbe8d6c8e2f13477ee9fd9d22663d322204e4423",
+      "sha256": "62f0e276fb487bfba8f4715396f4ecdaa40a8aa3bb47f71bd189746320ed32cb",
+      "surface_error_p90": 0.001954020499087375, "uv_coverage": 0.5115, "texels_per_metre": 929.8
+    },
+    {
+      "id": "tv-set", "triangles": 6914, "bytes": 1280820,
+      "image_sha256": "91eb296cc61e4f888af44c130ede5049a210394553744bb14ce753fcf6caebea",
+      "raw_sha256": "3ecd2193d4be4dca8fe125ac583685941ebeadf5557d803a807043e160077e23",
+      "sha256": "140cd59c033d51d3bf0ae190204d10d905a5c1f5d1be9d86e885afbc389e4c8b",
+      "surface_error_p90": 0.0007190297965035756, "uv_coverage": 0.3099, "texels_per_metre": 174.3
+    },
+    {
+      "id": "kitchen-counter", "triangles": 11992, "bytes": 1402464,
+      "image_sha256": "3e0e203a27ae39eb08c03a52f3b265f1c58b2ad0ca3a3b8a1d6380fe6f5101f5",
+      "raw_sha256": "d99545590fca236194f702e286dcdb3bb5bbc060295480cbe7b495d6a87eecea",
+      "sha256": "03aa0bcd20eed80af6f20434fa7623d0584e3af6d632cc766ae499c2719ab08c",
+      "surface_error_p90": 0.0000765321637317703, "uv_coverage": 0.3197, "texels_per_metre": 129.1
+    }
+  ]
+}

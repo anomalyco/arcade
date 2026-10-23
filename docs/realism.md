@@ -478,8 +478,17 @@ lanes, doors and colliders; raising a density only adds items (`packages/kit/sim
   (`games/lot/src/interior/finishes.ts`), locked to Lot uniforms for now.
 - **Wear materials and finish pass (landing, branch `kit-finish`).** Shared wear materials and a finish pass every
   model goes through. The branch fills in this entry (where, cost, Kit's decision, pitfalls) when it merges.
-- **Textured props (landing, branch `kit-textured-props`).** Props that keep their texture instead of collapsing to
-  vertex colour. The branch fills in this entry (where, cost, Kit's decision, pitfalls) when it merges.
+- **Textured props (candidate, `kit-textured-props`; Kit's pick pending).** `gpu/textured-mesh.ts` draws repeated
+  GLB primitives with one instanced draw per material, on the host's existing lights, shadows, fog and exposure.
+  `props/textured.ts` lazily loads nearby placements and keeps `.prop` fallbacks until ready. Outbreak's phone,
+  TV and counter are opt-in under Props › PBR textures; BARBARA's authored cooler follows camp detail (smoke skips it).
+  `scripts/props/blender-pbr.py` bakes normal/AO/ORM and base colour onto density-normalised low-poly UVs.
+  Cost: three 512² maps are ~4 MiB per material with mips; current Outbreak set 12 MiB, cooler 4 MiB.
+  Full-library residency at this size would be 104 MiB, exceeding the proposed 32 MB target. WebP reduces downloads
+  only; KTX2 currently also expands to RGBA in the loader. GPU evidence: [textured props](../perf/textured-props.md).
+  Pitfalls: generated albedo can retain source lighting; base-only transfer does not de-light it. UV density is
+  normalised within each asset, not across different-sized assets. Instances support yaw/uniform scale only;
+  bake pitch/roll into the source transforms. Wear hooks run after texture sampling so a host can layer its finish.
 - Pitfalls: coplanar trim makes moving patches (Night Shift partition rails); noise octaves and bump normals must fade
   by footprint. Kit vertex colours are sRGB and the shader linearises them, so a dark value goes far darker: 0.085
   became 0.4 % linear albedo and the spider's second round was invisible. Not built: triplanar wear on props and cars.
