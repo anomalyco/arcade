@@ -3,7 +3,7 @@ import { lakeDistance, nextRandom, terrainHeight, treesNear, type WoodsWorld } f
 
 /**
  * Sparse distant sounds, the woods' dread: a loon on the lake, a fox, an owl, a branch giving way, something heavy in
- * the brush, three knocks, a whistle, a radio, a car door much too far away, the camp's screen door.
+ * the brush, three knocks, a whistle, a car door much too far away, the camp's screen door.
  *
  * The schedule is plain seeded data (`DistantState`) stepped by `stepDistant`, using only + − × ÷ and `nextRandom`.
  * `stepWoods` owns it (the room's sim online, the local sim solo), so every player gets the same event: same sound, same take, same world position, same
@@ -20,7 +20,7 @@ import { lakeDistance, nextRandom, terrainHeight, treesNear, type WoodsWorld } f
  * (`DistantState.odd`), so the ordinary schedule up to the first of them is unchanged.
  */
 
-export const DISTANT_SOUNDS = ["far.loon", "far.fox", "far.owl", "far.snap", "far.steps", "far.knock", "far.whistle", "far.radio", "far.cardoor", "far.screendoor"] as const
+export const DISTANT_SOUNDS = ["far.loon", "far.fox", "far.owl", "far.snap", "far.steps", "far.knock", "far.whistle", "far.cardoor", "far.screendoor"] as const
 /**
  * A howl that goes on past any breath and becomes something else, an animal getting got, a searcher's call answered
  * from the wrong side, the loon twice exactly the same, a big tree taking a slow climbing weight, every cricket
@@ -28,7 +28,8 @@ export const DISTANT_SOUNDS = ["far.loon", "far.fox", "far.owl", "far.snap", "fa
  */
 export const UNCANNY_SOUNDS = ["far.howl", "far.taken", "far.mimic", "far.echo", "far.climb", "far.stop"] as const
 export type UncannySound = (typeof UNCANNY_SOUNDS)[number]
-export type DistantSound = (typeof DISTANT_SOUNDS)[number] | UncannySound
+/** Radio stays available to explicit auditions and old events, outside the night's pool. */
+export type DistantSound = (typeof DISTANT_SOUNDS)[number] | UncannySound | "far.radio"
 
 /** Calls the mimic can answer (its takes, in this order: `far.mimic` take i is a processed copy of line i). */
 export const MIMIC_LINES = ["walt.call.1", "walt.call.5", "joyce.call.1", "joyce.call.5", "gary.call.1", "dale.call.1", "dale.call.4", "tess.call.2", "tess.call.4"] as const

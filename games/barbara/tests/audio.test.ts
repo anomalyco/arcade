@@ -49,6 +49,7 @@ describe("distant events", () => {
   test("each sound is placed where it belongs", () => {
     const events = [...run(1, 40), ...run(2, 40), ...run(5, 40)]
     for (const e of events) {
+      expect(e.sound).not.toBe("far.radio")
       const rule = DISTANT_RULES[e.sound]
       if (rule.place === "lake") expect(Math.hypot((e.x - world.lake.x) / world.lake.rx, (e.z - world.lake.z) / world.lake.rz)).toBeLessThan(1)
       if (rule.place === "camp") expect(Math.hypot(e.x - world.camp.x, e.z - world.camp.z)).toBeLessThan(world.camp.radius)
