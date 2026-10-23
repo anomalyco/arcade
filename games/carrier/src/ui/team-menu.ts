@@ -85,6 +85,7 @@ export class TeamMenu {
         this.tabAt = performance.now()
         this.refresh()
       } else if (e.code === "Escape" && this.pinned) {
+        e.preventDefault()
         this.pinned = false
         this.refresh()
       }

@@ -33,13 +33,15 @@ import { Stars } from "./render/stars"
 import { WeatherSystem } from "./render/weather-system"
 import { Hud } from "./ui/hud"
 import { Zones } from "./objective/zones"
-import { type Start, startFromUrl, storedName } from "./ui/lobby"
-import { showMenu } from "./ui/menu"
+import { lobbyClient, type Start, startFromUrl, storedName } from "./ui/lobby"
+import "./ui/menu.css"
 import { OpsMenu } from "./ui/ops-menu"
 import { TeamMenu } from "./ui/team-menu"
 import { Chat } from "./ui/chat"
 import { registerGameCommands } from "@arcade/kit/dev-control"
-import { GameQuality } from "@arcade/kit/client/quality"
+import { keyPromptHtml } from "@arcade/kit/client/key-cap"
+import { createGameShell, createShellQuality, type GameShell, muteStorageKey } from "@arcade/kit/shell"
+import { CREW, roomCode } from "../shared/crew"
 import { GpuPerf } from "@arcade/kit/gpu-perf"
 import { CARRIER_QUALITY } from "./quality"
 
@@ -83,13 +85,17 @@ async function main() {
     showNotice(hudEl, "The GPU stopped responding. Reload to try again.")
   })
   const params = new URLSearchParams(location.search)
-  // Resolution and bloom follow the quality tier (Auto by default; the dev panel's Game tab sets the saved choice).
-  const quality = new GameQuality({
+  // Resolution and bloom follow the quality tier: Auto starts High and steps down only on slow frames (Settings).
+  let shell: GameShell | null = null
+  const quality = createShellQuality({
     game: "carrier",
     tiers: CARRIER_QUALITY,
     params,
     gpuMs: () => perf.gpuMs,
-    onChange: (tier) => renderer.setBloomLevels(tier.bloomLevels),
+    onChange: (tier) => {
+      renderer.setBloomLevels(tier.bloomLevels)
+      shell?.settings.changed()
+    },
   }).expose()
   renderer.setBloomLevels(quality.profile.bloomLevels)
   const tParam = params.get("t")
@@ -102,7 +108,7 @@ async function main() {
   const localRoom = devTools && params.has("bots") && start?.mode === "offline" ? devTools.localRoom() : null
   const netFor = (s: Start | null) =>
     s?.mode === "room"
-      ? connect({ room: s.room, name: s.name, private: s.private, onFull: () => menu("That game is full. Pick another.") })
+      ? connect({ room: s.room, name: s.name, private: s.private, onFull: () => toTitle("That game is full. Pick another.") })
       : localRoom && s?.mode === "offline"
         ? connect({ room: "local", name: storedName(), socket: localRoom, world: { seed: s.seed >>> 0, epoch: Date.now() } })
         : connect({ seed: s?.mode === "offline" ? s.seed : MENU_SEED, name: storedName() })
@@ -222,6 +228,13 @@ async function main() {
     },
   })
 
+  // Escape closes Carrier's own menus (Tab pinned, DEPLOY, chat, the full map) before the shell's: whether one owned
+  // this press is read here, in a capture listener added before theirs, so the menu closing first can't let the same
+  // press open the pause menu too.
+  let escapeHeld = false
+  addEventListener("keydown", (e) => {
+    if (e.code === "Escape") escapeHeld = teams.open || ops.open || chat.open || flight.radar.mapOpen
+  }, true)
   // Tab: players and ships (every carrier its own side), switching ships, captain powers. E: DEPLOY (take the helm, launch).
   const teams = new TeamMenu(document.body, {
     join: (ship) => net.board(ship),
@@ -264,23 +277,75 @@ async function main() {
     input.suspend()
     teams.pin(false)
   }
-  let menuOpen = false
-  const menu = (notice?: string) => {
+  // The title, lobby, Escape menu and Settings are the kit game shell, over the live sea. Carrier is rooms only: a
+  // callsign, Quick join, Create game (private) or Join by code or invite link.
+  let creating = false
+  let inRoom = start?.mode === "room"
+  // Mute used to live in the mixer's own store ("carrier.audio.v4"): carry it over once.
+  try {
+    if (localStorage.getItem(muteStorageKey("carrier")) === null && mixer().muted) localStorage.setItem(muteStorageKey("carrier"), "1")
+  } catch {}
+  const gameShell = createGameShell({
+    game: "carrier", title: "CARRIER", quickLabel: "Quick join", friendsNote: "a private room to share",
+    askName: true, quality, channels: ["master", "effects", "ambience"],
+    start: start ? "playing" : "title",
+    keysBlocked: () => chat.open || !!dev?.wantsInput,
+    escapeOwned: () => escapeHeld || teams.open || ops.open || chat.open || flight.radar.mapOpen,
+    controls: () => [keyPromptHtml("KeyW", "Steer"), keyPromptHtml("Mouse0", "Look"), keyPromptHtml("Tab", "Ships"), keyPromptHtml("KeyE", "Deploy"), keyPromptHtml("KeyT", "Chat"), keyPromptHtml("KeyM", "Mute"), keyPromptHtml("Escape", "Menu")].join(" "),
+    lobby: {
+      friends: true, quick: () => lobbyClient.quick(), maxName: CREW.nameMax, nameRequired: "Type a callsign first.",
+      roomPattern: /^[a-z0-9]{3,8}$/i,
+      createRoom: () => {
+        creating = true
+        return lobbyClient.create()
+      },
+      onJoin: (room, name) => {
+        const code = roomCode(room) ?? room
+        net.close()
+        inRoom = true
+        useNet(netFor({ mode: "room", room: code, name, via: creating ? "create" : "code", private: creating }))
+        creating = false
+        gameShell.flow.play()
+      },
+    },
+    onLeave: () => toTitle(),
+  })
+  shell = gameShell
+  const lobby = gameShell.lobby!
+  if (start?.mode === "room") lobby.setRoom(start.room)
+  /** Back to the title over the quiet offline sea; a message says why (a full room). */
+  function toTitle(notice?: string): void {
     if (lost) return
-    menuOpen = true
-    chat.hide()
-    chat.enabled = false
-    teams.enabled = false
-    ops.enabled = false
-    void showMenu(document.body, { notice }).then((s) => {
-      menuOpen = false
-      chat.enabled = true
-      teams.enabled = true
-      ops.enabled = true
+    if (gameShell.flow.started) gameShell.flow.leave()
+    if (inRoom) {
+      inRoom = false
       net.close()
-      useNet(netFor(s))
-    })
+      useNet(netFor(null))
+    }
+    lobby.setRoom(null)
+    if (notice) lobby.setConnection("offline", notice)
   }
+  // The shell owns volume and mute (M); the mixer's designer levels stay underneath.
+  const mix = mixer()
+  mix.runtime.muteKey = false
+  const syncAudio = () => {
+    Object.assign(mix.volumes, gameShell.settings.volumes)
+    mix.setVolumes()
+    if (mix.muted !== gameShell.settings.muted) mix.setMuted(gameShell.settings.muted)
+  }
+  gameShell.settings.subscribe(syncAudio)
+  syncAudio()
+  // The title is up: the HUD stays out of the way. Chat, Tab, DEPLOY and the full map (G) work only in play, so none
+  // opens behind the title or the menu; any shell screen frees the cursor.
+  const syncScreen = () => {
+    const title = gameShell.flow.screen === "title"
+    document.body.classList.toggle("mn-open", title)
+    chat.enabled = teams.enabled = ops.enabled = flight.radar.enabled = gameShell.playing
+    if (!gameShell.playing) chat.hide()
+    if (!gameShell.playing) input.suspend()
+  }
+  gameShell.flow.subscribe(syncScreen)
+  syncScreen()
 
   const debug: { renderer: Renderer; camera: Camera; net: typeof net; input: Input; frame: Float32Array; grade: typeof grade; atmosphere: typeof atmosphere; arch: Archipelago | null; ocean: Ocean; clouds: Clouds } = { renderer, camera, net, input, frame, grade, atmosphere, arch: null, ocean, clouds }
   Object.assign(globalThis, { carrier: Object.assign(debug, { game, gunnery, boat, roster: teams, teams, ops, flight, weather, baseOcean, daynight, stars, lights, zones, chat }, dev ? { lab: dev.lab, debugMenu: dev.menu, bots: dev.bots } : {}) })
@@ -360,7 +425,6 @@ async function main() {
     void n.ready.then(() => net === n && buildWorld(n.seed))
   }
   useNet(net)
-  if (!start) menu()
 
   const resize = () => {
     if (quality.fit(canvas, innerWidth, innerHeight)) renderer.resize(canvas.width, canvas.height)
@@ -374,13 +438,16 @@ async function main() {
     if (lost) return
     const dt = Math.min(0.1, (now - last) / 1000)
     last = now
-    quality.frame(now)
+    gameShell.tick(now)
+    if (gameShell.playing) quality.frame(now)
+    else quality.pause()
     perf.enabled = quality.wantsGpuTiming
     if (quality.fit(canvas, innerWidth, innerHeight)) renderer.resize(canvas.width, canvas.height)
     const t = dev ? dev.time(frozen ?? net.seaTime(), dt) : (frozen ?? net.seaTime())
-    const menus = menuOpen || teams.open || ops.open || chat.open || !!dev?.visible
+    const shellUp = !gameShell.playing
+    const menus = shellUp || teams.open || ops.open || chat.open || !!dev?.visible
     if (!menus) input.resume()
-    game.paused = menuOpen || teams.open || ops.open || chat.open || !!dev?.wantsInput
+    game.paused = shellUp || teams.open || ops.open || chat.open || !!dev?.wantsInput
     dev?.frame(dt, t)
     daynight.update(dt, t, dayBases, ocean.look)
     weather.update(dt, t, {
@@ -441,9 +508,10 @@ async function main() {
     ocean.update(t, view, sunView)
     clouds.update(t, view)
     weather.draw(dt, t, view, frame, camera.fov)
-    zones.update(t, camera.eye, net, game.state.ship, menuOpen)
+    zones.update(t, camera.eye, net, game.state.ship, gameShell.flow.screen === "title")
     renderer.render(frame, shownGrade)
     hud.update(net)
+    if (inRoom) lobby.setConnection(net.state === "online" ? "online" : "connecting")
     requestAnimationFrame(tick)
   }
   requestAnimationFrame(tick)

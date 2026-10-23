@@ -107,6 +107,11 @@ async function run(game: string, clip: boolean) {
     }
     await page.locator("[data-act=back]").click()
     const play = page.locator(".as-card [data-act=play], .as-card [data-act=solo]").first()
+    // Rooms-only games (Carrier) have no Play on the title: play and pause need a room server, so stop here.
+    if ((await play.count()) === 0) {
+      report[tag] = { ok: true, finalScreen: await screen(page), titleFit: fit, note: "rooms only: no Play without a room server", errors }
+      return
+    }
     await play.click()
     await page.waitForFunction(() => document.querySelector<HTMLElement>(".arcade-shell")?.dataset.screen === "playing")
     await page.waitForTimeout(clip ? 1500 : 800)

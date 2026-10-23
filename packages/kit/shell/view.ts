@@ -378,6 +378,8 @@ export const SHELL_CSS = `
 .arcade-shell .as-big { padding: 14px; font-size: 17px; }
 .arcade-shell .as-link { background: none; border: 0; color: var(--shell-dim); font: 14px var(--shell-font); text-decoration: underline; cursor: pointer; }
 .arcade-shell .as-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+/* A rooms-only title (no Play alone): Play with friends takes the row. */
+.arcade-shell .as-choices .as-btn:only-child { grid-column: 1 / -1; }
 .arcade-shell .as-choices .as-btn { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 14px 10px; font-size: 17px; }
 .arcade-shell .as-choices small { font: 400 12px var(--shell-font); opacity: 0.8; }
 .arcade-shell .as-join, .arcade-shell .as-name { display: flex; gap: 10px; align-items: center; }
