@@ -21,7 +21,7 @@ const arg = (name: string, fallback: number) => {
 const out = process.argv.includes("--out") ? process.argv[process.argv.indexOf("--out") + 1]! : null
 const body = arg("size", 3.5), legScale = arg("legs", 2.5), seconds = arg("seconds", 40)
 const size = body * legScale
-const shape: ArachnidShape = { ...HARVESTMAN_SHAPE, hips: 1 / legScale, ride: arg("ride", HARVESTMAN_SHAPE.ride), swing: arg("swing", HARVESTMAN_SHAPE.swing), lift: arg("lift", HARVESTMAN_SHAPE.lift) }
+const shape: ArachnidShape = { ...HARVESTMAN_SHAPE, ride: arg("ride", HARVESTMAN_SHAPE.ride), swing: arg("swing", HARVESTMAN_SHAPE.swing), lift: arg("lift", HARVESTMAN_SHAPE.lift) }
 
 const trunks: [number, number, number][] = []
 for (let i = 0; i < 90; i++) {

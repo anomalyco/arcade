@@ -84,8 +84,8 @@ The table below shows which shared modules each game and the Lab import. `script
 | `gpu/{surface-materials,foliage}` & `textures` | Procedural surface recipes, 16-layer WebP array, foliage, and trample | — | Yes | Yes | — | Yes | Yes | — |
 | `props/*` | Generated furniture library: catalogue, `.prop` meshes, instanced batches, seeded room placement | — | — | Yes | — | Yes | — | — |
 | `look` & `gpu/look-shaders` | `LookSettings` presets and WGSL scene/post grading hooks | — | Yes | Yes | — | Yes | Yes | Yes |
-| `sim/creature-motion` | Lamplight's creature root: deterministic planar momentum, brake/plant/pivot phases, `SecondOrder` springs, Froude scaling | — | — | — | — | — | — | — |
-| `creature/*` | Arachnid legs (world-space feet, footholds, swing clearance, IK, body springs, contacts), matte tube view and Lab settings | — | — | — | — | — | — | — |
+| `sim/creature-motion` | Lamplight's creature root: deterministic planar momentum, brake/plant/pivot phases, `SecondOrder` springs, Froude scaling | — | — | — | — | Yes | — | — |
+| `creature/*` | Arachnid legs (world-space feet, footholds, swing clearance, IK, body springs, contacts), matte tube view and Lab settings | — | — | — | — | Yes | — | — |
 | `gpu/post/camcorder` | Opt-in Camera filter final pass (iPhone, VHS, CRT TV, body cam) on `Renderer.setFinalPass` | — | — | Yes | — | — | — | — |
 | `forest/{view,settings}` & `sim/{forest-world,forest-demo}` | Photoreal night forest renderer (scanned trees, mist bank, beams, exposure, quality tiers) over a plain `ForestWorld` | — | — | — | — | Yes | — | — |
 | `client/walk-camera` | First-person walking camera: stride bob, settle and reduce-motion over `client/walk` | — | — | — | — | Yes | — | — |

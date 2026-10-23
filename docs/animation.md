@@ -819,12 +819,13 @@ now. The root is shared and deterministic, the legs are presentation:
 | --- | --- |
 | `sim/creature-motion` | Pure root: planar momentum and facing, Travel → Braking → Planting → Pivoting, `SecondOrder` springs, Froude scaling (`unitSurface`, `unitDt`) |
 | `creature/arachnid-legs` | Eight world-space feet in two groups, ring-search footholds, swing clearance, femur/tibia IK with a steep tarsus, body springs, touchdown `contacts` |
-| `creature/arachnid-view` | Matte tapered tubes and ellipsoid body (no GGX), outward winding |
-| `creature/arachnid-settings` | Typed Lab settings: body scale, leg length, height, step time and softness, leg thickness, pace |
+| `creature/arachnid-view` | A harvestman: one fused oval body with an eye turret, segmented legs (coxa, femur, patella, tibia, curled tarsus) with joint rings, glossy `MAT.chitin` |
+| `creature/arachnid-settings` | Typed Lab settings: body scale, leg length, body size, height, step time and softness, leg thickness, shell, sheen, pace |
+| `creature/forest-surface` | The forest as ground: feet out of trunks, rocks and the lake; the body off trunks only, skirting them |
 
 - **Units.** Everything runs at lamplight's scale (a leg about one unit). A creature `S` m per unit is the same motion
-  Froude-scaled: lengths × S, times × √S, speeds × √S. `S = body scale × leg length`; the body and hip ring shrink by
-  1/leg length (`hips`), so long legs carry a small body.
+  Froude-scaled: lengths × S, times × √S, speeds × √S. `S = body scale × leg length`; `hips` sizes the body and hip
+  ring against the legs. A true harvestman's 0.4 read as a stick insect at 20–90 m; 0.55 reads as a large animal.
 - **The pivot gate is a timer.** Lamplight waited on planted and aligned feet. The room has no legs, so the root waits
   one swing (0.15 creature-s) in Planting and once settled in Pivoting; server and client agree.
 - **Measured (unit scale, level ground):** duty 0.646 walking, 0.500 running (lamplight 0.656, 0.514); swing 0.150 s.
@@ -837,12 +838,27 @@ now. The root is shared and deterministic, the legs are presentation:
   (0.28 m → 0) and the landing snaps (foot 1055 → 173 m/s², the rest at startup).
 - **Step shape is a setting.** `lift` 0.8 is lamplight's snap up and slam down; the harvestman default 1.6 sets each
   foot down softly, with `swing` 1.5 for a slower, deliberate step (`HARVESTMAN_SHAPE`).
+- **Weight (Oct 22, r4).** Lamplight's bob, sway and springs glided at giant scale (step-frequency dip 15 cm, roll
+  0.7°, pitch 1.2° peak to peak on the Lab loop). `WEIGHT` in `arachnid-legs.ts`: a deeper dip as each group takes the
+  load plus a harder kick per landing, sway and roll over the planted side, a nose-down rock as a group lands, and
+  slower, underdamped pitch and roll springs (2.4 / 2.3 Hz at ζ 0.7) so the body lags and settles. Measured: dip 24 cm,
+  sway 36 cm, roll 1.2°, pitch 1.1°; the planted-foot and reach invariants still hold.
+- **The body rides over rocks.** The Lab loop stalled for 14 s against a 1.6 m boulder: the body was constrained by
+  rocks as well as trunks and was pushed straight back every step. The body rides 4 m up, so rocks and logs only keep
+  feet out; a body pushed off a trunk spends the step it lost round the edge (`forest-surface.test.ts`).
+- **Look.** Vertex colours are sRGB, so the first chitin (0.085) was 0.4% linear albedo and invisible past a few
+  metres. The legs are now about 1% (dark brown-black), the body a shade lighter, joint rings paler; `MAT.chitin` in
+  the forest shader is GGX at roughness 0.17 for a narrow highlight, plus a moonlit Fresnel rim scaled by `sheen`.
+  Judge it at game exposure: the Lab's review lift (moon 0.35, exposure 2.2) turned the old tan shell beige.
 - **Motion check.** `hivemind run --kind cargo -- bun scripts/arachnid-motion-check.ts` walks 40 s through trunks on
   rolling ground and runs `measureBodyMotion` on the displayed joints: no bad numbers, zero foot slip, soles within
   0.5% of S of the ground, rigid segments; it reports the worst velocity, acceleration and jerk per joint class.
 - **Not ported yet:** jumping, the stalk crouch and pounce, lamplight's whole-limb terrain sweep (`terrain.rs`) and
   trunk climbing. Legs can pass through trunks (only feet and the body avoid them).
-- Lab: the Spider gait station (`games/lab/spider.html`).
+- Lab: the Spider gait station (`games/lab/spider.html`). Walks past stands 20–30 m off the next 9 s of path, picked
+  for the fewest trunks and crowns in the way, on a lens that holds the leg span; Distant stands 45–60 m off with a
+  friend's beam running across the view, never toward it. `scripts/lab/spider-stills.ts --stills` diffs a frame with
+  and without the spider (Weber contrast) before anything is recorded.
 
 ## Known gaps
 

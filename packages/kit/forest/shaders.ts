@@ -15,6 +15,7 @@
  */
 import type { SceneHooks } from "../gpu/shaders"
 import { common } from "../gpu/shaders"
+import { MAT as GPU_MAT } from "../gpu/mesh"
 import { withPhysicalLights } from "../gpu/lights/physical"
 import { fogParamsWgsl, fogSceneWgsl } from "../gpu/fog-scatter"
 import { beamWgsl } from "../gpu/lights/beam"
@@ -393,6 +394,13 @@ const material = /* wgsl */ `
   } else if (mat == ${MAT.tape}) {
     albedo = vec3f(0.95, 0.2, 0.012);
     pbrRough = 0.42;
+  } else if (mat == ${GPU_MAT.chitin}) {
+    // Waxy cuticle: dark brown-black but glossy, so a beam draws a narrow highlight along the legs; aux is its
+    // sheen, a moonlit rim on the edges.
+    albedo = o.color;
+    pbrRough = 0.17;
+    let rim = pow(1.0 - clamp(dot(geo, V), 0.0, 1.0), 4.0);
+    woodsEmit = vec3f(0.55, 0.66, 0.95) * N.moon.w * rim * o.aux * (0.3 + 0.7 * max(dot(geo, N.moon.xyz), 0.0));
   } else {
     albedo = o.color;
     pbrRough = 0.5;

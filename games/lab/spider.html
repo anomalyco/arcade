@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <link rel="icon" href="data:," />
+    <title>Spider gait · Lab</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+      #view { display: block; width: 100vw; height: 100vh; }
+      #hud { position: fixed; left: 16px; bottom: 14px; color: #c9c4b8; font: 13px/1.4 system-ui, sans-serif; text-shadow: 0 1px 2px #000; pointer-events: none; display: flex; gap: 14px; align-items: center; }
+    </style>
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <div id="hud"></div>
+    <script type="module" src="/src/spider/main.ts"></script>
+  </body>
+</html>
