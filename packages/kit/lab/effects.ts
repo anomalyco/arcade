@@ -14,7 +14,7 @@ import {
   type ExplosionPresetId,
 } from "../fx/explosion"
 import { smokeDefaults, smokeRanges, type SmokeKey } from "../fx/volume-settings"
-import { FLARE_DEFAULTS, FLARE_RANGES, FlareFx, flareEnvelope, type FlareLight, type FlareSettings } from "../fx/flare"
+import { FLARE_DEFAULTS, FLARE_RANGES, FlareFx, flareEnvelope, flareOnBody, type FlareLight, type FlareSettings } from "../fx/flare"
 import { stepThrown, throwBody, type ThrownBody } from "../sim/thrown"
 import type { LabControl } from "../lab-panel"
 import { curveTable, curveText, gradientTable, gradientText, parseCurve, parseGradient } from "../ramps"
@@ -134,21 +134,7 @@ export function createEffects(context:LabContext) {
       const sway=Math.sin(time*2.3)*0.01
       flare.x=tx-3.2;flare.y=1.38+sway;flare.z=tz+0.4;flare.dx=0.55;flare.dy=0.8;flare.dz=-0.15
       flare.vx=flare.vy=flare.vz=0
-    }else{
-      let ax:number,ay:number,az:number
-      if(b.rest){
-        // On the ground the flame jets out of the end, propped up a little by the stick and litter.
-        const sign=b.spin%(2*Math.PI)<Math.PI?1:-1
-        ax=b.ax*sign;ay=0.3;az=b.az*sign
-      }else{
-        const c=Math.cos(b.spin),s=Math.sin(b.spin)
-        ax=b.ax*c;ay=s;az=b.az*c
-      }
-      const l=Math.hypot(ax,ay,az)
-      flare.dx=ax/l;flare.dy=ay/l;flare.dz=az/l
-      flare.x=b.x+flare.dx*FLARE_STICK;flare.y=b.y+Math.max(0,flare.dy*FLARE_STICK);flare.z=b.z+flare.dz*FLARE_STICK
-      flare.vx=b.vx;flare.vy=b.vy;flare.vz=b.vz
-    }
+    }else flareOnBody(flare,b,FLARE_STICK)
   }
   const resetFlare=(ground:((x:number,z:number)=>number)|undefined)=>{
     syncFlareSettings()

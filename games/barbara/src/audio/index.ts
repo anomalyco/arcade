@@ -3,18 +3,19 @@ import { Footsteps, type FootEvent, type FootSurface } from "@arcade/kit/audio/f
 import type { LabControl, LabPanel } from "@arcade/kit/lab-panel"
 import type { CreatureEvent } from "../../shared/creature"
 import { DISTANT_SOUNDS, placeDistant, type DistantEvent, type DistantSound } from "../../shared/distant"
+import { FLARE_SCRAPE, flareSources, handFlare, type FlareEvent } from "../../shared/flares"
 import { SIGNAL_HOLD_SECONDS, type WoodsEvent, type WoodsState } from "../../shared/sim"
 import type { VoiceEvent } from "../../shared/voices"
 import { groundHeight, type WoodsWorld } from "../../shared/world"
 import { WOODS_SFX } from "../sfx"
 import { SOUND, SOUND_CONTROLS, type SoundSettings } from "./settings"
-import { Soundscape, type Listener, type SoundLayer } from "./soundscape"
+import { Soundscape, type FlareSound, type Listener, type SoundLayer } from "./soundscape"
 import { BRUSH_IDS, VOICE, VOICE_CONTROLS, VoiceBus, voiceHeard, type VoiceSettings } from "./voices"
 
 export { Soundscape, type Listener, type SoundLayer } from "./soundscape"
 export { VOICE, VoiceBus, voiceHeard, type VoiceSettings } from "./voices"
 
-const LAYERS: SoundLayer[] = ["wind", "creaks", "room", "leaves", "insects", "lake", "dock", "lights", "walls", "distant"]
+const LAYERS: SoundLayer[] = ["wind", "creaks", "room", "leaves", "insects", "lake", "dock", "lights", "walls", "distant", "flares"]
 
 /** Footsteps (the shared quiet bank, #398 levels), the soundscape and the searchers' voices, each on its player level, through one limiter. */
 export class WoodsMix {
@@ -68,6 +69,9 @@ export type TapeFrame = {
   creature?: CreatureEvent[]
   /** Someone was signalling (distant sounds that start now fade out). */
   signal?: boolean
+  /** Flares struck this frame (where, and how long ago) and every one burning. */
+  struck?: { seed: number; x: number; y: number; z: number; elapsed: number }[]
+  burning?: FlareSound[]
 }
 
 /**
@@ -88,7 +92,8 @@ export class WoodsAudio {
   /** Set to [] to record a tape (automation). */
   tape: TapeFrame[] | null = null
   private tapeTime = 0
-  private pending: Pick<TapeFrame, "steps" | "distant" | "voices"> & { creature: CreatureEvent[] } = { steps: [], distant: [], voices: [], creature: [] }
+  private pending: Pick<TapeFrame, "steps" | "distant" | "voices"> & { creature: CreatureEvent[]; struck: NonNullable<TapeFrame["struck"]> } = { steps: [], distant: [], voices: [], creature: [], struck: [] }
+  private queuedFlares: Extract<FlareEvent, { kind: "flare-struck" }>[] = []
   private queued: (DistantEvent | CreatureEvent)[] = []
   private queuedVoices: VoiceEvent[] = []
   /** Lines heard before the mix existed (the context still starting): said once it does, unless long gone. */
@@ -98,6 +103,8 @@ export class WoodsAudio {
   /** Lines on their way to you, for `onLine` when they arrive (page clock, s). */
   private arriving: { at: number; e: VoiceEvent; heard: ReturnType<typeof voiceHeard> }[] = []
   private clock = 0
+  /** How long flares burn (the feel's; the page sets it). */
+  flareBurn = 150
   private listener: Listener = { x: 0, y: 1.7, z: 0, yaw: 0 }
   private sim = 0
   private world: WoodsWorld | null = null
@@ -145,6 +152,7 @@ export class WoodsAudio {
     this.live = false
     this.queued.length = 0
     this.queuedVoices.length = 0
+    this.queuedFlares.length = 0
     this.waitingVoices.length = 0
     this.arriving.length = 0
     this.mix?.scape.stopAll()
@@ -192,6 +200,17 @@ export class WoodsAudio {
       if (mix?.scape.loaded) mix.scape.distant(e, this.listener, this.sim)
     }
     this.queued.length = 0
+    // Flares: the scrape and the catch where they were struck, then each one's hiss where it burns.
+    for (const e of this.queuedFlares) {
+      const p = state.players.find((q) => q.id === e.by)
+      if (!p) continue
+      const [x, y, z] = handFlare(world, p)
+      const struck = { seed: e.flare * 7 + 3, x, y, z, elapsed: Math.max(0, this.sim - e.at) }
+      this.pending.struck.push(struck)
+      if (mix?.scape.loaded) mix.scape.flareStrike(struck.seed, x, y, z, this.listener, FLARE_SCRAPE, struck.elapsed)
+    }
+    this.queuedFlares.length = 0
+    const burning: FlareSound[] = flareSources(state.flares, world, state.players, state.t, { flareBurn: this.flareBurn }).map((f) => ({ id: f.id, x: f.x, y: f.y, z: f.z, level: f.level }))
     this.clock += dt
     for (const e of this.queuedVoices) {
       this.pending.voices!.push(e)
@@ -212,13 +231,14 @@ export class WoodsAudio {
     }
     if (this.tape) {
       this.tapeTime += dt
-      this.tape.push({ t: this.tapeTime, sim: state.t, l: this.listener, signal: signalling, ...this.pending })
+      this.tape.push({ t: this.tapeTime, sim: state.t, l: this.listener, signal: signalling, ...this.pending, burning })
     }
-    this.pending = { steps: [], distant: [], voices: [], creature: [] }
+    this.pending = { steps: [], distant: [], voices: [], creature: [], struck: [] }
     if (!mix) return
     const v = this.bank.volumes
     mix.levels(v.volumeMaster / 100, v.volumeEffects / 100, v.volumeAmbience / 100, this.bank.muted, v.volumeVoice / 100)
     mix.scape.update(this.listener, state.t, signalling)
+    if (mix.scape.loaded) mix.scape.flares(burning, this.listener)
     mix.voices.update(this.listener)
   }
 
@@ -227,6 +247,7 @@ export class WoodsAudio {
     if ((e.kind === "distant" || e.kind === "creature") && (this.live || this.tape)) this.queued.push(e)
     // Lines are read even while the woods are silent (subtitles), but only once you're out there.
     if (e.kind === "voice" && (this.live || this.tape)) this.queuedVoices.push(e)
+    if (e.kind === "flare-struck" && (this.live || this.tape)) this.queuedFlares.push(e)
   }
 
   /** Have these lines decoded before they're needed (the opening's, from `StoryHud`). */
@@ -301,6 +322,8 @@ export class WoodsAudio {
         mix.voices.update(f.l)
         for (const e of f.voices ?? []) mix.voices.say(e, f.l, f.sim)
         for (const e of f.creature ?? []) mix.scape.creature(e, f.l, f.sim, (x, z) => groundHeight(world, x, z))
+        for (const s of f.struck ?? []) mix.scape.flareStrike(s.seed, s.x, s.y, s.z, f.l, FLARE_SCRAPE, s.elapsed)
+        if (f.burning) mix.scape.flares(f.burning, f.l)
         void ctx.resume()
       })
     }

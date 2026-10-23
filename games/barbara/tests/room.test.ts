@@ -27,7 +27,7 @@ function setup() {
   const room = new WoodsRoomCore("test1", () => now)
   const tick = (n = 1) => { for (let i = 0; i < n; i++) { now += 1000 / 30; room.step() } }
   const connect = (name: string, token?: string, keep = true): Client => {
-    const c: Client = { got: [], keep, bytes: 0, biggest: 0, seq: 0, closed: false, tapes: new Map(), map: { trail: [], heard: [], tapes: [], markers: [], clues: [] }, conn: { send: (d) => { c.bytes += d.length; c.biggest = Math.max(c.biggest, d.length); const m = decodeServer(d); if (m) receive(c, m) }, close: () => { c.closed = true } } }
+    const c: Client = { got: [], keep, bytes: 0, biggest: 0, seq: 0, closed: false, tapes: new Map(), map: { trail: [], heard: [], tapes: [], markers: [], clues: [], flares: [] }, conn: { send: (d) => { c.bytes += d.length; c.biggest = Math.max(c.biggest, d.length); const m = decodeServer(d); if (m) receive(c, m) }, close: () => { c.closed = true } } }
     room.open(c.conn)
     room.message(c.conn, JSON.stringify({ type: "hello", build: BUILD, name, token }))
     const w = c.got.find((m) => m.type === "welcome") as { token: string } | undefined

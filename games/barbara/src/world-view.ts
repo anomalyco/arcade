@@ -4,7 +4,7 @@ import { MAT, Mesh, type Rgb } from "@arcade/kit/gpu/mesh"
 import type { Batch, Renderer } from "@arcade/kit/gpu/renderer"
 import type { SceneLight } from "@arcade/kit/gpu/scene-frame"
 import type { SpotShadowCaster } from "@arcade/kit/gpu/shadows/spot-shadows"
-import { createForestView, type ForestGlow, type ForestTorch, type ForestView } from "@arcade/kit/forest/view"
+import { createForestView, type ForestFrameInput, type ForestGlow, type ForestTorch, type ForestView } from "@arcade/kit/forest/view"
 import type { QualityTier } from "@arcade/kit/quality"
 import type { Rect } from "@arcade/kit/sim/geom"
 import type { Feel, WoodsState } from "../shared/sim"
@@ -81,6 +81,8 @@ export type WorldFrame = {
   casters?: readonly SpotShadowCaster[]
   /** Batches drawn beside `fp`'s (the creature's, which go into the TAA reactive mask). */
   batches?: readonly Batch[]
+  /** Road flares' far glows and fire (`FlareView`); their lights come in `place`. */
+  flares?: { glows: readonly ForestGlow[]; particles: NonNullable<ForestFrameInput["particles"]> }
 }
 
 /**
@@ -119,6 +121,7 @@ export class WorldView {
     const forest = await createForestView(gpu, forestWorld(world, settings.campDetail), { assetRoot: import.meta.env.BASE_URL + "forest-assets/", smoke: !!opts.smoke, quality: opts.quality ?? "balanced", markPrefix: "woods", settings })
     const view = new WorldView(forest)
     view.models(world)
+    forest.setOccluders(view.occluders(world))
     return view
   }
 
@@ -144,11 +147,12 @@ export class WorldView {
   /** Rebuilds the static world. Call again when the world is regenerated (trunk density, seed). */
   setWorld(world: WoodsWorld): void {
     this.forest.setWorld(forestWorld(world, this.forest.settings.campDetail))
+    this.forest.setOccluders(this.occluders(world))
     this.models(world)
     this.tapes.reset()
   }
 
-  /** Footprints of trunks, rocks and buildings with their top heights (for any polar-shadow user). */
+  /** Footprints of trunks, rocks and buildings with their top heights: the trunk shadows a flare on the ground casts. */
   occluders(world: WoodsWorld): { rect: Rect; h: number }[] {
     const out: { rect: Rect; h: number }[] = []
     for (const t of world.trees) {
@@ -195,7 +199,8 @@ export class WorldView {
     this.forest[sync || target ? "update" : "frame"]({
       eye: f.eye, viewProj: f.viewProj, width: f.width, height: f.height, time: f.time, dt: f.dt, fovY: f.fovY, torches: f.torches,
       batches: f.batches?.length ? [...f.fp.batches(), ...f.batches] : f.fp.batches(), sprites: { alpha: f.fp.alpha, alphaCount: f.fp.nAlpha, add: f.fp.add, addCount: f.fp.nAdd },
-      lights: f.place.scene, fogLamps: f.place.fog, glows: this.glows, casters: f.casters,
+      lights: f.place.scene, fogLamps: f.place.fog, glows: f.flares?.glows.length ? [...this.glows, ...f.flares.glows] : this.glows, casters: f.casters,
+      ...(f.flares ? { particles: f.flares.particles } : {}),
     })
     if (sync || target) this.forest.drawTo(target)
   }
