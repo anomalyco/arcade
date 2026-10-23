@@ -8,7 +8,7 @@
 
 ## People
 
-- The realistic searchers are the shared kit cast, `packages/kit/people/assets/CREDITS.md`: MakeHuman/MPFB 2 bodies and clothes (CC0), the CMU Graphics Lab Motion Capture Database walk and run (http://mocap.cs.cmu.edu), and, with Lab › Friends › People model set to Rocketbox (`?cast=rocketbox`), two Microsoft Rocketbox avatars, `Male_Adult_05` and `Female_Adult_04` (https://github.com/microsoft/Microsoft-Rocketbox), under this licence:
+- The realistic searchers are the shared kit cast, `packages/kit/people/assets/CREDITS.md`: MakeHuman/MPFB 2 bodies and clothes (CC0), the CMU Graphics Lab Motion Capture Database walk and run (http://mocap.cs.cmu.edu), and the five Microsoft Rocketbox avatars the searchers wear by default (MakeHuman with Lab › Friends › People model or `?cast=makehuman`), `Male_Adult_05`, `Female_Adult_04`, `Male_Adult_04`, `Female_Adult_07` and `Male_Adult_07` (https://github.com/microsoft/Microsoft-Rocketbox), under this licence:
 
 ```
 MIT License

@@ -39,6 +39,8 @@ export const ALBEDO_RANGES = {
   "concrete-aged": { min: 0.2, max: 0.3, label: "Aged concrete (0.2–0.3)" },
   "concrete-new": { min: 0.4, max: 0.55, label: "New concrete (0.40–0.55)" },
   paper: { min: 0.6, max: 0.7, label: "White paper (0.6–0.7)" },
+  /** Fitzpatrick VI to I, measured (`people/skin.ts` `SKIN_TONES`). */
+  skin: { min: 0.056, max: 0.677, label: "Human skin, Fitzpatrick VI–I (0.06–0.68)" },
 } as const
 export type AlbedoClass = keyof typeof ALBEDO_RANGES
 

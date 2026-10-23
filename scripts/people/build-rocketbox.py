@@ -182,6 +182,46 @@ for p, si in zip(me.polygons, src_index):
         k = "eyes"
     p.material_index = order.index(k)
 
+# --- Skin colour: the median linear texel over each skin material's own UV area (area-weighted random points), for
+# build-rocketbox.ts to move onto the measured skin curve (`packages/kit/people/skin.ts`). The median skips brows,
+# lips, stubble and painted hair. ----------------------------------------------------------------------------------
+import numpy as np
+
+
+def skin_median(mat_index, img, keep=lambda centre: True):
+    w, h = img.size
+    px = np.asarray(img.pixels[:], dtype=np.float32).reshape(h, w, 4)[:, :, :3]
+    me.calc_loop_triangles()
+    uv = me.uv_layers.active.data
+    rng = np.random.default_rng(1)
+    samples = []
+    for t in me.loop_triangles:
+        if t.material_index != mat_index or not keep(t.center):
+            continue
+        a, b, c = (np.array(uv[i].uv) for i in t.loops)
+        n = max(1, int(abs((b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1])) * 0.5 * 400_000))
+        r1, r2 = rng.random(n), rng.random(n)
+        s = np.sqrt(r1)
+        p = np.outer(1 - s, a) + np.outer(s * (1 - r2), b) + np.outer(s * r2, c)
+        x = np.clip((p[:, 0] % 1) * w, 0, w - 1).astype(int)
+        y = np.clip((p[:, 1] % 1) * h, 0, h - 1).astype(int)
+        samples.append(px[y, x])
+    srgb = np.concatenate(samples)
+    lin = np.where(srgb <= 0.04045, srgb / 12.92, ((srgb + 0.055) / 1.055) ** 2.4)
+    return [round(float(v), 4) for v in np.median(lin, axis=0)], len(lin)
+
+
+# The face only: in front of the head bone and below the brows (the head atlas also paints the scalp's hair).
+head_y = rig.data.bones["head"].head_local.y
+brow_z = rig.data.bones["face_leye"].head_local.z + 0.02
+face = lambda c: c.y < head_y - 0.02 and c.z < brow_z
+skin = {}
+for k, piece, keep in (("head", "head", face), ("hands", "hands", lambda c: True)):
+    m = new[k]
+    img = next(n.image for n in m.node_tree.nodes if n.type == "TEX_IMAGE" and n.image and n.image.colorspace_settings.name == "sRGB")
+    skin[piece], count = skin_median(order.index(k), img, keep)
+print("SKIN", json.dumps(skin))
+
 # --- Parts and LODs ---------------------------------------------------------------------------------------------------
 bpy.ops.object.select_all(action="DESELECT")
 mesh.select_set(True)

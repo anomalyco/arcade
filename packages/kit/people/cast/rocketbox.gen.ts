@@ -5,4 +5,7 @@ import type { CastMember } from "../view"
 export const CAST: readonly CastMember[] = [
   { id: "m05-rocketbox", url: new URL("../assets/m05-rocketbox.glb", import.meta.url).href, person: "m05", look: "rocketbox", outfit: "field vest over a long-sleeved shirt, work trousers, boots" },
   { id: "f04-rocketbox", url: new URL("../assets/f04-rocketbox.glb", import.meta.url).href, person: "f04", look: "rocketbox", outfit: "hooded leather jacket, cargo trousers, boots" },
+  { id: "m04-rocketbox", url: new URL("../assets/m04-rocketbox.glb", import.meta.url).href, person: "m04", look: "rocketbox", outfit: "dark zip jacket over a T-shirt, cargo trousers, trainers" },
+  { id: "f07-rocketbox", url: new URL("../assets/f07-rocketbox.glb", import.meta.url).href, person: "f07", look: "rocketbox", outfit: "brown jacket, jeans, knee boots" },
+  { id: "m07-rocketbox", url: new URL("../assets/m07-rocketbox.glb", import.meta.url).href, person: "m07", look: "rocketbox", outfit: "dark cardigan over a shirt, jeans, brown shoes" },
 ]

@@ -69,14 +69,22 @@ blender -b --factory-startup --python scripts/people/lineup.py -- out.png <glb> 
 
 ## Rocketbox avatars
 
-An alternative cast after Kit's Oct 23 playtest ("people look bad, use a real model, not procedural"): two Microsoft
-Rocketbox avatars (MIT), `m05` (Male_Adult_05: field vest over a green long-sleeved shirt, work trousers, boots) and
-`f04` (Female_Adult_04: hooded leather jacket, cargo trousers, boots), on the same rig, gait, IK, torch grip and
-lighting as the MakeHuman cast. Manifest `@arcade/kit/people/cast/rocketbox.gen.ts`; Barbara picks it with Lab ›
-Friends › People model or `?cast=rocketbox` (MakeHuman stays the default).
+Barbara's default cast since Kit's Oct 23 playtest ("people look bad, use a real model, not procedural"): five
+Microsoft Rocketbox avatars (MIT), ordinary adults in outdoor clothes, on the same rig, gait, IK, torch grip and
+lighting as the MakeHuman cast. Friends take them in order of arrival, so a group of five never repeats one:
+
+- `m05` (Male_Adult_05): grey-haired, field vest over a green long-sleeved shirt, work trousers, boots
+- `f04` (Female_Adult_04): blonde, hooded leather jacket, cargo trousers, boots
+- `m04` (Male_Adult_04): dark zip jacket over a T-shirt, cargo trousers, trainers
+- `f07` (Female_Adult_07): brunette, brown jacket, jeans, knee boots
+- `m07` (Male_Adult_07): dark cardigan over a shirt, jeans, brown shoes
+
+Manifest `@arcade/kit/people/cast/rocketbox.gen.ts`. Lab › Friends › People model or `?cast=makehuman` switches Barbara
+to the MakeHuman woods cast; Realistic people off or `?people=blocky` draws blocky friends, which also stand in while a
+person loads or if one fails to.
 
 ```
-bun scripts/people/build-rocketbox.ts [m05 | f04]   # ≈3 s each; downloads into ~/Library/Caches/arcade-people/rocketbox
+bun scripts/people/build-rocketbox.ts [m05 f04 m04 f07 m07]   # ≈3 s each; downloads into ~/Library/Caches/arcade-people/rocketbox
 ```
 
 - `build-rocketbox.py` imports the FBX, clears its action and bakes the centimetre scale and quarter turn into the rest
@@ -87,22 +95,34 @@ bun scripts/people/build-rocketbox.ts [m05 | f04]   # ≈3 s each; downloads int
   exporter would add a `neutral_bone` that pins them at the origin.
 - The single mesh splits by material and bone weight into `cloth.outfit`, `skin.hands` (body faces mostly weighted to
   hand and finger bones), `skin.head`, `eye.eyes` (head faces on the eye bones) and `hair.hair` (the opacity cards,
-  alpha-tested). The textures are full colour, so `baseColorFactor` is 1 and `mean` 1: no runtime tints. Specular
-  maps are dropped (roughness comes from the kind, as for the MakeHuman cast).
+  alpha-tested). The textures are full colour, so `mean` is 1 and only skin gets a `baseColorFactor`. Specular maps
+  are dropped (roughness comes from the kind, as for the MakeHuman cast).
+- Skin: the photo skin carries its capture light and ran hot orange in the torch (face red/green 2.0–2.35; measured
+  skin is 1.33–1.92). `build-rocketbox.py` prints each skin material's median linear texel (the face only for the
+  head: in front of the head bone and below the brows, since the head atlas also paints the scalp's hair). The build
+  sets `baseColorFactor` to move that median onto a measured skin's hue at its own lightness (`people/skin.ts`:
+  Fitzpatrick I–VI linear albedos from physicallybased.info), so pores, stubble and baked shading stay. The skin type
+  is read from the face at `PHOTO_EXPOSURE` 1.7 (the photo faces are that much darker than measured skin; f04, the
+  fairest, is 0.32 against type II's 0.54), and the hands take the face's type. It fails the build unless the result
+  passes `checkSkin` (`ALBEDO_RANGES.skin` and red/green 1.3–1.95), and records `extras.people.skin`. Faces now sit at
+  red/green 1.46–1.64, and m04, darker-skinned, at type V's 1.90. The shared skin scatter is unchanged.
 - Source files and SHA-256s: `packages/kit/people/assets/rocketbox-sources.json`, pinned to commit `0943055d`.
 
-| | m05 | f04 | MakeHuman (each) |
-| --- | --- | --- | --- |
-| GLB | 981 KB | 886 KB | 720–970 KB |
-| Textures (1024² WebP: body and head colour and normal, hair) | 766 KB | 637 KB | |
-| Triangles LOD0 / LOD1 | 7.8 k / 3.2 k | 9.3 k / 3.9 k | 28.5–33.1 k / 7.3–9.2 k |
-| Joints | 80 | 80 | 53 |
-| Height | 1.81 m | 1.76 m | 1.59–1.86 m |
+| | m05 | f04 | m04 | f07 | m07 | MakeHuman (each) |
+| --- | --- | --- | --- | --- | --- | --- |
+| GLB | 981 KB | 887 KB | 977 KB | 979 KB | 803 KB | 720–970 KB |
+| Textures (1024² WebP: body and head colour and normal, hair) | 766 KB | 637 KB | 745 KB | 748 KB | 596 KB | |
+| Joints | 80 | 80 | 80 | 80 | 80 | 53 |
+| Height | 1.81 m | 1.76 m | 1.87 m | 1.72 m | 1.82 m | 1.59–1.86 m |
+
+Triangles: m05 7.8 k / 3.2 k and f04 9.3 k / 3.9 k (LOD0 / LOD1); every avatar is under 12 k / 5 k
+(`people.test.ts`), against MakeHuman's 28.5–33.1 k / 7.3–9.2 k. Barbara preloads the first three (≈2.8 MB) before
+Play, the rest when those friends first appear.
 
 GPU frame in Barbara (`people-proof.ts --cast makehuman,rocketbox --gpu`, five friends in view, median of 48, three
 alternations, Oct 23 on pro): Rocketbox 26.5–27.0 ms, MakeHuman 24.8–27.1 ms, blocky 25.9–26.8 ms, all within noise.
-At game exposure Rocketbox reads as particular people from about 4 m in; the faces run hot orange in your torch (redder
-photo skin plus the skin scatter), the open look issue.
+At game exposure Rocketbox reads as particular people from about 4 m in. The proof is `people-proof.ts --shots
+group-row,near` (five friends side by side in your beam at 7 m, and one at 2.2 m).
 
 ## Runtime
 
@@ -152,9 +172,10 @@ for the beam and the torch mesh. Woods' adapter is `games/barbara/src/people-vie
 - Faster than ~3.5 m/s the run plays above its captured cadence.
 - Up close the MakeHuman textures are the ceiling: flat skin with no pores and cloth with no weave or fold maps.
   Microsoft Rocketbox (MIT, 115 avatars, photo-sourced 2K colour and normal maps) is clearly more real beside it
-  (`scripts/people/model-compare.sh`); two of its avatars are now an alternative cast (Rocketbox avatars, above).
-- Rocketbox: only two avatars so far, so a team of four repeats them; no headlamps or packs; the hair is one set of
-  low-poly cards; face bones are carried but never driven.
+  (`scripts/people/model-compare.sh`); five of its avatars are now Barbara's default cast (Rocketbox avatars, above).
+- Rocketbox: five avatars, so a sixth friend would repeat one; no headlamps or packs; the hair is one set of
+  low-poly cards; face bones are carried but never driven; the skin fix moves only each material's median hue, so
+  lips and blush keep the photo's own warmth.
 - Hair cards are alpha-tested and can shimmer at a distance under TAA.
 - Torch shadows from people re-render the torch's shadow slot every frame while anyone is in reach.
 
