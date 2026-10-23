@@ -3,6 +3,20 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { changedSnapshot, fullTestReason } from "./test-selection"
+import { workspacePackages } from "./check-changed"
+
+test("package checks discover newly added matching workspaces", async () => {
+  const root = mkdtempSync(join(tmpdir(), "arcade-workspace-checks-"))
+  try {
+    await Bun.write(join(root, "package.json"), JSON.stringify({ workspaces: ["packages/*", "games/*"] }))
+    await Bun.write(join(root, "packages/kit/package.json"), JSON.stringify({ name: "@arcade/kit" }))
+    await Bun.write(join(root, "games/demo/package.json"), JSON.stringify({ name: "demo" }))
+    await Bun.write(join(root, "standalone/package.json"), JSON.stringify({ name: "@arcade/standalone" }))
+    expect(await workspacePackages(root)).toEqual([join(root, "packages/kit")])
+    await Bun.write(join(root, "packages/new/package.json"), JSON.stringify({ name: "@arcade/new" }))
+    expect(await workspacePackages(root)).toEqual([join(root, "packages/kit"), join(root, "packages/new")])
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
 
 test("outside-graph inputs force full tests", () => {
   for (const file of ["package.json", "bun.lock", "bunfig.toml", "games/lot/tsconfig.json",
