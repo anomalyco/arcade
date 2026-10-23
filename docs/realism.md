@@ -195,6 +195,36 @@ that walls block. Nothing jitters, so it holds still under TAA, and six torches 
 - Where: Outbreak `games/outbreak/src/lightbake.ts`; Blackout `bakeBounce` (`games/blackout/src/render/level-mesh.ts`).
   Lot interior has room-local bounce (`games/lot/src/interior/`).
 
+**Baked per-light indirect lighting (`kit-lightmaps`, awaiting Kit).** Headless Blender 5.2 Cycles bakes each fixture's
+indirect bounce (`DIFFUSE` + `GLOSSY` with `INDIRECT`, 3 bounces, zero direct light) into a `128×128×4` `rgb9e5ufloat`
+2D texture array (256 KiB GPU) plus a `4×2×4` 3D L1 spherical-harmonics probe grid (32 probes × 3 `vec4f` = 1.5 KiB
+uniforms). Each light is baked with its exact live emitter shape (`SPOT` with `spot_size` / `spot_blend`, cosine `AREA`
+panel for `kit-crt` screens, or `POINT`), setting Cycles `energy = 4 * pi * bakedPower` (`pi * bakedPower` for `AREA`)
+and diffuse BSDF roughness 0 (`rho / pi`, matching `kD / PI` in `lights/physical.ts`), then multiplied by
+`ENGINE_LIGHT_GAIN` (`5.0`) in WGSL so `giIntensity = 1.0` matches engine units with zero fudge factor (`0.04%` vs
+closed-form `analyticSpotFloorBounce`). At runtime, `evaluateBakedLightWeights` weights each layer and probe strictly
+linearly by `(livePower / bakedPower) * giIntensity` (returning `0` immediately when a `LiveBounceSource` such as
+`screenBounceSource` is off), static lightmapped surfaces (`v.uv.x >= 0`) sample only the UV2 lightmap array, and
+dynamic objects (`MAT.actor` or unlightmapped meshes inside the room box) sample only the trilinear L1 SH probe volume
+(no double-counting). Forest canopies also bake a `128×128` `r8unorm` directional sky-openness map
+(`bakeCanopyOpenness`, `packages/kit/gpu/forest.ts` `@binding(5)`).
+- Where: `packages/kit/gpu/gi/lightmap.ts`, `packages/kit/gpu/gi/house-lightmap-data.ts`, `scripts/bake-room.py`,
+  `scripts/house-bake-scene.json`. Lab › Look and world, preset "Baked indirect GI (Cycles)" (`baked-gi`).
+- Cost: +0.02 to +0.09 ms at 960×600 on Metal (`scripts/lightmap-gpu-proof.ts`), 257.5 KiB GPU memory. Today (`giMode:
+  "today"`) is the default (`0` byte diff when off).
+- Adoption path for a new room:
+  1. Export a `BakeSceneSpec` JSON from the engine's packed mesh and physical `SceneLight`s via
+     `extractBakeSceneSpec({ packed24, bounds, lightmapBounds, probes, lights })` and `canonicalBakeSceneJson(spec)`.
+  2. Run `Blender --background --factory-startup --python scripts/bake-room.py -- --scene <scene.json> --out <data.ts>`:
+     it unwraps receiver triangles with `bpy.ops.uv.lightmap_pack(PREF_BOX_DIV=48, PREF_MARGIN_DIV=0.08)`, bakes each
+     light in Cycles, and writes `rgb9e5ufloat` texels, L1 SH probes, per-triangle `uv2Tris`, Blender version and the
+     input scene's SHA-256 hash (`assertBakedLightmapFresh(meta, currentSpec)` fails checks if geometry or light specs
+     drift).
+  3. Stamp UV2s onto the mesh with `applyBakedUv2ToMesh(packed24, meta)` (or `packMeshWithUv2`), upload the texture
+     array with `uploadBakedLightmapTexture(device, meta, b64)` (`r.setDetailTextureArray(gi.view)`), build the scene
+     shader with `bakedLightmapHooks(physicalScene)`, and call `packBakedLightmapUniforms(knobs, meta, sceneLights,
+     settings, liveSources)` each frame.
+
 **Sky and fog ambient.** The fog's sky is also the surface ambient, a quadratic in `n.y` fitted to the fog colour, so
 shadowed surfaces take the night sky's tint with no env bake (`fogAmbient`, `packages/kit/gpu/fog-scatter.ts`).
 Baked floor AO and Jimenez's multi-bounce AO keep crevices saturated instead of grey (`packages/kit/gpu/shaders.ts`).

@@ -4,6 +4,7 @@ import type { SceneHooks } from "./shaders"
 import type { SpotShadowCaster } from "./shadows/spot-shadows"
 import { TEXTURED_VERTEX_LAYOUT, texturedSceneShader } from "./textured-mesh"
 import { bakeScatter } from "./scatter-mesh"
+export { bakeCanopyOpenness, sampleCanopyOpenness, type CanopyOpennessMap } from "./gi/lightmap"
 
 // Instanced forest: each tree variant at two card-model detail levels, and one camera-facing impostor per far tree.
 // - LOD bands and instance lists follow Aiden's Ashwood forest (world/forest.ts, forest/render.ts): near and mid lists

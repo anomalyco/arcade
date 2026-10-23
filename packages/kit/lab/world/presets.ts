@@ -3,7 +3,7 @@
  * Current look, Oak and Lawn, wet asphalt), one per idea the separate Looks, Lighting, Weather, Materials and
  * Vegetation labs used to show. Add a preset here rather than a new lab. Keys are the world section's setting keys.
  */
-import { FINISHED_CAMERA, SCREEN_CAMERA } from "./scene"
+import { BAKED_GI_CAMERA, FINISHED_CAMERA, SCREEN_CAMERA } from "./scene"
 
 export const WORLD_PRESET_VERSION = 1
 
@@ -38,6 +38,7 @@ export const WORLD_PRESETS: readonly WorldPreset[] = [
   { id: "night-lamps", label: "Night lamps", idea: "light", note: "Midnight, dry: streetlamp, porch lamp and the lamp inside only.", values: { hour: 0 } },
   { id: "night-physical", label: "Night lamps, physical", idea: "light", note: "Night lamps under the physical light model: inverse-square pools, the streetlamp's 3D cone, GGX highlights and sky reflections.", values: { hour: 0, lightModel: "physical" } },
   { id: "spot-shadows", label: "Spot shadow maps", idea: "light", note: "Night lamps, physical, with perspective shadow maps for the streetlamp and porch cones: the canopy, car and porch roof cast what plan shadows can't.", values: { hour: 0, lightModel: "physical", spotShadows: 2 } },
+  { id: "baked-gi", label: "Baked indirect GI (Cycles)", idea: "light", note: "Midnight inside the house under Physical: per-light Cycles lightmap array (table lamp, CRT screen, porch, streetlamp) + 4×2×4 L1 SH probe volume.", values: { hour: 0, lightModel: "physical", spotShadows: 2, screen: true, "screen.light": 6, giMode: "baked", giIntensity: 1, giProbes: 1 }, camera: BAKED_GI_CAMERA },
   { id: "screen-bench", label: "CRT in a dark room", idea: "light", note: "Midnight inside the house, lamps off: a CRT television on a workbench is the only light, and the room follows its picture.", values: { hour: 0, lightModel: "physical", lampPower: 0, skyLight: 0.015, exposureEV: 0.8, shadowLift: 0, lensBloom: 0.25, screen: true, "screen.light": 6 }, camera: SCREEN_CAMERA },
   { id: "dying-lamps", label: "Dying lamps", idea: "light", note: "Midnight with the shared flicker: the sodium streetlamp cycles out and restrikes pink, the porch tube stutters.", values: { hour: 0, flicker: 1.5 } },
   { id: "brick-street", label: "Brick and concrete", idea: "materials", note: "Brick-red walls, dry asphalt, plaza paving, carpet inside.", values: { wall: "brick", street: 5, walk: 7, path: 7, floor: 0, car: "teal" } },

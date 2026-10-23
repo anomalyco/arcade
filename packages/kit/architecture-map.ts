@@ -171,9 +171,9 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
     match: (s) => s === "@arcade/kit/gpu/shadows/spot-shadows",
   },
   {
-    area: "`gpu/gi/plan-bounce`",
-    description: "One bounce of the frame's lights in plan space: per-frame emission, mip chain and cone gather on a world-anchored grid, held by walls",
-    match: (s) => s === "@arcade/kit/gpu/gi/plan-bounce",
+    area: "`gpu/gi/{plan-bounce,lightmap}`",
+    description: "One bounce of the frame's lights in plan space, and Cycles per-light baked lightmap arrays (`rgb9e5ufloat`) + 3D L1 SH probe volumes for rooms",
+    match: (s) => s === "@arcade/kit/gpu/gi/plan-bounce" || s === "@arcade/kit/gpu/gi/lightmap",
   },
   {
     area: "`gpu/shadows/capsule-shadows`",

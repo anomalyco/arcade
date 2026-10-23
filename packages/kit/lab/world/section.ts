@@ -1,4 +1,5 @@
 import { BUSH_PRESETS, BUSH_PRESET_IDS, FOLIAGE_PARAM_SPECS, GRASS_PRESETS, GRASS_PRESET_IDS, TREE_PRESETS, TREE_PRESET_IDS, type FoliageKind } from "../../gpu/foliage"
+import { bakedLightmapControls } from "../../gpu/gi/lightmap"
 import { LOOK_PRESETS, LOOK_PRESET_IDS, createLookControls } from "../../gpu/look"
 import { MAX_SPOT_SHADOWS } from "../../gpu/shadows/spot-shadows"
 import type { LabControl, LabSettings } from "../../lab-panel"
@@ -103,6 +104,7 @@ export function createWorldSection(context: LabContext, world: DebugWorld): LabS
     { key: "specularAA", label: "Specular anti-aliasing", group: "Clock & light", subsection: "Physical", type: "range", min: 0, max: 2, step: 0.05, unit: "×" },
     { key: "beamProfile", label: "Flashlight beam", group: "Clock & light", subsection: "Physical", type: "select", options: [{ value: "darkwood", label: "Darkwood (Outbreak)" }, { value: "hotCore", label: "Hot core" }] },
     { key: "spotShadows", label: "Spot shadow maps", group: "Clock & light", subsection: "Physical", type: "range", min: 0, max: MAX_SPOT_SHADOWS, step: 1 },
+    ...bakedLightmapControls("Clock & light", "Physical").map(c => ({ ...c, visible: (s: LabSettings) => s.lightModel === "physical" })),
     { key: "flicker", label: "Lamp flicker and failure", group: "Clock & light", type: "range", min: 0, max: 2, step: 0.05, unit: "×" },
     { key: "playing", label: "Animate", group: "Clock & light" },
     { key: "skyLight", label: "Sun, moon and sky", group: "Clock & light", type: "range", min: 0, max: 2, step: 0.01, unit: "×" },

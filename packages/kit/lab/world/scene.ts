@@ -1,11 +1,13 @@
-import { buildFoliageBush, buildFoliageTree, emitGrassClump, scatterGrassClumps, type FoliageParams } from "../../gpu/foliage"
+import { buildFoliageBush, buildFoliageTree, cloneFoliageParams, emitGrassClump, scatterGrassClumps, type FoliageParams } from "../../gpu/foliage"
+import { HOUSE_LIGHTMAP_META, applyBakedUv2ToMesh, extractBakeSceneSpec, type BakeSceneSpec } from "../../gpu/gi/lightmap"
 import type { LevelData } from "../../gpu/level"
 import { finishTagged } from "../../gpu/finish"
 import { lookIndex, type FinishLookId } from "../../gpu/materials/wear"
 import { FLOATS_PER_VERT, MAT, Mesh, hex, type Rgb } from "../../gpu/mesh"
 import { coldSodiumTint, type FlickerSample } from "../../gpu/lights/flicker"
 import { cagedBulbMesh, fluorescentTubeMesh, ledIndicatorMesh, type CagedBulb, type FluorescentTube, type LedIndicator } from "../../gpu/lights/practicals"
-import type { ScreenPlacement } from "../../gpu/screen/light"
+import { screenSceneLight, type ScreenPlacement } from "../../gpu/screen/light"
+import { createScreenDisplaySettings } from "../../gpu/screen/settings"
 import type { SceneLight } from "../../gpu/scene-frame"
 import { flatLighting } from "../../gpu/scene-frame"
 import type { Rect } from "../../sim/geom"
@@ -68,6 +70,8 @@ export type WorldBuild = {
   bulb?: boolean
   /** A row of finished props on the driveway, one per wear look (`gpu/finish`, `finishedProps` preset). */
   finishProps?: boolean
+  /** The `baked-gi` room: ceiling soffit, bookcase shelves, interior dynamic actor, shaded lamp cone and Blender UV2s. */
+  bakedRoom?: boolean
 }
 
 /** The world's flat bounce fill (`flatLighting`): daylight and sky returned off the ground, everywhere. */
@@ -100,6 +104,13 @@ export const STREETLAMP_AT = [21.2, 18.5] as const
 export const CAR_BOX = { x0: 23.4, x1: 27.8, z0: 19.7, z1: 21.5 } as const
 export const PUDDLE_AT = [17.4, 20.4] as const
 export const INTERIOR_LIGHT = [15.0, 11.0] as const
+export const INTERIOR_ACTOR_AT = [13.2, 9.7] as const
+/** Where the baked-GI preset looks from: inside the room viewing the table lamp, rug, bookcase, actor, ceiling, and CRT workbench. */
+export const BAKED_GI_CAMERA = { target: [-4.15, 1.14, -11.45] as const, yaw: -0.06, pitch: 0.14, dist: 3.05 } as const
+/** `SceneLight.id`s of the screen bench's lights. */
+export const SCREEN_LIGHT_ID = { screen: 20, tube: 21, bulb: 22, tvLed: 23, deckLed: 24, deckActivity: 25 } as const
+/** Reference emission (`display.emission()`) at which the `screen` (`id = 20`) area panel is baked in Cycles. */
+export const SCREEN_BAKE_REFERENCE = 60
 
 export function buildWorld(b: WorldBuild): WorldGeometry {
   const m = new Mesh()
@@ -146,6 +157,7 @@ export function buildWorld(b: WorldBuild): WorldGeometry {
   addStreetlamp(m, boxes, casters)
   addCar(m, glass, b, boxes)
   addCharacter(m, casters)
+  if (b.bakedRoom) addCharacterAt(m, casters, INTERIOR_ACTOR_AT[0], INTERIOR_ACTOR_AT[1], 0.24)
 
   // Vegetation from the production generators: a tree, a foundation bush and lawn grass around them.
   const veg = b.vegetation
@@ -178,6 +190,7 @@ export function buildWorld(b: WorldBuild): WorldGeometry {
   for (const b of boxes) b.rect = [b.rect[0] - ox, b.rect[1] - oz, b.rect[2] - ox, b.rect[3] - oz]
   for (const c of casters) { c.x -= ox; c.y -= oz }
   const data = m.pack()
+  if (b.bakedRoom) applyBakedUv2ToMesh(data, HOUSE_LIGHTMAP_META)
   const glassData = glass.pack()
   const lighting = flatLighting(0, 1, WORLD_BOUNCE)
   return {
@@ -330,6 +343,11 @@ function addHouse(m: Mesh, glass: Mesh, b: WorldBuild, boxes: { rect: Rect; h: n
   m.prism(ix, iz, 0.06, 0.06, 0.24, 1.2, 8, rgb(0x2b2622))
   m.prism(ix, iz, 0.28, 0.16, 1.2, 1.5, 10, rgb(0xffe2b0), MAT.lamp, LAMP.interior)
   m.box(11.3, 0.24, 8.3, 13.4, 2.1, 8.7, rgb(0x3b2a1e), MAT.lit)
+  if (b.bakedRoom) {
+    // Interior ceiling soffit and bookcase shadow occluder so upward bounce from the floor and rug illuminates the room.
+    m.box(x0 + t, h - 0.06, z0 + t, x1 - t, h, z1 - t, shade(wall, 0.96), MAT.wall, 0, undefined, true)
+    boxes.push({ rect: [11.3, 8.3, 13.4, 8.7], h: 2.1 })
+  }
   // Roof: a shallow gable along x with eaves overhanging every wall.
   const ex0 = x0 - 0.45, ex1 = x1 + 0.45, ez0 = z0 - 0.45, ez1 = z1 + 0.45, ridge = h + 1.35, mid = (z0 + z1) / 2
   const roof = rgb(0x3b3532)
@@ -486,9 +504,11 @@ function addCar(m: Mesh, glass: Mesh, b: WorldBuild, boxes: { rect: Rect; h: num
 
 /** A standing figure facing the street: boots, jeans, a long coat, scarf and head. */
 function addCharacter(m: Mesh, casters: { x: number; y: number; r: number; h: number }[]): void {
-  const [cx, cz] = CHARACTER_AT
+  addCharacterAt(m, casters, CHARACTER_AT[0], CHARACTER_AT[1], 0.12)
+}
+
+function addCharacterAt(m: Mesh, casters: { x: number; y: number; r: number; h: number }[], cx: number, cz: number, y: number): void {
   const A = MAT.actor
-  const y = 0.12
   for (const dx of [-0.11, 0.11]) {
     m.prism(cx + dx, cz, 0.075, 0.07, y, y + 0.12, 8, rgb(0x1c1814), A)
     m.prism(cx + dx, cz, 0.08, 0.075, y + 0.12, y + 0.82, 8, rgb(0x2c3a52), A)
@@ -575,7 +595,7 @@ export function physicalWorldLight(l: SceneLight, spot?: SceneLight["spot"], bea
 export const WORLD_LIGHT_ID = { street: 1, interior: 2, porch: 3, headlights: 4, flashlight: 6 } as const
 
 /** The world's practical lights at a clock: porch, streetlamp, the lamp inside, headlights when on. */
-export function worldLights(clock: WorldClock, opts: { lampPower: number; headlights: boolean; flashlight: boolean; porch: boolean; flicker?: WorldFlicker; physical?: boolean }): SceneLight[] {
+export function worldLights(clock: WorldClock, opts: { lampPower: number; headlights: boolean; flashlight: boolean; porch: boolean; flicker?: WorldFlicker; physical?: boolean; bakedRoom?: boolean }): SceneLight[] {
   const k = clock.lamps * opts.lampPower
   const f = opts.flicker ?? { street: STEADY, porch: STEADY, interior: STEADY }
   const [lx, lz] = STREETLAMP_AT
@@ -604,9 +624,10 @@ export function worldLights(clock: WorldClock, opts: { lampPower: number; headli
     const street = k > 0.01 ? 1 : -1
     const porch = k > 0.01 && opts.porch ? 3 : -1
     for (let i = 0; i < lights.length; i++) {
-      const spot = i === street ? { axis: [0, -1, 0] as const, cosOuter: Math.cos(1.1), cosInner: Math.cos(1.1 * 0.45) }
-        : i === porch ? { axis: [0, -1, 0] as const, cosOuter: Math.cos(1.3), cosInner: Math.cos(0.7) } : undefined
       const l = lights[i]!
+      const spot = i === street ? { axis: [0, -1, 0] as const, cosOuter: Math.cos(1.1), cosInner: Math.cos(1.1 * 0.45) }
+        : i === porch ? { axis: [0, -1, 0] as const, cosOuter: Math.cos(1.3), cosInner: Math.cos(0.7) }
+        : opts.bakedRoom && l.id === WORLD_LIGHT_ID.interior ? { axis: [0, -1, 0] as const, cosOuter: Math.cos(1.15), cosInner: Math.cos(0.65) } : undefined
       const beam = l.id === WORLD_LIGHT_ID.flashlight && l.cone
         ? { axis: [l.cone[0] * Math.cos(0.3), -Math.sin(0.3), l.cone[1] * Math.cos(0.3)] as const, halfAngle: Math.acos(l.cone[2]) }
         : undefined
@@ -616,4 +637,57 @@ export function worldLights(clock: WorldClock, opts: { lampPower: number; headli
   const [ox, oz] = WORLD_ORIGIN
   for (const l of lights.slice(1)) { l.x -= ox; l.y -= oz }
   return lights
+}
+
+export const HOUSE_BAKE_BOUNDS = { min: [-8.45, -0.05, -13.45] as const, max: [0.45, 4.3, -6.25] as const }
+
+/**
+ * Exports the canonical `BakeSceneSpec` for the house interior room directly from `buildWorld` and `worldLights`
+ * (plus the `kit-crt` screen panel at reference emission `SCREEN_BAKE_REFERENCE`).
+ */
+export function exportHouseBakeSceneSpec(): BakeSceneSpec {
+  const geom = buildWorld({
+    street: FLOOR.wetAsphalt,
+    walk: FLOOR.sidewalk,
+    path: FLOOR.flagstone,
+    floor: FLOOR.planks,
+    wall: "clapboard",
+    car: "red",
+    vegetation: cloneFoliageParams(),
+    tree: true,
+    bush: true,
+    grass: true,
+    seed: 7,
+    screen: true,
+    bakedRoom: true,
+  })
+  const wLights = worldLights(worldClock(0), {
+    lampPower: 1,
+    headlights: false,
+    flashlight: false,
+    porch: true,
+    physical: true,
+    bakedRoom: true,
+  })
+  const byId = new Map(wLights.filter(l => l.id !== undefined).map(l => [l.id!, l]))
+  const crtLight = screenSceneLight(
+    {
+      emission: () => [SCREEN_BAKE_REFERENCE, SCREEN_BAKE_REFERENCE, SCREEN_BAKE_REFERENCE],
+      settings: createScreenDisplaySettings({ power: true, brightness: 1, light: 1, lightShape: "panel", lightRange: 6 }),
+    },
+    SCREEN_AT,
+    { id: SCREEN_LIGHT_ID.screen, model: "physical" },
+  )!
+  return extractBakeSceneSpec({
+    packed24: geom.level.chunks[0]!.data,
+    bounds: HOUSE_BAKE_BOUNDS,
+    lightmapBounds: HOUSE_LIGHTMAP_META.bounds,
+    probes: HOUSE_LIGHTMAP_META.probes,
+    lights: [
+      { key: "interior", light: byId.get(WORLD_LIGHT_ID.interior)! },
+      { key: "screen", light: crtLight },
+      { key: "porch", light: byId.get(WORLD_LIGHT_ID.porch)! },
+      { key: "street", light: byId.get(WORLD_LIGHT_ID.street)! },
+    ],
+  })
 }

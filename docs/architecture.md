@@ -78,7 +78,7 @@ The table below shows which shared modules each game and the Lab import. `script
 | `gpu/{boot,scene-frame}` | WebGPU canvas boot, and frame inputs for small arenas: placed lights, box occluders, flat floor lighting | — | Yes | — | — | Yes | Yes | Yes |
 | `gpu/lights/{physical,beam,flicker,street}` | Opt-in physical lights and surfaces (GGX, 3D spot cones, torch beam profile, sky reflections, specular AA), street lamps as lens emitters with roadway photometry, and stateless lamp flicker and failure | — | — | Yes | — | Yes | — | — |
 | `gpu/shadows/spot-shadows` | Perspective shadow maps for the few most important spot lights, re-rendered only when a slot changes | — | — | — | — | Yes | — | — |
-| `gpu/gi/plan-bounce` | One bounce of the frame's lights in plan space: per-frame emission, mip chain and cone gather on a world-anchored grid, held by walls | — | — | Yes | — | — | — | — |
+| `gpu/gi/{plan-bounce,lightmap}` | One bounce of the frame's lights in plan space, and Cycles per-light baked lightmap arrays (`rgb9e5ufloat`) + 3D L1 SH probe volumes for rooms | — | — | Yes | — | Yes | — | — |
 | `gpu/shadows/capsule-shadows` | Analytic soft character shadows from rig bone capsules: contact occlusion and a contact-hardening shadow per light and the sun, grid-culled | — | — | Yes | — | — | — | — |
 | `gpu/contact-shadows` | Screen-space contact shadows volume slot: a short depth march toward the brightest lights at each pixel, with history | — | — | Yes | — | — | — | — |
 | `gpu/reflections/{ssr,surface,wet}` | Screen-space reflections volume slot (Ashwood's march, streak blur and history), HDR-alpha roughness tag, and the shared wet/puddle surface term | — | — | — | — | — | — | — |
