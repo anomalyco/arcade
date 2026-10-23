@@ -1,6 +1,7 @@
 import type { CreatureEvent } from "../../shared/creature"
 import { UNCANNY_SOUNDS, type DistantEvent, type DistantSound } from "../../shared/distant"
-import { treesNear, type Tree, type WoodsWorld } from "../../shared/world"
+import type { SpiderDrumEvent } from "../../shared/stalker"
+import { groundHeight, treesNear, type Tree, type WoodsWorld } from "../../shared/world"
 import { WOODS_FILES, type WoodsSoundId } from "./files"
 import type { SoundSettings } from "./settings"
 import { canopyDensity, gustAt, indoorsAt, insectLevel, nearestShore, nearestStringLight, windExposure } from "./space"
@@ -58,6 +59,12 @@ const DEFERRED = new Set<string>(UNCANNY_SOUNDS)
 
 /** The creature's brush crash against the distant sounds (× the Lab's loudness): a few dB under a far branch snap. */
 const CREATURE_LEVEL = 0.17
+/** The spider: a foot on the litter is a soft tick heard only within about 60 m; its drumming carries a little further. */
+const SPIDER_STEP_LEVEL = 0.12
+const SPIDER_DRUM_LEVEL = 0.32
+/** The crickets round you go quiet as it comes in: from about 48 m, silent by 30 m (it waits 36–46 m off someone alone). */
+const SPIDER_HUSH = { from: 48, to: 30, depth: 0.92 }
+const smoothstep = (a: number, b: number, x: number) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t) }
 
 /** Distance loudness, compressed for legibility: −6 dB per 3.2× distance past 20 m instead of per 2×. */
 export const distanceGain = (d: number) => (20 / Math.max(20, d)) ** 0.6
@@ -192,7 +199,7 @@ export class Soundscape {
   /** Solo one layer (listening page, Lab); null plays everything. */
   solo: SoundLayer | null = null
   /** Distant events played, for automation. */
-  readonly heard: { sound: DistantSound | "creature"; distance: number; delay: number; time: number }[] = []
+  readonly heard: { sound: DistantSound | "creature" | "spider.drum"; distance: number; delay: number; time: number }[] = []
 
   private readonly outdoor: BiquadFilterNode
   private readonly outdoorGain: GainNode
@@ -207,6 +214,8 @@ export class Soundscape {
   private nextKnock = 0
   private nextDock = 0
   private hush: { from: number; to: number; attack: number; release: number; depth: number }[] = []
+  /** Where the spider is (m), while there is one; the crickets near you hush as it comes close. */
+  spiderAt: { x: number; z: number } | null = null
   private ctxCache = { at: -1, exposure: 1, density: 0.5, insects: 1, densities: [0.5, 0.5, 0.5, 0.5] }
   private near: Tree[] = []
   /** One-shots scheduled or sounding, so a lost focus stops them and a signal fades the distant ones. */
@@ -465,6 +474,7 @@ export class Soundscape {
       hush = Math.min(hush, 1 - h.depth * clamp(k, 0, 1))
     }
     this.hush = this.hush.filter((h) => now < h.to + h.release + 1)
+    if (this.spiderAt) hush = Math.min(hush, 1 - SPIDER_HUSH.depth * smoothstep(SPIDER_HUSH.from, SPIDER_HUSH.to, Math.hypot(this.spiderAt.x - l.x, this.spiderAt.z - l.z)))
     set(this.beds.get("insects"), this.on("insects") ? s.soundInsects * 0.06 * c.insects * hush : 0, 0.6)
     set(this.beds.get("walls"), this.on("walls") ? s.soundWind * 0.13 * inside * (0.35 + 0.65 * gustHere) : 0, 0.3)
 
@@ -597,6 +607,29 @@ export class Soundscape {
     this.hush.push({ from: at, to: at + 2.5, attack: 1.2, release: 5, depth: 0.8 })
     this.heard.push({ sound: "creature", distance: Math.round(d), delay: Math.round(delay * 100) / 100, time: ctx.currentTime })
     return { distance: d, delay }
+  }
+
+  /** A frame of the spider (`TapeFrame.spider`): live and in the offline render alike. */
+  static spider(scape: Soundscape, f: { at: readonly number[] | null; steps: readonly number[][]; drums: readonly SpiderDrumEvent[] }, l: Listener, simNow: number, world: WoodsWorld): void {
+    scape.spiderAt = f.at ? { x: f.at[0]!, z: f.at[1]! } : null
+    for (const s of f.steps) scape.spiderStep(s[0]!, s[1]!, s[2]!, l, s[3]!)
+    for (const e of f.drums) scape.spiderDrum(e, l, simNow, (x, z) => groundHeight(world, x, z))
+  }
+
+  /** One of the spider's feet touching down on the litter (from its legs' real contacts). */
+  spiderStep(x: number, y: number, z: number, l: Listener, take: number): void {
+    if (!this.on("distant")) return
+    const d = Math.hypot(x - l.x, z - l.z)
+    const level = this.settings.distantLevel * SPIDER_STEP_LEVEL * smoothstep(62, 30, d)
+    if (level > 0.0005) this.oneShot("spider.step", take, x, y, z, l, level, { reverb: 0.3, rate: 0.85 + 0.3 * ((take * 0.618) % 1) })
+  }
+
+  /** The spider drumming the leaves with its palps: a soft rapid patter out in the dark. */
+  spiderDrum(e: SpiderDrumEvent, l: Listener, simNow: number, ground: (x: number, z: number) => number): void {
+    if (!this.on("distant")) return
+    const elapsed = Math.max(0, simNow - e.at)
+    const r = this.oneShot("spider.drum", Math.floor(e.seed * 3), e.x, ground(e.x, e.z) + 0.2, e.z, l, this.settings.distantLevel * SPIDER_DRUM_LEVEL, { reverb: 0.4, elapsed, rate: 0.92 + 0.16 * e.seed })
+    if (r) this.heard.push({ sound: "spider.drum", distance: Math.round(r.distance), delay: Math.round(r.delay * 100) / 100, time: this.ctx.currentTime })
   }
 
   /** A distant event: everyone hears the same one at the same place; `simNow - e.at` of its travel has passed. */

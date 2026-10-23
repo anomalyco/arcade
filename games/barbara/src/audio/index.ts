@@ -5,6 +5,7 @@ import type { CreatureEvent } from "../../shared/creature"
 import { DISTANT_SOUNDS, placeDistant, type DistantEvent, type DistantSound } from "../../shared/distant"
 import { FLARE_SCRAPE, flareSources, handFlare, type FlareEvent } from "../../shared/flares"
 import { SIGNAL_HOLD_SECONDS, type WoodsEvent, type WoodsState } from "../../shared/sim"
+import type { SpiderDrumEvent } from "../../shared/stalker"
 import type { VoiceEvent } from "../../shared/voices"
 import type { ThunderEvent } from "@arcade/kit/weather/storm"
 import { groundHeight, type WoodsWorld } from "../../shared/world"
@@ -77,6 +78,8 @@ export type TapeFrame = {
   /** The storm this frame (rain, wind, gust, its clock) and thunder emitted this frame. */
   storm?: { rain: number; wind: number; gust: number; clock: number }
   thunder?: ThunderEvent[]
+  /** The spider: where it is (x, z), its feet touching down this frame ([x, y, z, take]) and its drumming. */
+  spider?: { at: [number, number] | null; steps: number[][]; drums: SpiderDrumEvent[] }
 }
 
 /**
@@ -99,7 +102,9 @@ export class WoodsAudio {
   private tapeTime = 0
   private pending: Pick<TapeFrame, "steps" | "distant" | "voices"> & { creature: CreatureEvent[]; struck: NonNullable<TapeFrame["struck"]> } = { steps: [], distant: [], voices: [], creature: [], struck: [] }
   private queuedFlares: Extract<FlareEvent, { kind: "flare-struck" }>[] = []
-  private queued: (DistantEvent | CreatureEvent)[] = []
+  private queued: (DistantEvent | CreatureEvent | SpiderDrumEvent)[] = []
+  private spiderFrame: NonNullable<TapeFrame["spider"]> = { at: null, steps: [], drums: [] }
+  private spiderTake = 0
   private queuedVoices: VoiceEvent[] = []
   /** Thunder on its way, until it is scheduled (or arrives while the woods are silent and is dropped). */
   private thunder: ThunderEvent[] = []
@@ -200,7 +205,9 @@ export class WoodsAudio {
       }
     } else if (this.live) this.quiet()
     const mix = this.live ? this.ensureMix() : null
+    const spider = this.spiderFrame
     for (const e of this.queued) {
+      if (e.kind === "spider-drum") { spider.drums.push(e); continue }
       if (e.kind === "creature") {
         this.pending.creature.push(e)
         if (mix?.scape.loaded) mix.scape.creature(e, this.listener, this.sim, (x, z) => groundHeight(world, x, z))
@@ -210,6 +217,7 @@ export class WoodsAudio {
       if (mix?.scape.loaded) mix.scape.distant(e, this.listener, this.sim)
     }
     this.queued.length = 0
+    if (mix?.scape.loaded) Soundscape.spider(mix.scape, spider, this.listener, this.sim, world)
     // Flares: the scrape and the catch where they were struck, then each one's hiss where it burns.
     for (const e of this.queuedFlares) {
       const p = state.players.find((q) => q.id === e.by)
@@ -241,9 +249,10 @@ export class WoodsAudio {
     }
     if (this.tape) {
       this.tapeTime += dt
-      this.tape.push({ t: this.tapeTime, sim: state.t, l: this.listener, signal: signalling, ...this.pending, burning })
+      this.tape.push({ t: this.tapeTime, sim: state.t, l: this.listener, signal: signalling, ...this.pending, burning, ...(spider.at || spider.drums.length ? { spider } : {}) })
     }
     this.pending = { steps: [], distant: [], voices: [], creature: [], struck: [] }
+    this.spiderFrame = { at: spider.at, steps: [], drums: [] }
     if (this.tape && (this.weather || this.freshThunder.length)) Object.assign(this.tape[this.tape.length - 1]!, { ...(this.weather ? { storm: { ...this.weather } } : {}), thunder: this.freshThunder })
     this.freshThunder = []
     if (!mix) return
@@ -272,7 +281,7 @@ export class WoodsAudio {
 
   /** The session's events: a distant event plays where it happens, on the next `frame` (with that frame's clock). */
   event(e: WoodsEvent): void {
-    if ((e.kind === "distant" || e.kind === "creature") && (this.live || this.tape)) this.queued.push(e)
+    if ((e.kind === "distant" || e.kind === "creature" || e.kind === "spider-drum") && (this.live || this.tape)) this.queued.push(e)
     // Lines are read even while the woods are silent (subtitles), but only once you're out there.
     if (e.kind === "voice" && (this.live || this.tape)) this.queuedVoices.push(e)
     if (e.kind === "flare-struck" && (this.live || this.tape)) this.queuedFlares.push(e)
@@ -316,6 +325,12 @@ export class WoodsAudio {
     if (this.live && this.mix && this.running()) this.mix.feet.play(events, surface, walkTime, gain)
   }
 
+  /** Before `frame`: where the spider is (null without one) and the touchdowns of its feet since the last frame (m). */
+  spider(at: { x: number; z: number } | null, steps: readonly { x: number; y: number; z: number }[]): void {
+    this.spiderFrame.at = at ? [at.x, at.z] : null
+    if (this.live || this.tape) for (const s of steps) this.spiderFrame.steps.push([s.x, s.y, s.z, this.spiderTake++ % 4])
+  }
+
   play(id: (typeof WOODS_SFX)[number], x?: number, z?: number, gain = 1): void {
     if (this.live && this.running()) this.bank.play(id, x, z, { gain })
   }
@@ -355,6 +370,7 @@ export class WoodsAudio {
         for (const s of f.struck ?? []) mix.scape.flareStrike(s.seed, s.x, s.y, s.z, f.l, FLARE_SCRAPE, s.elapsed)
         if (f.burning) mix.scape.flares(f.burning, f.l)
         for (const e of f.thunder ?? []) mix.scape.storm.thunder(e, f.l, f.storm?.clock ?? e.emitted)
+        if (f.spider) Soundscape.spider(mix.scape, f.spider, f.l, f.sim, world)
         void ctx.resume()
       })
     }

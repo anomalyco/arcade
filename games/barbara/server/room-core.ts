@@ -7,6 +7,8 @@ import {
 } from "../shared/protocol"
 import { castVote } from "../shared/verdict"
 import { addHuman, createWoods, PLAYER_RADIUS, removePlayer, setBotCount, stepWoods, type MapKnowledge, type PlayerInput, type WoodsEvent, type WoodsState } from "../shared/sim"
+import { hasSpider } from "../shared/creature"
+import { stalkerRow } from "../shared/stalker"
 import { clampInside, makeWorld, type WoodsWorld } from "../shared/world"
 
 /** What a seat has already been sent, so a snapshot carries only what changed (the socket is reliable and ordered). */
@@ -285,6 +287,7 @@ export class WoodsRoomCore extends RoomCore<ClientMsg, PlayerInput, RosterRow, W
     if (s.flares.rev !== sent.flares) { sent.flares = s.flares.rev; snap.fl = { spares: s.flares.spares, rows: s.flares.list.map(flareRow) } }
     if (reset) { snap.tapes = s.tapes.map(tapeRow); snap.distant = { ...s.distant, rng: { ...s.distant.rng }, recent: [...s.distant.recent] } }
     if (s.night.rev !== sent.night) { sent.night = s.night.rev; snap.night = nightWire(s.night) }
+    if (hasSpider(ROOM_FEEL.creature)) snap.sp = stalkerRow(s.stalker)
     if (me) {
       const map = mapDelta(me.map, sent, reset)
       if (map) snap.map = map

@@ -36,7 +36,7 @@ export const FEEL_CONTROLS: LabControl[] = [
   { key: "uncannyRate", label: "Uncanny: how likely (solo; a room uses 1)", group: "Sound", subsection: "Uncanny", min: 0, max: 3, step: 0.1, unit: "×" },
   { key: "chatter", label: "Searchers talk: how often (solo; a room uses 1)", group: "Voices", min: 0, max: 4, step: 0.1, unit: "×" },
   { key: "voicePeople", label: "Your searcher speaks at key moments", group: "Voices", type: "toggle", on: 1, off: 0 },
-  { key: "creature", label: "On (solo; a room runs its own, on)", group: "Creature", type: "toggle" },
+  { key: "creature", label: "What's out there (solo; a room runs both)", group: "Creature", type: "select", options: [{ value: "both", label: "Figure and spider" }, { value: "figure", label: "Figure" }, { value: "spider", label: "Spider" }, { value: "off", label: "Nothing" }] },
   { key: "creatureRate", label: "How often (1 ≈ every 5 min with a light to cross)", group: "Creature", min: 0.1, max: 10, step: 0.1, unit: "×" },
   { key: "creatureNear", label: "Distance from", group: "Creature", min: 40, max: 120, step: 1, unit: "m" },
   { key: "creatureFar", label: "Distance to", group: "Creature", min: 45, max: 140, step: 1, unit: "m" },

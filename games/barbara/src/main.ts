@@ -9,8 +9,10 @@ import { FOREST_QUALITY } from "@arcade/kit/forest/settings"
 import { ForestStorm, forestRainLightControls, forestStormControls, forestStormEyeControls } from "@arcade/kit/forest/storm"
 import type { ForestTorch } from "@arcade/kit/forest/view"
 import { createGameShell, createShellQuality } from "@arcade/kit/shell"
-import { planCreature, triggerCreature, trunkBetween, type CreatureEvent } from "../shared/creature"
+import { hasSpider, planCreature, triggerCreature, trunkBetween, type CreatureEvent } from "../shared/creature"
 import { answerCall, DISTANT_SOUNDS, MIMIC_LINES, triggerUncanny, UNCANNY_SOUNDS, type UncannySound } from "../shared/distant"
+import { placeSpiderSigns, type SpiderSigns } from "../shared/spider-signs"
+import { beatNow, drumNow, type SpiderBeatEvent, type SpiderDrumEvent } from "../shared/stalker"
 import { VOICE_LINES } from "../shared/lines.gen"
 import { CLUE_NAMES, dawnShare, evidenceText, leadText, nextStep } from "../shared/night"
 import { canVote, isGone, SUSPECT_NAMES, SUSPECTS } from "../shared/verdict"
@@ -24,6 +26,8 @@ import { WoodsAudio } from "./audio"
 import { WoodsCamera } from "./camera"
 import { CAMERA_LOOKS, CameraLook, savedCameraLook, stageCameraLab, type CameraLookId } from "./camera-look"
 import { CreatureView } from "./creature-view"
+import { SpiderSignsView } from "./spider-signs-view"
+import { SpiderView } from "./spider-view"
 import { FEEL_CONTROLS } from "./feel-controls"
 import { FlareView } from "./flare-view"
 import { FriendsView } from "./friends-view"
@@ -144,6 +148,16 @@ async function main() {
   shell.loading?.done("people")
   shell.loading?.stage("frame", "Lighting the camp")
   const creatures = new CreatureView(renderer)
+  const spider = new SpiderView(renderer, world)
+  const spiderSigns = new SpiderSignsView(renderer)
+  /** The night's web and bundles, placed again for a new night, a new woods or the spider switched on or off. */
+  let signs: { key: string; signs: SpiderSigns | null } = { key: "", signs: null }
+  const signsFor = (seed: number) => {
+    const on = online || hasSpider(settings.creature)
+    const key = `${seed}:${world.params.seed}:${world.trees.length}:${on}`
+    if (key !== signs.key) signs = { key, signs: on ? placeSpiderSigns(world, seed) : null }
+    return signs.signs
+  }
   if (params.get("smooth") === "0") friends.smooth = false
   const map = new PaperMap(document.body)
   const held = new HeldMap(renderer, import.meta.env.BASE_URL, undefined, !smoke)
@@ -164,6 +178,7 @@ async function main() {
     friends.setLogs(view.forest.build.logs, (x, z) => standHeight(world, x, z))
     map.setWorld(world)
     held.setWorld(world)
+    spider.setWorld(world)
   }
   useWorld(world, false)
   performance.mark("woods:world")
@@ -209,6 +224,7 @@ async function main() {
     { key: "woods.beamSettle", field: "beamSettle", label: "Friend beam settle", group: "Friends", subsection: "Drawing", min: 0.02, max: 0.4, step: 0.01, unit: "s" },
   ])
   panel.addControls({}, [{ key: "creatureTrigger", label: "Trigger now", group: "Creature", type: "action", run: () => { creature.trigger() } }])
+  panel.addControls(spider.settings as unknown as Record<string, number>, spider.controls())
   panel.addControls({}, UNCANNY_SOUNDS.map((s) => ({ key: `uncanny.${s}`, label: `Trigger ${s.slice(4)}`, group: "Sound", subsection: "Uncanny", type: "action" as const, run: () => { void uncanny.trigger(s) } })))
   panel.addControls(storm.settings as unknown as Record<string, number | string | boolean>, forestStormControls("Weather", "woods.storm."))
   panel.addControls(storm.rainLighting as unknown as Record<string, number | string | boolean>, forestRainLightControls("Weather", "woods.rainLight."))
@@ -439,6 +455,34 @@ async function main() {
   }
 
   /**
+   * The spider's Lab and automation hooks (solo: in the sim, so it plays like the schedule's own). Walk across now: a
+   * slow walk across your view `distance` m out, from wherever it is now; Drum now: it drums where it stands.
+   */
+  const spiderLab = {
+    beat(distance = 42, x0?: number, z0?: number, x1?: number, z1?: number): SpiderBeatEvent | null {
+      if (!(session instanceof SoloSession)) { say("Solo only: a room runs its own spider.", 3); return null }
+      const st = session.state, me = session.self
+      if (x0 === undefined || z0 === undefined || x1 === undefined || z1 === undefined) {
+        const fx = -Math.sin(camera.yaw), fz = -Math.cos(camera.yaw), cx = me.x + fx * distance, cz = me.z + fz * distance
+        x0 = cx + fz * 7; z0 = cz - fx * 7; x1 = cx - fz * 7; z1 = cz + fx * 7
+      }
+      const e = beatNow(st.stalker, x0, z0, x1, z1, me.id, st.t)
+      session.inject(e)
+      return e
+    },
+    drum(): SpiderDrumEvent | null {
+      if (!(session instanceof SoloSession)) return null
+      const e = drumNow(session.state.stalker, session.state.t)
+      session.inject(e)
+      return e
+    },
+  }
+  panel.addControls({}, [
+    { key: "spiderBeat", label: "Walk across now", group: "Spider", type: "action", run: () => { spiderLab.beat() } },
+    { key: "spiderDrum", label: "Drum now", group: "Spider", type: "action", run: () => { spiderLab.drum() } },
+  ])
+
+  /**
    * The creature's Lab hooks. Trigger now places a sighting at once by the schedule's own rules (solo: in the sim, so it
    * plays like a scheduled one; a room: on this machine only). With no bright light 49 m out to cross (a friend's signal or
    * beam aimed back at you, camp lights from outside camp), solo stages one: a friend 64–96 m ahead holding up a
@@ -617,6 +661,7 @@ async function main() {
     const strip = nightTapes(state.night, world)
     view.draw(fp, world, strip.length ? { ...state, tapes: [...state.tapes, ...strip] } : state, state.t, camera.eye, settings)
     nightView.draw(fp, state.night, world)
+    spiderSigns.draw(fp, signsFor(state.night.seed), world)
     dawn.apply(view.forest.settings, dawnShare(state.night, state.t))
     friends.eye = [camera.eye[0], camera.eye[1], camera.eye[2]]
     friends.readingLevel = held.settings.readingLevel
@@ -647,7 +692,8 @@ async function main() {
     const torches: ForestTorch[] = beams.filter((b) => !debug.dark.includes(b.id === OWN ? meId : b.id)).map((b) => ({ id: b.id, pos: b.origin, dir: b.axis, on: true, kind: b.id === OWN ? "local" : "remote", level: b.level, ...(b.id === OWN && heldUp > 0.3 ? { shadowNear: 0.04 } : {}) }))
     debug.beams = beams.length
     if (torchTrace && level > 0) torchTrace.push({ origin: [...ownOrigin], aim: [...axis], axis: [...ownAxis], eye: [...camera.eye], vp: [...vp] })
-    cameraLook.frame({ t: state.t, dt, eye: camera.eye, yaw: camera.yaw, pitch: camera.pitch, torches, world, fp, place })
+    const spiderBatches = spider.frame(session.spider, dt)
+    cameraLook.frame({ t: state.t, dt, eye: camera.eye, yaw: camera.yaw, pitch: camera.pitch, torches, world, fp, place, spiderEyes: spider.eyes() })
     if (trace) {
       const at = performance.now()
       for (const q of state.players) {
@@ -664,7 +710,7 @@ async function main() {
     // Scheduled strikes follow the sim clock round camp, so a room on the same Look sees the same ones.
     const sf = storm.frame({ dt, eye: camera.eye, yaw: camera.yaw, groundY: standHeight(world, at.x, at.z), forestWind: view.forest.settings.wind, shared: { time: state.t, anchor: [world.camp.x, world.camp.z] } })
     audio.storm(sf)
-    view.frame({ eye: [camera.eye[0], camera.eye[1], camera.eye[2]], viewProj: vp as Float32Array, width, height, time: state.t, dt, fovY: ((camera.fov + camera.mount.fov) * Math.PI) / 180, torches, fp, place, casters: [...friends.casters(ownOrigin, view.forest.settings.torchReach), ...held.casters()], batches: creatures.frame(world, time), flares: lit, storm: smoke ? null : sf.view }, stepping, smokeTarget?.createView())
+    view.frame({ eye: [camera.eye[0], camera.eye[1], camera.eye[2]], viewProj: vp as Float32Array, width, height, time: state.t, dt, fovY: ((camera.fov + camera.mount.fov) * Math.PI) / 180, torches, fp, place, casters: [...friends.casters(ownOrigin, view.forest.settings.torchReach), ...held.casters()], batches: [...creatures.frame(world, time), ...spiderBatches], flares: lit, storm: smoke ? null : sf.view }, stepping, smokeTarget?.createView())
 
     // HUD: the tie prompt, the map, toasts.
     const atRadio = playing && canVote(state.night, p)
@@ -710,6 +756,7 @@ async function main() {
     endCard.frame(state, world)
     // You hear the woods while playing, or with the knobs open once you've begun (to tune the mix).
     audio.flareBurn = settings.flareBurn
+    audio.spider(session.spider, spider.steps)
     audio.frame(camera.eye, camera.yaw, dt, world, state, playing || panel.visible)
 
     frames++
@@ -721,7 +768,7 @@ async function main() {
   Object.assign(window, {
     woods: {
       get ready() { return true }, get frames() { return frames }, get time() { return time }, get paused() { return paused }, set paused(v: boolean) { paused = v },
-      renderer, camera, settings, panel, map, held, debug, flares, audio, story, view, look: view.forest.settings, quality, friends, cameraLook, creature, creatures, lakeEditor, endCard, verdictCard, storm,
+      renderer, camera, settings, panel, map, held, debug, flares, audio, story, view, look: view.forest.settings, quality, friends, cameraLook, creature, creatures, spider, spiderLab, lakeEditor, endCard, verdictCard, storm,
       /** Automation: name what took her, as if at the radio (`verdict.ts`). */
       vote: (s: (typeof SUSPECTS)[number]) => session.vote(s),
       /** Automation: the night (phase, clock, finds, the layout) and the next one. */
@@ -729,6 +776,8 @@ async function main() {
       /** Automation: the curated Looks (`src/looks.ts`) and the Triggers group's buttons. */
       looks: { pick: pickLook, get current() { return lookState.look }, ids: LOOK_IDS },
       trigger,
+      /** Automation: tonight's web and bundles (`shared/spider-signs.ts`), or null without the spider. */
+      get spiderSigns() { return signsFor(session.view.night.seed) },
       measure: (n?: number) => view.forest.measure(n), stats: () => view.forest.stats(),
       get state() { return session instanceof SoloSession ? session.state : session.view }, get world() { return world }, get session() { return session },
       /** Automation: room readout (your id, people and walkers seen, tapes, bytes in, KB/s, connection status). */

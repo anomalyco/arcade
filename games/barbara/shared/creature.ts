@@ -45,9 +45,14 @@ export type CreatureState = {
   last?: { x: number; z: number; at: number }
 }
 
-/** The creature's knobs (in `FEEL`): off by default until Kit has seen it; a room runs the defaults. */
+/** Which things are in the woods: the thin figure, the spider (`shared/stalker.ts`), both, or neither. */
+export type CreatureKind = "off" | "figure" | "spider" | "both"
+export const hasFigure = (k: CreatureKind) => k === "figure" || k === "both"
+export const hasSpider = (k: CreatureKind) => k === "spider" || k === "both"
+
+/** The creatures' knobs (in `FEEL`); a room runs the defaults. */
 export type CreatureFeel = {
-  creature: boolean
+  creature: CreatureKind
   /** How often (×): 1 is about once every five minutes when there is a light to cross. */
   creatureRate: number
   /** Distance band from the person who sees it (m). Never under `CREATURE_MIN`. */
@@ -226,7 +231,7 @@ export function segmentDistance(px: number, pz: number, ax: number, az: number, 
  */
 export function stepCreature(ds: DistantState, world: WoodsWorld, players: readonly Watcher[], t: number, feel: CreatureFeel, signalHold: number, beacons: readonly Beacon[] = []): CreatureEvent | null {
   const cs = ds.creature
-  if (!feel.creature || feel.creatureRate <= 0 || t < cs.next || t < cs.tryAt || t < ds.busyUntil) return null
+  if (!hasFigure(feel.creature) || feel.creatureRate <= 0 || t < cs.next || t < cs.tryAt || t < ds.busyUntil) return null
   // Look for a light to cross about once a second while due.
   cs.tryAt = t + 1
   const plan = planCreature(world, players, feel, cs.rng, signalHold, false, beacons)

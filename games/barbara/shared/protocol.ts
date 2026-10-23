@@ -148,6 +148,8 @@ export type Snapshot = {
   night?: NightWire
   /** Every flare (`flareRow`) and the camp's spares, on join and whenever one is struck, thrown, lands or goes. */
   fl?: { spares: number; rows: number[][] }
+  /** The spider's root (`stalkerRow`: x, z cm, heading mrad, mode, jump) while the woods have one. */
+  sp?: number[]
 }
 
 /**

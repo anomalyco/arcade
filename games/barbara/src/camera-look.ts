@@ -12,7 +12,7 @@ import type { DistantEvent } from "../shared/distant"
 import { viewDir } from "../shared/sim"
 import { groundHeight, treesNear, type WoodsWorld } from "../shared/world"
 import type { WoodsCamera } from "./camera"
-import { Eyeshine } from "./eyeshine"
+import { Eyeshine, type SpiderEye } from "./eyeshine"
 import type { PlaceLights } from "./world-view"
 
 /**
@@ -118,6 +118,8 @@ export type CameraLookFrame = {
   world: WoodsWorld
   fp: FrameParts
   place: PlaceLights
+  /** The spider's eyes, drawn whatever the look (`Eyeshine.drawSpider`). */
+  spiderEyes?: readonly SpiderEye[]
 }
 
 /**
@@ -249,14 +251,15 @@ export class CameraLook {
     if (s.irLight) {
       f.place.scene.push({ id: 990, x: f.eye[0]!, y: f.eye[2]!, h: f.eye[1]! - 0.05, r: 16, color: [1, 1, 1], power: s.irPower, size: 0.03, unshadowed: true, beam: { axis, halfAngle: 0.55 } })
     }
+    const lights = [
+      ...(own ? [{ pos: own.pos, dir: own.dir, power: look.torchPower * 5 * (own.level ?? 1), halfAngle, profile: prof }] : []),
+      ...(s.irLight ? [{ pos: f.eye, dir: axis, power: s.irPower * 5, halfAngle: 0.55, profile: prof }] : []),
+    ]
     if (s.eyeshine) {
       this.eyeshine.step(f.world, f.eye, f.yaw, f.t)
-      const lights = [
-        ...(own ? [{ pos: own.pos, dir: own.dir, power: look.torchPower * 5 * (own.level ?? 1), halfAngle, profile: prof }] : []),
-        ...(s.irLight ? [{ pos: f.eye, dir: axis, power: s.irPower * 5, halfAngle: 0.55, profile: prof }] : []),
-      ]
       this.eyeshine.draw(f.fp, f.eye, f.t, lights, this.blocked, look.fogDensity)
     }
+    if (f.spiderEyes?.length) this.eyeshine.drawSpider(f.fp, f.eye, f.spiderEyes, lights, this.blocked, look.fogDensity)
     const a = this.artifacts
     if (!(a.flare || a.dirt || a.pwm || a.focusHunt || a.sensorGain)) return
     const exposure = look.exposure * cam.exposure
