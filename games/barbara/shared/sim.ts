@@ -1,6 +1,7 @@
 import { stepBody } from "@arcade/kit/sim/move"
 import { stepCreature, type CreatureEvent } from "./creature"
-import { createDistant, holdDistant, stepDistant, type DistantEvent, type DistantState } from "./distant"
+import { answerCall, createDistant, holdDistant, stepDistant, type DistantEvent, type DistantState } from "./distant"
+import { VOICE_LINES } from "./lines.gen"
 import { BOT_ORDER, CAST_NAMES, createVoices, stepVoices, voicesBusyUntil, type VoiceCue, type VoiceEvent, type VoiceState } from "./voices"
 import { isDeepWater, nextRandom, solidsNear, standHeight, treesNear, type Tree, type WoodsWorld } from "./world"
 
@@ -44,6 +45,10 @@ export const FEEL = {
   botTapes: 8,
   /** How often the distant sounds come (×; `shared/distant.ts`). The room's is authoritative. */
   distantRate: 1,
+  /** The uncanny distant sounds (`UNCANNY_SOUNDS`): on; none before 8 min, each at most once a night. */
+  uncanny: true,
+  /** How likely an uncanny one is when they're allowed (×; a room uses 1). */
+  uncannyRate: 1,
   /** How often the searchers talk among themselves (×; 0 is silence apart from key moments; `shared/voices.ts`). */
   chatter: 1,
   /** People's own searchers speak at key moments (a find, a sighting): 1 on, 0 never. */
@@ -477,13 +482,17 @@ export function stepWoods(state: WoodsState, world: WoodsWorld, inputs: Readonly
   }
   // The woods keep quiet while anyone is signalling and for a few seconds after.
   if (state.players.some((p) => p.signal > SIGNAL_HOLD)) holdDistant(state.distant, state.t + DISTANT_AFTER_SIGNAL)
-  const sound = stepDistant(state.distant, world, state.players.filter((p) => !p.bot), state.t, feel.distantRate)
+  const people = state.players.filter((p) => !p.bot)
+  const sound = stepDistant(state.distant, world, people, state.t, feel.distantRate, feel)
   if (sound) state.events.push(sound)
   const creature = stepCreature(state.distant, world, state.players, state.t, feel, SIGNAL_HOLD)
   if (creature) state.events.push(creature)
   // A sighting cues the searchers too (`VOICE_CUES`).
   const cues = (state.events as readonly { kind: string }[]).filter((e) => VOICE_CUES.has(e.kind)) as VoiceCue[]
-  state.events.push(...stepVoices(state.voices, world, state.players, cues, state.t, dt, feel, BOT_ID))
+  const lines = stepVoices(state.voices, world, state.players, cues, state.t, dt, feel, BOT_ID)
+  state.events.push(...lines)
+  // A call for Barbara may be answered from the wrong side (`answerCall`, the uncanny tier's mimic).
+  for (const e of lines) if (!people.some((p) => p.id === e.by)) answerCall(state.distant, world, people, e.line, e, VOICE_LINES.find((l) => l.id === e.line)?.seconds ?? 2, state.t, feel)
   holdDistant(state.distant, voicesBusyUntil(state.voices))
 }
 

@@ -28,6 +28,8 @@ export const FEEL_CONTROLS: LabControl[] = [
   { key: "mapRaise", label: "Map raise time", group: "Tape & map", min: 0.08, max: 1.2, step: 0.01, unit: "s" },
   { key: "findRadius", label: "Marker find radius", group: "Tape & map", min: 1, max: 6, step: 0.1, unit: "m" },
   { key: "distantRate", label: "Distant sounds: how often (solo; a room uses 1)", group: "Sound", min: 0, max: 6, step: 0.1, unit: "×" },
+  { key: "uncanny", label: "Uncanny sounds (after 8 min, once a night each)", group: "Sound", subsection: "Uncanny", type: "toggle" },
+  { key: "uncannyRate", label: "Uncanny: how likely (solo; a room uses 1)", group: "Sound", subsection: "Uncanny", min: 0, max: 3, step: 0.1, unit: "×" },
   { key: "chatter", label: "Searchers talk: how often (solo; a room uses 1)", group: "Voices", min: 0, max: 4, step: 0.1, unit: "×" },
   { key: "voicePeople", label: "Your searcher speaks at key moments", group: "Voices", type: "toggle", on: 1, off: 0 },
   { key: "creature", label: "On (solo; a room runs its own, on)", group: "Creature", type: "toggle" },

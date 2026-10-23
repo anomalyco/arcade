@@ -5,11 +5,13 @@
 // 2. Renders that tape through the game's own mix in an OfflineAudioContext and muxes it with the frames (walk.mp4).
 // 3. Renders each layer soloed along the same walk, indoors, ridge vs hollow, and every distant sound soloed and in the
 //    mix, for the listening page; measures each with ffmpeg's EBU R128 meter (levels.json).
+// 4. Renders the uncanny tier (and the loon and owl to compare) at two or three set distances, soloed and in the mix.
+//    `--uncanny` does only this (no walk, no video).
 import { $ } from "bun"
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join, resolve, sep } from "node:path"
 import { chromium } from "playwright-core"
-import { DISTANT_SOUNDS, placeDistant, type DistantEvent, type DistantSound } from "../shared/distant"
+import { DISTANT_RULES, DISTANT_SOUNDS, placeDistant, UNCANNY_SOUNDS, type DistantEvent, type DistantSound } from "../shared/distant"
 import { makeWorld, terrainHeight } from "../shared/world"
 import { windExposure } from "../src/audio/space"
 import type { TapeFrame } from "../src/audio"
@@ -18,7 +20,8 @@ import type { SoundLayer } from "../src/audio/soundscape"
 const arg = (name: string, fallback: string) => { const i = process.argv.indexOf(name); return i >= 0 ? process.argv[i + 1]! : fallback }
 const out = resolve(arg("--out", process.env.LEASE_OUT ?? "captures/woods-audio"))
 const seconds = Number(arg("--seconds", "45"))
-const video = !process.argv.includes("--no-video")
+const onlyUncanny = process.argv.includes("--uncanny")
+const video = !process.argv.includes("--no-video") && !onlyUncanny
 const FPS = 30
 mkdirSync(out, { recursive: true })
 const frames = join(process.env.TMPDIR ?? "/tmp", `woods-audio-frames-${process.pid}`)
@@ -73,7 +76,7 @@ await page.evaluate(([sx, sz]) => {
   woods.audio.tape = []
 }, [camp.spawn.x, camp.spawn.z])
 let target = 0
-const total = Math.round(seconds * FPS)
+const total = onlyUncanny ? 0 : Math.round(seconds * FPS)
 for (let f = 0; f < total; f++) {
   const t = f / FPS
   const cmd = await page.evaluate(({ t, path, target }) => {
@@ -156,6 +159,7 @@ async function mp3(name: string, wav: string) {
   await $`ffmpeg -v error -y -i ${wav} -c:a libmp3lame -b:a 160k ${join(out, `${name}.mp3`)}`.quiet()
 }
 
+if (!onlyUncanny) {
 const walkWav = await render("walk", tape, seconds)
 await measure("walk", walkWav)
 if (video) {
@@ -167,9 +171,10 @@ const zero = { soundWind: 0, soundLeaves: 0, soundInsects: 0, soundLake: 0, soun
 const feet = await render("walk-footsteps", tape, seconds, { sound: zero })
 await measure("walk-footsteps", feet)
 await mp3("walk-footsteps", feet)
+}
 
 // ── 3. solos ────────────────────────────────────────────────────────────────────────────────────────────────────
-for (const layer of ["wind", "creaks", "leaves", "insects", "room", "lake", "dock", "lights", "distant"] as SoundLayer[]) {
+for (const layer of (onlyUncanny ? [] : ["wind", "creaks", "leaves", "insects", "room", "lake", "dock", "lights", "distant"]) as SoundLayer[]) {
   if (!budget()) break
   const wav = await render(`layer-${layer}`, tape, seconds, { solo: layer, footsteps: false })
   await measure(`layer-${layer}`, wav)
@@ -186,7 +191,7 @@ const eye = (x: number, z: number) => terrainHeight(world.terrain, x, z) + 1.7
 // Indoors: the mess hall.
 const hall = world.buildings.find((b) => b.kind === "mess-hall")!
 const hx = (hall.rect[0] + hall.rect[2]) / 2, hz = (hall.rect[1] + hall.rect[3]) / 2
-if (budget()) for (const [name, opts] of [["indoors-walls", { solo: "walls" as SoundLayer }], ["indoors-mix", {}]] as const) {
+if (budget() && !onlyUncanny) for (const [name, opts] of [["indoors-walls", { solo: "walls" as SoundLayer }], ["indoors-mix", {}]] as const) {
   const wav = await render(name, still(hx, hz, 0.3, 20, 400, [], eye(hx, hz)), 20, opts)
   await measure(name, wav)
   await mp3(name, wav)
@@ -199,7 +204,7 @@ for (let x = -180; x <= 180; x += 12) for (let z = -180; z <= 60; z += 12) {
   if (e > ridge.e) ridge = { x, z, e }
   if (e < hollow.e) hollow = { x, z, e }
 }
-if (budget()) for (const [name, p] of [["wind-ridge", ridge], ["wind-hollow", hollow]] as const) {
+if (budget() && !onlyUncanny) for (const [name, p] of [["wind-ridge", ridge], ["wind-hollow", hollow]] as const) {
   const wav = await render(name, still(p.x, p.z, 0, 25, 900, [], eye(p.x, p.z)), 25, {})
   await measure(name, wav)
   await mp3(name, wav)
@@ -207,7 +212,7 @@ if (budget()) for (const [name, p] of [["wind-ridge", ridge], ["wind-hollow", ho
 // Every distant sound, from a spot 90 m up the old path: soloed, and in the mix.
 const spot = { x: world.trail.points[3]![0], z: world.trail.points[3]![1] }
 const placed: Record<string, { distance: number; x: number; y: number; z: number; take: number }> = {}
-for (const sound of DISTANT_SOUNDS) {
+for (const sound of onlyUncanny ? [] : DISTANT_SOUNDS) {
   for (let take = 0; take < 3 && budget(); take++) {
     const e = placeDistant(world, sound, spot, 1, 101 + take * 7 + sound.length)
     if (!e) continue
@@ -225,7 +230,44 @@ for (const sound of DISTANT_SOUNDS) {
     }
   }
 }
-writeFileSync(join(out, "levels.json"), JSON.stringify({ levels, placed, ridge, hollow, spot, errors: errors.slice(0, 20) }, null, 1))
+// The uncanny tier and today's loon and owl, each at set distances 0.6 rad right of facing north (lake sounds: the lake
+// point nearest that distance), take 1 at every distance and the other takes at the middle one.
+const DISTANCES: Partial<Record<DistantSound, number[]>> = { "far.loon": [130, 230], "far.owl": [70, 150], "far.howl": [170, 240, 320], "far.taken": [70, 130, 190], "far.mimic": [150, 230], "far.echo": [130, 230], "far.climb": [50, 100, 150], "far.stop": [90, 170] }
+const TAKES: Partial<Record<DistantSound, number>> = { "far.howl": 3, "far.taken": 3, "far.mimic": 9, "far.echo": 2, "far.climb": 2, "far.stop": 2 }
+const ey = eye(spot.x, spot.z)
+function setAt(sound: DistantSound, d: number): DistantEvent {
+  const rule = DISTANT_RULES[sound]
+  let x = spot.x - Math.sin(-0.6) * d, z = spot.z - Math.cos(-0.6) * d, y = terrainHeight(world.terrain, x, z) + rule.above
+  if (rule.place === "lake") {
+    let bd = Infinity
+    for (let a = 0; a < 6.283; a += 0.02) for (let r = 0.3; r <= 0.85; r += 0.05) {
+      const lx = world.lake.x + Math.cos(a) * world.lake.rx * r, lz = world.lake.z + Math.sin(a) * world.lake.rz * r
+      const e = Math.abs(Math.hypot(lx - spot.x, lz - spot.z) - d)
+      if (e < bd) { bd = e; x = lx; z = lz }
+    }
+    y = world.lake.level + rule.above
+  }
+  return { kind: "distant", sound, x, y, z, at: 1201, take: 0, seq: 7 }
+}
+const uncanny: Record<string, { distance: number; take: number }> = {}
+for (const sound of ["far.loon", "far.owl", ...UNCANNY_SOUNDS] as DistantSound[]) {
+  const ds = DISTANCES[sound]!, mid = ds[Math.floor(ds.length / 2)]!
+  const jobs = [...ds.map((d) => [0, d] as const), ...Array.from({ length: (TAKES[sound] ?? 1) - 1 }, (_, i) => [i + 1, mid] as const)]
+  for (const [take, d] of jobs) {
+    if (!budget()) break
+    const e = { ...setAt(sound, d), take }
+    const secs = 3 + d / 343 + DISTANT_RULES[sound].seconds + 9
+    const tp = still(spot.x, spot.z, 0, secs, 1200, [{ t: 1, e }], ey)
+    const name = `odd-${sound.slice(4)}-${take + 1}-${d}m`
+    uncanny[name] = { distance: Math.round(Math.hypot(e.x - spot.x, e.y - ey, e.z - spot.z)), take: take + 1 }
+    for (const [suffix, opts] of [["-solo", { solo: "distant" as SoundLayer, footsteps: false }], ["", { footsteps: false }]] as const) {
+      const wav = await render(name + suffix, tp, secs, opts)
+      await measure(name + suffix, wav)
+      await mp3(name + suffix, wav)
+    }
+  }
+}
+writeFileSync(join(out, "levels.json"), JSON.stringify({ levels, placed, uncanny, ridge, hollow, spot, errors: errors.slice(0, 20) }, null, 1))
 await $`rm -f ${out}/*.wav`.quiet().nothrow()
 await browser.close()
 server.stop(true)

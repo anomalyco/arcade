@@ -245,13 +245,19 @@ export class WoodsAudio {
 
   /** The Lab's audition button (a gesture, so it may start the sound before Begin): waits for the files, then plays. */
   private async auditionNow(sound: DistantSound): Promise<void> {
+    if (await this.prepare()) this.audition(sound)
+  }
+
+  /** A Lab button's gesture: start the woods and have every file in (the uncanny tier too) before something plays. */
+  async prepare(): Promise<boolean> {
     this.begun = true
-    if (!(await this.bank.unlock())) return
+    if (!(await this.bank.unlock())) return false
     this.live = true
     const mix = this.ensureMix()
-    if (!mix) return
-    if (!mix.scape.loaded) await mix.scape.load().catch(() => {})
-    this.audition(sound)
+    if (!mix) return false
+    // A load already under way may be the first pass, which leaves the uncanny tier for later.
+    for (let i = 0; i < 2 && !mix.scape.complete; i++) await mix.scape.load(undefined, true).catch(() => {})
+    return mix.scape.loaded
   }
 
   /** Footstep and cloth contacts from the walk clock (`Walk.events`, sample-accurate) or a friend's gait. */
@@ -274,7 +280,7 @@ export class WoodsAudio {
     const ctx = opts.ctx ?? new OfflineAudioContext(2, Math.ceil(seconds * sr), sr)
     const mix = new WoodsMix(ctx, { ...this.sound, ...opts.sound }, this.baseUrl, () => world, this.voice, opts.fetcher)
     mix.scape.solo = opts.solo ?? null
-    await mix.scape.load(opts.fetcher)
+    await mix.scape.load(opts.fetcher, true)
     // Offline, every line on the tape is decoded up front so each starts on its frame.
     if (opts.voices !== false) await mix.voices.preload([...BRUSH_IDS, ...tape.flatMap((f) => (f.voices ?? []).map((e) => e.line))])
     const b = this.bank.volumes

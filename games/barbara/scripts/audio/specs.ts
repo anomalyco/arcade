@@ -48,3 +48,24 @@ export const WOODS_SOUND_SPECS: WoodsSoundSpec[] = [
   { id: "far.cardoor", prompt: "A car door slamming shut once, outdoors at night, solid metallic thunk", duration: 2, influence: 0.55, takes: 5, keep: 3, target: -18, range: [0.3, 2.2] },
   { id: "far.screendoor", prompt: "A wooden screen door on a spring snapping shut against its wooden frame, a hollow wooden slap and a short rattle as it bounces, outdoors at night", duration: 2, influence: 0.55, takes: 9, keep: 3, target: -18, range: [0.3, 2.2], picks: [2, 3, 1] },
 ]
+
+/**
+ * Ingredients for the uncanny tier (`scripts/audio/uncanny.ts` composes them into the shipped `odd.*` files): generated
+ * and curated like the rest, never shipped on their own. Real animals and real people, recorded close and dry.
+ */
+const SRC = { influence: 0.55, keep: 3, target: -18 }
+/** What uncanny.ts composes (`$WORK/composed/<id>/<n>.f32`), encoded by `sounds.ts build` alongside the specs. */
+export const UNCANNY_IDS = ["far.howl", "far.taken", "far.mimic", "far.echo", "far.climb", "far.stop"] as const
+export const UNCANNY_SOURCE_SPECS: WoodsSoundSpec[] = [
+  { id: "src.coyote", ...SRC, prompt: "A single lone coyote howling at night, one long sustained mournful howl that rises and holds a high note for several seconds, no yips, no barking, no other animals, natural wildlife field recording, close, quiet background, no music", duration: 9, takes: 5, range: [2.5, 9.2] },
+  { id: "src.wolf", ...SRC, prompt: "A lone gray wolf howling at night, one long low sustained howl that slowly rises and falls, a single animal, no other wolves, natural wildlife field recording, close, quiet background, no music", duration: 9, takes: 4, range: [2.5, 9.2] },
+  { id: "src.wail", ...SRC, influence: 0.6, prompt: "A woman's voice holding one long sustained wordless wail, a single open aaah vowel held for many seconds without a breath, mournful and strained, no words, no music, dry close recording, quiet background", duration: 7, takes: 5, range: [2, 7.2] },
+  { id: "src.deer", ...SRC, prompt: "A deer in distress at night, a doe's loud harsh bleating scream, two desperate cries, natural wildlife field recording, no music", duration: 3, takes: 5, range: [0.6, 3.2] },
+  { id: "src.rabbit", ...SRC, prompt: "A wild rabbit's distress scream, a shrill piercing shriek like a crying child, in grass at night, natural field recording, no music", duration: 3, takes: 4, range: [0.6, 3.2] },
+  { id: "src.thrash", ...SRC, prompt: "A short violent struggle in dry undergrowth at night: an animal thrashing and kicking through brush and dead leaves for a second or two, branches whipping, then it stops dead, close, no voices, no music", duration: 2.5, takes: 6, range: [0.6, 2.7] },
+  { id: "src.impact", ...SRC, prompt: "One heavy dull thud of a large body slammed onto the forest floor with a single wet crack like a thick bone breaking, close, dry, no reverb, no music", duration: 1.5, takes: 6, range: [0.2, 1.6] },
+  { id: "src.crack", ...SRC, prompt: "A single sharp wet crack of a thick bone snapping, close, dry, very short, no reverb, no music", duration: 1, takes: 4, range: [0.1, 1.1] },
+  { id: "src.climb", ...SRC, prompt: "A huge old pine tree creaking and groaning slowly under a heavy weight, deep strained woody creaks a few seconds apart as the trunk bends, as if something very heavy is slowly climbing it, a little bark scraping, then silence, at night, no wind, no music", duration: 10, takes: 6, range: [3, 10.2] },
+  { id: "src.knock", ...SRC, prompt: "One single hard knock of a thick piece of wood struck once against a hollow tree trunk, outdoors at night, then silence", duration: 1.5, takes: 6, range: [0.15, 1.6] },
+  { id: "src.morph", ...SRC, prompt: "A lone coyote howl at night that goes on far too long and slowly turns into a woman's long scream, then stops suddenly, natural field recording, no music", duration: 12, takes: 3, range: [4, 12.2] },
+]

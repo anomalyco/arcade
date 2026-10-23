@@ -41,6 +41,8 @@ export type CreatureState = {
   /** Next look for a light to cross while due (s). */
   tryAt: number
   seq: number
+  /** Where it last crossed (the middle of its path) and when, so the woods can remember it (`far.taken`). */
+  last?: { x: number; z: number; at: number }
 }
 
 /** The creature's knobs (in `FEEL`): off by default until Kit has seen it; a room runs the defaults. */
@@ -239,5 +241,6 @@ function fire(ds: DistantState, plan: CreaturePlan, t: number, feel: CreatureFee
   cs.next = t + (CREATURE_INTERVAL * (0.6 + 0.8 * nextRandom(cs.rng))) / Math.max(feel.creatureRate, 0.05)
   cs.tryAt = cs.next
   ds.busyUntil = Math.max(ds.busyUntil, t + plan.dur + CREATURE_QUIET)
+  cs.last = { x: Math.round(((plan.x0 + plan.x1) / 2) * 100) / 100, z: Math.round(((plan.z0 + plan.z1) / 2) * 100) / 100, at: Math.round(t * 1000) / 1000 }
   return { kind: "creature", at: Math.round(t * 1000) / 1000, x0: plan.x0, z0: plan.z0, x1: plan.x1, z1: plan.z1, dur: plan.dur, seed: plan.seed, seq: cs.seq++ }
 }
