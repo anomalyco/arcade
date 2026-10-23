@@ -56,6 +56,7 @@ The table below shows which shared modules each game and the Lab import. `script
 
 | Shared module (`@arcade/kit` / `@arcade/knobs`) | Responsibility | Getaway | Blackout | Outbreak | Carrier | Lab | Brawl | Archers |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| `sim/replay` | Seeded input recordings, per-tick state hashes and first-divergence golden checks | — | — | Yes | — | — | — | — |
 | `sim/rng` | Seeded PRNG (`Rng`, `mulberry32`, `seedOf`, `hash2`, `hash3`) | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
 | `sim/geom` | `RectGrid`, DDA `raycast`/`clearLine`, `pushOut`, `MinHeap` | — | Yes | Yes | — | Yes | Yes | — |
 | `sim/obb` | 2D SAT manifold and Box2D 2-point block impulse solver | Yes | Yes | Yes | — | — | — | — |
