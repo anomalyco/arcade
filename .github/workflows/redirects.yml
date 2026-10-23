@@ -24,11 +24,13 @@ jobs:
         working-directory: redirects
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.4.4"
       - run: bun install --frozen-lockfile
-      - run: bun run check
+      - run: bun ../scripts/check-changed.ts
       - name: Deploy
         if: github.event_name != 'pull_request'
         env:

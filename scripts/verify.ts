@@ -152,6 +152,7 @@ function targetSteps(target: Target, root: string, { dedupeKit }: { dedupeKit: b
         if (target.game && !/--parallel\b/.test(cmd)) cmd = cmd.replace(/^bun test\b/, `bun test --parallel=${testWorkers}`)
         if (!/--max-concurrency\b/.test(cmd)) cmd = cmd.replace(/^bun test\b/, "bun test --max-concurrency=4")
         if (!/--timeout\b/.test(cmd)) cmd = cmd.replace(/^bun test\b/, "bun test --timeout=20000")
+        if (!all) cmd = cmd.replace(/^bun test\b/, `bun ${$.escape(join(repo, "scripts/test-changed.ts"))}`)
       } else if (/^vite build\b/.test(cmd)) kind = "build"
       const id = tag(kind === "typecheck" ? `typecheck ${cmd.match(/-p\s+(\S+)/)?.[1] ?? "tsconfig.json"}` : kind)
       steps.push({ id, cwd, cmd, deps: kind === "other" && build ? [...prep, build] : [...prep], kind })
@@ -191,7 +192,8 @@ async function run(steps: Step[], root: string): Promise<Result[]> {
   const pending = new Map(steps.map((s) => [s.id, s]))
   const running = new Set<Promise<void>>()
   const active = new Map<string, string>()
-  const env = { ...process.env, PATH: `${join(root, "node_modules/.bin")}:${process.env.PATH}`, FORCE_COLOR: "0" }
+  const env = { ...process.env, PATH: `${join(root, "node_modules/.bin")}:${process.env.PATH}`, FORCE_COLOR: "0",
+    ARCADE_TEST_BASE: base, ...(changedList === undefined ? {} : { ARCADE_VERIFY_CHANGED_FILE: resolve(changedList) }) }
   const start = performance.now()
   // Start the long poles first: test suites, then typechecks.
   const weight = (s: Step) => ({ test: 0, typecheck: 1 })[s.kind] ?? 2
