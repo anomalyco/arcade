@@ -256,7 +256,12 @@ export class ShellView {
       for (const el of this.card.querySelectorAll<HTMLInputElement>("[data-voice]")) {
         const kind = el.dataset.voice
         if (kind === "enabled") el.checked = voice.enabled
-        if (kind === "volume" && el.ownerDocument.activeElement !== el) el.value = String(Math.round(voice.volume * 100))
+        if (kind === "volume") {
+          const v = Math.round(voice.volume * 100)
+          if (el.ownerDocument.activeElement !== el) el.value = String(v)
+          const out = el.parentElement?.querySelector("output")
+          if (out) out.textContent = `${v}%`
+        }
       }
       for (const b of this.card.querySelectorAll<HTMLButtonElement>("[data-act=voice-mode]")) b.setAttribute("aria-pressed", String(b.dataset.mode === voice.mode))
       const mic = this.card.querySelector<HTMLElement>("[data-act=voice-mic]")
@@ -399,7 +404,7 @@ export class ShellView {
     if (!v.enabled) return `<div class="as-head">Voice</div>${toggle}${status}`
     const players = this.lobby?.players.filter((p) => !p.you).map((p) => `<label class="as-field"><span>Mute ${esc(p.name || "…")}</span><input type="checkbox" data-voice-player="${esc(p.id)}" /><i></i></label>`).join("") ?? ""
     const mode = `<div class="as-field"><span>Nearby voice</span><div class="as-seg as-seg2">${(["open", "push"] as const).map((m) => `<button data-act="voice-mode" data-mode="${m}" aria-pressed="${v.mode === m}">${m === "open" ? "Open mic" : "Push to talk"}</button>`).join("")}</div></div>`
-    return `<div class="as-head">Voice</div>${toggle}${status}<label class="as-field"><span>Voice volume</span><input type="range" data-voice="volume" min="0" max="100" step="5" /></label>${mode}<div class="as-field"><span>Microphone</span><button class="as-pick as-mute" data-act="voice-mic" aria-pressed="false">Mute mic</button></div>${players}`
+    return `<div class="as-head">Voice</div>${toggle}${status}<label class="as-field"><span>Voice volume</span><input type="range" data-voice="volume" min="0" max="100" step="5" /><output></output></label>${mode}<div class="as-field"><span>Microphone</span><button class="as-pick as-mute" data-act="voice-mic" aria-pressed="false">Mute mic</button></div>${players}`
   }
 
   private rowHtml(section: string, r: ShellRow): string {
@@ -469,7 +474,11 @@ export class ShellView {
     const t = e.target as HTMLInputElement
     if (t.dataset.voice) {
       if (t.dataset.voice === "enabled") void this.o.voice?.setEnabled(t.checked)
-      if (t.dataset.voice === "volume") this.o.voice?.setVolume(Number(t.value) / 100)
+      if (t.dataset.voice === "volume") {
+        this.o.voice?.setVolume(Number(t.value) / 100)
+        const out = t.parentElement?.querySelector("output")
+        if (out) out.textContent = `${t.value}%`
+      }
       return
     }
     if (t.dataset.voicePlayer) return this.o.voice?.mute(t.dataset.voicePlayer, t.checked)
