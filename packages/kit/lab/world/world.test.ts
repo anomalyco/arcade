@@ -6,7 +6,7 @@ import { CHARACTER_AT, WORLD_ORIGIN, buildWorld, worldClock, worldLights } from 
 import { WORLD_TABS, createWorldSection } from "./section"
 import { WORLD_DEFAULTS, createDebugWorld } from "./world"
 
-const context = { device: {}, stage: { eye: new Float32Array(3), viewProj: new Float32Array(16), frameTarget() {} }, particles: { count: 0 }, sync() {} } as unknown as LabContext
+const context = { device: {}, stage: { eye: new Float32Array(3), viewProj: new Float32Array(16), frameTarget() {}, updateCamera() {} }, particles: { count: 0 }, sync() {} } as unknown as LabContext
 const make = () => {
   const world = createDebugWorld(context)
   return { world, section: createWorldSection(context, world) }
@@ -41,9 +41,9 @@ describe("the base debug world", () => {
 describe("the Look and world lab", () => {
   test("one tab per idea, and every setting has exactly one control", () => {
     const { section } = make()
-    expect(WORLD_TABS.map(t => t.label)).toEqual(["Look", "Light", "Sky", "Weather", "Materials", "Vegetation"])
+    expect(WORLD_TABS.map(t => t.label)).toEqual(["Look", "Light", "Sky", "Weather", "Materials", "Vegetation", "Screen"])
     const groups = new Set(section.controls.map(c => c.group))
-    expect([...groups].sort()).toEqual(["Clock & light", "Look", "Materials", "Preset", "Sky", "Vegetation", "Weather"])
+    expect([...groups].sort()).toEqual(["Clock & light", "Look", "Materials", "Preset", "Screen", "Sky", "Vegetation", "Weather"])
     const keys = section.controls.filter(c => c.type !== "action").map(c => c.key)
     expect(new Set(keys).size).toBe(keys.length)
     for (const key of keys) expect({ key, bound: key in section.settings }).toEqual({ key, bound: true })
@@ -65,6 +65,20 @@ describe("the Look and world lab", () => {
     expect(world.look.preset).toBe("noir")
     section.applyPreset("day")
     expect({ look: world.look.preset, weather: world.weather.preset, tree: world.vegetation.treePreset, grass: world.vegetation.grassPreset, hour: world.state.hour }).toEqual({ look: "current", weather: "clear", tree: "oak", grass: "lawn", hour: 13 })
+  })
+
+  test("leaving the screen bench's indoor camera goes back to the street view", () => {
+    const targets: number[][] = []
+    const stage = { ...context.stage, frameTarget: (x: number, y: number, z: number, d: number) => { targets.push([x, y, z, d]) } }
+    const ctx = { ...context, stage } as unknown as LabContext
+    const world = createDebugWorld(ctx)
+    const section = createWorldSection(ctx, world)
+    section.applyPreset("screen-bench")
+    section.applyPreset("night-lamps")
+    expect(targets.length).toBe(2)
+    expect(targets[1]![3]).toBeGreaterThan(5)
+    section.applyPreset("dusk")
+    expect(targets.length).toBe(2)
   })
 
   test("export and import round-trip a versioned preset, and a bad file changes nothing", () => {

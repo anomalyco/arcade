@@ -20,6 +20,8 @@ import { applyOutbreakDayNight } from "../day-night"
 import { BloodStains, setCurrentBloodStains } from "../blood/stains"
 import { DetailsPresenter, setCurrentDetails } from "../details/presenter"
 import { townNight, type TouchFrame } from "../details/touches"
+import type { DetailSite } from "../details/placement"
+import { TvPicture } from "../details/tv-picture"
 import { ClosetView } from "../discovery/closet"
 import { lowBatteryBeam, type BeamLook } from "../discovery/flashlight"
 import { PageGlance } from "../discovery/glance"
@@ -112,6 +114,8 @@ export class OutbreakFrameRenderer {
   readonly nightLights: NightLightsPresenter
   readonly fire: FirePresenter
   readonly details: DetailsPresenter
+  /** Details › Televisions show a picture: the lit set's CRT picture and the light it casts. */
+  private readonly tvPicture: TvPicture
   private readonly softShadows: SoftShadowPresenter
   private readonly lifeSounds = new LifeSounds()
   private readonly volumeSlots: (VolumeInput | null)[] = [null, null, null]
@@ -182,6 +186,7 @@ export class OutbreakFrameRenderer {
     setCurrentFire(this.fire)
     setCurrentFx(this.fx)
     this.details = new DetailsPresenter(this.renderer)
+    this.tvPicture = new TvPicture(this.renderer)
     setCurrentDetails(this.details)
     setWindowPower(this.details.powered)
     this.details.touches.onBolt = this.lifeSounds.bolt
@@ -564,6 +569,13 @@ export class OutbreakFrameRenderer {
     this.fire.gatherLights(fireFrame, camX, camY)
     const fireBatches = this.fire.collect(fireFrame, cam.groundRect(2.8))
     const nightBatches = this.nightLights.collect(session.view, settings.nightLights, cam.groundRect(2.8), camX, camY, day.lamps)
+    // The details pick the lit television while writing their lights; it shows the picture this frame.
+    let tvPlaced = false
+    const tvPicture = (site: DetailSite) => {
+      if (!tvPlaced) this.tvPicture.update(dt, settings.details, site)
+      tvPlaced = true
+      return this.tvPicture.light()
+    }
     const mapLights = this.frameLighting.collectMapAndInteriorLights({
       town,
       day,
@@ -591,11 +603,13 @@ export class OutbreakFrameRenderer {
             cutY,
             interior: inInteriorView,
             night: day.lamps,
+            picture: tvPicture,
           }), max),
           max,
         ),
     })
     count = mapLights.count
+    if (!tvPlaced) this.tvPicture.update(dt, settings.details, null)
     shadowLightCount = mapLights.shadowLightCount
     // Kit particles: the kit fire and world smoke, lit by the beam as a spot and the strongest lamps and fires.
     this.render.fxParticles = this.fx.step({

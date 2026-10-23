@@ -19,6 +19,7 @@ import { buildDetailMeshes, TV_LAMP_SLOT } from "./models"
 import { Casings, CASINGS_MAX, domeLevel, doorPose, laundryPoses, openDoorOf, placeLaundry, type LaundryLine, type OpenDoor, type Pose, type ShotLike } from "./leftovers"
 import { DETAIL_MODELS, placeBuildingDetails, placeCarDetails, placeCrowFlocks, type CruiserSite, type DetailModel, type DetailSite } from "./placement"
 import type { OutbreakDetailSettings } from "./settings"
+import type { TvPictureLight } from "./tv-picture"
 import { LifeTouches, type TouchFrame } from "./touches"
 
 /** Most instances of one detail model drawn in a frame (tape has many short segments). */
@@ -351,7 +352,7 @@ export class DetailsPresenter {
    * The screens' glow, and the nearest television's flicker on its room (clipped to the room like a table lamp)
    * while the camera is inside a house. `night` is the hour's lamp level. Returns the next light slot.
    */
-  writeLights(lights: Float32Array, count: number, max: number, lampPower: Float32Array, s: OutbreakDetailSettings, at: { cutX: number; cutY: number; interior: boolean; night: number }): number {
+  writeLights(lights: Float32Array, count: number, max: number, lampPower: Float32Array, s: OutbreakDetailSettings, at: { cutX: number; cutY: number; interior: boolean; night: number; picture?: (site: DetailSite) => TvPictureLight | null }): number {
     count = this.writeDome(lights, count, max, s, at.night)
     const on = s.worldDetails && this.tvs.length > 0
     const level = this.tvLevelNow
@@ -369,10 +370,13 @@ export class DetailsPresenter {
       }
     }
     if (!best) return count
-    const p = (0.5 * (0.3 + 0.7 * at.night) * s.dtTvPower * tvLevel(best.phase, this.time)) || 0
+    // With Televisions show a picture, this set shows it and its picture sets the colour and the cuts (`tv-picture.ts`).
+    const picture = at.picture?.(best.site) ?? null
+    const p = (0.5 * (0.3 + 0.7 * at.night) * s.dtTvPower * (picture ? picture.level : tvLevel(best.phase, this.time))) || 0
     if (p <= 0.002) return count
     const c = best.clip
-    lights.set([best.x, best.h, best.z, TV_RADIUS, 0.72, 0.8, 0.92, p, c[0], c[1], c[2], TABLE_LAMP_CONE_W, c[3], -1, 0.08, 0], count * LIGHT_FLOATS)
+    const [r, g, b] = picture ? picture.color : [0.72, 0.8, 0.92]
+    lights.set([best.x, best.h, best.z, TV_RADIUS, r, g, b, p, c[0], c[1], c[2], TABLE_LAMP_CONE_W, c[3], -1, 0.08, 0], count * LIGHT_FLOATS)
     this.shown.tvLights = 1
     return count + 1
   }

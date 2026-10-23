@@ -1,3 +1,4 @@
+import { SCREEN_PRESETS } from "@arcade/kit/gpu/screen/settings"
 import type { LabControl } from "@arcade/kit/lab-panel"
 
 /**
@@ -45,6 +46,10 @@ export type OutbreakDetailSettings = {
   dtTvs: number
   /** Brightness of a television's flicker on the room. */
   dtTvPower: number
+  /** The nearest lit television draws a real CRT picture (`@arcade/kit/gpu/screen`) and lights its room with it. Off is Today. */
+  dtTvPicture: boolean
+  /** Which kind of set that picture is on (a `SCREEN_PRESETS` id). */
+  dtTvSet: string
   /** Dogs barking far off at night. */
   dtDistantDogs: boolean
   /** Reroll which buildings get what (separate from the town seed). */
@@ -94,6 +99,8 @@ export const DEFAULT_DETAIL_SETTINGS: OutbreakDetailSettings = {
   dtCrowScare: 5.5,
   dtTvs: 0.35,
   dtTvPower: 1,
+  dtTvPicture: false,
+  dtTvSet: "portable",
   dtDistantDogs: true,
   dtSeed: 0,
   lifeTouches: true,
@@ -130,6 +137,15 @@ export const detailControls: LabControl[] = [
   { key: "dtCrowScare", label: "Crows take off within", group: GROUP, min: 2, max: 12, step: 0.25, unit: "m" },
   { key: "dtTvs", label: "Televisions left on", group: GROUP, min: 0, max: 1, step: 0.05, unit: "" },
   { key: "dtTvPower", label: "Television flicker brightness", group: GROUP, min: 0, max: 3, step: 0.05, unit: "×" },
+  { key: "dtTvPicture", label: "Nearest television shows a picture (off: Today)", group: GROUP, type: "toggle" },
+  {
+    key: "dtTvSet",
+    label: "Television set",
+    group: GROUP,
+    type: "select",
+    options: Object.entries(SCREEN_PRESETS).map(([value, p]) => ({ value, label: p.label })),
+    visible: (s) => s.dtTvPicture === true,
+  },
   { key: "dtDistantDogs", label: "Distant dogs at night", group: GROUP, type: "toggle" },
   { key: "dtSeed", label: "Reroll", group: GROUP, min: 0, max: 99, step: 1, unit: "" },
   { key: "lifeTouches", label: "Life touches (off: Today)", group: LIFE, type: "toggle" },

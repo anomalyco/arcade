@@ -80,7 +80,8 @@ generators (`gpu/foliage.ts`), and lit by a day/dusk/night clock (`worldClock`: 
 practical lamps). There is one world per Lab (`LabContext.world`); its section draws it through `Stage.customRender`.
 
 - **Look and world** (`world` section, station `look-and-world`) holds every knob in Details, tabbed Look, Light,
-  Weather, Materials and Vegetation, with curated presets on top. A preset is a named set of knob values over the
+  Weather, Materials, Vegetation and Screen, with curated presets on top. A preset may also set the camera (CRT in a
+  dark room looks at the screen bench inside the house; the `screen-display` station opens it). A preset is a named set of knob values over the
   defaults (`WORLD_PRESETS` in `world/presets.ts`): Clear day, Golden hour, Dusk, Noir rain, 70s sodium, Painterly,
   Storm night, Foggy dawn, Snow night, Night lamps, Brick and concrete, Autumn yard, Pine and weeds. Reset (or the Clear
   day preset) restores the defaults. `world.preset`, `world.set`, `world.export` and `world.import` drive it; the export

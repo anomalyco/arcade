@@ -3,6 +3,7 @@ import { spotShadowAreaWgsl, spotShadowWgsl } from "../shadows/spot-shadows"
 import { DARKWOOD_BEAM, beamWgsl } from "./beam"
 import { streetLampWgsl } from "./street"
 import { rectEmitterWgsl } from "./rect"
+import { panelEmitterWgsl } from "./panel"
 import type { SceneHooks } from "../shaders"
 
 /**
@@ -100,6 +101,8 @@ export type PhysicalLightOptions = {
   street?: { a: string; b: string }
   /** Compile downward rectangular Lambertian panels (`SceneLight.rect`), with exact diffuse and representative GGX. */
   rect?: boolean
+  /** Compile upright rectangular panels (`SceneLight.panel`, lit screens), with exact diffuse and representative GGX. */
+  panel?: boolean
 }
 
 /** WGSL: BRDF, light shape and environment functions. Needs `common` (Frame, Light, PI) and `ambientAt` before use. */
@@ -223,7 +226,7 @@ export function physicalLightHooks(opts: PhysicalLightOptions = {}): SceneHooks 
   const street = opts.street
   const beam = opts.beam ?? { a: `vec4f(${[d.inner, d.core, d.coreWidth, d.spill].map(num).join(", ")})`, b: `vec4f(${num(d.spillWidth)}, ${num(d.rings)}, 0.0, 0.0)` }
   return {
-    declarations: `${street ? streetLampWgsl : ""}${opts.rect ? rectEmitterWgsl : ""}${physicalLightWgsl}${beamWgsl}${opts.spotShadows ? spotShadowWgsl + (street || opts.rect ? spotShadowAreaWgsl : "") : ""}
+    declarations: `${street ? streetLampWgsl : ""}${opts.rect ? rectEmitterWgsl : ""}${opts.panel ? panelEmitterWgsl : ""}${physicalLightWgsl}${beamWgsl}${opts.spotShadows ? spotShadowWgsl + (street || opts.rect || opts.panel ? spotShadowAreaWgsl : "") : ""}
 fn pbrKnobs() -> vec4f { return ${knobs}; }
 ${street ? `fn pbrStreetA() -> vec4f { return ${street.a}; }
 fn pbrStreetB() -> vec4f { return ${street.b}; }
@@ -244,16 +247,21 @@ fn pbrEnvSpecular(n: vec3f, V: vec3f, rough: f32, f0: vec3f, ao: f32) -> vec3f {
     if(L.cone.w == -3.0) {
       let window=clamp(1.0-pow(d3/max(r,0.001),4.0),0.0,1.0);
       att=select(0.0,power*window*window,world.y<L.pos.y);
+    }` : ""}${opts.panel ? `
+    if(L.cone.w == -4.0) {
+      let window=clamp(1.0-pow(d3/max(r,0.001),4.0),0.0,1.0);
+      att=select(0.0,power*window*window,dot(world-L.pos.xyz,panelNormal(L.cone.z))>0.0);
     }` : ""}${opts.spotShadows ? `
-    if (att > 0.0005) {${street || opts.rect ? `
+    if (att > 0.0005) {${street || opts.rect || opts.panel ? `
       // A street lamp's lens softens its shadows with distance from the caster (contact hardening).
-      var lensR = ${street ? "select(0.0, sqrt(max(0.0,L.cone.z * (L.cone.w - 7.0))) * pbrStreetB().w, L.cone.w >= 6.5)" : "0.0"};${opts.rect ? "\n      if(L.cone.w == -3.0) { lensR=sqrt(L.cone.x*L.cone.y); }" : ""}
+      var lensR = ${street ? "select(0.0, sqrt(max(0.0,L.cone.z * (L.cone.w - 7.0))) * pbrStreetB().w, L.cone.w >= 6.5)" : "0.0"};${opts.rect ? "\n      if(L.cone.w == -3.0) { lensR=sqrt(L.cone.x*L.cone.y); }" : ""}${opts.panel ? "\n      if(L.cone.w == -4.0) { lensR=sqrt(L.cone.x*L.cone.y); }" : ""}
       if (lensR > 0.01) { att *= spotShadowVisArea(i, world, n, lensR, fract(sin(dot(world, vec3f(12.9898, 78.233, 37.719))) * 43758.5453 + F.cam.w * 0.618034)); }
       else { att *= spotShadowVis(i, world, n); }` : `
       att *= spotShadowVis(i, world, n);`}
     }` : ""}`,
-    diffuseTerm: opts.rect ? `var diffuse=max(ndl,0.0)/PI;
-    if(L.cone.w == -3.0) { diffuse=rectIrradiance(L.pos.xyz,L.cone.xy,L.cone.z,world,n)/PI; }` : "let diffuse = max(ndl, 0.0) / PI;",
+    diffuseTerm: opts.rect || opts.panel ? `var diffuse=max(ndl,0.0)/PI;${opts.rect ? `
+    if(L.cone.w == -3.0) { diffuse=rectIrradiance(L.pos.xyz,L.cone.xy,L.cone.z,world,n)/PI; }` : ""}${opts.panel ? `
+    if(L.cone.w == -4.0) { diffuse=panelIrradiance(L.pos.xyz,L.cone.xy,L.cone.z,world,n)/PI; }` : ""}` : "let diffuse = max(ndl, 0.0) / PI;",
     lightLeak: "0.0",
     wallDirectScale: "1.0",
     specularTerm: `if (att * vis > 0.0) {
@@ -270,9 +278,14 @@ fn pbrEnvSpecular(n: vec3f, V: vec3f, rough: f32, f0: vec3f, ao: f32) -> vec3f {
       ${opts.rect ? `if(L.cone.w == -3.0) {
         let rp=rectMirrorPoint(L.pos.xyz,L.cone.xy,L.cone.z,world,reflect(-V,n));
         sd=max(length(rp-world),0.05); sl=(rp-world)/sd; sr=min(L.cone.x,L.cone.y);
+      }` : ""}${opts.panel ? `
+      if(L.cone.w == -4.0) {
+        let pp=panelMirrorPoint(L.pos.xyz,L.cone.xy,L.cone.z,world,reflect(-V,n));
+        sd=max(length(pp-world),0.05); sl=(pp-world)/sd; sr=min(L.cone.x,L.cone.y);
       }` : ""}
       var sp = pbrSpecular(n, V, sl, shin, sd, sr * pbrKnobs().y);${opts.rect ? `
-      if(L.cone.w == -3.0) { sp*=max(sl.y,0.0)/(sd*sd); }` : ""}
+      if(L.cone.w == -3.0) { sp*=max(sl.y,0.0)/(sd*sd); }` : ""}${opts.panel ? `
+      if(L.cone.w == -4.0) { sp*=max(-dot(sl,panelNormal(L.cone.z)),0.0)/(sd*sd); }` : ""}
       out.spec += L.color.rgb * att * vis * sp.x;
       pbrSpecF += L.color.rgb * att * vis * sp.y;
     }`,

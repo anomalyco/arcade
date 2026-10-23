@@ -3,6 +3,8 @@
  * Current look, Oak and Lawn, wet asphalt), one per idea the separate Looks, Lighting, Weather, Materials and
  * Vegetation labs used to show. Add a preset here rather than a new lab. Keys are the world section's setting keys.
  */
+import { SCREEN_CAMERA } from "./scene"
+
 export const WORLD_PRESET_VERSION = 1
 
 export type WorldPresetIdea = "look" | "light" | "sky" | "weather" | "materials" | "vegetation"
@@ -12,6 +14,8 @@ export type WorldPreset = {
   idea: WorldPresetIdea
   note: string
   values: Readonly<Record<string, string | number | boolean>>
+  /** Where the preset looks from (orbit yaw and pitch in radians, distance in metres), when not the street view. */
+  camera?: { target: readonly [number, number, number]; yaw: number; pitch: number; dist: number }
 }
 
 export const WORLD_PRESETS: readonly WorldPreset[] = [
@@ -34,6 +38,7 @@ export const WORLD_PRESETS: readonly WorldPreset[] = [
   { id: "night-lamps", label: "Night lamps", idea: "light", note: "Midnight, dry: streetlamp, porch lamp and the lamp inside only.", values: { hour: 0 } },
   { id: "night-physical", label: "Night lamps, physical", idea: "light", note: "Night lamps under the physical light model: inverse-square pools, the streetlamp's 3D cone, GGX highlights and sky reflections.", values: { hour: 0, lightModel: "physical" } },
   { id: "spot-shadows", label: "Spot shadow maps", idea: "light", note: "Night lamps, physical, with perspective shadow maps for the streetlamp and porch cones: the canopy, car and porch roof cast what plan shadows can't.", values: { hour: 0, lightModel: "physical", spotShadows: 2 } },
+  { id: "screen-bench", label: "CRT in a dark room", idea: "light", note: "Midnight inside the house, lamps off: a CRT television on a workbench is the only light, and the room follows its picture.", values: { hour: 0, lightModel: "physical", lampPower: 0, skyLight: 0.015, exposureEV: 0.6, screen: true, "screen.light": 6 }, camera: SCREEN_CAMERA },
   { id: "dying-lamps", label: "Dying lamps", idea: "light", note: "Midnight with the shared flicker: the sodium streetlamp cycles out and restrikes pink, the porch tube stutters.", values: { hour: 0, flicker: 1.5 } },
   { id: "brick-street", label: "Brick and concrete", idea: "materials", note: "Brick-red walls, dry asphalt, plaza paving, carpet inside.", values: { wall: "brick", street: 5, walk: 7, path: 7, floor: 0, car: "teal" } },
   { id: "autumn", label: "Autumn yard", idea: "vegetation", note: "Maple, an overgrown shrub and an overgrown lawn at 16:00.", values: { hour: 16, treePreset: "maple", bushPreset: "overgrown", grassPreset: "overgrown" } },

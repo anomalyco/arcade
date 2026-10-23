@@ -5,6 +5,8 @@ import type { LabControl, LabSettings } from "../../lab-panel"
 import { WEATHER_PRESETS, WEATHER_PRESET_IDS, createWeatherControls } from "../../weather"
 import { skyControls } from "../../sky/settings"
 import { exposureControls } from "../../weather/exposure"
+import { PROGRAMME_OPTIONS } from "../../gpu/screen/programme"
+import { applyScreenPreset, screenDisplayControls } from "../../gpu/screen/settings"
 import { rainLightingControls } from "../../weather/rain-lighting"
 import type { LabContext, LabSection } from "../types"
 import { PRESET_PICKS, WORLD_PRESETS, WORLD_PRESET_VERSION, worldPreset, type WorldPresetFile } from "./presets"
@@ -18,6 +20,7 @@ export const WORLD_TABS = [
   { label: "Weather", groups: ["Weather"] },
   { label: "Materials", groups: ["Materials"] },
   { label: "Vegetation", groups: ["Vegetation"] },
+  { label: "Screen", groups: ["Screen"] },
 ] as const
 
 type Value = string | number | boolean
@@ -50,7 +53,7 @@ export function createWorldSection(context: LabContext, world: DebugWorld): LabS
   for (const key of Object.keys(world.sky) as (keyof typeof world.sky)[]) {
     def(key, () => world.sky[key], v => { (world.sky as Record<string, Value>)[key] = v })
   }
-  for (const [prefix, object] of [["exposure.", world.exposure], ["rainLight.", world.rainLighting]] as const) {
+  for (const [prefix, object] of [["exposure.", world.exposure], ["rainLight.", world.rainLighting], ["screen.", world.screen]] as const) {
     const values: Record<string, Value> = object
     for (const key of Object.keys(values)) def(prefix + key, () => values[key]!, v => { values[key] = v })
   }
@@ -101,6 +104,14 @@ export function createWorldSection(context: LabContext, world: DebugWorld): LabS
     { key: "spotShadows", label: "Spot shadow maps", group: "Clock & light", subsection: "Physical", type: "range", min: 0, max: MAX_SPOT_SHADOWS, step: 1 },
     { key: "flicker", label: "Lamp flicker and failure", group: "Clock & light", type: "range", min: 0, max: 2, step: 0.05, unit: "×" },
     { key: "playing", label: "Animate", group: "Clock & light" },
+    { key: "skyLight", label: "Sun, moon and sky", group: "Clock & light", type: "range", min: 0, max: 2, step: 0.01, unit: "×" },
+    { key: "exposureEV", label: "Camera exposure", group: "Clock & light", type: "range", min: -3, max: 4, step: 0.1, unit: "EV" },
+
+    { key: "screen", label: "Screen bench", group: "Screen" },
+    { key: "programme", label: "Showing", group: "Screen", type: "select", options: PROGRAMME_OPTIONS, visible: s => s.screen === true },
+    { key: "tube", label: "Failing fluorescent tube", group: "Screen", visible: s => s.screen === true },
+    { key: "bulb", label: "Caged bulb", group: "Screen", visible: s => s.screen === true },
+    ...screenDisplayControls({ group: "Screen", prefix: "screen.", onPreset: id => { applyScreenPreset(world.screen, id); sync() }, onDegauss: () => world.degauss() }),
 
     {
       key: "lookPreset",
@@ -171,12 +182,24 @@ export function createWorldSection(context: LabContext, world: DebugWorld): LabS
     const p = worldPreset(id)
     if (!p) throw new Error(`Unknown world preset "${id}". Valid presets: ${WORLD_PRESETS.map(x => x.id).join(", ")}.`)
     for (const [k, v] of Object.entries(p.values)) validate(k, v)
+    const cameraBefore = worldPreset(preset)?.camera
     world.reset()
     assign(p.values)
     preset = p.id
+    // Leaving a preset that placed the camera (inside the house) goes back to the street view.
+    if (cameraBefore && !p.camera && p.idea !== "sky") world.frame()
     if (p.idea === "sky") {
       stage.camPitch = -0.3
       stage.frameTarget(WORLD_FOCUS[0], 3, WORLD_FOCUS[2], 8)
+    }
+    if (p.camera) {
+      const c = p.camera
+      stage.camYaw = c.yaw
+      stage.camPitch = c.pitch
+      stage.frameTarget(c.target[0], c.target[1], c.target[2], c.dist)
+      // Inside a room: closer than the orbit's usual 4 m floor.
+      stage.camDist = stage.targetDist = c.dist
+      stage.updateCamera()
     }
     sync()
   }
