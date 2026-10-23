@@ -434,13 +434,13 @@ export class FlightModule {
         j.kind = f.vehicle
         j.flying = f.phase === "flying"
         const vapour = juice ? juice.jet(-1, m, j) : this.flight.vapour
-        juice?.streaks(j, f.cam.mode === "cockpit")
+        juice?.own(j)
         fx.plane(-1, m, this.pose.throttle, this.pose.burner, vapour, f.vehicle)
       }
       w.setOwnModel(f.phase === "flying" || f.phase === "landing" ? m : null)
     } else {
       w.setOwnModel(null)
-      juice?.streaks(null, false)
+      juice?.own(null)
     }
     this.audio.own(airborne ? f : null)
     // A crash breaks the jet up where it hit (once). A jet that was shot down already has its breakup and burning

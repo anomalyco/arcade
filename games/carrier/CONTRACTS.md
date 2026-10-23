@@ -535,7 +535,7 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   catapult z: receivers place it on their own copy of the hull), 1 = flying, 2 = crashed. Remote jets are drawn
   120 ms behind with Hermite position and slerped orientation (`flight/remote-planes.ts`). A pilot reconnecting
   mid-flight comes back on deck (the jet was lost with the connection).
-- Flight juice (`src/flight/juice.ts`, `src/render/flight-fx.ts`): air streaks and the burner FOV kick for the pilot's
+- Flight juice (`src/flight/juice.ts`, `src/render/flight-fx.ts`): the burner FOV kick for the pilot's
   view, wingtip and over-wing vapour from g and angle of attack, the vapour cone and shock ring at 0.9 × the type's
   burner top speed, the burner's light-up pulse and flicker (`plane-fx.ts`), heat shimmer (the composite's
   `heat` sources, `post.ts`, written through `renderer.heat`) and sea spray plus a short wake below 30 m, for every

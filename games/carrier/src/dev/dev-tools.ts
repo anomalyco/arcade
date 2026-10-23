@@ -74,7 +74,7 @@ export function installDevTools(ctx: DevToolsContext) {
     radarSection,
     // FEEL: the flight camera's lean, lag, kicks and the g-load grey-out (src/flight/feel.ts).
     feelSection,
-    // JUICE: speed streaks, vapour, the vapour cone, burner, heat shimmer and sea spray (src/render/flight-fx.ts).
+    // JUICE: vapour, the vapour cone, burner, heat shimmer and sea spray (src/render/flight-fx.ts).
     juiceSection,
     // FEEDBACK: damage and reward feedback (canopy, damage edge, kill moment, callouts, close calls) and previews.
     feedbackSection(ctx.flight),

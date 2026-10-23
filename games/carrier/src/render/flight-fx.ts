@@ -9,14 +9,6 @@ import type { Renderer, ScenePass } from "./renderer"
  * m/s, angles in degrees, times in seconds.
  */
 export type FlightFxSettings = {
-  /** Air streaks past the camera, from this airspeed to full at `streakFull`. */
-  streaks: boolean
-  streakStart: number
-  streakFull: number
-  streakAlpha: number
-  streakCount: number
-  /** Streak length as the time a point of air takes to cross it (s): the motion-blur shutter. */
-  streakShutter: number
   /** The FOV kick on afterburner light-up and on the vapour cone (degrees, on top of the camera's own boost FOV). */
   fovKick: number
   /** Wingtip trails and over-wing condensation: the load factor and angle of attack where they start and peak. */
@@ -43,12 +35,6 @@ export type FlightFxSettings = {
 }
 
 export const FLIGHT_FX_DEFAULTS: Readonly<FlightFxSettings> = {
-  streaks: true,
-  streakStart: 95,
-  streakFull: 215,
-  streakAlpha: 0.24,
-  streakCount: 150,
-  streakShutter: 0.045,
   fovKick: 2.5,
   vapourG: 7,
   vapourFullG: 13,
@@ -69,12 +55,6 @@ export const FLIGHT_FX_DEFAULTS: Readonly<FlightFxSettings> = {
 }
 export const FLIGHT_FX: FlightFxSettings = { ...FLIGHT_FX_DEFAULTS }
 export const FLIGHT_FX_CONTROLS: LabControl[] = [
-  { key: "streaks", label: "Air streaks", group: "Speed", type: "toggle" },
-  { key: "streakStart", label: "Streaks from", group: "Speed", min: 0, max: 240, step: 5, unit: "m/s" },
-  { key: "streakFull", label: "Streaks full at", group: "Speed", min: 60, max: 260, step: 5, unit: "m/s" },
-  { key: "streakAlpha", label: "Streak opacity", group: "Speed", min: 0, max: 1, step: 0.01 },
-  { key: "streakCount", label: "Streak count (High)", group: "Speed", min: 0, max: 400, step: 10 },
-  { key: "streakShutter", label: "Streak length (shutter)", group: "Speed", min: 0.005, max: 0.15, step: 0.005, unit: "s" },
   { key: "fovKick", label: "FOV kick on light-up", group: "Speed", min: 0, max: 8, step: 0.1, unit: "°" },
   { key: "vapourG", label: "Vapour from", group: "Vapour", min: 1, max: 12, step: 0.1, unit: "g" },
   { key: "vapourFullG", label: "Vapour full at", group: "Vapour", min: 2, max: 16, step: 0.1, unit: "g" },
@@ -118,11 +98,10 @@ const WINGS: Record<VehicleKind, Wing> = {
 
 const FLOATS = 7
 const MAX_VERTS = 24_000
-const MAX_STREAKS = 400
 const CONE_SEGS = 28
 const CONE_RINGS = 6
 const RING_SEGS = 40
-const KIND = { streak: 0, wing: 1, cone: 2, ring: 3 } as const
+const KIND = { wing: 1, cone: 2, ring: 3 } as const
 
 const WGSL = /* wgsl */ `
 ${FRAME_BINDING_WGSL}
@@ -158,14 +137,7 @@ fn vnoise(p: vec2f) -> f32 {
   let lit = F.sunColor.rgb * (F.sunDir.w * 0.55 + F.sunColor.w * 1.1);
   var a = 0.0;
   var c = lit;
-  if (o.kind < 0.5) {
-    // Air streak: x 0 head .. 1 tail, y across. A thin bright line that tapers off behind.
-    let across = 1.0 - o.uv.y * o.uv.y;
-    a = o.a * across * across * (1.0 - o.uv.x) * smoothstep(0.0, 0.08, o.uv.x);
-    let dir = normalize(o.world - F.eye.xyz);
-    c = mix(hazeColor(dir), lit, 0.5) * 1.25;
-    return vec4f(c * a, a * 0.35);
-  } else if (o.kind < 1.5) {
+  if (o.kind < 1.5) {
     // Over-wing condensation: x spanwise, y chordwise (0 leading edge); tufts streaming aft, soft at every edge.
     let n = vnoise(vec2f(o.uv.x * 7.0, o.uv.y * 3.0 - t * 9.0)) * 0.6 + vnoise(vec2f(o.uv.x * 19.0, o.uv.y * 7.0 - t * 17.0)) * 0.4;
     let edge = smoothstep(0.0, 0.25, o.uv.y) * (1.0 - smoothstep(0.55, 1.0, o.uv.y)) * smoothstep(0.0, 0.12, o.uv.x) * (1.0 - smoothstep(0.75, 1.0, o.uv.x));
@@ -190,9 +162,9 @@ type Cone = { age: number; strength: number }
 type Ring = { x: number; y: number; z: number; dx: number; dy: number; dz: number; age: number; strength: number }
 
 /**
- * Flight juice on the GPU ("alpha" slot): air streaks past the camera, over-wing condensation in hard pulls, the vapour
+ * Flight juice on the GPU ("alpha" slot): over-wing condensation in hard pulls, the vapour
  * cone when a jet passes its cone speed and the shock ring it leaves. One premultiplied pipeline, geometry built on the
- * CPU each frame (a few thousand vertices). Per frame: `begin(eye, dt)`, `streaks(...)`, `wing(...)` / `cone(...)`
+ * CPU each frame (a few thousand vertices). Per frame: `begin(eye, dt)`, `wing(...)` / `cone(...)`
  * per jet, then `upload()`.
  */
 export class FlightFx implements ScenePass {
@@ -203,12 +175,8 @@ export class FlightFx implements ScenePass {
   private drawn = 0
   private eye = [0, 0, 0]
   private dt = 0
-  /** Streak particles: fixed points in the air, respawned ahead of the camera. */
-  private pts = new Float32Array(MAX_STREAKS * 3)
-  private live = 0
   private cones = new Map<number, Cone>()
   private rings: Ring[] = []
-  private seed = 0x9e3779b9
 
   constructor(private renderer: Renderer) {
     const ctx = renderer.context
@@ -240,16 +208,6 @@ export class FlightFx implements ScenePass {
     })
   }
 
-  private rnd(): number {
-    // xorshift32: cheap and allocation free.
-    let x = this.seed
-    x ^= x << 13
-    x ^= x >>> 17
-    x ^= x << 5
-    this.seed = x >>> 0
-    return this.seed / 4294967296
-  }
-
   begin(eye: ArrayLike<number>, dt: number): void {
     this.eye[0] = eye[0]!
     this.eye[1] = eye[1]!
@@ -275,89 +233,6 @@ export class FlightFx implements ScenePass {
   private quad(p: ArrayLike<number>, uv: ArrayLike<number>, al: ArrayLike<number>, kind: number): void {
     if (this.n + 6 > MAX_VERTS) return
     for (const i of [0, 1, 2, 0, 2, 3]) this.vert(p[i * 3]!, p[i * 3 + 1]!, p[i * 3 + 2]!, uv[i * 2]!, uv[i * 2 + 1]!, al[i]!, kind)
-  }
-
-  /**
-   * Air streaks for the camera flying at (vx, vy, vz): points fixed in the air ahead are drawn as short motion-blurred
-   * lines while they rush past. `cockpit` keeps them clear of the canopy frame.
-   */
-  streaks(vx: number, vy: number, vz: number, burner: number, cockpit: boolean): void {
-    const s = FLIGHT_FX
-    const speed = Math.hypot(vx, vy, vz)
-    const on = s.streaks ? smooth((speed - s.streakStart) / Math.max(1, s.streakFull - s.streakStart)) : 0
-    const want = on > 0.01 ? Math.min(MAX_STREAKS, Math.round(s.streakCount * qualityScale)) : 0
-    if (!want || speed < 1) {
-      this.live = 0
-      return
-    }
-    const dx = vx / speed
-    const dy = vy / speed
-    const dz = vz / speed
-    // A basis across the flight path for respawning.
-    let ax = -dz
-    let ay = 0
-    let az = dx
-    let al = Math.hypot(ax, az)
-    if (al < 1e-3) {
-      ax = 1
-      az = 0
-      al = 1
-    }
-    ax /= al
-    az /= al
-    const bx = dy * az - dz * ay
-    const by = dz * ax - dx * az
-    const bz = dx * ay - dy * ax
-    const [ex, ey, ez] = this.eye as [number, number, number]
-    const reach = 150
-    const p = this.pts
-    const inner = cockpit ? 3 : 5
-    const spawn = (i: number, fresh: boolean) => {
-      const ahead = fresh ? this.rnd() * reach : reach * (0.55 + 0.45 * this.rnd())
-      const r = inner + (40 - inner) * Math.sqrt(this.rnd())
-      const a = this.rnd() * Math.PI * 2
-      const c = Math.cos(a) * r
-      const sn = Math.sin(a) * r
-      p[i * 3] = ex + dx * ahead + ax * c + bx * sn
-      p[i * 3 + 1] = ey + dy * ahead + ay * c + by * sn
-      p[i * 3 + 2] = ez + dz * ahead + az * c + bz * sn
-    }
-    for (let i = this.live; i < want; i++) spawn(i, true)
-    this.live = want
-    const len = speed * s.streakShutter
-    const alpha = s.streakAlpha * on * (1 + 0.4 * burner)
-    for (let i = 0; i < want; i++) {
-      let hx = p[i * 3]! - ex
-      let hy = p[i * 3 + 1]! - ey
-      let hz = p[i * 3 + 2]! - ez
-      const along = hx * dx + hy * dy + hz * dz
-      if (along < -len - 2 || hx * hx + hy * hy + hz * hz > reach * reach * 1.3) {
-        spawn(i, false)
-        hx = p[i * 3]! - ex
-        hy = p[i * 3 + 1]! - ey
-        hz = p[i * 3 + 2]! - ez
-      }
-      const dist = Math.hypot(hx, hy, hz)
-      const fade = (1 - smooth((dist - reach * 0.5) / (reach * 0.5))) * smooth((dist - 1.5) / 5)
-      if (fade < 0.01) continue
-      // Billboard: across = path × view.
-      let sx = dy * hz - dz * hy
-      let sy = dz * hx - dx * hz
-      let sz = dx * hy - dy * hx
-      const sl = Math.hypot(sx, sy, sz) || 1
-      const w = 0.035 + dist * 0.0018
-      sx = (sx / sl) * w
-      sy = (sy / sl) * w
-      sz = (sz / sl) * w
-      const hX = p[i * 3]!
-      const hY = p[i * 3 + 1]!
-      const hZ = p[i * 3 + 2]!
-      const tX = hX - dx * len
-      const tY = hY - dy * len
-      const tZ = hZ - dz * len
-      const a = alpha * fade
-      this.quad([hX - sx, hY - sy, hZ - sz, hX + sx, hY + sy, hZ + sz, tX + sx, tY + sy, tZ + sz, tX - sx, tY - sy, tZ - sz], [0, -1, 0, 1, 1, 1, 1, -1], [a, a, a, a], KIND.streak)
-    }
   }
 
   /** Over-wing condensation on a jet (model matrix `m`), `amount` 0..1. */

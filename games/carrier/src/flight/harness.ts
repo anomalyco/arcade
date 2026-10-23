@@ -276,7 +276,7 @@ async function main() {
       const m = planePass.modelMatrix(pose, new Float32Array(16))
       fx.plane(0, m, pose.throttle, pose.burner, juice.jet(-1, m, jet), flight.vehicle)
     }
-    juice.streaks(pose ? jet : null, cam.mode === "cockpit" && !debug.inspect)
+    juice.own(pose ? jet : null)
     planePass.upload()
     fx.upload()
     wfx.upload()

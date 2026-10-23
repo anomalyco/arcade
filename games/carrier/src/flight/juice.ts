@@ -38,12 +38,12 @@ export type JuiceJet = {
 type Heat = { ax: number; ay: number; bx: number; by: number; ra: number; rb: number; s: number; d: number }
 
 /**
- * The flight juice for every jet drawn (src/render/flight-fx.ts and friends): air streaks and the burner FOV kick for
+ * The flight juice for every jet drawn (src/render/flight-fx.ts and friends): the burner FOV kick for
  * the pilot's own view, wingtip and over-wing vapour from g and angle of attack, the vapour cone and shock ring when a
  * jet passes its cone speed, heat shimmer behind the nozzles (the composite's distortion, post.ts), and spray and a
  * short wake on the sea when flying low. Remote jets get all of it from their relayed state.
  *
- * Per frame: `begin(...)`, `jet(...)` for each jet (it returns the wingtip vapour for PlaneFx), `streaks(...)` for the
+ * Per frame: `begin(...)`, `jet(...)` for each jet (it returns the wingtip vapour for PlaneFx), `own(...)` for the
  * pilot's own jet, then `end()`. Add it after the carriers' Wake (its BoatWake draws onto their wake field).
  */
 export class FlightJuice {
@@ -100,17 +100,11 @@ export class FlightJuice {
     this.kick *= Math.exp(-dt / 0.35)
   }
 
-  /** The pilot's own view: streaks past the camera (flying at the jet's velocity) and the light-up kick. */
-  streaks(j: JuiceJet | null, cockpit: boolean): void {
-    if (!j || !j.flying) {
-      this.fx.streaks(0, 0, 0, 0, cockpit)
-      this.ownBurner = false
-      return
-    }
-    const lit = j.burner > 0.5
+  /** The pilot's own jet: the afterburner light-up FOV kick. */
+  own(j: JuiceJet | null): void {
+    const lit = !!j && j.flying && j.burner > 0.5
     if (lit && !this.ownBurner) this.kick = Math.max(this.kick, 1)
     this.ownBurner = lit
-    this.fx.streaks(j.vx, j.vy, j.vz, j.burner, cockpit)
   }
 
   /** One jet (model matrix `m`). Returns its wingtip vapour 0..1 (PlaneFx.plane's `vapour`). */
