@@ -60,7 +60,7 @@ try {
   check(page.url() === `${origin}/arcade/getaway/dev.html`, `Entry redirect: ${page.url()}`)
   check(await page.locator(".hub-env").textContent() === "Local", "Environment label")
   const links = Object.fromEntries(await page.locator("a.game").evaluateAll(cards => cards.map(card => [(card as HTMLElement).dataset.game, card.getAttribute("href")])))
-  check(JSON.stringify(links) === JSON.stringify({ getaway: "/arcade/getaway/", blackout: "/arcade/blackout/", wings: "https://anoma.ly/arcade/wings/", carrier: "/arcade/carrier/", outbreak: "/arcade/outbreak/" }), `Game links ${JSON.stringify(links)}`)
+  check(JSON.stringify(links) === JSON.stringify({ getaway: "/arcade/getaway/", blackout: "/arcade/blackout/", carrier: "/arcade/carrier/", outbreak: "/arcade/outbreak/" }), `Game links ${JSON.stringify(links)}`)
   for (const card of await page.locator("[data-prototypes] a").all()) check(!await card.isVisible(), "Prototype promoted")
   check(await page.getByText("bun run dev --workers").isVisible(), "Workers note")
   await page.screenshot({ path: join(out, "games.png") })

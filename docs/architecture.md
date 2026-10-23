@@ -1,6 +1,6 @@
 # Engine Architecture
 
-`arcade` is a Bun workspace monorepo where one source package, `@arcade/kit` (`packages/kit/`, ~65k lines of TypeScript), and a vendored control-panel library, `@arcade/knobs` (`packages/knobs/`, ~17.5k lines), power four live WebGPU multiplayer games (`getaway`, `blackout`, `outbreak`, `carrier`) and the shared authoring workbench (`lab`). Every workspace package exports `.ts` source directly with no intermediate build step; Vite and Wrangler bundle only the modules each game imports. Game rules, procedural maps, meshes, HUDs, and art direction stay inside `games/<name>/`. `games/wings/`, `landing/`, and `redirects/` remain independent projects with their own lockfiles.
+`arcade` is a Bun workspace monorepo where one source package, `@arcade/kit` (`packages/kit/`, ~65k lines of TypeScript), and a vendored control-panel library, `@arcade/knobs` (`packages/knobs/`, ~17.5k lines), power four live WebGPU multiplayer games (`getaway`, `blackout`, `outbreak`, `carrier`) and the shared authoring workbench (`lab`). Every workspace package exports `.ts` source directly with no intermediate build step; Vite and Wrangler bundle only the modules each game imports. Game rules, procedural maps, meshes, HUDs, and art direction stay inside `games/<name>/`. `landing/` and `redirects/` remain independent projects with their own lockfiles.
 
 ```mermaid
 flowchart TD
@@ -50,57 +50,57 @@ Lot adds `gpu/gltf` and `gpu/textured-mesh`: static GLB node transforms, meshopt
 
 ## 3. Shared module adoption across games
 
-The table below shows which shared modules each game and the Lab import. `scripts/architecture-map.ts` generates this table from source imports, and `packages/kit/architecture-map.test.ts` checks it during `bun run check:packages` so it cannot drift. Run `bun scripts/architecture-map.ts --write` after adding or removing `@arcade/kit` imports in a game. (`Wings` is an independent Three.js project with its own lockfile and imports no `@arcade/kit` modules.)
+The table below shows which shared modules each game and the Lab import. `scripts/architecture-map.ts` generates this table from source imports, and `packages/kit/architecture-map.test.ts` checks it during `bun run check:packages` so it cannot drift. Run `bun scripts/architecture-map.ts --write` after adding or removing `@arcade/kit` imports in a game.
 
 <!-- ARCHITECTURE-MAP:START -->
 
-| Shared module (`@arcade/kit` / `@arcade/knobs`) | Responsibility | Getaway | Blackout | Outbreak | Carrier | Lab | Wings | Brawl | Archers |
-| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| `sim/rng` | Seeded PRNG (`Rng`, `mulberry32`, `seedOf`, `hash2`, `hash3`) | Yes | Yes | Yes | Yes | Yes | — | Yes | Yes |
-| `sim/geom` | `RectGrid`, DDA `raycast`/`clearLine`, `pushOut`, `MinHeap` | — | Yes | Yes | — | Yes | — | Yes | — |
-| `sim/obb` | 2D SAT manifold and Box2D 2-point block impulse solver | Yes | Yes | Yes | — | — | — | — | — |
-| `sim/ai` | Shared steering, sight checks, and tactical/zombie AI helpers | — | Yes | Yes | — | — | — | — | — |
-| `sim/flow-field` | Shared per-goal flow fields (`FlowFieldCache`) over `GridNav` flat grids or chunk tiles | — | — | Yes | — | — | — | — | — |
-| `sim/ledger` | Deterministic item store, containers, and crafting rule engine | — | — | Yes | — | — | — | — | — |
-| `sim/matchmaking` | `SharedMatchmaker`, room codes, and player name sanitization | Yes | Yes | Yes | Yes | — | — | Yes | Yes |
-| `sim/move` | Top-down circle body step with eased velocity and substepped push-out | — | Yes | — | — | — | — | Yes | — |
-| `sim/{abilities,props,boids}` | Data-driven, server-authoritative abilities (casts, projectiles, swarms, zones, dashes, grabs), shoveable OBB props, and a presentation boids flock | — | — | — | — | — | — | Yes | — |
-| `server/*` | Room and Lobby Durable Objects (`RoomObject`, `LobbyObject`) and the room game Worker router | Yes | Yes | Yes | Yes | — | — | Yes | Yes |
-| `net/*` | Room seats/idle/tick core and client socket, binary framing, seat tokens, `JitterBuffer`, `SnapshotBuffer`, `Predictor`, `Smoother` | Yes | Yes | Yes | Yes | — | — | Yes | Yes |
-| `gpu/wgsl` | Typed WGSL structs (`wgslStruct`), slot specialization (`wgslSlot`), and snippet composition | Yes | Yes | Yes | Yes | Yes | — | Yes | — |
-| `gpu/mesh` | 24-byte packed vertex builder (`Mesh`, `packVerts`) | — | Yes | Yes | Yes | Yes | — | Yes | Yes |
-| `gpu/{cull,targets,pass-graph,reactive}` | Frustum/shadow-sweep culling, contiguous draw merging, `ScenePass` slots, MSAA/HDR targets, 5-level bloom, and the TAA reactive-mask contract | Yes | Yes | Yes | Yes | Yes | — | Yes | Yes |
-| `gpu/{renderer,shaders,level}` & `limits` | Polar shadows, cutaway chunks, 4x MSAA HDR, and 5-level bloom | — | Yes | Yes | — | Yes | — | Yes | Yes |
-| `gpu/{fog-scatter,volume-pass,fog-blur}` | Analytic height fog, fog-sky skylight, equiangular lamp scattering and wet streaks, drifting fog bank, lit cloud deck and fog-depth blur; volume slots with depth, history, transmittance and depth-aware upsample | — | Yes | Yes | — | Yes | — | Yes | — |
-| `gpu/{boot,scene-frame}` | WebGPU canvas boot, and frame inputs for small arenas: placed lights, box occluders, flat floor lighting | — | Yes | — | — | Yes | — | Yes | Yes |
-| `gpu/lights/{physical,beam,flicker,street}` | Opt-in physical lights and surfaces (GGX, 3D spot cones, torch beam profile, sky reflections, specular AA), street lamps as lens emitters with roadway photometry, and stateless lamp flicker and failure | — | — | Yes | — | Yes | — | — | — |
-| `gpu/shadows/spot-shadows` | Perspective shadow maps for the few most important spot lights, re-rendered only when a slot changes | — | — | — | — | Yes | — | — | — |
-| `gpu/gi/plan-bounce` | One bounce of the frame's lights in plan space: per-frame emission, mip chain and cone gather on a world-anchored grid, held by walls | — | — | Yes | — | — | — | — | — |
-| `gpu/shadows/capsule-shadows` | Analytic soft character shadows from rig bone capsules: contact occlusion and a contact-hardening shadow per light and the sun, grid-culled | — | — | Yes | — | — | — | — | — |
-| `gpu/contact-shadows` | Screen-space contact shadows volume slot: a short depth march toward the brightest lights at each pixel, with history | — | — | Yes | — | — | — | — | — |
-| `gpu/reflections/{ssr,surface,wet}` | Screen-space reflections volume slot (Ashwood's march, streak blur and history), HDR-alpha roughness tag, and the shared wet/puddle surface term | — | — | — | — | — | — | — | — |
-| `gpu/{motion,motion-blur,sprite-motion}` | Depth-aware 8-tap shutter gather and actor/sprite velocity history | Yes | Yes | Yes | — | Yes | — | Yes | — |
-| `gpu/{surface-materials,foliage}` & `textures` | Procedural surface recipes, 16-layer WebP array, foliage, and trample | — | Yes | Yes | — | Yes | — | Yes | — |
-| `props/*` | Generated furniture library: catalogue, `.prop` meshes, instanced batches, seeded room placement | — | — | Yes | — | Yes | — | — | — |
-| `look` & `gpu/look-shaders` | `LookSettings` presets and WGSL scene/post grading hooks | — | Yes | Yes | — | Yes | — | Yes | Yes |
-| `gpu/post/camcorder` | Opt-in Camera filter final pass (iPhone, VHS, CRT TV, body cam) on `Renderer.setFinalPass` | — | — | Yes | — | — | — | — | — |
-| `gpu-perf`, `fx/frame-timer` & `quality` | Rolling p50/p95/FPS `PerfSampler`, GPU pass timestamp telemetry and adaptive quality tiers (`GameQuality`) | Yes | Yes | Yes | Yes | Yes | — | Yes | Yes |
-| `fx/{particles,particle-renderer}` | Fixed typed-array particle pool, `Emitter`, and billboard/spark/debris pass | Yes | Yes | Yes | Yes | Yes | — | Yes | Yes |
-| `fx/{volume*,smoke-trail,tyre-renderer}` | Flood-fill volumetric smoke and continuous ribbon tyre trails | Yes | Yes | Yes | — | Yes | — | — | — |
-| `fx/{explosion,projectile-trail,fire-water,splatter*}` | Multi-stage explosions with trailing fragments and water splashes, fire/water jets, and surface blood decals | Yes | Yes | Yes | Yes | Yes | — | Yes | — |
-| `rig` & `human-*` | Shared human skeleton, planted-foot gait, shamble, IK, detachment, pose-diff | — | Yes | Yes | — | Yes | — | Yes | Yes |
-| `avatar/*` | Top-down human avatar adapter: soldier, wizard, zombie and skeleton meshes, weapon clips, ragdolls (soldier and any 15-bone figure), hit-reaction springs | — | Yes | Yes | — | — | — | Yes | Yes |
-| `vehicle/*` | Presentation chassis pose, lamps, tyre emissions, and drivetrain/nitro synth | Yes | Yes | Yes | — | Yes | — | — | — |
-| `client/{controls,key-cap,action-glyphs,chat.css}` | Physical `KeyboardEvent.code` bindings, QWERTY labels, key-cap UI, prompt action glyphs, and chat styling | Yes | Yes | Yes | Yes | Yes | — | Yes | Yes |
-| `client/{input,camera,side-camera,smooth}` & `orbit-gestures` | Top-down `Input`, `Camera` (trauma² shake, directional kick, `HitStop`), rig-agnostic `TraumaShake`, side-view `SideCamera`, and orbit/pan/zoom gestures | — | Yes | Yes | Yes | Yes | — | Yes | Yes |
-| `audio/*` | Web Audio runtime, offline renderer, procedural synth, and `sfx-library` | Yes | Yes | Yes | Yes | Yes | — | Yes | Yes |
-| `sky/*` | Lazy catalogue stars, HDR night sky, textured Moon, astronomical clock and lunar illuminance | — | — | Yes | — | Yes | — | — | — |
-| `weather/*` | Continuous-phase weather sim, wet-surface WGSL, and rain/snow/splash pass | — | — | Yes | — | Yes | — | — | — |
-| `shell` | The player-facing game shell: settings (volume, mute, quality, reduce motion, key labels), title and lobby, Escape menu, leave warning and loading ([game-shell.md](game-shell.md)) | Yes | Yes | Yes | Yes | — | — | Yes | Yes |
-| `lab-panel` & `@arcade/knobs` | Backquote debug overlay and Lab Inspector drawn by `packages/knobs` | Yes | Yes | Yes | Yes | Yes | — | Yes | Yes |
-| `ramps` & `ramp-table` | Gradient and curve settings kept as JSON text, baked into lookup tables for per-frame reads | — | — | Yes | — | Yes | — | — | — |
-| `lab/*` & `compare` | Lab workbench, sections, adapters, A/B compare, variation grid, and stations | Yes | Yes | Yes | — | Yes | — | — | — |
-| `dev-control`, `lab-commands` & `dev-hub` | `LabCommandRegistry`, `/__arcade/control` bridge, `arcade` CLI, tours, and Dev Hub | Yes | Yes | Yes | Yes | Yes | — | Yes | Yes |
+| Shared module (`@arcade/kit` / `@arcade/knobs`) | Responsibility | Getaway | Blackout | Outbreak | Carrier | Lab | Brawl | Archers |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| `sim/rng` | Seeded PRNG (`Rng`, `mulberry32`, `seedOf`, `hash2`, `hash3`) | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
+| `sim/geom` | `RectGrid`, DDA `raycast`/`clearLine`, `pushOut`, `MinHeap` | — | Yes | Yes | — | Yes | Yes | — |
+| `sim/obb` | 2D SAT manifold and Box2D 2-point block impulse solver | Yes | Yes | Yes | — | — | — | — |
+| `sim/ai` | Shared steering, sight checks, and tactical/zombie AI helpers | — | Yes | Yes | — | — | — | — |
+| `sim/flow-field` | Shared per-goal flow fields (`FlowFieldCache`) over `GridNav` flat grids or chunk tiles | — | — | Yes | — | — | — | — |
+| `sim/ledger` | Deterministic item store, containers, and crafting rule engine | — | — | Yes | — | — | — | — |
+| `sim/matchmaking` | `SharedMatchmaker`, room codes, and player name sanitization | Yes | Yes | Yes | Yes | — | Yes | Yes |
+| `sim/move` | Top-down circle body step with eased velocity and substepped push-out | — | Yes | — | — | — | Yes | — |
+| `sim/{abilities,props,boids}` | Data-driven, server-authoritative abilities (casts, projectiles, swarms, zones, dashes, grabs), shoveable OBB props, and a presentation boids flock | — | — | — | — | — | Yes | — |
+| `server/*` | Room and Lobby Durable Objects (`RoomObject`, `LobbyObject`) and the room game Worker router | Yes | Yes | Yes | Yes | — | Yes | Yes |
+| `net/*` | Room seats/idle/tick core and client socket, binary framing, seat tokens, `JitterBuffer`, `SnapshotBuffer`, `Predictor`, `Smoother` | Yes | Yes | Yes | Yes | — | Yes | Yes |
+| `gpu/wgsl` | Typed WGSL structs (`wgslStruct`), slot specialization (`wgslSlot`), and snippet composition | Yes | Yes | Yes | Yes | Yes | Yes | — |
+| `gpu/mesh` | 24-byte packed vertex builder (`Mesh`, `packVerts`) | — | Yes | Yes | Yes | Yes | Yes | Yes |
+| `gpu/{cull,targets,pass-graph,reactive}` | Frustum/shadow-sweep culling, contiguous draw merging, `ScenePass` slots, MSAA/HDR targets, 5-level bloom, and the TAA reactive-mask contract | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
+| `gpu/{renderer,shaders,level}` & `limits` | Polar shadows, cutaway chunks, 4x MSAA HDR, and 5-level bloom | — | Yes | Yes | — | Yes | Yes | Yes |
+| `gpu/{fog-scatter,volume-pass,fog-blur}` | Analytic height fog, fog-sky skylight, equiangular lamp scattering and wet streaks, drifting fog bank, lit cloud deck and fog-depth blur; volume slots with depth, history, transmittance and depth-aware upsample | — | Yes | Yes | — | Yes | Yes | — |
+| `gpu/{boot,scene-frame}` | WebGPU canvas boot, and frame inputs for small arenas: placed lights, box occluders, flat floor lighting | — | Yes | — | — | Yes | Yes | Yes |
+| `gpu/lights/{physical,beam,flicker,street}` | Opt-in physical lights and surfaces (GGX, 3D spot cones, torch beam profile, sky reflections, specular AA), street lamps as lens emitters with roadway photometry, and stateless lamp flicker and failure | — | — | Yes | — | Yes | — | — |
+| `gpu/shadows/spot-shadows` | Perspective shadow maps for the few most important spot lights, re-rendered only when a slot changes | — | — | — | — | Yes | — | — |
+| `gpu/gi/plan-bounce` | One bounce of the frame's lights in plan space: per-frame emission, mip chain and cone gather on a world-anchored grid, held by walls | — | — | Yes | — | — | — | — |
+| `gpu/shadows/capsule-shadows` | Analytic soft character shadows from rig bone capsules: contact occlusion and a contact-hardening shadow per light and the sun, grid-culled | — | — | Yes | — | — | — | — |
+| `gpu/contact-shadows` | Screen-space contact shadows volume slot: a short depth march toward the brightest lights at each pixel, with history | — | — | Yes | — | — | — | — |
+| `gpu/reflections/{ssr,surface,wet}` | Screen-space reflections volume slot (Ashwood's march, streak blur and history), HDR-alpha roughness tag, and the shared wet/puddle surface term | — | — | — | — | — | — | — |
+| `gpu/{motion,motion-blur,sprite-motion}` | Depth-aware 8-tap shutter gather and actor/sprite velocity history | Yes | Yes | Yes | — | Yes | Yes | — |
+| `gpu/{surface-materials,foliage}` & `textures` | Procedural surface recipes, 16-layer WebP array, foliage, and trample | — | Yes | Yes | — | Yes | Yes | — |
+| `props/*` | Generated furniture library: catalogue, `.prop` meshes, instanced batches, seeded room placement | — | — | Yes | — | Yes | — | — |
+| `look` & `gpu/look-shaders` | `LookSettings` presets and WGSL scene/post grading hooks | — | Yes | Yes | — | Yes | Yes | Yes |
+| `gpu/post/camcorder` | Opt-in Camera filter final pass (iPhone, VHS, CRT TV, body cam) on `Renderer.setFinalPass` | — | — | Yes | — | — | — | — |
+| `gpu-perf`, `fx/frame-timer` & `quality` | Rolling p50/p95/FPS `PerfSampler`, GPU pass timestamp telemetry and adaptive quality tiers (`GameQuality`) | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
+| `fx/{particles,particle-renderer}` | Fixed typed-array particle pool, `Emitter`, and billboard/spark/debris pass | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
+| `fx/{volume*,smoke-trail,tyre-renderer}` | Flood-fill volumetric smoke and continuous ribbon tyre trails | Yes | Yes | Yes | — | Yes | — | — |
+| `fx/{explosion,projectile-trail,fire-water,splatter*}` | Multi-stage explosions with trailing fragments and water splashes, fire/water jets, and surface blood decals | Yes | Yes | Yes | Yes | Yes | Yes | — |
+| `rig` & `human-*` | Shared human skeleton, planted-foot gait, shamble, IK, detachment, pose-diff | — | Yes | Yes | — | Yes | Yes | Yes |
+| `avatar/*` | Top-down human avatar adapter: soldier, wizard, zombie and skeleton meshes, weapon clips, ragdolls (soldier and any 15-bone figure), hit-reaction springs | — | Yes | Yes | — | — | Yes | Yes |
+| `vehicle/*` | Presentation chassis pose, lamps, tyre emissions, and drivetrain/nitro synth | Yes | Yes | Yes | — | Yes | — | — |
+| `client/{controls,key-cap,action-glyphs,chat.css}` | Physical `KeyboardEvent.code` bindings, QWERTY labels, key-cap UI, prompt action glyphs, and chat styling | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
+| `client/{input,camera,side-camera,smooth}` & `orbit-gestures` | Top-down `Input`, `Camera` (trauma² shake, directional kick, `HitStop`), rig-agnostic `TraumaShake`, side-view `SideCamera`, and orbit/pan/zoom gestures | — | Yes | Yes | Yes | Yes | Yes | Yes |
+| `audio/*` | Web Audio runtime, offline renderer, procedural synth, and `sfx-library` | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
+| `sky/*` | Lazy catalogue stars, HDR night sky, textured Moon, astronomical clock and lunar illuminance | — | — | Yes | — | Yes | — | — |
+| `weather/*` | Continuous-phase weather sim, wet-surface WGSL, and rain/snow/splash pass | — | — | Yes | — | Yes | — | — |
+| `shell` | The player-facing game shell: settings (volume, mute, quality, reduce motion, key labels), title and lobby, Escape menu, leave warning and loading ([game-shell.md](game-shell.md)) | Yes | Yes | Yes | Yes | — | Yes | Yes |
+| `lab-panel` & `@arcade/knobs` | Backquote debug overlay and Lab Inspector drawn by `packages/knobs` | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
+| `ramps` & `ramp-table` | Gradient and curve settings kept as JSON text, baked into lookup tables for per-frame reads | — | — | Yes | — | Yes | — | — |
+| `lab/*` & `compare` | Lab workbench, sections, adapters, A/B compare, variation grid, and stations | Yes | Yes | Yes | — | Yes | — | — |
+| `dev-control`, `lab-commands` & `dev-hub` | `LabCommandRegistry`, `/__arcade/control` bridge, `arcade` CLI, tours, and Dev Hub | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
 
 <!-- ARCHITECTURE-MAP:END -->
 

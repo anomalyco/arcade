@@ -158,7 +158,6 @@ stateDiagram-v2
 
 **What we have today:**
 - Both `games/getaway/wrangler.jsonc:26` and `games/blackout/wrangler.jsonc:26` already declare `new_sqlite_classes: ["Room"]`.
-- `games/wings/server.ts:178-288` already uses `this.state.storage` + `setAlarm()` for room lifecycle.
 - `games/blackout/server/lobby.ts:14-23` uses `ctx.storage` with `blockConcurrencyWhile`.
 
 **How persistent survival rooms work in `@arcade/server`:**

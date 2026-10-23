@@ -8,7 +8,6 @@ Browser games by Anomaly, served at https://anoma.ly/arcade/.
 | `games/blackout/` | Top-down stealth shooter (WebGPU, Durable Objects) | https://anoma.ly/arcade/blackout/ | `arcade-blackout` |
 | `games/getaway/` | Cops-and-robbers driving chase (WebGPU, Durable Objects) | https://anoma.ly/arcade/getaway/ | `arcade-getaway` |
 | `games/carrier/` | Naval combat: crew a carrier at the helm, in its jets, boat or guns (WebGPU, Durable Objects) | https://anoma.ly/arcade/carrier/ | `arcade-carrier` |
-| `games/wings/` | Multiplayer aerial combat with carrier strike groups (WebGPU, Durable Objects). Off the landing; Carrier replaces it | https://anoma.ly/arcade/wings/ | `arcade-wings` |
 | `redirects/` | 301s from the old `anoma.ly/labs/<game>` URLs to `/arcade/<game>` | — | `arcade-labs-redirects` |
 
 ## Prototypes
@@ -38,7 +37,7 @@ looks, physics and sound (`games/lab`, Worker `arcade-lab`). Old `/arcade/<game>
 
 Getaway, Blackout, Outbreak, Carrier, Brawl, Archers, the Lab and `packages/*` share a Bun workspace and the root `bun.lock`. Install at the root, then run
 checks and development commands in the game you are changing. Shared code is the private `@arcade/kit` source package.
-Wings, landing and redirects keep their own installs and lockfiles.
+Landing and redirects keep their own installs and lockfiles.
 
 `bun run dev` at the root serves every workspace game at its production path on one local origin, with the
 developer hub at `/arcade/getaway/dev.html` (see [docs/dev-hub.md](docs/dev-hub.md)). On Kit's Mac, launch it as
@@ -72,7 +71,7 @@ workflow checks shared code independently. On `main`, each affected game runs it
 ## History
 
 The games were imported with `git subtree add` from their original repositories, so `git log -- games/<name>` shows
-their full history. Blackout came from the `anomalyco/blackout` GitHub repository. Wings came from a local repository.
+their full history. Blackout came from the `anomalyco/blackout` GitHub repository. Wings came from a local repository; Carrier replaced it and its source was removed (see `git log -- games/wings`).
 
 ## Migration notes
 
