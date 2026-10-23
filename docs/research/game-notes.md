@@ -40,6 +40,11 @@ proven animation techniques to animation.md, not here.
   zero and the 60 m signal passes. Head-on torch haze fails the darkness guard even without bloom, so the new
   capture does not pass all p5 guards. The held-map proof waits for its asynchronous print before stepping the
   final frames. See `perf/woods-autoresearch.md` for the fixed ROIs and remaining limits.
+  BARBARA follow-up: a friend 2 m away in your own beam wore a body-sized glow (it was this bloom, not their torch:
+  hiding their torch, lens sprite or beam air left it; your torch or bloom off removed it). `batchHooks` now tags
+  friends and people the same way (lamps, glow and the accent torch lens excepted), and `bloomSource` scales the cap
+  by `1 - alpha` so the MSAA/TAA-mixed silhouette (alpha 0..1) no longer blooms a rim. Proof:
+  `games/barbara/scripts/friend-halo.ts` (variants turn one layer off; `face` aims the friend at you).
 
 - **Separate highlight clipping from bloom, and foliage geometry from shadow motion (Woods, round 5 candidate).**
   The opt-in log shoulder in `forest/post.ts` bounds the peak while preserving RGB ratios: fixed close-bark clipping

@@ -828,4 +828,15 @@ ${forestFlashWgsl}`,
   lightLeak: "0.0",
   wallDirectScale: "1.0",
   surface: "if (mat == 5) { col = tapeFluoresce(col, o.color); } col = fogApply(col, F.cam.xyz, o.world);",
+  // As the forest's own surfaces (its fragmentReturn): a nearby, rough, opaque body marks itself in alpha as no bloom
+  // source (forestPost's bloomSource caps it), so a friend lit by your torch at 2 m reads lit instead of wrapped in a
+  // body-sized glow. Lamps, glow and the torch lens (accent) still bloom; with the highlight shoulder off nothing changes.
+  fragmentReturn: /* wgsl */ `{
+    let reflectRough = clamp(select(1.0, pbrRough, pbrRough >= 0.0), 0.0, 1.0);
+    let near = 1.0 - smoothstep(3.0, 6.0, distance(F.cam.xyz, o.world));
+    if (N.motes.w > 0.5 && near > 0.0 && a >= 0.999 && reflectRough >= 0.4 && mat != ${GPU_MAT.lamp} && mat != ${GPU_MAT.glow} && mat != ${GPU_MAT.accent}) {
+      return vec4f(col, -near);
+    }
+    return vec4f(select(col * a, col, mat == 22 && o.aux >= -1.5), a);
+  }`,
 }, { knobs: "N.pbr", spotShadows: true, beam: { a: "N.beamA", b: "N.beamB" }, env: "mix(fogEnv(dir), fogAmbient(n), rough * rough)" })
