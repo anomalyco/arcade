@@ -1068,8 +1068,7 @@ ${torches ? `${beamWgsl}\n` : ""}${hooks.spotShadows ? `${spotShadowVolumeWgsl}\
 ${hooks.declarations ?? ""}
 fn fogWet(p: vec3f, n: vec3f, footprint: f32) -> f32 { return ${hooks.wet ?? "0.0"}; }
 fn fogRoughness(p: vec3f, n: vec3f) -> f32 { return ${hooks.roughness ?? "0.5"}; }
-${hooks.normal ? `fn fogNormal(p: vec3f) -> vec3f { return ${hooks.normal}; }` : ""}
-${hooks.extraScatter ? `fn fogExtraScatter(ro: vec3f, rd: vec3f, dist: f32, jitter: f32) -> vec3f { return ${hooks.extraScatter}; }` : ""}
+${hooks.normal ? `fn fogNormal(p: vec3f) -> vec3f { return ${hooks.normal}; }` : ""}${hooks.extraScatter ? `\nfn fogExtraScatter(ro: vec3f, rd: vec3f, dist: f32, jitter: f32) -> vec3f { return ${hooks.extraScatter}; }` : ""}
 
 struct VO { @builtin(position) pos: vec4f, @location(0) uv: vec2f }
 @vertex fn vs(@builtin(vertex_index) i: u32) -> VO {
