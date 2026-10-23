@@ -1,4 +1,5 @@
 import {
+  lookFastSceneHooks,
   makeLookPostShader,
   makeLookSceneShader,
   makeSceneShader,
@@ -260,7 +261,7 @@ ${windowRoomWgsl}`,
   lookBaseColor: "select(o.color, outbreakAlbedo, mat == 25)",
 }
 
-function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string {
+function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean, triplanarProp = true): string {
   return /* wgsl */ `
   outbreakFlashMask = 0.0;
   outbreakUnseenAlpha = 0.0;
@@ -347,9 +348,7 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
       col = col / (1.0 + max(vec3f(0.0), col - vec3f(wallKnee)) * mix(1.8, 0.85, sunVal));
     } else if ((mat == 0 || mat == 3 || mat == 10) && o.world.y > 0.03 && o.world.y < 2.68) {
       // Props, doors and cars: band-limited triplanar grain, floor-contact grounding, satin bevel catch and a silhouette rim.
-      if ((mat == 0 || mat == 10) && o.world.y > 0.14 && o.world.y < 2.65) {
-        col *= 1.0 + (evalTriplanarPropMod(o.world, n) - 1.0) * 1.15;
-      }
+      ${triplanarProp ? "if ((mat == 0 || mat == 10) && o.world.y > 0.14 && o.world.y < 2.65) {\n        col *= 1.0 + (evalTriplanarPropMod(o.world, n) - 1.0) * 1.15;\n      }" : ""}
       col *= mix(0.66, 1.0, smoothstep(0.03, 0.44, o.world.y));
       let Vp = normalize(F.cam.xyz - o.world);
       let contourP = clamp(length(n.xz), 0.0, 1.0);
@@ -682,6 +681,21 @@ function buildOutbreakSurfaceWgsl(includeLampAirAndActorShadow: boolean): string
     col = vec3f(fieldDiag.x, fieldDiag.y * 0.35, select(0.0, 0.25, mat == 12));
   }
 `
+}
+
+/** Scene hooks for textured glTF props in Outbreak: normal/ORM/AO lighting in lightSum plus Look & Noir shroud parity. */
+export function outbreakTexturedSceneHooks(variant: LookVariantMode = "noir"): SceneHooks {
+  return lookFastSceneHooks(
+    {
+      ...outbreakSceneHooks,
+      postLightMaterial: undefined,
+      material: `${outbreakSceneHooks.material} outbreakAlbedo = albedo;`,
+      combineLighting: `outbreakPracticalIrr = max(0.0, dot(lit.diff, vec3f(0.2126, 0.7152, 0.0722)) - dot(OL.u5.rgb, vec3f(0.2126, 0.7152, 0.0722)) * (outbreakFlashIrr + outbreakMateIrr)) * GAIN; col = albedo * (amb + direct + moon)`,
+      lookSurface: buildOutbreakSurfaceWgsl(false, false),
+      lookBaseColor: "outbreakAlbedo",
+    },
+    variant,
+  )
 }
 
 /** Slot zero casts from eye height, has no radiance, and is reserved for visibility. */

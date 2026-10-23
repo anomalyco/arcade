@@ -29,8 +29,23 @@ export const TEXTURED_VERTEX_LAYOUT: GPUVertexBufferLayout = {
   ],
 }
 
+/** 12-float instance layout matching `makeSceneShader`'s `Inst` (`posYaw`, `tint`, `extra`). */
+export const TEXTURED_INST_LAYOUT: GPUVertexBufferLayout = {
+  arrayStride: 48,
+  stepMode: "instance",
+  attributes: [
+    { shaderLocation: 5, offset: 0, format: "float32x4" },
+    { shaderLocation: 6, offset: 16, format: "float32x4" },
+    { shaderLocation: 7, offset: 32, format: "float32x4" },
+  ],
+}
+
 export type TexturedPrimitive = {
   vertices: ArrayBuffer
+  /** Kit 12-float instances: position/yaw, tint/uniform scale, extra. Pitch/roll must be zero (shadow ABI). */
+  instances?: Float32Array
+  /** Number of active instances (defaults to `instances.length / 12` when `instances` is supplied). */
+  instanceCount?: number
   base: GPUTexture
   normal: GPUTexture
   orm: GPUTexture
@@ -44,8 +59,9 @@ export type TexturedPrimitive = {
   blend: boolean
 }
 
-export function texturedSceneShader(hooks: SceneHooks, masked = false): string {
-  return makeSceneShader({ ...hooks, uv: true,
+export function texturedSceneHooks(hooks: SceneHooks, masked = false): SceneHooks {
+  const hasPbr = /\bpbrRough\b/.test(hooks.declarations ?? "")
+  return { ...hooks, uv: true,
     declarations: `${hooks.declarations ?? ""}
       @group(1) @binding(0) var baseMap: texture_2d<f32>;
       @group(1) @binding(1) var normalMap: texture_2d<f32>;
@@ -81,17 +97,21 @@ export function texturedSceneShader(hooks: SceneHooks, masked = false): string {
        alpha = select(1.0, texBase.a, Mtl.flags.y > 0.5);
       n = texNormal;
        let rough = pow(min(pow(max(0.08, texOrm.g * Mtl.surface.x), 4.0) + texNormalVariance, 1.0), 0.25);
-      let metal = texOrm.b * Mtl.surface.y;
+      let metal = texOrm.b * Mtl.surface.y;${hasPbr ? "\n       pbrRough = rough; pbrMetal = metal;" : ""}
        gloss = vec2f(min(240.0, 2.0 / pow(rough, 4.0)), mix(0.08, 0.8, metal) * (1.0 - rough * 0.65));
        ${hooks.material ?? ""}`,
     ambient: `(${hooks.ambient ?? "ambientAt(n)"}) * mix(1.0, texAo, Mtl.flags.x)`,
-  })
+  }
+}
+
+export function texturedSceneShader(hooks: SceneHooks, masked = false): string {
+  return makeSceneShader(texturedSceneHooks(hooks, masked))
 }
 
 // Material/geometry buffers belong to each pass; identical shaders and fixed render state belong to the renderer.
-export type TexturedPipelines = { layout: GPUBindGroupLayout; pipeline: (blend: boolean, masked?: boolean) => GPURenderPipeline }
+export type TexturedPipelines = { layout: GPUBindGroupLayout; pipeline: (blend: boolean, masked?: boolean, instanced?: boolean) => GPURenderPipeline }
 const pipelineCache = new WeakMap<PassContext, Map<string, TexturedPipelines>>()
-/** Cached textured scene pipelines (opaque, blended, alpha-tested) and their material bind group layout, per renderer and hooks. */
+/** Cached textured scene pipelines (opaque, blended, alpha-tested, static or instanced) and their material bind group layout, per renderer and hooks. */
 export function texturedPipelines(ctx: PassContext, hooks: SceneHooks): TexturedPipelines {
   let cache = pipelineCache.get(ctx)
   if (!cache) { cache = new Map(); pipelineCache.set(ctx, cache) }
@@ -106,12 +126,16 @@ export function texturedPipelines(ctx: PassContext, hooks: SceneHooks): Textured
   const module = compileShaderModuleWithLog(d, code, "textured scene")
   const pipelineLayout = d.createPipelineLayout({ bindGroupLayouts: [ctx.frameLayout, layout] })
   const variants = new Map<string, GPURenderPipeline>()
-  const pipeline = (blend: boolean, masked = false) => {
-    const key = `${blend}:${masked}`, cached = variants.get(key)
+  const pipeline = (blend: boolean, masked = false, instanced = false) => {
+    const key = `${blend}:${masked}:${instanced}`, cached = variants.get(key)
     if (cached) return cached
     const result = d.createRenderPipeline({
       layout: pipelineLayout,
-      vertex: { module, entryPoint: "vsStatic", buffers: [TEXTURED_VERTEX_LAYOUT] },
+      vertex: {
+        module,
+        entryPoint: instanced ? "vsInst" : "vsStatic",
+        buffers: instanced ? [TEXTURED_VERTEX_LAYOUT, TEXTURED_INST_LAYOUT] : [TEXTURED_VERTEX_LAYOUT],
+      },
       fragment: { module: masked ? compileShaderModuleWithLog(d, texturedSceneShader(hooks, true), "masked textured scene") : module, entryPoint: "fsSolid", targets: [{ format: ctx.color, ...(blend ? { blend: {
         color: { srcFactor: "one" as const, dstFactor: "one-minus-src-alpha" as const },
         alpha: { srcFactor: "one" as const, dstFactor: "one-minus-src-alpha" as const },
@@ -128,20 +152,47 @@ export function texturedPipelines(ctx: PassContext, hooks: SceneHooks): Textured
   return result
 }
 
+type TexturedDraw = {
+  buffer: GPUBuffer
+  uniform: GPUBuffer
+  group: GPUBindGroup
+  count: number
+  blend: boolean
+  masked: boolean
+  instanced: boolean
+  instBuffer: GPUBuffer | null
+  instCap: number
+  shadowInstBuffer: GPUBuffer | null
+  shadowCap: number
+  shadowScratch: Float32Array
+  instanceCount: number
+}
+
 /** Imported meshes share the kit's lights, polar shadows, scene hooks, HDR target and temporal resolve. */
 export class TexturedMeshPass implements ScenePass {
-  private draws: { buffer: GPUBuffer; uniform: GPUBuffer; group: GPUBindGroup; count: number; blend: boolean; masked: boolean }[] = []
+  private readonly device: GPUDevice
+  private draws: TexturedDraw[] = []
   private opaque: GPURenderPipeline | null
   private alpha: GPURenderPipeline | null
   private mask: GPURenderPipeline | null
+  private opaqueInst: GPURenderPipeline | null
+  private alphaInst: GPURenderPipeline | null
+  private maskInst: GPURenderPipeline | null
   constructor(ctx: PassContext, primitives: TexturedPrimitive[], hooks: SceneHooks) {
     const d = ctx.device, { layout, pipeline } = texturedPipelines(ctx, hooks)
+    this.device = d
     // Each imported pass has a fixed draw list. Avoid compiling unused variants (especially costly on SwiftShader).
-    this.opaque = primitives.some(p => !p.blend && (p.alphaCutoff ?? 0) <= 0) ? pipeline(false) : null
-    this.alpha = primitives.some(p => p.blend && (p.alphaCutoff ?? 0) <= 0) ? pipeline(true) : null
-    this.mask = primitives.some(p => (p.alphaCutoff ?? 0) > 0) ? pipeline(false, true) : null
+    const isStat = (p: TexturedPrimitive) => p.instances === undefined
+    const isInst = (p: TexturedPrimitive) => p.instances !== undefined
+    this.opaque = primitives.some(p => isStat(p) && !p.blend && (p.alphaCutoff ?? 0) <= 0) ? pipeline(false, false, false) : null
+    this.alpha = primitives.some(p => isStat(p) && p.blend && (p.alphaCutoff ?? 0) <= 0) ? pipeline(true, false, false) : null
+    this.mask = primitives.some(p => isStat(p) && (p.alphaCutoff ?? 0) > 0) ? pipeline(false, true, false) : null
+    this.opaqueInst = primitives.some(p => isInst(p) && !p.blend && (p.alphaCutoff ?? 0) <= 0) ? pipeline(false, false, true) : null
+    this.alphaInst = primitives.some(p => isInst(p) && p.blend && (p.alphaCutoff ?? 0) <= 0) ? pipeline(true, false, true) : null
+    this.maskInst = primitives.some(p => isInst(p) && (p.alphaCutoff ?? 0) > 0) ? pipeline(false, true, true) : null
     const sampler = d.createSampler({ magFilter: "linear", minFilter: "linear", mipmapFilter: "linear", addressModeU: "repeat", addressModeV: "repeat", maxAnisotropy: 8 })
-    for (const p of primitives) {
+    for (let i = 0; i < primitives.length; i++) {
+      const p = primitives[i]!
       const buffer = d.createBuffer({ size: p.vertices.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST })
       d.queue.writeBuffer(buffer, 0, p.vertices)
       const uniform = d.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
@@ -151,21 +202,110 @@ export class TexturedMeshPass implements ScenePass {
         { binding: 2, resource: p.orm.createView() }, { binding: 3, resource: sampler }, { binding: 4, resource: { buffer: uniform } },
         { binding: 5, resource: (p.ao ?? p.orm).createView() },
       ] })
-      this.draws.push({ buffer, uniform, group, count: p.vertices.byteLength / 32, blend: p.blend, masked: (p.alphaCutoff ?? 0) > 0 })
+      const instanced = p.instances !== undefined
+      this.draws.push({
+        buffer,
+        uniform,
+        group,
+        count: p.vertices.byteLength / 32,
+        blend: p.blend,
+        masked: (p.alphaCutoff ?? 0) > 0,
+        instanced,
+        instBuffer: null,
+        instCap: 0,
+        shadowInstBuffer: null,
+        shadowCap: 0,
+        shadowScratch: new Float32Array(0),
+        instanceCount: 0,
+      })
+      if (instanced) this.setInstances(i, p.instances!, p.instanceCount ?? Math.floor(p.instances!.length / 12))
     }
+  }
+  /** Updates the 12-float instance buffer (`posYaw`, `tint`, `extra`) and 8-float shadow instance buffer for primitive `index`. */
+  setInstances(index: number, instances: Float32Array, count = Math.floor(instances.length / 12)) {
+    const draw = this.draws[index]
+    if (!draw || !draw.instanced) return
+    if (!Number.isInteger(count) || count < 0 || count * 12 > instances.length) {
+      throw new RangeError("Textured instance count must fit the supplied 12-float records")
+    }
+    for (let i = 0; i < count; i++) {
+      if (instances[i * 12 + 8] !== 0 || instances[i * 12 + 9] !== 0) {
+        throw new RangeError("Textured instances support yaw only; bake pitch/roll into the glTF transform")
+      }
+    }
+    const n = count
+    draw.instanceCount = n
+    if (n === 0) return
+    const d = this.device
+    const instBytes = n * 48
+    if (!draw.instBuffer || draw.instCap < instBytes) {
+      draw.instBuffer?.destroy()
+      draw.instCap = Math.max(48, 2 ** Math.ceil(Math.log2(instBytes)))
+      draw.instBuffer = d.createBuffer({ size: draw.instCap, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST })
+    }
+    d.queue.writeBuffer(draw.instBuffer, 0, instances.buffer, instances.byteOffset, instBytes)
+    const shadowBytes = n * 32
+    if (!draw.shadowInstBuffer || draw.shadowCap < shadowBytes) {
+      draw.shadowInstBuffer?.destroy()
+      draw.shadowCap = Math.max(32, 2 ** Math.ceil(Math.log2(shadowBytes)))
+      draw.shadowInstBuffer = d.createBuffer({ size: draw.shadowCap, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST })
+      draw.shadowScratch = new Float32Array(draw.shadowCap / 4)
+    }
+    const sh = draw.shadowScratch
+    for (let i = 0; i < n; i++) {
+      const s = i * 12, o = i * 8, scale = instances[s + 7]!
+      sh[o] = instances[s]!
+      sh[o + 1] = instances[s + 1]!
+      sh[o + 2] = instances[s + 2]!
+      sh[o + 3] = instances[s + 3]!
+      sh[o + 4] = scale
+      sh[o + 5] = scale
+      sh[o + 6] = 0
+      sh[o + 7] = 0
+    }
+    d.queue.writeBuffer(draw.shadowInstBuffer, 0, sh.buffer, sh.byteOffset, shadowBytes)
+  }
+  /** Updates the instance buffer on every instanced primitive in this pass. */
+  setAllInstances(instances: Float32Array, count = Math.floor(instances.length / 12)) {
+    for (let i = 0; i < this.draws.length; i++) if (this.draws[i]!.instanced) this.setInstances(i, instances, count)
   }
   draw(pass: GPURenderPassEncoder) {
     for (const blend of [false, true]) {
       for (const draw of this.draws) if (draw.blend === blend) {
-        pass.setPipeline(draw.masked ? this.mask! : blend ? this.alpha! : this.opaque!)
-        pass.setBindGroup(1, draw.group); pass.setVertexBuffer(0, draw.buffer)
-        pass.draw(draw.count)
+        if (draw.instanced) {
+          if (draw.instanceCount <= 0 || !draw.instBuffer) continue
+          pass.setPipeline(draw.masked ? this.maskInst! : blend ? this.alphaInst! : this.opaqueInst!)
+          pass.setBindGroup(1, draw.group)
+          pass.setVertexBuffer(0, draw.buffer)
+          pass.setVertexBuffer(1, draw.instBuffer)
+          pass.draw(draw.count, draw.instanceCount)
+        } else {
+          pass.setPipeline(draw.masked ? this.mask! : blend ? this.alpha! : this.opaque!)
+          pass.setBindGroup(1, draw.group)
+          pass.setVertexBuffer(0, draw.buffer)
+          pass.draw(draw.count)
+        }
       }
     }
   }
   /** Opaque imported casters only; cutout foliage needs a matching alpha-aware depth shader. */
   shadowCasters(): SpotShadowCaster[] {
-    return this.draws.filter(d=>!d.blend && !d.masked).map(d=>({buffer:d.buffer,count:d.count,stride:32}))
+    return this.draws
+      .filter(d => !d.blend && !d.masked && (!d.instanced || (d.instanceCount > 0 && d.shadowInstBuffer !== null)))
+      .map(d => ({
+        buffer: d.buffer,
+        count: d.count,
+        stride: 32,
+        ...(d.instanced ? { instances: { buffer: d.shadowInstBuffer!, count: d.instanceCount } } : {}),
+      }))
   }
-  dispose() { for (const draw of this.draws) { draw.buffer.destroy(); draw.uniform.destroy() }; this.draws = [] }
+  dispose() {
+    for (const draw of this.draws) {
+      draw.buffer.destroy()
+      draw.uniform.destroy()
+      draw.instBuffer?.destroy()
+      draw.shadowInstBuffer?.destroy()
+    }
+    this.draws = []
+  }
 }

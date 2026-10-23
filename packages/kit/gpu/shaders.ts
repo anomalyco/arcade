@@ -1152,6 +1152,7 @@ fn hash(p: vec2f) -> f32 {
 export const postCommonSnippet = wgslSnippet("postCommon", postCommonWgsl)
 
 export {
+  lookFastSceneHooks,
   lookVariantSlot,
   makeLookPostShader,
   makeLookSceneShader,
