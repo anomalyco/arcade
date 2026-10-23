@@ -10,7 +10,7 @@ const { chromium } = budget
 
 const args = process.argv.slice(2)
 const opt = (k: string, d: string) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d
-const base = opt("base", "https://blackout.lwoyjcaeyxv6.opentunnel.xyz/anim.html")
+const base = opt("base", "https://studio.taila8e7c7.ts.net:5187/arcade/blackout/anim.html")
 const out = opt("out", "/tmp/opencode/anim")
 const start = Number(opt("start", "2000"))
 const step = Number(opt("step", "60"))

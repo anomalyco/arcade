@@ -567,7 +567,7 @@ async function cmdGalleryLink(argv: string[]) {
       : ""
   const relUrl = `/captures/${slug}${entryFile ? `/${entryFile}` : "/"}`
   const localUrl = `http://127.0.0.1:${port}${relUrl}`
-  const publicUrl = `https://arcade.lwoyjcaeyxv6.opentunnel.xyz${relUrl}`
+  const publicUrl = `https://studio.taila8e7c7.ts.net:5187${relUrl}`
 
   const res = await fetch(localUrl).catch(() => null)
   if (!res || !res.ok) {
