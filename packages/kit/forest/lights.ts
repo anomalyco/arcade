@@ -13,7 +13,7 @@ export function appendForestLights(
 ): void {
   lights.push(...game)
   if (bounce) lights.push(bounce)
-  for (const [i, l] of camp.entries()) {
+  for (const [i, l] of [...camp.entries()].sort(([, a], [, b]) => Number(!!a.surfaceOnly) - Number(!!b.surfaceOnly))) {
     const k = l.kind === "bulb" ? settings.stringLights : settings.windows
     if (k <= 0) continue
     lights.push({ id: 3000 + i, x: l.x, y: l.z, h: l.y, r: l.range, color: l.color, power: l.power * k, size: l.kind === "window" ? 0.5 : 0.05, unshadowed: true,

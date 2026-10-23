@@ -12,7 +12,7 @@ test("saturated camp keeps torches, flares and lanterns through the real light p
   // Exercise both packing classes: polar-shadowed lantern and unshadowed flare.
   const game = [light(8000), light(8001, false)]
   const lights = [...torches]
-  appendForestLights(lights, game, light(2000), camp, { windows: 1, stringLights: 1 })
+  appendForestLights(lights, game, light(2000), [...camp, { ...camp[0]!, surfaceOnly: false }], { windows: 1, stringLights: 1 })
   const packed = new SceneLights()
   packed.update(lights, [])
   expect(packed.lightCount).toBe(MAX_LIGHTS)
@@ -20,8 +20,9 @@ test("saturated camp keeps torches, flares and lanterns through the real light p
     expect(packed.indexOf(l.id!)).toBeGreaterThanOrEqual(0)
     expect(packed.indexOf(l.id!)).toBeLessThan(packed.indexOf(3000))
   }
-  expect(packed.indexOf(3000 + MAX_LIGHTS - 10)).toBe(MAX_LIGHTS - 1)
-  expect(packed.indexOf(3000 + MAX_LIGHTS - 9)).toBe(-1)
+  expect(packed.indexOf(3000 + camp.length)).toBe(9) // Ground lighting outranks decorative bulbs, even if supplied last.
+  expect(packed.indexOf(3000 + MAX_LIGHTS - 11)).toBe(MAX_LIGHTS - 1)
+  expect(packed.indexOf(3000 + MAX_LIGHTS - 10)).toBe(-1)
 })
 
 test("a gameplay-filled budget admits no decorative camp bulbs", () => {
