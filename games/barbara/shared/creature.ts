@@ -118,7 +118,7 @@ function shafts(world: WoodsWorld, players: readonly Watcher[], signalHold: numb
 }
 
 /** Sine and cosine from + − × ÷ only (a fixed polynomial after range reduction), so every machine agrees. */
-function sinApprox(a: number): number {
+export function sinApprox(a: number): number {
   const TAU = 6.283185307179586, PI = 3.141592653589793
   let x = a - TAU * Math.floor((a + PI) / TAU)
   // x in [−π, π): fold to [−π/2, π/2].
@@ -127,7 +127,7 @@ function sinApprox(a: number): number {
   const x2 = x * x
   return x * (1 - x2 / 6 * (1 - x2 / 20 * (1 - x2 / 42 * (1 - x2 / 72 * (1 - x2 / 110)))))
 }
-const cosApprox = (a: number) => sinApprox(a + 1.5707963267948966)
+export const cosApprox = (a: number) => sinApprox(a + 1.5707963267948966)
 
 export type CreaturePlan = Omit<CreatureEvent, "kind" | "seq" | "at"> & { watcher: number; shaft: { x: number; z: number }; cross: number }
 

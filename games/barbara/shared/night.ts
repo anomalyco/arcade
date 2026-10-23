@@ -1,3 +1,4 @@
+import { cosApprox, sinApprox } from "./creature"
 import { isDeepWater, nextRandom, terrainHeight, treesNear, type WoodsWorld } from "./world"
 
 /**
@@ -26,8 +27,9 @@ export type Clue = {
   y: number
   /** Height of the thing above the ground (m): what a beam has to fall on. */
   h: number
-  /** Plan heading the model faces (rad, for drawing). */
-  yaw: number
+  /** Plan direction the model faces (unit vector, for drawing). */
+  fx: number
+  fz: number
   /** How close you must be (m). */
   reach: number
   /** The trunk it's tied to (the page, the strip), or −1. */
@@ -39,7 +41,13 @@ export type NightLayout = { seed: number; /** The ridge light's plan position. *
 
 export type NightPhase = "camp" | "search" | "won" | "lost"
 export type NightReason = "" | "strip" | "dawn" | "dark"
-export type Find = { clue: number; by: number; at: number }
+export type Find = {
+  clue: number
+  by: number
+  at: number
+  /** Who has it on their map now, when the finder has left (`handOff`); else the finder. */
+  held?: number
+}
 /** A bot's current lead: the clue it's after and how far through its sweep it is. */
 export type BotLead = { clue: number; step: number }
 
@@ -110,14 +118,35 @@ function walkable(world: WoodsWorld, x: number, z: number): boolean {
   const h = world.params.half - EDGE_MARGIN
   return Math.abs(x) < h && Math.abs(z) < h && !isDeepWater(world, x, z) && dist(x, z, world.lake.x, world.lake.z) > 8
 }
+/** Clear of solids by this much (m): a person stands right beside it. */
+const SOLID_CLEAR = 0.28 + 0.6 // PLAYER_RADIUS (sim.ts) and a hand's width
+/** Out of a rectangle grown by `SOLID_CLEAR`, by its nearest side; null if already clear. */
+function outOfRect(x: number, z: number, x0: number, z0: number, x1: number, z1: number): [number, number] | null {
+  x0 -= SOLID_CLEAR; z0 -= SOLID_CLEAR; x1 += SOLID_CLEAR; z1 += SOLID_CLEAR
+  if (x <= x0 || x >= x1 || z <= z0 || z >= z1) return null
+  const l = x - x0, r = x1 - x, b = z - z0, f = z1 - z, m = Math.min(l, r, b, f)
+  return m === l ? [x0, z] : m === r ? [x1, z] : m === b ? [x, z0] : [x, z1]
+}
+/** Stepped off any trunk, rock or building (`solidsNear`'s solids, every rock however low), so it can be reached. */
 function offTrunks(world: WoodsWorld, x: number, z: number): [number, number] {
-  for (let k = 0; k < 4; k++) {
+  for (let k = 0; k < 6; k++) {
     let moved = false
     for (const t of treesNear(world, x, z, 1.2)) {
       const d = dist(x, z, t.x, t.z), need = t.radius + 0.9
       if (d >= need) continue
       const [ux, uz] = d > 1e-3 ? [(x - t.x) / d, (z - t.z) / d] : [1, 0]
       x = t.x + ux * need; z = t.z + uz * need; moved = true
+    }
+    for (const r of world.rocks) {
+      const e = Math.max(r.w, r.d) * 0.5
+      if (Math.abs(r.x - x) > e + SOLID_CLEAR || Math.abs(r.z - z) > e + SOLID_CLEAR) continue
+      const out = outOfRect(x, z, r.x - e, r.z - e, r.x + e, r.z + e)
+      if (out) { [x, z] = out; moved = true }
+    }
+    for (const b of world.buildings) {
+      if (b.kind === "dock" || b.kind === "canoe") continue
+      const out = outOfRect(x, z, ...b.rect)
+      if (out) { [x, z] = out; moved = true }
     }
     if (!moved) break
   }
@@ -162,7 +191,8 @@ export function placeNight(world: WoodsWorld, seed: number): NightLayout {
     const [ux, uz] = unit(camp.x - ridge.x, camp.z - ridge.z)
     for (let k = 0; k < 40 && stree < 0; k++) {
       const a = (r() - 0.5) * 2.2, d = 12 + 14 * r()
-      const dx = ux * Math.cos(a) - uz * Math.sin(a), dz = ux * Math.sin(a) + uz * Math.cos(a)
+      const ca = cosApprox(a), sa = sinApprox(a)
+      const dx = ux * ca - uz * sa, dz = ux * sa + uz * ca
       const x = ridge.x + dx * d, z = ridge.z + dz * d
       if (!walkable(world, x, z)) continue
       const t = trunkNear(world, x, z, 5)
@@ -209,7 +239,7 @@ export function placeNight(world: WoodsWorld, seed: number): NightLayout {
     qx = pt.x + fx * (pt.radius + 0.03); qz = pt.z + fz * (pt.radius + 0.03); ptree = pt.id
   }
   const [lx, lz] = lowest(world, ...near(bx, bz, 1.5), 3.5)
-  const pts: [number, number][] = [[cx, cz], [qx, qz], offTrunks(world, lx, lz), near(kx, kz, 4), [sx, sz]]
+  const pts: [number, number][] = [offTrunks(world, cx, cz), [qx, qz], offTrunks(world, lx, lz), near(kx, kz, 4), [sx, sz]]
   const lead = (from: number, to: number, ax: number, az: number, ridgeLead = false): Lead => {
     const [fx, fz] = pts[from]!, [dx, dz] = unit(ax - fx, az - fz)
     return { to, x: fx, z: fz, dx, dz, ...(ridgeLead ? { ridge: true as const } : {}) }
@@ -227,7 +257,7 @@ export function placeNight(world: WoodsWorld, seed: number): NightLayout {
     // Most face back the way you'd come; the car faces up the path.
     const [fx, fz] = id === 0 ? [0, -1] : unit(cx - x, cz - z)
     const tree = id === CLUE.page ? ptree : id === CLUE.strip ? stree : -1
-    return { id, kind, x, z, y: ground(x, z), h: HEIGHT[kind], yaw: Math.atan2(fx, -fz), reach: id === 0 ? CAR_REACH : FIND_REACH, tree, leads: leads[id]! }
+    return { id, kind, x, z, y: ground(x, z), h: HEIGHT[kind], fx, fz, reach: id === 0 ? CAR_REACH : FIND_REACH, tree, leads: leads[id]! }
   })
   // Spares: three on the mess table, and one or two out along the way.
   const table = world.buildings.find((b) => b.kind === "table")
@@ -396,9 +426,9 @@ export function stepNight(n: NightState, world: WoodsWorld, walkers: readonly Ni
         if (c.kind === "cassette") { n.tapeAt = t + 3.5; n.tapeBy = w.id }
       }
     }
-    // Bots tell each other what they've seen when they meet.
+    // Bots tell each other, and pick up what a person near them has seen (people compare maps themselves).
     for (const a of walkers) for (const b of walkers) {
-      if (a === b || !a.bot || !b.bot || dist(a.x, a.z, b.x, b.z) > 6) continue
+      if (a === b || !b.bot || dist(a.x, a.z, b.x, b.z) > 6) continue
       for (const id of a.map.clues) addUnique(b.map.clues, id)
     }
   }
@@ -415,6 +445,18 @@ export function stepNight(n: NightState, world: WoodsWorld, walkers: readonly Ni
   n.dark = out ? n.dark + dt : 0
   if (n.dark >= DARK_LOSS) end(n, walkers, tapes, t, "lost", "dark", events)
   return events
+}
+
+/**
+ * A walker leaves the night: the nearest one left takes what was on their map, so no clue is stranded with nobody
+ * holding it, and the finds they held say who has them now.
+ */
+export function handOff(n: NightState, gone: NightWalker, rest: readonly NightWalker[]): void {
+  if (!gone.map.clues.length || !rest.length) return
+  let heir = rest[0]!
+  for (const w of rest) if (dist(w.x, w.z, gone.x, gone.z) < dist(heir.x, heir.z, gone.x, gone.z)) heir = w
+  for (const id of gone.map.clues) addUnique(heir.map.clues, id)
+  for (const f of n.finds) if ((f.held ?? f.by) === gone.id) { f.held = heir.id; n.rev++ }
 }
 
 // ---------------------------------------------------------------- bots
@@ -459,8 +501,8 @@ const LINE_REACH = 150
  */
 export function botWaypoint(n: NightState, bot: NightWalker, others: readonly NightWalker[]): { x: number; z: number; searching: boolean } | null {
   if (n.phase !== "search") return null
-  const found = new Set(n.finds.map((f) => f.clue))
-  const targets = targetsFrom(n.layout, bot.map.clues, found, n.calls > 0)
+  // What it hasn't seen itself is still to look for, even if someone else found it (it can sight it again).
+  const targets = targetsFrom(n.layout, bot.map.clues, new Set(bot.map.clues), n.calls > 0)
   let lead = n.bots[bot.id]
   let target = lead ? targets.find((t) => t.clue === lead!.clue) : undefined
   if (!target) {
@@ -521,7 +563,10 @@ export function nextStep(n: Pick<NightState, "phase" | "layout" | "finds" | "cal
   if (has(CLUE.cassette)) return `She was going up to ${RIDGE_NAME}. Head for it.`
   // A friend's find you haven't seen: go and get it from them.
   const news = [...n.finds].reverse().find((f) => !has(f.clue))
-  const tell = news ? ` ${name(news.by)} found ${CLUE_NAMES[c[news.clue]!.kind]}: find them and compare maps (hold G together).` : ""
+  const what = news ? CLUE_NAMES[c[news.clue]!.kind] : ""
+  const tell = !news ? "" : news.held === undefined || news.held === news.by
+    ? ` ${name(news.by)} found ${what}: find them and compare maps (hold G together).`
+    : ` ${name(news.held)} has ${what} on their map: find them and compare maps (hold G together).`
   if (has(CLUE.page) && has(CLUE.badge)) return "Rule both bearings on your map (G): her tape recorder is where they cross." + tell
   if (has(CLUE.page) || has(CLUE.badge)) {
     const one = has(CLUE.page) ? c[CLUE.page]! : c[CLUE.badge]!

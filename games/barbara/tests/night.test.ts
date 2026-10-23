@@ -3,8 +3,8 @@ import { WoodsRoomCore } from "../server/room-core"
 import { BUILD } from "../shared/build.gen"
 import { CLUE, EDGE_MARGIN, nextStep, placeNight, seesClue, targetsFrom, watchMinutes, WATCH_DAWN, type NightEvent } from "../shared/night"
 import { decodeServer, packIntent, type ServerMsg, type Snapshot } from "../shared/protocol"
-import { createWoods, EYE_HEIGHT, FEEL, stepWoods, type PlayerInput, type WoodsState } from "../shared/sim"
-import { isDeepWater, makeWorld, standHeight } from "../shared/world"
+import { BOT_ID, createWoods, EYE_HEIGHT, FEEL, PLAYER_RADIUS, removePlayer, stepWoods, type PlayerInput, type WoodsState } from "../shared/sim"
+import { isDeepWater, makeWorld, solidsNear, standHeight } from "../shared/world"
 
 const world = makeWorld()
 const DT = 1 / 60
@@ -52,7 +52,7 @@ test("a night's layout comes from its seed alone: five clues on a trail to the r
 })
 
 /** A solo night with bots: you step just out of camp (starting the clock) and wait there, torch off. */
-function botNight(seed: number, feel = FEEL, maxMinutes = 25) {
+function botNight(seed: number, feel = FEEL, maxMinutes = 25, each?: (state: WoodsState) => void) {
   const state = createWoods(world, 3, seed)
   const you = state.players[0]!
   you.x = world.camp.x; you.z = world.camp.z - world.camp.radius - 8
@@ -61,6 +61,7 @@ function botNight(seed: number, feel = FEEL, maxMinutes = 25) {
   const voices: string[] = []
   for (let i = 0; i < maxMinutes * 60 * 60 && (state.night.phase === "camp" || state.night.phase === "search"); i++) {
     stepWoods(state, world, wait, DT, feel)
+    each?.(state)
     for (const e of state.events) {
       if (e.kind === "clue-found" || e.kind === "night" || e.kind === "spare-taken" || e.kind === "torch") events.push(e)
       if (e.kind === "voice") voices.push(e.line)
@@ -224,4 +225,67 @@ test("the goal line always says what to do next, from what your map knows", () =
   expect(nextStep(n, [CLUE.car, CLUE.page, CLUE.badge], name)).toContain("cross")
   expect(nextStep(n, [CLUE.cassette], name)).toContain("red light on the ridge")
   expect(nextStep({ ...n, calls: 1 }, [], name)).toContain("Over here!")
+})
+
+test("a person finding the car first doesn't strand the bots: they look for themselves and still win", () => {
+  // You find the car the moment the night starts, then stand far off where no bot meets you.
+  const far = { x: world.camp.x - (world.ridgeLight.x - world.camp.x) * 0.5, z: world.camp.z - (world.ridgeLight.z - world.camp.z) * 0.5 }
+  const r = botNight(4, FEEL, 25, (state) => {
+    const n = state.night, you = state.players[0]!
+    if (n.phase === "search" && !n.finds.length) { n.finds.push({ clue: CLUE.car, by: 0, at: state.t }); you.map.clues.push(CLUE.car) }
+    you.x = far.x; you.z = far.z
+  })
+  console.log("car found by you", JSON.stringify(summary(r)))
+  expect(r.state.night.finds[0]!.by).toBe(0)
+  expect(r.state.night.phase).toBe("won")
+})
+
+test("a clue whose only holder leaves goes to the nearest searcher, and the night goes on", () => {
+  let gone = -1, heir = -1, clue = -1
+  const r = botNight(4, FEEL, 25, (state) => {
+    const n = state.night
+    if (gone >= 0) return
+    const f = n.finds.find((k) => k.clue !== CLUE.car && k.by >= BOT_ID)
+    if (!f) return
+    gone = f.by; clue = f.clue
+    const leaver = state.players.find((p) => p.id === gone)!
+    expect(state.players.filter((p) => p.id !== gone && p.map.clues.includes(clue))).toEqual([])
+    const rest = state.players.filter((p) => p.id !== gone)
+    heir = rest.reduce((a, b) => (Math.hypot(b.x - leaver.x, b.z - leaver.z) < Math.hypot(a.x - leaver.x, a.z - leaver.z) ? b : a)).id
+    removePlayer(state, gone)
+  })
+  console.log("holder left", JSON.stringify(summary(r)), { gone, heir, clue })
+  const n = r.state.night
+  expect(gone).toBeGreaterThanOrEqual(0)
+  expect(n.finds.find((f) => f.clue === clue)!.held).toBe(heir)
+  // The goal line sends you to whoever has it now, not to the one who left.
+  const only = { ...n, phase: "search" as const, calls: 0, finds: n.finds.filter((f) => f.clue === clue) }
+  expect(nextStep(only, [], (id) => (id === heir ? "Heir" : "Gone"))).toContain("Heir has")
+  // Someone still knows it, and the trail carried on past it.
+  expect(n.finds.length).toBeGreaterThan(2)
+})
+
+test("every clue and spare can be reached: none inside a trunk, rock or building, over 60 seeds", () => {
+  const free = (x: number, z: number) => !isDeepWater(world, x, z) && solidsNear(world, x, z, 3).every(([x0, z0, x1, z1]) => x < x0 - PLAYER_RADIUS || x > x1 + PLAYER_RADIUS || z < z0 - PLAYER_RADIUS || z > z1 + PLAYER_RADIUS)
+  const standable = (x: number, z: number, reach: number) => {
+    for (let r = 0.4; r <= reach; r += 0.3) for (let k = 0; k < 24; k++) {
+      const a = (k / 24) * Math.PI * 2
+      if (free(x + Math.cos(a) * r, z + Math.sin(a) * r)) return true
+    }
+    return false
+  }
+  const inside = (x: number, z: number) =>
+    world.rocks.some((k) => Math.abs(k.x - x) < Math.max(k.w, k.d) * 0.5 && Math.abs(k.z - z) < Math.max(k.w, k.d) * 0.5) ||
+    world.buildings.some((b) => b.kind !== "dock" && b.kind !== "canoe" && b.kind !== "table" && x > b.rect[0] && x < b.rect[2] && z > b.rect[1] && z < b.rect[3])
+  for (let seed = 1; seed <= 60; seed++) {
+    const n = placeNight(world, seed)
+    for (const c of n.clues) {
+      expect(standable(c.x, c.z, c.reach - 0.3), `seed ${seed} ${c.kind}`).toBe(true)
+      if (c.tree < 0) expect(inside(c.x, c.z), `seed ${seed} ${c.kind} in a solid`).toBe(false)
+    }
+    for (const sp of n.spares) {
+      expect(standable(sp.x, sp.z, 1.3), `seed ${seed} spare ${sp.id}`).toBe(true)
+      if (!sp.camp) expect(inside(sp.x, sp.z), `seed ${seed} spare ${sp.id} in a solid`).toBe(false)
+    }
+  }
 })

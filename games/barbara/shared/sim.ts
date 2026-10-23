@@ -3,7 +3,7 @@ import { stepCreature, type CreatureEvent } from "./creature"
 import { answerCall, createDistant, holdDistant, stepDistant, type DistantEvent, type DistantState } from "./distant"
 import { VOICE_LINES } from "./lines.gen"
 import { NIGHT_LINES } from "./night-lines.gen"
-import { botWaypoint, CALL_EVERY, canLight, CLUE, createNight, stepNight, type NightEvent, type NightState } from "./night"
+import { botWaypoint, CALL_EVERY, handOff, canLight, CLUE, createNight, stepNight, type NightEvent, type NightState } from "./night"
 import { BOT_ORDER, CAST_NAMES, createVoices, sayExtra, sayTape, stepVoices, voicesBusyUntil, type VoiceCue, type VoiceEvent, type VoiceState } from "./voices"
 import { isDeepWater, nextRandom, solidsNear, standHeight, treesNear, type Tree, type WoodsWorld } from "./world"
 
@@ -248,7 +248,9 @@ export function addHuman(state: WoodsState, world: WoodsWorld, id: number, name:
 
 /** A walker leaves for good: their tapes and the room's finds stay, the copies of their path on other maps go. */
 export function removePlayer(state: WoodsState, id: number): void {
+  const gone = state.players.find((p) => p.id === id)
   state.players = state.players.filter((p) => p.id !== id)
+  if (gone) handOff(state.night, gone, state.players)
   state.brains = state.brains.filter((b) => b.id !== id)
   for (const p of state.players) if (p.map.heard.some((h) => h.from === id)) p.map.heard = p.map.heard.filter((h) => h.from !== id)
 }

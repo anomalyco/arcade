@@ -82,12 +82,12 @@ export const BIT = { light: 1, flicker: 2, bot: 4, signal: 8, untie: 16, map: 32
 export type NightWire = { seed: number; phase: NightPhase; start: number; dawn: number; end: number; reason: NightReason; finds: number[][]; taken: number[]; calls: number }
 const ms = (v: number) => Math.round(v * 1000) / 1000
 export function nightWire(n: NightState): NightWire {
-  return { seed: n.seed, phase: n.phase, start: ms(n.start), dawn: ms(n.dawn), end: ms(n.end), reason: n.reason, finds: n.finds.map((f) => [f.clue, f.by, ms(f.at)]), taken: n.taken.slice(), calls: n.calls }
+  return { seed: n.seed, phase: n.phase, start: ms(n.start), dawn: ms(n.dawn), end: ms(n.end), reason: n.reason, finds: n.finds.map((f) => (f.held === undefined ? [f.clue, f.by, ms(f.at)] : [f.clue, f.by, ms(f.at), f.held])), taken: n.taken.slice(), calls: n.calls }
 }
 /** A client's night from the room's (its layout is placed again only when the seed changes). */
 export function applyNightWire(n: NightState, w: NightWire): void {
   Object.assign(n, { phase: w.phase, start: w.start, dawn: w.dawn, end: w.end, reason: w.reason, taken: w.taken.slice(), calls: w.calls ?? 0 })
-  n.finds = w.finds.map(([clue, by, at]) => ({ clue: clue!, by: by!, at: at! }))
+  n.finds = w.finds.map(([clue, by, at, held]) => (held === undefined ? { clue: clue!, by: by!, at: at! } : { clue: clue!, by: by!, at: at!, held }))
 }
 
 /** Who is in the room: seat id (public), player id in the sim, name, connected. */

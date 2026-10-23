@@ -52,7 +52,9 @@ with only + − × ÷ √ and the seeded generator, so solo, a room and a replay
 - The page is tied to the nearest trunk within 5 m of its point, on the side facing the car (else a stake). The badge
   slides to the lowest ground within 3.5 m (`lowest`, the creek mud).
 - Every clue stays `EDGE_MARGIN` (40 m) inside the world's edge, clear of the boundary, and out of deep water; anything
-  placed on the ground steps clear of trunks.
+  placed on the ground steps clear of trunks, rocks and buildings with room to stand beside it (`offTrunks`). A test
+  checks every clue and spare is reachable over 60 seeds.
+- Rotations use `sinApprox`/`cosApprox` (`shared/creature.ts`), so every machine places the same night bit for bit.
 - Solo plays the browser's next night (`barbara.night` in local storage, counted when a night ends); `?night=N` replays
   the end card's "Night N". A room seeds from its code and the number of nights it has played.
 
@@ -68,7 +70,10 @@ strip at chest height, the badge and recorder on the ground) within 0.45 rad (ab
 - **Only the finder** gets the clue on their held map: a red-pencil ringed cross with a word, and its bearing ruled out
   as a dashed red line with an arrowhead; the cassette's lead runs to the ridge light with "she was going up here (red light)" under it. The finder's caption reads the lead ("Drag marks in the mud lead north-east, about 45°."). Everyone else
   has to be told, by voice chat, or by standing together with maps up (comparing maps copies clues, as it already copies
-  paths and tape). Bots tell each other when they meet.
+  paths and tape), or can find it again themselves (only the first sighting is news). Bots tell each other when they
+  meet, and pick up what a person within 6 m has seen.
+- Whoever leaves the night (a room seat let go, a bot giving its place to a person) hands their map's clues to the
+  nearest searcher left (`handOff`); the find records who has it now (`held`), and the goal line sends you to them.
 - The cassette plays once, a few seconds after it's found, from the finder's hand (Barbara's voice, band-limited with
   wow and hiss). Whoever is near hears it; the rest hear about it.
 
@@ -120,7 +125,8 @@ counts each searcher's tapes. Bots tie tape as they search, so theirs counts too
   the path, camp and the radio tower. The paths and tapes come on the end event (`Debrief`), paths thinned to 300 points
   each.
 - **Search again** starts the next night: solo the next seed from camp; in a room anyone can start it once the night is
-  over (`again`), and the room puts everyone back at camp with fresh torches and clean maps. **Keep walking** goes back
+  over (`again`), and the room puts everyone back at camp with fresh torches and clean maps; every client sees the new
+  seed and starts the opening again. **Keep walking** goes back
   to the woods; Tab brings the card back.
 
 ## Bots
@@ -129,7 +135,8 @@ Bots are searchers too (Walt, Joyce, Gary, Dale, Tess) and follow the same rules
 maps.
 
 - Everyone knows where the car is, so the first bots out check it.
-- After that a bot works the leads on its own map (`botWaypoint`): an open bearing line (zigzag out along it 4 m either
+- After that a bot works the leads on its own map (`botWaypoint`), looking again for anything not on its map even if
+  someone else found it: an open bearing line (zigzag out along it 4 m either
   side, 6 m steps), a crossing of two lines (spiral round it), or the ridge light from the cassette (spiral out to 28 m). Once the extra searcher has called, they all go to the
   strip. Bots
   spread over the open leads rather than all taking one.
@@ -139,8 +146,8 @@ maps.
 - When a bot finds something it says so, holds its beam up for a few seconds, then moves on.
 - A bot walking within 5 m of a lit friend (a person, or a bot ahead of it in the list) turns its own torch off. A bot
   with no light and no spare goes for one on the mess table, or keeps by a lit friend.
-- Measured (`scripts/night-sweep.ts`, seeds 1–16, you standing out of camp with your torch off): bots alone win 16 of 16
-  nights, median 14.9 minutes, slowest 17.1, against 18-minute dawn. Most of that is the climb to the ridge waiting on
+- Measured (`scripts/night-sweep.ts`, seeds 1–16, you standing out of camp with your torch off): bots alone win 15 of 16
+  nights, median 14.0 minutes (seed 1 runs out at dawn), against an 18-minute dawn. Most of that is the climb to the ridge waiting on
   the late call; you heading up and helping is what gives the night slack.
 
 ## Sim and wire
@@ -156,7 +163,7 @@ maps.
   debrief). The voice director reacts to `clue-found` with the clue's own pool and says `dawn`/`daylight`; `sayTape`
   plays the cassette and `sayExtra` the extra searcher's call. The strip is drawn as a real tape (`nightTapes` in
   `src/night-view.ts`, through `TapeView`).
-- Wire: `Snapshot.night` (`NightWire`: seed, phase, times, finds, taken) when its rev changes; a client places the layout
+- Wire: `Snapshot.night` (`NightWire`: seed, phase, times, finds with `held`, taken, calls) when its rev changes; a client places the layout
   from the seed itself. Player rows gain the charge (and `spare`/`swap` bits); map deltas gain `clues`. A new night's
   seed makes the room resend everything, and the client takes its position outright.
 

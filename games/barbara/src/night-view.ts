@@ -139,7 +139,7 @@ export class NightView {
       if (c.kind === "page" && tree) { pageOnTrunk(m, c, tree); continue }
       const from = m.length
       BUILD[c.kind](m)
-      turn(m, from, "y", -c.yaw)
+      turn(m, from, "y", -Math.atan2(c.fx, -c.fz))
       move(m, from, c.x, c.y, c.z)
     }
     this.clueModel = this.slot(this.clueModel, m)

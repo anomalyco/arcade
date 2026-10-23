@@ -244,8 +244,9 @@ async function main() {
       live.session = session
       camera.yaw = world.camp.spawn.yaw; camera.pitch = -0.05; camera.resetWalk()
     }
-    story.again()
   }
+  // A new night's seed, whoever started it (in a room, any friend's Search again): the opening plays again.
+  let storySeed = NaN
   const endCard = new NightHud({
     again: () => { nextNight(); shell.flow.resume() },
     resume: () => shell.flow.resume(),
@@ -547,6 +548,10 @@ async function main() {
     const campLight = Math.max(0, 1 - Math.hypot(at.x - world.camp.x, at.z - world.camp.z) / 30) * 0.5 * settings.campGlow
     map.frame(state, meId, held.held ? 0 : p.mapRaise, camera.yaw, ownLevel * r + campLight + 0.04, camera.walk.lateral * 40, dt)
     if (performance.now() > toastUntil) toast.style.opacity = "0"
+    if (state.night.seed !== storySeed) {
+      if (!Number.isNaN(storySeed)) { story.again(); camera.yaw = world.camp.spawn.yaw; camera.pitch = -0.05; camera.resetWalk(); shell.flow.changed() }
+      storySeed = state.night.seed
+    }
     // The story: the trailhead opening at your first step out, the FIND BARBARA card, subtitles.
     // Online, not before the room has seated you (until then you'd be nobody, at the room's t 0).
     if (playing && !lakeLab && (!online || meId >= 0)) story.begin(world, state, meId, at.x, at.z, camera.yaw)
