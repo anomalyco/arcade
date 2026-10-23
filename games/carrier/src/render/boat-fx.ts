@@ -1,6 +1,7 @@
 import { BOAT, type Boat, boatState } from "../../shared/boat"
 import { type ShipPoseLike, type Vec3, shipToWorld } from "../../shared/plane"
 import type { WeaponFx } from "./weapon-fx"
+import type { WaterSettings } from "@arcade/kit/water/settings"
 
 const rnd = (lo: number, hi: number) => lo + Math.random() * (hi - lo)
 const SPRAY: [number, number, number] = [0.93, 0.96, 0.99]
@@ -22,7 +23,12 @@ export class BoatFx {
   private q: Vec3 = [0, 0, 0]
   private frame = 0
 
-  constructor(readonly wfx: WeaponFx) {}
+  constructor(readonly wfx: WeaponFx, private water?: () => WaterSettings | undefined) {}
+
+  private mist(...args: Parameters<WeaponFx["spawn"]>): void {
+    // Continuous water keeps the trail in the ocean material; Today retains its mist discs.
+    if (this.water?.()?.mode !== "continuous") this.wfx.spawn(...args)
+  }
 
   private world(b: ShipPoseLike, x: number, y: number, z: number, out: Vec3 = this.p): Vec3 {
     return shipToWorld(b, x, y, z, out)
@@ -56,7 +62,7 @@ export class BoatFx {
           const ox = ch * side
           const oz = sh * side
           this.rock(p, vx * 0.6 + ox * out, rnd(1.5, 3) + 4.5 * speed, vz * 0.6 + oz * out, rnd(0.4, 0.75), rnd(0.15, 0.3), rnd(0.4, 0.8))
-          if (Math.random() < 0.08) fx.spawn(1, p[0], p[1], p[2], p[0], p[1], p[2], vx * 0.5 + ox * out * 0.5, 1.5, vz * 0.5 + oz * out * 0.5, rnd(0.6, 1), 0.5, rnd(1.6, 2.4), SPRAY[0], SPRAY[1], SPRAY[2], 0.18, 0.9, -1)
+          if (Math.random() < 0.08) this.mist(1, p[0], p[1], p[2], p[0], p[1], p[2], vx * 0.5 + ox * out * 0.5, 1.5, vz * 0.5 + oz * out * 0.5, rnd(0.6, 1), 0.5, rnd(1.6, 2.4), SPRAY[0], SPRAY[1], SPRAY[2], 0.18, 0.9, -1)
         }
       }
       // Rooster tail from the waterjets.
@@ -68,7 +74,7 @@ export class BoatFx {
         const p = this.world(b, rnd(-1.3, 1.3), 0.4, -8.8)
         const back = 2 + 5 * speed
         this.rock(p, vx * 0.65 - sh * back, rnd(2.5, 5) * (0.5 + speed), vz * 0.65 + ch * back, rnd(0.5, 0.9), rnd(0.2, 0.35), rnd(0.5, 1))
-        if (Math.random() < 0.1) fx.spawn(1, p[0], p[1], p[2], p[0], p[1], p[2], vx * 0.6 - sh * back, 2, vz * 0.6 + ch * back, rnd(0.7, 1.1), 0.6, rnd(2, 3), SPRAY[0], SPRAY[1], SPRAY[2], 0.16, 0.9, -1)
+        if (Math.random() < 0.1) this.mist(1, p[0], p[1], p[2], p[0], p[1], p[2], vx * 0.6 - sh * back, 2, vz * 0.6 + ch * back, rnd(0.7, 1.1), 0.6, rnd(2, 3), SPRAY[0], SPRAY[1], SPRAY[2], 0.16, 0.9, -1)
       }
       // Slam: the hull comes down hard: a burst of white along both sides.
       if (b.slams !== s.slams) {
@@ -80,7 +86,7 @@ export class BoatFx {
         }
         for (let i = 0; i < 6; i++) {
           const p = this.world(b, rnd(-2.5, 2.5) > 0 ? 3 : -3, 0.3, rnd(-6, 6))
-          fx.spawn(1, p[0], p[1], p[2], p[0], p[1], p[2], vx * 0.4, rnd(2, 4), vz * 0.4, rnd(1, 1.6), 1, rnd(3, 5), SPRAY[0], SPRAY[1], SPRAY[2], 0.35, 0.9, -1)
+          this.mist(1, p[0], p[1], p[2], p[0], p[1], p[2], vx * 0.4, rnd(2, 4), vz * 0.4, rnd(1, 1.6), 1, rnd(3, 5), SPRAY[0], SPRAY[1], SPRAY[2], 0.35, 0.9, -1)
         }
       }
     }
@@ -117,7 +123,9 @@ export class BoatFx {
 
   /** A faceted white spray chunk (weapon-fx's sea-spray particle), falling at 1 g. */
   private rock(p: Vec3, vx: number, vy: number, vz: number, life: number, s0: number, s1: number): void {
-    this.wfx.spray(p[0], p[1], p[2], vx, vy, vz, life, s0, s1, rnd(1.1, 1.6))
+    const continuous = this.water?.()?.mode === "continuous"
+    this.wfx.spray(p[0], p[1], p[2], vx, vy * (continuous ? 0.45 : 1), vz,
+      life * (continuous ? 0.35 : 1), s0 * (continuous ? 0.14 : 1), s1 * (continuous ? 0.10 : 1), rnd(1.1, 1.6))
   }
 
   /** A 25 mm round leaving the muzzle at `pos` along unit `dir`. */
@@ -143,4 +151,3 @@ export class BoatFx {
     this.wfx.explosion(p[0], p[1], p[2], (b.u * sh + b.v * ch) * 0.5, 2, (-b.u * ch + b.v * sh) * 0.5, 1.15, true, "car")
   }
 }
-

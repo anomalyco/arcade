@@ -1,7 +1,9 @@
 import { SEA_MAX_WAVES, SEA_UNIFORM_FLOATS, SEA_UNIFORM_LAYOUT, makeSeaDetail, packSea, snapSeaOrigin, type Sea, type Wave } from "../../shared/sea"
 import type { Seabed } from "../../shared/seabed"
 import { TIME_WRAP } from "./frame"
-import { OCEAN_FLOATS, OCEAN_LAYOUT as OL, OCEAN_LEVELS, OCEAN_LOOK, OCEAN_N, OCEAN_TILE, OCEAN_WAVES, OCEAN_WGSL } from "./ocean-shader"
+import { OCEAN_FLOATS, OCEAN_LAYOUT as OL, OCEAN_LEVELS, OCEAN_LOOK, OCEAN_N, OCEAN_TILE, OCEAN_WAVES, oceanShader } from "./ocean-shader"
+import { createWaterSettings, waterTint } from "@arcade/kit/water/settings"
+import { packWaterWakes, WATER_WAKE_FLOATS } from "@arcade/kit/water/wake"
 import type { RelView } from "./ocean-view"
 import { WAKE_SIZE, wakeTarget, type WakeTarget } from "./ocean-wake"
 import type { Renderer, ScenePass } from "./renderer"
@@ -156,11 +158,15 @@ function tileIndices(): Uint16Array<ArrayBuffer> {
  * Gerstner waves, crest foam with memory, and seabed-driven shallows, coral and surf.
  */
 export class Ocean implements ScenePass {
+  readonly water = createWaterSettings()
   readonly look: OceanLook = { ...OCEAN_LOOK_DEFAULT, deep: [...OCEAN_LOOK_DEFAULT.deep], scatter: [...OCEAN_LOOK_DEFAULT.scatter], sand: [...OCEAN_LOOK_DEFAULT.sand], coral: [...OCEAN_LOOK_DEFAULT.coral], foam: [...OCEAN_LOOK_DEFAULT.foam], absorb: [...OCEAN_LOOK_DEFAULT.absorb] }
   /** Tiles drawn last frame, for diagnostics. */
   tiles = 0
   private device: GPUDevice
   private pipe: GPURenderPipeline
+  private continuousPipe: GPURenderPipeline | null = null
+  private wakeUniform: GPUBuffer
+  private wakeData = new Float32Array(WATER_WAKE_FLOATS)
   private layout: GPUBindGroupLayout
   private ubuf: GPUBuffer
   private ibuf: GPUBuffer
@@ -186,10 +192,10 @@ export class Ocean implements ScenePass {
   private bed: Seabed | null = null
   private centre = new Float64Array(OCEAN_LEVELS * 2)
 
-  constructor(r: Renderer) {
+  constructor(private renderer: Renderer) {
+    const r = renderer
     const ctx = r.context
     const d = (this.device = ctx.device)
-    const module = r.module(OCEAN_WGSL, "ocean")
     this.layout = d.createBindGroupLayout({
       label: "ocean",
       entries: [
@@ -197,18 +203,10 @@ export class Ocean implements ScenePass {
         { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, texture: {} },
         { binding: 2, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, sampler: {} },
         { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+        { binding: 4, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
       ],
     })
-    this.pipe = d.createRenderPipeline({
-      label: "ocean",
-      layout: d.createPipelineLayout({ bindGroupLayouts: [ctx.frameLayout, this.layout] }),
-      vertex: { module, entryPoint: "vs", buffers: [{ arrayStride: 16, stepMode: "instance", attributes: [{ shaderLocation: 0, offset: 0, format: "sint32x4" }] }] },
-      fragment: { module, entryPoint: "fs", targets: [{ format: ctx.color }] },
-      // Seen from above the tile triangles wind clockwise; the sea is a height field, so back faces never show.
-      primitive: { topology: "triangle-list", cullMode: "back", frontFace: "cw" },
-      depthStencil: { format: ctx.depth, depthWriteEnabled: true, depthCompare: "greater-equal" },
-      multisample: { count: ctx.samples },
-    })
+    this.pipe = this.createPipeline(false)
     this.ubuf = d.createBuffer({ label: "ocean-u", size: OCEAN_FLOATS * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
     const idx = tileIndices()
     this.ibuf = d.createBuffer({ label: "ocean-idx", size: idx.byteLength, usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST })
@@ -216,8 +214,24 @@ export class Ocean implements ScenePass {
     this.inst = d.createBuffer({ label: "ocean-inst", size: this.instances.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST })
     this.sampler = d.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" })
     this.wake = wakeTarget(d)
+    this.wake.water = this.water
+    this.wakeUniform = d.createBuffer({ label: "water-kelvin", size: this.wakeData.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
     this.bedTex = this.blankBed()
     this.group = this.makeGroup()
+  }
+
+  private createPipeline(continuous: boolean): GPURenderPipeline {
+    const ctx = this.renderer.context
+    const module = this.renderer.module(oceanShader(continuous), continuous ? "water-continuous" : "ocean")
+    return this.device.createRenderPipeline({
+      label: continuous ? "water-continuous" : "ocean",
+      layout: this.device.createPipelineLayout({ bindGroupLayouts: [ctx.frameLayout, this.layout] }),
+      vertex: { module, entryPoint: "vs", buffers: [{ arrayStride: 16, stepMode: "instance", attributes: [{ shaderLocation: 0, offset: 0, format: "sint32x4" }] }] },
+      fragment: { module, entryPoint: "fs", targets: [{ format: ctx.color }] },
+      primitive: { topology: "triangle-list", cullMode: "back", frontFace: "cw" },
+      depthStencil: { format: ctx.depth, depthWriteEnabled: true, depthCompare: "greater-equal" },
+      multisample: { count: ctx.samples },
+    })
   }
 
   private blankBed(): GPUTexture {
@@ -234,6 +248,7 @@ export class Ocean implements ScenePass {
         { binding: 1, resource: this.bedTex.createView() },
         { binding: 2, resource: this.sampler },
         { binding: 3, resource: this.wake.view },
+        { binding: 4, resource: { buffer: this.wakeUniform } },
       ],
     })
   }
@@ -383,7 +398,7 @@ export class Ocean implements ScenePass {
     u[OL.cloud + 8] = this.wake.centre[0]! - ox
     u[OL.cloud + 9] = this.wake.centre[1]! - oz
     u[OL.cloud + 10] = 1 / WAKE_SIZE
-    u[OL.cloud + 11] = this.look.wake
+    u[OL.cloud + 11] = this.look.wake * (this.water.mode === "continuous" ? this.water.wake : 1)
     if (this.cloudDrift) {
       this.cloudDrift(t, this.driftOut)
       u[OL.cloud] = ox - this.driftOut[0]!
@@ -414,6 +429,10 @@ export class Ocean implements ScenePass {
       this.ui[g + 1] = Math.round(cz / s)
     }
     this.device.queue.writeBuffer(this.ubuf, 0, u)
+    if (this.water.mode === "continuous") {
+      packWaterWakes(this.wakeData, this.wake.boats, ox, oz, this.water.kelvin)
+      this.device.queue.writeBuffer(this.wakeUniform, 0, this.wakeData)
+    }
 
     // Tiles: everything of the first drawn level, then rings; frustum-culled.
     this.extractPlanes(view.viewProjRel64)
@@ -466,6 +485,19 @@ export class Ocean implements ScenePass {
     this.slot(10, k.surfReach, k.stormFoam, k.rain, k.wind)
     this.slot(11, k.windX, k.windZ, 0, k.filterCells)
     this.slot(12, k.debug, this.swellCount, k.fresnelFlat, 0)
+    if (this.water.mode === "continuous") {
+      const w = this.water
+      const tint = waterTint(w.colour)
+      this.vec(0, k.deep.map((v, i) => v * tint[i]!), w.horizonDistance)
+      this.vec(2, k.sand, w.horizonRoughness)
+      this.slot(3, ...k.coral, w.normalStrength)
+      this.slot(4, ...k.foam, k.foamAmount * w.foam)
+      this.slot(5, ...k.absorb, w.sunGlints)
+      this.slot(8, k.coralAmount, k.bedSun, k.haze * w.haze, w.detailStrength)
+      this.slot(9, k.slopeBoost, k.sssBase, k.sssBack, w.detailScale)
+      this.slot(11, k.windX, k.windZ, w.roughness, k.filterCells)
+      this.slot(12, k.debug, this.swellCount, k.fresnelFlat, w.reflection)
+    }
     this.u[OL.sun + 2] = (k.sunRadius * Math.PI) / 180
     this.u[OL.sun + 3] = k.swellBoost
   }
@@ -517,7 +549,7 @@ export class Ocean implements ScenePass {
 
   draw(pass: GPURenderPassEncoder): void {
     if (!this.sea || !this.tiles) return
-    pass.setPipeline(this.pipe)
+    pass.setPipeline(this.water.mode === "continuous" ? (this.continuousPipe ??= this.createPipeline(true)) : this.pipe)
     pass.setBindGroup(1, this.group)
     pass.setVertexBuffer(0, this.inst)
     pass.setIndexBuffer(this.ibuf, "uint16")

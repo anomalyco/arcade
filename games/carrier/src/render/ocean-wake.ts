@@ -1,3 +1,6 @@
+import type { WaterSettings } from "@arcade/kit/water/settings"
+import type { WaterWakeBoat } from "@arcade/kit/water/wake"
+
 /**
  * Wake field (Sea of Thieves-style "travelling window" foam): a camera-centred plan texture that hull passes draw
  * foam strength into each frame and the ocean shader samples, so wakes break up with the water and use the same foam
@@ -21,6 +24,8 @@ export type WakeTarget = {
   readonly view: GPUTextureView
   /** World plan centre of the window this frame. */
   readonly centre: Float64Array
+  water?: WaterSettings
+  readonly boats: WaterWakeBoat[]
 }
 
 const targets = new WeakMap<GPUDevice, WakeTarget>()
@@ -34,7 +39,7 @@ export function wakeTarget(device: GPUDevice): WakeTarget {
       format: WAKE_FORMAT,
       usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
     })
-    t = { texture, view: texture.createView(), centre: new Float64Array(2) }
+    t = { texture, view: texture.createView(), centre: new Float64Array(2), boats: [] }
     targets.set(device, t)
   }
   return t

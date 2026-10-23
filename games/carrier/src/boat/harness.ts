@@ -82,6 +82,10 @@ async function main() {
   }
   hudEl.innerHTML = `<div id="tl" class="brand">CARRIER · BOAT</div>`
   const params = new URLSearchParams(location.search)
+  const waterLab = location.pathname.endsWith("/water.html")
+  if (waterLab) for (const [key, value] of Object.entries({ water: "1", drone: "0", targets: "0", ship: "0", tod: "15" })) {
+    if (!params.has(key)) params.set(key, value)
+  }
   const num = (k: string, d: number) => (params.get(k) !== null && params.get(k) !== "" && Number.isFinite(Number(params.get(k))) ? Number(params.get(k)) : d)
   const seed = num("seed", 7) >>> 0
   const team = num("team", 0)
@@ -104,7 +108,7 @@ async function main() {
   const planePass = new PlanePass(renderer, models)
   const planeFx = new PlaneFx(renderer, models)
   const wfx = new WeaponFx(renderer)
-  const fx = new BoatFx(wfx)
+  const fx = new BoatFx(wfx, () => ocean.water)
   renderer.addPass("sky", sky)
   renderer.addPass("sky", stars)
   renderer.addPass("opaque", shipPass)
@@ -156,8 +160,8 @@ async function main() {
 
   const input = new Input(canvas)
   input.lockable = true
-  const audio = new BoatAudio()
-  const weaponAudio = new WeaponAudio()
+  const audio = waterLab ? null : new BoatAudio()
+  const weaponAudio = waterLab ? null : new WeaponAudio()
   const driver = new BoatDriver(new BoatInput(input, canvas), undefined, audio)
   driver.id = ME
   driver.team = team
@@ -229,6 +233,7 @@ async function main() {
    *  freezes the clock; `speed` scales it. */
   const debug = {
     renderer,
+    ocean,
     frame,
     grade,
     atmosphere,
@@ -285,6 +290,7 @@ async function main() {
     aimId: null as number | null,
   }
   Object.assign(globalThis, { carrier: debug })
+  const waterEditor = waterLab ? (await import("./water-editor")).createWaterEditor(canvas, debug, params) : null
 
   const resize = () => {
     const dpr = Math.min(devicePixelRatio, MAX_DPR)
@@ -363,7 +369,7 @@ async function main() {
           driver.aimAt = [e.boat.x + e.boat.u * s * lead, e.boat.heave + 1.5 + 0.5 * 9.81 * lead * lead, e.boat.z - e.boat.u * c * lead]
         } else driver.aimAt = null
       } else driver.aimAt = null
-      driver.fixed(world)
+      if (!waterEditor?.editing) driver.fixed(world)
       for (const e of enemies) {
         copyBoat(e.boat, e.prev)
         if (e.dead >= 0) {
@@ -392,7 +398,7 @@ async function main() {
           if (d) {
             wfx.explosion(d.plane.x, d.plane.y, d.plane.z, d.plane.vx * 0.5, d.plane.vy * 0.5, d.plane.vz * 0.5, 1.4)
             driver.hud.hit(true)
-            weaponAudio.explosion(Math.hypot(d.plane.x - camera.eye[0], d.plane.y - camera.eye[1], d.plane.z - camera.eye[2]), 1.2, "air-kill")
+            weaponAudio?.explosion(Math.hypot(d.plane.x - camera.eye[0], d.plane.y - camera.eye[1], d.plane.z - camera.eye[2]), 1.2, "air-kill")
           }
         }
       }
@@ -406,12 +412,13 @@ async function main() {
             e.dead = 0
             fx.explode({ x: e.boat.x, z: e.boat.z, heave: e.boat.heave, heading: e.boat.heading, pitch: 0, roll: 0, u: e.boat.u, v: e.boat.v })
             driver.hud.hit(true)
-            weaponAudio.explosion(Math.hypot(e.boat.x - camera.eye[0], e.boat.z - camera.eye[2]), 1, "missile")
+            weaponAudio?.explosion(Math.hypot(e.boat.x - camera.eye[0], e.boat.z - camera.eye[2]), 1, "missile")
           }
         }
       }
       boats.events.length = 0
     }
+    waterEditor?.update(t, dt)
     const k = Math.max(0, Math.min(1, (t - ship.t) / SHIP.tick))
     lerpShip(shipPrev, ship, k, shipDraw)
     Object.assign(homeDraw, shipDraw, { id: SHIP_ID, team, u: ship.u, v: ship.v, r: ship.r })

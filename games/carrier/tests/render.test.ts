@@ -3,6 +3,22 @@ import { Camera, DEFAULT_VIEW, FAR, NEAR, frustumGroundRect, parseCam } from "..
 import { FRAME, FRAME_FLOATS, FRAME_WGSL } from "../src/render/frame"
 import { splitFoliage } from "../src/render/lit"
 import { MAT, Mesh, VERT_BYTES } from "../src/render/mesh"
+import { oceanShader } from "../src/render/ocean-shader"
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { homedir, tmpdir } from "node:os"
+import { join } from "node:path"
+
+const naga = [process.env.NAGA, Bun.which("naga"), join(homedir(), ".cache/naga-cli/bin/naga")].find((p): p is string => !!p && existsSync(p))
+for (const continuous of [false, true]) test.skipIf(!naga)(`ocean WGSL validates (${continuous ? "continuous" : "Today"})`, () => {
+  const dir = mkdtempSync(join(tmpdir(), "ocean-wgsl-"))
+  try {
+    const file = join(dir, "ocean.wgsl")
+    writeFileSync(file, oceanShader(continuous))
+    const result = Bun.spawnSync([naga!, file])
+    expect(result.stderr.toString() + result.stdout.toString()).toContain("Validation successful")
+    expect(result.exitCode).toBe(0)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
 
 const clip = (m: Float32Array, p: readonly number[]) => {
   const [x, y, z] = p as [number, number, number]

@@ -2,6 +2,8 @@ import { ATMOSPHERE_WGSL } from "./atmosphere"
 import { CLOUD_SHADOW_WGSL } from "./clouds"
 import { FRAME_BINDING_WGSL } from "./frame"
 import { HASH_WGSL } from "./ocean-hash"
+import { WATER_WGSL } from "@arcade/kit/water/shader"
+import { WATER_WAKE_WGSL } from "@arcade/kit/water/wake"
 
 /** Lattice levels (0.5 m to 2048 m cells), waves the shader holds (16 sea + 8 detail), look slots. */
 export const OCEAN_LEVELS = 13
@@ -40,11 +42,14 @@ const MORPH_LO = OCEAN_N / 2 + OCEAN_TILE / 2
 const MORPH_HI = OCEAN_N - OCEAN_TILE
 const f = (v: number) => (Number.isInteger(v) ? `${v}.0` : `${v}`)
 
-export const OCEAN_WGSL = /* wgsl */ `
+/** The Today source keeps its original expressions. The continuous pipeline is compiled only on opt-in. */
+export function oceanShader(continuous = false): string { return /* wgsl */ `
 ${FRAME_BINDING_WGSL}
 ${ATMOSPHERE_WGSL}
 ${HASH_WGSL}
 ${CLOUD_SHADOW_WGSL}
+${continuous ? WATER_WGSL : ""}
+${continuous ? WATER_WAKE_WGSL : ""}
 
 const PI: f32 = 3.14159265;
 const TAU: f32 = 6.2831853;
@@ -109,7 +114,7 @@ struct VOut {
   @location(6) nSmooth: vec3f,
   @location(7) cell: f32,
   @location(8) @interpolate(flat) facet: u32,
-  @location(9) @interpolate(flat) peak: f32,
+  @location(9) ${continuous ? "" : "@interpolate(flat) "}peak: f32,
   @location(10) age: f32,
   @location(11) morph: f32,
   @location(12) @interpolate(flat) swell: vec2f,
@@ -532,13 +537,13 @@ fn sunAreaDir(L: vec3f, R: vec3f, r: f32) -> vec3f {
   var nF = cross(dX, dY);
   nF = select(-nF, nF, nF.y >= 0.0);
   let lenF = length(nF);
-  let nS = normalize(v.nSmooth);
+  ${continuous ? "var" : "let"} nS = normalize(v.nSmooth);
   nF = select(nS, nF / max(lenF, 1e-20), lenF > 1e-5 * length(dX) * length(dY));
   let facetPx = v.cell / footprint;
-  let facetFade = smoothstep(2.0, 6.0, facetPx);
+  let facetFade = ${continuous ? "1.0" : "smoothstep(2.0, 6.0, facetPx)"};
   var n = normalize(mix(nS, nF, facetFade));
   // Facet identity switches when a vertex passes half-morph; fade the per-facet jitter to zero there so it never pops.
-  let jit = facetFade * abs(v.morph * 2.0 - 1.0);
+  let jit = ${continuous ? "0.0" : "facetFade * abs(v.morph * 2.0 - 1.0)"};
   let h = rand3(vec3u(v.facet, 0x2545f491u, 7u));
   let spin = h.z * TAU + t * (1.0 + floor(h.y * 3.0)) * (TAU / 60.0);
   n = normalize(n + vec3f(cos(spin), 0.0, sin(spin)) * (O.look[0].w * h.x * jit));
@@ -563,6 +568,36 @@ fn sunAreaDir(L: vec3f, R: vec3f, r: f32) -> vec3f {
   }
   let depth = bed.r * 40.0;
   let shore = bed.b * 300.0;
+${continuous ? /* wgsl */ `
+  // Evaluate the same packed sea at the interpolated material coordinate, independent of mesh facets.
+  // Displacement and buoyancy remain unchanged. All unresolved normal energy becomes roughness.
+  var waterG = vec2f(0.0);
+  var waterJ = vec3f(0.0);
+  var waterVariance = 0.0;
+  for (var i = 0u; i < u32(O.anchor.z); i++) {
+    let w = O.waves[i];
+    let sh = O.shape[i];
+    let wavelength = TAU / w.z;
+    let bandWeight = 1.0 - smoothstep(0.12, 0.45, footprint / wavelength);
+    let damp = saturate(depth / clamp(1.57 / w.z, 1.5, 14.0));
+    let phase = wavePhase(w, v.p);
+    waterG += w.xy * sh.w * cos(phase) * bandWeight * damp;
+    waterJ -= vec3f(w.x * w.x, w.x * w.y, w.y * w.y) * sh.z * sin(phase) * bandWeight * damp;
+    waterVariance += 0.5 * sh.w * sh.w * damp * damp * (1.0 - bandWeight * bandWeight);
+  }
+  let waterDet = max((1.0 + waterJ.x) * (1.0 + waterJ.z) - waterJ.y * waterJ.y, 0.05);
+  let waterSlope = vec2f((1.0 + waterJ.z) * waterG.x - waterJ.y * waterG.y,
+    (1.0 + waterJ.x) * waterG.y - waterJ.y * waterG.x) / waterDet;
+  let detail = waterDetail(q, t, footprint, O.look[9].w, O.look[8].w);
+  let farWater = smoothstep(O.look[0].w * 0.35, O.look[0].w, length(v.rel));
+  let slopeKeep = 1.0 - farWater;
+  let slopeWater = (waterSlope * O.look[3].w + detail.xy + waterKelvin(v.wp, footprint)) * slopeKeep;
+  // Resolved slopes become a broad microfacet distribution rather than horizon stripes.
+  waterVariance = waterVariance * O.look[3].w * O.look[3].w + detail.z
+    + farWater * O.look[2].w * O.look[2].w;
+  n = normalize(vec3f(-slopeWater.x, 1.0, -slopeWater.y));
+  nS = n;
+` : ""}
 
   // Fragment band-split (brief §1, "high" option): swell waves the mesh filtered away but the pixel still resolves
   // come back as smooth shading, so the long swell bands stay readable from altitude and toward the horizon.
@@ -611,7 +646,7 @@ fn sunAreaDir(L: vec3f, R: vec3f, r: f32) -> vec3f {
   // Shading-only slope boost: the swell is gentle (kA ~ 0.01), so its tilt is exaggerated for shading (never for the
   // geometry, which must match physics) until the swell bands read like the concepts.
   let sb = O.sun.w;
-  var nB = normalize(vec3f(n.x * k9.x - swG.x * sb, n.y, n.z * k9.x - swG.y * sb));
+  var nB = ${continuous ? "n" : "normalize(vec3f(n.x * k9.x - swG.x * sb, n.y, n.z * k9.x - swG.y * sb))"};
   // Rain dimples the water near the camera: rings break up the reflections.
   let rain = O.look[10].z;
   let dimpleNear = rain * (1.0 - smoothstep(0.03, 0.12, footprint));
@@ -632,12 +667,12 @@ fn sunAreaDir(L: vec3f, R: vec3f, r: f32) -> vec3f {
   //    sun/view angle and the facet's tilt away from the sun, with the scatter boosted beyond realistic.
   let backlit = pow(saturate(dot(-V, Lv) * 0.5 + 0.5), 3.0);
   let away = pow(saturate(0.5 - 0.5 * dot(L, nB)), 2.0);
-  let sss = v.peak * (k9.y + k9.z * backlit) * (0.3 + 1.2 * away) * mix(0.35, 1.0, facetFade);
+  let sss = v.peak * (k9.y + k9.z * backlit) * (0.3 + 1.2 * away) * mix(0.35, 1.0, facetFade)${continuous ? " * 0.35" : ""};
   // Stylised facet lighting: facets turned toward the sun read lighter, like a lit low-poly mesh.
-  let facetLit = mix(1.0, saturate(0.5 + 0.65 * dot(nB, L) / max(L.y, 0.2)), O.look[7].w);
+  let facetLit = ${continuous ? "1.0" : "mix(1.0, saturate(0.5 + 0.65 * dot(nB, L) / max(L.y, 0.2)), O.look[7].w)"};
   let lightDeep = (sun * k6.z + skyAmb * k6.w) * facetLit;
   var body = mix(deep, scatter, saturate(sss)) * lightDeep;
-  body += scatter * sun * O.look[1].w * v.peak * v.peak * backlit * away;
+  body += scatter * sun * O.look[1].w * v.peak * v.peak * backlit * away${continuous ? " * 0.25" : ""};
   body *= mix(0.85, 1.15, saturate(v.peak * 1.6));
   // Shallows: Beer-Lambert down to the bed and back up over sand and coral.
   if (depth < 39.0) {
@@ -663,14 +698,14 @@ fn sunAreaDir(L: vec3f, R: vec3f, r: f32) -> vec3f {
   let glowR = F.sunColor.rgb * sunGlow(Rf) * vec3f(0.74, 1.1, 1.55) * (1.0 - smoothstep(0.0, 0.38, R.y));
   let skyR = max(skyNoSunAt(R, Lv) - glowR * 0.85, vec3f(0.0)) * k6.x;
   let fl = O.look[12].z;
-  let nFl = normalize(vec3f(nB.x * fl, nB.y, nB.z * fl));
+  let nFl = ${continuous ? "nB" : "normalize(vec3f(nB.x * fl, nB.y, nB.z * fl))"};
   let Fr = 0.02 + 0.98 * pow(1.0 - max(dot(nFl, V), 0.0), 5.0);
-  var col = mix(body, skyR, min(Fr, k6.y * (1.0 - 0.3 * rain)));
+  var col = mix(body, skyR, ${continuous ? "min(Fr * O.look[12].w, 0.58)" : "min(Fr, k6.y * (1.0 - 0.3 * rain))"});
 
   // 6) Sun specular: GGX with a big area sun (SoT / Karis representative point), widened by the slope the mesh
   //    filtered away; far facets glitter instead of mirroring.
   let NoV = max(dot(n, V), 1e-3);
-  let sunR = O.sun.z;
+  let sunR = ${continuous ? "0.00465" : "O.sun.z"};
   let Ls = sunAreaDir(Lv, reflect(-V, n), sunR);
   let Hs = normalize(Ls + V);
   let a2 = k7.z + min(v.sigma2, 0.0004) + (1.0 - facetFade) * 0.0005;
@@ -687,11 +722,13 @@ fn sunAreaDir(L: vec3f, R: vec3f, r: f32) -> vec3f {
   let broad = mix(0.05, 1.0, facetFade * facetFade) * dip * mix(1.0, 0.04, smoothstep(0.35, 1.6, footprint));
   // Capped well below the bloom's knee on distant facets: the path is a streak of glints, not a glowing disc.
   // Under the moon (Frame extra.w) the area specular is lifted: its light is ~20x dimmer than the sun's.
-  col += sun * (1.0 + 5.0 * F.extra.w) * sunVeil() * min(Dg * FrS * saturate(dot(n, Ls)) / (4.0 * max(NoV, 0.05)), k7.y * mix(0.08, 1.0, facetFade * facetFade) * mix(1.0, 0.25, smoothstep(0.6, 4.0, footprint))) * broad;
+  col += sun * (1.0 + 5.0 * F.extra.w) * sunVeil() * ${continuous
+    ? "(0.12 * (1.0 - exp(-waterSpecular(n, V, Ls, mix(O.look[11].z, O.look[2].w, farWater), waterVariance, sunR))) + 4.0 * waterGlints(wq, n, V, Lv, footIso) * slopeKeep) * O.look[5].w"
+    : "min(Dg * FrS * saturate(dot(n, Ls)) / (4.0 * max(NoV, 0.05)), k7.y * mix(0.08, 1.0, facetFade * facetFade) * mix(1.0, 0.25, smoothstep(0.6, 4.0, footprint))) * broad"};
 
   // 7) Glitter sparkles in the broad sun path.
   let wide = pow(saturate(dot(nS, normalize(Lv + V))), 10.0);
-  if (wide * dip * sunVeil() > 0.01 && (dbg & 16u) == 0u) { col += sun * sunVeil() * glitter(q, n, V, Lv, footprint, t) * O.look[5].w * wide * dip; }
+  ${continuous ? "// Continuous water's resolved normals carry the highlights; no random per-cell sparkles." : "if (wide * dip * sunVeil() > 0.01 && (dbg & 16u) == 0u) { col += sun * sunVeil() * glitter(q, n, V, Lv, footprint, t) * O.look[5].w * wide * dip; }"}
 
   // 8) Foam coverage: crest foam from the geometry, plus breaking surf near islands.
   var surf = 0.0;
@@ -720,7 +757,16 @@ fn sunAreaDir(L: vec3f, R: vec3f, r: f32) -> vec3f {
   }
   if (cover > 0.03 || streak.x > 0.01) {
     let age = mix(select(v.age, swellAge, swellFoam > v.foam), wk.y, step(crestCover, wk.x));
-    var fm = foamMask(q, cover, footIso, age, t);
+    var fm = ${continuous ? "waterFoam(wq, cover, footIso, age)" : "foamMask(q, cover, footIso, age, t)"};
+${continuous ? /* wgsl */ `
+    // Wake coverage remains continuous even where crest foam breaks into isolated filaments.
+    // The trajectory texture keeps the prop wash and arms on the displaced water surface.
+    let churn = waterNoise(wq * vec2f(0.37, 0.81)).x;
+    let bubbles = waterNoise(wq * 2.7 + churn).x;
+    let filaments = smoothstep(0.24, 0.72, 0.65 * churn + 0.35 * bubbles);
+    let wakeFoam = smoothstep(0.015, 0.55, wk.x) * (0.13 + 0.72 * filaments);
+    fm.x = max(fm.x * (1.0 - smoothstep(0.0, 0.25, wk.x)), wakeFoam);
+` : ""}
     // The storm wind tears the crest clusters into streaks (wake and surf foam keep their shapes).
     let carve = st * 0.85 * step(max(surfC, wk.x), crestCover);
     fm.x *= mix(1.0, smoothstep(0.35, 0.8, streak.y), carve);
@@ -736,7 +782,9 @@ fn sunAreaDir(L: vec3f, R: vec3f, r: f32) -> vec3f {
   // 9) Haze toward the same colour the sky paints below the horizon, so the far plane cut is invisible.
   let dist = length(v.rel);
   // Under an overcast the far sea melts into the grey horizon a little sooner (no fog: only the far kilometres).
-  col = mix(col, seaHazeAt(-V, Lv), 1.0 - exp(-dist * F.horizon.w * k8.z * (1.0 + 1.5 * overcast())));
+  col = mix(col, ${continuous ? "mix(seaHazeAt(-V, Lv), hazeColor(-V), 0.5 * (1.0 - smoothstep(0.0, 0.08, V.y)))" : "seaHazeAt(-V, Lv)"}, 1.0 - exp(-dist * F.horizon.w * k8.z * (1.0 + 1.5 * overcast())));
   return vec4f(col, 1.0);
 }
-`
+` }
+
+export const OCEAN_WGSL = oceanShader()
