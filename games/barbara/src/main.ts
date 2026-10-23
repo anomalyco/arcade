@@ -33,7 +33,8 @@ import { FlareView } from "./flare-view"
 import { FriendsView } from "./friends-view"
 import { HeldMap, heldMapControls } from "./held-map"
 import { arrangeControl, LOOKS_SECTION, SECTIONS } from "./knobs"
-import { applyLook, lookBase, LOOK_IDS, LOOKS, type LookId } from "./looks"
+import { applyLook, blendLooks, lookBase, LOOK_IDS, LOOKS, WEATHER_KEEPS, WEATHER_LOOK, type LookId } from "./looks"
+import { nightProgress, nightSpells, weatherAt, type WeatherSpell } from "../shared/night-weather"
 import { PaperMap } from "./map"
 import { OnlineSession, SoloSession, type Session } from "./session"
 import { NightHud } from "./night-hud"
@@ -251,8 +252,20 @@ async function main() {
   const pickLook = (id: LookId) => {
     if (!LOOKS[id]) return
     lookState.look = id
-    applyLook(id, lookTargets, todayLook)
+    if (id !== "tonight") applyLook(id, lookTargets, todayLook)
+    else tonight.at = -1
     panel.sync()
+  }
+  // Tonight: the night's own weather from its seed and the shared clock (`shared/night-weather.ts`), so everyone in a
+  // room on this Look sees the same fog roll in and the same storm break. Knobs it sets follow it while it's picked.
+  const tonight = { seed: NaN, spells: [] as WeatherSpell[], at: -1, now: "" }
+  const stepTonight = (t: number, night: { seed: number; start: number; dawn: number }) => {
+    if (tonight.seed !== night.seed) { tonight.seed = night.seed; tonight.spells = nightSpells(night.seed) }
+    const w = weatherAt(tonight.spells, nightProgress(t, night.start, night.dawn))
+    blendLooks(WEATHER_LOOK[w.from], WEATHER_LOOK[w.to], w.mix, lookTargets, todayLook, WEATHER_KEEPS)
+    tonight.now = w.mix > 0 ? `${w.from} → ${w.to} ${Math.round(w.mix * 100)}%` : w.from
+    // The panel shows the values as they drift, a few times a second.
+    if (t - tonight.at > 0.5 || t < tonight.at) { tonight.at = t; if (panel.visible) panel.sync() }
   }
   // Triggers: everything the storm and the woods can do, now. A click is a gesture, so the sound can start too.
   const trigger = (what: string) => {
@@ -266,7 +279,7 @@ async function main() {
   }
   panel.addControls(lookState as unknown as Bag as Record<string, string>, [
     { key: "woods.look", field: "look", label: "Look", group: LOOKS_SECTION, type: "select", options: LOOK_IDS.map((id) => ({ value: id, label: LOOKS[id].label })), change: (v) => pickLook(String(v) as LookId) },
-    { key: "woods.lookNote", label: "This look", group: LOOKS_SECTION, type: "readout", read: () => LOOKS[lookState.look].note },
+    { key: "woods.lookNote", label: "This look", group: LOOKS_SECTION, type: "readout", read: () => LOOKS[lookState.look].note + (lookState.look === "tonight" && tonight.now ? ` Now: ${tonight.now}.` : "") },
     { key: "woods.triggers.lightning", label: "Lightning strike", group: LOOKS_SECTION, type: "buttons", items: (["near", "mid", "far"] as const).map((d) => ({ key: `woods.trigger.${d}`, label: d === "near" ? "Near" : d === "mid" ? "Mid" : "Far", run: () => trigger(d) })) },
     { key: "woods.triggers.sound", label: "Sounds", group: LOOKS_SECTION, type: "buttons", items: [{ key: "woods.trigger.thunder", label: "Thunder only", run: () => trigger("thunder") }, { key: "woods.trigger.distant", label: "A distant sound", run: () => trigger("distant") }] },
     { key: "woods.triggers.woods", label: "In the woods", group: LOOKS_SECTION, type: "buttons", items: [{ key: "woods.trigger.gust", label: "A gust", run: () => trigger("gust") }, { key: "woods.trigger.creature", label: "The creature", run: () => trigger("creature") }, { key: "woods.triggers.flare", label: "A flare", run: () => trigger("flare") }] },
@@ -708,6 +721,7 @@ async function main() {
     creature.frame()
     // The storm: strikes, rain, wind and the eye after a flash for the picture; its thunder and rain for the sound.
     // Scheduled strikes follow the sim clock round camp, so a room on the same Look sees the same ones.
+    if (lookState.look === "tonight") stepTonight(state.t, state.night)
     const sf = storm.frame({ dt, eye: camera.eye, yaw: camera.yaw, groundY: standHeight(world, at.x, at.z), forestWind: view.forest.settings.wind, shared: { time: state.t, anchor: [world.camp.x, world.camp.z] } })
     audio.storm(sf)
     view.frame({ eye: [camera.eye[0], camera.eye[1], camera.eye[2]], viewProj: vp as Float32Array, width, height, time: state.t, dt, fovY: ((camera.fov + camera.mount.fov) * Math.PI) / 180, torches, fp, place, casters: [...friends.casters(ownOrigin, view.forest.settings.torchReach), ...held.casters()], batches: [...creatures.frame(world, time), ...spiderBatches], flares: lit, storm: smoke ? null : sf.view }, stepping, smokeTarget?.createView())
@@ -774,7 +788,7 @@ async function main() {
       /** Automation: the night (phase, clock, finds, the layout) and the next one. */
       get night() { return session.view.night }, nextNight,
       /** Automation: the curated Looks (`src/looks.ts`) and the Triggers group's buttons. */
-      looks: { pick: pickLook, get current() { return lookState.look }, ids: LOOK_IDS },
+      looks: { pick: pickLook, get current() { return lookState.look }, ids: LOOK_IDS, get tonight() { return { spells: tonight.spells, now: tonight.now } } },
       trigger,
       /** Automation: tonight's web and bundles (`shared/spider-signs.ts`), or null without the spider. */
       get spiderSigns() { return signsFor(session.view.night.seed, session.view.night.layout.verdict.culprit) },

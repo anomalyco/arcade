@@ -1,6 +1,6 @@
 // Headless, muted stills of every curated Look at one spot and time, a near strike at its peak, and rough GPU cost of
 // Downpour at High and Low (run after `bun run build`, through HiveMind browser):
-//   bun scripts/looks-proof.ts [--out <dir>] [--size 1600x900] [--looks id,id] [--no-perf] [--probe] [--sweep look:k=v,k=v;k=v]
+//   bun scripts/looks-proof.ts [--out <dir>] [--size 1600x900] [--looks id,id] [--no-perf] [--probe] [--sweep look:k=v,k=v;k=v] [--tonight 0.1,0.5]
 // The spot is the camera lab's (70 m north of camp, your torch and two friends'), on a synthetic clock. Scheduled
 // strikes are held off for the Look stills so each is comparable; Storm coming is taken at the peak of a far strike.
 import { mkdirSync, writeFileSync } from "node:fs"
@@ -20,7 +20,7 @@ type Woods = {
   frames: number; paused: boolean; autoplay: boolean
   step(ms: number): void
   setPose(x: number, z: number, yaw: number, pitch?: number): void
-  looks: { pick(id: string): void; ids: readonly string[] }
+  looks: { pick(id: string): void; ids: readonly string[]; tonight: { spells: unknown[]; now: string } }
   storm: { settings: Record<string, number | string>; settle(): void; strike(at: string): void; strikes: { live: readonly { t: number }[]; clock: number }; last: { view: { flash: number; flashSky: number } } | null }
   trigger(what: string): void
   world: { camp: { x: number; z: number }; buildings: { kind: string; rect: number[] }[] }
@@ -98,7 +98,7 @@ const strikePeak = async (at: string) => {
   console.log("strike", at, JSON.stringify(t))
 }
 
-const ids = (await page.evaluate(() => [...woods.looks.ids])).filter((id) => !only || only.split(",").includes(id))
+const ids = (await page.evaluate(() => [...woods.looks.ids])).filter((id) => id !== "tonight" && (!only || only.split(",").includes(id)))
 const timing: Record<string, number> = {}
 for (const id of ids) {
   const t0 = Date.now()
@@ -113,10 +113,29 @@ if (sweep) {
   const [id, sets] = sweep.split(":") as [string, string]
   for (const [i, set] of sets.split(";").entries()) {
     await lookAt(id)
-    await page.evaluate((kv) => { for (const p of kv.split(",")) { const [k, v] = p.split("="); (woods as unknown as { look: Record<string, unknown> }).look[k!] = isNaN(Number(v)) ? v : Number(v) } }, set)
+    await page.evaluate((kv) => { for (const p of kv.split(",")) { const [k, v] = p.split("="); (woods as unknown as { look: Record<string, unknown> }).look[k!] = v === "true" ? true : v === "false" ? false : isNaN(Number(v)) ? v : Number(v) } }, set)
     await settle(150)
     await shoot(`sweep-${id}-${i}`)
     console.log("sweep", i, set)
+  }
+}
+// `--tonight 0.1,0.5,0.9`: the Tonight Look at those shares of the night (the night's clock moved, solo).
+const tonightAt = arg("--tonight", "")
+if (tonightAt) {
+  await lookAt("today")
+  await page.evaluate(() => woods.looks.pick("tonight"))
+  for (const p of tonightAt.split(",").map(Number)) {
+    const now = await page.evaluate((p) => {
+      const n = (woods.state as unknown as { night: { start: number; dawn: number }; t: number })
+      n.night.start = n.t - p * 1080; n.night.dawn = n.night.start + 1080
+      for (let i = 0; i < 30; i++) woods.step(1000 / 60)
+      woods.storm.settings.strikes = 0
+      woods.storm.settle()
+      return woods.looks.tonight
+    }, p)
+    await settle(120)
+    await shoot(`tonight-${Math.round(p * 100)}`)
+    console.log("tonight", p, JSON.stringify(now))
   }
 }
 // Clear moonlit also from the dock, looking south over the lake toward the moon (its glitter path).
