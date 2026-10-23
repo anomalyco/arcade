@@ -374,7 +374,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     const spot = local ? (torchPower * 5 * 0.2) / (Math.PI * Math.max(cam.hit, 0.4) ** 2) * coverage : 0
     const metered = renderer.sceneMeter
     // The compensation follows your torch, not the whole night: camp with your torch off keeps its exposure law.
-    const targetStops = forestExposureTarget(metered, spot + 0.004 * s.sky + 0.0005, s, s.clearAir && !smoke && local ? -0.25 : 0)
+    const targetStops = forestExposureTarget(metered, spot + 0.004 * s.sky + 0.0005, s, s.clearAir && !smoke && local ? -0.25 * (1 - Math.min(1, Math.max(0, s.nearScatter))) : 0)
     // While a lightning flash is in the meter the storm's eye adaptation answers it; this clock waits.
     if (!st?.holdExposure) stepForestExposure(cam, renderer.sceneMeterStatus, targetStops, f.dt, s)
     cam.exposure = Math.pow(2, cam.stops)
