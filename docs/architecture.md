@@ -84,6 +84,8 @@ The table below shows which shared modules each game and the Lab import. `script
 | `props/*` | Generated furniture library: catalogue, `.prop` meshes, instanced batches, seeded room placement | — | — | Yes | — | Yes | — | — |
 | `look` & `gpu/look-shaders` | `LookSettings` presets and WGSL scene/post grading hooks | — | Yes | Yes | — | Yes | Yes | Yes |
 | `gpu/post/camcorder` | Opt-in Camera filter final pass (iPhone, VHS, CRT TV, body cam) on `Renderer.setFinalPass` | — | — | Yes | — | — | — | — |
+| `forest/{view,settings}` & `sim/{forest-world,forest-demo}` | Photoreal night forest renderer (scanned trees, mist bank, beams, exposure, quality tiers) over a plain `ForestWorld` | — | — | — | — | Yes | — | — |
+| `client/walk-camera` | First-person walking camera: stride bob, settle and reduce-motion over `client/walk` | — | — | — | — | Yes | — | — |
 | `gpu-perf`, `fx/frame-timer` & `quality` | Rolling p50/p95/FPS `PerfSampler`, GPU pass timestamp telemetry and adaptive quality tiers (`GameQuality`) | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
 | `fx/{particles,particle-renderer}` | Fixed typed-array particle pool, `Emitter`, and billboard/spark/debris pass | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
 | `fx/{volume*,smoke-trail,tyre-renderer}` | Flood-fill volumetric smoke and continuous ribbon tyre trails | Yes | Yes | Yes | — | Yes | — | — |

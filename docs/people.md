@@ -1,9 +1,9 @@
 # Realistic people (`@arcade/kit/people`)
 
 Skinned MakeHuman people any game can draw in place of the blocky rig figures, driven by the same shared human rig,
-so foot placement, stepping over logs, torch aiming and every game's `animate` call keep working. Woods is the first
-user (its "Realistic people" setting, `?people=real`, default off on the `woods` branch); every game still draws blocky
-people by default.
+so foot placement, stepping over logs, torch aiming and every game's `animate` call keep working. Barbara is the first
+user: realistic friends are its default, with the blocky ones one setting away (Lab › Friends › Realistic people, or
+`?people=blocky`); every other game still draws blocky people by default.
 
 Proof: feasibility https://studio.taila8e7c7.ts.net:8444/raw/people-2026-10-21/index.html, cast
 https://studio.taila8e7c7.ts.net:8444/raw/people-cast-2026-10-22/index.html
@@ -86,7 +86,7 @@ eases it out within a quarter second.
 
 A game keeps its avatars: animate them in rig space (`world / people.scale(cast)`), then call
 `people.drive(person, avatar, { dt, time, ground, torch: { side, dir }, look, eye })`. It returns the torch frame (world)
-for the beam and the torch mesh. Woods' adapter is `games/woods/src/people-view.ts` (≈80 lines) plus a
+for the beam and the torch mesh. Woods' adapter is `games/barbara/src/people-view.ts` (≈80 lines) plus a
 `FriendsView.people: "blocky" | "real"` switch that draws blocky friends while the GLB loads.
 
 ## Measured (Oct 22)

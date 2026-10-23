@@ -18,6 +18,7 @@ tool; the shell is what players see.
    card's corner, and M (unless the game gives M to something else, like Outbreak's map, and passes `muteKey: false`).
 4. **No game ships its own volume or quality UI.** The Lab panel may keep designer mix levels (renamed "Mix level"
    where it was "Volume"), but player volume, mute, quality and reduce camera motion live in the shell's Settings.
+   The one sanctioned in-HUD volume control is the shell's `ShellVolumeButton` (below); a game opts in by mounting it.
 5. **Escape behaves the same everywhere**: it opens the pause menu (Resume, Settings, Leave), closes Settings, and
    resumes. Pointer-lock games pause whenever the lock goes. A game menu that owns Escape (chat, a pack, a map) says
    so with `escapeOwned`, and the Lab panel's focus with `keysBlocked`.
@@ -61,6 +62,7 @@ audio.master = shell.settings.gain("master")   // master × channel, 0 while mut
 | Flow | `ShellFlow` (`shell.flow`): `screen` (`title`, `playing`, `paused`), `overlay`, `settingsOpen`, `play()`, `pause()`, `resume()`, `leave()` | Simulates while `shell.playing` (or keeps running in a room). Runs its Leave in `onLeave`. |
 | Lobby | `ShellLobby` (`shell.lobby`): `name` (saved as `<game>.name`), `room`, `players`, `connection`, `inviteLink()`, `join()`, `playWithFriends()` (`api/create`), `quickMatch()` (`api/quick`, with `quick: true`), `linkedRoom` (an invite link opened the page). No `onSolo`: no Play alone. `nameRequired`: rooms wait for a typed name instead of `fallbackName` | Owns the room socket; pushes `setRoom`, `setPlayers`, and `setSocketStatus(socket.status())` for the reconnect pill. A game that plays as soon as it joins calls `shell.flow.play()` in `onJoin`; one that gathers first leaves the room card up (players, ready, start). |
 | Audio runtime | `audioRuntimeSync(settings, runtime)` | Games on the kit `AudioRuntime` call it once a frame: mute, master and per-channel bus gains. It turns the runtime's own M off (`muteKey = false`); keep `autoBindDom` on, since it also unlocks audio on the first gesture. |
+| HUD volume | `ShellVolumeButton` / `mountVolumeControl(shell.settings, el, { channel?, muteKey? })` | Opt-in. Mounts a speaker in a HUD corner `el` (the game positions `el`; the control sets `pointer-events: auto`). Click toggles mute; hover drops a master-volume slider (moving it up unmutes). The icon shows muted (or 0), low (< 50%) or high. Same `ShellSettings` as Settings and M, so it saves the same way. It never holds keyboard focus (a key while it has focus blurs it and goes on to the game) and stops its own pointer events, so clicking it never takes pointer lock; under pointer lock it is out of reach until Esc frees the cursor. Carrier uses it top right. |
 | Leave warning | `LeaveGuard` (`shell.guard`) | Nothing, or its own `leaveGuard: () => boolean`. |
 | Loading | `ShellLoading` (`shell.loading`): weighted `stage()`s, `done()`, `finish()`, `fail()` | Reports real work; calls `finish()` after the first frame. |
 | View | `ShellView` (`shell.view`): title and pause cards, Settings inside them, loading bar, reconnect pill | Restyles with `--shell-font`, `--shell-title-font`, `--shell-ink`, `--shell-dim`, `--shell-card`, `--shell-edge`, `--shell-field`, `--shell-accent`, `--shell-accent-ink`, `--shell-backdrop`, `--shell-radius`. `view: false` draws nothing (headless). |
@@ -107,7 +109,7 @@ Each game lists its deliberate changes in its own `AGENTS.md` under "Game shell"
 | Getaway | Yes (night-road backdrop in the title slot) | `games/getaway/src/main.ts`, `src/ui/lobby.ts` |
 | Carrier | Yes (rooms only, callsign required) | `games/carrier/src/main.ts` |
 | Outbreak | Escape menu and Settings; its own lobby stays the title | `games/outbreak/src/main.ts`, `src/lobby/run-tools.ts` |
-| Woods | Not yet (unshipped branch `woods`); see the adoption note below | |
+| Barbara | Yes (room by link; M mutes; the Lab panel hides the cards while it is open, so you can play with it up) | `games/barbara/src/main.ts`, `index.html` |
 | Lab | Exempt: it is the authoring tool, not a game. It keeps Key labels and its own Edit-mode mute | |
 | Landing, redirects | Out of scope: independent projects | |
 
@@ -127,23 +129,23 @@ Each game lists its deliberate changes in its own `AGENTS.md` under "Game shell"
   Volume is now "Mix level".
 - Night Shift: the READY screen no longer prints "Begin"; the title card's Begin starts the opening.
 
-## Woods adoption note
+## Barbara (formerly Woods)
 
-Woods (`games/woods`, branch `woods`) built the shell's first draft: `src/menu.ts` (`SettingsMenu`), the `#start`
-and `#pause` cards in `index.html`, and quality that starts High and is remembered (`woods.quality`). To adopt the
-kit shell: replace `SettingsMenu` and both cards with `createGameShell({ game: "woods", title: "WOODS", subtitle,
-soloLabel: "Play alone", soloNote: "you and three campers", friendsNote: "a private room, up to 6", resumeLabel:
-"Back to the woods", pointerLock: canvas, blocked: () => panel.holdsInput, keysBlocked: () => panel.hasFocus(), quality,
-lobby: { friends: true, onJoin: (room) => (location.search = `?room=${room}`) } })`; build quality with
-`createShellQuality({ game: "woods", tiers: FOREST_QUALITY, ... })` (the saved key becomes `arcade.quality.woods.v1`);
-point the sound bank's volumes and mute at `shell.settings` (channels master, effects, ambience); drop the Lab's
-Quality row; and copy the card's look into `--shell-*` variables (Georgia title, warm `#f2c96b` accent).
+Woods built the shell's first draft (`SettingsMenu`, the `#start` and `#pause` cards, quality that starts High and is
+remembered). Barbara now uses the kit shell: `createGameShell({ game: "barbara", ... })` with Play alone, Play with
+friends and an invite room (a room is its own page, `?room=<code>`, so joining loads it and Leave room loads solo),
+`createShellQuality` over `FOREST_QUALITY` (`arcade.quality.barbara.v1`; frame time only, as before), channels master,
+effects, ambience and voice copied into the sound bank, Subtitles as a Story section, and the card look in
+`--shell-*` variables (Georgia title, warm `#f2c96b` accent). The Lab's Volume, Mute, Quality and Reduce camera motion
+rows are gone; `blocked` is the Lab panel being open, not only holding input, so the cards stay out of the way while
+you tune and a click on the woods plays on.
 
 ## Audit (Oct 22, before the shell)
 
 What each game had for its player-facing shell. Paths are under `games/<game>/`.
 
-| Game | Title / start | Lobby, rooms, invite | Pause / Escape | Volume and mute | Graphics quality (default) | Key prompts | Name entry | Loading | Leave warning | Reconnect UI | LabPanel |
+| Game | Title / start | Lobby, rooms, invite | Pause / Escape | Volume and mute | Graphics quality (default) | Key prompts | Name entry | Loading | HUD volume | `ShellVolumeButton` / `mountVolumeControl(shell.settings, el, { channel?, muteKey? })` | Opt-in. Mounts a speaker in a HUD corner `el` (the game positions `el`; the control sets `pointer-events: auto`). Click toggles mute; hover drops a master-volume slider (moving it up unmutes). The icon shows muted (or 0), low (< 50%) or high. Same `ShellSettings` as Settings and M, so it saves the same way. It never holds keyboard focus (a key while it has focus blurs it and goes on to the game) and stops its own pointer events, so clicking it never takes pointer lock; under pointer lock it is out of reach until Esc frees the cursor. Carrier uses it top right. |
+| Leave warning | Reconnect UI | LabPanel |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | Archers | None: couch play starts at once (`src/main.ts`) | `?room=`, `?online` or P quick-joins; Copy invite in the room line (`src/ui/hud.ts`) | None | None: `Sound.setMuted` (saved `archers.muted`) is never bound, though its comment says M; no sliders | None: fixed `MAX_DPR = 1.5` | Key caps in `src/ui/hud.ts` | None (bot names) | None | None | None | Dev playground only (`src/dev/playground.ts`) |
 | Blackout | Landing in `src/ui/menus.ts` | Quick, practice, sandbox, create (mode, map), join by code; host controls on the scoreboard; rejoin after a version reload | None (Esc unused in play) | M mutes (`src/main.ts`); sliders in the Lab (`src/ui/debug-overlay.ts`, `bindVolumeControls`) | `GameQuality` Auto, headroom policy; Lab View › Quality (`src/quality.ts`) | Key caps (`src/ui/hud.ts`, `modes-hud.ts`) | Landing field, `blackout.name` | None | None | `RoomSocket.status()` in the HUD (`src/game/net.ts`) | `DebugOverlay` extends `LabPanel` |

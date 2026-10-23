@@ -6,6 +6,7 @@ retired_branches:
   - release-5
   - release-6
   - release-7
+  - woods
 browser_proofs_default: off
 preview_worktree: /Users/kit/worktrees/arcade/release-4
 preview_hub_port: 5187
@@ -20,7 +21,7 @@ Live operational state for agents working in `anomalyco/arcade`. Read this file 
 
 - **`deploys: on`** — PRs target `main` (`allowed_base: main`) and merge when green (`gh pr merge --squash --delete-branch`). Pushing or merging to `main` triggers Cloudflare Workers deploy workflows automatically; do not run `bun run deploy` manually unless Kit explicitly asks.
 - **When `deploys: off`** — The coordinator sets `deploys: off` and updates `allowed_base` (for example, to an active integration branch). While `deploys: off`, never merge to `main` and never run `bun run deploy`.
-- **Retired branches (`release-4`, `release-5`, `release-6`, `release-7`)** — Never base a PR on a retired branch and never push to or recreate a retired branch on `origin`. When an integration branch ships to `main`, the coordinator adds it to `retired_branches` and deletes it on `origin`.
+- **Retired branches (`release-4`, `release-5`, `release-6`, `release-7`, `woods`)** — Never base a PR on a retired branch and never push to or recreate a retired branch on `origin`. When an integration branch ships to `main`, the coordinator adds it to `retired_branches` and deletes it on `origin`.
 
 ## Proof & Verification Defaults
 

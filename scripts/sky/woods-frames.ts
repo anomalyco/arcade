@@ -8,7 +8,7 @@ await using budget = browserBudget()
 const { chromium } = budget
 const out = resolve("captures/sky-baseline")
 await mkdir(out, { recursive: true })
-const url = process.argv[2] ?? "https://studio.taila8e7c7.ts.net:5298/arcade/woods/?bench=1"
+const url = process.argv[2] ?? "https://studio.taila8e7c7.ts.net:5298/arcade/barbara/?bench=1"
 const cache = `${process.env.HOME}/Library/Caches/ms-playwright`
 const executablePath = (await readdir(cache)).filter(n => n.startsWith("chromium_headless_shell-")).sort().reverse().map(n => `${cache}/${n}/chrome-headless-shell-mac-arm64/chrome-headless-shell`).find(existsSync)
 if (!executablePath) throw new Error("Headless Chromium missing")

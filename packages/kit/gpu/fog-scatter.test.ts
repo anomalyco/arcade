@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import { expect, test } from "bun:test"
 import { mat4 } from "wgpu-matrix"
 import { validateWgsl } from "./test-naga"
@@ -67,6 +68,7 @@ const sources = {
   volume: fogScatterVolume().code,
   hooks: fogScatterVolume({ declarations: "struct Night { look: vec4f }\n@group(0) @binding(13) var<uniform> N: Night;", wet: "select(0.0, N.look.x, p.y < 0.2)", roughness: "0.6", normal: "vec3f(0.0, 1.0, 0.0)" }).code,
   atmosphere: fogScatterVolume({ atmosphere: true, normal: "vec3f(0.0, 1.0, 0.0)", reflectionSamples: 4 }).code,
+  forest: fogScatterVolume({ atmosphere: true, bankLocal: "vec3f(p.y * 0.0, 1.0, 1.0)", bankExtinction: true, torches: true, surface: true, reflectionSamples: 2 }).code,
   blurDown: fogBlurDownWgsl, blurMix: fogBlurMixWgsl,
   accumulate: volumeAccumulateShader, upsample: volumeUpsampleShader, bilinear: volumeBilinearShader,
   scene: makeSceneShader({ lampGrid: false, declarations: fogSceneWgsl, ambient: "fogAmbient(n)", surface: "col = fogApply(col, F.cam.xyz, o.world); if (mat == 3 && o.aux < 0.0) { col = fogSky(F.cam.xyz, normalize(o.world - F.cam.xyz)) + fogEnv(n) * 0.0; }" }),
@@ -75,6 +77,19 @@ const sources = {
   postLooks: postShader(true, false, { chromatic: 0, bloom: 0.26, grain: 0.01, vignette: 0.45, bloomGate: { cap: 0.02, hot: 4 } }),
 }
 for (const [name, code] of Object.entries(sources)) test(`WGSL: ${name}`, () => validateWgsl(code))
+
+// The forest's opt-ins (torches, bankLocal, bankExtinction) leave the classic lamp fog the Lot, Outbreak and Night Shift
+// compile byte for byte as it was before they existed (woods 003c7733). Change these only for a deliberate change to
+// the classic fog.
+test("without the forest's opt-ins the fog WGSL is the classic shader", () => {
+  const hash = (code: string) => createHash("sha256").update(code).digest("hex").slice(0, 16)
+  expect({
+    default: hash(fogScatterVolume().code),
+    atmosphere: hash(fogScatterVolume({ atmosphere: true, normal: "vec3f(0.0, 1.0, 0.0)", reflectionSamples: 4 }).code),
+    street: hash(fogScatterVolume({ atmosphere: true, street: true, bankMask: "1.0" }).code),
+    surface: hash(fogScatterVolume({ surface: true, wetSettings: "vec4f(1.0, 0.32, 1.0, 0.5)", reflectionSamples: 4 }).code),
+  }).toEqual({ default: "01ca44e87526304a", atmosphere: "9efc01a4accd8602", street: "19bf31a5e032ed36", surface: "80c5a1b7a915b5a5" })
+})
 
 test("a lamp's glowRange keeps its glow-map light inside that reach", () => {
   const rect: [number, number, number, number] = [-20, -20, 20, 20]

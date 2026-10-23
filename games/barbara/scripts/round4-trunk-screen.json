@@ -1,0 +1,4 @@
+[
+  {"id":"trunk-today","look":{"smoothTrunks":false}},
+  {"id":"trunk-smooth","look":{"smoothTrunks":true}}
+]

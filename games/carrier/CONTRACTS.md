@@ -401,9 +401,39 @@ weather section; any section id works: `time`, `audio`, `sounds`, `sight`, `rada
   `intercept`, `helm`, `op`, `recover`): the same validation, damage, kill credit and relays as a player's. Invulnerable
   bots drop damage events (`RoomBots.absorb`); infinite ammo refills stores and budgets.
 - Behaviors (`BotSettings`, ranges in `BOT_RANGES`): jets straight / orbit / eight / evasive (jinks, breaks, flares on a
-  seeker or missile) / dogfight (lead pursuit, gun, AIM-9) / bomber (F-35C bomb runs, Hornet strafing); boats idle /
-  patrol / attack; gunners hold / engage; helms stop / cruise / circle / chase. Skill, aggression, accuracy, weapons,
+  seeker, an AIM-9 or a SAM) / dogfight (lead pursuit, gun, AIM-9) / bomber (F-35C bomb runs, Hornet strafing) /
+  match; boats idle / patrol / attack / match; gunners hold / engage (a SAM gunner's seeker sends `seek` like a
+  client's); helms stop / cruise / circle / chase / match. Skill, aggression, accuracy, weapons,
   flares, ammo, invulnerable, respawn, target player, target ship.
+- Match bots (behavior `match`, `server/bot-match.ts` decides, `server/bots.ts` flies it with the pieces above;
+  `MATCH_CREW` is a full crew of 8, `matchBehavior(role)`; gunners use `engage`):
+  - Helms sail for a capture zone (cost: travel time, enemies in or near it, held or half-captured by us; the
+    revealed next zone once staying would make them late, earlier with skill), routed round islands over a baked
+    open-water grid (`server/bot-nav.ts`: 150 m cells, A*, path pulled tight) with feelers and an aground back-off
+    (`steerClear`), bent away from other carriers' closest approach (`avoid`). They hold by circling the zone's
+    centre, or its far side from rivals when contested; ram a carrier contesting the zone only when a full-speed
+    ram (`COLLIDE.harmMax`) should sink it and they would survive with a margin; retreat below 15-35% health (by
+    aggression) until repaired to 60%.
+  - Jets reconsider their mission every 2-4 s (`jetMission`): RTB when hurt (sticky until the field repair or, for
+    the F-35C, the in-flight bomb rearm makes it pointless), defend the own carrier against jets within 3.5 km,
+    intercept jets within 2.5 km, else strike (F-35C always: bomb runs; a Hornet by its aggression: strafing passes
+    on a parked jet of the target, else the island) or fly CAP over the own carrier. The side's strike target
+    (`strikeTarget`) is judged from the own carrier, so every jet and boat of a side focuses one enemy: the zone holder
+    and the score leader first, then near and damaged. RTB flies the "R LAND" rules (`landTarget`), then the real
+    scripted landing (`startLanding`/`landingStep`, the plane tuple in mode 3) and recovers "landed".
+  - Boats harass the strike target (gun on a parked jet, else the island) and go home below 35 hp to be recovered
+    astern (`recoverable`), out again once repaired. Every bot's rounds on a parked jet go out as `deckhits`.
+- Headless rooms (the balance simulator, `scripts/balance.ts` + `scripts/balance/{match,metrics,report,tunables,worker}.ts`):
+  `new RoomCore(clock, random, { dev: true, botMax: 32, onEvent })`, `openHeadless(seed, rules)` opens a world and
+  its four carriers with no connection, `botCommand(cmd)` spawns bots, `botList()` reads them, and `step(now)` on a
+  fake clock in 50 ms steps runs everything exactly as a live room. `RoomOptions.onEvent` observes what the room
+  applies (`RoomEvent`: crew, combat, gunnery, fleet and objective events, every carrier hit with its damage, fires,
+  SAM/shell launches, flares, parked-jet kills); the combat `ship` event carries the store's `seq`. Nothing in the
+  room depends on the observer. `scripts/balance/tunables.ts` overrides the exported tunable objects by path
+  (`TUNABLES`: FLEET, WEAPONS, LOADOUTS, GUNNERY, OBJECTIVE, ZONE_AREA, SHIP, COLLIDE, PLANE, VEHICLES, BOAT,
+  BOAT_GUN, BOAT_HEALTH, BOAT_DAMAGE, BOAT_ARMOR, CRANE, DECK_JET, LANDING, LAUNCH, CREW, OPS by id); constants
+  derived at module load (CREW.recharge, DECK_JET_ROUND_DAMAGE, the room's boat reach) keep their shipped values.
+  `tests/balance.test.ts` checks determinism and that a short match plays to its target.
 - Wire: client `{ type: "bot", cmd }` (`BotCmd`: spawn, set, kill, remove, clear; `botCmdOf` validates and clamps);
   server `bots` (`BotInfo[]`, ~2 Hz while any exist) and `welcome.dev`.
 - Bots tab of the dev panel (`bots-lab.ts`): scenario buttons (1v1 dogfight · 2 km, bomber run on my carrier, swarm
@@ -725,8 +755,9 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
 - CIWS: 75 rps, 1,100 m/s, ~1.6 km, 1.6 dmg/round on jets (5 m sphere), heat 2.6 s. Rounds passing within 3 m of a
   missile, bomb, SAM or shell shoot it down. SAM: 8 cells (each reloads 3 s, starting 2 s after a launch), seeker 9°
   cone / 5.8 km / 2.2 s lock, PN (N 4, 30 g from 380 m/s), 15 m fuse, 110→50 damage; a flare burst fools it by a fixed
-  coin per missile and burst (35%). 5-inch: one round per 1.5 s, 800 m/s with drag (~8.4 km flat), 16 m proximity
-  burst on jets (75→25), 35 hp on a carrier (a fire), near misses within 14 m 28→6 hp; HUD splash marker
+  coin per missile and burst (35%). 5-inch (a steady threat, not the ship-killer): one round per 2.5 s, 800 m/s with drag
+  (~6 km flat), 10 m proximity burst on jets (45→12), 12 hp on a carrier (too light for a fire), near misses within
+  14 m 10→2 hp; HUD splash marker
   (`predictImpact`, the world's own steps). Friendly fire off everywhere; kills credit the gunner (`KillWeapon`
   `ciws`/`sam`/`shell` in kill feed and stats).
 - Authority: CIWS rounds are shooter-authoritative (`TurretRounds`): the client reports `thits` (jets), `tshiphits`

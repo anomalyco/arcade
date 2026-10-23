@@ -1002,25 +1002,23 @@ struct VO { @builtin(position) pos: vec4f, @location(0) uv: vec2f }
 fn clean(c: vec4f) -> vec4f {
   let bad = any(c != c) || any(abs(c) > vec4f(6e4));
   return select(min(c, vec4f(64.0)), vec4f(0.0), bad);
+}${finish?.bloomSource ? `
+fn bloomSource(uv: vec2f) -> vec3f {
+  let c = clean(textureSample(src, samp, uv));
+  ${finish.bloomSource}
 }
+` : ""}
 
 /** 13-tap downsample (Jimenez 2014); the first level also applies a soft-knee threshold. */
 @fragment fn down(o: VO) -> @location(0) vec4f {
   let t = P.xy;
   let uv = o.uv;
-  let a = clean(textureSample(src, samp, uv + t * vec2f(-2.0, -2.0))).rgb;
-  let b = clean(textureSample(src, samp, uv + t * vec2f(0.0, -2.0))).rgb;
-  let c = clean(textureSample(src, samp, uv + t * vec2f(2.0, -2.0))).rgb;
-  let d = clean(textureSample(src, samp, uv + t * vec2f(-2.0, 0.0))).rgb;
-  let e = clean(textureSample(src, samp, uv)).rgb;
-  let f = clean(textureSample(src, samp, uv + t * vec2f(2.0, 0.0))).rgb;
-  let g = clean(textureSample(src, samp, uv + t * vec2f(-2.0, 2.0))).rgb;
-  let h = clean(textureSample(src, samp, uv + t * vec2f(0.0, 2.0))).rgb;
-  let i = clean(textureSample(src, samp, uv + t * vec2f(2.0, 2.0))).rgb;
-  let j = clean(textureSample(src, samp, uv + t * vec2f(-1.0, -1.0))).rgb;
-  let k = clean(textureSample(src, samp, uv + t * vec2f(1.0, -1.0))).rgb;
-  let l = clean(textureSample(src, samp, uv + t * vec2f(-1.0, 1.0))).rgb;
-  let m = clean(textureSample(src, samp, uv + t * vec2f(1.0, 1.0))).rgb;
+  ${[["a", "uv + t * vec2f(-2.0, -2.0)"], ["b", "uv + t * vec2f(0.0, -2.0)"], ["c", "uv + t * vec2f(2.0, -2.0)"],
+    ["d", "uv + t * vec2f(-2.0, 0.0)"], ["e", "uv"], ["f", "uv + t * vec2f(2.0, 0.0)"],
+    ["g", "uv + t * vec2f(-2.0, 2.0)"], ["h", "uv + t * vec2f(0.0, 2.0)"], ["i", "uv + t * vec2f(2.0, 2.0)"],
+    ["j", "uv + t * vec2f(-1.0, -1.0)"], ["k", "uv + t * vec2f(1.0, -1.0)"],
+    ["l", "uv + t * vec2f(-1.0, 1.0)"], ["m", "uv + t * vec2f(1.0, 1.0)"]]
+    .map(([name, uv]) => `let ${name} = ${finish?.bloomSource ? `bloomSource(${uv})` : `clean(textureSample(src, samp, ${uv})).rgb`};`).join("\n  ")}
   var col = e * 0.125 + (a + c + g + i) * 0.03125 + (b + d + f + h) * 0.0625 + (j + k + l + m) * 0.125;
   if (P.z > 0.5) {${finish?.bloomKaris ? `
     // Karis average: weight each 4-tap group by 1 / (1 + luma) so lone hot pixels don't flicker the bloom.

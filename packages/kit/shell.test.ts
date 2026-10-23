@@ -5,6 +5,7 @@ import { ShellFlow, isTextEntry } from "./shell/flow"
 import { ShellLobby } from "./shell/lobby"
 import { LeaveGuard, ShellLoading } from "./shell/page"
 import { ShellSettings, muteStorageKey } from "./shell/settings"
+import { volumeLevel } from "./shell/volume"
 
 const memory = (init: Record<string, string> = {}) => {
   const m = new Map(Object.entries(init))
@@ -354,5 +355,14 @@ describe("@arcade/kit/shell page", () => {
     expect(l.progress).toBeCloseTo(0.625)
     l.finish()
     expect(l.progress).toBe(1)
+  })
+})
+
+describe("HUD volume control", () => {
+  test("the icon follows mute and the level", () => {
+    expect(volumeLevel(true, 80)).toBe("muted")
+    expect(volumeLevel(false, 0)).toBe("muted")
+    expect(volumeLevel(false, 45)).toBe("low")
+    expect(volumeLevel(false, 50)).toBe("high")
   })
 })

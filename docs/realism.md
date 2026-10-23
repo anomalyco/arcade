@@ -70,17 +70,18 @@ links to those instead of repeating them.
 
 ## Lights
 
-**Catalogue night sky (candidate, `night-sky`).** `packages/kit/sky` draws 9,096 Yale catalogue stars with
+**Catalogue night sky (`night-sky`).** `packages/kit/sky` draws 9,096 Yale catalogue stars with
 temperature colours, atmospheric extinction, sidereal rotation and a pixel-integrated point spread. Airglow and
 a faint procedural Galactic band sit behind a NASA-textured, half-degree Moon. The host supplies linear scene
 units per cd/m² and owns exposure. `moonLight()` supplies lux and direction for the host's shadowed lighting.
-- Where: opt-in adapters in Lot, Night Shift, Outbreak and the shared world/Sky station. Today remains the default.
+- Where: on by default in Barbara (through `@arcade/kit/forest`, Today one setting away; its software-GPU smoke keeps
+  Today); opt-in adapters in Lot, Night Shift, Outbreak and the shared world/Sky station, where Today is the default.
 - Cost: initial sky-only mini Metal proof, 1920×1080 MSAA4, +0.204 ms median (MAD 0.028 ms); this precedes the
   lunar occultation and mip-filtering follow-up. No whole-game cost claim.
 - Stability: integrated star energy varies 0.035% across 32 subpixel positions. Translation-free sky TAA drifts
   0.031 px after 64 m camera travel in the isolated production-pass fixture.
-- Kit: requested; no visual pick yet. Woods adoption, calibrated exposure, cloud composition and shadowed
-  moonlight remain integration work. Measurements and boundaries: [night-sky ledger](../perf/night-sky.md).
+- Kit: turned it on for Barbara at its ship. Calibrated exposure and cloud composition remain integration work.
+  Measurements and boundaries: [night-sky ledger](../perf/night-sky.md), [woods integration](../perf/night-sky-woods.md).
 - Pitfalls: do not use a long-exposure photograph's brightness as an eye-level target; do not raise forest ambient
   to make stars visible. Moon mips filter in linear light, and the unlit disk also occludes stars.
 
@@ -207,6 +208,8 @@ also stamps base darkening and edge tone into `v.color.a` on its buildings and p
 `games/outbreak/src/lighting.ts`); the kit's `Mesh.box` and `bevelBox` still leave it at 1.0, so other games miss it.
 
 ## Fog, mist and volumetrics
+
+- **Clear air near you (Woods):** `packages/kit/forest/view.ts` scales torch in-scatter from 10% at the eye to 100% at 8 m, with −0.25-stop compensation only while your torch is on; measured renderer GPU delta −0.031 to +0.053 ms (mini/Metal, High, 1600×900, three views; [measurements](../perf/woods-autoresearch.md#review-follow-up-optional-clear-near-air)). Default on in Barbara and its Lab page at Kit's request; **Kit's final visual decision is pending**. Mist → Clear air near you → off restores Today, including its exposure target, after adaptation settles; smoke stays Today.
 
 **Lamp airlight in height fog.** Exponential height fog with closed-form optical depth; each pixel takes 4
 equiangular samples per lamp along the view ray, so every lamp hangs in the air with a soft cone. Half resolution with
@@ -425,6 +428,21 @@ first build.
   - Kit asked for them: "it would make everything else look realistic, like that body cam game" (AR-125).
   - Pitfalls: the filter runs after tonemapping, so it can't recover clipped highlights; don't stack its exposure
     hunting on another exposure controller. VHS and CRT are period looks, not a realism upgrade (woods research).
+- **Lens and codec artifacts.** Eight switches around the camera filter, chained lens → filter → codec with
+  `FinalPassChain` on `Renderer.setFinalPass` (all off composites straight to the canvas): compression starvation
+  (macroblocks, banding and stale blocks while moving, a 1 s quality pump), autofocus hunting (waits, starts the wrong
+  way, overshoots, settles; focus breathing), sensor gain (luma/chroma noise and denoise smear that grow in the dark),
+  LED PWM banding (friends' torches through a rolling shutter), lens flare (ghosts plus a six-blade starburst from
+  torches pointed at the lens), lens dirt, condensation, infrared monochrome. Eyeshine (retroreflecting eyes in your
+  beam, from the shared distant-sound events) and an IR lamp at the lens are woods scene pieces.
+  - Where: `packages/kit/gpu/post/camera-artifacts.ts`, `final-chain.ts`; woods `src/camera-look.ts` (presets Eyes,
+    Body cam night, Camcorder NightShot, Phone night mode, VHS), `src/eyeshine.ts`, station `woods-camera`.
+  - Cost (`mini`, 1600×900 High, against Eyes): each effect a small fraction of a millisecond; the full looks under a
+    millisecond, NightShot and phone the heaviest. Off builds nothing.
+  - Kit: "What are some interesting rendering effects, like the bodycam etc., that could make this look cooler… to
+    make it feel realer?" Contact sheet: gallery `woods-2026-10-21/camera-lab/`.
+  - Pitfalls: flare needs sources projected from the torches, not a bright-pixel threshold, or every lit trunk ghosts;
+    the PWM band is subtle at a few hundred hertz, so its depth is a knob.
 - **Restrained walking camera.** Contacts come from actual displacement with critically damped presentation
   (`packages/kit/client/walk.ts`, `walk-camera.ts`). Night Shift, Lot. Woods research: 0.5–1.5 cm translation and
   0.1–0.35° roll tied to contacts, no idle sine.

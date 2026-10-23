@@ -40,7 +40,7 @@ import { TeamMenu } from "./ui/team-menu"
 import { Chat } from "./ui/chat"
 import { registerGameCommands } from "@arcade/kit/dev-control"
 import { keyPromptHtml } from "@arcade/kit/client/key-cap"
-import { createGameShell, createShellQuality, type GameShell, muteStorageKey } from "@arcade/kit/shell"
+import { createGameShell, createShellQuality, type GameShell, mountVolumeControl, muteStorageKey } from "@arcade/kit/shell"
 import { CREW, roomCode } from "../shared/crew"
 import { GpuPerf } from "@arcade/kit/gpu-perf"
 import { CARRIER_QUALITY } from "./quality"
@@ -341,6 +341,8 @@ async function main() {
   }
   gameShell.settings.subscribe(syncAudio)
   syncAudio()
+  // Top right in play: the shell's speaker (click mutes, hover for master volume), reachable once Esc frees the pointer.
+  mountVolumeControl(gameShell.settings, hud.corner)
   // The title is up: the HUD stays out of the way. Chat, Tab, DEPLOY and the full map (G) work only in play, so none
   // opens behind the title or the menu; any shell screen frees the cursor.
   const syncScreen = () => {
@@ -516,7 +518,6 @@ async function main() {
     weather.draw(dt, t, view, frame, camera.fov)
     zones.update(t, camera.eye, net, game.state.ship, gameShell.flow.screen === "title")
     renderer.render(frame, shownGrade)
-    hud.update(net)
     if (inRoom) lobby.setConnection(net.state === "online" ? "online" : "connecting")
     requestAnimationFrame(tick)
   }

@@ -14,6 +14,8 @@ Browser games by Anomaly, served at https://anoma.ly/arcade/.
 
 Unlisted: **Night Shift ’87** — a first-person government office at 2 a.m. Follow the ringing phone, answer with E, listen and hang up. WASD, mouse look, F flashlight, Backquote office settings. (`games/nightshift`, Worker `arcade-nightshift`, `/arcade/nightshift/`). [Credits](games/nightshift/public/CREDITS.md).
 
+Unlisted: [BARBARA](https://anoma.ly/arcade/barbara/) — co-op night search in the woods, alone with three searchers or with up to six friends by link: November 1996, Barbara's car is still in the camp lot. Flashlights, flagging tape, a held survey map and compass, the searchers' voices and something out there. WASD, mouse look, F flashlight, hold E tie tape, hold G map, Backquote knobs (`games/barbara`, Worker `arcade-barbara`). No landing link or indexing.
+
 Unlisted: **Lot** — walkable night parking-lot study using the kit's WebGPU renderer, an attributed wagon and scanned asphalt (`games/lot`, Worker `arcade-lot`, route `/arcade/lot/`; deployment pending). Mouse look, WASD, F flashlight, Backquote Night settings. [Asset credits](games/lot/public/CREDITS.md).
 
 Unlisted: [Outbreak](https://anoma.ly/arcade/outbreak/) — neighbourhood exploration and local survival-game foundation (`games/outbreak`, Worker `arcade-outbreak`). No landing link, indexing, sitemap entry or login.

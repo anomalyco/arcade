@@ -39,7 +39,7 @@ const jobs = Number(option("--jobs", String(Math.max(3, Math.floor(availablePara
 const repo = resolve(import.meta.dir, "..")
 const testWorkers = Math.max(2, Math.floor(availableParallelism() / 2))
 
-const WORKSPACE_GAMES = ["getaway", "blackout", "outbreak", "carrier", "lab", "brawl", "archers", "walkers", "lot", "nightshift"]
+const WORKSPACE_GAMES = ["getaway", "blackout", "outbreak", "carrier", "lab", "brawl", "archers", "walkers", "lot", "nightshift", "barbara"]
 const INDEPENDENT: Record<string, string> = { landing: "landing", redirects: "redirects" }
 
 type Target = { name: string; dirs: string[]; game?: string; independent?: boolean }

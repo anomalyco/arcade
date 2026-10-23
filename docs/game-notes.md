@@ -14,6 +14,49 @@ proven animation techniques to animation.md, not here.
 
 ## Proving a change
 
+- **Contain bloom at its source (Woods, round 7 candidate).** The round-6 destination-radiance cap was rejected:
+  halos land on dark pixels, so it also removed light-source halos. `forest/shaders.ts` now tags nearby rough,
+  non-emissive surfaces in HDR alpha; `forest/post.ts` limits those source taps before the bloom downsample.
+  Right-edge trunk luminance is .126842 versus .119030 without bloom/halation (Today .263515). Candidate-minus-off
+  halo luminance remains .187510 around a camp bulb and .027323 around a head-on torch. MSAA/TAA and bilinear
+  sampling soften the tag at boundaries; this is not a separate per-sample emission buffer. Bark clipping stays
+  zero and the 60 m signal passes. Head-on torch haze fails the darkness guard even without bloom, so the new
+  capture does not pass all p5 guards. The held-map proof waits for its asynchronous print before stepping the
+  final frames. See `perf/woods-autoresearch.md` for the fixed ROIs and remaining limits.
+
+- **Separate highlight clipping from bloom, and foliage geometry from shadow motion (Woods, round 5 candidate).**
+  The opt-in log shoulder in `forest/post.ts` bounds the peak while preserving RGB ratios: fixed close-bark clipping
+  9.52% → 0%, hotspot high-pass detail 3.24×, equal exposure. Bloom still leaves a pale patch relative to the target.
+  The slow walk in `games/barbara/scripts/autoresearch-motion.ts` records video and per-layer near/far counts:
+  disabling torch shadows cuts reprojected excursions 578.06 → 185.03/frame; forcing near ferns adds only .15/frame.
+  Large spikes also occur without visible-count changes. This implicates shadow behaviour, not a measured fern-LOD
+  fix; moving illumination also affects the metric. No foliage change retained. See `perf/woods-autoresearch.md`.
+
+- **Night forest obscuration and perception (Woods, round 4).** `forest/view.ts` ramps extinction from a 12 m clear
+  zone over 12 m to .05/m; this is an artistic distance gate, not a uniform physical atmosphere. Night lift/offset
+  .8 stops preserves darkness and the depth-validated 60 m signal (delta .05865, contrast 5.51). `forest/post.ts`
+  applies bounded luminance-dependent desaturation, rod-weighted colour and four-tap acuity loss: scene-linear
+  heuristics, not calibrated retinal luminance. Stop-down/recovery constants are .35/8 s. Seven mini/Metal view
+  medians were 9.16–11.93 ms in the final vision run; earlier runs exceeded 12, so the budget is not stable.
+  `forest/build.ts` uses 32-sided near trunks and surface-derived normals shared across height bands and UV seams;
+  the close-trunk screen was 9.87→9.38 ms, not a demonstrated speedup. Three foliage fades worsened depth-reprojected
+  disagreement, and both normalized flashlight profiles failed the p5 darkness guard; none was retained. Gallery
+  `woods-2026-10-21/autoresearch/round4/LEDGER.md` records the experiments and five-view comparisons.
+
+- **Index byte-identical forest vertices (Woods).** `forest/index-mesh.ts` deduplicates the complete packed vertex,
+  preserving triangle order and UV/normal seams. Instanced raster draws reuse the vertices; shadow casters keep
+  their original buffers. On mini/Metal at 1600×900 High, four-light renderer GPU time fell 15.13→11.30 ms (25.3%);
+  all 14 view medians were below 12 ms. Extra raster buffers cost memory and upload work; CPU and separate shadow
+  submission are outside that timing. `perf/woods-autoresearch.md` records brackets and stable tone scores.
+  Pixel comparisons must align TAA Halton phase as well as reset history. Continuous-motion probes must not call
+  a teleport API that resets exposure/history each frame.
+- **Skip exactly-zero fog samples before bank work (Woods).** The `torches` opt-in in `gpu/fog-scatter.ts` rejects a
+  zero cone after shadowing, before terrain-relative bank sampling and extinction. Bracketed mini controls put the
+  four-light view at 16.42–17.75 ms versus 15.35 ms with the early-out; marker cost was inconclusive. Fourteen fixed
+  views differ by at most 0.001192/255 mean absolute RGB error, below baseline-repeat noise; the reprojected walk
+  stays within repeat variation. Classic WGSL hashes remain pinned. The 10–12 ms budget and existing darkness
+  constraints are still unmet. `perf/woods-autoresearch.md` records the rejected look trials and measurement limits.
+
 - **Preserve source terrain weights through shading (Lot).** Store grass/dirt weights in the imported vertex colour
   and recolour the scanned floor's luminance in the fragment. Baking the source tint multipliers into unorm vertex
   colours clipped values above one and multiplied RGB instead of luminance. Ground aux selects separate road, lot,
@@ -21,6 +64,13 @@ proven animation techniques to animation.md, not here.
   camera pairs on Pro's Metal adapter passed without browser errors. Lower-frame RGB MAE against Ashwood is
   6.09/255 road, 15.70 lot and 9.58 booth; these include the newer lamp/fog/window treatment and do not establish
   visual parity or a before/after improvement. Evidence is in `lot-2026-10-20/detail-iteration-5` in the gallery.
+
+- **Shared distant sounds and a gust field that travels (Woods).** `games/barbara/shared/distant.ts` keeps the dread
+  schedule as plain seeded data stepped with only + − × ÷ √ (rejection-sampled directions, no trig) inside
+  `stepWoods`, so the room picks sound, take, place and emission time and each client adds its own travel delay (d / 343 m/s), distance
+  low-pass and forest reverb. Canopy wind is four voices 26 m around the listener, each reading a gust field that
+  moves downwind at 7 m/s, so gusts audibly cross the trees; exposure from local relief puts the ridge 11.5 dB over a
+  hollow. Measured in Chrome offline renders (`games/barbara/scripts/audio-proof.ts`, gallery `woods-2026-10-21/audio`).
 
 - **Shared quiet first-person walking (Lot / Night Shift).** `client/walk` and `client/walk-camera` share the
   actual-displacement contact clock and critically damped presentation; Night Shift's adapter keeps chair impacts
@@ -195,6 +245,14 @@ proven animation techniques to animation.md, not here.
   report. It found the director's ramp ending at Night 2 (16 zombies, 3 chasers on every later night); the D-40 night
   ramp (`shared/night-ramp/`, a per-tick `DirectorEscalation`) now lifts both every night up to a ceiling. See
   [outbreak-difficulty.md](outbreak-difficulty.md).
+- **Headless balance runs on the real room.** Carrier's `scripts/balance.ts` opens a dev `RoomCore` with no sockets
+  (`openHeadless`), fills it with 32 match bots that act only through the room's own message handlers, and drives its
+  clock in 50 ms steps as fast as the CPU goes: a full four-carrier match runs at ~20-45× real time per core, so 48
+  matches of up to 40 minutes take ~3 minutes on Bun Workers on a 24-core box. A read-only `onEvent` observer collects
+  what the room applies; results are identical per seed across runs and worker placement, and variants that override
+  the exported tunable objects share seeds, so a sweep compares like with like. The first run (Oct 22, after aircraft
+  damage was halved) found rams and the 5-inch gun doing ~80% of carrier damage and contested zones, not damage,
+  setting the match length. See games/carrier/AGENTS.md "Balance".
 
 ## Rendering (WebGPU)
 
@@ -1486,6 +1544,26 @@ kit renderer's `fxParticles` path; Today is one Lab setting away (Fire style, Wo
 - Ground dressing is `sim/debris` rules (Tidewater-style feature anchors + padded SDF keep-outs) with Ashwood's plant templates, procedural leaves/pebbles/paper and a CC0 can. Lane capsules matter: the gate apron's edge crosses the road, and without them weeds grew in the lamp pool.
 - Stills: `~/code/home/artifacts/lot-2026-10-20/forest-crops.jpg`, `forest-aiden-before-after.jpg`, `forest-far-masses.jpg`.
 
+### Woods: many torches in fog without wash-out (2026-10-22)
+
+- **Night exposure needs a calibrated key as well as highlight-resistant metering.** `forest/exposure.ts` uses the
+  existing scene-referred geometric mean (after fog, before exposure), calibration gain 3, key 0.003, offset +1.5
+  stops and response strength 0.85, clamped to ±1.5 stops. Stop-down/opening time constants are 0.8/6 s. No new GPU
+  pass. In fixed 24-second holds, eight-view paint-over distance improved 0.070185 → 0.067378 (4.0%); four-light dark
+  coverage rose 17.3% → 45.8%, and the fixed between-beam mask 34.8% → 84.2%. The 60 m signal stayed visible (114%
+  contrast); reprojected pops fell 1812 → 1662/frame. Camp is darker than its target and k1/k6 still miss target tone
+  bounds: this is a retained improvement for review, not a complete target match. Stronger toes and weakly adaptive
+  fixed keys were rejected. The classic centre meter remains selectable. See `perf/woods-autoresearch.md` and the
+  exposure checkpoint linked there; the prior uniform p5 guard rejects two targets themselves.
+- Kit: with everyone's lights on "the whole screen seems kind of washed out". Measured at one pose with 0/1/2/4 torches (`games/barbara/scripts/capture.ts` shots `l0`–`l4`, a `woods.debug.dark` list hides chosen torches): one torch lifted the frame's 5th-percentile luma from 0.004 to 0.086 and left 0 % of pixels below 0.05; lens glare and bloom made no difference.
+- Causes, all in the fog volume (`packages/kit/gpu/fog-scatter.ts`): the global cone `leak` (1.5 % of peak, all round the lamp) added to a torch's beam profile radiated about as much flux as the beam; torches were also baked into the bank's isotropic glow map; the bank scaled beam in-scatter by up to 7× with no matching extinction. Fixes: profiled (`FogLamp.beam`) lamps take no leak, torches pass `uplight: 0` (as Outbreak's do), and the `bankExtinction` hook dims each beam sample by the bank's path-mean σ on the lamp and eye legs.
+- Auto exposure metered one raycast point of the local beam, so a level beam (hit 40 m) read as dark and opened +1.5 stops while four beams lit the fog. `LuminanceMeter` (`packages/kit/gpu/meter.ts`, `Renderer.setMeter`) reduces the scene-referred image after the fog to 64×36 block means and reads them back through a 3-buffer ring a few frames late; the first version keyed on its centre-weighted mean × `meterGain` 3 (now the selectable reference model). Captures that step frames in a loop must yield (`setTimeout 0`) for `mapAsync` to land.
+- Your own beam is seen as backscatter. The fixed 15 % isotropic share in the lamp phase nearly triples HG(0.75)'s backscatter and drew Kit's "solid wedge"; it is now `FogSettings.phaseFloor` (default 0.15, forest 0.03).
+- Result at 1/2/4 torches: p5 0.020/0.016/0.024 (was 0.086/0.114/0.094), mean ≈ 0.10 (was 0.19–0.23), 31–46 % dark (was 0 %). Sheet: `~/code/home/artifacts/woods-2026-10-21/look/washout/index.html`.
+- Boot: the forest build called the woods terrain function ~4 M times; 66 ns each in Bun but ~4 µs each in the page, so `?smoke` took 29–68 s against the 55 s deadline. `buildForest` now samples the game's height once on the terrain mesh's 1 m grid (`forestHeightGrid`, out to the last terrain chunk plus 12 m) and reads the same triangles back (`gridHeight`): ~0.29 M calls, smoke boots in 5–11 s, and props stand on the surface as drawn.
+- The build runs on a worker (`packages/kit/forest/offthread.ts` `ForestBuilder`, `build-worker.ts`): the page samples the grid (the game's height is a function, so it can't cross), the world without `height` and the models go over by transfer, and the build comes back by transfer; the geometry is byte for byte the page's (`forest/build.test.ts`). Spawn the worker before the asset fetches, or its script queues behind the 58 texture images on the host's six connections (that cost 2 s). Six alternating A/B boots on pro: frame 2 median 7.3 s → 6.7 s; the worker's build is ~1.4× slower than the same build on the page, so the win is the overlap with texture decode and a main thread free for the loading screen, not 2–3 s. Boot marks: `woods:grid`, `:models`, `:worker`, `:textures`, `:build`, `:world`, `:frame1/2` (`scripts/smoke.mjs` prints them on a timeout; `games/barbara/scripts/boot-profile.ts` prints them and the top self time).
+- The forest's fog changes are opt-ins, so the Lot, Outbreak and Night Shift compile the classic shader byte for byte (checked against woods 003c7733 for every game's real hooks; `fog-scatter.test.ts` pins the hashes): `fogScatterVolume({ torches: true })` gives beam-profiled torches without leak, the d²/(d²+size²) near field and `FogSettings.phaseFloor`; `bankLocal` or `bankExtinction` give the stratified bank (floor from the game, soft shoulder, closed-form depth).
+
 ### Lot storm: one strike envelope, rain only where lit (2026-10-21)
 
 - Kit: "rain, storm and a lightning bolt in the Lot" (+ "Also want sfx"). Research brief: `~/code/home/artifacts/lot-2026-10-20/storm/RESEARCH.md`.
@@ -1714,6 +1792,19 @@ Candidates from the code audits; measure and playtest before moving any into the
   (360°, 40 m).
 
 ## Multiplayer
+
+- **Draw other walkers between ticks, ease their beams, and flicker on the page's clock.** Kit (woods, 2026-10-22):
+  "smoothly animate the other players so they don't just jump, the lights don't jump", and "the lights kind of
+  strobe". Three causes: solo bots were drawn at the 60 Hz sim tick (every other frame repeated on a 120 Hz screen, and
+  0 or 2 ticks a frame when rAF wobbles at 60 Hz); bot and remote headings snap (a new heading is set in one tick), so
+  the beam axis jumped up to 40° in a frame; and battery flicker was a 0.15/0.75 square wave read on the sim or 15 Hz
+  snapshot clock. Fixes in `games/barbara`: `SoloSession.frame(dt, alpha)` draws a copy of each friend between their
+  last two ticks (`state` stays the sim), `FriendsView` puts each beam's direction on an exact critically damped
+  spring (`beamSettle` 0.12 s) and eases brightness over 40 ms, and `beamLevel` is a soft sputter evaluated on the
+  page clock. `scripts/jitter.ts` (raw `?smooth=0` against smoothed, same worker): solo bots on a 120 Hz clock 53% →
+  4–8% repeated frames, speed jitter 2.8 → 0.015 m/s, largest beam step 34–42° → 3.4–4.0°; a room friend walking and
+  sweeping its look in real time, speed jitter 1.14 → 0.32 m/s, beam jitter 567 → 38 °/s, largest beam step
+  51° → 15°. Lab: Camera › Friends › Smooth friends, Friend beam settle.
 
 - **Replicate persistent hazards and the spectator's target.** Outbreak clients inferred Bloater gas from observed
   deaths, so late joiners missed damaging clouds. `shared/specials/net.ts` now sends active, interest-filtered hazards:

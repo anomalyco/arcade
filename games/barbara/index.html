@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>BARBARA</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #030405; color: #e8eef4; font-family: system-ui, sans-serif; overflow: hidden; }
+      #view { width: 100vw; height: 100vh; display: block; }
+      #hud { position: fixed; top: 12px; left: 14px; pointer-events: none; font-size: 12px; display: flex; gap: 12px; align-items: center; opacity: 0.55; }
+      #prompt { position: fixed; left: 50%; top: 70%; transform: translateX(-50%); pointer-events: none; font-size: 14px; text-shadow: 0 1px 4px #000, 0 0 12px #000; }
+      #toast { position: fixed; left: 50%; bottom: 9%; transform: translateX(-50%); pointer-events: none; font: italic 15px Georgia, serif; color: #d8d2c0; text-shadow: 0 1px 6px #000; opacity: 0; transition: opacity 0.6s; text-align: center; max-width: 70vw; z-index: 5; }
+      #reticle { position: fixed; left: 50%; top: 50%; width: 3px; height: 3px; margin: -1.5px; border-radius: 50%; background: rgba(230,235,240,0.35); pointer-events: none; }
+      /* The search's task (FIND BARBARA): over the woods, never in the way; it fades on its own. */
+      #objective { position: fixed; left: 50%; top: 21%; transform: translateX(-50%); pointer-events: none; text-align: center; opacity: 0; transition: opacity 1.4s ease; z-index: 5; }
+      #objective.on { opacity: 1; transition-duration: 0.5s; }
+      #objective .kicker { font: 600 12px system-ui, sans-serif; letter-spacing: 0.3em; text-transform: uppercase; color: #c9c0a8; text-shadow: 0 1px 4px #000; }
+      #objective .kicker:empty { display: none; }
+      #objective .rule { width: 132px; height: 1px; margin: 12px auto; background: linear-gradient(90deg, transparent, rgba(239,230,204,0.55), transparent); }
+      #objective .task { font: 400 46px/1.05 Georgia, serif; letter-spacing: 0.26em; margin-right: -0.26em; color: #f6eed6; text-shadow: 0 2px 24px rgba(255,214,140,0.28), 0 1px 8px #000; }
+      /* What the searchers say, as it reaches you; far-off lines are dimmer. */
+      #subs { position: fixed; left: 50%; bottom: 15%; transform: translateX(-50%); pointer-events: none; display: flex; flex-direction: column; align-items: center; gap: 4px; max-width: 72vw; z-index: 5; font: 15px system-ui, sans-serif; color: #efe6cc; text-shadow: 0 1px 4px #000, 0 0 12px #000; }
+      #subs div { transition: opacity 0.5s; text-align: center; }
+      #subs b { font-weight: 600; color: #f2c96b; margin-right: 0.4em; }
+      #subs .far { font-style: italic; color: #cfc7b2; }
+      #room { position: fixed; top: 12px; right: 14px; pointer-events: none; font-size: 12px; text-align: right; line-height: 1.6; opacity: 0.7; text-shadow: 0 1px 3px #000; }
+      #room .away { opacity: 0.45; }
+      #tuning { position: fixed; left: 50%; top: 46px; transform: translateX(-50%); pointer-events: none; font-size: 13px; color: #efe6cc; text-shadow: 0 1px 4px #000; z-index: 4; }
+
+      /* The shell's title and Escape menu (@arcade/kit/shell) as a lit card over the dark woods. */
+      .arcade-shell { --shell-title-font: Georgia, serif; --shell-ink: #efe6cc; --shell-dim: #b9b19c; --shell-card: rgba(10, 12, 11, 0.78); --shell-edge: rgba(239, 230, 204, 0.14); --shell-field: rgba(255, 255, 255, 0.06); --shell-accent: #f2c96b; --shell-accent-ink: #17130a; --shell-backdrop: radial-gradient(ellipse at center, rgba(0,0,0,0.05), rgba(0,0,0,0.6)); --shell-radius: 16px; }
+      .arcade-shell .as-title { font-weight: 400; font-size: 52px; letter-spacing: 0.22em; margin-right: -0.22em; color: #f6eed6; text-shadow: 0 2px 24px rgba(255,214,140,0.25); }
+      .arcade-shell .as-heading { font-weight: 400; color: #f6eed6; }
+      .arcade-shell .as-sub { font: italic 17px Georgia, serif; color: #ddd4bd; }
+    </style>
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <div id="hud"></div>
+    <div id="reticle"></div>
+    <div id="prompt"></div>
+    <div id="toast"></div>
+    <div id="objective" aria-live="polite"><div class="kicker"></div><div class="rule"></div><div class="task"></div></div>
+    <div id="subs" aria-live="polite"></div>
+    <div id="room"></div>
+    <div id="tuning" hidden></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
