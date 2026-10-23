@@ -1,3 +1,4 @@
+import { answerCall, MIMIC_LINES, UNCANNY_FIRST, type DistantState, type UncannyFeel } from "./distant"
 import { VOICE_LINES } from "./lines.gen"
 import type { ClueKind } from "./night"
 import { NIGHT_LINES, type NightLine } from "./night-lines.gen"
@@ -206,7 +207,7 @@ export function stepVoices(vs: VoiceState, world: WoodsWorld, walkers: readonly 
   const roll = () => nextRandom(vs.rng)
   // Chatter 0 (and the opening) leaves only key moments: a find, a sighting.
   const talk = feel.chatter > 0 && t >= OPENING_SECONDS
-  const okAt = (k: string, every: number) => { if (!talk || (vs.cool[k] ?? -1e9) > t) return false; vs.cool[k] = t + every; return true }
+  const okAt = (k: string, every: number, key = false) => { if ((!talk && !key) || (vs.cool[k] ?? -1e9) > t) return false; vs.cool[k] = t + every; return true }
 
   // ── reactions ──
   for (const c of cues) {
@@ -226,7 +227,7 @@ export function stepVoices(vs: VoiceState, world: WoodsWorld, walkers: readonly 
       // Shaken and quiet, from whoever is nearest the crossing, while it crosses.
       const mx = (c.x0 + c.x1) / 2, mz = (c.z0 + c.z1) / 2
       const s = nearestTo(all, mx, mz, 70, { key: true, people: keyPeople })
-      if (s && okAt("sighting", 90)) {
+      if (s && okAt("sighting", 90, true)) {
         plan(vs, { at: c.at + c.dur * 0.6, cast: s.cast, pool: "sighting", key: true })
         const o = nearestTo(all, s.x, s.z, 25, { not: s.cast, key: true, people: keyPeople })
         if (o) plan(vs, { at: c.at + c.dur * 0.6 + 0.3, cast: o.cast, pool: "sightreply", key: true })
@@ -333,6 +334,23 @@ export function stepVoices(vs: VoiceState, world: WoodsWorld, walkers: readonly 
   // Stale plans (their moment has passed by a long way) are dropped.
   vs.queue = vs.queue.filter((p) => t - p.at < 20)
   return out
+}
+
+/** With idle chatter off, keep one call-and-answer as an uncanny beat, never an unanswered idle call. */
+export function stepMimicCall(vs: VoiceState, ds: DistantState, world: WoodsWorld, walkers: readonly Walker[], t: number, feel: VoiceFeel & UncannyFeel, botBase = 100): VoiceEvent | null {
+  if (feel.chatter > 0 || !feel.uncanny || feel.uncannyRate <= 0 || t < UNCANNY_FIRST || ds.odd.mimic || ds.odd.played.includes("far.mimic")) return null
+  if (t < vs.next || t < vs.busyUntil || vs.queue.length || t < Math.max(ds.quietUntil, ds.busyUntil)) return null
+  const people = walkers.filter((w) => !w.bot)
+  if (!people.length) return null
+  vs.next = t + 30 + 40 * nextRandom(vs.rng)
+  const all = speakers(walkers, voiceRoles(walkers, botBase), vs.roamers)
+  const choices = all.filter((s) => !s.person).flatMap((s) => linesOf(s.cast, "call")
+    .filter((l) => (MIMIC_LINES as readonly string[]).includes(l.id) && people.some((p) => dist(s.x, s.z, p.x, p.z) <= CARRY[l.loud]))
+    .map((line) => ({ s, line })))
+  if (!choices.length) return null
+  const { s, line } = choices[Math.floor(nextRandom(vs.rng) * choices.length)]!
+  if (!answerCall(ds, world, people, line.id, s, line.seconds, t, feel)) return null
+  return say(vs, world, line, s, people, t)
 }
 
 function say(vs: VoiceState, world: WoodsWorld, line: NightLine, s: Pick<Speaker, "by" | "x" | "z">, people: readonly Walker[], t: number): VoiceEvent {

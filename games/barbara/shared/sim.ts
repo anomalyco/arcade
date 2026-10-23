@@ -5,7 +5,7 @@ import { answerCall, createDistant, holdDistant, stepDistant, type DistantEvent,
 import { VOICE_LINES } from "./lines.gen"
 import { NIGHT_LINES } from "./night-lines.gen"
 import { botWaypoint, CALL_EVERY, handOff, canLight, CLUE, createNight, stepNight, type NightEvent, type NightState } from "./night"
-import { BOT_ORDER, CAST_NAMES, createVoices, sayExtra, sayTape, stepVoices, voicesBusyUntil, type VoiceCue, type VoiceEvent, type VoiceState } from "./voices"
+import { BOT_ORDER, CAST_NAMES, createVoices, sayExtra, sayTape, stepMimicCall, stepVoices, voicesBusyUntil, type VoiceCue, type VoiceEvent, type VoiceState } from "./voices"
 import { isDeepWater, nextRandom, solidsNear, standHeight, treesNear, type Tree, type WoodsWorld } from "./world"
 
 /**
@@ -54,7 +54,7 @@ export const FEEL = {
   /** How likely an uncanny one is when they're allowed (×; a room uses 1). */
   uncannyRate: 1,
   /** How often the searchers talk among themselves (×; 0 is silence apart from key moments; `shared/voices.ts`). */
-  chatter: 1,
+  chatter: 0,
   /** People's own searchers speak at key moments (a find, a sighting): 1 on, 0 never. */
   voicePeople: 1,
   /** The thing in the woods (`shared/creature.ts`): on (Kit, at the Barbara ship); rare, distant and brief. A room runs these defaults. */
@@ -635,6 +635,8 @@ export function stepWoods(state: WoodsState, world: WoodsWorld, inputs: Readonly
     night.calls++; night.rev++
     night.callAt = state.t + CALL_EVERY
   }
+  const mimicCall = stepMimicCall(state.voices, state.distant, world, state.players, state.t, feel, BOT_ID)
+  if (mimicCall) state.events.push(mimicCall)
   holdDistant(state.distant, voicesBusyUntil(state.voices))
 }
 
