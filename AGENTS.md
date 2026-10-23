@@ -12,16 +12,27 @@ game's own `AGENTS.md`.
   Wrangler, TypeScript and Playwright versions aligned across workspace games.
 - `landing/` and `redirects/` are independent projects with their own lockfiles and install/check
   commands; do not add them to the workspace implicitly.
-- While iterating, run `hivemind run --kind browser -- bun run verify`: it checks only the targets whose CI workflow
+- While iterating, run `bun run verify:remote`: it snapshots changed paths on the submitter and runs
+  `hivemind run --kind browser -- …` automatically. It checks only the targets whose CI workflow
   paths match your changes (vs `origin/main`, including uncommitted files), in parallel, with incremental typecheck,
-  then smoke and `wrangler deploy --dry-run`. A one-game change takes ~5 s; `--all` ~17 s; docs-only checks nothing.
-- Before opening or merging a PR, run `hivemind run --kind browser -- bun run verify:release` (~30 s): a clean
+  then smoke and `wrangler deploy --dry-run`; docs-only checks nothing. Use
+  `bun run verify:remote --worker mini -- --all` to pass HiveMind options before `--` and verify options after it.
+- Before opening or merging a PR, run `hivemind run --kind browser -- bun run verify:release`: a clean
   `git archive` export of HEAD, root frozen install, then every workspace target's check commands, smoke and dry-run
   with cold caches. Commit first; it ignores uncommitted changes. Dry-runs do not deploy. The per-game
   `bun run check` and `bun run check:packages` still work and are what CI runs.
-- Hivemind workers sync files without a usable `.git`. There `verify` checks every workspace target unless
-  `--changed <file>` (newline-separated paths) narrows it, and `verify:release` copies the synced tree, minus ignored
+  Budget for minutes: the Oct 22 remote-mini `verify --all` run took 1,204 s at 2 jobs (including existing test
+  and smoke failures); release also adds export and frozen install. The old ~30 s estimate no longer applies.
+- HiveMind workers sync files without a usable `.git`. A bare remote `verify` fails unless given
+  `--changed <file>` or `ARCADE_VERIFY_CHANGED_FILE` (newline-separated paths); an empty file checks nothing.
+  `verify:remote` ships that snapshot automatically, including committed, staged, unstaged and untracked paths
+  versus `origin/main`. Use `--all` explicitly for every workspace target. The plan prints its targets and reason.
+  `verify:release` copies the synced tree, minus ignored
   output, as its export, so uncommitted files are included. `--export <dir|tar>` verifies a pre-made `git archive`.
+- Worker budgets default to `--jobs 2 --test-workers 2`. Precedence is flags, then `ARCADE_VERIFY_JOBS` /
+  `ARCADE_VERIFY_TEST_WORKERS`, then `HIVEMIND_JOBS` / `HIVEMIND_TEST_WORKERS`, then 2 each.
+  `HIVEMIND_CPUS`, when supplied by the worker, caps both to its allocation (rounded down, minimum 1).
+  `verify:remote` forwards the two Arcade budget variables; it never forwards the submitter's CPU allocation.
 - Every `tests/` and `scripts/` file is typechecked (Getaway's `tsconfig.scripts.json` also covers root `scripts/`).
   Proof scripts for kit code go in root `scripts/` (Lab proofs in `scripts/lab/`), not in `packages/kit/`.
 - Local smoke uses the Metal adapter on macOS (~80x faster than SwiftShader); `SMOKE_GPU=swiftshader` reproduces CI.
@@ -138,7 +149,7 @@ game's own `AGENTS.md`.
 
 - **Live state ([docs/agent-state.md](docs/agent-state.md))**: Read `docs/agent-state.md` (or run `bun scripts/agent-ops.ts state`) before opening a PR, merging, or deploying. It defines `deploys: on|off`, `allowed_base` (`main`), `retired_branches`, `browser_proofs_default`, and hot-file contention rules. `.github/workflows/pr-guard.yml` enforces it in CI.
 - **Worktrees & branches**: Work in a dedicated worktree under `/Users/kit/worktrees/arcade/<branch>` (`git worktree add`). Never share a worktree with another active agent and never use `/Users/kit/worktrees/arcade/release-4` (the live `:5187` Dev Hub preview worktree) for feature work. Never push to or recreate a retired branch (`release-4`, `release-5`, `release-6`, `release-7`).
-- **Verification & proofs**: Run heavy checks through `hivemind run --kind cargo -- bun run verify` (or `--kind browser` when GPU smoke or Playwright runs). When `browser_proofs_default: off` in `docs/agent-state.md`, skip multi-minute Playwright video/capture proofs unless your brief asks for visual proof or you changed shaders, lighting, camera framing, or HUD layout. Never open visible windows (`headless: true` only) and never play audio (`--mute-audio` only).
+- **Verification & proofs**: Run verification through `bun run verify:remote` (HiveMind browser admission while smoke is enabled). When `browser_proofs_default: off` in `docs/agent-state.md`, skip multi-minute Playwright video/capture proofs unless your brief asks for visual proof or you changed shaders, lighting, camera framing, or HUD layout. Never open visible windows (`headless: true` only) and never play audio (`--mute-audio` only).
 - **PRs & deploys**: Rebase onto `origin/main` before opening a PR (`gh pr create --base main`). When `deploys: on` and CI is green, merge (`gh pr merge --squash --delete-branch`) and fast-forward `/Users/kit/worktrees/arcade/release-4` (`git -C /Users/kit/worktrees/arcade/release-4 fetch origin main && git -C /Users/kit/worktrees/arcade/release-4 merge --ff-only origin/main`). Do not run `bun run deploy` manually unless Kit explicitly asks.
 - **Durable reports & safe messaging**: Before finishing a subagent task, save your full report to `~/code/home/artifacts/agent-reports/<session>.md` (`bun scripts/agent-ops.ts report write --session <ses_...> --file <path>`) and post a summary on the `AR-n` board card (`board.ts comment`). Coordinators must use `bun scripts/agent-ops.ts msg <ses_...> "<text>"` to message child sessions (refuses if mid-turn so queued messages do not overwrite `<subagent>` completion summaries) and `bun scripts/agent-ops.ts watchdog` / `bun scripts/agent-ops.ts board-hygiene` to catch stalled sessions, overwritten reports, and board drift.
 - **Gallery links**: Register capture directories with `bun scripts/agent-ops.ts gallery-link <capture-dir> <slug>` (symlinks into `/Users/kit/worktrees/arcade/release-4/captures/<slug>` and verifies HTTP 200 on `:5187`) before sharing any `arcade.lwoyjcaeyxv6.opentunnel.xyz/captures/<slug>/...` URL.

@@ -2,42 +2,65 @@
 //
 //   bun run verify              affected checks only, in parallel, with incremental typecheck caches
 //   bun run verify --all        every workspace target, same fast path
+//   bun run verify:remote      snapshot changed paths here, then run verify through HiveMind
 //   bun run verify:release      clean `git archive` export of HEAD, frozen install, then every workspace target's
 //                               check commands with cold caches, smoke and `wrangler deploy --dry-run`
 //
-// Options: --base <ref> (default origin/main), --no-smoke, --jobs <n>, --list (print the plan only),
+// Options: --base <ref> (default origin/main), --no-smoke, --jobs <n>, --test-workers <n>, --list (plan only),
 //          --changed <file> (newline-separated changed paths instead of asking git),
 //          --export <dir|tar> (release: verify this pre-made `git archive` export instead of making one).
 //
-// Without a git checkout (hivemind workers sync files but not `.git`), affected mode checks every workspace target
-// unless --changed says what changed, and release mode copies the synced tree, minus ignored build output, as its
-// clean export. Independent projects then join only through --changed.
+// Git-less workers require --changed or ARCADE_VERIFY_CHANGED_FILE; --all explicitly selects every workspace target.
+// Release mode copies the synced tree, minus ignored build output, as its clean export.
+// Budgets: flags > ARCADE_VERIFY_JOBS / ARCADE_VERIFY_TEST_WORKERS > HIVEMIND_JOBS / HIVEMIND_TEST_WORKERS > 2.
+// HIVEMIND_CPUS, when provided, caps both budgets to the allocation, never the host's core count.
 //
 // "Affected" comes from the CI workflows themselves: a target runs when a changed file (committed since the
 // merge-base with --base, staged, unstaged or untracked) matches its workflow's pull_request paths. So packages/**
 // and root changes check everything, a games/outbreak change checks Outbreak and the Lab, and docs check nothing.
 //
 // Both modes split each target's `check` script into its commands and run them in parallel. Test suites run one at
-// a time, game suites with `bun test --parallel` over half the cores, all with a 20 s per-test timeout. The fast path adds `tsc --incremental` build info under
+// a time, game suites with `bun test --parallel=<test-workers>`, all with a 20 s per-test timeout. The fast path adds `tsc --incremental` build info under
 // node_modules/.cache/arcade-verify and runs packages/kit's suite once instead of also inside Getaway and Blackout.
 // Smoke uses Metal on macOS and SwiftShader elsewhere (scripts/smoke.mjs).
 import { $ } from "bun"
-import { existsSync, mkdtempSync, realpathSync, rmSync, statSync } from "node:fs"
-import { availableParallelism, tmpdir } from "node:os"
+import { existsSync, mkdtempSync, rmSync, statSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { basename, join, relative, resolve } from "node:path"
+import { gitChangedFiles, hasGit } from "./verify-scope"
 
 const argv = process.argv.slice(2)
 const flag = (name: string) => argv.includes(name)
-const option = (name: string, fallback: string) => (argv.includes(name) ? argv[argv.indexOf(name) + 1]! : fallback)
+const option = (name: string, fallback: string) => {
+  const at = argv.indexOf(name)
+  if (at < 0) return fallback
+  const value = argv[at + 1]
+  if (!value || value.startsWith("--")) throw new Error(`${name} requires a value`)
+  return value
+}
 const release = flag("--release")
 const all = flag("--all") || release
 const smoke = !flag("--no-smoke")
 const base = option("--base", "origin/main")
-const changedList = argv.includes("--changed") ? option("--changed", "") : undefined
+const changedList = argv.includes("--changed") ? option("--changed", "") : process.env.ARCADE_VERIFY_CHANGED_FILE
 const exportArg = argv.includes("--export") ? resolve(option("--export", "")) : undefined
-const jobs = Number(option("--jobs", String(Math.max(3, Math.floor(availableParallelism() / 2)))))
+const positiveInteger = (value: string, name: string) => {
+  const n = Number(value)
+  if (!Number.isSafeInteger(n) || n < 1) throw new Error(`${name} must be a positive integer (received ${JSON.stringify(value)})`)
+  return n
+}
+const cpuBudget = (value: string) => {
+  const n = Number(value)
+  if (!Number.isFinite(n)) throw new Error("HIVEMIND_CPUS must be finite")
+  return Math.max(1, Math.floor(n))
+}
+const allocation = process.env.HIVEMIND_CPUS === undefined ? undefined : cpuBudget(process.env.HIVEMIND_CPUS)
+const budget = (flag: string, env: string, hiveEnv: string) => Math.min(
+  positiveInteger(option(flag, process.env[env] ?? process.env[hiveEnv] ?? "2"), flag), allocation ?? Infinity,
+)
+const jobs = budget("--jobs", "ARCADE_VERIFY_JOBS", "HIVEMIND_JOBS")
 const repo = resolve(import.meta.dir, "..")
-const testWorkers = Math.max(2, Math.floor(availableParallelism() / 2))
+const testWorkers = budget("--test-workers", "ARCADE_VERIFY_TEST_WORKERS", "HIVEMIND_TEST_WORKERS")
 
 const WORKSPACE_GAMES = ["getaway", "blackout", "outbreak", "carrier", "lab", "brawl", "archers", "walkers", "lot", "nightshift", "barbara"]
 const INDEPENDENT: Record<string, string> = { landing: "landing", redirects: "redirects" }
@@ -62,27 +85,16 @@ async function workflowTargets(): Promise<{ target: Target; paths: string[] }[]>
   return out
 }
 
-/** True when `repo` is the top of a usable git checkout (a synced worktree's `.git` file may point nowhere). */
-async function hasGit(): Promise<boolean> {
-  const top = await $`git rev-parse --show-toplevel`.cwd(repo).quiet().nothrow()
-  return top.exitCode === 0 && realpathSync(top.stdout.toString().trim()) === realpathSync(repo)
-}
-const git = await hasGit()
+const git = await hasGit(repo)
 
 /** Changed paths from --changed, else from git; undefined when neither can say. */
 async function changedFiles(): Promise<string[] | undefined> {
   if (changedList !== undefined) {
     const text = await Bun.file(resolve(changedList)).text()
-    return [...new Set(text.split("\n").map((l) => l.trim()).filter(Boolean))]
+    return [...new Set(text.split(/\r?\n/).filter(Boolean))]
   }
   if (!git) return undefined
-  const mergeBase = (await $`git merge-base HEAD ${base}`.cwd(repo).quiet().nothrow()).stdout.toString().trim()
-  if (!mergeBase) throw new Error(`No merge-base with ${base}; fetch it or pass --base <ref>`)
-  const lists = await Promise.all([
-    $`git diff --name-only ${mergeBase}`.cwd(repo).quiet().text(),
-    $`git ls-files --others --exclude-standard`.cwd(repo).quiet().text(),
-  ])
-  return [...new Set(lists.join("\n").split("\n").filter(Boolean))]
+  return gitChangedFiles(repo, base)
 }
 
 // ---- Steps ---------------------------------------------------------------------------------------------------
@@ -132,11 +144,9 @@ function targetSteps(target: Target, root: string, { incremental, dedupeKit }: {
         kind = "test"
         // Getaway and Blackout also run packages/kit's suite; when the packages target is in the plan it runs once there.
         if (dedupeKit) cmd = cmd.replace(/\s+\.\.\/\.\.\/packages\/kit\b/, "")
-        // Game suites run in parallel worker processes here (carrier 19 s -> 8 s) but not in CI, where 4 vCPUs push
-        // the AI tick budget and carrier's 3 s simulation tests past their limits. Half the cores, because one worker
-        // per core oversubscribes the shared Studio, and a 20 s per-test timeout (bun's 5 s default is a hang guard
-        // that slow simulation tests hit under load).
+        // Worker count belongs to this job's budget, not the host's CPU count. Keep suites serial below.
         if (target.game && !/--parallel\b/.test(cmd)) cmd = cmd.replace(/^bun test\b/, `bun test --parallel=${testWorkers}`)
+        if (!/--max-concurrency\b/.test(cmd)) cmd = cmd.replace(/^bun test\b/, "bun test --max-concurrency=4")
         if (!/--timeout\b/.test(cmd)) cmd = cmd.replace(/^bun test\b/, "bun test --timeout=20000")
       } else if (/^vite build\b/.test(cmd)) kind = "build"
       const id = tag(kind === "typecheck" ? `tsc ${cmd.match(/-p\s+tsconfig\.(\w+)\.json/)?.[1] ?? "app"}` : kind)
@@ -176,8 +186,7 @@ async function run(steps: Step[], root: string): Promise<Result[]> {
     }
     for (const s of ready()) {
       if (running.size >= jobs) break
-      // Each suite already uses every core (bun test --parallel), and some tests carry wall-clock budgets and
-      // timeouts that fail under oversubscription: run suites one at a time.
+      // Some suites carry wall-clock budgets: never overlap their worker pools.
       if (s.kind === "test" && [...active.values()].includes("test")) continue
       pending.delete(s.id)
       active.set(s.id, s.kind)
@@ -224,6 +233,7 @@ if (all) {
       if (target.independent && changed?.some((f) => paths.some((p) => new Bun.Glob(p).match(f)))) selected.push(target)
     }
   }
+  console.log(`verify: ${release ? "--release" : "--all"} -> ${selected.map((t) => t.name).join(", ")}`)
 } else {
   const changed = await changedFiles()
   if (changed) {
@@ -231,10 +241,10 @@ if (all) {
     const from = changedList !== undefined ? changedList : `vs ${base}`
     console.log(`verify: ${changed.length} changed file(s) ${from} -> ${selected.map((t) => t.name).join(", ") || "nothing to check"}`)
   } else {
-    selected = targets.map((t) => t.target).filter((t) => !t.independent)
-    console.log(`verify: no git checkout here (pass --changed <file> to narrow); checking every workspace target`)
+    throw new Error("verify: no git checkout or changed-file list. Run bun run verify:remote on the submitter, pass --changed <file> / ARCADE_VERIFY_CHANGED_FILE, or explicitly use --all.")
   }
 }
+console.log(`verify: jobs=${jobs}, test-workers=${testWorkers} (flags > ARCADE_VERIFY_* > HIVEMIND_* > defaults 2/2${allocation === undefined ? "" : `; capped by HIVEMIND_CPUS=${allocation}`})`)
 
 // Ignored output a git-less copy leaves behind, mirroring the .gitignore files.
 const COPY_EXCLUDES = [".git", "node_modules", "dist", ".wrangler", "*.tsbuildinfo", ".DS_Store", ".env*", "captures", ".scratch", "shots", "proof-output", "build.gen.ts", ".arcade-control.json"]

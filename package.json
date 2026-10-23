@@ -13,6 +13,7 @@
     "agent-ops": "bun scripts/agent-ops.ts",
     "check:packages": "bun run --filter '@arcade/*' check",
     "verify": "bun scripts/verify.ts",
+    "verify:remote": "bun scripts/verify-remote.ts",
     "verify:release": "bun scripts/verify.ts --release"
   },
   "devDependencies": {
