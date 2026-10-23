@@ -16,7 +16,9 @@ misses. This is not a full planar forest reflection: the canopy is a 64-bin dire
 approximation.
 
 Today is inert: the forest scene shader, `WOODS_FLOATS` and group-1 layout are main's
-(`scripts/lake-pins.ts` checks the shader byte for byte). Choosing Moonlit creates the cube, the
+(`scripts/lake-pins.ts` checks the shader byte for byte against its merge base, so it held for the
+lake PR; the later camp finish pass changes the forest shader and `WOODS_FLOATS` on purpose, so run
+it only against a base that already has the finish pass). Choosing Moonlit creates the cube, the
 lake uniform buffer (frame + canopy) and a separate water-only pipeline (compiled async; Today
 water draws until it is ready). Fresnel, transmission and the lunar lobe reuse kit water
 (`waterFresnel`, `waterTransmission`, `waterSpecular`). SSR skips the lake through a per-frame
