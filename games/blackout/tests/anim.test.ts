@@ -116,6 +116,27 @@ test("hard stop settles in at most two catch steps", () => {
   expect(a.feet.every(f => f.planted)).toBe(true)
 })
 
+test("a hard stop from any swing phase settles in two catch steps at 30, 60 and 144 fps", () => {
+  // A stop's re-aim must stretch the swing before it advances, and keep aiming after |sv| drops under the stopping
+  // threshold: at 30 fps a late-swing boot reached touchdown unaimed, and others froze 20 cm short.
+  for (const fps of [30, 60, 144]) {
+    const step = 1 / fps
+    for (let k = 0; k < 24; k++) {
+      const a = newAvatar("stop", 0, 0, 0, "rifle")
+      let t = 0, x = 0, steps = 0
+      while (t < 2 + k * 0.013) { t += step; x += 4.2 * step; animate(a, step, t, x, 0, 4.2, 0, 0) }
+      for (let n = 0; n < 1.5 * fps; n++) {
+        const before = a.feet.map(f => f.planted)
+        t += step
+        animate(a, step, t, x, 0, 0, 0, 0)
+        steps += a.feet.filter((f, i) => !before[i] && f.planted).length
+      }
+      expect(steps).toBeLessThanOrEqual(2)
+      expect(a.feet.every(f => f.planted)).toBe(true)
+    }
+  }
+})
+
 test("A/D reversals at a run hold the run posture and sweep the knees without a jump", () => {
   // |svx| passes through zero on a reversal: m.run read from it went 1 → 0 → 1 (a 90° elbow pop at 30 fps) and the
   // reversal step got a 3-frame side-step swing (knee 50 cm in one 30 fps frame, now ~35).

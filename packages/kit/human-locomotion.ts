@@ -32,6 +32,14 @@ const TAU = Math.PI * 2
 /** Fastest a stopping boot's landing point moves, m/s. */
 const STOP_REAIM = 1.5
 export const stiffness = (hz: number) => (hz * TAU) ** 2
+/**
+ * Eases `a.gait` toward walking (1) or standing (0) from the smoothed speed. A reversal passes |sv| through zero while
+ * the body is still driven at speed, so gait holds while `motion.reverseT` is live. Set `svx`/`vx` first.
+ */
+export function stepGait(a: Locomotion, dt: number): void {
+  const reversing = (a.motion.reverseT ?? 0) > 0 && Math.hypot(a.vx, a.vy) > 0.35
+  a.gait += ((Math.hypot(a.svx, a.svy) > 0.35 || reversing ? 1 : 0) - a.gait) * Math.min(1, dt * 6)
+}
 export function angleSpring(s: Spring, goal: number, hz: number, dt: number): void {
   stepSpring(s, stiffness(hz), 1, dt, s.x + angleDiff(goal, s.x))
 }
@@ -57,6 +65,7 @@ export function newMotion(x: number, y: number, aim: number) {
     stepArmVar: [1, 1] as [number, number],
     redirectFrom: [0, 0] as [number, number],
     bowSide: [0, 0] as [number, number],
+    stopReaim: [0, 0] as [number, number],
     targets: [[x, 0, y], [x, 0, y]] as [V3, V3],
     toes: [[x, 0, y], [x, 0, y]] as [V3, V3],
   }
@@ -237,7 +246,7 @@ function reset(a: Avatar): void {
   for (const s of [m.bob, m.sway, m.drop, m.twist, m.posture, m.crouch, m.bank, m.secondary, m.yawOffset, ...m.arms, ...m.hands]) { s.x = 0; s.v = 0 }
   m.stepDebt = 0; m.start = 0; m.moving = false; m.next = 0; m.strafeSign = 0; m.stepCount = 0; m.clock = 0
   m.strafePhi = 0; m.strafeCross = 0; m.sideStep = 0; m.backness = 0; m.strafeLateral = 0; m.steady = 0; m.reverseT = 0
-  m.effort = Math.hypot(a.vx, a.vy); m.bowSide[0] = 0; m.bowSide[1] = 0
+  m.effort = Math.hypot(a.vx, a.vy); m.bowSide[0] = 0; m.bowSide[1] = 0; m.stopReaim[0] = 0; m.stopReaim[1] = 0
   for (let i = 0; i < 2; i++) {
     const f = a.feet[i]!
     f.p = home(a, i, 0); f.lift = [...f.p]; f.yaw = a.legYaw; f.pitch = 0; f.planted = true
@@ -373,6 +382,18 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
     let u = Math.min(1, prevU + dt / m.durations[i]!)
     const rawDot = a.vx * a.svx + a.vy * a.svy
     const stopping = !travelling && speed > 0.2
+    // A stop's late re-aim spreads evenly over the swing left, stretched so the landing moves at most STOP_REAIM: the
+    // boot still lands where the stop wants it (one catch step) without doubling back 27 cm in the last two frames.
+    // Stretch before advancing u, or a 30 fps step reaches u = 1 and lands unaimed where 60 and 144 fps re-aim. Once
+    // started the re-aim runs to touchdown: "stopping" ends when |sv| falls under 0.2, often mid-swing.
+    let reaimLeft = 0
+    if ((stopping || m.stopReaim[i]) && u >= 0.75 && prevU < 1) {
+      m.stopReaim[i] = 1
+      const want = computeTarget(a, i, (1 - prevU) * m.durations[i]!, animation, curGait, speed, moving), prevT = m.targets[i]!
+      reaimLeft = Math.min(0.2, Math.max((1 - prevU) * m.durations[i]!, Math.hypot(want[0] - prevT[0], want[2] - prevT[2]) / STOP_REAIM))
+      m.durations[i] = Math.max(m.durations[i]!, reaimLeft / (1 - prevU))
+      u = Math.min(1, prevU + dt / m.durations[i]!)
+    }
     const reversing = travelling && rawDot < 0 && (a.feet[1 - i]!.planted || prevU > m.swings[1 - i]!)
     // If the character reverses while this foot is in late swing, redirect it to the new direction
     // and extend its remaining swing once so it never plants behind the reversal.
@@ -384,18 +405,11 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
       // Restart the swing from where the foot is, not from a lift point that would jump it 25% toward the target.
       const e0 = smoother(u)
       f.lift = [(f.p[0] - target[0] * e0) / (1 - e0), 0, (f.p[2] - target[2] * e0) / (1 - e0)]
-    } else if (u < (stopping ? 1 : (m.reverseT ?? 0) > 0 ? 0.9 : 0.75) || (u < 0.94 && landsOutOfReach(a, m.targets[i]!, (1 - u) * m.durations[i]!))) {
+    } else if (u < (reaimLeft > 0 || stopping ? 1 : (m.reverseT ?? 0) > 0 ? 0.9 : 0.75) || (u < 0.94 && landsOutOfReach(a, m.targets[i]!, (1 - u) * m.durations[i]!))) {
       let desired = computeTarget(a, i, (1 - u) * m.durations[i]!, animation, curGait, speed, moving)
       const prevT = m.targets[i]!
-      // A late correction eases toward the new landing so the boot never darts. A stop's re-aim spreads evenly over the
-      // swing left, stretched so the landing moves at most STOP_REAIM: the boot still lands where the stop wants it (one
-      // catch step) without doubling back 27 cm in the last two frames.
-      let late = u < 0.75 ? 1 : 0.35
-      if (u >= 0.75 && stopping) {
-        const left = Math.min(0.2, Math.max((1 - u) * m.durations[i]!, Math.hypot(desired[0] - prevT[0], desired[2] - prevT[2]) / STOP_REAIM))
-        m.durations[i] = Math.max(m.durations[i]!, left / (1 - u))
-        late = Math.min(1, dt / Math.max(dt, left))
-      }
+      // A late correction eases toward the new landing so the boot never darts.
+      const late = reaimLeft > 0 ? Math.min(1, dt / Math.max(dt, (1 - prevU) * m.durations[i]!)) : u < 0.75 ? 1 : 0.35
       if (late < 1) desired = [prevT[0] + (desired[0] - prevT[0]) * late, 0, prevT[2] + (desired[2] - prevT[2]) * late]
       // Fold any mid-swing target shift into f.lift so f.p(u) is C0-continuous (no retroactive eHoriz * dTarget snap)
       // while still landing at the exact updated target at u = 1.
@@ -487,7 +501,7 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
       f.planted = false; f.lift = [f.p[0], 0, f.p[2]]; f.liftYaw = f.yaw
       m.swings[i] = 0; m.stances[i] = 0
       if (m.redirectFrom) m.redirectFrom[i] = 0
-      m.bowSide[i] = 0
+      m.bowSide[i] = 0; m.stopReaim[i] = 0
       const stepIdx = ++m.stepCount
       // Same-foot (stepIdx - 2) high-pass blue-noise variation: genuine step-to-step organic variation
       // while telescoping each foot's mean to zero so L/R step symmetry stays ~1.000.
