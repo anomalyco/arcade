@@ -1,7 +1,8 @@
 # People cast: credits and licences
 
-Every file here is built by `scripts/people/build-people.ts` from `scripts/people/cast.json` (Blender 5.2 + MPFB 2).
-Ship this file with any game that loads them.
+Every `<person>-<look>.glb` here is built by `scripts/people/build-people.ts` from `scripts/people/cast.json` (Blender
+5.2 + MPFB 2); the `*-rocketbox.glb` files by `scripts/people/build-rocketbox.ts`. Ship this file with any game that
+loads them.
 
 ## Bodies, skeleton, weights, clothes, hair, eyes, brows: CC0 1.0
 
@@ -30,12 +31,37 @@ Ship this file with any game that loads them.
 
 No attribution is required for any of the above.
 
-## Motion
+## Rocketbox avatars (`m05-rocketbox.glb`, `f04-rocketbox.glb`): MIT
 
-The people move with the kit's own procedural rig (`packages/kit/human-*.ts`); no motion capture is baked into these
-files. Where the rig is measured or tuned against motion capture, see `docs/animation.md` (100STYLE, CC BY 4.0:
-Ian Mason, Sebastian Starke, Taku Komura, 2022, https://zenodo.org/records/8127870; attribution required if any of it
-is ever shipped).
+From the Microsoft Rocketbox Avatar Library, https://github.com/microsoft/Microsoft-Rocketbox, commit `0943055d`:
+`Assets/Avatars/Adults/Male_Adult_05` (m05) and `Assets/Avatars/Adults/Female_Adult_04` (f04). Source files and their
+SHA-256s are in `rocketbox-sources.json`. Changes: the Biped bones renamed to the `game_engine` names, thighs moved
+under the pelvis and clavicles under the chest, the mesh split by material and bone weights into clothes, skin, eyes
+and hair, a decimated LOD1, textures downscaled from 2048 to 1024 and re-encoded as WebP, specular maps dropped.
+
+```
+MIT License
+
+Copyright (c) 2020 Microsoft
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
 
 ## Motion
 

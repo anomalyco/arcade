@@ -67,6 +67,43 @@ blender -b --factory-startup --python scripts/people/lineup.py -- out.png <glb> 
 - Blender exports a file-backed image's source file, not its scaled pixels, so `load()` copies a downscaled image
   into a new packed image. Without this the 4096² MakeHuman normal maps shipped at full size (1.46 MB → 804 KB).
 
+## Rocketbox avatars
+
+An alternative cast after Kit's Oct 23 playtest ("people look bad, use a real model, not procedural"): two Microsoft
+Rocketbox avatars (MIT), `m05` (Male_Adult_05: field vest over a green long-sleeved shirt, work trousers, boots) and
+`f04` (Female_Adult_04: hooded leather jacket, cargo trousers, boots), on the same rig, gait, IK, torch grip and
+lighting as the MakeHuman cast. Manifest `@arcade/kit/people/cast/rocketbox.gen.ts`; Barbara picks it with Lab ›
+Friends › People model or `?cast=rocketbox` (MakeHuman stays the default).
+
+```
+bun scripts/people/build-rocketbox.ts [m05 | f04]   # ≈3 s each; downloads into ~/Library/Caches/arcade-people/rocketbox
+```
+
+- `build-rocketbox.py` imports the FBX, clears its action and bakes the centimetre scale and quarter turn into the rest
+  pose, renames the Biped bones to the `game_engine` names (`Bip01 L Finger1` → `index_01_l`, `Toe0` → `ball`; face
+  bones become `face_*` and follow the head), and moves the thighs under the pelvis and the clavicles under
+  `spine_03` (Biped hangs them from `Spine` and `Neck`, which would swing the hips with the chest and the shoulders
+  with the head). Vertices with no weights (four hair-card vertices on f04) copy the nearest weighted vertex, or the
+  exporter would add a `neutral_bone` that pins them at the origin.
+- The single mesh splits by material and bone weight into `cloth.outfit`, `skin.hands` (body faces mostly weighted to
+  hand and finger bones), `skin.head`, `eye.eyes` (head faces on the eye bones) and `hair.hair` (the opacity cards,
+  alpha-tested). The textures are full colour, so `baseColorFactor` is 1 and `mean` 1: no runtime tints. Specular
+  maps are dropped (roughness comes from the kind, as for the MakeHuman cast).
+- Source files and SHA-256s: `packages/kit/people/assets/rocketbox-sources.json`, pinned to commit `0943055d`.
+
+| | m05 | f04 | MakeHuman (each) |
+| --- | --- | --- | --- |
+| GLB | 981 KB | 886 KB | 720–970 KB |
+| Textures (1024² WebP: body and head colour and normal, hair) | 766 KB | 637 KB | |
+| Triangles LOD0 / LOD1 | 7.8 k / 3.2 k | 9.3 k / 3.9 k | 28.5–33.1 k / 7.3–9.2 k |
+| Joints | 80 | 80 | 53 |
+| Height | 1.81 m | 1.76 m | 1.59–1.86 m |
+
+GPU frame in Barbara (`people-proof.ts --cast makehuman,rocketbox --gpu`, five friends in view, median of 48, three
+alternations, Oct 23 on pro): Rocketbox 26.5–27.0 ms, MakeHuman 24.8–27.1 ms, blocky 25.9–26.8 ms, all within noise.
+At game exposure Rocketbox reads as particular people from about 4 m in; the faces run hot orange in your torch (redder
+photo skin plus the skin scatter), the open look issue.
+
 ## Runtime
 
 | Module | Owns |
@@ -115,13 +152,16 @@ for the beam and the torch mesh. Woods' adapter is `games/barbara/src/people-vie
 - Faster than ~3.5 m/s the run plays above its captured cadence.
 - Up close the MakeHuman textures are the ceiling: flat skin with no pores and cloth with no weave or fold maps.
   Microsoft Rocketbox (MIT, 115 avatars, photo-sourced 2K colour and normal maps) is clearly more real beside it
-  (`scripts/people/model-compare.sh`), but it is MIT rather than CC0 or CC BY and uses a Biped skeleton; not adopted.
+  (`scripts/people/model-compare.sh`); two of its avatars are now an alternative cast (Rocketbox avatars, above).
+- Rocketbox: only two avatars so far, so a team of four repeats them; no headlamps or packs; the hair is one set of
+  low-poly cards; face bones are carried but never driven.
 - Hair cards are alpha-tested and can shimmer at a distance under TAA.
 - Torch shadows from people re-render the torch's shadow slot every frame while anyone is in reach.
 
 ## Licences
 
-All shipped assets are CC0: MakeHuman/MPFB 2 bodies, clothes, hair, skins, eyes and eyebrows from
+The MakeHuman cast is CC0: MakeHuman/MPFB 2 bodies, clothes, hair, skins, eyes and eyebrows from
 `makehuman_system_assets_cc0`; the beanie and its knit texture are procedural. The gait cycles are from the CMU
 Graphics Lab Motion Capture Database (free for all uses; credited in `gait.gen.ts` and `CREDITS.md`). See
-`packages/kit/people/assets/CREDITS.md`. No Mixamo, no Bandai Namco data, nothing with ML or redistribution limits.
+`packages/kit/people/assets/CREDITS.md`. The Rocketbox avatars are MIT: their notice is in that file and in Barbara's
+`public/CREDITS.md`. No Mixamo, no Bandai Namco data, nothing with ML or redistribution limits.

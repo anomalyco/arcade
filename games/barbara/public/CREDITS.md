@@ -6,6 +6,34 @@
 - NASA SVS CGI Moon Kit (2019), Ernie Wright / NASA LRO–LROC: https://svs.gsfc.nasa.gov/4720/
 - Source hashes and conversion notes: `packages/kit/sky/assets/CREDITS.md` and `sources.json`.
 
+## People
+
+- The realistic searchers are the shared kit cast, `packages/kit/people/assets/CREDITS.md`: MakeHuman/MPFB 2 bodies and clothes (CC0), the CMU Graphics Lab Motion Capture Database walk and run (http://mocap.cs.cmu.edu), and, with Lab › Friends › People model set to Rocketbox (`?cast=rocketbox`), two Microsoft Rocketbox avatars, `Male_Adult_05` and `Female_Adult_04` (https://github.com/microsoft/Microsoft-Rocketbox), under this licence:
+
+```
+MIT License
+
+Copyright (c) 2020 Microsoft
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 ## Sound
 
 - Every file in `audio/` was generated with ElevenLabs `eleven_text_to_sound_v2` on Kit's account under the ElevenLabs commercial sound-generation licence (Anomaly), then trimmed, loop-crossfaded, loudness-normalised and encoded to Ogg Opus by `scripts/audio/sounds.ts`. The prompt, take, request id and measured loudness of each file are in `src/audio/files.ts`. The uncanny tier (`far.howl`, `far.taken`, `far.mimic`, `far.echo`, `far.climb`, `far.stop`) is edited together offline by `scripts/audio/uncanny.ts` from generated takes of the same kind and, for the mimic and the echo, from the searchers' lines and the loon; each file's ingredients are listed in its provenance.
