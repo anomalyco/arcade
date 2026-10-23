@@ -38,6 +38,8 @@ export const CAMERA_ARTIFACT_DEFAULTS = {
   condensationAmount: 0.45,
   infrared: false,
   infraredBloom: 0.7,
+  /** Infrared's colour: 0 a camcorder's NightShot green, 1 a body camera's grey. */
+  infraredTint: 0,
 }
 export type CameraArtifactSettings = typeof CAMERA_ARTIFACT_DEFAULTS
 
@@ -79,6 +81,7 @@ export function cameraArtifactControls(options: { group?: string; prefix?: strin
     range("condensationAmount", "Crept in", "condensation"),
     toggle("infrared", "Infrared monochrome"),
     range("infraredBloom", "IR blooming", "infrared"),
+    range("infraredTint", "IR green … grey", "infrared"),
   ]
 }
 
@@ -95,7 +98,7 @@ struct U {
   fa: array<vec4f, 4>,  // lens x y px, spot x y px
   fb: array<vec4f, 4>,  // lens radius px, spot radius px, hz, duty
   fc: array<vec4f, 4>,  // phase, level, -, -
-  pad: vec4f,
+  pad: vec4f, // infrared tint (0 green, 1 grey), -, -, -
 }
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var src: texture_2d<f32>;
@@ -302,7 +305,8 @@ fn ghost(px: vec2f, p: vec2f, c: vec2f, k: f32, r: f32, tint: vec3f) -> vec3f {
   if (ir > 0.0) {
     let y = lum(c) * 1.5 + max(lum(wide) - 0.04, 0.0) * 5.0 * u.k.y;
     let ys = clamp((toSrgb(vec3f(y)).x - 0.08) / 0.84, 0.0, 1.0);
-    let mono = mix(vec3f(0.34, 0.8, 0.32) * ys, vec3f(0.86, 1.0, 0.82), smoothstep(0.7, 1.0, ys) * 0.8);
+    let tint = mix(vec3f(0.34, 0.8, 0.32), vec3f(0.62, 0.64, 0.66), u.pad.x);
+    let mono = mix(tint * ys, mix(vec3f(0.86, 1.0, 0.82), vec3f(0.95, 0.96, 0.97), u.pad.x), smoothstep(0.7, 1.0, ys) * 0.8);
     c = mix(c, toLin(mono), ir);
   }
 
@@ -417,6 +421,8 @@ export class CameraArtifacts implements FinalPass {
   private af = { lens: 0.1, v: 0, aim: 0.1, off: 0, hunt: 0 }
   /** Bitrate envelope: how starved the encoder is (fast attack on motion, slow recovery). */
   private starve = 0
+  /** Multiplies every effect's amount this frame (a game clearing the picture while you read a map), leaving the knobs alone. */
+  strengthScale = 1
 
   constructor(private readonly device: GPUDevice, private readonly format: GPUTextureFormat, readonly settings: CameraArtifactSettings, readonly stage: CameraArtifactStage, private readonly seed = 7) {}
 
@@ -505,9 +511,10 @@ export class CameraArtifacts implements FinalPass {
   private pack(frame: Float32Array, time: number, dt: number, reset: boolean, width: number, height: number) {
     const s = this.settings, u = this.data, inp = this.input
     const codec = this.stage === "codec"
+    const k = Math.max(0, Math.min(1, this.strengthScale))
     const sc = height / 1080
     // Focus.
-    const fa = s.focusHunt && !codec ? s.focusAmount : 0
+    const fa = s.focusHunt && !codec ? s.focusAmount * k : 0
     this.stepFocus(dt, inp.focus, fa)
     const subject = 1 / Math.max(0.3, inp.focus)
     const blur = fa > 0 ? Math.max(-14, Math.min(14, (this.af.lens - subject) * 10 * fa)) * sc : 0
@@ -557,11 +564,12 @@ export class CameraArtifacts implements FinalPass {
       width, height, time, dt,
       this.flow[0], this.flow[1], reset ? 1 : 0, this.seed,
       blur, breath, Math.max(0, inp.gain), index / fps,
-      lens && s.flare ? s.flareAmount : 0, lens && s.dirt ? s.dirtAmount : 0, lens && s.condensation ? 1 : 0, lens && s.pwm ? s.pwmAmount : 0,
-      lens && s.sensorGain ? s.gainAmount : 0, lens && s.infrared ? 1 : 0, codec && s.compression ? s.compressionAmount : 0, ns,
+      lens && s.flare ? s.flareAmount * k : 0, lens && s.dirt ? s.dirtAmount * k : 0, lens && s.condensation ? k : 0, lens && s.pwm ? s.pwmAmount * k : 0,
+      lens && s.sensorGain ? s.gainAmount * k : 0, lens && s.infrared ? k : 0, codec && s.compression ? s.compressionAmount * k : 0, ns,
       nf, s.condensationAmount, 1 / 32, pump,
       s.gainSmear, s.infraredBloom, index, index % fps === 0 ? 1 : 0,
     ], 0)
+    u[92] = s.infraredTint
   }
 
   private resize(width: number, height: number) {

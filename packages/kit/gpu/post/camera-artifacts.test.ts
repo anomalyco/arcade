@@ -64,3 +64,23 @@ describe("final pass chain", () => {
     expect(new FinalPassChain([fake("a", [], false)]).active).toBe(false)
   })
 })
+
+describe("camera artifacts strength scale", () => {
+  test("strengthScale 0 zeroes every effect's amount while the knobs stay on", () => {
+    const s = { ...CAMERA_ARTIFACT_DEFAULTS, focusHunt: true, sensorGain: true, pwm: true, flare: true, dirt: true, condensation: true, infrared: true, compression: true }
+    const amounts = (stage: "lens" | "codec", scale: number) => {
+      const a = new CameraArtifacts(device, "bgra8unorm", s, stage)
+      a.strengthScale = scale
+      const f = new Float32Array(20)
+      f[0] = f[5] = 1; f[10] = -1; f[11] = -1; f[14] = -0.2
+      ;(a as unknown as { pack: (...x: unknown[]) => void }).pack(f, 1, 1 / 60, false, 1600, 900)
+      const u = (a as unknown as { data: Float32Array }).data
+      // e: flare, dirt, condensation, pwm (12..15); g: gain, infrared, compression (16..18).
+      return [...u.subarray(12, 19)]
+    }
+    expect(amounts("lens", 1).slice(0, 6).every((v) => v > 0)).toBe(true)
+    expect(amounts("codec", 1)[6]).toBeGreaterThan(0)
+    expect(amounts("lens", 0)).toEqual([0, 0, 0, 0, 0, 0, 0])
+    expect(amounts("codec", 0)).toEqual([0, 0, 0, 0, 0, 0, 0])
+  })
+})
