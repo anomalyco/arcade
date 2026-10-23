@@ -632,7 +632,7 @@ export function createSlider(
     onMotionWake?.()
   }
   onPan(track, {
-    accept: () => !dragging && number.hidden,
+    accept: () => !dragging && Boolean(number.hidden),
     move(dx) {
       const width = getTrackWidth()
       if (!width || span <= 0) return

@@ -17,7 +17,8 @@ async function fixture() {
   for (const game of ["lot", "brawl"]) {
     await Bun.write(join(root, ".github/workflows", `${game}.yml`), `on:\n  pull_request:\n    paths: ["games/${game}/**"]\n`)
     await Bun.write(join(root, "games", game, "package.json"), JSON.stringify({ scripts: {
-      check: "bun scripts/build-id.ts && tsc --noEmit && bun test && vite build && bun scripts/check-bundle.ts",
+      typecheck: "bun ../../scripts/typecheck.ts",
+      check: "bun scripts/build-id.ts && bun run typecheck && bun test && vite build && bun scripts/check-bundle.ts",
     } }))
   }
   return root
@@ -38,13 +39,13 @@ test("git-less workers require scope; explicit all and an empty snapshot are dis
   const root = await fixture()
   expect(run(root, []).code).toBe(1)
   expect(run(root, []).output).toContain("--changed")
-  expect(run(root, ["--all"]).output).toContain("brawl:tsc")
+  expect(run(root, ["--all"]).output).toContain("brawl:typecheck")
   const file = join(root, "changed.txt")
   await Bun.write(file, "")
   const empty = run(root, [], { ARCADE_VERIFY_CHANGED_FILE: file })
   expect(empty.code).toBe(0)
   expect(empty.output).toContain("nothing to check")
-  expect(empty.output).not.toContain("brawl:tsc")
+  expect(empty.output).not.toContain("brawl:typecheck")
 })
 
 test("changed file flag overrides env and worker budgets are explicit and bounded", async () => {
@@ -53,8 +54,8 @@ test("changed file flag overrides env and worker budgets are explicit and bounde
   await Bun.write(join(root, "brawl.txt"), "games/brawl/src/main.ts\n")
   const defaults = run(root, ["--changed", "lot.txt"], { ARCADE_VERIFY_CHANGED_FILE: join(root, "brawl.txt") })
   expect(defaults.code).toBe(0)
-  expect(defaults.output).toContain("lot:tsc")
-  expect(defaults.output).not.toContain("brawl:tsc")
+  expect(defaults.output).toContain("lot:typecheck")
+  expect(defaults.output).not.toContain("brawl:typecheck")
   expect(defaults.output).toContain("jobs=2, test-workers=2")
   const limited = run(root, ["--all", "--jobs", "4", "--test-workers", "3"], {
     ARCADE_VERIFY_JOBS: "5", ARCADE_VERIFY_TEST_WORKERS: "5", HIVEMIND_CPUS: "2",
@@ -120,8 +121,8 @@ test("remote wrapper delivers a submitter-local snapshot to a git-less worker", 
   const output = result.stdout.toString() + result.stderr.toString()
   if (result.exitCode !== 0) throw new Error(output)
   expect(result.exitCode).toBe(0)
-  expect(output).toContain("lot:tsc")
-  expect(output).not.toContain("brawl:tsc")
+  expect(output).toContain("lot:typecheck")
+  expect(output).not.toContain("brawl:typecheck")
   expect(output).toContain("jobs=1, test-workers=1")
   expect(await Bun.file(join(worker, "hive-args.txt")).text()).toContain("--kind\ncargo\n")
 })
@@ -131,7 +132,7 @@ test("verification tiers keep default checks headless, smoke one game, and retai
   const fast = run(root, ["--all"])
   expect(fast.code).toBe(0)
   expect(fast.output).toContain("lot:build-id")
-  expect(fast.output).toContain("lot:tsc")
+  expect(fast.output).toContain("lot:typecheck")
   expect(fast.output).toContain("lot:test")
   for (const command of ["vite build", "smoke.mjs", "wrangler", "check-bundle.ts"]) expect(fast.output).not.toContain(command)
   const smoke = run(root, ["--smoke", "--game", "lot"])
@@ -139,10 +140,10 @@ test("verification tiers keep default checks headless, smoke one game, and retai
   expect(smoke.output).toContain("lot:build-id")
   expect(smoke.output).toContain("vite build")
   expect(smoke.output).toContain("smoke.mjs   (after lot:build)")
-  for (const command of ["tsc --noEmit", "bun test", "wrangler", "brawl:"]) expect(smoke.output).not.toContain(command)
+  for (const command of ["scripts/typecheck.ts", "bun test", "wrangler", "brawl:"]) expect(smoke.output).not.toContain(command)
   const release = run(root, ["--release", "--export", root])
   expect(release.code).toBe(0)
-  for (const command of ["tsc --noEmit", "bun test", "vite build", "smoke.mjs", "wrangler", "check-bundle.ts"])
+  for (const command of ["scripts/typecheck.ts", "bun test", "vite build", "smoke.mjs", "wrangler", "check-bundle.ts"])
     expect(release.output).toContain(command)
   expect(release.output).not.toContain("--incremental")
   for (const args of [["--smoke"], ["--smoke", "--game", "missing"], ["--smoke", "--game", "lot", "--all"], ["--game", "lot"]])

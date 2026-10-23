@@ -41,7 +41,8 @@ writeFileSync(
         dev: "vite",
         build: "vite build",
         test: "bun test",
-        check: "tsc --noEmit && bun test && vite build",
+        typecheck: `bun ${scriptsRel}/typecheck.ts`,
+        check: "bun run typecheck && bun test && vite build",
       },
       dependencies: {
         "@arcade/kit": "workspace:*",
@@ -61,7 +62,7 @@ writeFileSync(
         module: "ESNext",
         moduleResolution: "bundler",
         lib: ["ES2022", "DOM", "DOM.Iterable"],
-        types: ["@webgpu/types", "bun-types"],
+        types: ["@webgpu/types", "bun", "vite/client"],
         strict: true,
         noEmit: true,
         skipLibCheck: true,

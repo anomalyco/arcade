@@ -10,7 +10,7 @@
   },
   "scripts": {
     "sync": "bun scripts/sync.ts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "bun ../../scripts/typecheck.ts",
     "check": "bun run typecheck"
   },
   "dependencies": {
@@ -18,6 +18,6 @@
   },
   "devDependencies": {
     "@types/bun": "^1.4.2",
-    "typescript": "^5.9.3"
+    "typescript": "7.1.0-beta"
   }
 }

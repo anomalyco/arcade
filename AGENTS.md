@@ -36,7 +36,7 @@ Once one is proven, give it a `docs/realism.md` entry with its cost and Kit's de
 - `landing/` and `redirects/` are independent projects with their own lockfiles and install/check
   commands; do not add them to the workspace implicitly.
 - While iterating, run `bun run verify:remote`: it snapshots changed paths on the submitter and runs
-  `hivemind run --kind cargo -- bun run verify` with that snapshot. It runs incremental typechecks and Bun tests
+  `hivemind run --kind cargo -- bun run verify` with that snapshot. It runs Bun TS7 typechecks and Bun tests
   only, plus their required build-ID preparation, for targets whose CI workflow paths match your changes
   (vs `origin/main`, including uncommitted files). No Vite build or Playwright runs in this tier; docs-only checks
   nothing. Don't rerun when nothing changed. Use `bun run verify:remote --worker mini -- --all` to pass HiveMind
@@ -67,6 +67,9 @@ Once one is proven, give it a `docs/realism.md` entry with its cost and Kit's de
   config also owns Blackout's cross-game `scripts/animation/` harnesses and `tests/motion-*.test.ts`, excluded from
   its game script check (the game still runs those tests).
   Proof scripts for kit code go in root `scripts/` (Lab proofs in `scripts/lab/`), not in `packages/kit/`.
+- Compiler scripts are named `typecheck` and use `scripts/typecheck.ts`: Bun check with full diagnostics,
+  `--no-script` to bypass aggregate `check` scripts, and threads from `HIVEMIND_CPUS` (default 2). Bun check
+  does not write incremental build info. Compiler-API tooling imports `typescript-api`; TS7 has no legacy AST API.
 - Local smoke uses the Metal adapter on macOS (~80x faster than SwiftShader); `SMOKE_GPU=swiftshader` reproduces CI.
 - Browser scripts use `scripts/browser-budget.ts` with `await using`: 180 s per script, `ARCADE_BROWSER_BUDGET_S` override ≤300 s; CPU-only sweeps run directly in Bun (`--kind cargo`).
 

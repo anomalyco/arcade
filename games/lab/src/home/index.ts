@@ -84,8 +84,8 @@ export function startHome(api: LabApi, stations: StationsController, list: reado
     actionKeys = new Set((kind?.actions ?? []).map(a => `Key${a.key}`))
     if (shown) {
       root.dataset.labShow = [...shown].join(" ")
-      root.toggleAttribute("data-lab-left-empty", !shown.has("outliner") && api.slots.left.hidden)
-      root.toggleAttribute("data-lab-right-empty", !shown.has("details") && api.slots.right.hidden)
+      root.toggleAttribute("data-lab-left-empty", !shown.has("outliner") && Boolean(api.slots.left.hidden))
+      root.toggleAttribute("data-lab-right-empty", !shown.has("details") && Boolean(api.slots.right.hidden))
     } else {
       delete root.dataset.labShow
       root.removeAttribute("data-lab-left-empty")

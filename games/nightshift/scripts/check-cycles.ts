@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync, existsSync } from "node:fs"
 import { resolve, dirname, join, relative } from "node:path"
-import ts from "typescript"
+import ts from "typescript-api"
 
 const root = resolve(import.meta.dir, "..")
 const graph = new Map<string, string[]>()

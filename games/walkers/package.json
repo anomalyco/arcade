@@ -8,10 +8,10 @@
     "test": "bun test tests",
     "test:training": "bun scripts/verify-training.ts",
     "test:soak": "ARCADE_TEST_SOAK=1 bun test --max-concurrency 4 tests/sim.test.ts",
-    "typecheck": "tsc --noEmit",
-    "typecheck:server": "tsc --noEmit -p tsconfig.server.json",
+    "typecheck": "bun ../../scripts/typecheck.ts",
+    "typecheck:server": "bun ../../scripts/typecheck.ts -p tsconfig.server.json",
     "train": "bun scripts/train.ts",
-    "check": "tsc --noEmit && bun run typecheck:server && bun run test && vite build",
+    "check": "bun run typecheck && bun run typecheck:server && bun run test && vite build",
     "deploy": "rm -rf dist && vite build && wrangler deploy"
   },
   "dependencies": {
@@ -22,7 +22,7 @@
     "@types/bun": "^1.4.2",
     "@webgpu/types": "^0.1.74",
     "playwright-core": "^1.64.0",
-    "typescript": "^5.9.3",
+    "typescript": "7.1.0-beta",
     "vite": "^8.3.4",
     "wrangler": "^4.149.0"
   }

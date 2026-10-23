@@ -6,7 +6,9 @@
     "dev": "bun scripts/build-id.ts && vite --host 127.0.0.1",
     "build": "bun scripts/build-id.ts && vite build",
     "test": "bun scripts/build-id.ts && bun test tests",
-    "check": "bun scripts/build-id.ts && bun scripts/check-cycles.ts && tsc --noEmit && tsc --noEmit -p tsconfig.server.json && bun test tests && vite build",
+    "typecheck": "bun ../../scripts/typecheck.ts",
+    "typecheck:server": "bun ../../scripts/typecheck.ts -p tsconfig.server.json",
+    "check": "bun scripts/build-id.ts && bun scripts/check-cycles.ts && bun run typecheck && bun run typecheck:server && bun test tests && vite build",
     "deploy": "bun run build && wrangler deploy",
     "dev:server": "bun scripts/build-id.ts && vite build && wrangler dev --port 8797"
   },
@@ -19,7 +21,7 @@
     "@types/bun": "^1.4.2",
     "@webgpu/types": "^0.1.74",
     "playwright-core": "^1.64.0",
-    "typescript": "^5.9.3",
+    "typescript": "7.1.0-beta",
     "vite": "^8.3.4",
     "wrangler": "^4.149.0"
   }

@@ -34,8 +34,8 @@ for (const changed of [
   expect(steps).toHaveLength(4)
   expect(steps[0]).toContain("bun games/blackout/scripts/build-id.ts")
   expect(steps[1]).toContain("bun games/outbreak/scripts/build-id.ts")
-  const check = steps.find(line => line.includes("tsc --noEmit -p scripts/tsconfig.json"))!
-  expect(check).toContain("--incremental")
+  const check = steps.find(line => line.includes("bun scripts/typecheck.ts -p scripts/tsconfig.json"))!
+  expect(check).not.toContain("--incremental")
   expect(check).toContain("(after scripts:build-id, scripts:build-id-1)")
   const testStep = steps.find(line => line.startsWith("scripts:test"))!
   expect(testStep).toContain("--max-concurrency 4 scripts/verify-scripts.test.ts")
@@ -48,6 +48,6 @@ test("docs-only changes do not select root script checks", async () => {
 test("release plans include root script checks even for docs-only changes", async () => {
   const steps = await plan("docs/animation.md", true)
   expect(steps).toHaveLength(4)
-  expect(steps.some(line => line.includes("tsc --noEmit -p scripts/tsconfig.json"))).toBe(true)
+  expect(steps.some(line => line.includes("bun scripts/typecheck.ts -p scripts/tsconfig.json"))).toBe(true)
   expect(steps.join("\n")).not.toContain("--incremental")
 })

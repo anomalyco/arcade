@@ -67,7 +67,7 @@
   `src/remote-trainer.ts` is the page's proxy. The page only pulls a population when it is about to show one.
 - URL params (automation only): `?creature=`, `?task=`, `?speed=`, `?ghosts=`, `?workers=`, `?seed=`, `?course=`,
   `?stage=`, `?curriculum=0`, `?lasers=` (laser speed), `?autostart=0`, `?compare=0`, `?panel=0`. `window.walkers` exposes settings, the trainer and history.
-- `bun run check` (tsc, server tsc, tests, build); CI also smoke-loads the bundle. Pushing to `main` deploys
+- `bun run check` (app/server typechecks, tests, build); CI also smoke-loads the bundle. Pushing to `main` deploys
   https://anoma.ly/arcade/walkers/.
 - Default tests replay every committed pretrained policy and require bit-identical fitness, distance, duration,
   outcome and alarm count. The human policy is still balance-only. Physics stability windows are three seconds
