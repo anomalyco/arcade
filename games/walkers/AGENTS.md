@@ -1,5 +1,6 @@
 # walkers
 
+- Style: **toy prototype** (Canvas 2D sim toy). Visual work follows the toy list in [quality-checklist.md](../../docs/quality-checklist.md).
 - Unlisted prototype: 2D physics creatures (human, biped, quadruped, inchworm) that learn to cross a room, get over low
   walls, climb steps, cross rough ground, run a seeded obstacle course, or (the quadruped) pull off a heist: in through
   a vent, past lasers and a camera, grab the gem, out the exit. The page opens on the heist. Training runs live in the browser with OpenAI-style evolution strategies

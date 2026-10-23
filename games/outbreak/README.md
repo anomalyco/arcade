@@ -24,7 +24,7 @@ last-known hordes and your own marks. Drag or two-finger swipe pans, pinch or th
 The game keeps running while it is open. A compass ring and a corner minimap are optional (Lab › Map), off by
 default. [docs/outbreak-map.md](../../docs/outbreak-map.md).
 
-The [2026-10-13 look study](../../docs/outbreak-look.md) records screenshot paintovers, procedural houses/terrain,
+The [2026-10-13 look study](../../docs/research/outbreak-look.md) records screenshot paintovers, procedural houses/terrain,
 shared-material work, actual comparison captures, seven paired cost runs and remaining visual gaps.
 
 The [zombie profile adapter](../../docs/outbreak-zombie-profile.md) prepares lurch/asymmetry/drag/reach tuning for

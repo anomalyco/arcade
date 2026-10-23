@@ -76,7 +76,7 @@ async function main() {
   const shader = makeSceneShader(hooks)
   // Software-GPU smoke keeps Today and compiles nothing it does not draw.
   const renderer = new Renderer(gpu.device, gpu.context, gpu.format, { scene: shader, sprite: spriteShader(), post, volume: smoke ? [reflectionVolume, fogVolume(false)] : [contactVolume, reflectionVolume, fogVolume(true)] })
-  // The CI smoke keeps the atmosphere at Today: its software GPU cost is noted in docs/rendering-techniques.md.
+  // The CI smoke keeps the atmosphere at Today: its software GPU cost is noted in docs/research/rendering-techniques.md.
   const fog=new FogScatter(createFogSettings(smoke ? {} : ATMOSPHERE)), ssr=new Ssr(createSsrSettings(SSR_MOTION)), wet={...WET_DEFAULTS}
   const settings = defaults()
   const skySettings = createSkySettings()

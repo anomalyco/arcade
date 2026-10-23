@@ -6,7 +6,7 @@ synchronous work before adding more threads.
 
 These are design guidelines and proposed experiments, not measured new optimizations. They apply
 [Barry Genova's GDC 2015 Destiny talk](https://www.youtube.com/watch?v=v2Q_zHG3vqg) to Arcade's browser and server
-runtimes. Read alongside [architecture.md](architecture.md), [game-notes.md](game-notes.md), and
+runtimes. Read alongside [architecture.md](architecture.md), [game-notes.md](research/game-notes.md), and
 [netcode.md](netcode.md).
 
 ## Design the data boundary first
@@ -74,7 +74,7 @@ The order below is a research recommendation. Gains are unmeasured.
 | Priority | Current evidence and first experiment | Main risk and measurement |
 | --- | --- | --- |
 | 1. Outbreak streaming | `src/world-streamer.ts` already has two `world-worker.ts` workers, but inner-ring misses and teleports still compile synchronously. Instrument those fallbacks, then try earlier prefetch and staged visual integration. | Missing geometry, stale results and recovery. Measure synchronous fallback time, queue/compile/integration/upload stages, ready bytes and frame p95/p99. Keep authoritative collision correct. |
-| 2. Woods startup | The woods branch's `packages/kit/forest/offthread.ts` uses a one-shot worker and transfers models out/back. Compare synchronous, current worker and earlier-dispatched worker with the same seed. | Detached inputs and preparation/upload costs. Measure request-to-playable time, startup, compute and parity; test a warm worker only if repeated initialization matters. The reported 1.4× slowdown is not a measured result of this research. |
+| 2. Woods startup | `packages/kit/forest/offthread.ts` uses a one-shot worker and transfers models out/back. Compare synchronous, current worker and earlier-dispatched worker with the same seed. | Detached inputs and preparation/upload costs. Measure request-to-playable time, startup, compute and parity; test a warm worker only if repeated initialization matters. The reported 1.4× slowdown is not a measured result of this research. |
 | 3. Audio cold paths | Outbreak's `src/audio/weapons/bank.ts` and soundscape already bake PCM in workers. Compare bounded, prioritized prewarm and result registration. | Startup contention and PCM memory. Measure first-use fallback count, request-to-ready and main-thread registration time. Native Web Audio already handles DSP; AudioWorklet is for a demonstrated custom real-time need. |
 | 4. Render-worker spike | Only after profiling CPU encoding pressure, compare one small scene on main against OffscreenCanvas worker ownership. | Broad ownership change and older displayed state. Measure input-to-display latency, snapshot bytes/age, encode/upload time, GPU duration and memory. |
 | 5. AI and room headroom | `packages/kit/sim/flow-field.ts` already shares per-goal fields and budgets distinct goals per tick. Profile invalidation, AI and snapshot encoding before partitioning. | Authoritative results must not depend on worker readiness. Compare deterministic hashes/wire bytes and tick tails; optimize repeated work first. |

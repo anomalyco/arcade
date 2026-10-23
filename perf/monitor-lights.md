@@ -2,7 +2,7 @@
 
 These measurements describe the pre-Lab lighting revision. The subsequent live-Lab work adds a 1.65 m directional
 monitor cone, intensity tuning, switchable chair shadows and AO, and monitor-off baked-light recombination. Its
-functional checks are recorded in `docs/game-notes.md`; the GPU costs below have not been remeasured for that revision.
+functional checks are recorded in `docs/research/game-notes.md`; the GPU costs below have not been remeasured for that revision.
 
 ## Scope
 

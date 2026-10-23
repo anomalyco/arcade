@@ -3,13 +3,13 @@
 Techniques that have worked in one arcade game and should carry to the others. Add an entry once something is proven:
 what it does, where it lives, and what it measured. Mark candidates that have not been measured or playtested yet.
 Shared code that bakes these decisions in is tracked in `docs/shared-code.md`. Animation has its own file,
-[animation.md](animation.md).
+[animation.md](../animation.md).
 
 ## Human animation
 
 Animation insights for the shared human rig (gait timing, contacts, arms, posture, transitions, profiles and
-weapons, with measured values and known gaps) live in [animation.md](animation.md). The rig's API and ownership are
-in [human-rig.md](human-rig.md), and the tuning procedure is the `procedural-animation-iteration` skill. Add
+weapons, with measured values and known gaps) live in [animation.md](../animation.md). The rig's API and ownership are
+in [human-rig.md](../human-rig.md), and the tuning procedure is the `procedural-animation-iteration` skill. Add
 proven animation techniques to animation.md, not here.
 
 ## Proving a change
@@ -18,7 +18,7 @@ proven animation techniques to animation.md, not here.
   High. Ultra sheds resolution/tiers on slow frames and the shared Settings readout reports the actual tier and
   scale. One M4 Pro Metal run at 1600×900: High 15.4–15.5 ms/frame, Ultra 19.2–19.5; at DPR 2 (2400×1350 vs
   native 3200×1800), 23.9–24.1 vs 40.6–41.0 ms. Static warmed view, cached shadows, before combined deploy #476;
-  this is not a walking/60 fps guarantee. Settings and proof method: [perf/barbara-ultra.md](../perf/barbara-ultra.md).
+  this is not a walking/60 fps guarantee. Settings and proof method: [perf/barbara-ultra.md](../../perf/barbara-ultra.md).
 
 - **Contain bloom at its source (Woods, round 7 candidate).** The round-6 destination-radiance cap was rejected:
   halos land on dark pixels, so it also removed light-source halos. `forest/shaders.ts` now tags nearby rough,
@@ -250,7 +250,7 @@ proven animation techniques to animation.md, not here.
   Night 3 over Night 2, ramp-in) and survival per preset inside loose bands; `scripts/difficulty-ramp.ts` is the full
   report. It found the director's ramp ending at Night 2 (16 zombies, 3 chasers on every later night); the D-40 night
   ramp (`shared/night-ramp/`, a per-tick `DirectorEscalation`) now lifts both every night up to a ceiling. See
-  [outbreak-difficulty.md](outbreak-difficulty.md).
+  [outbreak-difficulty.md](../outbreak-difficulty.md).
 - **Headless balance runs on the real room.** Carrier's `scripts/balance.ts` opens a dev `RoomCore` with no sockets
   (`openHeadless`), fills it with 32 match bots that act only through the room's own message handlers, and drives its
   clock in 50 ms steps as fast as the CPU goes: a full four-carrier match runs at ~20-45× real time per core, so 48
@@ -269,7 +269,7 @@ dot. With scintillation off, a magnitude-zero star varied 0.035114% in total HDR
 at 1920×1080 MSAA4 on mini Metal. The fixture uses the production `SkyPass`; it does not establish woods visibility.
 `scripts/sky/gpu-proof.ts --temporal` also exercises `gpu/temporal.ts`'s opt-in translation-free background
 reprojection: 64 m camera travel gave 0.030859 px star-centroid drift. The default temporal path stays unchanged.
-Raw results, scope and follow-up work are recorded in [the ledger](../perf/night-sky.md).
+Raw results, scope and follow-up work are recorded in [the ledger](../../perf/night-sky.md).
 
 - **Build a pipeline when it is first drawn, not when the renderer is made (Outbreak smoke, AR-119, 2026-10-21).** On
   SwiftShader (CI) every scene-shader pipeline costs seconds, and Outbreak's boot compiled 35 of which 10 were never
@@ -768,7 +768,7 @@ Raw results, scope and follow-up work are recorded in [the ledger](../perf/night
   `games/outbreak/scripts/refine-proof.ts` captures the shared shader's albedo/direct/ambient/specular/bloom
   contributions through the Lab. Smaller practical pools, sheltered ambient and removal of additive blue shadow
   lift corrected the main wash. Room lamps are excluded above the roof underside. Default shared WGSL remains
-  equivalent across twelve outputs. See `docs/outbreak-look-v2.md` for aligned evidence and limitations.
+  equivalent across twelve outputs. See `docs/research/outbreak-look-v2.md` for aligned evidence and limitations.
 - **Cull and simplify generated planting before adding density.** The second Outbreak pass removes covered
   terrain and excess grass/gravel, replaces sphere crowns with fewer folded-leaf sprays, and gives props their
   own render bounds. Static vertices fall 299,238→196,722; street submitted vertices fall 164,820→97,014.
@@ -780,7 +780,7 @@ Raw results, scope and follow-up work are recorded in [the ledger](../perf/night
   Static room discovery now supplies the scenery texture while `Vision.visible` retains strict occlusion for actors.
   A regression discovers a room, closes its door, and confirms its scenery persists without granting actor sight.
   Exterior scenery remains lit, and remembered interior scenery is desaturated instead of hidden behind wedges.
-  `docs/outbreak-look.md` contains actual before/target/after captures and the seven-pair cost report.
+  `docs/research/outbreak-look.md` contains actual before/target/after captures and the seven-pair cost report.
 - **Pass per-pixel 3D flashlight irradiance in the HDR alpha channel for selective-colour Noir grading, and pair feathered memory fog with SoA last-known ghosts and jittered sound ripples.**
   In `packages/kit/gpu/look.ts` and `look-shaders.ts`, `Noir / Limbo` (`selectiveColor = L.u15.w = 1.24`, Outbreak's default look) desaturates the world outside the player's flashlight to near-monochrome (`saturation = 0.04`, `outsideChroma = 0.75 / 255` street, `0.54 / 255` interior) while restoring full natural colour inside the 3D polar-shadow-tested flashlight cone (`beamChroma = 30.48 / 41.19`, `selectiveColorRatio = 40.9× / 76.0×`, `ΔE = 5.69` street / `8.44` interior against `gpt-image-1.5` targets). Encoding `outAlpha = 1.0 - clamp(lookFlashIrradiance, 0.0, 1.0)` in the 4× MSAA `rgba16float` scene pass keeps `1.0` as the fixed point of `one, one-minus-src-alpha` blending so unlit translucent sprites and decals outside the beam never trigger false colour retention, and adds zero render targets or texture bindings. Compiling a dedicated `compositeFast` entry point (1 `src` sample + rational Padé filmic curve without Kuwahara arrays or AgX matrices) and keeping `inst`/`glass` in `fsSolid` inside `ensureLookPipes()` cut `3456×1894` M5 Max Metal whole-frame GPU time from `39.34 → 15.653 ms` (street, MAD `0.026 ms`, fresh-submit `p95 = 18.400 ms`, `realtime_ratio = 0.9975`) and `31.84 → 16.040 ms` (interior, MAD `0.028 ms`, fresh-submit `p95 = 18.800 ms`, `realtime_ratio = 0.9969`). `Vision.actorVisible` (`games/outbreak/shared/vision.ts`) samples an actor's lateral shoulder disk against the polar blocker map so doorway/ray-boundary zombies are never falsely culled while walls/closed doors strictly occlude; `games/outbreak/src/shaders.ts` and `zombies.ts` add a top-down horizontal contour rim (`lumaP92 = 74–88 / 255`, contrast `52–72` in dark LOS), zero-allocation SoA last-known position ghosts (`seenPose` fading over `3.2 s` and clearing when the spot is seen empty), and spatially jittered (`±0.7–1.35 m`) Noir sound ripples across 3 Lab-selectable fog variants (`fogStyle` `0..2`, exposed in the Lab `fog` variation grid).
 - **Noir v2: shade the flashlight as a physical spotlight, drive selective colour from received light through a soft
@@ -1150,7 +1150,7 @@ Raw results, scope and follow-up work are recorded in [the ledger](../perf/night
   lighter rectangles. Pixel stats at 14:00: meanS 0.234 → 0.089, darkMeanS 0.285 → 0.089; 21:00 street darkMeanS
   0.084 → 0.033 with lit saturation unchanged (0.60). Paired GPU vs v7 (3456×1894, 6 rounds) sits inside the noise
   (−1.7 to +0.8 ms, MAD 1.6–4.4 ms). Stills: `games/outbreak/scripts/look-beauty.ts`. The finished contract is
-  [outbreak-art-direction.md](outbreak-art-direction.md).
+  [outbreak-art-direction.md](../outbreak-art-direction.md).
 - **Darkwood finish (`AR-53`, 2026-10-18).** A wide flat-topped beam (inner cone 0.8, near-lens softening 6 m, pool
   2.4 m out, thin volumetric 0.35) lights the ground's texture instead of glowing in the air, and costs 0.7–1.1 ms
   less than v7's dense volumetric at 3456×1894. Outdoor practical pools are gated by the lamps being on, so daylight
@@ -1837,7 +1837,7 @@ Candidates from the code audits; measure and playtest before moving any into the
   because slot-store inventory serialization omits counters. Four-client room tests also caught the spectator camera
   following a distant teammate while snapshots covered the corpse; one replicated seat now selects both camera and
   interest. Proof: `games/outbreak/tests/coop-{specials,death}-parity.test.ts` and `coop-feature-bandwidth.test.ts`;
-  [outbreak-coop.md](outbreak-coop.md) records coverage and remaining limits.
+  [outbreak-coop.md](../outbreak-coop.md) records coverage and remaining limits.
 - **Pair snapshot benchmarks on the same source.** `scripts/bench-multiplayer.ts --paired` alternates shared and
   per-recipient preparation order, runs one warmup plus nine measured pairs of 1,000 ticks, and checks serialized
   byte counts and SHA-256 outside the timed interval. Both games produced identical output across all 20 runs.
@@ -2131,7 +2131,7 @@ Candidates from the code audits; measure and playtest before moving any into the
 - **Put in-the-moment state on the character and keep it out of the aim.** Outbreak's callouts now sit screen-below
   the survivor's feet by default (the lowest projected point of a 0.2 m feet circle, so the camera tilt is accounted
   for), and stamina, reload, health and battery are small rings beside the body that appear only while they have
-  something to say (`src/hud/vitals.ts`, research and choices in [outbreak-hud.md](outbreak-hud.md)). When the
+  something to say (`src/hud/vitals.ts`, research and choices in [outbreak-hud.md](../outbreak-hud.md)). When the
   survivor aims within 55° of the side the HUD is on, it slides to the opposite side and returns past 68°
   (`chooseSide`, `src/hud/placement.ts`), so the flashlight's near field stays clear without flicker. Rings use shape
   for identity and colour for range, as Dead Space's RIG does. The same components run for co-op teammates from
@@ -2226,7 +2226,7 @@ Candidates from the code audits; measure and playtest before moving any into the
   simulators make live frame timing useless (sprint p99 43–260 ms between runs on mini against 17.1 ms on Studio);
   judge pacing on an idle machine. `scripts/feel-clips.ts` records deterministic muted clips for decisions.
 - **Pair a hit with its attacker from health diffs and show it on the attacker.** Outbreak's zombie strike lunge
-  (`src/zombie-strikes.ts`, details in [animation.md](animation.md)) and the bullet impact flash
+  (`src/zombie-strikes.ts`, details in [animation.md](../animation.md)) and the bullet impact flash
   (`src/bullet-impacts.ts`: flash 70 ms, sparks 120 ms, dust 260 ms, per surface, at the points `shotImpacts` gives the
   sound, delayed by the round's travel) are presentation fed by state the client already has, so co-op needs no wire
   fields. Hit-stop per hit kind, the impact flash, the lunge and an on-foot camera lead are typed settings in Lab ›
@@ -2432,7 +2432,7 @@ Candidates from the code audits; measure and playtest before moving any into the
   gameplay render was too slow to iterate). The user chose "Jet Wash": pure jet noise, no tones, a band-passed roar
   whose peak follows the Strouhal frequency of the exhaust (`games/carrier/src/audio/jet-engine-models.ts`).
 - **Generate many candidates, then let measurements do the first cut.** The shared library
-  (`scripts/sfx/library.ts`, [sfx-library.md](sfx-library.md)) asks ElevenLabs for 2–12 takes per sound and scores
+  (`scripts/sfx/library.ts`, [sfx-library.md](../sfx-library.md)) asks ElevenLabs for 2–12 takes per sound and scores
   them on numbers that catch bad takes without listening: near-silent takes (the first pistol prompt returned six
   takes peaking at -22 to -39 dBFS), flat-topped runs (real clipping, unlike recoverable decoded overs), SNR over the
   take's own noise floor, one onset for single events, decay by 0.2 s, timbre distance from the family median and

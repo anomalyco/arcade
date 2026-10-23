@@ -2,8 +2,8 @@
 
 The shipped look is **Today · v8**, a Darkwood pass (AR-52, finished in AR-53). This page is the contract: what the
 look is, the numbers it is held to, and what never to do. Read it before touching Outbreak's shaders, lighting,
-post or look settings. The look studies that led here are in [outbreak-look.md](outbreak-look.md) and
-[outbreak-look-v2.md](outbreak-look-v2.md).
+post or look settings. The look studies that led here are in [outbreak-look.md](research/outbreak-look.md) and
+[outbreak-look-v2.md](research/outbreak-look-v2.md).
 
 Current stills, v8 | Darkwood reference | final (AR-53):
 https://problems.kitlangton.com/media/iQeYx8OA8M1QrwJ_3Q2qYw.jpg
@@ -127,7 +127,7 @@ lands about a metre in front of the survivor and runs to its range, lighting the
   the beam (AR-70). Blood is matte, pools included.
 - **Coordinate hacks.** No hard-coded world coordinates in shaders (#247); use building and camera uniforms.
 - **A second shader path per look.** One surface path (`buildOutbreakSurfaceWgsl`); earlier looks are knob sets.
-  Follow the register-pressure rules in [rendering-techniques.md](rendering-techniques.md).
+  Follow the register-pressure rules in [rendering-techniques.md](research/rendering-techniques.md).
 
 ## Settings and Before presets
 

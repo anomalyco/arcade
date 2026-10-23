@@ -102,7 +102,7 @@ fn outbreakFigureCover(p: vec2f, a: vec2f, foot: f32, cover: ptr<function, vec2f
  * soft streak toward the camera), the same analytic image as the kit's floor-plane lamp mirror. The CPU picks up to
  * eight outdoor lights whose images land in view and works out each image (reflections/lights.ts, OL.reflLights), so
  * the loop is a distance test per light and never reads the light buffer or the shadow map (register pressure,
- * docs/game-notes.md). The survivor and the nearest zombies stand in front of the lights behind them as dark figures.
+ * docs/research/game-notes.md). The survivor and the nearest zombies stand in front of the lights behind them as dark figures.
  */
 fn outbreakWetGlints(world: vec3f, puddle: f32, wet: f32) -> vec3f {
   let gloss = max(puddle, wet * 0.4);

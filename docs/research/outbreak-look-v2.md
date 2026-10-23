@@ -54,8 +54,8 @@ Actor visibility still depends on `Vision.visible`; brighter scenery does not re
 
 Seven alternating measured pairs after one warmup pair, 120 steps per run, Apple M5 Max / Metal, 1000 × 680,
 DPR 1. Baseline is the exact `e5554a7` archive. Raw reports are
-[`perf/outbreak-look-v2-street.json`](../perf/outbreak-look-v2-street.json) and
-[`perf/outbreak-look-v2-interior.json`](../perf/outbreak-look-v2-interior.json).
+[`perf/outbreak-look-v2-street.json`](../../perf/outbreak-look-v2-street.json) and
+[`perf/outbreak-look-v2-interior.json`](../../perf/outbreak-look-v2-interior.json).
 
 | Metric | Baseline | Refined |
 | --- | ---: | ---: |

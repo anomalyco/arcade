@@ -4,7 +4,7 @@ import type { LabControl } from "@arcade/kit/lab-panel"
 /**
  * The survivor's presentation style. Today's box figure stays the default; the simple styles are single-tone figures
  * from `@arcade/kit/avatar/simple-figure` with a flat matte surface and a tight grazing rim, so the hero reads by
- * silhouette and motion against the detailed world (docs/rendering-techniques.md §7, the Big Walk / Playdead rule).
+ * silhouette and motion against the detailed world (docs/research/rendering-techniques.md §7, the Big Walk / Playdead rule).
  * Soft Bean (the hero concept's design 1) is a round toy in one matte colour per player, lit with soft wrap and a
  * sheen toward its edges so lamps and the flashlight model its roundness. Every survivor drawn on this client (co-op
  * teammates included) uses the same style.

@@ -3,7 +3,7 @@ import { MAT, Mesh, type Mat } from "../gpu/mesh"
 /**
  * Simple single-tone figures for the shared rig's bones: smooth matte surfaces, no texture or colour detail, so a
  * player character reads by silhouette and motion against a detailed world (the Big Walk / Playdead rule,
- * docs/rendering-techniques.md §7). Each mesh sits in the bone's local frame the way Outbreak's box survivor does:
+ * docs/research/rendering-techniques.md §7). Each mesh sits in the bone's local frame the way Outbreak's box survivor does:
  * limbs hang along −Y from their joint, X points forward, the torso rises from the waist, the head from the neck,
  * the foot hangs from the ankle and the toe starts at the ball.
  *

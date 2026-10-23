@@ -191,7 +191,7 @@ export class ByteReader {
 
 /**
  * Prefixes a per-recipient part to a payload shared by every recipient, which the caller encodes once per snapshot
- * (the shared-prefix technique from `docs/game-notes.md`, here as bytes rather than JSON).
+ * (the shared-prefix technique from `docs/research/game-notes.md`, here as bytes rather than JSON).
  * Layout: u32 personal length, personal bytes, shared bytes.
  */
 export function frame(personal: Uint8Array, shared: Uint8Array): Uint8Array {

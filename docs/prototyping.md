@@ -72,3 +72,7 @@ Before writing a custom mesh, shader, or multiplayer room, run a two-minute play
 3. **Knob sensitivity**: Did tuning the `LabPanel` feel sliders lock in a distinct pace, or are we hoping art and effects will rescue a flat mechanic?
 
 If the answer to any of the three is no, change the rules in `shared/sim.ts` or delete the prototype while it is still 150 lines of code. Once the toy passes, keep `shared/sim.ts` as the authoritative simulation, add a 25-line `@arcade/kit/server` room (`RoomObject` + `gameWorker`), and replace the primitive model IDs one at a time.
+
+Replacing primitives with real models, materials and looks follows [quality-checklist.md](quality-checklist.md). A
+build shown to Kit as the game, or listed on the landing page, has passed it; a build still on plain boxes is a toy
+and is labelled one.

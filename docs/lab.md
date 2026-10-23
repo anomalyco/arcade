@@ -3,7 +3,7 @@
 Use the shared Lab to tune a production effect, material, physics response or audio cue, then verify it in the game.
 This is the canonical authoring contract. [lab-workbench.md](lab-workbench.md) describes the current shell and input
 API; [dev-control.md](dev-control.md) covers driving an open browser page with `bun run arcade …`;
-[lab-adapters.md](lab-adapters.md) covers adapters; [game-notes.md](game-notes.md) records measured techniques.
+[lab-adapters.md](lab-adapters.md) covers adapters; [game-notes.md](research/game-notes.md) records measured techniques.
 The rules below apply to new authoring work. Existing gaps are listed explicitly and do not add release gates.
 
 ## Browser proof budget
@@ -467,7 +467,10 @@ Use the existing `compare.html` acknowledged paired-tick protocol for game compa
 Measure cost separately from screenshot/video capture and concurrent comparison panes. Record hardware/backend,
 resolution, timing interval, warmup and raw samples; alternate variants for at least seven measured pairs and report
 median deltas with spread. A change inside the spread is inconclusive. Check matched before/after images before calling
-a change an optimization. Save measured findings in `perf/` and proven techniques in `docs/game-notes.md`.
+a change an optimization. Save measured findings in `perf/` and proven techniques in `docs/research/game-notes.md`.
+Headless Chromium on a Mac uses Metal with `--enable-unsafe-webgpu --use-angle=metal`; check that
+`adapter.info.architecture` is not SwiftShader before trusting a number. A performance pass must not change the
+look: if the matched stills differ, it is a look change and needs its own review.
 
 Label CPU update/encode wall time, frame/vsync time, GPU timestamp intervals and queue-completion latency separately.
 Queue completion is not pure GPU time. The Lab's GPU interval covers polar compute/scene start through offscreen

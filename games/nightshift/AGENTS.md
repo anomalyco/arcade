@@ -1,5 +1,7 @@
 # Night Shift ’87
 
+- Style: **realistic**. Visual work (props, creatures, rooms, lighting, looks) follows [quality-checklist.md](../../docs/quality-checklist.md),
+  [realistic.md](../../docs/realistic.md) and the `arcade-quality` skill.
 - Unlisted first-person cubicle office at `/arcade/nightshift/`, rendered with `@arcade/kit`. Keep `noindex` and omit a landing panel.
 - `src/world.ts` owns metre-scale procedural geometry, colliders and the wide/phone comparison cameras. Eye height is 1.65 m and vertical FOV is 68°.
 - `src/shaders.ts` composes physical lighting, spot-map shadows, analytic blind gobos, procedural surface recipes and shared fog. Shared screen-space contact shadows run before fog (Shadows panel; omitted under `?smoke`, as in Lot). Derivatives belong at fragment entry, before divergent material branches.

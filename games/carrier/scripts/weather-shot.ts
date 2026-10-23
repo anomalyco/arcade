@@ -180,7 +180,7 @@ if (opt("lab", "1") === "1") {
 
 if (opt("bench", "0") === "1") {
   // Throughput: encode frames back to back through the renderer and divide the wall time (per-pass timestamps lie on an
-  // idle Apple GPU, docs/game-notes.md). Heavy weather with the rain on, then the same frame with the rain amount at 0.
+  // idle Apple GPU, docs/research/game-notes.md). Heavy weather with the rain on, then the same frame with the rain amount at 0.
   await load(`weather=heavy&lab=0&cam=${cam}`)
   const run = async (rain: boolean) =>
     page.evaluate(async (rain) => {
