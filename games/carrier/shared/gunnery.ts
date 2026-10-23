@@ -62,8 +62,6 @@ export const GUNNERY = {
     cool: 0.4,
     coolDelay: 0.3,
     restart: 0.25,
-    /** Rounds on an enemy carrier: shared/fleet.ts gun damage times this per round. */
-    shipScale: 0.8,
     /** Effective range (m): the HUD's lead pip, the room's sanity range for claims. */
     range: 1600,
     /** Rounds an intercept claim costs from the budget (a burst, not one lucky round). */
@@ -773,7 +771,7 @@ export type GunneryEvent =
   /** A jet took `dmg` from gunner `by`'s weapon `w` (the host applies it to shared/combat.ts health and kill credit). */
   | { k: "hurt"; on: number; dmg: number; by: number; w: GunWeapon }
   /** A shell or SAM struck carrier `ship` (ship-local point; `near` > 0: a shell burst in the water that far off). */
-  | { k: "ship"; ship: number; owner: number; w: GunWeapon; x: number; y: number; z: number; near: number; n?: number }
+  | { k: "ship"; ship: number; owner: number; w: "sam" | "shell"; x: number; y: number; z: number; near: number; n?: number }
   /** A SAM turned onto a flare. */
   | { k: "decoy"; owner: number; seq: number }
   /** Gunner `by`'s CIWS shot down a store (0: a missile or bomb of shared/combat.ts, 1: a SAM or shell) at (x, y, z). */
@@ -798,12 +796,11 @@ export function shellDamage(d: number): number {
 export const samDecoyed = (owner: number, seq: number, f: { owner: number; t0: number }): boolean => hash01(owner * 7919 + seq, f.owner * 131 + Math.round(f.t0 * 1000)) < GUNNERY.sam.decoy
 
 /**
- * A gunnery hit on a carrier in shared/fleet.ts terms (`Fleet.hit`): CIWS rounds are gun rounds (scaled per round); a
+ * A gunnery hit on a carrier in shared/fleet.ts terms (`Fleet.hit`); CIWS rounds never hurt a carrier. A
  * shell or SAM on the hull is a `shell` of its own damage (zone and fire from where it lands); a shell in the water near
  * the hull is a `shell` near miss (`near` > 0: the hull side, no fire) on a falling curve.
  */
-export function shipHitOf(w: GunWeapon, near: number): { w: ShipDamageKind; near: number; n: number; amount?: number } {
-  if (w === "ciws") return { w: "gun", near: 0, n: GUNNERY.ciws.shipScale }
+export function shipHitOf(w: "sam" | "shell", near: number): { w: ShipDamageKind; near: number; n: number; amount?: number } {
   if (w === "sam") return { w: "shell", near: 0, n: 1, amount: GUNNERY.sam.shipDamage }
   if (near <= 0) return { w: "shell", near: 0, n: 1, amount: GUNNERY.gun.shipDamage }
   const g = GUNNERY.gun
@@ -885,24 +882,9 @@ export class GunneryWorld {
   }
 
   /**
-   * CIWS rounds gunner `by` claims against carrier `ship` (`n`, ship-local point of the last one): cut to the budget,
-   * refused on a friendly ship or beyond range. Emits the ship hit; returns the rounds allowed.
-   */
-  ciwsShipHits(by: number, ship: GroundShip, n: number, x = 0, y = 0, z = 0): number {
-    const g = this.gunners.get(by)
-    if (!g || WEAPON_MOUNTS[g.mount]!.kind !== "ciws" || ship.id === undefined || ship.team === g.team) return 0
-    if (this.authority) {
-      const at = this.mountAt(g, mw)
-      if (at && Math.hypot(ship.x - at[0], ship.z - at[2]) > GUNNERY.ciws.range + 400) return 0
-    }
-    const use = this.spend(g, n)
-    if (use) this.events.push({ k: "ship", ship: ship.id, owner: by, w: "ciws", x, y, z, near: 0, n: use })
-    return use
-  }
-
-  /**
    * CIWS rounds gunner `by` claims against something on carrier `ship`'s deck (a parked jet, shared/deck-jets.ts):
-   * the same checks as `ciwsShipHits` (a manned CIWS, an enemy ship within range, the round budget), nothing emitted.
+   * a manned CIWS, an enemy ship within range, the round budget; nothing emitted. (Rounds on the carrier itself do
+   * nothing: CIWS never hurts a carrier.)
    * Returns the rounds allowed.
    */
   ciwsDeckRounds(by: number, ship: GroundShip, n: number): number {

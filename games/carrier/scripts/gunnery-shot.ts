@@ -76,7 +76,7 @@ type S = {
   impact: { x: number; z: number; kind: string; time: number }
   drones: { id: number; hp: number; dead: number; dist: number }[]
   stores: number
-  hits: { direct: number; near: number; ciws: number; sam: number }
+  hits: { direct: number; near: number; sam: number }
   feed: string
 }
 const state = (p: Page): Promise<S> =>
@@ -96,7 +96,7 @@ const state = (p: Page): Promise<S> =>
       impact: { x: st.impact.x, z: st.impact.z, kind: st.impact.kind, time: st.impact.time },
       drones: c.drones.list.map((d) => ({ id: d.id, hp: c.weapons.world.hp(d.id), dead: d.dead, dist: Math.round(Math.hypot(d.plane.x - me.x, d.plane.y - 30, d.plane.z - me.z)) })),
       stores: c.weapons.world.missiles.filter((m) => m.alive).length,
-      hits: { direct: c.hits.direct, near: c.hits.near, ciws: c.hits.ciws, sam: c.hits.sam },
+      hits: { direct: c.hits.direct, near: c.hits.near, sam: c.hits.sam },
       feed: (document.querySelector("#wp .feed") as HTMLElement | null)?.innerText.replace(/\s+/g, " ") ?? "",
     }
   })

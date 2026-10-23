@@ -69,7 +69,6 @@ export interface Net {
   sendAim(a: AimTuple): void
   sendGunFire(g: GunFireTuple): void
   sendTurretHits(on: number, n: number): void
-  sendTurretShipHits(ship: number, n: number): void
   sendIntercept(i: InterceptTuple): void
   /** Ship-gun messages from the room (turrets, launches, bursts) in arrival order; the consumer empties it every frame. */
   readonly gunnery: GunneryMsg[]
@@ -300,10 +299,6 @@ class NetClient implements Net {
 
   sendTurretHits(on: number, n: number): void {
     this.send({ type: "thits", on, n })
-  }
-
-  sendTurretShipHits(ship: number, n: number): void {
-    this.send({ type: "tshiphits", ship, n })
   }
 
   sendIntercept(i: InterceptTuple): void {

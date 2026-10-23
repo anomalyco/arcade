@@ -55,8 +55,6 @@ export type GunneryNet = {
   fire(f: GunFireTuple): void
   /** Our CIWS rounds hit jet `on` `n` times since the last report. */
   hits(on: number, n: number): void
-  /** Our CIWS rounds hit carrier `ship` `n` times since the last report. */
-  shipHits(ship: number, n: number): void
   /** Our CIWS rounds hit the jet parked in slot `slot` on carrier `ship`'s deck `n` times since the last report. */
   deckHits(ship: number, slot: number, n: number): void
   /** Our CIWS shot down a store (missile or bomb: 0; SAM or shell: 1). */
@@ -149,7 +147,6 @@ export class Gunnery {
   private firedAt = -1
   private gunFlash = -1
   private pendingHits = new Map<number, number>()
-  private pendingShipHits = new Map<number, { n: number; x: number; y: number; z: number }>()
   /** CIWS rounds on parked jets, by ship × 64 + slot. */
   private pendingDeckHits = new Map<number, number>()
   /** The parked jet (slot) at a ship-local point of carrier `ship`, or -1; the host wires it (shared/deck-jets.ts parkedAt). */
@@ -448,25 +445,15 @@ export class Gunnery {
         }
         return
       }
+      // Rounds on an enemy carrier only spark (the CIWS never hurts a carrier), except into a jet parked on its deck,
+      // which counts for that jet (online: the room keeps its health).
       if (kind === "ship" && sh && sh.id !== undefined && sh.team !== undefined && sh.team !== this.team) {
-        this.hud.hit()
         const l = worldToShip(sh, x, y, z, ld)
-        // A round into a jet parked on the deck counts for that jet (online: the room keeps its health).
         const slot = this.deckJet ? this.deckJet(sh.id, l[0], l[1], l[2]) : -1
-        if (slot >= 0) {
-          const k = sh.id * 64 + slot
-          if (this.net) this.pendingDeckHits.set(k, (this.pendingDeckHits.get(k) ?? 0) + 1)
-          return
-        }
-        if (this.net) {
-          const p = this.pendingShipHits.get(sh.id)
-          if (p) {
-            p.n++
-            p.x = l[0]
-            p.y = l[1]
-            p.z = l[2]
-          } else this.pendingShipHits.set(sh.id, { n: 1, x: l[0], y: l[1], z: l[2] })
-        } else this.world.ciwsShipHits(this.id, sh, 1, l[0], l[1], l[2])
+        if (slot < 0) return
+        this.hud.hit()
+        const k = sh.id * 64 + slot
+        if (this.net) this.pendingDeckHits.set(k, (this.pendingDeckHits.get(k) ?? 0) + 1)
       }
     })
   }
@@ -580,14 +567,12 @@ export class Gunnery {
 
     if (this.net) {
       this.hitIn -= v.dt
-      if (this.hitIn <= 0 && (this.pendingHits.size || this.pendingShipHits.size || this.pendingDeckHits.size)) {
+      if (this.hitIn <= 0 && (this.pendingHits.size || this.pendingDeckHits.size)) {
         this.hitIn = HIT_EVERY
         for (const [on, n] of this.pendingHits) this.net.hits(on, n)
-        for (const [ship, p] of this.pendingShipHits) this.net.shipHits(ship, p.n)
         for (const [k, n] of this.pendingDeckHits) this.net.deckHits(Math.floor(k / 64), k % 64, n)
         this.pendingDeckHits.clear()
         this.pendingHits.clear()
-        this.pendingShipHits.clear()
       }
     }
 

@@ -136,7 +136,7 @@ type JetMissionState = ReturnType<typeof jetMission> | ""
 
 type BoatBot = Base & { kind: "boat"; tr: Turret; placed: boolean; firing: boolean; ctl: [number, number, number]; hits: Map<string, number>; flushIn: number; target: number; sortie: number; home: boolean }
 
-type GunBot = Base & { kind: "gun"; mount: number; ts: TurretState; aim: TurretAngles; firing: boolean; aimIn: number; hits: Map<number, number>; shipHits: Map<number, number>; deckHits: Map<string, number>; claims: [number, number, number][]; flushIn: number; target: number; bias: number; refineIn: number; seek: number }
+type GunBot = Base & { kind: "gun"; mount: number; ts: TurretState; aim: TurretAngles; firing: boolean; aimIn: number; hits: Map<number, number>; deckHits: Map<string, number>; claims: [number, number, number][]; flushIn: number; target: number; bias: number; refineIn: number; seek: number }
 
 type HelmBot = Base & { kind: "helm"; mem: HelmMemory }
 
@@ -367,7 +367,7 @@ export class RoomBots {
     if (b.kind === "boat") return { ...b, kind: "boat", tr: makeTurret(), placed: false, firing: false, ctl: [0, 0, 0], hits: new Map(), flushIn: FLUSH, target: -1, sortie: -1, home: false }
     if (b.kind === "gun") {
       const mount = opById(b.role)?.mount ?? 0
-      return { ...b, kind: "gun", mount, ts: makeTurretState(mount), aim: restAngles(mount), firing: false, aimIn: 0, hits: new Map(), shipHits: new Map(), deckHits: new Map(), claims: [], flushIn: FLUSH, target: -1, bias: 0, refineIn: 0, seek: -1 }
+      return { ...b, kind: "gun", mount, ts: makeTurretState(mount), aim: restAngles(mount), firing: false, aimIn: 0, hits: new Map(), deckHits: new Map(), claims: [], flushIn: FLUSH, target: -1, bias: 0, refineIn: 0, seek: -1 }
     }
     return { ...b, kind: "helm", mem: helmMemory() }
   }
@@ -501,7 +501,11 @@ export class RoomBots {
         else if (kind === "store") {
           const s = this.stores[target]
           if (s && !b.claims.some((c) => c[0] === s.owner && c[1] === s.seq)) b.claims.push([s.owner, s.seq, s.store])
-        } else if (kind === "ship" && ship?.id !== undefined && ship.team !== this.teamOf(owner)) this.shipRound(b.shipHits, b.deckHits, ship, x, y, z, crew, nowMs)
+        } else if (kind === "ship" && ship?.id !== undefined && ship.team !== this.teamOf(owner)) {
+          // CIWS rounds never hurt a carrier; only a jet parked on its deck counts.
+          const slot = this.parkedHit(ship, x, y, z, crew, nowMs)
+          if (slot >= 0) b.deckHits.set(`${ship.id}:${slot}`, (b.deckHits.get(`${ship.id}:${slot}`) ?? 0) + 1)
+        }
       })
       this.boatRounds.step(DT, this.t, now, this.boatTargets, ground, (owner, kind, id, x, y, z, ship) => {
         const b = this.bots.get(owner)
@@ -1651,11 +1655,9 @@ export class RoomBots {
     if (b.flushIn <= 0) {
       b.flushIn = FLUSH
       for (const [on, n] of b.hits) this.room.handle(b.id, { type: "thits", on, n: Math.min(300, n) })
-      for (const [ship, n] of b.shipHits) this.room.handle(b.id, { type: "tshiphits", ship, n: Math.min(300, n) })
       for (const i of b.claims) this.room.handle(b.id, { type: "intercept", i })
       this.flushDeck(b.id, DECK_ROUND.ciws, b.deckHits)
       b.hits.clear()
-      b.shipHits.clear()
       b.claims.length = 0
     }
   }

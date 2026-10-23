@@ -22,7 +22,6 @@ export const WIRE = {
   hits: 5,
   shiphits: 6,
   thits: 7,
-  tshiphits: 8,
   bhits: 9,
   deckhits: 10,
   planes: 64,
@@ -197,7 +196,6 @@ export function encodeWire(msg: Msg): Uint8Array | null {
       w.u8(WIRE[msg.type]).uvar(m.on).uvar(m.n)
       break
     case "shiphits":
-    case "tshiphits":
       w.u8(WIRE[msg.type]).uvar(m.ship).uvar(m.n)
       break
     case "bhits":
@@ -247,8 +245,6 @@ export function decodeClientWire(bytes: Uint8Array): Record<string, unknown> | n
         return { type: "thits", on: r.uvar(), n: r.uvar() }
       case WIRE.shiphits:
         return { type: "shiphits", ship: r.uvar(), n: r.uvar() }
-      case WIRE.tshiphits:
-        return { type: "tshiphits", ship: r.uvar(), n: r.uvar() }
       case WIRE.bhits:
         return { type: "bhits", k: r.u8(), on: r.uvar(), n: r.uvar() }
       case WIRE.deckhits:

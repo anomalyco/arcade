@@ -150,7 +150,6 @@ async function main() {
     aim: (a) => net.sendAim(a),
     fire: (g) => net.sendGunFire(g),
     hits: (on, n) => net.sendTurretHits(on, n),
-    shipHits: (ship, n) => net.sendTurretShipHits(ship, n),
     deckHits: (ship, slot, n) => net.sendDeckHits(DECK_ROUND.ciws, ship, slot, n),
     intercept: (i) => net.sendIntercept(i),
     lock: (on, locked) => net.sendSeek(on, locked),

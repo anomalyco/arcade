@@ -58,7 +58,6 @@ describe("binary frames (shared/wire.ts)", () => {
     { type: "hits", on: 12, n: 3 },
     { type: "thits", on: 300, n: 300 },
     { type: "shiphits", ship: 4, n: 200 },
-    { type: "tshiphits", ship: 1, n: 1 },
     { type: "bhits", k: 2, on: 3, n: 60 },
   ]
   const server: ServerMsg[] = [

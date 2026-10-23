@@ -157,12 +157,11 @@ async function main() {
   gunnery.setPlayer(ME, 0)
   gunnery.man(own.draw.id, startMount)
   /** Damage to the enemy carrier as the fleet would take it (harness tally). */
-  const hits = { direct: 0, near: 0, ciws: 0, sam: 0, log: [] as string[] }
+  const hits = { direct: 0, near: 0, sam: 0, log: [] as string[] }
   gunnery.onEvent = (e: GunneryEvent) => {
     if (e.k === "hurt") hurtJet(weapons.world, e.on, e.dmg, e.by, AS_JET[e.w])
     else if (e.k === "ship") {
-      if (e.w === "ciws") hits.ciws += e.n ?? 1
-      else if (e.w === "sam") hits.sam++
+      if (e.w === "sam") hits.sam++
       else if (e.near > 0) hits.near++
       else hits.direct++
       hits.log.push(`${e.w} ship ${e.ship} near ${e.near.toFixed(1)} at ${e.x.toFixed(0)},${e.y.toFixed(0)},${e.z.toFixed(0)}`)

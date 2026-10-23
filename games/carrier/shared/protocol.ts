@@ -83,7 +83,6 @@ export type ClientMsg =
   /** The sender's CIWS rounds hit jet `on` `n` times since its last report. */
   | { type: "thits"; on: number; n: number }
   /** The sender's CIWS rounds hit carrier `ship` `n` times since its last report. */
-  | { type: "tshiphits"; ship: number; n: number }
   /** The sender's CIWS shot down a missile or bomb (store 0) or a SAM or shell (store 1). */
   | { type: "intercept"; i: InterceptTuple }
   // The boat (shared/boat.ts), from its driver: the room runs the boat's sim on these orders.
@@ -402,8 +401,6 @@ export function decodeClient(raw: unknown): ClientMsg | null {
       return isGunFireTuple(o.g) ? { type: "gfire", g: o.g } : null
     case "thits":
       return isCount(o.on) && isCount(o.n) && o.n > 0 && o.n <= 300 ? { type: "thits", on: o.on, n: o.n } : null
-    case "tshiphits":
-      return isCount(o.ship) && isCount(o.n) && o.n > 0 && o.n <= 300 ? { type: "tshiphits", ship: o.ship, n: o.n } : null
     case "intercept":
       return isInterceptTuple(o.i) ? { type: "intercept", i: o.i } : null
     case "boat":

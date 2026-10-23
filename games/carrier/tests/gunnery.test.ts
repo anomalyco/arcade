@@ -567,7 +567,6 @@ describe("5-inch gun", () => {
     expect(near.near).toBe(7)
     expect(near.amount!).toBeLessThan(GUNNERY.gun.nearMax)
     expect(near.amount!).toBeGreaterThan(GUNNERY.gun.nearMin)
-    expect(shipHitOf("ciws", 0).w).toBe("gun")
     // Through the fleet: a direct shell is GUNNERY.gun.shipDamage, too light to start a fire or close the deck (fleet's
     // 20 hp shell threshold); a near miss is less.
     const fleet = new Fleet()

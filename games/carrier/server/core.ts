@@ -489,18 +489,6 @@ export class RoomCore {
         this.flushGunnery()
         return
       }
-      case "tshiphits": {
-        const ship = this.hullPoses.get(msg.ship)
-        const g = this.gunnery.gunners.get(id)
-        if (!ship || !g) return
-        this.syncGunneryGround()
-        // The client doesn't say where: the side of the hull facing the gun.
-        const at = this.gunnery.mountAt(g, [0, 0, 0])
-        const l = at ? worldToShip(ship, at[0], at[1], at[2], [0, 0, 0]) : [0, 14, 0]
-        this.gunnery.ciwsShipHits(id, ship, msg.n, Math.max(-25, Math.min(25, l[0]!)), 14, Math.max(STERN_Z + 10, Math.min(BOW_Z - 10, l[2]!)))
-        this.flushGunnery()
-        return
-      }
       case "intercept": {
         const [owner, seq, store] = msg.i
         let s: Interceptable | null = null

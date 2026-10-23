@@ -277,7 +277,7 @@ team (`hearsChat`). `Net.chat` queues lines for `src/ui/chat.ts`; offline they e
 Offline (`?seed`) the same crew rules run locally on a crew of one.
 Wire format (`shared/protocol.ts` `encode`/`decodeClient`/`decodeServer`, codecs in `shared/wire.ts` on
 `@arcade/kit/net/bytes`): the high-rate messages travel as binary frames (first byte a `WIRE` kind; client `plane`,
-`aim`, `boat`, `gun`, `hits`, `shiphits`, `thits`, `tshiphits`, `bhits`, `deckhits`; room `planes`, `ships`, `boats`, `turrets`,
+`aim`, `boat`, `gun`, `hits`, `shiphits`, `thits`, `bhits`, `deckhits`; room `planes`, `ships`, `boats`, `turrets`,
 `gun`), everything else (hello/welcome, crew, chat, ops, objective, hulls, combat events, errors) as JSON text on the
 same socket (`binaryType = "arraybuffer"`). A binary frame decodes to the same message object JSON would and passes the
 same checks; malformed, truncated, trailing or oversized frames (512 B client, 64 KiB room) decode to null. Grids: jets
@@ -760,8 +760,8 @@ Look targets: `concept/time-*.png`, palettes in `concept/README-time.md`. Captur
   14 m 10→2 hp; HUD splash marker
   (`predictImpact`, the world's own steps). Friendly fire off everywhere; kills credit the gunner (`KillWeapon`
   `ciws`/`sam`/`shell` in kill feed and stats).
-- Authority: CIWS rounds are shooter-authoritative (`TurretRounds`): the client reports `thits` (jets), `tshiphits`
-  (enemy hulls) and `intercept` claims; the room's `GunneryWorld` checks a manned CIWS, the round budget, range from
+- Authority: CIWS rounds are shooter-authoritative (`TurretRounds`): the client reports `thits` (jets), `deckhits`
+  (jets parked on an enemy deck) and `intercept` claims (CIWS rounds never hurt a carrier: on a hull they only spark); the room's `GunneryWorld` checks a manned CIWS, the round budget, range from
   the mount and (intercepts) the claim within 22° of the reported aim and a fired trigger. SAMs and shells are events
   (`gfire`, `GunFireTuple`) the room validates (manned mount, budget, starts at the mount) and simulates; bursts go out
   as `gboom` (`GunBoomTuple`); damage lands in `CombatWorld.hurt` (jets) and `Fleet.hit` (`shipHitOf`). Gunners send
