@@ -5,6 +5,7 @@ import type { ShellFlow } from "./flow"
 import type { ShellLobby } from "./lobby"
 import type { ShellLoading } from "./page"
 import type { ShellRow, ShellSettings } from "./settings"
+import type { ShellVoice } from "./voice"
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 const QUALITY: readonly [QualityMode, string][] = [["auto", "Auto"], ["high", "High"], ["balanced", "Balanced"], ["low", "Low"]]
@@ -12,6 +13,7 @@ const TIER: Record<QualityTier, string> = { high: "High", balanced: "Balanced", 
 const SPEAKER = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M4 9h4l5-4v14l-5-4H4z"/><path class="as-wave" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M16 9.5a3.5 3.5 0 0 1 0 5M18.5 7a7 7 0 0 1 0 10"/><path class="as-cross" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M16 9l5 6M21 9l-5 6"/></svg>`
 
 export type ShellViewOptions = {
+  voice?: ShellVoice
   title: string
   subtitle?: string
   /** Play alone's label and small print (`Play alone` / `you and three campers`). */
@@ -93,6 +95,7 @@ export class ShellView {
     })
     const redraw = () => this.render()
     this.offs.push(settings.subscribe(redraw), flow.subscribe(redraw), onKeyLayoutChange(() => this.render(true)))
+    if (o.voice) this.offs.push(o.voice.subscribe(() => this.render()))
     if (lobby) this.offs.push(lobby.subscribe(redraw))
     if (loading) this.offs.push(loading.subscribe(redraw))
     // `blocked` (the Lab panel) changes outside the shell; one boolean read a frame keeps the overlay honest.
@@ -125,7 +128,7 @@ export class ShellView {
     if (overlay === null) return
     const settingsOpen = this.flow.settingsOpen
     const l = this.lobby
-    const key = [overlay, settingsOpen, l?.room, l?.linkedRoom, l?.busy, l?.connection, JSON.stringify(l?.players ?? []), this.flow.lockRefused, this.copied, this.settings.quality?.mode, this.settings.reduceMotion, this.settings.keyLabels].join("|")
+    const key = [overlay, settingsOpen, l?.room, l?.linkedRoom, l?.busy, l?.connection, JSON.stringify(l?.players ?? []), this.flow.lockRefused, this.copied, this.settings.quality?.mode, this.settings.reduceMotion, this.settings.keyLabels, this.o.voice?.enabled, this.o.voice?.pending, this.o.voice?.error].join("|")
     if (force || key !== this.layout) {
       this.layout = key
       this.card.innerHTML = settingsOpen ? this.settingsHtml() : overlay === "title" ? this.titleHtml() : this.pauseHtml()
@@ -149,6 +152,18 @@ export class ShellView {
 
   private sync(): void {
     const s = this.settings
+    const voice = this.o.voice
+    if (voice) {
+      for (const el of this.card.querySelectorAll<HTMLInputElement>("[data-voice]")) {
+        const kind = el.dataset.voice
+        if (kind === "enabled") el.checked = voice.enabled
+        if (kind === "volume" && el.ownerDocument.activeElement !== el) el.value = String(Math.round(voice.volume * 100))
+        if (kind === "mode") el.value = voice.mode
+      }
+      const mic = this.card.querySelector<HTMLElement>('[data-act="voice-mic"]')
+      if (mic) { mic.textContent = voice.micMuted ? "Unmute mic" : "Mute mic"; mic.setAttribute("aria-pressed", String(voice.micMuted)) }
+      for (const el of this.card.querySelectorAll<HTMLInputElement>("[data-voice-player]")) el.checked = voice.muted.has(el.dataset.voicePlayer!)
+    }
     for (const input of this.card.querySelectorAll<HTMLInputElement>("input[data-vol]")) {
       const v = s.volume(input.dataset.vol as never)
       if (input.ownerDocument.activeElement !== input) input.value = String(v)
@@ -196,7 +211,7 @@ export class ShellView {
     else body = `<button class="as-btn as-primary as-big" data-act="${l ? "solo" : "play"}">${esc(o.playLabel ?? o.soloLabel ?? "Play")}</button>`
     const message = l ? `<p class="as-message" data-lobby-message hidden></p>` : ""
     const refused = this.flow.lockRefused ? `<p class="as-message">Click again to take the mouse.</p>` : ""
-    return `${this.cornerHtml()}${top}<div class="as-slot-host"></div>${name}${body}${message}${refused}${this.footHtml()}`
+    return `${this.cornerHtml()}${top}<div class="as-slot-host"></div>${name}${body}${this.voiceHtml(false)}${message}${refused}${this.footHtml()}`
   }
 
   private roomHtml(): string {
@@ -243,7 +258,18 @@ export class ShellView {
       : ""
     const sections = s.sections.map((sec) => `<div class="as-head">${esc(sec.title)}</div>${sec.rows.map((r) => this.rowHtml(sec.id, r)).join("")}`).join("")
     const controls = `<div class="as-head">Controls</div><label class="as-field"><span>Reduce camera motion</span><input type="checkbox" data-act="reduce-motion"${s.reduceMotion ? " checked" : ""} /><i></i></label><div class="as-field"><span>Key labels</span><div class="as-seg as-seg2">${KEY_LABEL_OPTIONS.map((k) => `<button data-act="key-labels" data-mode="${k.value}" aria-pressed="${s.keyLabels === k.value}">${esc(k.label)}</button>`).join("")}</div></div>`
-    return `<h2 class="as-heading">Settings</h2><div class="as-settings">${sound ? `<div class="as-head">Sound</div>${vol}${mute}` : ""}${quality}${sections}${controls}</div><button class="as-btn as-primary" data-act="back">Done</button>`
+    return `<h2 class="as-heading">Settings</h2><div class="as-settings">${sound ? `<div class="as-head">Sound</div>${vol}${mute}` : ""}${this.voiceHtml(true)}${quality}${sections}${controls}</div><button class="as-btn as-primary" data-act="back">Done</button>`
+  }
+
+  private voiceHtml(settings: boolean): string {
+    const v = this.o.voice
+    if (!v) return ""
+    const toggle = `<label class="as-field"><span>Voice chat</span><input type="checkbox" data-voice="enabled"${v.enabled ? " checked" : ""} /><i></i></label>`
+    const message = v.pending ? "Connecting microphone…" : v.error
+    const status = message ? `<p class="as-message" role="status">${esc(message)}</p>` : ""
+    if (!settings) return `${toggle}${status}`
+    const players = this.lobby?.players.filter((p) => !p.you).map((p) => `<label class="as-field"><span>Mute ${esc(p.name)}</span><input type="checkbox" data-voice-player="${esc(p.id)}" /><i></i></label>`).join("") ?? ""
+    return `<div class="as-head">Voice</div>${toggle}${status}${v.enabled ? `<label class="as-field"><span>Voice volume</span><input type="range" data-voice="volume" min="0" max="100" step="5" /></label><label class="as-field"><span>Nearby voice</span><select data-voice="mode"><option value="open">Open mic</option><option value="push">Push to talk</option></select></label><button class="as-btn" data-act="voice-mic">Mute mic</button>${players}` : ""}`
   }
 
   private rowHtml(section: string, r: ShellRow): string {
@@ -258,6 +284,8 @@ export class ShellView {
     if (!t || (t as HTMLButtonElement).disabled) return
     const l = this.lobby
     switch (t.dataset.act) {
+      case "voice-mic":
+        return this.o.voice?.toggleMic()
       case "play":
         return this.flow.play()
       case "solo":
@@ -305,6 +333,13 @@ export class ShellView {
 
   private input(e: Event): void {
     const t = e.target as HTMLInputElement
+    if (t.dataset.voice) {
+      if (t.dataset.voice === "enabled") void this.o.voice?.setEnabled(t.checked)
+      if (t.dataset.voice === "volume") this.o.voice?.setVolume(Number(t.value) / 100)
+      if (t.dataset.voice === "mode") this.o.voice?.setMode(t.value === "push" ? "push" : "open")
+      return
+    }
+    if (t.dataset.voicePlayer) { this.o.voice?.mute(t.dataset.voicePlayer, t.checked); return }
     if (t.dataset.vol) this.settings.setVolume(t.dataset.vol as never, Number(t.value))
     else if (t.dataset.act === "reduce-motion") this.settings.setReduceMotion(t.checked)
     else if (t.dataset.field === "name") this.lobby?.setName(t.value)

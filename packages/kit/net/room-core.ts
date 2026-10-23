@@ -13,6 +13,7 @@
  */
 import { JitterBuffer, type InputOps, type JitterConfig, socketJitter } from "./jitter-buffer"
 import { Seats } from "./seats"
+import { decodeVoiceClient, type VoiceRoom } from "./voice"
 
 export type RoomLocationHint = "wnam" | "enam" | "weur" | "eeur" | "apac" | "oc" | "sam" | "afr" | "me"
 
@@ -118,6 +119,8 @@ type SeatData<I> = { activity: Activity; jitter: JitterBuffer<I> }
 type ConnState = { id: string | null; tokens: number; at: number }
 
 export abstract class RoomCore<C extends { type: string }, I, Row, Ev, Ents, Snap> {
+  /** Games opt in; only authenticated seats can signal, and disconnects destroy voice membership immediately. */
+  voice: VoiceRoom | null = null
   readonly code: string
   protected readonly clock: () => number
   private readonly opts: Required<Omit<RoomCoreOptions<I>, "clock" | "code">>
@@ -191,6 +194,11 @@ export abstract class RoomCore<C extends { type: string }, I, Row, Ev, Ents, Sna
     state.at = now
     if (state.tokens < 1) return
     state.tokens--
+    const voice = this.voice && decodeVoiceClient(raw)
+    if (voice) {
+      if (state.id && this.seats.byId(state.id)?.connected) this.voice!.message(state.id, voice, (m) => conn.send(JSON.stringify(m)))
+      return
+    }
     const msg = this.decode(raw)
     if (msg) this.dispatch(conn, state, msg)
   }
@@ -247,6 +255,7 @@ export abstract class RoomCore<C extends { type: string }, I, Row, Ev, Ents, Sna
     const state = this.conns.get(conn)
     this.conns.delete(conn)
     if (!state?.id) return
+    this.voice?.leave(state.id)
     this.seats.leave(state.id)
     this.dropped(state.id)
   }
@@ -271,6 +280,7 @@ export abstract class RoomCore<C extends { type: string }, I, Row, Ev, Ents, Sna
         conn.send(this.encode({ type: "error", message: "You were kicked for being idle." }))
         conn.close(4002, "idle")
         this.conns.delete(conn)
+        this.voice?.leave(seat.id)
         this.seats.remove(seat.id)
         this.leave(seat.id)
         continue

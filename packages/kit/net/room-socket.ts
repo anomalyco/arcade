@@ -1,9 +1,12 @@
 import type { RoomFrame } from "./room-core"
+import type { VoiceClientFrame, VoiceServerFrame } from "./voice"
 
 export type RoomSocketOptions<Hello> = {
   /** The game's storage prefix, for example "blackout". */
   game: string
   room: string
+  /** Explicit endpoint for embedded clients and local room proofs; defaults to this game's /ws/<room>. */
+  url?: string
   /** Socket query parameters only the room's first arrival can set (private, mode, map...). */
   query?: Record<string, string | null | undefined>
   /** The hello frame for this connection, with the private seat token to reclaim (from an earlier welcome). */
@@ -16,6 +19,11 @@ export type RoomSocketOptions<Hello> = {
   pong?: (t: number) => void
   encode: (msg: unknown) => string
   decode: (raw: string) => { type: string } | null
+  voice?: {
+    connected(send: (msg: VoiceClientFrame) => void): void
+    disconnected(): void
+    receive(msg: VoiceServerFrame): void
+  }
 }
 
 /** sessionStorage key a version reload leaves for the page to rejoin its room. */
@@ -65,11 +73,12 @@ export class RoomSocket<Hello> {
 
   close(): void {
     this.closed = true
+    this.o.voice?.disconnected()
     this.ws?.close()
   }
 
   private open(): void {
-    const ws = new WebSocket(socketUrl(this.o.room, this.o.query ?? {}))
+    const ws = new WebSocket(this.o.url ?? socketUrl(this.o.room, this.o.query ?? {}))
     this.ws = ws
     ws.onopen = () => {
       this.retries = 0
@@ -77,12 +86,19 @@ export class RoomSocket<Hello> {
     }
     ws.onmessage = (e) => {
       if (typeof e.data !== "string") return
+      if (this.o.voice && e.data.includes('"voice.')) {
+        try {
+          const voice = JSON.parse(e.data)
+          if (["voice.ready", "voice.members", "voice.signal"].includes(voice?.type)) { this.o.voice.receive(voice); return }
+        } catch {}
+      }
       const msg = this.o.decode(e.data)
       if (msg) this.frame(msg as RoomFrame<unknown, unknown>)
     }
     ws.onclose = () => {
       if (this.ws !== ws || this.closed) return
       this.ws = null
+      this.o.voice?.disconnected()
       this.problem = "Connection lost. Reconnecting…"
       setTimeout(() => !this.closed && this.open(), Math.min(4000, 300 * 2 ** this.retries++))
     }
@@ -97,13 +113,16 @@ export class RoomSocket<Hello> {
         sessionStorage.setItem(this.key("id"), m.id)
         sessionStorage.setItem(this.key("token"), m.token)
         this.problem = null
+        this.o.voice?.connected((frame) => { if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(frame)) })
         return
       case "error":
         this.closed = true
+        this.o.voice?.disconnected()
         this.o.fatal(m.message)
         return
       case "reload": {
         this.closed = true
+        this.o.voice?.disconnected()
         // Reload once into the same room (the page rejoins on its own); a second mismatch within a minute means the
         // new build isn't being served yet, so say so instead of looping.
         const key = `${this.o.game}.reloadAt`
