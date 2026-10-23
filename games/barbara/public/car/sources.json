@@ -1,0 +1,9 @@
+{
+  "licence": "CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)",
+  "model": "Japanese sedan '86 - Low poly model (now \"Kiri '86 - Low poly model\")",
+  "author": "Daniel Zhabotinsky (https://sketchfab.com/DanielZhabotinsky)",
+  "source": "https://sketchfab.com/3d-models/5c17c582ef9549798f694b660feea42a",
+  "files": {
+    "https://huggingface.co/datasets/allenai/objaverse/resolve/main/glbs/000-084/5c17c582ef9549798f694b660feea42a.glb": "27ca0bb14296ad01f52076c37d0b2b0174a934f2427f1032c56966c9f2395490"
+  }
+}

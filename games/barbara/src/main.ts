@@ -807,6 +807,8 @@ async function main() {
     }
 
     const place = view.lights(world, state.t, settings)
+    const dome = nightView.carLight(state.t, settings.carLight, camera.eye)
+    if (dome) place.scene.push(dome)
     // Road flares: fire and smoke on the page's clock, their light on the woods and in the mist.
     const lit = flares.update(state, world, meId, session.roomTime(), dt, camera.eye, { yaw: camera.yaw, pitch: camera.pitch }, settings, view.forest.settings, quality.tier === "low" ? 1 : quality.tier === "balanced" ? 2 : 3)
     place.scene.push(...lit.scene)
@@ -845,7 +847,7 @@ async function main() {
     audio.storm(sf)
     feel.storm(sf.thunder, sf.clock)
     groundWet = sf.rain
-    view.frame({ eye: [camera.eye[0], camera.eye[1], camera.eye[2]], viewProj: vp as Float32Array, width, height, time: state.t, dt, fovY: ((camera.fov + camera.mount.fov) * Math.PI) / 180, torches, fp, place, casters: [...friends.casters(ownOrigin, view.forest.settings.torchReach), ...held.casters()], batches: [...creatures.frame(world, time), ...spiderBatches], flares: flareFrame, storm: smoke ? null : sf.view }, stepping, smokeTarget?.createView())
+    view.frame({ eye: [camera.eye[0], camera.eye[1], camera.eye[2]], viewProj: vp as Float32Array, width, height, time: state.t, dt, fovY: ((camera.fov + camera.mount.fov) * Math.PI) / 180, torches, fp, place, casters: [...friends.casters(ownOrigin, view.forest.settings.torchReach), ...held.casters()], staticCasters: nightView.carFrame(camera.eye), batches: [...creatures.frame(world, time), ...spiderBatches], flares: flareFrame, storm: smoke ? null : sf.view }, stepping, smokeTarget?.createView())
 
     // HUD: the tie prompt, the map, toasts.
     const atRadio = playing && canVote(state.night, p)
@@ -911,7 +913,7 @@ async function main() {
 
   const woods = {
       get ready() { return true }, get frames() { return frames }, get time() { return time }, get paused() { return paused }, set paused(v: boolean) { paused = v },
-      renderer, camera, settings, panel, map, held, debug, flares, audio, story, view, look: view.forest.settings, quality, friends, cameraLook, feel, juice, creature, creatures, spider, spiderLab, lakeEditor, endCard, verdictCard, storm, voice: voice?.chat,
+      renderer, camera, settings, panel, map, held, debug, flares, audio, story, view, nightView, look: view.forest.settings, quality, friends, cameraLook, feel, juice, creature, creatures, spider, spiderLab, lakeEditor, endCard, verdictCard, storm, voice: voice?.chat,
       /** Automation: name what took her, as if at the radio (`verdict.ts`). */
       vote: (s: (typeof SUSPECTS)[number]) => session.vote(s),
       /** Automation: the night (phase, clock, finds, the layout) and the next one. */

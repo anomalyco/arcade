@@ -1,8 +1,8 @@
-import { WebIO, type Texture } from "@gltf-transform/core"
+import { WebIO, type Node, type Texture } from "@gltf-transform/core"
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions"
 import { MeshoptDecoder } from "meshoptimizer"
 import { mat4, vec3 } from "wgpu-matrix"
-import { MAT, Mesh } from "./mesh"
+import { MAT, Mesh, type Mat } from "./mesh"
 import { packTexturedVerts, type TexturedPrimitive } from "./textured-mesh"
 import { normalMipChain } from "./normal-mips"
 import { imageMipChain } from "./image-mips"
@@ -34,10 +34,20 @@ export async function imageTexture(device: GPUDevice, bytes: Uint8Array, srgb: b
   return texture
 }
 
+/** A node's level of detail from the common authored convention: the highest `LOD<n>` prefix on it or an ancestor, else 0. */
+function nodeLod(node: Node): number {
+  let lod = 0
+  for (let n: Node | null = node; n; n = n.getParentNode()) lod = Math.max(lod, Number(/^lod(\d)/i.exec(n.getName())?.[1] ?? 0))
+  return lod
+}
+
 /** glTF 2 static meshes: node transforms, normalized/quantized accessors, meshopt, PBR textures and optional KTX2.
  * Skins, animation and morph targets deliberately require a different adapter. Caller owns returned textures.
- * `source` is a URL or the already-fetched GLB bytes (for example from a boot screen's progress fetch). */
-export async function loadGltf(device: GPUDevice, source: string | Uint8Array, transform = mat4.identity(), ktx?: KtxDecoder) {
+ * `source` is a URL or the already-fetched GLB bytes (for example from a boot screen's progress fetch).
+ * Nodes named `LOD<n>` (and their children) load only for `lod` n, or all of them for "all"; `lods` gives each
+ * primitive's level. A material's `extras.kit` = `{ mat, aux, color? }` sets its kit surface (`MAT`, default lit) and
+ * vertex colour (the hue the forest batch keeps `MAT.retro` and tape at under bright light). */
+export async function loadGltf(device: GPUDevice, source: string | Uint8Array, transform = mat4.identity(), ktx?: KtxDecoder, lod: number | "all" = 0) {
   await MeshoptDecoder.ready
   const io = new WebIO().registerExtensions(ALL_EXTENSIONS).registerDependencies({ "meshopt.decoder": MeshoptDecoder })
   let bytes: Uint8Array
@@ -69,10 +79,12 @@ export async function loadGltf(device: GPUDevice, source: string | Uint8Array, t
     return promise
   }
   const jobs: Promise<TexturedPrimitive>[] = []
+  const lods: number[] = []
   try {
     scene.traverse(node => {
-      // Common authored LOD convention: load only the full-detail node, never both on top of each other.
-      for (let parent = node; parent; parent = parent.getParentNode()!) if (/^lod[1-9]/i.test(parent.getName())) return
+      // Common authored LOD convention: load one level, never two on top of each other.
+      const level = nodeLod(node)
+      if (lod !== "all" && level !== lod) return
       if (node.getSkin()) throw new Error("Static glTF adapter cannot render skins")
       const world = mat4.multiply(transform, node.getWorldMatrix())
       const normalMatrix = mat4.transpose(mat4.inverse(world))
@@ -81,17 +93,20 @@ export async function loadGltf(device: GPUDevice, source: string | Uint8Array, t
         const position = primitive.getAttribute("POSITION")!, normals = primitive.getAttribute("NORMAL")
         const uv = primitive.getAttribute("TEXCOORD_0"), indices = primitive.getIndices()
         if (!normals) throw new Error("glTF normals required")
+        const m = primitive.getMaterial()
+        const kit = (m?.getExtras() as { kit?: { mat?: number; aux?: number; color?: [number, number, number] } } | undefined)?.kit
+        const mat = (kit?.mat ?? MAT.lit) as Mat, aux = kit?.aux ?? 0, tint = kit?.color ?? [1, 1, 1]
         const mesh = new Mesh(), uvs: number[] = []
         const count = indices?.getCount() ?? position.getCount()
         for (let i = 0; i < count; i++) {
           const index = indices?.getScalar(i) ?? i
           const p = vec3.transformMat4(position.getElement(index, []), world)
           const n = vec3.normalize(vec3.transformMat4Upper3x3(normals.getElement(index, []), normalMatrix))
-          mesh.vert([p[0]!, p[1]!, p[2]!], [n[0]!, n[1]!, n[2]!], [1, 1, 1], MAT.lit)
+          mesh.vert([p[0]!, p[1]!, p[2]!], [n[0]!, n[1]!, n[2]!], tint, mat, aux)
           const t = uv?.getElement(index, []) ?? [0, 0]; uvs.push(t[0]!, t[1]!)
         }
         const vertices = packTexturedVerts(mesh.v, uvs)
-        const m = primitive.getMaterial()
+        lods.push(level)
         jobs.push(Promise.all([tex(m?.getBaseColorTexture() ?? null, true, white), tex(m?.getNormalTexture() ?? null, false, normal, true), tex(m?.getMetallicRoughnessTexture() ?? null, false, orm), tex(m?.getOcclusionTexture() ?? null, false, orm)]).then(([base, normal, orm, ao]) => ({
           vertices, base, normal, orm, ao, aoStrength: m?.getOcclusionTexture() ? m.getOcclusionStrength() : 0,
           alphaCutoff: m?.getAlphaMode() === "MASK" ? m.getAlphaCutoff() : 0,
@@ -100,7 +115,7 @@ export async function loadGltf(device: GPUDevice, source: string | Uint8Array, t
         })))
       }
     })
-    return { primitives: await Promise.all(jobs), dispose: () => textures.forEach(t => t.destroy()) }
+    return { primitives: await Promise.all(jobs), lods, dispose: () => textures.forEach(t => t.destroy()) }
   } catch (e) {
     // Other image decodes may still be running when a primitive or one texture fails.
     // Settle them before destroying the complete allocation set.

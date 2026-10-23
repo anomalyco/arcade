@@ -15,6 +15,7 @@ type Place = { section: Section; sub?: string }
 const BY_KEY: Record<string, Place> = {
   campGlow: { section: "Camp", sub: "Camp lights" },
   ridgeGlow: { section: "Camp", sub: "Ridge beacon" },
+  carLight: { section: "Forest", sub: "Barbara's car" },
   trunkDensity: { section: "Forest", sub: "Trees" },
   flashFlicker: { section: "Light & Sky", sub: "Flashlight" },
   "woods.windows": { section: "Camp", sub: "Camp lights" },

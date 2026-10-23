@@ -1,10 +1,11 @@
 // Headless, muted proof stills for the Oct 22 playtest fixes (run after `bun run build`, through HiveMind browser):
-//   bun scripts/playtest-look.ts [--scenario trail,own,map,edge,start] [--out dir] [--tag name] [--variants base,fog,taa,none]
+//   bun scripts/playtest-look.ts [--scenario trail,own,map,edge,start,car] [--out dir] [--tag name] [--variants base,fog,taa,none]
 // trail: you stand still, your light off, and a friend 10 m ahead sweeps their beam across the view at 3 rad/s; the
 //   still is taken mid-sweep. own: you turn at 2.5 rad/s with your light on, mid-turn. Variants (trail/own only) turn off
 //   the fog's history (fog), TAA (taa) or both (none: the trail-free reference for the same moment).
 // map: a friend 3 m away reading the map, realistic and blocky. edge: the world's north edge from 25 m and 4 m in your
 //   light, and the held map raised next to it. start: a fresh page, frames before and after Play.
+// car: her car at 6 m in your torch, 20 m behind it with the torch sweeping across, the courtesy light; GPU times.
 // sign: Kit's Scrawl spot (spawn towards the car, a flare by it, torch off/on) and a POSTED and a STATE FOREST sign at
 //   4 m and 15 m in your torch, dark, and with a flare beside it.
 // Writes PNGs and `playtest-look.json` to the out dir (repo-root captures/playtest-look by default).
@@ -40,10 +41,12 @@ declare const woods: Woods
 
 mkdirSync(out, { recursive: true })
 const root = resolve(arg("--dist", "dist/arcade/barbara"))
+/** `--no-car`: serve without the car model, so the greybox it replaced stands in (the before of a before/after). */
+const noCar = process.argv.includes("--no-car")
 const prefix = "/arcade/barbara/"
 const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(req) {
   const path = new URL(req.url).pathname
-  if (!path.startsWith(prefix)) return new Response("no", { status: 404 })
+  if (!path.startsWith(prefix) || (noCar && path.endsWith("/car/car.glb"))) return new Response("no", { status: 404 })
   const file = resolve(root, decodeURIComponent(path.slice(prefix.length)) || "index.html")
   if (!file.startsWith(root + sep)) return new Response("no", { status: 404 })
   const f = Bun.file(file)
@@ -280,6 +283,52 @@ if (scenarios.includes("sign")) {
     await stage(`sign-${kind}-flare`, sign(post, 4, true), false)
     await stage(`sign-${kind}-flare-15m`, sign(post, 15, true), false)
     await stage(`sign-${kind}-torch-15m`, sign(post, 15, false), true)
+  }
+  await page.close()
+}
+
+if (scenarios.includes("car")) {
+  // Her car: a three-quarter view from 6 m off the driver's front corner in your torch (the open door and the cab),
+  // then 20 m behind it in the dark with your torch sweeping across (the tail-light reflectors and plate catch it), and
+  // on builds that have it, the courtesy light (Lab `carLight` 1) from 6 m, torch off. GPU time at the near and far views.
+  const page = await open()
+  await hideShell(page)
+  await page.evaluate(() => { woods.paused = true })
+  for (let k = 0; k < 40 && !(await page.evaluate(() => (woods as unknown as { nightView?: { carDrawn: boolean } }).nightView?.carDrawn ?? true)); k++) await page.waitForTimeout(250)
+  /** Car space (nose −z, driver −x) to world, the way `carPose` and the greybox's turn stand it. */
+  const at = `const c = woods.night.layout.clues.find((q) => q.kind === "car"), a = Math.atan2(c.fx, -c.fz)
+    const at = (x, z) => ({ x: c.x + x * Math.cos(a) + z * Math.sin(a), z: c.z - x * Math.sin(a) + z * Math.cos(a) })
+    const look = (e, t, pitch) => woods.setPose(e.x, e.z, Math.atan2(-(t.x - e.x), -(t.z - e.z)), pitch)
+    const trees = woods.world.trees
+    const clear = (e, t) => trees.every((r) => { const dx = t.x - e.x, dz = t.z - e.z, k = Math.max(0, Math.min(1, ((r.x - e.x) * dx + (r.z - e.z) * dz) / (dx * dx + dz * dz))); return Math.hypot(r.x - e.x - dx * k, r.z - e.z - dz * k) > r.radius + 0.4 })
+    const best = (d, base) => { for (const o of [0, 0.25, -0.25, 0.5, -0.5, 0.8, -0.8]) { const e = at(Math.sin(base + o) * d, Math.cos(base + o) * d); if (clear(e, at(0, 0))) return e } return at(Math.sin(base) * d, Math.cos(base) * d) }`
+  const stage = async (fn: string, light: boolean, n = 120) => {
+    await page.evaluate(({ fn, light, clear, at }) => {
+      new Function(clear)(); woods.state.flares.list.length = 0; new Function(at + "\n" + fn)()
+      woods.camera.flashlight = light
+    }, { fn, light, clear: clearBots, at })
+    await steps(page, n)
+  }
+  const gpu = () => page.evaluate(async () => (await (woods as unknown as { measure(n: number, step: number): Promise<{ median: number } | null> }).measure(24, 1 / 60))?.median ?? null)
+  const near = "look(best(6, -2.36), at(-0.3, 0.2), -0.2)"
+  await stage(near, true)
+  await shot(page, "car-6m")
+  report.carNearGpuMs = await gpu()
+  // From behind (+z in car space), the camera sweeping right to left across the car at 0.8 rad/s with its torch.
+  const far = "const e = best(20, 0); look(e, at(0, 0), -0.03); woods.camera.yaw -= 0.45; globalThis.carFarYaw = woods.camera.yaw"
+  await stage(far, false)
+  report.carFarDarkGpuMs = await gpu()
+  await shot(page, "car-20m-dark")
+  await page.evaluate(() => { woods.camera.flashlight = true })
+  await steps(page, 60)
+  for (const [k, n] of [[0, 20], [1, 10], [2, 10], [3, 10]] as const) {
+    await steps(page, n, "woods.camera.yaw += 0.8 / 60")
+    await shot(page, `car-20m-sweep-${k}`)
+  }
+  report.carFarGpuMs = await gpu()
+  if (await page.evaluate(() => { const s = (woods as unknown as { settings: Record<string, number> }).settings; return "carLight" in s && ((s.carLight = 1), true) })) {
+    await stage(near, false, 180)
+    await shot(page, "car-6m-courtesy")
   }
   await page.close()
 }
