@@ -23,6 +23,7 @@ import { AdaptiveQualityController, type QualityMode } from "@arcade/kit/quality
 import { CREATURE_STEP, createCreatureMotion, stepCreatureMotion, unitDt, unitSurface } from "@arcade/kit/sim/creature-motion"
 import { demoForestWorld } from "@arcade/kit/sim/forest-demo"
 import type { Rect } from "@arcade/kit/sim/geom"
+import { captureCanvas, controlPatch, settleFrames } from "@arcade/kit/proof/look"
 
 type Camera = "distant" | "near" | "pass" | "walk"
 /** Where a friend searches for the free cameras (the loop's middle, 10–20 m from its path); the standing shots place their own. */
@@ -60,6 +61,7 @@ async function main() {
   const route = createRoute(LOOP)
   const start = LOOP[0]!
   const motion = createCreatureMotion(start[0] / size, start[1] / size, Math.PI / 2)
+  const initialMotion = { ...motion }, initialRoute = { ...route }
   let legs = new ArachnidLegs(motion, ground, size, arachnidShape(spider))
   const look = () => arachnidLook(spider)
   const spiderView = new ArachnidView(view.renderer, look())
@@ -302,6 +304,44 @@ async function main() {
       ready: true,
     },
   })
+  if (query.has("qualityGate") && !smoke) {
+    paused = true
+    const base = { ...view.settings }, defaults = { ...spider }
+    const draw = () => step(0)
+    let meterPending = false
+    window.look = {
+      version: 1, capabilities: { subject: true, shift: false, albedo: false },
+      apply(state) {
+        if (state.look !== undefined) throw new Error("Spider has no named Looks; use its Lab settings")
+        if (!["pass", "distant", "near"].includes(state.camera ?? "pass")) throw new Error("Unknown spider camera")
+        if (!Number.isFinite(state.time ?? 20) || (state.time ?? 20) < 0 || (state.time ?? 20) > 120) throw new Error("Spider time must be 0–120 seconds")
+        for (const key of Object.keys(state.settings ?? {})) if (!["spider.shell", "spider.sheen", "spider.beam"].includes(key)) throw new Error(`Unsupported proof setting: ${key}`)
+        const patch = controlPatch(panel.navigation, state.settings)
+        Object.assign(view.settings, base); Object.assign(spider, defaults)
+        size = arachnidScale(spider)
+        Object.assign(motion, initialMotion); Object.assign(route, initialRoute)
+        ticks = 0; accumulator = 0; clock = state.time ?? 20; shot = null; shotKind = null; hidden = false
+        scene.camera = (state.camera ?? "pass") as Camera; scene.sweep = false; scene.beam = true; scene.walking = true
+        camera.flashlight = state.torch ?? true
+        patch(); reshape(); advance(clock); previous = current
+        placeCamera(); view.resetExposure(); meterPending = true
+      },
+      async settle(n) {
+        view.renderer.resetProofHistory()
+        await settleFrames(n, draw, gpu.device.queue)
+        if (meterPending) { view.resetExposure(); meterPending = false }
+      },
+      grab: () => captureCanvas(canvas, draw, () => {
+        const p = project(), points = [p.body, ...p.joints].filter((p): p is number[] => !!p)
+        if (!points.length) throw new Error("Spider is behind the camera")
+        const x = Math.max(0, Math.floor(Math.min(...points.map(p => p[0]!)) - 12)), y = Math.max(0, Math.floor(Math.min(...points.map(p => p[1]!)) - 12))
+        const right = Math.min(canvas.width, Math.ceil(Math.max(...points.map(p => p[0]!)) + 12)), bottom = Math.min(canvas.height, Math.ceil(Math.max(...points.map(p => p[1]!)) + 12))
+        if (right <= x || bottom <= y) throw new Error("Spider is outside the frame")
+        return { exposure: view.settings.exposure * view.camera.exposure, time: clock, region: { x, y, width: right - x, height: bottom - y } }
+      }),
+      subject: visible => { hidden = !visible; view.renderer.resetTemporalHistory() },
+    }
+  }
   requestAnimationFrame(loop)
 }
 

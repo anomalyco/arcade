@@ -1170,6 +1170,13 @@ export class Renderer {
     this.resetVolumeHistory()
   }
 
+  /** Opt-in still proofs: restart TAA and volume sampling at the same phase as well as clearing history. */
+  resetProofHistory(): void {
+    this.temporal?.reset(0)
+    this.volumeFrame = 0
+    this.resetVolumeHistory()
+  }
+
   /** Temporal resolve telemetry, or null when it is off. */
   get temporalState(): TemporalState | null {
     return this.temporalSettings && this.temporal ? this.temporal.state(this.temporalSettings.mode) : null

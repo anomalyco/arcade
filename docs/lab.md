@@ -8,6 +8,9 @@ The rules below apply to new authoring work. Existing gaps are listed explicitly
 
 ## Browser proof budget
 
+Run the [rendered-frame quality gates](quality-gates.md) before showing Kit captures from an adopted scene.
+The warm sweep checks all requested states in one budget and labels failed evidence as diagnostic.
+
 Every Chromium proof, capture and Lab script owns one `browserBudget()` from
 `scripts/browser-budget.ts`, held with `await using budget = browserBudget()`. Launch through
 `budget.chromium`; keep existing server cleanup and any early browser closes. `await using` supplies

@@ -52,6 +52,11 @@ const LAB_PANEL_TRANSITIVE_SPECS = [
 
 export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
   {
+    area: "`proof/*`",
+    description: "Rendered-frame quality gates and deterministic warm-sweep capture hooks",
+    match: (s) => s.startsWith("@arcade/kit/proof/"),
+  },
+  {
     area: "`sim/replay`",
     description: "Seeded input recordings, per-tick state hashes and first-divergence golden checks",
     match: (s) => s === "@arcade/kit/sim/replay",

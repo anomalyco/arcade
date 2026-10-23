@@ -1,0 +1,18 @@
+{
+  "version": 1, "width": 1280, "height": 720, "settleFrames": 24, "probeFrames": 16,
+  "limits": { "slabBrightness": 0.012, "slabMaxCv": 0.3 },
+  "states": [
+    { "id": "today-torch", "state": { "look": "today", "torch": true }, "probes": { "subject": true, "shift": 0.25 } },
+    { "id": "today-dark", "state": { "look": "today", "torch": false } },
+    { "id": "moonlit-torch", "state": { "look": "moonlit", "torch": true }, "probes": { "subject": true } },
+    { "id": "moonlit-dark", "state": { "look": "moonlit", "torch": false } },
+    { "id": "newmoon-torch", "state": { "look": "newmoon", "torch": true }, "probes": { "subject": true, "shift": 0.25 } },
+    { "id": "newmoon-dark", "state": { "look": "newmoon", "torch": false } },
+    { "id": "groundfog-torch", "state": { "look": "groundfog", "torch": true }, "probes": { "subject": true, "shift": 0.25 } },
+    { "id": "groundfog-dark", "state": { "look": "groundfog", "torch": false } },
+    { "id": "stormcoming-torch", "state": { "look": "stormcoming", "torch": true }, "probes": { "subject": true } },
+    { "id": "stormcoming-dark", "state": { "look": "stormcoming", "torch": false } },
+    { "id": "downpour-torch", "state": { "look": "downpour", "torch": true }, "probes": { "subject": true, "shift": 0.25 } },
+    { "id": "downpour-dark", "state": { "look": "downpour", "torch": false } }
+  ]
+}

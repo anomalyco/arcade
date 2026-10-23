@@ -1,0 +1,7 @@
+{
+  "version": 1, "width": 1600, "height": 900, "settleFrames": 32, "probeFrames": 24,
+  "states": [
+    { "id": "pass", "state": { "camera": "pass", "time": 20, "torch": true }, "probes": { "subject": true } },
+    { "id": "distant", "state": { "camera": "distant", "time": 45, "torch": false }, "probes": { "subject": true } }
+  ]
+}

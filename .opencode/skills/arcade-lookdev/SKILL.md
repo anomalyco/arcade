@@ -24,8 +24,10 @@ target, check it before Kit sees it, then put Today and the candidate side by si
    round is reproducible ([docs/lab.md](../../../docs/lab.md)).
 5. Capture headless and muted inside the browser budget, at the target's camera and exposure. Run the quality
    checklist's pre-flight gates (step 5): legible subject, no crushed or clipped frame, nothing at the lens, stable
-   in motion. Automated gates are landing on `quality-gates`; that branch updates this step when it merges. Done
-   when every gate passes or its failure is written down for Kit.
+   in motion. Run `hivemind run --kind browser -- bun scripts/quality-gate.ts barbara --states scripts/quality/states/barbara.json`;
+   for the spider use `lab --states scripts/quality/states/spider.json`. Read
+   [docs/quality-gates.md](../../../docs/quality-gates.md) for adapters, thresholds and output. Done when the
+   scoreboard is complete, every required gate passes, and any slab warnings have been inspected and recorded.
 
 ## Show Kit
 

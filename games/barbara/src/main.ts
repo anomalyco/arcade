@@ -863,8 +863,7 @@ async function main() {
     if (smoke && frames >= 2) paused = true
   }
 
-  Object.assign(window, {
-    woods: {
+  const woods = {
       get ready() { return true }, get frames() { return frames }, get time() { return time }, get paused() { return paused }, set paused(v: boolean) { paused = v },
       renderer, camera, settings, panel, map, held, debug, flares, audio, story, view, look: view.forest.settings, quality, friends, cameraLook, feel, juice, creature, creatures, spider, spiderLab, lakeEditor, endCard, verdictCard, storm,
       /** Automation: name what took her, as if at the radio (`verdict.ts`). */
@@ -923,14 +922,26 @@ async function main() {
         state.tapes.push(tape)
         session.self.map.tapes.push(tape.id)
       },
-    },
-  })
+  }
+  Object.assign(window, { woods })
   // Automation and the Lab's camera station: the fixed night spot with your torch and two friends'.
   if (params.get("lab") === "camera" && !smoke) stageCameraLab((window as unknown as { woods: Parameters<typeof stageCameraLab>[0] }).woods)
   // The Looks station: the same night spot, the knobs open on Looks & Triggers.
   if (params.get("lab") === "looks" && !smoke) {
     stageCameraLab((window as unknown as { woods: Parameters<typeof stageCameraLab>[0] }).woods)
     if (!panel.visible) panel.toggle()
+  }
+  if (params.has("qualityGate") && !online && !smoke) {
+    paused = true
+    // Spawn, then stage the friends on a synthetic clock before the sweep takes ownership.
+    woods.step(1000 / 60); woods.step(1000 / 60)
+    stageCameraLab(woods)
+    for (let i = 0; i < 60; i++) woods.step(1000 / 60)
+    const { installBarbaraLook } = await import("./quality-look")
+    installBarbaraLook(woods, canvas, {
+      translate: (x, z) => { if (session instanceof SoloSession) session.teleport(x, z) },
+      torch: on => { session.self.light = on; camera.flashlight = on; ownLevel = on ? 1 : 0; laggedReady = false },
+    })
   }
   requestAnimationFrame(loop)
 }
