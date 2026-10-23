@@ -105,6 +105,14 @@ export class WoodsAudio {
   private live = false
   private retryAt = 0
   private resuming = false
+  private keepAlive = false
+
+  /** Consented room chat shares the context while the woods are quiet in the lobby/menu. */
+  keepVoiceAlive(on: boolean): void {
+    if (on === this.keepAlive) return
+    this.keepAlive = on
+    if (!on && !this.live && this.running()) this.bank.runtime.suspend()
+  }
 
   constructor(private readonly baseUrl = typeof document === "undefined" ? "./audio/" : new URL("./audio/", document.baseURI).href) {
     if (typeof document === "undefined") return
@@ -149,7 +157,8 @@ export class WoodsAudio {
     this.arriving.length = 0
     this.mix?.scape.stopAll()
     this.mix?.voices.stopAll()
-    if (this.running()) this.bank.runtime.suspend()
+    this.mix?.levels(0, 0, 0, true)
+    if (this.running() && (!this.keepAlive || document.hidden)) this.bank.runtime.suspend()
   }
 
   /** The Lab's sound and voice knobs. Player volume and mute are the game shell's Settings, copied into `bank`. */

@@ -255,7 +255,7 @@ export class VoiceChat {
     }
   }
 
-  /** Read-only diagnostics for the two-client proof; contains no SDP, candidates or credentials. */
+  /** Read-only diagnostics: codec/direction lines only, with no ICE addresses or credentials. */
   diagnostics() {
     const media = (d: RTCSessionDescription | null) => d?.sdp.split(/\r?\n/).filter((l) => /^(m=audio|a=(sendrecv|recvonly|sendonly|inactive|rtpmap|fmtp))/.test(l))
     return { enabled: this.enabled, pending: this.pending, context: this.graph?.ctx.state, transmitting: this.stream?.getAudioTracks().some((t) => t.enabled), peers: [...this.peers].map(([id, p]) => ({ id, connection: p.pc.connectionState, ice: p.pc.iceConnectionState, gathering: p.pc.iceGatheringState, sentIce: p.sentIce, receivedIce: p.receivedIce, signalling: p.pc.signalingState, localMedia: media(p.pc.localDescription), remoteMedia: media(p.pc.remoteDescription), receivedTrack: !!p.source, level: p.audio?.level() ?? 0 })), error: this.error }

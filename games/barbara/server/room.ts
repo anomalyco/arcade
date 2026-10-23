@@ -1,4 +1,5 @@
 import { RoomObject } from "@arcade/kit/server/room-object"
+import { voiceIce } from "@arcade/kit/server/voice-turn"
 import { TICK_HZ } from "../shared/protocol"
 import { type Env, lobbyOf } from "./env"
 import type { RoomReport } from "./lobby"
@@ -9,7 +10,7 @@ export class WoodsRoom extends RoomObject<Env, WoodsRoomCore, RoomReport> {
   protected readonly tickMs = 1000 / TICK_HZ
 
   protected async open(code: string): Promise<WoodsRoomCore> {
-    return (this.core ??= new WoodsRoomCore(code))
+    return (this.core ??= new WoodsRoomCore(code, undefined, undefined, undefined, () => voiceIce(this.env)))
   }
 
   /** Alive while anyone is connected or a dropped person's seat is still held for them. */

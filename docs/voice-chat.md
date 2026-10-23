@@ -32,6 +32,21 @@ microphone mute. M remains game audio mute. Other adopters must check their bind
 Outbreak, and weapon cycle in Carrier. Held inputs release on blur, hidden tabs, menus and Meta release.
 `bindVoiceLab` exposes the typed spatial settings and Reset in the shared LabPanel.
 
+## BARBARA adapter
+
+`games/barbara/src/voice-chat.ts` connects the kit client to BARBARA. It reads each friend's posed head after
+`FriendsView.frame`, maps public room seat IDs to numeric actors through the roster, and tests trunks and terrain
+between the heads. The receiving listener follows the rendered camera. It uses the game's `forestImpulse` on the
+sound bank's context, with its own limiter and volume path. The NPC Voices slider still controls scripted lines;
+Voice volume controls microphones, and master volume/mute controls both. BARBARA has no battery reserve state, so
+radio static currently depends on distance; other adapters can supply `battery` in 0..1.
+
+Voice appears only on a room page. Enabling it in the lobby starts no forest beds or NPC lines. `WoodsAudio`
+keeps its context running while consented chat is enabled, but stops the world mix on pause. Open-mic proximity
+continues in the lobby and menu. Held talk keys release when a menu opens; focus loss and hidden tabs disable
+transmission. Speaking glyphs use the displayed head and are suppressed behind terrain/trunks and beyond range.
+Leaving the page closes the socket, stops the microphone and disposes peer audio.
+
 ## TURN setup
 
 Without Worker secrets this uses Cloudflare STUN only. Direct connections work on compatible networks; symmetric
@@ -64,7 +79,16 @@ through the production audio chain in an `OfflineAudioContext`. It also checks o
 `captures/voice-chat/two-client.json` (or `$LEASE_OUT`). The launcher uses the shared browser budget. No video or
 audible playback is produced.
 
-The proof uses direct host ICE candidates (mDNS disabled only in its Chromium launch) and no public STUN/TURN.
+After `bun run --cwd games/barbara build`, add `--barbara` to check the actual game bundle and Worker. That path
+checks lobby voice while world audio is paused, public-ID player mute, master mute, V/B/N input, reconnect without another
+permission request, and stopped tracks on opt-out. It writes `barbara-voice.json` and one Settings still.
+
+The proof enables direct host/loopback ICE candidates and disables mDNS only in its Chromium launch. The generic
+fixture has no STUN/TURN; BARBARA retains its STUN configuration. Neither run verifies public TURN.
 On Oct 22, 2026, Pro passed: received RMS 0.03392 at 2 m, 0.00073 at 30 m and 0.00139 behind an obstruction;
-offline proximity at 60 m was exactly zero and radio at 300 m was 0.02677. Mini failed to establish direct ICE,
-so it did not exercise audio decoding. Public relay, device permissions and human speech quality remain separate checks.
+offline proximity at 60 m was exactly zero and radio at 300 m was 0.02677. The BARBARA proof also passed on Pro:
+lobby output RMS 0.00529 with no world mix, player/master mute, physical V/B/N, paused-context transmission,
+peer teardown and reconnection on socket drop, and ended microphone tracks on opt-out. The key proof uses the
+game's existing `autoplay` hook because headless pointer lock is unavailable. Both runs had zero page errors.
+Mini could exchange offers and candidates but failed direct ICE even with loopback enabled, so it never reached
+audio decoding. Public relay, device permissions and human speech quality remain separate checks.

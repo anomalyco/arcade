@@ -6,10 +6,12 @@ import { spawn } from "node:child_process"
 import { once } from "node:events"
 import { browserBudget } from "./browser-budget"
 import type { VoiceProof } from "./voice/client"
+import { proveBarbaraVoice } from "./voice/barbara"
 
 declare global { interface Window { proof: VoiceProof } }
 
 const out = process.env.LEASE_OUT ?? "captures/voice-chat"
+const barbara = process.argv.includes("--barbara")
 await mkdir(out, { recursive: true })
 // Deterministic mic: two speech-band tones, long enough for the complete proof, never sent to a speaker.
 const wav = Buffer.alloc(44 + 48000 * 90 * 2)
@@ -19,7 +21,7 @@ for (let i = 0; i < (wav.length - 44) / 2; i++) wav.writeInt16LE(Math.round(4000
 const mic = resolve(out, "microphone.wav")
 await writeFile(mic, wav)
 // Wrangler's Node HTTP upgrade proxy must run on Node, not Bun's partial upgrade implementation.
-const worker = spawn("node", ["node_modules/wrangler/bin/wrangler.js", "dev", "--config", "scripts/voice/wrangler.jsonc", "--local", "--ip", "127.0.0.1", "--port", "0", "--inspector-port", "0"], { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, CI: "true", WRANGLER_SEND_METRICS: "false" } })
+const worker = spawn("node", ["node_modules/wrangler/bin/wrangler.js", "dev", "--config", barbara ? "games/barbara/wrangler.jsonc" : "scripts/voice/wrangler.jsonc", "--local", "--ip", "127.0.0.1", "--port", "0", "--inspector-port", "0"], { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, CI: "true", WRANGLER_SEND_METRICS: "false" } })
 let workerLog = ""
 const ready = new Promise<string>((resolve, reject) => {
   const timer = setTimeout(() => { worker.kill(); reject(new Error(`Wrangler startup timed out: ${workerLog}`)) }, 30_000)
@@ -32,7 +34,10 @@ const vite = await createServer({ configFile: false, root: process.cwd(), logLev
 try {
   await vite.listen()
   await using budget = browserBudget()
-  const browser = await budget.chromium.launch({ headless: true, args: ["--mute-audio", "--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", `--use-file-for-fake-audio-capture=${mic}`, "--autoplay-policy=no-user-gesture-required", "--disable-features=WebRtcHideLocalIpsWithMdns"] })
+  const browser = await budget.chromium.launch({ headless: true, args: ["--mute-audio", "--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", `--use-file-for-fake-audio-capture=${mic}`, "--autoplay-policy=no-user-gesture-required", "--disable-features=WebRtcHideLocalIpsWithMdns", "--allow-loopback-in-peer-connection", ...(barbara ? ["--enable-unsafe-webgpu", "--use-angle=metal", "--ignore-gpu-blocklist"] : [])] })
+  if (barbara) {
+    await proveBarbaraVoice(browser, `${workerUrl}/arcade/barbara/`, out).catch((error) => { console.error("BARBARA proof failed:", error); throw error })
+  } else {
   const url = `http://127.0.0.1:${(vite.httpServer!.address() as { port: number }).port}/?ws=${encodeURIComponent(`${workerUrl.replace("http:", "ws:")}/ws/test`)}`
   const contexts = await Promise.all([browser.newContext(), browser.newContext()])
   const pages = await Promise.all(contexts.map((c) => c.newPage()))
@@ -70,6 +75,7 @@ try {
   await writeFile(`${out}/two-client.json`, JSON.stringify(report, null, 2))
   console.log(JSON.stringify(report, null, 2))
   for (const page of pages) await page.evaluate(() => window.proof.close())
+  }
 } finally {
   await vite.close()
   worker.kill("SIGTERM")

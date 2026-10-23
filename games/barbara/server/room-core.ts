@@ -1,4 +1,5 @@
 import { type Activity, type IdleState, RoomCore } from "@arcade/kit/net/room-core"
+import { VoiceRoom, type VoiceIce } from "@arcade/kit/net/voice"
 import { BUILD } from "../shared/build.gen"
 import {
   decodeClient, encodeServer, GRACE_MS, intentOps, MAX_PLAYERS, nightWire, playerRow, ROOM_FEEL, roundTrail, SNAP_EVERY, tapeRow, TEAM, TICK_DT,
@@ -71,9 +72,10 @@ export class WoodsRoomCore extends RoomCore<ClientMsg, PlayerInput, RosterRow, W
   /** Bytes encoded per seat (bandwidth measurement). */
   readonly bytes = new Map<string, number>()
 
-  constructor(code: string, clock: () => number = Date.now, world: WoodsWorld = makeWorld(), build = BUILD) {
+  constructor(code: string, clock: () => number = Date.now, world: WoodsWorld = makeWorld(), build = BUILD, ice?: () => Promise<VoiceIce>) {
     super({ code, build, title: "Woods", maxPlayers: MAX_PLAYERS, snapEvery: SNAP_EVERY, inputs: intentOps, clock, graceMs: GRACE_MS, idleKickMs: 20 * 60_000, idleWarnMs: 30_000 })
     this.world = world
+    this.voice = new VoiceRoom(ice, clock)
     this.seed = codeSeed(code)
     this.state = createWoods(world, TEAM, this.seed, [])
   }

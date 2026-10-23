@@ -82,6 +82,13 @@ export class PeopleView {
   /** Friends drawn as their person so far (automation). */
   get drawn(): number { return this.persons.size }
 
+  /** The posed head in world metres, after this frame's terrain and skinning update. */
+  head(id: number): V3 | null {
+    const p = this.persons.get(id)
+    const i = p?.rest.idx.head
+    return p?.inst.visible && i !== undefined ? p.pose.pos[i]! : null
+  }
+
   /** Drops friends who left. */
   keep(ids: Set<number>): void {
     for (const [id, person] of this.persons) if (!ids.has(id)) { this.people.remove(person); this.persons.delete(id); this.avatars.delete(id) }
