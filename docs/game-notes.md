@@ -195,6 +195,14 @@ proven animation techniques to animation.md, not here.
   report. It found the director's ramp ending at Night 2 (16 zombies, 3 chasers on every later night); the D-40 night
   ramp (`shared/night-ramp/`, a per-tick `DirectorEscalation`) now lifts both every night up to a ceiling. See
   [outbreak-difficulty.md](outbreak-difficulty.md).
+- **Headless balance runs on the real room.** Carrier's `scripts/balance.ts` opens a dev `RoomCore` with no sockets
+  (`openHeadless`), fills it with 32 match bots that act only through the room's own message handlers, and drives its
+  clock in 50 ms steps as fast as the CPU goes: a full four-carrier match runs at ~20-45× real time per core, so 48
+  matches of up to 40 minutes take ~3 minutes on Bun Workers on a 24-core box. A read-only `onEvent` observer collects
+  what the room applies; results are identical per seed across runs and worker placement, and variants that override
+  the exported tunable objects share seeds, so a sweep compares like with like. The first run (Oct 22, after aircraft
+  damage was halved) found rams and the 5-inch gun doing ~80% of carrier damage and contested zones, not damage,
+  setting the match length. See games/carrier/AGENTS.md "Balance".
 
 ## Rendering (WebGPU)
 
