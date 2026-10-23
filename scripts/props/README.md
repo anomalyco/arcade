@@ -17,7 +17,7 @@ Work files (source images, raw GLBs, previews, reports) live outside the repo, b
    2password run --env "OPENAI_API_KEY=op://Automation/OpenAI API Key/credential" -- bun scripts/props/source-images.ts
    ```
 
-2. **TRELLIS.2**, `trellis-batch.py` (via `generate.ts`, or alone): BiRefNet cutout (skipped when the source or cached cutout PNG already has alpha), image → 3D on the Apple Silicon Metal port at `~/code/experiments/image-to-3d/trellis2-mac` through the resident `trellis_worker.py` daemon (`low_vram=False`, 5-minute idle auto-unload), exported as a 40k-triangle GLB with direct O-Voxel vertex attributes (`COLOR_0`, or `--with-texture` for a 2048² UV atlas).
+2. **TRELLIS.2**, `trellis-batch.py` (via `generate.ts`, or alone): BiRefNet cutout (skipped when the source or cached cutout PNG already has alpha), image → 3D on the Apple Silicon Metal port at `~/code/experiments/image-to-3d/trellis2-mac` through the resident `trellis_worker.py` daemon (`low_vram=False`, 5-minute idle auto-unload), exported as a 40k-triangle GLB with a 2048² UV/PBR atlas (or `--vertex-color-only` for direct O-Voxel `COLOR_0`).
    - **Kit's fleet routing (default)**: `--worker mini` (or `--worker pro` fallback; `studio` is refused unless `ALLOW_STUDIO_TRELLIS=1`), one job at a time via `hivemind run --kind render --worker mini`.
    - **Standalone local Apple Silicon Mac**: pass `--worker local` (`bun scripts/props/generate.ts --worker local ...`) or invoke `trellis_worker.py` / `trellis-batch.py` directly after running `bash scripts/props/setup-trellis.sh`.
 3. **Blender cleanup**, `blender-cleanup.py` (headless Blender 5.2, one process for all props):
@@ -77,8 +77,8 @@ Generate a 3D GLB model from <image> using Arcade's Stage 1 TRELLIS.2 Apple Sili
 1. Read `scripts/props/README.md` and `scripts/props/patches/manifest.json`.
 2. If running on a standalone Apple Silicon Mac (not Kit's HiveMind fleet), ensure `~/code/experiments/image-to-3d/trellis2-mac` is provisioned by running `bash scripts/props/setup-trellis.sh` (requires Xcode Metal Toolchain and ~11 GB free in `~/.cache/huggingface` for the 512-pipeline weights on first run). If running on Kit's fleet, route the job to `mini` with `hivemind run --no-sync --kind render --worker mini` (never run heavy TRELLIS jobs on `studio`).
 3. Run the resident worker on `<image>`:
-   `~/code/experiments/image-to-3d/trellis2-mac/.venv/bin/python ~/code/experiments/image-to-3d/trellis2-mac/trellis_worker.py run --id <name> --image <image> --out-glb <out>/<name>.glb --fast-sampler --fill-interior --shape-seeds 3 --vertex-color-only`
-   (pass `--with-texture` instead of `--vertex-color-only` if a 2048x2048 UV texture atlas is needed).
+   `~/code/experiments/image-to-3d/trellis2-mac/.venv/bin/python ~/code/experiments/image-to-3d/trellis2-mac/trellis_worker.py run --id <name> --image <image> --out-glb <out>/<name>.glb --fast-sampler --fill-interior --shape-seeds 3 --with-texture`
+   (pass `--vertex-color-only` instead for an explicit legacy vertex-only source).
 4. Render a quick 3-angle preview thumbnail (or run headless Blender cleanup if producing a `.prop`), and report:
    - Output GLB path and file size in KB
    - Raw vs simplified triangle count (`raw_tris` -> `out_tris`)
@@ -113,9 +113,38 @@ The first batch used 0.4–3k-triangle budgets and an octree remesh, which tore 
 slats). Six small props (typewriter, phone, books, boxes, plates, plant) were redone from chunkier pictures; the first
 pictures had flaps, fronds and levers that shredded. Plates and the typewriter are still the weakest.
 
-The cleanup has no texture atlas. Vertex colour at these budgets reads at the game camera (a 1.8 m counter is about
-240 px wide on Retina), and an atlas would need a textured model path through the shared lit shader. That is the next
-step if small props need sharper print and wear.
+## Textured props
+
+```sh
+bun scripts/props/generate.ts --ids rotary-phone,tv-set,kitchen-counter --textured --worker mini
+```
+
+Map size comes from one library-wide texel density: the next power of two of 256 texels/m × √(surface area / UV
+coverage), clamped to 128–512 (`--texel-density`, `--max-texture-size`; `--texture-size` pins one size for all).
+The rotary phone bakes at 256², the TV and counter at 512².
+
+TRELLIS now defaults to a UV/PBR source; `trellis-batch.py --vertex-color-only` requests the older fast route.
+Vertex-only cache entries regenerate when PBR is requested. `--skip-trellis` reuses a valid textured raw GLB.
+The default cleanup still emits two-LOD `.prop`; `--textured` emits one LOD0 `.glb` alongside it.
+
+The textured cleanup selects a decimated candidate within the catalogue budget and rejects two-sided p90 surface
+error above 0.025 of its bounding diagonal. It normalises UV island density, packs with two-texel spacing, then
+uses Cycles selected-to-active to transfer base colour, tangent normal, AO, roughness and metallic. AO/roughness/
+metallic share one ORM image. Base and scalar passes use emission, so no new direct lighting enters the albedo.
+Existing lighting in generated source colour remains; this is not an intrinsic-image de-lighting algorithm.
+
+`@gltf-transform/cli@4.3.0` writes lossless WebP textures in the GLB. Three 512² RGBA maps with mips cost ~4 MiB,
+regardless of compressed file size; a 256² prop costs ~1 MiB. The loader decodes KTX2 to RGBA too. Loading KTX2 as
+BC7/ASTC (BC5 normals) is the next step before a full-library rollout; the numbers are in
+[perf/textured-props.md](../../perf/textured-props.md).
+
+Runtime: `TexturedPropBatches` registers one pass per loaded prop, batching placements per material. Outbreak
+opts in with `propTextures`; failed/loading assets and far LOD use `.prop`. The host passes one `SceneHooks` set
+or one per look variant (plain, noir, painterly, generic), and `setLook` applies its furniture tint, saturation
+and AO floor. Textured instances accept yaw and uniform scale; other rotations belong in glTF node transforms.
+Host material hooks apply after texture sampling.
+
+Measured assets, game-exposure proof and remaining limits: [perf/textured-props.md](../../perf/textured-props.md).
 
 ## Licences
 

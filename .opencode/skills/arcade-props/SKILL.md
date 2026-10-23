@@ -27,9 +27,14 @@ Creatures and rooms: see the method rows in [docs/assets.md](../../../docs/asset
 3. **TRELLIS.2 and Blender cleanup.** `bun scripts/props/generate.ts --ids <ids>` runs both on `mini` (never Studio;
    `--worker pro` is the fallback). Done when `<work>/report.json` lists no failure and the three preview renders read
    as the object.
-4. **Finish.** Today the cleanup bakes Cycles AO and vertex colour. The shared finish pass (wear, edges, material
-   sanity) is landing on `kit-finish`; textured props, which keep TRELLIS's 2048² texture instead of collapsing it to
-   vertex colour, are landing on `kit-textured-props`. Each branch updates this step when it merges.
+4. **Finish.** The default cleanup bakes Cycles AO and vertex colour. For textured props use
+   `generate.ts --textured`: normalised UV islands, high-to-low normal/AO/ORM/base transfer and lossless WebP GLB,
+   with maps sized for 256 texels/m (don't pin `--texture-size` without a reason;
+   [commands and limits](../../../scripts/props/README.md#textured-props)). Check the source albedo for embedded
+   lighting; the transfer preserves it. In the game, give `TexturedPropBatches` the game's own `SceneHookVariants`
+   (every look mode, `postLightMaterial` included) and call `setLook` with the vertex props' `PropLook`. Done when
+   the report has no failures and vertex and textured stills match in exposure in each look mode
+   (`scripts/props/textured-proof.ts`). The shared finish pass (wear, edges, material sanity) is landing on `kit-finish`.
 5. **Check.** `bun test props/` in `packages/kit` (two LODs, floor pivot, size, triangle budget). Then look at it in
    the Lab's `props` station (`bun run arcade station props`) and at the game's own camera, beside its target. Done
    when the tests pass and the in-game still holds up next to the target.

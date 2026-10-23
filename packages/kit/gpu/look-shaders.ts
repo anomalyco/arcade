@@ -66,43 +66,39 @@ const interiorFallback = (declarations = "") =>
   (/fn\s+interior\s*\(/.test(declarations) ? "" : "\nfn interior(p: vec2f) -> bool { return false; }\n") +
   (/var<private>\s+surfaceFootprint\b/.test(declarations) ? "" : "\nvar<private> surfaceFootprint: f32;\n")
 
-export const makeLookSceneShader = (hooks: SceneHooks = {}, variant: LookVariantMode = "generic"): string => {
+export function lookFastSceneHooks(hooks: SceneHooks = {}, variant: LookVariantMode = "generic"): SceneHooks {
   const includeNoir = variant === "noir" || variant === "generic"
   const includePainterly = variant === "painterly" || variant === "generic"
-
-  if (hooks.postLightMaterial) {
-    // Fast-path for games with postLightMaterial (Outbreak): keep register pressure identical to makeSceneShader
-    // while writing per-pixel flashlight irradiance into the HDR target's alpha channel.
-    const declSnippet = wgslSnippet(
-      `lookFastSceneDecl_${variant}`,
-      () => `${hooks.declarations ?? ""}${interiorFallback(hooks.declarations)}\n@group(0) @binding(7) var<uniform> LK: LookUniforms;\n`,
-      [lookGradeSnippet],
-    )
-    const surfBody = hooks.lookSurface ?? hooks.surface ?? ""
-    const presetBranches = [
-      includeNoir
-        ? `if (presetIdx == 1) {
+  const declSnippet = wgslSnippet(
+    `lookFastSceneDecl_${variant}`,
+    () => `${hooks.declarations ?? ""}${interiorFallback(hooks.declarations)}\n@group(0) @binding(7) var<uniform> LK: LookUniforms;\n`,
+    [lookGradeSnippet],
+  )
+  const surfBody = hooks.lookSurface ?? hooks.surface ?? ""
+  const presetBranches = [
+    includeNoir
+      ? `if (presetIdx == 1) {
       if (mat == 9) { col *= 0.14; }
       let topCatch = max(0.12, dot(n, vec3f(-0.3504, 0.8210, -0.4505)));
       let surfBoost = select(select(0.16, 0.02, interior(o.world.xz)), 0.36, mat == 21 || mat == 22);
       col += (${hooks.lookBaseColor ?? "o.color"}) * vec3f(0.014, 0.028, 0.062) * topCatch * surfBoost * LK.moonIntensity;
     }`
-        : "",
-      includePainterly
-        ? `${includeNoir ? "else " : ""}if (presetIdx == 2 || LK.painterlySmooth > 0.35) {
+      : "",
+    includePainterly
+      ? `${includeNoir ? "else " : ""}if (presetIdx == 2 || LK.painterlySmooth > 0.35) {
       let dab = noise2(o.world.xz * 3.8 + vec2f(o.world.y * 1.8, 3.7)) - 0.5;
       let tint = select(vec3f(0.88, 0.94, 1.18), vec3f(1.22, 0.96, 0.68), interior(o.world.xz) && o.world.y < 2.8);
       col = mix(col, col * tint * (1.0 + dab * 0.22), clamp(LK.painterlySmooth * 0.65, 0.0, 0.85));
     }`
-        : "",
-    ]
-      .filter(Boolean)
-      .join(" ")
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" ")
 
-    return makeSceneShader({
-      ...hooks,
-      declarations: resolveWgsl(declSnippet, [[lookVariantSlot, variant]]),
-      surface: `${surfBody}
+  return {
+    ...hooks,
+    declarations: resolveWgsl(declSnippet, [[lookVariantSlot, variant]]),
+    surface: `${surfBody}
   let lookCompare = i32(round(LK.compareMode));
   let lookUseAfter = select(lookCompare == 1, (o.pos.x / max(1.0, F.screen.x)) >= LK.wipeSplit, lookCompare == 2) && LK.activeFlag > 0.5;
   let lookFlashIrradiance = select(clamp(outbreakFlashMask, -6.0, 0.0), clamp(outbreakFlashMask, -6.0, 1.0), lookUseAfter);
@@ -111,10 +107,20 @@ export const makeLookSceneShader = (hooks: SceneHooks = {}, variant: LookVariant
     ${presetBranches}
   }
 `,
-      fragmentReturn: `let outRgb = select(col * a, col, mat == 22 && o.aux >= -1.5);
+    fragmentReturn: `let outRgb = select(col * a, col, mat == 22 && o.aux >= -1.5);
   let outAlpha = select(a, 1.0 - lookFlashIrradiance, a >= 0.999);
   return vec4f(outRgb, outAlpha);`,
-    })
+  }
+}
+
+export const makeLookSceneShader = (hooks: SceneHooks = {}, variant: LookVariantMode = "generic"): string => {
+  const includeNoir = variant === "noir" || variant === "generic"
+  const includePainterly = variant === "painterly" || variant === "generic"
+
+  if (hooks.postLightMaterial) {
+    // Fast-path for games with postLightMaterial (Outbreak): keep register pressure identical to makeSceneShader
+    // while writing per-pixel flashlight irradiance into the HDR target's alpha channel.
+    return makeSceneShader(lookFastSceneHooks(hooks, variant))
   }
 
   const declSnippet = wgslSnippet(

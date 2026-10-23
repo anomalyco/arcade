@@ -10,7 +10,7 @@
  * 3. Blender cleanup (headless, one process for all props) into packages/kit/props/assets/<id>.prop.
  * Writes <work>/report.json with per-prop seconds, triangles and bytes, and fixes from `fixups.json`.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { PROP_IDS, PROP_SPECS } from "../../packages/kit/props/catalogue"
 import { arg, trellisHome, workDir } from "./work"
@@ -26,6 +26,18 @@ const ids = arg("--ids")?.split(",") ?? PROP_IDS
 const idCsv = ids.join(",")
 const skipTrellis = process.argv.includes("--skip-trellis")
 const force = process.argv.includes("--force")
+const textured = process.argv.includes("--textured")
+// Textured maps are sized per prop from one library-wide texel density (texels/m over the packed UVs, next power of
+// two, 128 to --max-texture-size). --texture-size pins every prop to one size instead.
+const sizeFlags = (["--texture-size", "--texel-density", "--max-texture-size"] as const).flatMap(flag => {
+  const value = arg(flag)
+  if (value === undefined) return []
+  if (flag !== "--texel-density" && ![128, 256, 512, 1024].includes(Number(value))) throw new Error(`${flag} must be 128, 256, 512 or 1024`)
+  if (flag === "--texel-density" && !(Number(value) > 0)) throw new Error("--texel-density must be positive")
+  return [flag, value]
+})
+const bakeFlags = textured ? ["--textured", ...sizeFlags] : []
+const extension = textured ? "glb" : "prop"
 mkdirSync(out, { recursive: true })
 
 const run = async (cmd: string[], label: string) => {
@@ -67,6 +79,7 @@ if (isRemote) {
     specFile,
     join(repo, "scripts/props/trellis-batch.py"),
     join(repo, "scripts/props/blender-cleanup.py"),
+    join(repo, "scripts/props/blender-pbr.py"),
     `${remoteDest}/scripts/`,
   ], "Sync scripts and specs.json")
 
@@ -96,21 +109,34 @@ if (!skipTrellis) {
 }
 
 const blenderS = await execStage(
-  `blender -b --factory-startup -P "${remoteWork}/scripts/blender-cleanup.py" -- --work "${remoteWork}" --out "${remoteWork}/assets" --spec "${remoteWork}/scripts/specs.json" --ids "${idCsv}"`,
+  `blender -b --factory-startup --python-exit-code 1 -P "${remoteWork}/scripts/blender-cleanup.py" -- --work "${remoteWork}" --out "${remoteWork}/assets" --spec "${remoteWork}/scripts/specs.json" --ids "${idCsv}" ${bakeFlags.join(" ")}`,
   [
-    "blender", "-b", "--factory-startup", "-P", "scripts/props/blender-cleanup.py", "--",
+    "blender", "-b", "--factory-startup", "--python-exit-code", "1", "-P", "scripts/props/blender-cleanup.py", "--",
     "--work", work, "--out", out, "--spec", specFile, "--ids", idCsv,
+    ...bakeFlags,
   ],
   "Blender cleanup",
 )
+
+// Lossless WebP keeps normal and packed ORM channels exact. It saves download bytes, not GPU memory.
+if (textured) for (const id of ids) {
+  const remoteInput = `${remoteWork}/assets/${id}.glb`
+  const localInput = join(out, `${id}.glb`)
+  await execStage(
+    `bunx --yes @gltf-transform/cli@4.3.0 webp "${remoteInput}" "${remoteInput}.webp.glb" --lossless true && mv "${remoteInput}.webp.glb" "${remoteInput}"`,
+    ["bunx", "--yes", "@gltf-transform/cli@4.3.0", "webp", localInput, `${localInput}.webp.glb`, "--lossless", "true"],
+    `Compress ${id} PBR`,
+  )
+  if (!isRemote) await run(["mv", `${localInput}.webp.glb`, localInput], `Keep compressed ${id}`)
+}
 
 if (isRemote) {
   mkdirSync(join(work, "raw"), { recursive: true })
   await run([
     "rsync", "-a",
-    ...ids.map(id => `${remoteDest}/assets/${id}.prop`),
+    ...ids.map(id => `${remoteDest}/assets/${id}.${extension}`),
     `${out}/`,
-  ], `Fetch ${ids.length} .prop asset(s)`)
+  ], `Fetch ${ids.length} .${extension} asset(s)`)
   await run([
     "rsync", "-a",
     `${remoteDest}/cleanup-report.json`,
@@ -140,7 +166,7 @@ if (existsSync(prevReportPath)) {
     for (const r of prev.rows ?? []) rowMap.set(r.id, r)
   } catch {}
 }
-for (const c of cleanup) rowMap.set(c.id, { ...c, trellis: timings.get(c.id) })
+for (const c of cleanup) rowMap.set(c.id, { ...c, bytes: statSync(join(out, `${c.id}.${extension}`)).size, trellis: timings.get(c.id) })
 const rows = Array.from(rowMap.values())
 const totalBytes = rows.reduce((n, r) => n + r.bytes, 0)
 const gen = rows.map(r => r.trellis?.total_s).filter((v): v is number => v !== undefined)

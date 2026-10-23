@@ -72,7 +72,12 @@ export interface PassContext {
   readonly depthClearValue?: number
   /** MSAA sample count (4). */
   readonly samples: number
+  /** The scene shader the renderer draws this frame: its plain hooks, or a look variant. Read inside `draw`. */
+  readonly sceneVariant?: () => SceneVariant
 }
+
+/** `"plain"` is the renderer's own scene shader; the others are `makeLookSceneShader` variants. */
+export type SceneVariant = "plain" | "noir" | "painterly" | "generic"
 
 export interface ScenePass {
   /** Called inside the main HDR render pass with group 0 (Frame) already bound. Set your own pipeline and group 1+. */

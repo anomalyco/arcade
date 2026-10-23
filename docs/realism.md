@@ -478,8 +478,21 @@ lanes, doors and colliders; raising a density only adds items (`packages/kit/sim
   (`games/lot/src/interior/finishes.ts`), locked to Lot uniforms for now.
 - **Wear materials and finish pass (landing, branch `kit-finish`).** Shared wear materials and a finish pass every
   model goes through. The branch fills in this entry (where, cost, Kit's decision, pitfalls) when it merges.
-- **Textured props (landing, branch `kit-textured-props`).** Props that keep their texture instead of collapsing to
-  vertex colour. The branch fills in this entry (where, cost, Kit's decision, pitfalls) when it merges.
+- **Textured props (opt-in; Kit's pick pending).** `gpu/textured-mesh.ts` draws repeated
+  GLB primitives with one instanced draw per material, on the host's existing lights, shadows, fog and exposure.
+  `props/textured.ts` lazily loads nearby placements and keeps `.prop` fallbacks until ready. Outbreak's phone,
+  TV and counter are opt-in under Props › PBR textures. Pass `SceneHookVariants` and the pass follows the renderer's
+  look mode (`PassContext.sceneVariant`); `propLookHooks` applies the same `PropLook` grade as `.prop` vertex
+  colours, so textured and vertex furniture sit at one exposure in noir, painterly, generic and plain.
+  `scripts/props/blender-pbr.py` bakes normal/AO/ORM and base colour onto density-normalised low-poly UVs, sized for
+  256 texels/m library-wide (128–512 px until compression lands).
+  Cost: RGBA8 in memory, 1 MiB per 256² set and 4 MiB per 512² set with mips; the Outbreak batch is 9 MiB. The full
+  library at 512² would be 104 MiB, over the 32 MB target; BC7/BC5/ASTC would make it 26 MiB (the next step, with
+  numbers, in [textured props](../perf/textured-props.md)). Kit: blocked BARBARA's scripted cooler; pick pending.
+  Pitfalls: a game's textured hooks must be its full scene hooks per look variant, including `postLightMaterial`;
+  dropping it took the counter nearly black. Generated albedo can retain source lighting; base-only transfer does
+  not de-light it. Instances support yaw/uniform scale only; bake pitch/roll into the source transforms. Wear hooks
+  run after texture sampling so a host can layer its finish.
 - Pitfalls: coplanar trim makes moving patches (Night Shift partition rails); noise octaves and bump normals must fade
   by footprint. Kit vertex colours are sRGB and the shader linearises them, so a dark value goes far darker: 0.085
   became 0.4 % linear albedo and the spider's second round was invisible. Not built: triplanar wear on props and cars.

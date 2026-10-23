@@ -1,12 +1,14 @@
 import type { Batch, Renderer } from "@arcade/kit/gpu/renderer"
 import { PROP_IDS } from "@arcade/kit/props/catalogue"
 import { PropBatches, PropLibrary, PropModels, type PropInstance } from "@arcade/kit/props/models"
+import { TexturedPropBatches } from "@arcade/kit/props/textured"
 import type { QualityProfile } from "@arcade/kit/quality"
 import type { Rect } from "@arcade/kit/sim/geom"
 import type { Town } from "../../shared/map"
 import { furnishedHouses, instancesOf, usedPropIds, type HouseFurnishing } from "./furnish"
 import { PROP_LOD_HYSTERESIS, type OutbreakPropSettings } from "./settings"
 import { propDressingState } from "./state"
+import { outbreakTexturedSceneHooks } from "../shaders"
 
 const NONE: readonly Batch[] = []
 let current: PropDressing | null = null
@@ -27,11 +29,16 @@ export class PropDressing {
   private instances: PropInstance[] = []
   private usedIds: string[] = []
   private currentZoomLod: 0 | 1 | null = null
+  private readonly textured: TexturedPropBatches | null
 
   /** `lampAux`: the map light slot lamp shades glow through (Outbreak's `TABLE_LAMP_SLOT`). */
-  constructor(renderer: Pick<Renderer, "addModel" | "setModel">, lampAux?: number, library?: PropLibrary) {
+  constructor(renderer: Pick<Renderer, "addModel" | "setModel"> & Partial<Pick<Renderer, "passContext" | "addPass" | "removePass">>, lampAux?: number, library?: PropLibrary) {
     this.models = new PropModels(renderer, library, { lampAux, boxFallback: true })
     this.batches = new PropBatches(this.models)
+    this.textured = renderer.passContext && renderer.addPass && renderer.removePass
+      ? new TexturedPropBatches({ passContext: renderer.passContext, addPass: renderer.addPass.bind(renderer), removePass: renderer.removePass.bind(renderer) },
+        outbreakTexturedSceneHooks(), new Set(["rotary-phone", "tv-set", "kitchen-counter"]))
+      : null
     current = this
   }
 
@@ -62,10 +69,14 @@ export class PropDressing {
       st.seed = s.propSeed
       rebuildLevel()
     }
-    if (!on) return NONE
+    if (!on) {
+      this.textured?.collect([], false, () => false)
+      return NONE
+    }
     // Satin furniture: slightly darker, more saturated, with a raised AO floor so contact shadows hold at a distance.
     const look = { brightness: s.propBrightness * 0.94, ao: Math.min(1, Math.max(s.propAO, 0.62)), saturation: s.propSaturation * 1.16 }
     this.models.setLook(look)
+    this.textured?.setLook(look)
     const houses = furnishedHouses(town)
     if (houses !== this.houses) {
       this.houses = houses
@@ -106,10 +117,12 @@ export class PropDressing {
     }
     const lod = Math.max(quality.minPropLod, this.currentZoomLod)
     const [x0, z0, x1, z1] = view
+    const visible = (p: PropInstance) => p.x > x0 - 2 && p.x < x1 + 2 && p.z > z0 - 2 && p.z < z1 + 2
+    const replaced = this.textured?.collect(this.instances, Boolean(s.propTextures) && lod === 0, visible)
     return this.batches.collect(
       this.instances,
       () => lod,
-      p => p.x > x0 - 2 && p.x < x1 + 2 && p.z > z0 - 2 && p.z < z1 + 2,
+      p => visible(p) && !replaced?.(p),
     )
   }
 
@@ -119,6 +132,7 @@ export class PropDressing {
       on: propDressingState.on,
       furnishedReady: this.furnishedReady,
       ready: this.ready,
+      textured: this.textured?.stats() ?? null,
       usedProps: this.usedIds.length,
       failed: [...this.models.library.failed],
       houses: this.houses.map(h => ({ building: h.building, anchors: h.anchors.length, clutter: h.clutter.length, trianglesLod0: h.triangles })),

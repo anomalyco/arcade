@@ -8,6 +8,7 @@ const GROUP = "Props"
 function controls(): LabControl[] {
   return [
     { key: "propsOn", label: "Furnish start houses (prop library)", group: GROUP, type: "toggle" },
+    { key: "propTextures", label: "Textured close-up props", group: GROUP, type: "toggle" },
     { key: "propClutter", label: "Clutter density", group: GROUP, min: 0, max: 2, step: 0.05, unit: "×" },
     { key: "propSeed", label: "Clutter reroll", group: GROUP, min: 0, max: 99, step: 1, unit: "" },
     { key: "propLodZoom", label: "Far LOD above zoom", group: GROUP, min: 15, max: 80, step: 1, unit: "m" },

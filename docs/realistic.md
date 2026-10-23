@@ -22,7 +22,7 @@ branch fills in the row when it merges.
 | Indirect light | Top-down: plan bounce (`gpu/gi/plan-bounce.ts`). Interiors: baked lightmaps, landing on `kit-lightmaps` | Shipped / Landing | First-person torch hit bounce is not built. |
 | Surfaces | Scans (Poly Haven, ambientCG; [assets.md](assets.md)); footprint-filtered recipes (`gpu/surface-materials.ts`); `normal-mips`, `image-mips` | Shipped | No flat colour near the camera. |
 | Wear and finish materials | Landing on `kit-finish` | Landing | Until then: the Lot's `src/interior/finishes.ts`, Outbreak's vertex tone stamp. |
-| Textured props | Landing on `kit-textured-props` | Landing | Until then: `.prop` vertex-colour props, background only. |
+| Textured props | `gpu/textured-mesh`, `props/textured`; Outbreak Props › PBR textures | Shipped, off by default | Three furniture GLBs in every look mode at the vertex props' exposure; Kit's visual pick pending. Hand the pass the game's `SceneHookVariants`. [Cost and limits](../perf/textured-props.md). |
 | Glass and interiors | `thinGlassHooks`, `interiorWindowHooks` (`gpu/materials/glass.ts`) | Shipped | |
 | Wet ground and reflections | `gpu/reflections/wet.ts`; SSR (`gpu/reflections/ssr.ts`) where wet or glossy floors face the camera | Shipped | SSR is Lot-only so far. |
 | TAA | `gpu/temporal.ts` with the reactive mask (`gpu/reactive.ts`) | Shipped | Lot and Night Shift use it; Outbreak keeps MSAA by default. |

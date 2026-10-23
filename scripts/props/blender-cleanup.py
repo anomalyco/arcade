@@ -15,6 +15,9 @@ import os
 import struct
 import sys
 import time
+import hashlib
+import importlib.util
+import traceback
 
 import bmesh
 import bpy
@@ -32,6 +35,14 @@ WORK = opt("--work")
 OUT = opt("--out")
 SPECS = json.load(open(opt("--spec")))
 IDS = [s for s in (opt("--ids") or "").split(",") if s] or [s["id"] for s in SPECS["props"]]
+TEXTURED = "--textured" in argv
+# Map size comes from one library-wide texel density unless --texture-size pins it (blender-pbr.texture_size_for).
+TEXTURE_SIZE = int(opt("--texture-size", "0")) or None
+TEXEL_DENSITY = float(opt("--texel-density", "256"))
+MAX_TEXTURE_SIZE = int(opt("--max-texture-size", "512"))
+for _size in (TEXTURE_SIZE, MAX_TEXTURE_SIZE):
+    if _size is not None and _size not in (128, 256, 512, 1024):
+        raise ValueError("texture sizes must be 128, 256, 512 or 1024")
 FIX = SPECS.get("fixups", {})
 PREVIEW = os.path.join(WORK, "preview")
 os.makedirs(PREVIEW, exist_ok=True)
@@ -595,6 +606,54 @@ class Reference:
         return float(a + b) / self.diag
 
 
+def build_textured(pid, raw):
+    """Keep source PBR, choose a low-poly surface, then transfer to a density-normalised atlas."""
+    spec = next(s for s in SPECS["props"] if s["id"] == pid)
+    started = time.time()
+    reset()
+    source = import_raw(raw)
+    if not source.data.uv_layers or not images(source)[0]:
+        raise ValueError("Textured cleanup needs a UV/PBR source; regenerate with --with-texture --force")
+    drop_floaters(source)
+    yaw, size = orient_and_scale(source, spec, FIX.get(pid, {}))
+    drop_hidden(source)
+    reference = Reference(source)
+    budget = spec["lod"][0]
+    best = None
+    scores = {}
+    for name in FIX.get(pid, {}).get("candidates", ["source", "filled", "octree 7", "octree 8"]):
+        if name.startswith("octree") and best is not None:
+            break
+        solid = candidate_solid(pid, source, name)
+        low = decimate(solid, budget)
+        bpy.data.objects.remove(solid)
+        count = len(low.data.polygons)
+        if count > budget * 1.02:
+            scores[name] = f"stalled at {count}"
+            bpy.data.objects.remove(low)
+            continue
+        error = reference.error(low)
+        scores[name] = error
+        if best is None or error < best[0]:
+            if best:
+                bpy.data.objects.remove(best[1])
+            best = (error, low)
+        else:
+            bpy.data.objects.remove(low)
+    if best is None or best[0] > 0.025:
+        raise ValueError(f"No mesh within budget and 0.025 two-sided p90 error: {scores}")
+    error, low = best
+    module_spec = importlib.util.spec_from_file_location("blender_pbr", os.path.join(os.path.dirname(__file__), "blender-pbr.py"))
+    baker = importlib.util.module_from_spec(module_spec)
+    module_spec.loader.exec_module(baker)
+    path = os.path.join(OUT, f"{pid}.glb")
+    bake = baker.bake_pbr(source, low, path, TEXTURE_SIZE, density=TEXEL_DENSITY, max_size=MAX_TEXTURE_SIZE)
+    return {"id": pid, "yaw": yaw, "size": size, "mesh": scores, "error": error,
+            "lods": [{"tris": len(low.data.polygons)}], "bytes": os.path.getsize(path),
+            "source_sha256": hashlib.sha256(open(raw, "rb").read()).hexdigest(),
+            "seconds": round(time.time() - started, 1), **bake}
+
+
 def build(pid, raw):
     spec = next(s for s in SPECS["props"] if s["id"] == pid)
     t0 = time.time()
@@ -687,11 +746,13 @@ report, failed = [], []
 for pid in IDS:
     raw = os.path.join(WORK, "raw", f"{pid}.glb")
     if not os.path.exists(raw):
-        print(f"{pid}: no raw glb, skipped")
+        failed.append({"id": pid, "error": "no raw glb"})
+        print(f"{pid}: no raw glb")
         continue
     try:
-        rec = build(pid, raw)
+        rec = build_textured(pid, raw) if TEXTURED else build(pid, raw)
     except Exception as e:  # one bad mesh should not cost the batch
+        traceback.print_exc()
         print(f"FAILED {pid}: {e}", flush=True)
         failed.append({"id": pid, "error": str(e)})
         continue
@@ -700,3 +761,5 @@ for pid in IDS:
 
 json.dump(report, open(os.path.join(WORK, "cleanup-report.json"), "w"), indent=1)
 json.dump(failed, open(os.path.join(WORK, "cleanup-failed.json"), "w"), indent=1)
+if failed:
+    sys.exit(1)

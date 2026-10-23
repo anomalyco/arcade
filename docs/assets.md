@@ -98,8 +98,14 @@ atlas) and `rug-sheet.ts`.
 `generate.ts` runs it. Meshes are blobby up close, thin panels tear and small text is mush: use them for background
 props seen from Outbreak's camera, not held or inspected objects. Night Shift replaced its TRELLIS CRT, phone and
 rolodex with authored models (`games/nightshift/scripts/author-hard-surface.py`) for this reason. The `arcade-props`
-skill runs the pipeline end to end. Textured props, which keep TRELLIS's texture instead of vertex colour, are landing
-on `kit-textured-props`; that branch updates this paragraph when it merges.
+skill runs the pipeline end to end. `generate.ts --textured` adds textured GLBs: density-normalised UVs, Cycles
+high-to-low base/normal/AO/ORM, then lossless WebP. Map size follows one library-wide texel density, 256 texels/m
+over the packed UVs (next power of two, 128–512 px; `--texel-density`, `--max-texture-size`). Three regenerated
+furniture props use the shared instanced `TexturedMeshPass` in Outbreak (Lab › Props › PBR textures, off by
+default), graded with the same `PropLook` as the vertex props in every look mode. The `.prop` fallback and far LOD
+remain. WebP saves download bytes, not GPU memory: textures sit in memory as RGBA8, 4 MiB per 512² three-map set
+with mips; GPU block compression is the next step ([numbers](../perf/textured-props.md#memory-gpu-compressed-textures-next-step)).
+Source albedo is transferred without new lighting; existing generated lighting is not removed.
 
 **People, `scripts/people/`.** `build-people.ts` downloads MPFB 2 and the CC0 MakeHuman assets, runs
 `build-person.py` in headless Blender per `cast.json` (body, clothes, hair, procedural beanies, packs, headlamps),
