@@ -12,6 +12,11 @@ Browser games by Anomaly, served at https://anoma.ly/arcade/.
 
 ## Prototypes
 
+Unlisted: [TIMBER](https://anoma.ly/arcade/timber/) — greybox 1-vs-all in a night forest: one chainsaw lumberjack hunts
+three survivors, who fix a logging truck (fuel can, spark plug, keys) to escape and can drop half-cut trees on him. Pick
+a side on the title; bots take the other seats. Free-for-all chainsaw brawl stays on the `mode` knob. Backquote feel
+knobs (`games/timber`, Worker `arcade-timber`). No landing link or indexing.
+
 Unlisted: **Night Shift ’87** — a first-person government office at 2 a.m. Follow the ringing phone, answer with E, listen and hang up. WASD, mouse look, F flashlight, Backquote office settings. (`games/nightshift`, Worker `arcade-nightshift`, `/arcade/nightshift/`). [Credits](games/nightshift/public/CREDITS.md).
 
 Unlisted: [BARBARA](https://anoma.ly/arcade/barbara/) — co-op night search in the woods, alone with three searchers or with up to six friends by link: November 1996, Barbara's car is still in the camp lot. Flashlights, flagging tape, a held survey map and compass, the searchers' voices and something out there. WASD, mouse look, F flashlight, hold E tie tape, hold G map, Backquote knobs (`games/barbara`, Worker `arcade-barbara`). No landing link or indexing.

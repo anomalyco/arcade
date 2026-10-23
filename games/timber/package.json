@@ -1,0 +1,24 @@
+{
+  "name": "@arcade/timber",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "bun test --max-concurrency 4",
+    "typecheck": "bun ../../scripts/typecheck.ts",
+    "check": "bun run typecheck && bun run test && vite build",
+    "deploy": "rm -rf dist && vite build && wrangler deploy"
+  },
+  "dependencies": {
+    "@arcade/kit": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.2",
+    "@webgpu/types": "^0.1.74",
+    "playwright-core": "^1.64.0",
+    "typescript": "7.1.0-beta",
+    "vite": "^8.3.4",
+    "wrangler": "^4.149.0"
+  }
+}
