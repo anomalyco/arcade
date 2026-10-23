@@ -141,22 +141,23 @@ export function weatherEase(u: number): number {
 // ---------------------------------------------------------------------------------------------------------------
 
 /** Mean slot length (s). A kind holds for one or more slots. */
-export const WEATHER_SLOT = 270
+export const WEATHER_SLOT = 150
 /** Each slot boundary moves by up to ± this (s), so dwell times vary. */
-export const WEATHER_JITTER = 50
+export const WEATHER_JITTER = 30
 /** Cross-fade length range at a boundary (s), centred on it. */
-export const WEATHER_FADE: readonly [number, number] = [60, 120]
+export const WEATHER_FADE: readonly [number, number] = [30, 60]
 /** Slots of a new room that are always clear. */
-export const WEATHER_CALM_SLOTS = 2
+export const WEATHER_CALM_SLOTS = 1
 /** Coupling-from-the-past window (slots). */
 export const WEATHER_LOOKBACK = 64
 /**
  * Chain probabilities per slot, by kind index. Steps are to neighbours only. Monotone coupling needs
- * P_UP[i] + P_DOWN[i + 1] <= 1. Stationary shares (detailed balance): clear ~46%, light ~26%, medium ~18%, heavy ~10%;
- * a clear spell lasts ~22 min on average, a storm episode (light and up) ~25 min, heavy ~8 min.
+ * P_UP[i] + P_DOWN[i + 1] <= 1. Stationary shares (detailed balance): clear ~26%, light ~29%, medium ~26%, heavy ~19%;
+ * the weather turns over within a round: a clear spell lasts ~5.5 min on average, a rain spell (light and up) ~15 min
+ * with its heavy stretches ~4.5 min, and a new room is clear only for its first ~2.5 min.
  */
-export const WEATHER_P_UP: readonly number[] = [0.2, 0.25, 0.3, 0]
-export const WEATHER_P_DOWN: readonly number[] = [0, 0.35, 0.35, 0.55]
+export const WEATHER_P_UP: readonly number[] = [0.45, 0.4, 0.4, 0]
+export const WEATHER_P_DOWN: readonly number[] = [0, 0.4, 0.45, 0.55]
 
 function hash(seed: number, a: number, salt: number): number {
   let h = Math.imul((seed ^ 0x3c6ef372) >>> 0, 0x9e3779b1) ^ Math.imul(a | 0, 0x85ebca6b) ^ Math.imul(salt + 0x632be5ab, 0xc2b2ae35)

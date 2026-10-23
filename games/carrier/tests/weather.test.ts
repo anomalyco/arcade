@@ -28,6 +28,9 @@ import {
   unpackWeather,
   WaveClass,
   WEATHER_CALM_SLOTS,
+  WEATHER_FADE,
+  WEATHER_JITTER,
+  WEATHER_SLOT,
   WEATHER_KEYS,
   WEATHER_KINDS,
   WEATHER_PRESETS,
@@ -70,7 +73,7 @@ describe("timeline", () => {
     }
   })
 
-  test("a room starts clear, clear is the most common kind, and kinds only step to neighbours", () => {
+  test("a room starts clear, rain is common in every kind, and kinds only step to neighbours", () => {
     const counts = [0, 0, 0, 0]
     let n = 0
     for (const seed of SEEDS) {
@@ -84,14 +87,13 @@ describe("timeline", () => {
     }
     const share = counts.map((c) => c / n)
     console.log(`kind shares: ${WEATHER_KINDS.map((k, i) => `${k} ${(share[i]! * 100).toFixed(1)}%`).join(", ")}`)
-    expect(share[0]!).toBeGreaterThan(0.4)
-    expect(share[0]!).toBeGreaterThan(share[1]!)
-    expect(share[1]!).toBeGreaterThan(share[2]!)
-    expect(share[2]!).toBeGreaterThan(share[3]!)
-    expect(share[3]!).toBeGreaterThan(0.06)
+    // Within a round players see the weather turn: no kind dominates, and it rains most of the time.
+    for (const x of share) expect(x).toBeGreaterThan(0.15)
+    expect(share[0]!).toBeLessThan(0.35)
+    expect(share[3]!).toBeLessThan(share[1]!)
   })
 
-  test("is continuous: smooth 60-120 s fades, never a step", () => {
+  test("is continuous: smooth fades, never a step", () => {
     for (const seed of SEEDS.slice(0, 4)) {
       const prev = weatherAt(seed, 0)
       const cur = makeWeather()
@@ -102,8 +104,8 @@ describe("timeline", () => {
         worst = Math.max(worst, maxFieldDiff(prev, cur))
         Object.assign(prev, cur)
       }
-      // smootherstep's peak slope is 15/8 per fade; the shortest fade is 60 s and adjacent presets differ by < 0.65.
-      expect(worst).toBeLessThan((15 / 8 / 60) * dt * 0.65 + 1e-9)
+      // smootherstep's peak slope is 15/8 per fade; adjacent presets differ by < 0.65.
+      expect(worst).toBeLessThan((15 / 8 / WEATHER_FADE[0]) * dt * 0.65 + 1e-9)
     }
   })
 
@@ -112,8 +114,8 @@ describe("timeline", () => {
       for (let k = WEATHER_CALM_SLOTS; k < 400; k++) {
         const start = slotStart(seed, k)
         const fade = slotFade(seed, k)
-        expect(fade).toBeGreaterThanOrEqual(60)
-        expect(fade).toBeLessThanOrEqual(120)
+        expect(fade).toBeGreaterThanOrEqual(WEATHER_FADE[0])
+        expect(fade).toBeLessThanOrEqual(WEATHER_FADE[1])
         expect(slotAt(seed, start + 0.001)).toBe(k)
         expect(slotAt(seed, start - 0.001)).toBe(k - 1)
         const before = WEATHER_PRESETS[WEATHER_KINDS[slotKind(seed, k - 1)]!]
@@ -121,13 +123,13 @@ describe("timeline", () => {
         expect(maxFieldDiff(weatherAt(seed, start - fade / 2 - 0.01), before)).toBeLessThan(1e-9)
         expect(maxFieldDiff(weatherAt(seed, start + fade / 2 + 0.01), after)).toBeLessThan(1e-9)
         // Some dwell between this fade and the next.
-        expect(slotStart(seed, k + 1) - slotFade(seed, k + 1) / 2 - (start + fade / 2)).toBeGreaterThan(40)
+        expect(slotStart(seed, k + 1) - slotFade(seed, k + 1) / 2 - (start + fade / 2)).toBeGreaterThan(20)
       }
       const spans = weatherSchedule(seed, 3 * 3600, 12)
       expect(spans.length).toBe(12)
       for (let i = 0; i < spans.length; i++) {
         const s = spans[i]!
-        expect(s.end - s.start).toBeGreaterThan(160)
+        expect(s.end - s.start).toBeGreaterThan(WEATHER_SLOT - 2 * WEATHER_JITTER - 1)
         if (i) expect(s.start).toBe(spans[i - 1]!.end)
         expect(WEATHER_KINDS.indexOf(s.kind)).toBe(slotKind(seed, slotAt(seed, (s.start + s.end) / 2)))
       }

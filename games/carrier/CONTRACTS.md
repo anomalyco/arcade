@@ -414,8 +414,8 @@ weather section; any section id works: `time`, `audio`, `sounds`, `sight`, `rada
 ## Weather (`shared/weather.ts`, `src/render/{rain,weather-fx,weather-system}.ts`, `src/dev/{dev-panel,weather-lab}.ts`)
 
 - Weather is a pure function of (room seed, sea time, room override), like the sea. `weatherAt(seed, t)` is the seeded
-  timeline: ~270 s slots (±50 s), a neighbour-only Markov chain over clear/light/medium/heavy evaluated exactly by
-  coupling from the past (shares ~45/26/18/10%), the first two slots of a room clear, 60-120 s smootherstep fades.
+  timeline: ~150 s slots (±30 s), a neighbour-only Markov chain over clear/light/medium/heavy evaluated exactly by
+  coupling from the past (shares ~26/29/26/19%: weather turns over within a round), the first slot of a room clear, 30-60 s smootherstep fades.
   `Weather` is 16 linear parameters (rain, wind, windDir, sea, swell balance, foam, cloud, dark, fog (unused, always 0:
   storms read without haze), sun, lightning, streak, density, splash, desat, darken). Lightning strikes are hashed
   per 0.5 s slot (`lightningAt`, `strikesBetween`).
