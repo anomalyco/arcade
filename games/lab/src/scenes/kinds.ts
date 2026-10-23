@@ -147,6 +147,7 @@ export const LAB_KINDS: readonly LabKind[] = [
   { id: "ship", label: "Ship", subject: "A Carrier ship and sea at a time of day", host: { kind: "page", url: "/arcade/carrier/" }, panels: page },
   { id: "water", label: "Water", subject: "Water shading and hull wakes in the production renderers", host: { kind: "page", url: "/arcade/carrier/water.html" }, panels: page },
   { id: "brawler", label: "Brawler", subject: "Brawl's characters, their abilities and the props they throw around", host: { kind: "page", url: "/arcade/brawl/playground.html" }, panels: page, play: "Play" },
+  { id: "spider-gait", label: "Spider gait", subject: "The arachnid gait walking the night forest: size, leg length, ride height and step timing", host: { kind: "page", url: "/arcade/lab/spider.html" }, panels: page },
   { id: "woods-camera", label: "Barbara camera", subject: "The night woods through different cameras and the realism effects a real camera adds", host: { kind: "page", url: "/arcade/barbara/" }, panels: page, play: "Play" },
   { id: "archer", label: "Archer", subject: "Archers' arenas, movement tuning and power-ups", host: { kind: "page", url: "/arcade/archers/playground.html" }, panels: page, play: "Play" },
 ]
@@ -186,6 +187,7 @@ const PAGE_STATIONS: Record<string, string> = {
   brawl: "brawler",
   archers: "archer",
   "woods-camera": "woods-camera",
+  "spider-gait": "spider-gait",
 }
 
 /** What a station nobody gave a kind yet opens as, so a new station file never stops the Lab from starting. */

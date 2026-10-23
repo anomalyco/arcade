@@ -12,7 +12,7 @@
  *
  * Like the root, the gait runs in creature units (lamplight's scale) and the pose comes out in metres, scaled by
  * `size` (m per unit). `hips` shrinks the body and its hip ring against the legs: 1 is lamplight's wolf spider, about
- * 1/legScale gives a harvestman, a small body slung between long legs.
+ * 1/legScale (0.4) a true harvestman's small body; 0.55 keeps it reading as a large animal at 20–90 m.
  *
  * Not ported (yet): jumping, the stalk crouch and pounce, and lamplight's whole-limb terrain sweep (`terrain.rs`).
  */
@@ -20,7 +20,7 @@ import { add, cross, dist, dot, len, lerp3, madd, norm, rot, scale, sub, type V3
 import { SecondOrder, type CreatureMotion, type CreatureSurface, type CreatureTurn } from "../sim/creature-motion"
 
 export type ArachnidShape = {
-  /** Body and hip ring against the legs: 1 = lamplight's spider, ~0.4 = a harvestman. */
+  /** Body and hip ring against the legs: 1 = lamplight's spider, 0.4–0.55 = a harvestman. */
   hips: number
   /** Body ride height over the support, creature units (lamplight 0.34; legs are about 1 long). */
   ride: number
@@ -34,8 +34,8 @@ export type ArachnidShape = {
 }
 /** Lamplight's wolf spider, exactly. */
 export const SPIDER_SHAPE: ArachnidShape = { hips: 1, ride: 0.34, swing: 1, lift: 0.8 }
-/** A small body slung high between long legs, stepping slowly and setting each foot down softly. */
-export const HARVESTMAN_SHAPE: ArachnidShape = { hips: 0.4, ride: 0.42, swing: 1.5, lift: 1.6 }
+/** A body slung high between long legs, stepping slowly and setting each foot down softly. */
+export const HARVESTMAN_SHAPE: ArachnidShape = { hips: 0.55, ride: 0.42, swing: 1.5, lift: 1.6 }
 
 export type ArachnidLegPose = {
   /** Hip, knee, ankle, foot in metres. */
@@ -68,6 +68,13 @@ const SWING = 0.15
 const GROUPS = [[7, 2, 5, 0], [3, 6, 1, 4]] as const
 /** Time constant of the springs' targets, creature seconds (a third of a swing). */
 const TARGET_EASE = 0.05
+/**
+ * Weight, creature units: the body dips as each group takes the load (bob, twice a cycle, plus a kick down per foot
+ * landing), sways and rolls over the planted side, rocks nose-down as a group lands, and pitches and rolls on slower, slightly underdamped springs so it lags and
+ * settles. Lamplight's were 0.012 / 0.012 / 0.065 and 3.5 / 3.3 Hz at 0.85–0.9: at giant scale the body glided.
+ */
+const WEIGHT = { bob: 0.024, sway: 0.022, rollSway: 2.5, rock: 0.015, pitchHz: 2.4, rollHz: 2.3, damping: 0.7 }
+const LANDING_KICK = 0.1
 const Y: V3 = [0, 1, 0]
 const ANGLES = [28, 68, 108, 146].map(a => (a * PI) / 180)
 const RADII = [0.79, 0.72, 0.7, 0.82]
@@ -315,7 +322,7 @@ export class ArachnidLegs {
       f.at = madd(lerp3(f.from, f.to, swingProgress(f.t)), Y, f.lift * swingLift(f.t, this.shape.lift))
       if (f.t >= 1) {
         f.at = f.to
-        this.landingFilter.speed -= 0.065
+        this.landingFilter.speed -= LANDING_KICK
         this.contacts.push({ leg: i, x: f.at[0] * this.size, y: f.at[1] * this.size, z: f.at[2] * this.size })
       }
       // Never pass through a support, even one the apex missed.
@@ -341,8 +348,8 @@ export class ArachnidLegs {
     const shift: V3 = [t.sx, 0, t.sz], fraction = t.fraction, slopePitch = t.pitch, slopeRoll = t.roll
     const activity = Math.min(1, speed / 0.7)
     const phase = this.phase * TAU
-    const bob = Math.cos(phase * 2) * 0.012 * (1 - 0.65 * run) * activity
-    const sway = Math.sin(phase) * 0.012 * activity
+    const bob = Math.cos(phase * 2) * WEIGHT.bob * (1 - 0.65 * run) * activity
+    const sway = Math.sin(phase) * WEIGHT.sway * activity
     const noise = Math.sin(this.clock * 0.71) * Math.sin(this.clock * 1.13 + 0.7)
     const desiredSpeed = Math.hypot(this.desiredVx, this.desiredVz)
     const preparing = this.turn !== "travel" || speed > desiredSpeed + 0.05
@@ -361,8 +368,8 @@ export class ArachnidLegs {
     const localAccel = t.accel
     const localShift = shift[0] * rx + shift[2] * rz
     const k = Math.sqrt(fraction)
-    this.pitch = this.pitchFilter.step(this.pitch, Math.max(-0.18, Math.min(0.25, -localAccel * 0.015)) + Math.max(-0.35, Math.min(0.35, slopePitch)), 3.5 * k, 0.85, response, dt)
-    this.roll = this.rollFilter.step(this.roll, Math.max(-0.08, Math.min(0.08, -localShift * 0.5)) + Math.max(-0.25, Math.min(0.25, slopeRoll)) + sway * 0.8 + noise * 0.003, 3.3 * k, 0.9, response, dt)
+    this.pitch = this.pitchFilter.step(this.pitch, Math.max(-0.18, Math.min(0.25, -localAccel * 0.015)) + Math.max(-0.35, Math.min(0.35, slopePitch)) + Math.cos(phase * 2 + 0.8) * WEIGHT.rock * activity, WEIGHT.pitchHz * k, WEIGHT.damping, response, dt)
+    this.roll = this.rollFilter.step(this.roll, Math.max(-0.08, Math.min(0.08, -localShift * 0.5)) + Math.max(-0.25, Math.min(0.25, slopeRoll)) + sway * WEIGHT.rollSway + noise * 0.003, WEIGHT.rollHz * k, WEIGHT.damping, response, dt)
     this.abdomenPitch = this.abdomenFilter.step(
       this.abdomenPitch,
       -this.pitch * 0.7 - this.bodyFilter[1]!.speed * 0.025 + Math.sin(phase) * (0.055 + 0.013 * run) * activity + Math.sin(this.clock * 1.5) * 0.009 * (1 - activity) + noise * 0.004,
