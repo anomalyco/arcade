@@ -3,7 +3,7 @@ import { angleDiff } from "../sim/geom"
 import { Rng, seedOf } from "../sim/rng"
 import { GUNPTS, HIP, HOLD, RIG } from "./soldier"
 import { animation } from "./anim-settings"
-import { angleSpring, locomotion, newMotion, pelvisPoint, stiffness } from "./anim-locomotion"
+import { angleSpring, locomotion, newMotion, pelvisPoint, stepGait, stiffness } from "./anim-locomotion"
 import { bodyJoints } from "./anim-pose"
 import { humanProfiles, profileHands, profileTorso, type HumanProfile } from "../human-profile"
 import { boneVisible, jointVelocities, poseArms, poseLegs, poseUnarmedArms, unarmedHands, type BoneId, type HumanBody, type HiddenBones } from "../human-pose"
@@ -476,7 +476,7 @@ export function animate(a: Avatar, dt: number, now: number, x: number, y: number
   a.svy = nvy
   const sp = Math.hypot(nvx, nvy)
   const k = clamp(sp / SPEED, 0, 1)
-  a.gait += ((sp > 0.35 ? 1 : 0) - a.gait) * Math.min(1, dt * 6)
+  stepGait(a, dt)
   // Only sprinters go faster than a walk (snapshots carry velocity, not the key). A shot drops it at once.
   const sprinting = sp > SPEED + 0.6 && now - a.firedAt > 0.25
   if (now - a.firedAt < 0.05) a.sprint = 0

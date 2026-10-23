@@ -29,7 +29,17 @@ export function stepHash(seed: number, step: number, channel: number): number {
 }
 
 const TAU = Math.PI * 2
+/** Fastest a stopping boot's landing point moves, m/s. */
+const STOP_REAIM = 1.5
 export const stiffness = (hz: number) => (hz * TAU) ** 2
+/**
+ * Eases `a.gait` toward walking (1) or standing (0) from the smoothed speed. A reversal passes |sv| through zero while
+ * the body is still driven at speed, so gait holds while `motion.reverseT` is live. Set `svx`/`vx` first.
+ */
+export function stepGait(a: Locomotion, dt: number): void {
+  const reversing = (a.motion.reverseT ?? 0) > 0 && Math.hypot(a.vx, a.vy) > 0.35
+  a.gait += ((Math.hypot(a.svx, a.svy) > 0.35 || reversing ? 1 : 0) - a.gait) * Math.min(1, dt * 6)
+}
 export function angleSpring(s: Spring, goal: number, hz: number, dt: number): void {
   stepSpring(s, stiffness(hz), 1, dt, s.x + angleDiff(goal, s.x))
 }
@@ -39,7 +49,7 @@ export function newMotion(x: number, y: number, aim: number) {
     enabled: false, run: 0, stride: 1, stepDebt: 0, next: 0, moving: false, start: 0, strafeSign: 0,
     stepCount: 0, clock: 0, footDrag: 0, dragFoot: 1 as 0 | 1,
     strafePhi: 0, strafeCross: 0, sideStep: 0, backness: 0, strafeLateral: 0,
-    steady: 0, rawDir: 0, reverseT: 0,
+    steady: 0, rawDir: 0, reverseT: 0, effort: 0,
     centreX: { x, v: 0 }, centreY: { x: y, v: 0 },
     pelvis: { x: aim, v: 0 }, chest: { x: aim, v: 0 }, head: { x: aim, v: 0 }, weapon: { x: aim, v: 0 },
     bob: spring(), sway: spring(), drop: spring(), twist: spring(), posture: spring(), crouch: spring(), bank: spring(),
@@ -54,6 +64,8 @@ export function newMotion(x: number, y: number, aim: number) {
     stepToeYaw: [0, 0] as [number, number],
     stepArmVar: [1, 1] as [number, number],
     redirectFrom: [0, 0] as [number, number],
+    bowSide: [0, 0] as [number, number],
+    stopReaim: [0, 0] as [number, number],
     targets: [[x, 0, y], [x, 0, y]] as [V3, V3],
     toes: [[x, 0, y], [x, 0, y]] as [V3, V3],
   }
@@ -234,6 +246,7 @@ function reset(a: Avatar): void {
   for (const s of [m.bob, m.sway, m.drop, m.twist, m.posture, m.crouch, m.bank, m.secondary, m.yawOffset, ...m.arms, ...m.hands]) { s.x = 0; s.v = 0 }
   m.stepDebt = 0; m.start = 0; m.moving = false; m.next = 0; m.strafeSign = 0; m.stepCount = 0; m.clock = 0
   m.strafePhi = 0; m.strafeCross = 0; m.sideStep = 0; m.backness = 0; m.strafeLateral = 0; m.steady = 0; m.reverseT = 0
+  m.effort = Math.hypot(a.vx, a.vy); m.bowSide[0] = 0; m.bowSide[1] = 0; m.stopReaim[0] = 0; m.stopReaim[1] = 0
   for (let i = 0; i < 2; i++) {
     const f = a.feet[i]!
     f.p = home(a, i, 0); f.lift = [...f.p]; f.yaw = a.legYaw; f.pitch = 0; f.planted = true
@@ -254,6 +267,12 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
   const travelling = Math.hypot(a.vx, a.vy) > 0.12
   const stranded = a.feet.every(f => Math.hypot(f.p[0] - a.x, f.p[2] - a.y) > 1.1)
   if (teleport || !m.enabled || stranded) reset(a)
+  // |svx| passes through zero on a reversal, so run posture read from it went 1 → 0 → 1 in a few frames (forearms
+  // dropped out of the pump, a 90° elbow pop at 30 fps). Effort is |v| smoothed as a scalar at svx's rate: equal to
+  // |svx| on a straight line, it does not dip when the direction flips. Posture follows it only while reversing.
+  m.effort += (Math.hypot(a.vx, a.vy) - m.effort) * (1 - Math.exp(-dt * 14))
+  m.reverseT = travelling && a.vx * a.svx + a.vy * a.svy < 0 ? 0.3 : Math.max(0, (m.reverseT ?? 0) - dt)
+  const drive = speed + clamp(m.reverseT / 0.3, 0, 1) * Math.max(0, m.effort - speed)
   const lateral = -a.svx * Math.sin(a.aim) + a.svy * Math.cos(a.aim)
   const strafe = smooth((Math.abs(lateral) / Math.max(speed, 0.01) - 0.5) * 2)
   const strafeSign = strafe > 0.25 && Math.abs(lateral) > 0.25 ? Math.sign(lateral) : 0
@@ -301,7 +320,6 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
   } else m.steady = 0
   const settle = clamp(animation.strafeSettle ?? 0, 0, 2)
   const commit = settle > 0 ? smooth((m.steady ?? 0) / settle) : 1
-  m.reverseT = travelling && a.vx * a.svx + a.vy * a.svy < 0 ? 0.3 : Math.max(0, (m.reverseT ?? 0) - dt)
   const transK = stiffness(clamp(animation.transitionHz ?? 6, 2, 14))
   const prevLegYaw = a.legYaw
   // Angular limits are ownership constraints, not springs that can remain outside the limit.
@@ -333,7 +351,7 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
   const st = moving ? strafeStance(speed, a.legYaw, travelDir, animation) : strafeStance(0, a.legYaw, travelDir, animation)
   m.strafePhi = st.phi; m.strafeCross = st.cross; m.sideStep = st.sideStep; m.backness = st.backness; m.strafeLateral = st.lateral
   const curGait = gaitAt(speed, st.backness, st.sideStep, animation)
-  m.run = curGait.run; m.stride = curGait.stride
+  m.run = gaitAt(drive, st.backness, st.sideStep, animation).run; m.stride = curGait.stride
   m.footDrag = clamp(animation.footDrag, 0, 0.95)
   m.dragFoot = 1
   a.duty = curGait.duty
@@ -364,6 +382,18 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
     let u = Math.min(1, prevU + dt / m.durations[i]!)
     const rawDot = a.vx * a.svx + a.vy * a.svy
     const stopping = !travelling && speed > 0.2
+    // A stop's late re-aim spreads evenly over the swing left, stretched so the landing moves at most STOP_REAIM: the
+    // boot still lands where the stop wants it (one catch step) without doubling back 27 cm in the last two frames.
+    // Stretch before advancing u, or a 30 fps step reaches u = 1 and lands unaimed where 60 and 144 fps re-aim. Once
+    // started the re-aim runs to touchdown: "stopping" ends when |sv| falls under 0.2, often mid-swing.
+    let reaimLeft = 0
+    if ((stopping || m.stopReaim[i]) && u >= 0.75 && prevU < 1) {
+      m.stopReaim[i] = 1
+      const want = computeTarget(a, i, (1 - prevU) * m.durations[i]!, animation, curGait, speed, moving), prevT = m.targets[i]!
+      reaimLeft = Math.min(0.2, Math.max((1 - prevU) * m.durations[i]!, Math.hypot(want[0] - prevT[0], want[2] - prevT[2]) / STOP_REAIM))
+      m.durations[i] = Math.max(m.durations[i]!, reaimLeft / (1 - prevU))
+      u = Math.min(1, prevU + dt / m.durations[i]!)
+    }
     const reversing = travelling && rawDot < 0 && (a.feet[1 - i]!.planted || prevU > m.swings[1 - i]!)
     // If the character reverses while this foot is in late swing, redirect it to the new direction
     // and extend its remaining swing once so it never plants behind the reversal.
@@ -375,11 +405,12 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
       // Restart the swing from where the foot is, not from a lift point that would jump it 25% toward the target.
       const e0 = smoother(u)
       f.lift = [(f.p[0] - target[0] * e0) / (1 - e0), 0, (f.p[2] - target[2] * e0) / (1 - e0)]
-    } else if (u < (stopping ? 0.96 : (m.reverseT ?? 0) > 0 ? 0.9 : 0.75) || (u < 0.94 && landsOutOfReach(a, m.targets[i]!, (1 - u) * m.durations[i]!))) {
+    } else if (u < (reaimLeft > 0 || stopping ? 1 : (m.reverseT ?? 0) > 0 ? 0.9 : 0.75) || (u < 0.94 && landsOutOfReach(a, m.targets[i]!, (1 - u) * m.durations[i]!))) {
       let desired = computeTarget(a, i, (1 - u) * m.durations[i]!, animation, curGait, speed, moving)
       const prevT = m.targets[i]!
       // A late correction eases toward the new landing so the boot never darts.
-      if (u >= 0.75 && !stopping) desired = [prevT[0] + (desired[0] - prevT[0]) * 0.35, 0, prevT[2] + (desired[2] - prevT[2]) * 0.35]
+      const late = reaimLeft > 0 ? Math.min(1, dt / Math.max(dt, (1 - prevU) * m.durations[i]!)) : u < 0.75 ? 1 : 0.35
+      if (late < 1) desired = [prevT[0] + (desired[0] - prevT[0]) * late, 0, prevT[2] + (desired[2] - prevT[2]) * late]
       // Fold any mid-swing target shift into f.lift so f.p(u) is C0-continuous (no retroactive eHoriz * dTarget snap)
       // while still landing at the exact updated target at u = 1.
       const drag = i === 1 ? clamp(animation.footDrag, 0, 0.95) : 0
@@ -470,6 +501,7 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
       f.planted = false; f.lift = [f.p[0], 0, f.p[2]]; f.liftYaw = f.yaw
       m.swings[i] = 0; m.stances[i] = 0
       if (m.redirectFrom) m.redirectFrom[i] = 0
+      m.bowSide[i] = 0; m.stopReaim[i] = 0
       const stepIdx = ++m.stepCount
       // Same-foot (stepIdx - 2) high-pass blue-noise variation: genuine step-to-step organic variation
       // while telescoping each foot's mean to zero so L/R step symmetry stays ~1.000.
@@ -485,7 +517,11 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
       const rawDur = moving
         ? (swingFrac - phaseLead) / Math.max(0.85, cadence) * (1 + 0.12 * st.backness) * (1 - 0.14 * st.sideStep)
         : 0.19
-      m.durations[i] = clamp(rawDur, 0.08, 0.48)
+      // A reversal step crosses from behind the old travel to ahead of the new: give it a full stride's swing, not the
+      // short side-step one the stance reads while the hips sweep across travel (3 frames at 30 fps).
+      const full = gaitAt(m.effort, st.backness, 0, animation)
+      const reverseDur = moving && (m.reverseT ?? 0) > 0 ? (1 - full.duty) * full.stride / Math.max(m.effort, 0.5) : 0
+      m.durations[i] = clamp(Math.max(rawDur, reverseDur), 0.08, 0.48)
       m.targets[i] = computeTarget(a, i, m.durations[i]!, animation, curGait, speed, moving)
       m.next = 1 - i; m.stepDebt = Math.max(0, m.stepDebt - 1)
     }
@@ -579,23 +615,29 @@ function landsOutOfReach(a: Avatar, target: V3, remaining: number): boolean {
  * planted foot (a side-step closing in, a step round on the spot): the path curves out on the foot's own side.
  */
 function swingBow(a: Avatar, i: number, target: V3, animation: HumanProfile): [number, number] {
-  const f = a.feet[i]!, o = a.feet[1 - i]!
-  if (!o.planted) return [0, 0]
+  const f = a.feet[i]!, o = a.feet[1 - i]!, m = a.motion
+  // Steer round the other boot while it is down; fade over its swing rather than cut off the instant it lifts or lands,
+  // which jumped this boot sideways by up to the full bow (21 cm in one frame).
+  const weight = o.planted ? 1 : 1 - Math.sin(Math.PI * clamp(m.swings[1 - i]!, 0, 1))
   const dx = target[0] - f.lift[0], dz = target[2] - f.lift[2], l2 = dx * dx + dz * dz
-  if (l2 < 1e-4) return [0, 0]
-  const s = clamp(((o.p[0] - f.lift[0]) * dx + (o.p[2] - f.lift[2]) * dz) / l2, 0, 1)
-  const cx = f.lift[0] + dx * s - o.p[0], cz = f.lift[2] + dz * s - o.p[2]
-  const d = Math.hypot(cx, cz), need = (animation.strafeGap ?? 0.2) * 0.9 - d
+  if (weight <= 0 || l2 < 1e-4) return [0, 0]
+  const l = Math.sqrt(l2), gap = (animation.strafeGap ?? 0.2) * 0.9
+  const along = ((o.p[0] - f.lift[0]) * dx + (o.p[2] - f.lift[2]) * dz) / l2
+  // Signed offset of the path from the other boot along the path normal, and how far the boot lies past either end.
+  const nx = -dz / l, nz = dx / l
+  const sd = (f.lift[0] - o.p[0]) * nx + (f.lift[2] - o.p[2]) * nz
+  const past = Math.max(0, -along, along - 1) * l
+  // Pick the side once per swing: "away from the other boot" flipped the instant the path swept over it (23 cm).
+  if (!m.bowSide[i]) {
+    if (Math.hypot(sd, past) >= gap) return [0, 0]
+    const own = (-Math.sin(a.legYaw) * nx + Math.cos(a.legYaw) * nz) * (i === 0 ? -1 : 1)
+    m.bowSide[i] = Math.abs(sd) > 1e-3 ? Math.sign(sd) : own < 0 ? -1 : 1
+  }
+  const bowSide = m.bowSide[i]!
+  const need = gap - Math.hypot(Math.max(0, sd * bowSide), past)
   if (need <= 0) return [0, 0]
-  const side = i === 0 ? -1 : 1
-  const l = Math.sqrt(l2)
-  // Away from the other foot, perpendicular to the path; straight through it, toward the foot's own side of the legs.
-  let nx = cx, nz = cz
-  if (d < 1e-3) { nx = -Math.sin(a.legYaw) * side; nz = Math.cos(a.legYaw) * side }
-  const along = (nx * dx + nz * dz) / l2
-  nx -= dx * along; nz -= dz * along
-  const nl = Math.hypot(nx, nz) || 1
-  return [nx / nl * need * Math.min(1, l / 0.15), nz / nl * need * Math.min(1, l / 0.15)]
+  const k = need * Math.min(1, l / 0.15) * weight * bowSide
+  return [nx * k, nz * k]
 }
 
 /**

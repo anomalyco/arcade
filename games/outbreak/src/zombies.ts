@@ -1901,6 +1901,7 @@ export class ZombieCrowdRenderer {
       const rate = speed >= 0.15 ? Math.max(0.72, (speed / stride) * dragSlow) : needsStep ? 1.25 : 0
       const curPhase = (this.phase[s]! + rate * dt) % 1
       this.phase[s] = curPhase
+      const swingRate = rate > 0 ? rate : 1.25
 
       for (let i = 0; i < 2; i++) {
         const fi = f0 + i
@@ -1908,8 +1909,13 @@ export class ZombieCrowdRenderer {
         const isDrag = i === dragFoot
         const dragAmt = isDrag ? clamp(footDrag, 0, 0.95) : 0
         const fPhase = (curPhase + i * (0.5 + timingBias * 0.22)) % 1
-        if (rate > 0 && fPhase >= duty) {
-          const u = (fPhase - duty) / (1 - duty)
+        // A lifted foot owns its swing progress and finishes it: duty depends on speed, so reading swing from the
+        // shared clock let a speed drop end a swing mid-air and snap the foot to its target (1.1 m at chase→wander).
+        // A foot that lands while the clock still says swing holds (footPrevU < 0) until the clock reaches stance.
+        let u = -1
+        if (!this.footPlanted[fi]) u = this.footPrevU[fi]! + (swingRate * dt) / (1 - duty)
+        else if (rate > 0 && fPhase >= duty && this.footPrevU[fi]! >= 0) u = (fPhase - duty) / (1 - duty)
+        if (u >= 0 && u < 1) {
           const e = smoother(u)
           const eHoriz = dragAmt > 0 ? e * (1 - 0.34 * dragAmt * (1 - u)) : e
           if (this.footPlanted[fi]) {
@@ -1920,7 +1926,7 @@ export class ZombieCrowdRenderer {
             this.footPrevU[fi] = 0
           }
           // A longer behaviour stride lands further ahead, so the stance stays centred under the hips.
-          const lead = Math.min(0.38 * (bp ? bp.strideMul : 1), (1 - fPhase) / rate + (duty / rate) * 0.48) * (isDrag ? 1 - 0.18 * dragAmt : 1.06)
+          const lead = Math.min(0.38 * (bp ? bp.strideMul : 1), ((1 - u) * (1 - duty)) / swingRate + (duty / swingRate) * 0.48) * (isDrag ? 1 - 0.18 * dragAmt : 1.06)
           let tx = (i ? rest1X : rest0X) + vx * lead
           let tz = (i ? rest1Z : rest0Z) + vy * lead
           const side = i ? 1 : -1
@@ -1966,9 +1972,11 @@ export class ZombieCrowdRenderer {
           this.footPy[fi] = py
           this.footPz[fi] = pz
           this.footYaw[fi] = this.footYaw[fi]! + angleDiff(syaw, this.footYaw[fi]!) * e
-        } else if (!this.footPlanted[fi]) {
+        } else if (this.footPlanted[fi]) {
+          if (fPhase < duty || rate === 0) this.footPrevU[fi] = 0
+        } else {
           this.footPlanted[fi] = 1
-          this.footPrevU[fi] = 0
+          this.footPrevU[fi] = rate > 0 && fPhase >= duty ? -1 : 0
           const tx = this.footTargetX[fi]!
           const tz = this.footTargetZ[fi]!
           this.footPx[fi] = tx
@@ -2255,8 +2263,9 @@ export class ZombieCrowdRenderer {
 
         const footPhase = (curPhase + i * (0.5 + timingBias * 0.22)) % 1
         const planted = this.footPlanted[fi] !== 0
-        const stanceFrac = planted ? clamp(footPhase / Math.max(0.1, duty), 0, 1) : 0
         const prevU = this.footPrevU[fi]!
+        // A held foot landed early: flat until the clock's stance starts, then its roll begins from 0.
+        const stanceFrac = planted && prevU >= 0 ? clamp(footPhase / Math.max(0.1, duty), 0, 1) : 0
         const stancePitch = isDrag
           ? -0.22 * smooth((stanceFrac - 0.58) / 0.42) * dragAmt * shambleGait
           : -0.24 * smooth((stanceFrac - 0.58) / 0.42) * shambleGait

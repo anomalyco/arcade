@@ -15,7 +15,7 @@ def draw_frame(clip, frame):
     d = ImageDraw.Draw(im)
     d.text((20, 15), f'{v["actor"]} / {v["scenario"]} / {clip["pass"].split(":")[0]}', font=font, fill="white")
     d.text((20, 38), f'{v["joint"]} {v["metric"]} ({v["space"]})', font=font, fill="#ff6f7d")
-    d.text((20, 61), f'{v["value"]:.4g} > {v["threshold"]:.4g} {v["unit"]}  |  event {v["time"]:.3f}s', font=small, fill="#c1cbd9")
+    d.text((20, 61), f'{v["value"]:.4g} {">" if v["value"] > v["threshold"] else "<="} {v["threshold"]:.4g} {v["unit"]}  |  event {v["time"]:.3f}s', font=small, fill="#c1cbd9")
     j = frame["joints"]
     # A single event-anchored camera across every frame: root motion is visible, never camera-smoothed away.
     spans = []

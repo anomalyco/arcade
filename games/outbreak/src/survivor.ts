@@ -33,6 +33,7 @@ import {
   gaitAt,
   locomotion,
   newLocomotion,
+  stepGait,
   stepHash,
   stiffness,
   strafeFootOffset,
@@ -567,7 +568,7 @@ export class Survivor {
       L.acy += ((svy - L.svy) / h - L.acy) * ka
     }
     L.x = sx; L.y = sy; L.vx = rawVx; L.vy = rawVy; L.aim = aim; L.svx = svx; L.svy = svy
-    L.gait += ((Math.hypot(svx, svy) > 0.35 ? 1 : 0) - L.gait) * Math.min(1, h * 6)
+    stepGait(L, h)
     L.seed = this.seed
     const was = [L.feet[0].planted, L.feet[1].planted]
     locomotion(L, h, distance, teleport, profile)

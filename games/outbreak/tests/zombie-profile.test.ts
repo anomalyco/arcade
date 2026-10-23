@@ -75,6 +75,30 @@ test("sloped reversals keep survivor and zombie pelvis height and foot transitio
   }
 })
 
+test("a zombie dropping from chase to wander finishes its swing instead of snapping the foot down", () => {
+  // Swing progress came from the shared clock as (phase - duty) / (1 - duty); duty rises as speed falls, so a speed drop
+  // ended a swing mid-air and the foot jumped up to 1.1 m in one frame. Now a lifted foot owns its swing.
+  const dt = 1 / 60
+  for (const [from, to] of [[2.85, 0.6], [4, 0.6], [2.85, 0]]) for (let offset = 0; offset < 12; offset++) {
+    const zr = new ZombieCrowdRenderer({ addModel: () => 0 })
+    const agent = createAIAgent(1, 7, 0, 0, 0)
+    Object.assign(agent, { lurch: 0.85, asymmetry: 0.85, drag: 0.9, reach: 0.8, state: "wander" })
+    let x = 0, t = 0, prev: number[][] | undefined, worst = 0
+    const switchAt = 3 + offset * 0.037
+    while (t < switchAt + 1.5) {
+      t += dt
+      const v = t < switchAt ? from! : to!
+      x += v * dt
+      Object.assign(agent, { x, y: 0, vx: v, vy: 0, aim: 0 })
+      zr.draw([agent], dt, () => 0, { visible: () => true, actorVisible: () => 1 } as never, [-200, -200, 200, 200], zombieTuning, false, t)
+      const j = extractBonePoseJoints(zr.getAgentBones(1)!.bones), cur = [j.ankleL, j.ankleR] as number[][]
+      if (prev && t > 1) for (const k of [0, 1]) worst = Math.max(worst, Math.hypot(...cur[k]!.map((c, i) => c - prev![k]![i]!)) - v * dt)
+      prev = cur.map(c => [...c])
+    }
+    expect(worst).toBeLessThan(0.2)
+  }
+})
+
 test("unarmed survivor arm swing opposes foot stride and scales with speed", () => {
   let model = 0
   const avatar = new Survivor({ addModel: () => model++ })

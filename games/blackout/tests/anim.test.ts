@@ -8,6 +8,7 @@ import { angleDiff } from "../shared/geom"
 import { at } from "../src/game/rig"
 import { RIG } from "../src/render/person"
 import { humanProfiles } from "@arcade/kit/human-profile"
+import { extractBodyJoints } from "@arcade/kit/pose-diff"
 import { animationLab, animationControls } from "../src/game/anim-settings"
 import { LabNavigation } from "@arcade/kit/lab-navigation"
 import { bodyBones, boneVisible, detach, type BoneId } from "@arcade/kit/human-pose"
@@ -113,6 +114,52 @@ test("hard stop settles in at most two catch steps", () => {
   }
   expect(steps).toBeLessThanOrEqual(2)
   expect(a.feet.every(f => f.planted)).toBe(true)
+})
+
+test("a hard stop from any swing phase settles in two catch steps at 30, 60 and 144 fps", () => {
+  // A stop's re-aim must stretch the swing before it advances, and keep aiming after |sv| drops under the stopping
+  // threshold: at 30 fps a late-swing boot reached touchdown unaimed, and others froze 20 cm short.
+  for (const fps of [30, 60, 144]) {
+    const step = 1 / fps
+    for (let k = 0; k < 24; k++) {
+      const a = newAvatar("stop", 0, 0, 0, "rifle")
+      let t = 0, x = 0, steps = 0
+      while (t < 2 + k * 0.013) { t += step; x += 4.2 * step; animate(a, step, t, x, 0, 4.2, 0, 0) }
+      for (let n = 0; n < 1.5 * fps; n++) {
+        const before = a.feet.map(f => f.planted)
+        t += step
+        animate(a, step, t, x, 0, 0, 0, 0)
+        steps += a.feet.filter((f, i) => !before[i] && f.planted).length
+      }
+      expect(steps).toBeLessThanOrEqual(2)
+      expect(a.feet.every(f => f.planted)).toBe(true)
+    }
+  }
+})
+
+test("A/D reversals at a run hold the run posture and sweep the knees without a jump", () => {
+  // |svx| passes through zero on a reversal: m.run read from it went 1 → 0 → 1 (a 90° elbow pop at 30 fps) and the
+  // reversal step got a 3-frame side-step swing (knee 50 cm in one 30 fps frame, now ~35).
+  for (const unarmed of [true, false]) {
+    const a = newAvatar("reversal", 0, 0, 0, "rifle")
+    a.unarmed = unarmed
+    const step = 1 / 30
+    let x = 0, z = 0, minRun = 1, knee = 0, prev: number[][] | undefined
+    for (let n = 0; n < 150; n++) {
+      const t = n * step, dir = t < 1 || Math.floor((t - 1) / 0.4) % 2 ? Math.PI / 2 : -Math.PI / 2
+      const vx = 3.4 * Math.cos(dir), vz = 3.4 * Math.sin(dir)
+      x += vx * step; z += vz * step
+      animate(a, step, t, x, z, vx, vz, 0)
+      const j = extractBodyJoints(a.body!), rel = [j.kneeL, j.kneeR].map(k => k.map((v, i) => v - j.pelvis[i]!))
+      if (t > 1) {
+        minRun = Math.min(minRun, a.motion.run)
+        for (const k of [0, 1]) knee = Math.max(knee, Math.hypot(...rel[k]!.map((v, i) => v - prev![k]![i]!)))
+      }
+      prev = rel
+    }
+    expect(minRun).toBeGreaterThan(0.95)
+    expect(knee).toBeLessThan(0.42)
+  }
 })
 
 test("ragdoll starts at the exact pose and inherits individual joint velocities", () => {
