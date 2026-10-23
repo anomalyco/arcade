@@ -15,7 +15,7 @@ describe("Televisions show a picture", () => {
       expect(Math.cos(g.yaw)).toBeCloseTo(-Math.sin(yaw), 6)
       expect(Math.sin(g.yaw)).toBeCloseTo(Math.cos(yaw), 6)
       const ahead = (g.center[0] - site.x) * -Math.sin(yaw) + (g.center[2] - site.z) * Math.cos(yaw)
-      expect(ahead).toBeCloseTo(0.216, 6)
+      expect(ahead).toBeCloseTo(0.222, 6)
       expect(g.center[1]).toBeCloseTo(0.9, 6)
       expect(g.width / g.height).toBeCloseTo(0.42 / 0.34, 6)
     }

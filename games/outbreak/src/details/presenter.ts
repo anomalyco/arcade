@@ -352,13 +352,12 @@ export class DetailsPresenter {
    * The screens' glow, and the nearest television's flicker on its room (clipped to the room like a table lamp)
    * while the camera is inside a house. `night` is the hour's lamp level. Returns the next light slot.
    */
-  writeLights(lights: Float32Array, count: number, max: number, lampPower: Float32Array, s: OutbreakDetailSettings, at: { cutX: number; cutY: number; interior: boolean; night: number; picture?: TvPictureLight | null }): number {
+  writeLights(lights: Float32Array, count: number, max: number, lampPower: Float32Array, s: OutbreakDetailSettings, at: { cutX: number; cutY: number; interior: boolean; night: number; picture?: (site: DetailSite) => TvPictureLight | null }): number {
     count = this.writeDome(lights, count, max, s, at.night)
     const on = s.worldDetails && this.tvs.length > 0
     const level = this.tvLevelNow
     lampPower[TV_LAMP_SLOT] = on ? (0.35 + 0.9 * level) * Math.min(2, Math.max(0.2, s.dtTvPower)) : 0
     this.shown.tvLights = 0
-    this.litTv = null
     if (!on || !at.interior || count >= max || s.dtTvPower <= 0) return count
     let best: Tv | null = null
     let bd = 81
@@ -371,9 +370,8 @@ export class DetailsPresenter {
       }
     }
     if (!best) return count
-    this.litTv = best.site
-    // With Televisions show a picture, the set's own picture sets the colour and the cuts (`tv-picture.ts`).
-    const picture = at.picture?.site === best.site ? at.picture : null
+    // With Televisions show a picture, this set shows it and its picture sets the colour and the cuts (`tv-picture.ts`).
+    const picture = at.picture?.(best.site) ?? null
     const p = (0.5 * (0.3 + 0.7 * at.night) * s.dtTvPower * (picture ? picture.level : tvLevel(best.phase, this.time))) || 0
     if (p <= 0.002) return count
     const c = best.clip
@@ -384,8 +382,6 @@ export class DetailsPresenter {
   }
 
   private time = 0
-  /** The television whose light was drawn last frame (the one Televisions show a picture puts its picture on). */
-  litTv: DetailSite | null = null
 
   /** The nearest open car's dome light (warm, dim, dying night by night), spilling out of the doorway. */
   private writeDome(lights: Float32Array, count: number, max: number, s: OutbreakDetailSettings, night: number): number {

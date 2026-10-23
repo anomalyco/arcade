@@ -6,6 +6,11 @@ import type { ScreenDisplaySettings, ScreenLightShape } from "./settings"
  * buffers each frame and reads whichever finished last, so the CPU never waits on the GPU: the light lags the picture
  * by one to three frames. `ScreenLightProbe` holds that average; `screenSceneLight` turns it, with the power state and
  * peak white, into a kit `SceneLight` the room is lit by.
+ *
+ * Baked lighting: bake a screen's light under a stable `SceneLight.id` (pass `id` to `screenSceneLight`) at a reference
+ * picture, then scale that layer each frame by `screenBounceSource(display, id, reference).scale()` and tint it by
+ * `color()`. The Lab world's screen bench uses `SCREEN_LIGHT_ID` (`lab/world/world.ts`): screen 20, tube 21, bulb 22,
+ * TV LED 23, deck LEDs 24–25, with `MAT.lamp` fixture slots `LAMP.tube` 4 … `LAMP.deckLed` 7 (`lab/world/scene.ts`).
  */
 export class ScreenLightProbe {
   /** Average linear colour of the picture (signal units, 1 = full white), from the last finished readback. */

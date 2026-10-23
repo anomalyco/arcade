@@ -72,7 +72,7 @@ export class ScreenDisplay implements ScreenEmitter {
   private readonly fullView: GPUTextureView
   private signalGroups = new Map<GPUTexture, GPUBindGroup>()
   private blitGroups = new Map<GPUTexture, GPUBindGroup>()
-  private vhs: { filter: CameraFilter; settings: CameraFilterSettings; out: GPUTexture; frame: Float32Array } | null = null
+  private vhs: { filter: CameraFilter; settings: CameraFilterSettings; out: GPUTexture; outView: GPUTextureView; frame: Float32Array } | null = null
   private readonly readback: { buffer: GPUBuffer; busy: boolean }[]
   private readonly readLevel: number
   private readonly readSize: [number, number]
@@ -273,7 +273,7 @@ export class ScreenDisplay implements ScreenEmitter {
     if (!this.vhs) {
       const settings = createCameraFilterSettings(undefined, { mode: "vhs", overlay: false, vhsYear: 0 })
       const out = this.device.createTexture({ label: "screen vhs", size: [this.width, this.height], format: VHS_FORMAT, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING })
-      this.vhs = { filter: new CameraFilter(this.device, VHS_FORMAT, settings, 1987), settings, out, frame: new Float32Array(20) }
+      this.vhs = { filter: new CameraFilter(this.device, VHS_FORMAT, settings, 1987), settings, out, outView: out.createView(), frame: new Float32Array(20) }
     }
     const vhs = this.vhs
     vhs.settings.strength = s.vhsAmount
@@ -297,7 +297,7 @@ export class ScreenDisplay implements ScreenEmitter {
     vhs.frame[0] = vhs.frame[5] = vhs.frame[10] = vhs.frame[15] = 1
     vhs.frame[19] = this.time
     void vhs.filter.active
-    vhs.filter.encode(encoder, vhs.out.createView(), vhs.frame)
+    vhs.filter.encode(encoder, vhs.outView, vhs.frame)
     return vhs.out
   }
 
@@ -512,6 +512,8 @@ export class ScreenFinalPass implements FinalPass {
   /** Bezel margin each side, as a fraction of the view (0 fills it edge to edge). */
   margin = 0.035
   private target: GPUTexture | null = null
+  private targetView: GPUTextureView | null = null
+  private readonly params = new Float32Array(4)
   private readonly pipe: GPURenderPipeline
   private readonly uniform: GPUBuffer
   private group: GPUBindGroup | null = null
@@ -530,15 +532,18 @@ export class ScreenFinalPass implements FinalPass {
     if (!this.target || this.target.width !== width || this.target.height !== height) {
       this.target?.destroy()
       this.target = this.device.createTexture({ label: "screen full source", size: [width, height], format: this.format, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING })
+      this.targetView = this.target.createView()
       this.display.setSource({ texture: this.target })
       this.group = null
     }
-    return this.target.createView()
+    return this.targetView!
   }
 
   encode(encoder: GPUCommandEncoder, target: GPUTextureView, _frame: Float32Array): void {
     if (!this.target) return
-    this.device.queue.writeBuffer(this.uniform, 0, new Float32Array([this.margin, this.target.width / this.target.height, this.target.width, this.target.height]))
+    const p = this.params
+    p[0] = this.margin; p[1] = this.target.width / this.target.height; p[2] = this.target.width; p[3] = this.target.height
+    this.device.queue.writeBuffer(this.uniform, 0, p)
     this.display.encode(encoder)
     this.group ??= this.device.createBindGroup({ layout: this.pipe.getBindGroupLayout(0), entries: [...this.display.bindEntries(0), { binding: 3, resource: { buffer: this.uniform } }] })
     const pass = encoder.beginRenderPass({ colorAttachments: [{ view: target, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })

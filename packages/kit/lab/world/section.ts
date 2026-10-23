@@ -182,9 +182,12 @@ export function createWorldSection(context: LabContext, world: DebugWorld): LabS
     const p = worldPreset(id)
     if (!p) throw new Error(`Unknown world preset "${id}". Valid presets: ${WORLD_PRESETS.map(x => x.id).join(", ")}.`)
     for (const [k, v] of Object.entries(p.values)) validate(k, v)
+    const cameraBefore = worldPreset(preset)?.camera
     world.reset()
     assign(p.values)
     preset = p.id
+    // Leaving a preset that placed the camera (inside the house) goes back to the street view.
+    if (cameraBefore && !p.camera && p.idea !== "sky") world.frame()
     if (p.idea === "sky") {
       stage.camPitch = -0.3
       stage.frameTarget(WORLD_FOCUS[0], 3, WORLD_FOCUS[2], 8)

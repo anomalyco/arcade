@@ -6,8 +6,9 @@ import { SCREEN_PRESETS, applyScreenPreset, createScreenDisplaySettings } from "
 import type { DetailSite } from "./placement"
 import type { OutbreakDetailSettings } from "./settings"
 
-/** The television model's glass (`models.ts` `tv`), in model space: centre, half size, front face at +Z. */
-const GLASS = { x: -0.04, y: 0.7, z: 0.216, halfWidth: 0.21, halfHeight: 0.17 } as const
+/** The television model's glass (`models.ts` `tv`), in model space: centre, half size, front face at +Z, 7 mm proud of
+ * the glow box (z 0.215) so depth keeps them apart at street distances. */
+const GLASS = { x: -0.04, y: 0.7, z: 0.222, halfWidth: 0.21, halfHeight: 0.17 } as const
 
 /** Where a television site's glass is in the world (instances turn +Z to (−sin yaw, cos yaw)). */
 export function tvGlass(site: Pick<DetailSite, "x" | "y" | "z" | "yaw" | "scale">): ScreenPlacement {

@@ -67,6 +67,20 @@ describe("the Look and world lab", () => {
     expect({ look: world.look.preset, weather: world.weather.preset, tree: world.vegetation.treePreset, grass: world.vegetation.grassPreset, hour: world.state.hour }).toEqual({ look: "current", weather: "clear", tree: "oak", grass: "lawn", hour: 13 })
   })
 
+  test("leaving the screen bench's indoor camera goes back to the street view", () => {
+    const targets: number[][] = []
+    const stage = { ...context.stage, frameTarget: (x: number, y: number, z: number, d: number) => { targets.push([x, y, z, d]) } }
+    const ctx = { ...context, stage } as unknown as LabContext
+    const world = createDebugWorld(ctx)
+    const section = createWorldSection(ctx, world)
+    section.applyPreset("screen-bench")
+    section.applyPreset("night-lamps")
+    expect(targets.length).toBe(2)
+    expect(targets[1]![3]).toBeGreaterThan(5)
+    section.applyPreset("dusk")
+    expect(targets.length).toBe(2)
+  })
+
   test("export and import round-trip a versioned preset, and a bad file changes nothing", () => {
     const a = make()
     a.section.applyPreset("autumn")
