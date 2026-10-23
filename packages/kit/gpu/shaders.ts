@@ -2,6 +2,7 @@ import { LIGHT_CAPSULE, MAX_LIGHTS, MAX_OCCLUDERS, POLAR_RAYS } from "../limits"
 import type { PostFinishOptions } from "./look-shaders"
 import { motionGather, motionOutput } from "./motion"
 import { wgslSnippet } from "./wgsl"
+import { wearDecodeWgsl } from "./materials/wear"
 import { vehicleSprites } from "@arcade/kit/vehicle/sprites"
 
 /** Frame uniform layout, in floats. Keep in step with Game.build. */
@@ -147,6 +148,11 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 export type SceneHooks = {
   /** Optional float32 UV stream at location 4 (the compact untextured layout stays unchanged). */
   uv?: boolean
+  /**
+   * Decode the finishing bytes (normal.w, colour.a; `finish-bake.ts`) into the varying \`o.finish\` (AO, curvature, sky
+   * exposure, look + 1; unfinished vertices give (1, 0, 1, 0)), for the material hook's \`wearApply\`.
+   */
+  finish?: boolean
   declarations?: string
   vertex?: string
   /**
@@ -208,6 +214,7 @@ fn look(bit: u32) -> bool { return F.effects.z > 0.5 && (u32(F.effects.y) & bit)
 @group(0) @binding(6) var bounceTex: texture_2d<f32>;
 @group(0) @binding(8) var moonTex: texture_2d<f32>;
 ${hooks.lampGrid !== false ? "@group(0) @binding(17) var uLampGrid: texture_2d<u32>;" : ""}
+${hooks.finish ? wearDecodeWgsl : ""}
 ${hooks.declarations ?? ""}
 
 struct VIn {
@@ -234,12 +241,14 @@ struct VOut {
   @location(5) @interpolate(flat) extra: vec4f,
   ${motion ? "@location(6) previous: vec4f," : ""}
   ${hooks.uv ? "@location(7) uv: vec2f," : ""}
+  ${hooks.finish ? "@location(8) finish: vec4f," : ""}
 }
 
 @vertex fn vsStatic(v: VIn) -> VOut {
   var o: VOut;
   o.world = v.pos;
   ${hooks.uv ? "o.uv = v.uv;" : ""}
+  ${hooks.finish ? "o.finish = wearDecode(v.normal.w, v.color.a);" : ""}
   o.normal = v.normal.xyz;
   if (${hooks.material ? "v.matAux.x > 12.5 && v.matAux.x < 13.5" : "v.matAux.x > 12.5"}) {
     // Dust mote: drift slowly around its anchor, then expand the quad toward the camera.
@@ -291,6 +300,7 @@ fn instNormal(n: vec3f, inst: Inst) -> vec3f {
   var o: VOut;
   o.world = instWorld(v.pos, inst);
   ${hooks.uv ? "o.uv = v.uv;" : ""}
+  ${hooks.finish ? "o.finish = wearDecode(v.normal.w, v.color.a);" : ""}
   o.pos = F.viewProj * vec4f(o.world, 1.0);
   o.normal = instNormal(v.normal.xyz, inst);
   let accent = v.matAux.x > 7.5 && v.matAux.x < 8.5;
