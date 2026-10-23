@@ -84,3 +84,18 @@ describe("camera artifacts strength scale", () => {
     expect(amounts("codec", 0)).toEqual([0, 0, 0, 0, 0, 0, 0])
   })
 })
+
+describe("camera artifacts textures and repeats", () => {
+  test("switching off frees its textures; with no picture yet there is nothing to repeat", () => {
+    const s = { ...CAMERA_ARTIFACT_DEFAULTS, compression: true }
+    const codec = new CameraArtifacts(device, "bgra8unorm", s, "codec")
+    expect(codec.repeat({} as GPUCommandEncoder, {} as GPUTextureView)).toBe(false)
+    let freed = 0
+    const tex = { destroy: () => freed++ }
+    Object.assign(codec, { targets: { source: tex, hist: [tex, tex], aux: tex, grain: tex }, valid: true })
+    s.compression = false
+    expect(codec.active).toBe(false)
+    expect(freed).toBe(5)
+    expect(codec.repeat({} as GPUCommandEncoder, {} as GPUTextureView)).toBe(false)
+  })
+})

@@ -98,7 +98,7 @@ struct U {
   fa: array<vec4f, 4>,  // lens x y px, spot x y px
   fb: array<vec4f, 4>,  // lens radius px, spot radius px, hz, duty
   fc: array<vec4f, 4>,  // phase, level, -, -
-  pad: vec4f, // infrared tint (0 green, 1 grey), -, -, -
+  pad: vec4f, // infrared tint (0 green, 1 grey), denoise echoes (denoiseEchoes), -, -
 }
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var src: texture_2d<f32>;
@@ -147,6 +147,19 @@ const PRE_WGSL = COMMON + /* wgsl */ `
   }
   return vec4f(c / 25.0, 1.0);
 }
+/**
+ * Sensor gain's chroma blotches as a lattice: each texel is one value-noise corner (cb, cr), already eased between its
+ * two time slices, so the lens pass reads four texels instead of hashing sixteen corners per pixel.
+ */
+@fragment fn fs_grain(v: V) -> @location(0) vec4f {
+  let c = floor(v.pos.xy);
+  let tt = u.a.z * 8.0;
+  let tb = u32(tt);
+  let tf = fract(tt);
+  let cb = mix(hf(c.x, c.y, tb + 101u), hf(c.x, c.y, tb + 102u), tf);
+  let cr = mix(hf(c.x + 37.0, c.y + 37.0, tb + 201u), hf(c.x + 37.0, c.y + 37.0, tb + 202u), tf);
+  return vec4f(cb, cr, 0.0, 1.0);
+}
 /** Block mean (display values, as a codec sees them) and luma variance from 16 bilinear taps over the 8×8 block. */
 @fragment fn fs_blocks(v: V) -> @location(0) vec4f {
   let o = floor(v.pos.xy) * 8.0;
@@ -171,9 +184,12 @@ const MAIN_COMMON = COMMON + /* wgsl */ `
 @group(0) @binding(3) var aux: texture_2d<f32>;
 @group(0) @binding(4) var samp: sampler;
 struct Out { @location(0) color: vec4f, @location(1) hist: vec4f };
+/** The last picture again (a later pass holds this frame). */
+@fragment fn fs_repeat(v: V) -> @location(0) vec4f { return vec4f(textureLoad(hist, vec2i(v.pos.xy), 0).rgb, 1.0); }
 `
 
 const LENS_WGSL = MAIN_COMMON + /* wgsl */ `
+@group(0) @binding(5) var grain: texture_2d<f32>;
 fn S(uv: vec2f) -> vec3f { return toLin(textureSampleLevel(src, samp, uv, 0.0).rgb); }
 fn M(uv: vec2f) -> vec3f { return textureSampleLevel(aux, samp, uv, 0.0).rgb; }
 /** A defocus disc of radius r px: nine taps on a golden-angle spiral. */
@@ -196,7 +212,10 @@ fn hex(p: vec2f) -> f32 {
 /** One internal reflection: an image of the aperture on the line from the source through the centre. */
 fn ghost(px: vec2f, p: vec2f, c: vec2f, k: f32, r: f32, tint: vec3f) -> vec3f {
   let g = c + (c - p) * k;
-  let h = hex((px - g) / r);
+  let q = (px - g) / r;
+  // The hexagon lies inside the unit circle: outside it there is nothing to draw.
+  if (dot(q, q) >= 1.0) { return vec3f(0.0); }
+  let h = hex(q);
   let body = 1.0 - smoothstep(0.86, 1.0, h);
   let rim = smoothstep(0.55, 0.96, h) * body;
   return tint * (body * 0.45 + rim * 0.7);
@@ -251,9 +270,13 @@ fn ghost(px: vec2f, p: vec2f, c: vec2f, k: f32, r: f32, tint: vec3f) -> vec3f {
     let d = length(to);
     veil += s.z * (exp(-d / (0.2 * size.y)) + 0.05);
     if (u.e.x > 0.0) {
-      let ang = atan2(to.y, to.x) + 0.3;
+      // The six spikes, cos 3a and sin 3a of the angle turned by 0.3 rad, without an atan2.
+      let n = select(vec2f(1.0, 0.0), to / d, d > 1e-6);
+      let r = vec2f(n.x * 0.9553365 - n.y * 0.2955202, n.x * 0.2955202 + n.y * 0.9553365);
+      let c3 = r.x * (4.0 * r.x * r.x - 3.0);
+      let s3 = r.y * (3.0 - 4.0 * r.y * r.y);
       let len = size.y * 0.3 * sqrt(s.z);
-      let spikes = pow(abs(cos(ang * 3.0)), 240.0) + 0.3 * pow(abs(cos(ang * 3.0 + 1.5708)), 500.0);
+      let spikes = pow(abs(c3), 240.0) + 0.3 * pow(abs(s3), 500.0);
       flare += vec3f(1.0, 0.94, 0.86) * s.z * (spikes * exp(-d / max(len, 1.0)) * 0.5 + exp(-d / (0.012 * size.y)) * 0.6 + exp(-d / (0.05 * size.y)) * 0.06);
       let h = size.y;
       var gh = ghost(px, s.xy, centre, -0.42, 0.022 * h, vec3f(0.35, 1.0, 0.55));
@@ -314,6 +337,8 @@ fn ghost(px: vec2f, p: vec2f, c: vec2f, k: f32, r: f32, tint: vec3f) -> vec3f {
   // Sensor gain: grain, a faint column pattern and crawling chroma blotches, larger the darker the scene and the
   // more the camera has opened up; then temporal noise reduction smears dark areas that move.
   let gainA = u.g.x;
+  var raw = d;
+  var smear = 0.0;
   if (gainA > 0.0) {
     let gain = clamp(u.f.z, 0.0, 4.0);
     let dark = 1.0 - smoothstep(0.0, 0.3, lum(toSrgb(wide)));
@@ -321,23 +346,40 @@ fn ghost(px: vec2f, p: vec2f, c: vec2f, k: f32, r: f32, tint: vec3f) -> vec3f {
     let sigma = gainA * (0.028 + 0.022 * gain) * (0.4 + 0.6 * dark) * (0.5 + darkPx);
     let tk = u32(u.k.z);
     let g1 = hf(px.x, px.y, tk * 3u + 1u) + hf(px.x, px.y, tk * 3u + 2u) - 1.0;
-    let tt = t * 8.0;
-    let tb = u32(tt);
-    let tf = fract(tt);
-    let bs = 7.0 * sc;
-    let cb = mix(vnoise2(px / bs, tb + 101u), vnoise2(px / bs, tb + 102u), tf) - 0.5;
-    let cr = mix(vnoise2(px / bs + 37.0, tb + 201u), vnoise2(px / bs + 37.0, tb + 202u), tf) - 0.5;
+    // Chroma blotches: value noise from the lattice pass (fs_grain), eased between its corners.
+    let gp = px / (7.0 * sc);
+    let gi = vec2i(floor(gp));
+    let gf = fract(gp);
+    let ge = gf * gf * (3.0 - 2.0 * gf);
+    let g00 = textureLoad(grain, gi, 0).xy;
+    let g10 = textureLoad(grain, gi + vec2i(1, 0), 0).xy;
+    let g01 = textureLoad(grain, gi + vec2i(0, 1), 0).xy;
+    let g11 = textureLoad(grain, gi + vec2i(1, 1), 0).xy;
+    let blot = mix(mix(g00, g10, ge.x), mix(g01, g11, ge.x), ge.y) - 0.5;
+    let cb = blot.x;
+    let cr = blot.y;
     let fpn = (hf(px.x, 0.0, 77u) - 0.5) * 0.35;
     d += vec3f(g1 + fpn) * sigma + vec3f(1.4 * cr, -0.34 * cb - 0.71 * cr, 1.77 * cb) * sigma * 1.8 * (0.3 + dark);
+    raw = d;
+    smear = u.k.x * 0.88 * (0.25 + 0.75 * darkPx) * min(gainA, 1.0);
     if (u.b.z < 0.5) {
       let h = textureLoad(hist, ip, 0).rgb;
-      let w = u.k.x * 0.88 * (0.25 + 0.75 * darkPx) * (1.0 - smoothstep(0.05, 0.22, length(d - h))) * min(gainA, 1.0);
-      d = mix(d, h, w);
+      d = mix(d, h, smear * (1.0 - smoothstep(0.05, 0.22, length(d - h))));
     }
   }
   d = clamp(d, vec3f(0.0), vec3f(1.0));
   res.color = vec4f(d, 1.0);
-  res.hist = res.color;
+  // The denoise smears once per 60 Hz frame, as tuned: a picture held longer (a later pass repeating it, a slower
+  // display) smears this exposure into the history again for each 60 Hz frame it covers, the last one in part.
+  var h = d;
+  if (smear > 0.0) {
+    let n = u.pad.y;
+    for (var i = 0; i < i32(ceil(n)); i++) {
+      let e = clamp(mix(raw, h, smear * (1.0 - smoothstep(0.05, 0.22, length(raw - h)))), vec3f(0.0), vec3f(1.0));
+      h = mix(h, e, min(n - f32(i), 1.0));
+    }
+  }
+  res.hist = vec4f(h, 1.0);
   return res;
 }
 `
@@ -395,17 +437,25 @@ fn B(i: vec2i) -> vec4f { return textureLoad(aux, clamp(i, vec2i(0), vec2i(textu
 /** The passes' shaders, for validation. */
 export const CAMERA_ARTIFACT_WGSL = { pre: PRE_WGSL, lens: LENS_WGSL, codec: CODEC_WGSL }
 
+/**
+ * Extra denoise smears for a lens picture that stays up `elapsed` seconds since the last: one per 60 Hz frame it
+ * covers past the first, the last in part, so the smoothing matches its 60 Hz tuning at any display or sensor rate.
+ */
+export function denoiseEchoes(elapsed: number): number {
+  return Math.min(Math.max(elapsed * 60 - 1, 0), 4)
+}
+
 const UNIFORM_FLOATS = 96
 const MAX_SOURCES = 4
 
 export type CameraArtifactStage = "lens" | "codec"
-type Targets = { width: number; height: number; source: GPUTexture; sourceView: GPUTextureView; hist: [GPUTexture, GPUTexture]; histViews: [GPUTextureView, GPUTextureView]; aux: GPUTexture; auxView: GPUTextureView }
+type Targets = { width: number; height: number; source: GPUTexture; sourceView: GPUTextureView; hist: [GPUTexture, GPUTexture]; histViews: [GPUTextureView, GPUTextureView]; aux: GPUTexture; auxView: GPUTextureView; grain: GPUTexture; grainView: GPUTextureView }
 
 /** One stage of the camera artifacts as a final pass. Share `settings` and `input` between the two stages. */
 export class CameraArtifacts implements FinalPass {
   input: CameraArtifactInput = { sources: [], flicker: [], focus: 10, gain: 0 }
   private targets: Targets | null = null
-  private pipes: { pre?: GPURenderPipeline; main?: GPURenderPipeline } = {}
+  private pipes: { pre?: GPURenderPipeline; grain?: GPURenderPipeline; main?: GPURenderPipeline; repeat?: GPURenderPipeline } = {}
   private layouts: { pre: GPUBindGroupLayout; main: GPUBindGroupLayout } | null = null
   private groups: { pre: GPUBindGroup; main: [GPUBindGroup, GPUBindGroup] } | null = null
   private sampler: GPUSampler | null = null
@@ -417,6 +467,9 @@ export class CameraArtifacts implements FinalPass {
   private parity = 0
   private valid = false
   private lastTime = 0
+  /** When this pass last drew (`lastTime` also moves on frames it is left out of, `skip`). */
+  private drawnTime = 0
+  private echoes = 0
   /** Autofocus in dioptres: where the lens is, its velocity, what it is racking to, how long the subject has been off. */
   private af = { lens: 0.1, v: 0, aim: 0.1, off: 0, hunt: 0 }
   /** Bitrate envelope: how starved the encoder is (fast attack on motion, slow recovery). */
@@ -429,7 +482,11 @@ export class CameraArtifacts implements FinalPass {
   get active(): boolean {
     const s = this.settings
     const on = this.stage === "codec" ? s.compression : s.focusHunt || s.sensorGain || s.pwm || s.flare || s.dirt || s.condensation || s.infrared
-    if (!on) this.valid = false
+    if (!on) {
+      this.valid = false
+      // Off holds no full-size textures; the next frame on allocates them again.
+      if (this.targets) this.releaseTargets()
+    }
     return on
   }
 
@@ -446,23 +503,20 @@ export class CameraArtifacts implements FinalPass {
     if (!t) return
     this.ensure()
     const time = frame[19]!
-    const dt = time - this.lastTime
-    const continuous = this.valid && dt >= 0 && dt < 0.25
-    if (continuous && dt > 0) {
-      const [fx, fy] = cameraFlow(frame, this.prev, t.width, t.height, this.inverse)
-      const k = 1 - Math.exp(-dt / 0.05)
-      this.flow[0] += (fx / dt - this.flow[0]) * k
-      this.flow[1] += (fy / dt - this.flow[1]) * k
-    } else if (!continuous) this.flow = [0, 0]
-    this.prev.set(frame.subarray(0, 20))
-    this.pack(frame, time, continuous ? Math.max(dt, 0) : 0, !continuous, t.width, t.height)
+    const { continuous, elapsed } = this.advance(frame, true)
+    this.echoes = denoiseEchoes(elapsed)
+    this.pack(frame, time, elapsed, !continuous, t.width, t.height)
     this.device.queue.writeBuffer(this.uniform!, 0, this.data)
     const read = this.parity, write = 1 - read
-    const pre = encoder.beginRenderPass({ colorAttachments: [{ view: t.auxView, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 0 } }] })
-    pre.setPipeline(this.pipes.pre!)
-    pre.setBindGroup(0, this.groups!.pre)
-    pre.draw(3)
-    pre.end()
+    const small = (view: GPUTextureView, pipe: GPURenderPipeline) => {
+      const pass = encoder.beginRenderPass({ colorAttachments: [{ view, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 0 } }] })
+      pass.setPipeline(pipe)
+      pass.setBindGroup(0, this.groups!.pre)
+      pass.draw(3)
+      pass.end()
+    }
+    small(t.auxView, this.pipes.pre!)
+    if (this.stage === "lens" && this.data[16]! > 0) small(t.grainView, this.pipes.grain!)
     const main = encoder.beginRenderPass({ colorAttachments: [
       { view: target, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } },
       { view: t.histViews[write], loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } },
@@ -473,13 +527,60 @@ export class CameraArtifacts implements FinalPass {
     main.end()
     this.parity = write
     this.valid = true
+  }
+
+  /** A frame a later pass holds, drawn without this one (`FinalPassChain`): the flow and continuity clocks still move. */
+  skip(frame: Float32Array): void {
+    if (this.targets && this.valid) this.advance(frame, false)
+  }
+
+  /**
+   * Moves the clocks to this frame. `elapsed` is the time since the pass last drew (0 after a cut), which steps the
+   * autofocus, the bitrate envelope and the denoise echoes in real time however often the pass draws.
+   */
+  private advance(frame: Float32Array, draws: boolean): { continuous: boolean; elapsed: number } {
+    const t = this.targets!
+    const time = frame[19]!
+    const dt = time - this.lastTime
+    const continuous = this.valid && dt >= 0 && dt < 0.25
+    if (continuous && dt > 0) {
+      const [fx, fy] = cameraFlow(frame, this.prev, t.width, t.height, this.inverse)
+      const k = 1 - Math.exp(-dt / 0.05)
+      this.flow[0] += (fx / dt - this.flow[0]) * k
+      this.flow[1] += (fy / dt - this.flow[1]) * k
+    } else if (!continuous) this.flow = [0, 0]
+    this.prev.set(frame.subarray(0, 20))
     this.lastTime = time
+    const elapsed = continuous ? Math.max(time - this.drawnTime, 0) : 0
+    if (draws || !continuous) this.drawnTime = time
+    return { continuous, elapsed }
+  }
+
+  /**
+   * Draws the last picture again without reading the source, for a frame a later pass holds (`FinalPassChain`); false
+   * when there is none yet.
+   */
+  repeat(encoder: GPUCommandEncoder, target: GPUTextureView): boolean {
+    const t = this.targets
+    if (!t || !this.valid) return false
+    this.ensure()
+    const pass = encoder.beginRenderPass({ colorAttachments: [{ view: target, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })
+    pass.setPipeline(this.pipes.repeat!)
+    // The group that reads the history written last.
+    pass.setBindGroup(0, this.groups!.main[this.parity])
+    pass.draw(3)
+    pass.end()
+    return true
   }
 
   dispose(): void {
-    const t = this.targets
-    t?.source.destroy(); t?.hist.forEach(h => h.destroy()); t?.aux.destroy()
+    this.releaseTargets()
     this.uniform?.destroy()
+  }
+
+  private releaseTargets() {
+    const t = this.targets
+    t?.source.destroy(); t?.hist.forEach(h => h.destroy()); t?.aux.destroy(); t?.grain.destroy()
     this.targets = null
     this.groups = null
   }
@@ -570,19 +671,22 @@ export class CameraArtifacts implements FinalPass {
       s.gainSmear, s.infraredBloom, index, index % fps === 0 ? 1 : 0,
     ], 0)
     u[92] = s.infraredTint
+    u[93] = this.echoes
   }
 
   private resize(width: number, height: number) {
     const d = this.device
-    const t = this.targets
-    t?.source.destroy(); t?.hist.forEach(h => h.destroy()); t?.aux.destroy()
+    this.releaseTargets()
     const usage = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING
     const make = (label: string) => d.createTexture({ label, size: [width, height], format: this.format, usage })
     const source = make(`camera ${this.stage} source`)
     const hist: [GPUTexture, GPUTexture] = [make(`camera ${this.stage} history a`), make(`camera ${this.stage} history b`)]
     const auxSize = this.stage === "lens" ? [LOCAL_W, LOCAL_H] : [Math.ceil(width / 8), Math.ceil(height / 8)]
     const aux = d.createTexture({ label: `camera ${this.stage} ${this.stage === "lens" ? "local mean" : "blocks"}`, size: auxSize, format: "rgba16float", usage })
-    this.targets = { width, height, source, sourceView: source.createView(), hist, histViews: [hist[0].createView(), hist[1].createView()], aux, auxView: aux.createView() }
+    // Sensor gain's chroma lattice: one texel per blotch cell (7 px at 1080 lines) and a spare row and column.
+    const cell = (7 * height) / 1080
+    const grain = d.createTexture({ label: `camera ${this.stage} grain lattice`, size: this.stage === "lens" ? [Math.ceil(width / cell) + 2, Math.ceil(height / cell) + 2] : [1, 1], format: "rg32float", usage })
+    this.targets = { width, height, source, sourceView: source.createView(), hist, histViews: [hist[0].createView(), hist[1].createView()], aux, auxView: aux.createView(), grain, grainView: grain.createView() }
     this.valid = false
     this.groups = null
   }
@@ -603,6 +707,7 @@ export class CameraArtifacts implements FinalPass {
           { binding: 2, visibility: F, texture: { sampleType: "float" } },
           { binding: 3, visibility: F, texture: { sampleType: "float" } },
           { binding: 4, visibility: F, sampler: { type: "filtering" } },
+          { binding: 5, visibility: F, texture: { sampleType: "unfilterable-float" } },
         ] }),
       }
       this.sampler = d.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" })
@@ -614,7 +719,10 @@ export class CameraArtifacts implements FinalPass {
       const preModule = d.createShaderModule({ label: "camera artifacts pre", code: PRE_WGSL })
       this.pipes.pre = d.createRenderPipeline({ label: `camera ${this.stage} pre`, layout: d.createPipelineLayout({ bindGroupLayouts: [L.pre] }), vertex: { module: preModule, entryPoint: "vs" }, fragment: { module: preModule, entryPoint: lens ? "fs_local" : "fs_blocks", targets: [{ format: "rgba16float" }] }, primitive: { topology: "triangle-list" } })
       const module = d.createShaderModule({ label: `camera ${this.stage}`, code: lens ? LENS_WGSL : CODEC_WGSL })
-      this.pipes.main = d.createRenderPipeline({ label: `camera ${this.stage}`, layout: d.createPipelineLayout({ bindGroupLayouts: [L.main] }), vertex: { module, entryPoint: "vs" }, fragment: { module, entryPoint: lens ? "fs_lens" : "fs_codec", targets: [{ format: this.format }, { format: this.format }] }, primitive: { topology: "triangle-list" } })
+      const mainLayout = d.createPipelineLayout({ bindGroupLayouts: [L.main] })
+      this.pipes.main = d.createRenderPipeline({ label: `camera ${this.stage}`, layout: mainLayout, vertex: { module, entryPoint: "vs" }, fragment: { module, entryPoint: lens ? "fs_lens" : "fs_codec", targets: [{ format: this.format }, { format: this.format }] }, primitive: { topology: "triangle-list" } })
+      this.pipes.repeat = d.createRenderPipeline({ label: `camera ${this.stage} repeat`, layout: mainLayout, vertex: { module, entryPoint: "vs" }, fragment: { module, entryPoint: "fs_repeat", targets: [{ format: this.format }] }, primitive: { topology: "triangle-list" } })
+      if (lens) this.pipes.grain = d.createRenderPipeline({ label: "camera lens grain lattice", layout: d.createPipelineLayout({ bindGroupLayouts: [L.pre] }), vertex: { module: preModule, entryPoint: "vs" }, fragment: { module: preModule, entryPoint: "fs_grain", targets: [{ format: "rg32float" }] }, primitive: { topology: "triangle-list" } })
     }
     if (!this.groups) {
       const t = this.targets!, L = this.layouts
@@ -626,6 +734,7 @@ export class CameraArtifacts implements FinalPass {
           { binding: 2, resource: t.histViews[i]! },
           { binding: 3, resource: t.auxView },
           { binding: 4, resource: this.sampler! },
+          { binding: 5, resource: t.grainView },
         ] })) as [GPUBindGroup, GPUBindGroup],
       }
     }

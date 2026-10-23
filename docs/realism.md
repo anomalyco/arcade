@@ -638,12 +638,25 @@ first build.
   beam, from the shared distant-sound events) and an IR lamp at the lens are woods scene pieces.
   - Where: `packages/kit/gpu/post/camera-artifacts.ts`, `final-chain.ts`; woods `src/camera-look.ts` (presets Eyes,
     Body cam night, Camcorder NightShot, Phone night mode, VHS), `src/eyeshine.ts`, station `woods-camera`.
-  - Cost (`mini`, 1600×900 High, against Eyes): each effect a small fraction of a millisecond; the full looks under a
-    millisecond, NightShot and phone the heaviest. Off builds nothing.
+  - Cost (`mini` Metal, BARBARA's camera-lab spot at High, whole-frame GPU against Eyes, median of six rounds' means;
+    Oct 23, `games/barbara/scripts/camera-perf.ts`): at 1600×900 body cam −0.7 ms (its wide render is ~1.1 ms cheaper than
+    Eyes; its final passes 0.4 ms), phone +0.3, VHS and Hi8 +0.4, NightShot +0.5; at Retina (2400×1350) body cam −1.5,
+    phone +0.6, VHS and Hi8 +0.8, NightShot +1.2. Off holds no textures at all (each pass frees its full-size targets).
+  - How it got there (Oct 23, Kit: "the different cameras, like body cam, really slow things down"): a 30 fps sensor
+    (body cam, phone) on a 60 Hz display holds every other frame, and on those frames the chain skips the composite and
+    every pass before the hold; the codec, last, draws its own last picture again, so a held frame's whole chain is one
+    copy (`FinalPass.holds`, `RepeatablePass.repeat`). Skipped passes are told (`SkippablePass.skip`) so their flow
+    and continuity clocks keep moving; the meter's springs (`meterStep`) and the denoise echoes (`denoiseEchoes`) step
+    from the sensor time since they last ran, scaled to their 60 Hz tuning, so every display rate matches 60 Hz. Sensor-gain chroma blotches come from a small lattice pass instead of 16 hashes per pixel, flare ghosts
+    early-out outside their disc and the starburst angle has no `atan2`. Before → after at Retina: body cam's final
+    passes 1.4 → 0.8 ms, phone 1.4 → 0.7, NightShot 1.2 → 0.9, VHS and Hi8 1.1 → 0.8.
   - Kit: "What are some interesting rendering effects, like the bodycam etc., that could make this look cooler… to
     make it feel realer?"
   - Pitfalls: flare needs sources projected from the torches, not a bright-pixel threshold, or every lit trunk ghosts;
-    the PWM band is subtle at a few hundred hertz, so its depth is a knob.
+    the PWM band is subtle at a few hundred hertz, so its depth is a knob. A pass with state that a held frame skips
+    must keep its tuned pace: stepping the meter or the denoise once per sensor frame instead of once per 60 Hz frame
+    darkened the phone look by 3%, and counting skipped display frames instead of sensor time made it differ at 120 Hz. Timing a held frame needs the end marker to wait for the scene
+    (`FrameTimer.finish`'s `scene`), or the GPU overlaps the scene with the copy and the frame reads ~1 ms short.
 - **Recorded footage and turn blur (BARBARA).** Body cam reworked as an Axon-style chest cam (120° lens, slight
   barrel, timestamp and unit id, grey IR with an IR lamp and relay click when the torch is off); VHS gains iris
   pumping (`vhsIris`, a state pass) and a dated stamp from the story's epoch (`CameraFilter.epoch`); Hi8 (the VHS mode
@@ -653,7 +666,7 @@ first build.
   - Where: `packages/kit/gpu/post/camera-blur.ts`, `camcorder.ts` (`stamp`, `zoom`, `battery`, `vhsIris`),
     `camera-artifacts.ts` (`infraredTint`); BARBARA `src/camera-look.ts`, `src/camera-feel.ts`.
   - Cost: blur runs only while the view turns faster than its threshold (nothing at rest, not even its texture), then
-    one nine-tap full-screen pass; not timed apart from the looks (each look stays under a millisecond on `mini`).
+    one nine-tap full-screen pass; not timed apart from the looks (see Lens and codec artifacts for the looks' cost).
   - Kit: "can I see if a bodycam style could work, or a better VHS, or other recorded idea, or more screenshake and
     movement and motion blur". Stills and the feel clip: gallery `barbara-camera-2026-10-22/`.
   - Pitfalls: the held map is drawn before the final passes, so every pass (lens, filter, codec, blur) must fade to 0
