@@ -16,6 +16,8 @@ export type RoomSocketOptions<Hello> = {
   pong?: (t: number) => void
   encode: (msg: unknown) => string
   decode: (raw: string) => { type: string } | null
+  /** Keep retrying a rolling deployment without requiring a manual reload. */
+  automaticReload?: boolean
 }
 
 /** sessionStorage key a version reload leaves for the page to rejoin its room. */
@@ -40,6 +42,7 @@ export class RoomSocket<Hello> {
   idleIn = 0
   private retries = 0
   private closed = false
+  private reloadTimer: ReturnType<typeof setTimeout> | undefined
   /** Your public seat id: the last one this tab held in the room until the welcome confirms it. */
   id: string
   private token: string
@@ -65,6 +68,7 @@ export class RoomSocket<Hello> {
 
   close(): void {
     this.closed = true
+    clearTimeout(this.reloadTimer)
     this.ws?.close()
   }
 
@@ -108,10 +112,16 @@ export class RoomSocket<Hello> {
         // new build isn't being served yet, so say so instead of looping.
         const key = `${this.o.game}.reloadAt`
         const last = Number(sessionStorage.getItem(key) ?? 0)
-        if (Date.now() - last < 60_000) return this.o.fatal("A new version is rolling out. Reload the page in a moment.")
-        sessionStorage.setItem(key, String(Date.now()))
-        sessionStorage.setItem(rejoinKey(this.o.game), this.o.room)
-        location.reload()
+        if (!this.o.automaticReload && Date.now() - last < 60_000) return this.o.fatal("A new version is rolling out. Reload the page in a moment.")
+        const reload = () => {
+          sessionStorage.setItem(key, String(Date.now()))
+          sessionStorage.setItem(rejoinKey(this.o.game), this.o.room)
+          location.reload()
+        }
+        const delay = this.o.automaticReload ? Math.max(0, 5000 - (Date.now() - last)) : 0
+        this.problem = "Reconnecting…"
+        if (delay) this.reloadTimer = setTimeout(reload, delay)
+        else reload()
         return
       }
       case "idle":

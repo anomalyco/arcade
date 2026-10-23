@@ -3,6 +3,7 @@ import type { LabControl } from "@arcade/kit/lab-panel"
 /** Every feel constant in `FEEL` (shared/sim.ts) as a Lab knob. In a room only presentation knobs apply: the room walks everyone with the defaults. */
 export const FEEL_CONTROLS: LabControl[] = [
   { key: "walkSpeed", label: "Walk speed", group: "Walking", min: 1, max: 4, step: 0.05, unit: "m/s" },
+  { key: "jumpHeight", label: "Jump height", group: "Walking", min: 0, max: 0.6, step: 0.01, unit: "m" },
   { key: "mapWalk", label: "Walk speed with map up", group: "Walking", min: 0, max: 1, step: 0.05, unit: "×" },
   { key: "flashReach", label: "Flashlight reach", group: "Flashlight", min: 8, max: 70, step: 1, unit: "m" },
   { key: "flashCone", label: "Flashlight cone (half-angle)", group: "Flashlight", min: 0.1, max: 0.7, step: 0.01, unit: "rad" },

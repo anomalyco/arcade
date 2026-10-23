@@ -25,7 +25,7 @@ export interface Session {
   readonly self: Player
   tick(input: PlayerInput): void
   /** Your drawn position between ticks (`alpha` 0..1 of the way to the newest), with corrections eased out. */
-  drawn(alpha: number): { x: number; z: number }
+  drawn(alpha: number): { x: number; z: number; y: number }
   /** Presentation for this frame (`alpha` 0..1 of the way from the last tick to the next): friends interpolated, corrections decayed. */
   frame(dt: number, alpha: number): void
   drain(): WoodsEvent[]
@@ -34,7 +34,7 @@ export interface Session {
   close(): void
 }
 
-type Pose = { x: number; z: number; yaw: number; pitch: number }
+type Pose = { x: number; z: number; y: number; yaw: number; pitch: number }
 
 export class SoloSession implements Session {
   readonly online = false
@@ -47,7 +47,7 @@ export class SoloSession implements Session {
   smooth = true
   private inputs = new Map<number, PlayerInput>()
   private events: WoodsEvent[] = []
-  private prev = { x: 0, z: 0 }
+  private prev = { x: 0, z: 0, y: 0 }
   private before = new Map<number, Pose>()
   private shown = new Map<number, Player>()
   private drawnView = {} as WoodsState
@@ -55,18 +55,18 @@ export class SoloSession implements Session {
   /** `seed` picks the night (its clue layout, bots and flicker); the same seed is the same night. */
   constructor(readonly world: WoodsWorld, private readonly feel: Feel, readonly seed = world.params.seed) {
     this.state = this.view = createWoods(world, feel.botCount, seed)
-    this.prev = { x: this.self.x, z: this.self.z }
+    this.prev = { x: this.self.x, z: this.self.z, y: this.self.air.y }
   }
   get self(): Player {
     return this.state.players.find((p) => p.id === 0)!
   }
   tick(input: PlayerInput) {
     if (this.state.brains.length !== this.feel.botCount) setBotCount(this.state, this.world, this.feel.botCount)
-    this.prev = { x: this.self.x, z: this.self.z }
+    this.prev = { x: this.self.x, z: this.self.z, y: this.self.air.y }
     for (const p of this.state.players) {
       const b = this.before.get(p.id)
-      if (b) Object.assign(b, { x: p.x, z: p.z, yaw: p.yaw, pitch: p.pitch })
-      else this.before.set(p.id, { x: p.x, z: p.z, yaw: p.yaw, pitch: p.pitch })
+      if (b) Object.assign(b, { x: p.x, z: p.z, y: p.air.y, yaw: p.yaw, pitch: p.pitch })
+      else this.before.set(p.id, { x: p.x, z: p.z, y: p.air.y, yaw: p.yaw, pitch: p.pitch })
     }
     this.inputs.set(0, input)
     stepWoods(this.state, this.world, this.inputs, this.dt, this.feel)
@@ -74,7 +74,7 @@ export class SoloSession implements Session {
   }
   drawn(alpha: number) {
     const s = this.self
-    return { x: this.prev.x + (s.x - this.prev.x) * alpha, z: this.prev.z + (s.z - this.prev.z) * alpha }
+    return { x: this.prev.x + (s.x - this.prev.x) * alpha, z: this.prev.z + (s.z - this.prev.z) * alpha, y: this.prev.y + (s.air.y - this.prev.y) * alpha }
   }
   frame(_dt: number, alpha: number) {
     if (!this.smooth) { this.view = this.state; return }
@@ -88,6 +88,7 @@ export class SoloSession implements Session {
       if (b && Math.hypot(p.x - b.x, p.z - b.z) < 2) {
         d.x = b.x + (p.x - b.x) * alpha
         d.z = b.z + (p.z - b.z) * alpha
+        d.air = { ...p.air, y: b.y + (p.air.y - b.y) * alpha }
         d.yaw = lerpAngle(b.yaw, p.yaw, alpha)
         d.pitch = b.pitch + (p.pitch - b.pitch) * alpha
       }
@@ -115,7 +116,7 @@ export class SoloSession implements Session {
   /** Automation: stand somewhere. */
   teleport(x: number, z: number) {
     Object.assign(this.self, { x, z, vx: 0, vz: 0 })
-    this.prev = { x, z }
+    this.prev = { x, z, y: this.self.air.y }
   }
 }
 
@@ -141,7 +142,10 @@ export class OnlineSession implements Session {
   private names: Record<number, string> = {}
   private events: WoodsEvent[] = []
   private rosterRows: RosterRow[] = []
-  private prev = { x: 0, z: 0 }
+  private prev = { x: 0, z: 0, y: 0 }
+  /** A fresh join snapshot restores the camera's facing before it sends another input. */
+  poseVersion = 0
+  private obstacles: Player[] = []
   private fatal: string | null = null
   /** Ask the room for the next night (from the debrief). */
   again() {
@@ -155,11 +159,12 @@ export class OnlineSession implements Session {
     this.view = createWoods(world, 0, world.params.seed, [])
     const s = world.camp.spawn
     this.self = newPlayer(-1, false, name || "You", s.x, s.z, s.yaw)
-    this.prev = { x: s.x, z: s.z }
+    this.prev = { x: s.x, z: s.z, y: 0 }
     this.view.players.push(this.self)
     this.socket = new RoomSocket({
       game: GAME,
       room,
+      automaticReload: true,
       hello: (token) => ({ type: "hello", token, build: BUILD, name }),
       receive: (m) => this.receive(m as ServerMsg),
       fatal: (message) => (this.fatal = message),
@@ -174,18 +179,18 @@ export class OnlineSession implements Session {
   }
 
   tick(input: PlayerInput) {
-    if (this.me < 0) return
+    if (this.me < 0 || this.socket.problem) return
     const q = quantizeInput(input)
-    this.prev = { x: this.self.x, z: this.self.z }
+    this.prev = { x: this.self.x, z: this.self.z, y: this.self.air.y }
     const seq = this.predictor.record(q)
-    stepMotion(this.world, this.self, q, ROOM_FEEL, TICK_DT)
+    stepMotion(this.world, this.self, q, ROOM_FEEL, TICK_DT, this.obstacles)
     this.self.light = q.light && canLight(this.self)
     this.socket.send({ type: "intent", seq, i: packIntent(q) })
   }
 
   drawn(alpha: number) {
     const s = this.self
-    return { x: this.prev.x + (s.x - this.prev.x) * alpha + this.smoother.x, z: this.prev.z + (s.z - this.prev.z) * alpha + this.smoother.y }
+    return { x: this.prev.x + (s.x - this.prev.x) * alpha + this.smoother.x, z: this.prev.z + (s.z - this.prev.z) * alpha + this.smoother.y, y: this.prev.y + (s.air.y - this.prev.y) * alpha }
   }
 
   private receive(m: ServerMsg) {
@@ -208,9 +213,12 @@ export class OnlineSession implements Session {
 
   private snapshot(s: Snapshot) {
     // A new night puts everyone back at camp: take the room's position outright rather than easing across the woods.
-    const first = this.me < 0 || this.me !== s.me || (!!s.night && s.night.seed !== this.view.night.seed)
+    const first = this.me < 0 || this.me !== s.me || !!s.map?.reset || (!!s.night && s.night.seed !== this.view.night.seed)
+    if (first) { this.snaps.clear(); this.poseVersion++ }
     this.me = s.me
     this.self.id = s.me
+    // Collision reads the newest authoritative positions, never the delayed presentation poses.
+    this.obstacles = s.p.filter((r) => r[0] !== s.me).map((r) => newPlayer(r[0]!, !!(r[7]! & BIT.bot), "", r[1]! / 100, r[2]! / 100, r[5]! / 1000))
     this.view.t = s.t
     if (s.names) this.names = s.names
     if (s.tapes) this.view.tapes = s.tapes.map((r) => tapeFromRow(this.world, r)).filter((t) => t !== null)
@@ -229,18 +237,23 @@ export class OnlineSession implements Session {
     }
     if (s.you) {
       const you = s.you
-      const restore = () => { Object.assign(this.self, { x: you[0], z: you[1], vx: you[2], vz: you[3], mapRaise: you[4] }) }
+      const restore = () => {
+        Object.assign(this.self, { x: you[0], z: you[1], vx: you[2], vz: you[3], mapRaise: you[4] })
+        Object.assign(this.self.air, { y: you[5], v: you[6], airborne: you[5]! > 0 || you[6] !== 0 })
+      }
       if (first) {
         this.predictor.reset()
         restore()
-        this.prev = { x: this.self.x, z: this.self.z }
+        Object.assign(this.self, { yaw: you[7], pitch: you[8], light: !!you[9] })
+        this.prev = { x: this.self.x, z: this.self.z, y: this.self.air.y }
         this.smoother.x = this.smoother.y = 0
       } else {
-        const bx = this.self.x, bz = this.self.z
-        this.predictor.reconcile(s.ack, restore, (cmd) => stepMotion(this.world, this.self, cmd, ROOM_FEEL, TICK_DT))
+        const bx = this.self.x, bz = this.self.z, by = this.self.air.y
+        this.predictor.reconcile(s.ack, restore, (cmd) => stepMotion(this.world, this.self, cmd, ROOM_FEEL, TICK_DT, this.obstacles))
         this.smoother.correct(bx, bz, this.self.x, this.self.z)
         this.prev.x += this.self.x - bx
         this.prev.z += this.self.z - bz
+        this.prev.y += this.self.air.y - by
       }
     }
     this.snaps.push(s.t, s, performance.now() / 1000)
@@ -270,6 +283,9 @@ export class OnlineSession implements Session {
         const g = r.glide.step(h.x, h.y, h.vx, h.vy, dt)
         const p = r.player
         p.x = g.x; p.z = g.y; p.vx = h.vx; p.vz = h.vy
+        p.air.y = Math.max(0, (a[11]! + (b[11]! - a[11]!) * br.t) / 1000)
+        p.air.v = b[12]! / 1000
+        p.air.airborne = p.air.y > 0
         p.yaw = lerpAngle(a[5]! / 1000, b[5]! / 1000, br.t)
         p.pitch = a[6]! / 1000 + (b[6]! / 1000 - a[6]! / 1000) * br.t
         p.light = !!(b[7]! & BIT.light)

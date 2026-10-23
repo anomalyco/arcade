@@ -18,6 +18,8 @@ export type Seat<P> = {
 }
 
 export type JoinResult<P> = { ok: true; seat: Seat<P>; resumed: boolean } | { ok: false; reason: "full" }
+/** Server-only checkpoint; contains private reconnect credentials, never a public roster. */
+export type SavedSeat = Pick<Seat<unknown>, "id" | "token" | "index" | "name" | "leftAt">
 
 const hex = (bytes: number) => {
   const b = new Uint8Array(bytes)
@@ -46,6 +48,16 @@ export class Seats<P> {
 
   byId(id: string): Seat<P> | undefined {
     return this.seats.find((s) => s.id === id)
+  }
+
+  checkpoint(): SavedSeat[] {
+    return this.seats.map(({ id, token, index, name, connected, leftAt }) => ({ id, token, index, name, leftAt: connected ? this.clock() : leftAt }))
+  }
+
+  /** A restarted transport has no live sockets or buffered keys. Keep the original grace deadline. */
+  restore(saved: readonly SavedSeat[], create: () => P): void {
+    if (this.seats.length) throw new Error("Seats must be restored before joining")
+    for (const seat of saved) this.seats.push({ ...seat, connected: false, data: create() })
   }
 
   /** Reclaims the seat holding `token` (connected or within grace), or takes a new one. */

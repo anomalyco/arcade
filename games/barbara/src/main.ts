@@ -32,18 +32,19 @@ import { createLakeEditor } from "@arcade/kit/water/lake-editor"
 import { MOONLIT_LAKE } from "@arcade/kit/water/lake-preset"
 
 /** Reduce camera motion is the shell's Settings row (one choice across games); `main` copies it in. */
-const WALK = { cameraMotion: 1, reduceMotion: false, stepLength: 0.72, walkSettle: 0.3, footsteps: 0.9 }
+const WALK = { cameraMotion: 1, reduceMotion: false, stepLength: 0.72, walkSettle: 0.3, footsteps: 0.9, landDip: 0.035 }
 const WALK_CONTROLS: LabControl[] = [
   { key: "cameraMotion", label: "Head motion", min: 0, max: 1, step: 0.05, unit: "×", group: "Walking" },
   { key: "stepLength", label: "Step length", min: 0.45, max: 1.1, step: 0.01, unit: "m", group: "Walking" },
   { key: "walkSettle", label: "Start/stop spring", min: 0.1, max: 0.6, step: 0.01, unit: "s", group: "Walking" },
   { key: "footsteps", label: "Footsteps", min: 0, max: 2, step: 0.05, unit: "×", group: "Walking" },
+  { key: "landDip", label: "Landing dip", min: 0, max: 0.08, step: 0.001, unit: "m", group: "Walking" },
 ]
 /** Feel knobs the forest renderer's own look settings replace (its Flashlight, Mist, Night and Camera groups). */
 const LOOK_KEYS = new Set(["flashReach", "flashCone", "flashPower", "beamHaze", "beamPresence", "ownHaze", "beamLength", "mist", "mistFalloff", "mistBank", "ambient", "exposure", "trunkShadows", "tapeShine"])
 /** Your own beam's light id (friends and bots are never 0 in a room; solo you are 0). */
 const OWN = 0
-const controlsHtml = () => [keyPromptHtml("KeyW", "Walk"), keyPromptHtml("ShiftLeft", "Run", { hold: true }), keyPromptHtml("KeyF", "Flashlight"), keyPromptHtml("KeyE", "Tie tape", { hold: true }), keyPromptHtml("KeyG", "Map", { hold: true }), keyPromptHtml("KeyM", "Mute"), keyPromptHtml("Escape", "Menu")].join(" ")
+const controlsHtml = () => [keyPromptHtml("KeyW", "Walk"), keyPromptHtml("ShiftLeft", "Run", { hold: true }), keyPromptHtml("Space", "Jump"), keyPromptHtml("KeyF", "Flashlight"), keyPromptHtml("KeyE", "Tie tape", { hold: true }), keyPromptHtml("KeyG", "Map", { hold: true }), keyPromptHtml("KeyM", "Mute"), keyPromptHtml("Escape", "Menu")].join(" ")
 const MOVE_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight", "KeyE", "KeyG"])
 /** Solo nights played in this browser: the next night's layout (`?night=` replays one). */
 const NIGHT_KEY = "barbara.night"
@@ -194,12 +195,14 @@ async function main() {
   // Held keys the game reads (walking, tie, map); mouse look and F live in the shared camera. M (mute) and Escape
   // (the menu) are the shell's.
   const keys = new Set<string>()
-  const release = () => keys.clear()
+  let jumpPressed = false, poseVersion = 0
+  const release = () => { keys.clear(); jumpPressed = false }
   window.addEventListener("keydown", (e) => {
     if (isEditableEventTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return
     if (!locked()) return
     // Tab brings the end card back once a night is over.
     if (e.code === "Tab") { e.preventDefault(); if (endCard.canShow(session.view.night)) endCard.show(); return }
+    if (e.code === "Space") { if (!e.repeat) jumpPressed = true; e.preventDefault() }
     if (MOVE_KEYS.has(e.code)) { keys.add(e.code); e.preventDefault() }
   })
   window.addEventListener("keyup", (e) => { keys.delete(e.code); if (isMetaKey(e.code)) release() })
@@ -291,7 +294,9 @@ async function main() {
     }
     const len = Math.hypot(mx, mz)
     if (len > 1) { mx /= len; mz /= len }
-    return { yaw: camera.yaw, pitch: camera.pitch, light: camera.flashlight, tie: keys.has("KeyE"), map: keys.has("KeyG"), mx, mz, sprint: !!k("ShiftLeft", "ShiftRight") }
+    const jump = jumpPressed
+    jumpPressed = false
+    return { yaw: camera.yaw, pitch: camera.pitch, light: camera.flashlight, tie: keys.has("KeyE"), map: keys.has("KeyG"), mx, mz, sprint: !!k("ShiftLeft", "ShiftRight"), jump }
   }
 
   // The room's roster: who is here, who dropped, who just walked in.
@@ -422,6 +427,11 @@ async function main() {
     // Walk: fixed ticks of the shared sim (solo) or the room's prediction (online); a room keeps ticking while you're
     // on the start screen so friends still see you standing there.
     if (camera.flashlight !== prevLight) { prevLight = camera.flashlight; audio.play("flashlight.click") }
+    if (session instanceof OnlineSession && poseVersion !== session.poseVersion) {
+      poseVersion = session.poseVersion
+      camera.yaw = session.self.yaw; camera.pitch = session.self.pitch; camera.flashlight = session.self.light
+      camera.resetWalk(); release(); acc = 0
+    }
     acc = Math.min(acc + (playing || online ? dt : 0), 0.25)
     while (acc >= session.dt) {
       acc -= session.dt
@@ -432,7 +442,7 @@ async function main() {
     session.frame(dt, alpha)
     const state = session.view, meId = session.me
     const at = session.drawn(alpha)
-    const vp = camera.place(at.x, at.z, standHeight(world, at.x, at.z) + EYE_HEIGHT, dt, width / height)
+    const vp = camera.place(at.x, at.z, standHeight(world, at.x, at.z) + EYE_HEIGHT, dt, width / height, at.y)
     if (playing) audio.steps(camera.walk.events, surfaceAt(at.x, at.z), camera.walk.time, settings.footsteps)
     roster(now)
     {

@@ -135,8 +135,8 @@ export class FriendsView {
         : { r: signalling ? [0.12, 0.78, 0.16] : [0.4, 0.12 + up * 0.32, 0.17], k: 1 }
       const heading = Math.atan2(dz, dx)
       const cues = animate(a, dt, state.t, p.x, p.z, p.vx, p.vz, heading)
-      if (cues & EV.step) steps(p)
-      const ground = standHeight(world, a.x, a.y)
+      if ((cues & EV.step) && !p.air.airborne) steps(p)
+      const ground = standHeight(world, a.x, a.y) + p.air.y
       const push = fp.scaled(1, 0, 0, ground)
       pose(push, a, COATS[(p.id - 1) % COATS.length]!, this.parts)
       const fa = a.body?.fa[1]

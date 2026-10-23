@@ -65,9 +65,9 @@ export class PeopleView {
       this.persons.set(p.id, person)
     }
     a.reach = reach
-    if (animate(a, dt, t, p.x / s, p.z / s, p.vx / s, p.vz / s, aim) & EV.step) steps()
+    if ((animate(a, dt, t, p.x / s, p.z / s, p.vx / s, p.vz / s, aim) & EV.step) && !p.air.airborne) steps()
     const pitch = Math.max(-0.5, Math.min(0.6, p.pitch * 0.55))
-    return this.people.drive(person, a, { dt, time: t, ground: (x, z) => this.ground(stand, x, z), torch: { side: 1, dir }, look: { yaw: 0, pitch }, eye: eye ?? undefined })
+    return this.people.drive(person, a, { dt, time: t, ground: (x, z) => this.ground(stand, x, z), rise: p.air.y, torch: { side: 1, dir }, look: { yaw: 0, pitch }, eye: eye ?? undefined })
   }
 
   /** Torch-shadow casters: every drawn person within `reach` of `from` (your torch). */

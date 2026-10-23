@@ -1,5 +1,14 @@
 # Animation
 
+## Barbara hop (Oct 22)
+
+Space uses Night Shift's constant-gravity hop, extracted to `packages/kit/sim/hop.ts` so room, solo and prediction
+share the same 0.3 m arc. Friends' blocky root and realistic `People.drive` rise follow the replicated height;
+terrain-foot support is computed on the floor before adding the rise, so it cannot damp the hop away. The camera
+reuses `Walk.land`'s two quiet contacts and Night Shift's 35 mm, 0.3 s critically damped landing dip. Reduced motion
+keeps the physical rise and contacts but removes the dip. `games/barbara/tests/jump-camera.test.ts` checks the
+camera and contacts at 30/60/144 Hz. This is a floor-plan hop; it does not vault obstacles or change the gait poses.
+
 ## Walkers physical human (Oct 20, learning incomplete)
 
 `games/walkers/shared/human.ts` is a separate sagittal rigid-body learning prototype, not the shared 3D animation

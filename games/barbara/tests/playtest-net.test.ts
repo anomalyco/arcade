@@ -1,0 +1,149 @@
+import { expect, test } from "bun:test"
+import { stepBody } from "@arcade/kit/sim/move"
+import { JitterBuffer } from "@arcade/kit/net/jitter-buffer"
+import { WoodsRoomCore, type NightCheckpoint } from "../server/room-core"
+import { BUILD } from "../shared/build.gen"
+import { GRACE_MS, intentOps, packIntent, quantizeInput, type ServerMsg, type Snapshot } from "../shared/protocol"
+import { createWoods, FEEL, newPlayer, PLAYER_RADIUS, stepMotion, stepWoods, type PlayerInput } from "../shared/sim"
+import { makeWorld } from "../shared/world"
+
+const world = makeWorld(), dt = 1 / 30
+const input = (i: Partial<PlayerInput> = {}): PlayerInput => ({ yaw: 0, pitch: 0, light: true, mx: 0, mz: 0, tie: false, map: false, ...i })
+function join(room: WoodsRoomCore, token?: string, build = BUILD) {
+  const frames: ServerMsg[] = []
+  const conn = { send: (s: string) => frames.push(JSON.parse(s)), close() {} }
+  room.message(conn, JSON.stringify({ type: "hello", token, build, name: "Searcher" }))
+  const welcome = frames.find((m) => m.type === "welcome")
+  return { conn, frames, token: welcome?.type === "welcome" ? welcome.token : undefined, first: frames.find((m): m is Snapshot => m.type === "s") }
+}
+
+test("a cold room restores two private seats, poses, tapes, finds, maps and the full night schedule", () => {
+  let now = 100_000
+  const old = new WoodsRoomCore("proof", () => now, world)
+  const a = join(old), b = join(old)
+  for (let i = 0; i < 90; i++) {
+    old.message(a.conn, JSON.stringify({ type: "intent", seq: i, i: packIntent(input({ mx: -1, yaw: 0.7, pitch: 0.2 })) }))
+    old.message(b.conn, JSON.stringify({ type: "intent", seq: i, i: packIntent(input({ mx: 1, yaw: -0.9, pitch: -0.3 })) }))
+    now += 1000 / 30; old.step()
+  }
+  const s = old.state, tree = world.trees[0]!
+  s.t = 1020
+  s.tapes = [{ id: 3, tree: tree.id, x: tree.x, z: tree.z, y: tree.y + 1.5, yaw: 0.4, by: 1, at: 400 }]
+  s.nextTape = 4; s.found = { 0: [1, 2] }; s.rev.found++
+  for (const p of s.players.filter((p) => !p.bot)) { p.map.tapes = [3]; p.map.markers = [0] }
+  s.players[0]!.map.heard = [{ from: 2, serial: s.players[1]!.serial, trail: [...s.players[1]!.map.trail] }]
+  // JSON is the actual SQLite boundary; don't keep any old runtime objects alive.
+  const night: NightCheckpoint = JSON.parse(JSON.stringify(old.checkpoint()))
+  now += 5000
+  const restarted = WoodsRoomCore.restore(night, () => now, "new-build")
+  const stale = join(restarted, a.token)
+  expect(stale.frames).toEqual([{ type: "reload" }])
+  expect(restarted.humans).toBe(2)
+  const again = [join(restarted, a.token, "new-build"), join(restarted, b.token, "new-build")]
+  for (let i = 0; i < 2; i++) {
+    const p = s.players[i]!, c = again[i]!
+    expect(c.first!.me).toBe(p.id)
+    expect(c.first!.ack).toBe(-1)
+    expect(c.first!.you![0]).toBeCloseTo(p.x, 4)
+    expect(c.first!.you![1]).toBeCloseTo(p.z, 4)
+    expect(c.first!.you![7]).toBeCloseTo(p.yaw, 4)
+    expect(c.first!.you![8]).toBeCloseTo(p.pitch, 4)
+    expect(c.first!.found).toEqual(s.found)
+    expect(c.first!.tapes![0]![0]).toBe(3)
+    expect(c.first!.map!.tapes).toEqual([3])
+    expect(c.first!.map!.markers).toEqual([0])
+    expect(c.first!.t).toBe(1020)
+    expect(c.first!.distant).toEqual(s.distant)
+  }
+  expect(restarted.state.voices).toEqual(s.voices)
+  expect(restarted.state.rng).toEqual(s.rng)
+  expect(restarted.state.players[0]!.map).toEqual(s.players[0]!.map)
+  expect(restarted.state.brains).toEqual(s.brains)
+  // Public seat ids cannot steal a saved player; connected tokens still get a separate seat.
+  const publicId = again[0]!.frames.find((m) => m.type === "welcome")!
+  expect(publicId.type).toBe("welcome")
+  const stranger = join(restarted, publicId.type === "welcome" ? publicId.id : "", "new-build")
+  expect(stranger.first!.me).toBe(3)
+  expect(join(restarted, a.token, "new-build").first!.me).toBe(4)
+})
+
+test("checkpoints run every two seconds and on seat changes, and grace never renews after a restart", () => {
+  let now = 100_000, writes = 0
+  const room = new WoodsRoomCore("proof", () => now, world)
+  room.onCheckpoint = () => writes++
+  const a = join(room)
+  expect(writes).toBe(1)
+  for (let i = 0; i < 70; i++) { now += 1000 / 30; room.step() }
+  expect(writes).toBe(2)
+  room.close(a.conn)
+  expect(writes).toBe(3)
+  const night = JSON.parse(JSON.stringify(room.checkpoint())) as NightCheckpoint
+  now += GRACE_MS + 1
+  const restored = WoodsRoomCore.restore(night, () => now)
+  expect(restored.humans).toBe(0)
+  expect(restored.state.players.every((p) => p.bot)).toBe(true)
+})
+
+test("friends and bots stop a walker at two body radii, slide, and are never pushed", () => {
+  for (const bot of [false, true]) {
+    const s = world.camp.spawn
+    const a = newPlayer(1, false, "A", s.x, s.z, 0), b = newPlayer(2, bot, "B", s.x, s.z - 1, 0)
+    for (let i = 0; i < 120; i++) stepMotion(world, a, input({ mz: -1, sprint: true }), FEEL, dt, [a, b])
+    expect(Math.hypot(a.x - b.x, a.z - b.z)).toBeCloseTo(PLAYER_RADIUS * 2, 5)
+    expect(b.x).toBe(s.x); expect(b.z).toBe(s.z - 1)
+    for (let i = 0; i < 20; i++) stepMotion(world, a, input({ mx: 1, mz: -1 }), FEEL, dt, [a, b])
+    expect(a.x - b.x).toBeGreaterThan(0.6)
+    expect(Math.hypot(a.x - b.x, a.z - b.z)).toBeGreaterThanOrEqual(PLAYER_RADIUS * 2 - 1e-8)
+  }
+})
+
+test("two approaching people stay separated in the shared sim; prediction agrees against a stationary peer", () => {
+  const s = createWoods(world, 0, 42, [{ id: 1, name: "A" }, { id: 2, name: "B" }])
+  const [a, b] = s.players
+  Object.assign(b!, { x: a!.x, z: a!.z - 2 })
+  for (let i = 0; i < 90; i++) {
+    stepWoods(s, world, new Map([[1, input({ mz: -1 })], [2, input({ mz: 1 })]]), dt)
+    expect(Math.hypot(a!.x - b!.x, a!.z - b!.z)).toBeGreaterThanOrEqual(0.56 - 1e-8)
+  }
+  const predicted = structuredClone(a!)
+  for (let i = 0; i < 30; i++) {
+    const q = quantizeInput(input({ mz: -1, mx: 0.3, jump: i === 0 }))
+    stepMotion(world, predicted, q, FEEL, dt, [b!])
+    b!.vx = b!.vz = 0
+    stepWoods(s, world, new Map([[1, q], [2, input()]]), dt)
+    expect([predicted.x, predicted.z, predicted.vx, predicted.vz, predicted.air]).toEqual([a!.x, a!.z, a!.vx, a!.vz, a!.air])
+  }
+})
+
+test("a body cannot tunnel through another or squeeze it through a wall", () => {
+  const b = { x: 0, y: 0, vx: 20, vy: 0 }
+  const obstacle = { x: 1, y: 0, radius: 0.28 }
+  for (let i = 0; i < 30; i++) stepBody(b, 1, 0, 20, [], dt, 0.28, 18, [obstacle])
+  expect(b.x).toBeCloseTo(0.44, 6)
+  expect(obstacle.x).toBe(1)
+  const pinned = { x: 0, y: 0, vx: 0, vy: 0 }
+  for (let i = 0; i < 60; i++) stepBody(pinned, 1, 1, 3, [[-1, 0.3, 2, 1]], dt, 0.28, 18, [{ x: 0.56, y: 0, radius: 0.28 }])
+  expect(pinned.y).toBeLessThanOrEqual(0.02 + 1e-8)
+  expect(Math.hypot(pinned.x - 0.56, pinned.y)).toBeGreaterThanOrEqual(0.56 - 1e-8)
+})
+
+test("jump is a half-second 0.3 m hop with no air jump, identically quantized and edge-carried", () => {
+  for (const hz of [30, 60, 144]) {
+    const s = world.camp.spawn, p = newPlayer(1, false, "A", s.x, s.z, 0)
+    let peak = 0
+    for (let i = 0; i < hz; i++) {
+      stepMotion(world, p, quantizeInput(input({ jump: i === 0 || i === Math.floor(hz / 4) })), FEEL, 1 / hz)
+      peak = Math.max(peak, p.air.y)
+      if (i > hz * 0.55) expect(p.air.airborne).toBe(false)
+    }
+    expect(peak).toBeGreaterThan(0.298); expect(peak).toBeLessThanOrEqual(0.3)
+  }
+  const jitter = new JitterBuffer(intentOps)
+  jitter.push(0, input(), 0); jitter.take(0)
+  jitter.take(1)
+  jitter.push(1, input({ jump: true }), 2)
+  jitter.push(2, input(), 2)
+  let presses = 0
+  for (let i = 2; i < 20; i++) for (const q of jitter.take(i)) if (q.jump) presses++
+  expect(presses).toBe(1)
+})

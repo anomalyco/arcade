@@ -12,7 +12,7 @@
  * Runs in Workers, Bun tests and browsers: no DOM or Worker APIs.
  */
 import { JitterBuffer, type InputOps, type JitterConfig, socketJitter } from "./jitter-buffer"
-import { Seats } from "./seats"
+import { Seats, type SavedSeat } from "./seats"
 
 export type RoomLocationHint = "wnam" | "enam" | "weur" | "eeur" | "apac" | "oc" | "sam" | "afr" | "me"
 
@@ -176,6 +176,15 @@ export abstract class RoomCore<C extends { type: string }, I, Row, Ev, Ents, Sna
   /** Open sockets, seated or not. */
   get connections(): number {
     return this.conns.size
+  }
+
+  protected checkpointSeats(): SavedSeat[] {
+    return this.seats.checkpoint()
+  }
+
+  protected restoreSeats(saved: readonly SavedSeat[]): void {
+    this.seats.restore(saved, () => ({ activity: { at: this.clock(), aim: 0, warned: 0 }, jitter: new JitterBuffer(this.opts.inputs, this.opts.jitter) }))
+    for (const seat of this.seats.expire()) this.leave(seat.id)
   }
 
   /** A socket was accepted (before its hello), so the room counts it while it handshakes. */

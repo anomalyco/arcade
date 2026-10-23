@@ -45,6 +45,8 @@ export type DriveOptions = {
   time: number
   /** World ground height. Omit for a flat floor at y = 0. */
   ground?: (x: number, z: number) => number
+  /** Whole-body rise above the terrain, e.g. an authoritative hop. Does not move foot-support springs. */
+  rise?: number
   torch?: { side: 0 | 1; dir: V3 }
   look?: { yaw: number; pitch: number }
   grip?: [HandPose | null, HandPose | null]
@@ -145,7 +147,7 @@ export class People {
     const speed = Math.hypot(a.svx, a.svy) * p.rest.scale
     p.breath.x += o.dt * Math.PI * 2 * (0.25 + 0.12 * Math.min(1, speed / 3))
     posePerson(p.rest, {
-      body, lift, feet, tilt, torch: o.torch, look: o.look, grip: o.grip,
+      body, lift: lift + (o.rise ?? 0), feet, tilt, torch: o.torch, look: o.look, grip: o.grip,
       breath: 1, breathPhase: p.breath.x, shift: idleShift(p.idle, speed, bothPlanted(loco), o.dt),
     }, p.pose)
     skinMatrices(p.rest, p.pose, p.inst.matrices)
@@ -158,4 +160,3 @@ export class People {
     for (const l of this.ready.values()) l.model.dispose()
   }
 }
-
