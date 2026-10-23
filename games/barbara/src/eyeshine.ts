@@ -19,6 +19,12 @@ const EYES: Record<EyeKind, { gap: number; height: number; color: readonly [numb
 }
 const SOUND_KIND: Partial<Record<DistantEvent["sound"], EyeKind>> = { "far.fox": "fox", "far.steps": "deer", "far.snap": "deer" }
 
+/** A spider eye: where it is and the way it looks (unit, horizontal). */
+export type SpiderEye = { p: readonly [number, number, number]; n: readonly [number, number, number] }
+/** Pale green-white, a little weaker than a deer's: the light comes back off a small eye a long way up. */
+const SPIDER_EYE: readonly [number, number, number] = [0.82, 1, 0.8]
+const SPIDER_EYE_GAIN = 0.6
+
 type Sighting = { kind: EyeKind; x: number; y: number; z: number; face: number; start: number; end: number; seed: number }
 /** A light near the viewer: lens, unit axis, power (cd-ish, the forest's `torchPower × 5`), half-angle (rad) and its angular profile. */
 export type EyeLight = { pos: readonly number[]; dir: readonly number[]; power: number; halfAngle: number; profile: (t: number) => number }
@@ -91,24 +97,39 @@ export class Eyeshine {
       const k = lift * blink * facing
       if (k <= 0.001 || blocked(eye, [s.x, s.y, s.z])) continue
       const g = EYES[s.kind].gap / 2
-      for (const side of [-1, 1]) {
-        const p = [s.x + fz * g * side, s.y, s.z - fx * g * side]
-        let lit = 0
-        for (const l of lights) {
-          const dx = p[0]! - l.pos[0]!, dy = p[1]! - l.pos[1]!, dz = p[2]! - l.pos[2]!
-          const d2 = dx * dx + dy * dy + dz * dz, d = Math.sqrt(d2) || 1
-          const cos = (dx * l.dir[0]! + dy * l.dir[1]! + dz * l.dir[2]!) / d
-          if (cos <= 0) continue
-          lit += (l.power * l.profile(Math.acos(Math.min(1, cos)) / l.halfAngle)) / d2
-        }
-        const de = Math.hypot(p[0]! - eye[0]!, p[1]! - eye[1]!, p[2]! - eye[2]!)
-        const seen = Math.min(600, (lit * 1.5e5 * this.gain) / (de * de)) * Math.exp(-2 * beta * de) * k
-        if (seen < 0.05) continue
-        const c = EYES[s.kind].color
-        // A 12 cm quad: the glow sprite keeps its hot core at least ~1.3 px wide, so the eye stays a point at any range.
-        fp.sprite(true, p[0]!, p[1]!, p[2]!, 0.12, c[0] * seen, c[1] * seen, c[2] * seen, 1, 9)
-      }
+      for (const side of [-1, 1]) this.glint(fp, [s.x + fz * g * side, s.y, s.z - fx * g * side], eye, lights, beta, EYES[s.kind].color, k)
     }
+  }
+
+  /**
+   * The spider's eyes (`SpiderView.eyes`): a pair on its eye turret looking out to either side, so the torch catches
+   * one when it's broadside to you. Always on, whatever the camera look: it's one of its tells. Only at 20–40 m or so
+   * (much past that the returned light is lost in the air, and it never comes nearer than 20 m).
+   */
+  drawSpider(fp: FrameParts, eye: readonly number[], eyes: readonly SpiderEye[], lights: readonly EyeLight[], blocked: (a: readonly number[], b: readonly number[]) => boolean, beta: number) {
+    for (const e of eyes) {
+      const tx = eye[0]! - e.p[0], tz = eye[2]! - e.p[2], td = Math.hypot(tx, tz) || 1
+      const k = smooth(0.15, 0.7, (e.n[0] * tx + e.n[2] * tz) / td) * smooth(48, 38, td)
+      if (k <= 0.001 || blocked(eye, e.p)) continue
+      this.glint(fp, e.p, eye, lights, beta, SPIDER_EYE, k * SPIDER_EYE_GAIN)
+    }
+  }
+
+  /** One eye's returned light as seen from `eye`, crossing the air twice. */
+  private glint(fp: FrameParts, p: readonly number[], eye: readonly number[], lights: readonly EyeLight[], beta: number, c: readonly [number, number, number], k: number) {
+    let lit = 0
+    for (const l of lights) {
+      const dx = p[0]! - l.pos[0]!, dy = p[1]! - l.pos[1]!, dz = p[2]! - l.pos[2]!
+      const d2 = dx * dx + dy * dy + dz * dz, d = Math.sqrt(d2) || 1
+      const cos = (dx * l.dir[0]! + dy * l.dir[1]! + dz * l.dir[2]!) / d
+      if (cos <= 0) continue
+      lit += (l.power * l.profile(Math.acos(Math.min(1, cos)) / l.halfAngle)) / d2
+    }
+    const de = Math.hypot(p[0]! - eye[0]!, p[1]! - eye[1]!, p[2]! - eye[2]!)
+    const seen = Math.min(600, (lit * 1.5e5 * this.gain) / (de * de)) * Math.exp(-2 * beta * de) * k
+    if (seen < 0.05) return
+    // A 12 cm quad: the glow sprite keeps its hot core at least ~1.3 px wide, so the eye stays a point at any range.
+    fp.sprite(true, p[0]!, p[1]!, p[2]!, 0.12, c[0] * seen, c[1] * seen, c[2] * seen, 1, 9)
   }
 
   private spawn(world: WoodsWorld, eye: readonly number[], yaw: number, t: number, kind: EyeKind, distance: number, turn: number, seconds: number) {

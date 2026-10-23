@@ -219,6 +219,11 @@ maps.
 ## Hooks for later
 
 - **Isolation** (`Player.isolated`): seconds a person has had their own torch off or dead with no lit walker within
-  25 m. The spider reads it; nothing else does yet.
+  25 m. The spider (`shared/stalker.ts`) reads it: after 12 s alone in the dark it comes to 36–46 m, out of every beam.
 - **Capture** (`Player.capture`): `null` today. When something sets it (`{ by, left }`), that walker can't move, their
-  torch is out and they count as out for the torch-loss rule. Rescue is for the spider's branch.
+  torch is out and they count as out for the torch-loss rule. Rescue is for the spider's branch; the spider's v1 never
+  catches anyone.
+- **Spider evidence** (`placeSpiderSigns(world, night.seed, person)` in `shared/spider-signs.ts`): tonight's web across
+  the trail (torn, the team's pink tape caught in it) and the silk-wrapped bundles high in the trees near it, one the
+  length of a person on nights the verdict names the spider (otherwise a third small one). The same for every machine;
+  `src/spider-signs-view.ts` `webMesh`/`bundleMesh` draw them into any `Mesh`, for an ending that names what took her.

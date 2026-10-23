@@ -174,7 +174,7 @@ test("everyone in a room sees the creature as the same event at the same moment"
   const kit = room.state.players.find((p) => p.name === "Kit")!, aiden = room.state.players.find((p) => p.name === "Aiden")!
   const bot = room.state.players.find((p) => p.bot)!, brain = room.state.brains.find((x) => x.id === bot.id)!
   const was = { ...ROOM_FEEL }
-  Object.assign(ROOM_FEEL, { creature: true })
+  Object.assign(ROOM_FEEL, { creature: "figure" })
   try {
     let found = false
     for (let x = -150; x <= 150 && !found; x += 9) for (let z = -150; z <= 150 && !found; z += 9) {

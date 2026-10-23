@@ -1,7 +1,8 @@
 import { stepBody } from "@arcade/kit/sim/move"
 import { startHop, stepHop, type Hop } from "@arcade/kit/sim/hop"
-import { stepCreature, type CreatureEvent } from "./creature"
+import { hasSpider, stepCreature, type CreatureEvent, type CreatureKind } from "./creature"
 import { createFlares, dropFlare, flareSources, stepFlareBodies, stepFlareHand, type FlareEvent, type FlareState } from "./flares"
+import { createStalker, stepStalker, type StalkerEvent, type StalkerState } from "./stalker"
 import { answerCall, createDistant, holdDistant, stepDistant, type DistantEvent, type DistantState } from "./distant"
 import { VOICE_LINES } from "./lines.gen"
 import { NIGHT_LINES } from "./night-lines.gen"
@@ -59,8 +60,11 @@ export const FEEL = {
   chatter: 1,
   /** People's own searchers speak at key moments (a find, a sighting): 1 on, 0 never. */
   voicePeople: 1,
-  /** The thing in the woods (`shared/creature.ts`): on (Kit, at the Barbara ship); rare, distant and brief. A room runs these defaults. */
-  creature: true,
+  /**
+   * What's in the woods (`shared/creature.ts`): the thin figure and the spider (`shared/stalker.ts`), both on (Kit, after
+   * the Oct 22 playtest); rare, distant and brief. A room runs these defaults.
+   */
+  creature: "both" as CreatureKind,
   /** How often it comes (×; 1 ≈ every five minutes when there's a light to cross). */
   creatureRate: 1,
   /** How far from whoever sees it (m). */
@@ -184,6 +188,8 @@ export type WoodsEvent =
   | VoiceEvent
   /** The creature crossing in front of a distant light (`shared/creature.ts`), seen by everyone at the same moment. */
   | CreatureEvent
+  /** The spider drumming leaves, or starting a distant walk (`shared/stalker.ts`). */
+  | StalkerEvent
   /** Clues found, spares picked up, torches dying and swapped, and the night starting and ending (`shared/night.ts`). */
   | NightEvent
   /** A road flare struck, thrown, or a spare taken from the camp table (`shared/flares.ts`). */
@@ -213,6 +219,8 @@ export type WoodsState = {
   night: NightState
   /** Road flares in hands, in the air and burning on the ground, and the camp's spares (`shared/flares.ts`). */
   flares: FlareState
+  /** The spider (`shared/stalker.ts`): its root and mode; clients draw its legs. */
+  stalker: StalkerState
 }
 
 /** One player's controls for a step: the same for a person (sent to the room, predicted locally) and a bot. */
@@ -251,7 +259,7 @@ export type Human = { id: number; name: string }
 
 /** A fresh night: `humans` start at camp (solo is one person with id 0), `bots` friends spread just north of them. */
 export function createWoods(world: WoodsWorld, bots = FEEL.botCount, seed = world.params.seed, humans: readonly Human[] = [{ id: 0, name: "You" }]): WoodsState {
-  const state: WoodsState = { t: 0, rng: { seed }, players: [], brains: [], tapes: [], nextTape: 1, found: {}, compared: {}, events: [], rev: { found: 0 }, serial: 0, distant: createDistant(seed ^ 0x51ed), voices: createVoices(seed ^ 0x3a7c), night: createNight(world, seed), flares: createFlares() }
+  const state: WoodsState = { t: 0, rng: { seed }, players: [], brains: [], tapes: [], nextTape: 1, found: {}, compared: {}, events: [], rev: { found: 0 }, serial: 0, distant: createDistant(seed ^ 0x51ed), voices: createVoices(seed ^ 0x3a7c), night: createNight(world, seed), flares: createFlares(), stalker: createStalker(world, seed ^ 0x5b1d) }
   for (const h of humans) addHuman(state, world, h.id, h.name)
   setBotCount(state, world, bots)
   return state
@@ -667,6 +675,7 @@ export function stepWoods(state: WoodsState, world: WoodsWorld, inputs: Readonly
   if (sound) state.events.push(sound)
   const creature = stepCreature(state.distant, world, here, state.t, feel, SIGNAL_HOLD, flareSources(state.flares, world, here, state.t, feel))
   if (creature) state.events.push(creature)
+  if (hasSpider(feel.creature)) state.events.push(...stepStalker(state.stalker, world, state.players, state.t, dt, feel, SIGNAL_HOLD, (w) => eyeOf(world, w as Player)))
   // A sighting cues the searchers too (`VOICE_CUES`).
   const cues = (state.events as readonly { kind: string }[]).filter((e) => VOICE_CUES.has(e.kind)) as VoiceCue[]
   // Dawn coming, and dawn come, get a line each.

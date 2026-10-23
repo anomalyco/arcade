@@ -124,7 +124,7 @@ test("a burning flare 70 m off in sight is a backdrop the creature can cross", (
   }
   expect(line).not.toBeNull()
   const me = { x: line!.x, z: line!.z, yaw: line!.yaw, pitch: 0, light: true, bot: false, id: 0, signal: 0 }
-  const feel = { ...FEEL, creature: true }
+  const feel = { ...FEEL, creature: "figure" as const }
   let without = 0, withFlare = 0
   for (let seed = 1; seed < 12; seed++) {
     if (planCreature(world, [me], feel, { seed }, SIGNAL_HOLD_SECONDS)) without++

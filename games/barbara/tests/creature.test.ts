@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { CREATURE_FIRST, CREATURE_INTERVAL, CREATURE_MIN, planCreature, segmentDistance, triggerCreature, trunkBetween, type CreatureEvent, type Watcher } from "../shared/creature"
-import { createWoods, FEEL, SIGNAL_HOLD_SECONDS, stepWoods, type PlayerInput, type WoodsState } from "../shared/sim"
+import { createWoods, FEEL, SIGNAL_HOLD_SECONDS, stepWoods, type Feel, type PlayerInput, type WoodsState } from "../shared/sim"
 import { isDeepWater, makeWorld } from "../shared/world"
 
 const world = makeWorld()
@@ -20,7 +20,7 @@ function clearLine() {
 const line = clearLine()
 
 /** You stand looking at a friend (a bot) 70 m off who holds their beam up the whole night. */
-function night(minutes: number, feel = { ...FEEL, creature: true }) {
+function night(minutes: number, feel: Feel = { ...FEEL, creature: "figure" }) {
   const state = createWoods(world, 1)
   const you = state.players[0]!, bot = state.players[1]!, brain = state.brains[0]!
   const input: PlayerInput = { yaw: line.yaw, pitch: 0, light: true, tie: false, map: false, mx: 0, mz: 0 }
@@ -37,8 +37,8 @@ function night(minutes: number, feel = { ...FEEL, creature: true }) {
 }
 
 test("on by default, and off sends nothing", () => {
-  expect(FEEL.creature).toBe(true)
-  expect(night(8, { ...FEEL, creature: false }).seen).toEqual([])
+  expect(FEEL.creature).toBe("both")
+  expect(night(8, { ...FEEL, creature: "off" }).seen).toEqual([])
 })
 
 test("rare, seeded and never early: the same night gives the same sightings, minutes apart, none in the first four minutes", () => {
@@ -71,7 +71,7 @@ test("it only comes with a light to cross: nobody's beam out there, no sighting"
   const state = createWoods(world, 0)
   const you = state.players[0]!
   Object.assign(you, { x: line.x, z: line.z })
-  const feel = { ...FEEL, creature: true, creatureRate: 5 }
+  const feel = { ...FEEL, creature: "figure" as const, creatureRate: 5 }
   let n = 0
   for (let i = 0; i < 12 * 60 * 60; i++) {
     stepWoods(state, world, new Map([[0, { yaw: line.yaw, pitch: 0, light: true, tie: false, map: false, mx: 0, mz: 0 }]]), 1 / 60, feel)
@@ -84,7 +84,7 @@ test("Trigger now places one at once by the same rules and keeps the distant sou
   const state: WoodsState = createWoods(world, 1)
   Object.assign(state.players[0]!, { x: line.x, z: line.z, yaw: line.yaw })
   Object.assign(state.players[1]!, { x: line.bx, z: line.bz, pitch: 1.35, light: true })
-  const e = triggerCreature(state.distant, world, state.players, 5, { ...FEEL, creature: true }, SIGNAL_HOLD_SECONDS)
+  const e = triggerCreature(state.distant, world, state.players, 5, { ...FEEL, creature: "figure" as const }, SIGNAL_HOLD_SECONDS)
   expect(e).not.toBeNull()
   expect(segmentDistance(line.x, line.z, e!.x0, e!.z0, e!.x1, e!.z1)).toBeGreaterThanOrEqual(CREATURE_MIN)
   expect(state.distant.busyUntil).toBeGreaterThan(5 + e!.dur)
@@ -97,7 +97,7 @@ function pair(aim: number, pitch = -0.1): Watcher[] {
     { id: 100, x: line.bx, z: line.bz, yaw: aim, pitch, light: true, bot: true, signal: 0 },
   ]
 }
-const feel = { ...FEEL, creature: true }
+const feel = { ...FEEL, creature: "figure" as const }
 const back = Math.atan2(-(line.x - line.bx), -(line.z - line.bz))
 
 test("only bright backdrops: a friend's beam across your view gives no sighting, even for Trigger now", () => {

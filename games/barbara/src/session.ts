@@ -2,7 +2,9 @@ import { Glide, hermite2, lerpAngle, SnapshotBuffer } from "@arcade/kit/net/inte
 import { Predictor, Smoother } from "@arcade/kit/net/prediction"
 import { RoomSocket } from "@arcade/kit/net/room-socket"
 import { BUILD } from "../shared/build.gen"
+import { hasSpider } from "../shared/creature"
 import { createNight, canLight } from "../shared/night"
+import { poseFromRow, stalkerPose, type StalkerPose } from "../shared/stalker"
 import { applyFlares, applyMapDelta, applyNightWire, BIT, decodeServer, GAME, packIntent, quantizeInput, ROOM_FEEL, tapeFromRow, TICK_DT, type PlayerRow, type RosterRow, type ServerMsg, type Snapshot } from "../shared/protocol"
 import { createWoods, newPlayer, setBotCount, stepMotion, stepWoods, type Feel, type Player, type PlayerInput, type WoodsEvent, type WoodsState } from "../shared/sim"
 import { castVote, isGone, type Suspect } from "../shared/verdict"
@@ -30,6 +32,8 @@ export interface Session {
   drawn(alpha: number): { x: number; z: number; y: number }
   /** Presentation for this frame (`alpha` 0..1 of the way from the last tick to the next): friends interpolated, corrections decayed. */
   frame(dt: number, alpha: number): void
+  /** The spider's root for this frame (`frame` sets it), or null when the woods have none. */
+  readonly spider: StalkerPose | null
   drain(): WoodsEvent[]
   /** The sim's clock now (s), smooth between ticks and snapshots: what flares burn by. */
   roomTime(): number
@@ -41,6 +45,13 @@ export interface Session {
 }
 
 type Pose = { x: number; z: number; y: number; yaw: number; pitch: number }
+
+/** The spider between two roots (`k` 0..1); a jump (a beat starting out of sight) shows where it lands. */
+function lerpSpider(a: StalkerPose, b: StalkerPose, k: number): StalkerPose {
+  if (a.jump !== b.jump) return b
+  const t = Math.max(0, Math.min(1, k))
+  return { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t, heading: lerpAngle(a.heading, b.heading, t), mode: b.mode, jump: b.jump }
+}
 
 export class SoloSession implements Session {
   readonly online = false
@@ -57,6 +68,8 @@ export class SoloSession implements Session {
   private before = new Map<number, Pose>()
   private shown = new Map<number, Player>()
   private drawnView = {} as WoodsState
+  private spiderBefore: StalkerPose | null = null
+  spider: StalkerPose | null = null
 
   /** `seed` picks the night (its clue layout, bots and flicker); the same seed is the same night. */
   constructor(readonly world: WoodsWorld, private readonly feel: Feel, readonly seed = world.params.seed) {
@@ -75,6 +88,7 @@ export class SoloSession implements Session {
       else this.before.set(p.id, { x: p.x, z: p.z, y: p.air.y, yaw: p.yaw, pitch: p.pitch })
     }
     this.inputs.set(0, input)
+    this.spiderBefore = stalkerPose(this.state.stalker)
     stepWoods(this.state, this.world, this.inputs, this.dt, this.feel)
     this.events.push(...this.state.events)
   }
@@ -83,6 +97,8 @@ export class SoloSession implements Session {
     return { x: this.prev.x + (s.x - this.prev.x) * alpha, z: this.prev.z + (s.z - this.prev.z) * alpha, y: this.prev.y + (s.air.y - this.prev.y) * alpha }
   }
   frame(_dt: number, alpha: number) {
+    const now = stalkerPose(this.state.stalker)
+    this.spider = !hasSpider(this.feel.creature) ? null : this.smooth && this.spiderBefore ? lerpSpider(this.spiderBefore, now, alpha) : now
     if (!this.smooth) { this.view = this.state; return }
     const players = this.state.players.map((p) => {
       if (p.id === this.me) return p
@@ -160,6 +176,7 @@ export class OnlineSession implements Session {
   poseVersion = 0
   private obstacles: Player[] = []
   private fatal: string | null = null
+  spider: StalkerPose | null = null
   /** Ask the room for the next night (from the debrief). */
   again() {
     this.socket.send({ type: "again" })
@@ -289,6 +306,7 @@ export class OnlineSession implements Session {
     for (const f of this.view.flares.list) if (f.body && !f.body.rest) flyFor(this.world, f, dt)
     const br = this.snaps.sample(performance.now() / 1000)
     const seen = new Set<number>([this.me])
+    this.spider = br?.b.sp ? lerpSpider(poseFromRow(br.a.sp ?? br.b.sp), poseFromRow(br.b.sp), br.t) : null
     if (br) {
       const rowA = new Map<number, PlayerRow>(br.a.p.map((r) => [r[0]!, r]))
       for (const b of br.b.p) {
