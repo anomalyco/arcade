@@ -4,7 +4,7 @@
  * a select row joins it with `cycle` (`LabControl.cycle`), anything else with `LabPanel.addCycle`.
  *
  *   ] / [   next / previous preset in the current group
- *   = / -   next / previous group
+ *   ' / ;   next / previous group
  *   \       back to the preset before (tap swaps; hold to peek, let go to return)
  *
  * Physical keys (`KeyboardEvent.code`), so they sit in the same place on every layout; the toast names them by their
@@ -15,8 +15,8 @@ import { installKeyCapStyles, keyCapHtml } from "./client/key-cap"
 export const QUICK_SWITCH_KEYS = {
   previous: "BracketLeft",
   next: "BracketRight",
-  previousGroup: "Minus",
-  nextGroup: "Equal",
+  previousGroup: "Semicolon",
+  nextGroup: "Quote",
   back: "Backslash",
 } as const
 const CODES: ReadonlySet<string> = new Set(Object.values(QUICK_SWITCH_KEYS))

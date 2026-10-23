@@ -321,7 +321,7 @@ async function harness() {
   ok("a panel opened from a menu closes back to the menu")
   report.roundTrip = { before: { backquote: ["Backquote", "click Resume"], closeButton: ["click ×", "click Resume"], escape: ["Escape", "click Resume"], clickGame: ["click the game"] }, after: { ...trips, clickGame: ["click the game"] } }
 
-  // The quick switch: [ ] step the Look while playing with the panel closed, = picks the group, \ flips back.
+  // The quick switch: [ ] step the Look while playing with the panel closed, ' picks the group, \ flips back.
   // Chromium refuses lock requests that come too fast ("Too many pointer lock requests"): wait out the window, then click.
   for (let i = 0; i < 4 && !(await state(trip)).locked; i++) {
     await trip.waitForTimeout(1000)
@@ -338,21 +338,21 @@ async function harness() {
   await trip.keyboard.press("BracketLeft")
   assert.equal((await read()).look, "moonlit", "[ steps back")
   await trip.screenshot({ path: resolve(out, "quickswitch-toast.png"), clip: { x: 340, y: 0, width: 600, height: 120 } })
-  await trip.keyboard.press("Equal")
+  await trip.keyboard.press("Quote")
   await trip.keyboard.press("BracketRight")
   q = await read()
-  assert.equal(q.camera, "vhs", "= picks Camera, ] steps it")
+  assert.equal(q.camera, "vhs", "' picks Camera, ] steps it")
   assert.equal(q.look, "moonlit", "the Look stays")
-  await trip.keyboard.press("Equal")
+  await trip.keyboard.press("Quote")
   await trip.keyboard.press("BracketRight")
   assert.equal((await read()).quality, "low", "addCycle groups step too (Quality)")
-  await trip.keyboard.press("Equal")
+  await trip.keyboard.press("Quote")
   q = await read()
-  assert(/Look/.test(q.text), `= wraps back to Look: ${q.text}`)
-  await trip.keyboard.press("Minus")
-  assert(/Quality/.test((await read()).text), "- goes to the previous group")
-  await trip.keyboard.press("Equal")
-  ok("[ ] step a group's presets, = - pick the group, the toast names it")
+  assert(/Look/.test(q.text), `' wraps back to Look: ${q.text}`)
+  await trip.keyboard.press("Semicolon")
+  assert(/Quality/.test((await read()).text), "; goes to the previous group")
+  await trip.keyboard.press("Quote")
+  ok("[ ] step a group's presets, ; ' pick the group, the toast names it")
   // \ tap: back to the preset before, and again forward (A/B).
   await trip.keyboard.press("BracketRight")
   assert.equal((await read()).look, "fog")

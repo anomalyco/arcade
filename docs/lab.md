@@ -300,8 +300,9 @@ Every floating `LabPanel` has a quick switch for a few chosen choices, used whil
 game (`packages/kit/lab-quickswitch.ts`). Kit, Oct 22: "When there are some presets for me to look through, I could just
 hit a special key to switch through them."
 
-- `]` / `[` step the current group's presets, `=` / `-` pick the group, and `\` goes back to the preset before (tap to
-  swap, which makes A/B by eye one key; hold to peek and let go to return). These are physical keys, and no game binds them.
+- `]` / `[` step the current group's presets, `'` / `;` pick the group, and `\` goes back to the preset before (tap to
+  swap, which makes A/B by eye one key; hold to peek and let go to return). These are physical keys that no game binds
+  (`-` and `=` were taken: Outbreak's map zoom and Carrier's full ahead).
 - A select row joins with `cycle: true` (or `cycle: "Name"` for a shorter toast name); anything else joins with
   `panel.addCycle({ key, label, options, get, set })`. `panel.quick.order([...keys])` sets the group order. Row steps go
   through `LabNavigation.set` as one transaction each, so a row's `change` runs as if picked in the panel. A change made

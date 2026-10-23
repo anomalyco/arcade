@@ -90,8 +90,8 @@ describe("QuickSwitch", () => {
     expect(q.current?.key).toBe("creature")
   })
 
-  test("its keys are the brackets, minus, equal and backslash, by physical code", () => {
-    for (const code of ["BracketLeft", "BracketRight", "Minus", "Equal", "Backslash"]) expect(isQuickSwitchCode(code)).toBe(true)
-    for (const code of ["KeyW", "Digit1", "Backquote", "KeyQ"]) expect(isQuickSwitchCode(code)).toBe(false)
+  test("its keys are the brackets, semicolon, quote and backslash, by physical code", () => {
+    for (const code of ["BracketLeft", "BracketRight", "Semicolon", "Quote", "Backslash"]) expect(isQuickSwitchCode(code)).toBe(true)
+    for (const code of ["KeyW", "Digit1", "Backquote", "KeyQ", "Minus", "Equal"]) expect(isQuickSwitchCode(code)).toBe(false)
   })
 })

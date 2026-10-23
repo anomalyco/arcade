@@ -1,5 +1,5 @@
 // A short headless, muted clip of the Lab's quick switch while walking: ` opens the knobs and ` again goes straight
-// back to the woods, then ] steps the Looks, \ flips back and forth, = picks the camera looks and ] steps those, with
+// back to the woods, then ] steps the Looks, \ flips back and forth, ' picks the camera looks and ] steps those, with
 // the key-cap toast (run after `bun run build`, through HiveMind browser):
 //   ARCADE_BROWSER_BUDGET_S=300 bun scripts/quickswitch-clip.ts [--out <dir>]
 // Frames are screenshots taken as fast as the page allows while the steps run in real time, encoded at the measured
@@ -74,8 +74,8 @@ await press("Backslash", 1500)
 await note("back")
 await press("Backslash", 1500)
 await note("forward")
-await caption("= picks the camera looks · ] steps them")
-await press("Equal", 1200)
+await caption("' picks the camera looks · ] steps them")
+await press("Quote", 1200)
 for (let i = 0; i < 4; i++) { await press("BracketRight", 1600); await note(`camera ${i + 1}`) }
 await press("Backslash", 1500)
 await note("camera back")
