@@ -5,8 +5,8 @@ import { trunkBetween, type Beacon } from "../shared/creature"
 import { decodeServer, type Snapshot } from "../shared/protocol"
 import { createWoods, EYE_HEIGHT, FEEL, SIGNAL_HOLD_SECONDS, stepWoods, type Feel, type PlayerInput } from "../shared/sim"
 import { placeSpiderSigns } from "../shared/spider-signs"
-import { BEAT_FIRST, createStalker, poseFromRow, SPIDER_SIZE, STALKER_MIN, stalkerPose, stalkerRow, stalkerX, stalkerZ, stepStalker, type StalkerEvent, type StalkerState, type StalkerWalker } from "../shared/stalker"
-import { boundaryLine, isDeepWater, makeWorld, standHeight, trailDistance } from "../shared/world"
+import { BEAT_FIRST, createStalker, SPIDER_BODY_Y, poseFromRow, SPIDER_SIZE, STALKER_MIN, stalkerPose, stalkerRow, stalkerX, stalkerZ, stepStalker, type StalkerEvent, type StalkerState, type StalkerWalker } from "../shared/stalker"
+import { boundaryLine, isDeepWater, makeWorld, nextRandom, standHeight, trailDistance } from "../shared/world"
 
 const world = makeWorld()
 const DT = 1 / 30
@@ -262,4 +262,68 @@ test("a burning road flare out in the dark is a backdrop for its walk across", (
   // Torch off and no other light: only the flare gives it something to cross.
   expect(without).toBe(0)
   expect(withFlare).toBeGreaterThan(0)
+})
+
+/**
+ * Someone walks straight at it (1.9 m/s) with their torch held on its body for `seconds`. Returns the longest it was
+ * ever within `STALKER_MIN` of them (s), and whether it ever left the fence or went into the lake.
+ */
+function chase(s: StalkerState, w: StalkerWalker, seconds: number) {
+  const line = boundaryLine(world)
+  let inside = 0, longest = 0, fence = false, wet = false
+  for (let f = 0; f < seconds * 30; f++) {
+    const sx = stalkerX(s), sz = stalkerZ(s), dx = sx - w.x, dz = sz - w.z, d = Math.hypot(dx, dz)
+    const nx = w.x + (dx / d) * 1.9 * DT, nz = w.z + (dz / d) * 1.9 * DT
+    if (d > 1 && !isDeepWater(world, nx, nz) && Math.abs(nx) < line - 1 && Math.abs(nz) < line - 1) { w.x = nx; w.z = nz }
+    w.yaw = Math.atan2(-dx, -dz)
+    w.pitch = Math.atan2(standHeight(world, sx, sz) + SPIDER_BODY_Y - eye(w)[1], d)
+    step(s, [w], f * DT)
+    const now = distance(s, w)
+    inside = now < STALKER_MIN ? inside + DT : 0
+    longest = Math.max(longest, inside)
+    fence ||= Math.abs(stalkerX(s)) >= line || Math.abs(stalkerZ(s)) >= line
+    wet ||= isDeepWater(world, stalkerX(s), stalkerZ(s))
+  }
+  return { longest, fence, wet }
+}
+
+test("cornered against the fence in a beam, it doesn't freeze: it's out of reach at once, inside the fence", () => {
+  const h = world.params.half
+  const s = createStalker(world, 12)
+  place(s, h - 25, h - 25)
+  const r = chase(s, walker({ x: h - 50, z: h - 50, light: true }), 40)
+  expect(r.longest).toBeLessThanOrEqual(0.25)
+  expect(r.fence).toBe(false)
+  expect(r.wet).toBe(false)
+})
+
+test("backed up to the lake shore in a beam, the same", () => {
+  const lake = world.lake
+  let sx = lake.x + lake.rx
+  while (isDeepWater(world, sx, lake.z)) sx += 1
+  const s = createStalker(world, 13)
+  place(s, sx + 3, lake.z)
+  const r = chase(s, walker({ x: sx + 28, z: lake.z, light: true }), 40)
+  expect(r.longest).toBeLessThanOrEqual(0.25)
+  expect(r.fence).toBe(false)
+  expect(r.wet).toBe(false)
+})
+
+test("200 nights, someone walking straight at it with a torch on it from anywhere: never within 20 m past a moment", () => {
+  const line = boundaryLine(world)
+  let worst = 0
+  for (let seed = 0; seed < 200; seed++) {
+    const s = createStalker(world, seed), rng = { seed: seed * 7919 + 1 }
+    let x = 0, z = 0
+    for (let i = 0; i < 50; i++) {
+      const a = nextRandom(rng) * Math.PI * 2, d = 45 + 30 * nextRandom(rng)
+      x = stalkerX(s) + Math.sin(a) * d; z = stalkerZ(s) + Math.cos(a) * d
+      if (Math.abs(x) < line - 2 && Math.abs(z) < line - 2 && !isDeepWater(world, x, z)) break
+    }
+    const r = chase(s, walker({ x, z, light: true }), 30)
+    worst = Math.max(worst, r.longest)
+    expect(r.fence).toBe(false)
+    expect(r.wet).toBe(false)
+  }
+  expect(worst).toBeLessThanOrEqual(0.25)
 })

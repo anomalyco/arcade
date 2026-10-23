@@ -1,6 +1,6 @@
 import { createCreatureMotion, stepCreatureMotion, unitDt, unitSurface, type CreatureMotion, type CreatureSurface } from "@arcade/kit/sim/creature-motion"
 import { cosApprox, planCreature, segmentDistance, sinApprox, trunkBetween, type Beacon, type CreatureFeel, type Watcher } from "./creature"
-import { groundHeight, isDeepWater, nextRandom, solidsNear, treesNear, type Tree, type WoodsWorld } from "./world"
+import { boundaryLine, groundHeight, isDeepWater, nextRandom, solidsNear, treesNear, type Tree, type WoodsWorld } from "./world"
 
 /**
  * The spider (Kit's harvestman, `@arcade/kit/creature`): one stalker per night, authoritative in the room and stepped
@@ -166,11 +166,23 @@ function fair(world: WoodsWorld, people: readonly StalkerWalker[], x: number, z:
   return nearestPerson(people, x, z) >= min
 }
 
-/** A walk from (x, z) to (tx, tz) that stays out of the lake and at least `min` m from every person. */
+/**
+ * A walk from (x, z) to (tx, tz) that stays out of the lake and inside the fence (along it is fine), and at least `min`
+ * m from every person; from anyone already closer than that, only a walk that takes it further away every step of it.
+ */
 function clearWalk(world: WoodsWorld, people: readonly StalkerWalker[], x: number, z: number, tx: number, tz: number, min: number): boolean {
-  if (people.some((p) => segmentDistance(p.x, p.z, x, z, tx, tz) < min)) return false
+  for (const p of people) {
+    const ax = x - p.x, az = z - p.z
+    // Distance from them grows along the whole walk exactly when the walk starts away from them.
+    if (ax * ax + az * az < min * min) { if (ax * (tx - x) + az * (tz - z) <= 0) return false }
+    else if (segmentDistance(p.x, p.z, x, z, tx, tz) < min) return false
+  }
+  const line = boundaryLine(world) - BODY_RADIUS
   const n = Math.ceil(Math.hypot(tx - x, tz - z) / 4)
-  for (let i = 1; i < n; i++) if (isDeepWater(world, x + ((tx - x) * i) / n, z + ((tz - z) * i) / n)) return false
+  for (let i = 1; i <= n; i++) {
+    const sx = x + ((tx - x) * i) / n, sz = z + ((tz - z) * i) / n
+    if (Math.abs(sx) > line || Math.abs(sz) > line || isDeepWater(world, sx, sz)) return false
+  }
   return true
 }
 
@@ -209,8 +221,10 @@ function shadowSpot(s: StalkerState, world: WoodsWorld, walkers: readonly Stalke
 }
 
 /**
- * Cornered in the dark (someone ran it down against the lake or the edge of the map): it's gone, and somewhere far off
- * out of sight. Never while a beam is on it: nobody sees it go.
+ * Run down (someone came within `STALKER_MIN` + 2 m, against the lake or the fence): it's gone, somewhere far off out
+ * of sight. In the dark nobody sees it go; lit, only as a last resort, when it isn't already walking clear away or
+ * someone got inside `STALKER_MIN` anyway (`guard`), and clients show it scuttling off out of the beam (`SpiderView`),
+ * never a pop.
  */
 function vanish(s: StalkerState, world: WoodsWorld, walkers: readonly StalkerWalker[], people: readonly StalkerWalker[], eye: Eye, scratch: Tree[]): void {
   if (!shadowSpot(s, world, walkers, people, eye, scratch, true)) return
@@ -220,6 +234,20 @@ function vanish(s: StalkerState, world: WoodsWorld, walkers: readonly StalkerWal
   s.jump++
   s.mode = "shadow"
   s.until = 0
+}
+
+/**
+ * Someone walked up on it (within `STALKER_MIN` + 12 m): it backs straight off, quicker; run down, it's gone (`vanish`)
+ * in the dark, or lit when it has no clear walk away. Returns whether anyone was that near.
+ */
+function guard(s: StalkerState, world: WoodsWorld, walkers: readonly StalkerWalker[], people: readonly StalkerWalker[], eye: Eye, scratch: Tree[], nearest: number, on: boolean): boolean {
+  if (nearest >= STALKER_MIN + 12) return false
+  retreat(s, world, people)
+  const x = stalkerX(s), z = stalkerZ(s)
+  // Escaping: a clear walk away it's already on (a planting or pivoting body stands still for a second or two).
+  const escaping = s.motion.turn === "travel" && Math.hypot(s.tx - x, s.tz - z) > 3 && clearWalk(world, people, x, z, s.tx, s.tz, STALKER_MIN)
+  if ((nearest < STALKER_MIN + 2 && (!on || !escaping)) || nearest < STALKER_MIN) vanish(s, world, walkers, people, eye, scratch)
+  return true
 }
 
 /** Someone walked up on it: straight away from whoever is near, turning aside from the lake or the edge of the map. */
@@ -347,14 +375,11 @@ export function stepStalker(s: StalkerState, world: WoodsWorld, walkers: readonl
   else if (s.mode === "flee") {
     if ((nearest > 70 && s.dark > 3) || t > s.until) { s.mode = "shadow"; s.until = 0 }
     else if (reached) flee(s, world, walkers, people, t)
-  }
-  if (s.mode === "flee") {
-    // The same guards as in the shadow: run down in the dark it's gone; walked up on, it backs straight off.
-    if (nearest < STALKER_MIN + 2 && !on) vanish(s, world, walkers, people, eye, scratch)
-    else if (nearest < STALKER_MIN + 12) { retreat(s, world, people); s.pace = PACE.flee }
   } else if (s.mode === "beat") {
     if (reached || t > s.until || nearest < STALKER_MIN + 12) { s.mode = "shadow"; s.until = 0 }
   }
+  // The same guards as in the shadow while it flees, at its flight's pace.
+  if (s.mode === "flee" && guard(s, world, walkers, people, eye, scratch, nearest, on) && s.mode === "flee") s.pace = PACE.flee
   if (s.mode === "shadow") {
     if (t >= s.nextBeat && t >= s.tryAt && people.length) {
       s.tryAt = t + 1
@@ -363,10 +388,9 @@ export function stepStalker(s: StalkerState, world: WoodsWorld, walkers: readonl
     }
   }
   if (s.mode === "shadow") {
-    // Someone walked up on it: back off, quicker, straight away from them; run down in the dark, it's gone.
-    const crowded = nearest < STALKER_MIN + 12
-    if (nearest < STALKER_MIN + 2 && !on) vanish(s, world, walkers, people, eye, scratch)
-    else if (crowded) { retreat(s, world, people); s.until = t + 4 }
+    // Someone walked up on it: back off, quicker, straight away from them; run down, it's gone.
+    const crowded = guard(s, world, walkers, people, eye, scratch, nearest, on)
+    if (crowded) s.until = t + 4
     else if (t >= s.until || reached) { shadowSpot(s, world, walkers, people, eye, scratch); s.until = t + 20 + 20 * nextRandom(s.rng) }
     s.pace = crowded ? PACE.retreat : PACE.shadow
     // Drumming, now and then, for whoever is near enough to hear it.

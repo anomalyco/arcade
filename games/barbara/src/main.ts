@@ -784,7 +784,7 @@ async function main() {
     const torches: ForestTorch[] = beams.filter((b) => !debug.dark.includes(b.id === OWN ? meId : b.id)).map((b) => ({ id: b.id, pos: b.origin, dir: b.axis, on: true, kind: b.id === OWN ? "local" : "remote", level: b.level, ...(b.id === OWN && heldUp > 0.3 ? { shadowNear: 0.04 } : {}) }))
     debug.beams = beams.length
     if (torchTrace && level > 0) torchTrace.push({ origin: [...ownOrigin], aim: [...axis], axis: [...ownAxis], eye: [...camera.eye], vp: [...vp] })
-    const spiderBatches = spider.frame(session.spider, dt)
+    const spiderBatches = spider.frame(session.spider, dt, camera.eye)
     cameraLook.frame({ t: state.t, dt, eye: camera.eye, yaw: camera.yaw, pitch: camera.pitch, torches, world, fp, place, spiderEyes: spider.eyes(), mapRaise: p.mapRaise, feelBlur: feel.settings.blur, reduced: settings.reduceMotion, zoomHeld: playing && keys.has("Mouse2"), fovY: ((camera.fov + camera.mount.fov) * Math.PI) / 180, aspect: width / Math.max(1, height) })
     if (cameraLook.settings.zoom !== zoomPrompt) { zoomPrompt = cameraLook.settings.zoom; controlsHud() }
     audio.body(feel.fear < 0.15 ? 0 : Math.min(1, (feel.fear - 0.15) / 0.85), cameraLook.zooming)
