@@ -12,7 +12,10 @@
   sea still match the original experiment base; inherited source pins use the current
   main ancestor.
 - The single Water station exposes ocean variants only; Lake stays hidden until Woods ships.
-- Fresh editor/wake and lake proofs are tracked below; earlier captures predate these fixes.
+- Fresh mini/Metal editor proof passes, including Play click/blur preserving speed.
+  The new six-second wake clip has identical boat/ship/camera traces across all 180 frames.
+  No shader/page errors. The foam still reads as strong parallel trails; this is review
+  evidence, not a selected #arcade showcase.
 
 Current direction: judge the images; Kit will judge performance on his computer.
 No further paired timing or quiet-mini wait. Earlier timing experiments below are

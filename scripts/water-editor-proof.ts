@@ -1,6 +1,8 @@
 /** Real pointer/keyboard checks for the production Water Lab boat adapter. */
 import { createServer } from "vite"
-import { chromium } from "playwright-core"
+import { browserBudget } from "./browser-budget"
+await using budget = browserBudget()
+const { chromium } = budget
 import { mkdirSync } from "node:fs"
 import { hostname } from "node:os"
 import { resolve } from "node:path"
@@ -29,8 +31,7 @@ try {
   await page.goto(`http://127.0.0.1:${address.port}/water.html?seed=7&waterLook=continuous`)
   await page.waitForFunction(() => !!(globalThis as unknown as Debug).carrier, null, { timeout: 90000 })
   // The shared panel now starts secondary groups folded.
-  const interaction = page.getByRole("button", { name: "Interaction", exact: true })
-  if (await interaction.isVisible()) await interaction.click()
+  await page.getByText("Interaction", { exact: true }).click()
   const choose = async (label: string, option: string) => {
     const radio = page.getByRole("radio", { name: option, exact: true })
     if (await radio.isVisible()) await radio.click()

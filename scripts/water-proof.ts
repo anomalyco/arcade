@@ -1,6 +1,8 @@
 /** Headless, muted Carrier checkpoint. Run through HiveMind on mini. */
 import { createServer } from "vite"
-import { chromium } from "playwright-core"
+import { browserBudget } from "./browser-budget"
+await using budget = browserBudget()
+const { chromium } = budget
 import { mkdirSync } from "node:fs"
 import { resolve } from "node:path"
 import { writeBuildId } from "./build-id"

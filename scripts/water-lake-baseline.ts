@@ -1,5 +1,7 @@
 /** Read-only capture of the woods owner's preview; no changes to their worktree. */
-import { chromium } from "playwright-core"
+import { browserBudget } from "./browser-budget"
+await using budget = browserBudget()
+const { chromium } = budget
 import { mkdirSync } from "node:fs"
 import { hostname } from "node:os"
 

@@ -1,6 +1,8 @@
 /** Actual Carrier boat/ship/wake path, deterministic clock, muted headless Metal. */
 import { createServer } from "vite"
-import { chromium } from "playwright-core"
+import { browserBudget } from "./browser-budget"
+await using budget = browserBudget()
+const { chromium } = budget
 import { mkdirSync, unlinkSync } from "node:fs"
 import { hostname } from "node:os"
 import { resolve } from "node:path"
