@@ -106,7 +106,7 @@ describe("stations as labs", () => {
   test("the migrated scenes load into a store as repo scenes without problems", () => {
     const store = createSceneStore({ storage: memorySceneStorage(), repo: { scenes, collections }, now: () => new Date(NOW) })
     expect(store.problems).toEqual([])
-    expect(store.collections().find(c => c.collection.id === "world")?.scenes.map(e => e.scene.id)).toEqual(["look-and-world", "sky", "effects", "effects-splatter"])
+    expect(store.collections().find(c => c.collection.id === "world")?.scenes.map(e => e.scene.id)).toEqual(["look-and-world", "sky", "effects", "effects-splatter", "road-flare"])
     // The superseded look, light, weather, material, vegetation and effect labs wait in the archive.
     expect(store.collections().find(c => c.collection.id === "archive")?.scenes).toEqual([])
     expect(store.scenes({ archived: true }).filter(e => e.scene.status === "archived").map(e => e.scene.id).sort()).toEqual(["explosions", "explosions-splatter", "lighting", "looks", "materials", "smoke-fire", "vegetation", "weather"])

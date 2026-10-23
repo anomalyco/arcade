@@ -53,6 +53,18 @@ fn blackbodyFire(T: f32) -> vec3f {
 }
 `
 
+/**
+ * A road flare's strontium flame (`fx/flare.ts`) by temperature: deep crimson, then the tint's saturated red, then a
+ * pinkish-white core whose channel ratios are fixed, so a hot centre never clips to plain white or to flat orange.
+ */
+export const strontiumFlameWgsl = /* wgsl */ `
+fn strontiumFlame(T: f32, tint: vec3f) -> vec3f {
+  var c = mix(tint * vec3f(0.45, 0.3, 0.4), tint * 2.8, smoothstep(0.12, 0.55, T));
+  c = mix(c, vec3f(6.0, 3.0, 3.5), smoothstep(0.7, 1.3, T));
+  return c * smoothstep(0.03, 0.16, T);
+}
+`
+
 export function makeParticleShader(bindGroupIndex = 0): string {
   return /* wgsl */ `
 ${ParticleFrameStruct.wgsl}
@@ -83,6 +95,7 @@ fn fbm3(p: vec2f) -> f32 {
   return vnoise(p) * 0.54 + vnoise(p * 2.07 + vec2f(17.3, -9.1)) * 0.31 + vnoise(p * 4.23 + vec2f(-11.7, 23.5)) * 0.15;
 }
 ${blackbodyFireWgsl}
+${strontiumFlameWgsl}
 @vertex fn vs(@builtin(vertex_index) i:u32,s:In)->Out {
   let corners=array<vec2f,6>(vec2f(-1,-1),vec2f(1,-1),vec2f(1,1),vec2f(-1,-1),vec2f(1,1),vec2f(-1,1));
   let c=corners[i%6];let toward=normalize(F.eye-s.pos.xyz);
@@ -91,6 +104,10 @@ ${blackbodyFireWgsl}
   if(kind==1.0||kind==3.0){
     let v=s.velocity.xyz;let speed=length(v);
     if(speed>0.1){up=v/speed;right=normalize(cross(up,toward));size.y*=1.0+min(9.0,speed*0.25);size.x*=0.4;}
+  } else if(kind==10.0){
+    // Flame puffs stretch a little along their jet so the tongue reads as a flow, not beads.
+    let v=s.velocity.xyz;let speed=length(v);
+    if(speed>0.2){up=v/speed;right=normalize(cross(up,toward));size.y*=1.0+min(2.4,speed*0.9);size.x*=0.65;}
   } else if((kind==5.0&&s.misc.z<0.5)||kind==6.0){
     let angle=s.misc.x;let cs=cos(angle);let sn=sin(angle);
     right=vec3f(cs,0.0,-sn);up=vec3f(sn,0.0,cs);
@@ -140,7 +157,7 @@ ${blackbodyFireWgsl}
     }else{light=vec3f(2.2);}
   } else if(kind==4.0){
     light=vec3f(2.2);
-  } else if(kind==9.0){
+  } else if(kind==9.0||kind==10.0){
     light=vec3f(1.0);
   }
   if(F.debug==3.0){light=vec3f(dot(light,vec3f(0.333)));}
@@ -205,6 +222,21 @@ ${blackbodyFireWgsl}
     if(F.debug==1.0){return vec4f(vec3f(a,a*0.4,1.0-a)*a,a);}
     return vec4f(o.color.rgb*a,0.0);
   }
+  if(o.kind==10.0){
+    // Strontium flame: a temperature field (soft radial core, noise that drifts up the tongue, cooling with age)
+    // through the red-flare ramp. Additive and unlit; alpha 0 so it never occludes.
+    let r2=dot(o.uv,o.uv);
+    if(r2>=0.98){discard;}
+    let age=clamp(o.misc.y,0.0,1.0);
+    let n=vnoise(o.uv*vec2f(2.2,1.4)+vec2f(o.misc.x*3.1,-age*3.0-o.misc.x));
+    // Hot at birth, cooling along the tongue: the core is pinkish white, the envelope and the tip saturated red.
+    let T=o.misc.z*exp(-r2*2.6)*(0.7+0.6*n)*(1.0-0.8*age);
+    let a=o.color.a*(1.0-smoothstep(0.55,0.98,r2));
+    if(T*a<0.002){discard;}
+    if(F.debug==2.0){return vec4f(0.12,0.025,0.008,0.06);}
+    if(F.debug==1.0){return vec4f(vec3f(a,a*0.4,1.0-a)*a,a);}
+    return vec4f(strontiumFlame(T,o.color.rgb)*a,0.0);
+  }
   if(o.kind==8.0){
     // Lit smoke: the fireball's warped billow lobes without its heat, softer edged and slower, thinning as it ages.
     let r=length(o.uv);
@@ -218,7 +250,8 @@ ${blackbodyFireWgsl}
     let lobe=0.6+(billow-0.48)*(0.46+turb*0.22);
     let soft=mix(0.2,0.36,age);
     let shapeMask=(1.0-smoothstep(lobe-soft,lobe+soft,r))*(1.0-smoothstep(0.78,1.0,r));
-    let groundSoft=select(1.0,smoothstep(0.0,0.28,o.world.y),o.world.y<0.3&&o.world.y>-0.5);
+    // A temperature above 0.5 marks smoke that starts on the ground (a flare's column): no soft fade against Y=0.
+    let groundSoft=select(1.0,smoothstep(0.0,0.28,o.world.y),o.world.y<0.3&&o.world.y>-0.5&&o.misc.z<0.5);
     alpha*=shapeMask*groundSoft*(0.6+0.4*billow);
     if(alpha<0.003){discard;}
     let shade=clamp(0.78+0.55*(billow-0.5)+0.2*o.uv.y,0.35,1.2);

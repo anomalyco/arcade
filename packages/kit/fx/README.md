@@ -49,6 +49,39 @@ The clutter worktree's current `Fx` particles carry the same position, velocity,
 drag and life concepts. Its game-specific collision and damage rules can remain there while it writes this
 pool or its instance layout. Its existing particles have not been migrated in this branch.
 
+## Road flares
+
+`FlareFx` (`fx/flare.ts`) is a 1990s fusee: strontium red, a pinkish-white core, a fast sputter, sparks, molten slag
+and a smoke column. The host owns where it is; `@arcade/kit/sim/thrown` throws one (`throwBody`, `stepThrown`: a
+ballistic arc that bounces and rolls on terrain, stops against cylinders such as trunks and rocks and comes to rest,
+in fixed 1/120 s substeps with only + − × ÷ √, so a room and its clients land it in the same spot to the bit).
+
+```ts
+import { FlareFx, flareSceneLight, flareFogLamp } from "@arcade/kit/fx/flare"
+
+const fx = new FlareFx(seed, { burnTime: 150 })   // FlareSettings: intensity, temperature, burnTime, smoke, sparkRate…
+fx.strike()                                       // or fx.strike(age) for a joiner or a scrub
+// each frame: put the burning end and the flame's axis where the stick is, then
+fx.x = tip.x; fx.y = tip.y; fx.z = tip.z; fx.dx = axis.x; fx.dy = axis.y; fx.dz = axis.z
+fx.step(dt, particles)                            // emits on fixed 120 Hz ticks into a kit Particles pool
+const light = fx.light()                          // colour (red 1), level (× intensity × flicker, 0 when out)
+scene.push(flareSceneLight(light, power, reach))  // shadowed by default; flareFogLamp for the mist
+```
+
+- **Colour.** Strontium burns in lines, not as a blackbody, so `flareColor(K)` reads the temperature through the
+  blackbody ramp and filters it: 1850 K is (1, 0.08, 0.07), deep red with a magenta edge. Particle kind `flare` (10)
+  is the flame: an additive temperature field through `strontiumFlameWgsl` (deep crimson, saturated red, then a
+  pinkish-white core with fixed channel ratios, so it never clips to white or flat orange).
+- **Flicker and burn.** `flareFlicker(seed, age)` (8–25 Hz flutter, a slow breath, slag pops) and
+  `flareEnvelope(age, burn)` (strike, flare-up to ~2×, burn, a 10 s gutter that warms to orange, 14 s of embers) are
+  pure functions, so every client sees the same sputter.
+- **Smoke** is kind `smoke`, darkening and thinning over its life with a life ramp (its age is its height), lit only
+  by the frame's lights: red from the flare below, black above. Sparks and slag are hot `spark`s that cool.
+- **Light.** `light()` sits 22 cm over the flame, where the plume and the lit smoke are: a pool spreads round the flare
+  instead of a grazing glint.
+- Lab: Effects › Road flare (station `road-flare`): every setting, Strike and throw / Burning / Guttering out, lamps off
+  or on. `scripts/lab/prove-road-flare.ts` takes stills, a clip (`--clip`) and the GPU delta.
+
 ## Smoke renders after the HDR pass, before bloom
 
 Call `SmokeVolumes.reset(walls)` when the map changes. `spawn(x,z,radius,life,power,soot)` starts a finite cloud;

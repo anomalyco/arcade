@@ -8,8 +8,11 @@ export const PARTICLE_STRIDE = 28
  * `smoke` is a lit, noise-shaped billow (the fireball's shape without its heat) that drifts toward `windX`/`windZ`.
  * `glow` is an unlit, purely additive soft halo (colour × alpha), for the warm air round flames; it fades in and out
  * smoothly like smoke and never occludes.
+ * A `smoke` spec with `temperature` above 0.5 skips the soft fade against Y=0 (a column that starts on the ground).
+ * `flare` is an unlit, additive strontium flame puff (`fx/flare.ts`): its `temperature` runs a red-flare ramp from deep
+ * crimson through saturated red to a pinkish-white core, tinted by the spec's colour; it never occludes.
  */
-export type ParticleKind = "soft" | "spark" | "debris" | "water" | "fire" | "shock" | "scorch" | "fireball" | "smoke" | "glow"
+export type ParticleKind = "soft" | "spark" | "debris" | "water" | "fire" | "shock" | "scorch" | "fireball" | "smoke" | "glow" | "flare"
 export type ParticleSpec = {
   kind: ParticleKind; life: number; size: number; growth: number; gravity: number; drag: number
   bounce: number; r: number; g: number; b: number; alpha: number
@@ -48,7 +51,7 @@ export function lifeRamp(key: string, build: () => LifeRamp): number {
   rampKeys.set(key, id)
   return id
 }
-const kinds: Record<ParticleKind,number> = {soft:0,spark:1,debris:2,water:3,fire:4,shock:5,scorch:6,fireball:7,smoke:8,glow:9}
+const kinds: Record<ParticleKind,number> = {soft:0,spark:1,debris:2,water:3,fire:4,shock:5,scorch:6,fireball:7,smoke:8,glow:9,flare:10}
 
 /** Births queued by trailing or popping particles during `update`, spawned once the pool is compacted. */
 const BIRTH_CAPACITY = 512
@@ -157,7 +160,7 @@ export class Particles {
     for(let n=0;n<this.count;n++) {
       const i=n*PARTICLE_STRIDE,k=n*16,age=p[i+7],life=p[i+8],t=age/life,kind=p[i+16],ease=p[i+21]||1
       const growthCurve=ease!==1?(1-Math.pow(Math.max(0,1-t),ease))*life:age
-      const fade=kind===6?Math.min(1,t*18)*Math.pow(Math.max(0,1-t),1.35):kind===5?Math.pow(Math.max(0,1-t),1.75):kind===7?Math.min(1,t*18)*Math.min(1,(1-t)*2.35):kind===8||kind===9?smoothFade(t):Math.min(1,(1-t)*4)
+      const fade=kind===6?Math.min(1,t*18)*Math.pow(Math.max(0,1-t),1.35):kind===5?Math.pow(Math.max(0,1-t),1.75):kind===7?Math.min(1,t*18)*Math.min(1,(1-t)*2.35):kind===8||kind===9?smoothFade(t):kind===10?Math.min(1,t*8)*(1-t):Math.min(1,(1-t)*4)
       const ramp=p[i+26]?ramps[p[i+26]]:undefined
       if(ramp){
         const tint=ramp.tint,size=ramp.size?sampleTable(ramp.size,t):1,opacity=ramp.opacity?sampleTable(ramp.opacity,t):1

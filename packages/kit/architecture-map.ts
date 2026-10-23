@@ -97,6 +97,11 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
     match: (s) => s === "@arcade/kit/sim/abilities" || s === "@arcade/kit/sim/props" || s === "@arcade/kit/sim/boids",
   },
   {
+    area: "`sim/thrown`",
+    description: "Deterministic thrown body: ballistic arc, bounce and roll on terrain, stops against trunks and rocks, comes to rest",
+    match: (s) => s === "@arcade/kit/sim/thrown",
+  },
+  {
     area: "`server/*`",
     description: "Room and Lobby Durable Objects (`RoomObject`, `LobbyObject`) and the room game Worker router",
     match: (s) => s.startsWith("@arcade/kit/server/"),
@@ -248,6 +253,11 @@ export const ARCHITECTURE_MAP_ROWS: readonly ArchitectureMapRow[] = [
       s === "@arcade/kit/fx" ||
       s === "@arcade/kit/fx/particles" ||
       s === "@arcade/kit/fx/particle-renderer",
+  },
+  {
+    area: "`fx/flare`",
+    description: "Road flare (fusee): strontium flame, sputter, sparks, slag and a lit smoke column, plus its scene and fog lights",
+    match: (s) => s === "@arcade/kit/fx/flare",
   },
   {
     area: "`fx/{volume*,smoke-trail,tyre-renderer}`",

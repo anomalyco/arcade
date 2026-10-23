@@ -206,7 +206,7 @@ export function createDebugWorld(context: LabContext): DebugWorld {
     const out: SceneLight[] = []
     for (const l of stage.dynamicLights ?? []) {
       if (l.power <= 0.01 || out.length >= 6) continue
-      out.push({ x: l.x, y: l.z, h: Math.max(0.3, l.y), r: Math.max(2, l.radius), color: [l.r, l.g, l.b], power: Math.min(3, l.power * 0.6), size: 0.4, unshadowed: true })
+      out.push({ x: l.x, y: l.z, h: Math.max(l.shadowed ? 0.05 : 0.3, l.y), r: Math.max(2, l.radius), color: [l.r, l.g, l.b], power: Math.min(3, l.power * 0.6), size: l.shadowed ? 0.08 : 0.4, ...(l.shadowed ? {} : { unshadowed: true }) })
     }
     return out
   }
