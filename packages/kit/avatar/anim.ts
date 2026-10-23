@@ -476,7 +476,9 @@ export function animate(a: Avatar, dt: number, now: number, x: number, y: number
   a.svy = nvy
   const sp = Math.hypot(nvx, nvy)
   const k = clamp(sp / SPEED, 0, 1)
-  a.gait += ((sp > 0.35 ? 1 : 0) - a.gait) * Math.min(1, dt * 6)
+  // A reversal passes |sv| through zero while the body is still driven at speed; gait must not read that as a stop.
+  const reversing = (a.motion.reverseT ?? 0) > 0 && Math.hypot(vx, vy) > 0.35
+  a.gait += ((sp > 0.35 || reversing ? 1 : 0) - a.gait) * Math.min(1, dt * 6)
   // Only sprinters go faster than a walk (snapshots carry velocity, not the key). A shot drops it at once.
   const sprinting = sp > SPEED + 0.6 && now - a.firedAt > 0.25
   if (now - a.firedAt < 0.05) a.sprint = 0

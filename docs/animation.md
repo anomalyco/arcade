@@ -810,6 +810,46 @@ the shared-body tapes did not rise. No animation changes accompany this checker.
 Report, exact joint windows, highlighted strips and ¼-speed clips:
 `~/code/home/artifacts/motion-invariants-2026-10-22/`.
 
+### Fixed: the three shared-body pops (rig-pops, 2026-10-22)
+
+The first three reviewed events were state switches, each fixed where it switched. Same tape and clocks as above:
+
+| Event | Root cause | Fix | Before → after |
+| --- | --- | --- | --- |
+| Zombie run→walk, left ankle | `zombies.ts` read swing progress from the shared clock as `(phase − duty) / (1 − duty)`. Duty rises as speed falls, so a speed drop put `phase < duty` and ended a swing mid-air: the foot snapped to its target. | A lifted foot owns its progress (`footPrevU += rate·dt / (1 − duty)`) and finishes the swing. A foot that lands while the clock still says swing holds flat (`footPrevU = −1`) until the clock reaches stance. | 106.1 → 1.39 m/s contact-edge speed (limit 1.01 there) |
+| Blackout survivor reversals, right elbow | \|svx\| passes through zero on a reversal, so `m.run` (from `gaitAt(\|svx\|)`) went 1 → 0 → 1 and `unarmedHands` dropped the forearm out of the run pump. `a.gait` (anim.ts, `sp > 0.35`) dipped the same way at 60 fps. | `m.effort` is \|v\| smoothed as a scalar at svx's 14 Hz. On a straight line it equals \|svx\|; while `reverseT` is live the run posture reads it instead. `a.gait` holds while reversing. | 47.46 → 5.35 rad/s at that sample; 60 fps 51.2 → no finding; worst left 6.89 vs 6.46 |
+| Soldier reversals, right knee | The reversal step read the side-step stance while the hips swept across travel and got a short side-step swing: 3 frames at 30 fps to cross 1.4 m. | While reversing, a new swing lasts at least a full stride's swing at the driven speed (`reverseDur`). | 15.72 → 9.53 m/s (limit 4.88); the knee's worst 30 fps step is 50 → 35 cm |
+
+Gameplay speeds reproduce the zombie pop: chase 2.85 → wander 0.6 m/s gave a 113 cm (60 fps) or 123 cm (30 fps)
+one-frame ankle jump on the old loop, and every speed drop tried did it, down to 2 → 0.5 m/s. After the fix the worst
+ankle step beyond body travel is 11–15 cm at 60 fps and 19–27 cm at 30 fps, which is ordinary swing speed.
+`zombie-profile.test.ts` drives the production renderer through those switches; `anim.test.ts` holds the reversal
+run posture and the knee's worst 30 fps step under 42 cm.
+
+Two smaller fixes came out of the side effects. **Swing bow:** `swingBow` cut off the instant the other boot lifted
+or landed, and flipped side the instant the path swept over the other boot (21–23 cm in a frame). Its weight now
+fades over the other foot's swing, and it picks a side once per swing (`m.bowSide`). **Stop re-aim:** the late
+target correction was skipped while stopping, so the boot darted to the stop target in its last frames. It now
+spreads over the swing left, stretched so the landing moves at most `STOP_REAIM` (1.5 m/s). The hard stop still
+settles in two catch steps.
+
+Things that did not work: driving stance (crossover vs side-step), `moving` or `travelDir` from effort. Those raised
+the turned-walk-start toe from 6.5 to 9.6 m/s and gave nothing on the knee. A per-swing boot-yaw clamp bought 5% on
+the knee and stretched backpedal shins. Rate-limiting every mid-swing retarget made swings that start toward a stale
+target double back. A knee-pole clamp in `human-pose.ts` changed nothing.
+
+**Ledger refresh, accepted with `--accept-regression`.** Ranked findings over the seven ledger bodies at 30/60 fps,
+with and without the hitch, fall from a summed visibility of **1,108.7 to 847.8**. The per-channel ledger lowers
+1,245 channels and raises 910 (the CLI printed 994 changes). The tape is one continuous run, so a different reversal
+step leaves the feet at a different phase when crouch starts at t = 18 s. Most raises sit in those two scenarios
+(reversals 377, crouch 443). There, pre-existing transition pops (a mid-swing retarget at the crouch entry, the
+crouch→map stop) land on a worse or better phase. Ranked scenarios that got worse, all existing mechanisms:
+crouch-entry bone stretch on the zombie (0.537 → 0.609 m), the map-raise stop ankle (Blackout survivor, Outbreak
+survivor, f-survivor contact snap 2.27 → 3.21 m/s), a-woods turn-before-start ankle jerk (2.55 → 4.53 km/s³) and
+Blackout backpedal shin stretch (0.146 m). d-office's people-side pelvis pop in crouch (t ≈ 18.5 s, 10 cm in a frame
+on main) now flickers for three frames on this phase. That is `packages/kit/people`, left to its owner.
+Before/after strips: `~/code/home/artifacts/rig-pops-2026-10-22/`.
+
 ## Arachnid gait (spider, Oct 22)
 
 Lamplight's arachnid, ported by hand once (`~/code/open-source/lamplight/src/arachnid/`); the TypeScript is the source
@@ -860,6 +900,7 @@ now. The root is shared and deterministic, the legs are presentation:
   friend's beam running across the view, never toward it. `scripts/lab/spider-stills.ts --stills` diffs a frame with
   and without the spider (Weber contrast) before anything is recorded.
 
+||||||| parent of 28fcf51a (Fix three rig pops: zombie swing snap, reversal run posture, reversal knee swing)
 ## Known gaps
 
 - **Run late-swing knee extension still leads mocap by ~8°.** Walk leg RMSE is now **8.07°** (hip 4.48°, knee 10.94°,
@@ -872,6 +913,11 @@ now. The root is shared and deterministic, the legs are presentation:
   with zero shin-to-ankle separation. Reaching `112.5 steps/min` (`0.75 m` steps at `1.4 m/s`, vs. mocap's `1.30 m/s`)
   would require either a deeper double-support pelvis dip (`< 0.79 m`) or 3-DOF pelvic list/obliquity that lowers the
   trailing hip joint independently of the stance hip.
+- **A reversal at a run still sweeps the knee at 9.5 m/s (limit 4.88).** The step is now smooth but crosses 1.4 m in
+  a third of a second, from ahead in the old direction to ahead in the new. A braking plant (stance on the old lead
+  foot while the body turns round, then the first step) would shorten it.
+- **d-office crouch pelvis pop** (people `gait.ts`/terrain, t ≈ 18.5 s on the motion tape): 10 cm in one frame on
+  main, a three-frame flicker on the rig-pops foot phase.
 - **Outbreak's zombies still step their own terrain-support contact loop** (`src/zombies.ts`); the survivor runs
   `locomotion` (Lab › Survivor strafe › Legs › Today keeps the old loop).
 - **WASD leg gaps (survivor-legs.ts).** Shins still pass within a few cm for a frame or two when the hips swing
