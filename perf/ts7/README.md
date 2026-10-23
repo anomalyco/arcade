@@ -59,9 +59,12 @@ server and proof-script entrypoint. Combining it with the existing project check
 
 - Strict settings stay enabled. Fixes cover DOM `hidden` booleans, ArrayBuffer-backed encoder types,
   proof-only WebSocket buffers, WebGPU overload forwarding, Vite ambient types, and legacy AST imports.
-- Knobs' two boolean fixes were committed at `18b2452` on the local upstream branch `arcade-ts7-compat`,
-  based exactly on the previously vendored revision, then copied using its sync script. This adds no
-  unrelated upstream changes. Review and publish that upstream commit before publishing this migration.
+- Knobs is pinned at upstream `18b2452` on the published `arcade-ts7-compat` branch, based exactly on
+  the previously vendored revision. All 98 vendored source files match that commit byte-for-byte, with
+  no extra files. The same fix is on knobs main as `b27b651`. Adopting main (`0.4.0-next.18`, including
+  `tokens/`, `review/` and `@pierre/diffs`) needs a separate adoption pass.
 - The browser-budget audit successfully loaded the legacy compiler API, then reported the existing
   missing budget import in `scripts/sky/woods-checkpoint.ts`. That source is unchanged by this migration.
-- Full builds, browser proofs and runtime game suites were not run for this mechanical migration.
+- After restoring the minimal published knobs revision and rebasing onto main `6ba88792`, HiveMind
+  passed all 27 configs and the 14 touched tests (102 assertions, 1.011 s). The review coordinator also
+  reported `verify --all` passing 49/49 in 74 s, plus the Lab build and dry-run, on the reviewed revision.
