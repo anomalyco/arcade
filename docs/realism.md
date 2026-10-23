@@ -332,6 +332,13 @@ bind both under Weather, with independent Today defaults and Reset. The adapters
 single final exposure. Cost has not been isolated. Kit requested both as opt-ins; D-59 keeps Today's storm and
 parks the volumetric-cloud experiment on `weather-clouds-parked`.
 
+**Rain visibility follow-up (candidate).** Kit approved adaptation but rejected the faint lamp rain. On
+`weather-rain-look`, streak radiance receives attenuation once, with a forward-scattering lobe and no unlit floor.
+The existing far-drop budget samples world-anchored tiles around nearby light sources; the near field is tighter,
+and rain streak counts no longer fall to 34% at HiDPI. Splash/mist budgets stay as before. A typed **Streak brightness**
+control defaults to 4×. Lot lamp and carried-torch stills are in `perf/weather-rain-look.md`; Today matches the shipped
+renderer in both views. This is an image candidate awaiting Kit's review; motion and GPU cost have not been measured.
+
 **Lightning as one event envelope.** A seeded stepped-leader channel with midpoint displacement, a return stroke and
 2–4 later strokes in the same channel inside half a second, and one scene-light pulse per strike that lights the
 ground, the fog, the cloud deck and the rain together. No white overlay and no exposure change. A flash limiter keeps

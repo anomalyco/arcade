@@ -15,7 +15,7 @@ const { chromium } = budget
 //   bun scripts/lot-storm-proof.ts walk      Rain: open lot, past the wagon, under the booth edge, into the lobby, with sound
 //   bun scripts/lot-storm-proof.ts measure   paired whole-frame GPU time, Today vs each mode, at the gate
 //   bun scripts/lot-storm-proof.ts today     Today at the gate without touching weather; LOT_STORM_DIST=<main's dist> for the baseline
-//   bun scripts/lot-storm-proof.ts rain-review  isolated lamp rain and flash/recovery stills; LOT_STORM_CANDIDATES=today for main parity
+//   bun scripts/lot-storm-proof.ts rain-review  isolated lamp/torch rain and flash/recovery stills; LOT_STORM_CANDIDATES=today for main parity
 // Frames are JPEGs in $LOT_STORM_OUT; encode them on a render worker, not on Studio's display.
 const mode = process.argv[2] ?? "stills"
 const out = resolve(process.env.LOT_STORM_OUT ?? "captures/lot/storm")
@@ -93,9 +93,16 @@ try {
       const page = await open()
       await page.evaluate(({ subject, candidate }) => {
         const a = (window as any).lot
-        a.setWeather(subject === "lamp" ? "rain" : "storm"); a.weather.strikes = 0
+        const rain = subject === "lamp" || subject === "torch"
+        a.setWeather(rain ? "rain" : "storm"); a.weather.strikes = 0
+        if (subject === "torch") {
+          // Same real carried beam and camera on both sides, looking back along the unlit approach road.
+          a.camera.flashlight = true
+          a.camera.yaw += Math.PI
+          a.camera.pitch = -0.04
+        }
         if (candidate !== "today") {
-          if (subject === "lamp") a.rainLighting.mode = "volume"
+          if (rain) a.rainLighting.mode = "volume"
           else a.exposure.mode = "adapt"
         }
         // History reset does not reset sampling phases after asynchronous loading.
@@ -112,7 +119,15 @@ try {
         for (let i = 0; i < 15; i++) a.step(1000 / 60)
         await a.renderer.passContext.device.queue.onSubmittedWorkDone()
       })
-      if (subject === "lamp") save(`${candidate}-lamp.png`, await grab(page, "image/png"))
+      if (subject === "lamp" || subject === "torch") {
+        save(`${candidate}-${subject}.png`, await grab(page, "image/png"))
+        records.push(await page.evaluate(({ subject, candidate }) => {
+          const a = (window as any).lot, r = a.renderer.weatherRenderer
+          return { subject, candidate, eye: [...a.camera.eye], direction: [...a.camera.direction],
+            settings: { ...a.rainLighting }, nearCount: r.nearCount, farCount: r.farCount,
+            lights: a.stormFrame.weather.lights }
+        }, { subject, candidate }))
+      }
       else {
         await page.evaluate(async plan => {
           const a = (window as any).lot
