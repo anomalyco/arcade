@@ -4,6 +4,8 @@ import { DEFAULT_PROP_LOOK } from "@arcade/kit/props/mesh"
 export type OutbreakPropSettings = {
   /** Furnish the start block's houses with the prop library instead of box furniture (off restores the boxes). */
   propsOn: boolean
+  /** Retain baked PBR on the close-up props that have a GLB; distant props keep their cheap LOD. */
+  propTextures: boolean
   /** Wall, corner and tabletop clutter: 0 none, 1 default, 2 crowded (scaled down on lower quality tiers). */
   propClutter: number
   /** Reroll the clutter (anchors stay where the gameplay furniture is). */
@@ -17,6 +19,7 @@ export type OutbreakPropSettings = {
 
 export const DEFAULT_PROP_SETTINGS: OutbreakPropSettings = {
   propsOn: true,
+  propTextures: false,
   propClutter: 1,
   propSeed: 0,
   propLodZoom: 34,
