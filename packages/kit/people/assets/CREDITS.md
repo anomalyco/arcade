@@ -38,7 +38,8 @@ From the Microsoft Rocketbox Avatar Library, https://github.com/microsoft/Micros
 (f07) and `Male_Adult_07` (m07). Source files and their SHA-256s are in `rocketbox-sources.json`. Changes: the Biped
 bones renamed to the `game_engine` names, thighs moved under the pelvis and clavicles under the chest, the mesh split
 by material and bone weights into clothes, skin, eyes and hair, a decimated LOD1, textures downscaled from 2048 to
-1024 and re-encoded as WebP, specular maps dropped, and a colour factor on the skin moving its hue onto measured skin.
+1024 and re-encoded as WebP, specular maps dropped, the clothes' lining strips given the UVs and normals of the
+panels over them, and a colour factor on the skin moving its hue onto measured skin.
 
 ```
 MIT License

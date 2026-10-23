@@ -11,6 +11,7 @@ eyes (from the eye bones) and hair (the opacity cards). Each part gets a decimat
 """
 
 import json
+import math
 import os
 import sys
 
@@ -182,6 +183,82 @@ for p, si in zip(me.polygons, src_index):
         k = "eyes"
     p.material_index = order.index(k)
 
+# --- Linings: the outfit is one closed shell, and each opening (a vest's zip, armholes, hems, collars) folds 150-165°
+# back under itself into a lining strip a few millimetres inside the outer panel, facing the body. Rocketbox maps
+# those strips onto texels painted with the garment's contact shadow, near black, and shades them facing inward, so
+# wherever an edge opens as the rig moves they show as a dark seam. Give each strip corner the UV and normal of the
+# nearest panel corner facing the other way (the panel right over it), so the strip reads as the panel's own fabric.
+# Deleting the strips instead shows the panel's inside at 3/4 view. Strip faces: on such a fold, facing the body
+# (against their main bone's segment), grown across smooth neighbours that also face it, within 4 cm. ---------------
+import bmesh
+from mathutils.geometry import intersect_point_line
+
+
+def dress_linings(mat_index):
+    corner = [c.vector.copy() for c in me.corner_normals]
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bm.normal_update()
+    bm.faces.ensure_lookup_table()
+    dw = bm.verts.layers.deform.active
+    uvl = bm.loops.layers.uv.active
+    segs = {b.name: (b.head_local, b.tail_local) for b in rig.data.bones}
+
+    def inward(f):
+        acc = {}
+        for v in f.verts:
+            for g, w in v[dw].items():
+                acc[g] = acc.get(g, 0) + w
+        a, b = segs[groups[max(acc, key=acc.get)]]
+        c = f.calc_center_median()
+        _, t = intersect_point_line(c, a, b)
+        d = c - a.lerp(b, min(max(t, 0.0), 1.0))
+        return d.length > 1e-6 and f.normal.dot(d.normalized()) < -0.2
+
+    flap, origin = set(), {}
+    for e in bm.edges:
+        fs = [f for f in e.link_faces if f.material_index == mat_index]
+        if len(fs) == 2 and fs[0].normal.dot(fs[1].normal) < -0.5:
+            for f in fs:
+                if f not in flap and inward(f):
+                    flap.add(f)
+                    origin[f] = f.calc_center_median()
+    front = list(flap)
+    while front:
+        f = front.pop()
+        for e in f.edges:
+            for g in e.link_faces:
+                if g in flap or g.material_index != mat_index or g.normal.dot(f.normal) < 0.5:
+                    continue
+                if (g.calc_center_median() - origin[f]).length > 0.04 or not inward(g):
+                    continue
+                flap.add(g)
+                origin[g] = origin[f]
+                front.append(g)
+
+    outer = [(f, l) for f in bm.faces if f.material_index == mat_index and f not in flap for l in f.loops]
+    tree = kdtree.KDTree(len(outer))
+    for i, (_, l) in enumerate(outer):
+        tree.insert(l.vert.co, i)
+    tree.balance()
+    normal = {}
+    for f in flap:
+        for l in f.loops:
+            for _, i, _ in tree.find_n(l.vert.co, 32):
+                g, m = outer[i]
+                if g.normal.dot(f.normal) < -0.3:
+                    l[uvl].uv = m[uvl].uv.copy()
+                    normal[(f.index, l.vert.index)] = corner[m.index]
+                    break
+    bm.to_mesh(me)
+    bm.free()
+    me.normals_split_custom_set([normal.get((p.index, me.loops[li].vertex_index), corner[li])
+                                 for p in me.polygons for li in p.loop_indices])
+    return len(flap), len(normal)
+
+
+print("LININGS", *dress_linings(order.index("body")))
+
 # --- Skin colour: the median linear texel over each skin material's own UV area (area-weighted random points), for
 # build-rocketbox.ts to move onto the measured skin curve (`packages/kit/people/skin.ts`). The median skips brows,
 # lips, stubble and painted hair. ----------------------------------------------------------------------------------
@@ -251,6 +328,9 @@ for o in [o for o in bpy.data.objects if o.type == "MESH"]:
         bpy.context.view_layer.objects.active = dup
         bpy.ops.object.modifier_move_to_index(modifier=dec.name, index=0)
         bpy.ops.object.modifier_apply(modifier=dec.name)
+        # Decimate drops the custom normals, so the folds left (hems, collars, eyelids) would average front and back
+        # into a dark rim; split them where the faces turn more than 120° (an inside angle under 60°).
+        dup.data.set_sharp_from_angle(angle=math.radians(120))
     stats[dup.name] = sum(len(p.vertices) - 2 for p in dup.data.polygons)
 
 bpy.ops.object.select_all(action="DESELECT")

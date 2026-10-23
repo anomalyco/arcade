@@ -97,6 +97,12 @@ bun scripts/people/build-rocketbox.ts [m05 f04 m04 f07 m07]   # ≈3 s each; dow
   hand and finger bones), `skin.head`, `eye.eyes` (head faces on the eye bones) and `hair.hair` (the opacity cards,
   alpha-tested). The textures are full colour, so `mean` is 1 and only skin gets a `baseColorFactor`. Specular maps
   are dropped (roughness comes from the kind, as for the MakeHuman cast).
+- Linings: the outfit is one closed shell, and each opening (a vest's zip, armholes, hems, collars) folds back under
+  itself into a lining strip a few millimetres inside the panel. Rocketbox maps those strips onto texels painted with
+  the garment's contact shadow (on m05, 44 of 167 are near black). `dress_linings` finds them (faces on a fold of over
+  120° that face their main bone, grown within 4 cm) and gives each corner the UV and normal of the nearest panel
+  corner facing the other way, so the strip reads as the panel's own fabric. Triangles are unchanged; deleting the
+  strips instead showed the panel's inside at the zip edge at 3/4 view.
 - Skin: the photo skin carries its capture light and ran hot orange in the torch (face red/green 2.0–2.35; measured
   skin is 1.33–1.92). `build-rocketbox.py` prints each skin material's median linear texel (the face only for the
   head: in front of the head bone and below the brows, since the head atlas also paints the scalp's hair). The build
@@ -110,7 +116,7 @@ bun scripts/people/build-rocketbox.ts [m05 f04 m04 f07 m07]   # ≈3 s each; dow
 
 | | m05 | f04 | m04 | f07 | m07 | MakeHuman (each) |
 | --- | --- | --- | --- | --- | --- | --- |
-| GLB | 981 KB | 887 KB | 977 KB | 979 KB | 803 KB | 720–970 KB |
+| GLB | 984 KB | 889 KB | 978 KB | 980 KB | 805 KB | 720–970 KB |
 | Textures (1024² WebP: body and head colour and normal, hair) | 766 KB | 637 KB | 745 KB | 748 KB | 596 KB | |
 | Joints | 80 | 80 | 80 | 80 | 80 | 53 |
 | Height | 1.81 m | 1.76 m | 1.87 m | 1.72 m | 1.82 m | 1.59–1.86 m |
@@ -176,6 +182,9 @@ for the beam and the torch mesh. Woods' adapter is `games/barbara/src/people-vie
 - Rocketbox: five avatars, so a sixth friend would repeat one; no headlamps or packs; the hair is one set of
   low-poly cards; face bones are carried but never driven; the skin fix moves only each material's median hue, so
   lips and blush keep the photo's own warmth.
+- Known issue: a dark line along m05's vest zip at 2.2 m. It is not the mesh, texture or normals (a normals view of
+  the same shot shows no line); some light's shadow or visibility term zeroes those pixels in the shared lighting.
+  Follow-up PR: `people-lit-line`.
 - Hair cards are alpha-tested and can shimmer at a distance under TAA.
 - Torch shadows from people re-render the torch's shadow slot every frame while anyone is in reach.
 
