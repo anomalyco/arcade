@@ -40,6 +40,12 @@ export function stepGait(a: Locomotion, dt: number): void {
   const reversing = (a.motion.reverseT ?? 0) > 0 && Math.hypot(a.vx, a.vy) > 0.35
   a.gait += ((Math.hypot(a.svx, a.svy) > 0.35 || reversing ? 1 : 0) - a.gait) * Math.min(1, dt * 6)
 }
+/** How much a forward run kicks the heel up and tucks it back in swing, 0..1, from the travel direction and speed. */
+export function athleticSwing(a: Locomotion): number {
+  const sp = Math.hypot(a.svx, a.svy)
+  const fwdFlow = sp > 0.2 ? clamp((a.svx * Math.cos(a.legYaw) + a.svy * Math.sin(a.legYaw)) / sp, 0, 1) : 0
+  return smooth((fwdFlow - 0.25) / 0.55) * smooth((Math.hypot(a.vx, a.vy) - 0.3) / 0.8)
+}
 export function angleSpring(s: Spring, goal: number, hz: number, dt: number): void {
   stepSpring(s, stiffness(hz), 1, dt, s.x + angleDiff(goal, s.x))
 }
@@ -64,6 +70,9 @@ export function newMotion(x: number, y: number, aim: number) {
     stepToeYaw: [0, 0] as [number, number],
     stepArmVar: [1, 1] as [number, number],
     redirectFrom: [0, 0] as [number, number],
+    /** Each swing's run share and heel kick, fixed at liftoff (−1: read live, for swings locomotion did not lift). */
+    swingRun: [-1, -1] as [number, number],
+    swingAthletic: [-1, -1] as [number, number],
     bowSide: [0, 0] as [number, number],
     stopReaim: [0, 0] as [number, number],
     targets: [[x, 0, y], [x, 0, y]] as [V3, V3],
@@ -247,6 +256,7 @@ function reset(a: Avatar): void {
   m.stepDebt = 0; m.start = 0; m.moving = false; m.next = 0; m.strafeSign = 0; m.stepCount = 0; m.clock = 0
   m.strafePhi = 0; m.strafeCross = 0; m.sideStep = 0; m.backness = 0; m.strafeLateral = 0; m.steady = 0; m.reverseT = 0
   m.effort = Math.hypot(a.vx, a.vy); m.bowSide[0] = 0; m.bowSide[1] = 0; m.stopReaim[0] = 0; m.stopReaim[1] = 0
+  m.swingRun[0] = m.swingRun[1] = m.swingAthletic[0] = m.swingAthletic[1] = -1
   for (let i = 0; i < 2; i++) {
     const f = a.feet[i]!
     f.p = home(a, i, 0); f.lift = [...f.p]; f.yaw = a.legYaw; f.pitch = 0; f.planted = true
@@ -429,12 +439,13 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
     const e = smoother(u)
     const eHoriz = drag > 0 ? e * (1 - 0.38 * drag * (1 - u)) : e
     const liftScale = clamp(animation.stepLift ?? 1, 0.5, 1.8) * (m.stepLiftVar?.[i] ?? 1)
+    const swingRun = m.swingRun[i]! >= 0 ? m.swingRun[i]! : curGait.run
     // Quadratic liftoff (u=0) and cubic feather-soft touchdown (u=1) so contact foot velocity is ~0.
     const liftBell = 1.72 * Math.sin(Math.PI * u) ** 2 * (1 - u)
     const [bowX, bowZ] = swingBow(a, i, target, animation)
     const bow = Math.sin(Math.PI * u)
     f.p = [f.lift[0] + (target[0] - f.lift[0]) * eHoriz + bowX * bow,
-      (0.085 + 0.125 * curGait.run) * liftScale * (i === 1 ? 1 - drag : 1) * liftBell,
+      (0.085 + 0.125 * swingRun) * liftScale * (i === 1 ? 1 - drag : 1) * liftBell,
       f.lift[2] + (target[2] - f.lift[2]) * eHoriz + bowZ * bow]
     const side = i === 0 ? -1 : 1
     const opening = strafeFootOpen(st, i)
@@ -443,7 +454,7 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
     // Toe-off plantarflexion in early swing transitioning to dorsiflexed heel-strike preparation in late swing,
     // settling smoothly to flat (0 rad) at u = 1 so touchdown has zero pitch/vertical velocity discontinuity.
     const pushOffPitch = -0.30 * Math.sin(Math.PI * clamp(u / 0.58, 0, 1))
-    const heelStrikePitch = (0.20 * (1 - 0.35 * curGait.run) * (1 - st.backness) - 0.10 * st.backness) * Math.sin(Math.PI * clamp((u - 0.54) / 0.36, 0, 1))
+    const heelStrikePitch = (0.20 * (1 - 0.35 * swingRun) * (1 - st.backness) - 0.10 * st.backness) * Math.sin(Math.PI * clamp((u - 0.54) / 0.36, 0, 1))
     f.pitch = drag > 0
       ? (pushOffPitch * (1 - drag * 0.85) + 0.12 * drag * Math.sin(Math.PI * u)) + heelStrikePitch * (1 - drag * 0.75)
       : pushOffPitch + heelStrikePitch
@@ -502,6 +513,9 @@ export function locomotion(a: Avatar, dt: number, distance: number, teleport: bo
       m.swings[i] = 0; m.stances[i] = 0
       if (m.redirectFrom) m.redirectFrom[i] = 0
       m.bowSide[i] = 0; m.stopReaim[i] = 0
+      // A swing keeps the run share and heel kick it lifts off with: on a reversal the live ones dip through a walk
+      // for a frame or two, and a kicked-up heel dropped to a walking swing mid-air.
+      m.swingRun[i] = m.run; m.swingAthletic[i] = athleticSwing(a)
       const stepIdx = ++m.stepCount
       // Same-foot (stepIdx - 2) high-pass blue-noise variation: genuine step-to-step organic variation
       // while telescoping each foot's mean to zero so L/R step symmetry stays ~1.000.

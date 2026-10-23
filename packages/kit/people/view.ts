@@ -148,7 +148,7 @@ export class People {
     p.breath.x += o.dt * Math.PI * 2 * (0.25 + 0.12 * Math.min(1, speed / 3))
     posePerson(p.rest, {
       body, lift: lift + (o.rise ?? 0), feet, tilt, torch: o.torch, look: o.look, grip: o.grip,
-      breath: 1, breathPhase: p.breath.x, shift: idleShift(p.idle, speed, bothPlanted(loco), o.dt),
+      breath: 1, breathPhase: p.breath.x, shift: idleShift(p.idle, speed, bothPlanted(loco), o.dt), dt: o.dt,
     }, p.pose)
     skinMatrices(p.rest, p.pose, p.inst.matrices)
     if (o.eye) p.inst.lod = personLod(p.rest, p.pose, o.eye, p.inst.lod, this.lodDistance)

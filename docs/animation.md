@@ -853,6 +853,23 @@ backpedal shin stretch (0.148 m) and smaller ones under 15%. d-office's people-s
 on main) now flickers for three frames on this phase. That is `packages/kit/people`, left to its owner.
 Before/after strips: `~/code/home/artifacts/rig-pops-2026-10-22/`.
 
+### Fixed: swing shape and the people pelvis sink (people-pops, 2026-10-23)
+
+Two pops #459 left, measured on the same tape against main 244467cc:
+
+| Event | Root cause | Fix | Before → after |
+| --- | --- | --- | --- |
+| e-woods reversals, left toe | A swing read the live run share and heel kick (`athletic` in `poseLegs`, `curGait.run` for lift and heel-strike pitch). Both dip through a walk for a frame or two at a reversal, so a kicked-up heel dropped to a walking swing mid-air. | Each swing latches both at liftoff (`swingRun`, `swingAthletic`; −1 reads live, as `animate`'s own stepping does). | 2.49× (20.7 cm) → 1.85× (11.9 cm) at 60 fps |
+| d-office crouch, pelvis | `posePerson` sinks the body when the mesh's shorter legs cannot reach the rig's ankles, per frame. Near full extension the reach height swings steeply with plan distance: a swing ankle 3 cm closer cut the sink 10 → 3 cm, a 6–7 cm jump up in one frame. | The sink still grows at once (planted feet always reach) but lets go on a 10/s ease (`PersonPose.sink`, `SINK_RELEASE`). Callers without `dt` keep the per-frame sink. | crouch 4.46× → no finding; start-walk 6.22× → no finding |
+
+Not kept: holding `moving` through a reversal. After #459 it bought nothing on the toe (1.86× vs 1.85×), and it aimed
+reversal swings through the planted boot (2 cm boot gap in the strafe-reversal test), since a stop's targets go through
+`separate()`.
+
+Ranked against main: top 100 has nothing new or larger; events over 20 cm 951 → 436; summed visibility 1,194 → 923
+(b-woods 48 → 32 m, e-woods 48 → 41 m, d-office 51 → 33 m). The ledger refresh accepted the rest with
+`--accept-regression`, as step-timing reshuffles: 256 raised, 875 lowered, 1,817 unchanged over the fourteen tapes.
+
 ## Arachnid gait (spider, Oct 22)
 
 Lamplight's arachnid, ported by hand once (`~/code/open-source/lamplight/src/arachnid/`); the TypeScript is the source
@@ -918,8 +935,6 @@ now. The root is shared and deterministic, the legs are presentation:
 - **A reversal at a run still sweeps the knee at 9.5 m/s (limit 4.88).** The step is now smooth but crosses 1.4 m in
   a third of a second, from ahead in the old direction to ahead in the new. A braking plant (stance on the old lead
   foot while the body turns round, then the first step) would shorten it.
-- **d-office crouch pelvis pop** (people `gait.ts`/terrain, t ≈ 18.5 s on the motion tape): 10 cm in one frame on
-  main, a three-frame flicker on the rig-pops foot phase.
 - **Outbreak's zombies still step their own terrain-support contact loop** (`src/zombies.ts`); the survivor runs
   `locomotion` (Lab › Survivor strafe › Legs › Today keeps the old loop).
 - **WASD leg gaps (survivor-legs.ts).** Shins still pass within a few cm for a frame or two when the hips swing
