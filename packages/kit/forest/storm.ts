@@ -11,7 +11,7 @@ import type { Strike, StrikeLight, Vec3 } from "../weather/lightning"
 import { RAIN_LIGHTING_DEFAULTS, rainLightingControls, type RainLightingSettings } from "../weather/rain-lighting"
 import { weatherDefaults, type WeatherSettings } from "../weather/settings"
 import { WeatherSimulation, type WeatherFrameState } from "../weather/state"
-import { StormStrikes, type StormFlashes, type StrikeRequest, type ThunderEvent } from "../weather/storm"
+import { StormStrikes, type SharedStormClock, type StormFlashes, type StrikeRequest, type ThunderEvent } from "../weather/storm"
 import { FOREST_WIND_DIR } from "./wind"
 
 export type ForestStormSettings = {
@@ -118,6 +118,8 @@ export type ForestStormInput = {
   groundY: number
   /** The forest look's wind (×): the rain slants with the trees. */
   forestWind: number
+  /** A room's shared clock and anchor: scheduled strikes then match on every client (`SharedStormClock`). */
+  shared?: SharedStormClock
 }
 
 const ease = (dt: number, tau: number) => 1 - Math.exp(-dt / tau)
@@ -175,7 +177,7 @@ export class ForestStorm {
   frame(i: ForestStormInput): ForestStormFrame {
     const s = this.settings, dt = Math.max(0, Math.min(0.1, i.dt))
     const bearing = -i.yaw
-    const strikes = this.strikes.step(dt, { rate: s.strikes, cloud: s.strikeCloud, near: s.strikeNear, far: s.strikeFar, flashes: s.flashes }, i.eye, bearing, i.groundY)
+    const strikes = this.strikes.step(dt, { rate: s.strikes, cloud: s.strikeCloud, near: s.strikeNear, far: s.strikeFar, flashes: s.flashes }, i.eye, bearing, i.groundY, i.shared)
     const t = strikes.time
 
     // Rain arrives over a couple of seconds; the forest soaks more slowly and dries slower still.

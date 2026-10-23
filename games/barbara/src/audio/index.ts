@@ -246,7 +246,7 @@ export class WoodsAudio {
     this.weather = f && (f.rain > 0.001 || f.wind > 1.001 || f.gust > 0 || this.thunder.length || f.thunder.length) ? { rain: f.rain, wind: f.wind, gust: f.gust, clock: f.clock } : f ? { rain: 0, wind: 1, gust: 0, clock: f.clock } : null
     if (!f?.thunder.length) return
     this.freshThunder.push(...f.thunder.map((e) => ({ ...e })))
-    if (this.live) this.thunder.push(...f.thunder.map((e) => ({ ...e })))
+    if (this.live || this.begun) this.thunder.push(...f.thunder.map((e) => ({ ...e })))
   }
 
   /** The session's events: a distant event plays where it happens, on the next `frame` (with that frame's clock). */

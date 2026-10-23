@@ -25,7 +25,7 @@ import { ALPHA_COVERAGE_BASE } from "./alpha-coverage"
 import { FLASH_SHADOW_ID, GROUND_CELL, GROUND_CELLS, WOODS_FLOATS, WOODS_GROUND, WOODS_GROUND_AT, WOODS_STORM, batchHooks, cutoutDepthWgsl, forestHooks, forestShadowInstanceWgsl, moteShader, skyShader, stormSkyShader, treeVertexWgsl, woodsUniformWgsl, forestLakeHooks } from "./shaders"
 import type { ForestStormView } from "./storm"
 import { BoltPass, BOLT_LOOK } from "../weather/lightning-pass"
-import type { Strike } from "../weather/lightning"
+import type { Strike, StrikeLight } from "../weather/lightning"
 import type { WeatherEave, WeatherExcludeRect, WeatherLight, WeatherPrepareInput } from "../weather"
 import { forestPost } from "./post"
 import { FOREST_WIND_DIR } from "./wind"
@@ -481,7 +481,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     renderer.setCustomUniforms(custom)
 
     // ---- Storm: the cloud base over the sky, the channel, the rain.
-    if (st && !stormSky) { stormSky = new StormSkyPass(renderer.passContext); renderer.addPass("sky", stormSky) }
+    if (st && !stormSky && (st.cloudGlow > 0 || st.flashSky > 0)) { stormSky = new StormSkyPass(renderer.passContext); renderer.addPass("sky", stormSky) }
     if (stormSky) stormSky.on = !!st && (st.cloudGlow > 0 || st.flashSky > 0)
     if (st?.bolt && !bolt) { bolt = new BoltPass(renderer.passContext); renderer.addPass("alpha", bolt) }
     if (bolt) {
@@ -494,8 +494,9 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
         if (!drawn) { drawn = scaledStrike(k, f.eye, BOLT_FAR); boltShapes.set(k, drawn) }
         scale = (drawn as Strike & { scale?: number }).scale ?? 1
       }
-      const b = st?.boltBrightness ?? 1
-      bolt.frame(drawn, st!.light, { ...BOLT_LOOK, coreIntensity: BOLT_LOOK.coreIntensity * b, glowIntensity: BOLT_LOOK.glowIntensity * b, coreWidth: BOLT_LOOK.coreWidth * scale, glowWidth: BOLT_LOOK.glowWidth * scale }, [0, 0, 0], f.fovY)
+      // The eye's glare after the flash lands round the channel itself (its glow), never as a veil over the frame.
+      const b = st?.boltBrightness ?? 1, g = 1 + 3 * (st?.glare ?? 0)
+      bolt.frame(drawn, st?.light ?? NO_STRIKE_LIGHT, { ...BOLT_LOOK, coreIntensity: BOLT_LOOK.coreIntensity * b, glowIntensity: BOLT_LOOK.glowIntensity * b * g, coreWidth: BOLT_LOOK.coreWidth * scale, glowWidth: BOLT_LOOK.glowWidth * scale }, [0, 0, 0], f.fovY)
     }
     const weather = st?.rain && !smoke ? rainInput(st, f, local, halfAngle, torchColor) : null
 
@@ -997,6 +998,7 @@ class StormSkyPass implements ScenePass {
   draw(pass: GPURenderPassEncoder) { if (!this.on) return; pass.setPipeline(this.pipe); pass.draw(3) }
 }
 
+const NO_STRIKE_LIGHT: StrikeLight = { channel: 0, branches: 0, front: 0, leader: 0, scene: 0, after: 0 }
 /** Where a far lightning channel is drawn (m from the eye): inside the camera's far plane, behind the forest. */
 const BOLT_FAR = 270
 /** Weather-layer light power per torch candela (calibrated so drops in a beam sit near the lit mist). */
