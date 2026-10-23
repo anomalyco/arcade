@@ -22,7 +22,7 @@ import { loadForestModels, loadForestTextures, type ForestTextures } from "./ass
 import { buildForest, CHUNK, forestHeightGrid, INSTANCE_FLOATS, type ForestBuild } from "./build"
 import { ForestBuilder } from "./offthread"
 import { ALPHA_COVERAGE_BASE } from "./alpha-coverage"
-import { GROUND_CELL, GROUND_CELLS, WOODS_FLOATS, batchHooks, cutoutDepthWgsl, forestHooks, forestShadowInstanceWgsl, moteShader, skyShader, treeVertexWgsl, woodsUniformWgsl } from "./shaders"
+import { GROUND_CELL, GROUND_CELLS, WOODS_FLOATS, batchHooks, cutoutDepthWgsl, forestHooks, forestShadowInstanceWgsl, moteShader, skyShader, treeVertexWgsl, woodsUniformWgsl, forestLakeHooks } from "./shaders"
 import { forestPost } from "./post"
 import { FOREST_WIND_DIR } from "./wind"
 import { stepForestExposure, forestExposureTarget } from "./exposure"
@@ -92,8 +92,12 @@ export type ForestView = {
   readonly sky: ReturnType<typeof attachSky>
   readonly renderer: Renderer
   readonly settings: ForestLookSettings
+  /** Presentation-only floating log on the moonlit lake (Lab authoring). */
   readonly waterProbe: { x: number; z: number; active: boolean; at: number }
+  /** The moonlit lake's reflection cube; allocates nothing until `lakeLook` is "moonlit". */
   readonly lakeSky: LakeSky
+  /** Automation: whether any moonlit-lake GPU resource exists yet, and whether its water pipeline is drawing. */
+  readonly lake: { readonly allocated: boolean; readonly ready: boolean }
   readonly build: ForestBuild
   /** Rebuilds the static forest for a new world (same textures and models). */
   setWorld(world: ForestWorld): void
@@ -177,7 +181,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
   const ssr = new Ssr(createSsrSettings({ mode: smoke ? "today" : "ssr", strength: 1.6, maxDistance: 60, cutoff: 0.4, streak: 0.8, maxLuminance: 20, historyMoving: 0.4 }))
   const renderer = new Renderer(device, gpu.context, gpu.format, {
     scene: makeSceneShader(batchHooks), sprite: spriteShader(), post: forestPost,
-    volume: smoke ? [fogVolume] : [ssrVolume(), fogVolume],
+    volume: smoke ? [fogVolume] : [ssrVolume({ exclude: true }), fogVolume],
   })
   renderer.setTemporal({ ...TEMPORAL_DEFAULTS, mode: "taa", sharpen: 0.15 })
   // Auto exposure meters the frame as drawn (every beam, the fog they light, friends' lenses), not a guess at it.
@@ -214,9 +218,10 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
   const loadMs = performance.now() - t0
   mark("assets")
 
-  const lakeSky = new LakeSky(renderer.passContext, settings)
-  let pass = new ForestPass(renderer.passContext, build, textures, world, lakeSky.texture)
+  let pass = new ForestPass(renderer.passContext, build, textures, world)
   const sky = attachSky(renderer, settings, new SkyPass(renderer.passContext))
+  const lakeSky = new LakeSky(renderer.passContext, settings)
+  const lakeFrame = new Float32Array(12)
   renderer.addPass("opaque", pass)
   const motes = new MotePass(renderer.passContext)
   renderer.addPass("alpha", motes)
@@ -324,7 +329,8 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     // Reuse the forest's existing bounded eye state; there is no second adaptation clock.
     const darkAdaptation = Math.max(0, Math.min(1, (cam.stops + s.adaptRange) / Math.max(0.01, s.adaptRange + s.adaptLift)))
     sky.update({ time: f.time, sceneUnitsPerCdM2: 1, darkAdaptation })
-    lakeSky.update({ time: f.time, sceneUnitsPerCdM2: 1, darkAdaptation }, s.lakeLook === "moonlit")
+    const moonlitLake = s.lakeLook === "moonlit" && !smoke
+    lakeSky.update({ time: f.time, sceneUnitsPerCdM2: 1, darkAdaptation }, moonlitLake)
     const lunar = moonLight(s)
     const physicalMoon = sky.active && !smoke && lunar.illuminanceLux > 0
 
@@ -348,6 +354,11 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     const moonShadowId = 65000
     if (physicalMoon) candidates.push({ id: moonShadowId, pos: [Math.round(f.eye[0] / 8) * 8 + lunar.direction[0] * 512, f.eye[1] + lunar.direction[1] * 512, Math.round(f.eye[2] / 8) * 8 + lunar.direction[2] * 512], axis: [-lunar.direction[0], -lunar.direction[1], -lunar.direction[2]], cosOuter: 0.98, range: 650, intensity: 1e8 })
     pass.update(f.eye, f.viewProj, quality, s)
+    if (moonlitLake) {
+      lakeFrame.set([s.lakeRipples, s.lakeRain, s.lakeScatter, 0, s.lakeMist, lakeTime(f.time), Number(sky.active && lakeSky.active), sky.active ? lunar.illuminanceLux : s.moon,
+        waterProbe.x, waterProbe.z, Number(waterProbe.active), Math.min(100, Math.max(0, f.time - waterProbe.at))])
+      pass.moonlit(lakeSky.acquire(), lakeFrame)
+    } else pass.moonlit(null, null)
     const enc = device.createCommandEncoder()
     lakeSky.prepare(enc)
     const casters = spots.settings.count > 0 && (local || physicalMoon) ? pass.casters(physicalMoon ? f.eye : local!.pos, physicalMoon ? 140 : s.torchReach, physicalMoon ? 100 : quality.fernNear, s.foliageShadows && quality.foliageShadows ? foliageMask : null) : []
@@ -448,13 +459,10 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
     custom.set(unjitteredInv, 56)
     custom.set([textures.size, 0.5, Math.log2(ALPHA_COVERAGE_BASE / textures.size), sky.active ? 1 : 0], 72)
     custom.set([s.clearAir && !smoke ? 1 : 0, s.depthMist && !smoke ? s.depthDensity : 0, s.depthStart, s.nearScatter], 76)
-    custom.set([s.lakeLook === "moonlit" ? 1 : 0, s.lakeRipples, s.lakeRain, s.lakeScatter], 84 + GROUND_CELLS * GROUND_CELLS)
-    custom.set([s.lakeMist, lakeTime(f.time), Number(sky.active && lakeSky.active), sky.active ? lunar.illuminanceLux : s.moon], 88 + GROUND_CELLS * GROUND_CELLS)
-    custom.set([waterProbe.x, waterProbe.z, Number(waterProbe.active), Math.min(100, Math.max(0, f.time - waterProbe.at))], 92 + GROUND_CELLS * GROUND_CELLS)
     renderer.setCustomUniforms(custom)
 
     packSceneFrame(frameData, { viewProj: f.viewProj, eye: f.eye, time: f.time, width: f.width, height: f.height, lightCount: lights.lightCount, ambient: [0, 0, 0, 0], mapSize: [1, 1], ao: 0 })
-    const volumes = smoke ? [fog.volumeInput()] : [debug.ssr === false ? null : ssr.volumeInput({ indoor: false, wet: { ...WET_DEFAULTS, wetness: 1, puddles: 1, ripple: 0.15 } }), fog.volumeInput()]
+    const volumes = smoke ? [fog.volumeInput()] : [debug.ssr === false ? null : ssr.volumeInput({ indoor: false, wet: { ...WET_DEFAULTS, wetness: 1, puddles: 1, ripple: 0.15 }, exclude: moonlitLake ? lake : null }), fog.volumeInput()]
     lastFrame = {
       frame: frameData, lights: lights.lights, lightCount: lights.lightCount, shadowLightCount: lights.shadowLightCount,
       occluders: lights.occ, occluderCount: 0, lampPower: lights.power, lampCount: 0,
@@ -469,7 +477,8 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
   }
 
   return {
-    renderer, settings, waterProbe, sky, lakeSky,
+    renderer, settings, sky, waterProbe, lakeSky,
+    lake: { get allocated() { return lakeSky.allocated || pass.lakeState !== "none" }, get ready() { return pass.lakeState === "ready" } },
     get build() { return build },
     setWorld(next: ForestWorld) {
       const t = performance.now()
@@ -477,7 +486,7 @@ export async function createForestView(gpu: { device: GPUDevice; context: GPUCan
       buildMs = performance.now() - t
       const old = pass
       renderer.removePass(old)
-      pass = new ForestPass(renderer.passContext, build, textures, next, lakeSky.texture)
+      pass = new ForestPass(renderer.passContext, build, textures, next)
       Object.assign(pass.debug, old.debug)
       debug = pass.debug as Record<string, boolean>
       renderer.addPass("opaque", pass)
@@ -568,6 +577,9 @@ const gpuMesh = (device: GPUDevice, data: ArrayBuffer, indexed = false): GpuMesh
 
 const INSTANCE_LAYOUT: GPUVertexBufferLayout = { arrayStride: INSTANCE_FLOATS * 4, stepMode: "instance", attributes: [{ shaderLocation: 8, offset: 0, format: "float32x4" }, { shaderLocation: 9, offset: 16, format: "float32x4" }] }
 
+/** The moonlit lake's GPU side: its uniforms (frame + canopy), cube and group, and its async water pipeline. */
+type ForestLakeGpu = { buffer: GPUBuffer; cube: GPUTexture; group: GPUBindGroup; pipe?: GPURenderPipeline }
+
 /**
  * Draws the forest: baked chunk geometry (terrain, logs, camp) near or far by distance, every template's visible
  * instances near or far, and the water, through four pipelines (baked or instanced × opaque or cut-out with
@@ -581,7 +593,13 @@ class ForestPass implements ScenePass {
   private water: GpuMesh
   private instanceBuf: GPUBuffer
   private field: GPUTexture
-  private canopy: GPUBuffer
+  /** Group 1's entries and the pipeline recipe, kept for the moonlit lake's own water pipeline. */
+  private groupEntries: { layout: GPUBindGroupLayoutEntry[]; group: GPUBindGroupEntry[] }
+  private describe: (module: GPUShaderModule, layout: GPUPipelineLayout, entry: string, instanced: boolean, mode: "opaque" | "depth" | "shade" | "single") => GPURenderPipelineDescriptor
+  /** Moonlit lake: built the first time the look is chosen; undefined while every frame is Today. */
+  private lake?: ForestLakeGpu
+  private lakeOn = false
+  get lakeState(): "none" | "compiling" | "ready" { return !this.lake ? "none" : this.lake.pipe ? "ready" : "compiling" }
   private instanceData = new Float32Array(INSTANCE_FLOATS * 4096)
   private draws: { mesh: NonNullable<GpuMesh>; masked: boolean; first: number; count: number; hidden: number; prefix: { d: number; end: number }[]; template: number; near: boolean; kind: string }[] = []
   private statics: { mesh: NonNullable<GpuMesh>; masked: boolean; near: boolean; chunk: number; d: number; inView: boolean }[] = []
@@ -590,23 +608,22 @@ class ForestPass implements ScenePass {
   /** Profiling switches (automation only): draw statics, and each template kind. */
   readonly debug = { statics: true, tree: true, fern: true, rock: true, floor: true, prepass: true, indexed: true }
 
-  constructor(private ctx: PassContext, private build: ForestBuild, textures: ForestTextures, private world: ForestWorld, skyTexture: GPUTexture) {
+  constructor(private ctx: PassContext, private build: ForestBuild, textures: ForestTextures, private world: ForestWorld) {
     const d = ctx.device
     const code = makeSceneShader(forestHooks) + treeVertexWgsl + cutoutDepthWgsl
     const module = compileShaderModuleWithLog(d, code, "forest scene")
-    const layout = d.createBindGroupLayout({ entries: [
+    const layoutEntries: GPUBindGroupLayoutEntry[] = [
       { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { viewDimension: "2d-array" } },
       { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { viewDimension: "2d-array" } },
       { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { viewDimension: "2d-array" } },
       { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
       { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: {} },
       { binding: 5, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
-      { binding: 6, visibility: GPUShaderStage.FRAGMENT, texture: { viewDimension: "cube" } },
-      { binding: 7, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
-    ] })
+    ]
+    const layout = d.createBindGroupLayout({ entries: layoutEntries })
     const pipelineLayout = d.createPipelineLayout({ bindGroupLayouts: [ctx.frameLayout, layout] })
     // Cut-outs draw twice: a depth prepass with their coverage, then shading at depth "equal" (no overdraw shading).
-    const pipe = (entry: string, instanced: boolean, mode: "opaque" | "depth" | "shade" | "single") => d.createRenderPipeline({
+    this.describe = (module, pipelineLayout, entry, instanced, mode) => ({
       label: `forest ${entry} ${mode}`,
       layout: pipelineLayout,
       vertex: { module, entryPoint: entry, buffers: instanced ? [TEXTURED_VERTEX_LAYOUT, INSTANCE_LAYOUT] : [TEXTURED_VERTEX_LAYOUT] },
@@ -615,6 +632,7 @@ class ForestPass implements ScenePass {
       depthStencil: { format: ctx.depth, depthWriteEnabled: mode !== "shade", depthCompare: mode === "shade" ? "equal" : ctx.depthCompare ?? "less-equal" },
       multisample: { count: ctx.samples, alphaToCoverageEnabled: mode !== "opaque" && ctx.samples > 1 },
     })
+    const pipe = (entry: string, instanced: boolean, mode: "opaque" | "depth" | "shade" | "single") => d.createRenderPipeline(this.describe(module, pipelineLayout, entry, instanced, mode))
     this.pipes = {
       opaque: pipe("vsStatic", false, "opaque"), masked: pipe("vsStatic", false, "shade"), maskedDepth: pipe("vsStatic", false, "depth"),
       treeOpaque: pipe("vsTree", true, "opaque"), treeMasked: pipe("vsTree", true, "shade"), treeMaskedDepth: pipe("vsTree", true, "depth"),
@@ -622,19 +640,16 @@ class ForestPass implements ScenePass {
     }
     const field = this.field = d.createTexture({ size: [build.fieldSize, build.fieldSize], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
     d.queue.writeTexture({ texture: field }, build.field as Uint8Array<ArrayBuffer>, { bytesPerRow: build.fieldSize * 4 }, [build.fieldSize, build.fieldSize])
-    const canopy = lakeHorizon(world)
-    this.canopy = d.createBuffer({ label: "Lake canopy", size: canopy.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
-    d.queue.writeBuffer(this.canopy, 0, canopy)
-    this.group = d.createBindGroup({ layout, entries: [
+    const groupEntries: GPUBindGroupEntry[] = [
       { binding: 0, resource: textures.base.createView({ dimension: "2d-array" }) },
       { binding: 1, resource: textures.normal.createView({ dimension: "2d-array" }) },
       { binding: 2, resource: textures.orm.createView({ dimension: "2d-array" }) },
       { binding: 3, resource: d.createSampler({ magFilter: "linear", minFilter: "linear", mipmapFilter: "linear", addressModeU: "repeat", addressModeV: "repeat", maxAnisotropy: 8 }) },
       { binding: 4, resource: field.createView() },
       { binding: 5, resource: d.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" }) },
-      { binding: 6, resource: skyTexture.createView({ dimension: "cube" }) },
-      { binding: 7, resource: { buffer: this.canopy } },
-    ] })
+    ]
+    this.group = d.createBindGroup({ layout, entries: groupEntries })
+    this.groupEntries = { layout: layoutEntries, group: groupEntries }
     const pair = (m: { opaque: ArrayBuffer; masked: ArrayBuffer }, indexed = false) => ({ opaque: gpuMesh(d, m.opaque, indexed), masked: gpuMesh(d, m.masked, indexed) })
     this.templates = build.templates.map(t => ({ near: pair(t.near, true), far: t.far ? pair(t.far, true) : null, nearDist: t.nearDist, maxDist: t.maxDist, kind: t.kind }))
     this.chunks = build.chunks.map(c => ({ box: c.box, cx: c.x + CHUNK / 2, cz: c.z + CHUNK / 2, near: pair(c.near), far: pair(c.far), groups: c.groups }))
@@ -650,8 +665,38 @@ class ForestPass implements ScenePass {
 
   private cell(x: number, z: number) { return (Math.floor(x / 4) + 1000) * 4096 + Math.floor(z / 4) + 1000 }
 
+  /**
+   * This frame's lake: `null` draws Today's water. The first moonlit frame compiles the lake's water pipeline (async; Today
+   * water draws until it is ready) and binds the reflection cube, the canopy profile and the lake uniforms.
+   */
+  moonlit(cube: GPUTexture | null, frame: Float32Array | null) {
+    this.lakeOn = !!cube && !!frame
+    if (!cube || !frame) return
+    const d = this.ctx.device
+    if (!this.lake || this.lake.cube !== cube) {
+      const canopy = lakeHorizon(this.world)
+      const buffer = this.lake?.buffer ?? d.createBuffer({ label: "Forest lake", size: (frame.length + canopy.length) * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
+      if (!this.lake) d.queue.writeBuffer(buffer, frame.byteLength, canopy)
+      const layout = d.createBindGroupLayout({ entries: [...this.groupEntries.layout,
+        { binding: 6, visibility: GPUShaderStage.FRAGMENT, texture: { viewDimension: "cube" } },
+        { binding: 7, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
+      ] })
+      const group = d.createBindGroup({ layout, entries: [...this.groupEntries.group,
+        { binding: 6, resource: cube.createView({ dimension: "cube" }) },
+        { binding: 7, resource: { buffer } },
+      ] })
+      const lake: ForestLakeGpu = { buffer, cube, group }
+      this.lake = lake
+      const module = compileShaderModuleWithLog(d, makeSceneShader(forestLakeHooks), "forest lake")
+      const pipelineLayout = d.createPipelineLayout({ bindGroupLayouts: [this.ctx.frameLayout, layout] })
+      d.createRenderPipelineAsync(this.describe(module, pipelineLayout, "vsStatic", false, "opaque"))
+        .then(pipe => { if (this.lake === lake) lake.pipe = pipe }, e => console.error("Moonlit lake pipeline failed", e))
+    }
+    d.queue.writeBuffer(this.lake.buffer, 0, frame as Float32Array<ArrayBuffer>)
+  }
+
   dispose() {
-    this.canopy.destroy()
+    this.lake?.buffer.destroy()
     this.instanceBuf.destroy()
     this.field.destroy()
     const meshes = [this.water, ...this.templates.flatMap(t => [t.near.opaque, t.near.masked, t.far?.opaque ?? null, t.far?.masked ?? null]), ...this.chunks.flatMap(c => [c.near.opaque, c.near.masked, c.far.opaque, c.far.masked])]
@@ -754,7 +799,12 @@ class ForestPass implements ScenePass {
       const masked = phase !== "opaque"
       pass.setPipeline(phase === "opaque" ? this.pipes.opaque : phase === "depth" ? this.pipes.maskedDepth : phase === "single" ? this.pipes.maskedSingle : this.pipes.masked)
       if (this.debug.statics) for (const s of this.statics) if (s.masked === masked && s.inView) { pass.setVertexBuffer(0, s.mesh.buffer); pass.draw(s.mesh.count) }
-      if (phase === "opaque" && this.water) { pass.setVertexBuffer(0, this.water.buffer); pass.draw(this.water.count) }
+      if (phase === "opaque" && this.water) {
+        const lake = this.lakeOn ? this.lake : undefined
+        if (lake?.pipe) { pass.setPipeline(lake.pipe); pass.setBindGroup(1, lake.group) }
+        pass.setVertexBuffer(0, this.water.buffer); pass.draw(this.water.count)
+        if (lake?.pipe) pass.setBindGroup(1, this.group)
+      }
       pass.setPipeline(phase === "opaque" ? this.pipes.treeOpaque : phase === "depth" ? this.pipes.treeMaskedDepth : phase === "single" ? this.pipes.treeMaskedSingle : this.pipes.treeMasked)
       for (const d of this.draws) if (d.masked === masked && drawn(d)) {
         const indexed = this.debug.indexed ? d.mesh.indexed : undefined

@@ -63,7 +63,8 @@ export function createLakeEditor(canvas: HTMLCanvasElement, forest: ForestView, 
     state, stop,
     draw(fp: FrameParts, time: number) {
       now = time
-      camera.flashlight = state.torch
+      // Edit holds the torch to its knob; Play leaves it to F.
+      if (state.mode === "edit") camera.flashlight = state.torch
       fp.push(model, log.x, level + 0.035 + Math.sin(lakeTime(time) * 13 * Math.PI * 2 / 64) * 0.015, log.z, 0, [1,1,1], 0, 0, 0)
     },
   }

@@ -136,7 +136,11 @@ export class Ssr {
     return this.settings.mode === "ssr"
   }
 
-  volumeInput(opts: { indoor?: boolean; wet?: WetSettings } = {}): VolumeInput | null {
+  /**
+   * `exclude`: a horizontal ellipse (centre, radii, plane height) whose surface resolves its own reflection; SSR skips
+   * it while the scene's wet fog reflections still see it. Needs `ssrVolume({ exclude: true })`.
+   */
+  volumeInput(opts: { indoor?: boolean; wet?: WetSettings; exclude?: { x: number; z: number; rx: number; rz: number; level: number } | null } = {}): VolumeInput | null {
     if (!this.enabled) return null
     const s = this.settings
     const indoor = !!opts.indoor
@@ -146,6 +150,8 @@ export class Ssr {
     p.set([s.maxLuminance, s.thickness, s.maxDistance, indoor ? s.stepsIndoor : s.steps], 4)
     p.set([s.edgeFade, s.skyReplace, indoor ? Math.max(64, Math.min(1024, Math.round(s.maxStepsIndoor))) : SSR_MAX_STEPS, s.view === "weight" ? 1 : s.view === "hits" ? 2 : 0], 8)
     p.set(packWet(opts.wet ?? WET_DEFAULTS), 12)
+    const x = opts.exclude
+    p.set(x ? [x.x, x.z, 1 / Math.max(x.rx, 1e-3), 1 / Math.max(x.rz, 1e-3), x.level, 0.3, 1, 0] : [0, 0, 0, 0, 0, 0, 0, 0], 16)
     return { downscale: 1 / scale, history: s.history, moving: s.historyMoving, params: p }
   }
 }
@@ -153,6 +159,8 @@ export class Ssr {
 export type SsrHooks = {
   /** The wet material of the reflecting ground, so the film ripple lines up with the scene's puddles. */
   wetMaterial?: WetMaterial
+  /** Compile the per-frame exclusion ellipse (`Ssr.volumeInput({ exclude })`, params 16–23). */
+  exclude?: boolean
 }
 
 const fullscreen = /* wgsl */ `
@@ -206,7 +214,14 @@ fn ssrUv(c: vec4f) -> vec2f { return vec2f(c.x / c.w * 0.5 + 0.5, 0.5 - c.y / c.
   if (glossy <= 0.001) { return vec4f(0.0); }
   let eye = V.eye.xyz;
   let p = volumeWorldAtTexel(texelId);
-  let rd = normalize(p - eye);
+${hooks.exclude ? `  // A surface that resolves its own reflection: ellipse centre xz, 1/radii xz; plane height, tolerance, on.
+  let X0 = volumeParams[4];
+  let X1 = volumeParams[5];
+  if (X1.z > 0.5) {
+    let q = (p.xz - X0.xy) * X0.zw;
+    if (dot(q, q) < 1.0 && abs(p.y - X1.x) < X1.y) { return vec4f(0.0); }
+  }
+` : ""}  let rd = normalize(p - eye);
   let ng = volumeNormalAtTexel(texelId, eye);
   let pixel = length(volumeWorldAtTexel(texelId + vec2i(1, 0)) - p);
   let up = smoothstep(0.55, 0.85, ng.y);

@@ -22,6 +22,8 @@ import { spotShadowWgsl } from "../gpu/shadows/spot-shadows"
 import { ALPHA_COVERAGE } from "./alpha-coverage"
 import { LAYER } from "./assets"
 import { MAT } from "./build"
+import { MOON_RADIUS } from "../sky/astronomy"
+import { WATER_WGSL } from "../water/shader"
 import { LAKE_WGSL } from "../water/lake"
 import { LAKE_HORIZON_BINS } from "../water/lake-horizon"
 
@@ -32,7 +34,7 @@ const COVERAGE_LEVELS = 8
 export const GROUND_CELLS = 18
 export const GROUND_CELL = 10
 /** Floats in the forest's custom uniform (binding 13): the named slots, the grid's origin, then its heights. */
-export const WOODS_FLOATS = 96 + GROUND_CELLS * GROUND_CELLS
+export const WOODS_FLOATS = 84 + GROUND_CELLS * GROUND_CELLS
 
 export const woodsUniformWgsl = /* wgsl */ `
 struct Woods {
@@ -55,9 +57,6 @@ struct Woods {
   pad: vec4f,         // clear air near the eye, distance density, clear distance, -
   groundAt: vec4f,    // ground grid x0, z0, 1/cell, -
   ground: array<vec4f, ${(GROUND_CELLS * GROUND_CELLS) / 4}>,
-  lakeOptics: vec4f,  // candidate, ripple slope, rain, shallow scattering
-  lakeVolume: vec4f,  // surface mist, bounded time, catalogue sky ready, lunar lux
-  lakeProbe: vec4f,   // presentation-only floating log xz, active, drag age
 }
 @group(0) @binding(13) var<uniform> N: Woods;
 fn woodsGroundCell(i: i32, j: i32) -> f32 {
@@ -128,7 +127,6 @@ fn woodsSky(eye: vec3f, dir: vec3f, pix: f32) -> vec3f {
 /** Scene-side environment: the night sky (with stars) on glossy water and wet boards, the plain fog sky elsewhere. */
 const woodsEnvWgsl = /* wgsl */ `
 fn woodsEnv(dir: vec3f, rough: f32, n: vec3f) -> vec3f {
-  if (woodsWater && N.lakeOptics.x > 0.5) { return vec3f(0.0); }
   var sky = fogEnv(dir);
   if (rough < 0.25 && dir.y > 0.0) { sky = woodsSky(F.cam.xyz, dir, 0.0015) * mix(0.25, 1.0, woodsOpen); }
   return mix(sky, fogAmbient(n), rough * rough);
@@ -142,8 +140,6 @@ const textures = /* wgsl */ `
 @group(1) @binding(3) var texSamp: sampler;
 @group(1) @binding(4) var fieldTex: texture_2d<f32>;
 @group(1) @binding(5) var fieldSamp: sampler;
-@group(1) @binding(6) var lakeSky: texture_cube<f32>;
-@group(1) @binding(7) var<uniform> lakeCanopy: array<vec4f, ${LAKE_HORIZON_BINS}>;
 struct WS { base: vec4f, n: vec3f, orm: vec3f }
 fn woodsTex(layer: i32, uv: vec2f, dx: vec2f, dy: vec2f) -> WS {
   var s: WS;
@@ -195,7 +191,6 @@ var<private> woodsAo: f32 = 1.0;
 var<private> woodsMasked: bool = false;
 var<private> woodsThin: bool = false;
 var<private> woodsOpen: f32 = 1.0;
-var<private> woodsWater: bool = false;
 var<private> wDpx: vec3f;
 var<private> wDpy: vec3f;
 var<private> wDux: vec2f;
@@ -371,7 +366,6 @@ const material = /* wgsl */ `
     albedo = vec3f(0.17, 0.175, 0.16) * (0.8 + 0.3 * noise2(o.world.xz * 24.0));
     pbrRough = 0.92;
   } else if (mat == ${MAT.water}) {
-    woodsWater = true;
     let t = F.cam.w;
     let p = o.world.xz;
     let e = 0.15;
@@ -382,17 +376,6 @@ const material = /* wgsl */ `
     n = normalize(vec3f(-(hx - h0) / e * amp, 1.0, -(hz - h0) / e * amp));
     albedo = vec3f(0.004, 0.006, 0.006);
     pbrRough = 0.035;
-    if (N.lakeOptics.x > 0.5) {
-      var ripple = lakeRipples(p, N.lakeVolume.y, N.lakeOptics.z) * N.lakeOptics.y;
-      let delta = p - N.lakeProbe.xy;
-      let r = length(delta);
-      let age = N.lakeProbe.w;
-      let wave = r - age * 1.6;
-      ripple += delta / max(r, 0.1) * cos(wave * 15.0) * exp(-wave * wave * 2.0 - age * 0.7) * 0.045 * N.lakeProbe.z;
-      n = normalize(vec3f(-ripple.x, 1.0, -ripple.y));
-      albedo = vec3f(0.001, 0.002, 0.0025);
-      pbrRough = 0.045 + N.lakeOptics.z * 0.03;
-    }
   } else if (mat == ${MAT.glow}) {
     let lit = floor(o.aux * 10.0) / 10.0;
     let u = o.uv;
@@ -419,7 +402,7 @@ const material = /* wgsl */ `
 const sceneHooks: SceneHooks = {
   uv: true,
   lampGrid: false,
-  declarations: woodsUniformWgsl + fogSceneWgsl + textures + woodsSkyWgsl + woodsEnvWgsl + windWgsl + LAKE_WGSL + /* wgsl */ `
+  declarations: woodsUniformWgsl + fogSceneWgsl + textures + woodsSkyWgsl + woodsEnvWgsl + windWgsl + /* wgsl */ `
 fn forestMoon(world: vec3f, n: vec3f, open: f32) -> vec3f {
   if (N.misc.w < 0.5) { return vec3f(0.55, 0.66, 0.95) * N.moon.w * max(dot(n, N.moon.xyz), 0.0) * open * open * 0.35; }
   return vec3f(N.moon.w * max(dot(n, N.moon.xyz), 0.0) / 3.14159265) * spotShadowVis(65000u, world, n);
@@ -439,43 +422,11 @@ fn forestMoon(world: vec3f, n: vec3f, open: f32) -> vec3f {
   diffuseTerm: "let diffuse = select(max(ndl, 0.0) * clamp(abs(ndl) + 2.0 * woodsAo * woodsAo - 1.0, 0.0, 1.0), max(ndl, 0.0) * 0.7 + max(-ndl, 0.0) * 0.35, woodsThin) / PI;",
   surface: /* wgsl */ `
     col += woodsEmit;
-    if (woodsWater && N.lakeOptics.x > 0.5) {
-      let R = reflect(-V, n);
-      let depth = max(N.camp.w - woodsGround(o.world.xz), 0.0);
-      let tr = lakeTransmission(depth, V);
-      let fr = lakeFresnel(V, n);
-      let direction = normalize(vec3f(R.x, abs(R.y), R.z));
-      var sky = woodsSkyRadiance(direction, N.motes.y);
-      if (N.lakeVolume.z > 0.5) { sky = textureSampleLevel(lakeSky, fieldSamp, direction, 0.0).rgb; }
-      // Directional canopy-height approximation, including water-point parallax.
-      // The profile blocks sky below the reflected canopy, including off-screen trees.
-      let az = fract(atan2(direction.z, direction.x) / 6.2831853 + 1.0);
-      let tree = lakeCanopy[u32(az * ${LAKE_HORIZON_BINS}.0) % ${LAKE_HORIZON_BINS}u];
-      let top = tree.z / max(distance(o.world.xz, tree.xy), 1.0);
-      let elevation = direction.y / max(length(direction.xz), 0.001);
-      let skyVisible = mix(1.0, smoothstep(top - 0.025, top + 0.025, elevation), tree.w);
-      col += sky * skyVisible * fr * N.camp.z;
-      col += lakeMoon(n, V, N.moon.xyz, N.lakeVolume.w, o.world.xz, N.lakeVolume.y) * N.camp.z;
-      let toWater = o.world - N.torch.xyz;
-      let distance = length(toWater);
-      let cone = smoothstep(cos(N.torchDir.w), cos(N.torchDir.w * 0.65), dot(toWater / max(distance, 0.01), N.torchDir.xyz));
-      let beam = N.torchCol.rgb * N.torch.w * cone / max(distance * distance, 1.0);
-      let bedGrain = 0.65 + 0.35 * noise2(o.world.xz * 4.0);
-      let silt = vec3f(0.035, 0.05, 0.037) * tr * bedGrain + vec3f(0.005, 0.013, 0.012) * (1.0 - tr);
-      col += beam * silt * exp(-depth * 0.55) * N.lakeOptics.w * (1.0 - fr);
-      // Thin moving surface veil; main forest mist continues to supply lit volumetric shafts.
-      let mistPhase = N.lakeVolume.y * 6.2831853 / 64.0;
-      let veil = noise2(o.world.xz * 0.15 + vec2f(cos(mistPhase), sin(mistPhase)));
-      let mist = smoothstep(0.48, 0.82, veil) * N.lakeVolume.x * 0.16 * (1.0 - exp(-distance * 0.04));
-      col = mix(col, vec3f(0.008, 0.012, 0.017) * N.sky.x + beam * 0.009, mist);
-    }
     col = fogApply(col, F.cam.xyz, o.world);
   `,
   fragmentReturn: /* wgsl */ `{
     if (woodsMasked) { return vec4f(col, a); }
-    // The lake resolves its own radiance. Do not feed the bright lunar lobe back
-    // through screen-space reflection history (which otherwise blooms to white).
-    let reflectRough = select(clamp(select(1.0, pbrRough, pbrRough >= 0.0), 0.0, 1.0), 1.0, woodsWater && N.lakeOptics.x > 0.5);
+    let reflectRough = clamp(select(1.0, pbrRough, pbrRough >= 0.0), 0.0, 1.0);
     // Alpha already carries surface metadata. Negative values reserve a bloom
     // source mask for nearby rough surfaces, which are outside SSR's .4 cutoff.
     // Emissive materials and glossy surfaces keep the existing roughness tag.
@@ -487,13 +438,95 @@ fn forestMoon(world: vec3f, n: vec3f, open: f32) -> vec3f {
   }`,
 }
 
-/** The forest's scene hooks with the kit's physical lights, the torch beam profile and spot shadows. */
-export const forestHooks: SceneHooks = withPhysicalLights(sceneHooks, {
+const physicalLights = {
   knobs: "N.pbr",
   spotShadows: true,
   beam: { a: "N.beamA", b: "N.beamB" },
   env: "woodsEnv(dir, rough, n)",
-})
+}
+
+/** The forest's scene hooks with the kit's physical lights, the torch beam profile and spot shadows. */
+export const forestHooks: SceneHooks = withPhysicalLights(sceneHooks, physicalLights)
+
+/** Inserts after the single `anchor`, so the moonlit lake tracks the Today source and fails loudly when it moves. */
+function after(source: string, anchor: string, text: string): string {
+  const at = source.indexOf(anchor)
+  if (at < 0 || source.indexOf(anchor, at + 1) >= 0) throw Error(`Forest lake anchor not found once: ${anchor.trim()}`)
+  return source.slice(0, at + anchor.length) + text + source.slice(at + anchor.length)
+}
+
+/** The moonlit lake's own uniforms and bindings: only its pipeline declares them (group 1, after the forest's). */
+const lakeBindingsWgsl = /* wgsl */ `
+struct Lake {
+  optics: vec4f,  // ripple slope, rain, shallow scattering, -
+  volume: vec4f,  // surface mist, bounded time, catalogue sky ready, lunar lux
+  probe: vec4f,   // presentation-only floating log xz, active, drag age
+  canopy: array<vec4f, ${LAKE_HORIZON_BINS}>, // canopy xz, height above lake, occupied
+}
+@group(1) @binding(6) var lakeSky: texture_cube<f32>;
+@group(1) @binding(7) var<uniform> L: Lake;
+var<private> woodsWater: bool = false;
+`
+
+const lakeMaterialWgsl = /* wgsl */ `
+    var ripple = lakeRipples(p, L.volume.y, L.optics.y) * L.optics.x;
+    let delta = p - L.probe.xy;
+    let r = length(delta);
+    let age = L.probe.w;
+    let wave = r - age * 1.6;
+    ripple += delta / max(r, 0.1) * cos(wave * 15.0) * exp(-wave * wave * 2.0 - age * 0.7) * 0.045 * L.probe.z;
+    n = normalize(vec3f(-ripple.x, 1.0, -ripple.y));
+    albedo = vec3f(0.001, 0.002, 0.0025);
+    pbrRough = 0.045 + L.optics.y * 0.03;
+`
+
+const lakeSurfaceWgsl = /* wgsl */ `
+    if (woodsWater) {
+      let R = reflect(-V, n);
+      let depth = max(N.camp.w - woodsGround(o.world.xz), 0.0);
+      // Down to the bed, then back up the view ray.
+      let tr = waterTransmission(LAKE_ABSORPTION, depth, V.y) * waterTransmission(LAKE_ABSORPTION, depth, 1.0);
+      let fr = waterFresnel(dot(V, n));
+      let direction = normalize(vec3f(R.x, abs(R.y), R.z));
+      var sky = woodsSkyRadiance(direction, N.motes.y);
+      if (L.volume.z > 0.5) { sky = textureSampleLevel(lakeSky, fieldSamp, direction, 0.0).rgb; }
+      // Directional canopy-height approximation, including water-point parallax.
+      // The profile blocks sky below the reflected canopy, including off-screen trees.
+      let az = fract(atan2(direction.z, direction.x) / 6.2831853 + 1.0);
+      let tree = L.canopy[u32(az * ${LAKE_HORIZON_BINS}.0) % ${LAKE_HORIZON_BINS}u];
+      let top = tree.z / max(distance(o.world.xz, tree.xy), 1.0);
+      let elevation = direction.y / max(length(direction.xz), 0.001);
+      let skyVisible = mix(1.0, smoothstep(top - 0.025, top + 0.025, elevation), tree.w);
+      col += sky * skyVisible * fr * N.camp.z;
+      // Unresolved capillary slopes carry the lunar disk's energy (kit/sky's lux and direction) into a broken path.
+      let lunar = waterSpecular(n, V, N.moon.xyz, LAKE_MOON_ROUGHNESS, 0.0, ${MOON_RADIUS.toFixed(6)});
+      col += vec3f(1.0, 0.98, 0.94) * L.volume.w * lunar * lakeBreakup(o.world.xz, L.volume.y) * N.camp.z;
+      let toWater = o.world - N.torch.xyz;
+      let reach = length(toWater);
+      let cone = smoothstep(cos(N.torchDir.w), cos(N.torchDir.w * 0.65), dot(toWater / max(reach, 0.01), N.torchDir.xyz));
+      let beam = N.torchCol.rgb * N.torch.w * cone / max(reach * reach, 1.0);
+      let bedGrain = 0.65 + 0.35 * noise2(o.world.xz * 4.0);
+      let silt = vec3f(0.035, 0.05, 0.037) * tr * bedGrain + vec3f(0.005, 0.013, 0.012) * (1.0 - tr);
+      col += beam * silt * exp(-depth * 0.55) * L.optics.z * (1.0 - fr);
+      // Thin moving surface veil; main forest mist continues to supply lit volumetric shafts.
+      let mistPhase = L.volume.y * 6.2831853 / 64.0;
+      let veil = noise2(o.world.xz * 0.15 + vec2f(cos(mistPhase), sin(mistPhase)));
+      let mist = smoothstep(0.48, 0.82, veil) * L.volume.x * 0.16 * (1.0 - exp(-reach * 0.04));
+      col = mix(col, vec3f(0.008, 0.012, 0.017) * N.sky.x + beam * 0.009, mist);
+    }
+`
+
+/**
+ * The opt-in moonlit lake (`lakeLook: "moonlit"`): the same hooks plus its optics, drawn only on the lake's water mesh by
+ * a pipeline the forest compiles the first time the look is chosen. Today never sees any of it.
+ */
+export const forestLakeHooks: SceneHooks = withPhysicalLights({
+  ...sceneHooks,
+  declarations: after(sceneHooks.declarations!, "fn woodsEnv(dir: vec3f, rough: f32, n: vec3f) -> vec3f {\n", "  if (woodsWater) { return vec3f(0.0); }\n")
+    + WATER_WGSL + LAKE_WGSL + lakeBindingsWgsl,
+  material: after(after(sceneHooks.material!, `} else if (mat == ${MAT.water}) {\n`, "    woodsWater = true;\n"), "    pbrRough = 0.035;\n", lakeMaterialWgsl),
+  surface: after(sceneHooks.surface!, "    col += woodsEmit;\n", lakeSurfaceWgsl),
+}, physicalLights)
 
 /**
  * Instanced entry point appended to the forest scene shader: template vertices scaled (xz, y), turned about +y and

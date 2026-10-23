@@ -54,7 +54,7 @@ async function main() {
   const audio = new WoodsAudio()
   const story = new StoryHud(audio)
   // Filled in once they exist; the shell reads them from its first frame.
-  const live: { panel: LabPanel | null; session: Session | null; qualityChanged: () => void } = { panel: null, session: null, qualityChanged: () => {} }
+  const live: { panel: LabPanel | null; session: Session | null; qualityChanged: () => void; editing: () => boolean } = { panel: null, session: null, qualityChanged: () => {}, editing: () => false }
   // Auto starts at High and steps down on slow frames only (frame time alone: the renderer's GPU reading counts CPU
   // encoding and queue waits, which demoted capable GPUs). Saved per game; `?quality=` pins a mode for automation.
   const quality = createShellQuality({ game: "barbara", tiers: FOREST_QUALITY, params, onChange: () => live.qualityChanged() })
@@ -65,7 +65,7 @@ async function main() {
     channels: ["master", "effects", "ambience", "voice"], quality,
     sections: [{ id: "story", title: "Story", rows: [{ kind: "toggle", id: "subtitles", label: "Subtitles", get: () => story.subtitles, set: (on) => { story.subtitles = on; live.panel?.sync() } }] }],
     // The Lab panel stays open while you play (capture "focus"); while it shows, the title and menu stay out of the way.
-    pointerLock: canvas, blocked: () => live.panel?.visible ?? false, keysBlocked: () => live.panel?.hasFocus() ?? false,
+    pointerLock: canvas, blocked: () => (live.panel?.visible ?? false) || live.editing(), keysBlocked: () => live.panel?.hasFocus() ?? false,
     loading: smoke ? false : { gpu: 1, world: 4, frame: 1 }, controls: controlsHtml,
     lobby: {
       friends: true,
@@ -150,12 +150,14 @@ async function main() {
     const start = dock ? { x: (dock.rect[0] + dock.rect[2]) / 2, z: dock.rect[3] - 2 }
       : { x: world.lake.x, z: world.lake.z - world.lake.rz - 1 }
     lakeEditor = createLakeEditor(canvas, view.forest, camera, world.lake, start)
+    // Edit owns the mouse for dragging the log: no title, pause card or pointer lock while it's on.
+    live.editing = () => lakeEditor?.state.mode === "edit"
     if (session instanceof SoloSession) session.teleport(start.x, start.z)
     camera.yaw = Math.PI; camera.pitch = -0.18
     forcePlay = true
     panel.addControls(lakeEditor.state, [
-      { key: "lakeInteraction", field: "mode", label: "Log", group: "Water", type: "select", options: [{ value: "edit", label: "Edit" }, { value: "play", label: "Play" }], change: () => { lakeEditor?.stop(); keys.clear(); camera.release() } },
-      { key: "lakeTorch", field: "torch", label: "Torch", group: "Water", type: "toggle" },
+      { key: "lakeInteraction", field: "mode", label: "Log", group: "Water", type: "select", options: [{ value: "edit", label: "Edit" }, { value: "play", label: "Play" }], change: () => { lakeEditor?.stop(); keys.clear(); camera.release(); syncOverlays() } },
+      { key: "lakeTorch", field: "torch", label: "Torch", group: "Water", type: "toggle", change: () => { camera.flashlight = lakeEditor!.state.torch } },
     ])
   }
   panel.addControls(friends as unknown as Record<string, boolean>, [
@@ -493,7 +495,7 @@ async function main() {
     if (performance.now() > toastUntil) toast.style.opacity = "0"
     // The story: the trailhead opening at your first step out, the FIND BARBARA card, subtitles.
     // Online, not before the room has seated you (until then you'd be nobody, at the room's t 0).
-    if (playing && (!online || meId >= 0)) story.begin(world, state, meId, at.x, at.z, camera.yaw)
+    if (playing && !lakeLab && (!online || meId >= 0)) story.begin(world, state, meId, at.x, at.z, camera.yaw)
     if (playing || (shell.flow.started && panel.visible)) story.frame(dt, state, world)
     // You hear the woods while playing, or with the knobs open once you've begun (to tune the mix).
     audio.frame(camera.eye, camera.yaw, dt, world, state, playing || panel.visible)

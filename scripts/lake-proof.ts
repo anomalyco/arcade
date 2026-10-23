@@ -12,7 +12,8 @@ type Woods = {
   camera: { flashlight: boolean; viewProj: Float32Array }
   state: { t: number; players: { x: number; z: number }[]; brains: { mode: string; timer: number }[] }
   panel: { visible: boolean; toggle(): void }
-  view: { forest: { debug: Record<string, boolean>; waterProbe: { x: number; z: number }; sky: { ready: Promise<void>; active: boolean }; lakeSky: { ready: Promise<void>; active: boolean }; resetExposure(): void } }
+  view: { forest: { debug: Record<string, boolean>; waterProbe: { x: number; z: number }; sky: { ready: Promise<void>; active: boolean }; lakeSky: { ready: Promise<void>; active: boolean }; lake: { allocated: boolean; ready: boolean }; resetExposure(): void } }
+  lakeEditor: { state: { mode: string; torch: boolean } }
 }
 declare const woods: Woods
 await using budget = browserBudget()
@@ -36,9 +37,12 @@ try {
   const page = await browser.newPage({ viewport: { width: 1600, height: 900 }, deviceScaleFactor: 1 })
   page.on("pageerror", e => errors.push(e.message))
   page.on("console", m => { if (m.type() === "error") errors.push(m.text()) })
+  let todayInert: boolean | undefined
   const ready = async (lab: boolean) => {
     await page.goto(`http://127.0.0.1:${server.port}${prefix}?quality=high${lab ? "&lab=water" : ""}`)
     await page.waitForFunction(() => (window as unknown as { woods?: Woods }).woods?.frames! > 2, null, { timeout: 180000 })
+    // Today by default: no lake cube, buffer or pipeline exists before the look is chosen.
+    if (!lab) todayInert = await page.evaluate(() => !woods.view.forest.lake.allocated)
     await page.evaluate(preset => {
       woods.paused = true
       Object.assign(woods.look, preset)
@@ -55,6 +59,8 @@ try {
       await Promise.all([woods.view.forest.sky.ready, woods.view.forest.lakeSky.ready])
       woods.step(1000 / 60)
       if (!woods.view.forest.sky.active || !woods.view.forest.lakeSky.active) throw Error("Shared sky not ready")
+      for (let i = 0; i < 600 && !woods.view.forest.lake.ready; i++) { woods.step(1000 / 60); await new Promise(r => setTimeout(r, 10)) }
+      if (!woods.view.forest.lake.ready) throw Error("Moonlit lake pipeline not ready")
     })
   }
   const frames = (n: number) => page.evaluate(async n => {
@@ -74,6 +80,7 @@ try {
   } else {
   if (!process.argv.includes("--editor-only")) {
   await ready(false)
+  if (!todayInert) throw Error("Today allocated moonlit lake resources")
   for (const torch of [false, true]) for (const mode of ["today", "moonlit"] as const) {
     await page.evaluate(({ torch, mode }) => {
       woods.look.lakeLook = mode
@@ -90,6 +97,11 @@ try {
   await frames(30)
   const initial = await page.evaluate(() => ({ ...woods.view.forest.waterProbe }))
   await page.evaluate(() => { if (woods.panel.visible) woods.panel.toggle() })
+  await frames(10)
+  // Edit owns the mouse: hiding the panel must not bring up the title or pause card, and the story stays out.
+  const shellQuiet = await page.evaluate(() => ({ overlay: document.querySelector(".as-overlay")?.hasAttribute("hidden") ?? true, story: document.querySelector("#objective .task")?.textContent ?? "" }))
+  if (!shellQuiet.overlay) throw Error("Shell overlay showed during Edit")
+  if (shellQuiet.story) throw Error(`Story began in the water lab: ${shellQuiet.story}`)
   const point = await page.evaluate(() => {
     const log = woods.view.forest.waterProbe, m = woods.camera.viewProj, p = [log.x, 0, log.z, 1]
     const c = [0,1,2,3].map(row => p.reduce((sum,v,i) => sum + v * m[i * 4 + row]!, 0))
@@ -120,7 +132,11 @@ try {
     await page.getByRole("menuitemradio", { name: "Today", exact: true }).click()
   }
   if (await page.evaluate(() => woods.look.lakeLook) !== "today") throw Error("Today control failed")
-  await Bun.write(`${out}/proof.json`, JSON.stringify({ errors, initial, moved, editSuppressedWalking: true, editPointerLock: false, todayControl: true, preset: MOONLIT_LAKE, sky: "Production kit/sky: visible catalogue and cached HDR reflection cube; canopy-height silhouette from actual trees; shared lunar lux drives ripple glitter" }, null, 2))
+  // Play leaves the torch to F: drawing frames must not reset it to the Edit knob.
+  const torch = await page.evaluate(() => { woods.lakeEditor.state.mode = "play"; woods.camera.flashlight = !woods.lakeEditor.state.torch; return woods.camera.flashlight })
+  await frames(10)
+  if (await page.evaluate(() => woods.camera.flashlight) !== torch) throw Error("Play overwrote the torch toggle")
+  await Bun.write(`${out}/proof.json`, JSON.stringify({ errors, todayInert, initial, moved, editSuppressedWalking: true, editPointerLock: false, shellQuietInEdit: true, storyHeldInLab: true, playKeepsTorch: true, todayControl: true, preset: MOONLIT_LAKE, sky: "Production kit/sky: visible catalogue and cached HDR reflection cube; canopy-height silhouette from actual trees; shared lunar lux drives ripple glitter" }, null, 2))
   if (errors.length) throw Error(errors.join("\n"))
   }
 } finally { await browser.close(); server.stop(true) }

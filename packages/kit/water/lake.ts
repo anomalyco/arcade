@@ -41,26 +41,12 @@ fn lakeRipples(p: vec2f, t: f32, rain: f32) -> vec2f {
   }
   return slope;
 }
-fn lakeFresnel(v: vec3f, n: vec3f) -> f32 {
-  return 0.02037 + 0.97963 * pow(1.0 - max(dot(v, n), 0.0), 5.0);
-}
-fn lakeTransmission(depth: f32, v: vec3f) -> vec3f {
-  let cosT = sqrt(1.0 - (1.0 - v.y * v.y) / 1.777);
-  return exp(-vec3f(0.75, 0.32, 0.20) * depth * (1.0 + 1.0 / max(cosT, 0.1)));
-}
-// Unresolved capillary slopes carry the lunar disk's energy into a broken path.
-// The host supplies kit/sky's phase-dependent illuminance and direction.
-fn lakeMoon(n: vec3f, v: vec3f, l: vec3f, lux: f32, p: vec2f, t: f32) -> vec3f {
-  let h = normalize(v + l);
-  let nv = max(dot(n, v), 0.001);
-  let nl = max(dot(n, l), 0.0);
-  let nh = max(dot(n, h), 0.0);
-  let a2 = 0.0004;
-  let d = a2 / (3.14159265 * pow(nh * nh * (a2 - 1.0) + 1.0, 2.0));
-  let g = 2.0 * nv / (nv + sqrt(a2 + (1.0 - a2) * nv * nv));
-  let f = 0.02037 + 0.97963 * pow(1.0 - max(dot(v,h), 0.0), 5.0);
+// Fresnel, transmission and the lunar lobe come from kit water (water/shader.ts).
+const LAKE_ABSORPTION = vec3f(0.75, 0.32, 0.20); // per metre
+const LAKE_MOON_ROUGHNESS = 0.1414; // alpha² = 0.0004: calm capillary chop
+// Slowly drifting patches break the lunar path; periodic over the 64 s lake clock.
+fn lakeBreakup(p: vec2f, t: f32) -> f32 {
   let drift = vec2f(cos(t * 6.2831853 / 64.0), sin(t * 6.2831853 / 64.0));
-  let breakup = mix(0.12, 1.0, smoothstep(0.3, 0.75, noise2(p * vec2f(4.0, 9.0) + drift)));
-  return vec3f(1.0, 0.98, 0.94) * lux * d * g * f * nl / max(4.0 * nv, 0.004) * breakup;
+  return mix(0.12, 1.0, smoothstep(0.3, 0.75, noise2(p * vec2f(4.0, 9.0) + drift)));
 }
 `
