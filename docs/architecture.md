@@ -65,6 +65,7 @@ The table below shows which shared modules each game and the Lab import. `script
 | `sim/matchmaking` | `SharedMatchmaker`, room codes, and player name sanitization | Yes | Yes | Yes | Yes | — | Yes | Yes |
 | `sim/move` | Top-down circle body step with eased velocity and substepped push-out | — | Yes | — | — | — | Yes | — |
 | `sim/{abilities,props,boids}` | Data-driven, server-authoritative abilities (casts, projectiles, swarms, zones, dashes, grabs), shoveable OBB props, and a presentation boids flock | — | — | — | Yes | — | Yes | — |
+| `sim/thrown` | Deterministic thrown body: ballistic arc, bounce and roll on terrain, stops against trunks and rocks, comes to rest | — | — | — | — | Yes | — | — |
 | `server/*` | Room and Lobby Durable Objects (`RoomObject`, `LobbyObject`) and the room game Worker router | Yes | Yes | Yes | Yes | — | Yes | Yes |
 | `net/*` | Room seats/idle/tick core and client socket, binary framing, seat tokens, `JitterBuffer`, `SnapshotBuffer`, `Predictor`, `Smoother` | Yes | Yes | Yes | Yes | — | Yes | Yes |
 | `gpu/wgsl` | Typed WGSL structs (`wgslStruct`), slot specialization (`wgslSlot`), and snippet composition | Yes | Yes | Yes | Yes | Yes | Yes | — |
@@ -90,6 +91,7 @@ The table below shows which shared modules each game and the Lab import. `script
 | `client/walk-camera` | First-person walking camera: stride bob, settle and reduce-motion over `client/walk` | — | — | — | — | Yes | — | — |
 | `gpu-perf`, `fx/frame-timer` & `quality` | Rolling p50/p95/FPS `PerfSampler`, GPU pass timestamp telemetry and adaptive quality tiers (`GameQuality`) | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
 | `fx/{particles,particle-renderer}` | Fixed typed-array particle pool, `Emitter`, and billboard/spark/debris pass | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
+| `fx/flare` | Road flare (fusee): strontium flame, sputter, sparks, slag and a lit smoke column, plus its scene and fog lights | — | — | — | — | Yes | — | — |
 | `fx/{volume*,smoke-trail,tyre-renderer}` | Flood-fill volumetric smoke and continuous ribbon tyre trails | Yes | Yes | Yes | — | Yes | — | — |
 | `fx/{explosion,projectile-trail,fire-water,splatter*}` | Multi-stage explosions with trailing fragments and water splashes, fire/water jets, and surface blood decals | Yes | Yes | Yes | Yes | Yes | Yes | — |
 | `rig` & `human-*` | Shared human skeleton, planted-foot gait, shamble, IK, detachment, pose-diff | — | Yes | Yes | — | Yes | Yes | Yes |

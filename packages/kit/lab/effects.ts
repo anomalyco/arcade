@@ -46,7 +46,7 @@ export type FlareStart="throw"|"burning"|"gutter"
 const FLARE_HOLD=0.9
 const FLARE_STICK=0.11
 /** Full-burn power and reach of the flare's light in the debug world (its lamps are about 1–1.5). */
-const FLARE_POWER=4,FLARE_REACH=15
+const FLARE_POWER=2.2,FLARE_REACH=9
 const specs=effectSpecs
 /** Effects whose particles come from `effectSpecs` and take the over-life ramps. */
 const rampEffects=new Set(["sparks","debris","water","fire","nitro"])
@@ -152,6 +152,7 @@ export function createEffects(context:LabContext) {
   }
   const resetFlare=(ground:((x:number,z:number)=>number)|undefined)=>{
     syncFlareSettings()
+    flare.seed=seed
     const tx=params.targetX,tz=params.targetZ,g=(x:number,z:number)=>ground?ground(x,z):0
     flareBody=null
     if(params.flareStart==="throw"){flare.strike(0);placeFlare();return}

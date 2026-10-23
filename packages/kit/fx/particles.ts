@@ -8,6 +8,7 @@ export const PARTICLE_STRIDE = 28
  * `smoke` is a lit, noise-shaped billow (the fireball's shape without its heat) that drifts toward `windX`/`windZ`.
  * `glow` is an unlit, purely additive soft halo (colour × alpha), for the warm air round flames; it fades in and out
  * smoothly like smoke and never occludes.
+ * A `smoke` spec with `temperature` above 0.5 skips the soft fade against Y=0 (a column that starts on the ground).
  * `flare` is an unlit, additive strontium flame puff (`fx/flare.ts`): its `temperature` runs a red-flare ramp from deep
  * crimson through saturated red to a pinkish-white core, tinted by the spec's colour; it never occludes.
  */

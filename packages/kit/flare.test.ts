@@ -64,6 +64,22 @@ describe("road flare light", () => {
     expect(counts[1]).toBeGreaterThan(100)
   })
 
+  test("a retrigger with the same seed replays the same flare; another seed doesn't", () => {
+    const run = (fx: FlareFx, seed: number) => {
+      const pool = new Particles()
+      fx.seed = seed
+      fx.strike(0)
+      for (let i = 0; i < 90; i++) fx.step(1 / 60, pool)
+      return [pool.count, Array.from(pool.data.subarray(0, pool.count * 28)), fx.light().level] as const
+    }
+    const fx = new FlareFx(1)
+    const first = run(fx, 42)
+    fx.step(0.0071, new Particles()) // leave fractional emission carried over
+    expect(run(fx, 42)).toEqual(first)
+    expect(run(new FlareFx(42), 42)).toEqual(first)
+    expect(run(fx, 43)[1]).not.toEqual(first[1])
+  })
+
   test("a hitch skips emission instead of bursting", () => {
     const pool = new Particles()
     const fx = new FlareFx(3)
@@ -140,4 +156,16 @@ describe("thrown body", () => {
     for (let i = 0; i < 120; i++) stepThrown(steep, 1 / 60, slope(0.6))
     expect(steep.x).toBeGreaterThan(1)
   })
+})
+
+test("an obstacles callback that pushes never sees last substep's cylinders", () => {
+  const seen: number[] = []
+  const env: ThrownEnv = {
+    ground: () => 0,
+    obstacles: (_x, _z, _r, out) => { seen.push(out.length); out.push(50, 50, 0.2, Infinity); return 1 },
+  }
+  const b = throwBody(0, 1, 0, 2, 1, 0, 3)
+  stepThrown(b, 0.5, env)
+  expect(seen.length).toBeGreaterThan(10)
+  expect(seen.every(n => n === 0)).toBe(true)
 })

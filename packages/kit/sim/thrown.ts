@@ -122,6 +122,7 @@ function substep(b: ThrownBody, env: ThrownEnv, p: Readonly<ThrownParams>) {
   let floor = env.ground(b.x, b.z)
   let floorIsTop = false
   if (env.obstacles) {
+    scratch.length = 0
     const count = env.obstacles(b.x, b.z, 1.5, scratch)
     for (let i = 0; i < count; i++) {
       const cx = scratch[i * 4]!, cz = scratch[i * 4 + 1]!, cr = scratch[i * 4 + 2]!, top = scratch[i * 4 + 3]!

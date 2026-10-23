@@ -38,10 +38,10 @@ export const FLARE_DEFAULTS: Readonly<FlareSettings> = {
   temperature: 1850,
   burnTime: 150,
   smoke: 1,
-  sparkRate: 26,
-  slagRate: 3,
+  sparkRate: 40,
+  slagRate: 5,
   flicker: 1,
-  halo: 1,
+  halo: 0.3,
 }
 
 /** `[min, max, step, unit, label, group]` per setting. */
@@ -205,10 +205,10 @@ export type FlareLight = { x: number; y: number; z: number; r: number; g: number
 const STEP = 1 / 120
 const MAX_STEPS = 24
 
-const sparkSpec: ParticleSpec = { kind: "spark", life: 0.5, size: 0.011, growth: -0.01, gravity: 9.81, drag: 1.4, bounce: 0.3, r: 1, g: 0.5, b: 0.2, alpha: 1, temperature: 1.25 }
+const sparkSpec: ParticleSpec = { kind: "spark", life: 0.5, size: 0.016, growth: -0.01, gravity: 9.81, drag: 1.4, bounce: 0.3, r: 1, g: 0.5, b: 0.2, alpha: 1, temperature: 1.25 }
 const slagSpec: ParticleSpec = { kind: "spark", life: 2, size: 0.016, growth: -0.004, gravity: 9.81, drag: 0.3, bounce: 0.05, r: 1, g: 0.45, b: 0.12, alpha: 1, temperature: 1 }
-const flameSpec: ParticleSpec = { kind: "flare", life: 0.1, size: 0.045, growth: 0.9, gravity: -5, drag: 2.2, bounce: 0, r: 1, g: 0.08, b: 0.07, alpha: 1, temperature: 1.2, turbulence: 1 }
-const coreSpec: ParticleSpec = { kind: "flare", life: 0.05, size: 0.06, growth: 0.2, gravity: 0, drag: 6, bounce: 0, r: 1, g: 0.08, b: 0.07, alpha: 1, temperature: 1.45, turbulence: 0.5 }
+const flameSpec: ParticleSpec = { kind: "flare", life: 0.16, size: 0.05, growth: 0.6, gravity: -5, drag: 2.2, bounce: 0, r: 1, g: 0.08, b: 0.07, alpha: 1, temperature: 1.2, turbulence: 1 }
+const coreSpec: ParticleSpec = { kind: "flare", life: 0.05, size: 0.03, growth: 0.2, gravity: 0, drag: 6, bounce: 0, r: 1, g: 0.08, b: 0.07, alpha: 1, temperature: 1.45, turbulence: 0.5 }
 /**
  * Smoke darkens and thins as it ages, and since it rises steadily its age is its height: warm and lit at the base, cool
  * and dark higher up, whatever the host light's falloff is.
@@ -216,14 +216,14 @@ const coreSpec: ParticleSpec = { kind: "flare", life: 0.05, size: 0.06, growth: 
 const smokeRamp = () => lifeRamp("fx.flare.smoke", () => {
   const n = 16, tint = new Float32Array(n * 3), opacity = new Float32Array(n)
   for (let i = 0; i < n; i++) {
-    const t = i / (n - 1), k = 0.22 + 0.78 * Math.pow(1 - t, 1.6)
-    tint[i * 3] = k; tint[i * 3 + 1] = k; tint[i * 3 + 2] = k * 1.02
-    opacity[i] = 1 - 0.55 * t
+    const t = i / (n - 1), k = 0.14 + 0.86 * Math.exp(-t * 4)
+    tint[i * 3] = k; tint[i * 3 + 1] = k; tint[i * 3 + 2] = k * 1.03
+    opacity[i] = 1 - 0.6 * t
   }
   return { tint, size: null, opacity }
 })
-const smokeSpec: ParticleSpec = { kind: "smoke", life: 9, size: 0.08, growth: 0.14, gravity: -0.35, drag: 0.45, bounce: 0, r: 0.5, g: 0.49, b: 0.48, alpha: 0.22, turbulence: 1.1, ease: 1.6 }
-const haloSpec: ParticleSpec = { kind: "glow", life: 0.3, size: 0.55, growth: 0.3, gravity: 0, drag: 0, bounce: 0, r: 1, g: 0.08, b: 0.07, alpha: 0.05 }
+const smokeSpec: ParticleSpec = { kind: "smoke", life: 7, size: 0.04, growth: 0.13, gravity: -0.35, drag: 0.45, bounce: 0, r: 0.5, g: 0.49, b: 0.48, alpha: 0.16, turbulence: 1.4, ease: 1.4, temperature: 1 }
+const haloSpec: ParticleSpec = { kind: "glow", life: 0.3, size: 0.35, growth: 0.2, gravity: 0, drag: 0, bounce: 0, r: 1, g: 0.08, b: 0.07, alpha: 0.05 }
 
 /**
  * One burning flare. The host moves it (`x, y, z` is the burning end, `dx, dy, dz` the unit axis the flame jets
@@ -255,7 +255,8 @@ export class FlareFx {
   private random = 0
   private readonly colour: [number, number, number] = [1, 0, 0]
 
-  constructor(readonly seed: number, settings: Partial<FlareSettings> = {}) {
+  /** Seed of the flicker and the emission's random stream; set it before `strike` to retrigger as another flare. */
+  constructor(public seed: number, settings: Partial<FlareSettings> = {}) {
     this.settings = { ...FLARE_DEFAULTS, ...settings }
   }
 
@@ -268,6 +269,7 @@ export class FlareFx {
   strike(age = 0) {
     this.age = age
     this.carry = 0
+    this.sparks = this.slag = this.flame = this.core = this.smokeCarry = this.halo = 0
     this.tick = Math.floor(Math.max(0, age) / STEP)
   }
 
@@ -331,15 +333,15 @@ export class FlareFx {
 
     if (burning) {
       // The flame tongue: short puffs jetting out of the end, buoyant, hottest in the core.
-      this.flame += STEP * 110 * Math.min(1.6, out)
+      this.flame += STEP * 140 * Math.min(1.6, out)
       while (this.flame >= 1) {
         this.flame--
-        const speed = 1.1 + 1.1 * this.rand()
+        const speed = 0.8 + 0.9 * this.rand()
         const a = this.rand() * 2 - 1, b = this.rand() * 2 - 1
         flameSpec.r = c[0]; flameSpec.g = c[1]; flameSpec.b = c[2]
-        flameSpec.temperature = (0.85 + 0.45 * this.rand()) * Math.min(1.25, 0.55 + 0.45 * out) * (1 - 0.35 * env.heat)
-        flameSpec.life = 0.07 + 0.08 * this.rand()
-        flameSpec.alpha = Math.min(2, out) * s.intensity
+        flameSpec.temperature = (0.6 + 0.35 * this.rand()) * Math.min(1.25, 0.55 + 0.45 * out) * (1 - 0.35 * env.heat)
+        flameSpec.life = 0.12 + 0.12 * this.rand()
+        flameSpec.alpha = 1.4 * Math.min(2, out) * s.intensity
         pool.spawn(flameSpec, x, y, z,
           this.vx + dx * speed + (px * a + qx * b) * 0.35,
           this.vy + dy * speed + qy * b * 0.35 + 0.3,
@@ -351,7 +353,7 @@ export class FlareFx {
         this.core--
         coreSpec.r = c[0]; coreSpec.g = c[1]; coreSpec.b = c[2]
         coreSpec.temperature = 1.45 * Math.min(1.3, out) * (1 - 0.3 * env.heat)
-        coreSpec.alpha = Math.min(2, out) * s.intensity
+        coreSpec.alpha = 0.7 * Math.min(2, out) * s.intensity
         pool.spawn(coreSpec, x + dx * 0.01, y + dy * 0.01, z + dz * 0.01, this.vx + dx * 0.4, this.vy + dy * 0.4, this.vz + dz * 0.4, this.rand() * 6.283)
       }
       // Sparks: a spray round the axis, more in the strike and as it gutters.
@@ -388,16 +390,16 @@ export class FlareFx {
       }
     }
     // Smoke: a thick column from the flame's tip, hot and fast at first, slowing and spreading as it cools.
-    this.smokeCarry += STEP * 18 * s.smoke * env.smoke
+    this.smokeCarry += STEP * 42 * s.smoke * env.smoke
     if (this.smokeCarry >= 1) smokeSpec.ramp = smokeRamp()
     while (this.smokeCarry >= 1) {
       this.smokeCarry--
-      smokeSpec.life = 7 + 4 * this.rand()
-      smokeSpec.alpha = Math.min(0.4, 0.22 * Math.sqrt(Math.max(s.smoke, 0.01)))
-      smokeSpec.size = 0.06 + 0.05 * this.rand()
+      smokeSpec.life = 5.5 + 3 * this.rand()
+      smokeSpec.alpha = Math.min(0.35, 0.16 * Math.sqrt(Math.max(s.smoke, 0.01)))
+      smokeSpec.size = 0.035 + 0.03 * this.rand()
       const a = this.rand() * 2 - 1, b = this.rand() * 2 - 1
-      pool.spawn(smokeSpec, x + dx * 0.12, y + dy * 0.12 + 0.03, z + dz * 0.12,
-        this.vx * 0.5 + dx * 0.5 + a * 0.08, this.vy * 0.5 + 0.7 + 0.3 * this.rand(), this.vz * 0.5 + dz * 0.5 + b * 0.08,
+      pool.spawn(smokeSpec, x + dx * 0.14, y + dy * 0.14 + 0.04, z + dz * 0.14,
+        this.vx * 0.5 + dx * 0.35 + a * 0.05, this.vy * 0.5 + 0.75 + 0.25 * this.rand(), this.vz * 0.5 + dz * 0.35 + b * 0.05,
         this.rand() * 6.283)
     }
   }

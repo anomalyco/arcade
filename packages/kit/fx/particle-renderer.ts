@@ -107,7 +107,7 @@ ${strontiumFlameWgsl}
   } else if(kind==10.0){
     // Flame puffs stretch a little along their jet so the tongue reads as a flow, not beads.
     let v=s.velocity.xyz;let speed=length(v);
-    if(speed>0.2){up=v/speed;right=normalize(cross(up,toward));size.y*=1.0+min(1.6,speed*0.35);size.x*=0.8;}
+    if(speed>0.2){up=v/speed;right=normalize(cross(up,toward));size.y*=1.0+min(2.4,speed*0.9);size.x*=0.65;}
   } else if((kind==5.0&&s.misc.z<0.5)||kind==6.0){
     let angle=s.misc.x;let cs=cos(angle);let sn=sin(angle);
     right=vec3f(cs,0.0,-sn);up=vec3f(sn,0.0,cs);
@@ -229,7 +229,8 @@ ${strontiumFlameWgsl}
     if(r2>=0.98){discard;}
     let age=clamp(o.misc.y,0.0,1.0);
     let n=vnoise(o.uv*vec2f(2.2,1.4)+vec2f(o.misc.x*3.1,-age*3.0-o.misc.x));
-    let T=o.misc.z*exp(-r2*3.6)*(0.7+0.6*n)*(1.0-0.55*age);
+    // Hot at birth, cooling along the tongue: the core is pinkish white, the envelope and the tip saturated red.
+    let T=o.misc.z*exp(-r2*2.6)*(0.7+0.6*n)*(1.0-0.8*age);
     let a=o.color.a*(1.0-smoothstep(0.55,0.98,r2));
     if(T*a<0.002){discard;}
     if(F.debug==2.0){return vec4f(0.12,0.025,0.008,0.06);}
@@ -249,7 +250,8 @@ ${strontiumFlameWgsl}
     let lobe=0.6+(billow-0.48)*(0.46+turb*0.22);
     let soft=mix(0.2,0.36,age);
     let shapeMask=(1.0-smoothstep(lobe-soft,lobe+soft,r))*(1.0-smoothstep(0.78,1.0,r));
-    let groundSoft=select(1.0,smoothstep(0.0,0.28,o.world.y),o.world.y<0.3&&o.world.y>-0.5);
+    // A temperature above 0.5 marks smoke that starts on the ground (a flare's column): no soft fade against Y=0.
+    let groundSoft=select(1.0,smoothstep(0.0,0.28,o.world.y),o.world.y<0.3&&o.world.y>-0.5&&o.misc.z<0.5);
     alpha*=shapeMask*groundSoft*(0.6+0.4*billow);
     if(alpha<0.003){discard;}
     let shade=clamp(0.78+0.55*(billow-0.5)+0.2*o.uv.y,0.35,1.2);
