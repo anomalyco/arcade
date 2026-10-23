@@ -8,7 +8,7 @@ import { torchCarry } from "@arcade/kit/people/retarget"
 import { RIG, type V3 } from "@arcade/kit/rig"
 import { SIGNAL_PITCH, viewDir, type Player, type WoodsState } from "../shared/sim"
 import { standHeight, type WoodsWorld } from "../shared/world"
-import { PeopleView, type Log } from "./people-view"
+import { PeopleView, type CastName, type Log } from "./people-view"
 
 /** Raincoats in the dark: muted yellow, olive, rust, navy, grey. */
 const COATS: readonly (readonly [number, number, number])[] = [[0.62, 0.48, 0.12], [0.24, 0.28, 0.14], [0.45, 0.16, 0.08], [0.12, 0.15, 0.26], [0.3, 0.3, 0.3]]
@@ -58,7 +58,8 @@ export class FriendsView {
   readingLevel = 0.003
   private aims = new Map<number, Aim>()
 
-  constructor(private renderer: Renderer, public realistic = false) {
+  /** People model for realistic friends (Lab › Friends › People model, `?cast=rocketbox`). */
+  constructor(private renderer: Renderer, public realistic = false, public cast: CastName = "makehuman") {
     this.parts = registerPersonModels((m) => renderer.addModel(m))
     const torch = new Mesh()
     torch.box(-0.1, -0.022, -0.022, 0.06, 0.022, 0.022, [0.05, 0.05, 0.055], MAT.shiny)
@@ -79,7 +80,7 @@ export class FriendsView {
 
   /** The realistic people (created on first use, so blocky mode loads nothing). */
   realPeople(): PeopleView {
-    return (this.real ??= new PeopleView(this.renderer, this.logs))
+    return (this.real ??= new PeopleView(this.renderer, this.logs, this.cast))
   }
 
   /** Loads the realistic people the first `n` friends wear (nothing when blocky); resolves when they can be drawn. */
@@ -136,7 +137,10 @@ export class FriendsView {
     const beams: Beam[] = []
     const real = this.realistic ? this.realPeople() : null
     if (!real) this.real?.hideAll()
-    else real.keep(new Set(state.players.map((p) => p.id)))
+    else {
+      real.useCast(this.cast)
+      real.keep(new Set(state.players.map((p) => p.id)))
+    }
     for (const p of state.players) {
       if (p.id === me) continue
       const aim = this.aim(p, beamLevel(p), dt)

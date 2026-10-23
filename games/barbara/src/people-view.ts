@@ -2,7 +2,8 @@ import { animate, type Avatar, EV, newAvatar } from "@arcade/kit/avatar/anim"
 import { batchHooks } from "@arcade/kit/forest/shaders"
 import type { Renderer } from "@arcade/kit/gpu/renderer"
 import type { SpotShadowCaster } from "@arcade/kit/gpu/shadows/spot-shadows"
-import { CAST } from "@arcade/kit/people/cast/woods.gen"
+import { CAST as ROCKETBOX } from "@arcade/kit/people/cast/rocketbox.gen"
+import { CAST as WOODS } from "@arcade/kit/people/cast/woods.gen"
 import { People, type CastMember, type Person } from "@arcade/kit/people/view"
 import type { HandPose } from "@arcade/kit/people/retarget"
 import type { V3 } from "@arcade/kit/rig"
@@ -11,11 +12,18 @@ import type { Player } from "../shared/sim"
 /** The left hand on a map's edge: fingers flat under the sheet, the thumb on top. */
 const SHEET_GRIP: HandPose = { index: [12, 18, 8], middle: [14, 20, 10], ring: [18, 24, 12], pinky: [22, 28, 14], thumbOppose: 25, thumbAlong: 15, thumb: [5, 8, 6], together: 0 }
 
+/**
+ * Which people model the friends wear: the MakeHuman woods cast (default) or the Microsoft Rocketbox avatars (MIT,
+ * `scripts/people/build-rocketbox.ts`). Each GLB is fetched only when a friend first wears it.
+ */
+export const CASTS = { makehuman: WOODS, rocketbox: ROCKETBOX } as const
+export type CastName = keyof typeof CASTS
+
 export type Log = { x: number; z: number; yaw: number; length: number; r: number; y: number }
 
 /**
  * Woods' adapter onto `@arcade/kit/people`: realistic friends on the shared rig, each a different member of the woods
- * cast (`scripts/people/cast.json`) in their own jacket, beanie, headlamp and pack. The rig walks in the person's rig
+ * cast (`scripts/people/cast.json`) in their own jacket, beanie, headlamp and pack, or a Rocketbox avatar (`CASTS`). The rig walks in the person's rig
  * space (world / scale); the kit adds the ground under each foot (terrain, the dock and the forest's logs), the
  * standing weight shift and the torch hand. Swappable: `FriendsView` keeps drawing blocky friends whenever this is off
  * or a friend's person is still loading.
@@ -26,15 +34,29 @@ export class PeopleView {
   private persons = new Map<number, Person>()
   /** Cast member per friend, in order of arrival, so the first friend you meet wears yellow. */
   private assigned = new Map<number, CastMember>()
-  constructor(renderer: Renderer, public logs: Log[] = []) {
+  private castName: CastName
+  constructor(renderer: Renderer, public logs: Log[] = [], cast: CastName = "makehuman") {
     this.people = new People(renderer.passContext, batchHooks)
     renderer.addPass("opaque", this.people.pass)
+    this.castName = cast
+  }
+
+  private get cast(): readonly CastMember[] { return CASTS[this.castName] }
+
+  /** Switches every friend to `name`'s cast; each is drawn blocky until their new person loads. */
+  useCast(name: CastName): void {
+    if (name === this.castName) return
+    this.castName = name
+    for (const person of this.persons.values()) this.people.remove(person)
+    this.persons.clear()
+    this.avatars.clear()
+    this.assigned.clear()
   }
 
   private member(id: number): CastMember {
     let m = this.assigned.get(id)
     if (!m) {
-      m = CAST[this.assigned.size % CAST.length]!
+      m = this.cast[this.assigned.size % this.cast.length]!
       this.assigned.set(id, m)
       this.people.load(m).catch((e) => console.error(`people: ${m!.id} failed to load`, e))
     }
@@ -46,7 +68,7 @@ export class PeopleView {
    * Play shows them at once instead of popping them in; later arrivals still load on first sight. Never rejects.
    */
   preload(n: number): Promise<void> {
-    return Promise.all(CAST.slice(0, n).map((m) => this.people.load(m).catch((e) => console.error(`people: ${m.id} failed to load`, e)))).then(() => {})
+    return Promise.all(this.cast.slice(0, n).map((m) => this.people.load(m).catch((e) => console.error(`people: ${m.id} failed to load`, e)))).then(() => {})
   }
 
   /** Ground under (x, z): the terrain/dock height, raised over any log's round top. */

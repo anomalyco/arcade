@@ -166,8 +166,8 @@ async function main() {
   const renderer = view.renderer
   live.qualityChanged = () => { view.forest.setQuality(quality.tier); shell.settings.changed() }
   // Realistic friends by default; the blocky ones are one setting away (Lab › Friends, or `?people=blocky`). The
-  // software-GPU smoke draws blocky friends.
-  const friends = new FriendsView(renderer, !smoke && params.get("people") !== "blocky")
+  // software-GPU smoke draws blocky friends. `?cast=rocketbox` dresses them as the Rocketbox avatars instead.
+  const friends = new FriendsView(renderer, !smoke && params.get("people") !== "blocky", params.get("cast") === "rocketbox" ? "rocketbox" : "makehuman")
   // The first searchers you meet are loaded before Play, so nobody pops in at the start (12 s at most on a slow link).
   shell.loading?.stage("people", "Waking the searchers")
   await Promise.race([friends.preload(TEAM - 1), new Promise((r) => setTimeout(r, 12000))])
@@ -254,6 +254,9 @@ async function main() {
     { key: "woods.realisticPeople", field: "realistic", label: "Realistic people", group: "Friends", subsection: "Drawing", type: "toggle" },
     { key: "woods.smoothFriends", field: "smooth", label: "Smooth friends", group: "Friends", subsection: "Drawing", type: "toggle" },
     { key: "woods.beamSettle", field: "beamSettle", label: "Friend beam settle", group: "Friends", subsection: "Drawing", min: 0.02, max: 0.4, step: 0.01, unit: "s" },
+  ])
+  panel.addControls(friends as unknown as Record<string, string>, [
+    { key: "woods.peopleCast", field: "cast", label: "People model", group: "Friends", subsection: "Drawing", type: "select", options: [{ value: "makehuman", label: "MakeHuman" }, { value: "rocketbox", label: "Rocketbox" }] },
   ])
   panel.addControls({}, [{ key: "creatureTrigger", label: "Trigger now", group: "Creature", type: "action", run: () => { creature.trigger() } }])
   panel.addControls(spider.settings as unknown as Record<string, number>, spider.controls())

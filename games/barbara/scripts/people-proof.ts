@@ -5,6 +5,7 @@
 // the group walking past, one PNG per 1/30 s, encoded to people-group.mp4 with ffmpeg. --gpu times the GPU frame
 // (timestamp queries, median of 48) with the five friends in view, realistic against blocky, alternating three times.
 // --past 4,10: one friend walking across your beam at each distance (m), you standing still: past-<m>.mp4.
+// --cast makehuman,rocketbox: every shot and clip once per people model, named <shot>-<cast> (Barbara's `?cast=`).
 import { mkdirSync, writeFileSync } from "node:fs"
 import { resolve, sep } from "node:path"
 import { chromium, type Page } from "playwright-core"
@@ -15,6 +16,7 @@ const [w, h] = arg("--size", "1600x900").split("x").map(Number) as [number, numb
 const only = arg("--shots", "")
 const clip = process.argv.includes("--clip"), gpu = process.argv.includes("--gpu")
 const past = arg("--past", "").split(",").filter(Boolean).map(Number)
+const casts = arg("--cast", "").split(",").filter(Boolean)
 const FRIENDS = 5
 mkdirSync(out, { recursive: true })
 const root = resolve("dist/arcade/barbara"), prefix = "/arcade/barbara/"
@@ -39,7 +41,7 @@ type Woods = {
   state: { t: number; players: P[]; brains: B[] }
   world: { camp: { x: number; z: number } }
   camera: { flashlight: boolean }
-  friends: { realistic: boolean; realPeople(): { drawn: number } }
+  friends: { realistic: boolean; cast: string; realPeople(): { drawn: number } }
 }
 declare const woods: Woods
 
@@ -63,7 +65,7 @@ const group = (page: Page, o: Group) =>
 
 /** One friend in your beam at the close-up spot; the others away. */
 const CLOSE = { dx: 8, dz: -46, ahead: 4.2, light: true, pitch: -0.3 }
-const close = (page: Page) =>
+const close = (page: Page, ahead = CLOSE.ahead, pitch = CLOSE.pitch) =>
   page.evaluate((o) => {
     const c = woods.world.camp, x = c.x + o.dx, z = c.z + o.dz
     woods.setPose(x, z, 0, o.pitch)
@@ -74,12 +76,30 @@ const close = (page: Page) =>
       b.mode = "wait"; b.timer = 99; b.sweep = 0
     })
     woods.face(x + 0.3, z - o.ahead, o.pitch)
+  }, { ...CLOSE, ahead, pitch })
+
+/** Your torch on a searcher standing 8 m ahead while another walks across 6.5 m ahead, left to right. */
+const beam = (page: Page) =>
+  page.evaluate((o) => {
+    const c = woods.world.camp, x = c.x + o.dx, z = c.z + o.dz
+    woods.setPose(x, z, 0, 0)
+    woods.camera.flashlight = true
+    woods.state.brains.forEach((b, k) => {
+      const p = woods.state.players.find((q) => q.id === b.id)!
+      if (k === 0) { p.x = x + 0.8; p.z = z - 8; b.mode = "wait"; b.heading = Math.atan2(-(x - p.x), -(z - p.z)) + 0.4 }
+      else if (k === 1) { p.x = x - 4.5; p.z = z - 6.5; b.mode = "regroup"; b.tx = x + 30; b.tz = z - 6.5; b.heading = Math.atan2(-30, 0) }
+      else { p.x = x + 60 + k; p.z = z + 60; b.mode = "wait" }
+      b.timer = 99; b.sweep = 0
+    })
+    woods.face(x, z - 7.5, Math.atan2(1.1 - 1.6, 7.5))
   }, CLOSE)
 
 const MID: Group = { dx: 10, dz: -70, ahead: 9, spread: 7, light: false, pitch: -0.02, mode: "wait" }
 const shots: Record<string, { real: boolean; setup: (page: Page) => Promise<unknown> }> = {
-  close: { real: true, setup: close },
-  "close-blocky": { real: false, setup: close },
+  close: { real: true, setup: (page) => close(page) },
+  near: { real: true, setup: (page) => close(page, 2.2, -0.12) },
+  beam: { real: true, setup: beam },
+  "close-blocky": { real: false, setup: (page) => close(page) },
   group: { real: true, setup: (page) => group(page, MID) },
   "group-blocky": { real: false, setup: (page) => group(page, MID) },
   "group-lit": { real: true, setup: (page) => group(page, { ...MID, light: true, ahead: 7, pitch: -0.1 }) },
@@ -90,91 +110,98 @@ const page = await browser.newPage({ viewport: { width: w, height: h } })
 const errors: string[] = []
 page.on("pageerror", (e) => errors.push(e.message))
 page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") errors.push(m.text()) })
-await page.goto(`http://127.0.0.1:${server.port}${prefix}?quality=high&people=real`, { waitUntil: "load" })
+await page.goto(`http://127.0.0.1:${server.port}${prefix}?quality=high&people=real${casts[0] ? `&cast=${casts[0]}` : ""}`, { waitUntil: "load" })
 await page.waitForFunction(() => (window as unknown as { woods?: Woods }).woods && woods.frames > 2, null, { timeout: 180000 }).catch((e) => { console.log(errors.join("\n")); throw e })
-await page.evaluate((n) => { document.getElementById("start")!.style.display = "none"; woods.paused = true; woods.settings.botCount = n }, FRIENDS)
+await page.evaluate((n) => {
+  for (const el of document.querySelectorAll<HTMLElement>("#start, .arcade-shell, #hud, #prompt, #objective, #subs, #goal")) el.style.display = "none"
+  woods.paused = true; woods.settings.botCount = n
+}, FRIENDS)
 const settle = (n: number) => page.evaluate(async (n) => { for (let i = 0; i < n; i++) { woods.step(1000 / 60); if (i % 5 === 4) await new Promise((r) => setTimeout(r, 0)) } }, n)
 await settle(10)
-// Every friend drawn as their person (each is assigned and fetched on first sight).
-await group(page, MID)
-await settle(30)
-await page.waitForFunction(async (n) => {
-  woods.step(1000 / 60)
-  await new Promise((r) => setTimeout(r, 50))
-  return woods.friends.realPeople().drawn >= n
-}, FRIENDS, { timeout: 120000, polling: 200 }).catch((e) => { console.log(errors.join("\n")); throw e })
-const shot = (path: string) => page.screenshot({ path, timeout: 180000 })
 const timing: Record<string, number> = {}
-for (const [name, s] of Object.entries(shots)) {
-  if (only && !only.split(",").includes(name)) continue
-  const t0 = Date.now()
-  await page.evaluate((r) => { woods.friends.realistic = r }, s.real)
-  await s.setup(page)
-  await settle(150)
-  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
-  await shot(`${out}/${name}.png`)
-  timing[name] = Date.now() - t0
-  console.log(name, timing[name], "ms")
-}
+const gpuMs: Record<string, number[]> = {}
+for (const cast of casts.length ? casts : [""]) {
+  const tag = cast && casts.length > 1 ? `-${cast}` : ""
+  if (cast) await page.evaluate((c) => { woods.friends.realistic = true; woods.friends.cast = c }, cast)
+  // Every friend drawn as their person (each is assigned and fetched on first sight).
+  await group(page, MID)
+  await settle(30)
+  await page.waitForFunction(async (n) => {
+    woods.step(1000 / 60)
+    await new Promise((r) => setTimeout(r, 50))
+    return woods.friends.realPeople().drawn >= n
+  }, FRIENDS, { timeout: 120000, polling: 200 }).catch((e) => { console.log(errors.join("\n")); throw e })
+  const shot = (path: string) => page.screenshot({ path, timeout: 180000 })
+  for (const [name, s] of Object.entries(shots)) {
+    if (only && !only.split(",").includes(name)) continue
+    const t0 = Date.now()
+    await page.evaluate((r) => { woods.friends.realistic = r }, s.real)
+    await s.setup(page)
+    await settle(150)
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
+    await shot(`${out}/${name}${tag}.png`)
+    timing[name + tag] = Date.now() - t0
+    console.log(name + tag, timing[name + tag], "ms")
+  }
 
-const gpuMs: Record<string, number[]> = { real: [], blocky: [] }
-if (gpu) {
-  await group(page, { ...MID, light: true, ahead: 8, pitch: -0.06 })
-  for (let round = 0; round < 3; round++) {
-    for (const real of [true, false]) {
-      await page.evaluate((r) => { woods.friends.realistic = r }, real)
-      await settle(20)
-      const m = await page.evaluate(() => woods.measure(48))
-      if (m) gpuMs[real ? "real" : "blocky"]!.push(Math.round(m.median * 1000) / 1000)
+  if (gpu) {
+    await group(page, { ...MID, light: true, ahead: 8, pitch: -0.06 })
+    for (let round = 0; round < 3; round++) {
+      for (const real of [true, false]) {
+        await page.evaluate((r) => { woods.friends.realistic = r }, real)
+        await settle(20)
+        const m = await page.evaluate(() => woods.measure(48))
+        if (m) (gpuMs[(real ? "real" : "blocky") + tag] ??= []).push(Math.round(m.median * 1000) / 1000)
+      }
     }
+    await page.evaluate(() => { woods.friends.realistic = true })
+    await settle(10)
+    await shot(`${out}/gpu-frame${tag}.png`)
+    console.log("gpu ms", JSON.stringify(gpuMs))
   }
-  await page.evaluate(() => { woods.friends.realistic = true })
-  await settle(10)
-  await shot(`${out}/gpu-frame.png`)
-  console.log("gpu ms", JSON.stringify(gpuMs))
-}
 
-if (clip) {
-  // The group walks past left to right 8 m ahead, your torch on them.
-  await page.evaluate(() => { woods.friends.realistic = true })
-  // At the clear spot of the group stills: they start off to the left and cross 6 m ahead in your beam.
-  await group(page, { ...MID, light: true, ahead: 6, spread: 3, pitch: -0.12, mode: "regroup", walk: [30, 3] })
-  await page.evaluate(() => woods.state.brains.forEach((b, k) => { const p = woods.state.players.find((q) => q.id === b.id)!; p.x -= 6 + k * 0.5; b.tx -= 6 }))
-  await settle(20)
-  mkdirSync(`${out}/clip`, { recursive: true })
-  for (let f = 0; f < 150; f++) {
-    await page.evaluate(async () => { woods.step(1000 / 60); woods.step(1000 / 60); await new Promise((r) => setTimeout(r, 0)) })
-    await page.evaluate(() => new Promise((r) => requestAnimationFrame(r)))
-    await shot(`${out}/clip/${String(f).padStart(4, "0")}.png`)
+  if (clip) {
+    // The group walks past left to right 8 m ahead, your torch on them.
+    await page.evaluate(() => { woods.friends.realistic = true })
+    // At the clear spot of the group stills: they start off to the left and cross 6 m ahead in your beam.
+    await group(page, { ...MID, light: true, ahead: 6, spread: 3, pitch: -0.12, mode: "regroup", walk: [30, 3] })
+    await page.evaluate(() => woods.state.brains.forEach((b, k) => { const p = woods.state.players.find((q) => q.id === b.id)!; p.x -= 6 + k * 0.5; b.tx -= 6 }))
+    await settle(20)
+    mkdirSync(`${out}/clip${tag}`, { recursive: true })
+    for (let f = 0; f < 150; f++) {
+      await page.evaluate(async () => { woods.step(1000 / 60); woods.step(1000 / 60); await new Promise((r) => setTimeout(r, 0)) })
+      await page.evaluate(() => new Promise((r) => requestAnimationFrame(r)))
+      await shot(`${out}/clip${tag}/${String(f).padStart(4, "0")}.png`)
+    }
+    const ff = Bun.spawn(["ffmpeg", "-y", "-loglevel", "error", "-framerate", "30", "-i", `${out}/clip${tag}/%04d.png`, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "21", "-movflags", "+faststart", `${out}/people-group${tag}.mp4`])
+    console.log("ffmpeg", await ff.exited)
   }
-  const ff = Bun.spawn(["ffmpeg", "-y", "-loglevel", "error", "-framerate", "30", "-i", `${out}/clip/%04d.png`, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "21", "-movflags", "+faststart", `${out}/people-group.mp4`])
-  console.log("ffmpeg", await ff.exited)
-}
-for (const d of past) {
-  // You at the close-up spot, torch on, aimed at chest height where the friend will cross; they walk from 5 m left to
-  // 5 m right of it, the others far away.
-  await page.evaluate(() => { woods.friends.realistic = true })
-  await page.evaluate(({ o, d }) => {
-    const c = woods.world.camp, x = c.x + o.dx, z = c.z + o.dz
-    woods.setPose(x, z, 0, 0)
-    woods.camera.flashlight = true
-    woods.state.brains.forEach((b, k) => {
-      const p = woods.state.players.find((q) => q.id === b.id)!
-      if (k === 0) { p.x = x - 5; p.z = z - d; b.mode = "regroup"; b.tx = x + 30; b.tz = z - d; b.heading = Math.atan2(-30, 0) }
-      else { p.x = x + 60 + k; p.z = z + 60; b.mode = "wait" }
-      b.timer = 99; b.sweep = 0
-    })
-    woods.face(x, z - d, Math.atan2(1.25 - 1.6, d))
-  }, { o: CLOSE, d })
-  await settle(4)
-  mkdirSync(`${out}/past-${d}`, { recursive: true })
-  for (let f = 0; f < 120; f++) {
-    await page.evaluate(async () => { woods.step(1000 / 60); woods.step(1000 / 60); await new Promise((r) => setTimeout(r, 0)) })
-    await page.evaluate(() => new Promise((r) => requestAnimationFrame(r)))
-    await shot(`${out}/past-${d}/${String(f).padStart(4, "0")}.png`)
+  for (const d of past) {
+    // You at the close-up spot, torch on, aimed at chest height where the friend will cross; they walk from 5 m left to
+    // 5 m right of it, the others far away.
+    await page.evaluate(() => { woods.friends.realistic = true })
+    await page.evaluate(({ o, d }) => {
+      const c = woods.world.camp, x = c.x + o.dx, z = c.z + o.dz
+      woods.setPose(x, z, 0, 0)
+      woods.camera.flashlight = true
+      woods.state.brains.forEach((b, k) => {
+        const p = woods.state.players.find((q) => q.id === b.id)!
+        if (k === 0) { p.x = x - 5; p.z = z - d; b.mode = "regroup"; b.tx = x + 30; b.tz = z - d; b.heading = Math.atan2(-30, 0) }
+        else { p.x = x + 60 + k; p.z = z + 60; b.mode = "wait" }
+        b.timer = 99; b.sweep = 0
+      })
+      woods.face(x, z - d, Math.atan2(1.25 - 1.6, d))
+    }, { o: CLOSE, d })
+    await settle(4)
+    mkdirSync(`${out}/past-${d}${tag}`, { recursive: true })
+    for (let f = 0; f < 120; f++) {
+      await page.evaluate(async () => { woods.step(1000 / 60); woods.step(1000 / 60); await new Promise((r) => setTimeout(r, 0)) })
+      await page.evaluate(() => new Promise((r) => requestAnimationFrame(r)))
+      await shot(`${out}/past-${d}${tag}/${String(f).padStart(4, "0")}.png`)
+    }
+    const ff = Bun.spawn(["ffmpeg", "-y", "-loglevel", "error", "-framerate", "30", "-i", `${out}/past-${d}${tag}/%04d.png`, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20", "-movflags", "+faststart", `${out}/past-${d}${tag}.mp4`])
+    console.log(`past-${d}${tag}`, await ff.exited)
   }
-  const ff = Bun.spawn(["ffmpeg", "-y", "-loglevel", "error", "-framerate", "30", "-i", `${out}/past-${d}/%04d.png`, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20", "-movflags", "+faststart", `${out}/past-${d}.mp4`])
-  console.log(`past-${d}`, await ff.exited)
 }
 writeFileSync(`${out}/people-proof.json`, JSON.stringify({ timing, gpuMs, errors }, null, 2))
 if (errors.length) console.log("browser messages:", errors.slice(0, 12))

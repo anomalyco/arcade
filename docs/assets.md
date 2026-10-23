@@ -6,7 +6,8 @@ again at download time.
 
 ## Rules
 
-- **CC0, or CC BY with credits.** Nothing NC (non-commercial), ND (no derivatives) or SA (share-alike) without Kit's
+- **CC0, CC BY with credits, or MIT with its notice.** MIT assets ship their copyright line and the full licence text
+  in the `CREDITS.md` beside them (Kit approved this on October 23, 2026, for the Rocketbox avatars). Nothing NC (non-commercial), ND (no derivatives) or SA (share-alike) without Kit's
   approval. **No Mixamo** (forbids redistribution and ML use) and **no Bandai Namco motion data** (non-commercial),
   not even as shipped reference data ([animation.md](animation.md#reference-clips)).
 - **Every game ships a `CREDITS.md` next to its assets**: asset, author, source URL, licence link, what changed. CC BY
@@ -36,6 +37,7 @@ again at download time.
 | [Objaverse](https://huggingface.co/datasets/allenai/objaverse) on Hugging Face | Dataset ODC-By; each object has its own licence in `metadata/*.json.gz` (721K CC BY, 3.5K CC0, ~93K NC or SA) | Lot: the CC BY 4.0 station wagon (a Sketchfab model). Read the per-object metadata; take only CC0 and CC BY. |
 | [Sketchfab](https://sketchfab.com) | Per model; check the badge and the downloaded licence | Night Shift office look: phone, desk lamp, mug (CC BY 4.0, credited). CC0 and CC BY only. |
 | [MakeHuman / MPFB 2](https://extensions.blender.org/add-ons/mpfb/) | Assets CC0; MPFB code GPL-3.0 but its output is CC0 ([licence](https://github.com/makehumancommunity/makehuman/blob/master/LICENSE.md)) | Kit people cast: bodies, rig, clothes, hair, brows, skins (`packages/kit/people/assets/CREDITS.md`). |
+| [Microsoft Rocketbox](https://github.com/microsoft/Microsoft-Rocketbox) avatars | MIT ([licence](https://github.com/microsoft/Microsoft-Rocketbox/blob/master/LICENSE.md)); ship the notice | Kit people: `m05-rocketbox`, `f04-rocketbox` (`packages/kit/people/assets/CREDITS.md`, `rocketbox-sources.json`). 115 rigged avatars with photo-sourced 2K colour and normal maps, Biped skeleton. |
 | [100STYLE](https://zenodo.org/records/8127870) mocap | CC BY 4.0 (Mason, Starke, Komura 2022) | Gait measurement in `games/blackout/scripts/animation/reference-clips.ts`; not shipped. Credit it if any frame ships. |
 | [Quaternius](https://quaternius.com) UAL animation packs | CC0 ([FAQ](https://quaternius.com/faq.html)) | Reference clips beside 100STYLE (same script). |
 | [CMU mocap database](http://mocap.cs.cmu.edu/) | "Free for all uses" (home page); credit and NSF grant acknowledgement requested | Not used yet. The next stop for actions 100STYLE lacks. |

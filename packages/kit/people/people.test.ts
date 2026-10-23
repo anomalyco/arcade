@@ -329,3 +329,70 @@ test("people keep a game's full direct light on their upright surfaces (no wall 
   expect(personHooks({}).wallDirectScale).toBe("1.0")
   expect(personHooks({ wallDirectScale: "0.5" }).wallDirectScale).toBe("0.5")
 })
+
+// Rocketbox avatars (scripts/people/build-rocketbox.ts): a Biped skeleton renamed onto the game_engine names.
+const ROCKETBOX = await Promise.all(["m05", "f04"].map(async (id) => readPerson(await io.read(new URL(`./assets/${id}-rocketbox.glb`, import.meta.url).pathname), `${id}-rocketbox`)))
+
+describe("Rocketbox cast", () => {
+  test("reads as an 80-bone skeleton with two LODs, a person's height and leg scale, and clean vertices", () => {
+    for (const a of ROCKETBOX) {
+      const r = personRest(a.skeleton)
+      expect(a.skeleton.names.length).toBe(80)
+      expect(a.lods.length).toBe(2)
+      expect(a.lods[0]!.triangles).toBeLessThan(12_000)
+      expect(a.lods[1]!.triangles).toBeLessThan(5_000)
+      expect(r.height).toBeGreaterThan(1.6)
+      expect(r.height).toBeLessThan(1.95)
+      expect(r.scale).toBeGreaterThan(0.9)
+      expect(r.scale).toBeLessThan(1.15)
+      expect(a.materials.map((m) => m.kind).sort()).toEqual(["cloth", "eye", "hair", "skin", "skin"])
+      let bad = 0
+      for (const lod of a.lods) {
+        const f = new Float32Array(lod.source)
+        for (let o = 0; o < f.length; o += SRC_FLOATS) {
+          const nl = Math.hypot(f[o + 4]!, f[o + 5]!, f[o + 6]!), ws = f[o + 8]! + f[o + 9]! + f[o + 10]! + f[o + 11]!
+          if (![f[o]!, f[o + 1]!, f[o + 2]!].every(Number.isFinite) || Math.abs(nl - 1) > 1e-3 || Math.abs(ws - 1) > 1e-3) bad++
+        }
+      }
+      expect(bad).toBe(0)
+    }
+  })
+
+  test("knees bend forward and planted feet stay on the ground through starts and stops", () => {
+    for (const a of ROCKETBOX) {
+      const r = personRest(a.skeleton)
+      let flip = 0, lift = 0
+      gaitRun(r, 6, startStop, ({ pose, loco, gait, t }) => {
+        if (t < 0.5) return
+        const fwd: V3 = [Math.cos(gait.yaw), 0, Math.sin(gait.yaw)]
+        for (let k = 0; k < 2; k++) {
+          const ch = r.legs[k]!, hip = pose.pos[ch.upper]!, knee = pose.pos[ch.lower]!, ank = pose.pos[ch.end]!
+          const d: V3 = [ank[0] - hip[0], ank[1] - hip[1], ank[2] - hip[2]], l = Math.hypot(...d)
+          const u = ((knee[0] - hip[0]) * d[0] + (knee[1] - hip[1]) * d[1] + (knee[2] - hip[2]) * d[2]) / (l * l)
+          flip = Math.min(flip, (knee[0] - hip[0] - d[0] * u) * fwd[0] + (knee[2] - hip[2] - d[2] * u) * fwd[2])
+          if (loco.feet[k].planted) {
+            const ball = pose.pos[r.idx[k ? "ball_r" : "ball_l"]!]!, heel = pose.pos[r.idx[k ? "foot_r" : "foot_l"]!]!
+            lift = Math.max(lift, Math.min(ball[1] - r.ballHeight, heel[1] - 0.09))
+          }
+        }
+      })
+      expect(flip).toBeGreaterThan(-0.005)
+      expect(lift).toBeLessThan(0.025)
+    }
+  }, 60_000)
+
+  test("the torch grip closes the fingers round the barrel", () => {
+    for (const a of ROCKETBOX) {
+      const r = personRest(a.skeleton), pose = newPose(r), av = newAvatar("grip", 0, 0, 0, "rifle")
+      av.unarmed = true
+      animate(av, 1 / 60, 0, 0, 0, 0, 0, 0)
+      posePerson(r, { body: av.body!, lift: 0, torch: { side: 1, dir: [1, -0.25, 0] } }, pose)
+      const t = pose.torch!
+      const off = (p: V3) => { const d: V3 = [p[0] - t.p[0], p[1] - t.p[1], p[2] - t.p[2]], u = d[0] * t.x[0] + d[1] * t.x[1] + d[2] * t.x[2]; return Math.hypot(d[0] - u * t.x[0], d[1] - u * t.x[1], d[2] - u * t.x[2]) }
+      for (const f of ["index", "middle", "ring", "pinky"]) {
+        const tip = pose.pos[r.idx[`${f}_03_r`]!]!
+        expect(off(tip)).toBeLessThan(0.05)
+      }
+    }
+  })
+})
