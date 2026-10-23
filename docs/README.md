@@ -1,23 +1,29 @@
 # Docs
 
-Shared notes for every game in this repository. Game-specific notes stay in each game's `AGENTS.md` and its own
-docs folder. Start with `AGENTS.md` at the root; it says which of these to read before each kind of work.
+Shared practical guides for every game in this repository: what to do and how, with Kit's decisions. Measurements,
+studies and history live in [research/](research/README.md). Game-specific notes stay in each game's `AGENTS.md` and
+its own docs folder. Root `AGENTS.md` indexes visual work by task.
 
-## Techniques
+## Visual quality
 
-- [game-notes.md](game-notes.md): proven techniques for proving changes, rendering, art direction, multiplayer,
-  input, feel and audio. Read before rendering, performance, input, multiplayer or feel work; add an entry once a
-  technique is proven.
+- [quality-checklist.md](quality-checklist.md): one page for building anything visual (target, method per asset,
+  finish pass, shared kit effects, pre-flight gates, showing Kit). Start here for any prop, creature, room, light or
+  look.
+- [realism.md](realism.md): the realism playbook by topic (lights to ambience): which kit technique to use, its cost,
+  Kit's decisions and taste, and how each goes wrong.
+- [assets.md](assets.md): where to find models, textures, motion and sound (accepted licences, sources Arcade uses
+  and ones to evaluate) and when to generate them instead (image model, TRELLIS, MPFB, procedural, ElevenLabs). Read
+  before adding or generating assets.
+- [animation.md](animation.md): rules and measured values for procedural human animation (gait, contacts, arms,
+  posture, transitions, weapons) and the known gaps. Read before touching any character's motion.
+
+## Engine techniques
+
 - [netcode.md](netcode.md): how Arcade games hide network latency (client prediction, `OptimisticEvents`, wind-ups,
   adaptive time-stretched `SnapshotBuffer`, `hermite2` + coasting + `Glide`, `RewindHistory`, `RollbackClient`,
   `socketJitter`, and the new-game checklist). Read before any multiplayer or net work.
-- [rendering-techniques.md](rendering-techniques.md): catalogue of rendering techniques with have/missing status,
-  cost and location. Read before adding lighting, shadows, materials, post-processing or GPU performance work.
 - [threading.md](threading.md): worker ownership, dependencies, browser limits and ranked threading experiments.
   Read before moving CPU work off-thread or changing worker protocols.
-- [realism.md](realism.md): the realism playbook by topic (lights to ambience) with cost, Kit's decisions and taste.
-- [animation.md](animation.md): rules and measured values for procedural human animation (gait, contacts, arms,
-  posture, transitions, weapons) and the known gaps. Read before touching any character's motion.
 - [audio-design.md](audio-design.md): the shared audio engine and Audio Lab. Read before changing game sound.
 - [sfx-library.md](sfx-library.md): the shared sound library (semantic ids, variants, licences, loudness targets),
   its offline generation and curation pipeline, and Outbreak's positional sound. Read before adding or replacing a
@@ -26,14 +32,10 @@ docs folder. Start with `AGENTS.md` at the root; it says which of these to read 
 ## Shared code and conventions
 
 - [../packages/kit/TESTING.md](../packages/kit/TESTING.md): fast tests, opt-in soaks and the nightly network/audio/Walkers training checks.
-
 - [prototyping.md](prototyping.md): the toy-first workflow (`bun scripts/new-toy.ts <name>`): how to prove game feel
   on `@arcade/kit` primitives and `LabPanel` knobs before building custom meshes, shaders or multiplayer rooms.
 - [shared-code.md](shared-code.md): what the games still duplicate and what belongs in `packages/kit/`. Check
   before writing something another game already has.
-- [assets.md](assets.md): where to find models, textures, motion and sound (accepted licences, sources Arcade uses
-  and ones to evaluate) and when to generate them instead (image model, TRELLIS, MPFB, procedural, ElevenLabs). Read
-  before adding or generating assets.
 - [human-rig.md](human-rig.md): API and module ownership of the shared human rig, profiles, attachments,
   detachment and the Characters page. Read before using the rig in a game.
 - [people.md](people.md): realistic skinned people (`@arcade/kit/people`): the MakeHuman build, GPU skinning,
@@ -94,11 +96,20 @@ docs folder. Start with `AGENTS.md` at the root; it says which of these to read 
 - [outbreak-art-direction.md](outbreak-art-direction.md): Outbreak's shipped look (Darkwood v8): rules, targets by
   hour, the flashlight spec, what not to do and how to prove a change. Read before touching its shaders, lighting
   or look settings.
-- [outbreak-look.md](outbreak-look.md), [outbreak-look-v2.md](outbreak-look-v2.md): Outbreak's look studies.
-- [style-playground.md](style-playground.md): the 9-style rendering playground on Outbreak's room sim, measured GPU costs, and full-game scaling verdicts.
 - [outbreak-zombie-profile.md](outbreak-zombie-profile.md): Outbreak's zombie art controls on the shared rig.
+
+## Research
+
+[research/README.md](research/README.md) lists the evidence: the measured-lessons log
+([game-notes.md](research/game-notes.md)), the realism log, the rendering catalogue, and Outbreak's look and style
+studies.
 
 ## Agent skills
 
+- [`arcade-quality`](../.opencode/skills/arcade-quality/SKILL.md): runs the quality checklist for any visual work.
+- [`arcade-props`](../.opencode/skills/arcade-props/SKILL.md): models through the prop pipeline (image → TRELLIS.2
+  → Blender → finish), authored geometry or a CC0 model.
+- [`arcade-lookdev`](../.opencode/skills/arcade-lookdev/SKILL.md): target (concept art, paint-over), pre-flight
+  gates and showing Kit.
 - [`procedural-animation-iteration`](../.opencode/skills/procedural-animation-iteration/SKILL.md): the
   measure-first loop and scripts for tuning character animation.

@@ -1,5 +1,7 @@
 # Lot
 
+- Visual work (props, creatures, rooms, lighting, looks): follow [quality-checklist.md](../../docs/quality-checklist.md)
+  and the `arcade-quality` skill.
 - Unlisted first-person night exterior, `/arcade/lot/`. WebGPU through `@arcade/kit`, no Three.js runtime.
 - `src/interior/`: native entrance, lobby and storey-0 corridor, with physical fixtures, room-local bounce, authored finish maps and CC0 props. `scripts/import-interior.ts` executes the source builders read-only; `scripts/interior-assets.ts` decodes the five licensed prop models offline. Generated assets and their credits live in `public/interior/`. Closed door leaves and partitions are colliders; the imported slice stops at z=-3.2.
 - `scripts/interior-finishes.ts` decodes the CC0 ceiling, terrazzo and plaster scans; `src/interior/finishes.ts` adds world-space wear, wall sheen and wax. Ceiling UVs align the scan's six cells with the actual 0.6 × 1.2 m T-bars. Lit-vertex aux 101–106 identifies finish recipes; glow retains its emission value. Regenerate geometry after changing importer recipes.

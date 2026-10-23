@@ -48,7 +48,7 @@ with the timing script. Browser runs are headless and muted. GPU measurements ru
 ## Research and scope
 
 The cited two-to-three-line technique summaries, fit and estimated costs are in
-`docs/game-notes.md`, under “Connected smoke research”. Key conclusions:
+`docs/research/game-notes.md`, under “Connected smoke research”. Key conclusions:
 
 - [Valve's CS2 presentation](https://www.youtube.com/watch?v=_y9MpNcAitQ) establishes world-space, lit, connected
   smoke. Voxel flood fill and raymarching details come from [Gunnell's independent reconstruction](https://github.com/GarrettGunnell/CS2-Smoke-Grenades),

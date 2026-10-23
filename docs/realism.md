@@ -1,25 +1,15 @@
 # Realism playbook
 
-## Water candidate (2026-10-22, awaiting Kit)
-
-Carrier's opt-in continuous ocean uses `packages/kit/water/`: irregular filtered
-normal bands, sparse sun glints and turbulent surface foam. `water/wake.ts` adds a
-bounded Kelvin cusp-normal approximation at 19.47°, driven by the real boat poses;
-wave geometry and authoritative buoyancy are unchanged. Today remains the default.
-The separate `woods-water` branch adds moon/star reflections, shallow torch scatter,
-rain rings and a draggable local log to the real forest lake, with its existing sky
-as the labelled fallback until `kit/sky` integrates. The lake needs that branch's
-forest prerequisite, not just the Carrier branch.
-
-Cost: deliberately not gated by paired timing, per Kit's latest direction. Decision:
-pending visual review. Evidence and remaining differences: [perf/water.md](../perf/water.md).
-
 What makes Arcade's scenes read as real, by what you see: lights, bounce, shadows, fog, smoke, wet ground, storms,
 foliage, materials, glass, the camera, stability, quality tiers and sound. Each entry says what the trick is and why
-it reads as real, where it lives (the kit path first, then the games using it), what it costs and how the quality
-tiers treat it, what Kit picked or turned down, and how it goes wrong. How each one works in detail is in
-[rendering-techniques.md](rendering-techniques.md); measured lessons are in [game-notes.md](game-notes.md). This page
-links to those instead of repeating them.
+it reads as real, where it lives (the kit path first, then the games using it), what it costs, what Kit picked or
+turned down, and how it goes wrong. Start a visual task from [quality-checklist.md](quality-checklist.md); come here
+to pick the technique.
+
+Evidence lives in [research/](research/README.md): proofs, detailed measurements, open candidates and sources in
+[realism-log.md](research/realism-log.md), how each technique works in
+[rendering-techniques.md](research/rendering-techniques.md), and measured lessons in
+[game-notes.md](research/game-notes.md).
 
 - **Costs** are paired whole-frame GPU deltas against Today on Metal unless noted. The Mac mini (M4 Pro) is the budget
   machine. Studio's headless timings are not usable while its displays stay dark (184 ms frames, timestamp errors),
@@ -62,8 +52,9 @@ links to those instead of repeating them.
 2. Ship it behind a typed Lab setting with Today as the default and byte-identical Today pixels. Pipelines build on
    first draw (`ensureScenePipes`, `VolumeSlot.ensurePipes`), shader paths that slow SwiftShader compile are
    compile-time opt-in (`PhysicalLightOptions.street`, `rect`), and `?smoke` keeps the technique at Today.
-3. Measure paired GPU on `mini` (and `pro`) at the game's real resolution, and temporal stability with the game's
-   motion script (`games/lot/scripts/motion.ts`, `games/outbreak/scripts/motion.ts`), not only stills.
+3. Check temporal stability with the game's motion script (`games/lot/scripts/motion.ts`,
+   `games/outbreak/scripts/motion.ts`), not only stills, and note a rough GPU cost on `mini` at the game's real
+   resolution. Kit doesn't gate on timing: one honest number is enough.
 4. Put it to Kit as a board decision with Today and the candidate at the same moment.
 5. If it costs more than ~0.5 ms on the mini, give it quality-tier values.
 6. Add an entry here with the cost and Kit's decision.
@@ -76,12 +67,8 @@ a faint procedural Galactic band sit behind a NASA-textured, half-degree Moon. T
 units per cd/m² and owns exposure. `moonLight()` supplies lux and direction for the host's shadowed lighting.
 - Where: on by default in Barbara (through `@arcade/kit/forest`, Today one setting away; its software-GPU smoke keeps
   Today); opt-in adapters in Lot, Night Shift, Outbreak and the shared world/Sky station, where Today is the default.
-- Cost: initial sky-only mini Metal proof, 1920×1080 MSAA4, +0.204 ms median (MAD 0.028 ms); this precedes the
-  lunar occultation and mip-filtering follow-up. No whole-game cost claim.
-- Stability: integrated star energy varies 0.035% across 32 subpixel positions. Translation-free sky TAA drifts
-  0.031 px after 64 m camera travel in the isolated production-pass fixture.
+- Cost: about +0.2 ms sky-only (mini); no whole-game figure.
 - Kit: turned it on for Barbara at its ship. Calibrated exposure and cloud composition remain integration work.
-  Measurements and boundaries: [night-sky ledger](../perf/night-sky.md), [woods integration](../perf/night-sky-woods.md).
 - Pitfalls: do not use a long-exposure photograph's brightness as an eye-level target; do not raise forest ambient
   to make stars visible. Moon mips filter in linear light, and the unlit disk also occludes stars.
 
@@ -106,7 +93,6 @@ shadows sized by the lens, and an emissive sag bowl.
   needs its own low g (0.1) to read as the wedge below the lens. At full share the lamp-glow map lit the whole cloud
   deck olive; a cutoff head only sends its ground bounce up (`uplight` 0.12). LTC disc lights were rejected: at 6–9 m
   the lens subtends under 3°.
-- Research: `~/code/home/artifacts/lot-2026-10-20/lamps-*`, `lamps-research-2026-10-20.md`.
 
 **Torch beam profile.** Hot core, soft cone, two faint reflector rings and a wide dim spill, so the core reads as the
 bulb and the ground beside the beam doesn't go black.
@@ -116,13 +102,14 @@ bulb and the ground beside the beam doesn't go black.
 - Pitfalls: Outbreak's near-lens softening `1/(1 + d²/36)` is a top-down readability choice; don't use it in first
   person (woods research: clamp by the source radius instead). A first-person beam's own airlight read as "a solid
   bright wedge from the screen corner" in the woods; near-field scattering must be thin by the lens and fade softly.
-- Research: woods `RESEARCH.md` §D (hotspot 8–16°, beam 25–40°, spill 1–5 %, 2,000–8,000 cd, source 0.25–0.45 m to
-  the side of the eye).
-- Woods (Oct 22): a '90s krypton bulb at 3600 K (6000 K read as a clinical LED), a tighter core (1.3 × at 0.3 of the
+- Targets for a handheld torch: hotspot 8–16°, beam 25–40°, spill 1–5 %, 2,000–8,000 cd, source 0.25–0.45 m to the
+  side of the eye.
+- Woods: a '90s krypton bulb at 3600 K (6000 K read as a clinical LED), a tighter core (1.3 × at 0.3 of the
   half-angle) and 5 % spill. Each torch warms as its battery fades: T ∝ V^0.42 and light ∝ V^3.4, so T = T₀·level^0.124
   (30 % light → 3100 K). The spot is locked to the hand: no direction easing, an uneased bounce that doesn't light its
-  own surface, and the beam's change in the TAA reactive mask (game-notes "your torch's spot locked to the hand").
-  Kit's visual decision on the colour and core is pending.
+  own surface, and the beam's change in the TAA reactive mask
+  ([game-notes](research/game-notes.md#woods-your-torchs-spot-locked-to-the-hand-2026-10-22)). Any light derived from
+  a moving light must not be eased. Kit's visual decision on the colour and core is pending.
 
 **Flickering and failing practicals.** Stateless functions of seed and time, so co-op clients, replays and paired
 captures agree: sodium restrike, fluorescent starter stutter, incandescent brown-out, beacons. One signal drives the
@@ -143,6 +130,9 @@ point.
 (`PostFinishOptions.bloomGate`) and the first downsample is Karis-weighted (`bloomKaris`) so a lone ember doesn't
 flash. Far glow decals need a depth offset counted in 24-bit depth steps (`SceneHooks.depthBias`): the Lot's
 stairwell glow sat 5 mm off its backing, under one depth step at 150 m, and flashed (AR-118).
+
+**CRT display and screen light (landing, branch `kit-crt`).** A shared CRT display and the light a screen throws
+into the room. The branch fills in this entry (where, cost, Kit's decision, pitfalls) when it merges.
 
 **Analytic gobos and window light.** Light through blinds or a window frame, box-filtered with a penumbra that widens
 with distance from the aperture, shared by the surfaces and the dust in the same beam.
@@ -173,6 +163,9 @@ that walls block. Nothing jitters, so it holds still under TAA, and six torches 
 **Sky and fog ambient.** The fog's sky is also the surface ambient, a quadratic in `n.y` fitted to the fog colour, so
 shadowed surfaces take the night sky's tint with no env bake (`fogAmbient`, `packages/kit/gpu/fog-scatter.ts`).
 Baked floor AO and Jimenez's multi-bounce AO keep crevices saturated instead of grey (`packages/kit/gpu/shaders.ts`).
+
+**Baked lightmaps (landing, branch `kit-lightmaps`).** Baked indirect light for static rooms. The branch fills in this
+entry (where, cost, Kit's decision, pitfalls) when it merges.
 
 **Not built yet:** directional (SH) ambient, canopy-openness sky occlusion for forests (woods research rank 3), and the
 first-person flashlight hit bounce.
@@ -214,14 +207,15 @@ also stamps base darkening and edge tone into `v.color.a` on its buildings and p
 
 ## Fog, mist and volumetrics
 
-- **Clear air near you (Woods):** `packages/kit/forest/view.ts` scales torch in-scatter from 10% at the eye to 100% at 8 m, with −0.25-stop compensation only while your torch is on; measured renderer GPU delta −0.031 to +0.053 ms (mini/Metal, High, 1600×900, three views; [measurements](../perf/woods-autoresearch.md#review-follow-up-optional-clear-near-air)). Default on in Barbara and its Lab page at Kit's request; **Kit's final visual decision is pending**. Mist → Clear air near you → off restores Today, including its exposure target, after adaptation settles; smoke stays Today.
+**Clear air near you (Woods).** Torch in-scatter fades in from the eye over 8 m, so your own beam doesn't fog the
+lens (`packages/kit/forest/view.ts`). Cost within noise. On in BARBARA at Kit's request; his final pick is pending.
+Mist › Clear air near you › off restores Today.
 
 **Lamp airlight in height fog.** Exponential height fog with closed-form optical depth; each pixel takes 4
 equiangular samples per lamp along the view ray, so every lamp hangs in the air with a soft cone. Half resolution with
 its own history and a depth-aware upsample.
 - Where: `packages/kit/gpu/fog-scatter.ts`, `gpu/volume-pass.ts`. Lot (on); Outbreak lamp fog is an option, off.
 - Cost: Outbreak +1.37 to +1.39 ms (`mini`, half res, up to 7 lamps). Zero and uncompiled at Today.
-- Research: Aiden's Afterhours; equiangular sampling after Kulla & Fajardo.
 
 **Drifting fog bank and low mist.** A ray–slab march through a noise-modulated height layer with a rolling top, so fog
 settles between trunks and lamp beams thicken inside it. Outbreak masks it to pool against house walls, in yard
@@ -299,7 +293,7 @@ soft haze sprite (`ForestGlow.soft`) the trunks cut up, since the fog march's la
 a porous film darkens and smooths the rest, with drying streaks. Coverage is equalised, so the knob means area.
 - Where: `packages/kit/gpu/reflections/wet.ts` (`wetSurfaceWgsl`, from Ashwood's `wet()`). Lot road. Weather wetness
   and puddle masks: `packages/kit/weather/wgsl.ts`, Outbreak `games/outbreak/src/weather/puddles.ts`.
-- Research: Lagarde's *Water drop* series: porous darkening 0.65–0.85×, puddles 5–20 % of the pavement, water F0
+- Targets (Lagarde's *Water drop* series): porous darkening 0.65–0.85×, puddles 5–20 % of the pavement, water F0
   ≈ 0.02.
 
 **Screen-space reflections.** Each physical surface tags `2 − roughness` into HDR alpha, so a volume slot marches a
@@ -330,6 +324,11 @@ mirror image, with dark reflected figures in front.
   - The Lot's residual distant shimmer is lamp-lit wet asphalt (AR-122, open). Colour-mip filtering and filtered
     coverage did not fix it.
 
+**Open water.** Filtered normal bands, sparse glints and foam for Carrier's ocean, with Kelvin wakes from the real boat
+poses (`packages/kit/water/`, `water/wake.ts`); BARBARA's lake reflects the shared night sky and a canopy mask
+(Lab › Water › Water look › Moonlit). Both opt-in with Today the default; Kit's pick is pending
+([realism-log.md](research/realism-log.md#candidates-awaiting-kit)).
+
 ## Rain, storms and lightning
 
 **Rain that shows only in light.** Instanced streaks, splashes and eave drips that fade outside lamp cones and torch
@@ -337,7 +336,6 @@ beams (`litOnly`), lit by the nearest practicals.
 - Where: `packages/kit/weather/` (`WeatherRenderer`). Outbreak, Lot, Lab. Carrier keeps its ocean rain on purpose.
 - Cost: +0.08 to +0.41 ms (Lab, Outbreak). Lot on `mini` at 1280×720: 7.58 ms Today → Drizzle 7.61, Rain 7.64,
   Storm 7.69 between strikes.
-- Research: Garg & Nayar 2006 (streak appearance depends on light and view); Tatarchuk 2006 (ToyShop).
 
 **Light-volume rain and flash recovery (opt-in).** `weather/rain-lighting.ts` supplies typed controls for 3D light
 cones, endpoint-lit short streaks, smaller splashes and gravity-timed eave drips. `weather/exposure.ts` tracks bounded
@@ -347,12 +345,8 @@ bind both under Weather, with independent Today defaults and Reset. The adapters
 single final exposure. Cost has not been isolated. Kit requested both as opt-ins; D-59 keeps Today's storm and
 parks the volumetric-cloud experiment on `weather-clouds-parked`.
 
-**Rain visibility follow-up (candidate).** Kit approved adaptation but rejected the faint lamp rain. On
-`weather-rain-look`, streak radiance receives attenuation once, with a forward-scattering lobe and no unlit floor.
-The existing far-drop budget samples world-anchored tiles around nearby light sources; the near field is tighter,
-and rain streak counts no longer fall to 34% at HiDPI. Splash/mist budgets stay as before. A typed **Streak brightness**
-control defaults to 4×. Lot lamp and carried-torch stills are in `perf/weather-rain-look.md`; Today matches the shipped
-renderer in both views. This is an image candidate awaiting Kit's review; motion and GPU cost have not been measured.
+**Rain visibility.** Kit approved flash adaptation but rejected the faint lamp rain: rain in a lamp must read. A
+brighter candidate is on `weather-rain-look`, awaiting his review ([realism-log.md](research/realism-log.md#candidates-awaiting-kit)).
 
 **Lightning as one event envelope.** A seeded stepped-leader channel with midpoint displacement, a return stroke and
 2–4 later strokes in the same channel inside half a second, and one scene-light pulse per strike that lights the
@@ -365,7 +359,6 @@ any second to three scene flashes (WCAG 2.3.1); Full / Reduced / Off, with Reduc
 - Pitfalls: light the cloud, not the sky behind it (a sky lobe at ×0.25 of the flash glowed through the cloud; now
   ×0.02). Copying real restrike timing into the scene light makes a strobe. The bolt goes in the reactive mask so TAA
   doesn't average the flicker away. Strike now lands 220–420 m out because the Lot's sky dome is ±699 m.
-- Research: `~/code/home/artifacts/lot-2026-10-20/storm/RESEARCH.md` (NOAA, Rakov & Uman, WCAG G15).
 
 **Forest storm (`barbara-looks`).** The kit strike envelope under a canopy: `StormStrikes` (`weather/storm.ts`)
 schedules strikes and emits each one's thunder with its position and arrival (slant / 343 m/s); on a shared clock
@@ -380,8 +373,7 @@ crowns' lowest branches 3–12 m out and fade inside 3.5 m of the lens. BARBARA'
 soundscape with travel delay.
 - Where: `packages/kit/forest/storm.ts`, `packages/kit/weather/storm.ts`, `games/barbara/src/looks.ts` (Storm coming,
   Downpour), `games/barbara/src/audio/storm.ts`.
-- Cost: Downpour vs Today at the camera-lab spot (mini Metal, 1600×900, 12-frame median, three runs): +0.6–1.4 ms High,
-  +0.15–0.4 ms Low.
+- Cost: Downpour +0.6–1.4 ms High, +0.15–0.4 ms Low (mini).
 - Kit: asked for it with restraint (dark between flashes, no milky wash). A full-strength cloud dome on surfaces lit
   the whole floor grey; the dome is now 4% of the flash. Awaiting his pick.
 - Pitfalls: the forest's scene units make a full moon (0.25 lx) about as bright as a torch pool, so flash "lux" is
@@ -410,7 +402,9 @@ holds, and Ashwood's inner-crown shade.
 - Where: `packages/kit/gpu/forest.ts`. Lot.
 - Cost: within noise of Today (Studio, Lot title camera).
 - Kit: "his trees are thicker and kind of connect, make a better silhouette".
-- In progress: the woods forest renderer, `packages/kit/forest` on branch `woods-look` (not merged).
+
+**Night forest.** Procedural trees and terrain mixed with scanned bark and ground, a mist bank, torches, exposure and
+quality tiers in one renderer (`packages/kit/forest/`). BARBARA, Lab.
 
 **Rule-based ground clutter.** Weeds at fence bases, litter at kerbs, gravel in gutters, with padded keep-outs for
 lanes, doors and colliders; raising a density only adds items (`packages/kit/sim/debris.ts`). Lot.
@@ -436,21 +430,26 @@ lanes, doors and colliders; raising a density only adds items (`packages/kit/sim
   baked vertex colour and AO (`packages/kit/props/`), worker-baked rugs (`packages/kit/textures/rug.ts`). Outbreak.
 - **Painted ground.** Dirt drifts, stains with dark rims, scuffs and cracks at 0.4–3 m, each fading with the pixel
   footprint (Outbreak `games/outbreak/src/ground.ts`).
+- **World-space wear, damp and wax.** The Lot's interior varies albedo and roughness together in world space
+  (`games/lot/src/interior/finishes.ts`), locked to Lot uniforms for now.
+- **Wear materials and finish pass (landing, branch `kit-finish`).** Shared wear materials and a finish pass every
+  model goes through. The branch fills in this entry (where, cost, Kit's decision, pitfalls) when it merges.
+- **Textured props (landing, branch `kit-textured-props`).** Props that keep their texture instead of collapsing to
+  vertex colour. The branch fills in this entry (where, cost, Kit's decision, pitfalls) when it merges.
 - Pitfalls: coplanar trim makes moving patches (Night Shift partition rails); noise octaves and bump normals must fade
-  by footprint. Not built: triplanar wear on props and cars.
+  by footprint. Kit vertex colours are sRGB and the shader linearises them, so a dark value goes far darker: 0.085
+  became 0.4 % linear albedo and the spider's second round was invisible. Not built: triplanar wear on props and cars.
 
-## Glass and interiors
+## Glass, interiors and built structures
 
 **Grounded camp construction (BARBARA).** Wider closed-riser steps meet the terrain, four corner posts leave
 the entrance clear, and a framed door and firewood stack give the porch a use. Centred scanned stones surround
 textured ash, charcoal chips and charred logs. Camp wood stays matte; paths blend through the terrain material.
 - Where: `packages/kit/forest/build.ts` and `shaders.ts`, behind `campDetail`; enabled by the BARBARA adapter.
   The shared kit default stays off and the setting remains available to Looks presets through a world rebuild.
-- Cost: approved camp pose, triangles 780,622 → 789,329, draws 468 → 468, lights 21 → 42. Rough shared-Pro
-  timing ~20 ms for the candidate is unpaired and does not establish incremental cost. No new render pass.
-  Game lights pack before camp under the 64-light limit (`forest/lights.test.ts`).
+- Cost: +9k triangles, no new draws or passes; game lights pack before camp under the 64-light limit.
 - Kit: approved rounds 8–11 as the default, including the remaining faint paths, less visible tabletop and
-  lower fine detail than the targets. [Evidence and port status](../perf/woods-autoresearch.md).
+  lower fine detail than the targets.
 
 **Thin glass.** Fresnel reflectance is also the opacity, so a pane is nearly clear face-on and a mirror at grazing;
 grime and condensation raise roughness and scatter light from both sides; faces looking into a lit room reflect the
@@ -481,22 +480,17 @@ first build.
   hotspot rolls off without bleaching the bark or shifting its hue.
   - Where: `packages/kit/forest/post.ts`; `highlightShoulder` in `forest/settings.ts`, enabled by BARBARA's
     `games/barbara/src/world-view.ts` adapter. The kit default stays off. Kit approved the game default.
-  - Cost: scalar logarithm and RGB scaling in the existing composite, no pass or texture. Isolated GPU delta
-    unmeasured; the earlier whole candidate camp was roughly 12–13 ms on mini/Metal at 1600×900 High, not the
-    shoulder's cost. Same operation on all tiers.
-  - Proof: fixed near-bark clipping 9.52% → 0%, hotspot detail .001762 → .009900 at equal exposure .354.
-    See [Woods round 7](../perf/woods-autoresearch.md#round-7-source-filtered-bloom-and-camp-delta-2026-10-22).
+  - Cost: a logarithm and an RGB scale in the existing composite, no pass or texture; same on all tiers. Removed
+    all near-bark clipping in the woods.
 - **Contain bloom at the source (BARBARA).** The scene writes a negative HDR-alpha mask on nearby rough, non-emissive
   surfaces. Limit those source taps before the first bloom downsample; bulbs, windows, torch lenses and the held
   map retain their halos. Never cap the final bloom by the destination pixel's radiance: halos fall on dark air.
   - Where: `packages/kit/forest/shaders.ts` and `forest/post.ts`, through the optional
     `PostFinishOptions.bloomSource` hook in `gpu/{look-shaders,shaders}.ts`. Kit approved round 7 for Woods.
-  - Cost: existing alpha channel and 13 source-tap tests/scales; no extra pass, texture or sample. Isolated GPU
-    delta unmeasured. Other consumers' generated WGSL is unchanged when the hook is unset.
-  - Proof: trunk-edge excess over no-bloom falls 94.6%; bulb/torch halo display-luminance contributions remain
-    .187510/.027323. The mask is full within 3 m, fades to 6 m, and skips roughness below .4 to preserve reflections.
-  - Pitfalls: MSAA and source filtering mix tags at silhouettes, allowing a small fringe and partial attenuation
-    of subpixel emitters over tagged surfaces. Broad head-on torch haze remains even with bloom off.
+  - Cost: the existing alpha channel and a test per source tap; no extra pass, texture or sample. Other consumers'
+    WGSL is unchanged when the hook is unset.
+  - Pitfalls: MSAA mixes tags at silhouettes, leaving a small fringe. Broad head-on torch haze remains even with bloom
+    off.
 - **Grade from received light.** Outbreak drives selective colour from the irradiance written into HDR alpha, with
   unlit saturation at 0.06 (`games/outbreak/src/look/world.ts`). Tonemappers, split tone, halation and grain are in
   `packages/kit/gpu/look.ts`.
@@ -524,31 +518,27 @@ first build.
   - Cost (`mini`, 1600×900 High, against Eyes): each effect a small fraction of a millisecond; the full looks under a
     millisecond, NightShot and phone the heaviest. Off builds nothing.
   - Kit: "What are some interesting rendering effects, like the bodycam etc., that could make this look cooler… to
-    make it feel realer?" Contact sheet: gallery `woods-2026-10-21/camera-lab/`.
+    make it feel realer?"
   - Pitfalls: flare needs sources projected from the torches, not a bright-pixel threshold, or every lit trunk ghosts;
     the PWM band is subtle at a few hundred hertz, so its depth is a knob.
 - **Restrained walking camera.** Contacts come from actual displacement with critically damped presentation
   (`packages/kit/client/walk.ts`, `walk-camera.ts`). Night Shift, Lot. Woods research: 0.5–1.5 cm translation and
   0.1–0.35° roll tied to contacts, no idle sine.
-- Research: woods `RESEARCH.md` §F (vignette 5–12 %, chromatic aberration under 0.3–0.7 px at the edge, no DOF while
-  navigating, exposure correction 1–2 stops at most).
+- Targets for a first-person camera: vignette 5–12 %, chromatic aberration under 0.3–0.7 px at the edge, no DOF while
+  navigating, exposure correction 1–2 stops at most.
 
 ## Temporal stability
 
 - **TAA and upscaling.** Halton jitter, depth reprojection, a YCoCg variance clip, a reactive mask and RCAS
   (`packages/kit/gpu/temporal.ts`). Outbreak option (MSAA stays the default): TAA + upscale 0.67 saves 2.6–3.9 ms;
   TAA at native costs 0.6–2.9 ms. Passes in the scene take the jittered camera from the frame binding.
-- **Signed metadata needs signed history.** `gpu/temporal.ts`'s `sampleHistory` currently clamps all four channels
-  to >= 0 after Catmull–Rom sampling. Current-frame alpha is signed, but history loses Woods' negative bloom mask
-  and Outbreak's negative flash mask. The later neighbourhood clamp restores a uniform negative area; at mixed
-  edges, especially during motion, positive history weakens suppression. A fix should clamp RGB only and retain
-  alpha until the existing neighbourhood clamp, with a moving-edge regression covering both signed masks and
-  nonnegative roughness/shroud consumers. Left unchanged in the camp pass: cross-game temporal verification is
-  broader than a cheap local fix, and settled stills do not prove that behaviour.
+- **Signed metadata needs signed history.** TAA history clamps HDR alpha to ≥ 0, so negative masks (Woods' bloom
+  mask, Outbreak's flash mask) weaken at moving edges. Known and unfixed; the analysis and the fix's shape are in
+  [realism-log.md](research/realism-log.md#temporal-stability).
 - **History in motion.** Volume slots keep their history while the camera moves, clipped to mean ± 1.25σ and blended
   in a luminance-compressed space (`VolumeInput.moving`). Exception: the fog's in-scatter follows the view ray, so a
   kept fog history made the Lot's booth halo jump; it stays at 1.
-- **Light that moves on its own (2026-10-22, Barbara playtest).** The forest fog keeps its volume history (0.12 still,
+- **Light that moves on its own (BARBARA playtest).** The forest fog keeps its volume history (0.12 still,
   0.45 moving) because dropping it leaves your own beam's disc in dither noise, but `VolumeInput.moving` only knows
   the camera, so a friend's swinging beam left a fading wedge behind it for many frames (real-time screencast at the
   lake, 3 rad/s swing). Fix: a per-lamp swept angle (`FogLamp.motion`, the forest view's frame-to-frame torch turn)
@@ -570,13 +560,16 @@ first build.
 
 - **Kit tiers.** `packages/kit/quality.ts` (`AdaptiveQualityController`, `QUALITY_PROFILES`) and
   `packages/kit/client/quality.ts` (`GameQuality`): High, Balanced, Low and Auto. Auto starts at full Retina, sheds
-  pixels when 12 % of frames miss with the GPU at least half busy, and never adds pixels on a tier drop. Getaway,
-  Blackout, Brawl, Carrier and Outbreak draw through it; the Lot and Night Shift don't yet.
+  pixels when 12 % of frames miss with the GPU at least half busy, and never adds pixels on a tier drop. Every game
+  draws through it, most via the shell's `createShellQuality` ([game-shell.md](game-shell.md)).
 - **Tiers carry looks.** Outbreak's tiers (`games/outbreak/src/quality.ts`) also set the mist, contact shadows, bounce
   grid and soft-shadow lights; each Lab setting defaults to "Quality tier" (-1) and an explicit Lab value wins. High
   sheds a little resolution (`minScale` 0.85), then steps to Balanced, because the cheaper looks cost less than more
   lost pixels. On the mini at 4K 2×, the crossroads costs 20.5 ms at High 2×, 15.8 ms at High 1.7×, 11.5 ms at
   Balanced 1.5× and 6.7 ms at Low 1×; Auto settles on Balanced 1.5× after one change.
+- **Ultra is explicit.** Shared quality takes an optional `ultra` profile for desktops; Auto stays capped at High, Ultra
+  still sheds resolution and tiers on slow frames, and the Settings readout shows the actual tier and scale (BARBARA;
+  [game-notes](research/game-notes.md#proving-a-change)).
 - Pitfall: headless timing at 4K is unusable (Chromium copies the canvas back every frame, ~5 fps), so time the GPU
   per tier and replay the controller (`games/outbreak/scripts/auto-quality.ts`).
 
@@ -593,19 +586,8 @@ first build.
 - **Storm sound.** A quiet surface bed under positional car, booth-roof, gutter and drip emitters; thunder scheduled at
   distance / 343 m/s with crack, body and roll by distance, a distance lowpass, bearing pan and two facade echoes, all
   behind a limiter and muffled indoors (`games/lot/src/weather/audio.ts`; `weather.*` library ids, ElevenLabs).
-  Research: Alan Wake 2 (900 placed surface emitters), keep thunder out of rain loops, keep the bed below the detail.
+  From Alan Wake 2 (900 placed surface emitters): keep thunder out of rain loops, keep the bed below the detail.
 - **Light and sound from one signal.** Night Shift's ballast hum and starter crackle follow the same `tubeSignal` as
   the tube's light.
 - **Outbreak's mix.** Six buses, 11 surface materials and voice priority: [audio-design.md](audio-design.md) §4.
 - Never play sound aloud for tests: render offline (`packages/kit/audio/offline.ts`).
-
-## Research
-
-- Storm (rain, wet BRDF, lightning, thunder, flash safety): `~/code/home/artifacts/lot-2026-10-20/storm/RESEARCH.md`.
-- Night forest (scans, flashlight photometry, mist coefficients, camera treatment, asset licences):
-  `~/code/home/artifacts/woods-2026-10-21/RESEARCH.md`.
-- Web survey (Tidewater, web-ocean, Neon Zenith, three.js nodes, radiance cascades) and the Ashwood comparison:
-  `~/code/home/artifacts/agent-reports/gfx-research.md`, `engine-comparison.md`, contact sheet
-  `~/code/home/artifacts/gfx-research-2026-10-20/index.html`.
-- Camera filters (VHS, CRT, body cam sources): `~/code/home/artifacts/agent-reports/camera-filters.md`.
-- Licence rule: MIT, CC0 and Unlicense code may be ported with credit; GPL and CC BY-NC-SA work is technique only.

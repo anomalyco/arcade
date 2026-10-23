@@ -1,5 +1,7 @@
 # blackout
 
+- Visual work (props, creatures, rooms, lighting, looks): follow [quality-checklist.md](../../docs/quality-checklist.md)
+  and the `arcade-quality` skill.
 - Run `bun run check` before pushing; pushing to `main` deploys https://anoma.ly/arcade/blackout/ (follow `../../docs/agent-state.md` for deploy and branch rules).
 - WebGPU only runs in secure contexts: test via the deployed URL, the opentunnel dev URL or `localhost`, never a bare LAN hostname.
 - `TUNNEL=1 bun run dev` runs Wrangler (rooms, :8788) and Vite (:5191); opentunnel route `blackout` exposes it at https://blackout.lwoyjcaeyxv6.opentunnel.xyz.
@@ -33,7 +35,7 @@
   cars, cover) and floor kinds 5-9 in `shaders.ts`; ambient per kind in `lighting.ts` `AMBIENT`. Viewers:
   `envlab.html?kind=downtown&seed=N`, `?practice&map=downtown`, `KIND=downtown bun scripts/plan.ts`. Concepts: `concept/dt-*.png`.
 - Client/server version: `scripts/build-id.ts` hashes `shared/` into `shared/build.gen.ts` (gitignored; check, test, build, deploy and dev generate it). The client sends it in `hello`; a server with a different hash replies `reload` and the client reloads into the same room (old clients without a build get an error asking them to reload).
-- Cross-game techniques and lessons: `../../docs/game-notes.md`. Shared code plans: `../../docs/shared-code.md`.
+- Cross-game techniques and lessons: `../../docs/research/game-notes.md`. Shared code plans: `../../docs/shared-code.md`.
 - Characters use the shared human rig (the adapter is `@arcade/kit/avatar/anim`, re-exported from `src/game/anim.ts`; Brawl uses it too). Motion rules: `../../docs/animation.md`; tuning scripts: `scripts/animation/` (see the `procedural-animation-iteration` skill). All shared docs: `../../docs/README.md`.
 
 ## Game shell

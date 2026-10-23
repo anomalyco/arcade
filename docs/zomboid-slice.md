@@ -54,7 +54,7 @@ flowchart LR
     ```
 - **Client Chunk Streaming & Incremental Mesh Rebuild:**
   - The client maintains a **5×5 chunk resident window** (`160×160 m`) centered on the local player.
-  - Each resident chunk owns its GPU vertex buffer (`@arcade/gpu` 24-byte packed `Mesh`, split into `solid` and `cutaway` ranges so Apple GPUs keep early-Z hidden-surface removal on non-cutaway chunks, `docs/game-notes.md:84-86`) and its 64×64 tile in a toroidal 5×5 chunk floor/bounce texture array.
+  - Each resident chunk owns its GPU vertex buffer (`@arcade/gpu` 24-byte packed `Mesh`, split into `solid` and `cutaway` ranges so Apple GPUs keep early-Z hidden-surface removal on non-cutaway chunks, `docs/research/game-notes.md:84-86`) and its 64×64 tile in a toroidal 5×5 chunk floor/bounce texture array.
   - When a window shatters, a door swings open, or a player nails up a plank (`ChunkDelta.version` increments), only that single 32×32 m chunk rebuilds its mesh and updates its local `RectGrid` and `LightCuller` occluder cache (< 0.8 ms on CPU).
 
 ### 1.2 Visibility: Line of Sight and Three-State Fog of War

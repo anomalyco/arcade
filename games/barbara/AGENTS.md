@@ -1,5 +1,7 @@
 # BARBARA (formerly Woods)
 
+- Visual work (props, creatures, rooms, lighting, looks): follow [quality-checklist.md](../../docs/quality-checklist.md)
+  and the `arcade-quality` skill.
 - Unlisted co-op game at https://anoma.ly/arcade/barbara/ (Worker `arcade-barbara`): solo with bots, or a room of 2–6 shared by link (`?room=<code>`). Keep `noindex`, no landing panel, listed in the README's prototypes. Kit shipped it on Oct 22 2026 as BARBARA: "public for everyone, but if you know the link… Creature on, realistic people, all the cool fixes." Concepts 1 (flashlights on a forest trail), 2 (fog survey with compass, map and flagging tape) and 4 (summer camp '87, the spawn and base) are one game; the story is Find Barbara (`STORY.md`).
 - Work goes to `main` by PR like every game; the `woods` branch is retired. Internal names stay "woods" where renaming would be churn (`window.woods`, `WoodsState`, `stepWoods`, `@arcade/kit/forest`, the Lab's `woods.*` setting keys).
 - Defaults Kit set at the ship: realistic friends on (blocky one setting away), the creature on (rooms too), the catalogue night sky on (`skyMode: "physical"` in `src/world-view.ts`; Today one setting away; the software-GPU smoke keeps Today and blocky friends), the highlight shoulder on, camera looks off, Today looks one setting away.

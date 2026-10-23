@@ -1,5 +1,7 @@
 # Outbreak
 
+- Visual work (props, creatures, rooms, lighting, looks): follow [quality-checklist.md](../../docs/quality-checklist.md)
+  and the `arcade-quality` skill.
 - Unlisted prototype: deployed at `/arcade/outbreak/`, accessible by link without login. Keep `noindex`, no landing panel, and no sitemap entry until promoted.
 - Simulation lives in `shared/` (deterministic, no DOM or Worker APIs), presentation in `src/`. `shared/coop-sim.ts` is the one
   world simulation: offline `LocalSession` runs it with one survivor, the co-op room (`server/room-core.ts`, Durable Object
@@ -276,7 +278,7 @@
   `tests/weather-cycle.test.ts`, `tests/weather.test.ts`.
 - Anti-aliasing (AR-72, `src/anti-aliasing/`, Lab › Anti-aliasing; values in the view settings): MSAA (today, default),
   TAA, or TAA + upscale from a render scale, on the shared temporal resolve (`@arcade/kit/gpu/temporal`; rules for scene
-  passes under it in `../../docs/rendering-techniques.md`; what moves on its own draws into the reactive mask: flying
+  passes under it in `../../docs/research/rendering-techniques.md`; what moves on its own draws into the reactive mask: flying
   breach debris, throws and dynamite are `reactive` batches, beam dust a `drawReactive` pass; Restart, New town and
   regenerate drop the history in `scene/frame-renderer.ts`). Paired GPU, frame time, walking flicker, ghosting crops,
   stills and a side-by-side clip in one run: `bun scripts/taa-proof.ts --out <dir>` (via `hivemind run --kind browser`).
@@ -285,7 +287,7 @@
   (street, lamps, rain, pan-lamps, pan-wet, pan-rain, indoor, indoor-lamps) against each path held still, per Lab
   variant (`MOTION_VARIANTS=base,before,…`), with pop maps and `MOTION_RECORD` frames for clips. Fixes so far: lamp
   pools fade across their cull distance (Lab › Anti-aliasing › Motion stability › Lamp reach fade, 0 = Today) and LEAN
-  puddle glints (Look · Reflections › Glint anti-aliasing, 0 = Today). Numbers: `../../docs/game-notes.md`.
+  puddle glints (Look · Reflections › Glint anti-aliasing, 0 = Today). Numbers: `../../docs/research/game-notes.md`.
 - Prompt clarity (AR-89, `src/prompt-clarity/`, Lab: Backquote › Controls, "Today" one setting away): verbs beside
   glyphs for each action's first three uses, corner brackets on what E acts on, B (board up) and board pips in door
   and window prompts (B boards the prompt's target), a glyph stamp after a door, window, barricade or container

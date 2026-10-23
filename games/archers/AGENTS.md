@@ -1,5 +1,7 @@
 # archers
 
+- Visual work (props, creatures, rooms, lighting, looks): follow [quality-checklist.md](../../docs/quality-checklist.md)
+  and the `arcade-quality` skill.
 - Unlisted prototype: side-view arena archery (TowerFall-like) in the Noir Silhouette look picked on board card
   AR-39 (decision D-24, option 2; concept in `~/code/home/artifacts/2026-10-15-arena-archers/`). The working name lives
   only in `GAME` (`shared/config.ts`); rename there.

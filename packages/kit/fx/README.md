@@ -132,7 +132,7 @@ overdraw heatmap. The Lab reports whole-stage GPU timestamps separately from tho
 This shallow model treats every supplied rectangle as a sealed column. Blackout supplies walls at least 1.8 m
 high, windows and glass; low wrecks and cover remain depth occluders without sealing the smoke field. The model
 does not simulate pressure or support arbitrary camera angles. Carving is presentation-only and refills in about 0.7 s.
-It changes visual sightlines, not server visibility or hit detection. See `docs/game-notes.md` for the CS2 sources
+It changes visual sightlines, not server visibility or hit detection. See `docs/research/game-notes.md` for the CS2 sources
 and `perf/fx-kit.md` for the original cost and noise. The refined front's captures, tests and paired cost are in
 `perf/smoke-volume-refinement.md`.
 

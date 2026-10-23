@@ -1,7 +1,25 @@
 # arcade
 
 [docs/README.md](docs/README.md) lists every shared doc and when to read it. Game-specific notes live in each
-game's own `AGENTS.md`.
+game's own `AGENTS.md`. Practical guides live in `docs/`; measurements, studies and history live in
+[docs/research/](docs/research/README.md).
+
+## Visual work, by task
+
+Anything visual starts from [docs/quality-checklist.md](docs/quality-checklist.md) and the `arcade-quality` skill:
+target first, a method per asset, the finish pass, shared kit effects, pre-flight gates, then showing Kit.
+
+| Task | Read | Skill |
+| --- | --- | --- |
+| Building a prop or model | [assets.md](docs/assets.md#pick-the-right-method) | `arcade-props` |
+| A creature | [assets.md](docs/assets.md#pick-the-right-method), [animation.md](docs/animation.md) | `arcade-lookdev`, `arcade-props`, `procedural-animation-iteration` |
+| A room or interior | [assets.md](docs/assets.md#pick-the-right-method), [realism.md](docs/realism.md#glass-interiors-and-built-structures) | `arcade-lookdev`, `arcade-props` |
+| Lighting a scene (lights, shadows, fog, weather, materials) | [realism.md](docs/realism.md) | `arcade-lookdev` |
+| A camera look (grade, lens, filters, stability) | [realism.md](docs/realism.md#camera-lens-and-post) | `arcade-lookdev` |
+| A new game | [prototyping.md](docs/prototyping.md), [game-shell.md](docs/game-shell.md) | |
+
+New realism techniques go in `packages/kit/` with the game supplying hooks, unless they are truly game-specific.
+Once one is proven, give it a `docs/realism.md` entry with its cost and Kit's decision.
 
 ## Workspace and checks
 
@@ -85,10 +103,12 @@ game's own `AGENTS.md`.
   `limits`).
 - Read [docs/assets.md](docs/assets.md) before adding or generating assets: CC0 or credited CC BY only, a
   `CREDITS.md` per game, hashed sources, compressed files under 25 MiB.
-- Read [docs/game-notes.md](docs/game-notes.md) and [docs/rendering-techniques.md](docs/rendering-techniques.md)
-  before rendering, performance, input, multiplayer or feel work, and read [docs/netcode.md](docs/netcode.md) before any
-  multiplayer or net work. Add a technique to `docs/game-notes.md` once it is proven in a game, with where it lives and
-  what it measured (animation techniques go in `docs/animation.md`).
+- Before rendering, performance, input, multiplayer or feel work, check what was already measured in
+  [docs/research/game-notes.md](docs/research/game-notes.md) and
+  [docs/research/rendering-techniques.md](docs/research/rendering-techniques.md); read
+  [docs/netcode.md](docs/netcode.md) before any multiplayer or net work. Add a technique to
+  `docs/research/game-notes.md` once it is proven in a game, with where it lives and what it measured (animation
+  techniques go in `docs/animation.md`).
 
 ## Game shell
 
@@ -96,16 +116,6 @@ game's own `AGENTS.md`.
   mute, graphics quality or loading screen. Every game uses `@arcade/kit/shell` for settings, pause, title and lobby.
   Default graphics is High (Auto starts High and steps down only on slow frames). Volume and mute are always reachable
   from the title and the Escape menu. No game ships its own volume or quality UI.
-
-## Rendering
-
-- Rendering techniques, their status and cost are catalogued in
-  [docs/rendering-techniques.md](docs/rendering-techniques.md); proven rendering notes are in the Rendering and Art
-  direction sections of [docs/game-notes.md](docs/game-notes.md).
-- Read [docs/realism.md](docs/realism.md) before lighting, shadow, fog, smoke, weather, material, camera or ambience
-  work: what reads as real, what it costs, and what Kit picked or turned down.
-- New realism techniques go in `packages/kit/` with the game supplying hooks, not in a game folder, unless they are
-  truly game-specific. Once one is proven, give it a `docs/realism.md` entry with its cost and Kit's decision.
 
 ## Animation
 

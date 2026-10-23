@@ -1,5 +1,7 @@
 # brawl
 
+- Visual work (props, creatures, rooms, lighting, looks): follow [quality-checklist.md](../../docs/quality-checklist.md)
+  and the `arcade-quality` skill.
 - Unlisted prototype: a top-down hero brawler on the shared engine. Lobby → character select (pick, ready, random) →
   stock round with knockback that grows with damage → results → select again. 2–8 humans per room; bots top a room
   up to `BOT_FILL`. The working name lives only in `GAME` (`shared/config.ts`); rename there.

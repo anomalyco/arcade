@@ -14,7 +14,7 @@ again at download time.
   loads them ships that file too.
 - **Record provenance in a manifest**: source URL, licence and the SHA-256 of every downloaded file, written by the
   fetch script, so a rebuild is reproducible and a changed upstream file fails loudly. Pattern:
-  `scripts/woods/fetch-assets.ts` → `packages/kit/forest/assets/sources.json` (woods branch); also
+  `scripts/woods/fetch-assets.ts` → `packages/kit/forest/assets/sources.json`; also
   `games/lot/public/ashwood/{surfaces,models}/sources.json` and `games/lot/public/assets/source-metadata.json`. Fetch
   scripts should refuse an unexpected licence (Lot's `fetch-assets` refuses any wagon licence but the verified CC BY).
 - **Compress.** Textures as WebP (lossy colour, lossless for packed data) or KTX2 (Basis UASTC, mipmapped). Pack
@@ -29,7 +29,7 @@ again at download time.
 
 | Source | Licence | Used by, for what |
 | --- | --- | --- |
-| [Poly Haven](https://polyhaven.com) scans, models, HDRIs | CC0 1.0 ([licence](https://polyhaven.com/license)); API and site have separate terms | Lot: asphalt, concrete, wood scans and 19 Ashwood props (`games/lot/public/ashwood/*/CREDITS.md`), interior props, rusted can. Woods: every forest scan and model (`packages/kit/forest/assets/CREDITS.md`, woods branch). Night Shift office look: dirty carpet, notepads, stapler, clipboard, clock, box. |
+| [Poly Haven](https://polyhaven.com) scans, models, HDRIs | CC0 1.0 ([licence](https://polyhaven.com/license)); API and site have separate terms | Lot: asphalt, concrete, wood scans and 19 Ashwood props (`games/lot/public/ashwood/*/CREDITS.md`), interior props, rusted can. Woods: every forest scan and model (`packages/kit/forest/assets/CREDITS.md`). Night Shift office look: dirty carpet, notepads, stapler, clipboard, clock, box. |
 | [ambientCG](https://ambientcg.com) PBR textures | CC0 1.0 ([licence](https://docs.ambientcg.com/license/)) | Lot: gravel, ground, bark, metals, ceiling tile, terrazzo, plaster. Night Shift: Carpet001, Fabric030, OfficeCeiling001, Plastic004. |
 | [Kenney](https://kenney.nl) | CC0 ([support](https://kenney.nl/support)) | Night Shift: earlier mug and desk-chair placeholders. |
 | [Poly Pizza](https://poly.pizza) | Per model: CC0 or CC BY 3.0, shown on each model page | Night Shift: office phone, 90s computer (CC BY 3.0), mugs (CC0), mostly retained placeholders. |
@@ -69,6 +69,8 @@ of `~/code/home/artifacts/woods-2026-10-21/RESEARCH.md`.
 | Trees, terrain, buildings, wires, fences | Procedural (`packages/kit/forest/`, Ashwood builders). |
 | Background furniture and clutter | TRELLIS from a generated image, or a CC0 model. |
 | Hard-surface hero props (CRT, phone, keypad) | Authored geometry (Blender script or kit code); a CC0/CC BY model if one matches. |
+| Creatures and animals | A scanned or CC0/CC BY model if one fits; otherwise procedural kit geometry on a rig (`packages/kit/creature/`), finished and judged against a paint-over. |
+| Rooms and interiors | Kit geometry with bevels and scanned surfaces, furniture from the prop pipeline or CC0 models, judged against a paint-over. The Lot's interior (`games/lot/src/interior/`) is the most finished example. |
 | Maps, instruments, signage text, labels, forms | Procedural vector graphics rendered to a texture. |
 | Concept targets, paint-overs, decals, grime, stains, signage art, tileable detail | Image model. |
 | Characters | MPFB pipeline (`scripts/people`) on the kit rig. |
@@ -76,8 +78,9 @@ of `~/code/home/artifacts/woods-2026-10-21/RESEARCH.md`.
 
 ## Generating assets
 
-**Image model: targets and material layers.** The `concept-art` skill makes a round of distinct looks to pick from;
-`paint-over` paints over a real screenshot to make the target a rebuild is judged against. `gpt-image-2` also
+**Image model: targets and material layers.** The global `concept-art` skill makes a round of distinct looks to pick
+from; `paint-over` paints over a real screenshot to make the target a rebuild is judged against (the `arcade-lookdev`
+skill wires both into Arcade). `gpt-image-2` also
 supplies TRELLIS source images (`scripts/props/source-images.ts`), Lot's document photos and the raw texture
 candidates. Good at: concept targets, paint-overs, decals, grime, stains, water damage, signage art, tileable detail
 layers. Bad at: accurate geometry, maps, crisp small text, instrument markings and anything that must line up. Draw
@@ -94,14 +97,16 @@ atlas) and `rug-sheet.ts`.
 → `.prop`. 26 props in 4.2 MB. Read `scripts/props/README.md`; `setup-trellis.sh` provisions the runtime and
 `generate.ts` runs it. Meshes are blobby up close, thin panels tear and small text is mush: use them for background
 props seen from Outbreak's camera, not held or inspected objects. Night Shift replaced its TRELLIS CRT, phone and
-rolodex with authored models (`games/nightshift/scripts/author-hard-surface.py`) for this reason.
+rolodex with authored models (`games/nightshift/scripts/author-hard-surface.py`) for this reason. The `arcade-props`
+skill runs the pipeline end to end. Textured props, which keep TRELLIS's texture instead of vertex colour, are landing
+on `kit-textured-props`; that branch updates this paragraph when it merges.
 
 **People, `scripts/people/`.** `build-people.ts` downloads MPFB 2 and the CC0 MakeHuman assets, runs
 `build-person.py` in headless Blender per `cast.json` (body, clothes, hair, procedural beanies, packs, headlamps),
 then tints, prunes and meshopt-compresses each GLB. Run it through `hivemind run --kind render`. See
 [people.md](people.md) and [human-rig.md](human-rig.md).
 
-**Procedural, `packages/kit/forest/` (woods branch).** Trees, needle sprays, birch bark, flagging tape, buildings and
+**Procedural, `packages/kit/forest/`.** Trees, needle sprays, birch bark, flagging tape, buildings and
 terrain are generated in code and mixed with Poly Haven scans; no licence, no download, any amount of variation.
 Prefer code for anything repeated, seeded or parametric.
 

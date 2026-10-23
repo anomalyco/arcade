@@ -85,7 +85,7 @@ The bounded timing fixture is private loopback and closes on completion. All bro
 Phone encoding uses `h264_videotoolbox`, Main, 1900 kbps, limited-range yuv420p and fast-start at 15 fps.
 The result is 720×1280, 31.6 s, 7,435,113 bytes, with no audio. The sheet is 1440×1380.
 
-Research rationale and citations are in `docs/game-notes.md`, under “Tyres, nitro and cold exhaust”.
+Research rationale and citations are in `docs/research/game-notes.md`, under “Tyres, nitro and cold exhaust”.
 The look integration seam and limits are described there. `getaway-smoke-merge.json` records the exact read-only
 snapshot hashes used for the clean three-way compatibility merge; the combined project check passed.
 
