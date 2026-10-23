@@ -77,7 +77,7 @@ export type TapeFrame = {
  * the distant-sound schedule (`shared/distant.ts` in `stepWoods`); this only plays its events.
  */
 export class WoodsAudio {
-  readonly bank = new SoundBank("woods", WOODS_SFX, { unlockOnGesture: false })
+  readonly bank = new SoundBank("barbara", WOODS_SFX, { unlockOnGesture: false })
   readonly sound: SoundSettings = { ...SOUND }
   readonly voice: VoiceSettings = { ...VOICE }
   /** Each line as it reaches you (after its travel), for subtitles: whether you'd hear it, from how far. */
@@ -152,9 +152,8 @@ export class WoodsAudio {
     if (this.running()) this.bank.runtime.suspend()
   }
 
-  /** `changed`: a Lab edit here the Escape menu also shows (the voices volume). */
-  bindControls(panel: Pick<LabPanel, "addControls">, changed: () => void = () => {}): void {
-    this.bank.bindControls(panel)
+  /** The Lab's sound and voice knobs. Player volume and mute are the game shell's Settings, copied into `bank`. */
+  bindControls(panel: Pick<LabPanel, "addControls">): void {
     panel.addControls(this.sound, SOUND_CONTROLS)
     const controls: LabControl[] = [
       { key: "audition", label: "Distant sound", group: "Sound", subsection: "Audition", type: "select", options: DISTANT_SOUNDS.map((s, i) => ({ value: i, label: s.slice(4) })) },
@@ -162,7 +161,6 @@ export class WoodsAudio {
       { key: "solo", label: "Solo a layer", group: "Sound", subsection: "Audition", type: "select", options: [{ value: -1, label: "Everything" }, ...LAYERS.map((l, i) => ({ value: i, label: l }))], change: (v) => { if (this.mix) this.mix.scape.solo = LAYERS[Number(v)] ?? null } },
     ]
     panel.addControls(this.lab, controls)
-    panel.addControls(this.bank.volumes, [{ key: "volumeVoice", label: "Voices volume", group: "Voices", min: 0, max: 100, step: 1, unit: "%", change: () => { this.bank.applyVolumes(); changed() } }])
     panel.addControls(this.voice, VOICE_CONTROLS)
   }
 

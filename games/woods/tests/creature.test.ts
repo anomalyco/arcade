@@ -35,9 +35,9 @@ function night(minutes: number, feel = { ...FEEL, creature: true }) {
   return { state, seen }
 }
 
-test("off by default: the room's feel never sends it", () => {
-  expect(FEEL.creature).toBe(false)
-  expect(night(8, FEEL).seen).toEqual([])
+test("on by default, and off sends nothing", () => {
+  expect(FEEL.creature).toBe(true)
+  expect(night(8, { ...FEEL, creature: false }).seen).toEqual([])
 })
 
 test("rare, seeded and never early: the same night gives the same sightings, minutes apart, none in the first four minutes", () => {

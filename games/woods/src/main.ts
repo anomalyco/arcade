@@ -1,14 +1,13 @@
-import { isEditableEventTarget, isMetaKey, onKeyLayoutChange, requestCanvasPointerLock } from "@arcade/kit/client/controls"
-import { keyCapHtml, keyPromptHtml } from "@arcade/kit/client/key-cap"
+import { isEditableEventTarget, isMetaKey, onKeyLayoutChange } from "@arcade/kit/client/controls"
+import { keyPromptHtml } from "@arcade/kit/client/key-cap"
 import type { FootSurface } from "@arcade/kit/audio/footsteps"
 import { attachLabPanelControl } from "@arcade/kit/dev-control"
 import { openGpu } from "@arcade/kit/gpu/boot"
 import { FrameParts } from "@arcade/kit/gpu/frame-parts"
 import { LabPanel, type LabControl } from "@arcade/kit/lab-panel"
-import { AdaptiveQualityController, loadSavedQualityMode, saveQualityMode, type QualityMode } from "@arcade/kit/quality"
 import { FOREST_QUALITY } from "@arcade/kit/forest/settings"
 import type { ForestTorch } from "@arcade/kit/forest/view"
-import { randomRoomCode } from "@arcade/kit/sim/matchmaking"
+import { createGameShell, createShellQuality } from "@arcade/kit/shell"
 import { planCreature, triggerCreature, trunkBetween, type CreatureEvent } from "../shared/creature"
 import { ROOM_CODE } from "../shared/protocol"
 import { beamLevel, EYE_HEIGHT, TAPE_HEIGHT, FEEL, SIGNAL_HOLD_SECONDS, tapeOnTree, tieTarget, viewDir, type Player, type PlayerInput } from "../shared/sim"
@@ -21,14 +20,13 @@ import { FEEL_CONTROLS } from "./feel-controls"
 import { FriendsView } from "./friends-view"
 import { HeldMap, heldMapControls } from "./held-map"
 import { PaperMap } from "./map"
-import { SettingsMenu } from "./menu"
 import { OnlineSession, SoloSession, type Session } from "./session"
 import { StoryHud } from "./story"
 import { WorldView } from "./world-view"
 
-const WALK = { cameraMotion: 1, reduceMotion: globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false, stepLength: 0.72, walkSettle: 0.3, footsteps: 0.9 }
+/** Reduce camera motion is the shell's Settings row (one choice across games); `main` copies it in. */
+const WALK = { cameraMotion: 1, reduceMotion: false, stepLength: 0.72, walkSettle: 0.3, footsteps: 0.9 }
 const WALK_CONTROLS: LabControl[] = [
-  { key: "reduceMotion", label: "Reduce camera motion", type: "toggle", group: "Walking" },
   { key: "cameraMotion", label: "Head motion", min: 0, max: 1, step: 0.05, unit: "×", group: "Walking" },
   { key: "stepLength", label: "Step length", min: 0.45, max: 1.1, step: 0.01, unit: "m", group: "Walking" },
   { key: "walkSettle", label: "Start/stop spring", min: 0.1, max: 0.6, step: 0.01, unit: "s", group: "Walking" },
@@ -38,44 +36,84 @@ const WALK_CONTROLS: LabControl[] = [
 const LOOK_KEYS = new Set(["flashReach", "flashCone", "flashPower", "beamHaze", "beamPresence", "ownHaze", "beamLength", "mist", "mistFalloff", "mistBank", "ambient", "exposure", "trunkShadows", "tapeShine"])
 /** Your own beam's light id (friends and bots are never 0 in a room; solo you are 0). */
 const OWN = 0
-const QUALITY_KEY = "woods.quality"
+const controlsHtml = () => [keyPromptHtml("KeyW", "Walk"), keyPromptHtml("ShiftLeft", "Run", { hold: true }), keyPromptHtml("KeyF", "Flashlight"), keyPromptHtml("KeyE", "Tie tape", { hold: true }), keyPromptHtml("KeyG", "Map", { hold: true }), keyPromptHtml("KeyM", "Mute"), keyPromptHtml("Escape", "Menu")].join(" ")
 const MOVE_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight", "KeyE", "KeyG"])
 
 async function main() {
   const canvas = document.querySelector<HTMLCanvasElement>("#view")!
-  const hud = document.getElementById("hud")!, prompt = document.getElementById("prompt")!, toast = document.getElementById("toast")!, start = document.getElementById("start")!
+  const hud = document.getElementById("hud")!, prompt = document.getElementById("prompt")!, toast = document.getElementById("toast")!
   const params = new URLSearchParams(location.search)
   const smoke = params.has("smoke")
   const roomCode = (params.get("room") ?? "").toLowerCase()
   const online = ROOM_CODE.test(roomCode)
-  const nameInput = document.getElementById("name") as HTMLInputElement
-  nameInput.value = params.get("name") ?? localStorage.getItem("woods.name") ?? ""
-  const gpu = await openGpu(canvas, "WOODS")
-  if (typeof gpu === "string") { hud.textContent = gpu; return }
+  const audio = new WoodsAudio()
+  const story = new StoryHud(audio)
+  // Filled in once they exist; the shell reads them from its first frame.
+  const live: { panel: LabPanel | null; session: Session | null; qualityChanged: () => void } = { panel: null, session: null, qualityChanged: () => {} }
+  // Auto starts at High and steps down on slow frames only (frame time alone: the renderer's GPU reading counts CPU
+  // encoding and queue waits, which demoted capable GPUs). Saved per game; `?quality=` pins a mode for automation.
+  const quality = createShellQuality({ game: "barbara", tiers: FOREST_QUALITY, params, onChange: () => live.qualityChanged() })
+  if (smoke) quality.setMode("low", false)
+  const shell = createGameShell({
+    game: "barbara", title: "BARBARA", subtitle: online ? "Your friends start at camp too" : "Camp Tamarack, November 1996. Her car is still in the lot.",
+    soloLabel: "Play alone", soloNote: "you and three searchers", friendsNote: "a private room, up to 6", playLabel: "Step out of camp", resumeLabel: "Back to the woods", askName: true,
+    channels: ["master", "effects", "ambience", "voice"], quality,
+    sections: [{ id: "story", title: "Story", rows: [{ kind: "toggle", id: "subtitles", label: "Subtitles", get: () => story.subtitles, set: (on) => { story.subtitles = on; live.panel?.sync() } }] }],
+    // The Lab panel stays open while you play (capture "focus"); while it shows, the title and menu stay out of the way.
+    pointerLock: canvas, blocked: () => live.panel?.visible ?? false, keysBlocked: () => live.panel?.hasFocus() ?? false,
+    loading: smoke ? false : { gpu: 1, world: 4, frame: 1 }, controls: controlsHtml,
+    lobby: {
+      friends: true,
+      // Solo plays the session that's already running; a room is its own page (`?room=`), so joining loads it.
+      onSolo: () => {},
+      onJoin: (room) => { if (room !== roomCode) location.search = `?room=${room}` },
+      onLeaveRoom: () => location.replace(location.pathname),
+      onRename: (name) => { if (live.session instanceof OnlineSession) live.session.rename(name) },
+    },
+  })
+  if (online) shell.lobby!.setRoom(roomCode)
+  // The shell owns volume, mute and reduce camera motion; the sound bank and the walk read them.
+  const syncSound = () => {
+    Object.assign(audio.bank.volumes, shell.settings.volumes)
+    if (audio.bank.muted !== shell.settings.muted) audio.bank.setMuted(shell.settings.muted)
+    audio.bank.applyVolumes()
+  }
+  syncSound()
+  // Nothing sounds before Begin: Play, Resume, a click outside the pause card, or a click on the woods.
+  shell.view?.root.addEventListener("click", (e) => {
+    const t = e.target as HTMLElement
+    const act = t.closest<HTMLElement>("[data-act]")?.dataset.act
+    if (act === "play" || act === "solo" || act === "resume" || t.classList.contains("as-overlay")) audio.begin()
+  }, { capture: true })
+  shell.loading?.stage("gpu", "Starting the GPU")
+  const gpu = await openGpu(canvas, "BARBARA")
+  if (typeof gpu === "string") { hud.textContent = gpu; shell.loading?.fail(gpu); return }
+  shell.loading?.done("gpu")
   performance.mark("woods:gpu")
   const { device } = gpu
   const canvasFormat = gpu.format
-  const settings = { ...FEEL, ...WALK }
+  const settings = { ...FEEL, ...WALK, reduceMotion: shell.settings.reduceMotion }
   if (smoke) Object.assign(settings, { trunkDensity: 1, botCount: 1 })
 
   // A room walks the printed forest (default params) so everyone and the server share it; solo follows the knobs.
   let world: WoodsWorld = online ? makeWorld() : makeWorld({ trunkDensity: settings.trunkDensity })
-  // Your pick is remembered; `?quality=` (automation) overrides it without saving.
-  const look = { quality: (params.get("quality") as QualityMode | null) ?? loadSavedQualityMode(localStorage, QUALITY_KEY) ?? "auto" }
-  const quality = new AdaptiveQualityController({ mode: smoke ? "low" : look.quality, profiles: FOREST_QUALITY })
-  hud.textContent = "Loading the woods…"
-  const view = await WorldView.create(gpu, world, { smoke, quality: quality.getActiveTier() })
+  shell.loading?.stage("world", "Growing the woods")
+  const view = await WorldView.create(gpu, world, { smoke, quality: quality.tier })
+  shell.loading?.done("world")
+  shell.loading?.stage("frame", "Lighting the camp")
   const renderer = view.renderer
-  const friends = new FriendsView(renderer, params.get("people") === "real")
+  live.qualityChanged = () => { view.forest.setQuality(quality.tier); shell.settings.changed() }
+  // Realistic friends by default; the blocky ones are one setting away (Lab › Friends, or `?people=blocky`). The
+  // software-GPU smoke draws blocky friends.
+  const friends = new FriendsView(renderer, !smoke && params.get("people") !== "blocky")
   const creatures = new CreatureView(renderer)
   if (params.get("smooth") === "0") friends.smooth = false
   const map = new PaperMap(document.body)
   const held = new HeldMap(renderer, import.meta.env.BASE_URL, undefined, !smoke)
-  const audio = new WoodsAudio()
-  const story = new StoryHud(audio)
   const fp = new FrameParts()
 
-  let session: Session = online ? new OnlineSession(world, roomCode, nameInput.value.trim()) : new SoloSession(world, settings)
+  let session: Session = online ? new OnlineSession(world, roomCode, shell.lobby!.playName) : new SoloSession(world, settings)
+  live.session = session
   const useWorld = (w: WoodsWorld, rebuild = true) => {
     world = w
     if (rebuild) view.setWorld(world)
@@ -86,7 +124,7 @@ async function main() {
   useWorld(world, false)
   performance.mark("woods:world")
 
-  let forcePlay = false, begun = false
+  let forcePlay = false
   // The Lab panel stays open while you play (capture "focus"): it takes keys only while it has focus, and a click on the
   // woods hands input back and locks.
   const locked = () => document.pointerLockElement === canvas
@@ -97,8 +135,8 @@ async function main() {
   camera.yaw = spawn.yaw; camera.pitch = -0.05
 
   const panel = new LabPanel(settings, [...FEEL_CONTROLS.filter((c) => !LOOK_KEYS.has(c.field ?? c.key)), ...WALK_CONTROLS], params, () => { camera.release(); keys.clear() }, { open: false, pill: false, groupActions: false, capture: "focus", openGroups: ["Flashlight"], onToggle: () => syncOverlays() })
+  live.panel = panel
   panel.addControls(view.forest.settings as unknown as Record<string, number | string | boolean>, view.forest.controls())
-  panel.addControls(look, [{ key: "woods.quality", field: "quality", label: "Quality", group: "Camera", subsection: "Performance", type: "select", options: [{ value: "auto", label: "Auto" }, { value: "high", label: "High" }, { value: "balanced", label: "Balanced" }, { value: "low", label: "Low" }] }])
   panel.addControls(friends as unknown as Record<string, boolean>, [
     { key: "woods.realisticPeople", field: "realistic", label: "Realistic people", group: "Friends", subsection: "Drawing", type: "toggle" },
     { key: "woods.smoothFriends", field: "smooth", label: "Smooth friends", group: "Friends", subsection: "Drawing", type: "toggle" },
@@ -108,88 +146,43 @@ async function main() {
   panel.addControls(held.settings as unknown as Record<string, number | string | boolean>, heldMapControls())
   // Camera looks and realism effects (Lab › Camera look): a post chain after the forest's own camera, all off by default.
   const cameraLook = new CameraLook({ renderer, device, format: canvasFormat, camera, forest: view.forest, panel, params, smoke, seed: world.params.seed })
-  audio.bindControls(panel, () => menu.sync())
+  audio.bindControls(panel)
   story.bindControls(panel)
-  story.onChange = () => menu.sync()
-  panel.setView({ order: ["Walking", "Flashlight", "Camera", "Mist", "Night", "Forest", "Tape & map", "Friends", "Sound", "Voices", "Volume"] })
+  story.onChange = () => shell.settings.changed()
+  panel.setView({ order: ["Walking", "Flashlight", "Camera", "Mist", "Night", "Forest", "Tape & map", "Friends", "Sound", "Voices"] })
   attachLabPanelControl(panel)
-  let regenAt = 0, worldKey = `${settings.trunkDensity}`, qualityMode = look.quality
+  shell.settings.subscribe(() => { syncSound(); settings.reduceMotion = shell.settings.reduceMotion; panel.sync() })
+  let regenAt = 0, worldKey = `${settings.trunkDensity}`
 
-  // Held keys the game reads (walking, tie, map); mouse look and F live in the shared camera.
+  // Held keys the game reads (walking, tie, map); mouse look and F live in the shared camera. M (mute) and Escape
+  // (the menu) are the shell's.
   const keys = new Set<string>()
   const release = () => keys.clear()
   window.addEventListener("keydown", (e) => {
     if (isEditableEventTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return
-    // M mutes in play and on the title or Escape menu (not while typing in the Lab panel).
-    if (e.code === "KeyM" && !e.repeat && !panel.hasFocus()) { audio.bank.toggleMute(); menu.sync(); panel.sync() }
     if (!locked()) return
     if (MOVE_KEYS.has(e.code)) { keys.add(e.code); e.preventDefault() }
   })
   window.addEventListener("keyup", (e) => { keys.delete(e.code); if (isMetaKey(e.code)) release() })
   window.addEventListener("blur", release)
   document.addEventListener("visibilitychange", () => { if (document.hidden) release() })
-  // Overlays: the title until you first step out, then the Escape menu whenever the pointer is free. With the Lab
-  // panel open neither shows, so you can tune while looking at the woods; a click on them plays again.
-  const pause = document.getElementById("pause")!, tuning = document.getElementById("tuning")!
-  const menu = new SettingsMenu({
-    bank: audio.bank,
-    mode: () => look.quality,
-    setMode: (mode) => { look.quality = mode },
-    active: () => quality.getActiveTier(),
-    subtitles: () => story.subtitles,
-    setSubtitles: (on) => { story.subtitles = on },
-    changed: () => panel.sync(),
-  })
+  // With the Lab panel open the shell's cards stay hidden, so you can tune while looking at the woods; a click on them
+  // plays again.
+  const tuning = document.getElementById("tuning")!
   function syncOverlays() {
     const free = !forcePlay && !locked()
-    start.hidden = !free || begun || panel.visible
-    pause.hidden = !free || !begun || panel.visible
     tuning.hidden = !free || !panel.visible
     tuning.innerHTML = `Click the woods to play with the knobs open · ${keyPromptHtml("Backquote", "Hide knobs")}`
-    if (!start.hidden) menu.mount(start.querySelector(".card")!)
-    if (!pause.hidden) menu.mount(pause.querySelector(".card")!)
+    shell.flow.changed()
   }
-  const play = () => { audio.begin(); requestCanvasPointerLock(canvas) }
   document.addEventListener("pointerlockchange", () => {
     release()
-    if (locked()) begun = true
     syncOverlays()
   })
   canvas.addEventListener("click", () => audio.begin())
-  pause.addEventListener("click", (e) => { if (e.target === pause) play() })
-  document.getElementById("solo")!.addEventListener("click", play)
-  document.getElementById("join")!.addEventListener("click", play)
-  document.getElementById("resume")!.addEventListener("click", play)
-  nameInput.addEventListener("change", () => {
-    const name = nameInput.value.trim().slice(0, 16)
-    localStorage.setItem("woods.name", name)
-    if (session instanceof OnlineSession && name) session.rename(name)
-  })
-  const friendsButton = document.getElementById("friends") as HTMLButtonElement
-  const inviteLink = () => `${location.origin}${location.pathname}?room=${roomCode}`
-  if (online) {
-    document.getElementById("choices")!.hidden = true
-    document.getElementById("invite")!.hidden = false
-    document.getElementById("pause-room")!.hidden = false
-    for (const id of ["code", "pause-code"]) document.getElementById(id)!.textContent = roomCode
-    document.getElementById("start-sub")!.textContent = "Your friends start at camp too"
-    for (const id of ["copy", "pause-copy"]) {
-      const copy = document.getElementById(id) as HTMLButtonElement
-      copy.addEventListener("click", () => void navigator.clipboard?.writeText(inviteLink()).then(() => { copy.textContent = "Copied" }, () => { copy.textContent = inviteLink() }))
-    }
-  }
   syncOverlays()
-  friendsButton.addEventListener("click", async () => {
-    localStorage.setItem("woods.name", nameInput.value.trim().slice(0, 16))
-    friendsButton.disabled = true
-    let code = ""
-    try { code = ((await (await fetch("api/create", { method: "POST" })).json()) as { room?: string }).room ?? "" } catch {}
-    location.search = `?room=${ROOM_CODE.test(code) ? code : randomRoomCode()}`
-  })
 
-  const controlsHud = () => {
-    hud.innerHTML = [keyPromptHtml("KeyW", "Walk"), keyPromptHtml("ShiftLeft", "Run", { hold: true }), keyPromptHtml("KeyF", "Flashlight"), keyPromptHtml("KeyE", "Tie tape", { hold: true }), keyPromptHtml("KeyG", "Map", { hold: true }), keyPromptHtml("KeyM", "Mute"), keyPromptHtml("Escape", "Menu"), keyPromptHtml("Backquote", "Knobs")].join(" ")
-  }
+  const controlsHud = () => { hud.innerHTML = `${controlsHtml()} ${keyPromptHtml("Backquote", "Knobs")}` }
   controlsHud()
   onKeyLayoutChange(controlsHud)
 
@@ -251,6 +244,8 @@ async function main() {
     const key = JSON.stringify([rows, status])
     if (key === rosterKey) return
     rosterKey = key
+    shell.lobby!.setPlayers(rows.map((r) => ({ id: String(r.pid), name: r.name, you: r.pid === session.me, away: !r.connected })))
+    shell.lobby!.setSocketStatus(status)
     roomHud.innerHTML = [`Room <b>${roomCode}</b>${status ? ` · ${esc(status)}` : ""}`, ...rows.map((r) => `<div class="${r.connected ? "" : "away"}">${esc(r.name)}${r.pid === session.me ? " (you)" : ""}${r.connected ? "" : " · dropped"}</div>`)].join("")
     const here = new Set(rows.filter((r) => r.connected).map((r) => r.pid))
     for (const r of rows) if (r.connected && !rosterSeen.has(r.pid) && r.pid !== session.me && rosterSeen.size) say(`${r.name} walked into camp.`, 3)
@@ -326,17 +321,13 @@ async function main() {
       const solo = new SoloSession(world, settings)
       solo.teleport(pos.x, pos.z)
       session = solo
+      live.session = session
     }
-    if (look.quality !== qualityMode) {
-      qualityMode = look.quality
-      saveQualityMode(localStorage, qualityMode, QUALITY_KEY)
-      if (quality.setMode(qualityMode)) view.forest.setQuality(quality.getActiveTier())
-      menu.sync()
-    }
-
-    const ratio = Math.min(devicePixelRatio, quality.getProfile().dprCap) * quality.getResolutionScale()
-    const width = Math.max(1, Math.round(innerWidth * ratio)), height = Math.max(1, Math.round(innerHeight * ratio))
-    if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; view.forest.resize(width, height) }
+    shell.tick(now)
+    // Only play is the game's real load (not the title, the menu or a synthetic automation clock).
+    if (!smoke && playing && !stepping) quality.frame(now); else quality.pause()
+    if (quality.fit(canvas, innerWidth, innerHeight)) view.forest.resize(canvas.width, canvas.height)
+    const width = canvas.width, height = canvas.height
 
     // Walk: fixed ticks of the shared sim (solo) or the room's prediction (online); a room keeps ticking while you're
     // on the start screen so friends still see you standing there.
@@ -380,7 +371,7 @@ async function main() {
     const p = session.self
     // The held map and compass (Map style: Held): its hands follow the raise; while up, your torch is the one in its
     // right glove, aimed at the sheet, on its low setting.
-    held.tier = quality.getActiveTier()
+    held.tier = quality.tier
     // The props follow the rendered view, so a body camera's mount turns them with it.
     const mount = camera.mount
     held.frame({ state, me: meId, raise: p.mapRaise, eye: camera.eye, yaw: camera.yaw + mount.yaw, pitch: Math.max(-1.5, Math.min(1.5, camera.pitch + mount.pitch)), roll: camera.walk.roll + mount.roll, aspect: width / height, dt, time, walk: camera.walk })
@@ -437,9 +428,6 @@ async function main() {
     if (smoke && (!smokeTarget || smokeTarget.width !== width || smokeTarget.height !== height)) { smokeTarget?.destroy(); smokeTarget = device.createTexture({ size: [width, height], format: canvasFormat, usage: GPUTextureUsage.RENDER_ATTACHMENT }) }
     creature.frame()
     view.frame({ eye: [camera.eye[0], camera.eye[1], camera.eye[2]], viewProj: vp as Float32Array, width, height, time: state.t, dt, fovY: ((camera.fov + camera.mount.fov) * Math.PI) / 180, torches, fp, place, casters: [...friends.casters(ownOrigin, view.forest.settings.torchReach), ...held.casters()], batches: creatures.frame(world, time) }, stepping, smokeTarget?.createView())
-    // Frame time alone decides: the renderer's GPU reading runs from before encoding to the queue finishing, so it
-    // counts CPU work and queue waits and read over budget on GPUs that hold 60 fps at High.
-    if (!smoke && playing && quality.recordFrame(frameMs)) { view.forest.setQuality(quality.getActiveTier()); menu.sync() }
 
     // HUD: the tie prompt, the map, toasts.
     const target = playing && p.mapRaise < 0.3 ? tieTarget(world, p, settings.tapeReach) : null
@@ -454,12 +442,13 @@ async function main() {
     // The story: the trailhead opening at your first step out, the FIND BARBARA card, subtitles.
     // Online, not before the room has seated you (until then you'd be nobody, at the room's t 0).
     if (playing && (!online || meId >= 0)) story.begin(world, state, meId, at.x, at.z, camera.yaw)
-    if (playing || (begun && panel.visible)) story.frame(dt, state, world)
+    if (playing || (shell.flow.started && panel.visible)) story.frame(dt, state, world)
     // You hear the woods while playing, or with the knobs open once you've begun (to tune the mix).
     audio.frame(camera.eye, camera.yaw, dt, world, state, playing || panel.visible)
 
     frames++
     if (frames <= 2) performance.mark(`woods:frame${frames}`)
+    if (frames === 1) shell.loading?.finish()
     if (smoke && frames >= 2) paused = true
   }
 

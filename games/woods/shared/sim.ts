@@ -48,8 +48,8 @@ export const FEEL = {
   chatter: 1,
   /** People's own searchers speak at key moments (a find, a sighting): 1 on, 0 never. */
   voicePeople: 1,
-  /** The thing in the woods (`shared/creature.ts`): off until Kit has seen it; a room runs these defaults. */
-  creature: false,
+  /** The thing in the woods (`shared/creature.ts`): on (Kit, at the Barbara ship); rare, distant and brief. A room runs these defaults. */
+  creature: true,
   /** How often it comes (×; 1 ≈ every five minutes when there's a light to cross). */
   creatureRate: 1,
   /** How far from whoever sees it (m). */
